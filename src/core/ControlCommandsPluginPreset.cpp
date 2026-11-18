@@ -312,14 +312,12 @@ void registerPresetLoad(ControlRegistry& registry)
 				notePresetName(targetId, pluginId, previousName);
 			},
 			[targetId = target.id, pluginId = args.value(QStringLiteral("plugin")).toString(),
-				path, name]() {
-				QByteArray bytes;
-				ControlResult ignored;
-				if (controlReadFileBytes(path, &bytes, &ignored))
-				{
-					controlRestoreCapturedState(targetId, pluginId, bytes);
-					notePresetName(targetId, pluginId, name);
-				}
+				bytes, name]() {
+				// The LOADED bytes, not the path: a redo replays what this command
+				// applied. Re-reading the path made a preset edited (or replaced)
+				// after the load decide what the redo did.
+				controlRestoreCapturedState(targetId, pluginId, bytes);
+				notePresetName(targetId, pluginId, name);
 			});
 		ControlResult restored = controlRestoreDeviceState(handle, bytes);
 		if (!restored.ok) { return restored; }

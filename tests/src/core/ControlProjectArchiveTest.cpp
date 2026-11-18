@@ -60,6 +60,8 @@
 #include <QTemporaryDir>
 
 #include "ControlProjectAssets.h"
+#include "ConfigManager.h"
+#include "../../../src/core/ControlProjectAssetsShared.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
@@ -156,6 +158,30 @@ QString writeFixture(const QString& dir, const QString& projectName, bool intact
 	const QString project = dir + QLatin1Char('/') + projectName;
 	writeBytes(project, fixtureDocument(dir));
 	return project;
+}
+
+//! Pads a valid project with an XML comment without holding the padding in memory.
+bool writeOver64MiBProject(const QString& path, const QByteArray& document)
+{
+	const qsizetype closeAt = document.lastIndexOf("</zene-project>");
+	if (closeAt < 0) { return false; }
+	QFile file(path);
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)
+		|| file.write(document.constData(), closeAt) != closeAt || file.write("<!--", 4) != 4)
+	{
+		return false;
+	}
+	QByteArray chunk(1024 * 1024, 'x');
+	qint64 remaining = 64LL * 1024 * 1024 + 1;
+	while (remaining > 0)
+	{
+		const qint64 count = qMin<qint64>(remaining, chunk.size());
+		if (file.write(chunk.constData(), count) != count) { return false; }
+		remaining -= count;
+	}
+	return file.write("-->", 3) == 3
+		&& file.write(document.constData() + closeAt, document.size() - closeAt)
+			== document.size() - closeAt;
 }
 
 //! The reference whose stored value is \a raw.
@@ -284,6 +310,36 @@ private slots:
 			QCOMPARE(ref.value(QStringLiteral("sha256")).toString(), sha256Of(path));
 		}
 	}
+	//! A recognized sample prefix cannot fall back to the project directory when
+	//! its configured base does not produce an absolute path.
+	void unresolvedSamplePrefixesStayUnresolved()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		QString document = QString::fromUtf8(fixtureDocument(dir.path()));
+		document.replace(QDir::fromNativeSeparators(dir.path()) + QStringLiteral("/clip.wav"),
+			QStringLiteral("usersample:missing.wav"));
+		const QString project = dir.filePath(QStringLiteral("prefixed.mmp"));
+		QVERIFY(writeBytes(project, document.toUtf8()));
+
+		ConfigManager* config = ConfigManager::inst();
+		const QString workingDir = config->workingDir();
+		config->setWorkingDir(QStringLiteral("relative-sample-base"));
+		const ControlResult scanned = run(QStringLiteral("project.missing_assets"),
+			QJsonObject{{QStringLiteral("project"), project}});
+		config->setWorkingDir(workingDir);
+
+		QVERIFY2(scanned.ok, qPrintable(scanned.errorMessage));
+		QCOMPARE(scanned.result.value(QStringLiteral("unresolved_count")).toInt(), 1);
+		const QJsonObject unresolved = referenceWithRaw(
+			scanned.result.value(QStringLiteral("references")).toArray(),
+			QStringLiteral("usersample:missing.wav"));
+		QVERIFY(!unresolved.isEmpty());
+		QCOMPARE(unresolved.value(QStringLiteral("resolved")).toBool(), false);
+		QCOMPARE(unresolved.value(QStringLiteral("resolved_via")).toString(),
+			QStringLiteral("unresolved-prefix"));
+		QCOMPARE(unresolved.value(QStringLiteral("path")).toString(), QString());
+	}
 	//! The positive half: the four files that are gone are named by the value
 	//! the project STORES (so the caller can pass it straight back to relink),
 	//! including the legacy relative one, which resolves against the project's
@@ -322,6 +378,176 @@ private slots:
 		QCOMPARE(referenceWithRaw(references, QStringLiteral("gone.wav"))
 			.value(QStringLiteral("exists")).toBool(), false);
 	}
+	//! An empty path attribute names no file, so it is not listed as a reference -
+	//! but it is only "embedded media" when the element type actually HAS an inline
+	//! form and the media is really there. `sf2player` and the session `clip` have no
+	//! inline attribute at all (ControlProjectAssets.cpp:80-85), so `<sf2player src="">`
+	//! is an inert reference: counting it as embedded media reports inline content the
+	//! project does not carry.
+	void onlyInlineMediaCountsAsEmbedded()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString quoted = QDir::fromNativeSeparators(dir.path());
+		QString xml = QStringLiteral(
+			"<?xml version=\"1.0\"?>\n"
+			"<zene-project creator=\"Zene Studio\" version=\"1.0\" type=\"song\" creatorversion=\"0.3.0\">\n"
+			"  <head bpm=\"120\" timesig_numerator=\"4\" timesig_denominator=\"4\"/>\n"
+			"  <song>\n"
+			"    <trackcontainer type=\"song\">\n"
+			"      <track name=\"Audio\" type=\"0\">\n"
+			"        <instrumenttrack><instrument name=\"audiofileprocessor\">\n"
+			"          <audiofileprocessor src=\"\" sampledata=\"AAAA\" amp=\"100\"/></instrument>\n"
+			"        </instrumenttrack>\n"
+			"        <instrumenttrack instrument=\"1\"><instrument name=\"sf2player\">\n"
+			"          <sf2player src=\"\" bank=\"0\" patch=\"0\"/></instrument>\n"
+			"        </instrumenttrack>\n"
+			"      </track>\n"
+			"    </trackcontainer>\n"
+			"    <session><clips>\n"
+			"      <clip track=\"0\" scene=\"0\" type=\"1\" src=\"\"/>\n"
+			"    </clips></session>\n"
+			"  </song>\n"
+			"</zene-project>\n").arg(quoted);
+		const QString project = dir.path() + QStringLiteral("/empty-src.mmp");
+		QVERIFY(writeBytes(project, xml.toUtf8()));
+
+		const ControlResult scanned = run(QStringLiteral("project.missing_assets"),
+			QJsonObject{{QStringLiteral("project"), project}});
+		QVERIFY2(scanned.ok, qPrintable(scanned.errorMessage));
+
+		// Exactly ONE element carries its media inline: the audiofileprocessor
+		// with sampledata. The empty sf2player and the empty session clip have no
+		// inline form, so they are not embedded media.
+		QCOMPARE(scanned.result.value(QStringLiteral("embedded_count")).toInt(), 1);
+		// None of the three names a file, so none is a missing asset either.
+		QCOMPARE(scanned.result.value(QStringLiteral("missing_count")).toInt(), 0);
+		QCOMPARE(scanned.result.value(QStringLiteral("reference_count")).toInt(), 0);
+	}
+	//! The digest must distinguish "on disk but not hashed" from "not on disk".
+//! `project.missing_assets` does not hash anything, so EVERY present reference is
+//! unhashed - and digestOf wrote the "missing" marker for both cases, so a scan of a
+//! project whose wav exists and a scan of one whose wav is gone at the same stored
+//! path produced the same digest.
+	void presentButUnhashedIsNotDigestIndistinguishableFromMissing()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		// ONE project file, so the stored values, the tags and the document order
+		// are all identical between the two scans: the only thing that changes is
+		// what is on disk at those paths.
+		const QString project = writeFixture(dir.path(), QStringLiteral("same.mmp"), true);
+
+		const ControlResult present = run(QStringLiteral("project.missing_assets"),
+			QJsonObject{{QStringLiteral("project"), project}});
+		QVERIFY2(present.ok, qPrintable(present.errorMessage));
+		QCOMPARE(present.result.value(QStringLiteral("present_count")).toInt(), 5);
+		QVERIFY(!present.result.value(QStringLiteral("digest")).toString().isEmpty());
+
+		// Take the media away, leaving the project file itself untouched.
+		for (const QString& name : {QStringLiteral("sample.wav"), QStringLiteral("clip.wav"),
+				 QStringLiteral("sound.sf2"), QStringLiteral("slot.wav"), QStringLiteral("gone.wav")})
+		{
+			QVERIFY(QFile::remove(dir.path() + QLatin1Char('/') + name));
+		}
+
+		const ControlResult absent = run(QStringLiteral("project.missing_assets"),
+			QJsonObject{{QStringLiteral("project"), project}});
+		QVERIFY2(absent.ok, qPrintable(absent.errorMessage));
+		QCOMPARE(absent.result.value(QStringLiteral("present_count")).toInt(), 0);
+
+		// Same project, same stored values, nothing on disk: the digest is the
+		// answer to "is this the same media set", and it must say no.
+		QVERIFY2(present.result.value(QStringLiteral("digest")).toString()
+				!= absent.result.value(QStringLiteral("digest")).toString(),
+			"a project whose media is on disk and the same project with its media gone "
+			"digest the same");
+
+		// An over-cap file is present but unhashed too, so it must land on the
+		// same side as any other present file rather than reading as missing.
+		QTemporaryDir bigDir;
+		QVERIFY(bigDir.isValid());
+		const QString big = bigDir.path() + QStringLiteral("/big.wav");
+		QFile bigFile(big);
+		QVERIFY(bigFile.open(QIODevice::WriteOnly));
+		QVERIFY(bigFile.resize(1024LL * 1024LL * 1024LL + 4096));
+		bigFile.close();
+		const QString bigProject = writeFixture(bigDir.path(), QStringLiteral("big.mmp"), true);
+		const ControlResult scanned = run(QStringLiteral("project.missing_assets"),
+			QJsonObject{{QStringLiteral("project"), bigProject}});
+		QVERIFY2(scanned.ok, qPrintable(scanned.errorMessage));
+		QVERIFY(!scanned.result.value(QStringLiteral("references")).toArray().isEmpty());
+	}
+	//! Reading a project must be bounded BEFORE the bytes are allocated. A plain
+//! .mmp was read whole, and a .mmpz was handed to qUncompress, which allocates
+//! exactly the size its leading 4 bytes declare - so a crafted 8-byte file could
+//! ask for gigabytes. The engine already measures both against a 256 MiB cap for
+//! document recovery (src/core/DataFile.cpp:202); this verb must refuse too,
+	//! saying WHY rather than reading first and hoping.
+	void anOversizedProjectIsRefusedBeforeItIsRead()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		// A plain .mmp larger than the cap. Sparse, so the fixture costs no real
+		// bytes; a verb that checks the size first never reads it.
+		const QString big = dir.path() + QStringLiteral("/big.mmp");
+		QFile bigFile(big);
+		QVERIFY(bigFile.open(QIODevice::WriteOnly));
+		QVERIFY(bigFile.write("<zene-project>") > 0);
+		QVERIFY(bigFile.resize(300LL * 1024LL * 1024LL));
+		bigFile.close();
+		const ControlResult oversized = run(QStringLiteral("project.missing_assets"),
+			QJsonObject{{QStringLiteral("project"), big}});
+		QVERIFY(!oversized.ok);
+		QCOMPARE(oversized.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(oversized.errorMessage.contains(QStringLiteral("over")),
+			qPrintable(QStringLiteral("the refusal did not name the cap: %1")
+				.arg(oversized.errorMessage)));
+
+		// A crafted .mmpz: 4 bytes declaring 3 GiB of expanded project, then bytes
+		// that are not a zlib stream at all. The declared size is refused before
+		// anything is inflated.
+		QByteArray bomb;
+		const quint32 declared = 3u * 1024u * 1024u * 1024u;
+		bomb.append(static_cast<char>((declared >> 24) & 0xFF));
+		bomb.append(static_cast<char>((declared >> 16) & 0xFF));
+		bomb.append(static_cast<char>((declared >> 8) & 0xFF));
+		bomb.append(static_cast<char>(declared & 0xFF));
+		bomb.append("not a zlib stream", 17);
+		const QString bombPath = dir.path() + QStringLiteral("/bomb.mmpz");
+		QVERIFY(writeBytes(bombPath, bomb));
+		const ControlResult inflated = run(QStringLiteral("project.missing_assets"),
+			QJsonObject{{QStringLiteral("project"), bombPath}});
+		QVERIFY(!inflated.ok);
+		QCOMPARE(inflated.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(inflated.errorMessage.contains(QStringLiteral("over")),
+			qPrintable(QStringLiteral("the refusal did not name the declared size: %1")
+				.arg(inflated.errorMessage)));
+
+		// A genuine qCompress stream of one byte more than the cap, whose header is then
+		// rewritten to declare only 1 KiB. The declared size passes the fast refusal, so
+		// the cap has to hold on the bytes the inflate actually produces.
+		QByteArray understated = qCompress(QByteArray(static_cast<int>(lmms::control::MaxProjectAssetDocumentBytes) + 1, '\0'));
+		QVERIFY(understated.size() > 4);
+		const quint32 small = 1024u;
+		understated[0] = static_cast<char>((small >> 24) & 0xFF);
+		understated[1] = static_cast<char>((small >> 16) & 0xFF);
+		understated[2] = static_cast<char>((small >> 8) & 0xFF);
+		understated[3] = static_cast<char>(small & 0xFF);
+		const QString understatedPath = dir.path() + QStringLiteral("/understated.mmpz");
+		QVERIFY(writeBytes(understatedPath, understated));
+		const ControlResult grown = run(QStringLiteral("project.missing_assets"),
+			QJsonObject{{QStringLiteral("project"), understatedPath}});
+		QVERIFY(!grown.ok);
+		QCOMPARE(grown.errorKind, ControlErrorKind::Refused);
+		// The refusal must come from the inflate itself (the cap counted on produced bytes), not from a
+		// size check on the header or a parse of the full output: that is what proves the cap held DURING
+		// inflation. Without zlib this build refuses before inflating, so this assertion fails there.
+		QVERIFY2(grown.errorMessage.contains(QStringLiteral("inflates to more than")),
+			qPrintable(QStringLiteral("an understated header inflated past the cap: %1")
+				.arg(grown.errorMessage)));
+	}
 	//! Hashing is the identity step: the digest is stable, and relinking
 	//! changes it, because the digest covers the reference set and its hashes.
 	void hashingIsStableAndChangesWithTheReferenceSet()
@@ -350,6 +576,33 @@ private slots:
 		QVERIFY(after.ok);
 		QVERIFY2(after.result.value(QStringLiteral("digest")).toString() != digest,
 			"the digest did not move with the reference set");
+	}
+	//! A scan's file size can be stale by the time hashing opens the path. The
+	//! hash must still enforce its byte cap while reading the grown file.
+	void fileGrowthAfterScanRespectsHashCap()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString project = writeFixture(dir.path(), QStringLiteral("growth.mmp"), true);
+		const QString asset = dir.path() + QStringLiteral("/clip.wav");
+		QVERIFY(writeBytes(asset, QByteArray("small")));
+
+		control::ProjectAssetScan scan;
+		ControlResult error;
+		QVERIFY2(control::controlScanProjectAssets(project, &scan, &error),
+			qPrintable(error.errorMessage));
+		int index = -1;
+		for (int i = 0; i < scan.references.size(); ++i)
+		{
+			if (scan.references[i].path == asset) { index = i; break; }
+		}
+		QVERIFY(index >= 0);
+		QCOMPARE(scan.references[index].bytes, qint64(5));
+		QVERIFY(writeBytes(asset, QByteArray("this file is now over the cap")));
+
+		control::projectassets::hashReference(&scan.references[index], 16);
+		QVERIFY(!scan.references[index].hashed);
+		QVERIFY(scan.references[index].error.contains(QStringLiteral("cap")));
 	}
 	//! The relink's inverse, for real: the file is rewritten (the reference
 	//! resolves again, and a rescan says so), then ONE control.undo puts back the
@@ -392,6 +645,38 @@ private slots:
 
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(readBytes(project), before);
+	}
+
+	/*! A media folder that is a SYMLINK out of the project folder must not be written
+	 *  through: the copies would land outside the project the call claims to make
+	 *  portable, so the call REFUSES and nothing is copied anywhere. The containment
+	 *  check has to resolve the link, not merely compare the spelled-out paths. */
+	void collectMediaRefusesAMediaFolderThatSymlinksOutOfTheProject()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString outside = dir.path() + QStringLiteral("/library");
+		QVERIFY(QDir().mkpath(outside));
+		for (const QString& name : {QStringLiteral("sample.wav"), QStringLiteral("clip.wav"),
+			QStringLiteral("sound.sf2"), QStringLiteral("slot.wav")})
+		{
+			QVERIFY(writeBytes(outside + QLatin1Char('/') + name, fakeWave(32)));
+		}
+		const QString projectDir = dir.path() + QStringLiteral("/song");
+		QVERIFY(QDir().mkpath(projectDir));
+		const QString project = projectDir + QStringLiteral("/song.mmp");
+		QVERIFY(writeBytes(project, fixtureDocument(outside)));
+		const QByteArray before = readBytes(project);
+
+		// The project's own 'media' name is a link to a directory outside it.
+		QVERIFY(QFile::link(outside, projectDir + QStringLiteral("/media")));
+
+		const ControlResult collected = run(QStringLiteral("project.collect_media"),
+			QJsonObject{{QStringLiteral("project"), project}});
+		QVERIFY2(!collected.ok, "a media folder that resolves outside the project must be refused");
+		QVERIFY2(!QFileInfo::exists(outside + QStringLiteral("/media")),
+			"nothing may be written through the link");
+		QCOMPARE(readBytes(project), before);  // the project file is untouched
 	}
 
 	void relinkRepointsTheReferenceAndUndoRestoresTheFile()
@@ -438,6 +723,76 @@ private slots:
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(readBytes(project), before);
 	}
+
+	//! The inverse a relink ADVERTISES must be a command a client can actually
+	//! run. project.relink requires `project`, `from` AND `to`
+	//! (ControlCommandsProjectArchive.cpp:305-310), and the advertised inverse
+	//! carried only `project` and a `note`, so replaying it - which is what an
+	//! agent does with the inverse it was handed - was refused as InvalidArgs.
+	//! The inverse IS the recorded action checkpoint, so it is advertised as
+	//! control.undo, the shape every other action checkpoint carries.
+	void theRelinkInverseIsACommandAClientCanReplay()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString project = writeFixture(dir.path(), QStringLiteral("inverse.mmp"), false);
+		const QString found = dir.path() + QStringLiteral("/found/gone.wav");
+		QVERIFY(writeBytes(found, fakeWave(48)));
+
+		const ControlResult relinked = run(QStringLiteral("project.relink"), QJsonObject{
+			{QStringLiteral("project"), project},
+			{QStringLiteral("from"), QStringLiteral("gone.wav")},
+			{QStringLiteral("to"), found}});
+		QVERIFY2(relinked.ok, qPrintable(relinked.errorMessage));
+
+		const QJsonObject inverse = stateOf(QStringLiteral("project.relink"))
+			.value(QStringLiteral("inverse")).toObject();
+		QVERIFY2(!inverse.isEmpty(), "the relink advertised no inverse at all");
+
+		// Every required argument of the advertised inverse command must be
+		// supplied by the advertised inverse's own args.
+		const QString op = inverse.value(QStringLiteral("op")).toString();
+		QVERIFY2(!op.isEmpty(), "the advertised inverse names no command");
+		const ControlCommand* command = ControlRegistry::instance()->command(op);
+		QVERIFY2(command != nullptr,
+			qPrintable(QStringLiteral("the advertised inverse names no registered command: %1")
+				.arg(op)));
+		const QJsonObject inverseArgs = inverse.value(QStringLiteral("args")).toObject();
+		for (const QJsonValue& required : command->argsSchema
+			.value(QStringLiteral("required")).toArray())
+		{
+			QVERIFY2(inverseArgs.contains(required.toString()),
+				qPrintable(QStringLiteral("the advertised inverse %1 is missing the required "
+					"argument '%2'").arg(op, required.toString())));
+		}
+	}
+
+	//! Project-document reads retain the recovery-size allowance on both
+	//! project.relink and project.collect_media, above the 64 MiB device-state cap.
+	void relinkAndCollectMediaAcceptProjectFilesAbove64MiB()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString project = writeFixture(dir.path(), QStringLiteral("large.mmp"), false);
+		const QByteArray document = fixtureDocument(dir.path());
+		QVERIFY(writeOver64MiBProject(project, document));
+		QVERIFY(QFileInfo(project).size() > 64LL * 1024 * 1024);
+		const QString found = dir.path() + QStringLiteral("/found/gone.wav");
+		QVERIFY(writeBytes(found, fakeWave(48)));
+
+		const ControlResult relinked = run(QStringLiteral("project.relink"), QJsonObject{
+			{QStringLiteral("project"), project},
+			{QStringLiteral("from"), QStringLiteral("gone.wav")},
+			{QStringLiteral("to"), found}});
+		QVERIFY2(relinked.ok, qPrintable(relinked.errorMessage));
+		QVERIFY(QFileInfo(project).size() > 64LL * 1024 * 1024);
+
+		const ControlResult collected = run(QStringLiteral("project.collect_media"),
+			QJsonObject{{QStringLiteral("project"), project}});
+		QVERIFY2(collected.ok, qPrintable(collected.errorMessage));
+		QVERIFY(QFileInfo(project).size() > 64LL * 1024 * 1024);
+	}
+
 	//! A relink that cannot identify the media must refuse and write NOTHING.
 	void relinkRefusesAMismatchedHash()
 	{

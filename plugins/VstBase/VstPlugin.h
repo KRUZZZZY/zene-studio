@@ -25,6 +25,9 @@
 #ifndef _VST_PLUGIN_H
 #define _VST_PLUGIN_H
 
+#include <optional>
+#include <vector>
+
 #include <QMap>
 #include <QPointer>
 #include <QSize>
@@ -33,14 +36,51 @@
 
 #include "Knob.h"
 #include "JournallingObject.h"
+#include "LocaleHelper.h"
 #include "RemotePlugin.h"
 
 #include "vstbase_export.h"
+
+class QDomElement;
 
 namespace lmms
 {
 
 class RemotePluginAudioPortsController;
+
+struct VstParameterDumpValue
+{
+	int index;
+	QString label;
+	float value;
+};
+
+// A dump entry is "index:label:value" (VstPlugin::processMessage). The label may
+// contain ':' itself, so the value is the last field and the label is everything
+// between the first and last separators. A missing key, a negative or non-numeric
+// index, or a value that does not parse yields nothing.
+inline std::optional<VstParameterDumpValue> parseParameterDumpEntry(const QString& entry)
+{
+	const auto fields = entry.split(":");
+	if (fields.size() < 3)
+	{
+		return std::nullopt;
+	}
+	bool indexOk = false;
+	const int index = fields.first().toInt(&indexOk);
+	bool valueOk = false;
+	const float value = LocaleHelper::toFloat(fields.last(), &valueOk);
+	if (!indexOk || index < 0 || !valueOk)
+	{
+		return std::nullopt;
+	}
+	return VstParameterDumpValue{index, fields.mid(1, fields.size() - 2).join(":"), value};
+}
+
+// The parameters a saved project without a chunk restores: its "param<i>" entries
+// that parse, in index order. Entries that do not parse are left out, so the
+// restore never sends a parameter the saved entry does not name.
+VSTBASE_EXPORT std::vector<VstParameterDumpValue> savedParameterValues( const QDomElement & _this );
 
 class VSTBASE_EXPORT VstPlugin : public RemotePlugin, public JournallingObject
 {
@@ -106,7 +146,7 @@ public:
 	int currentProgram();
 
 	const QMap<QString, QString> & parameterDump();
-	void setParameterDump( const QMap<QString, QString> & _pdump );
+	void setParameterDump( const std::vector<VstParameterDumpValue> & _values );
 
 
 	QWidget * pluginWidget();

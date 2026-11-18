@@ -82,14 +82,12 @@ void Vst3EffectControls::poll()
 
 	if (m_syncing) { return; }
 	m_syncing = true;
+	PluginParamGesture::Edits edits;
 	for (auto* model : m_paramModels)
 	{
 		const auto id = model->paramId();
-		const auto value = plugin->paramNormalized(id);
-		if (std::abs(model->value() - value) > 1e-4f)
-		{
-			model->setValue(value);
-		}
+		plugin->readParamEdits(id, &edits);
+		model->pullFromPlugin(edits, 1e-4f);
 		// keep the edit controller's GUI-side mirror in sync (GUI thread only)
 		plugin->notifyController(id, model->value());
 	}
@@ -100,7 +98,12 @@ void Vst3EffectControls::saveSettings(QDomDocument& doc, QDomElement& element)
 {
 	QByteArray componentState;
 	QByteArray controllerState;
-	m_effect->plugin()->saveState(&componentState, &controllerState);
+	auto* plugin = m_effect->plugin();
+	const bool stateSaved = plugin->saveState(&componentState, &controllerState);
+	if (!stateSaved)
+	{
+		qWarning() << "VST3: plug-in state chunks could not be saved; writing parameter fallback";
+	}
 
 	auto appendState = [&doc, &element](const QString& name, const QByteArray& data) {
 		if (data.isEmpty()) { return; }
@@ -110,6 +113,19 @@ void Vst3EffectControls::saveSettings(QDomDocument& doc, QDomElement& element)
 	};
 	appendState(QStringLiteral("componentstate"), componentState);
 	appendState(QStringLiteral("controllerstate"), controllerState);
+
+	auto parameters = doc.createElement(QStringLiteral("parameters"));
+	for (const auto& descriptor : plugin->parameters())
+	{
+		if (descriptor.readOnly) { continue; }
+		auto parameter = doc.createElement(QStringLiteral("parameter"));
+		parameter.setAttribute(QStringLiteral("id"), QString::number(descriptor.id));
+		parameter.setAttribute(QStringLiteral("value"),
+			QString::number(plugin->paramNormalized(descriptor.id), 'g', 9));
+		parameters.appendChild(parameter);
+	}
+	if (parameters.hasChildNodes()) { element.appendChild(parameters); }
+
 }
 
 void Vst3EffectControls::loadSettings(const QDomElement& element)
@@ -122,13 +138,22 @@ void Vst3EffectControls::loadSettings(const QDomElement& element)
 
 	const auto componentState = readState(QStringLiteral("componentstate"));
 	const auto controllerState = readState(QStringLiteral("controllerstate"));
-	m_effect->plugin()->loadState(componentState, controllerState);
+	auto* plugin = m_effect->plugin();
+	const bool stateRestored = plugin->loadState(componentState, controllerState);
+	if (!stateRestored)
+	{
+		qWarning() << "VST3: plug-in state chunks could not be restored; applying parameter fallback";
+	}
+
+	// The host's saved values of the writable parameters: all of them when the chunks could not be applied
+	// (or there were none), and after a successful load each one the plug-in did not bring back (stress-4).
+	restoreSavedParameters(*plugin, element);
 
 	// reflect the restored state in the models
 	m_syncing = true;
 	for (auto* model : m_paramModels)
 	{
-		model->setValue(m_effect->plugin()->paramNormalized(model->paramId()));
+		model->setValue(plugin->paramNormalized(model->paramId()));
 	}
 	m_syncing = false;
 }

@@ -85,6 +85,26 @@ LMMS_EXPORT void crossfaderEntries(QMenu* menu, const QJsonObject& channel);
 //! 0.5.0 L09 (MX-062): an instrument track's MIDI output - a submenu of the MIDI output ports (ShellMenuEntries.cpp).
 LMMS_EXPORT void trackMidiOutEntries(QMenu* menu, Track* track, const QJsonObject& self);
 
+//! ED-029: "Loop the Content..." - a MIDI clip's notes, or (0.5.0 audio-clips) an audio clip's audio from its in-point
+//! (ShellMenuEntries.cpp).
+LMMS_EXPORT void clipLoopEntries(QMenu* menu, Clip* clip, const QJsonObject& self);
+
+//! 0.5.0 ED-176: an audio clip's "Crossfade Editor..." with the clip overlapping it, disabled while none does
+//! (ShellMenuEntries.cpp).
+LMMS_EXPORT void crossfadeEditorEntries(QMenu* menu, Clip* clip);
+
+//! Q050-339: an audio or instrument track's "Track Delay (N samples)..." - pdc.set_offset through its form, the field
+//! starting at the stored value; nothing for other tracks (ShellMenuEntries.cpp).
+LMMS_EXPORT void trackDelayEntries(QMenu* menu, Track* track, const QString& id);
+
+//! Q050-339: a mixer channel's "Channel Delay (N samples)..." - none for the master, which has no later summing point
+//! (ShellMenuEntries.cpp).
+LMMS_EXPORT void channelDelayEntries(QMenu* menu, const QString& channel);
+
+//! L08: a mixer channel's Strip submenu - polarity, mono, EQ, pan mode, solo safe, its meter mode (Q050-108), trim,
+//! its delay (Q050-339), meters and clip lights (ShellMenuEntries.cpp; moved here from ShellCommandMenus.cpp).
+LMMS_EXPORT void stripEntries(QMenu* strip, const QString& channel);
+
 } // namespace menuparts
 
 } // namespace lmms::gui

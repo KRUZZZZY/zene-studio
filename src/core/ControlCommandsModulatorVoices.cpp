@@ -29,6 +29,7 @@
  */
 
 #include <algorithm>
+#include <cmath>
 
 #include <QJsonObject>
 
@@ -89,9 +90,16 @@ bool voiceSource(const QJsonObject& args, ModulatorSource* source, ControlResult
 	source->perVoice = args.value(QStringLiteral("per_voice")).toBool(false);
 	if (args.contains(QStringLiteral("trigger")))
 	{
-		InstrumentTrack* track = resolveInstrumentTarget(args.value(QStringLiteral("trigger")).toString(), error);
-		if (track == nullptr) { return false; }
-		source->triggerTrack = track->id();
+		if (args.value(QStringLiteral("trigger")).isNull())
+		{
+			source->triggerTrack = -1;
+		}
+		else
+		{
+			InstrumentTrack* track = resolveInstrumentTarget(args.value(QStringLiteral("trigger")).toString(), error);
+			if (track == nullptr) { return false; }
+			source->triggerTrack = track->id();
+		}
 	}
 	if (source->perVoice && source->triggerTrack < 0)
 	{
@@ -111,11 +119,16 @@ ControlResult setVoice(const QJsonObject& args)
 	const ModulatorSource previous = layer.modulator(index)->source;
 	ModulatorSource wanted = previous;
 	if (!voiceSource(args, &wanted, &error)) { return error; }
+	if (wanted.perVoice == previous.perVoice && wanted.triggerTrack == previous.triggerTrack)
+	{
+		return ControlResult::success(layerResultFor(index));
+	}
 	const QJsonObject before = modulationLayerJson(layer);
 	editModulationLayer([index, wanted](ModulationLayer& target, ModulationRuntime&) { target.setSource(index, wanted); });
 	addUndoStep(sourceWriter(index, previous), sourceWriter(index, wanted));
 	QJsonObject inverse{{QStringLiteral("modulator"), modulatorId(index)}, {QStringLiteral("per_voice"), previous.perVoice}};
 	if (previous.triggerTrack >= 0) { inverse.insert(QStringLiteral("trigger"), trackId(previous.triggerTrack)); }
+	else { inverse.insert(QStringLiteral("trigger"), QJsonValue(QJsonValue::Null)); }
 	QJsonObject result = layerResultFor(index);
 	result.insert(QStringLiteral("__transaction"), transactionPayload(before, QStringLiteral("modulator.voice_set"), inverse,
 		true, QStringLiteral("action checkpoint: the recorded undo step writes the previous source (its per-voice "
@@ -138,7 +151,7 @@ void registerVoiceSet(ControlRegistry& registry)
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("modulator"), stringProperty()},
 		{QStringLiteral("per_voice"), booleanProperty()},
-		{QStringLiteral("trigger"), stringProperty()},
+		{QStringLiteral("trigger"), nullable(stringProperty())},
 	}, {QStringLiteral("modulator"), QStringLiteral("per_voice")});
 	cmd.resultSchema = resultSchema();
 	cmd.mutating = true;
@@ -199,13 +212,22 @@ ControlResult bindInstrumentRoute(InstrumentTrack* track, const QJsonObject& arg
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("modulator %1 already drives %2 parameters (the cap)")
 			.arg(modulatorId(modulator)).arg(ModulationLayer::MaxRoutesPerModulator));
 	}
+	const double depth = args.value(QStringLiteral("depth")).toDouble();
+	if (!std::isfinite(depth) || depth < -1.0 || depth > 1.0)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'depth' %1 is outside -1..1 (a fraction of the target's range)").arg(depth));
+	}
+	const int requestedIndex = args.value(QStringLiteral("target_index")).toInt(layer.modulator(modulator)->routeCount());
 	const ModulationRoute route = instrumentRoute(track, args);
 	const ControlResult refused = refusedInstrumentRoute(layer, route);
 	if (!refused.ok) { return refused; }
 	const QJsonObject before = modulationLayerJson(layer);
 	int index = -1;
-	editModulationLayer([&](ModulationLayer& target, ModulationRuntime&) { index = target.addRoute(modulator, route); });
-	if (index < 0) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("modulator %1 is full").arg(modulatorId(modulator))); }
+	editModulationLayer([&](ModulationLayer& target, ModulationRuntime&) {
+		index = insertModulationRouteAtIndex(target, modulator, requestedIndex, route);
+	});
+	if (index < 0) { return modulationRouteInsertFailure(args, QStringLiteral("target_index")); }
 	recordInstrumentRoute(modulator, index, route);
 	Instrument* instrument = track->instrument();
 	QJsonObject result = layerResultFor(modulator);
@@ -230,10 +252,12 @@ void registerInstrumentTargetSet(ControlRegistry& registry)
 		"the parameter's range (-1..1). This is the target a per-voice modulator sends per-note values to; "
 		"'per_note' says whether the instrument takes them for this parameter (a CLAP parameter marked "
 		"modulatable per key or note, a VST3 note-expression type). Refused when the parameter does not resolve "
-		"or is already driven. Reversible through the ProjectJournal (modulator.target_remove is the inverse).");
+		"or is already driven. Optional 'target_index' inserts at a route position; omitting it appends. "
+		"Reversible through the ProjectJournal (modulator.target_remove is the inverse).");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("modulator"), stringProperty()},
 		{QStringLiteral("target"), stringProperty()},
+		{QStringLiteral("target_index"), integerProperty()},
 		{QStringLiteral("parameter"), stringProperty()},
 		{QStringLiteral("depth"), numberProperty()},
 		{QStringLiteral("per_sample"), booleanProperty()},

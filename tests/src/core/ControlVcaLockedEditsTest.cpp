@@ -28,11 +28,17 @@
  *  writes nothing on any of them.
  */
 
+#include <memory>
+#include <vector>
+
 #include <QtTest>
 
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include <limits>
+
+#include "AudioEngine.h"
 #include "Clip.h"
 #include "ClipEdits.h"
 #include "ControlEdit.h"
@@ -41,6 +47,8 @@
 #include "ControlVcaTestSupport.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "SampleBuffer.h"
+#include "SampleClip.h"
 
 using namespace lmms;
 using namespace revtest;
@@ -139,6 +147,37 @@ private slots:
 		QCOMPARE(clipLength(pair.other), 500);
 	}
 
+	//! clip.trim's head-trim rule, held for sample clips: the source offset moves against the start,
+	//! so the frame heard at a song tick that stays inside the clip is the same before and after the
+	//! locked trim. A sign flip in the offset moves the audio off its tick and fails here.
+	void aLockedSampleTrimHoldsEveryMembersAudioAtItsSongTick()
+	{
+		const Pair pair = lockedPair(QStringLiteral("sample"));
+		const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+		std::vector<SampleFrame> data(static_cast<std::size_t>(rate * 4), SampleFrame(0.25f, 0.25f));
+		for (const QString& id : {pair.anchor, pair.other})
+		{
+			auto* sample = dynamic_cast<SampleClip*>(clipOf(id));
+			QVERIFY(sample != nullptr);
+			sample->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), rate));
+		}
+		const f_cnt_t heardAt1100 = clipOf(pair.anchor)->sourceFrameAt(TimePos(1100));
+		const f_cnt_t heardAt1200 = clipOf(pair.anchor)->sourceFrameAt(TimePos(1200));
+		// Inside the buffer and not clamped to an edge, so the comparison below means something.
+		QVERIFY(heardAt1200 > heardAt1100);
+		QVERIFY(heardAt1200 < static_cast<f_cnt_t>(data.size()));
+
+		const ControlResult trim = run(QStringLiteral("vca.edit_trim"),
+			edit(pair, {{QStringLiteral("start"), 1100}, {QStringLiteral("end"), 1400}}));
+		QVERIFY2(trim.ok, qPrintable(trim.errorMessage));
+		for (const QString& id : {pair.anchor, pair.other})
+		{
+			QCOMPARE(clipOf(id)->sourceFrameAt(TimePos(1100)), heardAt1100);
+			QCOMPARE(clipOf(id)->sourceFrameAt(TimePos(1200)), heardAt1200);
+			QCOMPARE(clipOf(id)->startTimeOffset().getTicks(), -100);
+		}
+	}
+
 	void aLockedTrimThatWouldEmptyOneClipWritesNothing()
 	{
 		const Pair pair = lockedPair(QStringLiteral("instrument"));
@@ -150,6 +189,39 @@ private slots:
 		QCOMPARE(trim.errorKind, ControlErrorKind::InvalidArgs);
 		QCOMPARE(clipPosition(pair.anchor), 1000);
 		QCOMPARE(clipLength(pair.anchor), 500);
+	}
+
+	void aLockedTrimThatWouldUnderflowAnOffsetWritesNothing()
+	{
+		const Pair pair = lockedPair(QStringLiteral("instrument"));
+		const tick_t minimumOffset = std::numeric_limits<tick_t>::min();
+		clipOf(pair.anchor)->setStartTimeOffset(TimePos(minimumOffset));
+
+		const ControlResult trim = run(QStringLiteral("vca.edit_trim"),
+			edit(pair, {{QStringLiteral("start"), 1100}}));
+		QCOMPARE(trim.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(clipPosition(pair.anchor), 1000);
+		QCOMPARE(clipLength(pair.anchor), 500);
+		QCOMPARE(clipOf(pair.anchor)->startTimeOffset().getTicks(), minimumOffset);
+		QCOMPARE(clipPosition(pair.other), 1000);
+		QCOMPARE(clipLength(pair.other), 500);
+		QCOMPARE(clipOf(pair.other)->startTimeOffset().getTicks(), 0);
+	}
+
+	void aSingleClipTrimThatWouldUnderflowAnOffsetWritesNothing()
+	{
+		const Pair pair = lockedPair(QStringLiteral("instrument"));
+		const tick_t minimumOffset = std::numeric_limits<tick_t>::min();
+		clipOf(pair.anchor)->setStartTimeOffset(TimePos(minimumOffset));
+		QVERIFY(run(QStringLiteral("vca.set_phase_lock"), {{QStringLiteral("group"), pair.group},
+			{QStringLiteral("locked"), false}}).ok);
+
+		const ControlResult trim = run(QStringLiteral("clip.trim"),
+			{{QStringLiteral("clip"), pair.anchor}, {QStringLiteral("start"), 1100}});
+		QVERIFY2(trim.errorKind == ControlErrorKind::InvalidArgs, qPrintable(trim.errorMessage));
+		QCOMPARE(clipPosition(pair.anchor), 1000);
+		QCOMPARE(clipLength(pair.anchor), 500);
+		QCOMPARE(clipOf(pair.anchor)->startTimeOffset().getTicks(), minimumOffset);
 	}
 
 	void aLockedSlipMovesEveryMembersContentByTheSameDelta()
@@ -195,6 +267,41 @@ private slots:
 			QCOMPARE(run(id, edit(pair, args)).errorKind, ControlErrorKind::Refused);
 		}
 		QCOMPARE(clipsOf(pair.first).size(), 1);
+	}
+
+	//! Every per-clip entry of a locked edit's reply names the CLIP it describes,
+	//! not just the track. One member track can hold several clips in the anchor's
+	//! span, and then `moves` holds several entries for that one track: without a
+	//! clip id the caller cannot tell which clip an entry moved.
+	void everyLockedMoveAndEditEntryNamesItsClip()
+	{
+		const Pair pair = lockedPair(QStringLiteral("instrument"));
+		// A SECOND clip on the peer track, overlapping the anchor's span: the
+		// reply then carries two moves for that track, one per clip.
+		const QString peerClip = addClip(pair.second, 1200, 500);
+		QVERIFY2(!peerClip.isEmpty(), "the second clip on the peer track was not added");
+
+		const ControlResult moved = run(QStringLiteral("vca.edit_move"),
+			edit(pair, {{QStringLiteral("position"), 1100}}));
+		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
+		const QJsonArray moves = moved.result.value(QStringLiteral("moves")).toArray();
+		QCOMPARE(moves.size(), 3);
+		QStringList named;
+		for (const QJsonValue& value : moves)
+		{
+			const QJsonObject entry = value.toObject();
+			const QString clipId = entry.value(QStringLiteral("clip")).toString();
+			QVERIFY2(!clipId.isEmpty(), "a moves entry names no clip");
+			// The id has to resolve, or it identifies nothing.
+			QVERIFY2(clipOf(clipId) != nullptr, qPrintable("moves names no live clip: " + clipId));
+			named.append(clipId);
+		}
+		// The anchor, the peer clip the fixture made, and the one added above.
+		QVERIFY(named.contains(pair.anchor));
+		QVERIFY(named.contains(pair.other));
+		QVERIFY(named.contains(peerClip));
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(clipOf(pair.anchor)->startPosition().getTicks(), TimePos(1000));
 	}
 };
 

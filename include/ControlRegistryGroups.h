@@ -75,12 +75,13 @@ LMMS_EXPORT void registerWasmEditCommands(ControlRegistry& registry);
  *  and was already in the tree with five registered tests; the only route to it
  *  was tools/stem_split_cli.py, outside the socket, plus a GUI-only clip action.
  *
- *  The feature is opt-in at configure time: WANT_STEM_SPLIT defaults to OFF
- *  (CMakeLists.txt:120) and a default build compiles none of the engine, so the
- *  registry must not carry ids whose handler could not exist - the rule the
- *  telemetry.*, session.* and wasm.* groups follow. Its call site is guarded by
- *  the same #ifdef, and so are its seven A16 rows, so the registry and the
- *  contract table stay consistent in both directions. */
+ *  WANT_STEM_SPLIT defaults to ON (CMakeLists.txt:130, owner decision 14), so
+ *  the group is in the default build; a build that deliberately configures it
+ *  OFF compiles none of the engine, so the registry must not carry ids whose
+ *  handler could not exist - the rule the telemetry.*, session.* and wasm.*
+ *  groups follow. Its call site is guarded by the same #ifdef, and so are its
+ *  seven A16 rows, so the registry and the contract table stay consistent in
+ *  both directions. */
 LMMS_EXPORT void registerStemCommands(ControlRegistry& registry);
 //! stem.model_get_state / stem.model_download - the model-store half, in its
 //! own translation unit (the folder-track, session, warp, rack, comp and
@@ -95,9 +96,10 @@ LMMS_EXPORT void registerStemModelCommands(ControlRegistry& registry);
 //! include/BrowserPeakCache.h; this group is the ONLY way to reach any of it -
 //! there is no UI for tags, no UI for a query and no UI for the peak cache.
 LMMS_EXPORT void registerBrowserCommands(ControlRegistry& registry);
-//! browser.tag.add / browser.tag.remove - the mutating half, in its own
-//! translation unit (the automation and warp groups' read/edit split). Both
-//! record a snapshot-class transaction whose inverse is the paired command.
+//! browser.tag.add / browser.tag.remove, and (0.5.0 L11, WF-007)
+//! browser.category.set / browser.category.clear - the mutating half, in its
+//! own translation unit (the automation and warp groups' read/edit split). All
+//! four record a snapshot-class transaction whose inverse is a paired command.
 LMMS_EXPORT void registerBrowserTagCommands(ControlRegistry& registry);
 
 /*! The modulation layer (#602): modulator.get_state / create / remove /
@@ -117,15 +119,18 @@ LMMS_EXPORT void registerModulatorRouteCommands(ControlRegistry& registry);
  *  already stores (docs/MPE.md); they are NOT a second expression store. */
 LMMS_EXPORT void registerNoteExpressionCommands(ControlRegistry& registry);
 /*! link.get_state / set_enabled / set_quantum / set_start_stop_sync /
- *  set_session_tempo - session tempo and beat-phase sync (D11 "Ableton Link
- *  sync"). The engine half is include/LinkSync.h and
- *  include/LinkPeerTransport.h (the seam a real Ableton Link transport would
- *  implement); this group is what makes any of it drivable, and it is the ONLY
- *  way to reach it - there is no interface for session sync in this release.
- *  The model is this project's own ("zene-link-style": Link's semantics, not
- *  Link's library, which is not vendored - the licence finding that vendoring
- *  it is permitted is docs/LINK-SYNC.md section 1). */
+ *  set_session_tempo - session tempo, beat-phase and start/stop sync (D11,
+ *  WF-051). The engine half is include/LinkSync.h: real Ableton Link (the
+ *  vendored library, src/3rdparty/ableton-link) wherever the build carries it,
+ *  else the zene-link-style fallback only Zene instances speak
+ *  (docs/LINK-SYNC.md). The transport's Sync toggle (SessionSyncAction) runs
+ *  link.set_enabled; everything else is driven through this group. */
 LMMS_EXPORT void registerLinkCommands(ControlRegistry& registry);
+
+/*! link.audio_get_state / link.audio_set_enabled - the PCM stream between two Zene
+ *  instances (Q050-024, docs/LINK-AUDIO.md). Not Link transport sync and not Ableton's
+ *  LinkAudio: it shares no state with registerLinkCommands' group. */
+LMMS_EXPORT void registerLinkAudioCommands(ControlRegistry& registry);
 
 /*! bounce.in_place / freeze.track / freeze.region / freeze.unfreeze - freeze /
  *  bounce-in-place. The engine half is include/BounceInPlace.h (the offline
@@ -135,6 +140,10 @@ LMMS_EXPORT void registerLinkCommands(ControlRegistry& registry);
  *  this group is what makes any of it drivable, and it is the ONLY way to
  *  reach it - there is no interface for freeze in this release. */
 LMMS_EXPORT void registerFreezeCommands(ControlRegistry& registry);
+
+/*! Q050-124: freeze.bus and freeze.unfreeze_bus - a mixer bus's output rendered and played in place of its live
+ *  inputs (include/MixerBusFreeze.h); the mixer strip's context menu runs the same two ids. */
+LMMS_EXPORT void registerBusFreezeCommands(ControlRegistry& registry);
 
 /*! The folder half of the track.* group (owner items 3+20+21): track.set_folder,
  *  track.folder_set_collapsed, track.set_routing, track.set_pinned and
@@ -278,9 +287,10 @@ LMMS_EXPORT void registerRoutingCommands(ControlRegistry& registry);
  * own, so this group is only the topology.
  */
 LMMS_EXPORT void registerBusCommands(ControlRegistry& registry);
-/*! port.get_state / port.set_pin - the audio-ports pin matrix (feature row 29):
+/*! port.get_state / port.set_pin / port.set_pins - the audio-ports pin matrix (feature row 29):
  * the device's AudioPortsModel, its in/out matrices and the pin write the
- * PinConnector view performs (AudioPortsModel::Matrix::setPin).
+ * PinConnector view performs (AudioPortsModel::Matrix::setPin); port.set_pins
+ * (Q050-155.2) is a whole routing as one edit and one undo step.
  */
 LMMS_EXPORT void registerPortCommands(ControlRegistry& registry);
 /*! The five groups above, registered as ONE call from ControlRegistry.cpp's
@@ -335,6 +345,10 @@ LMMS_EXPORT void registerPluginScanCommands(ControlRegistry& registry);
 //! plugin.rescan - the mutating half of the scan-cache group, in its own
 //! translation unit (the automation and warp groups' split).
 LMMS_EXPORT void registerPluginScanEditCommands(ControlRegistry& registry);
+//! plugin.scan_start / plugin.scan_status / plugin.scan_cancel (Q050-090) -
+//! the background rescan: the same scan without blocking the window, in its
+//! own translation unit for the reason the read and edit halves have theirs.
+LMMS_EXPORT void registerPluginScanBackgroundCommands(ControlRegistry& registry);
 /*! plugin.host_chunking (feature row 82, CODE-4): the chunking contract both
  * plugin host paths keep - "a request larger than the prepared block is split
  * into chunks of at most that block" - together with the counters the audio
@@ -400,6 +414,13 @@ LMMS_EXPORT void registerMasteringCommands(ControlRegistry& registry);
  * the choice is the user's (docs/AUTO-MASTERING.md section 8).
  */
 LMMS_EXPORT void registerMasteringRunCommands(ControlRegistry& registry);
+/*! 0.5.0 L12 (Q050-317.1): the mastering release sequence - the ordered songs of a release, each
+ *  with its own processing, fade-in/fade-out and the silence that follows it. The reads
+ *  (mastering.sequence_list) and the four edits (song_add / song_set / song_move / song_remove)
+ *  live in ControlCommandsMasteringSequence.cpp; each edit is one undo step that puts the whole
+ *  previous list back, and the state is saved as the project's <mastering-sequence> section.
+ *  Rendering the songs and the whole release is the next stage, not this one. */
+LMMS_EXPORT void registerMasteringSequenceCommands(ControlRegistry& registry);
 /*! The `detect.*` group (feature row 34 of docs/FEATURE-LIST-0.3.0.md): transient /
  *  BPM / key detection for an imported audio file, over the control surface -
  *  detect.analyze (the SUGGESTION: one file in, tempo + first transient + key out,
@@ -442,6 +463,9 @@ LMMS_EXPORT void registerDetectApplyCommands(ControlRegistry& registry);
  *  - registerNoteSlideCommands: note.slide_set / note.slide_clear - the FL-style
  *    slide (portamento) flag, which the engine has carried since
  *    docs/specs/SPEC-slide-notes.md and never had an id for.
+ *  - registerNoteSelectCommands: note.select - the piano roll's note selection, split
+ *    out of the note.* file (ControlCommandsNotes.cpp) to keep it under the 500-line
+ *    ratchet; called from registerNoteCommands.
  *  - registerNoteTransformCommands: note.transpose / note.velocity_offset /
  *    note.velocity_scale - NoteTransform's three transforms. The grid quantise is
  *    deliberately NOT re-wrapped: groove.quantize already drives
@@ -461,6 +485,7 @@ LMMS_EXPORT void registerDetectApplyCommands(ControlRegistry& registry);
  */
 LMMS_EXPORT void registerNoteRandomCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerNoteSlideCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerNoteSelectCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerNoteTransformCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerScaleCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerScaleEditCommands(ControlRegistry& registry);
@@ -489,6 +514,8 @@ LMMS_EXPORT void registerDeviceCommands(ControlRegistry& registry);
  *  `export.set_loudness_report` in src/core/ControlCommandsExport.cpp.
  */
 LMMS_EXPORT void registerMeterCommands(ControlRegistry& registry);
+//! Q050-100: meter.speak and meter.set_peak_watch, the speech half of the meter group.
+LMMS_EXPORT void registerMeterSpeechCommands(ControlRegistry& registry);
 /*! clip.link_create / clip.link_remove / clip.link_get_state / clip.link_sync -
  *  the linked / smart clip relation (feature-list row 6, board task #645): two
  *  clips that share one source, so an edit to one is seen by all of them, with
@@ -517,8 +544,9 @@ LMMS_EXPORT void registerClipLinkStateCommands(ControlRegistry& registry);
  *  group (amplify / normalize / reverse / fade) are declared next. Declared here
  *  rather than in include/ControlRegistry.h because that header sits at the
  *  file-length ratchet's limit; registered by
- *  src/core/ControlRegistryRegistrations.cpp. Socket-only this release: no
- *  interface reaches these ids (docs/KNOWN-LIMITATIONS.md). */
+ *  src/core/ControlRegistryRegistrations.cpp. Offered in the interface as a
+ *  sample track's More > Insert Test Signal... as well as on the control socket
+ *  and through MCP (docs/KNOWN-LIMITATIONS.md). */
 LMMS_EXPORT void registerSampleCommands(ControlRegistry& registry);
 /*! sample.amplify / sample.normalize / sample.reverse / sample.fade - the
  *  group's four BAKERS, in their own translation unit (the clip group's
@@ -663,6 +691,12 @@ LMMS_EXPORT void registerChordWriteCommands(ControlRegistry& registry);
  * given. Named in docs/KNOWN-LIMITATIONS.md and the release notes.
  */
 LMMS_EXPORT void registerProjectArchiveCommands(ControlRegistry& registry);
+/*! project.media_usage / project.media_cleanup - the Project Media completion (Q050-121):
+ *  per-file reference counts from the saved project document, the unused files in the managed
+ *  `media` folder, and the rechecked removal of a selected set of those unused files.
+ *  The engine half is include/ControlProjectMedia.h. The cleanup is IRREVERSIBLE: a deleted
+ *  media file is not restorable by project undo. */
+LMMS_EXPORT void registerProjectMediaCommands(ControlRegistry& registry);
 /*! The mmpz-git depth group (feature row 42, task #612): project.merge,
  *  project.diff, project.conflicts, project.audible_diff, over
  *  tools/mmpz-git/mmpz_git.py.  No compile-time switch: shipped everywhere.
@@ -679,6 +713,9 @@ LMMS_EXPORT void registerTrackStructureCommands(ControlRegistry& registry);
 //! control.id_contract - the stable-id contract as a readable table (feature row 51).
 //! Split out of ControlCommandsControl.cpp for the file-length ratchet: src/core/ControlCommandsIdContract.cpp.
 LMMS_EXPORT void registerIdContractCommand(ControlRegistry& registry);
+//! project.undo_history / project.set_undo_history - WF-033, the undo history saved with the project
+//! (src/core/ControlCommandsUndoHistory.cpp, docs/UNDO-HISTORY-PERSISTENCE.md).
+LMMS_EXPORT void registerUndoHistoryCommands(ControlRegistry& registry);
 /*! controller.surface_state / soft_takeover / feedback / template_save /
  *  template_list / template_apply / template_delete - the ENGINE HALF of MIDI
  *  controller surfaces (feature row 19). The engine is
@@ -692,9 +729,10 @@ LMMS_EXPORT void registerIdContractCommand(ControlRegistry& registry);
  *  project load or by controller.template_apply all answer to the same
  *  address, the model's fullDisplayName().
  *
- *  OSC IS OUT (Bar 3): this group is MIDI controller surfaces only. There is no
- *  interface for any of it in this release - the group is the only way to reach
- *  it. Named in docs/KNOWN-LIMITATIONS.md and the release notes. */
+ *  This group is MIDI controller surfaces only; OSC is the separate, opt-in
+ *  osc.* server (Q050-205, include/OscCommands.h). Its interface is Customise >
+ *  MIDI Mappings... and Mapping Templates...; Lua control-surface scripts are
+ *  controller.script_* (Q050-081, include/ControllerScript.h). */
 LMMS_EXPORT void registerControllerSurfaceCommands(ControlRegistry& registry);
 /*! controller.template_save / template_list / template_apply / template_delete -
  *  the four FILE verbs of the same group, in their own translation unit
@@ -755,6 +793,8 @@ LMMS_EXPORT void registerRangeCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerClipEnvelopeCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (ED-130): clip.controllers_get / set (ControlCommandsClipControllers.cpp).
 LMMS_EXPORT void registerClipControllerCommands(ControlRegistry& registry);
+//! Q050-291.1: clip.controllers_to_automation / controllers_from_automation (ControlCommandsControllerConvert.cpp).
+LMMS_EXPORT void registerClipControllerConvertCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (ED-145/113): track.input_transform_get / set (ControlCommandsInputTransform.cpp).
 LMMS_EXPORT void registerInputTransformCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (ED-137): warp.quantize - quantise audio (ControlCommandsWarpQuantize.cpp).
@@ -773,6 +813,12 @@ LMMS_EXPORT void registerMixerListenCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerVcaNestCommands(ControlRegistry& registry);
 //! 0.5.0 L08: mixer.set_many and the strip settings (ControlCommandsMixerStrip.cpp).
 LMMS_EXPORT void registerMixerStripCommands(ControlRegistry& registry);
+//! Q050-088: mixer.console_strip - one channel's Console section (ControlCommandsConsoleStrip.cpp).
+LMMS_EXPORT void registerConsoleStripCommand(ControlRegistry& registry);
+//! Q050-339: pdc.set_offset - a track's or a channel's manual delay (ControlCommandsTrackOffset.cpp).
+LMMS_EXPORT void registerTrackOffsetCommand(ControlRegistry& registry);
+//! Q050-340: meter.inputs - every capture channel's level and the armed tracks' inputs (ControlCommandsInputMeters.cpp).
+LMMS_EXPORT void registerInputMetersCommand(ControlRegistry& registry);
 LMMS_EXPORT void registerMixerRenameCommands(ControlRegistry& registry);  //!< 0.5.0 theme 13: mixer.rename_channel (ControlCommandsMixerRename.cpp)
 //! 0.5.0 L10 (MX-076/092): plugin.copy, chain.copy, plugin.ab (ControlCommandsDeviceCopy.cpp).
 LMMS_EXPORT void registerDeviceCopyCommands(ControlRegistry& registry);
@@ -788,10 +834,23 @@ LMMS_EXPORT void registerRemoteCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerDrumRackCommand(ControlRegistry& registry);
 //! 0.5.0 L03 (WF-080 / WF-082 / ED-168): transport.record_options, comp.cycle (ControlCommandsRecordingPass.cpp).
 LMMS_EXPORT void registerRecordingPassCommands(ControlRegistry& registry);
+//! Q050-054.1: track.set_midi_arm, record.midi_capture_status / midi_capture_commit - MIDI takes recorded on armed
+//! instrument tracks by transport.record (ControlCommandsMidiTakes.cpp).
+LMMS_EXPORT void registerMidiTakeCommands(ControlRegistry& registry);
 //! 0.5.0 L02 (WF-069): session.bindings_connect / bind / bind_learn / unbind / bindings (ControlCommandsLaunchBindings.cpp).
 LMMS_EXPORT void registerLaunchBindingCommands(ControlRegistry& registry);
 //! 0.5.0 L02 (WF-055): session.capture_to_slot (ControlCommandsSessionCapture.cpp).
 LMMS_EXPORT void registerSessionCaptureCommand(ControlRegistry& registry);
+//! 0.5.0 L02 (WF-055): session.record_slot / record_slot_status / record_slot_land - audio into a launcher cell
+//! (ControlCommandsSessionAudioRecord.cpp).
+LMMS_EXPORT void registerSessionAudioRecordCommands(ControlRegistry& registry);
+//! 0.5.0 L10 (Q050-156): record.sampler_capture / sampler_capture_stop / sampler_capture_status /
+//! sampler_capture_land - an input take recorded straight into a sampler instrument
+//! (ControlCommandsSamplerTake.cpp).
+LMMS_EXPORT void registerSamplerTakeCommands(ControlRegistry& registry);
+//! 0.5.0 L10 (Q050-263): plugin.slice_get / slice_set - the per-slice SlicerT controls
+//! (ControlCommandsSlicerSlices.cpp).
+LMMS_EXPORT void registerSlicerSliceCommands(ControlRegistry& registry);
 //! 0.5.0 L01 (MX-159): transport.low_latency (ControlCommandsLowLatency.cpp).
 LMMS_EXPORT void registerLowLatencyCommand(ControlRegistry& registry);
 //! 0.5.0 L11 (WF-006): browser.collection_save / remove / collections / collection_run.
@@ -809,6 +868,8 @@ LMMS_EXPORT void registerClipArrangeCommands(ControlRegistry& registry);
 //! 0.5.0 L06: automation.lane_add / add_trim / draw_shape / transform / thin / set_curve /
 //! last_touched (ControlCommandsAutomationLanes.cpp).
 LMMS_EXPORT void registerAutomationLaneCommands(ControlRegistry& registry);
+//! 0.5.0 L04 (Q050-283.2): track.set_role - a neutral row given an instrument, and back (ControlCommandsTrackRole.cpp).
+LMMS_EXPORT void registerTrackRoleCommands(ControlRegistry& registry);
 //! 0.5.0 L07: note.scale / ratchet / list / transform_where (ControlCommandsNoteShape.cpp) and
 //! key_names.* (ControlCommandsKeyNames.cpp).
 LMMS_EXPORT void registerNoteShapeCommands(ControlRegistry& registry);
@@ -816,6 +877,12 @@ LMMS_EXPORT void registerKeyNameCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (W3): note.invert / arpeggiate / flam / transpose_in_key / repeat / generate
 //! (ControlCommandsNoteTools.cpp).
 LMMS_EXPORT void registerNoteToolCommands(ControlRegistry& registry);
+//! 0.5.0 Q050-221.1 (L07): note.generate_melody, a seeded melodic contour in the active scale
+//! (ControlCommandsNoteMelody.cpp).
+LMMS_EXPORT void registerNoteMelodyCommands(ControlRegistry& registry);
+//! 0.5.0 Q050-294.3: note.step_fill, a seeded shape or random fill of a clip's step columns in the active scale
+//! (ControlCommandsNoteStepFill.cpp).
+LMMS_EXPORT void registerNoteStepFillCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (W3): note.move_to_track / split_by_pitch, scale.detect, transport.panic
 //! (ControlCommandsNoteMoves.cpp).
 LMMS_EXPORT void registerNoteMoveCommands(ControlRegistry& registry);
@@ -830,6 +897,9 @@ LMMS_EXPORT void registerMixerToolCommands(ControlRegistry& registry);
 //! 0.5.0 L02 (W3): session.release_slot / jump_slot / capture_scene / set_playlist / launch_group /
 //! setlist / setlist_go (ControlCommandsSessionPerform.cpp).
 LMMS_EXPORT void registerSessionPerformCommands(ControlRegistry& registry);
+//! 0.5.0 L02 (WF-064): session.subscene_create / subscene_rename / subscene_delete / subscene_launch
+//! (ControlCommandsSessionSubScenes.cpp).
+LMMS_EXPORT void registerSessionSubSceneCommands(ControlRegistry& registry);
 //! 0.5.0 L03 (W3): comp.move_edge / select_group (ControlCommandsCompGroup.cpp); transport.metronome_options /
 //! punch_here, record.remaining (ControlCommandsRecordTools.cpp).
 LMMS_EXPORT void registerCompGroupCommands(ControlRegistry& registry);
@@ -838,19 +908,30 @@ LMMS_EXPORT void registerRecordToolCommands(ControlRegistry& registry);
 //! section.* (ControlCommandsSections.cpp).
 LMMS_EXPORT void registerArrangeToolCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerSectionCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerFolderSpanCommands(ControlRegistry& registry);
 //! 0.5.0 L05/L06 (W3): sample.crop / make_unique, clip.fade_curve (ControlCommandsSampleTools.cpp); automation.switches /
 //! trim_get / trim_set / move_point (ControlCommandsAutomationTools.cpp).
 LMMS_EXPORT void registerSampleToolCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerAutomationToolCommands(ControlRegistry& registry);
 //! 0.5.0 L05 (W3): clip.audio_to_midi, sample.spectrogram (ControlCommandsAudioAnalysis.cpp).
 LMMS_EXPORT void registerAudioAnalysisCommands(ControlRegistry& registry);
+//! 0.5.0 L04 (Q050-031): clip.import_file, a dropped MIDI or audio file as a clip (ControlCommandsClipImportFile.cpp).
+LMMS_EXPORT void registerClipImportFileCommands(ControlRegistry& registry);
 //! 0.5.0 L05 (ED-156): sample.edit_range (ControlCommandsSampleRange.cpp).
 LMMS_EXPORT void registerSampleRangeCommands(ControlRegistry& registry);
+//! 0.5.0 L05 (Q050-106): sample.split_stereo, the stereo source as two mono WAV files
+//! (ControlCommandsSampleStereo.cpp).
+LMMS_EXPORT void registerSampleStereoCommands(ControlRegistry& registry);
 //! 0.5.0 L09 (MX-053, MX-140, MX-042): mixer.send_meters, mixer.eq_compare, browser.preview_output, monitor.control_room
 //! (ControlCommandsMixerMeters.cpp).
 LMMS_EXPORT void registerMixerMeterCommands(ControlRegistry& registry);
+//! 0.5.0 L08 (Q050-231.1): mixer.masking_report, read-only cross-channel masking clashes and cut proposals
+//! (ControlCommandsMixerMasking.cpp).
+LMMS_EXPORT void registerMixerMaskingCommands(ControlRegistry& registry);
 //! 0.5.0 L09 (MX-062): track.midi_out (ControlCommandsTrackMidiOut.cpp).
 LMMS_EXPORT void registerTrackMidiOutCommands(ControlRegistry& registry);
+//! 0.5.0 L09 (Q050-252.1, MX-062): device.external_* - an instrument track's External MIDI device (ControlCommandsExternalDevice.cpp).
+LMMS_EXPORT void registerExternalDeviceCommands(ControlRegistry& registry);
 //! 0.5.0 L04 (ED-049): track.version_list / save / switch / remove (ControlCommandsTrackVersions.cpp).
 LMMS_EXPORT void registerTrackVersionCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (ED-086): clip.export_musicxml (ControlCommandsScoreExport.cpp).
@@ -864,6 +945,10 @@ LMMS_EXPORT void registerTrackLookCommands(ControlRegistry& registry);
 //! notes are on screen: this version's notes count as shown.
 LMMS_EXPORT void registerAssistantCommands(ControlRegistry& registry);
 LMMS_EXPORT void markWhatsNewSeen();
+//! Q050-501: app.update_check_get / _set / _run and window.update_check / update_download_page. Defined and registered
+//! only with ZENE_UPDATE_CHECK_ENABLED, and registering nothing where something else updates the program.
+LMMS_EXPORT void registerUpdateCheckCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerUpdateCheckWindowCommands(ControlRegistry& registry);
 //! window.stay_on_top / tidy / large_clock / tuner / ask / whats_new / focus_panel / accessibility_report and
 //! view.crosshair (src/gui/ControlCommandsWorkspace.cpp).
 LMMS_EXPORT void registerWorkspaceCommands(ControlRegistry& registry);
@@ -880,7 +965,9 @@ LMMS_EXPORT void registerTunerCommands(ControlRegistry& registry);
 //! metadata / locks, track.set_locked, clip.set_locked (ControlCommandsProjectInfo.cpp).
 LMMS_EXPORT void registerMixerSnapshotCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerProjectInfoCommands(ControlRegistry& registry);
-//! 0.5.0 L11 (W3): browser.save_clip (ControlCommandsLibraryClips.cpp); browser.reindex / index_status / index_query /
+//! 0.5.0 L11 (W3): browser.save_clip (ControlCommandsLibraryClips.cpp) - an arrangement clip or, since
+//! Q050-273.1, a populated audio launcher cell addressed by track + scene (LibraryCellAudio.cpp);
+//! browser.reindex / index_status / index_query /
 //! similar (ControlCommandsBrowserIndex.cpp); browser.thumbnail / preview / preview_stop (ControlCommandsBrowserMedia.cpp);
 //! browser.browse / history / history_go / sources / remember_source (ControlCommandsBrowserNavigation.cpp).
 LMMS_EXPORT void registerLibraryClipCommands(ControlRegistry& registry);
@@ -908,6 +995,12 @@ LMMS_EXPORT void registerClipProcessCommand(ControlRegistry& registry);
 //! 0.5.0 W3 engine (MX-160, MX-082, MX-063, ED-179): automation.latency_compensation, mixer.post_inserts, chain.receive,
 //! clip.pre_fade (ControlCommandsW3Engine.cpp).
 LMMS_EXPORT void registerW3EngineCommands(ControlRegistry& registry);
+//! 0.5.0 Q050-040 (L07): clip.set_mute - the song editor's own clip mute dispatches this
+//! command too, so GUI and agents share one implementation (ControlCommandsClipMute.cpp;
+//! its own unit because the clip group's file ratchet is not moved for a new feature).
+LMMS_EXPORT void registerClipMuteCommands(ControlRegistry& registry);
+//! events.subscribe / unsubscribe / get_state: ordered, bounded project-change events (Q050-334.1).
+LMMS_EXPORT void registerEventsCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

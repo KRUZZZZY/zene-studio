@@ -59,17 +59,29 @@
 #include <QtTest>
 
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
+#include <ranges>
 #include <vector>
 
 #include "AudioBufferView.h"
 #include "AudioEngine.h"
 #include "AudioResampler.h"
+#include "Delay.h"
 #include "Engine.h"
 #include "ExportRenderSettings.h"
+#include "interpolation.h"
+#include "OversamplingHelpers.h"
 #include "Sample.h"
+#include "SampleClip.h"
 #include "SampleFrame.h"
+#include "SamplePlayHandle.h"
+#include "SampleTrack.h"
 #include "SrcQuality.h"
+#include "RealtimeScope.h"
+#include "Song.h"
+#include "TakeLane.h"
+#include "TimePos.h"
 
 using namespace lmms;
 
@@ -129,6 +141,60 @@ private slots:
 		Engine::destroy();
 	}
 
+	void cubicInterpolationPreservesConstantSignal()
+	{
+		constexpr float level = 1.0f;
+		for (const float position : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f})
+		{
+			const float output = cubicInterpolate(level, level, level, level, position);
+			QVERIFY2(std::fabs(output - level) < 1.0e-6f,
+				qPrintable(QStringLiteral("constant input changed to %1 at x=%2")
+					.arg(output).arg(position)));
+		}
+	}
+
+	void interleavedFrameIteratorDistanceCountsFrames()
+	{
+		float samples[8]{};
+		InterleavedBufferView<float, 2> staticView{samples, 4};
+		const auto staticFrames = staticView.framesView();
+		const auto staticBegin = staticFrames.begin();
+		const auto staticEnd = staticBegin + 3;
+		QCOMPARE(std::ranges::distance(staticBegin, staticEnd), std::ptrdiff_t{3});
+		QCOMPARE(std::ranges::distance(staticEnd, staticBegin), std::ptrdiff_t{-3});
+
+		InterleavedBufferView<float> dynamicView{samples, 2, 4};
+		const auto dynamicFrames = dynamicView.framesView();
+		const auto dynamicBegin = dynamicFrames.begin();
+		const auto dynamicEnd = detail::InterleavedFrameIterator<float>{samples + 6, 2};
+		QCOMPARE(std::ranges::distance(dynamicBegin, dynamicEnd), std::ptrdiff_t{3});
+		QCOMPARE(std::ranges::distance(dynamicEnd, dynamicBegin), std::ptrdiff_t{-3});
+	}
+
+	void framesViewOfNullDataIsEmpty()
+	{
+		// Null data is empty() even with non-zero counts. framesView() must agree and must not
+		// form `null + channels * frames`, which is undefined behaviour.
+		float* nullData = nullptr;
+		const InterleavedBufferView<float, 2> staticNull{nullData, 4};
+		QVERIFY(staticNull.empty());
+		QCOMPARE(std::ranges::distance(staticNull.framesView()), std::ptrdiff_t{0});
+
+		const InterleavedBufferView<float> dynamicNull{nullData, 2, 4};
+		QVERIFY(dynamicNull.empty());
+		QCOMPARE(std::ranges::distance(dynamicNull.framesView()), std::ptrdiff_t{0});
+
+		// A default-constructed view has no frames
+		InterleavedBufferView<float, 2> defaulted{};
+		QVERIFY(defaulted.empty());
+		QCOMPARE(std::ranges::distance(defaulted.framesView()), std::ptrdiff_t{0});
+
+		// A valid view still iterates every frame
+		float samples[8]{};
+		InterleavedBufferView<float, 2> valid{samples, 4};
+		QCOMPARE(std::ranges::distance(valid.framesView()), std::ptrdiff_t{4});
+	}
+
 	// -----------------------------------------------------------------------
 	// 1. THE CONVENTION, measured at the boundary where it can be inverted.
 	// -----------------------------------------------------------------------
@@ -166,6 +232,27 @@ private slots:
 		QVERIFY2(std::fabs(halvedRatio - 0.5) < 0.02,
 			qPrintable(QStringLiteral("src_ratio 0.5 gave %1 output frames per input frame")
 				.arg(halvedRatio)));
+	}
+
+	void stereoCombAliasesExposeTheirDelayApi()
+	{
+		StereoCombFeedfwd feedforward(4);
+		feedforward.setDelay(1.0);
+		feedforward.setGain(0.25);
+		QCOMPARE(feedforward.update(2.0, 0), 0.5);
+		QCOMPARE(feedforward.update(0.0, 0), 2.0);
+		feedforward.clearHistory();
+		feedforward.setMaxDelay(8);
+		QCOMPARE(feedforward.update(0.0, 0), 0.0);
+
+		StereoCombFeedbackDualtap dualtap(4);
+		dualtap.setDelays(1.0, 2.0);
+		dualtap.setGain(0.5);
+		QCOMPARE(dualtap.update(2.0, 0), 0.0);
+		QCOMPARE(dualtap.update(0.0, 0), 2.0);
+		dualtap.clearHistory();
+		dualtap.setMaxDelay(8);
+		QCOMPARE(dualtap.update(0.0, 0), 0.0);
 	}
 
 	//! The pre-existing path: a 48 kHz source in a 44.1 kHz project. The
@@ -318,6 +405,49 @@ private slots:
 				"(max difference %1)").arg(maxDifference)));
 	}
 
+	//! Sample::play must use the converter already on its playback state. Recreating
+	//! it to match a changed selection allocates on the audio-thread path.
+	void thePlayPathDoesNotReCreateTheConverter()
+	{
+		AudioEngine* const engine = Engine::audioEngine();
+		const int sourceRate = static_cast<int>(engine->outputSampleRate()) / 2;
+		const std::vector<SampleFrame> source = sineFrames(8192, sourceRate, 2000.0);
+		Sample sample(source.data(), source.size(), sourceRate);
+
+		const auto render = [&sample](AudioResampler::Mode mode, SrcQuality quality) {
+			ExportRenderSettings::setSrcQuality(quality);
+			Sample::PlaybackState state(mode);
+			state.setFrameIndex(0);
+			std::vector<SampleFrame> out(2048, SampleFrame(0.0f, 0.0f));
+			sample.play(out.data(), &state, out.size(), Sample::Loop::Off, 1.0);
+			return out;
+		};
+
+		const std::vector<SampleFrame> linear = render(AudioResampler::Mode::Linear, SrcQuality::Linear);
+		const std::vector<SampleFrame> pinned = render(AudioResampler::Mode::Linear, SrcQuality::SincBest);
+		const std::vector<SampleFrame> best = render(AudioResampler::Mode::SincBest, SrcQuality::SincBest);
+		ExportRenderSettings::reset();
+		QCOMPARE(ExportRenderSettings::srcQuality(), SrcQuality::Linear);
+
+		const double controlDifference = [&linear, &best] {
+			double difference = 0.0;
+			for (std::size_t i = 0; i < linear.size(); ++i)
+			{
+				difference = std::max(difference,
+					std::fabs(static_cast<double>(linear[i][0]) - static_cast<double>(best[i][0])));
+			}
+			return difference;
+		}();
+		QVERIFY2(controlDifference > 1e-5,
+			"the fixture cannot tell the converters apart, so the comparison below proves nothing");
+
+		for (std::size_t i = 0; i < linear.size(); ++i)
+		{
+			QCOMPARE(pinned[i][0], linear[i][0]);
+			QCOMPARE(pinned[i][1], linear[i][1]);
+		}
+	}
+
 	//! The other half of the contract: the DEFAULT quality is the one the
 	//! engine always used, so a render that asks for nothing is unchanged.
 	void theDefaultQualityIsTheHistoricalConverter()
@@ -350,6 +480,98 @@ private slots:
 			QCOMPARE(byDefault[i][1], byName[i][1]);
 		}
 		evidence("default quality is exactly Linear", 1.0);
+	}
+
+	void sampleTrackVoiceUsesPreparedConverterOnRenderPath()
+	{
+		QVERIFY(ExportRenderSettings::setSrcQuality(SrcQuality::SincBest));
+		SampleTrack track(Engine::getSong());
+		auto* const clip = dynamic_cast<SampleClip*>(track.createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->changeLength(TimePos(1920));
+		QCOMPARE(track.takeLanes().addLane(), 0);
+		QVERIFY(track.takeLanes().selectSegment(0, 1920, 0, 1));
+
+		AudioResampler::resetRealtimeConverterAllocationsForTest();
+		{
+			const RealtimeScope realtime;
+			SamplePlayHandle handle(clip, clip->sampleWindow());
+		}
+		const auto realtimeAllocations = AudioResampler::realtimeConverterAllocationsForTest();
+		QVERIFY(ExportRenderSettings::setSrcQuality(SrcQuality::Linear));
+		QCOMPARE(realtimeAllocations, std::uint64_t{0});
+	}
+
+	void upsamplerRejectsOutOfRangeStageChanges()
+	{
+		Upsampler<4> sampler;
+		sampler.setup(2, 48000.0f, 19000.0f);
+
+		sampler.setStages(5);
+		const int tooManyStages = sampler.getStages();
+		sampler.setStages(-1);
+		const int negativeStages = sampler.getStages();
+
+		QCOMPARE(tooManyStages, 2);
+		QCOMPARE(negativeStages, 2);
+	}
+
+	void downsamplerRejectsOutOfRangeStageChanges()
+	{
+		Downsampler<4> sampler;
+		sampler.setup(2, 48000.0f, 19000.0f);
+
+		sampler.setStages(5);
+		const int tooManyStages = sampler.getStages();
+		sampler.setStages(-1);
+		const int negativeStages = sampler.getStages();
+
+		QCOMPARE(tooManyStages, 2);
+		QCOMPARE(negativeStages, 2);
+	}
+
+	void upsamplerSetupRejectsOutOfRangeStages()
+	{
+		Upsampler<4> sampler;
+		sampler.setup(2, 48000.0f, 19000.0f);
+
+		sampler.setup(5, 96000.0f, 21000.0f);
+		const int tooManyStages = sampler.getStages();
+		const float tooManySampleRate = sampler.getSampleRate();
+		const float tooManyPassband = sampler.getPassband();
+		sampler.setup(-1, 22050.0f, 10000.0f);
+		const int negativeStages = sampler.getStages();
+		const float negativeSampleRate = sampler.getSampleRate();
+		const float negativePassband = sampler.getPassband();
+
+		QCOMPARE(tooManyStages, 2);
+		QCOMPARE(tooManySampleRate, 48000.0f);
+		QCOMPARE(tooManyPassband, 19000.0f);
+		QCOMPARE(negativeStages, 2);
+		QCOMPARE(negativeSampleRate, 48000.0f);
+		QCOMPARE(negativePassband, 19000.0f);
+	}
+
+	void downsamplerSetupRejectsOutOfRangeStages()
+	{
+		Downsampler<4> sampler;
+		sampler.setup(2, 48000.0f, 19000.0f);
+
+		sampler.setup(5, 96000.0f, 21000.0f);
+		const int tooManyStages = sampler.getStages();
+		const float tooManySampleRate = sampler.getSampleRate();
+		const float tooManyPassband = sampler.getPassband();
+		sampler.setup(-1, 22050.0f, 10000.0f);
+		const int negativeStages = sampler.getStages();
+		const float negativeSampleRate = sampler.getSampleRate();
+		const float negativePassband = sampler.getPassband();
+
+		QCOMPARE(tooManyStages, 2);
+		QCOMPARE(tooManySampleRate, 48000.0f);
+		QCOMPARE(tooManyPassband, 19000.0f);
+		QCOMPARE(negativeStages, 2);
+		QCOMPARE(negativeSampleRate, 48000.0f);
+		QCOMPARE(negativePassband, 19000.0f);
 	}
 };
 

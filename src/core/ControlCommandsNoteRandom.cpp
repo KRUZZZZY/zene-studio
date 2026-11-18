@@ -113,8 +113,9 @@ int jitteredPosition(int pos, double jitter, float unit)
  *  the two things it has to decide (an empty scope, and a link group to mirror).
  *  The draw is a pure function of the seed and each note's identity at entry, so
  *  a note already moved is rolled again from where it now is. */
-void rollNotes(const NoteVector& notes, uint32_t seed, double velocityJitter, double positionJitter)
+bool rollNotes(const NoteVector& notes, uint32_t seed, double velocityJitter, double positionJitter)
 {
+	bool changed = false;
 	for (Note* note : notes)
 	{
 		if (note == nullptr) { continue; }
@@ -128,15 +129,24 @@ void rollNotes(const NoteVector& notes, uint32_t seed, double velocityJitter, do
 			const int velocity = static_cast<int>(note->getVolume());
 			const int rolled = std::clamp(static_cast<int>(std::lround(velocity * factor)),
 				static_cast<int>(MinVolume), static_cast<int>(MaxVolume));
-			if (rolled != velocity) { note->setVolume(static_cast<volume_t>(rolled)); }
+			if (rolled != velocity)
+			{
+				note->setVolume(static_cast<volume_t>(rolled));
+				changed = true;
+			}
 		}
 		if (positionJitter > 0.0)
 		{
 			const float unit = NoteRandom::rollUnit(seed, key, pos, length, kTimingSalt);
 			const int moved = jitteredPosition(pos, positionJitter, unit);
-			if (moved != pos) { note->setPos(TimePos(moved)); }
+			if (moved != pos)
+			{
+				note->setPos(TimePos(moved));
+				changed = true;
+			}
 		}
 	}
+	return changed;
 }
 
 //! Resolves the clip a roll runs over, refusing one with no notes: a roll over
@@ -167,7 +177,8 @@ bool readSeed(const QJsonObject& args, uint32_t* out, bool* present, ControlResu
 	if (!args.contains(QStringLiteral("seed"))) { return true; }
 	const QJsonValue value = args.value(QStringLiteral("seed"));
 	const double number = value.toDouble(-1.0);
-	if (!value.isDouble() || number < 0.0 || number > static_cast<double>(kMaxSchemaInteger))
+	if (!value.isDouble() || !std::isfinite(number) || number < 0.0
+		|| number > static_cast<double>(kMaxSchemaInteger))
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'seed' is %1; the roll is a pure function of it and of each note's own "
@@ -194,6 +205,19 @@ bool readJitter(const QJsonObject& args, const QString& key, double minimum, dou
 		return false;
 	}
 	const double number = value.toDouble();
+	// NaN and the infinities pass the schema's "number" type check (isDouble is true
+	// for all three) and every range comparison below (each comparison with NaN is
+	// false), so they would reach the roll, whose `> 0` guards then skip the edits
+	// while the handler still checkpoints and answers success - "I edited nothing"
+	// reported as an edit. A jitter this engine cannot mean is refused, typed.
+	if (!std::isfinite(number))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+		 QStringLiteral("'%1' is %2, not a finite number: the roll is a fraction of what the note "
+				"already carries, and a non-finite one is refused rather than rolled as a no-op")
+				.arg(key).arg(number));
+		return false;
+	}
 	if (number < minimum || number > maximum)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
@@ -260,22 +284,30 @@ ControlResult randomSeedSet(const QJsonObject& args)
 	}
 
 	const uint32_t previous = song->midiSeed();
-	song->setMidiSeed(requested);
-	control::addUndoStep(
-		[previous]() {
-			Song* live = Engine::getSong();
-			if (live != nullptr) { live->setMidiSeed(previous); }
-		},
-		[requested]() {
-			Song* live = Engine::getSong();
-			if (live != nullptr) { live->setMidiSeed(requested); }
-		});
+	const bool changed = requested != previous;
+	// A seed the project already holds changes nothing, so it takes NO undo step: a step
+	// here would be the history's top entry, and the next control.undo would unwind the
+	// no-op - leaving the real edit behind it applied (the device.mpe_set rule).
+	if (changed)
+	{
+		song->setMidiSeed(requested);
+		control::addUndoStep(
+			[previous]() {
+				Song* live = Engine::getSong();
+				if (live != nullptr) { live->setMidiSeed(previous); }
+			},
+			[requested]() {
+				Song* live = Engine::getSong();
+				if (live != nullptr) { live->setMidiSeed(requested); }
+			});
+	}
 
 	QJsonObject result;
 	result.insert(QStringLiteral("seed"), static_cast<double>(song->midiSeed()));
 	result.insert(QStringLiteral("previous"), static_cast<double>(previous));
-	result.insert(QStringLiteral("changed"), song->midiSeed() != previous);
+	result.insert(QStringLiteral("changed"), changed);
 	result.insert(QStringLiteral("persisted"), true);
+	if (!changed) { return ControlResult::success(result); }
 	QJsonObject before;
 	before.insert(QStringLiteral("seed"), static_cast<double>(previous));
 	QJsonObject inverseArgs;
@@ -336,16 +368,21 @@ ControlResult randomize(const QJsonObject& args)
 				"nothing (note.select chooses them)").arg(clipId(ref.id)));
 	}
 	const NoteSnapshot before = snapshotNotes(*clip);
+	const tick_t previousClipLength = clip->length().getTicks();
+	const tick_t previousStartOffset = clip->startTimeOffset().getTicks();
 	clip->addJournalCheckPoint();
-	rollNotes(notes, seed, velocityJitter, positionJitter);
+	const bool notesChanged = rollNotes(notes, seed, velocityJitter, positionJitter);
 	// The notes moved, so the clip's own order (position, then key) has to be
 	// restored - the call note.move makes after it moves one note.
 	clip->rearrangeAllNotes();
 	// A note rolled past the old end is outside an auto-resizing clip until the
 	// clip's length is recomputed, the same way finish() does after an edit.
 	clip->updateLength();
+	const bool changed = notesChanged || clip->length().getTicks() != previousClipLength
+		|| clip->startTimeOffset().getTicks() != previousStartOffset;
 	clip->dataChanged();
 	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }  // a linked copy carries the rolled notes
+	if (changed) { song->setModified(); }
 
 	QJsonObject result;
 	result.insert(QStringLiteral("clip"), clipId(ref.id));
@@ -365,10 +402,8 @@ ControlResult randomize(const QJsonObject& args)
 	beforeState.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	beforeState.insert(QStringLiteral("note_count"), static_cast<int>(clip->notes().size()));
 	beforeState.insert(QStringLiteral("seed"), static_cast<double>(seed));
-	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
 	result.insert(QStringLiteral("__transaction"),
-		transactionPayload(beforeState, QStringLiteral("control.undo"), inverseArgs, true,
+		transactionPayload(beforeState, QStringLiteral("control.undo"), {}, true,
 			grooveClipMechanism() + QStringLiteral("; and because the roll is multiplicative on "
 				"velocities and drawn from each note's position at entry, the inverse is the "
 				"checkpoint and NOT \"run it again\" - a second call rolls on top of the first")));

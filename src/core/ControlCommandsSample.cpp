@@ -30,11 +30,14 @@
 // §3.1). The four BAKERS live in ControlCommandsSampleEdit.cpp, one group
 // across two translation units exactly as clip.* / warp.* split theirs.
 //
-// SCOPE, because it is a real limit rather than an accident: these ids are
-// socket-only in this release. No widget, menu, toolbar, dock or dialog
-// reaches them; placement (mixer-slot vs clip editor vs window) stays an open
-// owner decision for the UI phase (docs/KNOWN-LIMITATIONS.md carries the
-// same sentence).
+// ROUTE: sample.generate is offered by a sample track's More menu (the track
+// header's and the Inspector's) as Insert Test Signal..., which opens its
+// command form with that track fixed and position 0, length 192 and kind tone
+// as the starting values; the four bakers are offered by a sample clip's
+// Process menu. The same ids stay on the control socket and through MCP.
+// docs/KNOWN-LIMITATIONS.md carries the bounds around them, not a no-interface
+// claim.
+// The Sample Editor's range operations run their own id, sample.edit_range.
 
 #include <cmath>
 #include <memory>
@@ -152,7 +155,10 @@ bool sizeFrames(const QJsonObject& args, GenerateSpec* spec, ControlResult* erro
 	}
 	spec->frames = static_cast<f_cnt_t>(std::llround(
 		static_cast<double>(spec->length) * static_cast<double>(Engine::framesPerTick())));
-	const qint64 bytes = static_cast<qint64>(spec->frames) * 2 * static_cast<qint64>(sizeof(SampleFrame));
+	// SampleFrame is already a stereo frame (std::array<sample_t, DEFAULT_CHANNELS>),
+	// so its sizeof covers both channels - multiplying by the channel count again
+	// would halve the usable generation limit.
+	const qint64 bytes = static_cast<qint64>(spec->frames) * static_cast<qint64>(sizeof(SampleFrame));
 	const bool withinCap = bytes <= MaxGeneratedBytes;
 	if (!withinCap)
 	{
@@ -172,6 +178,16 @@ bool parseGenerate(const QJsonObject& args, GenerateSpec* spec, ControlResult* e
 	return sizeFrames(args, spec, error);
 }
 
+bool validateGenerateEnd(tick_t position, tick_t length, ControlResult* error)
+{
+	const qint64 end = static_cast<qint64>(position) + static_cast<qint64>(length);
+	if (end <= static_cast<qint64>(MaxSongLength)) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("generated clip ends at %1, past the song limit of %2")
+			.arg(end).arg(static_cast<qint64>(MaxSongLength)));
+	return false;
+}
+
 } // namespace
 
 void registerSampleCommands(ControlRegistry& registry)
@@ -187,8 +203,12 @@ void registerSampleCommands(ControlRegistry& registry)
 		"design/specs/DECISION-706-DESTRUCTION-MODEL.md). One journal checkpoint before the "
 		"clip exists: one control.undo removes clip and buffer together. length is in ticks, "
 		"position the clip's start; frequency (Hz) and amplitude (0..1) reach the tone and "
-		"noise kinds - silence ignores them. Socket-only in this release: no interface reaches "
-		"this verb (docs/KNOWN-LIMITATIONS.md).");
+		"noise kinds - silence ignores them. In the interface a sample track's More menu - the "
+		"track header's and the Inspector's - offers it as Insert Test Signal..., which opens "
+		"this command's form with that track fixed and position 0, length 192 and kind tone as "
+		"the starting values; confirming creates the clip. Agents reach the same command on the "
+		"control socket, through MCP and from a script; the Sample Editor's range operations are "
+		"sample.edit_range (docs/KNOWN-LIMITATIONS.md).");
 	cmd.argsSchema = objectSchema(
 		{
 			{QStringLiteral("track"), stringProperty()},
@@ -227,6 +247,7 @@ void registerSampleCommands(ControlRegistry& registry)
 		if (!parseGenerate(args, &spec, &error)) { return error; }
 
 		const tick_t position = static_cast<tick_t>(args.value(QStringLiteral("position")).toDouble(0.0));
+		if (!validateGenerateEnd(position, spec.length, &error)) { return error; }
 		const QString trackArg = args.value(QStringLiteral("track")).toString();
 		QJsonObject before;
 		before.insert(QStringLiteral("track"), trackArg);

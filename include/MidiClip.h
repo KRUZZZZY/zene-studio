@@ -26,6 +26,7 @@
 #ifndef LMMS_MIDI_CLIP_H
 #define LMMS_MIDI_CLIP_H
 
+#include <vector>
 #include "Clip.h"
 #include "MidiClipControllers.h"
 #include "Note.h"
@@ -70,6 +71,8 @@ public:
 
 	void rearrangeAllNotes();
 	void clearNotes();
+	//! Notify views after an in-place note edit and mirror the resulting shared content.
+	void notesChanged();
 
 	inline const NoteVector & notes() const
 	{

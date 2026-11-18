@@ -66,6 +66,10 @@ public:
 	VstEffect( Model * _parent,
 			const Descriptor::SubPluginFeatures::Key * _key );
 	~VstEffect() override = default;
+	QString unavailableReason() const override
+	{
+		return m_plugin == nullptr ? QStringLiteral("the VST plug-in binary was not found or could not be loaded") : QString();
+	}
 
 	EffectControls * controls() override
 	{

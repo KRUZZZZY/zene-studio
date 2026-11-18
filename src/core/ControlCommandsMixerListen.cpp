@@ -81,10 +81,18 @@ ControlResult listenMode(const QJsonObject& args)
 	return ControlResult::success(listenState());
 }
 
-//! MX-048: a send's own pan, put back by channel indices (a route is re-found, it may have been rebuilt).
-void setSendPan(mix_ch_t from, mix_ch_t to, float pan)
+//! MX-048: a send's own pan. Resolve persistent endpoint ids when the undo step runs;
+//! a reorder or deletion can make the positions captured at edit time stale.
+void setSendPan(const QString& fromId, const QString& toId, float pan)
 {
-	if (MixerRoute* route = findMixerRoute(from, to)) { route->pan()->setValue(pan); }
+	ControlResult ignored;
+	MixerChannel* from = resolveMixerChannel(fromId, &ignored);
+	MixerChannel* to = resolveMixerChannel(toId, &ignored);
+	if (from == nullptr || to == nullptr) { return; }
+	if (MixerRoute* route = findMixerRoute(static_cast<mix_ch_t>(from->index()), static_cast<mix_ch_t>(to->index())))
+	{
+		route->pan()->setValue(pan);
+	}
 }
 
 ControlResult sendPan(const QJsonObject& args)
@@ -100,7 +108,10 @@ ControlResult sendPan(const QJsonObject& args)
 	const double pan = args.value(QStringLiteral("pan")).toDouble();
 	if (pan < -1.0 || pan > 1.0) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'pan' is -1..1")); }
 	const float before = route->pan()->value();
-	addUndoStep([from, to, before]() { setSendPan(from, to, before); }, [from, to, pan]() { setSendPan(from, to, static_cast<float>(pan)); });
+	const QString fromId = channelIdOf(ends.from);
+	const QString toId = channelIdOf(ends.to);
+	addUndoStep([fromId, toId, before]() { setSendPan(fromId, toId, before); },
+		[fromId, toId, pan]() { setSendPan(fromId, toId, static_cast<float>(pan)); });
 	route->pan()->setValue(static_cast<float>(pan));
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("from"), channelIdOf(ends.from)}, {QStringLiteral("to"), channelIdOf(ends.to)}, {QStringLiteral("pan"), pan}};

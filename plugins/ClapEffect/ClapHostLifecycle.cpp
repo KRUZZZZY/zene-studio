@@ -35,6 +35,7 @@
 #include "ClapLoader.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 
@@ -51,7 +52,9 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 		setError(error, QStringLiteral("No CLAP plug-in loaded"));
 		return false;
 	}
-	if (sampleRate <= 0.0 || maxBlockSize <= 0)
+	// std::isfinite first: every comparison against NaN is false, so `sampleRate <= 0.0` alone let a
+	// NaN or an infinity through to activate() as the plug-in's rate.
+	if (!std::isfinite(sampleRate) || sampleRate <= 0.0 || maxBlockSize <= 0)
 	{
 		setError(error, QStringLiteral("Invalid sample rate or block size"));
 		return false;
@@ -68,8 +71,8 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 	// Every buffer the audio thread touches is allocated here, once.
 	impl.inPtrs.assign(std::max<std::size_t>(impl.layout.inputs, 1), nullptr);
 	impl.outPtrs.assign(std::max<std::size_t>(impl.layout.outputs, 1), nullptr);
-	impl.inBuffers.assign(impl.layout.inputPortChannels.size(), clap_audio_buffer_t{});
-	impl.outBuffers.assign(impl.layout.outputPortChannels.size(), clap_audio_buffer_t{});
+	impl.inBuffers.assign(static_cast<std::size_t>(impl.layout.pluginInputPorts), clap_audio_buffer_t{});
+	impl.outBuffers.assign(static_cast<std::size_t>(impl.layout.pluginOutputPorts), clap_audio_buffer_t{});
 	impl.silence.assign(static_cast<std::size_t>(maxBlockSize), 0.0f);
 	impl.outputScratch.assign(static_cast<std::size_t>(impl.layout.outputs) * maxBlockSize, 0.0f);
 	impl.paramEvents.assign(impl.params.size(), clap_event_param_value_t{});

@@ -26,6 +26,9 @@
 #ifndef LMMS_OUTPUT_SETTINGS_H
 #define LMMS_OUTPUT_SETTINGS_H
 
+#include <algorithm>
+#include <cmath>
+
 #include "ExportRenderSettings.h"
 #include "LmmsTypes.h"
 #include "SrcQuality.h"
@@ -51,6 +54,15 @@ public:
 		Stereo,
 		JointStereo,
 		Count
+	};
+
+	/*! 0.5.0 F7 (MX-060): what an export of a surround master writes (include/SurroundExport.h).
+	 *  Stereo, the default, is the export every caller had before: the master folded to L/R with the
+	 *  BS.775 downmix. Surround writes one WAV channel per speaker of the master (6 for 5.1, 8 for 7.1). */
+	enum class ChannelMode
+	{
+		Stereo,
+		Surround
 	};
 
 public:
@@ -100,8 +112,10 @@ public:
 
 	double getCompressionLevel() const{ return m_compressionLevel; }
 	void setCompressionLevel(double level){
-		// legal range is 0.0 to 1.0.
-		m_compressionLevel = level;
+		// legal range is 0.0 to 1.0: anything outside it is clamped to the nearer bound.
+		// NaN is not a level at all, so it leaves the current one in place.
+		if (std::isnan(level)) { return; }
+		m_compressionLevel = std::clamp(level, 0.0, 1.0);
 	}
 
 	/**
@@ -145,6 +159,9 @@ public:
 	SrcQuality srcQuality() const { return m_srcQuality; }
 	void setSrcQuality(SrcQuality quality) { m_srcQuality = quality; }
 
+	ChannelMode channelMode() const { return m_channelMode; }
+	void setChannelMode(ChannelMode mode) { m_channelMode = mode; }
+
 private:
 	sample_rate_t m_sampleRate;
 	bitrate_t m_bitRate;
@@ -157,6 +174,7 @@ private:
 	//! declaration order (the tree builds with -Werror; a reordered list is a
 	//! -Wreorder failure, not a warning).
 	bool m_loudnessReport = false;
+	ChannelMode m_channelMode = ChannelMode::Stereo;
 };
 
 

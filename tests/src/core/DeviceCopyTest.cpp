@@ -1,5 +1,5 @@
 /*
- * DeviceCopyTest.cpp - plugin.copy, chain.copy, plugin.ab and the plug-in organiser and folders
+ * DeviceCopyTest.cpp - plugin.copy, chain.copy, plugin.ab, the rack and drum-rack devices (the organiser: DeviceOrganiserTest.cpp)
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -24,17 +24,17 @@
 /*! 0.5.0 L10: a device copied to another channel keeps its settings and one undo takes it back
  *  (MX-076); a chain copied with 'replace' puts the destination's devices back on undo; plugin.ab
  *  stores two settings, toggles between them and a recall is one undo step (MX-092); a macro target's
- *  curve is accepted by the command (MX-105); plugin.organise marks a device and plugin.organisation
- *  lists it, undoably (MX-166); plugin.paths_set replaces a format's folders (MX-163); chain.bypass_all
- *  bypasses every device and chain.clean removes the bypassed ones, each one undo step (MX-078); the
- *  preferred plug-in format is kept and undone (MX-167). Theme 12: the card's read of the A/B slots, and plugin.move
- *  within a chain, one undo step. */
+ *  curve is accepted by the command (MX-105); chain.bypass_all bypasses every device and chain.clean
+ *  removes the bypassed ones, each one undo step (MX-078). Theme 12: the card's read of the A/B slots, and
+ *  plugin.move within a chain, one undo step. The organiser, folders and preferred format are in
+ *  DeviceOrganiserTest.cpp. */
 
 #include <QtTest>
 
 #include <QDir>
 #include <QJsonArray>
 
+#include <limits>
 #include <vector>
 
 #include "AllocationProbe.h"
@@ -46,6 +46,7 @@
 #include "ControlVocabulary.h"
 #include "DeviceAbState.h"
 #include "Effect.h"
+#include "EffectControls.h"
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
@@ -143,6 +144,45 @@ double parameterValue(const QString& target, const QString& plugin, const QStrin
 	return read.ok ? read.result.value(QStringLiteral("parameter")).toObject().value(QStringLiteral("value")).toDouble() : -1e9;
 }
 
+//! The minimal controls needed for Effect::saveSettings() on the unregistered test device; with
+//! @a parameters synthetic float controls when a test needs a device with more than one knob page.
+class UnregisteredCopyTestControls final : public EffectControls
+{
+public:
+	explicit UnregisteredCopyTestControls(Effect* effect, int parameters = 0) : EffectControls{effect}
+	{
+		for (int i = 0; i < parameters; ++i) { m_models.append(new FloatModel(0.f, 0.f, 1.f, 0.01f, effect, QStringLiteral("param %1").arg(i))); }
+	}
+	int controlCount() override { return static_cast<int>(m_models.size()); }
+	void saveSettings(QDomDocument&, QDomElement&) override {}
+	void loadSettings(const QDomElement&) override {}
+	QString nodeName() const override { return QStringLiteral("UnregisteredCopyTestControls"); }
+	gui::EffectControlDialog* createView() override { return nullptr; }
+
+private:
+	QList<FloatModel*> m_models;
+};
+
+//! A serializable source device whose private test descriptor is not in PluginFactory, so a copy stops at it.
+class UnregisteredCopyTestEffect final : public Effect
+{
+public:
+	explicit UnregisteredCopyTestEffect(Model* parent, int parameters = 0) : Effect{&s_descriptor, parent, nullptr}, m_controls{this, parameters} {}
+
+	EffectControls* controls() override { return &m_controls; }
+
+protected:
+	ProcessStatus processImpl(SampleFrame*, const f_cnt_t) override { return ProcessStatus::Continue; }
+
+private:
+	UnregisteredCopyTestControls m_controls;
+	static const Plugin::Descriptor s_descriptor;
+};
+
+const Plugin::Descriptor UnregisteredCopyTestEffect::s_descriptor{
+	"zene-unregistered-copy-test-effect", "Unregistered copy test effect", "", "Zene", 0x0100,
+	Plugin::Type::Effect, nullptr, nullptr, nullptr};
+
 } // namespace
 
 class DeviceCopyTest : public QObject
@@ -239,6 +279,74 @@ private slots:
 		QVERIFY(read.hasA && read.hasB);
 		QCOMPARE(read.onB, state.value(QStringLiteral("current")).toString() == QLatin1String("b"));
 		QVERIFY(!control::abSlotState(nullptr, &read));
+	}
+
+	//! 0.5.0 theme 12: plugin.ab store is a change of session state, so it is one undo step: undoing it
+	//! empties the slot it filled again instead of reaching the write before it.
+	void aStoredSlotIsUndone()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString target = ch(index);
+		const QString plugin = loadAnEffect(target);
+		if (plugin.isEmpty()) { QSKIP("this build loads no effect"); }
+		QString name;
+		double other = 0.0;
+		QVERIFY(aParameter(target, plugin, &name, &other));
+		const double before = parameterValue(target, plugin, name);
+		QVERIFY(run(QStringLiteral("plugin.param_set"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+			{QStringLiteral("name"), name}, {QStringLiteral("value"), other}}).ok);
+		const ControlResult stored = run(QStringLiteral("plugin.ab"), {{QStringLiteral("target"), target},
+			{QStringLiteral("plugin"), plugin}, {QStringLiteral("action"), QStringLiteral("store")}, {QStringLiteral("slot"), QStringLiteral("a")}});
+		QVERIFY2(stored.ok, qPrintable(stored.errorMessage));
+		QVERIFY(stored.result.value(QStringLiteral("has_a")).toBool());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the store, not the parameter write
+		const QJsonObject after = run(QStringLiteral("plugin.ab"), {{QStringLiteral("target"), target},
+			{QStringLiteral("plugin"), plugin}, {QStringLiteral("action"), QStringLiteral("get")}}).result;
+		QVERIFY(!after.value(QStringLiteral("has_a")).toBool());
+		QCOMPARE(run(QStringLiteral("plugin.ab"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+			{QStringLiteral("action"), QStringLiteral("recall")}, {QStringLiteral("slot"), QStringLiteral("a")}}).errorKind,
+			ControlErrorKind::NotFound);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // now the parameter write
+		QVERIFY(std::abs(parameterValue(target, plugin, name) - before) < 1e-3);
+		chainOf(index).clear();
+	}
+
+	//! 0.5.0 theme 12: an A/B recall undone after the device was unloaded and its unload undone still puts the
+	//! pre-recall settings back: the step finds the recreated device again instead of a stale pointer.
+	void anAbRecallUndoSurvivesTheDeviceBeingRecreated()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString target = ch(index);
+		const QString plugin = loadAnEffect(target);
+		if (plugin.isEmpty()) { QSKIP("this build loads no effect"); }
+		QString name;
+		double other = 0.0;
+		QVERIFY(aParameter(target, plugin, &name, &other));
+		const auto ab = [target, plugin](const QString& action, const QString& slot = QString()) {
+			QJsonObject args{{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+				{QStringLiteral("action"), action}};
+			if (!slot.isEmpty()) { args.insert(QStringLiteral("slot"), slot); }
+			return run(QStringLiteral("plugin.ab"), args);
+		};
+		const double stored = parameterValue(target, plugin, name);
+		QVERIFY(run(QStringLiteral("plugin.param_set"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+			{QStringLiteral("name"), name}, {QStringLiteral("value"), other}}).ok);
+		QVERIFY(ab(QStringLiteral("store"), QStringLiteral("a")).ok);
+		QVERIFY(run(QStringLiteral("plugin.param_set"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+			{QStringLiteral("name"), name}, {QStringLiteral("value"), stored}}).ok);
+		QVERIFY(ab(QStringLiteral("store"), QStringLiteral("b")).ok);
+		QVERIFY(ab(QStringLiteral("recall"), QStringLiteral("a")).ok);
+		QVERIFY(std::abs(parameterValue(target, plugin, name) - other) < 1e-3);  // A is heard
+		// The device goes away and its unload is undone, which builds a NEW effect object: the recall's
+		// undo must still find it and put B's settings back.
+		QVERIFY(run(QStringLiteral("plugin.unload"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin}}).ok);
+		QVERIFY(chainOf(index).effects().empty());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the unload: the device is back
+		QCOMPARE(chainOf(index).effects().size(), std::size_t{1});
+		const QString back = control::effectIdOf(chainOf(index).effects().front());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the recall
+		QVERIFY(std::abs(parameterValue(target, back, name) - stored) < 1e-3);
+		chainOf(index).clear();
 	}
 
 	//! 0.5.0 theme 12: plugin.move puts a device at another slot of its chain (the card's Move Left / Right), one undo
@@ -356,34 +464,52 @@ private slots:
 		QCOMPARE(rack.chain(chain)->effects().size(), std::size_t{1});  // back on its own chain
 	}
 
-	//! MX-106: the remote knobs drive the target device's parameters eight at a time.
+	//! MX-106: the remote knobs drive the target device's parameters eight at a time. A knob
+	//! outside 0..7 is refused before the page offset is added, so a malformed index - including
+	//! one whose 32-bit page offset would overflow - cannot reach the model list.
 	void remoteKnobsDriveAPageOfParameters()
 	{
-		if (chainOf(1).effects().empty()) { QSKIP("this build loads no effect"); }
 		QCOMPARE(run(QStringLiteral("remote.page")).errorKind, ControlErrorKind::Refused);  // nothing connected
 		QVERIFY(run(QStringLiteral("remote.connect"), {{QStringLiteral("first_cc"), 20}}).ok);
-		const QString plugin = control::effectIdOf(chainOf(1).effects().front());
+		// A deterministic device with more than one knob page: a later page makes the index a real
+		// page offset, so the overflow the old arithmetic had is exercised without a system plugin.
+		auto* device = new UnregisteredCopyTestEffect{&chainOf(1), 3 * RemoteControls::Knobs};
+		chainOf(1).appendEffect(device);
+		const QString plugin = control::effectIdOf(device);
 		const ControlResult targeted = run(QStringLiteral("remote.target"), {{QStringLiteral("target"), ch(1)},
 			{QStringLiteral("plugin"), plugin}, {QStringLiteral("follow"), false}});
 		QVERIFY2(targeted.ok, qPrintable(targeted.errorMessage));
-		const QJsonArray page = targeted.result.value(QStringLiteral("parameters")).toArray();
-		QVERIFY(!page.isEmpty());
-		const QString first = page.first().toObject().value(QStringLiteral("name")).toString();
-		QVERIFY(RemoteControls::instance()->applyKnob(0, 127));  // all the way up
-		const QJsonObject params = run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), ch(1)},
-			{QStringLiteral("plugin"), plugin}}).result;
-		for (const QJsonValue& value : params.value(QStringLiteral("parameters")).toArray())
-		{
-			const QJsonObject p = value.toObject();
-			if (p.value(QStringLiteral("name")).toString() != first) { continue; }
-			QVERIFY(std::abs(p.value(QStringLiteral("value")).toDouble() - p.value(QStringLiteral("max")).toDouble()) < 1e-3);
-			break;
-		}
-		QVERIFY(!RemoteControls::instance()->applyKnob(8, 64));  // there are eight knobs
+		auto value = [&](int index) {
+			return run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), plugin},
+				{QStringLiteral("index"), index}}).result.value(QStringLiteral("parameter")).toObject().value(QStringLiteral("value")).toDouble();
+		};
+		// A malformed knob must be refused and leave ALL 24 of the device's parameters as they were: every
+		// value is read back before and after the request, not just the one a loop happens to watch.
+		constexpr int parameterCount = 3 * RemoteControls::Knobs;
+		auto snapshot = [&] { QVector<double> all; for (int i = 0; i < parameterCount; ++i) { all.append(value(i)); } return all; };
+		auto refusedLeavingAllUnchanged = [&](int malformed) {
+			const QVector<double> before = snapshot();
+			QVERIFY2(!RemoteControls::instance()->applyKnob(malformed, 64), qPrintable(QString::number(malformed)));
+			const QVector<double> after = snapshot();
+			for (int i = 0; i < parameterCount; ++i) { QCOMPARE(after.at(i), before.at(i)); }
+		};
+		for (const int malformed : {-1, static_cast<int>(RemoteControls::Knobs), std::numeric_limits<int>::max()}) { refusedLeavingAllUnchanged(malformed); }
+		if (QTest::currentTestFailed()) { return; }
+		const QVector<double> beforeKnob = snapshot();
+		QVERIFY(RemoteControls::instance()->applyKnob(RemoteControls::Knobs - 1, 127));
+		QCOMPARE(value(RemoteControls::Knobs - 1), 1.0);
+		for (int i = 0; i < parameterCount; ++i) { if (i != RemoteControls::Knobs - 1) { QCOMPARE(value(i), beforeKnob.at(i)); } }
+		QCOMPARE(run(QStringLiteral("remote.page"), {{QStringLiteral("page"), 1}}).result.value(QStringLiteral("page")).toInt(), 1);
+		// On page 1 the offset is 8: the old 32-bit sum overflowed here, and all 24 must survive the request.
+		refusedLeavingAllUnchanged(std::numeric_limits<int>::max());
+		if (QTest::currentTestFailed()) { return; }
+		for (int knob = 0; knob < RemoteControls::Knobs; ++knob) { QCOMPARE(value(RemoteControls::Knobs + knob), 0.0); }
 		QCOMPARE(run(QStringLiteral("remote.page"), {{QStringLiteral("page"), 999}}).result.value(QStringLiteral("page")).toInt(),
 			targeted.result.value(QStringLiteral("pages")).toInt() - 1);  // clamped
 		QVERIFY(run(QStringLiteral("remote.disconnect")).ok);
 		QVERIFY(RemoteControls::instance() == nullptr);
+		chainOf(1).removeEffect(device);
+		delete device;
 	}
 
 	//! MX-111: a drum rack is a folder of sampler pads, each with its own channel sending to one bus;
@@ -426,37 +552,6 @@ private slots:
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracksBefore);  // the folder went too
 	}
 
-	void theOrganiserMarksADevice()
-	{
-		QCOMPARE(pluginorganiser::keyOf(QStringLiteral("ladspaeffect"), {{QStringLiteral("file"), QStringLiteral("caps")},
-			{QStringLiteral("plugin"), QStringLiteral("Chorus")}}), QStringLiteral("ladspaeffect|file=caps|plugin=Chorus"));
-		const QString key = QStringLiteral("amplifier");
-		const ControlResult marked = run(QStringLiteral("plugin.organise"), {{QStringLiteral("key"), key},
-			{QStringLiteral("favourite"), true}, {QStringLiteral("folder"), QStringLiteral("Gain")}});
-		QVERIFY2(marked.ok, qPrintable(marked.errorMessage));
-		QVERIFY(pluginorganiser::entry(key).favourite);
-		const QJsonObject listed = run(QStringLiteral("plugin.organisation"), {{QStringLiteral("folder"), QStringLiteral("Gain")}}).result;
-		QCOMPARE(listed.value(QStringLiteral("entries")).toArray().size(), 1);
-		QVERIFY(listed.value(QStringLiteral("folders")).toArray().contains(QStringLiteral("Gain")));
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QVERIFY(pluginorganiser::entry(key).isDefault());
-		QCOMPARE(run(QStringLiteral("plugin.organise"), {{QStringLiteral("favourite"), true}}).errorKind, ControlErrorKind::InvalidArgs);
-	}
-
-	void theFoldersAreSetAndUndone()
-	{
-		const QString dir = QDir::tempPath();
-		const ControlResult set = run(QStringLiteral("plugin.paths_set"), {{QStringLiteral("format"), QStringLiteral("vst3")},
-			{QStringLiteral("dirs"), QJsonArray{dir}}});
-		QVERIFY2(set.ok, qPrintable(set.errorMessage));
-		QCOMPARE(pluginpaths::configured(pluginpaths::Format::Vst3), QStringList{dir});
-		QCOMPARE(pluginpaths::searchDirs(pluginpaths::Format::Vst3).front(), dir);  // searched first
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QVERIFY(pluginpaths::configured(pluginpaths::Format::Vst3).isEmpty());
-		QCOMPARE(run(QStringLiteral("plugin.paths_set"), {{QStringLiteral("format"), QStringLiteral("au")},
-			{QStringLiteral("dirs"), QJsonArray{}}}).errorKind, ControlErrorKind::InvalidArgs);
-	}
-
 	void aChainIsBypassedAndCleaned()
 	{
 		const QString target = ch(3);
@@ -480,36 +575,29 @@ private slots:
 		QCOMPARE(after, before);
 	}
 
-	void aPreferredFormatIsKeptAndUndone()
-	{
-		QVERIFY(run(QStringLiteral("plugin.prefer_format"), {{QStringLiteral("format"), QStringLiteral("clap")}}).ok);
-		QCOMPARE(pluginorganiser::preferredFormat(), QStringLiteral("clap"));
-		QCOMPARE(run(QStringLiteral("plugin.prefer_format"), {{QStringLiteral("format"), QStringLiteral("au")}}).errorKind,
-			ControlErrorKind::InvalidArgs);
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QVERIFY(pluginorganiser::preferredFormat().isEmpty());
-	}
 
-	//! W6: the organiser tells an open effect picker that it changed - plugin.organise and plugin.prefer_format
-	//! over the socket, and their undo - once per real change, and not for a write that changes nothing.
-	void theOrganiserSignalsItsChanges()
+	//! A stopped chain copy keeps the call's full destination list in `to`, while `copies` records its progress.
+	void aPartialChainCopyKeepsTheRequestedDestinationList()
 	{
-		QSignalSpy changed(pluginorganiser::notifier(), &pluginorganiser::Notifier::changed);
-		const QString key = QStringLiteral("amplifier");
-		QVERIFY(run(QStringLiteral("plugin.organise"), {{QStringLiteral("key"), key}, {QStringLiteral("hidden"), true}}).ok);
-		QCOMPARE(changed.count(), 1);
-		pluginorganiser::setEntry(key, pluginorganiser::entry(key));  // the same entry again: nothing to show
-		QCOMPARE(changed.count(), 1);
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(changed.count(), 2);
-		QVERIFY(pluginorganiser::entry(key).isDefault());
-		QVERIFY(run(QStringLiteral("plugin.prefer_format"), {{QStringLiteral("format"), QStringLiteral("lv2")}}).ok);
-		QCOMPARE(changed.count(), 3);
-		pluginorganiser::setPreferredFormat(QStringLiteral("lv2"));  // unchanged
-		QCOMPARE(changed.count(), 3);
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(changed.count(), 4);
-		QVERIFY(pluginorganiser::preferredFormat().isEmpty());
+		const int source = Engine::mixer()->createChannel();
+		const int first = Engine::mixer()->createChannel();
+		const int second = Engine::mixer()->createChannel();
+		const int third = Engine::mixer()->createChannel();
+		auto* unavailable = new UnregisteredCopyTestEffect{&chainOf(source)};
+		chainOf(source).appendEffect(unavailable);
+		const QJsonArray requested{ch(first), ch(second), ch(third)};
+
+		const ControlResult copied = run(QStringLiteral("chain.copy"), {{QStringLiteral("target"), ch(source)},
+			{QStringLiteral("to"), requested}});
+		QVERIFY2(copied.ok, qPrintable(copied.errorMessage));
+		QVERIFY(!copied.result.value(QStringLiteral("stopped")).toString().isEmpty());
+		QCOMPARE(copied.result.value(QStringLiteral("count")).toInt(), 0);
+		QCOMPARE(copied.result.value(QStringLiteral("copies")).toArray().size(), 1);
+		QCOMPARE(copied.result.value(QStringLiteral("to")).toArray(), requested);
+
+		QVERIFY(chainOf(first).effects().empty());
+		chainOf(source).removeEffect(unavailable);
+		delete unavailable;
 	}
 };
 

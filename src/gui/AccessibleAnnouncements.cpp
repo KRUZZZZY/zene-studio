@@ -39,6 +39,7 @@
 #include <QWidget>
 
 #include "AccessibleWidgets.h"
+#include "DirectChildOfType.h"
 #include "Engine.h"
 #include "Song.h"
 #include "UiConfigStore.h"
@@ -56,6 +57,12 @@ struct Spoken
 	QString text;
 	QElapsedTimer at;
 };
+
+int& spokenCounter()
+{
+	static int count = 0;
+	return count;
+}
 
 Spoken& lastSpoken()
 {
@@ -157,16 +164,25 @@ const QStringList& announceLevelNames()
 	return names;
 }
 
-bool shouldAnnounce(const QString& message, Politeness politeness)
+bool shouldAnnounce(const QString& message, Politeness politeness, Repeat repeat)
 {
 	const AnnounceLevel level = announceLevel();
 	if (message.isEmpty() || level == AnnounceLevel::Off) { return false; }
 	if (level == AnnounceLevel::Errors && politeness != Politeness::Assertive) { return false; }
 	Spoken& last = lastSpoken();
-	if (last.text == message && last.at.isValid() && last.at.elapsed() < RepeatMs) { return false; }
+	if (repeat == Repeat::Suppress && last.text == message && last.at.isValid() && last.at.elapsed() < RepeatMs)
+	{
+		return false;
+	}
 	last.text = message;
 	last.at.start();
+	++spokenCounter();
 	return true;
+}
+
+int announcementCount()
+{
+	return spokenCounter();
 }
 
 QString lastAnnouncement()
@@ -182,7 +198,7 @@ void announceTransition(QObject* source, Transition kind, const QString& detail)
 void watchSongTransitions()
 {
 	Song* song = Engine::getSong();
-	if (song == nullptr || song->findChild<SongTransitions*>(QStringLiteral("zeneSongTransitions"), Qt::FindDirectChildrenOnly) != nullptr)
+	if (song == nullptr || directChildOfType<SongTransitions>(song, QStringLiteral("zeneSongTransitions")) != nullptr)
 	{
 		return;
 	}

@@ -59,6 +59,8 @@
 
 #include "lmms_export.h"
 
+class QFileInfo;
+
 namespace lmms
 {
 
@@ -89,6 +91,9 @@ LMMS_EXPORT QString browserKindName(BrowserKind kind);
 LMMS_EXPORT bool browserKindFromName(const QString& name, BrowserKind* kind);
 //! The kind of \a path, from its extension.
 LMMS_EXPORT BrowserKind browserKindForPath(const QString& path);
+//! True when \a info is an LV2 preset bundle: a directory the browser holds as ONE
+//! preset. Its contents are the preset's own parts, so no walk descends into it.
+LMMS_EXPORT bool browserIsLv2Bundle(const QFileInfo& info);
 
 //! Every root the browser reads, in the order the sidebar's tabs have them.
 LMMS_EXPORT QList<BrowserRoot> browserRoots();
@@ -146,10 +151,30 @@ struct LMMS_EXPORT BrowserItem
 	qint64 modifiedMs = 0;
 	//! The persisted tags of this path (empty when it has none).
 	QStringList tags;
+	//! The persisted category of this path (empty when it has none). One per
+	//! file, unlike the tags: 0.5.0 L11 (WF-007) narrows the library by what a
+	//! file IS classified as, beside the kind and the root, and the tags stay
+	//! free-form.
+	QString category;
 	//! True when `metadata` was actually filled in (a query only probes when it
 	//! was asked to, and only for the candidates that need it).
 	bool hasMetadata = false;
 	BrowserMetadata metadata;
+
+	/*! 0.5.0 L11 (Q050-316.1): the sound's measured tempo and key, when the
+	 *  search consulted the library index - the one place a sound's tempo and key
+	 *  are measured (the import detection, BrowserFeatures.h). False when this
+	 *  search did not read a measurement for the file, so a caller can tell
+	 *  "nobody looked" from "measured, nothing found".
+	 *
+	 *  Within a measurement, bpm 0 and keyPitchClass -1 mean the detector found
+	 *  none. Those are NOT values: an active tempo range or key filter never
+	 *  matches them, and neither does a file with no measurement at all. */
+	bool hasMeasuredTempoKey = false;
+	//! Measured tempo in BPM; 0 when the detector found none.
+	double measuredBpm = 0.0;
+	//! Measured tonic pitch class (0 == C .. 11 == B); -1 when unknown.
+	int measuredKeyPitchClass = -1;
 
 	//! name + path + tags (+ the probed metadata when there is any), lowercased.
 	QStringList searchableText() const;
@@ -172,6 +197,20 @@ struct LMMS_EXPORT BrowserQuery
 	QString text;
 	//! Every listed tag must be present on the item (AND, not OR).
 	QStringList tags;
+	//! The category the item must carry (case-insensitive), or empty for any.
+	//! 0.5.0 L11 (WF-007): the category facet beside kind and root.
+	QString category;
+	/*! 0.5.0 L11 (Q050-316.1): the tempo facet, as a range in BPM read from the
+	 *  library index's measurement. A bound <= 0 is open on that side, so 0/0 is
+	 *  "any tempo". A file whose measured tempo is unknown (0) or that has no
+	 *  measurement does NOT match an active range: a caller asking for 100-130 BPM
+	 *  asks for a fact the file does not carry. */
+	double minBpm = 0.0;
+	double maxBpm = 0.0;
+	/*! The key facet: a tonic pitch class 0..11, or -1 for any key. A pitch class
+	 *  only - the measurement stores no octave and no mode. As with the tempo, an
+	 *  unknown key (-1) or no measurement does not match an active key. */
+	int keyPitchClass = -1;
 	//! A BrowserKind wire name, or empty for any kind.
 	QString kind;
 	//! A root id ("samples", "factory-presets", ...), or empty for every root.
@@ -206,14 +245,47 @@ struct LMMS_EXPORT BrowserQueryResult
 //! answer is deterministic and a client can page through it with offset.
 LMMS_EXPORT BrowserQueryResult runBrowserQuery(const BrowserQuery& query);
 
-/*! The key a tag is filed under: the file's canonical path when it resolves
- * (so a symlink and its target are one entry), else its absolute path. */
+/*! 0.5.0 L11 (Q050-316.1): the key vocabulary and the tempo/key facets, shared
+ *  by BOTH searches and by the GUI's key list.
+ *
+ * The library index measures a sound's key as a PITCH CLASS only (the
+ * detector's tonic, 0 == C .. 11 == B), so the filter speaks the same thing:
+ * a pitch class, never an octave or a mode. browserKeyName/browserKeyFromName
+ * are the ONE table the GUI's list, the command reader and the wire form use,
+ * so a name a caller sends and a name a result reports cannot drift.
+ */
+//! "C", "C#", "D", ... for 0..11; an empty string outside that range.
+LMMS_EXPORT QString browserKeyName(int pitchClass);
+/*! Parses a key name into its pitch class: C..B, sharps and flats (Db == C#),
+ *  case-insensitively, a bare 0..11, or "any" (which sets -1). False when the
+ *  text names no pitch class: the caller refuses it rather than matching nothing.
+ */
+LMMS_EXPORT bool browserKeyFromName(const QString& name, int* pitchClass);
+
+//! True when the three values ask for anything at all (a bound 0 is open, -1 is any key).
+LMMS_EXPORT bool browserTempoKeyActive(double minBpm, double maxBpm, int keyPitchClass);
+//! True when \a item passes an active tempo range and key; an inactive facet passes every item.
+LMMS_EXPORT bool browserTempoKeyPasses(const BrowserItem& item, double minBpm, double maxBpm,
+	int keyPitchClass);
+
+/*! True when \a item passes \a query's tag, category and tempo/key facets.
+ *
+ * The ONE filter both searches apply, so `browser.query` (walking the folders)
+ * and `browser.index_query` (reading the index) cannot disagree: a facet that
+ * changes here changes both. The kind and the text expression are checked by the
+ * caller, because each search applies them at a different point of its own walk.
+ */
+LMMS_EXPORT bool browserItemMatchesFilters(const BrowserItem& item, const BrowserQuery& query);
+
+//! The key a tag is filed under: the file's canonical path when it resolves
+//! (so a symlink and its target are one entry), else its absolute path.
 LMMS_EXPORT QString browserCanonicalKey(const QString& path);
 //! The store's default file: `<user config dir>/browser-tags.json`.
 LMMS_EXPORT QString browserTagStorePath();
 
-/*! The persisted tag store: path -> tags, in a JSON file in the user's config
- * directory (see the header comment for why not the project file).
+/*! The persisted tag store: path -> tags, and path -> its one category, in a
+ * JSON file in the user's config directory (see the header comment for why not
+ * the project file).
  *
  * Written atomically (QSaveFile: a crash mid-write leaves the previous file
  * intact, not a truncated one) and read back on demand. Every write is a
@@ -257,6 +329,24 @@ public:
 	//! Removes \a tag from \a file. False when the file does not carry it.
 	bool remove(const QString& file, const QString& tag, QString* error = nullptr);
 
+	/*! The category facet (0.5.0 L11, WF-007): ONE category per file, kept in
+	 *  the same store document under a "categories" table beside "tags" - the
+	 *  classification a file IS, where the tags are what the user remembers it
+	 *  by. A store written before this facet has no such table and loads as
+	 *  one with no categories, so an old library reads exactly as it did. */
+	//! The file's category; empty when it has none.
+	QString categoryOf(const QString& file) const;
+	//! Distinct categories across the library, sorted.
+	QStringList allCategories() const;
+	//! How many files carry \a category.
+	int filesWithCategory(const QString& category) const;
+	//! Sets \a file's category. False when the file already carries it (an edit
+	//! that changes nothing is not an edit) or when the store cannot be
+	//! persisted. \a error receives the reason in both cases.
+	bool setCategory(const QString& file, const QString& category, QString* error = nullptr);
+	//! Removes \a file's category. False when the file carries none.
+	bool clearCategory(const QString& file, QString* error = nullptr);
+
 	//! Why the last load()/save() failed; empty when it did not.
 	QString lastError() const;
 	//! Empties the in-memory store. It does NOT touch the file (the tests use it
@@ -267,6 +357,8 @@ private:
 	BrowserTagStore() = default;
 
 	QHash<QString, QStringList> m_tags;
+	//! path -> the file's one category (no entry when it has none).
+	QHash<QString, QString> m_categories;
 	QString m_path;
 	mutable QString m_error;
 };

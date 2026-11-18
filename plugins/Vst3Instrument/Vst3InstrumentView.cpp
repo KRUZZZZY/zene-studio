@@ -61,7 +61,10 @@ Vst3InstrumentView::Vst3InstrumentView(Vst3Instrument* instrument, QWidget* pare
 	for (auto* model : instrument->paramModels())
 	{
 		const auto& descriptor = model->descriptor();
-		if (descriptor.hidden) { continue; }
+		// Hidden parameters stay out of the grid, and so do read-only ones: a
+		// knob is an editor, and the plug-in owns these values (a meter resets
+		// them on its next poll). The native editor shows them instead.
+		if (descriptor.hidden || descriptor.readOnly) { continue; }
 
 		auto* knob = new Knob(KnobType::Bright26, descriptor.title, this);
 		knob->setModel(model);

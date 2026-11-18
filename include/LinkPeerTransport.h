@@ -2,13 +2,13 @@
  * LinkPeerTransport.h - the seam between the session-sync model and the way its
  *                      announcements travel (docs/LINK-SYNC.md section 3).
  *
- * The model (include/LinkSync.h) knows packets, revisions and a shared timeline.
- * It does not know whether they leave the process over UDP multicast, over the
- * Ableton Link library, or not at all. That is this interface, and it is the
- * whole reason the design is shaped this way: real Link interoperability is a
- * licence-permitted follow-up (Link's LICENSE.md is GPL-2.0-or-later - see
- * docs/LINK-SYNC.md section 1), so the follow-up must be able to ADD a transport
- * beside this one rather than rewrite the model.
+ * The zene-link-style model (include/LinkSync.h) knows packets, revisions and a
+ * shared timeline; this interface is how its announcements travel (UDP multicast
+ * today). It was drawn as the place a real Ableton Link transport would plug in.
+ * When Link was vendored (WF-051) it went in one level up instead, as a whole
+ * backend (include/AbletonLinkBridge.h): Link owns the timeline, the peer set and
+ * the clock synchronisation, not just the wire, so it replaces the model rather
+ * than this seam - docs/LINK-SYNC.md section 3.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *

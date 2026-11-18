@@ -154,7 +154,7 @@ ENDIF()
 IF(NOT ZENE_HAVE_COLLAB)
 	# Same reason as above: the collaboration transport's Q_OBJECT headers are globbed for AUTOMOC,
 	# and their .cpp files are not built without Qt Network.
-	FOREACH(_collab_header CollabLink CollabHost CollabClient CollabSession CollabPanel PortMapping)
+	FOREACH(_collab_header CollabLink CollabHost CollabClient CollabSession CollabPanel PortMapping OscServer)
 		SET_SOURCE_FILES_PROPERTIES("${CMAKE_SOURCE_DIR}/include/${_collab_header}.h"
 			PROPERTIES SKIP_AUTOMOC ON)
 	ENDFOREACH()
@@ -312,6 +312,21 @@ ENDIF()
 # defect rather than failing later at a link step.
 TARGET_COMPILE_DEFINITIONS(zene_api PRIVATE ZENE_API_BOUNDARY)
 
+# Ableton Link (WF-051, docs/LINK-SYNC.md): the ONE translation unit that
+# includes the vendored library, in a static library of its own so that Link's
+# include directories and asio macros (src/3rdparty/ableton-link/CMakeLists.txt)
+# reach this file and nothing else in the core. It is linked through the tree's
+# static dependency chain exactly as zene_api is above. Without the library the
+# stub (src/core/AbletonLinkSessionStub.cpp) is in LMMS_SRCS instead.
+IF(LMMS_HAVE_ABLETON_LINK)
+	ADD_LIBRARY(zene_ableton_link STATIC core/AbletonLinkSession.cpp)
+	SET_TARGET_PROPERTIES(zene_ableton_link PROPERTIES AUTOMOC OFF POSITION_INDEPENDENT_CODE ON)
+	TARGET_COMPILE_DEFINITIONS(zene_ableton_link PRIVATE -Dlmmsobjs_EXPORTS)
+	TARGET_INCLUDE_DIRECTORIES(zene_ableton_link PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+	TARGET_LINK_LIBRARIES(zene_ableton_link PRIVATE ableton_link)
+	target_static_libraries(lmmsobjs zene_ableton_link)
+ENDIF()
+
 ADD_EXECUTABLE(zene
 	core/main.cpp
 	"${WINRC}"
@@ -399,6 +414,7 @@ SET(LMMS_REQUIRED_LIBS ${LMMS_REQUIRED_LIBS}
 	${SUIL_LIBRARIES}
 	${FFTW3F_LIBRARIES}
 	SampleRate::samplerate
+	zene_samplerate
 	SndFile::sndfile
 	${EXTRA_LIBRARIES}
 )
@@ -412,6 +428,17 @@ IF(LMMS_HAVE_RUBBERBAND)
 	TARGET_LINK_LIBRARIES(lmmsobjs ${RUBBERBAND_LIBRARIES})
 	TARGET_INCLUDE_DIRECTORIES(lmmsobjs SYSTEM PRIVATE ${RUBBERBAND_INCLUDE_DIRS})
 	TARGET_LINK_DIRECTORIES(lmmsobjs PRIVATE ${RUBBERBAND_LIBRARY_DIRS})
+ENDIF()
+# zlib lets the project-asset reader inflate a .mmpz with an output cap (ControlProjectAssets.cpp).
+# It is a required dependency (owner decision 2026-10-08): every CI/release manifest already carries it
+# (deps-ubuntu-24.04-gcc/mingw, deps-msys2-clangarm64, vcpkg.json; macOS ships it). The reader's
+# no-zlib branch still refuses .mmpz files (fail closed) should ZENE_HAVE_ZLIB ever be missing.
+find_package(ZLIB REQUIRED)
+TARGET_COMPILE_DEFINITIONS(lmmsobjs PRIVATE ZENE_HAVE_ZLIB)
+TARGET_LINK_LIBRARIES(lmmsobjs ZLIB::ZLIB)
+# Q050-024: the Link audio stream's datagram socket is winsock2 on Windows (src/core/LinkAudioStream.cpp).
+IF(WIN32)
+	TARGET_LINK_LIBRARIES(lmmsobjs ws2_32)
 ENDIF()
 IF(ZENE_HAVE_LIBAAF)
 	TARGET_COMPILE_DEFINITIONS(lmmsobjs PRIVATE ZENE_HAVE_LIBAAF)

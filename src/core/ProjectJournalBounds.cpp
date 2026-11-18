@@ -67,6 +67,7 @@ int ProjectJournal::serialisedBytes( const DataFile & data )
 
 bool ProjectJournal::setMaxUndoStates( int states )
 {
+	const StackChangeNotice stackNotice( this );
 	if( states < 1 || states > MaxUndoStateLimit ) { return false; }
 	m_maxUndoStates = states;
 	// Lowering the cap evicts the oldest steps there and then: the caller is
@@ -81,6 +82,7 @@ bool ProjectJournal::setMaxUndoStates( int states )
 
 bool ProjectJournal::setMaxUndoBytes( qint64 bytes )
 {
+	const StackChangeNotice stackNotice( this );
 	if( bytes < 1 || bytes > MaxUndoByteLimit ) { return false; }
 	m_maxUndoBytes = bytes;
 	trimUndoStack();
@@ -107,6 +109,21 @@ quint64 ProjectJournal::previousStepSerial() const
 
 
 
+int ProjectJournal::retainedStepsFrom(quint64 serial) const
+{
+	// The stack's serials ascend from bottom to top (a push takes a fresh serial; a coalesce keeps the
+	// lower one), so the steps at or above @a serial are a run at the top of the stack.
+	int count = 0;
+	for (int i = m_undoCheckPoints.size() - 1; i >= 0 && m_undoCheckPoints.at(i).serial >= serial; --i)
+	{
+		++count;
+	}
+	return count;
+}
+
+
+
+
 quint64 ProjectJournal::oldestStepSerial() const
 {
 	// An empty stack reports the NEXT serial to be issued: every already-issued
@@ -118,9 +135,22 @@ quint64 ProjectJournal::oldestStepSerial() const
 
 
 
+bool ProjectJournal::topStepCaptures( jo_id_t id ) const
+{
+	if( m_undoCheckPoints.isEmpty() ) { return false; }
+	for( const SavedObject & saved : m_undoCheckPoints.top().objects )
+	{
+		if( saved.joID == id ) { return true; }
+	}
+	return false;
+}
+
 bool ProjectJournal::coalesceTopStepIntoPrevious()
 {
+	const StackChangeNotice stackNotice( this );
 	if( m_undoCheckPoints.size() < 2 ) { return false; }
+	// WF-033: a step a load put back is never the start of a gesture.
+	if( m_undoCheckPoints.top().loaded || m_undoCheckPoints.at( m_undoCheckPoints.size() - 2 ).loaded ) { return false; }
 
 	CheckPoint top = m_undoCheckPoints.pop();
 	CheckPoint & previous = m_undoCheckPoints.top();
@@ -170,9 +200,12 @@ void ProjectJournal::trimUndoStack()
 			|| ( m_retainedBytes > m_maxUndoBytes && m_undoCheckPoints.size() > 1 ) ) )
 	{
 		m_retainedBytes -= m_undoCheckPoints.first().bytes;
+		m_newestEvictedSerial = qMax( m_newestEvictedSerial, m_undoCheckPoints.first().serial );
 		m_undoCheckPoints.remove( 0 );
 		++m_evicted;
 	}
+	// WF-033: the snapshots are bounded by their own caps, not these two.
+	pruneSnapshots();
 }
 
 } // namespace lmms

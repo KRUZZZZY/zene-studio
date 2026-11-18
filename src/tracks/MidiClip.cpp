@@ -26,6 +26,7 @@
 #include "MidiClip.h"
 
 #include <algorithm>
+#include <limits>
 #include <QDomElement>
 
 #include "GuiApplication.h"
@@ -179,6 +180,13 @@ TimePos MidiClip::beatClipLength() const
 
 
 
+void MidiClip::notesChanged()
+{
+	emit dataChanged();
+	if (linkId() > 0) { ClipLinks::mirrorContent(this); }
+}
+
+
 Note * MidiClip::addNote( const Note & _new_note, const bool _quant_pos )
 {
 	auto new_note = _new_note.clone();
@@ -196,11 +204,7 @@ Note * MidiClip::addNote( const Note & _new_note, const bool _quant_pos )
 	checkType();
 	updateLength();
 
-	emit dataChanged();
-
-	// Row 6: a content edit to a linked clip reaches every member of its group, in
-	// the same step. Unlinked clips (the normal case) skip it; see ClipLinks.h.
-	if (linkId() > 0) { ClipLinks::mirrorContent(this); }
+	notesChanged();
 
 	return new_note;
 }
@@ -218,8 +222,7 @@ NoteVector::const_iterator MidiClip::removeNote(NoteVector::const_iterator it)
 	checkType();
 	updateLength();
 
-	emit dataChanged();
-	if (linkId() > 0) { ClipLinks::mirrorContent(this); }   // row 6; see addNote
+	notesChanged();
 	return new_it;
 }
 
@@ -239,8 +242,7 @@ NoteVector::const_iterator MidiClip::removeNote(Note* note)
 	checkType();
 	updateLength();
 
-	emit dataChanged();
-	if (linkId() > 0) { ClipLinks::mirrorContent(this); }
+	notesChanged();
 	return it;
 }
 
@@ -281,7 +283,7 @@ void MidiClip::clearNotes()
 
 	checkType();
 	updateLength();
-	emit dataChanged();
+	notesChanged();
 }
 
 
@@ -334,7 +336,7 @@ void MidiClip::reverseNotes(const NoteVector& notes)
 	}
 
 	rearrangeAllNotes();
-	emit dataChanged();
+	notesChanged();
 }
 
 
@@ -366,6 +368,7 @@ void MidiClip::splitNotes(const NoteVector& notes, TimePos pos)
 
 		addNote(newNote, false);
 	}
+	notesChanged();
 }
 
 void MidiClip::splitNotesAlongLine(const NoteVector notes, TimePos pos1, int key1, TimePos pos2, int key2, bool deleteShortEnds)
@@ -413,6 +416,7 @@ void MidiClip::splitNotesAlongLine(const NoteVector notes, TimePos pos1, int key
 			removeNote(note);
 		}
 	}
+	notesChanged();
 }
 
 
@@ -535,11 +539,14 @@ void MidiClip::loadSettings( const QDomElement & _this )
 		node = node.nextSibling();
         }
 
-	m_steps = _this.attribute( "steps" ).toInt();
-	if( m_steps == 0 )
-	{
-		m_steps = TimePos::stepsPerBar();
-	}
+	// Luna cluster 3261: a malformed `steps` used to load verbatim whenever it was not exactly 0, and
+	// the beat step-menu and the length arithmetic multiply it in `int`. A pattern spans any number of
+	// bars (addSteps and cloneSteps grow it past one bar), so the limit is the largest count whose
+	// length arithmetic and one doubling by cloneSteps still fit in int, not one bar's tick count.
+	// Anything outside [1, limit] falls back to the default, as 0 always did.
+	const qint64 steps = _this.attribute( "steps" ).toLongLong();
+	const qint64 maxSteps = std::numeric_limits<int>::max() / (2 * static_cast<qint64>(TimePos::ticksPerBar()));
+	m_steps = (steps >= 1 && steps <= maxSteps) ? static_cast<int>(steps) : TimePos::stepsPerBar();
 
 	checkType();
 
@@ -635,7 +642,7 @@ void MidiClip::cloneSteps()
 		}
 	}
 	updateLength();
-	emit dataChanged();
+	notesChanged();
 }
 
 
@@ -652,7 +659,7 @@ void MidiClip::removeSteps()
 		}
 		m_steps -= n;
 		updateLength();
-		emit dataChanged();
+		notesChanged();
 	}
 }
 

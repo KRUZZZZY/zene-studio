@@ -52,7 +52,7 @@ public:
 
 	bool isKeyPressed(int key) const
 	{
-		return m_pressedKeys[key];
+		return isValidKey(key) && m_pressedKeys[key];
 	}
 
 	void handleKeyPress(int key, int midiVelocity = -1);

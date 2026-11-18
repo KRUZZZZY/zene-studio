@@ -3,6 +3,7 @@ set(LMMS_SRCS
 
 	wasm/WasmOfflineRender.cpp
 	wasm/WasmSandbox.cpp
+	wasm/WasmSandboxModules.cpp
 	wasm/WasmSandboxHost.cpp
 	wasm/WasmWorker.cpp
 	wasm/WasmWorkerPool.cpp

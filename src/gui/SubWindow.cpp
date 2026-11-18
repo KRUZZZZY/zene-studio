@@ -132,7 +132,14 @@ SubWindow::SubWindow(QWidget* parent, Qt::WindowFlags windowFlags)
 	// Disable the minimize button and make sure that the custom window hint is set
 	setWindowFlags((this->windowFlags() & ~Qt::WindowMinimizeButtonHint) | Qt::CustomizeWindowHint);
 
-	connect(mdiArea(), &QMdiArea::subWindowActivated, this, &SubWindow::focusChanged);
+	m_mdiAreaConnection = connect(mdiArea(), &QMdiArea::subWindowActivated, this, &SubWindow::focusChanged);
+}
+
+SubWindow::~SubWindow()
+{
+	// ~QMdiSubWindow emits windowStateChanged, which makes the MDI area emit subWindowActivated
+	// and reach focusChanged() on this half-destroyed object. Sever the link before the base runs.
+	disconnect(m_mdiAreaConnection);
 }
 
 

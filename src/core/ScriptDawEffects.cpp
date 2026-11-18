@@ -32,6 +32,8 @@
 #include "ControlVocabulary.h"
 #include "Effect.h"
 #include "EffectChain.h"
+#include "ScriptBindings.h"
+#include "ScriptEngine.h"
 
 #include <QString>
 
@@ -44,21 +46,29 @@ namespace lmms
 namespace
 {
 
-//! The effect the wrapper addresses, but only while it is STILL in its chain:
-//! a script may remove an effect and then read the wrapper it kept, and the
-//! pointer the wrapper holds would otherwise dangle.
-Effect* resolveLiveEffect(EffectChain* chain, Effect* effect)
+//! The chain the wrapper names, resolved through the stable id of the channel
+//! that owns it: a channel that is gone has no chain, and a chain that is gone
+//! is never read (cluster 1663 - the wrapper holds no pointer to it).
+EffectChain* liveChain(const QString& mixerChannelId)
 {
-	if (chain == nullptr || effect == nullptr)
-	{
-		return nullptr;
-	}
+	if (mixerChannelId.isEmpty()) { return nullptr; }
+	ScriptDawBindings::syncForRead();
+	return ScriptDawBindings::mixerChannelEffectChain(mixerChannelId);
+}
+
+//! The device the wrapper names, but only while it is STILL in its chain: a
+//! script may remove a device and then read the wrapper it kept. The device
+//! is found by its own id, not by its position: a position names a slot, and a
+//! slot can hold another device after a removal.
+Effect* liveEffect(EffectChain* chain, int effectId)
+{
+	if (chain == nullptr || effectId < 0) { return nullptr; }
 	const std::vector<Effect*>& effects = chain->effects();
-	if (std::find(effects.begin(), effects.end(), effect) == effects.end())
+	for (Effect* effect : effects)
 	{
-		return nullptr;
+		if (effect != nullptr && effect->id() == effectId) { return effect; }
 	}
-	return effect;
+	return nullptr;
 }
 
 //! The parameter models of \a effect, in the engine's own order - the list
@@ -74,19 +84,32 @@ QList<AutomatableModel*> effectParameters(Effect* effect)
 // LuaEffectChain
 // ---------------------------------------------------------------------------
 
+EffectChain* LuaEffectChain::resolve() const
+{
+	if (m_mixerChannelId.isEmpty()) { return nullptr; }
+	ScriptDawBindings::syncForRead();
+	return ScriptDawBindings::mixerChannelEffectChain(m_mixerChannelId);
+}
+
+bool LuaEffectChain::isValid() const
+{
+	return resolve() != nullptr;
+}
+
 int LuaEffectChain::effectCount() const
 {
-	return m_chain == nullptr ? 0 : static_cast<int>(m_chain->effects().size());
+	EffectChain* chain = resolve();
+	return chain == nullptr ? 0 : static_cast<int>(chain->effects().size());
 }
 
 LuaEffect& LuaEffectChain::effect(int index) const
 {
-	ScriptDawBindings::syncForRead();
-	if (m_chain == nullptr || index < 0 || index >= effectCount())
+	EffectChain* chain = resolve();
+	if (chain == nullptr || index < 0 || index >= static_cast<int>(chain->effects().size()))
 	{
-		return ScriptDawBindings::newEffect(m_chain, nullptr);
+		return ScriptDawBindings::newEffect(m_mixerChannelId, nullptr);
 	}
-	return ScriptDawBindings::newEffect(m_chain, m_chain->effects()[index]);
+	return ScriptDawBindings::newEffect(m_mixerChannelId, chain->effects()[index]);
 }
 
 LuaEffect& LuaEffectChain::effectById(const QString& id) const
@@ -98,23 +121,27 @@ LuaEffect& LuaEffectChain::effectById(const QString& id) const
 // LuaEffect
 // ---------------------------------------------------------------------------
 
+EffectChain* LuaEffect::m_chain() const
+{
+	return liveChain(m_mixerChannelId);
+}
+
 Effect* LuaEffect::m_effective() const
 {
-	if (m_effect == nullptr) { return nullptr; }
-	// Chain-less construction (a bare `Effect()` from Lua) still resolves:
-	// only a wrapper that HAS a chain checks that the effect is still in it.
-	if (m_chain == nullptr) { return m_effect; }
-	return resolveLiveEffect(m_chain, m_effect);
+	return liveEffect(m_chain(), m_effectId);
 }
 
 int LuaEffect::index() const
 {
-	Effect* effect = m_effective();
-	if (effect == nullptr || m_chain == nullptr) { return -1; }
-	const std::vector<Effect*>& effects = m_chain->effects();
+	EffectChain* chain = m_chain();
+	if (chain == nullptr) { return -1; }
+	const std::vector<Effect*>& effects = chain->effects();
 	for (std::size_t i = 0; i < effects.size(); ++i)
 	{
-		if (effects[i] == effect) { return static_cast<int>(i); }
+		if (effects[i] != nullptr && effects[i]->id() == m_effectId)
+		{
+			return static_cast<int>(i);
+		}
 	}
 	return -1;
 }
@@ -139,6 +166,8 @@ QString LuaEffect::displayName() const
 
 bool LuaEffect::enabled() const
 {
+	// Reads see prior writes from the same script (the apply side drains).
+	ScriptEngine::instance()->flushCommandsForRead();
 	Effect* effect = m_effective();
 	return effect != nullptr && effect->isEnabled();
 }
@@ -155,11 +184,14 @@ QString LuaEffect::parameterName(int index) const
 	return models.at(index)->displayName();
 }
 
-AutomatableModel* LuaEffect::parameter(int index) const
+LuaFloatModel& LuaEffect::parameter(int index) const
 {
 	const QList<AutomatableModel*> models = effectParameters(m_effective());
-	if (index < 0 || index >= models.size()) { return nullptr; }
-	return models.at(index);
+	// The pooled FloatModel, like LuaInstrument::parameterModel: a raw
+	// AutomatableModel* is not a class the bridge has registered, so returning
+	// one raised "The class is not registered in LuaBridge" in the script.
+	return ScriptBindings::newFloatModel(
+		index < 0 || index >= models.size() ? nullptr : models.at(index));
 }
 
 } // namespace lmms

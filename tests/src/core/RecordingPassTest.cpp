@@ -30,11 +30,19 @@
  *  Theme 7: Replace erases the notes from before the pass that a recorded note overlaps, at any pitch, and
  *  nothing else - not a note of the pass itself, not the clip's controller lanes - and the record options'
  *  reply states that scope; transport.time_format switches bars|beats, ticks and time as one undo step, and
- *  positions and lengths read and type back exactly in each. */
+ *  positions and lengths read and type back exactly in each.
+ *  Q050-094: the record mode is one choice for MIDI and audio - overdub, replace or keep_history - read and set
+ *  through transport.record_options with its scope for each medium, as one undo step; the stored config numbers
+ *  0 (overdub) and 1 (replace) keep their meaning; the audio overdub mix is sample-exact. */
 
 #include <QtTest>
 
+#include <vector>
+
+#include <QJsonArray>
+
 #include "AudioEngine.h"
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -48,8 +56,11 @@
 #include "PatternStore.h"
 #include "RecordOptions.h"
 #include "RetroMidiCapture.h"
+#include "SampleBuffer.h"
+#include "SampleFrame.h"
 #include "ReversibilityTestSupport.h"
 #include "SessionModel.h"
+#include "SessionScheduler.h"
 #include "Song.h"
 #include "TakeLane.h"
 #include "Track.h"
@@ -171,6 +182,83 @@ private slots:
 		delete track;
 	}
 
+	//! Q050-094: the same three choices for MIDI and audio, each with its scope, one undo step per change.
+	void theRecordModeIsOneChoiceForMidiAndAudio()
+	{
+		recordoptions::setOptions({});
+		const QJsonObject read = run(QStringLiteral("transport.record_options")).result;
+		QCOMPARE(read.value(QStringLiteral("mode")).toString(), QStringLiteral("overdub"));
+		QCOMPARE(read.value(QStringLiteral("modes")).toVariant().toStringList(),
+			(QStringList{QStringLiteral("overdub"), QStringLiteral("replace"), QStringLiteral("keep_history")}));
+		// The command's schema offers exactly those choices.
+		const ControlCommand* command = ControlRegistry::instance()->command(QStringLiteral("transport.record_options"));
+		QVERIFY(command != nullptr);
+		const QJsonArray offered = command->argsSchema.value(QStringLiteral("properties")).toObject()
+			.value(QStringLiteral("mode")).toObject().value(QStringLiteral("enum")).toArray();
+		QCOMPARE(offered.size(), 3);
+
+		for (const QString& name : recordoptions::modeNames())
+		{
+			const ControlResult set = run(QStringLiteral("transport.record_options"), {{QStringLiteral("mode"), name}});
+			QVERIFY2(set.ok, qPrintable(name + QStringLiteral(": ") + set.errorMessage));
+			const QJsonObject reply = set.result;
+			QCOMPARE(reply.value(QStringLiteral("mode")).toString(), name);
+			const auto mode = static_cast<recordoptions::Mode>(recordoptions::modeNames().indexOf(name));
+			QCOMPARE(reply.value(QStringLiteral("mode_label")).toString(), recordoptions::modeLabel(mode));
+			QCOMPARE(reply.value(QStringLiteral("midi_scope")).toString(), recordoptions::midiScope(mode));
+			QCOMPARE(reply.value(QStringLiteral("audio_scope")).toString(), recordoptions::audioScope(mode));
+			QVERIFY(reply.value(QStringLiteral("mode_scope")).toString().contains(recordoptions::audioScope(mode)));
+		}
+		QVERIFY(recordoptions::options().mode == recordoptions::Mode::KeepHistory);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // one step: back to Replace, the previous change
+		QVERIFY(recordoptions::options().mode == recordoptions::Mode::Replace);
+		QCOMPARE(run(QStringLiteral("transport.record_options"), {{QStringLiteral("mode"), QStringLiteral("merge")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		recordoptions::setOptions({});
+	}
+
+	//! Q050-094: the numbers in an existing config keep their meaning; one no build knows reads as the default.
+	void theStoredModeNumbersAreStable()
+	{
+		const auto stored = [](int value) {
+			ConfigManager::inst()->setValue(QStringLiteral("recording"), QStringLiteral("mode"), QString::number(value));
+			return recordoptions::options().mode;
+		};
+		QVERIFY(stored(0) == recordoptions::Mode::Overdub);
+		QVERIFY(stored(1) == recordoptions::Mode::Replace);
+		QVERIFY(stored(2) == recordoptions::Mode::KeepHistory);
+		QVERIFY(stored(9) == recordoptions::Mode::Overdub);
+		recordoptions::setOptions({0, 0, recordoptions::Mode::KeepHistory});
+		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("recording"), QStringLiteral("mode")), QStringLiteral("2"));
+		recordoptions::setOptions({});
+	}
+
+	//! Q050-094: the Overdub mix adds the pass to the audio already there, frame for frame.
+	void theOverdubMixAddsThePassToTheEarlierAudio()
+	{
+		const int rate = 48000;
+		std::vector<SampleFrame> earlier(100, SampleFrame(0.25f, -0.25f));
+		std::vector<SampleFrame> pass(150, SampleFrame(0.125f, 0.5f));
+		const SampleBuffer a(earlier.data(), earlier.size(), rate);
+		const SampleBuffer b(pass.data(), pass.size(), rate);
+		const auto mixed = recordoptions::overdubMix(a, b);
+		QCOMPARE(mixed->size(), std::size_t{150});  // as long as the longer
+		QCOMPARE(mixed->sampleRate(), rate);
+		QCOMPARE(mixed->data()[0].left(), 0.375f);
+		QCOMPARE(mixed->data()[99].right(), 0.25f);
+		QCOMPARE(mixed->data()[100].left(), 0.125f);  // past the earlier audio: the pass alone
+		QCOMPARE(mixed->data()[149].right(), 0.5f);
+		QCOMPARE(a.size(), std::size_t{100});  // the inputs are not changed
+		QCOMPARE(a.data()[0].left(), 0.25f);
+
+		// A pass at another rate is resampled to the earlier audio's rate (24 kHz doubles in length).
+		const SampleBuffer slow(pass.data(), 50, rate / 2);
+		const auto resampled = recordoptions::overdubMix(a, slow);
+		QCOMPARE(resampled->size(), std::size_t{100});
+		QCOMPARE(resampled->data()[10].left(), 0.375f);
+		QCOMPARE(recordoptions::overdubMix(a, SampleBuffer())->size(), std::size_t{100});  // nothing to add
+	}
+
 	//! Theme 7: the time format is one undo step, and every format reads and types back the same tick.
 	void theTimeFormatReadsAndTypesMusicalTime()
 	{
@@ -211,6 +299,26 @@ private slots:
 		}
 		QVERIFY(lengthFromText(QStringLiteral("0:00.5"), &tick, 96, Format::Time) && tick == 48);
 		tempo.setValue(static_cast<float>(wasTempo));
+	}
+
+	//! Cluster 5176: the ".tick" remainder counts INSIDE the sixteenth above it (12 ticks in 4/4),
+	//! so it cannot reach into the next one. It used to be bounded by the whole beat, and a position
+	//! it accepted did not read back as the text that produced it ("1.1.1.47" reads as "1.1.4.11").
+	void aTickRemainderStaysInsideItsSixteenth()
+	{
+		using namespace musicaltime;
+		tick_t tick = 0;
+		QVERIFY(positionFromText(QStringLiteral("1.1.1.11"), &tick) && tick == 11);
+		QVERIFY(!positionFromText(QStringLiteral("1.1.1.12"), &tick));
+		QVERIFY(!positionFromText(QStringLiteral("1.1.1.47"), &tick));
+		QVERIFY(!positionFromText(QStringLiteral("1.1.4.12"), &tick));
+		QVERIFY(!lengthFromText(QStringLiteral("0.0.0.12"), &tick));
+		// Every position the formatter does emit still reads back as itself.
+		for (const tick_t at : {0, 11, 12, 192 + 48 + 12 + 2, 192 + 48 + 12 + 11})
+		{
+			QVERIFY(positionFromText(positionText(at), &tick));
+			QCOMPARE(tick, at);
+		}
 	}
 
 	//! WF-055: what was played lands in a new pattern a launcher cell plays; one undo takes it away.
@@ -283,6 +391,96 @@ private slots:
 		QVERIFY(run(QStringLiteral("session.unbind"), {{QStringLiteral("key"), 48}, {QStringLiteral("channel"), 3}}).ok);
 		QVERIFY(LaunchBindings::bindings().isEmpty());
 		LaunchBindings::disconnect();
+	}
+
+	//! A note consumed by learning must not release a Gate cell that was already playing.
+	void learningANoteDoesNotReleaseAPlayingGateCell()
+	{
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		Song* song = Engine::getSong();
+		song->clearProject();
+		QVERIFY(Track::create(Track::Type::Instrument, song) != nullptr);
+		QVERIFY(Track::create(Track::Type::Pattern, song) != nullptr);
+		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 1}, {QStringLiteral("scenes"), 1}}).ok);
+		QVERIFY(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0},
+			{QStringLiteral("type"), QStringLiteral("midi")}, {QStringLiteral("pattern"), 0},
+			{QStringLiteral("mode"), QStringLiteral("gate")}, {QStringLiteral("quantisation"), QStringLiteral("none")}}).ok);
+
+		LaunchBindings* bindings = LaunchBindings::connect(QString(), QString());
+		SessionScheduler& scheduler = song->sessionScheduler();
+		QVERIFY(run(QStringLiteral("session.launch_slot"), {{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0}}).ok);
+		SessionClockContext clock;
+		clock.ticksPerBar = song->ticksPerBar();
+		clock.framesPerTick = 4.0f;
+		clock.transportRunning = true;
+		scheduler.processAudio(clock, 16);
+		QCOMPARE(scheduler.slotPhase(0, 0), SlotPhase::Playing);
+
+		QVERIFY(run(QStringLiteral("session.bind_learn"), {{QStringLiteral("action"), QStringLiteral("slot")},
+			{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0}}).ok);
+		bindings->applyNote(LaunchNote{0, 60, true});
+		QVERIFY(bindings->learning().isEmpty());
+		bindings->applyNote(LaunchNote{0, 60, false});
+		scheduler.processAudio(clock, 16);
+		const SlotPhase afterLearnedRelease = scheduler.slotPhase(0, 0);
+		LaunchBindings::disconnect();
+		LaunchBindings::setBindings({});
+		QCOMPARE(afterLearnedRelease, SlotPhase::Playing);
+	}
+
+	//! A hand-edited binding whose channel is invalid (-2, a word, a fraction, or absent) is skipped, not an any-channel
+	//! binding that launches on every channel; a channel 0..15 and -1 still match as they did.
+	void aBindingWithAnInvalidChannelIsSkipped()
+	{
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		Song* song = Engine::getSong();
+		song->clearProject();
+		QVERIFY(Track::create(Track::Type::Instrument, song) != nullptr);
+		QVERIFY(Track::create(Track::Type::Pattern, song) != nullptr);
+		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 1}, {QStringLiteral("scenes"), 6}}).ok);
+		for (int scene = 0; scene < 6; ++scene)
+		{
+			QVERIFY(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0}, {QStringLiteral("scene"), scene},
+				{QStringLiteral("type"), QStringLiteral("midi")}, {QStringLiteral("pattern"), 0},
+				{QStringLiteral("mode"), QStringLiteral("gate")}, {QStringLiteral("quantisation"), QStringLiteral("none")}}).ok);
+		}
+		const auto binding = [](int key, const QJsonValue& channel, int scene) {
+			return QJsonObject{{QStringLiteral("key"), key}, {QStringLiteral("channel"), channel}, {QStringLiteral("action"), QStringLiteral("slot")},
+				{QStringLiteral("track"), 0}, {QStringLiteral("scene"), scene}};
+		};
+		const QJsonObject missingChannel{{QStringLiteral("key"), 65}, {QStringLiteral("action"), QStringLiteral("slot")},
+			{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 5}};
+		LaunchBindings::setBindings(QJsonArray{binding(60, -2, 0), binding(61, QStringLiteral("bad"), 1), binding(62, 3, 2),
+			binding(63, -1.5, 3), binding(64, -1, 4), missingChannel});
+		LaunchBindings* bindings = LaunchBindings::connect(QString(), QString());
+		SessionScheduler& scheduler = song->sessionScheduler();
+		SessionClockContext clock;
+		clock.ticksPerBar = song->ticksPerBar();
+		clock.framesPerTick = 4.0f;
+		clock.transportRunning = true;
+		// All six cells share track 0, where a launch stops the cell it replaces: each note is checked as it lands.
+		bindings->applyNote(LaunchNote{3, 60, true});
+		scheduler.processAudio(clock, 16);
+		QCOMPARE(scheduler.slotPhase(0, 0), SlotPhase::Idle);  // key 60, channel -2: skipped
+		bindings->applyNote(LaunchNote{3, 61, true});
+		scheduler.processAudio(clock, 16);
+		QCOMPARE(scheduler.slotPhase(0, 1), SlotPhase::Idle);  // key 61, channel "bad": skipped
+		bindings->applyNote(LaunchNote{3, 62, true});
+		scheduler.processAudio(clock, 16);
+		QCOMPARE(scheduler.slotPhase(0, 2), SlotPhase::Playing);  // key 62, channel 3: an exact match
+		bindings->applyNote(LaunchNote{3, 63, true});
+		scheduler.processAudio(clock, 16);
+		QCOMPARE(scheduler.slotPhase(0, 3), SlotPhase::Idle);  // key 63, channel -1.5: skipped, so 62 keeps playing
+		QCOMPARE(scheduler.slotPhase(0, 2), SlotPhase::Playing);
+		bindings->applyNote(LaunchNote{5, 64, true});
+		scheduler.processAudio(clock, 16);
+		QCOMPARE(scheduler.slotPhase(0, 4), SlotPhase::Playing);  // key 64, channel -1: any channel
+		bindings->applyNote(LaunchNote{7, 65, true});
+		scheduler.processAudio(clock, 16);
+		QCOMPARE(scheduler.slotPhase(0, 5), SlotPhase::Idle);  // key 65, no channel field: malformed, not any channel
+		QCOMPARE(scheduler.slotPhase(0, 4), SlotPhase::Playing);
+		LaunchBindings::disconnect();
+		LaunchBindings::setBindings({});
 	}
 };
 

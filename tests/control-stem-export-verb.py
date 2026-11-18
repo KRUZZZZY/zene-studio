@@ -58,6 +58,7 @@ Exit code 0 only when every assertion held.
 import itertools
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -257,6 +258,40 @@ def report_results(recorder):
             print("      %s" % evidence)
 
 
+def check_cli_refusal_markers(binary, recorder):
+    """A deliberate CLI refusal must close both process-session markers."""
+    project = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data",
+                           "agent-control-fixture.mmp")
+    cases = [("missing output directory", False),
+             ("uncreatable output directory", True)]
+    for label, blocked_parent in cases:
+        with H.Instance(binary) as instance:
+            arguments = ["exportstems", project]
+            if blocked_parent:
+                parent = os.path.join(instance.tmp, "output-parent-file")
+                with open(parent, "w"):
+                    pass
+                arguments += ["-o", os.path.join(parent, "stems")]
+            command = [instance.binary, "--config", instance.config_path] + arguments
+            try:
+                result = subprocess.run(command, cwd=instance.tmp, env=instance.env(),
+                                        capture_output=True, text=True, timeout=RENDER_TIMEOUT)
+            except subprocess.TimeoutExpired as error:
+                recorder.check("CLI refusal: " + label, False,
+                               "timed out after %.0fs: %s" % (RENDER_TIMEOUT, error))
+                continue
+            session_marker = os.path.join(instance.workspace, "zene-session-open.marker")
+            safe_start_marker = os.path.join(instance.workspace, "zene-safe-start.marker")
+            recorder.check("CLI refusal: " + label, result.returncode == 1,
+                           "exit=%d output=%r" %
+                           (result.returncode, (result.stdout + result.stderr)[-500:]))
+            recorder.check("CLI refusal clears session markers: " + label,
+                           not os.path.exists(session_marker) and
+                           not os.path.exists(safe_start_marker),
+                           "session=%r safe-start=%r" %
+                           (os.path.exists(session_marker), os.path.exists(safe_start_marker)))
+
+
 def run_checks(session, instance, recorder, outdir):
     tracks, names_wanted = build_session(session)
     check_refusals(session, recorder, outdir)
@@ -272,6 +307,7 @@ def main(argv):
         return 2
     recorder = Recorder()
     transcript = H.Transcript()
+    check_cli_refusal_markers(argv[1], recorder)
     with H.start_instance(argv[1]) as instance:
         H.wait_for_socket(instance)
         client = H.connect(instance)

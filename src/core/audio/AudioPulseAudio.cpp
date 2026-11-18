@@ -30,6 +30,7 @@
 #ifdef LMMS_HAVE_PULSEAUDIO
 
 #include "ConfigManager.h"
+#include "CrashReporter.h"
 #include "LcdSpinBox.h"
 #include "AudioEngine.h"
 #include "Engine.h"
@@ -48,6 +49,8 @@ AudioPulseAudio::AudioPulseAudio(bool& _success_ful, AudioEngine* _audioEngine)
 		  _audioEngine)
 	, m_s(nullptr)
 	, m_latency(static_cast<double>(_audioEngine->framesPerAudioBuffer()) / sampleRate())
+	, m_connected(false)
+	, m_connectionReported(false)
 {
 	_success_ful = false;
 
@@ -92,6 +95,7 @@ void AudioPulseAudio::stopProcessingImpl()
 /* This routine is called whenever the stream state changes */
 static void stream_state_callback( pa_stream *s, void * userdata )
 {
+	auto _this = static_cast<AudioPulseAudio*>(userdata);
 	switch( pa_stream_get_state( s ) )
 	{
 		case PA_STREAM_CREATING:
@@ -107,6 +111,9 @@ static void stream_state_callback( pa_stream *s, void * userdata )
 			qCritical( "Stream error: %s\n",
 					pa_strerror(pa_context_errno(
 						pa_stream_get_context( s ) ) ) );
+			// The stream is gone: the device must leave the PulseAudio path
+			// and let the engine render through the fallback.
+			_this->signalConnected(false);
 	}
 }
 
@@ -127,6 +134,13 @@ static void context_state_callback(pa_context *c, void *userdata)
 		{
 			qDebug( "Connection established.\n" );
 			_this->m_s = pa_stream_new( c, "Zene Studio", &_this->m_sampleSpec,  nullptr);
+			if ( _this->m_s == nullptr )
+			{
+				qCritical( "pa_stream_new() failed." );
+				_this->signalConnected( false );
+				break;
+			}
+
 			pa_stream_set_state_callback( _this->m_s, stream_state_callback, _this );
 			pa_stream_set_write_callback( _this->m_s, stream_write_callback, _this );
 
@@ -143,11 +157,13 @@ static void context_state_callback(pa_context *c, void *userdata)
 			// ask PulseAudio for the desired latency (which might not be approved)
 			buffer_attr.tlength = pa_usec_to_bytes(_this->m_latency * PA_USEC_PER_MSEC, &_this->m_sampleSpec);
 
-			pa_stream_connect_playback( _this->m_s, nullptr, &buffer_attr,
+			// A refused connection is a failure, not a connection: the device
+			// has to report it, or it runs on a stream that never played.
+			const int connectResult = pa_stream_connect_playback( _this->m_s, nullptr, &buffer_attr,
 										PA_STREAM_ADJUST_LATENCY,
 										nullptr,	// volume
 										nullptr );
-			_this->signalConnected( true );
+			_this->signalConnected(connectResult >= 0);
 			break;
 		}
 
@@ -166,6 +182,7 @@ static void context_state_callback(pa_context *c, void *userdata)
 
 void AudioPulseAudio::run()
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	pa_mainloop * mainLoop = pa_mainloop_new();
 	if( !mainLoop )
 	{
@@ -178,10 +195,12 @@ void AudioPulseAudio::run()
 	if ( context == nullptr )
 	{
 		qCritical( "pa_context_new() failed." );
+		pa_mainloop_free( mainLoop );
 		return;
 	}
 
 	m_connected = false;
+	m_connectionReported = false;
 
 	pa_context_set_state_callback( context, context_state_callback, this  );
 	// connect the context
@@ -191,16 +210,23 @@ void AudioPulseAudio::run()
 		pa_mainloop_iterate(mainLoop, 1, nullptr);
 	}
 
-	// run the main loop
-	if( m_connected )
+	// Run PulseAudio while the stream stays connected. A stream that fails
+	// clears m_connected in its callback, which sends this worker to the
+	// engine's render fallback.
+	while (AudioDevice::isRunning() && m_connected)
 	{
 		int ret = 0;
-		while (AudioDevice::isRunning() && pa_mainloop_iterate(mainLoop, 1, &ret) >= 0) {}
+		if (pa_mainloop_iterate(mainLoop, 1, &ret) < 0) { m_connected = false; }
+	}
 
+	if (m_s != nullptr)
+	{
 		pa_stream_disconnect( m_s );
 		pa_stream_unref( m_s );
+		m_s = nullptr;
 	}
-	else
+
+	if (!m_connected)
 	{
 		while (AudioDevice::isRunning())
 		{
@@ -241,11 +267,18 @@ void AudioPulseAudio::streamWriteCallback(pa_stream*, size_t)
 
 void AudioPulseAudio::signalConnected( bool connected )
 {
-	if( !m_connected )
+	// The first answer is the one that starts the device: it releases the
+	// startup semaphore. A later answer (a stream that failed after the
+	// connection was established) only updates the state, so the worker
+	// leaves the PulseAudio path instead of releasing the semaphore twice.
+	if (!m_connectionReported)
 	{
+		m_connectionReported = true;
 		m_connected = connected;
 		m_connectedSemaphore.release();
+		return;
 	}
+	m_connected = connected;
 }
 
 

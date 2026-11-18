@@ -443,7 +443,8 @@ void registerMidiRetroCaptureToClip(ControlRegistry& registry)
 		windowBounds(snapshot.events, &windowStart, &windowEnd);
 		windowStart = std::max<tick_t>(0, windowStart);
 		windowEnd = std::max(windowStart, windowEnd);
-		const tick_t length = clipLengthFor(args, windowStart, windowEnd);
+		const tick_t captureEnd = std::max(windowStart, RetroMidiCapture::publishedTick());
+		const tick_t length = clipLengthFor(args, windowStart, std::max(windowEnd, captureEnd));
 
 		const int clipCount = track->numOfClips();
 		// TrackContentWidget::mousePressEvent checkpoints the track and then calls
@@ -451,7 +452,7 @@ void registerMidiRetroCaptureToClip(ControlRegistry& registry)
 		track->addJournalCheckPoint();
 		MidiClip* clip = static_cast<MidiClip*>(instrumentTrack->createClip(TimePos(windowStart)));
 		const RetroMidiClipWrite written = writeWindowToClip(clip, snapshot.events.data(),
-			snapshot.events.size(), windowStart);
+			snapshot.events.size(), windowStart, captureEnd);
 		// The length is set AFTER the notes: MidiClip::addNote() calls
 		// updateLength(), which would shrink a fresh auto-resizing clip to its
 		// notes. An explicit length is a manually resized clip, exactly as

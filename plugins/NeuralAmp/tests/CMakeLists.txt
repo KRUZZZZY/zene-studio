@@ -15,10 +15,30 @@
 #                (Linux only: interposes malloc/calloc/realloc/free with ld
 #                --wrap and replaces global operator new/delete).
 
+include(CTest)
+
 SET(NEURALAMP_ENGINE_SOURCES
 	"${CMAKE_CURRENT_SOURCE_DIR}/../nam/NamModel.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../nam/NamModelLoader.cpp"
 )
+
+# The harness's CPU measurement must not name a platform clock in its own translation unit:
+# on Windows, <time.h> includes winpthreads' <pthread_time.h>, whose inline clock_gettime()
+# calls clock_gettime64() - a symbol the MSYS2 clangarm64 link line does not resolve
+# (cluster ci-443a2931bcb5dacc: "undefined symbol: clock_gettime64" at link).
+# One implementation per platform, selected here; HarnessClock.h is the only interface.
+IF(WIN32)
+	SET(NEURALAMP_HARNESS_CLOCK_SOURCE
+		"${CMAKE_CURRENT_SOURCE_DIR}/HarnessClockWindows.cpp")
+ELSE()
+	SET(NEURALAMP_HARNESS_CLOCK_SOURCE
+		"${CMAKE_CURRENT_SOURCE_DIR}/HarnessClockPosix.cpp")
+ENDIF()
+
+# NeuralAmpWavInputTest #includes nam_harness.cpp, so tests/CMakeLists.txt compiles the
+# harness's clock interface too; it reads the same choice from here.
+SET_PROPERTY(GLOBAL PROPERTY ZENE_NAM_HARNESS_CLOCK_SOURCE
+	"${NEURALAMP_HARNESS_CLOCK_SOURCE}")
 
 SET(NEURALAMP_TEST_INCLUDES
 	"${CMAKE_CURRENT_SOURCE_DIR}/.."
@@ -28,10 +48,15 @@ SET(NEURALAMP_TEST_INCLUDES
 
 # The same engine options as the plugin target so measurements describe the
 # code that actually ships in libneuralamp.so.
-SET(NEURALAMP_ENGINE_OPTIONS $<$<CONFIG:Debug>:-O2>)
+SET(NEURALAMP_ENGINE_OPTIONS $<$<CONFIG:Debug>:-O2>
+	# As for the plugin target (../CMakeLists.txt): vendored Eigen's NEON kernels trip this on
+	# aarch64, and -DUSE_WERROR must not turn a diagnostic in unmodified vendored code into an error.
+	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-Wno-error=deprecated-enum-enum-conversion>")
 
 ADD_EXECUTABLE(nam_harness EXCLUDE_FROM_ALL
 	nam_harness.cpp
+	HarnessClock.h
+	${NEURALAMP_HARNESS_CLOCK_SOURCE}
 	${NEURALAMP_ENGINE_SOURCES}
 )
 # libm is a Unix convention — MSVC keeps the math routines in the CRT, so asking for m.lib
@@ -46,19 +71,41 @@ TARGET_COMPILE_FEATURES(nam_harness PRIVATE cxx_std_20)
 TARGET_COMPILE_OPTIONS(nam_harness PRIVATE ${NEURALAMP_ENGINE_OPTIONS})
 TARGET_LINK_LIBRARIES(nam_harness PRIVATE ${NEURALAMP_M_LIB} ${CMAKE_DL_LIBS})
 
+# Keep the cases beside their harness and mirror them into the main test tree,
+# which is where the project's targeted CTest command runs.
+SET(NAM_LOADER_TEST_CASES
+	valid
+	dilation-zero
+	dilation-negative
+	dilation-overflow
+	receptive-total-overflow
+	channels-zero
+	bottleneck-zero
+	head-size-zero
+)
+SET_PROPERTY(GLOBAL PROPERTY ZENE_NAM_LOADER_TEST_CASES "${NAM_LOADER_TEST_CASES}")
+FOREACH(NAM_LOADER_TEST_CASE IN LISTS NAM_LOADER_TEST_CASES)
+	ADD_TEST(NAME "NamLoaderTest_${NAM_LOADER_TEST_CASE}"
+		COMMAND nam_harness --test-loader-config "${NAM_LOADER_TEST_CASE}")
+ENDFOREACH()
+
 # Stage-level CPU profile of the engine. NAM_PROFILE_LAYERS is defined for this
 # target only: it turns the NAM_PROF_* hooks in NamModel.cpp into per-stage
 # CLOCK_THREAD_CPUTIME_ID accumulators. The plugin and nam_harness builds do not
 # define it, so their code is unchanged.
-ADD_EXECUTABLE(nam_profile EXCLUDE_FROM_ALL
-	nam_profile.cpp
-	${NEURALAMP_ENGINE_SOURCES}
-)
-TARGET_INCLUDE_DIRECTORIES(nam_profile PRIVATE ${NEURALAMP_TEST_INCLUDES})
-TARGET_COMPILE_FEATURES(nam_profile PRIVATE cxx_std_20)
-TARGET_COMPILE_OPTIONS(nam_profile PRIVATE ${NEURALAMP_ENGINE_OPTIONS})
-TARGET_COMPILE_DEFINITIONS(nam_profile PRIVATE NAM_PROFILE_LAYERS)
-TARGET_LINK_LIBRARIES(nam_profile PRIVATE ${NEURALAMP_M_LIB} ${CMAKE_DL_LIBS})
+# POSIX only: the accumulators read clock_gettime(CLOCK_THREAD_CPUTIME_ID), which Windows
+# lacks. tests/CMakeLists.txt builds NeuralAmpProfileArgumentsTest only if(TARGET nam_profile).
+IF(NOT WIN32)
+	ADD_EXECUTABLE(nam_profile EXCLUDE_FROM_ALL
+		nam_profile.cpp
+		${NEURALAMP_ENGINE_SOURCES}
+	)
+	TARGET_INCLUDE_DIRECTORIES(nam_profile PRIVATE ${NEURALAMP_TEST_INCLUDES})
+	TARGET_COMPILE_FEATURES(nam_profile PRIVATE cxx_std_20)
+	TARGET_COMPILE_OPTIONS(nam_profile PRIVATE ${NEURALAMP_ENGINE_OPTIONS})
+	TARGET_COMPILE_DEFINITIONS(nam_profile PRIVATE NAM_PROFILE_LAYERS)
+	TARGET_LINK_LIBRARIES(nam_profile PRIVATE ${NEURALAMP_M_LIB} ${CMAKE_DL_LIBS})
+ENDIF()
 
 IF(UNIX AND NOT APPLE)
 	ADD_EXECUTABLE(rt_alloc_probe EXCLUDE_FROM_ALL

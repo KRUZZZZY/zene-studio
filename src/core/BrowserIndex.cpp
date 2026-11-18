@@ -25,6 +25,10 @@
 #include "BrowserIndex.h"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
+#include <memory>
+#include <vector>
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -42,6 +46,7 @@
 
 #include "ConfigManager.h"
 #include "ImportDetection.h"
+#include "ImportDetectionDsp.h"
 #include "TaskCenter.h"
 
 namespace lmms
@@ -52,6 +57,40 @@ namespace
 
 constexpr int ProgressEvery = 64;
 
+bool finiteFeatureNumber(const QJsonObject& o, const QString& key, double* value)
+{
+	const QJsonValue field = o.value(key);
+	if (!field.isDouble()) { return false; }
+	*value = field.toDouble();
+	return std::isfinite(*value);
+}
+
+bool inFeatureRange(double value, double minimum, double maximum)
+{
+	return value >= minimum && value <= maximum;
+}
+
+bool validFeatureTempo(double bpm)
+{
+	return bpm == 0.0 || inFeatureRange(bpm, detection::MinDetectionBpm, detection::MaxDetectionBpm);
+}
+
+bool validFeatureKey(double key)
+{
+	return key == -1.0 || (inFeatureRange(key, 0.0, 11.0) && std::floor(key) == key);
+}
+
+bool validFeatureValues(const BrowserFeatures& f, double key)
+{
+	if (!inFeatureRange(f.durationSeconds, std::numeric_limits<double>::min(),
+		static_cast<double>(std::numeric_limits<std::size_t>::max()))) { return false; }
+	if (!inFeatureRange(f.loudnessDb, -120.0, 20.0 * std::log10(std::numeric_limits<float>::max()))) { return false; }
+	if (!inFeatureRange(f.centroidHz, 0.0, std::numeric_limits<int>::max() / 2.0)) { return false; }
+	if (!inFeatureRange(f.zeroCrossings, 0.0, std::numeric_limits<int>::max())) { return false; }
+	if (!validFeatureTempo(f.bpm)) { return false; }
+	return validFeatureKey(key);
+}
+
 QJsonObject featuresJson(const BrowserFeatures& f)
 {
 	return {{QStringLiteral("dur"), f.durationSeconds}, {QStringLiteral("db"), f.loudnessDb}, {QStringLiteral("cent"), f.centroidHz},
@@ -61,13 +100,16 @@ QJsonObject featuresJson(const BrowserFeatures& f)
 BrowserFeatures featuresFrom(const QJsonObject& o)
 {
 	BrowserFeatures f;
-	f.valid = !o.isEmpty();
-	f.durationSeconds = o.value(QStringLiteral("dur")).toDouble();
-	f.loudnessDb = o.value(QStringLiteral("db")).toDouble(-120.0);
-	f.centroidHz = o.value(QStringLiteral("cent")).toDouble();
-	f.zeroCrossings = o.value(QStringLiteral("zcr")).toDouble();
-	f.bpm = o.value(QStringLiteral("bpm")).toDouble();
-	f.keyPitchClass = o.value(QStringLiteral("key")).toInt(-1);
+	double key = -1.0;
+	if (!finiteFeatureNumber(o, QStringLiteral("dur"), &f.durationSeconds)
+		|| !finiteFeatureNumber(o, QStringLiteral("db"), &f.loudnessDb)
+		|| !finiteFeatureNumber(o, QStringLiteral("cent"), &f.centroidHz)
+		|| !finiteFeatureNumber(o, QStringLiteral("zcr"), &f.zeroCrossings)
+		|| !finiteFeatureNumber(o, QStringLiteral("bpm"), &f.bpm)
+		|| !finiteFeatureNumber(o, QStringLiteral("key"), &key)
+		|| !validFeatureValues(f, key)) { return f; }
+	f.keyPitchClass = static_cast<int>(key);
+	f.valid = true;
 	return f;
 }
 
@@ -124,17 +166,64 @@ BrowserIndexEntry entryOf(const QFileInfo& info, const QString& path, Walk* walk
 
 //! Count the file @a info and add it to the walk - once, however many roots hold it - unless the walk
 //! is full: then it is truncated (a file past the limit, so exactly MaxEntries files is not truncated).
-void admit(const QFileInfo& info, Walk* walk)
+//! Returns true when it counted the file, so the walk's progress moved.
+bool admit(const QFileInfo& info, Walk* walk)
 {
 	// Keyed as the tag store keys a file (its canonical path), so an indexed file's tags are found.
 	const QString canonical = info.canonicalFilePath();
 	const QString path = canonical.isEmpty() ? info.absoluteFilePath() : canonical;
 	const bool known = walk->seen.contains(path);
-	if (!known && static_cast<int>(walk->found.size()) >= BrowserIndex::MaxEntries) { walk->status.truncated = true; return; }
+	if (!known && static_cast<int>(walk->found.size()) >= BrowserIndex::MaxEntries) { walk->status.truncated = true; return false; }
 	++walk->status.scanned;
-	if (known) { return; }
+	if (known) { return true; }
 	walk->seen.insert(path);
 	walk->found.push_back(entryOf(info, path, walk));
+	return true;
+}
+
+//! A directory the walk handles itself rather than admitting: an ordinary one, which it enters (a
+//! symlinked one it skips). An LV2 bundle is a directory the library holds as one item: admitted here.
+bool isWalkedDirectory(const QFileInfo& info)
+{
+	return info.isDir() && !browserIsLv2Bundle(info);
+}
+
+//! The listing of \a dir: its files and subdirectories, never a hidden or unreadable entry.
+std::unique_ptr<QDirIterator> openListing(const QString& dir)
+{
+	return std::make_unique<QDirIterator>(dir, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable);
+}
+
+void reportProgress(const Walk& walk, QMutex* mutex, BrowserIndex::Status* status)
+{
+	if (walk.status.scanned % ProgressEvery != 0) { return; }
+	QMutexLocker lock(mutex);
+	status->scanned = walk.status.scanned;
+	status->analysed = walk.status.analysed;
+}
+
+//! Walks \a root depth-first, in the order QDirIterator's Subdirectories walk takes: an ordinary
+//! directory is entered the moment it is met, and its parent's listing resumes when it is done.
+//! One open listing is held per level of descent, so a wide directory is streamed, not buffered.
+//! A symlinked directory is never followed (a loop would never end); an LV2 bundle is one item.
+void walkDirectory(const QString& root, Walk* walk, std::atomic<bool>& cancel,
+	QMutex* mutex, BrowserIndex::Status* status)
+{
+	std::vector<std::unique_ptr<QDirIterator>> open;
+	open.push_back(openListing(root));
+	while (!open.empty() && !cancel.load() && !walk->status.truncated)
+	{
+		QDirIterator* listing = open.back().get();
+		if (!listing->hasNext()) { open.pop_back(); continue; }
+		listing->next();
+		const QFileInfo info = listing->fileInfo();
+		if (isWalkedDirectory(info))
+		{
+			if (!info.isSymLink()) { open.push_back(openListing(info.absoluteFilePath())); }
+			continue;
+		}
+		if (admit(info, walk)) { reportProgress(*walk, mutex, status); }
+	}
 }
 
 } // namespace
@@ -173,11 +262,11 @@ bool BrowserIndex::start(const QStringList& dirs, bool features)
 		&& QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, [] { BrowserIndex::instance().cancel(); });
 	Q_UNUSED(stopsOnQuit)
 	// 0.5.0 theme 24: a background scan is listed in the task area, with this scan's own cancel.
-	TaskCenter::instance().begin(this, 0, {QStringLiteral("index"), QObject::tr("Index the library"), [] { BrowserIndex::instance().cancel(); },
-		{}, false});
-	QThreadPool::globalInstance()->start([this, dirs, features] {
+	const TaskToken taskToken = TaskCenter::instance().begin(this, 0, {QStringLiteral("index"), QObject::tr("Index the library"),
+		[] { BrowserIndex::instance().cancel(); }, {}, false});
+	QThreadPool::globalInstance()->start([this, dirs, features, taskToken] {
 		scan(dirs, features, MaxAnalysed);
-		reportScanEnd();
+		reportScanEnd(taskToken);
 	});
 	return true;
 }
@@ -202,16 +291,7 @@ void BrowserIndex::scan(const QStringList& dirs, bool features, int maxAnalysed)
 	}
 	for (const QString& dir : dirs)
 	{
-		QDirIterator it(dir, QDir::Files | QDir::Readable, QDirIterator::Subdirectories);
-		while (it.hasNext() && !m_cancel.load() && !walk.status.truncated)
-		{
-			it.next();
-			admit(it.fileInfo(), &walk);
-			if (walk.status.scanned % ProgressEvery != 0) { continue; }
-			QMutexLocker lock(&m_mutex);
-			m_status.scanned = walk.status.scanned;
-			m_status.analysed = walk.status.analysed;
-		}
+		walkDirectory(dir, &walk, m_cancel, &m_mutex, &m_status);
 	}
 	std::sort(walk.found.begin(), walk.found.end(), [](const BrowserIndexEntry& a, const BrowserIndexEntry& b) { return a.path < b.path; });
 	walk.status.running = false;
@@ -226,16 +306,22 @@ void BrowserIndex::scan(const QStringList& dirs, bool features, int maxAnalysed)
 		m_status.error = QStringLiteral("the scan was cancelled; the previous index is kept");
 		return;
 	}
-	walk.status.error = saved ? QString() : QStringLiteral("the index could not be written to %1").arg(storePath());
+	if (!saved)
+	{
+		// Not published: the entries were not written, so queries keep the index the store still holds.
+		m_status.running = false;
+		m_status.error = QStringLiteral("the index could not be written to %1; the previous index is kept").arg(storePath());
+		return;
+	}
 	m_entries = std::move(walk.found);
 	m_status = walk.status;
 }
 
-void BrowserIndex::reportScanEnd()
+void BrowserIndex::reportScanEnd(const TaskToken& token)
 {
 	const Status ended = status();
 	const TaskState state = m_cancel.load() ? TaskState::Cancelled : ended.error.isEmpty() ? TaskState::Done : TaskState::Failed;
-	TaskCenter::instance().finish(this, 0, state, state == TaskState::Done ? QObject::tr("%n file(s)", "", ended.entries) : ended.error);
+	TaskCenter::instance().finish(token, state, state == TaskState::Done ? QObject::tr("%n file(s)", "", ended.entries) : ended.error);
 }
 
 BrowserIndex::Status BrowserIndex::status() const
@@ -297,6 +383,20 @@ bool BrowserIndex::save(const std::vector<BrowserIndexEntry>& entries, const Sta
 	if (!file.open(QIODevice::WriteOnly)) { return false; }
 	file.write(QJsonDocument(all).toJson(QJsonDocument::Compact));
 	return file.commit();
+}
+
+QHash<QString, BrowserFeatures> browserMeasuredFeatures()
+{
+	// One copy, taken while entries() holds the lock and kept after it releases:
+	// a search must never hold the index's mutex across a filesystem walk (a
+	// background scan needs it to publish). Only measured entries are included: a
+	// file the index holds no measurement for stays unknown to a tempo/key filter.
+	QHash<QString, BrowserFeatures> out;
+	for (const BrowserIndexEntry& entry : BrowserIndex::instance().entries())
+	{
+		if (entry.features.valid) { out.insert(entry.path, entry.features); }
+	}
+	return out;
 }
 
 } // namespace lmms

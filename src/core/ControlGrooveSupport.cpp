@@ -296,18 +296,27 @@ void addMoveCounts(const NoteSnapshot& before, const MidiClip& clip, QJsonObject
 {
 	int movedPositions = 0;
 	int movedVelocities = 0;
+	int movedNotes = 0;
 	const NoteVector& notes = clip.notes();
 	const std::size_t count = std::min(before.positions.size(), notes.size());
 	for (std::size_t index = 0; index < count; ++index)
 	{
 		const Note* note = notes[index];
 		if (note == nullptr) { continue; }
-		if (note->pos().getTicks() != before.positions[index]) { ++movedPositions; }
-		if (static_cast<int>(note->getVolume()) != before.velocities[index]) { ++movedVelocities; }
+		const bool positionMoved = note->pos().getTicks() != before.positions[index];
+		const bool velocityMoved = static_cast<int>(note->getVolume()) != before.velocities[index];
+		if (positionMoved) { ++movedPositions; }
+		if (velocityMoved) { ++movedVelocities; }
+		// notes_moved is the number of NOTES that moved, not the larger of the
+		// two counts above: one note can move its position while a different one
+		// moves its velocity, and taking the maximum of the two would report one
+		// note where two notes changed. A note that moved either way is counted
+		// once, and one that moved both ways is still one note.
+		if (positionMoved || velocityMoved) { ++movedNotes; }
 	}
 	out->insert(QStringLiteral("positions_moved"), movedPositions);
 	out->insert(QStringLiteral("velocities_moved"), movedVelocities);
-	out->insert(QStringLiteral("notes_moved"), std::max(movedPositions, movedVelocities));
+	out->insert(QStringLiteral("notes_moved"), movedNotes);
 }
 
 

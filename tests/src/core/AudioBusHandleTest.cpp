@@ -24,7 +24,9 @@
 
 #include <QtTest>
 
+#include <cstring>
 #include <limits>
+#include <new>
 
 #include "AudioBus.h"
 #include "AudioBusHandle.h"
@@ -127,6 +129,35 @@ private slots:
 	void cleanupTestCase()
 	{
 		lmms::Engine::destroy();
+	}
+
+	//! A default-constructed play handle must have no bus until one is assigned.
+	void unsetAudioBusHandleIsNull()
+	{
+		using namespace lmms;
+
+		BufferManager::init(48);
+		alignas(TestPlayHandle) unsigned char storage[sizeof(TestPlayHandle)];
+		std::memset(storage, 0xA5, sizeof(storage));
+		auto* handle = new (storage) TestPlayHandle{};
+
+		QVERIFY(handle->audioBusHandle() == nullptr);
+
+		handle->~TestPlayHandle();
+	}
+
+	void audioBusHandleDefaultsToNull()
+	{
+		using namespace lmms;
+
+		BufferManager::init(48);
+		alignas(TestPlayHandle) unsigned char storage[sizeof(TestPlayHandle)];
+		std::memset(storage, 0xA5, sizeof(storage));
+		auto* handle = ::new (static_cast<void*>(storage)) TestPlayHandle;
+		const bool hasNoBusHandle = handle->audioBusHandle() == nullptr;
+		handle->~TestPlayHandle();
+
+		QVERIFY(hasNoBusHandle);
 	}
 
 	//! Mix a 48-frame stereo block through an AudioBusHandle and verify that

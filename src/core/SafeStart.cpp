@@ -58,6 +58,8 @@
 #include <algorithm>
 #include <cstdlib>
 #include <ctime>
+#include <mutex>
+#include <utility>
 
 #ifndef Q_OS_WIN
 #include <unistd.h>
@@ -77,6 +79,18 @@ struct State
 	bool installed = false;
 	//! Snapshot of "a marker was on disk" taken at beginSession().
 	bool markerWasPresent = false;
+	//! Latched at beginSession(): "a marker was on disk" for the run that just
+	//! ended. Unlike markerWasPresent, clear() and endSession() never mutate it,
+	//! so previousRunExitedCleanly() keeps answering about the PREVIOUS run for
+	//! the whole session: the marker found at beginSession() is a fact, not a
+	//! switch this session can lift.
+	bool previousRunMarkerFound = false;
+	//! Has beginSession() run yet? Before it, the marker on disk still belongs
+	//! to the PREVIOUS run, so the disk itself answers the previous-run question.
+	bool sessionBegun = false;
+	//! install() is repeated once during GUI startup; the matching next
+	//! beginSession() must keep the first read for this process.
+	bool preserveSessionOnNextBegin = false;
 	//! True when this session must skip third-party plugin instances.
 	bool safeStart = false;
 	//! Consecutive safe starts, 1 for the first one after the crash.
@@ -87,6 +101,10 @@ struct State
 	//! THIS session's own project, recorded in the marker this session writes.
 	std::string projectPath;
 	std::vector<SkippedInstance> skipped;
+	//! Plugins this session is inside (innermost last); the marker names the last.
+	std::vector<ActivePlugin> active;
+	std::function<void(const ActivePlugin&)> activePluginObserver;
+	std::mutex activeMutex;
 };
 
 State& state()
@@ -144,8 +162,48 @@ std::string markerText()
 	out += "pid=" + std::to_string(processIdNow()) + "\n";
 	out += "time_unix=" + std::to_string(unixTimeNow()) + "\n";
 	out += "safe_start_runs=" + std::to_string(s.safeStartRuns) + "\n";
+	if (!s.active.empty())
+	{
+		const ActivePlugin& a = s.active.back();
+		out += "active_phase=" + bounded(a.phase, 32) + "\n";
+		out += "active_format=" + bounded(a.format, 32) + "\n";
+		out += "active_plugin=" + bounded(a.name, 128) + "\n";
+				out += "active_file=" + bounded(a.file, 400) + "\n";
+	}
+	// Last, so the 1 KiB cap trims the project hint (a diagnostic) before it
+	// can trim the field that identifies a crashing plug-in.
 	out += "project=" + bounded(s.projectPath, kMaxProjectPathBytes) + "\n";
 	return out;
+}
+
+//! Apply one key=value line to the record. A field that does not parse stays at
+//! its default; the marker as a whole is still "the previous run did not exit
+//! cleanly". Bounded HERE, not only when the marker is written: the file on disk
+//! is not necessarily one this build wrote (an older build, a packager's wrapper,
+//! a hand-edited marker), and SessionRecord promises strings bounded on read as
+//! well as on write (include/SafeStart.h). Measured by
+//! SafeStartTest::boundsTheMarkerCannotExceedItsCap, which plants an 8 KiB
+//! project= line.
+void applyMarkerField(SessionRecord& record, const std::string& key, const std::string& value)
+{
+	try
+	{
+		if (key == "pid") { record.processId = std::stoull(value); }
+		else if (key == "time_unix") { record.unixTime = std::stoull(value); }
+		else if (key == "safe_start_runs") { record.safeStartRuns = std::stoull(value); }
+		else if (key == "active_phase") { record.activePlugin.phase = bounded(value, 32); }
+		else if (key == "active_format") { record.activePlugin.format = bounded(value, 32); }
+		else if (key == "active_plugin") { record.activePlugin.name = bounded(value, 128); }
+		else if (key == "active_file")
+		{
+			record.activePlugin.file = bounded(value, 400);
+			record.activePlugin.present = !record.activePlugin.file.empty();
+		}
+		else if (key == "project") { record.projectPath = bounded(value, kMaxProjectPathBytes); }
+	}
+	catch (const std::exception&)
+	{
+	}
 }
 
 //! Parse a marker. Tolerant by contract: a line that is not understood is
@@ -162,31 +220,7 @@ SessionRecord parseMarker(const std::string& text)
 		const std::size_t end = text.find('\n', start);
 		const std::string line = text.substr(start, end == std::string::npos ? std::string::npos : end - start);
 		const std::size_t eq = line.find('=');
-		if (eq != std::string::npos)
-		{
-			const std::string key = line.substr(0, eq);
-			const std::string value = line.substr(eq + 1);
-			try
-			{
-				if (key == "pid") { record.processId = std::stoull(value); }
-				else if (key == "time_unix") { record.unixTime = std::stoull(value); }
-				else if (key == "safe_start_runs") { record.safeStartRuns = std::stoull(value); }
-				// Bounded HERE, not only when the marker is written: the file
-				// on disk is not necessarily one this build wrote (an older
-				// build, a packager's wrapper, a hand-edited marker), and
-				// SessionRecord promises strings bounded on read as well as on
-				// write (include/SafeStart.h). Measured by
-				// SafeStartTest::boundsTheMarkerCannotExceedItsCap, which
-				// plants an 8 KiB project= line: readMarker()'s byte cap alone
-				// still admitted a hint larger than kMaxProjectPathBytes.
-				else if (key == "project") { record.projectPath = bounded(value, kMaxProjectPathBytes); }
-			}
-			catch (const std::exception&)
-			{
-				// A field that does not parse stays at its default; the marker
-				// as a whole is still "the previous run did not exit cleanly".
-			}
-		}
+		if (eq != std::string::npos) { applyMarkerField(record, line.substr(0, eq), line.substr(eq + 1)); }
 		if (end == std::string::npos) { break; }
 		start = end + 1;
 	}
@@ -250,12 +284,53 @@ bool writeAcknowledged(const std::string& path)
 bool install(const std::string& workingDirectory)
 {
 	State& s = state();
-	s.installed = false;
-	s.directory.clear();
-	if (workingDirectory.empty()) { return false; }
+	auto resetInstall = [&s]()
+	{
+		s.installed = false;
+		s.directory.clear();
+		// A fresh install is a fresh session context, even when it fails: the
+		// safe-start decision of the session that no longer exists must not
+		// outlive it. The previous-run record (lastSession) is history and stays.
+		s.sessionBegun = false;
+		s.preserveSessionOnNextBegin = false;
+		s.markerWasPresent = false;
+		s.safeStart = false;
+		s.safeStartRuns = 0;
+		s.skipEnabled = true;
+		s.projectPath.clear();
+		s.skipped.clear();
+	};
+	if (workingDirectory.empty())
+	{
+		resetInstall();
+		return false;
+	}
 	const QFileInfo info(QString::fromStdString(workingDirectory));
-	if (!info.exists() || !info.isDir()) { return false; }
-	s.directory = QDir::cleanPath(info.absoluteFilePath()).toStdString();
+	if (!info.exists() || !info.isDir())
+	{
+		resetInstall();
+		return false;
+	}
+	const std::string directory = QDir::cleanPath(info.absoluteFilePath()).toStdString();
+	if (s.installed && s.sessionBegun && directory == s.directory)
+	{
+		// main() installs and begins SafeStart before GuiApplication, then repeats
+		// both calls after GuiApplication may have created the same directory.
+		// Keep the first read if the marker is still this process's own session
+		// marker. A different pid means this call models a new process/session.
+		const SessionRecord marker = readMarker(directory + "/" + kMarkerName);
+		if (!marker.present || marker.processId == processIdNow())
+		{
+			s.preserveSessionOnNextBegin = true;
+			return true;
+		}
+	}
+
+	// A fresh install is a fresh session context, whether it succeeds or not:
+	// even a FAILED install must not leave a stale session snapshot behind from
+	// a session that no longer exists.
+	resetInstall();
+	s.directory = directory;
 	s.installed = true;
 	return true;
 }
@@ -271,11 +346,22 @@ std::string acknowledgedPath() { return fileInDirectory(kAcknowledgedName); }
 void beginSession()
 {
 	State& s = state();
+	if (s.preserveSessionOnNextBegin)
+	{
+		s.preserveSessionOnNextBegin = false;
+		return;
+	}
 	s.skipped.clear();
+	{
+		const std::lock_guard<std::mutex> lock(s.activeMutex);
+		s.active.clear();
+	}
 	s.safeStartRuns = 0;
 	s.safeStart = false;
 	s.markerWasPresent = false;
+	s.previousRunMarkerFound = false;
 	s.skipEnabled = true;
+	s.sessionBegun = true;
 	if (!s.installed) { return; }
 
 	const std::string marker = markerPath();
@@ -284,6 +370,9 @@ void beginSession()
 	// READ what the previous run left, before this session's marker replaces it.
 	s.previous = readMarker(marker);
 	s.markerWasPresent = s.previous.present;
+	// The latched half: the previous-run STATUS, which nothing in this session
+	// may rewrite - clear() lifts safe-start state, not history.
+	s.previousRunMarkerFound = s.previous.present;
 
 	// CONSUME the acknowledgement: it only ever meant "the NEXT launch is a
 	// normal one", so it is removed as it is read. A decision taken about one
@@ -321,6 +410,11 @@ void endSession()
 	s.safeStart = false;
 	s.safeStartRuns = 0;
 	s.projectPath.clear();
+	// The session is over: the lifecycle state goes back, so the disk answers
+	// the previous-run question for the NEXT launch again - and the disk is
+	// clean, because the marker was just unlinked above.
+	s.sessionBegun = false;
+	s.preserveSessionOnNextBegin = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -331,7 +425,17 @@ bool markerExists() { return pathExists(markerPath()); }
 
 bool acknowledged() { return pathExists(acknowledgedPath()); }
 
-bool previousRunExitedCleanly() { return !markerExists(); }
+bool previousRunExitedCleanly()
+{
+	// Before beginSession() the marker on disk still belongs to the PREVIOUS
+	// run, so the disk itself is the answer. After it, this session's own
+	// marker has replaced that one and only the result latched at beginSession()
+	// still describes the run that just ended - and nothing in this session
+	// (clear(), endSession()) rewrites that latch while the session lives.
+	const State& s = state();
+	if (!s.sessionBegun) { return !markerExists(); }
+	return !s.previousRunMarkerFound;
+}
 
 bool safeStartActive() { return state().safeStart; }
 
@@ -353,9 +457,71 @@ void setProjectPath(const std::string& path)
 	writeMarker(markerPath(), markerText());
 }
 
+bool beginActivePlugin(const std::string& phase, const std::string& name,
+	const std::string& file, const std::string& format)
+{
+	State& s = state();
+	if (!s.installed || file.empty() || !isThirdPartyPluginFile(file)) { return false; }
+	ActivePlugin entry;
+	entry.present = true;
+	entry.phase = phase;
+	entry.name = name;
+	entry.file = file;
+	entry.format = format;
+	std::function<void(const ActivePlugin&)> observer;
+	{
+		const std::lock_guard<std::mutex> lock(s.activeMutex);
+		s.active.push_back(entry);
+		observer = s.activePluginObserver;
+		// Only an existing marker is rewritten: this must never create crash state.
+		if (markerExists()) { writeMarker(markerPath(), markerText()); }
+	}
+	if (observer) { observer(entry); }
+	return true;
+}
+
+void endActivePlugin()
+{
+	State& s = state();
+	if (!s.installed) { return; }
+	const std::lock_guard<std::mutex> lock(s.activeMutex);
+	if (s.active.empty()) { return; }
+	s.active.pop_back();
+	if (markerExists()) { writeMarker(markerPath(), markerText()); }
+}
+
+ActivePlugin currentActivePlugin()
+{
+	State& s = state();
+	const std::lock_guard<std::mutex> lock(s.activeMutex);
+	return s.active.empty() ? ActivePlugin() : s.active.back();
+}
+
+void setActivePluginObserverForTests(std::function<void(const ActivePlugin&)> observer)
+{
+	State& s = state();
+	const std::lock_guard<std::mutex> lock(s.activeMutex);
+	s.activePluginObserver = std::move(observer);
+}
+
+ActivePlugin crashSuspect()
+{
+	const State& s = state();
+	if (!s.previousRunMarkerFound) { return ActivePlugin(); }
+	return s.previous.activePlugin;
+}
+
 void acknowledge()
 {
-	if (!state().installed) { return; }
+	State& s = state();
+	// The offer of a normal start is made in a SAFE session and nowhere else
+	// (the stderr line main() prints and the `offer` block safestart.get_state
+	// reports are both gated on safeStartActive()), so the acknowledgement is
+	// only ever written there. In an ordinary session it would be consumed by
+	// the NEXT launch, and it would hide the crash marker that launch finds:
+	// that launch would start NORMAL, with the third-party plug-in that killed
+	// this one.
+	if (!s.installed || !s.safeStart) { return; }
 	// The marker STAYS: the crash is still there to look at, and the record of
 	// which session died is still on disk for the next launch's report. Only the
 	// decision is recorded here.
@@ -445,7 +611,7 @@ bool shouldSkipPluginInstance(const std::string& pluginName, const std::string& 
 {
 	(void) pluginName;
 	const State& s = state();
-	if (!s.safeStart || !s.skipEnabled) { return false; }
+	if (!s.installed || !s.safeStart || !s.skipEnabled) { return false; }
 	return isThirdPartyPluginFile(filePath);
 }
 

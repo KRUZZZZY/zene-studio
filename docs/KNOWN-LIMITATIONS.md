@@ -89,15 +89,13 @@ that is this page's fault — report it and it gets added.
   content, `<bus>` and `<sidechain-send>` routing, `prefader` flags, slide data. Silently is the operative
   word: you get a project that looks fine and is missing content. **Do not open a 0.2 project in an older
   build.** If you must, open a *copy* and compare.
-- **The Session View is in the 0.3.0-alpha builds, and there is still no way to operate it from the
-  interface.** From 0.3.0 `WANT_SESSION_VIEW` **defaults ON**, so the data layer, the launch scheduler and the
-  `session.*` control-surface group are in the release builds. The honest limits, because the option's value is
-  not the claim: there is **no clip launcher, no scene launcher and no clip grid** — no UI at all — and a
-  launched session slot **does not render audio**, because this tree has no session-clip playback path
-  (`src/core/SessionClip.cpp` is serialisation only). An agent can build a grid, launch a clip or a whole
-  scene, and read the launch back through `--control-socket` (`session.get_state`, `session.set_slot`,
-  `session.launch_scene`, ...); a user cannot see or hear any of it. A project containing `<session>` data is
-  also **preserved across a round trip**, which was already fixed in 0.2.1 and is unchanged.
+- **The Session View has no clip launcher, scene launcher or clip grid in the interface.** From 0.3.0
+  `WANT_SESSION_VIEW` **defaults ON**, so the data layer, launch scheduler, MIDI and audio cell playback, and
+  the `session.*` control-surface group are in the release builds. An agent can build a grid, launch a clip
+  or a whole scene, and read the launch back through `--control-socket` (`session.get_state`,
+  `session.set_slot`, `session.launch_scene`, ...); users can hear launched content but cannot see or operate
+  the grid. A project containing `<session>` data is also **preserved across a round trip**, which was already
+  fixed in 0.2.1 and is unchanged.
 - **UI absence — one line: the clip-launch grid is drivable through the socket, not from the
   interface.** The grid, its scenes and its slots ARE the `session.*` command group's objects
   (`session.set_grid`, `session.set_scene`, `session.set_slot`, `session.launch_scene`,
@@ -111,22 +109,30 @@ that is this page's fault — report it and it gets added.
   Follow Actions (the session-wide switch, `session.set_follow_actions`), Record to arrangement
   (`session.arrangement_record_arm`), Land the recording (`session.arrangement_record_land`) and Back to
   arrangement (`session.back_to_arrangement`), kept in step with the engine once a second
-  (`SessionTransportBarTest`). Per-cell chain editing is still socket-only. The bullet below is the earlier record.
-- **Follow Actions, Arrangement Record and the Back-to-Arrangement switch are drivable through the
-  socket, not from the interface.** The chain a slot has carried since #594 is now EVALUATED (all ten
-  action types, chance weighting, linked/unlinked timing) and the performance can be recorded into the
-  arrangement ring and landed as timeline clips — through `session.follow_set` /
+  (`SessionTransportBarTest`). Per-cell Follow Action chain editing is **not** socket-only: a cell's (and a
+  scene's) right-click menu has **Follow Action Chain...** (`chainEntry` in `src/gui/SessionGridMenus.cpp`,
+  WF-061), which opens the per-cell chain editor and writes the chain back through `session.set_slot` /
+  `session.set_scene` `follow_actions`. That is separate from the session-wide switch in the grid's own menu
+  (the **Follow Actions** row above, `session.set_follow_actions`), which only arms or clears evaluation for
+  every cell. The bullet below is the earlier record.
+- **Arrangement Record and the Back-to-Arrangement switch are drivable through the socket and through
+  nothing else; Follow Actions themselves are NOT socket-only — the session-wide switch and per-cell
+  chain editing are in the GUI (bullet above).** The chain a slot has carried since #594 is now EVALUATED
+  (all ten action types, chance weighting, linked/unlinked timing) and the performance can be recorded
+  into the arrangement ring and landed as timeline clips — through `session.follow_set` /
   `session.follow_get_state` / `session.arrangement_record_arm` / `_status` / `_land` /
   `session.back_to_arrangement` (2026-09-29, R5.2: and SCENE chains - `session.set_scene follow_actions`
   persists one, `session.scene_follow_set` arms it, and a launched row's chain moves the whole row and
   overrides its cells' chains; `session.set_slot follow_actions` is now how a cell's chain is persisted,
-  which no socket path could do before), and through nothing else: there is **no Follow Action editor, no
-  Arrangement Record button, no take lane and no Back-to-Arrangement light**, and the clip-launch grid
-  (#598) is **out of 0.3.0**. A landed clip carries the recorded **position and length**, not the
-  session slot's notes (`pattern` reports the reference it names), so the "rendered audio matches the
-  session playback" half of the feature's acceptance is **unmet in this tree** — a launched session slot
-  does not render audio at all (the bullet above). `docs/RELEASE-NOTES-v0.3.0-alpha.md` states the same
-  bounds.
+  which no socket path could do before): in the interface, the grid's **Follow Actions** row (the
+  session-wide switch, `SessionTransportBar`) and every cell's/scene's **Follow Action Chain...** entry
+  (`SessionGridMenus`, above) edit what these commands write, while **Arrangement Record** and
+  **Back-to-Arrangement** stay socket-only (no Arrangement Record button, no take lane and no
+  Back-to-Arrangement light), and the clip-launch grid (#598) is **out of 0.3.0**. A landed clip carries
+  the recorded **position, length and copyable content**:
+  MIDI notes are copied to instrument clips and audio cells to sample clips. Incompatible destinations and
+  unreadable audio sources are refused without consuming the recorded performance. The release notes state
+  the same bounds.
 - **A failed save is now reported rather than silent.** If a project cannot be moved aside on save (an existing
   file the platform refuses to rename over), the save is refused **and you are told**, rather than reporting
   success.
@@ -144,6 +150,45 @@ that is this page's fault — report it and it gets added.
 - The project file is now `<zene-project creator="Zene Studio">`. The reader still accepts the old root, so
   older files open — but the writer only emits the new one.
 
+## Plug-in formats and libraries on Linux — what loads, and what we have tested
+
+*(Added 2026-10-15, Q050-014.)* Format **loading** and third-party **compatibility** are different
+claims, and this page keeps them apart. What this build does is load the formats it is compiled with;
+what it has *tested* is a much smaller set. Read this before you expect a particular plug-in or sample
+library to work.
+
+- **Formats this Linux build loads** — from the interface and the agent surface alike: **VST3** effects and
+  instruments, **CLAP** effects and instruments, **VST2** through Vestige, **LV2**, **LADSPA**,
+  **SoundFont2** and GUS patches, plus the built-in instruments. Format availability varies by platform:
+  this list is the Linux build's, and each platform's build enables its own set — CMake disables VST
+  hosting on Apple builds, so a macOS build has no VST2/Vestige path. Discovery is Linux-native: plug-ins
+  are found in each format's standard folders and in your own (`plugin.paths_get` /
+  `plugin.paths_set`), and a scan records every candidate file.
+- **SFZ instruments play in the built-in SFZ Player** (Q050-484; the sfizz engine, built into the module on every
+  platform, with libsndfile as the only outside dependency). Velocity layers, round robins and key switches are
+  tested; **only the Linux/GCC build has been built and run** - the other platforms' builds are by construction, and a
+  region whose sample file is missing is silently dropped by sfizz. `docs/050-features/Q050-484.md` has the full list.
+- **The GUI location for per-file scan status and quarantine controls is Project tools ▸ Plug-in
+  Modules...** It lists every record the scan holds — its path, its per-file status, its name and the
+  error it failed with — and each row offers **Quarantine...** (with a reason), **Release** and
+  **Rescan**; **Edit ▸ Plugin Quarantine** adds and releases entries too. These are the *same*
+  registrations an agent drives: `plugin.scan_cache_list`, `plugin.scan_cache_quarantine_add`,
+  `plugin.scan_cache_quarantine_remove` and `plugin.rescan`.
+- **Third-party compatibility is unverified except for what `docs/PLUGIN-COMPATIBILITY.md` measures.**
+  That page is the measured matrix of named third-party VST3, CLAP and LV2 plug-ins (a pinned package and file
+  hash each) run on one Linux system, with load, editor and state round-trip as separate outcomes and every
+  failure listed; its in-tree fixtures section is a separate set. Beyond the fixtures in the source tree
+  (`tests/data/vst3-test-instrument/` and the CLAP test modules) and those matrix rows, **no other third-party
+  plug-in has been tested by us**. A file the scan finds and loads may still behave differently — that is
+  untested, not claimed.
+- **No verified bridge for Windows plug-ins.** There is no tested Wine/`yabridge` path: a Windows-only
+  VST that needs a bridge has not been run here and is not supported.
+- **Kontakt-scale libraries are external.** **SoundFont2** is a supported sampled-instrument format and
+  is what a Linux user can rely on from this build; a **Kontakt** library is not. Kontakt needs Native
+  Instruments' own installer and authorization, which live outside this project, and this build ships
+  **no Kontakt runtime and has verified no Kontakt library**. A hosted plug-in that happens to load a
+  library is the same unverified third-party case as above.
+
 ## What this alpha cannot do at all
 
 - **CLAP hosting is in the release on every platform — this bullet said the opposite and is corrected.**
@@ -156,6 +201,86 @@ that is this page's fault — report it and it gets added.
   CI-only evidence (the port's §"CLAP hosting on Windows" below), and **no third-party CLAP plug-in has been
   loaded anywhere** — the only modules proven are the MIT fixtures in the source tree.
 
+- *(Corrected 2026-10-07, plugin-hosting lane.)* **Until now no VST3 or CLAP effect could be added to a
+  chain.** The two effect host modules (`vst3effect`, `clapeffect`) never exported `lmms_plugin_main`, the
+  entry point `PluginFactory` requires of every module, so the factory recorded both as "not a plug-in":
+  `plugin.list` carried no VST3 or CLAP effect, the effect pickers offered none, and a project's saved one
+  loaded as a placeholder. Every earlier proof of the effect hosts constructed the classes directly and never
+  went through the factory. Both modules now export it. A class that does not load answers nothing, so the
+  chain keeps a saved one as its placeholder, state intact, as before.
+  `ControlDeviceCatalogueTest::hostedEffectsListAndLoadThroughTheSurface` lists and loads the in-tree VST3
+  and CLAP effect fixtures through the surface. Still true: no third-party effect has been loaded by us.
+- *(Added 2026-10-28, Q050-491.)* **Audio Units (AUv2) are hosted on macOS - and that host has not yet run.** The
+  `aueffect` and `auinstrument` modules (`plugins/AuEffect`, `plugins/AuInstrument`) are built on macOS only; every
+  other build compiles the format out and `plugin.list` has no `au` format there. Discovery is the system component
+  registry, each component recorded in the plug-in scan cache under its own path (`/AudioUnits/<type>/<subtype>/<maker>`)
+  and hidden by a quarantine entry for that path. Stereo in and out only; MIDI SysEx is not passed to an instrument;
+  AUv3 app extensions, side-chain buses, multiple output buses and the unit's factory presets are not offered.
+  **What was proved, and where:**
+  - **Linux (this lane):** `AuComponentTest` (the format-neutral rules: component keys, scan-cache records,
+    quarantine, persistence, typed errors) and the every-build half of `AuHostingTest` (no `au` format, a hand-made AU
+    device refused by name). The macOS sources were checked for syntax only: the seven plain C++ files with GCC against
+    the real headers, and `AuHost.cpp` (Objective-C++) with clang against stub Apple headers. **They have not been
+    compiled against the macOS SDK.**
+  - **Hosted macOS jobs (not yet observed; the lane is not pushed):** the rest of `AuHostingTest` against Apple's
+    AUBandpass, AUDistortion and DLSMusicDevice - listing, scan cache and quarantine, audio through an effect,
+    parameters and automation, state through a file and a project, MIDI to an instrument, the device picker, and the
+    editor button. Under the jobs' offscreen Qt platform the editor is refused by name (no NSView exists there), so the
+    Cocoa view itself is only opened on a real Mac.
+  - **For the owner's Mac mini:** open AUBandpass and DLSMusicDevice editors under the normal (cocoa) platform; play
+    DLSMusicDevice from a MIDI keyboard; load a third-party AU effect and instrument, save, quit, reopen; quarantine a
+    unit in Plug-in Modules and rescan; a project saved there opened on Linux keeps the AU device as a placeholder.
+- *(Added 2026-10-27, Q050-490.)* **VST3 and CLAP editors now try to open on Windows and macOS too.** The host
+  chooses the platform's native window when an editor opens (`include/PluginWindowSystem.h`): VST3 `HWND` /
+  CLAP `win32` on Windows, VST3 `NSView` / CLAP `cocoa` on macOS, and X11 on Linux as before. Before this change
+  every non-X11 view was refused. A plug-in that cannot embed in the platform's window is refused with the platform
+  and window API named (*"cannot embed on macOS (CLAP window API cocoa)"*). No editor is created, so no empty
+  window stays open. A native Wayland session is refused the same way (start with `QT_QPA_PLATFORM=xcb`).
+  **What was proved, and where:**
+  - **Linux:** every test named here was run, including the explicit Windows and macOS cases. `ClapHostTest`,
+    `Vst3EditorTest` and `ClapEffectIntegrationTest` choose the window system themselves, so all three paths
+    run on any machine.
+  - **Windows and macOS, hosted CI:** the hosted macOS, msvc and msys2 jobs build and run `ClapHostTest` and
+    `ClapEffectIntegrationTest` on their own native path. The macOS and msvc jobs now also pass
+    `WANT_VST3_TEST_INSTRUMENT=ON`: the VST3 fixture is laid out per platform (a Windows `.vst3` package with
+    `dllmain.cpp`; a macOS CFBundle with `macmain.cpp` and an `Info.plist`), and `Vst3EditorTest` opens,
+    resizes (host and plug-in), closes and reopens its editor as an `HWND` / `NSView` there. Those hosted runs had
+    **not yet been observed** when this was written, because lanes are not pushed; the Windows and macOS builds of
+    the fixture were not compiled on the Linux box either. The rest of the VST3 fixture suite
+    (`Vst3InstrumentTest`, the probe, the integration cases) still runs on Linux only.
+  - **Still to check on a real machine (the owner's Windows laptop and Mac mini):** a real third-party VST3 and
+    CLAP editor that opens, draws, resizes (host and plug-in), closes and reopens.
+  **Limits:**
+  - **Content scale on macOS:** both APIs use logical points on macOS and the OS applies the screen's factor
+    itself. So a VST3 view there is given the scaled size instead of `setContentScaleFactor`, and a CLAP editor
+    is never sent `set_scale`. `editor_scale` therefore has no effect on a CLAP editor on macOS.
+  - **Plug-in resizes:** a resize the plug-in asks for is granted to the view, but the host window keeps the
+    size it opened at, on every platform (as on X11 before).
+  - **Run loop:** the run loop for editor timers and file descriptors (Linux `IRunLoop`, CLAP fd/timer support) is
+    the same Qt loop on every platform.
+- *(Added 2026-10-07, plugin-hosting lane, MX-094.)* **A VST3 effect's own window now opens at the device's
+  zoom** (`plugin.options editor_scale`, 0.5 to 3), as a CLAP effect's already did. A view that scales itself
+  (`IPlugViewContentScaleSupport`) is told the factor. Any other view that can resize is given the scaled size.
+  A view that can do neither keeps its own size. Limits: the zoom applies when the window opens, not to a window
+  already open. Instruments have no editor-scale option (it is an effect's device option). **LV2 is not
+  covered**: this host does not open an LV2 plug-in's own UI at all (the generic controls only; the "Show GUI"
+  button in `src/gui/Lv2ViewBase.cpp` sits behind `if (false)`), so there is no UI to send `ui:scaleFactor` to, and no
+  LV2 UI fixture exists. Proved offscreen against the in-tree VST3 fixture only; no third-party editor has
+  been zoomed on a real display.
+- *(Added 2026-10-27, Q050-502.)* **Plug-in editors on a Wayland desktop run through XWayland.** Both formats' editors
+  embed only in X11 windows (VST3 `kPlatformTypeX11EmbedWindowID`, CLAP `CLAP_WINDOW_API_X11`). On Qt's native
+  `wayland` platform a widget's window id is not an X11 window: measured in a nested KWin session, a heap pointer that
+  X11 answers with `BadWindow`, while `plugin.editor_open` still reported `open: true` for both in-tree fixtures. At
+  start-up a Wayland session (`WAYLAND_DISPLAY` or `XDG_SESSION_TYPE=wayland`) that has XWayland (`DISPLAY` set) now
+  runs on `QT_QPA_PLATFORM=xcb;wayland`, as other Linux DAWs do (`src/core/PluginWindowPlatform.cpp`). A
+  `QT_QPA_PLATFORM` or `-platform` set by the user is never overridden. Limits: on native Wayland (the user's choice,
+  no XWayland, or a Qt without its xcb plug-in) every hosted editor refuses with a typed `requires` that names the
+  reason, and there is no Wayland-native embedding. Running through XWayland means XWayland's scaling, so on a
+  fractionally scaled KDE screen the whole window can look soft (KDE's "Legacy Applications (X11)" scaling setting
+  decides this). The choice is made only when Zene starts: there is no setting in the interface, only the environment
+  variable. Proved in a nested headless `kwin_wayland --virtual --xwayland` against the in-tree fixtures. On 2026-10-27,
+  the live KDE Wayland session was also checked on XWayland `:0` with the pinned third-party DPF Nekobi VST3 and DPF ProM
+  CLAP editor probes (forced to `xcb`); both opened, drew for one second and closed. Their fractional-scaling appearance was not checked.
 - *(Updated 2026-09-30, R4.1/R4.2/R4.4.)* **A VST3 plug-in's own editor now opens** - in a window of its
   own, through `plugin.editor_open` (the host's `Vst3EditorSession`: createView, X11 embedding, resize,
   IPlugFrame and Linux::IRunLoop on the Qt loop). What is proved is the contract, offscreen, against the
@@ -196,8 +321,13 @@ that is this page's fault — report it and it gets added.
   hosting is drivable through the socket as well as from the interface: `plugin.list` carries every VST3 class
   of the product's VST3 search directory as a `format: "vst3"` entry and `plugin.load` loads one onto an
   instrument track (the class, the bundle and the `(file, class)` key are the same ones the instrument browser
-  uses; `ControlDeviceCatalogueTest` holds the fixture-backed proof). There is no multi-out, no
-  preset management, no instrument latency compensation, and no out-of-process hosting. **CLAP instrument
+  uses; `ControlDeviceCatalogueTest` holds the fixture-backed proof). *(Corrected 2026-10-09, Q050-003.)*
+  Output buses past the main one are routable (MX-114: `Vst3Instrument::enableOutputBus`,
+  `plugins/Vst3Instrument/Vst3Instrument.cpp:239`; see "F2, instruments") and the instrument reports its
+  latency to delay compensation (MX-157, `:262`; see "Hosted instrument latency"; the native CLAP, VST3 and LV2 instrument hosts report, built-in instruments are 0, and the out-of-process, VST2 (Vestige) and Carla paths report nothing to it - corrected 2026-10-19, Q050-169); the in-tree VST3 fixture has
+  one output bus, so the routing of a real multi-output VST3 plug-in is unproven (`plugin.output_*` is measured
+  against the stand-in `buses_test_instrument`, `Vst3BusMapTest::testOutputBusesKeepInactiveOnes` covers the bus
+  map). There is still no read of the plug-in's own preset (program) lists and no out-of-process hosting. **CLAP instrument
   hosting is socket-only in the same sense** (feature row 79): a CLAP generator loads onto an instrument
   track through `plugin.load` — `plugin.list` carries the CLAP classes of the product's plug-in directory as
   `format: "clap"` entries — its notes reach it through the track's MIDI path, and
@@ -206,45 +336,118 @@ that is this page's fault — report it and it gets added.
   generated parameter view and there is no `clap.gui` support anywhere in this tree, so the instrument's own
   window does not open (the same limit the VST3 instrument has). *(Superseded 2026-09-30: R4.3 implements the
   clap.gui life cycle, X11 embedded, and the instrument view's "Show plugin editor" button opens it.)*
-- *(Superseded 2026-09-29/30: the mixer draws a VCA strip per group - fader, mute, solo - and a channel's
-  context menu assigns it to a group, through the `vca.*` commands (M3.7, `VcaStripViewTest`,
-  `VcaStripLifetimeTest`).)* The bullet below is the pre-M3.7 record.
-- **No VCA groups in the interface.** Mix-and-edit groups exist, are tested, and are saved with the project —
-  and since 2026-09-14 the **whole group is drivable through `--control-socket`, which is still the only way
-  to reach one: nothing in the interface creates a group, names one, assigns a member, locks it or edits
-  through it.**
-  Verified in the tree: the group is a real entity (`src/core/VcaGroup.cpp`, `include/VcaGroup.h`, owned by
-  the mixer via `Mixer::createVcaGroup`, `src/core/Mixer.cpp:720`), its gain is applied on the audio path
-  (`:528-545`), and the save/load element it is written as is `vcagroup` with a `vca` child (`:1893`,
-  `:1898`, `:2022`, `:2037`). `docs/VCA-GROUPS.md` is the implementing lane's report; the lane is an ancestor
-  of this tip. *Updated 2026-09-14 (OWNER-31 item 11, lane `030/vca-editgroups`): the UI half of this bullet
-  is still exactly true — nothing in `src/gui/` creates a group, adds a member or toggles the phase lock —
-  but the reachability half is no longer. The `vca.*` control group (14 ids: `vca.create`, `vca.remove`,
-  `vca.list`, `vca.get_state`, `vca.rename`, `vca.set_gain`, `vca.set_mute`, `vca.set_solo`, `vca.assign`,
-  `vca.unassign`, `vca.set_phase_lock`, `vca.track_add`, `vca.track_remove`, `vca.edit_move`) makes the
-  whole group drivable through the socket and the MCP bridge, including the **edit** half the group's name
-  promises: an edit set of tracks (`vca.track_add`) and a phase lock (`vca.set_phase_lock`, ON by default)
-  under which `vca.edit_move` moves a named clip and every other member's clips that overlap its
-  pre-command span by the same delta, so a take recorded across several inputs slides as one object and
-  stays sample-aligned. The edit set is persisted on the group's own `<vcagroup>` element (`locked`, plus
-  one `<edittrack track="n"/>` per member). `docs/VCA-EDIT-GROUPS.md` §1-§4 is that half's report, and
-  the three limits that remain are named there and in `docs/RELEASE-NOTES-v0.3.0-alpha.md`: **one** media
-  edit is propagated (a clip move — trim, slip, split and fades are not), a track deleted while it is in an
-  edit set stays in the set (reported as `missing_tracks` / `skipped_tracks` until `vca.track_remove`), and
-  `vca.set_solo`'s undo does not restore the transient `MixerChannel::m_muteBeforeSolo`. There is still no
-  Lua binding for any of it, and a group's audibility is proved by `VcaGroupTest`'s rendered dB delta, not
-  by the socket transcript.*
+- *(Superseded 2026-09-29/30 (M3.7); the interface half corrected again 2026-10-18 (Q050-171).)*
+  **A VCA group's mix half and its main edit-half gestures are in the interface, and
+  `--control-socket` reaches the same registered commands for the verbs that have no menu, listed
+  below.** The mixer draws a VCA strip per group - type badge, name, member count, Mute, Solo and
+  the group's own fader - while the mix has any groups (`src/gui/VcaStripView.cpp`, built by `MixerView::refreshVcaStrips`,
+  `src/gui/MixerView.cpp:403`, which hides the strip area when the last group is removed). The
+  strip's right-click menu carries **Links** (Level, Mute, Solo and Suspend All, checkable,
+  `vca.set_links`) and **Put Inside** (nesting through `vca.set_parent`; a parent that would close
+  a loop or nest past `MaxGroupDepth` (8, `include/MixerGroups.h:37`) is offered disabled with the
+  reason as its tooltip rather than refused unseen, `src/gui/VcaStripView.cpp:106`). A mixer
+  channel's context menu has a **VCA group** submenu (`src/gui/MixerChannelView.cpp:347`): one
+  checkable membership entry per group (`vca.assign` / `vca.unassign`) and **New VCA group**
+  (`vca.create`, then `vca.assign` for that channel; `populateVcaMenu`,
+  `src/gui/VcaStripView.cpp:168`) - two command invocations, so two recorded undo steps rather
+  than one. **Project tools ▸ Groups...** lists the groups with Rename... (ask), Remove
+  (confirmed), Add Track to Edit Set... and Remove Track from Edit Set... (ask), Phase Lock On and
+  Phase Lock Off, and New Group... (`CommandLists::vcaGroups`, `src/gui/CommandLists.cpp:59`,
+  behind `menuparts::list` in `src/gui/shell/ShellCommandMenus.cpp:526`); **Project tools ▸ Colour
+  a Group's Channels...** runs `vca.color_members`
+  (`src/gui/shell/ShellCommandMenus.cpp:519`); and the Inspector's **Clip** menu carries **Move
+  With Edit Group...**, the `vca.edit_move` form prefilled with the clip
+  (`src/gui/shell/ShellCommandMenus.cpp:327`, attached to the Clip section's title bar by
+  `src/gui/shell/InspectorPanel.cpp:383`; the Inspector's channel menu has no VCA submenu). Every
+  menu line runs a registered command the socket runs. Each **submitted mutating** action is one
+  recorded undo step - the membership ticks, the Links and Put Inside choices, the Groups list's
+  row actions and New Group..., Colour a Group's Channels..., the submitted Move With Edit Group...
+  form and the strip's fader, Mute and Solo - with **New VCA group** above the one exception (two
+  command invocations, two steps). The launchers themselves do not edit or add a step:
+  **Groups...** opens a list whose read-only `vca.list` query writes nothing, and **Move With Edit
+  Group...** (like **Colour a Group's Channels...**) opens a form that becomes one step when
+  submitted. The strip's fader, Mute and Solo are the group's own models, so a strip edit, a menu
+  edit and a socket edit move one state
+  (`VcaStripViewTest::theStripsControlsAreTheGroupsOwnModels`,
+  `theChannelMenuEditsMembershipThroughTheCommands`,
+  `theStripsMenuChoosesLinksAndNestingThroughTheCommands`,
+  `theGroupsListOffersCreateEditSetAndPhaseLock`, `theClipsMenuCarriesMoveWithEditGroup`).
+  The entity is unchanged, with the citations that hold at this tip: a real object
+  (`src/core/VcaGroup.cpp`, `include/VcaGroup.h`) created and owned by the mixer
+  (`Mixer::createVcaGroup`, `src/core/Mixer.cpp:997`), its gain published to each member as
+  `MixerChannel::m_vcaGain` and applied once per period on the audio path (`src/core/Mixer.cpp:762-768`),
+  and saved as the `<vcagroup>` element with its `vca` child, its `locked` attribute and one
+  `<edittrack track="n"/>` per edit-set member (`src/core/Mixer.cpp:2504-2544`), read back at
+  `src/core/Mixer.cpp:2753-2825` - a pre-edit-half element loads as locked with an empty set. `vca.*`
+  is 21 ids: the fourteen of `docs/VCA-EDIT-GROUPS.md` §3 plus `vca.color_members` (one colour for a
+  group's channels), `vca.set_parent` and `vca.set_links` (the strip's Put Inside and Links menus),
+  and the phase-locked `vca.edit_split`, `vca.edit_trim`, `vca.edit_slip` and `vca.edit_fade`; the
+  whole group is registered by one function (`registerVcaCommands`,
+  `src/core/ControlCommandsVca.cpp:468`), and the proofs are `VcaStripViewTest`,
+  `VcaStripLifetimeTest`, `ControlVcaCommandsTest`, `ControlVcaEditGroupsTest`,
+  `ControlVcaLockedEditsTest` and the registered ctest `ControlVcaCommands`
+  (`tests/control-vca-commands.py`). `docs/VCA-GROUPS.md` (the mix lane) and
+  `docs/VCA-EDIT-GROUPS.md` §1-§4 (the edit lane) are the implementing reports, both ancestors of this
+  tip; each now carries its own dated note where its "no interface" lines went stale.
+  What the interface still does not offer, so a reader can tell its limits from everyone's: **(1)** of
+  the phase-locked edits only the move has a menu line - split, trim, slip and fade
+  (`vca.edit_split` / `edit_trim` / `edit_slip` / `edit_fade`) are reachable from the socket or
+  `zene.command()`, so an edge drag, a split or a fade made on a clip in the arranger affects that clip
+  alone and never the edit set; **(2)** the channel's VCA menu never sends the shared-membership form
+  `vca.assign` with `also: true`, so ticking a group for a channel another one already holds is
+  refused (`heldElsewhere`, `src/core/ControlCommandsVcaShared.h:311`) and the menu reports nothing
+  back; **(3)** the Groups... dialog cannot show which tracks an edit set holds - it can add and
+  remove them but has no track column. And the limits that remain regardless of surface: a track
+  deleted while it is in an edit set stays in the set, reported as `missing_tracks` by `vca.get_state`
+  and `skipped_tracks` by an edit (`src/core/ControlCommandsVcaShared.h:177`, `:194`), until somebody says
+  `vca.track_remove`; `vca.set_solo`'s undo does not restore the transient
+  `MixerChannel::m_muteBeforeSolo`, re-derived on the next solo action
+  (`src/core/ControlCommandsVcaMix.cpp:224`, the same limit `track.set_solo` states); a clip
+  delete, a clip gain and a crossfade are not carried by the phase lock - `ControlVcaLockedEditsTest`
+  holds the five edits that are, and `clip.delete`, `clip.set_gain` and `clip.crossfade` affect only
+  the clip they name; and there is no dedicated Lua binding, though that is no longer the sentence to write: every
+  `vca.*` id is scriptable through the generic `zene.command()` bridge, which the sandbox refusal
+  lists do not name (`refusedPrefixes` / `refusedIds`, `src/core/ScriptCommandBridge.cpp:69` and
+  `:80`; the bridge itself at `:272`), so what is missing is menus and read-backs, not reachability. A
+  group's audibility is still proved by `VcaGroupTest`'s rendered dB delta rather than a socket
+  transcript - `tests/control-vca-commands.py` reads state back, it does not re-render; a strip's
+  fader drag undoes through the model's own journal checkpoint (`AutomatableModel` is a
+  `JournallingObject`), like any channel fader.
+- *(The pre-M3.7 record, kept so a reader who meets the old sentence in an older copy of this page can
+  see what replaced it.)* **No VCA groups in the interface.** Mix-and-edit groups exist, are tested,
+  and are saved with the project — and since 2026-09-14 the **whole group was drivable through
+  `--control-socket`, which was then the only way to reach one: nothing in the interface created a
+  group, named one, assigned a member, locked it or edited through it.** Its 2026-09-14 update named
+  fourteen `vca.*` ids and the three limits of the day (one propagated media edit - the move; the
+  deleted track still in the edit set; the `set_solo` undo); its engine citations (`Mixer.cpp:720`,
+  `:528-545`, `:1893`, `:1898`, `:2022`, `:2037`) were stale by the next renumber and the corrected
+  ones are in the bullet above.
 - *(Updated 2026-09-30.)* **A mixer channel's context menu now has a Rack submenu**, read from `rack.get_state`:
   a line naming the chains and the routing; Route to (Parallel, or one chain; `rack.set_selected`); Add
   parallel chain and Remove chain (`rack.add_chain` / `rack.remove_chain`; chain 0 is the channel's own and is
   not offered); and the rack's macros - one item per macro showing its value, which sets it
   (`rack.macro_set`), Add macro... and Remove macro (`rack.macro_add` / `rack.macro_remove`) (`RackMenuTest`).
   *Since the same day each macro also has Bind <name> to (effect > parameter of the channel's own chain, full
-  range; `rack.macro_target_add`) and Unbind <name> (`rack.macro_target_remove`).* Still socket-only: putting
-  effects into a parallel chain, a binding narrower than the full range, the key/velocity zones, and a Lua
-  binding. The two bullets below are the
+  range; `rack.macro_target_add`) and Unbind <name> (`rack.macro_target_remove`).* *Corrected 2026-10-09 (Q050-047),
+  against the tree:* putting effects into a parallel chain is **not** socket-only any more. The Device panel
+  draws each parallel chain under a "Parallel chain N" heading with its devices as cards and its modulators
+  (`src/gui/shell/DevicePanel.cpp:390-409`); a card's menu has **Insert Effect Before... / After...**, which name
+  the card's own chain (`src/gui/EffectDeviceMenu.cpp:247-252`, `insertBeside`); **Wrap the Chain into a Rack Chain**
+  (`rack.wrap`) moves the channel's devices into a new chain; and the Inspector's **Add Insert...** opens the
+  `plugin.load` form, which has a `chain` field. **The first device of an EMPTY parallel chain**
+  has no card to carry a menu, so its heading in the Device panel carries an **Add device...** button
+  (`DevicePanel::addChannel`, `src/gui/shell/DevicePanel.cpp:392-408`), and the panel's own **Add device** button now
+  loads into the channel's selected parallel chain (`rack.set_selected`; parallel or chain 0 selected means the
+  channel's own chain; `addTargetChain`, `:171-179`). Both run `plugin.load` with a `chain` field - the call the
+  socket takes, one undo step (`RackMenuTest::anEmptyParallelChainHasItsOwnAddDeviceButton`,
+  `::addDeviceLoadsIntoTheSelectedChain`, `::anEmptyParallelChainTakesItsFirstDeviceFromTheInsertForm`, which
+  keeps the Inspector's Add Insert... form route proven too). A track's Add device (a track has no rack) still loads
+  into the track's own chain. Still socket-only: a binding
+  narrower than the full range, a visual key map for the zones, and a Lua binding. The two bullets below are the
   pre-menu record.
-- **No racks in the interface, and no scripting access.** Parallel chains and a chain selector exist and are
+- *(Superseded 2026-09-30 and 2026-10-09: a channel's Rack submenu creates chains, routes and removes them, and the
+  Device panel shows and fills them; see the bullet above.)* **No racks in the interface, and no scripting access.**
+  Parallel chains and a chain selector exist and are
   saved with the project, but a user can only load a project that already contains a `<rack>`; there is no UI
   and no binding. Switching chains is not crossfaded, so it can click.
   Verified in the tree: a rack is saved as the `rack` element inside a `<mixerchannel>`
@@ -255,6 +458,13 @@ that is this page's fault — report it and it gets added.
   group (`rack.get_state`, `rack.add_chain`, `rack.remove_chain`, `rack.set_selected`) makes the whole rack
   drivable through `--control-socket` and the MCP bridge, which is `docs/RACK-MACROS.md` §1. There is still no
   Lua binding for it.*
+- *(Corrected 2026-10-09, Q050-047.)* **Macros and zones in the interface.** Macros have a menu (Add macro..., set
+  value, Bind to a parameter, Remove) and knobs on the Device panel (`MacroKnobs`, `DevicePanel.cpp:386`); zones have
+  **Rack > Zones...** (a list over `rack.get_state` with Remove, `CommandLists::rackZones`,
+  `src/gui/CommandLists.cpp:91-103`) and **Rack > Add Zone...** (the `rack.zone_add` form), both in a mixer
+  channel's menu (`ShellCommandMenus::populateChannel`, `src/gui/shell/ShellCommandMenus.cpp:438-440`) and both over
+  registered commands (`RackMenuTest::theZonesEntriesRunRegisteredCommands`). What is still absent is a zone
+  editor that draws a key map: zones are rows and a form. The bullet below is the 2026-09-13 record.
 - **Macros and key/velocity zones are socket-only, and the zones do not route yet — added 2026-09-13.** A rack
   macro is a named, persisted scalar that drives existing parameters through range windows
   (`rack.macro_add` / `rack.macro_target_add` / `rack.macro_set`, `docs/RACK-MACROS.md` §2) and a key/velocity
@@ -288,7 +498,18 @@ that is this page's fault — report it and it gets added.
   visibility sets have a switcher too - the song editor's Views menu: All tracks (the new
   `track.visibility_show_all`), each set (apply), Save visible tracks as..., Remove - and applying a
   set now actually hides the other rows (the view flag had never been read by the track list;
-  `VisibilitySetMenuTest`). The paragraph below is the pre-M3 record.
+  `VisibilitySetMenuTest`). *(Updated 2026-10-07, ED-035.)* A folder's row draws its children's clips as
+  **summary clips** - one per stretch where they hold clips (overlapping or touching clips make one), with a
+  miniature of the clips inside - so a collapsed folder still shows where its music is. Dragging a summary
+  clip moves every clip inside it (`track.folder_move` with its new optional `start`/`end` span), Ctrl+drag
+  copies them there (`range.copy` + `range.paste`), and its menu duplicates it after itself or deletes it
+  (`range.delete`); each edit is one undo step and the arranger's own range is put back after it
+  (`FolderSummaryLaneTest`; `include/FolderSummaryLane.h`). *(Updated 2026-11-01, Q050-255.)* A summary clip can also be
+  selected (several, beside ordinary clips), resized by its edges, split, and edited from the keyboard
+  (`track.folder_span_*`; `docs/050-features/Q050-255.md`). Not done: the copy uses (and so replaces)
+  the range clipboard; the single-clip menu delete follows the arranger's ripple mode, the selection's
+  `track.folder_span_delete` does not; a group split takes no zero-crossing snap; lengthening moves only the
+  clips already at that edge. The paragraph below is the pre-M3 record.
   **Folder tracks, their two modes, pinning and the named visibility sets are drivable through the
   socket, not from the interface**: nothing in `src/gui/` creates a folder, indents a child, collapses
   a row, draws the relation, shows a pin or offers a set switcher — a folder's row is an ordinary
@@ -311,7 +532,28 @@ that is this page's fault — report it and it gets added.
   and Fade shape for both ramps - each change one `control.undo` step (`ClipEditsMenuTest`). These are menu
   items, not drag gestures: there are still no fade handles on the clip, and crossfades (`clip.crossfade`)
   and the source-window trim/slip stay socket-only. The bullet below is the pre-menu record.
-- **No clip fade, crossfade or clip-gain gestures.** The clip model is in (an authored window that survives
+  *(Updated 2026-10-07, 0.5.0 ED-176.)* Crossfades are no longer socket-only: an audio clip that another clip
+  overlaps offers **Crossfade Editor...** (both sides' lengths and shapes, drawn, applied through `clip.crossfade`
+  as one undo step; `CrossfadeEditorTest`). See "0.5.0 audio clips" at the end of this page for what it leaves out.
+- *(Added 2026-10, Q050-125.)* **Clip gain, the gain envelope and polarity are now dragged on the waveform.**
+  A sample clip draws its gain as a dashed line with a square handle on its left edge: drag the handle up or
+  down and the clip's level follows the pointer, the drawn waveform growing or shrinking with it, and the
+  release is one `clip.set_gain` step. Press the drawn level curve to add a gain-envelope point at the pointer
+  and drag it in time and level (a plain press on a point moves it; points may be dragged past each other and are
+  re-sorted, which is the order `clip.gain_envelope_set` requires). Alt and Ctrl keep their arranger meanings;
+  the Smart tool's upper-half range gesture takes priority over the gain targets. The Gain and fades submenu
+  adds **Invert polarity** (`clip.set_polarity`), which flips the clip's rendered sign and mirrors its drawn waveform while
+  the SOURCE sample keeps every sample: the inversion is a signed stage on the clip's gain, written as `invert`
+  only when set, so an older project loads non-inverted and renders bit for bit as before. The drawn amplitude
+  is `clipGainCurveAt` (the one definition the audio path and the automation editor's ghost already share)
+  times the polarity sign, sampled per drawn column. Proved by `ClipWaveformEditTest` (real mouse gestures on
+  the real view, with the drawn image compared) and `ClipPolarityTest` / `ControlClipPolarity` (the render's
+  sign, the source untouched, the commands and the file). What is still absent: a per-point delete gesture
+  (remove points through the command), clip-filter and range-selection tools, destructive sample editing, MIDI
+  clip edits and mixer-channel polarity.
+- **No clip fade, crossfade or clip-gain gestures.** *(Stale in part: fade handles and the Crossfade Editor
+  arrived in 0.5.0 L05 - ED-173/ED-176 - and the clip-gain handle, the envelope points and the waveform
+  display in Q050-125, the bullet above. Kept as the record of what was absent on 2026-09-13.)* The clip model is in (an authored window that survives
   playback and is saved with the project) and so, since 2026-09-13, is the fade/gain model — but there are
   **no trim, slip, fade, crossfade or clip-gain tools** in the interface, and **fades, crossfades and clip gain
   are drivable through the socket, not from the interface**.
@@ -363,8 +605,10 @@ that is this page's fault — report it and it gets added.
   adds an LFO and removes one (`modulator.create` / `modulator.remove`), sets the selected one's shape and rate
   (`modulator.rate_set`), shows the parameters it drives with their depth, binds one from pickers over a mixer
   channel's effects and parameters (`modulator.target_set`) and unbinds it (`modulator.target_remove`)
-  (`ModulatorPanelTest`). Still socket-only: the per-sample switch and editing a bound route's depth in place
-  (`modulator.depth_set`); the layer still reaches mixer-channel racks only. The bullet below is the pre-panel
+  (`ModulatorPanelTest`). *(Corrected 2026-10-31, Q050-164.)* Each bound route has a **Per sample** switch in the
+  panel (`modulator.per_sample_set`). A route's depth is not socket-only either: an instrument's Modulation Assignments list has **Depth...**
+  (`modulator.depth_set`, `src/gui/InstrumentCommandMenus.cpp`). The Modulators panel still shows a bound route's depth
+  without editing it in place, and its Bind row reaches mixer-channel racks only. The bullet below is the pre-panel
   record.
 - **The modulation layer is in the engine and on the socket, and there is no interface for it.**
   Modulators (`modulator.*`, ten ids with `note.expression.*`) drive device parameters in a mixer channel's rack
@@ -382,30 +626,40 @@ that is this page's fault — report it and it gets added.
   task `#601` already put on a `Note` (`mpepitch` / `mpepressure` / `mpetimbre`), so `docs/MPE.md` §4's limit
   is now lifted — **all three axes reach playback**: pitch as a frequency ratio, pressure and timbre as MIDI
   events on the note's own member channel (task #649). There is still no per-note expression editor.
-- **No plugin-scanning interface worth the name.** A scan cache and a quarantine list exist; the user-facing
-  surface is thin or absent. Verified against this tree: the cache is JSON on disk and the documented way to
-  quarantine a plugin is a `{"path": …, "reason": …}` entry in that file; `docs/PLUGIN-SCAN-CACHE.md` §5
-  records that there is **no GUI for it yet**.
-- **Two features are compiled out of these builds**: the **WASM DSP sandbox** (needs the wasmtime C API) and
-  **offline HTDemucs stem separation** (opt-in at configure time - *since owner decision 14 it is on by default;
-  the release-honesty manifest row requires ON, 2026-09-30*). Both report `OFF` in the binary's own build
-  options, re-stated from the build this page was applied against:
-  `WANT_WASM='OFF'`, `WANT_STEM_SPLIT='OFF'` (`build/lmmsversion.h`, the same text the binary prints on its
-  `Build options:` line). **What enforces "everything the release notes document as present is in this build"
-  is `tests/release-honesty-gate.sh`, and on this release's configuration it passes every row.** The guard's
+- *(Corrected 2026-10-15, Q050-014.)* **The plugin scan cache and the quarantine list now have an
+  interface, and this bullet's "no interface" claim is corrected.** **Project tools ▸ Plug-in
+  Modules...** lists every file the scan found with its per-file status (path, status, name, error) and
+  offers **Quarantine...** (with a reason), **Release** and **Rescan** (`CommandLists::pluginModules`,
+  over `plugin.scan_cache_list`); **Edit ▸ Plugin Quarantine** adds and releases entries as well. The
+  documented way to quarantine a plugin is no longer hand-editing the JSON file. The pre-menu record
+  that this replaced is kept in the "plugin scan cache" bullet further down this page.
+- **One feature is compiled out of these builds: the WASM DSP sandbox** (it needs the wasmtime C API, which no
+  CI job provisions, so the option's default `ON` degrades to `OFF`). This build reports `WANT_WASM='OFF'` in
+  its own build options (`build/lmmsversion.h`, the same text the binary prints on its `Build options:` line).
+  **Offline HTDemucs stem separation is the other configure-time feature, and it is the opposite case**
+  *(corrected 2026-10-15, Q050-035)*: **it is built in and on by default.** Owner decision 14 made
+  `WANT_STEM_SPLIT` default `ON` (`CMakeLists.txt:130`), the release-honesty manifest row requires `ON`, and
+  this build reports `WANT_STEM_SPLIT='ON'` with the ONNX Runtime SDK found (`LMMS_HAVE_ONNXRUNTIME='1'`, so
+  the in-process inference backend is enabled; without the SDK the external-process backend is used instead).
+  It is **local and offline**: the separation runs on this machine and nothing is uploaded — the only network
+  access is the one-time fetch of the pinned ~166 MB model on first use, which `LMMS_STEM_OFFLINE` (or an
+  explicit `LMMS_STEM_MODEL` path) turns off. Text on this page and in the 0.3.0 release notes used to say
+  stem separation was compiled out and reported `OFF`; that described the pre-owner-decision-14 configuration
+  and is **not** true of the default build. The detailed limits of the feature (44.1 kHz OUTPUT, the
+  offline job, socket-only UI) are in the `stem.*` section below, not here.
+  **What enforces "everything the release notes document as present is in this build"
+  is `tests/release-honesty-gate.sh`, and on this configuration it passes every row.** The guard's
   mechanism is the checkable half: it fails a documented-present feature when the build under test does not
   report that option `ON` (`AUTO` is not `ON` — the script's own header says so), it fails a documented-absent
-  feature that reports `ON`, it exits 1 on any mismatch, and the six build jobs in
-  `.github/workflows/build.yml` run it against the binary they have just built. **Measured on this release's
-  configuration: 6 of 6 rows match** — the three plugin hosts `ON matches ON` and named as modules
-  (`libvst3effect.so`, `libvst3instrument.so`, `libclapeffect.so`), and session view, the WASM sandbox and
-  stem separation `OFF matches OFF` (`RESULT: PASS — all 6 documented feature(s) are what this build contains`,
-  `tests/integration-logs-release-verify/honesty-guard.log`). Run against the two older, non-release build
-  directories that happen to sit on this box it does not pass (3 of 6 rows on `build-coverage/zene`, 1 of 6 on
-  `build/zene`) — those directories are configured against the manifest, and the guard is right to fail them;
-  the release run above is this claim's evidence. The two features above are deliberately absent either way.
-  **Changed in 0.3.0-alpha:** the `session-view` row is no longer one of them — the option defaults ON and the
-  row now requires ON (see the Session View bullet above for what that does and does not include).
+  feature that reports `ON`, it exits 1 on any mismatch, and the build jobs in
+  `.github/workflows/build.yml` run it against the binary they have just built. **Measured on this
+  configuration: 5 of 5 rows match** — the three plugin hosts `ON matches ON` and named as modules
+  (`libvst3effect.so`, `libvst3instrument.so`, `libclapeffect.so`), the WASM sandbox `OFF matches OFF`, and
+  stem separation `ON matches ON` (`RESULT: PASS — all 5 documented feature(s) match this build on linux`;
+  `tests/advertised-features.tsv` is the single list the gate reads).
+  **Changed in 0.3.0-alpha:** the `session-view` row is gone — ARCH-4 removed `WANT_SESSION_VIEW` entirely
+  (the Session View is native engine code), so there is no option for a row and a build to agree about
+  (see the Session View bullet above for what the interface still does and does not include).
 
 - **The WASM DSP sandbox is present and runnable when built with the wasmtime C API, it is drivable through
   the socket, and the RELEASE builds still compile it out — added 2026-09-13 (`#614`), revised by
@@ -461,6 +715,19 @@ that is this page's fault — report it and it gets added.
   `tests/advertised-features.tsv` and `tests/release-honesty-gate.sh` would have to be reconciled in the
   same commit that did it. Until then the row states the truth and the gate enforces it.
 
+- *(Added 2026-10-06, WF-033.)* **The undo history can be saved with the project, and is OFF by default.**
+  A project opts in with `project.set_undo_history {setting: on}` or Edit ▸ Undo History's *Save with
+  project* box; every project can by default (`undohistory/persist`, the panel's *All projects* box). The
+  newest **20** steps (`undohistory/steps`) are saved as compressed whole-project snapshots under a **64 MB**
+  cap (`undohistory/capmb`); over it the oldest go first, and a snapshot that alone exceeds the cap means
+  nothing from that step back is saved - `project.save`'s `undo_history.warning` and a status message say
+  so. Plug-in state is saved exactly as a normal save saves it. Limits: with persistence on, every edit
+  serialises and compresses the whole project (the cost of the design, and why it is opt-in); steps made
+  before it was turned on cannot be saved; the redo stack is not saved; undoing a loaded step reloads the
+  project in place (playback stops); autosave/recovery files, templates, bundles, render temporaries and
+  `project.save_version` copies do not carry it; a history whose project was edited by a build that does
+  not read it is discarded on open, with the reason in `project.undo_history`'s `last_load`.
+  `docs/UNDO-HISTORY-PERSISTENCE.md` is the record.
 - *(Updated 2026-09-30.)* **Edit ▸ Undo History... now shows the stack** (`window.undo_history`,
   `UndoHistoryPanel`): depth, redo depth, the two caps, the bytes kept and the evicted count from
   `control.undo_depth`, Undo/Redo buttons through `control.undo`/`control.redo`, and the command record
@@ -507,6 +774,17 @@ that is this page's fault — report it and it gets added.
   external trigger — `docs/OUT-OF-PROCESS-BEYOND-ZYN.md` §4); and the client executable has to be part of the
   build for the family to be hostable at all, which is what the table is for. Full document:
   `docs/OUT-OF-PROCESS-BEYOND-ZYN.md`.
+
+## ARA2 and Melodyne-style pitch editing — deferred, not in 0.5.0 (Q050-344, 2026-11-15)
+
+The owner explicitly deferred ARA2 and Melodyne-style pitch editing for 0.5.0 (owner decision, 2026-11-14). Zene Studio cannot host ARA plug-ins. There is no ARA extension path, no Melodyne-style note-blob or pitch editing of audio clips, and no `ara.*` agent commands. Each item below is a capability gap: what a user might expect, and what to use today.
+
+- **ARA2** — deferred. A user would expect Zene to host a vendor's ARA2 plug-in inside a clip; Zene has no ARA2 host, and hosting first needs an ARA2 SDK licence decision.
+- **Melodyne-style clip editing** — deferred. A user would expect note-level pitch and timing editing of an audio clip; there is no such editor. Use the per-clip warp choice (`warp.stretch`) for rate and pitch behaviour instead.
+- **Track-wide ARA** — deferred. A user would expect one ARA session spanning every clip on a track; Zene has no track-level ARA, and the per-clip path above is not built either.
+- **ARA processing-order extensions** — deferred. A user would expect ARA plug-ins to set the render order of the processing chain; no such extension exists, so the processing chain stays as it is.
+
+No 0.5.0 implementation lane exists for any of these four items, and no support promise is made. The 11 member requests — R-editing-41, R-editing-112, R-editing-114, R-editing-115, R-effects-18, R-effects-19, R-effects-22, R-instruments-18, R-instruments-30, R-recording-18 and R-workflow-118 — are recorded here as deferred. Revisiting any of them needs a new owner decision.
 
 ## Where the quality bars are not met yet
 
@@ -566,11 +844,17 @@ that is this page's fault — report it and it gets added.
   the same reasoning that left the whole-tree ratchets red rather than grandfathered. The plan is on the record:
   build an effect fixture and instantiate the effect module, then decide the headless-untestable and
   deliberately-inert files individually, with their reasons.
-- **Automation is not sample-accurate.** Modes work (Read / Touch / Latch / Write) and riding a control in Read
-  cannot destroy written automation, but automation is evaluated once per tick, so it lands on a tick boundary
-  rather than a sample. Verified in the tree via the automation lane's own record: `docs/AUTOMATION-MODES.md`
-  states that automation is evaluated once per tick and names the line that stands between that and a
-  per-frame read.
+- **Automation clips carrying a curve are sample-accurate by default; a Discrete clip keeps its step.**
+  Modes work (Read / Touch / Latch / Write) and riding a control in Read cannot destroy written automation.
+  A Linear or CubicHermite clip publishes a per-block ramp at every sample by default, while a Discrete clip
+  keeps the per-tick step and a CubicHermite curve is approximated as one straight segment per tick. Each
+  ramp holds **32 knots**; a block that needs more is refused the surplus knots and counts them
+  (`refused_knots` in `automation.ramp_get`), never allocated for. A clip in a **pattern** has no single
+  block timeline, so `automation.ramp_set` refuses it (`Refused`). The detailed account, including the
+  consumers that must ask for the per-sample buffer and the one-block transport-jump case, is
+  **Sample-accurate automation (`automation.ramp_set`, `automation.ramp_get`) — feature row 9** below;
+  `docs/SAMPLE-ACCURATE-AUTOMATION.md` is the design record, and `docs/AUTOMATION-MODES.md` is the dated
+  pre-ramp record.
 - *(Updated 2026-09-30.)* **Every control's context menu now has an "Automation mode" submenu** (Off,
   Read, Touch, Latch, Write, the current one checked) that runs `automation.mode_set` for that parameter
   (`src/gui/AutomationModeMenu.cpp`, held by `AutomationModeMenuTest` against a real instrument). It
@@ -594,15 +878,35 @@ that is this page's fault — report it and it gets added.
   nothing to take hold of through the socket yet (Write needs no gesture and is fully drivable). Write mode does
   not erase the un-passed remainder of the clip — it overwrites where the playhead reaches and leaves the
   automation ahead of it untouched.
-- **Warping changes pitch.** The warp engine attaches markers and lets a clip follow or lead the project tempo,
-  but the time-stretch is done by resampling: a 2× stretch is an octave up. Pitch-preserving stretch is not
-  built.
-  Verified in the tree: `docs/WARP.md` §0 is the implementing lane's report — `WarpMarkers` is a child element of
+- **The default warp render changes pitch, and two optional modes keep it — added 2026-09-13, corrected
+  2026-10-19 (Q050-148).** The warp engine attaches markers and lets a clip follow or lead the project tempo;
+  how the resulting rate change is *rendered* is a per-clip choice (`warp.stretch`, `WarpStretchMode` in
+  `include/WarpMarkers.h`), and this file's earlier sentence "Pitch-preserving stretch is not built" no longer
+  describes the engine (it was true of the warp lane alone, and feature-list row 30 landed it):
+  - **`resample` (the default)** hands the rate to `AudioResampler` (libsamplerate): the pitch moves with the
+    rate, so a 2× warp is an octave up and a 0.5× warp an octave down. This is varispeed, and every clip that
+    does not ask otherwise renders through it.
+  - **`preserve_pitch`** routes the same rate through `AudioStretcher` (WSOLA): the clip lasts as long as the
+    mapping says and the pitch stays where it was. Limits: no formant preservation, no transient detection,
+    content below ~345 Hz cannot be aligned, linear-interpolation SRC only — the per-algorithm caveats are
+    listed in full in `docs/PITCH-STRETCH.md` §5.
+  - **`rubberband`** routes the rate through Rubber Band 3's R3 engine for tonal and polyphonic material. The
+    library is an **optional dependency** (`WANT_RUBBERBAND`, default ON): a build without it **refuses** the
+    mode, and a project that asks for it loads and renders through WSOLA; even with the library, a pass for
+    which both of the clip's two stretcher voices are busy falls back to WSOLA for that pass. `warp.list`
+    reports `stretch_algorithm` (`"rubberband"` only when the library actually rendered).
+  The refusals are honest: the pitch-preserving modes (`preserve_pitch`, `rubberband`) are refused for a
+  clip that renders linearly (no markers, no source tempo — there is no rate change to preserve the pitch
+  across), and `rubberband` is refused by a build without the library.
+  Verified in the tree: `docs/WARP.md` §0 is the warp lane's report — `WarpMarkers` is a child element of
   `<sampleclip>`, markers are pinned to source frames so a trim moves `sourceIn`/`sourceOut` and the markers stay
   on the audio, the map is monotonic and exact at every marker, with no markers it is the pre-warp arithmetic bit
   for bit, and a headless render puts a source whose transients are at 0/1/2/3 s at 0/0.5/1.0/1.5 s under a
   marker pair declaring 2× — while the base binary renders that project as if the `<warp>` element were absent.
-  The lane `post-alpha/warp` is an ancestor of this tip.
+  The lane `post-alpha/warp` is an ancestor of this tip. `docs/PITCH-STRETCH.md` is the stretch lane's report
+  (WSOLA measured at 440/660 Hz on a 2× warp, and the Rubber Band render, fallback and voice pool); the pitch
+  numbers are measured by the registered ctests `SampleClipStretchTest` and `SampleClipRubberBandTest`, and the
+  command path is driven end to end by `tests/control-pitch-stretch-transcript.py`.
 - **And there is no warp UI at all — added 2026-09-13.** The sentence above is true of the *engine*; the
   product can author markers only through the control surface. `warp.list` / `warp.add` / `warp.move` /
   `warp.remove` / `warp.set` are registered commands (argument and result schemas, A16 reversibility records)
@@ -611,16 +915,26 @@ that is this page's fault — report it and it gets added.
   all. Warp marker editing is drivable through the socket, not from the interface.
 - **MPE: all three axes reach playback.** Per-note expression is captured from MPE input, stored on the note
   and editable; **pitch, pressure and timbre are all applied on playback** — pitch as a frequency ratio,
-  pressure and timbre as MIDI events on the note's own member channel (task #649). There is still no per-note
-  expression editor.
+  pressure   and timbre as MIDI events on the note's own member channel (task #649). Since Q050-016 each axis can also
+  carry a **time-varying event stream** (ordered `(tick, value)` points per note, saved as the optional
+  `mpepitchpts` / `mpepressurepts` / `mpetimbrepts` attributes and played at each point's own offset through
+  `note.expression_stream_set` / `note.expression_stream_get`); there is still no per-note expression
+  *editor* — drawing and dragging the streams in a curve view is the dependent unit Q050-137, and the streams
+  are drivable through the socket only.
   Verified in the tree: `docs/MPE.md` §0 is the implementing lane's verdict — expression is captured from
   MPE-style input, stored backwards-compatibly on the note as `mpepitch` / `mpepressure` / `mpetimbre`, readable
   and editable through a headless API, with all three axes reaching the instrument through the playback path
   (`src/core/NotePlayHandle.cpp`). `src/core/midi/MpeExpression.cpp` is in the tree, and the lane
-  `post-alpha/mpe` is an ancestor of this tip. **What consumes the two new axes, stated plainly:** no built-in
-  synthesiser does — they are driven by a note's frequency and volume and never see MIDI — so a hosted
-  instrument (Vestige / LV2 / CLAP / Carla) or a MIDI output port is where a musician hears pressure and timbre,
-  and the *proof* applies them to an in-tree MIT test instrument
+  `post-alpha/mpe` is an ancestor of this tip. *(Updated 2026-11-04, Q050-311: the built-in per-note synthesisers
+  now DO sound pressure and timbre - `MpeSynthExpression` maps pressure to intensity (gain 1 + p/127) and CC74 to
+  brightness (high-band emphasis around 1 kHz) on every instrument that is not single-streamed, after the note's
+  envelopes; measured on TripleOscillator by `MpeSynthExpressionTest`. Single-streamed built-ins (LB302, OpulenZ, SF2/GIG,
+  ZynAddSubFx, the sfz player) and hosted plug-ins are unchanged: they get the axes as MIDI and map them
+  themselves, or not at all. The mapping is fixed - there is no per-instrument mapping editor.)* **What consumes
+  the two new axes, stated plainly:** the per-note built-in synthesisers, through `MpeSynthExpression` (above);
+  the single-streamed built-ins do not. The built-ins never see MIDI themselves - they are driven by a note's
+  frequency and volume - so on a hosted instrument (Vestige / LV2 / CLAP / Carla) or a MIDI output port the
+  axes arrive as MIDI and that instrument's own mapping decides what is heard. The *MIDI-route proof* applies them to an in-tree MIT test instrument
   (`tests/src/plugins/MpeTestConsumer.cpp`, built from `tests/`, never installed), which is the vehicle of the
   registered ctest `MpePlaybackTest`. That test is a measured comparison, not a smoke test: one audio block
   rendered with the expression against the same block without it, and the level has to move by the ratio the
@@ -671,18 +985,38 @@ that is this page's fault — report it and it gets added.
 Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium, best) - set through
 `export.set_dither` / `export.set_src_quality`; `ExportQualityControlsTest`.)* No RPDF, by decision.
 
+- *(Updated 2026-10-19.)* **The Search view searches by tag and - with the Search file metadata
+  toggle - by embedded metadata now** (Q050-075): typing `tag:drums` finds the files tagged
+  `drums` alongside the other expression fields (`kind:`, `name:`, `path:`, `ext:`), and the
+  toggle sends `probe: true` to `browser.query` so a search matches what the audio files
+  themselves say - the embedded title/artist/album/comment/genre and the sample rate, channels,
+  frames and duration - opening at most 200 files per search (the command's `probe_limit`,
+  `LibraryMenusTest`). The whole-library index takes no `probe` (it stores no embedded
+  metadata), so the toggle is disabled while **Whole library** is on. `browser.query` re-reads
+  the tag store file before matching, so a `tag:` search reflects tags written by another
+  instance or earlier in the session. The Search view draws no waveforms (the
+  browser's waveform view reads the peak cache since WF-010, in the background since Q050-010). The bullets below are the earlier
+  records.
 - *(Updated 2026-09-30.)* **A file's context menu in the browser now has a Tags submenu**: every tag the
   library knows, the file's own checked - check to add (`browser.tag.add`), uncheck to remove
-  (`browser.tag.remove`) - and New tag... (`BrowserTagMenuTest`). Searching by tag or by metadata, and
-  the peak cache, are still socket-only. The bullet below is the pre-menu record.
+  (`browser.tag.remove`) - and New tag... (`BrowserTagMenuTest`). Searching by tag and by metadata is in
+  the Search view now (the bullet above); the waveform peak cache alone is still socket-only. The bullet
+  below is the pre-menu record.
 - **Browser tag/metadata search and the waveform peak cache have no interface — added 2026-09-13.**
+  *(Superseded for tag and metadata search: both are in the Search view - `tag:` alongside the other
+  expression fields, embedded and numeric metadata behind the Search file metadata toggle. Only the
+  waveform peak cache and peak drawing are still socket-only; see the bullet above. What follows is the
+  record as of its date.)*
   The browser's items can be queried by name, by tag and by what the audio file itself says it is (sample
   rate, channels, length and the embedded title/artist/album/comment/genre tags), and a file's waveform
   peaks are read through a bounded cache — all of it drivable through `--control-socket`
   (`browser.roots`, `browser.query`, `browser.tags`, `browser.peaks`, `browser.tag.add`,
-  `browser.tag.remove`). **Nothing in the interface can do any of it**: the browser's filter box still
-  matches file names only, there is no tag column, no tag editor and no query UI, and the browser does not
-  draw a waveform — drivable through the socket, not from the interface. The tags are persisted in the
+  `browser.tag.remove`). **Nothing in the interface can draw a waveform**: the browser's filter box
+  matches file names only, there is no tag column or tag editor, and the browser does not draw a
+  waveform — the peaks are drivable through the socket, not from the interface. (The filter box and
+  the missing tag column and tag editor are pre-menu and pre-search-view details of this record; tags
+  are edited from a file's Tags submenu and searched from the Search view, as the bullets above say.)
+  The tags are persisted in the
   user's config directory (`browser-tags.json`), not in the project file, so they are a property of the
   user's library rather than of a project; `docs/RELEASE-NOTES-v0.3.0-alpha.md` carries the same sentence.
 - **Tempo and time-signature changes have no editor — added 2026-09-13.** The engine is in (a persisted,
@@ -710,6 +1044,13 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   written, and only the conductor track is (no notes, clips or automation).
 - *(Updated 2026-09-30.)* **File ▸ Import DAWproject... / Export DAWproject...** now run `dawproject.import` /
   `dawproject.export` through a file dialog. The bullet below is the pre-menu record.
+- *(Updated 2026-10-09, Q050-001.)* **DAWproject import reads DEFLATE now, and lists everything it could not take.**
+  The reader accepts STORE and DEFLATE ZIP entries (what Bitwig, Studio One and Cubase write) under a 512 MiB
+  per-entry and 1 GiB total decompressed-size bound, and `dawproject.read` / `dawproject.import` return a
+  `deviations` array (corrupt, CRC-failing, unsupported-method, encrypted/ZIP64, oversized and truncated-directory
+  entries; files `project.xml` references that the container lacks); the File menu shows the same list after an
+  import. Still not supported: encryption, ZIP64, spanned archives and any method other than STORE and DEFLATE
+  (each is reported, not skipped silently). The writer still stores its entries. See `docs/DAWPROJECT-INTERCHANGE.md`.
 - **DAWproject import / export has no interface — added 2026-09-15.** Tracks, clips, notes, the tempo map
   and mixer strips can be written as a DAWproject container another DAW reads, and a file can be read back
   and imported, through `--control-socket` (`dawproject.convention` / `dawproject.export` / `dawproject.read` /
@@ -717,6 +1058,22 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   from the interface. `docs/DAWPROJECT-INTERCHANGE.md` records the format version (1.0), the eleven stated
   losses (audio clips, automation, device state, sends, fades, loop points, scenes, folder nesting, mixer
   routing and sharing) and the time convention (beats, 48 ticks per quarter).
+- *(Updated 2026-10-07, WF-051.)* **Session sync is real Ableton Link now.** Wherever the build carries the
+  vendored library (`WANT_ABLETON_LINK`, default ON; Ableton Link 4.1, GPL-2.0-or-later, with standalone asio
+  1.38.2, BSL-1.0, in `src/3rdparty/ableton-link`), the arranger toolbar's **Ableton Link** toggle and the `link.*`
+  commands join the same session as Ableton Live, Bitwig, Reason and every other Link app on the network: tempo
+  both ways (a peer's tempo is not an undo step), the play head held on the session's beat grid while playing, and
+  start/stop both ways with `link.set_start_stop_sync`. The toggle shows the peer count and the session tempo; the
+  quantum and start/stop sync are in Project > Sync and the socket, not on the toolbar. What is still limited, each in
+  `docs/LINK-SYNC.md` §5: peers are counted, not named (Link exposes a count); no test runs against Ableton Live
+  itself - the proof is Zene against the reference library in-process and two Zene binaries over real Link; output
+  latency is one engine period plus the device's reported latency, with no user offset; the tempo map is not
+  followed while a Link session plays; the Song's tempo is a whole number, so a fractional session tempo is shown
+  rounded (the play head runs at the exact rate); a start counts in to the session's phase (up to one quantum) and
+  a seek lands on the session grid (within half a quantum); a MinGW cross build cannot compile Link and gets the
+  zene-link-style fallback, and the Windows and macOS builds of the library were not built in the lane that added
+  it. `ZENE_LINK_BACKEND=zene-link-style` selects the fallback, which is what Zene 0.3/0.4 speak. The two bullets
+  below are the pre-Link record.
 - *(Updated 2026-09-30.)* **The song editor's transport now has a Sync toggle** (`link.set_enabled`) whose
   text shows the peer count and the session tempo while enabled (`SessionSyncAction`,
   `SessionSyncActionTest`). The quantum, start/stop sync and the peer list are still socket-only. The
@@ -737,44 +1094,43 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
 - *(Updated 2026-09-30.)* **An instrument or sample track's menu now has Freeze track / Unfreeze track and
   Bounce in place** (`freeze.track`, `freeze.unfreeze`, `bounce.in_place`; `TrackRenderMenuTest`). Freezing a
   region (`freeze.region`) is still socket-only. The bullet below is the pre-menu record.
-- **Freeze and bounce-in-place have no interface — added 2026-09-13.** A track's own output (its devices,
-  fader, pan and sends) can be rendered to a WAV and the track made to play that render instead of its clips —
-  drivable through `--control-socket` (`bounce.in_place`, `freeze.track`, `freeze.region`, `freeze.unfreeze`),
-  and the frozen state is saved with the project and one `control.undo` takes it off — but **nothing in
-  `src/gui/` renders a track, marks it frozen or plays a take**: drivable through the socket, not from the
-  interface. Stated limits: a **region** freeze mutes the clips that *start* inside the region, so a clip that
-  begins before the region and runs into it is left alone and sounds twice inside the region (the command names
-  it in `overlapping_clips`); the render is 44.1 kHz and the take is re-sampled to the session's device rate,
-  so a frozen render is not bit-identical to the same track unfrozen; a range's frame window is derived from
-  the project tempo, so a project that also uses a tempo map can have its region offset read from the wrong
-  tempo; a frozen track's take bypasses the
-  track's own device chain and fader (they are already baked into the render), so those controls are inert
-  until `freeze.unfreeze`; and a take whose WAV has moved since it was frozen still reports `frozen: true` but
-  has nothing to play, which `track.get_state` reports as `frozen_audio_ready: false`.
+- **Region freeze is still socket-only; track freeze and bounce-in-place are in the track menu.** Freeze track,
+  Unfreeze track and Bounce in place are on an instrument or sample track's menu (`freeze.track`, `freeze.unfreeze`,
+  `bounce.in_place`; `TrackRenderMenuTest`). A **region** freeze (`freeze.region`) has no menu of its own yet; the
+  session command remains the way to freeze a range. Stated limits: a region freeze cuts a clip that crosses the
+  region's edges at those edges (named in `overlapping_clips`) and mutes only the pieces inside - a MIDI note held
+  across an edge can still ring on; the render is 44.1 kHz and the take is re-sampled to the session's device rate,
+  so a frozen render is not bit-identical to the same track unfrozen; a tempo map is followed; a frozen track's take
+  bypasses the track's own device chain and fader (they are already baked into the render), so those controls are inert
+  until `freeze.unfreeze`; and a take whose WAV has moved since it was frozen still reports `frozen: true`, is listed by
+  `project.missing_assets` (`track` / `frozenAudio`, repointed by `project.relink`), is reported with
+  `frozen_audio_ready: false` plus the ways out, lets the source play on, and can be taken off with `freeze.unfreeze`
+  (one `control.undo` puts it back).
 - *(Updated 2026-09-30.)* **The piano roll's note tools now have a Groove menu**: Extract groove from this clip...
   (at the roll's grid, `groove.extract`), Apply groove ▸ each pooled groove at a chosen strength (`groove.apply`),
   and Quantize with strength... (`groove.quantize`) - `GrooveMenuTest`. Renaming and removing grooves, and the
   random/humanise amounts, are still socket-only. The bullet below is the pre-menu record.
-- **The groove pool and quantise have no interface — added 2026-09-13.** A note pattern's timing and
-  velocity feel can be captured into a named groove, re-applied to another clip with a strength, and notes
-  can be quantised with a strength and a humanise amount — drivable through `--control-socket`
-  (`groove.list`, `groove.extract`, `groove.set`, `groove.apply`, `groove.quantize`, `groove.remove`,
-  `groove.rename`), with a registered ctest driving the real binary over the socket — but **nothing in
-  `src/gui/` creates, shows, edits or applies a groove**: there is no groove list, no template browser, no
-  drag-to-apply and no quantise dialog. The groove pool and quantise are drivable through the socket, not
-  from the interface. `docs/GROOVE-POOL.md` also records the engine's own stated limits (a groove's
-  resolution is the slot, a sample clip is refused because there are no notes to move, a groove is
-  applied once rather than played live, and a re-quantise with no humanise puts the positions back on
-  the grid but restores no velocity — a humanised take is reversed with `control.undo`, not by
-  re-quantising).
-
+- **The groove pool's rename, remove and humanise controls remain socket-only.** The piano roll's Groove menu can
+  extract a groove from the current clip, apply any pooled groove at a chosen strength, and quantise with a strength
+  (`groove.extract`, `groove.apply`, `groove.quantize`; `GrooveMenuTest`). There is no groove-list editor in the
+  interface yet, so renaming or removing a pooled groove, and the random/humanise amount fields, stay on
+  `groove.rename`, `groove.remove`, `groove.set` and `groove.quantize` over the socket. `docs/GROOVE-POOL.md` records
+  the engine's own limits: a groove's resolution is the slot, a sample clip is refused because it has no notes to move,
+  a groove is applied once rather than played live, and a re-quantise with no humanise puts positions back on the grid
+  but restores no velocity - a humanised take is reversed with `control.undo`.
 - *(Updated 2026-09-30.)* **File ▸ Render Presets** is rebuilt from `export.preset_list` each time it opens:
   Default Settings and one item per stored preset with the applied one checked (`export.preset_apply`), Save
   Preset... (name, sample rate, bit depth, stereo mode; `export.preset_add`, asking before a name is replaced),
   a Delete submenu (`export.preset_remove`, after a confirmation), and Render Song with Preset... - the
-  interface's first route to `render.render`, which is what a preset governs (`RenderPresetMenuTest`). The
-  export dialog still keeps its own settings and ignores the applied preset, and a ranged render is still
-  socket-only. The bullet below is the pre-menu record.
+  interface's first route to `render.render`, which is what a preset governs (`RenderPresetMenuTest`).
+  *(Updated 2026-10-16, Q050-009.)* The **export dialog now carries a Render preset picker**: Default
+  Settings and one item per stored preset with the applied one selected; choosing one applies it
+  (`export.preset_apply`) and moves the rate/bit-depth/stereo rows, and Save Preset... stores the rows
+  the dialog holds (`export.preset_add`) (`ExportProjectDialogPresetTest`). **Navigate ▸ Range** gains
+  Render Selection... (`render.render` with the range's exact start/end ticks) and Export Sections...
+  (`render.sections`, one correctly named, bounded file per named section) (`RenderRangeMenuTest`,
+  `ControlRenderSections`). An applied preset now also governs **`render.stems`**, which renders at the
+  selected rate and bit depth instead of a fixed 44100 Hz. The bullet below is the pre-menu record.
 - **Render/export presets have no interface, and a ranged render is socket-only — added 2026-09-15.**
   A named render preset (a sample rate, a bit depth and a stereo mode) can be saved, listed, applied
   and removed, drivable through `--control-socket` (`export.preset_add`, `export.preset_list`,
@@ -817,19 +1173,22 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   the same project can hold different presets. A preset carries effects only: the track's instrument and
   the rack's parallel chains (`rack.*`) are not part of it, and a preset naming a device this build
   cannot load is refused, typed, with the target's chain left untouched.
-- *(Corrected 2026-09-30.)* **The song editor's transport has Punch in/out (the loop range)**
-  (`src/gui/editors/SongEditor.cpp`, `transport.punch_set` / `punch_clear`), and the capture path DOES consult
-  the gate since R2.4 (`AudioEngine::renderNextPeriod`'s punch window, `PunchWindowTest`). Still missing: a punch
-  ruler with its own handles - the region is the loop markers' range. The bullet below is the earlier record.
-- **Punch in/out is the region and its gate, and there is no interface for it — added 2026-09-13.**
-  A punch region (a tick range that capture is gated to, plus an arm flag) lives on the transport, is written
-  with the project and survives a save/load — drivable through `--control-socket` (`transport.punch_set`,
-  `transport.punch_clear`, `transport.punch_get_state`), and one `control.undo` takes a region back off through
-  the timeline's own checkpoint — but **nothing in `src/gui/` draws a punch ruler, a region handle or a punch
-  toggle, and the capture path does not consult the gate yet**: the region and
-  `Timeline::punchCapturesAt()` are real and proved, and **wiring the audio-side capture gate is deferred** —
-  this build has no capture path to gate (ALSA records nothing and the two-track prototype is fed by tests), so
-  a gate here would be a change no test could exercise. Drivable through the socket, not from the interface.
+- **Control-file read size limits (cluster new-p9-81).** Device-state and preset inputs are limited
+  to 64 MiB per file. `project.relink` and `project.collect_media` accept project documents up to
+  256 MiB, matching the existing `DataFile` document-recovery bound; a larger project document is
+  refused before either command rewrites it.
+- *(Resolved 2026-10-20, Q050-147.)* **The song editor's transport has Punch in/out and its own punch
+  ruler.** The Song Editor's ruler draws the region in a band apart from the loop brace, with a draggable
+  handle at each end; the toolbar's Punch in/out button arms it and disarms it while keeping its bounds, and
+  Clear punch range forgets them (`src/gui/editors/TimeLineWidget.cpp`, `src/gui/editors/SongEditor.cpp`).
+  Arming and dragging never read or write the loop markers, and every edit goes through `transport.punch_set`
+  / `transport.punch_clear`, the same commands an agent uses. The capture path consults the armed gate
+  frame-accurately since R2.4 (`AudioEngine::renderNextPeriod`'s punch window, `PunchWindowTest`,
+  `RecordingLatencyTest`). The bullet below is the superseded record.
+- **Punch in/out was the region and its gate with no interface — added 2026-09-13, superseded 2026-10-20.**
+  This bullet's two claims are historical: the audio-side capture gate IS wired (R2.4) and the interface now
+  has the ruler band, handles and arm/clear controls described above. Kept only so an old review reference
+  finds the correction here.
 - *(Updated 2026-09-30.)* **File ▸ Recover Recordings** is rebuilt from `record.recovery_get_state` each time it
   opens: a count, and per interrupted take (named with its recoverable length) **Place on a New Sample Track** -
   `record.recovery_restore`, then the interface loads the recovered file into a clip at bar 1 of a new sample
@@ -841,32 +1200,95 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   progress is journalled to a side file beside its take (`<take>.rec-journal`), a clean stop retires it, and an
   abnormal exit leaves it — so the next start can find the interrupted take and hand the material back, drivable
   through `--control-socket` (`record.journal_begin` / `journal_update` / `journal_finish`,
-  `record.recovery_get_state` / `recovery_restore` / `recovery_discard`) — but **nothing in `src/gui/` offers a
-  recovery prompt, and `record.recovery_restore` does not put the recovered take into the session**: 0.3.0 has
-  no command that imports an audio file onto a track as a clip, so restore resolves the offer and hands back the
-  material untouched (`audio_untouched: true`), which its result says in `next_step`. The bound is stated rather
+  `record.recovery_get_state` / `recovery_restore` / `recovery_discard`) — *(Superseded by Q050-046, 2026-10-12: startup now offers
+  interrupted takes when `record.recovery_get_state` lists any, and `record.recovery_place` puts a take on a new
+  sample track as one undo step; `record.recovery_restore` still only resolves the offer.)* Originally **nothing in
+  `src/gui/` offered a recovery prompt, and `record.recovery_restore` did not put the recovered take into the
+  session**, handing back the material untouched (`audio_untouched: true`). The bound is stated rather
   than implied: **guaranteed recoverable is `min(frames the journal recorded, frames the take's file holds)**;
-  NOT recoverable is the audio written after the journal's last update (the journal lags by at most one second
-  of audio) and up to **65536 frames** that were still in the recorder's ring buffer when the process died —
-  audio that never reached a file. `include/RecordingJournal.h` states it, `record.recovery_get_state` reports
+  NOT recoverable is the audio written after the journal's last update and up to **65536 frames** that were
+  still in the recorder's ring buffer when the process died — audio that never reached a file. *(Superseded by
+  Q050-045, 2026-10-09: the journal now lags by a tenth of a second, not one second; see the next bullet.)* `include/RecordingJournal.h` states it, `record.recovery_get_state` reports
   it per take, and `docs/RELEASE-NOTES-v0.3.0-alpha.md` records the test that measures it. Drivable through the
   socket, not from the interface.
-- *(Updated 2026-09-30.)* **Edit ▸ MIDI Clock** switches the master (**Send Clock**, `clock.master_set`) and
-  the slave (**Follow External Clock**, and **Follow Its Tempo** while it follows, `clock.slave_set`), and a
-  line under them re-reads `clock.get_state` each time the submenu opens - not sending/sending, not
-  following, following with no lock, or locked at the measured BPM; a refused switch (a master with no MIDI
-  client to send through) stays unchecked and the line names the refusal (`MidiClockMenuTest`). Choosing the
-  port and the drift bound is still socket-only. The bullet below is the pre-menu record.
-- **MIDI clock is the engine and the socket, and there is no interface for it — added 2026-09-13.** The DAW runs
+- *(Updated 2026-10-09, Q050-045.)* **The recording crash-loss window is now at most 0.185 s at 48 kHz, down from
+  more than a second.** The disk-writer thread (never the audio thread) commits the take every
+  `recordingjournal::updateIntervalFrames()` = a tenth of a second of audio: it rewrites the WAV header's data size
+  (libsndfile only wrote it on close, so a SIGKILLed take used to claim zero frames however much was on disk), syncs
+  the file, then rewrites the journal. **The stated bound is `lossBoundFrames()` = one commit interval + one
+  4096-frame writer batch = 8896 frames = 0.185 s at 48 kHz** (`record.recovery_get_state` carries it in `bound`
+  and `journal_lag_bound_frames`). `RecordingCrashLossTest` measured it with a real SIGKILL of a recording child at
+  ten controlled points: the worst recovered take was 4096 frames (0.085 s) short of what the ring had accepted, the
+  best 512. **What it does not cover:** a *stalled* writer (a disk that stops answering) can still leave up to
+  65536 ring frames (1.37 s) unwritten, and the first 0.1 s of a take has no commit yet, so a crash inside it
+  recovers nothing; the tail of a take is only committed once a full interval has accumulated, so a pause in the
+  signal does not shorten the window. **I/O cost, measured:** about 10 commits per second per armed track, mean
+  3.7 ms each (header rewrite + fsync + journal temp-file rename), i.e. about 4 % of one disk-writer thread, none of
+  it on the audio thread; the audio-thread capture path still makes zero allocations
+  (`captureStaysAllocationFreeWhileTheWriterCommits`, the AllocationProbe pattern). The old window was not
+  re-measured on the new test; its figure is the one-second interval the code carried.
+- *(Updated 2026-09-30; corrected 2026-10-20, Q050-308.)* **Edit ▸ MIDI Clock** switches the master
+  (**Send Clock**, `clock.master_set`) and the slave (**Follow External Clock**, and **Follow Its Tempo**
+  while it follows, `clock.slave_set`), and a line under them re-reads `clock.get_state` each time the
+  submenu opens - not sending/sending, not following, following with no lock, or locked at the measured BPM;
+  a refused switch (a master with no MIDI client to send through) stays unchecked and the line names the
+  refusal (`MidiClockMenuTest`). The SOURCE PORT is chosen from this menu as well: **Edit ▸ MIDI Clock ▸
+  Clock Source** offers **Any Input** plus one entry per readable client port, which is `midi.device_list`'s
+  own vocabulary (the next bullet states that picker's bounds). The DRIFT BOUND is not an Edit-menu field:
+  it is one argument of the same `clock.slave_set` command, and its form is **Project tools ▸ Sync ▸ Follow
+  MIDI Clock...** (the bullet after the next one). Neither the port nor the bound is socket-only. The bullet
+  below is the pre-menu record.
+- *(Added 2026-10-16, Q050-026.)* **Edit ▸ MIDI Clock ▸ Clock Source** chooses which input drives the follower,
+  through the same `clock.slave_set` the socket uses: **Any Input** plus one entry per readable client port as
+  `midi.device_list` spells them, rebuilt each time the submenu opens so a plugged-in device is offered; picking
+  one changes the source only and leaves the follower's mode alone (`MidiClockMenuTest::theSourceSubmenuDrivesTheSameCommand`).
+  **A chosen source is now load-bearing** where before it was stored and never read: clock messages from any
+  OTHER port are dropped and counted in `clock.get_state`'s `slave.ignored`, and switching the source forgets the
+  measurement so the device moved off cannot keep writing its tempo
+  (`MidiClockSourceTest::onlyTheConfiguredSourceCanDriveTheFollower`). Three bounds are stated rather than
+  implied. **(1) A client with one unnamed input cannot be narrowed.** ALSA Raw-MIDI, JACK, OSS, sndio and the
+  dummy client open ONE device and their bytes carry no port identity, so they deliver an unnamed clock, which
+  matches an unset source and nothing else: on such a client the submenu offers **Any Input** alone, and naming
+  a source follows nothing — honestly (the state shows `locked:false` with `ignored` climbing), never silently.
+  ALSA **sequencer** is the one backend that names its senders, so it is the one where a chosen source selects a
+  device. **(2) The sender's name is resolved once per sender and cached for the life of the client**
+  (`MidiAlsaSeq::run`), so a device that is renamed or renumbered while Zene runs keeps being followed until the
+  client is reopened; the follower's lock then drops on its own after `lock_timeout_ms` rather than following a
+  name that no longer exists. **(3) Only two backends deliver the clock family at all** — the ALSA sequencer and
+  the raw parser (ALSA Raw-MIDI, JACK, OSS, sndio): on Windows (WinMM) and macOS (CoreMIDI) clients the engine
+  builds note/control events only, so an incoming clock is not seen there and a chosen source is not what keeps
+  it unseen.
+- *(Added 2026-10-20, Q050-308.)* **Project tools ▸ Sync ▸ Follow MIDI Clock...** opens the `clock.slave_set`
+  **form** - the same registered command an agent calls over `--control-socket` or MCP, so one implementation
+  serves the menu, the form and the socket. Its fields are **enabled** and **follow_tempo** as switches,
+  **source_port** as one of the same readable-port names (blank keeps the current choice; **Any Input** is the
+  explicit empty one), and **drift_bound_ms** as an integer in whole milliseconds from **0** to **100**
+  (`MidiClockTracker::MaxDriftBoundMs`) - how far one pulse interval may stray from the window's mean and still
+  count as locked. `clock.get_state` reads both back as `slave.source_port` and `slave.drift_bound_ms`, so the
+  form, the Edit menu's picker and an agent see the same numbers. One call is **one recorded undo step**:
+  `clock.slave_set`'s class is `snapshot`, and the step restores the mode, the tempo-follow flag, the source
+  and the drift bound (the tempo a FOLLOWING slave writes is a trajectory the inverse does not claim).
+  Proofs: the Sync form route is `LibraryMenusTest::theSyncMenuOpensTheFollowClockForm`, the Edit-menu picker
+  is `MidiClockMenuTest::theSourceSubmenuDrivesTheSameCommand`, and the fields, their bound and the read-back
+  are `ControlClockCommands` (`clock.slave_set` accepts `source_port` and the bounded integer
+  `drift_bound_ms`; a bound outside 0-100 or a source name longer than the engine can hold is a typed
+  refusal). The drift-bound field is NOT in the Edit menu; only this form and the command carry it.
+- *(Corrected 2026-10-20, Q050-308.)* **The clock has an interface now: MIDI clock is in Edit ▸ MIDI Clock and Project
+  tools ▸ Sync.** The bullet below is the 2026-09-13 record of the engine-only release, kept for its bounds
+  (the backend coverage, the tempo-error bound, MTC's absence) and NOT as a current claim about the
+  interface: `src/gui/MidiClockMenu.cpp` (attached by `MainWindow.cpp`) offers **Send Clock**, **Follow
+  External Clock**, **Follow Its Tempo**, **Clock Source** and a lock line, and Project tools ▸ Sync ▸
+  **Send MIDI Clock...** / **Follow MIDI Clock...** open the registry forms for the same two commands.
+  Drivable from the interface AND through `--control-socket`/MCP, over the same registered commands.
+- **MIDI clock is the engine AND the socket — added 2026-09-13, engine half.** The DAW runs
   as a MIDI clock **master** (24 pulses to the quarter note, START/STOP/CONTINUE and a Song Position Pointer on
   the transport's own edges, emitted from the audio thread through the engine's existing MIDI output) and as a
   clock **slave** (it follows an incoming clock, measures its tempo over one quarter note of pulses, and writes
   that tempo to the song when told to follow) — drivable through `--control-socket` (`clock.get_state`,
   `clock.master_set`, `clock.slave_set`), with a registered ctest driving the real binary over the socket and a
-  registered QTest proving the rate arithmetic — but **nothing in `src/gui/` offers a clock port selector, an
-  external-sync toggle or a lock indicator**: `grep -rniI 'MidiClock' src/gui/` returns **0** hits against
-  **36** for `MidiLearn` in the same directory, so the clock is drivable through the socket and not from the
-  interface. The bound is stated rather than implied:
+  registered QTest proving the rate arithmetic. The interface half landed later (see the two bullets above:
+  Edit ▸ MIDI Clock, and Project tools ▸ Sync for the forms); what this bullet records is the engine, and the
+  bounds below are still the current ones. The bound is stated rather than implied:
   **the bytes reach a MIDI device only where a real backend is open** — a headless run reports what the engine
   PRODUCED (the message counters and the bounded monitor `clock.get_state` returns, asserted by
   `tests/control-clock-commands.py`), NOT what an external instrument received, which no test on a box with no
@@ -879,8 +1301,8 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   the user's, and a MIDI thread moving it is a behavioural change this lane did not take), and the follower's
   measured tempo is accurate to **at most `tempo × 2 × 5 ms / window`** — the engine reports that number as
   `slave.tempo_error_bound_bpm` — because a pulse is timestamped when the MIDI client's reader thread observes it,
-  and the tree's ALSA Raw reader polls after a 5 ms sleep (`src/core/midi/MidiAlsaRaw.cpp`). Drivable through the
-  socket, not from the interface.
+  and the tree's ALSA Raw reader polls after a 5 ms sleep (`src/core/midi/MidiAlsaRaw.cpp`). Both halves are
+  drivable from the interface and through the socket, over the same registered commands.
 
 - *(Corrected 2026-09-30.)* **Edit ▸ Arm MIDI Capture and Capture MIDI** (`src/gui/MainWindow.cpp`,
   `midi.retro_capture_arm` / `midi.retro_capture_to_clip`; Ctrl+Shift+C captures onto the monitored track, R5.4)
@@ -915,6 +1337,50 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   bound stated for it could be measured by a registered test. Item 14's own recorded dependency is *none*;
   item 15's is the capture path itself.
 
+- *(Updated 2026-10-06, MX-157, BUGS 11.34.)* **Hosted instrument latency.** A CLAP, VST3 or LV2 instrument
+  now reports its plug-in's latency to delay compensation: the track's bus handle adds it to its own chain's
+  (`AudioBusHandle::latencyFrames`, so `pdc.report`'s `track_inputs[].latency_frames` includes it), and the
+  other tracks are delayed by it. The host reads it off the audio thread and publishes a lock-free value:
+  CLAP after every (re)prepare (a CLAP plug-in may change its latency only inside `activate()`, and asks
+  for that with `request_restart`, which the host's 100 ms poll answers), VST3 after every prepare and,
+  on `restartComponent(kLatencyChanged)`, at the host's next 100 ms poll, LV2 from the plug-in's latency
+  port on a 500 ms poll (the port is written as the plug-in runs, so a latent LV2 instrument reports 0
+  until it has run a block and the poll has fired). Measured on rendered audio for all three formats by
+  `InstrumentLatencyPdcTest` against the in-tree fixtures. What it does not do:
+  - Between a plug-in's change and the next poll the alignment is the old one (up to 100 ms for CLAP and
+    VST3, 500 ms for LV2); a change is a step, not a cross-fade, as every PDC change is here.
+  - An instrument latency above the delay lines' capacity (`LatencyCompensation::MaxFrames`, 16384
+    frames) is clamped like a chain's, and the published total says so, but no warning is logged for an
+    instrument (the once-only warning lives in `EffectChain::refreshLatency`, which an instrument is not
+    part of). *(Measured 2026-10-19, Q050-169: `InstrumentLatencyPdcTest::instrumentLatencyAboveTheCapacityIsClampedAndDiagnosed`
+    reports 17000 frames, sees the reference delayed by only 16384 and `pdc.report`'s `delay_line_clamped`
+    set, with no capacity warning.)*
+  - Only the native CLAP, VST3 and LV2 instrument hosts report, so those three are the supported
+    instrument hosts for delay compensation. Built-in instruments report 0 (none is latent). The
+    out-of-process, VST2 (Vestige) and Carla paths are unsupported for delay compensation, not for
+    hosting: they host and play, but report no instrument latency to PDC, so nothing is
+    compensated for them.
+  - Automation compensation (`AutomationLatency`) does not count an instrument's latency: an automated
+    parameter of a latent instrument, or of an effect on its track's own chain, changes `latency` frames
+    early against that instrument's audio. *(Measured 2026-10-19, Q050-169:
+    `InstrumentLatencyPdcTest::automationCompensationDoesNotCountTheInstrumentsLatency` stamps both such
+    clips at 0 while the channel the instrument feeds stamps at the full latency.)*
+  - A channel fed by a latent instrument has a non-zero alignment point, so its rack's key zones do not
+    route notes (`RackZoneFeed` routes only through a channel aligned at 0) - the existing zone rule, now
+    met by latent instruments too.
+  - Live playing through a latent instrument is late by its latency plus the alignment unless low-latency
+    monitoring takes its path; nothing bypasses an instrument the way the low-latency mode bypasses latent
+    effects. *(Measured 2026-10-19, Q050-169:
+    `InstrumentLatencyPdcTest::lowLatencyModeDoesNotBypassALatentInstrument` arms `transport.low_latency`,
+    sees a latent EFFECT stopped and the latent INSTRUMENT's reference still delayed by its latency.)*
+    *(Updated 2026-10-27, Q050-174:)* the mode instead takes the **alignment** off a record-armed (or, with
+    `scope: all`, any) instrument track whose instrument reports more than `max_ms`: its track handle applies
+    no PDC delay, so it is heard after its own latency only, and its latency still counts in the graph, so
+    every other path stays aligned (`InstrumentLowLatencyMonitorTest::lowLatencyMonitorsTheArmedLatentInstrumentWithoutAlignment`).
+    Its limits: the instrument's own latency is still heard (it is the plug-in's); a delay PDC adds further
+    downstream - on a send from the channel it plays into to a later channel or the master - still applies;
+    a multi-output instrument's routed output buses keep their alignment; and the answer's
+    `alignment_skipped_frames` is the alignment as the mixer last published it (it moves once a period).
 - *(Updated 2026-09-30.)* **A mixer strip's tooltip now shows its delay compensation** - the latency its effects
   add and the point its input is aligned to, in frames and ms, and on the master the compensated total
   (`mixerLatencyText`, refreshed with the mixer's 500 ms sync; `MixerLatencyTextTest`). It is still not
@@ -934,13 +1400,14 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   `tests/src/core/PdcMixerTest.cpp` (sample alignment, the `LatencyCompensation::MaxFrames` clamp, the
   bit-identical zero-delay bypass) and the registered transcript `tests/control-pdc-commands.py` proves the
   SURFACE: the numbers are on the wire and they follow the routing. Stated as the bound it is, not hidden.
-- **The routing graph is readable, and the patcher group edits it; there is no patcher GUI — added 2026-09-14,
-  extended 2026-09-15.** The graph a
+- **The routing graph is readable, and the patcher group edits it; the Chain Canvas (Q050-087) draws and edits it where
+  the engine allows — added 2026-09-14, extended 2026-09-15, canvas 2026-10-21.** The graph a
   signal is actually processed through (the effect chain's `RoutingGraph`: its nodes, connections, cached
   topological order and output node, plus a mixer channel's rack graph) is drivable through
   `--control-socket` with `routing.get_state`, and the mixer's routing is settable through `mixer.route_to` /
-  `mixer.send_to` / `mixer.sidechain_to` / `mixer.route_remove` — but **nothing in `src/gui/` draws a patch
-  bay, a cable, a node or a port**, and there is **no patcher canvas**: the `patcher.*` group (added
+  `mixer.send_to` / `mixer.sidechain_to` / `mixer.route_remove` — and since Q050-087 the **Chain Canvas**
+  (Rack > Chain Canvas...; `include/PatcherCanvas.h`) draws a chain's nodes and cables and edits them through the same
+  commands (the canvas has no patch bay of its own and no node an agent cannot also add): the `patcher.*` group (added
   2026-09-15, row 69) reads a chain's graph in patch terms and RE-WIRES it, but the node SET is the effect
   list's — a node can be neither added to nor removed from a chain's graph, and no verb sets a node's own
   parameters. Until 2026-09-15 no command edited a `RoutingGraph`, on two recorded grounds: the class's
@@ -959,15 +1426,15 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   `routing.get_state` also reports and `tests/control-routing-commands.py` measures (two added chains = five
   nodes, six connections, the sum node as the output node, prepared at the engine's own block size). Devices
   that are NOT `AudioPlugin`-derived (a legacy `Effect`) do make a chain graph live, which is what
-  `tests/src/core/PatcherCommandsTest.cpp` builds to prove the edit. The
-  patcher GUI is out of scope for this
-  release, exactly as feature row 28 records.
+  `tests/src/core/PatcherCommandsTest.cpp` and `tests/src/gui/PatcherCanvasTest.cpp` build to prove the edit. **On a chain
+  of shipped devices the Chain Canvas therefore shows the cables read-only, with the reason, while adding, reordering
+  and removing devices still work** (`docs/050-features/Q050-087.md`).
 - **The patcher's edit is guarded, session-scoped and blocking — added 2026-09-15.** `patcher.get_state` /
   `patcher.set_wiring` (feature row 69) let an agent re-wire a target's effect chain through
   `--control-socket`: the wiring is addressed by ROLE (`"input"`, `"effect:<index>"`), it is re-applied by
   every derived rebuild, and `control.undo` restores the previous wiring as ONE step (a chain that was on its
-  derived wiring comes back AS the derivation). Three bounds, stated rather than hidden: (1) **no patcher
-  GUI** — nothing in `src/gui/` shows the wiring the way the socket does; (2) **the wiring is session state**
+  derived wiring comes back AS the derivation). Three bounds, stated rather than hidden: (1) **the canvas
+  edits cables only on a chain the engine routes through its graph** (see the bullet above); (2) **the wiring is session state**
   — no `<routinggraph>` element is written into `<fxchain>`, so a patch does not survive a save/load, exactly
   as the pre-existing re-wired session did not (`docs/ROUTING-GRAPH-LIVE.md` section 7); (3) **the edit is not
   lock-free** — the new graph is built off the audio thread and published under the engine's model-change
@@ -1003,8 +1470,11 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   time it opens: a line with the cache's file and quarantine counts, one **Release** item per quarantined
   file (its tooltip is the path and the reason; a file that is gone says so), **Quarantine a Plugin
   File...** (a picker, then `plugin.scan_cache_quarantine_add`) and **Rescan Plugins** (`plugin.rescan`),
-  which applies an edit (`PluginQuarantineMenuTest`). The cache's per-file records are still only on the
-  socket (`plugin.scan_cache_list` / `_lookup`). The bullet below is the pre-menu record.
+  which applies an edit (`PluginQuarantineMenuTest`). *Corrected 2026-10-15 (Q050-014):* the cache's
+  per-file records are no longer socket-only — **Project tools ▸ Plug-in Modules...** shows each record's
+  path, status, name and error and offers **Quarantine...** / **Release** / **Rescan**
+  (`CommandLists::pluginModules`, over `plugin.scan_cache_list`), while `plugin.scan_cache_list` /
+  `_lookup` remain the agent route. The bullet below is the pre-menu record.
 - **The plugin scan cache and its quarantine list are drivable, and there is no interface for either —
   added 2026-09-14.** The cache the plugin scan fills (one record per candidate file: its path, the size and
   mtime it had, its status and, for a plugin, the descriptor metadata the scan resolved) and the quarantine
@@ -1073,6 +1543,22 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
  `tests/src/core/SafeStartTest.cpp`, which raises a real signal in a forked child before asserting the next
  launch, and `tests/src/core/SafeStartLoadPathTest.cpp`, which drives the real `Plugin::instantiate()`
  against a third-party module copy — and the surface half is the `safestart.*` group in the first of them.
+- *(Updated 2026-10-12, Q050-049.)* **The crash marker now names the plug-in that was active, and the next start
+  offers to quarantine exactly that file.** Before this, the marker recorded only the pid, time and project, so
+  nothing could say which third-party plug-in killed the run. While `PluginFactory` dlopens a module (phase
+  `scan`) or `Plugin::instantiate()` runs a plug-in's own entry point (phase `instantiate`), the marker carries
+  `active_phase` / `active_format` / `active_plugin` / `active_file` through bounded atomic writes on the loading
+  thread, never the audio thread. The I/O cost has not been benchmarked; a scope for an engine-owned module does
+  not write the marker, and nested scopes restore their enclosing entry. When those writes succeed, the next
+  start reads the suspect back (`safestart::crashSuspect()`): the GUI asks **once**
+  ("quarantine this plug-in?", `gui::offerCrashQuarantine`), and an unattended run prints one stderr line;
+  `safestart.get_state` reports `crash_suspect` and `offer.quarantine` (the registered
+  `plugin.scan_cache_quarantine_add` call with its arguments). Yes goes through that command, so **Edit ▸ Plugin
+  Quarantine ▸ Release** frees the entry like any other (`PluginQuarantineMenuTest`; the crash and the marker are
+  proven by a forked child in `SafeStartTest`). Limits: only the in-process `lmms-module` load paths are
+  instrumented (LADSPA's constructor-time scan, the out-of-process hosts and VST3/CLAP editors are not), a crash
+  outside those windows still yields "the previous run did not exit cleanly" with no suspect, and the suspect is
+  read at launch, so a session that exits cleanly afterwards drops it.
 
 ## Telemetry and privacy
 
@@ -1276,7 +1762,12 @@ line each, because the scope contract asks for one each:
 - *(Updated 2026-09-30.)* **The piano roll's note-tools menu now has Randomize velocities..., Humanize
   timing... and Scale velocities...** (`note.randomize` / `note.velocity_scale` on the selected notes, or
   the clip when none is selected; `NoteTransformActionsTest`), and slide notes have had a draw tool (Note
-  tools ▸ Slide notes, Shift+L) since the slide work. Still socket-only: the seed, velocity offset and
+  tools ▸ Slide notes, Shift+L) since the slide work. *(Updated 2026-10-16, Q050-016 round 2.)* The same
+  menu now has the MPE streams' GUI path beside them: **MPE pitch ramp...** (asks the bend at the note's
+  end in cents and writes a `{0:0, len:value}` pitch stream through the shared `note.expression_stream_set`
+  command, keeping the other axes) and **Clear MPE expression streams** (empties every axis of the notes
+  that carry a stream, skipping the rest so no empty undo step is pushed) — one undo step per note either
+  way (`NoteTransformActionsTest`: GUI trigger, registry effect, `control.undo`). Still socket-only: the seed, velocity offset and
   the typed transpose. The bullet below is the earlier record.
 - **Note randomisation, transforms and slide notes are drivable through the socket, not from the interface.**
   `note.randomize` (the seeded roll), `note.random_seed_get` / `note.random_seed_set` (the project's MIDI
@@ -1326,19 +1817,24 @@ line each, because the scope contract asks for one each:
   expression already stored on notes — `note.expression_clear` is the verb for that. The master channel and
   the bend range are per-MIDI-stream **instance** settings with no object the control surface can reach, so
   `device.mpe_get_state` reports the engine's defaults rather than writing a copy nothing reads.
-## Offline stem separation (`stem.*`, feature row 26) — socket-only, opt-in, and it needs the model
+## Offline stem separation (`stem.*`, feature row 26) — built in, local, socket-only, and it needs the model
 
 The engine (HTDemucs over ONNX Runtime, one job at a time) was already in the tree with five registered
-tests; what was missing was any way to drive it. Seven ids now do — `stem.get_state`, `stem.job_start`,
-`stem.job_status`, `stem.job_result`, `stem.job_cancel`, `stem.model_get_state`, `stem.model_download` —
-and this is the honest half.
+tests; what was missing was any way to drive it. Eight ids now do — `stem.get_state`, `stem.job_start`,
+`stem.job_status`, `stem.job_result`, `stem.job_cancel`, `stem.model_get_state`, `stem.model_download` and
+`stem.tracks_create` — and this is the honest half. **It is local and offline: the separation runs on this
+machine and nothing is uploaded.** The only network access is the one-time model fetch described below; with
+the model already in the model store — or with `LMMS_STEM_OFFLINE` / an explicit `LMMS_STEM_MODEL` path — the
+feature works with no network at all.
 
-- **UI absence — one line: the whole `stem.*` group is drivable through the socket, not from the
-  interface.** The only user-visible gesture that reaches this engine is the sample clip's **"Split to
-  stems"** context action, a *different, pre-existing* path (`src/gui/clips/SampleClipView.cpp:124` →
-  `StemSplitController::splitClipToStems`): it takes its mix from the clip a human selected and exists
-  only when a display does. Nothing in the interface shows an agent's job, its progress or its error,
-  nothing lists or fetches models, and no menu item, toolbar button or keybinding reaches a `stem.*` id.
+- **The UI and the agent surface are the SAME registered commands.** The sample clip's **"Split to
+  stems"** context action (`src/gui/clips/SampleClipView.cpp` → `StemSplitController::splitClipToStems`)
+  now starts its job through `stem.job_start`, polls `stem.job_status`, cancels through `stem.job_cancel`
+  and materialises the four tracks through `stem.tracks_create` — the identical `ControlRegistry`
+  commands an agent calls (a click and a command take one path, the whole point of SPEC A11). The action
+  still exists only when a display does, and what remains absent from the interface is narrower: nothing
+  shows an *agent's* job, its progress or its error, nothing lists or fetches models, and no menu item,
+  toolbar button or keybinding reaches a `stem.*` id — the only route is the clip context menu.
 - **The feature is ON by default since owner decision 14.** `WANT_STEM_SPLIT` defaults to ON. A
   build configured with it OFF compiles none of this engine and registers none of these ids. The A16
   rows are guarded by the same macro, so the contract table and the registry cannot disagree. Without
@@ -1355,17 +1851,28 @@ and this is the honest half.
   7.8 s segment (343980 frames at 44100 Hz) as context, so no chunk size fits an audio buffer: this is an
   **offline job only**. `stem.get_state` reports `realtime: false` and the lookahead; the group offers no
   monitoring, no streaming and no realtime variant.
-- **44100 Hz only.** The input must already be at the model's own rate — there is no resampler
-  (SPEC-stem-split.md OQ-1) — and the refusal names the rate it got. A file `render.render` wrote is
-  already in that format, which is why "bounce the session, then split the bounce" is the composable flow.
-- **The source is a file, not a clip or a bus.** The socket has no way to hand the engine a clip's audio
-  buffer; `stem.job_start` names an absolute path, and the mix is decoded from it.
-- **`stem.job_result` writes files, not tracks.** It produces `<stem>.wav` (drums, bass, other, vocals)
-  as float32 RIFF/WAVE with a sha256 per file, and it does **not** materialise `SampleTrack`s: the GUI's
-  `StemTrackBuilder` gesture is not reachable from the socket in 0.3.0.
+- **44.1 kHz output; other input rates are resampled.** The stems always come back at the model's
+  own 44.1 kHz, but a source at another rate (48 kHz, 96 kHz, ...) is **resampled to it offline**
+  before separation (the engine's best sinc converter, 0.5.0 E27) instead of being refused — the
+  rejection-by-rate behaviour SPEC-stem-split.md OQ-1 left open was closed in 0.5.0. The job reports
+  the model's `sample_rate`, so a caller sees 44100 regardless of its source's rate. A file
+  `render.render` wrote is already in that format, which is why "bounce the session, then split the
+  bounce" is the direct flow (a resample is then a no-op).
+- **The source the socket names is a file.** `stem.job_start` names a platform-native absolute path (a
+  drive or UNC path on Windows) and the mix is decoded from it; the socket has no way to hand the engine a
+  live clip or a bus. The GUI action spans the
+  gap for in-memory clips (recorded, pasted, generated) by writing the clip's own audio to a temporary WAV
+  and passing that path to the same command, so an unsaved clip still splits.
+- **`stem.job_result` writes files; `stem.tracks_create` builds tracks.** `stem.job_result` produces
+  `<stem>.wav` (drums, bass, other, vocals) as float32 RIFF/WAVE with a sha256 per file and touches no
+  project state. `stem.tracks_create` takes a completed job's four stems and adds them to the song as four
+  `SampleTrack`s (one clip each, at the caller's position) — the user-facing result, and the same command
+  the GUI's "Split to stems" action runs. It is the group's one editing verb and is ONE undo step: a single
+  `control.undo` (or Ctrl+Z) removes all four tracks together.
 - **Jobs are not project state.** They live in the instance's memory: a reload or a restart loses the id,
-  its progress and its stems, and `control.transactions` shows no record because the whole group is
-  `not_mutating` — a job is not a document and a written stem is an output.
+  its progress and its stems. The job, model and write verbs are `not_mutating` and leave no transaction;
+  the one editing verb, `stem.tracks_create`, records a `true_inverse` transaction whose inverse removes
+  all four tracks — a job itself is still not a document, and a written stem is an output.
 - **`stem.model_download` carries a DECLARED BOUND.** A performing transfer (an explicitly pinned spec)
   runs on the control surface's own thread, so the surface does not answer — `control.ping` included —
   until it finishes or fails. This is the **same** defect `docs/RENDER-CHILD-WAIT.md:120-126` records for
@@ -1376,52 +1883,73 @@ and this is the honest half.
   (`tests/control-stem-commands.py`), which drives the real pipeline over `--control-socket` on the
   committed stub ONNX graph, and which **skips** (exit 77) on a host with no python onnxruntime rather
   than passing.
-**Loudness metering is drivable and there is no meter in the interface — the socket is the only way to watch
-or measure a level.** `meter.get_state` reads the PASSIVE tap on the live master (gated integrated loudness,
+**Loudness metering: the shell's readout is the MASTER's; each mixer strip can show its own (corrected
+2026-10-25, Q050-108).** The earlier wording of this entry - "there is no meter in the interface" - is no longer
+true: the shell's transport bar has a LUFS field (`src/gui/shell/TransportReadouts.cpp`, the master's short-term
+LUFS and true peak from `meter.get_state` while the master meter is armed), Large Meters shows the master's
+short-term loudness, and since Q050-108 every mixer strip can pick its own meter (`mixer.set_strip`
+`meter_mode`: peak, rms, pre_fader, **vu** - 300 ms integration, 0 VU at `meter.set_reference`'s dBFS for a steady
+sine - or **lufs** - that channel's BS.1770 momentary / short-term loudness and true peak after its fader, read by
+`mixer.strip_get` and shown on the strip's meter line). What stays **master-only**: the shell's LUFS field,
+Large Meters' loudness line and `meter.get_state`; a strip's LUFS mode has no integrated loudness, no LRA and no
+history, and restarts its measurement whenever the strip enters the mode. The rest of this entry, as written:
+`meter.get_state` reads the PASSIVE tap on the live master (gated integrated loudness,
 momentary, short-term, the loudest short-term window and true peak, fed one period per rendered period out of
 `AudioEngine::renderStageMix()`), `meter.arm` arms or disarms it (arming starts a fresh measurement; a
 disarmed tap is one relaxed atomic load per audio period and measures nothing), and `meter.measure_file`
 measures a **rendered file** with the same BS.1770-4 meter the render path uses, with the EBU R 128 verdict.
 The render path's own report — the `.loudness.txt` sidecar — is reachable as well now: `export.get_settings`
 exposes `loudness_report` and `export.set_loudness_report` turns it on for the next render. What is **absent
-from the interface**: there is **no loudness meter widget, no LUFS/true-peak readout, no meter bridge and no
-loudness column** — `grep -rniI 'lufs\|loudness' src/gui/` finds only the export dialog's existing report
-checkbox and its result label — so nothing in this release shows a level while the transport runs. Stated
-limits: the live tap measures the **master mix only** (no per-track or per-bus loudness, no R128 momentary
-history graph and no loudness range / LRA); the meter is **stereo** in the application (`DEFAULT_CHANNELS`),
+from the interface** (as first written - see the correction above): no meter bridge and no loudness column.
+Stated limits: the live tap measures the **master mix only** (per-channel loudness is the strips' own LUFS mode,
+Q050-108; no R128 momentary history graph and no loudness range / LRA); the meter is **stereo** in the application (`DEFAULT_CHANNELS`),
 while `meter.measure_file` accepts 1 to 6 channels and refuses more, typed; a reading is JSON `null` — never a
 plausible number — while the meter has no measurement (silence, or a window that has not filled), and the
 **EBU R 128 target (−23.0 LUFS-I ±0.5 LU, −1.0 dBTP) is the only thing graded** (the −14 LUFS-I streaming
 figure is carried as an informative convention); and `meter.measure_file` measures a file **this** instance can
 open — it does not fetch, decode or render one. `docs/METER-SURFACE.md` is the feature's own record.
-## Linked / smart clips: two clips, one source (`clip.link_*`, feature row 6)
+## Linked / smart clips (`clip.link_*`, feature row 6)
 
-`clip.link_create` / `clip.link_remove` / `clip.link_get_state` / `clip.link_sync` are
-**drivable through the socket, not from the interface**: a link group is created, inspected, repaired and
-broken only through those four ids, and nothing in `src/gui/` draws a link badge, offers "edit shared
-source", or colours a member of a group (`grep -rn "linkId\|clip.link_" src/gui/` returns nothing).
-**UI absence — one line: content edits propagate and placement edits do not.** What a link shares is the
-clip's note list, so `note.add` / `note.remove` / `note.move` / `note.resize` / `note.velocity_set` on ANY
-member are seen by every member of the group (and `clip.link_sync` forces the group to agree when an edit
-did not pass through those verbs — a piano-roll in-place gesture, a hand-edited project file); what it does
-NOT share is where and how each member plays that content, so `clip.move`, `clip.resize`, `clip.trim`,
-`clip.slip`, `clip.set_fade`, `clip.set_gain`, `clip.crossfade`, mute/solo, a member's name or colour and
-its take lane are per-member and never propagate. **An audio clip cannot be a member**: the group's content
-channel is a note list, so `clip.link_create` refuses a `SampleClip` typed (`invalid_args`) rather than
-creating a group of one that would look linked and share nothing. The design decision (a persisted group id
-plus a write-through mirror — not a shared content object, not copy-on-write), the edit-kind table and the
-bounds are `docs/LINKED-CLIPS.md`; the proof is the registered ctest **ClipLinkTest** (the propagation, the
-unlink, the A16 rows, and a save/reload round trip that shows the link is still there and still propagates
-after `loadProject`).
+`clip.link_create`, `clip.link_remove`, `clip.link_make_unique`, `clip.link_get_state` and
+`clip.link_sync` are available through the control surface. The arranger also shows a small chain marker on
+linked MIDI clips, and each marker has an accessible name. The MIDI clip context menu offers **Make Unique**.
+
+**Shared state:** notes, name and colour. A note edit in any linked instance updates every member's notes. The
+link relation remains a persisted group id plus a write-through mirror, so it survives save/reload without a
+shared pointer or load-order relinking pass.
+
+**Per-instance state:** start, length, loop start/length/offset, fades, gain and mute. `clip.trim`, `clip.resize`,
+arranger edge drags and VCA trims change only the instance being edited. A split cuts only that instance; its two
+pieces stay linked and show the shared notes through their independent windows. Other linked instances remain
+untouched. `clip.link_make_unique` gives one instance its own copy of the current content and is reversible with
+one undo.
+
+**Bound:** an audio clip cannot be a member. A link group's content channel is a MIDI note list, so
+`clip.link_create` refuses a `SampleClip` typed (`invalid_args`). The design, edit-kind table and proof details are
+in `docs/LINKED-CLIPS.md`; registered proof is in `ClipLinkTest`, `LinkedClipGroupEditsTest` and
+`MidiClipLinkedEditTest`.
+
+## Clip crossfades — clamp by default (owner ruling 2026-10-09)
+
+Arranger drops and clip.crossfade default to edge-anchored crossfades with zero offsets. The previous V-shaped
+container fade is an explicit gesture: hold Alt while dropping a clip onto another clip on the same track, or call
+clip.crossfade with mode "container". Container mode uses the inner clip's authored fade-in and fade-out lengths;
+the ramps must fit inside the inner clip, and the container stays silent if those ramps leave a gap. A missing or
+non-fitting ramp is skipped in the arranger and refused by the command. Existing offset fades in project files
+still load and render under the previous adjacent-pair rule. Full behavior and the additive gap attribute are
+documented in docs/CLIP-CROSSFADE.md; the registered render and allocation checks are in ClipOffsetFadeTest and
+ClipOffsetFadePairTest.
+
 **CODE-6/CODE-7/CODE-8 — the change-plan code rows: what each of them does NOT do.** Four absences,
 each one line, because each is a bound rather than a bug:
 - *(Updated 2026-09-30.)* **File ▸ Script Memory Budget...** names the current cap and sets a new one in MiB
   (`script.set_memory_budget`; out-of-range values refused, one `control.undo` restores the previous cap)
   (`ScriptBudgetActionTest`). Still missing: a live readout of a running script's Lua bytes. The bullet below is
   the pre-menu record.
-- **The Lua memory budget has no interface.** `script.set_memory_budget` sets the cap and
-  `script.run` reports what a run measured against it; **no dialog shows live Lua bytes and nothing in
-  the window lets a user set a budget**. The default is 64 MiB
+- **The Lua memory budget has an interface for the CAP, not for live bytes.** `script.set_memory_budget`
+  sets the cap and `script.run` reports what a run measured against it; File > Script Memory Budget...
+  (the bullet above) is where a user sets it, and the live-code panel's help text states the default and
+  the accepted range. What is still missing is a **live readout of a run's Lua bytes**. The default is 64 MiB
   (`ScriptEngine::DefaultMemoryBudgetBytes`), the surface accepts `[512 KiB, 1 GiB]` and refuses
   anything outside that rather than clamping it, and the budget bounds **Lua memory** — what the script
   asks the Lua allocator for — **not** the C++ heap the bindings allocate, and not the process's total
@@ -1482,7 +2010,16 @@ a project with no warp, or with warps in the default mode, renders exactly as it
 feature. **UI absence — one line: the stretch mode is settable through the socket, not from the
 interface** — `grep -rniI 'WarpStretchMode\|preserve_pitch\|warpStretch\|AudioStretcher' src/gui/`
 returns **0** hits, there is no clip-context entry, no checkbox and no marker-drag gesture for it, and a
-project file or `warp.stretch` are the only two ways to author it.
+project file or `warp.stretch` are the only two ways to author it. **A third mode, `rubberband`, routes the
+same rate through Rubber Band 3's R3 engine** (`warp.stretch` with `mode="rubberband"`, `<warp
+stretch="rubberband">`; owner decision 12) for tonal and polyphonic material where WSOLA's search runs out.
+Its caveats, all structural: the library is an **optional dependency** (`WANT_RUBBERBAND`, default ON) and a
+build without it **refuses** the mode while a project that asks for it still loads and renders through WSOLA
+(`warp.list` then reads `stretch_algorithm:"wsola"`); a clip in the mode owns **two** stretcher voices, and a
+pass for which both are busy (a third concurrent pass, or a re-trigger inside the ~4 ms recycle window)
+renders through **WSOLA** for that pass — counted in `RubberBandPool::misses()`, never silence; and a
+transposed Rubber Band clip renders through the stretcher even without a rate change (the transpose is the
+pitch it renders, ED-038). The WSOLA caveats above apply verbatim to every fallback render.
 
 - **Structural undo is drivable and undoable through the socket, and the interface has no history panel —
   added 2026-09-15.** `track.add`, `track.remove`, `track.move`, `plugin.load` and `plugin.unload` are journalled
@@ -1504,10 +2041,14 @@ project file or `warp.stretch` are the only two ways to author it.
   with Ctrl+Z — but there is still **no undo-history panel**, nothing lists the structural steps, and there is no
   control that names or limits the capture bound.
 
-**The chord track, its detection and its generators are drivable, and nothing in the interface
-shows or plays them.** `chord.*` is the only way to reach any of it: there is no chord lane, no
-chord ruler, no chord-edit popover and no generator panel in 0.3.0, and `grep -rniI
-'ChordTrack\|chord-track' src/gui/` returns **0** hits. What IS there is the entity (a chord
+**The chord track, its detection and its generators are drivable; the chord track itself has no
+editor.** `chord.*` is the only way to write the track: there is no chord ruler, no chord-edit
+popover and no chord-track editor (the arranger draws the track as a ruler lane - docs/CHORD-TRACK.md
+§6a - but nothing edits it there). Since Q050-019 the Edit > Progression window
+(`window.progression`, `gui::ChordProgressionPanel`) browses the catalogue and writes a NAMED
+progression into a MIDI clip from the interface - but it writes NOTES into a clip through
+`chord.progression_generate`, exactly as the headless workflow does, and it leaves the chord track
+untouched (the panel's own bounds are in `docs/CHORD-TRACK.md` §6b). What IS there is the entity (a chord
 track persisted as one `<chord-track>` element inside `<song>`, written only when it holds a
 chord), the detection (what a clip's notes spell, against the vocabulary the piano roll's own
 chord and scale selectors read — no second scale table exists in this fork) and two generators
@@ -1602,7 +2143,9 @@ What is bounded, stated rather than implied:
   own counter (`MidiPort::outputEventsWritten()`) is read where `m_midiClient->processOutEvent()` is
   called. That is a write reaching the client, **not** a proof that a lamp lit — with the dummy client
   `sendByte()` is a no-op, and nothing here has been run against a controller that could confirm it.
-- **OSC is out** — this is the MIDI controller surface only.
+- **OSC is a separate, opt-in server** (Q050-205, `osc.*`, Customise > OSC Control Server): it maps `/zene/<command-id>`
+  onto the registry; this controller-surface group stays MIDI. The OSC server sends replies to requests only - no
+  unsolicited feedback, subscriptions or meter streams - and is not remembered across restarts.
 - **No motorised-fader return path is proved.** `controller.feedback` writes the value the project
   holds; whether a given device acts on it (moves a fader rather than lighting a ring) is a property of
   the device, and is unverified here.
@@ -1675,11 +2218,12 @@ mixer channel and the socket-addressable chain from Lua and reads the engine bac
   revisions are listed with their source and their UTC time by `revisions.list` (group `revisions`,
   feature-list row 76 / OWNER-31 item 30): the **keep-3 rotation** `project.save` performs
   (`<file>.rev0` .. `<file>.rev2`, 8 MiB each), the **`<file>.bak`** a save from the interface leaves,
-  the **autosave** (`recover.mmp`, and `recover.mmp.bak` when it replaced one, each with its `.info`
-  sidecar's recorded time) and the project's own **git history** where it lives in a repository (one
-  bounded `git log`, 2500 ms, skipped entirely when no `git` is on the machine — the `git` object in the
-  reply says which). **No new store and no format change**: every entry is an artefact the engine
-  already writes. Stated limits, all structural or measured: **`revisions.compare` is a STRUCTURAL
+  the **autosave** (`recover.mmp`, timed by its `.info` sidecar's `savedUTC` value, and
+  `recover.mmp.bak` when present, timed by its file timestamp) and the project's own **git history** where it
+  lives in a repository (one bounded `git log`, 2500 ms, skipped entirely when no `git` is on the machine —
+  the `git` object in the reply says which). **No new store and no format change**: rotation, backup
+  and autosave entries are existing files; Git entries come from the project's existing repository
+  history. Stated limits, all structural or measured: **`revisions.compare` is a STRUCTURAL
   comparison** — each document's element count per tag and the tags that differ — and it is **not a
   semantic diff**; the musical diff of two project documents stays `tools/mmpz-git`'s (`mmpz-git diff`),
   outside this process; **a git entry carries no `sha256`** (hashing every listed commit would be one
@@ -1695,10 +2239,17 @@ mixer channel and the socket-addressable chain from Lua and reads the engine bac
   after `qUncompress`**, so a document over 64 MiB decompressed is reported unreadable rather than
   counted. Proof: the registered ctest `RevisionTimelineTest` (real documents, a real `.bak`/`.rev0`/
   autosave fixture, a real repository where git exists, all three ids driven through the registry).
-  **UI absence — one line: the revision timeline is drivable through the socket, not from the
-  interface** — `grep -rniI 'RevisionTimeline\|revisions\.list\|revisions\.restore\|RevisionEntry'
-  src/gui/` returns **0** hits: there is no revision panel, no timeline strip and no "restore this
-  revision" entry, and `revisions.list` is where a caller finds out what a project has.
+  **The interface (corrected 2026-11-05, Q050-438): Project tools ▸ Revisions...** opens the list over
+  `revisions.list` (`CommandLists::revisions`, `src/gui/CommandLists.cpp`) whose rows carry the id,
+  source, UTC timestamp and size; **Restore** (asking first) runs `revisions.restore` on the row's id,
+  and **Compare With Now** runs `revisions.compare` with the row as `a` and the live file as `b` and
+  shows the reply. The menu runs the same registered commands the socket and MCP expose, so the person
+  and an agent read one list and take one action. It keeps these limits: the list reports only the
+  artefacts above (at most 24 entries, 10 of them git commits) - a numbered **File ▸ Save as New
+  Version** file and a named **alternative** are separate files the session switches to, not sources;
+  the git half is optional and bounded as stated; **Compare With Now** is the structural summary, not
+  a musical diff; and **Restore** changes the file on disk only - the session already open keeps the
+  state it had, and `project.open` is how the restored bytes are read back.
 
 **Import detection (`detect.*`) suggests a tempo and a key, and it is drivable only through the socket.**
 `detect.analyze` reads one audio file and reports a tempo (BPM), the first transient it carries and a key;
@@ -1895,24 +2446,46 @@ ignored. (Adds the `fsync`-before-rename durability step on POSIX; on Windows th
 guarantee. The `complete="1"` index marker the same spec section sketches is *not* implemented — it belongs to
 `<z:index>`/`DocumentIndex`, which this slice is scoped out of.)
 
-## The destructive waveform editor's first slice (`sample.*`, board card #706) — socket-only, no interface
+## The destructive waveform editor (`sample.*`, board card #706) — the Sample Editor's range edits, and the whole-source bakers
 
-Five commands exist — `sample.generate` (tone / white / pink / silence into a new audio clip),
-`sample.amplify`, `sample.normalize`, `sample.reverse` and `sample.fade` (linear, in or out) — and
-**no interface reaches any of them**: there is no waveform view, no menu entry, no toolbar button, no
-docked panel and no dialog for them in `src/gui/`, so the ONLY way to run a generator or a baker in
-this release is the control socket (the MCP bridge is the same door). **Placement is an open owner
-decision for the UI phase** — mixer-slot vs clip editor vs window — and this lane did not take it
-(board card #706, question 4; `design/specs/DECISION-706-DESTRUCTION-MODEL.md` records the same
-defer). The bounds around them, stated rather than left to be discovered: every operator transforms
-the clip's **whole source** — there is no range/selection model, a clip playing a trimmed
-`srcin/srcout` window is REFUSED with the typed error naming that limit, and a fade therefore always
-spans the whole clip and has only the linear curve (`clip.set_fade` remains the non-baking window
-fade; `clip.set_gain` remains the non-baking gain); `sample.amplify` applies **no limiter** (the
-float pipeline keeps values past 0 dBFS); each step's undo bound is the ENGINE's own — `min(100
-steps, 16 MiB)` of retained checkpoints (`docs/UNDO-BOUNDS.md`), against which a baked buffer's
-serialized bytes count — not a private stack; and the deferred verbs register **no id at all** in this
-slice: noise reduction, pitch/tempo change and chirp are named here as not started, not stubbed.
+A sample clip's menu opens **Sample Editor...**. A selection dragged across the waveform, or typed into
+Start, End and Length, is the range every edit button acts on: **-3 dB** and **+3 dB** (gain),
+**Silence**, **Delete**, **Reverse**, **Fade In**, **Fade Out** and **Crop**. Each button is one
+`sample.edit_range` call over source frames `[from, to)` with `op` = `gain` (with `gain_db`),
+`silence`, `delete`, `reverse`, `fade_in`, `fade_out` or `crop` — the same registered command an agent
+runs, so there is one implementation and one undo step per edit (a Clip checkpoint, against the
+engine's `min(100 steps, 16 MiB)` bound in `docs/UNDO-BOUNDS.md`). Silence keeps the range's length;
+Delete closes the gap, so what followed the range moves earlier; Crop keeps only the range. A delete
+that would remove everything the clip plays is refused, and a crop or delete that would move the
+clip's warp markers is refused (remove them first). The buttons are disabled while nothing is
+selected, and each reports its outcome (or its typed refusal) on the editor's status line.
+`window.sample_editor` opens the editor, or brings its open window forward, and can set its range and
+view.
+Two more buttons act on the **whole source**, not the selection: **To Mono** is `sample.edit_range`
+`op: "mono"` (every frame becomes the documented `(L + R) / 2` on both sides, one undo step; a mono
+source is refused), and **Split Stereo...** is `sample.split_stereo`, which writes the left and right
+channels as two mono WAV files and leaves the clip unchanged.
+
+The bounds, stated rather than left to be discovered: range gain multiplies the selected frames and
+applies **no limiter** (the float pipeline keeps values past 0 dBFS), and the destructive **fades are
+linear** — Fade In and Fade Out have no curve choices. The Sample Editor's range tools have
+**no noise reduction**: `sample.edit_range` registers no denoise operation (its eighth value,
+`mono`, is the whole-source downmix above). (A denoiser exists as a
+separate plug-in effect; it is not a destructive range operation.)
+
+The whole-source commands are a different surface, and a clip's **Process** menu reaches them:
+**Normalize...** (`sample.normalize`), **Amplify...** (`sample.amplify`), **Reverse**
+(`sample.reverse`) and **Fade** (`sample.fade`, direction in or out) bake the clip's **whole source**
+and are refused for a clip playing a trimmed `srcin/srcout` window; that fade is linear too, and
+**Amplify...** applies **no limiter** either. The same menu's **Convert to Mono** is the editor's
+To Mono (`sample.edit_range` `op: "mono"`). A sample track's **More** menu (the track header's and
+the Inspector's) offers `sample.generate` as **Insert Test Signal...**, which opens the command's
+own form with that track fixed and position `0`, length `192` and kind `tone` pre-filled. The MCP
+bridge and the control socket are the same commands, not a second implementation. The editor's **Crop** is `sample.edit_range` `op: "crop"` over the
+selection; a clip menu's **Crop the Sample** is `sample.crop`, which discards the source frames
+outside the clip's play window. `clip.set_fade` and `clip.set_gain` remain the non-baking window fade
+and gain. Noise reduction, pitch/tempo change and chirp still register **no id at all** — not started,
+not stubbed.
 
 ## Scheduled Lua evaluation (livecode.*) - board card #708 - 2026-09-22
 
@@ -1941,6 +2514,20 @@ measured by `ScriptClockTest` or the `ControlLivecodeCommands` transcript:
   `budget_exceeded` - and a schedule that ALWAYS overruns still costs its control thread that budget
   on every bar (bounded, not free). The audio thread is never on this path, which the transcript's
   negative control proves by reading the play head advancing across the overrun.
+- **Two hard caps, both stated in the live-code panel.** A single source is capped at 65,536 UTF-8 bytes
+  (`ScriptClock::SourceByteCap`) and the registry holds at most 64 schedules
+  (`ScriptClock::MaxScheduleCount`); scheduling past either is a typed refusal and changes nothing. The
+  caps exist because each schedule's definition is also carried by its transaction record (before-state
+  plus inverse) inside `control::MaxTransactionBytes`.
+- **Schedules are process-local runtime state.** `ScriptClock`'s registry is in memory and no project
+  save/load path carries it: a schedule does not survive a restart and is not in the `.mmp`/`.mmpz`, so
+  project-file compatibility is untouched (nothing was added to the format).
+- **The interface is Edit > Live Code (`window.livecode`).** The panel edits the source, schedules and
+  cancels through the same `livecode.*` commands an agent uses, shows a compile refusal without dropping
+  the active schedule, loads a schedule's captured text through `livecode.get_source` (a read-only
+  companion of `get_state`, which reports source BYTES only so a poll never carries every definition),
+  and its help text states the fresh-Lua-state rule and every bound above. Runtime schedules are still
+  not listed in the project's missing-devices or task surfaces - they are not project data.
 - **More than four crossings in one observation coalesce** (`ScriptClockGrid::CrossCap`): a forward
   seek or a control thread blocked inside a long `script.run` re-anchors the grid and counts the
   dropped bars as `coalesced` rather than firing stale bars late.
@@ -2015,9 +2602,14 @@ nested tab) and the settings and export dialogs, and asks Qt's accessibility lay
 every widget Tab can reach - 155 of them. The walks found 43 announced as nothing; all 43 are
 named, and the ratchet list is empty. **Knobs are now keyboard-operable** (Tab reaches them;
 arrows step as the wheel does, PageUp/PageDown coarsely, Home/End to the ends - `KnobKeyboardTest`)
-and named from their label, model or hint. **What it does not cover:** faders and LED buttons still
-take no keyboard focus (the mixer's own keys move the current channel's fader), and dialogs other
-than those two are not walked. The paragraph below is the 2026-09-22 record.
+and named from their label, model or hint. **Faders and model (LED) buttons take Tab focus too**
+(0.5.0 theme 10) and answer the slider and button keys; a mixer strip's controls are walked with
+Tab and Shift+Tab (wrapping inside the strip), and Ctrl+Tab / Ctrl+Shift+Tab move to the same
+control on the adjacent channel, stopping at the first and last channel (`MixerModesTest`). Each
+strip control is named with its channel's name through Qt's accessibility bridge. **What it does
+not cover:** dialogs other than those walked are not checked, and no screen reader has been run
+(the bridge is asserted, not a real screen reader - see the note below). The paragraph below is
+the 2026-09-22 record.
 
 The accessibility + palette pass of SPEC-zene-ui-v0 §5 item 1 swept exactly three
 surfaces - the Focus Desk shell (`src/gui/FocusDesk.cpp`, `FocusDeskPane.cpp`,
@@ -2225,17 +2817,54 @@ Fleshed out, because both halves of that sentence hide something real:
 - PulseAudio, SDL, OSS, sndio and SoundIo stay stereo; routes beyond 1/2 answer
   `multichannel:false` / `stereo_backend`. PortAudio is not compiled in this build.
 - Input channel names and buses are labels only; JACK port names do not use them.
-- A hardware insert is bypassed during an export: the dry signal passes and it reports 0 latency.
-- `pdc.report` does not list the insert's latency per channel, although PDC includes it.
+- A hardware insert is bypassed during an (offline) export: the dry signal passes and it reports 0 latency.
+  Since Q050-089.2 (2026-10-27) `render.render` says so in its reply (`hardware_inserts`: hardware
+  `unavailable`, `bypassed`, the inserts that are on), and `render.realtime` (the channel's Hardware I/O >
+  Render Through Hardware (Real Time)...) plays the song through the device so the inserts are heard. Its
+  limits: the whole song only (no range, stems or per-track print), WAV only, at the device's sample rate
+  (no resampling to the export preset's rate), stereo master only, at most 600 s of song; the control surface
+  and the interface wait while it plays; MIDI hardware instruments are not printed. The project export
+  dialog does not offer it yet (Q050-089 stage 3).
+- ~~`pdc.report` does not list the insert's latency per channel, although PDC includes it.~~ Lifted by
+  Q050-089.1 (2026-10-27): every channel carries `hardware_insert_latency_frames` (the figure PDC counts)
+  and `hardware_insert_latency_source`, and the strip tooltip names the same frames. During an export the
+  source reads `bypassed` and the figure 0 - a real-time render (`render.realtime`, Q050-089.2) is not
+  an export, so the insert keeps its latency there.
 
 **F2, instruments (MX-114/112/120).**
-- Output buses, MIDI parts, layers and per-voice modulation have no interface yet; they are
-  command-only.
+- Output buses have an interface: Instrument Setup > Output Buses on the track's header menu, its
+  Inspector "More" menu and its instrument's device card lists the buses, routes one to a channel
+  (or un-routes it) and makes a channel for each unrouted bus, all through the plugin.output_* commands.
+  A bus count is the plug-in's own: there is no adding or removing a bus, only routing one.
+- MIDI parts have an interface: Instrument Setup > MIDI Parts lists a track's parts, adds one, edits one
+  in place (plugin.midi_part_set, which keeps the part's place in the first-match order) and removes one.
+  The Edit form starts blank - a field left blank keeps its value - rather than showing the current one.
+- Layers have an interface: Instrument Setup > Layers > Layer Rack... is a panel with a row per layer
+  (layer-0 is the track's own instrument) - Mute, Solo, Level (a gain on top of the track's volume,
+  0..200 %), Open (the layer instrument's own view, in a window that closes with the layer) and Remove -
+  with Add Layer... and Zones... under it; Add a Layer... and Layer Zones... are in the menu too. Mute,
+  solo and level are rack.layer_set, saved with the track. Layer-0 has no level of its own (it is the
+  track's volume) and no Remove or Open there (its own window and device card do that). A layer's mute
+  and solo are a gain of 0 on its bus: a muted layer still runs its notes (CPU), it is just not heard.
+  A plug-in layer opens the host's view of it, not the plug-in's own editor (plugin.editor_open does
+  not address a layer).
+- Per-voice modulation has an interface: Instrument Setup > Per-Voice Modulation lists the modulators
+  (make one per-voice on the track's notes or not, bind it to a parameter of the track's instrument,
+  remove it, create one) and the modulation assignments (change a depth, remove one). The modulation
+  layer is the song's, so Modulation Assignments lists every track's assignments with a 'track' column
+  rather than only this track's; the parameter to bind is typed by its display name (plugin.param_get
+  lists them), there is no parameter picker; and a modulator's shape and rate are edited in the
+  Modulators panel, not here.
 - Layers receive the track's played notes, not the notes its chord or arpeggio functions add.
 - Each layer is a hidden track with its own bus handle and MIDI port, so under JACK each one has its
   own ports.
-- Hosted instruments still report no latency to PDC (BUGS 11.34). Routed buses are aligned to the
-  target channel's latency only.
+- *(Updated 2026-10-06, MX-157.)* Hosted CLAP, VST3 and LV2 instruments now report their latency to PDC,
+  and a routed output bus carries it: the mixer counts the instrument's latency in the bus's target
+  channel's alignment point, and delays the bus only by what that alignment adds on top
+  (`InstrumentLatencyPdcTest::routedOutputBusIsAlignedWithTheMainOutput`). A layer is a hidden instrument
+  track with its own bus handle, so a hosted instrument on a layer reports through that handle like any
+  track; that case is not separately tested. What remains is listed under "Hosted instrument latency"
+  below.
 - Removing a layer while live MIDI is forwarded from the MIDI thread has the same unguarded window
   as deleting any track.
 - CLAP note events now carry `note_id = channel × 128 + key` instead of -1.
@@ -2281,23 +2910,24 @@ Fleshed out, because both halves of that sentence hide something real:
 - There is no reconnect, and no HTML remote page, because browsers cannot do TLS-PSK.
 
 **F7, surround (MX-060).**
-- Multichannel WAV export is not built: the renderer writes stereo. A stereo export applies the
-  BS.775 downmix.
+- Multichannel export is WAV only (WAVE_FORMAT_EXTENSIBLE: 6 channels for 5.1, 8 for 7.1, 3 for LCR,
+  4 for quad, at 16/24/32-bit). Stereo, with the BS.775 downmix, stays the default; FLAC, OGG and MP3
+  export stereo. Choose it in the export dialog's Channels row, with `--channels surround`, or with
+  `render.render`'s `channels: "surround"` (docs/SURROUND-EXPORT.md).
+- A surround export carries no loudness report (the meter measures stereo): it is refused while the
+  report is on, and the dialog turns the report off.
+- Per-track renders, stem exports, mastering candidates, the render queue (`render.queue_add`) and
+  `render.stems` stay stereo; export presets do not store the channel choice.
 - A surround channel's extra channels get no PDC delay.
 - Its devices, post-fader inserts, mono/polarity/width/EQ and meters act on L/R only.
 - Cue mixes, listen and the recorder carry L/R.
 - The pan acts on the extra channels at its block value.
 
-**Found while integrating.** `transport.seek` while the transport is stopped moves the stopped
-mode's timeline, not the song's, and `transport.play` starts from the song's. The video window
-follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
-
-
 ## 0.5.0 catch-up wave 3 — the redesign themes 8-24, and what they leave out (2026-10-04)
 
 **Workspace and layouts (themes 8, 22).**
 - The controller rack and project notes stay floating tools rather than docked panels: docking them would change what every project file saves.
-- The main window's own geometry is not remembered; it opens maximised.
+- ~~The main window's own geometry is not remembered; it opens maximised.~~ *(Resolved 2026-10-07: it opens where it was left - screen, normal size and place, maximised or not - fitted to a connected screen; maximised only when nothing is remembered. `MainWindowGeometryTest`, docs/UI-SHELL.md §5. An agent-driven or offscreen run neither reads nor writes the place.)*
 - The header and footer overflow are tested offscreen only.
 
 **Arranger and launcher (themes 9, 14).**
@@ -2306,23 +2936,39 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 - `session.jump_slot` keeps its default of 0.
 
 **Canvases without a mouse, and announcements (themes 10, 17).**
-- The editable item list is a floating tool window opened with Ctrl+Shift+L or `window.item_list`. There are no List buttons in the toolbars yet.
-- The sample editor's keyboard route is its range fields. The waveform itself takes no keys.
-- An MPE lane key edits only the cursor note.
+- The editable item list is a floating tool window, not a docked panel. It opens from the List button on its canvas (the note editor's and the arranger's toolbars; under the lane chooser while it shows a controller lane; beside the XY pad's axes; beside Add lane in the take lanes), with Ctrl+Shift+L, or with `window.item_list`.
+  Since 2026-10-06 (ED-194) the automation editor has a list too (`surface: "automation"`, see the section below). It has
+  no List button: the List buttons (050/feat-ui-gaps) and the automation list (050/feat-editor-lanes) landed in parallel,
+  so that list opens with Ctrl+Shift+L or `window.item_list` only.
+- The sample editor's waveform takes keyboard focus: Left/Right move its cursor, Shift+Left/Right
+  extend the selection, Home/End go to the ends, Ctrl+Plus/Minus zoom, Ctrl+0 shows all and Ctrl+A
+  selects all; its range fields and operation buttons remain the typed route (`SampleEditorDialogTest`).
+- An MPE lane key edits every selected note in one undo step, not only the cursor note; the lane's
+  accessible value names the lane, value and selection count (`CanvasKeyboardTest`).
 - Screen readers (NVDA, VoiceOver, Orca) are reached through Qt's bridge, which the tests assert. No screen reader was run.
 
 **Lanes and the sample editor (themes 11, 15).**
-- The lanes have no playhead.
-- No arbitrary controller number can be chosen from the lane.
+- ~~The lanes have no playhead.~~ *(Resolved 2026-10-07: the expression and controller lanes draw the note area's playhead; `LaneReadoutTest::theLanesShowThePlayhead`, docs/NOTE-EDITOR.md §5.)*
+- *(Resolved 2026-10-06, ED-130.)* The lane chooser now lists every controller number, CC 0 to CC 127, beside
+  pitch bend, aftertouch and program change (`NoteEditorTest::anyControllerNumberCanBeChosenFromTheLane`).
 
 **Devices and the Inspector (themes 12, 13).**
-- VST3 and CLAP vendors read "Not reported", because the catalogue carries none.
+- *(Resolved 2026-10-07, plugin-hosting lane.)* VST3 and CLAP vendors no longer read "Not reported". The
+  device picker (the Device panel's Add, the device card's Replace and Insert) shows the vendor the module's
+  own factory reports: a VST3 class's vendor, which the SDK fills from `PFactoryInfo` when the class names
+  none, or a CLAP descriptor's vendor (`include/PluginVendors.h`). A plug-in that reports no vendor still
+  reads "Not reported". *(Resolved 2026-10-16, Q050-090.)* `plugin.list` carries the same vendor on every
+  entry (empty when the format reports none), and the Plug-in Manager list shows it as its Vendor column.
 - Channel pan and width still read in the knob's own units.
 - Mixed values cover the selected notes only: the selection holds one clip.
-- The rack's own "Add effect" still uses the older dialog.
+- *(Resolved 2026-10-07, plugin-hosting lane.)* The rack's own "Add effect" (a mixer channel's or an
+  instrument's effect chain) now opens the device picker the Device panel uses. It searches every loadable
+  effect of every format and shows each one's vendor and state. The chosen device is still appended to that
+  rack's chain with its controls opened. A device that can no longer be loaded is now reported, where the old
+  dialog added a placeholder. The older select dialog (`EffectSelectDialog`) is no longer opened from anywhere.
 
 **Mixer (theme 16).**
-- There is no "Selected" channel filter; the type filters stand in for it.
+- *(Superseded 2026-10-06, `050/feat-meters`: the filter has a "Selected" choice - MX-005, `docs/MIXER-METERING.md` §2.)*
 
 **Lists, help and workflows (themes 18, 19, 21).**
 - Results of commands run from menus or the palette still float briefly.
@@ -2331,5 +2977,392 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 
 **Themes, shared controls and background tasks (themes 20, 23, 24).**
 - Theme changes apply at the next start, and every reply and the window say so.
-- The plug-in scan, `render.render`, `render.stems` and `browser.peaks` stay synchronous and are not in the task area.
+- **Long jobs and what still runs on the interface thread (Q050-010).** Plug-in scans (`plugin.scan_start`: library
+  loads on a worker, the rest one file per event-loop turn), renders (`render.queue_add`, `render.queue_bounce`), stem
+  separation (`stem.job_start`: decode, resample and separation on the worker) and waveform reads
+  (`browser.peaks_start`, the browser's waveform view) run in the background, and all four are listed and stopped
+  through `app.tasks` / `app.task_cancel` and the Tasks list. Compatibility routes that still answer only when done, so
+  they hold the interface for as long as the job takes: `plugin.rescan`, `browser.peaks` on an uncached file,
+  `render.render`, `render.stems`, `bounce.in_place`, `freeze.*`, `bounce.land`, `track.flatten` and `range.bounce`.
+  A scan resolves each descriptor on the interface thread, one per turn; a library that hangs in its load keeps its
+  worker but cannot hold the cancel. `stem.job_start` decodes nothing on the caller: a `.ds` or `.ogg` source is decoded by the job's worker (its
+  reply's `frames` is 0 until then), and any other file libsndfile cannot open is refused typed. Split to Stems writes
+  an in-memory clip's temporary WAV on a worker too, listed in the Tasks list as `stem_prepare` with Cancel.
+- *(Resolved for the interface, Q050-010; see "Long jobs and what still runs on the interface thread".)* Plug-in
+  scans, render-queue jobs, stem separation and waveform reads run in the background and are in the task area; the
+  synchronous `plugin.rescan`, `render.render`, `render.stems` and `browser.peaks` stay for scripts.
 - Accessible mode's larger targets are not re-applied if a knob later resets its own fixed size.
+
+## 0.5.0 L08 metering — ballistics, the Selected filter, live input meters, the phase view (050/feat-meters, 2026-10-06)
+
+The record of what was built is `docs/MIXER-METERING.md`; this is what each piece does not do.
+
+**MX-128, meter ballistics.**
+- The fall-off is a factor per tick of the main window's 60 Hz timer, as the inherited one was: a busy
+  interface that misses ticks lets the bars fall more slowly. "fast" is the inherited 1.25 per tick
+  (about 116 dB/s); medium and slow are about 26 and 12 dB/s.
+- After its hold, the peak line still falls by the inherited 0.05 (linear) per tick; there is no
+  "hold until clicked" setting.
+- The RMS meter mode takes the same fall-off; its reading is still one period's RMS. A 300 ms VU integration
+  is its own mode since Q050-108 (a strip's `meter_mode` vu: two critically damped stages on the rectified
+  signal, 99 % at 300 ms, 0 VU at `meter.set_reference` for a steady sine; the bars still fall by the
+  fall-off between readings).
+
+**MX-005, the Selected channel filter.**
+- The selection is the mixer's own: the arranger's track selection does not feed it.
+- It is interface state, never saved with the project or in the config file; it is forgotten when the
+  mixer view is cleared for another project. With no interface (no mixer view to clear) an agent's
+  selection is kept until it sets another.
+- The mode bar's Pick... dialog starts with nothing ticked (it replaces the selection); Ctrl+click on a
+  strip adds or removes one channel.
+
+**MX-134, live input meters.**
+- They meter the engine's stereo input bus - the frames the retrospective capture and the stereo record
+  routes read. A wide capture (more than two channels, `AudioInputPath`) is not metered channel by
+  channel, and no record-armed track or input-monitoring strip carries its own input meter.
+- They are shown in Large Meters (the mixer's Mixer View menu) only; the record menu's Input Level is
+  still the one-shot `meter.input` reading, and no command reads the live meter (an agent reads
+  `meter.input`).
+- One live reader at a time: `inputmeter::live()` empties its own maxima, so a second Large Meters-style
+  reader would split the peaks with the first. Only one Large Meters window is ever open.
+
+**MX-137, the stereo phase view.**
+- One channel at a time, in its own Phase Scope window (Mixer View menu, a channel's More menu, or
+  `window.phase_scope`); it is not drawn on the strips or inside Large Meters.
+- It shows the block the correlation is measured from: after the channel's inserts and pan, before its
+  fader. A muted channel feeds nothing, and the view says "No signal" a quarter of a second after the
+  frames stop.
+- It draws the newest 1024 frames, auto-scaled to the loudest of them, every 40 ms; it keeps no
+  persistence trail, and the scale is not shown in dB.
+- In the one period in which the chosen channel changes, a push from the old channel still in flight
+  makes the new channel's first block wait for the next period (the tap has one writer at a time).
+- The agent reads the correlation and `frames_seen` (proof the tap is fed), not the drawn points.
+
+
+## 0.5.0 editor lanes — controller lanes, keyboard automation editing, fades in the automation view, write to end (2026-10-06)
+
+**ED-130, any controller lane.** The note editor's lane chooser lists every controller number (CC 0 to 127), pitch
+bend, aftertouch and program change (`docs/NOTE-EDITOR.md` §5). What it leaves out:
+- The chooser is one long list (24 rows visible at a time); there is no search or number field in it.
+- Only the five common controllers and about twenty standard ones carry a name; the rest read "CC <n>".
+
+**ED-194, keyboard editing of automation.** In the automation editor, Ctrl+Left/Right choose the previous/next point
+(from none: the first, or the last), Left/Right move the chosen point one grid step (Shift: four), Up/Down change its
+value by a hundredth of the control's range (Shift: a tenth, never less than the control's own step), Escape lets go
+of it and the arrows scroll again. The chosen point is ringed and named to a screen reader. Each key is one edit and
+one undo step: `automation.move_point` when the control has a command address. A move onto another point is refused
+and spoken. Ctrl+Shift+L, or `window.item_list` with `surface: "automation"`, opens the points as an editable list
+(position, value as a share of the range, stored value); its edits are the same moves, and its current row follows
+the chosen point both ways (`AutomationEditorEditingTest`). What it leaves out:
+- A control the command surface cannot name (a track's volume or pan, the tempo, a mixer fader) and a second clip
+  of the same control are moved in place behind one journal checkpoint, not through `automation.move_point`: still
+  one undo step, but no `control.transactions` entry.
+- One point at a time: there is no keyboard multi-selection, and neither the keys nor the list add or remove points
+  (the canvas, `automation.add_point` and `automation.remove_point` do).
+- Undoing a key move drops the chosen point; Ctrl+Left/Right choose one again.
+- A moved point keeps its curve and bend but not a separate out-value (a step): the move writes one value, as
+  `automation.move_point` does.
+- The list types a value in whole percent of the range; the "Stored value" column shows the exact value.
+
+**ED-180, fades drawn in the automation view.** An audio clip set as the automation editor's ghost ("Set as ghost in
+automation editor") now has its gain curve drawn over its waveform: the fades, the clip gain and the gain envelope -
+the same curve `clip.fade_curve` reports (one definition, `clipGainCurveAt`) - with what the fades take away shaded
+(`AutomationEditorEditingTest::aSampleClipsFadesAreDrawnBehindTheCurve`). What it leaves out:
+- It is drawn, not edited: the fade handles stay on the clip in the arranger (and `clip.set_fade`).
+- Pre-fades (the part of a fade outside the clip) and speed fades are not drawn.
+- The curve runs from tick 0 over the clip's length; the ghost waveform is placed by its own (inherited) rule, so on
+  a clip with a start offset or a trimmed window the two may not line up exactly. Not measured.
+- The curve is redrawn when the editor repaints; a fade changed elsewhere shows on the next repaint.
+
+**ED-201, write to end.** `automation.write_to_end` holds a control's value (its current one when left out) from a
+tick to the song's end: every later point goes, the point at the tick steps from the curve's value there to the new
+one, and a point at the song's end (the end of its last clip) holds it - one undo step. A control's context menu has
+**Write value to end**, which writes the current value from the song position
+(`AutomationLanesTest::writeToEndHoldsAValueToTheSongsEnd`, `AutomationModeMenuTest::theContextMenuWritesTheValueToTheEnd`).
+What it leaves out:
+- It is a helper run after (or instead of) a pass, not a mode of the pass itself: a Touch or Latch pass does not
+  write to the end when it stops, and there is no "write to punch" or "write to start".
+- It acts on the control's first automation clip; a clip that starts after the tick is refused rather than extended
+  backwards.
+- The menu item is offered only for a control the command surface can name (as the mode submenu is).
+
+## Recording audio into a launcher cell (WF-055, 0.5.0 L02 `launcher-rec`) — added 2026-10-07
+
+`session.record_slot` / `session.record_slot_status` / `session.record_slot_land` record a sample track's input
+into an empty launcher cell: it starts on the launch quantisation, stops on the cell's quantised stop or after
+`bars`, and lands as the cell's audio clip (a 24-bit WAV), one undo step. Design record and proof:
+`docs/SESSION-AUDIO-RECORD.md`. What it does not do:
+
+- **One take at a time**, on one cell. A finished take blocks the next `session.record_slot` until it is landed
+  or cancelled (`cancel: true`).
+- **Empty cells only.** A filled cell is refused; clear it first. There is no "record over" or overdub.
+- **Sample tracks only**, and the take is the engine's **stereo input bus** (what an arrangement clip records),
+  not a record route's chosen input channel. `track.set_arm` is not consulted: arming the cell is the arm.
+- **The start is period-granular.** The session scheduler decides launches once per audio period, so a take
+  starts with the period in which its grid line is reached (as the cell's own playback does); its length is
+  exact - whole frames of the span, shifted by the recording round trip like an arrangement take.
+- **Landing is explicit on the socket.** The take waits in `done` until `session.record_slot_land` writes it;
+  an agent polls `session.record_slot_status`. The WAV is never deleted by undo.
+- **From the interface** (View ▸ Clip Launcher): an empty cell's right-click menu has Record Audio Into Cell,
+  Record Audio for Bars... and Cancel Recording; the cell reads "● Rec" while it records ("○ Rec" while it waits
+  for its launch, and its accessible name says so in words); the column's stop button ends the take on the
+  quantised stop, and the grid lands the take it started into the user's `samples/Recordings` folder. There is no
+  record BUTTON on the cell itself, no keyboard shortcut for it, no count-in, and the grid does not land a take it
+  did not start (an agent's take is left for the agent).
+- **Clock-synced capture (Q050-277)** (`session.record_slot` `clock_sync: true`, `bars` or `steps`): the MIDI clock master
+  sends START when the take starts and STOP at its end with exactly the span's pulses between. The audio thread only QUEUES
+  these messages (a fixed lock-free ring of 512 records, no I/O); a sender thread started when the capture is armed hands them
+  to the MIDI client in order, about a millisecond later, so no client's output path (a raw device write, Core MIDI) ever runs
+  on the audio thread. The bound is the master's own: the messages are what the engine handed its MIDI client, not bytes a
+  device received - the test fixture reads the emission monitor. START is queued in the period in which the cell starts
+  (period-granular, like the take); at the stop at most 64 pulses are queued to catch up the period it falls in, never a
+  backlog that scales with the capture. If the master is turned OFF mid-capture the span ends there with a STOP and no
+  catch-up while the take goes on to its length; if the ring ever fills (a sender starved for seconds) pulses are refused and
+  counted (`MidiClock::captureOutputDropped`). A span is admitted only when its START and STOP both fit the ring; when earlier
+  output still fills it, the new capture's span is refused BEFORE START (nothing is sent, the take records unclocked,
+  `session.record_slot_status` `clock.refused` counts it), so the synth is never started without its STOP. The external synth's own latency is not compensated
+  beyond the recording round trip the take already drops. While the span is open the song transport's own START/STOP/CONTINUE
+  are not sent. The sender never calls `processOutEvent()` (the audio thread's path, a single-producer queue on ALSA): it uses
+  `MidiClient::sendFromNonAudioThread()`, serialized by a mutex the audio thread never takes. ALSA's sequencer client gives it
+  its own queue that the sequencer thread drains beside the audio one; raw clients (OSS, sndio, ALSA raw, JACK) carry only the
+  one-byte real-time messages from it, which MIDI lets stand anywhere in a stream; Core MIDI and WinMM send through their
+  thread-safe system calls. The macOS and Windows paths were not run on this host. At engine shutdown the clock lets go of
+  the MIDI client first (`MidiClock::detachClient`): a send in flight finishes, capture output not yet sent is dropped
+  (counted), so a synth started by a capture the engine is torn down under gets no STOP from Zene. One take, one cell, empty cells only, as above.
+- *(Updated 2026-10-28, Q050-493.)* Since Q050-013 a launched audio cell also plays on an instrument track's column
+  and its gain, loop region, transpose, detune and tempo warp ARE applied (`docs/050-features/Q050-013.md`); the
+  sentences below about them are the earlier record. These settings are no longer socket-only: the cell's
+  right-click menu has Playback and Warp (every `session.set_slot` playback field in one form, Warp to Song Tempo
+  and RAM Mode On/Off, a reset), and the cell shows its non-default settings after its name
+  (`docs/050-features/Q050-493.md`). RAM mode is stored and editable but still changes nothing in playback.
+- **A launched audio cell renders only on a sample track's column**, through that track, from the clip's top (or
+  its loop start), looping the whole file. The cell's gain, transpose, detune, RAM mode and loop LENGTH are not
+  applied to audio, and there is no warping: a file plays at its own speed whatever the tempo. A file at another
+  sample rate is converted once, when it is first launched. An audio cell on an instrument track's column still
+  only silences the column. (Before this lane no launched audio cell rendered at all - the bullet "The Session
+  View is in the 0.3.0-alpha builds..." above records that.)
+- **Clips are cached by path** for the open project: a file changed on disk after its cell was first launched
+  plays the old audio until the project is reopened.
+
+## 0.5.0 audio clips — looped content, rotation and the crossfade editor (lane `audio-clips`, 2026-10-07)
+
+**Looped audio content (ED-029, `clip.set_loop` on an audio clip).** An audio clip's audio from `start` ticks
+after its in-point, for `length` ticks, repeats across the clip once playback passes the loop's end
+(`include/ClipAudioLoop.h`; proved on rendered PCM by `tests/src/core/AudioClipLoopTest.cpp`). What it does not do:
+- The loop is measured in ticks when it is set and then kept in **source frames** (`loopfrom` / `loopframes`), so a
+  later tempo change keeps it on the same audio rather than on the same bars. There is no "loop follows the grid".
+- It plays only on a plain clip: one with no warp markers and no source tempo, no transpose, no speed change, not
+  armed to record, and on a track with no comp. `clip.set_loop` refuses such a clip, typed; a loop on a clip that
+  becomes one of these later is kept in the file but not played until it is plain again. Pre-fades are not played
+  on a looped clip.
+- A loop is not split-aware: splitting or trimming a looped clip keeps the loop on the source frames it had, and a
+  split past the loop's first pass does not carry the folded position into the right half.
+- The loop is drawn nowhere: the clip still shows its source waveform once, and the only interface is the clip
+  menu's "Loop the Content..." form.
+- An older build loads a looped clip as an unlooped one (it ignores the new attributes), so the clip falls silent
+  after its audio ends there.
+
+**Rotated audio content (ED-028, `note.rotate` on an audio clip).** The clip's content turns `amount` ticks later
+(negative: earlier) with wrap-around - inside its loop, or inside the clip, which then becomes a loop over exactly
+the audio it plays - one undo step each (`AudioClipLoopTest`). What it does not do:
+- It is a loop offset, not an edit of the audio: the waveform drawn on the clip does not move, and the rotation
+  plays only where the loop plays (the plain-clip rule above).
+- It refuses, typed, a clip longer than its audio with no loop (loop it first), a clip whose audio starts after
+  the clip, and a looped clip whose start plays before its loop (an intro does not repeat, so it cannot turn).
+- The command keeps its MIDI name (`note.rotate`) rather than adding a `clip.rotate`, so the canary did not move;
+  `scope` is not read on an audio clip. The clip menu's entry is Process > Rotate Content...
+
+**The crossfade editor (ED-176).** An audio clip's menu offers Crossfade Editor... while another audio clip on
+its track overlaps it; the editor shows the overlap, each side's ramp length (ticks) and shape - the clips' own
+ramps, or the overlap at equal power where a side has none - draws both ramps, and Apply runs `clip.crossfade` with
+both sides (`CrossfadeEditorTest`). What it does not do:
+- It edits numbers, not handles: there is still no crossfade drawn on the clips in the arranger and nothing to drag.
+- It pairs the clip with ONE neighbour (the nearest overlapping clip after it, else before it); a clip overlapped
+  on both sides is edited one pair at a time from each clip's menu.
+- The crossfade is still two independent fades, not a linked object: moving a clip afterwards does not move it.
+- `clip.crossfade`'s undo restores the TRACK checkpoint, which rebuilds the track's clips: an editor left open
+  across an undo loses its clips (Apply then does nothing) and has to be opened again from the menu.
+
+## The allocation probe: what a "zero allocations" test proves, and what it does not (2026-10-07)
+
+`tests/src/core/AllocationProbe.h` is the runtime half of the realtime rule: a test arms
+`lmms::test::tlCountAllocations` around an audio-thread call and asserts that
+`tlAllocationCount` stayed at 0. Until 2026-10-07 that assertion was **vacuous for library
+code**. The probe's replacement `operator new`/`new[]`/`delete`/`delete[]` were declared
+`inline`, which the standard forbids for a replacement allocation function
+([replacement.functions]); GCC then emitted no definition at all, so `nm -C` on every test
+binary showed only `U operator new(unsigned long)@GLIBCXX_3.4`. Allocations in the test's own
+file were counted (the inline body was visible there), but every allocation inside lmmsobjs,
+the code each test exists to check, went to libstdc++ and was never seen.
+
+**What it guarantees now.** The replacement functions live in `tests/src/core/AllocationProbe.cpp`,
+an ordinary (non-inline) definition compiled once and linked into every test whose source
+includes the header (`lmms_link_allocation_probe` in `tests/CMakeLists.txt`, also used by
+`Vst3InstrumentTest`, which compiles several translation units). One definition in the
+executable replaces `operator new` for the whole process: the test's file, the statically linked
+lmmsobjs, Qt's own `new` calls and any plugin module the test loads. Every form is replaced
+(plain, array, `nothrow`, `align_val_t`, sized delete). The counters are defined in that file
+too, so a test that includes the header without the probe linked fails to link instead of
+quietly counting nothing (that check caught `WarpMarkersTest` and the three `SampleClip*`
+tests, which spell the include `"../core/AllocationProbe.h"`).
+
+Evidence, all from the `050/feat-alloc-probe-fix` lane:
+- `AllocationProbeTest::countsAnAllocationMadeInLibraryCode` (an allocation inside
+  `RoutingGraph::createNode()`, compiled into lmmsobjs) **failed on the old probe**
+  ("counted 0") and passes on the fixed one. `nm -C` on all 41 probe binaries now shows
+  `T operator new(unsigned long)`; before the fix, none of the 40 did.
+- A positive control on two real tests: one `::operator new(16)` injected temporarily into
+  `MasterLoudnessTap::feed()` and `SessionScheduler::processAudio()`. On the old probe
+  `MeterTapTest` and `SessionSchedulerTest` still **passed**. On the fixed probe they fail
+  (`feedingAnArmedTapAllocatesNothing`, `audioThreadPathDoesNotAllocate`: "audio-thread path
+  allocated 20000 times", `commandsCrossThreadsWithoutLoss`). The injection was reverted.
+- All 40 tests that include the probe were rebuilt and re-run on the fixed probe: **40/40 pass**,
+  the same as on the old one. No audio-thread path these tests cover allocates through
+  `operator new`, so the lane has no allocation fixes to list. That is now a measured result
+  rather than an unchecked assumption.
+
+**What it still does not prove.**
+- It counts `operator new` only. `malloc`, `realloc` and Qt's implicitly shared containers
+  (`QString`, `QByteArray` and `QList` allocate through `QArrayData` with `malloc`) are
+  **not counted**. A `QString` built on the audio thread passes a probe test. The static sweep
+  (`docs/RT-SAFETY-SWEEP.md`) is what looks for those.
+- It counts per thread, only on the thread that armed it and only inside the window. A
+  path that hands work to another thread, or allocates on its first call before the window opens,
+  is not measured.
+- Locks, system calls and logging are not measured; it is an allocation counter, not a
+  realtime sanitizer (that is the dispatch-only RTSan job, `lmms::RealtimeScope`).
+- It proves the paths that the 40 tests drive, nothing more. Coverage of the audio thread is
+  whatever those tests call.
+- `tests/src/core/LinkRealtimeProbe.h` (`050/feat-link-interop`) was a second, correct
+  probe written for the same reason. It was folded into this one on the 2026-10-07 feature merge:
+  it defines no allocation function now, only an `allocationsDuring()` helper over these counters.
+
+## 0.5.0 launcher in performance — perform mode and sub-scenes (lane launcher-perform, 2026-10-07)
+
+**Perform mode (WF-071).** View > Perform Mode and Launcher > Perform Mode (`window.toggle` 'perform') open
+`PerformView`: the setlist's song and the next one, transport and tempo, the playing scene and the next, one big
+button per scene, each column's playing cell and a large Stop All - every press a registered command
+(`PerformViewTest`). What it does not do:
+- Its built-in keys (1-9, Up/Down, Enter, Space, Escape, Page Up/Down) are the window's own. Since Q050-055.1
+  stage 1 the shortcut map has a `perform` context (`shortcuts.set` `scope: "perform"`) covering Stop All, Start and
+  Stop Transport and Launch Scene 1-2, and a scoped key wins over the built-in table while Perform holds the focus -
+  but the remaining meanings (Up/Down, Enter, Page Up/Down, digits past 2) have no scoped action yet and cannot be
+  rebound. Launcher > Launch Scene 1-8 and Stop All Clips remain rebindable as menu actions.
+- Stage 2 of the context-aware map (keys bound to plug-in actions) is not implemented: a panel scope covers the four
+  panels' own commands only.
+- MIDI learn reaches what the launcher's controller bindings can do - launch a scene, stop everything
+  (`session.bind_learn`). "Select the next scene", "launch the selected scene", play/stop, tempo and the song
+  steps cannot be bound to a note.
+- Keys 1-9 reach only the first nine scenes; past them, Up/Down and Enter (the scene list scrolls to the
+  selected scene).
+- It does not remember its place or size (`ToolWindowMemory` does not know it), and it is not in the footer's
+  Tools menu.
+- The bar and beat it shows assume four beats of 48 ticks to the bar; a scene's own time signature is not
+  reflected there.
+- Found while testing it: `transport.set_tempo` is undone through a Song checkpoint, which rebuilds the tracks,
+  and each track's view is made by a queued call. Two such undos in one turn of the event loop, with the
+  interface up, crashed in `TrackContainerView::createTrackView` (on a track the second restore had deleted).
+  The application's event loop runs between two presses, so the test lets it run too; the hazard itself is not
+  fixed here.
+
+**Sub-scenes (WF-064).** A sub-scene is a named subset of one scene's cells (some of its columns), made from a grid
+selection (Ctrl+click or Ctrl+Space, then Sub-scenes > Make a Sub-scene From the Selection) or
+`session.subscene_create`, renamed and deleted (one undo step each), launched with `session.subscene_launch`, and kept
+in a project file as its own `<z:subscenes>` section (`docs/SCENES-NATIVE.md` §4; `SessionSubSceneTest`,
+`SessionSubSceneGridTest`). What it does not do:
+- A sub-scene is one scene's cells. Cells from several scenes cannot be combined into one.
+- Launching one does not mark the row as the launched scene, so the scene's own Follow Action chain does not fire,
+  and the grid's scene button shows the row's state, not the sub-scene's. The columns outside it play on.
+- It names columns by position. Moving or deleting a track, or shrinking the grid, does not move or drop a
+  sub-scene: a column or scene that is no longer there is skipped at launch (`skipped`), or the launch is refused
+  when its scene is gone.
+- Making one from the grid names it "Sub-scene N"; renaming is a second step (Sub-scenes > Rename...). The selection
+  stays after it is made.
+- Perform mode has no sub-scene buttons, and the controller bindings (`session.bind`) cannot launch a sub-scene.
+- A project whose `<z:subscenes>` section came from a newer build keeps that section as it came; sub-scenes made in
+  this build on top of it are not saved while it is there.
+- What an older build does with a new project was checked by reading its loader (`Song::restoreNamedSection` has no
+  branch for `<z:subscenes>`, and its `<z:scenes>` claim, unchanged here, still claims the section this build writes -
+  asserted in `SessionSubSceneTest`), not by running an older binary on the file.
+
+## Undo checkpoints for project.open and script.run (Q050-044, 2026-10-09)
+
+`project.open` over a session with unsaved changes, and a `script.run` that changes the project, leave one undo step
+that restores the whole project (`docs/A16-REVERSIBILITY.md` §1.2; `SessionCheckpointTest`). What they do not do:
+- The checkpoint is the document a save would build, not a copy of the machine's state. Audio files are referenced
+  by path, so a file deleted or edited on disk between the run and the undo is not brought back. Samples that live
+  only in memory (no file) are inside the document and count toward the size.
+- It is bounded by the undo stack's byte budget (`control.undo_depth` `cap_bytes`, default 16 MiB, set with
+  `control.set_undo_depth`), measured as the sum of the compressed pre-state and redo-state snapshots. A pre-state over
+  the limit is REFUSED before the open or script runs. If the post-state makes the pair too large, the old project is
+  restored and the action is REFUSED; the message names the sizes and budget. There is no "do it anyway": save the
+  project, or raise the budget.
+- Only a session with unsaved changes is checkpointed by `project.open`. A saved one is held by its file, so the open
+  records no step (`reversible: false`, the displaced file and hash are named) and `control.undo` refuses it typed.
+- When a checkpoint is held, partial loads retain their skipped-section list in its metadata. Undo and redo preserve
+  the partial state and filename for a partial `project.open` result or a script run that leaves a partial result.
+- Undoing an open brings back the displaced session and its file name, but not its earlier undo steps: the stack
+  holds the steps of the project that was opened. A project that persists its undo history (WF-033) and is opened
+  over a dirty session has a step with no stored snapshot on top of its loaded history, so a save from there writes
+  no history until newer steps replace it (`project.save`'s `undo_history` says so).
+- `script.run` replaces the finer undo steps the script pushed (Lua `addCheckPoint()`, edits through the bindings)
+  with its one step; the order of its edits is not separately undoable. Effects outside the project (files the script
+  wrote, the console) are not undone.
+- `control.undo` after a `control.redo` of the same step refuses typed, as for every command (a redo gives the step a
+  fresh serial, so the first run's record no longer names it); the interface's Ctrl+Z, which has no record, undoes it.
+- `project.new`, `project.switch`, `project.new_document` and `session.setlist_go` keep their `irreversible` class and
+  `project.new` and `project.new_document` take no checkpoint. `project.switch` and `session.setlist_go` run `project.open`, so a dirty session they displace is
+  checkpointed and the interface's Ctrl+Z restores it (`project.switch` saves the current project first, so there is
+  usually nothing to displace), but their own records still refuse `control.undo`.
+- **The v2 project container is opt-in and older builds cannot open it (Q050-007).** Saving as a v2 container
+  (`project.save {format: "v2"}`, the Save As checkbox, or `app/savecontainerv2`) writes a larger `.mmpz` that
+  builds before 0.5.0 refuse; ordinary saves stay legacy. The asset verbs (`project.missing_assets`,
+  `project.hash_assets`, `project.relink`) and the revision compare do not read containers yet. See
+  `docs/PROJECT-CONTAINER-V2.md`.
+
+## Plug-in editor gesture undo (Q050-214, 2026-10-31)
+
+A VST3 or CLAP editor gesture is one journal step per parameter, drained from a per-parameter queue by the 100 ms GUI poll.
+
+- **The queue is bounded.** It holds 32 marks, so 16 complete gestures on one parameter between two polls keep a step each. Marks
+  after that are dropped, not waited for: those gestures merge into one step and the plug-in's last value still arrives.
+- **A change in the same poll as a host edit.** A gesture still in the queue when a knob or an undo moves the model lands after
+  that edit, though the plug-in made it up to 100 ms before.
+- **One step per parameter.** An XY pad reporting two parameters is two steps; the journal has no group for them.
+- **Only reported changes.** Changes a plug-in reports with no gesture keep one step per polled change, as before; a change
+  it does not report as a parameter (its own preset browser's internal state) is not in the history.
+- **A plug-in that never ends a gesture** merges its later changes into that step until its next begin.
+- **The model's step applies.** A CLAP model rounds to 1 % of the range, as it always did, so an undo restores the model's
+  value rather than a finer value the plug-in held.
+- **The Undo History panel's list** still shows command steps only: a gesture is undoable from its buttons and has no row.
+- **`control.undo` after an undone agent edit** reports the newer edit as `unrecorded edit` (with its `step_serial`), the existing
+  label for a journal top the record does not match.
+
+## Update check (Q050-501, 2026-10-30)
+
+- **What is sent, exactly:** when the user has said yes, one bodyless HTTP GET of the configured feed (by default
+  `https://api.github.com/repos/KRUZZZZY/zene-studio/releases?per_page=10`; the `updatecheck/feed` config key) at most
+  once a day and on Help > Check for Updates, with `User-Agent: ZeneStudio/<version> (<kernel type>; <cpu>)`, a fixed
+  `Accept: application/json` and `Accept-Language: en`, the host, and Qt's `Accept-Encoding` and `Connection` transport
+  headers. No account, project, file, setting, locale or instance identifier. The feed's server (GitHub by default) still
+  sees the caller's IP address and the time, as with any web request. A system proxy, if set, is used.
+- **Installation stays manual.** Zene never downloads or installs anything: the notice's button opens the release's page in
+  the browser. Automatic download and installation are a later unit and need signed installers first.
+- **While the setting is off, or the question is unanswered, no request is made**, and Help > Check for Updates asks first.
+- **Hidden where something else updates the program:** a packager's `-DZENE_UPDATE_CHECK=OFF` compiles the checker, its
+  commands and its menu entry out; a Flatpak or Snap copy is recognised at run time (`/.flatpak-info`, `FLATPAK_ID`, `SNAP`)
+  and registers none of them. A distribution package that does not set the option is **not** detected, and would offer the
+  question like any other build.
+- Only https feeds and pages are followed (plain http to a loopback address exists for the tests); redirects never go from
+  https to http. Certificates are checked by Qt's normal TLS stack; the answer is not signed, so a compromised feed could
+  announce a release that does not exist and link to any https page. Nothing runs from it: its text is shown as plain text.
+- The default feed has **not been exercised by a test**: every test uses a loopback fixture and nothing leaves the machine.
+  If the repository is private or has no releases, the check reports a failure (HTTP 404) or "up to date".
+  GitHub's unauthenticated rate limit (a shared limit per IP address) can answer 403 or 429; that is a failed check and one
+  quiet line, and the next check is a day later.
+- A failed automatic check is not retried until the next day: the time of the request is stored whatever came of it.
+- The check's answer (`app.update_check_get`'s `result`, what `window.update_download_page` opens) lasts for the session.
+- The first-run question is asked once, whatever comes of it: quitting with it open leaves checks off and it does not come
+  back. Settings and Help > Check for Updates remain.
+- Answering in Settings or in the question is an undo step like any `app.update_check_set` (it can be undone with Edit > Undo).
+- The feed's version tags must be SemVer (`v1.2.3`, `1.2.3-rc.1`); a release tagged otherwise is passed over.

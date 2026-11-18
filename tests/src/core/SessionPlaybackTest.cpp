@@ -25,6 +25,7 @@
  */
 #include <QtTest/QtTest>
 
+#include "SessionModel.h"
 #include "SessionPlayback.h"
 #include "SessionScheduler.h"
 
@@ -84,6 +85,49 @@ private slots:
 		// A column with no slot launched is never rendered, whatever a cell
 		// elsewhere holds.
 		QVERIFY( !scheduler.playbackForColumn( 3 ).playing );
+	}
+
+	void aTriggerRetriggerKeepsTakingOverItsColumnUntilTheGridLine()
+	{
+		SessionScheduler scheduler;
+		QVERIFY( scheduler.publishSlotContent( 0, 0, 7, 0 ) );
+		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger,
+			LaunchQuantisation::Bar ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+		QVERIFY( scheduler.trackIsSessionActive( 0 ) );
+		QCOMPARE( scheduler.playbackForColumn( 0 ).patternId, 7 );
+
+		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger,
+			LaunchQuantisation::Bar ) );
+		scheduler.processAudio( clock( 100 ), kFramesPerPeriod );
+
+		QCOMPARE( scheduler.slotPhase( 0, 0 ), SlotPhase::LaunchPending );
+		QVERIFY2( scheduler.trackIsSessionActive( 0 ),
+			"a pending retrigger released arrangement takeover before its grid line" );
+		SessionSlotPlayback waiting = scheduler.playbackForColumn( 0 );
+		QVERIFY2( waiting.playing, "a pending retrigger stopped rendering the current clip" );
+		QCOMPARE( waiting.patternId, 7 );
+		QCOMPARE( int( waiting.positionTicks ), 100 );
+
+		scheduler.processAudio( clock( 120 ), kFramesPerPeriod );
+		QVERIFY( scheduler.trackIsSessionActive( 0 ) );
+		waiting = scheduler.playbackForColumn( 0 );
+		QVERIFY( waiting.playing );
+		QCOMPARE( waiting.patternId, 7 );
+		QCOMPARE( int( waiting.positionTicks ), 120 );
+	}
+
+	void aFirstPendingLaunchDoesNotTakeOverItsColumn()
+	{
+		SessionScheduler scheduler;
+		QVERIFY( scheduler.publishSlotContent( 0, 0, 7, 0 ) );
+		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger,
+			LaunchQuantisation::Bar ) );
+		scheduler.processAudio( clock( 100 ), kFramesPerPeriod );
+
+		QCOMPARE( scheduler.slotPhase( 0, 0 ), SlotPhase::LaunchPending );
+		QVERIFY( !scheduler.trackIsSessionActive( 0 ) );
+		QVERIFY( !scheduler.playbackForColumn( 0 ).playing );
 	}
 
 	//! The control: an EMPTY cell takes its column over and holds nothing.
@@ -199,21 +243,125 @@ private slots:
 		QCOMPARE(int(launchTickAt(LaunchQuantisation::Bar, clock(192))), 192);
 	}
 
-	//! The table refuses rather than growing, and a refused cell degrades to
-	//! the pre-#597 behaviour instead of a wrong one.
+	//! Drain the command queue while publishing, then prove the 128th distinct
+	//! cell is installed and the next one is refused by the content table.
 	void aFullTableRefusesAndLeavesTheCellSilent()
 	{
 		SessionScheduler scheduler;
-		bool refused = false;
-		for( int i = 0; i < 300; ++i )
+		constexpr int expectedCapacity = 128;
+		QCOMPARE( SessionSlotContentTable::Capacity, std::size_t( expectedCapacity ) );
+		for( int i = 0; i < expectedCapacity; ++i )
 		{
-			if( !scheduler.publishSlotContent( i, 0, 4, 0 ) )
+			QVERIFY( scheduler.publishSlotContent( i, 0, 4, 0 ) );
+			if( ( i + 1 ) % 64 == 0 )
 			{
-				refused = true;
-				break;
+				// Install each batch before filling the next one, so rejection
+				// cannot come from the 256-command queue.
+				scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
 			}
 		}
-		QVERIFY2( refused, "the fixed table accepted 300 cells" );
+
+		// Queue one more distinct cell after all 128 prior entries have been
+		// installed. The enqueue succeeds; the audio-thread table must refuse it.
+		QVERIFY( scheduler.publishSlotContent( expectedCapacity, 0, 4, 0 ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+
+		QVERIFY( scheduler.requestLaunch( expectedCapacity - 1, 0,
+			LaunchMode::Trigger, LaunchQuantisation::None ) );
+		QVERIFY( scheduler.requestLaunch( expectedCapacity, 0,
+			LaunchMode::Trigger, LaunchQuantisation::None ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+
+		const SessionSlotPlayback installed = scheduler.playbackForColumn( expectedCapacity - 1 );
+		QVERIFY( installed.playing );
+		QCOMPARE( installed.patternId, 4 );
+		const SessionSlotPlayback refused = scheduler.playbackForColumn( expectedCapacity );
+		QVERIFY( refused.playing );
+		QCOMPARE( refused.patternId, -1 );
+	}
+
+	/*! A cell with NOTHING to render does not take an entry of the fixed table.
+	 *  The model publishes every cell of the grid, an empty one included, and the
+	 *  table holds 128 entries: a grid one cell wider than that filled the whole
+	 *  table with EMPTY cells, and the MIDI cell in the new column was refused and
+	 *  played silently.
+	 */
+	void emptyCellsDoNotConsumeTheContentTable()
+	{
+		SessionScheduler scheduler;
+		for( int scene = 0; scene < 200; ++scene )
+		{
+			// -1 is what an empty (or audio) cell publishes: nothing to render.
+			QVERIFY( scheduler.publishSlotContent( 0, scene, -1, 0 ) );
+		}
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+
+		// A cell that DOES hold a pattern still fits, and is what plays.
+		QVERIFY( scheduler.publishSlotContent( 0, 200, 7, 0 ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+		QVERIFY( scheduler.requestLaunch( 0, 200, LaunchMode::Trigger, LaunchQuantisation::None ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+		QCOMPARE( scheduler.playbackForColumn( 0 ).patternId, 7 );
+
+		// And a cell that LOSES its pattern still stops rendering it: the entry
+		// that exists is updated rather than left stale.
+		QVERIFY( scheduler.publishSlotContent( 0, 200, -1, 0 ) );
+		scheduler.processAudio( clock( 100 ), kFramesPerPeriod );
+		QCOMPARE( scheduler.playbackForColumn( 0 ).patternId, -1 );
+	}
+
+	// A cell that held a pattern and then lost it gives its table entry back.
+	// Before this, the entry stayed (patternId -1), so churning real -> empty
+	// across every entry of the table left it full of cells that render nothing.
+	void aCellThatLosesItsPatternGivesItsEntryBack()
+	{
+		SessionSlotContentTable table;
+		for( int scene = 0; scene < int( SessionSlotContentTable::Capacity ); ++scene )
+		{
+			QVERIFY( table.install( 0, scene, 7, 0 ) );
+			QVERIFY( table.install( 0, scene, -1, 0 ) );
+		}
+		QCOMPARE( table.installedCount(), std::size_t( 0 ) );
+
+		// The freed table takes a full set of distinct pattern cells, and no more.
+		for( int scene = 0; scene < int( SessionSlotContentTable::Capacity ); ++scene )
+		{
+			QVERIFY2( table.install( 1, scene, 9, 0 ), "a freed table refused a pattern cell" );
+		}
+		QCOMPARE( table.installedCount(), SessionSlotContentTable::Capacity );
+		QVERIFY( !table.install( 2, 0, 9, 0 ) );
+
+		// Removing an entry from the middle keeps the others findable.
+		QVERIFY( table.install( 1, 3, -1, 0 ) );
+		QCOMPARE( table.installedCount(), SessionSlotContentTable::Capacity - 1 );
+		QVERIFY( table.find( 1, 3 ) == nullptr );
+		QVERIFY( table.find( 1, 4 ) != nullptr );
+		QCOMPARE( table.find( 1, 4 )->patternId, 9 );
+		QVERIFY( table.find( 1, int( SessionSlotContentTable::Capacity ) - 1 ) != nullptr );
+		QVERIFY( table.install( 2, 0, 9, 0 ) );  // the freed entry is usable again
+	}
+
+	// An AUDIO cell publishes patternId -1 with its clip (WF-055). It holds something to render, so
+	// it keeps its entry and its clip; only a cell with neither a pattern nor a clip gives it back.
+	void anAudioCellWithoutAPatternKeepsItsEntryAndClip()
+	{
+		SessionSlotContentTable table;
+		// The table only stores the clip's address and never reads it, so a sentinel address stands in
+		// for a loaded SampleBuffer (constructing one needs a running Engine, which this test does not start).
+		static int sentinel = 0;
+		const auto* const clip = reinterpret_cast<const SampleBuffer*>(&sentinel);
+		QVERIFY( table.install( 0, 0, -1, 0, false, 0, clip ) );
+		QCOMPARE( table.installedCount(), std::size_t( 1 ) );
+		QVERIFY( table.find( 0, 0 ) != nullptr );
+		QCOMPARE( table.find( 0, 0 )->clip, clip );
+
+		// Re-publishing the audio cell updates it in place rather than consuming a second entry.
+		QVERIFY( table.install( 0, 0, -1, 0, false, 0, clip ) );
+		QCOMPARE( table.installedCount(), std::size_t( 1 ) );
+
+		// A cell that loses its clip and its pattern is empty again and gives its entry back.
+		QVERIFY( table.install( 0, 0, -1, 0 ) );
+		QCOMPARE( table.installedCount(), std::size_t( 0 ) );
 	}
 
 	//! 0.5.0 WF-060: a cell's own start inside its clip offsets where it plays, and a legato cell
@@ -231,6 +379,20 @@ private slots:
 		QCOMPARE( int( scheduler.playbackForColumn( 0 ).positionTicks ), 148 );  // not 48: it went on
 	}
 
+	//! A loop is measured from the cell's loop start, so wrapping must preserve that start.
+	void aLoopWrapsBackToItsStart()
+	{
+		SessionScheduler scheduler;
+		QVERIFY( scheduler.publishSlotContent( 0, 0, 7, 96, false, 48 ) );
+		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger, LaunchQuantisation::None ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+
+		scheduler.processAudio( clock( 48 ), kFramesPerPeriod );
+		QCOMPARE( int( scheduler.playbackForColumn( 0 ).positionTicks ), 96 );
+		scheduler.processAudio( clock( 96 ), kFramesPerPeriod );
+		QCOMPARE( int( scheduler.playbackForColumn( 0 ).positionTicks ), 48 );
+	}
+
 	//! 0.5.0 WF-070: a playing cell jumps inside its clip at once; a cell that is not playing ignores it.
 	void aPlayingCellJumps()
 	{
@@ -246,6 +408,68 @@ private slots:
 		QCOMPARE( int( scheduler.playbackForColumn( 1 ).positionTicks ), 96 );
 		scheduler.processAudio( clock( 40 ), kFramesPerPeriod );
 		QCOMPARE( int( scheduler.playbackForColumn( 1 ).positionTicks ), 106 );
+	}
+
+	//! review-390ec761c: real -> empty churn across the whole table gives every entry
+	//! back, so a later live cell still installs through the scheduler queue.
+	void aCellThatGoesEmptyGivesItsEntryBackThroughTheScheduler()
+	{
+		SessionScheduler scheduler;
+		for( int scene = 0; scene < int( SessionSlotContentTable::Capacity ); ++scene )
+		{
+			QVERIFY( scheduler.publishSlotContent( 0, scene, 7, 0 ) );
+			QVERIFY( scheduler.publishSlotContent( 0, scene, -1, 0 ) );
+		}
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+
+		QVERIFY2( scheduler.publishSlotContent( 1, 0, 9, 0 ), "a churned table refused a live cell" );
+		QVERIFY( scheduler.requestLaunch( 1, 0, LaunchMode::Trigger, LaunchQuantisation::None ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+		QCOMPARE( scheduler.playbackForColumn( 1 ).patternId, 9 );
+	}
+
+	//! 5349's reported path: a grid one cell wider than the table, with empty cells
+	//! before the only MIDI cell, still publishes that clip instead of filling the
+	//! table with the empties and refusing it.
+	void aGridOfEmptyCellsLeavesTheTableForTheMidiCell()
+	{
+		const int midiScene = int( SessionSlotContentTable::Capacity );
+		SessionModel model;
+		model.setTrackCount( 1 );
+		model.setSceneCount( midiScene + 1 );
+		model.slot( 0, midiScene ).setPatternReference( 7 );
+
+		SessionScheduler scheduler;
+		QVERIFY( publishSessionSlotContent( scheduler, model ) > 0 );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+		QVERIFY( scheduler.requestLaunch( 0, midiScene, LaunchMode::Trigger, LaunchQuantisation::None ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+		QCOMPARE( scheduler.playbackForColumn( 0 ).patternId, 7 );
+	}
+
+	//! new-p8-219: an audio cell publishes a negative pattern id WITH its clip and shape,
+	//! and the view the renderer reads carries them instead of only the id.
+	void anAudioCellCarriesItsClipToTheRenderPath()
+	{
+		static int sentinel = 0;
+		const auto* const clip = reinterpret_cast<const SampleBuffer*>( &sentinel );
+		SessionAudioShape shape;
+		shape.gain = 0.5f;
+		shape.loopStartFrames = 12;
+		shape.loopLengthFrames = 34;
+
+		SessionScheduler scheduler;
+		QVERIFY( scheduler.publishSlotContent( 0, 0, -1, 0, false, 0, clip, shape ) );
+		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger, LaunchQuantisation::None ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+
+		const SessionSlotPlayback view = scheduler.playbackForColumn( 0 );
+		QVERIFY( view.playing );
+		QCOMPARE( view.patternId, -1 );
+		QCOMPARE( view.clip, clip );
+		QCOMPARE( view.audio.gain, 0.5f );
+		QCOMPARE( view.audio.loopStartFrames, std::int64_t( 12 ) );
+		QCOMPARE( view.audio.loopLengthFrames, std::int64_t( 34 ) );
 	}
 };
 

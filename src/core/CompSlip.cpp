@@ -81,8 +81,42 @@ void CompSlipReaders::openReaders(f_cnt_t sourceIn, float sourceFramesPerTick)
 	for (int reader = 0; reader < m_readerCount; ++reader)
 	{
 		auto& state = m_readers[static_cast<std::size_t>(reader)];
-		state.emplace();
+		state.emplace(AudioResampler::RealtimeVoiceTag{});
 		state->setFrameIndex(static_cast<int>(sourceIn + TimePos(m_slips[static_cast<std::size_t>(reader)]).frames(sourceFramesPerTick)));
+	}
+}
+
+auto CompSlipReaders::prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool
+{
+	for (int reader = 0; reader < m_readerCount; ++reader)
+	{
+		auto& state = m_readers[static_cast<std::size_t>(reader)];
+		if (!state || state->prepareConverterMode(mode)) { continue; }
+		for (int done = 0; done < reader; ++done)
+		{
+			auto& prepared = m_readers[static_cast<std::size_t>(done)];
+			if (prepared) { prepared->discardPreparedConverterMode(); }
+		}
+		return false;
+	}
+	return true;
+}
+
+void CompSlipReaders::adoptPreparedConverterMode() noexcept
+{
+	for (int reader = 0; reader < m_readerCount; ++reader)
+	{
+		auto& state = m_readers[static_cast<std::size_t>(reader)];
+		if (state) { state->adoptPreparedConverterMode(); }
+	}
+}
+
+void CompSlipReaders::discardPreparedConverterMode() noexcept
+{
+	for (int reader = 0; reader < m_readerCount; ++reader)
+	{
+		auto& state = m_readers[static_cast<std::size_t>(reader)];
+		if (state) { state->discardPreparedConverterMode(); }
 	}
 }
 

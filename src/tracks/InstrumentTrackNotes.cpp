@@ -47,6 +47,27 @@
 namespace lmms
 {
 
+static_assert(std::atomic<int>::is_always_lock_free);
+static_assert(std::atomic<std::uint32_t>::is_always_lock_free);
+
+void InstrumentTrack::recordNoteOnActivity()
+{
+	m_noteOnGeneration.fetch_add(1, std::memory_order_relaxed);
+	m_activeUiNotes.fetch_add(1, std::memory_order_relaxed);
+}
+
+void InstrumentTrack::recordNoteOffActivity()
+{
+	int activeNotes = m_activeUiNotes.load(std::memory_order_relaxed);
+	while (activeNotes > 0 && !m_activeUiNotes.compare_exchange_weak(activeNotes, activeNotes - 1,
+		std::memory_order_relaxed, std::memory_order_relaxed)) {}
+}
+
+InstrumentTrack::NoteActivitySnapshot InstrumentTrack::noteActivitySnapshot() const
+{
+	return {m_activeUiNotes.load(std::memory_order_relaxed), m_noteOnGeneration.load(std::memory_order_relaxed)};
+}
+
 void InstrumentTrack::decorateNoteHandle(NotePlayHandle* handle, const MidiClip* clip, NoteVector::const_iterator note,
 	NoteVector::const_iterator first, bool songGlobal, const TimePos& songOffset, uint32_t midiSeed) const
 {
@@ -86,32 +107,63 @@ void InstrumentTrack::decorateNoteHandle(NotePlayHandle* handle, const MidiClip*
 namespace
 {
 
-MidiEvent controllerEvent(const ControllerLane& lane, int value)
+struct ActiveInputTransform
+{
+	const InstrumentTrack* track;
+	const ActiveInputTransform* previous;
+};
+
+thread_local const ActiveInputTransform* s_activeInputTransforms = nullptr;
+
+bool inputTransformIsActiveFor(const InstrumentTrack* track)
+{
+	for (const ActiveInputTransform* active = s_activeInputTransforms; active != nullptr; active = active->previous)
+	{
+		if (active->track == track) { return true; }
+	}
+	return false;
+}
+
+class InputTransformScope
+{
+public:
+	explicit InputTransformScope(const InstrumentTrack* track) : m_context{track, s_activeInputTransforms}
+	{
+		s_activeInputTransforms = &m_context;
+	}
+	~InputTransformScope() { s_activeInputTransforms = m_context.previous; }
+
+private:
+	ActiveInputTransform m_context;
+};
+
+MidiEvent controllerEvent(const ControllerLane& lane, int value, int channel)
 {
 	switch (lane.kind)
 	{
-	case ControllerKind::PitchBend: return MidiEvent(MidiPitchBend, 0, static_cast<int16_t>(value));
-	case ControllerKind::ChannelPressure: return MidiEvent(MidiChannelPressure, 0, static_cast<int16_t>(value));
-	case ControllerKind::ProgramChange: return MidiEvent(MidiProgramChange, 0, static_cast<int16_t>(value));
+	case ControllerKind::PitchBend: return MidiEvent(MidiPitchBend, static_cast<int8_t>(channel), static_cast<int16_t>(value));
+	case ControllerKind::ChannelPressure: return MidiEvent(MidiChannelPressure, static_cast<int8_t>(channel), static_cast<int16_t>(value));
+	case ControllerKind::ProgramChange: return MidiEvent(MidiProgramChange, static_cast<int8_t>(channel), static_cast<int16_t>(value));
 	case ControllerKind::ControlChange: break;
 	}
-	return MidiEvent(MidiControlChange, 0, static_cast<int16_t>(lane.controller), static_cast<int16_t>(value));
+	return MidiEvent(MidiControlChange, static_cast<int8_t>(channel), static_cast<int16_t>(lane.controller), static_cast<int16_t>(value));
 }
 
 } // namespace
 
 bool InstrumentTrack::handleInputTransform(const MidiEvent& event, const TimePos& time, f_cnt_t offset)
 {
-	// MIDI input thread. The transformed event re-enters processInEvent once; the flag keeps it from
-	// being transformed twice (a thread's own re-entry, so a thread-local).
-	thread_local bool inside = false;
-	if (inside || event.source() != MidiEvent::Source::External || !m_inputTransform.active()) { return false; }
+	// MIDI input thread. Each active track may transform once in a forwarding chain; a track's own recursive
+	// re-entry is skipped while a nested layer track can still apply its transform.
+	if (inputTransformIsActiveFor(this) || event.source() != MidiEvent::Source::External || !m_inputTransform.active())
+	{
+		return false;
+	}
 	MidiEvent transformed = event;
 	if (m_inputTransform.apply(&transformed))
 	{
-		inside = true;
+		InputTransformScope scope{this};
 		processInEvent(transformed, time, offset);
-		inside = false;
 	}
 	return true;
 }
@@ -123,22 +175,44 @@ void InstrumentTrack::playClipControllers(const MidiClip* clip, tick_t tick, f_c
 	for (const ControllerLane& lane : clip->controllers().lanes())
 	{
 		const int value = lane.valueAt(tick);
-		const bool jumped = tick != lane.lastTick + 1;
+		const bool jumped = MidiPlayback::instance().chasingNow() || tick < lane.lastTick;
 		lane.lastTick = tick;
 		if (!jumped && value == lane.lastSent) { continue; }
 		lane.lastSent = value;
-		processOutEvent(controllerEvent(lane, value), TimePos(tick), offset);
+		processOutEvent(controllerEvent(lane, value, midiPort()->realOutputChannel()), TimePos(tick), offset);
 	}
 }
 
-bool InstrumentTrack::noteStartsNow(const Note& note, const TimePos& curStart, const MidiClip* clip) const
+bool InstrumentTrack::noteStartsNow(const Note& note, const TimePos& curStart, const MidiClip* clip, bool chaseNow) const
 {
-	if (note.pos() == curStart) { return true; }
-	if (!(note.pos() < curStart && note.endPos() > curStart)) { return false; }
+	const bool atStart = note.pos() == curStart;
+	if (!atStart && !(note.pos() < curStart && note.endPos() > curStart)) { return false; }
 	// A note under the clip's own start (a clip trimmed from the left) always sounds from there; one
-	// under a start, a jump or a loop does when chase is on (0.5.0 ED-075, MidiPlayback.h).
-	const MidiPlayback& playback = MidiPlayback::instance();
-	return curStart == -clip->startTimeOffset() || (playback.chase() && playback.chasingNow());
+	// under a start, a jump, a loop or an unmute (0.5.0 ED-075, Q050-040) only when chased.
+	if (!atStart && curStart == -clip->startTimeOffset()) { return true; }
+	if (!atStart && !chaseNow) { return false; }
+	// A chase must not sound a note twice: an under-playhead note a seek or loop left ringing already
+	// has a live handle, and starting another would double it (Q050-040, InstrumentTrack::play).
+	return !chaseNow || !noteIsAlreadySounding(note, clip);
+}
+
+bool InstrumentTrack::noteIsAlreadySounding(const Note& note, const MidiClip* clip) const
+{
+	// The handle's originating clip and the originating note's id (Note::id(), stable while the note
+	// lives): a same-key note in another overlapping clip is not this note (r2), and neither is a twin
+	// of the same key and position in this clip, which the model permits (r4). Audio thread, under
+	// play()'s tryLock: reads the handle list, allocates nothing.
+	const int id = note.id();
+	for (PlayHandle* handle : Engine::audioEngine()->playHandles())
+	{
+		auto* noteHandle = dynamic_cast<NotePlayHandle*>(handle);
+		if (noteHandle == nullptr || noteHandle->instrumentTrack() != this) { continue; }
+		if (noteHandle->clip() != clip || noteHandle->sourceNoteId() != id) { continue; }
+		// A released handle is a release tail, not the note: a loop may sound the note again over it.
+		if (noteHandle->isReleased()) { continue; }
+		return true;
+	}
+	return false;
 }
 
 bool InstrumentTrack::notePlaysNow(const Note& note, uint32_t midiSeed) const
@@ -156,31 +230,34 @@ bool InstrumentTrack::notePlaysNow(const Note& note, uint32_t midiSeed) const
 		&& NoteRandom::passesProbability(note.probability(), midiSeed, note.key(), note.pos(), note.length());
 }
 
-void InstrumentTrack::sendArticulation(int index, f_cnt_t offset)
+bool InstrumentTrack::sendArticulationEvents(const ArticulationEvents& events, int channel, int key, int volume,
+	const TimePos& time, f_cnt_t offset)
 {
-	// 0.5.0 ED-121: what the note's articulation sends before it - read under play()'s lock, no allocation.
-	const Articulation* articulation = m_articulations.at(index);
-	if (articulation == nullptr) { return; }
-	// A program change or a controller goes out in this block (a MIDI event has no carry-over to a later
-	// one), so it reaches the instrument no later than the note it prepares, however far that is delayed.
-	const f_cnt_t now = std::min(offset, Engine::audioEngine()->framesPerPeriod() - 1);
-	const TimePos time = TimePos::fromFrames(now, Engine::framesPerTick());
-	if (articulation->program >= 0) { processOutEvent(MidiEvent(MidiProgramChange, 0, static_cast<int16_t>(articulation->program)), time, now); }
-	if (articulation->controller >= 0)
+	// 0.5.0 ED-121 / Q050-015: audio thread, from the note's play handle - POD events only, no allocation, no lock
+	// of its own, no Qt signal. A layer rack that leaves this track's instrument out of the note leaves its
+	// articulation out too.
+	if (!m_layers.basePlays(key, volume)) { return false; }
+	const auto channelByte = static_cast<int8_t>(channel);
+	if (events.program >= 0) { processOutEvent(MidiEvent(MidiProgramChange, channelByte, static_cast<int16_t>(events.program)), time, offset); }
+	if (events.controller >= 0)
 	{
-		processOutEvent(MidiEvent(MidiControlChange, 0, static_cast<int16_t>(articulation->controller),
-			static_cast<int16_t>(articulation->value)), time, now);
+		processOutEvent(MidiEvent(MidiControlChange, channelByte, static_cast<int16_t>(events.controller),
+			static_cast<int16_t>(events.value)), time, offset);
 	}
-	if (articulation->keyswitch >= 0)
-	{
-		// The keyswitch is a play handle, which waits out a delay itself.
-		// A note on the stack: no static (review W3-batchA #12) and no member - a Note member takes a project id
-		// for every track built, which shifted every track's id on load. Its id costs what every played note's
-		// handle copy already does (ProjectIds::allocate, no lock, no allocation).
-		const Note key(TimePos(1), TimePos(0), articulation->keyswitch);
-		Engine::audioEngine()->addPlayHandle(NotePlayHandleManager::acquire(this, offset,
-			static_cast<f_cnt_t>(Engine::framesPerTick()), key));
-	}
+	if (events.keyswitch < 0) { return false; }
+	// The key goes to the instrument and the MIDI output directly: it is no played note, so none of the note
+	// bookkeeping (keyboard state, running notes, voices, the newNote signal) applies.
+	const MidiEvent on(MidiNoteOn, channelByte, static_cast<int16_t>(events.keyswitch), KeyswitchVelocity);
+	if (m_instrument != nullptr) { m_instrument->handleMidiEvent(on, time, offset); }
+	m_midiPort.processOutEvent(on, time, offset);
+	return true;
+}
+
+void InstrumentTrack::releaseKeyswitch(int key, int channel, const TimePos& time, f_cnt_t offset)
+{
+	const MidiEvent off(MidiNoteOff, static_cast<int8_t>(channel), static_cast<int16_t>(key), 0);
+	if (m_instrument != nullptr) { m_instrument->handleMidiEvent(off, time, offset); }
+	m_midiPort.processOutEvent(off, time, offset);
 }
 
 void InstrumentTrack::triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_cnt_t frames, const TimePos& curStart)
@@ -196,7 +273,10 @@ void InstrumentTrack::triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_
 	}
 	// MX-035: the track's own delay, on top (a chased note too: the whole track sits later).
 	offset += static_cast<f_cnt_t>(std::lround(delayMs() * Engine::audioEngine()->outputSampleRate() / 1000.0));
-	sendArticulation(note.conditions().articulation, offset);
+	// Q050-015: what the note's articulation sends goes with the note's own handle (the first hit's), which sends it
+	// at the offset the note starts at - however far swing, the MIDI offset or the track's delay put that.
+	const Articulation* articulation = m_articulations.at(note.conditions().articulation);
+	const ArticulationEvents articulationEvents = articulation != nullptr ? articulation->events() : ArticulationEvents{};
 	// Where the clip's own time 0 lies in the song for the pass playing: the clip's start on its first pass.
 	const TimePos songOffset(trigger.songTick - curStart.getTicks());
 	// 0.5.0 ED-133: the note's repeats - that many more hits, evenly spaced inside it (not a step note's).
@@ -207,10 +287,13 @@ void InstrumentTrack::triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_
 		// The last hit takes what the even split leaves over, so the note still ends where it ends.
 		const f_cnt_t length = hit + 1 < hits ? each : frames - hit * each;
 		NotePlayHandle* handle = NotePlayHandleManager::acquire(this, offset + hit * each, length, note);
+		handle->setClip(trigger.clip);  // Q050-040: the chase check must tell this clip's note from another's
+		handle->setSourceNoteId(note.id());  // Q050-040 r4: ...and one note of the clip from its same-key, same-position twin
 		handle->setPatternTrack(trigger.patternTrack);
 		// Velocity jitter, the slide source, the song-global offset and the clip's transpose.
 		decorateNoteHandle(handle, trigger.clip, trigger.note, trigger.first, trigger.songGlobal, songOffset, trigger.midiSeed);
 		// 0.5.0 MX-112: the same note on each layer its zones name - before the hand-off, which owns the handle.
+		if (hit == 0) { handle->setArticulation(articulationEvents); }
 		m_layers.playNote(*handle, offset + hit * each, length, trigger.patternTrack);
 		Engine::audioEngine()->addPlayHandle(handle);
 	}
@@ -235,10 +318,11 @@ TimePos InstrumentTrack::loopedPosition(const MidiClip* clip, const TimePos& pos
 // 0.5.0 MX-112 (layers), MX-114 (MIDI parts, output buses), MX-120 (per-voice modulation)
 // ---------------------------------------------------------------------------
 
-void InstrumentTrack::sendNoteOn(const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset)
+void InstrumentTrack::sendNoteOn(const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset,
+	std::atomic_bool* baseInstrumentAccepted)
 {
 	// MX-112: a layer rack whose zones leave the track's own instrument out of this note.
-	if (!m_layers.baseTakesNoteOn(event.key(), event.velocity())) { return; }
+	if (!m_layers.baseTakesNoteOn(event.key(), event.velocity(), baseInstrumentAccepted)) { return; }
 	m_midiNotesMutex.lock();
 	m_piano.setKeyState(event.key(), true);  // event.key() = original key
 	if (key >= 0 && key < NumKeys)
@@ -254,24 +338,25 @@ void InstrumentTrack::sendNoteOn(const MidiEvent& event, int key, int fallbackCh
 		m_instrument->handleMidiEvent(MidiEvent(MidiNoteOn, channel, key, event.velocity()), time, offset);
 		noteVoiceChanged(true, channel, key, offset);  // MX-120: a per-voice modulator's voice
 	}
+	recordNoteOnActivity();	// polled by InstrumentTrackView; no queued Qt signal on the event path
 	m_midiNotesMutex.unlock();
-	emit newNote();
 }
 
-void InstrumentTrack::sendNoteOff(const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset)
+void InstrumentTrack::sendNoteOff(const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset,
+	std::atomic_bool* baseInstrumentAccepted)
 {
-	if (!m_layers.baseTakesNoteOff(event.key())) { return; }  // MX-112: its note-on was not sent either
+	if (!m_layers.baseTakesNoteOff(event.key(), baseInstrumentAccepted)) { return; }  // MX-112: its note-on was not sent either
 	m_midiNotesMutex.lock();
 	m_piano.setKeyState(event.key(), false);  // event.key() = original key
-	if (key >= 0 && key < NumKeys && --m_runningMidiNotes[key] <= 0)
+	if (key >= 0 && key < NumKeys && m_runningMidiNotes[key] > 0 && --m_runningMidiNotes[key] == 0)
 	{
 		const int channel = m_midiParts.noteOffChannel(event.key(), fallbackChannel);  // MX-114
 		// The note-off velocity (0 unless the note has a release velocity, 0.5.0 L07).
 		m_instrument->handleMidiEvent(MidiEvent(MidiNoteOff, channel, key, event.velocity()), time, offset);
 		noteVoiceChanged(false, channel, key, offset);
 	}
+	recordNoteOffActivity();	// polled by InstrumentTrackView; no queued Qt signal on the event path
 	m_midiNotesMutex.unlock();
-	emit endNote();
 }
 
 void InstrumentTrack::sendChannelEvent(const MidiEvent& event, const TimePos& time, f_cnt_t offset)
@@ -332,14 +417,18 @@ void InstrumentTrack::saveZeneInstrumentSettings(QDomDocument& doc, QDomElement&
 	if (!presetMode && buses != nullptr) { buses->saveSettings(doc, element); }
 }
 
-void InstrumentTrack::loadZeneInstrumentSettings(const QDomElement& element)
+void InstrumentTrack::loadZeneInstrumentSettings(const QDomElement& element, bool presetMode)
 {
-	// Each reads its own element and treats a missing one as "none", so an undo step or a preset that
-	// predates the feature takes it back.
+	// MIDI parts and layers reset on absence. Output-bus routes name project mixer channels and presets
+	// deliberately omit them, so a preset only replaces routes when it explicitly carries the node.
 	m_midiParts.loadSettings(element);
 	m_layers.loadSettings(element);
 	InstrumentOutputBuses* buses = m_instrument != nullptr ? m_instrument->outputBuses() : nullptr;
-	if (buses != nullptr && !m_previewMode) { buses->loadSettings(element); }
+	if (buses != nullptr && !m_previewMode
+		&& (!presetMode || !element.firstChildElement(QStringLiteral("outputbuses")).isNull()))
+	{
+		buses->loadSettings(element);
+	}
 }
 
 } // namespace lmms

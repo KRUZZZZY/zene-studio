@@ -89,7 +89,14 @@ private:
 	//! column number in surrounding grid in LinkedModelGroupsView
 	std::size_t m_colNum;
 	class ControlLayout* m_layout;
-	std::map<std::string, std::unique_ptr<class Control>> m_widgets;
+	//! a control, with the name its layout item is registered under
+	struct ControlEntry
+	{
+		std::unique_ptr<class Control> control;
+		std::string layoutName;
+	};
+	//! keyed by the id given to addControl
+	std::map<std::string, ControlEntry> m_widgets;
 };
 
 

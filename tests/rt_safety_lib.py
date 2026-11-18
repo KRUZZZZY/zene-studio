@@ -67,6 +67,7 @@ class ScopeEntry:
     symbol: str
     reason: str
     lineno: int
+    rule_ids: Tuple[str, ...] = ()
 
 
 @dataclass
@@ -118,28 +119,59 @@ def _data_lines(text: str) -> Iterable[Tuple[int, str]]:
 
 
 def parse_scope(text: str) -> Tuple[List[ScopeEntry], List[str]]:
-    """`<path><TAB><symbol><TAB><reason>` per line. A blank reason is refused."""
+    """Parse path:symbol entries, optionally limited by a trailing rules= field."""
     entries: List[ScopeEntry] = []
     errors: List[str] = []
     seen = set()
     for lineno, raw in _data_lines(text):
-        fields = raw.rstrip("\n").split("\t")
-        if len(fields) < 3 or not fields[0].strip() or not fields[1].strip():
-            errors.append("rt-safety-scope.txt:%d: expected <path><TAB><symbol><TAB><reason>, "
-                          "got %r" % (lineno, raw))
+        entry, error = _parse_scope_line(lineno, raw)
+        if error:
+            errors.append(error)
             continue
-        path, symbol = fields[0].strip(), fields[1].strip()
-        reason = "\t".join(fields[2:]).strip()
-        if not reason:
-            errors.append("rt-safety-scope.txt:%d: %s:%s has no reason - a declared "
-                          "audio-thread path states WHY it is one" % (lineno, path, symbol))
+        key = (entry.path, entry.symbol)
+        if key in seen:
+            errors.append("rt-safety-scope.txt:%d: duplicate entry %s:%s"
+                          % (lineno, entry.path, entry.symbol))
             continue
-        if (path, symbol) in seen:
-            errors.append("rt-safety-scope.txt:%d: duplicate entry %s:%s" % (lineno, path, symbol))
-            continue
-        seen.add((path, symbol))
-        entries.append(ScopeEntry(path, symbol, reason, lineno))
+        seen.add(key)
+        entries.append(entry)
     return entries, errors
+
+
+def _parse_scope_line(lineno: int, raw: str) -> Tuple[Optional[ScopeEntry], Optional[str]]:
+    """Parse one declared path, including its optional rule filter."""
+    fields = raw.rstrip("\n").split("\t")
+    if len(fields) < 3 or not fields[0].strip() or not fields[1].strip():
+        return None, ("rt-safety-scope.txt:%d: expected <path><TAB><symbol><TAB><reason>, "
+                      "got %r" % (lineno, raw))
+    path, symbol = fields[0].strip(), fields[1].strip()
+    rule_ids, error = _scope_rule_ids(fields[2:], lineno, path, symbol)
+    if error:
+        return None, error
+    reason = "\t".join(field for field in fields[2:] if not field.startswith("rules=")).strip()
+    if not reason:
+        return None, ("rt-safety-scope.txt:%d: %s:%s has no reason - a declared "
+                      "audio-thread path states WHY it is one" % (lineno, path, symbol))
+    return ScopeEntry(path, symbol, reason, lineno, rule_ids), None
+
+
+def _scope_rule_ids(fields: Sequence[str], lineno: int, path: str,
+                    symbol: str) -> Tuple[Tuple[str, ...], Optional[str]]:
+    """Validate and return an optional rules= filter from a scope line."""
+    rule_fields = [field for field in fields if field.startswith("rules=")]
+    if len(rule_fields) > 1:
+        return (), _scope_rule_error(lineno, path, symbol)
+    if not rule_fields:
+        return (), None
+    rule_ids = tuple(rule_fields[0][6:].split(","))
+    if any(rule_id not in RULES_BY_ID for rule_id in rule_ids):
+        return (), _scope_rule_error(lineno, path, symbol)
+    return rule_ids, None
+
+
+def _scope_rule_error(lineno: int, path: str, symbol: str) -> str:
+    return "rt-safety-scope.txt:%d: %s:%s has an unknown or duplicate rule filter" \
+           % (lineno, path, symbol)
 
 
 def parse_allowlist(text: str) -> Tuple[List[AllowEntry], List[str]]:
@@ -207,6 +239,8 @@ def _collect(tree: str, scope: Sequence[ScopeEntry]) -> Tuple[List[Hit], int, Di
             total_lines += len(body)
             modes[region.mode] = modes.get(region.mode, 0) + 1
             for lineno, rule, text in scan_rules("\n".join(body)):
+                if entry.rule_ids and rule.id not in entry.rule_ids:
+                    continue
                 hits.append(Hit(entry.path, entry.symbol, rule.id, rule.category,
                                 region.start + lineno - 1, text))
     return hits, total_lines, modes, None

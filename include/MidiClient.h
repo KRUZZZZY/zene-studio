@@ -26,6 +26,7 @@
 #define LMMS_MIDI_CLIENT_H
 
 #include <QStringList>
+#include <mutex>
 #include <vector>
 
 
@@ -67,6 +68,14 @@ public:
 		(void) offset;
 		processOutEvent( event, time, port );
 	}
+
+	/*! Q050-277: sends @a event on @a port from a thread that is NOT the audio thread (the MIDI clock's capture sender),
+	 *  merged into this client's output WITHOUT becoming a second producer of whatever the audio thread feeds through
+	 *  processOutEvent(). Callers are serialized by a mutex the audio thread never takes, so whatever a client does in
+	 *  processNonAudioOutEvent() has exactly one non-audio producer at a time. False: the client refused it (its
+	 *  off-audio queue is full, or it cannot carry this event beside the audio thread's); nothing was sent and the
+	 *  caller may retry. May lock and wait: never call it from the audio thread. */
+	bool sendFromNonAudioThread( const MidiEvent& event, const MidiPort* port );
 
 	// inheriting classes can re-implement this for being able to update
 	// their internal port-structures etc.
@@ -136,6 +145,18 @@ public:
 		return false;
 	}
 
+	//! Stops delivering input to the ports (Q050-488). When it returns, no input
+	//! dispatch is in flight and none can start, so the ports may be destroyed.
+	//! Idempotent. Engine::destroy() calls it before the project's tracks - the
+	//! owners of the ports - are cleared. Output keeps working. The base does
+	//! nothing: a client with no input has nothing to stop. Clients with a worker
+	//! join it (MidiAlsaRaw, MidiAlsaSeq); clients called back on a foreign thread
+	//! close a MidiInputGate (MidiJack, MidiWinMM, MidiApple). MidiOss and MidiSndio
+	//! are being retired (Q050-479) and still stop only in their destructors.
+	virtual void stopInput()
+	{
+	}
+
 	//! Number of realtime MIDI output events refused by this client queue.
 	virtual std::uint64_t outputQueueOverflowCount() const noexcept
 	{
@@ -178,6 +199,14 @@ public:
 	}
 
 protected:
+	/*! The client half of sendFromNonAudioThread(), called with its mutex held (one caller at a time, never the audio
+	 *  thread). The base hands the event to processOutEvent(): right for a client whose processOutEvent() is safe beside
+	 *  the audio thread's own calls because it ends in a thread-safe system call and only READS its port maps - Core MIDI
+	 *  (MIDISend) and WinMM (midiOutShortMsg). A client that feeds a single-producer queue from the audio thread
+	 *  (MidiAlsaSeq) overrides it with a second queue its one consumer also drains; MidiClientRaw narrows it to the
+	 *  one-byte System Real-Time messages, the only ones a raw byte stream can carry from a second thread. */
+	virtual bool processNonAudioOutEvent( const MidiEvent& event, const MidiPort* port );
+
 	std::vector<MidiPort *> m_midiPorts;
 
 	RetroMidiCapture m_retroCapture;
@@ -186,6 +215,10 @@ protected:
 	//! port this client's MidiPorts are subscribed to, so a device that is
 	//! unplugged and replugged at a NEW sequencer address is re-attached.
 	MidiReconnect m_reconnect;
+
+private:
+	//! Serializes sendFromNonAudioThread() (Q050-277). Never taken by the audio thread.
+	std::mutex m_nonAudioOutMutex;
 
 } ;
 
@@ -219,6 +252,13 @@ protected:
 	// can wrap it - MidiJack assembles the bytes into whole messages for its JACK output port.
 	void processOutEvent( const MidiEvent& event, const TimePos& time, const MidiPort* port ) override;
 
+	/*! Q050-277: only a one-byte System Real-Time message (0xF8..0xFF: the clock's pulse, START, CONTINUE, STOP) is
+	 *  sent from a second thread. MIDI 1.0 lets such a byte stand anywhere in a stream, even between the bytes of
+	 *  another message, and each client writes it as one unit - MidiOss/MidiSndio one write() of one byte into a pipe
+	 *  (atomic below PIPE_BUF), MidiAlsaRaw one snd_rawmidi_write() of one byte, MidiJack one message on its
+	 *  multi-producer queue - so it cannot split or corrupt what the audio thread is sending. Anything longer is refused. */
+	bool processNonAudioOutEvent( const MidiEvent& event, const MidiPort* port ) override;
+
 
 private:
 	// this does MIDI-event-process
@@ -232,16 +272,28 @@ private:
 	// data being used for parsing
 	struct midiParserData
 	{
-		uint8_t m_status;		// identifies the type of event, that
+		/* Initialised HERE, and not only for the three system-common fields
+		 * below: this struct has no constructor, MidiClientRaw's is defaulted
+		 * and nothing else zeroes this parser state, so a field left without
+		 * an initialiser kept whatever the client's memory held. A raw device
+		 * that is opened in the middle of another device's message delivers a
+		 * DATA byte first, and parseData() then reads m_status to decide
+		 * whether that byte belongs to an event: with m_status left over it
+		 * assembled an event out of the leftover channel, byte counter and
+		 * payload instead of discarding the byte. Zero is the parser's own
+		 * "no event in progress" state (parseData() tests it, and every status
+		 * byte it stores is non-zero). Held by
+		 * tests/src/core/MidiClockTest.cpp::aFreshParserDiscardsALeadingDataByte. */
+		uint8_t m_status = 0;	// identifies the type of event, that
 					// is currently received ('Noteon',
 					// 'Pitch Bend' etc).
-		uint8_t m_channel;	// The channel of the event that is
+		uint8_t m_channel = 0;	// The channel of the event that is
 					// received (in case of a channel event)
-		uint32_t m_bytes;		// How many bytes have been read for
+		uint32_t m_bytes = 0;		// How many bytes have been read for
 					// the current event?
-		uint32_t m_bytesTotal;	// How many bytes does the current
+		uint32_t m_bytesTotal = 0;	// How many bytes does the current
 					// event type include?
-		uint32_t m_buffer[RAW_MIDI_PARSE_BUF_SIZE];
+		uint32_t m_buffer[RAW_MIDI_PARSE_BUF_SIZE] = {};
 					// buffer for incoming data
 		MidiEvent m_midiEvent;	// midi-event
 		/* System-common assembly (0.3.0, the `clock.*` group's slave half).

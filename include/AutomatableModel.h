@@ -26,6 +26,7 @@
 #define LMMS_AUTOMATABLE_MODEL_H
 
 #include <atomic>
+#include <cstddef>
 #include <cmath>
 #include <QMap>
 #include <QMutex>
@@ -37,6 +38,10 @@
 #include "ValueBuffer.h"
 #include "ModelVisitor.h"
 
+#ifdef LMMS_TESTING
+class PhaseDSidechainTest;
+class AutomatableModelTest;
+#endif
 
 namespace lmms
 {
@@ -75,6 +80,32 @@ namespace lmms
 
 class ControllerConnection;
 
+/*! While one of these is alive, the models created on this thread are NOT
+ *  registered with the audio engine.
+ *
+ *  A model the render thread cannot see needs no audio change lock: the lock
+ *  the render thread takes once per period exists so a writer and the render
+ *  thread never see a half-written model. A device that is not in any chain is
+ *  not rendered, so the models of a device that is still being built are not
+ *  render-visible, and the build may write them without the lock - a plug-in
+ *  load can take a while, and holding the change lock across it stalls
+ *  rendering for the whole load.
+ *
+ *  The models are registered when the device is attached to a chain
+ *  (ControlStructuralSupport.cpp's attachRecordedDevice), under the change
+ *  lock that attach already takes. */
+class DeferredModelRegistrationScope
+{
+public:
+	DeferredModelRegistrationScope() noexcept;
+	~DeferredModelRegistrationScope() noexcept;
+	DeferredModelRegistrationScope(const DeferredModelRegistrationScope&) = delete;
+	DeferredModelRegistrationScope& operator=(const DeferredModelRegistrationScope&) = delete;
+
+private:
+	bool m_outer{false};
+};
+
 class LMMS_EXPORT AutomatableModel : public Model, public JournallingObject
 {
 	Q_OBJECT
@@ -88,6 +119,17 @@ public:
 
 
 	~AutomatableModel() override;
+
+	/*! True when the model is in the audio engine's render-visible registry.
+	 *
+	 *  A model that is not registered is not read by the render thread: the
+	 *  render prepass walks the registry, and the value buffer of an
+	 *  unregistered model is empty. Such a model may therefore be written
+	 *  without taking the audio change lock. */
+	bool isRegisteredWithAudioEngine() const noexcept
+	{
+		return m_registeredWithAudioEngine.load(std::memory_order_acquire);
+	}
 
 	// Implement those by using the MODEL_IS_VISITABLE macro
 	virtual void accept(ModelVisitor& v) = 0;
@@ -131,7 +173,31 @@ public:
 	}
 
 
+	/*! Give this model the controller connection @a c (nullptr to remove it).
+	 *  The model OWNS the connection it is given and disposes of the one it
+	 *  replaces - or of the one it gives up when @a c is nullptr - so the
+	 *  previous connection is never leaked and its destroyed() handler is
+	 *  disconnected first, i.e. its death cannot clear the new connection.
+	 *  A caller must therefore not delete a connection it has handed over. */
 	void setControllerConnection( ControllerConnection* c );
+
+#ifdef LMMS_TESTING
+	//! Test the destructor's worker-thread deadlock guard without destroying an object.
+	static bool destructorWouldRequestBlockingChangeGuard() noexcept;
+	/*! Test seam: \a probe runs immediately AFTER the sample-accurate ramp has
+	 *  been read into the period buffer. A regression asks the legacy
+	 *  value-buffer mutex with tryLock(0) there: a read that holds the mutex
+	 *  across the ramp (the historical shape) is seen, and tryLock(0) never
+	 *  blocks. The seam exists in test builds only and is null in the product. */
+	static void setValueBufferRampReadProbeForTest(void (*probe)(AutomatableModel*));
+	/*! Test seam (Q050-161): \a probe runs on the render-time valueBuffer()
+	 *  path each time a request is answered from the period's prepared buffer
+	 *  (a cache hit) - after the hit was decided and before it returns. It lets
+	 *  a test count hits on the reading thread and look at the locks there; it
+	 *  is null in the product, and a test build without a probe pays one
+	 *  pointer test. */
+	static void setValueBufferCacheHitProbeForTest(void (*probe)(AutomatableModel*));
+#endif
 
 
 	template<class T>
@@ -170,7 +236,7 @@ public:
 				}
 			}
 		}
-		return castValue<T>( m_value );
+		return castValue<T>( publishedValue() );
 	}
 
 	float controllerValue( int frameOffset ) const;
@@ -178,6 +244,9 @@ public:
 	//! @brief Function that returns sample-exact data as a ValueBuffer
 	//! @return pointer to model's valueBuffer when s.ex.data exists, NULL otherwise
 	ValueBuffer * valueBuffer();
+
+	//! Serial render prepass entry point; workers only call valueBuffer().
+	void prepareValueBufferForRender(bool skipLinkedControllerLookup = false);
 
 	// -----------------------------------------------------------------------
 	// Sample-accurate automation (feature-list row 9,
@@ -215,7 +284,7 @@ public:
 
 	bool isAtInitValue() const
 	{
-		return m_value == m_initValue;
+		return publishedValue() == m_initValue;
 	}
 
 	template<class T>
@@ -243,11 +312,11 @@ public:
 
 	void setInitValue( const float value );
 
-	void setValue(const float value, const bool isAutomated = false);
+	void setValue(const float value, const bool isAutomated = false, const bool journal = true);
 
 	void incValue( int steps )
 	{
-		setValue( m_value + steps * m_step );
+		setValue( publishedValue() + steps * m_step );
 	}
 
 	float range() const
@@ -467,6 +536,14 @@ public:
 	float trimOffset() const;
 	float effectiveAutomationValue( float writtenValue ) const;
 
+	/*! Q050-103 / Q050-484: a value change made on the audio engine's render thread - an automation tick - does not
+	 *  emit dataChanged() there (a signal on the render thread can post an event, which allocates); it is remembered and
+	 *  emitted by the next flushDeferredChange(), which the model's owner calls from its own (non-render) thread. Off by
+	 *  default: every other model emits as it always did. A change on any other thread emits at once either way. */
+	void setDeferChangeSignalOnRenderThread(bool defer = true) { m_deferChangeSignal = defer; }
+	//! True when a render-thread change was waiting, in which case dataChanged() has just been emitted.
+	bool flushDeferredChange();
+
 public slots:
 	virtual void reset();
 	void unlink();
@@ -490,6 +567,17 @@ protected:
 	float fittedValue( float value ) const;
 
 private:
+	float publishedValue() const noexcept;
+	void publishValuePair(float oldValue, float newValue) noexcept;
+	void consumePublishedValuePair() noexcept;
+	void invalidateValueBufferCache() noexcept;
+	void invalidateLinkedValueBufferCaches() noexcept;
+	ValueBuffer* cachedValueBuffer() noexcept;
+	static std::uint64_t packValuePair(float oldValue, float newValue) noexcept;
+	static float unpackOldValue(std::uint64_t pair) noexcept;
+	static float unpackNewValue(std::uint64_t pair) noexcept;
+	static constexpr std::size_t NotInAudioEngineRegistry = ~std::size_t{0};
+
 	static std::atomic<jo_id_t> s_lastTouched;
 	float m_trimBase = 0.f;  //!< ED-199, see trimBase()
 	quint64 m_trimRun = ~quint64{0};  //!< no token: run 0 (stopped, an export) must read the value too
@@ -539,6 +627,10 @@ private:
 
 	ScaleType m_scaleType; //!< scale type, linear by default
 	float m_value;
+	//! Exact old/new values published by control writes, packed as two float bit patterns.
+	std::atomic<std::uint64_t> m_publishedValuePair{0};
+	//! Advances on every setValueInternal(), including a repeated pair after intervening writes.
+	std::atomic<std::uint64_t> m_valueRevision{0};
 	float m_initValue;
 	float m_minValue;
 	float m_maxValue;
@@ -547,7 +639,14 @@ private:
 	float m_centerValue;
 
 	bool m_valueChanged;
+	bool m_deferChangeSignal = false;
+	std::atomic<bool> m_changePending{false};
 	float m_oldValue; //!< used by valueBuffer for interpolation
+	//! Render-owned value snapshot and the last publication consumed by the prepass.
+	float m_renderValue = 0.0f;
+	std::uint64_t m_renderValueRevision = 0;
+	std::atomic<bool> m_registeredWithAudioEngine{false};
+	std::size_t m_audioEngineRegistrySlot = NotInAudioEngineRegistry;
 
 	// used to determine if step size should be applied strictly (ie. always)
 	// or only when value set from gui (default)
@@ -575,10 +674,20 @@ private:
 
 	bool m_hasSampleExactData;
 
-	// prevent several threads from attempting to write the same vb at the same time
+	// Legacy lock retained as a test sentinel; product code no longer acquires it.
 	QMutex m_valueBufferMutex;
+#ifdef LMMS_TESTING
+	// The sidechain lock probe (PhaseDSidechainTest::theSidechainAmountReadTakesNoLock)
+	// holds this mutex from another thread to see whether the sidechain read waits on it.
+	friend class ::PhaseDSidechainTest;
+	// The ramp-read probe takes the same mutex with tryLock(0) to prove the
+	// read (the automation-ramp path included) does not hold it.
+	friend class ::AutomatableModelTest;
+#endif
 
 	bool m_useControllerValue;
+
+	friend class AudioEngine;
 
 	// -----------------------------------------------------------------------
 	// Automation mode state (post-alpha/automation-modes). Written by the GUI
@@ -605,6 +714,8 @@ private:
 	static std::atomic<qint64> s_touchTimeoutNs;
 
 signals:
+	//! Emitted before AutomatableModel's value state is torn down.
+	void aboutToBeDestroyed();
 	void initValueChanged( float val );
 	void destroyed( lmms::jo_id_t id );
 

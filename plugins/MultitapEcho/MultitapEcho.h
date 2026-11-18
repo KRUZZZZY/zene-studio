@@ -31,6 +31,9 @@
 #include "RingBuffer.h"
 #include "BasicFilters.h"
 
+#include <array>
+#include <atomic>
+
 namespace lmms
 {
 
@@ -50,6 +53,7 @@ private:
 	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
 
 	void updateFilters( int begin, int end );
+	void applyPendingControls( int steps );
 	void runFilter( SampleFrame* dst, SampleFrame* src, StereoOnePole & filter, const f_cnt_t frames );
 
 	inline void setFilterFreq( float fc, StereoOnePole & f )
@@ -60,16 +64,18 @@ private:
 
 	int m_stages;
 
+	std::array<std::atomic<float>, 32> m_pendingAmp{};
+	std::array<std::atomic<float>, 32> m_pendingLpFreq{};
+	float m_amp [32]{};
+	float m_lpFreq [32]{};
+
 	MultitapEchoControls m_controls;
 	
-	float m_amp [32];
-	float m_lpFreq [32];
-
 	RingBuffer m_buffer;
 	StereoOnePole m_filter [32][4];
 	
-	float m_sampleRate;
-	float m_sampleRatio;
+	std::atomic<float> m_sampleRatio;
+	float m_appliedSampleRatio{};
 	
 	SampleFrame* m_work;
 

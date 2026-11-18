@@ -99,8 +99,21 @@ bool SessionScheduler::installScenePlan( int scene, const FollowPlan& plan ) noe
 	// none consumes nothing (installFollowPlan's two rules).
 	InstalledScenePlan* target = sceneEntry( scene, plan.enabled );
 	if( target == nullptr ) { return !plan.enabled; }
-	target->scene = scene;
-	target->plan = plan;
+	if( !plan.enabled )
+	{
+		// A DISABLED plan does nothing, so its entry is GIVEN BACK rather than
+		// left addressed to the scene - the same rule installFollowPlan follows
+		// for a cell. The free-entry loop only claims entries whose scene is
+		// negative, so an entry that kept its scene was unreachable again: 16
+		// scenes armed and disabled once each exhausted the table and every
+		// later plan was refused (applySceneCommand counts that as a drop).
+		*target = InstalledScenePlan{};
+	}
+	else
+	{
+		target->scene = scene;
+		target->plan = plan;
+	}
 	int armed = 0;
 	for( const auto& installed : m_scenePlans )
 	{
@@ -208,6 +221,7 @@ void SessionScheduler::evaluateSceneFollow( const SessionClockContext& ctx ) noe
 	eval.scene = m_activeScene;
 	eval.sceneCount = plan->sceneCount;
 	eval.rngUnit = followRandomUnit( m_followRng );
+	eval.targetRngUnit = followRandomUnit( m_followRng );
 	const FollowFire fire = decideFollowFire( *plan, eval );
 	// Reported at the tick it was scheduled for, then moved on by one step, so an
 	// outcome that does nothing still consumes its action time (the cells' rule).
@@ -273,7 +287,7 @@ void SessionScheduler::applySceneFire( const FollowFire& fire, tick_t firedAt,
 			slot.state = SlotLaunchState{};
 			slot.state.phase = SlotPhase::Playing;
 			slot.state.startCount = 1;
-			m_recorder.recordStart( slot.track, fire.targetScene, firedAt );
+			recordArrangementStart( slot.track, fire.targetScene, firedAt );
 		}
 		else
 		{

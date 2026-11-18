@@ -24,6 +24,8 @@
 
 #include "TaskIndicator.h"
 
+#include "DeprecationHelper.h"
+
 #include <algorithm>
 
 #include <QGuiApplication>
@@ -249,8 +251,8 @@ void TaskList::refresh()
 void TaskList::mousePressEvent(QMouseEvent* event)
 {
 	// A press on the indicator closes the list and must not reach the indicator too, or its click would open it again.
-	const QPoint global = event->globalPosition().toPoint();
-	if (!rect().contains(event->position().toPoint()) && m_anchor != nullptr && m_anchor->rect().contains(m_anchor->mapFromGlobal(global)))
+	const QPoint global = globalPosition(event);
+	if (!rect().contains(position(event)) && m_anchor != nullptr && m_anchor->rect().contains(m_anchor->mapFromGlobal(global)))
 	{
 		setAttribute(Qt::WA_NoMouseReplay);
 	}

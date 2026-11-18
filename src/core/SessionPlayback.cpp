@@ -14,14 +14,34 @@
 
 #include <algorithm>
 
+#include "Engine.h"
+#include "SessionAudioCells.h"
 #include "SessionScheduler.h"
+#include "Song.h"
 
 namespace lmms
 {
 
-bool SessionSlotContentTable::install( int track, int scene, int patternId,
-	tick_t loopLengthTicks, bool legato, tick_t startTicks ) noexcept
+namespace
 {
+
+bool hasCurrentPlaybackTake( const SlotLaunchState& state ) noexcept
+{
+	return state.phase == SlotPhase::Playing
+		|| state.phase == SlotPhase::StopPending
+		|| ( state.phase == SlotPhase::LaunchPending && state.startCount > 0 );
+}
+
+} // namespace
+
+
+bool SessionSlotContentTable::install( int track, int scene, int patternId,
+	tick_t loopLengthTicks, bool legato, tick_t startTicks, const SampleBuffer* clip, const SessionAudioShape& audio ) noexcept
+{
+	// A cell has something to render when it holds a pattern OR an audio clip (WF-055: an
+	// audio cell publishes patternId -1 with its clip, so patternId alone cannot tell an
+	// audio cell from an empty one).
+	const bool hasContent = patternId >= 0 || clip != nullptr;
 	// Replace in place when the cell is already known: re-publishing a cell is
 	// the ordinary case (the model edits a slot), and it must not consume a
 	// second entry.
@@ -29,12 +49,35 @@ bool SessionSlotContentTable::install( int track, int scene, int patternId,
 	{
 		if( m_entries[i].track == track && m_entries[i].scene == scene )
 		{
+			if( !hasContent )
+			{
+				// A cell that LOSES its content gives its entry back: the last
+				// entry moves into the hole and the count drops. A bounded move
+				// over fixed storage, so the audio thread neither allocates nor
+				// locks, and a churn of real -> empty cells cannot fill the table.
+				m_entries[i] = m_entries[m_count - 1];
+				m_entries[m_count - 1] = SessionSlotContent{};
+				--m_count;
+				return true;
+			}
 			m_entries[i].patternId = patternId;
 			m_entries[i].loopLengthTicks = loopLengthTicks;
 			m_entries[i].legato = legato;
 			m_entries[i].startTicks = startTicks;
+			m_entries[i].clip = clip;
+			m_entries[i].audio = audio;
 			return true;
 		}
+	}
+	// A cell with NOTHING to render takes no entry: an absent entry already means
+	// patternId < 0 to every reader (find() returning nullptr is the pre-#597
+	// "nothing to render" the render path handles). The model publishes EVERY
+	// cell of the grid, empty ones included, so claiming an entry for each one
+	// filled the fixed table with cells that render nothing - and the MIDI cell
+	// added to a grid one column wider was refused and played silently.
+	if( !hasContent )
+	{
+		return true;
 	}
 	if( m_count >= Capacity )
 	{
@@ -46,6 +89,8 @@ bool SessionSlotContentTable::install( int track, int scene, int patternId,
 	m_entries[m_count].loopLengthTicks = loopLengthTicks;
 	m_entries[m_count].legato = legato;
 	m_entries[m_count].startTicks = startTicks;
+	m_entries[m_count].clip = clip;
+	m_entries[m_count].audio = audio;
 	++m_count;
 	return true;
 }
@@ -75,7 +120,7 @@ void SessionSlotContentTable::clear() noexcept
 
 
 bool SessionScheduler::publishSlotContent( int track, int scene, int patternId,
-	tick_t loopLengthTicks, bool legato, tick_t startTicks ) noexcept
+	tick_t loopLengthTicks, bool legato, tick_t startTicks, const SampleBuffer* clip, const SessionAudioShape& audio ) noexcept
 {
 	// One queue push, exactly like requestLaunch/installFollowPlan: no
 	// allocation, no lock, no syscall. The audio thread applies it into the
@@ -84,7 +129,7 @@ bool SessionScheduler::publishSlotContent( int track, int scene, int patternId,
 	command.track = track;
 	command.scene = scene;
 	command.type = LaunchCommandType::Content;
-	command.content = SessionSlotContent{ track, scene, patternId, loopLengthTicks, legato, startTicks };
+	command.content = SessionSlotContent{ track, scene, patternId, loopLengthTicks, legato, startTicks, clip, audio };
 	return enqueue( command );
 }
 
@@ -97,7 +142,7 @@ bool SessionScheduler::applySlotContent( const SessionSlotContent& content ) noe
 	// pre-#597 behaviour for that slot: it takes its column over and renders
 	// nothing, which is observable rather than a crash or a clamp.
 	return m_slotContent.install( content.track, content.scene, content.patternId,
-		content.loopLengthTicks, content.legato, content.startTicks );
+		content.loopLengthTicks, content.legato, content.startTicks, content.clip, content.audio );
 }
 
 
@@ -110,16 +155,17 @@ SessionSlotPlayback SessionScheduler::playbackForColumn( int track ) const noexc
 		{
 			continue;
 		}
-		// StopPending counts as playing: the clip has not stopped yet, so the
-		// column is still rendering its content (the same rule
-		// trackIsSessionActive() states).
-		if( slot.state.phase != SlotPhase::Playing
-			&& slot.state.phase != SlotPhase::StopPending )
+		// StopPending counts as playing: the clip has not stopped yet. A pending
+		// retrigger also keeps rendering the last started take until its grid
+		// line. These are the same active-state rules as trackIsSessionActive().
+		if( !hasCurrentPlaybackTake( slot.state ) )
 		{
 			continue;
 		}
 
 		view.playing = true;
+		view.scene = slot.scene;
+		view.startedTick = slot.state.startedTick;
 
 		// What the cell holds. Absent content leaves patternId < 0, which is the
 		// pre-#597 behaviour: the column is taken over and renders nothing.
@@ -129,6 +175,8 @@ SessionSlotPlayback SessionScheduler::playbackForColumn( int track ) const noexc
 		{
 			view.patternId = content->patternId;
 			view.loopLengthTicks = content->loopLengthTicks;
+			view.audio = content->audio;
+			view.clip = content->clip;  // WF-055: an audio cell's clip, rendered by SessionCellPlayHandle
 			start = content->startTicks;  // WF-060: the cell's own start inside its clip
 		}
 
@@ -142,15 +190,39 @@ SessionSlotPlayback SessionScheduler::playbackForColumn( int track ) const noexc
 		{
 			position = 0;
 		}
-		position += start;
-		if( view.loopLengthTicks > 0 && position >= view.loopLengthTicks )
+		if( view.loopLengthTicks > 0 )
 		{
 			position %= view.loopLengthTicks;
 		}
+		position += start;
 		view.positionTicks = position;
 		return view;   // the column's first active slot is the one playing
 	}
 	return view;
+}
+
+bool publishSessionCell( SessionScheduler& scheduler, int track, int scene, const ClipSlot& slot ) noexcept
+{
+	// A MIDI cell publishes the pattern it references. Anything else -
+	// an empty cell, or an audio cell (whose playback path is a later
+	// slice) - publishes "nothing to render" explicitly, so a cell that
+	// changed kind stops rendering instead of keeping a stale pattern.
+	const int patternId = slot.isEmpty() ? -1 : slot.patternId();
+	// WF-055: an audio cell's clip, loaded (and its column's track given a renderer) here, on the
+	// model thread; nullptr for every other cell, so a cell that stopped being audio stops sounding.
+	Song* song = Engine::getSong();
+	sessionaudio::Prepared audio;
+	if( song != nullptr && slot.type() == ClipSlot::Type::Audio )
+	{
+		audio = sessionaudio::prepare( *song, track, slot, song->getTempo() );
+	}
+	const SampleBuffer* clip = audio.clip;
+
+	// The loop length is left 0: PatternStore::play wraps the position
+	// by the pattern's own length (src/core/PatternStore.cpp:56), so the
+	// render is correct without the model computing one, and a length
+	// published here would be a second source of truth for it.
+	return scheduler.publishSlotContent( track, scene, patternId, 0, slot.legato(), slot.loopStart(), clip, audio.shape );
 }
 
 int publishSessionSlotContent( SessionScheduler& scheduler, const SessionModel& model ) noexcept
@@ -162,19 +234,7 @@ int publishSessionSlotContent( SessionScheduler& scheduler, const SessionModel& 
 	{
 		for( int scene = 0; scene < scenes; ++scene )
 		{
-			const ClipSlot& slot = model.slot( track, scene );
-
-			// A MIDI cell publishes the pattern it references. Anything else -
-			// an empty cell, or an audio cell (whose playback path is a later
-			// slice) - publishes "nothing to render" explicitly, so a cell that
-			// changed kind stops rendering instead of keeping a stale pattern.
-			const int patternId = slot.isEmpty() ? -1 : slot.patternId();
-
-			// The loop length is left 0: PatternStore::play wraps the position
-			// by the pattern's own length (src/core/PatternStore.cpp:56), so the
-			// render is correct without the model computing one, and a length
-			// published here would be a second source of truth for it.
-			if( scheduler.publishSlotContent( track, scene, patternId, 0, slot.legato(), slot.loopStart() ) )
+			if( publishSessionCell( scheduler, track, scene, model.slot( track, scene ) ) )
 			{
 				++published;
 			}

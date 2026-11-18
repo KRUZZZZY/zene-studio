@@ -61,6 +61,10 @@ public:
 
 	//! Whether the chain's own on/off switch is on (an off chain calls none of its effects).
 	bool isEnabled() const { return m_enabledModel.value(); }
+	/*! Sets the enabled flag WITHOUT a journal checkpoint. Only the restore of a
+	 *  recorded removal uses it: that step is the checkpoint, and it puts the flag
+	 *  back as it was. */
+	void setEnabledUnjournalled(bool on);
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
 	void loadSettings( const QDomElement & _this ) override;
@@ -187,6 +191,13 @@ public:
 
 	void clear();
 
+#ifdef LMMS_TESTING
+	//! Test seam: loadSettings() calls the probe after it has cleared the old
+	//! chain and before it installs the restored effects, so a test can prove
+	//! the model-change guard spans the list and graph rebuild there.
+	static void setLoadSettingsProbe(void (*probe)());
+#endif
+
 	//! Every effect in the chain, in processing order. Control thread only.
 	//! Added for the agent control surface (plugin.* / dsp.get_state, SPEC
 	//! A11-A14): m_effects is the true order, while QObject child order can
@@ -198,6 +209,10 @@ public:
 private:
 	using EffectList = std::vector<Effect*>;
 	EffectList m_effects;
+
+#ifdef LMMS_TESTING
+	static void (*s_loadSettingsProbe)();
+#endif
 
 	//! The graph the chain is rendered through, and the buffers that carry the
 	//! block in and out of it. Built by rebuildRoutingGraph() on the control

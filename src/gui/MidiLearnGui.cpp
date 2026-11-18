@@ -100,6 +100,12 @@ void MidiLearnGui::syncArmedState()
 
 	MidiLearn::instance()->setFocusTarget(nullptr);
 
+	// Disarming is the user cancelling this learn, so a control-change the MIDI input
+	// thread queued for it goes with it: otherwise re-arming and focusing another control
+	// would bind that stale request to the new target on the next tick. The bind timer was
+	// stopped above, so nothing is draining the slot behind us.
+	MidiLearn::instance()->cancelPendingBinding();
+
 	if (qApp != nullptr)
 	{
 		qApp->removeEventFilter(this);

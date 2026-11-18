@@ -28,11 +28,17 @@
 #include "Graph.h"
 #include "DeprecationHelper.h"
 #include "FileDialog.h"
-#include "StringPairDrag.h"
 #include "Oscillator.h"
 
 namespace lmms
 {
+
+namespace
+{
+
+constexpr int MinGraphLength = 2;
+
+}
 
 namespace gui
 {
@@ -42,7 +48,8 @@ Graph::Graph( QWidget * _parent, Style _style, int _width,
 	QWidget( _parent ),
 	/* TODO: size, background? */
 	ModelView( new graphModel( -1.0, 1.0, 128, nullptr, true ), this ),
-	m_graphStyle( _style )
+	m_graphStyle( _style ),
+	m_lastCursorX( -1 )
 {
 	m_mouseDown = false;
 	m_graphColor = QColor( 0xFF, 0xAA, 0x00 );
@@ -130,7 +137,19 @@ void Graph::mouseMoveEvent ( QMouseEvent * _me )
 	y = qMax( 2, qMin( y, height()-3 ) );
 
 
-	drawLineAt( x, y, m_lastCursorX );
+	// only a left-button stroke edits samples; a move with another
+	// button, or with none, must leave the waveform alone
+	if( m_mouseDown )
+	{
+		if ( m_lastCursorX >= 0 )
+		{
+			drawLineAt( x, y, m_lastCursorX );
+		}
+		else
+		{
+			changeSampleAt( x, y );
+		}
+	}
 
 	// update mouse
 	if( diff != 0 )
@@ -173,7 +192,17 @@ void Graph::mousePressEvent( QMouseEvent * _me )
 			int x = pos.x();
 			int y = pos.y();
 
-			drawLineAt( x, y, m_lastCursorX );
+			if ( m_lastCursorX >= 0 )
+			{
+				x = qMax( 2, qMin( x, width()-3 ) );
+				y = qMax( 2, qMin( y, height()-3 ) );
+
+				drawLineAt( x, y, m_lastCursorX );
+			}
+			else
+			{
+				changeSampleAt( x, y );
+			}
 
 			m_mouseDown = true;
 			setCursor( Qt::BlankCursor );
@@ -187,7 +216,7 @@ void Graph::drawLineAt( int _x, int _y, int _lastx )
 {
 	float minVal = model()->minValue();
 	float maxVal = model()->maxValue();
-	if ( width() <= 4 )
+	if ( width() <= 4 || height() <= 5 )
 	{
 		return;
 	}
@@ -253,7 +282,7 @@ void Graph::changeSampleAt( int _x, int _y )
 	float minVal = model()->minValue();
 	float maxVal = model()->maxValue();
 
-	if ( width() <= 4 )
+	if ( width() <= 4 || height() <= 5 )
 	{
 		return;
 	}
@@ -270,7 +299,10 @@ void Graph::changeSampleAt( int _x, int _y )
 	float range = minVal - maxVal;
 	float val = ( _y*range/( height()-5 ) ) + maxVal;
 
-	model()->setSampleAt( (int)( _x*xscale ), val );
+	// a press on the border gives an index outside the model; keep it inside, as
+	// drawSampleAt() does for the write, so samplesChanged() reports a valid sample
+	const int sample = std::clamp( (int)( _x*xscale ), 0, model()->length() - 1 );
+	model()->setSampleAt( sample, val );
 }
 
 
@@ -414,24 +446,12 @@ void Graph::paintEvent( QPaintEvent * )
 
 void Graph::dropEvent( QDropEvent * _de )
 {
-	QString type = StringPairDrag::decodeKey( _de );
-	QString value = StringPairDrag::decodeValue( _de );
-
-	if( type == "samplefile" )
-	{
-		// TODO: call setWaveToUser
-		// loadSampleFromFile( value );
-		_de->accept();
-	}
+	_de->ignore();
 }
 
 void Graph::dragEnterEvent( QDragEnterEvent * _dee )
 {
-	if( StringPairDrag::processDragEnterEvent( _dee,
-		QString( "samplefile" ) ) == false )
-	{
-		_dee->ignore();
-	}
+	_dee->ignore();
 }
 
 
@@ -465,16 +485,19 @@ void Graph::updateGraph()
 
 graphModel::graphModel(float ymin, float ymax, int length, Model* parent, bool defaultConstructed, float step) :
 	Model(parent, tr("Graph"), defaultConstructed),
-	m_samples(length),
-	m_length(length),
-	m_minValue(ymin),
-	m_maxValue(ymax),
+	m_samples(std::max(length, MinGraphLength)),
+	m_length(std::max(length, MinGraphLength)),
+	// A reversed pair names the same interval: store it ordered, as std::clamp needs
+	m_minValue(ymin > ymax ? ymax : ymin),
+	m_maxValue(ymin > ymax ? ymin : ymax),
 	m_step(std::clamp(step, 0.f, std::abs(ymax - ymin)))
 {
 }
 
 void graphModel::setRange(float ymin, float ymax)
 {
+	// A reversed pair names the same interval: store it ordered, as std::clamp needs
+	if (ymin > ymax) { std::swap(ymin, ymax); }
 	if (ymin == m_minValue && ymax == m_maxValue) { return; }
 	// Step sizes less than zero or larger than the entire range of
 	// values are nonsense, clamp those
@@ -490,6 +513,7 @@ void graphModel::setRange(float ymin, float ymax)
 
 void graphModel::setLength( int _length )
 {
+	if (_length < MinGraphLength) { return; }
 	if( _length != m_length )
 	{
 		m_length = _length;
@@ -516,6 +540,18 @@ void graphModel::setSamples( const float * _samples )
 	std::copy( _samples, _samples + length(), m_samples.begin());
 
 	emit samplesChanged( 0, length()-1 );
+}
+
+
+
+void graphModel::setSamples(const float* samples, int count)
+{
+	// Q050-486: a source with its own length never reads past its end.
+	const int copied = std::min(std::max(count, 0), length());
+	if (samples == nullptr || copied == 0) { return; }
+	std::copy(samples, samples + copied, m_samples.begin());
+
+	emit samplesChanged(0, copied - 1);
 }
 
 
@@ -647,7 +683,10 @@ void graphModel::convolve(const float *convolution,
 		{
 			sum += convolution[j] * temp[( i + j ) % graphLength];
 		}
-		m_samples[( i + centerOffset ) % graphLength] = sum;
+		// '%' keeps the sign of its left operand, so a negative centerOffset
+		// needs a second modulo to land back in [0, graphLength)
+		const int target = ( ( i + centerOffset ) % graphLength + graphLength ) % graphLength;
+		m_samples[target] = sum;
 	}
 	emit samplesChanged(0, graphLength - 1);
 }

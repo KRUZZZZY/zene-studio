@@ -38,6 +38,11 @@ driven through the control surface is folded in; the interface stays deliberatel
   the first marker. `docs/KNOWN-LIMITATIONS.md` carries the same sentence.
 - **Still true, and still not fixed:** the stretch is resampling, so a warp changes pitch (2× is an octave
   up); there is no pitch-preserving time-stretch.
+  *Corrected 2026-10-19 (Q050-148): this bullet was written on 2026-09-13 and stopped being true two days
+  later, when feature-list row 30 landed the pitch-preserving stretch — `warp.stretch` selects
+  `preserve_pitch` (WSOLA) or `rubberband` (optional Rubber Band R3) beside the resampling default, and the
+  section below in this same file is its record. The default is still resampling, and a warp in the default
+  mode still changes pitch.*
 
 ## Export: TPDF dither and an explicit sample-rate-conversion quality
 
@@ -355,8 +360,8 @@ that marker is published as-is, and no unverified claim is published without one
 - **The mixer model is separate strips.** LMMS' MixerChannel is a summing strip several tracks may feed, not
   a property of any one track, so the format's bare `<Channel>` elements carry the mixer strips and each
   track's `<Channel destination="...">` names the strip it feeds. The one routing fact the format CAN
-  express is preserved; the wider MixerRoute graph, pre/post-fader flags and which tracks share a strip are
-  not (LOSSY #7).
+  express is preserved, including multiple tracks sharing one strip; the wider MixerRoute graph and
+  pre/post-fader flags are not (LOSSY #7).
 - **UI absence — one line: DAWproject import / export is drivable through the socket, not from the
   interface.** Nothing in `src/gui/` writes or reads a DAWproject container. `docs/KNOWN-LIMITATIONS.md`
   carries the same sentence.
@@ -753,7 +758,7 @@ two interchangeable backends (in-process ORT when the SDK was found; `tools/stem
 child process otherwise) and five registered tests (`OnnxRuntimeStemSeparatorTest`, `StemExportTest`,
 `StemJobManagerTest`, `StemModelStoreTest`, `StemSplitPipelineTest`). What did not exist was any way
 for a client to drive it: the only route was that CLI, outside the socket, plus a GUI-only clip action
-(`src/gui/StemSplitController.cpp`). Seven ids close that gap:
+(`src/gui/StemSplitController.cpp`). Eight ids close that gap:
 
 - **`stem.get_state`** answers with the engine's own facts — the backend this build drives, whether it
   can run right now (and the reason when it cannot), the model file the store resolves, the model
@@ -766,17 +771,27 @@ for a client to drive it: the only route was that CLI, outside the socket, plus 
   RIFF/WAVE with a sha256 per file, and cancel stops an outstanding job between inference segments.
   The separation runs on the job manager's own worker thread, so the control surface keeps answering —
   **including `control.ping` — while a job runs**, which the ctest measures rather than asserts from the
-  source. `stem.model_get_state` and `stem.model_download` are the model store: the resolved path, the
+  source. **`stem.tracks_create`** is the user-facing half added for the GUI: it turns a completed job's
+  four stems into four `SampleTrack`s at a position in ONE undo step, and it is the SAME registered
+  command the GUI's "Split to stems" action calls, so a click and an agent command take one path (the
+  other seven verbs are `not_mutating`; this one edits the project and is a `true_inverse`).
+  `stem.model_get_state` and `stem.model_download` are the model store: the resolved path, the
   spec, whether it is pinned enough to fetch, and a download that **refuses an unpinned spec** — the
-  default spec is deliberately unpinned in v1, so the default call is a typed refusal naming the model
-  card, which is the "never bundled, always verified" policy working rather than a gap.
-- **The feature is OFF in the default release configuration, and the group is honest about it.**
-  `WANT_STEM_SPLIT` defaults to OFF (`CMakeLists.txt:120`), so a default build compiles none of the
-  engine and registers none of these ids — the same rule the `telemetry.*`, `session.*` and `wasm.*`
-  groups follow, and the A16 rows are guarded by the same macro so the registry and the contract table
-  cannot disagree. Even a build with the option ON needs **the model present** before a job can start:
-  models are never bundled with the product, and the refusal names the path it looked in and the model
-  card to fetch from.
+  default spec IS pinned since owner decision 14 (HTDemucs fp16, one commit of the model card, SHA-256 and
+  size), so a first job fetches it on its own worker, while an explicit spec with no sha256/size is a typed
+  refusal, which is the "never bundled, always verified" policy working rather than a gap.
+- **The feature is ON in the default release configuration, and the group is honest about it.**
+  *Corrected 2026-10-15 (Q050-035): this bullet said the feature was OFF in the default configuration; owner
+  decision 14 (2026-09-29) turned `WANT_STEM_SPLIT` ON by default before the 0.3.0 cut, so that text was
+  wrong for this release and the `stem.*` group belongs to the release configuration (see the A16 section
+  below, where the group's eight rows — seven `not_mutating` and one `true_inverse` — are counted).*
+  `WANT_STEM_SPLIT` defaults to ON (`CMakeLists.txt:130`), the release-honesty manifest row requires ON
+  (`tests/advertised-features.tsv`), and the build reports `WANT_STEM_SPLIT='ON'`. It is **local and offline**
+  — the separation runs on this machine and nothing is uploaded; the only network access is the one-time fetch
+  of the pinned model on first use, which `LMMS_STEM_OFFLINE` turns off. A build that configures the option
+  OFF compiles none of the engine and registers none of these ids, and even with the option ON a job needs
+  **the model present** before it can start: models are never bundled with the product, and the refusal names
+  the path it looked in and the model card to fetch from.
 - **Proof.** ctest `ControlStemCommands` (`tests/control-stem-commands.py`), registered only when the
   feature is compiled in. It drives the REAL pipeline over `--control-socket` on the committed
   458-byte stub ONNX graph (`tests/data/stub-4stem-linear.onnx`) through the shipped CLI — no 166 MB
@@ -785,27 +800,28 @@ for a client to drive it: the only route was that CLI, outside the socket, plus 
   does not write), the asynchrony (`control.ping` answered while the job runs), the four written stems
   (float32 RIFF/WAVE, the mix's own length, sha256 verified against the file), a re-write of the same
   directory, a deterministic cancel of a slowed job (`LMMS_STEM_CHUNK_DELAY_MS`, the separator's own
-  test hook) and the model store's policy, with the reported SHA-256 cross-checked against the hash the
-  script computes locally. A host with no python onnxruntime skips (`SKIP_RETURN_CODE 77`) rather than
-  passing.
-- **Stated limits, all in `docs/KNOWN-LIMITATIONS.md`:** 44100 Hz only (there is no resampler —
-  SPEC-stem-split.md OQ-1 — and the refusal names the rate); the offline job only, never realtime; the
-  source is a file, not a clip or a bus; `stem.job_result` writes output artefacts and does **not**
-  materialise tracks (`StemTrackBuilder`, the GUI's own "split to stems" gesture, is not reachable from
-  the socket in 0.3.0); the jobs live in the instance's memory and do not survive a reload; and
+  test hook), the model store's policy (with the reported SHA-256 cross-checked against the hash the
+  script computes locally) and the new user-facing verb: `stem.tracks_create` materialises the four stems
+  as four tracks and records exactly ONE transaction, and one `control.undo` removes all four. A host with
+  no python onnxruntime skips (`SKIP_RETURN_CODE 77`) rather than passing.
+- **Stated limits, all in `docs/KNOWN-LIMITATIONS.md`:** the stems are always the model's own 44.1 kHz,
+  but a source at another rate is **resampled offline** to it (0.5.0 E27) rather than refused; the offline
+  job only, never realtime; the socket source is a file; `stem.job_result` writes output artefacts, while
+  `stem.tracks_create` materialises the four tracks (and the GUI's "Split to stems" action calls that same
+  command); the jobs live in the instance's memory and do not survive a reload; and
   `stem.model_download` **carries a declared bound** — a performing transfer runs on the control
   thread, so the surface does not answer until it finishes or fails (the defect
   `docs/RENDER-CHILD-WAIT.md:120-126` records for the child-process renders). The transfer's performing
   path is **not exercised by any registered proof** — CI has no pinned artefact to fetch — and only the
   refusal path is measured.
-- **UI absence — one line: the whole `stem.*` group is drivable through the socket and only through the
-  socket.** The one user-visible gesture that reaches this engine is the sample clip's **"Split to
-  stems"** context action (`src/gui/clips/SampleClipView.cpp:124` →
-  `StemSplitController::splitClipToStems`), which is a **different, pre-existing** code path: it takes
-  its mix from a `SampleClip` a human selected, is available only when a display is, and no menu item,
-  toolbar button or keybinding reaches a `stem.*` id. There is no job list, no progress surface for an
-  agent-owned job, no model-manager UI, and nothing in the interface says the model is missing —
-  `stem.get_state` is where that answer lives.
+- **One path for both surfaces.** The sample clip's **"Split to stems"** context action
+  (`src/gui/clips/SampleClipView.cpp` → `StemSplitController::splitClipToStems`) now runs through the SAME
+  registered commands an agent calls — `stem.job_start`, `stem.job_status`, `stem.job_cancel`,
+  `stem.tracks_create` — instead of a private engine, so a click and a command take one path and the four
+  tracks are one undo step. What is still absent from the interface is the agent-facing chrome: there is no
+  job list, no progress surface for an agent-owned job, no model-manager UI and no menu item, toolbar
+  button or keybinding — the only click route is the clip context menu, and `stem.get_state` is where the
+  model answer lives.
 
 ## Out-of-process hosting beyond ZynAddSubFx: the `oop.*` group (feature row 80, board card #670)
 
@@ -928,7 +944,8 @@ workflow.set_scope, window.layout_project_save and window.layout_project_clear (
 window.layout_project_apply (`not_mutating`) (+13); the seven macro.* rows became workflow.* unchanged.
 
 **0.5.0 catch-up wave 1** added rack.macro_set_pair and chord.follow_set (`true_inverse`), track.set_arm_many
-(`snapshot`, one step disarms what it armed) and, in WASM builds, wasm.device_load (`true_inverse`) (+4).
+(`irreversible`: its takes outlive the captures, so control.undo refuses it) and, in WASM builds, wasm.device_load
+(`true_inverse`) (+4).
 
 **0.5.0 catch-up wave 2** (+54, three new groups):
 - F1 hardware I/O: audio.io_setup, mixer.hardware_output, mixer.cue_send, mixer.cue_master, mixer.hardware_insert and
@@ -951,13 +968,188 @@ window.layout_project_apply (`not_mutating`) (+13); the seven macro.* rows becam
 view.announcements (`true_inverse`); window.sample_editor, window.item_list, workflow.resume and task.list, task.cancel,
 task.clear_finished and task.show (`not_mutating`, interface state).
 
+**0.5.0 F2 interface** (+2): plugin.midi_part_set (`true_inverse`), the in-place edit the MIDI parts list's Edit...
+runs; rack.layer_set (`true_inverse`), a layer's mute, solo and level from the layer rack panel.
+
+**0.5.0 L08 metering** (`050/feat-meters`, MX-137): window.phase_scope, the stereo phase view (`not_mutating`, a
+display) (+1). Measured by `ReversibilityContractTest` on that lane's build (no wasmtime): `rows=810 true_inverse=403
+snapshot=37 irreversible=21 not_mutating=349`, which is this block minus wasm's option row, exactly.
+
+**0.5.0 editor lanes (2026-10-06)** added automation.write_to_end (ED-201, `true_inverse`: an AutomationClip journal
+checkpoint, or an action step removing a created track) (+1). Measured with the probe on `050/feat-editor-lanes`, configured
+without wasmtime: `MEASURED rows=810 true_inverse=404 snapshot=37 irreversible=21 not_mutating=348`
+(`DECLARED rows=810 entries=810 duplicates=0`) - this block minus wasm's option row, exactly.
+
+**WF-033, the undo history saved with the project** (+2, no new group; `docs/UNDO-HISTORY-PERSISTENCE.md`):
+project.set_undo_history (`snapshot`, the inverse is the command with the previous setting) and
+project.undo_history (`not_mutating`).
+
+**0.5.0 L02 launcher-rec** (WF-055, audio into a launcher cell; +3): session.record_slot_land (`true_inverse`);
+session.record_slot and session.record_slot_status (`not_mutating`: arming and recording are a launch).
+
+**The 2026-10-06/07 feature merge** (`050/features-2026-10-06`: ui-gaps, mc-wav, inst-pdc, f2-ui, meters,
+editor-lanes, wf033, plugin-hosting, launcher-rec, audio-clips, arranger-gaps) re-took the figure with the probe
+at the merged tip, configured without wasmtime: `MEASURED rows=818 true_inverse=407 snapshot=38 irreversible=21
+not_mutating=352` (`DECLARED rows=818 entries=818 duplicates=0`) - the block below minus wasm's option row,
+exactly, and the lanes' own deltas summed (+2 f2-ui, +1 meters, +1 editor-lanes, +2 wf033, +3 launcher-rec).
+
+**0.5.0 launcher in performance** (lane launcher-perform, WF-064 sub-scenes; +4): session.subscene_create,
+session.subscene_rename and session.subscene_delete (`true_inverse`, the captured <session> block) and
+session.subscene_launch (`not_mutating`, a launch).
+
+**The 2026-10-07 second feature merge** (`050/features-2026-10-06`: alloc-probe-fix, launcher-perform,
+link-interop) re-took the figure with the probe at the merged tip, configured without wasmtime: `MEASURED rows=822
+true_inverse=410 snapshot=38 irreversible=21 not_mutating=353` (`DECLARED rows=822 entries=822 duplicates=0`) - the
+block below minus wasm's option row, exactly, and launcher-perform's +4 (3 `true_inverse`, 1 `not_mutating`) on the
+first merge's 818; alloc-probe-fix and link-interop add no row.
+
+**M0 merge train 1** (`050/m0-train-1`, 2026-10-08: 76 accepted Qwen/Luna fixes on the integration tip) adds no row
+and changes classes only. The probe at the train's tip, configured without wasmtime, measures `rows=822
+true_inverse=410 snapshot=37 irreversible=24 not_mutating=351` - the measurement at that train's tip, before the
+2026-10-09 linked-clip follow-up below.
+Net against the second feature merge: `snapshot` -1, `irreversible` +3, `not_mutating` -2. One of the moves is
+new-p8-51's `record.arm_track` (`snapshot` -> `irreversible`: its take stays after a disarm).
+
+**M0 merge train 5** (`050/m0-train-5`, 2026-10-15: the accepted fixes on the CachyOS toolchain, then the r3 clips and
+takes lanes reapplied after their train-3 reverts) adds three `true_inverse` rows - `clip.link_make_unique`,
+`comp.play_all_takes` and `comp.take_select` - measured off the tree with `tools/dawproject-proof.sh` part 2:
+`rows=839 true_inverse=418 snapshot=42 irreversible=22 not_mutating=357` (`DECLARED rows=839 entries=839 duplicates=0`).
+**M0 merge train 6** (`050/m0-train-6`, 2026-10-18: train 5 + the ci4 portability lane, 143 accepted fixes and 12 accepted
+0.5.0 units) adds four rows: Q050-024's `link.audio_set_enabled` (`true_inverse`) and `link.audio_get_state` (`not_mutating`),
+Q050-035's `stem.tracks_create` (`true_inverse`) and Q050-019's `window.progression` (`not_mutating`), measured by
+`ReversibilityContractTest` on the merged tree: `rows=841 true_inverse=419 snapshot=42 irreversible=22 not_mutating=358`.
+**M0 merge train 7** (`050/m0-train-7`, 2026-10-19: train 6 + 19 accepted fixes and the 0.5.0 units Q050-026 and Q050-040)
+adds one row: Q050-040's `clip.set_mute` (`true_inverse`, the song editor's clip mute and the agents' one command), measured
+by `ReversibilityContractTest` on the merged tree: `rows=842 true_inverse=420 snapshot=40 irreversible=24 not_mutating=358`.
+
+**Q050-170, the browser's category facet (2026-10-19)** adds three rows: `browser.categories`
+(`not_mutating`, the vocabulary read beside `browser.tags`) and the `browser.category.set` /
+`browser.category.clear` pair (both `snapshot`, each recording its inverse as a paired command).
+Measured on this wasm-off build with the part-2 probe: `rows=831 true_inverse=416 snapshot=41
+irreversible=22 not_mutating=352` (`DECLARED rows=831 entries=831 duplicates=0`) - exactly the
+train-5 figure plus these three rows, with the `wasm.load` option applied as above - so the block
+below moves by the same three rows to `rows=840 true_inverse=417 snapshot=44 irreversible=22
+not_mutating=357`.
+
+**0.5.0 L06 automation lanes as track children** (`Q050-022`, 2026-10-16) adds one `true_inverse` row -
+`automation.lanes_set_collapsed` (folding a track's child lanes is a Track checkpoint on the owner's own
+`autolanes` attribute). Measured by `ReversibilityContractTest` on this tree, configured without wasmtime:
+`rows=829 true_inverse=417 snapshot=39 irreversible=22 not_mutating=351`, which is the block below minus
+wasm's option row, exactly.
+
+**Q050-016** (MPE expression event streams) adds two `note.expression_stream_*` rows - one
+`true_inverse` (`note.expression_stream_set`, a MidiClip checkpoint) and one `not_mutating`
+(`note.expression_stream_get`) - so the figure below moved by two:
+
+**M0 merge train 9** (`050/m0-train-9`, 2026-10-20, automatic): `ReversibilityContractTest` on the merged tree measures `rows=849 true_inverse=422 snapshot=42 irreversible=24 not_mutating=361`.
+
+Then Q050-176 (2026-10-16) re-did the arranger's zoom walk as real back / forward instead of the
+one-entry swap, adding two `not_mutating` rows - `arrangement.zoom_forward` and `arrangement.zoom_toggle` -
+which move the figure to `rows=839 true_inverse=417 snapshot=42 irreversible=22 not_mutating=358`
+(`DECLARED rows=839`).
+
+**M0 merge train 12** (`050/m0-train-12`, 2026-10-22, automatic): `ReversibilityContractTest` on the merged tree measures `rows=854 true_inverse=423 snapshot=42 irreversible=24 not_mutating=365`. **Q050-055.1 stage 1** (2026-10-22): `automation.editor_mode` adds one `not_mutating` row - the automation editor's edit mode is interface state, like a zoom level - so the figure is `rows=855 true_inverse=423 snapshot=42 irreversible=24 not_mutating=366`.
+
+(Q050-125, 2026-10-22, after the train snapshot: `clip.set_polarity` adds one `true_inverse` row, so the
+same tree measures `rows=855 true_inverse=424 snapshot=42 irreversible=24 not_mutating=365`.)
+
+**M0 merge train 15** (`050/m0-train-15`, 2026-10-24, automatic): `ReversibilityContractTest` on the merged tree measures `rows=855 true_inverse=425 snapshot=42 irreversible=23 not_mutating=365`.
+
+**Q050-090** (plug-in manager vendor and background scan, 2026-10-16) adds three rows - `plugin.scan_start`
+(`irreversible`: a finished run re-measures the files, like `plugin.rescan`), `plugin.scan_status` and
+`plugin.scan_cancel` (both `not_mutating`: progress reads and a session-state stop) - measured off the tree
+with the contract test: `rows=840 true_inverse=417 snapshot=42 irreversible=23 not_mutating=358`.
+
+**M0 merge train 16** (`050/m0-train-16`, 2026-10-25, automatic): `ReversibilityContractTest` on the merged tree measures `rows=858 true_inverse=425 snapshot=42 irreversible=24 not_mutating=367`.
+
+**Q050-121** (Project Media usage and unused-media cleanup, integrated onto `050/m0-train-16`) adds two rows -
+`project.media_usage` (`not_mutating`: a read of the saved project and its `media/` folder) and
+`project.media_cleanup` (`irreversible`: a removed media file is not restored by undo) - measured off the tree
+with the contract test: `rows=860 true_inverse=425 snapshot=42 irreversible=25 not_mutating=368`.
+
+**Q050-106** (integrated on `050/m0-train-16`, 2026-10-26): one new `not_mutating` row, `sample.split_stereo`; `ReversibilityContractTest` on the merged tree measures `rows=859 true_inverse=425 snapshot=42 irreversible=24 not_mutating=368`.
+
+**Q050-100 batch integration onto train 16** (2026-10-26): four new rows - `meter.set_peak_watch` and `shortcuts.preset_apply` (`true_inverse`), `meter.speak` and `shortcuts.preset_list` (`not_mutating`) - give `rows=862 true_inverse=427 snapshot=42 irreversible=24 not_mutating=369`.
+
+**Q050-217.1** (MIDI bindings for built-in commands, 2026-10-23; integrated onto `050/m0-train-16` 2026-10-26) adds three `session.*` rows - two
+`true_inverse` (`session.bind_command`, `session.unbind_command`: a recorded undo step writes the previous
+config lists back) and one `not_mutating` (`session.command_bindings`, a read) - moving the train-16 figure from
+`858/425/42/24/367` to `861/427/42/24/368`:
+
+**M0 merge train 17** (`050/m0-train-17`, 2026-10-26, automatic): `ReversibilityContractTest` on the merged tree measures `rows=872 true_inverse=430 snapshot=42 irreversible=25 not_mutating=375`.
+
+**The strip-features batch** (`feat/050-Q050-088-oc`, Q050-088 / Q050-108 / Q050-339 / Q050-340; integrated onto
+`050/m0-train-17` 2026-10-27) adds four rows: `mixer.console_strip` and `pdc.set_offset` (`true_inverse`), `meter.inputs` and
+`window.input_meters` (`not_mutating`); `ReversibilityContractTest` on the integrated tree measures
+`rows=876 true_inverse=432 snapshot=42 irreversible=25 not_mutating=377`.
+
+**Q050-055.1** (panel-scoped shortcuts, integrated onto `050/m0-train-17`, 2026-10-27): `automation.editor_mode` adds one `not_mutating` row - `rows=873 true_inverse=430 snapshot=42 irreversible=25 not_mutating=376`.
+
+**M0 merge train 19** (`050/m0-train-19`, 2026-10-27, automatic): `ReversibilityContractTest` on the merged tree measures `rows=877 true_inverse=432 snapshot=42 irreversible=25 not_mutating=378`.
+
+**Q050-066.1** (drum-rack pads, stage 1, 2026-10-27): `track.drum_rack_pad_add` and `track.drum_rack_pad_set` add two `true_inverse` rows and `track.drum_rack_get_state` one `not_mutating` row - `rows=880 true_inverse=434 snapshot=42 irreversible=25 not_mutating=379`.
+
+**Q050-089.2** (real-time hardware insert export, 2026-10-27): `render.realtime` adds one `not_mutating` row - `rows=881 true_inverse=434 snapshot=42 irreversible=25 not_mutating=380`.
+
+**The L15 control-surface batch** (`feat/050-Q050-161-oc`: Q050-205 OSC server, Q050-081 controller scripts, 2026-10-28) adds six `not_mutating` rows - `osc.start`, `osc.stop`, `osc.get_state` and `controller.script_start`, `controller.script_stop`, `controller.script_state` (device state, the `surface.mcu_connect` precedent; what they run records as itself) - `rows=886 true_inverse=434 snapshot=42 irreversible=25 not_mutating=385`.
+
+**The update check** (`feat/050-Q050-501-oc`, 2026-10-30) adds five rows, one `true_inverse` (`app.update_check_set`) and four `not_mutating` (`app.update_check_get`, `app.update_check_run`, `window.update_check`, `window.update_download_page`), and they leave with `-DZENE_UPDATE_CHECK=OFF`: `rows=892 true_inverse=435 snapshot=42 irreversible=25 not_mutating=390`.
+
+**M0 merge train 22** (`050/m0-train-22`, 2026-10-28, automatic): `ReversibilityContractTest` on the merged tree measures `rows=887 true_inverse=434 snapshot=42 irreversible=25 not_mutating=386`.
+
+**Q050-093** (loop import tempo and key, integrated onto `050/m0-train-22`, 2026-10-30): `clip.source_get_state` adds one `not_mutating` row - `rows=888 true_inverse=434 snapshot=42 irreversible=25 not_mutating=387`.
+
+**Q050-180.1** (multiple positioned video clips, integrated onto `050/m0-train-22`, 2026-10-30): `video.clip_add` and `video.clip_remove` add two `true_inverse` rows and `video.render_frames` one `not_mutating` row - `rows=890 true_inverse=436 snapshot=42 irreversible=25 not_mutating=387`.
+
+**Q050-055.2** (keyboard plug-in actions, 2026-10-30): `plugin.selected_editor_open`, `plugin.selected_load` and `shortcuts.bind_plugin` add three `not_mutating` rows - `rows=890 true_inverse=434 snapshot=42 irreversible=25 not_mutating=389`. The last two run `plugin.load` and `shortcuts.set` inside themselves, and those record themselves with their own classes.
+
+**Q050-164** (per-sample switch in the Modulators panel, 2026-10-31): `modulator.per_sample_set` adds one `true_inverse` row - `rows=888 true_inverse=435 snapshot=42 irreversible=25 not_mutating=386`.
+
+**Q050-212** (a new track's destination, 2026-10-31): `track.add_to_new_bus` adds one `true_inverse` row - `rows=888 true_inverse=435 snapshot=42 irreversible=25 not_mutating=386`.
+
+**Q050-255 and Q050-219** (`feat/050-Q050-255-oc`, 2026-11-01): `track.folder_span_resize`, `track.folder_span_split`, `track.folder_span_move`, `track.folder_span_delete` and `section.move` add five `true_inverse` rows; `track.folder_spans` and `track.folder_span_select` add two `not_mutating` rows - `rows=894 true_inverse=439 snapshot=42 irreversible=25 not_mutating=388`.
+
+**Q050-263** (per-slice SlicerT controls, 2026-11-02): `plugin.slice_get` adds one `not_mutating` row and `plugin.slice_set` one `true_inverse` row - `rows=889 true_inverse=435 snapshot=42 irreversible=25 not_mutating=387`.
+
+**Q050-294.1** (melodic step state, stage 1, 2026-11-03): `note.step_set` adds one `true_inverse` row (a MidiClip checkpoint) and `note.step_get_state` one `not_mutating` row - `rows=889 true_inverse=435 snapshot=42 irreversible=25 not_mutating=387`.
+
+**Q050-124** (bus freeze, 2026-11-03): `freeze.bus` and `freeze.unfreeze_bus` add two `true_inverse` rows (action checkpoints on the bus's stable channel id) - `rows=889 true_inverse=436 snapshot=42 irreversible=25 not_mutating=386`.
+
+**Q050-291.1** (CC lane <-> device automation, stage 1, 2026-11-03): `clip.controllers_to_automation` and `clip.controllers_from_automation` add two `true_inverse` rows - `rows=889 true_inverse=436 snapshot=42 irreversible=25 not_mutating=386`. Project files now keep a MIDI clip's `<controllers metadata="1">` lanes (`DataFile::cleanMetaNodes` used to delete them on save).
+
+**Q050-231.1** (cross-track masking report, stage 1, 2026-11-05): `mixer.masking_report` adds one `not_mutating` row - `rows=888 true_inverse=434 snapshot=42 irreversible=25 not_mutating=387`.
+
+**M0 merge train 25** (`050/m0-train-25`, 2026-11-05, automatic): `ReversibilityContractTest` on the merged tree measures `rows=926 true_inverse=457 snapshot=42 irreversible=25 not_mutating=402`.
+
+**Q050-221.1** (seeded melodic contours, 2026-11-05): `note.generate_melody` adds one `true_inverse` row (a MidiClip journal checkpoint, as `note.generate`) - `rows=888 true_inverse=435 snapshot=42 irreversible=25 not_mutating=386`.
+
+**M0 merge train 26** (`050/m0-train-26`, 2026-11-06, automatic): `ReversibilityContractTest` on the merged tree measures `rows=933 true_inverse=459 snapshot=42 irreversible=25 not_mutating=407`.
+
+**Q050-155.2** (64 channels through device pins and mixer routes, 2026-11-10): `port.set_pins` adds one `true_inverse` row (one journal step for a whole pin routing) - `rows=934 true_inverse=460 snapshot=42 irreversible=25 not_mutating=407`.
+
+**Q050-294.2** (melodic step grid, stage 2, 2026-11-10): `window.step_grid` adds one `not_mutating` row (it opens the grid; the grid's edits are `note.step_set`, which already has its row) - `rows=934 true_inverse=459 snapshot=42 irreversible=25 not_mutating=408`.
+
+**Q050-327** (batch freeze, 2026-11-10): `freeze.tracks` adds one `true_inverse` row (the completed batch's single ProjectJournal step) - `rows=934 true_inverse=460 snapshot=42 irreversible=25 not_mutating=407`.
+
+**Q050-283.2** (2026-11-10): `track.set_role` adds one `true_inverse` row: `rows=934 true_inverse=460 snapshot=42 irreversible=25 not_mutating=407`.
+
+**Q050-054.1** (MIDI takes on armed instrument tracks, first measured on `050/m0-train-19`, 2026-10-27; re-measured
+after merging `050/m0-train-26`, 2026-11-12): `record.midi_capture_commit` adds one `true_inverse` row,
+`track.set_midi_arm` and `record.midi_capture_status` two `not_mutating` rows -
+`rows=936 true_inverse=460 snapshot=42 irreversible=25 not_mutating=409`.
+
+**M0 merge train 28** (`050/m0-train-28`, 2026-11-13, automatic): `ReversibilityContractTest` on the merged tree measures `rows=940 true_inverse=463 snapshot=42 irreversible=25 not_mutating=410`.
+
+**Q050-294.3** (melodic step fills, 2026-11-13): `note.step_fill` adds one `true_inverse` row (one MidiClip journal checkpoint per fill, none for a fill that changes nothing) - `rows=941 true_inverse=464 snapshot=42 irreversible=25 not_mutating=410`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=818 true_inverse=404 snapshot=40 irreversible=21 not_mutating=353
-     configuration: telemetry.status wasm.load session.get_state stem.get_state
+     measured: rows=942 true_inverse=465 snapshot=42 irreversible=25 not_mutating=410
+     configuration: telemetry.status wasm.load session.get_state stem.get_state app.update_check_get
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
      option session.get_state rows=18 true_inverse=7 not_mutating=11
-     option stem.get_state rows=7 not_mutating=7
+     option stem.get_state rows=8 true_inverse=1 not_mutating=7
+     option app.update_check_get rows=5 true_inverse=1 not_mutating=4
      A16-HISTOGRAM-END -->
 
 **The figure checks itself (board card #677).** It used to be a constant in
@@ -1467,6 +1659,10 @@ compares the data chunk against a base-commit binary or a recorded hash.
 - **UI absence — one line: MIDI clock is drivable through the socket, not from the interface.** `grep -rniI
   'MidiClock' src/gui/` returns **0** hits, so there is no port selector, no external-sync toggle and no lock
   indicator; `docs/KNOWN-LIMITATIONS.md` carries the sentence and the bounds above.
+  *(Superseded 2026-10-20, Q050-308: this is the 0.3.0-alpha record, not the current state. Edit ▸ MIDI Clock
+  now switches send/follow, picks the clock source and shows the lock, and Project tools ▸ Sync ▸ Send/Follow
+  MIDI Clock... open the registry forms carrying `source_port` and `drift_bound_ms`; the current statement is in
+  `docs/KNOWN-LIMITATIONS.md`.)*
 - **Proof:** the registered QTest `MidiClockTest` (`tests/src/core/MidiClockTest.cpp`) drives the tracker with
   synthetic timestamps and asserts a pulse stream at 120 BPM measures 120 and one that moves to 140 BPM measures
   140 (following, not averaging), that two pulses or none never lock, that a lock drops past the timeout and
@@ -1724,54 +1920,37 @@ Two feature rows, one store and one span. Nothing like either existed: a case-in
   carries the **declared bound** every render-running command carries: the render runs in a child
   process and the control surface does not answer — `control.ping` included — until it finishes
   (`docs/RENDER-CHILD-WAIT.md`); the range does not raise that bound, it is applied inside the child.
-## Linked / smart clips: two clips, one source (`clip.link_*`) — added 2026-09-15
+## Linked / smart clips: shared content with independent windows — updated 2026-10-09
 
-Feature-list row 6 (section 1), board task #645: **a linked clip is a clip that shares its source with
-another, so an edit to one is seen by all.** The engine half is `include/ClipLinks.h` plus
-`Clip::linkId()`; the surface is four ids in the `clip.` group (`clip.link_create`, `clip.link_remove`,
-`clip.link_get_state`, `clip.link_sync` — not `link.*`, which is session tempo/beat sync, `docs/LINK-SYNC.md`).
+Feature-list row 6, board task #645. The relation is a persisted group id on each clip plus write-through
+sharing. **Notes, name and colour are shared.** Start, length, loop start/length/offset, fades, gain and mute are
+per instance. A note edit in one member updates the other members' note lists; `clip.link_sync` repairs drift.
 
-- **The decision this row asked for: a persisted group id plus a WRITE-THROUGH MIRROR — not a shared content
-  object, and not copy-on-write.** The relation is an int on the clip (`0` = unlinked) written to the clip's
-  OWN element as `link="<n>"` only when the clip is a member, and read back with the same reset-on-absence rule
-  the take lane already follows. An edit to a member copies that member's note list onto every other member of
-  the group in the same step. Aliasing one `NoteVector` across N clips was rejected because it needs a
-  load-order re-linking pass (the very thing a save/reload round trip has to prove), because the note list is
-  read as a value by the play handle, the piano roll, the comp lanes and the serialiser, and because a
-  disagreement would then be impossible by construction — and therefore unreportable. Copy-on-write in its
-  strict sense (share until someone edits, then DETACH) is the opposite of the feature: a write fans OUT, and
-  the detach is its own command. `docs/LINKED-CLIPS.md` §1–2 is the full argument.
-- **The relation survives a save/reload**, and that is the registered proof's centrepiece: the `link`
-  attribute rides each member's own element, so a reload rebuilds the group from the clips with no second
-  registry in the file and no repair step. `ClipLinkTest::theLinkSurvivesSaveAndReload()` writes a project,
-  asserts the attribute is in the file, reloads it, asserts the group is still there with both members in
-  sync, and then **edits one reloaded member and asserts the other one changes** — the round trip and the
-  propagation together, which is what makes it a smart clip and not a session hack.
-- **`clip.link_remove` is the unlink, and it is the only detach.** A group needs two ends: an unlink that
-  leaves one member dissolves the relation entirely, so no group of one outlives its last pair. Merging two
-  groups by naming a member of another is refused typed (`refused`) instead of silently overwriting one
-  group's content with the other's.
-- **Reversibility (SPEC A16): `true_inverse` for the three writers, `not_mutating` for the read**, rows in
-  `src/core/ControlReversibilityTableVerbs.cpp` beside `clip.trim`'s. The checkpoint is taken over EVERY
-  member a command writes (`ProjectJournal`'s multi-object overload) and the registry's
-  `mergeCheckpointsFrom()` folds those into the command's one undo step, so **one `control.undo` takes the
-  whole group back** — asserted, not asserted-about: `ClipLinkTest::undoRestoresEveryMemberOfTheGroup()`.
-- **UI absence — one line:** the four ids are drivable through the socket and not from the interface — no
-  link badge, no "edit shared source" gesture, no group colour; and of the edit kinds, `note.add` /
-  `note.remove` / `note.move` / `note.resize` / `note.velocity_set` propagate while `clip.move` /
-  `resize` / `trim` / `slip` / `set_fade` / `set_gain` / `crossfade`, mute/solo, name, colour and take lane
-  stay per-member, and an audio clip cannot be a member at all (the group's content channel is a note list, so
-  `clip.link_create` refuses a `SampleClip` typed). `docs/KNOWN-LIMITATIONS.md` carries the same sentence; the
-  ctest `ClipLinkTest::theOneLineUiAbsenceIsWrittenDown()` reads both files from the built tree and fails if
-  either loses it.
-- **What is NOT here, stated rather than implied:** no UI (§ above); no audio-clip linking; the mirror writes
-  the WHOLE note list rather than a delta (so a one-note edit to a member of a large group rewrites every
-  member's list — unconditional by design, because a delta-based mirror is where divergence would come from);
-  a member with auto-resize on re-sizes to the propagated content, because that is the engine's own rule for a
-  clip whose notes changed, while a manually resized member (`autoresize=0`) keeps its length; and outside the
-  command path a GUI gesture that calls the note entry points directly takes one checkpoint per object the
-  journal sees, so a human's Ctrl+Z there may need more than one press — the pre-existing behaviour of a
-  gesture that is not one command.
+`clip.trim`, `clip.resize`, arranger edge drags and `vca.edit_trim` change only the selected instance's geometry.
+A split cuts only that instance. The right piece retains the link id, so both pieces display the same shared notes
+through their independent windows, and the split is one undo step. The other linked instances are unchanged.
+`clip.link_make_unique` gives one selected instance its own content copy and removes it from the group in one
+undoable action.
+
+The arranger draws a small chain marker on each linked MIDI clip and exposes its linked state through the clip's
+accessible name. **Make Unique** is also available from the MIDI clip context menu.
+
+`clip.link_create` still refuses `SampleClip` because a link group shares a note list. The full decision, edit-kind
+table and bounds are in `docs/LINKED-CLIPS.md`. The behavior is covered by `ClipLinkTest`,
+`LinkedClipGroupEditsTest` and `MidiClipLinkedEditTest`.
+
+## Contained-clip crossfades clamp by default — updated 2026-10-09
+
+Arranger crossfades and clip.crossfade now use ordinary edge fades by default. A contained clip no longer makes the
+outer clip duck and return through a V-shaped offset envelope, and a clamp edit creates no offset fades. Holding Alt
+while dropping a clip onto another on the same track selects the container gesture; control clients can request the
+same behavior with clip.crossfade and mode "container".
+
+The container gesture uses the inner clip's authored fade-in and fade-out lengths. If they do not fit inside the
+inner clip the gesture is skipped or the command is refused. If they leave a gap, the outer clip stays silent
+between ramps. Old projects without the new fadeoffsetgap attribute retain their previous offset-pair rendering.
+See docs/CLIP-CROSSFADE.md; focused tests are ClipOffsetFadeTest and ClipOffsetFadePairTest.
+
 ## The change-plan code rows: a Lua memory budget, an https-only non-blocking telemetry transport, and a shutdown hook that survives its owner (CODE-6, CODE-7, CODE-8)
 
 Three rows of the change-plan register (`BACKLOG.md` § Change-plan register), built together because
@@ -2149,9 +2328,11 @@ window's, next to the MIDI half's `docs/MIDI-RETRO-CAPTURE.md`.
   contradiction exactly: a real recorder in the tree with no command that could start it, and the id that
   should, registered to refuse. It now starts a capture on the record route a song track's position maps to,
   writes a 24-bit WAV, **journals the take** beside it (so a crash mid-take is offered to the next start by
-  `record.recovery_get_state`), and is taken back by `control.undo` through its recorded inverse. **No field
-  is added to the track's serialization format** — the arm state lives on the recorder, where it always did,
-  which is the objection the old refusal was right to raise.
+  `record.recovery_get_state`). **No field is added to the track's serialization format** — the arm state lives
+  on the recorder, where it always did, which is the objection the old refusal was right to raise. The take
+  file, though, outlives the capture: it stays on disk when the capture stops, so the arming has no complete
+  inverse and `control.undo` **refuses** it (the row is `irreversible`, and the batch row
+  `track.set_arm_many` says the same) rather than disarming the route and leaving the take behind.
 - **The recorder is drivable.** `record.get_state`, `record.arm_track`, `record.disarm_track` and
   `record.disarm_all` address up to `MultiTrackRecorder::MaxRoutes` (16) routes, each able to select **any**
   input channel in `[0, input_channel_capacity)`. A route is a file plus a channel; several routes may record
@@ -2160,10 +2341,13 @@ window's, next to the MIDI half's `docs/MIDI-RETRO-CAPTURE.md`.
   bounded window of the most recent 2^20 frames (~21.8 s at 48 kHz) of the engine's input bus, drop-oldest
   with the overwritten count reported, a consistent copy that never blocks the audio thread, and a one-pass
   stereo 24-bit WAV of exactly the retained frames. The model is `RetroMidiCapture`'s, deliberately.
-- **A16.** Ten rows, in the new group file `src/core/ControlReversibilityTableRecording.cpp`: `snapshot` for
-  `record.arm_track` and the re-classified `track.set_arm` (each with a paired-command inverse), `true_inverse`
-  for `record.input_set` (the config write's previous plan), and seven `not_mutating` rows for the two
-  inspectors, the three writers whose only output is a file, and the retro mode.
+  - **A16.** Twelve rows, in the group file `src/core/ControlReversibilityTableRecording.cpp`: `irreversible` for
+    `track.set_arm` and for `track.set_arm_many` (their takes outlive the captures, so neither the single arm nor
+    the batch has a complete inverse and control.undo refuses both), `true_inverse` for
+    `record.input_set` (the config write's previous plan), `irreversible` for `record.arm_track` (its take
+    remains after disarming) and for `record.disarm_track` and `record.disarm_all` (both stop capture and retire
+    journals while leaving takes on disk), and six `not_mutating` rows for the inspectors and operations outside
+    session undo.
 - **Proof.** `RecordingInputPathTest` and `RetroAudioCaptureTest` (registered ctests, no hardware: N routes ×
   N channels with each take read back sample-exactly, and the retro window's bounds, non-allocating producer
   path and empty-window refusal) plus `ControlRecordInputs` (`tests/control-record-inputs.py`), which drives
@@ -2800,15 +2984,12 @@ precision inside the block.
   reset path that records the stops it ends, and the allocation probe on the audio path this feature
   added (0 allocations over 20 000 periods with a plan installed and firing).
 - **What this does NOT have, stated rather than implied:**
-  (1) **a landed clip carries its position and length, not the session clip's notes** — `pattern`
-  reports the PatternStore reference the session slot names, and the notes are not copied;
-  (2) therefore the "rendered audio matches the session playback" half of #596's acceptance is
-  **UNMET in this tree**, because a launched session slot does not render audio at all (there is no
-  session-clip playback path, #597) — the render comparison cannot be run against silence;
-  (3) `session.arrangement_record_land` refuses while a recorded launch is still open, so landing
-  mid-performance is a refusal rather than a partial pass;
-  (4) the plan table is a fixed `MaxFollowPlans` (16 cells) and a chain longer than
-  `MaxFollowChainEntries` (8) is **refused, never truncated**.
+  (1) `session.arrangement_record_land` refuses while a recorded launch is still open, so landing
+  mid-performance is a refusal rather than a partial pass; incompatible MIDI/audio destinations and
+  unreadable audio sources are also refused before the recorder is consumed;
+  (2) the plan table is a fixed `MaxFollowPlans` (16 cells) and a chain longer than
+  `MaxFollowChainEntries` (8) is **refused, never truncated**. For supported destinations, the land pass
+  copies MIDI notes from the referenced PatternStore column or loads an audio cell into a sample clip.
 - **UI absence — one line: Follow Actions, Arrangement Record and the Back-to-Arrangement switch are
   drivable through the socket, not from the interface.** There is no Follow Action editor, no
   Arrangement Record button, no take lane and no Back-to-Arrangement light: `grep -rniI
@@ -2816,6 +2997,16 @@ precision inside the block.
   either feature. `docs/KNOWN-LIMITATIONS.md` carries the sentence and the bounds.
 
 ## CLAP hosting on Windows, and a load failure that says which failure it was (task #667, row `clap-hosting`) — added 2026-09-15
+
+*Correction (2026-10-07): the CLAP effect module was built, but the product could not load it. In this release
+and every other through v0.4.0-alpha the VST3 and CLAP effect modules (`vst3effect`, `clapeffect`) never
+exported `lmms_plugin_main`, the entry point the plug-in factory requires of every module
+(`src/core/PluginFactory.cpp`), so the factory recorded both as "not a plug-in": no VST3 or CLAP effect was
+listed or could be loaded in the product, and a saved one reopened as a placeholder. Only the integration
+tests, which construct the effect classes directly, ever ran one. Fixed on the 0.5.0 line by `21250a1a4`
+(`ControlDeviceCatalogueTest::hostedEffectsListAndLoadThroughTheSurface`); see
+`docs/PLUGIN-HOSTING-IN-RELEASE.md`, "Addendum 2026-10-07", and the program's defect register (BUGS_FOUND
+13.1). The text above is left as published.*
 
 - **CLAP effect hosting is built on Windows.** The row in `tests/advertised-features.tsv` is `*` again and all
   three Windows jobs (`mingw`, `msvc`, `msys2`) pass `-DWANT_CLAP=ON`. The loader's Windows half is

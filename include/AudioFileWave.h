@@ -33,6 +33,8 @@
 
 #include <sndfile.h>
 
+#include <vector>
+
 namespace lmms
 {
 
@@ -58,14 +60,39 @@ public:
 
 
 private:
-	void writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames) override;
+	bool writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames) override;
+	bool writeInterleaved(float* samples, const f_cnt_t frames) override;
 
 	bool startEncoding();
-	void finishEncoding();
+	//! 0.5.0 F7: a file of more than two channels is WAVE_FORMAT_EXTENSIBLE with the speakers' mask.
+	bool setChannelMap();
+
+public:
+	/*! Finalises the file: closes the libsndfile handle, patches a discrete layout's channel mask
+	 *  and reports whether the file was written completely. A file that was not is REMOVED here,
+	 *  so a failed export leaves nothing behind to be mistaken for a render. Idempotent: a render
+	 *  already called it, the destructor calls it again. */
+	bool finishEncoding() override;
+
+private:
+	//! The bytes of sample data the frames written so far must occupy in the file.
+	sf_count_t expectedDataBytes() const;
+	/*! True when the finished WAV's own header accounts for every frame the writes reported.
+	 *  sf_close() rewrites the RIFF and data-chunk sizes in place, and it reports success even
+	 *  when that rewrite only partly landed: the file's LENGTH is unchanged then (the old bytes
+	 *  are still there), so a size-only check cannot see it. The header fields themselves can. */
+	bool headerHoldsEveryFrame(sf_count_t expectedData) const;
+	//! A discrete layout has no speaker positions; libsndfile writes its count default mask, so zero it
+	//! after the samples are flushed (WAVEX's dwChannelMask 0 is what "no speaker positions" means).
+	//! False when the field could not be written: that is a broken header, not a finished export.
+	bool writeZeroChannelMask();
 
 private:
 	SF_INFO m_si;
 	SNDFILE * m_sf;
+	//! Frames libsndfile reported as written: what the close has to leave in the file.
+	sf_count_t m_framesWritten = 0;
+	bool m_zeroChannelMask = false;
 	//! TPDF dither for the integer depths (include/ExportDither.h). Off unless
 	//! OutputSettings::dither() is on; seeded from a constant so a dithered
 	//! render is still reproducible.
@@ -73,6 +100,8 @@ private:
 	//! DitherMode::NoiseShaped at 16-bit (include/ExportNoiseShaper.h): the encoder does the
 	//! requantisation itself so the error it feeds back is known.
 	ExportNoiseShaper m_noiseShaper;
+	//! The 16-bit staging of writeInterleaved(), sized on its first call (the render thread is offline).
+	std::vector<int_sample_t> m_interleaved16;
 } ;
 
 

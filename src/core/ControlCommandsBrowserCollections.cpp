@@ -22,8 +22,8 @@
  *
  */
 /*! 0.5.0 L11 (WF-006): saved searches - smart collections. A collection is a named browser.query (its
- *  text - an expression, BrowserSearch.h - tags, kind and root), kept in the user's config directory
- *  beside the browser tags (<config>/browser-collections.json): library state, not project state.
+ *  text - an expression, BrowserSearch.h - tags, kind, root and category), kept in the user's config
+ *  directory beside the browser tags (<config>/browser-collections.json): library state, not project state.
  *  Running one answers what matches NOW, so a collection follows the library as files and tags come
  *  and go. Saving and removing are one undo step each (the previous collection list comes back). */
 
@@ -71,11 +71,14 @@ bool readStore(QJsonObject* all)
 	return parsed.error == QJsonParseError::NoError && doc.isObject();
 }
 
-QJsonObject readAll()
+//! The stored collections in @a all; false (with @a error) when the store is damaged. A
+//! missing or empty file is an empty store, so this only refuses what cannot be read.
+bool readAll(QJsonObject* all, ControlResult* error)
 {
-	QJsonObject all;
-	readStore(&all);
-	return all;
+	if (readStore(all)) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the collections file %1 is not a JSON object, so "
+		"nothing was read from it; repair or move it, then try again").arg(storePath()));
+	return false;
 }
 
 //! readStore for an edit: a damaged store is refused, never overwritten with what one edit leaves of it.
@@ -89,21 +92,40 @@ bool readForEdit(QJsonObject* all, ControlResult* error)
 
 bool writeAll(const QJsonObject& all)
 {
+	const QByteArray bytes = QJsonDocument(all).toJson(QJsonDocument::Indented);
 	QSaveFile file(storePath());
 	if (!file.open(QIODevice::WriteOnly)) { return false; }
-	file.write(QJsonDocument(all).toJson(QJsonDocument::Indented));
+	// Written whole or not at all: a write the kernel cuts short is cancelled, never committed as the store.
+	if (file.write(bytes) != bytes.size())
+	{
+		file.cancelWriting();
+		return false;
+	}
 	return file.commit();
+}
+
+//! The store snapshot an undo (@a isUndo) or a redo writes. A write that fails is recorded with
+//! recordActionRestoreFailure, so control.undo / control.redo refuse instead of answering success over a
+//! store that still holds what it held before the step.
+void writeStep(const QJsonObject& snapshot, bool isUndo)
+{
+	if (writeAll(snapshot)) { return; }
+	recordActionRestoreFailure(QStringLiteral("the collections file %1 was NOT %2 - the write failed, so the store still "
+		"holds what it held when the %3 ran").arg(storePath(), isUndo ? QStringLiteral("restored") : QStringLiteral("re-applied"),
+		isUndo ? QStringLiteral("undo") : QStringLiteral("redo")));
 }
 
 //! Replace the store with @a next as one undo step.
 ControlResult store(const QJsonObject& next, const QJsonObject& answer)
 {
-	const QJsonObject before = readAll();
+	QJsonObject before;
+	ControlResult error;
+	if (!readForEdit(&before, &error)) { return error; }
 	if (!writeAll(next))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the collections file %1 could not be written").arg(storePath()));
 	}
-	addUndoStep([before]() { writeAll(before); }, [next]() { writeAll(next); });
+	addUndoStep([before]() { writeStep(before, true); }, [next]() { writeStep(next, false); });
 	return ControlResult::success(answer);
 }
 
@@ -112,7 +134,11 @@ ControlResult save(const QJsonObject& args)
 	const QString name = args.value(QStringLiteral("name")).toString().trimmed();
 	if (name.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a collection needs a 'name'")); }
 	QJsonObject query;
-	for (const char* key : {"text", "tags", "kind", "root"})
+	// 0.5.0 L11 (WF-007): the category facet rides along, so a collection saved
+	// from a category-filtered search runs the same filter later.
+	// 0.5.0 L11 (Q050-316.1): so do the tempo and key facets, validated by the
+	// same reader below - a collection that could never run is refused at save.
+	for (const char* key : {"text", "tags", "kind", "root", "category", "tempo_min", "tempo_max", "key"})
 	{
 		if (args.contains(QLatin1String(key))) { query.insert(QLatin1String(key), args.value(QLatin1String(key))); }
 	}
@@ -140,7 +166,9 @@ ControlResult remove(const QJsonObject& args)
 ControlResult list(const QJsonObject&)
 {
 	QJsonArray out;
-	const QJsonObject all = readAll();
+	QJsonObject all;
+	ControlResult error;
+	if (!readAll(&all, &error)) { return error; }
 	for (auto it = all.begin(); it != all.end(); ++it)
 	{
 		out.append(QJsonObject{{QStringLiteral("name"), it.key()}, {QStringLiteral("query"), it.value()}});
@@ -150,7 +178,9 @@ ControlResult list(const QJsonObject&)
 
 ControlResult run(const QJsonObject& args)
 {
-	const QJsonObject all = readAll();
+	QJsonObject all;
+	ControlResult error;
+	if (!readAll(&all, &error)) { return error; }
 	const QString name = args.value(QStringLiteral("name")).toString();
 	if (!all.contains(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no collection '%1'").arg(name)); }
 	QJsonObject query = all.value(name).toObject();
@@ -174,11 +204,15 @@ void add(ControlRegistry& registry, const char* verb, const QString& description
 void registerBrowserCollectionCommands(ControlRegistry& registry)
 {
 	add(registry, "collection_save", QStringLiteral("Save a search as a smart collection: 'name' and browser.query's 'text' (a "
-		"substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags', 'kind' and 'root'. A "
-		"collection of the same name is replaced. Kept beside the browser tags in the config directory, not the project; "
-		"one undo step."),
+		"substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags', 'kind', 'root', "
+		"'category', 'tempo_min', 'tempo_max' and 'key' (the measured tempo range and pitch class, as browser.query takes "
+		"them, so a tempo/key-filtered search runs again later). A collection of the same name is replaced. Kept beside the "
+		"browser tags in the config directory, not the project; one undo step."),
 		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("text"), stringProperty()},
-			{QStringLiteral("tags"), arrayProperty()}, {QStringLiteral("kind"), stringProperty()}, {QStringLiteral("root"), stringProperty()}},
+			{QStringLiteral("tags"), arrayProperty()}, {QStringLiteral("kind"), stringProperty()},
+			{QStringLiteral("root"), stringProperty()}, {QStringLiteral("category"), stringProperty()},
+			{QStringLiteral("tempo_min"), numberProperty()}, {QStringLiteral("tempo_max"), numberProperty()},
+			{QStringLiteral("key"), stringProperty()}},
 			{QStringLiteral("name")}), save, true);
 	add(registry, "collection_remove", QStringLiteral("Remove a smart collection ('name'). One undo step."),
 		objectSchema({{QStringLiteral("name"), stringProperty()}}, {QStringLiteral("name")}), remove, true);

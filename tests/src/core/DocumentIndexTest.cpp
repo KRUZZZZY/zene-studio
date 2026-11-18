@@ -27,6 +27,7 @@
 #include <QCryptographicHash>
 #include <QDomDocument>
 #include <QDomElement>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QString>
 #include <QStringList>
@@ -384,6 +385,31 @@ private slots:
 		QVERIFY( index.section( QStringLiteral( "absent" ) ) == nullptr );
 	}
 
+	//! Named rows are useful only when every field the index promises is present
+	//! and the version is numeric; one malformed row invalidates the whole index.
+	void aNamedEntryWithIncompleteMetadataIsRejected()
+	{
+		const QStringList malformedRows = {
+			QStringLiteral( "<z:section name=\"trackcontainer\" v=\"31\" digest=\"sha256:x\"/>" ),
+			QStringLiteral( "<z:section name=\"trackcontainer\" entry=\"\" v=\"31\" digest=\"sha256:x\"/>" ),
+			QStringLiteral( "<z:section name=\"trackcontainer\" entry=\"trackcontainer.xml\" v=\"31\"/>" ),
+			QStringLiteral( "<z:section name=\"trackcontainer\" entry=\"trackcontainer.xml\" v=\"31\" digest=\"\"/>" ),
+			QStringLiteral( "<z:section name=\"trackcontainer\" entry=\"trackcontainer.xml\" digest=\"sha256:x\"/>" ),
+			QStringLiteral( "<z:section name=\"trackcontainer\" entry=\"trackcontainer.xml\" v=\"bad\" digest=\"sha256:x\"/>" )
+		};
+
+		for( const QString& row : malformedRows )
+		{
+			QDomDocument document;
+			QVERIFY( document.setContent( QStringLiteral(
+				"<zene-project xmlns:z=\"urn:zene:core:1\"><z:index>"
+				"<z:section name=\"valid\" entry=\"valid.xml\" v=\"31\" digest=\"sha256:x\"/>%1"
+				"</z:index></zene-project>" )
+				.arg( row ) ) );
+			QVERIFY2( parseDocumentIndex( document.documentElement() ).isEmpty(), qPrintable( row ) );
+		}
+	}
+
 	// -----------------------------------------------------------------------
 	// The gate: which projects may carry one (SPEC-ARCH-4 5.2 risk 2)
 	// -----------------------------------------------------------------------
@@ -577,6 +603,50 @@ private slots:
 			.firstChildElement( QStringLiteral( "song" ) );
 		QCOMPARE( song.firstChildElement( QStringLiteral( "title" ) ).text(), mark );
 		QVERIFY( !song.firstChildElement( QStringLiteral( "keepme" ) ).isNull() );
+	}
+
+	//! Offset conversion must advance through the document once, even when many
+	//! direct children are selected. The one-section scan shares the same XML
+	//! parsing cost, so a large increase identifies repeated prefix rescans.
+	void manySelectedSectionsDoNotRescanTheDocumentPrefix()
+	{
+		QByteArray source = QByteArray( "<zene-project><song><prefix>" )
+			+ QByteArray( 1024 * 1024, 'x' )
+			+ QByteArray( "</prefix><single/>" );
+		constexpr int sectionCount = 512;
+		for( int section = 0; section < sectionCount; ++section )
+		{
+			source += QByteArray( "<many/>" );
+		}
+		source += QByteArray( "</song></zene-project>" );
+
+		const auto elapsedForScans = [&]( const QStringList& skipNames,
+			int expectedCount ) -> qint64
+		{
+			QElapsedTimer timer;
+			timer.start();
+			for( int repetition = 0; repetition < 2; ++repetition )
+			{
+				SectionRanges found;
+				if( !scanSectionRanges( source, QStringLiteral( "song" ),
+					skipNames, found ) || found.ranges.size() != expectedCount )
+				{
+					return -1;
+				}
+			}
+			return timer.elapsed();
+		};
+
+		const qint64 oneSectionMs = elapsedForScans(
+			QStringList{ QStringLiteral( "single" ) }, 1 );
+		const qint64 manySectionsMs = elapsedForScans(
+			QStringList{ QStringLiteral( "single" ), QStringLiteral( "many" ) },
+			sectionCount + 1 );
+		QVERIFY2( oneSectionMs >= 0 && manySectionsMs >= 0,
+			"the offset fixture must scan and return every expected section" );
+		QVERIFY2( manySectionsMs <= oneSectionMs * 8 + 20,
+			qPrintable( QStringLiteral( "single=%1ms, many=%2ms" )
+				.arg( oneSectionMs ).arg( manySectionsMs ) ) );
 	}
 };
 

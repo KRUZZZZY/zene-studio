@@ -101,13 +101,29 @@ bool isRotationId(const QString& id, int* revision)
 	return true;
 }
 
+bool needsProjectPath(const QString& projectPath, const QString& id, bool rotation)
+{
+	return projectPath.isEmpty()
+		&& (rotation || id == QLatin1String("backup") || id.startsWith(QLatin1String("git:")));
+}
+
 //! The slot \a id names, whether or not its artefact is still on disk. False when
 //! the id names nothing this timeline can ever hold.
 bool resolveSlot(const QString& projectPath, const QString& recoveryFile, const QString& id,
 	RevisionSlot* slot, QString* error)
 {
 	int revision = 0;
-	if (isRotationId(id, &revision))
+	const bool rotation = isRotationId(id, &revision);
+	// Rotation, backup and git ids need a project path. In an unsaved session
+	// the first two would resolve against the working directory; the autosave
+	// paths are session-level files and remain independently resolvable.
+	if (needsProjectPath(projectPath, id, rotation))
+	{
+		*error = QStringLiteral("'%1' names no artefact: the session has no project file yet")
+			.arg(id);
+		return false;
+	}
+	if (rotation)
 	{
 		slot->id = id;
 		slot->source = sourceOfSlot(id);
@@ -191,16 +207,20 @@ QString sha256OfFile(const QString& path)
  *  for the same reason: a stale autosave of something else is not this project's
  *  revision). A recovery with NO sidecar, or one that names no project, is
  *  reported: an upstream-written autosave cannot say whose it is, and hiding a
- *  real artefact would be the worse error.
+ *  real artefact would be the worse error. A sidecar over the identity bound
+ *  (ProjectRecovery::MaxRecoveryIdentityBytes) is malformed and counts as absent.
  */
 bool applyAutosaveIdentity(const QString& projectPath, RevisionEntry* entry)
 {
-	QFile sidecar(ProjectRecovery::recoveryInfoPath(entry->path));
-	if (!sidecar.open(QIODevice::ReadOnly)) { return true; }
+	QString identity;
+	if (!ProjectRecovery::readRecoveryIdentityText(
+			ProjectRecovery::recoveryInfoPath(entry->path), identity))
+	{
+		return true;
+	}
 	QString from;
 	QDateTime savedAt;
-	const bool parsed = ProjectRecovery::parseRecoveryIdentity(
-		QString::fromUtf8(sidecar.readAll()), from, savedAt);
+	const bool parsed = ProjectRecovery::parseRecoveryIdentity(identity, from, savedAt);
 	if (!parsed) { return true; }
 	if (savedAt.isValid()) { entry->timestamp = savedAt.toUTC(); }
 	entry->note = QStringLiteral("autosave of %1").arg(from);
@@ -218,6 +238,20 @@ bool entryIsNewer(const RevisionEntry& left, const RevisionEntry& right)
 		return left.bytes > right.bytes;
 	}
 	return left.timestamp > right.timestamp;
+}
+
+//! The bytes a restore may install: readRevisionBytes() and, on top of it, the
+//! refusal of a zero-byte artefact. Zero bytes read back as success (the file
+//! exists and reads), but a zero-byte file is not a project revision, so it is
+//! refused here rather than staged, rotated in and installed over a valid project.
+bool readRestorableBytes(const QString& projectPath, const QString& recoveryFile, const QString& id,
+	QByteArray* bytes, RevisionEntry* entry, QString* error)
+{
+	if (!readRevisionBytes(projectPath, recoveryFile, id, bytes, entry, error)) { return false; }
+	if (!bytes->isEmpty()) { return true; }
+	*error = QStringLiteral("'%1' is empty: a zero-byte file is not a project revision, so "
+		"it is refused rather than restored over %2").arg(id).arg(projectPath);
+	return false;
 }
 
 } // namespace
@@ -405,7 +439,7 @@ bool restoreTimelineRevision(const QString& projectPath, const QString& recovery
 	// Stage FIRST, so nothing is written before the bytes are known readable.
 	QByteArray bytes;
 	RevisionEntry entry;
-	if (!readRevisionBytes(projectPath, recoveryFile, id, &bytes, &entry, error)) { return false; }
+	if (!readRestorableBytes(projectPath, recoveryFile, id, &bytes, &entry, error)) { return false; }
 	const QString staging = projectPath + QStringLiteral(".timeline-stage");
 	QFile::remove(staging);
 	QFile stage(staging);
@@ -437,6 +471,7 @@ bool restoreTimelineRevision(const QString& projectPath, const QString& recovery
 	}
 	if (!replaceProjectWithStaged(projectPath, staging))
 	{
+		QFile::remove(staging);  // this function made the staging file; a failed replace keeps it otherwise
 		*error = QStringLiteral("could not move the staged revision over %1").arg(projectPath);
 		return false;
 	}

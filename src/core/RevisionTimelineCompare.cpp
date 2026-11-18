@@ -35,6 +35,7 @@
 
 #include "RevisionTimeline.h"
 
+#include "ControlProjectAssets.h"
 #include "ProjectContainer.h"
 
 #include <algorithm>
@@ -43,6 +44,7 @@
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QtEndian>
@@ -128,10 +130,20 @@ QJsonObject sideTotals(const QHash<QString, int>& counts, int* elements)
 //! Every tag either side holds, sorted, so the reported order is reproducible.
 QStringList unionOfTags(const QHash<QString, int>& left, const QHash<QString, int>& right)
 {
-	QStringList tags = left.keys();
-	for (const QString& tag : right.keys())
+	QStringList tags;
+	QSet<QString> seen;
+	for (auto it = left.cbegin(); it != left.cend(); ++it)
 	{
-		if (!tags.contains(tag)) { tags.append(tag); }
+		tags.append(it.key());
+		seen.insert(it.key());
+	}
+	for (auto it = right.cbegin(); it != right.cend(); ++it)
+	{
+		if (!seen.contains(it.key()))
+		{
+			tags.append(it.key());
+			seen.insert(it.key());
+		}
 	}
 	std::sort(tags.begin(), tags.end());
 	return tags;
@@ -140,20 +152,19 @@ QStringList unionOfTags(const QHash<QString, int>& left, const QHash<QString, in
 QJsonArray differingTags(const QHash<QString, int>& left, const QHash<QString, int>& right,
 	int* total)
 {
-	QJsonArray differing;
+	QJsonArray reported;
+	*total = 0;
 	for (const QString& tag : unionOfTags(left, right))
 	{
 		const int a = left.value(tag);
 		const int b = right.value(tag);
 		if (a == b) { continue; }
-		differing.append(QJsonObject{{QStringLiteral("tag"), tag}, {QStringLiteral("a"), a},
-			{QStringLiteral("b"), b}, {QStringLiteral("delta"), b - a}});
-	}
-	*total = differing.size();
-	QJsonArray reported;
-	for (int i = 0; i < differing.size() && i < Bounds::MaxComparedTags; ++i)
-	{
-		reported.append(differing.at(i));
+		++*total;
+		if (reported.size() < Bounds::MaxComparedTags)
+		{
+			reported.append(QJsonObject{{QStringLiteral("tag"), tag}, {QStringLiteral("a"), a},
+				{QStringLiteral("b"), b}, {QStringLiteral("delta"), b - a}});
+		}
 	}
 	return reported;
 }
@@ -165,8 +176,8 @@ QByteArray projectDocumentText(const QByteArray& raw)
 	if (raw.isEmpty()) { return QByteArray(); }
 	// A `.mmpz` v2 container must be refused BEFORE the `<?xml` probe below, and
 	// that order is the whole of this guard rather than a precaution. The
-	// container STORES its entries - DawProjectZip.cpp:8-15 records why it cannot
-	// compress them - so its bytes contain a LITERAL `<?xml` and the probe below
+	// container STORES its entries - DawProjectZip.cpp's header records that it
+	// stores them - so its bytes contain a LITERAL `<?xml` and the probe below
 	// matches them. Without this, the ZIP was returned as if it were the document
 	// text, the tag counter read the archive's own headers, and a comparison
 	// reported `readable: true` with counts that mean nothing (measured
@@ -185,8 +196,10 @@ QByteArray projectDocumentText(const QByteArray& raw)
 	// qCompress's 4-byte big-endian header declares the inflated size, and qUncompress allocates
 	// that up front: a declared size over the cap is refused before anything is inflated.
 	if (raw.size() < 4 || qFromBigEndian<quint32>(raw.constData()) > Bounds::MaxDocumentBytes) { return QByteArray(); }
-	const QByteArray text = qUncompress(raw);
-	if (text.isEmpty() || text.size() > Bounds::MaxDocumentBytes) { return QByteArray(); }
+	// The output is bounded while it inflates (the declared size above is only a fast refusal, because qUncompress
+	// grows its output past the header). Without zlib nothing is inflated: a fail-closed refusal.
+	QByteArray text;
+	if (!inflateQtCompressedWithinCap(raw, Bounds::MaxDocumentBytes, &text) || text.isEmpty()) { return QByteArray(); }
 	return text;
 }
 

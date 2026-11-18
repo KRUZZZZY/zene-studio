@@ -33,15 +33,18 @@
  *    key, 'step' ticks a step, into the clip. */
 
 #include <algorithm>
+#include <cmath>
 #include <map>
 #include <random>
 
+#include "ClipAudioLoop.h"
 #include "ControlCommandsNoteShared.h"
 #include "ControlCommandDef.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlScaleShared.h"
 #include "ControlVocabulary.h"
+#include "SampleClip.h"
 
 namespace lmms
 {
@@ -73,9 +76,19 @@ ControlResult invert(const QJsonObject& args)
 	int high = 0;
 	for (const Note* note : notes) { low = std::min(low, note->key()); high = std::max(high, note->key()); }
 	const int twice = args.contains(QStringLiteral("pivot")) ? 2 * args.value(QStringLiteral("pivot")).toInt() : low + high;
+	int changedCount = 0;
+	for (const Note* note : notes)
+	{
+		const int target = std::clamp(twice - note->key(), 0, NumKeys - 1);
+		if (target != note->key()) { ++changedCount; }
+	}
+	if (changedCount == 0)
+	{
+		return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("inverted"), 0}});
+	}
 	clip->addJournalCheckPoint();
 	for (Note* note : notes) { note->setKey(std::clamp(twice - note->key(), 0, NumKeys - 1)); }
-	return ControlResult::success(finish(ref, clip, QStringLiteral("note.invert"), {{QStringLiteral("inverted"), notes.size()}}));
+	return ControlResult::success(finish(ref, clip, QStringLiteral("note.invert"), {{QStringLiteral("inverted"), changedCount}}));
 }
 
 /*! Which of @a voices the run plays at each step, as INDICES into it.
@@ -101,6 +114,35 @@ std::vector<std::size_t> runOrder(const std::vector<Note>& voices, const QString
 	return order;
 }
 
+constexpr std::size_t MaxArpeggioNotes = 10000;
+
+//! The span a chord's run plays over: its longest member's length. Zero when every
+//! member has zero or negative length - such a chord is a point, not a span, and
+//! there is no run to play over it (Luna cluster new-p15-17).
+tick_t chordRunLength(const std::vector<Note*>& chord)
+{
+	tick_t length = 0;
+	for (const Note* note : chord)
+	{
+		length = std::max<tick_t>(length, note->length().getTicks());
+	}
+	return length;
+}
+
+bool exceedsArpeggioOutputLimit(const std::map<tick_t, std::vector<Note*>>& chords, tick_t rate)
+{
+	std::size_t outputCount = 0;
+	for (const auto& chordEntry : chords)
+	{
+		const tick_t length = chordRunLength(chordEntry.second);
+		const std::size_t chordCount = static_cast<std::size_t>(length / rate)
+			+ (length % rate == 0 ? 0U : 1U);
+		if (chordCount > MaxArpeggioNotes - outputCount) { return true; }
+		outputCount += chordCount;
+	}
+	return false;
+}
+
 ControlResult arpeggiate(const QJsonObject& args)
 {
 	ClipRef ref;
@@ -111,18 +153,34 @@ ControlResult arpeggiate(const QJsonObject& args)
 	const tick_t rate = std::max(1, args.value(QStringLiteral("rate")).toInt(12));
 	std::map<tick_t, std::vector<Note*>> chords;
 	for (Note* note : notes) { chords[note->pos().getTicks()].push_back(note); }
+	// Luna cluster new-p15-17: a chord of zero- or negative-length members counted as
+	// ZERO output notes in the limit check below (its length started at zero), so it
+	// passed - and the run then removed every member while `at < length` never ran:
+	// the chord was deleted and nothing replaced it. A chord with no positive length
+	// to play over is refused HERE, before the clip is touched - the same whole-command
+	// refusal note.repeat gives for one note that would end past the song limit.
+	for (const auto& [start, chord] : chords)
+	{
+		if (chordRunLength(chord) <= 0)
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("the chord at %1 has no positive length: there is no run to "
+					"play over it").arg(start));
+		}
+	}
+	if (exceedsArpeggioOutputLimit(chords, rate))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("arpeggio output is limited to %1 notes").arg(MaxArpeggioNotes));
+	}
 	clip->addJournalCheckPoint();
 	int made = 0;
 	for (auto& [start, chord] : chords)
 	{
-		tick_t length = 0;
+		const tick_t length = chordRunLength(chord);
 		std::vector<Note> voices;  // each chord member plays as its own note did: velocity, pan, probability, mute...
 		voices.reserve(static_cast<std::size_t>(chord.size()));
-		for (const Note* note : chord)
-		{
-			length = std::max<tick_t>(length, note->length().getTicks());
-			voices.push_back(*note);
-		}
+		for (const Note* note : chord) { voices.push_back(*note); }
 		for (Note* note : chord) { clip->removeNote(note); }
 		const std::vector<std::size_t> order = runOrder(voices, args.value(QStringLiteral("pattern")).toString(QStringLiteral("up")));
 		for (tick_t at = 0, i = 0; at < length; at += rate, ++i)
@@ -150,9 +208,12 @@ ControlResult flam(const QJsonObject& args)
 	// never asked for. The args schema is a bare number (it is in the
 	// ControlCommandsSnapshot canary and may not change), so the range is refused HERE -
 	// the same handler-side refusal as 4e288ecb5.
+	// Luna cluster new-p17-15: isfinite FIRST - NaN compares false against BOTH bounds,
+	// so it slipped the range and reached std::lround, which has a domain error for it
+	// (the refusal note.randomize already gives, ControlCommandsNoteRandom.cpp:212).
 	const double ratio = args.contains(QStringLiteral("velocity"))
 		? args.value(QStringLiteral("velocity")).toDouble(0.6) : 0.6;
-	if (ratio < 0.05 || ratio > 1.0)
+	if (!std::isfinite(ratio) || ratio < 0.05 || ratio > 1.0)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'velocity' is %1: the grace notes' velocity ratio must be 0.05..1.0")
@@ -203,6 +264,14 @@ ControlResult transposeInKey(const QJsonObject& args)
 	MidiClip* clip = scopedNotes(args, &ref, &notes, &error);
 	if (clip == nullptr) { return error; }
 	const int steps = args.value(QStringLiteral("steps")).toInt(1);
+	const bool changes = std::any_of(notes.cbegin(), notes.cend(), [&classes, steps](const Note* note)
+	{
+		return stepInScale(note->key(), steps, classes) != note->key();
+	});
+	if (!changes)
+	{
+		return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("moved"), 0}});
+	}
 	clip->addJournalCheckPoint();
 	int moved = 0;  // a note the scale would take past key 0 or 127 stays, and is not counted
 	for (Note* note : notes)
@@ -251,12 +320,41 @@ ControlResult repeatNotes(const QJsonObject& args)
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.repeat"), {{QStringLiteral("added"), notes.size() * count}}));
 }
 
-//! ED-028: the notes in scope moved 'amount' ticks later (negative: earlier), wrapped inside the clip's length.
+//! 0.5.0 ED-028 (audio): an audio clip's content turned 'amount' ticks later with wrap-around, through its loop
+//! (include/ClipAudioLoop.h) - one Clip checkpoint.
+ControlResult rotateAudio(const ClipRef& ref, SampleClip* clip, const QJsonObject& args)
+{
+	const QString refusal = audioloop::refusal(*clip);
+	if (!refusal.isEmpty()) { return ControlResult::failure(ControlErrorKind::Refused, refusal); }
+	ClipEdits after = clip->clipEdits();
+	bool turned = false;
+	QString message;
+	if (!audioloop::rotated(*clip, args.value(QStringLiteral("amount")).toInt(), &after, &turned, &message))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, message);
+	}
+	if (!turned) { return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("rotated"), 0}}); }
+	clip->addJournalCheckPoint();
+	clip->setClipEdits(after);
+	Engine::getSong()->setModified();
+	QJsonObject result{{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("rotated"), 1},
+		{QStringLiteral("offset_frames"), static_cast<double>(after.audioLoopOffset)}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("clip"), clipId(ref.id)}},
+		QStringLiteral("control.undo"), QJsonObject(), true, QStringLiteral("Clip journal checkpoint: undo restores the clip's loop and offset")));
+	return ControlResult::success(result);
+}
+
+//! ED-028: the notes in scope moved 'amount' ticks later (negative: earlier), wrapped inside the clip's length; an
+//! audio clip's content turned the same way (rotateAudio).
 ControlResult rotate(const QJsonObject& args)
 {
 	ClipRef ref;
 	QVector<Note*> notes;
 	ControlResult error;
+	if (resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error))
+	{
+		if (auto* audio = dynamic_cast<SampleClip*>(ref.clip)) { return rotateAudio(ref, audio, args); }
+	}
 	MidiClip* clip = scopedNotes(args, &ref, &notes, &error);
 	if (clip == nullptr) { return error; }
 	// The span the clip plays: a clip trimmed on the left plays only up to length - startTimeOffset, so a wrap past
@@ -273,7 +371,17 @@ ControlResult rotate(const QJsonObject& args)
 	for (Note* note : notes)
 	{
 		const tick_t relative = note->pos().getTicks() - offset;
-		note->setPos(TimePos(offset + ((relative + amount) % length + length) % length));
+		const tick_t rotated = offset + ((relative + amount) % length + length) % length;
+		const tick_t duration = note->length().getTicks();
+		const tick_t beforeWrap = offset + length - rotated;
+		note->setPos(TimePos(rotated));
+		if (duration <= beforeWrap) { continue; }
+		Note wrapped = *note;
+		note->setLength(TimePos(beforeWrap));
+		wrapped.forgetTiming();
+		wrapped.setPos(TimePos(offset));
+		wrapped.setLength(TimePos(duration - beforeWrap));
+		clip->addNote(wrapped, false);
 	}
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.rotate"), {{QStringLiteral("rotated"), notes.size()}}));
 }
@@ -382,7 +490,9 @@ void registerNoteToolCommands(ControlRegistry& registry)
 	add(registry, "transpose_in_key", QStringLiteral("Move the notes in 'scope' 'steps' scale degrees (negative: down) within the scale "
 		"scale.set chose, so they stay in key. One undo step."), with({{QStringLiteral("steps"), integerProperty(-24, 24)}}), transposeInKey);
 	add(registry, "rotate", QStringLiteral("Move the notes in 'scope' 'amount' ticks later (negative: earlier), wrapping round inside "
-		"the clip's length, so the pattern turns without growing. One undo step."),
+		"the clip's length, so the pattern turns without growing. On an audio clip its content turns the same way ('scope' is not "
+		"read): inside its loop, or inside the clip, which then loops exactly the audio it plays (refused, typed, for a clip longer "
+		"than its audio with no loop, or one whose loop starts after its first tick). One undo step."),
 		with({{QStringLiteral("amount"), integerProperty(-192 * 256, 192 * 256)}}), rotate);
 	add(registry, "repeat", QStringLiteral("Repeat each note in 'scope' 'count' times (1..64), every 'interval' ticks - a note repeater. "
 		"One undo step."), with({{QStringLiteral("count"), integerProperty(1, 64)}, {QStringLiteral("interval"), integerProperty(1, 3072)}}),

@@ -38,6 +38,7 @@ namespace lmms::gui
 TelemetryConsentDialog::TelemetryConsentDialog(QWidget * parent) :
 	QDialog(parent)
 {
+	setProperty(SavedProperty, false);
 	setWindowTitle(tr("Telemetry - what we send"));
 	resize(560, 460);
 
@@ -128,6 +129,7 @@ void TelemetryConsentDialog::refreshPreview()
 void TelemetryConsentDialog::save()
 {
 	Telemetry::saveConsent(currentConsent());
+	setProperty(SavedProperty, true);
 	refreshPreview();
 }
 

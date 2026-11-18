@@ -49,6 +49,25 @@ namespace lmms
 
 using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
 
+/*! How many fx-<n> ids @a channel carries.
+ *
+ *  Every chain a mixer channel holds hands out effect ids, not only its own:
+ *  the rack's parallel chains and the post-fader inserts resolve an effect id
+ *  the same way (ControlDeviceSupport's rackChainEffect), so all of them belong
+ *  in the count the id contract publishes. */
+int channelEffectCount(MixerChannel* channel)
+{
+	ControlTarget target;
+	ControlResult ignored;
+	if (!resolveControlTarget(control::channelIdOf(channel), &target, &ignored)) { return 0; }
+	int count = static_cast<int>(target.chain->effects().size());
+	for (int c = 1; c < channel->m_rack.chainCount(); ++c)
+	{
+		count += static_cast<int>(channel->m_rack.chain(c)->effects().size());
+	}
+	return count + static_cast<int>(channel->m_postInserts.chain().effects().size());
+}
+
 void registerIdContractCommand(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -98,12 +117,7 @@ void registerIdContractCommand(ControlRegistry& registry)
 		Mixer* mixer = Engine::mixer();
 		for (int i = 0; mixer != nullptr && i < static_cast<int>(mixer->numChannels()); ++i)
 		{
-			ControlTarget target;
-			ControlResult ignored;
-			if (resolveControlTarget(control::channelIdOf(mixer->mixerChannel(i)), &target, &ignored))
-			{
-				fxCount += static_cast<int>(target.chain->effects().size());
-			}
+			fxCount += channelEffectCount(mixer->mixerChannel(i));
 		}
 		const int trackCount = song != nullptr ? static_cast<int>(song->tracks().size()) : 0;
 		const int channelCount = mixer != nullptr ? static_cast<int>(mixer->numChannels()) : 0;

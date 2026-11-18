@@ -63,17 +63,6 @@ void store(const QString& key, const QWidget* window)
 	ConfigManager::inst()->setValue(kSection, kKey, QString::fromUtf8(QJsonDocument(all).toJson(QJsonDocument::Compact)));
 }
 
-//! The connected screen called @a name, else the one under @a centre, else the primary one.
-const QScreen* screenFor(const QString& name, const QPoint& centre)
-{
-	for (const QScreen* screen : QGuiApplication::screens())
-	{
-		if (screen->name() == name) { return screen; }
-	}
-	const QScreen* under = QGuiApplication::screenAt(centre);
-	return under != nullptr ? under : QGuiApplication::primaryScreen();
-}
-
 //! Keeps a tool window's place: a move or a resize of the shown window, not maximised, is remembered.
 class Watcher : public QObject
 {
@@ -97,6 +86,16 @@ private:
 };
 
 } // namespace
+
+const QScreen* screenFor(const QString& name, const QPoint& centre)
+{
+	for (const QScreen* screen : QGuiApplication::screens())
+	{
+		if (screen->name() == name) { return screen; }
+	}
+	const QScreen* under = QGuiApplication::screenAt(centre);
+	return under != nullptr ? under : QGuiApplication::primaryScreen();
+}
 
 QString keyOf(const QWidget* content)
 {

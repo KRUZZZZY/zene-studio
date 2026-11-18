@@ -121,7 +121,8 @@ void registerBounceLandCommand(ControlRegistry& registry)
 		"ticks) and put the render on a NEW audio track at the range's start, named '<track> "
 		"(bounce)', with the source track muted. Reversible: one control.undo removes the new "
 		"track and restores the source's mute. bounce.in_place stays the render-only verb; "
-		"freeze.track plays a render on the source track itself.");
+		"freeze.track plays a render on the source track itself. This command keeps its synchronous "
+		"result contract for compatibility; use render.queue_bounce with operation bounce_land for a cancellable job.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("track"), stringProperty()}, {QStringLiteral("out"), stringProperty()},
 		{QStringLiteral("start"), integerProperty()}, {QStringLiteral("end"), integerProperty()}}, {QStringLiteral("track")});
 	cmd.resultSchema = objectSchema({{QStringLiteral("track"), stringProperty()},

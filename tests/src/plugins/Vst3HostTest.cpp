@@ -24,16 +24,26 @@
 
 #include <QtTest>
 
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
 #include <QFileInfo>
 
 #include <cmath>
+#include <limits>
 #include <memory>
+#include <thread>
 #include <vector>
 
+#include "../core/AllocationProbe.h"
 #include "Midi.h"
+#include "PluginWindowSystem.h"
+#include "Vst3ComponentHandler.h"
+#include "Vst3EditorSession.h"
 #include "Vst3Host.h"
 #include "Vst3MidiEvent.h"
 #include "Vst3MidiMapping.h"
+#include "pluginterfaces/gui/iplugview.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 #include "pluginterfaces/vst/ivstmidicontrollers.h"
 #include "public.sdk/source/vst/hosting/parameterchanges.h"
@@ -110,6 +120,69 @@ public:
 	Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString) override { return nullptr; }
 };
 
+//! A second controller assignment for the same parameter, as IMidiMapping permits.
+class AliasedMappingController : public MappingController
+{
+public:
+	Steinberg::tresult PLUGIN_API getMidiControllerAssignment(Steinberg::int32 busIndex,
+		Steinberg::int16 channel, Steinberg::Vst::CtrlNumber number, Steinberg::Vst::ParamID& id) override
+	{
+		if (channel == 3 && number == 75)
+		{
+			id = 74;
+			return Steinberg::kResultTrue;
+		}
+		return MappingController::getMidiControllerAssignment(busIndex, channel, number, id);
+	}
+};
+
+//! A stand-in editor view that keeps the frame the host gives it, so a case can question that frame
+//! the way a faulty editor would. The case owns it, not the session: its reference count is fixed.
+class FrameProbeView : public Steinberg::IPlugView
+{
+public:
+	Steinberg::tresult PLUGIN_API queryInterface(const Steinberg::TUID iid, void** obj) override
+	{
+		if (Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::IPlugView::iid)
+			|| Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::FUnknown::iid))
+		{
+			*obj = static_cast<Steinberg::IPlugView*>(this);
+			return Steinberg::kResultOk;
+		}
+		*obj = nullptr;
+		return Steinberg::kNoInterface;
+	}
+	Steinberg::uint32 PLUGIN_API addRef() override { return 1; }
+	Steinberg::uint32 PLUGIN_API release() override { return 1; }
+	Steinberg::tresult PLUGIN_API isPlatformTypeSupported(Steinberg::FIDString) override { return Steinberg::kResultTrue; }
+	Steinberg::tresult PLUGIN_API attached(void*, Steinberg::FIDString) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API removed() override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API onWheel(float) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API onKeyDown(Steinberg::char16, Steinberg::int16, Steinberg::int16) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API onKeyUp(Steinberg::char16, Steinberg::int16, Steinberg::int16) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API getSize(Steinberg::ViewRect*) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API onSize(Steinberg::ViewRect*) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API onFocus(Steinberg::TBool) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API setFrame(Steinberg::IPlugFrame* frame) override { m_frame = frame; return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API canResize() override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API checkSizeConstraint(Steinberg::ViewRect*) override { return Steinberg::kResultFalse; }
+
+	//! The frame the last setFrame() gave this view; the session clears it when the editor closes.
+	Steinberg::IPlugFrame* frame() const { return m_frame; }
+
+private:
+	Steinberg::IPlugFrame* m_frame = nullptr;
+};
+
+//! A controller whose editor is the probe view: the session asks the controller for it.
+class FrameProbeController : public MappingController
+{
+public:
+	Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString) override { return &m_view; }
+
+	FrameProbeView m_view;
+};
+
 //! The queue @a changes holds for parameter @a id, or nullptr.
 auto queueFor(Steinberg::Vst::IParameterChanges& changes, Steinberg::Vst::ParamID id) -> Steinberg::Vst::IParamValueQueue*
 {
@@ -155,6 +228,17 @@ private slots:
 	void testMappedControllersKeepTheirFrame();
 	void testParameterChangesAreSlicedPerChunk();
 	void testAFullParameterQueueKeepsTheNewestValue();
+	void testAliasedControllersKeepNewestDeferredPoint();
+	void testRebuildingControllerMapClearsDeferredPoints();
+	void testPrepareRejectsInvalidRequests();
+	void testComponentHandlerAnswersInterfaceQueries();
+	void testEditorFrameRefusesANullOutPointer();
+	void testNonFiniteParameterValuesAreRefused();
+	void testReprepareGateQuiescesAllActiveAudioCalls();
+	void testDroppedOutputCounterUsesAtomicAccess();
+	void testDroppedMidiCounterUsesAtomicAccess();
+	void testRetriggerGetsANewNoteId();
+	void testEditorRefusalWithoutAnErrorStringDoesNotCrash();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -414,18 +498,423 @@ void Vst3HostTest::testParameterChangesAreSlicedPerChunk()
 }
 
 /*! 0.5.0 W4: a burst of controller points never grows a parameter's queue past the points the SDK
- *  reserves (no allocation on the audio thread); the newest value is kept, on the last kept point. */
+ *  reserves (no allocation on the audio thread), and the newest value takes effect at its OWN frame:
+ *  the first points keep theirs, the later ones are coalesced and the newest is written last. */
 void Vst3HostTest::testAFullParameterQueueKeepsTheNewestValue()
 {
-	Steinberg::Vst::ParameterChanges changes(1);
-	Steinberg::int32 index = 0;
-	auto* queue = changes.addParameterData(7, index);
-	for (int i = 0; i < kMaxPointsPerParameter + 3; ++i) { addBoundedPoint(queue, i * 10, i / 10.0); }
-	QCOMPARE(queue->getPointCount(), kMaxPointsPerParameter);
-	QCOMPARE(pointOf(queue, 0), std::make_pair(Steinberg::int32{0}, 0.0));
-	const auto last = pointOf(queue, kMaxPointsPerParameter - 1);
-	QCOMPARE(last.first, Steinberg::int32{(kMaxPointsPerParameter - 1) * 10});
-	QCOMPARE(last.second, (kMaxPointsPerParameter + 2) / 10.0);
+	MappingController controller;
+	MidiControllerMap map;
+	map.build(&controller, 0);
+	constexpr int Frames = 1024;
+	constexpr int Events = kMaxPointsPerParameter + 2;
+	auto queue = std::make_unique<MidiQueue>();
+	for (int i = 0; i < Events; ++i)
+	{
+		const bool newest = i == Events - 1;
+		QVERIFY(queue->push({static_cast<std::uint8_t>(MidiControlChange), 3, 74,
+			static_cast<std::uint8_t>(newest ? 127 : 0), 100 * (i + 1)}));
+	}
+	std::vector<MidiEventIn> scratch(kMaxMidiEventsPerBlock);
+	Steinberg::Vst::EventList events{kMaxMidiEventsPerBlock};
+	Steinberg::Vst::ParameterChanges changes(4);
+	QCOMPARE(drainMidiIntoEventList(*queue, scratch, events, 0, Frames, &map, &changes), Events);
+	auto* timbre = queueFor(changes, 74);
+	QVERIFY(timbre != nullptr);
+	QCOMPARE(timbre->getPointCount(), kMaxPointsPerParameter);
+	QCOMPARE(pointOf(timbre, 0), std::make_pair(Steinberg::int32{100}, 0.0));
+	QCOMPARE(pointOf(timbre, kMaxPointsPerParameter - 1), std::make_pair(Steinberg::int32{100 * Events}, 1.0));
+}
+
+void Vst3HostTest::testAliasedControllersKeepNewestDeferredPoint()
+{
+	AliasedMappingController controller;
+	MidiControllerMap map;
+	map.build(&controller, 0);
+	constexpr int Frames = 1024;
+	auto queue = std::make_unique<MidiQueue>();
+	for (int i = 0; i < kMaxPointsPerParameter - 1; ++i)
+	{
+		QVERIFY(queue->push({static_cast<std::uint8_t>(MidiControlChange), 3, 74, 0, 100 * (i + 1)}));
+	}
+	QVERIFY(queue->push({static_cast<std::uint8_t>(MidiControlChange), 3, 74, 0, 500}));
+	QVERIFY(queue->push({static_cast<std::uint8_t>(MidiControlChange), 3, 75, 127, 600}));
+	std::vector<MidiEventIn> scratch(kMaxMidiEventsPerBlock);
+	Steinberg::Vst::EventList events{kMaxMidiEventsPerBlock};
+	Steinberg::Vst::ParameterChanges changes(4);
+	QCOMPARE(drainMidiIntoEventList(*queue, scratch, events, 0, Frames, &map, &changes), kMaxPointsPerParameter + 1);
+	auto* timbre = queueFor(changes, 74);
+	QVERIFY(timbre != nullptr);
+	QCOMPARE(timbre->getPointCount(), kMaxPointsPerParameter);
+	QCOMPARE(pointOf(timbre, kMaxPointsPerParameter - 1), std::make_pair(Steinberg::int32{600}, 1.0));
+}
+
+void Vst3HostTest::testRebuildingControllerMapClearsDeferredPoints()
+{
+	MappingController controller;
+	MidiControllerMap map;
+	map.build(&controller, 0);
+	Steinberg::Vst::ParameterChanges changes(4);
+	const MidiEventIn timbre{static_cast<std::uint8_t>(MidiControlChange), 3, 74, 0, 0};
+	for (int i = 0; i < kMaxPointsPerParameter; ++i) { QVERIFY(map.apply(timbre, &changes, 100 * (i + 1))); }
+	auto* queue = queueFor(changes, 74);
+	QVERIFY(queue != nullptr);
+	QVERIFY(queue->getPointCount() > 0);
+
+	map.build(&controller, 0);
+	MidiQueue emptyQueue;
+	std::vector<MidiEventIn> scratch(kMaxMidiEventsPerBlock);
+	Steinberg::Vst::EventList events{kMaxMidiEventsPerBlock};
+	Steinberg::Vst::ParameterChanges nextChanges(4);
+	QCOMPARE(drainMidiIntoEventList(emptyQueue, scratch, events, 0, 1024, &map, &nextChanges), 0);
+	QCOMPARE(nextChanges.getParameterCount(), 0);
+}
+
+void Vst3HostTest::testPrepareRejectsInvalidRequests()
+{
+	QString error;
+	QVERIFY2(!m_plugin.prepare(TestSampleRate, 1'048'577, &error), qPrintable(error));
+	QVERIFY(!m_plugin.isPrepared());
+	QVERIFY(!error.isEmpty());
+
+	QVERIFY(!m_plugin.prepare(std::numeric_limits<double>::quiet_NaN(), TestBlockSize, &error));
+	QVERIFY(!m_plugin.isPrepared());
+	QVERIFY(!m_plugin.prepare(std::numeric_limits<double>::infinity(), TestBlockSize, &error));
+	QVERIFY(!m_plugin.isPrepared());
+}
+
+/*! 0.5.0 W5: a plug-in that queries the handler it was given for its own interfaces gets them.
+ *  queryInterface() returned kNoInterface for EVERY iid, including the two this object
+ *  implements, so a plug-in could not confirm it has a component handler at all. */
+void Vst3HostTest::testComponentHandlerAnswersInterfaceQueries()
+{
+	std::atomic<float> values[2] = {0.f, 0.f};
+	const std::vector<std::pair<std::uint32_t, std::size_t>> indexById = {{1, 1}};
+	auto* handler = new Vst3ComponentHandler{values, &indexById};
+
+	void* queried = nullptr;
+	QCOMPARE(handler->queryInterface(Steinberg::Vst::IComponentHandler::iid, &queried),
+		Steinberg::kResultOk);
+	QVERIFY(queried != nullptr);
+	QCOMPARE(queried, static_cast<void*>(static_cast<Steinberg::Vst::IComponentHandler*>(handler)));
+	handler->release();
+
+	queried = nullptr;
+	QCOMPARE(handler->queryInterface(Steinberg::FUnknown::iid, &queried), Steinberg::kResultOk);
+	QVERIFY(queried != nullptr);
+	handler->release();
+
+	// an interface this object does not implement still reports kNoInterface,
+	// and never leaves a dangling pointer in the caller's out-parameter
+	queried = reinterpret_cast<void*>(0x1);
+	QCOMPARE(handler->queryInterface(Steinberg::Vst::IMidiMapping::iid, &queried),
+		Steinberg::kNoInterface);
+	QVERIFY(queried == nullptr);
+
+	QCOMPARE(handler->queryInterface(Steinberg::Vst::IComponentHandler::iid, nullptr),
+		Steinberg::kInvalidArgument);
+
+	// the reference count the successful queries took is still owned here
+	handler->release();
+}
+
+/*! BUG 6 (new-p12-290): a faulty editor that asks the host's frame for an interface through a null
+ *  out-pointer is refused with kInvalidArgument, as the component handler refuses it. The frame's
+ *  queryInterface() stored through the null pointer and crashed the host. The frame is reached the
+ *  way an editor reaches it: the session hands it to the view, and the view keeps it. */
+void Vst3HostTest::testEditorFrameRefusesANullOutPointer()
+{
+	FrameProbeController controller;
+	Vst3EditorSession session(&controller);
+	session.setWindowSystem(PluginWindowSystem::X11);
+	QString error;
+	QVERIFY2(session.open(reinterpret_cast<void*>(1), &error), qPrintable(error));
+	auto* frame = controller.m_view.frame();
+	QVERIFY(frame != nullptr);
+
+	QCOMPARE(frame->queryInterface(Steinberg::IPlugFrame::iid, nullptr), Steinberg::kInvalidArgument);
+	QCOMPARE(frame->queryInterface(Steinberg::FUnknown::iid, nullptr), Steinberg::kInvalidArgument);
+
+	// a valid query still answers with the frame, and the reference it takes is the caller's to release
+	void* queried = nullptr;
+	QCOMPARE(frame->queryInterface(Steinberg::IPlugFrame::iid, &queried), Steinberg::kResultOk);
+	QCOMPARE(queried, static_cast<void*>(frame));
+	frame->release();
+
+	// an interface the frame does not implement still reports kNoInterface and leaves no pointer behind
+	queried = reinterpret_cast<void*>(0x1);
+	QCOMPARE(frame->queryInterface(Steinberg::IPlugView::iid, &queried), Steinberg::kNoInterface);
+	QVERIFY(queried == nullptr);
+
+	session.close();
+}
+
+/*! Luna cluster 3625: a plug-in or a caller that reports a value with no
+ *  meaning - NaN, or a double that overflows float - cannot have it stored in
+ *  the parameter array the audio thread reads: std::clamp() passes NaN through
+ *  (both of its comparisons are false for it), so nothing rejected it. */
+void Vst3HostTest::testNonFiniteParameterValuesAreRefused()
+{
+	// the host's own setter: the last good value stays
+	m_plugin.setParamNormalized(GainParamId, 0.5f);
+	m_plugin.setParamNormalized(GainParamId, std::numeric_limits<float>::quiet_NaN());
+	QCOMPARE(m_plugin.paramNormalized(GainParamId), 0.5f);
+	m_plugin.setParamNormalized(GainParamId, std::numeric_limits<float>::infinity());
+	QCOMPARE(m_plugin.paramNormalized(GainParamId), 0.5f);
+	m_plugin.setParamNormalized(GainParamId, -std::numeric_limits<float>::infinity());
+	QCOMPARE(m_plugin.paramNormalized(GainParamId), 0.5f);
+
+	// a plug-in's own edits, through the handler it was given
+	std::atomic<float> values[2] = {0.f, 0.25f};
+	const std::vector<std::pair<std::uint32_t, std::size_t>> indexById = {{0, 0}, {1, 1}};
+	auto* handler = new Vst3ComponentHandler{values, &indexById};
+
+	QCOMPARE(handler->performEdit(1, 2.5), Steinberg::kResultOk);
+	QCOMPARE(values[1].load(), 1.0f);
+	QCOMPARE(handler->performEdit(1, -1.0), Steinberg::kResultOk);
+	QCOMPARE(values[1].load(), 0.0f);
+	QCOMPARE(handler->performEdit(1, std::numeric_limits<double>::quiet_NaN()),
+		Steinberg::kResultOk);
+	QCOMPARE(values[1].load(), 0.0f);
+	QCOMPARE(handler->performEdit(1, std::numeric_limits<double>::infinity()),
+		Steinberg::kResultOk);
+	QCOMPARE(values[1].load(), 0.0f);
+	QCOMPARE(handler->performEdit(1, 1.0e300), Steinberg::kResultOk); // overflows float
+	QCOMPARE(values[1].load(), 1.0f);
+	handler->release();
+}
+
+void Vst3HostTest::testReprepareGateQuiescesAllActiveAudioCalls()
+{
+	AudioProcessGate gate;
+	QVERIFY(gate.tryEnterAudioProcess());
+	QVERIFY(gate.tryEnterAudioProcess());
+
+	std::atomic<bool> started{false};
+	std::atomic<bool> finished{false};
+	std::thread reconfigure([&] {
+		started.store(true, std::memory_order_release);
+		gate.beginReconfigure();
+		finished.store(true, std::memory_order_release);
+		gate.endReconfigure();
+	});
+	while (!started.load(std::memory_order_acquire)) { std::this_thread::yield(); }
+	while (!gate.reconfigurationPending() && !finished.load(std::memory_order_acquire))
+	{
+		std::this_thread::yield();
+	}
+	const bool pending = gate.reconfigurationPending();
+	const bool waitedForBoth = !finished.load(std::memory_order_acquire);
+	const bool refusedDuringReconfigure = !gate.tryEnterAudioProcess();
+	if (!refusedDuringReconfigure) { gate.leaveAudioProcess(); }
+	gate.leaveAudioProcess();
+	const bool waitedForLastCall = !finished.load(std::memory_order_acquire);
+	gate.leaveAudioProcess();
+	reconfigure.join();
+
+	QVERIFY(pending);
+	QVERIFY(waitedForBoth);
+	QVERIFY(refusedDuringReconfigure);
+	QVERIFY(waitedForLastCall);
+	QVERIFY(finished.load(std::memory_order_acquire));
+
+	lmms::test::resetAllocationCount();
+	lmms::test::tlCountAllocations = true;
+	const bool admitted = gate.tryEnterAudioProcess();
+	if (admitted) { gate.leaveAudioProcess(); }
+	lmms::test::tlCountAllocations = false;
+	QVERIFY(admitted);
+	QCOMPARE(lmms::test::tlAllocationCount, std::uint64_t{0});
+}
+
+void Vst3HostTest::testDroppedOutputCounterUsesAtomicAccess()
+{
+	const auto sourceRoot = QDir{QCoreApplication::applicationDirPath()};
+	const auto readSource = [&sourceRoot](const QString& relativePath) -> QByteArray
+	{
+		QFile file{sourceRoot.absoluteFilePath(relativePath)};
+		if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) { return {}; }
+		return file.readAll();
+	};
+	const auto internals = readSource(QStringLiteral("../../plugins/Vst3Effect/Vst3HostInternals.h"));
+	const auto host = readSource(QStringLiteral("../../plugins/Vst3Effect/Vst3Host.cpp"));
+	const auto reports = readSource(QStringLiteral("../../plugins/Vst3Effect/Vst3HostReports.cpp"));
+	QVERIFY(!internals.isEmpty());
+	QVERIFY(!host.isEmpty());
+	QVERIFY(!reports.isEmpty());
+	QVERIFY(internals.contains("std::atomic<std::uint64_t> droppedOutput{0};"));
+	QVERIFY(host.contains("d.droppedOutput.store(0, std::memory_order_relaxed);"));
+	QVERIFY(host.contains("droppedOutput.fetch_add(1, std::memory_order_relaxed);"));
+	QVERIFY(reports.contains("m_impl->droppedOutput.load(std::memory_order_relaxed)"));
+}
+
+void Vst3HostTest::testDroppedMidiCounterUsesAtomicAccess()
+{
+	const auto sourceRoot = QDir{QCoreApplication::applicationDirPath()};
+	const auto readSource = [&sourceRoot](const QString& relativePath) -> QByteArray
+	{
+		QFile file{sourceRoot.absoluteFilePath(relativePath)};
+		if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) { return {}; }
+		return file.readAll();
+	};
+	const auto internals = readSource(QStringLiteral("../../plugins/Vst3Effect/Vst3HostInternals.h"));
+	const auto host = readSource(QStringLiteral("../../plugins/Vst3Effect/Vst3Host.cpp"));
+	const auto parameters = readSource(QStringLiteral("../../plugins/Vst3Effect/Vst3HostParameters.cpp"));
+	QVERIFY(!internals.isEmpty());
+	QVERIFY(!host.isEmpty());
+	QVERIFY(!parameters.isEmpty());
+	// Several MIDI producers increment this while diagnostics reads it, so the counter itself must
+	// be atomic; a plain integer is a C++ data race even when no test can schedule it.
+	QVERIFY(internals.contains("std::atomic<std::uint64_t> droppedMidi{0};"));
+	QVERIFY(parameters.contains("++d.droppedMidi"));
+	QVERIFY(host.contains("d.droppedMidi = 0;"));
+	QVERIFY(parameters.contains("return m_impl->droppedMidi;"));
+}
+
+/*! 0.5.0 MX-120 round 2 (Luna DISPUTE, new-p9-509): a retrigger of a key whose first voice is still in its
+ *  release tail starts a NEW VST3 note id. The first note-off and the expression sent in its tail name the
+ *  first note; the retrigger's note-on and the expression after it name the new one, so the two voices never
+ *  share an id. */
+void Vst3HostTest::testRetriggerGetsANewNoteId()
+{
+	constexpr int Frames = 1024;
+	const auto noteAt = [](int type, int frame, int velocity) {
+		return MidiEventIn{static_cast<std::uint8_t>(type), 3, 60, static_cast<std::uint8_t>(velocity), frame, true};
+	};
+	const auto expressionAt = [](int frame, double value) {
+		return MidiEventIn{kNoteExpressionMidiType, 3, 60, 0, frame, true, 7, value};
+	};
+	auto queue = std::make_unique<MidiQueue>();
+	QVERIFY(queue->push(noteAt(MidiNoteOn, 0, 100)));          // voice A starts
+	QVERIFY(queue->push(noteAt(MidiNoteOff, 100, 0)));         // voice A is released; its tail still answers to its id
+	QVERIFY(queue->push(expressionAt(150, 0.25)));             // in the tail: names voice A
+	QVERIFY(queue->push(noteAt(MidiNoteOn, 200, 100)));        // the retrigger: voice B while A is still releasing
+	QVERIFY(queue->push(expressionAt(300, 0.75)));             // after the retrigger: names voice B
+	std::vector<MidiEventIn> scratch(kMaxMidiEventsPerBlock);
+	Steinberg::Vst::EventList events{kMaxMidiEventsPerBlock};
+	QCOMPARE(drainMidiIntoEventList(*queue, scratch, events, 0, Frames), 5);
+	QCOMPARE(events.getEventCount(), 5);
+
+	Steinberg::Vst::Event firstOn{};
+	Steinberg::Vst::Event release{};
+	Steinberg::Vst::Event tail{};
+	Steinberg::Vst::Event retrigger{};
+	Steinberg::Vst::Event after{};
+	QCOMPARE(events.getEvent(0, firstOn), Steinberg::kResultOk);
+	QCOMPARE(events.getEvent(1, release), Steinberg::kResultOk);
+	QCOMPARE(events.getEvent(2, tail), Steinberg::kResultOk);
+	QCOMPARE(events.getEvent(3, retrigger), Steinberg::kResultOk);
+	QCOMPARE(events.getEvent(4, after), Steinberg::kResultOk);
+	QCOMPARE(firstOn.type, Steinberg::Vst::Event::kNoteOnEvent);
+	QCOMPARE(release.type, Steinberg::Vst::Event::kNoteOffEvent);
+	QCOMPARE(tail.type, Steinberg::Vst::Event::kNoteExpressionValueEvent);
+	QCOMPARE(retrigger.type, Steinberg::Vst::Event::kNoteOnEvent);
+	QCOMPARE(after.type, Steinberg::Vst::Event::kNoteExpressionValueEvent);
+
+	const auto voiceA = firstOn.noteOn.noteId;
+	const auto voiceB = retrigger.noteOn.noteId;
+	QVERIFY2(voiceA >= 0 && voiceB >= 0, "a plug-in with note expressions must get a note id on every note");
+	QVERIFY2(voiceA != voiceB, "the retrigger reused the released voice's note id");
+	QCOMPARE(release.noteOff.noteId, voiceA);
+	QCOMPARE(tail.noteExpressionValue.noteId, voiceA);
+	QCOMPARE(after.noteExpressionValue.noteId, voiceB);
+}
+
+/*! An editor view whose platform support and attach can each be refused, for the editor's refusal paths. */
+class RefusingPlugView : public Steinberg::IPlugView
+{
+public:
+	RefusingPlugView(bool embeds, bool attaches) : m_embeds(embeds), m_attaches(attaches) {}
+
+	Steinberg::tresult PLUGIN_API queryInterface(const Steinberg::TUID, void**) override { return Steinberg::kNoInterface; }
+	Steinberg::uint32 PLUGIN_API addRef() override { return 1; }
+	Steinberg::uint32 PLUGIN_API release() override { return 1; }
+	Steinberg::tresult PLUGIN_API isPlatformTypeSupported(Steinberg::FIDString) override
+	{
+		return m_embeds ? Steinberg::kResultTrue : Steinberg::kResultFalse;
+	}
+	Steinberg::tresult PLUGIN_API attached(void*, Steinberg::FIDString) override
+	{
+		return m_attaches ? Steinberg::kResultOk : Steinberg::kResultFalse;
+	}
+	Steinberg::tresult PLUGIN_API removed() override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API onWheel(float) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API onKeyDown(Steinberg::char16, Steinberg::int16, Steinberg::int16) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API onKeyUp(Steinberg::char16, Steinberg::int16, Steinberg::int16) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API getSize(Steinberg::ViewRect*) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API onSize(Steinberg::ViewRect*) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API onFocus(Steinberg::TBool) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API setFrame(Steinberg::IPlugFrame*) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API canResize() override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API checkSizeConstraint(Steinberg::ViewRect*) override { return Steinberg::kResultOk; }
+
+private:
+	bool m_embeds;
+	bool m_attaches;
+};
+
+//! An edit controller whose editor is the view it was given (nullptr: no editor view at all).
+class ViewingController : public MappingController
+{
+public:
+	explicit ViewingController(Steinberg::IPlugView* view) : m_view(view) {}
+	Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString) override { return m_view; }
+
+private:
+	Steinberg::IPlugView* m_view;
+};
+
+/*! The editor's refusals name their reason through an optional error string, and the string may be null:
+ *  every failure path (no edit controller, no window to embed in, no editor view, a view that cannot embed,
+ *  an attach that is refused) must refuse cleanly without writing through a null pointer, and a caller that
+ *  asks for the reason gets it. The failure paths wrote through the pointer unconditionally, so a null error
+ *  crashed the host. */
+void Vst3HostTest::testEditorRefusalWithoutAnErrorStringDoesNotCrash()
+{
+	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+
+	HostedPlugin unloaded;
+	QVERIFY(!unloaded.openEditor(standInWindow, nullptr));
+	QVERIFY(!unloaded.editorOpen());
+	QString error;
+	QVERIFY(!unloaded.openEditor(standInWindow, &error));
+	QVERIFY(!unloaded.editorOpen());
+	QCOMPARE(error, QStringLiteral("the plug-in has no edit controller"));
+
+	// Each refusal, first with no error string (must not crash), then with one (must name the reason).
+	const auto refuse = [&](Vst3EditorSession& session, const char* reason)
+	{
+		QVERIFY(!session.open(standInWindow, nullptr));
+		QVERIFY(!session.isOpen());
+		QString named;
+		QVERIFY(!session.open(standInWindow, &named));
+		QVERIFY(!session.isOpen());
+		QVERIFY2(named.contains(QLatin1String(reason)), qPrintable(named));
+	};
+
+	Vst3EditorSession noController(nullptr);
+	noController.setWindowSystem(PluginWindowSystem::X11);
+	refuse(noController, "no edit controller");
+
+	MappingController noView;
+	Vst3EditorSession noWindow(&noView);
+	noWindow.setWindowSystem(PluginWindowSystem::None);
+	refuse(noWindow, "no native window a plug-in editor can embed in");
+
+	Vst3EditorSession createViewEmpty(&noView);
+	createViewEmpty.setWindowSystem(PluginWindowSystem::X11);
+	refuse(createViewEmpty, "offers no editor view");
+
+	RefusingPlugView cannotEmbed(false, true);
+	ViewingController embedsNot(&cannotEmbed);
+	Vst3EditorSession embedRefused(&embedsNot);
+	embedRefused.setWindowSystem(PluginWindowSystem::X11);
+	refuse(embedRefused, "cannot embed on");
+
+	RefusingPlugView attachRefused(true, false);
+	ViewingController attachRefusedController(&attachRefused);
+	Vst3EditorSession attachFails(&attachRefusedController);
+	attachFails.setWindowSystem(PluginWindowSystem::X11);
+	refuse(attachFails, "refused to attach");
 }
 
 } // namespace lmms::vst3

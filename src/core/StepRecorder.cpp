@@ -44,6 +44,16 @@ StepRecorder::StepRecorder(gui::PianoRoll& pianoRoll, gui::StepRecorderWidget& s
 	m_stepRecorderWidget.hide();
 }
 
+StepRecorder::~StepRecorder()
+{
+	// Notes still pending when the recorder goes away (e.g. the piano roll closes mid-step)
+	// are owned only by this vector; the apply and dismiss paths free them the same way.
+	for (StepNote* stepNote : m_curStepNotes)
+	{
+		delete stepNote;
+	}
+}
+
 void StepRecorder::initialize()
 {
 	connect(&m_updateReleasedTimer, SIGNAL(timeout()), this, SLOT(removeNotesReleasedForTooLong()));
@@ -164,8 +174,12 @@ void StepRecorder::setStepsLength(const TimePos& newLength)
 {
 	if(m_isStepInProgress)
 	{
-		//update current step length by the new amount : (number_of_steps * newLength)
-		m_curStepLength = (m_curStepLength / m_stepsLength) * newLength;
+		// with a zero old step length every step added to the current one was zero, so there is nothing to scale
+		if(m_stepsLength != 0)
+		{
+			//update current step length by the new amount : (number_of_steps * newLength)
+			m_curStepLength = (m_curStepLength / m_stepsLength) * newLength;
+		}
 
 		updateCurStepNotes();
 	}

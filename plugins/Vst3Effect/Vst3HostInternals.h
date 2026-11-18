@@ -96,18 +96,23 @@ struct HostedPlugin::Impl
 	//! its sample offsets rebased to that chunk's start. Sized once, in its
 	//! constructor: process() never allocates (see runChunk()).
 	EventList chunkEvents{kMaxMidiEventsPerBlock};
+	//! Events whose offset was at or beyond the end of the previous request, waiting for the next
+	//! one, where they are delivered at offset 0. Sized once, in its constructor; cleared per request.
+	EventList deferredEvents{kMaxMidiEventsPerBlock};
 	//! ProcessData::outputEvents (E7), and what the whole request's chunks wrote, as MIDI
 	EventList outputEvents{kMaxMidiEventsPerBlock};
 	std::array<MidiEventIn, kMaxMidiEventsPerBlock> blockOutput{};
 	int blockOutputCount = 0;
-	//! Output notes that did not fit blockOutput (audio thread; diagnostics, as droppedMidi is for input)
-	std::uint64_t droppedOutput = 0;
+	//! Output notes that did not fit blockOutput; atomic because diagnostics reads it off the audio thread.
+	std::atomic<std::uint64_t> droppedOutput{0};
 	//! Audio thread scratch for ordering the drained events by sample offset
 	std::vector<MidiEventIn> midiEvents;
 
 	std::vector<Vst3ParamDescriptor> params;
 	std::vector<std::pair<std::uint32_t, std::size_t>> indexById; // sorted by id
 	std::unique_ptr<std::atomic<float>[]> paramValues;
+	//! The editor's gesture reports of each parameter (Q050-214), same order as paramValues.
+	std::unique_ptr<PluginParamGesture[]> paramGestures;
 	std::vector<float> lastParamValues;
 
 	BusLayout layout;
@@ -149,6 +154,9 @@ struct HostedPlugin::Impl
 	//! Vst3Host.h.
 	void runChunk(const float* const* inputs, float* const* outputs, int numInputs,
 		int numOutputs, int offset, int chunk, bool firstChunk, bool lastChunk);
+	//! Moves the previous request's carried boundary events to offset 0 of this request's list.
+	//! @returns how many events it inserted, which is the room the drain must leave them.
+	auto prependDeferredEvents() -> int;
 	// runChunk's three steps (split for the complexity target, unchanged).
 	void sliceEvents(int offset, int chunk, bool lastChunk);
 	void mapBuses(const float* const* inputs, float* const* outputs, int numInputs, int numOutputs, int offset, int chunk);

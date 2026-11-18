@@ -79,6 +79,9 @@ public:
 
 	//! 0.5.0 F1 (MX-040): ALSA opens the output count the interface's I/O setup asks for, when the device has it.
 	bool supportsMultichannelOutput() const override { return true; }
+	//! Q050-074.2: the negotiated rate, period and buffer; output latency is the playback buffer
+	//! (blocking writes keep it full), input latency one capture period while capture is open.
+	DeviceTiming deviceTiming() const override;
 
 	inline static QString name()
 	{
@@ -91,6 +94,8 @@ public:
 	static DeviceInfoCollection getAvailableDevices();
 
 private:
+	friend class AudioDeviceDiagnosticsTest;
+
 	void startProcessingImpl() override;
 	void stopProcessingImpl() override;
 	void run() override;
@@ -122,11 +127,17 @@ private:
 	//! Error recovery for the capture PCM (overrun/suspend), the read-side twin
 	//! of handleError()'s write-side one.
 	int handleCaptureError( int _err );
+	//! Reports the capture failures the capture thread parked (see
+	//! m_captureOverrunError). NOT for the capture thread: this runs on the
+	//! thread that closes the capture, which is not an audio thread.
+	void reportCaptureErrors();
 
 	snd_pcm_t * m_handle;
 
-	snd_pcm_uframes_t m_bufferSize;
-	snd_pcm_uframes_t m_periodSize;
+	snd_pcm_uframes_t m_bufferSize = 0;
+	snd_pcm_uframes_t m_periodSize = 0;
+	//! Q050-074.2: the rate the playback PCM granted (read back after snd_pcm_hw_params); 0 until then.
+	unsigned int m_grantedRate = 0;
 
 	snd_pcm_hw_params_t * m_hwParams;
 	snd_pcm_sw_params_t * m_swParams;
@@ -135,6 +146,9 @@ private:
 	snd_pcm_t * m_captureHandle;
 	snd_pcm_hw_params_t * m_captureHwParams;
 	snd_pcm_uframes_t m_capturePeriodSize;
+	//! Q050-074.2: the rate the capture PCM granted - its own, which a separately selected capture
+	//! interface can negotiate apart from playback's; 0 while no capture is open.
+	unsigned int m_captureGrantedRate = 0;
 	//! Device channels the capture PCM granted (the plan's count, or what the
 	//! driver accepted instead).
 	int m_captureChannels;
@@ -147,6 +161,13 @@ private:
 	std::thread m_captureThread;
 	std::atomic<bool> m_captureStop;
 	std::atomic<bool> m_captureOpen;
+	//! The ALSA error code of a capture recovery that FAILED, parked by the
+	//! capture thread: that thread may not log (its own rule), so the code
+	//! waits here until a non-audio thread reports it. 0: nothing parked.
+	std::atomic<int> m_captureOverrunError;
+	//! The same for the suspend recovery (the two recoveries report
+	//! different failures).
+	std::atomic<int> m_captureSuspendError;
 } ;
 
 } // namespace lmms

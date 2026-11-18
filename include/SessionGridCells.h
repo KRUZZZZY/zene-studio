@@ -27,6 +27,7 @@
 
 #include <vector>
 
+#include <QJsonObject>
 #include <QString>
 
 #include "lmms_export.h"
@@ -64,6 +65,13 @@ LMMS_EXPORT QString sceneMark(SceneState state);
 //! it; nothing for an empty cell.
 LMMS_EXPORT QString cellMark(const QString& phase, bool filled);
 
+//! WF-055: the mark of a cell recording audio, for session.record_slot_status's @a state - "● Rec " while it records
+//! (or runs on to its length), "○ Rec " while it waits for its launch, nothing otherwise. The shape, not the colour,
+//! says which; the accessible name says it in words (recordingWords).
+LMMS_EXPORT QString recordingMark(const QString& state);
+//! "recording", "armed to record" or empty, for the same @a state.
+LMMS_EXPORT QString recordingWords(const QString& state);
+
 //! Column @a track's header: the song track's name, or "Track N" (1-based) when it has none or there is no such
 //! track.
 LMMS_EXPORT QString columnTitle(int track);
@@ -71,6 +79,14 @@ LMMS_EXPORT QString columnTitle(int track);
 //! What launching the cell named @a name will do to its column, for its tooltip: it replaces @a playing (the clip
 //! the column plays now, in another scene) - or empty when the column is idle or already on this cell.
 LMMS_EXPORT QString launchReplaces(const QString& name, const QString& playing);
+
+/*! Q050-493: what an AUDIO cell's playback settings (@a slot, its session.get_state entry) do to it, shown on the
+ *  cell after its name - only the ones off their defaults, short: "-6.0dB +12st +50ct ⟲ W128" (gain, transpose,
+ *  detune, a loop region, warped from 128 BPM). Empty for a MIDI or empty cell, or one at every default. */
+LMMS_EXPORT QString playbackBadge(const QJsonObject& slot);
+//! The same settings in words, for the cell's accessible name and tooltip ("gain -6.0 dB, transposed +12
+//! semitones, ..."); empty when the badge is.
+LMMS_EXPORT QString playbackWords(const QJsonObject& slot);
 
 } // namespace lmms::gui::sessiongrid
 

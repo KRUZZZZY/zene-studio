@@ -386,8 +386,8 @@ bool requiredTick(const QDomElement& child, const QString& key, tick_t* out)
  *  malformed and is refused rather than read as the fallback. */
 bool optionalTick(const QDomElement& child, const QString& key, tick_t fallback, tick_t* out)
 {
+	if (!child.hasAttribute(key)) { *out = fallback; return true; }
 	const QString text = child.attribute(key);
-	if (text.isEmpty()) { *out = fallback; return true; }
 	bool ok = false;
 	const qint64 value = text.toLongLong(&ok);
 	if (!ok || !fitsTick(value)) { return false; }
@@ -398,8 +398,8 @@ bool optionalTick(const QDomElement& child, const QString& key, tick_t fallback,
 //! An OPTIONAL int attribute: absent keeps \a fallback, malformed is refused.
 bool optionalInt(const QDomElement& child, const QString& key, int fallback, int* out)
 {
+	if (!child.hasAttribute(key)) { *out = fallback; return true; }
 	const QString text = child.attribute(key);
-	if (text.isEmpty()) { *out = fallback; return true; }
 	bool ok = false;
 	*out = text.toInt(&ok);
 	return ok;
@@ -447,7 +447,12 @@ bool ChordTrack::loadSettings(const QDomElement& element)
 	{
 		ChordFollowMode mode = ChordFollowMode::Chord;  // an unknown mode follows the chord, the default
 		followModeFromName(child.attribute(kFollowMode), &mode);
-		setFollow(child.attribute(kFollowTrack, QStringLiteral("-1")).toInt(), mode);
+		// A number that does not parse is not a zero: 0 is a valid track ID, so
+		// a malformed follower ID is SKIPPED, the same rule the malformed event
+		// numbers follow - defaulting would silently make track 0 follow.
+		bool trackIdParsed = false;
+		const int trackId = child.attribute(kFollowTrack, QStringLiteral("-1")).toInt(&trackIdParsed);
+		if (trackIdParsed) { setFollow(trackId, mode); }
 	}
 	return true;
 }
@@ -465,10 +470,15 @@ QString ChordTrack::toXml() const
 
 bool ChordTrack::fromXml(const QString& xml)
 {
-	clear();
+	// Parse and validate BEFORE replacing anything: fromXml() restores a
+	// snapshot over the live track, so a corrupt snapshot must leave it alone.
+	// loadSettings() is the project loader's path and still clears first -
+	// there an absent element legitimately means "no chord track at all".
 	QDomDocument doc;
 	if (!doc.setContent(xml)) { return false; }
-	return loadSettings(doc.documentElement());
+	const QDomElement element = doc.documentElement();
+	if (element.isNull() || element.tagName() != kTrackElement) { return false; }
+	return loadSettings(element);
 }
 
 } // namespace lmms

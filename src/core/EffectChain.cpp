@@ -35,14 +35,46 @@
 #include "AudioEngine.h"
 #include "Effect.h"
 #include "DummyEffect.h"
+#include "MissingDevices.h"
+#include "PluginVendors.h"
 #include "Engine.h"
 #include "LatencyCompensation.h"
+#include "LegacyVst2Conversion.h"
 #include "RoutingChainNodes.h"
 #include "RoutingGraph.h"
 
 namespace lmms
 {
 
+
+namespace
+{
+Effect* loadConvertedEffect(const QDomElement& effectData, EffectChain* chain)
+{
+	// This runs on the GUI thread inside the existing changes guard; VST2 discovery is cached per session.
+	const QDomElement converted = legacyvst2::convertEffect(effectData);
+	if (converted.isNull()) { return nullptr; }
+	EffectKey key(converted.elementsByTagName("key").item(0).toElement());
+	Effect* e = Effect::instantiate(converted.attribute("name").toUtf8(), chain, &key);
+	if (e != nullptr && e->isOkay() && e->nodeName() == converted.nodeName() && e->unavailableReason().isEmpty())
+	{
+		e->restoreState(converted);
+		return e;
+	}
+	delete e;
+	return nullptr;
+}
+}
+
+
+#ifdef LMMS_TESTING
+void (*EffectChain::s_loadSettingsProbe)() = nullptr;
+
+void EffectChain::setLoadSettingsProbe(void (*probe)())
+{
+	s_loadSettingsProbe = probe;
+}
+#endif
 
 
 EffectChain::EffectChain( Model * _parent ) :
@@ -129,12 +161,26 @@ void EffectChain::saveSettings( QDomDocument & _doc, QDomElement & _this )
 
 	for( Effect* effect : m_effects)
 	{
-		if (auto dummy = dynamic_cast<DummyEffect*>(effect)) { _this.appendChild(dummy->originalPluginData()); }
+		// Q050-018 (new-p14-96): the loaded node belongs to its source document. Import a copy; appending it
+		// directly moves it out of that document, so a second save would strip the effect from the first.
+		// cluster new-p14-97: the copy carries the generic settings the user changed on the placeholder.
+		if (auto dummy = dynamic_cast<DummyEffect*>(effect)) { _this.appendChild(effect->preservedXmlWithChangedGenericSettings(_doc, dummy->originalPluginData())); }
+		else if (!effect->preservedPluginData().isNull() && !effect->unavailableReason().isEmpty())
+		{
+			// 0.5.0 Q050-018: a wrapper whose plug-in binary is missing writes back what the file had -
+			// with the generic settings the user changed on the placeholder merged in (new-p14-97).
+			_this.appendChild(effect->preservedXmlWithChangedGenericSettings(_doc, effect->preservedPluginData()));
+		}
 		else
 		{
 			QDomElement ef = effect->saveState( _doc, _this );
 			ef.setAttribute( "name", QString::fromUtf8( effect->descriptor()->name ) );
 			ef.appendChild( effect->key().saveXML( _doc ) );
+			// 0.5.0 Q050-018: the maker is not in the key; keep it beside the name for a later open without the plug-in.
+			const auto& attrs = effect->key().attributes;
+			QString vendor = pluginvendors::vendorOf(attrs.value("file"), attrs.value("class"));
+			if (vendor.isEmpty()) { vendor = pluginvendors::vendorOf(attrs.value("file"), attrs.value("id")); }
+			if (!vendor.isEmpty()) { ef.setAttribute("vendor", vendor); }
 		}
 	}
 }
@@ -144,9 +190,19 @@ void EffectChain::saveSettings( QDomDocument & _doc, QDomElement & _this )
 
 void EffectChain::loadSettings( const QDomElement & _this )
 {
+	// new-p14-98 (cluster 5051 root cause): loading a chain is a topology edit,
+	// not a settings read. Hold the same model-change guard every other edit
+	// takes across clear(), the effect-list rebuild and the graph rebuild, so a
+	// render period cannot start between the old chain being destroyed and the
+	// restored list/graph being published. The guard is recursive, so the
+	// request/done pair inside clear() nests inside this one.
+	const auto guard = Engine::audioEngine()->requestChangesGuard();
+
 	clear();
 
-	// TODO This method should probably also lock the audio engine
+#ifdef LMMS_TESTING
+	if (s_loadSettingsProbe != nullptr) { s_loadSettingsProbe(); }
+#endif
 
 	m_enabledModel.loadSettings( _this, "enabled" );
 
@@ -160,21 +216,32 @@ void EffectChain::loadSettings( const QDomElement & _this )
 		{
 			QDomElement effectData = node.toElement();
 
-			const QString name = effectData.attribute( "name" );
-			EffectKey key( effectData.elementsByTagName( "key" ).item( 0 ).toElement() );
-
-			Effect* e = Effect::instantiate( name.toUtf8(), this, &key );
-
-			if( e != nullptr && e->isOkay() && e->nodeName() == node.nodeName() )
+			Effect* e = loadConvertedEffect(effectData, this);
+			if (e == nullptr)
 			{
-				e->restoreState( effectData );
-			}
-			else
-			{
-				delete e;
-				e = new DummyEffect( parentModel(), effectData );
+				const QString name = effectData.attribute( "name" );
+				EffectKey key( effectData.elementsByTagName( "key" ).item( 0 ).toElement() );
+
+				e = Effect::instantiate( name.toUtf8(), this, &key );
+
+				if( e != nullptr && e->isOkay() && e->nodeName() == node.nodeName() )
+				{
+					e->restoreState( effectData );
+					// 0.5.0 Q050-018: a hosted plug-in binary that is missing leaves a placeholder; keep the file's XML.
+					if (!e->unavailableReason().isEmpty())
+					{
+						e->setPreservedPluginData(missingdevices::detachedCopy(effectData));
+					}
+				}
+				else
+				{
+					delete e;
+					e = new DummyEffect( parentModel(), effectData );
+				}
+
 			}
 
+			e->setEffectChain( this );
 			m_effects.push_back( e );
 			++fx_loaded;
 		}
@@ -213,6 +280,13 @@ void EffectChain::appendEffect( Effect * _effect )
 
 
 
+void EffectChain::setEnabledUnjournalled(bool on)
+{
+	const bool journalling = m_enabledModel.testAndSetJournalling(false);
+	m_enabledModel.setValue(on);
+	m_enabledModel.setJournalling(journalling);
+}
+
 void EffectChain::removeEffect( Effect * _effect )
 {
 	Engine::audioEngine()->requestChangeInModel();
@@ -224,6 +298,10 @@ void EffectChain::removeEffect( Effect * _effect )
 		return;
 	}
 	m_effects.erase( found );
+	// A removed effect is no longer on this chain, so it must stop naming it: callers read a nullptr
+	// effectChain() as "taken off its chain". Set inside the same model change as the erase, so the
+	// audio thread never sees the effect's back-pointer disagree with the list it renders.
+	_effect->setEffectChain( nullptr );
 
 	rebuildRoutingGraph();
 
@@ -301,7 +379,8 @@ bool EffectChain::processAudioBuffer(AudioBuffer& buffer, const AudioBuffer* sid
 	bool moreEffects = false;
 	for (Effect* effect : m_effects)
 	{
-		moreEffects |= effect->processAudioBuffer(buffer);
+		// 0.5.0 L10 (MX-080): through the device's delta tap - its plain output while the tap is off.
+		moreEffects |= effect->deltaTap().process(*effect, buffer);
 	}
 
 	m_sidechainBuffer = previousSidechain;
@@ -438,6 +517,15 @@ void EffectChain::clear()
 
 	Engine::audioEngine()->requestChangeInModel();
 
+	// The routing graph's nodes point at the effects. Drop those nodes while
+	// the effects are still alive and while the audio thread is excluded.
+	m_graph->clear();
+	m_effectNodes.clear();
+	m_graphInput.reset();
+	m_graphOutput.reset();
+	m_graphActive = false;
+	m_patchDropped = false;
+
 	while (m_effects.size())
 	{
 		auto e = m_effects[m_effects.size() - 1];
@@ -448,10 +536,6 @@ void EffectChain::clear()
 	Engine::audioEngine()->doneChangeInModel();
 
 	m_enabledModel.setValue( false );
-
-	// Nothing left to route: the graph goes back to empty (and inactive), so
-	// the chain's signal path is exactly the plain loop again.
-	rebuildRoutingGraph();
 
 	refreshLatency();
 }

@@ -26,9 +26,12 @@
 #define LMMS_PROJECT_JOURNAL_H
 
 #include <functional>
+#include <memory>
 
+#include <QByteArray>
 #include <QHash>
 #include <QStack>
+#include <QString>
 #include <QVector>
 
 #include "LmmsTypes.h"
@@ -82,6 +85,20 @@ class ProjectJournal
 public:
 	static const int MAX_UNDO_STATES;
 
+	/*! What a change listener hears (Q050-334.1): a step was pushed, undone or redone, or the project was replaced.
+	 *  A listener is told after the fact and must only record or post. A process-wide hook, so it needs no journal
+	 *  to exist yet; the cost with none installed is one test of an empty function. */
+	enum class Change
+	{
+		Step,
+		Undo,
+		Redo,
+		ProjectReplaced,
+	};
+	using ChangeListener = std::function<void( Change )>;
+	static void setChangeListener( ChangeListener listener );
+	static void notifyChange( Change change );
+
 	//! The hard ceiling a client may raise the count cap to. A "bound" that can
 	//! be set to a billion is not a bound; measured against the byte budget,
 	//! 10000 steps of full-Song XML is already far past what an undo stack may
@@ -100,6 +117,15 @@ public:
 
 	void undo();
 	void redo();
+
+	/*! Called from a redo action while redo() replays it, when the replay did not happen: the action changed
+	 *  nothing. redo() then takes back the actions the step replayed before it, and returns the step to the redo
+	 *  stack unrecorded, so no undo step is added for a redo that did nothing. \a reason says why; the control
+	 *  layer reads it with takeRedoDecline(). For an action-only step: a step that restored journalled objects
+	 *  cannot be taken back this way. */
+	void declineRedo( const QString& reason );
+	//! The reason the last redo was declined, or empty; clears it.
+	QString takeRedoDecline();
 
 	bool canUndo() const;
 	bool canRedo() const;
@@ -151,6 +177,16 @@ public:
 	void addJournalStructure( std::function<void()> undo, std::function<void()> redo,
 		qint64 payloadBytes );
 
+	/*! Q050-044: drops the \a count newest undo steps and releases their bytes. A whole-session
+	 *  checkpoint (script.run, project.open) replaces the finer steps a script pushed while it
+	 *  ran: its one step restores the entire project, so those steps would only undo what it
+	 *  already undoes. Returns how many were dropped; the redo stack is left alone. */
+	int discardTopSteps( int count );
+	/*! Q050-044: drops every step a project load put back (pushLoadedStep). Undoing a project.open returns to
+	 *  the displaced session, and the opened project's own history must not stay beneath it: one more undo
+	 *  would replace the restored session with an earlier state of the OTHER project. Returns the count. */
+	int discardLoadedSteps();
+
 	bool isJournalling() const
 	{
 		return m_journalling;
@@ -171,6 +207,11 @@ public:
 	 */
 	int undoDepth() const { return m_undoCheckPoints.size(); }
 	void mergeCheckpointsFrom( int depth );
+	/*! The same merge, with the window named by SERIAL instead of by index: every
+	 *  step pushed after the newest step whose serial was @a serial (take it with
+	 *  topStepSerial() before the work). An index taken before the work goes
+	 *  stale when a bound evicts steps under it; a serial does not. */
+	void mergeCheckpointsSince( quint64 serial );
 
 	// ---- the bound (Zene Studio, task #623: "undo depth and drag coalescing") ----
 
@@ -216,6 +257,9 @@ public:
 	 */
 	bool coalesceTopStepIntoPrevious();
 
+	//! Whether the newest step holds a capture of the object @a id: a change just made to it has its step on top.
+	bool topStepCaptures( jo_id_t id ) const;
+
 	/*! The serial of the newest step, 0 when the stack is empty. A transaction
 	 *  record holds it so control.undo can tell "this step is still on the
 	 *  stack" from "a bound evicted it". */
@@ -223,11 +267,90 @@ public:
 	/*! The serial of the OLDEST retained step; the next serial to be issued when
 	 *  the stack is empty, so `record.step < oldestStepSerial()` means evicted. */
 	quint64 oldestStepSerial() const;
+	/*! The newest serial a bound evicted, 0 when none (Q050-214). A step older than the stack's oldest may
+	 *  also just have been undone - by Ctrl+Z, say - and only this one tells the two apart. */
+	quint64 newestEvictedSerial() const { return m_newestEvictedSerial; }
 	/*! The serial of the step DIRECTLY BELOW the newest one, 0 when there is
 	 *  none. The coalescing rule uses it to recognise "the step below the one
 	 *  this call just pushed is the run I am still in" without holding an index:
 	 *  a bound can evict steps under an index, but a serial is stable. */
 	quint64 previousStepSerial() const;
+	/*! How many retained undo steps have a serial at or above @a serial: the number of undos that take the
+	 *  stack back to just before that step. Counted from the stack, because serials are not contiguous -
+	 *  a redo issues a fresh one and a coalesced step keeps an older one - so the serial difference
+	 *  overstates the distance. 0 when no retained step is at or above @a serial. */
+	int retainedStepsFrom(quint64 serial) const;
+
+	// ---- WF-033: the undo history saved with the project ----
+	// (docs/UNDO-HISTORY-PERSISTENCE.md; include/UndoHistory.h is the policy.)
+
+	//! A compressed full-project document: the state ONE undo step returns to.
+	using Snapshot = std::shared_ptr<const QByteArray>;
+
+	/*! What decides whether steps carry snapshots and how many are kept. The
+	 *  journal does not know what a project is, so capture is delegated; it
+	 *  only attaches what it is handed to the step being pushed, carries it
+	 *  through undo, redo, merge and coalescing, and drops it from steps the
+	 *  policy's bounds no longer keep (the memory bound). */
+	class SnapshotPolicy
+	{
+	public:
+		virtual ~SnapshotPolicy() = default;
+		//! Whether steps capture their pre-edit state at all (opt-in, off by default).
+		virtual bool capturing() const = 0;
+		//! The newest steps whose snapshots are kept (the persisted step limit).
+		virtual int keepSteps() const = 0;
+		//! The compressed bytes those snapshots may occupy together (the persisted cap).
+		virtual qint64 keepBytes() const = 0;
+		//! The project as it is NOW, compressed; null when it cannot be captured.
+		virtual Snapshot capture() = 0;
+	};
+	//! Installs the policy (UndoHistory); nullptr turns capture off.
+	void setSnapshotPolicy( SnapshotPolicy * policy ) { m_snapshotPolicy = policy; }
+	//! Re-applies the policy's bounds now (a setting changed): drops what it no longer keeps.
+	void applySnapshotPolicy() { pruneSnapshots(); }
+
+	/*! Brackets ONE edit - a control command (ControlRegistry::runHandler).
+	 *  The pre-edit state is captured once, at the outermost begin, and every
+	 *  step the edit pushes is given it: an ACTION step is pushed AFTER its
+	 *  change (the closure undoes what already happened), so the state before
+	 *  it can only be taken before the handler runs. */
+	void beginEdit();
+	void endEdit();
+
+	//! One undo step's snapshot as the persistence plan reads it, newest first.
+	struct StepSnapshot
+	{
+		Snapshot snapshot;  //!< null when never captured or dropped by a bound
+		int bytes = -1;     //!< its compressed size; -1 when it was never captured
+	};
+	//! The undo stack's snapshots, NEWEST step first.
+	QVector<StepSnapshot> stepSnapshots() const;
+
+	/*! Which of those snapshots a save keeps, newest first (WF-033's rule, one
+	 *  definition for the save and for the memory bound): at most \a keepSteps,
+	 *  and together at most \a keepBytes - the OLDEST go first. A snapshot that
+	 *  ALONE exceeds the cap stops the walk there: that step and every older one
+	 *  are not kept, and `oversize` says so. A step with no snapshot stops it
+	 *  too (`unavailable`): a history must be contiguous from the newest step. */
+	struct PersistPlan
+	{
+		int saved = 0;             //!< steps kept, counted from the newest
+		qint64 bytes = 0;          //!< their compressed bytes together
+		int droppedOldest = 0;     //!< older steps not kept: the step limit or the size cap
+		bool oversize = false;     //!< one snapshot alone exceeded the cap
+		qint64 oversizeBytes = 0;  //!< that snapshot's size
+		int unavailable = 0;       //!< steps (and older) whose pre-edit state was never captured
+	};
+	static PersistPlan planPersist( const QVector<StepSnapshot> & newestFirst, int keepSteps,
+		qint64 keepBytes );
+
+	/*! Pushes a step loaded from a project file: \a undo / \a redo replace the
+	 *  whole project, \a before is the state it returns to. Bypasses
+	 *  isJournalling() because a load runs with journalling off. Counts 0 bytes
+	 *  against the session byte budget: snapshots are bounded by WF-033's own
+	 *  caps (UndoHistory), not by the session budget (docs/UNDO-BOUNDS.md). */
+	void pushLoadedStep( std::function<void()> undo, std::function<void()> redo, Snapshot before );
 
 	void setJournalling( const bool _on )
 	{
@@ -252,11 +375,26 @@ public:
 
 	//! hack, not used when saving a file
 	static jo_id_t idToSave( jo_id_t id );
+	/*! WF-033: the id a model or an automation link writes - idToSave() in a
+	 *  file, the id ITSELF while an undo snapshot is built (setSnapshotIds), so a
+	 *  restore gives every model back exactly the id later steps name. While it
+	 *  is set, every AutomatableModel writes its id (not only an automated one). */
+	static jo_id_t idToWrite( jo_id_t id ) { return s_snapshotIds ? id : idToSave( id ); }
+	static bool snapshotIds() { return s_snapshotIds; }
+	static void setSnapshotIds( bool on ) { s_snapshotIds = on; }
 	//! hack, not used when loading a savefile
 	static jo_id_t idFromSave( jo_id_t id );
 
 	void clearJournal();
 	void stopAllJournalling();
+
+	/*! Registers the one observer told whenever either stack moves: a step pushed, undone, redone, merged,
+	 *  evicted, cleared or loaded. The Edit menu's Undo/Redo enablement is read from these stacks, and a
+	 *  disabled QAction does not fire its shortcut, so the menu has to follow the stacks rather than the last
+	 *  time it was opened. GUI thread only; an empty function removes the observer.
+	 */
+	void setStackObserver( std::function<void()> observer );
+
 	JournallingObject * journallingObject( const jo_id_t _id )
 	{
 		if( m_joIDs.contains( _id ) )
@@ -265,6 +403,15 @@ public:
 		}
 		return nullptr;
 	}
+
+	/*! Every journalling object of the session, by id.
+	 *
+	 *  The control thread's automation drain walks it to find the clips that
+	 *  have writes queued for it (cluster 5388) - the journal knows every clip
+	 *  of the session, including the inline automation clip of a note, which
+	 *  is on no track at all. The walk is a control-thread walk and touches no
+	 *  engine state, so it runs without the render guard. */
+	const QHash<jo_id_t, JournallingObject*>& journallingObjects() const { return m_joIDs; }
 
 
 private:
@@ -315,6 +462,18 @@ private:
 		//! is still on the stack" from "a bound evicted it" without holding a
 		//! pointer into the stack.
 		quint64 serial = 0;
+		//! WF-033: the whole project as it was before this step - the state its
+		//! undo returns to - when the policy captured one. Survives undo/redo
+		//! (a step's pre-state does not change by being undone) and merges keep
+		//! the EARLIEST, the same rule as the object captures above.
+		Snapshot snapshot;
+		//! The snapshot's compressed size; -1 when none was captured. Kept after
+		//! a bound drops the snapshot itself, so a save can say WHY it is gone.
+		int snapshotBytes = -1;
+		//! WF-033: a step a project load put back from the file. Never merged or
+		//! coalesced with another: the command that loaded it (project.open) is not
+		//! an edit, and folding the file's history into one step would erase it.
+		bool loaded = false;
 
 		bool hasActions() const { return !actions.isEmpty(); }
 		bool empty() const { return objects.isEmpty() && actions.isEmpty(); }
@@ -345,10 +504,40 @@ private:
 	//! Restores \a saved into its object, journalling off.
 	void restoreState( SavedObject & saved );
 
+	//! WF-033: the pre-edit snapshot for an OBJECT step (taken now: an object
+	//! checkpoint is pushed before its change) or for an ACTION step (only the
+	//! one captured at beginEdit - after the change it is too late).
+	Snapshot snapshotForObjectStep();
+	Snapshot snapshotForActionStep() const { return m_editDepth > 0 ? m_pendingSnapshot : Snapshot(); }
+	static void attachSnapshot( CheckPoint & step, const Snapshot & snapshot );
+	//! Drops the snapshots the policy's bounds no longer keep (memory bound).
+	void pruneSnapshots();
+
+	//! Tells the observer that the stacks may have moved when the mutator that declares it returns, on
+	//! every return path. The mutators are the only code that changes the stacks.
+	class StackChangeNotice
+	{
+	public:
+		explicit StackChangeNotice( ProjectJournal* journal ) : m_journal( journal ) {}
+		~StackChangeNotice() { m_journal->notifyStackChanged(); }
+		StackChangeNotice( const StackChangeNotice& ) = delete;
+		StackChangeNotice& operator=( const StackChangeNotice& ) = delete;
+
+	private:
+		ProjectJournal* m_journal;
+	};
+	void notifyStackChanged() const
+	{
+		if( m_stackObserver ) { m_stackObserver(); }
+	}
+
 	JoIdMap m_joIDs;
 
 	CheckPointStack m_undoCheckPoints;
 	CheckPointStack m_redoCheckPoints;
+
+	//! The GUI's view of the stacks (setStackObserver()); empty when no GUI is listening.
+	std::function<void()> m_stackObserver;
 
 	bool m_journalling;
 
@@ -362,8 +551,36 @@ private:
 	//! Steps a bound has evicted, and steps coalescing has merged away.
 	int m_evicted = 0;
 	int m_coalesced = 0;
+	quint64 m_newestEvictedSerial = 0;
 	//! The last serial handed to a step; 0 means "no step has been pushed yet".
 	quint64 m_stepSerial = 0;
+	//! Set by declineRedo() during a redo, read and cleared by redo() and takeRedoDecline().
+	QString m_redoDecline;
+
+	//! WF-033: Song::captureUndoSnapshot is building its document (idToWrite).
+	static bool s_snapshotIds;
+	//! WF-033 (see SnapshotPolicy): not owned.
+	SnapshotPolicy * m_snapshotPolicy = nullptr;
+	int m_editDepth = 0;
+	Snapshot m_pendingSnapshot;
+	bool m_capturing = false;
+
+public:
+	/*! WF-033: the stacks and their accounting, lifted out while a snapshot
+	 *  restore runs a whole project load (Song::restoreUndoSnapshot) - a load
+	 *  clears the journal, and the steps around the one being undone must
+	 *  survive it. Opaque: only the journal reads it back. */
+	struct DetachedHistory
+	{
+		CheckPointStack undo;
+		CheckPointStack redo;
+		qint64 retainedBytes = 0;
+		int evicted = 0;
+		int coalesced = 0;
+		quint64 newestEvictedSerial = 0;
+	};
+	DetachedHistory detachHistory();
+	void reattachHistory( DetachedHistory && history );
 
 } ;
 

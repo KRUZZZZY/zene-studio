@@ -39,6 +39,12 @@ class EffectChain;
 class Effect;
 class AutomatableModel;
 
+//! The REGISTERED model wrappers this header returns (FloatModel / BoolModel).
+//! Declared here rather than reached through ScriptBindings.h so the header
+//! keeps its forward-declaration-only dependency set.
+class LuaFloatModel;
+class LuaBoolModel;
+
 //! Forward declaration at namespace scope: naming it as `const struct
 //! ScriptCommand&` inside ScriptDawBindings would declare a NEW nested type.
 struct ScriptCommand;
@@ -64,9 +70,9 @@ class LuaMixerChannel
 {
 public:
 	LuaMixerChannel() = default;
-	explicit LuaMixerChannel(MixerChannel* channel) : m_channel(channel) {}
+	explicit LuaMixerChannel(MixerChannel* channel);
 
-	bool isValid() const { return m_channel != nullptr; }
+	bool isValid() const;
 	int index() const;
 	//! "ch-<n>", the same stable id mixer.* uses.
 	QString id() const;
@@ -86,9 +92,16 @@ public:
 
 	//! The channel's fader / mute / solo as model wrappers, so a script can
 	//! reach the model (min, max, display name) rather than only the value.
-	AutomatableModel* gainModel() const;
-	AutomatableModel* muteModel() const;
-	AutomatableModel* soloModel() const;
+	//!
+	//! These return the REGISTERED Lua classes - FloatModel / BoolModel -
+	//! pooled the way the instrument-track bindings pool theirs, NOT a raw
+	//! `AutomatableModel*`: the bridge wraps a returned pointer as the class
+	//! that pointer's static type is registered under, and AutomatableModel is
+	//! not a registered class, so a raw model raised "The class is not
+	//! registered in LuaBridge" out of the script.
+	LuaFloatModel& gainModel() const;
+	LuaBoolModel& muteModel() const;
+	LuaBoolModel& soloModel() const;
 
 	//! The channel's effect chain (rack chain 0), as the Lua view of it: the
 	//! registered class is LuaEffectChain ("EffectChain"), so a raw
@@ -102,7 +115,8 @@ public:
 	bool sendPreFader(int index) const;
 
 private:
-	MixerChannel* m_channel{nullptr};
+	MixerChannel* resolve() const;
+	QString m_id;
 };
 
 //! Lua-facing mixer (registered as `Mixer`).
@@ -127,12 +141,19 @@ public:
  *
  *  Parameters are the engine's own AutomatableModels (the same list
  *  `plugin.param_get` reads), so a parameter read here and a parameter read
- *  through the control surface cannot disagree. */
+ *  through the control surface cannot disagree.
+ *
+ *  The wrapper names its device by STABLE IDS - the mixer channel that owns the
+ *  chain and the device's own id - and resolves them on every access. It holds
+ *  no pointer to the chain and none to the device: a script may remove the
+ *  channel (which takes the chain and every device on it with it) and then read
+ *  the wrapper it kept, and a pointer would dangle (cluster 1663). */
 class LuaEffect
 {
 public:
 	LuaEffect() = default;
-	LuaEffect(EffectChain* chain, Effect* effect) : m_chain(chain), m_effect(effect) {}
+	LuaEffect(const QString& mixerChannelId, int effectId) :
+		m_mixerChannelId(mixerChannelId), m_effectId(effectId) {}
 
 	bool isValid() const { return m_effective() != nullptr; }
 	int index() const;
@@ -146,23 +167,29 @@ public:
 
 	int parameterCount() const;
 	QString parameterName(int index) const;
-	//! Parameter \a index (-1 when out of range).
-	AutomatableModel* parameter(int index) const;
+	//! Parameter \a index as the registered FloatModel wrapper (an invalid
+	//! wrapper when out of range), NOT a raw AutomatableModel*: the bridge
+	//! cannot expose an unregistered class, so the raw model raised out of the
+	//! script before a parameter was reachable from Lua at all.
+	LuaFloatModel& parameter(int index) const;
 
 private:
 	Effect* m_effective() const;
-	EffectChain* m_chain{nullptr};
-	Effect* m_effect{nullptr};
+	//! The chain the wrapper names, or null when its channel is gone.
+	EffectChain* m_chain() const;
+	QString m_mixerChannelId;
+	int m_effectId{-1};
 };
 
-//! Lua-facing effect chain (registered as `EffectChain`).
+//! Lua-facing effect chain (registered as `EffectChain`), resolved through its
+//! owning channel's stable id on each access.
 class LuaEffectChain
 {
 public:
 	LuaEffectChain() = default;
-	explicit LuaEffectChain(EffectChain* chain) : m_chain(chain) {}
+	explicit LuaEffectChain(QString mixerChannelId) : m_mixerChannelId(mixerChannelId) {}
 
-	bool isValid() const { return m_chain != nullptr; }
+	bool isValid() const;
 	int effectCount() const;
 	LuaEffect& effect(int index) const;
 	LuaEffect& effectById(const QString& id) const;
@@ -170,10 +197,11 @@ public:
 	//! catalogue id (plugin.list) or a plugin name this build can load.
 	LuaEffect& loadEffect(const QString& device) const;
 	//! Unload the effect at \a index. Refused when the index is not there.
-	void removeEffect(int index);
+	bool removeEffect(int index);  //!< true when the effect was removed; false when it was refused (see ScriptDawEdit.cpp)
 
 private:
-	EffectChain* m_chain{nullptr};
+	EffectChain* resolve() const;
+	QString m_mixerChannelId;
 };
 
 // ---------------------------------------------------------------------------
@@ -210,12 +238,20 @@ void beginRun();
 //! it (ScriptBindings.cpp's LuaFloatModel::value() does the same).
 void syncForRead();
 
+//! Resolve a channel-owned child view by the channel's stable object id.
+AutomatableModel* mixerChannelGainModel(const QString& mixerChannelId);
+EffectChain* mixerChannelEffectChain(const QString& mixerChannelId);
+
 //! Pooled wrappers with stable addresses (Lua userdata holds references to
 //! them). Used by the read side above and by the edit side in ScriptDawEdit.cpp.
 LuaMixerChannel& newMixerChannel(MixerChannel* channel);
-LuaEffectChain& newEffectChain(EffectChain* chain);
-LuaEffect& newEffect(EffectChain* chain, Effect* effect);
+LuaEffectChain& newEffectChain(const QString& mixerChannelId);
+LuaEffect& newEffect(const QString& mixerChannelId, Effect* effect);
 LuaMixer& mixerView();
+
+//! How many view wrappers the pools hold right now: the pools grow with the
+//! OBJECTS a script names, not with the accesses it makes (a diagnostic).
+int viewPoolSize();
 
 //! Apply one queued command on the apply side. Returns true when \a type was
 //! a DAW-control op, i.e. when the caller must not look at it again.

@@ -31,6 +31,7 @@
 #include <QtGlobal>
 
 #include <atomic>
+#include <cstdint>
 
 namespace lmms
 {
@@ -106,6 +107,16 @@ public:
 	//! GUI thread to build its binding (tests / diagnostics).
 	bool hasPendingBinding() const;
 
+	//! Throw away a control-change waiting in the pending slot. GUI thread only.
+	//!
+	//! Called when the user explicitly disarms: the queued request belongs to a learn
+	//! they just cancelled, and applying it later would bind that control-change to
+	//! whatever control the NEXT armed learn focuses. The exchange is the same claim
+	//! applyPendingBinding() uses, so a request a concurrent MIDI thread is claiming at
+	//! this moment is taken by whichever of the two gets there first - never dropped
+	//! silently by a plain clear, and never applied twice.
+	void cancelPendingBinding();
+
 	//! Number of bindings created since process start (tests / diagnostics).
 	unsigned int bindingCount() const;
 
@@ -125,24 +136,22 @@ private:
 	bool bindFocusedControl(int channel, int controllerNum);
 
 	//! MIDI input thread: record the request. No allocation, no lock.
-	void requestBinding(int channel, int controllerNum);
+	void requestBinding(int channel, int controllerNum, std::uint64_t seen);
 
 	//! True when the calling thread is the application (GUI) thread.
 	static bool onGuiThread();
 
-	std::atomic<bool> m_enabled{false};
+	//! Armed flag, the pending control-change (channel and controller number) and a generation,
+	//! packed into one lock-free word (layout in MidiLearn.cpp). The MIDI input thread claims the
+	//! pending slot with a single compare-and-swap against the state it checked, so there is one
+	//! outstanding request at a time, and a request made for a learn the GUI thread has since ended
+	//! is dropped rather than published.
+	std::atomic<std::uint64_t> m_slot{0};
 
 	//! The MIDI input thread cannot look at m_focusTarget (a QPointer owned by
 	//! the GUI thread); it reads this flag instead.
 	std::atomic<bool> m_focusTargetSet{false};
 	QPointer<AutomatableModel> m_focusTarget;
-
-	//! Lock-free single slot: payload first, then m_pendingBinding with release
-	//! ordering. One outstanding request at a time, by construction - the first
-	//! control-change of an armed learn claims the slot and spends the learn.
-	std::atomic<bool> m_pendingBinding{false};
-	std::atomic<int> m_pendingChannel{0};
-	std::atomic<int> m_pendingController{0};
 
 	std::atomic<unsigned int> m_bindingCount{0};
 	std::atomic<Qt::HANDLE> m_lastBindingThreadId{nullptr};

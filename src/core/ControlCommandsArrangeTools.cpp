@@ -29,7 +29,8 @@
  *  - clip.remove_silence (ED-040): the stretches of a sample clip quieter than a threshold for longer
  *    than a length are cut out, as one undo step;
  *  - track.folder_move (ED-035): every clip inside a folder (its sub-folders too) moved together - the
- *    folder handled as one block of the song, one undo step. */
+ *    folder handled as one block of the song, one undo step; or, with a span, one of the folder's summary
+ *    clips (FolderSummary.h) - the clips starting inside it. */
 
 #include <algorithm>
 #include <cmath>
@@ -71,10 +72,15 @@ ControlResult listClips(const QJsonObject& args)
 	const QString onTrack = args.value(QStringLiteral("track")).toString();
 	const QString text = args.value(QStringLiteral("name")).toString();
 	const int limit = args.value(QStringLiteral("limit")).toInt(500);
+	// A 'track' that names no live track is a typo, not an empty track: refuse it the way
+	// automation.get_state (ControlCommandsAutomation.cpp:129) refuses a filter that matched
+	// nothing, so a misspelt id cannot read as a successful answer about the wrong track.
 	QJsonArray clips;
+	bool matchedTrack = onTrack.isEmpty();
 	for (const Track* track : Engine::getSong()->tracks())
 	{
 		if (!onTrack.isEmpty() && trackIdOf(track) != onTrack) { continue; }
+		matchedTrack = true;
 		for (const Clip* clip : track->getClips())
 		{
 			if (!text.isEmpty() && !clip->name().contains(text, Qt::CaseInsensitive)) { continue; }
@@ -85,6 +91,11 @@ ControlResult listClips(const QJsonObject& args)
 				{QStringLiteral("length"), static_cast<int>(clip->length().getTicks())},
 				{QStringLiteral("kind"), track->type() == Track::Type::Instrument ? QStringLiteral("midi") : kindOf(clip)}});
 		}
+	}
+	if (!matchedTrack)
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("no track %1 (the song has %2)").arg(onTrack).arg(Engine::getSong()->tracks().size()));
 	}
 	return ControlResult::success({{QStringLiteral("clips"), clips}, {QStringLiteral("count"), clips.size()}});
 }
@@ -98,9 +109,15 @@ std::vector<tick_t> transientsAround(tick_t tick)
 		for (Clip* clip : track->getClips())
 		{
 			auto* audio = dynamic_cast<SampleClip*>(clip);
-			if (audio == nullptr || tick < clip->startPosition().getTicks() || tick >= clip->endPosition().getTicks()) { continue; }
+			const tick_t clipStart = clip->startPosition().getTicks();
+			const tick_t clipEnd = clip->endPosition().getTicks();
+			if (audio == nullptr || tick < clipStart || tick >= clipEnd) { continue; }
 			const tick_t origin = clip->startPosition().getTicks() + clip->startTimeOffset().getTicks();
-			for (const int at : clipTransientTicks(*audio)) { out.push_back(origin + at); }
+			for (const int at : clipTransientTicks(*audio))
+			{
+				const tick_t mapped = origin + at;
+				if (mapped >= clipStart && mapped < clipEnd) { out.push_back(mapped); }
+			}
 		}
 	}
 	std::sort(out.begin(), out.end());
@@ -168,7 +185,10 @@ ControlResult removeSilence(const QJsonObject& args)
 	if (clip == nullptr) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'clip' is an audio clip")); }
 	const float level = std::pow(10.f, static_cast<float>(args.value(QStringLiteral("threshold_db")).toDouble(-50.0)) / 20.f);
 	const tick_t minTicks = std::max(1, args.value(QStringLiteral("min_length")).toInt(48));
-	const auto minFrames = static_cast<f_cnt_t>(minTicks * Engine::framesPerTick());
+	// min_length counts TICKS and quietRuns() counts frames of the clip's OWN sample, so the scalar
+	// has to be the clip's: at the engine's rate a 96 kHz clip in a 48 kHz engine would cut half the
+	// frames asked for. clipFramesPerTick() is where the clip's tempo mode enters the mapping.
+	const auto minFrames = static_cast<f_cnt_t>(std::ceil(static_cast<double>(minTicks) * clip->clipFramesPerTick()));
 	std::vector<std::pair<tick_t, tick_t>> cuts;
 	for (const auto& [from, to] : quietRuns(*clip, level, minFrames))
 	{
@@ -182,17 +202,56 @@ ControlResult removeSilence(const QJsonObject& args)
 	return ControlResult::success({{QStringLiteral("removed"), static_cast<int>(cuts.size())}});
 }
 
-//! The tracks inside @a folder that hold clips, and the earliest clip start among them in @a earliest.
-QVector<JournallingObject*> folderTracks(const TrackFolder* folder, tick_t* earliest)
+//! Whether a clip starting at @a start is one the move takes: inside [@a from, @a to), or any with no span.
+bool inSpan(tick_t start, tick_t from, tick_t to)
+{
+	return from < 0 || (start >= from && start < to);
+}
+
+//! The tracks inside @a folder holding clips the move takes, and the earliest start among those clips in @a earliest.
+QVector<JournallingObject*> folderTracks(const TrackFolder* folder, tick_t from, tick_t to, tick_t* earliest)
 {
 	QVector<JournallingObject*> tracks;
 	for (Track* track : Engine::getSong()->tracks())
 	{
-		if (!insideFolder(track, folder) || track->getClips().empty()) { continue; }
-		tracks.append(track);
-		for (const Clip* clip : track->getClips()) { *earliest = std::min<tick_t>(*earliest, clip->startPosition().getTicks()); }
+		if (!insideFolder(track, folder)) { continue; }
+		bool holds = false;
+		for (const Clip* clip : track->getClips())
+		{
+			if (!inSpan(clip->startPosition().getTicks(), from, to)) { continue; }
+			holds = true;
+			*earliest = std::min<tick_t>(*earliest, clip->startPosition().getTicks());
+		}
+		if (holds) { tracks.append(track); }
 	}
 	return tracks;
+}
+
+//! ED-035's summary clip: 'start' and 'end' together limit the move to the clips starting in [start, end); -1 for none.
+bool spanOf(const QJsonObject& args, tick_t* from, tick_t* to)
+{
+	const bool hasStart = args.contains(QStringLiteral("start"));
+	if (hasStart != args.contains(QStringLiteral("end"))) { return false; }
+	*from = hasStart ? args.value(QStringLiteral("start")).toInt() : -1;
+	*to = hasStart ? args.value(QStringLiteral("end")).toInt() : -1;
+	return !hasStart || *to > *from;
+}
+
+//! Move the clips of @a tracks starting in [@a from, @a to) (every one with no span) by @a delta; how many moved.
+int moveClips(const QVector<JournallingObject*>& tracks, tick_t from, tick_t to, tick_t delta)
+{
+	int moved = 0;
+	for (JournallingObject* object : tracks)
+	{
+		// The clips the move takes are found first: a moved clip must not be found again past its new start.
+		std::vector<Clip*> taken;
+		for (Clip* clip : static_cast<Track*>(object)->getClips())
+		{
+			if (inSpan(clip->startPosition().getTicks(), from, to)) { taken.push_back(clip); }
+		}
+		for (Clip* clip : taken) { clip->movePosition(TimePos(clip->startPosition().getTicks() + delta)); ++moved; }
+	}
+	return moved;
 }
 
 ControlResult folderMove(const QJsonObject& args)
@@ -200,17 +259,16 @@ ControlResult folderMove(const QJsonObject& args)
 	ControlResult error;
 	const auto* folder = dynamic_cast<const TrackFolder*>(resolveTrack(args.value(QStringLiteral("folder")).toString(), &error));
 	if (folder == nullptr) { return error.errorMessage.isEmpty() ? ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'folder' is a folder track")) : error; }
+	tick_t from = -1;
+	tick_t to = -1;
+	if (!spanOf(args, &from, &to)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'start' and 'end' come together, 'end' after 'start'")); }
 	const tick_t delta = args.value(QStringLiteral("delta")).toInt();
 	tick_t earliest = MaxSongLength;
-	const QVector<JournallingObject*> tracks = folderTracks(folder, &earliest);
-	if (tracks.isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the folder holds no clips")); }
+	const QVector<JournallingObject*> tracks = folderTracks(folder, from, to, &earliest);
+	if (tracks.isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the folder holds no clips there")); }
 	if (delta == 0 || earliest + delta < 0) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'delta' moves the clips, and not before the song's start")); }
 	addUndoStep(tracks);
-	int moved = 0;
-	for (JournallingObject* object : tracks)
-	{
-		for (Clip* clip : static_cast<Track*>(object)->getClips()) { clip->movePosition(TimePos(clip->startPosition().getTicks() + delta)); ++moved; }
-	}
+	const int moved = moveClips(tracks, from, to, delta);
 	Engine::getSong()->setModified();
 	return ControlResult::success({{QStringLiteral("moved"), moved}, {QStringLiteral("tracks"), static_cast<int>(tracks.size())}});
 }
@@ -238,8 +296,10 @@ void registerArrangeToolCommands(ControlRegistry& registry)
 		{{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("threshold_db"), numberProperty()},
 			{QStringLiteral("min_length"), integerProperty(1, 192 * 64)}}, {QStringLiteral("clip")}, true, removeSilence);
 	add(registry, "track.folder_move", QStringLiteral("Move every clip inside folder track 'folder' (its sub-folders too) by 'delta' "
-		"ticks - the folder's part of the song as one block. One undo step."),
-		{{QStringLiteral("folder"), stringProperty()}, {QStringLiteral("delta"), integerProperty(-192 * 9999, 192 * 9999)}},
+		"ticks - the folder's part of the song as one block. With 'start' and 'end' only the clips starting in [start, end) "
+		"move: one of the folder's summary clips, the spans its row draws. One undo step."),
+		{{QStringLiteral("folder"), stringProperty()}, {QStringLiteral("delta"), integerProperty(-192 * 9999, 192 * 9999)},
+			{QStringLiteral("start"), integerProperty(0, 192 * 9999)}, {QStringLiteral("end"), integerProperty(1, 192 * 9999)}},
 		{QStringLiteral("folder"), QStringLiteral("delta")}, true, folderMove);
 }
 

@@ -31,6 +31,7 @@ namespace lmms::gui
 //! Set global palette via array, checking bounds
 void ColorChooser::setPalette (QVector<QColor> colors)
 {
+	defaultPalette();
 	const int max = qMin (colors.size(), 48);
 	for (int i = 0; i < max; i++)
 	{
@@ -68,14 +69,18 @@ QVector<QColor> ColorChooser::getPalette (Palette palette)
 
 
 
-//! Copy the current QColorDialog palette into an array
+//! Return the QColorDialog standard palette captured before the first custom palette is applied
 QVector<QColor> ColorChooser::defaultPalette()
 {
-	QVector <QColor> result (48);
-	for (int i = 0; i < 48; i++)
+	static const QVector<QColor> result = []
 	{
-		result[i] = (QColorDialog::standardColor(i));
-	}
+		QVector<QColor> palette (48);
+		for (int i = 0; i < 48; i++)
+		{
+			palette[i] = QColorDialog::standardColor(i);
+		}
+		return palette;
+	}();
 	return result;
 }
 

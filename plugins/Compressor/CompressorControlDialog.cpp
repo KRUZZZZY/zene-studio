@@ -389,19 +389,24 @@ void CompressorControlDialog::updateDisplay()
 
 	if (!m_controls->m_effect->isEnabled() || !m_controls->m_effect->isAwake())
 	{
-		m_controls->m_effect->m_displayPeak[0] = COMP_NOISE_FLOOR;
-		m_controls->m_effect->m_displayPeak[1] = COMP_NOISE_FLOOR;
-		m_controls->m_effect->m_displayGain[0] = 1;
-		m_controls->m_effect->m_displayGain[1] = 1;
+		m_controls->m_effect->m_displayPeak[0].store(COMP_NOISE_FLOOR);
+		m_controls->m_effect->m_displayPeak[1].store(COMP_NOISE_FLOOR);
+		m_controls->m_effect->m_displayGain[0].store(1.f);
+		m_controls->m_effect->m_displayGain[1].store(1.f);
 	}
 
-	m_peakAvg = (m_controls->m_effect->m_displayPeak[0] + m_controls->m_effect->m_displayPeak[1]) * 0.5f;
-	m_gainAvg = (m_controls->m_effect->m_displayGain[0] + m_controls->m_effect->m_displayGain[1]) * 0.5f;
+	// The holds are shared with the audio thread, which raises them to the block's peak and
+	// gain: they are atomic, so this is a read of a value, not a race.
+	m_peakAvg = (m_controls->m_effect->m_displayPeak[0].load() + m_controls->m_effect->m_displayPeak[1].load()) * 0.5f;
+	m_gainAvg = (m_controls->m_effect->m_displayGain[0].load() + m_controls->m_effect->m_displayGain[1].load()) * 0.5f;
 
-	m_controls->m_effect->m_displayPeak[0] = m_controls->m_effect->m_yL[0];
-	m_controls->m_effect->m_displayPeak[1] = m_controls->m_effect->m_yL[1];
-	m_controls->m_effect->m_displayGain[0] = m_controls->m_effect->m_gainResult[0];
-	m_controls->m_effect->m_displayGain[1] = m_controls->m_effect->m_gainResult[1];
+	// Reset the holds to what the audio thread published: the detector's envelope and the gain
+	// the last block applied. The audio thread's own working state (m_yL, m_gainResult) is not
+	// read here - it is the audio thread's, and it changes while this reads it.
+	m_controls->m_effect->m_displayPeak[0].store(m_controls->m_effect->m_publishedEnvelope[0].load());
+	m_controls->m_effect->m_displayPeak[1].store(m_controls->m_effect->m_publishedEnvelope[1].load());
+	m_controls->m_effect->m_displayGain[0].store(m_controls->m_effect->m_publishedGain[0].load());
+	m_controls->m_effect->m_displayGain[1].store(m_controls->m_effect->m_publishedGain[1].load());
 
 	m_yPoint = dbfsToYPoint(ampToDbfs(m_peakAvg));
 	m_yGainPoint = dbfsToYPoint(ampToDbfs(m_gainAvg));

@@ -241,7 +241,8 @@ void registerExportCommand(ControlRegistry& registry)
 					QStringLiteral("'path' must be an absolute path"));
 			}
 			const bool overwrite = args.value(QStringLiteral("overwrite")).toBool();
-			if (QFileInfo::exists(path) && !overwrite)
+			// A dangling link is occupied too: QFileInfo::exists is false for it, and the save would replace it.
+			if ((QFileInfo::exists(path) || QFileInfo(path).isSymLink()) && !overwrite)
 			{
 				return ControlResult::failure(ControlErrorKind::Refused,
 					QStringLiteral("%1 already exists; pass overwrite true to replace it").arg(path));
@@ -294,8 +295,9 @@ void registerReadCommand(ControlRegistry& registry)
 			"report them in LMMS' own tick domain, WITHOUT touching the session: every track's "
 			"tempo and time-signature meta events, merged by tick (the first the file names at "
 			"a tick wins, per half), with the file's own division, how many events had to be "
-			"rounded onto LMMS' 48-ticks-per-quarter grid, and whether the map could hold them "
-			"all. This is what makes a round trip checkable against the file rather than "
+			"rounded onto LMMS' 48-ticks-per-quarter grid, and whether the engine can represent "
+			"and hold them all, with the reason when it cannot. This is what makes a round trip "
+			"checkable against the file rather than "
 			"against its hash: read the file, compare the map. A file that is not a Standard "
 			"MIDI File, or whose division is an SMPTE rate, is a typed invalid_args refusal.");
 		cmd.argsSchema = objectSchema({{QStringLiteral("path"), stringProperty()}},
@@ -314,6 +316,7 @@ void registerReadCommand(ControlRegistry& registry)
 			{QStringLiteral("superseded_events"), integerProperty()},
 			{QStringLiteral("capacity_events"), integerProperty()},
 			{QStringLiteral("importable"), booleanProperty()},
+			{QStringLiteral("importability_error"), stringProperty()},
 			{QStringLiteral("first_tick"), integerProperty()},
 			{QStringLiteral("last_tick"), integerProperty()},
 			{QStringLiteral("events"), arrayProperty()},
@@ -329,6 +332,11 @@ void registerReadCommand(ControlRegistry& registry)
 				return ControlResult::failure(ControlErrorKind::InvalidArgs, report.error);
 			}
 
+			TempoMap validatedMap;
+			QString importabilityError;
+			const bool importable = interchange::mapFromEvents(report.events, &validatedMap,
+				&importabilityError);
+
 			const interchange::SmfConvention& convention = interchange::smfConvention();
 			QJsonObject result;
 			result.insert(QStringLiteral("path"), path);
@@ -343,7 +351,8 @@ void registerReadCommand(ControlRegistry& registry)
 			result.insert(QStringLiteral("rounded_events"), report.roundedEvents);
 			result.insert(QStringLiteral("superseded_events"), report.supersededEvents);
 			result.insert(QStringLiteral("capacity_events"), report.capacityEvents);
-			result.insert(QStringLiteral("importable"), report.capacityEvents == 0);
+			result.insert(QStringLiteral("importable"), importable);
+			result.insert(QStringLiteral("importability_error"), importabilityError);
 			result.insert(QStringLiteral("first_tick"),
 				report.events.empty() ? 0 : static_cast<qint64>(report.events.front().tick));
 			result.insert(QStringLiteral("last_tick"),

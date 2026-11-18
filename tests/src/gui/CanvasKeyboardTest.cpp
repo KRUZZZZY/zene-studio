@@ -28,6 +28,8 @@
 
 #include <QtTest>
 
+#include <algorithm>
+
 #include <QAccessible>
 #include <QJsonArray>
 #include <QTemporaryDir>
@@ -35,13 +37,16 @@
 #include "AccessibleCanvas.h"
 #include "AccessibleWidgets.h"
 #include "ArrangerClipKeys.h"
+#include "AutomatableModel.h"
 #include "CompSwipeStrip.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
+#include "Knob.h"
 #include "MidiClip.h"
+#include "MusicalTime.h"
 #include "Note.h"
 #include "NoteCanvas.h"
 #include "NoteEditor.h"
@@ -88,6 +93,15 @@ QStringList selected(const MidiClip* clip)
 bool claimedBy(QWidget* widget, Qt::Key key, Qt::KeyboardModifiers mods)
 {
 	QKeyEvent event(QEvent::ShortcutOverride, key, mods);
+	event.ignore();
+	QApplication::sendEvent(widget, &event);
+	return event.isAccepted();
+}
+
+//! A key press sent to the widget, as the widget answered it (an unhandled one is not accepted).
+bool handledBy(QWidget* widget, Qt::Key key, Qt::KeyboardModifiers mods)
+{
+	QKeyEvent event(QEvent::KeyPress, key, mods);
 	event.ignore();
 	QApplication::sendEvent(widget, &event);
 	return event.isAccepted();
@@ -144,6 +158,27 @@ private slots:
 		m_clip = nullptr;
 	}
 
+	void middleDragKeepsTheStartingKeyUnderThePointer()
+	{
+		auto* keyboard = m_editor->findChild<NoteKeyboardView*>(QStringLiteral("noteKeyboard"));
+		QVERIFY(keyboard != nullptr);
+		QVERIFY(keyboard->height() > 200);
+		NoteGrid& grid = m_editor->state().grid;
+		grid.setRowHeight(14);
+		grid.setScrollY(0);
+		const QPoint start(30, 200);
+		const QPoint moved(30, 192);
+		const int key = grid.keyAtY(start.y());
+		QVERIFY(key >= 0);
+
+		QTest::mousePress(keyboard, Qt::MiddleButton, Qt::NoModifier, start);
+		QTest::mouseMove(keyboard, moved);
+
+		QCOMPARE(grid.rowHeight(), 15);
+		QCOMPARE(grid.keyAtY(moved.y()), key);
+		QTest::mouseRelease(keyboard, Qt::MiddleButton, Qt::NoModifier, moved);
+	}
+
 	void altArrowsWalkTheNotesInTimeThenPitch()
 	{
 		QWidget* canvas = m_editor->canvas();
@@ -169,6 +204,59 @@ private slots:
 		QVERIFY(!claimedBy(canvas, Qt::Key_Right, Qt::ControlModifier | Qt::AltModifier));
 	}
 
+	//! BUG 8 (cluster new-p12-154): with no clip the area keeps the focus and paints its no-clip line,
+	//! so the cursor keys must find no clip to walk instead of reading through one.
+	void theCursorKeysAreRefusedWhenNoClipIsOpen()
+	{
+		QWidget* canvas = m_editor->canvas();
+		m_editor->setClip(nullptr);
+		QCOMPARE(a11y::canvasValue(canvas), QStringLiteral("No clip open"));
+		QTest::keyClick(canvas, Qt::Key_Right, Qt::AltModifier);
+		QTest::keyClick(canvas, Qt::Key_Left, Qt::AltModifier);
+		QTest::keyClick(canvas, Qt::Key_Up, Qt::AltModifier);
+		QTest::keyClick(canvas, Qt::Key_Down, Qt::AltModifier | Qt::ShiftModifier);
+		QTest::keyClick(canvas, Qt::Key_Home);
+		QTest::keyClick(canvas, Qt::Key_End);
+		QTest::keyClick(canvas, Qt::Key_Right, Qt::ControlModifier);
+		QTest::keyClick(canvas, Qt::Key_Insert);
+		QTest::keyClick(canvas, Qt::Key_Delete);
+		QVERIFY(m_editor->clip() == nullptr);  // and the area still reads no clip
+		QCOMPARE(a11y::canvasValue(canvas), QStringLiteral("No clip open"));
+		QVERIFY(!handledBy(canvas, Qt::Key_Right, Qt::AltModifier));  // the cursor key was not taken
+		QVERIFY(!handledBy(canvas, Qt::Key_Home, Qt::NoModifier));
+	}
+
+	//! Q050-099: an MPE lane edits every SELECTED note in one undo step, not only the cursor
+	//! note, and its readout says how many notes the value applies to.
+	void anMpeLaneEditsEverySelectedNoteInOneStep()
+	{
+		m_editor->setLane(NoteLane::Timbre);
+		QWidget* lane = m_editor->laneView();
+		lane->setFocus();
+		const auto selectTheChord = [this] {
+			return invoke(QStringLiteral("note.select"), {{QStringLiteral("clip"), m_editor->clipId()},
+				{QStringLiteral("notes"), QJsonArray{control::noteIdOf(noteAt(m_clip, 0, 60)), control::noteIdOf(noteAt(m_clip, 0, 64))}}}).ok;
+		};
+		QVERIFY(selectTheChord());
+		QTest::keyClick(lane, Qt::Key_Up);
+		QCOMPARE(noteAt(m_clip, 0, 60)->mpeTimbre(), 1);
+		QCOMPARE(noteAt(m_clip, 0, 64)->mpeTimbre(), 1);
+		QVERIFY2(a11y::canvasValue(lane).contains(QStringLiteral("2 selected")), qPrintable(a11y::canvasValue(lane)));
+		QVERIFY(undo());
+		QCOMPARE(noteAt(m_clip, 0, 60)->mpeTimbre(), 0);
+		QCOMPARE(noteAt(m_clip, 0, 64)->mpeTimbre(), 0);
+
+		// Micro-pitch uses the same batch path; a note outside the selection stays where it was.
+		m_editor->setLane(NoteLane::Pitch);
+		lane = m_editor->laneView();
+		QVERIFY(selectTheChord());
+		QTest::keyClick(lane, Qt::Key_Up);
+		QCOMPARE(noteAt(m_clip, 0, 60)->mpePitchCents(), 1);
+		QCOMPARE(noteAt(m_clip, 0, 64)->mpePitchCents(), 1);
+		QCOMPARE(noteAt(m_clip, 192, 62)->mpePitchCents(), 0);
+		QVERIFY(undo());
+	}
+
 	void ctrlArrowsResizeAndChangeVelocityOneStepEach()
 	{
 		QWidget* canvas = m_editor->canvas();
@@ -185,6 +273,18 @@ private slots:
 		QCOMPARE(static_cast<int>(noteAt(m_clip, 192, 62)->getVolume()), 105);
 		QTest::keyClick(canvas, Qt::Key_Down, Qt::ControlModifier | Qt::ShiftModifier);
 		QCOMPARE(static_cast<int>(noteAt(m_clip, 192, 62)->getVolume()), 104);
+	}
+
+	void unsupportedModifiersDoNotNudgeTheSelection()
+	{
+		QVERIFY(invoke(QStringLiteral("note.select"), {{QStringLiteral("clip"), m_editor->clipId()},
+			{QStringLiteral("notes"), QJsonArray{control::noteIdOf(noteAt(m_clip, 192, 62))}}}).ok);
+		QTest::keyClick(m_editor->canvas(), Qt::Key_Up, Qt::MetaModifier);
+		QVERIFY(noteAt(m_clip, 192, 62) != nullptr);
+		QVERIFY(noteAt(m_clip, 192, 63) == nullptr);
+		QTest::keyClick(m_editor->canvas(), Qt::Key_Up, Qt::ControlModifier | Qt::AltModifier);
+		QVERIFY(noteAt(m_clip, 192, 62) == nullptr);
+		QVERIFY(noteAt(m_clip, 192, 63) != nullptr);
 	}
 
 	void insertAddsANoteAfterTheCursor()
@@ -212,8 +312,29 @@ private slots:
 		QVERIFY2(face->text(QAccessible::Value).contains(QStringLiteral("3 notes, 0 selected")), qPrintable(face->text(QAccessible::Value)));
 		QTest::keyClick(canvas, Qt::Key_End);
 		QVERIFY(face->text(QAccessible::Value).startsWith(NoteGrid::keyName(62)));
-		QVERIFY(canvas->findChild<a11y::CanvasKeyCursor*>() != nullptr);
+		QVERIFY2(face->text(QAccessible::Value).contains(musicaltime::positionText(192)), qPrintable(face->text(QAccessible::Value)));
+		// CanvasKeyCursor has no Q_OBJECT, so findChild<CanvasKeyCursor*> matched any QFocusFrame (and Qt 6.12 refuses it).
+		const auto frames = canvas->findChildren<QFocusFrame*>();
+		QVERIFY(std::any_of(frames.begin(), frames.end(),
+			[](QFocusFrame* frame) { return dynamic_cast<a11y::CanvasKeyCursor*>(frame) != nullptr; }));
 		QVERIFY(!a11y::CanvasKeyCursor::of(canvas)->mark().isEmpty());  // the cursor note is marked
+	}
+
+	void invalidValueDoesNotChangeAValueControlModel()
+	{
+		a11y::installAccessibleWidgets();
+		FloatModel model(50.f, 0.f, 100.f, 1.f, nullptr, QStringLiteral("Gain"));
+		Knob knob(KnobType::Bright26);
+		knob.setModel(&model);
+		QAccessibleInterface* face = QAccessible::queryAccessibleInterface(&knob);
+		QVERIFY(face != nullptr);
+		QAccessibleValueInterface* value = face->valueInterface();
+		QVERIFY(value != nullptr);
+
+		value->setCurrentValue(QVariant(QStringLiteral("not numeric")));
+		QCOMPARE(model.value(), 50.f);
+		value->setCurrentValue(QVariant(25.f));
+		QCOMPARE(model.value(), 25.f);
 	}
 
 	void theExpressionLaneStepsTheSelectionInOneStep()
@@ -267,7 +388,7 @@ private slots:
 	{
 		XyPadArea pad;
 		QPointF reported(-1, -1);
-		pad.moved = [&reported](QPointF point) { reported = point; };
+		pad.moved = [&reported](QPointF point, unsigned) { reported = point; };
 		pad.setPoint(QPointF(0.5, 0.5));
 		pad.setAxisNames(QStringLiteral("Cutoff"), QStringLiteral("Drive"));
 		QTest::keyClick(&pad, Qt::Key_Right);
@@ -290,6 +411,12 @@ private slots:
 				{QStringLiteral("segments"), QJsonArray{
 					QJsonObject{{QStringLiteral("begin"), 0}, {QStringLiteral("end"), 384}, {QStringLiteral("lane"), 0}},
 					QJsonObject{{QStringLiteral("begin"), 384}, {QStringLiteral("end"), 768}, {QStringLiteral("lane"), 1}}}}}}});
+		QVERIFY((strip.focusPolicy() & Qt::TabFocus) != 0);
+		host.resize(420, 80);
+		host.show();
+		QVERIFY(QTest::qWaitForWindowExposed(&host));
+		QTest::mouseClick(&strip, Qt::LeftButton, Qt::NoModifier, QPoint(10, 10));
+		QVERIFY(strip.hasFocus());
 		QCOMPARE(strip.keyLane(), 0);
 		QTest::keyClick(&strip, Qt::Key_Down);
 		QCOMPARE(strip.keyLane(), 1);
@@ -305,6 +432,57 @@ private slots:
 		// A comp on a track that is not there is refused - and said, at once.
 		QTest::keyClick(&strip, Qt::Key_Return);
 		QVERIFY2(a11y::lastAnnouncement().startsWith(QStringLiteral("Not done")), qPrintable(a11y::lastAnnouncement()));
+	}
+
+	//! Only a left double-click cycles the take: a right or middle one is not the gesture the
+	//! strip offers, so it must not reach comp.cycle (which changes the project).
+	void onlyALeftDoubleClickCyclesTheTake()
+	{
+		QWidget host;
+		CompSwipeStrip strip(QStringLiteral("trk-999"), &host);
+		strip.resize(400, 60);
+		QStringList ran;
+		QObject::connect(&strip, &CompSwipeStrip::ran, [&ran](const QString& status) { ran.append(status); });
+		const QPoint at(100, 20);
+		for (const Qt::MouseButton button : {Qt::RightButton, Qt::MiddleButton})
+		{
+			const int before = ran.size();
+			QTest::mouseDClick(&strip, button, Qt::NoModifier, at);
+			QVERIFY2(ran.size() == before, "a non-left double-click reached comp.cycle");
+		}
+		// The left double-click still cycles: the gesture the strip offers.
+		const int before = ran.size();
+		QTest::mouseDClick(&strip, Qt::LeftButton, Qt::NoModifier, at);
+		QCOMPARE(ran.size(), before + 1);
+	}
+
+	void enterAtExclusiveTakeSpanEndDoesNotExtendTheComp()
+	{
+		const QString trackId = control::trackIdOf(m_track);
+		const ControlResult lane = invoke(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), trackId}});
+		QVERIFY2(lane.ok, qPrintable(lane.errorMessage));
+		QCOMPARE(lane.result.value(QStringLiteral("lane")).toInt(), 0);
+
+		const ControlResult before = invoke(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), trackId}});
+		QVERIFY2(before.ok, qPrintable(before.errorMessage));
+		QVERIFY(before.result.value(QStringLiteral("composite")).toObject()
+			.value(QStringLiteral("segments")).toArray().isEmpty());
+
+		QWidget host;
+		CompSwipeStrip strip(trackId, &host);
+		strip.resize(400, 60);
+		strip.setState(before.result);
+		const int spanEnd = m_clip->endPosition().getTicks();
+		QVERIFY(spanEnd > 0);
+		QTest::keyClick(&strip, Qt::Key_End);
+		QCOMPARE(strip.keyTick(), spanEnd);
+		QTest::keyClick(&strip, Qt::Key_Return);
+
+		const ControlResult after = invoke(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), trackId}});
+		QVERIFY2(after.ok, qPrintable(after.errorMessage));
+		QVERIFY2(after.result.value(QStringLiteral("composite")).toObject()
+			.value(QStringLiteral("segments")).toArray().isEmpty(),
+			"Enter at the exclusive take-span end must not create a segment past the takes");
 	}
 
 	void theArrangerAddsItsOwnClipKeys()

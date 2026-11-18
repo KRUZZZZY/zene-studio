@@ -40,13 +40,16 @@
  *  lengths (and shapes) on every locked audio clip.
  */
 
+#include <limits>
 #include <vector>
 
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include "ArrangementEdits.h"
 #include "Clip.h"
 #include "ClipEdits.h"
+#include "ClipLinks.h"
 #include "ControlCommandsVcaShared.h"
 #include "ControlRegistry.h"
 #include "SampleClip.h"
@@ -139,13 +142,24 @@ QJsonObject transactionFor(const QString& op, VcaGroup* group, const ClipRef& an
 
 QJsonObject clipEdge(Track* track, Clip* clip)
 {
-	return QJsonObject{{QStringLiteral("track"), trackIdOf(track)},
+	// `clip` first: a member track can hold several clips in the anchor's span, so
+	// the per-clip edit entries of one reply are only distinguishable by the clip
+	// they name (the same reason moveLockedClip's `moves` entries carry it).
+	return QJsonObject{{QStringLiteral("clip"), control::clipIdOf(clip)},
+		{QStringLiteral("track"), trackIdOf(track)},
 		{QStringLiteral("position"), clip->startPosition().getTicks()},
 		{QStringLiteral("length"), clip->length().getTicks()},
 		{QStringLiteral("offset"), clip->startTimeOffset().getTicks()}};
 }
 
 // ---- vca.edit_split -------------------------------------------------------
+
+//! clip.split's own sequence (ClipView::splitClip) on one locked clip: checkpoint the track, then cut this instance.
+void cutLockedClip(const Locked& entry, tick_t at)
+{
+	entry.track->addJournalCheckPoint();
+	arrangement::splitClipAlone(entry.clip, at);
+}
 
 ControlResult editSplit(const QJsonObject& args)
 {
@@ -173,18 +187,7 @@ ControlResult editSplit(const QJsonObject& args)
 		if (!inside(entry.clip)) { continue; }
 		const tick_t start = entry.clip->startPosition().getTicks();
 		const tick_t end = entry.clip->endPosition().getTicks();
-		// clip.split's own sequence (ClipView::splitClip): checkpoint the track,
-		// keep the new half from journalling itself, clone, resize both halves.
-		entry.track->addJournalCheckPoint();
-		entry.track->saveJournallingState(false);
-		Clip* right = entry.clip->clone();
-		entry.clip->changeLength(TimePos(at - start));
-		entry.clip->setAutoResize(false);
-		right->movePosition(TimePos(at));
-		right->changeLength(TimePos(end - at));
-		right->setStartTimeOffset(entry.clip->startTimeOffset() - entry.clip->length());
-		right->setAutoResize(false);
-		entry.track->restoreJournallingState();
+		cutLockedClip(entry, at);
 		edits.append(QJsonObject{{QStringLiteral("track"), trackIdOf(entry.track)},
 			{QStringLiteral("from"), start}, {QStringLiteral("at"), at}, {QStringLiteral("to"), end}});
 	}
@@ -224,6 +227,14 @@ ControlResult editTrim(const QJsonObject& args)
 					"start - so the locked trim is refused and nothing moved")
 					.arg(trackIdOf(entry.track)).arg(s).arg(e));
 		}
+		const qint64 offset = static_cast<qint64>(entry.clip->startTimeOffset().getTicks()) - dStart;
+		if (offset < std::numeric_limits<tick_t>::min() || offset > std::numeric_limits<tick_t>::max())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("the trim would put %1's source offset at %2, outside the tick range, "
+					"so the locked trim is refused and nothing moved")
+					.arg(trackIdOf(entry.track)).arg(offset));
+		}
 	}
 	QJsonArray edits;
 	for (const Locked& entry : locked)
@@ -232,7 +243,8 @@ ControlResult editTrim(const QJsonObject& args)
 		const tick_t e = entry.clip->endPosition().getTicks() + dEnd;
 		// clip.trim's head-trim rule: the source offset moves against the start,
 		// so the audio holds its song position.
-		const tick_t offset = entry.clip->startTimeOffset().getTicks() - dStart;
+		const tick_t offset = static_cast<tick_t>(
+			static_cast<qint64>(entry.clip->startTimeOffset().getTicks()) - dStart);
 		entry.clip->addJournalCheckPoint();
 		entry.clip->movePosition(TimePos(s));
 		entry.clip->changeLength(TimePos(e - s));

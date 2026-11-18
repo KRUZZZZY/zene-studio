@@ -257,8 +257,8 @@ void registerJournalUpdate(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Record how much of the take had reached disk at the "
 		"last flush ('frames_on_disk'), which is the count the recovery offer reports as "
 		"guaranteed. It must not move backwards: the journal only ever records that MORE of "
-		"the take reached disk. The recorder's own disk-writer does this once per second of "
-		"audio (RecordingJournal::UpdateIntervalFrames), which is the whole of the lag bound. "
+		"the take reached disk. The recorder's own disk-writer does this every tenth of a second of "
+		"audio (recordingjournal::updateIntervalFrames), which is the whole of the lag bound. "
 		"Reversible (paired command).");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("take"), stringProperty()},

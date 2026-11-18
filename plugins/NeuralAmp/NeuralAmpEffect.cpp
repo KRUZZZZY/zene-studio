@@ -26,6 +26,8 @@
 
 #include "nam/NamModel.h"
 
+#include "AudioEngine.h"
+#include "Engine.h"
 #include "embed.h"
 #include "plugin_export.h"
 
@@ -63,9 +65,17 @@ NeuralAmpEffect::NeuralAmpEffect(Model* parent,
 	m_controls(this),
 	m_model(nullptr),
 	m_audioActive(false),
+	m_sampleRateCompatible(false),
 	m_scratchIn(nam::NamModel::kMaxBlock, 0.0f),
 	m_scratchOut(nam::NamModel::kMaxBlock, 0.0f)
 {
+	if (auto* engine = Engine::audioEngine())
+	{
+		m_engineSampleRate = engine->outputSampleRate();
+		connect(engine, &AudioEngine::sampleRateChanged, this,
+			[this] { refreshSampleRateCompatibility(); });
+	}
+
 	// Optional default model (used by the headless harness and for convenience):
 	//   LMMS_NAM_MODEL=/path/to/model.nam
 	const QByteArray envPath = qgetenv("LMMS_NAM_MODEL");
@@ -82,6 +92,13 @@ NeuralAmpEffect::NeuralAmpEffect(Model* parent,
 
 NeuralAmpEffect::~NeuralAmpEffect()
 {
+	// Drop any request still waiting and let the worker leave; a parse already under way cannot be
+	// interrupted, so this waits for that one file at most. Nothing is published after this point.
+	{
+		std::lock_guard<std::mutex> lock(m_loadMutex);
+		m_shuttingDown = true;
+		m_hasPending = false;
+	}
 	if (m_loadThread.joinable())
 	{
 		m_loadThread.join();
@@ -100,29 +117,48 @@ QString NeuralAmpEffect::modelPath() const
 
 void NeuralAmpEffect::setModelPath(const QString& path)
 {
-	// A previous load must be finished before starting another one, otherwise
-	// two workers could race on the published pointer.
+	// Record the request and return: the caller (the GUI thread) never waits for a load. A request made
+	// while the worker is busy replaces the one still waiting, so the last request is the one that wins.
+	std::lock_guard<std::mutex> lock(m_loadMutex);
+	if (m_shuttingDown) { return; }
+	m_pendingPath = path;
+	m_hasPending = true;
+	if (m_workerRunning) { return; }
+	// The previous worker has cleared m_workerRunning as its last locked act, so this join is only
+	// the thread's final return.
 	if (m_loadThread.joinable())
 	{
 		m_loadThread.join();
 	}
-	m_loadThread = std::thread(&NeuralAmpEffect::loadWorker, this, path);
+	m_workerRunning = true;
+	m_loadThread = std::thread(&NeuralAmpEffect::workerLoop, this);
 }
 
 
-void NeuralAmpEffect::loadWorker(QString path)
+void NeuralAmpEffect::workerLoop()
 {
-	const std::string nativePath = path.toStdString();
-	std::string error;
-	std::unique_ptr<nam::NamModel> model = nam::NamModel::loadFromFile(nativePath, &error);
-
-	if (model == nullptr)
+	for (;;)
 	{
-		setStatus("load failed: " + error);
-		return;
+		QString path;
+		{
+			std::lock_guard<std::mutex> lock(m_loadMutex);
+			if (!m_hasPending || m_shuttingDown)
+			{
+				m_hasPending = false;
+				m_workerRunning = false;
+				return;
+			}
+			path = std::move(m_pendingPath);
+			m_hasPending = false;
+		}
+		loadOne(path);
 	}
+}
 
-	const nam::ModelSpec& spec = model->spec();
+
+//! The status line for a model that parsed: its name, architecture and size.
+static std::string describeLoadedModel(const nam::ModelSpec& spec, const std::string& nativePath)
+{
 	std::ostringstream status;
 	status << "loaded " << (spec.name.empty() ? nativePath : spec.name)
 	       << " [" << spec.architecture;
@@ -137,9 +173,119 @@ void NeuralAmpEffect::loadWorker(QString path)
 	{
 		status << " trained@" << static_cast<long>(spec.sampleRate) << " Hz";
 	}
-	setStatus(status.str());
+	return status.str();
+}
+
+
+void NeuralAmpEffect::clearModel()
+{
+	{
+		// A newer request, or the destructor, made this clearing stale: leave the published model be.
+		std::lock_guard<std::mutex> lock(m_loadMutex);
+		if (m_hasPending || m_shuttingDown) { return; }
+	}
+	// An empty request means "no model": publishing nothing sends the audio thread dry instead of
+	// running the model an earlier request left in place. publishModel() waits for a running audio
+	// call before reclaiming the old model, so this stays off the audio thread.
+	publishModel(nullptr);
+	setStatus("no model loaded");
+}
+
+
+void NeuralAmpEffect::loadOne(const QString& path)
+{
+	if (path.isEmpty())
+	{
+		clearModel();
+		return;
+	}
+	setStatus("loading " + path.toStdString());
+#ifdef ZENE_NAM_TEST_SEAM
+	if (s_testBeforeLoad != nullptr) { s_testBeforeLoad(path); }
+#endif
+	const std::string nativePath = path.toStdString();
+	std::string error;
+	std::unique_ptr<nam::NamModel> model = nam::NamModel::loadFromFile(nativePath, &error);
+
+	{
+		// A newer request, or the destructor, made this result stale: never publish it.
+		std::lock_guard<std::mutex> lock(m_loadMutex);
+		if (m_hasPending || m_shuttingDown) { return; }
+	}
+
+	if (model == nullptr)
+	{
+		setStatus("load failed: " + error);
+		return;
+	}
+
+	const nam::ModelSpec& spec = model->spec();
+	const std::string loadedStatus = describeLoadedModel(spec, nativePath);
+	{
+		std::lock_guard<std::mutex> lock(m_rateMutex);
+		if (auto* engine = Engine::audioEngine())
+		{
+			m_engineSampleRate = engine->outputSampleRate();
+		}
+		if (!nam::sampleRateMatchesEngine(spec.sampleRate, m_engineSampleRate))
+		{
+			std::ostringstream refusal;
+			refusal << "load refused: model trained at " << static_cast<long>(spec.sampleRate)
+				<< " Hz, engine runs at " << static_cast<long>(m_engineSampleRate)
+				<< " Hz; rate adaptation is not implemented";
+			setStatus(refusal.str());
+			return;
+		}
+		m_modelSampleRate = spec.sampleRate;
+		m_loadedStatus = loadedStatus;
+		m_modelPublicationInProgress = true;
+		m_sampleRateCompatible.store(false, std::memory_order_release);
+	}
 
 	publishModel(std::move(model));
+	{
+		std::lock_guard<std::mutex> lock(m_rateMutex);
+		if (auto* engine = Engine::audioEngine())
+		{
+			m_engineSampleRate = engine->outputSampleRate();
+		}
+		m_modelPublicationInProgress = false;
+		m_sampleRateCompatible.store(
+			nam::sampleRateMatchesEngine(m_modelSampleRate, m_engineSampleRate),
+			std::memory_order_release);
+	}
+	refreshSampleRateCompatibility();
+}
+
+
+void NeuralAmpEffect::refreshSampleRateCompatibility()
+{
+	std::string status;
+	bool hasModel = false;
+	{
+		std::lock_guard<std::mutex> lock(m_rateMutex);
+		if (auto* engine = Engine::audioEngine())
+		{
+			m_engineSampleRate = engine->outputSampleRate();
+		}
+		const bool compatible = !m_modelPublicationInProgress
+			&& nam::sampleRateMatchesEngine(m_modelSampleRate, m_engineSampleRate);
+		m_sampleRateCompatible.store(compatible, std::memory_order_release);
+		hasModel = m_model.load(std::memory_order_acquire) != nullptr;
+		if (hasModel)
+		{
+			if (compatible) { status = m_loadedStatus; }
+			else
+			{
+				std::ostringstream message;
+				message << "bypassed: model trained at " << static_cast<long>(m_modelSampleRate)
+					<< " Hz, engine runs at " << static_cast<long>(m_engineSampleRate)
+					<< " Hz; rate adaptation is not implemented";
+				status = message.str();
+			}
+		}
+	}
+	if (hasModel) { setStatus(status); }
 }
 
 
@@ -186,7 +332,8 @@ Effect::ProcessStatus NeuralAmpEffect::processImpl(
 	m_audioActive.store(true, std::memory_order_seq_cst);
 	nam::NamModel* model = m_model.load(std::memory_order_seq_cst);
 
-	if (model == nullptr || !model->ready())
+	if (model == nullptr || !model->ready()
+		|| !m_sampleRateCompatible.load(std::memory_order_acquire))
 	{
 		m_audioActive.store(false, std::memory_order_release);
 		return ProcessStatus::ContinueIfNotQuiet;

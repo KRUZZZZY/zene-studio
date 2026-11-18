@@ -117,3 +117,35 @@ measured until its proof line says so.
   with it the flag-OFF half): asserts the legacy `<session>` block's data survived
   into `<z:scenes>` (S8's upconversion) and that the legacy block is not
   re-emitted alongside it.
+
+## 4. Sub-scenes: `<z:subscenes>` (0.5.0 L02, WF-064, lane launcher-perform, 2026-10-07)
+
+A sub-scene is a named subset of one scene's cells - some of its columns - launched on its own
+(`session.subscene_create` / `_rename` / `_delete` / `_launch`, `SessionModel::subScenes()`).
+
+- **Where it lives in the file.** Its own top-level section, written by the `SessionSubScenes`
+  ProjectSection (`src/core/SessionSubScenes.cpp`) only when the model holds a sub-scene:
+
+  ```xml
+  <z:subscenes v="1">
+    <z:subscene name="Drums" scene="1" tracks="0,2"/>
+  </z:subscenes>
+  ```
+
+  `scene` and `tracks` use the same (track, scene) coordinates as `<z:cell>`. Nothing is added to
+  `<z:scenes>`: its claim (§2) declines any child but `<z:scene>`/`<z:cell>`, so a sub-scene row
+  inside it would make every older build decline the whole grid. As a sibling section, an older
+  build claims `<z:scenes>` exactly as before and keeps `<z:subscenes>` verbatim as unclaimed text,
+  re-saving it unchanged (the `Song::restoreNamedSection` walk has no branch for it).
+- **The additive rule.** No sub-scene, no section and no byte: a project that never made one
+  re-saves byte-identically (`SessionSubSceneTest::aProjectWithoutSubScenesIsUnchanged`), and the
+  `z:scenes` bytes of a project that has sub-scenes are what this build wrote before the feature.
+- **Version policy.** A `<z:subscenes>` of another `v`, or with a child that is not a well-formed
+  `<z:subscene>`, is not read: it is kept as text and written back as it came
+  (`aNewerSectionIsKeptAsItCame`).
+- **Load order.** `saveProjectSections` writes the section before `<z:scenes>`, so it is read
+  first; `restoreScenesSection` keeps the sub-scenes already read when it replaces the model.
+- **Undo.** Each edit is one step through the `<session>` block payload (`sessionBlockXml`), which
+  now carries a `<subscenes>` child - only when there is a sub-scene, so the block's bytes are
+  unchanged otherwise. The legacy reader skips an unknown child, and the block never reaches a
+  project file (§2).

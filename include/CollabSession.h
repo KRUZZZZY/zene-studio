@@ -110,6 +110,7 @@ private:
 	bool applyCommand(const QString& command, const QJsonObject& args, QString* error);
 	void startWatch();
 	void pollJournal();
+	bool trackUntrackedEdit(const QByteArray& fingerprint);
 	void recordFingerprint();
 	QByteArray journalFingerprint() const;
 	void scheduleResync(const QString& reason, int delayMs);
@@ -128,6 +129,7 @@ private:
 	QByteArray m_fingerprint;
 	qint64 m_graceUntilMs = 0;
 	qint64 m_lastAutoResyncMs = 0;
+	bool m_autoResyncPending = false;
 	std::unique_ptr<CollabHost> m_host;
 	std::unique_ptr<CollabClient> m_client;
 	std::unique_ptr<portmap::PortMapping> m_mapping;

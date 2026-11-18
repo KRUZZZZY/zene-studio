@@ -33,7 +33,6 @@
 
 class QButtonGroup;
 class QComboBox;
-class QHBoxLayout;
 class QMenu;
 class QPushButton;
 class QToolButton;
@@ -41,10 +40,12 @@ class QToolButton;
 namespace lmms::gui
 {
 
+class MixerModeBarLayout;  // MixerModeBarLayout.h: the bar's rows, which wrap when the panel is narrow (gui-1030)
+
 /*! 0.5.0 theme 16 (the mixer reworked around clear modes). One bar across the top of the mixer, always
  *  shown, that says - in words - how the mixer is set and sets it:
  *  - View: Mix | Routing, and Density: Compact | Expanded (independent of each other), and Show: the
- *    channel filter - all through window.mixer_view;
+ *    channel filter - all through window.mixer_view; and (MX-005) Pick..., the channels its Selected filter shows;
  *  - the modes, each a button naming its state that opens a menu to change it: what the faders drive
  *    (window.mixer_view's sends_on_faders - the banner under the bar says it loudly while they drive
  *    sends), the solo mode (mixer.solo_mode), the listen bus (mixer.listen_mode) and the master's
@@ -66,34 +67,46 @@ public:
 	QPushButton* viewButton(const QString& view) const { return m_viewButtons.value(view); }
 	QPushButton* densityButton(const QString& density) const { return m_densityButtons.value(density); }
 	QComboBox* filterBox() const { return m_filter; }
+	QPushButton* followButton() const { return m_follow; }
 	QToolButton* fadersButton() const { return m_faders; }
 	QToolButton* soloButton() const { return m_solo; }
 	QToolButton* listenButton() const { return m_listen; }
 	QToolButton* masterButton() const { return m_master; }
+	//! Q050-227.1: the button naming the mixer's dock layout, whose menu docks and un-docks its regions
+	//! through window.mixer_zones.
+	QToolButton* zonesButton() const { return m_zones; }
+	//! Q050-227.1: fill @a menu with the mixer's dock layout - one submenu per side region with its two
+	//! supported sides (the one in force checked), then Reset the Layout. Every entry runs
+	//! window.mixer_zones, so the menu and an agent take the same path.
+	void fillZones(QMenu* menu);
 
 signals:
 	void changed();
 
 private:
 	//! A labelled row of exclusive buttons, one per value of window.mixer_view's @a key.
-	QHash<QString, QPushButton*> addSegment(QHBoxLayout* layout, const QString& label, const char* key,
+	QHash<QString, QPushButton*> addSegment(MixerModeBarLayout* layout, const QString& label, const char* key,
 		const QStringList& values, const QStringList& captions);
 	//! A button naming a mode's state (@a hint says what it is) whose menu @a fill builds each time it opens.
-	QToolButton* addChip(QHBoxLayout* layout, const QString& objectName, const QString& hint, void (MixerModeBar::*fill)(QMenu*));
+	QToolButton* addChip(MixerModeBarLayout* layout, const QString& objectName, const QString& hint, void (MixerModeBar::*fill)(QMenu*));
 	void setOption(const QString& key, const QJsonValue& value);
 	void fillFaders(QMenu* menu);
 	void fillSolo(QMenu* menu);
 	void fillListen(QMenu* menu);
 	void fillMaster(QMenu* menu);
+
+	void pickSelected();  //!< MX-005
 	void refreshChips(const mixerstripinfo::Context& context);
 
 	QHash<QString, QPushButton*> m_viewButtons;
 	QHash<QString, QPushButton*> m_densityButtons;
 	QComboBox* m_filter = nullptr;
+	QPushButton* m_follow = nullptr;  // MX-021: the Selected filter follows the arranger selection
 	QToolButton* m_faders = nullptr;
 	QToolButton* m_solo = nullptr;
 	QToolButton* m_listen = nullptr;
 	QToolButton* m_master = nullptr;
+	QToolButton* m_zones = nullptr;  //!< Q050-227.1: the dock layout
 };
 
 } // namespace lmms::gui

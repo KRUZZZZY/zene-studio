@@ -466,6 +466,59 @@ private slots:
 		}
 		QVERIFY(previousMs > 0.0);
 	}
+
+	/*! Luna cluster 5521: an out-of-source cursor is SILENCE, not an
+	 *  out-of-bounds read. The position arrives from a seek or from a speed
+	 *  so large that the analysis hop overflows, so it is never a value a
+	 *  caller promised to be inside the buffer. */
+	void extremePositionsProduceSilenceInsteadOfOutOfBoundsReads()
+	{
+		const std::vector<SampleFrame> source = twoTone(4096);
+		std::vector<SampleFrame> out(1024);
+		const auto allFinite = [](const std::vector<SampleFrame>& frames) {
+			for (const SampleFrame& frame : frames)
+			{
+				if (!std::isfinite(frame[0]) || !std::isfinite(frame[1])) { return false; }
+			}
+			return true;
+		};
+
+		AudioStretcher seeked;
+		seeked.prepare();
+		seeked.seek(1e300);
+		QCOMPARE(seeked.process(source.data(), static_cast<f_cnt_t>(source.size()),
+			out.data(), static_cast<f_cnt_t>(out.size()), 1.0), static_cast<f_cnt_t>(out.size()));
+		QVERIFY(allFinite(out));
+		for (const SampleFrame& frame : out) { QCOMPARE(frame[0], 0.0f); }
+
+		// The same via the cursor: a huge but finite speed overflows the hop
+		// advance, and the next grain must still read as silence.
+		AudioStretcher fast;
+		fast.prepare();
+		QCOMPARE(fast.process(source.data(), static_cast<f_cnt_t>(source.size()),
+			out.data(), static_cast<f_cnt_t>(out.size()), 1e300), static_cast<f_cnt_t>(out.size()));
+		QVERIFY(allFinite(out));
+	}
+
+	/*! Luna cluster 5519: the first hop has no grain before it to sum with, so
+	 *  its window must be flat - a stretched sample starts with its onset. */
+	void theFirstHopReproducesTheStartOfTheSample()
+	{
+		const std::size_t sourceFrames = 4096;
+		const std::vector<SampleFrame> source(sourceFrames, SampleFrame(1.0f, 1.0f));
+		std::vector<SampleFrame> out(1024);
+		AudioStretcher stretcher;
+		stretcher.prepare({1024, 128});
+		QCOMPARE(stretcher.process(source.data(), static_cast<f_cnt_t>(sourceFrames),
+			out.data(), static_cast<f_cnt_t>(out.size()), 1.0), static_cast<f_cnt_t>(out.size()));
+
+		for (int i = 0; i < static_cast<int>(out.size()); ++i)
+		{
+			QVERIFY2(std::abs(out[static_cast<std::size_t>(i)][0] - 1.0f) < 1e-5f,
+				qPrintable(QStringLiteral("output frame %1 is %2, the onset should be 1.0")
+					.arg(i).arg(out[static_cast<std::size_t>(i)][0])));
+		}
+	}
 };
 
 QTEST_GUILESS_MAIN(AudioStretcherTest)

@@ -28,6 +28,8 @@
 
 #include <cassert>
 #include <concepts>
+#include <cstddef>
+#include <limits>
 #include <ranges>
 #include <span>
 #include <type_traits>
@@ -40,6 +42,37 @@ namespace lmms
 
 //! Use when the number of channels is not known at compile time
 inline constexpr auto DynamicChannelCount = static_cast<ch_cnt_t>(-1);
+
+namespace detail {
+
+constexpr auto checkedSizeMul(std::size_t lhs, std::size_t rhs) noexcept -> std::size_t
+{
+	if (rhs != 0 && lhs > std::numeric_limits<std::size_t>::max() / rhs)
+	{
+		return std::numeric_limits<std::size_t>::max();
+	}
+	return lhs * rhs;
+}
+
+constexpr auto checkedSizeFromCounts(std::size_t channels, f_cnt_t frames) noexcept -> std::size_t
+{
+	if constexpr (std::numeric_limits<f_cnt_t>::max() > std::numeric_limits<std::size_t>::max())
+	{
+		if (frames > static_cast<f_cnt_t>(std::numeric_limits<std::size_t>::max()))
+		{
+			return std::numeric_limits<std::size_t>::max();
+		}
+	}
+	return checkedSizeMul(
+		static_cast<std::size_t>(channels), static_cast<std::size_t>(frames));
+}
+
+constexpr auto inFrameRange(f_cnt_t offset, f_cnt_t count, f_cnt_t total) noexcept -> bool
+{
+	return offset <= total && count <= total - offset;
+}
+
+} // namespace detail
 
 
 namespace detail {
@@ -231,7 +264,8 @@ public:
 
 	constexpr auto operator-(InterleavedFrameIterator other) const noexcept -> difference_type
 	{
-		return this->m_data - other.m_data;
+		const auto channels = static_cast<difference_type>(this->channels());
+		return channels == 0 ? 0 : (this->m_data - other.m_data) / channels;
 	}
 
 	constexpr auto operator<=>(InterleavedFrameIterator other) const noexcept
@@ -340,12 +374,15 @@ public:
 
 	constexpr auto dataSizeBytes() const noexcept -> std::size_t
 	{
-		return Base::channels() * this->m_frames * sizeof(T);
+		return detail::checkedSizeMul(
+			detail::checkedSizeFromCounts(Base::channels(), this->m_frames), sizeof(T));
 	}
 
 	constexpr auto dataView() noexcept -> std::span<T>
 	{
-		return std::span<T>{this->m_data, this->m_frames * Base::channels()};
+		const auto samples = detail::checkedSizeFromCounts(Base::channels(), this->m_frames);
+		if (samples == std::numeric_limits<std::size_t>::max()) { return {}; }
+		return std::span<T>{this->m_data, samples};
 	}
 
 	//! @return the sample at the given channel and frame indicies
@@ -389,8 +426,7 @@ public:
 	//! @returns a subview at the given frame offset `offset` with a frame count of `frames`
 	constexpr auto subspan(f_cnt_t offset, f_cnt_t frames) const -> InterleavedBufferView<T, channelCount>
 	{
-		assert(offset <= this->m_frames);
-		assert(offset + frames <= this->m_frames);
+		assert(detail::inFrameRange(offset, frames, this->m_frames));
 		if constexpr (channelCount == DynamicChannelCount)
 		{
 			return {this->m_data + offset * Base::channels(), Base::channels(), frames};
@@ -404,7 +440,8 @@ public:
 	//! @returns a const view over the frames. Iterates in chunks containing `channels()` elements.
 	constexpr auto framesView() const noexcept -> std::ranges::subrange<ConstFrameIter, const T*>
 	{
-		const T* end = this->m_data + Base::channels() * this->m_frames;
+		// An empty view ends where it begins: never offset a null m_data
+		const T* end = this->empty() ? this->m_data : this->m_data + Base::channels() * this->m_frames;
 		if constexpr (channelCount == DynamicChannelCount)
 		{
 			return std::ranges::subrange{ConstFrameIter{this->m_data, Base::channels()}, end};
@@ -418,7 +455,8 @@ public:
 	//! @returns a view over the frames. Iterates in chunks containing `channels()` elements.
 	constexpr auto framesView() noexcept -> std::ranges::subrange<FrameIter, T*>
 	{
-		T* end = this->m_data + Base::channels() * this->m_frames;
+		// An empty view ends where it begins: never offset a null m_data
+		T* end = this->empty() ? this->m_data : this->m_data + Base::channels() * this->m_frames;
 		if constexpr (channelCount == DynamicChannelCount)
 		{
 			return std::ranges::subrange{FrameIter{this->m_data, Base::channels()}, end};

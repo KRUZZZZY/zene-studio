@@ -218,6 +218,27 @@ def check_refusals(session, recorder, outdir):
                    store_list(session).get("count") == 0, repr(store_list(session))[:200])
 
 
+def check_failure_says_why(session, recorder, outdir):
+    """A render the CHILD failed carries the child's own reason, not only an exit code.
+
+    The refusal is typed and the output is nothing at all here: the target
+    directory does not exist, so the CLI renderer cannot open the file and says
+    so on its own stderr. That text is the only thing that tells an agent
+    whether to fix the path, free the disk or change the encoder, so a refusal
+    carrying nothing but "the render failed (exit 1)" has thrown it away.
+    """
+    unreachable = os.path.join(outdir, "no-such-dir", "out.wav")
+    reply = session.result("render.render", {"out": unreachable})
+    message = reply.get("error", {}).get("message", "")
+    recorder.check("a render whose output cannot be opened is refused typed",
+                   reply.get("error", {}).get("kind") == "refused", repr(reply)[:300])
+    recorder.check("the refusal carries the renderer's own reason, not only an exit code",
+                   "Could not open file" in message and unreachable in message,
+                   "message=%r" % (message[:300],))
+    recorder.check("a failed render wrote no file at the requested path",
+                   not os.path.exists(unreachable), "out=%r" % (unreachable,))
+
+
 def add_preset(session, **overrides):
     args = {"name": PRESET, "sample_rate": PRESET_RATE, "bit_depth": PRESET_DEPTH,
             "stereo_mode": PRESET_MODE}
@@ -458,6 +479,7 @@ def report_results(recorder):
 def run_checks(session, instance, recorder, outdir):
     build_session(session)
     check_refusals(session, recorder, outdir)
+    check_failure_says_why(session, recorder, outdir)
     path_for = check_store(session, recorder)
     whole = check_whole_project(session, recorder, outdir) if path_for else None
     info_one = check_ranges(session, recorder, outdir, whole) if whole else None

@@ -65,7 +65,10 @@ void MidiSetupWidget::show()
 {
 	// the setup widget should only be visible if the device has some configurable attributes
 	bool visible = !m_configSection.isEmpty();
-	parentWidget()->setVisible(visible);
+	if (QWidget * parent = parentWidget())
+	{
+		parent->setVisible(visible);
+	}
 	QWidget::setVisible(visible);
 }
 

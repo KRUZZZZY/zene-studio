@@ -102,7 +102,7 @@ const ReversibilityRow kVerbRows[] = {
 		"edit brings the note back to 'always plays' rather than leaving the edit in place)",
 		""),
 	/* ---- the linked / smart clip relation (feature-list row 6, task #645) ------
-	 * Three writing verbs and one read. The relation is the clip's OWN serialized
+	 * Four writing verbs and one read. The relation is the clip's OWN serialized
 	 * attribute (`link`, written by Clip::saveClipEdits only when the clip is a
 	 * member, read back by Clip::loadClipEdits with a reset-on-absence rule), so
 	 * the engine's own checkpoint is a LIVE inverse - the same class clip.trim and
@@ -133,6 +133,12 @@ const ReversibilityRow kVerbRows[] = {
 		"ProjectJournal (Clip checkpoints: the same live checkpoint as clip.link_create; "
 		"the recorded inverse op is clip.link_create with the remaining member as the "
 		"anchor, and 'applies: journal' is what control.undo uses)",
+		""),
+	R("clip.link_make_unique", RC::TrueInverse, true,
+		"making one instance unique changes its own 'link' attribute and, when its departure leaves one member, the "
+		"remaining member's attribute too; both values are part of their clips' serialized state",
+		"ProjectJournal (Clip checkpoints: the selected clip and the remaining member when the group dissolves are "
+		"captured together before the link ids change, so one control.undo restores the shared group)",
 		""),
 	R("clip.link_sync", RC::TrueInverse, true,
 		"the write is a member's note list (MidiClip state) and nothing else - the source "

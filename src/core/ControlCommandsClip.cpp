@@ -107,11 +107,14 @@ void registerClipAdd(ControlRegistry& registry)
 		{QStringLiteral("fade_out"), control::numberProperty()},
 		{QStringLiteral("fade_out_shape"), control::stringProperty()},
 		{QStringLiteral("gain_db"), control::numberProperty()},
+		{QStringLiteral("inverted"), control::booleanProperty()},
 		{QStringLiteral("id"), control::stringProperty()},
 		{QStringLiteral("index_in_track"), control::numberProperty()},
 		{QStringLiteral("muted"), control::booleanProperty()},
 		{QStringLiteral("name"), control::stringProperty()},
 		{QStringLiteral("note_count"), control::nullable(control::numberProperty())},
+		{QStringLiteral("channels"), control::nullable(control::numberProperty())},
+		{QStringLiteral("layout"), control::nullable(control::stringProperty())},
 		{QStringLiteral("selected"), control::booleanProperty()},
 	});
 	cmd.mutating = true;
@@ -119,6 +122,14 @@ void registerClipAdd(ControlRegistry& registry)
 		ControlResult error;
 		Track* track = control::resolveTrack(args.value(QStringLiteral("track")).toString(), &error);
 		if (track == nullptr) { return error; }
+		// A folder or neutral track holds no clips: their createClip() returns null. Refuse
+		// before the checkpoint below, so a refused add leaves no no-op undo step and
+		// does not clear the redo history.
+		if (track->type() == Track::Type::Folder || track->type() == Track::Type::Neutral)
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("a folder or neutral track holds no clips; add the clip to a track that carries clips"));
+		}
 		const int clipCount = track->numOfClips();
 		QJsonObject before;
 		before.insert(QStringLiteral("track"), args.value(QStringLiteral("track")).toString());
@@ -129,6 +140,11 @@ void registerClipAdd(ControlRegistry& registry)
 		track->addJournalCheckPoint();
 		Clip* clip = track->createClip(TimePos(static_cast<tick_t>(
 			args.value(QStringLiteral("position")).toDouble())));
+		if (clip == nullptr)
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("the clip could not be created on this track"));
+		}
 		if (!args.value(QStringLiteral("name")).toString().isEmpty())
 		{
 			clip->setName(args.value(QStringLiteral("name")).toString());
@@ -170,6 +186,7 @@ void registerClipMove(ControlRegistry& registry)
 	cmd.resultSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
 		{QStringLiteral("position"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("overlap_skipped"), control::stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -193,7 +210,8 @@ void registerClipMove(ControlRegistry& registry)
 		if (trackWide) { ref.track->addJournalCheckPoint(); } else { ref.clip->addJournalCheckPoint(); }
 		ref.clip->movePosition(TimePos(target));
 		arrangement::rippleAfterMove(ref.clip, previous, ripple);
-		arrangement::applyOverlap(ref.clip, overlap);
+		QString overlapSkipped;
+		arrangement::applyOverlap(ref.clip, overlap, &overlapSkipped);
 		// ED-190: the automation lanes following this track carry their points with the clip.
 		arrangement::moveFollowingAutomation(ref.track, previous, ref.clip->length().getTicks(),
 			ref.clip->startPosition().getTicks() - previous, true);
@@ -201,6 +219,7 @@ void registerClipMove(ControlRegistry& registry)
 		QJsonObject result;
 		result.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		result.insert(QStringLiteral("position"), ref.clip->startPosition().getTicks());
+		if (!overlapSkipped.isEmpty()) { result.insert(QStringLiteral("overlap_skipped"), overlapSkipped); }  // why a crossfade was not made
 		QJsonObject inverseArgs;
 		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		inverseArgs.insert(QStringLiteral("position"), previous);
@@ -221,7 +240,8 @@ void registerClipResize(ControlRegistry& registry)
 	cmd.id = QStringLiteral("clip.resize");
 	cmd.group = QStringLiteral("clip");
 	cmd.verb = QStringLiteral("resize");
-	cmd.description = QStringLiteral("Set a clip's length in ticks (the clip becomes manually resized). "
+	cmd.description = QStringLiteral("Set a clip's length in ticks (the clip becomes manually resized). Linked "
+		"instances keep independent lengths and loop windows. "
 		"Reversible through the ProjectJournal (Clip checkpoint).");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
@@ -240,9 +260,9 @@ void registerClipResize(ControlRegistry& registry)
 			return error;
 		}
 		const tick_t previous = ref.clip->length().getTicks();
+		const auto wanted = static_cast<tick_t>(args.value(QStringLiteral("length")).toDouble());
 		ref.clip->addJournalCheckPoint();
-		ref.clip->changeLength(TimePos(static_cast<tick_t>(
-			args.value(QStringLiteral("length")).toDouble())));
+		ref.clip->changeLength(TimePos(wanted));
 		ref.clip->setAutoResize(false);
 
 		QJsonObject result;
@@ -273,7 +293,8 @@ void registerClipSplit(ControlRegistry& registry)
 		"ED-021, sample clips only: 'frames' cuts that many engine frames after 'position' (frame-exact - the "
 		"halves' audio meets at that frame, their clips overlap by under a tick), and 'zero_crossing' (default: "
 		"arrangement.modes' snap_to_zero_crossings) moves the cut to the nearest zero crossing within 10 ms; the "
-		"reply then names the source 'frame' cut at.");
+		"reply then names the source 'frame' cut at. Splitting a linked instance cuts only that instance; "
+		"both halves stay linked and keep the shared content through their independent windows.");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
 		{QStringLiteral("position"), control::integerProperty(1, MaxSongLength)},
@@ -287,6 +308,9 @@ void registerClipSplit(ControlRegistry& registry)
 		{QStringLiteral("zero_crossing"), control::booleanProperty()},
 		{QStringLiteral("right_position"), control::integerProperty()},
 		{QStringLiteral("lead_frames"), control::integerProperty()},
+		{QStringLiteral("members_split"), control::integerProperty()},
+		{QStringLiteral("right_group"), control::integerProperty()},
+		{QStringLiteral("left_group"), control::integerProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -314,8 +338,8 @@ void registerClipSplit(ControlRegistry& registry)
 		before.insert(QStringLiteral("position"), start);
 		before.insert(QStringLiteral("length"), end - start);
 
-		// ClipView::splitClip: checkpoint the track, then the one split recipe the range edits
-		// share (arrangement::splitClipAt).
+		// The right clone keeps the same link id, so both pieces show shared content
+		// through their independent windows. One Track checkpoint undoes the edit.
 		ref.track->addJournalCheckPoint();
 		Clip* right = arrangement::splitClipAt(ref.clip, splitPos);
 
@@ -323,6 +347,12 @@ void registerClipSplit(ControlRegistry& registry)
 		QJsonObject result;
 		result.insert(QStringLiteral("left"), control::clipId(ref.id));
 		result.insert(QStringLiteral("right"), control::clipId(rightOrdinal));
+		if (ref.clip->linkId() > 0)
+		{
+			result.insert(QStringLiteral("members_split"), 1);
+			result.insert(QStringLiteral("right_group"), ref.clip->linkId());
+			result.insert(QStringLiteral("left_group"), ref.clip->linkId());
+		}
 		result.insert(QStringLiteral("__transaction"),
 			control::transactionPayload(before, QStringLiteral("control.undo"),
 				QJsonObject{{QStringLiteral("left"), control::clipId(ref.id)},
@@ -355,12 +385,15 @@ void registerClipDelete(ControlRegistry& registry)
 		{QStringLiteral("fade_out"), control::numberProperty()},
 		{QStringLiteral("fade_out_shape"), control::stringProperty()},
 		{QStringLiteral("gain_db"), control::numberProperty()},
+		{QStringLiteral("inverted"), control::booleanProperty()},
 		{QStringLiteral("id"), control::stringProperty()},
 		{QStringLiteral("index_in_track"), control::numberProperty()},
 		{QStringLiteral("length"), control::numberProperty()},
 		{QStringLiteral("muted"), control::booleanProperty()},
 		{QStringLiteral("name"), control::stringProperty()},
 		{QStringLiteral("note_count"), control::numberProperty()},
+		{QStringLiteral("channels"), control::nullable(control::numberProperty())},
+		{QStringLiteral("layout"), control::nullable(control::stringProperty())},
 		{QStringLiteral("position"), control::numberProperty()},
 		{QStringLiteral("selected"), control::booleanProperty()},
 	});

@@ -27,11 +27,13 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
+#include <QFileInfo>
 #include <QLibrary>
 #include <QList>
 #include <QRegularExpression>
 
 #include <cmath>
+#include <limits>
 
 #include "ConfigManager.h"
 #include "LadspaManager.h"
@@ -54,7 +56,14 @@ LadspaManager::LadspaManager()
 								split( LADSPA_PATH_SEPERATOR );
 	ladspaDirectories += ConfigManager::inst()->ladspaDir().split( ',' );
 
+	// Two bundled locations, both scanned: "plugins:ladspa" is the LADSPA
+	// directory of the "plugins" search path - the plugin directory relative
+	// to the application, where a build or an installation keeps its modules -
+	// and "plugins/ladspa" the LADSPA directory relative to the working
+	// directory. Neither entry reaches the other location, so replacing one
+	// by the other loses the modules of the location it did not name.
 	ladspaDirectories.push_back( "plugins:ladspa" );
+	ladspaDirectories.push_back( "plugins/ladspa" );
 #ifndef LMMS_BUILD_WIN32
 	ladspaDirectories.push_back( qApp->applicationDirPath() + '/' + LIB_DIR + "ladspa" );
 	ladspaDirectories.push_back( "/usr/lib/ladspa" );
@@ -91,20 +100,21 @@ LadspaManager::LadspaManager()
 				continue;
 			}
 
-			QLibrary plugin_lib( f.absoluteFilePath() );
+			auto plugin_lib = std::make_shared<QLibrary>( f.absoluteFilePath() );
 
-			if( plugin_lib.load() == true )
+			if( plugin_lib->load() == true )
 			{
-				auto descriptorFunction = (LADSPA_Descriptor_Function)plugin_lib.resolve("ladspa_descriptor");
+				auto descriptorFunction = (LADSPA_Descriptor_Function)plugin_lib->resolve("ladspa_descriptor");
 				if( descriptorFunction != nullptr )
 				{
 					addPlugins( descriptorFunction,
 							f.fileName() );
+					m_loadedLibraries.push_back( plugin_lib );
 				}
 			}
 			else
 			{
-				qWarning() << plugin_lib.errorString();
+				qWarning() << plugin_lib->errorString();
 			}
 		}
 	}
@@ -148,8 +158,21 @@ void LadspaManager::addPlugins(
 {
 	for (long pluginIndex = 0; const auto descriptor = _descriptor_func(pluginIndex); ++pluginIndex)
 	{
+		if (descriptor->PortCount > std::numeric_limits<uint32_t>::max())
+		{
+			continue;
+		}
+
 		ladspa_key_t key( _file, QString( descriptor->Label ) );
 		if( m_ladspaManagerMap.contains( key ) )
+		{
+			continue;
+		}
+
+		const uint32_t inputChannels = getPluginInputs( descriptor );
+		const uint32_t outputChannels = getPluginOutputs( descriptor );
+		if (inputChannels > std::numeric_limits<uint16_t>::max() ||
+			outputChannels > std::numeric_limits<uint16_t>::max())
 		{
 			continue;
 		}
@@ -157,8 +180,8 @@ void LadspaManager::addPlugins(
 		auto plugIn = new LadspaManagerDescription;
 		plugIn->descriptorFunction = _descriptor_func;
 		plugIn->index = pluginIndex;
-		plugIn->inputChannels = getPluginInputs( descriptor );
-		plugIn->outputChannels = getPluginOutputs( descriptor );
+		plugIn->inputChannels = static_cast<uint16_t>(inputChannels);
+		plugIn->outputChannels = static_cast<uint16_t>(outputChannels);
 
 		if( plugIn->inputChannels == 0 && plugIn->outputChannels > 0 )
 		{
@@ -186,24 +209,19 @@ void LadspaManager::addPlugins(
 
 
 
-uint16_t LadspaManager::getPluginInputs(
+uint32_t LadspaManager::getPluginInputs(
 		const LADSPA_Descriptor * _descriptor )
 {
-	uint16_t inputs = 0;
+	uint32_t inputs = 0;
 	
-	for( uint16_t port = 0; port < _descriptor->PortCount; port++ )
+	for( decltype(_descriptor->PortCount) port = 0; port < _descriptor->PortCount; port++ )
 	{
 		if( LADSPA_IS_PORT_INPUT( 
 				_descriptor->PortDescriptors[port] ) &&
 			LADSPA_IS_PORT_AUDIO( 
 				_descriptor->PortDescriptors[port] ) )
 		{
-			QString name = QString( 
-					_descriptor->PortNames[port] );
-			if( name.toUpper().contains( "IN" ) )
-			{
-				inputs++;
-			}
+			inputs++;
 		}
 	}
 	return inputs;
@@ -212,24 +230,19 @@ uint16_t LadspaManager::getPluginInputs(
 
 
 
-uint16_t LadspaManager::getPluginOutputs(
+uint32_t LadspaManager::getPluginOutputs(
 		const LADSPA_Descriptor * _descriptor )
 {
-	uint16_t outputs = 0;
+	uint32_t outputs = 0;
 	
-	for( uint16_t port = 0; port < _descriptor->PortCount; port++ )
+	for( decltype(_descriptor->PortCount) port = 0; port < _descriptor->PortCount; port++ )
 	{
 		if( LADSPA_IS_PORT_OUTPUT( 
 				_descriptor->PortDescriptors[port] ) &&
 			LADSPA_IS_PORT_AUDIO( 
 				_descriptor->PortDescriptors[port] ) )
 		{
-			QString name = QString( 
-					_descriptor->PortNames[port] );
-			if( name.toUpper().contains( "OUT" ) )
-			{
-				outputs++;
-			}
+			outputs++;
 		}
 	}
 	return outputs;
@@ -337,7 +350,7 @@ QString LadspaManager::getCopyright( const ladspa_key_t & _plugin )
 uint32_t LadspaManager::getPortCount( const ladspa_key_t & _plugin )
 {
 	const LADSPA_Descriptor * descriptor = getDescriptor( _plugin );
-	return( descriptor ? descriptor->PortCount : 0 );
+	return descriptor ? static_cast<uint32_t>(descriptor->PortCount) : 0;
 }
 
 
@@ -702,6 +715,21 @@ bool LadspaManager::cleanup( const ladspa_key_t & _plugin,
 	}
 	return( false );
 }
+
+#ifdef LMMS_TESTING
+bool LadspaManager::isLibraryLoaded( const QString & fileName ) const
+{
+	for( const auto & library : m_loadedLibraries )
+	{
+		if( library && library->isLoaded() &&
+			QFileInfo( library->fileName() ).fileName() == fileName )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+#endif
 
 
 } // namespace lmms

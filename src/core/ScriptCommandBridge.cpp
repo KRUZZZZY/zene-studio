@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include <QByteArray>
 #include <QHash>
 #include <QJsonArray>
 #include <QRegularExpression>
@@ -52,6 +53,19 @@ namespace
 //! Nesting beyond this is refused rather than recursed into (a self-referencing table).
 constexpr int MaxDepth = 16;
 
+QString fromLuaString(lua_State* L, int index)
+{
+	size_t length = 0;
+	const char* bytes = lua_tolstring(L, index, &length);
+	return QString::fromUtf8(bytes, static_cast<qsizetype>(length));
+}
+
+void pushString(lua_State* L, const QString& value)
+{
+	const QByteArray utf8 = value.toUtf8();
+	lua_pushlstring(L, utf8.constData(), static_cast<size_t>(utf8.size()));
+}
+
 const QStringList& refusedPrefixes()
 {
 	// shortcuts.* and workflow.* (0.5.0 L13; workflows were "macros" until design theme 19) write the
@@ -67,7 +81,9 @@ const QStringList& refusedIds()
 {
 	static const QStringList ids{QStringLiteral("control.quit"), QStringLiteral("settings.set"),
 		QStringLiteral("audio.device_set"), QStringLiteral("stem.model_download"),
-		QStringLiteral("window.header_set"), QStringLiteral("window.layout_save"), QStringLiteral("window.layout_remove")};
+		QStringLiteral("window.header_set"), QStringLiteral("window.layout_save"), QStringLiteral("window.layout_remove"),
+		// Q050-081: a script does not start or stop controller scripts (one script starting another).
+		QStringLiteral("controller.script_start"), QStringLiteral("controller.script_stop")};
 	return ids;
 }
 
@@ -131,7 +147,7 @@ QJsonValue tableToJson(lua_State* L, int index, int depth)
 	lua_pushnil(L);
 	while (lua_next(L, index) != 0)
 	{
-		if (lua_type(L, -2) == LUA_TSTRING) { object.insert(QString::fromUtf8(lua_tostring(L, -2)), luaToJson(L, -1, depth + 1)); }
+		if (lua_type(L, -2) == LUA_TSTRING) { object.insert(fromLuaString(L, -2), luaToJson(L, -1, depth + 1)); }
 		lua_pop(L, 1);
 	}
 	return object;
@@ -145,7 +161,7 @@ QJsonValue luaToJson(lua_State* L, int index, int depth)
 	case LUA_TNUMBER:
 		return lua_isinteger(L, index) ? QJsonValue(static_cast<qint64>(lua_tointeger(L, index)))
 			: QJsonValue(lua_tonumber(L, index));
-	case LUA_TSTRING: return QString::fromUtf8(lua_tostring(L, index));
+	case LUA_TSTRING: return fromLuaString(L, index);
 	case LUA_TTABLE: return tableToJson(L, index, depth);
 	default: return QJsonValue();
 	}
@@ -168,8 +184,9 @@ void pushObject(lua_State* L, const QJsonObject& object)
 	lua_createtable(L, 0, static_cast<int>(object.size()));
 	for (auto it = object.begin(); it != object.end(); ++it)
 	{
+		pushString(L, it.key());
 		pushJson(L, it.value());
-		lua_setfield(L, -2, it.key().toUtf8().constData());
+		lua_settable(L, -3);
 	}
 }
 
@@ -188,7 +205,7 @@ void pushJson(lua_State* L, const QJsonValue& value)
 	{
 	case QJsonValue::Bool: lua_pushboolean(L, value.toBool()); return;
 	case QJsonValue::Double: pushNumber(L, value.toDouble()); return;
-	case QJsonValue::String: lua_pushstring(L, value.toString().toUtf8().constData()); return;
+	case QJsonValue::String: pushString(L, value.toString()); return;
 	case QJsonValue::Array: pushArray(L, value.toArray()); return;
 	case QJsonValue::Object: pushObject(L, value.toObject()); return;
 	default: lua_pushnil(L); return;
@@ -198,8 +215,8 @@ void pushJson(lua_State* L, const QJsonValue& value)
 int pushFailure(lua_State* L, const QString& message, const QString& kind)
 {
 	lua_pushnil(L);
-	lua_pushstring(L, message.toUtf8().constData());
-	lua_pushstring(L, kind.toUtf8().constData());
+	pushString(L, message);
+	pushString(L, kind);
 	return 3;
 }
 
@@ -257,7 +274,14 @@ void emptyTablesAsArrays(const QString& id, QJsonObject& args)
 //! zene.command(id, args) -> reply | nil, message, kind
 int luaCommand(lua_State* L)
 {
-	const QString id = QString::fromUtf8(luaL_checkstring(L, 1));
+	size_t idLength = 0;
+	const char* idBytes = luaL_checklstring(L, 1, &idLength);
+	const QString id = QString::fromUtf8(idBytes, static_cast<qsizetype>(idLength));
+	if (lua_gettop(L) >= 2 && !lua_isnil(L, 2) && !lua_istable(L, 2))
+	{
+		return pushFailure(L, QStringLiteral("'%1' expects a table of arguments (or none), got %2")
+			.arg(id, luaL_typename(L, 2)), QStringLiteral("invalid_args"));
+	}
 	QJsonObject args = lua_istable(L, 2) ? luaToJson(L, 2, 0).toObject() : QJsonObject();
 	if (const QString why = refusalFor(id); !why.isEmpty()) { return pushFailure(L, why, QStringLiteral("refused")); }
 	emptyTablesAsArrays(id, args);
@@ -268,7 +292,16 @@ int luaCommand(lua_State* L)
 	command.type = ScriptCommand::Type::DawEdit;
 	command.i0 = static_cast<std::int32_t>(ScriptDawBindings::Op::RegistryCall);
 	command.object0 = &request;
-	ScriptEngine::instance()->enqueue(command);
+	if (!ScriptEngine::instance()->enqueue(command))
+	{
+		// The bounded queue was full, so the request was DROPPED and will
+		// never be applied: the reply below would be an empty failure that
+		// says nothing. Say what happened instead.
+		return pushFailure(L,
+			QStringLiteral("the script command queue is full (%1 commands); the command was dropped")
+				.arg(ScriptCommandQueueCapacity),
+			QStringLiteral("refused"));
+	}
 	// The read-back rule (ScriptDawEdit.cpp): the request is on this stack, so the script waits
 	// until the apply side has run it.
 	ScriptEngine::instance()->flushCommandsForRead();
@@ -288,13 +321,23 @@ int luaCommands(lua_State* L)
 	lua_createtable(L, static_cast<int>(ids.size()), 0);
 	for (int i = 0; i < ids.size(); ++i)
 	{
-		lua_pushstring(L, ids.at(i).toUtf8().constData());
+		pushString(L, ids.at(i));
 		lua_rawseti(L, -2, i + 1);
 	}
 	return 1;
 }
 
 } // namespace
+
+QJsonObject tableToObject(lua_State* L, int index)
+{
+	return lua_istable(L, index) ? luaToJson(L, index, 0).toObject() : QJsonObject();
+}
+
+void pushJsonObject(lua_State* L, const QJsonObject& object)
+{
+	pushObject(L, object);
+}
 
 QString refusalFor(const QString& id)
 {

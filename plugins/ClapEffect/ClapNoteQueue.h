@@ -76,7 +76,7 @@ struct NoteEventIn
 	std::uint8_t type = 0;        //!< CLAP_EVENT_NOTE_ON / _OFF / _CHOKE / _EXPRESSION
 	std::uint8_t channel = 0;     //!< 0 .. 15 (LMMS' MIDI channel)
 	std::int16_t key = 0;         //!< 0 .. 127; -1 for an expression that applies to the channel
-	std::int16_t velocity = 0;    //!< 0 .. 127; ignored for note-off
+	double velocity = 0.0;         //!< a note-on's CLAP 0 .. 1 velocity, unrounded; 0 for note-off/choke
 	std::int32_t frameOffset = 0; //!< frames from the start of the block
 	std::uint8_t expressionId = 0; //!< CLAP_NOTE_EXPRESSION_*, for CLAP_EVENT_NOTE_EXPRESSION (E11)
 	double value = 0.0;           //!< the expression's value in CLAP's own range; a CLAP_EVENT_PARAM_MOD's amount

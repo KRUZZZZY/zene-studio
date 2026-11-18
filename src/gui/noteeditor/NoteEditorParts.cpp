@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <vector>
 
 #include <QJsonArray>
@@ -112,7 +113,9 @@ void NoteKeyboardView::mousePressEvent(QMouseEvent* event)
 		m_zoomKey = m_state.grid.keyAtY(m_zoomY);
 		return;
 	}
-	m_pressed = m_state.grid.keyAtY(event->pos().y());
+	// Only the left button auditions: the right one is the editor's context menu, the middle one
+	// the row-height drag below. Neither sounds the key.
+	m_pressed = event->button() == Qt::LeftButton ? m_state.grid.keyAtY(event->pos().y()) : -1;
 	if (m_pressed >= 0) { m_editor->auditionPress(m_pressed, m_state.lastVelocity); }
 	update();
 }
@@ -124,7 +127,7 @@ void NoteKeyboardView::mouseMoveEvent(QMouseEvent* event)
 	if (m_zoomY < 0) { return; }
 	NoteGrid& g = m_state.grid;
 	g.setRowHeight(m_zoomRows + (m_zoomY - event->pos().y()) / 8);
-	if (const int row = g.rowOfKey(m_zoomKey); row >= 0) { g.setScrollY(row * g.rowHeight() + g.rowHeight() / 2 - m_zoomY); }
+	if (const int row = g.rowOfKey(m_zoomKey); row >= 0) { g.setScrollY(row * g.rowHeight() + g.rowHeight() / 2 - event->pos().y()); }
 	emit m_editor->stateChanged();
 }
 
@@ -138,7 +141,9 @@ void NoteKeyboardView::mouseReleaseEvent(QMouseEvent*)
 
 void NoteKeyboardView::wheelEvent(QWheelEvent* event)
 {
-	m_state.grid.setScrollY(m_state.grid.scrollY() - event->angleDelta().y() / 2);
+	// A trackpad sends pixel deltas and no angle deltas: those scroll by their pixels.
+	const int angle = event->angleDelta().y();
+	m_state.grid.setScrollY(m_state.grid.scrollY() - (angle != 0 ? angle / 2 : event->pixelDelta().y()));
 	emit m_editor->stateChanged();
 }
 
@@ -301,13 +306,18 @@ void NoteLaneView::mousePressEvent(QMouseEvent* event)
 	if (m_state.clip == nullptr || event->button() != Qt::LeftButton) { return; }
 	m_drawing = true;
 	m_pending.clear();
+	m_drawAt = event->pos();
 	drawAt(event->pos());
 }
 
 void NoteLaneView::mouseMoveEvent(QMouseEvent* event)
 {
 	m_hover = event->pos();
-	if (m_drawing) { drawAt(event->pos()); }
+	if (m_drawing)
+	{
+		drawAlong(m_drawAt, event->pos());
+		m_drawAt = event->pos();
+	}
 	else { update(); }  // the readout follows the pointer
 }
 
@@ -339,6 +349,15 @@ void NoteLaneView::drawAt(const QPoint& pos)
 		}
 	}
 	update();
+}
+
+void NoteLaneView::drawAlong(const QPoint& from, const QPoint& to)
+{
+	// Qt coalesces a fast drag into sparse move events, so the path between two events is walked as the
+	// note area's strokes walk theirs: a stem the pointer passed over between them takes the value too.
+	const QPoint path = to - from;
+	const int steps = std::max(1, std::max(std::abs(path.x()), std::abs(path.y())) / 2);
+	for (int i = 1; i <= steps; ++i) { drawAt(from + path * i / steps); }
 }
 
 void NoteLaneView::commit()

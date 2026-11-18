@@ -120,6 +120,13 @@ class SessionPlaybackRenderTest : public QObject
 private slots:
 	void initTestCase()
 	{
+#ifdef LMMS_TEST_PLUGIN_DIR
+		// The fixture needs a REAL instrument (tripleoscillator). tests/CMakeLists.txt hands this target the
+		// build's plugin directory; without pointing PluginFactory at it before Engine::init scans, the
+		// instrument is never found unless the caller happened to export LMMS_PLUGIN_DIR - and both render
+		// cases then skipped for want of an instrument, which left most of this file unexecuted.
+		qputenv( "LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR );
+#endif
 		Engine::init( true );
 		// 1. The play-handle pool exists only if main() built it; a test binary
 		//    that plays a note must build it itself.
@@ -137,10 +144,8 @@ private slots:
 	//! silent.
 	void aLaunchedSlotWithContentRendersAudio()
 	{
-		if( !buildFixture( /*withContent=*/true ) )
-		{
-			QSKIP( "no sounding instrument is loadable in this environment" );
-		}
+		QVERIFY2( buildFixture( /*withContent=*/true ),
+			"the sounding instrument (tripleoscillator, built with this test) did not load: a failure, not a skip" );
 
 		const QByteArray silent = render();
 		QVERIFY2( !silent.isEmpty(), "the export produced no file" );
@@ -236,10 +241,8 @@ private slots:
 	//! must be silent in it: the take-over is real and there is nothing to play.
 	void aColumnTakenOverByAnEmptyCellStaysSilent()
 	{
-		if( !buildFixture( /*withContent=*/false ) )
-		{
-			QSKIP( "no sounding instrument is loadable in this environment" );
-		}
+		QVERIFY2( buildFixture( /*withContent=*/false ),
+			"the sounding instrument (tripleoscillator, built with this test) did not load: a failure, not a skip" );
 
 		const QByteArray before = render();
 		QVERIFY( isSilent( before ) );

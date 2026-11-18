@@ -32,12 +32,16 @@
 #include <QStyleHints>
 
 #include "ControlVocabulary.h"
+#include "Engine.h"
+#include "InstrumentTrack.h"
 #include "DesignTokens.h"
 #include "MidiClip.h"
 #include "Note.h"
 #include "NoteCanvas.h"
 #include "NoteEditor.h"
 #include "NoteProperties.h"
+#include "ShellSelection.h"
+#include "Song.h"
 
 namespace lmms::gui
 {
@@ -45,11 +49,46 @@ namespace lmms::gui
 namespace
 {
 
+//! Find the editor through the canvas's possible wrapper widgets.
+NoteEditor* containingNoteEditor(QWidget* parent)
+{
+	auto* editor = qobject_cast<NoteEditor*>(parent);
+	for (QWidget* widget = parent; editor == nullptr && widget != nullptr; widget = widget->parentWidget())
+	{
+		editor = qobject_cast<NoteEditor*>(widget);
+	}
+	return editor;
+}
+
 QJsonArray idsOf(const std::vector<Note*>& notes)
 {
 	QJsonArray ids;
 	for (const Note* note : notes) { ids.append(control::noteIdOf(note)); }
 	return ids;
+}
+
+//! The MIDI clip a click in an empty note editor writes to: on the selected instrument track (else the song's first
+//! one), the clip already under the play position's bar, else a new one-bar clip there. Null with no instrument track.
+MidiClip* clipForEmptyEditor()
+{
+	Song* song = Engine::getSong();
+	auto* track = dynamic_cast<InstrumentTrack*>(ShellSelection::instance()->track());
+	for (Track* t : song->tracks())
+	{
+		if (track != nullptr) { break; }
+		track = dynamic_cast<InstrumentTrack*>(t);
+	}
+	if (track == nullptr) { return nullptr; }
+	const TimePos bar(song->getPlayPos(Song::PlayMode::Song).getBar() * TimePos::ticksPerBar());
+	for (Clip* clip : track->getClips())
+	{
+		auto* midi = dynamic_cast<MidiClip*>(clip);
+		if (midi != nullptr && clip->startPosition() <= bar && bar < clip->endPosition()) { return midi; }
+	}
+	track->addJournalCheckPoint();  // undo removes the clip, as for a click in the arranger
+	auto* clip = dynamic_cast<MidiClip*>(track->createClip(bar));
+	if (clip != nullptr) { clip->changeLength(TimePos(TimePos::ticksPerBar())); }
+	return clip;
 }
 
 } // namespace
@@ -123,7 +162,16 @@ int NoteCanvas::keyMovedBy(int key, int rows) const
 
 void NoteCanvas::mousePressEvent(QMouseEvent* event)
 {
-	if (m_state.clip == nullptr) { return; }
+	if (m_state.clip == nullptr)
+	{
+		// Owner 2026-10-29 (a Windows tester could not place a note): an empty editor is no dead end. A left click
+		// opens a clip on the selected instrument (clipForEmptyEditor) and goes on to place its note there.
+		auto* editor = containingNoteEditor(parentWidget());
+		MidiClip* clip = event->button() == Qt::LeftButton && editor != nullptr ? clipForEmptyEditor() : nullptr;
+		if (clip == nullptr) { return; }
+		editor->setClip(clip);
+		if (m_state.clip == nullptr) { return; }
+	}
 	setFocus(Qt::MouseFocusReason);
 	m_pressPos = m_currentPos = event->pos();
 	m_pressTick = static_cast<int>(m_state.grid.tickAtX(event->pos().x()));
@@ -213,8 +261,8 @@ void NoteCanvas::pressOnEmpty(QMouseEvent* event)
 	if (m_state.tool == NoteTool::Draw && m_pressKey >= 0)
 	{
 		m_drag = Drag::Draw;
-		m_auditionKey = m_pressKey;
-		m_editor->auditionPress(m_pressKey, m_state.lastVelocity);
+		m_auditionKey = scaleKey(m_pressKey);
+		m_editor->auditionPress(m_auditionKey, m_state.lastVelocity);
 		return;
 	}
 	pressBand(event);
@@ -234,36 +282,101 @@ void NoteCanvas::mouseMoveEvent(QMouseEvent* event)
 	m_mods = event->modifiers();
 	switch (m_drag)
 	{
-	case Drag::None: updateCursor(event->pos()); return;
+	case Drag::None:
+		// The Draw tool previews the note the pointer would draw, and every tool shows its own cursor
+		// without waiting for a button.
+		m_hoverPos = event->pos();
+		m_hovering = true;
+		updateCursor(event->pos());
+		update();
+		return;
 	case Drag::Pan: panTo(event->pos()); return;
+	case Drag::Draw: followDrawPitch(); break;
 	case Drag::Erase:
 	case Drag::Mute: strokeAlong(from, event->pos()); break;
-	case Drag::Paint: extendPaint(event->pos()); break;
+	case Drag::Paint: paintAlong(from, event->pos()); break;
 	case Drag::Audition: scrubTo(event->pos()); break;
 	default: break;
 	}
 	update();
 }
 
+void NoteCanvas::leaveEvent(QEvent* event)
+{
+	m_hovering = false;
+	update();
+	QWidget::leaveEvent(event);
+}
+
+int NoteCanvas::drawKey() const
+{
+	const int key = m_state.grid.keyAtY(m_currentPos.y());
+	return scaleKey(key >= 0 ? key : m_pressKey);
+}
+
+void NoteCanvas::followDrawPitch()
+{
+	// FL: while a draw gesture runs, moving to another row moves the note being drawn (and what it
+	// auditions) there. The press row is only the fallback when the pointer leaves the rows.
+	const int key = drawKey();
+	if (key < 0 || key == m_auditionKey) { return; }
+	if (m_auditionKey >= 0) { m_editor->auditionRelease(m_auditionKey); }
+	m_auditionKey = key;
+	m_editor->auditionPress(key, m_state.lastVelocity);
+}
+
+namespace
+{
+
+//! The cursor the note area shows when the pointer is on an empty row: each tool's next action.
+Qt::CursorShape toolCursor(NoteTool tool)
+{
+	switch (tool)
+	{
+	case NoteTool::Draw: return Qt::CrossCursor;
+	case NoteTool::Select: return Qt::ArrowCursor;
+	case NoteTool::Slice: return Qt::SplitHCursor;
+	case NoteTool::Erase: return Qt::ForbiddenCursor;
+	case NoteTool::Audition: return Qt::PointingHandCursor;
+	case NoteTool::Paint: return Qt::CrossCursor;
+	case NoteTool::Mute: return Qt::UpArrowCursor;
+	}
+	return Qt::ArrowCursor;
+}
+
+} // namespace
+
 void NoteCanvas::updateCursor(const QPoint& pos)
 {
 	const Note* note = noteAt(pos);
 	const bool editing = note != nullptr && (m_state.tool == NoteTool::Draw || m_state.tool == NoteTool::Select);
-	const bool handle = editing && (onResizeHandle(*note, pos)
-		|| (QGuiApplication::keyboardModifiers().testFlag(Qt::ShiftModifier) && onStartHandle(*note, pos)));
-	setCursor(handle ? Qt::SizeHorCursor : Qt::ArrowCursor);
+	if (editing && (onResizeHandle(*note, pos)
+		|| (QGuiApplication::keyboardModifiers().testFlag(Qt::ShiftModifier) && onStartHandle(*note, pos))))
+	{
+		setCursor(Qt::SizeHorCursor);
+		return;
+	}
+	// Over a note, Draw's and Select's next action is a move; on an empty row it is the tool's own.
+	setCursor(editing ? Qt::SizeAllCursor : toolCursor(m_state.tool));
 }
+
+void NoteCanvas::refreshCursor() { updateCursor(m_currentPos); }
 
 void NoteCanvas::mouseReleaseEvent(QMouseEvent* event)
 {
+	const QPoint from = m_currentPos;
 	m_currentPos = event->pos();
 	m_mods = event->modifiers();
+	if (m_drag == Drag::Paint) { paintAlong(from, m_currentPos); }
 	if (m_drag == Drag::Draw) { m_drawnAt = event->timestamp(); }
 	commitDrag(m_drag);
 	if (m_auditionKey >= 0) { m_editor->auditionRelease(m_auditionKey); }
 	m_auditionKey = -1;
 	m_drag = Drag::None;
 	m_anchorId = -1;
+	m_hoverPos = event->pos();
+	m_hovering = rect().contains(event->pos());
+	updateCursor(event->pos());  // the tool's cursor stays after the gesture, wherever it ended
 	update();
 }
 
@@ -317,9 +430,10 @@ std::pair<int, int> NoteCanvas::drawSpan() const
 void NoteCanvas::commitDraw()
 {
 	const auto [start, length] = drawSpan();
+	const int key = drawKey();
 	m_state.lastLength = length;
 	const QJsonObject added = m_editor->run(QStringLiteral("note.add"), {{QStringLiteral("clip"), m_editor->clipId()},
-		{QStringLiteral("key"), scaleKey(m_pressKey)}, {QStringLiteral("position"), start},
+		{QStringLiteral("key"), key}, {QStringLiteral("position"), start},
 		{QStringLiteral("length"), m_state.lastLength}, {QStringLiteral("velocity"), m_state.lastVelocity}});
 	m_justDrawn = added.value(QStringLiteral("note")).toString();
 }
@@ -415,6 +529,7 @@ void NoteCanvas::paintDragPreview(QPainter& p) const
 {
 	switch (m_drag)
 	{
+	case Drag::None: paintHoverPreview(p); break;
 	case Drag::Draw: paintDrawPreview(p); break;
 	case Drag::Erase:
 	case Drag::Mute: paintStrokePreview(p); break;
@@ -429,11 +544,26 @@ void NoteCanvas::paintDragPreview(QPainter& p) const
 
 void NoteCanvas::paintDrawPreview(QPainter& p) const
 {
-	if (m_pressKey < 0) { return; }
+	const int key = drawKey();
+	if (key < 0) { return; }
 	const auto [start, length] = drawSpan();
 	QColor fill = tokens::velocityColor(m_state.lastVelocity);
 	fill.setAlpha(170);
-	p.fillRect(rectFor(scaleKey(m_pressKey), start, start + length), fill);
+	p.fillRect(rectFor(key, start, start + length), fill);
+}
+
+void NoteCanvas::paintHoverPreview(QPainter& p) const
+{
+	// The Draw tool shows the note a press would make under the idle pointer. Over a note the click
+	// would move it instead, so no note preview is drawn there.
+	if (m_state.clip == nullptr || m_drag != Drag::None || m_state.tool != NoteTool::Draw || !m_hovering) { return; }
+	const int row = m_state.grid.keyAtY(m_hoverPos.y());
+	if (row < 0 || noteAt(m_hoverPos) != nullptr) { return; }
+	const int start = std::max(0, NoteGrid::snapDown(static_cast<int>(m_state.grid.tickAtX(m_hoverPos.x())), m_state.gridTicks));
+	const int length = m_state.newLength > 0 ? m_state.newLength : m_state.lastLength;
+	QColor fill = tokens::velocityColor(m_state.lastVelocity);
+	fill.setAlpha(90);
+	p.fillRect(rectFor(scaleKey(row), start, start + std::max(1, length)), fill);
 }
 
 int NoteCanvas::resizeDelta() const

@@ -144,6 +144,12 @@ ControlResult trim(const ClipRef& ref, const QJsonObject& args)
 	auto* clip = dynamic_cast<SampleClip*>(ref.clip);
 	QString why;
 	if (!arrangement::frameEditable(*clip, &why)) { return refused(why); }
+	// 'end_frames' is a frame offset from the 'end' tick, so without that tick there is nothing to offset
+	// from: taking the frame path and trimming nothing would answer success without moving the clip.
+	if (!args.contains(QStringLiteral("end")) && args.contains(QStringLiteral("end_frames")))
+	{
+		return refused(QStringLiteral("'end_frames' counts frames after 'end': send the end tick with it"));
+	}
 	const TrimFrames frames = trimFrames(clip, args);
 	if (!frames.hasHead && !frames.hasTail) { return ControlResult::success(edges(clip)); }  // nothing to move
 	if (!checkTrim(clip, frames, &why)) { return refused(why); }

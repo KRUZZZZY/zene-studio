@@ -25,6 +25,7 @@
 #include "ClapInstrument.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <exception>
 
 #include <QDebug>
@@ -34,6 +35,7 @@
 #include "ClapInstrumentView.h"
 #include "ClapSubPluginFeatures.h"
 #include "Engine.h"
+#include "HostedTrackChannels.h"
 #include "InstrumentPlayHandle.h"
 #include "LmmsCommonMacros.h"
 #include "MidiEvent.h"
@@ -101,7 +103,7 @@ ChannelCounts channelCountsOf(const clap::PortLayout& layout)
 {
 	const auto inputs = static_cast<ch_cnt_t>(std::max(0, layout.inputs));
 	const auto outputs = std::max<ch_cnt_t>(ch_cnt_t{2}, static_cast<ch_cnt_t>(std::max(0, layout.outputs)));
-	return {std::max(inputs, outputs), inputs, outputs};
+	return {hostedTrackChannels(inputs, outputs), inputs, outputs};
 }
 
 } // namespace
@@ -142,6 +144,7 @@ ClapInstrument::ClapInstrument(InstrumentTrack* parent,
 			m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(),
 				&error);
 		}
+		cacheLatency();  // MX-157
 	}
 
 	// Every CLAP parameter becomes an LMMS model, exactly as for the effect
@@ -213,15 +216,28 @@ void ClapInstrument::reprepare()
 			qWarning() << "CLAP: re-prepare failed:" << error;
 		}
 		// prepare() re-read a changed port layout: the transport follows it, as the effect host's does.
+		bool layoutChanged = false;
 		if (m_plugin.layoutRevision() != revision)
 		{
 			const auto counts = channelCountsOf(m_plugin.busLayout());
 			audioPorts().setAllChannelCounts(counts.total, counts.inputs, counts.outputs);
 			m_outputBuses.setLayout(clap::outputBusesOf(m_plugin.ports()));  // MX-114
+			layoutChanged = true;
 		}
 		engine->doneChangeInModel();
+		// BUG 6: the audio-output configuration on the surface follows the new layout instead of going stale.
+		if (layoutChanged) { emit outputLayoutChanged(); }
 	}
 	m_needsReprepare.store(false, std::memory_order_relaxed);
+	cacheLatency();  // MX-157
+}
+
+void ClapInstrument::cacheLatency()
+{
+	// clap_plugin_latency reports a uint32_t: past INT32_MAX it would turn negative as an int (the effect
+	// host's bound, ClapEffect::cacheLatency). The PDC delay lines clamp what they cannot apply.
+	const auto latency = std::min<std::uint32_t>(m_plugin.latency(), static_cast<std::uint32_t>(INT32_MAX));
+	reportLatency(m_plugin.isPrepared() ? static_cast<int>(latency) : 0);
 }
 
 bool ClapInstrument::handleMidiEvent(const MidiEvent& event, const TimePos&,
@@ -346,18 +362,23 @@ void ClapInstrument::modulateNote(std::int64_t target, int channel, int key, flo
 void ClapInstrument::saveSettings(QDomDocument& doc, QDomElement& element)
 {
 	QByteArray state;
-	if (!m_plugin.saveState(&state)) { return; }
-
-	auto stateElement = doc.createElement(QStringLiteral("state"));
-	stateElement.appendChild(doc.createTextNode(QString::fromLatin1(state.toBase64())));
-	element.appendChild(stateElement);
+	if (m_plugin.saveState(&state))
+	{
+		auto stateElement = doc.createElement(QStringLiteral("state"));
+		stateElement.appendChild(doc.createTextNode(QString::fromLatin1(state.toBase64())));
+		element.appendChild(stateElement);
+	}
+	m_params.saveValues(doc, element);
 }
 
 void ClapInstrument::loadSettings(const QDomElement& element)
 {
 	const auto node = element.firstChildElement(QStringLiteral("state"));
-	if (node.isNull()) { return; }
-	m_plugin.loadState(QByteArray::fromBase64(node.text().toLatin1()));
+	if (!node.isNull()) { m_plugin.loadState(QByteArray::fromBase64(node.text().toLatin1())); }
+	// stress-4: the host's saved values of what the plug-in's state did not bring back (none in a document
+	// written before they were saved).
+	const bool restored = m_params.restoreValues(element);
+	if (node.isNull() && !restored) { return; }
 
 	// reflect the restored state in the models
 	m_params.pullValues(0.f);

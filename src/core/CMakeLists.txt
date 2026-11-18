@@ -1,5 +1,14 @@
-# Offline stem separation (opt-in, see doc/STEM-SPLIT.md). The job manager and
-# track builder are pure Qt and always available when the feature is enabled;
+# Ableton Link (WF-051, docs/LINK-SYNC.md). With the vendored library
+# (LMMS_HAVE_ABLETON_LINK), src/core/AbletonLinkSession.cpp is compiled as its own
+# static library in src/CMakeLists.txt so Link's asio configuration reaches that
+# one translation unit only; without it, this stub implements the same header
+# (include/AbletonLinkSession.h) and reports the library absent.
+IF(NOT LMMS_HAVE_ABLETON_LINK)
+	SET(LMMS_ABLETON_LINK_STUB_SRCS core/AbletonLinkSessionStub.cpp)
+ENDIF()
+
+# Offline stem separation (on by default, owner decision 14; see doc/STEM-SPLIT.md). The job
+# manager and track builder are pure Qt and always available when the feature is enabled;
 # the C++ ONNX Runtime backend is compiled only when the runtime was found.
 IF(LMMS_HAVE_STEM_SPLIT)
 	SET(LMMS_STEM_SRCS
@@ -15,6 +24,7 @@ IF(LMMS_HAVE_STEM_SPLIT)
 		# it there is no engine for any of them to drive; each file is split the
 		# way this tree splits a group, for the file-length ratchet.
 		core/ControlStemSupport.cpp
+		core/ControlStemSource.cpp
 		core/ControlStemModel.cpp
 		core/ControlStemWav.cpp
 		core/ControlCommandsStems.cpp
@@ -55,6 +65,10 @@ SET(LMMS_COLLAB_SRCS
 	core/CollabPolicy.cpp
 	core/ControlCommandsCollab.cpp
 	core/ControlReversibilityTableCollab.cpp
+	# Q050-205: the OSC server's commands and its wire codec are always built; the UDP listener needs Qt Network.
+	core/ControlCommandsOsc.cpp
+	core/ControlReversibilityTableOsc.cpp
+	core/OscBridge.cpp
 )
 IF(ZENE_HAVE_COLLAB)
 	LIST(APPEND LMMS_COLLAB_SRCS
@@ -68,12 +82,18 @@ IF(ZENE_HAVE_COLLAB)
 		core/PortMappingCodec.cpp
 		core/PortMappingPmp.cpp
 		core/PortMappingUpnp.cpp
+		core/OscServer.cpp
 	)
 ENDIF()
 
 # The telemetry.* command group is the client's agent surface, so it travels with
 # the client (SPEC A15). Kept in its own variable so the big source list below
 # keeps the position it has always had.
+# Q050-501: the update check, with its own packager switch (not telemetry's).
+SET(LMMS_UPDATE_CHECK_SRCS)
+IF(ZENE_UPDATE_CHECK_ENABLED)
+	LIST(APPEND LMMS_UPDATE_CHECK_SRCS core/UpdateCheck.cpp core/ControlCommandsUpdateCheck.cpp)
+ENDIF()
 SET(LMMS_TELEMETRY_COMMAND_SRCS)
 IF(ZENE_TELEMETRY_ENABLED)
 	LIST(APPEND LMMS_TELEMETRY_COMMAND_SRCS core/ControlCommandsTelemetry.cpp)
@@ -109,6 +129,8 @@ SET(LMMS_SESSION_SRCS
 		# its own TU because SessionScheduler.h is AT the file-length limit, so
 		# the new declarations' bodies cannot live beside their class.
 		core/SessionPlayback.cpp
+		# Q050-489: the one boundary that keeps the launcher in step with grid edits, undo, redo and pattern renumbering.
+		core/SessionTransitions.cpp
 		# The session.* control-surface group (SPEC A11-A16): always compiled
 		# with the data layer since ARCH-4 S10 removed WANT_SESSION_VIEW.
 		core/ControlCommandsSession.cpp
@@ -125,6 +147,13 @@ SET(LMMS_SESSION_SRCS
 		core/ControlCommandsSessionSceneFollow.cpp
 		core/ControlCommandsSessionRecord.cpp
 		core/ControlCommandsSessionRecordLand.cpp
+		# 0.5.0 L02 (WF-055): the audio take a launcher cell records (include/SessionAudioRecorder.h).
+		core/SessionAudioRecorder.cpp
+		# Q050-089.2: render.realtime's capture of the master mix (include/RealtimeExport.h).
+		core/RealtimeExport.cpp
+		# ...and a launched audio cell rendering its clip through its sample track (include/SessionAudioCells.h).
+		core/SessionAudioCells.cpp
+		core/SessionAudioBake.cpp
 	)
 
 set(LMMS_SRCS
@@ -134,8 +163,13 @@ set(LMMS_SRCS
 	core/AudioBus.cpp
 	core/AudioBusHandle.cpp
 	core/AudioEngine.cpp
+	# 0.5.0 L10 (Q050-156): the bounded input take recorded into a sampler (include/SamplerTakeRecorder.h).
+	core/SamplerTakeRecorder.cpp
 	core/AudioEngineProfiler.cpp
 	core/AudioEngineWorkerThread.cpp
+	# The worker wake's platform half (Q050-167): compare-and-wait on the generation word,
+	# with no mutex and no allocation on the render-side post.
+	core/AudioWorkerWake.cpp
 	core/AudioPortsModel.cpp
 	core/AudioResampler.cpp
 	# Pitch-preserving time stretch (0.3.0 feature-list row 30): WSOLA. The
@@ -152,9 +186,12 @@ set(LMMS_SRCS
 	core/AutomationRamp.cpp
 	core/BandLimitedWave.cpp
 	core/base64.cpp
+	# Q050-486: the one bounded, validating loader for saved plug-in waveform data.
+	core/WaveformData.cpp
 	core/BrowserCatalog.cpp
 	core/BrowserMetadata.cpp
 	core/BrowserPeakCache.cpp
+	core/PeakJobs.cpp
 	core/BrowserSearch.cpp
 	core/BrowserTagStore.cpp
 	# Import detection (feature row 34 of docs/FEATURE-LIST-0.3.0.md): the Qt-free
@@ -189,13 +226,18 @@ set(LMMS_SRCS
 	core/ControlCommandsArrangement.cpp
 	core/ControlCommandsAudioSlice.cpp
 	core/ControlCommandsClip.cpp
+	# clip.set_mute (0.5.0 Q050-040): the clip mute the song editor dispatches too.
+	core/ControlCommandsClipMute.cpp
 	core/ControlCommandsConsolidate.cpp
 	core/ControlCommandsMonitor.cpp
 	core/ControlCommandsPluginEditor.cpp
+	# Q050-502: the Qt platform a Wayland desktop runs on, so plug-in editors can embed (XWayland).
+	core/PluginWindowPlatform.cpp
 	core/ControlBounceSupport.cpp
 	core/ControlCommandsBounceLand.cpp
 	core/ControlCommandsBrowserCollections.cpp
 	core/ControlCommandsClipEdits.cpp
+	core/ControlCommandsClipRecord.cpp
 	core/ControlCommandsCollectMedia.cpp
 	# clip.trim / clip.slip (0.3.0 verb wave): the clip group's edge-editing verbs.
 	# Split into its own TU because ControlCommandsClipEdits.cpp is at the file
@@ -207,6 +249,10 @@ set(LMMS_SRCS
 	# helpers the group's two translation units share. See docs/LINKED-CLIPS.md
 	# for the design decision and the edit-kind table.
 	core/ClipLinks.cpp
+	# A crossfade between a clip and one lying wholly inside it (owner decision 2026-10-08).
+	core/ContainedCrossfade.cpp
+	# Shared-content adjustments for linked clips: linked geometry remains per-instance (owner decision 2026-10-09).
+	core/LinkedClipEdits.cpp
 	core/ControlCommandsClipLink.cpp
 	core/ControlCommandsClipLinkState.cpp
 	# The destructive waveform editor's first slice (board card #706): the
@@ -242,9 +288,13 @@ set(LMMS_SRCS
 	core/ControlCommandsMixer.cpp
 	core/ControlCommandsMixerListen.cpp
 	core/ControlCommandsMixerStrip.cpp
+	core/ControlCommandsConsoleStrip.cpp
+	core/ControlCommandsTrackOffset.cpp
+	core/ControlCommandsInputMeters.cpp
 	core/ControlCommandsMixerRename.cpp
 	core/ControlCommandsDeviceCopy.cpp
 	core/ControlCommandsDrumRack.cpp
+	core/DrumPadState.cpp
 	core/ControlCommandsHandoff.cpp
 	core/ControlCommandsImportTracks.cpp
 	core/ControlCommandsLaunchBindings.cpp
@@ -255,6 +305,11 @@ set(LMMS_SRCS
 	core/ControlCommandsRangeBounce.cpp
 	core/ControlCommandsRecordingPass.cpp
 	core/ControlCommandsSessionCapture.cpp
+	core/ControlCommandsSessionAudioRecord.cpp
+	# 0.5.0 L10 (Q050-156): record.sampler_capture / _stop / _status / _land - an input take into a sampler.
+	core/ControlCommandsSamplerTake.cpp
+	# 0.5.0 L10 (Q050-263): plugin.slice_get / plugin.slice_set - the per-slice SlicerT controls.
+	core/ControlCommandsSlicerSlices.cpp
 	core/ControlCommandsTrackPresets.cpp
 	core/ControlCommandsRemote.cpp
 	core/ControlDeviceMoves.cpp
@@ -286,6 +341,10 @@ set(LMMS_SRCS
 	core/ControlMasteringSupport.cpp
 	core/ControlCommandsMastering.cpp
 	core/ControlCommandsMasteringRun.cpp
+	# 0.5.0 L12 (Q050-317.1): the release sequence of a mastering document - the model
+	# (MasteringSequence.h, a ProjectSection) and the mastering.song_* commands that edit it.
+	core/MasteringSequence.cpp
+	core/ControlCommandsMasteringSequence.cpp
 	# Import detection (feature row 34): detect.analyze (the SUGGESTION - one audio
 	# file in, tempo + first transient + key out, nothing written), detect.apply
 	# (the acceptance: the tempo into the tempo map and the key into the project's
@@ -303,6 +362,7 @@ set(LMMS_SRCS
 	# drivable.
 	core/ControlCommandsMeter.cpp
 	core/ControlCommandsMeterFile.cpp
+	core/ControlCommandsMeterSpeech.cpp
 	# ... which is also the group's shared JSON vocabulary and the target it
 	# reports against (include/ControlMeterSupport.h), so the live readout and a
 	# measured file cannot drift into two spellings of one number.
@@ -329,14 +389,20 @@ set(LMMS_SRCS
 	core/ControlCommandsModulatorRoutes.cpp
 	core/ControlCommandsNoteExpression.cpp
 	core/ControlCommandsMidi.cpp
+	core/ControlCommandsMidiTakes.cpp
 	core/ControlCommandsMidiReconnect.cpp
 	core/ControlCommandsMidiReconnectEdit.cpp
 	core/ControlCommandsNotes.cpp
+	core/ControlCommandsNoteSelect.cpp
 	# note.probability_set (0.3.0 verb wave): the MIDI-depth probability verb the
 	# engine has carried since docs/MIDI-DEPTH.md and never got an id for.
 	core/ControlCommandsNoteProbability.cpp
 	# note.edit (0.5.0 note editor): a batch of note edits as one journal checkpoint.
 	core/ControlCommandsNoteEdit.cpp
+	# note.step_get_state / note.step_set (Q050-294.1): the melodic step grid view of a MIDI clip.
+	core/ControlCommandsNoteStep.cpp
+	# note.step_fill (Q050-294.3): a seeded shape or random fill of a clip's step columns, in the active scale.
+	core/ControlCommandsNoteStepFill.cpp
 	# The 0.3.0 note/scale/device wave (board task #648; feature-list rows 11, 66 and
 	# 81): the note randomisation verbs (note.random_seed_get/_set, note.randomize),
 	# the slide verbs (note.slide_set / note.slide_clear), the three note transforms,
@@ -366,6 +432,10 @@ set(LMMS_SRCS
 	core/ControlCommandsCrashControl.cpp
 	core/ControlCommandsPluginScan.cpp
 	core/ControlCommandsPluginScanEdit.cpp
+	# Q050-090: the background rescan's three commands (scan_start /
+	# scan_status / scan_cancel) - their own TU for the reason the read and
+	# edit halves have theirs (gate 7 measures a file, not a group).
+	core/ControlCommandsPluginScanBackground.cpp
 	# Safe-start mode's surface (feature row 77, board task #666): the marker, the
 	# acknowledgement and the session-scoped half of the load-time predicate. Its
 	# own translation unit for the reason the crash and scan groups have theirs -
@@ -423,6 +493,11 @@ set(LMMS_SRCS
 	# product already ships (`lmms exportstems`), with the same declared bound every
 	# render-running command carries - see the file header and docs/RENDER-CHILD-WAIT.md.
 	core/ControlCommandsRenderStems.cpp
+	# render.sections (0.5.0 L12, Q050-009): the song's named sections exported one
+	# bounded file each, through render.render.
+	core/ControlCommandsRenderSections.cpp
+	# render.realtime (Q050-089.2): the project played through the device, so hardware inserts are heard.
+	core/ControlCommandsRenderRealtime.cpp
 	core/ControlCommandsRack.cpp
 	core/ControlCommandsRackMacros.cpp
 	core/ControlCommandsRackZones.cpp
@@ -441,13 +516,27 @@ set(LMMS_SRCS
 	# signal-graph submode (get_state / enable / disable) and its engine seam.
 	core/ControlCommandsFeedback.cpp
 	core/ControlCommandsFreeze.cpp
+	# Q050-124: freeze.bus / freeze.unfreeze_bus and the bus's frozen take.
+	core/ControlCommandsBusFreeze.cpp
+	core/MixerBusFreeze.cpp
 	# The session tempo/phase sync model and its wire (D11 "Ableton Link sync"):
 	# the model, the transport seam, the UDP multicast transport, and the
 	# link.* commands that make the whole of it drivable. See docs/LINK-SYNC.md.
 	core/ControlCommandsLink.cpp
+	core/ControlCommandsLinkAudio.cpp
+	core/LinkAudioStream.cpp
+	core/LinkAudioSocket.cpp
+	core/LinkAudioCodec.cpp
 	core/LinkSync.cpp
 	core/LinkSyncWire.cpp
 	core/LinkUdpTransport.cpp
+	# The real Ableton Link backend (WF-051): the UI-thread bridge, the
+	# audio-thread follower Song::processNextBuffer() calls, and the pure
+	# phase-lock arithmetic it uses. They compile in every build - against the
+	# stub session when the library is not (AbletonLinkSessionStub.cpp).
+	core/AbletonLinkBridge.cpp
+	core/LinkAudioFollower.cpp
+	core/LinkPhaseLock.cpp
 	core/ControlCommandsSettings.cpp
 	core/ControlCommandsSurface.cpp
 	# track.move: the structural half of track.* (task #664, feature row 75) - the
@@ -455,9 +544,14 @@ set(LMMS_SRCS
 	# ControlCommandsArrangement.cpp is at the file-length ratchet.
 	core/ControlCommandsStructure.cpp
 	${LMMS_TELEMETRY_COMMAND_SRCS}
+	${LMMS_UPDATE_CHECK_SRCS}
 	core/ControlCommandsTransport.cpp
 	core/ControlCommandsTrackChannel.cpp
+	core/ControlCommandsTrackRouting.cpp
+	core/ControlTrackRouting.cpp
 	core/ControlCommandsTrackFolder.cpp
+	core/ControlCommandsTrackRole.cpp
+	core/ControlTrackRoleLinks.cpp
 	core/ControlCommandsTrackFolderSets.cpp
 	# VCA / mix-and-edit groups (OWNER-31 item 11): the group+entity half, the
 	# mix half (fader/mute/solo/membership) and the phase-locked edit half, each
@@ -474,6 +568,10 @@ set(LMMS_SRCS
 	# The bounded-undo slice: the depth caps, the coalescing window, and the
 	# commands that expose them (SPEC A16, task #623).
 	core/ControlCommandsUndo.cpp
+	# WF-033: the undo history saved with the project - the policy and section,
+	# its two commands, and the journal's snapshot carriage.
+	core/UndoHistory.cpp
+	core/ControlCommandsUndoHistory.cpp
 	core/ControlCommandsTransportMap.cpp
 	# Punch in/out (0.3.0): the transport's punch region, on the transport group.
 	core/ControlCommandsPunch.cpp
@@ -481,6 +579,7 @@ set(LMMS_SRCS
 	# record.* group (the journalling verbs and the recovery verbs).
 	core/ControlCommandsRecording.cpp
 	core/ControlCommandsRecordingRecovery.cpp
+	core/ControlCommandsRecordingPlace.cpp
 	core/ControlRecordingSupport.cpp
 	# The recording engine surface (0.3.0, feature rows 14/16/64): the capture
 	# IN path's plan and live state, the N-channel staging stage between a
@@ -518,16 +617,25 @@ set(LMMS_SRCS
 	# (core/ControlDeviceHosted.cpp). Its own translation unit so neither of
 	# those files grows for a format they do not own.
 	core/ControlDeviceVst3.cpp
+	core/ControlDeviceVst2.cpp
+	core/LegacyVst2Conversion.cpp
 	# The CLAP half of the device catalogue (feature row 79, board task #669):
 	# plugin.list enumerates the CLAP hosts' own classes - the effect host's and
 	# the instrument host's this lane adds - and plugin.load loads one onto a
 	# track. Its own translation unit, the same rule as the VST3 half above.
 	core/ControlDeviceClap.cpp
+	# Q050-491: the Audio Unit half of the catalogue, and the format-neutral AU rules (component ids,
+	# scan-cache records and quarantine, status names) it and the macOS-only hosts share.
+	core/ControlDeviceAu.cpp
+	core/AuComponent.cpp
 	# The chain PRESET store and the chain.* group (the 0.3.0 ladder's
 	# "plugin-chain presets", OWNER-31 item 2): the store, its read/capture half
 	# and its edit half. A chain preset is NOT a rack chain - see
 	# control/ControlCommandsChain.cpp.
 	core/ControlChainPresetSupport.cpp
+	core/PresetBindings.cpp
+	core/ControllerScript.cpp
+	core/ControlCommandsControllerScripts.cpp
 	core/ControlCommandsChain.cpp
 	core/ControlCommandsChainEdit.cpp
 	# The chord engine (feature row 35): the read-only view over the piano roll's
@@ -551,6 +659,9 @@ set(LMMS_SRCS
 	core/ControlModulationSupport.cpp
 	core/ControlRackSupport.cpp
 	core/ControlRegistry.cpp
+	core/ControlRegistryShutdown.cpp
+	# The undo-record bookkeeping of nested and wrapped commands (aggregate records, merged runs).
+	core/ControlRegistryRecords.cpp
 	# The registry's COMPOSITION - which command groups exist and in what order -
 	# split out of ControlRegistry.cpp when the vca group and the routing surface
 	# were merged into the same train and pushed it over the file-length ratchet.
@@ -665,6 +776,12 @@ set(LMMS_SRCS
 	core/ControlCommandsProjectArchive.cpp
 	core/ControlProjectAssets.cpp
 	core/ControlProjectAssetsRelink.cpp
+	# project.media_usage / project.media_cleanup (Q050-121): the Project Media inventory
+	# (per-file usage counts, unused local assets, distinct missing/external states) and the
+	# irreversible cleanup of selected still-unused files. Built on ControlProjectAssets' scan.
+	core/ControlProjectMedia.cpp
+	core/ControlCommandsProjectMedia.cpp
+	core/ControlProjectTransplantChannels.cpp
 	# The mmpz-git depth group (feature row 42, task #612): the control-surface
 	# wrappers around tools/mmpz-git/mmpz_git.py.
 	core/ControlCommandsProjectMmpzGit.cpp
@@ -747,6 +864,16 @@ set(LMMS_SRCS
 	core/ControlVocabulary.cpp
 	core/ControlServer.cpp
 	core/ControlServerSocket.cpp
+	core/ControlServerEvents.cpp
+	core/ControlEventHub.cpp
+	core/ControlCommandsEvents.cpp
+	# The one reader of a caller's sample array (include/ControlSampleArray.h):
+	# the rules an 'input' array has to satisfy before a render or a process
+	# is driven with it. Pure Qt and no wasmtime, so it is compiled in EVERY
+	# configuration - the commands that read a caller's samples are the wasm.*
+	# group's today, but the reader is the control layer's, and its regression
+	# test has to run in a build without the wasmtime C API.
+	core/ControlSampleArray.cpp
 	# The Windows half of the control transport: the same JSON-RPC contract, the
 	# same command ids, served over a named pipe (CODE-9, feature row 83). Named
 	# here because LMMS_SRCS is an explicit list rather than a glob; on POSIX the
@@ -818,6 +945,7 @@ set(LMMS_SRCS
 	core/MidiClipControllers.cpp
 	core/MidiInputTransform.cpp
 	core/MidiClock.cpp
+	core/MidiClockCapture.cpp
 	core/MidiClockState.cpp
 	core/MidiClockTracker.cpp
 	core/MixHelpers.cpp
@@ -835,6 +963,7 @@ set(LMMS_SRCS
 	# 0.5.0 F7: surround channels, the surround panner, the downmix (MX-060).
 	core/MixerSurround.cpp
 	core/MixerSurroundMix.cpp
+	core/SurroundExport.cpp
 	core/ControlCommandsMixerSurround.cpp
 	# 0.5.0 F5: the video track through FFmpeg (ED-054); library calls only under ZENE_HAVE_FFMPEG.
 	core/VideoReference.cpp
@@ -843,6 +972,7 @@ set(LMMS_SRCS
 	core/VideoAudioExtract.cpp
 	core/VideoFramePump.cpp
 	core/ControlCommandsVideo.cpp
+	core/ControlCommandsVideoRender.cpp
 	core/ControlReversibilityTableVideo.cpp
 	# 0.5.0 theme 24: the background task area's reporting API and task.* commands.
 	core/TaskCenter.cpp
@@ -850,8 +980,15 @@ set(LMMS_SRCS
 	core/ControlReversibilityTableTask.cpp
 	core/MixerSendPan.cpp
 	core/MixerStrip.cpp
+	core/ConsoleStrip.cpp
+	core/StripMeters.cpp
+	core/InputReadings.cpp
 	core/Model.cpp
 	core/ModelVisitor.cpp
+	# Q050-016: scheduled playback of a note's MPE expression event streams -
+	# the per-note pitch/pressure/timbre points, each sent at its own offset.
+	core/MpeExpressionStreamPlayback.cpp
+	core/MpeSynthExpression.cpp
 	# ARCH-4 S1a: the document format's namespace table and the resolver that
 	# reads it (design/specs/SPEC-ARCH-4-DOCUMENT-MODEL-DRAFT.md 1.3). Additive
 	# on purpose - nothing in the load or save path consults it yet.
@@ -876,9 +1013,18 @@ set(LMMS_SRCS
 	core/PluginIssue.cpp
 	core/PluginEditorHost.cpp
 	core/PluginFactory.cpp
+	# Q050-090: the background rescan's engine (one file per event-loop
+	# turn) and the per-file steps both runs share with the synchronous one.
+	core/PluginFactoryBackgroundScan.cpp
 	core/PluginOrganiser.cpp
 	core/PluginPaths.cpp
 	core/PluginScanCache.cpp
+	# The vendor each VST3 / CLAP class's own factory reports, recorded by the hosts' discovery.
+	core/PluginVendors.cpp
+	# Cluster stress-3: the reason a hosted plug-in module's entry point produced no plug-in.
+	core/PluginInstantiationFailure.cpp
+	# 0.5.0 Q050-018: the placeholders a project open could not load (name, format, vendor)
+	core/MissingDevices.cpp
 	core/PresetPreviewPlayHandle.cpp
 	core/ProjectJournal.cpp
 	# The undo stack's two-sided bound and its coalescing primitive, in their own
@@ -888,17 +1034,21 @@ set(LMMS_SRCS
 	# deleted track's own XML, a removed device's state (task #664, row 75). Its
 	# own translation unit for the same reason as the bound above.
 	core/ProjectJournalStructural.cpp
+	core/ProjectJournalSnapshots.cpp
 	core/ProjectRecovery.cpp
 	# The take journal: what makes a recording in progress recoverable after an
 	# abnormal exit (0.3.0, docs/KNOWN-LIMITATIONS.md for the stated bound).
 	core/RecordingJournal.cpp
 	core/ProjectIds.cpp
+	core/OfflineRenderBarrier.cpp
 	core/ProjectRenderer.cpp
 	core/ProjectRevisions.cpp
 	core/ProjectVersion.cpp
 	core/RecordOptions.cpp
 	core/MusicalTime.cpp
 	core/RemoteControls.cpp
+	core/RenderDiagnostics.cpp
+	core/AudioDeviceDiagnostics.cpp
 	core/RemotePlugin.cpp
 	core/Rack.cpp
 	core/RackMacros.cpp
@@ -929,6 +1079,7 @@ set(LMMS_SRCS
 	core/SampleBuffer.cpp
 	core/SampleBufferResample.cpp
 	core/SampleClip.cpp
+	core/SampleClipEffects.cpp
 	core/SampleDecoder.cpp
 	core/SamplePlayHandle.cpp
 	core/SampleRecordHandle.cpp
@@ -945,11 +1096,14 @@ set(LMMS_SRCS
 	core/ScriptDawEdit.cpp
 	core/ScriptDawEffects.cpp
 	core/ScriptEngine.cpp
+	core/ScriptImport.cpp
 	core/ScriptPackage.cpp
 	core/LmmsSemaphore.cpp
 	core/SerializingObject.cpp
 	core/Song.cpp
 	core/SongSections.cpp
+	core/SessionCheckpoint.cpp
+	core/SongUndoSnapshot.cpp
 	core/TempoMap.cpp
 	# The Standard MIDI File conductor track (feature row 33): the encoder and
 	# the bounds-checked reader behind the interchange.* group. Hand-written
@@ -964,15 +1118,18 @@ set(LMMS_SRCS
 	# DAWproject import / export (feature row 37 of docs/FEATURE-LIST-0.3.0.md,
 	# docs/DAWPROJECT-INTERCHANGE.md): the published format's container, the model,
 	# and the four conversions a round trip is made of. The ZIP container is
-	# hand-written (STORE entries, no compression dependency) because DataFile's
-	# qUncompress is zlib's framed format and cannot make a raw DEFLATE stream;
+	# hand-written: the writer stores its entries, the reader (DawProjectZipRead.cpp)
+	# also inflates raw DEFLATE through zlib under a size bound (DataFile's
+	# qUncompress is zlib's framed format and cannot read a raw DEFLATE stream);
 	# the XML writer and reader are one translation unit each, the session
 	# coupling is its own (a reader has to survive whatever a foreign program
 	# meant, which is not the writer's job - the same split SmfInterchange.cpp /
 	# SmfInterchangeReader.cpp uses), and every file stays inside gate 7's cap.
 	core/DawProjectZip.cpp
+	core/DawProjectZipRead.cpp
 	core/DawProjectModel.cpp
 	core/DawProjectWrite.cpp
+	core/DawProjectWriteRefusal.cpp
 	core/DawProjectRead.cpp
 	core/DawProjectReadTracks.cpp
 	core/DawProjectSession.cpp
@@ -1021,6 +1178,7 @@ set(LMMS_SRCS
 	core/ControlCommandsAutomationLanes.cpp
 	core/ControlCommandsClipArrange.cpp
 	core/ControlCommandsClipControllers.cpp
+	core/ControlCommandsControllerConvert.cpp
 	core/ControlCommandsClipEnvelope.cpp
 	core/ControlCommandsKeyNames.cpp
 	core/ControlCommandsMarkers.cpp
@@ -1030,21 +1188,30 @@ set(LMMS_SRCS
 	core/ControlCommandsNoteClipboard.cpp
 	core/ControlCommandsRackMacroPair.cpp
 	core/ControlCommandsNoteTools.cpp
+	core/ControlCommandsNoteMelody.cpp
 	core/ControlCommandsNoteMoves.cpp
 	core/ControlCommandsNoteHarmony.cpp
 	core/ControlCommandsNotePlayback.cpp
 	core/ControlCommandsMixerTools.cpp
 	core/ControlCommandsSessionPerform.cpp
+	core/ControlCommandsSessionSubScenes.cpp
+	core/SessionSubScenes.cpp
 	core/ControlCommandsCompGroup.cpp
 	core/ControlCommandsRecordTools.cpp
 	core/MetronomeOptions.cpp
 	core/ControlCommandsArrangeTools.cpp
+	core/FolderSummary.cpp
+	core/ClipGroupEdits.cpp
+	core/ControlCommandsFolderSpans.cpp
 	core/ControlCommandsSections.cpp
 	core/ArrangementSections.cpp
 	core/ControlCommandsSampleTools.cpp
 	core/ControlCommandsAutomationTools.cpp
 	core/AutomationSwitches.cpp
 	core/ControlCommandsAudioAnalysis.cpp
+	core/SmfNoteRead.cpp
+	core/ControlCommandsClipImportFile.cpp
+	core/LoopImportWarp.cpp
 	# 0.5.0 W3 L13 / L14: customisation and access.
 	core/JsonFile.cpp
 	core/TrackLooks.cpp
@@ -1054,6 +1221,7 @@ set(LMMS_SRCS
 	core/ViewMemory.cpp
 	core/ControlCommandsSettingsPresets.cpp
 	core/TunerTap.cpp
+	core/PhaseScopeTap.cpp
 	core/ControlCommandsTuner.cpp
 	# 0.5.0 L11 / L12 (W3): mixer snapshots, project settings / metadata / document type, edit locks.
 	core/ControlCommandsMixerSnapshots.cpp
@@ -1073,6 +1241,9 @@ set(LMMS_SRCS
 	# 0.5.0 L11 (W3): a clip into the library, the library index and similar sounds, thumbnails and the
 	# matched preview, the browser's history and remembered sources.
 	core/ControlCommandsLibraryClips.cpp
+	# Q050-273.1: one launcher cell's source audio, saved to the library - bounded by DECODED size,
+	# written atomically through QSaveFile (the decoded-memory hole the 512 MiB input check left).
+	core/LibraryCellAudio.cpp
 	core/ControlCommandsBrowserIndex.cpp
 	core/ControlCommandsBrowserMedia.cpp
 	core/ControlCommandsBrowserNavigation.cpp
@@ -1080,18 +1251,27 @@ set(LMMS_SRCS
 	core/BrowserFeatures.cpp
 	# 0.5.0 L12 (W3): the render queue, batch conversion and the task list; flattening a track.
 	core/ControlCommandsRenderQueue.cpp
+	core/ControlCommandsRenderBounce.cpp
 	core/ControlCommandsTrackFlatten.cpp
 	core/RenderQueue.cpp
+	core/RenderQueueBounce.cpp
+	# Q050-327: freeze.tracks - several tracks rendered concurrently, one task, one undo step.
+	core/BatchFreeze.cpp
+	core/ControlCommandsFreezeBatch.cpp
 	core/ControlCommandsSubprojects.cpp
 	core/ControlCommandsAlternatives.cpp
 	core/ControlTrackCreation.cpp
 	core/PitchTrack.cpp
 	core/ControlCommandsSampleRange.cpp
+	# Q050-106: the stereo pair - sample.split_stereo writes the two channels as mono WAVs.
+	core/ControlCommandsSampleStereo.cpp
 	core/ControlCommandDef.cpp
+	core/ControlCommandsMixerMasking.cpp
 	core/ControlCommandsMixerMeters.cpp
 	core/PreviewOutput.cpp
 	core/ControlRoom.cpp
 	core/ControlCommandsTrackMidiOut.cpp
+	core/ControlCommandsExternalDevice.cpp
 	core/TrackVersions.cpp
 	core/ControlCommandsTrackVersions.cpp
 	core/ProjectSectionRegistry.cpp
@@ -1101,6 +1281,8 @@ set(LMMS_SRCS
 	core/AutomationLatency.cpp
 	core/MixerPostInserts.cpp
 	core/ClipPreFades.cpp
+	# 0.5.0 ED-029 / ED-028: a sample clip's content looped and rotated inside the clip.
+	core/ClipAudioLoop.cpp
 	core/ControlCommandsW3Engine.cpp
 	core/InputMeter.cpp
 	core/RecorderTaps.cpp
@@ -1119,7 +1301,10 @@ set(LMMS_SRCS
 	core/MarkerActions.cpp
 	core/MixerOptions.cpp
 	core/ArticulationMap.cpp
+	core/ArticulationRemap.cpp
 	core/MidiPlayback.cpp
+	core/MidiTakeCapture.cpp
+	core/MidiTakeRecorder.cpp
 	core/NoteConditions.cpp
 	core/ControlCommandsRange.cpp
 	core/ProjectMarkers.cpp
@@ -1128,6 +1313,7 @@ set(LMMS_SRCS
 	core/TrackMixModels.cpp
 	core/TimePos.cpp
 	core/TakeLane.cpp
+	core/TakeLanePersistence.cpp
 	core/CompSlip.cpp
 	core/ToolPlugin.cpp
 	core/Track.cpp
@@ -1138,6 +1324,7 @@ set(LMMS_SRCS
 	core/UnclaimedElements.cpp
 	core/Clip.cpp
 	core/ClipTransients.cpp
+	core/TransientRepeat.cpp
 	core/ValueBuffer.cpp
 	core/VstSyncController.cpp
 	core/StepRecorder.cpp
@@ -1187,6 +1374,7 @@ set(LMMS_SRCS
 	core/midi/MidiPort.cpp
 	core/midi/MidiReconnect.cpp
 	core/midi/MpeExpression.cpp
+	core/midi/MpeStreamSnapshot.cpp
 	core/midi/MidiWinMM.cpp
 
 	# ARCH-4 slice S6 (SPEC-ARCH-4 1.9): the append-only <z:provenance>
@@ -1199,6 +1387,7 @@ set(LMMS_SRCS
 
 	${LMMS_STEM_SRCS}
 	${LMMS_SESSION_SRCS}
+	${LMMS_ABLETON_LINK_STUB_SRCS}
 
 	${LMMS_TELEMETRY_SRCS}
 	${LMMS_COLLAB_SRCS}
@@ -1232,6 +1421,9 @@ set(LMMS_SRCS
 # and register into the same registry from there.
 SET(ZENE_API_SRCS
 	core/ControlRegistry.cpp
+	core/ControlRegistryShutdown.cpp
+	# The undo-record bookkeeping of nested and wrapped commands (aggregate records, merged runs).
+	core/ControlRegistryRecords.cpp
 	core/ControlRegistryRegistrations.cpp
 	core/ControlReversibility.cpp
 	core/ControlTransactions.cpp

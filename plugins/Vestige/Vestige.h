@@ -31,6 +31,7 @@
 
 #include "AudioPlugin.h"
 #include "InstrumentView.h"
+#include "MidiHandoffQueue.h"
 #include "RemotePluginAudioPorts.h"
 #include "SubWindow.h"
 
@@ -84,6 +85,12 @@ class VestigeInstrument
 public:
 	VestigeInstrument( InstrumentTrack * _instrument_track );
 	~VestigeInstrument() override;
+	QString unavailableReason() const override
+	{
+		QMutexLocker locker(&m_pluginMutex);
+		return (m_plugin == nullptr && !m_pluginDLL.isEmpty())
+			? QStringLiteral("the VST plug-in binary was not found or could not be loaded") : QString();
+	}
 
 	void saveSettings(QDomDocument& _doc, QDomElement& _parent) override;
 	void loadSettings(const QDomElement& _this) override;
@@ -111,7 +118,14 @@ private:
 
 
 	VstPlugin * m_plugin;
-	QMutex m_pluginMutex;
+	mutable QMutex m_pluginMutex;
+
+	//! MIDI from any thread (processInEvent() runs on the GUI, the MIDI input and the audio thread), waiting
+	//! for the next processed period. handleMidiEvent() only pushes here; processImpl() forwards it under
+	//! processLock(), so the audio thread never waits for the plugin mutex to queue an event.
+	MidiHandoffQueue<256> m_midiHandoff;
+	//! Channels whose events the full queue refused; sent all-notes-off once the queue has drained.
+	MidiChannelOverflow m_midiOverflow;
 
 	QString m_pluginDLL;
 	gui::SubWindow* m_subWindow;

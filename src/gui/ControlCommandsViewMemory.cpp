@@ -103,15 +103,16 @@ QJsonArray selectedClips()
 	return ids;
 }
 
-void selectInArranger(const QJsonArray& ids)
+bool selectInArranger(const QJsonArray& ids)
 {
 	gui::SongEditor* editor = arranger();
-	if (editor == nullptr) { return; }
+	if (editor == nullptr) { return false; }
 	for (gui::selectableObject* object : editor->rubberBand()->selectableObjects())
 	{
 		auto* view = dynamic_cast<gui::ClipView*>(object);
 		if (view != nullptr) { view->setSelected(ids.contains(clipIdOf(view->getClip()))); }
 	}
+	return true;
 }
 
 //! The 'name' argument as it is stored: save, recall, apply and remove all trim it the same way.
@@ -148,6 +149,22 @@ QJsonArray partsOf(const QJsonObject& entry)
 QString kindNoun(Kind kind)
 {
 	return kind == Kind::Location ? QStringLiteral("memory location") : QStringLiteral("saved selection");
+}
+
+//! The result key a list of @a kind is published under, here and in the list command.
+QString keyOf(Kind kind)
+{
+	return kind == Kind::Location ? QStringLiteral("locations") : QStringLiteral("selections");
+}
+
+//! The honest transaction of one stored-entry change: the list as it was before, the undo step
+//! that puts it back, and @a changed false for a call that recorded none.
+QJsonObject entryPayload(Kind kind, const QJsonArray& previous, bool changed)
+{
+	return transactionPayload({{keyOf(kind), previous}}, QStringLiteral("control.undo"), {}, changed,
+		changed
+			? QStringLiteral("action checkpoint: the recorded undo step puts the previous list back")
+			: QStringLiteral("nothing changed: this call left no undo step, and there is nothing to take back"));
 }
 
 //! Replace the entries of @a kind with @a next as ONE undo step.
@@ -190,9 +207,14 @@ ControlResult saveEntry(Kind kind, const QJsonObject& entry, bool replace)
 	}
 	if (!replaced) { next.append(entry); }
 	// Saving what is already saved changes nothing: no undo step, the project stays unmodified.
-	const bool changed = next != ViewMemory::instance().entries(kind);
+	const QJsonArray previous = ViewMemory::instance().entries(kind);
+	const bool changed = next != previous;
 	if (changed) { storeEntries(kind, next); }
 	QJsonObject result = entry;
+	// The list of this kind is a bounded recorded state, and the recorded undo step puts the
+	// previous one back - so SAY SO, as range.set and the copy commands do, rather than leaving
+	// the client to infer it from a bare 'changed'.
+	result.insert(QStringLiteral("__transaction"), entryPayload(kind, previous, changed));
 	result.insert(QStringLiteral("replaced"), replaced);
 	result.insert(QStringLiteral("changed"), changed);
 	result.insert(QStringLiteral("captures"), partsOf(entry));
@@ -213,8 +235,11 @@ ControlResult removeEntry(Kind kind, const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("nothing is saved as '%1'").arg(name));
 	}
+	const QJsonArray previous = ViewMemory::instance().entries(kind);
 	storeEntries(kind, next);
-	return ControlResult::success({{QStringLiteral("name"), name}, {QStringLiteral("count"), next.size()}});
+	QJsonObject result = {{QStringLiteral("name"), name}, {QStringLiteral("count"), next.size()}};
+	result.insert(QStringLiteral("__transaction"), entryPayload(kind, previous, true));
+	return ControlResult::success(result);
 }
 
 bool namedOrRefuse(const QJsonObject& args, QString* name, ControlResult* error)
@@ -276,16 +301,22 @@ ControlResult recallLocation(const QJsonObject& args)
 		{{"position", true}, {"range", range}, {"zoom", zoom}}));
 }
 
-//! The first of @a ids that names no clip in the project, or an empty string when every one does.
-QString firstUnknownClip(const QJsonArray& ids)
+//! Whether one of @a ids names no clip in the project; @a unknown receives the first such id. The
+//! answer is a flag and NOT the id itself: the empty string is a valid argument that resolves no
+//! clip, so returning it as the "nothing unknown" sentinel let such an id through unvalidated.
+bool firstUnknownClip(const QJsonArray& ids, QString* unknown)
 {
 	for (const QJsonValue& id : ids)
 	{
 		ClipRef ref;
 		ControlResult missing;
-		if (!resolveClip(id.toString(), &ref, &missing)) { return id.isString() ? id.toString() : QStringLiteral("?"); }
+		if (!resolveClip(id.toString(), &ref, &missing))
+		{
+			*unknown = id.isString() ? id.toString() : QStringLiteral("?");
+			return true;
+		}
 	}
-	return QString();
+	return false;
 }
 
 ControlResult saveSelection(const QJsonObject& args)
@@ -296,7 +327,17 @@ ControlResult saveSelection(const QJsonObject& args)
 	const QJsonObject range = currentRange();
 	const bool given = args.contains(QStringLiteral("clips"));
 	const QJsonArray clips = given ? args.value(QStringLiteral("clips")).toArray() : selectedClips();
-	if (const QString unknown = given ? firstUnknownClip(clips) : QString(); !unknown.isEmpty())
+	// The schema validator checks the array itself, but not its items; reject them before toString() can coerce one.
+	for (const QJsonValue& id : clips)
+	{
+		if (!id.isString())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("clips: every clip id must be a string"));
+		}
+	}
+	QString unknown;
+	if (given && firstUnknownClip(clips, &unknown))
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no clip '%1'").arg(unknown));
 	}
@@ -322,12 +363,13 @@ ControlResult applySelection(const QJsonObject& args)
 		ControlResult missing;
 		if (resolveClip(id.toString(), &ref, &missing)) { live.append(id); }
 	}
-	selectInArranger(live);
+	const bool arrangerOk = selectInArranger(live);
+	const bool clipsRestored = !live.isEmpty() && arrangerOk;
 	if (!live.isEmpty()) { ControlRegistry::instance()->invoke(QStringLiteral("clip.select"), {{QStringLiteral("clip"), live.first()}}); }
 	else { selectClip(QString()); }  // the arranger's selection is empty now, so the surface's is too
 	return ControlResult::success(withOutcome({{QStringLiteral("name"), name}, {QStringLiteral("clips"), live},
 		{QStringLiteral("missing"), entry.value(QStringLiteral("clips")).toArray().size() - live.size()}, {QStringLiteral("range_restored"), range}},
-		entry, {{"range", range}, {"clips", !live.isEmpty()}}));
+		entry, {{"range", range}, {"clips", clipsRestored}}));
 }
 
 void add(ControlRegistry& registry, const char* group, const char* verb, const QString& description, const QJsonObject& args,
@@ -380,7 +422,9 @@ void registerViewMemoryCommands(ControlRegistry& registry)
 		"replacing one of that name ('replaced') unless 'replace' is false, when a name in use is refused; at most 99 ('changed' "
 		"false when it was already saved just so: no undo step). Refused when nothing is selected. Saved with the project; one "
 		"undo step."),
-		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("clips"), arrayProperty()},
+		objectSchema({{QStringLiteral("name"), stringProperty()},
+		{QStringLiteral("clips"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
+			{QStringLiteral("items"), stringProperty()}}},
 		{QStringLiteral("replace"), booleanProperty()}}, {QStringLiteral("name")}), true, saveSelection);
 	add(registry, "selection", "apply", QStringLiteral("Select saved selection 'name' again: its range (range.set) and those of "
 		"its clips that still exist ('missing' counts the rest; 'restored' and 'skipped' name the parts that came back and those "

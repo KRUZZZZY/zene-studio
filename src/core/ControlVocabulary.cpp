@@ -193,8 +193,20 @@ QString effectIdOf(const Effect* effect)
 int idToIndex(const QString& id, const QString& prefix)
 {
 	if (!id.startsWith(prefix)) { return -1; }
+	// The suffix is DECIMAL DIGITS and nothing else, and that is checked rather
+	// than inferred from the conversion (Luna cluster 5033): QString::toInt()
+	// also accepts a sign and surrounding whitespace, so "clip--0" converted its
+	// "-0" suffix to 0 and a mutating command addressed through the malformed id
+	// acted on the real clip 0. ASCII digits only, so a non-ASCII digit-like
+	// code point cannot slip past isDigit().
+	const QString suffix = id.mid(prefix.size());
+	if (suffix.isEmpty()) { return -1; }
+	for (const QChar c : suffix)
+	{
+		if (c < QLatin1Char('0') || c > QLatin1Char('9')) { return -1; }
+	}
 	bool ok = false;
-	const int index = id.mid(prefix.size()).toInt(&ok);
+	const int index = suffix.toInt(&ok);
 	return ok && index >= 0 ? index : -1;
 }
 

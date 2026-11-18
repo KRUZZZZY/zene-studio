@@ -164,7 +164,14 @@ void MidiClipControllers::load(const QDomElement& clipElement)
 		std::vector<ControllerPoint> points;
 		for (QDomElement p = laneElement.firstChildElement(QStringLiteral("p")); !p.isNull(); p = p.nextSiblingElement(QStringLiteral("p")))
 		{
-			points.push_back({std::max(0, p.attribute(QStringLiteral("t")).toInt()), std::clamp(p.attribute(QStringLiteral("v")).toInt(), 0, top)});
+			// A tick or value that is not one used to convert to 0, landing the point at tick
+			// zero with value zero - audible as a jump in the curve at the clip's start.
+			bool tickOk = false;
+			bool valueOk = false;
+			const tick_t at = static_cast<tick_t>(p.attribute(QStringLiteral("t")).toInt(&tickOk));
+			const int value = p.attribute(QStringLiteral("v")).toInt(&valueOk);
+			if (!tickOk || !valueOk) { continue; }
+			points.push_back({std::max<tick_t>(0, at), std::clamp(value, 0, top)});
 		}
 		setPoints(kind, controller, std::move(points));
 	}

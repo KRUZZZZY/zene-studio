@@ -36,11 +36,15 @@
  */
 
 #include <QCryptographicHash>
+#include <QtGlobal>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #include <QByteArrayView>
+#endif
 #include <QJsonArray>
 #include <QJsonObject>
 
 #include "ControlRegistry.h"
+#include "ControlSampleArray.h"
 #include "ControlWasmSupport.h"
 
 #include "src/wasm/WasmOfflineRender.h"
@@ -82,8 +86,13 @@ QString digestOf(const std::vector<float>& samples)
 		// QByteArrayView overload, and this tree builds with
 		// -Werror=deprecated-declarations. The bytes hashed are the same, so
 		// every digest this function returns is unchanged.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 		hash.addData(QByteArrayView(reinterpret_cast<const char*>(samples.data()),
 			static_cast<qsizetype>(samples.size() * sizeof(float))));
+#else
+		// Qt 5 (hosted CI) has no QByteArrayView; its (const char*, int) overload hashes the same bytes.
+		hash.addData(reinterpret_cast<const char*>(samples.data()), static_cast<int>(samples.size() * sizeof(float)));
+#endif
 	}
 	return QString::fromLatin1(hash.result().toHex());
 }
@@ -104,8 +113,10 @@ QJsonObject renderJson(const wasm::OfflineRender& render)
 {
 	double peak = 0.0;
 	double sumOfSquares = 0.0;
+	std::uint64_t nonFiniteSamples = 0;
 	for (const float sample : render.output)
 	{
+		if (!std::isfinite(sample)) { ++nonFiniteSamples; }
 		peak = std::max(peak, std::fabs(static_cast<double>(sample)));
 		sumOfSquares += static_cast<double>(sample) * static_cast<double>(sample);
 	}
@@ -120,6 +131,7 @@ QJsonObject renderJson(const wasm::OfflineRender& render)
 	out.insert(QStringLiteral("dropped_blocks"), static_cast<double>(render.droppedBlocks));
 	out.insert(QStringLiteral("trapped_blocks"), static_cast<double>(render.trappedBlocks));
 	out.insert(QStringLiteral("frames"), static_cast<int>(render.output.size()));
+	out.insert(QStringLiteral("non_finite_samples"), static_cast<double>(nonFiniteSamples));
 	out.insert(QStringLiteral("peak"), peak);
 	out.insert(QStringLiteral("rms"), rms);
 	out.insert(QStringLiteral("sha256"), digestOf(render.output));
@@ -180,14 +192,6 @@ std::vector<float> rampInput(std::uint32_t frames)
 	return out;
 }
 
-std::vector<float> jsonToFloats(const QJsonArray& values)
-{
-	std::vector<float> out;
-	out.reserve(static_cast<std::size_t>(values.size()));
-	for (const QJsonValue& value : values) { out.push_back(static_cast<float>(value.toDouble())); }
-	return out;
-}
-
 ControlResult handleRenderOffline(const QJsonObject& args)
 {
 	WasmSandboxHost& host = WasmSandboxHost::instance();
@@ -211,12 +215,27 @@ ControlResult handleRenderOffline(const QJsonObject& args)
 	const std::uint32_t repeats = args.contains(QStringLiteral("repeats"))
 		? static_cast<std::uint32_t>(args.value(QStringLiteral("repeats")).toInt())
 		: 2u;
-	const float sampleRate = args.contains(QStringLiteral("sample_rate"))
-		? static_cast<float>(args.value(QStringLiteral("sample_rate")).toDouble())
-		: 48000.0f;
+	// The rate is checked before it is converted to the module's float: a rate
+	// outside the float range or not positive is refused, not rendered.
+	float sampleRate = 48000.0f;
+	const ControlResult rate = readSampleRateArgument(args, 48000.0f, &sampleRate);
+	if (!rate.ok)
+	{
+		return ControlResult::failure(rate.errorKind,
+			wasmNotFound(QStringLiteral("wasm.render_offline"), rate.errorMessage));
+	}
 	const bool callerInput = args.contains(QStringLiteral("input"));
-	const std::vector<float> input = callerInput
-		? jsonToFloats(args.value(QStringLiteral("input")).toArray()) : rampInput(frames);
+	std::vector<float> input = rampInput(frames);
+	// The caller's samples are read through the ONE reader both sample-taking
+	// commands use (ControlSampleArray.h), so a malformed array is refused
+	// here exactly as it is in wasm.process - and never reaches the render
+	// as a different stimulus than the caller sent.
+	const ControlResult read = readInputArgument(args, frames, &input);
+	if (!read.ok)
+	{
+		return ControlResult::failure(read.errorKind,
+			wasmNotFound(QStringLiteral("wasm.render_offline"), read.errorMessage));
+	}
 
 	const wasm::OfflineRenderOutcome outcome =
 		wasm::renderOffline(modulePath, frames, blockFrames, repeats, sampleRate, input);
@@ -308,7 +327,11 @@ void registerWasmRenderOfflineCommand(ControlRegistry& registry)
 			"and reports that the comparator finds it, so 'identical' is a measurement and not a "
 			"constant. 'module' defaults to the hosted module; 'frames' (default 4096), "
 			"'block_frames' (default 256), 'sample_rate' (default 48000) and 'input' (plane 0; a "
-			"ramp by default) describe the render. Writes nothing."),
+			"ramp by default) describe the render. 'input' may hold at most 'frames' samples, "
+			"and every one of them must be a finite number within the float range: a malformed "
+			"array is refused (invalid_args) instead of being rendered with as something else. "
+			"Each run reports its `non_finite_samples` count. "
+			"Writes nothing."),
 		{{QStringLiteral("module"), stringProperty()},
 			{QStringLiteral("frames"), integerProperty(1, 4194304)},
 			{QStringLiteral("block_frames"), integerProperty(1, 8192)},

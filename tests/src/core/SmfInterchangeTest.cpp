@@ -323,6 +323,8 @@ private slots:
 			{{QStringLiteral("path"), slow}}).result;
 		QCOMPARE(slowRead.value(QStringLiteral("events")).toArray().at(0).toObject()
 			.value(QStringLiteral("bpm")).toInt(), 4);
+		QCOMPARE(slowRead.value(QStringLiteral("importable")).toBool(), false);
+		QVERIFY(!slowRead.value(QStringLiteral("importability_error")).toString().isEmpty());
 		const ControlResult tooFast = run(QStringLiteral("interchange.smf_import"),
 			{{QStringLiteral("path"), slow}});
 		QVERIFY(!tooFast.ok);
@@ -335,6 +337,33 @@ private slots:
 	//! most FOUR bytes (0x0FFFFFFF file ticks), and a file tick is ten LMMS
 	//! ticks, so the widest gap the format can carry is 26,843,545 LMMS ticks.
 	//! A wider one used to be written as the five-byte quantity appendVlq can
+	//! An export to a path that holds a DANGLING symbolic link is refused without
+	//! `overwrite`. QFileInfo::exists is false for a link whose target is gone, so
+	//! the guard let the export through and the commit replaced the link. A link
+	//! is occupied, as it is for the hand-off and the clip save: nothing is written
+	//! and the link stays. Unix-only: QFile::link writes a .lnk shortcut on Windows.
+	void aDanglingLinkAtTheExportPathIsOccupied()
+	{
+#ifndef Q_OS_UNIX
+		QSKIP("symlinks are exercised on Unix only: QFile::link writes a .lnk shortcut on Windows");
+#else
+		QVERIFY(run(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 0}, {QStringLiteral("bpm"), 90}}).ok);
+		const QString file = path(m_directory, QStringLiteral("dangling.mid"));
+		const QString target = path(m_directory, QStringLiteral("never-created.mid"));
+		QVERIFY2(QFile::link(target, file), "the fixture symlink was not created");
+		QVERIFY2(!QFileInfo::exists(file), "the fixture link is not dangling");
+
+		const ControlResult exported = run(QStringLiteral("interchange.smf_export"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY2(!exported.ok, "an export replaced a dangling link without overwrite");
+		QCOMPARE(exported.errorKind, ControlErrorKind::Refused);
+		QVERIFY(exported.errorMessage.contains(QStringLiteral("already exists")));
+		QVERIFY2(QFileInfo(file).isSymLink(), "the refused export replaced the link");
+		QVERIFY2(!QFileInfo::exists(target), "the refused export wrote the link's target");
+#endif
+	}
+
 	//! emit - a file no reader of the format would accept - and the scaled tick
 	//! was narrowed to quint32, which wraps above 429,496,729 LMMS ticks. A map
 	//! the format cannot carry is refused, and no file is left behind; one it
@@ -390,6 +419,50 @@ private slots:
 			static_cast<quint32>(widestGap * interchange::SmfTicksPerLmmsTick));
 	}
 
+	//! Each delta can fit a four-byte VLQ while their absolute position exceeds
+	//! the reader's 32-bit file-tick range. The last event must be refused by the
+	//! writer rather than producing a file its own reader cannot accept.
+	void anAbsoluteFileTickBeyondTheReaderRangeIsRefused()
+	{
+		TempoMap map;
+		map.setActive(true);
+		for (tick_t tick = 0; tick <= 430'000'000; tick += 20'000'000)
+		{
+			TempoMapEvent event;
+			event.tick = tick;
+			event.hasTempo = true;
+			event.tempo = 120 + static_cast<int>((tick / 20'000'000) % 2);
+			QVERIFY(map.addEvent(event));
+		}
+
+		// 4.3 billion file ticks is still inside SmfMaxFileTicks.
+		QString error;
+		const QString withinRange = path(m_directory, QStringLiteral("absolute-tick-within.mid"));
+		QVERIFY2(interchange::writeConductorTrack(withinRange, map, 120,
+			TempoMapTimeSignature{4, 4}, nullptr, &error), qPrintable(error));
+		QVERIFY2(interchange::readConductorTrack(withinRange).ok,
+			"the largest in-range event sequence must read back");
+
+		// The same 200-million-file-tick deltas now reach 4.4 billion.
+		TempoMapEvent beyondRange;
+		beyondRange.tick = 440'000'000;
+		beyondRange.hasTempo = true;
+		beyondRange.tempo = 120;
+		QVERIFY(map.addEvent(beyondRange));
+		const QString beyond = path(m_directory, QStringLiteral("absolute-tick-beyond.mid"));
+		const bool wroteBeyondRange = interchange::writeConductorTrack(beyond, map, 120,
+			TempoMapTimeSignature{4, 4}, nullptr, &error);
+		if (wroteBeyondRange)
+		{
+			const interchange::SmfReadReport refused = interchange::readConductorTrack(beyond);
+			QVERIFY2(!refused.ok, "the baseline writer's over-limit output must trigger the reader limit");
+		}
+		QVERIFY2(!wroteBeyondRange,
+			"a writer output beyond the reader's absolute tick range is not readable");
+		QVERIFY2(error.contains(QStringLiteral("reader can hold")), qPrintable(error));
+		QVERIFY(!QFile::exists(beyond));
+	}
+
 	//! A global tempo outside the engine's own bounds never reaches the file's
 	//! microseconds-per-quarter arithmetic. An EMPTY map answers the caller's
 	//! global tempo at every tick, so the tick-0 seed carries whatever the caller
@@ -415,6 +488,78 @@ private slots:
 		QVERIFY2(interchange::writeConductorTrack(file, TempoMap{}, TempoMapMinTempo,
 			TempoMapTimeSignature{4, 4}, nullptr, &error), qPrintable(error));
 		QVERIFY(QFile::exists(file));
+	}
+
+	//! A global metre becomes the tick-0 seed when the map has no signature there.
+	//! Refuse values the engine cannot hold instead of silently changing them in
+	//! the SMF payload; ordinary signatures such as 3/4 remain valid.
+	void aGlobalTimeSignatureTheEngineDoesNotHoldIsRefused()
+	{
+		const QString file = path(m_directory, QStringLiteral("bad-global-signature.mid"));
+		for (const TempoMapTimeSignature signature : {TempoMapTimeSignature{0, 4},
+				TempoMapTimeSignature{33, 4}, TempoMapTimeSignature{3, 3},
+				TempoMapTimeSignature{3, 64}})
+		{
+			QString error;
+			QVERIFY2(!interchange::writeConductorTrack(file, TempoMap{}, 120, signature,
+				nullptr, &error), qPrintable(QStringLiteral("global signature %1/%2 was accepted")
+					.arg(signature.numerator).arg(signature.denominator)));
+			QVERIFY(!error.isEmpty());
+			QVERIFY(!QFile::exists(file));
+		}
+
+		QString error;
+		QVERIFY2(interchange::writeConductorTrack(file, TempoMap{}, 120,
+			TempoMapTimeSignature{3, 4}, nullptr, &error), qPrintable(error));
+		const interchange::SmfReadReport read = interchange::readConductorTrack(file);
+		QVERIFY2(read.ok, qPrintable(read.error));
+		QCOMPARE(read.events.size(), static_cast<std::size_t>(1));
+		QCOMPARE(read.events.front().numerator, 3);
+		QCOMPARE(read.events.front().denominator, 4);
+	}
+
+	//! A required tick-zero seed cannot make a full tempo map unreadable.
+	void aTickZeroSeedDoesNotExceedTempoMapCapacity()
+	{
+		TempoMap map;
+		map.setActive(true);
+		for (int index = 0; index < TempoMap::MaxEvents; ++index)
+		{
+			TempoMapEvent event;
+			event.tick = index + 1;
+			event.hasTempo = true;
+			event.tempo = 120;
+			QVERIFY(map.addEvent(event));
+		}
+		QCOMPARE(map.size(), TempoMap::MaxEvents);
+
+		const QString file = path(m_directory, QStringLiteral("full-map-seed.mid"));
+		QString error;
+		QVERIFY2(!interchange::writeConductorTrack(file, map, 120,
+			TempoMapTimeSignature{4, 4}, nullptr, &error),
+			"a full map plus its required tick-zero seed cannot be imported");
+		QVERIFY(!error.isEmpty());
+		QVERIFY(!QFile::exists(file));
+
+		// A tick-zero event absorbs the seed, so a full map remains exportable.
+		TempoMap mapWithTickZero;
+		mapWithTickZero.setActive(true);
+		for (int index = 0; index < TempoMap::MaxEvents; ++index)
+		{
+			TempoMapEvent event;
+			event.tick = index;
+			event.hasTempo = true;
+			event.tempo = 120;
+			QVERIFY(mapWithTickZero.addEvent(event));
+		}
+		const QString boundary = path(m_directory, QStringLiteral("full-map-tick-zero.mid"));
+		QVERIFY2(interchange::writeConductorTrack(boundary, mapWithTickZero, 120,
+			TempoMapTimeSignature{4, 4}, nullptr, &error), qPrintable(error));
+		const interchange::SmfReadReport read = interchange::readConductorTrack(boundary);
+		QVERIFY2(read.ok, qPrintable(read.error));
+		TempoMap restored;
+		QVERIFY2(interchange::mapFromEvents(read.events, &restored, &error), qPrintable(error));
+		QCOMPARE(restored.size(), TempoMap::MaxEvents);
 	}
 
 	//! A map switched off is never consulted by the timeline: every tick answers

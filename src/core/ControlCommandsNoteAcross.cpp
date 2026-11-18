@@ -62,16 +62,22 @@ const QStringList& acrossCommands()
 bool prepare(const ControlCommand& command, const QJsonArray& clips, const QJsonObject& args, QVector<QJsonObject>* calls,
 	ControlResult* error)
 {
-	if (clips.isEmpty() || clips.size() > MaxClips)
-	{
-		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'clips' names 1..%1 MIDI clips").arg(MaxClips));
-		return false;
-	}
+	// Duplicates drop before the limit counts, so it bounds the clips EDITED, not the names given.
+	QJsonArray unique;
 	QSet<QString> seen;
 	for (const QJsonValue& value : clips)
 	{
 		if (seen.contains(value.toString())) { continue; }  // a clip named twice is edited once
 		seen.insert(value.toString());
+		unique.append(value);
+	}
+	if (unique.isEmpty() || unique.size() > MaxClips)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'clips' names 1..%1 MIDI clips").arg(MaxClips));
+		return false;
+	}
+	for (const QJsonValue& value : unique)
+	{
 		ClipRef ref;
 		if (resolveMidiClip(value.toString(), &ref, error) == nullptr) { return false; }
 		QJsonObject call = args;

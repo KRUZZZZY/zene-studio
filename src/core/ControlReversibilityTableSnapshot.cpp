@@ -84,6 +84,32 @@ const ReversibilityRow kSnapshotRows[] = {
 		"registers NO inverse and reports reversible:false rather than naming a "
 		"revision 0 that cannot exist (BUG-CTL-6)",
 		""),
+	R("project.open", RC::Snapshot, true,
+		"loading a project replaces the whole session. A session with UNSAVED changes is "
+		"captured whole first (Q050-044), so the open is one undo step; a session with none "
+		"is already held by its file",
+		"snapshot: the displaced session is captured as the document a save would build "
+		"(audio files by reference, never copied) before anything loads, bounded by the undo "
+		"stack's byte budget (control.set_undo_depth). Over the budget the open is REFUSED "
+		"before either project changes. One undo step restores the displaced session and its "
+		"file name; redo opens the project again. Recorded PER CALL: a session with no unsaved "
+		"changes, or a partial load, registers no step and reports reversible:false with the "
+		"reason, and the record still names the displaced file and its hash",
+		"when reversible is false: reopen the file named in before.previous_file. The "
+		"displaced session's own earlier undo steps are not carried back"),
+	R("script.run", RC::Snapshot, true,
+		"a Lua script mutates the engine through its own bindings, so the registry cannot know "
+		"what it wrote. The project is therefore captured whole before the run (Q050-044)",
+		"snapshot: the project as it was before the script (audio files by reference), bounded "
+		"by the undo stack's byte budget (control.set_undo_depth); over the budget the run is "
+		"REFUSED before the script executes. Everything the script changed is ONE undo step that "
+		"restores the exact pre-script project; redo reapplies the run's result. The finer steps "
+		"the script pushed (Lua addCheckPoint) are replaced by it. Recorded PER CALL: a script "
+		"that changed nothing, or ran where no snapshot can be taken (a partial load), registers "
+		"no step and reports reversible:false with the reason",
+		"when reversible is false: nothing changed, or the project is a partial load - save the "
+		"project first. A script's effects OUTSIDE the project (files it writes, the console) are "
+		"not undone"),
 	R("plugin.load", RC::Snapshot, false,
 		"two branches: appending an EFFECT has an exact inverse (the instance "
 		"is new and carries only defaults), but REPLACING an instrument does "
@@ -143,10 +169,15 @@ const ReversibilityRow kSnapshotRows[] = {
 		"A rack with more than one parallel chain does NOT get the removed "
 		"chain's position back, so a selection that named a later chain has to "
 		"be set again with rack.set_selected"),
-	R("control.set_undo_depth", RC::Snapshot, true,
-		"the depth cap is not project state, but LOWERING it evicts undo steps, and an evicted step is gone. The previous cap is a bounded scalar, so the change itself is reversible - what it dropped is not",
-		"snapshot: the transaction's before-state holds the previous cap, and the recorded inverse is the command itself (control.undo dispatches control.set_undo_depth with steps/bytes set back). The journal's byte budget is not stored twice: it is COMPUTED from the steps the stack retains (ProjectJournal::retainedBytes) and reported by control.undo_depth",
-		"the steps evicted by a cap change are NOT recoverable: control.undo restores the CAP, not the history it dropped. Raise the cap before a long session, or re-drive the edits"),
+	R("control.set_undo_depth", RC::Snapshot, false,
+		"the depth cap is not project state, but LOWERING it evicts undo steps, and an evicted step is gone. A change that drops no steps is reversible; one that drops history is not, because restoring the previous cap cannot restore those steps",
+		"snapshot: the transaction's before-state holds the previous caps. When no steps were dropped, its inverse command can restore them completely. When a cap change dropped steps, the record is irreversible and control.undo refuses it. The journal's byte budget is not stored twice: it is COMPUTED from the steps the stack retains (ProjectJournal::retainedBytes) and reported by control.undo_depth",
+		"after a cap change drops history, control.undo refuses because the evicted steps cannot be recovered by restoring the cap. Raise the cap manually and re-drive any edits whose steps were evicted"),
+	// WF-033: the project's own choice to save its undo history with it.
+	R("project.set_undo_history", RC::Snapshot, true,
+		"the setting is project state (saved in <z:undohistory>), but it is a choice about what a SAVE writes, not an edit of the music: it is recorded, not journalled, so toggling it never becomes one of the undo steps it decides about",
+		"snapshot: the transaction's before-state holds the previous setting (on / off / default) and the recorded inverse is the command itself, so one control.undo puts it back",
+		"turning it OFF drops the snapshots the session's steps carried; the inverse turns it back on but cannot recapture them - those steps stay unsaveable (docs/UNDO-HISTORY-PERSISTENCE.md)"),
 
 	// CODE-6: the Lua memory budget. The instruction budget's sibling, and the
 	// same shape: a bounded scalar the process holds, settable through the
@@ -179,6 +210,28 @@ const ReversibilityRow kSnapshotRows[] = {
 		"the recorded inverse is the paired COMMAND browser.tag.add with this "
 		"path and tag (`applies: command`), dispatched by control.undo; the "
 		"the tag set the edit started from is in the transaction's before-state",
+		""),
+	// 0.5.0 L11 (WF-007): the category facet's two verbs, beside the tag edits.
+	// The same store document, the same absence of a JournallingObject, and the
+	// inverse is the recorded COMMAND with the value the edit started from (the
+	// wasm.load pattern: set restores the previous category, or clears when
+	// there was none).
+	R("browser.category.set", RC::Snapshot, true,
+		"the category table lives in the tag store, a user-config file, not a "
+		"JournallingObject: there is no object checkpoint that holds a path's "
+		"category, and the project journal is deliberately not used for state "
+		"outside the project",
+		"the recorded inverse is the COMMAND that puts the previous category "
+		"back - browser.category.set with it, or browser.category.clear when "
+		"there was none (`applies: command`), dispatched by control.undo "
+		"through the registry; before.category holds it, bounded by the tag "
+		"label cap",
+		""),
+	R("browser.category.clear", RC::Snapshot, true,
+		"the same store and the same absence of a checkpoint",
+		"the recorded inverse is the COMMAND browser.category.set with the "
+		"category the file carried (`applies: command`), dispatched by "
+		"control.undo; before.category holds it",
 		""),
 #ifdef LMMS_HAVE_WASM
 	// =====================================================================
@@ -288,7 +341,9 @@ const ReversibilityRow kSnapshotRows[] = {
 		"stops the follower's poll. The tempo a following slave wrote is NOT part "
 		"of the inverse; what it was before the command is in the transaction's "
 		"before-state (`tempo`), because a follower cannot un-follow the music "
-		"that already played",
+		"that already played. A SOURCE SWITCH also forgets the measurement rather "
+		"than moving it with the source (Q050-026), so an undone switch restores "
+		"the port and waits for that port's own clock again",
 		"the tempo itself: transport.set_tempo with the value the transaction's "
 		"before-state reports (`tempo`), AFTER the follow flag is off, or the "
 		"slave immediately overwrites it from the next measurement "

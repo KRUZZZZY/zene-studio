@@ -53,7 +53,9 @@
 #include "src/wasm/WasmSandboxHost.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <limits>
 #include <string>
 
 namespace lmms
@@ -194,7 +196,15 @@ ControlResult handleSetParam(const QJsonObject& args)
 	}
 
 	const int index = args.value(QStringLiteral("index")).toInt();
-	const float value = static_cast<float>(args.value(QStringLiteral("value")).toDouble());
+	const double requestedValue = args.value(QStringLiteral("value")).toDouble();
+	const double maxFloat = static_cast<double>(std::numeric_limits<float>::max());
+	if (!std::isfinite(requestedValue) || requestedValue < -maxFloat || requestedValue > maxFloat)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			wasmNotFound(QStringLiteral("wasm.set_param"),
+				QStringLiteral("value must be finite and within the float range")));
+	}
+	const float value = static_cast<float>(requestedValue);
 	const std::uint32_t slot = static_cast<std::uint32_t>(std::max(index, 0));
 	const float previous = host.param(slot);
 	if (!host.setParam(slot, value))

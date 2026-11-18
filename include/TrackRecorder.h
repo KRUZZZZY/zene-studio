@@ -70,6 +70,11 @@ public:
 	//! Frames per sndfile write on the disk-writer thread.
 	static constexpr std::size_t WriteBatchFrames = 4096;
 
+#ifdef LMMS_TESTING
+	//! Inject one portable writer-start failure for lifecycle regression tests.
+	static void failNextWriterThreadStartForTesting() noexcept;
+#endif
+
 	TrackRecorder();
 	~TrackRecorder();
 
@@ -85,7 +90,7 @@ public:
 	//! feature row 64 "Arbitrary input count"). With no capture device open the
 	//! engine's bus is two channels wide, so that is the default; an N-channel
 	//! interface raises it. Off the audio thread.
-	void setInputChannelCapacity(int channels) noexcept;
+	void setInputChannelCapacity(int channels);
 	int inputChannelCapacity() const noexcept;
 	//! True when \a channel can be selected: the check arm() makes, exposed so
 	//! the control surface can refuse a bad channel with the range in the
@@ -98,10 +103,23 @@ public:
 	//! cannot be opened.
 	bool arm(const std::string& filePath, int sampleRate, int inputChannel);
 	//! Off the audio thread: stop the writer, drain the ring and close the
-	//! file. Idempotent.
-	void disarm();
+	//! file. Idempotent. Returns the journal-removal result (new-p17-27) for
+	//! callers that report it: true when this disarm retired the take journal
+	//! (or there was none), false when removal failed - in which case the
+	//! journal path is retained so the failure stays observable.
+	bool disarm();
 
-	bool isArmed() const noexcept { return m_armed.load(std::memory_order_acquire); }
+	bool isArmed() const noexcept
+	{
+		return m_capturing.load(std::memory_order_acquire)
+			&& !m_inputUnavailable.load(std::memory_order_acquire);
+	}
+	//! True after the audio thread sees a delivered block narrower than the
+	//! selected channel, until the control thread retires the route.
+	bool hasUnavailableInput() const noexcept
+	{
+		return m_inputUnavailable.load(std::memory_order_acquire);
+	}
 	bool isWriterRunning() const noexcept { return m_writerRunning.load(std::memory_order_acquire); }
 
 	//! Audio-thread entry point. Demuxes one channel of the interleaved input
@@ -140,8 +158,16 @@ public:
 	//! file - see include/RecordingJournal.h.
 	std::uint64_t journalledFrames() const noexcept { return m_journalFrames.load(std::memory_order_relaxed); }
 
+	//! Commits made by the disk-writer (header rewrite + sync + journal) since arm(),
+	//! and the nanoseconds it spent in them: the honest I/O cost of the short
+	//! journal interval (Q050-045). Reset by arm().
+	std::uint64_t commitCount() const noexcept { return m_commitCount.load(std::memory_order_relaxed); }
+	std::uint64_t commitNanoseconds() const noexcept { return m_commitNanos.load(std::memory_order_relaxed); }
+
 private:
 	void writerLoop();
+	//! Header rewrite + sync + journal write; disk-writer thread only.
+	void commitTake();
 
 	//! Writes the take journal with the frames recorded so far (0.3.0). Called
 	//! from arm() and from writerLoop() - never from the audio thread.
@@ -158,6 +184,7 @@ private:
 	//! writer are ready (m_armed is claimed first, so it cannot gate the audio path), cleared first
 	//! by disarm().
 	std::atomic<bool> m_capturing{false};
+	std::atomic<bool> m_inputUnavailable{false};
 	std::atomic<bool> m_stopRequested{false};
 	std::atomic<bool> m_writerRunning{false};
 	std::atomic<int> m_inputChannel{0};
@@ -177,6 +204,8 @@ private:
 	// written by arm() (before the thread exists) and by that thread only, and
 	// is atomic because journalledFrames() reads it from the control thread
 	// while that thread runs.
+	std::atomic<std::uint64_t> m_commitCount{0};
+	std::atomic<std::uint64_t> m_commitNanos{0};
 	std::string m_journalPath;
 	std::atomic<std::uint64_t> m_journalFrames{0};
 	std::uint64_t m_journalIntervalFrames = 0;

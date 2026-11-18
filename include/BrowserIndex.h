@@ -28,6 +28,7 @@
 #include <atomic>
 #include <vector>
 
+#include <QHash>
 #include <QMutex>
 #include <QString>
 #include <QStringList>
@@ -37,6 +38,8 @@
 
 namespace lmms
 {
+
+class TaskToken;
 
 /*! 0.5.0 L11 (WF-020): what a sound is like, as a handful of numbers measured from the start of the file
  *  (at most FeatureSeconds): its length, loudness (RMS, dBFS), brightness (mean spectral centroid),
@@ -56,7 +59,12 @@ struct LMMS_EXPORT BrowserFeatures
 
 	//! Measure @a path (decodes it: never on the audio thread). valid false when it cannot be read.
 	static BrowserFeatures analyse(const QString& path);
-	//! How far apart two sounds are: 0 for the same numbers, about 1 for clearly different ones.
+	//! What distance() reports when either record was never measured: further
+	//! apart than any two real measurements can be, so an unmeasured file sorts
+	//! last instead of tying for first.
+	static constexpr double InvalidDistance = 1e9;
+	//! How far apart two sounds are: 0 for the same numbers, about 1 for clearly
+	//! different ones, InvalidDistance when either was never measured.
 	static double distance(const BrowserFeatures& a, const BrowserFeatures& b);
 };
 
@@ -75,7 +83,7 @@ struct LMMS_EXPORT BrowserIndexEntry
  *  size and date, and (when asked) each audio file's features - kept in the user's config directory
  *  (<config>/browser-index.json; ZENE_BROWSER_INDEX names another file), so a search over the whole
  *  library is a lookup instead of a walk, and a similar-sound search has something to compare with.
- *  A scan runs on a worker thread (never the audio thread) and replaces the index when it finishes; a
+ *  A scan runs on a worker thread (never the audio thread) and replaces the index when it finishes and its store is written (a scan whose store cannot be written keeps the previous index and reports the error); a
  *  file whose size and date are unchanged keeps the features it had, so a rescan only measures what is
  *  new. Bounded: MaxEntries files (a longer walk says `truncated`) and MaxAnalysed measured per scan. */
 class LMMS_EXPORT BrowserIndex
@@ -118,7 +126,7 @@ private:
 	bool claim(const QStringList& dirs);
 	void scan(const QStringList& dirs, bool features, int maxAnalysed);
 	//! 0.5.0 theme 24: a background scan's end, reported to the task area (TaskCenter.h).
-	void reportScanEnd();
+	void reportScanEnd(const TaskToken& token);
 	void loadLocked() const;
 	bool save(const std::vector<BrowserIndexEntry>& entries, const Status& status) const;
 
@@ -128,6 +136,17 @@ private:
 	mutable bool m_loaded = false;
 	std::atomic<bool> m_cancel{false};
 };
+
+/*! 0.5.0 L11 (Q050-316.1): every measured entry, keyed by canonical path.
+ *
+ * The tempo/key filter has to answer the SAME file set from a walked search
+ * (browser.query) and an indexed one (browser.index_query). The index is the one
+ * place a sound's tempo and key are measured, so the walk reads its measurement
+ * here instead of holding a second analyzer. A one-shot copy taken under the
+ * index's lock and released before the walk: a search must never hold that lock
+ * across a filesystem walk that a background scan needs to publish through.
+ */
+LMMS_EXPORT QHash<QString, BrowserFeatures> browserMeasuredFeatures();
 
 } // namespace lmms
 

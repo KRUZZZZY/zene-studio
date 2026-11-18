@@ -102,6 +102,18 @@ class SessionSceneFollowTest : public QObject
 	Q_OBJECT
 
 private slots:
+	void publishesColumnStateForTrack64()
+	{
+		SessionScheduler scheduler;
+		QVERIFY(scheduler.requestLaunch(64, 1, LaunchMode::Trigger, LaunchQuantisation::None));
+		runTo(scheduler, 0, 8);
+
+		QCOMPARE(scheduler.slotPhase(64, 1), SlotPhase::Playing);
+		const SessionScheduler::ColumnState state = scheduler.columnState(64);
+		QCOMPARE(state.phase, SlotPhase::Playing);
+		QCOMPARE(state.scene, 1);
+	}
+
 	void aSceneChainMovesTheWholeRowOnOneLine()
 	{
 		SessionScheduler scheduler;
@@ -190,6 +202,37 @@ private slots:
 		scheduler.processAudio(clockAt(0), kFramesPerPeriod);
 		QCOMPARE(scheduler.armedFollowScenes(), 0);
 		QCOMPARE(scheduler.activeScene(), -1);
+	}
+
+	/*! A DISABLED scene plan frees its entry of the fixed table. Disabling one
+	 *  that was installed replaced the plan but left the entry's scene set, while
+	 *  sceneEntry() only claims entries whose scene is negative - so the entry was
+	 *  consumed for good: the slots armed and disarmed in turn, and the next plan
+	 *  was refused as the table being full.
+	 */
+	void aDisabledScenePlanGivesItsEntryBack()
+	{
+		SessionScheduler scheduler;
+		FollowPlan plan = chainOf(FollowAction::Type::Next, 1.0);
+		for (int scene = 0; scene < MaxFollowPlans; ++scene)
+		{
+			plan.enabled = true;
+			QVERIFY(scheduler.requestSceneFollowPlan(scene, plan));
+			scheduler.processAudio(clockAt(0), kFramesPerPeriod);
+			QCOMPARE(scheduler.armedFollowScenes(), 1);
+			plan.enabled = false;
+			QVERIFY(scheduler.requestSceneFollowPlan(scene, plan));
+			scheduler.processAudio(clockAt(0), kFramesPerPeriod);
+			QCOMPARE(scheduler.armedFollowScenes(), 0);
+		}
+		// The table holds no ARMED plan, so a new scene takes an entry rather than
+		// being refused for one a disabled plan is still sitting on.
+		plan.enabled = true;
+		const std::uint64_t droppedBefore = scheduler.droppedCommands();
+		QVERIFY(scheduler.requestSceneFollowPlan(MaxFollowPlans + 3, plan));
+		scheduler.processAudio(clockAt(0), kFramesPerPeriod);
+		QCOMPARE(scheduler.droppedCommands(), droppedBefore);
+		QCOMPARE(scheduler.armedFollowScenes(), 1);
 	}
 
 	void aSceneChainRoundTripsAndOldSectionsStayVersionOne()

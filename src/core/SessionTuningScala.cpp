@@ -34,6 +34,7 @@
 
 #include <algorithm>
 #include <array>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -60,12 +61,13 @@ namespace
 bool ratioFromLine(const QString& line, int numerator, Interval* out)
 {
 	int denominator = 1;
-	if (line.contains(QLatin1Char('/')))
+	const QString value = line.section(QRegularExpression(QStringLiteral("\\s+")),
+		0, 0, QString::SectionSkipEmpty);
+	if (value.contains(QLatin1Char('/')))
 	{
+		if (value.count(QLatin1Char('/')) != 1) { return false; }
 		bool denOk = false;
-		denominator = line.split(QLatin1Char('/')).at(1)
-			.section(QRegularExpression(QStringLiteral("\\s+")), 0, 0, QString::SectionSkipEmpty)
-			.toInt(&denOk);
+		denominator = value.section(QLatin1Char('/'), 1, 1).toInt(&denOk);
 		if (!denOk || denominator <= 0) { return false; }
 	}
 	if (numerator <= 0) { return false; }
@@ -125,6 +127,17 @@ bool readScaleLines(QTextStream& stream, QString* name, QStringList* lines, QStr
 		}
 		else { lines->append(line); }
 		++i;
+	}
+	// The two header lines are a PROMISE about the scale that follows: a
+	// stream that never reached the degree count never said how many degrees
+	// it has, and the count check below compares zero against zero - so an
+	// empty file (or one that only names a scale) passed it. The scale built
+	// from it would hold only the 1/1 interval loadScaleFile() starts with:
+	// every key at the same pitch. A file that describes no scale is refused.
+	if (i < 0)
+	{
+		failWith(error, QStringLiteral("the .scl file must contain a name and a positive degree count"));
+		return false;
 	}
 	// The count the file declared is a PROMISE about how many degrees follow:
 	// a file that ends early has not described the scale it carries, and
@@ -232,9 +245,11 @@ double baseFreqOf(const QString& field, QString* error)
 {
 	bool ok = false;
 	const double baseFreq = field.toDouble(&ok);
-	if (!ok || !std::isfinite(baseFreq) || baseFreq <= 0.0)
+	if (!ok || !std::isfinite(baseFreq) || baseFreq <= 0.0
+		|| baseFreq > std::numeric_limits<float>::max()
+		|| static_cast<float>(baseFreq) == 0.0f)
 	{
-		*error = QStringLiteral("field 6 must be a positive base frequency");
+		*error = QStringLiteral("field 6 must be a positive base frequency the render path can use");
 		return 0.0;
 	}
 	return baseFreq;
@@ -313,6 +328,33 @@ std::shared_ptr<Keymap> keymapOf(const QStringList& fields, const QString& descr
 }
 
 } // namespace
+
+bool SessionTuning::parseScaleFile(const QString& path, QString* name, QStringList* intervals,
+	QString* error)
+{
+	// The file is read here, not by the caller, so that the dialog and the
+	// command below it read the same bytes with the same rules. A file that
+	// does not describe a scale is refused BEFORE the caller has touched the
+	// Song or the session table with it.
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+	{
+		failWith(error, QStringLiteral("cannot read the scale file '%1'").arg(path));
+		return false;
+	}
+	QTextStream stream(&file);
+	QString scaleName;
+	QStringList scaleLines;
+	QString reason;
+	if (!readScaleLines(stream, &scaleName, &scaleLines, &reason))
+	{
+		failWith(error, reason);
+		return false;
+	}
+	if (name != nullptr) {*name = scaleName;}
+	if (intervals != nullptr) {*intervals = scaleLines;}
+	return true;
+}
 
 bool SessionTuning::loadScaleFile(const QString& path, QString* error)
 {

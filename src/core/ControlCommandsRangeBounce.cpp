@@ -130,7 +130,8 @@ void registerRangeBounceCommand(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("bounce");
 	cmd.description = QStringLiteral("Bounce the selection to a new track: the range's tracks (range.set), over its ticks, rendered "
 		"together into one file ('out', or beside the project) that lands on a new audio track at the range's start; "
-		"'mute_sources' (true when left out) mutes the bounced tracks so the song sounds as before. One undo step.");
+		"'mute_sources' (true when left out) mutes the bounced tracks so the song sounds as before. One undo step. This command "
+		"keeps its synchronous result contract for compatibility; use render.queue_bounce with operation range_bounce for a cancellable job.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("out"), stringProperty()}, {QStringLiteral("mute_sources"), booleanProperty()}});
 	cmd.resultSchema = objectProperty();
 	cmd.mutating = true;

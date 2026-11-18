@@ -56,8 +56,10 @@ class QTimer;
 namespace lmms::gui
 {
 
+class AutomationEditor;
 class CompSwipeStrip;
 class NoteEditor;
+class ShellButton;
 class XyPadDialog;
 
 //! One column of a list.
@@ -137,7 +139,8 @@ public:
 
 	//! The open list of @a kind on @a surface, or nullptr.
 	static ItemListPanel* find(QWidget* surface, const QString& kind);
-	//! The list of @a kind on @a surface, made with @a make (given the panel to parent the source to) when none is.
+	//! The list of @a kind on @a surface, made with @a make (given the panel to parent the source to) when none is;
+	//! nullptr when @a surface is nullptr.
 	static ItemListPanel* open(QWidget* surface, const QString& kind, const std::function<ItemListSource*(QObject*)>& make);
 
 	ItemListSource* source() const { return m_source; }
@@ -169,7 +172,7 @@ private:
 	bool m_syncing = false;
 };
 
-//! The sources of the five canvases (ItemListSources*.cpp).
+//! The sources of the canvases (ItemListSources*.cpp, ItemListAutomationSource.cpp).
 namespace itemlists
 {
 LMMS_EXPORT ItemListSource* notes(NoteEditor* editor, QObject* parent);
@@ -177,6 +180,15 @@ LMMS_EXPORT ItemListSource* controllerPoints(NoteEditor* editor, QObject* parent
 LMMS_EXPORT ItemListSource* xyAxes(XyPadDialog* pad, QObject* parent);
 LMMS_EXPORT ItemListSource* compSegments(CompSwipeStrip* strip, QObject* parent);
 LMMS_EXPORT ItemListSource* clips(QObject* parent);
+
+/*! The List button every canvas with a list carries on its toolbar (ItemListPanel.cpp): the shell's button with the
+ *  list icon, declaring window.item_list (controlCommand) and @a surface (itemListSurface). A press puts the keyboard
+ *  focus on @a canvas - window.item_list lists the canvas holding it, as Ctrl+Shift+L there does - and runs
+ *  window.item_list on @a surface, which opens the list and, pressed again, closes it. A refusal is announced. */
+LMMS_EXPORT ShellButton* listButton(const QString& surface, QWidget* canvas, QWidget* parent);
+
+//! ED-194: the open automation editor's points (ItemListAutomationSource.cpp).
+LMMS_EXPORT ItemListSource* automationPoints(AutomationEditor* editor, QObject* parent);
 } // namespace itemlists
 
 } // namespace lmms::gui

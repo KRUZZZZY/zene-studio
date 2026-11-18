@@ -376,8 +376,15 @@ bool TempoMap::loadSettings(const QDomElement& element)
 		const QDomElement node = events.at(i).toElement();
 		if (node.isNull()) { continue; }
 		TempoMapEvent event;
+		// A `tick` that is PRESENT but unreadable - not a number, or a number too
+		// large for the int32 a tick is - is refused. toInt() alone answers 0 for
+		// both, which would move the event to the very start of the map and let its
+		// BPM apply from tick 0. An ABSENT tick is not malformed: it still means the
+		// start of the map, which is what the default has always said.
+		bool tickOk = true;
 		event.tick = static_cast<tick_t>(
-			node.attribute(QStringLiteral("tick"), QStringLiteral("0")).toInt());
+			node.attribute(QStringLiteral("tick"), QStringLiteral("0")).toInt(&tickOk));
+		if (!tickOk) { continue; }
 		if (node.hasAttribute(QStringLiteral("bpm")))
 		{
 			event.hasTempo = true;

@@ -49,6 +49,8 @@
  */
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <vector>
 
 #include <QJsonArray>
@@ -73,6 +75,137 @@ using namespace sessioncontrol;
 namespace
 {
 
+//! The JSON type of @a value, named for a refusal message. Qt6 dropped
+//! QJsonValue::typeName(), so the one used to be is spelled here.
+QString jsonTypeName(const QJsonValue& value)
+{
+	if (value.isNull()) { return QStringLiteral("null"); }
+	if (value.isBool()) { return QStringLiteral("a boolean"); }
+	if (value.isDouble()) { return QStringLiteral("a number"); }
+	if (value.isString()) { return QStringLiteral("a string"); }
+	if (value.isArray()) { return QStringLiteral("an array"); }
+	if (value.isObject()) { return QStringLiteral("an object"); }
+	return QStringLiteral("undefined");
+}
+
+/*! A Follow Action entry's NUMBER field, refusing a value of the wrong JSON type.
+ *
+ *  QJsonValue::toDouble()/toInt() substitute the default for anything they cannot
+ *  convert, so without a type check `{"type":"jump","jump_to":"oops"}` would arm a
+ *  jump to scene 0 - a well-formed action built out of a value the client never
+ *  sent. The range check the caller then applies is therefore only reached with a
+ *  value the client actually chose. An absent field is NOT an error: it leaves
+ *  @a fallback, which is the entry's own default. */
+bool numberField(const QJsonObject& entry, const QString& name, double fallback,
+	double* out, QString* error)
+{
+	const QJsonValue value = entry.value(name);
+	if (value.isUndefined()) { *out = fallback; return true; }
+	if (!value.isDouble())
+	{
+		*error = QStringLiteral("'%1' is a number, not %2").arg(name, jsonTypeName(value));
+		return false;
+	}
+	*out = value.toDouble();
+	return true;
+}
+
+//! The same rule for a BOOLEAN field (`linked`), which toBool() would otherwise
+//! turn into `true` for a string, a number or null.
+bool boolField(const QJsonObject& entry, const QString& name, bool fallback, bool* out, QString* error)
+{
+	const QJsonValue value = entry.value(name);
+	if (value.isUndefined()) { *out = fallback; return true; }
+	if (!value.isBool())
+	{
+		*error = QStringLiteral("'%1' is a boolean, not %2").arg(name, jsonTypeName(value));
+		return false;
+	}
+	*out = value.toBool();
+	return true;
+}
+
+//! And for an INTEGER field (`jump_to`). A JSON number is a double, so the value must also be a
+//! whole number inside the int range: toInt() would otherwise truncate 0.5 to 0 and let 1e30
+//! wrap around.
+bool intField(const QJsonObject& entry, const QString& name, int fallback, int* out, QString* error)
+{
+	const QJsonValue value = entry.value(name);
+	if (value.isUndefined()) { *out = fallback; return true; }
+	if (!value.isDouble())
+	{
+		*error = QStringLiteral("'%1' is an integer, not %2").arg(name, jsonTypeName(value));
+		return false;
+	}
+	const double number = value.toDouble();
+	if (!std::isfinite(number) || number != std::floor(number)
+		|| number < static_cast<double>(std::numeric_limits<int>::min())
+		|| number > static_cast<double>(std::numeric_limits<int>::max()))
+	{
+		*error = QStringLiteral("'%1' is a whole number within the int range, not %2").arg(name).arg(number);
+		return false;
+	}
+	*out = static_cast<int>(number);
+	return true;
+}
+
+//! The entry's remaining fields, each read through a TYPED helper so a
+//! present-but-wrong-typed value is refused here instead of being converted
+//! into the entry's default (QJsonValue::toDouble()/toInt()/toBool() substitute
+//! that default for anything they cannot convert, which silently armed a jump to
+//! scene 0 or a chance of 1 - always fire). An absent field keeps the struct's
+//! own default, so this is behaviour-preserving for a well-typed entry.
+bool followActionTargetFromJson(const QJsonObject& entry, int sceneCount, FollowAction* action,
+	QString* error);
+
+bool followActionFieldsFromJson(const QJsonObject& entry, int sceneCount, FollowAction* action,
+	QString* error)
+{
+	double chance = action->chance;
+	double bars = action->timeBars;
+	bool linked = action->linked;
+
+	if (!numberField(entry, QStringLiteral("chance"), action->chance, &chance, error)) { return false; }
+	if (chance < 0.0 || chance > 1.0)
+	{
+		*error = QStringLiteral("'chance' is a weight in 0..1, not %1").arg(chance);
+		return false;
+	}
+	action->chance = chance;
+	if (!boolField(entry, QStringLiteral("linked"), action->linked, &linked, error)) { return false; }
+	action->linked = linked;
+	if (!numberField(entry, QStringLiteral("time_bars"), action->timeBars, &bars, error)) { return false; }
+	if (bars < 0.0)
+	{
+		*error = QStringLiteral("'time_bars' is an Unlinked action time in bars and cannot "
+			"be negative (%1)").arg(bars);
+		return false;
+	}
+	action->timeBars = bars;
+	return followActionTargetFromJson(entry, sceneCount, action, error);
+}
+
+//! `jump_to`, read through the typed helper and then range-checked against the
+//! grid. An out-of-grid row is refused HERE rather than only at fire time: the
+//! engine refuses it too (FollowOutcome::Refused, which is a measurement rather
+//! than a silent retry), but a client that names a scene the grid does not have
+//! has made an argument error, and the reply should say so while the client can
+//! still see the grid's real height.
+bool followActionTargetFromJson(const QJsonObject& entry, int sceneCount, FollowAction* action,
+	QString* error)
+{
+	int jumpTo = action->jumpTo;
+	if (!intField(entry, QStringLiteral("jump_to"), action->jumpTo, &jumpTo, error)) { return false; }
+	if (jumpTo < 0 || (action->type == FollowAction::Type::Jump && jumpTo >= sceneCount))
+	{
+		*error = QStringLiteral("'jump_to' %1 is outside the grid's %2 scenes; "
+			"session.set_grid resizes it").arg(jumpTo).arg(sceneCount);
+		return false;
+	}
+	action->jumpTo = jumpTo;
+	return true;
+}
+
 //! The chain entry an agent sent, or the slot's own as a fallback. `ok` is
 //! false when the args name an action the vocabulary does not carry, when an
 //! entry's numbers are outside their range, or when the chain is longer than the
@@ -95,49 +228,7 @@ bool followActionFromJson(const QJsonObject& entry, int sceneCount, FollowAction
 		return false;
 	}
 	action->type = static_cast<FollowAction::Type>(type);
-
-	if (entry.contains(QStringLiteral("chance")))
-	{
-		const double chance = entry.value(QStringLiteral("chance")).toDouble(1.0);
-		if (chance < 0.0 || chance > 1.0)
-		{
-			*error = QStringLiteral("'chance' is a weight in 0..1, not %1").arg(chance);
-			return false;
-		}
-		action->chance = chance;
-	}
-	if (entry.contains(QStringLiteral("linked")))
-	{
-		action->linked = entry.value(QStringLiteral("linked")).toBool(true);
-	}
-	if (entry.contains(QStringLiteral("time_bars")))
-	{
-		const double bars = entry.value(QStringLiteral("time_bars")).toDouble(1.0);
-		if (bars < 0.0)
-		{
-			*error = QStringLiteral("'time_bars' is an Unlinked action time in bars and cannot "
-				"be negative (%1)").arg(bars);
-			return false;
-		}
-		action->timeBars = bars;
-	}
-	if (entry.contains(QStringLiteral("jump_to")))
-	{
-		const int jumpTo = entry.value(QStringLiteral("jump_to")).toInt();
-		// An out-of-grid row is refused HERE rather than only at fire time: the
-		// engine refuses it too (FollowOutcome::Refused, which is a measurement
-		// rather than a silent retry), but a client that names a scene the grid
-		// does not have has made an argument error, and the reply should say so
-		// while the client can still see the grid's real height.
-		if (jumpTo < 0 || (action->type == FollowAction::Type::Jump && jumpTo >= sceneCount))
-		{
-			*error = QStringLiteral("'jump_to' %1 is outside the grid's %2 scenes; "
-				"session.set_grid resizes it").arg(jumpTo).arg(sceneCount);
-			return false;
-		}
-		action->jumpTo = jumpTo;
-	}
-	return true;
+	return followActionFieldsFromJson(entry, sceneCount, action, error);
 }
 
 } // namespace
@@ -425,6 +516,40 @@ void registerSetFollowActions(ControlRegistry& registry)
 }
 
 
+//! The one-cell reading: which cell was named, whether the armed mask covers it
+//! and whether it is armed, the cell's own state, and the action time its
+//! PERSISTED chain implies. That last one is computed with the same pure
+//! function the audio thread uses (SessionFollow.h), so the reply is the
+//! engine's arithmetic rather than a second implementation.
+void addCellReading(QJsonObject& result, const SessionModel& model,
+	const SessionScheduler& scheduler, int track, int scene, tick_t ticksPerBar)
+{
+	const ClipSlot& slot = model.slot(track, scene);
+	result.insert(QStringLiteral("track"), track);
+	result.insert(QStringLiteral("scene"), scene);
+
+	const bool covered = track >= 0 && track < 8 && scene >= 0 && scene < 8;
+	const std::uint64_t mask = scheduler.armedFollowCellsMask();
+	result.insert(QStringLiteral("armed_mask_covers_cell"), covered);
+	result.insert(QStringLiteral("armed"),
+		covered && (mask & (std::uint64_t{ 1 } << (track * 8 + scene))) != 0);
+	result.insert(QStringLiteral("cell"), clipSlotState(track, scene, slot));
+
+	FollowPlan plan;
+	plan.enabled = !slot.followActions().empty();
+	plan.count = slot.followActions().size() > static_cast<std::size_t>(MaxFollowChainEntries)
+		? MaxFollowChainEntries : static_cast<int>(slot.followActions().size());
+	for (int i = 0; i < plan.count; ++i)
+	{
+		plan.entries[i] = slot.followActions()[static_cast<std::size_t>(i)];
+	}
+	plan.clipLengthTicks = static_cast<tick_t>(slot.loopLength());
+	plan.sceneCount = model.sceneCount();
+	result.insert(QStringLiteral("chain"), followPlanJson(plan));
+	result.insert(QStringLiteral("chain_step_ticks"),
+		static_cast<int>(followActionTicks(plan, ticksPerBar)));
+}
+
 void registerFollowGetState(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -478,40 +603,26 @@ void registerFollowGetState(ControlRegistry& registry)
 		// Addressing one cell is optional: the engine reading above answers for
 		// the whole grid, and the cell reading adds what only the model knows -
 		// the persisted chain and the action time it implies.
-		if (!args.contains(QStringLiteral("track")) && !args.contains(QStringLiteral("scene")))
+		const bool hasTrack = args.contains(QStringLiteral("track"));
+		const bool hasScene = args.contains(QStringLiteral("scene"));
+		if (!hasTrack && !hasScene)
 		{
 			return ControlResult::success(result);
+		}
+		// Both or NEITHER: with one of them absent its reading below would be the
+		// default 0, and the reply would address a cell the caller never named -
+		// a real cell, with its chain and its armed flag, reported as if it had
+		// been asked for. A cell address is a pair.
+		if (hasTrack != hasScene)
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("name both 'track' and 'scene' to address one cell, or neither "
+					"for the whole grid"));
 		}
 		const int track = args.value(QStringLiteral("track")).toInt();
 		const int scene = args.value(QStringLiteral("scene")).toInt();
 		if (!gridContains(*model, track, scene, &error)) { return error; }
-		const ClipSlot& slot = model->slot(track, scene);
-		result.insert(QStringLiteral("track"), track);
-		result.insert(QStringLiteral("scene"), scene);
-
-		const bool covered = track >= 0 && track < 8 && scene >= 0 && scene < 8;
-		const std::uint64_t mask = scheduler.armedFollowCellsMask();
-		result.insert(QStringLiteral("armed_mask_covers_cell"), covered);
-		result.insert(QStringLiteral("armed"),
-			covered && (mask & (std::uint64_t{ 1 } << (track * 8 + scene))) != 0);
-		result.insert(QStringLiteral("cell"), clipSlotState(track, scene, slot));
-
-		// The action time the cell's OWN persisted chain implies, computed with
-		// the same pure function the audio thread uses (SessionFollow.h), so the
-		// reply is the engine's arithmetic rather than a second implementation.
-		FollowPlan plan;
-		plan.enabled = !slot.followActions().empty();
-		plan.count = slot.followActions().size() > static_cast<std::size_t>(MaxFollowChainEntries)
-			? MaxFollowChainEntries : static_cast<int>(slot.followActions().size());
-		for (int i = 0; i < plan.count; ++i)
-		{
-			plan.entries[i] = slot.followActions()[static_cast<std::size_t>(i)];
-		}
-		plan.clipLengthTicks = static_cast<tick_t>(slot.loopLength());
-		plan.sceneCount = model->sceneCount();
-		result.insert(QStringLiteral("chain"), followPlanJson(plan));
-		result.insert(QStringLiteral("chain_step_ticks"),
-			static_cast<int>(followActionTicks(plan, ctx.ticksPerBar)));
+		addCellReading(result, *model, scheduler, track, scene, ctx.ticksPerBar);
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);

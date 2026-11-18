@@ -83,12 +83,85 @@ void addSongStep(QMenu* menu, const QString& label, const QString& to)
 	step->setProperty("controlCommand", QStringLiteral("session.setlist_go"));
 	step->setEnabled(ControlRegistry::instance()->hasCommand(QStringLiteral("session.setlist_go")));
 	QObject::connect(step, &QAction::triggered, menu, [menu, to] {
+		// The same end-of-set check PerformView::stepSong makes before it asks: past either end there is nothing to open.
+		const QJsonObject setlist = ControlRegistry::instance()->invoke(QStringLiteral("session.setlist")).result;
+		const int target = setlist.value(QStringLiteral("index")).toInt(-1) + (to == QLatin1String("previous") ? -1 : 1);
+		if (target < 0 || target >= setlist.value(QStringLiteral("items")).toArray().size()) { return; }
 		MainWindow* window = getGUI() != nullptr ? getGUI()->mainWindow() : nullptr;
 		if (window != nullptr && !window->mayChangeProject(true)) { return; }
 		// Parented past every QMenu, as addCommandAction does: a message must outlive the menu.
 		QWidget* host = menu;
 		while (qobject_cast<QMenu*>(host) != nullptr) { host = host->parentWidget(); }
 		runCommand(host, call(QStringLiteral("session.setlist_go"), {{QStringLiteral("to"), to}}, QString(), false));
+	});
+}
+
+//! WF-055: record the column's input into this cell (an empty one), for as long as it plays or for some bars, and
+//! drop a take in hand. The two record entries carry "recordTake" so the grid knows to land what they start.
+void addRecordEntries(QMenu* menu, const QJsonObject& where, const QString& title, bool empty)
+{
+	const bool idle = ControlRegistry::instance()->invoke(QStringLiteral("session.record_slot_status")).result
+		.value(QStringLiteral("state")).toString() == QLatin1String("idle");
+	QAction* record = addCommandAction(menu, QObject::tr("Record Audio Into Cell"), QStringLiteral("session.record_slot"),
+		[where, title] { return call(QStringLiteral("session.record_slot"), where, title, false); });
+	//! One timed entry: a form for session.record_slot with @a defaults filled (the length, and the MIDI clock when synced).
+	const auto timed = [&](const QString& label, const QJsonObject& defaults) {
+		return addCommandAction(menu, label, QStringLiteral("session.record_slot"), [where, title, defaults] {
+			CommandCall form = call(QStringLiteral("session.record_slot"), where, title);
+			form.defaults = defaults;
+			return form;
+		});
+	};
+	QAction* bars = timed(QObject::tr("Record Audio for Bars..."), {{QStringLiteral("bars"), 1}});
+	QAction* steps = timed(QObject::tr("Record Audio for Steps..."), {{QStringLiteral("steps"), 16}});
+	// Q050-277: the MIDI clock master starts and stops an external synth at the take's own boundaries.
+	QAction* clockBars = timed(QObject::tr("Record Bars with MIDI Clock Start/Stop..."),
+		{{QStringLiteral("bars"), 1}, {QStringLiteral("clock_sync"), true}});
+	QAction* clockSteps = timed(QObject::tr("Record Steps with MIDI Clock Start/Stop..."),
+		{{QStringLiteral("steps"), 16}, {QStringLiteral("clock_sync"), true}});
+	for (QAction* action : {record, bars, steps, clockBars, clockSteps})
+	{
+		action->setProperty("recordTake", true);
+		action->setEnabled(action->isEnabled() && empty && idle);
+	}
+	QAction* cancel = addCommandAction(menu, QObject::tr("Cancel Recording"), QStringLiteral("session.record_slot"), [where, title] {
+		QJsonObject args = where;
+		args.insert(QStringLiteral("cancel"), true);
+		return call(QStringLiteral("session.record_slot"), args, title, false);
+	});
+	cancel->setEnabled(cancel->isEnabled() && !idle);
+}
+
+//! Q050-493: an audio cell's playback - gain, transpose, detune, loop region, tempo warp and RAM mode, every one of
+//! session.set_slot's playback fields - from its menu, through session.set_slot as an agent sets them (one undo step
+//! each). The form starts at the cell's current values, so Run with one field changed changes that field alone.
+void addPlaybackEntries(QMenu* menu, const QJsonObject& where, const QJsonObject& slot, const QString& title)
+{
+	static const char* const keys[] = {"gain_db", "transpose", "detune", "loop_start", "loop_length", "warp", "warp_bpm", "ram"};
+	const QString id = QStringLiteral("session.set_slot");
+	QMenu* playback = menu->addMenu(QObject::tr("Playback and Warp"));
+	addCommandAction(playback, QObject::tr("Gain, Pitch, Loop and Warp..."), id, [id, where, slot, title] {
+		CommandCall edit = call(id, where, title);
+		for (const char* key : keys)
+		{
+			const QString name = QLatin1String(key);
+			if (slot.contains(name)) { edit.defaults.insert(name, slot.value(name)); }
+		}
+		return edit;
+	});
+	const auto set = [id, where, title] { return call(id, where, title); };
+	addCommandChoices(playback, QObject::tr("Warp to Song Tempo"), id, QStringLiteral("warp"), set);
+	addCommandChoices(playback, QObject::tr("RAM Mode"), id, QStringLiteral("ram"), set);
+	playback->addSeparator();
+	addCommandAction(playback, QObject::tr("Reset Gain, Pitch, Loop and Warp"), id, [id, where, title] {
+		QJsonObject reset = where;
+		reset.insert(QStringLiteral("gain_db"), 0.0);
+		reset.insert(QStringLiteral("transpose"), 0);
+		reset.insert(QStringLiteral("detune"), 0);
+		reset.insert(QStringLiteral("loop_start"), 0);
+		reset.insert(QStringLiteral("loop_length"), 0);
+		reset.insert(QStringLiteral("warp"), false);
+		return call(id, reset, title, false);
 	});
 }
 
@@ -123,6 +196,21 @@ void populateCell(QMenu* menu, int track, int scene, const QJsonObject& slot)
 		audio.insert(QStringLiteral("type"), QStringLiteral("audio"));
 		return call(QStringLiteral("session.set_slot"), audio, title);
 	});
+	if (slot.value(QStringLiteral("type")).toString() == QLatin1String("audio")) { addPlaybackEntries(menu, where, slot, title); }
+	// Q050-273.1: the cell's audio into the shared library, through the same browser.save_clip an arrangement
+	// clip's Save to Library uses - the command form comes up with the cell's own name filled in. Only a
+	// populated AUDIO cell gets the entry: an empty cell has nothing to save, and a MIDI cell's pattern notes
+	// are stage 2 (the command refuses one by name, so a menu entry that always refused would be a dead item).
+	if (slot.value(QStringLiteral("type")).toString() == QLatin1String("audio") && !slot.isEmpty())
+	{
+		addCommandAction(menu, QObject::tr("Save to Library..."), QStringLiteral("browser.save_clip"), [where, slot, title] {
+			CommandCall save = call(QStringLiteral("browser.save_clip"), where, title);
+			const QString name = slot.value(QStringLiteral("name")).toString();
+			if (!name.isEmpty()) { save.defaults.insert(QStringLiteral("name"), name); }
+			return save;
+		});
+	}
+	addRecordEntries(menu, where, title, slot.isEmpty());  // WF-055
 	const auto set = [where, title] { return call(QStringLiteral("session.set_slot"), where, title); };
 	addCommandChoices(menu, QObject::tr("Launch Mode"), QStringLiteral("session.set_slot"), QStringLiteral("mode"), set);
 	addCommandChoices(menu, QObject::tr("Launch Quantisation"), QStringLiteral("session.set_slot"),
@@ -184,6 +272,36 @@ void populateScene(QMenu* menu, int scene, const QJsonObject& sceneState)
 	menu->addSeparator();
 	addCommandAction(menu, QObject::tr("Launch Scene"), QStringLiteral("session.launch_scene"),
 		[where, title] { return call(QStringLiteral("session.launch_scene"), where, title, false); });
+}
+
+void populateSubScenes(QMenu* menu, int scene, const QJsonArray& subScenes, const QJsonObject& selection)
+{
+	QMenu* sub = menu->addMenu(QObject::tr("Sub-scenes"));
+	const int picked = selection.value(QStringLiteral("tracks")).toArray().size();
+	const QString title = QObject::tr("Sub-scene");
+	QAction* make = addCommandAction(sub, QObject::tr("Make a Sub-scene From the Selection"), QStringLiteral("session.subscene_create"),
+		[selection, title] { return call(QStringLiteral("session.subscene_create"), selection, title, false); });
+	make->setEnabled(make->isEnabled() && picked > 0);
+	make->setToolTip(picked > 0 ? QObject::tr("Scene %1, %n track(s); rename it after", nullptr, picked).arg(selection.value(QStringLiteral("scene")).toInt() + 1)
+		: QObject::tr("Ctrl+click the cells of one scene first"));
+	sub->setToolTipsVisible(true);
+	for (const QJsonValue& value : subScenes)
+	{
+		const QJsonObject one = value.toObject();
+		if (scene < 0 || one.value(QStringLiteral("scene")).toInt() != scene) { continue; }
+		const QJsonObject which{{QStringLiteral("subscene"), one.value(QStringLiteral("subscene"))}};
+		const QString name = one.value(QStringLiteral("name")).toString();
+		sub->addSeparator();
+		addCommandAction(sub, QObject::tr("Launch %1").arg(name), QStringLiteral("session.subscene_launch"),
+			[which, name] { return call(QStringLiteral("session.subscene_launch"), which, name, false); });
+		addCommandAction(sub, QObject::tr("Rename %1...").arg(name), QStringLiteral("session.subscene_rename"), [which, name] {
+			CommandCall rename = call(QStringLiteral("session.subscene_rename"), which, name);
+			rename.defaults.insert(QStringLiteral("name"), name);
+			return rename;
+		});
+		addCommandAction(sub, QObject::tr("Delete %1").arg(name), QStringLiteral("session.subscene_delete"),
+			[which, name] { return call(QStringLiteral("session.subscene_delete"), which, name, false); });
+	}
 }
 
 void populateGrid(QMenu* menu, int tracks, int scenes)

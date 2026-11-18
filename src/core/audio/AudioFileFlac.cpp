@@ -65,11 +65,6 @@ bool AudioFileFlac::startEncoding()
 			m_sfinfo.format |= SF_FORMAT_PCM_16;
 	}
 
-#ifdef LMMS_HAVE_SF_COMPLEVEL
-	double compression = getOutputSettings().getCompressionLevel();
-	sf_command(m_sf, SFC_SET_COMPRESSION_LEVEL, &compression, sizeof(double));
-#endif
-
 	m_sf = sf_open(
 #ifdef LMMS_BUILD_WIN32
 		outputFile().toLocal8Bit().constData(),
@@ -79,6 +74,17 @@ bool AudioFileFlac::startEncoding()
 		SFM_WRITE,
 		&m_sfinfo
 	);
+	if (m_sf == nullptr)
+	{
+		return false;
+	}
+
+#ifdef LMMS_HAVE_SF_COMPLEVEL
+	// Applied to the open handle: a command issued before sf_open() has no
+	// encoder to configure and is silently dropped.
+	double compression = getOutputSettings().getCompressionLevel();
+	sf_command(m_sf, SFC_SET_COMPRESSION_LEVEL, &compression, sizeof(double));
+#endif
 
 	sf_command(m_sf, SFC_SET_CLIPPING, nullptr, SF_TRUE);
 
@@ -87,7 +93,7 @@ bool AudioFileFlac::startEncoding()
 	return true;
 }
 
-void AudioFileFlac::writeBuffer(const SampleFrame* _ab, f_cnt_t const frames)
+bool AudioFileFlac::writeBuffer(const SampleFrame* _ab, f_cnt_t const frames)
 {
 	OutputSettings::BitDepth depth = getOutputSettings().getBitDepth();
 	float clipvalue = std::nextafterf( -1.0f, 0.0f );
@@ -105,25 +111,38 @@ void AudioFileFlac::writeBuffer(const SampleFrame* _ab, f_cnt_t const frames)
 				buf[frame*channels() + channel] = std::max(clipvalue, _ab[frame][channel]);
 			}
 		}
-		sf_writef_float(m_sf, static_cast<float*>(buf.data()), frames);
+		if (sf_writef_float(m_sf, static_cast<float*>(buf.data()), frames) != static_cast<sf_count_t>(frames))
+		{
+			// The encoder took fewer frames than it was given: the file does not hold
+			// this period, so the export is already broken.
+			recordWriteError();
+			return false;
+		}
 	}
 	else // integer PCM encoding
 	{
 		auto buf = std::vector<int_sample_t>(frames * channels());
 		convertToS16(_ab, frames, buf.data(), !isLittleEndian());
-		sf_writef_short(m_sf, static_cast<short*>(buf.data()), frames);
+		if (sf_writef_short(m_sf, static_cast<short*>(buf.data()), frames) != static_cast<sf_count_t>(frames))
+		{
+			recordWriteError();
+			return false;
+		}
 	}
 
+	return true;
 }
 
 
-void AudioFileFlac::finishEncoding()
+bool AudioFileFlac::finishEncoding()
 {
-	if (m_sf)
-	{
-		sf_write_sync(m_sf);
-		sf_close(m_sf);
-	}
+	if (!m_sf) { return true; }
+
+	sf_write_sync(m_sf);
+	if (sf_close(m_sf) != 0) { recordWriteError(); }
+	m_sf = nullptr;
+	if (!flushOutputFile()) { return false; }
+	return !hasWriteError();
 }
 
 } // namespace lmms

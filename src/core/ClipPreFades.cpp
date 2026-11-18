@@ -28,6 +28,7 @@
 #include <cstdint>
 
 #include "AudioEngine.h"
+#include "ClipAudioLoop.h"
 #include "ClipEdits.h"
 #include "Engine.h"
 #include "SampleClip.h"
@@ -80,7 +81,7 @@ bool engaged(const SampleClip& clip)
 {
 	const ClipEdits& edits = clip.clipEdits();
 	return edits.hasPreFade() && clip.rendersLinearly() && edits.transpose == 0 && !edits.hasSpeed() && !clip.isRecord()
-		&& !sampleOf(clip).reversed() && !comped(clip);
+		&& !sampleOf(clip).reversed() && !comped(clip) && !audioloop::engaged(clip);  // ED-029: a looped clip plays its loop
 }
 
 int leadTicks(const SampleClip& clip)
@@ -125,7 +126,8 @@ void SamplePlayHandle::snapshotPreFades(const SampleClip* clip, const SampleWind
 	// The ramps as scheduled - the pre-fades clamped to the hidden audio there is - so each starts (or ends) silent.
 	m_preFadeSpan = {static_cast<std::int64_t>(m_clipFrames), framesAt(prefades::leadTicks(*clip), m_outputFramesPerTick),
 		framesAt(tailTicks(*clip), m_outputFramesPerTick), static_cast<std::int64_t>(m_fadeInFrames),
-		static_cast<std::int64_t>(m_fadeOutFrames)};
+		static_cast<std::int64_t>(m_fadeOutFrames), static_cast<std::int64_t>(m_fadeInOffsetFrames),
+		static_cast<std::int64_t>(m_fadeOutOffsetFrames), m_edits.fadeOffsetGap};
 	const SampleWindow own = clip->sampleWindow();
 	const double ratio = static_cast<double>(Engine::audioEngine()->outputSampleRate()) / static_cast<double>(m_sample->sampleRate());
 	m_preRollFrames = window.sourceIn < own.sourceIn ? framesAt(static_cast<double>(own.sourceIn - window.sourceIn), ratio) : 0;
@@ -144,11 +146,19 @@ void SamplePlayHandle::applyPreFaded(SampleFrame* buffer, f_cnt_t frames) const
 	const float from = envelopeGainAt(m_edits, static_cast<double>(base) / perTick);
 	const float to = envelopeGainAt(m_edits, static_cast<double>(base + static_cast<std::int64_t>(frames)) / perTick);
 	const float step = frames > 0 ? (to - from) / static_cast<float>(frames) : 0.f;
+	// Q050-125: the clip's polarity multiplies in here, the same signed gain stage as the plain path.
+	const float sign = m_edits.polaritySign();
 	for (f_cnt_t f = 0; f < frames; ++f)
 	{
 		const std::int64_t at = base + static_cast<std::int64_t>(f);
-		const float fade = preFadedGainAt(m_preFadeSpan, at, m_edits.fadeInShape, m_edits.fadeOutShape);
-		const float gain = m_edits.gain * fade * (from + step * static_cast<float>(f));
+		float fade = preFadedGainAt(m_preFadeSpan, at, m_edits.fadeInShape, m_edits.fadeOutShape);
+		// The automatic edge fade, kept apart from the ramps when the clip has an offset fade (snapshotClipEdits).
+		if (m_edgeFadeFrames > 0 && at >= 0 && at < static_cast<std::int64_t>(m_clipFrames))
+		{
+			fade *= clipFadeGainAt(static_cast<f_cnt_t>(at), m_clipFrames, m_edgeFadeFrames, m_edgeFadeFrames,
+				m_edits.fadeInShape, m_edits.fadeOutShape);
+		}
+		const float gain = sign * m_edits.gain * fade * (from + step * static_cast<float>(f));
 		buffer[f][0] *= gain;
 		buffer[f][1] *= gain;
 	}

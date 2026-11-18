@@ -46,6 +46,18 @@ QString vendorPrefix()
 	return QStringLiteral( "vendor." );
 }
 
+/*! Can \a domain form `vendor.<domain>:<version>`? The whole domain is read, not two characters:
+ *  it is empty, or it carries the separator or ANY whitespace (a newline is whitespace too). */
+bool malformedDomain( const QString & domain )
+{
+	if( domain.isEmpty() ) { return true; }
+	for( const QChar c : domain )
+	{
+		if( c.isSpace() || c == separator() ) { return true; }
+	}
+	return false;
+}
+
 } // namespace
 
 const QString & NamespaceRegistry::coreNamespace()
@@ -68,12 +80,7 @@ const QString & NamespaceRegistry::guiNamespace()
 
 QString NamespaceRegistry::vendorNamespace( const QString & domain, int version )
 {
-	if( domain.isEmpty() || version < 1 ) { return QString(); }
-	if( domain.contains( separator() ) ) { return QString(); }
-	if( domain.contains( QLatin1Char( ' ' ) ) || domain.contains( QLatin1Char( '\t' ) ) )
-	{
-		return QString();
-	}
+	if( version < 1 || malformedDomain( domain ) ) { return QString(); }
 	return vendorPrefix() + domain + separator() + QString::number( version );
 }
 
@@ -90,9 +97,12 @@ bool NamespaceRegistry::isKnownNamespace( const QString & uri )
 bool NamespaceRegistry::isVendorNamespace( const QString & uri )
 {
 	if( !uri.startsWith( vendorPrefix() ) ) { return false; }
+	// EXACTLY one separator colon: the last one splits off the version, and a further one inside the
+	// domain would leave a URI outside the documented `vendor.<domain>:<version>` shape.
 	const int colon = uri.lastIndexOf( separator() );
 	if( colon <= vendorPrefix().size() ) { return false; }
-	if( uri.mid( vendorPrefix().size(), colon - vendorPrefix().size() ).isEmpty() )
+	if( uri.indexOf( separator(), vendorPrefix().size() ) != colon ) { return false; }
+	if( malformedDomain( uri.mid( vendorPrefix().size(), colon - vendorPrefix().size() ) ) )
 	{
 		return false;
 	}

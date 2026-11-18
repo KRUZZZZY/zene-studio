@@ -95,6 +95,10 @@ struct ControlCommand
 	QJsonObject resultSchema;
 	//! records a transaction per SPEC A16
 	bool mutating = false;
+	//! A non-mutating wrapper joins the coalescing run of the nested command it names here (its row
+	//! declares the target): a burst of its calls (arrangement.nudge -> clip.move) is one undo step.
+	//! Empty for every other command.
+	QString coalescesWrapped;
 	//! false for the liveness and bookkeeping commands (control.*) that must answer
 	//! even before the engine is initialised; those report readiness themselves.
 	bool requiresEngine = true;
@@ -146,8 +150,21 @@ public:
 	//! Validate, check \c requires and the engine state, then run the handler on
 	//! the UI thread.
 	ControlResult invoke(const QString& id, const QJsonObject& args = QJsonObject());
+	/*! The application's own window running a command in this process (Q050-059.1): the same validation,
+	 *  handler, collaboration tap, journal step, coalescing and transaction record as invoke(), but an
+	 *  engine command needs only the engine to exist. The readiness flag (setReady) belongs to the opt-in
+	 *  agent socket and is never set when the program runs without one, so an edit made in a window must
+	 *  not depend on it. A refusal leaves the project as it was, exactly as it does for invoke(). */
+	ControlResult invokeInProcess(const QString& id, const QJsonObject& args = QJsonObject()) { return dispatch(id, args, true); }
+	//! The class an aggregate record of several mutating children carries: the weakest of their classes
+	//! ("irreversible" < "snapshot" < "true_inverse"), or "" when a child has no row or is not mutating.
+	static QString aggregateClassOf(const QStringList& childClasses);
 
 	//! Queue \p fn onto the UI thread and wait for its result.
+	//! How many handlers are running right now (0 with no registry): tells an edit a command makes from one the
+	//! interface makes directly (Q050-334.1).
+	static int runningHandlers() { return s_instance != nullptr ? s_instance->m_depth : 0; }
+
 	static ControlResult runOnUiThread(const std::function<ControlResult()>& fn);
 
 	//! Empty string when \p args satisfies \p schema, else a human-readable reason.
@@ -156,9 +173,14 @@ public:
 	//! Payload of control.commands_list.
 	QJsonObject describeAll() const;
 
-	//! True when no display is available (offscreen/minimal/vnc platform).
+	//! True when nobody can answer a dialog: an agent instance, or no display (offscreen/minimal/vnc platform).
 	bool isHeadless() const { return m_headless; }
-	void setHeadless(bool headless) { m_headless = headless; }
+	//! Sets both flags: headless means no display here (a test's way to be on, or off, a display).
+	void setHeadless(bool headless) { m_headless = headless; m_displayAvailable = !headless; }
+	//! True when a window can be shown: what `requires: display` checks. Unlike isHeadless() it stays true in an
+	//! agent instance on a real display, so a non-modal window command (app.help) runs there.
+	bool isDisplayAvailable() const { return m_displayAvailable; }
+	void setDisplayAvailable(bool available) { m_displayAvailable = available; }
 
 	//! True once the GUI is fully constructed and the initial project exists.
 	//! Commands return the typed 'busy' refusal until then, so a client cannot
@@ -233,6 +255,9 @@ public:
 	static constexpr int ShutdownGuardMs = 10000;
 
 	void recordTransaction(const Transaction& tx);
+	//! Record a journal edit whose asynchronous command completed after invoke() returned.
+	void recordCompletedEdit(const QString& commandId, const QJsonObject& args, const QJsonObject& before,
+		const QJsonObject& report, quint64 step);
 	QJsonArray transactions() const;
 
 	//! The coalescing window in force, milliseconds (0 = grouping disabled),
@@ -263,14 +288,14 @@ public:
 	 *  itself whatever route the process leaves by ("the socket file is removed
 	 *  on exit"). HOLD THE ID: a hook captures the object that registered it, and
 	 *  an object destroyed before shutdown must un-register it rather than leave
-	 *  a call on freed memory behind (CODE-8; ControlServer's destructor is the
-	 *  only production caller). Hooks live in a PROCESS-lifetime store, not in
-	 *  the registry instance, so they survive a destroyed-and-recreated one.
+	 *  a call on freed memory behind (CODE-8; ControlServer::close() and its
+	 *  destructor are the only production callers). Hooks live in a PROCESS-lifetime
+	 *  store, not in the registry instance, so they survive a destroyed-and-recreated one.
 	 */
 	ShutdownHookId addShutdownHook(std::function<void()> hook);
 	//! Un-register \p id; false when unknown (including 0), so a caller may
 	//! un-register unconditionally.
-	bool removeShutdownHook(ShutdownHookId id);
+	static bool removeShutdownHook(ShutdownHookId id);
 	//! How many hooks are registered right now.
 	int shutdownHookCount() const;
 	//! Runs every registered hook once, in registration order, and clears them.
@@ -279,6 +304,8 @@ public:
 private:
 	explicit ControlRegistry(QObject* parent = nullptr);
 	QString checkRequires(const ControlCommand& command) const;
+	//! invoke() and invokeInProcess(): they differ only in what makes an engine command addressable.
+	ControlResult dispatch(const QString& id, const QJsonObject& args, bool inProcess);
 	/*! Runs one handler with everything that has to happen around it: the
 	 *  one-command-one-step merge, the coalescing rule and the transaction
 	 *  record. Split out of invoke() so neither function carries the dispatch
@@ -292,6 +319,32 @@ private:
 	}
 	CommandObserver m_observer;
 	int m_depth = 0;  //!< how many handlers are running (UI thread)
+	int m_mutatingDepth = 0;  //!< how many MUTATING handlers are running (UI thread)
+	int m_foldedNestedRecords = 0;  //!< nested mutating calls whose record was folded into an enclosing step
+	int m_wrapperDepth = 0;  //!< how many NON-mutating handlers are running (wrappers and reads)
+	//! A mutating call run by a non-mutating wrapper, held until the wrapper's journal step is known.
+	struct NestedRecord
+	{
+		QString command;
+		ControlResult result;  //!< the call's result, with its __transaction descriptor still in it
+		QJsonObject args;      //!< the call's arguments (the coalescing key of the run it may join)
+		quint64 step = 0;
+	};
+	QVector<NestedRecord> m_nestedRecords;
+	//! Writes the held records of a wrapper: one record as itself, or ONE aggregate record for the
+	//! whole merged journal step (the wrapper's name, listing the nested commands).
+	void flushNestedRecords(const QString& wrapperId, const ControlResult& wrapper, quint64 step);
+	//! Records, or holds for its wrapper, the step of one finished call (runHandler's tail).
+	void recordCall(const QString& commandId, const QJsonObject& args, ControlResult* result, bool coalesced,
+		quint64 step, bool mutating, bool changed, bool enclosedByMutating, bool enclosedByWrapper, int foldedBefore);
+	//! The wrapper's one record for several held calls (two or more): the aggregate of flushNestedRecords.
+	void recordAggregate(const QString& wrapperId, const ControlResult& wrapper, quint64 step,
+		const QVector<NestedRecord>& held, const QStringList& nestedIds);
+	//! Whether this finished call may join an earlier run (see runHandler): not a call a wrapper runs, not one a
+	//! mutating call runs, and not a wrapper that joins its nested call's run instead (flushNestedRecords).
+	bool mayCoalesce(const QString& commandId, bool enclosedByWrapper, bool enclosedByMutating) const;
+	//! A coalescing wrapper's burst call joined the previous run: that run's record extends, not a new one.
+	void extendForMergedStep(const NestedRecord& child, const ControlResult& wrapper, const QStringList& nestedIds);
 	//! Stamps \a tx with the contract table's class for its command and refuses
 	//! to let a handler claim an inverse the contract says does not exist.
 	void stampContract(const QString& commandId, Transaction* tx) const;
@@ -338,6 +391,7 @@ private:
 	int m_recordedBytes = 0;
 	int m_evicted = 0;
 	bool m_headless;
+	bool m_displayAvailable = true;
 };
 
 //! Register every command of the first control-surface slice (SPEC A12/A16).
@@ -378,6 +432,7 @@ LMMS_EXPORT void registerRecordingCommands(ControlRegistry& registry);
  *  and warp groups' split). What the next start does with a journal an abnormal
  *  exit left behind, and the BOUND each offer states. */
 LMMS_EXPORT void registerRecordingRecoveryCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerRecordingPlaceCommand(ControlRegistry& registry);  //!< record.recovery_place: the take placed on a new sample track, one undo step (Q050-046)
 LMMS_EXPORT void registerRecordingInputCommands(ControlRegistry& registry);  //!< record.* capture-IN half: input_get_state/set, get_state, arm_track, disarm_track/disarm_all (0.3.0, rows 14/64; docs/RECORD-INPUTS.md)
 LMMS_EXPORT void registerRecordingRetroCommands(ControlRegistry& registry);  //!< record.* retro AUDIO half: retro_capture_arm/status/to_take (0.3.0, row 16; docs/RETRO-AUDIO-CAPTURE.md)
 //! mixer.*
@@ -425,11 +480,14 @@ LMMS_EXPORT void registerPluginEditorCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerClipTrimCommands(ControlRegistry& registry);
 //! note.probability_set - the MIDI-depth probability verb (docs/MIDI-DEPTH.md).
 LMMS_EXPORT void registerNoteProbabilityCommands(ControlRegistry& registry);
+//! note.step_get_state / note.step_set - the melodic step grid view of a MIDI clip (Q050-294.1).
+LMMS_EXPORT void registerNoteStepCommands(ControlRegistry& registry);
 //! note.edit - several notes' position/key/length/velocity/pan/probability as one edit and
 //! one undo step (the 0.5.0 note editor's gestures; docs/NOTE-EDITOR.md).
 LMMS_EXPORT void registerNoteEditCommands(ControlRegistry& registry);
 //! track.set_mixer_channel - which mixer channel a track plays into (0.5.0 L01).
 LMMS_EXPORT void registerTrackChannelCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerTrackRoutingCommands(ControlRegistry& registry);
 //! project.collect_media - a project's media copied beside it, references made relative (L01 E28).
 LMMS_EXPORT void registerCollectMediaCommand(ControlRegistry& registry);
 //! bounce.land - a track rendered onto a new audio track, the source muted (L01).
@@ -437,6 +495,9 @@ LMMS_EXPORT void registerBounceLandCommand(ControlRegistry& registry);
 //! render.stems - per-track stem export through the shipped `exportstems` CLI
 //! (docs/STEM-EXPORT.md).
 LMMS_EXPORT void registerRenderStemsCommands(ControlRegistry& registry);
+//! render.sections - the song's named sections, one bounded file each, through
+//! render.render (0.5.0 L12, Q050-009).
+LMMS_EXPORT void registerRenderSectionsCommands(ControlRegistry& registry);
 //! note.add/remove/move/resize/velocity_set/select and roll.get_state
 LMMS_EXPORT void registerNoteCommands(ControlRegistry& registry);
 //! plugin.* and dsp.get_state - the device catalogue, load/unload/bypass,

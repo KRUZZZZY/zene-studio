@@ -25,8 +25,12 @@
 #ifndef LMMS_GUI_TRACK_RENDER_MENU_H
 #define LMMS_GUI_TRACK_RENDER_MENU_H
 
+#include <QString>
+
 #include "lmms_export.h"
 
+class QDialog;
+class QJsonObject;
 class QMenu;
 
 namespace lmms
@@ -37,17 +41,26 @@ class Track;
 namespace lmms::gui
 {
 
-/*! KNOWN-LIMITATIONS "freeze and bounce-in-place have no interface": for an instrument or sample
- *  track's operations menu, Freeze track (freeze.track) or - on a frozen one - Unfreeze track
- *  (freeze.unfreeze), and Bounce in place (bounce.in_place). Both renders run in a child process
- *  and the command answers when it finishes, so the items show a wait cursor; a refusal is shown,
- *  typed. Other track types get nothing. */
+/*! For an instrument or sample track's operations menu, Freeze track and Bounce in place queue a
+ *  cancellable child render shown in the task indicator; Unfreeze applies immediately; an unfrozen track
+ *  also gets Freeze several tracks... (openBatchFreezeDialog, freeze.tracks). Other track
+ *  types get nothing. */
 LMMS_EXPORT void addTrackRenderActions(QMenu* menu, Track* track);
+
+/*! Q050-327: the dialog behind the track menu's "Freeze several tracks...": every unfrozen instrument or
+ *  sample track as a checkable row (@a preselected ticked), and Freeze - enabled from two ticks on - sends
+ *  freeze.tracks, the command an agent sends. Opened non-modally (QDialog::open) and deleted on close. */
+LMMS_EXPORT QDialog* openBatchFreezeDialog(Track* preselected);
 
 /*! KNOWN-LIMITATIONS "DAWproject import / export has no interface": File menu items Import
  *  DAWproject... and Export DAWproject... (dawproject.import / dawproject.export), each through a
  *  file dialog; the result or the refusal is shown. */
 LMMS_EXPORT void addDawProjectActions(QMenu* fileMenu);
+
+/*! The text the Import DAWproject action shows after an import that succeeded but could not take
+ *  everything in the container as written: one line per entry of the reply's `deviations`. Empty
+ *  when the container was clean. */
+LMMS_EXPORT QString dawProjectImportNotice(const QJsonObject& result);
 
 } // namespace lmms::gui
 

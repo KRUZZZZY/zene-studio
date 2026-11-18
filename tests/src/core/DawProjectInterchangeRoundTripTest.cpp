@@ -48,9 +48,15 @@
 
 #include <cmath>
 #include <limits>
+#include <sys/stat.h>
+#include <sys/types.h>
+#ifdef _MSC_VER
+#include <io.h>
+#endif
 
 #include <QByteArray>
 #include <QDir>
+#include <QFile>
 #include <QList>
 #include <QPair>
 #include <QJsonArray>
@@ -64,6 +70,7 @@
 #include "MidiClip.h"
 #include "Mixer.h"
 #include "ProjectJournal.h"
+#include "SampleTrack.h"
 #include "Song.h"
 #include "TempoMap.h"
 #include "Track.h"
@@ -282,6 +289,32 @@ private slots:
 		QCOMPARE(dawProjectTicksFromBeats(lastTick / perBeat), static_cast<qint64>(lastTick));
 	}
 
+	/*! A read that gives back nothing is refused AS A READ by the strict reader the
+	 *  .mmpz container uses, so a recovery names the file it could not read. The
+	 *  same bytes read without the fault are refused as malformed. The fault is
+	 *  ZENE_TEST_CONTAINER_READ_FAULT. */
+	void aFailedReadOfTheStrictReaderIsNamedAsARead()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("read-fault.dawproject"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		QVERIFY(file.write(QByteArray(64, 'x')) == 64);
+		file.close();
+
+		std::vector<DawProjectEntry> entries;
+		QString error;
+		qputenv("ZENE_TEST_CONTAINER_READ_FAULT", "1");
+		const bool ok = dawProjectZipRead(path, &entries, &error);
+		qunsetenv("ZENE_TEST_CONTAINER_READ_FAULT");
+		QVERIFY(!ok);
+		QVERIFY2(error.contains(QStringLiteral("cannot read")), qPrintable(error));
+
+		QVERIFY(!dawProjectZipRead(path, &entries, &error));
+		QVERIFY2(!error.contains(QStringLiteral("cannot read")), qPrintable(error));
+	}
+
 	void cleanupTestCase()
 	{
 		ControlRegistry::setReady(false);
@@ -393,6 +426,83 @@ private slots:
 		QCOMPARE(extracted.denominator, authored.denominator);
 	}
 
+	//! A Channel IDREF can be named by more than one track, so shared mixer
+	//! destinations survive the session-to-model conversion without loss.
+	void sharedMixerDestinationIsNotReportedLost()
+	{
+		Song* song = Engine::getSong();
+		Engine::mixer()->clear();
+
+		Track* first = Track::create(Track::Type::Instrument, song);
+		Track* second = Track::create(Track::Type::Instrument, song);
+		QVERIFY(first != nullptr);
+		QVERIFY(second != nullptr);
+		QVERIFY(first->mixerChannelModel() != nullptr);
+		QVERIFY(second->mixerChannelModel() != nullptr);
+		first->mixerChannelModel()->setValue(0);
+		second->mixerChannelModel()->setValue(0);
+
+		DawProjectLossReport loss;
+		const DawProjectModel exported = dawProjectModelFromSong(song, &loss);
+		QCOMPARE(exported.tracks.size(), 2);
+		QCOMPARE(exported.tracks[0].destinationChannelId, QStringLiteral("mixer0"));
+		QCOMPARE(exported.tracks[1].destinationChannelId, QStringLiteral("mixer0"));
+
+		const QString file = path(m_directory, QStringLiteral("shared-mixer.dawproject"));
+		DawProjectWriteReport writeReport;
+		QString error;
+		QVERIFY2(writeDawProject(file, exported, &writeReport, &error), qPrintable(error));
+		DawProjectModel readBack;
+		DawProjectReadReport readReport;
+		QVERIFY2(readDawProject(file, &readBack, &readReport, &error), qPrintable(error));
+		QCOMPARE(readBack.tracks.size(), 2);
+		QCOMPARE(readBack.tracks[0].destinationChannelId, QStringLiteral("mixer0"));
+		QCOMPARE(readBack.tracks[1].destinationChannelId, QStringLiteral("mixer0"));
+		QCOMPARE(loss.mixerSharingLost, 0);
+	}
+
+	void importResetsAnUnnamedMixerChannelToItsDefaultName()
+	{
+		Song* song = Engine::getSong();
+		Mixer* mixer = Engine::mixer();
+		mixer->clear();
+		const int channelIndex = mixer->createChannel();
+		const QString defaultName = mixer->mixerChannel(channelIndex)->m_name;
+		mixer->mixerChannel(channelIndex)->m_name = QStringLiteral("Previous project channel");
+
+		DawProjectModel imported;
+		imported.mixerChannels.append(DawProjectMixerChannel{});
+		imported.mixerChannels.append(DawProjectMixerChannel{});
+		QString error;
+		const bool applied = applyDawProjectModel(song, imported, &error);
+		const QString importedName = mixer->mixerChannel(channelIndex)->m_name;
+		mixer->clear();
+
+		QVERIFY2(applied, qPrintable(error));
+		QCOMPARE(importedName, defaultName);
+	}
+
+	void sampleTrackPanIsAppliedOnImport()
+	{
+		DawProjectModel model;
+		DawProjectTrack sampleEntry;
+		sampleEntry.id = QStringLiteral("sample");
+		sampleEntry.name = QStringLiteral("Sample");
+		sampleEntry.contentType = QStringLiteral("audio");
+		sampleEntry.typeName = QStringLiteral("sample");
+		sampleEntry.hasPan = true;
+		sampleEntry.pan = 0.75;
+		model.tracks.append(sampleEntry);
+
+		QString error;
+		Song* song = Engine::getSong();
+		QVERIFY2(applyDawProjectModel(song, model, &error), qPrintable(error));
+		QCOMPARE(static_cast<int>(song->tracks().size()), 1);
+		auto* sampleTrack = dynamic_cast<SampleTrack*>(song->tracks().front());
+		QVERIFY(sampleTrack != nullptr);
+		QCOMPARE(sampleTrack->panningModel()->value(), 50.f);
+	}
+
 	//! Claim 3: the control command reads the file back and reports the model.
 	void theControlCommandReadsTheModelBack()
 	{
@@ -484,6 +594,41 @@ private slots:
 		const DawProjectModel restored = dawProjectModelFromSong(song, &restoredLoss);
 		QCOMPARE(restored.tracks.size(), 1);
 		QCOMPARE(restored.tracks[0].name, QStringLiteral("Before"));
+	}
+
+	void importWithoutMixerChannelsResetsTheMaster()
+	{
+		Mixer* mixer = Engine::mixer();
+		MixerChannel* master = mixer->mixerChannel(0);
+		master->m_name = QStringLiteral("Previous Master");
+		master->m_volumeModel.setValue(0.25f);
+		master->m_muteModel.setValue(true);
+		master->m_soloModel.setValue(true);
+
+		DawProjectModel withoutMixerChannels;
+		withoutMixerChannels.applicationName = QStringLiteral("Zene Studio");
+		withoutMixerChannels.applicationVersion = QStringLiteral("0.3.0-alpha");
+		const QString file = path(m_directory, QStringLiteral("empty-mixer.dawproject"));
+		DawProjectWriteReport writeReport;
+		QString writeError;
+		QVERIFY2(writeDawProject(file, withoutMixerChannels, &writeReport, &writeError),
+			qPrintable(writeError));
+		QCOMPARE(writeReport.mixerChannelCount, 0);
+		DawProjectModel readBack;
+		DawProjectReadReport readReport;
+		QString readError;
+		QVERIFY2(readDawProject(file, &readBack, &readReport, &readError),
+			qPrintable(readError));
+		QCOMPARE(readReport.mixerChannelCount, 0);
+
+		const ControlResult imported = run(QStringLiteral("dawproject.import"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY2(imported.ok, qPrintable(imported.errorMessage));
+		QCOMPARE(static_cast<int>(mixer->numChannels()), 1);
+		QCOMPARE(master->m_name, QStringLiteral("Master"));
+		QCOMPARE(master->m_volumeModel.value(), 1.0f);
+		QVERIFY(!master->m_muteModel.value());
+		QVERIFY(!master->m_soloModel.value());
 	}
 
 	void overCapacityTempoImportIsRefusedBeforeMutation()
@@ -637,22 +782,82 @@ private slots:
 	//! bounds, so only the TIME can refuse it.
 	void importRefusesAnUnrepresentableBeat()
 	{
-		DawProjectModel model = authoredModel();
-		model.tempoPoints.clear();
-		DawProjectPoint point;
-		point.time = 1e300;
-		point.isMeter = false;
-		point.value = 120.0;
-		model.tempoPoints.append(point);
-
 		const QString file = path(m_directory, QStringLiteral("huge-beat.dawproject"));
-		DawProjectWriteReport writeReport;
+		const QByteArray projectXml =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+			"<Channel id=\"c1\"/></Track></Structure>"
+			"<Arrangement><Lanes/>"
+			"<TempoAutomation timeUnit=\"beats\" unit=\"bpm\" id=\"id1\">"
+			"<Target parameter=\"id2\"/>"
+			"<RealPoint time=\"1e300\" value=\"120\" interpolation=\"hold\"/>"
+			"</TempoAutomation></Arrangement></Project>";
+		DawProjectModel rejectedModel;
+		DawProjectReadReport readReport;
+		QString readError;
+		QVERIFY2(!dawProjectModelFromXml(projectXml, &rejectedModel, &readReport, &readError),
+			"the reader accepted an out-of-range tempo point");
+		QVERIFY(readError.contains(QStringLiteral("48-tick-per-beat")));
+
+		const std::vector<DawProjectEntry> entries = {
+			{QStringLiteral("project.xml"), projectXml}};
 		QString writeError;
-		QVERIFY2(writeDawProject(file, model, &writeReport, &writeError), qPrintable(writeError));
+		QVERIFY2(dawProjectZipWrite(file, entries, &writeError), qPrintable(writeError));
 
 		const ControlResult result = run(QStringLiteral("dawproject.import"),
 			{{QStringLiteral("path"), file}});
 		QVERIFY(!result.ok);
+	}
+
+	//! The tempo arm rounds a point's value and casts it to int. A value that is
+	//! not finite, or that rounds outside the engine's bounds, has no int to
+	//! become (a NaN or out-of-range cast is undefined), so applyDawProjectModel
+	//! refuses it before the cast - naming the value, as the beat refusal names
+	//! its time - and the session's tempo map is left as it was.
+	void tempoPointValuesOutsideTheEngineAreRefusedBeforeTheCast()
+	{
+		Song* song = Engine::getSong();
+		const double refused[] = {
+			std::numeric_limits<double>::quiet_NaN(),
+			std::numeric_limits<double>::infinity(),
+			-std::numeric_limits<double>::infinity(),
+			1e300,
+			-1e300,
+			5000.0,
+			9.4,
+			999.5,
+		};
+		for (const double value : refused)
+		{
+			DawProjectModel model;
+			DawProjectPoint point;
+			point.time = 1.0;
+			point.value = value;
+			model.tempoPoints.append(point);
+
+			QString error;
+			QVERIFY(!applyDawProjectModel(song, model, &error));
+			QVERIFY2(error.contains(QString::number(value, 'g', 17)), qPrintable(error));
+			QCOMPARE(song->tempoMap().map().size(), 0);
+		}
+
+		// The rounding itself is unchanged at both edges of the accepted interval.
+		DawProjectModel accepted;
+		DawProjectPoint minimum;
+		minimum.time = 1.0;
+		minimum.value = 9.5;
+		accepted.tempoPoints.append(minimum);
+		DawProjectPoint maximum;
+		maximum.time = 2.0;
+		maximum.value = 999.4;
+		accepted.tempoPoints.append(maximum);
+		QString error;
+		QVERIFY2(applyDawProjectModel(song, accepted, &error), qPrintable(error));
+		QCOMPARE(song->tempoMap().map().size(), 2);
+		QCOMPARE(song->tempoMap().map()[0].tempo, 10);
+		QCOMPARE(song->tempoMap().map()[1].tempo, 999);
 	}
 
 	//! Claim 5: typed refusals - a missing file, a file that is not a ZIP, a
@@ -959,6 +1164,382 @@ private slots:
 			"a malformed note key was read as the default 60");
 	}
 
+	//! XML booleans have four lexical forms. A present value outside that set is
+	//! malformed; it must not silently become false like an absent attribute.
+	void malformedBooleanAttributesAreRefused()
+	{
+		const QString prefix = QStringLiteral(
+			"<Project version=\"1.0\"><Application name=\"Probe\" version=\"1\"/>"
+			"<Structure><Track id=\"t1\" name=\"Track\" contentType=\"notes\">");
+		const QString suffix = QStringLiteral("</Track></Structure></Project>");
+		const QList<QPair<QString, QString>> invalidChannels = {
+			{QStringLiteral("<Channel id=\"c1\" solo=\"yes\"/>"), QStringLiteral("solo")},
+			{QStringLiteral("<Channel id=\"c1\" solo=\"&#xA0;true\"/>"), QStringLiteral("solo")},
+			{QStringLiteral("<Channel id=\"c1\"><Mute value=\"invalid\"/></Channel>"),
+				QStringLiteral("Mute")},
+			{QStringLiteral("<Channel id=\"c1\" solo=\"\"/>"), QStringLiteral("solo")}
+		};
+		for (const auto& invalid : invalidChannels)
+		{
+			const QByteArray xml = (prefix + invalid.first + suffix).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				qPrintable(QStringLiteral("invalid %1 boolean was accepted")
+					.arg(invalid.second)));
+			QVERIFY2(error.contains(QStringLiteral("boolean")), qPrintable(error));
+		}
+
+		for (const QString& value : {QStringLiteral("true"), QStringLiteral("false"),
+			QStringLiteral("1"), QStringLiteral("0")})
+		{
+			const QString xml = prefix + QStringLiteral(
+				"<Channel id=\"c1\" solo=\"%1\"><Mute value=\"%1\"/></Channel>").arg(value)
+				+ suffix;
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(dawProjectModelFromXml(xml.toLatin1(), &model, &report, &error),
+				qPrintable(error));
+			const bool expected = value == QLatin1String("true") || value == QLatin1String("1");
+			QCOMPARE(model.tracks[0].solo, expected);
+			QCOMPARE(model.tracks[0].mute, expected);
+		}
+	}
+
+	//! Luna cluster new-p8-111: an EMPTY numeric attribute is PRESENT, not absent -
+	//! the absent-attribute fallback belongs to an attribute the document did not
+	//! carry, so `<RealPoint time="">` must be refused as malformed, not read as
+	//! time zero (and `<Tempo value="">` not as the 120 default).
+	void emptyNumericAttributesAreNotAbsent()
+	{
+		const QByteArray emptyTempo =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"\"/></Transport></Project>";
+		DawProjectModel model;
+		DawProjectReadReport report;
+		QString error;
+		QVERIFY2(!dawProjectModelFromXml(emptyTempo, &model, &report, &error),
+			"an empty tempo value was read as the 120 default");
+
+		const QByteArray emptyPointTime =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Arrangement><TempoAutomation timeUnit=\"beats\">"
+			"<RealPoint time=\"\" value=\"120\"/>"
+			"</TempoAutomation></Arrangement></Project>";
+		DawProjectModel pointModel;
+		DawProjectReadReport pointReport;
+		QString pointError;
+		QVERIFY2(!dawProjectModelFromXml(emptyPointTime, &pointModel, &pointReport, &pointError),
+			"an empty automation point time was read as time zero");
+
+		const QByteArray emptyNumerator =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/>"
+			"<TimeSignature numerator=\"\" denominator=\"4\"/></Transport></Project>";
+		DawProjectModel metreModel;
+		DawProjectReadReport metreReport;
+		QString metreError;
+		QVERIFY2(!dawProjectModelFromXml(emptyNumerator, &metreModel, &metreReport, &metreError),
+			"an empty metre numerator was read as the 4/4 default");
+	}
+
+	//! Luna cluster new-p8-113: the format declares each channel value as a RealParameter
+	//! carrying its OWN unit and bounds on the element (`<Volume unit="linear" min="0"
+	//! max="2" value="1">`, docs/DAWPROJECT-INTERCHANGE.md:193/198) - those bounds belong
+	//! to the document, so a finite number outside them is not a value the document can
+	//! mean: it is refused rather than read and clamped silently when the model is applied.
+	void outOfRangeChannelValuesAreRefused()
+	{
+		const QString strip =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Channel id=\"m0\" role=\"master\">%1</Channel></Structure></Project>";
+		for (const char* child : {"<Volume unit=\"linear\" min=\"0\" max=\"2\" value=\"4\"/>",
+			"<Volume unit=\"linear\" min=\"0\" max=\"2\" value=\"-0.5\"/>",
+			"<Pan unit=\"normalized\" min=\"0\" max=\"1\" value=\"-1\"/>",
+			"<Pan unit=\"normalized\" min=\"0\" max=\"1\" value=\"1.5\"/>"})
+		{
+			const QByteArray xml = strip.arg(QLatin1String(child)).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				qPrintable(QStringLiteral("the mixer strip carried %1").arg(QLatin1String(child))));
+		}
+
+		const QString track =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+			"<Channel id=\"c1\">%1</Channel></Track></Structure></Project>";
+		for (const char* child : {"<Volume unit=\"linear\" min=\"0\" max=\"2\" value=\"2.5\"/>",
+			"<Pan unit=\"normalized\" min=\"0\" max=\"1\" value=\"-0.25\"/>"})
+		{
+			const QByteArray xml = track.arg(QLatin1String(child)).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				"an out-of-range track channel value was accepted");
+		}
+
+		// The positive half: the endpoints of the declared range still read.
+		const QByteArray inRange =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Channel id=\"m0\" role=\"master\">"
+			"<Volume unit=\"linear\" min=\"0\" max=\"2\" value=\"2\"/><Pan unit=\"normalized\" min=\"0\" max=\"1\" value=\"0\"/></Channel>"
+			"<Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+			"<Channel id=\"c1\"><Volume unit=\"linear\" min=\"0\" max=\"2\" value=\"0\"/><Pan unit=\"normalized\" min=\"0\" max=\"1\" value=\"1\"/></Channel></Track>"
+			"</Structure></Project>";
+		DawProjectModel model;
+		DawProjectReadReport report;
+		QString error;
+		QVERIFY2(dawProjectModelFromXml(inRange, &model, &report, &error), qPrintable(error));
+		QCOMPARE(model.mixerChannels.size(), 1);
+		QCOMPARE(model.mixerChannels[0].volume, 2.0);
+		QCOMPARE(model.tracks.size(), 1);
+		QCOMPARE(model.tracks[0].hasVolume, true);
+		QCOMPARE(model.tracks[0].volume, 0.0);
+		QCOMPARE(model.tracks[0].hasPan, true);
+		QCOMPARE(model.tracks[0].pan, 1.0);
+	}
+
+	//! Luna round 2: the bounds a RealParameter declares are the DOCUMENT's, not the
+	//! format's - 0..2/0..1 are only what this build's writer emits (its models' own
+	//! reach: the mixer fader 0..2, the track volume 0..200/100, the panning model
+	//! -100..100/200). A narrower declared range must refuse values the models could
+	//! hold (a format-range error); a wider one must not stretch the models (an
+	//! import-compatibility error, kept distinct); a unit the models do not speak is
+	//! refused too; absent min/max declare no format bound.
+	void declaredBoundsUnitsAndModelReach()
+	{
+		const QString strip =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Channel id=\"m0\" role=\"master\">%1</Channel></Structure></Project>";
+
+		// Narrower declared bounds: inside the models' reach but outside the
+		// document's own range - refused as format-range errors.
+		for (const char* child : {"<Volume unit=\"linear\" min=\"0.5\" max=\"1.5\" value=\"1.75\"/>",
+			"<Volume unit=\"linear\" min=\"0.5\" max=\"1.5\" value=\"0.25\"/>",
+			"<Pan unit=\"normalized\" min=\"0.25\" max=\"0.75\" value=\"0.9\"/>"})
+		{
+			const QByteArray xml = strip.arg(QLatin1String(child)).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				qPrintable(QStringLiteral("the mixer strip carried %1").arg(QLatin1String(child))));
+			QVERIFY2(error.contains("declared"), qPrintable(error));
+		}
+
+		// Wider declared bounds: inside the file's bounds but past the models' reach -
+		// an import-compatibility refusal, distinct from a format-range one.
+		{
+			const QByteArray xml = strip.arg(QLatin1String(
+				"<Volume unit=\"linear\" min=\"-5\" max=\"5\" value=\"3\"/>")).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				"a value past the models' reach was accepted");
+			QVERIFY2(error.contains("cannot hold"), qPrintable(error));
+		}
+
+		// A unit the models do not speak is refused even when the value fits -
+		// `decibel` is a valid schema unit, unlike the made-up `db`.
+		{
+			const QByteArray xml = strip.arg(QLatin1String(
+				"<Volume unit=\"decibel\" min=\"-24\" max=\"0\" value=\"-12\"/>")).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				"a foreign unit was accepted");
+			QVERIFY2(error.contains("unit"), qPrintable(error));
+		}
+
+		// Absent min/max declare no format bound: the models' reach still applies.
+		{
+			const QByteArray ok = strip.arg(QLatin1String(
+				"<Volume unit=\"linear\" value=\"1\"/>")).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(dawProjectModelFromXml(ok, &model, &report, &error), qPrintable(error));
+			QCOMPARE(model.mixerChannels.size(), 1);
+			QCOMPARE(model.mixerChannels[0].volume, 1.0);
+
+			const QByteArray past = strip.arg(QLatin1String(
+				"<Volume unit=\"linear\" value=\"3\"/>")).toLatin1();
+			DawProjectModel pastModel;
+			DawProjectReadReport pastReport;
+			QString pastError;
+			QVERIFY2(!dawProjectModelFromXml(past, &pastModel, &pastReport, &pastError),
+				"a value past the models' reach was accepted");
+			QVERIFY2(pastError.contains("cannot hold"), qPrintable(pastError));
+		}
+
+		// Custom bounds endpoints are inclusive: 0.5 and 1.5 read.
+		{
+			const QByteArray lo = strip.arg(QLatin1String(
+				"<Volume unit=\"linear\" min=\"0.5\" max=\"1.5\" value=\"0.5\"/>")).toLatin1();
+			const QByteArray hi = strip.arg(QLatin1String(
+				"<Volume unit=\"linear\" min=\"0.5\" max=\"1.5\" value=\"1.5\"/>")).toLatin1();
+			DawProjectModel loModel;
+			DawProjectReadReport loReport;
+			QString loError;
+			QVERIFY2(dawProjectModelFromXml(lo, &loModel, &loReport, &loError), qPrintable(loError));
+			QCOMPARE(loModel.mixerChannels[0].volume, 0.5);
+			DawProjectModel hiModel;
+			DawProjectReadReport hiReport;
+			QString hiError;
+			QVERIFY2(dawProjectModelFromXml(hi, &hiModel, &hiReport, &hiError), qPrintable(hiError));
+			QCOMPARE(hiModel.mixerChannels[0].volume, 1.5);
+		}
+	}
+
+	//! Luna round 3: `unit` is REQUIRED on every RealParameter in the schema, so a
+	//! missing or empty one is refused outright - the value has no declared meaning;
+	//! a valid schema unit the models do not speak (`decibel`) is an import-
+	//! compatibility refusal; and a min/max that is PRESENT but empty declares a
+	//! malformed bound, not an absent one - refused, while absent min/max still
+	//! declare no format bound.
+	void requiredUnitsAndPresentEmptyBoundsAreRefused()
+	{
+		const QString strip =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Channel id=\"m0\" role=\"master\">%1</Channel></Structure></Project>";
+
+		// A missing or empty unit: the schema requires RealParameter.unit, so the
+		// value has no declared meaning - refused.
+		for (const char* child : {"<Volume value=\"1\"/>",
+			"<Volume unit=\"\" value=\"1\"/>",
+			"<Pan value=\"0.5\"/>",
+			"<Pan unit=\"\" value=\"0.5\"/>"})
+		{
+			const QByteArray xml = strip.arg(QLatin1String(child)).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				qPrintable(QStringLiteral("the mixer strip carried %1").arg(QLatin1String(child))));
+			QVERIFY2(error.contains("no unit"), qPrintable(error));
+		}
+
+		// A valid schema unit the models do not speak, refused even when the value
+		// fits the models' reach - an import-compatibility error.
+		{
+			const QByteArray xml = strip.arg(QLatin1String(
+				"<Volume unit=\"decibel\" min=\"-24\" max=\"0\" value=\"-12\"/>")).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				"a valid but unsupported unit was accepted");
+			QVERIFY2(error.contains("cannot convert"), qPrintable(error));
+		}
+
+		// Present-empty min/max: an attribute the document carries with no number -
+		// malformed, refused; absent min/max still declare no bound (covered above).
+		for (const char* child : {"<Volume unit=\"linear\" min=\"\" max=\"2\" value=\"1\"/>",
+			"<Volume unit=\"linear\" min=\"0\" max=\"\" value=\"1\"/>",
+			"<Pan unit=\"normalized\" min=\"\" max=\"1\" value=\"0.5\"/>"})
+		{
+			const QByteArray xml = strip.arg(QLatin1String(child)).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+		 QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				qPrintable(QStringLiteral("the mixer strip carried %1").arg(QLatin1String(child))));
+			QVERIFY2(error.contains("not a number"), qPrintable(error));
+		}
+	}
+
+
+	//! A note duration must not enter the model negative, even when the value
+	//! would round to zero on the engine's tick grid.
+	void negativeNoteDurationsAreRefused()
+	{
+		const QString xml =
+			QStringLiteral("<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+			"<Channel id=\"c1\"/></Track></Structure>"
+			"<Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+			"<Clip time=\"0\" duration=\"4\"><Notes>"
+			"<Note time=\"0\" duration=\"%1\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"
+			"</Notes></Clip></Clips></Lanes></Lanes></Arrangement></Project>");
+		for (const QString& duration : {QStringLiteral("-1"), QStringLiteral("-0.001")})
+		{
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml.arg(duration).toLatin1(),
+				&model, &report, &error),
+				qPrintable(QStringLiteral("negative note duration %1 was accepted")
+					.arg(duration)));
+			QVERIFY2(error.contains(QStringLiteral("duration")),
+				"the refusal does not identify the invalid note duration");
+		}
+	}
+
+	//! The reader implements beat timelines only; an unknown unit must not be
+	//! silently treated as beats on either notes or automation.
+	void unknownNoteLaneTimeUnitsAreRefused()
+	{
+		const QByteArray notesInMilliseconds =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+			"<Channel id=\"c1\"/></Track></Structure>"
+			"<Arrangement><Lanes timeUnit=\"milliseconds\"><Lanes track=\"t1\"><Clips>"
+			"<Clip time=\"0\" duration=\"4\"><Notes>"
+			"<Note time=\"1500\" duration=\"250\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"
+			"</Notes></Clip></Clips></Lanes></Lanes></Arrangement></Project>";
+		DawProjectModel notesModel;
+		DawProjectReadReport notesReport;
+		QString notesError;
+		QVERIFY2(!dawProjectModelFromXml(notesInMilliseconds, &notesModel, &notesReport, &notesError),
+			"a note lane with an unknown time unit was imported as beats");
+		QVERIFY2(notesError.contains(QStringLiteral("milliseconds")),
+			"the note-lane refusal does not identify its unknown time unit");
+	}
+
+	void unknownAutomationTimeUnitsAreRefused()
+	{
+		const QByteArray automationInMilliseconds =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Arrangement><TempoAutomation timeUnit=\"milliseconds\">"
+			"<RealPoint time=\"1500\" value=\"120\"/>"
+			"</TempoAutomation></Arrangement></Project>";
+		DawProjectModel automationModel;
+		DawProjectReadReport automationReport;
+		QString automationError;
+		QVERIFY2(!dawProjectModelFromXml(automationInMilliseconds, &automationModel,
+			&automationReport, &automationError),
+			"a tempo automation with an unknown time unit was imported as beats");
+		QVERIFY2(automationError.contains(QStringLiteral("milliseconds")),
+			"the automation refusal does not identify its unknown time unit");
+	}
+
 	//! Luna cluster 5064: an automation point's time is a beat like any other, so
 	//! it goes through the same bounded tick conversion - and is counted in
 	//! `rounded_times` when it is not on the 48-tick grid - instead of being kept
@@ -1021,6 +1602,37 @@ private slots:
 			"an off-grid metre point time was not counted in rounded_times");
 		QVERIFY2(std::fabs(meterModel.meterPoints[0].time) < 1e-9,
 			"the off-grid metre point time was not normalised through the tick grid");
+	}
+
+	//! Unknown children in automation are skipped; their missing attributes must
+	//! never turn them into default tempo or metre points.
+	void unknownAutomationChildrenAreSkipped()
+	{
+		const QByteArray xml =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Arrangement><TempoAutomation timeUnit=\"beats\">"
+			"<Unknown/>"
+			"<RealPoint time=\"2\" value=\"140\"/>"
+			"</TempoAutomation><TimeSignatureAutomation timeUnit=\"beats\">"
+			"<Unknown/>"
+			"<TimeSignaturePoint time=\"4\" numerator=\"3\" denominator=\"8\"/>"
+			"</TimeSignatureAutomation></Arrangement></Project>";
+
+		DawProjectModel model;
+		DawProjectReadReport report;
+		QString error;
+		QVERIFY2(dawProjectModelFromXml(xml, &model, &report, &error), qPrintable(error));
+		QCOMPARE(model.tempoPoints.size(), 1);
+		QCOMPARE(model.tempoPoints[0].time, 2.0);
+		QCOMPARE(model.tempoPoints[0].value, 140.0);
+		QCOMPARE(model.meterPoints.size(), 1);
+		QCOMPARE(model.meterPoints[0].time, 4.0);
+		QCOMPARE(model.meterPoints[0].numerator, 3);
+		QCOMPARE(model.meterPoints[0].denominator, 8);
+		QCOMPARE(report.tempoPointCount, 1);
+		QCOMPARE(report.meterPointCount, 1);
 	}
 
 	//! Luna cluster 2232: the Arrangement walk compared `reader.name()` before its
@@ -1112,6 +1724,26 @@ private slots:
 		DawProjectLossReport loss;
 		dawProjectModelFromSong(song, &loss);
 		QCOMPARE(loss.folderChildrenLost, 3);
+	}
+
+	//! Luna cluster new-p11-88: a folder has no mixer channel by design, so it
+	//! must not be reported as sharing the instrument track's mixer strip.
+	void aFolderDoesNotCountAsMixerSharing()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+
+		TrackFolder* folder = dynamic_cast<TrackFolder*>(
+			Track::create(Track::Type::Folder, song));
+		Track* instrument = Track::create(Track::Type::Instrument, song);
+		QVERIFY(folder != nullptr);
+		QVERIFY(instrument != nullptr);
+		QVERIFY(folder->mixerChannelModel() == nullptr);
+		QVERIFY(instrument->mixerChannelModel() != nullptr);
+
+		DawProjectLossReport loss;
+		dawProjectModelFromSong(song, &loss);
+		QCOMPARE(loss.mixerSharingLost, 0);
 	}
 
 //! Luna cluster 5068: the import updated the strips the model names and never
@@ -1232,6 +1864,51 @@ private slots:
 				.arg(roundTripped.rel)));
 	}
 
+	//! A note's time is its position and its duration its length. The import
+	//! passes Note's length first and its position second (Note.h), so a swap
+	//! would move the note to its duration and stretch it to its start. The
+	//! other notes in this file start at 0, which is why they cannot see one.
+	void noteTimeIsPositionAndDurationIsLength()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		Track* track = Track::create(Track::Type::Instrument, song);
+		QVERIFY(track != nullptr);
+		Clip* clip = track->createClip(TimePos(0));
+		QVERIFY(dynamic_cast<MidiClip*>(clip) != nullptr);
+
+		DawProjectModel model = previousSessionModel();
+		model.tracks.clear();
+		DawProjectTrack entry;
+		entry.typeName = QStringLiteral("instrument");
+		entry.contentType = QStringLiteral("notes");
+		entry.name = QStringLiteral("Pos");
+		DawProjectClip clipEntry;
+		clipEntry.time = 0.0;
+		clipEntry.duration = 4.0;
+		DawProjectNote noteEntry;
+		noteEntry.time = 1.0;
+		noteEntry.duration = 2.0;
+		noteEntry.key = 60;
+		noteEntry.vel = 0.8;
+		noteEntry.rel = 0.8;
+		clipEntry.notes.append(noteEntry);
+		entry.clips.append(clipEntry);
+		model.tracks.append(entry);
+
+		QString error;
+		QVERIFY2(applyDawProjectModel(song, model, &error), qPrintable(error));
+
+		DawProjectLossReport loss;
+		const DawProjectModel back = dawProjectModelFromSong(song, &loss);
+		QCOMPARE(back.tracks.size(), 1);
+		QCOMPARE(back.tracks[0].clips.size(), 1);
+		QCOMPARE(back.tracks[0].clips[0].notes.size(), 1);
+		const DawProjectNote& roundTripped = back.tracks[0].clips[0].notes[0];
+		QCOMPARE(roundTripped.time, 1.0);
+		QCOMPARE(roundTripped.duration, 2.0);
+	}
+
 //! Luna cluster 3137: a clip far past the engine's 32-bit tick grid cannot
 	//! enter the model as an out-of-range tick. The reader converts every beat
 	//! through ticksFromBeats(), which clamps into the signed 32-bit tick domain
@@ -1247,8 +1924,8 @@ private slots:
 			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
 			"<Channel id=\"c1\"/></Track></Structure>"
 			"<Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
-			"<Clip time=\"50000000\" duration=\"4\"><Notes>"
-			"<Note time=\"50000000\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"
+			"<Clip time=\"50000000\" duration=\"0\"><Notes>"
+			"<Note time=\"50000000\" duration=\"0\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"
 			"</Notes></Clip></Clips></Lanes></Lanes></Arrangement>"
 			"</Project>";
 
@@ -1268,6 +1945,96 @@ private slots:
 			"a note past the 32-bit tick grid reached the model as an out-of-range tick");
 		QVERIFY2(report.loss.roundedTimes >= 1,
 			"a clamped position was not counted in rounded_times");
+	}
+
+//! Luna cluster new-p8-114: note fields beyond the format's MIDI and velocity
+//! ranges must be refused before they reach engine notes.
+void outOfRangeNoteFieldsAreRefused()
+{
+	const QByteArray validXml =
+		"<Project version=\"1.0\">"
+		"<Application name=\"Probe\" version=\"1\"/>"
+		"<Transport><Tempo value=\"120\"/></Transport>"
+		"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+		"<Channel id=\"c1\"/></Track></Structure>"
+		"<Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+		"<Clip time=\"0\" duration=\"1\"><Notes>"
+		"<Note time=\"0\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.5\" rel=\"0.5\"/>"
+		"</Notes></Clip></Clips></Lanes></Lanes></Arrangement>"
+		"</Project>";
+
+	QByteArray boundaryXml = validXml;
+	boundaryXml.replace("channel=\"0\"", "channel=\"15\"");
+	boundaryXml.replace("key=\"60\"", "key=\"127\"");
+	boundaryXml.replace("vel=\"0.5\"", "vel=\"0\"");
+	boundaryXml.replace("rel=\"0.5\"", "rel=\"1\"");
+	DawProjectModel boundaryModel;
+	DawProjectReadReport boundaryReport;
+	QString error;
+	QVERIFY2(dawProjectModelFromXml(boundaryXml, &boundaryModel, &boundaryReport, &error),
+		qPrintable(error));
+	const DawProjectNote& boundaryNote = boundaryModel.tracks[0].clips[0].notes[0];
+	QCOMPARE(boundaryNote.channel, 15);
+	QCOMPARE(boundaryNote.key, 127);
+	QCOMPARE(boundaryNote.vel, 0.0);
+	QCOMPARE(boundaryNote.rel, 1.0);
+
+	const QList<QPair<QByteArray, QByteArray>> invalidAttributes = {
+		{"channel=\"0\"", "channel=\"-1\""}, {"channel=\"0\"", "channel=\"16\""},
+		{"key=\"60\"", "key=\"-1\""}, {"key=\"60\"", "key=\"128\""},
+		{"vel=\"0.5\"", "vel=\"-0.01\""}, {"vel=\"0.5\"", "vel=\"1.01\""},
+		{"rel=\"0.5\"", "rel=\"-0.01\""}, {"rel=\"0.5\"", "rel=\"1.01\""}
+	};
+	for (const auto& [validAttribute, invalidAttribute] : invalidAttributes)
+	{
+		QByteArray xml = validXml;
+		xml.replace(validAttribute, invalidAttribute);
+		DawProjectModel model;
+		DawProjectReadReport report;
+		error.clear();
+		QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+			qPrintable(QStringLiteral("accepted %1").arg(QString::fromLatin1(invalidAttribute))));
+		const QByteArray field = validAttribute.left(validAttribute.indexOf('='));
+		QVERIFY2(error.contains(QString::fromLatin1(field)), qPrintable(error));
+	}
+}
+
+	//! The writer refuses a negative timeline position; importing one would put
+	//! a value in the model that this same module cannot write back.
+	void negativeTimelinePositionsAreRefusedByReader()
+	{
+		const QList<QPair<QString, QByteArray>> fixtures = {
+			{QStringLiteral("negative clip time"),
+				QByteArrayLiteral("<Project version=\"1.0\"><Application name=\"Probe\" version=\"1\"/>"
+				"<Transport><Tempo value=\"120\"/></Transport>"
+				"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\"><Channel id=\"c1\"/>"
+				"</Track></Structure><Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+				"<Clip time=\"-1\" duration=\"4\"><Notes>"
+				"<Note time=\"0\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"
+				"</Notes></Clip></Clips></Lanes></Lanes></Arrangement></Project>")},
+			{QStringLiteral("negative note time"),
+				QByteArrayLiteral("<Project version=\"1.0\"><Application name=\"Probe\" version=\"1\"/>"
+				"<Transport><Tempo value=\"120\"/></Transport>"
+				"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\"><Channel id=\"c1\"/>"
+				"</Track></Structure><Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+				"<Clip time=\"0\" duration=\"4\"><Notes>"
+				"<Note time=\"-1\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"
+				"</Notes></Clip></Clips></Lanes></Lanes></Arrangement></Project>")},
+			{QStringLiteral("negative tempo map-point time"),
+				QByteArrayLiteral("<Project version=\"1.0\"><Application name=\"Probe\" version=\"1\"/>"
+				"<Transport><Tempo value=\"120\"/></Transport>"
+				"<Arrangement><TempoAutomation timeUnit=\"beats\"><RealPoint time=\"-1\" value=\"130\"/>"
+				"</TempoAutomation></Arrangement></Project>")}
+		};
+
+		for (const auto& [description, xml] : fixtures)
+		{
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				qPrintable(QStringLiteral("%1 was accepted: %2").arg(description, error)));
+		}
 	}
 
 //! Luna cluster 5066: the writer's own header promises a NEGATIVE time is
@@ -1326,6 +2093,262 @@ void timesOutsideTheEngineGridAreRefusedByTheWriter()
 	QVERIFY2(dawProjectXmlFromModel(base, &xml, &error), qPrintable(error));
 }
 
+//! Cluster new-p10-100: the reader refuses numerators outside [1, 32], so the
+//! writer must refuse those values for both the global signature and map points.
+void unsupportedTimeSignatureNumeratorsAreRefusedByTheWriter()
+{
+	const QList<int> unsupported = {TempoMapMinNumerator - 1, TempoMapMaxNumerator + 1};
+	const QList<int> supported = {TempoMapMinNumerator, TempoMapMaxNumerator};
+	QByteArray xml;
+	QString error;
+
+	for (const int numerator : unsupported)
+	{
+		DawProjectModel global = authoredModel();
+		global.numerator = numerator;
+		QVERIFY2(!dawProjectXmlFromModel(global, &xml, &error),
+			qPrintable(QStringLiteral("global time-signature numerator %1 was written")
+				.arg(numerator)));
+		QVERIFY2(error.contains(QStringLiteral("numerator")),
+			"the refusal does not identify the invalid global numerator");
+
+		DawProjectModel point = authoredModel();
+		point.meterPoints[0].numerator = numerator;
+		QVERIFY2(!dawProjectXmlFromModel(point, &xml, &error),
+			qPrintable(QStringLiteral("meter-point numerator %1 was written").arg(numerator)));
+		QVERIFY2(error.contains(QStringLiteral("numerator")),
+			"the refusal does not identify the invalid meter-point numerator");
+	}
+
+	for (const int numerator : supported)
+	{
+		DawProjectModel global = authoredModel();
+		global.numerator = numerator;
+		QVERIFY2(dawProjectXmlFromModel(global, &xml, &error), qPrintable(error));
+
+		DawProjectModel point = authoredModel();
+		point.meterPoints[0].numerator = numerator;
+		QVERIFY2(dawProjectXmlFromModel(point, &xml, &error), qPrintable(error));
+	}
+}
+
+//! Luna cluster new-p8-97: the writer must refuse beats whose serialized
+//! value rounds beyond the signed tick_t range when this reader imports it.
+void writerRefusesBeatTimesOutsideTheTickRange()
+{
+	DawProjectModel base = authoredModel();
+	DawProjectWriteReport report;
+	QString error;
+	const QString file = path(m_directory, QStringLiteral("outside-tick-range.dawproject"));
+
+	DawProjectModel hugeClip = base;
+	hugeClip.tracks[0].clips[0].time = 50000000.0;
+	QVERIFY2(!writeDawProject(file, hugeClip, &report, &error),
+		"a clip time beyond the engine's tick range was written");
+
+	DawProjectModel hugeNote = base;
+	hugeNote.tracks[0].clips[0].notes[0].time = 50000000.0;
+	QVERIFY2(!writeDawProject(file, hugeNote, &report, &error),
+		"a note time beyond the engine's tick range was written");
+
+	const double maxTick = static_cast<double>(std::numeric_limits<tick_t>::max());
+	const double roundsPastRange = (maxTick + 0.49999) / DawProjectTicksPerQuarterNote;
+	QVERIFY(dawProjectBeatRepresentable(roundsPastRange));
+	DawProjectModel roundedClip = base;
+	roundedClip.tracks[0].clips[0].time = roundsPastRange;
+	QVERIFY2(!writeDawProject(file, roundedClip, &report, &error),
+		"six-decimal serialization rounded a representable beat into an unrepresentable tick");
+
+}
+
+//! Individually representable fields must not create an overflowing clip end.
+void writerRefusesAClipEndpointPastTheTickRange()
+{
+	DawProjectModel model = authoredModel();
+	DawProjectWriteReport report;
+	QString error;
+	const QString file = path(m_directory, QStringLiteral("clip-endpoint-overflow.dawproject"));
+	const double maxTickBeat = static_cast<double>(std::numeric_limits<tick_t>::max())
+		/ DawProjectTicksPerQuarterNote;
+	model.tracks[0].clips[0].time = maxTickBeat;
+	model.tracks[0].clips[0].duration = 1.0 / DawProjectTicksPerQuarterNote;
+	QVERIFY2(!writeDawProject(file, model, &report, &error),
+		"a clip endpoint beyond the engine's tick range was written");
+}
+
+//! Individually representable fields must not create an overflowing note end.
+void writerRefusesANoteEndpointPastTheTickRange()
+{
+	DawProjectModel model = authoredModel();
+	DawProjectWriteReport report;
+	QString error;
+	const QString file = path(m_directory, QStringLiteral("note-endpoint-overflow.dawproject"));
+	const double maxTickBeat = static_cast<double>(std::numeric_limits<tick_t>::max())
+		/ DawProjectTicksPerQuarterNote;
+	model.tracks[0].clips[0].notes[0].time = maxTickBeat;
+	model.tracks[0].clips[0].notes[0].duration = 1.0 / DawProjectTicksPerQuarterNote;
+	QVERIFY2(!writeDawProject(file, model, &report, &error),
+		"a note endpoint beyond the engine's tick range was written");
+}
+
+//! Cluster new-p14-89: a clip or note whose start plus duration passes tick_t is refused.
+//! An endpoint that fits exactly is kept, and positions outside the domain retain the
+//! reader's existing clamp-and-count behavior.
+void readerRefusesATimelineEndpointPastTheTickRange()
+{
+	// 44739241 beats is exactly 2147483568 ticks, 79 ticks below tick_t's maximum.
+	const auto documentWith = [](const QByteArray& clipAttributes, const QByteArray& clipBody) {
+		return QByteArray("<Project version=\"1.0\"><Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\"><Channel id=\"c1\"/>"
+			"</Track></Structure><Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+			"<Clip ") + clipAttributes + ">" + clipBody + "</Clip>"
+			"</Clips></Lanes></Lanes></Arrangement></Project>";
+	};
+	const QByteArray unitNotes = "<Notes><Note time=\"0\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/></Notes>";
+	const QByteArray notePastMax = "<Notes><Note time=\"44739241\" duration=\"2\" channel=\"0\" key=\"60\" vel=\"0.8\"/></Notes>";
+	const QByteArray noteAtMax = "<Notes><Note time=\"44739241\" duration=\"1.6458333333\" channel=\"0\" key=\"60\" vel=\"0.8\"/></Notes>";
+
+	DawProjectModel rejectedModel;
+	DawProjectReadReport rejectedReport;
+	QString error;
+	QVERIFY(!dawProjectModelFromXml(documentWith("time=\"44739241\" duration=\"2\"", unitNotes),
+		&rejectedModel, &rejectedReport, &error));
+	QVERIFY(error.contains(QStringLiteral("start plus duration")));
+	QVERIFY(!dawProjectModelFromXml(documentWith("time=\"0\" duration=\"4\"", notePastMax),
+		&rejectedModel, &rejectedReport, &error));
+	QVERIFY(error.contains(QStringLiteral("start plus duration")));
+
+	DawProjectModel fitModel;
+	DawProjectReadReport fitReport;
+	QVERIFY2(dawProjectModelFromXml(documentWith("time=\"44739241\" duration=\"1.6458333333\"", unitNotes),
+		&fitModel, &fitReport, &error), qPrintable(error));
+	QCOMPARE(qRound(fitModel.tracks[0].clips[0].duration * DawProjectTicksPerQuarterNote), 79);
+	DawProjectModel noteFitModel;
+	DawProjectReadReport noteFitReport;
+	QVERIFY2(dawProjectModelFromXml(documentWith("time=\"0\" duration=\"4\"", noteAtMax),
+		&noteFitModel, &noteFitReport, &error), qPrintable(error));
+	QCOMPARE(qRound(noteFitModel.tracks[0].clips[0].notes[0].duration * DawProjectTicksPerQuarterNote), 79);
+	QCOMPARE(fitReport.loss.roundedTimes + noteFitReport.loss.roundedTimes, 0);
+
+	// A clip the model does not carry (no <Notes>) is counted as skipped.
+	DawProjectModel uncarriedModel;
+	DawProjectReadReport uncarriedReport;
+	QVERIFY2(dawProjectModelFromXml(documentWith("time=\"0\" duration=\"2\"", ""),
+		&uncarriedModel, &uncarriedReport, &error), qPrintable(error));
+	QCOMPARE(uncarriedModel.tracks[0].clips.size(), 0);
+	QCOMPARE(uncarriedReport.loss.automationClipsSkipped, 1);
+}
+
+//! Cluster new-p14-89, rework: applying an imported boundary clip or note must not overflow tick_t
+//! inside the engine's own sums. Song::lengthChanged runs after every engine length update, so each
+//! clip is checked while the import runs, and a transient overflow is caught even when the final
+//! values look right.
+void appliedBoundaryEndpointsStayInTheTickRange()
+{
+	const qint64 lastTick = std::numeric_limits<tick_t>::max();
+	Song* song = Engine::getSong();
+	QString error;
+	QVERIFY2(applyDawProjectModel(song, previousSessionModel(), &error), qPrintable(error));
+	Track* preservedTrack = song->tracks().front();
+	const auto modelWithClip = [](const DawProjectClip& clip) {
+		DawProjectModel model;
+		DawProjectTrack track;
+		track.typeName = QStringLiteral("instrument");
+		track.contentType = QStringLiteral("notes");
+		track.clips.append(clip);
+		model.tracks.append(track);
+		return model;
+	};
+	DawProjectClip overflowingClip;
+	overflowingClip.time = dawProjectBeatsFromTicks(lastTick - 79);
+	overflowingClip.duration = dawProjectBeatsFromTicks(80);
+	QVERIFY(!applyDawProjectModel(song, modelWithClip(overflowingClip), &error));
+	QVERIFY(error.contains(QStringLiteral("start plus duration")));
+	QVERIFY(song->tracks().size() == 1 && song->tracks().front() == preservedTrack);
+	DawProjectClip overflowingNoteClip;
+	overflowingNoteClip.duration = 4.0;
+	DawProjectNote overflowingNote;
+	overflowingNote.time = dawProjectBeatsFromTicks(lastTick - 79);
+	overflowingNote.duration = dawProjectBeatsFromTicks(80);
+	overflowingNoteClip.notes.append(overflowingNote);
+	QVERIFY(!applyDawProjectModel(song, modelWithClip(overflowingNoteClip), &error));
+	QVERIFY(error.contains(QStringLiteral("start plus duration")));
+	QVERIFY(song->tracks().size() == 1 && song->tracks().front() == preservedTrack);
+	const auto documentWith = [](const QByteArray& clipAttributes, const QByteArray& clipBody) {
+		return QByteArray("<Project version=\"1.0\"><Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\"><Channel id=\"c1\"/>"
+			"</Track></Structure><Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+			"<Clip ") + clipAttributes + ">" + clipBody + "</Clip>"
+			"</Clips></Lanes></Lanes></Arrangement></Project>";
+	};
+	struct Fixture
+	{
+		const char* what;
+		QByteArray xml;
+		qint64 clipStart;
+		qint64 clipLength;
+		qint64 noteStart;
+		qint64 noteLength;
+	};
+	const QByteArray oneBeatNote = "<Notes><Note time=\"0\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/></Notes>";
+	const QList<Fixture> fixtures = {
+		{"a clip starting 79 ticks short of the end",
+			documentWith("time=\"44739241\" duration=\"1.6458333333\"", oneBeatNote), 2147483568, 79, 0, 48},
+		{"a note ending on the last tick",
+			documentWith("time=\"0\" duration=\"44739242.6458333333\"",
+				"<Notes><Note time=\"44739241\" duration=\"1.6458333333\" channel=\"0\" key=\"60\" vel=\"0.8\"/></Notes>"),
+			0, lastTick, 2147483568, 79},
+		{"a clip with no duration, 79 ticks short of the end",
+			documentWith("time=\"44739241\" duration=\"0\"", oneBeatNote), 2147483568, 79, 0, 48},
+	};
+
+	for (const Fixture& fixture : fixtures)
+	{
+		DawProjectModel model;
+		DawProjectReadReport report;
+		QString error;
+		QVERIFY2(dawProjectModelFromXml(fixture.xml, &model, &report, &error), qPrintable(error));
+
+		song->clearProject();
+		int outsideStates = 0;
+		const auto clipsOutsideTickRange = [song, lastTick]() {
+			int outside = 0;
+			for (const Track* track : song->tracks())
+			{
+				for (const Clip* clip : track->getClips())
+				{
+					const qint64 start = clip->startPosition().getTicks();
+					const qint64 length = clip->length().getTicks();
+					if (start < 0 || length < 0 || start + length > lastTick) { ++outside; }
+				}
+			}
+			return outside;
+		};
+		const auto link = QObject::connect(song, &Song::lengthChanged,
+			[&outsideStates, &clipsOutsideTickRange]() { outsideStates += clipsOutsideTickRange(); });
+		const bool applied = applyDawProjectModel(song, model, &error);
+		QObject::disconnect(link);
+		QVERIFY2(applied, qPrintable(error));
+		QVERIFY2(outsideStates == 0, qPrintable(QStringLiteral("%1: %2 engine length states left the tick range")
+			.arg(QString::fromLatin1(fixture.what)).arg(outsideStates)));
+
+		QCOMPARE(static_cast<int>(song->tracks().size()), 1);
+		const auto& clips = song->tracks().front()->getClips();
+		QCOMPARE(clips.size(), 1);
+		const Clip* clip = clips.front();
+		QCOMPARE(static_cast<qint64>(clip->startPosition().getTicks()), fixture.clipStart);
+		QCOMPARE(static_cast<qint64>(clip->length().getTicks()), fixture.clipLength);
+		const auto* midi = dynamic_cast<const MidiClip*>(clip);
+		QVERIFY(midi != nullptr);
+		QCOMPARE(static_cast<int>(midi->notes().size()), 1);
+		const Note* note = midi->notes().front();
+		QCOMPARE(static_cast<qint64>(note->pos().getTicks()), fixture.noteStart);
+		QCOMPARE(static_cast<qint64>(note->length().getTicks()), fixture.noteLength);
+	}
+}
+
 //! Luna cluster 5067: dawProjectXmlFromModel(DawProjectModel{}) SUCCEEDED and
 //! wrote <Application name=""/>, which this module's own reader refuses
 //! (Project.xsd makes the name required). The writer has to refuse it for the
@@ -1344,6 +2367,138 @@ void anEmptyApplicationNameIsRefusedByTheWriter()
 	// The positive half: a named model still writes.
 	QVERIFY2(dawProjectXmlFromModel(authoredModel(), &xml, &error), qPrintable(error));
 }
+
+//! Cluster new-p14-87: the writer must refuse invalid note fields that the
+//! reader rejects (channel/key/vel/rel ranges), including non-finite values.
+	void invalidNoteFieldsAreRefusedByTheWriter()
+	{
+		DawProjectModel base = authoredModel();
+		QByteArray xml;
+		QString error;
+
+		// channel out of range
+		{
+			DawProjectModel m = base;
+			m.tracks[0].clips[0].notes[0].channel = 16;
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				"a note with channel 16 was written");
+		}
+		// key out of range
+		{
+			DawProjectModel m = base;
+			m.tracks[0].clips[0].notes[0].key = 128;
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				"a note with key 128 was written");
+		}
+		// vel out of range / non-finite
+		for (const double v : { -0.01, 1.01, std::numeric_limits<double>::quiet_NaN(),
+			std::numeric_limits<double>::infinity() })
+		{
+			DawProjectModel m = base;
+			m.tracks[0].clips[0].notes[0].vel = v;
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				qPrintable(QStringLiteral("a note with vel %1 was written").arg(v)));
+		}
+		// rel out of range / non-finite
+		for (const double v : { -0.01, 1.01, std::numeric_limits<double>::quiet_NaN(),
+			std::numeric_limits<double>::infinity() })
+		{
+			DawProjectModel m = base;
+			m.tracks[0].clips[0].notes[0].rel = v;
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				qPrintable(QStringLiteral("a note with rel %1 was written").arg(v)));
+		}
+		// positive half
+		QVERIFY2(dawProjectXmlFromModel(base, &xml, &error), qPrintable(error));
+	}
+
+//! Cluster new-p8-100: non-finite / out-of-range scalar parameters must be
+//! refused before they are serialized into invalid XML.
+	void nonFiniteScalarParametersAreRefusedByTheWriter()
+	{
+		DawProjectModel base = authoredModel();
+		QByteArray xml;
+		QString error;
+
+		// NaN mixer volume
+		{
+			DawProjectModel m = base;
+			m.mixerChannels[0].volume = std::numeric_limits<double>::quiet_NaN();
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				"a NaN mixer volume was written");
+		}
+		// infinity mixer volume
+		{
+			DawProjectModel m = base;
+			m.mixerChannels[0].volume = std::numeric_limits<double>::infinity();
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				"an infinite mixer volume was written");
+		}
+		// out-of-range mixer volume
+		{
+			DawProjectModel m = base;
+			m.mixerChannels[0].volume = 3.0;
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				"an out-of-range mixer volume was written");
+		}
+		// NaN track volume
+		{
+			DawProjectModel m = base;
+			m.tracks[0].volume = std::numeric_limits<double>::quiet_NaN();
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				"a NaN track volume was written");
+		}
+		// NaN track pan
+		{
+			DawProjectModel m = base;
+			m.tracks[0].pan = std::numeric_limits<double>::quiet_NaN();
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				"a NaN track pan was written");
+		}
+		// out-of-range track pan
+		{
+			DawProjectModel m = base;
+			m.tracks[0].pan = 2.0;
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				"an out-of-range track pan was written");
+		}
+		// positive half
+		QVERIFY2(dawProjectXmlFromModel(base, &xml, &error), qPrintable(error));
+	}
+
+//! Cluster new-p20-42: writing without a report must not read the archive back.
+	void writingWithoutAReportDoesNotReadTheArchive()
+	{
+		const QString file = path(m_directory, QStringLiteral("no-report.dawproject"));
+		// Do not pre-create the destination: QSaveFile copies an existing
+		// file's permissions, which would make it readable again. On POSIX,
+		// create it under a umask that strips read bits so the old read-back
+		// fails. MSVC's CRT ignores attempts to remove read permission, but its
+		// supported _umask_s spelling keeps the test target warning-free there.
+		int maskResult = 0;
+		int restoreMaskResult = 0;
+#ifdef _MSC_VER
+		int previous = 0;
+		maskResult = _umask_s(_S_IREAD, &previous);
+#else
+		const mode_t previous = umask(0466);
+#endif
+		DawProjectModel model = authoredModel();
+		QString error;
+		const bool ok = writeDawProject(file, model, nullptr, &error);
+		// Restore the process-wide mask even if writing the file failed.
+#ifdef _MSC_VER
+		int ignoredMask = 0;
+		restoreMaskResult = _umask_s(previous, &ignoredMask);
+#else
+		umask(previous);
+#endif
+		// restore permissions for cleanup
+		QFile::setPermissions(file, QFile::ReadOwner | QFile::WriteOwner);
+		QVERIFY2(maskResult == 0, "could not set the file permission mask");
+		QVERIFY2(restoreMaskResult == 0, "could not restore the file permission mask");
+		QVERIFY2(ok, qPrintable(error));
+	}
 
 //! Luna cluster 5071: the write report's documented file identity. `bytes` and
 //! `sha256` are documented as describing the FILE, but `sha256` hashed only the
@@ -1435,6 +2590,27 @@ void archivesPastClassicZipLimitsAreRefused()
 	QCOMPARE(readBack[0].first, QStringLiteral("project.xml"));
 }
 
+//! Luna cluster new-p8-98: the reader uses int offsets and rejects files above
+//! INT_MAX, but the writer only checked the classic ZIP 32-bit limit before
+//! narrowing the local-record size into centralOffset.
+void archivesPastTheReaderSizeLimitAreRefused()
+{
+	const QString entryName = QStringLiteral("oversized.bin");
+	const qsizetype readerLimit = static_cast<qsizetype>(std::numeric_limits<int>::max());
+	const qsizetype localRecordHeaderSize = 30 + entryName.toUtf8().size();
+	const qsizetype bodySize = readerLimit - localRecordHeaderSize + 1;
+	const std::vector<DawProjectEntry> entries = {
+		{entryName, QByteArray(bodySize, '\0')},
+	};
+	const QString file = path(m_directory, QStringLiteral("past-reader-limit.dawproject"));
+	QString error;
+
+	QVERIFY2(!dawProjectZipWrite(file, entries, &error),
+		"the writer accepted a local-record section too large for its reader's int offsets");
+	QVERIFY2(error.contains(QStringLiteral("reader")), qPrintable(error));
+	QVERIFY2(!QFile::exists(file), "a refused archive left a file at the destination");
+}
+
 //! Luna cluster 5075: the reader finds the end record by scanning BACKWARDS for
 //! the signature and accepts the first match, without checking that the record's
 //! own declared comment length carries it to the end of the file. A ZIP comment
@@ -1485,6 +2661,52 @@ void aCommentThatLooksLikeAnEndRecordIsNotOne()
 	QCOMPARE(readBack[0].first, QStringLiteral("project.xml"));
 	QCOMPARE(readBack[1].first, QStringLiteral("metadata.xml"));
 }
+
+	//! Luna cluster new-p12-75: the entry count is written into 16-bit fields, and
+	//! 0xFFFF in them is the ZIP64 SENTINEL - a reader that follows it looks for the
+	//! ZIP64 end-of-central-directory records this writer does not write, so the
+	//! container it wrote is one no reader can agree on. The preflight refused only
+	//! counts ABOVE 0xFFFF, so exactly 65,535 entries was written with the sentinel.
+	void theZip64EntryCountSentinelIsRefused()
+	{
+		const QString sentinelCount = path(m_directory, QStringLiteral("sentinel-count.zip"));
+		std::vector<DawProjectEntry> many;
+		many.reserve(65535);
+		for (int index = 0; index < 65535; index++)
+		{
+			many.emplace_back(QStringLiteral("e%1").arg(index), QByteArray("x"));
+		}
+		QCOMPARE(many.size(), static_cast<std::size_t>(0xFFFF));
+
+		QString error;
+		QVERIFY2(!dawProjectZipWrite(sentinelCount, many, &error),
+			"65535 entries were written with 0xFFFF - the ZIP64 sentinel - in the count "
+			"fields of an archive that carries no ZIP64 record");
+		QVERIFY2(error.contains(QStringLiteral("classic ZIP")),
+			"the refusal does not say which limit was exceeded");
+		QVERIFY2(!QFile::exists(sentinelCount),
+			"a refused archive left a file at the destination");
+
+		// The positive half: one entry below the sentinel still writes, and the count
+		// the end record carries is the real one, not 0xFFFF.
+		const QString largest = path(m_directory, QStringLiteral("largest-classic-count.zip"));
+		many.pop_back();
+		QCOMPARE(many.size(), static_cast<std::size_t>(0xFFFE));
+		QVERIFY2(dawProjectZipWrite(largest, many, &error), qPrintable(error));
+
+		QFile written(largest);
+		QVERIFY(written.open(QIODevice::ReadOnly));
+		QVERIFY(written.seek(written.size() - 22));
+		const QByteArray end = written.read(22);
+		QCOMPARE(end.size(), 22);
+		const auto count = [&end](int offset)
+		{
+			return static_cast<int>(static_cast<quint8>(end[offset]))
+				| (static_cast<int>(static_cast<quint8>(end[offset + 1])) << 8);
+		};
+		QCOMPARE(count(8), 0xFFFE);  // entries on this disk
+		QCOMPARE(count(10), 0xFFFE);  // entries in total
+	}
 
 private:
 	QTemporaryDir m_directory;

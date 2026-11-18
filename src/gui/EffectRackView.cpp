@@ -27,12 +27,15 @@
 
 #include <QApplication>
 #include <QAction>
+#include <QMessageBox>
+#include <QPointer>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QVBoxLayout>
 
+#include "ControlDeviceSupport.h"
 #include "DeprecationHelper.h"
-#include "EffectSelectDialog.h"
+#include "DevicePicker.h"
 #include "EffectView.h"
 #include "GroupBox.h"
 
@@ -177,7 +180,18 @@ void EffectRackView::update()
 			auto view = new EffectView(effect, w);
 			connect(view, &EffectView::movedUp, this, &EffectRackView::moveUp);
 			connect(view, &EffectView::movedDown, this, &EffectRackView::moveDown);
-			connect(view, &EffectView::deletedPlugin, this, &EffectRackView::deletePlugin, Qt::QueuedConnection);
+			// The removal is deferred to the rack's next event-loop turn. The plugin's view is held in a QPointer
+			// (the signal is emitted by the live view), and it is removed only if it is still one of this rack's
+			// views then: a view deleted in the meantime (its chain cleared in the same turn) is skipped, never
+			// dereferenced (m0 blocker, trackview-uaf follow-up).
+			connect(view, &EffectView::deletedPlugin, this, [this](EffectView* removed)
+			{
+				QPointer<EffectView> scheduled(removed);
+				QMetaObject::invokeMethod(this, [this, scheduled]
+				{
+					if (scheduled && m_effectViews.contains(scheduled.data())) { deletePlugin(scheduled.data()); }
+				}, Qt::QueuedConnection);
+			}, Qt::DirectConnection);
 
 			QAction* moveUpAction = new QAction(view);
 			moveUpAction->setShortcut(keySequence(Qt::Key_Up, Qt::AltModifier));
@@ -237,17 +251,23 @@ void EffectRackView::update()
 
 void EffectRackView::addEffect()
 {
-	EffectSelectDialog esd( this );
-	esd.exec();
+	// 0.5.0 plugin-hosting lane: the searchable device picker the Device panel uses (DevicePicker.h) - every
+	// loadable effect of every format, with its vendor and state in words - in place of the older select dialog.
+	// The chosen device is appended to this rack's chain, as before.
+	const QString device = DevicePicker::pick(this, DevicePicker::Kind::Effect, tr("Add effect"));
+	if (device.isEmpty()) { return; }
 
-	if( esd.result() == QDialog::Rejected )
+	ControlDeviceEntry entry;
+	int index = -1;
+	ControlResult error;
+	Effect* fx = controlDeviceById(device, &entry, &index, &error)
+		? controlInstantiateDevice(entry, fxChain(), &error) : nullptr;
+	if (fx == nullptr)
 	{
+		// The picker offers only loadable devices; one whose files went away since it listed them says why.
+		QMessageBox::warning(this, tr("Add effect"), error.errorMessage);
 		return;
 	}
-
-	Effect * fx = esd.instantiateSelectedPlugin( fxChain() );
-
-	fxChain()->appendEffect( fx );
 	update();
 
 	// Find the effectView, and show the controls

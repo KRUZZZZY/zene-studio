@@ -26,9 +26,11 @@ Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-customisation.py <zene>
 Exit 0 only when every check held.
 """
 
+import json
 import os
 import sys
 import time
+import xml.etree.ElementTree as ET
 
 import control_socket_harness as H
 from freeze_bounce_evidence import Recorder, Session, report_results
@@ -38,6 +40,20 @@ ODD_KEYS = "Ctrl+Alt+Shift+F9"
 
 def kind(reply):
     return (reply.get("error") or {}).get("kind")
+
+
+def saved_track_heights(session, outdir, name):
+    """Read persisted Track::saveTrack heights as an independent state readback."""
+    path = os.path.join(outdir, name)
+    saved = session.result("project.save", {"path": path})
+    if saved.get("file") != path or not os.path.exists(path):
+        return None
+    try:
+        root = ET.parse(path).getroot()
+        return [int(track.get("trackheight")) for track in root.iter("track")
+                if track.get("trackheight") is not None]
+    except (OSError, ET.ParseError, ValueError):
+        return None
 
 
 def binding(session, action_id):
@@ -76,6 +92,22 @@ def check_shortcuts(session, recorder, tmp):
     recorder.check("export, reset and import round-trip the set",
                    exported.get("ok") and os.path.exists(path) and reset_ok and imported.get("ok")
                    and binding(session, first).get("keys") == ODD_KEYS, "export=%r import=%r" % (exported, imported))
+    malformed_sets = [
+        ("missing overrides", {"format": "zene-shortcuts", "version": 1}),
+        ("non-object overrides", {"format": "zene-shortcuts", "version": 1, "overrides": []}),
+        ("missing version", {"format": "zene-shortcuts", "overrides": {}}),
+        ("non-integer version", {"format": "zene-shortcuts", "version": "1", "overrides": {}}),
+        ("fractional version", {"format": "zene-shortcuts", "version": 1.5, "overrides": {}}),
+    ]
+    malformed_path = os.path.join(tmp, "malformed-shortcuts.json")
+    for label, document in malformed_sets:
+        session.result("shortcuts.set", {"id": first, "keys": ODD_KEYS})
+        with open(malformed_path, "w", encoding="utf-8") as malformed_file:
+            json.dump(document, malformed_file)
+        rejected = session.call("shortcuts.import", {"file": malformed_path, "replace": True})
+        recorder.check("%s shortcut set is rejected without clearing overrides" % label,
+                       kind(rejected) == "invalid_args" and binding(session, first).get("keys") == ODD_KEYS,
+                       "reply=%r keys=%r" % (rejected, binding(session, first).get("keys")))
     bad = session.call("shortcuts.set", {"id": "No ▸ Such action", "keys": "Ctrl+1"})
     recorder.check("an unknown action is not_found", kind(bad) == "not_found", "reply=%r" % bad)
     session.result("shortcuts.reset")
@@ -314,22 +346,71 @@ def check_workflow_scope(session, recorder):
     session.result("workflow.remove", {"name": "everywhere"})
 
 
-def check_arranger_view(session, recorder):
-    zoomed = session.result("arrangement.zoom", {"pixels_per_bar": 64})
-    stepped = session.result("arrangement.zoom", {"step": 6})
+def check_arranger_view(session, recorder, outdir):
+    first = session.result("arrangement.zoom", {"pixels_per_bar": 32})
+    second = session.result("arrangement.zoom", {"pixels_per_bar": 96})
+    third = session.result("arrangement.zoom", {"pixels_per_bar": 200})
+    three = len({first.get("zoom"), second.get("zoom"), third.get("zoom")}) == 3
     back = session.result("arrangement.zoom_back")
-    again = session.result("arrangement.zoom_back")
-    recorder.check("zoom_back goes back, and twice toggles",
-                   back.get("zoom") == zoomed.get("zoom") and again.get("zoom") == stepped.get("zoom"),
-                   "zoomed=%r stepped=%r back=%r again=%r" % (zoomed, stepped, back, again))
+    forward = session.result("arrangement.zoom_forward")
+    back_again = session.result("arrangement.zoom_back")
+    earlier = session.result("arrangement.zoom_back")
+    to_flip = session.result("arrangement.zoom_toggle")
+    flipped_back = session.result("arrangement.zoom_toggle")
+    recorder.check("zoom back and forward walk three prior extents in order, and the toggle swaps with the extent "
+                   "the zoom last left",
+                   three and back.get("zoom") == second.get("zoom") and forward.get("zoom") == third.get("zoom")
+                   and back_again.get("zoom") == second.get("zoom") and earlier.get("zoom") == first.get("zoom")
+                   and to_flip.get("zoom") == second.get("zoom") and flipped_back.get("zoom") == first.get("zoom")
+                   and back.get("forward") == 1 and forward.get("forward") == 0,
+                   "first=%r second=%r third=%r back=%r forward=%r again=%r earlier=%r flip=%r back=%r"
+                   % (first, second, third, back, forward, back_again, earlier, to_flip, flipped_back))
+    drained = 0
+    while kind(session.call("arrangement.zoom_back")) is None and drained < 64:  # the walk's cap is 32
+        drained += 1
+    recorder.check("the back walk drains within its bound", drained < 64, "drained=%d" % drained)
+    settled = session.result("arrangement.zoom", {"pixels_per_bar": 160})
+    left_behind = settled.get("previous_zoom")  # what the fresh zoom left: the toggle's swap target
+    swapped = session.result("arrangement.zoom_toggle")
+    back_after = session.call("arrangement.zoom_back")
+    forward_after = session.result("arrangement.zoom_forward")
+    recorder.check("after the toggle, Back is refused where it would only repeat the zoom, and Forward "
+                   "walks the extent the swap left",
+                   swapped.get("zoom") == left_behind and kind(back_after) == "not_found"
+                   and forward_after.get("zoom") == settled.get("zoom"),
+                   "settled=%r swapped=%r back=%r forward=%r" % (settled, swapped, back_after, forward_after))
+    drained = 0
+    while kind(session.call("arrangement.zoom_back")) is None and drained < 64:  # what they left behind
+        drained += 1
+    recorder.check("the walk drains again after the swap and the forward step", drained < 64,
+                   "drained=%d" % drained)
+    no_back = session.call("arrangement.zoom_back")
+    fresh = session.call("arrangement.zoom", {"step": 3})
+    no_forward = session.call("arrangement.zoom_forward")
+    recorder.check("a zoom cut the forward walk off, and a drained back walk is refused",
+                   fresh.get("ok") and kind(no_back) == "not_found" and kind(no_forward) == "not_found",
+                   "no_back=%r fresh=%r no_forward=%r" % (no_back, fresh, no_forward))
     fit = session.call("arrangement.zoom", {"fit": "song"})
     recorder.check("fit song answers a zoom", fit.get("ok") and (fit.get("result") or {}).get("pixels_per_bar", 0) > 0,
                    "reply=%r" % fit)
+    track_count = session.result("track.overview").get("count", 0)
+    seeded_heights = [48 + (index % 97) for index in range(track_count)]
+    seeded = session.result("arrangement.fit_tracks", {"heights": seeded_heights})
+    before_heights = saved_track_heights(session, outdir, "fit-tracks-before.mmp")
+    recorder.check("fit_tracks test captured every track's distinct prior height",
+                   len(seeded_heights) > 1 and before_heights == seeded.get("heights")
+                   and len(set(before_heights or [])) > 1,
+                   "expected=%r reply=%r saved=%r" % (seeded_heights, seeded, before_heights))
+
     tracks = session.call("arrangement.fit_tracks")
     heights = (tracks.get("result") or {}).get("heights") or []
     recorder.check("fit_tracks gives every track one height",
                    tracks.get("ok") and len(heights) > 0 and len(set(heights)) == 1, "reply=%r" % tracks)
-    session.result("control.undo")
+    undone = session.result("control.undo")
+    restored_heights = saved_track_heights(session, outdir, "fit-tracks-after-undo.mmp")
+    recorder.check("one control.undo restores every track's exact pre-fit height",
+                   undone.get("undone") is True and restored_heights == before_heights,
+                   "before=%r undo=%r restored=%r" % (before_heights, undone, restored_heights))
     tool = session.result("arrangement.set_tool", {"tool": "select"})
     menu = session.result("window.tool_menu")
     # The arranger's seven tools and the note editor's seven (paint and mute included since the 0.5.0 review).
@@ -395,7 +476,7 @@ def main(argv):
         check_workflow_recording(session, recorder)
         check_workflow_recovery(session, recorder)
         check_workflow_scope(session, recorder)
-        check_arranger_view(session, recorder)
+        check_arranger_view(session, recorder, instance.tmp)
         check_patterns(session, recorder)
         check_nudge_and_navigation(session, recorder)
         check_lua_refuses(session, recorder)

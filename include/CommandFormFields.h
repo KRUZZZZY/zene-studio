@@ -62,8 +62,9 @@ LMMS_EXPORT Editor makeEditor(QWidget* parent, const QString& id, const QString&
  *  outside its bounds. */
 LMMS_EXPORT bool readValue(const QWidget* editor, const QJsonObject& spec, QJsonValue* value, QString* error);
 
-//! Put @a value into @a editor; false when a choice does not offer it.
-LMMS_EXPORT bool writeValue(QWidget* editor, const QJsonValue& value);
+//! Put @a value into @a editor; false when a choice does not offer it, or when @a value is not of
+//! the field's type (@a spec) and so could never be read back from it.
+LMMS_EXPORT bool writeValue(QWidget* editor, const QJsonObject& spec, const QJsonValue& value);
 
 //! A muted, word-wrapped caption (a field's guidance, a unit, a command's id) in the design tokens' caption type.
 LMMS_EXPORT QLabel* captionLabel(const QString& text, QWidget* parent);

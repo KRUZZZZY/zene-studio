@@ -7,11 +7,13 @@
  * the channel's existing <rack> element - no second container. What this file
  * adds is the surface: create, drop, and the lookup an agent can ask about.
  *
- * HONEST SCOPE, and it is the reason docs/KNOWN-LIMITATIONS.md and the release
- * notes carry a line for it: the rack moves one stereo block, so it has no
- * per-note input to consult, and nothing in this build calls RackZones::resolve
- * to pick a chain while a note plays. What is here is the persisted, validated,
- * queryable zone model and its resolver - not note routing.
+ * HONEST SCOPE: the zone model is created, dropped and queried here, but it is
+ * socket-only - nothing in src/gui/ draws a zone editor or a key map, so a user
+ * cannot create or see one. Note routing is NOT this file's job and is NOT
+ * missing: since 0.5.0 (E20/E38) an instrument track playing into a channel is
+ * routed through RackZoneFeed (src/core/AudioBusHandle.cpp), so a note a zone
+ * claims plays on that zone's chain. See docs/KNOWN-LIMITATIONS.md and
+ * tests/src/core/RackZoneRoutingTest.cpp.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -230,10 +232,11 @@ void registerZoneRemove(ControlRegistry& registry)
 		result.insert(QStringLiteral("removed"), zoneId(index));
 		result.insert(QStringLiteral("zone_count"), rack.zones().zoneCount());
 		QJsonObject beforeState = zoneJson(zone, index);
+		// The advertised inverse is the exact recorded checkpoint, control.undo, which re-inserts
+		// the zone at its own index with its sample. A rack.zone_add replay would APPEND the zone,
+		// changing the first-match order of overlapping zones and the ids after this one.
 		result.insert(QStringLiteral("__transaction"),
-			transactionPayload(beforeState, QStringLiteral("rack.zone_add"),
-				QJsonObject{{QStringLiteral("channel"), channelIdText},
-					{QStringLiteral("zone"), zoneId(index)}},
+			transactionPayload(beforeState, QStringLiteral("control.undo"), QJsonObject{},
 				true,
 				QStringLiteral("action checkpoint: the recorded undo step re-inserts the captured "
 					"zone at its own index, so the list - and the order the first-match rule "

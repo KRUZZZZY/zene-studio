@@ -38,19 +38,26 @@
 #include <memory>
 
 #include <QDomDocument>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
 #include <QVector>
 
+#include "AudioDevice.h"
+#include "AudioEngine.h"
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlStructuralSupport.h"
+#include "ControlVocabulary.h"
 #include "Effect.h"
+#include "EffectControls.h"
 #include "EffectChain.h"
 #include "Engine.h"
+#include "MasterLoudnessTap.h"
+#include "Plugin.h"
 #include "ProjectJournal.h"
 #include "ReversibilityTestSupport.h"
 
@@ -238,6 +245,16 @@ private slots:
 			{{QStringLiteral("clip"), clipId}, {QStringLiteral("length"), 384}}).ok);
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(clipLength(clipId), 192);
+
+		// clip.set_mute (0.5.0 Q050-040): the mute BoolModel checkpoint, the same
+		// class the track's mute rides - set, read back, undo, read back.
+		QVERIFY(run(QStringLiteral("clip.set_mute"),
+			{{QStringLiteral("clip"), clipId}, {QStringLiteral("muted"), true}}).ok);
+		QVERIFY(clipMuted(clipId));
+		QCOMPARE(stateOf(QStringLiteral("clip.set_mute")).value(QStringLiteral("class")).toString(),
+			QStringLiteral("true_inverse"));
+		REV_UNDO_OR_FAIL();
+		QVERIFY(!clipMuted(clipId));
 	}
 
 
@@ -294,146 +311,220 @@ private slots:
 	}
 
 
-	//! The device commands: bypass and param_set are model checkpoints, and a
-	//! state load is an action step that restores the captured XML.
-	void deviceCommandsUndoToTheirPreCommandState()
+	//! An instrument replacement is snapshot-only. Any inverse it advertises
+	//! must replay through the command registry's schema validation.
+	void instrumentLoadTransactionOnlyAdvertisesAReplayableInverse()
 	{
-		const QString device = firstLoadableEffect();
-		if (device.isEmpty()) { QSKIP("this build exposes no loadable built-in effect"); }
 		const QString track = addInstrumentTrack();
 		if (track.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
+		const QString device = firstLoadable(QStringLiteral("instrument"));
+		if (device.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
 
-		const ControlResult loaded = run(QStringLiteral("plugin.load"),
+		const ControlResult replaced = run(QStringLiteral("plugin.load"),
 			{{QStringLiteral("target"), track}, {QStringLiteral("device"), device}});
-		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
-		QCOMPARE(loaded.result.value(QStringLiteral("kind")).toString(), QStringLiteral("effect"));
-		const QString fx = loaded.result.value(QStringLiteral("id")).toString();
-		const int devicesAfterLoad = deviceCount(track);
+		QVERIFY2(replaced.ok, qPrintable(replaced.errorMessage));
+		const QJsonObject transaction = stateOf(QStringLiteral("plugin.load"));
+		QVERIFY(!transaction.isEmpty());
+		QCOMPARE(transaction.value(QStringLiteral("reversible")).toBool(), false);
+		const QJsonObject inverse = transaction.value(QStringLiteral("inverse")).toObject();
+		if (inverse.isEmpty()) { return; }
 
-		QVERIFY(run(QStringLiteral("plugin.bypass"),
-			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), fx},
-				{QStringLiteral("bypass"), true}}).ok);
-		QVERIFY(!deviceEnabled(track, fx));
-		REV_UNDO_OR_FAIL();
-		QVERIFY(deviceEnabled(track, fx));
+		const ControlResult replayed = run(inverse.value(QStringLiteral("op")).toString(),
+			inverse.value(QStringLiteral("args")).toObject());
+		QVERIFY2(replayed.ok, qPrintable(replayed.errorMessage));
+	}
 
-		// The param write is only meaningful when the device exposes one.
-		const QJsonArray parameters = deviceParameters(track, fx);
-		if (parameters.isEmpty()) { QSKIP("the loaded effect exposes no parameter"); }
-		const QJsonObject parameter = parameters.first().toObject();
-		const double previous = parameter.value(QStringLiteral("value")).toDouble();
-		const double wanted = parameter.value(QStringLiteral("min")).toDouble() != previous
-			? parameter.value(QStringLiteral("min")).toDouble()
-			: parameter.value(QStringLiteral("max")).toDouble();
-		QVERIFY(run(QStringLiteral("plugin.param_set"),
-			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), fx},
-				{QStringLiteral("index"), parameter.value(QStringLiteral("index")).toInt()},
-				{QStringLiteral("value"), wanted}}).ok);
-		QCOMPARE(deviceParameterValue(track, fx, parameter.value(QStringLiteral("index")).toInt()), wanted);
-		REV_UNDO_OR_FAIL();
-		QCOMPARE(deviceParameterValue(track, fx, parameter.value(QStringLiteral("index")).toInt()), previous);
+	//! Luna cluster 5723: a state load that FAILS must leave no undo step.
+	//!
+	//! The handler called addUndoStep() with the captured previous settings
+	//! BEFORE handing the bytes to controlRestoreDeviceState(), which is the
+	//! call that can refuse them. A readable file whose content is not a device
+	//! state document therefore failed the command and still left a step whose
+	//! undo "restores" the device it never changed - so the caller's next
+	//! control.undo consumed a step for an operation that did not happen, and
+	//! the real step before it became unreachable from the keyboard.
+	void aFailedStateLoadRecordsNoUndoStep()
+	{
+		const QString track = addInstrumentTrack();
+		if (track.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
+		// The instrument-track device is addressed as 'inst'
+		// (ControlDeviceState.cpp:46), not as an fx-<n> effect id.
+		const QString pluginId = QStringLiteral("inst");
 
-		// The append itself is one step: undo unloads the device it created.
-		QCOMPARE(deviceCount(track), devicesAfterLoad);
-		const QJsonObject loadTx = stateOf(QStringLiteral("plugin.load"));
-		QCOMPARE(loadTx.value(QStringLiteral("reversible")).toBool(), true);
+		// Readable, and NOT a state document for this device.
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString bogus = dir.path() + QStringLiteral("/not-a-state.xpf");
+		QFile out(bogus);
+		QVERIFY(out.open(QIODevice::WriteOnly));
+		out.write("this is not an instrument-track preset document");
+		out.close();
 
-		// ... and the state load restores the settings it replaced.
+		const ControlResult depth = run(QStringLiteral("control.undo_depth"));
+		QVERIFY(depth.ok);
+		const int before = depth.result.value(QStringLiteral("depth")).toInt();
+
+		const ControlResult failed = run(QStringLiteral("plugin.state_load"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
+				{QStringLiteral("path"), bogus}});
+		QVERIFY2(!failed.ok, "the device accepted a document that is not its state");
+
+		const ControlResult after = run(QStringLiteral("control.undo_depth"));
+		QVERIFY(after.ok);
+		QCOMPARE(after.result.value(QStringLiteral("depth")).toInt(), before);
+	}
+
+
+	//! Luna cluster 2050: plugin.state_load advertised an inverse that could not be
+	//! replayed. The command is an ACTION checkpoint - the table
+	//! (ControlReversibilityTableAction.cpp) and its own `mechanism` both say the
+	//! recorded undo step restores the captured settings XML - but the transaction
+	//! named plugin.state_save and supplied only a `note`. That command requires
+	//! target, plugin and path, and saving a device's CURRENT state would not
+	//! restore the previous one anyway. A client that FOLLOWS the returned inverse
+	//! - which is what `reversible: true` promises - could not undo the load.
+	void theStateLoadInverseIsTheCheckpointItActuallyRecorded()
+	{
+		const QString track = addInstrumentTrack();
+		if (track.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
+		const QString pluginId = QStringLiteral("inst");
+
+		// The state load is only an INVERSE if replaying it restores what the
+		// load REPLACED. Saving and loading the same document happens to leave
+		// the device where it already was, so that shape passes even over an
+		// inverse that restores the wrong state. Move the device first, then
+		// load the saved document, then follow the inverse and read back the
+		// moved state - the state the load destroyed.
+		int index = -1;
+		double before = 0.0;
+		double wanted = 0.0;
+		for (int candidate = 0; candidate < 256 && index < 0; ++candidate)
+		{
+			const ControlResult read = run(QStringLiteral("plugin.param_get"),
+				{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
+					{QStringLiteral("index"), candidate}});
+			if (!read.ok) { break; }
+			const QJsonObject parameter = read.result.value(QStringLiteral("parameter")).toObject();
+			const double low = parameter.value(QStringLiteral("min")).toDouble();
+			const double high = parameter.value(QStringLiteral("max")).toDouble();
+			if (parameter.value(QStringLiteral("type")).toString() != QLatin1String("number")
+				|| high <= low)
+			{
+				continue;
+			}
+			index = candidate;
+			before = parameter.value(QStringLiteral("value")).toDouble();
+			wanted = before > low ? low : high;  // a value the device is not at
+		}
+		QVERIFY2(index >= 0, "the loaded instrument exposes no numeric parameter to move");
+
 		QTemporaryDir dir;
 		QVERIFY(dir.isValid());
 		const QString file = dir.path() + QStringLiteral("/state.xml");
 		QVERIFY(run(QStringLiteral("plugin.state_save"),
-			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), fx},
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
 				{QStringLiteral("path"), file}}).ok);
-		QVERIFY(QFileInfo::exists(file));
+
 		QVERIFY(run(QStringLiteral("plugin.param_set"),
-			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), fx},
-				{QStringLiteral("index"), parameter.value(QStringLiteral("index")).toInt()},
-				{QStringLiteral("value"), wanted}}).ok);
-		QCOMPARE(deviceParameterValue(track, fx, parameter.value(QStringLiteral("index")).toInt()), wanted);
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
+				{QStringLiteral("index"), index}, {QStringLiteral("value"), wanted}}).ok);
+		QVERIFY(qAbs(deviceParameterValue(track, pluginId, index) - wanted) < 1e-6);
+
 		QVERIFY(run(QStringLiteral("plugin.state_load"),
-			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), fx},
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
 				{QStringLiteral("path"), file}}).ok);
-		QCOMPARE(deviceParameterValue(track, fx, parameter.value(QStringLiteral("index")).toInt()), previous);
-		REV_UNDO_OR_FAIL();
-		QCOMPARE(deviceParameterValue(track, fx, parameter.value(QStringLiteral("index")).toInt()), wanted);
+		// The load really replaced the moved state with the saved document.
+		QVERIFY2(qAbs(deviceParameterValue(track, pluginId, index) - before) < 1e-6,
+			"plugin.state_load did not apply the saved document, so the replay below "
+			"would prove nothing");
+
+		const QJsonObject recorded = stateOf(QStringLiteral("plugin.state_load"));
+		QVERIFY(!recorded.isEmpty());
+		QCOMPARE(recorded.value(QStringLiteral("reversible")).toBool(), true);
+		const QJsonObject inverse = recorded.value(QStringLiteral("inverse")).toObject();
+		const QString op = inverse.value(QStringLiteral("op")).toString();
+		QVERIFY2(!op.isEmpty(), "plugin.state_load recorded an inverse with no op");
+		QVERIFY2(ControlRegistry::instance()->command(op) != nullptr,
+			qPrintable(QStringLiteral("the recorded inverse names '%1', which is not a "
+				"command of the surface").arg(op)));
+
+		// The promise `reversible: true` makes: a caller that follows the inverse
+		// must be able to run it - AND the run must restore the state the load
+		// replaced, not the state it installed.
+		const ControlResult replay = run(op, inverse.value(QStringLiteral("args")).toObject());
+		QVERIFY2(replay.ok, qPrintable(QStringLiteral("plugin.state_load advertised the "
+			"replayable inverse %1%2, which the registry refused: %3").arg(op,
+				QString::fromUtf8(QJsonDocument(inverse).toJson(QJsonDocument::Compact)),
+				replay.errorMessage)));
+		QVERIFY2(qAbs(deviceParameterValue(track, pluginId, index) - wanted) < 1e-6,
+			qPrintable(QStringLiteral("replaying plugin.state_load's inverse left parameter "
+				"%1 at %2; the load replaced %3, so the inverse restored the wrong state")
+				.arg(index).arg(deviceParameterValue(track, pluginId, index)).arg(wanted)));
 	}
 
 
-	/*! BUG-CTL-1 (SPEC A16): the undo of plugin.unload must NOT report success when
-	 *  the recreated device could not be given its captured settings. Before the fix
-	 *  recreateEffectFromState() discarded controlRestoreEffectState()'s result, so
-	 *  the undo answered `undone: true` over a device sitting at its DEFAULTS.
-	 *
-	 *  The refusal is driven through the PRODUCTION recreate path with a document whose
-	 *  body element is removed: one controlEffectStateXml() captured from a live device
-	 *  is always restorable by that same engine, so plugin.unload cannot reach it. The
-	 *  step is pushed with the API journalEffectRemoval() uses.
-	 */
-	void unloadUndoRefusesWhenTheDeviceCannotBeRestored()
+	//! The last two `true_inverse` rows that had no behavioural proof anywhere
+	//! (cluster new-p8-205): `plugin.midi_part_set` and `rack.layer_set`. The
+	//! contract calls both reversible through a recorded action checkpoint, but
+	//! an undo acceptance suite that only names them in the table cannot tell a
+	//! missing inverse from a working one. Each is applied, read back, undone
+	//! once and read back again - the pre-command state, which is what A16
+	//! promises and what the row's mechanism claims.
+	void partAndLayerEditsUndoToTheirPreCommandState()
 	{
-		const QString device = firstLoadableEffect();
-		if (device.isEmpty()) { QSKIP("this build exposes no loadable built-in effect"); }
 		const QString track = addInstrumentTrack();
 		if (track.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
-		ControlTarget target; ControlResult error;
-		QVERIFY2(resolveControlTarget(track, &target, &error), qPrintable(error.errorMessage));
+		const ControlResult added = run(QStringLiteral("plugin.midi_part_add"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("midi_channel"), 3},
+				{QStringLiteral("low_key"), 40}, {QStringLiteral("high_key"), 80}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		QCOMPARE(added.result.value(QStringLiteral("part_count")).toInt(), 1);
 
-		const ControlResult loaded = run(QStringLiteral("plugin.load"),
-			{{QStringLiteral("target"), track}, {QStringLiteral("device"), device}});
-		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
-		const QString fx = loaded.result.value(QStringLiteral("id")).toString();
-
-		// The happy path is untouched: the undo reports success and the device is back.
-		QVERIFY(run(QStringLiteral("plugin.unload"),
-			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), fx}}).ok);
-		QCOMPARE(deviceCount(track), 0);
+		// plugin.midi_part_set: change the channel and the range, then undo.
+		QVERIFY(run(QStringLiteral("plugin.midi_part_set"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("part"), QStringLiteral("part-0")},
+				{QStringLiteral("midi_channel"), 7}, {QStringLiteral("low_key"), 12},
+				{QStringLiteral("high_key"), 24}}).ok);
+		QJsonObject part = run(QStringLiteral("plugin.midi_parts"),
+			{{QStringLiteral("target"), track}}).result.value(QStringLiteral("parts"))
+			.toArray().at(0).toObject();
+		QCOMPARE(part.value(QStringLiteral("midi_channel")).toInt(), 7);
+		QCOMPARE(part.value(QStringLiteral("low_key")).toInt(), 12);
+		QCOMPARE(stateOf(QStringLiteral("plugin.midi_part_set"))
+			.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString(),
+			QStringLiteral("plugin.midi_part_set"));
 		REV_UNDO_OR_FAIL();
-		QCOMPARE(deviceCount(track), 1);
+		part = run(QStringLiteral("plugin.midi_parts"),
+			{{QStringLiteral("target"), track}}).result.value(QStringLiteral("parts"))
+			.toArray().at(0).toObject();
+		QCOMPARE(part.value(QStringLiteral("midi_channel")).toInt(), 3);
+		QCOMPARE(part.value(QStringLiteral("low_key")).toInt(), 40);
+		QCOMPARE(part.value(QStringLiteral("high_key")).toInt(), 80);
 
-		// The defect: a document the DEVICE refuses, naming a device this build can build.
-		const QString restored = deviceIdAt(track, 0);
-		Effect* live = resolveControlEffect(target, restored, &error);
-		QVERIFY2(live != nullptr, qPrintable(error.errorMessage));
-		QDomDocument document;
-		QVERIFY(document.setContent(controlEffectStateXml(live)));
-		const QDomElement body = document.documentElement().firstChildElement(live->nodeName());
-		QVERIFY2(!body.isNull(), "the captured device document carries no body to remove");
-		document.documentElement().removeChild(body);
-		const QString refused = document.toString();
-
-		// plugin.unload again, the REAL command (so the transaction control.undo consults
-		// is the one it recorded), then the step it recorded with the refused document.
-		QVERIFY(run(QStringLiteral("plugin.unload"),
-			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), restored}}).ok);
-		QCOMPARE(deviceCount(track), 0);
-		auto holder = std::make_shared<Effect*>(nullptr);
-		control::addStructuralUndoStep(
-			[chain = target.chain, refused, holder]() {
-				*holder = control::recreateEffectFromState(chain, refused, 0);
-			},
-			[chain = target.chain, holder]() {
-				if (*holder != nullptr) { chain->removeEffect(*holder); (*holder)->deleteLater(); *holder = nullptr; }
-			},
-			refused.size());
-
-		// (1) the undo must NOT report success - `undone: true` here was the lie ...
-		const ControlResult undo = run(QStringLiteral("control.undo"));
-		QVERIFY2(!undo.ok, "control.undo reported SUCCESS although the device was not restored "
-			"(BUG-CTL-1): the recreated instance sat at its defaults");
-		QVERIFY(undo.errorKind == ControlErrorKind::InvalidArgs
-			|| undo.errorKind == ControlErrorKind::Refused);
-		QVERIFY2(undo.errorMessage.contains(QStringLiteral("NOT restored")), qPrintable(undo.errorMessage));
-		QCOMPARE(deviceCount(track), 0);  // (2) no half-restored device left behind
-		// (3) ... and repeated undo/redo stays honest. No depth delta is asserted:
-		// undo_depth also counts the chain's own enabled-flag checkpoints (appendEffect/
-		// removeEffect), a pre-existing EffectChain behaviour the happy path has too.
-		QVERIFY(run(QStringLiteral("control.redo")).ok);
-		QCOMPARE(deviceCount(track), 0);
-		QVERIFY2(!run(QStringLiteral("control.undo")).ok, "a second undo of the failed restore "
-			"reported SUCCESS (BUG-CTL-1)");
-		QCOMPARE(deviceCount(track), 0);
-		QVERIFY(run(QStringLiteral("track.list")).ok);
+		// rack.layer_set: layer-0 is the track's own instrument, so its level is
+		// the track's volume and only mute/solo are settable. Both are read back.
+		const QJsonObject beforeLayer = run(QStringLiteral("rack.layers"),
+			{{QStringLiteral("target"), track}}).result.value(QStringLiteral("layers"))
+			.toArray().at(0).toObject();
+		QVERIFY(!beforeLayer.value(QStringLiteral("muted")).toBool());
+		QVERIFY(!beforeLayer.value(QStringLiteral("solo")).toBool());
+		QVERIFY(run(QStringLiteral("rack.layer_set"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("layer"), QStringLiteral("layer-0")},
+				{QStringLiteral("muted"), true}, {QStringLiteral("solo"), true}}).ok);
+		QJsonObject layer = run(QStringLiteral("rack.layers"),
+			{{QStringLiteral("target"), track}}).result.value(QStringLiteral("layers"))
+			.toArray().at(0).toObject();
+		QVERIFY(layer.value(QStringLiteral("muted")).toBool());
+		QVERIFY(layer.value(QStringLiteral("solo")).toBool());
+		QCOMPARE(stateOf(QStringLiteral("rack.layer_set"))
+			.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString(),
+			QStringLiteral("rack.layer_set"));
+		REV_UNDO_OR_FAIL();
+		layer = run(QStringLiteral("rack.layers"),
+			{{QStringLiteral("target"), track}}).result.value(QStringLiteral("layers"))
+			.toArray().at(0).toObject();
+		QVERIFY(!layer.value(QStringLiteral("muted")).toBool());
+		QVERIFY(!layer.value(QStringLiteral("solo")).toBool());
 	}
 
 
@@ -492,6 +583,87 @@ private slots:
 			QJsonObject{{QStringLiteral("path"), direct}, {QStringLiteral("revision"), 9}});
 		QVERIFY(!beyond.ok);
 		QCOMPARE(beyond.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+
+	//! A state load's REDO is covered in UndoHonestyTest
+	//! (theStateLoadRedoReplaysTheBytesItLoaded, Luna cluster 5724): it needs the
+	//! revtest:: fixture helpers and the file-length ratchet leaves no room here.
+
+	/*! An instrument-track state restore accepted ANY parseable XML: the only
+	 *  check was that the parsed content was non-null, then loadPreset was
+	 *  called and `restored: true` reported unconditionally - a document the
+	 *  loader ignores was still reported as applied. track.preset_load (the
+	 *  file-based sibling, ControlCommandsTrackPresets.cpp:85-90) already
+	 *  refuses a content element whose `type` is missing or is another kind of
+	 *  track; plugin.state_load must refuse it too.
+	 */
+	void anInstrumentStateRestoreRefusesAForeignDocument()
+	{
+		const QString track = addTrack();
+		QVERIFY2(!track.isEmpty(), "this build exposes no instrument track to restore into");
+		ControlTarget target; ControlResult error;
+		QVERIFY2(resolveControlTarget(track, &target, &error), qPrintable(error.errorMessage));
+		QVERIFY(target.instrumentTrack != nullptr);
+		ControlDeviceHandle handle;
+		handle.track = target.instrumentTrack;
+		handle.pluginName = QStringLiteral("bundle-test");
+
+		// The happy path is untouched: the engine's own captured state restores.
+		const QByteArray own = controlDeviceStateBytes(handle);
+		QVERIFY2(!own.isEmpty(), "the instrument track captured no state to restore");
+		QVERIFY2(controlRestoreDeviceState(handle, own).ok,
+			"the instrument's own captured state was refused");
+
+		// The defect: a document that parses and DOES carry the content element
+		// DataFile selects, but is not an instrument-track preset - a saved
+		// project, whose root type names a `song` content element. loadPreset was
+		// handed that element and `restored: true` was reported regardless of the
+		// fact that it applied nothing.
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString project = dir.path() + QStringLiteral("/foreign.mmp");
+		QVERIFY2(run(QStringLiteral("project.save"), {{QStringLiteral("path"), project}}).ok,
+			"this build could not save a project document to stand in as the foreign state");
+		ControlResult ignored;
+		QByteArray foreign;
+		QVERIFY(controlReadFileBytes(project, &foreign, &ignored));
+		QVERIFY2(!foreign.isEmpty(), "the saved project document is empty");
+
+		const ControlResult restored = controlRestoreDeviceState(handle, foreign);
+		QVERIFY2(!restored.ok,
+			"controlRestoreDeviceState reported SUCCESS over a saved PROJECT document "
+			"(BUG): the content element exists, so the null check passed, loadPreset was "
+			"handed a <song> element it ignores, and restored:true was returned");
+		QVERIFY2(!restored.result.value(QStringLiteral("restored")).toBool(),
+			"the refusal still carried restored:true");
+	}
+
+	//! A failed meter.arm action restore must be reported by control.undo rather
+	//! than claimed as undone while the live tap remains armed.
+	void meterArmUndoReportsQuietWaitFailure()
+	{
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		MasterLoudnessTap* tap = Engine::audioEngine()->masterLoudness();
+		QVERIFY(tap != nullptr);
+		QVERIFY(tap->setEnabled(false));
+
+		const ControlResult armed = run(QStringLiteral("meter.arm"),
+			{{QStringLiteral("enabled"), true}});
+		QVERIFY2(armed.ok, qPrintable(armed.errorMessage));
+		QVERIFY(tap->enabled());
+
+		setMasterLoudnessTapNextQuietWaitResultForTesting(false);
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(!undone.ok, "control.undo claimed the meter.arm action was undone after the tap timed out");
+		QCOMPARE(undone.errorKind, ControlErrorKind::Refused);
+		QVERIFY(tap->enabled());
+
+		setMasterLoudnessTapNextQuietWaitResultForTesting(false);
+		const ControlResult redone = run(QStringLiteral("control.redo"));
+		QVERIFY2(!redone.ok, "control.redo claimed the meter.arm action was reapplied after the tap timed out");
+		QCOMPARE(redone.errorKind, ControlErrorKind::Refused);
+		QVERIFY(tap->enabled());
 	}
 };
 

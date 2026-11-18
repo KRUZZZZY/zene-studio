@@ -48,6 +48,7 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <QHash>
 #include <QJsonArray>
 
 #include "ControlCommandsOutOfProcessShared.h"
@@ -302,17 +303,25 @@ ControlResult handleResetCrashes(const QJsonObject& args)
 	QJsonArray afterArray;
 	QJsonArray cleared;
 
+	// `cleared` names the clients whose CRASH COUNT this call actually took
+	// down: a record that was already at zero crashes had nothing to clear,
+	// and listing it would claim a count was reset that was never nonzero.
 	if (client.isEmpty())
 	{
+		QHash<QString, int> crashesBefore;
 		for (const ClientRecord& record : tracker.records())
 		{
 			beforeArray.append(clientRecordJson(record));
+			crashesBefore.insert(record.client, record.crashes);
 		}
 		tracker.resetAll();
 		for (const ClientRecord& record : tracker.records())
 		{
 			afterArray.append(clientRecordJson(record));
-			if (record.crashes == 0 && record.exits > 0) { cleared.append(record.client); }
+			if (record.crashes == 0 && crashesBefore.value(record.client) > 0)
+			{
+				cleared.append(record.client);
+			}
 		}
 	}
 	else
@@ -322,7 +331,7 @@ ControlResult handleResetCrashes(const QJsonObject& args)
 		tracker.resetCrashes(client);
 		const ClientRecord after = tracker.record(client);
 		afterArray.append(clientRecordJson(after));
-		if (after.crashes == 0 && after.exits > 0) { cleared.append(client); }
+		if (after.crashes == 0 && before.crashes > 0) { cleared.append(client); }
 	}
 
 	QJsonObject result;

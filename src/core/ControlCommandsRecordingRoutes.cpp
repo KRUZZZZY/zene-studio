@@ -46,6 +46,7 @@
 #include <algorithm>
 #include <cstdint>
 
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
 
@@ -56,6 +57,12 @@
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "MultiTrackRecorder.h"
+#include "Clip.h"
+#include "SampleClip.h"
+#include "SampleRecordHandle.h"
+#include "SampleTrack.h"
+#include "Song.h"
+#include "Track.h"
 #include "TrackRecorder.h"
 
 namespace lmms
@@ -65,6 +72,11 @@ using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
 
 namespace
 {
+
+void releaseDefaultTakeIfOmitted(const QJsonObject& args, const QString& path)
+{
+	if (args.value(QStringLiteral("file")).toString().isEmpty()) { releaseDefaultTake(path); }
+}
 
 //! The live recorder, or nullptr when this instance has no audio engine at all
 //! (a headless render, or an instance that came up without a device).
@@ -144,6 +156,35 @@ ControlResult getState(const QJsonObject&)
 	result.insert(QStringLiteral("input"), inputPathJson());
 	// R2.2: the round trip a take recorded against playback is shifted back by.
 	result.insert(QStringLiteral("latency_frames"), static_cast<int>(Engine::audioEngine()->recordingLatencyFrames()));
+	// The clip record path (sample tracks armed for recording): frames a full capture ring lost
+	// (each padded with silence in its take, unless padded_frames falls short), takes that found
+	// no prepared handle, takes the main thread could not queue, and clip starts the per-pass cap
+	// deferred. All since the process started.
+	// Per clip: the frames its last take lost to overflow (padded in that take).
+	QJsonArray dropped;
+	for (const Track* track : Engine::getSong()->tracks())
+	{
+		for (const Clip* clip : track->getClips())
+		{
+			const auto* sample = dynamic_cast<const SampleClip*>(clip);
+			if (sample != nullptr && sample->lastTakeDroppedFrames() > 0)
+			{
+				dropped.append(QJsonObject{
+					{QStringLiteral("track_id"), track->id()},
+					{QStringLiteral("clip_id"), clip->id()},
+					{QStringLiteral("last_take_dropped_frames"), static_cast<qint64>(sample->lastTakeDroppedFrames())},
+				});
+			}
+		}
+	}
+	result.insert(QStringLiteral("clip_takes"), QJsonObject{
+		{QStringLiteral("dropped_frames"), static_cast<qint64>(SampleRecordHandle::framesDroppedTotal())},
+		{QStringLiteral("padded_frames"), static_cast<qint64>(SampleRecordHandle::framesPaddedTotal())},
+		{QStringLiteral("unprepared_takes"), static_cast<qint64>(SampleRecordHandle::unpreparedTakes())},
+		{QStringLiteral("queue_overflows"), static_cast<qint64>(SampleRecordHandle::queueOverflows())},
+		{QStringLiteral("deferred_clip_starts"), static_cast<qint64>(SampleTrack::deferredClipStarts())},
+		{QStringLiteral("clips"), dropped},
+	});
 	return ControlResult::success(result);
 }
 
@@ -175,6 +216,7 @@ ControlResult armTrack(const QJsonObject& args)
 	const int channel = channelArg(args, route, target);
 	if (!target.inputChannelSelectable(channel))
 	{
+		releaseDefaultTakeIfOmitted(args, file);
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("input_channel %1 is outside [0, %2): this instance's capture path "
 				"delivers %2 channel(s) (record.input_get_state reports whether a capture device "
@@ -187,6 +229,13 @@ ControlResult armTrack(const QJsonObject& args)
 	const QJsonObject before = routeJson(target, route);
 	if (!recorder->armTrack(route, file.toStdString(), sampleRate, channel))
 	{
+		// Explicit file (new-p17-24): a failed arm truncates nothing new and
+		// leaves nothing to release. Default file: the allocator reserved
+		// this path exclusively above - release only that reservation.
+		if (args.value(QStringLiteral("file")).toString().isEmpty())
+		{
+			releaseDefaultTake(file);
+		}
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("route %1 could not be armed: the take file %2 could not be opened "
 				"for writing, or the route is already armed").arg(route).arg(file));
@@ -197,10 +246,10 @@ ControlResult armTrack(const QJsonObject& args)
 	result.insert(QStringLiteral("input_frames_staged_at_arm"),
 		static_cast<qint64>(Engine::audioEngine() != nullptr
 			? Engine::audioEngine()->inputFramesStaged() : 0u));
-	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("route"), route);
 	result.insert(QStringLiteral("__transaction"),
-		commandTransaction(before, QStringLiteral("record.disarm_track"), inverseArgs));
+		transactionPayload(before, QString(), QJsonObject(), false,
+			QStringLiteral("none: explicitly call record.disarm_track to stop writing; the take "
+				"file remains at the returned path and can be kept or deleted manually")));
 	return ControlResult::success(result);
 }
 
@@ -218,11 +267,11 @@ ControlResult disarmTrack(const QJsonObject& args)
 
 	TrackRecorder& target = recorder->track(route);
 	const bool wasArmed = target.isArmed();
-	target.disarm();
+	const bool retired = target.disarm();
 
 	QJsonObject result = armedReply(target, route);
 	result.insert(QStringLiteral("armed_before"), wasArmed);
-	result.insert(QStringLiteral("journal_retired"), wasArmed);
+	result.insert(QStringLiteral("journal_retired"), retired);
 	return ControlResult::success(result);
 }
 
@@ -317,6 +366,7 @@ void registerGetState(ControlRegistry& registry)
 		{QStringLiteral("total_overflow_frames"), integerProperty()},
 		{QStringLiteral("input"), QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}}},
 		{QStringLiteral("latency_frames"), integerProperty()},
+		{QStringLiteral("clip_takes"), QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}}},
 	});
 	cmd.mutating = false;
 	cmd.handler = [](const QJsonObject& args) { return getState(args); };
@@ -340,8 +390,9 @@ void registerArmTrack(ControlRegistry& registry)
 		"absolute and defaults to zene-take-route<N>.wav beside this instance's recovery file; "
 		"'sample_rate', when given, must be the engine's rate (a take records at the rate the "
 		"engine runs). "
-		"Reversible: the recorded inverse is record.disarm_track, which stops the capture and "
-		"retires the journal; the take file itself is left on disk, like any recording you keep.");
+		"Not reversible: control.undo refuses this arm because the take file is outside the "
+		"project journal. Call record.disarm_track to stop writing; the take remains at the "
+		"returned file path and can be kept or deleted manually.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("route"), integerProperty(0, 1024)},
 		{QStringLiteral("file"), stringProperty()},
@@ -364,7 +415,8 @@ void registerDisarmTrack(ControlRegistry& registry)
 		"joined, the WAV is closed, and the take journal is RETIRED - a clean stop leaves no "
 		"journal, which is what makes 'there is a journal' and 'the capture died' the same fact "
 		"(include/RecordingJournal.h). The take file stays on disk. This is record.arm_track's "
-		"recorded inverse, so control.undo after an arm dispatches it. Not reversible itself: "
+		"explicit stop operation, not its undo inverse, since the WAV remains after a clean stop. "
+		"Not reversible itself: "
 		"re-arming writes a NEW take rather than restoring this one, and there is nothing the "
 		"engine could hand back.");
 	cmd.argsSchema = routeSchema();
@@ -377,7 +429,7 @@ void registerDisarmTrack(ControlRegistry& registry)
 	properties.insert(QStringLiteral("journal_retired"), booleanProperty());
 	schema.insert(QStringLiteral("properties"), properties);
 	cmd.resultSchema = schema;
-	cmd.mutating = false;
+	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return disarmTrack(args); };
 	registry.registerCommand(cmd);
 }
@@ -394,7 +446,7 @@ void registerDisarmAll(ControlRegistry& registry)
 		"is a file that stays on disk, and re-arming starts a new one.");
 	cmd.argsSchema = objectSchema({});
 	cmd.resultSchema = recorderStateSchema();
-	cmd.mutating = false;
+	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return disarmAll(args); };
 	registry.registerCommand(cmd);
 }

@@ -35,6 +35,7 @@
 
 #include "../core/ReversibilityTestSupport.h"
 #include "AutomatableModel.h"
+#include "AutomationClip.h"
 #include "AutomationModeMenu.h"
 #include "ControlAutomationSupport.h"
 #include "ControlDeviceSupport.h"
@@ -121,6 +122,37 @@ private slots:
 		QVERIFY(checkedLabel(modeMenuOf(again)).startsWith(QStringLiteral("Touch")));
 		modeMenuOf(again)->actions().at(1)->trigger();  // back to Read
 		QCOMPARE(model->automationMode(), AutomatableModel::AutomationMode::Read);
+	}
+
+	//! ED-201: the same menu's "Write value to end" holds the control's current value from the song position to the
+	//! song's end - automation.write_to_end, one undo step.
+	void theContextMenuWritesTheValueToTheEnd()
+	{
+#ifdef Q_OS_WIN
+		if (m_track.isEmpty()) { QSKIP("plugin modules cannot load in a Windows test host (ControlAutomationModesTest)"); }
+#endif
+		QVERIFY2(!m_track.isEmpty(), "no instrument to drive (LMMS_TEST_PLUGIN_DIR)");
+		ControlTarget target;
+		ControlResult error;
+		QVERIFY(resolveControlTarget(m_track, &target, &error));
+		auto* floatModel = dynamic_cast<FloatModel*>(control::automationParameters(target).first().model);
+		QVERIFY(floatModel != nullptr);
+		floatModel->setValue((floatModel->minValue() + floatModel->maxValue()) / 2);
+		Knob knob(KnobType::Bright26);
+		knob.setModel(floatModel);
+		QMenu menu;
+		knob.addDefaultActions(&menu);
+		QAction* toEnd = nullptr;
+		for (QAction* action : menu.actions())
+		{
+			if (action->menu() == nullptr && action->data().toString() == QLatin1String("automation.write_to_end")) { toEnd = action; }
+		}
+		QVERIFY2(toEnd != nullptr, "the control's context menu has no Write value to end");
+		toEnd->trigger();
+		AutomationClip* clip = control::existingAutomationClip(floatModel);
+		QVERIFY(clip != nullptr);
+		QCOMPARE(clip->getTimeMap().value(TimePos(0)).getOutValue(), floatModel->inverseScaledValue(floatModel->value()));
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok);
 	}
 
 	void aControlTheSocketCannotNameGetsNoSubmenu()

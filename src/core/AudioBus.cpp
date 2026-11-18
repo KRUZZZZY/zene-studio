@@ -25,7 +25,6 @@
 #include "AudioBus.h"
 
 #include <algorithm>
-#include <iostream>
 #include <type_traits>
 
 #include "AudioPortsModel.h"
@@ -109,12 +108,6 @@ void AudioBus::sanitize(const AudioPortsModel& apm)
 
 			if (std::isinf(sample) || std::isnan(sample))
 			{
-#ifdef LMMS_DEBUG
-				// TODO: don't use std::cout here?
-				std::cout << "Bad data, clearing buffer. frame: " << static_cast<std::size_t>(frame - output.data());
-				std::cout << ": value " << sample << " (" << (channel == 0 ? "L" : "R") << ")\n";
-#endif
-
 				// Clear the whole channel if a problem is found
 				for (float* f : output.framesView())
 				{
@@ -250,7 +243,7 @@ auto AudioBus::update(const std::bitset<MaxTrackChannels>& channels, ch_cnt_t up
 			{
 				const auto tcPair = trackChannelPair(tc / 2);
 				const auto quiet = std::ranges::all_of(tcPair.framesView(), [](const float* frame) {
-					return std::abs(frame[0]) < SilenceThreshold;
+					return std::abs(frame[0]) <= SilenceThreshold;
 				});
 				m_quietChannels[tc] = quiet;
 				allQuiet = allQuiet && quiet;
@@ -260,7 +253,7 @@ auto AudioBus::update(const std::bitset<MaxTrackChannels>& channels, ch_cnt_t up
 			{
 				const auto tcPair = trackChannelPair(tc / 2);
 				const auto quiet = std::ranges::all_of(tcPair.framesView(), [](const float* frame) {
-					return std::abs(frame[1]) < SilenceThreshold;
+					return std::abs(frame[1]) <= SilenceThreshold;
 				});
 				m_quietChannels[tc + 1] = quiet;
 				allQuiet = allQuiet && quiet;

@@ -27,12 +27,16 @@
 
 #include "AafImport.h"
 
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
+
+#include "volume.h"
 
 namespace lmms::interchange
 {
@@ -65,6 +69,14 @@ qint64 AafModel::firstClipFrame() const
 	return first == std::numeric_limits<qint64>::max() ? 0 : first;
 }
 
+void aafPopulateTrackGainClampLoss(const AafModel& model, AafLossReport& loss)
+{
+	loss.trackGainClamps = static_cast<int>(std::count_if(model.tracks.cbegin(), model.tracks.cend(), [](const AafTrack& track) {
+		const float requestedVolume = static_cast<float>(track.gain * 100.0);
+		return requestedVolume < static_cast<float>(MinVolume) || requestedVolume > static_cast<float>(MaxVolume);
+	}));
+}
+
 QJsonObject AafLossReport::toJson() const
 {
 	QJsonObject result{
@@ -80,6 +92,9 @@ QJsonObject AafLossReport::toJson() const
 		{QStringLiteral("envelope_points_dropped"), envelopePointsDropped},
 		{QStringLiteral("missing_media_clips"), missingMediaClips},
 		{QStringLiteral("beyond_song_length"), beyondSongLength},
+		{QStringLiteral("markers_beyond_song_length"), markersBeyondSongLength},
+		{QStringLiteral("markers_refused"), markersRefused},
+		{QStringLiteral("track_gain_clamps"), trackGainClamps},
 		{QStringLiteral("not_in_libaaf"), QStringLiteral("effects and plug-in state, sends and buses")},
 	};
 	result.insert(QStringLiteral("warnings"), QJsonArray::fromStringList(warnings));
@@ -113,9 +128,13 @@ QString aafDefaultMediaDir(const QString& aafPath, const QString& projectFile)
 	{
 		return QFileInfo(aafPath).dir().filePath(aafName + QStringLiteral("-aaf-media"));
 	}
+	// Every AAF in a project shares this folder, so alike names must not collide: the folder name carries a hash
+	// of the AAF's full path (SHA-256, stable across runs, unlike qHash).
+	const QByteArray identity = QCryptographicHash::hash(QFileInfo(aafPath).absoluteFilePath().toUtf8(),
+		QCryptographicHash::Sha256);
 	const QFileInfo project(projectFile);
 	const QDir media(project.dir().filePath(project.completeBaseName() + QStringLiteral("-aaf-media")));
-	return media.filePath(aafName);
+	return media.filePath(aafName + QLatin1Char('-') + QString::fromLatin1(identity.toHex().left(12)));
 }
 
 namespace

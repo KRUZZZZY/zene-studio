@@ -34,10 +34,12 @@
 #include "ChordVocabulary.h"
 #include "ControlCommandsNoteShared.h"
 #include "ControlCommandDef.h"
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlScaleShared.h"
 #include "ControlVocabulary.h"
+#include "Song.h"
 
 namespace lmms
 {
@@ -78,7 +80,14 @@ ControlResult followChords(const QJsonObject& args)
 	MidiClip* clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
 	if (clip == nullptr) { return error; }
 	if (Engine::getSong()->chordTrack().empty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the chord track is empty")); }
-	const QVector<Note*> notes = scoped(clip, args.value(QStringLiteral("scope")).toString());
+	const QString scope = args.value(QStringLiteral("scope")).toString();
+	const QVector<Note*> notes = scoped(clip, scope);
+	if (scope == QLatin1String("selection") && notes.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 has %2 notes and none is selected, so scope 'selection' would edit "
+				"nothing").arg(clipId(ref.id)).arg(clip->notes().size()));
+	}
 	const bool scale = args.value(QStringLiteral("mode")).toString() == QLatin1String("scale");
 	// Where the clip sounds: a clip trimmed from the left starts its notes earlier than its position.
 	const tick_t start = clip->startPosition().getTicks() + clip->startTimeOffset().getTicks();
@@ -95,6 +104,18 @@ ControlResult followChords(const QJsonObject& args)
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.follow_chords"), {{QStringLiteral("moved"), static_cast<int>(moves.size())}}));
 }
 
+//! The track of @a ref and the clip's start position before the quantize moves it: the before-state
+//! the reversibility record names. Each clip is captured once, in the order it was named.
+void captureQuantizeBefore(const ClipRef& ref, QVector<JournallingObject*>* tracks, QVector<Clip*>* captured,
+	QJsonArray* beforeClips)
+{
+	if (!tracks->contains(ref.track)) { tracks->append(ref.track); }
+	if (captured->contains(ref.clip)) { return; }
+	beforeClips->append(QJsonObject{{QStringLiteral("clip"), clipId(ref.id)},
+		{QStringLiteral("start"), ref.clip->startPosition().getTicks()}});
+	captured->append(ref.clip);
+}
+
 ControlResult quantizeClips(const QJsonObject& args)
 {
 	const tick_t grid = std::max(1, args.value(QStringLiteral("grid")).toInt(TimePos::ticksPerBar()));
@@ -107,21 +128,36 @@ ControlResult quantizeClips(const QJsonObject& args)
 		refs.append(ref);
 	}
 	if (refs.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("name the 'clips'")); }
-	const auto snapped = [grid](const ClipRef& ref) { return (ref.clip->startPosition().getTicks() + grid / 2) / grid * grid; };
+	// Rounded in qint64: a start near tick_t's maximum would overflow the half-grid addition in tick_t.
+	const auto snapped = [grid](const ClipRef& ref) { return (static_cast<qint64>(ref.clip->startPosition().getTicks()) + grid / 2) / grid * grid; };
 	QVector<JournallingObject*> tracks;
+	QVector<Clip*> captured;
+	QJsonArray beforeClips;
 	for (const ClipRef& ref : refs)
 	{
-		if (snapped(ref) != ref.clip->startPosition().getTicks() && !tracks.contains(ref.track)) { tracks.append(ref.track); }
+		const qint64 target = snapped(ref);
+		if (target == ref.clip->startPosition().getTicks()) { continue; }
+		// Checked before any clip is captured or moved, so a refused batch changes nothing (as note.repeat refuses a copy past the limit).
+		if (target > MaxSongLength)
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("%1 would move to %2, past the song limit of %3").arg(clipId(ref.id)).arg(target).arg(static_cast<qint64>(MaxSongLength)));
+		}
+		captureQuantizeBefore(ref, &tracks, &captured, &beforeClips);
 	}
 	if (tracks.isEmpty()) { return ControlResult::success({{QStringLiteral("moved"), 0}, {QStringLiteral("grid"), static_cast<int>(grid)}}); }
 	addUndoStep(tracks);
 	int moved = 0;
 	for (const ClipRef& ref : refs)
 	{
-		if (snapped(ref) != ref.clip->startPosition().getTicks()) { ref.clip->movePosition(TimePos(snapped(ref))); ++moved; }
+		if (snapped(ref) != ref.clip->startPosition().getTicks()) { ref.clip->movePosition(TimePos(static_cast<tick_t>(snapped(ref)))); ++moved; }
 	}
 	Engine::getSong()->setModified();
-	return ControlResult::success({{QStringLiteral("moved"), moved}, {QStringLiteral("grid"), static_cast<int>(grid)}});
+	QJsonObject result{{QStringLiteral("moved"), moved}, {QStringLiteral("grid"), static_cast<int>(grid)}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("clips"), beforeClips}},
+		QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("Track journal checkpoints: control.undo restores each clip's original start position")));
+	return ControlResult::success(result);
 }
 
 ControlResult defineScale(const QJsonObject& args)
@@ -146,7 +182,11 @@ ControlResult defineScale(const QJsonObject& args)
 	if (all == before) { return ControlResult::success({{QStringLiteral("scales"), all}}); }
 	setCustomScales(all);
 	addUndoStep([before]() { setCustomScales(before); }, [all]() { setCustomScales(all); });
-	return ControlResult::success({{QStringLiteral("scales"), all}});
+	QJsonObject result{{QStringLiteral("scales"), all}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("scales"), before}},
+		QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("Action checkpoint: control.undo writes the previous custom scales back to the config file")));
+	return ControlResult::success(result);
 }
 
 ControlResult listCustom(const QJsonObject&) { return ControlResult::success({{QStringLiteral("scales"), customScales()}}); }

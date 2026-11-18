@@ -171,6 +171,9 @@ public:
 private:
 	//! One synthesis hop: search, window, overlap-add, emit, carry.
 	void produceHop(const SampleFrame* src, f_cnt_t srcFrames, double speed);
+	//! Windowed overlap-add of the grain starting at `grainStart` onto the
+	//! carry, using the first hop's flat left half or the periodic Hann.
+	void overlapAddGrain(const SampleFrame* src, f_cnt_t srcFrames, double grainStart);
 
 	Parameters m_params{};
 	int m_grain = 0;
@@ -183,6 +186,11 @@ private:
 	//! always half the grain, so this is the grain's own bound halved).
 	std::array<SampleFrame, MaxGrainFrames / 2> m_hopOut{};
 	std::array<float, MaxGrainFrames> m_window{};
+	/*! The same window for the FIRST hop only, with a flat left half: that hop
+	 *  has no grain before it to sum against, so fading its onset in would
+	 *  fade the sample in with it. From the second hop on, `m_window` is used
+	 *  and the Hann pair still sums to one. */
+	std::array<float, MaxGrainFrames> m_firstWindow{};
 	f_cnt_t m_hopReady = 0;
 	f_cnt_t m_hopRead = 0;
 	//! The analysis cursor, in source frames. Doubles because a fractional hop

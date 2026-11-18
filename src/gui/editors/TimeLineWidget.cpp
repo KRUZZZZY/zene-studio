@@ -25,8 +25,11 @@
 #include "TimeLineWidget.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <memory>
 
 #include <QGuiApplication>
+#include <QKeyEvent>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
@@ -34,6 +37,7 @@
 #include <QToolBar>
 
 #include "ConfigManager.h"
+#include "ControlRegistry.h"
 #include "DeprecationHelper.h"
 #include "embed.h"
 #include "KeyboardShortcuts.h"
@@ -46,6 +50,48 @@ namespace lmms::gui
 namespace
 {
 	constexpr int MIN_BAR_LABEL_DISTANCE = 35;
+	//! 0.5.0 L03 (Q050-147): how wide a punch handle is, and how tall its band. The band is a
+	//! third of the ruler; the loop brace keeps the room above it.
+	constexpr int PUNCH_HANDLE_WIDTH = 5;
+	constexpr int PUNCH_MIN_BAND_HEIGHT = 4;
+	constexpr int PUNCH_MAX_BAND_HEIGHT = 14;
+	constexpr int PUNCH_BAND_GAP = 2;
+
+	//! gui-1106: the part of the punch band between the punch bounds, cut to the band itself (the
+	//! ruler already clips the band to its visible content area). Empty when the range is scrolled
+	//! out of view. A positive range that maps to less than a pixel keeps a one-pixel sliver, so a
+	//! subpixel range stays visible.
+	QRect punchIntervalRect(const QRect& band, int beginX, int endX)
+	{
+		const int left = std::max(band.left(), beginX);
+		const int right = std::min(band.left() + band.width(), endX);
+		if (right > left) { return QRect(left, band.top(), right - left, band.height()); }
+		if (band.width() > 0 && beginX <= band.left() + band.width() - 1 && endX >= band.left())
+		{
+			return QRect(std::min(left, band.left() + band.width() - 1), band.top(), 1, band.height());
+		}
+		return {};
+	}
+
+	//! gui-1106: a handle centred on x, kept wholly inside the content area (the ruler's visible
+	//! columns) so the in handle of a range starting at the content edge is not half clipped away.
+	//! A bound scrolled out of view keeps its handle out of view too. A range narrower than one
+	//! handle keeps its handles on its markers: pulling them to the edge would detach them from
+	//! the sliver they mark. The band supplies only the handle's row and height.
+	QRect punchHandleRect(const QRect& band, int x, int rangeWidth, int contentLeft, int contentRight)
+	{
+		// A bound outside the content area has no handle: a slim handle centred just past the
+		// edge would otherwise leak a sliver onto the last column. Both accessors clamp within
+		// the content area, so an empty rect here also means the bound is scrolled out of view.
+		if (x < contentLeft || x > contentRight) { return {}; }
+		int left = x - PUNCH_HANDLE_WIDTH / 2;
+		if (rangeWidth >= PUNCH_HANDLE_WIDTH)
+		{
+			left = std::clamp(left, contentLeft,
+				std::max(contentLeft, contentRight - PUNCH_HANDLE_WIDTH + 1));
+		}
+		return QRect(left, band.top(), PUNCH_HANDLE_WIDTH, band.height());
+	}
 }
 
 TimeLineWidget::TimeLineWidget(const int xoff, const int yoff, const float ppb, Timeline& timeline,
@@ -59,10 +105,14 @@ TimeLineWidget::TimeLineWidget(const int xoff, const int yoff, const float ppb, 
 	move( 0, yoff );
 
 	setMouseTracking(true);
+	setFocusPolicy(Qt::StrongFocus);
+	setAccessibleName(tr("Time ruler"));
+	setAccessibleDescription(tr("Press Menu or Shift+F10 for the loop actions at the play position"));
 
 	connect( Engine::getSong(), SIGNAL(timeSignatureChanged(int,int)),
 					this, SLOT(update()));
 	connect(m_timeline, &Timeline::positionChanged, this, qOverload<>(&QWidget::update));
+	connect(m_timeline, &Timeline::punchChanged, this, qOverload<>(&QWidget::update));
 }
 
 
@@ -144,7 +194,11 @@ void TimeLineWidget::paintEvent( QPaintEvent * )
 
 	// Variables for the loop rectangle
 	int const loopRectMargin = getLoopRectangleVerticalPadding();
-	int const loopRectHeight = this->height() - 2 * loopRectMargin;
+	// 0.5.0 L03 (Q050-147): the punch range has its own band under the loop brace, so the two
+	// ranges never share a row and a handle cannot be mistaken for the other range's.
+	const QRect punchBand = punchBandRect();
+	int const punchRoom = punchBand.isEmpty() ? 0 : punchBand.height() + PUNCH_BAND_GAP;
+	int const loopRectHeight = this->height() - 2 * loopRectMargin - punchRoom;
 	int const loopStart = markerX(m_timeline->loopBegin());
 	int const loopEndR = markerX(m_timeline->loopEnd());
 	int const loopRectWidth = loopEndR - loopStart;
@@ -203,6 +257,39 @@ void TimeLineWidget::paintEvent( QPaintEvent * )
 	p.setBrush( Qt::NoBrush );
 	p.drawRect( innerRectangle );
 	
+	// 0.5.0 L03 (Q050-147): the punch band. It is drawn apart from the loop brace, filled when
+	// armed and only outlined when disarmed (the bounds stay for another pass), with a handle
+	// at each end. A short range keeps the handles inside the band.
+	// gui-1106: the punch band is the range's interval, so the fill, outline and label mark exactly
+	// the bars that capture; the band and these stay clipped to the visible ruler.
+	if (!punchBand.isEmpty())
+	{
+		const bool armed = m_timeline->punchArmed();
+		QColor fill = armed ? QColor(198, 84, 62, 190) : QColor(198, 84, 62, 60);
+		QColor edge = armed ? QColor(236, 132, 104) : QColor(198, 84, 62, 180);
+		const QRect interval = punchIntervalRect(punchBand, markerX(TimePos(m_timeline->punchBegin())),
+			markerX(TimePos(m_timeline->punchEnd())));
+		p.fillRect(interval, fill);
+		p.setPen(edge);
+		p.setBrush(Qt::NoBrush);
+		if (!interval.isEmpty()) { p.drawRect(interval.adjusted(0, 0, -1, -1)); }
+
+		const QRect beginHandle = punchBeginHandleRect();
+		const QRect endHandle = punchEndHandleRect();
+		p.fillRect(beginHandle, edge);
+		p.fillRect(endHandle, edge);
+
+		p.setPen(armed ? QColor(255, 240, 235) : QColor(236, 200, 190));
+		QFont bandFont = p.font();
+		bandFont.setPointSizeF(std::max(6.0, bandFont.pointSizeF() - 2.0));
+		bandFont.setBold(armed);
+		p.setFont(bandFont);
+		const QRect textRect(interval.left() + 4, interval.top(), std::max(0, interval.width() - 8),
+			interval.height());
+		p.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, armed ? tr("PUNCH") : tr("punch"));
+		p.setFont(font);
+	}
+
 	// Draw loop handles if necessary
 	const auto handleMode = ConfigManager::inst()->value("app", "loopmarkermode") == "handles";
 	if (handleMode && underMouse() && QGuiApplication::keyboardModifiers().testFlag(Qt::ShiftModifier))
@@ -227,6 +314,56 @@ void TimeLineWidget::paintEvent( QPaintEvent * )
 		p.drawPixmap(markerX(m_timeline->pos()) - (marker.width() / 2),
 			height() - marker.height(), marker);
 	}
+}
+
+bool TimeLineWidget::hasPunchRange() const
+{
+	return m_timeline->punchEnd() > m_timeline->punchBegin();
+}
+
+QRect TimeLineWidget::punchBandRect() const
+{
+	if (!hasPunchRange()) { return {}; }
+	// A short ruler still leaves the loop brace a row above the band: the band never takes the
+	// whole height, even when the widget has not been laid out to its usual size yet.
+	const int roomForLoop = std::max(2, height() - 2 - 4);
+	const int bandHeight = std::min(std::clamp(height() / 3, PUNCH_MIN_BAND_HEIGHT, PUNCH_MAX_BAND_HEIGHT), roomForLoop);
+	// The band spans the punch range itself, between its in and out markers, clipped to the
+	// visible ruler, so its extent shows exactly which bars capture.
+	const int rangeBeginX = markerX(TimePos(m_timeline->punchBegin()));
+	const int rangeEndX = markerX(TimePos(m_timeline->punchEnd()));
+	const double pixelsPerTick = static_cast<double>(m_ppb) / TimePos::ticksPerBar();
+	const double rangeEndPosition = m_xOffset + (m_timeline->punchEnd() - m_begin.getTicks()) * pixelsPerTick;
+	const int visibleRight = std::max(m_xOffset, width());
+	const int beginX = std::clamp(rangeBeginX, m_xOffset, visibleRight);
+	const int endX = std::clamp(rangeEndX, m_xOffset, visibleRight);
+	int bandWidth = std::max(0, endX - beginX);
+	// A positive tick range can be narrower than one pixel at the current zoom. Keep it visible
+	// when it intersects the ruler; a range wholly beyond either edge still has no band.
+	if (bandWidth == 0 && m_xOffset < width()
+		&& beginX < width() && rangeEndPosition > m_xOffset)
+	{
+		bandWidth = 1;
+	}
+	return QRect(beginX, height() - bandHeight, bandWidth, bandHeight);
+}
+
+QRect TimeLineWidget::punchBeginHandleRect() const
+{
+	const QRect band = punchBandRect();
+	if (band.isEmpty()) { return {}; }
+	const int beginX = markerX(TimePos(m_timeline->punchBegin()));
+	const int rangeWidth = std::abs(markerX(TimePos(m_timeline->punchEnd())) - beginX);
+	return punchHandleRect(band, beginX, rangeWidth, m_xOffset, width() - 1);
+}
+
+QRect TimeLineWidget::punchEndHandleRect() const
+{
+	const QRect band = punchBandRect();
+	if (band.isEmpty()) { return {}; }
+	const int endX = markerX(TimePos(m_timeline->punchEnd()));
+	const int rangeWidth = std::abs(endX - markerX(TimePos(m_timeline->punchBegin())));
+	return punchHandleRect(band, endX, rangeWidth, m_xOffset, width() - 1);
 }
 
 auto TimeLineWidget::getClickedTime(const int xPosition) const -> TimePos
@@ -271,12 +408,36 @@ auto TimeLineWidget::getLoopAction(QMouseEvent* event) const -> TimeLineWidget::
 	}
 }
 
+auto TimeLineWidget::getPunchAction(QMouseEvent* event) const -> TimeLineWidget::Action
+{
+	const QRect band = punchBandRect();
+	if (band.isEmpty()) { return Action::NoAction; }
+	if (event->button() != Qt::LeftButton) { return Action::NoAction; }
+
+	const QPoint pos = position(event);
+	const int x = pos.x();
+	const int beginX = markerX(TimePos(m_timeline->punchBegin()));
+	const int endX = markerX(TimePos(m_timeline->punchEnd()));
+	// The handles sit on the band's end markers, which are its edges, so a press on either one
+	// belongs to the punch range even though the band's rectangle stops at the out marker. Only
+	// the band's row is required here.
+	if (pos.y() < band.top() || pos.y() > band.bottom()) { return Action::NoAction; }
+	// The handles are always visible, so the nearest one wins even when the range is short.
+	if (std::abs(x - beginX) <= PUNCH_HANDLE_WIDTH) { return Action::MovePunchBegin; }
+	if (std::abs(x - endX) <= PUNCH_HANDLE_WIDTH) { return Action::MovePunchEnd; }
+	if (x > beginX && x < endX) { return Action::MovePunch; }
+	return Action::NoAction;
+}
+
 auto TimeLineWidget::actionCursor(Action action) const -> QCursor
 {
 	switch (action) {
 		case Action::MoveLoop: return Qt::SizeHorCursor;
 		case Action::MoveLoopBegin: return m_cursorSelectLeft;
 		case Action::MoveLoopEnd: return m_cursorSelectRight;
+		case Action::MovePunchBegin: return m_cursorSelectLeft;
+		case Action::MovePunchEnd: return m_cursorSelectRight;
+		case Action::MovePunch: return Qt::SizeHorCursor;
 		// Fall back to normal cursor if no action or action cursor not specified
 		default: return Qt::ArrowCursor;
 	}
@@ -307,14 +468,37 @@ void TimeLineWidget::mousePressEvent(QMouseEvent* event)
 		m_action = Action::SelectSongClip;
 		m_initalXSelect = pos.x();
 	}
-	else if (event->button() == Qt::LeftButton && !ctrl) // move playhead
+	else if (event->button() == Qt::LeftButton) // 0.5.0 L03: the punch band's own handles first
 	{
-		m_action = Action::MovePositionMarker;
+		m_action = getPunchAction(event);
+		// Owner 2026-10-29 (a Windows tester could not set a loop): the loop's drawn handles take a plain drag, as in
+		// other DAWs; Shift was the only way. A press on either edge of the loop (within its handle) moves that edge.
+		const int grab = std::max(m_loopHandleWidth, 6);
+		if (m_action == Action::NoAction || m_action == Action::MovePositionMarker)
+		{
+			if (std::abs(pos.x() - markerX(m_timeline->loopBegin())) <= grab) { m_action = Action::MoveLoopBegin; }
+			else if (std::abs(pos.x() - markerX(m_timeline->loopEnd())) <= grab) { m_action = Action::MoveLoopEnd; }
+		}
+		if (m_action == Action::MoveLoopBegin || m_action == Action::MoveLoopEnd) { setCursor(actionCursor(m_action)); }
+		if (m_action == Action::MoveLoopBegin || m_action == Action::MoveLoopEnd) {}
+		else if (m_action == Action::MovePunchBegin || m_action == Action::MovePunchEnd || m_action == Action::MovePunch)
+		{
+			setCursor(actionCursor(m_action));
+			m_punchDragStart = getClickedTime(pos.x()).getTicks();
+			m_oldPunchBegin = m_timeline->punchBegin();
+			m_oldPunchEnd = m_timeline->punchEnd();
+			m_punchDragged = false;
+		}
+		else
+		{
+			m_action = Action::MovePositionMarker;
+		}
 	}
 
 	if (m_action == Action::MoveLoopBegin || m_action == Action::MoveLoopEnd)
 	{
 		delete m_hint;
+		m_hint = nullptr;  // a release delivered while the float shows deletes m_hint too (ClipView has the same)
 		m_hint = TextFloat::displayMessage(tr("Hint"),
 			tr("Press <%1> to disable magnetic loop points.").arg(UI_CTRL_KEY),
 			embed::getIconPixmap("hint"), 0);
@@ -388,6 +572,45 @@ void TimeLineWidget::mouseMoveEvent( QMouseEvent* event )
 			m_timeline->setLoopPoints(loopPos[0], loopPos[1]);
 			break;
 		}
+		case Action::MovePunchBegin:
+		case Action::MovePunchEnd:
+		{
+			const auto otherPoint = m_action == Action::MovePunchBegin
+				? TimePos(m_timeline->punchEnd())
+				: TimePos(m_timeline->punchBegin());
+			if (!control) { timeAtCursor = timeAtCursor.quantize(m_snapSize); }
+			// Keep at least one tick: a half-open region of no ticks captures nothing.
+			if (timeAtCursor == otherPoint)
+			{
+				const tick_t offset = control ? 1 : std::max<tick_t>(1, static_cast<tick_t>(m_snapSize * TimePos::ticksPerBar()));
+				if (m_action == Action::MovePunchBegin) { timeAtCursor = TimePos(std::max<tick_t>(0, timeAtCursor.getTicks() - offset)); }
+				else { timeAtCursor = TimePos(timeAtCursor.getTicks() + offset); }
+			}
+			m_action = timeAtCursor.getTicks() < otherPoint.getTicks() ? Action::MovePunchBegin : Action::MovePunchEnd;
+			m_timeline->setPunchRange(timeAtCursor.getTicks(), otherPoint.getTicks());
+			m_punchDragged = true;
+			update();
+			break;
+		}
+		case Action::MovePunch:
+		{
+			tick_t delta = timeAtCursor.getTicks() - m_punchDragStart;
+			if (!control)
+			{
+				const tick_t snapped = TimePos(m_oldPunchBegin + delta).quantize(m_snapSize).getTicks();
+				delta = snapped - m_oldPunchBegin;
+			}
+			tick_t begin = m_oldPunchBegin + delta;
+			tick_t end = m_oldPunchEnd + delta;
+			if (begin < 0) { end -= begin; begin = 0; }
+			if (end > MaxSongLength) { begin -= end - MaxSongLength; end = MaxSongLength; }
+			begin = std::clamp<tick_t>(begin, 0, MaxSongLength);
+			end = std::clamp<tick_t>(end, begin + 1, MaxSongLength);
+			m_timeline->setPunchRange(begin, end);
+			m_punchDragged = true;
+			update();
+			break;
+		}
 		case Action::SelectSongClip:
 			emit regionSelectedFromPixels(m_initalXSelect, pos.x());
 			break;
@@ -409,36 +632,107 @@ void TimeLineWidget::mouseReleaseEvent( QMouseEvent* event )
 {
 	delete m_hint;
 	m_hint = nullptr;
+	if (m_action == Action::MovePunchBegin || m_action == Action::MovePunchEnd || m_action == Action::MovePunch)
+	{
+		commitPunchDrag();
+	}
 	if ( m_action == Action::SelectSongClip ) { emit selectionFinished(); }
 	m_action = Action::NoAction;
 }
 
-void TimeLineWidget::contextMenuEvent(QContextMenuEvent* event)
+void TimeLineWidget::commitPunchDrag()
 {
-	if (event->x() < m_xOffset) { return; }
+	if (!m_punchDragged) { return; }
+	m_punchDragged = false;
+	const tick_t begin = m_timeline->punchBegin();
+	const tick_t end = m_timeline->punchEnd();
+	if (end <= begin) { return; }
+	// The drag previewed straight onto the timeline (so the band followed the pointer). Put the
+	// range it started with back FIRST: transport.punch_set takes its checkpoint from what it
+	// sees, and that checkpoint is what makes the whole drag one undo step.
+	m_timeline->setPunchRange(m_oldPunchBegin, m_oldPunchEnd);
+	invokePunchSet(begin, end, m_timeline->punchEnabled());
+	update();
+}
 
-	auto menu = QMenu{};
+void TimeLineWidget::invokePunchSet(const tick_t begin, const tick_t end, const bool enabled)
+{
+	const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("transport.punch_set"),
+		{{QStringLiteral("start"), static_cast<int>(begin)},
+		 {QStringLiteral("end"), static_cast<int>(end)},
+		 {QStringLiteral("enabled"), enabled}});
+	if (!result.ok)
+	{
+		// A refused range (the model's own validation) leaves the timeline as it was.
+		m_timeline->setPunchRange(m_oldPunchBegin, m_oldPunchEnd);
+	}
+}
 
-	menu.addAction(tr("Set loop begin here"), [this, event] {
-		auto begin = getClickedTime(event->x());
+QMenu* TimeLineWidget::buildLoopMenu(const TimePos& at, bool snap)
+{
+	auto* menu = new QMenu(this);
+	menu->setAccessibleName(tr("Ruler actions"));
+	menu->addAction(tr("Set loop begin here"), [this, at, snap] {
+		// The mouse menu has always honoured Ctrl held at the moment the action fires, not at
+		// the moment the menu opened; the keyboard path uses the same rule (Q050-322).
+		auto begin = (snap && !QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier))
+			? at.quantize(m_snapSize) : at;
 		const auto end = m_timeline->loopEnd();
-		if (!QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier)) { begin = begin.quantize(m_snapSize); }
 		if (begin == end) { m_timeline->setLoopEnd(end + m_snapSize * TimePos::ticksPerBar()); }
 		m_timeline->setLoopBegin(begin);
 		update();
 	});
-	menu.addAction(tr("Set loop end here"), [this, event] {
+	menu->addAction(tr("Set loop end here"), [this, at, snap] {
 		const auto begin = m_timeline->loopBegin();
-		auto end = getClickedTime(event->x());
-		if (!QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier)) { end = end.quantize(m_snapSize); }
+		auto end = (snap && !QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier))
+			? at.quantize(m_snapSize) : at;
 		if (begin == end) { m_timeline->setLoopBegin(begin - m_snapSize * TimePos::ticksPerBar()); }
 		m_timeline->setLoopEnd(end);
 		update();
 	});
 
-	menu.addSeparator();
+	menu->addSeparator();
 
-	const auto loopMenu = menu.addMenu(tr("Loop edit mode (hold shift)"));
+	// 0.5.0 L03 (Q050-147): the punch range's own edits. They go through the transport commands,
+	// the same path the toolbar arm control and an agent use, so each is one undo step.
+	menu->addAction(tr("Set punch in here"), [this, at, snap] {
+		m_oldPunchBegin = m_timeline->punchBegin();
+		m_oldPunchEnd = m_timeline->punchEnd();
+		auto begin = at.getTicks();
+		if (snap && !QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier)) { begin = TimePos(begin).quantize(m_snapSize).getTicks(); }
+		const tick_t end = std::max<tick_t>(begin + 1, m_timeline->punchEnd());
+		invokePunchSet(begin, end, true);
+		update();
+	});
+	menu->addAction(tr("Set punch out here"), [this, at, snap] {
+		m_oldPunchBegin = m_timeline->punchBegin();
+		m_oldPunchEnd = m_timeline->punchEnd();
+		auto end = at.getTicks();
+		if (snap && !QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier)) { end = TimePos(end).quantize(m_snapSize).getTicks(); }
+		const tick_t begin = std::min<tick_t>(std::max<tick_t>(0, end - 1), m_timeline->punchBegin());
+		if (end <= begin) { return; }
+		invokePunchSet(begin, end, true);
+		update();
+	});
+	const auto armPunch = menu->addAction(tr("Arm the punch range"), [this] {
+		const tick_t begin = m_timeline->punchBegin();
+		const tick_t end = m_timeline->punchEnd();
+		if (end <= begin) { return; }
+		m_oldPunchBegin = begin;
+		m_oldPunchEnd = end;
+		invokePunchSet(begin, end, true);
+		update();
+	});
+	armPunch->setEnabled(m_timeline->punchEnd() > m_timeline->punchBegin() && !m_timeline->punchEnabled());
+	const auto clearPunch = menu->addAction(tr("Clear the punch range"), [this] {
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.punch_clear"), {});
+		update();
+	});
+	clearPunch->setEnabled(m_timeline->shouldPersistPunch());
+
+	menu->addSeparator();
+
+	const auto loopMenu = menu->addMenu(tr("Loop edit mode (hold shift)"));
 	const auto loopMode = ConfigManager::inst()->value("app", "loopmarkermode", "dual");
 	const auto addLoopModeAction = [loopMenu, &loopMode](QString text, QString mode) {
 		const auto action = loopMenu->addAction(text, [mode] {
@@ -450,8 +744,37 @@ void TimeLineWidget::contextMenuEvent(QContextMenuEvent* event)
 	addLoopModeAction(tr("Dual-button"), "dual");
 	addLoopModeAction(tr("Grab closest"), "closest");
 	addLoopModeAction(tr("Handles"), "handles");
+	return menu;
+}
 
-	menu.exec(event->globalPos());
+void TimeLineWidget::contextMenuEvent(QContextMenuEvent* event)
+{
+	if (event->x() < m_xOffset) { return; }
+	std::unique_ptr<QMenu> menu(buildLoopMenu(getClickedTime(event->x()), true));
+	menu->exec(event->globalPos());
+}
+
+bool TimeLineWidget::isMenuKey(int key, Qt::KeyboardModifiers modifiers)
+{
+	return key == Qt::Key_Menu || (key == Qt::Key_F10 && modifiers.testFlag(Qt::ShiftModifier));
+}
+
+void TimeLineWidget::openRulerMenu()
+{
+	QMenu* menu = buildLoopMenu(m_timeline->pos(), true);
+	menu->setAttribute(Qt::WA_DeleteOnClose);
+	menu->popup(mapToGlobal(QPoint(std::max(m_xOffset, markerX(m_timeline->pos())), height())));
+}
+
+void TimeLineWidget::keyPressEvent(QKeyEvent* event)
+{
+	if (isMenuKey(event->key(), event->modifiers()))
+	{
+		openRulerMenu();
+		event->accept();
+		return;
+	}
+	QWidget::keyPressEvent(event);
 }
 
 

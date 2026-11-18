@@ -67,6 +67,9 @@ struct WaveSpec
 	//! The RIFF `LIST`/`INFO` `INAM` value - the embedded title libsndfile reads
 	//! back as SF_STR_TITLE, which is what makes "match on metadata" testable.
 	QString title = QStringLiteral("Kick Drum");
+	//! The RIFF `LIST`/`INFO` `IART` value - the embedded artist libsndfile reads
+	//! back as SF_STR_ARTIST. Empty writes no `IART` chunk.
+	QString artist;
 };
 
 namespace detail
@@ -92,22 +95,31 @@ inline void writeFormatChunk(QDataStream& stream, const WaveSpec& spec, quint16 
 		<< blockAlign << quint16(16);
 }
 
-//! The `LIST`/`INFO` chunk, or nothing when the spec carries no title. `INFO`
-//! sub-chunks are padded to an even length, as the format requires.
-inline QByteArray listInfoChunk(const WaveSpec& spec)
+//! One `INFO` sub-chunk (`INAM`, `IART`, ...) with its value NUL-terminated
+//! and the chunk padded to an even length, as the format requires.
+inline void appendInfoChunk(QByteArray* body, const char* id, const QString& text)
 {
-	if (spec.title.isEmpty()) { return QByteArray(); }
-	QByteArray body("INFO", 4);
-	QByteArray value = spec.title.toUtf8();
+	if (text.isEmpty()) { return; }
+	QByteArray value = text.toUtf8();
 	value.append('\0');
 	QByteArray sub;
 	QDataStream subStream(&sub, QIODevice::WriteOnly);
 	subStream.setByteOrder(QDataStream::LittleEndian);
-	subStream.writeRawData("INAM", 4);
+	subStream.writeRawData(id, 4);
 	subStream << quint32(value.size());
 	subStream.writeRawData(value.constData(), value.size());
-	body.append(sub);
-	if (sub.size() % 2 != 0) { body.append('\0'); }
+	body->append(sub);
+	if (sub.size() % 2 != 0) { body->append('\0'); }
+}
+
+//! The `LIST`/`INFO` chunk, or nothing when the spec carries no title and no
+//! artist.
+inline QByteArray listInfoChunk(const WaveSpec& spec)
+{
+	if (spec.title.isEmpty() && spec.artist.isEmpty()) { return QByteArray(); }
+	QByteArray body("INFO", 4);
+	appendInfoChunk(&body, "INAM", spec.title);
+	appendInfoChunk(&body, "IART", spec.artist);
 	return body;
 }
 
@@ -177,7 +189,8 @@ inline bool writeText(const QString& path, const QString& text)
 {
 	QFile file(path);
 	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) { return false; }
-	const bool written = file.write(text.toUtf8()) >= 0;
+	const QByteArray utf8 = text.toUtf8();
+	const bool written = file.write(utf8) == utf8.size();
 	file.close();
 	return written;
 }

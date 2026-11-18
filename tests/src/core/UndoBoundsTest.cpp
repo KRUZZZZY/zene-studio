@@ -3,7 +3,7 @@
  *                     (Zene Studio; SPEC A16's "undo depth and drag coalescing"
  *                     obligation, task #623; docs/UNDO-BOUNDS.md).
  *
- * What each test is for, in the order the file declares them:
+ * Test coverage in this file:
  *
  *   1. undoDepthIsDeclaredAndBounded
  *        the depth is READABLE and the count cap is SETTABLE through the socket,
@@ -29,6 +29,11 @@
  *        the honesty half: once a bound has evicted the step a record describes,
  *        control.undo REFUSES (typed) instead of unwinding an older edit, and the
  *        stack is left exactly as it was.
+ *   7. loweringCapAfterEvictionsCannotBeUndone
+ *        when setting a cap drops existing history, the cap-change record is
+ *        irreversible and control.undo refuses it instead of restoring only the cap.
+ *   8. undoDepthContractDoesNotPromiseUnconditionalReversibility
+ *        the static table leaves room for a cap change that evicts history.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -57,14 +62,19 @@
 #include <QJsonObject>
 #include <QThread>
 
+#include "ArrangementEdits.h"
 #include "AudioEngine.h"
+#include "Clip.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlUndoCoalescing.h"
+#include "ControlVocabulary.h"
 #include "Engine.h"
 #include "MidiPort.h"
 #include "ProjectJournal.h"
 #include "Song.h"
+#include "TimePos.h"
+#include "Track.h"
 #include "ReversibilityTestSupport.h"
 
 using namespace lmms;
@@ -152,6 +162,38 @@ private:
 
 private slots:
 
+	void breakRunClearsLastStepTime()
+	{
+		control::UndoCoalescer coalescer;
+		QCOMPARE(coalescer.sinceLastMs(), qint64(-1));
+		coalescer.stepOpened(QStringLiteral("clip.move:clip-1"), 1);
+		QVERIFY(coalescer.sinceLastMs() >= 0);
+
+		coalescer.breakRun();
+		QCOMPARE(coalescer.sinceLastMs(), qint64(-1));
+	}
+
+	void changingWindowClearsLastStepTime()
+	{
+		control::UndoCoalescer coalescer;
+		coalescer.stepOpened(QStringLiteral("clip.move:clip-1"), 1);
+		QVERIFY(coalescer.sinceLastMs() >= 0);
+
+		QVERIFY(coalescer.setWindowMs(0));
+		QCOMPARE(coalescer.sinceLastMs(), qint64(-1));
+	}
+
+	void invalidWindowLeavesLastStepTimeIntact()
+	{
+		control::UndoCoalescer coalescer;
+		coalescer.stepOpened(QStringLiteral("clip.move:clip-1"), 1);
+
+		QVERIFY(!coalescer.setWindowMs(-1));
+		QVERIFY(coalescer.sinceLastMs() >= 0);
+		QVERIFY(!coalescer.setWindowMs(control::MaxUndoCoalesceWindowMs + 1));
+		QVERIFY(coalescer.sinceLastMs() >= 0);
+	}
+
 	void initTestCase()
 	{
 		Engine::init(true);
@@ -165,6 +207,46 @@ private slots:
 		Engine::destroy();
 	}
 
+
+	//! The caps themselves are reversible even though the call leaves no journal
+	//! step of its own: the record's inverse IS control.set_undo_depth carrying
+	//! the previous caps (applies: command), so control.undo dispatches it and the
+	//! caps come back. A claim that the call "records nothing" and so cannot be
+	//! undone is FALSE (Luna cluster 4907).
+	void setUndoDepthRecordsAnUndoableCapChange()
+	{
+		shipCaps();
+		const int previousSteps = capSteps();
+		const qint64 previousBytes = capBytes();
+		QVERIFY2(previousSteps != 40 && previousBytes != 65536,
+			"this probe needs the ship caps to differ from the ones it sets");
+
+		// The record the call leaves on top. BOTH caps in ONE call: A16 is one
+		// command per undo, so two calls would need two undos.
+		QVERIFY2(run(QStringLiteral("control.set_undo_depth"),
+			{{QStringLiteral("steps"), 40}, {QStringLiteral("bytes"), 65536}}).ok,
+			"control.set_undo_depth refused a cap inside its declared range");
+		QCOMPARE(capSteps(), 40);
+		QCOMPARE(capBytes(), static_cast<qint64>(65536));
+
+		// A transaction IS recorded even though this handler adds no journal step:
+		// it carries the __transaction payload, so the registry records it.
+		const ControlRegistry::Transaction* tx = ControlRegistry::instance()->lastTransaction();
+		QVERIFY2(tx != nullptr, "control.set_undo_depth recorded no transaction at all");
+		QCOMPARE(tx->command, QStringLiteral("control.set_undo_depth"));
+		QVERIFY2(tx->reversible, "the record claims the cap change is not reversible");
+		QCOMPARE(tx->inverse.value(QStringLiteral("op")).toString(),
+			QStringLiteral("control.set_undo_depth"));
+		QCOMPARE(tx->inverse.value(QStringLiteral("applies")).toString(),
+			QStringLiteral("command"));
+
+		// And one control.undo really does put the caps back.
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(capSteps(), previousSteps);
+		QCOMPARE(capBytes(), previousBytes);
+		shipCaps();
+	}
 
 	//! The depth is DECLARED (readable through the socket) and BOUNDED (a cap
 	//! that is enforced, with eviction reported rather than hidden).
@@ -203,6 +285,43 @@ private slots:
 	}
 
 
+	//! The change cannot be undone when it has already evicted older steps: its
+	//! inverse contains only the previous caps, not the removed history.
+	void loweringCapAfterEvictionsCannotBeUndone()
+	{
+		shipCaps();
+		setWindow(0);
+		distinctSteps(2, 140);
+		QVERIFY(depth() >= 2);
+
+		const ControlResult lowered = run(QStringLiteral("control.set_undo_depth"),
+			QJsonObject{{QStringLiteral("steps"), 1}});
+		QVERIFY2(lowered.ok, qPrintable(lowered.errorMessage));
+		QVERIFY(lowered.result.value(QStringLiteral("dropped")).toInt() > 0);
+
+		const QJsonObject record = stateOf(QStringLiteral("control.set_undo_depth"));
+		const ControlResult undo = run(QStringLiteral("control.undo"));
+
+		QCOMPARE(record.value(QStringLiteral("command")).toString(),
+			QStringLiteral("control.set_undo_depth"));
+		QCOMPARE(record.value(QStringLiteral("reversible")).toBool(), false);
+		QVERIFY2(!undo.ok, "control.undo restored the cap after its change discarded history");
+		QCOMPARE(undo.errorKind, ControlErrorKind::Irreversible);
+		QCOMPARE(capSteps(), 1);
+	}
+
+
+	//! The table's default is conservative because a call may evict history;
+	//! the handler supplies true only for a call that drops no steps.
+	void undoDepthContractDoesNotPromiseUnconditionalReversibility()
+	{
+		const control::ReversibilityEntry* entry =
+			control::ReversibilityTable::instance().lookup(QStringLiteral("control.set_undo_depth"));
+		QVERIFY(entry != nullptr);
+		QCOMPARE(entry->reversible, false);
+	}
+
+
 	//! THE DEFECT. 200 moves of one clip used to be 200 undo steps; under the
 	//! coalescing rule they are ONE, on the journal and on the record, and one
 	//! control.undo takes the whole drag back.
@@ -238,6 +357,66 @@ private slots:
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(clipPosition(clip), 0);
 		QCOMPARE(depth(), depthBefore);
+	}
+
+
+	//! The GUI's clip drag is TWO checkpoints merged into one step: the clip at
+	//! the press and the track at the release (arrangement::afterUserMove). The
+	//! track's XML contains the clip, so undo must capture BOTH post-states
+	//! before it restores either of them; capturing the track after the clip has
+	//! already been put back gives redo a track snapshot that already holds the
+	//! undone position, and Ctrl+Shift+Z then replays the move away again.
+	void aMovedClipRedoesThroughItsMergedTrackCheckpoint()
+	{
+		shipCaps();
+		const QString trackId = addTrack();
+		QVERIFY2(!trackId.isEmpty(), "track.add failed, so the drag cannot be measured");
+		const int bar3 = 3 * TimePos::ticksPerBar();
+		const int bar4 = 4 * TimePos::ticksPerBar();
+		const ControlResult added = run(QStringLiteral("clip.add"),
+			QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("position"), bar3},
+				{QStringLiteral("length"), TimePos::ticksPerBar()}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		const QString clipId = added.result.value(QStringLiteral("clip")).toString();
+		QCOMPARE(clipPosition(clipId), bar3);
+
+		Clip* clip = nullptr;
+		for (Track* track : Engine::getSong()->tracks())
+		{
+			if (control::trackIdOf(track) != trackId) { continue; }
+			for (Clip* each : track->getClips())
+			{
+				if (control::clipIdOf(each) == clipId) { clip = each; }
+			}
+		}
+		QVERIFY2(clip != nullptr, "the clip.add result does not name a live clip");
+		journal()->clearJournal();
+
+		// ClipView::mousePressEvent (the unselected-clip branch): the clip's
+		// pre-state is checkpointed and the clip stops journalling for the drag.
+		clip->addJournalCheckPoint();
+		clip->setJournalling(false);
+		clip->movePosition(TimePos(bar4));
+		// ClipView::mouseReleaseEvent: journalling back on, then the drop asks the
+		// arrangement for its overlap/automation work. The default trim mode makes
+		// it checkpoint the TRACK at the pre-drag position and merge that with the
+		// clip's step, so the whole gesture is one Ctrl+Z.
+		clip->setJournalling(true);
+		QVERIFY2(arrangement::afterUserMove(clip, bar3), "the drop was refused");
+		QCOMPARE(journal()->undoDepth(), 1);
+		QCOMPARE(clipPosition(clipId), bar4);
+
+		journal()->undo();
+		QCOMPARE(clipPosition(clipId), bar3);
+		QVERIFY2(journal()->canRedo(), "undo left no redo step for the moved clip");
+		journal()->redo();
+		QCOMPARE(clipPosition(clipId), bar4);
+		// The redo records its own reverse state the same way, so the cycle is
+		// honest more than once: the step redo produced undoes to bar 3 again.
+		journal()->undo();
+		QCOMPARE(clipPosition(clipId), bar3);
+		journal()->redo();
+		QCOMPARE(clipPosition(clipId), bar4);
 	}
 
 

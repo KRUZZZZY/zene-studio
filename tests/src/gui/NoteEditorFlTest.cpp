@@ -30,9 +30,13 @@
 
 #include <QtTest>
 
+#include <QAction>
 #include <QCheckBox>
+#include <QDialogButtonBox>
 #include <QJsonArray>
+#include <QPushButton>
 #include <QSpinBox>
+#include <QToolButton>
 #include <QWheelEvent>
 
 #include "ControlRegistry.h"
@@ -45,6 +49,7 @@
 #include "NoteEditor.h"
 #include "NotePlayHandle.h"
 #include "NoteProperties.h"
+#include "ShellChrome.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -120,6 +125,34 @@ private slots:
 		m_clip = nullptr;
 	}
 
+	//! Cluster gui-1106-main-delete: a click on the toolbar's Delete button selects the tool, checks that button,
+	//! unchecks Draw, and both buttons repaint differently - the selection is visible on the button itself.
+	void aClickOnTheDeleteButtonShowsItSelected()
+	{
+		ShellButton* draw = nullptr;
+		ShellButton* erase = nullptr;
+		for (ShellButton* button : m_editor->findChildren<ShellButton*>())
+		{
+			const QAction* action = button->defaultAction();
+			if (action == nullptr) { continue; }
+			if (action->toolTip().startsWith(QStringLiteral("Delete tool"))) { erase = button; }
+			if (action->toolTip().startsWith(QStringLiteral("Draw tool"))) { draw = button; }
+		}
+		QVERIFY(draw != nullptr && erase != nullptr);
+		QVERIFY(erase->isVisible() && erase->isEnabled());
+		QVERIFY(draw->isChecked());
+		QVERIFY(!erase->isChecked());
+		const QImage drawBefore = draw->grab().toImage();
+		const QImage eraseBefore = erase->grab().toImage();
+		QTest::mouseClick(erase, Qt::LeftButton);
+		QCOMPARE(m_editor->state().tool, NoteTool::Erase);
+		QVERIFY(erase->isChecked());
+		QVERIFY(erase->defaultAction()->isChecked());
+		QVERIFY(!draw->isChecked());
+		QVERIFY2(erase->grab().toImage() != eraseBefore, "the Delete button looks the same once selected");
+		QVERIFY2(draw->grab().toImage() != drawBefore, "the Draw button still looks selected");
+	}
+
 	void drawIsTheDefaultAndTheLettersPickFlsTools()
 	{
 		QCOMPARE(m_editor->state().tool, NoteTool::Draw);
@@ -138,6 +171,32 @@ private slots:
 		QVERIFY(claimed(Qt::Key_C, Qt::ControlModifier));
 		QVERIFY(claimed(Qt::Key_B, Qt::ControlModifier));
 		QVERIFY2(!claimed(Qt::Key_Q, Qt::NoModifier), "a key the editor does not use stays the window's");
+	}
+
+	void clickingAToolButtonSelectsItAndShowsIt()
+	{
+		ShellButton* paint = nullptr;
+		ShellButton* draw = nullptr;
+		for (ShellButton* b : m_editor->findChildren<ShellButton*>())
+		{
+			if (b->text() == QStringLiteral("Paint")) { paint = b; }
+			if (b->text() == QStringLiteral("Draw")) { draw = b; }
+		}
+		QVERIFY(paint != nullptr && draw != nullptr);
+		QVERIFY(draw->isChecked());
+		QVERIFY(!paint->isChecked());
+		QTest::mouseClick(paint, Qt::LeftButton, Qt::NoModifier, paint->rect().center());
+		QCOMPARE(m_editor->state().tool, NoteTool::Paint);
+		QVERIFY2(paint->isChecked(), "the clicked Paint button shows as selected");
+		QVERIFY2(!draw->isChecked(), "and the tool it replaced no longer does");
+		// What the user sees: the checked button paints a different face from the idle one.
+		QImage on(paint->size(), QImage::Format_ARGB32);
+		QImage off(paint->size(), QImage::Format_ARGB32);
+		paint->render(&on);
+		draw->setChecked(false);
+		paint->setChecked(false);
+		paint->render(&off);
+		QVERIFY2(on != off, "a checked tool button looks different from an unchecked one");
 	}
 
 	void zZoomsToTheSelection()
@@ -236,6 +295,45 @@ private slots:
 		QCOMPARE(static_cast<int>(noteAt(m_clip, 0, 60)->getVolume()), 100);  // an unselected note elsewhere is left alone
 	}
 
+	void aPaintDragDownAColumnPaintsEveryRowItCrosses()
+	{
+		QTest::keyClick(m_editor, Qt::Key_B);  // the Paint tool
+		QCOMPARE(m_editor->state().tool, NoteTool::Paint);
+		const QPoint from = point(400, 66);
+		const QPoint to = point(400, 70);  // straight down the same grid column
+		QWidget* canvas = m_editor->canvas();
+		QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mouseMove(canvas, to);
+		QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, to);
+		// A painted cell is a (key, start) pair: two rows in one column are two different cells,
+		// and the drag must not lose the second one to the first (a start-only duplicate check).
+		QVERIFY2(noteAt(m_clip, 396, 66) != nullptr, "the row the drag started on");
+		QVERIFY2(noteAt(m_clip, 396, 70) != nullptr, "and the row it crossed into");
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{3});
+	}
+
+	void aFastPaintStrokePaintsTheCellsItSkipsOver()
+	{
+		QTest::keyClick(m_editor, Qt::Key_B);  // the Paint tool
+		QCOMPARE(m_editor->state().tool, NoteTool::Paint);
+		const QPoint from = point(400, 66);
+		const QPoint to = point(400 + 4 * 12, 66);  // four grid cells along, in ONE delivered event
+		QWidget* canvas = m_editor->canvas();
+		QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mouseMove(canvas, to);
+		QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, to);
+		// Qt coalesces a fast drag into sparse events, so the stroke must walk its path like the erase
+		// and mute strokes do: the cells between the press and the release are painted too.
+		QVERIFY2(noteAt(m_clip, 396, 66) != nullptr, "the cell the drag started on");
+		QVERIFY2(noteAt(m_clip, 408, 66) != nullptr, "the first cell it crossed");
+		QVERIFY2(noteAt(m_clip, 420, 66) != nullptr, "the second cell it crossed");
+		QVERIFY2(noteAt(m_clip, 432, 66) != nullptr, "the third cell it crossed");
+		QVERIFY2(noteAt(m_clip, 444, 66) != nullptr, "and the one it was released on");
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{3});
+	}
+
 	void aNewNoteTakesTheLastTouchedNotesLength()
 	{
 		QTest::mouseClick(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, point(200, 62));  // touch C (96 long)
@@ -251,6 +349,9 @@ private slots:
 		QTest::mouseDClick(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, point(200, 62));
 		auto* box = m_editor->findChild<NotePropertiesDialog*>(QStringLiteral("noteProperties"));
 		QVERIFY(box != nullptr);
+		// Q050-242: the recurrence controls are there on the gesture's box too.
+		QVERIFY(box->findChild<QSpinBox*>(QStringLiteral("recur_length")) != nullptr);
+		QVERIFY(box->findChild<QCheckBox*>(QStringLiteral("recur_pass_1")) != nullptr);
 		box->findChild<QSpinBox*>(QStringLiteral("velocity"))->setValue(150);
 		box->findChild<QSpinBox*>(QStringLiteral("timbre"))->setValue(90);
 		box->findChild<QCheckBox*>(QStringLiteral("slide"))->setChecked(true);
@@ -271,6 +372,189 @@ private slots:
 		QTest::mouseRelease(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, point(400, 66));
 		QVERIFY(noteAt(m_clip, 396, 66) != nullptr);
 		QVERIFY(m_editor->findChild<NotePropertiesDialog*>(QStringLiteral("noteProperties")) == nullptr);
+	}
+
+	/*! Q050-242: the properties box exposes the recurrence (ED-133) - the pass pattern's length and
+	 *  one box per pass bit - and reads back what the note saved. A length and mask the note already
+	 *  carries open in the boxes; ticking pass 3 of 4 and OK writes the PAIR through one note.edit
+	 *  (a length alone would cut the mask), one undo restores both, and a box opened again shows the
+	 *  restored pair. The double-click reachability of these controls is asserted by
+	 *  aDoubleClickOpensTheNotesPropertiesAndOkIsOneEdit. */
+	void thePropertiesBoxExposesThePassPatternAndReadsItBack()
+	{
+		const QString clip = control::clipIdOf(m_clip);
+		Note* note = noteAt(m_clip, 192, 62);
+		const QString id = control::noteIdOf(note);
+		// The pair as a project keeps it: every two passes, the first of them.
+		QVERIFY(invoke(QStringLiteral("note.edit"), {{QStringLiteral("clip"), clip}, {QStringLiteral("edits"),
+			QJsonArray{QJsonObject{{QStringLiteral("note"), id}, {QStringLiteral("recur_length"), 2},
+				{QStringLiteral("recur_mask"), 1}}}}}).ok);
+		QCOMPARE(noteAt(m_clip, 192, 62)->conditions().recurLength, 2);
+		QCOMPARE(noteAt(m_clip, 192, 62)->conditions().recurMask, 1);
+
+		// The box opens on the note the gesture names and shows the saved pair.
+		NotePropertiesDialog box(m_editor, *note);
+		auto* length = box.findChild<QSpinBox*>(QStringLiteral("recur_length"));
+		QVERIFY(length != nullptr);
+		QCOMPARE(length->value(), 2);
+		QVERIFY(box.findChild<QCheckBox*>(QStringLiteral("recur_pass_1"))->isChecked());   // pass 0: bit 0
+		QVERIFY(!box.findChild<QCheckBox*>(QStringLiteral("recur_pass_2"))->isChecked());  // pass 1
+		// The box is not shown in this test, so "shown when it is" is isHidden(): a bit past the
+		// length is hidden, the ones inside it are not (the row shows exactly the current pattern).
+		QVERIFY(!box.findChild<QCheckBox*>(QStringLiteral("recur_pass_2"))->isHidden());
+		QVERIFY(box.findChild<QCheckBox*>(QStringLiteral("recur_pass_3"))->isHidden());  // beyond the length
+
+		// Pass 3 of 4 only: length 4 and bit 2 (the third pass) - both fields go in one edit.
+		length->setValue(4);
+		QVERIFY(!box.findChild<QCheckBox*>(QStringLiteral("recur_pass_3"))->isHidden());
+		box.findChild<QCheckBox*>(QStringLiteral("recur_pass_1"))->setChecked(false);
+		box.findChild<QCheckBox*>(QStringLiteral("recur_pass_3"))->setChecked(true);
+		const QJsonObject edit = box.changes();
+		QCOMPARE(edit.value(QStringLiteral("recur_length")).toInt(), 4);
+		QCOMPARE(edit.value(QStringLiteral("recur_mask")).toInt(), 4);
+		// The dialog's own OK button, clicked as a user's press would be - not the slot called.
+		auto* buttons = box.findChild<QDialogButtonBox*>();
+		QVERIFY(buttons != nullptr && buttons->button(QDialogButtonBox::Ok) != nullptr);
+		buttons->button(QDialogButtonBox::Ok)->click();
+		const Note* applied = noteAt(m_clip, 192, 62);
+		QCOMPARE(applied->conditions().recurLength, 4);
+		QCOMPARE(applied->conditions().recurMask, 4);
+		QVERIFY2(!applied->conditions().recursOnPass(0) && !applied->conditions().recursOnPass(1)
+			&& applied->conditions().recursOnPass(2) && !applied->conditions().recursOnPass(3),
+			"the saved pair plays the third of every four passes");
+		QVERIFY(undo());  // ONE note.edit, the pair together
+		QCOMPARE(noteAt(m_clip, 192, 62)->conditions().recurLength, 2);
+		QCOMPARE(noteAt(m_clip, 192, 62)->conditions().recurMask, 1);
+
+		// A box opened again reads the restored values back; length 0 (every pass) greys the bits out.
+		NotePropertiesDialog reopened(m_editor, *noteAt(m_clip, 192, 62));
+		auto* reopenedLength = reopened.findChild<QSpinBox*>(QStringLiteral("recur_length"));
+		QCOMPARE(reopenedLength->value(), 2);
+		QVERIFY(reopened.findChild<QCheckBox*>(QStringLiteral("recur_pass_1"))->isChecked());
+		QVERIFY(!reopened.findChild<QCheckBox*>(QStringLiteral("recur_pass_2"))->isChecked());
+		reopenedLength->setValue(0);
+		QVERIFY(!reopened.findChild<QCheckBox*>(QStringLiteral("recur_pass_1"))->isEnabled());
+		// Length 0 means every pass: note.edit stores 0 / 0, not a mask that would contradict it.
+		QCOMPARE(reopened.changes().value(QStringLiteral("recur_mask")).toInt(), 0);
+	}
+
+	//! L07 Q050-064: the Draw tool previews the note under the idle pointer, and a draw drag adjusts
+	//! its pitch - the preview, the auditioned key and the committed note all on the row it ends on.
+	void aDrawPreviewsAndAdjustsPitchUnderThePointer()
+	{
+		m_editor->setTool(NoteTool::Draw);
+		NoteCanvas* canvas = m_editor->canvas();
+		const QPoint hover = point(400, 66);
+		const QImage idle = canvas->grab().toImage();
+		QTest::mouseMove(canvas, hover);
+		const QImage previewed = canvas->grab().toImage();
+		const QRect hoverRect = canvas->rectFor(66, 396, 408);
+		QVERIFY2(!hoverRect.isEmpty(), "the preview row is on screen");
+		QVERIFY2(previewed.pixelColor(hoverRect.center()) != idle.pixelColor(hoverRect.center()),
+			"the idle pointer shows a note preview");
+
+		Piano* piano = m_track->pianoModel();
+		QVERIFY(piano != nullptr);
+		const QPoint to = point(400, 64);
+		QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, hover);
+		QVERIFY2(piano->isKeyPressed(66), "the press auditions the row it starts on");
+		QTest::mouseMove(canvas, to);
+		QVERIFY2(!piano->isKeyPressed(66), "the old pitch stops when the draw moves");
+		QVERIFY2(piano->isKeyPressed(64), "the new pitch is auditioned");
+		const QImage adjusted = canvas->grab().toImage();
+		const QRect adjustedRect = canvas->rectFor(64, 396, 408);
+		QVERIFY2(adjusted.pixelColor(adjustedRect.center()) != idle.pixelColor(adjustedRect.center()),
+			"the preview follows the adjusted pitch");
+		QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, to);
+		QVERIFY2(noteAt(m_clip, 396, 64) != nullptr, "one note lands on the pitch the draw ended on");
+		QVERIFY2(noteAt(m_clip, 396, 66) == nullptr, "not on the press pitch");
+		QVERIFY(!piano->isKeyPressed(64));
+		const QImage released = canvas->grab().toImage();
+		QTest::mouseMove(canvas, QPoint(to.x() + 1, to.y()));
+		const QImage settled = canvas->grab().toImage();
+		QCOMPARE(released.pixelColor(hoverRect.center()), settled.pixelColor(hoverRect.center()));
+		QCOMPARE(m_clip->notes().size(), std::size_t{4});
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{3});
+	}
+
+	//! gui-1106-main-slice: a real left-click on the Slice button of the toolbar selects the tool and the
+	//! button shows it (checked, painted differently), as the sweep expects.
+	void aClickOnTheSliceButtonSelectsItAndShowsIt()
+	{
+		QWidget* bar = m_editor->findChild<QWidget*>(QStringLiteral("noteEditorToolbar"));
+		QVERIFY(bar != nullptr);
+		QToolButton* slice = nullptr;
+		for (QToolButton* b : bar->findChildren<QToolButton*>())
+		{
+			if (b->defaultAction() == toolAction(NoteTool::Slice)) { slice = b; }
+		}
+		QVERIFY2(slice != nullptr, "no Slice button on the toolbar");
+		QVERIFY2(slice->isVisible() && slice->width() > 0, "the Slice button is not shown");
+		const QImage before = slice->grab().toImage();
+		QTest::mouseClick(slice, Qt::LeftButton, Qt::NoModifier, slice->rect().center());
+		QCOMPARE(m_editor->state().tool, NoteTool::Slice);
+		QVERIFY2(slice->isChecked(), "the Slice button is not checked after its click");
+		QVERIFY2(slice->grab().toImage() != before, "the Slice button looks the same after its click");
+		QVERIFY2(bar->isVisible(), "the toolbar vanished after the click");
+	}
+
+	//! L07 Q050-064: each tool shows its own cursor at once (a toolbar action, no pointer move), and the
+	//! gesture leaves that tool's cursor in place.
+	void theToolsCursorsFollowTheToolbarAndSurviveAGesture()
+	{
+		struct Expected { NoteTool tool; Qt::CursorShape cursor; };
+		const Expected expected[] = {{NoteTool::Draw, Qt::CrossCursor}, {NoteTool::Erase, Qt::ForbiddenCursor},
+			{NoteTool::Slice, Qt::SplitHCursor}, {NoteTool::Audition, Qt::PointingHandCursor}};
+		for (const Expected& e : expected)
+		{
+			QAction* action = toolAction(e.tool);
+			QVERIFY2(action != nullptr, "the toolbar offers every tool");
+			action->trigger();
+			QCOMPARE(m_editor->state().tool, e.tool);
+			QCOMPARE(static_cast<int>(m_editor->canvas()->cursor().shape()), static_cast<int>(e.cursor));
+			// End the gesture past the note its start would draw: the release then lands on an empty row,
+			// where the tool's own cursor - not the resize handle's - is the next action.
+			QTest::mousePress(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, point(400, 66));
+			QTest::mouseMove(m_editor->canvas(), point(602, 66));
+			QTest::mouseRelease(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, point(602, 66));
+			QCOMPARE(static_cast<int>(m_editor->canvas()->cursor().shape()), static_cast<int>(e.cursor));
+		}
+		// The keyboard path (D) updates it too, without another mouse move.
+		QTest::keyClick(m_editor, Qt::Key_D);
+		QCOMPARE(static_cast<int>(m_editor->canvas()->cursor().shape()), static_cast<int>(Qt::ForbiddenCursor));
+		QTest::keyClick(m_editor, Qt::Key_P);
+		QCOMPARE(static_cast<int>(m_editor->canvas()->cursor().shape()), static_cast<int>(Qt::CrossCursor));
+	}
+
+	void clickingAToolButtonSelectsThatTool()
+	{
+		// The toolbar buttons themselves, clicked with the mouse (GUI sweep gui-1105: Mute "left unchanged").
+		const NoteTool order[] = {NoteTool::Mute, NoteTool::Erase, NoteTool::Slice, NoteTool::Select, NoteTool::Audition,
+			NoteTool::Paint, NoteTool::Draw};
+		for (const NoteTool tool : order)
+		{
+			QAction* action = toolAction(tool);
+			QVERIFY(action != nullptr);
+			QToolButton* button = nullptr;
+			for (auto* candidate : m_editor->findChildren<QToolButton*>())
+			{
+				if (candidate->defaultAction() == action) { button = candidate; }
+			}
+			QVERIFY2(button != nullptr, "every tool action has a toolbar button");
+			QVERIFY(button->isVisible() && button->isEnabled());
+			QTest::mouseClick(button, Qt::LeftButton);
+			QCOMPARE(m_editor->state().tool, tool);
+			QVERIFY2(action->isChecked() && button->isChecked(), "the clicked button shows as selected");
+			for (QAction* other : m_editor->findChildren<QAction*>())
+			{
+				if (other != action && other->isCheckable() && other->property("controlCommand").toString()
+						== QStringLiteral("window.note_editor_set") && other->data().isValid())
+				{
+					QVERIFY2(!other->isChecked() || other->data().toInt() != action->data().toInt(), "one tool at a time");
+				}
+			}
+		}
 	}
 
 	void theClipboardKeysCopyPasteDuplicateAndDelete()
@@ -294,6 +578,19 @@ private slots:
 	}
 
 private:
+	QAction* toolAction(NoteTool tool) const
+	{
+		for (QAction* action : m_editor->findChildren<QAction*>())
+		{
+			if (action->isCheckable() && action->data().toInt() == static_cast<int>(tool)
+				&& action->property("controlCommand").toString() == QStringLiteral("window.note_editor_set"))
+			{
+				return action;
+			}
+		}
+		return nullptr;
+	}
+
 	QPoint point(int tick, int key) const
 	{
 		const NoteGrid& g = m_editor->state().grid;

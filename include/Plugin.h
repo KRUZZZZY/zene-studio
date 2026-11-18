@@ -25,6 +25,8 @@
 #ifndef LMMS_PLUGIN_H
 #define LMMS_PLUGIN_H
 
+#include <memory>
+
 #include <QStringList>
 #include <QMap>
 
@@ -33,6 +35,7 @@
 
 
 class QWidget;
+class QLibrary;
 
 namespace lmms
 {
@@ -308,6 +311,9 @@ protected:
 
 private:
 	const Descriptor * m_descriptor;
+	// The factory can replace its discovery results while this instance is alive.
+	// Keep the module loaded until the instance's derived destructor has run.
+	std::shared_ptr<QLibrary> m_library;
 
 	Descriptor::SubPluginFeatures::Key m_key;
 

@@ -128,6 +128,7 @@ public:
 	auto nodeName() const -> QString override { return "timeline"; }
 
 signals:
+	void loopPointsChanged();
 	void loopEnabledChanged(bool enabled);
 	void punchChanged();
 	void stopBehaviourChanged(lmms::Timeline::StopBehaviour behaviour);

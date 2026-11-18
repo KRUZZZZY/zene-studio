@@ -34,9 +34,15 @@
 #include <QTemporaryDir>
 #include <QTextStream>
 
+#include <limits>
+
 #include "ControlRegistry.h"
 #include "DataFile.h"
+#include "DummyEffect.h"
+#include "EffectChain.h"
 #include "Engine.h"
+#include "MidiClip.h"
+#include "Note.h"
 #include "ProjectIds.h"
 #include "Song.h"
 #include "Track.h"
@@ -129,6 +135,31 @@ QString legacyProject(const QString& version, const QStringList& ids = {},
 		.arg(version,
 			nextId.isEmpty() ? QString() : QStringLiteral(" next-id=\"%1\"").arg(nextId),
 			tracks);
+}
+
+/*! A project whose one midi clip holds two notes that CLAIM THE SAME id - the
+ * note-family equivalent of the duplicated track ids the track pass repairs.
+ * Reachable only from an external merge of two branches, exactly like those. */
+QString projectWithDuplicateNoteIds(const QString& noteId)
+{
+	const QString note = QStringLiteral(" key=\"60\" vol=\"100\" pan=\"0\" len=\"384\" pos=\"%1\" type=\"0\" id=\"%2\"");
+	return QStringLiteral(
+		"<?xml version=\"1.0\"?>\n"
+		"<lmms-project version=\"1.2\" type=\"song\" creator=\"LMMS\" creatorversion=\"1.2.0\">\n"
+		"  <head/>\n"
+		"  <song>\n"
+		"    <trackcontainer type=\"song\">\n"
+		"      <track type=\"0\" name=\"A\" muted=\"0\">\n"
+		"        <instrumenttrack/>\n"
+		"          <midiclip steps=\"16\" name=\"c\" muted=\"0\" pos=\"0\" len=\"192\" type=\"0\">\n"
+		"            <note%1/>\n"
+		"            <note%2/>\n"
+		"          </midiclip>\n"
+		"      </track>\n"
+		"    </trackcontainer>\n"
+		"  </song>\n"
+		"</lmms-project>\n")
+		.arg(note.arg(QStringLiteral("0"), noteId), note.arg(QStringLiteral("48"), noteId));
 }
 
 } // namespace
@@ -451,6 +482,88 @@ private slots:
 		QVERIFY(!repaired.contains(fresh));
 	}
 
+	//! A missing track id can inherit INT_MAX when it follows a stored maximum
+	//! id. Both its load assignment and the duplicate-id repair must saturate the
+	//! project counter rather than wrapping it negative.
+	void aMaximumKeptLoadIdDoesNotWrapTheCounter()
+	{
+		const int maximum = std::numeric_limits<int>::max();
+		const QString maxText = QString::number(maximum);
+		const QString path = writeTemp(QStringLiteral("maximum-load-id.mmp"),
+			QStringLiteral(
+				"<?xml version=\"1.0\"?>\n"
+				"<lmms-project version=\"75\" type=\"song\" creator=\"LMMS\" "
+				"creatorversion=\"1.2.0\" next-id=\"%1\">\n"
+				"  <head/>\n"
+				"  <song>\n"
+				"    <trackcontainer type=\"song\">\n"
+				"      <track type=\"0\" name=\"A\" muted=\"0\" id=\"%2\">\n"
+				"        <instrumenttrack/>\n"
+				"      </track>\n"
+				"      <track type=\"0\" name=\"B\" muted=\"0\">\n"
+				"        <instrumenttrack/>\n"
+				"      </track>\n"
+				"    </trackcontainer>\n"
+				"  </song>\n"
+				"</lmms-project>\n").arg(maxText, maxText));
+
+		loadProject(path);
+		QCOMPARE(trackIds(), QVector<int>({maximum, maximum}));
+		QCOMPARE(ProjectIds::loadAssignments(), 2);
+		QCOMPARE(ProjectIds::next(), maximum);
+	}
+
+	//! Luna cluster 3324: the SAME rule the track and clip passes already
+	//! apply, for the note family. Note::setId accepts any nonnegative id, so a
+	//! project carrying two notes with id="5" used to load with BOTH keeping 5 -
+	//! and `note-5` then named two live notes at once, so a command addressing
+	//! one could edit or remove the other.
+	void duplicateNoteIdsAreRepairedOnLoad()
+	{
+		const QString path = writeTemp(QStringLiteral("dup-notes.mmp"),
+			projectWithDuplicateNoteIds(QStringLiteral("5")));
+		loadProject(path);
+
+		QVector<int> ids;
+		for (const Track* track : Engine::getSong()->tracks())
+		{
+			for (const Clip* clip : track->getClips())
+			{
+				const auto* midi = dynamic_cast<const MidiClip*>(clip);
+				if (!midi) { continue; }
+				for (const Note* note : midi->notes()) { ids << note->id(); }
+			}
+		}
+		QCOMPARE(ids.size(), 2);
+		QVERIFY2(ids[0] == 5, "the first occurrence in document order keeps the id");
+		QVERIFY2(ids[1] != 5, "the duplicate note kept the id it shares");
+		QSet<int> distinct;
+		for (int id : ids) { distinct.insert(id); }
+		QCOMPARE(distinct.size(), 2);
+
+		// the repair is counted, not hidden, and the fresh id clears the counter
+		QVERIFY(ProjectIds::loadAssignments() >= 1);
+		QVERIFY(ProjectIds::next() > ids[1]);
+
+		// and it is stable across a save/open round trip
+		const QString savedPath = m_dir.filePath(QStringLiteral("dup-saved.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(savedPath, false));
+		loadProject(savedPath);
+		QVector<int> reloaded;
+		for (const Track* track : Engine::getSong()->tracks())
+		{
+			for (const Clip* clip : track->getClips())
+			{
+				const auto* midi = dynamic_cast<const MidiClip*>(clip);
+				if (!midi) { continue; }
+				for (const Note* note : midi->notes()) { reloaded << note->id(); }
+			}
+		}
+		QCOMPARE(reloaded.size(), 2);
+		QVERIFY(reloaded[0] != reloaded[1]);
+		QCOMPARE(ProjectIds::loadAssignments(), 0);
+	}
+
 	//! project.open reports the upgrade (Q1) - extending the object that already
 	//! carries loaded_with_errors/error_count/errors[], not a second one.
 	void projectOpenReportsTheIdUpgrade()
@@ -475,6 +588,34 @@ private slots:
 		QVERIFY2(reopened.ok, qPrintable(reopened.errorMessage));
 		QCOMPARE(reopened.result.value(QStringLiteral("ids_assigned")).toInt(), 0);
 		QVERIFY(!reopened.result.value(QStringLiteral("format_upgraded")).toBool());
+	}
+
+	//! An unavailable effect is still addressable by the stable id in its
+	//! project element, even though its original XML is what gets saved back.
+	void missingEffectKeepsItsStableId()
+	{
+		QDomDocument source;
+		QDomElement chainData = source.createElement(QStringLiteral("fxchain"));
+		chainData.setAttribute(QStringLiteral("numofeffects"), 1);
+		QDomElement effectData = source.createElement(QStringLiteral("effect"));
+		effectData.setAttribute(QStringLiteral("name"), QStringLiteral("missing-test-effect"));
+		effectData.setAttribute(QStringLiteral("id"), 4242);
+		effectData.appendChild(source.createElement(QStringLiteral("key")));
+		chainData.appendChild(effectData);
+
+		EffectChain chain(Engine::getSong());
+		chain.loadSettings(chainData);
+		QCOMPARE(chain.effects().size(), std::size_t{1});
+		auto* dummy = dynamic_cast<DummyEffect*>(chain.effects().front());
+		QVERIFY(dummy != nullptr);
+		QCOMPARE(dummy->id(), 4242);
+		QVERIFY(ProjectIds::next() > 4242);
+
+		QDomDocument saved;
+		QDomElement savedChain = saved.createElement(QStringLiteral("fxchain"));
+		chain.saveSettings(saved, savedChain);
+		QCOMPARE(savedChain.firstChildElement(QStringLiteral("effect"))
+			.attribute(QStringLiteral("id")).toInt(), 4242);
 	}
 };
 

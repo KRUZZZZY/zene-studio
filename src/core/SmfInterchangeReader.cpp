@@ -186,6 +186,12 @@ bool skipEventPayload(Cursor& track, unsigned char status, QString* error)
 //! The FF 58 payload's two bytes, once dd is known to be a metre the map holds.
 void readTimeSignaturePayload(const unsigned char* payload, Candidate* candidate, QString* error)
 {
+	if (payload[0] == 0)
+	{
+		*error = QStringLiteral("a time signature has a zero numerator, so it cannot name a number of "
+			"beats per bar");
+		return;
+	}
 	// dd is log2(denominator) and the map holds a power of two up to 32
 	// (TempoMapLargestDenominator), so dd = 0..5. Masking the byte instead
 	// rewrote dd 32 as dd 0 and imported 1/1 - a different metre, not the
@@ -231,16 +237,23 @@ bool readMetaEvent(Cursor& track, quint32 smfTick, std::vector<Candidate>* candi
 		*error = QStringLiteral("a meta event's payload runs past the track");
 		return false;
 	}
-	if (type == SmfMetaTempo && length == 3)
+	if (type == SmfMetaTempo)
 	{
+		// SMF 1.0: a tempo meta event names microseconds-per-quarter in exactly
+		// three bytes. Any other payload length does not name a tempo, and
+		// letting it fall through as an unknown meta event dropped the file's
+		// tempo change silently while the file still read as valid, so it is
+		// refused like the malformed end-of-track event below.
+		if (length != 3) { *error = QStringLiteral("a tempo meta event carries %1 payload bytes; the format names exactly three microseconds-per-quarter bytes, so the file was refused").arg(length); return false; }
 		Candidate candidate;
 		candidate.smfTick = smfTick;
 		candidate.hasTempo = true;
 		candidate.microseconds = (payload[0] << 16) | (payload[1] << 8) | payload[2];
 		candidates->push_back(candidate);
 	}
-	else if (type == SmfMetaTimeSignature && length >= 2)
-	{
+	else if (type == SmfMetaTimeSignature)
+	{  // SMF 1.0: nn/dd/cc/bb in exactly four bytes; other lengths refused.
+		if (length != 4) { *error = QStringLiteral("a time signature meta event carries %1 payload bytes; the format names exactly four nn/dd/cc/bb bytes, so the file was refused").arg(length); return false; }
 		Candidate candidate;
 		candidate.smfTick = smfTick;
 		readTimeSignaturePayload(payload, &candidate, error);

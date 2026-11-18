@@ -36,9 +36,13 @@
 
 #include <QtTest>
 
+#include <QScopeGuard>
 #include <QStringList>
 
 #include "ControlDeviceSupport.h"
+#include "ControlRegistry.h"
+#include "ControlStructuralSupport.h"
+#include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Effect.h"
 #include "EffectChain.h"
@@ -46,6 +50,7 @@
 #include "Mixer.h"
 #include "ProjectJournal.h"
 #include "ScriptApiVersion.h"
+#include "ScriptDawBindings.h"
 #include "ScriptEngine.h"
 
 using namespace lmms;
@@ -80,6 +85,25 @@ channel:setGain(0.25)
 print("gain now " .. channel:gain())
 )LUA";
 
+//! The model accessors must cross the bridge as the REGISTERED model classes:
+//! a raw AutomatableModel* is not a registered class, so the call raises.
+const char* const ModelAccessorScript = R"LUA(
+local channel = zene.mixer():channel(%1)
+local gain = channel:gainModel()
+print("gain isValid=" .. tostring(gain:isValid())
+    .. " value=" .. gain:value()
+    .. " min=" .. gain:minValue()
+    .. " max=" .. gain:maxValue()
+    .. " name=" .. gain:name()
+    .. " type=" .. gain:type())
+gain:setValue(0.75)
+print("gain after setValue=" .. gain:value())
+local mute = channel:muteModel()
+local solo = channel:soloModel()
+print("mute isValid=" .. tostring(mute:isValid()) .. " value=" .. tostring(mute:value()))
+print("solo isValid=" .. tostring(solo:isValid()) .. " name=" .. solo:name())
+)LUA";
+
 //! The effect-chain half: address the chain, refuse a bad device load.
 const char* const ChainScript = R"LUA(
 local channel = zene.mixer():channel(%1)
@@ -90,6 +114,74 @@ print("refused isValid=" .. tostring(refused:isValid()))
 print("chain effects after refusal=" .. chain:effectCount())
 )LUA";
 
+//! Every id mixer:ids() lists must be resolvable, and must be the id the
+//! channel itself publishes - the vocabulary channelById() understands.
+const char* const IdScript = R"LUA(
+local mixer = zene.mixer()
+local listed = mixer:ids()
+local unresolved = 0
+for i, id in ipairs(listed) do
+  if not mixer:channelById(id):isValid() then unresolved = unresolved + 1 end
+end
+print("listed " .. #listed .. " unresolved " .. unresolved)
+)LUA";
+
+const char* const RemovedChannelScript = R"LUA(
+local mixer = zene.mixer()
+local channel = mixer:addChannel()
+local id = channel:id()
+local gain = channel:gainModel()
+local chain = channel:chain()
+local removal = zene.command("mixer.remove_channel", {channel = id})
+print("removed=" .. tostring(removal.removed == id)
+    .. " valid=" .. tostring(channel:isValid())
+    .. " gain-zero=" .. tostring(channel:gain() == 0)
+    .. " gain-view-valid=" .. tostring(gain:isValid())
+    .. " chain-view-valid=" .. tostring(chain:isValid()))
+)LUA";
+
+//! Remove the first device of a channel's chain and report what the binding returned.
+const char* const RemoveFirstEffectScript = R"LUA(
+local ok = zene.mixer():channel(%1):chain():removeEffect(0)
+print("removeEffect returned " .. tostring(ok))
+)LUA";
+
+//! A chain effect the test owns. Removing it needs no plugin module, so the
+//! removal runs in any build: its state document is what the journal records.
+class UndoProbeEffect : public Effect
+{
+public:
+	UndoProbeEffect(Model* parent) :
+		Effect{&descriptor(), parent, nullptr}
+	{
+	}
+
+	EffectControls* controls() override { return nullptr; }
+
+	void saveSettings(QDomDocument& doc, QDomElement& element) override
+	{
+		Q_UNUSED(doc);
+		element.setAttribute(QStringLiteral("probe"), QStringLiteral("1"));
+	}
+
+protected:
+	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override
+	{
+		Q_UNUSED(buf);
+		Q_UNUSED(frames);
+		return ProcessStatus::Continue;
+	}
+
+private:
+	static const Plugin::Descriptor& descriptor()
+	{
+		static const Plugin::Descriptor d{
+			"undoprobe", "Undo probe", "Deterministic probe effect for undo tests",
+			"LMMS", 0x0100, Plugin::Type::Effect, nullptr, nullptr, nullptr};
+		return d;
+	}
+};
+
 } // namespace
 
 class ScriptDawBindingTest : public QObject
@@ -99,11 +191,18 @@ private slots:
 
 	void initTestCase()
 	{
+#ifdef LMMS_TEST_PLUGIN_DIR
+		// The build's own effect modules (BassBooster for the undo test below),
+		// found the way RackMenuTest finds them. Set before Engine::init scans.
+		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
+#endif
 		Engine::init(true);
+		ControlRegistry::setReady(true);
 	}
 
 	void cleanupTestCase()
 	{
+		ControlRegistry::setReady(false);
 		Engine::destroy();
 	}
 
@@ -153,6 +252,107 @@ private slots:
 		QCOMPARE(engine->takeLogMessages(), expected);
 	}
 
+	void aChannelViewStopsResolvingAfterItsTargetIsRemoved()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		const int before = static_cast<int>(mixer->numChannels());
+		ScriptEngine* engine = ScriptEngine::instance();
+		engine->takeLogMessages();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr(RemovedChannelScript), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QCOMPARE(static_cast<int>(mixer->numChannels()), before);
+		QCOMPARE(engine->takeLogMessages(), QStringList{
+			qstr("removed=true valid=false gain-zero=true gain-view-valid=false chain-view-valid=false")});
+	}
+
+	//! An overlong UTF-8 name must be refused intact, not split by the queue payload.
+	void anOverlongChannelNameIsRejectedWithoutChangingTheEngine()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		const int index = static_cast<int>(mixer->numChannels());
+		mixer->createChannel();
+		MixerChannel* channel = mixer->mixerChannel(index);
+		QVERIFY(channel != nullptr);
+		const QString originalName = channel->m_name;
+
+		ScriptEngine* engine = ScriptEngine::instance();
+		engine->takeLogMessages();
+		const QString script = qstr("local c = zene.mixer():channel(%1)\n"
+			"c:setName(string.rep(string.char(195, 169), 128))\n").arg(index);
+		QString error;
+		QCOMPARE(int(engine->runString(script, &error)), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+
+		QCOMPARE(channel->m_name, originalName);
+		const QStringList logs = engine->takeLogMessages();
+		QCOMPARE(logs.size(), 1);
+		QVERIFY(logs.front().contains(qstr("255-byte")));
+	}
+
+	//! The payload is read back as a C string, so a NUL byte must be refused whole
+	//! rather than stored as the bytes before it.
+	void aNameWithAnEmbeddedNulIsRefusedBeforeItReachesThePayload()
+	{
+		ScriptCommand command;
+		const QString withNul = QString::fromUtf8(QByteArray("A\0B", 3));
+		QVERIFY(!setCommandText(command, withNul));
+		QVERIFY(command.text[0] == '\0');
+	}
+
+	//! A script rename with an embedded NUL is refused, not renamed to its prefix.
+	void anEmbeddedNulInChannelNameIsRejectedWithoutChangingTheEngine()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		const int index = static_cast<int>(mixer->numChannels());
+		mixer->createChannel();
+		MixerChannel* channel = mixer->mixerChannel(index);
+		QVERIFY(channel != nullptr);
+		const QString originalName = channel->m_name;
+
+		ScriptEngine* engine = ScriptEngine::instance();
+		engine->takeLogMessages();
+		const QString script = qstr("local c = zene.mixer():channel(%1)\n"
+			"c:setName(string.char(65, 0, 66))\n").arg(index);
+		QString error;
+		QCOMPARE(int(engine->runString(script, &error)), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+
+		QCOMPARE(channel->m_name, originalName);
+		const QStringList logs = engine->takeLogMessages();
+		QCOMPARE(logs.size(), 1);
+		QVERIFY(logs.front().contains(qstr("NUL")));
+	}
+
+	//! The same payload limit applies to the device reference used by loadEffect.
+	void anOverlongDeviceReferenceIsRejectedWithoutChangingTheChain()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		const int index = static_cast<int>(mixer->numChannels());
+		mixer->createChannel();
+		EffectChain& chain = mixer->mixerChannel(index)->m_fxChain;
+		const int effectsBefore = static_cast<int>(chain.effects().size());
+
+		ScriptEngine* engine = ScriptEngine::instance();
+		engine->takeLogMessages();
+		const QString script = qstr("local chain = zene.mixer():channel(%1):chain()\n"
+			"local effect = chain:loadEffect(string.rep('x', 256))\n"
+			"print('long reference valid=' .. tostring(effect:isValid()))\n").arg(index);
+		QString error;
+		QCOMPARE(int(engine->runString(script, &error)), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+
+		QCOMPARE(static_cast<int>(chain.effects().size()), effectsBefore);
+		const QStringList logs = engine->takeLogMessages();
+		QVERIFY(logs.contains(qstr("long reference valid=false")));
+		QCOMPARE(logs.filter(qstr("255-byte")).size(), 1);
+	}
+
 	/*! Writes are journalled through the channel's own models, so the GUI's
 	 *  Ctrl+Z and control.undo meet the same history the manual path leaves:
 	 *  one undo restores the fader the script moved, and the channel survives. */
@@ -180,6 +380,42 @@ private slots:
 		QVERIFY2(static_cast<int>(mixer->numChannels()) > index,
 			"the undo removed the channel instead of restoring the fader");
 		QCOMPARE(mixer->mixerChannel(index)->m_volumeModel.value(), 0.5f);
+	}
+
+	/*! The model accessors are the instrument-track bindings' shape: a pooled,
+	 *  REGISTERED wrapper (FloatModel / BoolModel), never a raw
+	 *  AutomatableModel*. A raw model pointer is not a registered class, so
+	 *  `channel:gainModel()` raised "The class is not registered in LuaBridge"
+	 *  and nothing a script did with the result was reachable. */
+	void modelAccessorsReturnRegisteredLuaWrappers()
+	{
+		Mixer* mixer = Engine::mixer();
+		const int index = static_cast<int>(mixer->numChannels()) - 1;
+		MixerChannel* channel = mixer->mixerChannel(index);
+		const float gainBefore = channel->m_volumeModel.value();
+
+		ScriptEngine* engine = ScriptEngine::instance();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr(ModelAccessorScript).arg(index), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+
+		const QStringList logs = engine->takeLogMessages();
+		const QString gainLine = logs.value(0);
+		QVERIFY2(gainLine.startsWith(qstr("gain isValid=true value=")),
+			qPrintable(gainLine));
+		// The wrapper read the ENGINE's live value, not a stale or invented one.
+		QCOMPARE(gainLine.section(" value=", 1, 1).section(" ", 0, 0).toFloat(), gainBefore);
+		QVERIFY2(logs.contains(qstr("gain after setValue=0.75")),
+			qPrintable(logs.join(QStringLiteral(" | "))));
+		QVERIFY2(logs.contains(qstr("mute isValid=true value=")
+			+ (channel->m_muteModel.value() ? qstr("true") : qstr("false"))),
+			qPrintable(logs.join(QStringLiteral(" | "))));
+		QVERIFY2(logs.contains(qstr("solo isValid=true name=") + channel->m_soloModel.displayName()),
+			qPrintable(logs.join(QStringLiteral(" | "))));
+
+		// The wrapper's write reached the engine's own model, not just Lua.
+		QCOMPARE(channel->m_volumeModel.value(), 0.75f);
 	}
 
 	/*! The effect-chain half of the binding: the chain a Lua script reaches is
@@ -248,6 +484,159 @@ private slots:
 		journal->undo();  // its channel is gone: nothing to take out, and nothing freed is touched
 		QCOMPARE(static_cast<int>(mixer->numChannels()), index);
 		engine->takeLogMessages();
+	}
+
+	/*! Luna 5332: the script's removal is journalled before the device comes off,
+	 *  and a device whose state cannot be captured is NOT taken off (owner
+	 *  decision 2026-10-08). Journalless, removeEffect took the device away with
+	 *  no undo step behind it. This runs on a probe device, so it needs no plugin
+	 *  module; the restoration by undo needs one and is proved by the load test above.
+	 */
+	void aScriptsRemovalOfAProbeDeviceIsJournalledOrRefused()
+	{
+		Mixer* mixer = Engine::mixer();
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		// Pin the count cap: a slot that fails before it restores its own tight cap
+		// would otherwise hold this stack at that many steps and drop the removal's.
+		const int oldCap = journal->maxUndoStates();
+		QVERIFY(journal->setMaxUndoStates(ProjectJournal::MaxUndoStateLimit));
+		const auto restoreCap = qScopeGuard([journal, oldCap] { journal->setMaxUndoStates(oldCap); });
+		ScriptEngine* engine = ScriptEngine::instance();
+		const int index = mixer->createChannel();
+		EffectChain* chain = &mixer->mixerChannel(index)->m_fxChain;
+		chain->appendEffect(new UndoProbeEffect(chain));
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+		const QString script = qstr(RemoveFirstEffectScript).arg(index);
+		const int depth = journal->undoDepth();
+		QString error;
+
+		// Capture refused: the device stays, the script is told, no undo step is pushed.
+		control::setRemovalCaptureFailsForTest(true);
+		const auto restore = qScopeGuard([] { control::setRemovalCaptureFailsForTest(false); });
+		QCOMPARE(int(engine->runString(script, &error)), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+		QCOMPARE(journal->undoDepth(), depth);
+		const QStringList refused = engine->takeLogMessages();
+		QVERIFY2(refused.join(QLatin1Char('|')).contains(QStringLiteral("removeEffect returned false")),
+			qPrintable(refused.join(QLatin1Char('|'))));
+
+		// Capture working: the device is removed, and the removal is one journalled step.
+		control::setRemovalCaptureFailsForTest(false);
+		QCOMPARE(int(engine->runString(script, &error)), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QVERIFY(chain->effects().empty());
+		QCOMPARE(journal->undoDepth(), depth + 1);
+		const QStringList removed = engine->takeLogMessages();
+		QVERIFY2(removed.join(QLatin1Char('|')).contains(QStringLiteral("removeEffect returned true")),
+			qPrintable(removed.join(QLatin1Char('|'))));
+
+		mixer->deleteChannel(index);
+		engine->takeLogMessages();
+	}
+
+	/*! mixer:ids() must publish the CHANNEL ids channel:id() publishes, because
+	 *  those are the ids channelById() resolves. It used to name positions
+	 *  (channelId(index)), so enumerating ids() and feeding the entries back into
+	 *  channelById() addressed nothing: the master is ch-1 but ids() listed ch-0,
+	 *  and a ch-<n> number is an allocated id, never an index. */
+	void mixerIdsListsTheChannelsOwnIdsAndEveryOneResolves()
+	{
+		Mixer* mixer = Engine::mixer();
+		ScriptEngine* engine = ScriptEngine::instance();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr(IdScript), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+
+		// The mixer really has that many channels, and every id ids() listed is
+		// one a channel really carries.
+		const int count = static_cast<int>(mixer->numChannels());
+		for (int i = 0; i < count; ++i)
+		{
+			MixerChannel* channel = mixer->mixerChannel(i);
+			const QString id = control::channelIdOf(channel);
+			ControlTarget target;
+			ControlResult result;
+			QVERIFY2(resolveControlTarget(id, &target, &result),
+				qPrintable(result.errorMessage));
+			QCOMPARE(target.chain, &channel->m_fxChain);
+		}
+
+		// And the binding agrees: it listed every channel, and channelById()
+		// resolved every entry back to a live channel. A positional list listed
+		// "ch-0" for the master, which resolves to nothing at all.
+		QCOMPARE(engine->takeLogMessages(), QStringList{
+			qstr("listed %1 unresolved 0").arg(count)});
+	}
+
+	/*! Cluster 1663, the whole recipe: a script takes a channel view, removes
+	 *  the channel through the command bridge, and then reads and writes the
+	 *  view it kept. The view resolves its channel by the channel's stable id
+	 *  on every access, so the removed channel is never touched: every read is
+	 *  empty, the write is refused, and the view reports itself invalid. A
+	 *  view that held the channel's pointer read - and wrote - a channel that
+	 *  is gone. */
+	void aRemovedChannelsViewIsInert()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		ScriptEngine* engine = ScriptEngine::instance();
+		engine->takeLogMessages();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr(R"LUA(
+local mixer = zene.mixer()
+local channel = mixer:addChannel()
+local id = channel:id()
+zene.command("mixer.remove_channel", {channel = id})
+if channel:isValid() then
+    print("stale channel view remained valid")
+    return
+end
+print("valid=" .. tostring(channel:isValid())
+    .. " gain=" .. channel:gain()
+    .. " muted=" .. tostring(channel:muted())
+    .. " soloed=" .. tostring(channel:soloed()))
+print("chain=" .. tostring(channel:chain():isValid())
+    .. " gain-model=" .. tostring(channel:gainModel():isValid()))
+channel:setGain(0.25)
+print("after-write valid=" .. tostring(channel:isValid()))
+)LUA"), &error)), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+
+		const QStringList logs = engine->takeLogMessages();
+		QCOMPARE(logs.size(), 3);
+		QCOMPARE(logs.at(0), qstr("valid=false gain=0.0 muted=false soloed=false"));
+		QCOMPARE(logs.at(1), qstr("chain=false gain-model=false"));
+		QCOMPARE(logs.at(2), qstr("after-write valid=false"));
+	}
+
+	/*! A script that reads the same channel many times must not leave a
+	 *  wrapper behind per READ: the wrappers are C++ objects the Lua collector
+	 *  cannot reclaim, so a pool that grew with the accesses grew outside the
+	 *  Lua memory budget (new-p12-245). The pool holds one view per object, so
+	 *  five hundred reads of one channel leave the one view behind.
+	 *
+	 *  The pools are cleared when a run starts, so the two runs are measured
+	 *  on their own: one read against five hundred. */
+	void aRepeatedChannelReadDoesNotGrowTheViewPool()
+	{
+		ScriptEngine* engine = ScriptEngine::instance();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr("local c = zene.mixer():channel(0)\n"), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		const int once = ScriptDawBindings::viewPoolSize();
+
+		QCOMPARE(int(engine->runString(qstr(
+			"for i = 1, 500 do local c = zene.mixer():channel(0) end\n"), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		const int many = ScriptDawBindings::viewPoolSize();
+
+		QVERIFY2(once > 0, "the run made no view at all");
+		QCOMPARE(many, once);
 	}
 
 	/*! The version policy's Lua face: the surface this build reports is the

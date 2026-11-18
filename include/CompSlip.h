@@ -76,6 +76,10 @@ public:
 	/*! Audio thread: plays every reader over @a frames with @a ratio (the handle's own) and writes each slipped
 	 *  span's frames of @a dst - output frame @a clipFrame from the clip's start onwards - from its reader. */
 	void render(const Sample& sample, SampleFrame* dst, f_cnt_t frames, f_cnt_t clipFrame, double ratio);
+	//! Prepare/adopt/discard every reader's converter as one state set.
+	auto prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool;
+	void adoptPreparedConverterMode() noexcept;
+	void discardPreparedConverterMode() noexcept;
 
 	int readerCount() const { return m_readerCount; }
 	int spanCount() const { return m_spanCount; }

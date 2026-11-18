@@ -44,6 +44,8 @@
 #include <QFileInfo>
 #include <QByteArray>
 #include <QDomElement>
+#include <algorithm>
+#include <QMutexLocker>
 #include <cassert>
 #include <cmath>
 
@@ -89,7 +91,8 @@ PLUGIN_EXPORT Plugin * lmms_plugin_main( Model *m, void * )
 
 // I'd much rather do without a mutex, but it looks like
 // the emulator code isn't really ready for threads
-QMutex OpulenzInstrument::emulatorMutex;
+// Recursive because reloadEmulator() holds it while updatePatch() takes it again.
+QRecursiveMutex OpulenzInstrument::emulatorMutex;
 
 // Weird ordering of voice parameters
 const auto adlib_opadd = std::array<unsigned int, OPL2_VOICES>{0x00, 0x01, 0x02, 0x08, 0x09, 0x0A, 0x10, 0x11, 0x12};
@@ -229,17 +232,17 @@ OpulenzInstrument::~OpulenzInstrument() {
 
 // Samplerate changes when choosing oversampling, so this is more or less mandatory
 void OpulenzInstrument::reloadEmulator() {
-	delete theEmulator;
 	emulatorMutex.lock();
+	delete theEmulator;
 	theEmulator = new CTemuopl(Engine::audioEngine()->outputSampleRate(), true, false);
 	theEmulator->init();
 	theEmulator->write(0x01,0x20);
-	emulatorMutex.unlock();
 	for(int i=0; i<OPL2_VOICES; ++i) {
 		voiceNote[i] = OPL2_VOICE_FREE;
 		voiceLRU[i] = i;
 	}
 	updatePatch();
+	emulatorMutex.unlock();
 }
 
 // This shall only be called from code protected by the holy Mutex!
@@ -393,15 +396,25 @@ gui::PluginView* OpulenzInstrument::instantiateView( QWidget * _parent )
 void OpulenzInstrument::playImpl(std::span<SampleFrame> out)
 {
 	emulatorMutex.lock();
-	theEmulator->update(renderbuffer, frameCount);
+	for (std::size_t offset = 0; offset < out.size();)
+	{
+		const auto chunkSize = std::min(out.size() - offset, static_cast<std::size_t>(frameCount));
+		if (chunkSize == 0)
+		{
+			break;
+		}
 
-	for( f_cnt_t frame = 0; frame < frameCount; ++frame )
-        {
-                sample_t s = float(renderbuffer[frame]) / 8192.0;
-                for( ch_cnt_t ch = 0; ch < DEFAULT_CHANNELS; ++ch )
-                {
-                        out[frame][ch] = s;
-                }
+		theEmulator->update(renderbuffer, static_cast<f_cnt_t>(chunkSize));
+
+		for (std::size_t frame = 0; frame < chunkSize; ++frame)
+		{
+			const sample_t sample = static_cast<sample_t>(renderbuffer[frame]) / 8192.0f;
+			for (ch_cnt_t ch = 0; ch < DEFAULT_CHANNELS; ++ch)
+			{
+				out[offset + frame][ch] = sample;
+			}
+		}
+		offset += chunkSize;
 	}
 	emulatorMutex.unlock();
 }
@@ -489,7 +502,11 @@ void OpulenzInstrument::loadSettings( const QDomElement & _this )
 
 // Load a patch into the emulator
 void OpulenzInstrument::loadPatch(const unsigned char inst[14]) {
-	emulatorMutex.lock();
+	QMutexLocker locker(&emulatorMutex);
+	loadPatchLocked(inst);
+}
+
+void OpulenzInstrument::loadPatchLocked(const unsigned char inst[14]) {
 	for(int v=0; v<OPL2_VOICES; ++v) {
 		theEmulator->write(0x20+adlib_opadd[v],inst[0]); // op1 AM/VIB/EG/KSR/Multiplier
 		theEmulator->write(0x23+adlib_opadd[v],inst[1]); // op2
@@ -503,7 +520,6 @@ void OpulenzInstrument::loadPatch(const unsigned char inst[14]) {
 		theEmulator->write(0xe3+adlib_opadd[v],inst[9]); // op2
 		theEmulator->write(0xc0+v,inst[10]);             // feedback/algorithm
 	}
-	emulatorMutex.unlock();
 }
 
 void OpulenzInstrument::tuneEqual(int center, float Hz) {
@@ -516,8 +532,10 @@ void OpulenzInstrument::tuneEqual(int center, float Hz) {
 // Find suitable F number in lowest possible block
 int OpulenzInstrument::Hz2fnum(float Hz) {
 	for(int block=0; block<8; ++block) {
-		auto fnum = static_cast<unsigned>(Hz * std::exp2(20.0f - static_cast<float>(block)) / 49716.0f);
-		if(fnum<1023) {
+		// Check the float before converting: negative, NaN or >= 2^32 has no unsigned value
+		const float scaled = Hz * std::exp2(20.0f - static_cast<float>(block)) / 49716.0f;
+		if(scaled >= 0.0f && scaled < 1023.0f) {
+			auto fnum = static_cast<unsigned>(scaled);
 			return fnum + (block << 10);
 		}
 	}
@@ -532,6 +550,7 @@ void OpulenzInstrument::loadGMPatch() {
 
 // Update patch from the models to the chip emulation
 void OpulenzInstrument::updatePatch() {
+	QMutexLocker locker(&emulatorMutex);
 	auto inst = std::array<unsigned char, 14>{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 	inst[0] = ( op1_trem_mdl.value() ?  128 : 0  ) +
 		( op1_vib_mdl.value() ?  64 : 0 ) +
@@ -570,7 +589,10 @@ void OpulenzInstrument::updatePatch() {
 
 	// have to do this, as the level knobs might've changed
 	for( int voice = 0; voice < OPL2_VOICES ; ++voice) {
-		if(voiceNote[voice] && OPL2_VOICE_FREE == 0) {
+		// The free flag is a bit in the voice's note number: a voice that is
+		// still sounding has it clear, a free or an already released one has
+		// it set (the same test the pitch bend handler uses).
+		if((voiceNote[voice] & OPL2_VOICE_FREE) == 0) {
 			setVoiceVelocity(voice, velocities[voiceNote[voice]] );
 		}
 	}
@@ -581,7 +603,7 @@ void OpulenzInstrument::updatePatch() {
 #endif
 
 
-	loadPatch(inst.data());
+	loadPatchLocked(inst.data());
 }
 
 // Load an SBI file into the knob models
@@ -597,7 +619,9 @@ void OpulenzInstrument::loadFile( const QString& file ) {
 		}
 
 		QByteArray sbidata = sbifile.read(52);
-		if( !sbidata.startsWith("SBI\0x1a") ) {
+		// The SBI signature is four bytes: "SBI" followed by 0x1a. A plain
+		// string literal stops at the first NUL, so the length is explicit.
+		if( !sbidata.startsWith(QByteArray{"SBI\x1a", 4}) ) {
 			printf("No SBI signature\n");
 			return;
 		}

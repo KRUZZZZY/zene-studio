@@ -133,7 +133,7 @@ bool CollabHost::start(const QHostAddress& address, quint16 port, QString* error
 	server->onDescriptor = [this](qintptr descriptor) { acceptDescriptor(descriptor); };
 	if (!server->listen(address, port))
 	{
-		*error = QStringLiteral("could not listen on port %1: %2").arg(port).arg(server->errorString());
+		if (error != nullptr) { *error = QStringLiteral("could not listen on port %1: %2").arg(port).arg(server->errorString()); }
 		return false;
 	}
 	m_server = std::move(server);
@@ -145,6 +145,17 @@ void CollabHost::stop()
 	if (m_server) { m_server->close(); }
 	m_server.reset();
 	m_backlog.clear();
+	m_backlogBytes = 0;
+	const QSet<QSslSocket*> pendingSockets = m_pendingSockets;
+	m_pendingSockets.clear();
+	m_pending = 0;
+	for (QSslSocket* socket : pendingSockets)
+	{
+		socket->setProperty(DoneProperty, true);
+		socket->disconnect(this);
+		socket->abort();
+		socket->deleteLater();
+	}
 	const QHash<int, Peer> peers = m_peers;
 	m_peers.clear();
 	for (const Peer& peer : peers)
@@ -177,7 +188,7 @@ void CollabHost::acceptDescriptor(qintptr descriptor)
 	auto* socket = new QSslSocket(this);
 	if (!socket->setSocketDescriptor(descriptor)) { socket->deleteLater(); return; }
 	const QString from = socket->peerAddress().toString();
-	const bool full = m_pending >= MaxPendingHandshakes || m_peers.size() >= MaxPeers;
+	const bool full = m_pending >= MaxPendingHandshakes || static_cast<int>(m_peers.size()) + m_pending >= MaxPeers;
 	if (full || !m_limiter.admit(from, nowMs()))
 	{
 		socket->abort();
@@ -185,6 +196,7 @@ void CollabHost::acceptDescriptor(qintptr descriptor)
 		return;
 	}
 	++m_pending;
+	m_pendingSockets.insert(socket);
 	socket->setSslConfiguration(pskConfiguration());
 	connect(socket, &QSslSocket::preSharedKeyAuthenticationRequired, this,
 		[this, socket](QSslPreSharedKeyAuthenticator* authenticator) { onPsk(socket, authenticator); });
@@ -210,7 +222,7 @@ void CollabHost::onHandshakeFailed(QSslSocket* socket)
 {
 	// Reached from errorOccurred and from the handshake timer; a socket that already became a peer, or was
 	// already counted, is left alone (its CollabLink reports its own close).
-	if (socket->isEncrypted() || socket->property(DoneProperty).toBool()) { return; }
+	if (socket->isEncrypted() || socket->property(DoneProperty).toBool() || !m_pendingSockets.remove(socket)) { return; }
 	socket->setProperty(DoneProperty, true);
 	--m_pending;
 	m_limiter.recordFailure(socket->peerAddress().toString(), nowMs());
@@ -221,11 +233,19 @@ void CollabHost::onHandshakeFailed(QSslSocket* socket)
 
 void CollabHost::onEncrypted(QSslSocket* socket)
 {
+	if (socket->property(DoneProperty).toBool() || !m_pendingSockets.remove(socket))
+	{
+		socket->disconnect(this);
+		socket->abort();
+		socket->deleteLater();
+		return;
+	}
 	socket->setProperty(DoneProperty, true);
 	--m_pending;
 	socket->disconnect(this);
 	const auto role = static_cast<CollabRole>(socket->property(RoleProperty).toInt());
 	auto* link = new CollabLink(socket, MaxPeerLineBytes, this);
+	if (m_peers.size() >= MaxPeers) { turnAway(link, QStringLiteral("the host is full")); return; }
 	QString error;
 	const QByteArray snapshot = role != CollabRole::Remote ? snapshotFrame(&error) : QByteArray();
 	if (role != CollabRole::Remote && snapshot.isEmpty()) { turnAway(link, error); return; }
@@ -268,8 +288,27 @@ void CollabHost::rename(Peer& peer, const QJsonObject& hello)
 
 void CollabHost::resyncPeer(Peer& peer)
 {
-	if (!holdsProject(peer) || nowMs() - peer.lastResyncMs < ResyncIntervalMs) { return; }
-	peer.lastResyncMs = nowMs();
+	if (!holdsProject(peer)) { return; }
+	const qint64 now = nowMs();
+	const qint64 sinceLastResync = now - peer.lastResyncMs;
+	if (sinceLastResync < ResyncIntervalMs)
+	{
+		if (!peer.resyncPending)
+		{
+			peer.resyncPending = true;
+			const int delayMs = static_cast<int>(ResyncIntervalMs - sinceLastResync);
+			const int peerId = peer.id;
+			QTimer::singleShot(delayMs, this, [this, peerId] {
+				auto it = m_peers.find(peerId);
+				if (it == m_peers.end() || !it->resyncPending) { return; }
+				it->resyncPending = false;
+				resyncPeer(*it);
+			});
+		}
+		return;
+	}
+	peer.resyncPending = false;
+	peer.lastResyncMs = now;
 	QString error;
 	if (!sendSnapshot(peer, snapshotFrame(&error))) { emit notice(QStringLiteral("could not re-sync %1: %2").arg(peer.name, error)); }
 }
@@ -281,12 +320,17 @@ void CollabHost::onMessage(int peerId, const QJsonObject& message, const QByteAr
 	const QString type = message.value(QStringLiteral("type")).toString();
 	if (type == QLatin1String("hello")) { rename(*it, message); return; }
 	if (type == QLatin1String("resync")) { resyncPeer(*it); return; }
-	if (line.trimmed().isEmpty()) { return; }
 	// Everything else is a request in the control-socket shape; the handler answers malformed ones itself.
 	// Requests wait while a nested event loop runs (a dialog, a handler that waits), so a peer's command never
 	// runs inside another command; the per-peer order is kept because one queue holds them all.
-	if (m_backlog.size() >= MaxBacklog) { it->link->close(QStringLiteral("too many requests waiting")); return; }
+	// The count and the byte total are both capped: a count alone lets 512 maximum-size lines retain about 512 MiB.
+	if (m_backlog.size() >= MaxBacklog || line.size() > MaxBacklogBytes - m_backlogBytes)
+	{
+		it->link->close(QStringLiteral("too many requests waiting"));
+		return;
+	}
 	m_backlog.append({peerId, line});
+	m_backlogBytes += line.size();
 	drainRequests();
 }
 
@@ -295,6 +339,7 @@ void CollabHost::drainRequests()
 	while (!m_backlog.isEmpty() && QThread::currentThread()->loopLevel() <= 1)
 	{
 		const auto [peerId, line] = m_backlog.takeFirst();
+		m_backlogBytes -= line.size();
 		auto it = m_peers.find(peerId);
 		if (it == m_peers.end()) { continue; }
 		const QByteArray reply = m_requests ? m_requests(line, it->role, it->name)
@@ -325,9 +370,27 @@ QByteArray CollabHost::snapshotFrame(QString* error)
 		if (error->isEmpty()) { *error = QStringLiteral("the host could not write its project"); }
 		return QByteArray();
 	}
-	const QByteArray frame = frameOf({{QStringLiteral("type"), QStringLiteral("snapshot")},
-		{QStringLiteral("seq"), static_cast<double>(m_seq)}, {QStringLiteral("bytes"), static_cast<int>(project.size())},
-		{QStringLiteral("data"), QString::fromLatin1(project.toBase64())}});
+	if (project.size() >= MaxHostLineBytes)
+	{
+		*error = QStringLiteral("the project is too large to share (%1 MB; the limit is %2 MB)")
+			.arg(project.size() / (1024 * 1024)).arg(MaxHostLineBytes / (1024 * 1024) * 3 / 4);
+		return QByteArray();
+	}
+	// Reject before base64-encoding: the frame carries the project base64-encoded, so an oversized project
+	// cannot fit even before paying for the (large) allocation.
+	const qsizetype base64Size = ((project.size() + 2) / 3) * 4;
+	QJsonObject frameObject{{QStringLiteral("type"), QStringLiteral("snapshot")},
+		{QStringLiteral("seq"), static_cast<double>(m_seq)}, {QStringLiteral("bytes"), project.size()},
+		{QStringLiteral("data"), QString()}};
+	const QByteArray frameHeader = frameOf(frameObject);
+	if (base64Size + frameHeader.size() >= MaxHostLineBytes)
+	{
+		*error = QStringLiteral("the project is too large to share (%1 MB; the limit is %2 MB)")
+			.arg(project.size() / (1024 * 1024)).arg(MaxHostLineBytes / (1024 * 1024) * 3 / 4);
+		return QByteArray();
+	}
+	frameObject.insert(QStringLiteral("data"), QString::fromLatin1(project.toBase64()));
+	const QByteArray frame = frameOf(frameObject);
 	if (frame.size() >= MaxHostLineBytes)
 	{
 		*error = QStringLiteral("the project is too large to share (%1 MB; the limit is %2 MB)")
@@ -349,8 +412,15 @@ void CollabHost::broadcastSnapshot(const QString& reason)
 	QString error;
 	const QByteArray frame = snapshotFrame(&error);
 	if (frame.isEmpty()) { emit notice(QStringLiteral("could not re-sync the peers: %1").arg(error)); return; }
-	sendToProjectPeers(frame);
-	emit notice(QStringLiteral("peers re-synced (%1)").arg(reason));
+	const int recipients = sendToProjectPeers(frame);
+	if (recipients == 0)
+	{
+		emit notice(QStringLiteral("no project peers to re-sync (%1)").arg(reason));
+	}
+	else
+	{
+		emit notice(QStringLiteral("peers re-synced (%1): %2 recipient(s)").arg(reason).arg(recipients));
+	}
 }
 
 void CollabHost::broadcastCommand(const QString& command, const QJsonObject& args, const QString& origin)
@@ -360,12 +430,16 @@ void CollabHost::broadcastCommand(const QString& command, const QJsonObject& arg
 		{QStringLiteral("cmd"), command}, {QStringLiteral("args"), args}, {QStringLiteral("origin"), origin}}));
 }
 
-void CollabHost::sendToProjectPeers(const QByteArray& line)
+int CollabHost::sendToProjectPeers(const QByteArray& line)
 {
-	for (const Peer& peer : std::as_const(m_peers))
+	int recipients = 0;
+	const QList<int> peerIds = m_peers.keys();
+	for (int peerId : peerIds)
 	{
-		if (holdsProject(peer)) { peer.link->sendLine(line); }
+		auto it = m_peers.find(peerId);
+		if (it != m_peers.end() && holdsProject(*it)) { it->link->sendLine(line); ++recipients; }
 	}
+	return recipients;
 }
 
 QJsonArray CollabHost::peersJson() const
@@ -387,18 +461,27 @@ void CollabHost::broadcastPeers()
 	emit peersChanged();
 }
 
-bool CollabHost::setPeerRole(int peerId, CollabRole role)
+bool CollabHost::setPeerRole(int peerId, CollabRole role, QString* error)
 {
+	if (error != nullptr) { error->clear(); }
 	const auto it = m_peers.find(peerId);
 	if (it == m_peers.end()) { return false; }
 	const bool gainsProject = !holdsProject(*it) && role != CollabRole::Remote;
-	it->role = role;
-	it->link->send({{QStringLiteral("type"), QStringLiteral("role")}, {QStringLiteral("role"), roleName(role)}});
+	QByteArray snapshot;
 	if (gainsProject)
 	{
-		QString error;
-		if (!sendSnapshot(*it, snapshotFrame(&error))) { emit notice(error); }
+		QString snapshotError;
+		snapshot = snapshotFrame(&snapshotError);
+		if (snapshot.isEmpty())
+		{
+			if (error != nullptr) { *error = snapshotError; }
+			emit notice(snapshotError);
+			return false;
+		}
 	}
+	it->role = role;
+	it->link->send({{QStringLiteral("type"), QStringLiteral("role")}, {QStringLiteral("role"), roleName(role)}});
+	if (gainsProject) { sendSnapshot(*it, snapshot); }
 	broadcastPeers();
 	return true;
 }

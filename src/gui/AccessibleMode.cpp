@@ -23,6 +23,7 @@
  */
 
 #include "AccessibleWidgets.h"
+#include "DirectChildOfType.h"
 
 #include <QAbstractItemView>
 #include <QAbstractSpinBox>
@@ -30,6 +31,7 @@
 #include <QApplication>
 #include <QFocusEvent>
 #include <QFocusFrame>
+#include <QLabel>
 #include <QLineEdit>
 #include <QMainWindow>
 #include <QPainter>
@@ -183,17 +185,69 @@ void installAccessibility()
 {
 	installAccessibleWidgets();
 	auto* app = qobject_cast<QApplication*>(QCoreApplication::instance());
-	if (app == nullptr || app->findChild<AccessibleMode*>(QStringLiteral("zeneAccessibleMode"), Qt::FindDirectChildrenOnly) != nullptr)
+	if (app == nullptr || directChildOfType<AccessibleMode>(app, QStringLiteral("zeneAccessibleMode")) != nullptr)
 	{
 		return;
 	}
 	app->installEventFilter(new AccessibleMode(app));
 }
 
-void announceStatus(QObject* source, const QString& message, Politeness politeness)
+namespace
+{
+
+//! The window's live region: a one-pixel label that is never painted over anything and takes no focus. Its
+//! name is the message being announced, which is what a pre-6.8 alert makes the screen reader read.
+QLabel* liveRegion(QWidget* window)
+{
+	static QPointer<QLabel> region;
+	if (region.isNull())
+	{
+		region = new QLabel(window);
+		region->setObjectName(QStringLiteral("zeneLiveRegion"));
+		region->setFocusPolicy(Qt::NoFocus);
+		region->setAttribute(Qt::WA_TransparentForMouseEvents);
+		region->setFixedSize(1, 1);
+	}
+	else if (region->parentWidget() != window)
+	{
+		region->setParent(window);
+		region->setFixedSize(1, 1);
+	}
+	return region;
+}
+
+QWidget* liveRegionWindow()
+{
+	if (QWidget* active = QApplication::activeWindow()) { return active; }
+	for (QWidget* top : QApplication::topLevelWidgets())
+	{
+		if (qobject_cast<QMainWindow*>(top) != nullptr) { return top; }
+	}
+	return nullptr;
+}
+
+} // namespace
+
+QObject* announcementSource(QObject* source, const QString& message)
+{
+	if (source == nullptr) { return nullptr; }
+	if (QAccessibleInterface* shown = QAccessible::queryAccessibleInterface(source))
+	{
+		if (shown->text(QAccessible::Name) == message) { return source; }
+	}
+	QWidget* window = liveRegionWindow();
+	if (window == nullptr) { return source; }
+	QLabel* region = liveRegion(window);
+	region->setText(message);
+	region->setAccessibleName(message);
+	region->show();
+	return region;
+}
+
+void announceStatus(QObject* source, const QString& message, Politeness politeness, Repeat repeat)
 {
 	// The policy first (AccessibleAnnouncements.cpp), so a test with no screen reader still sees what would be said.
-	if (source == nullptr || !shouldAnnounce(message, politeness) || !QAccessible::isActive()) { return; }
+	if (source == nullptr || !shouldAnnounce(message, politeness, repeat) || !QAccessible::isActive()) { return; }
 #if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
 	QAccessibleAnnouncementEvent event(source, message);
 	event.setPoliteness(politeness == Politeness::Assertive ? QAccessible::AnnouncementPoliteness::Assertive
@@ -201,7 +255,7 @@ void announceStatus(QObject* source, const QString& message, Politeness politene
 	QAccessible::updateAccessibility(&event);
 #else
 	Q_UNUSED(politeness)
-	QAccessibleEvent event(source, QAccessible::Alert);
+	QAccessibleEvent event(announcementSource(source, message), QAccessible::Alert);
 	QAccessible::updateAccessibility(&event);
 #endif
 }

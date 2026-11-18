@@ -147,6 +147,12 @@ bool readMasterFields(const QJsonObject& args, hardwareio::CueMaster* master, Co
 	return true;
 }
 
+bool hasCueMasterFields(const QJsonObject& args)
+{
+	return args.contains(QStringLiteral("name")) || args.contains(QStringLiteral("level")) || args.contains(QStringLiteral("output"))
+		|| args.contains(QStringLiteral("follow_listen"));
+}
+
 bool readCueState(const QJsonObject& args, CueState* state, ControlResult* error)
 {
 	const QString listenTo = args.value(QStringLiteral("listen_to")).toString();
@@ -156,7 +162,15 @@ bool readCueState(const QJsonObject& args, CueState* state, ControlResult* error
 		return false;
 	}
 	if (!listenTo.isEmpty()) { state->listenToCue = listenTo == QStringLiteral("cue"); }
-	if (!args.contains(QStringLiteral("cue"))) { return true; }
+	if (!args.contains(QStringLiteral("cue")))
+	{
+		if (hasCueMasterFields(args))
+		{
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'cue' is required when changing a cue master"));
+			return false;
+		}
+		return true;
+	}
 	int cue = 0;
 	return readCue(args, &cue, error) && readMasterFields(args, &state->masters[static_cast<std::size_t>(cue)], error);
 }

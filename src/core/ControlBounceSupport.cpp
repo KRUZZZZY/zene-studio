@@ -93,10 +93,12 @@ QString parseRange(const QJsonObject& args, bool required, BounceInPlace::Range*
 //! file. The same bounce made again lands on the same path and replaces it.
 static QString defaultBouncePath(Track* track, const QString& verb, const BounceInPlace::Range& range)
 {
-	const QString project = Engine::getSong()->projectFileName();
+	const Song* song = Engine::getSong();
+	const QString project = song->projectFileName();
 	const QDir base = project.isEmpty() ? QDir(QDir::tempPath()) : QFileInfo(project).dir();
+	// Keep repeated bounces stable in one document while isolating different unsaved projects.
 	const QString name = project.isEmpty()
-		? QStringLiteral("untitled")
+		? QStringLiteral("untitled-%1").arg(song->property("_zeneUnsavedProjectId").toString())
 		: QFileInfo(project).completeBaseName();
 	const QDir directory(base.filePath(name + QStringLiteral("-bounces")));
 
@@ -113,6 +115,15 @@ QString resolveOutPath(const QJsonObject& args, Track* track, const QString& ver
 {
 	const QString requested = args.value(QStringLiteral("out")).toString();
 	return requested.isEmpty() ? defaultBouncePath(track, verb, range) : requested;
+}
+
+QString flattenRefusal(const Track* track)
+{
+	// The same test BounceInPlace's carriesAudio applies: an automation track or a folder has no audio of its own, so
+	// its render is silence and flattening it would replace its data with that silence.
+	if (static_cast<int>(track->type()) < static_cast<int>(Track::Type::Automation)) { return QString(); }
+	return QStringLiteral("%1 carries no audio: a flatten needs an instrument, pattern, sample, event or video track")
+		.arg(trackIdOf(track));
 }
 
 //! The render facts every verb of this file reports.

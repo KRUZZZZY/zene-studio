@@ -26,6 +26,7 @@
 #define LMMS_GUI_ARRANGER_ZOOM_H
 
 #include <QPoint>
+#include <QtCore/qnamespace.h>
 
 #include "LmmsTypes.h"
 #include "lmms_export.h"
@@ -76,9 +77,30 @@ constexpr int WheelBurstMs = 400;
 
 //! The zoom history arrangement.zoom_back walks (zoom model values, newest last; UI thread).
 LMMS_EXPORT void remember(int value);
-//! Swap @a current with the newest remembered value, into @a earlier; false when there is none.
+//! Record the starting zoom when a pinch has ended (finished or canceled), if it changed.
+LMMS_EXPORT void finishPinch(int startValue, int currentValue, bool ended);
+#ifndef QT_NO_GESTURES
+//! The gesture-state form, where Qt has gestures. A Qt built without them (MinGW Qt 5 in the
+//! hosted mingw64 job) declares no Qt::GestureState, so the exported overload takes a bool.
+inline void finishPinch(int startValue, int currentValue, Qt::GestureState state)
+{
+	finishPinch(startValue, currentValue, state == Qt::GestureFinished || state == Qt::GestureCanceled);
+}
+#endif
+//! Step one back: take the newest remembered extent into @a earlier and queue @a current so
+//! arrangement.zoom_forward can return to it; false when there is nothing earlier (UI thread).
 LMMS_EXPORT bool takeEarlier(int current, int* earlier);
+//! Step one forward: take the newest queued extent into @a next and leave @a current to go back to; false when
+//! there is nothing forward (UI thread).
+LMMS_EXPORT bool takeNext(int current, int* next);
+//! The zoom toggle: return the extent the current one last left (a zoom or a back / forward step) into
+//! @a extent, with @a current the extent to return to next time; false after the very first zoom yet (UI thread).
+//! The swap reconciles the walk: the extent swapped to comes off the stack that holds it and the extent left
+//! behind queues in its place, so a back or forward step after the toggle never succeeds without a change.
+LMMS_EXPORT bool takeToggle(int current, int* extent);
 LMMS_EXPORT int historySize();
+//! The extents queued forward (a forward step can take); UI thread.
+LMMS_EXPORT int forwardSize();
 
 } // namespace arrangerzoom
 

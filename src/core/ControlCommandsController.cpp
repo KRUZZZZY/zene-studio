@@ -131,6 +131,18 @@ bool modelNamedExists(const QString& name)
 	return false;
 }
 
+//! The other bound control in @a all that answers to @a name too, or nullptr when \a bound is the only one - i.e. when
+//! the name is unambiguous and the control can be resolved.
+const BoundControl* otherBoundWithName(const QVector<BoundControl>& all, const BoundControl& bound,
+	const QString& name)
+{
+	for (const BoundControl& other : all)
+	{
+		if (&other != &bound && other.name == name) { return &other; }
+	}
+	return nullptr;
+}
+
 //! The control an argument names. An empty \a spec means "the project's only
 //! bound MIDI control", which is what a single-controller session wants; with
 //! more than one bound control it is refused rather than guessed, because
@@ -165,7 +177,28 @@ BoundControl findBoundControl(const QString& spec, ControlResult* error)
 
 	for (const BoundControl& bound : all)
 	{
-		if (bound.name == spec) { return bound; }
+		if (bound.name != spec) { continue; }
+
+		// Two bound controls can answer to ONE name: Model::fullDisplayName()
+		// is the display name under the parent's, so two identically named
+		// devices in one track - or two copies of one device - collide. Which
+		// one the caller meant is then unanswerable, and returning the first
+		// would silently write to a control it did not choose. So the same
+		// question the empty 'control' branch above refuses is refused here:
+		// named, but ambiguously.
+		const BoundControl* second = otherBoundWithName(all, bound, spec);
+		if (second == nullptr) { return bound; }
+
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("'%1' names %2 MIDI-bound controls, so which one to change is not "
+				"answerable; nothing was changed. Rename one of them, or bind the one you mean "
+				"through MIDI learn (midi.learn_toggle). The two bindings are CC %3/%4 and CC %5/%6")
+				.arg(spec).arg(2)
+				.arg(bound.controller->midiPort().inputChannel())
+				.arg(bound.controller->midiPort().inputController())
+				.arg(second->controller->midiPort().inputChannel())
+				.arg(second->controller->midiPort().inputController()));
+		return BoundControl();
 	}
 
 	// Distinguish "no such control" from "the control exists but is not bound

@@ -44,6 +44,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <array>
 #include <memory>
 #include <span>
 #include <vector>
@@ -61,6 +62,7 @@
 #include "SampleTrack.h"
 #include "Song.h"
 #include "TimePos.h"
+#include "WarpMarkers.h"
 
 #if __has_include("SampleWindow.h")
 #include "SampleWindow.h"
@@ -165,6 +167,36 @@ private slots:
 	void cleanupTestCase()
 	{
 		Engine::destroy();
+	}
+
+	//! A project may carry a lead only when it parsed as a frame count below one clip tick.
+	void projectLoadRejectsInvalidLeadValues()
+	{
+		const int rate = Engine::audioEngine()->outputSampleRate();
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeToneClip(track, rate);
+		QVERIFY(clip->clipFramesPerTick() > 1.0f);
+
+		QDomDocument document;
+		QDomElement element = document.createElement(QStringLiteral("sampleclip"));
+		document.appendChild(element);
+		element.setAttribute(QStringLiteral("pos"), 0);
+		element.setAttribute(QStringLiteral("len"), 384);
+		element.setAttribute(QStringLiteral("muted"), 0);
+		element.setAttribute(QStringLiteral("off"), 0);
+		element.setAttribute(QStringLiteral("autoresize"), 0);
+		const auto restoreLead = [&](const QString& value)
+		{
+			element.setAttribute(QStringLiteral("lead"), value);
+			clip->restoreState(element);
+			return clip->leadFrames();
+		};
+
+		QCOMPARE(restoreLead(QStringLiteral("1")), f_cnt_t{1});
+		QCOMPARE(restoreLead(QStringLiteral("18446744073709551615")), f_cnt_t{0});
+		const auto atTick = static_cast<qulonglong>(std::ceil(clip->clipFramesPerTick()));
+		QCOMPARE(restoreLead(QString::number(atTick)), f_cnt_t{0});
+		QCOMPARE(restoreLead(QStringLiteral("invalid")), f_cnt_t{0});
 	}
 
 	//! THE RED TEST. A window authored on the clip is authored state: a playback
@@ -395,6 +427,215 @@ private slots:
 		QCOMPARE(static_cast<int>(clip->sample().startFrame()), static_cast<int>(in));
 		QCOMPARE(static_cast<int>(clip->sample().endFrame()), static_cast<int>(out));
 #endif
+	}
+
+	//! Luna cluster 2484: "where does this source frame play" must follow the
+	//! clip's play DIRECTION. `SampleClip::timelinePosAt()` clamped the frame into
+	//! the window and mapped it forwards, never consulting `reversed()` - so every
+	//! consumer that places a source frame on the timeline (the view's transient
+	//! overlay, `clipTransientTicks`, the slice and warp-quantise commands) kept the
+	//! markers at their forward positions after "Reverse sample".
+	//!
+	//! The rule asserted is the mirror: a reversed clip plays frame
+	//! `sourceIn + sourceOut - 1 - f` where a forward one plays `f`.
+	void aReversedClipMapsItsFramesThroughTheReversedDirection()
+	{
+#ifdef LMMS_HAVE_SAMPLE_WINDOW
+		const int rate = Engine::audioEngine()->outputSampleRate();
+		const f_cnt_t in = trimIn(rate);
+		const f_cnt_t out = trimOut(rate);
+
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeToneClip(track, rate);
+		clip->setSampleStartFrame(in);
+		clip->setSamplePlayLength(out);
+
+		// the forward mapping, measured before the reversal
+		const auto forwardOf = [clip](f_cnt_t frame) { return clip->timelinePosAt(frame).getTicks(); };
+
+		QCOMPARE(clip->sample().reversed(), false);
+		const auto forwardAtIn = forwardOf(in);
+		const auto forwardAtInNext = forwardOf(in + 1);
+		const auto forwardAtLast = forwardOf(out - 1);
+		const auto forwardAtPenultimate = forwardOf(out - 2);
+		const auto forwardAtMid = forwardOf((in + out) / 2);
+		QVERIFY(forwardAtIn < forwardAtMid);
+		QVERIFY(forwardAtMid < forwardAtLast);
+
+		// reversing swaps which window frame each timeline position plays
+		clip->sample().setReversed(true);
+		QCOMPARE(clip->sample().reversed(), true);
+
+		// Sample::render reverses the whole buffer: buffer frame f is played at play frame size - 1 - f.
+		// So the frame that plays at play frame p is the buffer frame size - 1 - p, and that frame's
+		// timeline position is the forward position of p.
+		const auto size = static_cast<f_cnt_t>(clip->sample().sampleSize());
+		QCOMPARE(forwardOf(size - 1 - in), forwardAtIn);
+		QCOMPARE(forwardOf(size - 1 - (in + 1)), forwardAtInNext);
+		QCOMPARE(forwardOf(size - 1 - (out - 1)), forwardAtLast);
+		QCOMPARE(forwardOf(size - 1 - (out - 2)), forwardAtPenultimate);
+
+		// and the ordering inverts: as the buffer frame ascends, the tick descends.
+		// A whole tick's worth of frames, so the assertion measures direction rather
+		// than the frame-to-tick truncation (two adjacent frames share a tick).
+		const auto aTick = static_cast<f_cnt_t>(Engine::framesPerTick(rate));
+		const auto middle = size - 1 - (in + out) / 2;
+		QVERIFY2(forwardOf(middle) > forwardOf(middle + aTick),
+				 "a reversed clip mapped its frames in ascending order");
+
+		// restoring the direction restores the mapping exactly
+		clip->sample().setReversed(false);
+		QCOMPARE(forwardOf(in), forwardAtIn);
+		QCOMPARE(forwardOf(in + 1), forwardAtInNext);
+		QCOMPARE(forwardOf((in + out) / 2), forwardAtMid);
+		QCOMPARE(forwardOf(out - 1), forwardAtLast);
+		QCOMPARE(forwardOf(out - 2), forwardAtPenultimate);
+#else
+		QSKIP("the clip-level timeline mapping does not exist on this tree");
+#endif
+	}
+
+	//! Audible, not only mapped: a single impulse in a reversed, trimmed clip must come out of the
+	//! renderer where the timeline mapping says its transient sits (the overlay and the slice and
+	//! warp-quantise commands rely on that mapping).
+	void aReversedImpulseSoundsWhereItsTransientPlaces()
+	{
+#ifdef LMMS_HAVE_SAMPLE_WINDOW
+		const int rate = Engine::audioEngine()->outputSampleRate();
+		const f_cnt_t in = trimIn(rate);
+		const f_cnt_t out = trimOut(rate);
+		const auto frames = static_cast<f_cnt_t>(kSourceSeconds) * rate;
+		// The impulse plays a quarter of the way into the window, so the mapping cannot match by accident.
+		const f_cnt_t playAt = in + (out - in) / 4;
+		const f_cnt_t at = frames - 1 - playAt;
+		std::vector<SampleFrame> data(frames, SampleFrame(0.0f, 0.0f));
+		data[at] = SampleFrame(1.0f, 1.0f);
+
+		SampleTrack track(Engine::getSong());
+		auto* clip = dynamic_cast<SampleClip*>(track.createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), rate));
+		clip->setSampleStartFrame(in);
+		clip->setSamplePlayLength(out);
+		clip->sample().setReversed(true);
+
+		std::vector<SampleFrame> rendered(out - in + 64, SampleFrame(0.0f, 0.0f));
+		Sample::PlaybackState state;
+		clip->sample().play(rendered.data(), &state, rendered.size());
+		std::size_t peak = 0;
+		for (std::size_t i = 0; i < rendered.size(); ++i)
+		{
+			if (std::abs(rendered[i][0]) > std::abs(rendered[peak][0])) { peak = i; }
+		}
+		const auto expected = static_cast<long long>(playAt - in);
+		QVERIFY2(std::abs(static_cast<long long>(peak) - expected) <= 2,
+				 qPrintable(QStringLiteral("the impulse rendered at frame %1, expected %2").arg(peak).arg(expected)));
+
+		// and the timeline mapping of the same buffer frame lands on that frame, to a tick's precision
+		const auto framesPerTick = static_cast<double>(Engine::framesPerTick(rate));
+		const double mapped = static_cast<double>(clip->timelinePosAt(at).getTicks()) * framesPerTick;
+		QVERIFY2(std::abs(mapped - static_cast<double>(expected)) <= framesPerTick + 2.0,
+				 qPrintable(QStringLiteral("the timeline mapped the impulse to frame %1, rendered at %2")
+							.arg(mapped).arg(expected)));
+#else
+		QSKIP("the clip-level timeline mapping does not exist on this tree");
+#endif
+	}
+
+	//! BUG new-p16-205: a window edit has to move the clip's timeline length with
+	//! it. The clip plays exactly its window, so a window that is trimmed in half
+	//! is half the audio - a clip that kept its old length would play half a
+	//! clip of silence. The length is moved while auto-resize is still on,
+	//! because the moment auto-resize goes off nothing moves it any more.
+	void trimmingTheWindowMovesTheClipLength()
+	{
+		const int rate = Engine::audioEngine()->outputSampleRate();
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeToneClip(track, rate);
+		clip->setAutoResize(true);
+		clip->updateLength();
+		const auto fullLength = static_cast<int>(clip->length());
+		QVERIFY(fullLength > 1);
+		QCOMPARE(static_cast<int>(clip->length()), static_cast<int>(clip->sampleLength()));
+
+		// trim the source in half
+		const auto half = static_cast<f_cnt_t>(clip->sample().sampleSize()) / 2;
+		clip->setSamplePlayLength(half);
+
+		// the window shrank ...
+		QCOMPARE(asNumber(clip->sampleWindow().sourceOut), asNumber(half));
+		QVERIFY(static_cast<int>(clip->sampleLength()) < fullLength);
+		// ... and the clip's length followed it
+		QVERIFY2(std::abs(static_cast<int>(clip->length()) - static_cast<int>(clip->sampleLength())) <= 1,
+				 qPrintable(QStringLiteral("the length stayed at %1, the window says %2")
+						.arg(clip->length().getTicks()).arg(clip->sampleLength().getTicks())));
+	}
+
+	//! BUG new-p17-158: a source whose rate is zero has no frames per tick, so
+	//! the clip-to-timeline mapping has nothing to divide by. It has to answer
+	//! with a DEFINED position - the clip's own origin, the fallback the linear
+	//! branch already gets from TimePos::fromFrames() - and not with a position
+	//! computed from a zero rate, which put the frame hundreds of ticks outside
+	//! the clip that owns it.
+	void aZeroRateSourceMapsToTheClipOrigin()
+	{
+		SampleTrack track(Engine::getSong());
+		auto* clip = dynamic_cast<SampleClip*>(track.createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+
+		// a zero-rate source: 1024 frames of silence at rate 0
+		std::vector<SampleFrame> data(1024, SampleFrame(0.0f, 0.0f));
+		clip->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), 0));
+		QVERIFY(clip->clipFramesPerTick() <= 0.0f);
+
+		const auto origin = clip->startPosition().getTicks() + clip->startTimeOffset().getTicks();
+
+		// the linear mapping answers with the origin ...
+		QCOMPARE(clip->timelinePosAt(0).getTicks(), origin);
+		QCOMPARE(clip->timelinePosAt(512).getTicks(), origin);
+
+		// ... and so must the warped one, which used to divide by the zero rate
+		const std::array<WarpMarker, 2> markers{ WarpMarker{ 256, 4 }, WarpMarker{ 768, 12 } };
+		QVERIFY(clip->setWarpMarkers(std::span<const WarpMarker>(markers)));
+		QCOMPARE(clip->timelinePosAt(0).getTicks(), origin);
+		QCOMPARE(clip->timelinePosAt(512).getTicks(), origin);
+		QCOMPARE(clip->timelinePosAt(1023).getTicks(), origin);
+	}
+
+	//! A frame outside the window has no place on the timeline, and the mapping
+	//! has to say so in a DEFINED way: the window's nearest edge, not a wrapped
+	//! or an underflowed position. A frame past the end of the source is the
+	//! case the unsigned arithmetic used to wrap on (Luna cluster 2484), and it
+	//! has to stay defined in both play directions.
+	void aFrameOutsideTheWindowMapsToItsNearestEdge()
+	{
+		const int rate = Engine::audioEngine()->outputSampleRate();
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeToneClip(track, rate);
+		clip->setSampleStartFrame(trimIn(rate));
+		clip->setSamplePlayLength(trimOut(rate));
+
+		const auto size = static_cast<f_cnt_t>(clip->sample().sampleSize());
+		const auto origin = clip->startPosition().getTicks();
+		const auto last = clip->endPosition().getTicks();
+
+		// a frame past the end of the source
+		for (const f_cnt_t frame : { size + 1000, size * 4 })
+		{
+			const auto forward = clip->timelinePosAt(frame).getTicks();
+			QVERIFY2(forward >= origin && forward <= last,
+					 qPrintable(QStringLiteral("the frame %1 mapped to the tick %2, outside the clip").arg(frame).arg(forward)));
+		}
+
+		// and the same for a reversed clip, whose mirror of that frame is a
+		// negative play frame
+		clip->sample().setReversed(true);
+		for (const f_cnt_t frame : { size + 1000, size * 4 })
+		{
+			const auto reversed = clip->timelinePosAt(frame).getTicks();
+			QVERIFY2(reversed >= origin && reversed <= last,
+					 qPrintable(QStringLiteral("the reversed frame %1 mapped to the tick %2, outside the clip").arg(frame).arg(reversed)));
+		}
 	}
 
 	//! I5: the length the author sees is the window's length, and a tempo change

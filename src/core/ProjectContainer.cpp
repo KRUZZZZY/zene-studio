@@ -56,7 +56,7 @@ namespace
  *  The signature is 0x04034B50 and is stored little-endian, so the bytes on
  *  disk are "PK\3\4". This is a decision about the first four bytes only -
  *  everything after them is the reader's to validate, and it validates all of
- *  it (DawProjectZip.cpp bounds-checks every offset and size, and refuses
+ *  it (DawProjectZipRead.cpp bounds-checks every offset and size, and its strict mode refuses
  *  DEFLATE, encryption, spanning and a bad CRC each by name). */
 bool opensWithZipLocalHeader( const QByteArray& bytes )
 {
@@ -307,8 +307,9 @@ bool writeContainer( const QString& path, const QByteArray& skeleton,
 
 
 bool readContainer( const QString& path, const QStringList& keepEntries,
-	std::vector<std::pair<QString, QByteArray>>* entries, QString* error )
+	std::vector<std::pair<QString, QByteArray>>* entries, QString* error, bool* unreadable )
 {
+	if( unreadable != nullptr ) { *unreadable = false; }
 	if( entries == nullptr )
 	{
 		setError( error, QStringLiteral( "no destination for the container's entries" ) );
@@ -317,7 +318,7 @@ bool readContainer( const QString& path, const QStringList& keepEntries,
 
 	const QString skeleton = skeletonEntryName();
 	std::vector<interchange::DawProjectEntry> all;
-	if( !interchange::dawProjectZipRead( path, &all, error ) ) { return false; }
+	if( !interchange::dawProjectZipRead( path, &all, error, unreadable ) ) { return false; }
 
 	const bool keepEverything = keepEntries.isEmpty();
 	bool sawSkeleton = false;

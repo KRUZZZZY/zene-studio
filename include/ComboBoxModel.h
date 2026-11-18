@@ -63,7 +63,7 @@ public:
 
 	const PixmapLoader* currentData() const
 	{
-		return m_items[value()].second.get();
+		return m_items.empty() ? nullptr : m_items[value()].second.get();
 	}
 
 	const QString & itemText( int i ) const

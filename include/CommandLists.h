@@ -40,7 +40,8 @@ namespace CommandLists
 LMMS_EXPORT ListSpec revisions();
 //! WF-035: the project's file references, relink a missing one, collect media.
 LMMS_EXPORT ListSpec missingFiles(const QString& project);
-//! MX-069: VCA groups - rename, remove, create.
+//! MX-069 / ED-034: VCA groups - rename, remove, the edit set (add/remove a track), phase lock
+//! on/off, create.
 LMMS_EXPORT ListSpec vcaGroups();
 //! ED-147: a sample clip's warp markers - move, remove, add.
 LMMS_EXPORT ListSpec warpMarkers(const QString& clip);
@@ -91,6 +92,11 @@ LMMS_EXPORT ListSpec renderQueue();
 LMMS_EXPORT ListSpec backgroundTasks();
 //! L12 (WF-045): the project's subprojects - render one again, open its file; add one.
 LMMS_EXPORT ListSpec subprojects();
+//! 0.5.0 L12 (Q050-317.1): a mastering document's release sequence - the songs in release order, each
+//! with its processing, fades and gap; add one, edit one, move one, remove one (mastering.song_*).
+LMMS_EXPORT ListSpec masteringSequence();
+//! The last completed mastering run's candidates (mastering.get_state's `candidates`): read-only, no actions.
+LMMS_EXPORT ListSpec masteringReport();
 //! L12 (WF-032): the project's alternatives - switch to one, remove one; keep the session as a new one.
 LMMS_EXPORT ListSpec alternatives();
 
@@ -108,6 +114,22 @@ LMMS_EXPORT ListSpec savedSelections();
 //! settings presets - apply, remove, save the current settings as one.
 LMMS_EXPORT ListSpec settingsCatalogue();
 LMMS_EXPORT ListSpec settingsPresets();
+
+//! 0.5.0 F2 (InstrumentCommandMenus.cpp), each over one instrument track @a track (trk-<n>):
+//! MX-114: its instrument's output buses - route one to a mixer channel, un-route it, a channel for each.
+LMMS_EXPORT ListSpec outputBuses(const QString& track);
+//! MX-114: its MIDI parts (a key/velocity zone sent on one MIDI channel) - edit one in place, remove one, add one.
+LMMS_EXPORT ListSpec midiParts(const QString& track);
+//! MX-112: its layer rack's key/velocity zones (which layers a note plays on) - remove one, add one. The layers
+//! themselves are LayerRackPanel's.
+LMMS_EXPORT ListSpec layerZones(const QString& track);
+//! MX-120: the modulators, each with its source and whether it is per-voice - make one per-voice on the track's notes
+//! (or not), bind one to a parameter of the track's instrument, remove one; create a new one.
+LMMS_EXPORT ListSpec voiceModulators(const QString& track);
+//! MX-120: every modulation assignment (a modulator driving a parameter) with its depth and, for a per-voice
+//! modulator, how each note is driven ('voice_mode') - change a depth, remove one; bind a parameter of the track's
+//! instrument. The modulation layer is the song's, so it lists every track's assignments ('track' says whose).
+LMMS_EXPORT ListSpec modulationAssignments(const QString& track);
 
 } // namespace CommandLists
 

@@ -221,19 +221,18 @@ void VestigeInstrument::loadSettings( const QDomElement & _this )
 		paramCount = dump.size();
 		auto paramStr = std::array<char, 35>{};
 		knobFModel = new FloatModel *[ paramCount ];
-		QStringList s_dumpValues;
 		for( int i = 0; i < paramCount; i++ )
 		{
 			std::snprintf(paramStr.data(), paramStr.size(), "param%d", i);
-			s_dumpValues = dump[paramStr.data()].split(":");
+			const auto entry = parseParameterDumpEntry(dump.value(paramStr.data()));
 
 			knobFModel[i] = new FloatModel( 0.0f, 0.0f, 1.0f, 0.01f, this, QString::number(i) );
 			knobFModel[i]->loadSettings(_this, paramStr.data());
 
-			if( !( knobFModel[ i ]->isAutomated() || knobFModel[ i ]->controllerConnection() ) )
+			if( entry && !( knobFModel[ i ]->isAutomated() || knobFModel[ i ]->controllerConnection() ) )
 			{
-				knobFModel[ i ]->setValue(LocaleHelper::toFloat(s_dumpValues.at(2)));
-				knobFModel[ i ]->setInitValue(LocaleHelper::toFloat(s_dumpValues.at(2)));
+				knobFModel[ i ]->setValue(entry->value);
+				knobFModel[ i ]->setInitValue(entry->value);
 			}
 
 			connect( knobFModel[i], &FloatModel::dataChanged, this,
@@ -368,7 +367,7 @@ void VestigeInstrument::loadFile( const QString & _file )
 		closePlugin();
 		delete tf;
 		collectErrorForUI( VstPlugin::tr( "The VST plugin %1 could not be loaded." ).arg( m_pluginDLL ) );
-		m_pluginDLL = "";
+		m_pluginDLL = _file; // Preserve the failed path so the original project state can be saved.
 		return;
 	}
 
@@ -401,6 +400,22 @@ auto VestigeInstrument::processImpl(PlanarBufferView<const float> in, PlanarBuff
 		return ProcessStatus::Continue;
 	}
 
+	// MIDI queued since the last period goes to the plugin first, in order. A channel whose events the full queue
+	// refused is cut with all-notes-off at the point of the refusal (see drainMidi()).
+	drainMidi(m_midiHandoff, m_midiOverflow, m_midiHandoff.capacity(),
+		[this](const HandoffMidiEvent& queued) -> bool
+		{
+			m_plugin->processMidiEvent(
+				MidiEvent(static_cast<MidiEventTypes>(queued.type), queued.channel, queued.param1, queued.param2),
+				queued.offset);
+			return true;
+		},
+		[this](int channel) -> bool
+		{
+			m_plugin->processMidiEvent(MidiEvent(MidiControlChange, static_cast<int8_t>(channel), 123, 0), 0);
+			return true;
+		});
+
 	// The VST renders into the shared audio block that VestigeAudioPorts()
 	// exposes as this plugin's in/out ports; ProcessStatus::Continue keeps the
 	// audio ports router reading that block.
@@ -432,12 +447,16 @@ void VestigeInstrument::processUnlock()
 
 bool VestigeInstrument::handleMidiEvent( const MidiEvent& event, const TimePos& time, f_cnt_t offset )
 {
-	m_pluginMutex.lock();
-	if( m_plugin != nullptr )
-	{
-		m_plugin->processMidiEvent( event, offset );
-	}
-	m_pluginMutex.unlock();
+	// Realtime: this is called from the audio thread too, so it never takes m_pluginMutex. The event is
+	// forwarded by the next processed period (processImpl()). When the queue is full the event's channel
+	// is cut with all-notes-off instead (see processImpl()).
+	HandoffMidiEvent queued;
+	queued.type = static_cast<std::uint8_t>( event.type() );
+	queued.channel = event.channel();
+	queued.param1 = event.param( 0 );
+	queued.param2 = event.param( 1 );
+	queued.offset = static_cast<std::uint32_t>( offset );
+	pushOrRecord( m_midiHandoff, m_midiOverflow, queued );
 
 	return true;
 }
@@ -821,15 +840,30 @@ void VestigeInstrumentView::toggleGUI( void )
 
 void VestigeInstrumentView::noteOffAll( void )
 {
-	m_vi->m_pluginMutex.lock();
-	if( m_vi->m_plugin != nullptr )
+	// Through the same queue as the notes it has to end, so no queued note-on can land after it.
+	for( int key = 0; key <= MidiMaxKey; ++key )
 	{
-		for( int key = 0; key <= MidiMaxKey; ++key )
-		{
-			m_vi->m_plugin->processMidiEvent( MidiEvent( MidiNoteOff, 0, key, 0 ), 0 );
-		}
+		HandoffMidiEvent off;
+		off.type = static_cast<std::uint8_t>( MidiNoteOff );
+		off.channel = 0;
+		off.param1 = static_cast<std::int16_t>( key );
+		off.param2 = 0;
+		pushOrRecord( m_vi->m_midiHandoff, m_vi->m_midiOverflow, off );
 	}
-	m_vi->m_pluginMutex.unlock();
+
+	// A note that is sounding on another MIDI channel has to end as well: the plug-in
+	// can receive events on all sixteen channels, and the button used to cover channel
+	// 0 only. The all-notes-off is the message the overflow path sends to cut a channel
+	// (see processImpl()), so the plug-in side of the contract does not change.
+	for( int channel = 0; channel < 16; ++channel )
+	{
+		HandoffMidiEvent cut;
+		cut.type = static_cast<std::uint8_t>( MidiControlChange );
+		cut.channel = static_cast<std::int8_t>( channel );
+		cut.param1 = 123; // All Notes Off
+		cut.param2 = 0;
+		pushOrRecord( m_vi->m_midiHandoff, m_vi->m_midiOverflow, cut );
+	}
 }
 
 
@@ -981,14 +1015,12 @@ ManageVestigeInstrumentView::ManageVestigeInstrumentView( VestigeInstrument * _i
 	}
 
 	auto paramStr = std::array<char, 35>{};
-	QStringList s_dumpValues;
 
 	for( int i = 0; i < m_vi->paramCount; i++ )
 	{
 		std::snprintf(paramStr.data(), paramStr.size(), "param%d", i);
-		s_dumpValues = dump[paramStr.data()].split(":");
-
-		const auto& description = s_dumpValues.at(1);
+		const auto entry = parseParameterDumpEntry(dump.value(paramStr.data()));
+		const auto description = entry ? entry->label : QString{};
 
 		auto knob = new VstPluginKnob{m_vi->m_plugin, i, description, this};
 		m_vstKnobs.push_back(knob);
@@ -996,7 +1028,7 @@ ManageVestigeInstrumentView::ManageVestigeInstrumentView( VestigeInstrument * _i
 		if( !hasKnobModel )
 		{
 			std::snprintf(paramStr.data(), paramStr.size(), "%d", i);
-			m_vi->knobFModel[i] = new FloatModel(LocaleHelper::toFloat(s_dumpValues.at(2)),
+			m_vi->knobFModel[i] = new FloatModel(entry ? entry->value : 0.0f,
 				0.0f, 1.0f, 0.01f, castModel<VestigeInstrument>(), paramStr.data());
 		}
 
@@ -1050,7 +1082,6 @@ void ManageVestigeInstrumentView::closeWindow()
 void ManageVestigeInstrumentView::syncPlugin( void )
 {
 	auto paramStr = std::array<char, 35>{};
-	QStringList s_dumpValues;
 	const QMap<QString, QString> & dump = m_vi->m_plugin->parameterDump();
 
 	for( int i = 0; i < m_vi->paramCount; i++ )
@@ -1060,10 +1091,11 @@ void ManageVestigeInstrumentView::syncPlugin( void )
 		if( !( m_vi->knobFModel[ i ]->isAutomated() || m_vi->knobFModel[ i ]->controllerConnection() ) )
 		{
 			std::snprintf(paramStr.data(), paramStr.size(), "param%d", i);
-			s_dumpValues = dump[paramStr.data()].split(":");
-			float f_value = LocaleHelper::toFloat(s_dumpValues.at(2));
-			m_vi->knobFModel[i]->setValue(f_value, true);
-			m_vi->knobFModel[i]->setInitValue(f_value);
+			if (const auto entry = parseParameterDumpEntry(dump.value(paramStr.data())))
+			{
+				m_vi->knobFModel[i]->setValue(entry->value, true);
+				m_vi->knobFModel[i]->setInitValue(entry->value);
+			}
 		}
 	}
 	m_vi->m_plugin->loadParameterLabels();

@@ -48,6 +48,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 #include "Vst3Host.h"
@@ -67,6 +68,12 @@ constexpr int TestBlockSize = 512;
 //! The fixture, tests/data/vst3-chunk-probe/vst3-chunk-probe.cpp.
 constexpr const char* TestPluginClass = "Zene VST3 Chunk Probe";
 constexpr std::uint32_t GainParamId = 100;
+
+//! The fixture's second class, whose two parameters report defaults with no
+//! meaning - cluster new-p10-442-port's subject at parameter ingress.
+constexpr const char* InvalidDefaultsPluginClass = "Zene VST3 Invalid Defaults Probe";
+constexpr std::uint32_t HugeNormDefaultParamId = 200;
+constexpr std::uint32_t NaNaNormDefaultParamId = 201;
 
 /*! Mirrors ProbeState in the fixture: the plug-in's own account of the calls
  * it was given, saved through IComponent::getState and read back by the host's
@@ -109,9 +116,13 @@ class Vst3ChunkProbeTest : public QObject
 private slots:
 	void initTestCase();
 	void testIdentity();
+	void testFailedOutputBusActivationRefreshesLayout();
+	void testOutOfRangeOutputBusActivationDoesNotMutate();
+	void testNegativeOutputBusActivationDoesNotMutate();
 	void testChunkedProcessing();
 	void testChannelWithoutACallerBufferOverAFullRequest();
 	void testZeroFramesIsANoOp();
+	void testInvalidParameterDefaultsNeverEnterTheSnapshot();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -152,6 +163,54 @@ void Vst3ChunkProbeTest::testIdentity()
 	ProbeState state{};
 	QVERIFY2(readProbeState(m_plugin, &state), "the fixture saved an unexpected state layout");
 	QCOMPARE(state.declaredMaxBlock, static_cast<std::int32_t>(TestBlockSize));
+}
+
+void Vst3ChunkProbeTest::testFailedOutputBusActivationRefreshesLayout()
+{
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(VST3_CHUNK_PROBE_PATH),
+		QString::fromLatin1(TestPluginClass), &error), qPrintable(error));
+	QCOMPARE(plugin.outputBusDescriptors().size(), std::size_t{3});
+	QCOMPARE(plugin.busLayout().outputs, 2);
+
+	QVERIFY(!plugin.activateOutputBuses(2));
+	QVERIFY(plugin.outputBusDescriptors()[1].active);
+	QVERIFY(!plugin.outputBusDescriptors()[2].active);
+	QCOMPARE(plugin.busLayout().outputs, 3);
+	QCOMPARE(plugin.busLayout().outputBusChannels, (std::vector<int>{2, 1}));
+}
+
+void Vst3ChunkProbeTest::testOutOfRangeOutputBusActivationDoesNotMutate()
+{
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(VST3_CHUNK_PROBE_PATH),
+		QString::fromLatin1(TestPluginClass), &error), qPrintable(error));
+	QCOMPARE(plugin.outputBusDescriptors().size(), std::size_t{3});
+	QCOMPARE(plugin.busLayout().outputs, 2);
+
+	QVERIFY(!plugin.activateOutputBuses(3));
+	QVERIFY(!plugin.outputBusDescriptors()[1].active);
+	QVERIFY(!plugin.outputBusDescriptors()[2].active);
+	QCOMPARE(plugin.busLayout().outputs, 2);
+	QCOMPARE(plugin.busLayout().outputBusChannels, (std::vector<int>{2}));
+}
+
+void Vst3ChunkProbeTest::testNegativeOutputBusActivationDoesNotMutate()
+{
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(VST3_CHUNK_PROBE_PATH),
+		QString::fromLatin1(TestPluginClass), &error), qPrintable(error));
+	QCOMPARE(plugin.outputBusDescriptors().size(), std::size_t{3});
+	QCOMPARE(plugin.busLayout().outputs, 2);
+
+	QVERIFY(!plugin.activateOutputBuses(-1));
+	QVERIFY(!plugin.outputBusDescriptors()[1].active);
+	QVERIFY(!plugin.outputBusDescriptors()[2].active);
+	QCOMPARE(plugin.busLayout().outputs, 2);
+	QCOMPARE(plugin.busLayout().outputBusChannels, (std::vector<int>{2}));
 }
 
 /*!
@@ -321,6 +380,47 @@ void Vst3ChunkProbeTest::testZeroFramesIsANoOp()
 	QVERIFY2(readProbeState(m_plugin, &state), "the fixture saved an unexpected state layout");
 	QCOMPARE(state.blocks, beforeState.blocks);
 	QCOMPARE(output, -12345.0f); // and nothing was written
+}
+
+void Vst3ChunkProbeTest::testInvalidParameterDefaultsNeverEnterTheSnapshot()
+{
+	HostedPlugin probe;
+	QString error;
+	QVERIFY2(probe.load(QStringLiteral(VST3_CHUNK_PROBE_PATH),
+			 QString::fromLatin1(InvalidDefaultsPluginClass), &error),
+		qPrintable(error));
+	QVERIFY(probe.paramIndex(HugeNormDefaultParamId) >= 0);
+	QVERIFY(probe.paramIndex(NaNaNormDefaultParamId) >= 0);
+
+	// a default outside [0, 1]: clamped into it, not cast into a float infinity
+	QVERIFY2(std::isfinite(probe.paramNormalized(HugeNormDefaultParamId)),
+		"a default of 1.0e300 reached the parameter array as infinity");
+	QCOMPARE(probe.paramNormalized(HugeNormDefaultParamId), 1.0f);
+
+	// a default with no meaning: refused, the descriptor's own zero stands
+	QVERIFY2(std::isfinite(probe.paramNormalized(NaNaNormDefaultParamId)),
+		"a NaN default reached the parameter array");
+	QCOMPARE(probe.paramNormalized(NaNaNormDefaultParamId), 0.0f);
+
+	// and every descriptor the UI builds its models from is finite, inside [0, 1]
+	const auto& descriptors = probe.parameters();
+	QVERIFY(descriptors.size() >= 2);
+	for (const auto& descriptor : descriptors)
+	{
+		QVERIFY2(std::isfinite(descriptor.defaultNormalized),
+			qPrintable(QStringLiteral("parameter %1's default %2 is not finite")
+						   .arg(descriptor.id)
+						   .arg(descriptor.defaultNormalized)));
+		QVERIFY(descriptor.defaultNormalized >= 0.f && descriptor.defaultNormalized <= 1.f);
+	}
+
+	// the accepted fix's host-side pair, on the same instance: a value with no
+	// meaning leaves the last good one alone, through both entry points
+	probe.setParamNormalized(NaNaNormDefaultParamId, 0.5f);
+	probe.setParamNormalized(NaNaNormDefaultParamId, std::numeric_limits<float>::quiet_NaN());
+	QCOMPARE(probe.paramNormalized(NaNaNormDefaultParamId), 0.5f);
+	probe.notifyController(NaNaNormDefaultParamId, std::numeric_limits<float>::infinity());
+	QCOMPARE(probe.paramNormalized(NaNaNormDefaultParamId), 0.5f);
 }
 
 void Vst3ChunkProbeTest::process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,

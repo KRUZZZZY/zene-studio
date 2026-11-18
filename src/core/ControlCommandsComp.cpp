@@ -195,6 +195,12 @@ void registerCompLaneRemove(ControlRegistry& registry)
 				QStringLiteral("%1 has no take lane %2 (its lanes: %3)")
 					.arg(id).arg(lane).arg(laneIndexList(model)));
 		}
+		if (!model.canRemoveLane(lane))
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("removing lane %1 would exceed the %2-span playback limit on the base lane")
+					.arg(lane).arg(TakeLaneModel::MaxCompositeSpansPerLane));
+		}
 		const QString name = laneNameOf(model, lane);
 		const QJsonArray beforeLanes = lanesState(track);
 		const QJsonObject beforeComposite = compositeState(track);
@@ -351,8 +357,10 @@ namespace control
 {
 
 /*! The take-lane tag's one writer outside the loader (WriteRefusalGateTest names THIS file
- *  as its owner): comp.assign above, and clip.consolidate's replacement clip, which goes on
- *  the base lane. The caller checks the lane exists and takes the checkpoint. */
+ *  as its owner): comp.assign above, clip.consolidate's replacement clip, which goes on
+ *  the base lane, and pasted clips (range.paste and the arranger's paste), which leave their
+ *  take group for the base lane.
+ *  The caller checks the lane exists and takes the checkpoint. */
 void assignTakeLane(Clip* clip, int lane)
 {
 	clip->setLaneIndex(lane);

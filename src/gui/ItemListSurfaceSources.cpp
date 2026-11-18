@@ -138,7 +138,7 @@ public:
 
 	bool setValue(int row, int column, int value) override
 	{
-		if (row >= rowCount()) { return false; }
+		if (!hasRow(row)) { return false; }
 		const CompSwipeStrip::Segment s = segment(row);
 		if (column == 2) { return comp(s.begin, s.end, value); }
 		const bool start = column == 0;
@@ -158,21 +158,41 @@ public:
 	{
 		if (row < 0 || row >= rowCount()) { refuse(tr("choose the segment to split")); return false; }
 		const CompSwipeStrip::Segment s = segment(row);
+		if (s.end - s.begin < 2) { refuse(tr("the segment has no interior tick boundary to split at")); return false; }
 		const std::vector<int>& lanes = m_strip->lanes();
 		const auto at = std::find(lanes.begin(), lanes.end(), s.lane);
 		const int next = at == lanes.end() || at + 1 == lanes.end() ? lanes.front() : *(at + 1);
-		return comp((s.begin + s.end) / 2, s.end, next);
+		return comp(s.begin + (s.end - s.begin) / 2, s.end, next);
 	}
 
 	bool remove(const QList<int>& rows) override
 	{
 		if (rowCount() < 2) { refuse(tr("the comp's only segment cannot go")); return false; }
-		const int row = rows.first();
-		const CompSwipeStrip::Segment s = segment(row);
-		return comp(s.begin, s.end, segment(row > 0 ? row - 1 : row + 1).lane);
+		struct Edit
+		{
+			int begin;
+			int end;
+			int lane;
+		};
+		const std::vector<CompSwipeStrip::Segment>& segments = m_strip->segments();
+		std::vector<Edit> edits;
+		edits.reserve(static_cast<std::size_t>(rows.size()));
+		for (const int row : rows)
+		{
+			if (row < 0 || row >= static_cast<int>(segments.size())) { refuse(tr("choose a comp segment")); return false; }
+			const CompSwipeStrip::Segment& s = segments.at(static_cast<std::size_t>(row));
+			const int neighbour = row > 0 ? row - 1 : row + 1;
+			edits.push_back({s.begin, s.end, segments.at(static_cast<std::size_t>(neighbour)).lane});
+		}
+		for (const Edit& edit : edits)
+		{
+			if (!comp(edit.begin, edit.end, edit.lane)) { return false; }
+		}
+		return true;
 	}
 
 private:
+	bool hasRow(int row) const { return row >= 0 && row < rowCount(); }
 	const CompSwipeStrip::Segment& segment(int row) const { return m_strip->segments().at(static_cast<std::size_t>(row)); }
 
 	bool comp(int begin, int end, int lane)
@@ -189,8 +209,7 @@ private:
 
 //! The arrangement's clips, track by track and by start: name, start and length. Selecting a row selects the clip
 //! (window.select, and in the arranger); start and length edits are clip.move and clip.resize; Insert adds a clip after
-//! the current one on its track (clip.add); Delete removes the current clip (clip.delete) - one at a time, so each is
-//! one undo step.
+//! the current one on its track (clip.add); Delete removes selected clips with one clip.delete and one undo step each.
 class ClipsSource : public ItemListSource
 {
 public:
@@ -254,7 +273,19 @@ public:
 
 	bool remove(const QList<int>& rows) override
 	{
-		return runAndLook(QStringLiteral("clip.delete"), {{QStringLiteral("clip"), rowId(rows.first())}});
+		if (rows.isEmpty()) { return false; }
+		QStringList ids;
+		for (const int row : rows)
+		{
+			if (row < 0 || row >= rowCount() || m_clips.at(row) == nullptr) { return false; }
+			ids.append(rowId(row));
+		}
+		for (const QString& id : ids)
+		{
+			if (!run(QStringLiteral("clip.delete"), {{QStringLiteral("clip"), id}})) { look(); return false; }
+		}
+		look();
+		return true;
 	}
 
 	bool tracksSelection() const override { return true; }

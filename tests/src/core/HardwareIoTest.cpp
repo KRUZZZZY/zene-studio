@@ -41,6 +41,7 @@
 
 #include <QDomDocument>
 #include <QJsonArray>
+#include <cmath>
 #include <span>
 #include <vector>
 
@@ -51,10 +52,15 @@
 #include "AudioIoSetup.h"
 #include "AutomatableModel.h"
 #include "ControlRegistry.h"
+#include "ConfigManager.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "HardwareInsert.h"
 #include "HardwareIo.h"
 #include "Mixer.h"
+#include "ProjectJournal.h"
+#include "RealtimeExport.h"
+#include "SampleBuffer.h"
 #include "MixerListen.h"
 #include "SampleFrame.h"
 
@@ -86,6 +92,11 @@ float varying(int f)
 //! One mixer period (channel 1 constant 0.25, channel 2 varying), then the bus flipped so it can be read.
 std::vector<SampleFrame> period(Mixer* mixer)
 {
+	// Serial model prepass, as AudioEngine runs it once per period before mixing (consumes setter ramps).
+	{
+		auto changeGuard = Engine::audioEngine()->requestChangesGuard();
+		Engine::audioEngine()->prepareAutomatableModelBuffers();
+	}
 	const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
 	std::vector<SampleFrame> out(fpp);
 	std::vector<SampleFrame> one(fpp, SampleFrame(0.25f, 0.25f));
@@ -128,238 +139,111 @@ class HardwareIoTest : public QObject
 	Q_OBJECT
 
 private slots:
-	void initTestCase()
-	{
-		Engine::init(true);
-		Engine::audioEngine()->audioDev()->stopProcessing();  // the test drives the periods itself
-		Mixer* mixer = Engine::mixer();
-		while (mixer->numChannels() <= 2) { mixer->createChannel(); }
-		mixer->mixerChannel(1)->m_volumeModel.setValue(0.5f);
-		mixer->mixerChannel(2)->m_volumeModel.setValue(0.5f);
-		ControlRegistry::setReady(true);
-		for (int i = 0; i < 3; ++i) { period(mixer); }  // let the fader ramps settle
-	}
+	void initTestCase();
 
-	void cleanupTestCase()
-	{
-		mixerlisten::clear();
-		ControlRegistry::setReady(false);
-		Engine::destroy();
-	}
+	void cleanupTestCase();
 
-	void aRoutedChannelPlaysOnItsPairAfterItsFader()
-	{
-		Mixer* mixer = Engine::mixer();
-		QVERIFY(!period(mixer).empty());
-		QVERIFY2(!bus().active(), "with nothing routed the device takes the old path");
-		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("output"), QStringLiteral("3/4")}}));
-		const std::vector<SampleFrame> out = period(mixer);
-		QVERIFY(bus().active());
-		QVERIFY(channelAt(out, 2, 0.125f));  // 0.25 through the 0.5 fader
-		QVERIFY(channelAt(out, 3, 0.125f));
-		for (f_cnt_t f = 0; f < static_cast<f_cnt_t>(out.size()); ++f)
-		{
-			QCOMPARE(bus().sample(0, f, out[f]), out[f][0]);  // the master stays on 1/2, the send to it untouched
-		}
-		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("output"), QStringLiteral("7")}}));
-		QVERIFY(channelAt(period(mixer), 6, 0.125f));  // a mono output: the average of both sides
-		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("output"), QStringLiteral("default")}}));
-		period(mixer);
-		QVERIFY(!bus().active());
-	}
+	void aRoutedChannelPlaysOnItsPairAfterItsFader();
 
-	void theMasterMovesToItsOwnPair()
-	{
-		Mixer* mixer = Engine::mixer();
-		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), ch(0)}, {QStringLiteral("output"), QStringLiteral("5/6")}}));
-		std::vector<SampleFrame> out = period(mixer);
-		for (f_cnt_t f = 0; f < static_cast<f_cnt_t>(out.size()); ++f)
-		{
-			QCOMPARE(bus().sample(0, f, out[f]), 0.f);
-			QCOMPARE(bus().sample(4, f, out[f]), out[f][0]);
-		}
-		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), ch(0)}, {QStringLiteral("output"), QStringLiteral("none")}}));
-		period(mixer);
-		QCOMPARE(bus().channelsInUse(), 0);
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		period(mixer);
-		QVERIFY2(!bus().active(), "two undos put the master back on 1/2");
-	}
+	void theMasterMovesToItsOwnPair();
 
-	void aCueMixSumsItsSendsAtItsLevel()
-	{
-		Mixer* mixer = Engine::mixer();
-		QVERIFY(ok(QStringLiteral("mixer.cue_master"), {{QStringLiteral("cue"), QStringLiteral("A")}, {QStringLiteral("output"), QStringLiteral("3/4")},
-			{QStringLiteral("level"), 0.5}}));
-		QVERIFY(ok(QStringLiteral("mixer.cue_send"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("cue"), QStringLiteral("A")},
-			{QStringLiteral("level"), 1.0}}));
-		QVERIFY(channelAt(period(mixer), 2, 0.125f));  // pre-fader 0.25, at the cue's 0.5
-		QVERIFY(ok(QStringLiteral("mixer.cue_send"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("cue"), QStringLiteral("A")},
-			{QStringLiteral("pre_fader"), false}, {QStringLiteral("pan"), -1.0}}));
-		const std::vector<SampleFrame> out = period(mixer);
-		QVERIFY(channelAt(out, 2, 0.0625f));  // after the 0.5 fader
-		QVERIFY(channelAt(out, 3, 0.f));      // panned hard left
-		QVERIFY(ok(QStringLiteral("mixer.cue_send"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("cue"), QStringLiteral("A")},
-			{QStringLiteral("pre_fader"), true}, {QStringLiteral("pan"), 0.0}}));
-	}
+	void outOfRangeFrameReadsAsSilence();
 
-	void aCueFollowsSoloAndListen()
-	{
-		Mixer* mixer = Engine::mixer();
-		mixer->mixerChannel(2)->m_soloModel.setValue(true);  // mutes channel 1, whose send feeds the cue
-		QVERIFY(channelAt(period(mixer), 2, 0.f));
-		mixer->mixerChannel(2)->m_soloModel.setValue(false);
-		QVERIFY(channelAt(period(mixer), 2, 0.125f));
+	void cueMasterFieldsRequireACue();
 
-		mixerlisten::setListening(2, true);  // AFL on channel 2: the cue carries it, at the cue's level
-		const std::vector<SampleFrame> listened = period(mixer);
-		for (f_cnt_t f = 0; f < static_cast<f_cnt_t>(listened.size()); ++f)
-		{
-			QVERIFY(std::abs(bus().sample(2, f, listened[f]) - varying(f) * 0.5f * 0.5f) < 1e-5f);
-			QVERIFY(std::abs(listened[f][0] - varying(f) * 0.5f) < 1e-5f);  // listen_to main: the main output too
-		}
-		QVERIFY(ok(QStringLiteral("mixer.cue_master"), {{QStringLiteral("listen_to"), QStringLiteral("cue")}}));
-		mixerlisten::setListening(2, false);
-		const std::vector<SampleFrame> mix = period(mixer);
-		mixerlisten::setListening(2, true);
-		const std::vector<SampleFrame> spared = period(mixer);
-		for (std::size_t f = 0; f < mix.size(); ++f) { QCOMPARE(spared[f][0], mix[f][0]); }  // the main output keeps the mix
-		mixerlisten::clear();
-		QVERIFY(ok(QStringLiteral("mixer.cue_master"), {{QStringLiteral("listen_to"), QStringLiteral("main")}}));
-	}
+	void aCueMixSumsItsSendsAtItsLevel();
 
-	void theRoutedRenderAllocatesNothing()
-	{
-		Mixer* mixer = Engine::mixer();
-		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("output"), QStringLiteral("5/6")}}));
-		mixerlisten::setListening(1, true);
-		const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
-		std::vector<SampleFrame> out(fpp);
-		mixer->prepareMasterMix();
-		test::resetAllocationCount();
-		test::tlCountAllocations = true;
-		mixer->masterMix(out.data());
-		bus().swap();
-		test::tlCountAllocations = false;
-		QCOMPARE(static_cast<qulonglong>(test::tlAllocationCount), static_cast<qulonglong>(0));
-		mixerlisten::clear();
-		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("output"), QStringLiteral("default")}}));
-	}
+	void invalidCueNumbersUseClampedDefaultNames();
 
-	void aPingMeasuresTheLoopAndFeedsDelayCompensation()
-	{
-		AudioEngine* engine = Engine::audioEngine();
-		const f_cnt_t fpp = engine->framesPerPeriod();
-		QCOMPARE(run(QStringLiteral("mixer.hardware_insert_ping"), {{QStringLiteral("channel"), ch(1)}}).errorKind, ControlErrorKind::Requires);
-		QVERIFY(ok(QStringLiteral("mixer.hardware_insert"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("enabled"), true},
-			{QStringLiteral("send"), QStringLiteral("3/4")}, {QStringLiteral("return"), QStringLiteral("1/2")}}));
-		QVERIFY(ok(QStringLiteral("mixer.hardware_insert_ping"), {{QStringLiteral("channel"), ch(1)}}));
-		HardwareInsert& insert = Engine::mixer()->mixerChannel(1)->m_hardwareIo.insert;
-		// A cable from outputs 3/4 to inputs 1/2: what the device plays on 3/4 is captured for the next period.
-		std::vector<SampleFrame> cable(fpp);
-		for (int i = 0; i < 64 && insert.pingState() != HardwareInsert::PingState::Done; ++i)
-		{
-			const std::span<const SampleFrame> played = engine->renderNextPeriod();
-			for (f_cnt_t f = 0; f < fpp; ++f) { cable[f] = SampleFrame(bus().sample(2, f, played[f]), bus().sample(3, f, played[f])); }
-			engine->pushInputFrames(cable.data(), fpp);
-		}
-		QCOMPARE(static_cast<int>(insert.pingState()), static_cast<int>(HardwareInsert::PingState::Done));
-		// One period of output double buffer, one of capture staging: the loop the Dummy device has too.
-		QCOMPARE(insert.settings().measured, static_cast<int>(2 * fpp));
-		QCOMPARE(insert.latencyFrames(), static_cast<int>(2 * fpp));
-		engine->renderNextPeriod();
-		QCOMPARE(Engine::mixer()->totalLatencyFrames(), static_cast<int>(2 * fpp));
-		QVERIFY(ok(QStringLiteral("mixer.hardware_insert"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("latency_frames"), 300}}));
-		QCOMPARE(insert.latencyFrames(), 300);  // a typed figure wins over the measured one
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(insert.settings().measured, -1);  // the ping's undo: no figure, as before it
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QVERIFY(!insert.enabled());
-		engine->renderNextPeriod();
-		QCOMPARE(Engine::mixer()->totalLatencyFrames(), 0);
-	}
+	void aCueFollowsSoloAndListen();
 
-	void destinationsParse()
-	{
-		audioio::Side outputs;
-		outputs.channels = 6;
-		outputs.buses = {{QStringLiteral("Phones"), 2, 2}};
-		audioio::Destination d;
-		QVERIFY(audioio::parseDestination(QStringLiteral("3/4"), outputs, &d, nullptr) && d == (audioio::Destination{2, 2}));
-		QVERIFY(audioio::parseDestination(QStringLiteral("5"), outputs, &d, nullptr) && d == (audioio::Destination{4, 1}));
-		QVERIFY(audioio::parseDestination(QStringLiteral("phones"), outputs, &d, nullptr) && d == (audioio::Destination{2, 2}));
-		QVERIFY(audioio::parseDestination(QStringLiteral("none"), outputs, &d, nullptr) && d.none());
-		QString error;
-		QVERIFY(!audioio::parseDestination(QStringLiteral("3/5"), outputs, &d, &error) && !error.isEmpty());
-		QVERIFY(!audioio::parseDestination(QStringLiteral("0"), outputs, &d, nullptr));
-		QVERIFY(!audioio::parseDestination(QStringLiteral("Talkback"), outputs, &d, nullptr));
-		QCOMPARE(audioio::destinationLabel({2, 2}, outputs), QStringLiteral("Phones"));
-		QCOMPARE(audioio::channelLabel({4, 1}), QStringLiteral("5"));
-	}
+	void theRoutedRenderAllocatesNothing();
 
-	void theInterfaceIsNamedPerDeviceAndUndone()
-	{
-		const QString key = audioio::currentDeviceKey();
-		const QJsonObject before = audioio::storedEntry(key);
-		QVERIFY(ok(QStringLiteral("audio.io_setup"), {{QStringLiteral("outputs"), QJsonObject{{QStringLiteral("channels"), 4},
-			{QStringLiteral("names"), QJsonArray{QStringLiteral("Main L"), QStringLiteral("Main R"), QStringLiteral("HP L"), QStringLiteral("HP R")}},
-			{QStringLiteral("buses"), QJsonArray{QJsonObject{{QStringLiteral("name"), QStringLiteral("Main")}, {QStringLiteral("channels"), QStringLiteral("1/2")}},
-				QJsonObject{{QStringLiteral("name"), QStringLiteral("Phones")}, {QStringLiteral("channels"), QStringLiteral("3/4")}}}}}}}));
-		const ControlResult list = run(QStringLiteral("audio.io_list"));
-		QVERIFY(list.ok);
-		const QJsonObject outputs = list.result.value(QStringLiteral("outputs")).toObject();
-		QCOMPARE(outputs.value(QStringLiteral("requested")).toInt(), 4);
-		QCOMPARE(outputs.value(QStringLiteral("granted")).toInt(), 2);  // the Dummy opens a stereo pair
-		QCOMPARE(outputs.value(QStringLiteral("buses")).toArray().at(1).toObject().value(QStringLiteral("name")).toString(), QStringLiteral("Phones"));
-		QCOMPARE(outputs.value(QStringLiteral("channels")).toArray().at(2).toObject().value(QStringLiteral("name")).toString(), QStringLiteral("HP L"));
-		const ControlResult routed = run(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("output"), QStringLiteral("Phones")}});
-		QVERIFY(routed.ok);
-		const QJsonObject output = routed.result.value(QStringLiteral("output")).toObject();
-		QCOMPARE(output.value(QStringLiteral("channels")).toString(), QStringLiteral("3/4"));
-		QCOMPARE(output.value(QStringLiteral("status")).toString(), QStringLiteral("stereo_backend"));  // routed nowhere, and said so
-		QCOMPARE(run(QStringLiteral("audio.io_setup"), {{QStringLiteral("outputs"), QJsonObject{{QStringLiteral("buses"), QJsonArray{
-			QJsonObject{{QStringLiteral("name"), QStringLiteral("A")}, {QStringLiteral("channels"), QStringLiteral("1/2")}},
-			QJsonObject{{QStringLiteral("name"), QStringLiteral("B")}, {QStringLiteral("channels"), QStringLiteral("2")}}}}}}}).errorKind,
-			ControlErrorKind::InvalidArgs);  // overlapping buses
-		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the route
-		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the setup
-		QVERIFY(audioio::storedEntry(key) == before);
-	}
+	//! Q050-089.2: render.realtime's capture keeps the master from the song's first period, drops the delay
+	//! compensation's head, ends at the end tick plus the tail and scales by the master gain - and the period
+	//! that feeds it allocates nothing.
+	void theRealtimeCaptureTrimsEndsAndAllocatesNothing();
 
-	void everythingSurvivesASaveAndLoad()
-	{
-		Mixer* mixer = Engine::mixer();
-		mixer->clear();  // a project with nothing routed
-		while (mixer->numChannels() <= 2) { mixer->createChannel(); }
-		QDomDocument plain;
-		QDomElement plainMixer = plain.createElement(QStringLiteral("mixer"));
-		plain.appendChild(plainMixer);
-		mixer->saveSettings(plain, plainMixer);
-		QVERIFY2(!plain.toString().contains(QStringLiteral("hardware")) && !plain.toString().contains(QStringLiteral("cue")),
-			"a project that routes nothing to the hardware saves none of it");
+	void aPingMeasuresTheLoopAndFeedsDelayCompensation();
 
-		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("output"), QStringLiteral("5/6")}}));
-		QVERIFY(ok(QStringLiteral("mixer.cue_send"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("cue"), QStringLiteral("B")},
-			{QStringLiteral("level"), 0.7}, {QStringLiteral("pan"), 0.25}, {QStringLiteral("pre_fader"), false}}));
-		QVERIFY(ok(QStringLiteral("mixer.cue_master"), {{QStringLiteral("cue"), QStringLiteral("B")}, {QStringLiteral("name"), QStringLiteral("Drummer")},
-			{QStringLiteral("output"), QStringLiteral("7/8")}, {QStringLiteral("level"), 0.8}, {QStringLiteral("follow_listen"), false},
-			{QStringLiteral("listen_to"), QStringLiteral("cue")}}));
-		QVERIFY(ok(QStringLiteral("mixer.hardware_insert"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("enabled"), true},
-			{QStringLiteral("send"), QStringLiteral("9/10")}, {QStringLiteral("return"), QStringLiteral("3")}, {QStringLiteral("mix"), 0.5},
-			{QStringLiteral("latency_frames"), 123}}));
-		QDomDocument doc;
-		QDomElement element = doc.createElement(QStringLiteral("mixer"));
-		doc.appendChild(element);
-		mixer->saveSettings(doc, element);
-		mixer->clear();
-		QVERIFY(hardwareio::cueMaster(1) == hardwareio::CueMaster{});
-		mixer->loadSettings(element);
+	void masterHardwareInsertLatencyIsIncludedInTotal();
 
-		verifyLoaded(*mixer);
-		mixer->clear();
-	}
+	void aNonFiniteSavedMixDoesNotContaminateAudio();
+
+	void malformedInsertLatencyUsesTheMeasuredFigure();
+
+	void savedInsertMeasurementAtAnotherSampleRateIsDiscarded();
+
+	void liveInsertMeasurementIsDiscardedWhenSampleRateChanges();
+
+	void measuredInsertLatencyIsDiscardedWhenItsRouteChanges();
+
+	void malformedInsertMeasurementKeepsUnknownSentinel();
+
+	void unparsableSavedLevelsUseTheirDefaults();
+
+	void disablingAnInsertCancelsAnInProgressPing();
+
+	void changingAnInsertRouteCancelsAnInProgressPing();
+
+	void changingReturnRouteDropsQueuedFrames();
+
+	void destinationsParse();
+
+	void theInterfaceIsNamedPerDeviceAndUndone();
+
+	/*! A store that is set but is not a JSON object holds the setups of every device, and it is kept as it is:
+	 *  a write or an undo refuses rather than read it as empty and store that empty object with its one new
+	 *  entry, which would drop every other device's setup. */
+	void aMalformedSetupStoreIsNeverReplaced();
+
+	/*! A restart is required whenever the CONFIGURED output count and the RUNNING
+	 *  device's granted count differ - not only when this very call changed the
+	 *  count. A saved setup that already asks for four outputs, met by a device
+	 *  that granted a stereo pair, still needs a restart: reporting "none" while
+	 *  the counts disagree tells the caller the running device matches what it
+	 *  asked for, and it does not. */
+	void aStillMismatchedOutputCountAsksForARestart();
+
+	/*! Undo takes the ping back with it. The measurement lands a few periods later,
+	 *  on the audio thread; an undo that restored the settings but left the ping
+	 *  running would let it finish afterwards and write a measured latency into
+	 *  the project the undo just put back. */
+	void anUndoCancelsThePingItRequested();
+
+	void anEmptyIoSetupAddsNoUndoStep();
+
+	void settingHardwareOutputToItsCurrentRouteAddsNoUndoStep();
+
+	/*! The undo calls the ping off, but a period that had already read the request can still
+	 *  move the ping on afterwards: the ping comes back and the answer it hears lands a
+	 *  measured latency in the project the undo just put back. The ping's state machine must
+	 *  be a compare-and-swap, so a cancel wins against a move that is already on its way.
+	 *
+	 *  The two halves of the race are driven one after the other, without a thread and
+	 *  without a clock: the period reads the state, the interface thread cancels, the period
+	 *  makes its move. */
+	void aCancelledPingIsNotRevivedByAPeriodThatHadReadTheRequest();
+
+	void everythingSurvivesASaveAndLoad();
+
+	void nonFiniteCueSettingsSanitizeToDefaults();
+
+	/*! A saved route that does not parse leaves the default in force (cluster new-p14-120-port):
+	 *  a hand-edited project can carry output="3/5" (a pair that is not two consecutive channels),
+	 *  and the master must not be silenced by it - it keeps its default route, the outputs 1/2.
+	 *  An explicit "none" does parse: it is the user's own route nowhere, and it stays. */
+	void malformedOutputKeepsTheDefaultRoute();
+
+	void malformedDuplicateCueOutputKeepsItsPreviousDefaultSemantics();
+
+	void channelCueLoadsRequireExplicitIndices();
+
+	void cueMasterLoadsRequireExplicitIndices();
+
+	void malformedPrefaderKeepsItsDefault();
+
+	void malformedListenKeepsItsDefault();
 
 private:
 	//! What everythingSurvivesASaveAndLoad routed, read back after the load.
@@ -377,6 +261,9 @@ private:
 		QVERIFY(std::abs(insert.mix - 0.5f) < 1e-6f && insert.latencyOverride == 123);
 	}
 };
+
+#include "HardwareIoTestParts1.h"
+#include "HardwareIoTestParts2.h"
 
 QTEST_MAIN(HardwareIoTest)
 #include "HardwareIoTest.moc"

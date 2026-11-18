@@ -90,6 +90,9 @@ QJsonObject trackJson(const QDomElement& track, int index)
 
 } // namespace
 
+ReferenceProject::ReferenceProject() = default;
+ReferenceProject::~ReferenceProject() = default;
+
 ReferenceProject& ReferenceProject::instance()
 {
 	static ReferenceProject reference;
@@ -105,13 +108,13 @@ bool ReferenceProject::open(const QString& path, QString* why)
 {
 	if (!QFileInfo(path).isFile())
 	{
-		*why = QStringLiteral("no project file '%1'").arg(path);
+		if (why != nullptr) { *why = QStringLiteral("no project file '%1'").arg(path); }
 		return false;
 	}
 	auto file = std::make_unique<DataFile>(path);
 	if (control::transplant::songTracks(file->content()).isEmpty())
 	{
-		*why = QStringLiteral("'%1' is not a project with song tracks").arg(path);
+		if (why != nullptr) { *why = QStringLiteral("'%1' is not a project with song tracks").arg(path); }
 		return false;
 	}
 	m_file = std::move(file);
@@ -141,6 +144,11 @@ bool ReferenceProject::stale() const
 QList<QDomElement> ReferenceProject::tracks() const
 {
 	return isOpen() ? control::transplant::songTracks(m_file->content()) : QList<QDomElement>();
+}
+
+QDomElement ReferenceProject::mixer() const
+{
+	return isOpen() ? m_file->content().firstChildElement(QStringLiteral("mixer")) : QDomElement();
 }
 
 QList<QDomElement> ReferenceProject::channels() const

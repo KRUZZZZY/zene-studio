@@ -83,7 +83,9 @@ because a caller wants to identify its artefact, and it is deliberately not what
   curve feature would need a representation this format does not have.
 - **Only the conductor track is written.** Notes, clips, automation, markers and track names are not in the
   file. The tempo map is the part of a session with no other portable form; the note export is the
-  pre-existing `File > Export MIDI` path (`plugins/MidiExport`) and is untouched by this feature.
+  `File > Export MIDI` / `project.export_midi` path (`plugins/MidiExport`), which since Q050-020 writes the
+  SAME conductor events (same tick scaling, tempo encoding and tick-0 seed) as its track 0, followed by one
+  track per instrument with name, program change, channel and notes at 480 ppq (`docs/050-features/Q050-020.md`).
 - **Only the tempo and metre meta events are read.** The rest of a foreign file is ignored rather than
   refused (the reader walks every chunk, including running-status channel events and sysex, so it does not
   fall over on them).
@@ -102,5 +104,5 @@ because a caller wants to identify its artefact, and it is deliberately not what
 - **No tempo map for a foreign session.** Import replaces the map; it does not merge, and there is no
   "import into a range".
 - **UI absence — one line: Standard MIDI File tempo-map interchange is drivable through the socket, not from
-  the interface.** `File > Export MIDI` is the pre-existing note export and is neither changed by nor wired
+  the interface.** `File > Export MIDI` is the note export (it embeds the same conductor track, Q050-020) and is not wired
   to these ids; there is no import entry for a tempo map anywhere in `src/gui/`.

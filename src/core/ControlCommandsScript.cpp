@@ -27,17 +27,25 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <QCryptographicHash>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QStringList>
+#include <QtGlobal>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QByteArrayView>
+#endif
 
 #include "ConfigManager.h"
 #include "ControlAutomationSupport.h"
-#include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
+#include "Engine.h"
+#include "ProjectJournal.h"
 #include "ScriptEngine.h"
+#include "SessionCheckpoint.h"
 
 namespace lmms
 {
@@ -80,22 +88,42 @@ QString resolveScriptDir()
 	return firstExisting;
 }
 
+//! SHA-256 of a script, hashed in 64 KiB reads so a script of any size costs one chunk
+//! of memory. An unreadable script yields an EMPTY hash, never the well-known SHA-256 of
+//! zero bytes: 'bytes: 412' beside that hash would read as a claim about 412 bytes, and
+//! it is a claim about none.
+QString scriptFileSha256(const QString& path)
+{
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly)) { return {}; }
+
+	QCryptographicHash hash(QCryptographicHash::Sha256);
+	while (!file.atEnd())
+	{
+		const QByteArray chunk = file.read(64 * 1024);
+		if (chunk.isEmpty())
+		{
+			if (file.atEnd() && file.error() == QFileDevice::NoError) { break; }
+			return {};
+		}
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+		hash.addData(QByteArrayView(chunk));
+#else
+		// Qt 5 (hosted CI) has no QByteArrayView; its QByteArray overload hashes the same bytes.
+		hash.addData(chunk);
+#endif
+	}
+	if (file.error() != QFileDevice::NoError) { return {}; }
+	return QString::fromLatin1(hash.result().toHex());
+}
+
 QJsonObject scriptEntryJson(const QFileInfo& file)
 {
-	QByteArray bytes;
-	// The helper writes its refusal into the ControlResult, so a local one is
-	// passed rather than a null: an unreadable script is reported with an empty
-	// hash instead of taking the socket down.
-	ControlResult unreadable;
-	if (!controlReadFileBytes(file.absoluteFilePath(), &bytes, &unreadable))
-	{
-		bytes.clear();
-	}
 	QJsonObject entry;
 	entry.insert(QStringLiteral("name"), file.fileName());
 	entry.insert(QStringLiteral("path"), file.absoluteFilePath());
 	entry.insert(QStringLiteral("bytes"), static_cast<qint64>(file.size()));
-	entry.insert(QStringLiteral("sha256"), controlSha256OfBytes(bytes));
+	entry.insert(QStringLiteral("sha256"), scriptFileSha256(file.absoluteFilePath()));
 	return entry;
 }
 
@@ -178,26 +206,95 @@ QJsonObject scriptRunResultJson(ScriptEngine::RunResult result, const QStringLis
 	return out;
 }
 
-ControlResult scriptRun(const QJsonObject& args)
+//! Runs the file or inline source \a args names. The budget is per invocation (SPEC / spec section 5) and is
+//! put back afterwards, so an override shapes this run and not the process; \a budget reports the one in force.
+ScriptEngine::RunResult runWithBudget(ScriptEngine* engine, const QJsonObject& args, const QString& path,
+	QString* error, quint64* budget)
+{
+	const bool overridden = args.contains(QStringLiteral("budget"));
+	const quint64 previous = engine->instructionBudget();
+	if (overridden)
+	{
+		engine->setInstructionBudget(
+			static_cast<quint64>(args.value(QStringLiteral("budget")).toDouble()));
+	}
+	ScriptEngine::RunResult result = ScriptEngine::RunResult::ScriptError;
+	if (!path.isEmpty())
+	{
+		result = engine->runFile(path, error);
+	}
+	else
+	{
+		const QString chunk = args.value(QStringLiteral("name")).toString(
+			QStringLiteral("=(control source)"));
+		result = engine->runString(args.value(QStringLiteral("source")).toString(), error, chunk);
+	}
+	*budget = engine->instructionBudget();
+	if (overridden) { engine->setInstructionBudget(previous); }
+	return result;
+}
+
+//! SPEC A16: with a checkpoint taken and the project changed, the record is a snapshot whose one undo step
+//! restores the whole project as it was before the script (and redo reapplies the run's result). Otherwise it
+//! says why it claims nothing: a script that changed nothing has nothing to undo, and one that ran without a
+//! checkpoint has no inverse the registry can name.
+QJsonObject scriptTransaction(const control::SessionCheckpoint& checkpoint)
+{
+	QJsonObject transaction;
+	transaction.insert(QStringLiteral("before"), QJsonObject{});
+	if (checkpoint.pushed)
+	{
+		transaction.insert(QStringLiteral("inverse"),
+			QJsonObject{{QStringLiteral("op"), QStringLiteral("restore the project as it was before the script")},
+				{QStringLiteral("applies"), QStringLiteral("journal")}});
+		transaction.insert(QStringLiteral("reversible"), true);
+		// The snapshot restores what the commands the script ran (zene.command) did too.
+		transaction.insert(QStringLiteral("covers_nested"), true);
+		transaction.insert(QStringLiteral("mechanism"),
+			QStringLiteral("snapshot: the pre-script and redo-state projects are captured whole (%1 bytes "
+			"compressed in total, audio files by reference) and everything the script changed is ONE "
+				"undo step that restores it exactly; redo reapplies the run's result. The finer "
+				"steps the script pushed while it ran are replaced by that one step")
+				.arg(checkpoint.retainedBytes));
+	}
+	else
+	{
+		transaction.insert(QStringLiteral("inverse"),
+			QJsonObject{{QStringLiteral("op"), QStringLiteral("none: no undo step was kept for this run")}});
+		transaction.insert(QStringLiteral("reversible"), false);
+		transaction.insert(QStringLiteral("mechanism"),
+			QStringLiteral("none: %1")
+				.arg(checkpoint.taken() ? QStringLiteral("the script left the project exactly as it was, "
+										  "so there is nothing to undo")
+										: checkpoint.note));
+	}
+	return transaction;
+}
+
+bool scriptInput(const QJsonObject& args, QString* path, ControlResult* error)
 {
 	const bool hasPath = args.contains(QStringLiteral("path"));
 	if (hasPath == args.contains(QStringLiteral("source")))
 	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("exactly one of 'path' or 'source' is required: 'path' runs a file, "
 				"'source' runs Lua text supplied inline"));
+		return false;
 	}
+	if (!hasPath) { return true; }
 
+	*path = args.value(QStringLiteral("path")).toString();
+	if (QFileInfo::exists(*path)) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::NotFound,
+		QStringLiteral("no Lua script at '%1'").arg(*path));
+	return false;
+}
+
+ControlResult scriptRun(const QJsonObject& args)
+{
 	QString path;
-	if (hasPath)
-	{
-		path = args.value(QStringLiteral("path")).toString();
-		if (!QFileInfo::exists(path))
-		{
-			return ControlResult::failure(ControlErrorKind::NotFound,
-				QStringLiteral("no Lua script at '%1'").arg(path));
-		}
-	}
+	ControlResult inputError;
+	if (!scriptInput(args, &path, &inputError)) { return inputError; }
 
 	ScriptEngine* engine = ScriptEngine::instance();
 	if (engine == nullptr)
@@ -206,56 +303,55 @@ ControlResult scriptRun(const QJsonObject& args)
 			QStringLiteral("this instance has no script engine"));
 	}
 
-	// The budget is per invocation (SPEC / spec section 5) and is put back
-	// afterwards, so an override shapes this run and not the process.
-	const bool overridden = args.contains(QStringLiteral("budget"));
-	const quint64 previous = engine->instructionBudget();
-	if (overridden)
+	// Q050-044: the project as it is before the script touches it, bounded by the undo stack's byte
+	// budget. A checkpoint over the budget refuses the run, before the script has changed anything.
+	control::SessionCheckpoint checkpoint = control::takeSessionCheckpoint(QStringLiteral("script.run"), false);
+	if (checkpoint.refused())
 	{
-		engine->setInstructionBudget(
-			static_cast<quint64>(args.value(QStringLiteral("budget")).toDouble()));
+		return ControlResult::failure(ControlErrorKind::Refused, checkpoint.note);
 	}
+	if (!checkpoint.taken())
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, checkpoint.note);
+	}
+	ProjectJournal* journal = Engine::projectJournal();
+	const quint64 serialBefore = journal != nullptr ? journal->topStepSerial() : 0;
 
+	const bool overridden = args.contains(QStringLiteral("budget"));
 	QString error;
-	ScriptEngine::RunResult result = ScriptEngine::RunResult::ScriptError;
-	if (hasPath)
-	{
-		result = engine->runFile(path, &error);
-	}
-	else
-	{
-		const QString chunk = args.value(QStringLiteral("name")).toString(
-			QStringLiteral("=(control source)"));
-		result = engine->runString(args.value(QStringLiteral("source")).toString(), &error, chunk);
-	}
+	quint64 budget = 0;
+	const ScriptEngine::RunResult result = runWithBudget(engine, args, path, &error, &budget);
 	const QStringList logs = engine->takeLogMessages();
-	const quint64 budget = engine->instructionBudget();
-	if (overridden) { engine->setInstructionBudget(previous); }
+
+	// Everything the script queued is applied before the project is compared with the checkpoint.
+	engine->processCommands();
+	bool changed = false;
+	QString checkpointRefusal;
+	control::finishScriptCheckpoint(&checkpoint, serialBefore, &changed, &checkpointRefusal);
+	if (!checkpointRefusal.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, checkpointRefusal);
+	}
 
 	if (result != ScriptEngine::RunResult::Ok)
 	{
-		return ControlResult::failure(scriptErrorKind(result),
-			scriptFailureMessage(path.isEmpty() ? QStringLiteral("(inline source)") :
-				QStringLiteral("'%1'").arg(path), error, logs));
+		QString message = scriptFailureMessage(path.isEmpty() ? QStringLiteral("(inline source)") :
+			QStringLiteral("'%1'").arg(path), error, logs);
+		// The edits made before the error stay in the project; one undo takes them all back.
+		ControlResult failed = ControlResult::failure(scriptErrorKind(result), message);
+		if (checkpoint.pushed)
+		{
+			message += QStringLiteral(" (the edits it made before failing are ONE undo step)");
+			failed.errorMessage = message;
+			failed.result.insert(QStringLiteral("__transaction"), scriptTransaction(checkpoint));
+		}
+		return failed;
 	}
 
 	QJsonObject out = scriptRunResultJson(result, logs, path, budget, overridden);
-	// SPEC A16: a script's edits are its own, so the record says exactly that
-	// rather than inventing an inverse. A script may take its own checkpoint
-	// (Lua `addCheckPoint()`); the journal's own Undo replays it, while
-	// control.undo refuses this record (E19: no inverse is claimed).
-	QJsonObject transaction;
-	transaction.insert(QStringLiteral("before"), QJsonObject{});
-	transaction.insert(QStringLiteral("inverse"),
-		QJsonObject{{QStringLiteral("op"),
-			QStringLiteral("none: a Lua script's own edits have no recorded inverse")}});
-	transaction.insert(QStringLiteral("reversible"), false);
-	transaction.insert(QStringLiteral("mechanism"),
-		QStringLiteral("snapshot only: a Lua script mutates the engine through its own bindings; "
-			"the registry records no inverse for that. A script can take its own ProjectJournal "
-			"checkpoint with Lua addCheckPoint(), which the journal's own Undo (Ctrl+Z) replays; "
-			"control.undo refuses this record rather than unwind a step it cannot attribute."));
-	out.insert(QStringLiteral("__transaction"), transaction);
+	out.insert(QStringLiteral("checkpoint"), checkpoint.toJson());
+	out.insert(QStringLiteral("changed_project"), changed);
+	out.insert(QStringLiteral("__transaction"), scriptTransaction(checkpoint));
 	return ControlResult::success(out);
 }
 
@@ -305,16 +401,21 @@ ControlResult scriptSetMemoryBudget(const QJsonObject& args)
 	ScriptEngine* engine = ScriptEngine::instance();
 	const quint64 previous = engine->memoryBudget();
 	const quint64 bytes = static_cast<quint64>(requested);
-	engine->setMemoryBudget(bytes);
+	const bool changed = previous != bytes;
+	// BUG 12: a cap the engine already has is neither set again nor recorded. A
+	// transaction for it would be a reversible no-op on top of the last real
+	// change, and the next control.undo would spend its one step on that no-op.
+	if (changed) { engine->setMemoryBudget(bytes); }
 
 	QJsonObject out;
 	out.insert(QStringLiteral("memory_budget"), static_cast<qint64>(bytes));
 	out.insert(QStringLiteral("previous_memory_budget"), static_cast<qint64>(previous));
-	out.insert(QStringLiteral("changed"), previous != bytes);
+	out.insert(QStringLiteral("changed"), changed);
 	out.insert(QStringLiteral("min_memory_budget"),
 		static_cast<qint64>(ScriptEngine::MinMemoryBudgetBytes));
 	out.insert(QStringLiteral("max_memory_budget"),
 		static_cast<qint64>(ScriptEngine::MaxMemoryBudgetBytes));
+	if (!changed) { return ControlResult::success(out); }
 	out.insert(QStringLiteral("__transaction"),
 		QJsonObject{{QStringLiteral("before"),
 						QJsonObject{{QStringLiteral("memory_budget"), static_cast<qint64>(previous)}}},
@@ -346,7 +447,11 @@ void registerScriptCommands(ControlRegistry& registry)
 			"running instance - the same ScriptEngine the run-and-exit `--run-script` CLI flag "
 			"drives, on its own worker thread with the engine apply side pumped on the UI thread. "
 			"Returns the Lua log lines, or a typed error carrying them. 'budget' overrides the "
-			"per-invocation instruction budget (default from the engine) for this call only.");
+			"per-invocation instruction budget (default from the engine) for this call only. The project is "
+			"captured whole before the script runs (bounded by the undo stack's byte budget, "
+			"control.set_undo_depth; over it the run is REFUSED before anything changes), and "
+			"everything the script changed is ONE undo step: control.undo restores the exact "
+			"pre-script project and control.redo reapplies the run's result.");
 		cmd.argsSchema = control::objectSchema({
 			{QStringLiteral("path"), control::stringProperty()},
 			{QStringLiteral("source"), control::stringProperty()},
@@ -370,6 +475,9 @@ void registerScriptCommands(ControlRegistry& registry)
 				QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 			{QStringLiteral("memory_refusals"),
 				QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+			// Q050-044: the whole-project checkpoint taken before the run, and whether the run changed the project.
+			{QStringLiteral("checkpoint"), control::objectProperty()},
+			{QStringLiteral("changed_project"), control::booleanProperty()},
 		});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) { return scriptRun(args); };

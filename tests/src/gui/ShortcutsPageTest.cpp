@@ -25,12 +25,22 @@
 #include <QtTest>
 
 #include <QAction>
+#include <QFile>
+#include <QJsonDocument>
 #include <QMenu>
 #include <QMenuBar>
+#include <QPushButton>
+#include <QTemporaryDir>
 
+#include "ControlRegistry.h"
+#include "Engine.h"
+#include "GuiApplication.h"
+#include "GuiTestApplication.h"
 #include "HelpTasks.h"
+#include "MainWindow.h"
 #include "ShortcutsPage.h"
 
+using namespace lmms;
 using namespace lmms::gui;
 
 class ShortcutsPageTest : public QObject
@@ -38,6 +48,23 @@ class ShortcutsPageTest : public QObject
 	Q_OBJECT
 
 private slots:
+	void initTestCase()
+	{
+		QVERIFY(m_home.isValid());
+		guitest::startGui(m_home);
+		QVERIFY(getGUI() != nullptr && getGUI()->mainWindow() != nullptr);
+		ControlRegistry::setReady(true);
+		getGUI()->mainWindow()->show();
+		QTest::qWaitForWindowExposed(getGUI()->mainWindow());
+		QTest::qWait(100);
+	}
+
+	void cleanupTestCase()
+	{
+		ControlRegistry::setReady(false);
+		Engine::destroy();
+	}
+
 	void itListsEveryBoundActionAndOnlyThose()
 	{
 		QMenuBar bar;
@@ -86,6 +113,82 @@ private slots:
 		QCOMPARE(page.visibleRowCount(), 1);
 		QVERIFY(lmms::gui::help::menuTopic(QString(), QStringLiteral("Help ▸ Manual")) == QStringLiteral("access"));
 	}
+
+	//! Q050-202: the page offers the shipped maps, and choosing one goes through the registered command.
+	void thePageAppliesAShippedKeyboardMap()
+	{
+		ShortcutsPage page(getGUI()->mainWindow()->menuBar());
+		auto* button = page.findChild<QPushButton*>(QStringLiteral("shortcutsPresetButton"));
+		QVERIFY(button != nullptr);
+		QVERIFY(button->menu() != nullptr);
+		QCOMPARE(button->menu()->actions().size(), 4);
+		QAction* accessibility = nullptr;
+		for (QAction* action : button->menu()->actions())
+		{
+			if (action->objectName() == QLatin1String("shortcutPreset_accessibility")) { accessibility = action; }
+		}
+		QVERIFY(accessibility != nullptr);
+		QCOMPARE(accessibility->property("controlCommand").toString(), QStringLiteral("shortcuts.preset_apply"));
+		accessibility->trigger();
+		bool found = false;
+		for (const QJsonValue& value : ControlRegistry::instance()->invoke(QStringLiteral("shortcuts.list")).result
+			.value(QStringLiteral("bindings")).toArray())
+		{
+			const QJsonObject row = value.toObject();
+			if (row.value(QStringLiteral("command")).toString() == QLatin1String("transport.record"))
+			{
+				found = true;
+				QCOMPARE(row.value(QStringLiteral("keys")).toString(), QStringLiteral("Ctrl+R"));
+			}
+		}
+		QVERIFY(found);
+	}
+
+	//! Q050-202: the manual has setup guidance for the three supported readers and links the
+	//! honestly-marked workflow matrix.
+	void theManualNamesTheReadersAndLinksTheTestedWorkflowMatrix()
+	{
+		QFile manual(QStringLiteral("../../data/manual/index.html"));
+		QVERIFY(manual.open(QIODevice::ReadOnly));
+		const QString html = QString::fromUtf8(manual.readAll());
+		for (const QString& reader : {QStringLiteral("NVDA"), QStringLiteral("VoiceOver"), QStringLiteral("Orca")})
+		{
+			QVERIFY2(html.contains(reader), qPrintable(reader));
+		}
+		const QString url = QStringLiteral("https://github.com/KRUZZZZY/zene-studio/blob/main/docs/ACCESSIBILITY-TEST-MATRIX.md");
+		QVERIFY(html.contains(url));
+		QFile matrix(QStringLiteral("../../docs/ACCESSIBILITY-TEST-MATRIX.md"));
+		QVERIFY(matrix.open(QIODevice::ReadOnly));
+		const QString text = QString::fromUtf8(matrix.readAll());
+		for (const QString& row : {QStringLiteral("NVDA"), QStringLiteral("VoiceOver"), QStringLiteral("Orca"),
+			QStringLiteral("Not tested in this environment")})
+		{
+			QVERIFY2(text.contains(row), qPrintable(row));
+		}
+	}
+
+	void importRejectsTwoShortcutSources()
+	{
+		const QString path = m_home.filePath(QStringLiteral("shortcuts.json"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		const QByteArray bytes = QJsonDocument(QJsonObject{
+			{QStringLiteral("format"), QStringLiteral("zene-shortcuts")},
+			{QStringLiteral("version"), 1},
+			{QStringLiteral("overrides"), QJsonObject{{QStringLiteral("menu.save"), QStringLiteral("Ctrl+S")}}}}).toJson();
+		QCOMPARE(file.write(bytes), qint64(bytes.size()));
+
+		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("shortcuts.import"),
+			{{QStringLiteral("file"), path},
+				{QStringLiteral("overrides"), QJsonObject{{QStringLiteral("menu.save"), QStringLiteral("Ctrl+Shift+K")}}},
+				{QStringLiteral("replace"), true}});
+		QVERIFY2(!result.ok, qPrintable(QStringLiteral("shortcuts.import accepted both sources: ") + result.errorMessage));
+		QVERIFY(result.errorKind == ControlErrorKind::InvalidArgs);
+		QCOMPARE(result.errorMessage, QStringLiteral("give 'file' or 'overrides', not both"));
+	}
+
+private:
+	QTemporaryDir m_home;
 };
 
 QTEST_MAIN(ShortcutsPageTest)

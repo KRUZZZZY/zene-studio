@@ -32,6 +32,11 @@ WHAT IT ASSERTS, in numbers read off the wire:
   * arming it is reversible (a recorded action checkpoint) and STARTS a measurement: the
     readings are null immediately after, and blocks_fed then grows on its own, i.e. the
     engine's audio thread is feeding the tap (the tap is live, not a fixture);
+  * one control.undo takes a real arm back to disarmed (the ORIGINAL inverse check, kept
+    verbatim: arm, then undo, then armed false);
+  * repeating a disarm while already disarmed adds no undo step: one control.undo still
+    reverses the preceding real disarm and restores the armed state;
+  * repeating an arm while armed preserves its in-progress measurement;
   * THE THREE NEGATIVE CONTROLS THE TASK NAMES:
       1. silence reads null: tests/data/loudness/silent.wav measures `measured` false,
          every reading null and verdict NOT MEASURED - while the two tones measure their
@@ -237,6 +242,7 @@ def play_and_measure(session, project_path, arm_seconds=4.0):
     """Open a project, arm a fresh measurement, play, and read the live tap back."""
     session.result("transport.stop")
     session.result("project.open", {"path": project_path})
+    session.result("meter.arm", {"enabled": False})
     session.result("meter.arm", {"enabled": True})
     session.result("transport.seek", {"ticks": 0})
     session.result("transport.play")
@@ -371,6 +377,13 @@ def check_arm_is_live_and_reversible(session, recorder):
     recorder.check("a master carrying no signal still reads null, never a number",
                    readings(second) == (None, None, None, None, None),
                    "live=%r" % second)
+
+    session.result("meter.arm", {"enabled": True})
+    after_repeat = live(session.result("meter.get_state"))
+    recorder.check("re-sending an arm preserves the in-progress measurement",
+                   after_repeat.get("blocks_fed", 0) >= second.get("blocks_fed", 0),
+                   "before=%r after=%r" % (second.get("blocks_fed"),
+                                            after_repeat.get("blocks_fed")))
 
     disarmed = session.result("meter.arm", {"enabled": False})
     recorder.check("disarming keeps the measurement readable and stops the counting",
@@ -526,6 +539,25 @@ def check_refusals(session, recorder, workdir):
     session.error("meter.measure_file", {"path": "relative/tone.wav"}, "invalid_args")
     session.error("meter.measure_file", {"path": os.path.join(workdir, "absent.wav")}, "invalid_args")
 
+    windows_paths = [
+        ("Windows drive", r"C:\zene-meter-path-probe-%d\absent.wav" % os.getpid()),
+    ]
+    # A UNC lookup can contact a remote host on Windows. Exercise the UNC syntax
+    # on non-Windows hosts, where this deliberately nonexistent path is local.
+    if os.name != "nt":
+        windows_paths.append(("UNC", r"\\zene-meter-path-probe-%d\share\absent.wav" % os.getpid()))
+    for path_kind, path in windows_paths:
+        error = session.error("meter.measure_file", {"path": path}, "invalid_args")
+        recorder.check("%s absolute paths pass path validation" % path_kind,
+                       "must be an absolute path" not in error["message"],
+                       "message=%r" % error["message"])
+
+    for path in (":/meter/absent.wav", "qrc:/meter/absent.wav"):
+        error = session.error("meter.measure_file", {"path": path}, "invalid_args")
+        recorder.check("resource paths remain rejected (%s)" % path,
+                       "must be an absolute path" in error["message"],
+                       "message=%r" % error["message"])
+
     empty = os.path.join(workdir, "empty.wav")
     with wave.open(empty, "wb") as handle:
         handle.setnchannels(2)
@@ -559,6 +591,35 @@ def check_master_arm_undo(session, recorder):
                    "armed=%r after undo" % state.get("armed"))
 
 
+def check_noop_disarm_adds_no_history(session, recorder):
+    """The no-op disarm, as its own scenario on top of the one above.
+
+    It is a SECOND helper rather than an extension of check_master_arm_undo because
+    the two read the same stack in opposite directions: the check above asks one
+    control.undo to take an ARM back to disarmed, and this one asks it to take a
+    DISARM back to armed past a repeated disarm. Merging them can only prove one of
+    the two, so each keeps its own sequence, its own assertion and its own undo.
+    """
+    session.result("meter.arm", {"enabled": False})
+    session.result("meter.arm", {"enabled": True})
+    session.result("meter.arm", {"enabled": False})
+    transactions_before_noop = meter_records(session)
+    session.result("meter.arm", {"enabled": False})
+    transactions_after_noop = meter_records(session)
+    recorder.check("disarmed for the no-op undo check",
+                   session.result("meter.get_state").get("armed") is False,
+                   "disarmed after the repeated disarm")
+    session.result("control.undo")
+    state = session.result("meter.get_state")
+    recorder.check("a no-op disarm adds no undo step",
+                   state.get("armed") is True,
+                   "armed=%r after one undo" % state.get("armed"))
+    recorder.check("a no-op disarm adds no transaction record",
+                   transactions_after_noop == transactions_before_noop,
+                   "before=%r after=%r" % (transactions_before_noop[-1:],
+                                            transactions_after_noop[-1:]))
+
+
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
@@ -584,6 +645,7 @@ def run_checks(session, workdir, fixtures, recorder):
     check_render_is_byte_identical_with_the_tap_attached(session, recorder, workdir, fixtures)
     check_refusals(session, recorder, workdir)
     check_master_arm_undo(session, recorder)
+    check_noop_disarm_adds_no_history(session, recorder)
 
 
 def main(argv):

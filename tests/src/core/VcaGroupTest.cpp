@@ -736,6 +736,42 @@ private slots:
 		evidence(QStringLiteral("solo_group members_audible=2,4,6 others_muted=1 restored=1"));
 	}
 
+	//! Luna cluster 1523: applyGroupSolo() returned early for a group whose solo
+	//! link is off or which is suspended, BEFORE the `!soloed` branch that calls
+	//! deactivateSolo(). Soloing such a group mutes every non-member; clearing
+	//! the flag then skipped the restore and left them muted for good.
+	void clearingSoloRestoresMutesAfterTheSoloLinkIsTurnedOff()
+	{
+		Mixer* mixer = Engine::mixer();
+		buildGraph(mixer);
+		VcaGroup* group = makeGroup(mixer, kMembers);
+		QVERIFY(group != nullptr);
+		mixer->toggledSolo();
+
+		group->soloModel()->setValue(true);
+		for (int ch = 1; ch < kChannels; ++ch)
+		{
+			if (!isMember(ch))
+			{
+				QVERIFY2(mixer->mixerChannel(ch)->m_muteModel.value() == true,
+					qPrintable(QStringLiteral("non-member %1 was not muted by the solo").arg(ch)));
+			}
+		}
+
+		// The solo link is turned off (or the group suspended) while the solo is
+		// still active, then the solo flag is cleared.
+		group->setLinks(true, true, false);
+		group->soloModel()->setValue(false);
+
+		for (int ch = 1; ch < kChannels; ++ch)
+		{
+			QVERIFY2(mixer->mixerChannel(ch)->m_muteModel.value() == false,
+				qPrintable(QStringLiteral("channel %1 stayed muted after the solo was cleared (1523)")
+					.arg(ch)));
+		}
+		evidence(QStringLiteral("solo_link_off_cleared members_restored=1"));
+	}
+
 	// -- 4. persistence -------------------------------------------------------
 
 	//! The grouping, the fader value and both flags survive save/reload, and the
@@ -809,6 +845,71 @@ private slots:
 		evidence(QStringLiteral(
 			"save_load groups=2 members=2,4,6,7 vca=0.6 mute_roundtrip=1 state_identical=1"
 			" audio_identical=1 sha256=%1").arg(sha256Hex(beforeSave)));
+	}
+
+	//! A non-finite persisted VCA fader must not reach its gain or a member channel.
+	void nonFiniteVcaGainDoesNotReachMemberChannel()
+	{
+		Mixer* mixer = Engine::mixer();
+		buildGraph(mixer);
+		VcaGroup* group = makeGroup(mixer, {2});
+		QVERIFY(group != nullptr);
+		group->vcaModel()->setValue(0.75f);
+		const int groupId = group->id();
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("mixer"));
+		doc.appendChild(root);
+		mixer->saveSettings(doc, root);
+		QDomElement savedGroup = root.firstChildElement(QStringLiteral("vcagroup"));
+		QVERIFY(!savedGroup.isNull());
+		savedGroup.setAttribute(QStringLiteral("vca"), QStringLiteral("nan"));
+
+		mixer->loadSettings(root);
+		VcaGroup* loaded = mixer->vcaGroup(groupId);
+		QVERIFY(loaded != nullptr);
+		QVERIFY(std::isfinite(loaded->vcaModel()->value()));
+		QCOMPARE(loaded->vcaModel()->value(), 1.0f);
+		QVERIFY(std::isfinite(loaded->gain()));
+		QCOMPARE(loaded->gain(), 1.0f);
+		QVERIFY(std::isfinite(mixer->mixerChannel(2)->vcaGain()));
+		QCOMPARE(mixer->mixerChannel(2)->vcaGain(), 1.0f);
+	}
+
+	//! A duplicate serialized id must not discard the later group's contents.
+	void duplicateGroupIdsPreserveLaterGroup()
+	{
+		Mixer* mixer = Engine::mixer();
+		buildGraph(mixer);
+		VcaGroup* first = makeGroup(mixer, {2}, QStringLiteral("First"));
+		VcaGroup* duplicate = makeGroup(mixer, {7}, QStringLiteral("Duplicate"));
+		QVERIFY(first != nullptr);
+		QVERIFY(duplicate != nullptr);
+		QVERIFY(duplicate->addEditTrack(4821));
+		duplicate->vcaModel()->setValue(0.375f);
+		duplicate->muteModel()->setValue(true);
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("mixer"));
+		doc.appendChild(root);
+		mixer->saveSettings(doc, root);
+		const QDomElement firstDom = root.firstChildElement(QStringLiteral("vcagroup"));
+		QVERIFY(!firstDom.isNull());
+		QDomElement duplicateDom = firstDom.nextSiblingElement(QStringLiteral("vcagroup"));
+		QVERIFY(!duplicateDom.isNull());
+		duplicateDom.setAttribute(QStringLiteral("id"), firstDom.attribute(QStringLiteral("id")));
+
+		mixer->loadSettings(root);
+		QCOMPARE(mixer->vcaGroups().size(), static_cast<std::size_t>(2));
+		VcaGroup* loaded = mixer->vcaGroup(1);
+		QVERIFY(loaded != nullptr);
+		QCOMPARE(loaded->name(), QStringLiteral("Duplicate"));
+		QVERIFY(bitEqual(loaded->vcaModel()->value(), 0.375f));
+		QVERIFY(loaded->muteModel()->value());
+		QCOMPARE(loaded->members().size(), static_cast<std::size_t>(1));
+		QCOMPARE(loaded->members().front(), static_cast<mix_ch_t>(7));
+		QCOMPARE(loaded->editTracks().size(), static_cast<std::size_t>(1));
+		QCOMPARE(loaded->editTracks().front(), 4821);
 	}
 
 	//! A pre-#622 project has no <vcagroup>; it must load to no groups, publish

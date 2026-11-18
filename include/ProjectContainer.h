@@ -17,11 +17,13 @@
  * reader already in the tree (DawProjectInterchange.h: dawProjectZipWrite,
  * dawProjectZipRead) - STORE entries, one local header per entry, one central
  * directory, no compression, no directory entries, no data descriptors, no
- * spanning. DawProjectZip.cpp:8-15 records why compression cannot be reused
- * here: DataFile.cpp's mmpz path uses Qt's qCompress/qUncompress, which is
- * zlib's own framed format and NOT a raw DEFLATE stream. The cost of that rule
- * is stated plainly rather than discovered: a v2 container is LARGER than the
- * v1 blob it replaces, because it stores what v1 compressed.
+ * spanning. This container's reader is STRICT and STORE-only (dawProjectZipRead
+ * refuses a DEFLATE entry by name; the DAWproject importer's tolerant, DEFLATE-
+ * reading dawProjectZipReadTolerant is a different entry point). DataFile.cpp's
+ * mmpz path uses Qt's qCompress/qUncompress, which is zlib's own framed format
+ * and NOT a raw DEFLATE stream. The cost of that rule is stated plainly rather
+ * than discovered: a v2 container is LARGER than the v1 blob it replaces,
+ * because it stores what v1 compressed.
  *
  * THIS MODULE DOES NOT PARSE, PRUNE OR REDUCE ANYTHING. It moves entries. The
  * section boundaries come from the index, the bytes come from the caller, and
@@ -96,7 +98,7 @@ enum class Shape
  *  Every test here is cheap and none of them inflates the payload: a ZIP local
  *  header signature, a zlib header, or a leading `<` after an optional BOM and
  *  whitespace. Deciding "this is a v2 container" is a 4-byte comparison; the
- *  full validation is the reader's, and it refuses by name (DawProjectZip.cpp
+ *  full validation is the reader's, and it refuses by name (DawProjectZipRead.cpp
  *  bounds-checks every offset and size against the file's own length). */
 LMMS_EXPORT Shape shapeOf( const QByteArray& bytes );
 
@@ -146,12 +148,12 @@ LMMS_EXPORT bool writeContainer( const QString& path, const QByteArray& skeleton
  *  When \a keepEntries is non-empty only those entries are returned, plus the
  *  skeleton. HONEST LIMIT, stated because it is easy to assume otherwise: the
  *  reader underneath reads the file whole and copies every entry's body before
- *  this selection runs (DawProjectZip.cpp:260, :410, :422). So a subset read
+ *  this selection runs (DawProjectZipRead.cpp: scanDirectory and materialise). So a subset read
  *  saves PARSING, not I/O and not peak memory. Turning the container's
  *  addressing into a real I/O saving needs a filtered reader, which is a
  *  separate change and is recorded as such rather than implied here. */
 LMMS_EXPORT bool readContainer( const QString& path, const QStringList& keepEntries,
-	std::vector<std::pair<QString, QByteArray>>* entries, QString* error );
+	std::vector<std::pair<QString, QByteArray>>* entries, QString* error, bool* unreadable = nullptr );
 
 /*! True when \a entryName is shaped to be one of this container's section
  *  entries: the `sections/` namespace (sectionNamespace(), as spelled by
@@ -310,6 +312,25 @@ LMMS_EXPORT bool deriveContainerEntries( const QByteArray& document,
 LMMS_EXPORT bool reassembleContainerDocument(
 	const std::vector<std::pair<QString, QByteArray>>& entries,
 	const QString& contentElementName, QByteArray* document, QString* error );
+
+/*! Q050-007: write \a document - a project document carrying a `<z:index>` - as
+ *  a v2 container at \a path: deriveContainerEntries() cuts it along the
+ *  index's section boundaries and writeContainer() stores the pieces. The one
+ *  call a SAVE makes, so the save path owns no entry-naming rule of its own.
+ *  Refusals are the two halves': an unindexed or unfileable document, or a
+ *  write that failed, with \a error set and no file left behind. */
+LMMS_EXPORT bool writeDocumentContainer( const QString& path, const QByteArray& document,
+	const QString& contentElementName, QString* error );
+
+/*! Q050-007: read the v2 container at \a path back into the one document it was
+ *  cut from - readContainer() then reassembleContainerDocument(), so a load needs
+ *  one call and gets the original bytes, raw (the guarantee is
+ *  deriveContainerEntries' contract above). \a document is left as passed on a
+ *  refusal. \a unreadable, when given, is set true only when the file could not
+ *  be opened or read; a malformed or truncated container leaves it false, so a
+ *  caller can keep an unread temp apart from one that was checked and refused. */
+LMMS_EXPORT bool readDocumentContainer( const QString& path, const QString& contentElementName,
+	QByteArray* document, QString* error, bool* unreadable = nullptr );
 
 } // namespace projectcontainer
 

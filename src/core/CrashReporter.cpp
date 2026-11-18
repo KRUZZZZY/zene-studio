@@ -30,6 +30,11 @@
 #if defined(__APPLE__) && !defined(_XOPEN_SOURCE)
 	#define _XOPEN_SOURCE 700
 #endif
+// _XOPEN_SOURCE alone hides Darwin's BSD extensions (O_NOFOLLOW below: macos-arm64 "use of undeclared
+// identifier 'O_NOFOLLOW'", hosted run 37892087548); _DARWIN_C_SOURCE brings them back.
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+	#define _DARWIN_C_SOURCE
+#endif
 
 #include "CrashReporter.h"
 #include "CrashReporterFormat.h"
@@ -90,12 +95,12 @@ alignas(16) char s_projectPath[2][kMaxProjectPathBytes] = {"(none)", "(none)"};
 std::atomic<int> s_projectSlot{0};
 
 // A crash from an exhausted stack cannot run a handler on that stack, so the
-// handlers are installed with SA_ONSTACK and this dedicated stack.  It is
-// per-thread (POSIX sigaltstack is a thread attribute): the thread that calls
-// install() gets it.  See the "not proven" list in docs/CRASH-REPORTER.md.
-alignas(16) char s_altStack[32 * 1024];
+// handlers are installed with SA_ONSTACK and each thread that may need crash
+// handling registers its own stack. sigaltstack() is a per-thread attribute.
+alignas(16) thread_local char s_altStack[32 * 1024];
 
 bool s_installed = false;
+constexpr int kCrashSignalCount = 5;
 
 // The directory the public, main-thread API uses.  The handler does not read
 // this; it only uses s_dirFd.
@@ -205,12 +210,33 @@ std::string reportFileInDir(const std::string& dir, const char* name)
  */
 const int* handlerSignals(int& count)
 {
-	static const int kSignals[] = { SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGFPE };
-	count = 5;
+	static const int kSignals[kCrashSignalCount] = { SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGFPE };
+	count = kCrashSignalCount;
 #ifdef LMMS_DEBUG_FPE
 	count = 4;
 #endif
 	return kSignals;
+}
+
+bool writeReportFile(int fd, int subFd, const char* buf, unsigned long size)
+{
+	// Bounded write loop: at most 8 write() calls and never more than
+	// kMaxReportBytes bytes, whatever the filesystem does.
+	unsigned long off = 0;
+	int attempts = 0;
+	while (off < size && attempts < 8)
+	{
+		const ssize_t n = ::write(fd, buf + off, size - off);
+		if (n > 0) { off += static_cast<unsigned long>(n); }
+		else if (n < 0 && errno == EINTR) { /* retry, still capped */ }
+		else { break; }
+		++attempts;
+	}
+
+	const bool wrote = (off == size);
+	::close(fd);
+	if (!wrote) { ::unlinkat(subFd, kReportFileName, 0); }
+	return wrote;
 }
 
 } // namespace
@@ -237,22 +263,28 @@ bool setReportDirectory(const std::string& workingDirectory)
 	return true;
 }
 
-bool install(const std::string& workingDirectory)
+bool installAlternateStackForCurrentThread()
 {
-	if (!setReportDirectory(workingDirectory)) { return false; }
+	static thread_local bool registered = false;
+	if (registered) { return true; }
 
-	if (s_installed) { return true; }
-
-	// The handler's own stack, so an exhausted stack is still reportable.
 	stack_t ss;
 	std::memset(&ss, 0, sizeof(ss));
 	ss.ss_sp = s_altStack;
 	ss.ss_size = sizeof(s_altStack);
-	ss.ss_flags = 0;
-	if (::sigaltstack(&ss, nullptr) != 0)
-	{
-		// Non-fatal: without it a stack-overflow crash is not reportable.
-	}
+	if (::sigaltstack(&ss, nullptr) != 0) { return false; }
+	registered = true;
+	return true;
+}
+
+bool install(const std::string& workingDirectory)
+{
+	if (!setReportDirectory(workingDirectory)) { return false; }
+	// Repeated installs may come from a different thread; each caller needs its
+	// own alternate stack even when the process-wide handlers are already armed.
+	installAlternateStackForCurrentThread();
+
+	if (s_installed) { return true; }
 
 	struct sigaction sa;
 	std::memset(&sa, 0, sizeof(sa));
@@ -262,9 +294,18 @@ bool install(const std::string& workingDirectory)
 
 	int count = 0;
 	const int* signals = handlerSignals(count);
+	struct sigaction previous[kCrashSignalCount];
 	for (int i = 0; i < count; ++i)
 	{
-		sigaction(signals[i], &sa, nullptr);
+		if (sigaction(signals[i], &sa, &previous[i]) != 0)
+		{
+			for (int rollback = i; rollback > 0; --rollback)
+			{
+				sigaction(signals[rollback - 1], &previous[rollback - 1], nullptr);
+			}
+			if (const int fd = s_dirFd.exchange(-1); fd >= 0) { ::close(fd); }
+			return false;
+		}
 	}
 
 	s_installed = true;
@@ -418,6 +459,7 @@ bool writeReportIfIdle(const CrashInfo& info)
 
 	bool wrote = false;
 	int fd = -1;
+	int subFd = -1;
 	const int dirFd = s_dirFd.load();
 	if (dirFd >= 0)
 	{
@@ -428,13 +470,16 @@ bool writeReportIfIdle(const CrashInfo& info)
 		// O_NOFOLLOW on both: a symlink planted at either name is refused
 		// rather than followed to truncate whatever it points at.
 		::mkdirat(dirFd, kReportDirName, 0700);
-		const int subFd = ::openat(dirFd, kReportDirName,
+		subFd = ::openat(dirFd, kReportDirName,
 			O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
 		if (subFd >= 0)
 		{
+			// This report is a NEW crash: clear the marker left by the last
+			// offered one, or hasPendingReport() would call this crash already
+			// offered.  unlinkat() is async-signal-safe, like the rest of here.
+			::unlinkat(subFd, kOfferedMarkerName, 0);
 			fd = ::openat(subFd, kReportFileName,
 				O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0644);
-			::close(subFd);
 		}
 	}
 
@@ -473,21 +518,9 @@ bool writeReportIfIdle(const CrashInfo& info)
 			kMaxProjectPathBytes);
 		pos = appendStr(buf, cap, pos, "\n");
 
-		// Bounded write loop: at most 8 write() calls and never more than
-		// kMaxReportBytes bytes, whatever the filesystem does.
-		unsigned long off = 0;
-		int attempts = 0;
-		while (off < pos && attempts < 8)
-		{
-			const ssize_t n = ::write(fd, buf + off, pos - off);
-			if (n > 0) { off += static_cast<unsigned long>(n); }
-			else if (n < 0 && errno == EINTR) { /* retry, still capped */ }
-			else { break; }
-			++attempts;
-		}
-		wrote = (off == pos);
-		::close(fd);
+		wrote = writeReportFile(fd, subFd, buf, pos);
 	}
+	if (subFd >= 0) { ::close(subFd); }
 
 	s_active.store(0);
 	return wrote;

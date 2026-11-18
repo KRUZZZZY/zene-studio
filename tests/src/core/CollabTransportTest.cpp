@@ -23,32 +23,84 @@
  *
  */
 
-/*! No router and no engine: a CollabHost and CollabClient talk over loopback with the real TLS stack, the
- *  snapshot provider and sinks stand in for the project, and the request handler stands in for the registry.
- *  What is proved: the right key joins and receives the snapshot first; a wrong key is refused before any
- *  application byte; a plaintext client reaches nothing; the host's broadcast and a peer's request both make
- *  the round trip; a role is bound to its key. */
+/*! No router: CollabHost and CollabClient talk over loopback with the real TLS stack, the snapshot provider and
+ *  sinks stand in for the project, and the request handler stands in for the registry. One engine-backed case
+ *  also proves the joined session retries an untracked edit seen inside its resync throttle. Other cases prove
+ *  the right key joins and receives the snapshot first; a wrong key is refused before application bytes; plaintext
+ *  reaches nothing; the host's broadcast and a peer's request round-trip; and a role is bound to its key. */
 
 #include "lmmsconfig.h"
 
 #include <QtTest>
 
+#include <array>
+
 #ifdef ZENE_HAVE_COLLAB
 
+#include <QElapsedTimer>
+#include <QFile>
+#include <QEventLoop>
 #include <QJsonDocument>
+#include <QSslSocket>
+#include <QTcpServer>
+#include <QTemporaryDir>
+#include <QSslSocket>
+#include <QTcpServer>
+#include <QSslPreSharedKeyAuthenticator>
+#include <QSslSocket>
 #include <QTcpSocket>
+#include <QThread>
+#include <QTimer>
+#include <QScopeGuard>
+
+#include "ConfigManager.h"
+
+#include <vector>
+
+#include <limits>
 
 #include "CollabClient.h"
 #include "CollabHost.h"
 #include "CollabInvite.h"
 #include "CollabLink.h"
+#include "CollabSession.h"
+#include "ControlRegistry.h"
+#include "Engine.h"
+#include "ProjectJournal.h"
+#include "Song.h"
 
+using namespace lmms;
 using namespace lmms::collab;
+
+namespace lmms::collab
+{
+
+struct CollabClientTestAccess
+{
+	static void prepareRequestIdWrap(CollabClient& client)
+	{
+		client.m_nextRequest = std::numeric_limits<int>::max();
+		client.m_inflight.insert(1, QStringLiteral("still pending"));
+	}
+
+	static bool hasInflight(const CollabClient& client, int id)
+	{
+		return client.m_inflight.contains(id);
+	}
+
+	static CollabLink* link(CollabClient& client)
+	{
+		return client.m_link;
+	}
+};
+
+} // namespace lmms::collab
 
 namespace
 {
 
 const QByteArray ProjectBytes = QByteArrayLiteral("<?xml version=\"1.0\"?><lmms-project/>");
+constexpr int InflightRequestLimit = 256;
 
 struct Received
 {
@@ -56,6 +108,75 @@ struct Received
 	QList<QByteArray> snapshots;
 	QList<QByteArray> requests;
 	QList<CollabRole> requestRoles;
+};
+
+class QueueReportingSslSocket final : public QSslSocket
+{
+public:
+	explicit QueueReportingSslSocket(qint64 queuedBytes) : m_queuedBytes(queuedBytes) {}
+
+	qint64 bytesToWrite() const override { return m_queuedBytes; }
+
+private:
+	qint64 m_queuedBytes;
+};
+
+QJsonObject snapshotFrame(double sequence)
+{
+	return {{QStringLiteral("type"), QStringLiteral("snapshot")},
+		{QStringLiteral("data"), QString::fromLatin1(ProjectBytes.toBase64())},
+		{QStringLiteral("bytes"), ProjectBytes.size()}, {QStringLiteral("seq"), sequence}};
+}
+
+//! A TLS-PSK host that sends hand-made frames, so a test can put values on the wire that a real host never sends.
+class CraftedPeer : public QTcpServer
+{
+public:
+	explicit CraftedPeer(QByteArray key) : m_key(std::move(key)) {}
+
+	bool start() { return listen(QHostAddress(QHostAddress::LocalHost), 0); }
+	quint16 port() const { return serverPort(); }
+	void setInitialFrames(QList<QJsonObject> frames) { m_initialFrames = std::move(frames); }
+	bool requestedResync() const { return m_requestedResync; }
+
+	void send(const QJsonObject& message)
+	{
+		if (m_socket == nullptr || !m_socket->isEncrypted()) { return; }
+		m_socket->write(QJsonDocument(message).toJson(QJsonDocument::Compact) + '\n');
+	}
+
+protected:
+	void incomingConnection(qintptr descriptor) override
+	{
+		m_socket = new QSslSocket(this);
+		if (!m_socket->setSocketDescriptor(descriptor)) { m_socket->deleteLater(); m_socket = nullptr; return; }
+		m_socket->setSslConfiguration(pskConfiguration());
+		connect(m_socket, &QSslSocket::preSharedKeyAuthenticationRequired, this,
+			[this](QSslPreSharedKeyAuthenticator* authenticator) { authenticator->setPreSharedKey(m_key); });
+		connect(m_socket, &QSslSocket::encrypted, this, [this] {
+			send({{QStringLiteral("type"), QStringLiteral("welcome")}, {QStringLiteral("peer"), 1},
+				{QStringLiteral("role"), QStringLiteral("editor")}, {QStringLiteral("proto"), 1}});
+			for (const QJsonObject& frame : m_initialFrames) { send(frame); }
+		});
+		connect(m_socket, &QIODevice::readyRead, this, [this] {
+			m_incoming.append(m_socket->readAll());
+			qsizetype newline = -1;
+			while ((newline = m_incoming.indexOf('\n')) >= 0)
+			{
+				const QJsonObject message = QJsonDocument::fromJson(m_incoming.left(newline)).object();
+				m_incoming.remove(0, newline + 1);
+				m_requestedResync |= message.value(QStringLiteral("type")).toString() == QLatin1String("resync");
+			}
+		});
+		m_socket->startServerEncryption();
+	}
+
+private:
+	QByteArray m_key;
+	QList<QJsonObject> m_initialFrames;
+	QSslSocket* m_socket = nullptr;
+	QByteArray m_incoming;
+	bool m_requestedResync = false;
 };
 
 } // namespace
@@ -67,6 +188,8 @@ private:
 	std::unique_ptr<CollabHost> m_host;
 	QByteArray m_editorKey;
 	Received m_got;
+	collab::CollabSession* m_session = nullptr;
+	bool m_engineStarted = false;
 
 	Invite inviteFor(CollabRole role, const QByteArray& key) const
 	{
@@ -93,169 +216,138 @@ private:
 	}
 
 private slots:
-	void init()
-	{
-		const QString reason = tlsPskUnavailableReason();
-		if (!reason.isEmpty()) { QSKIP(qPrintable(reason)); }
-		m_got = Received();
-		m_host = std::make_unique<CollabHost>();
-		m_editorKey = randomInviteKey();
-		m_host->setKey(CollabRole::Editor, m_editorKey);
-		m_host->setSnapshotProvider([](QString*) { return ProjectBytes; });
-		m_host->setRequestHandler([this](const QByteArray& line, CollabRole role, const QString&) {
-			m_got.requests.append(line);
-			m_got.requestRoles.append(role);
-			const int id = QJsonDocument::fromJson(line).object().value(QStringLiteral("id")).toInt();
-			return QJsonDocument(QJsonObject{{QStringLiteral("id"), id}, {QStringLiteral("ok"), true},
-				{QStringLiteral("result"), QJsonObject{}}}).toJson(QJsonDocument::Compact);
-		});
-		QString error;
-		QVERIFY2(m_host->start(QHostAddress(QHostAddress::LocalHost), 0, &error), qPrintable(error));
-	}
+	void init();
 
-	void cleanup() { m_host.reset(); }
+	void cleanup();
+
+	//! A payload at the queue limit is refused because its framing newline would exceed the limit.
+	void sendLineCountsItsFramingNewline();
 
 	//! The right key: the handshake completes, the peer is listed, and the FIRST thing it receives is the project.
-	void rightKeyJoinsAndGetsTheSnapshotFirst()
-	{
-		CollabClient client;
-		wire(client);
-		client.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("Alice"));
-		QTRY_VERIFY_WITH_TIMEOUT(joined(client), 10000);
-		QCOMPARE(m_got.snapshots.size(), 1);
-		QCOMPARE(m_got.snapshots.first(), ProjectBytes);
-		QVERIFY(m_got.commands.isEmpty());
-		QTRY_COMPARE(m_host->peerCount(), 1);
-		QTRY_COMPARE(m_host->peersJson().first().toObject().value(QStringLiteral("name")).toString(), QStringLiteral("Alice"));
-		QCOMPARE(client.role(), CollabRole::Editor);
-	}
+	void rightKeyJoinsAndGetsTheSnapshotFirst();
+
+	//! A transport close removes the cached peer list and notifies its observers.
+	void transportCloseClearsPeers();
+
+	//! A host goodbye removes the cached peer list and notifies its observers.
+	void hostByeClearsPeers();
+
+	//! Pending handshakes reserve peer slots, even when later handshakes complete after other peers.
+	void pendingHandshakesReservePeerCapacity();
+
+	//! A peer without a snapshot sink must not be told that the host's project was applied.
+	void missingSnapshotSinkIsReportedAsAnApplicationFailure();
+
+	//! A peer without a command sink must not be told that a streamed command was applied.
+	void missingCommandSinkIsReportedAsAnApplicationFailure();
 
 	//! A wrong key fails the TLS handshake: no peer, no snapshot, and the reason names the key.
-	void wrongKeyIsRefused()
-	{
-		CollabClient client;
-		wire(client);
-		QByteArray wrong = m_editorKey;
-		wrong[0] = static_cast<char>(wrong.at(0) ^ 0x01);
-		client.join(inviteFor(CollabRole::Editor, wrong), QStringLiteral("Mallory"));
-		QTRY_COMPARE_WITH_TIMEOUT(client.state(), CollabClient::State::Failed, 10000);
-		QCOMPARE(m_host->peerCount(), 0);
-		QVERIFY(m_got.snapshots.isEmpty());
-		QVERIFY2(client.lastNotice().contains(QStringLiteral("key")) || client.lastNotice().contains(QStringLiteral("closed")),
-			qPrintable(client.lastNotice()));
-	}
+	void wrongKeyIsRefused();
 
 	//! The role is bound to its key: the host holds no remote key, so a remote claim cannot complete a handshake
 	//! even with the editor's key.
-	void aRoleTheHostDidNotKeyCannotJoin()
-	{
-		CollabClient client;
-		wire(client);
-		client.join(inviteFor(CollabRole::Remote, m_editorKey), QStringLiteral("Eve"));
-		QTRY_COMPARE_WITH_TIMEOUT(client.state(), CollabClient::State::Failed, 10000);
-		QCOMPARE(m_host->peerCount(), 0);
-	}
+	void aRoleTheHostDidNotKeyCannotJoin();
+
+	//! A failed streamed command invalidates this copy until the resync snapshot arrives.
+	void failedCommandWaitsForReplacementSnapshot();
+
+	//! A second failed streamed command inside the host's resync interval still gets a replacement snapshot.
+	void throttledFailedCommandGetsReplacementSnapshot();
 
 	//! A plaintext client that writes a request before (instead of) the handshake reaches nothing.
-	void plaintextReachesNothing()
-	{
-		QTcpSocket raw;
-		raw.connectToHost(QHostAddress(QHostAddress::LocalHost), m_host->port());
-		QVERIFY(raw.waitForConnected(5000));
-		raw.write("{\"id\":1,\"cmd\":\"control.quit\",\"args\":{}}\n");
-		raw.flush();
-		QTRY_COMPARE_WITH_TIMEOUT(raw.state(), QAbstractSocket::UnconnectedState, 15000);
-		QVERIFY(m_got.requests.isEmpty());
-		QCOMPARE(m_host->peerCount(), 0);
-	}
+	void plaintextReachesNothing();
+
+	//! Stopping closes every pending handshake and leaves the restarted host able to admit a fresh peer.
+	void stoppingHostAbortsPendingHandshakes();
+
+	//! A port that is already taken refuses the host with false; the error sink is optional, so nullptr must not crash.
+	void occupiedPortRefusedWithoutErrorSink();
+
+	//! The same refusal fills the error sink with the port that could not be bound.
+	void occupiedPortReportsErrorToSink();
 
 	//! The host's broadcast reaches the peer in order, with its arguments, after the snapshot.
-	void hostBroadcastRoundTrip()
-	{
-		CollabClient client;
-		wire(client);
-		client.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("Bob"));
-		QTRY_VERIFY_WITH_TIMEOUT(joined(client), 10000);
-		const QJsonObject first{{QStringLiteral("type"), QStringLiteral("instrument")}};
-		const QJsonObject second{{QStringLiteral("track"), QStringLiteral("trk-3")}, {QStringLiteral("name"), QStringLiteral("Bass")}};
-		m_host->broadcastCommand(QStringLiteral("track.add"), first, QStringLiteral("host"));
-		m_host->broadcastCommand(QStringLiteral("track.rename"), second, QStringLiteral("host"));
-		QTRY_COMPARE(m_got.commands.size(), 2);
-		QCOMPARE(m_got.commands.at(0).first, QStringLiteral("track.add"));
-		QCOMPARE(m_got.commands.at(0).second, first);
-		QCOMPARE(m_got.commands.at(1).first, QStringLiteral("track.rename"));
-		QCOMPARE(m_got.commands.at(1).second, second);
-		QCOMPARE(client.sequence(), m_host->sequence());
-	}
+	void hostBroadcastRoundTrip();
+
+	//! The broadcast implementation must snapshot ids and re-look up each peer
+	//! after sendLine can synchronously erase it.
+	void peerBroadcastUsesStableIdSnapshot();
+
+	//! A queue-limit close erases a peer synchronously while a host broadcast is
+	//! walking the peer set; every affected peer must still be removed safely.
+	void oversizedBroadcastCanClosePeersDuringIteration();
+
+	//! A client that cannot apply streamed commands during a nested event loop is disconnected at the backlog cap.
+	void backlogOverflowDisconnectsBusyClient();
+
+	//! A nested host loop cannot retain unbounded request bytes even when every line is below the transport cap.
+	void peerRequestBacklogHasByteBudget();
 
 	//! A peer's request reaches the host's handler with the peer's role, and the reply comes back to it.
-	void peerRequestRoundTrip()
-	{
-		CollabClient client;
-		wire(client);
-		client.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("Carol"));
-		QTRY_VERIFY_WITH_TIMEOUT(joined(client), 10000);
-		QSignalSpy replies(&client, &CollabClient::replied);
-		const int id = client.request(QStringLiteral("note.add"), {{QStringLiteral("clip"), QStringLiteral("clip-1")}});
-		QVERIFY(id > 0);
-		QTRY_COMPARE(replies.size(), 1);
-		QCOMPARE(replies.first().at(0).toInt(), id);
-		QVERIFY(replies.first().at(1).toBool());
-		QCOMPARE(m_got.requests.size(), 1);
-		QCOMPARE(m_got.requestRoles.first(), CollabRole::Editor);
-		const QJsonObject sent = QJsonDocument::fromJson(m_got.requests.first()).object();
-		QCOMPARE(sent.value(QStringLiteral("cmd")).toString(), QStringLiteral("note.add"));
-	}
+	void peerRequestRoundTrip();
+
+	//! Request IDs wrap to a positive value and skip an ID that is still in flight.
+	void requestIdsWrapWithoutReusingInflightIds();
+
+	//! Requests arriving at the limit keep their original command association until the host replies.
+	void reachingInflightLimitPreservesPendingRequestCommands();
 
 	//! A later joiner gets the CURRENT project, and a re-sync reaches everyone who holds one.
-	void snapshotOnJoinAndResync()
-	{
-		CollabClient first;
-		wire(first);
-		first.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("One"));
-		QTRY_VERIFY_WITH_TIMEOUT(joined(first), 10000);
-		const QByteArray changed = ProjectBytes + QByteArrayLiteral("<!-- edited -->");
-		m_host->setSnapshotProvider([changed](QString*) { return changed; });
-		CollabClient second;
-		wire(second);
-		second.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("Two"));
-		QTRY_VERIFY_WITH_TIMEOUT(joined(second), 10000);
-		QCOMPARE(m_got.snapshots.last(), changed);
-		m_host->broadcastSnapshot(QStringLiteral("test"));
-		QTRY_COMPARE(m_got.snapshots.size(), 4);
-		QCOMPARE(m_got.snapshots.at(2), changed);
-		QCOMPARE(m_got.snapshots.at(3), changed);
-	}
+	void snapshotOnJoinAndResync();
+
+	//! A re-sync with no project-holding peers reports that, instead of claiming success.
+	void broadcastSnapshotReportsRecipients();
+
+	//! A blank collaboration line is answered with the malformed-wire id:-1 reply.
+	void blankCollaborationLineReceivesMalformedReply();
+
+	//! An oversized snapshot is refused before it is base64-encoded into a frame.
+	void oversizedSnapshotIsRefusedBeforeEncoding();
+
+	//! The early size check must preserve a project whose exact snapshot frame is below the wire limit.
+	void snapshotFrameAcceptsPayloadThatFits();
+
+	//! The size check must precede the base64 encoding in the host source.
+	void snapshotSizeCheckPrecedesEncodingInSource();
+
+	//! Huge projects are rejected before header work, and their byte counts never narrow to int.
+	void snapshotSizesAreCheckedBeforeHeaderSerialization();
+
+	//! A journal change during the snapshot grace window must remain visible after the window expires.
+	void snapshotGraceDoesNotConsumeAnUntrackedEdit();
+
+	//! Snapshot open and read failures must expose the QFile reason to the caller.
+	void snapshotReadFailuresPreserveFileReason();
+
+	//! Blank lines must not be dropped before the request handler in the host source.
+	void blankLinesAreDispatchedInSource();
+	//! An untracked edit seen during the peer's resync throttle is retried after the interval.
+	void throttledUntrackedEditIsRetried();
+
+	//! A complete line over the configured cap closes the link before it reaches the receiver.
+	void completeOversizedLineIsRejected();
 
 	//! A host that cannot write its project turns the joiner away with the reason instead of a broken copy.
-	void aSnapshotFailureEndsTheJoinWithTheReason()
-	{
-		m_host->setSnapshotProvider([](QString* error) { *error = QStringLiteral("disk full"); return QByteArray(); });
-		CollabClient client;
-		wire(client);
-		client.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("Dave"));
-		QTRY_COMPARE_WITH_TIMEOUT(client.state(), CollabClient::State::Failed, 10000);
-		QVERIFY2(client.lastNotice().contains(QStringLiteral("disk full")), qPrintable(client.lastNotice()));
-		QVERIFY(m_got.snapshots.isEmpty());
-	}
+	void aSnapshotFailureEndsTheJoinWithTheReason();
+
+	//! A negative sequence is not a position in the stream: the snapshot is refused and the client asks again.
+	void rejectsNegativeSnapshotSequence();
+
+	//! An out-of-range command sequence is refused before the command runs; the sequence the client holds is kept.
+	void rejectsOutOfRangeCommandSequence();
+
+	//! A failed promotion leaves a remote peer remote until the host can provide its project.
+	void failedPromotionKeepsPeerRemote();
+
+	//! Snapshot refusal is distinct from a missing peer through the session API.
+	void sessionReportsFailedPromotionAndKeepsPeerRemote();
 
 	//! The join limiter: attempts and failures per address are bounded, and a ban expires.
-	void joinLimiterBoundsAttemptsAndFailures()
-	{
-		JoinLimiter limiter;
-		const QString a = QStringLiteral("198.51.100.7");
-		for (int i = 0; i < JoinLimiter::MaxAttempts; ++i) { QVERIFY(limiter.admit(a, 1000)); }
-		QVERIFY(!limiter.admit(a, 1000));
-		QVERIFY(!limiter.admit(a, 1000 + JoinLimiter::BanMs - 1));
-		QVERIFY(limiter.admit(a, 1000 + JoinLimiter::BanMs + JoinLimiter::WindowMs + 1));
-
-		JoinLimiter failures;
-		const QString b = QStringLiteral("198.51.100.8");
-		for (int i = 0; i < JoinLimiter::MaxFailures; ++i) { QVERIFY(failures.admit(b, 50)); failures.recordFailure(b, 50); }
-		QVERIFY(!failures.admit(b, 60));
-		QVERIFY(failures.admit(QStringLiteral("198.51.100.9"), 60));
-	}
+	void joinLimiterBoundsAttemptsAndFailures();
 };
+
+#include "CollabTransportTestParts1.h"
+#include "CollabTransportTestParts2.h"
 
 QTEST_GUILESS_MAIN(CollabTransportTest)
 #include "CollabTransportTest.moc"

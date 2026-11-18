@@ -16,12 +16,12 @@
  * only be authored by editing a project file's <timeline> element, which is
  * exactly the gap AGENT-TOOLING.md section 1 makes a defect.
  *
- * THE STATED LIMIT, in the same place as the claim: 0.3.0 ships the region and
- * its predicate, and NOT the audio-side gate. Nothing in this build feeds the
- * capture path a transport position (ALSA has no capture path and the two-track
- * prototype is fed by tests), so wiring a gate would be a change no test here
- * could exercise - and an unexercised gate on the audio thread is a claim, not
- * a feature. docs/KNOWN-LIMITATIONS.md carries the one line.
+ * 0.5.0 L03 (Q050-147): the interface gap is closed too. The Song Editor's
+ * ruler draws the region in its own band with a handle at each end, the toolbar
+ * arms and disarms it without touching the loop markers, and both go through
+ * these same commands. The audio-side gate was already wired in R2.4
+ * (AudioEngine::punchWindow, PunchWindowTest); docs/KNOWN-LIMITATIONS.md keeps
+ * the record.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -242,9 +242,10 @@ void registerTransportPunchSet(ControlRegistry& registry)
 		"state: it is written with the timeline (`punch0pos`/`punch1pos`/`punchstate` on the "
 		"<timeline> element, and only when it is set, so a project that never punches saves the "
 		"bytes it always has) and one control.undo takes it back off through the Timeline's own "
-		"checkpoint. Reversible through the ProjectJournal. The AUDIO-SIDE GATE IS NOT WIRED in "
-		"0.3.0: the region and the predicate are real, and no capture path in this build "
-		"consults them yet (docs/KNOWN-LIMITATIONS.md).");
+		"checkpoint. Both recording paths consult it frame-accurately: an armed region records "
+		"only the frames inside [start, end), keeping the take aligned by writing silence outside. "
+		"The Song Editor draws the region in its own ruler band with draggable handles and arms it "
+		"with the Punch in/out button. Reversible through the ProjectJournal.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("start"), integerProperty()},
 		{QStringLiteral("end"), integerProperty()},

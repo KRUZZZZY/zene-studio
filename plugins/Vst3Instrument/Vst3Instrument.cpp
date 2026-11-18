@@ -28,13 +28,16 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <exception>
 
 #include <QDebug>
 #include <QTimer>
 
 #include "AudioEngine.h"
+#include "DeviceOptions.h"
 #include "Engine.h"
+#include "HostedTrackChannels.h"
 #include "InstrumentPlayHandle.h"
 #include "LmmsCommonMacros.h"
 #include "MidiEvent.h"
@@ -120,9 +123,14 @@ Vst3Instrument::Vst3Instrument(InstrumentTrack* parent,
 
 		if (auto* engine = Engine::audioEngine())
 		{
-			m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(),
-				&error);
+			// A refused preparation is reported, not left as a silent instrument (cluster stress-2).
+			if (!m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(), &error))
+			{
+				qWarning() << "VST3:" << modulePath << classId << "could not be prepared:" << error;
+			}
 		}
+		cacheLatency();  // MX-157
+		m_plugin.setLatencyChangedCallback([this] { m_latencyChanged.store(true, std::memory_order_relaxed); });
 	}
 
 	// Every VST3 parameter becomes an LMMS model, exactly as for the effect
@@ -177,6 +185,7 @@ bool Vst3Instrument::nativeEditorOpen() const
 
 Vst3Instrument::~Vst3Instrument()
 {
+	m_plugin.setLatencyChangedCallback(nullptr);  // MX-157: the flag it raises goes before the plug-in
 	if (auto* engine = Engine::audioEngine())
 	{
 		engine->removePlayHandlesOfTypes(instrumentTrack(),
@@ -203,8 +212,7 @@ void Vst3Instrument::applyChannelCounts()
 	const auto mainInputs = static_cast<ch_cnt_t>(std::max(0, layout.inputs));
 	const auto mainOutputs = std::max<ch_cnt_t>(ch_cnt_t{2},
 		static_cast<ch_cnt_t>(std::max(0, layout.outputs)));
-	audioPorts().setAllChannelCounts(std::max(mainInputs, mainOutputs),
-		mainInputs, mainOutputs);
+	audioPorts().setAllChannelCounts(hostedTrackChannels(mainInputs, mainOutputs), mainInputs, mainOutputs);
 }
 
 bool Vst3Instrument::enableOutputBus(int bus)
@@ -214,6 +222,7 @@ bool Vst3Instrument::enableOutputBus(int bus)
 	// GUI thread, with the render held off: a VST3 bus is activated on an inactive component, and the
 	// transport's channel count follows the new layout before the next block.
 	engine->requestChangeInModel();
+	m_processGate.beginReconfigure();
 	m_plugin.release();
 	const bool activated = m_plugin.activateOutputBuses(bus);
 	QString error;
@@ -224,7 +233,17 @@ bool Vst3Instrument::enableOutputBus(int bus)
 	applyChannelCounts();
 	m_outputBuses.setLayout(vst3::outputBusesOf(m_plugin.outputBusDescriptors()));
 	engine->doneChangeInModel();
+	cacheLatency();  // MX-157
+	m_processGate.endReconfigure();
 	return activated;
+}
+
+void Vst3Instrument::cacheLatency()
+{
+	// The plug-in's unsigned report, bounded as the effect host bounds it (Vst3Effect::cacheLatency), so a
+	// garbage value can never wrap into a negative delay; the PDC delay lines clamp what they cannot apply.
+	const auto latency = std::min<std::uint32_t>(m_plugin.latency(), DeviceOptions::MaxLatencyOverride);
+	reportLatency(m_plugin.isPrepared() ? static_cast<int>(latency) : 0);
 }
 
 auto Vst3Instrument::perNoteTarget(const AutomatableModel* parameter) const -> std::int64_t
@@ -251,18 +270,49 @@ void Vst3Instrument::modulateNote(std::int64_t target, int channel, int key, flo
 	m_plugin.pushMidiEvent(midi);
 }
 
+auto Vst3Instrument::mayPrepareAgain() const -> bool
+{
+	auto* engine = Engine::audioEngine();
+	if (engine == nullptr) { return true; }
+	const PrepareConfig current{engine->outputSampleRate(), engine->framesPerPeriod()};
+	// A configuration the plug-in has not been asked for yet is tried at once:
+	// that is the sample-rate change the re-prepare exists for.
+	if (current != m_attemptedConfig) { return true; }
+	return m_attemptCount < MaxPrepareAttempts;
+}
+
 void Vst3Instrument::reprepare()
 {
+	m_processGate.beginReconfigure();
 	if (auto* engine = Engine::audioEngine())
 	{
-		QString error;
-		if (!m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(),
-				&error))
+		const PrepareConfig config{engine->outputSampleRate(), engine->framesPerPeriod()};
+		if (config != m_attemptedConfig)
 		{
+			// A new configuration: its retry budget starts here.
+			m_attemptedConfig = config;
+			m_attemptCount = 0;
+		}
+		++m_attemptCount;
+		QString error;
+		if (!m_plugin.prepare(config.sampleRate, static_cast<int>(config.framesPerPeriod), &error))
+		{
+			// A plug-in that refuses this configuration is not asked again and
+			// again for it: the request stays pending, but the next attempt
+			// waits for a different sample rate or block size
+			// (mayPrepareAgain()), so the failure is not repeated on every
+			// poll tick.
 			qWarning() << "VST3: re-prepare failed:" << error;
+		}
+		else
+		{
+			// The configuration works again: the budget is refreshed.
+			m_attemptCount = 0;
 		}
 	}
 	m_needsReprepare.store(false, std::memory_order_relaxed);
+	cacheLatency();  // MX-157
+	m_processGate.endReconfigure();
 }
 
 bool Vst3Instrument::handleMidiEvent(const MidiEvent& event, const TimePos&,
@@ -333,14 +383,36 @@ bool Vst3Instrument::handleMidiEvent(const MidiEvent& event, const TimePos&,
 }
 
 auto Vst3Instrument::processImpl(PlanarBufferView<const float, DynamicChannelCount> in,
-	PlanarBufferView<float, DynamicChannelCount> out) -> lmms::ProcessStatus
+		PlanarBufferView<float, DynamicChannelCount> out) -> lmms::ProcessStatus
 {
+	if (!m_processGate.tryEnterAudioProcess())
+	{
+		for (ch_cnt_t c = 0; c < out.channels(); ++c)
+		{
+			std::fill_n(out.bufferPtr(c), out.frames(), 0.f);
+		}
+		return lmms::ProcessStatus::Continue;
+	}
+
 	if (!m_plugin.isPrepared())
 	{
+		if (!out.empty())
+		{
+			for (ch_cnt_t channel = 0; channel < out.channels(); ++channel)
+			{
+				const auto samples = out.buffer(channel);
+				std::fill(samples.begin(), samples.end(), 0.0f);
+			}
+		}
 		// Either the plug-in failed to load or the sample rate changed. The
 		// actual re-configuration happens on the GUI thread; this path only
 		// records the request.
+		for (ch_cnt_t channel = 0; channel < out.channels(); ++channel)
+		{
+			std::fill_n(out.bufferPtr(channel), out.frames(), 0.0f);
+		}
 		m_needsReprepare.store(true, std::memory_order_relaxed);
+		m_processGate.leaveAudioProcess();
 		return lmms::ProcessStatus::Continue;
 	}
 
@@ -360,6 +432,7 @@ auto Vst3Instrument::processImpl(PlanarBufferView<const float, DynamicChannelCou
 	// MX-114: the output buses past the main one, into the mixer channels they are routed to.
 	m_outputBuses.deliver(out.data(), static_cast<int>(out.channels()), out.frames(),
 		instrumentTrack() != nullptr && instrumentTrack()->isMuted());
+	m_processGate.leaveAudioProcess();
 
 	return lmms::ProcessStatus::Continue;
 }
@@ -386,7 +459,11 @@ void Vst3Instrument::saveSettings(QDomDocument& doc, QDomElement& element)
 {
 	QByteArray componentState;
 	QByteArray controllerState;
-	m_plugin.saveState(&componentState, &controllerState);
+	const bool stateSaved = m_plugin.saveState(&componentState, &controllerState);
+	if (!stateSaved)
+	{
+		qWarning() << "VST3: instrument state chunks could not be saved; writing parameter fallback";
+	}
 
 	auto appendState = [&doc, &element](const QString& name, const QByteArray& data) {
 		if (data.isEmpty()) { return; }
@@ -396,6 +473,19 @@ void Vst3Instrument::saveSettings(QDomDocument& doc, QDomElement& element)
 	};
 	appendState(QStringLiteral("componentstate"), componentState);
 	appendState(QStringLiteral("controllerstate"), controllerState);
+
+	auto parameters = doc.createElement(QStringLiteral("parameters"));
+	for (const auto& descriptor : m_plugin.parameters())
+	{
+		if (descriptor.readOnly) { continue; }
+		auto parameter = doc.createElement(QStringLiteral("parameter"));
+		parameter.setAttribute(QStringLiteral("id"), QString::number(descriptor.id));
+		parameter.setAttribute(QStringLiteral("value"),
+			QString::number(m_plugin.paramNormalized(descriptor.id), 'g', 9));
+		parameters.appendChild(parameter);
+	}
+	if (parameters.hasChildNodes()) { element.appendChild(parameters); }
+
 }
 
 void Vst3Instrument::loadSettings(const QDomElement& element)
@@ -408,7 +498,15 @@ void Vst3Instrument::loadSettings(const QDomElement& element)
 
 	const auto componentState = readState(QStringLiteral("componentstate"));
 	const auto controllerState = readState(QStringLiteral("controllerstate"));
-	m_plugin.loadState(componentState, controllerState);
+	const bool stateRestored = m_plugin.loadState(componentState, controllerState);
+	if (!stateRestored)
+	{
+		qWarning() << "VST3: instrument state chunks could not be restored; applying parameter fallback";
+	}
+
+	// The host's saved values of the writable parameters: all of them when the chunks could not be applied
+	// (or there were none), and after a successful load each one the plug-in did not bring back (stress-4).
+	restoreSavedParameters(m_plugin, element);
 
 	// reflect the restored state in the models
 	m_syncing = true;
@@ -423,21 +521,20 @@ void Vst3Instrument::poll()
 {
 	if (!m_plugin.isLoaded()) { return; }
 
-	if (needsReprepare())
+	if (needsReprepare() && mayPrepareAgain())
 	{
 		reprepare();
 	}
+	if (m_latencyChanged.exchange(false, std::memory_order_relaxed)) { cacheLatency(); }  // MX-157
 
 	if (m_syncing) { return; }
 	m_syncing = true;
+	PluginParamGesture::Edits edits;
 	for (auto* model : m_paramModels)
 	{
 		const auto id = model->paramId();
-		const auto value = m_plugin.paramNormalized(id);
-		if (std::abs(model->value() - value) > 1e-4f)
-		{
-			model->setValue(value);
-		}
+		m_plugin.readParamEdits(id, &edits);
+		model->pullFromPlugin(edits, 1e-4f);
 		// keep the edit controller's GUI-side mirror in sync (GUI thread only)
 		m_plugin.notifyController(id, model->value());
 	}

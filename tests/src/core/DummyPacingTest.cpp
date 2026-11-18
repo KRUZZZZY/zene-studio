@@ -33,6 +33,8 @@
 
 #include <QElapsedTimer>
 
+#include "AudioDevice.h"
+#include "AudioDummy.h"
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "Song.h"
@@ -63,6 +65,26 @@ private slots:
 		std::printf("DUMMY_PACING %.3f of real time over %.2f s\n", ratio, seconds);
 		QVERIFY2(ratio >= 0.8, qPrintable(QStringLiteral("the Dummy played %1 of real time").arg(ratio)));
 		QVERIFY2(ratio <= 1.2, qPrintable(QStringLiteral("the Dummy played %1 of real time - faster than real").arg(ratio)));
+	}
+
+	/*! R2.2: a loopback latency read from the environment must not size the delay line without a
+	 *  ceiling. The value here is far past any device figure; the device has to clamp it rather
+	 *  than try to allocate a cable of that length. */
+	void loopbackLatencyFromTheEnvironmentIsBounded()
+	{
+		qputenv("LMMS_DUMMY_LOOPBACK", "1");
+		qputenv("LMMS_DUMMY_INPUT_LATENCY", "5000000");
+		qputenv("LMMS_DUMMY_OUTPUT_LATENCY", "5000000");
+		{
+			bool success = false;
+			AudioDummy device(success, Engine::audioEngine());
+			QVERIFY(success);
+			QCOMPARE(device.inputLatencyFrames(), f_cnt_t(1 << 20));
+			QCOMPARE(device.outputLatencyFrames(), f_cnt_t(1 << 20));
+		}
+		qunsetenv("LMMS_DUMMY_LOOPBACK");
+		qunsetenv("LMMS_DUMMY_INPUT_LATENCY");
+		qunsetenv("LMMS_DUMMY_OUTPUT_LATENCY");
 	}
 };
 

@@ -27,6 +27,8 @@
  *  selection follows both ways. Theme 17: the audit runs its checks separately (duplicate names among them), and
  *  announcements follow the level, the repeat window and the song's transitions. */
 
+#include <stdexcept>
+
 #include <QtTest>
 
 #include <QJsonArray>
@@ -36,6 +38,7 @@
 
 #include "AccessibilityAudit.h"
 #include "AccessibleWidgets.h"
+#include "CompSwipeStrip.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -43,12 +46,14 @@
 #include "InstrumentTrack.h"
 #include "ItemList.h"
 #include "MidiClip.h"
+#include "MusicalTime.h"
 #include "Note.h"
 #include "NoteCanvas.h"
 #include "NoteEditor.h"
 #include "NoteGrid.h"
 #include "NotePlayHandle.h"
 #include "Song.h"
+#include "../../../src/gui/ValueAnnouncementState.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -168,6 +173,19 @@ private slots:
 		QTRY_VERIFY(m_panel->statusText().startsWith(QStringLiteral("Not done")));
 	}
 
+	void numericEditsRejectPercentCharacters()
+	{
+		QVERIFY(!edit(m_panel, 2, 3, QStringLiteral("1%2")));
+		QCOMPARE(static_cast<int>(noteAt(m_clip, 192, 62)->getVolume()), 100);
+
+		int parsed = -1;
+		QVERIFY(ItemListSource::parse(ItemColumn::Kind::Percent, QStringLiteral("42 %"), &parsed));
+		QCOMPARE(parsed, 42);
+		QVERIFY(!ItemListSource::parse(ItemColumn::Kind::Number, QStringLiteral("42%"), &parsed));
+		QVERIFY(!ItemListSource::parse(ItemColumn::Kind::Percent, QStringLiteral("4%%"), &parsed));
+		QVERIFY(!ItemListSource::parse(ItemColumn::Kind::Percent, QStringLiteral("4%2"), &parsed));
+	}
+
 	void insertAndDeleteAreOneStepEach()
 	{
 		m_panel->table()->setCurrentIndex(m_panel->table()->model()->index(2, 0));
@@ -185,6 +203,134 @@ private slots:
 		QCOMPARE(m_clip->notes().size(), std::size_t{3});
 	}
 
+	void theClipListDeletesEverySelectedClip()
+	{
+		constexpr int firstPosition = 384;
+		constexpr int secondPosition = 768;
+		Clip* first = m_track->createClip(TimePos(firstPosition));
+		Clip* second = m_track->createClip(TimePos(secondPosition));
+		QVERIFY(first != nullptr);
+		QVERIFY(second != nullptr);
+		ItemListPanel* clips = ItemListPanel::open(m_editor, QStringLiteral("clips"),
+			[](QObject* parent) { return itemlists::clips(parent); });
+		const bool multipleSelectionAvailable = clips->table()->selectionMode() == QAbstractItemView::ExtendedSelection;
+		const QString firstId = control::clipIdOf(first);
+		const QString secondId = control::clipIdOf(second);
+		const auto rowFor = [clips](const QString& id) {
+			for (int row = 0; row < clips->source()->rowCount(); ++row)
+			{
+				if (clips->source()->rowId(row) == id) { return row; }
+			}
+			return -1;
+		};
+		const int firstRow = rowFor(firstId);
+		const int secondRow = rowFor(secondId);
+		const bool rowsFound = firstRow >= 0 && secondRow >= 0 && firstRow != secondRow;
+		if (rowsFound)
+		{
+			QItemSelection selection;
+			for (const int row : {firstRow, secondRow})
+			{
+				selection.select(clips->table()->model()->index(row, 0),
+					clips->table()->model()->index(row, clips->table()->model()->columnCount() - 1));
+			}
+			clips->table()->selectionModel()->select(selection, QItemSelectionModel::ClearAndSelect);
+		}
+		const bool selectedBoth = clips->table()->selectionModel()->selectedRows().size() == 2;
+		const bool removed = selectedBoth && clips->removeItems();
+		const auto hasRow = [clips](const QString& id) {
+			for (int row = 0; row < clips->source()->rowCount(); ++row)
+			{
+				if (clips->source()->rowId(row) == id) { return true; }
+			}
+			return false;
+		};
+		const bool firstRemains = hasRow(firstId);
+		const bool secondRemains = hasRow(secondId);
+		bool undoOk = true;
+		for (int deleted = 0; deleted < static_cast<int>(!firstRemains) + static_cast<int>(!secondRemains); ++deleted)
+		{
+			undoOk = undo() && undoOk;
+		}
+		const auto clipAt = [this](int position) -> Clip* {
+			for (Clip* clip : m_track->getClips())
+			{
+				if (clip->startPosition().getTicks() == position) { return clip; }
+			}
+			return nullptr;
+		};
+		// Undo restores the track from its checkpoint (Track::restoreState re-loads the clips as new objects), so the
+		// fixture's clip is the restored object now at its start; deleting the old pointer would be a use-after-free.
+		if (Clip* restored = clipAt(0)) { m_clip = dynamic_cast<MidiClip*>(restored); }
+		const auto discardAt = [this, clipAt](int position) {
+			if (Clip* clip = clipAt(position))
+			{
+				m_track->removeClip(clip);
+				delete clip;
+			}
+		};
+		discardAt(firstPosition);
+		discardAt(secondPosition);
+		QVERIFY(rowsFound);
+		QVERIFY(selectedBoth);
+		QVERIFY(removed);
+		QVERIFY(!firstRemains);
+		QVERIFY(!secondRemains);
+		QVERIFY(undoOk);
+		QVERIFY(multipleSelectionAvailable);
+	}
+
+	void insertRefusesOneTickCompSegment()
+	{
+		const QString track = invoke(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}})
+			.result.value(QStringLiteral("track")).toString();
+		QVERIFY(!track.isEmpty());
+		QVERIFY(invoke(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), track}}).ok);
+		QVERIFY(invoke(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), track}}).ok);
+		QVERIFY(invoke(QStringLiteral("comp.select"), {{QStringLiteral("track"), track}, {QStringLiteral("begin"), 10},
+			{QStringLiteral("end"), 11}, {QStringLiteral("lane"), 0}}).ok);
+
+		CompSwipeStrip strip(track, nullptr);
+		strip.setState(invoke(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), track}}).result);
+		ItemListPanel panel(itemlists::compSegments(&strip, nullptr), &strip, QStringLiteral("comp"));
+		QCOMPARE(panel.table()->model()->rowCount(), 1);
+		panel.table()->setCurrentIndex(panel.table()->model()->index(0, 0));
+
+		QVERIFY(!panel.insertItem());
+		QVERIFY(panel.statusText().startsWith(QStringLiteral("Not done:")));
+		const QJsonArray segments = invoke(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), track}}).result
+			.value(QStringLiteral("composite")).toObject().value(QStringLiteral("segments")).toArray();
+		QCOMPARE(segments.size(), 1);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("begin")).toInt(), 10);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("end")).toInt(), 11);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("lane")).toInt(), 0);
+	}
+
+	void aNegativeCompRowIsRefusedNotIndexed()
+	{
+		const QString track = invoke(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}})
+			.result.value(QStringLiteral("track")).toString();
+		QVERIFY(!track.isEmpty());
+		QVERIFY(invoke(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), track}}).ok);
+		QVERIFY(invoke(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), track}}).ok);
+		QVERIFY(invoke(QStringLiteral("comp.select"), {{QStringLiteral("track"), track}, {QStringLiteral("begin"), 10},
+			{QStringLiteral("end"), 11}, {QStringLiteral("lane"), 0}}).ok);
+
+		CompSwipeStrip strip(track, nullptr);
+		strip.setState(invoke(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), track}}).result);
+		ItemListSource* source = itemlists::compSegments(&strip, &strip);
+		const int rows = source->rowCount();
+		QVERIFY(rows >= 1);
+		const QJsonObject before = invoke(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), track}}).result;
+
+		bool accepted = true;
+		try { accepted = source->setValue(-1, 0, 5); }
+		catch (const std::out_of_range&) { QFAIL("a negative row reached the segment list and threw out_of_range"); }
+		QVERIFY(!accepted);
+		QCOMPARE(source->rowCount(), rows);
+		QVERIFY(invoke(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), track}}).result == before);
+	}
+
 	void theSelectionFollowsBothWays()
 	{
 		m_panel->table()->selectRow(1);
@@ -196,6 +342,20 @@ private slots:
 		const QModelIndexList rows = m_panel->table()->selectionModel()->selectedRows();
 		QCOMPARE(rows.size(), 1);
 		QCOMPARE(rows.first().row(), 2);
+	}
+
+	void ctrlClickClearsTheOnlySelectedRow()
+	{
+		QTableView* table = m_panel->table();
+		const QModelIndex index = table->model()->index(1, 0);
+		table->selectionModel()->setCurrentIndex(index, QItemSelectionModel::NoUpdate);
+		table->selectRow(1);
+		QVERIFY(noteAt(m_clip, 0, 64)->selected());
+
+		QTest::mouseClick(table->viewport(), Qt::LeftButton, Qt::ControlModifier, table->visualRect(index).center());
+
+		QTRY_VERIFY(!noteAt(m_clip, 0, 64)->selected());
+		QVERIFY(table->selectionModel()->selectedRows().isEmpty());
 	}
 
 	void theControllerListEditsTheLane()
@@ -219,6 +379,95 @@ private slots:
 		QVERIFY(m_clip->controllers().lane(ControllerKind::ControlChange, 7) != nullptr);
 	}
 
+	void aControllerPositionCollisionDoesNotDiscardEitherPoint()
+	{
+		m_editor->setControllerLane(QStringLiteral("cc:7"));
+		const QJsonArray initial{QJsonObject{{QStringLiteral("tick"), 0}, {QStringLiteral("value"), 10}},
+			QJsonObject{{QStringLiteral("tick"), 12}, {QStringLiteral("value"), 100}}};
+		QVERIFY(invoke(QStringLiteral("clip.controllers_set"), {{QStringLiteral("clip"), m_editor->clipId()},
+			{QStringLiteral("lane"), QStringLiteral("cc:7")}, {QStringLiteral("points"), initial}}).ok);
+		ItemListPanel* points = ItemListPanel::open(m_editor, QStringLiteral("controller"),
+			[this](QObject* parent) { return itemlists::controllerPoints(m_editor, parent); });
+		QCOMPARE(points->table()->model()->rowCount(), 2);
+		tick_t collisionTick = -1;
+		QVERIFY(musicaltime::positionFromText(QStringLiteral("12 ticks"), &collisionTick));
+		QCOMPARE(collisionTick, tick_t{12});
+		edit(points, 0, 0, QStringLiteral("12 ticks"));
+
+		const ControllerLane* lane = m_clip->controllers().lane(ControllerKind::ControlChange, 7);
+		QVERIFY(lane != nullptr);
+		QCOMPARE(lane->points.size(), std::size_t{2});
+		QVERIFY(lane->points[0].tick != lane->points[1].tick);
+		bool keptTen = false;
+		bool keptHundred = false;
+		for (const ControllerPoint& point : lane->points)
+		{
+			keptTen = keptTen || point.value == 10;
+			keptHundred = keptHundred || point.value == 100;
+		}
+		QVERIFY(keptTen);
+		QVERIFY(keptHundred);
+	}
+
+	void insertingAfterAControllerPointDoesNotDiscardTheInsertion()
+	{
+		m_editor->setControllerLane(QStringLiteral("cc:7"));
+		const QJsonArray initial{QJsonObject{{QStringLiteral("tick"), 0}, {QStringLiteral("value"), 10}},
+			QJsonObject{{QStringLiteral("tick"), 12}, {QStringLiteral("value"), 100}}};
+		QVERIFY(invoke(QStringLiteral("clip.controllers_set"), {{QStringLiteral("clip"), m_editor->clipId()},
+			{QStringLiteral("lane"), QStringLiteral("cc:7")}, {QStringLiteral("points"), initial}}).ok);
+		ItemListPanel* points = ItemListPanel::open(m_editor, QStringLiteral("controller"),
+			[this](QObject* parent) { return itemlists::controllerPoints(m_editor, parent); });
+		points->table()->setCurrentIndex(points->table()->model()->index(0, 0));
+		const bool inserted = points->insertItem();
+
+		const ControllerLane* lane = m_clip->controllers().lane(ControllerKind::ControlChange, 7);
+		QVERIFY(lane != nullptr);
+		QCOMPARE(lane->points.size(), inserted ? std::size_t{3} : std::size_t{2});
+		for (std::size_t i = 0; i < lane->points.size(); ++i)
+		{
+			for (std::size_t j = i + 1; j < lane->points.size(); ++j) { QVERIFY(lane->points[i].tick != lane->points[j].tick); }
+		}
+		bool keptTen = false;
+		bool keptHundred = false;
+		for (const ControllerPoint& point : lane->points)
+		{
+			keptTen = keptTen || point.value == 10;
+			keptHundred = keptHundred || point.value == 100;
+		}
+		QVERIFY(keptTen);
+		QVERIFY(keptHundred);
+	}
+
+	void aNegativeControllerRowIsRefusedNotIndexed()
+	{
+		// The row comes from the caller, not from the list: a negative one must be refused, never used to index the points.
+		m_editor->setControllerLane(QStringLiteral("cc:7"));
+		const QJsonArray initial{QJsonObject{{QStringLiteral("tick"), 0}, {QStringLiteral("value"), 10}},
+			QJsonObject{{QStringLiteral("tick"), 12}, {QStringLiteral("value"), 100}}};
+		QVERIFY(invoke(QStringLiteral("clip.controllers_set"), {{QStringLiteral("clip"), m_editor->clipId()},
+			{QStringLiteral("lane"), QStringLiteral("cc:7")}, {QStringLiteral("points"), initial}}).ok);
+		QObject owner;
+		ItemListSource* points = itemlists::controllerPoints(m_editor, &owner);
+		QVERIFY(!points->setValue(-1, 0, 5));
+		QVERIFY(!points->setValue(-1, 1, 5));
+
+		const ControllerLane* lane = m_clip->controllers().lane(ControllerKind::ControlChange, 7);
+		QVERIFY(lane != nullptr);
+		QCOMPARE(lane->points.size(), std::size_t{2});
+		QCOMPARE(lane->points[0].value, 10);
+		QCOMPARE(lane->points[1].value, 100);
+	}
+
+	void aNegativeNoteRowIsRefusedNotIndexed()
+	{
+		QObject owner;
+		ItemListSource* notes = itemlists::notes(m_editor, &owner);
+		QVERIFY(!notes->setValue(-1, 1, 62));
+		QVERIFY(!notes->setValue(-1, 0, 12));
+		QCOMPARE(m_clip->notes().size(), std::size_t{3});
+	}
+
 	void theCommandOpensAndClosesTheList()
 	{
 		m_panel->close();
@@ -236,6 +485,19 @@ private slots:
 		QCOMPARE(invoke(QStringLiteral("window.item_list"), {{QStringLiteral("surface"), QStringLiteral("xy")}}).errorKind, ControlErrorKind::NotFound);
 		QCOMPARE(invoke(QStringLiteral("window.item_list"), {{QStringLiteral("surface"), QStringLiteral("piano")}}).errorKind,
 			ControlErrorKind::InvalidArgs);
+	}
+
+	void aNullSurfaceOpensNothing()
+	{
+		// No canvas means no list: nothing is made for it and nothing is shown beside it.
+		bool made = false;
+		ItemListPanel* panel = ItemListPanel::open(nullptr, QStringLiteral("notes"), [this, &made](QObject* parent) {
+			made = true;
+			return itemlists::notes(m_editor, parent);
+		});
+		QVERIFY(panel == nullptr);
+		QVERIFY(!made);
+		QVERIFY(ItemListPanel::find(nullptr, QStringLiteral("notes")) == nullptr);
 	}
 
 	void theAuditRunsItsChecksSeparately()
@@ -279,6 +541,19 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 	}
 
+	void returningToLastAnnouncedValueCancelsPendingAnnouncement()
+	{
+		bool pending = false;
+		using a11y::detail::ValueChangeAction;
+		using a11y::detail::valueChangeAction;
+		QCOMPARE(valueChangeAction(QStringLiteral("B"), QStringLiteral("A"), false, pending), ValueChangeAction::Announce);
+		pending = false;  // announce() clears the pending flag
+		QCOMPARE(valueChangeAction(QStringLiteral("A"), QStringLiteral("B"), true, pending), ValueChangeAction::Defer);
+		QVERIFY(pending);
+		QCOMPARE(valueChangeAction(QStringLiteral("B"), QStringLiteral("B"), true, pending), ValueChangeAction::NoChange);
+		QVERIFY2(!pending, "returning to the settled value must leave nothing for the timer to announce");
+	}
+
 	void aSaveIsAnnounced()
 	{
 		a11y::watchSongTransitions();
@@ -286,6 +561,35 @@ private slots:
 		song->setModified();
 		song->noteProjectSaved(m_home.filePath(QStringLiteral("tune.mmpz")));
 		QTRY_COMPARE(a11y::lastAnnouncement(), QStringLiteral("Saved tune.mmpz"));
+	}
+
+	void aSourceWithoutItsEditorStaysEmpty()
+	{
+		// A list can outlive the editor it lists: the source must answer its empty state, not dereference the gone editor.
+		ItemListSource* notes = itemlists::notes(m_editor, this);
+		ItemListSource* points = itemlists::controllerPoints(m_editor, this);
+		delete m_editor;  // QPointer in the source is nulled by the deletion
+		m_editor = nullptr;
+		m_panel = nullptr;
+		QCOMPARE(notes->rowCount(), 0);
+		QCOMPARE(notes->step(0), 1);  // the grid's floor, as with an open editor at grid 1
+		QCOMPARE(notes->step(1), 1);
+		QVERIFY(!notes->remove({}));
+		QCOMPARE(points->rowCount(), 0);
+		QCOMPARE(points->step(0), 1);
+		QVERIFY(!points->remove({}));
+	}
+
+	void aSourceBuiltWithoutAnEditorStaysEmpty()
+	{
+		ItemListSource* notes = itemlists::notes(nullptr, this);
+		ItemListSource* points = itemlists::controllerPoints(nullptr, this);
+		QCOMPARE(notes->rowCount(), 0);
+		QCOMPARE(notes->step(0), 1);
+		QVERIFY(!notes->remove({}));
+		QCOMPARE(points->rowCount(), 0);
+		QCOMPARE(points->step(0), 1);
+		QVERIFY(!points->remove({}));
 	}
 
 private:

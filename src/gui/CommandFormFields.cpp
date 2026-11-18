@@ -41,9 +41,12 @@
 #include <QRegularExpression>
 #include <QToolButton>
 
+#include <cmath>
+
 #include "Clip.h"
 #include "CommandForm.h"
 #include "CommandMetadata.h"
+#include "ControlDeviceSupport.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Mixer.h"
@@ -141,6 +144,18 @@ QList<Reference> mixerChannels()
 	return out;
 }
 
+//! Q050-055.2: `format: device` - the catalogue's loadable devices, by name, so nobody has to know a dev-<n>.
+QList<Reference> loadableDevices()
+{
+	QList<Reference> out;
+	const QList<ControlDeviceEntry> catalogue = controlDeviceCatalogue();
+	for (int i = 0; i < catalogue.size(); ++i)
+	{
+		if (catalogue[i].loadable) { out.append({control::deviceId(i), catalogue[i].displayName}); }
+	}
+	return out;
+}
+
 //! What a reference argument can name: "track" the project's tracks, "channel" the mixer's, "target" either.
 QList<Reference> referencesFor(const QString& key, const QJsonObject& spec)
 {
@@ -221,7 +236,7 @@ QLineEdit* textEditor(QWidget* parent, const QJsonObject& spec, Kind kind)
 {
 	auto* edit = withKind(new QLineEdit(parent), kind);
 	if (kind == Kind::Text) { constrain(edit, spec); }
-	if (kind == Kind::List) { edit->setPlaceholderText(tr("Values separated by commas")); }
+	if (kind == Kind::List) { edit->setPlaceholderText(tr("Values separated by commas (a \\ escapes a comma or a backslash)")); }
 	if (kind == Kind::Json)
 	{
 		edit->setPlaceholderText(schemaType(spec) == QStringLiteral("array") ? QStringLiteral("[ ... ]") : QStringLiteral("{ ... }"));
@@ -308,28 +323,101 @@ bool parseJson(const QString& text, const QString& type, QJsonValue* value)
 	return false;
 }
 
-//! "a, b, c" as a list of the items' type; a list typed as JSON ("[...]") is read as JSON.
-bool parseList(const QString& text, const QJsonObject& spec, QJsonValue* value)
-{
-	if (text.startsWith(QLatin1Char('['))) { return parseJson(text, QStringLiteral("array"), value); }
-	QJsonArray items;
-	for (const QString& part : text.split(QLatin1Char(',')))
-	{
-		QJsonValue item;
-		if (part.trimmed().isEmpty()) { continue; }
-		if (!parseScalar(part.trimmed(), itemType(spec), &item)) { return false; }
-		items.append(item);
-	}
-	*value = items;
-	return true;
-}
-
 bool inRange(const QJsonValue& value, const QJsonObject& spec)
 {
 	const QJsonValue low = spec.value(QStringLiteral("minimum"));
 	const QJsonValue high = spec.value(QStringLiteral("maximum"));
 	if (!value.isDouble()) { return true; }
 	return !(low.isDouble() && value.toDouble() < low.toDouble()) && !(high.isDouble() && value.toDouble() > high.toDouble());
+}
+
+bool itemMatchesType(const QJsonValue& value, const QString& type)
+{
+	if (type == QStringLiteral("string")) { return value.isString(); }
+	if (type == QStringLiteral("number")) { return value.isDouble(); }
+	return type == QStringLiteral("integer") && value.isDouble() && std::floor(value.toDouble()) == value.toDouble();
+}
+
+bool listMatchesSchema(const QJsonArray& items, const QJsonObject& spec)
+{
+	const QJsonValue minimum = spec.value(QStringLiteral("minItems"));
+	const QJsonValue maximum = spec.value(QStringLiteral("maxItems"));
+	if (minimum.isDouble() && items.size() < minimum.toDouble()) { return false; }
+	if (maximum.isDouble() && items.size() > maximum.toDouble()) { return false; }
+	const QJsonObject itemSpec = spec.value(QStringLiteral("items")).toObject();
+	for (const QJsonValue& item : items)
+	{
+		if (!itemMatchesType(item, itemType(spec)) || !inRange(item, itemSpec)) { return false; }
+	}
+	return true;
+}
+
+//! The comma list's escape: a backslash makes the next character literal.
+const QLatin1Char ListEscape('\\');
+
+//! The items of a comma list: split on the commas no escape protects, each item's escapes resolved
+//! and its edges trimmed, as an item always was. A backslash escapes a comma or another backslash
+//! and stands for itself before anything else, so a path like "folder\sample" is that path.
+void splitListItems(const QString& text, QStringList* items)
+{
+	QString item;
+	for (int i = 0; i < text.size(); ++i)
+	{
+		const QChar ch = text.at(i);
+		const bool escapes = ch == ListEscape && i + 1 < text.size()
+			&& (text.at(i + 1) == QLatin1Char(',') || text.at(i + 1) == ListEscape);
+		if (escapes) { item += text.at(i + 1); ++i; }
+		else if (ch == QLatin1Char(',')) { items->append(item.trimmed()); item.clear(); }
+		else { item += ch; }
+	}
+	items->append(item.trimmed());
+}
+
+//! A list's value as the text of its editor: the items separated by commas, a comma inside an item
+//! escaped. A list of records, or one whose text would read as JSON, is written as JSON.
+QString listText(const QJsonValue& value)
+{
+	if (!value.isArray()) { return valueText(value); }
+	const QJsonArray items = value.toArray();
+	QStringList parts;
+	for (const QJsonValue& item : items)
+	{
+		// A record, or an item the comma list cannot say, is JSON's business.
+		if (item.isArray() || item.isObject() || item.toString().trimmed().isEmpty()) { return compactJson(items); }
+		QString part = item.isString() ? item.toString().trimmed() : valueText(item);
+		part.replace(ListEscape, QStringLiteral("\\\\"));
+		part.replace(QLatin1Char(','), QStringLiteral("\\,"));
+		parts.append(part);
+	}
+	const QString text = parts.join(QStringLiteral(", "));
+	return text.startsWith(QLatin1Char('[')) ? compactJson(items) : text;
+}
+
+//! "a, b, c" as a list of the items' type; a list typed as JSON ("[...]") is read as JSON.
+//! An empty item is refused, with the reason in @a error: malformed input is not a shorter list.
+bool parseList(const QString& text, const QJsonObject& spec, QJsonValue* value, QString* error)
+{
+	QJsonArray items;
+	if (text.startsWith(QLatin1Char('[')))
+	{
+		if (!parseJson(text, QStringLiteral("array"), value)) { return false; }
+		items = value->toArray();
+	}
+	else
+	{
+		QStringList parts;
+		splitListItems(text, &parts);
+		for (const QString& part : parts)
+		{
+			if (part.isEmpty()) { *error = tr("\"%1\" has an empty item").arg(text); return false; }
+			QJsonValue item;
+			if (!parseScalar(part, itemType(spec), &item)) { return false; }
+			items.append(item);
+		}
+	}
+	if (!listMatchesSchema(items, spec)) { return false; }
+	*value = items;
+	return true;
 }
 
 QString typeError(const QString& text, const QString& type)
@@ -349,14 +437,15 @@ bool readTyped(const QString& text, const QJsonObject& spec, QJsonValue* value, 
 	return false;
 }
 
-QString editorText(const QWidget* editor)
+QString editorText(const QWidget* editor, const QJsonObject& spec)
 {
 	if (const auto* box = qobject_cast<const QComboBox*>(editor)) { return box->currentText().trimmed(); }
 	if (const auto* keys = qobject_cast<const QKeySequenceEdit*>(editor))
 	{
 		return keys->keySequence().toString(QKeySequence::PortableText);
 	}
-	return static_cast<const QLineEdit*>(editor)->text().trimmed();
+	const QString text = static_cast<const QLineEdit*>(editor)->text();
+	return schemaType(spec) == QStringLiteral("string") ? text : text.trimmed();
 }
 
 //! A picked reference: the chosen entry's id, or the text as typed (an id the list does not hold).
@@ -373,9 +462,12 @@ bool readText(const QWidget* editor, const QString& text, const QJsonObject& spe
 	case Kind::Pick: *value = pickedValue(static_cast<const QComboBox*>(editor), text); return true;
 	case Kind::Keys: *value = text; return true;
 	case Kind::List:
-		if (parseList(text, spec, value)) { return true; }
-		*error = tr("\"%1\" is not a list of values separated by commas").arg(text);
+	{
+		QString reason;
+		if (parseList(text, spec, value, &reason)) { return true; }
+		*error = reason.isEmpty() ? tr("\"%1\" is not a list of values separated by commas").arg(text) : reason;
 		return false;
+	}
 	case Kind::Json:
 		if (parseJson(text, schemaType(spec), value)) { return true; }
 		*error = typeError(text, schemaType(spec));
@@ -431,6 +523,7 @@ Editor makeEditor(QWidget* parent, const QString& id, const QString& key, const 
 	{
 		return single(withKind(new QKeySequenceEdit(parent), Kind::Keys));
 	}
+	if (spec.value(QStringLiteral("format")).toString() == QStringLiteral("device")) { return single(pickEditor(parent, loadableDevices())); }
 	if (const QList<Reference> references = referencesFor(key, spec); !references.isEmpty())
 	{
 		return single(pickEditor(parent, references));
@@ -455,12 +548,35 @@ bool readValue(const QWidget* editor, const QJsonObject& spec, QJsonValue* value
 		if (data.isValid()) { *value = data.toJsonValue(); }
 		return true;
 	}
-	const QString text = editorText(editor);
+	const QString text = editorText(editor, spec);
 	return text.isEmpty() || readText(editor, text, spec, value, error);
 }
 
-bool writeValue(QWidget* editor, const QJsonValue& value)
+//! The JSON types a schema type can have, so a value is checked without guessing its type again.
+bool isOfType(const QJsonValue& value, const QString& type)
 {
+	if (type == QStringLiteral("integer") || type == QStringLiteral("number")) { return value.isDouble(); }
+	if (type == QStringLiteral("boolean")) { return value.isBool(); }
+	if (type == QStringLiteral("array")) { return value.isArray(); }
+	if (type == QStringLiteral("object")) { return value.isObject(); }
+	if (type == QStringLiteral("string")) { return value.isString(); }
+	return true;  // a type the form does not constrain (a raw blob, a path)
+}
+
+//! Whether @a value is what @a editor (spec @a spec) can be read back as: a choice needs its value
+//! offered, any other editor holds its field's own type - a plain list and raw JSON are typed
+//! "array"/"object" by the schema, so the same check covers them. Bounds are collect()'s business
+//! (a field may hold an out-of-range number, so the user can correct it).
+bool fitsEditor(QWidget* editor, const QJsonObject& spec, const QJsonValue& value)
+{
+	if (value.isUndefined()) { return true; }  // a blank field holds Undefined, which readValue answers
+	if (kindOf(editor) == Kind::Choice) { return true; }  // writeChoice answers whether the value is offered
+	return isOfType(value, schemaType(spec));
+}
+
+bool writeValue(QWidget* editor, const QJsonObject& spec, const QJsonValue& value)
+{
+	if (!fitsEditor(editor, spec, value)) { return false; }
 	switch (kindOf(editor))
 	{
 	case Kind::Choice: return writeChoice(static_cast<QComboBox*>(editor), value);
@@ -469,7 +585,7 @@ bool writeValue(QWidget* editor, const QJsonValue& value)
 		static_cast<QKeySequenceEdit*>(editor)->setKeySequence(QKeySequence::fromString(valueText(value), QKeySequence::PortableText));
 		return true;
 	case Kind::Json: static_cast<QLineEdit*>(editor)->setText(compactJson(value)); return true;
-	case Kind::List:
+	case Kind::List: static_cast<QLineEdit*>(editor)->setText(listText(value)); return true;
 	case Kind::Text: static_cast<QLineEdit*>(editor)->setText(valueText(value)); return true;
 	}
 	return false;

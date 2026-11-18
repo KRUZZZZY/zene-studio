@@ -32,6 +32,7 @@
 #include <QtTest>
 
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QTemporaryDir>
@@ -41,6 +42,7 @@
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "DataFile.h"
 #include "Engine.h"
 #include "ReversibilityTestSupport.h"
 #include "Song.h"
@@ -71,6 +73,48 @@ void touch(const QString& path)
 	QFile file(path);
 	QVERIFY(file.open(QIODevice::WriteOnly));
 	file.write("x");
+}
+
+//! @a text written at @a path. Answers false rather than throwing, so a slot can
+//! assert the write happened instead of reading a file that is not there.
+bool writeText(const QString& path, const QString& text)
+{
+	QFile file(path);
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) { return false; }
+	return file.write(text.toUtf8()) >= 0;
+}
+
+//! A project document with the shape Song::loadProject needs, carrying @a songExtras
+//! as the last child of <song> - the position an unclaimed section is read from, and
+//! therefore the position a partial load leaves one out of.
+QString songProject(const QString& songExtras)
+{
+	DataFile fresh(DataFile::Type::SongProject);
+	return QString(
+		"<?xml version=\"1.0\"?>\n"
+		"<lmms-project version=\"%1\" type=\"song\" creator=\"Zene Studio\">\n"
+		"  <head/>\n"
+		"  <song>\n"
+		"    <trackcontainer type=\"song\">\n"
+		"      <track type=\"0\" name=\"t\" muted=\"0\">\n"
+		"        <instrumenttrack/>\n"
+		"      </track>\n"
+		"    </trackcontainer>\n"
+		"%2"
+		"  </song>\n"
+		"</lmms-project>\n").arg(fresh.documentElement().attribute(QStringLiteral("version")), songExtras);
+}
+
+//! Load a project that carries a section the caller asks to skip: the session that
+//! comes back holds less than the file and REFUSES to save itself (SPEC-ARCH-4 1.4).
+//! That refusal is the deterministic way to make a hand off fail after it has made
+//! its destination folder.
+void loadPartially(const QString& path)
+{
+	Song* song = Engine::getSong();
+	song->clearProject();
+	song->setLoadOnLaunch(false);
+	song->loadProject(path, {QStringLiteral("newsection")});
 }
 
 } // namespace
@@ -115,6 +159,21 @@ private slots:
 		QVERIFY(!BrowserSearch(QStringLiteral("\"drum bass\"")).matches(bass));
 	}
 
+	void anIncompleteExpressionDoesNotMatchTheWholeLibrary()
+	{
+		const BrowserItem kick = itemOf(QStringLiteral("/lib/drums/kick 808.wav"), BrowserKind::Audio, {QStringLiteral("Drums")});
+		const BrowserItem loop = itemOf(QStringLiteral("/lib/loops/kick loop.ogg"), BrowserKind::Audio);
+		// An incomplete field term has no value to look for: it must not match everything.
+		QVERIFY(!BrowserSearch(QStringLiteral("tag:")).matches(kick));
+		QVERIFY(!BrowserSearch(QStringLiteral("tag:")).matches(loop));
+		QVERIFY(!BrowserSearch(QStringLiteral("ext:")).matches(loop));
+		// A lone OR is not a search for the text "OR" either.
+		QVERIFY(!BrowserSearch(QStringLiteral("OR")).matches(kick));
+		QVERIFY(!BrowserSearch(QStringLiteral("|")).matches(loop));
+		// Only a genuinely empty query still matches everything.
+		QVERIFY(BrowserSearch(QString()).matches(kick));
+	}
+
 	void aCollectionRunsAndIsUndone()
 	{
 		const QString lib = m_dir.filePath(QStringLiteral("lib"));
@@ -140,6 +199,42 @@ private slots:
 			{QStringLiteral("kind"), QStringLiteral("video")}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! A damaged store file is a corruption error, not an empty store: before this, readAll()
+	//! dropped readStore's failure, so browser.collections answered success with an empty list
+	//! and collection_run answered "no collection 'X'" for a collection that was on disk.
+	void aDamagedCollectionsFileIsRefusedNotReadAsEmpty()
+	{
+		const QString store = m_dir.filePath(QStringLiteral("collections.json"));
+		QVERIFY(run(QStringLiteral("browser.collection_save"), {{QStringLiteral("name"), QStringLiteral("Snares")},
+			{QStringLiteral("text"), QStringLiteral("name:snare")}}).ok);
+		QFile broken(store);
+		QVERIFY(broken.open(QIODevice::WriteOnly));
+		broken.write("{ this is not json");
+		broken.close();
+
+		const ControlResult listed = run(QStringLiteral("browser.collections"));
+		QVERIFY2(!listed.ok, "a damaged collections file was listed as an empty one");
+		QCOMPARE(listed.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(listed.errorMessage.contains(QStringLiteral("collections.json")), qPrintable(listed.errorMessage));
+
+		const ControlResult ran = run(QStringLiteral("browser.collection_run"), {{QStringLiteral("name"), QStringLiteral("Snares")}});
+		QVERIFY2(!ran.ok, "a saved collection behind a damaged store was reported as missing");
+		QCOMPARE(ran.errorKind, ControlErrorKind::Refused);
+
+		// Writing over the damaged file stays refused (that is what readForEdit is for), so the
+		// repair here is the file itself: hand-edit it back and the collection reads again.
+		QVERIFY(!run(QStringLiteral("browser.collection_save"), {{QStringLiteral("name"), QStringLiteral("Snares")},
+			{QStringLiteral("text"), QStringLiteral("name:snare")}}).ok);
+		QFile repaired(store);
+		QVERIFY(repaired.open(QIODevice::WriteOnly));
+		repaired.write(R"({"Snares":{"text":"name:snare"}})");
+		repaired.close();
+		const ControlResult listedAgain = run(QStringLiteral("browser.collections"));
+		QVERIFY2(listedAgain.ok, qPrintable(listedAgain.errorMessage));
+		QCOMPARE(listedAgain.result.value(QStringLiteral("collections")).toArray().size(), 1);
+		QVERIFY(run(QStringLiteral("browser.collection_remove"), {{QStringLiteral("name"), QStringLiteral("Snares")}}).ok);
+	}
+
 	void aCollectionRunsOverItsRoot()
 	{
 		const QString samples = ConfigManager::inst()->userSamplesDir();
@@ -159,6 +254,68 @@ private slots:
 		const QJsonArray roots = found.result.value(QStringLiteral("roots")).toArray();
 		QCOMPARE(roots.size(), 1);
 		QCOMPARE(roots.first().toString(), QStringLiteral("samples"));  // the stored root, not every root
+	}
+
+	//! A collection saved from a category-filtered search keeps the category:
+	//! running it later answers the same filtered question, and clearing the
+	//! file's category changes what the collection finds - a collection follows
+	//! the library, facet included (0.5.0 L11, WF-007).
+	void aSavedCollectionKeepsItsCategoryFilter()
+	{
+		const QString samples = ConfigManager::inst()->userSamplesDir();
+		QVERIFY(QDir().mkpath(samples));
+		// Named uniquely: the samples root is this test's own but an earlier
+		// slot already left files in it, and every count below is scoped by
+		// this prefix rather than by the folder's whole contents.
+		const QString kick = samples + QStringLiteral("/facet-kick.wav");
+		const QString snare = samples + QStringLiteral("/facet-snare.wav");
+		touch(kick);
+		touch(snare);
+		QVERIFY(run(QStringLiteral("browser.category.set"),
+			{{QStringLiteral("path"), kick}, {QStringLiteral("category"), QStringLiteral("Drums")}}).ok);
+		QVERIFY(run(QStringLiteral("browser.category.set"),
+			{{QStringLiteral("path"), snare}, {QStringLiteral("category"), QStringLiteral("Loops")}}).ok);
+
+		QVERIFY(run(QStringLiteral("browser.collection_save"), {{QStringLiteral("name"), QStringLiteral("Drum Kits")},
+			{QStringLiteral("root"), QStringLiteral("samples")},
+			{QStringLiteral("category"), QStringLiteral("Drums")}}).ok);
+		const ControlResult found = run(QStringLiteral("browser.collection_run"),
+			{{QStringLiteral("name"), QStringLiteral("Drum Kits")}});
+		QVERIFY2(found.ok, qPrintable(found.errorMessage));
+		QCOMPARE(found.result.value(QStringLiteral("matched")).toInt(), 1);  // the kick, not the snare
+		QCOMPARE(found.result.value(QStringLiteral("items")).toArray().first().toObject()
+			.value(QStringLiteral("name")).toString(), QStringLiteral("facet-kick.wav"));
+
+		// The stored query carries the category, so a re-save and a re-list agree.
+		const QJsonArray saved = run(QStringLiteral("browser.collections")).result
+			.value(QStringLiteral("collections")).toArray();
+		bool sawCategory = false;
+		for (const QJsonValue& value : saved)
+		{
+			const QJsonObject entry = value.toObject();
+			if (entry.value(QStringLiteral("name")).toString() != QLatin1String("Drum Kits")) { continue; }
+			QCOMPARE(entry.value(QStringLiteral("query")).toObject()
+				.value(QStringLiteral("category")).toString(), QStringLiteral("Drums"));
+			sawCategory = true;
+		}
+		QVERIFY2(sawCategory, "the saved collection does not carry its category");
+
+		// The collection follows the library: clearing the kick's category empties it.
+		QVERIFY(run(QStringLiteral("browser.category.clear"), {{QStringLiteral("path"), kick}}).ok);
+		QCOMPARE(run(QStringLiteral("browser.collection_run"),
+			{{QStringLiteral("name"), QStringLiteral("Drum Kits")}}).result
+			.value(QStringLiteral("matched")).toInt(), 0);
+		// And an "Any category" collection (no category argument) sees both files again.
+		QVERIFY(run(QStringLiteral("browser.collection_save"), {{QStringLiteral("name"), QStringLiteral("Every Sample")},
+			{QStringLiteral("root"), QStringLiteral("samples")},
+			{QStringLiteral("text"), QStringLiteral("facet")}}).ok);
+		QCOMPARE(run(QStringLiteral("browser.collection_run"),
+			{{QStringLiteral("name"), QStringLiteral("Every Sample")}}).result
+			.value(QStringLiteral("matched")).toInt(), 2);
+		QVERIFY(run(QStringLiteral("browser.collection_remove"),
+			{{QStringLiteral("name"), QStringLiteral("Drum Kits")}}).ok);
+		QVERIFY(run(QStringLiteral("browser.collection_remove"),
+			{{QStringLiteral("name"), QStringLiteral("Every Sample")}}).ok);
 	}
 
 	void aTrackPresetRoundTrips()
@@ -223,6 +380,15 @@ private slots:
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before);
 		QCOMPARE(run(QStringLiteral("project.import_tracks"), {{QStringLiteral("path"), other}, {QStringLiteral("tracks"), QJsonArray{999}}})
 			.errorKind, ControlErrorKind::NotFound);
+		// A fractional index names no track: QJsonValue::toInt answers its default for a
+		// non-integral double, so [1.9] is refused instead of importing the track it
+		// would truncate to.
+		const int held = static_cast<int>(Engine::getSong()->tracks().size());
+		const ControlResult fractional = run(QStringLiteral("project.import_tracks"), {{QStringLiteral("path"), other},
+			{QStringLiteral("tracks"), QJsonArray{1.9}}});
+		QVERIFY(!fractional.ok);
+		QCOMPARE(fractional.errorKind, ControlErrorKind::NotFound);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), held);
 	}
 
 	void aHandOffFolderCarriesItsManifest()
@@ -237,6 +403,233 @@ private slots:
 		QVERIFY(info.contains(QStringLiteral("devices")) && info.contains(QStringLiteral("tempo")));
 		QCOMPARE(run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), QStringLiteral("relative/dir")}}).errorKind,
 			ControlErrorKind::InvalidArgs);
+	}
+
+	//! A dangling link where the session copy or the manifest goes is refused, not replaced: the link stays.
+	void aHandOffNeverReplacesADanglingLink()
+	{
+		for (const bool manifestSlot : {false, true})
+		{
+			const QString dir = m_dir.filePath(manifestSlot ? QStringLiteral("dangling-manifest") : QStringLiteral("dangling-copy"));
+			const ControlResult first = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+			QVERIFY2(first.ok, qPrintable(first.errorMessage));
+			const QString copy = first.result.value(QStringLiteral("file")).toString();
+			const QString manifest = QDir(dir).filePath(QStringLiteral("HANDOFF.json"));
+			const QString slot = manifestSlot ? manifest : copy;
+			QVERIFY(QFile::remove(copy));
+			QVERIFY(QFile::remove(manifest));
+			QVERIFY(QDir(QDir(dir).filePath(QStringLiteral("media"))).removeRecursively());  // the first hand off's media
+			const QString missing = m_dir.filePath(QStringLiteral("gone-%1.target").arg(manifestSlot ? 1 : 0));
+			QVERIFY(QFile::link(missing, slot));
+			QVERIFY(QFileInfo(slot).isSymLink() && !QFileInfo::exists(slot));  // a dangling link
+
+			const ControlResult refused = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+			QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+			QVERIFY2(refused.errorMessage.contains(QStringLiteral("already exists")), qPrintable(refused.errorMessage));
+			QVERIFY2(QFileInfo(slot).isSymLink(), "the hand off replaced a dangling link it did not write");
+			QCOMPARE(QFile::symLinkTarget(slot), missing);
+			QVERIFY(!QFileInfo::exists(missing));
+		}
+	}
+
+	//! The session save's temporary '<copy>.new' is held like the copy: a regular file or a dangling link there
+	//! is refused and left alone, not renamed over.
+	void aHandOffNeverReplacesTheSaveTemporary()
+	{
+		for (const bool dangling : {false, true})
+		{
+			const QString dir = m_dir.filePath(dangling ? QStringLiteral("temp-link") : QStringLiteral("temp-file"));
+			const ControlResult first = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+			QVERIFY2(first.ok, qPrintable(first.errorMessage));
+			const QString copy = first.result.value(QStringLiteral("file")).toString();
+			const QString temp = copy + QStringLiteral(".new");
+			QVERIFY(QFile::remove(copy));
+			QVERIFY(QFile::remove(QDir(dir).filePath(QStringLiteral("HANDOFF.json"))));
+			QVERIFY(QDir(QDir(dir).filePath(QStringLiteral("media"))).removeRecursively());
+			const QString missing = m_dir.filePath(QStringLiteral("gone-temp.target"));
+			if (dangling)
+			{
+				QVERIFY(QFile::link(missing, temp));
+			}
+			else
+			{
+				QFile theirs(temp);
+				QVERIFY(theirs.open(QIODevice::WriteOnly));
+				theirs.write("not a save temporary");
+				theirs.close();
+			}
+
+			const ControlResult refused = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+			QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+			QVERIFY2(refused.errorMessage.contains(QStringLiteral("already exists")), qPrintable(refused.errorMessage));
+			if (dangling)
+			{
+				QVERIFY2(QFileInfo(temp).isSymLink(), "the hand off replaced a dangling link at its save temporary");
+				QCOMPARE(QFile::symLinkTarget(temp), missing);
+			}
+			else
+			{
+				QFile check(temp);
+				QVERIFY(check.open(QIODevice::ReadOnly));
+				QCOMPARE(check.readAll(), QByteArray("not a save temporary"));
+			}
+		}
+	}
+
+	// A second hand off into a folder that already carries someone else's
+	// session copy and manifest must be refused, leaving both files alone.
+	void aHandOffNeverOverwritesTheDestinationFolder()
+	{
+		const QString dir = m_dir.filePath(QStringLiteral("busy"));
+		const ControlResult first = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+		QVERIFY2(first.ok, qPrintable(first.errorMessage));
+		const QString copy = first.result.value(QStringLiteral("file")).toString();
+		const QString manifest = QDir(dir).filePath(QStringLiteral("HANDOFF.json"));
+		QFile theirs(copy);
+		QVERIFY(theirs.open(QIODevice::WriteOnly));
+		theirs.write("not our project");
+		theirs.close();
+		QFile theirManifest(manifest);
+		QVERIFY(theirManifest.open(QIODevice::WriteOnly));
+		theirManifest.write("{\"project\":\"theirs\"}");
+		theirManifest.close();
+
+		const ControlResult refused = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QFile check(copy);
+		QVERIFY(check.open(QIODevice::ReadOnly));
+		QCOMPARE(check.readAll(), QByteArray("not our project"));
+		check.close();
+		QFile checkManifest(manifest);
+		QVERIFY(checkManifest.open(QIODevice::ReadOnly));
+		QCOMPARE(checkManifest.readAll(), QByteArray("{\"project\":\"theirs\"}"));
+	}
+
+// A hand off that fails after the session copy was written must not leave that copy
+	// behind: the folder either holds a complete bundle or nothing at all.
+	void aFailedHandOffLeavesNoBundleBehind()
+	{
+		const QString dir = m_dir.filePath(QStringLiteral("halfway"));
+		QVERIFY(QDir().mkpath(dir));
+		touch(QDir(dir).filePath(QStringLiteral("media")));  // a file where the media folder goes
+
+		const ControlResult failed = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+		QCOMPARE(failed.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(!QFileInfo(QDir(dir).filePath(QStringLiteral("HANDOFF.json"))).exists(), "no manifest was written");
+		const QStringList left = QDir(dir).entryList({QStringLiteral("*.mmpz"), QStringLiteral("*.mmp")}, QDir::Files);
+		QVERIFY2(left.isEmpty(), qPrintable(QStringLiteral("the session copy survived a failed hand off: ") + left.join(QStringLiteral(", "))));
+		QVERIFY(QFileInfo(QDir(dir).filePath(QStringLiteral("media"))).isFile());  // what was there before is untouched
+	}
+
+	//! A hand off into a folder whose media folder already holds files is refused before anything is written, and
+	//! the files stay: a failed hand off's rollback removes the media folder, so it must never own one that was there.
+	void aHandOffNeverWritesIntoOrRemovesAnExistingMediaFolder()
+	{
+		const QString dir = m_dir.filePath(QStringLiteral("occupied"));
+		const QString media = QDir(dir).filePath(QStringLiteral("media"));
+		QVERIFY(QDir().mkpath(media));
+		const QString sentinel = QDir(media).filePath(QStringLiteral("keep.txt"));
+		touch(sentinel);
+
+		const ControlResult refused = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(QFileInfo::exists(sentinel), "the existing media folder's file was removed");
+		QVERIFY2(!QFileInfo::exists(QDir(dir).filePath(QStringLiteral("HANDOFF.json"))), "a manifest was written");
+		QVERIFY(QDir(dir).entryList({QStringLiteral("*.mmpz"), QStringLiteral("*.mmp")}, QDir::Files).isEmpty());
+	}
+
+	//! A media link to a folder elsewhere is refused too: the rollback's recursive removal would reach through it.
+	void aHandOffNeverRemovesWhatAMediaLinkPointsAt()
+	{
+		const QString outside = m_dir.filePath(QStringLiteral("outside"));
+		QVERIFY(QDir().mkpath(outside));
+		const QString sentinel = QDir(outside).filePath(QStringLiteral("keep.txt"));
+		touch(sentinel);
+		const QString dir = m_dir.filePath(QStringLiteral("linked"));
+		QVERIFY(QDir().mkpath(dir));
+		QVERIFY(QFile::link(outside, QDir(dir).filePath(QStringLiteral("media"))));
+
+		const ControlResult refused = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(QFileInfo::exists(sentinel), "a rollback removed the file the media link points at");
+	}
+
+	//! A hand off that fails must not leave the folder it made behind. The destination
+	//! is created BEFORE the bundle is written, so a failure that comes after that
+	//! (here: a session that cannot be saved, because it was loaded with a section
+	//! skipped) must take the empty folder away again. The folders on the way there
+	//! are the hand off's own too: it made them, it takes them back.
+	void aFailedHandOffTakesItsNewFolderBack()
+	{
+		const QString partial = m_dir.filePath(QStringLiteral("partial.mmp"));
+		QVERIFY(writeText(partial, songProject(QStringLiteral("    <newsection/>\n"))));
+		loadPartially(partial);
+		QVERIFY(Engine::getSong()->isPartialLoad());
+
+		const QString dir = m_dir.filePath(QStringLiteral("new-folder/deeper"));
+		QVERIFY(!QFileInfo::exists(dir));
+		const ControlResult failed = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+		QCOMPARE(failed.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(!QFileInfo::exists(dir), "the failed hand off left the folder it created behind");
+		QVERIFY2(!QFileInfo::exists(m_dir.filePath(QStringLiteral("new-folder"))),
+			"the failed hand off left the folder it created on the way behind");
+	}
+
+	//! A folder that was there BEFORE the hand off is not the hand off's to remove: a
+	//! failed hand off leaves it as it found it.
+	void aFailedHandOffKeepsTheFolderItDidNotCreate()
+	{
+		const QString partial = m_dir.filePath(QStringLiteral("partial-2.mmp"));
+		QVERIFY(writeText(partial, songProject(QStringLiteral("    <newsection/>\n"))));
+		loadPartially(partial);
+		QVERIFY(Engine::getSong()->isPartialLoad());
+
+		const QString dir = m_dir.filePath(QStringLiteral("someone-elses-folder"));
+		QVERIFY(QDir().mkpath(dir));
+		const ControlResult failed = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+		QCOMPARE(failed.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(QFileInfo(dir).isDir(), "the failed hand off removed a folder it did not create");
+	}
+
+	//! A destination path that spells a folder the file system resolves elsewhere - a
+	//! symlink followed by a '..' - must be cleaned up where it really is. The folder the
+	//! hand off made is the one to take back; the link and the folders that were there
+	//! before must survive.
+	void aFailedHandOffTakesBackTheFolderItReallyCreated()
+	{
+		const QString base = m_dir.filePath(QStringLiteral("symlinked-destination"));
+		QVERIFY(QDir().mkpath(QDir(base).filePath(QStringLiteral("target/child"))));
+		const QString link = QDir(base).filePath(QStringLiteral("link"));
+		QVERIFY(QFile::link(QDir(base).filePath(QStringLiteral("target/child")), link));
+		QVERIFY(QFileInfo(link).isSymLink());
+
+		// Where the file system really puts such a path: 'link/../probe' is
+		// 'target/probe' once the link is followed - the same call the hand off makes to
+		// create its destination, so this says where the hand off's folder lands.
+		QVERIFY(QDir().mkpath(QDir(base).filePath(QStringLiteral("link/../probe"))));
+		QVERIFY2(QFileInfo(QDir(base).filePath(QStringLiteral("target/probe"))).isDir(),
+			"the file system did not resolve the path through the symlink");
+		QVERIFY2(!QFileInfo::exists(QDir(base).filePath(QStringLiteral("probe"))),
+			"the file system resolved the path lexically");
+
+		// The refusal: a session that cannot be saved, so the hand off fails after it has
+		// made its destination folder.
+		const QString partial = m_dir.filePath(QStringLiteral("partial-3.mmp"));
+		QVERIFY(writeText(partial, songProject(QStringLiteral("    <newsection/>\n"))));
+		loadPartially(partial);
+		QVERIFY(Engine::getSong()->isPartialLoad());
+
+		const ControlResult failed = run(QStringLiteral("project.handoff"),
+			{{QStringLiteral("dir"), QDir(base).filePath(QStringLiteral("link/../made"))}});
+		QCOMPARE(failed.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(!QFileInfo::exists(QDir(base).filePath(QStringLiteral("target/made"))),
+			"the failed hand off left the folder it really created behind");
+		QVERIFY2(!QFileInfo::exists(QDir(base).filePath(QStringLiteral("made"))),
+			"the failed hand off left a folder behind");
+		QVERIFY2(QFileInfo(QDir(base).filePath(QStringLiteral("target/child"))).isDir(),
+			"a folder that was there before was removed");
+		QVERIFY2(QFileInfo(base).isDir(), "a folder that was there before was removed");
+		QVERIFY2(QFileInfo(link).isSymLink(), "the symlink was removed");
 	}
 
 private:

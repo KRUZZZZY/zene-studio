@@ -60,6 +60,19 @@ def roll(session, clip_id):
 def arrangement(session):
     return session.result("arrangement.get_state")
 
+def check_track_add_description(session, recorder):
+    """The public command description must match track.add's undo contract."""
+    listing = session.result("control.commands_list")
+    command = next((entry for entry in listing.get("commands", [])
+                    if entry.get("id") == "track.add"), {})
+    description = command.get("description", "")
+    normalized = description.lower()
+    recorder.check("track.add description says undoable and gives redo's fresh id",
+                   "undo" in normalized and "redo" in normalized
+                   and "fresh" in normalized and "id" in normalized
+                   and "not reversible" not in normalized,
+                   "description=%r" % description)
+
 def find_track(state, track_id):
     for entry in state.get("tracks") or []:
         if entry.get("id") == track_id:
@@ -487,6 +500,7 @@ def main(argv):
         print("instance: %s" % argv[1])
         print("socket:   %s" % instance.socket_path)
         session.result("control.version")
+        check_track_add_description(session, recorder)
         fixture = build_fixture(session, instance, transcript)
         check_fixture(session, recorder, fixture)
         check_delete_takes_the_music(session, recorder, fixture)

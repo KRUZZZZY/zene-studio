@@ -91,13 +91,34 @@ inline bool scaleAccepts( const Note& note, const Filter& f )
 	return f.scaleMatch == ScaleMatch::InScale ? inScale : !inScale;
 }
 
+/*! The key a transpose by `semitones` gives `key`: the ONE rule both the
+ *  transpose and the count of what it would move follow, so the two cannot
+ *  disagree. The shift is bounded first: key + INT_MAX would overflow before
+ *  the clamp saw it. */
+inline int transposedKey( int key, int semitones ) noexcept
+{
+	return std::clamp( key + std::clamp( semitones, -NumKeys, NumKeys ), 0, NumKeys - 1 );
+}
+
+/*! The volume a velocity offset by `delta` gives `volume`: the ONE rule both
+ *  the offset and the count of what it would move follow. The delta is bounded
+ *  first, so the sum cannot overflow. */
+inline int offsetVolume( int volume, int delta ) noexcept
+{
+	const int bounded = std::clamp( delta, -static_cast<int>( MaxVolume ), static_cast<int>( MaxVolume ) );
+	return std::clamp( volume + bounded, static_cast<int>( MinVolume ), static_cast<int>( MaxVolume ) );
+}
+
 /*! The nearest in-scale pitch to `key`, with a tie resolving downward. Returns
  *  `key` unchanged when it is already in the scale (or is unreachable, which a
  *  non-empty scale cannot make it). */
 int nearestInScaleKey( int key, const std::vector<int>& classes )
 {
 	if( isInScale( classes, key ) ) { return key; }
-	for( int distance = 1; distance <= KeysPerOctave / 2; ++distance )
+	// As far as the MIDI range allows, not just half an octave: a scale may
+	// hold a single pitch class, which can sit further from a boundary key
+	// than any octave, and that key still has a nearest legal pitch.
+	for( int distance = 1; distance < NumKeys; ++distance )
 	{
 		const int down = key - distance;
 		if( down >= 0 && isInScale( classes, down ) ) { return down; }
@@ -151,8 +172,7 @@ int transpose( const NoteVector& notes, int semitones )
 	for( Note* note : notes )
 	{
 		if( note == nullptr ) { continue; }
-		// The shift is bounded first: key + INT_MAX would overflow before the clamp saw it.
-		const int target = std::clamp( note->key() + std::clamp( semitones, -NumKeys, NumKeys ), 0, NumKeys - 1 );
+		const int target = transposedKey( note->key(), semitones );
 		if( target != note->key() )
 		{
 			note->setKey( target );
@@ -163,6 +183,18 @@ int transpose( const NoteVector& notes, int semitones )
 }
 
 
+int countTransposed( const NoteVector& notes, int semitones )
+{
+	int count = 0;
+	for( const Note* note : notes )
+	{
+		if( note == nullptr ) { continue; }
+		if( transposedKey( note->key(), semitones ) != note->key() ) { ++count; }
+	}
+	return count;
+}
+
+
 int offsetVelocity( const NoteVector& notes, int delta )
 {
 	int changed = 0;
@@ -170,8 +202,7 @@ int offsetVelocity( const NoteVector& notes, int delta )
 	{
 		if( note == nullptr ) { continue; }
 		const int current = static_cast<int>( note->getVolume() );
-		const int bounded = std::clamp( delta, -static_cast<int>( MaxVolume ), static_cast<int>( MaxVolume ) );  // no overflow
-		const int target = std::clamp( current + bounded, static_cast<int>( MinVolume ), static_cast<int>( MaxVolume ) );
+		const int target = offsetVolume( current, delta );
 		if( target != current )
 		{
 			note->setVolume( static_cast<volume_t>( target ) );
@@ -182,15 +213,38 @@ int offsetVelocity( const NoteVector& notes, int delta )
 }
 
 
+int countOffsetVelocity( const NoteVector& notes, int delta )
+{
+	int count = 0;
+	for( const Note* note : notes )
+	{
+		if( note == nullptr ) { continue; }
+		if( offsetVolume( static_cast<int>( note->getVolume() ), delta ) != static_cast<int>( note->getVolume() ) )
+		{
+			++count;
+		}
+	}
+	return count;
+}
+
+
 int scaleVelocity( const NoteVector& notes, float factor )
 {
+	// A factor that is not a number is not a velocity to scale BY: std::clamp
+	// hands a NaN straight back and std::lround of one is a domain error, so
+	// every note would be moved by an amount nothing asked for. Nothing moves.
+	if( !std::isfinite( factor ) ) { return 0; }
+	const float railLow = static_cast<float>( MinVolume );
+	const float railHigh = static_cast<float>( MaxVolume );
 	int changed = 0;
 	for( Note* note : notes )
 	{
 		if( note == nullptr ) { continue; }
 		const int current = static_cast<int>( note->getVolume() );
-		const int target = std::clamp( static_cast<int>( std::lround( current * factor ) ),
-			static_cast<int>( MinVolume ), static_cast<int>( MaxVolume ) );
+		// Bounded BEFORE the rounding: a large factor overflows the product to
+		// infinity, which is outside lround's domain just as a NaN is.
+		const float scaled = std::clamp( current * factor, railLow, railHigh );
+		const int target = static_cast<int>( std::lround( scaled ) );
 		if( target != current )
 		{
 			note->setVolume( static_cast<volume_t>( target ) );
@@ -301,6 +355,13 @@ int quantizeNotes( const NoteVector& notes, const QuantizeOptions& options )
 }
 
 
+int snapKeyToScale( int key, const std::vector<int>& scaleDegrees )
+{
+	const std::vector<int> classes = pitchClasses( scaleDegrees );
+	return classes.empty() ? key : nearestInScaleKey( key, classes );
+}
+
+
 int snapToScale( const NoteVector& notes, const std::vector<int>& scaleDegrees )
 {
 	const std::vector<int> classes = pitchClasses( scaleDegrees );
@@ -319,6 +380,21 @@ int snapToScale( const NoteVector& notes, const std::vector<int>& scaleDegrees )
 		}
 	}
 	return changed;
+}
+
+
+int countOffScale( const NoteVector& notes, const std::vector<int>& scaleDegrees )
+{
+	const std::vector<int> classes = pitchClasses( scaleDegrees );
+	if( classes.empty() ) { return 0; }
+
+	int count = 0;
+	for( const Note* note : notes )
+	{
+		if( note == nullptr ) { continue; }
+		if( nearestInScaleKey( note->key(), classes ) != note->key() ) { ++count; }
+	}
+	return count;
 }
 
 

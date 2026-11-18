@@ -53,6 +53,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QStringList>
 
 #include "ControlCommandsSafeStartShared.h"
 #include "ControlRegistry.h"
@@ -75,11 +76,16 @@ using namespace lmms::safestart;
 ControlResult safeStartHandleAcknowledge()
 {
 	if (!isInstalled()) { return safeStartNoModule(SafeStartAcknowledgeId); }
-	if (!safeStartActive() && !markerExists())
+	// The offer is made in a safe session and nowhere else, so that is the only
+	// place it can be accepted. The marker alone is NOT the offer: every live
+	// session has a marker of its own (beginSession() writes it), and an
+	// acknowledgement written in an ordinary session would be consumed by the
+	// NEXT launch and would hide the crash marker that launch finds.
+	if (!safeStartActive())
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound,
-			QStringLiteral("%1: there is no crash marker, so this session did not start safe and "
-				"there is nothing to acknowledge (%2)").arg(SafeStartAcknowledgeId,
+			QStringLiteral("%1: this session did not start safe, so there is no offer of a normal "
+				"start to accept (%2)").arg(SafeStartAcknowledgeId,
 				safeStartWire(markerPath())));
 	}
 
@@ -141,6 +147,23 @@ ControlResult safeStartHandleClear()
 	}
 
 	clear();
+
+	// The engine operation returns void and ignores both QFile::remove results
+	// (src/core/SafeStart.cpp:369-370), so the effect is READ BACK rather than
+	// assumed - exactly what safeStartHandleAcknowledge does above: a marker
+	// that could not be unlinked (a read-only working directory) is still on
+	// disk, and a caller told `cleared: true` would go on believing the next
+	// launch is normal when it is not.
+	if (markerExists() || acknowledged())
+	{
+		QStringList left;
+		if (markerExists()) { left << safeStartWire(markerPath()); }
+		if (acknowledged()) { left << safeStartWire(acknowledgedPath()); }
+		return ControlResult::failure(ControlErrorKind::Busy,
+			QStringLiteral("%1: %2 could not be removed, so the next launch is still affected by "
+				"them. The files were left exactly as they were")
+				.arg(SafeStartClearId, left.join(QStringLiteral(" and "))));
+	}
 
 	QJsonArray removed;
 	if (hadMarker) { removed.append(safeStartWire(markerPath())); }
@@ -228,7 +251,8 @@ void registerSafeStartEditCommands(ControlRegistry& registry)
 		cmd.description = QStringLiteral("Accept the offer of a normal start: write the acknowledgement "
 			"the NEXT launch consumes, so it loads with third-party plugins enabled. Keeps the marker "
 			"and does not change this session (instances already skipped were never created). Refuses "
-			"when there is no marker. Not reversible - no function in this engine removes the "
+			"unless this session started safe - the offer is made in a safe session and nowhere else. "
+			"Not reversible - no function in this engine removes the "
 			"acknowledgement except safestart.clear, which removes the marker with it.");
 		cmd.mutating = true;
 		cmd.argsSchema = objectSchema({});

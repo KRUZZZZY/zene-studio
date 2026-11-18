@@ -24,14 +24,19 @@
 
 #include "TrackOperationsWidget.h"
 
+#include <algorithm>
+
 #include <QCheckBox>
 #include <QHBoxLayout>
 #include <QMenu>
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPointer>
 #include <QPushButton>
 #include <QToolButton>
+
+#include <vector>
 
 #include "AutomatableButton.h"
 #include "AutomationClip.h"
@@ -42,6 +47,7 @@
 #include "ControlRegistry.h"
 #include "ControlStructuralSupport.h"
 #include "ControlVocabulary.h"
+#include "DesignTokens.h"
 #include "embed.h"
 #include "Engine.h"
 #include "GuiApplication.h"
@@ -57,6 +63,7 @@
 #include "TakeLanesPanel.h"
 #include "Track.h"
 #include "TrackFolderMenu.h"
+#include "TrackRoleMenu.h"
 #include "TrackRenderMenu.h"
 #include "ChainPresetMenu.h"
 #include "TrackContainerView.h"
@@ -148,12 +155,71 @@ TrackOperationsWidget::TrackOperationsWidget( TrackView * parent ) :
 		operationsLayout->addWidget(m_armBtn);
 	}
 
+	// 0.5.0 Q050-022: fold/unfold this track's child automation lanes. Shown only
+	// when the track owns lanes (automation.lane_add placed an AutomationTrack
+	// following it); paintEvent keeps that up to date because a lane can be added
+	// at any time. The click goes through the registered command, the same one the
+	// agent surface uses.
+	m_lanesBtn = new QToolButton(operationsWidget);
+	m_lanesBtn->setObjectName(QStringLiteral("btn-automation-lanes"));
+	m_lanesBtn->setText(QStringLiteral("\u25BE"));
+	m_lanesBtn->setAutoRaise(true);
+	m_lanesBtn->setToolTip(tr("Fold this track's automation lanes"));
+	m_lanesBtn->setAccessibleName(tr("Fold or unfold this track's automation lanes"));
+	m_lanesBtn->setProperty("controlCommand", QStringLiteral("automation.lanes_set_collapsed"));
+	m_lanesBtn->setVisible(false);
+	connect(m_lanesBtn, &QToolButton::clicked, this, [this]() {
+		Track* track = m_trackView->getTrack();
+		const ControlResult result = ControlRegistry::instance()->invoke(
+			QStringLiteral("automation.lanes_set_collapsed"),
+			{{QStringLiteral("track"), control::trackIdOf(track)},
+				{QStringLiteral("collapsed"), !track->automationLanesCollapsed()}});
+		if (!result.ok) { m_lanesBtn->setToolTip(result.errorMessage); }
+		// No realignTracks() here: the command changes the track's fold flag, whose
+		// signal the container listens to (Q050-022), so the agent, the menu and this
+		// button all refresh the rows through the same path.
+		m_trackView->update();
+	});
+	operationsLayout->addWidget(m_lanesBtn);
+
+	// 0.5.0 Q050-141: in the touch-first layout every operation is a 44 px target, a touch gap
+	// apart, and the grip is wide enough to grab as well.
+	if (tokens::accessibleMode())
+	{
+		const int target = tokens::targetSize();
+		operationsLayout->setContentsMargins(0, 0, 0, 0);
+		operationsLayout->setSpacing(tokens::targetSpacing(2));
+		m_trackGrip->setFixedWidth(std::max(m_trackGrip->width(), target));
+		const QString metrics = QStringLiteral("min-width: %1px; max-width: %1px; min-height: %1px; max-height: %1px; padding: 0;")
+			.arg(target).arg(target).arg(target).arg(target);
+		for (QWidget* control : {static_cast<QWidget*>(m_trackOps), static_cast<QWidget*>(m_muteBtn),
+				static_cast<QWidget*>(m_soloBtn), static_cast<QWidget*>(m_armBtn),
+				static_cast<QWidget*>(m_lanesBtn)})
+		{
+			if (control == nullptr) { continue; }
+			// The track header's inherited 14 px button rule would otherwise shrink these targets.
+			control->setStyleSheet(metrics);
+			control->setFixedSize(target, target);
+		}
+	}
+
 	layout->addWidget(operationsWidget, 0, Qt::AlignTop | Qt::AlignLeading);
 
-	connect( this, SIGNAL(trackRemovalScheduled(lmms::gui::TrackView*)),
-			m_trackView->trackContainerView(),
-				SLOT(deleteTrackView(lmms::gui::TrackView*)),
-							Qt::QueuedConnection );
+	// The removal is deferred to the container's next event-loop turn. The row is held in a QPointer, and it is
+	// removed only if it is still one of the container's rows then: a row closed in the meantime (its track
+	// deleted in the same turn) is skipped, not deleted a second time (m0 blocker, trackview-uaf).
+	TrackContainerView * const container = m_trackView->trackContainerView();
+	connect( this, &TrackOperationsWidget::trackRemovalScheduled, this, [container]( TrackView * view )
+	{
+		QPointer<TrackView> scheduled( view );
+		QMetaObject::invokeMethod( container, [container, scheduled]
+		{
+			if( scheduled && container->trackViews().contains( scheduled.data() ) )
+			{
+				container->deleteTrackView( scheduled.data() );
+			}
+		}, Qt::QueuedConnection );
+	}, Qt::DirectConnection );
 
 	connect( m_trackView->getTrack()->getMutedModel(), SIGNAL(dataChanged()),
 			this, SLOT(update()));
@@ -173,6 +239,21 @@ void TrackOperationsWidget::paintEvent(QPaintEvent*)
 {
 	// The arm state can change elsewhere (a script, the Record menu): shown as it is on each repaint.
 	if (m_armBtn != nullptr) { m_armBtn->setChecked(control::trackRecordArmed(m_trackView->getTrack())); }
+	// 0.5.0 Q050-022: the lanes fold button appears only once the track owns a
+	// lane, and it points the way the lanes will move (down = shown, right = folded).
+	if (m_lanesBtn != nullptr)
+	{
+		Track* track = m_trackView->getTrack();
+		const bool hasLanes = track->hasAutomationLaneChildren();
+		m_lanesBtn->setVisible(hasLanes);
+		if (hasLanes)
+		{
+			const bool folded = track->automationLanesCollapsed();
+			m_lanesBtn->setText(folded ? QStringLiteral("\u25B8") : QStringLiteral("\u25BE"));
+			m_lanesBtn->setToolTip(folded ? tr("Unfold this track's automation lanes")
+				: tr("Fold this track's automation lanes"));
+		}
+	}
 	QPainter p( this );
 
 	p.fillRect(rect(), palette().brush(QPalette::Window));
@@ -266,7 +347,23 @@ void TrackOperationsWidget::removeTrack()
 		// One implementation, shared with the control surface's track.remove
 		// (control::journalTrackRemoval, task #664) - a delete the user can undo
 		// and a delete an agent can undo are the same delete.
-		control::journalTrackRemoval(m_trackView->getTrack());
+		//
+		// 0.5.0 Q050-022: the track's child automation lanes go with it, as ONE
+		// undo step (journalTrackRemovalWithLanes). Leaving a lane behind would
+		// leave a row following a track that is gone.
+		Track* track = m_trackView->getTrack();
+		const std::vector<Track*> lanes = track->automationLaneChildren();
+		if (lanes.empty()) { control::journalTrackRemoval(track); }
+		else { control::journalTrackRemovalWithLanes(track); }
+
+		TrackContainerView* container = m_trackView->trackContainerView();
+		for (Track* lane : lanes)
+		{
+			for (TrackView* view : container->trackViews())
+			{
+				if (view->getTrack() == lane) { emit trackRemovalScheduled(view); break; }
+			}
+		}
 		emit trackRemovalScheduled(m_trackView);
 	}
 }
@@ -322,6 +419,12 @@ void TrackOperationsWidget::resetClipColors()
  *  on all Clips (same should be added for sample tracks when
  *  sampletrack recording is implemented)
  */
+void TrackOperationsWidget::showActionsMenu(const QPoint& global)
+{
+	updateMenu();
+	if (QMenu* menu = m_trackOps->menu()) { menu->popup(global); }
+}
+
 void TrackOperationsWidget::updateMenu()
 {
 	QMenu * toMenu = m_trackOps->menu();
@@ -332,6 +435,22 @@ void TrackOperationsWidget::updateMenu()
 	toMenu->addAction( embed::getIconPixmap( "cancel", 16, 16 ),
 						tr( "Remove this track" ),
 						this, SLOT(removeTrack()));
+
+	// 0.5.0 Q050-022: fold/unfold the track's child automation lanes. Offered only
+	// when the track owns one, and driven through the registered command.
+	if (m_trackView->getTrack()->hasAutomationLaneChildren())
+	{
+		const bool folded = m_trackView->getTrack()->automationLanesCollapsed();
+		toMenu->addAction(folded ? tr("Unfold automation lanes") : tr("Fold automation lanes"), this, [this]() {
+			Track* track = m_trackView->getTrack();
+			ControlRegistry::instance()->invoke(QStringLiteral("automation.lanes_set_collapsed"),
+				{{QStringLiteral("track"), control::trackIdOf(track)},
+					{QStringLiteral("collapsed"), !track->automationLanesCollapsed()}});
+			// The command's fold flag reaches the container through the track's
+			// signal (Q050-022): no manual realignTracks() here either.
+			m_trackView->update();
+		});
+	}
 
 	if( ! m_trackView->trackContainerView()->fixedClips() )
 	{
@@ -347,15 +466,16 @@ void TrackOperationsWidget::updateMenu()
 		toMenu->addSeparator();
 		toMenu->addMenu(trackView->midiMenu());
 	}
-	// M3 item 6: a sample track's take lanes, audition and consolidate - a registry-first
-	// panel (TakeLanesPanel) in a sub-window of its own.
-	if (dynamic_cast<SampleTrackView*>(m_trackView) != nullptr)
+	// M3 item 6: sample and instrument tracks get the take lanes panel (MIDI takes, Q050-054.2),
+	// a registry-first panel (TakeLanesPanel) in a sub-window of its own.
+	if (dynamic_cast<SampleTrackView*>(m_trackView) != nullptr || dynamic_cast<InstrumentTrackView*>(m_trackView) != nullptr)
 	{
 		QAction* lanes = toMenu->addAction(tr("Take lanes..."), this, [this] {
 			auto* panel = new TakeLanesPanel(control::trackIdOf(m_trackView->getTrack()));
 			panel->setAttribute(Qt::WA_DeleteOnClose);
 			getGUI()->mainWindow()->addWindowedWidget(panel)->show();
 		});
+		lanes->setObjectName(QStringLiteral("takeLanes"));
 		lanes->setProperty("controlCommand", QStringLiteral("comp.get_state"));
 	}
 	if( dynamic_cast<AutomationTrackView *>( m_trackView ) )
@@ -366,6 +486,8 @@ void TrackOperationsWidget::updateMenu()
 	// 0.5.0 W1: recording, takes and rendering - the same menu as the Inspector's (registry commands).
 	ShellCommandMenus::populateTrack(toMenu->addMenu(tr("More")), m_trackView->getTrack());
 
+	// Q050-283.2: a neutral row's "Assign instrument", an instrument track's "Make neutral" (track.set_role).
+	addTrackRoleMenu(toMenu, m_trackView->getTrack());
 	// Folder membership, and on a folder its collapse/pin/routing, through the track.* commands.
 	addTrackFolderMenu(toMenu, m_trackView->getTrack());
 	// Freeze / Unfreeze and Bounce in place (freeze.* / bounce.in_place).

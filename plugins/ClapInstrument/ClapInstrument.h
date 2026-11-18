@@ -89,6 +89,7 @@ class ClapInstrument : public AudioPluginExt<Instrument, ClapInstrumentAudioPort
 public:
 	ClapInstrument(InstrumentTrack* parent, const Descriptor::SubPluginFeatures::Key* key);
 	~ClapInstrument() override;
+	QString unavailableReason() const override { return m_plugin.isLoaded() ? QString() : QStringLiteral("the CLAP module or plug-in was not found or could not be loaded"); }
 
 	auto clapPlugin() -> clap::HostedPlugin* { return &m_plugin; }
 
@@ -131,6 +132,10 @@ signals:
 	//! W6: the plug-in rescanned its parameters and the models were rebuilt; the view redraws its knobs.
 	void parametersChanged();
 
+	//! BUG 6: the plug-in changed its clap.audio-ports layout while running and reprepare() re-read
+	//! it; the view refreshes the audio-output channel count it shows.
+	void outputLayoutChanged();
+
 protected:
 	auto processImpl(PlanarBufferView<const float, DynamicChannelCount> in,
 		PlanarBufferView<float, DynamicChannelCount> out) -> lmms::ProcessStatus override;
@@ -143,6 +148,12 @@ private slots:
 	void poll();
 
 private:
+	/*! MX-157 (BUGS 11.34), GUI thread: the plug-in's latency after its last prepare, reported to the
+	 *  track's delay compensation (Instrument::reportLatency). CLAP lets a plug-in change its latency only
+	 *  inside activate() - it asks for that with request_restart, which poll() answers with reprepare() -
+	 *  so every prepare is when a new value is read. */
+	void cacheLatency();
+
 	clap::HostedPlugin m_plugin;
 	gui::PluginNativeEditor m_editor;
 	//! Every CLAP parameter as a model, in the plug-in's plain values, following its rescans (W6).

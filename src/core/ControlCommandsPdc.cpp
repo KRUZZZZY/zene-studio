@@ -105,6 +105,7 @@ QJsonArray trackInputReport()
 	Mixer* mixer = Engine::mixer();
 	for (const AudioBusHandle* handle : engine->audioBusHandles())
 	{
+		if (engine->isSampleVoicePoolBus(handle)) { continue; }
 		QJsonObject entry;
 		entry.insert(QStringLiteral("name"), handle->name());
 		// The channel's PERSISTENT id (SPEC-stable-ids.md slice 2), read off the
@@ -159,9 +160,13 @@ ControlResult handlePdcReport()
 	QJsonObject result;
 	result.insert(QStringLiteral("total_latency_frames"), total);
 	// The bound the graph can actually honour (#605 follow-up, audit B-1): a
-	// request above it is clamped by the delay line itself.
+	// request above it is clamped by the delay line itself. The flag is the
+	// mixer's OWN verdict on the compensation delays it asked for, NOT a
+	// comparison of the published total: the total carries the master chain's
+	// always-applied latency on top of the alignment point, so an aligned graph
+	// (every delay 0, nothing clamped) can exceed the bound on that sum alone.
 	result.insert(QStringLiteral("delay_line_capacity_frames"), LatencyCompensation::MaxFrames);
-	result.insert(QStringLiteral("delay_line_clamped"), total >= LatencyCompensation::MaxFrames);
+	result.insert(QStringLiteral("delay_line_clamped"), mixer->latencyCompensationClamped());
 	result.insert(QStringLiteral("channels"), channels);
 	result.insert(QStringLiteral("channel_count"), channels.size());
 	result.insert(QStringLiteral("routes"), routes);
@@ -189,8 +194,11 @@ void registerPdcCommands(ControlRegistry& registry)
 		cmd.verb = QStringLiteral("report");
 		cmd.description = QStringLiteral("Plugin delay compensation as the mixer publishes it: the "
 			"total latency to the master output, every channel's alignment point and the latency its "
-			"own chain adds, the compensation applied at every send, and whether sidechain routing "
-			"exists. Read-only.");
+			"own chain adds, its hardware insert's effective latency (hardware_insert_latency_frames: "
+			"the typed override, else the measured ping; 0 while the insert is off or an export "
+			"bypasses it) and where that figure comes from (hardware_insert_latency_source: off, "
+			"bypassed, override, measured or unmeasured), the compensation applied at every send, and "
+			"whether sidechain routing exists. Read-only.");
 		cmd.argsSchema = objectSchema({});
 		cmd.resultSchema = objectSchema({
 			{QStringLiteral("total_latency_frames"), integerProperty()},

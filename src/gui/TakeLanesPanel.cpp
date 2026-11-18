@@ -24,11 +24,13 @@
 
 #include "TakeLanesPanel.h"
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -36,8 +38,11 @@
 #include "CompSwipeStrip.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "ItemList.h"
 #include "Engine.h"
 #include "MusicalTime.h"
+#include "SampleTrack.h"
+#include "ShellChrome.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -98,7 +103,57 @@ TakeLanesPanel::TakeLanesPanel(const QString& trackId, QWidget* parent) :
 	outer->addLayout(m_lanes);
 	m_addLane = makeButton(QStringLiteral("comp.lane_add"), tr("Add lane"));
 	connect(m_addLane, &QToolButton::clicked, this, [this] { run(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), m_trackId}}); });
-	outer->addWidget(m_addLane);
+	auto* head = new QHBoxLayout;
+	head->addWidget(m_addLane);
+	outer->addLayout(head);
+	auto* takes = new QHBoxLayout;
+	const auto addLabel = [this, takes](const QString& text) {
+		auto* label = new QLabel(text, this);
+		takes->addWidget(label);
+	};
+	addLabel(tr("Group"));
+	m_takeGroup = new QComboBox(this);
+	m_takeGroup->setAccessibleName(tr("Recorded take group"));
+	takes->addWidget(m_takeGroup);
+	addLabel(tr("Take"));
+	m_takeChoice = new QComboBox(this);
+	m_takeChoice->setAccessibleName(tr("Active take choice"));
+	takes->addWidget(m_takeChoice);
+	m_useTake = makeButton(QStringLiteral("comp.take_select"), tr("Use take"));
+	m_useTake->setEnabled(false);
+	connect(m_useTake, &QToolButton::clicked, this, [this] {
+		const QString clip = m_takeChoice->currentData(Qt::UserRole).toString();
+		const int lane = m_takeChoice->currentData(Qt::UserRole + 1).toInt();
+		if (!clip.isEmpty())
+		{
+			run(QStringLiteral("comp.take_select"), {{QStringLiteral("clip"), clip},
+				{QStringLiteral("lane"), lane}});
+		}
+	});
+	takes->addWidget(m_useTake);
+	m_playAllTakes = new QCheckBox(tr("Play all takes"), this);
+	m_playAllTakes->setAccessibleName(tr("Play all takes"));
+	m_playAllTakes->setProperty("controlCommand", QStringLiteral("comp.play_all_takes"));
+	connect(m_playAllTakes, &QCheckBox::toggled, this, [this](bool enabled) {
+		run(QStringLiteral("comp.play_all_takes"), {{QStringLiteral("track"), m_trackId},
+			{QStringLiteral("enabled"), enabled}});
+	});
+	takes->addWidget(m_playAllTakes);
+	takes->addStretch();
+	outer->addLayout(takes);
+	connect(m_takeGroup, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
+		const int groupId = index >= 0 ? m_takeGroup->currentData().toInt() : -1;
+		for (const QJsonValue& value : m_takeGroups)
+		{
+			const QJsonObject group = value.toObject();
+			if (group.value(QStringLiteral("group")).toInt() == groupId)
+			{
+				showTakeChoices(group);
+				return;
+			}
+		}
+		showTakeChoices(QJsonObject());
+	});
 
 	// 0.5.0 L03 (ED-165 / ED-168): drag along a lane to comp that range, double-click to cycle the take.
 	m_strip = new CompSwipeStrip(m_trackId, this);
@@ -108,6 +163,11 @@ TakeLanesPanel::TakeLanesPanel(const QString& trackId, QWidget* parent) :
 		refresh();
 	});
 	outer->addWidget(m_strip);
+	// Theme 10: beside Add lane, the comp's segments as an editable list (window.item_list, as Ctrl+Shift+L on the strip).
+	ShellButton* list = itemlists::listButton(QStringLiteral("comp"), m_strip, this);
+	list->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+	head->addWidget(list);
+	head->addStretch();
 
 	m_composite = new QLabel(this);
 	m_composite->setAccessibleName(tr("Composite"));
@@ -139,6 +199,8 @@ TakeLanesPanel::TakeLanesPanel(const QString& trackId, QWidget* parent) :
 	outer->addLayout(comp);
 
 	m_consolidate = makeButton(QStringLiteral("clip.consolidate"), tr("Consolidate the comp"));
+	// clip.consolidate renders sample-track audio; MIDI comps are not supported by that command.
+	m_consolidate->setVisible(dynamic_cast<const SampleTrack*>(track) != nullptr);
 	connect(m_consolidate, &QToolButton::clicked, this, [this] {
 		QJsonObject args{{QStringLiteral("track"), m_trackId}};
 		if (m_spanEnd > m_spanBegin)
@@ -227,6 +289,11 @@ void TakeLanesPanel::refresh()
 	const QJsonArray lanes = state.result.value(QStringLiteral("lanes")).toArray();
 	m_strip->setState(state.result);
 	showLanes(lanes);
+	showTakeGroups(state.result.value(QStringLiteral("take_groups")).toArray());
+	{
+		const QSignalBlocker blocker(m_playAllTakes);
+		m_playAllTakes->setChecked(state.result.value(QStringLiteral("play_all_takes")).toBool());
+	}
 	showComposite(state.result.value(QStringLiteral("composite")).toObject(), !lanes.isEmpty());
 }
 
@@ -262,6 +329,63 @@ void TakeLanesPanel::showLanes(const QJsonArray& lanes)
 		m_auditions[i]->setAccessibleName(tr("Audition %1").arg(label));
 		m_auditions[i]->setChecked(m_laneIndices[i] == m_auditioning);
 	}
+}
+
+
+void TakeLanesPanel::showTakeGroups(const QJsonArray& groups)
+{
+	const int previousGroup = m_takeGroup->currentIndex() >= 0
+		? m_takeGroup->currentData(Qt::UserRole).toInt() : -1;
+	m_takeGroups = groups;
+	const QSignalBlocker blocker(m_takeGroup);
+	m_takeGroup->clear();
+	int selected = -1;
+	for (int i = 0; i < groups.size(); ++i)
+	{
+		const QJsonObject group = groups.at(i).toObject();
+		const int groupId = group.value(QStringLiteral("group")).toInt();
+		m_takeGroup->addItem(tr("Group %1").arg(groupId), groupId);
+		if (groupId == previousGroup) { selected = i; }
+	}
+	if (selected < 0 && m_takeGroup->count() > 0) { selected = 0; }
+	m_takeGroup->setCurrentIndex(selected);
+	const int selectedGroup = selected >= 0 ? m_takeGroup->currentData().toInt() : -1;
+	for (const QJsonValue& value : groups)
+	{
+		const QJsonObject group = value.toObject();
+		if (group.value(QStringLiteral("group")).toInt() == selectedGroup)
+		{
+			showTakeChoices(group);
+			return;
+		}
+	}
+	showTakeChoices(QJsonObject());
+}
+
+
+void TakeLanesPanel::showTakeChoices(const QJsonObject& group)
+{
+	const QSignalBlocker blocker(m_takeChoice);
+	m_takeChoice->clear();
+	const int activeLane = group.value(QStringLiteral("active_lane")).toInt(-1);
+	int selected = -1;
+	const QJsonArray takes = group.value(QStringLiteral("takes")).toArray();
+	for (const QJsonValue& value : takes)
+	{
+		const QJsonObject take = value.toObject();
+		const QString clip = take.value(QStringLiteral("clip")).toString();
+		const int lane = take.value(QStringLiteral("lane")).toInt();
+		// The engine says whether the take is heard (the newest loop pass, or every take under
+		// Play all takes); a take with no such key is heard.
+		const bool audible = take.value(QStringLiteral("audible")).toBool(true);
+		const QString state = audible ? tr("audible") : tr("muted");
+		m_takeChoice->addItem(tr("Lane %1 (%2) - %3").arg(lane).arg(clip).arg(state), clip);
+		m_takeChoice->setItemData(m_takeChoice->count() - 1, lane, Qt::UserRole + 1);
+		if (lane == activeLane && selected < 0) { selected = m_takeChoice->count() - 1; }
+	}
+	if (selected < 0 && m_takeChoice->count() > 0) { selected = 0; }
+	m_takeChoice->setCurrentIndex(selected);
+	m_useTake->setEnabled(selected >= 0);
 }
 
 

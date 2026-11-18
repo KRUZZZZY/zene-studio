@@ -110,16 +110,26 @@ ControlResult setTransform(const QJsonObject& args)
 	if (!scaleSnapMask(args, &fields, &error)) { return error; }
 	MidiInputTransform& transform = track->inputTransform();
 	const QJsonObject before = transform.toJson();
-	MidiInputTransform probe;  // validate on a copy first: a refusal changes nothing
+	// The probe starts from the track's CURRENT transform, not from the identity: a partial
+	// update is judged against the state it would actually be applied to, so a value that only
+	// conflicts with what the track already holds is caught before anything is written.
+	MidiInputTransform probe;
 	QString why;
+	if (!probe.fromJson(before, &why)) { probe.reset(); }
+	if (args.value(QStringLiteral("reset")).toBool()) { probe.reset(); }
 	if (!probe.fromJson(fields, &why)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, why); }
 	if (args.value(QStringLiteral("reset")).toBool()) { transform.reset(); }
-	transform.fromJson(fields, &why);
+	// fromJson() validates before it stores, so the result is checked rather than assumed:
+	// a refusal must not be reported as success, and must leave no undo step behind.
+	if (!transform.fromJson(fields, &why)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, why); }
 	const QJsonObject after = transform.toJson();
+	QJsonObject result{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("transform"), after}};
+	// A call that leaves the transform as it was (a track-only update, a reset of an identity) changed nothing:
+	// no undo step and no dirty mark, so the next control.undo still reaches the last real edit.
+	if (after == before) { return ControlResult::success(result); }
 	const int id = track->id();
 	addUndoStep([id, before] { restore(id, before); }, [id, after] { restore(id, after); });
 	Engine::getSong()->setModified();
-	QJsonObject result{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("transform"), after}};
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("transform"), before}},
 		QStringLiteral("control.undo"), {}, true,
 		QStringLiteral("action checkpoint: the recorded undo step puts the track's previous transform back")));

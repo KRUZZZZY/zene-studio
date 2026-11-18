@@ -26,6 +26,7 @@
 #define LMMS_PLAY_HANDLE_H
 
 #include <QList>
+#include <QVector>
 #include <QMutex>
 #include <span>
 #include <vector>
@@ -45,6 +46,7 @@ namespace lmms
 class Track;
 class AudioBusHandle;
 class SampleFrame;
+class SynthesisLoad;
 
 class LMMS_EXPORT PlayHandle : public ThreadableJob
 {
@@ -57,7 +59,9 @@ public:
 		PresetPreviewHandle = 0x08,
 		//! R2.1: a sample track's input monitor (InputMonitor.h) - persistent, like an
 		//! instrument's own handle: the song-stop clear keeps it.
-		InputMonitorHandle = 0x10
+		InputMonitorHandle = 0x10,
+		//! WF-055: a sample track's launcher-cell renderer (SessionAudioCells.h) - persistent too.
+		SessionCellHandle = 0x20
 	} ;
 	using Types = Flags<Type>;
 
@@ -130,6 +134,10 @@ public:
 
 	virtual bool isFromTrack( const Track * _track ) const = 0;
 
+	//! Q050-074.1: the instrument track's synthesis meter this handle's rendering counts toward, or
+	//! nullptr for a handle that synthesises for no instrument track (samples, previews, monitors).
+	virtual SynthesisLoad* synthesisLoad() noexcept { return nullptr; }
+
 	bool usesBuffer() const
 	{
 		return m_usesBuffer;
@@ -162,10 +170,17 @@ private:
 	std::vector<SampleFrame> m_playHandleBuffer;
 	bool m_bufferReleased;
 	bool m_usesBuffer;
-	AudioBusHandle* m_audioBusHandle;
+	AudioBusHandle* m_audioBusHandle{nullptr};
 } ;
 
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
 using PlayHandleList = QList<PlayHandle*>;
+#else
+// The render paths reserve this list on the main thread and append without growing on the audio thread
+// (AudioEngine/AudioBusHandle: capacity()). Qt 5's QList has no capacity() and can reallocate on append
+// after a front erase; QVector is contiguous and exact on Qt 5 (on Qt 6 QVector is QList).
+using PlayHandleList = QVector<PlayHandle*>;
+#endif
 using ConstPlayHandleList = QList<const PlayHandle*>;
 
 LMMS_DECLARE_OPERATORS_FOR_FLAGS(PlayHandle::Type)

@@ -25,6 +25,9 @@
 #define LMMS_GUI_SAMPLE_EDITOR_DIALOG_H
 
 #include <algorithm>
+#include <cstddef>
+#include <limits>
+#include <optional>
 #include <vector>
 
 #include <QDialog>
@@ -41,17 +44,31 @@ namespace lmms
 {
 class ControlRegistry;
 class SampleClip;
+struct ControlResult;
 
 //! 0.5.0 theme 15: window.sample_editor (src/gui/ControlCommandsSampleEditor.cpp); registered by registerWindowCommands.
 LMMS_EXPORT void registerSampleEditorWindowCommands(ControlRegistry& registry);
 }
 
+class QAction;
 class QComboBox;
 class QLabel;
+class QMenu;
 class QPushButton;
 
 namespace lmms::gui
 {
+
+namespace sampleeditor::detail
+{
+
+inline auto representableFrameCount(std::size_t sampleSize) -> std::optional<int>
+{
+	if (sampleSize > static_cast<std::size_t>(std::numeric_limits<int>::max())) { return std::nullopt; }
+	return static_cast<int>(sampleSize);
+}
+
+} // namespace sampleeditor::detail
 
 /*! The waveform of a sample clip's whole source, with a selection dragged across it (source frames, End
  *  exclusive). 0.5.0 theme 15: the selection's edges are handles - drag one to move that edge - and the
@@ -62,6 +79,7 @@ class LMMS_EXPORT SampleSelectionView : public QWidget
 public:
 	explicit SampleSelectionView(QWidget* parent = nullptr);
 	void setClip(SampleClip* clip);
+	bool hasUnsupportedFrameCount() const { return m_unsupportedFrameCount; }
 	int from() const { return std::min(m_anchor, m_end); }
 	int to() const { return std::max(m_anchor, m_end); }
 	int frames() const { return m_frames; }
@@ -85,6 +103,7 @@ protected:
 	void mousePressEvent(QMouseEvent* event) override;
 	void mouseMoveEvent(QMouseEvent* event) override;
 	void wheelEvent(QWheelEvent* event) override;
+	void keyPressEvent(QKeyEvent* event) override;
 
 private:
 	enum class Edge
@@ -95,6 +114,9 @@ private:
 	};
 	int frameAt(int x) const;
 	int xOf(int frame) const;
+	//! The frame step a plain arrow takes: about one percent of the visible source, at least one frame.
+	int keyboardStep() const;
+	QString readout() const;
 	//! The selection edge whose handle is under @a x (a target no narrower than the design system's).
 	Edge edgeAt(int x) const;
 	//! Show @a span frames from @a first, clamped to the source and to a frame a pixel at the most.
@@ -102,6 +124,7 @@ private:
 	void paintHandle(QPainter& p, int frame, Edge edge) const;
 	QPointer<SampleClip> m_clip;
 	SampleThumbnail m_thumbnail;
+	bool m_unsupportedFrameCount = false;
 	int m_frames = 0;
 	int m_anchor = 0;
 	int m_end = 0;
@@ -121,6 +144,15 @@ public:
 	SampleEditorDialog(SampleClip* clip, QWidget* parent = nullptr);
 	//! The open sample editor of @a clip, or a new one (shown either way).
 	static SampleEditorDialog* openFor(SampleClip* clip, QWidget* parent);
+
+	/*! Q050-106: ask for the two destinations, then run sample.split_stereo on the clip's
+	 *  whole source. False when the person cancelled a destination dialog (nothing ran);
+	 *  true with the command's outcome in @a result otherwise. Shared by the Sample Editor
+	 *  and the clip's Process menu, so both surfaces reach the same registered command. */
+	static bool splitStereoToFiles(SampleClip* clip, QWidget* parent, ControlResult* result);
+	//! Q050-106: the clip Process menu's "Split Stereo to Two Mono Files..." entry, running
+	//! splitStereoToFiles on @a clip (tagged with sample.split_stereo; disabled unless @a enabled).
+	static QAction* addSplitStereoAction(QMenu* menu, SampleClip* clip, bool enabled);
 
 	SampleClip* clip() const;  // out of line: QPointer<SampleClip>::data() needs the complete type
 	SampleSelectionView* view() const { return m_view; }
@@ -144,6 +176,9 @@ private:
 	void report(const QString& message, bool failed);
 	//! Run @a op (the button @a label) on the range the fields say; the status line says what happened.
 	void apply(const QString& op, double gainDb, const QString& label);
+	//! Q050-106: the whole source to mono, or the two destinations for a stereo split.
+	void applyMono();
+	void applySplit();
 	QPointer<SampleClip> m_clip;
 	SampleSelectionView* m_view;
 	SampleFrameField* m_start = nullptr;
@@ -151,6 +186,8 @@ private:
 	SampleFrameField* m_length = nullptr;
 	QComboBox* m_unitBox = nullptr;
 	QLabel* m_status = nullptr;
+	QPushButton* m_mono = nullptr;
+	QPushButton* m_split = nullptr;
 	samplerange::Unit m_unit = samplerange::Unit::Time;
 	std::vector<QPushButton*> m_actions;  //!< the edit buttons: enabled while there is a selection to edit
 };

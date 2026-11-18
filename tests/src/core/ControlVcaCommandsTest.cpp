@@ -42,12 +42,16 @@
 #include <QString>
 #include <QStringList>
 
+#include <cmath>
+#include <limits>
+
 #include "Clip.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlVcaTestSupport.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "ProjectJournal.h"
 #include "Track.h"
 
 using namespace lmms;
@@ -190,6 +194,32 @@ private slots:
 		evidence(QStringLiteral("junk_cases=%1 all_typed=1 groups_created=0").arg(junk.size()));
 	}
 
+	//! A stale channel position cannot crash either read that serializes group state.
+	void staleMembersAreSkippedFromStateReads()
+	{
+		clearGroups();
+		Mixer* mixer = Engine::mixer();
+		VcaGroup* group = mixer->createVcaGroup(QStringLiteral("Stale"));
+		QVERIFY(group != nullptr);
+		QVERIFY(group->addMember(1));
+		QVERIFY(group->addMember(static_cast<mix_ch_t>(mixer->numChannels())));
+		const QString groupId = QStringLiteral("vca-%1").arg(group->id());
+
+		const ControlResult state = run(QStringLiteral("vca.get_state"), {{QStringLiteral("group"), groupId}});
+		QVERIFY2(state.ok, qPrintable(state.errorMessage));
+		QCOMPARE(state.result.value(QStringLiteral("member_count")).toInt(), 1);
+		QCOMPARE(state.result.value(QStringLiteral("members")).toArray().size(), 1);
+		QCOMPARE(state.result.value(QStringLiteral("members")).toArray().first().toObject()
+			.value(QStringLiteral("channel")).toString(), channelId(1));
+
+		const ControlResult listed = run(QStringLiteral("vca.list"));
+		QVERIFY2(listed.ok, qPrintable(listed.errorMessage));
+		const QJsonArray groups = listed.result.value(QStringLiteral("groups")).toArray();
+		QCOMPARE(groups.size(), 1);
+		QCOMPARE(groups.first().toObject().value(QStringLiteral("member_count")).toInt(), 1);
+		QVERIFY(mixer->deleteVcaGroup(group->id()));
+	}
+
 	// -- 3. the measured effect --------------------------------------------
 
 	//! The fader SCALES: the members' published gain follows the group, and not
@@ -279,6 +309,306 @@ private slots:
 			"ghost_unassign_refused=1 undo_membership=1"));
 	}
 
+	//! The command must trust the engine mutation result before claiming a
+	//! successful transaction. A detached live group makes addMember refuse
+	//! after the argument resolver has accepted an `also:true` request.
+	void failedAssignmentMutationLeavesNoUndoOrTransaction()
+	{
+		clearGroups();
+		Mixer* mixer = Engine::mixer();
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(mixer != nullptr);
+		QVERIFY(journal != nullptr);
+
+		const QString first = createGroup(QStringLiteral("First member"));
+		const QString second = createGroup(QStringLiteral("Shared member"));
+		QVERIFY(!first.isEmpty());
+		QVERIFY(!second.isEmpty());
+		QVERIFY(run(QStringLiteral("vca.assign"), {{QStringLiteral("group"), first},
+			{QStringLiteral("channel"), channelId(1)}}).ok);
+		QVERIFY(run(QStringLiteral("vca.set_gain"), {{QStringLiteral("group"), first},
+			{QStringLiteral("gain"), 0.5}}).ok);
+		QVERIFY(run(QStringLiteral("vca.set_gain"), {{QStringLiteral("group"), second},
+			{QStringLiteral("gain"), 0.25}}).ok);
+
+		const int depthBeforeCrossGroup = journal->undoDepth();
+		const int transactionsBeforeCrossGroup = run(QStringLiteral("control.transactions"))
+			.result.value(QStringLiteral("transactions")).toArray().size();
+		const ControlResult crossGroup = run(QStringLiteral("vca.assign"),
+			{{QStringLiteral("group"), second}, {QStringLiteral("channel"), channelId(1)}});
+		QVERIFY2(!crossGroup.ok, "default cross-group assign reported success");
+		QCOMPARE(crossGroup.errorKind, ControlErrorKind::Refused);
+		QVERIFY(crossGroup.errorMessage.contains(first));
+		QCOMPARE(journal->undoDepth(), depthBeforeCrossGroup);
+		QCOMPARE(run(QStringLiteral("control.transactions"))
+			.result.value(QStringLiteral("transactions")).toArray().size(), transactionsBeforeCrossGroup);
+		QCOMPARE(memberGain(second, channelId(1)), -1.0);
+		QCOMPARE(static_cast<double>(mixer->mixerChannel(1)->vcaGain()), 0.5);
+
+		const ControlResult shared = run(QStringLiteral("vca.assign"),
+			{{QStringLiteral("group"), second}, {QStringLiteral("channel"), channelId(1)},
+				{QStringLiteral("also"), true}});
+		QVERIFY2(shared.ok, qPrintable(shared.errorMessage));
+		QCOMPARE(run(QStringLiteral("vca.get_state"), {{QStringLiteral("group"), first}})
+			.result.value(QStringLiteral("member_count")).toInt(), 1);
+		QCOMPARE(run(QStringLiteral("vca.get_state"), {{QStringLiteral("group"), second}})
+			.result.value(QStringLiteral("member_count")).toInt(), 1);
+		QCOMPARE(run(QStringLiteral("vca.get_state"), {{QStringLiteral("group"), first}})
+			.result.value(QStringLiteral("volume")).toDouble(), 0.5);
+		QCOMPARE(run(QStringLiteral("vca.get_state"), {{QStringLiteral("group"), second}})
+			.result.value(QStringLiteral("volume")).toDouble(), 0.25);
+		QCOMPARE(static_cast<double>(mixer->mixerChannel(1)->vcaGain()), 0.125);
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(memberGain(second, channelId(1)), -1.0);
+		QCOMPARE(static_cast<double>(mixer->mixerChannel(1)->vcaGain()), 0.5);
+
+		const QString detachedId = createGroup(QStringLiteral("Detached target"));
+		QVERIFY(!detachedId.isEmpty());
+		const QString detachedWireId = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), detachedId}}).result.value(QStringLiteral("id")).toString();
+		const int detachedGroupId = detachedWireId.mid(QStringLiteral("vca-").size()).toInt();
+		VcaGroup* detached = mixer->vcaGroup(detachedGroupId);
+		QVERIFY(detached != nullptr);
+		detached->detach();
+		const int depthBeforeFailure = journal->undoDepth();
+		const int transactionsBeforeFailure = run(QStringLiteral("control.transactions"))
+			.result.value(QStringLiteral("transactions")).toArray().size();
+		const ControlResult failed = run(QStringLiteral("vca.assign"),
+			{{QStringLiteral("group"), detachedId}, {QStringLiteral("channel"), channelId(2)},
+				{QStringLiteral("also"), true}});
+		QVERIFY2(!failed.ok, "a refused VcaGroup::addMember mutation reported success");
+		QCOMPARE(failed.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(journal->undoDepth(), depthBeforeFailure);
+		QCOMPARE(run(QStringLiteral("control.transactions"))
+			.result.value(QStringLiteral("transactions")).toArray().size(), transactionsBeforeFailure);
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), detachedId}}).result.value(QStringLiteral("member_count")).toInt(), 0);
+		QCOMPARE(static_cast<double>(mixer->mixerChannel(2)->vcaGain()), 1.0);
+		evidence(QStringLiteral("cross_group_refused=1 also_shared_gain=0.125 add_member_refusal=1 "
+			"undo_depth_unchanged=1 transaction_unchanged=1"));
+	}
+
+	//! A transaction inverse must restore every exclusive solo flag and the
+	//! channel mutes it displaced, even after the bounded journal evicts it.
+	void replayingSoloInverseRestoresPreviousExclusiveSolo()
+	{
+		clearGroups();
+		Mixer* mixer = Engine::mixer();
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(mixer != nullptr);
+		QVERIFY(journal != nullptr);
+		const QString first = createGroup(QStringLiteral("Solo A"));
+		const QString second = createGroup(QStringLiteral("Solo B"));
+		QVERIFY(!first.isEmpty());
+		QVERIFY(!second.isEmpty());
+		QVERIFY(run(QStringLiteral("vca.assign"), {{QStringLiteral("group"), first},
+			{QStringLiteral("channel"), channelId(1)}}).ok);
+		QVERIFY(run(QStringLiteral("vca.assign"), {{QStringLiteral("group"), second},
+			{QStringLiteral("channel"), channelId(2)}}).ok);
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			mixer->mixerChannel(ch)->m_muteModel.setValue(ch == 3);
+		}
+		QVector<bool> originalMutes;
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			originalMutes.append(mixer->mixerChannel(ch)->m_muteModel.value());
+		}
+		QVERIFY(run(QStringLiteral("vca.set_solo"),
+			{{QStringLiteral("group"), first}, {QStringLiteral("soloed"), true}}).ok);
+		QVector<bool> beforeSecondSoloMutes;
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			beforeSecondSoloMutes.append(mixer->mixerChannel(ch)->m_muteModel.value());
+		}
+
+		const int oldCap = journal->maxUndoStates();
+		QVERIFY(journal->setMaxUndoStates(1));
+		const int evictedBefore = journal->evictedSteps();
+		const ControlResult secondSolo = run(QStringLiteral("vca.set_solo"),
+			{{QStringLiteral("group"), second}, {QStringLiteral("soloed"), true}});
+		QVERIFY2(secondSolo.ok, qPrintable(secondSolo.errorMessage));
+		const QJsonObject inverse = stateOf(QStringLiteral("vca.set_solo"))
+			.value(QStringLiteral("inverse")).toObject();
+		QCOMPARE(journal->undoDepth(), 1);
+		QVERIFY(run(QStringLiteral("vca.set_gain"),
+			{{QStringLiteral("group"), second}, {QStringLiteral("gain"), 0.75}}).ok);
+		QVERIFY(journal->evictedSteps() > evictedBefore);
+		const ControlResult restored = run(inverse.value(QStringLiteral("op")).toString(),
+			inverse.value(QStringLiteral("args")).toObject());
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		const bool firstRestored = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), first}}).result.value(QStringLiteral("soloed")).toBool();
+		const bool secondCleared = !run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), second}}).result.value(QStringLiteral("soloed")).toBool();
+		QVector<bool> restoredMutes;
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			restoredMutes.append(mixer->mixerChannel(ch)->m_muteModel.value());
+		}
+		const ControlResult unsoloed = run(QStringLiteral("vca.set_solo"),
+			{{QStringLiteral("group"), first}, {QStringLiteral("soloed"), false}});
+		QVERIFY2(unsoloed.ok, qPrintable(unsoloed.errorMessage));
+		QVector<bool> finalMutes;
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			finalMutes.append(mixer->mixerChannel(ch)->m_muteModel.value());
+		}
+		QVERIFY(journal->setMaxUndoStates(oldCap));
+
+		QVERIFY2(firstRestored, "replaying B's inverse left A unsoloed");
+		QVERIFY(secondCleared);
+		QCOMPARE(restoredMutes, beforeSecondSoloMutes);
+		QCOMPARE(finalMutes, originalMutes);
+		evidence(QStringLiteral("solo_inverse_restored_prior_group=1 channel_mutes=1 "
+			"unsolo_restored_original_mutes=1 journal_evicted=1"));
+	}
+
+	//! The pre-solo cache can be stale while no solo is active: a later manual
+	//! mute edit changes the model but does not rewrite that transient cache.
+	void soloUndoRestoresPreSoloMuteCache()
+	{
+		clearGroups();
+		Mixer* mixer = Engine::mixer();
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(mixer != nullptr);
+		QVERIFY(journal != nullptr);
+		const QString group = createGroup(QStringLiteral("Cache restore"));
+		QVERIFY(!group.isEmpty());
+		QVERIFY(run(QStringLiteral("vca.assign"), {{QStringLiteral("group"), group},
+			{QStringLiteral("channel"), channelId(1)}}).ok);
+
+		const bool wasJournalling = journal->isJournalling();
+		journal->setJournalling(false);
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			mixer->mixerChannel(ch)->m_muteModel.setValue(ch == 3);
+		}
+		journal->setJournalling(wasJournalling);
+		QVERIFY(run(QStringLiteral("vca.set_solo"),
+			{{QStringLiteral("group"), group}, {QStringLiteral("soloed"), true}}).ok);
+		QVERIFY(run(QStringLiteral("vca.set_solo"),
+			{{QStringLiteral("group"), group}, {QStringLiteral("soloed"), false}}).ok);
+
+		// A user mute edit while solo is inactive changes the models but leaves
+		// the previous cache available for the command's undo checkpoint.
+		journal->setJournalling(false);
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			mixer->mixerChannel(ch)->m_muteModel.setValue(ch == 2);
+		}
+		journal->setJournalling(wasJournalling);
+		QVector<bool> cacheBefore;
+		QVector<bool> changedMutes;
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			cacheBefore.append(mixer->mixerChannel(ch)->m_muteBeforeSolo);
+			changedMutes.append(mixer->mixerChannel(ch)->m_muteModel.value());
+		}
+		QVERIFY(run(QStringLiteral("vca.set_solo"),
+			{{QStringLiteral("group"), group}, {QStringLiteral("soloed"), true}}).ok);
+		QVector<bool> cacheAfterSolo;
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			cacheAfterSolo.append(mixer->mixerChannel(ch)->m_muteBeforeSolo);
+		}
+		QVERIFY(cacheAfterSolo != cacheBefore);
+		REV_UNDO_OR_FAIL();
+
+		QVector<bool> cacheAfterUndo;
+		QVector<bool> mutesAfterUndo;
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			cacheAfterUndo.append(mixer->mixerChannel(ch)->m_muteBeforeSolo);
+			mutesAfterUndo.append(mixer->mixerChannel(ch)->m_muteModel.value());
+		}
+		QCOMPARE(cacheAfterUndo, cacheBefore);
+		QCOMPARE(mutesAfterUndo, changedMutes);
+		evidence(QStringLiteral("solo_undo_restored_mute_models=1 pre_solo_cache=1"));
+	}
+
+	//! A deleted track keeps its stable id in the group's edit set so callers
+	//! can see and repair the missing membership. Removing that id must not need
+	//! a live Track object, and its undo restores the same missing membership.
+	void staleTrackMembershipCanBeRemoved()
+	{
+		clearGroups();
+		const QString track = addTrack();
+		const QString group = createGroup(QStringLiteral("Deleted track"));
+		QVERIFY(!track.isEmpty());
+		QVERIFY(!group.isEmpty());
+		QVERIFY(run(QStringLiteral("vca.track_add"),
+			{{QStringLiteral("group"), group}, {QStringLiteral("track"), track}}).ok);
+
+		const ControlResult deleted = run(QStringLiteral("track.remove"),
+			{{QStringLiteral("track"), track}});
+		QVERIFY2(deleted.ok, qPrintable(deleted.errorMessage));
+		const QJsonObject stale = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), group}}).result;
+		QCOMPARE(stale.value(QStringLiteral("tracks")).toArray().size(), 1);
+		QCOMPARE(stale.value(QStringLiteral("tracks")).toArray().at(0).toString(), track);
+		QCOMPARE(stale.value(QStringLiteral("missing_tracks")).toArray().size(), 1);
+
+		const ControlResult removed = run(QStringLiteral("vca.track_remove"),
+			{{QStringLiteral("group"), group}, {QStringLiteral("track"), track}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QCOMPARE(removed.result.value(QStringLiteral("removed")).toString(), track);
+		QCOMPARE(removed.result.value(QStringLiteral("tracks")).toArray().size(), 0);
+		QCOMPARE(removed.result.value(QStringLiteral("missing_tracks")).toArray().size(), 0);
+
+		REV_UNDO_OR_FAIL();
+		const QJsonObject restored = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), group}}).result;
+		QCOMPARE(restored.value(QStringLiteral("tracks")).toArray().size(), 1);
+		QCOMPARE(restored.value(QStringLiteral("tracks")).toArray().at(0).toString(), track);
+		QCOMPARE(restored.value(QStringLiteral("missing_tracks")).toArray().size(), 1);
+
+		// The inverse published in the transaction stream is also a replay
+		// promise. A live-track command cannot restore this dead id; replay the
+		// reported operation through the same registry clients use.
+		const ControlResult removedAgain = run(QStringLiteral("vca.track_remove"),
+			{{QStringLiteral("group"), group}, {QStringLiteral("track"), track}});
+		QVERIFY2(removedAgain.ok, qPrintable(removedAgain.errorMessage));
+		const QJsonArray transactions = run(QStringLiteral("control.transactions"))
+			.result.value(QStringLiteral("transactions")).toArray();
+		QVERIFY(!transactions.isEmpty());
+		const QJsonObject inverse = transactions.last().toObject()
+			.value(QStringLiteral("inverse")).toObject();
+		const ControlResult replayed = run(inverse.value(QStringLiteral("op")).toString(),
+			inverse.value(QStringLiteral("args")).toObject());
+		QVERIFY2(replayed.ok, qPrintable(QStringLiteral("reported inverse failed: %1 -> %2")
+			.arg(inverse.value(QStringLiteral("op")).toString(), replayed.errorMessage)));
+		const QJsonObject replayRestored = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), group}}).result;
+		QCOMPARE(replayRestored.value(QStringLiteral("tracks")).toArray().size(), 1);
+		QCOMPARE(replayRestored.value(QStringLiteral("tracks")).toArray().at(0).toString(), track);
+		QCOMPARE(replayRestored.value(QStringLiteral("missing_tracks")).toArray().size(), 1);
+		evidence(QStringLiteral("deleted_track_membership_removed=1 undo_restored=1 inverse_replay_restored=1"));
+	}
+
+	//! Redoing `vca.create` restores the requested group name, not an empty one.
+	void redoingCreateRestoresTheRequestedName()
+	{
+		clearGroups();
+		const QString name = QStringLiteral("Redo preserves this name");
+		const QString group = createGroup(name);
+		QVERIFY2(!group.isEmpty(), "vca.create failed");
+
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), group}}).errorKind, ControlErrorKind::NotFound);
+
+		const ControlResult redone = run(QStringLiteral("control.redo"));
+		QVERIFY2(redone.ok, qPrintable(redone.errorMessage));
+		QVERIFY(redone.result.value(QStringLiteral("redone")).toBool());
+		const ControlResult restored = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), group}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QCOMPARE(restored.result.value(QStringLiteral("name")).toString(), name);
+		clearGroups();
+		evidence(QStringLiteral("create_undo=1 redo=1 name_restored=1"));
+	}
+
 	//! `vca.remove` is EXACTLY reversible: the id, name, fader, mute, solo,
 	//! phase lock, member channels and edit tracks all come back, and the
 	//! members publish the group's gain again.
@@ -327,6 +657,95 @@ private slots:
 		QCOMPARE(static_cast<double>(mixer->mixerChannel(1)->vcaGain()), 0.0);
 		evidence(QStringLiteral("removed=1 undo_restored_fields=%1 published_gain=0")
 			.arg(after.size()));
+	}
+
+	//! Undoing `vca.unassign` restores a SHARED membership: a channel assigned
+	//! with `also:true` lives in two groups, and the undo has to put it back
+	//! with that same multiple-membership mode. Re-adding it single-valued asks
+	//! VcaGroup::addMember to take a channel another group already holds, which
+	//! it refuses - so the undo silently drops a membership that was there
+	//! before the undo, and the channel plays at a group's gain in one bus only.
+	void undoingUnassignRestoresASharedMembership()
+	{
+		clearGroups();
+		const QString first = createGroup(QStringLiteral("Shared one"));
+		const QString second = createGroup(QStringLiteral("Shared two"));
+		QVERIFY(!first.isEmpty());
+		QVERIFY(!second.isEmpty());
+
+		// `also:true` is the multiple-membership mode (0.5.0 L09): the channel
+		// belongs to BOTH groups, and both hold it deliberately.
+		QVERIFY(run(QStringLiteral("vca.assign"), {{QStringLiteral("group"), first},
+			{QStringLiteral("channel"), channelId(1)}, {QStringLiteral("also"), true}}).ok);
+		QVERIFY(run(QStringLiteral("vca.assign"), {{QStringLiteral("group"), second},
+			{QStringLiteral("channel"), channelId(1)}, {QStringLiteral("also"), true}}).ok);
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), second}}).result.value(QStringLiteral("member_count")).toInt(), 1);
+
+		QVERIFY(run(QStringLiteral("vca.unassign"), {{QStringLiteral("group"), second},
+			{QStringLiteral("channel"), channelId(1)}}).ok);
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), second}}).result.value(QStringLiteral("member_count")).toInt(), 0);
+
+		// The undo path: control.undo restores the SHARED membership in both groups.
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), second}}).result.value(QStringLiteral("member_count")).toInt(), 1);
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), first}}).result.value(QStringLiteral("member_count")).toInt(), 1);
+
+		// Luna 4911: the ADVERTISED inverse must be replayable as written. It names vca.assign with
+		// also:true - without it, the channel is refused by `first`, which still holds it. Unassign
+		// again first, so the replay has a membership to put back.
+		QVERIFY(run(QStringLiteral("vca.unassign"), {{QStringLiteral("group"), second},
+			{QStringLiteral("channel"), channelId(1)}}).ok);
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), second}}).result.value(QStringLiteral("member_count")).toInt(), 0);
+		const QJsonObject inverse = revtest::stateOf(QStringLiteral("vca.unassign"))
+			.value(QStringLiteral("inverse")).toObject();
+		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("vca.assign"));
+		const QJsonObject inverseArgs = inverse.value(QStringLiteral("args")).toObject();
+		QCOMPARE(inverseArgs.value(QStringLiteral("also")).toBool(), true);
+		QVERIFY2(run(inverse.value(QStringLiteral("op")).toString(), inverseArgs).ok,
+			"the advertised vca.assign inverse was refused");
+		// The replay must restore the same membership: `second` again AND still `first`.
+		const ControlResult restored = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), second}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QCOMPARE(restored.result.value(QStringLiteral("member_count")).toInt(), 1);
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), first}}).result.value(QStringLiteral("member_count")).toInt(), 1);
+		evidence(QStringLiteral("shared_unassign=1 undo_shared_restored=1"));
+	}
+
+	//! NaN is a numeric QJsonValue, so the range checks must refuse it explicitly.
+	void nonFiniteGainIsRefusedWithoutChangingTheGroupFader()
+	{
+		clearGroups();
+		const QString group = createGroup();
+		QVERIFY2(!group.isEmpty(), "vca.create failed");
+
+		const QJsonObject args{{QStringLiteral("group"), group},
+			{QStringLiteral("gain"), std::numeric_limits<double>::quiet_NaN()}};
+		QVERIFY(args.value(QStringLiteral("gain")).isDouble());
+		QVERIFY(std::isnan(args.value(QStringLiteral("gain")).toDouble()));
+
+		const ControlResult attempted = run(QStringLiteral("vca.set_gain"), args);
+		const double gainAfter = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), group}}).result.value(QStringLiteral("volume")).toDouble();
+		const bool refused = !attempted.ok && attempted.errorKind == ControlErrorKind::InvalidArgs;
+		const bool unchanged = std::isfinite(gainAfter) && gainAfter == 1.0;
+		if (!refused)
+		{
+			// Keep the following cases isolated on the original implementation,
+			// where NaN is accepted and stored.
+			run(QStringLiteral("vca.set_gain"),
+				{{QStringLiteral("group"), group}, {QStringLiteral("gain"), 1.0}});
+		}
+		clearGroups();
+
+		QVERIFY2(refused, qPrintable(attempted.errorMessage));
+		QVERIFY(unchanged);
 	}
 };
 

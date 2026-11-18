@@ -249,12 +249,19 @@ QJsonObject hostedDeviceJson(const HostedDevice& device)
 {
 	const Family family = familyFor(device.pluginKey);
 	HostTracker& tracker = HostTracker::instance();
+	const State state = hostedDeviceState(device);
 	QString refusal;
 	const bool refused = !family.client.isEmpty()
 		&& tracker.refusedByCrashLoop(family.client, &refusal);
+	// The refusal FIELDS describe the same answer the state line does: a device
+	// this call reports as refused has to say so here too, not only in `state`.
+	// A crash-loop refusal quotes the tracker; a family that ships no client
+	// quotes that family's own reason, the words that name what is missing.
+	if (!refused && state == State::RefusedNoClient) { refusal = family.reason; }
+	const bool deviceRefused = refused || state == State::RefusedNoClient;
 
 	QJsonObject hosting;
-	hosting.insert(QStringLiteral("state"), stateName(hostedDeviceState(device)));
+	hosting.insert(QStringLiteral("state"), stateName(state));
 	hosting.insert(QStringLiteral("family"), familyObject(family));
 	hosting.insert(QStringLiteral("client"), family.client);
 	hosting.insert(QStringLiteral("client_process_id"), deviceHostingProcessId(device));
@@ -264,8 +271,8 @@ QJsonObject hostedDeviceJson(const HostedDevice& device)
 	// implementation of the convention.
 	hosting.insert(QStringLiteral("can_choose_mode"), deviceCanChooseHostingMode(device));
 	hosting.insert(QStringLiteral("can_restart"), hasInvokable(device.plugin(), "reloadPlugin()"));
-	hosting.insert(QStringLiteral("refused"), refused);
-	hosting.insert(QStringLiteral("refused_reason"), refused ? refusal : QString());
+	hosting.insert(QStringLiteral("refused"), deviceRefused);
+	hosting.insert(QStringLiteral("refused_reason"), deviceRefused ? refusal : QString());
 	hosting.insert(QStringLiteral("record"), clientRecordJson(familyRecord(family)));
 
 	QJsonObject out;

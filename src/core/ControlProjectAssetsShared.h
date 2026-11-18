@@ -61,7 +61,9 @@ namespace projectassets
  *    audiofileprocessor  AudioFileProcessor::saveSettings,
  *                        plugins/AudioFileProcessor/AudioFileProcessor.cpp:196
  *    sf2player           Sf2Instrument::saveSettings, plugins/Sf2Player/Sf2Player.cpp:244
+ *    sfzplayer           SfzPlayer::saveSettings, plugins/SfzPlayer/SfzPlayer.cpp (the .sfz file)
  *    clip (session slot) ClipSlot::saveState, src/core/SessionClip.cpp:77
+ *    track (frozenAudio) Track::saveTrack, src/core/Track.cpp (a frozen take's render)
  *
  *  The first two are the elements DataFile::ELEMENTS_WITH_RESOURCES names for
  *  its own bundle walk (src/core/DataFile.cpp:68-71); the other two are the
@@ -76,7 +78,7 @@ struct AssetElement
 };
 
 //! The table itself, defined once in ControlProjectAssets.cpp.
-extern const AssetElement kAssetElements[4];
+extern const AssetElement kAssetElements[6];
 
 bool elementMatches(const AssetElement& spec, const QString& tag, const QString& parentChain);
 
@@ -97,6 +99,9 @@ Resolution resolveAssetPath(const QString& projectDir, const QString& raw);
 //! Fills \a ref from \a element and the disk (existence, size, mtime).
 void fillReference(const QDomElement& element, const AssetElement& spec, int index,
 	const QString& projectDir, ProjectAssetReference* ref);
+
+//! Hashes a scanned reference, refusing files whose observed size exceeds \a byteCap.
+void hashReference(ProjectAssetReference* ref, qint64 byteCap);
 
 //! Reads .mmp (XML) or .mmpz (qCompress'd XML) into \a document. False with a
 //! typed error for a missing, unreadable, mis-inflated or unparseable file.

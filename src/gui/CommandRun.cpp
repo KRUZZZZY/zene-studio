@@ -31,6 +31,8 @@
 #include <QAction>
 #include <QJsonArray>
 #include <QMenu>
+#include <QtGlobal>
+#include <QMenuBar>
 
 #include "CommandMetadata.h"
 #include "ControlVocabulary.h"
@@ -50,6 +52,16 @@ QWidget* hostOf(QWidget* widget)
 {
 	while (qobject_cast<QMenu*>(widget) != nullptr) { widget = widget->parentWidget(); }
 	return widget;
+}
+
+//! An unattended session has nobody to read a floating message, but a refusal (app.help declares
+//! requires: display) must not vanish: log it, as the other menus' refusals are.
+void logHeadlessRefusal(const CommandCall& call, const ControlResult& result)
+{
+	if (!result.ok && ControlRegistry::instance()->isHeadless())
+	{
+		qWarning("%s refused: %s", qPrintable(call.id), qPrintable(result.errorMessage));
+	}
 }
 
 } // namespace
@@ -86,14 +98,18 @@ QJsonObject selectionContext(const QString& id)
 
 void announce(QWidget* parent, const CommandCall& call, const ControlResult& result)
 {
+	logHeadlessRefusal(call, result);
 	// No interface to float a message over (a tool embedding the registry): nothing to show.
 	if (ControlRegistry::instance()->isHeadless() || getGUI() == nullptr || (result.ok && !call.showResult)) { return; }
 	constexpr int MaxChars = 400;
 	constexpr int MaxLines = 8;
 	QString text = result.ok ? resultSummary(result.result, MaxLines) : result.errorMessage;
 	if (text.size() > MaxChars) { text = text.left(MaxChars - 1) + QStringLiteral("…"); }
+	// gui-1105: a message floats beside the widget it was asked from - but a menu bar spans its window, so beside it
+	// is past the window's right edge (often off-screen); a main-menu entry's message goes over the main window.
+	QWidget* beside = qobject_cast<QMenuBar*>(parent) != nullptr ? nullptr : parent;
 	TextFloat::displayMessage(call.title.isEmpty() ? commandName(call.id) : call.title, text, QPixmap(),
-		result.ok ? 8000 : 4000, parent);
+		result.ok ? 8000 : 4000, beside);
 }
 
 ControlResult runCommand(QWidget* parent, const CommandCall& call, CommandForm** form)

@@ -70,9 +70,25 @@ What it drives, in order:
                                            say so: CI has no pinned artefact to
                                            fetch, and a real transfer would
                                            block the surface for its duration;
-  9. `control.transactions`                the A16 record: the whole group is
-                                           `not_mutating`, so a separation
-                                           leaves NO project transaction.
+  9. `control.transactions`                the A16 record: the job and
+                                           model-store verbs are `not_mutating`,
+                                           so a separation leaves NO project
+                                           transaction;
+ 9b. `quality` (Q050-062.1)              `stem.get_state` lists fast / standard /
+                                           high; jobs started with each (and with
+                                           none: standard, the legacy overlap)
+                                           report the effective `quality`,
+                                           `overlap`, `hop_frames` in the start
+                                           reply and `stem.job_status`; an
+                                           unknown name is refused typed; the CLI
+                                           runs 6 / 9 / 17 segments at fast /
+                                           standard / high (stem_quality_lib.py);
+ 10. `stem.tracks_create`                  the USER-FACING half: the four stems
+                                           become four SampleTracks in one
+                                           command - the SAME one the GUI's
+                                           "Split to stems" action calls - and
+                                           ONE `control.undo` removes all four
+                                           together.
 
 Started through the shared harness (tests/control_socket_harness.py), so this
 file adds no second launch path.
@@ -93,8 +109,11 @@ import control_socket_harness as H
 from stem_commands_lib import (CHUNK_DELAY_MS, CLI_PATH, SAMPLE_RATE, SOURCE_SECONDS, STUB_MODEL,
                              Recorder, Session, check_a_job_does_not_hold_the_surface, check_cancel,
                              check_get_state, check_model_store, check_refusals, check_result,
-                             check_transactions, job_state, onnxruntime_site_dir, poll_until,
-                             python_with_onnxruntime, start_job, write_source_wav)
+                             check_tracks_create, check_transactions, check_windows_absolute_sources,
+                             job_state, onnxruntime_site_dir, poll_until, python_with_onnxruntime,
+                             start_job, write_source_wav)
+from stem_quality_lib import check_quality
+from stem_task_checks import check_resample_is_not_on_the_caller
 
 def check_quit(session, instance, recorder):
     reply = session.call("control.quit")
@@ -119,10 +138,16 @@ def report_results(recorder):
 def run_checks(session, instance, recorder, outdir):
     check_get_state(session, recorder)
     check_refusals(session, recorder, outdir)
+    check_resample_is_not_on_the_caller(session, recorder, outdir)
+    # The GUI's "Split to stems" route hands this command a platform-native
+    # absolute path; on Windows that is a drive path or a UNC share, which the
+    # validator must accept rather than refuse as a relative path.
+    check_windows_absolute_sources(session, recorder)
 
     source = os.path.join(outdir, "mix.wav")
     frames = write_source_wav(source)
     job_id = start_job(session, recorder, source, "the happy path")
+    completed = False
     if job_id is not None:
         check_a_job_does_not_hold_the_surface(session, recorder, job_id)
         state, seen, seconds = poll_until(session, job_id, ("completed", "failed", "cancelled"))
@@ -131,11 +156,22 @@ def run_checks(session, instance, recorder, outdir):
         recorder.check("the poll saw the job in a non-terminal state first",
                        bool([s for s in seen if s in ("queued", "running")]),
                        "seen=%r" % (seen,))
-        if state == "completed":
+        completed = state == "completed"
+        if completed:
             check_result(session, recorder, job_id, os.path.join(outdir, "stems"), frames)
     check_cancel(session, recorder, source, os.path.join(outdir, "cancelled"))
+    # Q050-062.1: the quality setting, over the socket and through the CLI.
+    cli_env = dict(os.environ)
+    if instance.extra_env.get("PYTHONPATH"):
+        cli_env["PYTHONPATH"] = instance.extra_env["PYTHONPATH"]
+    check_quality(session, recorder, outdir, instance.extra_env["LMMS_STEM_PYTHON"], cli_env)
     check_model_store(session, recorder, instance.extra_env["LMMS_STEM_MODEL_DIR"])
     check_transactions(session, recorder)
+    # The user-facing half: the GUI action and the agent surface share
+    # stem.tracks_create, and the four tracks are ONE undo step. Last, because
+    # it is the one mutating verb in the group.
+    if completed:
+        check_tracks_create(session, recorder, job_id)
 
 
 def main(argv):

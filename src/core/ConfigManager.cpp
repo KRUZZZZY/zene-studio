@@ -34,6 +34,7 @@
 #include <QDir>
 #include <QDomElement>
 #include <QMessageBox>
+#include <QSaveFile>
 #include <QStandardPaths>
 #include <QTextStream>
 
@@ -105,6 +106,14 @@ ConfigManager::ConfigManager() :
 ConfigManager::~ConfigManager()
 {
 	saveConfigFile();
+}
+
+
+void ConfigManager::destroy()
+{
+	ConfigManager* instance = s_instanceOfMe;
+	s_instanceOfMe = nullptr;
+	delete instance;
 }
 
 
@@ -429,6 +438,7 @@ void ConfigManager::loadConfigFile(const QString & configFile)
 	{
 		m_configFile = configFile;
 	}
+	m_configUnreadable = false;
 
 	QFile cfg_file(m_configFile);
 	QDomDocument dom_tree;
@@ -543,13 +553,24 @@ void ConfigManager::loadConfigFile(const QString & configFile)
 		#endif
 			setBackgroundPicFile(value("paths", "backgroundtheme"));
 		}
-		else if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+		else
 		{
-			QMessageBox::warning(nullptr, gui::MainWindow::tr("Configuration file"),
-									gui::MainWindow::tr("Error while parsing configuration file at line %1:%2: %3").
-													arg(errorLine).
-													arg(errorCol).
-													arg(errorString));
+			m_configUnreadable = true;
+			const QString message = gui::MainWindow::tr("Error while parsing configuration file at line %1:%2: %3").
+											arg(errorLine).
+											arg(errorCol).
+											arg(errorString);
+			if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+			{
+				QMessageBox::warning(nullptr, gui::MainWindow::tr("Configuration file"), message);
+			}
+			else
+			{
+				// An unattended run has no dialog to show the error in.  The file is kept
+				// as it is, so the settings in it are not loaded and not overwritten.
+				qWarning("%s; settings not loaded, file left unchanged: %s",
+						qPrintable(message), qPrintable(m_configFile));
+			}
 		}
 		cfg_file.close();
 	}
@@ -638,6 +659,13 @@ void ConfigManager::saveConfigFile()
 #endif
 	setValue("paths", "backgroundtheme", m_backgroundPicFile);
 
+	// The file did not parse at load time. Its settings were not read, so writing
+	// now would replace them with defaults; leave the file as the user has it.
+	if (m_configUnreadable)
+	{
+		return;
+	}
+
 	QDomDocument doc("zene-config-file");
 
 	QDomElement zene_config = doc.createElement("zene");
@@ -678,15 +706,18 @@ void ConfigManager::saveConfigFile()
 
 	QString xml = "<?xml version=\"1.0\"?>\n" + doc.toString(2);
 
-	QFile outfile(m_configFile);
-	if(!outfile.open(QIODevice::WriteOnly | QIODevice::Truncate))
+	QSaveFile outfile(m_configFile);
+	outfile.setDirectWriteFallback(false);
+	const QByteArray xmlBytes = xml.toUtf8();
+	if (!outfile.open(QIODevice::WriteOnly | QIODevice::Unbuffered) ||
+		outfile.write(xmlBytes) != xmlBytes.size() || !outfile.commit())
 	{
+		outfile.cancelWriting();
 		using gui::MainWindow;
 
 		QString title, message;
-		title = MainWindow::tr("Could not open file");
-		message = MainWindow::tr("Could not open file %1 "
-					"for writing.\nPlease make "
+		title = MainWindow::tr("Could not save file");
+		message = MainWindow::tr("Could not save file %1.\nPlease make "
 					"sure you have write "
 					"permission to the file and "
 					"the directory containing the "
@@ -707,9 +738,6 @@ void ConfigManager::saveConfigFile()
 		}
 		return;
 	}
-
-	outfile.write(xml.toUtf8());
-	outfile.close();
 }
 
 void ConfigManager::initPortableWorkingDir()

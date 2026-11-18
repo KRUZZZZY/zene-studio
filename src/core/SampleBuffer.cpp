@@ -35,16 +35,19 @@
 
 namespace lmms {
 
-SampleBuffer::SampleBuffer(const SampleFrame* data, size_t numFrames, int sampleRate)
+SampleBuffer::SampleBuffer(const SampleFrame* data, size_t numFrames, int sampleRate, int channels)
 	: m_data(data, data + numFrames)
 	, m_sampleRate(sampleRate)
+	, m_channels(channels)
 {
 }
 
-SampleBuffer::SampleBuffer(std::vector<SampleFrame> data, int sampleRate, const QString& audioFile)
+SampleBuffer::SampleBuffer(std::vector<SampleFrame> data, int sampleRate, const QString& audioFile,
+	int channels)
 	: m_data(std::move(data))
 	, m_audioFile(audioFile)
 	, m_sampleRate(sampleRate)
+	, m_channels(channels)
 {
 }
 
@@ -54,6 +57,7 @@ void swap(SampleBuffer& first, SampleBuffer& second) noexcept
 	swap(first.m_data, second.m_data);
 	swap(first.m_audioFile, second.m_audioFile);
 	swap(first.m_sampleRate, second.m_sampleRate);
+	swap(first.m_channels, second.m_channels);
 }
 
 QString SampleBuffer::toBase64() const
@@ -65,8 +69,18 @@ QString SampleBuffer::toBase64() const
 	return byteArray.toBase64();
 }
 
+auto SampleBuffer::engineSampleRate() -> sample_rate_t
+{
+	const AudioEngine* const engine = Engine::audioEngine();
+	return engine != nullptr ? engine->outputSampleRate() : static_cast<sample_rate_t>(SUPPORTED_SAMPLERATES.front());
+}
+
 auto SampleBuffer::emptyBuffer() -> std::shared_ptr<const SampleBuffer>
 {
+	// The shared buffer takes its rate from the first caller. One from before Engine::init() (a
+	// metronome sample that did not decode at command registration) gets a buffer of its own, so the
+	// shared one still carries the engine's rate, as it always has.
+	if (Engine::audioEngine() == nullptr) { return std::make_shared<const SampleBuffer>(); }
 	static auto s_buffer = std::make_shared<const SampleBuffer>();
 	return s_buffer;
 }
@@ -105,9 +119,24 @@ std::shared_ptr<const SampleBuffer> SampleBuffer::fromFile(const QString& filePa
 	return std::make_shared<SampleBuffer>(std::move(data), sampleRate, storedPath);
 }
 
-std::shared_ptr<const SampleBuffer> SampleBuffer::fromBase64(const QString& str, int sampleRate)
+std::shared_ptr<const SampleBuffer> SampleBuffer::fromBase64(const QString& str, int sampleRate,
+	int channels)
 {
 	if (str.isEmpty()) { return SampleBuffer::emptyBuffer(); }
+
+	// A rate that is not positive - "0", a negative one, or text a caller read
+	// back as 0 - would build a buffer whose frames-per-tick is 0, and the clip
+	// mapping divides by that rate (Engine::framesPerTick). An unusable rate
+	// loads the way an absent one loads: the engine's own output rate - the
+	// rule SampleClip::loadSettings applies to a project's stated sample_rate -
+	// so the frames survive and the buffer always carries a rate the mapping can
+	// divide by.
+	if (sampleRate <= 0)
+	{
+		qWarning() << QObject::tr(
+			"Base64 sample carries an invalid sample rate, loading it at the engine's output rate");
+		sampleRate = engineSampleRate();
+	}
 
 	const auto bytes = QByteArray::fromBase64(str.toUtf8());
 
@@ -130,7 +159,7 @@ std::shared_ptr<const SampleBuffer> SampleBuffer::fromBase64(const QString& str,
 
 	auto data = std::vector<SampleFrame>(bytes.size() / sizeof(SampleFrame));
 	std::memcpy(reinterpret_cast<char*>(data.data()), bytes, bytes.size());
-	return std::make_shared<SampleBuffer>(std::move(data), sampleRate);
+	return std::make_shared<SampleBuffer>(std::move(data), sampleRate, QString(), channels);
 }
 
 } // namespace lmms

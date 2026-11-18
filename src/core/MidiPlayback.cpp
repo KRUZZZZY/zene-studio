@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include <QDomElement>
 
@@ -52,7 +53,13 @@ MidiPlayback::MidiPlayback()
 
 void MidiPlayback::setSwing(float swing, int grid)
 {
-	m_swing.store(std::clamp(swing, 0.f, MaxSwing), std::memory_order_relaxed);
+	// std::clamp leaves a NaN untouched - every comparison against it is false -
+	// so a project file carrying swing="nan" (or a caller passing one) would store
+	// a non-finite amount that then reaches delayFrames(), save() and
+	// shouldPersist(). Load non-finite as the default, off, exactly like an
+	// unreadable attribute.
+	const float amount = std::isfinite(swing) ? swing : 0.f;
+	m_swing.store(std::clamp(amount, 0.f, MaxSwing), std::memory_order_relaxed);
 	m_swingGrid.store(grid == 2 * DefaultSwingGrid ? grid : DefaultSwingGrid, std::memory_order_relaxed);
 }
 
@@ -64,7 +71,7 @@ void MidiPlayback::setPreferences(bool chase, int offsetMs)
 	ConfigManager::inst()->setValue(QStringLiteral("midi"), QStringLiteral("playbackoffset"), QString::number(this->offsetMs()));  // as clamped
 }
 
-void MidiPlayback::tickPlayed(tick_t tick, unsigned loopWraps)
+void MidiPlayback::tickPlayed(tick_t tick, std::uint64_t loopWraps)
 {
 	const bool restarted = m_restart.exchange(false, std::memory_order_relaxed);
 	if (restarted)
@@ -75,7 +82,7 @@ void MidiPlayback::tickPlayed(tick_t tick, unsigned loopWraps)
 	}
 	m_chasingNow = restarted || tick != m_lastTick + 1;  // the first tick is a start, whatever tick it is (-1 too)
 	// Only a loop wrap is a pass: a seek back moves the position the same way but is not one (0.5.0 W2).
-	const unsigned wraps = loopWraps - m_lastWraps;  // unsigned: a counter that wrapped round still subtracts right
+	const std::uint64_t wraps = loopWraps - m_lastWraps;  // modular: a counter that wrapped round still subtracts right
 	if (wraps != 0) { m_pass.fetch_add(static_cast<int>(wraps), std::memory_order_relaxed); }
 	m_lastWraps = loopWraps;
 	m_lastTick = tick;
@@ -91,8 +98,17 @@ f_cnt_t MidiPlayback::delayFrames(tick_t songTick, float framesPerTick, sample_r
 	double frames = offsetMs() * static_cast<double>(sampleRate) / 1000.0;
 	const float amount = swing();
 	const int grid = swingGrid();
-	if (amount > 0.f && songTick % (2 * grid) == grid) { frames += amount * grid * framesPerTick; }
-	return static_cast<f_cnt_t>(std::lround(frames));
+	// A tick length that is not a positive finite number gives the swing nothing to delay by: a negative
+	// one would make the delay negative, and a negative delay converts to a huge unsigned frame count.
+	if (amount > 0.f && songTick % (2 * grid) == grid && std::isfinite(framesPerTick) && framesPerTick > 0.f)
+	{
+		frames += amount * grid * framesPerTick;
+	}
+	// The delay is a count of frames: never below zero (NaN included), and clamped to the largest count
+	// the type holds before the conversion, which is only defined inside the type's range.
+	if (!(frames > 0.0)) { return 0; }
+	if (frames >= static_cast<double>(std::numeric_limits<f_cnt_t>::max())) { return std::numeric_limits<f_cnt_t>::max(); }
+	return static_cast<f_cnt_t>(std::round(frames));
 }
 
 QString MidiPlayback::elementName() const

@@ -60,6 +60,14 @@ namespace
 
 const QString kGroup = QStringLiteral("modulator");
 
+//! The fields rate_set can write; all other source fields are copied unchanged.
+bool sameRateSetSource(const ModulatorSource& a, const ModulatorSource& b)
+{
+	return a.shape == b.shape && a.rateHz == b.rateHz && a.phase == b.phase
+		&& a.unipolar == b.unipolar && a.active == b.active && a.steps == b.steps
+		&& a.stepCount == b.stepCount && a.attack == b.attack;
+}
+
 //! The undo/redo pair of a step that removes \a modulator at \a index: the
 //! inverse re-inserts the captured modulator (name, source and routes) at its
 //! own index, so the layer and the modulator-<n> ids come back exactly.
@@ -355,6 +363,10 @@ void registerRateSet(ControlRegistry& registry)
 		if (!layer.validSource(wanted, &why))
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs, why);
+		}
+		if (sameRateSetSource(previous, wanted))
+		{
+			return ControlResult::success(layerResult(layer, index));
 		}
 		const QJsonObject before = layerResult(layer, index);
 		editModulationLayer([&](ModulationLayer& target, ModulationRuntime&) {

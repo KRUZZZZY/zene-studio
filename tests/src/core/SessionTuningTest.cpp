@@ -31,10 +31,19 @@
 
 #include <QtTest>
 
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <thread>
+#include <memory>
+#include <vector>
+#include <utility>
+#include <vector>
+#include <limits>
 
 #include <QDir>
+#include <QDomDocument>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
@@ -59,6 +68,7 @@
 #include "Track.h"
 
 #include "ReversibilityTestSupport.h"
+#include "../../../thirdparty/mts-esp/libMTSClient.h"
 
 using namespace lmms;
 using namespace revtest;
@@ -197,6 +207,20 @@ std::shared_ptr<Keymap> copyOfKeymap(const std::shared_ptr<const Keymap>& source
 		source->getBaseKey(), source->getBaseFreq());
 }
 
+void installNegativeDegreeFixture(Song* song, const std::vector<int>& degrees)
+{
+	std::vector<Interval> intervals;
+	intervals.reserve(13);
+	for (int degree = 0; degree <= 12; ++degree)
+	{
+		intervals.emplace_back(degree * 100.0f);
+	}
+	song->setScale(0, std::make_shared<Scale>(QStringLiteral("12-tone equal temperament"),
+		std::move(intervals)));
+	song->setKeymap(0, std::make_shared<Keymap>(QStringLiteral("negative degree fixture"), degrees,
+		0, 127, 69, 69, 440.0f));
+}
+
 struct RefusalCase
 {
 	QString id;
@@ -264,6 +288,37 @@ const QVector<RefusalCase>& refusalCases(const QString& missingPath)
 	return cases;
 }
 
+using MtsClientPtr = std::unique_ptr<MTSClient, decltype(&MTS_DeregisterClient)>;
+
+std::vector<unsigned char> localMtsScaleOctaveDump()
+{
+	std::vector<unsigned char> message{0xF0, 0x7E, 0x7F, 0x08, 0x05, 0x00, 0x00};
+	for (const char character : QByteArrayLiteral("Test scale"))
+	{
+		message.push_back(static_cast<unsigned char>(character));
+	}
+	message.insert(message.end(), 6, 0);
+	for (int degree = 0; degree < 12; ++degree)
+	{
+		message.push_back(static_cast<unsigned char>(degree == 0 ? 65 : 64));
+	}
+	message.push_back(0);
+	message.push_back(0xF7);
+	return message;
+}
+
+void seedLocalMtsScale(MTSClient* client)
+{
+	const auto message = localMtsScaleOctaveDump();
+	MTS_ParseMIDIDataU(client, message.data(), static_cast<int>(message.size()));
+}
+
+void sendLocalMtsTuningDumpRequest(MTSClient* client)
+{
+	constexpr unsigned char request[]{0xF0, 0x7E, 0x7F, 0x08, 0x00, 0x00, 0xF7};
+	MTS_ParseMIDIDataU(client, request, static_cast<int>(sizeof(request)));
+}
+
 } // namespace
 
 class SessionTuningTest : public QObject
@@ -292,6 +347,38 @@ private slots:
 		Engine::destroy();
 	}
 
+	//! Metadata children and malformed degree values must not enter the map.
+	void keymapLoadingIgnoresNonDegreeChildrenAndInvalidValues()
+	{
+		QDomDocument document;
+		QDomElement element = document.createElement(QStringLiteral("keymap"));
+		document.appendChild(element);
+		element.appendChild(document.createComment(QStringLiteral("annotation")));
+
+		QDomElement metadata = document.createElement(QStringLiteral("metadata"));
+		metadata.setAttribute(QStringLiteral("value"), 91);
+		element.appendChild(metadata);
+
+		QDomElement firstDegree = document.createElement(QStringLiteral("degree"));
+		firstDegree.setAttribute(QStringLiteral("value"), 3);
+		element.appendChild(firstDegree);
+
+		QDomElement invalidDegree = document.createElement(QStringLiteral("degree"));
+		invalidDegree.setAttribute(QStringLiteral("value"), QStringLiteral("not-an-integer"));
+		element.appendChild(invalidDegree);
+
+		QDomElement lastDegree = document.createElement(QStringLiteral("degree"));
+		lastDegree.setAttribute(QStringLiteral("value"), 8);
+		element.appendChild(lastDegree);
+
+		Keymap keymap;
+		keymap.loadSettings(element);
+
+		QCOMPARE(keymap.getSize(), std::size_t{2});
+		QCOMPARE(keymap.getMap().at(0), 3);
+		QCOMPARE(keymap.getMap().at(1), 8);
+	}
+
 	//! INACTIVE table -> the pre-#712 branch, computed from the models.
 	void baselineInactiveKeepsTheOldRenderPath()
 	{
@@ -318,6 +405,63 @@ private slots:
 				"pre-#712 branch says %2").arg(seen).arg(expected)));
 
 		track->processInEvent(MidiEvent(MidiNoteOff, 1, 69));
+	}
+
+	void negativeNoteDegreeUsesFloorOctaveDivision()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		installNegativeDegreeFixture(song, {0, -2});
+		float actual = 0.0f;
+		{
+			Microtuner microtuner;
+			actual = microtuner.keyToFreq(70, 69);
+		}
+		song->clearProject();
+
+		const double expected = 440.0 * std::exp2(-2.0 / 12.0);
+		QVERIFY2(closeTo(actual, expected),
+			qPrintable(QStringLiteral("degree -2 should be two scale steps below the base note: got %1 Hz, expected %2 Hz")
+				.arg(actual).arg(expected)));
+	}
+
+	void negativeBaseDegreeUsesFloorOctaveDivision()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		installNegativeDegreeFixture(song, {-2, 0});
+		float actual = 0.0f;
+		{
+			Microtuner microtuner;
+			actual = microtuner.keyToFreq(70, 69);
+		}
+		song->clearProject();
+
+		const double expected = 440.0 * std::exp2(2.0 / 12.0);
+		QVERIFY2(closeTo(actual, expected),
+			qPrintable(QStringLiteral("base degree -2 should shift the reference up to its equivalent octave: got %1 Hz, expected %2 Hz")
+				.arg(actual).arg(expected)));
+	}
+
+	//! The public Scale constructor takes an empty interval list and Song::setScale
+	//! stores it. A mapped key must then read 0 Hz from keyToFreq, not index the
+	//! empty list (the octave degree would be -1).
+	void emptyStoredScaleReadsSilenceForAMappedKey()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		song->setScale(0, std::make_shared<Scale>(QStringLiteral("empty scale"), std::vector<Interval>{}));
+		song->setKeymap(0, std::make_shared<Keymap>(QStringLiteral("empty scale fixture"), std::vector<int>{0, 2},
+			0, 127, 69, 69, 440.0f));
+		QVERIFY2(song->getKeymap(0)->getDegree(70) != -1, "key 70 must be mapped so keyToFreq reaches the scale");
+		float actual = -1.0f;
+		{
+			Microtuner microtuner;
+			actual = microtuner.keyToFreq(70, 69);
+		}
+		song->clearProject();
+
+		QCOMPARE(actual, 0.0f);
 	}
 
 	//! THE PROOF: transport playing, two sounding notes, one .scl, both tracks
@@ -529,6 +673,62 @@ private slots:
 		tuning->reset();
 	}
 
+	//! GUI-fed scales use their description as the table source. An over-cap
+	//! description must leave both the current table and its built-from scale.
+	void anOverCapScaleFeedLeavesTheSessionTuningUnchanged()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = writeJiScl(dir);
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), path}}).ok, "the JI fixture did not load");
+
+		const QJsonObject before = tuning->stateJson();
+		const std::shared_ptr<const Scale> beforeScale = tuning->scale();
+		const QString longDescription(SessionTuning::MaxSourceLength + 1, QLatin1Char('s'));
+		auto overCapScale = std::make_shared<Scale>(longDescription,
+			beforeScale->getIntervals());
+		tuning->feedScale(overCapScale, longDescription);
+
+		const bool tableUnchanged = tuning->stateJson() == before;
+		const bool scaleUnchanged = tuning->scale() == beforeScale;
+		QVERIFY2(tableUnchanged && scaleUnchanged,
+			"an over-cap GUI scale feed changed the table or its built-from scale");
+		tuning->reset();
+	}
+
+	//! GUI-fed keymaps use their description as the table source. An over-cap
+	//! description must leave both the current table and its built-from keymap.
+	void anOverCapKeymapFeedLeavesTheSessionTuningUnchanged()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = writeJiScl(dir);
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), path}}).ok, "the JI fixture did not load");
+
+		const QJsonObject before = tuning->stateJson();
+		const std::shared_ptr<const Keymap> beforeKeymap = tuning->keymap();
+		const QString longDescription(SessionTuning::MaxSourceLength + 1, QLatin1Char('k'));
+		auto overCapKeymap = copyOfKeymap(beforeKeymap);
+		overCapKeymap->setDescription(longDescription);
+		tuning->feedKeymap(overCapKeymap, longDescription);
+
+		const bool tableUnchanged = tuning->stateJson() == before;
+		const bool keymapUnchanged = tuning->keymap() == beforeKeymap;
+		QVERIFY2(tableUnchanged && keymapUnchanged,
+			"an over-cap GUI keymap feed changed the table or its built-from keymap");
+		tuning->reset();
+	}
+
 	//! The anti-reimplementation anchor: same Scale, same Keymap, 128 keys.
 	void sessionTableMatchesTheMicrotunerOverAll128Keys()
 	{
@@ -602,11 +802,13 @@ private slots:
 			QStringLiteral("1/1"), QStringLiteral("3/nope"), QStringLiteral("3/2")};
 		const QStringList badZeroDen{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
 			QStringLiteral("1/1"), QStringLiteral("3/0"), QStringLiteral("3/2")};
+		const QStringList badExtraSlash{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
+			QStringLiteral("1/1"), QStringLiteral("3/2/7"), QStringLiteral("3/2")};
 		const QStringList badZeroNum{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
 			QStringLiteral("1/1"), QStringLiteral("0/2"), QStringLiteral("3/2")};
 		const QStringList badInMiddle{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
 			QStringLiteral("1/1"), QStringLiteral("3/nope"), QStringLiteral("3/2")};
-		const QVector<QStringList> badBodies{badOne, badZeroDen, badZeroNum, badInMiddle};
+		const QVector<QStringList> badBodies{badOne, badZeroDen, badExtraSlash, badZeroNum, badInMiddle};
 		for (const QStringList& body : badBodies)
 		{
 			const QString path = writeScl(dir, QStringLiteral("bad-%1.scl").arg(qHash(body)), body);
@@ -614,7 +816,7 @@ private slots:
 			const ControlResult loaded = run(QStringLiteral("mts.load_scale"),
 				QJsonObject{{QStringLiteral("path"), path}});
 			QVERIFY2(!loaded.ok, qPrintable(QStringLiteral("'%1' was accepted: the bad ratio "
-				"line became a different, valid interval").arg(body.last())));
+				"line became a different, valid interval").arg(body.at(3))));
 			QCOMPARE(loaded.errorKind, ControlErrorKind::Refused);
 
 			int mismatch = 0;
@@ -623,6 +825,19 @@ private slots:
 				qPrintable(QStringLiteral("the refused scale still changed the table at key %1")
 					.arg(mismatch)));
 		}
+
+		// Scala ignores description text after the interval value, including
+		// slashes inside that text.
+		const QStringList describedRatio{QStringLiteral("ratio with description"),
+			QStringLiteral("3"), QStringLiteral("1/1"),
+			QStringLiteral("3/2 description/variant"), QStringLiteral("3/2")};
+		const QString describedPath = writeScl(dir, QStringLiteral("described-ratio.scl"),
+			describedRatio);
+		QVERIFY2(!describedPath.isEmpty(), "the described-ratio .scl could not be written");
+		const ControlResult describedLoad = run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), describedPath}});
+		QVERIFY2(describedLoad.ok, qPrintable(QStringLiteral("valid trailing description was refused: %1")
+			.arg(describedLoad.errorMessage)));
 	}
 
 	//! A .kbm with the standard 12-TET shape but \a baseFrequency in field 5 -
@@ -743,6 +958,57 @@ QString writeKbm(QTemporaryDir& dir, const QString& name, const QString& baseFre
 		QVERIFY2(sameTable(before, after, &mismatch),
 			qPrintable(QStringLiteral("the refused scale still changed the table at key %1")
 				.arg(mismatch)));
+	}
+
+	//! An .scl has to NAME the scale and DECLARE how many degrees it has before
+	//! it can describe one. readScaleLines() left its degree count at zero when
+	//! the stream carried neither header line, and its "the file carries as many
+	//! interval lines as it declared" check compared zero against zero - so an
+	//! empty .scl was accepted, and the scale built from it held the single 1/1
+	//! interval that loadScaleFile() always starts with: a table in which every
+	//! key has the same pitch. Such a file is refused, typed, and the standing
+	//! table is left alone.
+	void aScaleFileWithoutNameOrDegreeCountIsRefused()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString good = writeJiScl(dir);
+		QVERIFY(!good.isEmpty());
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), good}}).ok, "the JI fixture did not load");
+		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
+
+		// A zero-byte file: no name and no degree count at all.
+		const QString empty = dir.filePath(QStringLiteral("empty.scl"));
+		QFile emptyFile(empty);
+		QVERIFY(emptyFile.open(QIODevice::WriteOnly | QIODevice::Text));
+		emptyFile.close();
+		// A file that names the scale but never declares how many degrees it has.
+		const QString nameOnly = writeScl(dir, QStringLiteral("name-only.scl"),
+			{QStringLiteral("missing degree count")});
+		QVERIFY(!nameOnly.isEmpty());
+
+		const QStringList incompletePaths{empty, nameOnly};
+		for (const QString& path : incompletePaths)
+		{
+			const ControlResult loaded = run(QStringLiteral("mts.load_scale"),
+				QJsonObject{{QStringLiteral("path"), path}});
+			QVERIFY2(!loaded.ok, qPrintable(QStringLiteral("incomplete .scl '%1' was accepted: "
+				"it built a one-interval scale whose every key has the same pitch")
+				.arg(path)));
+			QCOMPARE(loaded.errorKind, ControlErrorKind::Refused);
+
+			int mismatch = 0;
+			const QJsonObject after = snapshotState(run(QStringLiteral("mts.get_state")).result);
+			QVERIFY2(sameTable(before, after, &mismatch),
+				qPrintable(QStringLiteral("the refused scale changed the table at key %1")
+					.arg(mismatch)));
+		}
 	}
 
 	//! A .kbm with the standard 12-TET shape but \a declaredSize in field 0 and
@@ -904,6 +1170,111 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 				.arg(mismatch)));
 	}
 
+	//! Positive doubles that narrow to float zero are not usable render
+	//! frequencies. Mapped zero is different from the intentional unmapped marker.
+	void aKeymapFrequencyThatUnderflowsTheRenderFloatIsRefused()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		QStringList scaleLines{QStringLiteral("12-tone scale"), QStringLiteral("12")};
+		for (int degree = 0; degree < 12; ++degree)
+		{
+			scaleLines.append(QStringLiteral("%1/1").arg(degree + 1));
+		}
+		const QString scalePath = writeScl(dir, QStringLiteral("twelve.scl"), scaleLines);
+		QVERIFY(!scalePath.isEmpty());
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), scalePath}}).ok, "the scale did not load");
+		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
+
+		const QString tinyBase = writeKbm(dir, QStringLiteral("tiny-base.kbm"),
+			QStringLiteral("1e-100"));
+		QVERIFY(!tinyBase.isEmpty());
+		const ControlResult tiny = run(QStringLiteral("mts.load_keymap"),
+			QJsonObject{{QStringLiteral("path"), tinyBase}});
+		QVERIFY2(!tiny.ok, "a positive .kbm base frequency that narrows to float zero was accepted");
+		QCOMPARE(tiny.errorKind, ControlErrorKind::Refused);
+
+		// This base is the smallest positive float. Key 0 is mapped one scale
+		// octave below the reference, so its positive double narrows to float 0.
+		const QStringList lowHeader{QStringLiteral("0"), QStringLiteral("127"),
+			QStringLiteral("127"), QStringLiteral("127"), QStringLiteral("1.40129846e-45")};
+		QStringList wideMap;
+		for (int degree = 0; degree < 128; ++degree)
+		{
+			wideMap.append(degree == 2 ? QStringLiteral("x") : QStringLiteral("0"));
+		}
+		const QString lowPath = writeKbmSized(dir, QStringLiteral("low-render-frequency.kbm"),
+			QStringLiteral("128"), lowHeader, wideMap);
+		QVERIFY(!lowPath.isEmpty());
+		const ControlResult low = run(QStringLiteral("mts.load_keymap"),
+			QJsonObject{{QStringLiteral("path"), lowPath}});
+		QVERIFY2(!low.ok, "a mapped positive frequency that narrows to float zero was accepted");
+		QCOMPARE(low.errorKind, ControlErrorKind::Refused);
+
+		int mismatch = 0;
+		QVERIFY2(sameTable(before, snapshotState(run(QStringLiteral("mts.get_state")).result),
+			&mismatch), qPrintable(QStringLiteral("a refused keymap changed the table at key %1")
+				.arg(mismatch)));
+
+		// An actual 'x' entry remains a valid zero in the table.
+		QStringList sparseMap;
+		for (int degree = 0; degree < 12; ++degree)
+		{
+			sparseMap.append(degree == 1 ? QStringLiteral("x") : QString::number(degree));
+		}
+		const QString sparsePath = writeKbmSized(dir, QStringLiteral("sparse.kbm"),
+			QStringLiteral("12"), {QStringLiteral("0"), QStringLiteral("127"),
+				QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("440.0")}, sparseMap);
+		QVERIFY(!sparsePath.isEmpty());
+		QVERIFY2(run(QStringLiteral("mts.load_keymap"),
+			QJsonObject{{QStringLiteral("path"), sparsePath}}).ok,
+			"a keymap's intentional unmapped entry was rejected");
+		QCOMPARE(tuning->noteToFreq(1), 0.0f);
+		QVERIFY(tuning->noteToFreq(0) > 0.0f);
+	}
+
+	//! Project keymap XML used to retain arbitrary integer key fields, so a
+	//! minimum middle_key overflowed key - middle_key during pitch mapping. The
+	//! XML loader applies the same MIDI bounds as the .kbm loader, and Keymap's
+	//! public constructor still gets overflow-safe offset arithmetic.
+	void aKeymapWithOutOfRangeLoadedMiddleKeyIsClampedBeforeMapping()
+	{
+		QDomDocument document(QStringLiteral("keymap-test"));
+		QDomElement element = document.createElement(QStringLiteral("keymap"));
+		document.appendChild(element);
+		element.setAttribute(QStringLiteral("first_key"), 0);
+		element.setAttribute(QStringLiteral("last_key"), 127);
+		element.setAttribute(QStringLiteral("middle_key"),
+			std::numeric_limits<int>::min());
+		element.setAttribute(QStringLiteral("base_key"), 0);
+		element.setAttribute(QStringLiteral("base_freq"), 440.0);
+		std::vector<int> degrees;
+		for (int degree = 0; degree < 12; ++degree)
+		{
+			degrees.push_back(degree);
+			QDomElement degreeElement = document.createElement(QStringLiteral("degree"));
+			degreeElement.setAttribute(QStringLiteral("value"), degree);
+			element.appendChild(degreeElement);
+		}
+
+		Keymap loaded;
+		loaded.loadSettings(element);
+		QCOMPARE(loaded.getMiddleKey(), 0);
+		QCOMPARE(loaded.getDegree(60), 0);
+		QCOMPARE(loaded.getOctave(60), 5);
+
+		Keymap directlyConstructed(QStringLiteral("extreme"), std::move(degrees),
+			0, 127, std::numeric_limits<int>::min(), 0, 440.0f);
+		QCOMPARE(directlyConstructed.getDegree(60), 8);
+		QCOMPARE(directlyConstructed.getOctave(60), 178956975);
+	}
+
 	//! The recorded undo step restores the Scale/Keymap the table was BUILT from,
 	//! not just the frequencies: stateJson() carries the table alone, so without
 	//! this mts.get_state kept reporting the scale an undone load had installed.
@@ -943,6 +1314,52 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 		tuning->reset();
 	}
 
+	void localMtsTuningDumpRequestPreservesScaleName()
+	{
+		MtsClientPtr client(MTS_RegisterClient(), &MTS_DeregisterClient);
+		QVERIFY(client != nullptr);
+		seedLocalMtsScale(client.get());
+		const QByteArray name(MTS_GetScaleName(client.get()));
+		QCOMPARE(name, QByteArrayLiteral("Test scale"));
+
+		sendLocalMtsTuningDumpRequest(client.get());
+
+		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), name);
+	}
+
+	void localMtsFrequencyToNoteMapsNanToFallback()
+	{
+		MtsClientPtr client(MTS_RegisterClient(), &MTS_DeregisterClient);
+		QVERIFY(client != nullptr);
+		const double nan = std::numeric_limits<double>::quiet_NaN();
+		const char expected = MTS_FrequencyToNote(nullptr, nan, -1);
+		QCOMPARE(expected, static_cast<char>(60));
+
+		QCOMPARE(MTS_FrequencyToNote(client.get(), nan, -1), expected);
+
+		signed char channel = -1;
+		QCOMPARE(MTS_FrequencyToNoteAndChannel(client.get(), nan, &channel), expected);
+		QCOMPARE(channel, static_cast<signed char>(0));
+	}
+
+	void localMtsTuningDumpRequestPreservesMapMetadata()
+	{
+		MtsClientPtr client(MTS_RegisterClient(), &MTS_DeregisterClient);
+		QVERIFY(client != nullptr);
+		seedLocalMtsScale(client.get());
+		QCOMPARE(MTS_GetMapSize(client.get()), static_cast<signed char>(12));
+		QCOMPARE(MTS_GetMapStartKey(client.get()), static_cast<signed char>(60));
+		const double frequency = MTS_NoteToFrequency(client.get(), 0, 0);
+		const double expectedFrequency = 440.0 * std::pow(2.0, (0.01 - 69.0) / 12.0);
+		QVERIFY(std::abs(frequency - expectedFrequency) < expectedFrequency * 1e-12);
+
+		sendLocalMtsTuningDumpRequest(client.get());
+
+		QCOMPARE(MTS_GetMapSize(client.get()), static_cast<signed char>(12));
+		QCOMPARE(MTS_GetMapStartKey(client.get()), static_cast<signed char>(60));
+		QCOMPARE(MTS_NoteToFrequency(client.get(), 0, 0), frequency);
+	}
+
 	//! This box has no libMTS.so: arming is a typed REFUSAL that writes nothing
 	//! and names the library; the installed-library branch stays runnable.
 	void masterSetReportsItsOwnMtsEspState()
@@ -964,6 +1381,14 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 			QVERIFY(disarmed.ok);
 			QVERIFY(!run(QStringLiteral("mts.get_state")).result
 				.value(QStringLiteral("mts_master")).toBool());
+			// A repeated disarm changes nothing and takes no undo step, so ONE undo
+			// must reach the real disarm above and bring the master back.
+			const ControlResult repeated = run(QStringLiteral("mts.master_set"),
+				QJsonObject{{QStringLiteral("enabled"), false}});
+			QVERIFY2(repeated.ok, qPrintable(repeated.errorMessage));
+			REV_UNDO_OR_FAIL();
+			QVERIFY(run(QStringLiteral("mts.get_state")).result
+				.value(QStringLiteral("mts_master")).toBool());
 			return;
 		}
 
@@ -983,14 +1408,47 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 		std::fprintf(stdout, "MTS712_EVIDENCE mts master arm refused: %s\n",
 			qPrintable(armed.errorMessage));
 
-		// Disarming what was never armed is idempotent - and as a SUCCESSFUL
-		// mutator it records exactly ONE undo step (A16), while the refused
-		// arm above recorded none.
+		// Disarming what was never armed is idempotent, and a value the flag already
+		// has changes nothing, so it takes NO undo step - the refused arm above
+		// recorded none either.
 		const ControlResult disarmed = run(QStringLiteral("mts.master_set"),
 			QJsonObject{{QStringLiteral("enabled"), false}});
 		QVERIFY2(disarmed.ok, qPrintable(disarmed.errorMessage));
-		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore + 1);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore);
 	}
+
+	//! A repeated mts.master_set changes nothing and must not sit on the undo
+	//! stack: the real table edit before it is the step control.undo unwinds.
+	void repeatedMasterSetLeavesTheRealEditForUndo()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		const ControlResult firstDisarm = run(QStringLiteral("mts.master_set"),
+			QJsonObject{{QStringLiteral("enabled"), false}});
+		QVERIFY2(firstDisarm.ok, qPrintable(firstDisarm.errorMessage));
+		const int depthBefore = Engine::projectJournal()->undoDepth();
+		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
+
+		const ControlResult noted = run(QStringLiteral("mts.set_note"),
+			QJsonObject{{QStringLiteral("note"), 60}, {QStringLiteral("frequency"), 432.0},
+				{QStringLiteral("source"), QStringLiteral("repeated-master-set")}});
+		QVERIFY2(noted.ok, qPrintable(noted.errorMessage));
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore + 1);
+
+		const ControlResult repeated = run(QStringLiteral("mts.master_set"),
+			QJsonObject{{QStringLiteral("enabled"), false}});
+		QVERIFY2(repeated.ok, qPrintable(repeated.errorMessage));
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore + 1);
+
+		REV_UNDO_OR_FAIL();
+		int mismatchKey = 0;
+		const QJsonObject undone = snapshotState(run(QStringLiteral("mts.get_state")).result);
+		QVERIFY2(sameTable(before, undone, &mismatchKey),
+			qPrintable(QStringLiteral("control.undo unwound the repeated mts.master_set "
+				"instead of the set_note before it (first difference: %1)").arg(mismatchKey)));
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore);
+	}
+
 };
 
 QTEST_GUILESS_MAIN(SessionTuningTest)

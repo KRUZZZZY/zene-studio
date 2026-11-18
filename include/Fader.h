@@ -88,6 +88,10 @@ public:
 	inline void setMinPeak(float minPeak) { m_fMinPeak = minPeak; }
 
 	inline float getMaxPeak() const { return m_fMaxPeak; }
+
+	//! 0.5.0 L08 (MX-128): how long the peak line holds before it falls, in ms; 0 - no hold, the line is the level.
+	int peakHoldMs() const { return m_peakHoldMs; }
+	void setPeakHoldMs(int ms) { m_peakHoldMs = ms; }
 	inline void setMaxPeak(float maxPeak) { m_fMaxPeak = maxPeak; }
 
 	inline bool getRenderUnityLine() const { return m_renderUnityLine; }
@@ -172,6 +176,7 @@ private:
 	float m_persistentPeak_R {0.};
 	float m_fMinPeak {dbfsToAmp(-42)};
 	float m_fMaxPeak {dbfsToAmp(9)};
+	int m_peakHoldMs {1500};  //!< MX-128: the inherited 1.5 s
 
 	QElapsedTimer m_lastPeakTimer_L;
 	QElapsedTimer m_lastPeakTimer_R;

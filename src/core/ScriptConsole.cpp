@@ -25,8 +25,11 @@
 #include "ScriptConsole.h"
 
 #include <QDebug>
+#include <QMutexLocker>
 
 #include <atomic>
+
+#include "ScriptEngine.h"
 
 namespace lmms
 {
@@ -40,8 +43,47 @@ namespace
 //! diagnostic switch, never a synchronisation point, and a reader on any thread
 //! (including a future one on the audio side) must not be able to block.
 std::atomic<bool> s_enabled{true};
+constexpr qsizetype CaptureCharacterLimit = 1024 * 1024;
+constexpr qsizetype CaptureLineLimit = 4096;
+const QString s_captureLimitNotice =
+	QStringLiteral("[script output truncated: further lines dropped]");
 
 } // namespace
+
+void CaptureBuffer::reset()
+{
+	m_characters = 0;
+	m_lines = 0;
+	m_limitReached = false;
+}
+
+bool CaptureBuffer::append(QStringList& messages, const QString& line)
+{
+	if (m_limitReached)
+	{
+		return false;
+	}
+	const qsizetype availableCharacters = CaptureCharacterLimit - m_characters
+		- s_captureLimitNotice.size();
+	const qsizetype availableLines = CaptureLineLimit - m_lines - 1;
+	if (availableLines > 0 && line.size() <= availableCharacters)
+	{
+		messages.append(line);
+		m_characters += line.size();
+		++m_lines;
+		return false;
+	}
+	m_limitReached = true;
+	messages.append(s_captureLimitNotice);
+	m_characters += s_captureLimitNotice.size();
+	++m_lines;
+	return true;
+}
+
+const QString& CaptureBuffer::truncationNotice()
+{
+	return s_captureLimitNotice;
+}
 
 void setEnabled(bool enabled)
 {
@@ -65,4 +107,24 @@ void streamLine(const QString& line)
 }
 
 } // namespace ScriptConsole
+
+void ScriptEngine::logMessage(const QString& message)
+{
+	bool reportCaptureLimit = false;
+	{
+		QMutexLocker locker(&m_stateMutex);
+		reportCaptureLimit = m_logCapture.append(m_logMessages, message);
+	}
+	emit logged(message);
+	// The console is the part a script author sees while debugging: without it
+	// a print() only lands in the capture buffer above, which nothing renders.
+	ScriptConsole::streamLine(message);
+	if (reportCaptureLimit)
+	{
+		const QString& notice = ScriptConsole::CaptureBuffer::truncationNotice();
+		emit logged(notice);
+		ScriptConsole::streamLine(notice);
+	}
+}
+
 } // namespace lmms

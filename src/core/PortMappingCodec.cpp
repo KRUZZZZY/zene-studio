@@ -44,6 +44,29 @@ constexpr int PcpHeaderBytes = 24;
 constexpr int PcpMapBytes = 36;
 constexpr int RtfGateway = 0x2;
 
+struct IPv4Subnet
+{
+	quint32 network;
+	quint32 mask;
+};
+
+constexpr IPv4Subnet NonGlobalIPv4Subnets[] = {
+	{0x00000000, 0xff000000}, // 0.0.0.0/8
+	{0x0a000000, 0xff000000}, // 10.0.0.0/8
+	{0x64400000, 0xffc00000}, // 100.64.0.0/10
+	{0x7f000000, 0xff000000}, // 127.0.0.0/8
+	{0xa9fe0000, 0xffff0000}, // 169.254.0.0/16
+	{0xac100000, 0xfff00000}, // 172.16.0.0/12
+	{0xc0000000, 0xffffff00}, // 192.0.0.0/24 except the globally reachable .9 and .10 anycasts
+	{0xc0000200, 0xffffff00}, // 192.0.2.0/24 (TEST-NET-1)
+	{0xc0586300, 0xffffff00}, // 192.88.99.0/24 (deprecated 6to4 relay anycast)
+	{0xc0a80000, 0xffff0000}, // 192.168.0.0/16
+	{0xc6120000, 0xfffe0000}, // 198.18.0.0/15 (benchmarking)
+	{0xc6336400, 0xffffff00}, // 198.51.100.0/24 (TEST-NET-2)
+	{0xcb007100, 0xffffff00}, // 203.0.113.0/24 (TEST-NET-3)
+	{0xe0000000, 0xe0000000}, // 224.0.0.0/3 (multicast and reserved)
+};
+
 void put16(QByteArray& out, quint16 value)
 {
 	out.append(static_cast<char>(value >> 8));
@@ -82,6 +105,23 @@ QHostAddress mappedFrom(const QByteArray& in, int at)
 	return isV4 ? QHostAddress(v4) : address;
 }
 
+bool decodePmpPayload(PmpReply& reply, const QByteArray& bytes)
+{
+	if (reply.opcode == (0x80 | PmpOpAddress))
+	{
+		if (bytes.size() < 12) { return false; }
+		reply.externalAddress = QHostAddress(get32(bytes, 8));
+	}
+	if (reply.opcode == (0x80 | PmpOpMapTcp))
+	{
+		if (bytes.size() < 16) { return false; }
+		reply.internalPort = get16(bytes, 8);
+		reply.externalPort = get16(bytes, 10);
+		reply.lifetime = get32(bytes, 12);
+	}
+	return true;
+}
+
 //! One /proc/net/route row's gateway when it is a default route, with its metric.
 bool defaultRouteOf(const QList<QByteArray>& fields, quint32* gateway, int* metric)
 {
@@ -100,6 +140,14 @@ bool defaultRouteOf(const QList<QByteArray>& fields, quint32* gateway, int* metr
 bool isWanService(const QString& type)
 {
 	return type.contains(QLatin1String(":service:WANIPConnection:")) || type.contains(QLatin1String(":service:WANPPPConnection:"));
+}
+
+bool isRouterHttpUrl(const QUrl& url, const QUrl& location)
+{
+	return url.isValid() && location.isValid() && !location.host().isEmpty()
+		&& url.scheme().compare(QLatin1String("http"), Qt::CaseInsensitive) == 0
+		&& url.scheme().compare(location.scheme(), Qt::CaseInsensitive) == 0
+		&& url.host().compare(location.host(), Qt::CaseInsensitive) == 0;
 }
 
 struct DescriptionScan
@@ -125,7 +173,7 @@ void finishService(DescriptionScan& scan)
 
 void scanElement(QXmlStreamReader& reader, DescriptionScan& scan)
 {
-	const QStringView name = reader.name();
+	const auto name = reader.name();  // QStringRef on Qt 5, QStringView on Qt 6
 	if (name == QLatin1String("URLBase")) { scan.urlBase = reader.readElementText().trimmed(); }
 	else if (name == QLatin1String("service")) { scan.currentType.clear(); scan.currentControl.clear(); }
 	else if (name == QLatin1String("serviceType")) { scan.currentType = reader.readElementText().trimmed(); }
@@ -158,13 +206,7 @@ PmpReply decodePmpReply(const QByteArray& bytes)
 	reply.opcode = static_cast<quint8>(bytes.at(1));
 	reply.result = get16(bytes, 2);
 	reply.epoch = get32(bytes, 4);
-	if (reply.opcode == (0x80 | PmpOpAddress) && bytes.size() >= 12) { reply.externalAddress = QHostAddress(get32(bytes, 8)); }
-	if (reply.opcode == (0x80 | PmpOpMapTcp) && bytes.size() >= 16)
-	{
-		reply.internalPort = get16(bytes, 8);
-		reply.externalPort = get16(bytes, 10);
-		reply.lifetime = get32(bytes, 12);
-	}
+	if (!decodePmpPayload(reply, bytes)) { return reply; }
 	reply.valid = true;
 	return reply;
 }
@@ -269,7 +311,9 @@ IgdService parseIgdDescription(const QByteArray& xml, const QUrl& location)
 	}
 	if (scan.best.serviceType.isEmpty()) { return IgdService(); }
 	const QUrl base = scan.urlBase.isEmpty() ? location : QUrl(scan.urlBase);
-	scan.best.controlUrl = base.resolved(QUrl(scan.bestControl));
+	const QUrl controlUrl = base.resolved(QUrl(scan.bestControl));
+	if (!isRouterHttpUrl(controlUrl, location)) { return IgdService(); }
+	scan.best.controlUrl = controlUrl;
 	return scan.best;
 }
 
@@ -305,13 +349,12 @@ bool isPublicIPv4(const QHostAddress& address)
 	bool isV4 = false;
 	const quint32 a = address.toIPv4Address(&isV4);
 	if (!isV4) { return false; }
-	const quint32 top = a >> 24;
-	const bool reserved = top == 0 || top == 10 || top == 127 || top >= 224;
-	const bool cgnat = (a & 0xffc00000) == 0x64400000;     // 100.64.0.0/10
-	const bool linkLocal = (a & 0xffff0000) == 0xa9fe0000; // 169.254.0.0/16
-	const bool private172 = (a & 0xfff00000) == 0xac100000; // 172.16.0.0/12
-	const bool private192 = (a & 0xffff0000) == 0xc0a80000; // 192.168.0.0/16
-	return !(reserved || cgnat || linkLocal || private172 || private192);
+	if (a == 0xc0000009 || a == 0xc000000a) { return true; }
+	for (const IPv4Subnet& subnet : NonGlobalIPv4Subnets)
+	{
+		if ((a & subnet.mask) == subnet.network) { return false; }
+	}
+	return true;
 }
 
 } // namespace lmms::portmap

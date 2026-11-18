@@ -63,7 +63,40 @@ void PmpMapper::setServer(const QHostAddress& gateway, quint16 port)
 
 void PmpMapper::map(quint16 internalPort, quint16 externalPort, quint32 lifetime)
 {
-	if (m_socket->state() != QAbstractSocket::BoundState) { m_socket->bind(QHostAddress(QHostAddress::AnyIPv4), 0); }
+	// A restart gets a new endpoint whenever the last attempt used one, whether it is still pending or was
+	// canceled by unmap(), which leaves the socket bound. NAT-PMP replies have no transaction id, so keep the
+	// old endpoint bound until the replacement has a different local port: the canceled attempt's late answers
+	// are then addressed to a port that the new attempt does not hold.
+	if (m_socket->state() == QAbstractSocket::BoundState)
+	{
+		m_timer->stop();
+		const quint16 previousPort = m_socket->localPort();
+		auto* replacement = new QUdpSocket(this);
+		const bool bound = replacement->bind(QHostAddress(QHostAddress::AnyIPv4), 0);
+		if (!bound || replacement->localPort() == previousPort)
+		{
+			const QString error = bound ? QStringLiteral("replacement reused local port %1").arg(previousPort)
+				: replacement->errorString();
+			delete replacement;
+			m_socket->close();
+			m_result = MappingResult();
+			m_pcpFailure.clear();
+			finish(false, QStringLiteral("could not bind a replacement UDP socket: %1").arg(error));
+			return;
+		}
+		connect(replacement, &QUdpSocket::readyRead, this, &PmpMapper::onReadyRead);
+		auto* previous = m_socket;
+		m_socket = replacement;
+		delete previous;
+	}
+	else if (!m_socket->bind(QHostAddress(QHostAddress::AnyIPv4), 0))
+	{
+		const QString error = m_socket->errorString();
+		m_result = MappingResult();
+		m_pcpFailure.clear();
+		finish(false, QStringLiteral("could not bind a UDP socket: %1").arg(error));
+		return;
+	}
 	m_internal = internalPort;
 	m_external = externalPort;
 	m_lifetime = lifetime;
@@ -76,11 +109,32 @@ void PmpMapper::map(quint16 internalPort, quint16 externalPort, quint32 lifetime
 
 void PmpMapper::unmap()
 {
-	if (!m_result.ok) { return; }
-	const QByteArray packet = m_result.method == QLatin1String("pcp")
-		? encodePcpMapRequest(m_nonce, m_client, m_internal, 0, 0)
-		: encodePmpMapRequest(m_internal, 0, 0);
-	m_socket->writeDatagram(packet, m_gateway, m_serverPort);
+	const bool mapped = m_result.ok;
+	const Step step = m_step;
+	const bool pending = m_step != Step::Idle;
+	const bool pcpMapping = m_result.method == QLatin1String("pcp");
+	m_timer->stop();
+	m_step = Step::Idle;
+	if (mapped)
+	{
+		const QByteArray packet = pcpMapping
+			? encodePcpMapRequest(m_nonce, m_client, m_internal, 0, 0)
+			: encodePmpMapRequest(m_internal, 0, 0);
+		m_socket->writeDatagram(packet, m_gateway, m_serverPort);
+	}
+	else if (pending)
+	{
+		// Only expire a mapping that this attempt could actually have created. A PCP attempt may have
+		// reached the router; a NAT-PMP mapping is only possible once the map request itself is out.
+		if (step == Step::Pcp)
+		{
+			m_socket->writeDatagram(encodePcpMapRequest(m_nonce, m_client, m_internal, 0, 0), m_gateway, m_serverPort);
+		}
+		else if (step == Step::PmpMap)
+		{
+			m_socket->writeDatagram(encodePmpMapRequest(m_internal, 0, 0), m_gateway, m_serverPort);
+		}
+	}
 	m_result = MappingResult();
 }
 
@@ -107,6 +161,7 @@ void PmpMapper::sendCurrent()
 
 void PmpMapper::onTimeout()
 {
+	if (m_step == Step::Idle) { return; }
 	if (++m_try < m_schedule.size()) { sendCurrent(); return; }
 	if (m_step == Step::Pcp)
 	{
@@ -123,8 +178,10 @@ void PmpMapper::onReadyRead()
 	while (m_socket->hasPendingDatagrams())
 	{
 		const QNetworkDatagram datagram = m_socket->receiveDatagram(1100);
-		// Only the gateway's answers count: any other host on the LAN could send to this port.
-		if (m_step != Step::Idle && datagram.senderAddress().isEqual(m_gateway, QHostAddress::TolerantConversion))
+		// Only answers from the gateway's configured service count: any other host on the LAN, or another port
+		// on the gateway, could send to this port.
+		if (m_step != Step::Idle && datagram.senderAddress().isEqual(m_gateway, QHostAddress::TolerantConversion)
+			&& datagram.senderPort() == m_serverPort)
 		{
 			handle(datagram.data());
 		}

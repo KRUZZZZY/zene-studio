@@ -27,8 +27,11 @@
 
 #include <QtTest>
 
+#include <atomic>
 #include <cstddef>
 
+#include <QDir>
+#include <QFile>
 #include <QString>
 #include <QStringList>
 
@@ -37,11 +40,76 @@
 #include "MidiEventProcessor.h"
 #include "MidiPort.h"
 #include "MidiReconnect.h"
+#include "MidiSndio.h"
 #include "TimePos.h"
+#include "ControlCommandsMidiReconnectShared.h"
+#include "ControlEdit.h"
+#include "InstrumentTrack.h"
+#include "ProjectJournal.h"
+#include "Song.h"
 
 #include "Engine.h"
 
 using namespace lmms;
+
+#ifdef LMMS_HAVE_SNDIO
+#include <poll.h>
+#include <sndio.h>
+
+namespace
+{
+
+std::atomic_int g_mioOpenCount{0};
+std::atomic_int g_mioCloseCount{0};
+std::atomic_bool g_mioCloseWhileRunning{false};
+lmms::MidiSndio* g_clientBeingDestroyed = nullptr;
+int g_fakeMioHandleStorage = 0;
+
+mio_hdl* fakeMioHandle()
+{
+	return reinterpret_cast<mio_hdl*>(&g_fakeMioHandleStorage);
+}
+
+} // namespace
+
+extern "C" mio_hdl* mio_open(const char*, unsigned int, int)
+{
+	++g_mioOpenCount;
+	return fakeMioHandle();
+}
+
+extern "C" void mio_close(mio_hdl* handle)
+{
+	if (handle == fakeMioHandle())
+	{
+		if (g_clientBeingDestroyed != nullptr && g_clientBeingDestroyed->isRunning())
+		{
+			g_mioCloseWhileRunning = true;
+		}
+		++g_mioCloseCount;
+	}
+}
+
+extern "C" size_t mio_write(mio_hdl*, const void*, size_t size)
+{
+	return size;
+}
+
+extern "C" size_t mio_read(mio_hdl*, void*, size_t)
+{
+	return 0;
+}
+
+extern "C" int mio_pollfd(mio_hdl*, struct pollfd*, int)
+{
+	return 0;
+}
+
+extern "C" int mio_revents(mio_hdl*, struct pollfd*)
+{
+	return 0;
+}
+#endif
 
 namespace
 {
@@ -117,6 +185,27 @@ class MidiReconnectTest : public QObject
 	Q_OBJECT
 
 private slots:
+
+#ifdef LMMS_HAVE_SNDIO
+	//! The sndio handle belongs to the client and must be released as that
+	//! client is destroyed. A fake sndio handle makes this independent of host
+	//! devices while still exercising MidiSndio's constructor and destructor.
+	void sndioHandleIsClosedWhenClientIsDestroyed()
+	{
+		g_mioOpenCount = 0;
+		g_mioCloseCount = 0;
+		g_mioCloseWhileRunning = false;
+		{
+			MidiSndio client;
+			g_clientBeingDestroyed = &client;
+			QCOMPARE(g_mioOpenCount.load(), 1);
+			QVERIFY(client.isRunning());
+		}
+		g_clientBeingDestroyed = nullptr;
+		QCOMPARE(g_mioCloseCount.load(), 1);
+		QVERIFY(!g_mioCloseWhileRunning.load());
+	}
+#endif
 
 	//! A real Engine, because a MidiPort is a Model: its AutomatableModels
 	//! register themselves with the running Song (the automation cache), so a
@@ -283,6 +372,43 @@ private slots:
 		QVERIFY(!binding->lost);
 	}
 
+	//! A recorded binding must follow the stable track id when a deleted track is
+	//! recreated. Allocate its replacement while the original is alive, so this
+	//! catches the old closure without depending on allocator reuse.
+	void bindingUndoAndRedoResolveTheRestoredTrackPort()
+	{
+		Song* song = Engine::getSong();
+		QVERIFY(song != nullptr);
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		journal->clearJournal();
+
+		InstrumentTrack* target = new InstrumentTrack(song);
+		InstrumentTrack* replacement = new InstrumentTrack(song);
+		const QString trackId = control::trackIdOf(target);
+		const int stableId = target->id();
+		MidiPort* oldPort = target->midiPort();
+		QVERIFY(replacement->midiPort() != oldPort);
+		const QString bindingName = QStringLiteral("Lifetime Probe:controller");
+
+		journal->clearJournal();
+		midireconnectcontrol::recordBindingInverse(trackId, true, bindingName, true);
+		target->midiPort()->subscribeReadablePort(bindingName, true);
+		QVERIFY(target->midiPort()->readablePorts().value(bindingName, false));
+		control::removeTrack(target);
+		replacement->setId(stableId);
+		QCOMPARE(midireconnectcontrol::midiPortForTrack(trackId), replacement->midiPort());
+		replacement->midiPort()->subscribeReadablePort(bindingName, true);
+
+		journal->undo();
+		QVERIFY(!replacement->midiPort()->readablePorts().value(bindingName, false));
+		journal->redo();
+		QVERIFY(replacement->midiPort()->readablePorts().value(bindingName, false));
+
+		control::removeTrack(replacement);
+		journal->clearJournal();
+	}
+
 	//! The mode OFF is the whole content of the switch: the loss is still
 	//! recorded and reported, and nothing is re-attached. Arming again is what
 	//! re-attaches, on the next poll.
@@ -400,6 +526,25 @@ private slots:
 		QVERIFY(!MidiReconnect::clientNoticesPortChanges(&plain));
 		QVERIFY(MidiReconnect::clientNoticesPortChanges(&polling));
 		QVERIFY(!MidiReconnect::clientNoticesPortChanges(nullptr));
+	}
+
+	//! CoreMIDI add/remove notifications format their endpoint name into malloc-owned memory.
+	//! Keep the Apple-only callback's ownership visible in the portable MIDI test suite.
+	void notificationCallbackOwnsEveryFormattedName()
+	{
+		const QString sourcePath = QDir::current().absoluteFilePath(
+			QStringLiteral("../../src/core/midi/MidiApple.cpp"));
+		QFile source(sourcePath);
+		QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(sourcePath));
+		const QString text = QString::fromUtf8(source.readAll());
+		const int callbackStart = text.indexOf(QStringLiteral("void MidiApple::NotifyCallback("));
+		QVERIFY(callbackStart >= 0);
+		const int callbackEnd = text.indexOf(QStringLiteral("char * MidiApple::getFullName"), callbackStart);
+		QVERIFY(callbackEnd > callbackStart);
+		const QString callback = text.mid(callbackStart, callbackEnd - callbackStart);
+
+		QCOMPARE(callback.count(QStringLiteral("midiApple->getFullName(endpoint_ref)")), 2);
+		QCOMPARE(callback.count(QStringLiteral("std::unique_ptr<char, decltype(&std::free)> fullName")), 2);
 	}
 
 	//! The written direction keeps its own assignment: the same identity

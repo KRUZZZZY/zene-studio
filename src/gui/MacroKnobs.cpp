@@ -55,15 +55,15 @@ QString signatureOf(const RackMacros* macros, int maxKnobs)
 
 } // namespace
 
-MacroKnobs::MacroKnobs(const QString& channel, int maxKnobs, bool small, QWidget* parent) :
+MacroKnobs::MacroKnobs(const QString& channel, int maxKnobs, bool compact, QWidget* parent) :
 	QWidget(parent),
 	m_channel(channel),
 	m_maxKnobs(maxKnobs),
-	m_small(small),
+	m_small(compact),
 	m_row(new QHBoxLayout(this))
 {
 	m_row->setContentsMargins(0, 0, 0, 0);
-	m_row->setSpacing(small ? 1 : 6);
+	m_row->setSpacing(compact ? 1 : 6);
 	setObjectName(QStringLiteral("macroKnobs"));
 	rebuild();
 }

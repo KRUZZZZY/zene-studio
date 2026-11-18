@@ -26,6 +26,7 @@
 #define LMMS_GUI_DEVICE_PICKER_H
 
 #include <QDialog>
+#include <functional>
 
 #include "lmms_export.h"
 
@@ -49,7 +50,8 @@ namespace devicelabels
 LMMS_EXPORT QString formatLabel(const QString& format);
 //! "Instrument", "Effect", "Analysis tool", "Other" for plugin.list's kind.
 LMMS_EXPORT QString kindLabel(const QString& kind);
-//! Who made @a entry, as its own format reports it; "Not reported" when the format carries no maker.
+//! Who made @a entry, as its own format reports it (a VST3 or CLAP factory's vendor since the plugin-hosting
+//! lane); "Not reported" when the format carries no maker.
 LMMS_EXPORT QString vendorOf(const ControlDeviceEntry& entry);
 } // namespace devicelabels
 
@@ -83,6 +85,8 @@ public:
 
 	//! Opens the picker modally; the chosen dev-<n>, or empty when cancelled.
 	static QString pick(QWidget* parent, Kind kind, const QString& title);
+	//! For the tests: answer pick() with @a chooser instead of opening the dialog; an empty one restores the dialog.
+	static void setChooser(std::function<QString(Kind, const QString&)> chooser);
 
 protected:
 	bool eventFilter(QObject* watched, QEvent* event) override;

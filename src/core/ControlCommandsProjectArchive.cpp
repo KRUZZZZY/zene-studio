@@ -49,6 +49,9 @@
  * docs/RELEASE-NOTES-v0.3.0-alpha.md, not silently dropped.
  */
 
+#include <QDir>
+#include <QFileInfo>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -76,7 +79,32 @@ const char* const kRelinkMechanism = "action checkpoint: the previous bytes of t
 	"are captured before the rewrite and the recorded step writes them back, so one control.undo "
 	"restores the file byte for byte (the project's own journal does not carry a file-level edit)";
 
-QJsonObject referenceJson(const ProjectAssetReference& ref, bool withHash)
+//! How many references name the same file, by reference index: repeated clips and
+//! repeated instrument references each add one (Q050-121).
+QHash<int, int> referenceUsageCounts(const ProjectAssetScan& scan)
+{
+	QHash<QString, int> perFile;
+	for (const ProjectAssetReference& ref : scan.references)
+	{
+		if (ref.embedded) { continue; }
+		const QString key = !ref.resolved ? QStringLiteral("raw:") + ref.raw
+			: ref.exists ? QStringLiteral("file:") + QFileInfo(ref.path).canonicalFilePath()
+			: QStringLiteral("missing:") + QDir::cleanPath(ref.path);
+		++perFile[key];
+	}
+	QHash<int, int> out;
+	for (const ProjectAssetReference& ref : scan.references)
+	{
+		if (ref.embedded) { continue; }
+		const QString key = !ref.resolved ? QStringLiteral("raw:") + ref.raw
+			: ref.exists ? QStringLiteral("file:") + QFileInfo(ref.path).canonicalFilePath()
+			: QStringLiteral("missing:") + QDir::cleanPath(ref.path);
+		out.insert(ref.index, perFile.value(key));
+	}
+	return out;
+}
+
+QJsonObject referenceJson(const ProjectAssetReference& ref, bool withHash, int usageCount = 0)
 {
 	QJsonObject out;
 	out.insert(QStringLiteral("index"), ref.index);
@@ -89,6 +117,7 @@ QJsonObject referenceJson(const ProjectAssetReference& ref, bool withHash)
 	out.insert(QStringLiteral("exists"), ref.exists);
 	out.insert(QStringLiteral("embedded"), ref.embedded);
 	out.insert(QStringLiteral("missing"), ref.missing());
+	out.insert(QStringLiteral("usage_count"), usageCount);
 	out.insert(QStringLiteral("bytes"), ref.bytes);
 	out.insert(QStringLiteral("mtime_ms"), ref.mtimeMs);
 	if (!ref.error.isEmpty()) { out.insert(QStringLiteral("error"), ref.error); }
@@ -103,9 +132,10 @@ QJsonObject referenceJson(const ProjectAssetReference& ref, bool withHash)
 QJsonArray referencesJson(const ProjectAssetScan& scan, bool withHash)
 {
 	QJsonArray array;
+	const QHash<int, int> counts = referenceUsageCounts(scan);
 	for (const ProjectAssetReference& ref : scan.references)
 	{
-		array.append(referenceJson(ref, withHash));
+		array.append(referenceJson(ref, withHash, counts.value(ref.index)));
 	}
 	return array;
 }
@@ -113,9 +143,10 @@ QJsonArray referencesJson(const ProjectAssetScan& scan, bool withHash)
 QJsonArray missingJson(const ProjectAssetScan& scan)
 {
 	QJsonArray array;
+	const QHash<int, int> counts = referenceUsageCounts(scan);
 	for (const ProjectAssetReference& ref : scan.references)
 	{
-		if (ref.missing()) { array.append(referenceJson(ref, false)); }
+		if (ref.missing()) { array.append(referenceJson(ref, false, counts.value(ref.index))); }
 	}
 	return array;
 }
@@ -352,7 +383,8 @@ void registerProjectRelink(ControlRegistry& registry)
 						"be undone; fallback: keep a copy of %1 and edit it with an external "
 						"tool").arg(project));
 			}
-			if (!controlReadFileBytes(project, &previous, &error)) { return error; }
+			if (!controlReadFileBytes(project, &previous, &error,
+				ControlFileReadPurpose::ProjectDocument)) { return error; }
 		}
 
 		ProjectAssetRelink relink;
@@ -389,11 +421,12 @@ void registerProjectRelink(ControlRegistry& registry)
 				{QStringLiteral("previous_content"), QString::fromUtf8(previous.left(
 					ControlSnapshotLimit))},
 				{QStringLiteral("previous_truncated"), previous.size() > ControlSnapshotLimit}},
-			QStringLiteral("project.relink"),
-			QJsonObject{{QStringLiteral("project"), project},
-				{QStringLiteral("note"), QStringLiteral("a relink is undone through "
-					"control.undo, which restores the file's previous bytes; a project that "
-					"needs its media moved instead is the portable bundle (Bar 3)")}},
+			// The inverse IS the action checkpoint recorded above, so it is
+			// advertised as the one command that replays it. Naming
+			// project.relink here advertised a command that requires `from` and
+			// `to`, which this payload does not carry, so a client replaying the
+			// inverse it was handed was refused as InvalidArgs.
+			QStringLiteral("control.undo"), {},
 			true, QString::fromLatin1(kRelinkMechanism)));
 		return ControlResult::success(result);
 	};

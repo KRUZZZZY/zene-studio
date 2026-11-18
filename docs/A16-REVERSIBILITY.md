@@ -49,6 +49,10 @@ counts, per block as the tree ships it:
 | `not_mutating` | 47 (of which 3 are declared-mutating refusals and 2 are selection commands) |
 | **total** | **111** |
 
+(That is the 111-command measurement this section was written against. Q050-044 (2026-10-09) moved `project.open` and
+`script.run` from `irreversible` to `snapshot`: the published current figure, which the contract test re-checks, is
+the `A16-HISTOGRAM` block in `docs/RELEASE-NOTES-v0.3.0-alpha.md`, `snapshot` +2 and `irreversible` -2 there.)
+
 ### 1.1 `true_inverse` - a live checkpoint on the engine's own undo stack
 
 Three flavours of ONE checkpoint, all unwound by `ProjectJournal::undo()` - the same call the GUI's
@@ -72,6 +76,7 @@ Edit->Undo (Ctrl+Z) makes:
 | `clip.duplicate` | yes | the duplicate is a second clip in the same Track | ProjectJournal (Track checkpoint) | - |
 | `clip.move` | yes | position is a Clip property and the Clip is a JournallingObject | ProjectJournal (Clip checkpoint) | - |
 | `clip.resize` | yes | length is a Clip property | ProjectJournal (Clip checkpoint) | - |
+| `clip.set_mute` | yes | the muted flag is a BoolModel, i.e. a JournallingObject of its own (0.5.0 Q050-040: the song editor's clip mute dispatches this same command) | ProjectJournal (Clip mute BoolModel checkpoint) | - |
 | `clip.split` | yes | the split rewrites the clip list of one Track | ProjectJournal (Track checkpoint) | - |
 | `mixer.add_channel` | yes | a created MixerChannel has no before-state; the mixer is a JournallingObject but restoring its checkpoint would destroy and recreate every channel, and a MixerView holds those pointers - the same GUI-safety reason the TrackContainer checkpoints are commented out upstream. DISAGREEMENT with A16-STATUS-MEASURED.md, which records this as reversible:false | action checkpoint: the recorded undo step deletes the channel it created (Mixer::deleteChannel), through the same code path mixer.remove_channel uses; a fresh channel carries only defaults, so removing it restores the mixer exactly | - |
 | `mixer.set_volume` | yes | the fader is a FloatModel, i.e. a JournallingObject | ProjectJournal (MixerChannel volume model checkpoint) | - |
@@ -103,6 +108,8 @@ refusal names the fallback rather than pretending.
 | command | rev | reason | mechanism the engine provides | fallback |
 |---|---|---|---|---|
 | `mixer.remove_channel` | no | the channel's full state is in the transaction's before-state, but there is no command that recreates a channel WITH state: mixer.add_channel always makes a default channel | bounded container snapshot: before-state holds the removed channel's name, gain, mute/solo, sends and effects, so the state is not lost - only the automatic replay is missing. DISAGREEMENT with A16-STATUS-MEASURED.md in one respect: the doc lists this command under "not exercised", so its class was unmeasured; this row is the measurement | recreate the channel with mixer.add_channel and re-apply name, gain, mute/solo and sends from before; the effects must be loaded again with plugin.load and their state XML re-applied |
+| `project.open` | yes (per call) | loading a project replaces the whole session. A session with UNSAVED changes is captured whole first (Q050-044), so the open is one undo step; a session with none is already held by its file | snapshot: the displaced session is captured as the document a save would build (audio files by reference, never copied) before anything loads, bounded by the undo stack's byte budget (`control.set_undo_depth`). Over the budget the open is REFUSED (typed `refused`) before either project changes. One undo step restores the displaced session and its file name; redo opens the project again. Recorded PER CALL: a session with no unsaved changes, or a partial load, registers no step and reports `reversible: false` with the reason, and the record still names the displaced file and its hash | when `reversible` is false: reopen the file named in `before.previous_file`. The displaced session's own earlier undo steps are not carried back |
+| `script.run` | yes (per call) | a Lua script mutates the engine through its own bindings, so the registry cannot know what it wrote. The project is therefore captured whole before the run (Q050-044) | snapshot: the project as it was before the script (audio files by reference), bounded by the undo stack's byte budget; over the budget the run is REFUSED before the script executes. Everything the script changed - including what it did through `zene.command` - is ONE undo step that restores the exact pre-script project; redo reapplies the run's result. The finer steps the script pushed (Lua `addCheckPoint`) are replaced by it. Recorded PER CALL: a script that changed nothing, or ran where no snapshot can be taken (a partial load), registers no step and reports `reversible: false` with the reason | when `reversible` is false: nothing changed, or the project is a partial load - save the project first. A script's effects OUTSIDE the project (files it writes, the console) are not undone |
 | `plugin.load` | no | two branches: appending an EFFECT has an exact inverse (the instance is new and carries only defaults), but REPLACING an instrument does not - the replaced instrument and its parameter values are gone | the effect branch pushes an action checkpoint that unloads the device it created (plugin.load of an effect is therefore one undoable step). The instrument branch records the replaced plugin NAME only and is NOT reversible: replacing an instrument destroys its state | the instrument branch: reload the previous instrument by dev-<n> (the transaction's before.plugin names it); its parameter values are NOT restored, so treat an instrument replacement as destructive |
 | `plugin.preset_save` | no | the command writes a file OUTSIDE the project; the replaced revision is recorded in before.previous_content (bounded) | file-level snapshot: the replaced revision is in before.previous_content | write before.previous_content back with plugin.preset_save, or delete the file when before.replaced was false |
 | `plugin.state_save` | no | the command writes a file OUTSIDE the project; the project is untouched, and the file's previous revision is recorded in before.previous_content (bounded) | file-level snapshot: the replaced revision is in before.previous_content, bounded like every other state snapshot | write before.previous_content back with plugin.state_save, or delete the file when before.replaced was false |
@@ -116,9 +123,7 @@ instead.
 
 | command | rev | reason | mechanism the engine provides | fallback |
 |---|---|---|---|---|
-| `plugin.unload` | no | the removed Effect's state XML is captured, but recreating the instance would need plugin.load by catalogue id plus a state restore, and the instance id (fx-<n>) is position-derived - the inverse is not one operation the registry can run | none. before holds the device's full state XML (bounded at 64 KiB) plus its plugin name and chain index | write before.state_xml to a file, plugin.load the same dev-<n> onto the same target, then plugin.state_load that file. The chain ORDER is not restored |
-| `project.open` | no | loading a project replaces the whole session, and the engine keeps no pre-load snapshot: the previous document, including any UNSAVED edits, is gone | none. The transaction records the previous file path and its sha256 so the caller can see what was displaced | reopen the file named in before.previous_file; unsaved changes to the displaced session are LOST - save first (project.save keeps a revision) if they matter |
-| `script.run` | no | a Lua script mutates the engine through its own bindings; the registry sees one command and cannot know what the script wrote | none. A script that wants to be undoable must take its own checkpoint (Lua addCheckPoint()), which ProjectJournal::undo DOES replay - so the record is honest about what it can and cannot cover | run a script that takes its own checkpoint (Lua addCheckPoint()) before it edits; control.undo then replays that checkpoint |
+| `plugin.unload` | no | the removed Effect's state XML is captured when it fits the snapshot cap, but recreating the instance would need plugin.load by catalogue id plus a state restore, and the instance id (fx-<n>) is position-derived - the inverse is not one operation the registry can run | none. before holds the device's state XML when it is at most 64 KiB, plus its plugin name and chain index; over-limit state has empty state_xml and state_truncated=true | only when state_truncated is false, write before.state_xml to a file, plugin.load the same dev-<n> onto the same target, then plugin.state_load that file. Over-limit state cannot be restored from this snapshot. The chain ORDER is not restored |
 | `project.new` | no | a new project replaces the whole session, exactly as project.open does, and no snapshot of what it replaced is kept | none | save first, then reopen that file with project.open |
 | `project.save_as_template` | no | it replaces the user's default template file and keeps no copy; the session is not modified | none | copy default.mpt aside first; `replaced` says whether one existed |
 | `project.import` | no | the import filters add tracks with the journal paused, so control.undo has no checkpoint | none | save before importing, or track.remove the added tracks (the reply counts them) |
@@ -205,7 +210,7 @@ this design as follows:
 | not a `JournallingObject` (`transport.seek`, `settings.set`, `audio.device_set`) | action checkpoints: the scalar inverse is recorded and runs on undo. |
 | file-level (`project.save`, `plugin.state_*`, `plugin.preset_*`) | `project.save` keeps a named, bounded revision set and its inverse is the command `project.restore_revision`, which `control.undo` dispatches. `plugin.state_load` / `plugin.preset_load` are action checkpoints (the device's previous XML is restored). `plugin.state_save` / `plugin.preset_save` stay **not reversible automatically**: they write a file outside the project; their previous revision is recorded (`before.previous_content`) and the fallback names how to put it back. |
 | replacement / removal (`plugin.load`, `plugin.unload`) | split by branch. **Effect append** is an action step (unload the instance it created; it carries only defaults). **Instrument replacement** is NOT reversible (the replaced instrument's parameter values are gone) and says so. `plugin.unload` is **irreversible**, as the task requires. |
-| out-of-band mutation (`script.run`) | **irreversible**, typed refusal, with the honest fallback: a script that wants to be undoable takes its own checkpoint (Lua `addCheckPoint()`), which `control.undo` does replay. |
+| out-of-band mutation (`script.run`) | **snapshot** (Q050-044): the whole project is captured before the run, bounded by the undo stack's byte budget, and everything the script changed is one undo step (`control.undo` / `control.redo`). It was `irreversible` until then, with Lua `addCheckPoint()` as the only fallback. |
 
 ---
 
@@ -365,13 +370,12 @@ revision, while a GUI Ctrl+Z after the same save behaves exactly as it did befor
 3. otherwise undoes it - by dispatching the recorded inverse command when the inverse is a command,
    else by unwinding the engine's `ProjectJournal`.
 
-The three irreversible commands and what an agent should do instead:
+The irreversible commands that remain, and what an agent should do instead (`project.open` and `script.run` left
+this list with Q050-044: they are `snapshot` rows now, reversible per call - see their rows in section 1.2):
 
 | command | fallback |
 |---|---|
-| `project.open` | reopen the file named in `before.previous_file` (the record also carries its sha256). UNSAVED changes to the displaced session are lost - save first if they matter. |
-| `script.run` | the script takes its own checkpoint (Lua `addCheckPoint()`), which `control.undo` DOES replay. |
-| `plugin.unload` | write `before.state_xml` to a file, `plugin.load` the same `dev-<n>` onto the same target, `plugin.state_load` that file. The chain ORDER is not restored. |
+| `plugin.unload` | only when `before.state_truncated` is false, write `before.state_xml` to a file, `plugin.load` the same `dev-<n>` onto the same target, then `plugin.state_load` that file. Over-limit state returns empty `state_xml` with `state_truncated: true` and cannot be restored from that snapshot. The chain ORDER is not restored. |
 
 `plugin.state_save` / `plugin.preset_save` are ALSO refused an automatic undo (class `snapshot`,
 `reversible: false`) - they write a file outside the project - and their fallback is to write
@@ -423,8 +427,9 @@ The three irreversible commands and what an agent should do instead:
    those land ABOVE the merged step and cost a second undo. Nothing in the current surface does
    that - every handler mutates synchronously - but it is a property to keep, not a guarantee the
    engine can enforce.
-10. **The merged step is not persisted.** Close the app and the undo history is gone, as it was
-    before this change.
+10. **The merged step is not persisted** by default. Close the app and the undo history is gone, as
+    it was before this change - unless the project opts into WF-033 (`docs/UNDO-HISTORY-PERSISTENCE.md`),
+    which saves the newest steps as whole-project snapshots; a merged step is saved as ONE step.
 
 ## 9. Defects found while doing this (all measured, all fixed here)
 
@@ -457,7 +462,7 @@ command):
 | command | class | what it does |
 |---|---|---|
 | `control.undo_depth` | `not_mutating` | reads the depth, the two caps, the bytes retained, the eviction count and the coalescing rule in force |
-| `control.set_undo_depth` | `snapshot` (reversible) | sets the count cap and/or the byte budget; the previous caps are the before-state and the recorded inverse is the command itself (`applies: command`). What it CANNOT restore is named: the steps a lower cap evicted are gone (`dropped` reports how many) |
+| `control.set_undo_depth` | `snapshot` (reversible only when no steps are dropped) | sets the count cap and/or the byte budget; the previous caps are the before-state and the recorded inverse is the command itself (`applies: command`). When lowering a cap drops history (`dropped` reports how many), the record is irreversible and `control.undo` refuses it because the evicted steps cannot be restored |
 | `control.set_undo_coalescing` | `not_mutating` | sets the window a same-command-same-target run is grouped in; `0` disables grouping, which reproduces the pre-0.3.0 behaviour exactly |
 
 **One new column in the table below, as DATA:** `RC(id, cls, rev, reason, mechanism, fallback, target)`
@@ -493,3 +498,17 @@ gestures were already one step each (a checkpoint at mouse-press, journalling of
 > notes carry the new class, and `ReversibilityContractTest`'s histogram and its documented-refusal list were
 > updated in the same commit. The other three refusals (`mixer.set_pan`, `automation.mode_set`,
 > `crash.upload_report`) are unchanged.
+
+> **2026-10-20 (cluster new-p8-81-port-port, the recording arm verbs).** `track.set_arm` and
+> `track.set_arm_many` have moved again: both rows are now `irreversible` with `reversible=false`, in the
+> group file `src/core/ControlReversibilityTableRecording.cpp`. The reason is the same on both rows - the
+> capture writes a take WAV (and a take journal) beside the recovery file, and that take stays on disk once
+> the capture stops, outside the project state a checkpoint could restore. The recorded inverse the single
+> arm used to carry (this command with `armed: false`) only STOPPED the capture and retired the journal: it
+> left the take behind, so `control.undo` claimed to reverse an arming whose recorded state it could not
+> restore. The arming now records no inverse at all, and `control.undo` refuses both commands with a typed
+> `irreversible` error that names the command and its fallback (`track.set_arm` with `armed: false`, or
+> `record.disarm_track`, stops the capture; the take is kept or deleted by hand at the path the reply
+> names). The measurement above is that lane's record of the tree it described and is kept as written; the
+> live table, the counts (`snapshot=40 irreversible=24`), the release notes and the command descriptions
+> carry the current class, and `ReversibilityContractTest`'s histogram checks them on every run.

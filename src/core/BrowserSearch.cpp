@@ -94,6 +94,17 @@ BrowserSearch::BrowserSearch(const QString& text)
 		if (!text.trimmed().isEmpty()) { m_groups.push_back({Term{QString(), text.trimmed().toLower(), false}}); }
 		return;
 	}
+	parseExpression(words);
+	// An expression that produced no usable term (`tag:`, a lone `OR`) is not a match-all:
+	// keep it as the literal text it looks like, as the non-expression path above does.
+	if (m_groups.empty() && !text.trimmed().isEmpty())
+	{
+		m_groups.push_back({Term{QString(), text.trimmed().toLower(), false}});
+	}
+}
+
+void BrowserSearch::parseExpression(const QStringList& words)
+{
 	m_groups.emplace_back();
 	for (const QString& w : words)
 	{
@@ -125,6 +136,18 @@ bool BrowserSearch::termHolds(const Term& term, const BrowserItem& item, const Q
 		? anyContains(item.searchableText(), term.value) || anyContains(metadataText, term.value)
 		: fieldHolds(term.field, term.value, item);
 	return found != term.negate;
+}
+
+bool BrowserSearch::hasUnfieldedExclusion() const
+{
+	for (const Group& group : m_groups)
+	{
+		for (const Term& term : group)
+		{
+			if (term.negate && term.field.isEmpty()) { return true; }
+		}
+	}
+	return false;
 }
 
 bool BrowserSearch::matches(const BrowserItem& item, const QStringList& metadataText) const

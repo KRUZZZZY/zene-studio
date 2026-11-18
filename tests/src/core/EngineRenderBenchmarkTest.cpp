@@ -108,6 +108,11 @@ private slots:
 	{
 		Engine::init(true);
 		Engine::audioEngine()->audioDev()->stopProcessing();
+		// No device deadline here: the render cost is what is measured, not whether it would keep
+		// up with a 5.8 ms period. Under coverage the session costs ~1.6 periods of wall clock, so
+		// the engine's overload shed (AudioEngine::criticalXRuns) would refuse the clips it starts,
+		// and the benchmark would measure silence.
+		Engine::audioEngine()->setOverloadSheddingEnabled(false);
 	}
 
 	void cleanupTestCase() { Engine::destroy(); }

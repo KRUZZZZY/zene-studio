@@ -7,7 +7,8 @@ implemented, what the mapping is, and what it cannot carry**. The code it descri
 | where | what |
 |---|---|
 | `include/DawProjectInterchange.h` | the model, the four conversions, the convention as data |
-| `src/core/DawProjectZip.cpp` | the container: a ZIP of STORE entries, hand-written writer, bounds-checked reader |
+| `src/core/DawProjectZip.cpp` | the container's writer: a ZIP of STORE entries, plus the CRC-32 both halves share |
+| `src/core/DawProjectZipRead.cpp` | the container's reader: STORE and raw DEFLATE (zlib), bounds-checked, size-bounded, reporting every deviation |
 | `src/core/DawProjectModel.cpp` | tick/beat arithmetic, the `contentType` vocabulary, equality, the digest, the JSON view, `dawProjectConvention()` |
 | `src/core/DawProjectWrite.cpp` | model → `project.xml` |
 | `src/core/DawProjectRead.cpp` | `project.xml` → model: the document walk, the version check, the typed refusals |
@@ -49,12 +50,14 @@ and `DawProjectVersionAttribute = "1.0"` written into `<Project version="1.0">`
 document declares DAWproject version N; this module implements 1.0"*), rather than reading a
 document whose semantics it does not know.
 
-**GAP: none claimed.** The format's own version is 1.0, this module writes 1.0 and reads 1.0;
-no part of the published 1.0 schema is implemented as a dialect. What this build does **not**
-implement is *optional content within* 1.0 — that is the list in section 7, and it is stated as
-loss rather than left implicit. `dawproject.convention` reports the version, the container, the
-tick rule and the stated losses **as data on the wire**, so a client can read the same claims
-this document makes without reading the source.
+**Schema gap: none claimed.** The format's own version is 1.0, this module writes 1.0 and reads
+1.0; no part of the published 1.0 schema is implemented as a dialect. Container method support:
+the writer stores its entries (STORE, method 0); the reader accepts STORE and DEFLATE (method 8,
+what Bitwig, Studio One and Cubase write), under a size bound, and reports anything else. What this build does **not** implement
+within the schema is *optional content within* 1.0 — that is the list in section 7, and it is
+stated as loss rather than left implicit. `dawproject.convention` reports the version, the
+container, the tick rule and the stated losses **as data on the wire**, so a client can read the
+same claims this document makes without reading the source.
 
 The format's own support list (`README.md`, section "DAW Support", line 175) names exactly six
 DAWs at 1.0 — Bitwig Studio 5.0.9, PreSonus Studio One 6.5, Steinberg Cubase 14, Steinberg
@@ -121,11 +124,50 @@ schema's own sequence:
 <MetaData><Comment>Exported by Zene Studio 0.3.0-alpha as DAWproject 1.0.</Comment></MetaData>
 ```
 
-**A stored entry, not a deflated one.** The container is a ZIP whose entries use the **STORE**
-method (method 0). Two reasons, both engine-level: `DataFile`'s `qUncompress` reads zlib's
-*framed* format and cannot produce a raw DEFLATE stream, so compression would mean a new
-dependency; and a stored entry is a valid entry in every ZIP reader, while the format's spec
-constrains the *entries*, not the compression method.
+**The writer stores, the reader also inflates.** The container this build WRITES is a ZIP whose
+entries use the **STORE** method (method 0): the format's spec constrains the *entries*, not the
+compression method, a stored entry is a valid entry in every ZIP reader, and the output stays
+byte-for-byte reproducible. The container this build READS may be STORE or DEFLATE (method 8):
+`src/core/DawProjectZipRead.cpp` inflates the raw RFC 1951 stream with zlib (`inflateInit2` with
+negative window bits; zlib is a required dependency, the same one the project-asset reader inflates
+a `.mmpz` with in `src/core/ControlProjectAssets.cpp`). `DataFile`'s `qUncompress` cannot be used
+for this: it reads zlib's *framed* format, not a bare DEFLATE stream.
+
+**Bounded.** Every entry is held to `DawProjectZipLimits`: at most **512 MiB** decompressed for
+one entry and **1 GiB** for all of them together. An entry is judged on its declared size
+*before* it is inflated, and the bound is enforced again on the bytes actually produced (counted
+chunk by chunk), so an entry that claims 1 KiB and inflates to gigabytes stops at its claim and is
+reported as corrupt; a many-entry bomb stops at the total. The central directory is authoritative
+for sizes and the CRC, so an entry written with a data descriptor (the streaming writers' shape)
+reads like any other.
+
+**Tolerant, and complete about it.** `dawproject.read` and `dawproject.import` do not stop at the
+first problem. Each of these is one entry in the reply's `deviations` array (`entry`, `kind`,
+`detail`), and `deviation_count` counts them:
+
+| `kind` | when |
+|---|---|
+| `corrupt_entry` | a DEFLATE stream that is damaged, truncated, or inflates past/short of its declared size; a missing or misplaced local header; a body past the end of the file |
+| `crc_mismatch` | the entry decoded, but its bytes do not match the CRC-32 the directory declares (the bytes are not used) |
+| `unsupported_method` | a compression method other than STORE and DEFLATE (BZIP2, LZMA, Zstandard, ... named) |
+| `unsupported_feature` | an encrypted entry, or one that needs ZIP64 |
+| `oversized_entry` | the entry would decompress past the per-entry bound; it is not inflated |
+| `total_oversized` | the entry would take the container past the total bound; it is not inflated |
+| `truncated_directory` | the central directory ends before the entries it declares; the entries reached are still read |
+| `missing_project_entry` | the container has no `project.xml` |
+| `missing_referenced_file` | `project.xml` has a `<File path="...">` (not `external="true"`) the container does not hold |
+| `duplicate_entry` | an entry name appears twice; the last one is used |
+
+A deviation in an entry the importer does not use (an audio file, a damaged `metadata.xml`) does
+not stop the import: the readable content still imports and the reply lists what was not taken as
+written. A deviation in `project.xml` itself leaves nothing to import, so the import is a typed
+refusal (`InvalidArgs`) that writes nothing and whose message still lists *every* deviation. A file
+that is not a ZIP, is spanned, or declares a directory past its own end has no usable directory and
+is refused with that one reason. The File menu item **Import DAWproject...** shows the same list
+in a dialog after an import that proceeded.
+
+The `.mmpz` v2 project container shares the ZIP code but not this contract: it calls the strict
+`dawProjectZipRead`, which stays STORE-only and refuses on the first deviation.
 
 ---
 
@@ -175,9 +217,11 @@ back to the **id** (the file path), so an export→import→export cycle keeps p
 tracks at the same strips. A track whose strip cannot be found is written **without**
 `destination` rather than with a dangling IDREF — an unresolvable IDREF is an invalid document.
 
-**The sharing is what cannot be carried** (LOSSY #7): the format joins one track to one strip,
-so two LMMS tracks feeding one `MixerChannel` import as two strips, or as one — either way the
-*sharing* is gone, and `mixerSharingLost` counts it.
+**Sharing is carried by the destination IDREF:** multiple tracks can point at the same bare
+`Channel`, and the reader resolves each reference to that same strip. A track whose type has no
+mixer channel model, such as a folder, writes no destination IDREF, and that is **not** counted as
+lost sharing: no other track shares its strip. `mixerSharingLost` is still serialized for
+compatibility, but no code path increments it.
 
 ---
 
@@ -258,7 +302,7 @@ properties of the conversion itself. Each line names **where it is counted**, so
 | 4 | **Folder nesting** — LMMS' track list is flat, so a folder's children are written as tracks at the container root; the folder **marker** survives as a `tracks`-contentType track, the *relation* does not. | export | `folderChildrenLost` |
 | 5 | **Track types** — LMMS' nine types onto the format's six `contentType` values (section 5). `instrument` and `pattern` → `notes`; `sample` → `audio`; `automation` and `hidden_automation` → `automation`; `folder` → `tracks`; `event` and `video` have **no counterpart** and are written with an empty `contentType`. The mapping is many-to-one: two LMMS types can come back as the same type. | both | `unmappedTrackTypes` |
 | 6 | **Mixer pan, and two volume scales** — the format has one `<Volume>` per `Channel`, LMMS has two: a `MixerChannel` fader (0..2, unity 1.0) goes on the bare strip `<Channel>`, the track's own volume (0..200, unity 100) on the track's `<Channel>`, divided by 100. `<Pan>` comes from the **track's** panning model, which only `InstrumentTrack` exposes — a track type with none has no pan written and is counted. | both | `panNotWritten` |
-| 7 | **Mixer routing and sharing** — `destination` names the strip one track feeds; LMMS' wider `MixerRoute` graph, its pre/post-fader flags, and *which* tracks share one strip are not carried (the format joins one track to one strip). | both | `routingLost`, `mixerSharingLost` |
+| 7 | **Mixer routing** — `destination` names the strip one track feeds, and multiple tracks may name the same strip. LMMS' wider `MixerRoute` graph and its pre/post-fader flags are not carried. Track types without a mixer channel model (a folder, for example) have no destination IDREF written; that is not counted as lost sharing, and `mixerSharingLost` is still serialized for compatibility but has no increment path. | both | `routingLost` |
 | 8 | **Tempo bounds** — written as 10..999 and a file outside them is refused (section 3), so an out-of-range tempo is a refusal rather than a loss. | both | — (refusal) |
 | 9 | **Time values are beats** — a *foreign* time not on LMMS' 48-per-beat grid is rounded onto it. Times this build writes are exact (section 5). | import | `roundedTimes` |
 | 10 | **The track type's NAME is not in the document** — the format carries `contentType`, and the name is **derived from it on read**, so a model whose `typeName` is spelled another way (`"Instrument"` for the canonical `"instrument"`) comes back in the canonical lowercase spelling. The mapping is case-insensitive in both directions, so the *type* is never lost — only its spelling. | both | — (not a count: it is a spelling) |
@@ -280,8 +324,8 @@ by `registerDawProjectCommands` from `ControlRegistryRegistrations.cpp`, declare
 |---|---|---|---|
 | `dawproject.convention` | `{}` (none) | `format_name`, `format_version`, `major_version`, `minor_version`, `container`, `project_entry`, `metadata_entry`, `text_encoding`, `time_unit`, `ticks_per_quarter`, `tick_rule`, `zip_method`, `content_type_vocabulary`, `stated_losses` | `not_mutating` |
 | `dawproject.export` | `path` (required), `overwrite` | `path`, `bytes`, `sha256`, `format_version`, `application_name`, `application_version`, `track_count`, `mixer_channel_count`, `clip_count`, `note_count`, `tempo_point_count`, `meter_point_count`, `split_map_events`, `model_digest`, `loss` | `not_mutating` |
-| `dawproject.read` | `path` (required) | `format_version`, `application_name`, `application_version`, `has_metadata`, `title`, `track_count`, `mixer_channel_count`, `clip_count`, `note_count`, `tempo_point_count`, `meter_point_count`, `split_map_events`, `unused_entries[]`, `model_digest`, `loss`, `model` (the whole model as JSON) | `not_mutating` |
-| `dawproject.import` | `path` (required) | `path`, `format_version`, `track_count`, `mixer_channel_count`, `clip_count`, `note_count`, `tempo`, `numerator`, `denominator`, `tempo_point_count`, `meter_point_count`, `map_active`, `model_digest`, `loss` | `true_inverse`, reversible, recorded-action checkpoint |
+| `dawproject.read` | `path` (required) | `format_version`, `application_name`, `application_version`, `has_metadata`, `title`, `track_count`, `mixer_channel_count`, `clip_count`, `note_count`, `tempo_point_count`, `meter_point_count`, `split_map_events`, `unused_entries[]`, `entry_count`, `deflated_entry_count`, `referenced_file_count`, `deviation_count`, `deviations[]`, `model_digest`, `loss`, `model` (the whole model as JSON) | `not_mutating` |
+| `dawproject.import` | `path` (required) | `path`, `format_version`, `track_count`, `mixer_channel_count`, `clip_count`, `note_count`, `tempo`, `numerator`, `denominator`, `tempo_point_count`, `meter_point_count`, `map_active`, `model_digest`, `entry_count`, `deflated_entry_count`, `referenced_file_count`, `deviation_count`, `deviations[]`, `loss` | `true_inverse`, reversible, recorded-action checkpoint |
 
 **The A16 rows** live in their own file, `src/core/ControlReversibilityTableDawProject.cpp`,
 joined into `reversibilityRowTable()` with **one** entry (the join list in

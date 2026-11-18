@@ -110,6 +110,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Free disk space (a full Debug build + ~500 test executables)
+        # Hosted run 37881021912 (2026-10-09): unit-tests, coverage, tsan and the MCP e2e job
+        # all died with "/usr/bin/ld: final link failed: No space left on device" once the
+        # suite reached ~500 test executables. Same list as build.yml's mingw64 step (which
+        # documents why $AGENT_TOOLSDIRECTORY and /usr/local/share/boost stay).
+        run: |
+          echo "[free-disk-space] df -h / before:"; df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          # Hosted run 38707621703 (2026-10-15) still ran out of space in the link phase, so the
+          # preinstalled toolsets this build never touches go too (Swift, PowerShell, Azure CLI, Edge).
+          sudo rm -rf /usr/share/swift /usr/local/share/powershell /opt/az /opt/microsoft || true
+          sudo rm -rf /usr/local/share/chromium || true
+          sudo apt-get clean || true
+          if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
+          echo "[free-disk-space] df -h / after:"; df -h /
       - name: Install build dependencies (Qt6, mirrors the locally verified build)
         run: |
           sudo apt-get update
@@ -134,7 +149,13 @@ jobs:
       - name: Runner CPU (BUGS_FOUND 11.15)
         run: lscpu | grep -E 'Model name|Flags' | cut -c1-400
       - name: Configure (Debug, Qt6)
-        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON
+        # Debug keeps its -O0 and its asserts. Hosted run 38707621703 died with "No space left on device" while
+        # linking ~560 test executables, so the debug info is cut where nothing reads it: -g1 (line tables
+        # only, about half the object size) and --strip-debug at link time (the executables carry none).
+        # No gate here needs DWARF - ctest reads exit codes and gcov reads the .gcno files the compiler wrote.
+        run: >-
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON
+          -DCMAKE_CXX_FLAGS_DEBUG=-g1 -DCMAKE_C_FLAGS_DEBUG=-g1 -DCMAKE_EXE_LINKER_FLAGS=-Wl,--strip-debug
       - name: Build
         run: cmake --build build -j4
       - name: Gate 1 - ctest (must run from build/tests)
@@ -166,6 +187,8 @@ jobs:
   # (BUGS_FOUND.md 10.9), so the job is green today and fails on any NEW race. Validated
   # locally with exactly these commands (six suites, 0 reports; a deliberately racy program
   # is still reported through the same suppressions) - NOT yet run on a hosted runner.
+  # MidiClockSourceTest was added by Q050-026: its source-name publication is the one new
+  # cross-thread buffer in this change, and the test now races a writer against a reader.
   # setarch -R: TSan aborts with "unexpected memory mapping" under high-entropy ASLR.
   tsan:
     name: ThreadSanitizer (concurrency suites)
@@ -177,6 +200,21 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
+      - name: Free disk space (a full Debug build + ~500 test executables)
+        # Hosted run 37881021912 (2026-10-09): unit-tests, coverage, tsan and the MCP e2e job
+        # all died with "/usr/bin/ld: final link failed: No space left on device" once the
+        # suite reached ~500 test executables. Same list as build.yml's mingw64 step (which
+        # documents why $AGENT_TOOLSDIRECTORY and /usr/local/share/boost stay).
+        run: |
+          echo "[free-disk-space] df -h / before:"; df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          # Hosted run 38707621703 (2026-10-15) still ran out of space in the link phase, so the
+          # preinstalled toolsets this build never touches go too (Swift, PowerShell, Azure CLI, Edge).
+          sudo rm -rf /usr/share/swift /usr/local/share/powershell /opt/az /opt/microsoft || true
+          sudo rm -rf /usr/local/share/chromium || true
+          sudo apt-get clean || true
+          if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
+          echo "[free-disk-space] df -h / after:"; df -h /
       - name: Install build dependencies (Qt6, mirrors the locally verified build)
         run: |
           sudo apt-get update
@@ -193,7 +231,7 @@ jobs:
       - name: Build the concurrency suites
         run: |
           cmake --build build-tsan -j4 --target VcaRefreshAtomicityTest ModulationAudioViewTest \
-            MixerConcurrencyTest MidiLearnThreadTest TempoMapTest SessionSchedulerTest
+            MixerConcurrencyTest MidiLearnThreadTest MidiClockSourceTest TempoMapTest SessionSchedulerTest
       - name: Run them under TSan
         working-directory: build-tsan/tests
         env:
@@ -201,7 +239,7 @@ jobs:
         run: |
           fail=0
           for t in VcaRefreshAtomicityTest ModulationAudioViewTest MixerConcurrencyTest \
-                   MidiLearnThreadTest TempoMapTest SessionSchedulerTest; do
+                   MidiLearnThreadTest MidiClockSourceTest TempoMapTest SessionSchedulerTest; do
             TSAN_OPTIONS="suppressions=$GITHUB_WORKSPACE/tests/tsan-suppressions.txt halt_on_error=1 exitcode=66" \
               setarch "$(uname -m)" -R ./"$t" || { echo "::error::$t failed under TSan"; fail=1; }
           done
@@ -220,6 +258,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Free disk space (a full Debug build + ~500 test executables)
+        # Hosted run 37881021912 (2026-10-09): unit-tests, coverage, tsan and the MCP e2e job
+        # all died with "/usr/bin/ld: final link failed: No space left on device" once the
+        # suite reached ~500 test executables. Same list as build.yml's mingw64 step (which
+        # documents why $AGENT_TOOLSDIRECTORY and /usr/local/share/boost stay).
+        run: |
+          echo "[free-disk-space] df -h / before:"; df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          # Hosted run 38707621703 (2026-10-15) still ran out of space in the link phase, so the
+          # preinstalled toolsets this build never touches go too (Swift, PowerShell, Azure CLI, Edge).
+          sudo rm -rf /usr/share/swift /usr/local/share/powershell /opt/az /opt/microsoft || true
+          sudo rm -rf /usr/local/share/chromium || true
+          sudo apt-get clean || true
+          if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
+          echo "[free-disk-space] df -h / after:"; df -h /
       - name: Install build dependencies and clang 20 (RTSan needs clang >= 20)
         run: |
           sudo apt-get update
@@ -243,7 +296,8 @@ jobs:
           grep -q "fsanitize=realtime" "$flags" && grep -q "LMMS_RTSAN=1" "$flags" \
             || { echo "::error::not instrumented (no -fsanitize=realtime / LMMS_RTSAN in $flags)"; exit 1; }
           cmake --build build-rtsan -j4 --target RecordingLatencyTest DummyPacingTest \
-            SessionSchedulerRenderTest MixerConcurrencyTest ModulationAudioViewTest TempoMapTest
+            SessionSchedulerRenderTest MixerConcurrencyTest ModulationAudioViewTest TempoMapTest \
+            MpeStreamSnapshotTest
       - name: Run them under RTSan
         working-directory: build-rtsan/tests
         env:
@@ -251,8 +305,10 @@ jobs:
           RTSAN_OPTIONS: halt_on_error=false:print_stats_on_exit=true
         run: |
           fail=0
+          # MpeStreamSnapshotTest (Q050-016): a note's expression-stream copy, release and the
+          # realtime final release run inside RealtimeScopes - no lock, allocation or free there.
           for t in RecordingLatencyTest DummyPacingTest SessionSchedulerRenderTest MixerConcurrencyTest \
-                   ModulationAudioViewTest TempoMapTest; do
+                   ModulationAudioViewTest TempoMapTest MpeStreamSnapshotTest; do
             ./"$t" > "$t.rtsan.log" 2>&1 || { echo "::error::$t failed under RTSan"; fail=1; }
             if grep -q "RealtimeSanitizer" "$t.rtsan.log"; then
               echo "::error::$t: RealtimeSanitizer findings"
@@ -275,6 +331,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Free disk space (a full Debug build + ~500 test executables)
+        # Hosted run 37881021912 (2026-10-09): unit-tests, coverage, tsan and the MCP e2e job
+        # all died with "/usr/bin/ld: final link failed: No space left on device" once the
+        # suite reached ~500 test executables. Same list as build.yml's mingw64 step (which
+        # documents why $AGENT_TOOLSDIRECTORY and /usr/local/share/boost stay).
+        run: |
+          echo "[free-disk-space] df -h / before:"; df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          # Hosted run 38707621703 (2026-10-15) still ran out of space in the link phase, so the
+          # preinstalled toolsets this build never touches go too (Swift, PowerShell, Azure CLI, Edge).
+          sudo rm -rf /usr/share/swift /usr/local/share/powershell /opt/az /opt/microsoft || true
+          sudo rm -rf /usr/local/share/chromium || true
+          sudo apt-get clean || true
+          if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
+          echo "[free-disk-space] df -h / after:"; df -h /
       - name: Install build and coverage dependencies
         run: |
           sudo apt-get update
@@ -304,7 +375,10 @@ jobs:
       - name: Gate 2 - coverage ratchet, CI mode (baseline never written)
         if: ${{ !inputs.capture_baseline }}
         run: |
-          bash tests/run-coverage.sh build-coverage -DWANT_QT6=ON
+          bash tests/run-coverage.sh build-coverage -DWANT_QT6=ON \
+            -DCMAKE_CXX_FLAGS_DEBUG=-g1 \
+            -DCMAKE_C_FLAGS_DEBUG=-g1 \
+            -DCMAKE_EXE_LINKER_FLAGS=-Wl,--strip-debug
           bash tests/coverage-gate.sh build-coverage/coverage/coverage-fork.info --check
       - name: Keep the golden-audio renders (on failure)
         if: failure()
@@ -324,7 +398,10 @@ jobs:
       - name: Gate 2 - capture the baseline on the runner (write mode)
         if: ${{ inputs.capture_baseline }}
         run: |
-          bash tests/run-coverage.sh build-coverage -DWANT_QT6=ON
+          bash tests/run-coverage.sh build-coverage -DWANT_QT6=ON \
+            -DCMAKE_CXX_FLAGS_DEBUG=-g1 \
+            -DCMAKE_C_FLAGS_DEBUG=-g1 \
+            -DCMAKE_EXE_LINKER_FLAGS=-Wl,--strip-debug
           # Drop the committed baseline first: with no baseline every file counts
           # as an addition, so write mode records this run's numbers instead of
           # refusing to write because the old baseline looks "regressed".
@@ -421,6 +498,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Free disk space (a full Debug build + ~500 test executables)
+        # Hosted run 37881021912 (2026-10-09): unit-tests, coverage, tsan and the MCP e2e job
+        # all died with "/usr/bin/ld: final link failed: No space left on device" once the
+        # suite reached ~500 test executables. Same list as build.yml's mingw64 step (which
+        # documents why $AGENT_TOOLSDIRECTORY and /usr/local/share/boost stay).
+        run: |
+          echo "[free-disk-space] df -h / before:"; df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          # Hosted run 38707621703 (2026-10-15) still ran out of space in the link phase, so the
+          # preinstalled toolsets this build never touches go too (Swift, PowerShell, Azure CLI, Edge).
+          sudo rm -rf /usr/share/swift /usr/local/share/powershell /opt/az /opt/microsoft || true
+          sudo rm -rf /usr/local/share/chromium || true
+          sudo apt-get clean || true
+          if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
+          echo "[free-disk-space] df -h / after:"; df -h /
       - name: Install build dependencies (Qt6, mirrors the locally verified build)
         run: |
           sudo apt-get update
@@ -433,7 +525,13 @@ jobs:
       - name: Install the MCP SDK the bridge imports
         run: pip install "mcp==2.0.0"
       - name: Configure (Debug, Qt6)
-        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON
+        # Debug keeps its -O0 and its asserts. Hosted run 38707621703 died with "No space left on device" while
+        # linking ~560 test executables, so the debug info is cut where nothing reads it: -g1 (line tables
+        # only, about half the object size) and --strip-debug at link time (the executables carry none).
+        # No gate here needs DWARF - ctest reads exit codes and gcov reads the .gcno files the compiler wrote.
+        run: >-
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON
+          -DCMAKE_CXX_FLAGS_DEBUG=-g1 -DCMAKE_C_FLAGS_DEBUG=-g1 -DCMAKE_EXE_LINKER_FLAGS=-Wl,--strip-debug
       - name: Build
         run: cmake --build build -j4
       - name: Run all four bridge suites against the built binary

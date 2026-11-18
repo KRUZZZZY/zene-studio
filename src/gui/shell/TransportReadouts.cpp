@@ -39,6 +39,7 @@
 #include "Accessibility.h"
 #include "AudioEngine.h"
 #include "CommandForm.h"
+#include "CpuDiagnosticsDialog.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "Engine.h"
@@ -58,6 +59,10 @@ namespace
 constexpr int kCaptionHeight = 13;
 
 QString signedValue(int v) { return v > 0 ? QStringLiteral("+%1").arg(v) : QString::number(v); }
+
+//! WF-085: the Rec left readout's source, the live record.remaining command unless a test set
+//! its own (setRemainingTestSource); read and written on the UI thread only, like the readout.
+TransportReadouts::RemainingTestSource g_remainingTestSource;
 
 } // namespace
 
@@ -85,7 +90,17 @@ void ReadoutField::bindText(std::function<QString()> text, std::function<bool(co
 {
 	m_text = std::move(text);
 	m_typed = std::move(typed);
+	m_typedResult = {};
 	if (m_typed) { setToolTip(tr("%1: double-click to type").arg(m_caption)); }
+	refresh();
+}
+
+void ReadoutField::bindTextResult(std::function<QString()> text, std::function<ControlResult(const QString&)> typed)
+{
+	m_text = std::move(text);
+	m_typed = {};
+	m_typedResult = std::move(typed);
+	if (m_typedResult) { setToolTip(tr("%1: double-click to type").arg(m_caption)); }
 	refresh();
 }
 
@@ -116,7 +131,7 @@ void ReadoutField::paintEvent(QPaintEvent*)
 	QPainter p(this);
 	p.setRenderHint(QPainter::Antialiasing);
 	const QRectF r = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
-	const bool live = m_model != nullptr || m_typed;
+	const bool live = m_model != nullptr || m_typed || m_typedResult;
 	p.setPen(Qt::NoPen);
 	p.setBrush(m_dragging ? pal.selected : (underMouse() && live) ? pal.controlHover : pal.control);
 	p.drawRoundedRect(r, tokens::radius::lg, tokens::radius::lg);
@@ -188,7 +203,7 @@ void ReadoutField::step(int delta)
 
 void ReadoutField::mouseDoubleClickEvent(QMouseEvent*)
 {
-	if (m_model == nullptr && !m_typed) { return; }
+	if (m_model == nullptr && !m_typed && !m_typedResult) { return; }
 	if (m_editor == nullptr)
 	{
 		m_editor = new QLineEdit(this);
@@ -210,7 +225,13 @@ void ReadoutField::commitTyped()
 	const QString text = m_editor->text().trimmed();
 	m_editor->hide();
 	bool accepted = false;
-	if (m_typed) { accepted = m_typed(text); }
+	ControlResult typedResult = ControlResult::success();
+	if (m_typedResult)
+	{
+		typedResult = m_typedResult(text);
+		accepted = typedResult.ok;
+	}
+	else if (m_typed) { accepted = m_typed(text); }
 	else if (m_model != nullptr)
 	{
 		const int v = text.toInt(&accepted);
@@ -225,7 +246,9 @@ void ReadoutField::commitTyped()
 	// Typed text the readout refuses says so, rather than the old value quietly coming back (review r4 L19 #15).
 	if (!accepted && m_editor->isModified())
 	{
-		QToolTip::showText(mapToGlobal(QPoint(0, height())), tr("%1: \"%2\" was not accepted").arg(m_caption, text), this);
+		const QString reason = typedResult.errorMessage.isEmpty()
+			? tr("%1: \"%2\" was not accepted").arg(m_caption, text) : typedResult.errorMessage;
+		QToolTip::showText(mapToGlobal(QPoint(0, height())), reason, this);
 	}
 }
 
@@ -271,6 +294,20 @@ bool setMeterTyped(MeterModel* meter, const QString& typed)
 }
 
 } // namespace
+
+//! WF-085: the Rec left readout's words. The estimate comes straight from record.remaining,
+//! so the header and the agent surface show the same number whatever the budget.
+QString recordRemainingLabel(const ControlResult& state)
+{
+	const double seconds = state.ok ? state.result.value(QStringLiteral("seconds")).toDouble(-1.0) : -1.0;
+	if (seconds < 0.0) { return QObject::tr("-"); }  // the command refused: a volume it could not measure
+	const qint64 minutes = static_cast<qint64>(seconds / 60.0);  // the floor: the readout keeps its minute until the next is there
+	if (minutes >= 60)
+	{
+		return QObject::tr("%1h %2m").arg(minutes / 60).arg(minutes % 60);
+	}
+	return QObject::tr("%1m").arg(minutes);  // "0m" is the spent budget (a zero estimate)
+}
 
 QString barBeatText(int ticks)
 {
@@ -340,11 +377,13 @@ TransportReadouts::TransportReadouts(QWidget* parent)
 	m_position = new ReadoutField(tr("Position"), this);
 	m_time = new ReadoutField(tr("Time"), this);
 	m_recordMode = new ReadoutField(tr("Rec mode"), this);
+	m_recordRemaining = new ReadoutField(tr("Rec left"), this);  // WF-085
 	m_volume = new ReadoutField(tr("Master"), this);
 	m_pitch = new ReadoutField(tr("Transpose"), this);
 	m_load = new ReadoutField(tr("CPU"), this);
 	m_loudness = new ReadoutField(tr("LUFS"), this);
-	for (ReadoutField* f : {m_tempo, m_meter, m_position, m_time, m_recordMode, m_volume, m_pitch, m_load, m_loudness}) { row->addWidget(f); }
+	for (ReadoutField* f : {m_tempo, m_meter, m_position, m_time, m_recordMode, m_recordRemaining, m_volume,
+		m_pitch, m_load, m_loudness}) { row->addWidget(f); }
 	// A shell built without an engine (a widget test) shows the readouts inert.
 	if (song != nullptr) { bindToSong(song); }
 }
@@ -373,22 +412,32 @@ void TransportReadouts::bindToSong(Song* song)
 		return QStringLiteral("%1:%2.%3").arg(ms / 60000).arg((ms / 1000) % 60, 2, 10, QLatin1Char('0'))
 			.arg((ms % 1000) / 10, 2, 10, QLatin1Char('0'));
 	});
-	// Theme 7: the record mode, its scope in the tooltip - what a MIDI pass does to the notes already there.
-	// Right-click chooses (transport.record_options); typing "overdub" or "replace" does too.
+	// Theme 7 / Q050-094: the record mode, its scope in the tooltip - what a MIDI and an audio pass do to what is
+	// already there. Right-click chooses (transport.record_options); typing "overdub", "replace" or "keep" does too.
 	m_recordMode->bindText([]() { return recordoptions::modeLabel(recordoptions::options().mode); },
 		[](const QString& typed) {
 			const QString word = typed.trimmed().toLower();
-			const int mode = word.isEmpty() ? -1 : word.startsWith(QLatin1Char('r')) ? 1 : word.startsWith(QLatin1Char('o')) ? 0 : -1;
+			const int mode = word.isEmpty() ? -1 : word.startsWith(QLatin1Char('r')) ? 1 : word.startsWith(QLatin1Char('o')) ? 0
+				: word.startsWith(QLatin1Char('k')) ? 2 : -1;
 			return mode >= 0 && ControlRegistry::instance()->invoke(QStringLiteral("transport.record_options"),
 				{{QStringLiteral("mode"), recordoptions::modeNames().at(mode)}}).ok;
 		});
 	m_recordModes = addChoices(m_recordMode, QStringLiteral("transport.record_options"), QStringLiteral("mode"),
 		recordoptions::modeNames(), {recordoptions::modeChoice(recordoptions::Mode::Overdub),
-			recordoptions::modeChoice(recordoptions::Mode::Replace)});
+			recordoptions::modeChoice(recordoptions::Mode::Replace), recordoptions::modeChoice(recordoptions::Mode::KeepHistory)});
 	syncRecordMode();
+	// WF-085 (Q050-179): the header shows record.remaining's estimate next to the record mode,
+	// so the recording budget is visible while a route is armed and while a pass runs - and the
+	// GUI answers record.remaining through the same registered command the agent surface has.
+	m_recordRemaining->bindText([]() { return recordRemainingLabel(
+		g_remainingTestSource ? g_remainingTestSource()
+			: ControlRegistry::instance()->invoke(QStringLiteral("record.remaining"))); });
+	m_recordRemaining->setToolTip(tr("Rec left: the recording time the disk's free space still allows "
+		"(record.remaining); '-' when a volume cannot be measured"));
 	m_volume->bind(&song->masterVolumeModel(), [](int v) { return QStringLiteral("%1%").arg(v); }, 2);
 	m_pitch->bind(&song->masterPitchModel(), [](int v) { return signedValue(v); }, 8);
 	m_load->bindText([]() { return QStringLiteral("%1%").arg(Engine::audioEngine()->cpuLoad()); });
+	addCpuDiagnosticsAction(m_load);  // Q050-074.1: each instrument's synthesis load and the late periods
 	// MX-132: the master's loudness (meter.get_state) - short-term LUFS and true peak while the
 	// meter is armed; typing "on" or "off" arms or disarms it (meter.arm).
 	m_loudness->bindText(loudnessText, [](const QString& typed) {
@@ -406,9 +455,14 @@ void TransportReadouts::syncRecordMode()
 	if (mode == m_shownRecordMode) { return; }
 	m_shownRecordMode = mode;
 	m_recordMode->refresh();
-	m_recordMode->setToolTip(tr("%1\nRight-click to choose; double-click and type overdub or replace.")
+	m_recordMode->setToolTip(tr("%1\nRight-click to choose; double-click and type overdub, replace or keep.")
 		.arg(recordoptions::modeScope(static_cast<recordoptions::Mode>(mode))));
 	checkChoice(m_recordModes, mode);
+}
+
+void TransportReadouts::setRemainingTestSource(RemainingTestSource source)
+{
+	g_remainingTestSource = std::move(source);
 }
 
 void TransportReadouts::tick()
@@ -420,10 +474,17 @@ void TransportReadouts::tick()
 	// The loudness reading changes at the meter's own 100 ms block rate; 60 Hz would only
 	// re-ask the registry for the same numbers.
 	constexpr int LoudnessEvery = 15;
+	// The recording budget follows the disk's free space and the armed routes (record.remaining);
+	// a second's resolution is enough - the free space does not move at 60 Hz.
+	constexpr int RecordRemainingEvery = 60;  // WF-085
 	if (++m_ticks % LoudnessEvery == 0)
 	{
 		m_loudness->refresh();
 		syncRecordMode();  // a mode set from the Record menu, a script or an undo
+	}
+	if (m_recordRemaining != nullptr && m_ticks % RecordRemainingEvery == 0)
+	{
+		m_recordRemaining->refresh();  // the budget as it changes: a route armed, space consumed
 	}
 }
 

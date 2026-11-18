@@ -57,9 +57,11 @@ struct CallResult
 
 //! Owns one wasmtime engine/store/instance and the host import surface.
 //!
-//! The sandbox is deliberately single-threaded: it must only be used by the
-//! thread that owns it (the WasmWorker thread). The audio thread never touches
-//! it; it communicates through WasmWorker's lock-free queues.
+//! The sandbox's Wasmtime operations are deliberately single-threaded: they
+//! must only be used by the thread that owns it (the WasmWorker thread). The
+//! bounded takeLog() snapshot is the exception and may run concurrently with
+//! host_log. The audio thread never touches the sandbox; it communicates
+//! through WasmWorker's lock-free queues.
 // Exported from the host: the WasmEffect plugin (a separate .so) resolves
 // these symbols at load time, exactly like Effect/PluginFactory.
 class LMMS_EXPORT WasmSandbox
@@ -74,6 +76,12 @@ public:
 	//! Assemble a .wat text module into .wasm bytes. Uses the runtime's own
 	//! wat2wasm so the build needs no extra tooling.
 	static bool assembleWat(const std::string& wat, std::vector<std::uint8_t>& out, std::string& error);
+
+	//! Read a module file into \p out, enforcing abi::maxModuleBytes. The size
+	//! is checked before the buffer is allocated, and a failed allocation is
+	//! reported through \p error instead of escaping the loader.
+	static bool readModuleFile(const std::string& path, std::vector<std::uint8_t>& out,
+		std::string& error);
 
 	//! Compile and instantiate a module. Returns false and sets \p error on
 	//! malformed input or failed instantiation; never aborts the process.
@@ -101,7 +109,8 @@ public:
 	float param(std::uint32_t index) const;
 	void setTransportState(std::int32_t state);
 
-	//! Text passed to host_log() by the most recent call ("" if none).
+	//! Bounded snapshot of the latest host_log() text (empty if none or contended).
+	//! Concurrent host_log() never waits; it drops a log while this snapshot is copied.
 	std::string takeLog();
 
 	int declaredChannels() const;
@@ -112,10 +121,50 @@ public:
 	void setFuelBudget(std::uint64_t fuel);
 	std::uint64_t fuelBudget() const;
 
+#ifdef LMMS_TESTING
+	//! Test seam: lets a test substitute the host view of linear memory for one
+	//! query, so the stale-pointer path after process() can be driven
+	//! deterministically instead of depending on wasmtime moving its mapping.
+	//! The hook receives the real view for a data or a size query and may
+	//! replace either; production builds never call it.
+	using MemoryViewTestHook = void (*)(void* context, bool dataQuery,
+		std::uint8_t*& data, std::size_t& size);
+	static void setMemoryViewTestHook(MemoryViewTestHook hook, void* context);
+#endif
+
 private:
 	struct Impl;
 	std::unique_ptr<Impl> m_impl;
 };
+
+namespace detail
+{
+
+//! process() may grow linear memory, invalidating the pointer held by the host.
+//! Reacquire both the pointer and its size before the next host-side access.
+template<class Sandbox>
+bool refreshLinearMemoryAfterProcess(Sandbox& sandbox, std::uint8_t*& memory,
+	std::size_t needed)
+{
+	memory = sandbox.memoryData();
+	return memory != nullptr && sandbox.memorySize() >= needed;
+}
+
+template<class Sandbox>
+CallResult callProcessAndRefreshMemory(Sandbox& sandbox, std::uint32_t inOffset,
+	std::uint32_t outOffset, std::uint32_t frames, float sampleRate,
+	std::uint8_t*& memory, std::size_t needed)
+{
+	CallResult result = sandbox.callProcess(inOffset, outOffset, frames, sampleRate);
+	if (!refreshLinearMemoryAfterProcess(sandbox, memory, needed) && result.ok())
+	{
+		result.status = CallResult::Status::Error;
+		result.message = "the module's linear memory no longer holds the requested block after process()";
+	}
+	return result;
+}
+
+} // namespace detail
 
 } // namespace lmms::wasm
 

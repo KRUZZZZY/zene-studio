@@ -31,6 +31,7 @@
 
 #include <lilv/lilv.h>
 #include <memory>
+#include <vector>
 
 #include "LinkedModelGroups.h"
 #include "lmms_export.h"
@@ -43,6 +44,10 @@ namespace lmms
 class Lv2Proc;
 class PluginIssue;
 class SampleFrame;
+
+//! The processor instance a <lv2state> element names, or -1 when the element is malformed
+//! (missing or non-numeric instance attribute) or names an instance beyond @param procCount.
+int lv2StateInstanceIndex(const QDomElement& element, std::size_t procCount);
 
 /**
 	Common base class for Lv2 plugins
@@ -149,6 +154,11 @@ private:
 	//! If this is a mono effect, the vector will have size 2 in order to
 	//! fulfill LMMS' requirement of having stereo input and output
 	std::vector<std::unique_ptr<Lv2Proc>> m_procs;
+
+	//! Reports a state that could not be restored through the project load's error
+	//! path (cluster new-p17-83): the processor keeps its default state, so the loss
+	//! must reach the user instead of passing in silence.
+	void reportStateRestoreFailure(int instance);
 
 	bool m_hasGUI = false;
 	unsigned m_channelsPerProc;

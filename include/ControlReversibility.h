@@ -237,7 +237,8 @@ LMMS_EXPORT const ReversibilityRow* reversibilityExportPresetRowTable(int* rowCo
  *  `record.retro_capture_arm` / `record.retro_capture_status` /
  *  `record.retro_capture_to_take`, and the RE-CLASSIFIED `track.set_arm` - which
  *  used to be one of the four documented refusals in the passive block and is now
- *  a real arm verb with a command inverse. A GROUP file on the same seam as the
+ *  a real arm verb whose take file outlives the capture, so it records no
+ *  inverse. A GROUP file on the same seam as the
  *  mastering and scan-and-crash files. Joined into reversibilityRowTable(). */
 LMMS_EXPORT const ReversibilityRow* reversibilityRecordingRowTable(int* rowCount);
 /*! The `revisions.*` group's three rows (feature-list row 76, OWNER-31 item 30:
@@ -317,15 +318,18 @@ LMMS_EXPORT const ReversibilityRow* reversibilityClapInstrumentRowTable(int* row
 LMMS_EXPORT const ReversibilityRow* reversibilityDawProjectRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
-/*! The `stem.*` group's seven not_mutating rows (feature row 26, board task
- *  #653): the offline stem-separation engine's read verb, its four job verbs and
- *  its two model-store verbs. A GROUP file on the same seam as the folder, vca,
- *  routing, scan/crash and mastering files - and, like the passive block itself,
- *  a file split off a block because the file-length ratchet reads a file as a
- *  unit. Joined into the passive block's rows by ReversibilityTable's
- *  constructor. The array is EMPTY without LMMS_HAVE_STEM_SPLIT: the ids do not
- *  exist in that configuration, and a row naming an unregistered command is a
- *  failure in the other direction (ReversibilityContractTest).
+/*! The `stem.*` group's eight rows (feature row 26, board task #653): the
+ *  offline stem-separation engine's read verb, its four job verbs, its two
+ *  model-store verbs and `stem.tracks_create`. Seven are not_mutating; the
+ *  eighth, `stem.tracks_create`, edits the project (four SampleTracks, one undo
+ *  step) and is a recorded-action true_inverse. A GROUP file on the same seam
+ *  as the folder, vca, routing, scan/crash and mastering files - and, like the
+ *  passive block itself, a file split off a block because the file-length
+ *  ratchet reads a file as a unit. Joined into the passive block's rows by
+ *  ReversibilityTable's constructor. The array is EMPTY without
+ *  LMMS_HAVE_STEM_SPLIT: the ids do not exist in that configuration, and a row
+ *  naming an unregistered command is a failure in the other direction
+ *  (ReversibilityContractTest).
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityStemRowTable(int* rowCount);
 /*! The Session View completion halves' six rows (board task #641, the #596
@@ -335,9 +339,9 @@ LMMS_EXPORT const ReversibilityRow* reversibilityStemRowTable(int* rowCount);
  *  session.back_to_arrangement switch). Five are not_mutating - a plan install,
  *  two reads, an arm/disarm and one atomic reset request, none of which writes
  *  project state - and session.arrangement_record_land is a live-checkpoint
- *  true_inverse row: it creates arrangement clips over one Track journal
- *  checkpoint per touched track, the clip.add and midi.retro_capture_to_clip
- *  mechanism.
+ *  true_inverse row: it creates arrangement clips over one composite journal
+ *  checkpoint covering every touched track, the clip.add and
+ *  midi.retro_capture_to_clip mechanism.
  *
  *  A GROUP file on the same seam as the recording, folder, vca and routing
  *  files - the class comes from each row, not from its file - and it exists
@@ -496,9 +500,44 @@ LMMS_EXPORT void addUndoStep(const QVector<JournallingObject*>& journallingObjec
  *
  *  \a payloadBytes may be 0 for a structural step with no document (a reorder:
  *  the state is the container's order, not a serialized value).
+ *
+ *  FALSE when no step was recorded - no journal at all, or a journal that is
+ *  not journalling (ProjectJournal::addJournalStructure() refuses a step in
+ *  both cases). The caller MUST take that answer for what it is: a step that
+ *  was never pushed is not an inverse, and a caller that reports one anyway
+ *  tells its own caller that the edit can be undone when the next undo would
+ *  take back an OLDER edit instead.
  */
-LMMS_EXPORT void addStructuralUndoStep(std::function<void()> undo,
+LMMS_EXPORT bool addStructuralUndoStep(std::function<void()> undo,
 	std::function<void()> redo, qint64 payloadBytes);
+
+/*! Records that a recorded ACTION step ran but could not finish its work, for
+ *  control.undo / control.redo to report - and the two ends of that channel.
+ *
+ *  WHY A SIDE CHANNEL AND NOT A RETURN VALUE: a journal action's closure is
+ *  `void` and `ProjectJournal::undo()`/`redo()` are `void`, so an action whose
+ *  inverse fails has no way to hand a failure to the command that asked for the
+ *  undo. That includes file restore actions such as `revisions.restore`, and
+ *  bounded state changes such as the master loudness tap's arm flag. Without
+ *  this record, either can answer `undone: true` over state it did not restore.
+ *
+ *  The SAME discipline as that channel, and the reason it is safe to trust:
+ *  control.undo and control.redo clear the record before they unwind a step and
+ *  read it after, so the reply describes exactly the step that just ran and a
+ *  failure recorded by a GUI Ctrl+Z (which does not go through the command) can
+ *  never be attributed to a later undo. The read consumes the record, so one
+ *  failure is reported once. UI thread only, like every helper here.
+ *
+ *  \a reason is the recorded failure in the words the CALLER should read (what
+ *  was not restored and why); the command wraps it with its own verb.
+ */
+LMMS_EXPORT void recordActionRestoreFailure(const QString& reason);
+//! The recorded failure, or an empty string when the step that just ran
+//! completed its work (the read clears the record).
+LMMS_EXPORT QString takeActionRestoreFailure();
+//! Drops a recorded failure without reporting it (see above).
+LMMS_EXPORT void clearActionRestoreFailure();
+
 /*! The automation-mode group's two rows (feature-list rows 10 and 63, board
  *  task #647): automation.mode_set (irreversible - runtime state with no
  *  persistence or undo) and automation.record_mode_set (true_inverse - the

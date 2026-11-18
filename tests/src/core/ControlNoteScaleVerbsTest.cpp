@@ -50,6 +50,10 @@
 
 #include <QtTest>
 
+#include <cmath>
+#include <cfenv>
+
+#include <QDomDocument>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QSet>
@@ -58,10 +62,12 @@
 
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "ControlScaleShared.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
 #include "ProjectKey.h"
 #include "ReversibilityTestSupport.h"
+#include "Scale.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -118,6 +124,15 @@ bool makeFixture(Fixture* fixture)
 	if (!added.ok) { return false; }
 	fixture->clip = added.result.value(QStringLiteral("clip")).toString();
 	return true;
+}
+
+bool makeOneNoteFixture(Fixture* fixture)
+{
+	if (!makeFixture(fixture)) { return false; }
+	return run(QStringLiteral("note.add"),
+		QJsonObject{{QStringLiteral("clip"), fixture->clip}, {QStringLiteral("key"), 60},
+			{QStringLiteral("position"), 0}, {QStringLiteral("length"), 24},
+			{QStringLiteral("velocity"), 100}}).ok;
 }
 
 //! Eight notes at distinct keys and positions, all the same velocity, so a roll has
@@ -178,6 +193,41 @@ private slots:
 	{
 		ControlRegistry::setReady(false);
 		Engine::destroy();
+	}
+
+	void scaleLoadIgnoresUnexpectedChildrenAndMalformedIntervals()
+	{
+		QDomDocument document;
+		QDomElement scaleElement = document.createElement(QStringLiteral("scale"));
+		document.appendChild(scaleElement);
+
+		QDomElement interval = document.createElement(QStringLiteral("interval"));
+		interval.setAttribute(QStringLiteral("num"), QStringLiteral("3"));
+		interval.setAttribute(QStringLiteral("den"), QStringLiteral("2"));
+		scaleElement.appendChild(interval);
+		QDomElement centsInterval = document.createElement(QStringLiteral("interval"));
+		centsInterval.setAttribute(QStringLiteral("cents"), QStringLiteral("100"));
+		scaleElement.appendChild(centsInterval);
+		scaleElement.appendChild(document.createComment(QStringLiteral("ignored")));
+		scaleElement.appendChild(document.createTextNode(QStringLiteral("ignored")));
+		scaleElement.appendChild(document.createElement(QStringLiteral("metadata")));
+		scaleElement.appendChild(document.createElement(QStringLiteral("interval")));
+		QDomElement incompleteInterval = document.createElement(QStringLiteral("interval"));
+		incompleteInterval.setAttribute(QStringLiteral("num"), QStringLiteral("3"));
+		scaleElement.appendChild(incompleteInterval);
+		QDomElement invalidCentsInterval = document.createElement(QStringLiteral("interval"));
+		invalidCentsInterval.setAttribute(QStringLiteral("cents"), QStringLiteral("invalid"));
+		scaleElement.appendChild(invalidCentsInterval);
+		QDomElement nonFiniteCentsInterval = document.createElement(QStringLiteral("interval"));
+		nonFiniteCentsInterval.setAttribute(QStringLiteral("cents"), QStringLiteral("nan"));
+		scaleElement.appendChild(nonFiniteCentsInterval);
+
+		Scale scale;
+		scale.loadSettings(scaleElement);
+
+		QCOMPARE(static_cast<int>(scale.getIntervals().size()), 2);
+		QCOMPARE(scale.getIntervals().front().getRatio(), 1.5f);
+		QCOMPARE(scale.getIntervals().at(1).getRatio(), Interval(100.0f).getRatio());
 	}
 
 	//! W1: every id is declared, typed, and classified - and the classes are the ones
@@ -309,6 +359,37 @@ private slots:
 			.value(QStringLiteral("seed")).toDouble(), 424242.0);
 	}
 
+	//! Luna cluster new-p19-7: the recorded randomize inverse is the argument-free
+	//! control.undo operation, and replaying it restores the notes.
+	void randomizeInverseCanBeReissuedThroughControlUndo()
+	{
+		Fixture fixture;
+		QVERIFY2(makeFixture(&fixture), "could not build a track + clip fixture");
+		QVERIFY2(addRollFixtureNotes(fixture.clip), "could not add the roll fixture's notes");
+		const QJsonArray before = run(QStringLiteral("roll.get_state"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}}).result
+			.value(QStringLiteral("notes")).toArray();
+
+		const ControlResult rolled = run(QStringLiteral("note.randomize"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("velocity_jitter"), 1.0}, {QStringLiteral("seed"), 424242}});
+		QVERIFY2(rolled.ok, qPrintable(rolled.errorMessage));
+		QVERIFY(rolled.result.value(QStringLiteral("velocities_moved")).toInt() > 0);
+		const ControlRegistry::Transaction* transaction = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(transaction != nullptr);
+		QCOMPARE(transaction->command, QStringLiteral("note.randomize"));
+		const QString inverseOp = transaction->inverse.value(QStringLiteral("op")).toString();
+		const QJsonObject inverseArgs = transaction->inverse.value(QStringLiteral("args")).toObject();
+		const ControlResult undone = ControlRegistry::instance()->invoke(inverseOp, inverseArgs);
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(inverseOp, QStringLiteral("control.undo"));
+		QVERIFY(inverseArgs.isEmpty());
+		const QJsonArray after = run(QStringLiteral("roll.get_state"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}}).result
+			.value(QStringLiteral("notes")).toArray();
+		QCOMPARE(after, before);
+	}
+
 	//! W4: the roll's typed refusals - a missing jitter, an out-of-range one, and a
 	//! clip with no notes at all.
 	void theRollRefusesWhatItCannotMean()
@@ -342,6 +423,85 @@ private slots:
 				{QStringLiteral("velocity_jitter"), 0.5},
 				{QStringLiteral("scope"), QStringLiteral("selection")}});
 		QCOMPARE(emptyScope.errorKind, ControlErrorKind::Refused);
+	}
+
+	//! Luna cluster new-p8-41: NaN jitter is not a number this engine can mean. It
+	//! passes the schema's "number" type check (isDouble is true for NaN) and BOTH
+	//! range comparisons (every comparison with NaN is false), so it reached the
+	//! roll, whose `> 0` guards then skipped the edits while the handler still
+	//! checkpointed and answered success - a no-op reported as an edit.
+	//! Non-finite jitter is refused with a typed InvalidArgs instead.
+	void nonfiniteJitterIsRefused()
+	{
+		Fixture fixture;
+		QVERIFY2(makeFixture(&fixture), "could not build a track + clip fixture");
+		QVERIFY2(addRollFixtureNotes(fixture.clip), "could not add the roll fixture's notes");
+		const double nan = std::nan("0");
+		const ControlResult velocityNan = run(QStringLiteral("note.randomize"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("velocity_jitter"), nan}});
+		QVERIFY2(!velocityNan.ok, "NaN velocity_jitter was accepted as a successful no-op roll");
+		QCOMPARE(velocityNan.errorKind, ControlErrorKind::InvalidArgs);
+		const ControlResult positionNan = run(QStringLiteral("note.randomize"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("velocity_jitter"), 0.5},
+				{QStringLiteral("position_jitter"), nan}});
+		QVERIFY2(!positionNan.ok, "NaN position_jitter was accepted as a successful no-op roll");
+		QCOMPARE(positionNan.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! Luna cluster new-p15-16: readNumber()'s range check compared with `<` and
+	//! `>`, and BOTH are false for NaN - so a NaN factor passed and
+	//! note.velocity_scale multiplied every velocity by NaN, writing an
+	//! implementation-dependent value while reporting success. Non-finite numbers
+	//! are refused typed, the way note.randomize refuses non-finite jitter.
+	void nonfiniteVelocityScaleFactorIsRefused()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		const ControlResult scaled = run(QStringLiteral("note.velocity_scale"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("factor"), std::nan("0")}});
+		QVERIFY2(!scaled.ok, "NaN factor was accepted as a successful velocity scale");
+		QCOMPARE(scaled.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(noteVelocity(fixture.clip, 0), 100.0);  // the note is untouched
+	}
+
+	//! Luna cluster new-p22-42: a handler call that bypasses schema validation must
+	//! still reject NaN before converting it to the engine's uint32 seed.
+	void nonfiniteSeedIsRefusedByRandomizeHandler()
+	{
+		Fixture fixture;
+		QVERIFY2(makeFixture(&fixture), "could not build a track + clip fixture");
+		QVERIFY2(addRollFixtureNotes(fixture.clip), "could not add the roll fixture's notes");
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlCommand* command = registry->command(QStringLiteral("note.randomize"));
+		QVERIFY(command != nullptr);
+		QVERIFY(static_cast<bool>(command->handler));
+		const double nan = std::nan("0");
+		const ControlResult rejected = command->handler(QJsonObject{
+			{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("velocity_jitter"), 0.5},
+			{QStringLiteral("seed"), nan}});
+		QVERIFY2(!rejected.ok, "note.randomize handler accepted a NaN seed");
+		QCOMPARE(rejected.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! The same readSeed helper serves random_seed_set, so its direct-handler path
+	//! must reject NaN without changing the persisted project seed.
+	void nonfiniteSeedIsRefusedBySeedSetHandler()
+	{
+		const double previous = run(QStringLiteral("note.random_seed_get")).result
+			.value(QStringLiteral("seed")).toDouble();
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlCommand* command = registry->command(QStringLiteral("note.random_seed_set"));
+		QVERIFY(command != nullptr);
+		QVERIFY(static_cast<bool>(command->handler));
+		const ControlResult rejected = command->handler(
+			QJsonObject{{QStringLiteral("seed"), std::nan("0")}});
+		QVERIFY2(!rejected.ok, "note.random_seed_set handler accepted a NaN seed");
+		QCOMPARE(rejected.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("note.random_seed_get")).result
+			.value(QStringLiteral("seed")).toDouble(), previous);
 	}
 
 	//! W5: the slide verbs, from the trap state (a note at the DEFAULT, which writes
@@ -424,6 +584,58 @@ private slots:
 		QCOMPARE(noteState(fixture.clip, 0).value(QStringLiteral("slide")).toBool(), true);
 	}
 
+	//! A zero semitone shift must not leave a clip checkpoint to undo.
+	void zeroSemitoneTransposeDoesNotTakeUndoStep()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int depthBefore = journal->undoDepth();
+		const ControlResult transposed = run(QStringLiteral("note.transpose"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("semitones"), 0}});
+		QVERIFY2(transposed.ok, qPrintable(transposed.errorMessage));
+		QCOMPARE(transposed.result.value(QStringLiteral("notes_changed")).toInt(), 0);
+		const int depthAfter = journal->undoDepth();
+		while (journal->undoDepth() > depthBefore) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+		QCOMPARE(depthAfter, depthBefore);
+	}
+
+	//! A zero velocity delta must not leave a clip checkpoint to undo.
+	void zeroVelocityOffsetDoesNotTakeUndoStep()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int depthBefore = journal->undoDepth();
+		const ControlResult offset = run(QStringLiteral("note.velocity_offset"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("delta"), 0}});
+		QVERIFY2(offset.ok, qPrintable(offset.errorMessage));
+		QCOMPARE(offset.result.value(QStringLiteral("notes_changed")).toInt(), 0);
+		const int depthAfter = journal->undoDepth();
+		while (journal->undoDepth() > depthBefore) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+		QCOMPARE(depthAfter, depthBefore);
+	}
+
+	//! An identity velocity scale must not leave a clip checkpoint to undo.
+	void identityVelocityScaleDoesNotTakeUndoStep()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int depthBefore = journal->undoDepth();
+		const ControlResult scaled = run(QStringLiteral("note.velocity_scale"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("factor"), 1.0}});
+		QVERIFY2(scaled.ok, qPrintable(scaled.errorMessage));
+		QCOMPARE(scaled.result.value(QStringLiteral("notes_changed")).toInt(), 0);
+		const int depthAfter = journal->undoDepth();
+		while (journal->undoDepth() > depthBefore) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+		QCOMPARE(depthAfter, depthBefore);
+	}
+
 	//! W6: the three transforms, each with its inverse exercised for real, plus the
 	//! selection scope and the two refusals it can produce.
 	void theThreeTransformsMoveNotesAndUndoPutsThemBack()
@@ -495,6 +707,115 @@ private slots:
 		QVERIFY2(run(QStringLiteral("note.select"),
 			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("notes"),
 				QJsonArray()}}).ok, "could not clear the selection");
+	}
+
+	//! Luna cluster new-p19-7: transform transactions also record an argument-free
+	//! control.undo inverse, which restores the transformed note through validation.
+	void transformInverseCanBeReissuedThroughControlUndo()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		const auto undoAsRecorded = [](const QString& command) {
+			ControlRegistry* registry = ControlRegistry::instance();
+			const ControlRegistry::Transaction* transaction = registry->lastTransaction();
+			if (transaction == nullptr || transaction->command != command) { return false; }
+			const QString inverseOp = transaction->inverse.value(QStringLiteral("op")).toString();
+			const QJsonObject inverseArgs = transaction->inverse.value(QStringLiteral("args")).toObject();
+			const ControlResult undone = registry->invoke(inverseOp, inverseArgs);
+			return undone.ok && inverseOp == QLatin1String("control.undo") && inverseArgs.isEmpty();
+		};
+
+		const ControlResult transposed = run(QStringLiteral("note.transpose"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("semitones"), 12}});
+		QVERIFY2(transposed.ok, qPrintable(transposed.errorMessage));
+		QCOMPARE(noteKey(fixture.clip, 0), 72);
+		QVERIFY2(undoAsRecorded(QStringLiteral("note.transpose")),
+			"the transpose's recorded control.undo failed validation or retained arguments");
+		QCOMPARE(noteKey(fixture.clip, 0), 60);
+
+		const ControlResult offset = run(QStringLiteral("note.velocity_offset"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("delta"), 25}});
+		QVERIFY2(offset.ok, qPrintable(offset.errorMessage));
+		QCOMPARE(noteVelocity(fixture.clip, 0), 125.0);
+		QVERIFY2(undoAsRecorded(QStringLiteral("note.velocity_offset")),
+			"the velocity-offset control.undo inverse retained arguments or failed");
+		QCOMPARE(noteVelocity(fixture.clip, 0), 100.0);
+
+		const ControlResult scaled = run(QStringLiteral("note.velocity_scale"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("factor"), 0.5}});
+		QVERIFY2(scaled.ok, qPrintable(scaled.errorMessage));
+		QCOMPARE(noteVelocity(fixture.clip, 0), 50.0);
+		QVERIFY2(undoAsRecorded(QStringLiteral("note.velocity_scale")),
+			"the velocity-scale control.undo inverse retained arguments or failed");
+		QCOMPARE(noteVelocity(fixture.clip, 0), 100.0);
+	}
+
+	//! A hand-edited scales/custom entry must not turn into a bogus "degree 0" scale.
+	void malformedCustomScaleEntriesAreIgnored()
+	{
+		const QJsonObject before = lmms::control::customScales();
+		QJsonObject edited = before;
+		// an unconvertible value used toInt() into 0; a fractional one was truncated
+		edited.insert(QStringLiteral("Odd"), QJsonArray{true, QStringLiteral("nope")});
+		edited.insert(QStringLiteral("Ragged"), QJsonArray{0, 12, 99, 4});
+		edited.insert(QStringLiteral("Huge"), QJsonArray{1.0e300, 2});
+		// extreme negative, fractional and non-finite-looking inputs: only the whole 0..11 degree survives
+		edited.insert(QStringLiteral("Extremes"), QJsonArray{-1.0e300, 2.5, 7, -0.5, 11.5, 12.0, 7});
+		lmms::control::setCustomScales(edited);
+
+		QVERIFY(lmms::control::scaleDegreesOf(QStringLiteral("Odd")).empty());  // nothing valid: not a "C" scale
+		const std::vector<int> ragged = lmms::control::scaleDegreesOf(QStringLiteral("Ragged"));
+		QCOMPARE(ragged.size(), size_t(2));  // only 0 and 4 survive the 0..11 window
+		QCOMPARE(ragged[0], 0);
+		QCOMPARE(ragged[1], 4);
+
+		const std::vector<int> huge = lmms::control::scaleDegreesOf(QStringLiteral("Huge"));
+		QCOMPARE(huge.size(), size_t(1));
+		QCOMPARE(huge[0], 2);
+
+		// -1e300, 2.5, -0.5, 11.5 and 12.0 are all refused; only the two whole 7s survive
+		const std::vector<int> extremes = lmms::control::scaleDegreesOf(QStringLiteral("Extremes"));
+		QCOMPARE(extremes.size(), size_t(2));
+		QCOMPARE(extremes[0], 7);
+		QCOMPARE(extremes[1], 7);
+
+		// Keep the FP-exception check separate from 1e300: Qt's JSON parser may
+		// itself raise FE_INVALID while decoding an exponent that large. This
+		// fixture isolates the product's out-of-range casts, one past INT_MAX and
+		// one past INT_MIN, both of which would raise FE_INVALID before the range check.
+		QJsonObject overflowEdited = before;
+		overflowEdited.insert(QStringLiteral("Overflow"), QJsonArray{2147483648.0, -2147483649.0, 2});
+		lmms::control::setCustomScales(overflowEdited);
+
+		// On Linux x86-64 the overflowing SSE conversion sets FE_INVALID. Check
+		// that flag around the lookup so this regression detects the undefined
+		// conversion even though its result is discarded by the scale validator.
+#if defined(__linux__) && defined(__x86_64__)
+		std::fenv_t originalEnvironment;
+		QVERIFY(std::fegetenv(&originalEnvironment) == 0);
+		QVERIFY(std::feclearexcept(FE_ALL_EXCEPT) == 0);
+#endif
+		const std::vector<int> overflow = lmms::control::scaleDegreesOf(QStringLiteral("Overflow"));
+#if defined(__linux__) && defined(__x86_64__)
+		const int invalidExceptions = std::fetestexcept(FE_INVALID);
+		QVERIFY(std::fesetenv(&originalEnvironment) == 0);
+#endif
+		lmms::control::setCustomScales(before);
+#if defined(__linux__) && defined(__x86_64__)
+		QCOMPARE(invalidExceptions, 0);
+#endif
+		QCOMPARE(overflow.size(), size_t(1));
+		QCOMPARE(overflow[0], 2);
+
+		// a well-formed custom scale still wins over the engine's table
+		QJsonObject good = edited;
+		good.insert(QStringLiteral("Mine"), QJsonArray{0, 5, 7});
+		lmms::control::setCustomScales(good);
+		const std::vector<int> mine = lmms::control::scaleDegreesOf(QStringLiteral("Mine"));
+		QCOMPARE(mine.size(), size_t(3));
+		QCOMPARE(mine[1], 5);
+		lmms::control::setCustomScales(before);
 	}
 
 	//! W7: the scale vocabulary is the engine's own, and the analysis is a measurement.
@@ -645,15 +966,82 @@ private slots:
 		QVERIFY2(again.ok, qPrintable(again.errorMessage));
 		QCOMPARE(again.result.value(QStringLiteral("notes_moved")).toInt(), 0);
 
-		// Two undos: the second snap is its own step (a no-op edit still records one,
-		// and undoing it leaves the first snap's result), then the first snap's step
-		// restores the keys.
-		REV_UNDO_OR_FAIL();
-		QCOMPARE(noteKey(fixture.clip, 1), 60);
+		// ONE undo: the second snap moved nothing, so it took no step of its own
+		// (Luna cluster new-p14-72) and the step under it is still the first snap's -
+		// which restores the keys.
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(noteKey(fixture.clip, 1), 61);
 		QCOMPARE(noteKey(fixture.clip, 0), 60);
 		QCOMPARE(noteKey(fixture.clip, 2), 62);
+	}
+
+	//! Luna cluster new-p14-72: a snap that moves NOTHING must take no undo step.
+	//! The empty step it used to push sat ON TOP of the first snap's, so an undo
+	//! after a second snap unwound the no-op - the clip stayed snapped and the real
+	//! edit needed one undo too many.
+	void aSecondSnapOfAClipAlreadyInScaleTakesNoUndoStep()
+	{
+		Fixture fixture;
+		QVERIFY2(makeFixture(&fixture), "could not build a track + clip fixture");
+		// C (in C major), C# (out), D (in).
+		static const int keys[] = {60, 61, 62};
+		for (int index = 0; index < 3; ++index)
+		{
+			QVERIFY2(run(QStringLiteral("note.add"),
+				QJsonObject{{QStringLiteral("clip"), fixture.clip},
+					{QStringLiteral("key"), keys[index]}, {QStringLiteral("position"), index * 24},
+					{QStringLiteral("length"), 24}}).ok, "could not add a fixture note");
+		}
+		QVERIFY(run(QStringLiteral("scale.set"),
+			QJsonObject{{QStringLiteral("scale"), QStringLiteral("Major")}}).ok);
+		QVERIFY(run(QStringLiteral("scale.root_set"),
+			QJsonObject{{QStringLiteral("root"), 0}}).ok);
+
+		const ControlResult snapped = run(QStringLiteral("scale.snap_notes"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}});
+		QVERIFY2(snapped.ok, qPrintable(snapped.errorMessage));
+		QCOMPARE(snapped.result.value(QStringLiteral("notes_moved")).toInt(), 1);
+
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int depthAfterTheSnap = journal->undoDepth();
+
+		// The clip is in scale now: the second snap moves nothing, so it must leave
+		// the undo stack exactly as it found it.
+		const ControlResult again = run(QStringLiteral("scale.snap_notes"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}});
+		QVERIFY2(again.ok, qPrintable(again.errorMessage));
+		QCOMPARE(again.result.value(QStringLiteral("notes_moved")).toInt(), 0);
+		QCOMPARE(journal->undoDepth(), depthAfterTheSnap);
+
+		// And the step that IS there is the first snap's: one undo takes the keys back.
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(noteKey(fixture.clip, 1), 61);
+		QCOMPARE(noteKey(fixture.clip, 0), 60);
+		QCOMPARE(noteKey(fixture.clip, 2), 62);
+	}
+
+	//! W9b: the empty-clip refusal of scale.snap_notes (Luna cluster new-p11-48). An
+	//! empty clip with the DEFAULT scope 'clip' was blamed on the selection scope -
+	//! "none is selected, so scope 'selection' would edit nothing" - which names a
+	//! reason that was never asked for. note.transform already distinguishes the two
+	//! empties (ControlCommandsNoteTransform.cpp:105-110); the snap must too.
+	void snapOnAnEmptyClipNamesTheEmptyClipAsTheReason()
+	{
+		Fixture fixture;
+		QVERIFY2(makeFixture(&fixture), "could not build a track + clip fixture");
+		// Set the scale first, so the refusal below is about the clip, not about a
+		// missing scale context.
+		QVERIFY2(run(QStringLiteral("scale.set"),
+			QJsonObject{{QStringLiteral("scale"), QStringLiteral("Major")}}).ok,
+			"could not set the scale context");
+		const ControlResult emptyClip = run(QStringLiteral("scale.snap_notes"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}});
+		QCOMPARE(emptyClip.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(emptyClip.errorMessage.contains(QStringLiteral("no notes")),
+			"the refusal must say the clip has no notes");
+		QVERIFY2(!emptyClip.errorMessage.contains(QStringLiteral("none is selected")),
+			"an empty clip must not be blamed on the selection scope");
 	}
 
 	//! W10: the device group's MPE verb - the switch flips, the read-back is honest
@@ -690,6 +1078,63 @@ private slots:
 
 		const ControlResult noArgument = run(QStringLiteral("device.mpe_set"));
 		QCOMPARE(noArgument.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! A call that changes NOTHING must not take an undo step. device.mpe_set
+	//! answered `changed: false` for a value the flag already had, and still
+	//! recorded a step - so the next control.undo unwound that no-op instead of
+	//! the real edit behind it, and the edit stayed applied.
+	void theMpeSwitchTakesNoUndoStepForAValueItAlreadyHas()
+	{
+		const ControlResult initial = run(QStringLiteral("device.mpe_get_state"));
+		QVERIFY2(initial.ok, qPrintable(initial.errorMessage));
+		const bool wasEnabled = initial.result.value(QStringLiteral("enabled")).toBool();
+
+		// A real edit first, so there IS a step for a no-op to shadow.
+		const bool edited = !wasEnabled;
+		const ControlResult changed = run(QStringLiteral("device.mpe_set"),
+			QJsonObject{{QStringLiteral("enabled"), edited}});
+		QVERIFY2(changed.ok, qPrintable(changed.errorMessage));
+		QCOMPARE(changed.result.value(QStringLiteral("changed")).toBool(), true);
+
+		const ControlResult same = run(QStringLiteral("device.mpe_set"),
+			QJsonObject{{QStringLiteral("enabled"), edited}});
+		QVERIFY2(same.ok, qPrintable(same.errorMessage));
+		QCOMPARE(same.result.value(QStringLiteral("changed")).toBool(), false);
+		QCOMPARE(same.result.value(QStringLiteral("previous_enabled")).toBool(), edited);
+
+		// ONE undo must take the real edit back, not the no-op.
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(run(QStringLiteral("device.mpe_get_state")).result
+			.value(QStringLiteral("enabled")).toBool(), wasEnabled);
+	}
+
+	//! A seed the project already holds changes nothing, so it takes NO undo step.
+	//! note.random_seed_set recorded one anyway, and the next control.undo unwound
+	//! that no-op instead of the real seed edit behind it, leaving the edit applied.
+	void theUnchangedSeedTakesNoUndoStep()
+	{
+		const ControlResult initial = run(QStringLiteral("note.random_seed_get"));
+		QVERIFY2(initial.ok, qPrintable(initial.errorMessage));
+		const double original = initial.result.value(QStringLiteral("seed")).toDouble();
+
+		// A real edit first, so there IS a step for a no-op to shadow.
+		const double edited = original == 424242.0 ? 515151.0 : 424242.0;
+		const ControlResult changed = run(QStringLiteral("note.random_seed_set"),
+			QJsonObject{{QStringLiteral("seed"), edited}});
+		QVERIFY2(changed.ok, qPrintable(changed.errorMessage));
+		QCOMPARE(changed.result.value(QStringLiteral("changed")).toBool(), true);
+
+		const ControlResult same = run(QStringLiteral("note.random_seed_set"),
+			QJsonObject{{QStringLiteral("seed"), edited}});
+		QVERIFY2(same.ok, qPrintable(same.errorMessage));
+		QCOMPARE(same.result.value(QStringLiteral("changed")).toBool(), false);
+		QCOMPARE(same.result.value(QStringLiteral("previous")).toDouble(), edited);
+
+		// ONE undo must take the real edit back, not the no-op.
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(run(QStringLiteral("note.random_seed_get")).result
+			.value(QStringLiteral("seed")).toDouble(), original);
 	}
 
 	//! scale.from_detected_key's ADVERTISED inverse must be able to restore the

@@ -42,6 +42,7 @@
 
 class QDomDocument;
 class QDomElement;
+class InstrumentLayersCommandsTest;
 
 namespace lmms
 {
@@ -80,6 +81,8 @@ class TrackContainer;
  * model-change guard. The note paths read fixed atomics and the zone list; they allocate nothing beyond
  * what starting a note on a track already does (NotePlayHandleManager's pool, the engine's lock-free
  * play-handle list).
+ * Live layer routing retains at most 128 unmatched note-on routes per key. At that limit the oldest route
+ * is stolen and its own note-off is swallowed, so a new note-on is never dropped and the FIFO stays bounded.
  */
 class LMMS_EXPORT InstrumentLayers
 {
@@ -115,6 +118,24 @@ public:
 	auto zones() -> RackZones& { return m_zones; }
 	auto zones() const -> const RackZones& { return m_zones; }
 
+	/*! 0.5.0 F2 interface: one layer's mix. A muted layer - or, while any layer is soloed, a layer that is not -
+	 *  sounds at gain 0; @a level is a linear gain (0..MaxLevel, 1 = unity) on top of the track's volume. Layer 0
+	 *  (the track's own instrument) has a mute and a solo; its level is the track's volume. Applied as the gain of
+	 *  each layer's own audio bus (AudioBusHandle::setGain): one atomic per bus, read once a period. */
+	struct Mix
+	{
+		bool muted = false;
+		bool solo = false;
+		float level = 1.0f;
+	};
+	static constexpr float MaxLevel = 2.0f;
+
+	//! Layer @a index's mix (0..layerCount()); the default for any other index.
+	auto mix(int index) const -> Mix;
+	//! Sets layer @a index's mix (0..layerCount(), level clamped to 0..MaxLevel) and publishes every layer's gain;
+	//! false for no such layer, or a non-finite level (NaN is never a gain).
+	auto setMix(int index, const Mix& mix) -> bool;
+
 	//! The track's mixer channel changed: the layers follow it (InstrumentTrack::updateMixerChannel).
 	void followMixerChannel(int channel);
 
@@ -127,9 +148,9 @@ public:
 
 	//! Whether the track's own instrument plays a note of @a key at note volume @a volume.
 	auto basePlays(int key, int volume) const -> bool;
-	//! processOutEvent's note-on gate for the track's instrument (MIDI velocity); remembered for the note-off.
-	auto baseTakesNoteOn(int key, int velocity) -> bool;
-	auto baseTakesNoteOff(int key) -> bool;
+	//! processOutEvent's note-on gate; @a noteAccepted carries a clip handle's decision to its own note-off.
+	auto baseTakesNoteOn(int key, int velocity, std::atomic_bool* noteAccepted = nullptr) -> bool;
+	auto baseTakesNoteOff(int key, const std::atomic_bool* noteAccepted = nullptr) -> bool;
 	//! Render thread: starts @a note (the track's own, decorated) on every layer it falls into, in
 	//! @a patternTrack's pattern when it plays in one.
 	void playNote(const NotePlayHandle& note, f_cnt_t offset, f_cnt_t frames, Track* patternTrack);
@@ -137,6 +158,8 @@ public:
 	void forwardInEvent(const MidiEvent& event, const TimePos& time, f_cnt_t offset);
 
 private:
+	friend class ::InstrumentLayersCommandsTest;
+
 	//! One bit per layer index (bit k = layer k) a note of @a key at @a volume plays on.
 	auto layerMask(int key, int volume) const -> std::uint32_t;
 	auto ensureContainer() -> TrackContainer*;
@@ -148,20 +171,40 @@ private:
 	//! The zones after layer @a index is removed (dropped) or inserted (made room for).
 	auto zonesWithout(int index) const -> std::vector<RackZone>;
 	auto zonesWithRoomAt(int index) const -> std::vector<RackZone>;
-	//! The layers a live @a event goes to: a note-on's zones (remembered per key), the layers its note-on
-	//! reached for a note-off or key pressure, every layer for a channel-wide message.
-	auto liveLayersFor(const MidiEvent& event) -> std::uint32_t;
+	//! Every layer's bus gain from m_mix: 0 when muted or (while any layer is soloed) not soloed, else its level.
+	void publishMix();
+	//! m_mix with layer @a index's entry dropped (the later ones move down) or made room for (moved up).
+	void dropMix(int index);
+	void makeRoomForMix(int index, const Mix& mix);
+	//! A live event uses a bounded per-key FIFO, or every layer for a channel-wide message.
+	auto liveLayersFor(const MidiEvent& event, const TimePos& time, f_cnt_t offset) -> std::uint32_t;
+	auto admitLiveNoteOn(int key, std::uint32_t layers, const MidiEvent& event, const TimePos& time, f_cnt_t offset) -> std::uint32_t;
+	auto rememberLiveLayers(int key, std::uint32_t layers) -> bool;
+	auto takeOldestLiveLayers(int key) -> std::uint32_t;
+	auto activeLiveLayers(int key) const -> std::uint32_t;
+	void insertLiveLayer(int index);
+	void dropLiveLayer(int index);
+	void clearLiveRoutes();
 	void sendToLayers(std::uint32_t layers, const MidiEvent& event, const TimePos& time, f_cnt_t offset);
+	static constexpr std::size_t MaxActiveLiveNotesPerKey = 128;
+	struct LiveKeyRoutes
+	{
+		std::array<std::atomic<std::uint32_t>, MaxActiveLiveNotesPerKey> entries{};
+		std::atomic<std::uint32_t> nextSequence{0};
+		std::atomic<std::uint32_t> overflowNotes{0};
+	};
 
 	InstrumentTrack* m_owner;
 	std::unique_ptr<TrackContainer> m_container;
 	std::array<std::atomic<InstrumentTrack*>, MaxLayers> m_slots{};
 	RackZones m_zones;
-	//! Per key: the layers a live note-on was passed to (bit k = layer k), for its note-off.
-	std::array<std::atomic<std::uint32_t>, NumKeys> m_liveLayers{};
-	//! Per key: whether the track's own instrument declined the note-on (processOutEvent), so its note-off is
-	//! declined too.
-	std::array<std::atomic<bool>, NumKeys> m_baseSkipped{};
+	//! Control thread only: each layer's mix, by layer index (0 = the track's own instrument).
+	std::array<Mix, MaxLayers + 1> m_mix{};
+	//! Per key: the ordered layer masks of overlapping live note-ons (bit k = layer k).
+	std::array<LiveKeyRoutes, NumKeys> m_liveLayers{};
+	//! Per key: accepted and skipped base-instrument note-ons, so overlapping notes keep their note-offs paired.
+	std::array<std::atomic<std::uint32_t>, NumKeys> m_baseAccepted{};
+	std::array<std::atomic<std::uint32_t>, NumKeys> m_baseSkipped{};
 };
 
 } // namespace lmms

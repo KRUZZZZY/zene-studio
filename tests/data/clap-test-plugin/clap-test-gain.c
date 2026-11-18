@@ -9,6 +9,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,10 +17,12 @@
 
 #include <clap/clap.h>
 
+#include "clap-test-gesture.h"
+
 #define TEST_PLUGIN_ID "org.lmms.test.clap-gain"
 #define TEST_PLUGIN_MAGIC 0x4C4D4741u /* "LMGA" */
 /* Bump when the state layout below changes; the host stores the bytes opaquely. */
-#define TEST_PLUGIN_STATE_VERSION 2u
+#define TEST_PLUGIN_STATE_VERSION 3u
 /* How many per-call block sizes the fixture records, for the chunking test
    (ClapHostTest::testChunkedProcessing). The recorded sequence is what the
    host actually asked the plug-in to process, so a test can assert the exact
@@ -49,11 +52,17 @@ typedef struct gain_state
 	double gain;
 	double bypass;
 	double frames_processed;
+	uint32_t host_flushes; /* params.flush() calls that arrived outside process() - a host answering a
+	                          request_flush while the plug-in was active */
 } gain_state_t;
 
 typedef struct gain_plugin
 {
 	clap_plugin_t plugin;
+	uint32_t host_flushes;
+	int in_process;         /* set for the duration of process(), so flush() can tell the two apart */
+	long gesture_seen;      /* clap-test-gesture.h: the last sequence this instance reported */
+	int return_pending;     /* CLAP_TEST_GAIN_REQUEST_FLUSH: the next process() returns the changed value */
 	const clap_host_t* host;
 	const clap_plugin_params_t* params;
 	double gain;
@@ -77,12 +86,15 @@ typedef struct gain_plugin
 	clap_id timer_id;
 	bool timer_registered;
 	uint32_t timer_ticks;
-	/* R4.3: an embedded X11 editor - sized 400x300, never smaller than 100x80. */
+	/* R4.3: an embedded editor - sized 400x300, never smaller than 100x80. Q050-490: on X11, win32
+	   or cocoa, the api it was created for in gui_api. */
 	bool gui_created;
+	const char* gui_api;
 	bool gui_visible;
 	uint64_t gui_parent;
 	uint32_t gui_width;
 	uint32_t gui_height;
+	bool gui_scale_finite;
 } gain_plugin_t;
 
 static const clap_plugin_descriptor_t s_descriptor = {
@@ -114,6 +126,31 @@ static void gain_param_info(clap_param_info_t* info, clap_id id, const char* nam
 	info->max_value = max;
 	info->default_value = def;
 	info->flags = CLAP_PARAM_IS_AUTOMATABLE;
+	/* CLAP_TEST_GAIN_BAD_RANGE: Gain reports an inverted range (min > max), which a host must survive
+	   (std::clamp needs ordered bounds) instead of storing verbatim. */
+	if (id == PARAM_GAIN && getenv("CLAP_TEST_GAIN_BAD_RANGE") != NULL)
+	{
+		info->min_value = 1.0;
+		info->max_value = 0.0;
+		info->default_value = 0.5;
+	}
+	/* CLAP_TEST_GAIN_WIDE_RANGE: Gain reports the two FINITE extremes. Each endpoint is a valid double,
+	   but max - min overflows to +inf; a host that stores them verbatim divides by an infinite range. */
+	if (id == PARAM_GAIN && getenv("CLAP_TEST_GAIN_WIDE_RANGE") != NULL)
+	{
+		info->min_value = -DBL_MAX;
+		info->max_value = DBL_MAX;
+		info->default_value = 0.0;
+	}
+	/* CLAP_TEST_GAIN_HUGE_RANGE: Gain reports 0 .. DBL_MAX, whose span IS finite. A host may keep the
+	   endpoints, but its range must stay finite and normalizing must not divide a finite span by an
+	   infinite one. */
+	if (id == PARAM_GAIN && getenv("CLAP_TEST_GAIN_HUGE_RANGE") != NULL)
+	{
+		info->min_value = 0.0;
+		info->max_value = DBL_MAX;
+		info->default_value = 0.0;
+	}
 }
 
 /* The extended list's entries after Gain (W6). */
@@ -143,6 +180,9 @@ static bool gain_params_get_info(const clap_plugin_t* plugin, uint32_t index, cl
 		info->max_value = 1.0;
 		info->default_value = 0.0;
 		info->flags = CLAP_PARAM_IS_AUTOMATABLE | CLAP_PARAM_IS_STEPPED;
+		/* CLAP_TEST_GAIN_READONLY: Bypass is CLAP_PARAM_IS_READONLY, so a host must not offer an
+		   editable knob for it (its writes are ignored). */
+		if (getenv("CLAP_TEST_GAIN_READONLY") != NULL) { info->flags |= CLAP_PARAM_IS_READONLY; }
 		return true;
 	default:
 		return false;
@@ -155,6 +195,10 @@ static bool gain_params_get_value(const clap_plugin_t* plugin, clap_id param_id,
 	switch (param_id)
 	{
 	case PARAM_GAIN:
+		/* CLAP_TEST_GAIN_NAN_VALUE: the plug-in REPORTS a non-finite value. std::clamp does not
+		   sanitize NaN, so a host that clamps and stores it forwards NaN to the plug-in's own
+		   processing instead of a number in the parameter's range. */
+		if (getenv("CLAP_TEST_GAIN_NAN_VALUE") != NULL) { *value = (double)NAN; return true; }
 		*value = self->gain;
 		return true;
 	case PARAM_BYPASS:
@@ -194,6 +238,7 @@ static void gain_params_flush(const clap_plugin_t* plugin, const clap_input_even
 {
 	(void)out_events;
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	if (!self->in_process) { self->host_flushes += 1; }
 	const uint32_t size = in_events->size(in_events);
 	for (uint32_t i = 0; i < size; ++i)
 	{
@@ -232,24 +277,59 @@ static const clap_plugin_params_t s_params = {
 
 /* ----------------------------------------------------------- audio ports -- */
 
+/* CLAP_TEST_GAIN_LAYOUT selects a port layout for the routing tests (ClapHostTest). Without it the
+   fixture keeps its one stereo input and one stereo output, the main port at index 0 of each.
+     sidechain-first   inputs: 0 = side-chain (not main), 1 = main; one stereo output
+     unreadable-input  inputs: 0 reports no info (get() fails), 1 = main; one stereo output
+     zero-output       one stereo input; outputs: 0 = zero-channel, 1 = main stereo
+     mono-sidechain    inputs: 0 = main stereo, 1 = MONO side-chain (three input channels, an odd count:
+                       ZAM's ZamCompX2); one stereo output (cluster stress-3)
+     no-audio          no audio port at all, the shape of a note-only plug-in (Stochas; cluster stress-3)
+   Each process() copies the main input to the main output (scaled by the gain), and when the ports do
+   not match the expected indices it writes nothing, so a misrouted buffer reads back as silence. */
+static const char* gain_layout(void) { return getenv("CLAP_TEST_GAIN_LAYOUT"); }
+
+static uint32_t gain_main_index(bool is_input)
+{
+	const char* layout = gain_layout();
+	if (layout == NULL || strcmp(layout, "mono-sidechain") == 0) { return 0; }
+	if (strcmp(layout, "zero-output") == 0) { return is_input ? 0 : 1; }
+	return is_input ? 1 : 0;
+}
+
 static uint32_t gain_audio_ports_count(const clap_plugin_t* plugin, bool is_input)
 {
 	(void)plugin;
-	return 1;
-	(void)is_input;
+	const char* layout = gain_layout();
+	if (layout == NULL) { return 1; }
+	if (strcmp(layout, "no-audio") == 0) { return 0; }
+	const bool zero = strcmp(layout, "zero-output") == 0;
+	return is_input ? (zero ? 1 : 2) : (zero ? 2 : 1);
 }
 
 static bool gain_audio_ports_get(const clap_plugin_t* plugin, uint32_t index, bool is_input,
 	clap_audio_port_info_t* info)
 {
 	(void)plugin;
-	if (index != 0) { return false; }
+	const char* layout = gain_layout();
+	if (index >= gain_audio_ports_count(plugin, is_input)) { return false; }
+	if (layout != NULL && is_input && index == 0 && strcmp(layout, "unreadable-input") == 0) { return false; }
 	memset(info, 0, sizeof(*info));
-	info->id = is_input ? 0 : 1;
-	strncpy(info->name, is_input ? "Input" : "Output", sizeof(info->name) - 1);
-	info->flags = CLAP_AUDIO_PORT_IS_MAIN;
-	info->channel_count = 2;
-	info->port_type = CLAP_PORT_STEREO;
+	const bool empty = layout != NULL && !is_input && index == 0 && strcmp(layout, "zero-output") == 0;
+	info->id = (is_input ? 0u : 100u) + index;
+	if (layout == NULL)
+	{
+		strncpy(info->name, is_input ? "Input" : "Output", sizeof(info->name) - 1);
+	}
+	else
+	{
+		strncpy(info->name, empty ? "Empty" : (is_input ? (index == gain_main_index(true) ? "Main" : "Side-chain")
+			: "Output"), sizeof(info->name) - 1);
+	}
+	info->flags = index == gain_main_index(is_input) ? CLAP_AUDIO_PORT_IS_MAIN : 0;
+	const bool mono = layout != NULL && is_input && index == 1 && strcmp(layout, "mono-sidechain") == 0;
+	info->channel_count = empty ? 0 : (mono ? 1 : 2);
+	info->port_type = empty ? NULL : (mono ? CLAP_PORT_MONO : CLAP_PORT_STEREO);
 	info->in_place_pair = CLAP_INVALID_ID;
 	return true;
 }
@@ -279,6 +359,16 @@ static bool gain_state_save(const clap_plugin_t* plugin, const clap_ostream_t* s
 	state.gain = self->gain;
 	state.bypass = self->bypass;
 	state.frames_processed = self->frames_processed;
+	state.host_flushes = self->host_flushes;
+	/* CLAP_TEST_GAIN_HUGE_STATE: the plug-in asks the host to write more bytes than any blob can hold
+	   (SIZE_MAX - 8) and then IGNORES the answer, reporting success anyway - exactly the plug-in the host
+	   must not believe. A host that casts the uint64 size to a signed qsizetype appends strlen() of the
+	   buffer instead and still returns "success": the saved project gets a truncated blob. */
+	if (getenv("CLAP_TEST_GAIN_HUGE_STATE") != NULL)
+	{
+		(void)stream->write(stream, &state, (uint64_t)-1 - 8);
+		return true;
+	}
 	return stream->write(stream, &state, sizeof(state)) == (int64_t)sizeof(state);
 }
 
@@ -293,6 +383,7 @@ static bool gain_state_load(const clap_plugin_t* plugin, const clap_istream_t* s
 	self->gain = state.gain;
 	self->bypass = state.bypass;
 	self->frames_processed = state.frames_processed;
+	self->host_flushes = state.host_flushes;
 	/* The counters are part of the saved state, so restoring a state restores
 	   what the fixture reports as well: two saves of one state round-trip
 	   byte-wise (ClapHostTest::testStateRoundTrip). */
@@ -368,16 +459,28 @@ static void gain_on_timer(const clap_plugin_t* plugin, clap_id timer_id)
 
 /* ------------------------------------------------------------------ gui --- */
 
+/* Q050-490: x11, win32 and cocoa, embedded, as a real cross-platform editor offers;
+   CLAP_TEST_GAIN_GUI_API names the only api it takes instead, so the host's refusal can be exercised. */
 static bool gui_is_api_supported(const clap_plugin_t* plugin, const char* api, bool is_floating)
 {
 	(void)plugin;
-	return strcmp(api, CLAP_WINDOW_API_X11) == 0 && !is_floating;
+	if (api == NULL || is_floating) { return false; }
+	const char* only = getenv("CLAP_TEST_GAIN_GUI_API");
+	if (only != NULL) { return strcmp(api, only) == 0; }
+	return strcmp(api, CLAP_WINDOW_API_X11) == 0 || strcmp(api, CLAP_WINDOW_API_WIN32) == 0
+		|| strcmp(api, CLAP_WINDOW_API_COCOA) == 0;
 }
 
 static bool gui_get_preferred_api(const clap_plugin_t* plugin, const char** api, bool* is_floating)
 {
 	(void)plugin;
+#if defined(_WIN32)
+	*api = CLAP_WINDOW_API_WIN32;
+#elif defined(__APPLE__)
+	*api = CLAP_WINDOW_API_COCOA;
+#else
 	*api = CLAP_WINDOW_API_X11;
+#endif
 	*is_floating = false;
 	return true;
 }
@@ -387,6 +490,11 @@ static bool gui_create(const clap_plugin_t* plugin, const char* api, bool is_flo
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
 	if (!gui_is_api_supported(plugin, api, is_floating) || self->gui_created) { return false; }
 	self->gui_created = true;
+	self->gui_api = strcmp(api, CLAP_WINDOW_API_WIN32) == 0 ? CLAP_WINDOW_API_WIN32
+		: strcmp(api, CLAP_WINDOW_API_COCOA) == 0 ? CLAP_WINDOW_API_COCOA : CLAP_WINDOW_API_X11;
+	/* No set_scale is a scale of 1 (a cocoa host never calls it). A test can require the host to
+	   call set_scale with one exact factor before it accepts the parent. */
+	self->gui_scale_finite = getenv("CLAP_TEST_GAIN_EXPECT_SCALE") == NULL;
 	self->gui_width = 400;
 	self->gui_height = 300;
 	return true;
@@ -400,7 +508,20 @@ static void gui_destroy(const clap_plugin_t* plugin)
 	self->gui_parent = 0;
 }
 
-static bool gui_set_scale(const clap_plugin_t* plugin, double scale) { (void)plugin; (void)scale; return true; }
+static bool gui_set_scale(const clap_plugin_t* plugin, double scale)
+{
+	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	/* Q050-490: "cocoa uses logical size, don't call set_scale" (clap/ext/gui.h). A host that does
+	   anyway is refused the parent, as a non-finite scale is. */
+	if (self->gui_api == CLAP_WINDOW_API_COCOA)
+	{
+		self->gui_scale_finite = false;
+		return false;
+	}
+	const char* expected = getenv("CLAP_TEST_GAIN_EXPECT_SCALE");
+	self->gui_scale_finite = isfinite(scale) && (expected == NULL || scale == strtod(expected, NULL));
+	return true;
+}
 
 static bool gui_get_size(const clap_plugin_t* plugin, uint32_t* width, uint32_t* height)
 {
@@ -442,8 +563,12 @@ static bool gui_set_size(const clap_plugin_t* plugin, uint32_t width, uint32_t h
 static bool gui_set_parent(const clap_plugin_t* plugin, const clap_window_t* window)
 {
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
-	if (!self->gui_created || window == NULL || strcmp(window->api, CLAP_WINDOW_API_X11) != 0) { return false; }
-	self->gui_parent = (uint64_t)window->x11;
+	if (!self->gui_created || !self->gui_scale_finite || window == NULL || window->api == NULL ||
+		strcmp(window->api, self->gui_api) != 0) { return false; }
+	/* The handle is read from the union member of the api the editor was created for. */
+	if (self->gui_api == CLAP_WINDOW_API_WIN32) { self->gui_parent = (uint64_t)(uintptr_t)window->win32; }
+	else if (self->gui_api == CLAP_WINDOW_API_COCOA) { self->gui_parent = (uint64_t)(uintptr_t)window->cocoa; }
+	else { self->gui_parent = (uint64_t)window->x11; }
 	return self->gui_parent != 0;
 }
 
@@ -460,6 +585,8 @@ static bool gui_show(const clap_plugin_t* plugin)
 {
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
 	self->gui_visible = self->gui_created && self->gui_parent != 0;
+	/* CLAP_TEST_GAIN_REQUEST_RESIZE: once shown, the editor asks for a new size from the main thread. */
+	if (self->gui_visible && getenv("CLAP_TEST_GAIN_REQUEST_RESIZE") != NULL) { self->host->request_callback(self->host); }
 	return self->gui_visible;
 }
 
@@ -508,7 +635,11 @@ static bool gain_activate(const clap_plugin_t* plugin, double sample_rate, uint3
 	memset(self->recorded, 0, sizeof(self->recorded));
 	/* With CLAP_TEST_GAIN_MAIN_THREAD set, the plug-in asks for a main-thread call, the path the
 	   host services in HostedPlugin::serviceMainThread() (engine audit E8). */
-	if (getenv("CLAP_TEST_GAIN_MAIN_THREAD") != NULL || getenv("CLAP_TEST_GAIN_RESCAN") != NULL)
+	self->host_flushes = 0;
+	self->in_process = 0;
+	self->return_pending = 0;
+	if (getenv("CLAP_TEST_GAIN_MAIN_THREAD") != NULL || getenv("CLAP_TEST_GAIN_RESCAN") != NULL
+		|| getenv("CLAP_TEST_GAIN_REQUEST_FLUSH") != NULL || getenv("CLAP_TEST_GAIN_CLOSE_GUI") != NULL)
 	{
 		self->host->request_callback(self->host);
 	}
@@ -550,17 +681,63 @@ static void gain_reset(const clap_plugin_t* plugin)
 	memset(self->recorded, 0, sizeof(self->recorded));
 }
 
+/* The routing modes: the main input, at the index the plug-in calls its main, goes to the main output. */
+static void gain_route_layout(const clap_process_t* process, double gain)
+{
+	const uint32_t src = gain_main_index(true);
+	const uint32_t dst = gain_main_index(false);
+	if (src >= process->audio_inputs_count || dst >= process->audio_outputs_count) { return; }
+	const clap_audio_buffer_t* in = &process->audio_inputs[src];
+	const clap_audio_buffer_t* out = &process->audio_outputs[dst];
+	const uint32_t channels = in->channel_count < out->channel_count ? in->channel_count : out->channel_count;
+	for (uint32_t c = 0; c < channels; ++c)
+	{
+		if (!in->data32[c] || !out->data32[c]) { continue; }
+		for (uint32_t f = 0; f < process->frames_count; ++f)
+		{
+			out->data32[c][f] = (float)(in->data32[c][f] * gain);
+		}
+	}
+}
+
 static clap_process_status gain_process(const clap_plugin_t* plugin, const clap_process_t* process)
 {
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	self->in_process = 1;
 
 	/* The host delivers parameter changes through the event list. */
 	self->params->flush(plugin, process->in_events, process->out_events);
+	clap_test_report_gesture(process->out_events, PARAM_GAIN, &self->gain, &self->gesture_seen);
+
+	/* CLAP_TEST_GAIN_REQUEST_FLUSH: the value the plug-in changed on the main thread goes back to the host
+	   through this process() call's output events - the plug-in's own update, not a flush the host makes. */
+	if (self->return_pending && process->out_events != NULL)
+	{
+		clap_event_param_value_t event;
+		memset(&event, 0, sizeof(event));
+		event.header.size = sizeof(event);
+		event.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+		event.header.type = CLAP_EVENT_PARAM_VALUE;
+		event.param_id = PARAM_GAIN;
+		event.value = self->gain;
+		process->out_events->try_push(process->out_events, &event.header);
+		self->return_pending = 0;
+	}
+
+	/* CLAP_TEST_GAIN_PROCESS_ERROR: report a processing error without writing the output block, the way
+	   a plug-in that fails partway through leaves the rest of the buffer as the host handed it over. */
+	if (getenv("CLAP_TEST_GAIN_PROCESS_ERROR") != NULL)
+	{
+		self->in_process = 0;
+		return CLAP_PROCESS_ERROR;
+	}
 
 	const double gain = self->bypass >= 0.5 ? 1.0 : self->gain;
 	const uint32_t frames = process->frames_count;
 	const uint32_t input_count = process->audio_inputs_count;
-	for (uint32_t p = 0; p < process->audio_outputs_count; ++p)
+	const char* layout = gain_layout();
+	if (layout != NULL) { gain_route_layout(process, gain); }
+	for (uint32_t p = 0; p < (layout != NULL ? 0u : process->audio_outputs_count); ++p)
 	{
 		const clap_audio_buffer_t* out = &process->audio_outputs[p];
 		const clap_audio_buffer_t* in = p < input_count ? &process->audio_inputs[p] : NULL;
@@ -591,6 +768,7 @@ static clap_process_status gain_process(const clap_plugin_t* plugin, const clap_
 		self->recorded[self->recorded_count] = frames;
 		self->recorded_count += 1;
 	}
+	self->in_process = 0;
 	return CLAP_PROCESS_CONTINUE;
 }
 
@@ -629,8 +807,49 @@ static void gain_request_rescan(gain_plugin_t* self, const char* kind)
 static void gain_on_main_thread(const clap_plugin_t* plugin)
 {
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	/* Q050-490, CLAP_TEST_GAIN_REQUEST_RESIZE="<w>x<h>": the plug-in resizes its OWN editor (a resize
+	   handle in the editor) through clap.gui's request_resize; the host grants it with set_size. */
+	const char* resize = getenv("CLAP_TEST_GAIN_REQUEST_RESIZE");
+	if (resize != NULL && self->gui_created)
+	{
+		char* end = NULL;
+		const uint32_t resize_width = (uint32_t)strtoul(resize, &end, 10);
+		const uint32_t resize_height = *end == 'x' ? (uint32_t)strtoul(end + 1, NULL, 10) : 0u;
+		const clap_host_gui_t* resizeGui =
+			(const clap_host_gui_t*)self->host->get_extension(self->host, CLAP_EXT_GUI);
+		if (resizeGui != NULL) { resizeGui->request_resize(self->host, resize_width, resize_height); }
+		return;
+	}
+	/* CLAP_TEST_GAIN_CLOSE_GUI: the plug-in closes its OWN editor from the editor's side, the way a
+	   plug-in with a close button does - "hide" leaves the GUI alive, "destroy" takes it down and says
+	   so with was_destroyed. The host must reopen it correctly afterwards. */
+	const char* closeGui = getenv("CLAP_TEST_GAIN_CLOSE_GUI");
+	if (closeGui != NULL && self->gui_created)
+	{
+		const clap_host_gui_t* hostGui =
+			(const clap_host_gui_t*)self->host->get_extension(self->host, CLAP_EXT_GUI);
+		if (hostGui != NULL)
+		{
+			const bool destroyed = strcmp(closeGui, "destroy") == 0;
+			if (destroyed) { s_gui.destroy(plugin); }
+			else { s_gui.hide(plugin); }
+			hostGui->closed(self->host, destroyed);
+		}
+		return;
+	}
 	const char* rescan = getenv("CLAP_TEST_GAIN_RESCAN");
 	if (rescan != NULL) { gain_request_rescan(self, rescan); }
+	/* CLAP_TEST_GAIN_REQUEST_FLUSH: the plug-in changed a value behind the host's back and asks for
+	   the flush, while it is active - the host has to answer it on the audio thread. */
+	if (getenv("CLAP_TEST_GAIN_REQUEST_FLUSH") != NULL)
+	{
+		self->gain = 0.75;
+		self->return_pending = 1;
+		const clap_host_params_t* flushParams =
+			(const clap_host_params_t*)self->host->get_extension(self->host, CLAP_EXT_PARAMS);
+		if (flushParams != NULL) { flushParams->request_flush(self->host); }
+		return;
+	}
 	if (getenv("CLAP_TEST_GAIN_MAIN_THREAD") == NULL) { return; }
 	self->gain = 0.25;
 	const clap_host_params_t* params = (const clap_host_params_t*)self->host->get_extension(self->host, CLAP_EXT_PARAMS);

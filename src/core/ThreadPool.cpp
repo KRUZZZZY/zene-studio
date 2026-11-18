@@ -24,16 +24,38 @@
 #include "ThreadPool.h"
 
 #include <cassert>
+#include <optional>
 
 namespace lmms {
 ThreadPool::ThreadPool(size_t numWorkers)
 {
+	numWorkers = workerCount(numWorkers);
 	assert(numWorkers > 0);
 
 	m_workers.reserve(numWorkers);
-	for (size_t i = 0; i < numWorkers; ++i)
+	try
 	{
-		m_workers.emplace_back([this] { run(); });
+		for (size_t i = 0; i < numWorkers; ++i)
+		{
+			m_workers.emplace_back([this] { run(); });
+		}
+	}
+	catch (...)
+	{
+		// Workers already started capture `this`; stop and join them before the members die.
+		{
+			const auto lock = std::unique_lock{m_runMutex};
+			m_done = true;
+		}
+
+		m_runCond.notify_all();
+
+		for (auto& worker : m_workers)
+		{
+			if (worker.joinable()) { worker.join(); }
+		}
+
+		throw;
 	}
 }
 
@@ -59,18 +81,18 @@ auto ThreadPool::numWorkers() const -> size_t
 
 void ThreadPool::run()
 {
-	while (!m_done)
+	while (true)
 	{
-		std::function<void()> task;
+		std::optional<std::packaged_task<void()>> task;
 		{
 			auto lock = std::unique_lock{m_runMutex};
 			m_runCond.wait(lock, [this] { return !m_queue.empty() || m_done; });
 
-			if (m_done) { break; }
-			task = m_queue.front();
+			if (m_queue.empty()) { break; }
+			task.emplace(std::move(m_queue.front()));
 			m_queue.pop();
 		}
-		task();
+		(*task)();
 	}
 }
 

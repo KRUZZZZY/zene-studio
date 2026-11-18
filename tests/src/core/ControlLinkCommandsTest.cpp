@@ -56,6 +56,19 @@
 
 using namespace lmms;
 
+namespace lmms
+{
+
+struct LinkSyncEngineTestAccess
+{
+	static double signedPhaseDifference(double a, double b, double period)
+	{
+		return LinkSyncEngine::signedPhaseDifference(a, b, period);
+	}
+};
+
+} // namespace lmms
+
 namespace
 {
 
@@ -281,6 +294,58 @@ private slots:
 		QCOMPARE(engineTempo(), 111);
 	}
 
+	//! An omitted revision owner means the announcing peer owns the declaration,
+	//! so the same-revision tiebreak must compare that peer id.
+	void emptyRevisionOwnerUsesPeerIdForTieBreak()
+	{
+		setEnabledForTest(false);
+		setEnabledForTest(true);
+		const ControlResult local = run(QStringLiteral("link.set_session_tempo"),
+			{{QStringLiteral("bpm"), 122.0}});
+		QVERIFY2(local.ok, qPrintable(local.errorMessage));
+		const QJsonObject before = state();
+		const QString currentOwner = before.value(QStringLiteral("session_revision_owner")).toString();
+		QVERIFY(!currentOwner.isEmpty());
+
+		const QString peerId = currentOwner + QStringLiteral("z");
+		link::LinkPeerPacket packet = packetFrom(peerId, revisionOf(before), 134.0);
+		packet.revisionOwner.clear();
+		observe(packet);
+
+		const QJsonObject after = state();
+		QCOMPARE(after.value(QStringLiteral("session_tempo")).toDouble(), 134.0);
+		QCOMPARE(after.value(QStringLiteral("session_revision_owner")).toString(), peerId);
+		QCOMPARE(engineTempo(), 134);
+	}
+
+	//! A positive, integral timestamp can still be stale enough to invent an
+	//! enormous transit interval. It must be dropped before peer storage/adoption.
+	void tooOldIntegralTimestampIsIgnoredBeforeRememberingPeer()
+	{
+		setEnabledForTest(false);
+		setEnabledForTest(true);
+		const QJsonObject before = state();
+		const quint32 revision = revisionOf(before);
+		const double tempo = before.value(QStringLiteral("session_tempo")).toDouble();
+		const int engineBpm = engineTempo();
+
+		// Inject an explicit receive clock so the age is unambiguously past the
+		// transit limit regardless of how long this process has been up.
+		const quint64 receivedUs = 10000000;
+		const quint64 sentUs = receivedUs
+			- (static_cast<quint64>(link::PeerTimeoutMs) * 1000 + 1);
+		link::LinkPeerPacket stale = packetFrom(QStringLiteral("peer-old-clock"),
+			revision + 1, 240.0);
+		stale.sentUs = sentUs;
+		observe(stale, receivedUs);
+
+		const QJsonObject after = state();
+		QVERIFY(!sessionHasPeer(after, stale.id));
+		QCOMPARE(revisionOf(after), revision);
+		QCOMPARE(after.value(QStringLiteral("session_tempo")).toDouble(), tempo);
+		QCOMPARE(engineTempo(), engineBpm);
+	}
+
 	/*! THE PHASE CLAIM, computed independently. A peer announces beat 0 at a
 	 *  send time one second in the past at 150 BPM, so the beat it is playing at
 	 *  the moment this instance reads the datagram is 1.0 * 150 / 60 = 2.5 beats
@@ -311,6 +376,12 @@ private slots:
 		// different quantity - and the error between them is reported, wrapped.
 		const double error = report.value(QStringLiteral("phase_error_beats")).toDouble();
 		QVERIFY(error > -2.0 && error <= 2.0);
+	}
+
+	void exactHalfQuantumErrorsUseThePositiveBoundary()
+	{
+		QCOMPARE(LinkSyncEngineTestAccess::signedPhaseDifference(2.0, 0.0, 4.0), 2.0);
+		QCOMPARE(LinkSyncEngineTestAccess::signedPhaseDifference(-2.0, 0.0, 4.0), 2.0);
 	}
 
 	//! The peer table is bounded and quiet peers leave: a session cannot grow
@@ -352,6 +423,16 @@ private slots:
 		QVERIFY(!LinkSyncEngine::decodePacket(QByteArray("not json at all"), &decoded));
 		QVERIFY(!LinkSyncEngine::decodePacket(QByteArray(), &decoded));
 		QVERIFY(!LinkSyncEngine::decodePacket(ours, nullptr));
+		QJsonObject fractionalTimestamp = QJsonDocument::fromJson(ours).object();
+		fractionalTimestamp.insert(QStringLiteral("sent_us"), 0.5);
+		QVERIFY2(!LinkSyncEngine::decodePacket(
+			QJsonDocument(fractionalTimestamp).toJson(QJsonDocument::Compact), &decoded),
+			"a fractional send timestamp was truncated before transit arithmetic");
+		QJsonObject outsideSignedClock = QJsonDocument::fromJson(ours).object();
+		outsideSignedClock.insert(QStringLiteral("sent_us"), 9223372036854775808.0);
+		QVERIFY2(!LinkSyncEngine::decodePacket(
+			QJsonDocument(outsideSignedClock).toJson(QJsonDocument::Compact), &decoded),
+			"a timestamp outside signed transit arithmetic was accepted");
 		QJsonObject foreign = QJsonDocument::fromJson(ours).object();
 		foreign.insert(QStringLiteral("model"), QStringLiteral("ableton-link"));
 		QVERIFY2(!LinkSyncEngine::decodePacket(QJsonDocument(foreign).toJson(QJsonDocument::Compact),

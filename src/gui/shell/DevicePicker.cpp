@@ -25,6 +25,7 @@
 #include "DevicePicker.h"
 
 #include <algorithm>
+#include <utility>
 
 #include <QDialogButtonBox>
 #include <QHeaderView>
@@ -38,15 +39,7 @@
 #include "ControlDeviceSupport.h"
 #include "ControlVocabulary.h"
 #include "DesignTokens.h"
-#include "Engine.h"
-#include "Ladspa2LMMS.h"
 #include "PluginOrganiser.h"
-#include "lmmsconfig.h"
-
-#ifdef LMMS_HAVE_LV2
-#include "Lv2Basics.h"
-#include "Lv2Manager.h"
-#endif
 
 namespace lmms::gui
 {
@@ -104,6 +97,7 @@ QString devicelabels::formatLabel(const QString& format)
 	if (format == QLatin1String("builtin")) { return DevicePicker::tr("Built-in"); }
 	if (format == QLatin1String("ladspa")) { return QStringLiteral("LADSPA"); }
 	if (format == QLatin1String("lv2")) { return QStringLiteral("LV2"); }
+	if (format == QLatin1String("au")) { return QStringLiteral("Audio Unit"); }  // Q050-491, macOS builds
 	return format.toUpper();  // vst3, clap
 }
 
@@ -117,22 +111,11 @@ QString devicelabels::kindLabel(const QString& kind)
 
 QString devicelabels::vendorOf(const ControlDeviceEntry& entry)
 {
-	QString maker;
-	if (entry.format == QLatin1String("builtin")) { maker = QStringLiteral("Zene Studio"); }
-	else if (entry.format == QLatin1String("ladspa") && Engine::getLADSPAManager() != nullptr)
-	{
-		maker = Engine::getLADSPAManager()->getMaker(ladspa_key_t(entry.file, entry.label));
-	}
-#ifdef LMMS_HAVE_LV2
-	else if (entry.format == QLatin1String("lv2") && Engine::getLv2Manager() != nullptr)
-	{
-		if (const LilvPlugin* plugin = Engine::getLv2Manager()->getPlugin(entry.uri))
-		{
-			maker = qStringFromPluginNode(plugin, lilv_plugin_get_author_name);
-		}
-	}
-#endif
-	return maker.trimmed().isEmpty() ? DevicePicker::tr("Not reported") : maker.trimmed();
+	// The maker is resolved once, in the core (ControlDeviceCatalogue.cpp's
+	// controlDeviceVendor, the same string plugin.list carries as `vendor`);
+	// the window only adds the "Not reported" words for an empty one (Q050-090).
+	const QString maker = controlDeviceVendor(entry);
+	return maker.isEmpty() ? DevicePicker::tr("Not reported") : maker;
 }
 
 DevicePicker::DevicePicker(Kind kind, const QString& title, QWidget* parent)
@@ -277,8 +260,23 @@ void DevicePicker::accept()
 	QDialog::accept();
 }
 
+namespace
+{
+std::function<QString(DevicePicker::Kind, const QString&)>& chooser()
+{
+	static std::function<QString(DevicePicker::Kind, const QString&)> instance;
+	return instance;
+}
+} // namespace
+
+void DevicePicker::setChooser(std::function<QString(Kind, const QString&)> replacement)
+{
+	chooser() = std::move(replacement);
+}
+
 QString DevicePicker::pick(QWidget* parent, Kind kind, const QString& title)
 {
+	if (chooser()) { return chooser()(kind, title); }
 	DevicePicker picker(kind, title, parent);
 	return picker.exec() == QDialog::Accepted ? picker.selectedDevice() : QString();
 }

@@ -26,7 +26,7 @@
 #ifndef _LADSPA_EFFECT_H
 #define _LADSPA_EFFECT_H
 
-#include <QMutex>
+#include <atomic>
 
 #include "AudioPlugin.h"
 #include "ladspa.h"
@@ -79,12 +79,19 @@ private:
 
 	static sample_rate_t maxSamplerate( const QString & _name );
 
-	QMutex m_pluginMutex;
+	//! Realtime hand-off between the audio callback and a sample-rate
+	//! reconfiguration. The callback never takes a mutex: processLock() claims
+	//! a slot in m_processorsInFlight (and re-checks m_reconfiguring), while
+	//! changeSampleRate() sets m_reconfiguring and waits for the claims to
+	//! drain before it re-instantiates the LADSPA plugin and its ports.
+	std::atomic<bool> m_reconfiguring{false};
+	std::atomic<int> m_processorsInFlight{0};
 	LadspaControls * m_controls;
 
 	ladspa_key_t m_key;
 	int m_portCount;
 	bool m_inPlaceBroken;
+	bool m_processorsActivated = false;
 
 	const LADSPA_Descriptor * m_descriptor;
 	QVector<LADSPA_Handle> m_handles;

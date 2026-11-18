@@ -160,7 +160,7 @@ void LadspaControl::setValue( LADSPA_Data _value )
 	switch( m_port->data_type )
 	{
 		case BufferDataType::Toggled:
-			m_toggledModel.setValue( static_cast<bool>( _value ) );
+			m_toggledModel.setValue( _value > 0.0f );
 			break;
 		case BufferDataType::Integer:
 		case BufferDataType::Enum:

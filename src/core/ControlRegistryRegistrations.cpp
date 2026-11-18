@@ -40,6 +40,8 @@
  */
 
 #include "CollabCommands.h"
+#include "OscCommands.h"
+#include "ControllerScript.h"
 #include "ControlHardwareIoSupport.h"
 #include "ControlRegistry.h"
 #include "ControlWindowCommands.h"
@@ -72,6 +74,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerTransportPunchCommands(registry);
 	registerRecordingCommands(registry);
 	registerRecordingRecoveryCommands(registry);
+	registerRecordingPlaceCommand(registry);
 	// The capture-IN half of the `record.` group (0.3.0, feature rows 14 and
 	// 64) and the retrospective AUDIO capture half (row 16), each its own
 	// translation unit. No compile-time switch: the input path's plan is a
@@ -88,6 +91,7 @@ void registerControlCommands(ControlRegistry& registry)
 	// The project-asset reference group (feature row 38): detection, hashing and
 	// relink over a project FILE.
 	registerProjectArchiveCommands(registry);
+	registerProjectMediaCommands(registry);
 	// The mmpz-git depth group (feature row 42, task #612): 3-way merge, diff,
 	// conflict reporter and audible-diff wrappers around tools/mmpz-git/mmpz_git.py.
 	registerProjectMmpzGitCommands(registry);
@@ -97,6 +101,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerRangeCommands(registry);
 	registerClipEnvelopeCommands(registry);
 	registerClipControllerCommands(registry);
+	registerClipControllerConvertCommands(registry);
 	registerInputTransformCommands(registry);
 	registerWarpQuantizeCommand(registry);
 	registerNoteCurveCommands(registry);
@@ -105,6 +110,9 @@ void registerControlCommands(ControlRegistry& registry)
 	registerControllerMapCommands(registry);
 	registerMixerListenCommands(registry);
 	registerMixerStripCommands(registry);
+	registerConsoleStripCommand(registry);  // Q050-088
+	registerTrackOffsetCommand(registry);  // Q050-339
+	registerInputMetersCommand(registry);  // Q050-340
 	registerMixerRenameCommands(registry);  // 0.5.0 theme 13: mixer.rename_channel
 	registerDeviceCopyCommands(registry);
 	registerPluginOrganiseCommands(registry);
@@ -113,8 +121,12 @@ void registerControlCommands(ControlRegistry& registry)
 	registerRemoteCommands(registry);
 	registerDrumRackCommand(registry);
 	registerRecordingPassCommands(registry);
+	registerMidiTakeCommands(registry);
 	registerLaunchBindingCommands(registry);
 	registerSessionCaptureCommand(registry);
+	registerSessionAudioRecordCommands(registry);
+	registerSamplerTakeCommands(registry);
+	registerSlicerSliceCommands(registry);
 	registerLowLatencyCommand(registry);
 	registerBrowserCollectionCommands(registry);
 	registerTrackPresetCommands(registry);
@@ -126,27 +138,38 @@ void registerControlCommands(ControlRegistry& registry)
 	registerNoteShapeCommands(registry);
 	registerKeyNameCommands(registry);
 	registerNoteToolCommands(registry);
+	registerNoteMelodyCommands(registry);
 	registerNoteMoveCommands(registry);
 	registerNoteHarmonyCommands(registry);
 	registerNotePlaybackCommands(registry);
 	registerMixerToolCommands(registry);
 	registerSessionPerformCommands(registry);
+	registerSessionSubSceneCommands(registry);
 	registerCompGroupCommands(registry);
 	registerRecordToolCommands(registry);
 	registerArrangeToolCommands(registry);
 	registerSectionCommands(registry);
+	registerFolderSpanCommands(registry);
 	registerSampleToolCommands(registry);
 	registerAutomationToolCommands(registry);
 	registerAudioAnalysisCommands(registry);
+	registerClipImportFileCommands(registry);  // 0.5.0 L04 (Q050-031)
 	registerSampleRangeCommands(registry);
+	registerSampleStereoCommands(registry);  // 0.5.0 L05 (Q050-106): sample.split_stereo
 	registerMixerMeterCommands(registry);
+	registerMixerMaskingCommands(registry);  // 0.5.0 L08 (Q050-231.1)
 	registerHardwareIoCommands(registry);  // 0.5.0 F1: audio.io_*, mixer.hardware_*, mixer.cue_*
 	registerTrackMidiOutCommands(registry);
+	registerExternalDeviceCommands(registry);  // 0.5.0 L09 (Q050-252.1): device.external_*
 	registerTrackVersionCommands(registry);
 	registerScoreExportCommands(registry);
 	registerThemeCommands(registry);
 	registerTrackLookCommands(registry);
 	registerAssistantCommands(registry);
+#ifdef ZENE_UPDATE_CHECK_ENABLED
+	registerUpdateCheckCommands(registry);
+	registerUpdateCheckWindowCommands(registry);
+#endif
 	registerWorkspaceCommands(registry);
 	registerViewMemoryCommands(registry);
 	registerHistoryJumpCommand(registry);
@@ -171,6 +194,8 @@ void registerControlCommands(ControlRegistry& registry)
 	registerVideoCommands(registry);  // 0.5.0 F5 (ED-054)
 	registerTaskCommands(registry);  // 0.5.0 theme 24: the background task area
 	registerCollabCommands(registry);  // 0.5.0 F6 (WF-050/WF-052)
+	registerOscCommands(registry);  // Q050-205: the opt-in OSC control server
+	registerControllerScriptCommands(registry);  // Q050-081: Lua control-surface scripts
 #ifdef ZENE_TELEMETRY_ENABLED
 	// The telemetry.* group travels with the client. -DZENE_TELEMETRY=OFF
 	// removes the client, so the registry must not carry ids that would
@@ -180,6 +205,8 @@ void registerControlCommands(ControlRegistry& registry)
 
 	registerArrangementCommands(registry);
 	registerClipCommands(registry);
+	// 0.5.0 Q050-040: the song editor's clip mute and the agents' share one command.
+	registerClipMuteCommands(registry);
 	registerClipEditsCommands(registry);
 	registerClipConsolidateCommands(registry);
 	registerTrackMonitorCommands(registry);
@@ -189,16 +216,25 @@ void registerControlCommands(ControlRegistry& registry)
 	// sample.* group over SampleClip's non-destructive model - the generator,
 	// then the four bakers - each its own translation unit. No compile-time
 	// switch: the DSP is in-tree arithmetic, so the ids are honest in every
-	// configuration; no interface reaches them yet (docs/KNOWN-LIMITATIONS.md).
+	// configuration. The interface reaches them too: a sample track's More menu
+	// runs the generator as Insert Test Signal..., and a sample clip's Process
+	// menu runs the bakers (docs/KNOWN-LIMITATIONS.md).
 	registerSampleCommands(registry);
 	registerSampleEditCommands(registry);
 	registerNoteCommands(registry);
 	registerNoteProbabilityCommands(registry);
 	registerNoteEditCommands(registry);
+	registerNoteStepCommands(registry);
+	registerNoteStepFillCommands(registry);
 	registerTrackChannelCommands(registry);
+	registerTrackRoutingCommands(registry);
 	registerCollectMediaCommand(registry);
 	registerBounceLandCommand(registry);
 	registerRenderStemsCommands(registry);
+	// render.sections - the song's named sections exported one file each
+	// (0.5.0 L12, Q050-009). Registered beside render.stems: it renders through
+	// render.render, so it belongs to the same render group.
+	registerRenderSectionsCommands(registry);
 	registerPluginCommands(registry);
 	registerDspCommands(registry);
 	registerSettingsCommands(registry);
@@ -225,6 +261,8 @@ void registerControlCommands(ControlRegistry& registry)
 	// ScriptEngine, reached through hooks (bar/beat/transport) instead of only
 	// an explicit run.
 	registerLivecodeCommands(registry);
+	// Q050-334.1: ordered, bounded project-change events for local control clients.
+	registerEventsCommands(registry);
 	// board card #712: the session-wide dynamic-tuning table (MTS-ESP
 	// host-wide tuning) - the mts.* group over include/SessionTuning.h.
 	registerMtsCommands(registry);
@@ -273,9 +311,9 @@ void registerControlCommands(ControlRegistry& registry)
 #endif // LMMS_HAVE_WASM
 	// The stem.* group travels with the offline stem-separation engine, the
 	// same rule again: without LMMS_HAVE_STEM_SPLIT there is no StemJobManager,
-	// no backend and no model store, so a default build (WANT_STEM_SPLIT=OFF,
-	// CMakeLists.txt:120) must not carry these ids. The A16 table guards its
-	// seven stem rows with the same #ifdef.
+	// no backend and no model store, so a build that configured the option OFF
+	// (it defaults ON at CMakeLists.txt:130, owner decision 14) must not carry
+	// these ids. The A16 table guards its seven stem rows with the same #ifdef.
 #ifdef LMMS_HAVE_STEM_SPLIT
 	registerStemCommands(registry);
 #endif // LMMS_HAVE_STEM_SPLIT
@@ -292,16 +330,19 @@ void registerControlCommands(ControlRegistry& registry)
 	// display, and reports its own transport's availability, so its ids are
 	// honest in every configuration (docs/LINK-SYNC.md).
 	registerLinkCommands(registry);
+	registerLinkAudioCommands(registry);  // Q050-024: the PCM stream, apart from tempo/phase sync
 	// Freeze / bounce-in-place: the offline render (include/BounceInPlace.h) and
 	// the frozen take a track then plays instead of its clips. No compile-time
 	// switch: the render is the product's own CLI render path and the take is a
 	// plain value on Track, so its ids are honest in every configuration.
 	registerFreezeCommands(registry);
+	registerBusFreezeCommands(registry);  // Q050-124: the same verbs for a mixer bus
 	// Folder tracks (owner items 3+20+21): a Track subclass that references its
 	// children, its two modes and the named visibility sets. No compile-time
 	// switch - a folder is a plain Track type and the sets are container state,
 	// so its ids are honest in every configuration.
 	registerTrackFolderCommands(registry);
+	registerTrackRoleCommands(registry);
 	// MIDI clock (0.3.0): the DAW as a clock master and as a clock slave. No
 	// compile-time switch; the bound it states is in docs/KNOWN-LIMITATIONS.md.
 	registerClockCommands(registry);
@@ -330,6 +371,9 @@ void registerControlCommands(ControlRegistry& registry)
 	// half, then the edit half, each its own translation unit.
 	registerPluginScanCommands(registry);
 	registerPluginScanEditCommands(registry);
+	// Q050-090: the background rescan (scan_start / scan_status /
+	// scan_cancel), its own translation unit for the same reason.
+	registerPluginScanBackgroundCommands(registry);
 	// CODE-4 (feature row 82): the chunking contract both plugin host paths
 	// keep, and the counters their audio paths increment. The hosts are plugin
 	// modules, so the counters and the command live in the core
@@ -358,6 +402,10 @@ void registerControlCommands(ControlRegistry& registry)
 	// meter are in every configuration, so its ids are honest in every one.
 	registerMasteringCommands(registry);
 	registerMasteringRunCommands(registry);
+	// The mastering release sequence (Q050-317.1): the ordered songs of a release with their
+	// processing, fades and gaps. No compile-time switch - the candidate set it names is in
+	// every configuration.
+	registerMasteringSequenceCommands(registry);
 	// Import detection (feature row 34: transient / BPM / key detection on
 	// import). No compile-time switch: the engine's own decoder, the Qt-free
 	// arithmetic and the project's `<detected-key>` field are in every

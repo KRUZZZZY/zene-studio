@@ -54,9 +54,9 @@ void Shell::setPersonalAside()
 bool Shell::restorePersonal()
 {
 	const QString text = ConfigManager::inst()->value(kSection, kAside);
-	dropPersonalAside();
 	const QJsonObject doc = QJsonDocument::fromJson(text.toUtf8()).object();
 	if (doc.isEmpty()) { return false; }
+	dropPersonalAside();
 	restoreSnapshot(doc);
 	return true;
 }

@@ -32,11 +32,13 @@
 #include <limits>
 
 #include <QJsonArray>
+#include <QStringList>
 
 #include "ClipLinks.h"
 #include "ControlCommandsNoteShared.h"
 #include "ControlCommandDef.h"
 #include "ControlEdit.h"
+#include "ControlNoteShared.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlVocabulary.h"
@@ -58,14 +60,50 @@ namespace
 
 constexpr int MaxRatchet = 16;
 
-//! Whether scaling @a notes about @a pivot by @a time (positions) and @a length (lengths) keeps them inside the longest song;
-//! asked in doubles, before any tick is rounded (a huge factor would overflow the rounding).
+//! Whether scaling @a notes about @a pivot keeps each rounded note end inside the longest song;
+//! bounds the doubles first so a huge factor cannot overflow the rounding.
 bool scaledFits(const QVector<Note*>& notes, tick_t pivot, double time, double length)
 {
 	const auto limit = static_cast<double>(MaxSongLength);
 	return std::all_of(notes.begin(), notes.end(), [=](const Note* note) {
-		return pivot + (note->pos().getTicks() - pivot) * time <= limit && note->length().getTicks() * length <= limit;
+		const double scaledPosition = pivot + (note->pos().getTicks() - pivot) * time;
+		const double scaledLength = note->length().getTicks() * length;
+		if (!(scaledPosition <= limit) || !(scaledLength <= limit) || !(scaledPosition + scaledLength <= limit))
+		{
+			return false;
+		}
+		const tick_t roundedPosition = static_cast<tick_t>(std::lround(scaledPosition));
+		const tick_t roundedLength = std::max<tick_t>(1, static_cast<tick_t>(std::lround(scaledLength)));
+		return roundedPosition + roundedLength <= MaxSongLength;
 	});
+}
+
+//! The position and the length every note gets when the clip is scaled by @a time
+//! and @a length about @a pivot - and whether that changes any note at all.
+struct ScaledShape
+{
+	QVector<tick_t> positions;
+	QVector<tick_t> lengths;
+	bool changes = false;
+};
+
+//! The scaled shape of @a notes, computed BEFORE anything is changed: the undo
+//! checkpoint has to be taken before the edit, and the edit has to know whether it
+//! changes anything at all (a scale by 1 moves nothing, and a step that undoes
+//! nothing would shadow the edit under it - the rule control::checkpointNoteEdit
+//! holds, the same one note.transpose follows).
+ScaledShape scaledShape(const QVector<Note*>& notes, tick_t pivot, double time, double length)
+{
+	ScaledShape shape;
+	for (const Note* note : notes)
+	{
+		const tick_t position = static_cast<tick_t>(std::lround(pivot + (note->pos().getTicks() - pivot) * time));
+		const tick_t scaledLength = std::max<tick_t>(1, static_cast<tick_t>(std::lround(note->length().getTicks() * length)));
+		shape.positions.append(position);
+		shape.lengths.append(scaledLength);
+		if (position != note->pos().getTicks() || scaledLength != note->length().getTicks()) { shape.changes = true; }
+	}
+	return shape;
 }
 
 ControlResult scaleNotes(const QJsonObject& args)
@@ -89,13 +127,15 @@ ControlResult scaleNotes(const QJsonObject& args)
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("those factors move notes past the longest song (%1 ticks)")
 			.arg(MaxSongLength));
 	}
-	clip->addJournalCheckPoint();
-	for (Note* note : notes)
+	const ScaledShape shape = scaledShape(notes, pivot, time, length);
+	control::checkpointNoteEdit(clip, shape.changes);
+	for (int index = 0; index < notes.size(); ++index)
 	{
-		note->setPos(TimePos(static_cast<tick_t>(std::lround(pivot + (note->pos().getTicks() - pivot) * time))));
-		note->setLength(TimePos(std::max<tick_t>(1, static_cast<tick_t>(std::lround(note->length().getTicks() * length)))));
+		notes.at(index)->setPos(TimePos(shape.positions.at(index)));
+		notes.at(index)->setLength(TimePos(shape.lengths.at(index)));
 	}
-	return ControlResult::success(finish(ref, clip, QStringLiteral("note.scale"), {{QStringLiteral("scaled"), notes.size()}}));
+	return ControlResult::success(finish(ref, clip, QStringLiteral("note.scale"),
+		{{QStringLiteral("scaled"), notes.size()}}, shape.changes));
 }
 
 ControlResult ratchetNotes(const QJsonObject& args)
@@ -227,10 +267,12 @@ ControlResult restoreTiming(const QJsonObject& args)
 
 //! One filter bound into @a out, held to what its type carries; false for a value that is not a whole number
 //! (QJsonValue::toInt would read 60.5 as 0, an open bound where a tight one was meant) - a string "60" too.
+//! An explicit null is refused like any other wrong value: only an OMITTED bound (undefined) is open, since a
+//! null read as open made {key_min: null} match every note and 'action: remove' then removed them all.
 template <typename T>
 bool readBound(const QJsonValue& value, T* out)
 {
-	if (value.isUndefined() || value.isNull()) { return true; }  // absent: the bound is open
+	if (value.isUndefined()) { return true; }  // omitted: the bound is open
 	if (!value.isDouble()) { return false; }
 	const double v = value.toDouble();
 	if (v != std::floor(v)) { return false; }
@@ -238,14 +280,14 @@ bool readBound(const QJsonValue& value, T* out)
 	return true;
 }
 
-//! The filter's {key,velocity,position,length}_{min,max} bounds (an absent bound is open); false for a fractional one.
+//! The filter's {key,velocity,position,length}_{min,max} bounds (an absent bound is open); false for a bad bound or reversed pair.
 bool readRanges(const QJsonObject& json, NoteTransform::Filter* f)
 {
 	const auto range = [&json](const char* field, bool* use, auto* low, auto* high) {
 		const QJsonValue lo = json.value(QLatin1String(field) + QStringLiteral("_min"));
 		const QJsonValue hi = json.value(QLatin1String(field) + QStringLiteral("_max"));
 		*use = lo.isDouble() || hi.isDouble();
-		return readBound(lo, low) && readBound(hi, high);
+		return !(lo.isDouble() && hi.isDouble() && lo.toDouble() > hi.toDouble()) && readBound(lo, low) && readBound(hi, high);
 	};
 	return range("key", &f->useKeyRange, &f->minKey, &f->maxKey) && range("velocity", &f->useVelocityRange, &f->minVelocity, &f->maxVelocity)
 		&& range("position", &f->usePositionRange, &f->minPos, &f->maxPos) && range("length", &f->useLengthRange, &f->minLength, &f->maxLength);
@@ -270,10 +312,10 @@ bool readInvert(const QJsonValue& value, NoteTransform::Filter* f, ControlResult
 //! filter.scale as NoteTransform::Filter's scale channel: the string "in" / "out" (the scale
 //! context's pitch classes). A value of the wrong type used to become an EMPTY string through
 //! toString(), which the code below reads as "no scale filter" - so a malformed filter matched
-//! every note, and 'action: remove' then removed all of them.
+//! every note, and 'action: remove' then removed all of them. An explicit null is such a value too.
 bool readScale(const QJsonValue& value, NoteTransform::Filter* f, ControlResult* error)
 {
-	if (value.isUndefined() || value.isNull()) { return true; }  // absent: no scale channel
+	if (value.isUndefined()) { return true; }  // omitted: no scale channel
 	if (!value.isString())
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
@@ -295,17 +337,88 @@ bool readScale(const QJsonValue& value, NoteTransform::Filter* f, ControlResult*
 	return true;
 }
 
-//! The `filter` object as a NoteTransform::Filter: {key,velocity,position,length}_{min,max} (an absent
-//! bound is open), `scale` "in" / "out" (the scale context's pitch classes) and `invert`.
-bool filterFrom(const QJsonObject& json, NoteTransform::Filter* f, ControlResult* error)
+//! Filter keys are limited to the documented bounds, scale, and invert fields.
+bool readFilterKeys(const QJsonObject& json, ControlResult* error)
 {
-	if (!readRanges(json, f))
+	static const QStringList recognized{
+		QStringLiteral("key_min"), QStringLiteral("key_max"), QStringLiteral("velocity_min"), QStringLiteral("velocity_max"),
+		QStringLiteral("position_min"), QStringLiteral("position_max"), QStringLiteral("length_min"), QStringLiteral("length_max"),
+		QStringLiteral("scale"), QStringLiteral("invert")};
+	for (auto it = json.constBegin(); it != json.constEnd(); ++it)
 	{
-		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a filter bound is a whole number (a JSON number)"));
+		const QString& key = it.key();
+		if (recognized.contains(key)) { continue; }
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("unknown filter field '%1'").arg(key));
 		return false;
 	}
+	return true;
+}
+
+//! Whether a range the filter uses is empty: its minimum above its maximum (an open side sits at the Filter's
+//! default bound). Such a range matches no note, and 'invert' would then make the filter match EVERY note.
+bool anyRangeEmpty(const NoteTransform::Filter& f)
+{
+	return (f.useKeyRange && f.minKey > f.maxKey) || (f.useVelocityRange && f.minVelocity > f.maxVelocity)
+		|| (f.usePositionRange && f.minPos > f.maxPos) || (f.useLengthRange && f.minLength > f.maxLength);
+}
+
+bool filterFrom(const QJsonObject& json, NoteTransform::Filter* f, ControlResult* error)
+{
+	if (!readFilterKeys(json, error)) { return false; }
+	if (!readRanges(json, f))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("filter bounds are whole numbers and each minimum is no greater than its maximum"));
+		return false;
+	}
+	if (anyRangeEmpty(*f)) { *error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("a filter range's minimum is above its maximum")); return false; }
 	return readInvert(json.value(QStringLiteral("invert")), f, error)
 		&& readScale(json.value(QStringLiteral("scale")), f, error);
+}
+
+//! Whether any of @a hits carries a velocity other than @a target.
+bool anyVolumeDiffers(const NoteVector& hits, int target)
+{
+	return std::any_of(hits.cbegin(), hits.cend(), [target](const Note* note)
+	{
+		return note != nullptr && static_cast<int>(note->getVolume()) != target;
+	});
+}
+
+//! Whether any of @a hits carries a mute flag other than @a muted.
+bool anyMuteDiffers(const NoteVector& hits, bool muted)
+{
+	return std::any_of(hits.cbegin(), hits.cend(), [muted](const Note* note)
+	{
+		return note != nullptr && note->muted() != muted;
+	});
+}
+
+/*! Whether @a action (with @a amount) would change any of @a hits - the question
+ *  the undo checkpoint asks BEFORE the edit, because the checkpoint captures the state
+ *  the edit is about to replace and so has to be taken first.
+ *
+ *  A transpose of zero semitones, a velocity offset of zero, a velocity the note
+ *  already has and a mute flag the note already carries all change nothing, and an
+ *  edit that changes nothing takes no step (control::checkpointNoteEdit). The two
+ *  engine-backed actions are counted by the engine's own rule - the same rule
+ *  act() applies - so the answer and the edit cannot drift apart.
+ */
+bool actionChanges(const NoteVector& hits, const QString& action, int amount)
+{
+	if (action == QStringLiteral("remove")) { return !hits.empty(); }
+	if (action == QStringLiteral("transpose")) { return NoteTransform::countTransposed(hits, amount) > 0; }
+	if (action == QStringLiteral("velocity_offset")) { return NoteTransform::countOffsetVelocity(hits, amount) > 0; }
+	if (action == QStringLiteral("velocity_set"))
+	{
+		return anyVolumeDiffers(hits, std::clamp(amount, static_cast<int>(MinVolume), static_cast<int>(MaxVolume)));
+	}
+	if (action == QStringLiteral("mute") || action == QStringLiteral("unmute"))
+	{
+		return anyMuteDiffers(hits, action == QStringLiteral("mute"));
+	}
+	return false;
 }
 
 //! Apply @a action (with @a amount) to the matched @a hits; the notes to remove are returned.
@@ -323,6 +436,35 @@ NoteVector act(const NoteVector& hits, const QString& action, int amount)
 		for (Note* note : hits) { note->setVolume(static_cast<volume_t>(std::clamp(amount, int{MinVolume}, int{MaxVolume}))); }
 	}
 	return {};
+}
+
+//! Keep filter-hit positions separate from their group-expanded selection.
+QVector<int> matchedPositions(const NoteVector& noteList, const NoteVector& hits)
+{
+	QVector<int> positions;
+	for (int index = 0; index < static_cast<int>(noteList.size()); ++index)
+	{
+		Note* note = noteList.at(index);
+		if (std::find(hits.cbegin(), hits.cend(), note) == hits.cend()) { continue; }
+		positions.append(index);
+	}
+	return positions;
+}
+
+//! Include each matched note's group in the resulting positions.
+void withGroupMates(const NoteVector& noteList, QVector<int>* positions)
+{
+	QVector<int> groups;
+	for (int index : *positions)
+	{
+		const int group = noteList.at(index)->conditions().group;
+		if (group > 0 && !groups.contains(group)) { groups.append(group); }
+	}
+	if (groups.isEmpty()) { return; }
+	for (int index = 0; index < static_cast<int>(noteList.size()); ++index)
+	{
+		if (groups.contains(noteList.at(index)->conditions().group) && !positions->contains(index)) { positions->append(index); }
+	}
 }
 
 //! Selection is view state (note.select's rule): no checkpoint, the previous selection in the reply.
@@ -351,22 +493,23 @@ ControlResult selectWhere(const QJsonObject& args)
 		if (!additive) { note->setSelected(false); }
 	}
 	const NoteVector hits = NoteTransform::select(noteList, filter);
+	QVector<int> matched = matchedPositions(noteList, hits);
+	const int matchedCount = static_cast<int>(matched.size());
+	withGroupMates(noteList, &matched);
+	std::sort(matched.begin(), matched.end());
 	QJsonArray selected;
-	for (int index = 0; index < static_cast<int>(noteList.size()); ++index)
+	for (int index : matched)
 	{
-		Note* note = noteList.at(index);
-		if (std::find(hits.cbegin(), hits.cend(), note) == hits.cend()) { continue; }
-		note->setSelected(true);
-		wanted.append(index);
-		selected.append(noteIdOf(note));
+		selected.append(noteIdOf(noteList.at(index)));
+		noteList.at(index)->setSelected(true);
+		if (!wanted.contains(index)) { wanted.append(index); }
 	}
-	// The flags above are half the selection: the index store control::selectNotes owns is
-	// the other half, and note.select writes BOTH (src/core/ControlCommandsNotes.cpp:477).
-	// Writing only the flags left roll.get_state and the next note.select reporting the
-	// selection this verb had replaced.
-	control::selectNotes(clipId(ref.id), static_cast<int>(noteList.size()), wanted);
+	// The flags above are the piano-roll half. The control selection store keeps the
+	// selected notes' ids (control::selectNotes), so its selection follows those
+	// notes if the clip's list is later re-sorted or a note is removed.
+	control::selectNotes(clipId(ref.id), *clip, wanted);
 	emit clip->dataChanged();
-	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("matched"), selected.size()},
+	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("matched"), matchedCount},
 		{QStringLiteral("selected"), selected}, {QStringLiteral("previous"), previous}});
 }
 
@@ -419,11 +562,16 @@ ControlResult transformWhere(const QJsonObject& args)
 	{
 		return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("matched"), 0}, {QStringLiteral("removed"), 0}});
 	}
-	clip->addJournalCheckPoint();
+	// The action may change nothing (a transpose of zero, a velocity the notes
+	// already have, a mute flag they already carry) - then it takes no undo step
+	// and leaves the project clean.
+	const bool changes = actionChanges(hits, action, amount);
+	control::checkpointNoteEdit(clip, changes);
 	const NoteVector doomed = act(hits, action, amount);
 	for (Note* note : doomed) { clip->removeNote(note); }
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.transform_where"),
-		{{QStringLiteral("matched"), static_cast<int>(hits.size())}, {QStringLiteral("removed"), static_cast<int>(doomed.size())}}));
+		{{QStringLiteral("matched"), static_cast<int>(hits.size())}, {QStringLiteral("removed"), static_cast<int>(doomed.size())}},
+		changes));
 }
 
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,

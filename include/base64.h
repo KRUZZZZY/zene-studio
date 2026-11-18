@@ -44,6 +44,12 @@ namespace lmms::base64
 	inline void decode( const QString & _b64, T * * _data, int * _size )
 	{
 		QByteArray data = QByteArray::fromBase64( _b64.toUtf8() );
+		if( data.size() % sizeof(T) != 0 )
+		{
+			*_data = nullptr;
+			*_size = 0;
+			return;
+		}
 		*_size = data.size();
 		*_data = new T[*_size / sizeof(T)];
 		memcpy( *_data, data.constData(), *_size );

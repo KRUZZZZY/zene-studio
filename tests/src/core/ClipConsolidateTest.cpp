@@ -30,7 +30,10 @@
  *    * clip gain is baked in (the clips' own audio), the composite's lane gate is honoured
  *      and the composite then names the one clip, and undo restores the composite;
  *    * a clip crossing the region's edge, an instrument track and an empty region are
- *      refused and change nothing; a default path is never reused.
+ *      refused and change nothing; a default path is never reused;
+ *    * a range too large to render (a whole-song range at a slow tempo, or a tick range
+ *      near the full width of tick_t) is refused before its mix is allocated, and no file
+ *      is written.
  */
 
 #include <QtTest>
@@ -41,10 +44,13 @@
 #include <QTemporaryDir>
 
 #include <cmath>
+#include <limits>
 #include <memory>
+#include <new>
 #include <vector>
 
 #include "AudioEngine.h"
+#include "ClipConsolidate.h"
 #include "ClipEdits.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
@@ -187,6 +193,27 @@ private slots:
 		QCOMPARE(clipsOf(track).size(), std::size_t{2});
 	}
 
+	void aClipOverlappingTheRangeStartIsRenderedFromWhereTheRangeBegins()
+	{
+		Track* track = newSampleTrack();
+		SampleClip* clip = addTake(track, 0, 0.5f);
+		const tick_t length = clip->length().getTicks();
+		// render() is exported and takes the range separately: a clip whose audio starts before
+		// the range must contribute from the range's start, not vanish. (clip.consolidate refuses
+		// a clip crossing a region edge; this is the library underneath it.)
+		const QString out = m_dir.filePath(QStringLiteral("overlapping.wav"));
+		const ClipConsolidate::Result rendered = ClipConsolidate::render({clip}, length / 2, length,
+			out);
+		QVERIFY2(rendered.ok, qPrintable(rendered.error));
+		auto* fresh = dynamic_cast<SampleClip*>(track->createClip(TimePos(length / 2)));
+		fresh->setSampleFile(out);
+		fresh->changeLength(TimePos(length / 2));
+		fresh->setAutoResize(false);
+		const tick_t pad = length / 16;
+		QVERIFY2(std::fabs(levelAt(fresh, pad, length / 2 - pad) - 0.5) < 1e-4,
+			"the part of the clip inside the range is missing from the rendered file");
+	}
+
 	void refusalsChangeNothing()
 	{
 		Track* track = newSampleTrack();
@@ -226,6 +253,150 @@ private slots:
 		QVERIFY(QFileInfo::exists(a) && QFileInfo::exists(b));
 		QFile::remove(a);
 		QFile::remove(b);
+	}
+
+	//! A region whose replacement would push the base lane past its span budget is refused
+	//! before the render and the checkpoint: no file, no clip removed, composite unchanged.
+	void aReplacementTheCompositeCannotCarryIsRefusedBeforeAnythingChanges()
+	{
+		Track* track = newSampleTrack();
+		TakeLaneModel& comp = track->takeLanes();
+		const int base = comp.addLane();
+		const int other = comp.addLane();
+		QVERIFY(base != other);
+		SampleClip* clip = addTake(track, 0, 0.5f, other);
+		const int length = clip->length().getTicks();
+		QVERIFY(comp.selectSegment(0, length, other));
+		// The base lane sits at its budget, all of it past the clip's region with a tick to spare:
+		// a span that touched the region would merge into the replacement and cost nothing.
+		for (int i = 0; i < TakeLaneModel::MaxCompositeSpansPerLane; ++i)
+		{
+			QVERIFY(comp.selectSegment(length + 1 + 2 * i, length + 2 + 2 * i, base));
+		}
+		const auto segmentsBefore = comp.segments();
+		const QString out = m_dir.filePath(QStringLiteral("refused-budget.wav"));
+
+		const ControlResult done = run(QStringLiteral("clip.consolidate"),
+			args(track, {{QStringLiteral("out"), out}}));
+		QCOMPARE(done.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(done.errorMessage.contains(QStringLiteral("spans")), qPrintable(done.errorMessage));
+		QVERIFY(!QFileInfo::exists(out));
+		QCOMPARE(clipsOf(track).size(), std::size_t{1});
+		QCOMPARE(clipsOf(track)[0], clip);
+		QCOMPARE(comp.segments().size(), segmentsBefore.size());
+		QCOMPARE(comp.segments().front().laneIndex, other);
+		QCOMPARE(comp.segments().front().endTick, length);
+	}
+
+	//! One span short of the budget, the same replacement fits: the composite is repainted onto
+	//! the base lane, and the clip it names plays the region.
+	void aReplacementThatFitsTheBudgetRepaintsTheComposite()
+	{
+		Track* track = newSampleTrack();
+		TakeLaneModel& comp = track->takeLanes();
+		const int base = comp.addLane();
+		const int other = comp.addLane();
+		SampleClip* clip = addTake(track, 0, 0.5f, other);
+		const int length = clip->length().getTicks();
+		QVERIFY(comp.selectSegment(0, length, other));
+		for (int i = 0; i < TakeLaneModel::MaxCompositeSpansPerLane - 1; ++i)
+		{
+			QVERIFY(comp.selectSegment(length + 1 + 2 * i, length + 2 + 2 * i, base));
+		}
+
+		const ControlResult done = run(QStringLiteral("clip.consolidate"), args(track, {}));
+		QVERIFY2(done.ok, qPrintable(done.errorMessage));
+		QVERIFY(done.result.value(QStringLiteral("recomped")).toBool());
+		const auto after = clipsOf(track);
+		QCOMPARE(after.size(), std::size_t{1});
+		QCOMPARE(comp.segments().front().beginTick, 0);
+		QCOMPARE(comp.segments().front().laneIndex, base);
+		QVERIFY(comp.segments().front().endTick >= length);
+	}
+
+	void aClipEndingPastTheLargestTickIsRenderedUpToIt()
+	{
+		// Clip end = start + length is a tick sum: here it passes the largest tick and wraps
+		// negative in tick_t, which dropped the whole clip. The part before the largest tick
+		// is still audible and must reach the file.
+		Track* track = newSampleTrack();
+		const tick_t largest = std::numeric_limits<tick_t>::max();
+		SampleClip* clip = addTake(track, largest - 20, 0.5f);
+		QVERIFY(clip->length().getTicks() > 20);
+		const QString out = m_dir.filePath(QStringLiteral("nearLargestTick.wav"));
+		const ClipConsolidate::Result rendered = ClipConsolidate::render({clip}, largest - 20, largest,
+			out);
+		QVERIFY2(rendered.ok, qPrintable(rendered.error));
+		auto* fresh = dynamic_cast<SampleClip*>(track->createClip(TimePos(largest - 20)));
+		fresh->setSampleFile(out);
+		fresh->changeLength(TimePos(20));
+		fresh->setAutoResize(false);
+		QVERIFY2(std::fabs(levelAt(fresh, 2, 18) - 0.5) < 1e-4,
+			"the clip's audio before the largest tick is missing from the rendered file");
+	}
+
+	void aClipOffsetPastTheLargestTickContributesNothing()
+	{
+		// The offset carries the clip's audio past the largest tick, where no tick of the mix
+		// can hold it. start + offset wraps in tick_t; the clip must still contribute nothing.
+		Track* track = newSampleTrack();
+		SampleClip* clip = addTake(track, 1, 0.5f);
+		// Set the timeline offset directly. SampleClip's override also converts ticks to an int
+		// frame cache, which is a separate out-of-range conversion for this deliberately huge value.
+		clip->Clip::setStartTimeOffset(TimePos(std::numeric_limits<tick_t>::max()));
+		const tick_t length = clip->length().getTicks();
+		const QString out = m_dir.filePath(QStringLiteral("offsetPastLargestTick.wav"));
+		const ClipConsolidate::Result rendered = ClipConsolidate::render({clip}, 0, 2 * length, out);
+		QVERIFY2(rendered.ok, qPrintable(rendered.error));
+		auto* fresh = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		fresh->setSampleFile(out);
+		fresh->changeLength(TimePos(2 * length));
+		fresh->setAutoResize(false);
+		QCOMPARE(levelAt(fresh, 0, 2 * length), 0.0);
+	}
+
+	// Both tests run under an address-space cap (see the step that records the RED run): an
+	// unfixed render asks for terabytes, fails at the allocation, and is caught below as a
+	// failure rather than an out-of-memory kill of the host.
+	void aRangeTooLargeToRenderIsRefusedBeforeItIsAllocated()
+	{
+		const QString out = m_dir.filePath(QStringLiteral("huge.wav"));
+		try
+		{
+			// The whole tick_t width: about 2^32 ticks of mix at any tempo.
+			const ClipConsolidate::Result rendered = ClipConsolidate::render({},
+				std::numeric_limits<tick_t>::min() + 1, std::numeric_limits<tick_t>::max(), out);
+			QVERIFY(!rendered.ok);
+			QVERIFY2(rendered.error.contains(QStringLiteral("limit")), qPrintable(rendered.error));
+		}
+		catch (const std::bad_alloc&)
+		{
+			QFAIL("render() allocated the whole tick range instead of refusing it");
+		}
+		QVERIFY(!QFileInfo::exists(out));
+	}
+
+	void theWholeSongRangeOfACommandIsRefusedAndChangesNothing()
+	{
+		Track* track = newSampleTrack();
+		SampleClip* clip = addTake(track, 0, 0.5f);
+		const QString out = m_dir.filePath(QStringLiteral("whole.wav"));
+		try
+		{
+			// Every tick a song can hold: about 9999 bars, several hundred million frames at 140 BPM.
+			const ControlResult refused = run(QStringLiteral("clip.consolidate"), args(track,
+				{{QStringLiteral("start"), 0}, {QStringLiteral("end"), MaxSongLength},
+					{QStringLiteral("out"), out}}));
+			QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+			QVERIFY2(refused.errorMessage.contains(QStringLiteral("limit")), qPrintable(refused.errorMessage));
+		}
+		catch (const std::bad_alloc&)
+		{
+			QFAIL("clip.consolidate allocated the whole song range instead of refusing it");
+		}
+		QVERIFY(!QFileInfo::exists(out));
+		QCOMPARE(clipsOf(track).size(), std::size_t{1});
+		QCOMPARE(clipsOf(track)[0], clip);
 	}
 
 private:

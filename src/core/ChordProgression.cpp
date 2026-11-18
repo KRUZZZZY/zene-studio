@@ -166,8 +166,10 @@ void layOutArpeggio(const std::vector<int>& keys, tick_t pos, tick_t span, bool 
 	for (int voice = 0; voice < voiceCount; ++voice)
 	{
 		const int order = down ? voiceCount - 1 - voice : voice;
+		const qint64 offset = static_cast<qint64>(voice) * static_cast<qint64>(slot);
+		if (offset >= static_cast<qint64>(span)) { break; }
 		appendNote(out, keys[static_cast<std::size_t>(order)],
-			pos + static_cast<tick_t>(voice) * slot, slot, pos, span, velocity);
+			pos + static_cast<tick_t>(offset), slot, pos, span, velocity);
 	}
 }
 
@@ -428,8 +430,8 @@ bool chordsFor(const Request& request, std::vector<ChordStep>* out, QString* err
 void layOutChord(const std::vector<int>& keys, tick_t pos, tick_t room, Pattern pattern, int velocity,
 	std::vector<NoteSpec>* out)
 {
-	if (out == nullptr || keys.empty()) { return; }
-	const tick_t span = room < 1 ? 1 : room;
+	if (out == nullptr || keys.empty() || room <= 0) { return; }
+	const tick_t span = room;
 
 	if (pattern == Pattern::Block)
 	{

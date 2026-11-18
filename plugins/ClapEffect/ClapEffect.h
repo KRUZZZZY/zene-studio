@@ -51,6 +51,7 @@ class ClapEffect : public AudioPluginExt<Effect, ClapEffectAudioPortsSettings>
 public:
 	ClapEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key);
 	~ClapEffect() override;
+	QString unavailableReason() const override { return m_plugin.isLoaded() ? QString() : QStringLiteral("the CLAP module or plug-in was not found or could not be loaded"); }
 
 	auto controls() -> EffectControls* override;
 

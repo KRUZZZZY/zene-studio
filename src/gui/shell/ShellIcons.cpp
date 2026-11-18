@@ -66,6 +66,7 @@ const std::map<QString, QString>& shellTable()
 	{"ghost", "ghost"},
 	{"inspector", "info"},
 	{"launcher", "layout-grid"},
+	{"list", "align-left"},  // theme 10: a canvas's editable item list (ItemList.h)
 	{"loop", "repeat"},
 	{"metronome", "timer"},
 	{"mixer", "sliders-vertical"},

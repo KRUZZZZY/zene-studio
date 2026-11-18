@@ -61,13 +61,18 @@ QString idOf(const PaletteEntry& entry)
 //! @a entry's action gets its override from @a chosen, or its default back. The default is remembered before
 //! any override replaces it, so a reset after a restart is exact; and a stored override that no longer parses
 //! (a hand-edited config) keeps the default rather than leaving the action with no key (review ux05 #76).
+//! An override must be a STRING to be read at all: shortcuts.import refuses one that is not key text, but the
+//! config file can be hand-edited, and a non-string read through toString() came out as an empty string - which
+//! is exactly the documented UNBIND, so `42` silently took the action's key away (cluster 5373). Only "" unbinds.
 void applyTo(const PaletteEntry& entry, const QJsonObject& chosen)
 {
 	const QString fallback = defaultOf(entry.action);
 	const QString id = idOf(entry);
+	const QJsonValue stored = chosen.value(id);
+	const bool isOverride = stored.isString();
 	bool ok = false;
-	const QString keys = portable(chosen.value(id).toString(), &ok);
-	entry.action->setShortcut(QKeySequence::fromString(chosen.contains(id) && ok ? keys : fallback, QKeySequence::PortableText));
+	const QString keys = portable(stored.toString(), &ok);
+	entry.action->setShortcut(QKeySequence::fromString(isOverride && ok ? keys : fallback, QKeySequence::PortableText));
 }
 
 } // namespace
@@ -89,7 +94,7 @@ QList<Binding> bindings(QMenuBar* bar)
 		binding.command = entry.command;
 		binding.action = entry.action;
 		binding.defaults = defaultOf(entry.action);
-		binding.overridden = chosen.contains(binding.id);
+		binding.overridden = chosen.value(binding.id).isString();  // only a string is an override at all (cluster 5373)
 		// The walk asked each menu to fill itself, and one that builds its items on show (New from template) made
 		// them anew without their keys: give them back before reading (a listed binding is the live one).
 		applyTo(entry, chosen);
@@ -121,9 +126,16 @@ QStringList conflicts(const QList<Binding>& all, const QString& keys, const QStr
 {
 	QStringList out;
 	if (keys.isEmpty()) { return out; }
+	// A conflict is two bindings that fire in the SAME place: the global menu map, or one panel
+	// scope. The same key in two panels is the point of a scoped map, not a clash.
+	QString scope;
 	for (const Binding& binding : all)
 	{
-		if (binding.id != except && binding.keys == keys) { out.append(binding.id); }
+		if (binding.id == except) { scope = binding.scope; break; }
+	}
+	for (const Binding& binding : all)
+	{
+		if (binding.id != except && binding.keys == keys && binding.scope == scope) { out.append(binding.id); }
 	}
 	return out;
 }

@@ -38,9 +38,12 @@
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
+#include "ModulationLayer.h"
 #include "MidiEvent.h"
 #include "MidiInputTransform.h"
 #include "NotePlayHandle.h"
+#include "ProjectJournal.h"
+#include "RackZones.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -220,6 +223,27 @@ private slots:
 		QCOMPARE(transform.toJson().value(QStringLiteral("fixed_velocity")).toInt(), 90);
 	}
 
+	//! The attribute must be an OBJECT to be a transform. "[]" is valid JSON,
+	//! so it passed the parse guard, but document.object() answers an empty
+	//! object for an array - the candidate accepted it and the track's
+	//! transform was replaced with the identity: what the user had was gone.
+	void aValidJsonArrayIsNotATransform()
+	{
+		QDomDocument doc;
+		MidiInputTransform transform;
+		QVERIFY(set(transform, {{QStringLiteral("transpose"), 12}}));
+		QDomElement track = doc.createElement(QStringLiteral("instrumenttrack"));
+
+		track.setAttribute(QStringLiteral("inputtransform"), QStringLiteral("[]"));
+		transform.load(track);  // valid JSON, but an array
+		QCOMPARE(transform.toJson().value(QStringLiteral("transpose")).toInt(), 12);
+
+		track.setAttribute(QStringLiteral("inputtransform"), QStringLiteral("\"transpose\""));
+		transform.load(track);  // valid JSON, but a string
+		QCOMPARE(transform.toJson().value(QStringLiteral("transpose")).toInt(), 12);
+		QVERIFY(transform.active());
+	}
+
 	//! Every setting is an integer. QJsonValue::toInt() answers the DEFAULT (0)
 	//! for a number that is not whole, so a fractional value used to pass the
 	//! range check and be stored as that default: 'transpose': 2.5 was accepted
@@ -294,6 +318,67 @@ private slots:
 			.hasAttribute(QStringLiteral("inputtransform")));  // the identity is not written
 	}
 
+	//! Luna cluster 5643: the probe started from the identity transform, not the track's, and the
+	//! real fromJson() result was thrown away - so a partial update that only conflicts with
+	//! what the track ALREADY holds was accepted, refused, and still reported as success with an
+	//! undo step that restores a state the call never reached.
+	void aPartialUpdateThatConflictsWithTheCurrentTransformIsRefused()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		const QString id = control::trackIdOf(track);
+		QVERIFY(run(QStringLiteral("track.input_transform_set"), {{QStringLiteral("track"), id},
+			{QStringLiteral("key_low"), 60}}).ok);
+		const int highBefore = track->inputTransform().toJson().value(QStringLiteral("key_high")).toInt();
+
+		// key_high below the track's CURRENT key_low: the range would hold no key. The identity
+		// probe sees 0..40 and accepts it; the track's own state says otherwise.
+		const ControlResult refused = run(QStringLiteral("track.input_transform_set"), {{QStringLiteral("track"), id},
+			{QStringLiteral("key_high"), 40}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		// Nothing changed, and no undo step was pushed for a call that changed nothing.
+		QCOMPARE(track->inputTransform().toJson().value(QStringLiteral("key_low")).toInt(), 60);
+		QCOMPARE(track->inputTransform().toJson().value(QStringLiteral("key_high")).toInt(), highBefore);
+		// The refused call pushed no step of its own, so one undo reaches the step that IS
+		// there - the key_low set - rather than the refused call's phantom record.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(track->inputTransform().toJson().value(QStringLiteral("key_low")).toInt(), 0);
+
+		// A value that fits the track's range still goes through.
+		QVERIFY(run(QStringLiteral("track.input_transform_set"), {{QStringLiteral("track"), id},
+			{QStringLiteral("key_high"), 72}}).ok);
+		QCOMPARE(track->inputTransform().toJson().value(QStringLiteral("key_high")).toInt(), 72);
+	}
+
+	//! BUG 12 (new-p14-18): a track-only update changes no transform, yet the handler recorded an
+	//! undo step and marked the song modified - so the next control.undo was spent on that no-op.
+	void aTrackOnlyUpdateChangesNothingAndTakesNoUndoStep()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		QVERIFY(track != nullptr);
+		const QString id = control::trackIdOf(track);
+		song->noteProjectSaved(QString());  // the project as if saved: a call that changes nothing must leave it so
+		const int beforeNoOp = Engine::projectJournal()->undoDepth();
+		const ControlResult noOp = run(QStringLiteral("track.input_transform_set"), {{QStringLiteral("track"), id}});
+		QVERIFY2(noOp.ok, qPrintable(noOp.errorMessage));
+		QVERIFY(!track->inputTransform().active());
+		QCOMPARE(Engine::projectJournal()->undoDepth(), beforeNoOp);  // no step for a call that changed nothing
+		QVERIFY2(!song->isModified(), "a track-only update dirtied the project");
+		QVERIFY(!noOp.result.contains(QStringLiteral("__transaction")));
+
+		// A real edit, then the no-op: the one undo must reach the real edit, not the no-op.
+		QVERIFY(run(QStringLiteral("track.input_transform_set"), {{QStringLiteral("track"), id},
+			{QStringLiteral("transpose"), -12}}).ok);
+		QVERIFY(track->inputTransform().active());
+		QVERIFY(run(QStringLiteral("track.input_transform_set"), {{QStringLiteral("track"), id}}).ok);
+		QCOMPARE(track->inputTransform().toJson().value(QStringLiteral("transpose")).toInt(), -12);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY2(!track->inputTransform().active(), "the undo reverted the no-op, not the real edit");
+	}
+
 	void liveInputPlaysTheTransformedNote()
 	{
 		Song* song = Engine::getSong();
@@ -317,6 +402,79 @@ private slots:
 		off.setSource(MidiEvent::Source::External);
 		track->processInEvent(off, TimePos(0), 0);
 		Engine::audioEngine()->renderNextPeriod();
+	}
+
+	//! A forwarded external event re-enters the owner but must still get the layer track's own transform.
+	void nestedLayerAppliesItsOwnInputTransform()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* owner = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		QVERIFY(owner != nullptr);
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("root"));
+		QDomElement layers = doc.createElement(QStringLiteral("layers"));
+		QDomElement layerEntry = doc.createElement(QStringLiteral("layer"));
+		QDomElement layerTrackState = doc.createElement(QStringLiteral("track"));
+		layerTrackState.setAttribute(QStringLiteral("type"), static_cast<int>(Track::Type::Instrument));
+		layerTrackState.appendChild(doc.createElement(QStringLiteral("instrumenttrack")));
+		layerEntry.appendChild(layerTrackState);
+		layers.appendChild(layerEntry);
+		root.appendChild(layers);
+		owner->layers().loadSettings(root);
+		RackZone zone;
+		zone.chain = 1;
+		QVERIFY(owner->layers().zones().addZone(zone) >= 0);
+		InstrumentTrack* layer = owner->layers().layer(1);
+		QVERIFY(layer != nullptr);
+		QVERIFY(set(owner->inputTransform(), {{QStringLiteral("transpose"), 1}}));
+		QVERIFY(set(layer->inputTransform(), {{QStringLiteral("transpose"), 2}}));
+
+		MidiEvent on = noteOn(60, 100);
+		on.setSource(MidiEvent::Source::External);
+		owner->processInEvent(on, TimePos(0), 0);
+		QVERIFY(layer->playingNote(63) != nullptr);
+		QVERIFY(layer->playingNote(61) == nullptr);
+
+		MidiEvent off = noteOff(60);
+		off.setSource(MidiEvent::Source::External);
+		owner->processInEvent(off, TimePos(0), 0);
+		Engine::audioEngine()->renderNextPeriod();
+		QVERIFY(layer->playingNote(63) == nullptr);
+	}
+
+	void aStrayNoteOffDoesNotReleaseAnOverlappingVoice()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		QVERIFY(track != nullptr);
+		QVERIFY(track->loadInstrument(QStringLiteral("missing_test_instrument")) != nullptr);
+
+		auto& modulation = song->modulationLayer();
+		modulation.edit([trackId = track->id()](ModulationLayer&, ModulationRuntime& runtime) {
+			runtime = ModulationRuntime{};
+			runtime.sourceCount = 1;
+			runtime.sources[0].triggerTrack = trackId;
+			runtime.sources[0].perVoice = true;
+			return true;
+		});
+
+		track->processOutEvent(noteOff(60));
+		track->processOutEvent(noteOn(60, 100));
+		track->processOutEvent(noteOn(60, 100));
+		QCOMPARE(modulation.voices().activeCount(), 1);
+		track->processOutEvent(noteOff(60));
+		QCOMPARE(modulation.voices().activeCount(), 1);
+		track->processOutEvent(noteOff(60));
+		QCOMPARE(modulation.voices().activeCount(), 0);
+
+		modulation.edit([](ModulationLayer& layer, ModulationRuntime& runtime) {
+			layer.clear();
+			runtime = ModulationRuntime{};
+			return true;
+		});
 	}
 };
 

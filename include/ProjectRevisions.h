@@ -78,17 +78,31 @@ LMMS_EXPORT QJsonObject projectRevisionState(const QString& projectPath);
  *
  * The live file is rotated first (so the restore is itself recoverable: the
  * file it replaced is the new revision 0), then the revision is copied into
- * place. False with \a error set when the revision does not exist.
+ * place. False with \a error set when the revision does not exist, or when the
+ * bytes a restore would install are over MaxRevisionBytes: that refusal comes
+ * before anything is staged or rotated, so the retained set is left as it was.
+ *
+ * The revision is staged on disk first, under a path of its own. A stage an
+ * earlier FAILED attempt left behind is reused, because the rotation may
+ * already have replaced the revision that was asked for: the staged bytes are
+ * then the only copy of the target left. A failed restore keeps its stage, and
+ * a successful one consumes it.
  */
 LMMS_EXPORT bool restoreProjectRevision(const QString& projectPath, int revision,
 	QString* error);
 
 /*! Moves \a staging over \a projectPath, for a restore that has already rotated the live file
- * into revision 0 (rotateProjectRevision without a refusal). When the move fails the live file is
- * put back from that revision, so a failed restore never leaves the project path empty. False when
- * the move failed; \a staging is gone either way.
+ * into revision 0 (rotateProjectRevision without a refusal). The live file is replaced in one rename, so
+ * when the replacement cannot be made the live file is left exactly as it was and a failed restore never
+ * empties the project path. False when the replacement did not happen; \a staging is removed only once the
+ * replacement is in place, so a failure keeps the bytes the restore took out.
  */
 LMMS_EXPORT bool replaceProjectWithStaged(const QString& projectPath, const QString& staging);
+
+/*! Test seam: while \a fail is true, the replacement step of a revision copy fails once its staged copy is
+ * complete, so a test can prove the slot it would have replaced keeps its bytes. Never set outside tests.
+ */
+LMMS_EXPORT void setRevisionReplacementFailureForTest(bool fail);
 
 } // namespace control
 } // namespace lmms

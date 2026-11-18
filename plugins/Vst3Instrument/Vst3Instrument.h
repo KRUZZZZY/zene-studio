@@ -35,6 +35,7 @@
 
 #include "AudioPlugin.h"
 #include "InstrumentOutputBuses.h"
+#include "LmmsTypes.h"
 #include "Vst3Host.h"
 #include "PluginNativeEditor.h"
 #include "Vst3Parameter.h"
@@ -88,6 +89,7 @@ class Vst3Instrument : public AudioPluginExt<Instrument, Vst3InstrumentAudioPort
 public:
 	Vst3Instrument(InstrumentTrack* parent, const Descriptor::SubPluginFeatures::Key* key);
 	~Vst3Instrument() override;
+	QString unavailableReason() const override { return m_plugin.isLoaded() ? QString() : QStringLiteral("the VST3 module or class was not found or could not be loaded"); }
 
 	auto vst3Plugin() -> vst3::HostedPlugin* { return &m_plugin; }
 
@@ -138,20 +140,54 @@ private slots:
 	void poll();
 
 private:
+	//! The engine configuration a re-prepare attempt used: the sample rate and
+	//! the block size the plug-in was set up for.
+	struct PrepareConfig
+	{
+		sample_rate_t sampleRate = 0;
+		f_cnt_t framesPerPeriod = 0;
+
+		auto operator==(const PrepareConfig& other) const -> bool
+		{
+			return sampleRate == other.sampleRate && framesPerPeriod == other.framesPerPeriod;
+		}
+	};
+
+	//! How many times a re-prepare may fail for the SAME configuration before
+	//! the host stops asking: a plug-in that refuses one sample rate or block
+	//! size is not set up again on every poll tick (100 ms) for ever.
+	static constexpr int MaxPrepareAttempts = 3;
+
+	//! GUI thread: true when the plug-in may be prepared again - either the
+	//! engine configuration changed since the last attempt, or the attempts for
+	//! the current one have not used up the budget yet.
+	auto mayPrepareAgain() const -> bool;
+
 	//! Audio thread: hand the notes the plug-in wrote this block to the track's MIDI output.
 	void forwardOutputEvents();
 	//! The transport's channel counts for the plug-in's current bus layout.
 	void applyChannelCounts();
 	//! MX-114: activates output buses 1..@a bus (re-preparing the plug-in) when a route asks for one.
 	bool enableOutputBus(int bus);
+	/*! MX-157 (BUGS 11.34), GUI thread: the plug-in's latency (IAudioProcessor::getLatencySamples) after
+	 *  its last prepare, reported to the track's delay compensation (Instrument::reportLatency). A
+	 *  kLatencyChanged from the plug-in only raises m_latencyChanged - it may come from any thread - and
+	 *  poll() reads the new value. */
+	void cacheLatency();
+	vst3::AudioProcessGate m_processGate;
 	vst3::HostedPlugin m_plugin;
 	gui::PluginNativeEditor m_editor;
 	std::vector<Vst3ParamModel*> m_paramModels;
 	QTimer* m_pollTimer = nullptr;
 	bool m_syncing = false;
 	std::atomic<bool> m_needsReprepare{false};
+	//! GUI thread: the configuration the last re-prepare attempt used, and how
+	//! many attempts it has had (the retry budget of that configuration).
+	PrepareConfig m_attemptedConfig{};
+	int m_attemptCount = 0;
 	InstrumentOutputBuses m_outputBuses;  //!< MX-114
 	std::atomic<bool> m_noteIds{false};   //!< MX-120: the plug-in takes note expressions, so notes carry ids
+	std::atomic<bool> m_latencyChanged{false};  //!< MX-157: kLatencyChanged arrived; poll() re-reads
 };
 
 } // namespace lmms

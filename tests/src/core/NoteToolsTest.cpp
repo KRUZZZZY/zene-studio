@@ -102,6 +102,21 @@ private slots:
 		QCOMPARE(keysOf(clip), (QList<int>{60, 64, 67}));
 	}
 
+	void aNoOpInvertDoesNotTakeAnUndoStep()
+	{
+		MidiClip* clip = clipWith({{60, 0}});
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+
+		const int depthBefore = journal->undoDepth();
+		const ControlResult inverted = run(QStringLiteral("note.invert"), self(clip));
+		QVERIFY2(inverted.ok, qPrintable(inverted.errorMessage));
+		QCOMPARE(clip->notes()[0]->key(), 60);
+		const int depthAfter = journal->undoDepth();
+		while (journal->undoDepth() > depthBefore) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+		QCOMPARE(depthAfter, depthBefore);
+	}
+
 	void aChordBecomesARun()
 	{
 		MidiClip* clip = clipWith({{60, 0}, {64, 0}, {67, 0}}, 48);
@@ -112,6 +127,18 @@ private slots:
 		QCOMPARE(clip->notes()[0]->key(), 60);
 		QCOMPARE(clip->notes()[1]->key(), 64);
 		QCOMPARE(clip->notes()[3]->key(), 60);  // the run wraps
+	}
+
+	void arpeggiateRefusesExcessiveAggregateOutputBeforeChangingTheClip()
+	{
+		MidiClip* clip = clipWith({{60, 0}, {64, 5001}}, 5001);
+		QJsonObject args = self(clip);
+		args.insert(QStringLiteral("rate"), 1);
+		const ControlResult refused = run(QStringLiteral("note.arpeggiate"), args);
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(clip->notes().size(), std::size_t{2});
+		QCOMPARE(clip->notes().front()->length().getTicks(), tick_t{5001});
+		QCOMPARE(clip->notes().back()->pos().getTicks(), tick_t{5001});
 	}
 
 	void flamsRepeatsAndKeyedTransposition()
@@ -131,6 +158,25 @@ private slots:
 		QVERIFY(run(QStringLiteral("scale.set"), {{QStringLiteral("scale"), QStringLiteral("Major")}}).ok);
 		QVERIFY(run(QStringLiteral("note.transpose_in_key"), self(clip)).ok);
 		QCOMPARE(keysOf(clip), (QList<int>{62, 64}));  // C -> D, D -> E: one degree each
+	}
+
+	void zeroStepKeyedTransposeDoesNotTakeAnUndoStep()
+	{
+		MidiClip* clip = clipWith({{60, 0}});
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		QVERIFY(run(QStringLiteral("scale.root_set"), {{QStringLiteral("root"), QStringLiteral("C")}}).ok);
+		QVERIFY(run(QStringLiteral("scale.set"), {{QStringLiteral("scale"), QStringLiteral("Major")}}).ok);
+		const int depthBefore = journal->undoDepth();
+		QJsonObject args = self(clip);
+		args.insert(QStringLiteral("steps"), 0);
+		const ControlResult transposed = run(QStringLiteral("note.transpose_in_key"), args);
+		QVERIFY2(transposed.ok, qPrintable(transposed.errorMessage));
+		QCOMPARE(transposed.result.value(QStringLiteral("moved")).toInt(), 0);
+		QCOMPARE(clip->notes()[0]->key(), 60);
+		const int depthAfter = journal->undoDepth();
+		while (journal->undoDepth() > depthBefore) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+		QCOMPARE(depthAfter, depthBefore);
 	}
 
 	void aEuclideanRhythm()
@@ -182,6 +228,32 @@ private slots:
 			{QStringLiteral("root"), 0}}).ok);
 		QVERIFY(run(QStringLiteral("note.follow_chords"), self(clip)).ok);
 		for (const Note* note : clip->notes()) { QVERIFY(QList<int>({0, 4, 7}).contains(note->key() % 12)); }  // C, E, G only
+		QVERIFY(run(QStringLiteral("chord.clear")).ok);
+	}
+
+	//! scale.detect weights each note by key % 12: a note's key is clamped on every path in (constructor, setKey,
+	//! Note::loadSettings), so a -1 never reaches the weights. Pinned here, in the scale.detect family.
+	void aNegativeNoteKeyIsClampedAndDetectsInRange()
+	{
+		MidiClip* clip = clipWith({{-1, 0}, {60, 24}});
+		QCOMPARE(keysOf(clip), (QList<int>{0, 60}));
+		const ControlResult key = run(QStringLiteral("scale.detect"), self(clip));
+		QVERIFY2(key.ok, qPrintable(key.errorMessage));
+	}
+
+	void followingChordsRefusesAnEmptySelection()
+	{
+		MidiClip* clip = clipWith({{61, 0}});
+		QVERIFY(run(QStringLiteral("chord.set"), {{QStringLiteral("pos"), 0},
+			{QStringLiteral("chord"), QStringLiteral("Major")}, {QStringLiteral("root"), 0}}).ok);
+		QCOMPARE(clip->notes().size(), std::size_t{1});
+		QVERIFY(!clip->notes().front()->selected());
+
+		QJsonObject args = self(clip);
+		args.insert(QStringLiteral("scope"), QStringLiteral("selection"));
+		const ControlResult refused = run(QStringLiteral("note.follow_chords"), args);
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(clip->notes().front()->key(), 61);
 		QVERIFY(run(QStringLiteral("chord.clear")).ok);
 	}
 
@@ -375,6 +447,29 @@ private slots:
 			qPrintable(QStringLiteral("the wrapped note landed at tick %1 - outside the audible "
 				"[%2, %3) region of the trimmed clip")
 				.arg(wrapped).arg(clip->startTimeOffset().getTicks()).arg(clip->length().getTicks())));
+	}
+
+	//! Rotating a note across the clip end splits its duration at the wrap instead of growing an auto-resizing clip.
+	void rotatingAWrappedNoteKeepsTheAutoResizingClipSpan()
+	{
+		const tick_t span = TimePos::ticksPerBar();
+		auto* clip = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setAutoResize(false);
+		clip->changeLength(TimePos(span));
+		clip->addNote(Note(TimePos(span), TimePos(0), 60), false);
+		clip->setAutoResize(true);
+
+		QJsonObject args = self(clip);
+		args.insert(QStringLiteral("amount"), 20);
+		const ControlResult rotated = run(QStringLiteral("note.rotate"), args);
+		QVERIFY2(rotated.ok, qPrintable(rotated.errorMessage));
+		QCOMPARE(clip->length().getTicks(), span);
+		QCOMPARE(clip->notes().size(), std::size_t{2});
+		QCOMPARE(clip->notes()[0]->pos().getTicks(), tick_t{0});
+		QCOMPARE(clip->notes()[0]->length().getTicks(), tick_t{20});
+		QCOMPARE(clip->notes()[1]->pos().getTicks(), tick_t{20});
+		QCOMPARE(clip->notes()[1]->length().getTicks(), span - 20);
 	}
 
 //! Luna cluster 5693: generate() clamped `pulses` to `steps` and answered ok, so

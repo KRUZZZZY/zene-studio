@@ -48,6 +48,7 @@
 
 #include "AudioEngine.h"
 #include "ControlEdit.h"      // control::resolveTrack(), control::trackIdOf()
+#include "ControlReversibility.h"
 #include "ControlRegistry.h"  // ControlResult, ControlErrorKind
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -89,6 +90,49 @@ inline MidiReconnect* liveReconnect()
 {
 	MidiClient* client = liveClient();
 	return client != nullptr ? &client->reconnect() : nullptr;
+}
+
+//! The current MIDI port of a stable track id, or nullptr after its deletion.
+inline MidiPort* midiPortForTrack(const QString& trackId)
+{
+	ControlResult error;
+	Track* track = control::resolveTrack(trackId, &error);
+	InstrumentTrack* instrument = qobject_cast<InstrumentTrack*>(track);
+	return instrument != nullptr ? instrument->midiPort() : nullptr;
+}
+
+//! Apply a recorded MIDI binding to whichever object currently owns this id.
+inline void applyBindingForTrack(const QString& trackId, bool readable,
+	const QString& name, bool subscribe)
+{
+	MidiPort* port = midiPortForTrack(trackId);
+	if (port == nullptr) { return; }
+	if (readable) { port->subscribeReadablePort(name, subscribe); }
+	else { port->subscribeWritablePort(name, subscribe); }
+}
+
+//! Journal both directions by stable track id, since track restoration creates
+//! a new InstrumentTrack and MidiPort object with the same id.
+/*!
+ * The subscription set is a property of MidiPort, and its subscribe methods
+ * are the only calls that keep the live subscription and serialized inports
+ * and outports in step. Loading a checkpoint only subscribes ports it names; it
+ * does not detach a binding that was absent, so undo and redo must use the same
+ * subscribe call as the edit.
+ *
+ * \a subscribe is the state the command leaves in place (bind=true, detach=false).
+ * Undo takes the opposite action and redo re-applies it. The closures resolve
+ * the current MidiPort each time so a deleted and restored track is addressed
+ * by its stable id, never through a freed object.
+ */
+inline void recordBindingInverse(const QString& trackId, bool readable,
+	const QString& name, bool subscribe)
+{
+	control::addUndoStep(
+		[trackId, readable, name, subscribe]()
+		{ applyBindingForTrack(trackId, readable, name, !subscribe); },
+		[trackId, readable, name, subscribe]()
+		{ applyBindingForTrack(trackId, readable, name, subscribe); });
 }
 
 //! The line every refusal about a missing client shares.

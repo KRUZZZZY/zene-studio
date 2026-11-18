@@ -33,6 +33,8 @@
 #include <utility>
 #include <vector>
 
+#include "PluginParamGesture.h"
+#include "Vst3ParamDescriptor.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 
 namespace lmms::vst3
@@ -51,6 +53,7 @@ using namespace Steinberg::Vst;
  * Minimal IComponentHandler. performEdit() only mirrors the plug-in's own
  * parameter changes into the lock free parameter array of the host, using a
  * binary search over the pre-sorted parameter index: no allocation, no lock.
+ * beginEdit() and endEdit() report the gesture the same way (Q050-214).
  */
 class Vst3ComponentHandler : public IComponentHandler
 {
@@ -60,13 +63,19 @@ public:
 	virtual ~Vst3ComponentHandler() = default;
 
 	Vst3ComponentHandler(std::atomic<float>* values,
-			const std::vector<std::pair<std::uint32_t, std::size_t>>* indexById) :
+			const std::vector<std::pair<std::uint32_t, std::size_t>>* indexById,
+			PluginParamGesture* gestures = nullptr) :
 		m_values{values},
-		m_indexById{indexById}
+		m_indexById{indexById},
+		m_gestures{gestures}
 	{
 	}
 
-	tresult PLUGIN_API beginEdit(ParamID) SMTG_OVERRIDE { return kResultOk; }
+	tresult PLUGIN_API beginEdit(ParamID id) SMTG_OVERRIDE
+	{
+		if (const auto index = gestureIndexOf(id); index >= 0) { m_gestures[index].begin(m_values[index]); }
+		return kResultOk;
+	}
 
 	tresult PLUGIN_API performEdit(ParamID id, ParamValue valueNormalized) SMTG_OVERRIDE
 	{
@@ -75,13 +84,21 @@ public:
 			std::make_pair(static_cast<std::uint32_t>(id), std::size_t{0}));
 		if (it != m_indexById->end() && it->first == static_cast<std::uint32_t>(id))
 		{
-			m_values[it->second].store(static_cast<float>(valueNormalized),
+			// A plug-in that edits a parameter to a value with no meaning (NaN,
+			// an infinity, or a ParamValue too large for float) is refused: the
+			// last good value stays, rather than reaching the audio thread.
+			const auto keep = m_values[it->second].load(std::memory_order_relaxed);
+			m_values[it->second].store(sanitizedNormalized(valueNormalized, keep),
 				std::memory_order_relaxed);
 		}
 		return kResultOk;
 	}
 
-	tresult PLUGIN_API endEdit(ParamID) SMTG_OVERRIDE { return kResultOk; }
+	tresult PLUGIN_API endEdit(ParamID id) SMTG_OVERRIDE
+	{
+		if (const auto index = gestureIndexOf(id); index >= 0) { m_gestures[index].end(m_values[index]); }
+		return kResultOk;
+	}
 
 	//! BUGS 11.34: a plug-in whose latency changed says so here (UI thread, per the VST3 SDK);
 	//! the host re-reads it and the owning chain re-aligns its paths.
@@ -101,12 +118,24 @@ public:
 	{
 		m_values = nullptr;
 		m_indexById = nullptr;
+		m_gestures = nullptr;
 		m_onLatencyChanged = nullptr;
 	}
 
-	tresult PLUGIN_API queryInterface(const TUID, void** obj) SMTG_OVERRIDE
+	//! The two interfaces this object implements. A plug-in that asks the handler it was given
+	//! for IComponentHandler (or for the FUnknown base) gets them, with the reference count
+	//! incremented for the reference it receives; anything else is kNoInterface.
+	tresult PLUGIN_API queryInterface(const TUID iid, void** obj) SMTG_OVERRIDE
 	{
-		if (obj) { *obj = nullptr; }
+		if (obj == nullptr) { return kInvalidArgument; }
+		if (FUnknownPrivate::iidEqual(iid, IComponentHandler::iid)
+			|| FUnknownPrivate::iidEqual(iid, FUnknown::iid))
+		{
+			*obj = static_cast<IComponentHandler*>(this);
+			addRef();
+			return kResultOk;
+		}
+		*obj = nullptr;
 		return kNoInterface;
 	}
 
@@ -120,8 +149,18 @@ public:
 	}
 
 private:
+	auto gestureIndexOf(ParamID id) const -> std::ptrdiff_t
+	{
+		if (m_gestures == nullptr || m_values == nullptr || m_indexById == nullptr) { return -1; }
+		const auto it = std::lower_bound(m_indexById->begin(), m_indexById->end(),
+			std::make_pair(static_cast<std::uint32_t>(id), std::size_t{0}));
+		const bool found = it != m_indexById->end() && it->first == static_cast<std::uint32_t>(id);
+		return found ? static_cast<std::ptrdiff_t>(it->second) : -1;
+	}
+
 	std::atomic<float>* m_values;
 	const std::vector<std::pair<std::uint32_t, std::size_t>>* m_indexById;
+	PluginParamGesture* m_gestures;
 	std::function<void()> m_onLatencyChanged;
 	std::atomic<uint32> m_refCount{1};
 };

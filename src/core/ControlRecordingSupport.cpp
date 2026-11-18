@@ -27,8 +27,13 @@
 #include <algorithm>
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
+
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 
 #include "ConfigManager.h"
 #include "AudioEngine.h"
@@ -109,6 +114,14 @@ bool readJournal(const QJsonObject& args, TakeJournal* journal, ControlResult* e
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'take' is required: the absolute path of the capture's WAV file"));
+		return false;
+	}
+	if (!QFileInfo(take).isAbsolute())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'take' must be an ABSOLUTE path: a relative one names a different "
+				"file in the next process's working directory, which is the run this journal "
+				"exists to be found by"));
 		return false;
 	}
 	if (!read(journalPathFor(take), journal))
@@ -273,6 +286,37 @@ int routeArg(const QJsonObject& args)
 	return args.contains(QStringLiteral("route")) ? args.value(QStringLiteral("route")).toInt() : -1;
 }
 
+void releaseDefaultTake(const QString& reservedPath)
+{
+	if (reservedPath.isEmpty()) { return; }
+	QFile::remove(reservedPath);
+	QFile::remove(journalPathFor(reservedPath));
+}
+
+QString reserveDefaultTake(const QString& directory, const QString& base)
+{
+	if (directory.isEmpty() || base.isEmpty()) { return QString(); }
+	for (int index = 0; index < TakeNameProbeBound; ++index)
+	{
+		const QString stem = index == 0 ? base
+			: QStringLiteral("%1-%2").arg(base).arg(index);
+		const QString candidate = QDir(directory).absoluteFilePath(stem + QStringLiteral(".wav"));
+		if (QFileInfo::exists(candidate) || QFileInfo::exists(journalPathFor(candidate)))
+		{
+			continue;
+		}
+		// Exclusive creation IS the reservation: it fails when the candidate
+		// appeared since the existence check (another allocator won the race).
+		QFile fresh(candidate);
+		if (fresh.open(QIODevice::WriteOnly | QIODevice::NewOnly))
+		{
+			fresh.close();
+			return candidate;
+		}
+	}
+	return QString();
+}
+
 QString takePathArg(const QJsonObject& args, int route, ControlResult* error)
 {
 	const QString file = args.value(QStringLiteral("file")).toString();
@@ -287,8 +331,58 @@ QString takePathArg(const QJsonObject& args, int route, ControlResult* error)
 		}
 		return file;
 	}
-	return QDir(defaultRecoveryDir()).absoluteFilePath(
-		QStringLiteral("zene-take-route%1.wav").arg(route));
+	const QString base = QStringLiteral("zene-take-route%1").arg(route);
+	const QString reserved = reserveDefaultTake(defaultRecoveryDir(), base);
+	if (reserved.isEmpty())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("route %1 could not be armed: all %2 default take names "
+				"beside this instance's recovery file already hold a take or journal")
+				.arg(route).arg(TakeNameProbeBound));
+		return QString();
+	}
+	return reserved;
+}
+
+// ---------------------------------------------------------------------------
+// The recording budget's filesystem identity (see the header).
+// ---------------------------------------------------------------------------
+
+VolumeNaming platformVolumeNaming()
+{
+#ifdef _WIN32
+	// Windows names a volume by its GUID (the storage info's device id).
+	return VolumeNaming::VolumeId;
+#else
+	// POSIX names a filesystem by the device the kernel mounts it from (st_dev).
+	return VolumeNaming::KernelDevice;
+#endif
+}
+
+QString filesystemIdentityKey(const QString& path, VolumeNaming naming, const QString& deviceId,
+	const QString& mountPoint)
+{
+	if (naming == VolumeNaming::VolumeId)
+	{
+		// The volume's GUID (QStorageInfo::device()) names the volume: one volume mounted at
+		// several paths keeps ONE key, so its routes share one budget of free bytes. The mount
+		// point (QStorageInfo::rootPath()) names the MOUNT, not the volume, so it is the
+		// fallback for a storage info that knows no GUID - and never the identity.
+		return deviceId.isEmpty() ? QStringLiteral("path:") + mountPoint
+			: QStringLiteral("vol:") + deviceId;
+	}
+#ifndef _WIN32
+	// The device the kernel mounts the filesystem from: the device LABEL (every tmpfs mount
+	// answers "tmpfs") is not an identity, so it is not used here.
+	struct stat fsStat;
+	if (::stat(path.toUtf8().constData(), &fsStat) == 0)
+	{
+		return QStringLiteral("dev:") + QString::number(static_cast<qulonglong>(fsStat.st_dev));
+	}
+#else
+	Q_UNUSED(path);
+#endif
+	return QStringLiteral("path:") + mountPoint;
 }
 
 } // namespace control

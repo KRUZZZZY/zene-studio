@@ -26,9 +26,14 @@
 #define LMMS_GUI_SLICERT_VIEW_H
 
 
+#include <QTimer>
+#include <array>
+
 #include "InstrumentView.h"
 
+class QDoubleSpinBox;
 class QPushButton;
+class QSpinBox;
 
 namespace lmms {
 
@@ -50,6 +55,11 @@ public slots:
 	void exportMidi();
 	void openFiles();
 	void clearSlices();
+	//! Q050-156: record the input straight into this slicer (record.sampler_capture*).
+	void recordTake();
+	//! Q050-263: re-reads the selected slice's gain, pan, filter and random amount into the per-slice panel;
+	//! the panel's edits go out through the registered plugin.slice_set.
+	void refreshSlicePanel();
 
 public:
 	SlicerTView(SlicerT* instrument, QWidget* parent);
@@ -61,6 +71,7 @@ public:
 	static constexpr int s_bottomBoxHeight = 97;
 	static constexpr int s_bottomBoxOffset = 65;
 	static constexpr int s_sampleBoxHeight = 14;
+	static constexpr int s_sliceBarHeight = 30;
 	static constexpr int s_folderButtonWidth = 15;
 	static constexpr int s_leftBoxWidth = 400;
 
@@ -82,6 +93,7 @@ private:
 	bool isResizable() const override { return true; }
 
 	SlicerT* m_slicerTParent;
+	QTimer* m_playheadPoll;
 
 	Knob* m_noteThresholdKnob;
 	Knob* m_fadeOutKnob;
@@ -93,8 +105,17 @@ private:
 
 	QPushButton* m_resetButton;
 	QPushButton* m_midiExportButton;
+	QPushButton* m_recordTakeButton;
 
 	SlicerTWaveform* m_wf;
+
+	//! Q050-263: the per-slice panel, between the waveform and the sample bar.
+	QWidget* m_sliceBar;
+	QSpinBox* m_sliceSelect;
+	std::array<QDoubleSpinBox*, 4> m_sliceValues{};
+	bool m_refreshingSlicePanel = false;
+	void editSliceValue(std::size_t control, double value);
+	QString trackId() const;
 
 	Knob* createStyledKnob();
 

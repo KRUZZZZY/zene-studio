@@ -87,8 +87,10 @@ bool HardwareOutputBus::active() const noexcept
 
 float HardwareOutputBus::sample(int channel, f_cnt_t frame, const SampleFrame& master) const noexcept
 {
+	// A frame outside the period is no audio: silence, not the next channel's plane or past the storage.
+	if (frame < 0 || frame >= m_frames) { return 0.f; }
 	const Side& side = readSide();
-	float value = channel < side.used ? side.data[static_cast<std::size_t>(channel) * m_frames + frame] : 0.f;
+	float value = channel >= 0 && channel < side.used ? side.data[static_cast<std::size_t>(channel) * m_frames + frame] : 0.f;
 	const Placement& at = side.master;
 	if (at.start < 0 || channel < at.start || channel >= at.start + at.width) { return value; }
 	return value + (at.width == 1 ? 0.5f * (master[0] + master[1]) : master[channel - at.start]);
@@ -96,6 +98,7 @@ float HardwareOutputBus::sample(int channel, f_cnt_t frame, const SampleFrame& m
 
 float HardwareOutputBus::monoSample(f_cnt_t frame, const SampleFrame& master) const noexcept
 {
+	if (frame < 0 || frame >= m_frames) { return 0.f; }
 	const Side& side = readSide();
 	const float value = side.used > 0 ? side.data[static_cast<std::size_t>(frame)] : 0.f;
 	return value + (side.master.start == 0 ? master.average() : 0.f);

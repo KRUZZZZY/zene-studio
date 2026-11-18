@@ -1,9 +1,12 @@
 #include "SendButtonIndicator.h"
 
+#include <QMouseEvent>
+
 #include "Engine.h"
 #include "Mixer.h"
 #include "MixerChannelView.h"
 #include "MixerView.h"
+#include "Song.h"
 
 namespace lmms::gui
 {
@@ -21,20 +24,25 @@ SendButtonIndicator:: SendButtonIndicator(QWidget* parent, MixerChannelView* own
 
 void SendButtonIndicator::mousePressEvent(QMouseEvent* e)
 {
+	if (e->button() != Qt::LeftButton) { return; }
+
 	Mixer* mix = Engine::mixer();
 	int from = m_mv->currentMixerChannel()->channelIndex();
 	int to = m_parent->channelIndex();
 	FloatModel* sendModel = mix->channelSendModel(from, to);
+	bool changed = false;
 	if (sendModel == nullptr)
 	{
 		// not sending. create a mixer send.
-		mix->createChannelSend(from, to);
+		changed = mix->createChannelSend(from, to) != nullptr;
 	}
 	else
 	{
 		// sending. delete the mixer send.
 		mix->deleteChannelSend(from, to);
+		changed = true;
 	}
+	if (changed) { Engine::getSong()->setModified(); }
 
 	m_mv->updateMixerChannel(m_parent->channelIndex());
 	updateLightStatus();

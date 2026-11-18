@@ -24,13 +24,46 @@
 
 #include <QtTest>
 
+#include <QFile>
+#include <QProcess>
+#include <QTemporaryDir>
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <memory>
 #include <numbers>
 #include <vector>
 
+#include "DrumSynth.h"
 #include "SampleBufferResample.h"
 
 using namespace lmms;
+
+
+namespace
+{
+
+std::vector<std::int16_t> renderDrumSynth(const QString& path, const char* level)
+{
+	const QByteArray settings = QStringLiteral(
+		"[General]\nVersion=DrumSynth v2.0\nLevel=%1\nStretch=100\nTuning=0\nFilter=0\n"
+		"FilterEnv=0,0 100,0\n\n[Tone]\nOn=1\nLevel=100\nF1=440\nF2=440\n"
+		"Droop=0\nPhase=0\nEnvelope=0,100 1200,0\n")
+		.arg(QLatin1String(level)).toUtf8();
+	{
+		QFile file(path);
+		if (!file.open(QIODevice::WriteOnly) || file.write(settings) != settings.size()) { return {}; }
+	}
+
+	std::int16_t* samples = nullptr;
+	const int frames = DrumSynth{}.GetDSFileSamples(path, samples, 1, 44100);
+	const std::unique_ptr<std::int16_t[]> ownedSamples(samples);
+	if (frames <= 0 || !ownedSamples) { return {}; }
+	return {ownedSamples.get(), ownedSamples.get() + frames};
+}
+
+} // namespace
+
 
 //! Engine audit E27: stem separation resamples a source to 44.1 kHz instead of refusing it, so
 //! the resample must keep the audio's length in time and its pitch.
@@ -70,7 +103,85 @@ private slots:
 		const auto input = std::make_shared<const SampleBuffer>(std::vector<SampleFrame>(100), 44100);
 		QCOMPARE(resampleBuffer(input, 44100).get(), input.get());
 	}
+
+	//! Luna cluster 5285: the zero TARGET rate was rejected but a zero SOURCE rate was not,
+	//! so the output/input ratio was an infinity and the output length an enormous (and
+	//! meaningless) allocation request. A buffer that cannot state its rate is passed through
+	//! untouched, exactly as the target-rate guard already does.
+	void aBufferWithNoSourceRateIsPassedThroughUnchanged()
+	{
+		const auto input = std::make_shared<const SampleBuffer>(std::vector<SampleFrame>(4096), 0);
+		QCOMPARE(input->sampleRate(), 0U);
+		// Without the guard this divides by zero below and asks for a huge allocation.
+		QCOMPARE(resampleBuffer(input, 44100).get(), input.get());
+	}
+
+	void aResampledBufferDoesNotPointBackToTheUntransformedSourceFile()
+	{
+		const auto input = std::make_shared<const SampleBuffer>(
+			std::vector<SampleFrame>(4096), 48000, QStringLiteral("source.wav"));
+		const auto output = resampleBuffer(input, 44100);
+		QVERIFY(output.get() != input.get());
+		QVERIFY(output->audioFile().isEmpty());
+	}
+
+	void aNonfiniteDrumSynthLevelUsesTheDefaultGain()
+	{
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const auto expected = renderDrumSynth(directory.filePath(QStringLiteral("default.ds")), "0");
+		const auto actual = renderDrumSynth(directory.filePath(QStringLiteral("nan.ds")), "nan");
+		QVERIFY(!expected.empty());
+		QVERIFY(std::any_of(expected.begin(), expected.end(), [](std::int16_t sample) { return sample != 0; }));
+		QVERIFY(actual == expected);
+	}
+
+	void negativeDrumSynthDistortionRateDoesNotHang()
+	{
+		QTemporaryDir tempDir;
+		QVERIFY(tempDir.isValid());
+		QFile file(tempDir.filePath(QStringLiteral("invalid-rate.ds")));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		const QByteArray fixture = R"([General]
+Version=DrumSynth v2.0
+Stretch=100
+[Distortion]
+On=1
+Bits=0
+Rate=-1
+)";
+		QCOMPARE(file.write(fixture), static_cast<qint64>(fixture.size()));
+		file.close();
+
+		QProcess renderer;
+		renderer.start(QCoreApplication::applicationFilePath(),
+			{QStringLiteral("--render-drumsynth"), file.fileName()});
+		QVERIFY(renderer.waitForStarted(5000));
+		const bool completed = renderer.waitForFinished(3000);
+		if (!completed)
+		{
+			renderer.kill();
+			QVERIFY(renderer.waitForFinished(5000));
+		}
+		QVERIFY2(completed, "DrumSynth rendering stalled on Rate=-1");
+		QCOMPARE(renderer.exitStatus(), QProcess::NormalExit);
+		QCOMPARE(renderer.exitCode(), 0);
+	}
 };
 
-QTEST_GUILESS_MAIN(SampleBufferResampleTest)
+int main(int argc, char* argv[])
+{
+	QCoreApplication app(argc, argv);
+	if (app.arguments().size() == 3 && app.arguments().at(1) == QStringLiteral("--render-drumsynth"))
+	{
+		std::int16_t* wave = nullptr;
+		DrumSynth drumSynth;
+		const int samples = drumSynth.GetDSFileSamples(app.arguments().at(2), wave, 1, 44100);
+		delete[] wave;
+		return samples > 0 ? 0 : 1;
+	}
+
+	SampleBufferResampleTest test;
+	return QTest::qExec(&test, argc, argv);
+}
 #include "SampleBufferResampleTest.moc"

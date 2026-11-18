@@ -24,9 +24,13 @@
 
 #include <QtTest>
 
+#include "lmmsconfig.h"
 #include "ControlRegistry.h"
+#ifdef ZENE_TELEMETRY_ENABLED
+#include "ConfigManager.h"
+#include <QJsonDocument>
+#endif
 #include "Engine.h"
-
 using namespace lmms;
 
 class ControlRegistryTest : public QObject
@@ -142,6 +146,32 @@ private slots:
 		QVERIFY(sawPing);
 	}
 
+	//! Q050-343: sample.generate's help names BOTH routes - the command surface an
+	//! agent uses and the sample track's More menu, where the same registered id is
+	//! offered as Insert Test Signal... - and rejects the stale "Socket-only / no
+	//! interface reaches this verb" claim the description carried while the menu
+	//! action already existed. A description is what `control.commands_list`, the
+	//! MCP tool text and the CommandForm's about line all show, so this is the one
+	//! place the route can drift.
+	void sampleGenerateHelpNamesItsTrackMenuRoute()
+	{
+		const ControlCommand* command =
+			ControlRegistry::instance()->command(QStringLiteral("sample.generate"));
+		QVERIFY(command != nullptr);
+		const QString help = command->description;
+		QVERIFY2(help.contains(QStringLiteral("Insert Test Signal...")) &&
+			help.contains(QStringLiteral("More")) && help.contains(QStringLiteral("sample track")),
+			qPrintable(QStringLiteral("sample.generate does not name its menu route: %1").arg(help)));
+		QVERIFY2(help.contains(QStringLiteral("control socket")) && help.contains(QStringLiteral("MCP")),
+			qPrintable(QStringLiteral("sample.generate dropped its command-surface route: %1").arg(help)));
+		QVERIFY2(!help.contains(QStringLiteral("Socket-only"), Qt::CaseInsensitive) &&
+			!help.contains(QStringLiteral("no interface reaches")),
+			qPrintable(QStringLiteral("sample.generate still denies an interface: %1").arg(help)));
+		QVERIFY2(help.contains(QStringLiteral("NEW audio clip")),
+			qPrintable(QStringLiteral("sample.generate stopped describing the generated clip: %1").arg(help)));
+		QCOMPARE(command->id, QStringLiteral("sample.generate"));  // the id the snapshot carries
+	}
+
 	//! An unknown command id is the typed not_found error, never an empty success.
 	void unknownCommandIsNotFound()
 	{
@@ -151,6 +181,17 @@ private slots:
 		QCOMPARE(result.errorKind, ControlErrorKind::NotFound);
 		QCOMPARE(controlErrorKindName(result.errorKind), QStringLiteral("not_found"));
 		QVERIFY(!result.errorMessage.isEmpty());
+	}
+
+	void requiredIsCheckedWithoutAPropertiesObject()
+	{
+		QJsonObject schema;
+		schema.insert(QStringLiteral("type"), QStringLiteral("object"));
+		schema.insert(QStringLiteral("required"), QJsonArray{QStringLiteral("x")});
+		QVERIFY(!ControlRegistry::validateArgs(schema, QJsonObject{}).isEmpty());
+		QJsonObject given;
+		given.insert(QStringLiteral("x"), 1);
+		QVERIFY(ControlRegistry::validateArgs(schema, given).isEmpty());
 	}
 
 	void missingRequiredArgumentIsInvalidArgs()
@@ -180,6 +221,35 @@ private slots:
 		const ControlResult result = registry->invoke(QStringLiteral("transport.set_tempo"), args);
 		QVERIFY(!result.ok);
 		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! Luna cluster 5727: a quarantine entry is matched by the scan against the
+	//! CANDIDATE's absolute path (PluginFactory.cpp: `isQuarantined(file.
+	//! absoluteFilePath())`), and both verbs say so in their own error text. A
+	//! relative path can never match that comparison, so accepting one stores an
+	//! entry that reports success and hides nothing on the next scan. It must be
+	//! refused as an argument error - before the scan cache is even consulted, so
+	//! the refusal does not depend on whether this process has a writable cache.
+	void quarantineRefusesARelativePath()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		// ONLY the declared arguments: an extra key would be refused by the
+		// schema and this case would pass without ever reaching the handler.
+		const QJsonObject relative{{QStringLiteral("path"), QStringLiteral("./bad-plugin.so")}};
+		const QJsonObject relativeAdd{{QStringLiteral("path"), QStringLiteral("./bad-plugin.so")},
+			{QStringLiteral("reason"), QStringLiteral("a relative path")}};
+		for (const auto& call : {QPair<QString, QJsonObject>(
+			 QStringLiteral("plugin.scan_cache_quarantine_add"), relativeAdd),
+			QPair<QString, QJsonObject>(
+				QStringLiteral("plugin.scan_cache_quarantine_remove"), relative)})
+		{
+			const ControlResult result = registry->invoke(call.first, call.second);
+			QVERIFY2(!result.ok, qPrintable(QStringLiteral("%1 accepted a relative path")
+				.arg(call.first)));
+			QVERIFY2(result.errorKind == ControlErrorKind::InvalidArgs,
+				qPrintable(QStringLiteral("%1 refused './bad-plugin.so' as kind %2: %3")
+					.arg(call.first).arg(int(result.errorKind)).arg(result.errorMessage)));
+		}
 	}
 
 	void unexpectedArgumentIsInvalidArgs()
@@ -303,6 +373,13 @@ private slots:
 		QVERIFY(!audio.isEmpty());
 		QVERIFY(audio.contains(QStringLiteral("state")));
 		QVERIFY(audio.contains(QStringLiteral("start_failed")));
+		const QJsonObject overflow = audio.value(QStringLiteral("play_handle_overflow")).toObject();
+		QVERIFY(overflow.contains(QStringLiteral("engine_handles_dropped")));
+		QVERIFY(overflow.contains(QStringLiteral("bus_edits_dropped")));
+		QVERIFY(overflow.contains(QStringLiteral("worker_buffer_overflows")));
+		QVERIFY(audio.contains(QStringLiteral("slicert_state_overflow")));
+		QVERIFY(audio.contains(QStringLiteral("sample_voice_overflow")));
+		QVERIFY(audio.contains(QStringLiteral("sample_voice_queue_invariant_failures")));
 
 		ControlRegistry::setReady(true);
 		const ControlResult ready = registry->invoke(QStringLiteral("control.ping"));
@@ -341,7 +418,12 @@ private slots:
 			transaction.insert(QStringLiteral("before"), QJsonObject{{QStringLiteral("value"), 1}});
 			transaction.insert(QStringLiteral("inverse"),
 				QJsonObject{{QStringLiteral("op"), QStringLiteral("test.mutator")},
-					{QStringLiteral("args"), QJsonObject{{QStringLiteral("value"), 1}}}});
+					{QStringLiteral("args"), QJsonObject{{QStringLiteral("value"), 1}}},
+					// The inverse is the PAIRED COMMAND, and says so: a command
+					// inverse needs no journal step of its own (new-p14-81), while
+					// the default ("journal") means the inverse rests on a step this
+					// call recorded - and this test command records none.
+					{QStringLiteral("applies"), QStringLiteral("command")}});
 			transaction.insert(QStringLiteral("reversible"), true);
 			transaction.insert(QStringLiteral("mechanism"), QStringLiteral("test"));
 			QJsonObject result;
@@ -384,6 +466,49 @@ private slots:
 		QVERIFY(!transactions.last().toObject().value(QStringLiteral("reversible")).toBool());
 	}
 
+	//! A mutating command that runs another mutating command inside itself
+	//! (document.open, range.consolidate, the alternative switch) records ONE
+	//! transaction: the nested call is part of the outer one, exactly as the
+	//! macro-recorder observer already treats it.
+	void nestedMutatingCommandRecordsOneTransaction()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		registry->clearTransactions();
+
+		ControlCommand inner;
+		inner.id = QStringLiteral("test.nested_inner");
+		inner.group = QStringLiteral("test");
+		inner.verb = QStringLiteral("nested_inner");
+		inner.mutating = true;
+		inner.handler = [](const QJsonObject&) {
+			QJsonObject transaction;
+			transaction.insert(QStringLiteral("before"), QJsonObject{{QStringLiteral("value"), 1}});
+			transaction.insert(QStringLiteral("inverse"),
+				QJsonObject{{QStringLiteral("op"), QStringLiteral("test.nested_inner")},
+					{QStringLiteral("args"), QJsonObject{{QStringLiteral("value"), 1}}}});
+			transaction.insert(QStringLiteral("reversible"), true);
+			transaction.insert(QStringLiteral("mechanism"), QStringLiteral("test"));
+			return ControlResult::success(QJsonObject{{QStringLiteral("value"), 2},
+				{QStringLiteral("__transaction"), transaction}});
+		};
+		registry->registerCommand(inner);
+
+		ControlCommand outer;
+		outer.id = QStringLiteral("test.nested_outer");
+		outer.group = QStringLiteral("test");
+		outer.verb = QStringLiteral("nested_outer");
+		outer.mutating = true;
+		outer.handler = [inner](const QJsonObject& args) {
+			return ControlRegistry::instance()->invoke(inner.id, args);
+		};
+		registry->registerCommand(outer);
+
+		QVERIFY(registry->invoke(outer.id).ok);
+		const QJsonArray transactions = registry->transactions();
+		QCOMPARE(transactions.size(), 1);
+		QCOMPARE(transactions.last().toObject().value(QStringLiteral("command")).toString(), outer.id);
+	}
+
 	//! The undo/redo commands share the engine's own ProjectJournal.
 	void undoRedoUseTheProjectJournal()
 	{
@@ -414,6 +539,24 @@ private slots:
 		QCOMPARE(control::idToIndex(QStringLiteral("ch-0"), QStringLiteral("ch-")), 0);
 		QCOMPARE(control::idToIndex(QStringLiteral("ch-x"), QStringLiteral("ch-")), -1);
 		QCOMPARE(control::idToIndex(QStringLiteral("trk-"), QStringLiteral("trk-")), -1);
+	}
+
+	//! A stable id's suffix is DECIMAL DIGITS and nothing else (Luna cluster
+	//! 5033). QString::toInt() also accepts a sign and surrounding whitespace, so
+	//! "clip--0" used to parse its "-0" suffix as clip 0 and a mutating command
+	//! addressed through the malformed id acted on the real clip. Every suffix
+	//! that is not [0-9]+ must be -1, which is what "does not exist" means.
+	void malformedIdSuffixesDoNotAliasRealObjects()
+	{
+		QCOMPARE(control::idToIndex(QStringLiteral("clip--0"), QStringLiteral("clip-")), -1);
+		QCOMPARE(control::idToIndex(QStringLiteral("clip-+0"), QStringLiteral("clip-")), -1);
+		QCOMPARE(control::idToIndex(QStringLiteral("clip- 0"), QStringLiteral("clip-")), -1);
+		QCOMPARE(control::idToIndex(QStringLiteral("clip-0 "), QStringLiteral("clip-")), -1);
+		QCOMPARE(control::idToIndex(QStringLiteral("clip-\t0"), QStringLiteral("clip-")), -1);
+		QCOMPARE(control::idToIndex(QStringLiteral("trk--1"), QStringLiteral("trk-")), -1);
+		// A leading zero is still digits and still names one object, so the
+		// grammar keeps accepting it rather than growing a second rule.
+		QCOMPARE(control::idToIndex(QStringLiteral("clip-007"), QStringLiteral("clip-")), 7);
 	}
 
 	//! mixer.set_pan sets the channel's pan model (it was a typed refusal until
@@ -481,6 +624,35 @@ private slots:
 		QCOMPARE(controlErrorKindName(refused.errorKind), QStringLiteral("requires"));
 	}
 
+	//! The read-only command may report the configured origin, but never any
+	//! credential-bearing URL component.
+	void telemetryStatusRedactsConfiguredEndpointCredentials()
+	{
+		ConfigManager* config = ConfigManager::inst();
+		const QString originalEndpoint = config->value(QStringLiteral("telemetry"),
+			QStringLiteral("endpoint"), QString());
+		const QString configuredEndpoint = QStringLiteral(
+			"https://alice:password-secret@ingest.example.org:8443/internal/path-secret"
+			"?token=query-secret#fragment-secret");
+		config->setValue(QStringLiteral("telemetry"), QStringLiteral("endpoint"), configuredEndpoint);
+
+		const ControlResult report = ControlRegistry::instance()->invoke(
+			QStringLiteral("telemetry.status"));
+		config->setValue(QStringLiteral("telemetry"), QStringLiteral("endpoint"), originalEndpoint);
+
+		QVERIFY2(report.ok, qPrintable(report.errorMessage));
+		const QString response = QString::fromUtf8(
+			QJsonDocument(report.result).toJson(QJsonDocument::Compact));
+		QVERIFY2(!response.contains(QStringLiteral("alice")) &&
+			!response.contains(QStringLiteral("password-secret")) &&
+			!response.contains(QStringLiteral("path-secret")) &&
+			!response.contains(QStringLiteral("query-secret")) &&
+			!response.contains(QStringLiteral("fragment-secret")),
+			"telemetry.status exposed a credential-bearing endpoint");
+		QCOMPARE(report.result.value(QStringLiteral("transport_endpoint")).toString(),
+			QStringLiteral("https://ingest.example.org:8443"));
+	}
+
 #else
 	//! The same contract from the other side: with the packager kill switch off
 	//! the client is not compiled, so the group must not be in the registry at
@@ -494,15 +666,21 @@ private slots:
 		{
 			QVERIFY2(!id.startsWith(QStringLiteral("telemetry.")), qPrintable(id));
 		}
-		// 85 is the product surface this instance reports here (87 with the
-		// telemetry.* pair), plus the five synthetic commands the slots above
-		// declare. rack.* (#599) and transport.tempo_map_* (D11) are in the 85;
-		// script.set_memory_budget (CODE-6) is new.
-		//   + 7 (feature row 19, board task #651): the controller.* ids -
-		//   surface_state, soft_takeover, feedback, template_save,
-		//   template_list, template_apply, template_delete.
-		// MEASUREMENT, re-taken by the merge train: base 102 + sample 5 + livecode 3 + 3 feedback = 113, + 7 mts (#712) = 120; mismatch at tip = finding. LANE-LOCAL, board cards #709/#712: the merge tip must re-measure.
-		QCOMPARE(registry->commandCount(), 85 + 7 + 5 + 5 + 5 + 3 + 3 + 7);
+		// MEASUREMENT (Q050-156, round 6): the whole registry of a telemetry-OFF
+		// build of the Q050-156 branch (`-DZENE_TELEMETRY=OFF`, ControlRegistryTest
+		// run from its build tree) reported 842 commands while its live snapshot
+		// held 837 ids. Integrated onto 050/m0-train-16 the live snapshot holds 853
+		// ids (16 more train ids, none of them telemetry.*), so the same build
+		// reports 842 + 16 = 858; the 4 record.sampler_capture* ids are in it. The
+		// older hand-summed figure (85 + 7 + 5 + 5 + 5 + 3 + 3 + 7 + 4 = 124) had
+		// stopped matching long before. A mismatch at the tip = finding: the merge
+		// train must re-measure.
+		// Q050-317.1 adds the mastering release sequence's five ids
+		// (mastering.sequence_list and the four mastering.song_* verbs), so the
+		// telemetry-OFF count moves 858 -> 863. Measured on this branch: the live
+		// snapshot (telemetry ON) holds 883 ids, and telemetry.consent/status are
+		// the two the option removes.
+		QCOMPARE(registry->commandCount(), 863);
 	}
 #endif
 };

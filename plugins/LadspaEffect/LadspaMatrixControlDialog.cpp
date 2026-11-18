@@ -184,6 +184,19 @@ QWidget * LadspaMatrixControlDialog::createMatrixWidget()
 
 void LadspaMatrixControlDialog::updateEffectView(LadspaControls * ladspaControls)
 {
+	if (ladspaControls == nullptr)
+	{
+		setModel(nullptr);
+		m_effectControls = nullptr;
+		m_scrollArea->setWidget(new QWidget());
+		if (m_stereoLink != nullptr)
+		{
+			m_stereoLink->unsetModel();
+			m_stereoLink->hide();
+		}
+		return;
+	}
+
 	m_effectControls = ladspaControls;
 
 	// No need to delete the existing widget as it's deleted

@@ -25,6 +25,7 @@
 #ifndef EXPRSYNTH_H
 #define EXPRSYNTH_H
 
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -46,16 +47,18 @@ public:
 	using ff1data_functor = float (*)(void*, float);
 	ExprFront(const char* expr, int last_func_samples);
 	~ExprFront();
+	ExprFront(const ExprFront&) = delete;
+	ExprFront& operator=(const ExprFront&) = delete;
 	bool compile();
 	inline bool isValid() { return m_valid; }
 	float evaluate();
 	bool add_variable(const char* name, float & ref);
 	bool add_constant(const char* name, float  ref);
 	bool add_cyclic_vector(const char* name, const float* data, size_t length, bool interp = false);
-	void setIntegrate(const unsigned int* frameCounter, unsigned int sample_rate);
+	void setIntegrate(const f_cnt_t* frameCounter, unsigned int sample_rate);
 	ExprFrontData* getData() { return m_data; }
 private:
-	ExprFrontData *m_data;
+	ExprFrontData *m_data = nullptr;
 	bool m_valid;
 	
 	static const int max_float_integer_mask=(1<<(std::numeric_limits<float>::digits))-1;
@@ -78,10 +81,10 @@ public:
 		m_samples = new float[m_length];
 		memcpy(m_samples, graph->samples(), m_length * sizeof(float));
 	}
-	inline void copyFrom(const graphModel * graph)
-	{
-		memcpy(m_samples, graph->samples(), m_length * sizeof(float));
-	}
+	WaveSample(const WaveSample&) = delete;
+	WaveSample& operator=(const WaveSample&) = delete;
+	// Waits for any render period in progress: playing notes read m_samples directly.
+	void copyFrom(const graphModel * graph);
 	~WaveSample()
 	{
 		delete [] m_samples;
@@ -89,7 +92,7 @@ public:
 	inline void setInterpolate(bool _interpolate) { m_interpolate = _interpolate; }
 	float *m_samples;
 	int m_length;
-	bool m_interpolate;
+	bool m_interpolate = false;
 };
 
 class ExprSynth
@@ -98,15 +101,31 @@ public:
 	ExprSynth(const WaveSample* gW1, const WaveSample* gW2, const WaveSample* gW3, ExprFront* exprO1, ExprFront* exprO2, NotePlayHandle* nph,
 			const sample_rate_t sample_rate, const FloatModel* pan1, const FloatModel* pan2, float rel_trans);
 	virtual ~ExprSynth();
+	ExprSynth(const ExprSynth&) = delete;
+	ExprSynth& operator=(const ExprSynth&) = delete;
 
 	void renderOutput(f_cnt_t frames, SampleFrame* buf );
 
+	//! Claims the pending render error, if there is one. The audio thread calls it
+	//! after the render, so the error is reported exactly once even though the broken
+	//! expression throws in every period. The message stays available through
+	//! pendingError().
+	bool takePendingError();
+	//! Message of the render error that is waiting to be reported.
+	const char* pendingError() const { return m_pendingError; }
 
 private:
+	//! Records a render error for a later report. Runs on the audio thread, so it
+	//! must not allocate: the message goes into a fixed size buffer.
+	void recordRenderError(const char* message);
+
 	ExprFront *m_exprO1, *m_exprO2;
 	const WaveSample *m_W1, *m_W2, *m_W3;
-	unsigned int m_note_sample;
-	unsigned int m_note_rel_sample;
+	f_cnt_t m_note_sample;
+	f_cnt_t m_note_rel_sample;
+	//! Whether m_note_rel_sample holds the release position. Sample zero is a valid
+	//! release position, so it cannot be used as the "not set yet" marker.
+	bool m_note_rel_sample_set;
 	float m_note_sample_sec;
 	float m_note_rel_sec;
 	float m_frequency;
@@ -116,6 +135,12 @@ private:
 	const FloatModel *m_pan1,*m_pan2;
 	float m_rel_transition;
 	float m_rel_inc;
+	//! Render error waiting to be reported. Fixed size, so that recording it on the
+	//! audio thread never allocates.
+	char m_pendingError[128] = {};
+	std::atomic_bool m_pendingErrorSet{false};
+	//! Whether the recorded error was already claimed by the caller.
+	std::atomic_bool m_errorReported{false};
 
 } ;
 
@@ -125,11 +150,15 @@ inline float positiveFraction(float x)
 {
 	if (std::isnan(x) || std::isinf(x))
 		return 0;
-	if (x<0)
+	const float fractionalPart = std::fmod(x, 1.0f);
+	if (fractionalPart == 0.0f)
+		return 0.0f;
+	if (fractionalPart < 0.0f)
 	{
-		x+=static_cast<int>(1-x);
+		const float wrapped = fractionalPart + 1.0f;
+		return wrapped < 1.0f ? wrapped : 0.0f;
 	}
-	return x-static_cast<int>(x);
+	return fractionalPart;
 }
 
 template <typename T>

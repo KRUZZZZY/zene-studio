@@ -27,7 +27,10 @@
 
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
+#include <mutex>
+#include <thread>
 
 #include <QJsonObject>
 #include <QObject>
@@ -38,6 +41,9 @@
 #include "lmms_export.h"
 
 class QTimer;
+#ifdef LMMS_TESTING
+class MidiClockSourceTest;
+#endif
 
 namespace lmms
 {
@@ -167,6 +173,11 @@ public:
 	int lastTimeCode() const noexcept { return m_timeCode.load(); }
 
 private:
+#ifdef LMMS_TESTING
+	// The counter seam: MidiClockSourceTest writes m_messageCounts directly, because no
+	// public path can take a session counter above INT32_MAX in a test.
+	friend class ::MidiClockSourceTest;
+#endif
 	void unlock() noexcept;
 	void accumulate(quint64 timestampNs) noexcept;
 	void measure(quint64 timestampNs) noexcept;
@@ -231,16 +242,46 @@ private:
  * a tempo write is project state, not a per-block timing scalar. With no clock
  * arriving the tracker never locks, nothing is written and the transport does
  * not move - the engine half of the `clock.slave_set` contract.
+ *
+ * WHICH CLOCK (Q050-026). `handleInputMessage()` takes the SOURCE the message
+ * arrived on, and a follower with a source chosen follows that source alone:
+ * a pulse from any other port is counted as ignored and never reaches the
+ * tracker, so a device the user did not pick cannot move this session's tempo.
+ * Before this, the source was stored and never read and every client delivered
+ * clock bytes without identity, so any connected device could drive the
+ * follower. An EMPTY source keeps the older behaviour - follow a clock from
+ * wherever it arrives - and a client that cannot name its input (a raw client
+ * has exactly one device) delivers an empty source, which matches an empty
+ * configuration and nothing else. Changing the source forgets the measurement,
+ * for the reason setSlaveEnabled(false) does: a tempo measured from the device
+ * the user just moved off must not still be written.
  */
 class LMMS_EXPORT MidiClock
 {
 public:
 	//! How many emitted messages the monitor keeps.
 	static constexpr int MonitorCapacity = 32;
+	//! The capture handoff ring (a power of two), the slot a clock pulse leaves free for the open span's STOP, and the
+	//! most pulses a stop may queue to catch up the period it falls in (Q050-277). A span is admitted only when START
+	//! and its STOP both fit; from then on the ring always keeps ReservedSlots free for that STOP.
+	static constexpr quint32 RingCapacity = 512;
+	static constexpr quint32 ReservedSlots = 1;
+	static constexpr quint32 MaxTopUpPulses = 64;
 	//! The tempo dead band of the follower, in BPM: a measured tempo within this
 	//! of the song's own is not written. A follower that chased every last digit
 	//! would rewrite the project's tempo on every window.
 	static constexpr double FollowDeadbandBpm = 0.5;
+	/*! How many QChar units a clock-source name may hold (Q050-026). The name is
+	 *  stored whole, in a fixed buffer the MIDI reader thread can compare against
+	 *  without allocating, so a longer one is REFUSED rather than truncated: a
+	 *  source that silently became a different name would follow nothing while
+	 *  reporting that it was following something. ALSA's own "<client>:<port>
+	 *  <client name>:<port name>" form is two orders of magnitude shorter.
+	 */
+	static constexpr int SourceNameCapacity = 96;
+	//! How many times a reader re-reads the source name while a reconfiguration
+	//! is in flight before it gives up and drops that one message.
+	static constexpr int SourceReadAttempts = 4;
 
 	static MidiClock* instance();
 
@@ -270,6 +311,11 @@ public:
 	 *  is a real refusal an agent must see rather than a silent no-op. */
 	bool setMasterEnabled(bool enabled, const QString& port, QString* error);
 	QString masterPort() const;
+	//! Whether this object's own output port is currently SUBSCRIBED to the
+	//! client port named \a port. The subscription map is what a switched
+	//! destination has to keep honest: naming a new one is not enough, the old
+	//! one has to stop receiving. Control thread, diagnostic only.
+	bool masterSubscribedTo(const QString& port) const;
 	/*! The exact inverse of setMasterEnabled for a recorded undo step: when the
 	 *  before-state named no port, unsubscribe the one the call subscribed, so
 	 *  control.undo restores the SUBSCRIPTION and not only the flag. */
@@ -281,13 +327,85 @@ public:
 	//! and the number the bound in KNOWN-LIMITATIONS quotes.
 	double periodMs() const;
 
+	// ------------------------------------------------- capture span (Q050-277)
+	/*! What one clock-synced capture has told the external device so far. The span is the capture's own:
+	 *  START goes out when the capture starts, STOP at its end, and exactly (length / TicksPerMidiClockPulse)
+	 *  pulses in between when the length is known up front. */
+	struct CaptureReport
+	{
+		bool active = false;       //!< START sent, STOP not yet
+		qint64 startTick = -1;     //!< the tick START carried (-1: no span yet)
+		qint64 stopTick = -1;      //!< the tick STOP carried (-1: not stopped)
+		qint64 lengthTicks = 0;    //!< the length asked for (0: until the cell stops)
+		quint32 pulses = 0;        //!< clock pulses sent inside the span
+		quint32 starts = 0;        //!< spans started since the process began
+		quint32 stops = 0;         //!< spans stopped since the process began
+		quint32 refused = 0;       //!< captures refused a span (no room for START and STOP) since the process began
+	};
+	/*! A capture is armed and will start soon: starts the sender thread if it is not running (control thread; the
+	 *  thread that delivers the span's messages to the MIDI client - the audio thread never does, see captureStarted). */
+	void captureArm();
+	/*! The capture began on tick @a startTick and will run @a lengthTicks (0: until captureStopped). With the master
+	 *  on, queues START now and opens a span; with it off nothing is sent. ADMISSION: the span opens only when the ring
+	 *  has room for START and its STOP (earlier output still undelivered may fill it); otherwise it is refused BEFORE
+	 *  START - nothing is queued, the device is never started, CaptureReport::refused counts it and the take records
+	 *  unclocked. So every START queued has its STOP's slot held for it. While a span is open the clock pulses on its
+	 *  own time (the song's transport may be stopped) and ignores the transport's edges. AUDIO THREAD: it only fills a
+	 *  fixed lock-free ring (RingCapacity records, no allocation, no I/O, no logging, no wait); the sender thread
+	 *  hands the records to the MIDI client in order, within about a millisecond. */
+	void captureStarted(qint64 startTick, qint64 lengthTicks) noexcept;
+	/*! The capture ended on tick @a stopTick: queues the pulses the periods have not yet (at most MaxTopUpPulses - a
+	 *  bounded catch-up for the period the stop falls in; never a backlog that scales with the capture's length), then
+	 *  STOP, and closes the span. The transport's own state is picked up again once the ring has drained. Audio thread. */
+	void captureStopped(qint64 stopTick) noexcept;
+	/*! The span ends where it is: STOP at the last pulse's tick and no catch-up. Called when the master is turned off
+	 *  mid-capture (from processAudioPeriod, so the take goes on and the device is stopped) and by a cancel, which holds
+	 *  the engine so no period renders. Also forgets an armed capture that never started. */
+	void captureAbort() noexcept;
+	//! Records queued for the MIDI client and not yet delivered (control thread / tests wait for 0 before reading counters).
+	bool captureOutputPending() const noexcept { return m_outHead.load() != m_outTail.load(); }
+	//! Records the ring had no room for: pulses only (a pulse leaves ReservedSlots free for the open span's STOP; a span
+	//! with no room for both START and STOP is refused whole, see captureStarted).
+	quint32 captureOutputDropped() const noexcept { return m_outDropped.load(); }
+	//! Test seam: while held the sender delivers nothing, so a test can see what the audio thread queued and that it delivered none itself.
+	void holdCaptureOutput(bool hold) noexcept { m_outHold.store(hold); }
+	/*! The engine's MIDI client @a client is about to be destroyed (AudioEngine, before `delete`; control thread). Waits
+	 *  for a send the capture sender has in flight, then forgets the client (the sender and the transport clock send to
+	 *  nobody from here on) and RETIRES the capture output it has not delivered - those messages were for a client that
+	 *  is going away - counting them (captureOutputRetired). After it returns nothing in this object calls @a client.
+	 *  A different @a client than the one held is ignored. Never call it from the audio thread (it takes a lock). */
+	void detachClient(MidiClient* client) noexcept;
+	//! Capture records retired undelivered by detachClient().
+	quint32 captureOutputRetired() const noexcept { return m_outRetired.load(); }
+	//! Test seam: the client the clock sends through, swapped (returns the previous one) so a test can watch which thread
+	//! hands it what. The output port is kept. Not for production use.
+	MidiClient* swapClientForTesting(MidiClient* client) noexcept { return m_client.exchange(client); }
+	CaptureReport captureReport() const noexcept;
+
 	// ----------------------------------------------------------------- slave
 	bool slaveEnabled() const noexcept { return m_slaveEnabled.load(); }
 	void setSlaveEnabled(bool enabled) noexcept;
 	bool slaveFollowTempo() const noexcept { return m_slaveFollowTempo.load(); }
 	void setSlaveFollowTempo(bool follow) noexcept;
+	/*! The port the follower follows, in the same vocabulary `midi.device_list`
+	 *  lists as `readable` (Q050-026). Empty means "no port chosen", and that is
+	 *  what the follower follows in: a clock from wherever it arrives, which is
+	 *  what this release did before the source became load-bearing. */
 	QString slaveSourcePort() const;
-	void setSlaveSourcePort(const QString& port);
+	/*! Choose the port to follow, or clear the choice with an empty name. Choosing
+	 *  a DIFFERENT source forgets the measurement - a tempo measured from the
+	 *  device just moved off must not still be written - and re-naming the current
+	 *  source is not a change and must not drop the lock. Answers false and fills
+	 *  \a error for a name SourceNameCapacity cannot hold; the reason is the same
+	 *  string sourcePortProblem() gives, so `clock.slave_set` refuses the same
+	 *  names for the same reason without duplicating either. Control thread. */
+	bool setSlaveSourcePort(const QString& port, QString* error);
+	//! Why \a port cannot be this follower's source (empty when it can be one).
+	static QString sourcePortProblem(const QString& port);
+	//! Clock-family messages dropped because they arrived on a port other than
+	//! the configured one (Q050-026). Monotonic for the session; 0 whenever no
+	//! source is configured, because nothing is dropped then.
+	quint32 slaveIgnoredCount() const noexcept;
 	double slaveDriftBoundMs() const noexcept { return m_tracker.driftBoundMs(); }
 	void setSlaveDriftBoundMs(double ms) noexcept;
 
@@ -301,9 +419,16 @@ public:
 	//! the ALSA-sequencer client serves under its own mutex.
 	void processAudioPeriod(int frames, bool transportRunning, qint64 playPosTicks,
 		quint64 timestampNs) noexcept;
-	//! The MIDI input entry point (MidiClientRaw::parseData).
+	/*! The MIDI input entry point (MidiClientRaw::parseData, MidiAlsaSeq::run).
+	 *  \a sourcePort is the port the message arrived on, in `midi.device_list`'s
+	 *  `readable` vocabulary, and an EMPTY name for a client that has one input
+	 *  and cannot name it (Q050-026). The name is deliberate and not defaulted:
+	 *  a dispatch site that cannot say where its bytes came from must pass an
+	 *  empty name and be answerable for it, rather than inherit a source
+	 *  silently. A message from another source is counted as ignored and does
+	 *  not reach the tracker. Reader thread; allocates nothing, locks nothing. */
 	void handleInputMessage(MidiClockMessage message, quint32 value,
-		quint64 timestampNs) noexcept;
+		quint64 timestampNs, const QString& sourcePort) noexcept;
 
 	//! Write the measured tempo to the Song when the follower is enabled, the
 	//! slave is locked and the measurement has left the dead band. Returns the
@@ -331,6 +456,11 @@ public:
 	void stopFollowTimer();
 
 private:
+#ifdef LMMS_TESTING
+	// The counter seam: MidiClockSourceTest writes the session counters directly, because
+	// no public path can take one above INT32_MAX in a test.
+	friend class ::MidiClockSourceTest;
+#endif
 	explicit MidiClock();
 	~MidiClock();
 
@@ -349,8 +479,34 @@ private:
 	//! (only off the top) plus CONTINUE or a START on the rise.
 	void transportEdge(bool running, qint64 playPosTicks) noexcept;
 	void emitPulses(int frames) noexcept;
+	//! One period of an open capture span: pulses for the frames it renders, never past the span's count. Audio thread; queues only.
+	void emitCapturePulses(int frames) noexcept;
+	//! Pulses the span owes for @a ticks (whole pulses).
+	static quint32 pulsesOfTicks(qint64 ticks) noexcept { return ticks <= 0 ? 0u : static_cast<quint32>(ticks / TicksPerMidiClockPulse); }
+	//! Free slots in the capture ring (producer side).
+	quint32 ringFree() const noexcept;
+	//! Queues one record for the sender thread; false (and counted) when it would leave fewer than @a keepFree slots.
+	bool queueOut(MidiClockMessage message, qint64 tick, quint32 keepFree) noexcept;
+	//! The sender's delivery of one record: through MidiClient::sendFromNonAudioThread, never processOutEvent (whose
+	//! queue the audio thread produces into). False: the client refused it for now; the sender retries it in order.
+	bool deliverOffAudio(MidiClockMessage message, qint64 tick) noexcept;
+	void queueCapturePulse() noexcept;
+	void senderMain();
+	void deliverQueued() noexcept;
+	bool senderBusy() const noexcept;
+	//! Sends STOP at @a stopTick and closes the span.
+	void closeCapture(qint64 stopTick) noexcept;
 
 	MidiClient* client() const;
+
+	/*! Whether an incoming message from \a source may drive the follower
+	 *  (Q050-026): with no source configured, any source may; with one, only an
+	 *  exact match. The comparison runs on the MIDI reader thread against the
+	 *  published buffer below, so it allocates nothing, locks nothing and waits
+	 *  for nothing. */
+	bool acceptsSource(const QString& source) const noexcept;
+	//! Copy \a port into that buffer and publish it to the reader thread.
+	void publishSource(const QString& port) noexcept;
 
 	std::atomic<bool> m_masterEnabled{false};
 	std::atomic<bool> m_slaveEnabled{false};
@@ -362,6 +518,37 @@ private:
 	std::atomic<qint64> m_lastPlayPosTicks{0};
 	std::atomic<bool> m_transportWasRunning{false};
 	std::atomic<bool> m_positionKnown{false};
+	// The capture span (Q050-277): written by the audio thread (and captureAbort with the engine held), read as a diagnostic.
+	std::atomic<bool> m_captureActive{false};
+	std::atomic<bool> m_captureAwaiting{false};  //!< armed, span not opened yet: keeps the sender polling
+	//! The bounded handoff from the audio thread to the sender thread: a single-producer / single-consumer ring of
+	//! plain records (head written by the producer, tail by the consumer, release/acquire between them).
+	struct OutRecord
+	{
+		quint32 message = 0;
+		qint64 tick = 0;
+	};
+	std::array<OutRecord, RingCapacity> m_outRing;
+	std::atomic<quint32> m_outHead{0};
+	std::atomic<quint32> m_outTail{0};
+	std::atomic<quint32> m_outDropped{0};
+	std::atomic<bool> m_outHold{false};
+	std::atomic<quint32> m_outRetired{0};
+	//! Set by detachClient() before it waits for m_deliverMutex: the sender stops after the send in flight.
+	std::atomic<bool> m_detaching{false};
+	//! Held by the sender around each delivery and by detachClient(): the ring's consumer side is one holder at a time,
+	//! and a client is never forgotten (then freed) while a send to it is in flight. Never taken by the audio thread.
+	std::mutex m_deliverMutex;
+	std::thread m_sender;
+	std::mutex m_senderMutex;
+	std::condition_variable m_senderWake;
+	std::atomic<qint64> m_captureStart{-1};
+	std::atomic<qint64> m_captureStop{-1};
+	std::atomic<qint64> m_captureLength{0};
+	std::atomic<quint32> m_capturePulses{0};
+	std::atomic<quint32> m_captureStarts{0};
+	std::atomic<quint32> m_captureStops{0};
+	std::atomic<quint32> m_captureRefused{0};
 	std::atomic<quint32> m_emittedTotal{0};
 	std::atomic<quint32> m_monitorWrite{0};
 	std::array<std::atomic<quint32>, 7> m_emittedCounts{};
@@ -379,7 +566,26 @@ private:
 	MidiClockTracker m_tracker;
 	QTimer* m_followTimer = nullptr;
 	QString m_masterPort;
+	//! The configured source, on the CONTROL thread (stateJson reads it).
 	QString m_slavePort;
+	/*! The same name, published for the MIDI reader thread (Q050-026): UTF-16
+	 *  code units the reader can compare a port name against without allocating a
+	 *  QString on the way in from a device. Written only by publishSource()
+	 *  (control thread) and read only by acceptsSource() (a MIDI reader thread).
+	 *  Each unit is its OWN std::atomic, so the two threads never race on the
+	 *  buffer. m_sourceVersion is the ODD-WHILE-WRITING sequence counter, and the
+	 *  payload accesses around it are ordered by RELEASE/ACQUIRE FENCES
+	 *  (std::atomic_thread_fence), which is what makes a reader's snapshot one
+	 *  published name under the C++ memory model: a bare counter with a relaxed
+	 *  payload does NOT guarantee that - a reader could pair an even version read
+	 *  with a code unit from the following write. The fences close exactly that
+	 *  gap; a reader whose two version reads still disagree drops the message.
+	 *  m_sourceLength is the snapshot's length, also atomic. */
+	std::array<std::atomic<quint16>, SourceNameCapacity> m_sourceChars{};
+	std::atomic<int> m_sourceLength{0};
+	std::atomic<quint32> m_sourceVersion{0};
+	//! Clock-family messages the source filter dropped (Q050-026).
+	std::atomic<quint32> m_ignoredTotal{0};
 };
 
 } // namespace lmms

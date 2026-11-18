@@ -257,7 +257,11 @@ bool barsBeatsFrom(const QString& text, tick_t base, tick_t* out)
 	tick_t rest = 0;
 	if (parts.size() > 4 || !partIn(parts, 0, base, MaxTick / m.perBar - 1 + base, &bar)
 		|| !partIn(parts, 1, base, m.numerator - 1 + base, &beat)
-		|| !partIn(parts, 2, base, m.sixteenths - 1 + base, &sixteenth) || !partIn(parts, 3, 0, m.perBeat - 1, &rest))
+		|| !partIn(parts, 2, base, m.sixteenths - 1 + base, &sixteenth)
+		// The tick remainder counts INSIDE the sixteenth above it, so it is bounded by that sixteenth
+		// (what barsBeatsText's split() emits), never by the whole beat: "1.1.1.47" is not a position
+		// and would not read back as itself.
+		|| !partIn(parts, 3, 0, m.perSixteenth - 1, &rest))
 	{
 		return false;
 	}

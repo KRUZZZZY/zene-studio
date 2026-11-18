@@ -381,7 +381,8 @@ The operation reuses the **existing** note path rather than inventing one:
   (`include/Note.h:104-109`); the capture does not need panning or detuning.
 - Note-on/note-off pairs are matched in arrival order into one `Note` each;
   `position = event.tick - windowStartTick`, `length = offTick - onTick` (minimum 1 tick). An unmatched
-  note-on at the window edge is closed at the window end and counted in the result as
+  note-on at the window edge is closed at the current published transport tick and
+  counted in the result as
   `unmatched_ons`, so the caller can see the truncation rather than being told the capture was clean.
 
 ---
@@ -699,8 +700,8 @@ AND a MIDI client is open.
 window bounds) rather than a `bool`, because §3.7 requires the caller to REPORT truncation
 (`unmatched_ons`) instead of being told the capture was clean. The matcher itself is §3.7 as
 specified: arrival-order FIFO per (channel, key), note-on velocity 0 treated as a release, lengths
-clamped to one tick, unmatched note-ons closed at the window's end (the newest tick a NOTE event
-carries), non-note events counted and written nowhere.
+clamped to one tick, unmatched note-ons closed at the current published transport tick (or the
+newest note-event tick if later), non-note events counted and written nowhere.
 
 **Menu.** `Edit > Arm MIDI Capture` (checkable, `midi.retro_capture_arm`) and `Edit > Capture MIDI`
 (`midi.retro_capture_to_clip`) sit beside `Edit > MIDI Learn`; both declare their command in

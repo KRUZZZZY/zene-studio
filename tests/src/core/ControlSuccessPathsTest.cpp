@@ -43,21 +43,34 @@
 
 #include <QtTest>
 
+#include <algorithm>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QList>
+#include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QTemporaryFile>
 #include <QTextStream>
 
+#include "ConfigManager.h"
+#include "ControlProjectAssets.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "MidiEvent.h"
 #include "MidiLearn.h"
 #include "Mixer.h"
 #include "ModulationTestSupport.h"
+#include "ProjectInfo.h"
+#include "ProjectJournal.h"
+#include "ProvenanceSection.h"
 #include "RackTestSupport.h"
+#include "SafeStart.h"
 #include "Song.h"
+#include "DeprecationHelper.h"
+#include "Track.h"
 
 using namespace lmms;
 using modtest::run;
@@ -84,6 +97,16 @@ QString addClip(const QString& track, int position)
 	return clip.ok ? clip.result.value(QStringLiteral("clip")).toString() : QString();
 }
 
+//! Every entry of the document's provenance log, in order. The content a rollback has to
+//! give back - the count and the newest sequence alone say nothing about WHICH entries it kept.
+QList<provenance::Change> provenanceEntries()
+{
+	QList<provenance::Change> entries;
+	const provenance::Section& section = provenance::Section::instance();
+	for (int i = 0; i < section.size(); ++i) { entries.append(section.at(i)); }
+	return entries;
+}
+
 //! A 12-note Scala keyboard mapping, linear, A4 = 440 Hz on key 69.
 QString writeKeymap(const QTemporaryDir& dir)
 {
@@ -106,6 +129,7 @@ class ControlSuccessPathsTest : public QObject
 private slots:
 	void initTestCase()
 	{
+		QStandardPaths::setTestModeEnabled(true);
 		QString why;
 		QVERIFY2(initRackFixture(&why), qPrintable(why));
 		QVERIFY(m_dir.isValid());
@@ -248,6 +272,387 @@ private slots:
 		// project.audible_diff renders both files through the RUNNING binary as
 		// child processes, which in-process is this test executable: its success
 		// path is driven over the socket instead (tests/control-project-audible-diff.py).
+	}
+
+	/*! Luna cluster 5742: project.export_midi used FILE EXISTENCE as proof of a
+	 *  successful export. When the midiexport filter does not load,
+	 *  Song::exportProjectMidi writes nothing and says so only through qDebug, so
+	 *  exporting onto a path that already held an older `.mid` left that stale
+	 *  file in place and the handler answered `success` with the OLD byte count -
+	 *  telling a caller that had just overwritten its only copy of the session's
+	 *  notes that the write had happened.
+	 *
+	 *  This asserts the REFUSAL half, which is the half that was wrong. A headless
+	 *  test process loads no export filters, so the export writing nothing is the
+	 *  case by construction - the same state a user hits with a build that cannot
+	 *  load midiexport. Were the filter to load, the temporary output is renamed
+	 *  over the target, and the post-condition below (the target no longer holds
+	 *  the bytes this test wrote) holds either way.
+	 */
+	void exportMidiDoesNotReportAStaleFileAsAFreshExport()
+	{
+		const QString path = m_dir.filePath(QStringLiteral("stale.mid"));
+		const QByteArray stale("MThd-STALE-NOT-AN-EXPORT");
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(stale) == stale.size());
+		}
+		QVERIFY(QFileInfo::exists(path));
+
+		const ControlResult result = run(QStringLiteral("project.export_midi"),
+			{{QStringLiteral("path"), path}});
+
+		// The defect: the handler saw the file it was pointed at and called the
+		// pre-existing bytes a successful export of this call.
+		QVERIFY2(!result.ok || jsonInteger(result.result.value(QStringLiteral("bytes")))
+			!= static_cast<qint64>(stale.size()),
+			"project.export_midi reported success for the pre-existing file");
+		if (result.ok)
+		{
+			// The filter DID load, so the target must now hold the NEW bytes.
+			QFile written(path);
+			QVERIFY(written.open(QIODevice::ReadOnly));
+			QVERIFY(written.readAll() != stale);
+		}
+		else
+		{
+			// A refusal names what went wrong rather than failing silently, and
+			// leaves the previous export in place for the caller to fall back on.
+			QVERIFY(!result.errorMessage.isEmpty());
+			QFile kept(path);
+			QVERIFY(kept.open(QIODevice::ReadOnly));
+			QCOMPARE(kept.readAll(), stale);
+		}
+	}
+
+	/*! Luna 5742 (review): the export's temporary file used one FIXED sibling name and the handler
+	 *  removed it before exporting, so a file the user kept under that name was destroyed. The
+	 *  temporary name is unique now; this proves a user file with the old name survives the call. */
+	void exportMidiLeavesAUserFileWithTheOldTemporaryNameAlone()
+	{
+		const QString path = m_dir.filePath(QStringLiteral("keep-me.mid"));
+		const QString sibling = path + QStringLiteral(".zene-export.tmp");
+		const QByteArray userBytes("USER-FILE-NOT-A-TEMPORARY");
+		{
+			QFile file(sibling);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(userBytes) == userBytes.size());
+		}
+		run(QStringLiteral("project.export_midi"), {{QStringLiteral("path"), path}});
+		QFile kept(sibling);
+		QVERIFY(kept.open(QIODevice::ReadOnly));
+		QCOMPARE(kept.readAll(), userBytes);
+	}
+
+	/*! Luna 5742 (review): the replacement must be atomic. A failed replacement keeps the previous file
+	 *  byte for byte. Each failure below used to remove the target first and rename second, so the
+	 *  target was lost when the rename had nothing to move. */
+	void replacingAnExportIsAtomic()
+	{
+		const QString target = m_dir.filePath(QStringLiteral("atomic.mid"));
+		const QByteArray previous("PREVIOUS-EXPORT");
+		{
+			QFile file(target);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(previous) == previous.size());
+		}
+		ControlResult error;
+
+		// 1. The new output is missing: nothing to move, so the target must keep its bytes.
+		QVERIFY(!control::controlReplaceFileAtomically(m_dir.filePath(QStringLiteral("no-such-output.tmp")),
+			target, &error));
+		QVERIFY(!error.errorMessage.isEmpty());
+		{
+			QFile kept(target);
+			QVERIFY(kept.open(QIODevice::ReadOnly));
+			QCOMPARE(kept.readAll(), previous);
+		}
+
+		// 2. The target cannot be replaced (a directory holds its name): refused, directory intact.
+		const QString directory = m_dir.filePath(QStringLiteral("held.mid"));
+		QVERIFY(QDir().mkpath(directory));
+		const QString child = directory + QStringLiteral("/child.txt");
+		{
+			QFile file(child);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write("child") == 5);
+		}
+		const QString output = m_dir.filePath(QStringLiteral("output-2.tmp"));
+		{
+			QFile file(output);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write("NEW-BYTES") == 9);
+		}
+		QVERIFY(!control::controlReplaceFileAtomically(output, directory, &error));
+		QVERIFY(QFileInfo(child).exists());
+
+		// 3. The ordinary case still replaces the target with exactly the new bytes.
+		const QString fresh = m_dir.filePath(QStringLiteral("output-3.tmp"));
+		{
+			QFile file(fresh);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write("NEW-BYTES") == 9);
+		}
+		QVERIFY2(control::controlReplaceFileAtomically(fresh, target, &error), qPrintable(error.errorMessage));
+		QFile replaced(target);
+		QVERIFY(replaced.open(QIODevice::ReadOnly));
+		QCOMPARE(replaced.readAll(), QByteArray("NEW-BYTES"));
+	}
+
+/*! Luna clusters 5748 / 4833: project.conflicts and project.audible_diff
+	 *  special-cased exit 2 and let every OTHER exit code through. The tool
+	 *  documents 0/1 (success, or "there are conflicts / the renders differ")
+	 *  and 2 (an error it could report); anything else is a tool that died, and
+	 *  answering `success` there told a caller a file was CLEAN (conflict_count
+	 *  0) or that two renders MATCHED (differ:false) when nobody ever compared
+	 *  them - the most dangerous possible answer from a merge-conflict reporter.
+	 *
+	 *  A fake tool makes the failure deterministic: MMPZ_GIT_TOOL wins over the
+	 *  discovered script (ControlCommandsProjectMmpzGit.cpp findMmpzGitTool), so
+	 *  this writes a script that exits 3 and points the commands at it.
+	 */
+	void mmpzToolExitsWithAnUndocumentedCode()
+	{
+		const QString tool = m_dir.filePath(QStringLiteral("fake-mmpz-git.py"));
+		{
+			QFile file(tool);
+			QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			QVERIFY(file.write("import sys\n"
+				"sys.stderr.write('fake tool died unexpectedly\\n')\n"
+				"sys.exit(3)\n") > 0);
+		}
+		const QString project = m_dir.filePath(QStringLiteral("mmpz-probe.mmp"));
+		REQUIRE_OK(run(QStringLiteral("project.save"), {{QStringLiteral("path"), project}}),
+			"project.save");
+
+		const QByteArray saved = qgetenv("MMPZ_GIT_TOOL");
+		const bool hadTool = qEnvironmentVariableIsSet("MMPZ_GIT_TOOL");
+		qputenv("MMPZ_GIT_TOOL", tool.toUtf8());
+
+		// The defect, in both handlers: an exit nobody documented is reported
+		// as a clean read of the file.
+		const ControlResult conflicts = run(QStringLiteral("project.conflicts"),
+			{{QStringLiteral("file"), project}});
+		QVERIFY2(!conflicts.ok && !conflicts.errorMessage.isEmpty(),
+			"project.conflicts reported success for an undocumented tool exit");
+		const ControlResult audible = run(QStringLiteral("project.audible_diff"),
+			{{QStringLiteral("a"), project}, {QStringLiteral("b"), project}});
+		QVERIFY2(!audible.ok && !audible.errorMessage.isEmpty(),
+			"project.audible_diff reported success for an undocumented tool exit");
+
+		if (hadTool) { qputenv("MMPZ_GIT_TOOL", saved); }
+		else { qunsetenv("MMPZ_GIT_TOOL"); }
+	}
+
+	/*! The safe-start acknowledgement belongs to the OFFER, and the offer is
+	 *  made in a session that started safe and nowhere else (the stderr line
+	 *  main() prints and safestart.get_state's `offer` block are both gated on
+	 *  safeStartActive()). The acknowledgement is CONSUMED by the next launch,
+	 *  so one written in an ordinary session would hide the crash marker that
+	 *  launch finds: that launch would start normal, with the third-party
+	 *  plug-in that killed the previous one.
+	 *
+	 *  Both halves of the command are proved here, through the registry, the
+	 *  way the socket calls it: the success path (a safe session accepts the
+	 *  offer and the next launch is a normal one) and the refusal (an ordinary
+	 *  session has no offer to accept, so nothing is written and the next
+	 *  launch still starts safe).
+	 */
+	void safeStartAcknowledgeNeedsTheOffer()
+	{
+		QTemporaryDir crashed;
+		QVERIFY(crashed.isValid());
+		QVERIFY(safestart::install(crashed.path().toStdString()));
+		// A marker left by a crashed run, planted the way a crashed session
+		// leaves it: this session starts SAFE, so the offer is on the table.
+		{
+			QFile marker(QString::fromStdString(safestart::markerPath()));
+			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			marker.write("Zene Studio safe-start marker v1\npid=4242\ntime_unix=1700000000\n");
+		}
+		safestart::beginSession();
+		QVERIFY2(safestart::safeStartActive(), "a marker behind the session must make it a safe start");
+
+		// THE SUCCESS PATH: the offer is accepted and the acknowledgement is
+		// written for the next launch.
+		REQUIRE_OK(run(QStringLiteral("safestart.acknowledge")), "safestart.acknowledge");
+		QVERIFY2(safestart::acknowledged(), "the accepted offer must write the acknowledgement");
+		QVERIFY2(safestart::markerExists(), "the accepted offer must NOT delete the marker");
+		// The next launch consumes it and is a normal one.
+		safestart::beginSession();
+		QVERIFY2(!safestart::acknowledged(),
+			"the acknowledgement must be CONSUMED by the launch it was written for");
+		QVERIFY2(!safestart::safeStartActive(), "the acknowledged launch must be a normal one");
+		safestart::endSession();
+
+		// AN ORDINARY SESSION HAS NO OFFER: the acceptance is refused, and
+		// nothing is written - the next launch must still start safe.
+		QTemporaryDir ordinary;
+		QVERIFY(ordinary.isValid());
+		QVERIFY(safestart::install(ordinary.path().toStdString()));
+		safestart::beginSession();
+		QVERIFY2(!safestart::safeStartActive(), "no marker was behind it: not a safe start");
+		const ControlResult refused = run(QStringLiteral("safestart.acknowledge"));
+		QVERIFY2(!refused.ok, "an ordinary session has no offer of a normal start to accept");
+		QVERIFY2(refused.errorKind == ControlErrorKind::NotFound,
+			"the refusal must be typed as 'not found': there is no offer, not a busy file");
+		QVERIFY2(!refused.errorMessage.isEmpty(), "a refusal must say why it refused");
+		QVERIFY2(!safestart::acknowledged(), "a refused acceptance must not write the acknowledgement");
+		// The crash this session would leave behind is still honoured by the
+		// next launch: nothing was written that could hide it.
+		safestart::beginSession();
+		QVERIFY2(safestart::safeStartActive(),
+			"the next launch after a crash must start safe, whatever was called in between");
+		safestart::endSession();
+	}
+
+	void failedBuiltInDocumentKeepsCurrentSession()
+	{
+		ConfigManager::inst()->setWorkingDir(m_dir.filePath(QStringLiteral("workspace")));
+		const QString cacheLocation = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+		QVERIFY(QDir().mkpath(cacheLocation));
+		const QString templateDir = QDir(cacheLocation).filePath(QStringLiteral("document-templates"));
+		if (QDir(templateDir).exists()) { QVERIFY(QDir(templateDir).removeRecursively()); }
+		else if (QFile::exists(templateDir)) { QVERIFY(QFile::remove(templateDir)); }
+		QFile blocker(templateDir);
+		QVERIFY(blocker.open(QIODevice::WriteOnly));
+		QVERIFY(blocker.write("blocked") == 7);
+		blocker.close();
+
+		Song* const song = Engine::getSong();
+		Track* const preserved = Track::create(Track::Type::Sample, song);
+		QVERIFY(preserved != nullptr);
+		preserved->setName(QStringLiteral("Session that must survive"));
+		const auto hasPreservedTrack = [song]
+		{
+			return std::any_of(song->tracks().begin(), song->tracks().end(), [](const Track* track)
+			{
+				return track->name() == QStringLiteral("Session that must survive");
+			});
+		};
+		QVERIFY(hasPreservedTrack());
+
+		const ControlResult failed = run(QStringLiteral("project.new_document"),
+			{{QStringLiteral("type"), QStringLiteral("mastering")}});
+		QVERIFY(!failed.ok);
+		const bool preservedAfterFailure = hasPreservedTrack();
+		QVERIFY(blocker.remove());
+		QVERIFY2(preservedAfterFailure, "a failed built-in document creation replaced the current session");
+	}
+
+	void failedBuiltInDocumentSaveKeepsCurrentSession()
+	{
+		ConfigManager::inst()->setWorkingDir(m_dir.filePath(QStringLiteral("workspace")));
+		const QString cacheLocation = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+		const QString templateDir = QDir(cacheLocation).filePath(QStringLiteral("document-templates"));
+		if (QDir(templateDir).exists()) { QVERIFY(QDir(templateDir).removeRecursively()); }
+		else if (QFile::exists(templateDir)) { QVERIFY(QFile::remove(templateDir)); }
+		QVERIFY(QDir().mkpath(templateDir));
+		const QString templatePath = QDir(templateDir).filePath(QStringLiteral("mastering.mpt"));
+		const QString partialPath = templatePath + QStringLiteral(".new");
+		QVERIFY(!QFile::exists(templatePath) || QFile::remove(templatePath));
+		QVERIFY(QDir().mkpath(partialPath));
+
+		QTemporaryFile probe(QDir(templateDir).filePath(QStringLiteral(".save-failure-probe-XXXXXX")));
+		QVERIFY(probe.open());
+		QVERIFY(probe.write("writable") == 8);
+		QVERIFY(probe.flush());
+		probe.close();
+		QVERIFY(probe.remove());
+
+		Song* const song = Engine::getSong();
+
+		// A known undoable change made before the failed creation. Its step - and the
+		// session content it describes - must come through the rollback untouched: a
+		// rollback that reloads a plain snapshot leaves the project but drops the history.
+		const ControlResult added = run(QStringLiteral("track.add"),
+			{{QStringLiteral("type"), QStringLiteral("sample")},
+				{QStringLiteral("name"), QStringLiteral("Session that must survive save failure")}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		QVERIFY2(Engine::projectJournal()->canUndo(), "the undoable change made no undo step to preserve");
+
+		const QString previousFile = song->projectFileName();
+		const bool previousModified = song->isModified();
+		const QString previousType = ProjectInfo::instance().documentType();
+		const QStringList previousRecentProjects = ConfigManager::inst()->recentlyOpenedProjects();
+		const int previousProvenanceSize = provenance::Section::instance().size();
+		const quint64 previousProvenanceLastSeq = provenance::Section::instance().lastSeq();
+		// The whole log, entry by entry: a rollback that keeps the count but swaps the
+		// entries for the new document's has replaced the session's history, not restored it.
+		const QList<provenance::Change> previousProvenance = provenanceEntries();
+		QVERIFY2(previousProvenanceSize > 0, "the seeded undoable change left no provenance to preserve");
+		QVERIFY2(previousProvenance.size() == previousProvenanceSize,
+			"the provenance snapshot does not match the log it was taken from");
+		QVERIFY2(previousProvenance.last().command == QStringLiteral("track.add"),
+			"the seeded track.add change is not the newest provenance entry");
+		const auto hasPreservedTrack = [song]
+		{
+			return std::any_of(song->tracks().begin(), song->tracks().end(), [](const Track* track)
+			{
+				return track->name() == QStringLiteral("Session that must survive save failure");
+			});
+		};
+		QVERIFY(hasPreservedTrack());
+
+		const ControlResult failed = run(QStringLiteral("project.new_document"),
+			{{QStringLiteral("type"), QStringLiteral("mastering")}});
+
+		QVERIFY(!failed.ok);
+		QVERIFY(QDir(partialPath).exists());
+		const bool preservedAfterFailure = hasPreservedTrack();
+		const QString fileAfterFailure = song->projectFileName();
+		const bool modifiedAfterFailure = song->isModified();
+		const QString typeAfterFailure = ProjectInfo::instance().documentType();
+		const QStringList recentProjectsAfterFailure = ConfigManager::inst()->recentlyOpenedProjects();
+		const bool newRecentPathsExist = std::all_of(recentProjectsAfterFailure.begin(), recentProjectsAfterFailure.end(),
+			[&previousRecentProjects](const QString& recent)
+			{
+				return previousRecentProjects.contains(recent) || QFile::exists(recent);
+			});
+		const bool undoSurvived = Engine::projectJournal()->canUndo();
+		const int provenanceSizeAfter = provenance::Section::instance().size();
+		const quint64 provenanceLastSeqAfter = provenance::Section::instance().lastSeq();
+		const QList<provenance::Change> provenanceAfter = provenanceEntries();
+		QVERIFY(QDir(partialPath).removeRecursively());
+		QVERIFY2(preservedAfterFailure, "a save-time failure replaced the current session");
+		QCOMPARE(fileAfterFailure, previousFile);
+		QCOMPARE(modifiedAfterFailure, previousModified);
+		QCOMPARE(typeAfterFailure, previousType);
+		QVERIFY2(newRecentPathsExist, "restoring the original session left a dead recent-project entry");
+		QVERIFY2(undoSurvived, "a save-time failure dropped the undo history of the restored session");
+		// The count and the sequence are not the content: every entry - the seeded
+		// track.add change among them - has to be the very same change it was before.
+		int firstDifferent = -1;
+		const qsizetype common = std::min(provenanceAfter.size(), previousProvenance.size());
+		for (qsizetype i = 0; i < common; ++i)
+		{
+			if (!(provenanceAfter.at(i) == previousProvenance.at(i)))
+			{
+				firstDifferent = static_cast<int>(i);
+				break;
+			}
+		}
+		const bool sameEntries = firstDifferent < 0 && provenanceAfter.size() == previousProvenance.size();
+		QVERIFY2(sameEntries, qPrintable(QStringLiteral(
+			"a save-time failure did not give the original session's provenance back: %1 entries instead of %2")
+			.arg(provenanceAfter.size()).arg(previousProvenance.size())
+			+ (firstDifferent < 0 ? QString()
+				: QStringLiteral("; entry %1 is '%2' where '%3' was")
+					.arg(firstDifferent)
+					.arg(provenanceAfter.at(firstDifferent).command, previousProvenance.at(firstDifferent).command))));
+		QVERIFY2(provenanceSizeAfter == previousProvenanceSize,
+			"a save-time failure dropped or replaced the original session's provenance");
+		QVERIFY2(provenanceLastSeqAfter == previousProvenanceLastSeq,
+			"a save-time failure changed the original session's provenance sequence");
+		QVERIFY2(provenanceAfter.last().command == QStringLiteral("track.add"),
+			"the seeded track.add change is not the newest provenance entry after the rollback");
+
+		// The history is not only present but usable, and it is the step the change made.
+		REQUIRE_OK(run(QStringLiteral("control.undo")), "control.undo");
+		QVERIFY2(!hasPreservedTrack(), "control.undo did not take back the change made before the failed creation");
+		REQUIRE_OK(run(QStringLiteral("control.redo")), "control.redo");
+		QVERIFY2(hasPreservedTrack(), "control.redo did not restore the change made before the failed creation");
 	}
 
 private:

@@ -30,6 +30,7 @@
 #include <QJsonObject>
 #include <QList>
 #include <QString>
+#include <QStringList>
 
 class QDomDocument;
 class QDomElement;
@@ -60,6 +61,9 @@ struct Change
 	QString target;       //!< the object address the before-state names, if any
 	QString before;       //!< "sha256:..." over the recorded before-state JSON
 	QString after;        //!< "sha256:..." over the command's post-change report
+	//! The command ids a wrapper's ONE step covered, space-separated (an aggregate change, e.g.
+	//! range.consolidate over several tracks); empty for an ordinary change. Optional on the wire.
+	QString nested;
 	int bytes = 0;        //!< serialised size, the quantity the byte bound counts
 
 	//! Content equality - what a save/load round trip must preserve. `bytes`
@@ -68,7 +72,7 @@ struct Change
 	{
 		return a.seq == b.seq && a.at == b.at && a.actor == b.actor
 			&& a.instance == b.instance && a.command == b.command
-			&& a.target == b.target && a.before == b.before && a.after == b.after;
+			&& a.target == b.target && a.before == b.before && a.after == b.after && a.nested == b.nested;
 	}
 };
 
@@ -117,7 +121,7 @@ public:
 	void append(Change change);
 	//! Refresh the newest entry's `after` digest (a coalesced run extends the
 	//! change it started instead of appending a second one). Re-measures bytes.
-	void updateLastAfter(const QString& after);
+	void updateLastAfter(const QString& after, const QString& nested);
 
 private:
 	Section() = default;
@@ -136,9 +140,9 @@ private:
  *  __transaction key stripped before it is digested. Either may be empty, and
  *  an empty one writes no digest attribute rather than a digest of nothing. */
 LMMS_EXPORT void recordChange(const QString& command, const QJsonObject& before,
-	const QJsonObject& report);
-//! A coalesced run's own report refreshes the newest entry's after-digest.
-LMMS_EXPORT void extendTopChange(const QJsonObject& report);
+	const QJsonObject& report, const QStringList& nested = QStringList());
+//! A coalesced run's own report refreshes the newest entry's after-digest, and its nested ids are added.
+LMMS_EXPORT void extendTopChange(const QJsonObject& report, const QStringList& nested = QStringList());
 
 /*! Attribute changes made while a control-socket client is being dispatched to
  *  "agent" for the scope's duration (the socket IS the agent surface, SPEC

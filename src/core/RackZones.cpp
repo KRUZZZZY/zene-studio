@@ -51,6 +51,13 @@ bool isValidRange(int low, int high, int minimum, int maximum)
 	return low <= high;
 }
 
+bool readIntAttribute(const QDomElement& element, const QString& name, int fallback, int& value)
+{
+	bool converted = false;
+	value = element.attribute(name, QString::number(fallback)).toInt(&converted);
+	return converted;
+}
+
 } // namespace
 
 bool isValidRackZone(const RackZone& zone, int chainCount)
@@ -85,12 +92,12 @@ void RackZones::edit(const std::function<void()>& change)
 {
 	// The audio workers resolve notes against this list (RackZoneFeed.h): a change waits for the period
 	// boundary, as every other rack topology edit does. The guard is recursive, so a caller already
-	// inside it (Rack::loadSettings) nests.
+	// inside it (Rack::loadSettings) nests. The RAII guard releases the model-change guard even when
+	// the change or the hook throws, so an exception cannot leave workers blocked.
 	AudioEngine* engine = Engine::audioEngine();
-	if (engine != nullptr) { engine->requestChangeInModel(); }
+	const auto guard = engine != nullptr ? engine->requestChangesGuard() : AudioEngine::RequestChangesGuard{};
 	change();
 	if (m_changed) { m_changed(); }
-	if (engine != nullptr) { engine->doneChangeInModel(); }
 }
 
 auto RackZones::zoneCount() const -> int
@@ -104,11 +111,15 @@ auto RackZones::zone(int index) const -> const RackZone*
 	return &m_zones[static_cast<std::size_t>(index)];
 }
 
-auto RackZones::addZone(const RackZone& zone) -> int
+auto RackZones::addZone(const RackZone& zone, const std::function<void()>& alongside) -> int
 {
 	RackZone loaded = zone;
 	loadRackZoneSample(loaded);  // before the guard: the render never waits on a file
-	edit([this, &loaded] { m_zones.push_back(std::move(loaded)); });
+	edit([this, &loaded, &alongside]
+	{
+		m_zones.push_back(std::move(loaded));
+		if (alongside) { alongside(); }
+	});
 	return zoneCount() - 1;
 }
 
@@ -144,22 +155,27 @@ auto RackZones::resolve(int key, int velocity) const -> int
 	return -1;
 }
 
-void RackZones::assign(std::vector<RackZone> zones)
+void RackZones::assign(std::vector<RackZone> zones, const std::function<void()>& alongside)
 {
 	for (RackZone& zone : zones) { loadRackZoneSample(zone); }  // decoded before the guard, as addZone does
-	edit([this, &zones] { m_zones.swap(zones); });
+	edit([this, &zones, &alongside]
+	{
+		m_zones.swap(zones);
+		if (alongside) { alongside(); }
+	});
 }
 
 auto RackZones::matchMask(int key, int velocity) const -> std::uint64_t
 {
 	std::uint64_t mask = 0;
-	const std::size_t count = std::min<std::size_t>(m_zones.size(), 64);
-	for (std::size_t i = 0; i < count; ++i)
+	for (const RackZone& candidate : m_zones)
 	{
-		const RackZone& candidate = m_zones[i];
 		const bool keyIn = key >= candidate.lowKey && key <= candidate.highKey;
 		const bool velocityIn = velocity >= candidate.lowVelocity && velocity <= candidate.highVelocity;
-		if (keyIn && velocityIn) { mask |= std::uint64_t{1} << i; }
+		if (keyIn && velocityIn && candidate.chain >= 0 && candidate.chain < 64)
+		{
+			mask |= std::uint64_t{1} << candidate.chain;
+		}
 	}
 	return mask;
 }
@@ -168,6 +184,25 @@ void RackZones::clear()
 {
 	if (m_zones.empty()) { return; }
 	edit([this] { m_zones.clear(); });
+}
+
+void RackZones::reindexChains(int removedIndex)
+{
+	if (m_zones.empty() || removedIndex < 1) { return; }
+	edit([this, removedIndex] {
+		std::vector<RackZone> kept;
+		kept.reserve(m_zones.size());
+		for (const RackZone& zone : m_zones)
+		{
+			// A zone on the chain that is gone can only fail to route now, so it
+			// is dropped rather than left naming an index that means something else.
+			if (zone.chain == removedIndex) { continue; }
+			RackZone moved = zone;
+			if (moved.chain > removedIndex) { --moved.chain; }
+			kept.push_back(std::move(moved));
+		}
+		m_zones.swap(kept);
+	});
 }
 
 void RackZones::saveSettings(QDomDocument& doc, QDomElement& rackElement) const
@@ -190,7 +225,7 @@ void RackZones::saveSettings(QDomDocument& doc, QDomElement& rackElement) const
 	}
 }
 
-void RackZones::loadSettings(const QDomElement& rackElement)
+void RackZones::loadSettings(const QDomElement& rackElement, int chainCount)
 {
 	std::vector<RackZone> read;
 	for (QDomElement zoneElement = rackElement.firstChildElement(QStringLiteral("zone"));
@@ -198,15 +233,26 @@ void RackZones::loadSettings(const QDomElement& rackElement)
 		zoneElement = zoneElement.nextSiblingElement(QStringLiteral("zone")))
 	{
 		RackZone zone;
-		zone.lowKey = zoneElement.attribute(QStringLiteral("low_key"),
-			QString::number(RackZoneMinKey)).toInt();
-		zone.highKey = zoneElement.attribute(QStringLiteral("high_key"),
-			QString::number(RackZoneMaxKey)).toInt();
-		zone.lowVelocity = zoneElement.attribute(QStringLiteral("low_velocity"),
-			QString::number(RackZoneMinVelocity)).toInt();
-		zone.highVelocity = zoneElement.attribute(QStringLiteral("high_velocity"),
-			QString::number(RackZoneMaxVelocity)).toInt();
-		zone.chain = zoneElement.attribute(QStringLiteral("chain"), QStringLiteral("0")).toInt();
+		if (!readIntAttribute(zoneElement, QStringLiteral("low_key"), RackZoneMinKey, zone.lowKey))
+		{
+			continue;
+		}
+		if (!readIntAttribute(zoneElement, QStringLiteral("high_key"), RackZoneMaxKey, zone.highKey))
+		{
+			continue;
+		}
+		if (!readIntAttribute(zoneElement, QStringLiteral("low_velocity"), RackZoneMinVelocity,
+				zone.lowVelocity))
+		{
+			continue;
+		}
+		if (!readIntAttribute(zoneElement, QStringLiteral("high_velocity"), RackZoneMaxVelocity,
+				zone.highVelocity))
+		{
+			continue;
+		}
+		if (!readIntAttribute(zoneElement, QStringLiteral("chain"), 0, zone.chain)) { continue; }
+		if (!isValidRackZone(zone, chainCount)) { continue; }
 		zone.sample = zoneElement.attribute(QStringLiteral("sample"));
 		loadRackZoneSample(zone);  // a missing file keeps its reference (saved back unchanged)
 		read.push_back(std::move(zone));

@@ -86,7 +86,10 @@ struct ExtractGeometry
 //! Reads (and proves) the geometry of one groove.extract call.
 bool readExtractGeometry(const QJsonObject& args, ExtractGeometry* out, ControlResult* error)
 {
-	out->name = GrooveTemplate::normalisedName(args.value(QStringLiteral("name")).toString());
+	// Judged on the name as given: normalising first would cut an overlong name
+	// down to one that may already exist.
+	const QString rawName = args.value(QStringLiteral("name")).toString();
+	out->name = GrooveTemplate::normalisedName(rawName);
 	if (!readTicks(args, QStringLiteral("grid"), GrooveTemplate::MinStepTicks,
 		GrooveTemplate::MaxStepTicks, &out->grid, error))
 	{
@@ -99,11 +102,11 @@ bool readExtractGeometry(const QJsonObject& args, ExtractGeometry* out, ControlR
 	{
 		return false;
 	}
-	if (GrooveTemplate::isWritable(out->name, out->length, out->grid)) { return true; }
+	if (GrooveTemplate::isWritable(rawName, out->length, out->grid)) { return true; }
 	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 		QStringLiteral("'%1' over %2 ticks in slots of %3 is not a groove this engine "
 			"holds: the name is 1..%4 characters, the slot 1..%5 ticks, and the length a "
-			"whole 1..%6 slots").arg(out->name).arg(out->length).arg(out->grid)
+			"whole 1..%6 slots").arg(rawName.trimmed()).arg(out->length).arg(out->grid)
 			.arg(GrooveTemplate::MaxNameLength).arg(GrooveTemplate::MaxStepTicks)
 			.arg(GrooveTemplate::MaxSteps));
 	return false;

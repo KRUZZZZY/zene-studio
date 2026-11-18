@@ -186,6 +186,12 @@ ControlResult routeBus(InstrumentTrack* track, InstrumentOutputBuses& buses, con
 			QStringLiteral("the plug-in did not activate output bus %1").arg(bus));
 	}
 	const QString trackIdText = trackIdOf(track);
+	// Only a real change is an undo step: routing a bus to the channel it already
+	// uses would otherwise record a no-op step that consumes the next undo.
+	if (previous == channelId)
+	{
+		return ControlResult::success(busesState(track, buses));
+	}
 	addUndoStep([trackIdText, bus, previous]() {
 		if (InstrumentOutputBuses* current = busesById(trackIdText)) { current->route(bus, previous); }
 	}, [trackIdText, bus, channelId]() {
@@ -285,7 +291,16 @@ ControlResult createChannels(InstrumentTrack* track, InstrumentOutputBuses& buse
 		if (buses.routeOf(bus) >= 0) { continue; }
 		CreatedRoute route{bus, QStringLiteral("%1 %2").arg(track->name(), buses.bus(bus)->name), -1};
 		route.channelId = createChannelFor(buses, bus, route.name);
-		if (route.channelId < 0) { continue; }
+		if (route.channelId < 0)
+		{
+			for (auto it = created.rbegin(); it != created.rend(); ++it)
+			{
+				buses.route(it->bus, -1);
+				deleteChannelById(it->channelId);
+			}
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("the plug-in did not activate output bus %1").arg(bus));
+		}
 		created.push_back(route);
 		list.append(QJsonObject{{QStringLiteral("bus"), bus}, {QStringLiteral("channel"), channelIdOfPersistent(route.channelId)}});
 	}
@@ -293,6 +308,8 @@ ControlResult createChannels(InstrumentTrack* track, InstrumentOutputBuses& buse
 	if (!created.empty()) { recordCreation(trackIdText, created); }
 	QJsonObject result = busesState(track, buses);
 	result.insert(QStringLiteral("created"), list);
+	// Nothing routed, nothing created: there is no step to claim, so no transaction.
+	if (created.empty()) { return ControlResult::success(result); }
 	result.insert(QStringLiteral("__transaction"), transactionPayload(
 		QJsonObject{{QStringLiteral("routed_count"), buses.routedCount() - static_cast<int>(created.size())}},
 		QStringLiteral("control.undo"), {}, true,

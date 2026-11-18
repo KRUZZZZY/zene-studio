@@ -100,6 +100,7 @@ const QString& FileRevealer::getDefaultFileManager()
 
 	// If the fileManager contains dots (e.g., "org.kde.dolphin"), extract only the last part
 	fileManager = fileManager.section('.', -1);
+	if (fileManager.isEmpty()) { fileManager = "xdg-open"; }
 	fileManagerCache = fileManager;
 #endif
 	qDebug() << "FileRevealer: Default app for inode/directory:" << fileManagerCache.value();

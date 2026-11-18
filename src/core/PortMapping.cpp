@@ -117,31 +117,50 @@ void PortMapping::start(quint16 internalPort)
 	stop();
 	m_internal = internalPort;
 	m_busy = true;
+	m_stopped = false;
 	m_pmpFailure.clear();
-	m_gateway = discoverGateway(&m_gatewayGuessed);
-	m_local = lanAddress(m_gateway);
+	if (m_hasTestEndpoints)
+	{
+		m_gateway = m_test.gateway;
+		m_gatewayGuessed = false;
+		m_local = m_test.local;
+	}
+	else
+	{
+		m_gateway = discoverGateway(&m_gatewayGuessed);
+		m_local = lanAddress(m_gateway);
+	}
 	if (m_gateway.isNull())
 	{
 		m_pmpFailure = QStringLiteral("no default gateway was found");
 		m_upnp->map(m_internal, m_internal, UpnpLeaseS, m_local);
 		return;
 	}
-	m_pmp->setServer(m_gateway);
+	m_pmp->setServer(m_gateway, m_hasTestEndpoints ? m_test.gatewayPort : PmpServerPort);
 	m_pmp->setClientAddress(m_local);
 	m_pmp->map(m_internal, m_internal, PmpLifetimeS);
 }
 
+void PortMapping::setTestEndpoints(const TestEndpoints& endpoints)
+{
+	m_test = endpoints;
+	m_hasTestEndpoints = true;
+	m_upnp->setSearchEndpoint(endpoints.upnpSearch, endpoints.upnpSearchPort, true);
+}
+
 void PortMapping::stop()
 {
+	m_busy = false;
+	m_stopped = true;
 	m_renew->stop();
 	m_pmp->unmap();
 	m_upnp->unmap();
-	m_busy = false;
 	m_result = MappingResult();
 }
 
 void PortMapping::onPmpFinished(const MappingResult& result)
 {
+	if (m_stopped) { return; }  // a completion of an attempt stop() canceled
 	if (result.ok) { succeed(result); return; }
 	m_pmpFailure = result.message + (m_gatewayGuessed ? QStringLiteral(" (the gateway address was guessed)") : QString());
 	m_upnp->map(m_internal, m_internal, UpnpLeaseS, m_local);
@@ -149,6 +168,7 @@ void PortMapping::onPmpFinished(const MappingResult& result)
 
 void PortMapping::onUpnpFinished(const MappingResult& result)
 {
+	if (m_stopped) { return; }  // a completion of an attempt stop() canceled
 	if (result.ok) { succeed(result); return; }
 	m_busy = false;
 	m_result = MappingResult();
@@ -169,7 +189,12 @@ void PortMapping::succeed(const MappingResult& result)
 			"this port. Share a LAN invite, or forward the port on the outer router too")
 			.arg(result.externalAddress.isNull() ? QStringLiteral("unknown") : result.externalAddress.toString());
 	}
-	if (result.lifetime > 0) { m_renew->start(static_cast<int>(qMin<quint32>(result.lifetime / 2, 3600) * 1000)); }
+	if (result.lifetime > 0)
+	{
+		const quint32 halfLifetime = result.lifetime / 2 + result.lifetime % 2;
+		const quint32 renewalSeconds = qMax<quint32>(1, qMin<quint32>(halfLifetime, 3600));
+		m_renew->start(static_cast<int>(renewalSeconds * 1000));
+	}
 	emit finished(m_result);
 }
 

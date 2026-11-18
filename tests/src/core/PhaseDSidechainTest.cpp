@@ -51,18 +51,28 @@
 #include <QString>
 #include <QTemporaryDir>
 
+#include <bit>
+#include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <future>
 #include <memory>
+#include <optional>
+#include <thread>
 #include <vector>
 
 #include "PhaseDMixerTestSupport.h"
 
 #include "AudioDevice.h"
+#include "AllocationProbe.h"
 #include "AudioEngine.h"
+#include "Controller.h"
+#include "ControllerConnection.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
+#include "LfoController.h"
 #include "Mixer.h"
 #include "Plugin.h"
 
@@ -91,6 +101,40 @@ void feedDc(PeriodHarness& harness, int channel, float value)
 bool nearValue(float actual, float expected, float eps = 1.0e-6f)
 {
 	return std::fabs(actual - expected) <= eps;
+}
+
+class CountingLfoController : public LfoController
+{
+public:
+	explicit CountingLfoController(Model* parent = nullptr) : LfoController(parent) {}
+	std::uint64_t updateCount() const { return m_updateCount.load(std::memory_order_relaxed); }
+	const ValueBuffer& preparedBuffer() const { return m_valueBuffer; }
+
+protected:
+	void updateValueBuffer() override
+	{
+		m_updateCount.fetch_add(1, std::memory_order_relaxed);
+		LfoController::updateValueBuffer();
+	}
+
+private:
+	std::atomic<std::uint64_t> m_updateCount{0};
+};
+
+//! FNV-1a over the bit pattern of every frame: one changed bit anywhere changes the hash.
+std::uint64_t frameBitsHash(const float* frames, f_cnt_t count)
+{
+	std::uint64_t hash = 1469598103934665603ULL;
+	for (f_cnt_t f = 0; f < count; ++f)
+	{
+		const auto bits = std::bit_cast<std::uint32_t>(frames[f]);
+		for (int shift = 0; shift < 32; shift += 8)
+		{
+			hash ^= (bits >> shift) & 0xFFu;
+			hash *= 1099511628211ULL;
+		}
+	}
+	return hash;
 }
 
 /*!
@@ -253,6 +297,478 @@ private slots:
 			probePreFader->firstL(), expectPreFader,
 			probePostFader->firstL(), expectPostFader,
 			probeNoGain->firstL(), expectNoGain);
+	}
+
+	//! Luna cluster 5156: sumSidechainInputs() read the amount with
+	//! amount()->value() and applied that one scalar to every frame of the
+	//! period, so an automated sidechain send lost its curve. A regular send
+	//! multiplies with the amount's ValueBuffer (Mixer.cpp doProcessing).
+	//! Driven directly: publish a sample-exact ramp on the amount, write the
+	//! sender's tap, sum, and read the receiver's sidechain buffer.
+	void anAutomatedSidechainAmountIsAppliedPerFrame()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		MixerChannel* sender = mixer->mixerChannel(1);
+		MixerChannel* receiver = mixer->mixerChannel(2);
+		MixerSidechainRoute* route = mixer->createSidechainSend(1, 2, 0.0f,
+			SidechainTapPoint::PreFader);
+		QVERIFY(route != nullptr);
+
+		const f_cnt_t fpp = periodFrames();
+		// The sender's signal: a constant 1.0, so the summed buffer IS the
+		// per-frame amount curve.
+		for (f_cnt_t f = 0; f < fpp; ++f) { sender->m_buffer[f] = SampleFrame(1.f, 1.f); }
+		sender->writeSidechainTaps(SidechainTapPoint::PreFader, fpp);
+
+		// A sample-exact ramp 0 -> 1 over this period, published the way the
+		// automation evaluation publishes it (the model's own fixed-capacity
+		// AutomationRamp; valueBuffer() then hands the audio path the curve).
+		FloatModel* amount = route->amount();
+		amount->setValue(1.0f);
+		AutomationRamp ramp;
+		QVERIFY(ramp.addKnot(0, 0.0f));
+		QVERIFY(ramp.addKnot(fpp - 1, 1.0f));
+		amount->publishAutomationRamp(ramp);
+		QVERIFY(amount->valueBuffer() != nullptr);
+
+		receiver->sumSidechainInputs(fpp);
+
+		const float* summed = receiver->m_sidechainBuffer.buffer(0).data();
+		QVERIFY2(summed[0] < 0.05f,
+			qPrintable(QString("first frame %1 is not near the ramp start").arg(summed[0])));
+		QVERIFY2(summed[fpp - 1] > 0.95f,
+			qPrintable(QString("last frame %1 is not near the ramp end (5156)")
+				.arg(summed[fpp - 1])));
+		// A constant-per-block sum would make every frame identical.
+		QVERIFY2(std::fabs(summed[0] - summed[fpp - 1]) > 0.5f,
+			"the sidechain amount was applied as one value for the whole block (5156)");
+	}
+
+	//! The audio-path sum of a published-ramp amount allocates nothing, and the
+	//! summed curve is right with nothing computed for the amount beforehand.
+	//! The read goes through valueBuffer(), which takes the model's mutex; that
+	//! lock is the mixer-wide realtime item tracked as cluster 2647, not
+	//! something this test can see.
+	void theAutomatedSidechainPathAllocatesNothing()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		MixerChannel* sender = mixer->mixerChannel(1);
+		MixerChannel* receiver = mixer->mixerChannel(2);
+		MixerSidechainRoute* route = mixer->createSidechainSend(1, 2, 0.0f,
+			SidechainTapPoint::PreFader);
+		QVERIFY(route != nullptr);
+
+		const f_cnt_t fpp = periodFrames();
+		for (f_cnt_t f = 0; f < fpp; ++f) { sender->m_buffer[f] = SampleFrame(1.f, 1.f); }
+		sender->writeSidechainTaps(SidechainTapPoint::PreFader, fpp);
+
+		FloatModel* amount = route->amount();
+		amount->setValue(1.0f);
+		AutomationRamp ramp;
+		QVERIFY(ramp.addKnot(0, 0.0f));
+		QVERIFY(ramp.addKnot(fpp - 1, 1.0f));
+		amount->publishAutomationRamp(ramp);
+
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		receiver->sumSidechainInputs(fpp);
+		test::tlCountAllocations = false;
+		QCOMPARE(static_cast<unsigned long long>(test::tlAllocationCount), 0ULL);
+
+		const float* summed = receiver->m_sidechainBuffer.buffer(0).data();
+		QVERIFY2(summed[0] < 0.05f,
+			qPrintable(QString("first frame %1 is not near the ramp start").arg(summed[0])));
+		QVERIFY2(summed[fpp - 1] > 0.95f,
+			qPrintable(QString("last frame %1 is not near the ramp end").arg(summed[fpp - 1])));
+	}
+
+	//! A sidechain amount that is NOT a published ramp keeps the per-frame
+	//! valueBuffer() behaviour the amount has everywhere else: a controller
+	//! drives it sample-exact (an LFO here), and the sum must vary across the
+	//! period. The scalar value() path would hold it constant.
+	void aControllerDrivenAmountVariesPerFrame()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		MixerChannel* sender = mixer->mixerChannel(1);
+		MixerChannel* receiver = mixer->mixerChannel(2);
+		MixerSidechainRoute* route = mixer->createSidechainSend(1, 2, 0.0f,
+			SidechainTapPoint::PreFader);
+		QVERIFY(route != nullptr);
+
+		const f_cnt_t fpp = periodFrames();
+		for (f_cnt_t f = 0; f < fpp; ++f) { sender->m_buffer[f] = SampleFrame(1.f, 1.f); }
+		sender->writeSidechainTaps(SidechainTapPoint::PreFader, fpp);
+
+		// The LFO drives the amount; the model's own value is left alone.
+		auto* lfo = new LfoController(nullptr);
+		route->amount()->setControllerConnection(new ControllerConnection(lfo));
+		route->amount()->setUseControllerValue(true);
+		// End a period, as the engine does, so the LFO's buffer is refilled
+		// for this period rather than left at its constructor fill.
+		Controller::triggerFrameCounter();
+		AutomatableModel::incrementPeriodCounter();
+
+		receiver->sumSidechainInputs(fpp);
+		const float* summed = receiver->m_sidechainBuffer.buffer(0).data();
+		const float spread = std::fabs(summed[fpp - 1] - summed[0]);
+		QVERIFY2(spread > 1e-3f,
+			qPrintable(QString("a controller-driven amount was constant across the period (spread %1)").arg(spread)));
+		route->amount()->setControllerConnection(nullptr);
+	}
+
+	//! A manually changed amount is interpolated across the period by
+	//! valueBuffer() (old value to new value), with no ramp and no controller.
+	void aManuallyChangedAmountInterpolatesAcrossThePeriod()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		MixerChannel* sender = mixer->mixerChannel(1);
+		MixerChannel* receiver = mixer->mixerChannel(2);
+		MixerSidechainRoute* route = mixer->createSidechainSend(1, 2, 0.0f,
+			SidechainTapPoint::PreFader);
+		QVERIFY(route != nullptr);
+
+		const f_cnt_t fpp = periodFrames();
+		for (f_cnt_t f = 0; f < fpp; ++f) { sender->m_buffer[f] = SampleFrame(1.f, 1.f); }
+		sender->writeSidechainTaps(SidechainTapPoint::PreFader, fpp);
+
+		route->amount()->setValue(0.0f);
+		route->amount()->setValue(1.0f);
+		receiver->sumSidechainInputs(fpp);
+
+		const float* summed = receiver->m_sidechainBuffer.buffer(0).data();
+		QVERIFY2(summed[0] < 0.5f,
+			qPrintable(QString("the first frame %1 is not near the old amount 0").arg(summed[0])));
+		QVERIFY2(summed[fpp - 1] > 0.5f,
+			qPrintable(QString("the last frame %1 is not near the new amount 1").arg(summed[fpp - 1])));
+	}
+
+	//! Before/after evidence for the sidechain amount read (review f1a74cc54). For
+	//! each source valueBuffer() honours - a published ramp, a sample-exact LFO
+	//! controller, a manual change - the summed sidechain buffer must equal an
+	//! identically configured model's own valueBuffer(), frame for frame, and its
+	//! bit pattern is printed as a hash. Run the binary before and after a change
+	//! to the read: the PARTD_SIDECHAIN_AMOUNT lines must be identical.
+	void theSidechainAmountIsUnchangedForEverySource()
+	{
+		enum class Source { Ramp, Controller, Manual };
+		const struct
+		{
+			const char* name;
+			Source source;
+		} cases[] = {{"ramp", Source::Ramp}, {"controller", Source::Controller}, {"manual", Source::Manual}};
+		constexpr std::uint64_t rampHash = 0x323a07fa3203dfb1ULL;
+		constexpr std::uint64_t controllerHash = 0x37f34ff56c876b74ULL;
+		constexpr std::uint64_t manualHash = 0x7fad6c72da607ddeULL;
+
+		for (const auto& testCase : cases)
+		{
+			auto mixer = Engine::mixer();
+			mixer->clear();
+			while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+			MixerChannel* sender = mixer->mixerChannel(1);
+			MixerChannel* receiver = mixer->mixerChannel(2);
+			MixerSidechainRoute* route = mixer->createSidechainSend(1, 2, 0.0f,
+				SidechainTapPoint::PreFader);
+			QVERIFY(route != nullptr);
+
+			const f_cnt_t fpp = periodFrames();
+			for (f_cnt_t f = 0; f < fpp; ++f) { sender->m_buffer[f] = SampleFrame(1.f, 1.f); }
+			sender->writeSidechainTaps(SidechainTapPoint::PreFader, fpp);
+
+			// The reference is an identically configured model read through valueBuffer().
+			FloatModel reference(0.0f, 0.0f, 1.0f, 0.001f);
+			FloatModel* amount = route->amount();
+			LfoController* lfo = nullptr;
+			if (testCase.source == Source::Ramp)
+			{
+				amount->setValue(1.0f);
+				reference.setValue(1.0f);
+			}
+			else if (testCase.source == Source::Controller)
+			{
+				lfo = new LfoController(nullptr);
+				amount->setControllerConnection(new ControllerConnection(lfo));
+				amount->setUseControllerValue(true);
+				reference.setControllerConnection(new ControllerConnection(lfo));
+				reference.setUseControllerValue(true);
+			}
+			else
+			{
+				amount->setValue(0.0f);
+				amount->setValue(1.0f);
+				reference.setValue(0.0f);
+				reference.setValue(1.0f);
+			}
+			// A new period: a published ramp is stamped with the period it was published in.
+			Controller::triggerFrameCounter();
+			AutomatableModel::incrementPeriodCounter();
+			if (testCase.source == Source::Ramp)
+			{
+				AutomationRamp ramp;
+				QVERIFY(ramp.addKnot(0, 0.0f));
+				QVERIFY(ramp.addKnot(fpp - 1, 1.0f));
+				amount->publishAutomationRamp(ramp);
+				reference.publishAutomationRamp(ramp);
+			}
+
+			receiver->sumSidechainInputs(fpp);
+			const ValueBuffer* expected = reference.valueBuffer();
+			QVERIFY2(expected != nullptr,
+				qPrintable(QString("the reference %1 amount has no sample-exact data").arg(testCase.name)));
+			const float* summed = receiver->m_sidechainBuffer.buffer(0).data();
+			for (f_cnt_t f = 0; f < fpp; ++f)
+			{
+				QVERIFY2(std::bit_cast<std::uint32_t>(summed[f])
+						== std::bit_cast<std::uint32_t>(expected->values()[f]),
+					qPrintable(QString("%1: frame %2 is %3, the amount's valueBuffer() says %4")
+						.arg(testCase.name).arg(f).arg(summed[f]).arg(expected->values()[f])));
+			}
+			const std::uint64_t hash = frameBitsHash(summed, fpp);
+			const std::uint64_t expectedHash = testCase.source == Source::Ramp ? rampHash
+				: testCase.source == Source::Controller ? controllerHash : manualHash;
+			QCOMPARE(hash, expectedHash);
+			evidence("PARTD_SIDECHAIN_AMOUNT source=%s fnv1a=%016llx first=%.9g last=%.9g",
+				testCase.name, static_cast<unsigned long long>(hash),
+				static_cast<double>(summed[0]), static_cast<double>(summed[fpp - 1]));
+
+			amount->setControllerConnection(nullptr);
+			reference.setControllerConnection(nullptr);
+		}
+	}
+
+	//! The sidechain amount's read takes no lock (review f1a74cc54, cluster 2647).
+	//! Another thread holds the amount's valueBuffer() mutex for the whole sum, and
+	//! the sum must still finish. A read through valueBuffer() waits behind that
+	//! mutex, so this is a BLOCKING probe rather than a static reading: the mutex is
+	//! reached through the friend access the header grants this class.
+	void theSidechainAmountReadTakesNoLock()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		MixerChannel* sender = mixer->mixerChannel(1);
+		MixerChannel* receiver = mixer->mixerChannel(2);
+		MixerSidechainRoute* route = mixer->createSidechainSend(1, 2, 0.0f,
+			SidechainTapPoint::PreFader);
+		QVERIFY(route != nullptr);
+
+		const f_cnt_t fpp = periodFrames();
+		for (f_cnt_t f = 0; f < fpp; ++f) { sender->m_buffer[f] = SampleFrame(1.f, 1.f); }
+		sender->writeSidechainTaps(SidechainTapPoint::PreFader, fpp);
+
+		FloatModel* amount = route->amount();
+		amount->setValue(1.0f);
+		AutomationRamp ramp;
+		QVERIFY(ramp.addKnot(0, 0.0f));
+		QVERIFY(ramp.addKnot(fpp - 1, 1.0f));
+		amount->publishAutomationRamp(ramp);
+
+		QMutex& mutex = static_cast<AutomatableModel*>(amount)->m_valueBufferMutex;
+		std::promise<void> holding;
+		std::promise<void> release;
+		std::shared_future<void> released = release.get_future().share();
+		std::thread holder([&mutex, &holding, released]
+		{
+			const QMutexLocker held(&mutex);
+			holding.set_value();
+			released.wait();
+		});
+		holding.get_future().wait();
+
+		std::promise<void> summed;
+		std::future<void> done = summed.get_future();
+		std::thread summing([receiver, fpp, &summed]
+		{
+			receiver->sumSidechainInputs(fpp);
+			summed.set_value();
+		});
+		const bool completed = done.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+		release.set_value();
+		holder.join();
+		summing.join();
+		QVERIFY2(completed, "the sidechain sum waited on the amount's valueBuffer() mutex (cluster 2647)");
+
+		const float* out = receiver->m_sidechainBuffer.buffer(0).data();
+		QVERIFY2(out[0] < 0.05f,
+			qPrintable(QString("first frame %1 is not near the ramp start").arg(out[0])));
+		QVERIFY2(out[fpp - 1] > 0.95f,
+			qPrintable(QString("last frame %1 is not near the ramp end").arg(out[fpp - 1])));
+	}
+
+	//! The fader lookup on a mixer job must not wait for the old per-model mutex.
+	void mixerFaderBufferLookupDoesNotWaitOnCacheLock()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 2) { mixer->createChannel(); }
+		MixerChannel* const source = mixer->mixerChannel(1);
+		PeriodHarness harness(mixer);
+		feedDc(harness, 1, 0.25f);
+		harness.render();
+		feedDc(harness, 1, 0.25f);
+
+		std::uint64_t allocations = 0;
+		const bool completed = renderCompletesWhileCacheMutexHeld(&source->m_volumeModel,
+			harness, &allocations);
+		QVERIFY2(completed, "the mixer fader valueBuffer lookup waited on m_valueBufferMutex");
+		QCOMPARE(allocations, std::uint64_t{0});
+	}
+
+	//! The test effect calls valueBuffer() on its own parameter from the mixer
+	//! worker; that prepared lookup must neither wait nor allocate.
+	void pluginParameterBufferLookupDoesNotWaitOrAllocate()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 2) { mixer->createChannel(); }
+		EffectChain* const chain = chainOf(mixer, 1);
+		const std::uint64_t registeredBefore = Engine::audioEngine()->registeredAutomatableModelCount();
+		auto* const effect = new ParameterGainProbeEffect(chain);
+		chain->appendEffect(effect);
+		QVERIFY(Engine::audioEngine()->registeredAutomatableModelCount() > registeredBefore);
+		PeriodHarness harness(mixer);
+		feedDc(harness, 1, 0.25f);
+		harness.render();
+		feedDc(harness, 1, 0.25f);
+
+		std::uint64_t allocations = 0;
+		const bool completed = renderCompletesWhileCacheMutexHeld(&effect->gainModel(),
+			harness, &allocations);
+		QVERIFY2(completed, "the plug-in parameter valueBuffer lookup waited on m_valueBufferMutex");
+		QCOMPARE(allocations, std::uint64_t{0});
+		QVERIFY(effect->valueBufferCalls() > 0);
+		QCOMPARE(effect->valueBufferAllocations(), std::uint64_t{0});
+	}
+
+	//! A missing registry slot must be reported rather than evaluated as a fallback.
+	void unregisteredModelBufferRequestIsReported()
+	{
+		FloatModel model(0.25f, 0.0f, 1.0f, 0.001f);
+		AudioEngine* const engine = Engine::audioEngine();
+		const std::uint64_t before = engine->unregisteredAutomatableBufferRequests();
+		engine->unregisterAutomatableModel(&model);
+		QVERIFY(model.valueBuffer() == nullptr);
+		QCOMPARE(engine->unregisteredAutomatableBufferRequests(), before + 1);
+		QVERIFY(engine->registerAutomatableModel(&model));
+	}
+
+	//! One LFO and a linked pair of mixer controls are read by separate mixer
+	//! jobs. The output hash and update count form the before/after render proof.
+	void oneLfoDrivesLinkedControlsOnParallelMixerJobs()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		FloatModel* const first = &mixer->mixerChannel(1)->m_volumeModel;
+		FloatModel* const second = &mixer->mixerChannel(2)->m_volumeModel;
+		first->setValue(0.5f);
+		second->setValue(0.5f);
+		first->linkToModel(second);
+		auto* const lfo = new CountingLfoController(nullptr);
+		first->setControllerConnection(new ControllerConnection(lfo));
+		second->setControllerConnection(new ControllerConnection(lfo));
+		first->setUseControllerValue(true);
+		second->setUseControllerValue(true);
+
+		PeriodHarness harness(mixer);
+		const std::uint64_t updatesBefore = lfo->updateCount();
+		AudioEngine* const engine = Engine::audioEngine();
+		const std::uint64_t modelMissesBefore = engine->unpreparedAutomatableBufferRequests();
+		const std::uint64_t controllerMissesBefore = engine->unpreparedControllerBufferRequests();
+		feedDc(harness, 1, 0.25f);
+		feedDc(harness, 2, 0.5f);
+		const std::vector<SampleFrame> output = harness.render();
+		const std::uint64_t updates = lfo->updateCount() - updatesBefore;
+		QCOMPARE(updates, std::uint64_t{1});
+		QCOMPARE(engine->unpreparedAutomatableBufferRequests(), modelMissesBefore);
+		QCOMPARE(engine->unpreparedControllerBufferRequests(), controllerMissesBefore);
+		QVERIFY(meanAbs(output, 0, harness.fpp()) > 0.0);
+		const ValueBuffer& serialLfo = lfo->preparedBuffer();
+		for (f_cnt_t frame = 0; frame < harness.fpp(); ++frame)
+		{
+			const float gain = serialLfo.values()[frame] * 2.0f;
+			const float expected = 0.25f * gain + 0.5f * gain;
+			QCOMPARE(std::bit_cast<std::uint32_t>(output[frame][0]),
+				std::bit_cast<std::uint32_t>(expected));
+			QCOMPARE(std::bit_cast<std::uint32_t>(output[frame][1]),
+				std::bit_cast<std::uint32_t>(expected));
+		}
+		const QByteArray hash = sha256(output);
+		QCOMPARE(hash, QByteArray("e5e6ba72936e7367bc138608fd1ff1768562759a14f6935cb274aafa50e8708e"));
+		evidence("AUTOMATION_PREPASS_SHARED_LFO sha256=%s updates=%llu first=%.9g last=%.9g",
+			hash.constData(), static_cast<unsigned long long>(updates),
+			static_cast<double>(output.front()[0]), static_cast<double>(output.back()[0]));
+
+		first->setControllerConnection(nullptr);
+		second->setControllerConnection(nullptr);
+	}
+
+	//! A repeated old/new pair still uses the immediately previous setter value
+	//! as its ramp start, for both members of a linked ring.
+	void linkedModelsRetainTheImmediatelyPreviousRampStart()
+	{
+		FloatModel first(0.0f, 0.0f, 1.0f, 0.001f);
+		FloatModel second(0.0f, 0.0f, 1.0f, 0.001f);
+		first.linkToModel(&second);
+		first.setValue(1.0f);
+		first.setValue(0.0f);
+		first.setValue(1.0f);
+		AutomatableModel::incrementPeriodCounter();
+
+		const ValueBuffer* const firstBuffer = first.valueBuffer();
+		const ValueBuffer* const secondBuffer = second.valueBuffer();
+		QVERIFY(firstBuffer != nullptr);
+		QVERIFY(secondBuffer != nullptr);
+		QCOMPARE(firstBuffer->values()[0], 0.0f);
+		QCOMPARE(firstBuffer->values()[firstBuffer->length() - 1],
+			static_cast<float>(firstBuffer->length() - 1) / firstBuffer->length());
+		ValueBuffer expected(static_cast<int>(firstBuffer->length()));
+		expected.interpolate(0.0f, 1.0f);
+		for (int frame = 0; frame < firstBuffer->length(); ++frame)
+		{
+			QCOMPARE(std::bit_cast<std::uint32_t>(firstBuffer->values()[frame]),
+				std::bit_cast<std::uint32_t>(expected.values()[frame]));
+			QCOMPARE(std::bit_cast<std::uint32_t>(firstBuffer->values()[frame]),
+				std::bit_cast<std::uint32_t>(secondBuffer->values()[frame]));
+		}
+		evidence("AUTOMATION_PREPASS_LINKED_RAMP fnv1a=%016llx",
+			static_cast<unsigned long long>(frameBitsHash(firstBuffer->values(),
+				static_cast<f_cnt_t>(firstBuffer->length()))));
+	}
+
+	//! A control-side cache cannot hide a value or ramp published before the
+	//! render owner's registry pass for the same period.
+	void controlPreparedCacheRefreshesAfterPublishedChanges()
+	{
+		FloatModel model(0.0f, 0.0f, 1.0f, 0.001f);
+		QVERIFY(model.valueBuffer() == nullptr);
+
+		model.setValue(1.0f);
+		AutomationRamp ramp;
+		QVERIFY(ramp.addKnot(0, 0.0f));
+		QVERIFY(ramp.addKnot(periodFrames() - 1, 1.0f));
+		model.publishAutomationRamp(ramp);
+		model.prepareValueBufferForRender();
+
+		const ValueBuffer* const refreshed = model.valueBuffer();
+		QVERIFY(refreshed != nullptr);
+		QCOMPARE(refreshed->values()[0], 0.0f);
+		QCOMPARE(refreshed->values()[refreshed->length() - 1], 1.0f);
 	}
 
 	//! 8.1 ducking: the receiver's gain follows the key channel. The ducker
@@ -487,6 +1003,82 @@ private slots:
 			static_cast<int>(xml.count("<effect ")));
 	}
 
+	//! Tilt must bias the detector even when the detector reads an external
+	//! sidechain: Tilt is documented as biasing the sidechain toward the low
+	//! or high frequencies, so with a sidechain keyed by a steady DC signal
+	//! the Tilt setting must change how hard the bus is ducked. Before the fix
+	//! the Tilt filter ran on the channel signal only, so the external key was
+	//! never tilted and both settings ducked identically.
+	void tiltAlsoBiasesAnExternalSidechainKey()
+	{
+		if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
+
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		const int bus = mixer->createBusChannel();
+		mixer->channelSendModel(1, 0)->setValue(0.0f); // key channel is not audible
+		QVERIFY(mixer->createChannelSend(2, bus, 1.0f) != nullptr);
+		QVERIFY(mixer->createSidechainSend(1, bus, 1.0f,
+			SidechainTapPoint::PostFader) != nullptr);
+
+		EffectChain* busChain = chainOf(mixer, bus);
+		Effect* compressor = Effect::instantiate("compressor", busChain, nullptr);
+		QVERIFY2(compressor != nullptr,
+			"native Compressor plugin could not be instantiated");
+		busChain->appendEffect(compressor);
+
+		PeriodHarness harness(mixer);
+		const float key = 0.5f;
+		const float program = 0.02f;
+
+		//! Configure the compressor through its normal XML path and measure the
+		//! steady level the bus is ducked to with that Tilt setting.
+		auto duckedLevelForTilt = [&](const char* tilt) {
+			QDomDocument doc;
+			QDomElement effect = doc.createElement("effect");
+			effect.setAttribute("on", "1");
+			effect.setAttribute("wet", "1");
+			QDomElement controls = doc.createElement("CompressorControls");
+			controls.setAttribute("threshold", "-20");
+			controls.setAttribute("ratio", "20");
+			controls.setAttribute("attack", "1");
+			controls.setAttribute("release", "50");
+			controls.setAttribute("knee", "0");
+			controls.setAttribute("peakmode", "1");
+			controls.setAttribute("rms", "1");
+			controls.setAttribute("autoMakeup", "0");
+			controls.setAttribute("outGain", "0");
+			controls.setAttribute("tilt", tilt);
+			effect.appendChild(controls);
+			compressor->restoreState(effect);
+
+			double level = 0.0;
+			int measured = 0;
+			for (int p = 0; p < 16; ++p)
+			{
+				feedDc(harness, 1, key);
+				feedDc(harness, 2, program);
+				const std::vector<SampleFrame> out = harness.render();
+				// Skip the first half: the tilt filter and the envelope settle.
+				if (p >= 8) { level += meanAbs(out, 0, harness.fpp()); ++measured; }
+			}
+			return level / measured;
+		};
+
+		const double flat = duckedLevelForTilt("0");
+		const double lowBiased = duckedLevelForTilt("-6");
+
+		QVERIFY2(flat > 0.0, "the bus measured silence with the key on");
+		QVERIFY2(lowBiased < flat,
+			qPrintable(QString("Tilt did not bias the external sidechain key: "
+				"flat %1, low-biased %2").arg(flat).arg(lowBiased)));
+
+		evidence("SIDECHAIN_TILT key=%.4f program=%.4f flat=%.6f low_biased=%.6f "
+			"drop_db=%.2f", key, program, flat, lowBiased, toDb(lowBiased / flat));
+	}
+
 	//! A sidechain send that would close a scheduling cycle is refused.
 	void cycleFormingSidechainSendIsRejected()
 	{
@@ -506,9 +1098,273 @@ private slots:
 			mixer->channelSidechainSend(2, 1) == nullptr ? 0 : 1);
 	}
 
+	//! Q050-161: worker reads of a prepared ramp are cache hits that take no
+	//! lock, while control updates made during the period wait for the period
+	//! boundary and the next serial prepass recomputes from them. Four periods:
+	//! (1) ramp A is read from a realtime worker while another thread holds the
+	//! legacy value-buffer mutex AND a control thread is blocked trying to write
+	//! two values - every read is a hit with ramp A's exact bits; (2) the
+	//! writes land at the boundary and the prepass interpolates old -> new
+	//! exactly as the legacy algorithm; (3) a newly published ramp B replaces
+	//! it; (4) without a ramp and without a new write the buffer is null and
+	//! the static value is the last write.
+	void cachedRampHitsTakeNoLockAndRecomputeAfterConcurrentUpdates()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 2) { mixer->createChannel(); }
+		AudioEngine* const engine = Engine::audioEngine();
+		FloatModel* const gain = &mixer->mixerChannel(1)->m_volumeModel;
+		gain->setValue(0.5f);
+		PeriodHarness harness(mixer);
+		const f_cnt_t fpp = harness.fpp();
+
+		AutomationRamp rampA;
+		QVERIFY(rampA.addKnot(0, 0.125f));
+		QVERIFY(rampA.addKnot(fpp - 1, 0.875f));
+		AutomationRamp rampB;
+		QVERIFY(rampB.addKnot(0, 1.5f));
+		QVERIFY(rampB.addKnot(fpp - 1, 0.25f));
+
+		constexpr int Reads = 256;
+		std::vector<float> preparedA;
+		float writtenFirst = 0.0f;
+		float writtenSecond = 0.0f;
+		{
+			// Period 1: this thread is the render owner (it holds the change lock).
+			std::optional<AudioEngine::RequestChangesGuard> period{engine->requestChangesGuard()};
+			gain->publishAutomationRamp(rampA);
+			engine->prepareAutomatableModelBuffers();
+			preparedA = readBufferOnRealtimeWorker(gain, 1);
+			QCOMPARE(preparedA.size(), static_cast<std::size_t>(fpp));
+			QVERIFY(std::fabs(preparedA.front() - 0.125f) < 1.0e-3f);
+			QVERIFY(std::fabs(preparedA.back() - 0.875f) < 1.0e-3f);
+
+			// A control write during the period waits for the boundary; it never
+			// makes the audio side wait.
+			std::atomic<bool> written{false};
+			std::thread control([&]
+			{
+				gain->setValue(0.25f);
+				writtenFirst = gain->value();
+				gain->setValue(0.75f);
+				writtenSecond = gain->value();
+				written.store(true, std::memory_order_release);
+			});
+			const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+			while (engine->modelChangeWaiters() == 0 && std::chrono::steady_clock::now() < deadline)
+			{
+				std::this_thread::yield();
+			}
+			const bool writerWaiting = engine->modelChangeWaiters() > 0;
+
+			QMutex& sentinel = static_cast<AutomatableModel*>(gain)->m_valueBufferMutex;
+			std::promise<void> holding;
+			std::promise<void> release;
+			std::shared_future<void> released = release.get_future().share();
+			std::thread holder([&sentinel, &holding, released]
+			{
+				const QMutexLocker held(&sentinel);
+				holding.set_value();
+				released.wait();
+			});
+			holding.get_future().wait();
+
+			s_cacheHits.store(0);
+			s_cacheHitOffRealtime.store(0);
+			AutomatableModel::setValueBufferCacheHitProbeForTest(&PhaseDSidechainTest::countCacheHit);
+			std::promise<std::vector<float>> readDone;
+			auto readResult = readDone.get_future();
+			std::thread reader([gain, &readDone, fpp]
+			{
+				const RealtimeScope realtime;
+				std::vector<float> mismatch;
+				const ValueBuffer* first = nullptr;
+				for (int read = 0; read < Reads; ++read)
+				{
+					const ValueBuffer* buffer = gain->valueBuffer();
+					if (buffer == nullptr || static_cast<f_cnt_t>(buffer->length()) != fpp
+						|| (first != nullptr && buffer != first))
+					{
+						mismatch.push_back(static_cast<float>(read));
+						continue;
+					}
+					first = buffer;
+				}
+				std::vector<float> lastRead;
+				if (first != nullptr) { lastRead.assign(first->values(), first->values() + fpp); }
+				if (!mismatch.empty()) { lastRead.clear(); }
+				readDone.set_value(lastRead);
+			});
+			const bool completed = readResult.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+			release.set_value();
+			holder.join();
+			reader.join();
+			AutomatableModel::setValueBufferCacheHitProbeForTest(nullptr);
+			const bool writtenInsidePeriod = written.load(std::memory_order_acquire);
+			const std::vector<float> hitValues = readResult.get();
+
+			Controller::triggerFrameCounter();
+			AutomatableModel::incrementPeriodCounter();
+			// Releasing the change lock is the period boundary; every thread is joined before any check, so a
+			// failing check reports instead of leaving a thread behind.
+			period.reset();
+			control.join();
+
+			QVERIFY2(writerWaiting, "the control writer never reached the change lock");
+			QVERIFY2(completed, "a cache-hit valueBuffer() read waited on a lock (Q050-161)");
+			QCOMPARE(s_cacheHits.load(), Reads);
+			QCOMPARE(s_cacheHitOffRealtime.load(), 0);
+			QCOMPARE(hitValues.size(), preparedA.size());
+			for (f_cnt_t frame = 0; frame < fpp; ++frame)
+			{
+				QCOMPARE(std::bit_cast<std::uint32_t>(hitValues[frame]),
+					std::bit_cast<std::uint32_t>(preparedA[frame]));
+			}
+			QVERIFY2(!writtenInsidePeriod, "the control write landed inside the render period");
+			QVERIFY(written.load(std::memory_order_acquire));
+		}
+
+		// Period 2: the prepass recomputes from the published pair.
+		const std::vector<float> interpolated = preparePeriodAndRead(gain, nullptr);
+		ValueBuffer legacy(fpp);
+		legacy.interpolate(writtenFirst, writtenSecond);
+		QCOMPARE(interpolated.size(), static_cast<std::size_t>(fpp));
+		for (f_cnt_t frame = 0; frame < fpp; ++frame)
+		{
+			QCOMPARE(std::bit_cast<std::uint32_t>(interpolated[frame]),
+				std::bit_cast<std::uint32_t>(legacy.values()[frame]));
+		}
+
+		// Period 3: a new ramp replaces the cache in the next prepass.
+		const std::vector<float> preparedB = preparePeriodAndRead(gain, &rampB);
+		QCOMPARE(preparedB.size(), static_cast<std::size_t>(fpp));
+		QVERIFY(std::fabs(preparedB.front() - 1.5f) < 1.0e-3f);
+		QVERIFY(std::fabs(preparedB.back() - 0.25f) < 1.0e-3f);
+
+		// Period 4: nothing sample-exact; the static value is the last write.
+		QVERIFY(preparePeriodAndRead(gain, nullptr).empty());
+		QCOMPARE(gain->value(), writtenSecond);
+
+		evidence("Q050_161_CONCURRENT_RAMP reads=%d hits=%d waited=0 first_write=%.4f second_write=%.4f",
+			Reads, s_cacheHits.load(), static_cast<double>(writtenFirst), static_cast<double>(writtenSecond));
+	}
+
+	//! Q050-161: the full-mixer render of a sample-accurate ramp, with the
+	//! fader's cache-hit reads instrumented on the rendering thread, completes
+	//! while the legacy mutex is held, allocates nothing, answers the fader from
+	//! the cache, and is bit-identical to the reference render pinned by
+	//! AutomationPrepassProofTest (source=ramp).
+	void instrumentedRampRenderHitsCacheWithoutLockAndMatchesReference()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+		FloatModel* const gain = &mixer->mixerChannel(1)->m_volumeModel;
+		gain->setValue(0.75f);
+		PeriodHarness harness(mixer);
+		AutomationRamp ramp;
+		QVERIFY(ramp.addKnot(0, 0.125f));
+		QVERIFY(ramp.addKnot(harness.fpp() - 1, 0.875f));
+		gain->publishAutomationRamp(ramp);
+		feedDc(harness, 1, 0.25f);
+
+		s_cacheHits.store(0);
+		s_cacheHitOffRealtime.store(0);
+		AutomatableModel::setValueBufferCacheHitProbeForTest(&PhaseDSidechainTest::countCacheHit);
+		std::uint64_t allocations = 0;
+		const bool completed = renderCompletesWhileCacheMutexHeld(gain, harness, &allocations);
+		AutomatableModel::setValueBufferCacheHitProbeForTest(nullptr);
+		QVERIFY2(completed, "the ramp render waited on m_valueBufferMutex (Q050-161)");
+		QCOMPARE(allocations, std::uint64_t{0});
+		QVERIFY2(s_cacheHits.load() > 0, "the fader's valueBuffer() was not answered from the period cache");
+		QCOMPARE(s_cacheHitOffRealtime.load(), 0);
+		const QByteArray rendered = sha256(m_lastRender);
+		QCOMPARE(rendered,
+			QByteArrayLiteral("a7348883c00f4f81640c7f0f022a02d4ed706e60312431da5fcf5024d18c5a69"));
+		evidence("Q050_161_INSTRUMENTED_RENDER hits=%d allocations=%llu sha256=%s", s_cacheHits.load(),
+			static_cast<unsigned long long>(allocations), rendered.constData());
+	}
+
 private:
+	static std::atomic<int> s_cacheHits;
+	static std::atomic<int> s_cacheHitOffRealtime;
+	static void countCacheHit(AutomatableModel*)
+	{
+		s_cacheHits.fetch_add(1, std::memory_order_relaxed);
+		if (!RealtimeScope::isActive()) { s_cacheHitOffRealtime.fetch_add(1, std::memory_order_relaxed); }
+	}
+
+	//! Reads @a model's period buffer once from a realtime worker thread (the
+	//! shape of a mixer job); an empty vector means the read returned null.
+	static std::vector<float> readBufferOnRealtimeWorker(AutomatableModel* model, int reads)
+	{
+		std::vector<float> values;
+		std::thread worker([model, reads, &values]
+		{
+			const RealtimeScope realtime;
+			const ValueBuffer* buffer = nullptr;
+			for (int read = 0; read < reads; ++read) { buffer = model->valueBuffer(); }
+			if (buffer != nullptr) { values.assign(buffer->values(), buffer->values() + buffer->length()); }
+		});
+		worker.join();
+		return values;
+	}
+
+	//! One serial period: publish @a ramp (if any), run the prepass, read from a
+	//! realtime worker, close the period.
+	static std::vector<float> preparePeriodAndRead(AutomatableModel* model, const AutomationRamp* ramp)
+	{
+		auto period = Engine::audioEngine()->requestChangesGuard();
+		if (ramp != nullptr) { model->publishAutomationRamp(*ramp); }
+		Engine::audioEngine()->prepareAutomatableModelBuffers();
+		std::vector<float> values = readBufferOnRealtimeWorker(model, 2);
+		Controller::triggerFrameCounter();
+		AutomatableModel::incrementPeriodCounter();
+		return values;
+	}
+
+	bool renderCompletesWhileCacheMutexHeld(AutomatableModel* model, PeriodHarness& harness,
+		std::uint64_t* allocations)
+	{
+		QMutex& mutex = model->m_valueBufferMutex;
+		std::promise<void> holding;
+		std::promise<void> release;
+		std::shared_future<void> released = release.get_future().share();
+		std::thread holder([&mutex, &holding, released]
+		{
+			const QMutexLocker held(&mutex);
+			holding.set_value();
+			released.wait();
+		});
+		holding.get_future().wait();
+
+		std::promise<void> rendered;
+		std::future<void> done = rendered.get_future();
+		std::thread renderThread([this, &harness, allocations, &rendered]
+		{
+			test::resetAllocationCount();
+			const bool wasCounting = test::tlCountAllocations;
+			test::tlCountAllocations = true;
+			const std::vector<SampleFrame>& out = harness.render();
+			test::tlCountAllocations = wasCounting;
+			m_lastRender = out;
+			*allocations = test::tlAllocationCount;
+			rendered.set_value();
+		});
+		const bool completed = done.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+		release.set_value();
+		holder.join();
+		renderThread.join();
+		return completed;
+	}
+
 	std::unique_ptr<QTemporaryDir> m_pluginDir;
+	std::vector<SampleFrame> m_lastRender;
 };
+
+std::atomic<int> PhaseDSidechainTest::s_cacheHits{0};
+std::atomic<int> PhaseDSidechainTest::s_cacheHitOffRealtime{0};
 
 QTEST_GUILESS_MAIN(PhaseDSidechainTest)
 #include "PhaseDSidechainTest.moc"

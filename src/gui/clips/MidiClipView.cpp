@@ -36,14 +36,19 @@
 
 #include "AutomationEditor.h"
 #include "ClipEditsMenu.h"
+#include "ClipLinks.h"
 #include "ConfigManager.h"
+#include "ControlClipLinkSupport.h"
+#include "ControlRegistry.h"
 #include "DeprecationHelper.h"
 #include "GuiApplication.h"
+#include "LinkedClipEdits.h"
 #include "MainWindow.h"
 #include "NoteEditor.h"
 #include "InstrumentTrackView.h"
 #include "MidiClip.h"
 #include "PianoRoll.h"
+#include "ProjectJournal.h"
 #include "RenameDialog.h"
 #include "SongEditor.h"
 #include "TrackContainerView.h"
@@ -51,6 +56,53 @@
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+void setMidiClipName(MidiClip* clip, const QString& name)
+{
+	if (clip->name() == name) { return; }
+	QVector<JournallingObject*> toCheckpoint;
+	if (clip->linkId() > 0)
+	{
+		for (Clip* member : ClipLinks::groupOf(clip)) { toCheckpoint.append(member); }
+	}
+	else { toCheckpoint.append(clip); }
+	if (ProjectJournal* journal = Engine::projectJournal(); journal != nullptr)
+	{
+		journal->addJournalCheckPoint(toCheckpoint);
+	}
+	clip->setName(name);
+	Engine::getSong()->setModified();
+}
+
+std::vector<ControllerPoint> controllerPrefix(const ControllerLane& lane, tick_t end)
+{
+	std::vector<ControllerPoint> points;
+	for (const ControllerPoint& point : lane.points)
+	{
+		if (point.tick <= end) { points.push_back(point); }
+	}
+	const int endValue = lane.valueAt(end);
+	if (points.empty()) { points.push_back({end, endValue}); }
+	else if (points.back().tick < end && points.back().value != endValue) { points.push_back({end, endValue}); }
+	return points;
+}
+
+std::vector<ControllerPoint> controllerSegment(const ControllerLane& lane, tick_t start, tick_t end)
+{
+	std::vector<ControllerPoint> points{{0, lane.valueAt(start)}};
+	for (const ControllerPoint& point : lane.points)
+	{
+		if (point.tick > start && point.tick < end) { points.push_back({point.tick - start, point.value}); }
+	}
+	const int endValue = lane.valueAt(end);
+	if (points.back().value != endValue) { points.push_back({end - start, endValue}); }
+	return points;
+}
+
+} // namespace
 
 constexpr int BeatStepButtonOffset = 4;
 
@@ -85,7 +137,11 @@ MidiClip* MidiClipView::getMidiClip()
 
 void MidiClipView::update()
 {
-	setToolTip(m_clip->name());
+	const bool linked = m_clip->linkId() > 0;
+	const QString label = m_clip->name().isEmpty() ? tr("MIDI clip") : tr("MIDI clip: %1").arg(m_clip->name());
+	setAccessibleName(linked ? tr("Linked %1").arg(label) : label);
+	setAccessibleDescription(linked ? tr("This MIDI clip is linked. Its notes, name and colour are shared.") : label);
+	setToolTip(linked ? tr("%1 (linked)").arg(m_clip->name()) : m_clip->name());
 
 	ClipView::update();
 }
@@ -123,7 +179,7 @@ void MidiClipView::setGhostInAutomationEditor()
 	getGUI()->mainWindow()->revealPanel(QStringLiteral("automation"));
 }
 
-void MidiClipView::resetName() { m_clip->setName(""); }
+void MidiClipView::resetName() { setMidiClipName(m_clip, QString()); }
 
 
 
@@ -133,7 +189,7 @@ void MidiClipView::changeName()
 	QString s = m_clip->name();
 	RenameDialog rename_dlg( s );
 	rename_dlg.exec();
-	m_clip->setName( s );
+	setMidiClipName(m_clip, s);
 }
 
 
@@ -186,7 +242,7 @@ void MidiClipView::transposeSelection()
 		{
 			note->setKey(note->key() + semitones);
 		}
-		emit clip->dataChanged();
+		clip->notesChanged();
 	}
 	// At least one clip must have notes to show the transpose dialog, so something *has* changed
 	Engine::getSong()->setModified();
@@ -239,11 +295,24 @@ void MidiClipView::constructContextMenu( QMenu * _cm )
 	else
 	{
 		// 0.5.0 L07 (ED-085): the chance and ratchet of the step under the menu (ClipEditsMenu.cpp).
+		// Luna cluster 3261: the product and the `- 1` were `int`, so a malformed step count
+		// (a negative or astronomically large one loaded from a project) overflowed here.
 		const QPoint at = mapFromGlobal(QCursor::pos());
-		const int step = (at.x() - BORDER_WIDTH) * m_clip->m_steps / std::max(1, width() - BORDER_WIDTH * 2);
-		addStepEditsMenu(_cm, m_clip, std::clamp(step, 0, std::max(0, m_clip->m_steps - 1)));
+		// new-p14-176: the loader allows up to INT_MAX / (2 * ticksPerBar) steps, so a cursor well across
+		// the clip overflowed the product in int; widen one operand before the multiplication.
+		const qint64 step = static_cast<qint64>(at.x() - BORDER_WIDTH) * m_clip->m_steps
+			/ std::max(1, width() - BORDER_WIDTH * 2);
+		addStepEditsMenu(_cm, m_clip,
+			static_cast<int>(std::clamp(step, qint64{0}, qint64{std::max(0, m_clip->m_steps - 1)})));
 	}
 	_cm->addSeparator();
+	if (m_clip->linkId() > 0)
+	{
+		_cm->addAction(embed::getIconPixmap("edit_copy"), tr("Make Unique"), [this]() {
+			ControlRegistry::instance()->invoke(QStringLiteral("clip.link_make_unique"),
+				{{QStringLiteral("clip"), control::cliplink::clipIdOf(m_clip)}});
+		});
+	}
 
 	_cm->addAction( embed::getIconPixmap( "reload" ), tr( "Reset name" ),
 						this, SLOT(resetName()));
@@ -359,6 +428,27 @@ void MidiClipView::mergeClips(QVector<ClipView*> clipvs)
 			}
 		}
 
+		// Merge the visible controller window in the same song-time frame as this clip's notes.
+		// setControllerPoints keeps one point per tick, so a later clip in clipvs wins a collision.
+		const tick_t controllerStart = -mcView->getMidiClip()->startTimeOffset().getTicks();
+		const tick_t controllerEnd = mcView->getMidiClip()->length().getTicks()
+			- mcView->getMidiClip()->startTimeOffset().getTicks();
+		const tick_t controllerShift = mcView->getMidiClip()->startPosition().getTicks() - earliestPos.getTicks();
+		for (const ControllerLane& lane : mcView->getMidiClip()->controllers().lanes())
+		{
+			std::vector<ControllerPoint> points;
+			if (const ControllerLane* existing = newMidiClip->controllers().lane(lane.kind, lane.controller))
+			{
+				points = existing->points;
+			}
+			for (ControllerPoint point : controllerSegment(lane, controllerStart, controllerEnd))
+			{
+				point.tick += controllerShift;
+				points.push_back(point);
+			}
+			newMidiClip->setControllerPoints(lane.kind, lane.controller, std::move(points));
+		}
+
 		// We disable the journalling system before removing, so the
 		// removal doesn't get added to the undo/redo history
 		clipv->getClip()->saveJournallingState(false);
@@ -381,9 +471,18 @@ void MidiClipView::mergeClips(QVector<ClipView*> clipvs)
 
 void MidiClipView::clearNotesOutOfBounds()
 {
-	m_clip->getTrack()->addJournalCheckPoint();
+	// This shared note-content edit replaces a clip, so capture every linked track as ONE undo step.
+	if (m_clip->linkId() > 0) { ClipLinks::checkpointGroupTracks(m_clip); }
+	else { m_clip->getTrack()->addJournalCheckPoint(); }
 	m_clip->getTrack()->saveJournallingState(false);
 
+	// The clone keeps this clip's linkId and joins the track, so it is a member
+	// of the link group from the moment it exists. Its edits below would then
+	// mirror onto this clip and its peers: a clear would empty the group before
+	// the loop reads this clip's notes, and each add would overwrite them. So
+	// the clone is built with mirroring suspended, and the peers keep their
+	// notes. remove() edits no notes.
+	ClipLinks::MirroringSuspension noMirroring;
 	auto newClip = m_clip->clone();
 	newClip->clearNotes();
 
@@ -403,12 +502,20 @@ void MidiClipView::clearNotesOutOfBounds()
 			newClip->addNote(newNote, false);
 		}
 	}
+	for (const ControllerLane& lane : m_clip->controllers().lanes())
+	{
+		newClip->setControllerPoints(lane.kind, lane.controller,
+			controllerSegment(lane, startBound.getTicks(), endBound.getTicks()));
+	}
 	newClip->setStartTimeOffset(0);
 	newClip->changeLength(m_clip->length());
 	newClip->updateLength();
 
+	// The group's other members take the same shared notes. Each instance keeps its independent source window.
+	Track* track = m_clip->getTrack();
 	remove();
-	m_clip->getTrack()->restoreJournallingState();
+	ClipLinks::adoptTrimmedContent(newClip);
+	track->restoreJournallingState();
 }
 
 void MidiClipView::bulkClearNotesOutOfBounds(QVector<ClipView*> clipvs)
@@ -540,6 +647,7 @@ void MidiClipView::wheelEvent(QWheelEvent * we)
 			{
 				n->setVolume( qMax( 0, vol - 5 ) );
 			}
+			m_clip->notesChanged();
 
 			Engine::getSong()->setModified();
 			update();
@@ -557,6 +665,13 @@ void MidiClipView::wheelEvent(QWheelEvent * we)
 static int computeNoteRange(int minKey, int maxKey)
 {
 	return (maxKey - minKey) + 1;
+}
+
+
+int MidiClipView::beatStepCountToPaint(int steps, int drawableWidth)
+{
+	const int stepCount = std::max(1, steps);
+	return drawableWidth / stepCount > 0 ? stepCount : 0;
 }
 
 void MidiClipView::paintEvent( QPaintEvent * )
@@ -651,6 +766,7 @@ void MidiClipView::paintEvent( QPaintEvent * )
 		QPixmap stephighlight;
 		const int steps = std::max(1, m_clip->m_steps);
 		const int w = width() - 2 * BORDER_WIDTH;
+		const int stepsToPaint = beatStepCountToPaint(steps, w);
 
 		// scale step graphics to fit the beat clip length
 		stepon0
@@ -664,12 +780,12 @@ void MidiClipView::paintEvent( QPaintEvent * )
 		stephighlight = m_stepBtnHighlight.scaled(
 			w / steps, m_stepBtnHighlight.height(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 
-		for (int it = 0; it < steps; it++)	// go through all the steps in the beat clip
+		for (int it = 0; it < stepsToPaint; it++)	// go through the steps with visible buttons
 		{
 			Note* n = m_clip->noteAtStep(it);
 
 			// figure out x and y coordinates for step graphic
-			const int x = BORDER_WIDTH + static_cast<int>(it * w / steps);
+			const int x = BORDER_WIDTH + static_cast<int>(static_cast<qint64>(it) * w / steps);
 			const int y = BeatStepButtonOffset;
 
 			const bool isAtPlayPos = Engine::getSong()->getPlayPos(Song::PlayMode::Pattern) * TimePos::stepsPerBar() / TimePos::ticksPerBar() == it
@@ -848,6 +964,17 @@ void MidiClipView::paintEvent( QPaintEvent * )
 	{
 		paintTextLabel(m_clip->name(), p);
 	}
+	if (m_clip->linkId() > 0)
+	{
+		p.save();
+		p.setRenderHint(QPainter::Antialiasing, true);
+	const QColor marker = c.lightness() > 128 ? c.darker(260) : c.lighter(240);
+		p.setPen(QPen(marker, 1.4));
+		p.setBrush(Qt::NoBrush);
+		p.drawRoundedRect(QRectF(width() - 20, 4, 10, 6), 3, 3);
+		p.drawRoundedRect(QRectF(width() - 15, 7, 10, 6), 3, 3);
+		p.restore();
+	}
 
 	if( !( fixedClips() && beatClip ) )
 	{
@@ -890,9 +1017,17 @@ bool MidiClipView::destructiveSplitClip(const TimePos pos)
 	// clip (bad), and a clip the same length as the original one (pointless).
 	if (splitPos <= m_initialClipPos || splitPos >= m_initialClipEnd) { return false; }
 
+	// Linked content stays shared: splitting changes only this instance's window, and both pieces
+	// continue to expose the same note list.
+	if (m_clip->linkId() > 0) { return ClipView::splitClip(pos); }
+
 	m_clip->getTrack()->addJournalCheckPoint();
 	m_clip->getTrack()->saveJournallingState(false);
 
+	// Both halves are clones that join this clip's link group as they are made
+	// (see clearNotesOutOfBounds): built with mirroring suspended, so neither
+	// clear nor copy reaches this clip's notes before the loops below read them.
+	ClipLinks::MirroringSuspension noMirroring;
 	auto leftClip = m_clip->clone();
 	leftClip->clearNotes();
 	auto rightClip =  m_clip->clone();
@@ -927,6 +1062,15 @@ bool MidiClipView::destructiveSplitClip(const TimePos pos)
 			movedNote.setLength(internalSplitPos - note->pos());
 			leftClip->addNote(movedNote, false);
 		}
+	}
+
+	const tick_t splitTick = internalSplitPos.getTicks();
+	const tick_t controllerEnd = m_clip->length().getTicks() - m_clip->startTimeOffset().getTicks();
+	for (const ControllerLane& lane : m_clip->controllers().lanes())
+	{
+		leftClip->setControllerPoints(lane.kind, lane.controller, controllerPrefix(lane, splitTick));
+		rightClip->setControllerPoints(lane.kind, lane.controller,
+			controllerSegment(lane, splitTick, controllerEnd));
 	}
 
 	leftClip->movePosition(m_initialClipPos);

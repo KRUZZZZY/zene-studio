@@ -23,27 +23,39 @@
  */
 
 #include "Mixer.h"
+#include "RealtimeExport.h"
 #include "RecorderTaps.h"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
+#include <QDebug>
 #include <QDomElement>
+#include <QSet>
+#include <QScopedValueRollback>
 
 #include "AudioBusHandle.h"
 #include "AudioEngine.h"
+#include "AudioPortsModel.h"
 #include "AudioEngineWorkerThread.h"
+#include "AudioEngineWorkerThread.h"
+#include "AutomatableModel.h"
+#include "AutomationClip.h"
 #include "DspLoadProbe.h"
 #include "Mixer.h"
 #include "Song.h"
 #include "VcaGroup.h"
 
+#include "InstrumentOutputBuses.h"
 #include "InstrumentTrack.h"
+#include "LocaleHelper.h"
 #include "MixHelpers.h"
 #include "MixerListen.h"
 #include "MixerGroups.h"
 #include "MixerSendPan.h"
 #include "MixerStrip.h"
+#include "StripMeters.h"
 #include "PatternStore.h"
 #include "ProjectIds.h"
 #include "SampleTrack.h"
@@ -52,6 +64,162 @@
 
 namespace lmms
 {
+
+namespace
+{
+
+//! What a project-supplied channel index turned out to be.
+enum class ProjectIndex
+{
+	Ok,          //!< a channel index this mixer can address
+	NotANumber,  //!< the attribute carries no number at all
+	OutOfRange   //!< a number the project file does not back up
+};
+
+//! True when the text is a decimal integer literal - a number that did not
+//! fit the 64-bit conversion, rather than a non-number.
+bool looksLikeDecimalInteger(const QString& text)
+{
+	// QString::toLongLong() trims the whitespace around the number before it
+	// converts it (" 42 " is 42), so this classification has to trim the same
+	// way: a padded number that did not fit 64 bits is still a number, and it
+	// must be reported as one instead of being dropped as a non-number.
+	const QString trimmed = text.trimmed();
+	int i = 0;
+	if (!trimmed.isEmpty() && (trimmed.at(0) == QLatin1Char('-') || trimmed.at(0) == QLatin1Char('+'))) { i = 1; }
+	if (i >= trimmed.size()) { return false; }
+	for (; i < trimmed.size(); ++i)
+	{
+		const QChar c = trimmed.at(i);
+		if (c < QLatin1Char('0') || c > QLatin1Char('9')) { return false; }
+	}
+	return true;
+}
+
+//! The number of distinct channel indices the project file describes. The
+//! application writes one <mixerchannel> element per channel with a distinct
+//! index, so a saved project keeps its full range. Counting unique indices
+//! prevents duplicate elements from inflating the allocation bound.
+int countDescribedChannels( const QDomElement & _this )
+{
+	QSet<qlonglong> indices;
+	for( QDomNode node = _this.firstChild(); ! node.isNull(); node = node.nextSibling() )
+	{
+		const QDomElement channel = node.toElement();
+		if( channel.nodeName() != QString( "mixerchannel" ) ) { continue; }
+		bool ok = false;
+		const qlonglong index = channel.attribute( "num" ).toLongLong( &ok );
+		if( ok && index >= 0 ) { indices.insert( index ); }
+	}
+	return indices.size();
+}
+
+//! True when the index is one the project file backs up: 0..describedChannels.
+//! The bound is the FILE's own distinct channel indices, not a fixed number, so a
+//! project the application created and saved loads however many channels it
+//! has - while an index the file does not describe (which is what a hostile
+//! file asks for) is refused: honouring it would let a 60-byte file choose
+//! how much memory the load takes.
+bool isSupportedProjectMixerIndex(int index, int describedChannels)
+{
+	return index >= 0 && index <= describedChannels;
+}
+
+//! Read a project-supplied channel index. The value is converted as a WIDE
+//! integer first: QString::toInt() fails on a number that does not fit in an
+//! int and returns 0 for it, and 0 is the master - a conversion failure must
+//! never become a channel. An index the file does not back up is refused.
+ProjectIndex parseProjectChannelIndex(const QString& text, int describedChannels, int& index)
+{
+	bool ok = false;
+	const qlonglong value = text.toLongLong(&ok);
+	if (!ok)
+	{
+		// The number did not even fit in 64 bits. It is still a number, so
+		// it is refused AND reported, not dropped as a non-number.
+		index = 0;
+		return looksLikeDecimalInteger(text) ? ProjectIndex::OutOfRange : ProjectIndex::NotANumber;
+	}
+	if (value < 0 || value > describedChannels)
+	{
+		index = 0;
+		return ProjectIndex::OutOfRange;
+	}
+	index = static_cast<int>(value);
+	return ProjectIndex::Ok;
+}
+
+//! True when @a element carries @a name as a float attribute whose value is not finite.
+//! loadSettings() would otherwise feed it straight into the model (NaN, +/-inf), so the
+//! loader skips that one setting and keeps the default it already reset to.
+bool hasNonFiniteFloatAttribute(const QDomElement& element, const QString& name)
+{
+	if (!element.hasAttribute(name)) { return false; }
+	// The converted value is checked regardless of the conversion flag: an overflowing
+	// literal ("1e999") converts to infinity with the flag cleared.
+	const float value = LocaleHelper::toFloat(element.attribute(name));
+	return !std::isfinite(value);
+}
+
+//! True when any point of @a clip's automation carries a non-finite float.
+bool hasNonFiniteAutomationValue(const QDomElement& clip)
+{
+	for (QDomElement point = clip.firstChildElement(QStringLiteral("time")); !point.isNull();
+		 point = point.nextSiblingElement(QStringLiteral("time")))
+	{
+		if (hasNonFiniteFloatAttribute(point, QStringLiteral("value"))
+			|| hasNonFiniteFloatAttribute(point, QStringLiteral("outValue"))
+			|| hasNonFiniteFloatAttribute(point, QStringLiteral("inTan"))
+			|| hasNonFiniteFloatAttribute(point, QStringLiteral("outTan"))
+			|| hasNonFiniteFloatAttribute(point, QStringLiteral("bend")))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+//! The child element AutomatableModel::loadSettings() would read @a name's value from.
+QDomElement modelValueElement(const QDomElement& element, const QString& name)
+{
+	QDomElement mismatchedNamedElement;
+	for (QDomElement child = element.firstChildElement(); !child.isNull(); child = child.nextSiblingElement())
+	{
+		const bool matches = (!child.hasAttribute(QStringLiteral("nodename")) && child.tagName() == name)
+			|| child.attribute(QStringLiteral("nodename")) == name;
+		if (matches)
+		{
+			return child;
+		}
+		// AutomatableModel::loadSettings() starts with namedItem(name). If that
+		// element's nodename mismatches and there is no matching sibling, it still
+		// loads the original element, so validate it too.
+		if (mismatchedNamedElement.isNull() && child.tagName() == name) { mismatchedNamedElement = child; }
+	}
+	return mismatchedNamedElement;
+}
+
+//! True when the model @a name of @a element would load a non-finite value, from its
+//! attribute form, its child-element form or its automation clip.
+bool hasNonFiniteModelValue(const QDomElement& element, const QString& name)
+{
+	const QDomElement automation = element.firstChildElement(AutomationClip::classNodeName())
+		.firstChildElement(name);
+	if (!automation.isNull()) { return hasNonFiniteAutomationValue(automation); }
+
+	const QDomElement valueElement = modelValueElement(element, name);
+	return valueElement.isNull()
+		? hasNonFiniteFloatAttribute(element, name)
+		: hasNonFiniteFloatAttribute(valueElement, QStringLiteral("value"));
+}
+
+//! Load a persisted mixer model unless the file would give it a non-finite value.
+void loadFiniteMixerSetting(FloatModel& model, const QDomElement& element, const QString& name)
+{
+	if (!hasNonFiniteModelValue(element, name)) { model.loadSettings(element, name); }
+}
+
+} // namespace
 
 
 bool MixerRoute::delivers(bool compensate) const
@@ -81,6 +249,8 @@ void MixerRoute::updateName()
 {
 	m_amount.setDisplayName(
 			tr("Amount to send from channel %1 to channel %2").arg(m_from->index()).arg(m_to->index()));
+	m_pan.setDisplayName(
+			tr("Pan of the send from channel %1 to channel %2").arg(m_from->index()).arg(m_to->index()));
 }
 
 
@@ -220,7 +390,6 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_volumeModel(1.f, 0.f, 2.f, 0.001f, _parent),
 	m_panModel(0.f, -1.f, 1.f, 0.001f, _parent),
 	m_name(),
-	m_lock(),
 	m_queued( false ),
 	// D1 (mixer concurrency audit): initialise the mute latch explicitly. It
 	// used to be left indeterminate until the first masterMix().
@@ -249,6 +418,18 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_sidechainBuffer.silenceAllChannels();
 	m_postFaderBuffer.silenceAllChannels();
 	m_surround.init( Engine::audioEngine()->framesPerPeriod() );  // 0.5.0 F7: the side buffer, once
+
+	// cluster new-p10-249: one input partial per render thread (plus one for a
+	// caller outside a render job), sized here on the control thread so the
+	// worker-fed accumulation never allocates on the audio path. A render thread
+	// writes only its own slot; Mixer::reduceInputPartials() reduces the slots
+	// at the period barrier.
+	m_inputPartials.resize( static_cast<std::size_t>(Engine::audioEngine()->renderThreadCount()) + 1 );
+	for( MixerChannel::InputPartial & partial : m_inputPartials )
+	{
+		partial.buffer.assign( Engine::audioEngine()->framesPerPeriod(), SampleFrame{} );
+		partial.quiet.set();
+	}
 }
 
 
@@ -256,6 +437,7 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 
 MixerChannel::~MixerChannel()
 {
+	// m_loudnessOwner (Q050-108) goes with the channel: a channel is deleted while no period is processed.
 	delete[] m_buffer;
 }
 
@@ -362,6 +544,11 @@ void MixerChannel::incrementDeps()
 
 void MixerChannel::unmuteForSolo()
 {
+	// Two visited sets, one per walk direction. A channel reached by the
+	// sender walk is not yet expanded by the receiver walk (and the reverse),
+	// so one shared set would hide it from the walk that must still follow it.
+	std::set<MixerChannel*> senderVisited;
+	std::set<MixerChannel*> receiverVisited;
 	m_muteModel.setValue(false);
 
 	// if channel is not master, unmute also every channel it sends to/receives from
@@ -369,18 +556,27 @@ void MixerChannel::unmuteForSolo()
 	{
 		for (const MixerRoute* sendsRoute : m_sends)
 		{
-			sendsRoute->receiver()->unmuteSenderForSolo();
+			sendsRoute->receiver()->unmuteSenderForSolo(senderVisited, receiverVisited);
 		}
 
 		for (const MixerRoute* receiverRoute : m_receives)
 		{
-			receiverRoute->sender()->unmuteReceiverForSolo();
+			receiverRoute->sender()->unmuteReceiverForSolo(senderVisited, receiverVisited);
 		}
 	}
 }
 
 void MixerChannel::unmuteSenderForSolo()
 {
+	std::set<MixerChannel*> senderVisited;
+	std::set<MixerChannel*> receiverVisited;
+	unmuteSenderForSolo(senderVisited, receiverVisited);
+}
+
+void MixerChannel::unmuteSenderForSolo(std::set<MixerChannel*>& senderVisited,
+	std::set<MixerChannel*>& receiverVisited)
+{
+	if (!senderVisited.insert(this).second) { return; }
 	m_muteModel.setValue(false);
 
 	// if channel is not master, unmute every channel it sends to
@@ -388,7 +584,7 @@ void MixerChannel::unmuteSenderForSolo()
 	{
 		for (const MixerRoute* sendsRoute : m_sends)
 		{
-			sendsRoute->receiver()->unmuteSenderForSolo();
+			sendsRoute->receiver()->unmuteSenderForSolo(senderVisited, receiverVisited);
 		}
 	}
 }
@@ -396,6 +592,15 @@ void MixerChannel::unmuteSenderForSolo()
 
 void MixerChannel::unmuteReceiverForSolo()
 {
+	std::set<MixerChannel*> senderVisited;
+	std::set<MixerChannel*> receiverVisited;
+	unmuteReceiverForSolo(senderVisited, receiverVisited);
+}
+
+void MixerChannel::unmuteReceiverForSolo(std::set<MixerChannel*>& senderVisited,
+	std::set<MixerChannel*>& receiverVisited)
+{
+	if (!receiverVisited.insert(this).second) { return; }
 	m_muteModel.setValue(false);
 
 	// if channel is not master, unmute every channel it receives from, and of those, unmute the channels they send to
@@ -403,12 +608,12 @@ void MixerChannel::unmuteReceiverForSolo()
 	{
 		for (const MixerRoute* receiverRoute : m_receives)
 		{
-			receiverRoute->sender()->unmuteReceiverForSolo();
+			receiverRoute->sender()->unmuteReceiverForSolo(senderVisited, receiverVisited);
 		}
 
 		for (const MixerRoute* sendsRoute : m_sends)
 		{
-			sendsRoute->receiver()->unmuteSenderForSolo();
+			sendsRoute->receiver()->unmuteSenderForSolo(senderVisited, receiverVisited);
 		}
 	}
 }
@@ -440,15 +645,29 @@ void MixerChannel::sumSidechainInputs(const f_cnt_t fpp)
 		// Deferred routes do not gate their receiver, so the current
 		// intermediate may not have been written yet this period: read the
 		// snapshot committed in prepareMasterMix() instead (one period late).
-		const float amount = route->mode() == SidechainTapPoint::PostFaderNoGain
-			? 1.0f
-			: route->amount()->value();
+		const bool postNoGain = route->mode() == SidechainTapPoint::PostFaderNoGain;
+		// Luna cluster 5156: an automated amount carries sample-exact data,
+		// exactly like a regular send; read it per frame instead of collapsing
+		// the curve to one scalar for the whole period.
+		// review f1a74cc54 (cluster 2647): this receiver's job is the only reader of the route's amount,
+		// so the sole-reader form takes no mutex. A linked amount still takes the linked model's mutex.
+		ValueBuffer* const amountBuf = postNoGain ? nullptr : route->amount()->valueBuffer();
+		const float amount = postNoGain ? 1.0f : route->amount()->value();
 		// PDC (#605): delay the tap to this channel's alignment point. The
 		// route owns the tap buffer, so the delay is applied in place.
 		const float* s0 = nullptr;
 		const float* s1 = nullptr;
 		route->compensatedTap(route->deferred(), &s0, &s1, fpp);
-		if( amount == 1.0f )
+		if( amountBuf )
+		{
+			for( f_cnt_t f = 0; f < fpp; ++f )
+			{
+				const float a = amountBuf->value( f );
+				dst0[f] += s0[f] * a;
+				dst1[f] += s1[f] * a;
+			}
+		}
+		else if( amount == 1.0f )
 		{
 			for( f_cnt_t f = 0; f < fpp; ++f )
 			{
@@ -550,6 +769,90 @@ void MixerChannel::writeSidechainTaps(const SidechainTapPoint point,
 		dst.assumeNonSilent(0);
 		dst.assumeNonSilent(1);
 	}
+}
+
+
+
+
+void MixerChannel::processInserts(const f_cnt_t fpp)
+{
+	// #599: a channel with a rack (two or more chains) renders this period
+	// through the rack's RoutingGraph; with no rack configured the
+	// channel's own chain is the whole signal path, exactly as before.
+	if( m_rack.canProcessThroughRack( m_bus ) )
+	{
+		m_stillRunning = m_sidechainReceives.empty()
+			? m_rack.processAudioBuffer( m_bus )
+			: m_rack.processAudioBuffer( m_bus, &m_sidechainBuffer );
+	}
+	else if( surround::insertsTakeWideBus( *this, fpp ) )
+	{
+		// Q050-155.2 / Q050-296.1: any surround layout wider than the pair - discrete or named 5.1/7.1/... -
+		// sees all its channels, by index, through the devices' pins.
+		m_stillRunning = surround::processWideInserts( *this, fpp,
+			m_sidechainReceives.empty() ? nullptr : &m_sidechainBuffer );
+	}
+	else
+	{
+		m_stillRunning = m_sidechainReceives.empty()
+			? m_fxChain.processAudioBuffer(m_bus)
+			: m_fxChain.processAudioBuffer(m_bus, &m_sidechainBuffer);
+	}
+
+	// 0.5.0 F1 (MX-061): the hardware insert, after the devices and before the fader (a no-op while off).
+	hardwareio::processInsert( *this, fpp );
+
+	// VCA / mix group (#622). The group gain is applied here, as one extra
+	// factor on the post-FX buffer, and nowhere else: m_buffer is what the
+	// fader snapshot, the peak meter, the post-/pre-fader sidechain taps
+	// and every receiving channel all read, so a single multiply scales the
+	// whole of the member's output while the member's own volume model is
+	// never written. That is what makes "move the VCA back" restore the
+	// members bit-exactly.
+	//
+	// The guard is not only an optimisation: with gain == 1.0f (no group, or
+	// a group at unity) a channel takes the pre-#622 arithmetic path
+	// unchanged, so an ungrouped project renders byte-identically.
+	const float vcaGain = m_vcaGain.load(std::memory_order_relaxed);
+	if (vcaGain != 1.0f)
+	{
+		for (f_cnt_t f = 0; f < fpp; ++f)
+		{
+			m_buffer[f][0] *= vcaGain;
+			m_buffer[f][1] *= vcaGain;
+		}
+		// Deliberately no quiet-flag update: the bus flags are an
+		// optimisation the DSP trusts, and claiming silence we do not have
+		// loses audio, while claiming audio we do not have only wastes
+		// work. A silent group is silent either way.
+	}
+
+	// Channel pan (m_panModel, a balance law). Applied HERE for the reason the
+	// VCA gain is: m_buffer is what the fader snapshot, the meter, the taps
+	// and every receiver read, so one multiply pans the channel's whole
+	// output, and pre-fader sends carry it too (pan is part of the channel's
+	// insert stage, not of the fader). Centred and unautomated - every
+	// channel in every project written before this - skips the stage, so the
+	// arithmetic is the pre-pan arithmetic, bit for bit. No allocation, no
+	// lock: the model's value and its sample-exact buffer are the same reads
+	// the volume fader makes on this thread.
+	// 0.5.0 L08: polarity and mono, then the pan in its mode (balance falls through to the stage below).
+	mixerstrip::applyOutput( *this, fpp );
+	const bool panned = mixerstrip::applyPanMode( *this, fpp );
+	const ValueBuffer* panBuf = m_panModel.valueBuffer();
+	const float pan = m_panModel.value();
+	if (!panned && (panBuf != nullptr || pan != 0.0f))
+	{
+		for (f_cnt_t f = 0; f < fpp; ++f)
+		{
+			const float p = panBuf != nullptr ? panBuf->values()[f] : pan;
+			m_buffer[f][0] *= std::min(1.0f, 1.0f - p);
+			m_buffer[f][1] *= std::min(1.0f, 1.0f + p);
+		}
+	}
+
+	// 0.5.0 F7 (MX-060): the side channels' trim, VCA gain and balance (a no-op for stereo).
+	surround::processChannel( *this, fpp );
 }
 
 
@@ -671,8 +974,12 @@ void MixerChannel::doProcessing()
 			}
 		}
 
+		// Q050-124: a frozen bus plays its take in place of the inputs summed above and of every stage up to its
+		// fader (the take carries them); the fader, the sends, the taps and the meters below run on the take.
+		const bool frozen = busfreeze::substitute( *this, fpp );
+
 		// 0.5.0 L08: the strip's trim, before the inserts (MixerStrip.cpp).
-		mixerstrip::applyInput( *this, fpp );
+		if( ! frozen ) { mixerstrip::applyInput( *this, fpp ); }
 
 		// Phase D: pre-FX sidechain tap, taken from the raw channel buffer
 		// before the FX chain runs (spec 4.3).
@@ -687,76 +994,8 @@ void MixerChannel::doProcessing()
 		// this block (two clock reads and one relaxed store; DspLoadProbe.h).
 		const DspLoadProbe dspLoad( m_dspLoad, fpp, Engine::audioEngine()->baseSampleRate() );
 
-		// #599: a channel with a rack (two or more chains) renders this period
-		// through the rack's RoutingGraph; with no rack configured the
-		// channel's own chain is the whole signal path, exactly as before.
-		if( m_rack.canProcessThroughRack( m_bus ) )
-		{
-			m_stillRunning = m_sidechainReceives.empty()
-				? m_rack.processAudioBuffer( m_bus )
-				: m_rack.processAudioBuffer( m_bus, &m_sidechainBuffer );
-		}
-		else
-		{
-			m_stillRunning = m_sidechainReceives.empty()
-				? m_fxChain.processAudioBuffer(m_bus)
-				: m_fxChain.processAudioBuffer(m_bus, &m_sidechainBuffer);
-		}
-
-		// 0.5.0 F1 (MX-061): the hardware insert, after the devices and before the fader (a no-op while off).
-		hardwareio::processInsert( *this, fpp );
-
-		// VCA / mix group (#622). The group gain is applied here, as one extra
-		// factor on the post-FX buffer, and nowhere else: m_buffer is what the
-		// fader snapshot, the peak meter, the post-/pre-fader sidechain taps
-		// and every receiving channel all read, so a single multiply scales the
-		// whole of the member's output while the member's own volume model is
-		// never written. That is what makes "move the VCA back" restore the
-		// members bit-exactly.
-		//
-		// The guard is not only an optimisation: with gain == 1.0f (no group, or
-		// a group at unity) a channel takes the pre-#622 arithmetic path
-		// unchanged, so an ungrouped project renders byte-identically.
-		const float vcaGain = m_vcaGain.load(std::memory_order_relaxed);
-		if (vcaGain != 1.0f)
-		{
-			for (f_cnt_t f = 0; f < fpp; ++f)
-			{
-				m_buffer[f][0] *= vcaGain;
-				m_buffer[f][1] *= vcaGain;
-			}
-			// Deliberately no quiet-flag update: the bus flags are an
-			// optimisation the DSP trusts, and claiming silence we do not have
-			// loses audio, while claiming audio we do not have only wastes
-			// work. A silent group is silent either way.
-		}
-
-		// Channel pan (m_panModel, a balance law). Applied HERE for the reason the
-		// VCA gain is: m_buffer is what the fader snapshot, the meter, the taps
-		// and every receiver read, so one multiply pans the channel's whole
-		// output, and pre-fader sends carry it too (pan is part of the channel's
-		// insert stage, not of the fader). Centred and unautomated - every
-		// channel in every project written before this - skips the stage, so the
-		// arithmetic is the pre-pan arithmetic, bit for bit. No allocation, no
-		// lock: the model's value and its sample-exact buffer are the same reads
-		// the volume fader makes on this thread.
-		// 0.5.0 L08: polarity and mono, then the pan in its mode (balance falls through to the stage below).
-		mixerstrip::applyOutput( *this, fpp );
-		const bool panned = mixerstrip::applyPanMode( *this, fpp );
-		const ValueBuffer* panBuf = m_panModel.valueBuffer();
-		const float pan = m_panModel.value();
-		if (!panned && (panBuf != nullptr || pan != 0.0f))
-		{
-			for (f_cnt_t f = 0; f < fpp; ++f)
-			{
-				const float p = panBuf != nullptr ? panBuf->values()[f] : pan;
-				m_buffer[f][0] *= std::min(1.0f, 1.0f - p);
-				m_buffer[f][1] *= std::min(1.0f, 1.0f + p);
-			}
-		}
-
-		// 0.5.0 F7 (MX-060): the side channels' trim, VCA gain and balance (a no-op for stereo).
-		surround::processChannel( *this, fpp );
+		if( ! frozen ) { processInserts( fpp ); }
+		busfreeze::capture( *this, fpp );  // a render child capturing this bus only (Q050-124)
 
 		// D1: the volume multiply happens after the send loop, producing the
 		// post-fader snapshot used by post-fader sidechain taps.
@@ -790,6 +1029,8 @@ void MixerChannel::doProcessing()
 		SampleFrame peakSamples = getAbsPeakValues(m_buffer, fpp);
 		m_peakLeft = std::max(m_peakLeft, peakSamples[0] * meterGain);
 		m_peakRight = std::max(m_peakRight, peakSamples[1] * meterGain);
+		m_speechPeakLeft.set(peakSamples[0] * meterGain);
+		m_speechPeakRight.set(peakSamples[1] * meterGain);
 		mixerstrip::updateMeters( *this, m_buffer, meterGain, fpp );  // 0.5.0 L08
 	}
 	// A muted channel never reaches this function: Mixer::masterMix handles
@@ -801,7 +1042,28 @@ void MixerChannel::doProcessing()
 	processed();
 }
 
+#ifdef LMMS_TESTING
+namespace
+{
 
+//! Test seam (cluster new-p14-29): the mixerChannel() lookups that named no channel.
+int refusedLookups = 0;
+
+} // namespace
+
+MixerChannel* Mixer::refusedLookupForTesting()
+{
+	++refusedLookups;
+	return nullptr;
+}
+
+int Mixer::takeRefusedLookupsForTesting()
+{
+	const int count = refusedLookups;
+	refusedLookups = 0;
+	return count;
+}
+#endif
 
 Mixer::Mixer() :
 	Model( nullptr ),
@@ -899,6 +1161,8 @@ void Mixer::toggledSolo()
 {
 	int soloedChan = -1;
 	bool resetSolo = m_lastSoloed != -1;
+	// Luna cluster 1523: a channel solo now owns the mute state.
+	m_soloingGroup = nullptr;
 	// 0.5.0 L08 (MX-029): additive solo keeps the earlier solos (MixerStrip.cpp).
 	if (mixerstrip::additiveSolo()) { applyAdditiveSolo(); return; }
 	//untoggle if lastsoloed is entered
@@ -1063,15 +1327,27 @@ void Mixer::refreshGroups()
 
 void Mixer::applyGroupSolo(VcaGroup* group, bool soloed)
 {
-	// 0.5.0 L09 (MX-071): a group whose solo link is off - or that is suspended - does not solo its members.
-	if (group == nullptr || !group->linksSolo() || group->isSuspended())
+	if (group == nullptr)
 	{
 		return;
 	}
 	if (!soloed)
 	{
+		// Luna cluster 1523: clearing a solo must run BEFORE the link check
+		// below. A group that was soloed while its link was on has muted every
+		// non-member; if the link is then turned off (or the group suspended),
+		// the early return used to skip deactivateSolo() and those mutes were
+		// never restored. Only the group that muted may restore, so clearing a
+		// group that never soloed cannot unmute a channel solo in progress.
+		if (m_soloingGroup != group) { return; }
+		m_soloingGroup = nullptr;
 		deactivateSolo();
 		m_lastSoloed = -1;
+		return;
+	}
+	// 0.5.0 L09 (MX-071): a group whose solo link is off - or that is suspended - does not solo its members.
+	if (!group->linksSolo() || group->isSuspended())
+	{
 		return;
 	}
 
@@ -1098,6 +1374,8 @@ void Mixer::applyGroupSolo(VcaGroup* group, bool soloed)
 	// No channel's own solo flag drove this, so toggledSolo() has nothing to
 	// untoggle later.
 	m_lastSoloed = -1;
+	// Luna cluster 1523: this group owns the mute state until its flag clears.
+	m_soloingGroup = group;
 }
 
 
@@ -1192,8 +1470,15 @@ void Mixer::deleteChannel( int index )
 		deleteSidechainSend(ch->m_sidechainReceives.front());
 	}
 
-	// if m_lastSoloed was our index, reset it
-	if (m_lastSoloed == index) { m_lastSoloed = -1; }
+	// if m_lastSoloed was our index, the solo goes with the channel: restore the mutes it hid
+	// (activateSolo saved each channel's pre-solo state) before the channel is erased, or nothing
+	// brings them back once m_lastSoloed no longer names a soloed channel.
+	const bool soloRemoved = m_lastSoloed == index;
+	if (soloRemoved)
+	{
+		deactivateSolo();
+		m_lastSoloed = -1;
+	}
 	// if m_lastSoloed is > delete index, it will move left
 	else if (m_lastSoloed > index) { --m_lastSoloed; }
 
@@ -1229,6 +1514,10 @@ void Mixer::deleteChannel( int index )
 			r->updateName();
 		}
 	}
+
+	// Additive solo keeps the other soloed channels on: re-derive the mutes from them on the new layout
+	// (after the renumbering, which applyAdditiveSolo reads through index()).
+	if (soloRemoved && mixerstrip::additiveSolo()) { applyAdditiveSolo(); }
 
 	Engine::audioEngine()->doneChangeInModel();
 	if (!m_clearing) { emit channelDeleted(); }
@@ -1303,6 +1592,24 @@ void Mixer::moveChannelLeft( int index )
 	m_mixerChannels[index]->setIndex(index);
 	m_mixerChannels[index - 1]->setIndex(index - 1);
 
+	// Send model labels include both endpoint indices, so refresh routes touching either moved channel.
+	for (MixerRoute* route : m_mixerRoutes)
+	{
+		if (route->senderIndex() == static_cast<mix_ch_t>(a) || route->senderIndex() == static_cast<mix_ch_t>(b)
+			|| route->receiverIndex() == static_cast<mix_ch_t>(a) || route->receiverIndex() == static_cast<mix_ch_t>(b))
+		{
+			route->updateName();
+		}
+	}
+	for (MixerSidechainRoute* route : m_mixerSidechainRoutes)
+	{
+		if (route->senderIndex() == static_cast<mix_ch_t>(a) || route->senderIndex() == static_cast<mix_ch_t>(b)
+			|| route->receiverIndex() == static_cast<mix_ch_t>(a) || route->receiverIndex() == static_cast<mix_ch_t>(b))
+		{
+			route->updateName();
+		}
+	}
+
 	// #622: group membership follows the channels, not the slots.  Done inside
 	// the same change (D4) as the swap it follows, so the render thread never
 	// sees a channel order the groups do not describe.
@@ -1346,9 +1653,14 @@ MixerRoute * Mixer::createChannelSend( mix_ch_t fromChannel, mix_ch_t toChannel,
 	{
 		if (send->receiver() == to)
 		{
+			// Luna cluster 5157: preFader is a plain field the render thread
+			// reads, so an update takes the same change-mutex boundary
+			// createRoute() does.
+			Engine::audioEngine()->requestChangeInModel();
 			// simply adjust the amount
 			send->amount()->setValue(amount);
 			send->setPreFader(routePreFader);
+			Engine::audioEngine()->doneChangeInModel();
 			return send;
 		}
 	}
@@ -1377,7 +1689,7 @@ MixerRoute * Mixer::createRoute( MixerChannel * from, MixerChannel * to, float a
 	// cannot run, so the default path is byte-for-byte the old one;
 	// loadSettings flags its own sends from their persisted attribute. The
 	// master guard keeps the "master cannot send" rule outside the submode.
-	if( m_feedbackMode && from != m_mixerChannels[0] && checkInfiniteLoop( from, to ) )
+	if( shouldAutoFlagFeedbackRoute(from, to) )
 	{
 		route->setFeedback( true );
 	}
@@ -1393,6 +1705,13 @@ MixerRoute * Mixer::createRoute( MixerChannel * from, MixerChannel * to, float a
 	Engine::audioEngine()->doneChangeInModel();
 
 	return route;
+}
+
+
+bool Mixer::shouldAutoFlagFeedbackRoute(MixerChannel* from, MixerChannel* to)
+{
+	return !m_loadingSettings && m_feedbackMode && from != m_mixerChannels[0]
+		&& checkInfiniteLoop(from, to);
 }
 
 
@@ -1446,8 +1765,13 @@ MixerSidechainRoute * Mixer::createSidechainSend( mix_ch_t fromChannel,
 	{
 		if( route->receiver() == to )
 		{
+			// Luna cluster 5157: the tap mode is a plain field the render
+			// thread reads, so an update takes the same change-mutex
+			// boundary the creation path below does.
+			Engine::audioEngine()->requestChangeInModel();
 			route->amount()->setValue(amount);
 			route->setMode(mode);
+			Engine::audioEngine()->doneChangeInModel();
 			return route;
 		}
 	}
@@ -1629,6 +1953,17 @@ int Mixer::setFeedbackMode( bool enabled )
 
 bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to )
 {
+	// Control thread only (createRoute / createSidechainSend / the GUI's
+	// routing arrows), so the one visited-set allocation below is never on a
+	// process/render/play path.
+	std::vector<MixerChannel*> visited;
+	return checkInfiniteLoop( from, to, visited );
+}
+
+
+bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to,
+	std::vector<MixerChannel*>& visited )
+{
 	// can't send master to anything
 	if( from == m_mixerChannels[0] )
 	{
@@ -1641,6 +1976,16 @@ bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to )
 		return true;
 	}
 
+	// Already expanded on this walk: the feedback submode permits real
+	// cycles, so an existing A->B->A would otherwise be followed forever and
+	// blow the stack. Everything reachable from here was decided the first
+	// time, so cutting the revisit cannot change the answer.
+	if (std::find(visited.begin(), visited.end(), to) != visited.end())
+	{
+		return false;
+	}
+	visited.push_back(to);
+
 	// follow sendTo's outputs recursively looking for something that sends
 	// to sendFrom. Phase D: gating sidechain edges are traversed as well,
 	// because a non-deferred sidechain send is a scheduling dependency and a
@@ -1648,7 +1993,13 @@ bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to )
 	// routes never gate, so they cannot deadlock and are skipped.
 	for (const auto& send : to->m_sends)
 	{
-		if (checkInfiniteLoop(from, send->receiver()))
+		// A feedback route is cycle-permitted by construction (createRoute
+		// flags the edge that closes one), so it never closes a NEW cycle.
+		if (send->feedback())
+		{
+			continue;
+		}
+		if (checkInfiniteLoop(from, send->receiver(), visited))
 		{
 			return true;
 		}
@@ -1659,7 +2010,7 @@ bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to )
 		{
 			continue;
 		}
-		if (checkInfiniteLoop(from, send->receiver()))
+		if (checkInfiniteLoop(from, send->receiver(), visited))
 		{
 			return true;
 		}
@@ -1721,19 +2072,65 @@ void Mixer::mixToChannel(const AudioBus& bus, mix_ch_t channel)
 	{
 		return;
 	}
-	if (mixerChannel->m_muteModel.value() == false)
+	if (mixerChannel->m_muteModel.value() != false)
 	{
-		mixerChannel->m_lock.lock();
+		return;
+	}
 
+	// cluster new-p10-249: render threads never touch the shared channel bus
+	// directly. They fold their block into their OWN partial, which no other
+	// thread touches; Mixer::reduceInputPartials() sums the partials at the
+	// period barrier (top of masterMix). A caller that is not on a render job
+	// (the control side, the tests) accumulates straight into the channel bus,
+	// exactly as before, so its data is visible immediately.
+	const int slot = AudioEngineWorkerThread::currentRenderSlot();
+	if (slot >= 0 && static_cast<std::size_t>(slot) < mixerChannel->m_inputPartials.size() - 1)
+	{
+		MixerChannel::InputPartial & partial = mixerChannel->m_inputPartials[static_cast<std::size_t>(slot)];
+		const int frames = std::min( static_cast<int>(bus.frames()), static_cast<int>(partial.buffer.size()) );
+		MixHelpers::add(partial.buffer.data(), bus.bus()[0], frames);
+		partial.quiet &= bus.quietChannels(); // mix silence status
+		partial.frames = std::max(partial.frames, frames);
+		partial.live = true;
+	}
+	else
+	{
 		MixHelpers::add(mixerChannel->m_bus.bus()[0], bus.bus()[0], bus.frames());
 		mixerChannel->m_bus.quietChannels() &= bus.quietChannels(); // mix silence status
 		mixerChannel->m_hasInput = true;
-
-		mixerChannel->m_lock.unlock();
 	}
 }
 
 
+
+
+//! The period barrier: the render workers have joined (STAGE 1 and STAGE 2 are
+//! done), so every render thread's input partial is complete and private. This
+//! is the single owner of the worker-fed accumulation: it sums the live partials
+//! into the channel buses before any channel is processed.
+void Mixer::reduceInputPartials()
+{
+	for( MixerChannel * channel : m_mixerChannels )
+	{
+		for( MixerChannel::InputPartial & partial : channel->m_inputPartials )
+		{
+			if( ! partial.live )
+			{
+				continue;
+			}
+			const int frames = partial.frames;
+			MixHelpers::add(channel->m_bus.bus()[0], partial.buffer.data(), frames);
+			channel->m_bus.quietChannels() &= partial.quiet; // mix silence status
+			channel->m_hasInput = true;
+
+			// The partial is spent: clear it for the next period.
+			partial.live = false;
+			partial.frames = 0;
+			partial.quiet.set();
+			std::fill(partial.buffer.begin(), partial.buffer.begin() + frames, SampleFrame{});
+		}
+	}
+}
 
 
 void Mixer::prepareMasterMix()
@@ -1797,6 +2194,43 @@ int Mixer::channelInputLatency(mix_ch_t channel) const
 
 
 
+namespace
+{
+
+//! MX-157: whether a hosted instrument's bus routed to @a index counts there: a bus channel takes no
+//! instrument output (mixToChannel refuses it), the same rule as for a track's handle.
+bool takesRoutedBus(const std::vector<MixerChannel*>& channels, int index)
+{
+	const auto at = static_cast<std::size_t>(index);
+	return index >= 0 && at < channels.size() && !channels[at]->isBus();
+}
+
+//! MX-157: a hosted instrument's routed output buses are direct sources of their channels, and as late
+//! as the instrument (InstrumentOutputBuses::forEachLatentRoute; allocation-free).
+void addRoutedBusLatency(const std::vector<MixerChannel*>& channels, std::vector<int>& sourceLatency)
+{
+	InstrumentOutputBuses::forEachLatentRoute([&channels, &sourceLatency](int index, int latency) {
+		if (!takesRoutedBus(channels, index)) { return; }
+		auto& frames = sourceLatency[static_cast<std::size_t>(index)];
+		frames = std::max(frames, latency);
+	});
+}
+
+//! MX-157: @a clamped, or whether a routed bus needs more delay than a delay line holds (the handles'
+//! clamp rule).
+bool routedBusClamped(const std::vector<MixerChannel*>& channels, const std::vector<int>& alignment, int cap,
+	bool clamped)
+{
+	InstrumentOutputBuses::forEachLatentRoute([&](int index, int latency) {
+		clamped = clamped || (takesRoutedBus(channels, index) && alignment[static_cast<std::size_t>(index)] - latency > cap);
+	});
+	return clamped;
+}
+
+} // namespace
+
+
+
 int Mixer::resolveLatency(std::size_t index)
 {
 	if (m_latencyVisitScratch[index] == 2)
@@ -1828,6 +2262,13 @@ int Mixer::resolveLatency(std::size_t index)
 			// is what keeps the solve acyclic (every cycle has one of these).
 			continue;
 		}
+		if (!route->enabled())
+		{
+			// A switched-off send delivers nothing (0.5.0 L08 / MX-047), so it
+			// cannot raise the alignment point: keeping it here would delay
+			// every other path into this channel for a route that is silent.
+			continue;
+		}
 		resolveLatency(route->senderIndex());
 		input = std::max(input, sendTapLatency(*route));
 	}
@@ -1848,7 +2289,8 @@ int Mixer::resolveLatency(std::size_t index)
 	m_latencyOutputScratch[index] =
 		input + std::max(0, channel->m_fxChain.latencyFrames())
 		+ std::max(0, channel->m_postInserts.chain().latencyFrames())  // 0.5.0 MX-082 (0 while empty)
-		+ hardwareio::insertLatency( *channel );  // 0.5.0 F1 (MX-061): 0 while off or bypassed
+		+ hardwareio::insertLatency( *channel )  // 0.5.0 F1 (MX-061): 0 while off or bypassed
+		- channel->offsetFrames();  // Q050-339: a channel delay moves every path out of the channel (0 by default)
 	m_latencyVisitScratch[index] = 2;
 	return m_latencyOutputScratch[index];
 }
@@ -1878,6 +2320,9 @@ int Mixer::sidechainTapLatency(const MixerSidechainRoute& route) const
 
 void Mixer::updateLatencyCompensation()
 {
+#ifdef LMMS_TESTING
+	if (s_latencyUpdateProbe != nullptr) { s_latencyUpdateProbe(this); }
+#endif
 	const std::size_t count = m_mixerChannels.size();
 	if (count == 0 || m_latencyInputScratch.size() < count)
 	{
@@ -1901,12 +2346,15 @@ void Mixer::updateLatencyCompensation()
 			// so a handle pointing at a bus contributes nothing.
 			if (channel < count && !m_mixerChannels[channel]->isBus())
 			{
+				// Q050-339: less the track's manual offset (a negative offset raises the alignment point).
 				m_directSourceLatencyScratch[channel] =
 					std::max(m_directSourceLatencyScratch[channel],
-						std::max(0, handle->latencyFrames()));
+						std::max(0, handle->alignedLatencyFrames()));
 			}
 		}
 	}
+
+	addRoutedBusLatency(m_mixerChannels, m_directSourceLatencyScratch);  // MX-157
 
 	for (std::size_t i = 0; i < count; ++i)
 	{
@@ -1960,24 +2408,29 @@ void Mixer::updateLatencyCompensation()
 		for (const AudioBusHandle* handle : Engine::audioEngine()->audioBusHandles())
 		{
 			const mix_ch_t channel = handle->nextMixerChannel();
-			if (channel < count && !m_mixerChannels[channel]->isBus())
+			// Q050-174: a handle monitored unaligned applies no delay, so it cannot be clamped.
+			if (channel < count && !m_mixerChannels[channel]->isBus() && !handle->monitorUnaligned())
 			{
 				clamped = clamped
 					|| (m_latencyInputScratch[channel]
-						- std::max(0, handle->latencyFrames())) > cap;
+						- handle->alignedLatencyFrames()) > cap;
 			}
 		}
 	}
 
+	clamped = routedBusClamped(m_mixerChannels, m_latencyInputScratch, cap, clamped);  // MX-157
+
 	const int masterChain =
 		std::max(0, m_mixerChannels[0]->m_fxChain.latencyFrames())
-		+ std::max(0, m_mixerChannels[0]->m_postInserts.chain().latencyFrames());  // 0.5.0 MX-082
+		+ std::max(0, m_mixerChannels[0]->m_postInserts.chain().latencyFrames())  // 0.5.0 MX-082
+		+ hardwareio::insertLatency( *m_mixerChannels[0] );
 	const int alignment = m_latencyInputScratch[0];
 	// The alignment point is realised by delaying the earlier paths; no path
 	// can be delayed by more than the ring capacity, so a clamped alignment
 	// cannot be honoured. Publish what the graph can actually apply, keeping
 	// the master chain's own (always applied) latency on top. At or below the
 	// cap this is the exact requested value.
+	m_latencyCompensationClamped.store(clamped, std::memory_order_relaxed);
 	m_totalLatencyFrames.store(
 		(clamped ? std::min(alignment, cap) : alignment) + masterChain,
 		std::memory_order_relaxed);
@@ -1988,6 +2441,10 @@ void Mixer::updateLatencyCompensation()
 void Mixer::masterMix( SampleFrame* _buf )
 {
 	const int fpp = Engine::audioEngine()->framesPerPeriod();
+
+	// cluster new-p10-249: fold render-thread input partials into the channel
+	// buses at the period barrier, before any channel is processed.
+	reduceInputPartials();
 
 	// add the channels that have no dependencies (no incoming senders, ie.
 	// no receives) to the jobqueue. The channels that have receives get
@@ -2089,20 +2546,22 @@ void Mixer::masterMix( SampleFrame* _buf )
 
 	if( volBuf )
 	{
-		for( int f = 0; f < fpp; f++ )
-		{
-			m_mixerChannels[0]->m_buffer[f][0] *= volBuf->values()[f];
-			m_mixerChannels[0]->m_buffer[f][1] *= volBuf->values()[f];
-		}
+		// Keep the master channel's source buffer pre-fader: the listen bus reads
+		// it after this mix, applying the master fader once for AFL and bypassing
+		// it for PFL.
+		MixHelpers::addMultipliedByBuffer( _buf, m_mixerChannels[0]->m_buffer, 1.0f, volBuf, fpp );
 	}
-
-	const float v = volBuf
-		? 1.0f
-		: postinserts::faderValue( *m_mixerChannels[0], nullptr );
-	MixHelpers::addMultiplied( _buf, m_mixerChannels[0]->m_buffer, v, fpp );
+	else
+	{
+		const float v = postinserts::faderValue( *m_mixerChannels[0], nullptr );
+		MixHelpers::addMultiplied( _buf, m_mixerChannels[0]->m_buffer, v, fpp );
+	}
+	// Q050-124: a bus-freeze render child writes the captured bus instead of the master (a no-op everywhere else).
+	busfreeze::replaceOutput( _buf, fpp );
 	// 0.5.0 F7 (MX-060): a surround master's other speakers - onto the outputs, or folded into the mix.
 	surround::masterOutput( *this, _buf, fpp );
 	recordertaps::master( _buf, fpp );  // 0.5.0 WF-072: a record route resampling the master
+	realtimeexport::master( _buf, fpp );  // Q050-089.2: render.realtime keeps the master (one load while idle)
 	// 0.5.0 F1 (MX-040, MX-036, MX-061): direct outs, cue mixes and insert sends onto the hardware outputs.
 	hardwareio::mixOutputs( *this, _buf, fpp );
 	// 0.5.0 L09 (MX-037): a channel listened to (AFL / PFL) replaces the mix on the output - unless the
@@ -2161,10 +2620,15 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_postInserts.clear();  // 0.5.0 MX-082
 	ch->m_hardwareIo.clear();  // 0.5.0 F1
 	ch->m_surround.reset();  // 0.5.0 F7
+	if( ch->m_freeze.isFrozen() ) { busfreeze::clear( *ch ); }  // Q050-124
 	ch->m_volumeModel.setValue( 1.0f );
 	ch->m_panModel.setValue( 0.0f );
 	ch->m_muteModel.setValue( false );
 	ch->m_soloModel.setValue( false );
+	// Luna cluster 4279: the strip's own settings are reset with the rest, so a cleared
+	// channel (the master after Mixer::clear) does not keep applying the previous
+	// project's trim, polarity, EQ, pan mode and the rest to later audio.
+	mixerstrip::reset(*ch);
 	ch->m_name = ( index == 0 ) ? tr( "Master" ) : tr( "Channel %1" ).arg( index );
 	ch->m_volumeModel.setDisplayName( ch->m_name + ">" + tr( "Volume" ) );
 	ch->m_panModel.setDisplayName( ch->m_name + ">" + tr( "Pan" ) );
@@ -2184,6 +2648,14 @@ void Mixer::clearChannel(mix_ch_t index)
 	}
 	ch->m_sidechainBuffer.silenceAllChannels();
 	ch->m_postFaderBuffer.silenceAllChannels();
+	// cluster new-p10-249: drop any pending render-thread input partials.
+	for( MixerChannel::InputPartial & partial : ch->m_inputPartials )
+	{
+		partial.live = false;
+		partial.frames = 0;
+		partial.quiet.set();
+		std::fill(partial.buffer.begin(), partial.buffer.end(), SampleFrame{});
+	}
 
 	// send only to master
 	if( index > 0)
@@ -2233,6 +2705,7 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		ch->m_muteModel.saveSettings( _doc, mixch, "muted" );
 		ch->m_soloModel.saveSettings( _doc, mixch, "soloed" );
 		mixerstrip::save( *ch, mixch );  // 0.5.0 L08: only what differs from the defaults
+		busfreeze::save( *ch, mixch );  // Q050-124: only while the bus is frozen
 		mixch.setAttribute("num", static_cast<qulonglong>(i));
 		// SPEC-stable-ids.md 3.1/3.2, slice 2: the channel's stable id as an
 		// ATTRIBUTE on the channel's own element, BESIDE `num` - which keeps
@@ -2284,7 +2757,11 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 			mixch.appendChild( sendsDom );
 
 			sendsDom.setAttribute("channel", send->receiverIndex());
-			if (send->preFader()) { sendsDom.setAttribute("prefader", "1"); }
+			// Luna cluster 1512: a send to a bus is pre-fader by default, so
+			// its post-fader setting has to be written out explicitly -
+			// otherwise the file records nothing and the load applies the
+			// default again.
+			if (send->preFader() || send->receiver()->isBus()) { sendsDom.setAttribute("prefader", send->preFader() ? "1" : "0"); }
 			// board card #709: a cycle-permitted send carries its own flag -
 			// the persisted half of the submode (the mode itself is derived
 			// from these flags on load). A send without the flag writes byte
@@ -2306,6 +2783,13 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 
 			scDom.setAttribute("channel", send->receiverIndex());
 			scDom.setAttribute("mode", static_cast<int>(send->mode()));
+			// Luna cluster 4277: a deferred route is INFERRED at creation from
+			// the routing graph, and loadSettings re-infers it against a
+			// half-built graph (this channel's element is read before the
+			// regular send that makes it deferred exists), so the flag has to
+			// be written out. Only a deferred route carries the attribute, so a
+			// project with no deferred route saves exactly what it always did.
+			if (send->deferred()) { scDom.setAttribute("deferred", "1"); }
 			send->amount()->saveSettings(_doc, scDom, "amount");
 		}
 	}
@@ -2363,10 +2847,14 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 }
 
 // make sure we have at least num channels
-void Mixer::allocateChannelsTo(int num)
+void Mixer::allocateChannelsTo(int num, int describedChannels)
 {
-	if (num <= 0) { return; }
-	while (static_cast<std::size_t>(num) > m_mixerChannels.size() - 1)
+	// A project-driven index is bounded by what the file describes: the
+	// number comes from a file, and a file that names two billion channels
+	// must not allocate two billion channels (it would hang the load and
+	// exhaust the memory).
+	if (!isSupportedProjectMixerIndex(num, describedChannels)) { return; }
+	while (static_cast<std::size_t>(num) >= m_mixerChannels.size())
 	{
 		createChannel();
 
@@ -2379,7 +2867,24 @@ void Mixer::allocateChannelsTo(int num)
 void Mixer::loadSettings( const QDomElement & _this )
 {
 	clear();
+	m_feedbackMode = false;
+	const QScopedValueRollback<bool> loadingSettings(m_loadingSettings, true);
 	QDomNode node = _this.firstChild();
+	// The channels this file describes. Every project-supplied index is
+	// bounded by them, so the loader can never be talked into allocating more
+	// channels than the file itself holds - and a project the application
+	// created and saved (it writes one <mixerchannel> element per channel)
+	// always loads, however many channels it has.
+	const int describedChannels = countDescribedChannels( _this );
+	const auto reportUnsupportedIndex = [](const QString& item, const QString& value, int describedChannels)
+	{
+		if (Song* song = Engine::getSong())
+		{
+			song->collectError(QObject::tr(
+				"Project mixer %1 index '%2' is outside the range this project describes (0-%3); item ignored.")
+				.arg(item, value, QString::number(describedChannels)));
+		}
+	};
 
 	// Phase D pre-pass: bus flags must be known before sends are loaded,
 	// otherwise a send to a bus that appears later in the document would be
@@ -2391,8 +2896,21 @@ void Mixer::loadSettings( const QDomElement & _this )
 		if( mixch.nodeName() == QString( "mixerchannel" )
 			&& ! mixch.firstChildElement( QString( "bus" ) ).isNull() )
 		{
-			const int busNum = mixch.attribute( "num" ).toInt();
-			allocateChannelsTo( busNum );
+			// A `num` that is not a channel index must be rejected, not used as
+			// one: allocateChannelsTo() ignores a number outside the supported
+			// range, so indexing with it read outside m_mixerChannels. The
+			// value is read wide, so a number that overflows an int cannot
+			// become channel 0 (the master) here. The main pass below
+			// reports the element once, so this pre-pass stays quiet.
+			int busNum = 0;
+			if( parseProjectChannelIndex( mixch.attribute( "num" ), describedChannels, busNum ) != ProjectIndex::Ok )
+			{
+				continue;
+			}
+			// Zero is the master, which cannot be a bus, so only a positive
+			// number is one.
+			if( busNum <= 0 ) { continue; }
+			allocateChannelsTo( busNum, describedChannels );
 			m_mixerChannels[busNum]->setIsBus( true );
 		}
 	}
@@ -2411,10 +2929,29 @@ void Mixer::loadSettings( const QDomElement & _this )
 		}
 
 		// index of the channel we are about to load
-		int num = mixch.attribute( "num" ).toInt();
+		// The number is read as a WIDE integer, because a value that does not
+		// fit in an int must not become channel 0: toInt() alone would return
+		// 0 and let this element overwrite the master. A `num` that is not a
+		// number at all names no channel, so it is skipped whole; a number
+		// the file does not back up is refused AND reported, so the user
+		// learns that the file names a channel it does not have. Zero is the
+		// master, a real channel that clear() creates, so its saved state
+		// must still load.
+		int num = 0;
+		const ProjectIndex numKind =
+			parseProjectChannelIndex( mixch.attribute( "num" ), describedChannels, num );
+		if( numKind != ProjectIndex::Ok )
+		{
+			if( numKind == ProjectIndex::OutOfRange )
+			{
+				reportUnsupportedIndex( QStringLiteral( "channel" ), mixch.attribute( "num" ), describedChannels );
+			}
+			node = node.nextSibling();
+			continue;
+		}
 
 		// allocate enough channels
-		allocateChannelsTo( num );
+		allocateChannelsTo( num, describedChannels );
 
 		// The stable id (SPEC-stable-ids.md rules R1/R2, slice 2) - the same
 		// shape Track::loadTrack uses for the track element. A file that
@@ -2437,14 +2974,14 @@ void Mixer::loadSettings( const QDomElement & _this )
 			ProjectIds::noteLoadAssignment( m_mixerChannels[num]->id() );
 		}
 
-		m_mixerChannels[num]->m_volumeModel.loadSettings( mixch, "volume" );
+		loadFiniteMixerSetting(m_mixerChannels[num]->m_volumeModel, mixch, QStringLiteral("volume"));
 		// Absent means centred - every file written before channel pan existed.
 		// Explicit, so a restored journal checkpoint without the attribute
 		// takes a pan back off rather than keeping it.
 		if (mixch.hasAttribute("pan") || !mixch.firstChildElement("pan").isNull()
 			|| !mixch.firstChildElement("connection").firstChildElement("pan").isNull())
 		{
-			m_mixerChannels[num]->m_panModel.loadSettings( mixch, "pan" );
+			loadFiniteMixerSetting(m_mixerChannels[num]->m_panModel, mixch, QStringLiteral("pan"));
 		}
 		else
 		{
@@ -2459,8 +2996,13 @@ void Mixer::loadSettings( const QDomElement & _this )
 			m_mixerChannels[num]->setColor(QColor{mixch.attribute("color")});
 		}
 
-		m_mixerChannels[num]->m_fxChain.restoreState( mixch.firstChildElement(
-			m_mixerChannels[num]->m_fxChain.nodeName() ) );
+		{
+			// Q050-155.2: a discrete-N channel's devices load with N track channels, so their pins past the
+			// stereo pair are read back (the <surround> element itself is applied below, as before).
+			const AudioPortsModel::HostBusScope hostBus( surround::savedDiscreteChannels( mixch ) );
+			m_mixerChannels[num]->m_fxChain.restoreState( mixch.firstChildElement(
+				m_mixerChannels[num]->m_fxChain.nodeName() ) );
+		}
 
 		// #599: the channel's rack, if the project has one. A project with no
 		// <rack> element loads an empty rack, which is off the signal path.
@@ -2468,6 +3010,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 		m_mixerChannels[num]->m_postInserts.load( mixch );  // 0.5.0 MX-082: absent empties it
 		m_mixerChannels[num]->m_hardwareIo.load( mixch, Engine::audioEngine()->framesPerPeriod() );  // 0.5.0 F1
 		m_mixerChannels[num]->m_surround.load( mixch );  // 0.5.0 F7: absent is stereo, panner off
+		busfreeze::load( *m_mixerChannels[num], mixch );  // Q050-124: absent is unfrozen
 
 		// mixer sends
 		QDomNodeList chData = mixch.childNodes();
@@ -2476,13 +3019,39 @@ void Mixer::loadSettings( const QDomElement & _this )
 			QDomElement chDataItem = chData.at(i).toElement();
 			if( chDataItem.nodeName() == QString( "send" ) )
 			{
-				int sendTo = chDataItem.attribute( "channel" ).toInt();
-				allocateChannelsTo( sendTo ) ;
+				int sendTo = 0;
+				const ProjectIndex sendKind =
+					parseProjectChannelIndex( chDataItem.attribute( "channel" ), describedChannels, sendTo );
+				// A `channel` that is not a channel index is not routed
+				// anywhere: createChannelSend() indexes m_mixerChannels with
+				// it. Zero (the master) is the one valid low number, so a
+				// target that is not a number at all, or that is negative or
+				// outside the range the file describes, is refused here
+				// rather than converted to an unsigned index downstream - and
+				// rather than silently becoming the master, which is what a
+				// failed conversion to an int used to do.
+				if( sendKind != ProjectIndex::Ok )
+				{
+					if( sendKind == ProjectIndex::OutOfRange )
+					{
+						reportUnsupportedIndex( QStringLiteral( "send target" ), chDataItem.attribute( "channel" ), describedChannels );
+					}
+					continue;
+				}
+				allocateChannelsTo( sendTo, describedChannels ) ;
 				const bool preFader =
 					chDataItem.attribute( "prefader" ).toInt() != 0;
 				MixerRoute * mxr = createChannelSend( num, sendTo, 1.0f, preFader );
-				if( mxr ) mxr->amount()->loadSettings( chDataItem, "amount" );
-				if( mxr && chDataItem.hasAttribute( "pan" ) ) { mxr->pan()->loadSettings( chDataItem, "pan" ); }
+				// Luna cluster 1512: createChannelSend() applies the bus
+				// pre-fader default, which is right for a send the file says
+				// nothing about. A file that states the setting is taken at
+				// its word, so a post-fader send to a bus stays post-fader.
+				if( mxr && chDataItem.hasAttribute( "prefader" ) ) { mxr->setPreFader( preFader ); }
+				if (mxr) { loadFiniteMixerSetting(*mxr->amount(), chDataItem, QStringLiteral("amount")); }
+				if (mxr && chDataItem.hasAttribute("pan"))
+				{
+					loadFiniteMixerSetting(*mxr->pan(), chDataItem, QStringLiteral("pan"));
+				}
 				if( mxr ) { mxr->enabledModel()->setValue( chDataItem.attribute( "off" ).toInt() == 0 ); }
 				// board card #709: a cycle-permitted send carries its own
 				// flag, and loading one turns the submode on WITH it (the
@@ -2496,8 +3065,22 @@ void Mixer::loadSettings( const QDomElement & _this )
 			}
 			else if( chDataItem.nodeName() == QString( "sidechain-send" ) )
 			{
-				int sendTo = chDataItem.attribute( "channel" ).toInt();
-				allocateChannelsTo( sendTo );
+				int sendTo = 0;
+				const ProjectIndex sendKind =
+					parseProjectChannelIndex( chDataItem.attribute( "channel" ), describedChannels, sendTo );
+				// Same rule as a <send>: a target that is not a channel index
+				// is not a channel, and createSidechainSend() converts it to
+				// an unsigned index - so a failed conversion must not become
+				// the master either.
+				if( sendKind != ProjectIndex::Ok )
+				{
+					if( sendKind == ProjectIndex::OutOfRange )
+					{
+						reportUnsupportedIndex( QStringLiteral( "sidechain send target" ), chDataItem.attribute( "channel" ), describedChannels );
+					}
+					continue;
+				}
+				allocateChannelsTo( sendTo, describedChannels );
 				const int mode = chDataItem.attribute( "mode" ).toInt();
 				const SidechainTapPoint tap =
 					( mode >= 0 && mode <= 3 )
@@ -2505,7 +3088,15 @@ void Mixer::loadSettings( const QDomElement & _this )
 						: SidechainTapPoint::PreFader;
 				MixerSidechainRoute * mxr =
 					createSidechainSend( num, sendTo, 1.0f, tap );
-				if( mxr ) mxr->amount()->loadSettings( chDataItem, "amount" );
+				// Luna cluster 4277: a file that states the route is deferred
+				// is taken at its word. Inference at this point runs against a
+				// graph whose later channels have not been read yet, so it
+				// cannot see the regular send that closes the cycle.
+				if( mxr && chDataItem.hasAttribute( "deferred" ) )
+				{
+					mxr->setDeferred( chDataItem.attribute( "deferred" ).toInt() != 0 );
+				}
+				if (mxr) { loadFiniteMixerSetting(*mxr->amount(), chDataItem, QStringLiteral("amount")); }
 			}
 		}
 
@@ -2529,14 +3120,18 @@ void Mixer::loadSettings( const QDomElement & _this )
 		// An id the file recorded is preserved (so a group keeps its identity
 		// across a round trip); a file without one gets the lowest free id.
 		const QString idAttr = groupDom.attribute( "id" );
-		VcaGroup* group = createVcaGroup( groupDom.attribute( "name" ),
-			idAttr.isEmpty() ? -1 : idAttr.toInt() );
+		const QString name = groupDom.attribute( "name" );
+		const int requestedId = idAttr.isEmpty() ? -1 : idAttr.toInt();
+		VcaGroup* group = createVcaGroup( name, requestedId );
 		if( group == nullptr )
 		{
-			continue;
+			group = createVcaGroup( name, -1 );
+			if( group == nullptr ) { continue; }
+			qWarning() << "Duplicate VCA group id" << requestedId
+				<< "in project; assigned id" << group->id();
 		}
 
-		group->vcaModel()->loadSettings( groupDom, "vca" );
+		loadFiniteMixerSetting(*group->vcaModel(), groupDom, QStringLiteral("vca"));
 		group->muteModel()->loadSettings( groupDom, "muted" );
 		group->soloModel()->loadSettings( groupDom, "soloed" );
 		// OWNER-31 item 11: the edit half. `locked` is read for EVERY group
@@ -2567,8 +3162,35 @@ void Mixer::loadSettings( const QDomElement & _this )
 			{
 				continue;
 			}
-			const int channel = memberDom.attribute( "channel" ).toInt();
-			allocateChannelsTo( channel );
+			// Luna cluster 3295: the attribute is read before it is known to be a
+			// channel index. A missing or non-numeric value names no channel, a
+			// negative one wraps to 65535 when cast to mix_ch_t, and a large
+			// positive one is handed to allocateChannelsTo(), so a malformed
+			// file could allocate a whole mixer. The value is read wide, so a
+			// number that overflows an int is refused and reported instead of
+			// being dropped without a word. A member must name an EXISTING
+			// non-master channel, which is exactly what a saved group ever
+			// names, so nothing is skipped that a real project could contain.
+			const QString channelAttr = memberDom.attribute( "channel" );
+			int channel = 0;
+			const ProjectIndex memberKind =
+				parseProjectChannelIndex( channelAttr, describedChannels, channel );
+			if( memberKind != ProjectIndex::Ok )
+			{
+				if( memberKind == ProjectIndex::OutOfRange )
+				{
+					reportUnsupportedIndex( QStringLiteral( "VCA member" ), channelAttr, describedChannels );
+				}
+				continue;
+			}
+			if( channel <= 0 )
+			{
+				continue;
+			}
+			if( static_cast<std::size_t>( channel ) >= m_mixerChannels.size() )
+			{
+				continue;
+			}
 			group->addMember( static_cast<mix_ch_t>( channel ) );
 		}
 	}

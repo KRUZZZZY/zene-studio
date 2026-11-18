@@ -28,6 +28,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QSet>
 
 #include "AudioEngine.h"
 #include "AudioInputPath.h"
@@ -49,6 +50,14 @@ using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
 namespace
 {
 
+void releaseDefaultTakeIfOmitted(const QJsonObject& args, const QString& path)
+{
+	if (args.value(QStringLiteral("file")).toString().isEmpty())
+	{
+		control::releaseDefaultTake(path);
+	}
+}
+
 void registerArrangementGetState(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -59,7 +68,8 @@ void registerArrangementGetState(ControlRegistry& registry)
 		"clip-<n> ids. The trk-<n> number is assigned at creation and persists in the project file. "
 		"Addressing is scoped to the SONG container: a track inside a nested container (the "
 		"<trackcontainer> a pattern track carries) is not reachable by id, exactly as it is not "
-		"addressable by index.");
+		"addressable by index. `playhead_ticks` reports the arranger's Song-timeline position, also "
+		"used by the video window.");
 	cmd.argsSchema = control::objectSchema({});
 	cmd.resultSchema = control::objectSchema({
 		{QStringLiteral("tracks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
@@ -67,6 +77,7 @@ void registerArrangementGetState(ControlRegistry& registry)
 		{QStringLiteral("track_count"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("clip_count"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("selected_clip"), control::stringProperty()},
+		{QStringLiteral("playhead_ticks"), control::integerProperty(0, 0x7fffffff)},
 	});
 	cmd.handler = [](const QJsonObject&) {
 		const QVector<control::ClipRef> refs = control::enumerateClips();
@@ -95,6 +106,8 @@ void registerArrangementGetState(ControlRegistry& registry)
 		result.insert(QStringLiteral("track_count"), tracks.size());
 		result.insert(QStringLiteral("clip_count"), clips.size());
 		result.insert(QStringLiteral("selected_clip"), control::selectedClipId());
+		result.insert(QStringLiteral("playhead_ticks"), static_cast<qint64>(
+			Engine::getSong()->getPlayPos(Song::PlayMode::Song).getTicks()));
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);
@@ -130,7 +143,9 @@ void registerArrangementGetState(ControlRegistry& registry)
 //! addressable by id either, exactly as arrangement.get_state documents).
 int trackRouteOf(const Track* track)
 {
-	const TrackContainer::TrackList& list = Engine::getSong()->tracks();
+	Song* song = Engine::getSong();
+	if (song == nullptr) { return -1; }  // no song: no track is in its container
+	const TrackContainer::TrackList& list = song->tracks();
 	for (int i = 0; i < static_cast<int>(list.size()); ++i)
 	{
 		if (list[i] == track) { return i; }
@@ -169,7 +184,9 @@ ControlResult disarmTrackArm(TrackRecorder& target, const QString& trackId, int 
 }
 
 //! `armed: true`: validate the take path and the input channel, then start a
-//! real capture and record the inverse (this command with armed: false).
+//! real capture. No inverse is recorded: the take file the capture writes stays
+//! on disk once the capture stops, so the contract row is irreversible and
+//! control.undo refuses this command instead of half-reversing it.
 ControlResult armTrackArm(MultiTrackRecorder& recorder, Track* track, const QString& trackId,
 	int route, const QJsonObject& args, int sampleRate)
 {
@@ -189,10 +206,23 @@ ControlResult armTrackArm(MultiTrackRecorder& recorder, Track* track, const QStr
 			QStringLiteral("'file' must be absolute: a relative path names a different file in "
 				"the next process, and so does the take journal beside it"));
 	}
-	const QString takePath = file.isEmpty()
-		? QDir(control::defaultRecoveryDir()).absoluteFilePath(
-			QStringLiteral("zene-take-trk%1.wav").arg(track->id()))
-		: file;
+	QString takePath;
+	if (file.isEmpty())
+	{
+		takePath = control::reserveDefaultTake(control::defaultRecoveryDir(),
+			QStringLiteral("zene-take-trk%1").arg(track->id()));
+		if (takePath.isEmpty())
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("route %1 could not be armed: all %2 default take names "
+					"beside this instance's recovery file already hold a take or journal")
+					.arg(route).arg(control::TakeNameProbeBound));
+		}
+	}
+	else
+	{
+		takePath = file;
+	}
 
 	const int channels = target.inputChannelCapacity();
 	const int channel = args.contains(QStringLiteral("input_channel"))
@@ -200,6 +230,7 @@ ControlResult armTrackArm(MultiTrackRecorder& recorder, Track* track, const QStr
 		: std::min(route, channels - 1);
 	if (!target.inputChannelSelectable(channel))
 	{
+		releaseDefaultTakeIfOmitted(args, takePath);
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("input_channel %1 is outside [0, %2): this instance's input path "
 				"delivers %2 channel(s) (record.input_get_state reports the device's own answer)")
@@ -208,6 +239,7 @@ ControlResult armTrackArm(MultiTrackRecorder& recorder, Track* track, const QStr
 
 	if (!recorder.armTrack(route, takePath.toStdString(), sampleRate, channel))
 	{
+		if (file.isEmpty()) { control::releaseDefaultTake(takePath); }
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("route %1 could not be armed: the take file %2 could not be opened "
 				"for writing").arg(route).arg(takePath));
@@ -215,14 +247,6 @@ ControlResult armTrackArm(MultiTrackRecorder& recorder, Track* track, const QStr
 
 	QJsonObject result = armReply(target, trackId, route);
 	result.insert(QStringLiteral("sample_rate"), sampleRate);
-	QJsonObject before;
-	before.insert(QStringLiteral("track"), trackId);
-	before.insert(QStringLiteral("armed"), false);
-	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("track"), trackId);
-	inverseArgs.insert(QStringLiteral("armed"), false);
-	result.insert(QStringLiteral("__transaction"),
-		control::commandTransaction(before, QStringLiteral("track.set_arm"), inverseArgs));
 	return ControlResult::success(result);
 }
 
@@ -287,9 +311,10 @@ void registerTrackSetArm(ControlRegistry& registry)
 		"input path, so a route armed while nothing is staged records silence: "
 		"record.input_get_state reports whether a capture device is open and how many frames are "
 		"staged ('capture_capable', 'capture_open', 'capture_reason', 'input_frames_staged'). "
-		"Arming is reversible - the recorded inverse is track.set_arm with armed: false, which "
-		"stops the capture and retires the journal and leaves the take on disk; disarming is not, "
-		"and says so in its own record, because re-arming starts a NEW take.");
+		"Arming writes a take file that stays on disk when the capture stops, so it has no "
+		"complete inverse and control.undo refuses this command; stop the capture with this "
+		"command again, armed: false, or with record.disarm_track. Disarming records no inverse "
+		"either, because re-arming starts a NEW take.");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("track"), control::stringProperty()},
 		{QStringLiteral("armed"), control::booleanProperty()},
@@ -324,50 +349,75 @@ struct ArmBatch
 	QString lastReason;
 };
 
-//! Each track @a ids names, through track.set_arm's own handler. A track already in that state (busy) is skipped, not
-//! refused; every other refusal is collected and the rest still go ahead.
+//! The 'tracks' argument: an array whose every entry is a track ID string.
+QJsonObject trackIdsProperty()
+{
+	QJsonObject property = control::arrayProperty();
+	property.insert(QStringLiteral("items"), control::stringProperty());
+	return property;
+}
+
+//! True when every entry of @a ids is a string - checked before any track is armed, so a malformed entry
+//! cannot leave earlier valid entries armed while the batch reports a refusal.
+bool allTrackIdsAreStrings(const QJsonArray& ids)
+{
+	return std::all_of(ids.begin(), ids.end(), [](const QJsonValue& id) { return id.isString(); });
+}
+
+//! Each track @a ids names, through track.set_arm's own handler. A track already in that state is skipped, not
+//! refused; every other refusal is collected and the rest still go ahead. A repeated id names ONE track, so it is
+//! acted on and reported once.
 ArmBatch armEach(const QJsonArray& ids, bool armed)
 {
 	ArmBatch out;
+	QSet<QString> seen;
 	for (const QJsonValue& id : ids)
 	{
-		ControlResult one = setArm({{QStringLiteral("track"), id.toString()}, {QStringLiteral("armed"), armed}});
+		const QString trackId = id.toString();
+		if (seen.contains(trackId)) { continue; }
+		seen.insert(trackId);
+		ControlResult one = setArm({{QStringLiteral("track"), trackId}, {QStringLiteral("armed"), armed}});
 		if (one.ok)
 		{
-			one.result.remove(QStringLiteral("__transaction"));  // the batch records ONE transaction for all of them
-			out.changed.append(id.toString());
+			// Disarming an already-disarmed route SUCCEEDS - there is nothing there to
+			// refuse - so the batch has to ask the route's own before-state, or it
+			// reports tracks whose state it never changed.
+			if (!armed && !one.result.value(QStringLiteral("armed_before")).toBool()) { continue; }
+			one.result.remove(QStringLiteral("__transaction"));  // the per-track reply carries no transaction payload: neither arm verb records an inverse
+			out.changed.append(trackId);
 			out.routes.append(one.result);
 			continue;
 		}
 		if (one.errorKind == ControlErrorKind::Busy) { continue; }
-		out.refused.append(QJsonObject{{QStringLiteral("track"), id.toString()}, {QStringLiteral("reason"), one.errorMessage}});
+		out.refused.append(QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("reason"), one.errorMessage}});
 		out.lastReason = one.errorMessage;
 	}
 	return out;
 }
 
-/*! track.set_arm_many (W1): the mixer's Arm All as ONE call and ONE undo step. Arming records one inverse - this command
- *  with armed: false over exactly the tracks it armed - so one control.undo disarms them all; disarming records none, as
- *  track.set_arm's disarm does not (re-arming starts a NEW take). */
+/*! track.set_arm_many (W1): the mixer's Arm All as ONE call. Arming creates take files that remain on disk after the
+ *  captures stop, so the batch has no complete inverse and control.undo refuses it. Stop each route with
+ *  record.disarm_track; disarming records no inverse because re-arming starts a NEW take. */
 ControlResult setArmMany(const QJsonObject& args)
 {
 	const QJsonArray ids = args.value(QStringLiteral("tracks")).toArray();
 	if (ids.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'tracks' names no track")); }
+	if (!allTrackIdsAreStrings(ids))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'tracks' entries must be strings"));
+	}
 	const bool armed = args.value(QStringLiteral("armed")).toBool();
 	const ArmBatch batch = armEach(ids, armed);
 	if (batch.changed.isEmpty())
 	{
 		return batch.refused.isEmpty()
-			? ControlResult::failure(ControlErrorKind::Busy, QStringLiteral("every named track's route is already armed"))
+			? ControlResult::failure(ControlErrorKind::Busy, armed
+				? QStringLiteral("every named track's route is already armed")
+				: QStringLiteral("every named track's route is already disarmed"))
 			: ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("no track was armed: %1").arg(batch.lastReason));
 	}
 	QJsonObject result{{QStringLiteral("armed"), armed}, {QStringLiteral("tracks"), batch.changed},
 		{QStringLiteral("refused"), batch.refused}, {QStringLiteral("routes"), batch.routes}};
-	if (armed)
-	{
-		const QJsonObject inverse{{QStringLiteral("tracks"), batch.changed}, {QStringLiteral("armed"), false}};
-		result.insert(QStringLiteral("__transaction"), control::commandTransaction(inverse, QStringLiteral("track.set_arm_many"), inverse));
-	}
 	return ControlResult::success(result);
 }
 
@@ -381,10 +431,11 @@ void registerTrackSetArmMany(ControlRegistry& registry)
 		"Each track in 'tracks' (trk-<n> ids) is armed or disarmed as track.set_arm does it, with its default take file and "
 		"input channel; a track already armed is skipped, and a track that refuses (past the last record route, say) is "
 		"listed in 'refused' with its reason while the others still go ahead. 'tracks' answers the ones changed, 'routes' "
-		"each one's route reply. Arming is ONE undo step: control.undo disarms exactly the tracks this call armed (their "
-		"takes stay on disk). Disarming records no inverse, as track.set_arm's does not.");
+		"each one's route reply. Arming writes take files that remain on disk when captures stop, so control.undo refuses "
+		"this command; stop each route with record.disarm_track using its route id from 'routes'. Disarming records no "
+		"inverse, as track.set_arm's does not.");
 	cmd.argsSchema = control::objectSchema({
-		{QStringLiteral("tracks"), control::arrayProperty()},
+		{QStringLiteral("tracks"), trackIdsProperty()},
 		{QStringLiteral("armed"), control::booleanProperty()},
 	}, {QStringLiteral("tracks"), QStringLiteral("armed")});
 	cmd.resultSchema = control::objectSchema({

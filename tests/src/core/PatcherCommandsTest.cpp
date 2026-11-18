@@ -50,7 +50,9 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
+#include <algorithm>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "AllocationProbe.h"
@@ -58,9 +60,11 @@
 #include "AudioBus.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "AudioPortsModel.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
+#include "DeltaTap.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
@@ -119,6 +123,34 @@ const Plugin::Descriptor PatcherScaleEffect::s_descriptor
 	nullptr,
 	nullptr,
 	nullptr
+};
+
+//! An audio-port model whose output map excludes the first track-channel pair.
+class PatcherUnroutedOutputModel final : public AudioPortsModel
+{
+public:
+	PatcherUnroutedOutputModel() : AudioPortsModel{0, 2, false}
+	{
+		out().setPin(0, 0, false);
+		out().setPin(1, 1, false);
+	}
+
+private:
+	void bufferPropertiesChanging(ch_cnt_t, ch_cnt_t, f_cnt_t) override {}
+};
+
+class PatcherScaleEffectWithPorts final : public PatcherScaleEffect
+{
+public:
+	PatcherScaleEffectWithPorts(Model* parent, float left, float right, const AudioPortsModel& model)
+		: PatcherScaleEffect{parent, left, right}, m_model{model}
+	{
+	}
+
+	auto audioPortsModel() const -> const AudioPortsModel* override { return &m_model; }
+
+private:
+	const AudioPortsModel& m_model;
 };
 
 //! 8 * 256 frames - enough for the chain to have produced audio.
@@ -373,6 +405,49 @@ private slots:
 		QCOMPARE(chainUnderTest()->routingGraph().outputNodeId(), 2);
 	}
 
+	//! `changed` must account for AUTHORED-vs-DERIVED, not only the effective
+	//! edges. Authoring the chain's own derived linear edges leaves the render
+	//! and the effective wiring identical, but the chain's state flips: the
+	//! patch is now in force (patchActive), the read calls it "authored", and
+	//! the next rebuild re-applies it as a patch rather than deriving it. That
+	//! IS a change, so reporting `changed: false` alongside `wiring: "authored"`
+	//! in the same result contradicts itself.
+	void switchingToAnIdenticalAuthoredWiringReportsChanged()
+	{
+		QCOMPARE(readState().value(QStringLiteral("wiring")).toString(), QStringLiteral("derived"));
+		const QJsonObject derived = readState().value(QStringLiteral("effective_wiring")).toObject();
+
+		// Exactly the derived linear wiring of this two-effect chain, authored:
+		// input -> effect:0 -> effect:1, output effect:1.
+		QJsonObject args;
+		args.insert(QStringLiteral("target"), channel());
+		args.insert(QStringLiteral("edges"), QJsonArray{inputTo(QStringLiteral("effect:0")),
+			wire(QStringLiteral("effect:0"), QStringLiteral("effect:1"))});
+		args.insert(QStringLiteral("output"), QStringLiteral("effect:1"));
+		const ControlResult applied = invoke(QStringLiteral("patcher.set_wiring"), args);
+		QVERIFY2(applied.ok, qPrintable(applied.errorMessage));
+
+		QVERIFY2(applied.result.value(QStringLiteral("changed")).toBool(),
+			"authoring the chain's own derived wiring switched the wiring to `authored` but "
+			"reported changed: false");
+		QVERIFY(chainUnderTest()->patchActive());
+		QCOMPARE(applied.result.value(QStringLiteral("wiring")).toString(), QStringLiteral("authored"));
+		// The premise of the case: the EFFECTIVE wiring really is unchanged, so
+		// only the authored/derived state can be what `changed` missed.
+		QCOMPARE(applied.result.value(QStringLiteral("effective_wiring")).toObject(), derived);
+
+		// And the way back is still the derivation, with the same flip reported
+		// in the other direction.
+		QJsonObject restore;
+		restore.insert(QStringLiteral("target"), channel());
+		restore.insert(QStringLiteral("edges"), QJsonArray());
+		const ControlResult derivedAgain = invoke(QStringLiteral("patcher.set_wiring"), restore);
+		QVERIFY2(derivedAgain.ok, qPrintable(derivedAgain.errorMessage));
+		QVERIFY2(derivedAgain.result.value(QStringLiteral("changed")).toBool(),
+			"clearing the authored wiring restored the derived route but reported changed: false");
+		QVERIFY(!chainUnderTest()->patchActive());
+	}
+
 	//! Every refusal is typed and writes nothing - the state is read back after
 	//! each one and compared with the state before it.
 	void refusalsWriteNothing()
@@ -417,6 +492,45 @@ private slots:
 		QCOMPARE(invoke(QStringLiteral("patcher.get_state"), {}).errorKind,
 			ControlErrorKind::InvalidArgs);
 		QCOMPARE(readState(), before);
+	}
+
+	//! A port field that IS present but is not a JSON integer is not the same
+	//! thing as a port field that is absent. `from_port: "1"` used to leave the
+	//! default 0 in place, so the edit succeeded and connected a DIFFERENT port
+	//! than the caller asked for - and port 0 is usually valid, so nothing
+	//! downstream complained. `to_port: 0.5` was worse still: `toInt()`
+	//! truncated it to 0 silently. Both are now refused as malformed input,
+	//! while an absent port field still defaults to 0.
+	void aPresentButInvalidPortIsRefusedRatherThanBecomingPortZero()
+	{
+		const QJsonObject before = readState();
+
+		QJsonObject stringPort = wire(QStringLiteral("effect:0"), QStringLiteral("effect:1"));
+		stringPort.insert(QStringLiteral("from_port"), QStringLiteral("1"));
+		const ControlResult stringResult = invoke(QStringLiteral("patcher.set_wiring"),
+			{{QStringLiteral("target"), channel()},
+			 {QStringLiteral("edges"), QJsonArray{inputTo(QStringLiteral("effect:0")), stringPort}}});
+		QVERIFY(!stringResult.ok);
+		QCOMPARE(stringResult.errorKind, ControlErrorKind::InvalidArgs);
+
+		QJsonObject fractionalPort = wire(QStringLiteral("effect:0"), QStringLiteral("effect:1"));
+		fractionalPort.insert(QStringLiteral("to_port"), 0.5);
+		const ControlResult fractionalResult = invoke(QStringLiteral("patcher.set_wiring"),
+			{{QStringLiteral("target"), channel()},
+			 {QStringLiteral("edges"), QJsonArray{inputTo(QStringLiteral("effect:0")), fractionalPort}}});
+		QVERIFY(!fractionalResult.ok);
+		QCOMPARE(fractionalResult.errorKind, ControlErrorKind::InvalidArgs);
+
+		// Neither refusal wrote anything.
+		QCOMPARE(readState(), before);
+
+		// An absent port field still means port 0, and still works.
+		QJsonObject absentPort = wire(QStringLiteral("effect:0"), QStringLiteral("effect:1"));
+		absentPort.remove(QStringLiteral("from_port"));
+		const ControlResult absentResult = invoke(QStringLiteral("patcher.set_wiring"),
+			{{QStringLiteral("target"), channel()},
+			 {QStringLiteral("edges"), QJsonArray{inputTo(QStringLiteral("effect:0")), absentPort}}});
+		QVERIFY(absentResult.ok);
 	}
 
 	//! The measured normal case for a chain of real devices, stated rather than
@@ -490,6 +604,150 @@ private slots:
 		const std::uint64_t allocations = test::tlAllocationCount;
 		test::tlCountAllocations = false;
 		QCOMPARE(allocations, std::uint64_t{0});
+	}
+
+	//! The AudioBuffer overload runs every effect through its delta tap, like
+	//! the AudioBus fallback (EffectChain.cpp:336) and the graph path
+	//! (RoutingChainNodes.cpp:98) already do. With "hear only what it changes"
+	//! on a doubling effect, a unit block must come out as the change alone
+	//! (1.0), not the effect's own output (2.0), and the tap back off must
+	//! restore the plain output.
+	void theAudioBufferPathAppliesTheDeltaTap()
+	{
+		// One effect only: a legacy effect processes the interleaved scratch and
+		// its result is copied back to the planar channels, so a second effect
+		//! would read a stale input and mask what the first one did.
+		EffectChain* chain = &Engine::mixer()->mixerChannel(kEmptyChannel)->m_fxChain;
+		QVERIFY(chain->effects().empty());
+		auto* effect = new PatcherScaleEffect(chain, kBypassedGain, kBypassedGain);
+		chain->appendEffect(effect);
+		QCOMPARE(chain->effects().size(), std::size_t{1});
+
+		const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+		AudioBuffer buffer{fpp};
+		// The legacy effect processes through the interleaved scratch, which a
+		// bare AudioBuffer does not carry.
+		buffer.allocateInterleavedBuffer();
+		DeltaTap& tap = effect->deltaTap();
+
+		// A block is read from the interleaved scratch and written back to the
+		// planar channels; its silence flags are what a sleeping effect checks
+		// before zeroing it.
+		const auto fillWithUnitSignal = [&buffer, fpp]
+		{
+			std::fill_n(buffer.buffer(0).data(), fpp, 1.f);
+			std::fill_n(buffer.buffer(1).data(), fpp, 1.f);
+			toInterleaved(buffer.groupBuffers(0), buffer.interleavedBuffer());
+			buffer.assumeNonSilent(0);
+			buffer.assumeNonSilent(1);
+		};
+
+		// The tap off: the effect's plain output, 1.0 doubled.
+		QVERIFY(!tap.enabled());
+		fillWithUnitSignal();
+		chain->processAudioBuffer(buffer);
+		QCOMPARE(buffer.buffer(0)[0], kBypassedGain);
+		QCOMPARE(buffer.buffer(1)[0], kBypassedGain);
+
+		// The tap on: output minus input, i.e. the doubling itself - 1.0.
+		tap.setEnabled(true, fpp);
+		QVERIFY(tap.enabled());
+		fillWithUnitSignal();
+		chain->processAudioBuffer(buffer);
+		QCOMPARE(buffer.buffer(0)[0], kBypassedGain - 1.f);
+		QCOMPARE(buffer.buffer(1)[0], kBypassedGain - 1.f);
+
+		tap.setEnabled(false, fpp);
+		QVERIFY(!tap.enabled());
+	}
+
+	//! The tap hands the mixer the silence of the delta, measured and never assumed. A device that
+	//! changes nothing (gain 1) leaves an exact zero delta, which is quiet on both overloads; a
+	//! doubling device's delta is the signal, so it stays non-silent. With silence tracking off the
+	//! planar block is still assumed non-silent, as AudioBuffer documents.
+	void theDeltaTapMeasuresTheSilenceOfItsDelta()
+	{
+		EffectChain* chain = &Engine::mixer()->mixerChannel(kEmptyChannel)->m_fxChain;
+		auto* passthrough = new PatcherScaleEffect(chain, 1.f, 1.f);
+		auto* doubling = new PatcherScaleEffect(chain, kBypassedGain, kBypassedGain);
+		const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+
+		// The plain chain's path: an interleaved stereo bus.
+		std::vector<SampleFrame> block(fpp);
+		SampleFrame* busData[1] = {block.data()};
+		AudioBus bus{busData, 1, fpp};
+		const auto fillBus = [&block](float value)
+		{
+			for (auto& frame : block)
+			{
+				frame[0] = value;
+				frame[1] = value;
+			}
+		};
+
+		// The graph's path: a planar block, run with the silence flags the graph gives it.
+		AudioBuffer buffer{fpp};
+		buffer.allocateInterleavedBuffer();
+		const auto fillBuffer = [&buffer, fpp](float value)
+		{
+			std::fill_n(buffer.buffer(0).data(), fpp, value);
+			std::fill_n(buffer.buffer(1).data(), fpp, value);
+			toInterleaved(buffer.groupBuffers(0), buffer.interleavedBuffer());
+			buffer.assumeNonSilent(0);
+			buffer.assumeNonSilent(1);
+		};
+
+		passthrough->deltaTap().setEnabled(true, fpp);
+		doubling->deltaTap().setEnabled(true, fpp);
+		QVERIFY(passthrough->deltaTap().enabled());
+		QVERIFY(doubling->deltaTap().enabled());
+
+		// The bus: a silent block through a device that changes nothing is quiet...
+		fillBus(0.f);
+		bus.quietChannels().reset();
+		passthrough->deltaTap().process(*passthrough, bus);
+		QVERIFY(bus.quietChannels()[0]);
+		QVERIFY(bus.quietChannels()[1]);
+
+		// An output-port map may omit pair 0, but DeltaTap still subtracts it; its
+		// quiet bits must therefore be measured independently of that map.
+		PatcherUnroutedOutputModel unroutedOutput;
+		auto* routedPassthrough = new PatcherScaleEffectWithPorts(chain, 1.f, 1.f, unroutedOutput);
+		fillBus(1.f);
+		bus.quietChannels().reset();
+		routedPassthrough->deltaTap().setEnabled(true, fpp);
+		routedPassthrough->deltaTap().process(*routedPassthrough, bus);
+		QVERIFY(bus.quietChannels()[0]);
+		QVERIFY(bus.quietChannels()[1]);
+		routedPassthrough->deltaTap().setEnabled(false, fpp);
+
+		// ...while a doubling device's delta is the signal, not silence.
+		fillBus(1.f);
+		doubling->deltaTap().process(*doubling, bus);
+		QVERIFY(!bus.quietChannels()[0]);
+		QVERIFY(!bus.quietChannels()[1]);
+
+		// The buffer with silence tracking on: the same two answers.
+		buffer.enableSilenceTracking(true);
+		fillBuffer(0.f);
+		passthrough->deltaTap().process(*passthrough, buffer);
+		QVERIFY(buffer.silenceFlags()[0]);
+		QVERIFY(buffer.silenceFlags()[1]);
+
+		fillBuffer(1.f);
+		doubling->deltaTap().process(*doubling, buffer);
+		QVERIFY(!buffer.silenceFlags()[0]);
+		QVERIFY(!buffer.silenceFlags()[1]);
+
+		// The buffer with tracking off: nothing is measured, so the block stays non-silent.
+		buffer.enableSilenceTracking(false);
+		fillBuffer(0.f);
+		passthrough->deltaTap().process(*passthrough, buffer);
+		QVERIFY(!buffer.silenceFlags()[0]);
+		QVERIFY(!buffer.silenceFlags()[1]);
+
+		passthrough->deltaTap().setEnabled(false, fpp);
+		doubling->deltaTap().setEnabled(false, fpp);
 	}
 
 private:

@@ -39,6 +39,15 @@ is an alpha, and what is known to be missing is written down in `docs/KNOWN-LIMI
 - **Automation and modulation**: ramps by default, per-sample modulation for armed routes.
 - **Edit groups** carry every edit type; **scene Follow Actions**; the clip-launch grid.
 - **Plugin editors**: a run loop, VST3 and CLAP editor embedding, `plugin.editor_*`.
+  *Correction (2026-10-07): for instruments only. No VST3 or CLAP effect could be loaded in this release, so
+  no effect's editor could open: the VST3 and CLAP effect modules (`vst3effect`, `clapeffect`) never exported
+  `lmms_plugin_main`, the entry point the plug-in factory requires of every module
+  (`src/core/PluginFactory.cpp`), so the factory recorded both as "not a plug-in": no VST3 or CLAP effect was
+  listed or could be loaded in the product, and a saved one reopened as a placeholder. Only the integration
+  tests, which construct the effect classes directly, ever ran one. Fixed on the 0.5.0 line by `21250a1a4`
+  (`ControlDeviceCatalogueTest::hostedEffectsListAndLoadThroughTheSurface`); see
+  `docs/PLUGIN-HOSTING-IN-RELEASE.md`, "Addendum 2026-10-07", and the program's defect register (BUGS_FOUND
+  13.1). The text above is left as published.*
 - Rubber Band time-stretch (optional; WSOLA stays the default); stem separation on by default, its model
   fetched on first use; TPDF / noise-shaped dither; microtuning over MTS-ESP and Scala (`mts.*`); a
   live-coding clock for scheduled Lua (`livecode.*`); a waveform generator and operators (`sample.*`); the

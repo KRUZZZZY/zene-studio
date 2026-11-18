@@ -42,12 +42,14 @@
 
 #include "AutomatableModel.h"
 #include "ControlDeviceSupport.h"
+#include "ControlMixerSupport.h"
 #include "ControlVocabulary.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "ScriptApiVersion.h"
+#include "ScriptBindings.h"
 #include "ScriptCommandBridge.h"
 #include "ScriptEngine.h"
 // Stack<QString>/Stack<QStringList>. WITHOUT this include every function here
@@ -66,6 +68,7 @@ extern "C"
 
 #include "LuaBridge/LuaBridge.h"
 
+#include <QHash>
 #include <QString>
 #include <QStringList>
 
@@ -83,22 +86,44 @@ namespace
 // non-owning references, so a wrapper lives in a deque - push_back never
 // invalidates an existing element - and the pool is recycled only once the
 // previous lua_State has been closed).
+//
+// The pool holds ONE wrapper per OBJECT, not one per access. The wrappers are
+// C++ objects the Lua collector cannot reclaim, so a pool that grew with the
+// accesses grew outside the Lua memory budget: a script that read the same
+// channel a thousand times left a thousand wrappers behind (new-p12-245). The
+// key is the object's stable identity - the channel's id, the chain's channel
+// id, the device's own id - and a wrapper never changes after it is made, so
+// every reference Lua holds keeps naming the same view.
 // ---------------------------------------------------------------------------
 
 template<class T>
 class ViewPool
 {
 public:
-	T& add(const T& value)
+	//! The view for \a key: the one the pool already holds, or a new one made
+	//! by \a make.
+	template<class Maker>
+	T& add(const QString& key, Maker make)
 	{
-		m_items.push_back(value);
+		const auto found = m_index.constFind(key);
+		if (found != m_index.constEnd())
+		{
+			const int at = found.value();
+			if (at >= 0 && at < static_cast<int>(m_items.size())) { return m_items[at]; }
+		}
+		m_items.push_back(make());
+		m_index[key] = static_cast<int>(m_items.size()) - 1;
 		return m_items.back();
 	}
 
-	void clear() { m_items.clear(); }
+	void clear() { m_items.clear(); m_index.clear(); }
+
+	//! How many views the pool holds.
+	int size() const { return static_cast<int>(m_items.size()); }
 
 private:
 	std::deque<T> m_items;
+	QHash<QString, int> m_index;
 };
 
 ViewPool<LuaMixerChannel>& mixerChannelPool()
@@ -226,25 +251,59 @@ void syncForRead()
 	ScriptEngine::instance()->flushCommandsForRead();
 }
 
+AutomatableModel* mixerChannelGainModel(const QString& mixerChannelId)
+{
+	if (mixerChannelId.isEmpty()) { return nullptr; }
+	ControlResult error;
+	MixerChannel* channel = control::resolveMixerChannel(mixerChannelId, &error);
+	return channel == nullptr ? nullptr : &channel->m_volumeModel;
+}
+
+EffectChain* mixerChannelEffectChain(const QString& mixerChannelId)
+{
+	if (mixerChannelId.isEmpty()) { return nullptr; }
+	ControlResult error;
+	MixerChannel* channel = control::resolveMixerChannel(mixerChannelId, &error);
+	return channel == nullptr ? nullptr : &channel->m_fxChain;
+}
+
 LuaMixerChannel& newMixerChannel(MixerChannel* channel)
 {
-	return mixerChannelPool().add(LuaMixerChannel(channel));
+	// The channel's own id is the key: the same channel read twice is the same
+	// view, and a channel that is gone is a view that reports itself invalid.
+	return mixerChannelPool().add(control::channelIdOf(channel),
+		[channel]() { return LuaMixerChannel(channel); });
 }
 
-LuaEffectChain& newEffectChain(EffectChain* chain)
+LuaEffectChain& newEffectChain(const QString& mixerChannelId)
 {
-	return effectChainPool().add(LuaEffectChain(chain));
+	return effectChainPool().add(mixerChannelId,
+		[mixerChannelId]() { return LuaEffectChain(mixerChannelId); });
 }
 
-LuaEffect& newEffect(EffectChain* chain, Effect* effect)
+LuaEffect& newEffect(const QString& mixerChannelId, Effect* effect)
 {
-	return effectPool().add(LuaEffect(chain, effect));
+	// The device's own id is the key: it is unique for the life of the project,
+	// so the pool holds one view per device and never one per access. A view of
+	// no device is keyed by the channel it was asked about, so the invalid
+	// views do not pile up either.
+	const QString key = effect == nullptr
+		? QStringLiteral("none:%1").arg(mixerChannelId)
+		: control::effectIdOf(effect);
+	return effectPool().add(key, [mixerChannelId, effect]() {
+		return LuaEffect(mixerChannelId, effect == nullptr ? -1 : effect->id());
+	});
 }
 
 LuaMixer& mixerView()
 {
 	static LuaMixer view;
 	return view;
+}
+
+int viewPoolSize()
+{
+	return mixerChannelPool().size() + effectChainPool().size() + effectPool().size();
 }
 
 void registerAll(lua_State* L)
@@ -385,10 +444,18 @@ LuaMixerChannel& LuaMixer::master() const
 QStringList LuaMixer::ids() const
 {
 	QStringList out;
-	const int count = channelCount();
-	for (int i = 0; i < count; ++i)
+	ScriptDawBindings::syncForRead();
+	Mixer* mixer = liveMixer();
+	if (mixer == nullptr) { return out; }
+	for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
 	{
-		out.append(control::channelId(i));
+		MixerChannel* channel = mixer->mixerChannel(i);
+		// The channel OBJECT's own id - the same number `channel:id()` publishes
+		// and the same one channelById() resolves. channelId(i) names a POSITION,
+		// so this list started at "ch-0" for a master that is ch-1, and the
+		// entries were ids no channel carried: feeding one back to channelById()
+		// returned an invalid wrapper instead of the channel it named.
+		if (channel != nullptr) { out.append(control::channelIdOf(channel)); }
 	}
 	return out;
 }
@@ -397,106 +464,219 @@ QStringList LuaMixer::ids() const
 // LuaMixerChannel
 // ---------------------------------------------------------------------------
 
+LuaMixerChannel::LuaMixerChannel(MixerChannel* channel) :
+	m_id(control::channelIdOf(channel))
+{
+}
+
+MixerChannel* LuaMixerChannel::resolve() const
+{
+	if (m_id.isEmpty()) { return nullptr; }
+	ControlResult error;
+	return control::resolveMixerChannel(m_id, &error);
+}
+
+bool LuaMixerChannel::isValid() const
+{
+	ScriptDawBindings::syncForRead();
+	return resolve() != nullptr;
+}
+
 int LuaMixerChannel::index() const
 {
-	return m_channel == nullptr ? -1 : m_channel->index();
+	ScriptDawBindings::syncForRead();
+	MixerChannel* channel = resolve();
+	return channel == nullptr ? -1 : channel->index();
 }
 
 QString LuaMixerChannel::id() const
 {
-	// The channel OBJECT's own id, the same number `mixer.get_state` publishes -
-	// not channelId(index). Measured on a live session: the master is ch-1 and
-	// the first added channel ch-7, so `mixer:channelById(channel:id())` used to
-	// be answered with an id no channel carries.
-	return m_channel == nullptr ? QString() : control::channelIdOf(m_channel);
+	return m_id;
 }
 
 QString LuaMixerChannel::name() const
 {
 	ScriptDawBindings::syncForRead();
-	return m_channel == nullptr ? QString() : m_channel->m_name;
+	MixerChannel* channel = resolve();
+	return channel == nullptr ? QString() : channel->m_name;
 }
 
 bool LuaMixerChannel::isMaster() const
 {
-	return m_channel != nullptr && m_channel->isMaster();
+	ScriptDawBindings::syncForRead();
+	MixerChannel* channel = resolve();
+	return channel != nullptr && channel->isMaster();
 }
 
 bool LuaMixerChannel::isBus() const
 {
-	return m_channel != nullptr && m_channel->isBus();
+	ScriptDawBindings::syncForRead();
+	MixerChannel* channel = resolve();
+	return channel != nullptr && channel->isBus();
 }
 
 float LuaMixerChannel::gain() const
 {
-	if (m_channel == nullptr) { return 0.0f; }
 	ScriptDawBindings::syncForRead();
-	return m_channel->m_volumeModel.value();
+	MixerChannel* channel = resolve();
+	return channel == nullptr ? 0.0f : channel->m_volumeModel.value();
 }
 
 bool LuaMixerChannel::muted() const
 {
-	if (m_channel == nullptr) { return false; }
 	ScriptDawBindings::syncForRead();
-	return m_channel->m_muteModel.value();
+	MixerChannel* channel = resolve();
+	return channel != nullptr && channel->m_muteModel.value();
 }
 
 bool LuaMixerChannel::soloed() const
 {
-	if (m_channel == nullptr) { return false; }
 	ScriptDawBindings::syncForRead();
-	return m_channel->m_soloModel.value();
+	MixerChannel* channel = resolve();
+	return channel != nullptr && channel->m_soloModel.value();
 }
 
-AutomatableModel* LuaMixerChannel::gainModel() const
+LuaFloatModel& LuaMixerChannel::gainModel() const
 {
-	return m_channel == nullptr ? nullptr : &m_channel->m_volumeModel;
+	return ScriptBindings::newMixerGainModel(m_id);
 }
 
-AutomatableModel* LuaMixerChannel::muteModel() const
+LuaBoolModel& LuaMixerChannel::muteModel() const
 {
-	return m_channel == nullptr ? nullptr : &m_channel->m_muteModel;
+	ScriptDawBindings::syncForRead();
+	MixerChannel* channel = resolve();
+	return ScriptBindings::newBoolModel(channel == nullptr ? nullptr : &channel->m_muteModel);
 }
 
-AutomatableModel* LuaMixerChannel::soloModel() const
+LuaBoolModel& LuaMixerChannel::soloModel() const
 {
-	return m_channel == nullptr ? nullptr : &m_channel->m_soloModel;
+	ScriptDawBindings::syncForRead();
+	MixerChannel* channel = resolve();
+	return ScriptBindings::newBoolModel(channel == nullptr ? nullptr : &channel->m_soloModel);
 }
 
 LuaEffectChain& LuaMixerChannel::chain() const
 {
-	// The Lua VIEW: lmms::EffectChain is not a registered class (the registered
-	// name "EffectChain" is LuaEffectChain), so the raw EffectChain* this used
-	// to return raised "The class is not registered in LuaBridge" and
-	// `channel:chain():effectCount()` was unreachable from a script.
-	ScriptDawBindings::syncForRead();
-	return ScriptDawBindings::newEffectChain(m_channel == nullptr ? nullptr : &m_channel->m_fxChain);
+	return ScriptDawBindings::newEffectChain(m_id);
 }
 
 int LuaMixerChannel::sendCount() const
 {
-	return m_channel == nullptr ? 0 : static_cast<int>(m_channel->m_sends.size());
+	ScriptDawBindings::syncForRead();
+	MixerChannel* channel = resolve();
+	return channel == nullptr ? 0 : static_cast<int>(channel->m_sends.size());
 }
 
 QString LuaMixerChannel::sendTarget(int index) const
 {
-	if (m_channel == nullptr || index < 0 || index >= sendCount()) { return QString(); }
-	// The RECEIVER's own id - never channelId(receiverIndex()), which names a
-	// mixer POSITION, not the object's id the surface resolves.
-	return control::channelIdOf(m_channel->m_sends[index]->receiver());
+	ScriptDawBindings::syncForRead();
+	MixerChannel* channel = resolve();
+	if (channel == nullptr || index < 0 || index >= static_cast<int>(channel->m_sends.size()))
+	{
+		return QString();
+	}
+	return control::channelIdOf(channel->m_sends[index]->receiver());
 }
 
 float LuaMixerChannel::sendAmount(int index) const
 {
-	if (m_channel == nullptr || index < 0 || index >= sendCount()) { return 0.0f; }
 	ScriptDawBindings::syncForRead();
-	return m_channel->m_sends[index]->amount()->value();
+	MixerChannel* channel = resolve();
+	if (channel == nullptr || index < 0 || index >= static_cast<int>(channel->m_sends.size()))
+	{
+		return 0.0f;
+	}
+	return channel->m_sends[index]->amount()->value();
 }
 
 bool LuaMixerChannel::sendPreFader(int index) const
 {
-	if (m_channel == nullptr || index < 0 || index >= sendCount()) { return false; }
-	return m_channel->m_sends[index]->preFader();
+	ScriptDawBindings::syncForRead();
+	MixerChannel* channel = resolve();
+	return channel != nullptr && index >= 0 && index < static_cast<int>(channel->m_sends.size())
+		&& channel->m_sends[index]->preFader();
+}
+
+// ---------------------------------------------------------------------------
+// LuaFloatModel
+// ---------------------------------------------------------------------------
+
+LuaFloatModel::LuaFloatModel(AutomatableModel* model) : m_model(model) {}
+
+AutomatableModel* LuaFloatModel::resolve() const
+{
+	if (!m_mixerChannelId.isEmpty())
+	{
+		ScriptDawBindings::syncForRead();
+		return ScriptDawBindings::mixerChannelGainModel(m_mixerChannelId);
+	}
+	return m_model;
+}
+
+bool LuaFloatModel::isValid() const
+{
+	return resolve() != nullptr;
+}
+
+float LuaFloatModel::value() const
+{
+	AutomatableModel* model = resolve();
+	if (!model) { return 0.0f; }
+	if (m_mixerChannelId.isEmpty())
+	{
+		ScriptEngine::instance()->flushCommandsForRead();
+		// The flush can replace the project and clear the model's QPointer, so
+		// the pointer resolved above is only trusted again after this re-read.
+		model = m_model.data();
+	}
+	return model ? model->value<float>() : 0.0f;
+}
+
+void LuaFloatModel::setValue(float value)
+{
+	AutomatableModel* model = resolve();
+	if (!model) { return; }
+	ScriptCommand command;
+	command.type = ScriptCommand::Type::SetModelValue;
+	command.object0 = model;
+	command.f0 = value;
+	if (!ScriptEngine::instance()->enqueue(command))
+	{
+		// The bounded queue was full, so the write was dropped (spec section 4:
+		// the producer is never blocked). The script is told, rather than left
+		// to read back a value it never wrote - the same refusal the DAW
+		// write half reports (src/core/ScriptDawEdit.cpp).
+		ScriptEngine::instance()->logMessage(QStringLiteral(
+			"[error] setting this parameter refused: the script command queue is full (%1 commands); "
+			"the edit was dropped").arg(ScriptCommandQueueCapacity));
+	}
+}
+
+float LuaFloatModel::minValue() const
+{
+	AutomatableModel* model = resolve();
+	return model ? model->minValue<float>() : 0.0f;
+}
+
+float LuaFloatModel::maxValue() const
+{
+	AutomatableModel* model = resolve();
+	return model ? model->maxValue<float>() : 0.0f;
+}
+
+QString LuaFloatModel::name() const
+{
+	AutomatableModel* model = resolve();
+	return model ? model->displayName() : QString();
+}
+
+QString LuaFloatModel::type() const
+{
+	AutomatableModel* model = resolve();
+	if (dynamic_cast<IntModel*>(model) != nullptr) { return QStringLiteral("int"); }
+	if (dynamic_cast<BoolModel*>(model) != nullptr) { return QStringLiteral("bool"); }
+	if (dynamic_cast<FloatModel*>(model) != nullptr) { return QStringLiteral("float"); }
+	return QStringLiteral("unknown");
 }
 
 } // namespace lmms

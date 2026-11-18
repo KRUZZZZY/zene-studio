@@ -60,6 +60,7 @@
 #include "ControlReversibility.h"
 #include "MidiClip.h"
 #include "Note.h"
+#include "NoteConditions.h"
 
 namespace lmms
 {
@@ -104,9 +105,17 @@ ControlResult slideSet(const QJsonObject& args)
 	const bool slide = args.value(QStringLiteral("slide")).toBool();
 
 	const bool previous = note->slide();
-	clip->addJournalCheckPoint();
-	note->setSlide(slide);
-	publishSlideEdit(clip);
+	// A slide flag the note ALREADY carries changes nothing: the flag is set to
+	// the value it has, so the edit takes no undo step (control::checkpointNoteEdit)
+	// and the project stays clean - a step that undoes nothing would shadow the
+	// edit under it.
+	const bool changes = previous != slide;
+	control::checkpointNoteEdit(clip, changes);
+	if (changes)
+	{
+		note->setSlide(slide);
+		publishSlideEdit(clip);
+	}
 
 	QJsonObject result = noteState(note, index);
 	result.insert(QStringLiteral("clip"), clipId(ref.id));
@@ -115,6 +124,9 @@ ControlResult slideSet(const QJsonObject& args)
 	// position is what the next edit's re-sort invalidates.
 	result.insert(QStringLiteral("note"), noteIdOf(note));
 	result.insert(QStringLiteral("slide"), note->slide());
+
+	// No step, no inverse: a no-op edit has nothing to record.
+	if (!changes) { return ControlResult::success(result); }
 
 	QJsonObject before;
 	before.insert(QStringLiteral("clip"), clipId(ref.id));
@@ -191,17 +203,18 @@ ControlResult slideClear(const QJsonObject& args)
 	result.insert(QStringLiteral("slides_remaining"), slidesBefore - cleared);
 	result.insert(QStringLiteral("note_count"), static_cast<int>(clip->notes().size()));
 
-	QJsonObject before;
-	before.insert(QStringLiteral("clip"), clipId(ref.id));
-	before.insert(QStringLiteral("track"), trackIdOf(ref.track));
-	before.insert(QStringLiteral("slides_before"), slidesBefore);
-	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
-	result.insert(QStringLiteral("__transaction"),
-		transactionPayload(before, QStringLiteral("control.undo"), inverseArgs, true,
-			kSlideCheckpoint + QStringLiteral("; every cleared flag is part of the note list the "
-				"checkpoint carries, so ONE control.undo restores the whole scope without a "
-				"per-note call and without re-toggling anything")));
+	if (cleared > 0)
+	{
+		QJsonObject before;
+		before.insert(QStringLiteral("clip"), clipId(ref.id));
+		before.insert(QStringLiteral("track"), trackIdOf(ref.track));
+		before.insert(QStringLiteral("slides_before"), slidesBefore);
+		result.insert(QStringLiteral("__transaction"),
+			transactionPayload(before, QStringLiteral("control.undo"), {}, true,
+				kSlideCheckpoint + QStringLiteral("; every cleared flag is part of the note list the "
+					"checkpoint carries, so ONE control.undo restores the whole scope without a "
+					"per-note call and without re-toggling anything")));
+	}
 	return ControlResult::success(result);
 }
 
@@ -239,6 +252,8 @@ void registerNoteSlideCommands(ControlRegistry& registry)
 			{QStringLiteral("velocity"), numberProperty()},
 			{QStringLiteral("midi_velocity"), integerProperty(0, 127)},
 			{QStringLiteral("pan"), numberProperty()},
+			{QStringLiteral("recur_length"), integerProperty(0, NoteConditions::MaxRecurLength)},
+			{QStringLiteral("recur_mask"), integerProperty(0, 65535)},
 		});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) { return slideSet(args); };

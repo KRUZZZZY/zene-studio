@@ -52,6 +52,9 @@ public:
 	int getMajor() const { return m_major; }
 	int getMinor() const { return m_minor; }
 	int getPatch() const { return m_patch; }
+	//! False if a MAJOR, MINOR or PATCH identifier is not a number (e.g. "2.x.0").
+	//! Such an identifier is not read as 0: it is -1, which sorts below every number.
+	bool isValid() const { return m_valid; }
 	const QStringList& getLabels() const { return m_labels; }
 	CompareType getCompareType() const { return m_compareType; }
 	ProjectVersion setCompareType(CompareType compareType) { m_compareType = compareType; return * this; }
@@ -64,6 +67,7 @@ private:
 	int m_major = 0;
 	int m_minor = 0;
 	int m_patch = 0;
+	bool m_valid = true;
 	QStringList m_labels;
 	CompareType m_compareType;
 } ;

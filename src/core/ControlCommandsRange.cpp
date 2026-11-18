@@ -226,6 +226,8 @@ QVector<Track*> rippledOthers(const QVector<Track*>& covered)
 {
 	QVector<Track*> others;
 	if (arrangement::modes().ripple != arrangement::Ripple::All) { return others; }
+	// No covered track (its track was removed since range.set): nothing is cut, so no gap to close.
+	if (covered.isEmpty()) { return others; }
 	for (Track* track : Engine::getSong()->tracks())
 	{
 		if (!covered.contains(track)) { others.append(track); }
@@ -324,6 +326,10 @@ int pasteAt(const QVector<Track*>& tracks, tick_t position)
 		Track* track = tracks.at(copied.trackIndex);
 		Clip* clip = track->createClip(TimePos(position + copied.offset));
 		clip->restoreState(doc.documentElement().firstChildElement());
+		// A range-pasted clip is an independent ordinary clip, not another
+		// member of the source take group.
+		clip->clearTakeGroupId();
+		control::assignTakeLane(clip, 0);  // the lane tag's one writer (ControlCommandsComp.cpp)
 		clip->movePosition(TimePos(position + copied.offset));
 		++pasted;
 	}
@@ -567,8 +573,8 @@ void registerRangeCommands(ControlRegistry& registry)
 		"range's tracks, in the order they were copied from.") + oneStep,
 		objectSchema({{QStringLiteral("position"), tickProperty()}}), true, pasteRange);
 	add(registry, "consolidate", QStringLiteral("Render each covered sample track's clips inside the range into ONE clip "
-		"(clip.consolidate per track - clips crossing an edge are refused: range.split first). Each track records "
-		"and undoes as its own consolidation."), objectSchema({}), false, consolidateRange);
+		"(clip.consolidate per track - clips crossing an edge are refused: range.split first). "
+		"The tracks' consolidations are one undo step, which control.undo reverts for every track together."), objectSchema({}), false, consolidateRange);
 	add(registry, "duplicate", QStringLiteral("Copy what is inside the range and paste it right after it; the range moves "
 		"onto the copy, so repeating it repeats the pattern.") + oneStep, objectSchema({}), true, duplicateRange);
 }

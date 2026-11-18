@@ -2,13 +2,28 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <stdexcept>
 
 namespace lmms
 {
 
+namespace
+{
+
+std::size_t checkedLength(int length)
+{
+	if (length < 0)
+	{
+		throw std::invalid_argument("ValueBuffer length must be non-negative");
+	}
+	return static_cast<std::size_t>(length);
+}
+
+}
 
 ValueBuffer::ValueBuffer(int length)
-	: std::vector<float>(length)
+	: std::vector<float>(checkedLength(length))
 {}
 
 void ValueBuffer::fill(float value)
@@ -18,7 +33,10 @@ void ValueBuffer::fill(float value)
 
 float ValueBuffer::value(int offset) const
 {
-	return at(offset % length());
+	const int bufferLength = length();
+	if (bufferLength == 0) { return 0.0f; }
+	const int index = offset % bufferLength;
+	return at(index < 0 ? index + bufferLength : index);
 }
 
 const float *ValueBuffer::values() const

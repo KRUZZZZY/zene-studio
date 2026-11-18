@@ -33,6 +33,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include "ClipAudioLoop.h"
 #include "ClipEdits.h"
 #include "ControlCommandDef.h"
 #include "ControlEdit.h"
@@ -114,7 +115,7 @@ bool readPoint(const QJsonValue& value, int clipTicks, GainPoint* point, Control
 		return false;
 	}
 	const double db = dbValue.toDouble();
-	if (tick < 0 || tick > clipTicks || db < MinDb || db > MaxDb)
+	if (tick < 0 || tick > clipTicks || !std::isfinite(db) || db < MinDb || db > MaxDb)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("a point needs 0 <= tick <= %1 and %2 <= gain_db <= %3").arg(clipTicks).arg(MinDb).arg(MaxDb));
@@ -189,7 +190,7 @@ ControlResult setTranspose(const QJsonObject& args)
 	// One checkpoint covers both: the edits and the warp element (the stretch mode) are the clip's.
 	ref.clip->addJournalCheckPoint();
 	ref.clip->setClipEdits(after);
-	if (sample != nullptr && semitones != 0) { sample->setWarpStretchMode(WarpStretchMode::RubberBand); }
+	if (sample != nullptr && semitones != 0) { sample->setWarpStretchMode(WarpStretchMode::Complex); }
 	QJsonObject result{{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("semitones"), semitones},
 		{QStringLiteral("previous"), before.transpose}};
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("semitones"), before.transpose}},
@@ -198,13 +199,36 @@ ControlResult setTranspose(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
-//! 0.5.0 ED-029: a MIDI clip's content repeating every 'length' ticks across the clip (0 stops it).
+//! 0.5.0 ED-029 (audio): a sample clip's audio looped - 'start' and 'length' ticks from its in-point, kept in source frames.
+ControlResult setAudioLoop(const ClipRef& ref, SampleClip* sample, const QJsonObject& args)
+{
+	const int length = args.value(QStringLiteral("length")).toInt();
+	const int start = args.value(QStringLiteral("start")).toInt();
+	const QString refusal = audioloop::refusal(*sample);
+	if (length > 0 && !refusal.isEmpty()) { return ControlResult::failure(ControlErrorKind::Refused, refusal); }
+	ClipEdits after = ref.clip->clipEdits();
+	QString message;
+	if (!audioloop::withLoop(*sample, start, length, &after, &message)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, message); }
+	ref.clip->addJournalCheckPoint();
+	ref.clip->setClipEdits(after);
+	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("length"), length > 0 ? length : 0},
+		{QStringLiteral("start"), length > 0 ? start : 0}, {QStringLiteral("loop_from_frame"), static_cast<double>(after.audioLoopStart)},
+		{QStringLiteral("loop_frames"), static_cast<double>(after.audioLoopFrames)}});
+}
+
+//! 0.5.0 ED-029: a MIDI clip's content repeating every 'length' ticks across the clip (0 stops it); a sample clip's audio
+//! looped (setAudioLoop).
 ControlResult setLoop(const QJsonObject& args)
 {
 	ClipRef ref;
 	ControlResult error;
 	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
-	if (dynamic_cast<MidiClip*>(ref.clip) == nullptr) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("looped content belongs to MIDI clips")); }
+	if (auto* sample = dynamic_cast<SampleClip*>(ref.clip)) { return setAudioLoop(ref, sample, args); }
+	if (dynamic_cast<MidiClip*>(ref.clip) == nullptr) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("looped content belongs to MIDI and audio clips")); }
+	if (args.value(QStringLiteral("start")).toInt() != 0)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a MIDI clip's loop starts at the clip's start; 'start' is for audio clips"));
+	}
 	ClipEdits after = ref.clip->clipEdits();
 	after.loopTicks = args.value(QStringLiteral("length")).toInt();
 	ref.clip->addJournalCheckPoint();
@@ -250,7 +274,7 @@ ControlResult setFormant(const QJsonObject& args)
 	after.formant = args.value(QStringLiteral("semitones")).toInt(after.formant);
 	ref.clip->addJournalCheckPoint();
 	ref.clip->setClipEdits(after);
-	if (after.keepFormants || after.formant != 0) { static_cast<SampleClip*>(ref.clip)->setWarpStretchMode(WarpStretchMode::RubberBand); }
+	if (after.keepFormants || after.formant != 0) { static_cast<SampleClip*>(ref.clip)->setWarpStretchMode(WarpStretchMode::Complex); }
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("keep"), after.keepFormants},
 		{QStringLiteral("semitones"), after.formant}});
 }
@@ -263,10 +287,13 @@ void registerClipEnvelopeCommands(ControlRegistry& registry)
 	loop.id = QStringLiteral("clip.set_loop");
 	loop.group = QStringLiteral("clip");
 	loop.verb = QStringLiteral("set_loop");
-	loop.description = QStringLiteral("Loop a MIDI clip's content: its notes from the start to 'length' ticks repeat across the whole "
-		"clip, however long it is drawn (0 stops the loop). Saved with the clip. Reversible through the ProjectJournal (Clip checkpoint).");
-	loop.argsSchema = objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("length"), integerProperty(0, 192 * 256)}},
-		{QStringLiteral("clip"), QStringLiteral("length")});
+	loop.description = QStringLiteral("Loop a clip's content: a MIDI clip's notes from the start to 'length' ticks repeat across the whole "
+		"clip, however long it is drawn (0 stops the loop). An audio clip's audio from 'start' ticks after its in-point (0 when left out) "
+		"for 'length' ticks repeats the same way once the clip plays past it - kept in source frames, so a tempo change keeps it on the "
+		"same audio; refused, typed, for a warped, transposed, sped or recording audio clip. Saved with the clip. Reversible through "
+		"the ProjectJournal (Clip checkpoint).");
+	loop.argsSchema = objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("length"), integerProperty(0, 192 * 256)},
+		{QStringLiteral("start"), integerProperty(0, 192 * 256)}}, {QStringLiteral("clip"), QStringLiteral("length")});
 	loop.resultSchema = objectProperty();
 	loop.mutating = true;
 	loop.handler = setLoop;

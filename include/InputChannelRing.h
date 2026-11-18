@@ -31,6 +31,8 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <stdexcept>
 #include <vector>
 
 namespace lmms
@@ -80,7 +82,7 @@ public:
 		m_mask(m_capacity - 1),
 		m_maxChannels(std::max(channels < 1 ? 1 : channels, maxChannels)),
 		m_channels(channels < 1 ? 1 : channels),
-		m_data(m_capacity * static_cast<std::size_t>(m_maxChannels))
+		m_data(storageSize(m_capacity, std::max(channels < 1 ? 1 : channels, maxChannels)))
 	{
 	}
 
@@ -190,9 +192,27 @@ public:
 private:
 	static std::size_t nextPowerOfTwo(std::size_t value)
 	{
+		// Past the largest power of two a size_t holds, `result <<= 1` wraps to 0 and never ends.
+		if (value > (std::numeric_limits<std::size_t>::max() >> 1) + 1)
+		{
+			throw std::length_error("ring capacity cannot be rounded up to a power of two");
+		}
 		std::size_t result = 1;
 		while (result < value) { result <<= 1; }
 		return result;
+	}
+
+	//! Frames x channels; a product that wraps would size the storage too small,
+	//! so every later write landed out of bounds. SampleFrameRingBuffer's
+	//! storage is one element per frame, which is why only this ring needs it.
+	static std::size_t storageSize(std::size_t capacity, int maxChannels)
+	{
+		const auto width = static_cast<std::size_t>(maxChannels);
+		if (width != 0 && capacity > std::numeric_limits<std::size_t>::max() / width)
+		{
+			throw std::length_error("ring storage size overflows size_t");
+		}
+		return capacity * width;
 	}
 
 	const std::size_t m_capacity;

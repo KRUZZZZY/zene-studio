@@ -24,6 +24,7 @@
 
 #include "LibraryCommandMenus.h"
 
+#include <QActionGroup>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QMenu>
@@ -50,6 +51,8 @@ namespace lmms::gui::LibraryCommandMenus
 
 namespace
 {
+
+void syncDocumentTypeView();
 
 QString tr(const char* text)
 {
@@ -96,15 +99,20 @@ std::function<QJsonObject()> current(const char* id, const QString& dropped = {}
 void documentTypeMenu(QMenu* menu)
 {
 	QMenu* types = menu->addMenu(tr("Document Type"));
+	// A document has ONE type, so the items are exclusive: choosing one unticks the one it replaces,
+	// and choosing the type that is already chosen leaves it ticked instead of clearing it.
+	auto* exclusive = new QActionGroup(types);
+	exclusive->setExclusive(true);
 	const QString now = ProjectInfo::instance().documentType();
 	for (const QString& type : ProjectInfo::documentTypes())
 	{
 		QAction* action = types->addAction(type);
 		action->setCheckable(true);
 		action->setChecked(type == now);
+		exclusive->addAction(action);
 		action->setProperty("controlCommand", QStringLiteral("project.settings"));
 		QObject::connect(action, &QAction::triggered, menu, [type] {
-			if (run(QStringLiteral("project.settings"), {{QStringLiteral("document_type"), type}}).ok) { applyDocumentType(type); }
+			if (run(QStringLiteral("project.settings"), {{QStringLiteral("document_type"), type}}).ok) { syncDocumentTypeView(); }
 		});
 	}
 }
@@ -192,17 +200,24 @@ void snapshotMenu(QMenu* menu)
 	list(snapshots, "Snapshots...", [] { return CommandLists::mixerSnapshots(); });
 }
 
-//! WF-051: syncing with other apps and machines - the Link-style session and MIDI clock.
+//! WF-051: syncing with other apps and machines - the Ableton Link session and MIDI clock.
 void syncMenu(QMenu* menu)
 {
 	QMenu* sync = menu->addMenu(tr("Sync"));
-	addCommandChoices(sync, tr("Link Session"), QStringLiteral("link.set_enabled"), QStringLiteral("enabled"),
+	addCommandChoices(sync, tr("Sync with Other Apps"), QStringLiteral("link.set_enabled"), QStringLiteral("enabled"),
 		[] { return CommandCall{QStringLiteral("link.set_enabled"), {}, {}, QString(), false}; });
 	addCommandChoices(sync, tr("Share Start and Stop"), QStringLiteral("link.set_start_stop_sync"), QStringLiteral("enabled"),
 		[] { return CommandCall{QStringLiteral("link.set_start_stop_sync"), {}, {}, QString(), false}; });
 	entry(sync, "Session Tempo...", "link.set_session_tempo", {}, true);
 	entry(sync, "Quantum...", "link.set_quantum", {}, true);
 	entry(sync, "Session Status", "link.get_state", {}, false, {}, true);
+	sync->addSeparator();
+	// Q050-024: the PCM stream between instances - not Link sync (docs/LINK-AUDIO.md).
+	addCommandChoices(sync, tr("Link Audio Stream"), QStringLiteral("link.audio_set_enabled"), QStringLiteral("enabled"),
+		[] { return CommandCall{QStringLiteral("link.audio_set_enabled"), {}, {}, QString(), false}; });
+	entry(sync, "Link Audio Peer...", "link.audio_set_enabled", {}, true);
+	entry(sync, "Link Audio Status", "link.audio_get_state", {}, false, {}, true);
+	sync->addSeparator();
 	sync->addSeparator();
 	entry(sync, "Send MIDI Clock...", "clock.master_set", {}, true);
 	entry(sync, "Follow MIDI Clock...", "clock.slave_set", {}, true);
@@ -213,6 +228,11 @@ void syncMenu(QMenu* menu)
 
 void populateProject(QMenu* menu)
 {
+	// Q050-055.2: what follows the selection, as menu actions - so a key can also be given to them for the whole window.
+	QMenu* selected = menu->addMenu(tr("Selected Track"));
+	entry(selected, "Open Editor", "plugin.selected_editor_open", {}, false);
+	entry(selected, "Open First Effect", "plugin.selected_editor_open", {{QStringLiteral("device"), QStringLiteral("effect")}}, false);
+	entry(selected, "Load a Plug-in...", "plugin.selected_load", {}, true);
 	menu->addSeparator();
 	entry(menu, "Project Settings...", "project.settings", {}, true, current("project.settings", QStringLiteral("file")));  // WF-043
 	entry(menu, "Project Info...", "project.metadata", {}, true, [] {  // WF-047
@@ -314,6 +334,11 @@ void tagTitle(MainWindow* window)
 	if (window->windowTitle() != tagged) { window->setWindowTitle(tagged); }
 }
 
+void syncDocumentTypeView()
+{
+	applyDocumentType(ProjectInfo::instance().documentType());
+}
+
 //! Once the main window exists: keep its title tagged from now on.
 void ensureTitleTagging()
 {
@@ -326,9 +351,9 @@ void ensureTitleTagging()
 	tagTitle(window);
 }
 
-void documentChanged(ProjectInfo::Change change)
+void documentChanged(ProjectInfo::Change)
 {
-	if (change == ProjectInfo::Change::Created) { applyDocumentType(ProjectInfo::instance().documentType()); }
+	syncDocumentTypeView();
 	ensureTitleTagging();
 	if (!titledWindow().isNull()) { titledWindow()->resetWindowTitle(); }
 }
@@ -342,8 +367,7 @@ void install()
 	if (installed || song == nullptr) { return; }
 	installed = true;
 	QObject::connect(song, &Song::projectLoaded, song, [] {
-		const QString type = ProjectInfo::instance().documentType();
-		if (type != ProjectInfo::documentTypes().first()) { applyDocumentType(type); }
+		syncDocumentTypeView();
 	});
 	ProjectInfo::setChangeHook(documentChanged);  // WF-048: the type in the title, a new document's view
 	ReferenceProject::setChangeHook(ReferenceProjectPanel::refreshIfOpen);  // WF-042

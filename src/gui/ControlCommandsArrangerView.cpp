@@ -22,7 +22,7 @@
  *
  */
 
-/*! 0.5.0 L13: WF-094 zoom history and toggle (arrangement.zoom_back), WF-095 fit the song, the
+/*! 0.5.0 L13: WF-094 zoom history and toggle (arrangement.zoom_back / zoom_forward / zoom_toggle), WF-095 fit the song, the
  *  loop or the selection across the width and every track into the height (arrangement.zoom
  *  {fit}, arrangement.fit_tracks), and WF-108 the tool menu at the pointer (window.tool_menu,
  *  arrangement.set_tool). The zoom and the tool are interface state; track heights are saved
@@ -81,7 +81,8 @@ ControlResult noArranger(const QString& id)
 QJsonObject zoomState(gui::SongEditor* editor)
 {
 	return {{QStringLiteral("pixels_per_bar"), static_cast<double>(editor->pixelsPerBar())},
-		{QStringLiteral("zoom"), editor->zoomingModel()->value()}, {QStringLiteral("history"), gui::arrangerzoom::historySize()}};
+		{QStringLiteral("zoom"), editor->zoomingModel()->value()}, {QStringLiteral("history"), gui::arrangerzoom::historySize()},
+		{QStringLiteral("forward"), gui::arrangerzoom::forwardSize()}};
 }
 
 //! The tick range a fit spans, or false (with @a error) when there is nothing to fit.
@@ -145,10 +146,30 @@ tick_t zoomAnchor(gui::SongEditor* editor, const QJsonObject& args)
 int requestedZoom(gui::SongEditor* editor, const QJsonObject& args)
 {
 	IntModel* model = editor->zoomingModel();
-	const int value = args.contains(QStringLiteral("pixels_per_bar"))
+	const long long value = args.contains(QStringLiteral("pixels_per_bar"))
 		? editor->zoomValueFor(static_cast<int>(std::lround(args.value(QStringLiteral("pixels_per_bar")).toDouble())))
-		: model->value() + args.value(QStringLiteral("step")).toInt(1);
-	return std::clamp(value, model->minValue(), model->maxValue());
+		: static_cast<long long>(model->value()) + args.value(QStringLiteral("step")).toInt(1);
+	return static_cast<int>(std::clamp(value, static_cast<long long>(model->minValue()), static_cast<long long>(model->maxValue())));
+}
+
+/*! gui-1106-menu-navigate-zoom-in: a 'step' zoom already at the end it steps toward (Navigate > Zoom In
+ *  at 400 px per bar, a fresh project can inherit it from the saved UI settings) changes nothing; like
+ *  zoom_back with nothing to walk, it is refused with the reason instead of a silent success. Empty when
+ *  the zoom can move (a step clamped onto the bound still moves) or is not a step zoom. */
+QString stepBoundProblem(gui::SongEditor* editor, const QJsonObject& args)
+{
+	if (args.contains(QStringLiteral("pixels_per_bar"))) { return QString(); }
+	const int step = args.value(QStringLiteral("step")).toInt(1);
+	const IntModel* model = editor->zoomingModel();
+	if (step > 0 && model->value() >= model->maxValue())
+	{
+		return QStringLiteral("already at the maximum zoom (%1 px per bar); nothing to zoom in to").arg(editor->pixelsPerBar());
+	}
+	if (step < 0 && model->value() <= model->minValue())
+	{
+		return QStringLiteral("already at the minimum zoom (%1 px per bar); nothing to zoom out to").arg(editor->pixelsPerBar());
+	}
+	return QString();
 }
 
 ControlResult zoom(const QJsonObject& args)
@@ -179,6 +200,10 @@ ControlResult zoom(const QJsonObject& args)
 	}
 	else
 	{
+		if (const QString bound = stepBoundProblem(editor, args); !bound.isEmpty())
+		{
+			return ControlResult::failure(ControlErrorKind::Refused, bound);
+		}
 		anchor = zoomAnchor(editor, args);
 		gui::arrangerzoom::zoomAround(editor, requestedZoom(editor, args), anchor);
 	}
@@ -189,18 +214,47 @@ ControlResult zoom(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
+//! 0.5.0 L13 (WF-094): zoom back / forward walk the arranger's zoom history - each of the several prior
+//! extents, like the browser back and forward. A new zoom cuts the forward walk off (nothing to walk back
+//! to). Like every keyboard zoom they keep the selection or the playhead in place (0.5.0 theme 9).
 ControlResult zoomBack(const QJsonObject&)
 {
 	gui::SongEditor* editor = arranger();
 	if (editor == nullptr) { return noArranger(QStringLiteral("arrangement.zoom_back")); }
-	// Back swaps the current zoom with the last one, so pressing it twice toggles between them; like
-	// every keyboard zoom it keeps the selection or the playhead in place (0.5.0 theme 9).
 	int earlier = 0;
 	if (!gui::arrangerzoom::takeEarlier(editor->zoomingModel()->value(), &earlier))
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no earlier zoom to go back to"));
 	}
 	gui::arrangerzoom::zoomAround(editor, earlier, gui::arrangerzoom::keyboardAnchor(editor));
+	return ControlResult::success(zoomState(editor));
+}
+
+ControlResult zoomForward(const QJsonObject&)
+{
+	gui::SongEditor* editor = arranger();
+	if (editor == nullptr) { return noArranger(QStringLiteral("arrangement.zoom_forward")); }
+	int next = 0;
+	if (!gui::arrangerzoom::takeNext(editor->zoomingModel()->value(), &next))
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no later zoom to go forward to"));
+	}
+	gui::arrangerzoom::zoomAround(editor, next, gui::arrangerzoom::keyboardAnchor(editor));
+	return ControlResult::success(zoomState(editor));
+}
+
+//! 0.5.0 L13 (WF-094): swap the current zoom with the extent it last left, so pressing the toggle twice
+//! flips between the two; unlike back it walks neither way of the history.
+ControlResult zoomToggle(const QJsonObject&)
+{
+	gui::SongEditor* editor = arranger();
+	if (editor == nullptr) { return noArranger(QStringLiteral("arrangement.zoom_toggle")); }
+	int extent = 0;
+	if (!gui::arrangerzoom::takeToggle(editor->zoomingModel()->value(), &extent))
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no earlier extent to swap with"));
+	}
+	gui::arrangerzoom::zoomAround(editor, extent, gui::arrangerzoom::keyboardAnchor(editor));
 	return ControlResult::success(zoomState(editor));
 }
 
@@ -391,24 +445,36 @@ void registerArrangerViewCommands(ControlRegistry& registry)
 {
 	const QJsonObject zoomResult = objectSchema({{QStringLiteral("pixels_per_bar"), numberProperty()},
 		{QStringLiteral("zoom"), integerProperty()}, {QStringLiteral("history"), integerProperty()},
-		{QStringLiteral("previous_zoom"), integerProperty()}, {QStringLiteral("anchor"), integerProperty()}});
+		{QStringLiteral("forward"), integerProperty()}, {QStringLiteral("previous_zoom"), integerProperty()},
+		{QStringLiteral("anchor"), integerProperty()}});
 	add(registry, "arrangement", "zoom", QStringLiteral("Zoom the arranger: to 'pixels_per_bar', by 'step' zoom steps "
 		"(negative zooms out), to the span 'start'..'end' (the zoom tool's drag), or to 'fit' the song, the loop or the "
 		"selection (the time range, else the selected clips) across its width (scrolled to "
 		"its start). A 'pixels_per_bar' or 'step' zoom keeps one tick where it is on screen ('anchor' in the answer): "
 		"'anchor_tick' (a pointer gesture passes the tick under the pointer), else 'anchor' - selection, playhead, view "
 		"(its middle), start (its left edge) or auto (the default: the selection, else the playhead when it is on "
-		"screen, else the middle). The previous zoom joins the history arrangement.zoom_back walks. Interface state."),
+		"screen, else the middle). The previous zoom joins the history arrangement.zoom_back walks back over. "
+		"Interface state."),
 		objectSchema({{QStringLiteral("pixels_per_bar"), numberProperty()}, {QStringLiteral("step"), integerProperty()},
 			{QStringLiteral("start"), tickProperty()}, {QStringLiteral("end"), tickProperty()},
 			{QStringLiteral("fit"), enumProperty({QStringLiteral("song"), QStringLiteral("loop"), QStringLiteral("selection")})},
 			{QStringLiteral("anchor"), enumProperty({QStringLiteral("auto"), QStringLiteral("selection"), QStringLiteral("playhead"),
 				QStringLiteral("view"), QStringLiteral("start")})}, {QStringLiteral("anchor_tick"), tickProperty()}}),
 		zoomResult, false, zoom);
-	add(registry, "arrangement", "zoom_back", QStringLiteral("Go back to the previous zoom. It swaps the current zoom "
-		"with the last one, so going back twice toggles between two zooms; the selection, else the playhead on screen, "
-		"stays where it is. Refused when there is no earlier zoom."),
+	add(registry, "arrangement", "zoom_back", QStringLiteral("Go back one step in the zoom history, to an earlier "
+		"extent - the same way the browser goes back, to walk back over several prior extents. A new "
+		"arrangement.zoom cuts what can be walked forward off; the selection, else the playhead on screen, stays "
+		"where it is. Refused when there is nothing earlier."),
 		objectSchema({}), zoomResult, false, zoomBack);
+	add(registry, "arrangement", "zoom_forward", QStringLiteral("Go forward one step in the zoom history, back over "
+		"what arrangement.zoom_back went past (the way the browser goes forward). The selection, else the playhead "
+		"on screen, stays where it is. Refused when there is nothing later."),
+		objectSchema({}), zoomResult, false, zoomForward);
+	add(registry, "arrangement", "zoom_toggle", QStringLiteral("Swap the arranger's zoom with the extent it last "
+		"left (the zoom before this one, or the extent a back or forward step left behind), so pressing the "
+		"toggle twice returns to where you were. The selection, else the playhead on screen, stays where it is. "
+		"Refused before any second extent is known."),
+		objectSchema({}), zoomResult, false, zoomToggle);
 	add(registry, "arrangement", "fit_tracks", QStringLiteral("Give every track the height that fits them all in the "
 		"arranger's height (clamped to 32..256 px), or the 'heights' given, in track order. Track heights are "
 		"saved with the project, so this is one undo step."),
@@ -420,10 +486,19 @@ void registerArrangerViewCommands(ControlRegistry& registry)
 		"upper half draws a range, its lower half moves). Interface state."),
 		objectSchema({{QStringLiteral("tool"), enumProperty(toolNames())}}, {QStringLiteral("tool")}),
 		objectSchema({{QStringLiteral("tool"), stringProperty()}}), false, setTool);
-	add(registry, "arrangement", "nudge", QStringLiteral("Move the selected clip left or right by 'amount' ticks "
-		"(default: the arranger's snap) - clip.move, which records itself. Refused when the clip is already at the start."),
-		objectSchema({{QStringLiteral("direction"), enumProperty({QStringLiteral("left"), QStringLiteral("right")})},
-			{QStringLiteral("amount"), integerProperty(1, 1 << 20)}}, {QStringLiteral("direction")}), objectProperty(), false, nudge);
+	{
+		// Declared as a coalescing wrapper: a burst of presses is one undo step (the clip.move it runs joins its run).
+		ControlCommand nudgeCommand = guiCommand("arrangement", "nudge");
+		nudgeCommand.description = QStringLiteral("Move the selected clip left or right by 'amount' ticks "
+			"(default: the arranger's snap) - clip.move, which records itself. Refused when the clip is already at the start.");
+		nudgeCommand.argsSchema = objectSchema({{QStringLiteral("direction"), enumProperty({QStringLiteral("left"), QStringLiteral("right")})},
+			{QStringLiteral("amount"), integerProperty(1, 1 << 20)}}, {QStringLiteral("direction")});
+		nudgeCommand.resultSchema = objectProperty();
+		nudgeCommand.mutating = false;
+		nudgeCommand.coalescesWrapped = QStringLiteral("clip.move");  // the nested call whose run a burst joins
+		nudgeCommand.handler = nudge;
+		registry.registerCommand(nudgeCommand);
+	}
 	add(registry, "arrangement", "select_clip", QStringLiteral("Select the next or previous clip on the selected clip's "
 		"track (window.select). Interface state."),
 		objectSchema({{QStringLiteral("direction"), enumProperty({QStringLiteral("next"), QStringLiteral("previous")})}},

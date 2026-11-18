@@ -4,6 +4,11 @@
 release notes advertised both, what now fetches them in CI, and the guard that
 fails a build in which a documented feature has been compiled out.**
 
+> **Correction (2026-10-07).** Compiling the hosts in did not make the release notes' "Modern effects load,
+> run and save their state" true. No release through v0.4.0-alpha could load a VST3 or CLAP effect: the effect
+> modules never exported `lmms_plugin_main`. See "Addendum 2026-10-07" at the end of this file; fixed on the
+> 0.5.0 line by `21250a1a4` (BUGS_FOUND 13.1 in the program's defect register).
+
 Worktree: `post-alpha/vst3-instrument-fixture` → branch `post-alpha/plugin-hosting-in-release`.
 Produced 2026-09-12. Nothing here was validated by a GitHub Actions run: see
 [§6 What this does not prove](#6-what-this-does-not-prove) before reading any of it
@@ -463,3 +468,43 @@ milestone to be re-documented, and the programme is now aiming at beta. For the 
 that that build does not contain, and this file is the correction of record. The beta's
 notes must take their advertised feature list from `tests/advertised-features.tsv`, which
 is what the guard reads, and the beta's build is the first one where that claim is true.
+*Correction (2026-10-07): it was not. Every release from v0.2.1-alpha through v0.4.0-alpha contained both
+effect modules, but neither could be loaded (no `lmms_plugin_main`; "Addendum 2026-10-07" below). The guard
+checks that a host is compiled in, not that the product can load what it hosts.*
+
+---
+
+## Addendum 2026-10-07: the effect modules had no entry point
+
+Building the modules was not enough. `libvst3effect.so` and `libclapeffect.so` were built and shipped,
+but neither exported `lmms_plugin_main`, the symbol `PluginFactory` resolves in every module
+(`src/core/PluginFactory.cpp`, `loadPluginDescriptor`). The factory therefore recorded both as "not a
+plug-in" (`nm -D --defined-only build/plugins/libvst3effect.so | grep -c lmms_plugin_main` printed 0,
+as it did in the integration and survey build trees). So the release notes' "Modern effects load, run
+and save their state" was true only of the integration tests, which construct the effect classes
+directly. The instrument modules always had the entry point.
+
+Both effect modules now export it (`plugins/Vst3Effect/Vst3Effect.cpp`, `plugins/ClapEffect/ClapEffect.cpp`).
+A class that fails to load answers `nullptr`, so `EffectChain` keeps a saved one as a `DummyEffect`
+that writes its state back, as it did before. The proof is through the surface:
+`ControlDeviceCatalogueTest::hostedEffectsListAndLoadThroughTheSurface` points the plug-in search
+directory at the in-tree VST3 effect fixture (the SDK's gain sample) and at `clap-test-gain`, finds each
+in `plugin.list`, and loads it onto a track with `plugin.load`, hosted by `vst3effect` / `clapeffect`.
+Before the change it failed at the first step: `plugin.list format=vst3 does not carry 'AGain Sample Accurate'`.
+
+### The vendor a hosted class reports (same lane)
+
+The device picker's Vendor column read "Not reported" for every VST3 and CLAP class. The hosts did read
+the vendor (`vst3::listClasses`, `clap::listClasses`), but the catalogue entry had nowhere to carry it.
+The two discovery paths (`Vst3SubPluginFeatures`, `ClapSubPluginFeatures`) now record it in
+`include/PluginVendors.h` as they read each factory, and `devicelabels::vendorOf` shows it. For VST3 it is
+the class's vendor; the SDK's `PluginFactory::classInfos` fills that from `PFactoryInfo` when the class
+names none. For CLAP it is the descriptor's `vendor`. It is kept out of the sub-plug-in key on purpose.
+The key's attributes are saved in projects and name the organiser's favourites, so a vendor added there
+would change both. Test: `ControlDeviceCatalogueTest::hostedVendorsAreTheFactoriesOwn` (red: "Not
+reported" where the fixture's factory says "Zene Studio test fixture").
+
+*(Extended 2026-10-16, Q050-090.)* The same vendor now travels on the wire: every `plugin.list`
+entry carries `vendor` (empty when the format reports none), resolved once in the core
+(`controlDeviceVendor`) and read by both the command and the picker, so the two cannot disagree.
+Test: `ControlDeviceCatalogueTest::listedVendorIsThePickerVendor`.

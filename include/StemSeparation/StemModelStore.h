@@ -99,8 +99,9 @@ public:
 	// HTTPS only. http://, file:// and relative URLs are rejected.
 	static bool isDownloadUrlAllowed(const QString& url);
 
-	// Downloads to `<destDir>/<spec.name>.onnx.part`, verifies size and
-	// SHA-256, then atomically renames into place. Returns false and sets
+	// Downloads to a per-attempt `<destDir>/<spec.name>.onnx.part.<unique>` of the
+	// caller's own - concurrent downloads of one model never share a partial file -
+	// verifies size and SHA-256, then renames into place. Returns false and sets
 	// `error` on any failure; a partial file never replaces a good one.
 	// A non-null `cancel` that becomes true aborts the transfer (reported as
 	// "cancelled"); the partial file is removed as on any other failure.
@@ -111,6 +112,15 @@ public:
 		const DownloadProgressFn& progress,
 		QString* error = nullptr,
 		const std::atomic<bool>* cancel = nullptr);
+
+	// Test seam: a hook invoked between removing the final path and renaming
+	// the verified staging file into place. Production leaves it unset. Tests
+	// use it to deterministically simulate a concurrent installer winning the
+	// rename. Not part of the public contract.
+	static void setDownloadRenameHook(std::function<void(const QString& finalPath)> hook);
+
+private:
+	static std::function<void(const QString& finalPath)> s_downloadRenameHook;
 };
 
 } // namespace lmms

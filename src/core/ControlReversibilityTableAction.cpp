@@ -157,6 +157,13 @@ const ReversibilityRow kActionRows[] = {
 		"state XML through the same controlRestoreDeviceState path "
 		"plugin.state_load itself uses",
 		""),
+	R("plugin.open_file", RC::TrueInverse, true,
+		"the file replaces what the instrument had loaded, and the instrument's PREVIOUS state (its file and "
+		"settings) is captured in the transaction's before-state",
+		"action checkpoint: the recorded undo step restores the captured state XML through the same "
+		"controlRestoreCapturedState path plugin.state_load uses; a file the instrument refuses changes nothing "
+		"(the previous state is put back at once) and records no step",
+		""),
 	R("plugin.preset_load", RC::TrueInverse, true,
 		"same as plugin.state_load: the preset replaces the device's "
 		"parameters and the previous settings are captured first",
@@ -205,11 +212,12 @@ const ReversibilityRow kActionRows[] = {
 		"the sync model is process state (include/LinkSync.h): it is not a "
 		"JournallingObject, so there is no object checkpoint - but joining or "
 		"leaving the session is one bounded flag, and its previous value is "
-		"captured before the write. Enabling also MEASURES whether this host can "
-		"RECEIVE an announcement (a bounded loopback probe, "
-		"docs/LINK-SYNC.md section 3) and reports the measurement in "
-		"transport.loopback_probe; that is a report, not state, so it adds "
-		"nothing to what this row's inverse has to restore",
+		"captured before the write. With the zene-link-style fallback, enabling "
+		"also MEASURES whether this host can RECEIVE an announcement (a bounded "
+		"loopback probe, docs/LINK-SYNC.md section 3) and reports the measurement "
+		"in transport.loopback_probe; that is a report, not state, so it adds "
+		"nothing to what this row's inverse has to restore. With real Ableton "
+		"Link, joining or leaving the library's session is the same one flag",
 		"action checkpoint: the recorded undo step calls LinkSyncEngine::setEnabled "
 		"with the value in before, exactly as the command sets the new one",
 		""),
@@ -227,15 +235,24 @@ const ReversibilityRow kActionRows[] = {
 		"action checkpoint: the recorded undo step calls "
 		"LinkSyncEngine::setStartStopSync with the value in before",
 		""),
+	// --- Link audio stream (Q050-024): process state, not Link sync ---------
+	R("link.audio_set_enabled", RC::TrueInverse, true,
+		"the PCM stream (include/LinkAudioStream.h) is process state the engine does not journal: "
+		"one configuration struct (enabled, send, receive, addresses, ports, latency) whose previous "
+		"value is captured before the write, and a refused configuration changes and records nothing",
+		"action checkpoint: the recorded undo step calls LinkAudioStream::configure with the previous "
+		"configuration (a stopped stream stays stopped; counters restart, they are a report)",
+		""),
 	R("link.set_session_tempo", RC::TrueInverse, true,
 		"the session tempo lives on the sync model's timeline (a double on the "
 		"wire, applied to the Song's integer tempo model), so the previous value "
 		"is captured before the declaration and the write itself is the inverse's "
 		"mechanism",
 		"action checkpoint: the recorded undo step DECLARES the previous tempo "
-		"through LinkSyncEngine::setSessionTempo, which re-anchors the shared beat "
-		"and advances the revision - so peers follow the undo exactly as they "
-		"followed the declaration",
+		"through LinkSyncEngine::setSessionTempo - committed to the Ableton Link "
+		"session, or (zene-link-style) re-anchoring the shared beat and advancing "
+		"the revision - so peers follow the undo exactly as they followed the "
+		"declaration",
 		""),
 	R("audio.device_set", RC::TrueInverse, true,
 		"the preference is a scalar in the config file, not in the project",
@@ -396,6 +413,13 @@ const ReversibilityRow kActionRows[] = {
 		"action checkpoint: the recorded undo step writes the previous depth "
 		"back through ModulationLayer::setDepth. The transaction's before-state "
 		"holds the previous depth",
+		""),
+	R("modulator.per_sample_set", RC::TrueInverse, true,
+		"the switch is a flag in the layer, not a model value: nothing the journal "
+		"could checkpoint changes, and the route's depth and captured base are kept",
+		"action checkpoint: the recorded undo step writes the previous switch back "
+		"through ModulationLayer::setPerSample and republishes the route. The "
+		"transaction's before-state holds the previous switch",
 		""),
 	R("modulator.target_remove", RC::TrueInverse, true,
 		"a removed route has no live object behind it",

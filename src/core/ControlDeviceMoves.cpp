@@ -99,6 +99,7 @@ QJsonArray recreateDevices(EffectChain* chain, const QStringList& states, int po
 QJsonArray recreateDevices(const std::function<EffectChain*()>& chainOf, const QStringList& states, int position, ControlResult* error)
 {
 	EffectChain* chain = chainOf();
+	if (chain == nullptr) { return {}; }
 	auto made = std::make_shared<std::vector<RecordedDevice>>();
 	QJsonArray ids;
 	for (const QString& state : states)
@@ -160,7 +161,9 @@ bool journalChainRemoval(const QString& channelId, int index, const QStringList&
 	// Rack::addChain appends: only the LAST chain can be put back where it was. An inner chain records nothing, and the
 	// caller says so in its transaction rather than claim an inverse that would come back at the wrong index.
 	if (rack == nullptr || index != rack->chainCount() - 1) { return false; }
-	addStructuralUndoStep(
+	// The writer's answer is the answer: a step the journal refused to record is no
+	// inverse, and the caller (rack.remove_chain) must not claim one (new-p14-81).
+	return addStructuralUndoStep(
 		[channelId, index, states, selectedBefore]() {
 			ControlResult unused;
 			Rack* current = resolveRack(channelId, &unused);
@@ -180,7 +183,6 @@ bool journalChainRemoval(const QString& channelId, int index, const QStringList&
 			if (current != nullptr && index < current->chainCount()) { current->removeChain(index); }
 		},
 		bytesOf(states));
-	return true;
 }
 
 } // namespace lmms::control

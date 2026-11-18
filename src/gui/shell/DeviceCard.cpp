@@ -274,13 +274,7 @@ QWidget* DeviceCard::buildHeader()
 		fold->setCheckable(true);
 		fold->setChecked(m_spec.effect->deviceOptions().folded);
 		m_fold = fold;
-		connect(fold, &QToolButton::clicked, this, [this, fold](bool folded) {
-			const QJsonObject args{{QStringLiteral("target"), m_spec.target}, {QStringLiteral("plugin"), m_spec.plugin},
-				{QStringLiteral("folded"), folded}};
-			// A rack chain's card is not redrawn by its chain's signal, so the card folds itself too.
-			if (dispatch(this, QStringLiteral("plugin.fold"), args).ok) { m_body->setVisible(!folded); }
-			else { fold->setChecked(!folded); }
-		});
+		connect(fold, &QToolButton::clicked, this, [this](bool folded) { foldCard(folded); });
 		row->addWidget(fold);
 		// MX-080: hear only what the device changes (plugin.delta, a monitor switch).
 		auto* delta = new QToolButton(header);
@@ -312,6 +306,22 @@ QWidget* DeviceCard::buildHeader()
 	}
 	row->addWidget(actionsButton(this, header));
 	return header;
+}
+
+//! Fold or open the card's body (MX-113). The command decides; the card folds itself too, because a
+//! rack chain's card is not redrawn by its chain's signal.
+void DeviceCard::foldCard(bool folded)
+{
+	const QJsonObject args{{QStringLiteral("target"), m_spec.target}, {QStringLiteral("plugin"), m_spec.plugin},
+		{QStringLiteral("folded"), folded}};
+	// The dispatch runs a command, and a command can retire this card: the card is guarded, so a card
+	// that is gone by then is not touched (its body would be a dangling pointer).
+	const QPointer<DeviceCard> self(this);
+	if (dispatch(this, QStringLiteral("plugin.fold"), args).ok)
+	{
+		if (!self.isNull()) { m_body->setVisible(!folded); }
+	}
+	else if (!self.isNull()) { m_fold->setChecked(!folded); }
 }
 
 QWidget* DeviceCard::buildParameters(const QList<AutomatableModel*>& parameters)
@@ -359,39 +369,53 @@ QWidget* DeviceCard::buildParameters(const QList<AutomatableModel*>& parameters)
 void DeviceCard::contextMenuEvent(QContextMenuEvent* event)
 {
 	// Theme 12: the card's one action menu - the same entries, in the same order, as its Actions button.
+	// The menu is built as the card's child, so its entries name the card as the widget their dialogs
+	// belong to, and it is let go of before it runs: one of the entries (Remove) retires the card, and a
+	// card deleted while this menu's own event loop runs would take the menu - a stack object - with it.
 	QMenu menu(this);
 	fillDeviceActionMenu(&menu, this);
 	if (menu.isEmpty()) { QFrame::contextMenuEvent(event); return; }
+	menu.setParent(nullptr);
 	menu.exec(event->globalPos());
 }
 
 void DeviceCard::openEditor()
 {
-	if (m_spec.effect == nullptr)
-	{
-		if (InstrumentTrackView* view = instrumentTrackView(m_spec.instrumentTrack))
-		{
-			view->getInstrumentTrackWindow()->toggleVisibility(true);
-		}
-		return;
-	}
+	if (m_spec.effect == nullptr) { openGenericEditor(); return; }
 	// A hosted plug-in's own window first (VST3 / CLAP); a built-in effect's control dialog when
 	// the device has no native editor.
 	const QJsonObject args{{QStringLiteral("target"), m_spec.target}, {QStringLiteral("plugin"), m_spec.plugin}};
-	if (!invoke(QStringLiteral("plugin.editor_open"), args).ok) { openEffectDialog(); }
+	const ControlResult result = invoke(QStringLiteral("plugin.editor_open"), args);
+	if (result.ok) { setEditorError(QString()); return; }
+	// The built-in control dialog is the fallback for a device with no editor of its own.
+	if (openEffectDialog()) { setEditorError(QString()); return; }
+	// Neither opened: the user is told why the first try failed - a silent no-op says nothing
+	// (the reason is the command's own, not a word of ours).
+	setEditorError(result.errorMessage);
+	announce(this, CommandCall{QStringLiteral("plugin.editor_open"), args, {}, QString(), false}, result);
 }
 
-void DeviceCard::openEffectDialog()
+bool DeviceCard::openGenericEditor()
+{
+	if (m_spec.effect != nullptr) { return openEffectDialog(); }
+	InstrumentTrackView* view = instrumentTrackView(m_spec.instrumentTrack);
+	if (view == nullptr) { return false; }
+	view->getInstrumentTrackWindow()->toggleVisibility(true);
+	return true;
+}
+
+bool DeviceCard::openEffectDialog()
 {
 	if (m_editor.isNull())
 	{
 		EffectControlDialog* dialog = m_spec.effect->controls()->createView();
-		if (dialog == nullptr) { return; }
+		if (dialog == nullptr) { return false; }
 		m_editor = getGUI()->mainWindow()->addWindowedWidget(dialog);
 		m_editor->setWindowFlag(Qt::WindowMaximizeButtonHint, false);
 	}
 	m_editor->show();
 	m_editor->raise();
+	return true;
 }
 
 void DeviceCard::openPins()
@@ -402,6 +426,8 @@ void DeviceCard::openPins()
 		if (model == nullptr) { return; }
 		auto* view = model->instantiateView();
 		view->setWindowTitle(tr("%1 - pins").arg(m_spec.title));
+		// Q050-155.2: its edits run port.set_pin / port.set_pins, and a discrete bus's channels are its rows.
+		view->setControlAddress(m_spec.target, m_spec.plugin);
 		m_pins = getGUI()->mainWindow()->addWindowedWidget(view);
 	}
 	m_pins->show();

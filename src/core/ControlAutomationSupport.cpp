@@ -26,7 +26,10 @@
 
 #include "ControlVocabulary.h"
 
+#include <memory>
 #include <utility>
+
+#include <QDomDocument>
 
 #include "AutomatableModel.h"
 #include "AutomationClip.h"
@@ -399,14 +402,12 @@ QJsonObject automationTransaction(const AutomationParameter& parameter, const QJ
 	transaction.insert(QStringLiteral("before"), beforeState);
 	transaction.insert(QStringLiteral("inverse"), inverse);
 	// SPEC A16 deliverable 5: even the creating call is one undoable step, so
-	// both halves are reversible:true and the difference is the MECHANISM, not
-	// the verdict.
+	// both halves are reversible:true; the action step snapshots the created track
+	// on undo so redo can recreate the same edit.
 	transaction.insert(QStringLiteral("reversible"), true);
 	transaction.insert(QStringLiteral("mechanism"), created
-		? QStringLiteral("action checkpoint: the AutomationTrack this call created is removed by "
-			"the recorded undo step, so the first point is one undoable step like every later "
-			"one. LIMIT: redo is not offered for the creating call - re-issue "
-			"automation.add_point")
+		? QStringLiteral("action checkpoint: undo snapshots and removes the AutomationTrack this call "
+			"created; redo restores that recorded state")
 		: QStringLiteral("ProjectJournal (AutomationClip checkpoint)"));
 	return transaction;
 }
@@ -425,11 +426,29 @@ AutomationClip* automationClipForEdit(AutomatableModel* model, bool* created, Co
 	if (*created)
 	{
 		// SPEC A16 deliverable 5: a whole AutomationTrack was created, which no clip checkpoint can
-		// take back (the clip lives inside it). ONE action step, recorded before the edit, removes
-		// the track again - so the first edit is one undoable step like every later one. The step holds
-		// the track's id, not its pointer: track.remove and its undo free it and build an equal one.
-		addUndoStep([id = clip->getTrack()->id()]() {
-			if (Track* live = trackWithId(id)) { removeTrack(live); }
+		// take back (the clip lives inside it). ONE action step, recorded before the edit, captures the
+		// final track state on undo and restores it on redo. The shared id is refreshed when redo builds
+		// an equal track, so a later undo does not rely on the freed object's pointer or stale id.
+		auto id = std::make_shared<int>(clip->getTrack()->id());
+		auto state = std::make_shared<QString>();
+		addUndoStep([id, state]() {
+			if (Track* live = trackWithId(*id))
+			{
+				QDomDocument doc;
+				QDomElement root = doc.createElement(QStringLiteral("root"));
+				doc.appendChild(root);
+				live->saveState(doc, root);
+				*state = doc.toString();
+				removeTrack(live);
+			}
+		}, [id, state]() {
+			QDomDocument doc;
+			doc.setContent(*state);
+			if (Track* restored = Track::create(doc.documentElement().firstChildElement(), Engine::getSong()))
+			{
+				*id = restored->id();
+				AutomationClip::resolveAllIDs();
+			}
 		});
 	}
 	else

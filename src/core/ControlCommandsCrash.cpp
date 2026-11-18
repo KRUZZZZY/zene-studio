@@ -80,6 +80,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QStringList>
 
 #include "ControlRegistry.h"
 
@@ -175,11 +176,12 @@ QJsonObject fileJson(const std::string& path)
 		return out;
 	}
 	const QFileInfo info(wire(path));
-	out.insert(QStringLiteral("exists"), info.exists());
-	// A directory is not a report; bytes are 0 for one, as for a missing file.
+	// A report is a FILE: a directory at the reporter's path is not a report, so
+	// it is reported as absent rather than as an existing, zero-byte one.
+	out.insert(QStringLiteral("exists"), info.isFile());
 	out.insert(QStringLiteral("bytes"), info.isFile() ? qint64(info.size()) : qint64(0));
 	out.insert(QStringLiteral("modified_unix"),
-		info.exists() ? qint64(info.lastModified().toSecsSinceEpoch()) : qint64(0));
+		info.isFile() ? qint64(info.lastModified().toSecsSinceEpoch()) : qint64(0));
 	return out;
 }
 
@@ -189,6 +191,25 @@ ControlResult noReporter(const QString& command)
 		QStringLiteral("%1: the crash reporter is not installed in this instance, so it has no report "
 			"directory and nothing was written. main() installs it on POSIX; on Windows the module is a "
 			"documented no-op (include/CrashReporter.h)").arg(command));
+}
+
+/*! The reporter's `offered` sentinel: a REGULAR FILE the reporter wrote itself.
+ *
+ *  writeSmallFile() opens that sentinel with O_NOFOLLOW
+ *  (src/core/CrashReporter.cpp:170-184), so the reporter never writes THROUGH
+ *  a symlink planted at the name - and it never creates one either. A symlink
+ *  there is therefore not a marker the reporter wrote: it is something else
+ *  occupying the name, and the write cannot happen.
+ *
+ *  QFileInfo::isFile() alone is not enough: it FOLLOWS symlinks and answers
+ *  true for a symlink to a regular file, which would let a path the reporter
+ *  refused to write be reported as an acknowledgement. A marker is a regular
+ *  file that is not a symlink.
+ */
+bool isOfferedMarker(const QString& path)
+{
+	const QFileInfo info(path);
+	return info.isFile() && !info.isSymbolicLink();
 }
 
 /*! crash.list_reports - the reporter's state, from the module's own public
@@ -203,7 +224,7 @@ ControlResult handleListReports()
 	// nothing, and report_path below is where a crash would write one. So
 	// report_count is a count of reports, not of a path the module could use.
 	QJsonArray reports;
-	if (paths.valid && QFileInfo::exists(wire(paths.report))) { reports.append(fileJson(paths.report)); }
+	if (paths.valid && QFileInfo(wire(paths.report)).isFile()) { reports.append(fileJson(paths.report)); }
 
 	QJsonObject result;
 	result.insert(QStringLiteral("installed"), crashreporter::isInstalled());
@@ -225,8 +246,12 @@ ControlResult handleListReports()
 	// report exists and has not been offered yet" (CrashReporter.cpp:
 	// hasPendingReport), which is exactly what the offer dialog is gated on.
 	result.insert(QStringLiteral("pending"), crashreporter::hasPendingReport());
+	// `offered` is the same state crash.acknowledge_report decides by, read
+	// the same way: the sentinel is a regular file the reporter wrote, so a
+	// directory - or a symlink, which the reporter refuses to write through -
+	// at that path is not an acknowledgement.
 	result.insert(QStringLiteral("offered"),
-		paths.valid && QFileInfo::exists(wire(paths.offered)));
+		paths.valid && isOfferedMarker(wire(paths.offered)));
 	// A marker left behind means the previous run did not exit cleanly; the
 	// module removes it on the clean path (endSession()).
 	const bool markerLeft = crashreporter::sessionMarkerExists();
@@ -278,24 +303,49 @@ ControlResult handleAcknowledgeReport()
 	const CrashPaths paths = crashPaths();
 	if (!paths.valid) { return noReporter(AcknowledgeName); }
 	const QFileInfo report(wire(paths.report));
-	if (!report.exists())
+	if (!report.isFile())
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound,
 			QStringLiteral("%1: there is no report to acknowledge at %2").arg(AcknowledgeName, wire(paths.report)));
+	}
+
+	// An ALREADY-offered report is not a mutation: the sentinel is on disk, so
+	// this call would change nothing while recording an irreversible transaction
+	// for it. Refuse before the write, the way crash.enable refuses "already
+	// armed" and a second discard is not_found - crash.list_reports' `offered`
+	// is where the state this leaves behind is read.
+	//
+	// The sentinel is a regular FILE the reporter wrote: it opens the name with
+	// O_NOFOLLOW, so a symlink planted there is never written through, and a
+	// directory is not a file at all. A path that merely EXISTS is therefore
+	// not an acknowledgement - so refusing here as "ALREADY acknowledged" would
+	// be a claim about a state that never happened.
+	if (isOfferedMarker(wire(paths.offered)))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1: the report at %2 is ALREADY acknowledged (its `offered` sentinel %3 "
+				"exists), so nothing was changed. crash.list_reports' `offered` reports that state")
+				.arg(AcknowledgeName, wire(paths.report), wire(paths.offered)));
 	}
 
 	const QJsonObject before = crashBeforeState(paths);
 	crashreporter::acknowledgePendingReport();
 
 	// The engine operation returns void, so the effect is READ BACK rather than
-	// assumed: a sentinel that could not be written (a read-only working
-	// directory) must not be reported as an acknowledge that happened.
-	const bool offered = QFileInfo::exists(wire(paths.offered));
-	if (!offered)
+	// assumed: the sentinel must be a regular file the reporter wrote, and the
+	// report must no longer be pending. A path that merely exists is not
+	// enough - a directory occupying the sentinel's name blocks the write, a
+	// symlink there is refused by the reporter (O_NOFOLLOW), and a write that
+	// failed (a read-only working directory) leaves no sentinel at all.
+	const bool markerWritten = isOfferedMarker(wire(paths.offered));
+	const bool pending = crashreporter::hasPendingReport();
+	if (!markerWritten || pending)
 	{
 		return ControlResult::failure(ControlErrorKind::Busy,
-			QStringLiteral("%1: the report at %2 exists but its `offered` sentinel %3 could not be written, "
-				"so the report will be offered again on the next start. Nothing else was changed")
+			QStringLiteral("%1: the report at %2 was NOT acknowledged: its `offered` sentinel %3 is not a "
+				"regular file the reporter wrote (it writes that sentinel with O_NOFOLLOW, so a "
+				"directory, a symlink or anything else at that path blocks the write) or the report is "
+				"still pending. Nothing else was changed and the report file is untouched")
 				.arg(AcknowledgeName, wire(paths.report), wire(paths.offered)));
 	}
 
@@ -304,7 +354,7 @@ ControlResult handleAcknowledgeReport()
 	result.insert(QStringLiteral("report_path"), wire(paths.report));
 	result.insert(QStringLiteral("offered_marker_path"), wire(paths.offered));
 	result.insert(QStringLiteral("report"), fileJson(paths.report));
-	result.insert(QStringLiteral("pending"), crashreporter::hasPendingReport());
+	result.insert(QStringLiteral("pending"), pending);
 	result.insert(QStringLiteral("offered"), true);
 	result.insert(QStringLiteral("__transaction"),
 		QJsonObject{{QStringLiteral("before"), before},
@@ -317,6 +367,22 @@ ControlResult handleAcknowledgeReport()
 					"untouched by this command, which is why the file is still there to attach")
 					.arg(wire(paths.offered), wire(paths.report))}});
 	return ControlResult::success(result);
+}
+
+/*! The paths that were there before the unlink and are STILL there after it.
+ *
+ *  discardPendingReport() returns void and ::unlink fails on a directory (and on
+ *  a read-only directory entry), so the effect has to be READ BACK rather than
+ *  assumed - the same rule handleAcknowledgeReport follows. Claiming
+ *  discarded:true for a report that is still on disk would be a lie the caller
+ *  cannot detect.
+ */
+static QStringList pathsLeftAfterDiscard(const CrashPaths& paths, bool hadReport, bool hadOffered)
+{
+QStringList remaining;
+if (hadReport && QFileInfo::exists(wire(paths.report))) { remaining.append(wire(paths.report)); }
+if (hadOffered && QFileInfo::exists(wire(paths.offered))) { remaining.append(wire(paths.offered)); }
+return remaining;
 }
 
 /*! crash.discard_report - clear the pending report: the engine operation is
@@ -340,6 +406,19 @@ ControlResult handleDiscardReport()
 	}
 
 	crashreporter::discardPendingReport();
+
+	// The unlink is read back, not assumed (see pathsLeftAfterDiscard).
+	const QStringList remaining = pathsLeftAfterDiscard(paths, hadReport, hadOffered);
+	if (!remaining.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::Busy,
+			QStringLiteral("%1: the report at %2 could NOT be discarded - %3 %4 still on disk after the "
+				"unlink, so the report is still pending. Check the directory's permissions; nothing "
+				"else was changed")
+				.arg(DiscardName, wire(paths.report),
+					remaining.size() == 1 ? QStringLiteral("this path is") : QStringLiteral("these paths are"),
+					remaining.join(QStringLiteral(", "))));
+	}
 
 	QJsonArray removed;
 	if (hadReport) { removed.append(wire(paths.report)); }

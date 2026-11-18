@@ -40,6 +40,7 @@
 #include "ProjectJournal.h"
 #include "ScriptEngine.h"
 #include "ScriptApiVersion.h"
+#include "ScriptConsole.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -223,6 +224,34 @@ private slots:
 				.arg(QString::fromLatin1(ZENE_LUA_API_MAJOR_MINOR_STRING))).size() == 1,
 			qPrintable(log.join('|')));
 		QVERIFY2(log.contains("hello.lua finished"), qPrintable(log.join('|')));
+	}
+
+	void testLogCaptureIsBoundedPerRun()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		QString error;
+
+		// Keep the regression's large lines out of Qt's test output. The capture
+		// API under test remains enabled.
+		ScriptConsole::setEnabled(false);
+		const auto result = engine->runString(QStringLiteral(
+			"local line = string.rep('x', 600000)\n"
+			"print(line)\n"
+			"print(line)\n"
+			"print('after limit')"), &error);
+		ScriptConsole::setEnabled(true);
+
+		QVERIFY2(result == ScriptEngine::RunResult::Ok, qPrintable(error));
+		const QStringList captured = engine->takeLogMessages();
+		QCOMPARE(captured.size(), 2);
+		QCOMPARE(captured.at(0).size(), qsizetype(600000));
+		QCOMPARE(captured.at(1),
+			QStringLiteral("[script output truncated: further lines dropped]"));
+
+		QVERIFY2(engine->runString(QStringLiteral("print('fresh run')"), &error)
+			== ScriptEngine::RunResult::Ok, qPrintable(error));
+		QCOMPARE(engine->takeLogMessages(), QStringList{QStringLiteral("fresh run")});
 	}
 
 	// The scripting namespace and API header were renamed `zene`; both
@@ -462,6 +491,54 @@ assert(string ~= nil and table ~= nil and math ~= nil, "safe stdlib missing")
 		QVERIFY(!QFile::exists(QDir(project.path()).absoluteFilePath("../escape.txt")));
 	}
 
+	//! A DANGLING symlink is not an escape the ancestor walk may step over: its
+	//! target does not exist yet, so QFileInfo::exists() is false for it, the
+	//! walk climbs to the in-project parent and the write that follows the link
+	//! creates a file OUTSIDE the project. The link is inspected as a link, not
+	//! only as a path that exists.
+	void testSandboxRejectsADanglingSymlinkEscape()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		QTemporaryDir project;
+		QTemporaryDir outside;
+		QVERIFY(project.isValid());
+		QVERIFY(outside.isValid());
+		engine->setProjectDir(project.path());
+
+		const QString target = QDir(outside.path()).absoluteFilePath(QStringLiteral("planted.txt"));
+		const QFileInfo targetInfo(target);
+		QVERIFY(!targetInfo.exists());
+
+		// escape -> <outside>/planted.txt, which does not exist: a dangling link.
+		const QString link = QDir(project.path()).absoluteFilePath(QStringLiteral("escape"));
+		QVERIFY2(QFile::link(target, link), "could not create the test symlink");
+
+		QString error;
+		QCOMPARE(int(engine->runString(
+			QStringLiteral("lmms.projectFile():write('escape', 'planted')"), &error)),
+			int(ScriptEngine::RunResult::ScriptError));
+		QVERIFY2(error.contains("escapes the project directory"), qPrintable(error));
+		QVERIFY2(!QFile::exists(target),
+			"the write followed a dangling symlink and created a file outside the project");
+		qInfo().noquote() << "dangling-symlink write rejected:" << error;
+
+		// The tightening must not refuse a link that stays INSIDE the project:
+		// an in-project symlink is a legitimate way to name a file.
+		const QString inside = QDir(project.path()).absoluteFilePath(QStringLiteral("real.txt"));
+		{
+			QFile file(inside);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			file.write("in project");
+		}
+		QVERIFY(QFile::link(inside, QDir(project.path()).absoluteFilePath(QStringLiteral("alias.txt"))));
+		error.clear();
+		QCOMPARE(int(engine->runString(
+			QStringLiteral("assert(lmms.projectFile():read('alias.txt') == 'in project')"), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+	}
+
 	void testWorkerThreadNotAudioThread()
 	{
 		using namespace lmms;
@@ -659,6 +736,107 @@ for i = 1, 20000 do clip:addNoteAt(60, i, 10, 100) end
 
 		engine->processCommands();
 		engine->setAutoApply(true);
+	}
+
+	//! A script FILE is read into the host's memory before Lua ever sees it,
+	//! and those copies sit OUTSIDE the Lua memory budget: a huge file could
+	//! make the host allocate far past the budget before Lua refused the
+	//! script. The file is therefore refused on its size, before it is read.
+	void testScriptFileAboveTheSourceLimitIsRefused()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		const QString header = QStringLiteral("--! zene-api %1.%2\n")
+				.arg(ZENE_LUA_API_VERSION_MAJOR).arg(ZENE_LUA_API_VERSION_MINOR);
+
+		// One byte above the hard limit. The body is padding, and the header
+		// is a VALID one: the refusal must be about the size, not about the
+		// version or about the syntax.
+		const QString hugePath = QDir(dir.path()).absoluteFilePath(QStringLiteral("huge.lua"));
+		{
+			QFile file(hugePath);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			file.write(header.toUtf8());
+			file.resize(static_cast<qint64>(MaxScriptSourceBytes) + 1);
+		}
+		QString error;
+		const auto refused = engine->runFile(hugePath, &error);
+		QCOMPARE(int(refused), int(ScriptEngine::RunResult::ScriptError));
+		QVERIFY2(error.contains(QStringLiteral("too large")), qPrintable(error));
+		qInfo().noquote() << "oversized script refused:" << error;
+
+		// Source length and the Lua allocator budget measure different things:
+		// comments are read and parsed but do not occupy the Lua state. A source
+		// larger than the budget must still run when its script state fits.
+		const QString largeCommentPath =
+			QDir(dir.path()).absoluteFilePath(QStringLiteral("large-comment.lua"));
+		{
+			QFile file(largeCommentPath);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			file.write(header.toUtf8());
+			file.write("--");
+			file.write(QByteArray(2 * 1024 * 1024, 'x'));
+			file.write("\nprint('large comment script ran')\n");
+		}
+		engine->setMemoryBudget(1024 * 1024);
+		QString largeCommentError;
+		const auto largeComment = engine->runFile(largeCommentPath, &largeCommentError);
+		engine->setMemoryBudget(ScriptEngine::DefaultMemoryBudgetBytes);
+		qInfo().noquote() << "large comment script result:" << largeCommentError;
+		QCOMPARE(int(largeComment), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(largeCommentError.isEmpty(), qPrintable(largeCommentError));
+
+		// A script inside the limit still runs: the limit must not touch the
+		// ordinary case.
+		const QString okPath = QDir(dir.path()).absoluteFilePath(QStringLiteral("small.lua"));
+		{
+			QFile file(okPath);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			file.write((header + QStringLiteral("print('small script ran')\n")).toUtf8());
+		}
+		QString okError;
+		QCOMPARE(int(engine->runFile(okPath, &okError)), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(okError.isEmpty(), qPrintable(okError));
+	}
+
+	//! The MIDI-in buffer is a fixed-size ring: when it is full the write is
+	//! REFUSED, and a refused event is a LOST event - a dropped note-off
+	//! leaves a note sounding. The policy stays non-blocking, but the loss is
+	//! counted and the count is readable.
+	void testMidiInOverflowIsCounted()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+
+		// Drain what an earlier test left behind, so the count below is about
+		// this test's own events.
+		ScriptMidiEvent drained;
+		while (engine->popMidiInEvent(&drained)) { }
+
+		const quint64 droppedBefore = engine->droppedMidiInEventCount();
+		constexpr int EventCount = 2000;
+		for (int i = 0; i < EventCount; ++i)
+		{
+			engine->pushMidiInEvent(0, 36 + (i % 60), 100, true);
+		}
+
+		const int pending = engine->midiInPending();
+		const quint64 dropped = engine->droppedMidiInEventCount() - droppedBefore;
+		qInfo() << "midi-in pending:" << pending << "dropped:" << dropped;
+		QVERIFY2(pending > 0, "the ring buffer took nothing at all");
+		QVERIFY2(dropped > 0, "the overflow was not counted");
+		QCOMPARE(dropped, static_cast<quint64>(EventCount - pending));
+
+		// The events that did fit are the FIRST ones: the ring drops the new
+		// events, it does not overwrite the old ones (an overwritten note-off
+		// would silence a note that should sound).
+		ScriptMidiEvent event;
+		QVERIFY(engine->popMidiInEvent(&event));
+		QCOMPARE(event.channel, 0);
+		QCOMPARE(event.key, 36);
 	}
 };
 

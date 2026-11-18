@@ -25,6 +25,7 @@
 #ifndef LMMS_PEAK_CONTROLLER_H
 #define LMMS_PEAK_CONTROLLER_H
 
+#include <vector>
 #include "Controller.h"
 #include "ControllerDialog.h"
 

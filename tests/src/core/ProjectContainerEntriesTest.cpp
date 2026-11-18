@@ -145,6 +145,25 @@ private slots:
 		QCOMPARE( derived.at( 2 ).second, QByteArray( "<tempo-map v=\"1\"/>\n  " ) );
 	}
 
+	/*! A `>` inside a quoted content-element attribute is not the end of its
+	 *  start tag, and the `/` before it does not make the element self-closing. */
+	void derivingAcceptsSlashAndGreaterThanInsideContentAttribute()
+	{
+		QByteArray original = documentWith( QStringList{ QStringLiteral( "trackcontainer" ) },
+			QStringLiteral( "    <trackcontainer/>\n" ) );
+		original.replace( "<song>\n", "<song data=\"/>value\">\n" );
+
+		std::vector<std::pair<QString, QByteArray>> derived;
+		QString error;
+		QVERIFY2( projectcontainer::deriveContainerEntries( original,
+			QString::fromLatin1( kContent ), &derived, &error ), qPrintable( error ) );
+
+		QByteArray rebuilt;
+		QVERIFY2( projectcontainer::reassembleContainerDocument( derived,
+			QString::fromLatin1( kContent ), &rebuilt, &error ), qPrintable( error ) );
+		QCOMPARE( rebuilt, original );
+	}
+
 	/*! THE round trip, and the guarantee it proves: RAW byte identity - the
 	 *  rebuilt document equals the original byte for byte, not merely in
 	 *  canonical form. Chosen deliberately (see deriveContainerEntries in
@@ -306,6 +325,53 @@ private slots:
 		QCOMPARE( int( entries.size() ), 1 );
 	}
 
+	/*! A CDATA section holding only whitespace is still not whitespace: its '<'
+	 *  opener would be taken for the content element's close tag, so the
+	 *  splice would land before the section and move the bytes. The finding's
+	 *  shape - the CDATA ahead of an indexed child - is refused by name with
+	 *  the destination untouched, rather than derived into a skeleton that
+	 *  does not reassemble. */
+	void derivingRefusesWhitespaceCDATAInTheInterior()
+	{
+		const QByteArray cdata = documentWith(
+			QStringList{ QStringLiteral( "trackcontainer" ) },
+			QStringLiteral(
+				"    <![CDATA[  ]]><trackcontainer/>\n" ) );
+
+		auto entries = sentinelEntries();
+		QString error;
+		QVERIFY( !projectcontainer::deriveContainerEntries( cdata,
+			QString::fromLatin1( kContent ), &entries, &error ) );
+		QVERIFY( error.contains( QStringLiteral( "not whitespace-only" ) ) );
+		QCOMPARE( int( entries.size() ), 1 );
+	}
+
+	/*! Reassembly applies the same interior proof to the skeleton it is handed:
+	 *  a skeleton whose <song> holds whitespace CDATA is refused by name, and
+	 *  the destination keeps its bytes, instead of splicing the section in
+	 *  before the CDATA opener. */
+	void reassemblingRefusesWhitespaceCDATAInTheInterior()
+	{
+		const QByteArray compact =
+			"<?xml version=\"1.0\"?>\n"
+			"<lmms-project version=\"31\" type=\"song\"><head/>"
+			"<z:index xmlns:z=\"urn:zene:core:1\">"
+			"<z:section name=\"a\" entry=\"a.xml\" v=\"31\" digest=\"sha256:x0\"/>"
+			"</z:index><song><a/></song></lmms-project>\n";
+		QString error;
+		std::vector<std::pair<QString, QByteArray>> derived;
+		QVERIFY2( projectcontainer::deriveContainerEntries( compact,
+			QString::fromLatin1( kContent ), &derived, &error ), qPrintable( error ) );
+		QVERIFY( derived.at( 0 ).second.contains( "<song></song>" ) );
+		derived[ 0 ].second.replace( "<song></song>", "<song><![CDATA[  ]]></song>" );
+
+		auto document = QByteArray( "untouched" );
+		QVERIFY( !projectcontainer::reassembleContainerDocument( derived,
+			QString::fromLatin1( kContent ), &document, &error ) );
+		QVERIFY( error.contains( QStringLiteral( "not whitespace-only" ) ) );
+		QCOMPARE( document, QByteArray( "untouched" ) );
+	}
+
 	/*! No skeleton, no document: a pair list without the skeleton entry is not
 	 *  a v2 project, refused by name rather than guessed at - and the caller's
 	 *  destination keeps its bytes. */
@@ -321,6 +387,34 @@ private slots:
 		QVERIFY( !projectcontainer::reassembleContainerDocument( derived,
 			QString::fromLatin1( kContent ), &document, &error ) );
 		QVERIFY( error.contains( projectcontainer::skeletonEntryName() ) );
+		QCOMPARE( document, QByteArray( "untouched" ) );
+	}
+
+	/*! The end of a start tag is the '>' OUTSIDE any quoted attribute. An
+	 *  indexed section cannot be placed inside a self-closing <song>, so that
+	 *  skeleton must be refused with the caller's destination untouched. */
+	void reassemblingRefusesSelfClosingContentWithGreaterThanInAttribute()
+	{
+		const QByteArray skeleton =
+			"<?xml version=\"1.0\"?>\n"
+			"<lmms-project version=\"31\" type=\"song\">\n"
+			"  <z:index xmlns:z=\"urn:zene:core:1\">\n"
+			"    <z:section name=\"trackcontainer\" entry=\"trackcontainer.xml\" "
+			"v=\"31\" digest=\"sha256:x0\"/>\n"
+			"  </z:index>\n"
+			"  <song marker=\"left>right\"/>\n"
+			"</lmms-project>\n";
+		const std::vector<std::pair<QString, QByteArray>> entries{
+			{ projectcontainer::skeletonEntryName(), skeleton },
+			{ QStringLiteral( "sections/0000-trackcontainer" ),
+				QByteArray( "<trackcontainer/>\n" ) }
+		};
+
+		QByteArray document( "untouched" );
+		QString error;
+		QVERIFY( !projectcontainer::reassembleContainerDocument( entries,
+			QString::fromLatin1( kContent ), &document, &error ) );
+		QVERIFY( error.contains( QStringLiteral( "element is empty" ) ) );
 		QCOMPARE( document, QByteArray( "untouched" ) );
 	}
 
@@ -409,6 +503,40 @@ private slots:
 		QVERIFY2( projectcontainer::reassembleContainerDocument( read,
 			QString::fromLatin1( kContent ), &rebuilt, &error ), qPrintable( error ) );
 		QCOMPARE( rebuilt, original );
+	}
+
+	/*! Through the document entry point the recovery uses, a read that gives back
+	 *  nothing is refused AS A READ, so the caller can keep the file it could not
+	 *  check. Control: an opaque file is refused as malformed, not as unreadable. */
+	void aFailedDocumentReadIsNamedAsARead()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		const QString path = dir.filePath( QStringLiteral( "song.mmpz" ) );
+		const QByteArray skeleton( "<?xml version=\"1.0\"?>\n<zene-project version=\"31\" type=\"song\"/>\n" );
+		const std::vector<std::pair<QString, QByteArray>> sections{
+			{ projectcontainer::sectionEntryName( 0, QStringLiteral( "track" ) ),
+				QByteArray( "<track id=\"0\"/>" ) } };
+
+		QString error;
+		QVERIFY2( projectcontainer::writeContainer( path, skeleton, sections, &error ),
+			qPrintable( error ) );
+
+		QByteArray document;
+		qputenv( "ZENE_TEST_CONTAINER_READ_FAULT", "1" );
+		const bool ok = projectcontainer::readDocumentContainer( path, QStringLiteral( "song" ),
+			&document, &error );
+		qunsetenv( "ZENE_TEST_CONTAINER_READ_FAULT" );
+		QVERIFY( !ok );
+		QVERIFY2( error.contains( QStringLiteral( "cannot read" ) ), qPrintable( error ) );
+
+		QFile opaque( path );
+		QVERIFY( opaque.open( QIODevice::WriteOnly | QIODevice::Truncate ) );
+		QVERIFY( opaque.write( QByteArray( "\x00\x11\x22\x33\x44\x55\x66\x77", 8 ) ) == 8 );
+		opaque.close();
+		QVERIFY( !projectcontainer::readDocumentContainer( path, QStringLiteral( "song" ),
+			&document, &error ) );
+		QVERIFY2( !error.contains( QStringLiteral( "cannot read" ) ), qPrintable( error ) );
 	}
 };
 

@@ -28,6 +28,8 @@
 #include <QDragEnterEvent>
 #include <QPushButton>
 
+#include <stdexcept>
+
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "InstrumentPlayHandle.h"
@@ -43,6 +45,26 @@
 
 namespace lmms
 {
+
+namespace
+{
+
+QString uriForKey(const Plugin::Descriptor::SubPluginFeatures::Key* key)
+{
+	if (key == nullptr || !key->isValid())
+	{
+		throw std::runtime_error("Cannot instantiate LV2 instrument: missing sub-plugin key");
+	}
+
+	const QString uri = key->attributes.value(QStringLiteral("uri"));
+	if (uri.isEmpty())
+	{
+		throw std::runtime_error("Cannot instantiate LV2 instrument: sub-plugin key has no URI");
+	}
+	return uri;
+}
+
+} // namespace
 
 
 extern "C"
@@ -81,7 +103,7 @@ Lv2Instrument::Lv2Instrument(InstrumentTrack *instrumentTrackArg,
 		Flag::IsSingleStreamed
 #endif
 	),
-	Lv2ControlBase(this, key->attributes["uri"])
+	Lv2ControlBase(this, uriForKey(key))
 {
 	clearRunningNotes();
 
@@ -91,6 +113,11 @@ Lv2Instrument::Lv2Instrument(InstrumentTrack *instrumentTrackArg,
 		this, &Lv2Instrument::onSampleRateChanged);
 
 	publishOutputBuses();  // 0.5.0 MX-114
+
+	// MX-157: the latency port is read off the audio thread, twice a second (Lv2Effect's interval).
+	m_latencyPoll.setInterval(500);
+	connect(&m_latencyPoll, &QTimer::timeout, this, &Lv2Instrument::checkLatency);
+	m_latencyPoll.start();
 
 	// now we need a play-handle which cares for calling play()
 	auto iph = new InstrumentPlayHandle(this, instrumentTrackArg);
@@ -114,6 +141,17 @@ void Lv2Instrument::reload()
 	Lv2ControlBase::reload();
 	clearRunningNotes();
 	emit modelChanged();
+}
+
+
+
+
+void Lv2Instrument::checkLatency()
+{
+	const int frames = Lv2ControlBase::latencyFrames();
+	if (frames == m_reportedLatency) { return; }
+	m_reportedLatency = frames;
+	reportLatency(frames);
 }
 
 

@@ -53,7 +53,13 @@ InstrumentMidiParts::InstrumentMidiParts()
 
 auto InstrumentMidiParts::noteOnChannel(int key, int velocity, int fallback) -> int
 {
-	if (!active() || !validKey(key)) { return fallback; }
+	if (!validKey(key)) { return fallback; }
+	if (!active())
+	{
+		// Nothing to remember without parts, but an earlier note-on's channel must not outlive the parts it used.
+		m_keyChannel[static_cast<std::size_t>(key)].store(-1, std::memory_order_relaxed);
+		return fallback;
+	}
 	const int zone = m_zones.resolve(key, volumeOfVelocity(velocity));
 	const RackZone* part = zone >= 0 ? m_zones.zone(zone) : nullptr;
 	const int channel = part != nullptr ? part->chain : fallback;
@@ -98,7 +104,7 @@ void InstrumentMidiParts::saveSettings(QDomDocument& doc, QDomElement& parent) c
 void InstrumentMidiParts::loadSettings(const QDomElement& parent)
 {
 	// A missing element reads as no zones, which clears the parts a preset or an undo step replaced.
-	m_zones.loadSettings(parent.firstChildElement(QStringLiteral("midiparts")));
+	m_zones.loadSettings(parent.firstChildElement(QStringLiteral("midiparts")), Channels);
 }
 
 } // namespace lmms

@@ -178,7 +178,8 @@ ControlResult telemetryStatus()
 	QString endpointReason;
 	const bool endpointAllowed =
 		TelemetryNetworkTransport::isAllowedEndpoint(QUrl(endpoint), &endpointReason);
-	result.insert(QStringLiteral("transport_endpoint"), endpoint);
+	result.insert(QStringLiteral("transport_endpoint"),
+		TelemetryNetworkTransport::redactedEndpoint(endpoint));
 	result.insert(QStringLiteral("transport_endpoint_allowed"), endpointAllowed);
 	result.insert(QStringLiteral("transport_endpoint_reason"), endpointReason);
 	result.insert(QStringLiteral("transport_policy"), TelemetryNetworkTransport::endpointPolicy());
@@ -251,11 +252,12 @@ ControlResult openTelemetryConsentScreen()
 	}
 	gui::TelemetryConsentDialog dialog(window);
 	dialog.exec();
-	// What the screen left behind, read back from the one consent store, so the
-	// result reports the state rather than assuming the human clicked Save.
+	// Read the persisted state from the one consent store, and report separately
+	// whether this opening actually saved it. Save leaves the screen open, so the
+	// dialog records that action instead of using exec()'s later close result.
 	const TelemetryConsent consent = Telemetry::loadConsent();
 	QJsonObject result = consentState(consent);
-	result.insert(QStringLiteral("saved"), true);
+	result.insert(QStringLiteral("saved"), dialog.wasSaved());
 	return ControlResult::success(result);
 #else
 	return ControlResult::failure(ControlErrorKind::Refused,

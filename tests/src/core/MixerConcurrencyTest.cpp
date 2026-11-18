@@ -54,6 +54,7 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -62,11 +63,14 @@
 #include "AudioBus.h"
 #include "AudioBusHandle.h"
 #include "AudioEngine.h"
+#include "AudioEngineWorkerThread.h"
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "MixerSnapshots.h"
 #include "PlayHandle.h"
 #include "SampleFrame.h"
+#include "ThreadableJob.h"
 
 using namespace lmms;
 using partd::PeriodHarness;
@@ -85,6 +89,14 @@ public:
 	bool isFinished() const override { return true; }
 	bool isFromTrack(const Track*) const override { return false; }
 };
+
+//! One render period's worth of the bus as production runs it: AudioEngine::renderNextPeriod holds the change
+//! mutex around every doProcessing, and that lock is what makes a producer's drain under it exclusive.
+void renderPeriod(AudioBusHandle& handle)
+{
+	const auto lock = Engine::audioEngine()->requestChangesGuard();
+	handle.doProcessing();
+}
 
 //! Holds AudioEngine's change mutex for as long as it lives: the contract
 //! AudioEngine::renderNextPeriod() implements for a whole render period.
@@ -174,6 +186,37 @@ bool escapesTheRenderPeriod(Mutate&& mutate, Changed&& changed)
 	worker.join();
 	return escaped;
 }
+
+//! Feeds one block into a mixer channel from a render thread. The job is taken
+//! by the render pool (or run inline by the calling thread), so the feeding
+//! thread owns a render slot - exactly where production feeds a channel from
+//! (AudioBusHandle::doProcessing and InstrumentOutputBuses::send).
+class FeedChannelJob : public ThreadableJob
+{
+public:
+	FeedChannelJob(Mixer* mixer, mix_ch_t channel, std::vector<SampleFrame> block, int adds = 1) :
+		m_mixer(mixer),
+		m_channel(channel),
+		m_block(std::move(block)),
+		m_adds(adds),
+		m_data{m_block.data()},
+		m_bus(m_data, 1, static_cast<f_cnt_t>(m_block.size()))
+	{
+	}
+	bool requiresProcessing() const override { return true; }
+protected:
+	void doProcessing() override
+	{
+		for (int i = 0; i < m_adds; ++i) { m_mixer->mixToChannel(m_bus, m_channel); }
+	}
+private:
+	Mixer* m_mixer;
+	mix_ch_t m_channel;
+	std::vector<SampleFrame> m_block;
+	int m_adds;
+	SampleFrame* m_data[1];
+	AudioBus m_bus;
+};
 
 } // namespace
 
@@ -492,6 +535,44 @@ private slots:
 	// D3 - Mixer::createChannel() reallocates m_mixerChannels and the latency
 	// scratch with no guard, while the render thread iterates them.
 	// -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Luna cluster 5157: the update-existing-route branches of
+	// createChannelSend() and createSidechainSend() write plain route fields
+	// (preFader, the sidechain tap mode) that the render thread reads, with
+	// no change-mutex boundary - only createRoute() took one. Deterministic
+	// here for the same reason as D3-D5: the period is held open on this
+	// thread and the mutation is asked whether it got through anyway.
+	// -----------------------------------------------------------------------
+	void updatingAnExistingRouteWaitsForTheRenderPeriodToEnd()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		MixerRoute* send = mixer->createChannelSend(1, 2, 0.5f, true);
+		QVERIFY(send != nullptr);
+		QVERIFY(send->preFader());
+		const bool flippedWhileRendering = escapesTheRenderPeriod(
+			[mixer] { mixer->createChannelSend(1, 2, 0.5f, false); },
+			[send] { return !send->preFader(); });
+		QVERIFY2(!flippedWhileRendering,
+			"createChannelSend() changed an existing send's preFader while a render period was in flight (5157)");
+		QVERIFY2(!send->preFader(),
+			"the pre-fader change never landed after the render period ended");
+		QCOMPARE(send->amount()->value(), 0.5f);
+
+		MixerSidechainRoute* sidechain = mixer->createSidechainSend(1, 2, 0.5f, SidechainTapPoint::PostFader);
+		QVERIFY(sidechain != nullptr);
+		QCOMPARE(sidechain->mode(), SidechainTapPoint::PostFader);
+		const bool movedWhileRendering = escapesTheRenderPeriod(
+			[mixer] { mixer->createSidechainSend(1, 2, 0.5f, SidechainTapPoint::PreFx); },
+			[sidechain] { return sidechain->mode() == SidechainTapPoint::PreFx; });
+		QVERIFY2(!movedWhileRendering,
+			"createSidechainSend() changed an existing route's mode while a render period was in flight (5157)");
+		QVERIFY2(sidechain->mode() == SidechainTapPoint::PreFx,
+			"the tap-point change never landed after the render period ended");
+	}
+
 	void creatingAChannelIsSerialisedWithTheRenderPeriod()
 	{
 		Mixer* mixer = Engine::mixer();
@@ -640,6 +721,33 @@ private slots:
 	// D6 - AudioBusHandle::m_playHandles is appended under m_playHandleLock
 	// but a worker range-fors it without the lock.
 	// -----------------------------------------------------------------------
+	// Recall writes a send's fader tap (preFader) on the control thread, as
+	// createChannelSend() does for an existing route. The write has to wait
+	// for the render period to end, like the route update it mirrors.
+	void recallingASnapshotWaitsForTheRenderPeriodToEnd()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		MixerRoute* send = mixer->createChannelSend(1, 2, 0.5f, true);
+		QVERIFY(send != nullptr);
+		QVERIFY(send->preFader());
+		const MixerSnapshot snapshot = MixerSnapshots::capture(QStringLiteral("Tap"));
+		send->setPreFader(false);
+
+		const bool flippedWhileRendering = escapesTheRenderPeriod(
+			[&snapshot]
+			{
+				MixerSnapshots::apply(snapshot, MixerSnapshots::Parts{});
+			},
+			[send] { return send->preFader(); });
+		QVERIFY2(!flippedWhileRendering,
+			"a snapshot recall wrote a send's fader tap while a render period was in flight");
+		QVERIFY2(send->preFader(),
+			"the recalled fader tap never landed after the render period ended");
+	}
+
 	void addingAPlayHandleIsSerialisedWithTheIterator()
 	{
 		AudioBusHandle handle{QStringLiteral("MixerConcurrencyTest"), false};
@@ -661,7 +769,7 @@ private slots:
 		constexpr int kMaxIterations = 2000000;
 		while (!mutationDone.load(std::memory_order_acquire) && iterations < kMaxIterations)
 		{
-			handle.doProcessing();
+			renderPeriod(handle);
 			++iterations;
 		}
 		mutation.join();
@@ -669,6 +777,168 @@ private slots:
 		QVERIFY2(iterations > 0, "the iterator never ran concurrently with the writer");
 		handle.removePlayHandle(&playHandle);
 		partd::evidence("MIXCONC_D6 rounds=%d do_processing_iterations=%d", kRounds, iterations);
+	}
+
+	//! The edit queue is multi-producer, SINGLE consumer. While a render is draining it (here: this thread
+	//! calling doProcessing), a producer that finds the queue full waits for the drain; it must not pop the
+	//! queue itself, or two threads consume at once (ThreadSanitizer: MpscQueue::pop from both).
+	void aFullEditQueueIsDrainedByTheConsumerAndNeverByItsProducer()
+	{
+		AudioBusHandle handle{QStringLiteral("MixerConcurrencyTest"), false};
+		SilentPlayHandle playHandle;
+
+		// Several queue capacities of edits, so the producer meets a full queue however fast the consumer is.
+		constexpr int kRounds = static_cast<int>(PlayHandle::MaxNumber) * 8;
+		std::atomic<bool> producerDone{false};
+		std::thread producer([&handle, &playHandle, &producerDone]
+		{
+			for (int i = 0; i < kRounds; ++i)
+			{
+				handle.addPlayHandle(&playHandle);
+				handle.removePlayHandle(&playHandle);
+			}
+			producerDone.store(true, std::memory_order_release);
+		});
+		while (!producerDone.load(std::memory_order_acquire)) { renderPeriod(handle); }
+		producer.join();
+		handle.doProcessing();
+
+		QCOMPARE(handle.producerDrainedPlayHandleEdits(), quint64(0));
+		QCOMPARE(handle.droppedPlayHandleEdits(), quint64(0));
+	}
+
+	//! The hand-off itself: a producer meets a full queue, stalls, and resumes the moment the consumer
+	//! drains it - well inside the 50 ms after which it would conclude nobody is draining.
+	void aProducerStalledOnAFullQueueResumesWhenTheConsumerDrains()
+	{
+		AudioBusHandle handle{QStringLiteral("MixerConcurrencyTest"), false};
+		SilentPlayHandle playHandle;
+		for (std::size_t i = 0; i < PlayHandle::MaxNumber; ++i) { handle.addPlayHandle(&playHandle); }  // queue now full
+
+		std::atomic<bool> pushed{false};
+		std::thread producer([&] { handle.addPlayHandle(&playHandle); pushed.store(true, std::memory_order_release); });
+		QTest::qSleep(10);
+		QVERIFY2(!pushed.load(std::memory_order_acquire), "the producer did not wait on a full queue");
+		renderPeriod(handle);  // the consumer drains; the stalled push now fits
+		producer.join();
+		QVERIFY(pushed.load(std::memory_order_acquire));
+		QCOMPARE(handle.producerDrainedPlayHandleEdits(), quint64(0));
+		handle.doProcessing();
+		QCOMPARE(handle.droppedPlayHandleEdits(), quint64(0));
+	}
+
+	//! With nothing consuming, the full queue is not a deadlock and no edit is lost: after the consumer
+	//! made no progress for a while the producer drains the queue itself, holding the engine change lock.
+	void aFullEditQueueWithNoConsumerIsDrainedByTheProducerUnderTheLock()
+	{
+		AudioBusHandle handle{QStringLiteral("MixerConcurrencyTest"), false};
+		SilentPlayHandle playHandle;
+
+		constexpr int kRounds = static_cast<int>(PlayHandle::MaxNumber) * 2;
+		for (int i = 0; i < kRounds; ++i)
+		{
+			handle.addPlayHandle(&playHandle);
+			handle.removePlayHandle(&playHandle);
+		}
+
+		QVERIFY2(handle.producerDrainedPlayHandleEdits() > 0, "a queue nobody drains must be drained by its producer");
+		QCOMPARE(handle.droppedPlayHandleEdits(), quint64(0));
+		handle.doProcessing();
+	}
+
+	// -----------------------------------------------------------------------
+	// BUG 9 (cluster new-p10-249) - the period's input add must not be a
+	// shared read-modify-write the render workers would contend on.
+	//
+	// Several play handles may feed one channel in one period: AudioEngine runs
+	// them on its QThread::idealThreadCount()-1 workers (AudioEngine.cpp:315)
+	// and on the inline (engine) thread, and each one's AudioBusHandle ends in
+	// Mixer::mixToChannel(). The accumulation is therefore shared, and it used
+	// to be shared through a lock - a QMutex first, a spin flag after - which
+	// AGENTS.md rule 4 forbids on an audio-thread path ("no allocation, no
+	// mutex, no logging").
+	//
+	// The accumulation is single-owner now: every render thread adds its block
+	// into its OWN per-channel partial (indexed by
+	// AudioEngineWorkerThread::currentRenderSlot()), and Mixer::reduceInputPartials()
+	// - the period barrier, at the top of masterMix - folds the partials into
+	// the channel buses. No worker waits, and no worker spins.
+	//
+	// The first slot below proves the design from the outside: a block fed on
+	// a render thread does NOT land in the shared channel bus (that would be
+	// the shared read-modify-write the old guard existed for), and it lands
+	// when the barrier runs. The second proves that every feeder's block
+	// still reaches the channel - the sum is unchanged.
+	// -----------------------------------------------------------------------
+	void aRenderThreadsBlockStaysOutOfTheSharedChannelBusUntilTheBarrier()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 2) { mixer->createChannel(); }
+		MixerChannel* channel = mixer->mixerChannel(1);
+		channel->m_bus.silenceAllChannels();
+		channel->m_hasInput = false;
+
+		const f_cnt_t fpp = partd::periodFrames();
+
+		// The feed runs where production runs it: on a render thread.
+		FeedChannelJob job(mixer, 1, std::vector<SampleFrame>(fpp, SampleFrame(0.25f, -0.25f)));
+		AudioEngineWorkerThread::addJob(&job);
+		AudioEngineWorkerThread::startAndWaitForJobs();
+
+		// The shared channel bus must not have moved.
+		const SampleFrame* channelBus = channel->m_bus.bus()[0];
+		partd::evidence("MIXCONC_249 shared_bus_after_feed l=%.6f r=%.6f",
+			static_cast<double>(channelBus[0][0]), static_cast<double>(channelBus[0][1]));
+		QVERIFY2(channelBus[0][0] == 0.0f && channelBus[0][1] == 0.0f,
+			"a render thread wrote its block straight into the shared channel bus: the "
+			"accumulation still runs on the worker instead of at the period barrier");
+
+		// The barrier: the block reaches the channel, and the master carries it.
+		std::vector<SampleFrame> out(fpp);
+		renderPeriod(mixer, out);
+		partd::evidence("MIXCONC_249 master_after_barrier l=%.6f r=%.6f",
+			static_cast<double>(out[0][0]), static_cast<double>(out[0][1]));
+		QVERIFY2(std::abs(out[0][0] - 0.25f) < 1e-5f && std::abs(out[0][1] + 0.25f) < 1e-5f,
+			"the period barrier did not fold the render thread's partial into the channel");
+	}
+
+	//! Every feeder's block has to land: four render threads feed the same
+	//! channel in one period and the sum is exact.
+	void everyRenderThreadsBlockLandsAtThePeriodBarrier()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 2) { mixer->createChannel(); }
+		MixerChannel* channel = mixer->mixerChannel(1);
+		channel->m_bus.silenceAllChannels();
+		channel->m_hasInput = false;
+
+		const f_cnt_t fpp = partd::periodFrames();
+		constexpr int kFeeders = 4;
+		constexpr int kAdds = 250;
+		std::vector<std::unique_ptr<FeedChannelJob>> jobs;
+		jobs.reserve(kFeeders);
+		for (int feeder = 0; feeder < kFeeders; ++feeder)
+		{
+			jobs.emplace_back(std::make_unique<FeedChannelJob>(
+				mixer, 1, std::vector<SampleFrame>(fpp, SampleFrame(0.5f, -0.5f)), kAdds));
+		}
+		for (std::unique_ptr<FeedChannelJob>& job : jobs) { AudioEngineWorkerThread::addJob(job.get()); }
+		AudioEngineWorkerThread::startAndWaitForJobs();
+
+		std::vector<SampleFrame> out(fpp);
+		renderPeriod(mixer, out);
+
+		const float expected = 0.5f * kFeeders * kAdds;
+		partd::evidence("MIXCONC_249 barrier_sum l=%.6f r=%.6f expected=%.6f",
+			static_cast<double>(out[0][0]), static_cast<double>(out[0][1]),
+			static_cast<double>(expected));
+		for (f_cnt_t f = 0; f < fpp; ++f)
+		{
+			QCOMPARE(out[f][0], expected);
+			QCOMPARE(out[f][1], -expected);
+		}
 	}
 };
 

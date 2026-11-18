@@ -72,7 +72,11 @@ void VideoFramePump::run()
 		{
 			openPath = next.path;
 			QString ignored;  // a file that does not open answers with null images; the commands report why
-			if (openPath.isEmpty() || !decoder.open(openPath, &ignored)) { decoder.close(); }
+			if (openPath.isEmpty() || !decoder.open(openPath, &ignored))
+			{
+				decoder.close();
+				openPath.clear();  // let a later request retry after a failed open
+			}
 		}
 		emit frameReady(decoder.frameAt(next.seconds, next.box), next.seconds, next.tag);
 	}

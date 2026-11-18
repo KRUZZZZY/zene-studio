@@ -24,7 +24,9 @@
 #include "ArrangerNavigator.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
+#include <limits>
 
 #include <QAbstractSlider>
 #include <QHelpEvent>
@@ -39,6 +41,7 @@
 #include <QToolTip>
 #include <QWheelEvent>
 
+#include "DeprecationHelper.h"
 #include "ArrangementSections.h"
 #include "ArrangerLandmarks.h"
 #include "ArrangerZoom.h"
@@ -174,16 +177,16 @@ protected:
 	void mousePressEvent(QMouseEvent* event) override
 	{
 		if (event->button() != Qt::LeftButton) { return; }
-		if (event->modifiers() & Qt::AltModifier) { zoomToLandmark(event->position().x()); }
-		else { scrollTo(event->position().x()); }
+		if (event->modifiers() & Qt::AltModifier) { zoomToLandmark(positionF(event).x()); }
+		else { scrollTo(positionF(event).x()); }
 	}
 	void mouseDoubleClickEvent(QMouseEvent* event) override
 	{
-		if (event->button() == Qt::LeftButton) { zoomToLandmark(event->position().x()); }
+		if (event->button() == Qt::LeftButton) { zoomToLandmark(positionF(event).x()); }
 	}
 	void mouseMoveEvent(QMouseEvent* event) override
 	{
-		if ((event->buttons() & Qt::LeftButton) && !(event->modifiers() & Qt::AltModifier)) { scrollTo(event->position().x()); }
+		if ((event->buttons() & Qt::LeftButton) && !(event->modifiers() & Qt::AltModifier)) { scrollTo(positionF(event).x()); }
 	}
 	void wheelEvent(QWheelEvent* event) override
 	{
@@ -221,8 +224,10 @@ private:
 		setSingleStep(static_cast<int>(std::max<tick_t>(1, view / 8)));
 		setValue(static_cast<int>(start));
 		m_following = false;
+		// The view's end is exclusive: the last bar named is the one the view ends INSIDE.
+		const tick_t lastTick = view > 0 ? start + view - 1 : start;
 		const QString text = QObject::tr("Showing bars %1 to %2 of %3").arg(start / TimePos::ticksPerBar() + 1)
-			.arg((start + view) / TimePos::ticksPerBar() + 1).arg(Engine::getSong()->length());
+			.arg(lastTick / TimePos::ticksPerBar() + 1).arg(Engine::getSong()->length());
 		if (accessibleDescription() != text) { setAccessibleDescription(text); }
 		update();
 	}
@@ -360,8 +365,10 @@ private:
 	//! The song's length with a bar to spare, or the end of what the arranger shows when that is further.
 	tick_t spanTicks() const
 	{
-		const tick_t song = (Engine::getSong()->length() + 1) * TimePos::ticksPerBar();
-		return std::max<tick_t>(song, m_editor->currentPosition().getTicks() + arrangerzoom::visibleTicks(m_editor));
+		const std::int64_t song = (static_cast<std::int64_t>(Engine::getSong()->length()) + 1) * TimePos::ticksPerBar();
+		const std::int64_t viewEnd = static_cast<std::int64_t>(m_editor->currentPosition().getTicks()) + arrangerzoom::visibleTicks(m_editor);
+		return static_cast<tick_t>(std::clamp(std::max(song, viewEnd), std::int64_t{0},
+			static_cast<std::int64_t>(std::numeric_limits<tick_t>::max())));
 	}
 
 	//! Centre the arranger on the tick under @a x.
@@ -396,7 +403,10 @@ ControlResult scroll(const QJsonObject& args)
 {
 	SongEditor* editor = arrangerEditor();
 	if (editor == nullptr) { return noInterface(QStringLiteral("arrangement.scroll")); }
-	editor->horizontalScroll()->setValue(std::max(0, args.value(QStringLiteral("position")).toInt()));
+	QScrollBar* scrollbar = editor->horizontalScroll();
+	const double position = std::clamp(args.value(QStringLiteral("position")).toDouble(), 0.0,
+		static_cast<double>(scrollbar->maximum()));
+	scrollbar->setValue(static_cast<int>(position));
 	return ControlResult::success({{QStringLiteral("position"), static_cast<int>(editor->currentPosition().getTicks())},
 		{QStringLiteral("visible_ticks"), static_cast<int>(arrangerzoom::visibleTicks(editor))}});
 }

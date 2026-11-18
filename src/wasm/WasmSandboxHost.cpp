@@ -25,8 +25,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
-#include <fstream>
-#include <iterator>
 
 namespace lmms::wasm
 {
@@ -34,25 +32,13 @@ namespace lmms::wasm
 namespace
 {
 
-//! Read the whole of \p path. An unreadable or empty file is an error: both are
-//! module problems the caller reports as a typed refusal, never as a silent pass.
+//! Read the whole of \p path through the same bounded reader the effect path
+//! uses. An unreadable, oversized or empty file is an error: all three are
+//! module problems the caller reports as a typed refusal, never a silent pass.
 bool readWholeFile(const std::string& path, std::vector<std::uint8_t>& out,
 	std::string& error)
 {
-	std::ifstream file(path, std::ios::binary);
-	if (!file)
-	{
-		error = "cannot open module '" + path + "'";
-		return false;
-	}
-	out.assign(std::istreambuf_iterator<char>(file),
-		std::istreambuf_iterator<char>());
-	if (out.empty())
-	{
-		error = "module '" + path + "' is empty";
-		return false;
-	}
-	return true;
+	return WasmSandbox::readModuleFile(path, out, error);
 }
 
 /*! The bytes `loadModuleBytes` wants, for the format `formatOf` named.
@@ -136,18 +122,25 @@ HostLoadOutcome WasmSandboxHost::load(const std::string& path,
 	std::vector<std::uint8_t> bytes;
 	if (!decodeModule(path, outcome.format, bytes, outcome.error)) { return outcome; }
 
+	const std::uint64_t budget =
+		fuelBudget == 0 ? abi::defaultFuelBudget : fuelBudget;
+
 	// Compile and instantiate into a FRESH sandbox FIRST: a module that fails to
 	// load must leave the running one alone. `wasm.load` is therefore atomic,
 	// and the inverse a failed call never consumed stays the truth.
 	auto candidate = std::make_unique<WasmSandbox>();
+	// The requested budget must be in force BEFORE the module is instantiated:
+	// instantiation runs the module's start function, and the sandbox primes
+	// the store with the CONFIGURED budget for exactly that reason
+	// (WasmSandbox::Impl::primeFuelBudget, src/wasm/WasmSandbox.cpp:271-279).
+	// Setting it afterwards left the start function running under the default
+	// budget, so a caller that asked for a small one was not confined at all.
+	candidate->setFuelBudget(budget);
 	if (!candidate->loadModuleBytes(bytes.data(), bytes.size(), outcome.error))
 	{
 		return outcome;
 	}
 
-	const std::uint64_t budget =
-		fuelBudget == 0 ? abi::defaultFuelBudget : fuelBudget;
-	candidate->setFuelBudget(budget);
 	m_sandbox = std::move(candidate);
 	m_path = path;
 	m_format = outcome.format;

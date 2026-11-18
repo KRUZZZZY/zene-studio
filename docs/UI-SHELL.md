@@ -99,6 +99,9 @@ and it declares that command in its `controlCommand` property for the agent-surf
   - `clip_launcher` → `launcher`
   - `pattern`, `automation` and `mixer` are unchanged
   - the floating windows `controller_rack`, `project_notes` and `microtuner`
+  - `perform` (0.5.0, WF-071): perform mode, the launcher's live show window (`PerformView`,
+    View > Perform Mode and Launcher > Perform Mode). It is a top-level window of its own, not a
+    panel, and it does not remember its place (`ToolWindowMemory` does not know it).
 
   Showing a panel hides the panel its region held. A view's centre stays visible. A panel that
   the current view does not offer (the arranger or the launcher in Edit) is revealed by
@@ -128,6 +131,13 @@ and it declares that command in its `controlCommand` property for the agent-surf
   screen's available area, or the nearest connected screen's. One never placed opens centred.
   The project's MDI-era placement for them is still not used (it was relative to the hidden
   workspace).
+- **The main window remembers its place (theme 22, 2026-10-07).** A clean exit keeps its screen, its normal
+  (un-maximised) position and size and whether it was maximised (or full screen) in the personal config,
+  `ui/main.geometry` (`MainWindowGeometry.h`); the next start opens it there, fitted inside that screen's
+  available area - or the nearest connected screen's, when that one is gone - with room for the title bar,
+  and maximised over that normal place when it was maximised. With nothing remembered, or with `-geometry`
+  given, the start is what it was (maximised, or Qt's `-geometry`). An unattended run (an agent instance, or
+  no display) neither reads nor writes the place. Not stored in a project. `MainWindowGeometryTest`.
 - Editor geometry saved by MDI-era projects (`x`, `y`, `width`, `height`, `visible`,
   `maximized`) is **ignored safely**. For a panel's editor, `restoreWidgetState` finds no
   sub-window and does nothing (`ShellTest::mdiEraGeometryInAProjectIsIgnoredSafely`). The tool
@@ -209,6 +219,7 @@ come back. Every route ends in `window.detach` or `window.attach` (`Shell::dispa
 |---|---|
 | `ShellLayoutTest` | region, view and refusal rules; save/restore; corrupt layouts |
 | `ShellTest` | the rendered shell: a view switch moves an editor without deleting it; the region rule; reveal by switching view; actions and footer follow the layout; 24 px targets; persistence; MDI geometry ignored; BUGS 11.30's clamp (moved from the retired Focus Desk tests) |
+| `TouchLayoutTest` | accessible mode, the touch-first layout: the rendered transport and note-editor targets are at least 44 x 44 logical pixels with 8 between neighbours, and a finger's touch event selects an arranger clip and a note and plays and stops the transport |
 | `DesignTokensTest` | every declared text/surface pair meets AA; the generated stylesheet meets AA; the velocity ramp is ordered by lightness; icons are paths that paint at the screen's scale |
 | `AccessibilityHelperTest` | every footer switch and view word is named and Tab-focusable; the chrome bands and panel frames are named |
 | `ControlShell` | the socket proof (§4) and three distinct rendered views |

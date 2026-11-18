@@ -48,6 +48,39 @@ static float process_frame(DenoiseState *st, const float *in, float *out, int co
 	return v;
 }
 
+/* Opens the optional stats file and writes its header row. The path is optional, but if it IS
+ * given and cannot be written there is nothing to write the per-frame rows into, so this reports
+ * the open failure and stops instead of letting the caller fprintf through a null FILE *. */
+static FILE *open_stats(const char *path)
+{
+	FILE *fs = fopen(path, "w");
+	if (!fs)
+	{
+		perror("stats");
+		exit(2);
+	}
+	fprintf(fs, "frame,in_rms,out_rms,vad_prob\n");
+	return fs;
+}
+
+/* Writes the `count` samples at `samples` to `path`. A short write, a stream error, or a failed
+ * close is a failure: buffered data may reach the file only at close, so checking fwrite alone
+ * can report success for output that was never stored. */
+static int write_output(const char *path, const float *samples, size_t count)
+{
+	FILE *fo = fopen(path, "wb");
+	if (!fo) { perror("out"); return 2; }
+	const size_t written = fwrite(samples, sizeof(float), count, fo);
+	int write_failed = written != count || ferror(fo);
+	if (fclose(fo) != 0) { write_failed = 1; }
+	if (write_failed)
+	{
+		fprintf(stderr, "output write failed\n");
+		return 2;
+	}
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	const float scale = argc < 4 ? 0.0f : parse_scale(argv[3]);
@@ -73,8 +106,7 @@ int main(int argc, char **argv)
 	DenoiseState *st = rnnoise_create(NULL);
 	if (!st) { fprintf(stderr, "rnnoise_create failed\n"); return 2; }
 
-	FILE *fs = NULL;
-	if (argc > 4) { fs = fopen(argv[4], "w"); fprintf(fs, "frame,in_rms,out_rms,vad_prob\n"); }
+	FILE *fs = argc > 4 ? open_stats(argv[4]) : NULL;
 
 	double vsum = 0.0;
 	int nf = 0;
@@ -88,10 +120,7 @@ int main(int argc, char **argv)
 	if (fs) fclose(fs);
 	rnnoise_destroy(st);
 
-	FILE *fo = fopen(argv[2], "wb");
-	if (!fo) { perror("out"); return 2; }
-	fwrite(out, sizeof(float), (size_t)n, fo);
-	fclose(fo);
+	if (write_output(argv[2], out, (size_t)n) != 0) { return 2; }
 
 	printf("frames=%d mean_vad_prob=%.4f\n", nf, vsum / (nf ? nf : 1));
 	free(in);

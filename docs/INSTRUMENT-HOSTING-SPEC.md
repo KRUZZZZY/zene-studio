@@ -581,6 +581,13 @@ of the chain? Note also that today **no VST3 plug-in reports latency at all** �
 `latencyFrames()` override (`grep -n latency plugins/Vst3Effect/` → 0 hits) while the default returns
 0 (`include/Effect.h:173-176`). *Files:* `Vst3Host.cpp:508-594` (call `getLatencySamples()` after
 `setupProcessing`), `src/core/EffectChain.cpp:55-85`, `src/core/Mixer.cpp:1257-1345`.
+*Answered 2026-10-06 (MX-157, BUGS 11.34):* at the track's outgoing edge, as a source latency of the
+track's bus handle. `Instrument::reportLatency()` (control thread) stores it on the handle
+(`AudioBusHandle::setSourceLatencyFrames`), whose `latencyFrames()` - the value the mixer's direct-input pass
+already reads - is now the source's latency plus the chain's; a routed output bus carries it too
+(`InstrumentOutputBuses::setSourceLatencyFrames`, counted in its target channel by the same pass). The
+CLAP, VST3 and LV2 instrument hosts call it; `docs/KNOWN-LIMITATIONS.md` ("Hosted instrument latency")
+lists what it does not cover.
 
 **Q11 — Multi-out: what is the documented behaviour when an instrument has more outputs than the
 first bus?** Current code sums nothing — it just ignores channels beyond `numOutputs`

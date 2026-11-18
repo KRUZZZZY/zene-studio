@@ -37,6 +37,7 @@
 #include "EffectChain.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
+#include "PluginInstantiationFailure.h"
 
 namespace lmms
 {
@@ -68,10 +69,20 @@ QJsonObject stateSnapshot(Effect* effect)
 	QJsonObject snapshot;
 	QString xml = controlEffectStateXml(effect);
 	const bool truncated = xml.size() > MaxSnapshotChars;
-	if (truncated) { xml.truncate(MaxSnapshotChars); }
+	if (truncated) { xml.clear(); }
 	snapshot.insert(QStringLiteral("state_xml"), xml);
 	snapshot.insert(QStringLiteral("state_truncated"), truncated);
 	return snapshot;
+}
+
+//! The formats plugin.list filters by: "au" only on a build that hosts Audio Units (Q050-491).
+QStringList pluginListFormats()
+{
+	QStringList formats{QStringLiteral("builtin"), QStringLiteral("ladspa"), QStringLiteral("lv2"),
+		QStringLiteral("vst3"), QStringLiteral("clap")};
+	if (controlAuHostingBuilt()) { formats << QStringLiteral("au"); }
+	formats << QStringLiteral("vst2");  // Q050-481.1: listed after every format, like its entries
+	return formats;
 }
 
 void registerPluginList(ControlRegistry& registry)
@@ -84,13 +95,20 @@ void registerPluginList(ControlRegistry& registry)
 		"instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, "
 		"VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> "
 		"is a catalogue index, not a persisted project id, and 'loadable' says whether "
-		"plugin.load accepts the entry. Format order is built-in, then LADSPA, then LV2, then "
-		"VST3, then CLAP, so adding a host does not renumber the ids of the formats that were "
-		"already there.");
+		"plugin.load accepts the entry. Each entry carries 'vendor' - who made it, as its own "
+		"format reports it (\"Zene Studio\" for a built-in, the LADSPA maker, the LV2 author, "
+		"the VST3 or CLAP factory's vendor; empty when the format reports none, which the "
+		"device picker reads as \"Not reported\"). Format order is built-in, then LADSPA, then LV2, then "
+		"VST3, then CLAP, then AU, so adding a host does not renumber the ids of the formats that were "
+		"already there. macOS builds also list Audio Units (format 'au', from the system component "
+		"registry; each entry carries its 'component' type:subtype:manufacturer and the "
+		"'scan_cache_path' its quarantine entry uses); other builds have no 'au' format. VST2 instruments, "
+		"then VST2 effects (format 'vst2', Q050-481.1/.2), come last: hosted through Carla, found by Carla's own out-of-process "
+		"discovery under ZENE_VST2_PATH or else VST_PATH, the VST directory setting and ~/.vst; each carries "
+		"its 'file', VST2 'unique_id', 'binary' (native, win64, win32) and 'bridged' (a Windows binary run "
+		"through Carla's Wine bridge). None are listed when no Carla runtime is installed.");
 	cmd.argsSchema = objectSchema({
-		{QStringLiteral("format"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
-			{QStringLiteral("enum"), QJsonArray{QStringLiteral("builtin"), QStringLiteral("ladspa"),
-				QStringLiteral("lv2"), QStringLiteral("vst3"), QStringLiteral("clap")}}}},
+		{QStringLiteral("format"), enumProperty(pluginListFormats())},
 		{QStringLiteral("kind"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
 			{QStringLiteral("enum"), QJsonArray{QStringLiteral("effect"),
 				QStringLiteral("instrument"), QStringLiteral("tool"), QStringLiteral("other")}}}},
@@ -208,13 +226,18 @@ ControlResult loadInstrument(const ControlTarget& target, const ControlDeviceEnt
 	bool useKey = false;
 	if (!controlDeviceModule(entry, &pluginName, &key, &useKey, &error)) { return error; }
 	if (!controlPluginIsInstantiable(pluginName, &error)) { return error; }
+	pluginload::takeInstantiationFailure();  // a reason an earlier load left is not this load's
 	Instrument* instrument = target.instrumentTrack->loadInstrument(pluginName,
 		useKey ? &key : nullptr);
 	if (instrument == nullptr ||
 		QString::fromUtf8(instrument->descriptor()->name) != pluginName)
 	{
+		// Q050-491: the host module's own reason (an Audio Unit's typed instantiation error) follows, as
+		// controlInstantiateDevice() does for an effect.
+		const QString reason = pluginload::takeInstantiationFailure();
+		const QString refusal = QStringLiteral("the engine could not load instrument '%1'").arg(pluginName);
 		return ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("the engine could not load instrument '%1'").arg(pluginName));
+			reason.isEmpty() ? refusal : QStringLiteral("%1: %2").arg(refusal, reason));
 	}
 
 	QJsonObject result;
@@ -232,11 +255,7 @@ ControlResult loadInstrument(const ControlTarget& target, const ControlDeviceEnt
 		QJsonObject{{QStringLiteral("target"), target.id},
 			{QStringLiteral("plugin"), previous}});
 	transaction.insert(QStringLiteral("inverse"),
-		QJsonObject{{QStringLiteral("op"), QStringLiteral("plugin.load")},
-			{QStringLiteral("args"),
-				QJsonObject{{QStringLiteral("target"), target.id},
-					{QStringLiteral("note"), QStringLiteral("reload the previous instrument by "
-						"device id; its parameter values are not restored")}}}});
+		QJsonObject{});
 	transaction.insert(QStringLiteral("reversible"), false);
 	transaction.insert(QStringLiteral("mechanism"),
 		QStringLiteral("snapshot only: replacing an instrument has no ProjectJournal checkpoint "
@@ -259,7 +278,10 @@ void registerPluginLoad(ControlRegistry& registry)
 		"parametrisable through plugin.param_get / plugin.param_set on a display-less instance. "
 		"Optional for an effect: `chain` (default 0) puts it on parallel chain n of a mixer "
 		"channel's rack (rack.add_chain), and `position` (0 = first) inserts it at that slot "
-		"instead of appending; the reply's `index` is the slot it landed in.");
+		"instead of appending; the reply's `index` is the slot it landed in. Q050-111: a `target` of clip-<n> (an audio "
+		"clip) puts the effect on that clip's OWN chain - realtime, processing that clip alone before the track sums "
+		"its clips; plugin.unload / plugin.bypass / plugin.move / plugin.param_set take the same clip-<n> target, and "
+		"dsp.get_state reads it.");
 	cmd.argsSchema = objectSchema(
 		{{QStringLiteral("target"), stringProperty()},
 			{QStringLiteral("device"), stringProperty()},
@@ -309,12 +331,12 @@ void registerPluginUnload(ControlRegistry& registry)
 	cmd.id = QStringLiteral("plugin.unload");
 	cmd.group = QStringLiteral("plugin");
 	cmd.verb = QStringLiteral("unload");
-	cmd.description = QStringLiteral("Remove a device instance (fx-<n>) from a track's chain or a "
-		"mixer channel. REVERSIBLE: the device's own state document is captured before the "
-		"removal and one control.undo re-instantiates the same plugin at the same index in the "
-		"chain with its settings restored. The transaction's 'before' snapshot still carries the "
-		"state XML, so a client that prefers to rebuild by hand can; a device whose state exceeds "
-		"the capture cap reports itself as snapshot-only instead.");
+	cmd.description = QStringLiteral("Remove a device instance (fx-<n>) from a track's chain, a "
+		"mixer channel or an audio clip's own chain (clip-<n>). When its state fits the capture cap and the undo stack is addressable, "
+		"one control.undo re-instantiates the same plugin at the same index with its settings "
+		"restored. If state exceeds the cap, 'state_xml' is empty and 'state_truncated' is true; "
+		"its settings cannot be manually restored from that snapshot. When state fits the cap but no inverse is "
+		"recorded, the transaction's 'before' snapshot contains usable XML for a manual rebuild.");
 	cmd.argsSchema = objectSchema(
 		{{QStringLiteral("target"), stringProperty()},
 			{QStringLiteral("plugin"), stringProperty()}},
@@ -345,6 +367,7 @@ void registerPluginUnload(ControlRegistry& registry)
 		const auto it = std::find(effects.begin(), effects.end(), effect);
 		const int index = static_cast<int>(std::distance(effects.begin(), it));
 		QJsonObject snapshot = stateSnapshot(effect);
+		const bool stateTruncated = snapshot.value(QStringLiteral("state_truncated")).toBool();
 		snapshot.insert(QStringLiteral("target"), target.id);
 		snapshot.insert(QStringLiteral("index"), index);
 		snapshot.insert(QStringLiteral("plugin"), pluginName);
@@ -358,7 +381,7 @@ void registerPluginUnload(ControlRegistry& registry)
 		// checkpoint could restore. The recorded structural step RE-INSTANTIATES
 		// it, at the index it was removed from, with its settings.
 		const bool reversible = control::journalEffectRemoval(chain, effect, index);
-		chain->removeEffect(effect);
+		control::detachEffect(chain, effect);
 		// Same lifetime as the rack's own delete: the audio engine may still
 		// hold the pointer for the period in flight.
 		effect->deleteLater();
@@ -373,34 +396,44 @@ void registerPluginUnload(ControlRegistry& registry)
 
 		QJsonObject transaction;
 		transaction.insert(QStringLiteral("before"), snapshot);
+		const QString inverseNote = reversible
+			? QStringLiteral("the recorded undo step re-instantiates the same dev-<n> at index %1 "
+				"with its captured settings, so no reload is needed by hand").arg(index)
+			: stateTruncated
+				? QStringLiteral("reload the same dev-<n>; no usable state snapshot was captured, "
+					"so before.state_xml cannot restore its settings")
+				: QStringLiteral("reload the same dev-<n>, then plugin.state_load from "
+					"'before.state_xml' written to a file");
 		transaction.insert(QStringLiteral("inverse"),
-			reversible
-				? QJsonObject{{QStringLiteral("op"), QStringLiteral("plugin.load")},
-					{QStringLiteral("args"),
-						QJsonObject{{QStringLiteral("target"), target.id},
-							{QStringLiteral("note"), QStringLiteral("the recorded undo step "
-								"re-instantiates the same dev-<n> at index %1 with its "
-								"captured settings, so no reload is needed by hand")
-								.arg(index)}}}}
-				: QJsonObject{{QStringLiteral("op"), QStringLiteral("plugin.load")},
-					{QStringLiteral("args"),
-						QJsonObject{{QStringLiteral("target"), target.id},
-							{QStringLiteral("note"), QStringLiteral("reload the same dev-<n>, then "
-								"plugin.state_load from 'before.state_xml' written to a file")}}}});
+			QJsonObject{{QStringLiteral("op"), QStringLiteral("plugin.load")},
+				{QStringLiteral("args"),
+					QJsonObject{{QStringLiteral("target"), target.id},
+						{QStringLiteral("note"), inverseNote}}}});
 		transaction.insert(QStringLiteral("reversible"), reversible);
-		transaction.insert(QStringLiteral("mechanism"),
-			reversible
-				? QStringLiteral("action checkpoint (structural step): the device's own state "
-					"document (controlEffectStateXml - including the sub-plugin key that "
-					"identifies a hosted plugin) is captured before the removal, and the "
-					"recorded undo step re-instantiates the device through the chain's own "
-					"instantiate path and puts the settings back, at the index it was removed "
-					"from. The document's measured size is charged to the undo stack's byte "
-					"budget, so a long run of removals is evicted like any other step")
-				: QStringLiteral("snapshot only: this device's state document is over the "
-					"%1-character cap (or the engine's undo stack is not addressable), so no "
-					"inverse was recorded; 'before.state_xml' is the bounded record that allows "
-					"a rebuild by hand").arg(control::StructuralSnapshotLimit));
+		QString mechanism;
+		if (reversible)
+		{
+			mechanism = QStringLiteral("action checkpoint (structural step): the device's own state "
+				"document (controlEffectStateXml - including the sub-plugin key that identifies "
+				"a hosted plugin) is captured before the removal, and the recorded undo step "
+				"re-instantiates the device through the chain's own instantiate path and puts "
+				"the settings back, at the index it was removed from. The document's measured "
+				"size is charged to the undo stack's byte budget, so a long run of removals is "
+				"evicted like any other step");
+		}
+		else if (stateTruncated)
+		{
+			mechanism = QStringLiteral("state unavailable: this device's state document exceeds "
+				"the %1-character cap, so no inverse was recorded and no usable state snapshot "
+				"was captured").arg(control::StructuralSnapshotLimit);
+		}
+		else
+		{
+			mechanism = QStringLiteral("snapshot only: no inverse was recorded because the engine's "
+				"undo stack is not addressable; 'before.state_xml' is a usable record for a "
+				"manual rebuild");
+		}
+		transaction.insert(QStringLiteral("mechanism"), mechanism);
 		result.insert(QStringLiteral("__transaction"), transaction);
 		return ControlResult::success(result);
 	};
@@ -451,12 +484,17 @@ void registerPluginBypass(ControlRegistry& registry)
 		QJsonObject transaction;
 		transaction.insert(QStringLiteral("before"),
 			QJsonObject{{QStringLiteral("enabled"), previouslyEnabled}});
+		// `bypass` and `enabled` are OPPOSITE flags - the handler above applies
+		// setEnabled(!bypass) - so the inverse restores the state the command found
+		// by asking for !previouslyEnabled. Storing previouslyEnabled here re-applied
+		// the change instead of undoing it: bypassing an enabled effect recorded an
+		// inverse that bypassed it again.
 		transaction.insert(QStringLiteral("inverse"),
 			QJsonObject{{QStringLiteral("op"), QStringLiteral("plugin.bypass")},
 				{QStringLiteral("args"),
 					QJsonObject{{QStringLiteral("target"), target.id},
 						{QStringLiteral("plugin"), pluginId},
-						{QStringLiteral("bypass"), previouslyEnabled}}}});
+						{QStringLiteral("bypass"), !previouslyEnabled}}}});
 		transaction.insert(QStringLiteral("reversible"), true);
 		transaction.insert(QStringLiteral("mechanism"),
 			QStringLiteral("ProjectJournal (Effect enabled-model checkpoint)"));

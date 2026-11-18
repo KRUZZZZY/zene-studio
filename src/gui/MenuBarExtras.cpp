@@ -24,15 +24,31 @@
 
 #include "MenuBarExtras.h"
 
+#include <QActionGroup>
 #include <QKeySequence>
 #include <QMenu>
 #include <QMenuBar>
 
+#include "AccessibleWidgets.h"
 #include "CommandForm.h"
 #include "CommandLists.h"
+#include "DeprecationHelper.h"
+#include "RenderRangeMenu.h"
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+//! Check the entry of @a menu whose level is the one in force.
+void checkAnnounceLevel(QMenu* menu)
+{
+	const QString current = a11y::announceLevelNames().value(static_cast<int>(a11y::announceLevel()));
+	for (QAction* action : menu->actions()) { action->setChecked(action->data().toString() == current); }
+}
+
+} // namespace
 
 QMenu* insertBeforeHelp(QMenuBar* bar, QMenu* menu)
 {
@@ -57,6 +73,8 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	run(QObject::tr("Zoom In"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), 4}});
 	run(QObject::tr("Zoom Out"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), -4}});
 	run(QObject::tr("Zoom Back"), QStringLiteral("arrangement.zoom_back"), {});
+	run(QObject::tr("Zoom Forward"), QStringLiteral("arrangement.zoom_forward"), {});
+	run(QObject::tr("Zoom Toggle"), QStringLiteral("arrangement.zoom_toggle"), {});
 	menu->addSeparator();
 	run(QObject::tr("Fit Song"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("fit"), QStringLiteral("song")}});
 	run(QObject::tr("Fit Loop"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("fit"), QStringLiteral("loop")}});
@@ -65,13 +83,13 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	menu->addSeparator();
 	// ED-024: bound to keys by default (rebindable with shortcuts.set, like every menu action).
 	run(QObject::tr("Nudge Clip Left"), QStringLiteral("arrangement.nudge"), {{QStringLiteral("direction"), QStringLiteral("left")}})
-		->setShortcut(QKeySequence(Qt::ALT | Qt::Key_Left));
+		->setShortcut(keySequence(Qt::ALT, Qt::Key_Left));
 	run(QObject::tr("Nudge Clip Right"), QStringLiteral("arrangement.nudge"), {{QStringLiteral("direction"), QStringLiteral("right")}})
-		->setShortcut(QKeySequence(Qt::ALT | Qt::Key_Right));
+		->setShortcut(keySequence(Qt::ALT, Qt::Key_Right));
 	run(QObject::tr("Next Clip"), QStringLiteral("arrangement.select_clip"), {{QStringLiteral("direction"), QStringLiteral("next")}})
-		->setShortcut(QKeySequence(Qt::ALT | Qt::Key_Down));
+		->setShortcut(keySequence(Qt::ALT, Qt::Key_Down));
 	run(QObject::tr("Previous Clip"), QStringLiteral("arrangement.select_clip"), {{QStringLiteral("direction"), QStringLiteral("previous")}})
-		->setShortcut(QKeySequence(Qt::ALT | Qt::Key_Up));
+		->setShortcut(keySequence(Qt::ALT, Qt::Key_Up));
 	menu->addSeparator();
 	run(QObject::tr("Add Marker at Play Position"), QStringLiteral("marker.add"), {});
 	run(QObject::tr("Next Marker"), QStringLiteral("marker.jump"), {{QStringLiteral("direction"), QStringLiteral("next")}});
@@ -120,9 +138,42 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	onRange(QObject::tr("Duplicate"), QStringLiteral("range.duplicate"), {});
 	onRange(QObject::tr("Consolidate"), QStringLiteral("range.consolidate"), {});
 	onRange(QObject::tr("Bounce to a New Track"), QStringLiteral("range.bounce"), {});  // the manual's "bounce it from Navigate > Range"
+	// 0.5.0 L12 (Q050-009): render the selection to a file, and export the song's named sections.
+	range->addSeparator();
+	addRenderRangeActions(range);
 	// range.clear only drops the selection (interface state); "Clear Range" read as erasing its contents.
 	onRange(QObject::tr("Deselect Range"), QStringLiteral("range.clear"), {});
 	run(QObject::tr("Tool Menu at Pointer"), QStringLiteral("window.tool_menu"), {});
+	return menu;
+}
+
+QMenu* addAnnouncementsMenu(QMenu* view)
+{
+	auto* menu = view->findChild<QMenu*>(QStringLiteral("announcementsMenu"), Qt::FindDirectChildrenOnly);
+	if (menu == nullptr)
+	{
+		menu = new QMenu(QObject::tr("Screen Reader Announcements"), view);
+		menu->setObjectName(QStringLiteral("announcementsMenu"));
+		auto* levels = new QActionGroup(menu);
+		const QStringList labels{QObject::tr("All"), QObject::tr("Errors Only"), QObject::tr("Off")};  // AnnounceLevel's order
+		for (const QString& level : a11y::announceLevelNames())
+		{
+			QAction* action = addCommandAction(menu, labels.value(static_cast<int>(levels->actions().size()), level),
+				QStringLiteral("view.announcements"), [level] {
+					return CommandCall{QStringLiteral("view.announcements"), {{QStringLiteral("level"), level}}, {}, QString(), false};
+				});
+			action->setData(level);
+			action->setCheckable(true);
+			levels->addAction(action);
+			// After the command ran (connected after addCommandAction's handler): a refused choice puts the check
+			// back on the level in force.
+			QObject::connect(action, &QAction::triggered, menu, [menu] { checkAnnounceLevel(menu); });
+		}
+		// Opening shows the level set elsewhere (the socket, undo).
+		QObject::connect(menu, &QMenu::aboutToShow, menu, [menu] { checkAnnounceLevel(menu); });
+	}
+	checkAnnounceLevel(menu);
+	view->addMenu(menu);
 	return menu;
 }
 

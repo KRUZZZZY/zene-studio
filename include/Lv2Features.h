@@ -38,6 +38,8 @@
 namespace lmms
 {
 
+class Lv2FeaturesTestAccess;
+
 /**
 	Feature container
 
@@ -53,6 +55,8 @@ namespace lmms
 */
 class Lv2Features
 {
+	friend class Lv2FeaturesTestAccess;
+
 public:
 	//! Return if a feature is supported by LMMS
 	static bool isFeatureSupported(const char *featName);

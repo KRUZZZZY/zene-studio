@@ -52,7 +52,10 @@ ControlResult exportMusicXml(const QJsonObject& args)
 	const auto* clip = dynamic_cast<const MidiClip*>(ref.clip);
 	if (clip == nullptr) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'clip' is a MIDI clip")); }
 	const QString path = args.value(QStringLiteral("path")).toString();
-	if (!path.endsWith(QLatin1String(".musicxml")) && !path.endsWith(QLatin1String(".xml")))
+	// Case-insensitively: '.MUSICXML' and '.XML' are the same file types, and a
+	// client that names its score 'score.XML' is not wrong.
+	if (!path.endsWith(QLatin1String(".musicxml"), Qt::CaseInsensitive)
+		&& !path.endsWith(QLatin1String(".xml"), Qt::CaseInsensitive))
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'path' is a .musicxml or .xml file"));
 	}

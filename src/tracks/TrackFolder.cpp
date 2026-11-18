@@ -29,11 +29,13 @@
 
 #include "AudioEngine.h"
 #include "Engine.h"
+#include "FolderSummaryLane.h"
 #include "Mixer.h"
 #include "Song.h"
 #include "TimePos.h"
 #include "TrackContainer.h"
 #include "TrackContainerView.h"
+#include "TrackLabelButton.h"
 #include "TrackView.h"
 
 namespace lmms
@@ -135,12 +137,12 @@ TrackFolder::~TrackFolder()
 	// Mixer::deleteChannel() indexes its channel vector unchecked. A channel
 	// that is not there is not ours to delete, and there is nothing to
 	// renumber around.
-	if( m_mixerChannel >= 0 && Engine::mixer() != nullptr && Engine::getSong() != nullptr
+	if( m_mixerChannel > 0 && Engine::mixer() != nullptr && Engine::getSong() != nullptr
 		&& m_mixerChannel < static_cast<int>( Engine::mixer()->numChannels() ) )
 	{
 		Engine::mixer()->deleteChannel( static_cast<int>( m_mixerChannel ) );
-		m_mixerChannel = -1;
 	}
+	m_mixerChannel = -1;
 }
 
 /*! A folder makes no sound of its own.
@@ -157,9 +159,12 @@ bool TrackFolder::play( const TimePos &, const f_cnt_t, const f_cnt_t, int )
 	return false;
 }
 
-/*! The folder's row: an ordinary `gui::TrackView`.
+/*! The folder's row: an ordinary `gui::TrackView`, with (0.5.0 ED-035) a
+ *  FolderSummaryLane over its content: the children's clips as summary clips.
+ *  The row carries the ordinary track header label, so the folder's own name is
+ *  shown like every other row's.
  *
- *  0.3.0 draws NO folder affordance on it - no chevron, no pin, no child
+ *  0.3.0 drew NO folder affordance on it - no chevron, no pin, no child
  *  indent, no colour header - and collapses nothing in the list. That absence is
  *  stated in one line in docs/RELEASE-NOTES-v0.3.0-alpha.md and in
  *  docs/KNOWN-LIMITATIONS.md; the state it would drive (`collapsed`, `pinned`)
@@ -168,7 +173,14 @@ bool TrackFolder::play( const TimePos &, const f_cnt_t, const f_cnt_t, int )
  */
 gui::TrackView * TrackFolder::createView( gui::TrackContainerView * view )
 {
-	return new gui::TrackView( this, view );
+	auto* trackView = new gui::TrackView( this, view );
+	// The header label every track row has: the folder's name (its type has no glyph of its own).
+	auto* label = new gui::TrackLabelButton( trackView, trackView->getTrackSettingsWidget() );
+	label->move( 3, 1 );
+	label->show();
+	// 0.5.0 ED-035: the row draws the children's clips as summary clips, each edited as one.
+	new gui::FolderSummaryLane( this, trackView );
+	return trackView;
 }
 
 Clip * TrackFolder::createClip( const TimePos & )
@@ -281,6 +293,9 @@ int TrackFolder::savedChannelFor( int childId ) const
  */
 void TrackFolder::routeChild( Track * child )
 {
+	Mixer * mixer = Engine::mixer();
+	if( mixer == nullptr || m_mixerChannel < 0
+		|| m_mixerChannel >= static_cast<int>( mixer->numChannels() ) ) { return; }
 	IntModel * model = child->mixerChannelModel();
 	if( model == nullptr ) { return; }   // a track type with no channel of its own
 	if( alreadyRouted( child ) ) { return; }
@@ -384,11 +399,12 @@ bool TrackFolder::releaseRouting()
 {
 	for( Track * child : children() ) { unrouteChild( child ); }
 	m_savedChildChannels.clear();
-	if( m_mixerChannel >= 0 )
+	if( m_mixerChannel > 0 && Engine::mixer() != nullptr
+		&& m_mixerChannel < static_cast<int>( Engine::mixer()->numChannels() ) )
 	{
 		Engine::mixer()->deleteChannel( static_cast<int>( m_mixerChannel ) );
-		m_mixerChannel = -1;
 	}
+	m_mixerChannel = -1;
 	// The children are off the folder's channel and that channel no longer exists,
 	// so the RANGE routeChild() widened to hold it goes back to the channels the
 	// mixer really has - the same thing MixerView::updateMaxChannelSelector does

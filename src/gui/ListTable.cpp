@@ -43,7 +43,7 @@ namespace
 //! The number @a text starts with ("-3 dB", "120", "1.5 s") in @a value; false when it starts with none.
 bool leadingNumber(const QString& text, double* value)
 {
-	static const QRegularExpression number(QStringLiteral("^\\s*([-+]?\\d+(?:\\.\\d+)?)"));
+	static const QRegularExpression number(QStringLiteral("^\\s*([-+]?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)"));
 	const QRegularExpressionMatch found = number.match(text);
 	if (!found.hasMatch()) { return false; }
 	*value = found.captured(1).toDouble();

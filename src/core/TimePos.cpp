@@ -25,6 +25,8 @@
 
 #include "TimePos.h"
 
+#include <stdexcept>
+
 #include "MeterModel.h"
 
 namespace lmms
@@ -34,6 +36,10 @@ TimeSig::TimeSig( int num, int denom ) :
 	m_num(num),
 	m_denom(denom)
 {
+	if ( num <= 0 || denom <= 0 )
+	{
+		throw std::invalid_argument( "Time signature numerator and denominator must be positive" );
+	}
 }
 
 TimeSig::TimeSig( const MeterModel &model ) :
@@ -54,8 +60,16 @@ TimePos::TimePos( const tick_t ticks ) :
 
 TimePos TimePos::quantize(float bars, bool forceRoundDown) const
 {
+	// A grid under one tick has no positions to snap to: zero or negative bars,
+	// a count that truncates to zero ticks, or NaN. Checked on the float, before
+	// the int conversion, so the divisions below never see a zero interval.
+	const float gridTicks = s_ticksPerBar * bars;
+	if ( !( gridTicks >= 1.f ) )
+	{
+		return *this;
+	}
 	//The intervals we should snap to, our new position should be a factor of this
-	int interval = s_ticksPerBar * bars;
+	int interval = gridTicks;
 	//The lower position we could snap to
 	int lowPos = m_ticks / interval;
 	//Offset from the lower position

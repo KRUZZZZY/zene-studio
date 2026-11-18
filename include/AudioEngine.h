@@ -26,8 +26,13 @@
 #define LMMS_AUDIO_ENGINE_H
 
 #include <mutex>
+#include <array>
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
 
 #include <QThread>
+#include <QTimer>
 #include <samplerate.h>
 
 #include <memory>
@@ -35,19 +40,26 @@
 
 #include "AudioBufferView.h"
 #include "AudioDevice.h"
+#include "AudioResampler.h"
 #include "LmmsTypes.h"
 #include "SampleFrame.h"
 #include "LocklessList.h"
 #include "AudioEngineProfiler.h"
 #include "MasterLoudnessTap.h"
 #include "PunchWindow.h"
+#include "RenderDiagnostics.h"
 #include "PlayHandle.h"
 #include "AudioWideInputStage.h"
 #include "HardwareOutputBus.h"
 #include "MultiTrackRecorder.h"
 #include "RetroAudioCapture.h"
+#include "SamplerTakeRecorder.h"
 #include "SampleFrameRingBuffer.h"
 
+#ifdef LMMS_TESTING
+class AudioBusPlayHandleQueueTest;
+class ArrangeToolsTest;
+#endif
 
 namespace lmms
 {
@@ -55,6 +67,10 @@ namespace lmms
 class MidiClient;
 class AudioBusHandle;  // IWYU pragma: keep
 class AudioEngineWorkerThread;
+class SampleBuffer;
+class SamplePlayHandle;
+class Track;
+class AutomatableModel;
 
 constexpr f_cnt_t MINIMUM_BUFFER_SIZE = 32;
 constexpr f_cnt_t DEFAULT_BUFFER_SIZE = 256;
@@ -73,6 +89,10 @@ class LMMS_EXPORT AudioEngine : public QObject
 {
 	Q_OBJECT
 public:
+	//! Preconstructed sample-voice partitions shared by metronome and frozen takes.
+	static constexpr std::size_t MetronomeSampleVoicePoolCapacity = 32;
+	static constexpr std::size_t FrozenSampleVoicePoolCapacity = 480;
+
 	/**
 	 * @brief RAII helper for requestChangesInModel.
 	 * Used by AudioEngine::requestChangesGuard.
@@ -87,6 +107,23 @@ public:
 			m_audioEngine->requestChangeInModel();
 		}
 	public:
+
+#ifdef LMMS_TESTING
+		/*! Test-only guard: it takes the change lock exactly like the ordinary
+		 *  guard, but it reports a CONTENDED acquisition - the lock was held by
+		 *  another thread (the render thread) when the acquisition was
+		 *  attempted - through @a contendedProbe.
+		 *
+		 *  The report is made AT the attempt, on the acquiring thread: a
+		 *  report sent before the attempt could not tell a thread that is
+		 *  blocked on the change lock from one that has not run yet.
+		 */
+		RequestChangesGuard(AudioEngine* audioEngine, void (*contendedProbe)(void*), void* context)
+			: m_audioEngine{audioEngine}
+		{
+			m_audioEngine->requestChangeInModelForTest(contendedProbe, context);
+		}
+#endif
 
 		RequestChangesGuard()
 			: m_audioEngine{nullptr}
@@ -121,6 +158,8 @@ public:
 	// audio-device-stuff
 
 	bool renderOnly() const { return m_renderOnly; }
+	//! The fixed render contexts: the worker threads plus the caller-side context.
+	int renderThreadCount() const noexcept;
 	// Returns the current audio device's name. This is not necessarily
 	// the user's preferred audio device, in case you were thinking that.
 	inline const QString & audioDevName() const
@@ -179,12 +218,7 @@ public:
 
 
 	// audio-bus-handle-stuff
-	inline void addAudioBusHandle(AudioBusHandle* busHandle)
-	{
-		requestChangeInModel();
-		m_audioBusHandles.push_back(busHandle);
-		doneChangeInModel();
-	}
+	void addAudioBusHandle(AudioBusHandle* busHandle);
 
 	void removeAudioBusHandle(AudioBusHandle* busHandle);
 
@@ -208,6 +242,74 @@ public:
 
 	// play-handle stuff
 	bool addPlayHandle( PlayHandle* handle );
+	//! Accepted engine-list edits deferred by capacity and out-of-bound overflow, respectively.
+	std::uint64_t capacityDeferredPlayHandles() const noexcept
+	{
+		return m_capacityDeferredPlayHandleCountTotal.load(std::memory_order_relaxed);
+	}
+	std::uint64_t droppedPlayHandles() const noexcept
+	{
+		return m_droppedPlayHandleCount.load(std::memory_order_relaxed);
+	}
+	//! Count of play-handle edits rejected after a bus's fixed storage bounds filled.
+	std::uint64_t droppedPlayHandleEdits() const noexcept
+	{
+		return m_droppedPlayHandleEditCount.load(std::memory_order_relaxed);
+	}
+	//! SlicerT notes refused because the instrument's fixed playback-state pool was full.
+	void recordSlicerTStateOverflow() noexcept
+	{
+		m_slicerTStateOverflowCount.fetch_add(1, std::memory_order_relaxed);
+	}
+	std::uint64_t slicerTStateOverflows() const noexcept
+	{
+		return m_slicerTStateOverflowCount.load(std::memory_order_relaxed);
+	}
+	//! Claim and arm one preconstructed metronome or frozen-take voice on the render path.
+	SamplePlayHandle* acquirePooledSampleVoice(const std::shared_ptr<const SampleBuffer>& buffer,
+		int sourceIn, int sourceOut, float amplification, f_cnt_t offset, Track* track, bool metronome) noexcept;
+	//! Return a detached pool handle; realtime returns are retired for the main-thread recycler.
+	void recyclePooledSampleVoice(SamplePlayHandle* handle, bool realtime) noexcept;
+
+	//! Reconfigure every retained sample converter off the audio thread.
+	auto applyConverterModeToRetainedStates(AudioResampler::Mode mode, SrcQuality quality) noexcept -> bool;
+	static auto onSrcQualityChanged(SrcQuality quality) noexcept -> bool;
+	std::uint64_t converterModePropagationFailures() const noexcept
+	{
+		return m_converterModePropagationFailures.load(std::memory_order_relaxed);
+	}
+	//! Whether @a handle is the private bus used by the fixed sample-voice pool.
+	bool isSampleVoicePoolBus(const AudioBusHandle* handle) const noexcept;
+	void recordSampleVoiceOverflow() noexcept
+	{
+		m_sampleVoiceOverflowCount.fetch_add(1, std::memory_order_relaxed);
+	}
+	std::uint64_t sampleVoiceOverflows() const noexcept
+	{
+		return m_sampleVoiceOverflowCount.load(std::memory_order_relaxed);
+	}
+	std::uint64_t sampleVoiceQueueInvariantFailures() const noexcept
+	{
+		return m_sampleVoiceQueueInvariantFailureCount.load(std::memory_order_relaxed);
+	}
+	//! Release the pool bus while Engine's global audio-engine pointer and device are still valid.
+	void shutdownSampleVoicePool() noexcept;
+	//! Prepare, adopt, and discard form the engine-wide converter transaction.
+	bool prepareConverterModeForRetainedStates(AudioResampler::Mode mode) noexcept;
+	void adoptPreparedConverterModeForRetainedStates() noexcept;
+	void discardPreparedConverterModeForRetainedStates() noexcept;
+	enum class ConverterModePhase { Prepare, Adopt, Discard };
+	static auto applyConverterModeToPlayHandle(PlayHandle* handle, AudioResampler::Mode mode,
+		ConverterModePhase phase) noexcept -> bool;
+	void recordDroppedPlayHandleEdit() noexcept
+	{
+		m_droppedPlayHandleEditCount.fetch_add(1, std::memory_order_relaxed);
+	}
+	//! Realtime-safe request for the engine-thread capacity service.
+	void requestPlayHandleCapacityRefresh() noexcept
+	{
+		m_playHandleCapacityRefreshRequested.store(true, std::memory_order_relaxed);
+	}
 
 	void removePlayHandle( PlayHandle* handle );
 
@@ -232,6 +334,11 @@ public:
 	{
 		return m_profiler.detailLoad(type);
 	}
+
+	//! Q050-074.1: how many periods the engine has started rendering - the clock SynthesisLoad::percent() reads.
+	std::uint64_t renderedPeriods() const noexcept { return m_renderedPeriods.load(std::memory_order_relaxed); }
+	//! Q050-074.1: the render periods that missed their deadline, at their song positions (not backend xruns).
+	const LatePeriodLog& latePeriods() const noexcept { return m_latePeriods; }
 
 	sample_rate_t baseSampleRate() const { return m_baseSampleRate; }
 
@@ -274,6 +381,12 @@ public:
 
 
 	bool criticalXRuns() const;
+
+	//! Whether criticalXRuns() may refuse new play handles (on by default). It is a wall-clock
+	//! decision: a build whose period takes longer than the device's period budget sheds the
+	//! clips that start in it. A benchmark has no device deadline and measures the render path,
+	//! so EngineRenderBenchmarkTest turns the shed off; the product never does.
+	void setOverloadSheddingEnabled(bool enabled) { m_overloadShedding.store(enabled, std::memory_order_relaxed); }
 
 	void pushInputFrames( const SampleFrame* _ab, const f_cnt_t _frames ) noexcept;
 
@@ -336,7 +449,11 @@ public:
 	//! Capture thread: stage one interleaved N-channel block. Realtime-safe. A
 	//! block wider than AudioInputPath::MaxChannels, or of a different width
 	//! than the one already staged, is refused whole and counted.
-	void pushInputFramesWide(const float* interleaved, int channels, f_cnt_t frames) noexcept;
+	//! \returns the frames the stage took (0 when it refused the block whole).
+	//! The publisher needs that number: the stereo representation of a capture
+	//! block is published for EXACTLY the frames the wide path took, so the two
+	//! paths are always one block (cluster 3705).
+	std::size_t pushInputFramesWide(const float* interleaved, int channels, f_cnt_t frames) noexcept;
 	//! Render thread: the N-channel input of the most recently rendered period.
 	const float* inputWideBuffer() const noexcept;
 	f_cnt_t inputWideFrames() const noexcept;
@@ -350,6 +467,11 @@ public:
 	//! engine's input, kept only while armed. Off by default.
 	RetroAudioCapture& retroCapture() noexcept { return m_retroCapture; }
 	const RetroAudioCapture& retroCapture() const noexcept { return m_retroCapture; }
+
+	//! 0.5.0 L10 (Q050-156): the input take being recorded straight into a sampler
+	//! instrument (AudioFileProcessor / SlicerT). Idle unless one is in hand.
+	SamplerTakeRecorder& samplerTakeRecorder() noexcept { return m_samplerTakeRecorder; }
+	const SamplerTakeRecorder& samplerTakeRecorder() const noexcept { return m_samplerTakeRecorder; }
 
 	/**
 	 * @returns The internal buffer size used by audio plugins and other processing done within the audio engine.
@@ -378,7 +500,21 @@ public:
 	 *  never held, so a take that starts there must not skip it. Read on the render thread;
 	 *  every device start (AudioDevice::startProcessing) resets it. */
 	bool inputStreamStarted() const { return m_inputStreamStarted.load(std::memory_order_relaxed); }
-	void resetInputStream() { m_inputStreamStarted.store(false, std::memory_order_relaxed); }
+	/*! A device (re)start: the capture path has delivered nothing yet, and the
+	 *  next device publishes its own blocks. The wide-path flag follows it, so
+	 *  a device that does not use the wide path at all drains the stereo ring
+	 *  on its own (cluster 3705). The frames staged before the stop go too
+	 *  (cluster new-p14-402): the next render must not take them as new input.
+	 *  Called by AudioDevice::startProcessing, which follows stopProcessing(): that call has
+	 *  waited out every open backend callback (AudioDevice::CallbackScope), so no render and no
+	 *  capture publish is running and neither staging ring is being read or written here. */
+	void resetInputStream()
+	{
+		if (m_inputStage != nullptr) { m_inputStage->discardStaged(); }
+		if (m_wideInputStage != nullptr) { m_wideInputStage->discardStaged(); }
+		m_inputStreamStarted.store(false, std::memory_order_relaxed);
+		m_captureWideInUse.store(false, std::memory_order_relaxed);
+	}
 
 	/**
 	 * @brief Renders the next audio period.
@@ -395,6 +531,50 @@ public:
 	 * @returns A non-owning buffer to the next audio period.
 	 */
 	std::span<const SampleFrame> renderNextPeriod();
+
+	//! Register models from their base constructor; growth is control-thread-only.
+	bool registerAutomatableModel(AutomatableModel* model) noexcept;
+	//! Remove a model slot; realtime teardown only tombstones its preallocated slot.
+	void unregisterAutomatableModel(AutomatableModel* model) noexcept;
+	//! Serial cache pass. The normal caller already owns m_changeMutex.
+	void prepareAutomatableModelBuffers() noexcept;
+	void recordUnregisteredAutomatableBufferRequest() noexcept
+	{
+		m_unregisteredAutomatableBufferRequests.fetch_add(1, std::memory_order_relaxed);
+	}
+	void recordUnpreparedAutomatableBufferRequest() noexcept
+	{
+		m_unpreparedAutomatableBufferRequests.fetch_add(1, std::memory_order_relaxed);
+	}
+	void recordUnpreparedControllerBufferRequest() noexcept
+	{
+		m_unpreparedControllerBufferRequests.fetch_add(1, std::memory_order_relaxed);
+	}
+	std::uint64_t unregisteredAutomatableBufferRequests() const noexcept
+	{
+		return m_unregisteredAutomatableBufferRequests.load(std::memory_order_relaxed);
+	}
+	std::uint64_t unpreparedAutomatableBufferRequests() const noexcept
+	{
+		return m_unpreparedAutomatableBufferRequests.load(std::memory_order_relaxed);
+	}
+	std::uint64_t unpreparedControllerBufferRequests() const noexcept
+	{
+		return m_unpreparedControllerBufferRequests.load(std::memory_order_relaxed);
+	}
+	std::uint64_t registeredAutomatableModelCount() const noexcept
+	{
+		return m_registeredAutomatableModelCount.load(std::memory_order_relaxed);
+	}
+	std::uint64_t automatableModelRegistrationFailures() const noexcept
+	{
+		return m_automatableModelRegistrationFailures.load(std::memory_order_relaxed);
+	}
+	//! TEST SEAM: make model registration fail before it can acquire the change lock.
+	void setAutomatableModelRegistrationFailureForTest(bool fail) noexcept;
+	//! TEST SEAM: signal before registration attempts to acquire the change lock.
+	void setAutomatableModelRegistrationAttemptStateForTest(std::atomic<int>* state) noexcept;
+	bool isRenderThread() const noexcept;
 
 	/**
 	 * @brief Renders an audio buffer into @a dst.
@@ -425,6 +605,42 @@ public:
 		return RequestChangesGuard{this};
 	}
 
+	//! @returns how many control threads are parked inside
+	//! requestChangeInModel(), waiting for the render period's model
+	//! ownership. A test seam: it lets a test observe that another control
+	//! thread reached the model-change guard, so a concurrency regression can
+	//! decide on an ordering of events instead of a clock deadline.
+	int modelChangeWaiters() const
+	{
+		return m_modelChangeWaiters.load(std::memory_order_relaxed);
+	}
+
+#ifdef LMMS_TESTING
+	//! Test seam: whether the CALLING thread currently holds the change-in-model
+	//! guard through requestChangeInModel(). A test uses it to prove a topology
+	//! rebuild excludes the audio thread for its whole duration; it is not a
+	//! product query (the render thread takes m_changeMutex directly).
+	//! Out of line: MSVC rejects a thread_local data member of a dllexport class
+	//! (C2492), so the depth lives in AudioEngine.cpp.
+	bool isChangeInModelHeld() const noexcept;
+
+	/*! Test-only: takes the change lock like requestChangeInModel(), but
+	 *  reports a CONTENDED acquisition through @a contendedProbe - the probe is
+	 *  called from the acquiring thread when the lock was held by another
+	 *  thread (the render thread) at the attempt.
+	 *
+	 *  This is the observation a test needs to tell a thread that is blocked
+	 *  on the change lock from one that has not run yet: a timeout on "nothing
+	 *  happened" cannot.
+	 */
+	void requestChangeInModelForTest(void (*contendedProbe)(void*), void* context);
+
+	RequestChangesGuard requestChangesGuardForTest(void (*contendedProbe)(void*), void* context)
+	{
+		return RequestChangesGuard{this, contendedProbe, context};
+	}
+#endif
+
 	static bool isAudioDevNameValid(QString name);
 	static bool isMidiDevNameValid(QString name);
 
@@ -441,6 +657,17 @@ signals:
 
 
 private:
+	struct SampleVoicePool;
+	void serviceSampleVoicePoolOnControlThread() noexcept;
+	void disposePlayHandle(PlayHandle* handle, bool realtime) noexcept;
+	struct AutomatableModelRegistry;
+#ifdef LMMS_TESTING
+	friend class ::AudioBusPlayHandleQueueTest;
+	// The track-version regression reads the change mutex directly: it is the
+	// lock the audio thread takes, and a test needs to see whether a model
+	// edit runs inside it.
+	friend class ::ArrangeToolsTest;
+#endif
 	void renderNextBuffer(AudioBufferView<float> auto dst)
 	{
 		for (auto frame = f_cnt_t{0}; frame < dst.frames(); ++frame)
@@ -514,6 +741,10 @@ private:
 	void renderStageInstruments();
 	void renderStageEffects();
 	void renderStageMix();
+	//! Q050-074.1: folds STAGE 1's per-track synthesis time into each track's SynthesisLoad (render thread).
+	void foldSynthesisLoads(std::uint64_t period) noexcept;
+	//! Q050-074.1: records the period just rendered in m_latePeriods when it took longer than it lasts.
+	void noteLatePeriod() noexcept;
 
 
 	void swapBuffers();
@@ -544,14 +775,25 @@ private:
 	//! m_inputBuffer[m_inputBufferRead]. Both m_inputBuffer entries are sized
 	//! to InputStageCapacityFrames, so a drain can never overrun them.
 	std::unique_ptr<SampleFrameRingBuffer> m_inputStage;
-	void drainInputStage() noexcept;
 
 	//! The N-CHANNEL capture stage (0.3.0, feature row 64; see
 	//! include/AudioWideInputStage.h). Allocated once in the constructor, off
 	//! every realtime thread, and drained once per rendered period beside
 	//! m_inputStage. May be null only before the constructor has run.
 	std::unique_ptr<AudioWideInputStage> m_wideInputStage;
-	void drainWideInputStage() noexcept;
+
+	/*! Whether the capture path publishes BOTH representations of a capture
+	 *  block - the N-channel block and the stereo pair (cluster 3705). Set by
+	 *  the first pushInputFramesWide(), cleared by every device (re)start.
+	 *  While it is set, the two stages are drained as ONE block: as many
+	 *  frames as both of them hold, so a render can never take the wide block
+	 *  in one period and the stereo pair in the next. A capture path that
+	 *  never uses the wide path drains the stereo ring on its own, exactly as
+	 *  it always did. */
+	std::atomic<bool> m_captureWideInUse{false};
+
+	//! Render thread: drain the capture stages once per rendered period.
+	void drainCaptureStages() noexcept;
 
 	//! prototype: N-route capture (task #556; N-wide since 0.3.0)
 	MultiTrackRecorder m_recorder;
@@ -565,11 +807,19 @@ private:
 	//! taken by the render thread before the song advances (renderStageNoteSetup).
 	double m_periodStartFrame = 0.0;
 	bool m_periodSongPlaying = false;
+	//! Q050-074.1: the same start as a song tick (the late-period mark's position).
+	tick_t m_periodStartTick = 0;
 
 	//! Retrospective AUDIO capture (feature row 16). Its ring is allocated in
 	//! this object's constructor - i.e. off the audio thread - and the audio
 	//! thread's cost while it is disarmed is one relaxed atomic load per period.
 	RetroAudioCapture m_retroCapture;
+
+	//! 0.5.0 L10 (Q050-156): the take a sampler instrument (AudioFileProcessor /
+	//! SlicerT) records from the input bus. Its ring is made by arm() on the
+	//! control thread; the audio thread's cost while idle is one relaxed atomic
+	//! load per period (include/SamplerTakeRecorder.h).
+	SamplerTakeRecorder m_samplerTakeRecorder;
 
 	std::unique_ptr<SampleFrame[]> m_outputBufferRead;
 	std::unique_ptr<SampleFrame[]> m_outputBufferWrite;
@@ -586,14 +836,32 @@ private:
 	// worker thread stuff
 	std::vector<AudioEngineWorkerThread *> m_workers;
 	int m_numWorkers;
+	//! Main-thread poll only takes the change guard when a render-stage low-water mark is raised.
+	QTimer m_playHandleCapacityTimer;
 
 	// playhandle stuff
 	PlayHandleList m_playHandles;
+	//! Handles waiting for a reserved engine-list slot; the owner retries them next period.
+	std::array<PlayHandle*, PlayHandle::MaxNumber> m_capacityDeferredPlayHandles{};
+	std::size_t m_capacityDeferredPlayHandleCount = 0;
+	std::atomic<bool> m_playHandleCapacityLow{false};
+	std::atomic<bool> m_playHandleCapacityRefreshRequested{false};
+	std::atomic<std::uint64_t> m_capacityDeferredPlayHandleCountTotal{0};
+	std::atomic<std::uint64_t> m_droppedPlayHandleCount{0};
+	std::atomic<std::uint64_t> m_droppedPlayHandleEditCount{0};
+	std::atomic<std::uint64_t> m_slicerTStateOverflowCount{0};
+	std::atomic<std::uint64_t> m_sampleVoiceOverflowCount{0};
+	std::atomic<std::uint64_t> m_sampleVoiceQueueInvariantFailureCount{0};
+	std::atomic<std::uint64_t> m_converterModePropagationFailures{0};
+	std::unique_ptr<SampleVoicePool> m_sampleVoicePool;
 	// place where new playhandles are added temporarily
 	LocklessList<PlayHandle *> m_newPlayHandles;
 	ConstPlayHandleList m_playHandlesToRemove;
 
 	float m_masterGain;
+	void topUpPlayHandleCapacityOnControlThread();
+	bool appendPlayHandleWithoutGrowth(PlayHandle* handle) noexcept;
+	bool removeCapacityDeferredPlayHandle(PlayHandle* handle) noexcept;
 
 	// audio device stuff
 	void doSetAudioDevice( AudioDevice *_dev );
@@ -609,13 +877,28 @@ private:
 	QString m_midiClientName;
 
 	AudioEngineProfiler m_profiler;
+	//! Q050-074.1: the render thread's period count and its late periods (RenderDiagnostics.h).
+	std::atomic<std::uint64_t> m_renderedPeriods{0};
+	LatePeriodLog m_latePeriods;
 
 	bool m_clearSignal;
 	std::atomic<bool> m_sanitizationEnabled = false;
+	std::atomic<bool> m_overloadShedding{true};
 
 	std::recursive_mutex m_changeMutex;
+	std::atomic<int> m_modelChangeWaiters{0};
+	std::atomic<AutomatableModelRegistry*> m_automatableModelRegistry{nullptr};
+	std::atomic<std::uint64_t> m_registeredAutomatableModelCount{0};
+	std::atomic<std::uint64_t> m_automatableModelRegistrationFailures{0};
+	std::atomic<bool> m_failAutomatableModelRegistrationForTest{false};
+	std::atomic<std::atomic<int>*> m_automatableModelRegistrationAttemptStateForTest{nullptr};
+	std::atomic<std::uint64_t> m_unregisteredAutomatableBufferRequests{0};
+	std::atomic<std::uint64_t> m_unpreparedAutomatableBufferRequests{0};
+	std::atomic<std::uint64_t> m_unpreparedControllerBufferRequests{0};
 
 	friend class Engine;
+	friend class AutomatableModel;
+	friend class AudioBusHandle;
 	friend class AudioEngineWorkerThread;
 	friend class ProjectRenderer;
 } ;

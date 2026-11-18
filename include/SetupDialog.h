@@ -71,6 +71,7 @@ protected slots:
 
 private slots:
 	// General settings widget.
+	void toggleAutoTrackChannel(bool enabled);
 	void toggleTooltips(bool enabled);
 	void toggleDisplayWaveform(bool enabled);
 	void toggleNoteLabels(bool enabled);
@@ -84,6 +85,7 @@ private slots:
 	void toggleMixerChannelDeletionWarning(bool enabled);
 	void toggleMMPZ(bool enabled);
 	void toggleDisableBackup(bool enabled);
+	void toggleSaveContainerV2(bool enabled);
 	void toggleOpenLastProject(bool enabled);
 	void detachBehaviorChanged();
 	void loopMarkerModeChanged();
@@ -135,6 +137,7 @@ private:
 	TabBar * m_tabBar;
 
 	// General settings widgets.
+	bool m_autoTrackChannel;
 	bool m_tooltips;
 	bool m_displayWaveform;
 	bool m_printNoteLabels;
@@ -144,10 +147,13 @@ private:
 	bool m_sideBarOnRight;
 	bool m_letPreviewsFinish;
 	bool m_soloLegacyBehavior;
+	QCheckBox* m_updateCheck = nullptr;  //!< Q050-501; null where the command does not exist
+	QCheckBox* m_updatePrereleases = nullptr;
 	bool m_trackDeletionWarning;
 	bool m_mixerChannelDeletionWarning;
 	bool m_MMPZ;
 	bool m_disableBackup;
+	bool m_saveContainerV2;
 	bool m_openLastProject;
 	QString m_detachBehavior;
 	QComboBox* m_detachBehaviorComboBox;

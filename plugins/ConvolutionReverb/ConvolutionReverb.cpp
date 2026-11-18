@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <new>
 
 #include <QDomElement>
 
@@ -168,7 +169,8 @@ void ConvolutionReverbEffect::install(std::unique_ptr<ConvolutionKernel> kernel)
 {
 	m_tail.store(kernel->length() + ConvolutionKernel::Partition, std::memory_order_relaxed);
 	// The swap is the only edit the audio thread can see: under the model-change guard, a block
-	// boundary; the old kernel is freed here, on the control thread, after the guard.
+	// boundary; the old kernel is freed here, on the control thread, after the guard - its FFTW
+	// plans die in the scope that quiesces the audio thread (ConvolutionKernel's destructor).
 	Engine::audioEngine()->requestChangeInModel();
 	m_kernel.swap(kernel);
 	Engine::audioEngine()->doneChangeInModel();
@@ -194,7 +196,16 @@ bool ConvolutionReverbEffect::loadImpulse(const QString& path)
 		right = channelOf(*impulse, 1, limit);
 	}
 	normalise(&left, &right);
-	install(std::make_unique<ConvolutionKernel>(left, right));
+	std::unique_ptr<ConvolutionKernel> kernel;
+	try
+	{
+		kernel = std::make_unique<ConvolutionKernel>(left, right);
+	}
+	catch (const std::bad_alloc&)
+	{
+		return false;
+	}
+	install(std::move(kernel));
 	m_impulsePath = path;
 	return true;
 }
@@ -256,7 +267,7 @@ ProcessStatus ConvolutionReverbEffect::processImpl(InterleavedBufferView<float, 
 		m_position = 0;
 		const float* in[2] = {m_in[0].data(), m_in[1].data()};
 		float* outBlock[2] = {m_out[0].data(), m_out[1].data()};
-		m_kernel->process(in, outBlock);
+		if (m_kernel != nullptr) { m_kernel->process(in, outBlock); }
 	}
 	return ProcessStatus::ContinueIfNotQuiet;
 }

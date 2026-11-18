@@ -38,6 +38,7 @@
 #include <QList>
 #include <QObject>
 #include <QPair>
+#include <QSet>
 #include <QString>
 
 #include "CollabPolicy.h"
@@ -62,6 +63,8 @@ constexpr qint64 ResyncIntervalMs = 2000;
 constexpr int ByeGraceMs = 2000;
 //! Peer requests waiting (all peers together) before the one that sends more is dropped.
 constexpr int MaxBacklog = 512;
+//! Total request-line bytes waiting across peers before the one that sends more is dropped.
+constexpr qint64 MaxBacklogBytes = 8 * 1024 * 1024;
 
 /*! Join attempts per source address: more than MaxAttempts connections, or MaxFailures failed handshakes,
  *  inside WindowMs bans the address for BanMs. A 128-bit key is not guessable, so this is about load, not
@@ -102,7 +105,7 @@ public:
 	explicit CollabHost(QObject* parent = nullptr);
 	~CollabHost() override;
 
-	//! Nothing listens until this is called. False with \a error when the port cannot be bound.
+	//! Nothing listens until this is called. False with \a error filled when the port cannot be bound; \a error may be nullptr.
 	bool start(const QHostAddress& address, quint16 port, QString* error);
 	void stop();
 	bool isListening() const;
@@ -117,8 +120,8 @@ public:
 	void broadcastCommand(const QString& command, const QJsonObject& args, const QString& origin);
 	//! Sends a fresh snapshot to every project-holding peer (after an undo, a load, an untracked edit).
 	void broadcastSnapshot(const QString& reason);
-	//! False when \a peerId is not connected.
-	bool setPeerRole(int peerId, CollabRole role);
+	//! True when changed. On failure, \a error is empty if \a peerId is absent, or holds the snapshot error if promotion failed.
+	bool setPeerRole(int peerId, CollabRole role, QString* error = nullptr);
 	QJsonArray peersJson() const;
 	int peerCount() const { return static_cast<int>(m_peers.size()); }
 	quint64 sequence() const { return m_seq; }
@@ -136,6 +139,7 @@ private:
 		CollabLink* link = nullptr;
 		qint64 joinedMs = 0;
 		qint64 lastResyncMs = 0;  //!< a peer's own re-sync requests are served at most every ResyncIntervalMs
+		bool resyncPending = false;  //!< one request received during the throttle window is served when it expires
 	};
 
 	void acceptDescriptor(qintptr descriptor);
@@ -151,18 +155,20 @@ private:
 	void resyncPeer(Peer& peer);
 	bool sendSnapshot(Peer& peer, const QByteArray& frame);
 	QByteArray snapshotFrame(QString* error);
-	void sendToProjectPeers(const QByteArray& line);
+	int sendToProjectPeers(const QByteArray& line);
 	void broadcastPeers();
 	static bool holdsProject(const Peer& peer) { return peer.role != CollabRole::Remote; }
 
 	std::unique_ptr<QTcpServer> m_server;
 	QHash<int, QByteArray> m_keys;
 	QHash<int, Peer> m_peers;
+	QSet<QSslSocket*> m_pendingSockets;
 	int m_pending = 0;
 	int m_nextPeerId = 0;
 	quint64 m_seq = 0;
 	JoinLimiter m_limiter;
 	QList<QPair<int, QByteArray>> m_backlog;  //!< (peer, request line), applied in arrival order
+	qint64 m_backlogBytes = 0;                //!< Sum of the request-line sizes in m_backlog
 	QTimer* m_drain;
 	SnapshotProvider m_snapshot;
 	RequestHandler m_requests;

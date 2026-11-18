@@ -25,6 +25,7 @@
 #include "HardwareIo.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <QDomDocument>
 #include <QDomElement>
@@ -57,10 +58,23 @@ bool exporting()
 	return song != nullptr && song->isExporting();
 }
 
-audioio::Destination readDestination(const QDomElement& element, const QString& name)
+//! Read a routing target from @a element. False when @a name does not hold one that parses: the
+//! caller keeps the default then. A project stores channel NUMBERS, not the interface's own count:
+//! a route saved on a machine with eight outputs must load on one with two, so the whole range is
+//! read here.
+bool readDestination(const QDomElement& element, const QString& name, audioio::Destination* out)
 {
-	audioio::Destination out;
-	return audioio::parseDestination(element.attribute(name), audioio::Side{}, &out, nullptr) ? out : audioio::Destination{};
+	audioio::Side routes;
+	routes.channels = audioio::MaxChannels;
+	return audioio::parseDestination(element.attribute(name), routes, out, nullptr);
+}
+
+//! A saved 0/1 flag. A malformed value ("abc") does not convert, so it keeps @a fallback rather than reading as 0.
+bool savedFlag(const QDomElement& element, const QString& name, bool fallback)
+{
+	bool valid = false;
+	const int value = element.attribute(name).toInt(&valid);
+	return valid ? value != 0 : fallback;
 }
 
 void saveCueSends(QDomDocument& doc, QDomElement& element, const ChannelHardwareIo& io)
@@ -82,12 +96,17 @@ void loadCueSends(const QDomElement& element, ChannelHardwareIo& io)
 {
 	for (QDomElement cue = element.firstChildElement(QStringLiteral("cue")); !cue.isNull(); cue = cue.nextSiblingElement(QStringLiteral("cue")))
 	{
-		const int k = cue.attribute(QStringLiteral("index")).toInt();
-		if (k < 0 || k >= hardwareio::MaxCues) { continue; }
+		bool validIndex = false;
+		const int k = cue.attribute(QStringLiteral("index")).toInt(&validIndex);
+		if (!validIndex || k < 0 || k >= hardwareio::MaxCues) { continue; }
 		hardwareio::CueSend& send = io.cues[static_cast<std::size_t>(k)];
-		send.level = std::clamp(cue.attribute(QStringLiteral("level")).toFloat(), 0.f, 2.f);
-		send.pan = std::clamp(cue.attribute(QStringLiteral("pan")).toFloat(), -1.f, 1.f);
-		send.preFader = cue.attribute(QStringLiteral("prefader"), QStringLiteral("1")).toInt() != 0;
+		// A hand-edited project can carry level="nan": std::clamp lets NaN through, so a non-finite
+		// figure falls back to the attribute's own default (no send, centred).
+		const float sendLevel = cue.attribute(QStringLiteral("level")).toFloat();
+		send.level = std::isfinite(sendLevel) ? std::clamp(sendLevel, 0.f, 2.f) : 0.f;
+		const float sendPan = cue.attribute(QStringLiteral("pan")).toFloat();
+		send.pan = std::isfinite(sendPan) ? std::clamp(sendPan, -1.f, 1.f) : 0.f;
+		send.preFader = savedFlag(cue, QStringLiteral("prefader"), true);
 	}
 }
 
@@ -165,8 +184,14 @@ void ChannelHardwareIo::load(const QDomElement& channelElement, f_cnt_t frames)
 	const QDomElement element = channelElement.firstChildElement(QStringLiteral("hardwareio"));
 	if (element.hasAttribute(QStringLiteral("output")))
 	{
-		outputSet = true;
-		output = readDestination(element, QStringLiteral("output"));
+		// A route that does not parse (a hand-edited project) leaves the default in force: the
+		// master stays on the outputs 1/2 instead of going nowhere (cluster new-p14-120-port).
+		audioio::Destination parsed;
+		if (readDestination(element, QStringLiteral("output"), &parsed))
+		{
+			outputSet = true;
+			output = parsed;
+		}
 	}
 	loadCueSends(element, *this);
 	insert.load(element, frames);
@@ -195,8 +220,9 @@ void setCueMaster(int cue, const CueMaster& master)
 
 QString cueName(int cue)
 {
-	const QString& name = cueMaster(cue).name;
-	return name.isEmpty() ? QStringLiteral("Cue %1").arg(QChar('A' + cue)) : name;
+	const int index = std::clamp(cue, 0, MaxCues - 1);
+	const CueMaster& master = s_cueMasters[static_cast<std::size_t>(index)];
+	return master.name.isEmpty() ? QStringLiteral("Cue %1").arg(QChar('A' + index)) : master.name;
 }
 
 bool listenToCue() { return s_listenToCue; }
@@ -206,7 +232,7 @@ void setListenToCue(bool toCue) { s_listenToCue = toCue; }
 bool listenSparesMain()
 {
 	return s_listenToCue && std::any_of(s_cueMasters.begin(), s_cueMasters.end(),
-		[](const CueMaster& cue) { return cue.followListen && !cue.output.none(); });
+		[](const CueMaster& cue) { return cue.followListen && cue.level > 0.f && !cue.output.none(); });
 }
 
 void processInsert(MixerChannel& channel, f_cnt_t frames)
@@ -223,6 +249,18 @@ void processInsert(MixerChannel& channel, f_cnt_t frames)
 int insertLatency(const MixerChannel& channel)
 {
 	return exporting() ? 0 : std::max(0, channel.m_hardwareIo.insert.latencyFrames());
+}
+
+QString insertLatencySource(const MixerChannel& channel)
+{
+	const HardwareInsert& insert = channel.m_hardwareIo.insert;
+	if (!insert.enabled()) { return QStringLiteral("off"); }
+	if (exporting()) { return QStringLiteral("bypassed"); }
+	const HardwareInsert::Settings settings = insert.settings();
+	if (settings.latencyOverride >= 0) { return QStringLiteral("override"); }
+	// latencyFrames() drops a figure measured at another rate or on another route: unmeasured then.
+	return settings.measured >= 0 && insert.latencyFrames() == settings.measured
+		? QStringLiteral("measured") : QStringLiteral("unmeasured");
 }
 
 void mixOutputs(Mixer& mixer, const SampleFrame* master, f_cnt_t frames)
@@ -274,13 +312,19 @@ void loadMixer(const QDomElement& mixerElement)
 	for (QDomElement element = mixerElement.firstChildElement(QStringLiteral("cuemix")); !element.isNull();
 		element = element.nextSiblingElement(QStringLiteral("cuemix")))
 	{
-		const int k = element.attribute(QStringLiteral("index")).toInt();
-		if (k < 0 || k >= MaxCues) { continue; }
+		bool validIndex = false;
+		const int k = element.attribute(QStringLiteral("index")).toInt(&validIndex);
+		if (!validIndex || k < 0 || k >= MaxCues) { continue; }
 		CueMaster& cue = s_cueMasters[static_cast<std::size_t>(k)];
 		cue.name = element.attribute(QStringLiteral("name"));
-		cue.level = std::clamp(element.attribute(QStringLiteral("level"), QStringLiteral("1")).toFloat(), 0.f, 2.f);
-		cue.output = readDestination(element, QStringLiteral("output"));
-		cue.followListen = element.attribute(QStringLiteral("listen"), QStringLiteral("1")).toInt() != 0;
+		bool levelOk = false;
+		const float cueLevel = element.attribute(QStringLiteral("level"), QStringLiteral("1")).toFloat(&levelOk);
+		cue.level = levelOk && std::isfinite(cueLevel) ? std::clamp(cueLevel, 0.f, 2.f) : 1.f;  // unparsable or non-finite: the cuemix's default
+		// A cue's default is nowhere, so a route that does not parse leaves it there.
+		audioio::Destination cueOutput;
+		if (!readDestination(element, QStringLiteral("output"), &cueOutput)) { cueOutput = audioio::Destination{}; }
+		cue.output = cueOutput;
+		cue.followListen = savedFlag(element, QStringLiteral("listen"), true);
 	}
 	s_listenToCue = mixerElement.firstChildElement(QStringLiteral("cuelisten")).attribute(QStringLiteral("target")) == QStringLiteral("cue");
 }

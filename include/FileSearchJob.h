@@ -60,11 +60,11 @@ public:
 	//! Commit to searching with the given @p task.
 	//! Cancels any previous search.
 	//! Callers can connect to the provided signals to interact with the search and its progress.
-	void search(Task task);
+	void search(Task task, quint64 generation);
 
 signals:
 	//! Emitted when the search job has found a matching path.
-	void foundMatch(const QString& path);
+	void foundMatch(quint64 generation, const QString& path);
 
 	//! Emitted when the search job has started searching.
 	void started();
@@ -73,7 +73,7 @@ signals:
 	void finished();
 
 private:
-	void runSearch(Task task);
+	void runSearch(Task task, quint64 generation);
 	std::future<void> m_task;
 	std::atomic_flag m_stop = ATOMIC_FLAG_INIT;
 };

@@ -25,6 +25,9 @@
 
 #include "Nes.h"
 
+#include <cstddef>
+#include <memory>
+
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -94,7 +97,12 @@ NesObject::NesObject( NesInstrument * nes, const sample_rate_t samplerate, NoteP
 	m_nsf = NES_SIMPLE_FILTER * ( m_samplerate / 44100.0 );
 	
 	m_lastNoteFreq = 0;
+	m_lastFreq1 = 0.0f;
+	m_lastFreq2 = 0.0f;
+	m_lastFreq3 = 0.0f;
 	m_lastNoiseFreq = -1.0f; // value that is always different than noisefreq so it gets updated at start
+	m_lastNoiseFreqMode = m_parent->m_ch4NoiseFreqMode.value();
+	m_lastNoiseQuantize = m_parent->m_ch4NoiseQuantize.value();
 	
 	m_vibratoPhase = 0;
 	
@@ -450,30 +458,38 @@ void NesObject::updatePitch()
 	{
 		updateVibrato( &freq );
 	}
-	// check if frequency has changed, if so, update wavelengths of ch1-3
-	if( freq != m_lastNoteFreq )
+	// update wavelengths when the note frequency or a channel detune changes
+	if( freq != m_lastNoteFreq || m_parent->m_freq1 != m_lastFreq1 ||
+		m_parent->m_freq2 != m_lastFreq2 || m_parent->m_freq3 != m_lastFreq3 )
 	{
 		m_wlen1 = wavelength( freq * m_parent->m_freq1 );
 		m_wlen2 = wavelength( freq * m_parent->m_freq2 );
 		m_wlen3 = wavelength( freq * m_parent->m_freq3 );
+		m_lastFreq1 = m_parent->m_freq1;
+		m_lastFreq2 = m_parent->m_freq2;
+		m_lastFreq3 = m_parent->m_freq3;
 	}
 	// noise channel can use either note freq or preset freqs
-	if( m_parent->m_ch4NoiseFreqMode.value() && freq != m_lastNoteFreq ) 
+	const bool noiseFreqMode = m_parent->m_ch4NoiseFreqMode.value();
+	const bool noiseQuantize = m_parent->m_ch4NoiseQuantize.value();
+	if( noiseFreqMode && ( freq != m_lastNoteFreq || !m_lastNoiseFreqMode || noiseQuantize != m_lastNoiseQuantize ) )
 	{
 		float f = freq * 2.0f;
-		if( m_parent->m_ch4NoiseQuantize.value() ) // note freq can be quantized to the preset freqs
+		if( noiseQuantize ) // note freq can be quantized to the preset freqs
 		{
 			f = NOISE_FREQS[ nearestNoiseFreq( f ) ];
 		}
 		m_wlen4 = wavelength( f );
 	}
-	if( ! m_parent->m_ch4NoiseFreqMode.value() && m_lastNoiseFreq != m_parent->m_ch4NoiseFreq.value() )
+	if( !noiseFreqMode && ( m_lastNoiseFreqMode || m_lastNoiseFreq != m_parent->m_ch4NoiseFreq.value() ) )
 	{
 		m_wlen4 = wavelength( NOISE_FREQS[ 15 - static_cast<int>( m_parent->m_ch4NoiseFreq.value() ) ] );
 		m_lastNoiseFreq = m_parent->m_ch4NoiseFreq.value();
 	}
 	
 	m_lastNoteFreq = freq;
+	m_lastNoiseFreqMode = noiseFreqMode;
+	m_lastNoiseQuantize = noiseQuantize;
 }
 
 
@@ -551,8 +567,13 @@ void NesInstrument::playNoteImpl(NotePlayHandle* n, std::span<SampleFrame> out)
 	
 	if (!n->m_pluginData)
 	{
-		auto nes = new NesObject(this, Engine::audioEngine()->outputSampleRate(), n);
-		n->m_pluginData = nes;
+		// The note state is created on the audio path, so it lives in the note
+		// handle's inline storage instead of the heap.
+		static_assert(sizeof(NesObject) <= NotePlayHandle::PluginDataStorageSize);
+		static_assert(alignof(NesObject) <= alignof(std::max_align_t));
+		n->m_pluginData = std::construct_at(
+			static_cast<NesObject*>(n->pluginDataStorage()),
+			this, Engine::audioEngine()->outputSampleRate(), n);
 	}
 
 	auto nes = static_cast<NesObject*>(n->m_pluginData);
@@ -565,7 +586,11 @@ void NesInstrument::playNoteImpl(NotePlayHandle* n, std::span<SampleFrame> out)
 
 void NesInstrument::deleteNotePluginData( NotePlayHandle * n )
 {
-	delete static_cast<NesObject *>( n->m_pluginData );
+	if (n->m_pluginData != nullptr)
+	{
+		std::destroy_at(static_cast<NesObject*>(n->m_pluginData));
+		n->m_pluginData = nullptr;
+	}
 }
 
 

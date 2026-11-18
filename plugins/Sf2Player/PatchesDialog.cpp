@@ -36,6 +36,7 @@
 
 #include "embed.h"
 #include "fluidsynthshims.h"
+#include "PatchPresetIteration.h"
 
 namespace lmms::gui
 {
@@ -218,7 +219,7 @@ void PatchesDialog::setup ( fluid_synth_t * pSynth, int iChan,
 	if (pPreset) {
 		m_iBank = fluid_preset_get_banknum(pPreset);
 #ifdef CONFIG_FLUID_BANK_OFFSET
-		m_iBank += ::fluid_synth_get_bank_offset(m_pSynth, fluid_sfont_get_id(fluid_preset_get_sfont(sfont)));
+		m_iBank += ::fluid_synth_get_bank_offset(m_pSynth, fluid_sfont_get_id(fluid_preset_get_sfont(pPreset)));
 #endif
 	}
 
@@ -264,6 +265,8 @@ bool PatchesDialog::validateForm()
 	bool bValid = true;
 
 	bValid = bValid && (m_bankListView->currentItem() != nullptr);
+	bValid = bValid && m_progListView->selectionModel()->hasSelection();
+	bValid = bValid && m_progListView->selectionModel()->currentIndex().isValid();
 
 	return bValid;
 }
@@ -351,44 +354,44 @@ void PatchesDialog::bankChanged ()
 	m_progListSourceModel.setRowCount(0);
 
 	// For all soundfonts (in reversed stack order) fill the available programs...
-	bool stop = false; // replaces the `pProgItem` check that used to exist here
 	int cSoundFonts = ::fluid_synth_sfcount(m_pSynth);
-	for (int i = 0; i < cSoundFonts && !stop; i++) {
-		fluid_sfont_t *pSoundFont = ::fluid_synth_get_sfont(m_pSynth, i);
-		if (pSoundFont) {
-#ifdef CONFIG_FLUID_BANK_OFFSET
-			int iBankOffset = ::fluid_synth_get_bank_offset(m_pSynth, fluid_sfont_get_id(pSoundFont));
-#endif
-			fluid_sfont_iteration_start(pSoundFont);
+	auto forEachPreset = [](fluid_sfont_t *pSoundFont, auto&& visitPreset) {
+		fluid_sfont_iteration_start(pSoundFont);
 #if FLUIDSYNTH_VERSION_MAJOR < 2
-			fluid_preset_t preset;
-			fluid_preset_t *pCurPreset = &preset;
+		fluid_preset_t preset;
+		fluid_preset_t *pCurPreset = &preset;
 #else
-			fluid_preset_t *pCurPreset = nullptr;
+		fluid_preset_t *pCurPreset = nullptr;
 #endif
-			while ((pCurPreset = fluid_sfont_iteration_next_wrapper(pSoundFont, pCurPreset))) {
-				int iBank = fluid_preset_get_banknum(pCurPreset);
-#ifdef CONFIG_FLUID_BANK_OFFSET
-				iBank += iBankOffset;
-#endif
-				int iProg = fluid_preset_get_num(pCurPreset);
-				if (iBank == iBankSelected && !findProgItem(iProg)) {
-					// Numeric value on the batch number column - allows for numerical sorting
-					auto patchNumItem = new QStandardItem();
-					patchNumItem->setData(iProg, Qt::DisplayRole);
-
-					auto patchNameItem = new QStandardItem(fluid_preset_get_name(pCurPreset));
-
-					stop = true;
-
-					m_progListSourceModel.appendRow({patchNumItem, patchNameItem});
-					// Old columns:
-					// Col. 2: QString::number(fluid_sfont_get_id(pSoundFont))
-					// Col. 3: QFileInfo(fluid_sfont_get_name(pSoundFont).baseName())
-				}
-			}
+		while ((pCurPreset = fluid_sfont_iteration_next_wrapper(pSoundFont, pCurPreset))) {
+			visitPreset(pCurPreset);
 		}
-	}
+	};
+	auto bankFor = [this](fluid_sfont_t *pSoundFont, fluid_preset_t *pPreset) {
+		int iBank = fluid_preset_get_banknum(pPreset);
+#ifdef CONFIG_FLUID_BANK_OFFSET
+		iBank += ::fluid_synth_get_bank_offset(m_pSynth, fluid_sfont_get_id(pSoundFont));
+#endif
+		return iBank;
+	};
+	lmms::sf2::forEachUniquePresetForBank(
+		cSoundFonts, iBankSelected,
+		[this](int index) { return ::fluid_synth_get_sfont(m_pSynth, index); },
+		forEachPreset, bankFor,
+		[](fluid_preset_t *pPreset) { return fluid_preset_get_num(pPreset); },
+		[this](int program) { return findProgItem(program) != nullptr; },
+		[this](fluid_sfont_t *, fluid_preset_t *pPreset, int program) {
+			// Numeric value on the batch number column - allows for numerical sorting
+			auto patchNumItem = new QStandardItem();
+			patchNumItem->setData(program, Qt::DisplayRole);
+
+			auto patchNameItem = new QStandardItem(fluid_preset_get_name(pPreset));
+
+			m_progListSourceModel.appendRow({patchNumItem, patchNameItem});
+			// Old columns:
+			// Col. 2: QString::number(fluid_sfont_get_id(pSoundFont))
+			// Col. 3: QFileInfo(fluid_sfont_get_name(pSoundFont).baseName())
+		});
 	m_progListView->setSortingEnabled(true);
 
 	// Stabilize the form.
@@ -410,10 +413,16 @@ void PatchesDialog::updatePatch(bool updateUi)
 
 void PatchesDialog::progChanged(const QModelIndex& cur, const QModelIndex& prev)
 {
-	if (m_pSynth == nullptr) { return; }
-
 	auto curRow = m_progListProxyModel.mapToSource(cur).row();
-	if (curRow < 0) { return; }
+	if (curRow < 0)
+	{
+		m_selProg = -1;
+		m_selProgName.clear();
+		stabilizeForm();
+		return;
+	}
+
+	if (m_pSynth == nullptr) { return; }
 
 	auto progIdx = m_progListSourceModel.index(curRow, 0);
 	m_selProg = m_progListSourceModel.data(progIdx).toInt();

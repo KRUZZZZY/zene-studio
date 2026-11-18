@@ -26,16 +26,22 @@
 #include <QSignalSpy>
 #include <QtTest>
 
+#include <limits>
+
+#include "LmmsTypes.h"
+
 #include "AutomatableModel.h"
 #include "AudioEngine.h"
 #include "Controller.h"
 #include "ControllerConnection.h"
 #include "ControllerSurface.h"
+#include "ControlRegistry.h"
 #include "Engine.h"
 #include "MidiController.h"
 #include "MidiEvent.h"
 #include "MidiLearn.h"
 #include "MidiPort.h"
+#include "PeakController.h"
 #include "Song.h"
 #include "TimePos.h"
 
@@ -79,6 +85,42 @@ MidiController* bindThroughMidiLearn(AutomatableModel* model, int channel,
 	return boundMidiController(model);
 }
 
+class BufferResetProbeController final : public Controller
+{
+public:
+	explicit BufferResetProbeController() :
+		Controller(ControllerType::Lfo, Engine::getSong(), QStringLiteral("Buffer Reset Probe"))
+	{}
+
+	void setNextValue(float value) { m_nextValue = value; }
+	int updateCount() const { return m_updateCount; }
+
+protected:
+	void updateValueBuffer() override
+	{
+		m_valueBuffer.fill(m_nextValue);
+		m_bufferLastUpdated = runningPeriods();
+		++m_updateCount;
+	}
+
+private:
+	float m_nextValue = 0.5f;
+	int m_updateCount = 0;
+};
+
+class RunningFrameCountProbeController final : public Controller
+{
+public:
+	explicit RunningFrameCountProbeController() :
+		Controller(ControllerType::Lfo, Engine::getSong(), QStringLiteral("Running Frame Count Probe"))
+	{}
+
+	static void setPeriods(f_cnt_t periods)
+	{
+		s_periods.store(periods, std::memory_order_relaxed);
+	}
+};
+
 //! The template name this file uses. Deliberately not a name a user would
 //! pick: saveTemplate() writes a REAL file under the user config dir, and the
 //! tests remove it again.
@@ -95,6 +137,9 @@ private slots:
 	{
 		Engine::init(true);
 		QVERIFY(Engine::getSong() != nullptr);
+		// A command-driven case below needs the registry addressable; without
+		// this every invoke answers 'the engine is still starting up'.
+		ControlRegistry::instance()->setReady(true);
 	}
 
 	void cleanupTestCase()
@@ -112,6 +157,52 @@ private slots:
 		// test - the MidiLearnTest discipline.
 		MidiLearn::instance()->setFocusTarget(nullptr);
 		MidiLearn::instance()->setEnabled(false);
+	}
+
+	void defaultPeakControllerWithoutEffectReturnsSilence()
+	{
+		PeakController controller(Engine::getSong());
+		Controller::triggerFrameCounter();
+		QCOMPARE(controller.currentValue(0), 0.0f);
+	}
+
+	void runningFrameCountDoesNotWrapAtUnsignedIntLimit()
+	{
+		RunningFrameCountProbeController controller;
+		const f_cnt_t framesPerPeriod = Engine::audioEngine()->framesPerPeriod();
+		const f_cnt_t periods = std::numeric_limits<unsigned int>::max() / framesPerPeriod + 1;
+		const f_cnt_t expectedFrames = periods * framesPerPeriod;
+		RunningFrameCountProbeController::setPeriods(periods);
+
+		const f_cnt_t actualFrames = Controller::runningFrames();
+		const float actualTime = Controller::runningTime();
+		const float expectedTime = static_cast<float>(expectedFrames /
+			Engine::audioEngine()->outputSampleRate());
+		Controller::resetFrameCounter();
+
+		QCOMPARE(actualTime, expectedTime);
+		QCOMPARE(actualFrames, expectedFrames);
+		QCOMPARE(sizeof(Controller::runningFrames()), sizeof(f_cnt_t));
+	}
+
+	void resettingFrameCounterRefreshesControllerBuffer()
+	{
+		Controller::resetFrameCounter();
+		BufferResetProbeController controller;
+		controller.setNextValue(0.2f);
+		Controller::triggerFrameCounter();
+		QCOMPARE(controller.currentValue(0), 0.2f);
+		QCOMPARE(controller.updateCount(), 1);
+
+		controller.setNextValue(0.8f);
+		Controller::triggerFrameCounter();
+		QCOMPARE(controller.currentValue(0), 0.8f);
+		QCOMPARE(controller.updateCount(), 2);
+
+		controller.setNextValue(0.4f);
+		Controller::resetFrameCounter();
+		QCOMPARE(controller.currentValue(0), 0.4f);
+		QCOMPARE(controller.updateCount(), 3);
 	}
 
 	/*! Soft-takeover: a hardware control that is bound to a control whose
@@ -495,6 +586,45 @@ private slots:
 		QVERIFY(restored->feedbackEnabled());
 		QCOMPARE(restored->midiPort().inputChannel(), 7);
 		QCOMPARE(restored->midiPort().inputController(), 22);
+	}
+
+	/*! Two bound controls that share a fullDisplayName() are AMBIGUOUS, and an
+	 *  ambiguous name must be refused rather than resolved to whichever
+	 *  ControllerConnection happens to come first in the list. The same
+	 *  command already refuses an empty 'control' when more than one control is
+	 *  bound (findBoundControl's `all.size() > 1`); naming one of two identical
+	 *  names is the same unanswerable question asked a different way.
+	 *
+	 *  Two FloatModels under the song share a parent and a display name, so
+	 *  their fullDisplayName() is the same string - the collision a user hits
+	 *  with two identically named plugins or two copies of one device. Both are
+	 *  bound here through the landed MIDI-learn path. */
+	void DuplicateControlNamesAreRefusedNotResolvedToTheFirstBinding()
+	{
+		const QString name = QStringLiteral("Surface Ambiguous Knob");
+		FloatModel first(0.25f, 0.0f, 1.0f, 0.01f, Engine::getSong(), name);
+		FloatModel second(0.75f, 0.0f, 1.0f, 0.01f, Engine::getSong(), name);
+
+		QVERIFY(bindThroughMidiLearn(&first, 10, 31) != nullptr);
+		QVERIFY(bindThroughMidiLearn(&second, 11, 32) != nullptr);
+
+		// The collision is real: the two models really do answer to ONE name.
+		QCOMPARE(first.fullDisplayName(), second.fullDisplayName());
+		QVERIFY(!first.fullDisplayName().isEmpty());
+
+		// Naming that name must be refused, typed, and must change NEITHER
+		// binding: picking the first would write to a control the caller did
+		// not choose.
+		const ControlResult result = ControlRegistry::instance()->invoke(
+			QStringLiteral("controller.soft_takeover"),
+			{{QStringLiteral("control"), first.fullDisplayName()},
+				{QStringLiteral("enabled"), true}});
+		QVERIFY2(!result.ok, "a control name two bound controls answer to must be refused");
+		QVERIFY2(result.errorMessage.contains(QStringLiteral("2")),
+			qPrintable(QStringLiteral("ok=%1 message=[%2]").arg(result.ok).arg(result.errorMessage)));
+
+		QVERIFY(!boundMidiController(&first)->softTakeoverEnabled());
+		QVERIFY(!boundMidiController(&second)->softTakeoverEnabled());
 	}
 };
 

@@ -25,18 +25,22 @@
 
 #include <QFile>
 
+#include <algorithm>
 #include <atomic>
 
 #include "ProjectRenderer.h"
 #include "Song.h"
 #include "PerfLog.h"
 #include "LoudnessReport.h"
+#include "OfflineRenderBarrier.h"
 
 #include "AudioEngineWorkerThread.h"
+#include "CrashReporter.h"
 #include "AudioFileWave.h"
 #include "AudioFileOgg.h"
 #include "AudioFileMP3.h"
 #include "AudioFileFlac.h"
+#include "SurroundExport.h"
 
 
 namespace lmms
@@ -154,7 +158,21 @@ ProjectRenderer::ProjectRenderer(
 	, m_previousSrcQuality(ExportRenderSettings::srcQuality())
 {
 	ExportRenderSettings::setDitherMode(outputSettings.ditherMode());
-	ExportRenderSettings::setSrcQuality(outputSettings.srcQuality());
+	if (!ExportRenderSettings::setSrcQuality(outputSettings.srcQuality()))
+	{
+		m_refusal = QStringLiteral("The requested SRC converter could not be created.");
+		return;
+	}
+
+	// 0.5.0 F7 (MX-060): a surround export the master or the format cannot carry is refused before a
+	// file is opened. A stereo export is never refused, and is written with the two channels it was.
+	m_refusal = surroundexport::refusal(outputSettings, exportFileFormat == ExportFileFormat::Wave);
+	if (!m_refusal.isEmpty())
+	{
+		qWarning("Render refused: %s", qUtf8Printable(m_refusal));
+		return;
+	}
+	m_channels = surroundexport::channelsFor(outputSettings);
 
 	AudioFileDeviceInstantiaton audioEncoderFactory = fileEncodeDevices[static_cast<std::size_t>(exportFileFormat)].m_getDevInst;
 
@@ -163,13 +181,21 @@ ProjectRenderer::ProjectRenderer(
 		bool successful = false;
 
 		m_fileDev = audioEncoderFactory(
-					outputFilename, outputSettings, DEFAULT_CHANNELS,
+					outputFilename, outputSettings, static_cast<ch_cnt_t>(m_channels),
 					Engine::audioEngine(), successful );
 		if( !successful )
 		{
 			delete m_fileDev;
 			m_fileDev = nullptr;
 		}
+	}
+
+	if( m_channels > DEFAULT_CHANNELS && m_fileDev != nullptr )
+	{
+		// Allocated here, on this (control) thread, before the render: the period path only copies.
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		m_interleaved.assign(static_cast<std::size_t>(frames) * m_channels, 0.f);
+		surroundexport::arm(frames);
 	}
 
 	// The loudness report is opt-in (OutputSettings::loudnessReport(), set by the
@@ -194,6 +220,8 @@ ProjectRenderer::~ProjectRenderer()
 	// opened).
 	ExportRenderSettings::setDitherMode(m_previousDither);
 	ExportRenderSettings::setSrcQuality(m_previousSrcQuality);
+	// The render thread has finished (or never started) by now: the tap can go.
+	if( !m_interleaved.empty() ) { surroundexport::disarm(); }
 }
 
 
@@ -238,6 +266,11 @@ void ProjectRenderer::startProcessing()
 		// make slots connected to sampleRateChanged()-signals being called immediately.
 		Engine::audioEngine()->setAudioDevice(m_fileDev, false);
 
+		// Q050-484: tell the instruments on the main thread, before the render thread exists.
+		Song* const song = Engine::getSong();
+		emit song->exportPreparing();
+		connect(this, &QThread::finished, song, &Song::exportFinished, Qt::UniqueConnection);
+
 		start(
 #ifndef LMMS_BUILD_WIN32
 			QThread::HighPriority
@@ -250,6 +283,7 @@ void ProjectRenderer::startProcessing()
 
 void ProjectRenderer::run()
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	PerfLogTimer perfLog("Project Render");
 
 	// Everything below renders on this thread alone; see DeterministicRenderScope.
@@ -259,16 +293,22 @@ void ProjectRenderer::run()
 
 	Engine::getSong()->startExport();
 	// Skip first empty buffer.
+	offlinerender::waitForAll();
 	Engine::audioEngine()->renderNextPeriod();
 
-	m_progress = 0;
+	m_progress.store( 0, std::memory_order_relaxed );
 
 	// Now start processing
 	Engine::audioEngine()->startProcessing();
 
+	bool writeFailed = false;
+
 	// Continually track and emit progress percentage to listeners.
 	while (!Engine::getSong()->isExportDone() && !m_abort)
 	{
+		// Q050-481.2: devices that render on threads of their own (VST2 through Carla) are waited for HERE,
+		// between periods - an export has no realtime deadline, but the render period itself never waits.
+		offlinerender::waitForAll();
 		const auto buffer = Engine::audioEngine()->renderNextPeriod();
 
 		// The loudness tap: measure the very block that is about to be written.
@@ -279,13 +319,24 @@ void ProjectRenderer::run()
 			m_loudnessReport->addBlock(buffer.data(), static_cast<f_cnt_t>(buffer.size()));
 		}
 
-		m_fileDev->writeBuffer(buffer.data(), buffer.size());
+		const bool written = m_channels > DEFAULT_CHANNELS
+			? writeSurround(buffer.data(), static_cast<f_cnt_t>(buffer.size()))
+			: m_fileDev->writeBuffer(buffer.data(), buffer.size());
+		if (!written)
+		{
+			// These bytes did not reach the file (a full disk, an unwritable path): no
+			// amount of further rendering would fix that, so the render ends here and the
+			// file is reported as failed - and removed - below, the way an abort is.
+			writeFailed = true;
+			break;
+		}
 
 		const int nprog = Engine::getSong()->getExportProgress();
-		if (m_progress != nprog)
+		const int progress = m_progress.load( std::memory_order_relaxed );
+		if (progress != nprog)
 		{
-			m_progress = nprog;
-			emit progressChanged( m_progress );
+			m_progress.store( nprog, std::memory_order_relaxed );
+			emit progressChanged( nprog );
 		}
 	}
 
@@ -296,9 +347,17 @@ void ProjectRenderer::run()
 
 	perfLog.end();
 
-	// If the user aborted export-process, the file has to be deleted.
+	// Finalise here, on this thread, before anything reads the result: a close that
+	// failed - or a header libsndfile could not write - makes the export a failed one,
+	// not a finished one. (The file device's destructor would call this again later;
+	// it is idempotent, and the verdict has already been taken over by writeFailed.)
+	if (!m_fileDev->finishEncoding() || m_fileDev->hasWriteError()) { writeFailed = true; }
+	m_writeFailed.store(writeFailed, std::memory_order_relaxed);
+
+	// A file the export could not write completely has to be deleted: what is left
+	// on disk would be a headerless or truncated file that looks like a render.
 	const QString f = m_fileDev->outputFile();
-	if( m_abort )
+	if( m_abort || writeFailed )
 	{
 		QFile( f ).remove();
 	}
@@ -306,6 +365,26 @@ void ProjectRenderer::run()
 	{
 		reportLoudness( f );
 	}
+}
+
+
+
+
+bool ProjectRenderer::writeSurround( const SampleFrame* pair, f_cnt_t frames )
+{
+	const auto width = static_cast<std::size_t>(m_channels);
+	frames = std::min(frames, static_cast<f_cnt_t>(m_interleaved.size() / width));
+	for( f_cnt_t f = 0; f < frames; ++f )
+	{
+		m_interleaved[f * width] = pair[f][0];
+		m_interleaved[f * width + 1] = pair[f][1];
+	}
+	for( int c = 2; c < m_channels; ++c )
+	{
+		const float* side = surroundexport::readPlane(c);
+		for( f_cnt_t f = 0; f < frames; ++f ) { m_interleaved[f * width + c] = side[f]; }
+	}
+	return m_fileDev->writeInterleaved(m_interleaved.data(), frames);
 }
 
 
@@ -352,16 +431,17 @@ void ProjectRenderer::updateConsoleProgress()
 	static int rot = 0;
 	auto buf = std::array<char, 80>{};
 	auto prog = std::array<char, cols + 1>{};
+	const int progress = m_progress.load( std::memory_order_relaxed );
 
 	for( int i = 0; i < cols; ++i )
 	{
-		prog[i] = ( i*100/cols <= m_progress ? '-' : ' ' );
+		prog[i] = ( i*100/cols <= progress ? '-' : ' ' );
 	}
 	prog[cols] = 0;
 
 	const auto activity = "|/-\\";
 	std::fill(buf.begin(), buf.end(), 0);
-	std::snprintf(buf.data(), buf.size(), "\r|%s|    %3d%%   %c  ", prog.data(), m_progress,
+	std::snprintf(buf.data(), buf.size(), "\r|%s|    %3d%%   %c  ", prog.data(), progress,
 							activity[rot] );
 	rot = ( rot+1 ) % 4;
 

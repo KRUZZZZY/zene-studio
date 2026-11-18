@@ -41,6 +41,8 @@
 
 #include <QtTest>
 
+#include <stdexcept>
+
 #include <QDomDocument>
 #include <QDomElement>
 #include <QJsonObject>
@@ -122,12 +124,34 @@ private slots:
 		QVERIFY(!isValidRackZone(noChain, rackUnderTest().chainCount()));
 	}
 
+	//! Project data is checked just like command-created zones: malformed and
+	//! out-of-range bounds are discarded without losing valid neighbors.
+	void malformedProjectZoneBoundsAreRejected()
+	{
+		QDomDocument doc;
+		QVERIFY(doc.setContent(QStringLiteral(
+			"<rack>"
+			"<zone low_key=\"oops\" high_key=\"127\" chain=\"0\"/>"
+			"<zone low_key=\"36\" high_key=\"48\" low_velocity=\"-1\" chain=\"0\"/>"
+			"<zone low_key=\"36\" high_key=\"48\" chain=\"0\"/>"
+			"</rack>")));
+
+		RackZones zones;
+		zones.loadSettings(doc.documentElement());
+		QCOMPARE(zones.zoneCount(), 1);
+		QCOMPARE(zones.zone(0)->lowKey, 36);
+		QCOMPARE(zones.zone(0)->highKey, 48);
+		QCOMPARE(zones.resolve(36, 100), 0);
+		QCOMPARE(zones.resolve(0, 100), -1);
+	}
+
 	//! The zone surface: add through the registry, resolve, remove, and take the
 	//! removal back with control.undo - the zone returns at its own index, which
 	//! is the order the first-match rule reads.
 	void theZoneSurfaceAddsResolvesAndUndoes()
 	{
 		const QString channel = underTestChannel();  // the id the fixture's channel carries, not kChannel
+		const int zonesBefore = rackUnderTest().zones().zoneCount();
 
 		const ControlResult added = revtest::run(QStringLiteral("rack.zone_add"),
 			{{QStringLiteral("channel"), channel}, {QStringLiteral("low_key"), 24},
@@ -175,7 +199,7 @@ private slots:
 
 		QCOMPARE(revtest::run(QStringLiteral("rack.get_state"),
 			QJsonObject{{QStringLiteral("channel"), channel}})
-			.result.value(QStringLiteral("zone_count")).toInt(), 3);
+			.result.value(QStringLiteral("zone_count")).toInt(), zonesBefore + 1);
 
 		const ControlResult removed = revtest::run(QStringLiteral("rack.zone_remove"),
 			{{QStringLiteral("channel"), channel}, {QStringLiteral("zone"), zone}});
@@ -189,6 +213,75 @@ private slots:
 			.result.value(QStringLiteral("zone")).toString(), zone);
 		printEvidence("surface-zone-undo",
 			QStringLiteral("zone_remove -> control.undo -> the zone is back at its index"));
+	}
+
+	//! Luna 5746: rack.zone_remove advertises rack.zone_add as its inverse, and that
+	//! inverse must be REPLAYABLE. It used to carry only {"channel", "zone"}: no
+	//! "chain" (which rack.zone_add requires), and none of the dropped zone's
+	//! range values, so replaying it either failed argument validation or rebuilt
+	//! a different zone. The args have to describe the zone that was dropped.
+	void zoneRemoveAdvertisesAReplayableInverse()
+	{
+		const QString channel = underTestChannel();
+		const ControlResult added = revtest::run(QStringLiteral("rack.zone_add"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("low_key"), 60},
+				{QStringLiteral("high_key"), 72}, {QStringLiteral("low_velocity"), 20},
+				{QStringLiteral("high_velocity"), 90}, {QStringLiteral("chain"), kDrivenChain}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		const QString zone = added.result.value(QStringLiteral("zone")).toString();
+		QVERIFY2(revtest::run(QStringLiteral("rack.zone_remove"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("zone"), zone}}).ok,
+			"rack.zone_remove refused");
+
+		// Luna 5746: the advertised inverse is the exact recorded checkpoint, control.undo. A
+		// rack.zone_add replay appended the zone; undoing re-inserts it at its own index.
+		const QJsonObject inverse = revtest::stateOf(QStringLiteral("rack.zone_remove"))
+			.value(QStringLiteral("inverse")).toObject();
+		QVERIFY2(!inverse.isEmpty(), "rack.zone_remove advertised no inverse at all");
+		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+		REV_UNDO_OR_FAIL();
+		const QJsonObject resolved = revtest::run(QStringLiteral("rack.zone_resolve"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("key"), 66},
+				{QStringLiteral("velocity"), 50}}).result;
+		QVERIFY(resolved.value(QStringLiteral("matched")).toBool());
+		QCOMPARE(resolved.value(QStringLiteral("zone_state")).toObject()
+			.value(QStringLiteral("chain")).toInt(), kDrivenChain);
+		printEvidence("surface-zone-inverse",
+			QStringLiteral("zone_remove's inverse is a rack.zone_add carrying chain and the "
+				"dropped zone's four range values, and it replays"));
+	}
+
+	//! Luna 5746: removing the FIRST of two overlapping zones (with samples) and undoing it restores
+	//! the zone at its own index, its sample, and the first-match order.
+	void zoneRemoveOfAnOverlappingFirstZoneUndoesInOrder()
+	{
+		const QString channel = underTestChannel();
+		RackZones& zones = rackUnderTest().zones();
+		const int before = zones.zoneCount();
+		const ControlResult first = revtest::run(QStringLiteral("rack.zone_add"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("low_key"), 60},
+				{QStringLiteral("high_key"), 72}, {QStringLiteral("low_velocity"), 20},
+				{QStringLiteral("high_velocity"), 90}, {QStringLiteral("chain"), kDrivenChain},
+				{QStringLiteral("sample"), QStringLiteral("first-zone.wav")}});
+		QVERIFY2(first.ok, qPrintable(first.errorMessage));
+		const ControlResult second = revtest::run(QStringLiteral("rack.zone_add"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("low_key"), 66},
+				{QStringLiteral("high_key"), 80}, {QStringLiteral("low_velocity"), 1},
+				{QStringLiteral("high_velocity"), 127}, {QStringLiteral("chain"), kDrivenChain},
+				{QStringLiteral("sample"), QStringLiteral("second-zone.wav")}});
+		QVERIFY2(second.ok, qPrintable(second.errorMessage));
+		QCOMPARE(zones.zoneCount(), before + 2);
+
+		QVERIFY2(revtest::run(QStringLiteral("rack.zone_remove"),
+			{{QStringLiteral("channel"), channel},
+				{QStringLiteral("zone"), first.result.value(QStringLiteral("zone")).toString()}}).ok,
+			"rack.zone_remove refused");
+		QCOMPARE(zones.zoneCount(), before + 1);
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(zones.zoneCount(), before + 2);
+		QCOMPARE(zones.zone(before)->sample, QStringLiteral("first-zone.wav"));
+		QCOMPARE(zones.zone(before)->lowKey, 60);
+		QCOMPARE(zones.zone(before + 1)->sample, QStringLiteral("second-zone.wav"));
 	}
 
 	//! The whole configuration - the chains, the selector, the macros with their
@@ -249,38 +342,74 @@ private slots:
 			QStringLiteral("rack version=2 selected=1 macro+1 target+1 zone+2, all children of "
 				"<rack>"));
 
-		// Reload the mixer from XML. The fixture's chains carry no effects on
-		// purpose - instantiating one from XML starts the plugin loader, the
-		// teardown race docs/RACKS.md section 6 records - so the macro's target
-		// is asserted as DATA here, and as a live write by RackMacrosTest.
-		QDomDocument loadDoc;
-		loadDoc.setContent(QString::fromUtf8(reloadFixtureXml()));
-		Engine::mixer()->loadSettings(loadDoc.documentElement());
+		// THE ROUND TRIP: reload the document THIS test just wrote and assert
+		// that what comes back out of it is what went into it - the
+		// "Persisted" macro with its target, and the two zones at the indexes
+		// they were saved at. Reloading a hand-written fixture (further down)
+		// only proves the READER; reloading doc proves the writer and the
+		// reader agree, which is the only thing a save/load proof can be: a
+		// writer that drops the macro value or a zone's chain reads back as a
+		// document that happens to load.
+		//
+		// The fixture's own effect is named in doc, so this load instantiates
+		// effects from XML. That is safe and is why the macro's target is
+		// asserted as DATA here: the test effect is local to this binary
+		// (RackTestSupport.h), the plugin factory does not know its
+		// descriptor, and an effect it cannot instantiate becomes a
+		// DummyEffect rather than a plugin module load. A live write is
+		// asserted through the fixture the tests build themselves.
+		Engine::mixer()->loadSettings(doc.documentElement());
 
 		Rack& reloaded = rackUnderTest();
+		// One parallel chain saved, and the channel's own chain beside it.
 		QCOMPARE(reloaded.chainCount(), 2);
 		QCOMPARE(reloaded.selectedChain(), 1);
-		QCOMPARE(reloaded.macros().macroCount(), 1);
-		QCOMPARE(reloaded.macros().macro(0)->name, QStringLiteral("Loaded"));
-		QCOMPARE(reloaded.macros().macro(0)->value, 0.25f);
-		QCOMPARE(static_cast<int>(reloaded.macros().macro(0)->targets.size()), 1);
-		QCOMPARE(reloaded.macros().macro(0)->targets[0].parameter, QString::fromLatin1(kGainName));
-		QCOMPARE(reloaded.macros().macro(0)->targets[0].low, 0.5f);
-		QCOMPARE(reloaded.macros().macro(0)->targets[0].high, 1.0f);
-		QCOMPARE(reloaded.zones().zoneCount(), 2);
-		QCOMPARE(reloaded.zones().resolve(40, 150), 0);
-		QCOMPARE(reloaded.zones().resolve(55, 150), 1);
-		QCOMPARE(reloaded.zones().resolve(55, 20), -1);
-		QCOMPARE(reloaded.zones().zone(0)->sample, QStringLiteral("kick.wav"));
+		QCOMPARE(reloaded.macros().macroCount(), macrosBefore + 1);
+		const RackMacro* persisted = reloaded.macros().macro(macrosBefore);
+		QVERIFY(persisted != nullptr);
+		QCOMPARE(persisted->name, QStringLiteral("Persisted"));
+		QCOMPARE(persisted->value, 0.5f);
+		QCOMPARE(static_cast<int>(persisted->targets.size()), 1);
+		const RackMacroTarget& target = persisted->targets[0];
+		QCOMPARE(target.chain, kDrivenChain);
+		QCOMPARE(target.effect, 0);
+		QCOMPARE(target.parameter, QString::fromLatin1(kGainName));
+		QCOMPARE(target.low, 0.25f);
+		QCOMPARE(target.high, 0.75f);
+		QCOMPARE(reloaded.zones().zoneCount(), zonesBefore + 2);
+		const RackZone* lowZone = reloaded.zones().zone(zonesBefore);
+		const RackZone* highZone = reloaded.zones().zone(zonesBefore + 1);
+		QVERIFY(lowZone != nullptr && highZone != nullptr);
+		QCOMPARE(lowZone->lowKey, 0);
+		QCOMPARE(lowZone->highKey, 47);
+		QCOMPARE(lowZone->chain, kDrivenChain);
+		QCOMPARE(lowZone->sample, QStringLiteral("bass.wav"));
+		QCOMPARE(highZone->lowKey, 48);
+		QCOMPARE(highZone->highKey, 127);
+		QCOMPARE(highZone->chain, 0);
+		QVERIFY(highZone->sample.isEmpty());
+		// Both velocity ranges ride the whole space (0..200): a zone that
+		// states only keys is a zone the writer states as keys only, and the
+		// reader gives it back the full range rather than a zero-width one.
+		QCOMPARE(lowZone->lowVelocity, 0);
+		QCOMPARE(lowZone->highVelocity, 200);
+		// The two zones come back in the order they were saved, so the
+		// first-match-wins lookup reads the same ladder. Keys 10 and 100 are
+		// outside every zone the earlier cases left in the fixture, so these
+		// answers are the two zones this test saved.
+		QCOMPARE(reloaded.zones().resolve(10, 150), zonesBefore);
+		QCOMPARE(reloaded.zones().resolve(100, 150), zonesBefore + 1);
+		QCOMPARE(reloaded.zones().resolve(128, 150), -1);
+		QCOMPARE(reloaded.zones().resolve(100, 201), -1);
+		printEvidence("persistence-round-trip",
+			QStringLiteral("reloaded the document this test saved: macro=%1 name=Persisted "
+				"value=0.5 target=1 zone=%2 resolve(10,150)=%3 resolve(100,150)=%4 "
+				"resolve(128,150)=-1")
+				.arg(macrosBefore + 1).arg(zonesBefore + 2).arg(zonesBefore).arg(zonesBefore + 1));
 
-		// The reloaded macro's target names a device the fixture does not build,
-		// so applying it writes nothing and says so.
-		QCOMPARE(static_cast<int>(reloaded.macros().apply(0, reloaded).size()), 0);
-		printEvidence("persistence-reloaded",
-			QStringLiteral("macro=1 value=0.25 target=1 zone=2 resolve(40,150)=0 resolve(55,20)=-1 "
-				"apply_writes=0 (the fixture's chain has no devices)"));
-
-		// Save again: the reloaded configuration writes the same children.
+		// Save again: the configuration that came back out of doc writes the
+		// same children back out, so the trip closes on the bytes as well as
+		// on the values.
 		QDomDocument again;
 		QDomElement rootAgain = again.createElement(QStringLiteral("mixer"));
 		again.appendChild(rootAgain);
@@ -288,12 +417,188 @@ private slots:
 		const QDomElement rackAgain = savedRackElement(rootAgain);
 		QVERIFY(!rackAgain.isNull());
 		QCOMPARE(rackAgain.attribute(QStringLiteral("version")), QStringLiteral("2"));
-		QCOMPARE(rackAgain.elementsByTagName(QStringLiteral("macro")).size(), 1);
+		QCOMPARE(rackAgain.elementsByTagName(QStringLiteral("macro")).size(), macrosBefore + 1);
 		QCOMPARE(rackAgain.elementsByTagName(QStringLiteral("target")).size(), 1);
-		QCOMPARE(rackAgain.elementsByTagName(QStringLiteral("zone")).size(), 2);
+		QCOMPARE(rackAgain.elementsByTagName(QStringLiteral("zone")).size(), zonesBefore + 2);
 		QCOMPARE(rackAgain.elementsByTagName(QStringLiteral("chain")).size(), 1);
-		printEvidence("persistence-round-trip",
-			QStringLiteral("saved=macro1/target1/zone2 loaded=same re-saved=same"));
+		printEvidence("persistence-re-saved",
+			QStringLiteral("re-saved from the reloaded document: same macro/target/zone/chain counts"));
+
+		// The reader also takes a document this build did not write. Same
+		// reader, different writer: a fixture whose macro is not the one this
+		// test saved and whose zones name other ranges and a sample.
+		QDomDocument loadDoc;
+		loadDoc.setContent(QString::fromUtf8(reloadFixtureXml()));
+		Engine::mixer()->loadSettings(loadDoc.documentElement());
+
+		Rack& fromFixture = rackUnderTest();
+		QCOMPARE(fromFixture.chainCount(), 2);
+		QCOMPARE(fromFixture.selectedChain(), 1);
+		QCOMPARE(fromFixture.macros().macroCount(), 1);
+		QCOMPARE(fromFixture.macros().macro(0)->name, QStringLiteral("Loaded"));
+		QCOMPARE(fromFixture.macros().macro(0)->value, 0.25f);
+		QCOMPARE(static_cast<int>(fromFixture.macros().macro(0)->targets.size()), 1);
+		QCOMPARE(fromFixture.macros().macro(0)->targets[0].parameter, QString::fromLatin1(kGainName));
+		QCOMPARE(fromFixture.macros().macro(0)->targets[0].low, 0.5f);
+		QCOMPARE(fromFixture.macros().macro(0)->targets[0].high, 1.0f);
+		QCOMPARE(fromFixture.zones().zoneCount(), 2);
+		QCOMPARE(fromFixture.zones().resolve(40, 150), 0);
+		QCOMPARE(fromFixture.zones().resolve(55, 150), 1);
+		QCOMPARE(fromFixture.zones().resolve(55, 20), -1);
+		QCOMPARE(fromFixture.zones().zone(0)->sample, QStringLiteral("kick.wav"));
+
+		// The reloaded macro's target names a device the fixture does not build,
+		// so applying it writes nothing and says so.
+		QCOMPARE(static_cast<int>(fromFixture.macros().apply(0, fromFixture).size()), 0);
+		printEvidence("persistence-reloaded",
+			QStringLiteral("macro=1 value=0.25 target=1 zone=2 resolve(40,150)=0 resolve(55,20)=-1 "
+				"apply_writes=0 (the fixture's chain has no devices)"));
+	}
+
+	//! Luna cluster 5256: removing a chain renumbers the zones that named a
+	//! LATER chain, and drops the ones that named the chain that is gone. A
+	//! stale index either routes to a chain nobody asked for or - once the rack
+	//! has fewer chains than the index - to nothing at all, silently.
+	void removingAChainReindexesTheZones()
+	{
+		Rack& rack = rackUnderTest();
+		while (rack.chainCount() < 5) { rack.addChain(); }
+		QCOMPARE(rack.chainCount(), 5);
+		const int zonesBefore = rack.zones().zoneCount();
+
+		RackZone later;
+		later.lowKey = 60;
+		later.highKey = 72;
+		later.chain = 4;
+		const int laterIndex = rack.zones().addZone(later);
+		QCOMPARE(laterIndex, zonesBefore);
+
+		RackZone onRemoved;
+		onRemoved.lowKey = 73;
+		onRemoved.highKey = 80;
+		onRemoved.chain = 2;
+		rack.zones().addZone(onRemoved);
+		QCOMPARE(rack.zones().zoneCount(), zonesBefore + 2);
+
+		QVERIFY(rack.removeChain(2));
+		QCOMPARE(rack.chainCount(), 4);
+
+		// The zone that named the deleted chain is gone; the one that named the
+		// chain after it slides down with it.
+		QCOMPARE(rack.zones().zoneCount(), zonesBefore + 1);
+		QCOMPARE(rack.zones().zone(laterIndex)->chain, 3);
+		printEvidence("chain-removal-reindexes-zones",
+			QStringLiteral("chains 5 -> 4; zone on chain 4 -> chain 3; zone on the removed "
+				"chain 2 dropped"));
+	}
+
+	//! Luna cluster new-p9-378: an exception inside RackZones::edit must still
+	//! release the audio model-change guard. The alongside step throws after the
+	//! mutation and the changed hook throws after the mutation: both unwind
+	//! while the guard is held. The LMMS_TESTING seam reports whether the
+	//! calling thread still holds the guard afterwards, with no timing.
+	void throwingEditReleasesTheModelChangeGuard()
+	{
+		auto* engine = Engine::audioEngine();
+		QVERIFY(engine != nullptr);
+		QVERIFY(!engine->isChangeInModelHeld());
+
+		RackZone zone;
+		zone.lowKey = 0;
+		zone.highKey = 127;
+		zone.chain = 0;
+
+		RackZones zones;
+		bool alongsideThrew = false;
+		try
+		{
+			zones.addZone(zone, [] { throw std::runtime_error("alongside"); });
+		}
+		catch (const std::runtime_error&)
+		{
+			alongsideThrew = true;
+		}
+		QVERIFY(alongsideThrew);
+		QCOMPARE(zones.zoneCount(), 1);
+		const bool heldAfterAlongside = engine->isChangeInModelHeld();
+		if (heldAfterAlongside) { engine->doneChangeInModel(); }
+		QVERIFY2(!heldAfterAlongside,
+			"edit left the model-change guard held after the alongside step threw");
+
+		RackZones hooked;
+		hooked.setChangedHook([] { throw std::runtime_error("hook"); });
+		bool hookThrew = false;
+		try
+		{
+			hooked.addZone(zone);
+		}
+		catch (const std::runtime_error&)
+		{
+			hookThrew = true;
+		}
+		QVERIFY(hookThrew);
+		const bool heldAfterHook = engine->isChangeInModelHeld();
+		if (heldAfterHook) { engine->doneChangeInModel(); }
+		QVERIFY2(!heldAfterHook,
+			"edit left the model-change guard held after the changed hook threw");
+
+		RackZones normal;
+		QCOMPARE(normal.addZone(zone), 0);
+		QVERIFY(!engine->isChangeInModelHeld());
+		printEvidence("guard-released-on-throw",
+			QStringLiteral("alongside throw and hook throw both leave the guard released"));
+	}
+
+	//! Luna cluster 5244: a project zone naming a chain the rack does not have
+	//! is discarded on load, not stored. The rack in the document has two
+	//! chains; the first zone names chain 99.
+	void projectZoneNamingAMissingChainIsDiscarded()
+	{
+		QDomDocument doc;
+		QVERIFY(doc.setContent(QStringLiteral(
+			"<channel><rack version=\"2\" selected=\"1\">"
+			"<chain index=\"1\"><fxchain numofeffects=\"0\" enabled=\"0\"/></chain>"
+			"<zone low_key=\"0\" high_key=\"127\" low_velocity=\"0\" high_velocity=\"200\" "
+			"chain=\"99\"/>"
+			"<zone low_key=\"60\" high_key=\"72\" low_velocity=\"0\" high_velocity=\"200\" "
+			"chain=\"1\"/>"
+			"</rack></channel>")));
+
+		Rack& rack = rackUnderTest();
+		rack.loadSettings(doc.documentElement());
+		QCOMPARE(rack.chainCount(), 2);
+		QCOMPARE(rack.zones().zoneCount(), 1);
+		QCOMPARE(rack.zones().zone(0)->chain, 1);
+		QCOMPARE(rack.zones().resolve(65, 100), 0);
+		printEvidence("loaded-zone-chain-validated",
+			QStringLiteral("chain=99 zone discarded on load; chain=1 zone kept and resolves"));
+	}
+
+	//! Luna cluster new-p16-178: an invalid first zone must not hide a later
+	//! valid zone. The first zone covers the note but names chain 999, which
+	//! the feed cannot route; the second zone covers the same note and names
+	//! chain 1.
+	void invalidFirstZoneDoesNotHideAValidLaterZone()
+	{
+		QDomDocument doc;
+		QVERIFY(doc.setContent(QStringLiteral(
+			"<channel><rack version=\"2\" selected=\"1\">"
+			"<chain index=\"1\"><fxchain numofeffects=\"0\" enabled=\"0\"/></chain>"
+			"<zone low_key=\"36\" high_key=\"60\" low_velocity=\"0\" high_velocity=\"200\" "
+			"chain=\"999\"/>"
+			"<zone low_key=\"36\" high_key=\"60\" low_velocity=\"0\" high_velocity=\"200\" "
+			"chain=\"1\"/>"
+			"</rack></channel>")));
+
+		Rack& rack = rackUnderTest();
+		rack.loadSettings(doc.documentElement());
+		QCOMPARE(rack.chainCount(), 2);
+		QCOMPARE(rack.zones().zoneCount(), 1);
+		const int hit = rack.zones().resolve(40, 100);
+		QCOMPARE(hit, 0);
+		QCOMPARE(rack.zones().zone(hit)->chain, 1);
+		printEvidence("invalid-zone-does-not-hide-valid",
+			QStringLiteral("chain=999 zone discarded; (40,100) resolves to the chain=1 zone"));
 	}
 };
 

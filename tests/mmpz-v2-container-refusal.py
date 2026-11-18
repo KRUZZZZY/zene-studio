@@ -28,6 +28,9 @@ What the fix pins, and what this test exists to keep pinned:
     document, and `--compress` still frames an `.mmp`. Those two cases are the
     controls, and a guard that refused everything would fail them - which is the
     only thing that makes this suite evidence rather than a description.
+  * `--tail-bars` is accepted only by `exportstems`; the whole-project `render`
+    action refuses it before writing an output file, while `exportstems` keeps
+    accepting it (the control that the option was scoped, not removed).
 
 The v2 fixture is written by Python's own `zipfile` in STORE mode rather than by
 the product's writer, on purpose: this test is about what the CLI does with ANY
@@ -147,6 +150,91 @@ def compress_cases(zene, plain, v2, env, cases):
           b"v2 container" in refused.stderr, "stderr: %r" % refused.stderr[:120])
 
 
+def unreadable_cases(zene, scratch, env, cases):
+    """An input the process could NOT READ is refused, not reported as success.
+
+    The v2 cases above refuse a file this build understands but will not answer.
+    These refuse a file the process never got bytes out of at all: `QFile::open`
+    was not checked, so a missing path read as an EMPTY document - `--dump`
+    printed a bare newline and returned 0, and `--compress` framed those zero
+    bytes into a valid-looking qCompress stream. A caller scripting over these
+    verbs cannot tell that from a successful dump of an empty project."""
+    missing = os.path.join(scratch, "does-not-exist.mmpz")
+    check(cases, "fixture: the missing input really is missing", not os.path.exists(missing),
+          "path %s" % missing)
+
+    # `--dump` on a file that is not there.
+    dumped = run(zene, ["--dump", missing], env)
+    check(cases, "--dump refuses a missing file", dumped.returncode != 0,
+          "exit %d" % dumped.returncode)
+    check(cases, "--dump writes no document for a missing file", dumped.stdout == b"",
+          "stdout is %d bytes: %r" % (len(dumped.stdout), dumped.stdout[:24]))
+    check(cases, "--dump names the unreadable input", missing.encode() in dumped.stderr,
+          "stderr: %r" % dumped.stderr[:160])
+
+    # `--compress` on the same path: the writer must not frame nothing.
+    framed = run(zene, ["--compress", missing], env)
+    check(cases, "--compress refuses a missing file", framed.returncode != 0,
+          "exit %d" % framed.returncode)
+    check(cases, "--compress writes nothing for a missing file", framed.stdout == b"",
+          "stdout is %d bytes: %r" % (len(framed.stdout), framed.stdout[:24]))
+
+    # A file that EXISTS but holds bytes qUncompress cannot decode. This is the
+    # other half: the open succeeds, so only the decode result can refuse it.
+    garbage = os.path.join(scratch, "garbage.mmpz")
+    open(garbage, "wb").write(b"this is not a qCompress frame at all")
+    bad = run(zene, ["--dump", garbage], env)
+    check(cases, "--dump refuses an undecodable file", bad.returncode != 0,
+          "exit %d" % bad.returncode)
+    check(cases, "--dump writes no document for an undecodable file", bad.stdout == b"",
+          "stdout is %d bytes: %r" % (len(bad.stdout), bad.stdout[:24]))
+
+    # CONTROL: a genuinely empty input is still refused rather than "dumped".
+    # (An empty file is not a project either; this pins that the refusal above
+    # is about unreadability/decodability, not about zero bytes alone.)
+    empty = os.path.join(scratch, "empty.mmpz")
+    open(empty, "wb").write(b"")
+    zero = run(zene, ["--dump", empty], env)
+    check(cases, "--dump refuses an empty file", zero.returncode != 0,
+          "exit %d" % zero.returncode)
+
+
+def tail_bars_scope_cases(zene, scratch, env, cases):
+    """The stem-only tail option must not silently change another action.
+
+    `--tail-bars` is consumed by `exportStems()` only, so `render` used to accept
+    it, render without the requested tail and still exit 0. Both a nonzero value
+    and an explicit zero are refused - zero is still an explicitly supplied,
+    stem-only option - and neither refusal may create an output file. The
+    `exportstems` case is the control: the option keeps working where it belongs,
+    so a guard that removed it everywhere would fail here."""
+    project = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "data", "vca-render-fixture.mmp")
+    check(cases, "fixture: the tail-bars render project exists",
+          os.path.exists(project), "path %s" % project)
+
+    for bars in ("4", "0"):
+        output = os.path.join(scratch, "render-with-tail-bars-%s.wav" % bars)
+        result = run(zene, ["--allowroot", "render", project, "-o", output,
+                            "--tail-bars", bars], env)
+        check(cases, "render refuses the exportstems-only --tail-bars %s" % bars,
+              result.returncode != 0, "exit %d" % result.returncode)
+        check(cases, "a render refused for --tail-bars %s creates no output" % bars,
+              not os.path.exists(output),
+              "output exists=%s" % os.path.exists(output))
+
+    stem_dir = os.path.join(scratch, "stems-with-tail-bars")
+    control = run(zene, ["--allowroot", "exportstems", project, "-o", stem_dir,
+                         "--tail-bars", "4"], env)
+    stems = []
+    if os.path.isdir(stem_dir):
+        stems = sorted(name for name in os.listdir(stem_dir)
+                       if name.lower().endswith(".wav"))
+    check(cases, "CONTROL: exportstems still accepts --tail-bars",
+          control.returncode == 0 and stems, "exit %d, stems %r"
+          % (control.returncode, stems))
+
+
 def report(cases):
     failed = 0
     for name, passed, detail in cases:
@@ -188,6 +276,8 @@ def main(argv):
     fixture_cases(v2_bytes, cases)
     dump_cases(zene, v1, v2, env, cases)
     compress_cases(zene, plain, v2, env, cases)
+    unreadable_cases(zene, scratch, env, cases)
+    tail_bars_scope_cases(zene, scratch, env, cases)
     return report(cases)
 
 

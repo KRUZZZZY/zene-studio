@@ -26,7 +26,11 @@
 #ifndef LMMS_RMS_HELPER_H
 #define LMMS_RMS_HELPER_H
 
+#include <stdexcept>
+
 #include "lmms_math.h"
+
+#include <cstring>
 
 
 namespace lmms
@@ -41,6 +45,30 @@ public:
 	{
 		setSize( size );
 	}
+	RmsHelper(const RmsHelper& other) :
+		m_buffer( new float[ other.m_size ] ),
+		m_sum( other.m_sum ),
+		m_pos( other.m_pos ),
+		m_size( other.m_size ),
+		m_sizef( other.m_sizef )
+	{
+		std::memcpy( m_buffer, other.m_buffer, m_size * sizeof( float ) );
+	}
+	RmsHelper& operator=(const RmsHelper& other)
+	{
+		if( this != &other )
+		{
+			auto* buffer = new float[ other.m_size ];
+			std::memcpy( buffer, other.m_buffer, other.m_size * sizeof( float ) );
+			delete[] m_buffer;
+			m_buffer = buffer;
+			m_sum = other.m_sum;
+			m_pos = other.m_pos;
+			m_size = other.m_size;
+			m_sizef = other.m_sizef;
+		}
+		return *this;
+	}
 	virtual ~RmsHelper() 
 	{
 		if( m_buffer ) delete[] m_buffer;
@@ -48,11 +76,16 @@ public:
 
 	void setSize(std::size_t size)
 	{
+		if( size == 0 )
+		{
+			throw std::invalid_argument( "RmsHelper size must be greater than zero" );
+		}
+
 		if( m_buffer )
 		{
 			if( m_size < size )
 			{
-				delete m_buffer;
+				delete[] m_buffer;
 				m_buffer = new float[ size ];
 				m_size = size;
 				reset();

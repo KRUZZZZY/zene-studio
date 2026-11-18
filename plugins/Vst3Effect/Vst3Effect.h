@@ -51,6 +51,7 @@ class Vst3Effect : public AudioPluginExt<Effect, Vst3EffectAudioPortsSettings>
 public:
 	Vst3Effect(Model* parent, const Descriptor::SubPluginFeatures::Key* key);
 	~Vst3Effect() override;
+	QString unavailableReason() const override { return m_plugin.isLoaded() ? QString() : QStringLiteral("the VST3 module or class was not found or could not be loaded"); }
 
 	auto controls() -> EffectControls* override;
 
@@ -65,6 +66,16 @@ public:
 	//! GUI thread: re-create the processing setup, e.g. after a sample rate
 	//! change. Not real-time safe, never call from the audio thread.
 	void reprepare();
+
+#ifdef LMMS_TESTING
+	//! Test-only pause point after admission closes, so wrapper processing can be driven during re-prepare.
+	using ReprepareTestHook = void (*)(void*);
+	void setReprepareTestHook(ReprepareTestHook hook, void* context) noexcept
+	{
+		m_reprepareTestHook = hook;
+		m_reprepareTestContext = context;
+	}
+#endif
 
 	//! BUGS 11.34: the latency the plug-in reported after its last successful prepare, so the
 	//! effect chain's delay compensation sees it (read on the control thread).
@@ -84,9 +95,14 @@ protected:
 		PlanarBufferView<float, DynamicChannelCount> out) -> lmms::ProcessStatus override;
 
 private:
+	vst3::AudioProcessGate m_processGate;
 	vst3::HostedPlugin m_plugin;
 	gui::PluginNativeEditor m_editor;
 	std::unique_ptr<Vst3EffectControls> m_controls;
+#ifdef LMMS_TESTING
+	ReprepareTestHook m_reprepareTestHook = nullptr;
+	void* m_reprepareTestContext = nullptr;
+#endif
 	//! Set from the audio thread when the plug-in is not prepared, polled by
 	//! Vst3EffectControls on the GUI thread which then calls reprepare().
 	std::atomic<bool> m_needsReprepare{false};

@@ -50,6 +50,7 @@ static QColor s_waveformInnerColor = QColor(183, 124, 255); // color of inner wa
 // now playing colors
 static QColor s_playColor = QColor(255, 255, 255, 200);			// now playing line
 static QColor s_playHighlightColor = QColor(255, 255, 255, 70); // now playing note marker
+static QColor s_selectedSliceColor = QColor(159, 124, 223, 55); // slice the per-slice controls edit (Q050-263)
 
 // slice markers
 static QColor s_sliceColor = QColor(218, 193, 255);			 // color of slice marker
@@ -244,6 +245,15 @@ void SlicerTWaveform::drawEditor()
 	brush.drawLine(noteCurrentPos, s_arrowHeight, noteCurrentPos, m_editorHeight);
 	brush.fillRect(noteStartPos, s_arrowHeight, noteLength, m_editorHeight, s_playHighlightColor);
 
+	// the slice the per-slice controls edit
+	if (m_selectedSlice >= 0 && static_cast<std::size_t>(m_selectedSlice) + 1 < m_slicerTParent->m_slicePoints.size())
+	{
+		const float selectedStart = (m_slicerTParent->m_slicePoints.at(m_selectedSlice) - startFrame) / numFramesToDraw;
+		const float selectedEnd = (m_slicerTParent->m_slicePoints.at(m_selectedSlice + 1) - startFrame) / numFramesToDraw;
+		brush.fillRect(QRectF(selectedStart * m_editorWidth, s_arrowHeight,
+			(selectedEnd - selectedStart) * m_editorWidth, m_editorHeight), s_selectedSliceColor);
+	}
+
 	brush.setPen(QPen(s_sliceColor, 2));
 
 	for (auto i = std::size_t{0}; i < m_slicerTParent->m_slicePoints.size(); i++)
@@ -271,6 +281,14 @@ void SlicerTWaveform::drawEditor()
 	brush.setPen(s_editorBounding);
 	brush.drawLine(0, s_arrowHeight, m_editorWidth, s_arrowHeight);
 	brush.drawLine(0, m_editorHeight - 1, m_editorWidth, m_editorHeight - 1);
+}
+
+void SlicerTWaveform::setSelectedSlice(int slice)
+{
+	if (slice == m_selectedSlice) { return; }
+	m_selectedSlice = slice;
+	drawEditor();
+	update();
 }
 
 void SlicerTWaveform::isPlaying(float current, float start, float end)
@@ -362,6 +380,7 @@ void SlicerTWaveform::updateCursor()
 void SlicerTWaveform::mousePressEvent(QMouseEvent* me)
 {
 	const auto pos = position(me);
+	m_draggedSlice = -1;
 
 	switch (me->button())
 	{
@@ -377,20 +396,34 @@ void SlicerTWaveform::mousePressEvent(QMouseEvent* me)
 		m_seekerMiddle = static_cast<float>(pos.x() - s_seekerHorMargin) / m_seekerWidth;
 		break;
 	case Qt::MouseButton::RightButton:
-		if (m_slicerTParent->m_slicePoints.size() > 2 && m_closestObject == UIObjects::SlicePoint)
+		if (m_slicerTParent->m_slicePoints.size() > 2 && m_closestObject == UIObjects::SlicePoint
+			&& m_closestSlice > 0
+			&& static_cast<std::size_t>(m_closestSlice) < m_slicerTParent->m_slicePoints.size() - 1)
 		{
 			m_slicerTParent->m_slicePoints.erase(m_slicerTParent->m_slicePoints.begin() + m_closestSlice);
+			m_slicerTParent->sliceMerged(m_closestSlice); // the per-slice controls follow their slices
+			emit m_slicerTParent->dataChanged();
 		}
 		break;
 	default:;
 	}
 	updateClosest(me);
+	if (me->button() == Qt::MouseButton::LeftButton && m_closestObject == UIObjects::SlicePoint && m_closestSlice >= 0)
+	{
+		m_draggedSlice = m_closestSlice;
+		m_dragStartSlicePosition = m_slicerTParent->m_slicePoints.at(m_closestSlice);
+	}
 }
 
 // sort slices after moving and remove draggable object
 void SlicerTWaveform::mouseReleaseEvent(QMouseEvent* me)
 {
+	const bool slicePointChanged = m_draggedSlice >= 0
+		&& static_cast<std::size_t>(m_draggedSlice) < m_slicerTParent->m_slicePoints.size()
+		&& m_slicerTParent->m_slicePoints.at(m_draggedSlice) != m_dragStartSlicePosition;
 	std::sort(m_slicerTParent->m_slicePoints.begin(), m_slicerTParent->m_slicePoints.end());
+	m_draggedSlice = -1;
+	if (slicePointChanged) { emit m_slicerTParent->dataChanged(); }
 	updateClosest(me);
 }
 
@@ -439,7 +472,8 @@ void SlicerTWaveform::mouseMoveEvent(QMouseEvent* me)
 		break;
 
 	case UIObjects::SlicePoint:
-		if (m_closestSlice == -1) { break; }
+		if (m_slicerTParent->m_slicePoints.size() <= 2 || m_closestSlice <= 0
+			|| static_cast<std::size_t>(m_closestSlice) >= m_slicerTParent->m_slicePoints.size() - 1) { break; }
 		m_slicerTParent->m_slicePoints.at(m_closestSlice)
 			= startFrame + normalizedClickEditor * (endFrame - startFrame);
 		m_slicerTParent->m_slicePoints.at(m_closestSlice)
@@ -465,14 +499,19 @@ void SlicerTWaveform::mouseDoubleClickEvent(QMouseEvent* me)
 	float endFrame = m_seekerEnd;
 	float slicePosition = startFrame + normalizedClickEditor * (endFrame - startFrame);
 
-	m_slicerTParent->m_slicePoints.insert(m_slicerTParent->m_slicePoints.begin(), slicePosition);
-	std::sort(m_slicerTParent->m_slicePoints.begin(), m_slicerTParent->m_slicePoints.end());
+	auto& points = m_slicerTParent->m_slicePoints;
+	std::sort(points.begin(), points.end());
+	const auto insertAt = std::lower_bound(points.begin(), points.end(), slicePosition);
+	const auto insertIndex = static_cast<int>(insertAt - points.begin());
+	points.insert(insertAt, slicePosition);
+	m_slicerTParent->sliceSplit(insertIndex); // both halves of the slice keep its per-slice controls
+	emit m_slicerTParent->dataChanged();
 }
 
 void SlicerTWaveform::wheelEvent(QWheelEvent* we)
 {
 	m_zoomLevel += we->angleDelta().y() / 360.0f * s_zoomSensitivity;
-	m_zoomLevel = std::max(0.0f, m_zoomLevel);
+	m_zoomLevel = std::clamp(m_zoomLevel, s_minZoom, s_maxZoom);
 
 	updateUI();
 }

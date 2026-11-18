@@ -30,8 +30,10 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMenu>
+#include <QMessageBox>
 
 #include "ControlRegistry.h"
+#include "SafeStart.h"
 
 namespace lmms::gui
 {
@@ -40,6 +42,8 @@ namespace
 {
 
 std::function<QString()> s_picker;
+std::function<bool(const QString&)> s_crashAsker;
+std::function<void(const QString&)> s_crashFailureReporter;
 
 QString pickFile()
 {
@@ -100,10 +104,10 @@ void rebuild(QMenu* menu, const QString& refusal)
 		rebuild(menu, added.ok ? QString() : QMenu::tr("Refused: %1").arg(added.errorMessage));
 	});
 	QAction* rescan = menu->addAction(QMenu::tr("Rescan Plugins"));
-	rescan->setData(QStringLiteral("plugin.rescan"));
-	rescan->setToolTip(QMenu::tr("Run a plugin scan now, so a quarantine edit takes effect"));
+	rescan->setData(QStringLiteral("plugin.scan_start"));
+	rescan->setToolTip(QMenu::tr("Scan the plugins in the background, so a quarantine edit takes effect; the Tasks list shows it with Cancel"));
 	QObject::connect(rescan, &QAction::triggered, menu, [menu] {
-		const ControlResult scanned = invoke("plugin.rescan");
+		const ControlResult scanned = invoke("plugin.scan_start");
 		rebuild(menu, scanned.ok ? QString() : QMenu::tr("Refused: %1").arg(scanned.errorMessage));
 	});
 }
@@ -126,6 +130,46 @@ QMenu* addPluginQuarantineMenu(QMenu* menu)
 	// runs the first scan (the note plugin.scan_cache_get_state carries).
 	QObject::connect(quarantine, &QMenu::aboutToShow, quarantine, [quarantine] { rebuild(quarantine); });
 	return quarantine;
+}
+
+void setCrashQuarantineAsker(std::function<bool(const QString&)> asker) { s_crashAsker = std::move(asker); }
+
+void setCrashQuarantineFailureReporter(std::function<void(const QString&)> reporter)
+{
+	s_crashFailureReporter = std::move(reporter);
+}
+
+bool offerCrashQuarantine()
+{
+	const safestart::ActivePlugin suspect = safestart::crashSuspect();
+	if (!suspect.present) { return false; }
+	const QString file = QString::fromStdString(suspect.file);
+	const bool scanning = suspect.phase == "scan";
+	const QString text = scanning
+		? QMenu::tr("The previous session ended unexpectedly while Zene Studio was scanning this plug-in:\n\n%1\n\n"
+			"Quarantine it so it is not scanned again? You can release it later from Edit > Plugin Quarantine.")
+			.arg(file)
+		: QMenu::tr("The previous session ended unexpectedly while Zene Studio was loading this plug-in:\n\n%1\n\n"
+			"Quarantine it so it is not loaded again? You can release it later from Edit > Plugin Quarantine.")
+			.arg(file);
+	bool yes = false;
+	if (s_crashAsker) { yes = s_crashAsker(text); }
+	else
+	{
+		yes = QMessageBox::question(nullptr, QMenu::tr("Plug-in crash"), text,
+			QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes) == QMessageBox::Yes;
+	}
+	if (!yes) { return false; }
+	const ControlResult added = invoke("plugin.scan_cache_quarantine_add",
+		{{QStringLiteral("path"), file},
+		 {QStringLiteral("reason"), scanning ? QMenu::tr("crashed the previous session while it was being scanned")
+			: QMenu::tr("crashed the previous session while it was being instantiated")}});
+	if (added.ok) { return true; }
+	const QString failure = QMenu::tr("Could not quarantine this plug-in. The scan cache was not changed.\n\n%1")
+		.arg(added.errorMessage);
+	if (s_crashFailureReporter) { s_crashFailureReporter(failure); }
+	else { QMessageBox::warning(nullptr, QMenu::tr("Plug-in quarantine failed"), failure); }
+	return false;
 }
 
 } // namespace lmms::gui

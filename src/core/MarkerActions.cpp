@@ -23,8 +23,10 @@
  */
 #include "MarkerActions.h"
 
+#include <QDebug>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonParseError>
 #include <QPointer>
 #include <QTimer>
 #include <QVector>
@@ -64,7 +66,7 @@ std::atomic<unsigned>& jumps()
 struct Counts
 {
 	unsigned jumps = 0;
-	unsigned wraps = 0;
+	std::uint64_t wraps = 0;
 	bool operator!=(const Counts& other) const { return jumps != other.jumps || wraps != other.wraps; }
 };
 
@@ -87,7 +89,7 @@ enum class Moved { Not, Wrapped, Jumped, Racing };
 Moved movedBetween(const Counts& before, const Counts& now)
 {
 	const unsigned jumped = now.jumps - before.jumps;
-	const unsigned wrapped = now.wraps - before.wraps;
+	const std::uint64_t wrapped = now.wraps - before.wraps;
 	if (wrapped > jumped) { return Moved::Racing; }
 	if (jumped == 0) { return Moved::Not; }
 	return jumped == wrapped ? Moved::Wrapped : Moved::Jumped;
@@ -135,7 +137,8 @@ void follow(const Song& song, Moved moved, tick_t now, bool paused)
 
 //! One look of the timer. Only the arrangement's playback crosses markers (a pattern or a clip played
 //! alone has its own ticks). A resume from pause is not a fresh start. Stopped, the counters are taken
-//! as they stand, so a wrap whose jump went unannounced (the transport stopped under it) is forgotten.
+//! as they stand, so a wrap whose jump went unannounced (the transport stopped under it) is forgotten;
+//! paused, the current position stays as the mark from which resumed playback is checked.
 void watch(Song& song)
 {
 	static bool paused = false;
@@ -148,7 +151,8 @@ void watch(Song& song)
 	{
 		paused = song.isPaused();
 		seen() = after;
-		advance(now, false);
+		if (paused) { lastSeen() = now; }
+		else { advance(now, false); }
 		return;
 	}
 	const Moved moved = settle(after);
@@ -165,6 +169,35 @@ void followJumps(Song* song)
 		[] { jumps().fetch_add(1, std::memory_order_release); }, Qt::DirectConnection);
 	// After the connection: a wrap from here on is counted on both sides.
 	seen() = countsNow(*song);
+}
+
+//! Runs one crossed marker action and reports malformed arguments or command refusals.
+void runMarkerAction(const Marker& marker)
+{
+	QJsonObject args;
+	if (!marker.args.isEmpty())
+	{
+		QJsonParseError parseError;
+		const QJsonDocument document = QJsonDocument::fromJson(marker.args.toUtf8(), &parseError);
+		if (parseError.error != QJsonParseError::NoError)
+		{
+			qWarning("marker action '%s' has invalid args JSON: %s",
+				qPrintable(marker.action), qPrintable(parseError.errorString()));
+			return;
+		}
+		if (!document.isObject())
+		{
+			qWarning("marker action '%s' args must be a JSON object", qPrintable(marker.action));
+			return;
+		}
+		args = document.object();
+	}
+
+	const ControlResult result = ControlRegistry::instance()->invoke(marker.action, args);
+	if (!result.ok)
+	{
+		qWarning("marker action '%s' failed: %s", qPrintable(marker.action), qPrintable(result.errorMessage));
+	}
 }
 
 } // namespace
@@ -186,7 +219,7 @@ int advance(tick_t tick, bool playing)
 	last = tick;
 	for (const Marker& marker : crossed)
 	{
-		ControlRegistry::instance()->invoke(marker.action, QJsonDocument::fromJson(marker.args.toUtf8()).object());
+		runMarkerAction(marker);
 	}
 	return static_cast<int>(crossed.size());
 }

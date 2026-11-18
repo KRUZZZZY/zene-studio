@@ -52,6 +52,9 @@
 #include "RackMacros.h"
 #include "RackZones.h"
 
+#include <cmath>
+#include <limits>
+
 namespace lmms
 {
 
@@ -60,12 +63,20 @@ using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
 namespace
 {
 
-//! The chain index in a handler's args, as an int (0 when absent - every
-//! command that takes one declares it required, so absence is caught by the
-//! registry's schema check, not here).
-int chainArg(const QJsonObject& args)
+//! Read a schema-validated chain as an int without narrowing an out-of-range double.
+bool chainArg(const QJsonObject& args, int& index)
 {
-	return static_cast<int>(args.value(QStringLiteral("chain")).toDouble());
+	const QJsonValue value = args.value(QStringLiteral("chain"));
+	if (!value.isDouble()) { return false; }
+	const double number = value.toDouble();
+	if (!std::isfinite(number) || std::floor(number) != number ||
+		number < static_cast<double>(std::numeric_limits<int>::lowest()) ||
+		number > static_cast<double>(std::numeric_limits<int>::max()))
+	{
+		return false;
+	}
+	index = static_cast<int>(number);
+	return true;
 }
 
 /*! The chain's own state as XML, or empty when it is larger than the bounded
@@ -249,7 +260,8 @@ void registerRackRemoveChain(ControlRegistry& registry)
 		"undo (the transaction says reversible: false).");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("channel"), stringProperty()},
-		{QStringLiteral("chain"), integerProperty()},
+		{QStringLiteral("chain"), integerProperty(std::numeric_limits<int>::lowest(),
+			std::numeric_limits<int>::max())},
 	}, {QStringLiteral("channel"), QStringLiteral("chain")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("channel"), stringProperty()},
@@ -263,7 +275,12 @@ void registerRackRemoveChain(ControlRegistry& registry)
 			&error);
 		if (channel == nullptr) { return error; }
 		Rack& rack = channel->m_rack;
-		const int index = chainArg(args);
+		int index = 0;
+		if (!chainArg(args, index))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'chain' must fit the supported integer range"));
+		}
 		if (index == 0)
 		{
 			return ControlResult::failure(ControlErrorKind::Refused,
@@ -314,7 +331,8 @@ void registerRackSetSelected(ControlRegistry& registry)
 		"ProjectJournal (an action checkpoint restores the previous selection).");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("channel"), stringProperty()},
-		{QStringLiteral("chain"), integerProperty()},
+		{QStringLiteral("chain"), integerProperty(std::numeric_limits<int>::lowest(),
+			std::numeric_limits<int>::max())},
 	}, {QStringLiteral("channel"), QStringLiteral("chain")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("channel"), stringProperty()},
@@ -329,7 +347,12 @@ void registerRackSetSelected(ControlRegistry& registry)
 			&error);
 		if (channel == nullptr) { return error; }
 		Rack& rack = channel->m_rack;
-		const int index = chainArg(args);
+		int index = 0;
+		if (!chainArg(args, index))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'chain' must fit the supported integer range"));
+		}
 		// The engine leaves a selection it cannot route UNWIRED rather than
 		// guessing (Rack::setSelectedChain); the surface refuses it instead, so
 		// a caller cannot ask for a chain nobody has and hear "ok".
@@ -342,26 +365,31 @@ void registerRackSetSelected(ControlRegistry& registry)
 
 		const int previous = rack.selectedChain();
 		const QString channelIdText = channelIdOf(channel);
-		addSelectorUndoStep(channelIdText, previous, index);
 		rack.setSelectedChain(index);
+		const int selected = rack.selectedChain();
+		const bool changed = previous != selected;
+		if (changed) { addSelectorUndoStep(channelIdText, previous, selected); }
 
 		QJsonArray routed;
 		for (const int routedIndex : rack.routedChains()) { routed.append(routedIndex); }
 		QJsonObject result;
 		result.insert(QStringLiteral("channel"), channelIdText);
-		result.insert(QStringLiteral("selected"), rack.selectedChain());
+		result.insert(QStringLiteral("selected"), selected);
 		result.insert(QStringLiteral("previous"), previous);
 		result.insert(QStringLiteral("routed"), routed);
-		QJsonObject beforeState;
-		beforeState.insert(QStringLiteral("selected"), previous);
-		result.insert(QStringLiteral("__transaction"),
-			transactionPayload(beforeState, QStringLiteral("rack.set_selected"),
-				QJsonObject{{QStringLiteral("channel"), channelIdText},
-					{QStringLiteral("chain"), previous}},
-				true,
-				QStringLiteral("action checkpoint: the recorded undo step restores the "
-					"previous selection on the rack (the selection is a scalar the rack owns, "
-					"not a JournallingObject, so the inverse is the operation)")));
+		if (changed)
+		{
+			QJsonObject beforeState;
+			beforeState.insert(QStringLiteral("selected"), previous);
+			result.insert(QStringLiteral("__transaction"),
+				transactionPayload(beforeState, QStringLiteral("rack.set_selected"),
+					QJsonObject{{QStringLiteral("channel"), channelIdText},
+						{QStringLiteral("chain"), previous}},
+					true,
+					QStringLiteral("action checkpoint: the recorded undo step restores the "
+						"previous selection on the rack (the selection is a scalar the rack owns, "
+						"not a JournallingObject, so the inverse is the operation)")));
+		}
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);

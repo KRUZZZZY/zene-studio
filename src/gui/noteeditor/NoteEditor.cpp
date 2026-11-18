@@ -42,11 +42,13 @@
 #include "ControllerLaneView.h"
 #include "DesignTokens.h"
 #include "InstrumentTrack.h"
+#include "ItemList.h"
 #include "MidiClip.h"
 #include "Note.h"
 #include "NoteCanvas.h"
 #include "NoteEditorParts.h"
 #include "Piano.h"
+#include "ShellChrome.h"
 #include "ShellSelection.h"
 #include "Engine.h"
 #include "Song.h"
@@ -58,6 +60,16 @@ namespace lmms::gui
 
 namespace
 {
+
+//! The rows of the grid at least partly on screen, for describe()'s visible row range.
+int visibleRows(const NoteGrid& grid)
+{
+	if (grid.rowCount() <= 0) { return 0; }
+	const int rowHeight = std::max(1, grid.rowHeight());
+	const int first = grid.scrollY() / rowHeight;
+	const int last = std::min(grid.rowCount() - 1, (grid.scrollY() + std::max(1, grid.viewportHeight()) - 1) / rowHeight);
+	return std::max(0, last - first + 1);
+}
 
 //! The header's title: the clip's name, elided in the middle to the label's width, with the
 //! whole name and its track in the tooltip.
@@ -107,17 +119,32 @@ void NoteEditor::updatePlayhead(bool always)
 	const Song* song = Engine::getSong();
 	if (m_state.clip == nullptr || song == nullptr || (!always && !song->isPlaying()))
 	{
-		if (!always) { m_canvas->setPlayhead(-1); }
+		if (!always) { showPlayhead(-1); }
 		return;
 	}
 	const int tick = song->getPlayPos(Song::PlayMode::Song).getTicks() - m_state.clip->startPosition().getTicks();
-	m_canvas->setPlayhead(tick >= 0 && tick <= m_state.clip->length().getTicks() ? tick : -1);
+	showPlayhead(tick >= 0 && tick <= m_state.clip->length().getTicks() ? tick : -1);
+}
+
+void NoteEditor::showPlayhead(int tick)
+{
+	if (tick == m_canvas->playhead()) { return; }
+	m_canvas->setPlayhead(tick);
+	// 0.5.0 theme 11: the lanes under the notes draw the same line.
+	m_lanes->update();
+	m_ccLane->update();
+}
+
+int NoteEditor::playheadX() const
+{
+	const int tick = m_canvas->playhead();
+	return tick < 0 ? -1 : static_cast<int>(m_state.grid.xOfTick(tick));
 }
 
 void NoteEditor::followScale()
 {
 	const control::ScaleContext& context = control::scaleContext();
-	if (context.root != m_scaleRoot || context.scale != m_scaleSeen) { readScale(); }
+	if (m_scaleDeferred || context.root != m_scaleRoot || context.scale != m_scaleSeen) { readScale(); }
 }
 
 NoteEditor::~NoteEditor()
@@ -146,6 +173,11 @@ void NoteEditor::buildBody()
 	grid->addWidget(m_canvas, 1, 1);
 	grid->addWidget(m_vScroll, 1, 2);
 	grid->addWidget(m_laneBox, 2, 0, 1, 1, Qt::AlignTop);
+	// Theme 10: under the lane chooser while it shows a controller curve, that lane's points as an editable list.
+	ShellButton* laneList = itemlists::listButton(QStringLiteral("controller"), this, body);
+	laneList->hide();
+	connect(this, &NoteEditor::stateChanged, laneList, [this, laneList]() { laneList->setVisible(!m_state.controllerLane.isEmpty()); });
+	grid->addWidget(laneList, 2, 0, 1, 1, Qt::AlignBottom | Qt::AlignLeft);
 	grid->addWidget(m_lanes, 2, 1);
 	grid->addWidget(m_ccLane, 2, 1);
 	grid->addWidget(m_hScroll, 3, 1);
@@ -250,6 +282,7 @@ void NoteEditor::setTool(NoteTool tool)
 	{
 		if (action->data().toInt() == static_cast<int>(tool)) { action->setChecked(true); }
 	}
+	if (m_canvas != nullptr) { m_canvas->refreshCursor(); }  // at once, without waiting for the pointer to move
 	emit stateChanged();
 }
 
@@ -339,17 +372,48 @@ void NoteEditor::setZoom(double pixelsPerTick)
 void NoteEditor::zoomToFit()
 {
 	if (m_state.clip == nullptr) { return; }
+	NoteGrid& grid = m_state.grid;
+	grid.setViewport(std::max(1, m_canvas->width()), std::max(1, m_canvas->height()));
+	// Horizontal: the clip's length fills the note area (a short clip still gets a bar's room).
 	const int length = std::max<int>(DefaultTicksPerBar, m_state.clip->length().getTicks());
-	m_state.grid.setPixelsPerTick(std::max(1, m_canvas->width() - 16) / static_cast<double>(length));
-	m_state.grid.setScrollTicks(0);
+	grid.setPixelsPerTick(std::max(1, m_canvas->width() - 16) / static_cast<double>(length));
+	grid.setScrollTicks(0);
+	// Vertical: fit the used pitch range with a margin when it fits. A row height between the grid's
+	// minimum and 32 px keeps a narrow clip legible without turning a one-note clip into one huge row.
 	int lowest = 127;
-	int highest = 0;
+	int highest = -1;
 	for (const Note* note : m_state.clip->notes())
 	{
 		lowest = std::min(lowest, note->key());
 		highest = std::max(highest, note->key());
 	}
-	m_state.grid.centreOnKey(lowest <= highest ? (lowest + highest) / 2 : DefaultKey);
+	const int height = m_canvas->height();
+	if (height >= 60)
+	{
+		constexpr int minRowHeight = 6;  // NoteGrid::setRowHeight's own floor
+		constexpr int maxFitRowHeight = 32;
+		constexpr int emptyClipRowHeight = 14;
+		if (highest < lowest)
+		{
+			// An empty clip has no range to fit: the default key in a normal row height, never stale.
+			grid.setRowHeight(emptyClipRowHeight);
+			grid.centreOnKey(DefaultKey);
+		}
+		else
+		{
+			// A folded grid collapses unused pitches; fit the rows the musician can actually see.
+			const int lowRow = grid.rowOfKey(lowest);
+			const int highRow = grid.rowOfKey(highest);
+			const int rows = lowRow >= 0 && highRow >= 0
+				? std::max(lowRow, highRow) - std::min(lowRow, highRow) + 1 : highest - lowest + 1;
+			const int margin = std::clamp((rows + 3) / 8, 1, 6);
+			const int wanted = height / (rows + 2 * margin);
+			// A range too wide for the minimum row height is the fallback: the smallest readable row,
+			// centred on the range, so as many of its pitches as possible are visible.
+			grid.setRowHeight(wanted >= minRowHeight ? std::clamp(wanted, minRowHeight, maxFitRowHeight) : minRowHeight);
+			grid.centreOnKey((lowest + highest) / 2);
+		}
+	}
 	emit stateChanged();
 }
 
@@ -428,7 +492,10 @@ QJsonObject NoteEditor::describe() const
 		{QStringLiteral("zoom"), g.pixelsPerTick()},
 		{QStringLiteral("scroll_ticks"), g.scrollTicks()},
 		{QStringLiteral("scroll_y"), g.scrollY()},
+		{QStringLiteral("row_height"), g.rowHeight()},
 		{QStringLiteral("top_key"), g.keyAtY(0)},
+		{QStringLiteral("bottom_key"), g.keyAtY(std::max(0, g.viewportHeight() - 1))},
+		{QStringLiteral("visible_rows"), visibleRows(g)},
 		{QStringLiteral("visible_notes"), m_canvas->visibleRange().second - m_canvas->visibleRange().first},
 	};
 }

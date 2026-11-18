@@ -23,8 +23,14 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QObject>
+#include <QRegularExpression>
 #include <QTemporaryDir>
 #include <QtTest>
+
+#if defined(Q_OS_UNIX)
+#include <signal.h>
+#include <sys/resource.h>
+#endif
 
 #include "ConfigManager.h"
 
@@ -55,6 +61,29 @@ QByteArray readFile( const QString & path )
 	if( !f.open( QIODevice::ReadOnly ) ) { return QByteArray(); }
 	return f.readAll();
 }
+
+#if defined(Q_OS_UNIX)
+bool saveWithFileSizeLimit( ConfigManager & configManager )
+{
+	struct rlimit originalLimit;
+	if( getrlimit( RLIMIT_FSIZE, &originalLimit ) != 0 ) { return false; }
+
+	struct sigaction originalAction {};
+	struct sigaction ignoreAction {};
+	ignoreAction.sa_handler = SIG_IGN;
+	sigemptyset( &ignoreAction.sa_mask );
+	if( sigaction( SIGXFSZ, &ignoreAction, &originalAction ) != 0 ) { return false; }
+
+	struct rlimit limited = originalLimit;
+	limited.rlim_cur = 0;
+	const bool limitSet = setrlimit( RLIMIT_FSIZE, &limited ) == 0;
+	if( limitSet ) { configManager.saveConfigFile(); }
+
+	const bool limitRestored = setrlimit( RLIMIT_FSIZE, &originalLimit ) == 0;
+	const bool signalRestored = sigaction( SIGXFSZ, &originalAction, nullptr ) == 0;
+	return limitSet && limitRestored && signalRestored;
+}
+#endif
 
 } // namespace
 
@@ -176,6 +205,68 @@ private slots:
 		QVERIFY( !mixer.isNull() );
 		QCOMPARE( mixer.attribute( "audiodev" ), QStringLiteral( "PulseAudio" ) );
 		QCOMPARE( mixer.attribute( "samplerate" ), QStringLiteral( "44100" ) );
+	}
+
+	// A config that does not parse must be reported, and the shutdown save must
+	// not replace it with defaults: the file keeps the settings the user has.
+	void malformedConfigIsReportedAndNotOverwritten()
+	{
+		QTemporaryDir tmp;
+		QVERIFY( tmp.isValid() );
+		const QString configPath = tmp.path() + "/.zenestudio.xml";
+		const QByteArray malformed = "<zene version=\"1.0.99\" configversion=\"3\"><mixer audiodev=\"saved\"\n";
+		QVERIFY( writeFile( configPath, malformed ) );
+
+		auto * configManager = ConfigManager::inst();
+		QTest::ignoreMessage( QtWarningMsg, QRegularExpression( QStringLiteral( "Error while parsing configuration file" ) ) );
+		configManager->loadConfigFile( configPath );
+		configManager->saveConfigFile();
+
+		QCOMPARE( readFile( configPath ), malformed );
+	}
+
+	// Loading a readable config again clears the unreadable mark, so its next save
+	// is written as usual.
+	void readableReloadClearsTheUnreadableMark()
+	{
+		QTemporaryDir tmp;
+		QVERIFY( tmp.isValid() );
+		const QString badPath = tmp.path() + "/bad.xml";
+		const QString goodPath = tmp.path() + "/zene.xml";
+		const QByteArray malformed = "<zene version=\"1.0.99\" configversion=\"3\"><mixer audiodev=\"saved\"\n";
+		const QByteArray good = "<zene version=\"1.0.99\" configversion=\"3\"/>\n";
+		QVERIFY( writeFile( badPath, malformed ) );
+		QVERIFY( writeFile( goodPath, good ) );
+
+		auto * configManager = ConfigManager::inst();
+		QTest::ignoreMessage( QtWarningMsg, QRegularExpression( QStringLiteral( "Error while parsing configuration file" ) ) );
+		configManager->loadConfigFile( badPath );
+		configManager->loadConfigFile( goodPath );
+		configManager->saveConfigFile();
+
+		QVERIFY2( readFile( goodPath ).startsWith( "<?xml" ), "a readable config must be saved again" );
+	}
+
+	void failedConfigWritePreservesExistingFile()
+	{
+#if defined(Q_OS_UNIX)
+		QTemporaryDir tmp;
+		QVERIFY( tmp.isValid() );
+		const QString configPath = tmp.path() + "/.zenestudio.xml";
+		const QString workingDir = tmp.path() + "/working";
+		QVERIFY( QDir().mkpath( workingDir ) );
+		const QByteArray original = ( QStringLiteral(
+			"<zene version=\"1.0.99\" configversion=\"3\"><mixer audiodev=\"saved\"/>"
+			"<paths workingdir=\"") + workingDir + QStringLiteral( "\"/></zene>\n" ) ).toUtf8();
+		QVERIFY( writeFile( configPath, original ) );
+
+		auto * configManager = ConfigManager::inst();
+		configManager->loadConfigFile( configPath );
+		QVERIFY( saveWithFileSizeLimit( *configManager ) );
+		QCOMPARE( readFile( configPath ), original );
+#else
+		QSKIP( "RLIMIT_FSIZE is needed to induce a deterministic write failure" );
+#endif
 	}
 };
 

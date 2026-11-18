@@ -40,6 +40,8 @@
 
 #include <QByteArray>
 #include <QCryptographicHash>
+#include <QDomDocument>
+#include <QDomElement>
 #include <QFile>
 #include <QString>
 
@@ -79,9 +81,25 @@ class LiveScaleEffect : public Effect
 public:
 	LiveScaleEffect(Model* parent, float left, float right) :
 		Effect{&s_descriptor, parent, nullptr},
+		m_chain(static_cast<EffectChain*>(parent)),
 		m_left(left),
 		m_right(right)
 	{
+	}
+
+	LiveScaleEffect(Model* parent, float left, float right, bool* clearedBeforeDelete) :
+		LiveScaleEffect(parent, left, right)
+	{
+		m_clearedBeforeDelete = clearedBeforeDelete;
+	}
+
+	~LiveScaleEffect() override
+	{
+		if (m_clearedBeforeDelete != nullptr)
+		{
+			*m_clearedBeforeDelete = !m_chain->routesThroughGraph()
+				&& m_chain->routingGraph().nodeCount() == 0;
+		}
 	}
 
 	EffectControls* controls() override { return nullptr; }
@@ -98,8 +116,10 @@ protected:
 	}
 
 private:
+	EffectChain* m_chain;
 	float m_left;
 	float m_right;
+	bool* m_clearedBeforeDelete = nullptr;
 
 	static const Plugin::Descriptor s_descriptor;
 };
@@ -181,6 +201,18 @@ int inputNodeId(const RoutingGraph& graph)
 		if (!fed) { return connection.sourceNode; }
 	}
 	return -1;
+}
+
+//! Set by loadSettingsProbe() from inside EffectChain::loadSettings().
+bool s_guardHeldDuringLoad = false;
+
+//! Test seam: records whether loadSettings() held the model-change guard at
+//! the point where the old chain has been cleared and the restored list is
+//! about to be installed.
+void loadSettingsProbe()
+{
+	auto* engine = Engine::audioEngine();
+	s_guardHeldDuringLoad = engine != nullptr && engine->isChangeInModelHeld();
 }
 
 } // namespace
@@ -296,6 +328,51 @@ private slots:
 		QVERIFY(!empty.routesThroughGraph());
 		QCOMPARE(empty.routingGraph().nodeCount(), 0);
 		QVERIFY(!empty.routingGraph().isPrepared());
+	}
+
+	//! Clear disconnects graph nodes while their Effect targets are still alive.
+	void clearDropsRoutingNodesBeforeDestroyingEffects()
+	{
+		EffectChain chain{nullptr};
+		bool clearedBeforeDelete = false;
+		chain.appendEffect(new LiveScaleEffect(&chain, 1.0f, 1.0f, &clearedBeforeDelete));
+		QVERIFY(chain.routesThroughGraph());
+		QCOMPARE(chain.routingGraph().nodeCount(), 2);
+
+		chain.clear();
+		QVERIFY2(clearedBeforeDelete, "the graph still had nodes when its effect was destroyed");
+		QVERIFY(!chain.routesThroughGraph());
+		QCOMPARE(chain.routingGraph().nodeCount(), 0);
+	}
+
+	//! new-p14-98: loading a chain is a topology edit like append/remove/clear.
+	//! Its list and graph rebuild must sit inside the same model-change guard,
+	//! so a render period cannot start between clear() and the restored list.
+	void loadSettingsHoldsTheChangeGuardAcrossTheRebuild()
+	{
+		EffectChain chain{nullptr};
+
+		// A name that resolves to no plug-in takes the loader's DummyEffect
+		// branch: the effect still enters m_effects and the graph is still
+		// rebuilt, without depending on a built-in module being found.
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("fxchain"));
+		root.setAttribute(QStringLiteral("numofeffects"), 1);
+		root.setAttribute(QStringLiteral("enabled"), 1);
+		QDomElement effect = doc.createElement(QStringLiteral("effect"));
+		effect.setAttribute(QStringLiteral("name"), QStringLiteral("new-p14-98-no-such-effect"));
+		root.appendChild(effect);
+		doc.appendChild(root);
+
+		s_guardHeldDuringLoad = false;
+		EffectChain::setLoadSettingsProbe(&loadSettingsProbe);
+		chain.loadSettings(root);
+		EffectChain::setLoadSettingsProbe(nullptr);
+
+		QVERIFY2(s_guardHeldDuringLoad,
+			"loadSettings rebuilt the effect list and graph outside the model-change guard");
+		QCOMPARE(chain.effects().size(), std::size_t{1});
+		QVERIFY(chain.routesThroughGraph());
 	}
 
 	//! Liveness: re-directing a connection changes the render, and changes it by

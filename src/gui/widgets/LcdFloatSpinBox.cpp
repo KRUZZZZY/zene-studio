@@ -43,7 +43,6 @@
 #include "DesignTokens.h"
 #include "embed.h"
 #include "GuiApplication.h"
-#include "FontHelper.h"
 #include "KeyboardShortcuts.h"
 #include "MainWindow.h"
 #include "lmms_math.h"
@@ -107,8 +106,32 @@ void LcdFloatSpinBox::layoutSetup(const QString &style)
 	outerLayout->setContentsMargins(0, 0, 0, 0);
 	outerLayout->setSizeConstraint(QLayout::SetFixedSize);
 	this->setLayout(outerLayout);
-	this->setFixedHeight(tokens::size::target + tokens::space::md);  // the field (a target's height) and the label's line
+	m_fieldWidth = outerLayout->sizeHint().width();
+	updateSize();
 	setFocusPolicy(Qt::TabFocus);  // 0.5.0 (theme 10): Tab reaches it; a click still leaves focus where it was
+}
+
+
+void LcdFloatSpinBox::setLabel(const QString& label)
+{
+	m_label = label;
+	updateSize();
+}
+
+
+void LcdFloatSpinBox::updateSize()
+{
+	// The caption is painted in the interface font, not the digits' font: reserve its
+	// own line and width so a label such as "BASE NOTE FREQ" is never clipped or laid
+	// over its neighbour in the Microtuner's keymap range.
+	const QFontMetrics labelMetrics(tokens::font(tokens::TextRole::Caption));
+	const int labelWidth = m_label.isEmpty() ? 0
+		: labelMetrics.horizontalAdvance(m_label) + 2 * tokens::space::xxs;
+	const int labelHeight = m_label.isEmpty() ? tokens::space::md
+		: qMax(tokens::space::md, labelMetrics.height());
+	const int fieldHeight = qMax(m_wholeDisplay.height(), tokens::size::target);
+	setFixedWidth(qMax(m_fieldWidth, labelWidth));
+	setFixedHeight(fieldHeight + labelHeight);
 }
 
 
@@ -194,12 +217,19 @@ void LcdFloatSpinBox::mouseReleaseEvent(QMouseEvent*)
 
 void LcdFloatSpinBox::wheelEvent(QWheelEvent *event)
 {
+	if (event->angleDelta().y() == 0)
+	{
+		event->ignore();
+		return;
+	}
+
 	// switch between integer and fractional step based on cursor position
 	if (event->position().toPoint().x() < m_wholeDisplay.width()) { m_intStep = true; }
 	else { m_intStep = false; }
 
 	event->accept();
-	model()->setValue(model()->value() + ((event->angleDelta().y() > 0) ? 1 : -1) * getStep());
+	const int direction = (event->angleDelta().y() > 0 ? 1 : -1) * (event->inverted() ? -1 : 1);
+	model()->setValue(model()->value() + direction * getStep());
 	emit manualChange();
 }
 
@@ -268,11 +298,15 @@ void LcdFloatSpinBox::paintEvent(QPaintEvent*)
 	// Label
 	if (!m_label.isEmpty())
 	{
-		p.setFont(adjustedToPixelSize(p.font(), DEFAULT_FONT_SIZE));
+		// The same font the width and height were reserved for (updateSize): the label
+		// sits in its own line under the field, aligned bottom so ascenders and
+		// descenders stay inside the widget.
+		p.setFont(tokens::font(tokens::TextRole::Caption));
+		const QRect labelRect(0, m_wholeDisplay.height(), width(), height() - m_wholeDisplay.height());
 		p.setPen(m_wholeDisplay.textShadowColor());
-		p.drawText(width() / 2 - p.fontMetrics().boundingRect(m_label).width() / 2 + 1, height(), m_label);
+		p.drawText(labelRect.translated(1, 1), Qt::AlignHCenter | Qt::AlignBottom, m_label);
 		p.setPen(m_wholeDisplay.textColor());
-		p.drawText(width() / 2 - p.fontMetrics().boundingRect(m_label).width() / 2, height() - 1, m_label);
+		p.drawText(labelRect, Qt::AlignHCenter | Qt::AlignBottom, m_label);
 	}
 }
 

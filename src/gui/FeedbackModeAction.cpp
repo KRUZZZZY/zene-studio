@@ -66,17 +66,21 @@ QAction* addFeedbackModeAction(QMenu* menu, std::function<void()> refresh)
 	action->setData(QStringLiteral("feedback.enable"));
 	action->setToolTip(QMenu::tr("Let a send close a loop - it is delayed by one period - while plugin delay "
 		"compensation is suspended. Turning this off deletes every loop-closing send"));
-	QObject::connect(action, &QAction::triggered, menu, [refresh](bool on) {
+	QObject::connect(action, &QAction::triggered, menu, [action, refresh](bool on) {
 		if (!on)
 		{
 			const int loops = static_cast<int>(feedbackState().value(QStringLiteral("feedback_routes")).toArray().size());
 			if (loops > 0 && !ask(QMenu::tr("Turning feedback sends off deletes %n loop-closing send(s). Continue?", nullptr, loops)))
 			{
+				action->setChecked(true);  // the item unticked itself before this ran; feedback is still on
 				return;
 			}
 		}
-		ControlRegistry::instance()->invoke(on ? QStringLiteral("feedback.enable") : QStringLiteral("feedback.disable"),
-			QJsonObject{});
+		const ControlResult result = ControlRegistry::instance()->invoke(
+			on ? QStringLiteral("feedback.enable") : QStringLiteral("feedback.disable"), QJsonObject{});
+		// A checkable QAction has already toggled itself by the time this runs, so the tick is put back to
+		// what the command actually did - a declined disable and a refused write both leave feedback as it was.
+		action->setChecked(result.ok ? result.result.value(QStringLiteral("enabled")).toBool(on) : !on);
 		if (refresh) { refresh(); }
 	});
 	return action;

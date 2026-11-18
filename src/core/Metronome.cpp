@@ -36,6 +36,9 @@ void Metronome::processTick(int currentTick, int ticksPerBar, int beatsPerBar, s
 	if (currentTick % ticksPerBeat != 0 || (!m_active && !force)) { return; }
 	// 0.5.0 L03 (WF-081): whether it sounds now, its sound and level (MetronomeOptions.cpp; the defaults click as before).
 	if (!metronomeoptions::sounds(force, Engine::getSong()->isRecording())) { return; }
-	Engine::audioEngine()->addPlayHandle(metronomeoptions::click(currentTick % ticksPerBar == 0, bufferOffset));
+	if (PlayHandle* const click = metronomeoptions::click(currentTick % ticksPerBar == 0, bufferOffset))
+	{
+		Engine::audioEngine()->addPlayHandle(click);
+	}
 }
 } // namespace lmms

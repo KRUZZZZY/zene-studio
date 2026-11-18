@@ -26,8 +26,12 @@
 #include "AudioFileWave.h"
 #include "endian_handling.h"
 #include "AudioEngine.h"
+#include "SurroundExport.h"
+
+#include <QFileInfo>
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 
 
@@ -53,6 +57,40 @@ int ditherBitsFor(OutputSettings::BitDepth bitDepth, bool ditherEnabled)
 	case OutputSettings::BitDepth::Depth24Bit: return 24;
 	case OutputSettings::BitDepth::Depth32Bit:
 	default: return 0;
+	}
+}
+
+/*! Round-to-nearest variant of AudioDevice::convertToS16, used for the dithered
+ *  16-bit path only.
+ *
+ *  convertToS16 truncates toward zero. Truncation discards every dither offset
+ *  smaller than one LSB, so at digital silence - or at any input below half an
+ *  LSB - the TPDF noise is quantised straight back out again and the exported
+ *  bytes carry no dither at all. Rounding to nearest instead keeps the offsets
+ *  that push a sample across the decision threshold. Clip and scale are
+ *  identical to convertToS16, and the byte order matches, so the only change is
+ *  where a half-way value lands.
+ */
+int sampleRoundedToS16(float value)
+{
+	return static_cast<int>(std::lround(AudioEngine::clip(value) * OUTPUT_SAMPLE_MULTIPLIER));
+}
+
+void convertDitheredToS16(const SampleFrame* _ab,
+						  const f_cnt_t _frames,
+						  const ch_cnt_t _channels,
+						  int_sample_t * _output_buffer,
+						  const bool _convert_endian)
+{
+	for( f_cnt_t frame = 0; frame < _frames; ++frame )
+	{
+		for( ch_cnt_t chnl = 0; chnl < _channels; ++chnl )
+		{
+			auto temp = static_cast<int_sample_t>(sampleRoundedToS16(_ab[frame][chnl]));
+
+			( _output_buffer + frame * _channels )[chnl] = _convert_endian ?
+					( ( temp & 0x00ff ) << 8 | ( temp & 0xff00 ) >> 8 ) : temp;
+		}
 	}
 }
 
@@ -88,7 +126,10 @@ bool AudioFileWave::startEncoding()
 	m_si.sections = 1;
 	m_si.seekable = 0;
 
-	m_si.format = SF_FORMAT_WAV;
+	// 0.5.0 F7: more than two channels (a surround export) is WAVE_FORMAT_EXTENSIBLE, which carries the
+	// speakers' mask; libsndfile's SF_FORMAT_WAV would write a plain PCM header with no mask. A stereo
+	// file is the SF_FORMAT_WAV it always was.
+	m_si.format = channels() > DEFAULT_CHANNELS ? SF_FORMAT_WAVEX : SF_FORMAT_WAV;
 
 	switch( getOutputSettings().getBitDepth() )
 	{
@@ -112,6 +153,11 @@ bool AudioFileWave::startEncoding()
 		qWarning("Error: AudioFileWave::startEncoding: %s", sf_strerror(nullptr));
 		return false;
 	}
+	if (!setChannelMap())
+	{
+		qWarning("Error: AudioFileWave::startEncoding: no channel map for %d channels", static_cast<int>(channels()));
+		return false;
+	}
 
 	// Prevent fold overs when encountering clipped data
 	sf_command(m_sf, SFC_SET_CLIPPING, nullptr, SF_TRUE);
@@ -121,10 +167,12 @@ bool AudioFileWave::startEncoding()
 	return true;
 }
 
-void AudioFileWave::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
+bool AudioFileWave::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
 {
 	OutputSettings::BitDepth bitDepth = getOutputSettings().getBitDepth();
 	const int ditherBits = ditherBitsFor(bitDepth, getOutputSettings().dither());
+
+	bool ok = true;
 
 	if( bitDepth == OutputSettings::BitDepth::Depth32Bit || bitDepth == OutputSettings::BitDepth::Depth24Bit )
 	{
@@ -144,7 +192,13 @@ void AudioFileWave::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
 		{
 			m_dither.ditherInterleaved(buf, static_cast<std::size_t>(_frames) * channels(), ditherBits);
 		}
-		sf_writef_float( m_sf, buf, _frames );
+		const sf_count_t written = sf_writef_float( m_sf, buf, _frames );
+		m_framesWritten += written;
+		if (written != static_cast<sf_count_t>(_frames))
+		{
+			m_writeError = true;
+			ok = false;
+		}
 		delete[] buf;
 	}
 	else
@@ -164,27 +218,199 @@ void AudioFileWave::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
 			auto staged = std::make_unique<SampleFrame[]>(_frames);
 			std::copy_n(_ab, _frames, staged.get());
 			m_dither.ditherFrames(staged.get(), _frames, ditherBits);
-			convertToS16(staged.get(), _frames, buf, !isLittleEndian());
+			convertDitheredToS16(staged.get(), _frames, channels(), buf, !isLittleEndian());
 		}
 		else
 		{
 			convertToS16(_ab, _frames, buf, !isLittleEndian());
 		}
 
-		sf_writef_short( m_sf, buf, _frames );
+		const sf_count_t written = sf_writef_short( m_sf, buf, _frames );
+		m_framesWritten += written;
+		if (written != static_cast<sf_count_t>(_frames))
+		{
+			m_writeError = true;
+			ok = false;
+		}
 		delete[] buf;
 	}
+
+	return ok;
 }
 
 
 
 
-void AudioFileWave::finishEncoding()
+bool AudioFileWave::setChannelMap()
 {
-	if( m_sf )
+	if (channels() <= DEFAULT_CHANNELS) { return true; }
+	const surround::Format format = surroundexport::formatForChannels(channels(), surroundexport::masterFormat());
+	if (format == surround::Format::Stereo) { return false; }
+	// A discrete layout has no speaker mask. libsndfile refuses an all-INVALID map and writes a
+	// count-based default mask for some counts (4/6/8), so setChannelMap lets it write and
+	// writeZeroChannelMask() clears the field after the samples are flushed.
+	if (surround::isDiscrete(format)) { m_zeroChannelMask = true; return true; }
+	// Before any audio: libsndfile writes the mask into the header it has not written yet.
+	auto map = surroundexport::sndfileChannelMap(format);
+	return sf_command(m_sf, SFC_SET_CHANNEL_MAP_INFO, map.data(),
+		static_cast<int>(channels() * sizeof(int))) == SF_TRUE;
+}
+
+/*! 0.5.0 F7 (MX-060): a surround export's interleaved frames. The same depths, the same dither and the
+ *  same 16-bit quantisation as writeBuffer() - per sample instead of per SampleFrame - except that the
+ *  16-bit samples go to sf_writef_short in the host's own byte order, which is what it takes. */
+bool AudioFileWave::writeInterleaved(float* samples, const f_cnt_t frames)
+{
+	const auto count = static_cast<std::size_t>(frames) * channels();
+	const OutputSettings::BitDepth bitDepth = getOutputSettings().getBitDepth();
+	const int ditherBits = ditherBitsFor(bitDepth, getOutputSettings().dither());
+	const bool shaped = bitDepth == OutputSettings::BitDepth::Depth16Bit
+		&& getOutputSettings().ditherMode() == DitherMode::NoiseShaped;
+	if (ditherBits > 0 && !shaped) { m_dither.ditherInterleaved(samples, count, ditherBits); }
+	if (bitDepth == OutputSettings::BitDepth::Depth32Bit || bitDepth == OutputSettings::BitDepth::Depth24Bit)
 	{
-		sf_close( m_sf );
+		const sf_count_t written = sf_writef_float(m_sf, samples, static_cast<sf_count_t>(frames));
+		m_framesWritten += written;
+		const bool ok = written == static_cast<sf_count_t>(frames);
+		if (!ok) { m_writeError = true; }
+		return ok;
 	}
+	m_interleaved16.resize(count);
+	for (std::size_t i = 0; i < count; ++i)
+	{
+		m_interleaved16[i] = shaped ? m_noiseShaper.quantise16(samples[i], static_cast<int>(i % channels()))
+			: static_cast<int_sample_t>(AudioEngine::clip(samples[i]) * OUTPUT_SAMPLE_MULTIPLIER);
+	}
+	const sf_count_t written = sf_writef_short(m_sf, m_interleaved16.data(), static_cast<sf_count_t>(frames));
+	m_framesWritten += written;
+	const bool ok = written == static_cast<sf_count_t>(frames);
+	if (!ok) { m_writeError = true; }
+	return ok;
+}
+
+
+
+
+sf_count_t AudioFileWave::expectedDataBytes() const
+{
+	sf_count_t bytesPerSample = 2;
+	switch (getOutputSettings().getBitDepth())
+	{
+	case OutputSettings::BitDepth::Depth24Bit: bytesPerSample = 3; break;
+	case OutputSettings::BitDepth::Depth32Bit: bytesPerSample = 4; break;
+	case OutputSettings::BitDepth::Depth16Bit:
+	default: break;
+	}
+	return m_framesWritten * channels() * bytesPerSample;
+}
+
+
+namespace
+{
+
+//! Little-endian u32 at @a at, the field order every RIFF chunk uses.
+quint32 riffU32(const QByteArray& bytes, int at)
+{
+	return static_cast<quint32>(static_cast<unsigned char>(bytes.at(at)))
+		| (static_cast<quint32>(static_cast<unsigned char>(bytes.at(at + 1))) << 8)
+		| (static_cast<quint32>(static_cast<unsigned char>(bytes.at(at + 2))) << 16)
+		| (static_cast<quint32>(static_cast<unsigned char>(bytes.at(at + 3))) << 24);
+}
+
+} // namespace
+
+
+bool AudioFileWave::headerHoldsEveryFrame(sf_count_t expectedData) const
+{
+	QFile file(outputFile());
+	if (!file.open(QIODevice::ReadOnly)) { return false; }
+	const QByteArray head = file.read(12);
+	if (head.size() < 12 || head.left(4) != "RIFF" || head.mid(8, 4) != "WAVE") { return false; }
+	const quint32 riffSize = riffU32(head, 4);
+
+	// Walk the chunk list to the data chunk, the way a reader does. The RIFF size and the data
+	// chunk's own size are exactly the two fields sf_close() rewrites in place; a partial rewrite
+	// leaves either stale while the file's LENGTH is untouched, so the fields - not the size - are
+	// the evidence. Bounded: a real WAV has a handful of chunks before data.
+	quint32 dataOffset = 0;
+	quint32 dataSize = 0;
+	bool sawData = false;
+	qint64 at = 12;
+	for (int chunks = 0; chunks < 64; ++chunks)
+	{
+		if (!file.seek(at)) { break; }
+		const QByteArray chunk = file.read(8);
+		if (chunk.size() < 8) { break; }
+		const quint32 size = riffU32(chunk, 4);
+		if (chunk.left(4) == "data")
+		{
+			dataOffset = static_cast<quint32>(at);
+			dataSize = size;
+			sawData = true;
+			break;
+		}
+		if (size == 0) { break; }  // a chunk list a reader would reject: nothing to prove
+		at += 8 + static_cast<qint64>(size) + static_cast<qint64>(size & 1u);
+	}
+	if (!sawData) { return false; }
+
+	// The data chunk's size must account for every frame the writes reported; a stale field is short.
+	if (static_cast<sf_count_t>(dataSize) < expectedData) { return false; }
+	// And the RIFF field must cover the data chunk header plus its payload.
+	const quint64 riffNeeds = static_cast<quint64>(dataOffset) + 8u + static_cast<quint64>(expectedData);
+	return static_cast<quint64>(riffSize) + 8u >= riffNeeds;
+}
+
+
+bool AudioFileWave::finishEncoding()
+{
+	// Already finalised (a render called this, the destructor calls it again): report the state
+	// the file was left in, and touch nothing - the file, when it was broken, is already gone.
+	if (!m_sf) { return !m_writeError; }
+
+	const sf_count_t expectedData = expectedDataBytes();
+	if (sf_close( m_sf ) != 0)
+	{
+		m_writeError = true;
+	}
+	m_sf = nullptr;
+	if (m_zeroChannelMask && !writeZeroChannelMask())
+	{
+		// The speaker-mask patch is part of finalising a discrete WAVEX file: a patch that did not
+		// land leaves a header a reader would take for a layout the export never wrote.
+		m_writeError = true;
+	}
+
+	// sf_close() reports success even for a header it could not rewrite completely
+	// (psf_fwrite() counts a partial write as a whole one), and such a partial rewrite does not
+	// change the file's length, so the header's own fields - not its size - are the evidence.
+	if (!headerHoldsEveryFrame(expectedData))
+	{
+		m_writeError = true;
+	}
+
+	if (m_writeError)
+	{
+		removeOutputFile();
+		return false;
+	}
+	return true;
+}
+
+bool AudioFileWave::writeZeroChannelMask()
+{
+	QFile file(outputFile());
+	if (!file.open(QIODevice::ReadWrite)) { return false; }
+	const QByteArray header = file.read(4096);
+	const int fmt = header.indexOf("fmt ");
+	// fmt chunk data begins at fmt + 8; dwChannelMask is field 20 of WAVE_FORMAT_EXTENSIBLE's fmt data.
+	if (fmt < 0 || fmt + 32 > header.size()) { return false; }
+	if (!file.seek(fmt + 28)) { return false; }
+	// QFile buffers, so write() alone is not evidence: a short write that QFile accepts into its
+	// buffer only fails at flush(). Both results are the answer.
+	const QByteArray zero(4, '\0');
+	if (file.write(zero) != zero.size()) { return false; }
+	return file.flush();
 }
 
 } // namespace lmms

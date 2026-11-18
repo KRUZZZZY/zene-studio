@@ -39,16 +39,22 @@
 
 #include <QtTest>
 
+#include <QDomDocument>
+#include <QDomElement>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QScopeGuard>
 #include <QString>
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "AllocationProbe.h"
+#include "AutomatableModel.h"
 #include "ControlRegistry.h"
+#include "ControlRackSupport.h"
 #include "ControlReversibility.h"
 #include "RackMacros.h"
 #include "RackTestSupport.h"
@@ -57,347 +63,137 @@
 
 using namespace racktest;
 
+namespace
+{
+
+//! What control.id_contract reports as the session's fx-<n> count.
+int fxIdCount()
+{
+	const ControlResult contract = revtest::run(QStringLiteral("control.id_contract"));
+	if (!contract.ok) { return -1; }
+	for (const QJsonValue& family : contract.result.value(QStringLiteral("families")).toArray())
+	{
+		const QJsonObject entry = family.toObject();
+		if (entry.value(QStringLiteral("prefix")).toString() == QLatin1String("fx-"))
+		{
+			return entry.value(QStringLiteral("count")).toInt();
+		}
+	}
+	return -1;
+}
+
+} // namespace
+
 class RackMacrosTest : public QObject
 {
 	Q_OBJECT
 
 private slots:
-	void initTestCase()
-	{
-		QString why;
-		QVERIFY2(initRackFixture(&why), qPrintable(why));
-	}
+	void initTestCase();
 
-	void cleanupTestCase() { teardownRackFixture(); }
+	void cleanupTestCase();
 
 	//! A macro writes the REAL model, through the window, exactly - on two
 	//! parameters whose ranges are deliberately different, including an
 	//! inverted window.
-	void macrosDriveParametersThroughTheirWindows()
-	{
-		RackMacros& macros = rackUnderTest().macros();
-		const int gainMacro = macros.addMacro(QStringLiteral("Gain sweep"), 0.0f);
-		QCOMPARE(gainMacro, 0);
-		QCOMPARE(macros.addTarget(gainMacro, targetOf(kGainName, 0.25f, 0.75f)), 0);
-		QCOMPARE(macros.addTarget(gainMacro, targetOf(kPanName, 0.0f, 1.0f)), 1);
-
-		FloatModel* const gain = gainModel();
-		FloatModel* const pan = panModel();
-		QVERIFY2(gain != nullptr, "the driven chain's 0..100 parameter was not found");
-		QVERIFY2(pan != nullptr, "the driven chain's -100..100 parameter was not found");
-		QCOMPARE(gain->value(), 50.0f);
-		QCOMPARE(pan->value(), 0.0f);
-
-		// value 0 -> the window's low end: a quarter of 0..100, all of -100..100.
-		QVERIFY(macros.setValue(gainMacro, 0.0f));
-		QCOMPARE(static_cast<int>(macros.apply(gainMacro, rackUnderTest()).size()), 2);
-		QCOMPARE(gain->value(), 25.0f);
-		QCOMPARE(pan->value(), kPanMinimum);
-		printEvidence("window-low",
-			QStringLiteral("value 0.0: gain (0..100, window 0.25..0.75) -> %1; pan (-100..100, "
-				"window 0..1) -> %2")
-				.arg(static_cast<double>(gain->value()))
-				.arg(static_cast<double>(pan->value())));
-
-		// value 0.5 -> the middle of the 0.25..0.75 window: half of 0..100.
-		QVERIFY(macros.setValue(gainMacro, 0.5f));
-		QCOMPARE(static_cast<int>(macros.apply(gainMacro, rackUnderTest()).size()), 2);
-		QCOMPARE(gain->value(), 50.0f);
-		QCOMPARE(pan->value(), 0.0f);
-
-		// value 1 -> the window's high end. The FRACTION is what carries: the
-		// same macro moves both ranges by the same share of their own span.
-		QVERIFY(macros.setValue(gainMacro, 1.0f));
-		QCOMPARE(static_cast<int>(macros.apply(gainMacro, rackUnderTest()).size()), 2);
-		QCOMPARE(gain->value(), 75.0f);
-		QCOMPARE(pan->value(), kPanMaximum);
-		printEvidence("window-arithmetic",
-			QStringLiteral("value 1.0: gain -> 75 (0.75 of 0..100); pan -> 100 (1.0 of -100..100)"));
-
-		// An inverted window (high < low) drives the other way, exactly.
-		const int inverted = macros.addMacro(QStringLiteral("Inverted"), 0.0f);
-		QCOMPARE(macros.addTarget(inverted, targetOf(kGainName, 0.75f, 0.25f)), 0);
-		QVERIFY(macros.setValue(inverted, 0.0f));
-		QCOMPARE(static_cast<int>(macros.apply(inverted, rackUnderTest()).size()), 1);
-		QCOMPARE(gain->value(), 75.0f);
-		QVERIFY(macros.setValue(inverted, 1.0f));
-		macros.apply(inverted, rackUnderTest());
-		QCOMPARE(gain->value(), 25.0f);
-		printEvidence("window-inverted",
-			QStringLiteral("window 0.75..0.25: value 0.0 -> 75, value 1.0 -> 25"));
-
-		// A value outside 0..1 is clamped by the macro, not silently applied.
-		QVERIFY(macros.setValue(inverted, 4.0f));
-		QCOMPARE(macros.macro(inverted)->value, 1.0f);
-
-		// Every write is reported with its previous value, which is what the
-		// command layer records as the inverse.
-		QVERIFY(macros.setValue(inverted, 0.0f));
-		const std::vector<RackMacroWrite> reported = macros.apply(inverted, rackUnderTest());
-		QCOMPARE(static_cast<int>(reported.size()), 1);
-		QCOMPARE(reported[0].previous, 25.0f);
-		QCOMPARE(reported[0].written, 75.0f);
-
-		// Back to one macro at its middle, so the later slots start from here.
-		QVERIFY(macros.removeMacro(inverted));
-		QVERIFY(macros.setValue(gainMacro, 0.5f));
-		macros.apply(gainMacro, rackUnderTest());
-		QCOMPARE(macros.macroCount(), 1);
-	}
+	void macrosDriveParametersThroughTheirWindows();
 
 	//! 0.5.0 L10 (MX-105): a target's curve shapes the response across its window, and is saved
 	//! only when it is not linear.
-	void aCurveShapesTheResponse()
-	{
-		QCOMPARE(shapeMacroValue(0.5f, 0.0f), 0.5f);
-		QVERIFY(std::abs(shapeMacroValue(0.5f, 1.0f) - std::pow(0.5f, 0.25f)) < 1e-5f);  // rises early
-		QVERIFY(std::abs(shapeMacroValue(0.5f, -1.0f) - 0.0625f) < 1e-5f);              // rises late
-		QCOMPARE(shapeMacroValue(1.0f, -1.0f), 1.0f);  // the ends stay where they are
-		RackMacroTarget bent = targetOf(kGainName, 0.0f, 1.0f);
-		bent.curve = -1.0f;
-		QVERIFY(isValidMacroTarget(bent));
-		RackMacros& macros = rackUnderTest().macros();
-		const int curved = macros.addMacro(QStringLiteral("Curved"), 0.5f);
-		QCOMPARE(macros.addTarget(curved, bent), 0);
-		macros.apply(curved, rackUnderTest());
-		QVERIFY(std::abs(gainModel()->value() - 6.25f) < 1e-3f);  // 0.5^4 of 0..100
-		QDomDocument doc;
-		QDomElement rack = doc.createElement(QStringLiteral("rack"));
-		doc.appendChild(rack);  // in the document, so its text holds what was saved
-		macros.saveSettings(doc, rack);
-		QVERIFY(doc.toString().contains(QStringLiteral("curve=\"-1\"")));
-		RackMacros reloaded;
-		reloaded.loadSettings(rack);
-		QCOMPARE(reloaded.macro(curved)->targets.front().curve, -1.0f);
-		bent.curve = 1.5f;
-		QVERIFY(!isValidMacroTarget(bent));
-		QVERIFY(macros.removeMacro(curved));
-		macros.apply(0, rackUnderTest());
-	}
+	void aCurveShapesTheResponse();
 
 	//! A target whose chain, effect or parameter is gone is SKIPPED, and the
 	//! applied count says so - it is never guessed at.
-	void aMacroSkipsTargetsItCannotResolve()
-	{
-		RackMacros& macros = rackUnderTest().macros();
-		RackMacroTarget gone = targetOf(kGainName, 0.0f, 1.0f);
-		gone.effect = 7;
+	void aMacroSkipsTargetsItCannotResolve();
 
-		const int macro = macros.addMacro(QStringLiteral("Half dead"), 1.0f);
-		QCOMPARE(macros.addTarget(macro, gone), 0);
-		QCOMPARE(macros.addTarget(macro, targetOf("NoSuchParameter", 0.0f, 1.0f)), 1);
-		QCOMPARE(macros.addTarget(macro, targetOf(kGainName, 0.0f, 1.0f)), 2);
+	//! A macro's value is a FINITE 0..1 scalar. std::clamp does not make a
+	//! nonfinite value one - every comparison against NaN is false, so clamp
+	//! hands NaN straight back - and QString reads a "nan" attribute as NaN,
+	//! so a project can carry one. Such a value is refused at every door that
+	//! stores it, and it never reaches a parameter model.
+	void aNonfiniteMacroValueIsRefused();
 
-		const std::vector<RackMacroWrite> writes = macros.apply(macro, rackUnderTest());
-		QCOMPARE(static_cast<int>(writes.size()), 1);
-		QCOMPARE(writes[0].written, kGainMaximum);
-		printEvidence("skipped-targets",
-			QStringLiteral("targets=3 applied=1 (a missing effect and an unknown parameter are "
-				"skipped, not guessed)"));
-		QVERIFY(macros.removeMacro(macro));
-	}
+	//! A macro target's window is a pair of fractions and a curve, and a NaN is
+	//! not a fraction: every comparison against NaN is false, so the range
+	//! checks let it through - and the applied fraction is then a NaN, which
+	//! lands in the parameter model.
+	void aNonfiniteMacroTargetNeverReachesAParameter();
+
+	//! A project may not carry a macro value or a target window outside the
+	//! 0..1 contract: the loader clamps the value into it and drops a window
+	//! that is not a fraction pair, instead of driving the parameter to its
+	//! maximum for every macro value. A project that is inside the contract
+	//! loads exactly as it did.
+	void aProjectLoadedMacroIsValidated();
 
 	//! With macros and zones configured the rack's own process() allocates
 	//! nothing: a macro is not on the audio path, and a zone's routing (0.5.0
 	//! E20) reads blocks prepared when the rack re-wired.
-	void configuringMacrosAndZonesLeavesTheAudioPathAllocatingNothing()
-	{
-		Rack& rack = rackUnderTest();
-		RackZone zone;
-		zone.lowKey = 60;
-		zone.highKey = 72;
-		zone.chain = kDrivenChain;
-		QCOMPARE(rack.zones().addZone(zone), 0);
-
-		QVERIFY2(rack.canProcessThroughRack(currentBus()),
-			"the rack is not on the path - the allocation claim would be vacuous");
-		QVERIFY(rack.macros().macroCount() > 0);
-		QVERIFY(rack.zones().zoneCount() > 0);
-
-		auto bus = currentBus();
-		// The first block may touch lazy internals; measure the second.
-		rack.processAudioBuffer(bus);
-
-		lmms::test::tlCountAllocations = true;
-		lmms::test::resetAllocationCount();
-		rack.processAudioBuffer(bus);
-		const std::uint64_t allocations = lmms::test::tlAllocationCount;
-		lmms::test::tlCountAllocations = false;
-
-		printEvidence("macro-zone-rack-allocations",
-			QStringLiteral("allocations=%1").arg(static_cast<qulonglong>(allocations)));
-		QCOMPARE(allocations, std::uint64_t{0});
-	}
+	void configuringMacrosAndZonesLeavesTheAudioPathAllocatingNothing();
 
 	//! The group is registered: every id exists, carries both schemas, and has
 	//! the SPEC A16 class the contract table states.
-	void theGroupIsRegisteredWithSchemasAndA16Classes()
-	{
-		ControlRegistry* registry = ControlRegistry::instance();
-		const struct
-		{
-			const char* id;
-			bool mutating;
-			const char* cls;
-		} expected[] = {
-			{"rack.get_state", false, "not_mutating"},
-			{"rack.add_chain", true, "true_inverse"},
-			{"rack.remove_chain", true, "snapshot"},
-			{"rack.set_selected", true, "true_inverse"},
-			{"rack.macro_add", true, "true_inverse"},
-			{"rack.macro_remove", true, "true_inverse"},
-			{"rack.macro_target_add", true, "true_inverse"},
-			{"rack.macro_target_remove", true, "true_inverse"},
-			{"rack.macro_set", true, "true_inverse"},
-			{"rack.zone_add", true, "true_inverse"},
-			{"rack.zone_remove", true, "true_inverse"},
-			{"rack.zone_resolve", false, "not_mutating"},
-		};
-
-		int checked = 0;
-		for (const auto& want : expected)
-		{
-			const QString id = QString::fromLatin1(want.id);
-			const ControlCommand* cmd = registry->command(id);
-			QVERIFY2(cmd != nullptr, qPrintable(id + " is not registered"));
-			QCOMPARE(cmd->group, QStringLiteral("rack"));
-			QVERIFY2(!cmd->argsSchema.isEmpty(), qPrintable(id + " has no args schema"));
-			QVERIFY2(!cmd->resultSchema.isEmpty(), qPrintable(id + " has no result schema"));
-			QVERIFY2(!cmd->description.isEmpty(), qPrintable(id + " has no description"));
-			QCOMPARE(cmd->mutating, want.mutating);
-			// The class comes from the ONE contract table, not from the handler:
-			// an id here with no row would be an unclassified command, which the
-			// anti-drift test refuses as well.
-			const control::ReversibilityEntry* entry =
-				control::ReversibilityTable::instance().lookup(id);
-			QVERIFY2(entry != nullptr, qPrintable(id + " has no reversibility row"));
-			QCOMPARE(control::reversibilityClassName(entry->cls), QString::fromLatin1(want.cls));
-			QVERIFY2(!entry->reason.isEmpty(), qPrintable(id + " has an empty reason"));
-			QVERIFY2(!entry->mechanism.isEmpty(), qPrintable(id + " has an empty mechanism"));
-			++checked;
-		}
-		printEvidence("group-registered",
-			QStringLiteral("commands=%1 mutating=10 read_only=2").arg(checked));
-	}
+	void theGroupIsRegisteredWithSchemasAndA16Classes();
 
 	//! The end-to-end path an agent takes: add a macro, bind a parameter, drive
 	//! it - then take it back with control.undo, which must restore BOTH the
 	//! macro's value and the parameter it wrote.
-	void theSurfaceCreatesDrivesAndUndoesAMacro()
-	{
-		FloatModel* const gain = gainModel();
-		QVERIFY2(gain != nullptr, "the driven chain's 0..100 parameter was not found");
-		gain->setValue(kGainMaximum);
-		const QString channel = underTestChannel();  // the id the fixture's channel carries, not kChannel
+	void theSurfaceCreatesDrivesAndUndoesAMacro();
 
-		const ControlResult state = revtest::run(QStringLiteral("rack.get_state"),
-			QJsonObject{{QStringLiteral("channel"), channel}});
-		QVERIFY2(state.ok, qPrintable(state.errorMessage));
-		QCOMPARE(state.result.value(QStringLiteral("chain_count")).toInt(), 2);
-		QVERIFY(state.result.value(QStringLiteral("macros")).toArray().size() >= 1);
-
-		const ControlResult added = revtest::run(QStringLiteral("rack.macro_add"),
-			{{QStringLiteral("channel"), channel},
-				{QStringLiteral("name"), QStringLiteral("Level")},
-				{QStringLiteral("value"), 0.0}});
-		QVERIFY2(added.ok, qPrintable(added.errorMessage));
-		const QString macro = added.result.value(QStringLiteral("macro")).toString();
-
-		const ControlResult bound = revtest::run(QStringLiteral("rack.macro_target_add"),
-			{{QStringLiteral("channel"), channel}, {QStringLiteral("macro"), macro},
-				{QStringLiteral("chain"), kDrivenChain}, {QStringLiteral("effect"), 0},
-				{QStringLiteral("parameter"), QString::fromLatin1(kGainName)},
-				{QStringLiteral("low"), 0.25}, {QStringLiteral("high"), 0.75}});
-		QVERIFY2(bound.ok, qPrintable(bound.errorMessage));
-		QCOMPARE(bound.result.value(QStringLiteral("target_index")).toInt(), 0);
-
-		const ControlResult driven = revtest::run(QStringLiteral("rack.macro_set"),
-			{{QStringLiteral("channel"), channel}, {QStringLiteral("macro"), macro},
-				{QStringLiteral("value"), 1.0}});
-		QVERIFY2(driven.ok, qPrintable(driven.errorMessage));
-		QCOMPARE(driven.result.value(QStringLiteral("applied")).toInt(), 1);
-		QCOMPARE(driven.result.value(QStringLiteral("skipped")).toInt(), 0);
-		QCOMPARE(gain->value(), 75.0f);
-		printEvidence("surface-macro-set",
-			QStringLiteral("gain 100 -> 75 through the window 0.25..0.75 at value 1.0"));
-
-		QCOMPARE(revtest::stateOf(QStringLiteral("rack.macro_set"))
-			.value(QStringLiteral("class")).toString(), QStringLiteral("true_inverse"));
-		QCOMPARE(revtest::stateOf(QStringLiteral("rack.macro_set"))
-			.value(QStringLiteral("reversible")).toBool(), true);
-
-		REV_UNDO_OR_FAIL();
-		QCOMPARE(gain->value(), kGainMaximum);
-		const ControlResult after = revtest::run(QStringLiteral("rack.get_state"),
-			QJsonObject{{QStringLiteral("channel"), channel}});
-		QJsonObject restored;
-		for (const QJsonValue& value : after.result.value(QStringLiteral("macros")).toArray())
-		{
-			if (value.toObject().value(QStringLiteral("macro")).toString() == macro)
-			{
-				restored = value.toObject();
-			}
-		}
-		QVERIFY2(!restored.isEmpty(), "the macro disappeared from the rack after the undo");
-		QCOMPARE(restored.value(QStringLiteral("value")).toDouble(), 0.0);
-		printEvidence("surface-macro-undo",
-			QStringLiteral("control.undo restored the macro to 0.0 and the parameter to 100"));
-	}
+	/*! control.id_contract's fx- count answers "how many fx- ids does this
+	 *  session have". A mixer channel carries devices on its own chain, on the
+	 *  rack's parallel chains and on its post-fader inserts - and all three hand
+	 *  out fx- ids (ControlDeviceSupport's rackChainEffect walks exactly them) -
+	 *  so the count must move when a device lands on any of the three. */
+	void theIdContractCountsEveryChainThatHandsOutFxIds();
 
 	//! Typed refusals: a caller is told what is wrong, and never gets "ok" for a
 	//! selection or a bind that cannot exist.
-	void theSurfaceRefusesWhatCannotExist()
-	{
-		const QString channel = underTestChannel();  // the id the fixture's channel carries, not kChannel
+	void theSurfaceRefusesWhatCannotExist();
 
-		const ControlResult noChannel = revtest::run(QStringLiteral("rack.macro_add"),
-			{{QStringLiteral("channel"), QStringLiteral("ch-99")},
-				{QStringLiteral("name"), QStringLiteral("nope")}});
-		QVERIFY(!noChannel.ok);
-		QCOMPARE(noChannel.errorKind, ControlErrorKind::NotFound);
+	//! Luna cluster 5257: removing a chain renumbers the macro targets that
+	//! named a LATER chain, and drops the ones that named the chain that is
+	//! gone. Without that, a target on the chain after the removed one drives
+	//! the wrong device - and a target on the removed chain drives whichever
+	//! chain slid into its index.
+	void removingAChainReindexesTheMacroTargets();
 
-		const ControlResult noName = revtest::run(QStringLiteral("rack.macro_add"),
-			{{QStringLiteral("channel"), channel}, {QStringLiteral("name"), QString()}});
-		QVERIFY(!noName.ok);
-		QCOMPARE(noName.errorKind, ControlErrorKind::InvalidArgs);
+	//! A macro/zone id that does not PARSE is a statement about the arguments,
+	//! not about the rack: "macro-x" is malformed in the same way a blank name
+	//! is, and resolveRackChannel already answers invalid_args for "ch-x". The
+	//! two cases must not share one not_found: a caller retrying on not_found
+	//! can never fix a typo, and a caller checking the rack's size from that
+	//! message is told a real rack question about a malformed string.
+	void malformedMacroAndZoneIdsAreInvalidArgs();
 
-		// A selected chain that does not exist is refused rather than left
-		// unwired: Rack::setSelectedChain would wire nothing at all.
-		const ControlResult badSelection = revtest::run(QStringLiteral("rack.set_selected"),
-			{{QStringLiteral("channel"), channel}, {QStringLiteral("chain"), 5}});
-		QVERIFY(!badSelection.ok);
-		QCOMPARE(badSelection.errorKind, ControlErrorKind::InvalidArgs);
+	//! Integer index fields must reject values that cannot be represented by
+	//! the handlers' int indices before any floating-point narrowing occurs.
+	void integerIndexArgumentsAreBoundedToInt();
 
-		// Chain 0 is the channel's own chain: it is not the rack's to remove.
-		const ControlResult removeBase = revtest::run(QStringLiteral("rack.remove_chain"),
-			{{QStringLiteral("channel"), channel}, {QStringLiteral("chain"), 0}});
-		QVERIFY(!removeBase.ok);
-		QCOMPARE(removeBase.errorKind, ControlErrorKind::Refused);
+	//! A repeated selector value is not an undo step of its own.
+	void aNoOpSelectionDoesNotConsumeUndo();
 
-		// A target that names no parameter is refused at BIND time, so a macro
-		// never carries one that can only fail.
-		const ControlResult badTarget = revtest::run(QStringLiteral("rack.macro_target_add"),
-			{{QStringLiteral("channel"), channel},
-				{QStringLiteral("macro"), QStringLiteral("macro-0")},
-				{QStringLiteral("chain"), kDrivenChain}, {QStringLiteral("effect"), 0},
-				{QStringLiteral("parameter"), QStringLiteral("NoSuchParameter")}});
-		QVERIFY(!badTarget.ok);
-		QCOMPARE(badTarget.errorKind, ControlErrorKind::InvalidArgs);
+	//! A repeated macro value with no changed target write is not an undo step.
+	void aNoOpMacroSetDoesNotConsumeUndo();
 
-		// A window that is not a fraction pair is refused too.
-		const ControlResult badWindow = revtest::run(QStringLiteral("rack.macro_target_add"),
-			{{QStringLiteral("channel"), channel},
-				{QStringLiteral("macro"), QStringLiteral("macro-0")},
-				{QStringLiteral("chain"), kDrivenChain}, {QStringLiteral("effect"), 0},
-				{QStringLiteral("parameter"), QString::fromLatin1(kGainName)},
-				{QStringLiteral("low"), 3.0}, {QStringLiteral("high"), 1.0}});
-		QVERIFY(!badWindow.ok);
-		QCOMPARE(badWindow.errorKind, ControlErrorKind::InvalidArgs);
-		printEvidence("typed-refusals",
-			QStringLiteral("no channel -> not_found; empty name / bad selection / dead target / bad "
-				"window -> invalid_args; chain 0 removal -> refused"));
-	}
+	//! A macro with an unchanged scalar still needs undo when it repairs a target.
+	void anUnchangedMacroScalarStillUndoesItsParameterWrite();
+
+	//! Cluster 5524: a project load and a model initialization are not a person's
+	//! change, so neither may become the "last touched" model (ED-191). This is
+	//! the same contract as the macro pair above - the store names what a command
+	//! wrote - read where a load writes instead.
+	void aLoadDoesNotClaimTheLastTouchedModel();
+
+	//! Repeating an unchanged XY pair must leave the first pair edit on top.
+	void aNoOpMacroPairDoesNotConsumeUndo();
+
+	//! One undo restores a parameter shared by both axes to its pre-pair value.
+	void aNoOpSharedParameterMacroPairDoesNotConsumeUndo();
 };
+
+#include "RackMacrosTestParts1.h"
+#include "RackMacrosTestParts2.h"
 
 QTEST_GUILESS_MAIN(RackMacrosTest)
 #include "RackMacrosTest.moc"

@@ -49,12 +49,16 @@
 // makes one; child mode is the same engine calls in a process image of its own.
 
 #include "SafeStart.h"
+#include "ControlRegistry.h"
+
+#include "src/core/ControlCommandsSafeStartShared.h"
 
 #include <QtTest>
 #include <QByteArray>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonObject>
 #include <QStringList>
 #include <QTemporaryDir>
 
@@ -117,6 +121,18 @@ int runCrashChild(char** argv)
 	if (!install(argv[2])) { ::_exit(83); }   // no directory, no session: fail loudly
 	beginSession();            // begins THIS process's session and writes its marker, with its own pid
 	resetFatalSignalsToDefault();
+	// Q050-049: die INSIDE the instrumented point. The plug-in file is test-local
+	// (never an own plug-in directory, never LMMS_PLUGIN_DIR).
+	if (std::strncmp(argv[3], "active-", 7) == 0)
+	{
+		const std::string file = std::string(argv[2]) + "/test-plugins/libcrashy.so";
+		const std::string phase = std::strcmp(argv[3], "active-segv-scan") == 0 ? "scan" : "instantiate";
+		ActivePluginScope scope(phase, phase == "scan" ? "" : "crashy", file, "lmms-module");
+		if (std::strcmp(argv[3], "active-kill") == 0) { ::kill(::getpid(), SIGKILL); ::_exit(81); }
+		volatile int* q = reinterpret_cast<volatile int*>(static_cast<uintptr_t>(1));
+		*q = 1;
+		::_exit(80);
+	}
 	// SIGKILL when the slot asks for it: uncatchable by construction.
 	if (std::strcmp(argv[3], "kill") == 0) { ::kill(::getpid(), SIGKILL); ::_exit(81); }
 	volatile int* p = reinterpret_cast<volatile int*>(static_cast<uintptr_t>(1));
@@ -173,6 +189,21 @@ class SafeStartTest : public QObject
 
 private slots:
 
+	//! The read-only state command must remain addressable before the engine is up.
+	void stateCommandAnswersBeforeEngineInitialization()
+	{
+		lmms::ControlRegistry::setReady(true);
+		const bool engineReady = lmms::ControlRegistry::isEngineReady();
+		lmms::ControlRegistry* registry = lmms::ControlRegistry::instance();
+		const lmms::ControlResult state = registry->invoke(QStringLiteral("safestart.get_state"));
+		lmms::ControlRegistry::setReady(false);
+		lmms::ControlRegistry::destroy();
+
+		QVERIFY(!engineReady);
+		QVERIFY2(state.ok, qPrintable(state.errorMessage));
+		QVERIFY(state.result.contains(QStringLiteral("installed")));
+	}
+
 	// -----------------------------------------------------------------------
 	// 1. THE NEGATIVE CONTROL. A session that exits cleanly leaves nothing: no
 	//    marker, no acknowledgement, no skipped instance, no safe start.
@@ -202,6 +233,37 @@ private slots:
 			"a clean run must not skip anything");
 		QVERIFY2(QDir(dir.path()).entryList(QDir::Files).isEmpty(),
 			"a clean run must leave no file of ours in the working directory");
+	}
+
+	// The production startup path begins SafeStart once before GuiApplication,
+	// then installs and begins it again after GuiApplication may create the
+	// working directory. Both calls belong to one process session: the GUI offer
+	// must still see the suspect read by the first call.
+	void startupSequenceKeepsSuspectAcrossBothBeginCalls()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString plugin = dir.filePath(QStringLiteral("plugins/libcrashed.so"));
+		QVERIFY(QDir().mkpath(QFileInfo(plugin).absolutePath()));
+		QFile marker(dir.filePath(QString::fromLatin1(kMarkerName)));
+		QVERIFY(marker.open(QIODevice::WriteOnly));
+		QVERIFY(marker.write(("Zene Studio safe-start marker v1\npid=4242\ntime_unix=1\n"
+			"active_phase=scan\nactive_format=lmms-module\nactive_plugin=crashy\nactive_file="
+			+ plugin + "\n").toUtf8()) > 0);
+		marker.close();
+
+		const std::string workDir = dir.path().toStdString();
+		QVERIFY(install(workDir));
+		beginSession(); // main.cpp: safe-start setup before GuiApplication
+		QVERIFY(crashSuspect().present);
+
+		QVERIFY(install(workDir));
+		beginSession(); // main.cpp: safe-start setup after GuiApplication
+		const ActivePlugin suspect = crashSuspect();
+		QVERIFY2(suspect.present, "the GUI startup offer must retain the first beginSession() suspect");
+		QCOMPARE(QString::fromStdString(suspect.file), plugin);
+		QCOMPARE(QString::fromStdString(suspect.phase), QStringLiteral("scan"));
+		endSession();
 	}
 
 	// -----------------------------------------------------------------------
@@ -318,9 +380,195 @@ private slots:
 	}
 
 	// -----------------------------------------------------------------------
+	// 3b. Q050-049: the marker names the plug-in the dead session was inside.
+	//     A child dies (SIGSEGV while scanning; SIGKILL while instantiating)
+	//     inside an instrumented scope over a test-local plug-in path; the next
+	//     start reads that file, phase and format back as the crash suspect.
+	// -----------------------------------------------------------------------
+	void aCrashInsideAPluginScopeNamesThePlugin_data()
+	{
+		QTest::addColumn<QString>("mode");
+		QTest::addColumn<int>("signal");
+		QTest::addColumn<QString>("phase");
+		QTest::addColumn<QString>("name");
+#ifndef Q_OS_WIN
+		QTest::newRow("segv while scanning") << "active-segv-scan" << int(SIGSEGV) << "scan" << "";
+		QTest::newRow("sigkill while instantiating") << "active-kill" << int(SIGKILL) << "instantiate" << "crashy";
+#else
+		QTest::newRow("POSIX signal cases unavailable") << QString() << 0 << QString() << QString();
+#endif
+	}
+
+	void aCrashInsideAPluginScopeNamesThePlugin()
+	{
+#ifdef Q_OS_WIN
+		QSKIP("POSIX signal path; the module is a documented no-op on Windows");
+#else
+		QFETCH(QString, mode);
+		QFETCH(int, signal);
+		QFETCH(QString, phase);
+		QFETCH(QString, name);
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		const std::string workDir = dir.path().toStdString();
+		QVERIFY(install(workDir));
+		beginSession();
+		endSession();
+		QVERIFY(!crashSuspect().present);
+
+		::fflush(nullptr);
+		const pid_t pid = forkCrashChild(workDir, mode.toStdString().c_str());
+		QVERIFY2(pid >= 0, "fork failed");
+		int status = 0;
+		QVERIFY2(waitBounded(pid, 15000, status), "the child neither died nor resumed inside 15s");
+		QVERIFY2(WIFSIGNALED(status) && WTERMSIG(status) == signal,
+			qPrintable(QString("the child must die by the intended signal: %1").arg(describeStatus(status))));
+
+		QVERIFY(install(workDir));
+		beginSession();
+		QVERIFY(safeStartActive());
+		const ActivePlugin suspect = crashSuspect();
+		QVERIFY2(suspect.present, "the marker must name the plug-in the session died inside");
+		QCOMPARE(QString::fromStdString(suspect.file), dir.path() + "/test-plugins/libcrashy.so");
+		QCOMPARE(QString::fromStdString(suspect.phase), phase);
+		QCOMPARE(QString::fromStdString(suspect.name), name);
+		QCOMPARE(QString::fromStdString(suspect.format), QStringLiteral("lmms-module"));
+		QVERIFY2(!currentActivePlugin().present, "THIS session is not inside any plug-in");
+		// The agent surface reports the same suspect and the registered command that quarantines it.
+		const lmms::ControlResult state = lmms::control::safeStartHandleGetState();
+		QVERIFY(state.ok);
+		const QJsonObject wire = state.result.value(QStringLiteral("crash_suspect")).toObject();
+		QVERIFY(wire.value(QStringLiteral("present")).toBool());
+		QCOMPARE(wire.value(QStringLiteral("file")).toString(), dir.path() + "/test-plugins/libcrashy.so");
+		QCOMPARE(wire.value(QStringLiteral("phase")).toString(), phase);
+		const QJsonObject offerQ = state.result.value(QStringLiteral("offer")).toObject()
+			.value(QStringLiteral("quarantine")).toObject();
+		QCOMPARE(offerQ.value(QStringLiteral("accept_with")).toString(),
+			QStringLiteral("plugin.scan_cache_quarantine_add"));
+		QCOMPARE(offerQ.value(QStringLiteral("accept_args")).toObject().value(QStringLiteral("path")).toString(),
+			dir.path() + "/test-plugins/libcrashy.so");
+		endSession();
+#endif
+	}
+
+	void theMarkerNamesOnlyThePluginThatIsActive()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		QVERIFY(install(dir.path().toStdString()));
+		beginSession();
+		const std::string outer = ThirdPartyPath;
+		const std::string inner = "/tmp/some-user-drop-in/libinner.so";
+		QVERIFY(!QString::fromStdString(markerPath()).isEmpty());
+		auto markerBytes = [] {
+			QFile f(QString::fromStdString(markerPath()));
+			return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+		};
+		QVERIFY(!markerBytes().contains("active_file"));
+		{
+			ActivePluginScope a("scan", "", outer, "lmms-module");
+			QVERIFY(markerBytes().contains(QByteArray::fromStdString("active_file=" + outer)));
+			{
+				ActivePluginScope b("instantiate", "inner", inner, "lmms-module");
+				QVERIFY(markerBytes().contains(QByteArray::fromStdString("active_file=" + inner)));
+				QCOMPARE(QString::fromStdString(currentActivePlugin().file), QString::fromStdString(inner));
+			}
+			// leaving the inner scope restores the enclosing plug-in
+			QVERIFY(markerBytes().contains(QByteArray::fromStdString("active_file=" + outer)));
+
+			// An engine-owned module nested inside a third-party load does not push
+			// an entry, so its scope must not pop the outer plug-in on destruction.
+			QTemporaryDir ownNested;
+			QVERIFY(ownNested.isValid());
+			const QByteArray savedPluginDir = qgetenv("LMMS_PLUGIN_DIR");
+			qputenv("LMMS_PLUGIN_DIR", ownNested.path().toLocal8Bit());
+			{
+				ActivePluginScope engineOwned("scan", "shipped", ownNested.path().toStdString()
+					+ "/libshipped.so", "lmms-module");
+				QCOMPARE(QString::fromStdString(currentActivePlugin().file), QString::fromStdString(outer));
+			}
+			if (savedPluginDir.isNull()) { qunsetenv("LMMS_PLUGIN_DIR"); }
+			else { qputenv("LMMS_PLUGIN_DIR", savedPluginDir); }
+			QCOMPARE(QString::fromStdString(currentActivePlugin().file), QString::fromStdString(outer));
+			QVERIFY(markerBytes().contains(QByteArray::fromStdString("active_file=" + outer)));
+		}
+		QVERIFY2(!markerBytes().contains("active_file"), "no stale plug-in may outlive its scope");
+		QVERIFY(markerBytes().size() <= static_cast<int>(kMaxMarkerBytes));
+
+		// An engine-shipped module is never recorded: no cost, no false suspect.
+		QTemporaryDir own;
+		QVERIFY(own.isValid());
+		const QByteArray saved = qgetenv("LMMS_PLUGIN_DIR");
+		qputenv("LMMS_PLUGIN_DIR", own.path().toLocal8Bit());
+		{
+			ActivePluginScope s("scan", "", own.path().toStdString() + "/libshipped.so", "lmms-module");
+			QVERIFY(!markerBytes().contains("active_file"));
+		}
+		if (saved.isNull()) { qunsetenv("LMMS_PLUGIN_DIR"); } else { qputenv("LMMS_PLUGIN_DIR", saved); }
+
+		// A marker that names no plug-in leaves no suspect.
+		endSession();
+		QVERIFY(install(dir.path().toStdString()));
+		beginSession();
+		endSession();
+		QVERIFY(install(dir.path().toStdString()));
+		beginSession();
+		QVERIFY(!crashSuspect().present);
+		endSession();
+	}
+
+	// -----------------------------------------------------------------------
 	// 4. The acknowledgement: "the NEXT launch is the normal one", consumed by it
 	//    so a second crash cannot be masked by the first decision.
 	// -----------------------------------------------------------------------
+	void normalSessionCannotAcknowledgeAFutureCrash()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(dir.path().toStdString()));
+
+		beginSession();
+		QVERIFY(!safeStartActive());
+		acknowledge();
+
+		// The current marker now represents a crash. An acknowledgement made in
+		// this ordinary session must not hide it from the next launch.
+		beginSession();
+		QVERIFY2(safeStartActive(),
+			"a normal session cannot acknowledge a crash offer it did not receive");
+		endSession();
+	}
+
+	// The same rule on the surface the user actually calls: the offer is made
+	// in a safe session and nowhere else (safestart.get_state's `offer` block
+	// and the stderr line main() prints are both gated on safeStartActive()),
+	// so accepting it in an ordinary session must be REFUSED - and must leave
+	// no file behind, because the next launch would consume that file and skip
+	// the safe start its crash marker asks for.
+	void theAcknowledgeCommandRefusesOutsideASafeStart()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(dir.path().toStdString()));
+
+		beginSession();
+		QVERIFY(!safeStartActive());
+
+		const lmms::ControlResult reply = lmms::control::safeStartHandleAcknowledge();
+		QVERIFY2(!reply.ok, "the command must refuse when there is no offer to accept");
+		QVERIFY2(reply.errorKind == lmms::ControlErrorKind::NotFound,
+			"the refusal must be typed as 'not found': there is no offer, not a busy file");
+		QVERIFY2(!reply.errorMessage.isEmpty(), "a refusal must say why it refused");
+		QVERIFY2(!acknowledged(), "a refused acknowledgement must not leave a file behind");
+
+		// The crash this session would leave behind is still honoured by the next
+		// launch: nothing was written that could hide it.
+		beginSession();
+		QVERIFY2(safeStartActive(),
+			"the next launch after a crash must start safe, whatever was called in between");
+		endSession();
+	}
+
 	void acknowledgeMakesTheNextLaunchNormal()
 	{
 		QTemporaryDir dir;
@@ -347,18 +595,11 @@ private slots:
 		QVERIFY2(acknowledged(), "accepting the offer must write the acknowledgement");
 		QVERIFY2(markerExists(), "accepting the offer must NOT delete the marker");
 		QVERIFY2(safeStartActive(), "the CURRENT session is still the safe one");
-		endSession();
 
 		// The NEXT launch consumes it and is a normal one - and it does so even
-		// though the marker is there again, because the definition of a safe
-		// start is "a marker and no acknowledgement".
-		{
-			QFile marker(QString::fromStdString(markerPath()));
-			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
-			marker.write("Zene Studio safe-start marker v1\npid=4243\ntime_unix=1700000001\n");
-		}
-		acknowledge();
-		QVERIFY(acknowledged());
+		// though the marker of this session is still there after its abnormal
+		// exit, because the definition of a safe start is "a marker and no
+		// acknowledgement".
 		beginSession();
 		QVERIFY2(!acknowledged(),
 			"the acknowledgement must be CONSUMED by the launch it was written for");
@@ -367,6 +608,9 @@ private slots:
 			"a normal launch must not skip third-party plugin instances");
 		// A crash of that normal launch is still a crash: the marker stays.
 		QVERIFY(markerExists());
+		beginSession();
+		QVERIFY2(safeStartActive(),
+			"the consumed acknowledgement must not mask a later crash");
 
 		// clear() is the "the cause is fixed" verb.
 		clear();
@@ -480,6 +724,179 @@ private slots:
 		QVERIFY2(lastSession().projectPath.size() <= kMaxProjectPathBytes,
 			"the project hint exceeded kMaxProjectPathBytes");
 		endSession();
+	}
+
+	// -----------------------------------------------------------------------
+	// 8. THE COMMAND'S REPORT IS CHECKED AGAINST THE DISK, NOT AGAINST THE CALL
+	//    IT MADE. safestart.clear calls an engine operation that returns void
+	//    and ignores both QFile::remove results
+	//    (src/core/SafeStart.cpp:369-370), so a marker that could not be
+	//    unlinked stayed on disk while the reply said `cleared: true`.
+	// -----------------------------------------------------------------------
+#ifndef Q_OS_WIN
+	void clearRefusesWhenTheMarkerCannotActuallyBeRemoved()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(dir.path().toStdString()));
+
+		// A marker left by a crashed run, planted the way test 4 plants one: the
+		// session starts SAFE, so the acknowledgement below is written by the
+		// offer it was offered. An acknowledgement is only ever written in a safe
+		// session - an ordinary session has no offer to accept.
+		{
+			QFile marker(QString::fromStdString(markerPath()));
+			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			marker.write("Zene Studio safe-start marker v1\npid=4247\ntime_unix=1700000002\n");
+		}
+
+		beginSession();
+		QVERIFY(markerExists());
+		QVERIFY2(safeStartActive(), "a marker behind the session must make it a safe start");
+		acknowledge();
+		QVERIFY(acknowledged());
+
+		// A read-only working directory: unlink of a file inside it cannot
+		// succeed for a non-privileged uid, so the handler's engine operation
+		// runs for real and removes nothing.
+		QFile probe(dir.filePath(QStringLiteral("probe")));
+		QVERIFY(probe.open(QIODevice::WriteOnly));
+		probe.close();
+
+		const QFile::Permissions writable = QFile::permissions(dir.path());
+		QVERIFY(QFile::setPermissions(dir.path(),
+			QFile::ReadOwner | QFile::ReadGroup | QFile::ReadOther |
+				QFile::ExeOwner | QFile::ExeGroup | QFile::ExeOther));
+		if (QFile::remove(probe.fileName()))
+		{
+			// This uid can unlink from a directory it cannot write (root): the
+			// condition cannot be produced here, so the case says so instead of
+			// asserting a failure the machine is incapable of showing.
+			QFile::setPermissions(dir.path(), writable);
+			QSKIP("this uid ignores directory write permissions; the failure cannot be produced");
+		}
+
+		const lmms::ControlResult reply = lmms::control::safeStartHandleClear();
+		// Whatever the reply says, the files are still there - so a `cleared:
+		// true` in it would be a lie a caller acts on.
+		QVERIFY2(markerExists(), "the precondition broke: the marker was removed after all");
+		QVERIFY2(acknowledged(), "the precondition broke: the acknowledgement was removed after all");
+		QVERIFY2(!reply.ok, "safestart.clear reported success although neither file was removed");
+		QVERIFY2(!reply.errorMessage.isEmpty(), "a refusal must name what is still on disk");
+
+		QVERIFY(QFile::setPermissions(dir.path(), writable));
+		endSession();
+		QVERIFY(!markerExists());
+		QVERIFY(!acknowledged());
+	}
+#endif
+	// 8. THE STATUS QUESTION. previousRunExitedCleanly() is about the session
+	//    BEFORE this one, so beginSession() must not turn THIS session's own
+	//    marker into "the previous run crashed": a clean predecessor stays
+	//    clean for the whole session. Before beginSession() the disk marker
+	//    still IS the predecessor's, and that half must not move either.
+	// -----------------------------------------------------------------------
+	void previousRunStatusSurvivesThisSessionsMarker()
+	{
+		// A predecessor that died: before beginSession() the marker on disk is
+		// the previous run's, and the answer is "not clean" from the disk.
+		QTemporaryDir crashedDir;
+		QVERIFY2(crashedDir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(crashedDir.path().toStdString()));
+		{
+			QFile marker(QString::fromStdString(markerPath()));
+			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			// A marker left by a crashed run, planted the way test 4 plants one.
+			// The marker's PRESENCE is the signal; its content is the diagnostic.
+			marker.write("Zene Studio safe-start marker v1\npid=4245\ntime_unix=1700000000\n");
+		}
+		// Before beginSession() the disk marker IS the previous run's: the disk
+		// answers, and that half of the documented contract must not move.
+		QVERIFY2(!previousRunExitedCleanly(),
+			"before beginSession() a marker on disk means the previous run did not exit cleanly");
+		beginSession();
+		QVERIFY2(!previousRunExitedCleanly(),
+			"the launch after a crash must report the previous run as unclean");
+		QVERIFY(safeStartActive());
+		endSession();
+
+		// A clean predecessor: beginSession() rewrites the marker with THIS
+		// session's, and the status must still say the previous run exited
+		// cleanly - for the whole session, not just before the marker is written.
+		QTemporaryDir cleanDir;
+		QVERIFY2(cleanDir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(cleanDir.path().toStdString()));
+		beginSession();
+		QVERIFY2(markerExists(), "beginSession() writes this session's marker");
+		QVERIFY2(!safeStartActive(), "no marker was behind it: not a safe start");
+		QVERIFY2(previousRunExitedCleanly(),
+			"the previous run exited cleanly; this session's own marker must not change that");
+		endSession();
+		QVERIFY2(previousRunExitedCleanly(), "a clean exit leaves the status clean");
+	}
+
+	// -----------------------------------------------------------------------
+	// 9. THE STATUS SNAPSHOT IS LATCHED. clear() lifts safe-start state for
+	//    THIS session; it must not rewrite the history of the run that just
+	//    ended. After a crashed predecessor, clearing safe-start mid-session
+	//    still reports the previous run as unclean, for as long as the session
+	//    lives: the marker found at beginSession() is a fact, not a switch.
+	// -----------------------------------------------------------------------
+	void clearingSafeStartDoesNotRewritePreviousRunHistory()
+	{
+		// A predecessor that died, planted the way test 4 plants one.
+		QTemporaryDir crashedDir;
+		QVERIFY2(crashedDir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(crashedDir.path().toStdString()));
+		{
+			QFile marker(QString::fromStdString(markerPath()));
+			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			marker.write("Zene Studio safe-start marker v1\npid=4245\ntime_unix=1700000000\n");
+		}
+		beginSession();
+		QVERIFY2(!previousRunExitedCleanly(),
+			"the launch after a crash must report the previous run as unclean");
+		QVERIFY(safeStartActive());
+
+		// "The cause is known and fixed": safe-start is lifted for THIS session...
+		clear();
+		QVERIFY2(!safeStartActive(), "clear() leaves safe-start mode in this session");
+		QVERIFY2(!markerExists(), "clear() unlinks the marker for the next launch");
+		// ... but the previous run's history is a fact, not a switch: the status
+		// must keep reporting the marker found at beginSession() all session.
+		QVERIFY2(!previousRunExitedCleanly(),
+			"clearing safe-start mid-session must not rewrite the previous run's history");
+	}
+
+	// -----------------------------------------------------------------------
+	// 10. A FAILED install() must not leave the previous session's snapshot
+	//     answering. The session lifecycle state resets at the START of
+	//     install(), so even a failed install puts the module back to "nothing
+	//     has begun": the disk answers the previous-run question again, and
+	//     with no working directory there is no marker anywhere.
+	// -----------------------------------------------------------------------
+	void failedInstallLeavesNoStaleSessionSnapshot()
+	{
+		// A crashed predecessor, a session begun over it...
+		QTemporaryDir crashedDir;
+		QVERIFY2(crashedDir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(crashedDir.path().toStdString()));
+		{
+			QFile marker(QString::fromStdString(markerPath()));
+			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			marker.write("Zene Studio safe-start marker v1\npid=4246\ntime_unix=1700000000\n");
+		}
+		beginSession();
+		QVERIFY2(!previousRunExitedCleanly(), "the session over the crash reports the crash");
+
+		// ... then an install that FAILS: the module owns no working directory,
+		// so no session snapshot may survive it - the disk answers again, and
+		// there is no marker anywhere.
+		QVERIFY2(!install(crashedDir.path().toStdString() + "/definitely-not-a-directory"),
+			"install() into a path that does not exist must fail");
+		QVERIFY2(!isInstalled(), "a failed install leaves the module uninstalled");
+		QVERIFY2(previousRunExitedCleanly(),
+			"the stale snapshot of a session that no longer exists must not answer after a failed install");
 	}
 
 };

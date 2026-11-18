@@ -30,17 +30,18 @@
 #include "ControlServer.h"
 
 #include <cerrno>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <limits>
 
-#include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QSocketNotifier>
 #include <QTimer>
 
+#include "ControlEventHub.h"
 #include "ControlRegistry.h"
 #include "ProvenanceSection.h"
 
@@ -138,6 +139,21 @@ bool readRequestId(const QJsonObject& request, int* id, QByteArray* reply)
 	return true;
 }
 
+#if defined(Q_OS_UNIX)
+//! BUG 8: client idle deadlines are measured on the MONOTONIC clock. The wall
+//! clock (QDateTime::currentMSecsSinceEpoch()) can be stepped by NTP or by the
+//! user, and a step moved every stored deadline with it: forward, an active
+//! peer was dropped early; backward, an idle one outlived its timeout. A
+//! monotonic clock never goes backwards, so a deadline set here elapses in
+//! exactly ClientIdleTimeoutMs of real time. Same source as SystemSemaphore's
+//! timed acquire (src/common/SystemSemaphore.cpp).
+qint64 monotonicNowMs()
+{
+	return std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+#endif
+
 } // namespace
 
 ControlServer::ControlServer(ControlRegistry* registry, QObject* parent) :
@@ -148,6 +164,7 @@ ControlServer::ControlServer(ControlRegistry* registry, QObject* parent) :
 	m_clientSweep->setInterval(1000);
 	connect(m_clientSweep, &QTimer::timeout, this, &ControlServer::retireIdleClients);
 	m_clientSweep->start();
+	control::ControlEventHub::instance();  // Q050-334.1: the event sequence counts from here, subscribers or not
 }
 
 ControlServer::~ControlServer()
@@ -158,11 +175,8 @@ ControlServer::~ControlServer()
 	// first removes the socket file, and close() is idempotent. A hook left
 	// behind is a call on freed memory on the forced-exit path - the one route
 	// where it is the ONLY thing that removes the file.
-	if (m_registry != nullptr)
-	{
-		m_registry->removeShutdownHook(m_shutdownHookId);
-		m_shutdownHookId = 0;
-	}
+	ControlRegistry::removeShutdownHook(m_shutdownHookId);
+	m_shutdownHookId = 0;
 	close();
 }
 
@@ -215,7 +229,8 @@ void ControlServer::onNewConnection()
 		::fcntl(fd, F_SETFL, O_NONBLOCK);
 		Client client;
 		client.fd = fd;
-		client.deadlineMs = QDateTime::currentMSecsSinceEpoch() + ClientIdleTimeoutMs;
+		client.eventConnection = control::ControlEventHub::nextConnectionKey();
+		client.deadlineMs = monotonicNowMs() + ClientIdleTimeoutMs;
 		client.notifier = new QSocketNotifier(fd, QSocketNotifier::Read, this);
 		connect(client.notifier, &QSocketNotifier::activated, this, [this, fd]() { onClientReadable(fd); });
 		// A reply larger than the peer's socket buffer cannot be written in one
@@ -309,10 +324,14 @@ WriteOutcome writeWhatFits(int fd, const char* data, int size, int* written)
 void ControlServer::retireIdleClients()
 {
 #if defined(Q_OS_UNIX)
-	const qint64 now = QDateTime::currentMSecsSinceEpoch();
+	const qint64 now = monotonicNowMs();
 	QVector<int> expired;
-	for (auto it = m_clients.constBegin(); it != m_clients.constEnd(); ++it)
+	const control::ControlEventHub& hub = control::ControlEventHub::instance();
+	for (auto it = m_clients.begin(); it != m_clients.end(); ++it)
 	{
+		// Q050-334.1: a subscriber waits quietly for events by design. One stalled on a reply or event tail still
+		// times out, a full period after the sweep last saw its write path idle.
+		if (it->pending.isEmpty() && hub.isSubscribed(it->eventConnection)) { it->deadlineMs = now + ClientIdleTimeoutMs; }
 		if (it->deadlineMs <= now) { expired.append(it.key()); }
 	}
 	for (const int fd : expired) { dropClient(fd); }
@@ -344,7 +363,7 @@ void ControlServer::onClientReadable(int fd)
 	if (!dispatchPendingLines(fd, buffer)) { return; }
 	if (buffer.isEmpty())
 	{
-		it->deadlineMs = QDateTime::currentMSecsSinceEpoch() + ClientIdleTimeoutMs;
+		it->deadlineMs = monotonicNowMs() + ClientIdleTimeoutMs;
 	}
 
 	// Every complete line is gone, so a buffer still over the cap is ONE request
@@ -367,6 +386,25 @@ bool ControlServer::dispatchPendingLines(int fd, QByteArray& buffer)
 	{
 		const QByteArray line = buffer.left(newline);
 		buffer.remove(0, newline + 1);
+		// A COMPLETE line is over the cap too, not only one that never ended.
+		// The read loop stops appending once the BUFFER passes the cap, but a
+		// line that arrived whole inside those last bytes was already complete:
+		// without this check it was dispatched, which is the cap's whole point
+		// undone (a padded request the cap is there to refuse). Refuse it in the
+		// same vocabulary as a line that never ended, and retire the
+		// connection - there is no safe resynchronisation inside a line.
+		if (line.size() > MaxRequestLineBytes)
+		{
+			refuseOverCapLine(fd, false);
+			return false;
+		}
+		// Q050-334.1: events.* commands act for this connection while it is dispatched.
+		const quint64 eventConnection = m_clients.constFind(fd)->eventConnection;
+		control::ControlEventHub::Connection connection;
+		connection.key = eventConnection;
+		connection.owner = this;
+		connection.wake = [this, fd, eventConnection]() { postEventFlush(fd, eventConnection); };
+		const control::ControlEventHub::ConnectionScope eventScope(connection);
 		const QByteArray reply = dispatchLine(line);
 		if (!reply.isEmpty() && !sendBytes(fd, reply + '\n'))
 		{
@@ -391,6 +429,7 @@ void ControlServer::refuseOverCapLine(int fd, bool closed)
 	// The refusal goes out BEFORE the drain, and the drain is why it arrives:
 	// see Client::draining.
 	sendBytes(fd, refusal + '\n');
+	control::ControlEventHub::instance().connectionClosed(it->eventConnection);
 	it->draining = true;
 	it->buffer.clear();
 	it->buffer.squeeze();
@@ -409,6 +448,7 @@ void ControlServer::dropClient(int fd)
 #else
 	const auto it = m_clients.find(fd);
 	if (it == m_clients.end()) { return; }
+	control::ControlEventHub::instance().connectionClosed(it->eventConnection);
 	it->retire();
 	::close(it->fd);
 	m_clients.erase(it);
@@ -442,6 +482,7 @@ bool ControlServer::sendBytes(int fd, const QByteArray& bytes)
 		// The peer's buffer is full: normal flow control, not a failure. Keep
 		// the tail - whole bytes, so the line stays intact - and finish it when
 		// the socket says it can take more.
+		if (bytes.size() - written > MaxQueuedReplyBytes) { return false; }
 		it->pending = bytes.mid(written);
 		it->writeNotifier->setEnabled(true);
 	}
@@ -471,7 +512,8 @@ void ControlServer::onClientWritable(int fd)
 		return;
 	}
 	if (it->pending.isEmpty()) { it->writeNotifier->setEnabled(false); }
-	it->deadlineMs = QDateTime::currentMSecsSinceEpoch() + ClientIdleTimeoutMs;
+	it->deadlineMs = monotonicNowMs() + ClientIdleTimeoutMs;
+	if (it->pending.isEmpty()) { flushClientEvents(fd, it->eventConnection); }  // Q050-334.1: events waited behind it
 #endif
 }
 
@@ -479,30 +521,35 @@ QByteArray ControlServer::dispatchLine(const QByteArray& line)
 {
 	const QByteArray trimmed = line.trimmed();
 	if (trimmed.isEmpty()) { return QByteArray(); }
+	const auto finishExchange = [this, &trimmed](const QByteArray& response)
+	{
+		emit exchanged(trimmed, response);
+		return response;
+	};
 
 	QJsonParseError parseError;
 	const QJsonDocument document = QJsonDocument::fromJson(trimmed, &parseError);
 	if (parseError.error != QJsonParseError::NoError || !document.isObject())
 	{
-		return errorLine(-1, ControlErrorKind::InvalidArgs,
-			QStringLiteral("malformed JSON request: %1").arg(parseError.errorString()));
+		return finishExchange(errorLine(-1, ControlErrorKind::InvalidArgs,
+			QStringLiteral("malformed JSON request: %1").arg(parseError.errorString())));
 	}
 
 	const QJsonObject request = document.object();
 	QByteArray reply;
 	int id = -1;
-	if (!readRequestId(request, &id, &reply)) { return reply; }
-	if (!protoMatches(request, id, &reply)) { return reply; }
+	if (!readRequestId(request, &id, &reply)) { return finishExchange(reply); }
+	if (!protoMatches(request, id, &reply)) { return finishExchange(reply); }
 
 	const QJsonValue cmdValue = request.value(QStringLiteral("cmd"));
 	if (!cmdValue.isString() || cmdValue.toString().isEmpty())
 	{
-		return errorLine(id, ControlErrorKind::InvalidArgs,
-			QStringLiteral("request 'cmd' must be a non-empty command id"));
+		return finishExchange(errorLine(id, ControlErrorKind::InvalidArgs,
+			QStringLiteral("request 'cmd' must be a non-empty command id")));
 	}
 
 	QJsonObject args;
-	if (!readArgs(request, &args, id, &reply)) { return reply; }
+	if (!readArgs(request, &args, id, &reply)) { return finishExchange(reply); }
 
 	// Every control-socket client is an agent session (SPEC-ARCH-4 1.9): while
 	// this dispatch runs, the provenance it may record says actor="agent" - a
@@ -511,8 +558,7 @@ QByteArray ControlServer::dispatchLine(const QByteArray& line)
 	const provenance::AgentScope agentSession;
 	const ControlResult result = m_registry->invoke(cmdValue.toString(), args);
 	reply = responseLine(id, result);
-	emit exchanged(trimmed, reply);
-	return reply;
+	return finishExchange(reply);
 }
 
 } // namespace lmms

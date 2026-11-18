@@ -127,10 +127,12 @@ QJsonObject rollState(const ClipRef& ref);
 // ---------------------------------------------------------------------------
 void selectClip(const QString& id);
 QString selectedClipId();
-//! Records the selection; out-of-range indices are dropped.
-void selectNotes(const QString& clip, int noteCount, const QVector<int>& indices);
-bool noteSelected(const QString& clip, int index);
-QVector<int> selectedNoteIndices(const QString& clip);
+//! Records the selected note identities, read from \a midiClip at \a indices
+//! (out-of-range ones are dropped). The store holds note ids, not positions, so
+//! a later removal or re-sort cannot make it name a different note.
+void selectNotes(const QString& clip, const MidiClip& midiClip, const QVector<int>& indices);
+bool noteSelected(const QString& clip, const MidiClip& midiClip, int index);
+QVector<int> selectedNoteIndices(const QString& clip, const MidiClip& midiClip);
 
 //! One track as the get_states report it (shared by arrangement.get_state and
 //! the track commands' transaction snapshots).

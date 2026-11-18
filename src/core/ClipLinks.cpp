@@ -56,6 +56,8 @@ namespace
  *  (MidiClip::addNote -> this file -> MidiClip::addNote) a no-op instead of an
  *  infinite recursion. UI-thread only, like every other write path here. */
 int g_mirrorDepth = 0;
+//! Re-entrant guard for the group-wide name/colour setters.
+int g_presentationMirrorDepth = 0;
 /*! How many load passes have suspended mirroring (MirroringSuspension). */
 int g_suspendDepth = 0;
 
@@ -182,17 +184,18 @@ bool collectStaleMembers(MidiClip* sourceMidi, const QVector<Clip*>& members,
 	return true;
 }
 
-/*! Copies \p source's note list onto \p member, through the member's own public
- *  note API - the same calls the piano roll makes - so the member's clip length
- *  (auto-resize) and its views follow exactly as they do for an edit made in
- *  that clip. */
+/*! Copies \p source's shared note list without changing the member's independent
+ *  position, length, offset or auto-resize setting. */
 void writeContent(MidiClip* source, MidiClip* member)
 {
+	const bool autoResize = member->getAutoResize();
+	member->setAutoResize(false);
 	member->clearNotes();
 	for (const Note* note : source->notes())
 	{
 		if (note != nullptr) { member->addNote(*note, false); }
 	}
+	member->setAutoResize(autoResize);
 	member->dataChanged();
 }
 
@@ -261,6 +264,23 @@ MirrorReport mirrorContent(Clip* source)
 
 	report.reason = QStringLiteral("wrote %1 of %2 members").arg(report.written).arg(report.members);
 	return report;
+}
+
+void mirrorPresentation(Clip* source)
+{
+	if (source == nullptr || source->linkId() <= 0 || g_suspendDepth > 0 || g_presentationMirrorDepth > 0)
+	{
+		return;
+	}
+
+	++g_presentationMirrorDepth;
+	for (Clip* member : group(source->linkId()))
+	{
+		if (member == source) { continue; }
+		if (member->name() != source->name()) { member->setName(source->name()); }
+		if (member->color() != source->color()) { member->setColor(source->color()); }
+	}
+	--g_presentationMirrorDepth;
 }
 
 void suspendMirroring() { ++g_suspendDepth; }

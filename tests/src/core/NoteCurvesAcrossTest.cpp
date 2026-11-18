@@ -30,18 +30,28 @@
 #include <QtTest>
 
 #include <limits>
+#include <algorithm>
 
 #include <QDomDocument>
 #include <QJsonArray>
 
+#include "BasicFilters.h"
+#include "Note.h"
+#include "PlayHandle.h"
+#include "Track.h"
+#define private public
+#include "NotePlayHandle.h"
+#undef private
+
 #include "AutomationClip.h"
+#include "AudioEngine.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "DetuningHelper.h"
 #include "Engine.h"
+#include "InstrumentFunctions.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
-#include "Note.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -83,6 +93,8 @@ private slots:
 	void initTestCase()
 	{
 		Engine::init(true);
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		NotePlayHandleManager::init();
 		ControlRegistry::setReady(true);
 	}
 
@@ -145,6 +157,24 @@ private slots:
 		QVERIFY(copy.detuning() == nullptr);
 	}
 
+	void duplicateNoteIdsCountOnlyOneChangedNote()
+	{
+		MidiClip* clip = clipWith(0, {60});
+		const QString clipId = control::clipIdOf(clip);
+		const QString noteId = control::noteIdOf(clip->notes().front());
+		const ControlResult set = run(QStringLiteral("note.pitch_curve_set"), {{QStringLiteral("clip"), clipId},
+			{QStringLiteral("notes"), QJsonArray{noteId, noteId}},
+			{QStringLiteral("points"), QJsonArray{QJsonObject{{QStringLiteral("tick"), 0}, {QStringLiteral("semitones"), 3.0}}}}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QCOMPARE(set.result.value(QStringLiteral("notes")).toInt(), 1);
+		const QJsonArray transactions = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray();
+		QVERIFY(!transactions.isEmpty());
+		const QJsonArray before = transactions.at(transactions.size() - 1).toObject().value(QStringLiteral("before")).toObject()
+			.value(QStringLiteral("notes")).toArray();
+		QCOMPARE(before.size(), 1);
+		QCOMPARE(clip->notes().front()->detuning()->automationClip()->getTimeMap().size(), 1);
+	}
+
 	void aRelativeShapeFitsEveryNoteInOneStep()
 	{
 		MidiClip* clip = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
@@ -191,6 +221,32 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(keysOf(a), (QList<int>{60, 62}));
 		QCOMPARE(keysOf(b), (QList<int>{48}));
+	}
+
+	//! note.across checked the raw 'clips' length against its 64-clip limit before dropping
+	//! duplicates, so naming one clip 65 times was refused even though it edits one clip.
+	void theClipLimitCountsUniqueClips()
+	{
+		MidiClip* a = clipWith(0, {60});
+		const QString id = control::clipIdOf(a);
+		QJsonArray clips;
+		for (int i = 0; i < 65; ++i) { clips.append(id); }  // one clip named 65 times
+		const ControlResult done = run(QStringLiteral("note.across"), {{QStringLiteral("clips"), clips},
+			{QStringLiteral("command"), QStringLiteral("note.transpose")}, {QStringLiteral("args"), QJsonObject{{QStringLiteral("semitones"), 12}}}});
+		QVERIFY2(done.ok, qPrintable(done.errorMessage));
+		QCOMPARE(done.result.value(QStringLiteral("edited")).toInt(), 1);
+		QCOMPARE(keysOf(a), (QList<int>{72}));
+
+		// The limit still applies to unique clips: 65 distinct clips are refused.
+		QJsonArray unique;
+		for (int i = 0; i < 65; ++i)
+		{
+			MidiClip* c = clipWith((i + 1) * 192, {60});
+			unique.append(control::clipIdOf(c));
+		}
+		QCOMPARE(run(QStringLiteral("note.across"), {{QStringLiteral("clips"), unique},
+			{QStringLiteral("command"), QStringLiteral("note.transpose")}, {QStringLiteral("args"), QJsonObject{{QStringLiteral("semitones"), 1}}}}).errorKind,
+			ControlErrorKind::InvalidArgs);
 	}
 
 	//! note.across counted every successful handler as an edit, so a handler that succeeded while
@@ -240,6 +296,43 @@ private slots:
 			{QStringLiteral("command"), QStringLiteral("note.transpose")}, {QStringLiteral("args"), QJsonObject{}}}).errorKind,
 			ControlErrorKind::InvalidArgs);  // 'semitones' is required
 		QCOMPARE(keysOf(a), (QList<int>{60}));
+	}
+
+	void chordStackingRejectsTheFirstKeyPastTheRange()
+	{
+		const auto& chords = InstrumentFunctionNoteStacking::ChordTable::getInstance().chords();
+		const auto chromatic = std::find_if(chords.begin(), chords.end(), [](const auto& chord)
+		{
+			return chord.getName() == QStringLiteral("Chromatic");
+		});
+		QVERIFY(chromatic != chords.end());
+		const int chromaticIndex = static_cast<int>(chromatic - chords.begin());
+
+		InstrumentFunctionNoteStacking stacking(nullptr);
+		QDomDocument document;
+		QDomElement settings = document.createElement(QStringLiteral("chordcreator"));
+		settings.setAttribute(QStringLiteral("chord-enabled"), 1);
+		settings.setAttribute(QStringLiteral("chord"), chromaticIndex);
+		settings.setAttribute(QStringLiteral("chordrange"), 1);
+		stacking.loadSettings(settings);
+
+		NotePlayHandle* source = NotePlayHandleManager::acquire(m_track, 0,
+			Engine::audioEngine()->framesPerPeriod(), Note(TimePos(96), TimePos(0), NumKeys - 1));
+		stacking.processNote(source);
+
+		QList<int> stackedKeys;
+		const NotePlayHandleList children = source->m_subNotes;
+		for (const NotePlayHandle* child : children) { stackedKeys << child->key(); }
+
+		for (NotePlayHandle* child : children)
+		{
+			child->audioBusHandle()->removePlayHandle(child);
+			NotePlayHandleManager::release(child);
+		}
+		Engine::audioEngine()->clearNewPlayHandles();
+		NotePlayHandleManager::release(source);
+
+		QCOMPARE(stackedKeys, (QList<int>{NumKeys - 1}));
 	}
 };
 

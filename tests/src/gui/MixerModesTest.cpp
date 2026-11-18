@@ -30,30 +30,52 @@
  *  application (a Fader cannot be built without it). */
 
 #include <QtTest>
+#include "MixerModeVisibilityTestSupport.h"
 
+#include <QAccessible>
+#include <QApplication>
 #include <QComboBox>
+#include <QEvent>
+#include <QContextMenuEvent>
+#include <QAbstractButton>
 #include <QJsonArray>
 #include <QLabel>
+#include <QLayout>
 #include <QLineEdit>
+#include <QPointer>
+#include <QMenu>
 #include <QPushButton>
+#include <QScopeGuard>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QSet>
+#include <QTimer>
 #include <QToolButton>
+#include <QVBoxLayout>
 
 #include "AutomatableButton.h"
+#include "AutomatableModel.h"
+#include "ColorChooser.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Fader.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
+#include "Knob.h"
 #include "MacroKnobs.h"
 #include "MainWindow.h"
 #include "Mixer.h"
+#include "PinConnector.h"
+#include "MixerChannelLcdSpinBox.h"
 #include "MixerChannelView.h"
 #include "MixerModeBar.h"
 #include "MixerRoutingMatrix.h"
 #include "MixerStripInfo.h"
 #include "MixerView.h"
+#include "SendButtonIndicator.h"
 #include "MixerViewOptions.h"
+#include "Song.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -66,6 +88,15 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 	return ControlRegistry::instance()->invoke(id, args);
 }
 
+class TestAudioPortsModel : public AudioPortsModel
+{
+public:
+	using AudioPortsModel::AudioPortsModel;
+
+protected:
+	void bufferPropertiesChanging(ch_cnt_t, ch_cnt_t, f_cnt_t) override {}
+};
+
 QString ch(int index) { return control::channelIdOf(Engine::mixer()->mixerChannel(index)); }
 
 //! The view's half-second sync, now: a count change rebuilds the strips, the next pass applies the modes.
@@ -77,6 +108,33 @@ void syncMixer()
 
 MixerChannelView* strip(int index) { return getGUI()->mixerView()->channelView(index); }
 MixerModeBar* bar() { return getGUI()->mixerView()->modeBar(); }
+
+//! What a screen reader hears for @a widget, through Qt's own accessibility layer.
+QString announcedName(QWidget* widget)
+{
+	QAccessibleInterface* face = QAccessible::queryAccessibleInterface(widget);
+	return face != nullptr ? face->text(QAccessible::Name) : widget->accessibleName();
+}
+
+QAccessible::Role announcedRole(QWidget* widget)
+{
+	QAccessibleInterface* face = QAccessible::queryAccessibleInterface(widget);
+	return face != nullptr ? face->role() : QAccessible::NoRole;
+}
+
+//! Keyboard focus only lives in an active window; a test earlier may have opened a menu.
+bool activateMainWindow()
+{
+	QWidget* window = getGUI() != nullptr ? getGUI()->mainWindow() : nullptr;
+	if (window == nullptr) { return false; }
+	window->activateWindow();
+	return QTest::qWaitForWindowActive(window);
+}
+
+AutomatableButton* muteButtonOf(MixerChannelView* view)
+{
+	return view != nullptr ? view->findChild<AutomatableButton*>(QStringLiteral("btn-mute")) : nullptr;
+}
 
 } // namespace
 
@@ -110,6 +168,25 @@ private slots:
 	{
 		ControlRegistry::setReady(false);
 		Engine::destroy();
+	}
+
+	void aMixerChannelContextMenuWorksWithoutTrackView()
+	{
+		MixerChannelLcdSpinBox spinBox(2, nullptr, QStringLiteral("Mixer channel"));
+		spinBox.show();
+
+		bool menuOpened = false;
+		QTimer::singleShot(0, &spinBox, [&] {
+			if (QMenu* menu = spinBox.findChild<QMenu*>())
+			{
+				menuOpened = true;
+				menu->close();
+			}
+		});
+
+		QContextMenuEvent event(QContextMenuEvent::Mouse, QPoint(0, 0), QPoint(0, 0));
+		QApplication::sendEvent(&spinBox, &event);
+		QVERIFY(menuOpened);
 	}
 
 	void everyStripWearsItsTypeInWords()
@@ -194,6 +271,470 @@ private slots:
 		QCOMPARE(mixerviewoptions::options().filter, QStringLiteral("all"));
 	}
 
+	//! gui-1030: a mixer narrower than the bar's one row wraps its controls onto more rows - every one,
+	//! Routing Matrix... last, stays inside the mixer, whole (never squeezed below the width its words
+	//! need) and clear of the others - and a wide one keeps them
+	//! on one row with the modes pushed to the right edge, as before.
+	void theModeBarWrapsInsteadOfClippingWhenNarrow()
+	{
+		QWidget host;  // the mixer's column: the bar on top of the strips, as MixerView lays it out
+		auto* column = new QVBoxLayout(&host);
+		column->setContentsMargins(0, 0, 0, 0);
+		auto* modes = new MixerModeBar(&host);
+		column->addWidget(modes);
+		column->addStretch(1);
+		auto* matrix = modes->findChild<QPushButton*>(QStringLiteral("mixerModeMatrix"));
+		QVERIFY(matrix != nullptr);
+		const int oneRow = modes->sizeHint().width();
+		for (const int width : {oneRow / 2, oneRow / 3, oneRow})
+		{
+			host.layout()->setGeometry(QRect(0, 0, width, 800));  // a parent that gives the column this much
+			modes->layout()->setGeometry(modes->rect());  // what the bar's resize event does once it is shown
+			const QRect given(0, 0, width, 800);
+			QList<QPair<QString, QRect>> taken;
+			for (QWidget* control : modes->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
+			{
+				if (control->isHidden() || control->isWindow()) { continue; }
+				const QString name = control->objectName().isEmpty()
+					? control->property("text").toString() + control->accessibleName() : control->objectName();
+				const QRect onHost(control->mapTo(&host, QPoint(0, 0)), control->size());
+				QVERIFY2(given.contains(onHost), qPrintable(QStringLiteral("%1 ends at %2, past a %3-wide mixer")
+					.arg(name).arg(onHost.right()).arg(width)));
+				QVERIFY2(control->width() >= control->sizeHint().width(), qPrintable(QStringLiteral("%1 is squeezed to %2 of its %3 px in a %4-wide mixer")
+					.arg(name).arg(control->width()).arg(control->sizeHint().width()).arg(width)));
+				for (const auto& [otherName, other] : taken)
+				{
+					QVERIFY2(!other.intersects(control->geometry()), qPrintable(QStringLiteral("%1 overlaps %2 in a %3-wide bar")
+						.arg(name, otherName).arg(width)));
+				}
+				taken.append({name, control->geometry()});
+			}
+			if (width == oneRow)
+			{
+				QCOMPARE(modes->height(), modes->sizeHint().height());  // one row
+				QCOMPARE(matrix->geometry().right(), modes->rect().right() - modes->layout()->contentsMargins().right());
+			}
+		}
+	}
+
+	//! gui-1030: in a narrow Mixer panel (a shell column held at 300 px) the bar wraps instead of
+	//! clipping or crushing its controls, so Density: Compact and every other mode control stays whole,
+	//! on screen and clickable.
+	void aNarrowPanelKeepsEveryModeControlOnScreen()
+	{
+		const auto restore = qScopeGuard([] {  // the density a click below sets, even if a check fails
+			run(QStringLiteral("window.mixer_view"), {{QStringLiteral("density"), QStringLiteral("expanded")}});
+			syncMixer();
+		});
+		QWidget host;
+		auto* column = new QVBoxLayout(&host);
+		column->setContentsMargins(0, 0, 0, 0);
+		auto* narrow = new MixerModeBar(&host);
+		column->addWidget(narrow);
+		column->addStretch(1);
+		host.setFixedSize(300, 600);  // the panel is this wide whatever the bar asks for
+		host.show();
+		column->activate();
+		QCoreApplication::processEvents();
+		QCOMPARE(host.width(), 300);
+		const auto onScreen = [&](QWidget* control) {
+			const QRect r(control->mapTo(&host, QPoint(0, 0)), control->size());
+			// whole and uncrushed: a squeezed row shrinks a button below its caption, clipping it
+			const QSize whole = control->minimumSizeHint();
+			return host.rect().contains(r) && narrow->geometry().contains(r) && host.childAt(r.center()) == control
+				&& r.width() >= whole.width() && r.height() >= whole.height();
+		};
+		QPushButton* compact = narrow->densityButton(QStringLiteral("compact"));
+		QVERIFY2(onScreen(compact), "Density: Compact is clipped in a 300 px panel");
+		for (QWidget* control : narrow->findChildren<QWidget*>())
+		{
+			const bool interactive = qobject_cast<QAbstractButton*>(control) != nullptr || qobject_cast<QComboBox*>(control) != nullptr;
+			if (!interactive || !control->isVisibleTo(&host)) { continue; }
+			QVERIFY2(onScreen(control), qPrintable(control->objectName()));
+		}
+		QVERIFY(narrow->height() > compact->height() * 2);  // it wrapped onto more rows
+		QTest::mouseClick(compact, Qt::LeftButton);  // and Compact answers a click there
+		QCOMPARE(mixerviewoptions::options().density, QStringLiteral("compact"));
+		// A wide panel keeps one row with Routing Matrix... at its right end, as before.
+		host.setFixedSize(2400, 600);
+		column->activate();
+		QCoreApplication::processEvents();
+		QWidget* matrix = narrow->findChild<QWidget*>(QStringLiteral("mixerModeMatrix"));
+		QVERIFY(matrix != nullptr);
+		QVERIFY(onScreen(compact));
+		QVERIFY(onScreen(matrix));
+		QCOMPARE(narrow->width() - 1 - matrix->geometry().right(), narrow->layout()->contentsMargins().right());
+		QVERIFY(qAbs(matrix->geometry().center().y() - compact->geometry().center().y()) <= 2);
+	}
+
+	//! gui-1030: in a mixer too narrow for one row the bar wraps its controls onto more rows, so none of
+	//! them - Density: Expanded among them - lies past its right edge where it cannot be clicked.
+	void aNarrowModeBarKeepsEveryControlOnScreen()
+	{
+		QWidget host;
+		auto* narrow = new MixerModeBar(&host);
+		const int width = 320;
+		QVERIFY(narrow->sizeHint().width() > width);  // one row would not fit
+		const int height = std::max(narrow->heightForWidth(width), narrow->sizeHint().height());
+		host.resize(width, height);
+		narrow->setGeometry(0, 0, width, height);
+		narrow->layout()->invalidate();  // unshown, a resize alone does not lay it out again
+		narrow->layout()->activate();
+		QPushButton* expanded = narrow->densityButton(QStringLiteral("expanded"));
+		QVERIFY(expanded);
+		QVERIFY2(narrow->rect().contains(expanded->geometry()), "Density: Expanded is past the bar's edge");
+		QVERIFY2(expanded->width() >= expanded->minimumSizeHint().width(), "Density: Expanded is squeezed out of sight");
+		for (QWidget* control : narrow->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
+		{
+			if (control->isHidden() || control->isWindow()) { continue; }
+			QVERIFY2(narrow->rect().contains(control->geometry()), qPrintable(control->objectName() + QStringLiteral(" is clipped")));
+			QVERIFY2(control->width() >= control->minimumSizeHint().width(), qPrintable(control->objectName() + QStringLiteral(" is squeezed")));
+		}
+		// Wide enough, the bar stays the one row it was.
+		const int wide = narrow->sizeHint().width() + 120;
+		narrow->setGeometry(0, 0, wide, narrow->sizeHint().height());
+		narrow->layout()->invalidate();  // unshown, a resize alone does not lay it out again
+		narrow->layout()->activate();
+		QCOMPARE(expanded->geometry().center().y(), narrow->viewButton(QStringLiteral("mix"))->geometry().center().y());
+		QCOMPARE(narrow->zonesButton()->geometry().center().y(), expanded->geometry().center().y());
+		QPushButton* matrix = narrow->findChild<QPushButton*>(QStringLiteral("mixerModeMatrix"));
+		QVERIFY(matrix);
+		QCOMPARE(matrix->geometry().right(), wide - narrow->layout()->contentsMargins().right() - 1);
+	}
+
+	//! gui-1030: in a narrow Mixer panel the bar wraps onto more rows instead of clipping its right-hand
+	//! controls (Pick..., Follow Selection, the mode chips, Routing Matrix...); wide, it stays one row.
+	void theModeBarWrapsInsteadOfClippingInANarrowPanel()
+	{
+		MixerModeBar probe(nullptr);
+		const auto heightAt = [&probe](int width) {
+			return probe.hasHeightForWidth() ? probe.heightForWidth(width) : probe.sizeHint().height();
+		};
+		const auto controlsOutside = [&probe, &heightAt](int width) {
+			// The layout is driven directly: a hidden widget defers its resize (and so its layout) to show.
+			probe.resize(width, heightAt(width));
+			probe.layout()->setGeometry(probe.rect());
+			QStringList outside;
+			const QRect room = probe.rect();
+			for (QWidget* control : probe.findChildren<QWidget*>())
+			{
+				if (qobject_cast<QAbstractButton*>(control) == nullptr && qobject_cast<QComboBox*>(control) == nullptr) { continue; }
+				const QRect at(control->mapTo(&probe, QPoint(0, 0)), control->size());
+				if (!room.contains(at)) { outside << QStringLiteral("%1@%2,%3,%4x%5").arg(control->objectName()).arg(at.x()).arg(at.y()).arg(at.width()).arg(at.height()); }
+			}
+			return outside;
+		};
+		const int wide = 3000;
+		const int narrow = 420;
+		// Without wrapping the row's minimum is the sum of its controls, which a narrower panel can only clip.
+		QVERIFY2(probe.minimumSizeHint().width() <= narrow,
+			qPrintable(QStringLiteral("the bar needs %1px at least").arg(probe.minimumSizeHint().width())));
+		QVERIFY2(controlsOutside(wide).isEmpty(), "the wide bar must fit");
+		QPushButton* matrix = probe.findChild<QPushButton*>(QStringLiteral("mixerModeMatrix"));
+		QVERIFY(matrix != nullptr);
+		const int wideRowY = matrix->mapTo(&probe, QPoint(0, 0)).y();
+		QVERIFY(matrix->geometry().right() > wide / 2);  // the old stretch keeps the trailing controls on the right
+		for (QWidget* control : probe.findChildren<QWidget*>())
+		{
+			if (qobject_cast<QAbstractButton*>(control) == nullptr && qobject_cast<QComboBox*>(control) == nullptr) { continue; }
+			QCOMPARE(control->mapTo(&probe, QPoint(0, 0)).y(), wideRowY);  // wide enough means one row, as before
+		}
+		const int oneRow = heightAt(wide);
+		const QStringList clipped = controlsOutside(narrow);
+		QVERIFY2(clipped.isEmpty(), qPrintable(QStringLiteral("clipped at %1px: %2").arg(narrow).arg(clipped.join(QLatin1Char(',')))));
+		QVERIFY(probe.hasHeightForWidth());
+		QVERIFY2(heightAt(narrow) > oneRow, "a narrow bar must take more rows");
+		QCOMPARE(heightAt(wide), oneRow);
+		QVERIFY(probe.findChild<QPushButton*>(QStringLiteral("mixerModePickSelected")) != nullptr);
+	}
+
+	//! Acceptance 1: the fader and the mute/solo (LED) buttons are Tab stops, answer their keys, and
+	//! are in the accessibility walk with the channel's name and the right role.
+	void mixerControlsTakeFocusAndAnswerTheKeys()
+	{
+		QVERIFY(activateMainWindow());
+		syncMixer();
+		MixerView* mixerView = getGUI()->mixerView();
+		MixerChannelView* view = strip(m_sender);
+		mixerView->setCurrentMixerChannel(m_sender);
+		const QString channelName = Engine::mixer()->mixerChannel(m_sender)->m_name;
+
+		QWidget* mute = muteButtonOf(view);
+		QWidget* solo = view->soloButton();
+		QVERIFY(mute != nullptr);
+		QVERIFY(solo != nullptr);
+		Fader* fader = view->fader();
+		Knob* pan = view->panKnob();
+		QCOMPARE(mute->focusPolicy(), Qt::TabFocus);
+		QCOMPARE(solo->focusPolicy(), Qt::TabFocus);
+		QCOMPARE(fader->focusPolicy(), Qt::TabFocus);
+
+		// The same walk AccessibilityWalkTest makes: every visible Tab stop, with a name.
+		QSet<QWidget*> walked;
+		for (QWidget* widget : view->findChildren<QWidget*>())
+		{
+			if ((widget->focusPolicy() & Qt::TabFocus) == 0 || !widget->isVisibleTo(mixerView)) { continue; }
+			walked.insert(widget);
+			QVERIFY2(!announcedName(widget).isEmpty(),
+				qPrintable(QStringLiteral("unnamed focusable %1").arg(QString::fromLatin1(widget->metaObject()->className()))));
+		}
+		QVERIFY(walked.contains(fader));
+		QVERIFY(walked.contains(mute));
+		QVERIFY(walked.contains(solo));
+		QVERIFY(walked.contains(pan));
+
+		// Qt's bridge says what each control is, and names it for its channel.
+		QCOMPARE(announcedRole(fader), QAccessible::Slider);
+		QCOMPARE(announcedRole(pan), QAccessible::Dial);
+		QCOMPARE(announcedRole(mute), QAccessible::Button);
+		QCOMPARE(announcedRole(solo), QAccessible::Button);
+		QCOMPARE(announcedName(fader), QStringLiteral("Fader %1").arg(channelName));
+		QCOMPARE(announcedName(mute), QStringLiteral("Mute %1").arg(channelName));
+		QCOMPARE(announcedName(solo), QStringLiteral("Solo %1").arg(channelName));
+		QCOMPARE(announcedName(pan), QStringLiteral("Pan %1").arg(channelName));
+		QCOMPARE(view->accessibleName(), channelName);  // the strip's name is the channel context
+		QVERIFY(announcedName(fader).contains(channelName));
+
+		// The fader answers the slider keys - the same path the keyboard already used.
+		FloatModel* volume = &Engine::mixer()->mixerChannel(m_sender)->m_volumeModel;
+		const float original = volume->value();
+		fader->setFocus();
+		QTRY_VERIFY(fader->hasFocus());
+		QTest::keyClick(fader, Qt::Key_End);
+		QCOMPARE(volume->value(), volume->maxValue());
+		QTest::keyClick(fader, Qt::Key_Home);
+		QCOMPARE(volume->value(), volume->minValue());
+		QTest::keyClick(fader, Qt::Key_PageUp);
+		QVERIFY(volume->value() > volume->minValue());
+		QTest::keyClick(fader, Qt::Key_Up);
+		QVERIFY(volume->value() > volume->minValue());
+		volume->setValue(original);
+
+		// Space presses the model buttons.
+		BoolModel* muteModel = &Engine::mixer()->mixerChannel(m_sender)->m_muteModel;
+		const bool wasMuted = muteModel->value();
+		mute->setFocus();
+		QTRY_VERIFY(mute->hasFocus());
+		QTest::keyClick(mute, Qt::Key_Space);
+		QCOMPARE(muteModel->value(), !wasMuted);
+		QTest::keyClick(mute, Qt::Key_Space);
+		QCOMPARE(muteModel->value(), wasMuted);
+	}
+
+	//! A send knob's model is the selected source's send to this strip; focusing it must not select
+	//! its destination and hide the control before the keyboard can adjust it.
+	void sendKnobKeepsItsSourceWhileFocused()
+	{
+		QVERIFY(activateMainWindow());
+		syncMixer();
+		MixerView* mixerView = getGUI()->mixerView();
+		MixerChannelView* destination = strip(m_return);
+		mixerView->setCurrentMixerChannel(m_sender);
+		destination->soloButton()->setFocus();
+		QTRY_VERIFY(destination->soloButton()->hasFocus());
+		QCOMPARE(mixerView->currentMixerChannel(), destination);
+
+		// The send belongs to the selected source, so restoring that source shows the knob on its target.
+		mixerView->setCurrentMixerChannel(m_sender);
+		FloatModel* sendModel = Engine::mixer()->channelSendModel(m_sender, m_return);
+		QVERIFY(sendModel != nullptr);
+		const QList<QWidget*> controls = destination->keyboardFocusOrder();
+		QVERIFY(!controls.isEmpty());
+		auto* sendKnob = qobject_cast<Knob*>(controls.first());
+		QVERIFY(sendKnob != nullptr);
+		QCOMPARE(announcedName(sendKnob), QStringLiteral("Send to Verb"));
+		QVERIFY(sendKnob->isVisibleTo(mixerView));
+
+		const float original = sendModel->value();
+		sendKnob->setFocus();
+		QTRY_VERIFY(sendKnob->hasFocus());
+		QCOMPARE(mixerView->currentMixerChannel(), strip(m_sender));
+		QVERIFY(sendKnob->isVisibleTo(mixerView));
+		QTest::keyClick(sendKnob, Qt::Key_Up);
+		QVERIFY(sendModel->value() > original);
+		sendModel->setValue(original);
+
+		// Keep the source selected while Ctrl+Tab follows the same send to an adjacent destination.
+		const ControlResult created = run(QStringLiteral("bus.create"));
+		const int adjacentIndex = created.result.value(QStringLiteral("index")).toInt(-1);
+		QCOMPARE(adjacentIndex, m_return + 1);
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), ch(m_sender)},
+			{QStringLiteral("to"), ch(adjacentIndex)}, {QStringLiteral("amount"), 0.25}}).ok);
+		syncMixer();
+		mixerView->setCurrentMixerChannel(m_sender);
+		destination = strip(m_return);
+		const QList<QWidget*> refreshedControls = destination->keyboardFocusOrder();
+		QVERIFY(!refreshedControls.isEmpty());
+		sendKnob = qobject_cast<Knob*>(refreshedControls.first());
+		QVERIFY(sendKnob != nullptr);
+		MixerChannelView* adjacent = strip(adjacentIndex);
+		const QList<QWidget*> adjacentControls = adjacent->keyboardFocusOrder();
+		QVERIFY(!adjacentControls.isEmpty());
+		auto* adjacentSendKnob = qobject_cast<Knob*>(adjacentControls.first());
+		QVERIFY(adjacentSendKnob != nullptr);
+		const QString adjacentName = Engine::mixer()->mixerChannel(adjacentIndex)->m_name;
+		QCOMPARE(announcedName(adjacentSendKnob), QStringLiteral("Send to %1").arg(adjacentName));
+
+		QTest::keyClick(sendKnob, Qt::Key_Tab, Qt::ControlModifier);
+		QTRY_COMPARE(QApplication::focusWidget(), adjacentSendKnob);
+		QCOMPARE(mixerView->currentMixerChannel(), strip(m_sender));
+		QTest::keyClick(adjacentSendKnob, Qt::Key_Backtab, Qt::ControlModifier);
+		QTRY_COMPARE(QApplication::focusWidget(), sendKnob);
+		QCOMPARE(mixerView->currentMixerChannel(), strip(m_sender));
+		mixerView->deleteChannel(adjacentIndex);
+		syncMixer();
+	}
+
+	//! Acceptance 2: Tab and Shift+Tab walk the strip's controls in order and wrap inside it.
+	void tabMovesThroughOneStripsControls()
+	{
+		QVERIFY(activateMainWindow());
+		syncMixer();
+		MixerView* mixerView = getGUI()->mixerView();
+		mixerView->setCurrentMixerChannel(m_sender);
+		MixerChannelView* view = strip(m_sender);
+		const QString channelName = Engine::mixer()->mixerChannel(m_sender)->m_name;
+		AutomatableButton* mute = muteButtonOf(view);
+		AutomatableButton* solo = view->soloButton();
+		QVERIFY(mute != nullptr);
+		QVERIFY(solo != nullptr);
+
+		// Walk forward from Solo until Tab comes back to it. The strip's own controls must all be
+		// met on the way - and nothing outside the strip - before the wrap.
+		const auto walk = [&](Qt::Key key, QList<QWidget*>* seen) {
+			seen->append(solo);
+			solo->setFocus();
+			QTRY_COMPARE(QApplication::focusWidget(), solo);
+			for (int i = 0; i < 32; ++i)
+			{
+				QWidget* current = QApplication::focusWidget();
+				QVERIFY(current != nullptr);
+				QTest::keyClick(current, key);
+				QWidget* next = QApplication::focusWidget();
+				QVERIFY(next != nullptr);
+				if (next == solo) { return; }
+				QVERIFY2(!seen->contains(next), "Tab left the strip or repeated a control before wrapping");
+				QVERIFY2(view->isAncestorOf(next), "Tab left the strip");
+				seen->append(next);
+			}
+			QFAIL("Tab did not wrap back to the first control");
+		};
+
+		QList<QWidget*> forward;
+		walk(Qt::Key_Tab, &forward);
+		QTRY_COMPARE(QApplication::focusWidget(), solo);
+		QVERIFY(forward.size() >= 4);
+		QVERIFY(forward.contains(view->fader()));
+		QVERIFY(forward.contains(mute));
+		QVERIFY(forward.contains(view->panKnob()));
+		for (QWidget* control : forward)
+		{
+			QVERIFY(!announcedName(control).isEmpty());
+			// The strip stays the selected channel while the keyboard moves through it.
+			QCOMPARE(mixerView->currentMixerChannel(), view);
+		}
+		QVERIFY(announcedName(view->fader()).contains(channelName));
+
+		// Shift+Tab walks the same set backwards (the last control comes first).
+		QList<QWidget*> reverse;
+		walk(Qt::Key_Backtab, &reverse);
+		QTRY_COMPARE(QApplication::focusWidget(), solo);
+		QCOMPARE(reverse.size(), forward.size());
+		QSet<QWidget*> forwardSet;
+		for (QWidget* control : forward) { forwardSet.insert(control); }
+		QSet<QWidget*> reverseSet;
+		for (QWidget* control : reverse) { reverseSet.insert(control); }
+		QCOMPARE(reverseSet, forwardSet);
+		QCOMPARE(reverse.at(1), forward.last());
+	}
+
+	//! Acceptance 2 and 3: Ctrl+Tab and Ctrl+Shift+Tab reach the same control on the adjacent
+	//! channel, forward and backward, and leave the selection with the focus.
+	void ctrlTabMovesTheSameControlAcrossChannels()
+	{
+		QVERIFY(activateMainWindow());
+		syncMixer();
+		MixerView* mixerView = getGUI()->mixerView();
+		MixerChannelView* first = strip(0);
+		MixerChannelView* second = strip(1);
+		const QString firstName = Engine::mixer()->mixerChannel(0)->m_name;
+		const QString secondName = Engine::mixer()->mixerChannel(1)->m_name;
+
+		AutomatableButton* firstMute = muteButtonOf(first);
+		AutomatableButton* secondMute = muteButtonOf(second);
+		QVERIFY(firstMute != nullptr);
+		QVERIFY(secondMute != nullptr);
+		firstMute->setFocus();
+		QTRY_VERIFY(firstMute->hasFocus());
+		QTest::keyClick(firstMute, Qt::Key_Tab, Qt::ControlModifier);
+		QTRY_COMPARE(QApplication::focusWidget(), secondMute);
+		QCOMPARE(mixerView->currentMixerChannel(), second);
+		QCOMPARE(announcedName(secondMute), QStringLiteral("Mute %1").arg(secondName));
+
+		QTest::keyClick(secondMute, Qt::Key_Tab, Qt::ControlModifier | Qt::ShiftModifier);
+		QTRY_COMPARE(QApplication::focusWidget(), firstMute);
+		QCOMPARE(mixerView->currentMixerChannel(), first);
+		QCOMPARE(announcedName(firstMute), QStringLiteral("Mute %1").arg(firstName));
+
+		// A fader is the same fader on the next channel; reverse comes back to this one.
+		first->fader()->setFocus();
+		QTRY_VERIFY(first->fader()->hasFocus());
+		QTest::keyClick(first->fader(), Qt::Key_Tab, Qt::ControlModifier);
+		QTRY_COMPARE(QApplication::focusWidget(), second->fader());
+		QCOMPARE(announcedName(second->fader()), QStringLiteral("Fader %1").arg(secondName));
+		QTest::keyClick(second->fader(), Qt::Key_Backtab, Qt::ControlModifier);
+		QTRY_COMPARE(QApplication::focusWidget(), first->fader());
+	}
+
+	//! Acceptance 3: at the first and last channel the command keeps the focus and the selection -
+	//! after proving it still moves between the channels inside those ends.
+	void ctrlTabDoesNotWrapAtTheMixerEnds()
+	{
+		QVERIFY(activateMainWindow());
+		syncMixer();
+		MixerView* mixerView = getGUI()->mixerView();
+		MixerChannelView* master = strip(0);
+		MixerChannelView* second = strip(1);
+		second->soloButton()->setFocus();
+		QTRY_VERIFY(second->soloButton()->hasFocus());
+		QTest::keyClick(second->soloButton(), Qt::Key_Tab, Qt::ControlModifier | Qt::ShiftModifier);
+		QTRY_COMPARE(QApplication::focusWidget(), master->soloButton());
+		QCOMPARE(mixerView->currentMixerChannel(), master);
+		// From the first channel, backwards stays here.
+		master->soloButton()->setFocus();
+		QTRY_VERIFY(master->soloButton()->hasFocus());
+		QTest::keyClick(master->soloButton(), Qt::Key_Tab, Qt::ControlModifier | Qt::ShiftModifier);
+		QTRY_VERIFY(master->soloButton()->hasFocus());
+		QCOMPARE(mixerView->currentMixerChannel(), master);
+
+		const int last = static_cast<int>(Engine::mixer()->numChannels()) - 1;
+		QVERIFY(last > 1);
+		MixerChannelView* previous = strip(last - 1);
+		MixerChannelView* end = strip(last);
+		previous->fader()->setFocus();
+		QTRY_VERIFY(previous->fader()->hasFocus());
+		QTest::keyClick(previous->fader(), Qt::Key_Tab, Qt::ControlModifier);
+		QTRY_COMPARE(QApplication::focusWidget(), end->fader());
+		QCOMPARE(mixerView->currentMixerChannel(), end);
+		// From the last channel, forwards stays here.
+		end->fader()->setFocus();
+		QTRY_VERIFY(end->fader()->hasFocus());
+		QTest::keyClick(end->fader(), Qt::Key_Tab, Qt::ControlModifier);
+		QTRY_VERIFY(end->fader()->hasFocus());
+		QCOMPARE(mixerView->currentMixerChannel(), end);
+	}
+
+	void ctrlRightClickDoesNotSelectAnotherStrip()
+	{
+		MixerView* mixerView = getGUI()->mixerView();
+		mixerView->setCurrentMixerChannel(m_sender);
+		MixerChannelView* target = strip(m_return);
+
+		QTest::mousePress(target, Qt::RightButton, Qt::ControlModifier, target->rect().center());
+
+		QCOMPARE(mixerView->currentMixerChannel()->channelIndex(), m_sender);
+	}
+
 	void listeningShowsOnTheStripAndTheBar()
 	{
 		QVERIFY(run(QStringLiteral("mixer.listen"), {{QStringLiteral("channel"), ch(m_sender)}}).ok);
@@ -228,6 +769,48 @@ private slots:
 		syncMixer();
 		QVERIFY(bar()->masterButton()->text().startsWith(QStringLiteral("Master: ")));
 		QVERIFY(!bar()->masterButton()->text().contains(QStringLiteral("ch-")));
+	}
+
+	void sendIndicatorOnlyTogglesOnLeftPress()
+	{
+		MixerView* view = getGUI()->mixerView();
+		view->setCurrentMixerChannel(m_sender);
+		Mixer* mixer = Engine::mixer();
+		Song* song = Engine::getSong();
+		QVERIFY(mixer->channelSendModel(m_sender, m_return) != nullptr);
+		song->noteProjectSaved(QStringLiteral("send-indicator-clean.mmpz"));
+		QVERIFY(!song->isModified());
+
+		SendButtonIndicator indicator{nullptr, strip(m_return), view};
+		QMouseEvent rightPress{QEvent::MouseButtonPress, QPointF{1, 1}, QPointF{1, 1}, QPointF{1, 1},
+			Qt::RightButton, Qt::RightButton, Qt::NoModifier};
+		QApplication::sendEvent(&indicator, &rightPress);
+		QVERIFY(mixer->channelSendModel(m_sender, m_return) != nullptr);
+		QVERIFY(!song->isModified());
+
+		QMouseEvent middlePress{QEvent::MouseButtonPress, QPointF{1, 1}, QPointF{1, 1}, QPointF{1, 1},
+			Qt::MiddleButton, Qt::MiddleButton, Qt::NoModifier};
+		QApplication::sendEvent(&indicator, &middlePress);
+		QVERIFY(mixer->channelSendModel(m_sender, m_return) != nullptr);
+		QVERIFY(!song->isModified());
+
+		QMouseEvent leftPress{QEvent::MouseButtonPress, QPointF{1, 1}, QPointF{1, 1}, QPointF{1, 1},
+			Qt::LeftButton, Qt::LeftButton, Qt::NoModifier};
+		QApplication::sendEvent(&indicator, &leftPress);
+		QVERIFY(mixer->channelSendModel(m_sender, m_return) == nullptr);
+		QVERIFY(song->isModified());
+
+		song->noteProjectSaved(QStringLiteral("send-indicator-clean.mmpz"));
+		QMouseEvent createPress{QEvent::MouseButtonPress, QPointF{1, 1}, QPointF{1, 1}, QPointF{1, 1},
+			Qt::LeftButton, Qt::LeftButton, Qt::NoModifier};
+		QApplication::sendEvent(&indicator, &createPress);
+		QVERIFY(mixer->channelSendModel(m_sender, m_return) != nullptr);
+		QVERIFY(song->isModified());
+
+		QMouseEvent cleanupPress{QEvent::MouseButtonPress, QPointF{1, 1}, QPointF{1, 1}, QPointF{1, 1},
+			Qt::LeftButton, Qt::LeftButton, Qt::NoModifier};
+		QApplication::sendEvent(&indicator, &cleanupPress);
+		song->noteProjectSaved(QStringLiteral("send-indicator-clean.mmpz"));
 	}
 
 	void renamingFromTheStripIsOneUndoStep()
@@ -266,6 +849,164 @@ private slots:
 		QCOMPARE(model.data(model.index(5, 0), Qt::AccessibleTextRole).toString(), QStringLiteral("Ch 5 to Master: no send (Enter makes one)"));
 		QVERIFY(model.flags(model.index(7, 7)) == Qt::NoItemFlags);  // no channel sends to itself
 		QCOMPARE(model.channelId(4), QStringLiteral("ch-4"));
+	}
+
+// Deleting a channel renumbers the ones behind it. The selection follows the channel itself, not
+	// the number it used to sit at: removing one in front of it left it pointing at whatever channel
+	// then took that number.
+	void deletingAChannelInFrontKeepsTheSelectedChannelSelected()
+	{
+		MixerView* mixer = getGUI()->mixerView();
+		const int front = Engine::mixer()->createChannel();
+		Engine::mixer()->mixerChannel(front)->m_name = QStringLiteral("Wedge");
+		const int middle = Engine::mixer()->createChannel();
+		Engine::mixer()->mixerChannel(middle)->m_name = QStringLiteral("Room");
+		const int last = Engine::mixer()->createChannel();
+		Engine::mixer()->mixerChannel(last)->m_name = QStringLiteral("Plate");
+		mixer->syncWithMixer();
+		// A channel with channels behind it, so the stale number names a real neighbour.
+		mixer->setCurrentMixerChannel(middle);
+		QCOMPARE(mixer->currentMixerChannel()->channelIndex(), middle);
+
+		mixer->deleteChannel(front);
+		QCOMPARE(Engine::mixer()->numChannels(), last);  // one fewer
+		// The same channel, renumbered: its strip, and the selection with it.
+		QCOMPARE(mixer->currentMixerChannel()->channelIndex(), middle - 1);
+		QCOMPARE(Engine::mixer()->mixerChannel(middle - 1)->m_name, QStringLiteral("Room"));
+	}
+
+// A channel added while the mixer was open rebuilds the strips. The selection then jumped to Master
+	// and the user's channel was lost, whatever the rebuild was for.
+	void addingAChannelKeepsTheSelectedChannelSelected()
+	{
+		MixerView* mixer = getGUI()->mixerView();
+		const int selected = Engine::mixer()->createChannel();
+		Engine::mixer()->mixerChannel(selected)->m_name = QStringLiteral("Selected");
+		mixer->syncWithMixer();
+		mixer->setCurrentMixerChannel(selected);
+		QCOMPARE(Engine::mixer()->mixerChannel(mixer->currentMixerChannel()->channelIndex())->m_name,
+			QStringLiteral("Selected"));
+
+		// A channel appears from outside the mixer: a script, or the TrackContainer above.
+		QVERIFY(Engine::mixer()->createChannel() > 0);
+		syncMixer();
+
+		QCOMPARE(Engine::mixer()->mixerChannel(mixer->currentMixerChannel()->channelIndex())->m_name,
+			QStringLiteral("Selected"));
+	}
+
+// mixer.order_by_tracks and friends reorder the channels behind the mixer's back: the count never
+	// changes, so nothing rebuilt the strips and each one kept driving the channel that used to sit
+	// at its number.
+	void aReorderWithTheSameCountRebindsEveryStrip()
+	{
+		const int first = Engine::mixer()->createChannel();
+		const int second = Engine::mixer()->createChannel();
+		for (int i = first; i <= second; ++i)
+		{
+			Engine::mixer()->mixerChannel(i)->m_name = QStringLiteral("Reordered %1").arg(i);
+			Engine::mixer()->mixerChannel(i)->m_volumeModel.setValue(0.25f + 0.25f * (i - first));
+		}
+		syncMixer();
+		QCOMPARE(strip(first)->fader()->model(), &Engine::mixer()->mixerChannel(first)->m_volumeModel);
+
+		// The same channel count, a different order: the mixer moves the channels itself.
+		Engine::mixer()->moveChannelLeft(second);
+		QCOMPARE(Engine::mixer()->numChannels(), second + 1);  // the count never changed
+		syncMixer();
+
+		// Every strip's controls drive the channel now at its own number, not the one it was built for.
+		for (int i = 0; i < Engine::mixer()->numChannels(); ++i)
+		{
+			MixerChannel* channel = Engine::mixer()->mixerChannel(i);
+			QCOMPARE(strip(i)->channelIndex(), i);
+			QCOMPARE(strip(i)->soloButton()->model(), &channel->m_soloModel);
+		}
+	}
+
+	void rightClickDoesNotChangePinRouting()
+	{
+		TestAudioPortsModel model{2, 2, true};
+		auto* connector = new PinConnector{&model};
+		QPointer<PinConnector> connectorGuard{connector};
+
+		connector->toggleVisibility();
+		QList<QWidget*> matrices;
+		for (QWidget* child : connector->findChildren<QWidget*>())
+		{
+			if (child->toolTip().contains(QStringLiteral("input(s)"))
+				|| child->toolTip().contains(QStringLiteral("output(s)")))
+			{
+				matrices.append(child);
+			}
+		}
+		const bool matrixCountValid = matrices.size() == 2;
+		const bool matricesVisible = matrixCountValid
+			&& std::all_of(matrices.cbegin(), matrices.cend(), [](const auto* matrix) { return matrix->isVisible(); });
+		const bool inputPinInitiallyDisabled = !model.in().enabled(0, 0);
+		const bool outputPinInitiallyEnabled = model.out().enabled(0, 0);
+		if (matricesVisible)
+		{
+			for (auto* matrix : matrices)
+			{
+				QTest::mouseClick(matrix, Qt::RightButton, Qt::NoModifier, QPoint{8, 8});
+			}
+		}
+		const bool pinsUnchanged = !model.in().enabled(0, 0) && model.out().enabled(0, 0);
+		connector->closeWindow();
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+		const bool connectorClosed = connectorGuard.isNull();
+
+		QVERIFY(matrixCountValid);
+		QVERIFY(matricesVisible);
+		QVERIFY(inputPinInitiallyDisabled);
+		QVERIFY(outputPinInitiallyEnabled);
+		QVERIFY(connectorClosed);
+		QVERIFY(pinsUnchanged);
+	}
+
+	void defaultPaletteRestoresAfterTrackPalette()
+	{
+		QVector<QColor> original (48);
+		for (int i = 0; i < original.size(); ++i)
+		{
+			original[i] = QColorDialog::standardColor(i);
+		}
+
+		ColorChooser chooser;
+		chooser.setPalette(ColorChooser::Palette::Track);
+		chooser.setPalette(ColorChooser::Palette::Default);
+		QVector<QColor> restored (48);
+		for (int i = 0; i < restored.size(); ++i)
+		{
+			restored[i] = QColorDialog::standardColor(i);
+		}
+
+		for (int i = 0; i < original.size(); ++i)
+		{
+			QColorDialog::setStandardColor(i, original[i]);
+		}
+		QCOMPARE(restored, original);
+	}
+
+	//! gui-1106-main-edit: with the Mixer open, the mode bar's full row (1576 px) made the main window's minimum
+	//! width 2000 px, so on a 1600-px screen the window grew past the edge and took the footer's Arrange/Mix/Edit
+	//! switches and the Browser switch with it. Every mode control must remain visible and unobscured
+	//! inside the same window; layout implementation is not the behavioral contract.
+	void anOpenMixerKeepsTheMainWindowOnA1600PixelScreen()
+	{
+		MainWindow* window = getGUI()->mainWindow();
+		window->revealPanel(QStringLiteral("mixer"));
+		QVERIFY(getGUI()->mixerView()->isVisible());
+		QVERIFY2(window->minimumSizeHint().width() <= 1600,
+			qPrintable(QStringLiteral("main window minimum width %1").arg(window->minimumSizeHint().width())));
+		window->resize(1600, 900);
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+		QCoreApplication::processEvents();
+		QVERIFY(window->width() <= 1600);
+		const QString problem = lmms::test::mixerModeVisibilityProblem(bar(), window);
+		QVERIFY2(problem.isEmpty(), qPrintable(problem));
+		QVERIFY(bar()->findChild<QPushButton*>(QStringLiteral("mixerModeMatrix")) != nullptr);
 	}
 
 private:

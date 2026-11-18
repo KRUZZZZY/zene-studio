@@ -34,6 +34,7 @@
 #include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "Mixer.h"
+#include "MixerPostInserts.h"
 #include "Song.h"
 
 namespace lmms
@@ -101,11 +102,19 @@ void appendChannelChains(QJsonArray* chains, bool withDevicesOnly)
 	Mixer* mixer = Engine::mixer();
 	for (int i = 0; mixer != nullptr && i < static_cast<int>(mixer->numChannels()); ++i)
 	{
+		const QString channelId = control::channelIdOf(mixer->mixerChannel(i));
 		ControlTarget target;
 		ControlResult ignored;
-		if (!resolveControlTarget(control::channelIdOf(mixer->mixerChannel(i)), &target, &ignored)) { continue; }
-		if (withDevicesOnly && target.chain->effects().empty()) { continue; }
-		chains->append(chainJson(target));
+		if (!resolveControlTarget(channelId, &target, &ignored)) { continue; }
+		if (!withDevicesOnly || !target.chain->effects().empty()) { chains->append(chainJson(target)); }
+		// MX-082: the post-fader inserts hang off the channel as a chain of their own, addressed
+		// 'ch-<n>/post' by every device command, so the state a channel carries includes them.
+		ControlTarget post;
+		if (resolveControlTarget(postinserts::targetOf(channelId), &post, &ignored)
+			&& (!withDevicesOnly || !post.chain->effects().empty()))
+		{
+			chains->append(chainJson(post));
+		}
 	}
 }
 
@@ -155,7 +164,8 @@ void registerDspCommands(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Every device chain with its fx-<n> instances, each one's "
 		"parameter values and, on an instrument track, its 'inst' entry with the instrument's "
 		"parameters. With 'target' it reads exactly that target, an empty chain included; "
-		"without it, every track and mixer channel that carries at least one device.");
+		"without it, every track and mixer channel that carries at least one device. A clip-<n> target reads an audio "
+		"clip's own effects (Q050-111).");
 	cmd.argsSchema = objectSchema({{QStringLiteral("target"), stringProperty()}});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("chains"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},

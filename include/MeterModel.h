@@ -34,11 +34,27 @@ namespace lmms
 class LMMS_EXPORT MeterModel : public Model
 {
 	Q_OBJECT
-	mapPropertyFromModel(int,getNumerator,setNumerator,m_numeratorModel);
 	mapPropertyFromModel(int,getDenominator,setDenominator,m_denominatorModel);
 public:
 	MeterModel( Model * _parent );
 	~MeterModel() override = default;
+
+	// The numerator is a beat count and every caller divides by it. fittedValue() does not clamp
+	// NaN, so a NaN numerator is read as one beat here instead of through an undefined float-to-int
+	// conversion (which yields 0 or INT_MIN, never a valid count).
+	int getNumerator() const
+	{
+		const float numerator = m_numeratorModel.AutomatableModel::value<float>();
+		return numerator >= 1.0f ? static_cast<int>(numerator) : 1;
+	}
+
+public slots:
+	void setNumerator( const int val )
+	{
+		m_numeratorModel.setValue( (float) val );
+	}
+
+public:
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _this,
 						const QString & _name );

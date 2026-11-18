@@ -233,6 +233,17 @@ private slots:
 		{
 			QVERIFY2(note.pos + note.length <= 4, qPrintable(keysOf(notes)));
 		}
+
+		// The walk may end on INT32_MAX. Later arpeggio voices have no room
+		// there, so their offsets must be discarded before adding them to start.
+		request.steps = 1;
+		request.stepTicks = 1;
+		request.start = std::numeric_limits<tick_t>::max() - 1;
+		notes.clear();
+		QVERIFY2(generateNotes(request, &notes, &error), qPrintable(error));
+		QCOMPARE(notes.size(), 1u);
+		QCOMPARE(notes.front().pos, request.start);
+		QCOMPARE(notes.front().length, 1);
 	}
 
 	//! The tick the walk starts at: a chord track holds no event before tick 0
@@ -453,6 +464,10 @@ private slots:
 		notes.clear();
 		layOutChord({}, 0, 96, Pattern::Block, 100, &notes);
 		QVERIFY2(notes.empty(), "an empty chord produced notes");
+
+		notes.clear();
+		layOutChord(keys, 10, 0, Pattern::Block, 100, &notes);
+		QVERIFY2(notes.empty(), "a zero-room chord produced notes");
 	}
 
 	//! The progression as TRACK events: the same walk, with the vocabulary's

@@ -29,6 +29,8 @@
 
 #include "lmms_export.h"
 
+class QCheckBox;
+class QComboBox;
 class QLabel;
 class QListWidget;
 class QPushButton;
@@ -45,7 +47,9 @@ namespace lmms::gui
  *  an edit made directly in an editor is undone by Undo but is not in the list, and the panel
  *  says so rather than let the list read as the whole history. Its Limits row sets the two caps
  *  (control.set_undo_depth: steps, and a byte budget in MB) and the drag-merging window
- *  (control.set_undo_coalescing, in milliseconds; 0 turns merging off). */
+ *  (control.set_undo_coalescing, in milliseconds; 0 turns merging off). Its "Save with project" row
+ *  (WF-033) chooses whether this project saves its undo history (project.set_undo_history), the
+ *  default for every project, and the saved steps / compressed MB (the undohistory settings). */
 class LMMS_EXPORT UndoHistoryPanel : public QDialog
 {
 public:
@@ -64,6 +68,14 @@ private:
 	QSpinBox* m_steps = nullptr;
 	QSpinBox* m_megabytes = nullptr;
 	QSpinBox* m_coalesce = nullptr;
+	//! WF-033: the history saved with the project - the project's setting, the default, the two caps.
+	QComboBox* m_persist = nullptr;
+	QCheckBox* m_persistDefault = nullptr;
+	QSpinBox* m_savedSteps = nullptr;
+	QSpinBox* m_savedMb = nullptr;
+	QLabel* m_saved = nullptr;
+
+	void refreshSavedHistory();
 };
 
 } // namespace lmms::gui

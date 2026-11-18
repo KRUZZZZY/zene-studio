@@ -57,6 +57,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <span>
 #include <vector>
 
 namespace lmms
@@ -213,6 +214,15 @@ void mergeHalves(SmfInterchangeEvent* target, const SmfInterchangeEvent& source)
  *  is refused rather than written as something no reader of the format accepts. */
 bool appendDelta(QByteArray& out, qint64 cursor, qint64 tick, QString* error)
 {
+	if (tick > static_cast<qint64>(SmfMaxFileTicks))
+	{
+		if (error != nullptr)
+		{
+			*error = QStringLiteral("event at file tick %1 is beyond the %2 the reader can hold; "
+				"nothing was exported").arg(tick).arg(SmfMaxFileTicks);
+		}
+		return false;
+	}
 	const qint64 delta = tick - cursor;
 	if (delta < 0 || delta > SmfMaxDeltaTicks)
 	{
@@ -322,6 +332,63 @@ void fillWriteReport(const QString& path, const QByteArray& bytes,
 	report->lastTick = events.empty() ? 0 : events.back().tick;
 }
 
+//! Does the export read the global metre? Only the tick-0 seed carries it, and
+//! the seed is written only when the map is off or has no metre at tick zero.
+bool needsGlobalTimeSignature(const TempoMap& map)
+{
+	const std::span<const TempoMapEvent> events = map.all();
+	return !map.active() || std::none_of(events.begin(), events.end(),
+		[](const TempoMapEvent& event) { return event.tick == 0 && event.hasTimeSignature; });
+}
+
+//! The global metre may be written only when the seed can carry it. The seed is
+//! a time-signature-only event, so the engine's own rule for that half decides.
+bool globalTimeSignatureExportable(const TempoMap& map, const TempoMapTimeSignature& signature)
+{
+	if (!needsGlobalTimeSignature(map)) { return true; }
+	TempoMapEvent seed;
+	seed.tick = 0;
+	seed.hasTimeSignature = true;
+	seed.numerator = signature.numerator;
+	seed.denominator = signature.denominator;
+	return TempoMap::validEvent(seed);
+}
+
+//! The tick-0 seed writes globalTempo and globalSignature verbatim when the map
+//! does not carry them, so a value the engine does not hold has no encoding the
+//! file can carry. False - with \a error set - refuses such a value instead of
+//! writing another one; nothing is exported.
+bool globalSeedRepresentable(const TempoMap& map, int globalTempo,
+	const TempoMapTimeSignature& globalSignature, QString* error)
+{
+	// tempoPayload divides by the tempo: a tempo outside TempoMapMinTempo..
+	// TempoMapMaxTempo would divide by zero or write a byte triple no player
+	// reads back as the requested bpm.
+	if (globalTempo < TempoMapMinTempo || globalTempo > TempoMapMaxTempo)
+	{
+		if (error != nullptr)
+		{
+			*error = QStringLiteral("the global tempo %1 bpm is outside the %2..%3 bpm this "
+				"engine holds, so the tick-0 seed has no value the file can carry; nothing "
+				"was exported").arg(globalTempo).arg(TempoMapMinTempo).arg(TempoMapMaxTempo);
+		}
+		return false;
+	}
+	// A metre the engine does not hold (3/3, 0/4, 3/64) would be encoded as
+	// another metre.
+	if (!globalTimeSignatureExportable(map, globalSignature))
+	{
+		if (error != nullptr)
+		{
+			*error = QStringLiteral("the global time signature %1/%2 is outside the values this "
+				"engine holds, so the tick-0 seed has no value the file can carry; nothing "
+				"was exported").arg(globalSignature.numerator).arg(globalSignature.denominator);
+		}
+		return false;
+	}
+	return true;
+}
+
 } // namespace
 
 std::vector<SmfInterchangeEvent> exportEvents(const TempoMap& map, int globalTempo,
@@ -389,23 +456,21 @@ const SmfConvention& smfConvention()
 bool writeConductorTrack(const QString& path, const TempoMap& map, int globalTempo,
 	const TempoMapTimeSignature& globalSignature, SmfWriteReport* report, QString* error)
 {
-	// The tick-0 seed writes globalTempo verbatim, and tempoPayload divides by
-	// it: a tempo the engine does not hold (0, or anything outside
-	// TempoMapMinTempo..TempoMapMaxTempo) has no microseconds-per-quarter-note
-	// the format can carry, so the export is refused instead of dividing by zero
-	// or writing a byte triple no player reads back as the requested bpm.
-	if (globalTempo < TempoMapMinTempo || globalTempo > TempoMapMaxTempo)
+	if (!globalSeedRepresentable(map, globalTempo, globalSignature, error)) { return false; }
+	int seedEvents = 0;
+	const std::vector<SmfInterchangeEvent> events = exportEvents(map, globalTempo, globalSignature,
+		&seedEvents);
+	if (events.size() > static_cast<std::size_t>(TempoMap::MaxEvents))
 	{
 		if (error != nullptr)
 		{
-			*error = QStringLiteral("the global tempo %1 bpm is outside the %2..%3 bpm this "
-				"engine holds, so the tick-0 seed has no value the file can carry; nothing "
-				"was exported").arg(globalTempo).arg(TempoMapMinTempo).arg(TempoMapMaxTempo);
+			*error = QStringLiteral("the export needs %1 conductor ticks after the tick-0 seed and "
+				"the tempo map holds %2 events; nothing was exported")
+				.arg(events.size()).arg(TempoMap::MaxEvents);
 		}
 		return false;
 	}
-	const std::vector<SmfInterchangeEvent> events = exportEvents(map, globalTempo, globalSignature,
-		report != nullptr ? &report->seedEvents : nullptr);
+	if (report != nullptr) { report->seedEvents = seedEvents; }
 	QByteArray body;
 	if (!trackBody(events, &body, error)) { return false; }
 	const QByteArray bytes = conductorFile(body);

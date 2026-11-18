@@ -56,6 +56,7 @@ extern "C"
 #include "ScriptBindings.h"
 #include "ScriptConsole.h"
 #include "ScriptDawBindings.h"
+#include "ScriptImport.h"
 #include "Song.h"
 #include "Track.h"
 #include "TrackContainer.h"
@@ -94,7 +95,7 @@ public:
 	}
 
 	ScriptEngine::RunResult run(const QString& source, const QString& chunkName,
-					QString* error)
+					QString* error, const QString& importRoot = QString())
 	{
 		// CODE-6: the budget travels with the state it bounds. The allocator is
 		// ScriptMemoryState::allocate (include/ScriptMemoryBudget.h) - the second
@@ -116,6 +117,9 @@ public:
 		openSandbox(L);
 		ScriptBindings::registerAll(L, m_engine);
 		ScriptDawBindings::registerAll(L);
+		// Q050-051: sibling `require` for script FILES only (root = entry dir).
+		ScriptImport imports(importRoot); // outlives lua_close(): upvalue target
+		if (!importRoot.isEmpty()) { imports.install(L); }
 
 		m_state.instructions = 0;
 		m_state.budget = m_engine->instructionBudget();
@@ -140,9 +144,12 @@ public:
 					: QStringLiteral("unknown Lua error");
 			if (status == LUA_ERRMEM)
 			{
-				// CODE-6: name a memory refusal as a BUDGET one - Lua's own
-				// text ("not enough memory") does not say which bound was hit.
-				*error = memory.budgetExceededMessage(luaMessage);
+				// CODE-6: name the bound that actually bit - Lua's own text
+				// ("not enough memory") says neither whether it was the script's
+				// budget nor the machine. A refusal reads as a budget one; an
+				// allocation the system refused is reported as that instead, so
+				// a client is not told to raise a budget it never reached.
+				*error = memory.memoryErrorMessage(luaMessage);
 			}
 			else
 			{
@@ -318,17 +325,11 @@ ScriptEngine::~ScriptEngine()
 
 ScriptEngine::RunResult ScriptEngine::runFile(const QString& path, QString* error)
 {
-	QFile file(path);
-	if (!file.open(QIODevice::ReadOnly))
+	QString source;
+	if (!readScriptSource(path, MaxScriptSourceBytes, source, error))
 	{
-		if (error != nullptr)
-		{
-			*error = QStringLiteral("cannot open script '%1': %2").arg(path, file.errorString());
-		}
 		return RunResult::ScriptError;
 	}
-	const QString source = QString::fromUtf8(file.readAll());
-	file.close();
 
 	const QString version = parseVersionHeader(source);
 	if (version.isEmpty())
@@ -351,7 +352,7 @@ ScriptEngine::RunResult ScriptEngine::runFile(const QString& path, QString* erro
 		return RunResult::VersionError;
 	}
 
-	return runOnWorker(source, path, error);
+	return runOnWorker(source, path, error, QFileInfo(path).absolutePath());
 }
 
 
@@ -363,7 +364,7 @@ ScriptEngine::RunResult ScriptEngine::runString(const QString& source, QString* 
 
 
 ScriptEngine::RunResult ScriptEngine::runOnWorker(const QString& source, const QString& chunkName,
-							QString* error)
+							QString* error, const QString& importRoot)
 {
 	RunResult result = RunResult::ScriptError;
 	QString message;
@@ -381,13 +382,14 @@ ScriptEngine::RunResult ScriptEngine::runOnWorker(const QString& source, const Q
 		QMutexLocker locker(&m_stateMutex);
 		m_lastError.clear();
 		m_logMessages.clear();
+		m_logCapture.reset();
 	}
 
 	if (QThread::currentThread() == m_workerThread)
 	{
 		// Re-entrant invocation from the worker itself: run inline. No
 		// apply-side pump exists, so flushCommandsForRead() applies inline too.
-		result = m_worker->run(source, chunkName, &message);
+		result = m_worker->run(source, chunkName, &message, importRoot);
 	}
 	else
 	{
@@ -396,7 +398,7 @@ ScriptEngine::RunResult ScriptEngine::runOnWorker(const QString& source, const Q
 		m_applyPumpActive.store(true, std::memory_order_release);
 
 		const bool invoked = QMetaObject::invokeMethod(m_worker, [&]() {
-			result = m_worker->run(source, chunkName, &message);
+			result = m_worker->run(source, chunkName, &message, importRoot);
 			finished.store(true, std::memory_order_release);
 		}, Qt::QueuedConnection);
 		if (!invoked)
@@ -710,9 +712,15 @@ QString ScriptEngine::lastError() const
 }
 
 
-void ScriptEngine::enqueue(const ScriptCommand& command)
+bool ScriptEngine::enqueue(const ScriptCommand& command)
 {
-	m_commands.push(command);
+	return m_commands.push(command);
+}
+
+
+bool ScriptEngine::enqueue(const ScriptCommand& first, const ScriptCommand& second)
+{
+	return m_commands.push(first, second);
 }
 
 
@@ -736,19 +744,6 @@ void ScriptEngine::flushCommandsForRead()
 		return;
 	}
 	applyCommands(ScriptCommandQueueCapacity);
-}
-
-
-void ScriptEngine::logMessage(const QString& message)
-{
-	{
-		QMutexLocker locker(&m_stateMutex);
-		m_logMessages.append(message);
-	}
-	emit logged(message);
-	// The console is the part a script author sees while debugging: without it
-	// a print() only lands in the capture buffer above, which nothing renders.
-	ScriptConsole::streamLine(message);
 }
 
 
@@ -790,12 +785,7 @@ QString ScriptEngine::resolveProjectPath(const QString& path, bool forWrite, QSt
 
 	// Canonicalize the deepest existing ancestor so symlinks cannot be used to
 	// step outside the sandbox.
-	QString probe = candidate;
-	while (!QFileInfo::exists(probe) && probe.size() > root.size())
-	{
-		probe = QFileInfo(probe).absolutePath();
-	}
-	const QString realProbe = QFileInfo(probe).canonicalFilePath();
+	const QString realProbe = QFileInfo(deepestExistingAncestor(candidate, root)).canonicalFilePath();
 	if (realProbe != root && !realProbe.startsWith(root + QLatin1Char('/')))
 	{
 		if (error != nullptr)
@@ -819,7 +809,7 @@ QString ScriptEngine::resolveProjectPath(const QString& path, bool forWrite, QSt
 void ScriptEngine::pushMidiInEvent(int channel, int key, int velocity, bool noteOn)
 {
 	const ScriptMidiEvent event{channel, key, velocity, noteOn ? 1 : 0};
-	m_midiIn.write(&event, 1);
+	countDroppedMidiInEvent(m_midiIn.write(&event, 1));
 }
 
 

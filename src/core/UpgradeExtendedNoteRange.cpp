@@ -26,8 +26,9 @@
 
 #include <QDomElement>
 
-#include <set>
 #include <cassert>
+#include <limits>
+#include <set>
 
 
 namespace lmms
@@ -91,11 +92,25 @@ static void fixNotePatterns(QDomNodeList & patterns)
 			QDomElement note = notes.item(j).toElement();
 			if (note.hasAttribute("key"))
 			{
-				int const currentKey = note.attribute("key").toInt();
-				note.setAttribute("key", currentKey + 12);
+				bool converted = false;
+				int const currentKey = note.attribute("key").toInt(&converted);
+				if (converted && currentKey <= std::numeric_limits<int>::max() - 12)
+				{
+					note.setAttribute("key", currentKey + 12);
+				}
 			}
 		}
 	}
+}
+
+/**
+ * @brief Checks that a base note can be raised by @p semitones and still fit in an int.
+ * A value that would overflow, or that is not a number (NaN fails both comparisons),
+ * is left as it was saved.
+ */
+static bool canRaiseBaseNote(double const baseNote, int const semitones)
+{
+	return baseNote >= std::numeric_limits<int>::min() && baseNote <= std::numeric_limits<int>::max() - semitones;
 }
 
 static void fixInstrumentBaseNoteAndCollectIds(QDomElement & instrument, std::set<unsigned int> & automatedBaseNoteIds)
@@ -108,9 +123,15 @@ static void fixInstrumentBaseNoteAndCollectIds(QDomElement & instrument, std::se
 		   // stored as elements. Non-automated base notes are stored as attributes.
 	if (instrumentParent.hasAttribute("basenote"))
 	{
-		// TODO Base notes can have float values in the save file! This might need to be changed!
-		int const currentBaseNote = instrumentParent.attribute("basenote").toInt();
-		instrumentParent.setAttribute("basenote", currentBaseNote + 12);
+		// Base notes can have float values in the save file, so the value is read as a
+		// double and keeps its fraction. A value that is not a number, or that would
+		// overflow int, is left as it was saved.
+		bool converted = false;
+		double const currentBaseNote = instrumentParent.attribute("basenote").toDouble(&converted);
+		if (converted && canRaiseBaseNote(currentBaseNote, 12))
+		{
+			instrumentParent.setAttribute("basenote", currentBaseNote + 12);
+		}
 	}
 	else
 	{
@@ -130,8 +151,13 @@ static void fixInstrumentBaseNoteAndCollectIds(QDomElement & instrument, std::se
 					// is saved after a linear automation has run on the base note. Therefore
 					// it is fixed here as a float even if the nominal values of base notes
 					// are integers.
-					float const value = baseNote.attribute("value").toFloat();
-					baseNote.setAttribute("value", value + 12);
+					// A value that is not a number, or that would overflow int, is left as it was saved.
+					bool converted = false;
+					float const value = baseNote.attribute("value").toFloat(&converted);
+					if (converted && canRaiseBaseNote(value, 12))
+					{
+						baseNote.setAttribute("value", value + 12);
+					}
 				}
 
 					   // The ids of base notes are of type jo_id_t which are in fact uint32_t.
@@ -153,17 +179,44 @@ static void fixAutomationPattern(QDomElement & automationPattern)
 	while (!time.isNull())
 	{
 		// Automation patterns can automate base notes as floats
-		// so we read and correct them as floats here.
-		float const value = time.attribute("value").toFloat();
-		time.setAttribute("value", value + 12.);
+		// so we read and correct them as floats here. A node whose value cannot be read is
+		// kept as it was saved, outValue included, because the outValue follows from the value.
+		bool converted = false;
+		float const value = time.attribute("value").toFloat(&converted);
+		if (converted)
+		{
+			time.setAttribute("value", value + 12.);
 
-			   // The method "upgrade_automationNodes" adds some attributes
-			   // with the name "outValue". We have to correct these as well.
-		float const outValue = time.attribute("outValue").toFloat();
-		time.setAttribute("outValue", outValue + 12.);
+			// The method "upgrade_automationNodes" adds some attributes
+			// with the name "outValue". We have to correct these as well.
+			// A missing or unreadable outValue is not invented or changed.
+			bool outConverted = false;
+			float const outValue = time.attribute("outValue").toFloat(&outConverted);
+			if (outConverted)
+			{
+				time.setAttribute("outValue", outValue + 12.);
+			}
+		}
 
 		time = time.nextSiblingElement("time");
 	};
+}
+
+static void fixBaseNoteOnlyAutomationPatterns(QDomElement const & track, std::set<unsigned int> const & automatedBaseNoteIds)
+{
+	QDomElement automationPattern = track.firstChildElement("automationpattern");
+	while (!automationPattern.isNull())
+	{
+		// Only patterns that actually target a base note are corrected. Patterns without
+		// any target are left alone because no base note value was changed for them.
+		auto const analysis = analyzeAutomationPattern(automationPattern, automatedBaseNoteIds);
+		if (analysis.hasBaseNoteAutomations)
+		{
+			fixAutomationPattern(automationPattern);
+		}
+
+		automationPattern = automationPattern.nextSiblingElement("automationpattern");
+	}
 }
 
 static bool affected(QDomElement & instrument)
@@ -263,13 +316,7 @@ static void fixAutomationTracks(QDomElement & song, std::set<unsigned int> const
 			if (!containsPatternsWithNonBaseNoteTargets)
 			{
 				// Only base note targets. This means we can simply keep the track and fix it.
-				automationPattern = currentTrack.firstChildElement("automationpattern");
-				while (!automationPattern.isNull())
-				{
-					fixAutomationPattern(automationPattern);
-
-					automationPattern = automationPattern.nextSiblingElement("automationpattern");
-				}
+				fixBaseNoteOnlyAutomationPatterns(currentTrack, automatedBaseNoteIds);
 			}
 			else
 			{
@@ -418,15 +465,24 @@ void UpgradeExtendedNoteRange::upgrade()
 		// NOTE: Many older presets do not have any basenote defined, assume they were "made for 57".
 		// (Specifying a default like this also happens to fix a FileBrowser bug where previews of presets
 		// with undefined basenote always play with the basenote inherited from previously played preview.)
-		int oldBase = preset.attribute("basenote", "57").toInt();
-		preset.setAttribute("basenote", oldBase + 12);
+		bool converted = false;
+		double const oldBase = preset.attribute("basenote", "57").toDouble(&converted);
 		// Extra correction for Zyn, VeSTige, LV2 and Carla (to preserve the original buggy behavior).
 		QDomNodeList instruments = presets.item(0).toElement().elementsByTagName("instrument");
-		if (instruments.isEmpty()) { return; }
-		QDomElement instrument = instruments.item(0).toElement();
-		if (affected(instrument))
+		int shift = 12;
+		if (!instruments.isEmpty())
 		{
-			preset.setAttribute("basenote", preset.attribute("basenote").toInt() + 12);
+			QDomElement instrument = instruments.item(0).toElement();
+			if (affected(instrument))
+			{
+				shift += 12;
+			}
+		}
+		// Both corrections are applied as one shift. A base note that is not a number, or that
+		// would overflow int, is left as it was saved.
+		if (converted && canRaiseBaseNote(oldBase, shift))
+		{
+			preset.setAttribute("basenote", oldBase + shift);
 		}
 	}
 }

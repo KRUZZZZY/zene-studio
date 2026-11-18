@@ -22,15 +22,22 @@
  *
  */
 
+#include "AddTrackMenu.h"
 #include "SongEditor.h"
 #include "ArrangerClipKeys.h"
 
 #include <QSignalBlocker>
+#include <QStatusBar>
+#include <new>
 #include "Timeline.h"
+#include "AddTrackMenu.h"
 #include "ControlRegistry.h"
 #include "SessionSyncAction.h"
 #include "VisibilitySetMenu.h"
+#include "ItemList.h"
+#include "ShellChrome.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include <QAction>
@@ -60,6 +67,7 @@
 #include "LcdSpinBox.h"
 #include "MainWindow.h"
 #include "MeterDialog.h"
+#include "NeutralTrackView.h"
 #include "Oscilloscope.h"
 #include "PianoRoll.h"
 #include "PositionLine.h"
@@ -78,6 +86,9 @@ namespace
 constexpr int MIN_PIXELS_PER_BAR = 4;
 constexpr int MAX_PIXELS_PER_BAR = 400;
 constexpr int ZOOM_STEPS = 200;
+//! The bar ruler's least height: a bar number, the loop brace and the punch band fit in it. Its layout gives it
+//! no size of its own, so without this it collapses to nothing and there is no ruler to click.
+constexpr int BAR_RULER_MIN_HEIGHT = 24;
 
 constexpr std::array SNAP_SIZES{8.f, 4.f, 2.f, 1.f, 1/2.f, 1/4.f, 1/8.f, 1/16.f};
 constexpr std::array PROPORTIONAL_SNAP_SIZES{64.f, 32.f, 16.f, 8.f, 4.f, 2.f, 1.f, 1/2.f, 1/4.f, 1/8.f, 1/16.f, 1/32.f, 1/64.f};
@@ -101,9 +112,8 @@ SongEditor::SongEditor( Song * song ) :
 	m_rubberBandStartTrackview(0),
 	m_rubberbandStartTimePos(0),
 	m_rubberbandPixelsPerBar(DEFAULT_PIXELS_PER_BAR),
-	m_trackHeadWidth(ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt()==1
-					 ? DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT + TRACK_OP_WIDTH_COMPACT
-					 : DEFAULT_SETTINGS_WIDGET_WIDTH + TRACK_OP_WIDTH),
+	m_trackHeadWidth(trackSettingsWidth(ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt() == 1)
+					 + trackOperationsWidth(ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt() == 1)),
 	m_selectRegion(false)
 {
 	// R8.5: what a screen reader announces when Tab reaches it.
@@ -156,6 +166,9 @@ SongEditor::SongEditor( Song * song ) :
 	m_mpsStatus = nullptr;
 
 
+	// The theme fixes timeline heights in em. Keep this arranger ruler at its
+	// accessible scaled height through later stylesheet polishing as well.
+	m_timeLine->setStyleSheet(QStringLiteral("min-height: %1px; max-height: %1px;").arg(scaledPixels(32)));
 	static_cast<QVBoxLayout *>( layout() )->insertWidget( 0, m_timeLine );
 
 	m_leftRightScroll = new QScrollBar( Qt::Horizontal, this );
@@ -690,8 +703,8 @@ void SongEditor::updatePosition()
 {
 	const TimePos& t = m_timeLine->timeline()->pos();
 	const bool compactTrackButtons = ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt();
-	const auto widgetWidth = compactTrackButtons ? DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT : DEFAULT_SETTINGS_WIDGET_WIDTH;
-	const auto trackOpWidth = compactTrackButtons ? TRACK_OP_WIDTH_COMPACT : TRACK_OP_WIDTH;
+	const auto widgetWidth = trackSettingsWidth(compactTrackButtons);
+	const auto trackOpWidth = trackOperationsWidth(compactTrackButtons);
 
 	if ((m_song->isPlaying() && m_song->m_playMode == Song::PlayMode::Song)
 							|| m_scrollBack)
@@ -725,8 +738,8 @@ void SongEditor::updatePosition()
 void SongEditor::updatePositionLine()
 {
 	const bool compactTrackButtons = ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt();
-	const auto widgetWidth = compactTrackButtons ? DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT : DEFAULT_SETTINGS_WIDGET_WIDTH;
-	const auto trackOpWidth = compactTrackButtons ? TRACK_OP_WIDTH_COMPACT : TRACK_OP_WIDTH;
+	const auto widgetWidth = trackSettingsWidth(compactTrackButtons);
+	const auto trackOpWidth = trackOperationsWidth(compactTrackButtons);
 	const int x = m_timeLine->markerX(m_timeLine->timeline()->pos());
 	if( x >= trackOpWidth + widgetWidth -1 )
 	{
@@ -871,21 +884,35 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 	m_recordAccompanyAction->setToolTip(tr("Record samples from Audio-device while playing song or pattern track"));
 	m_stopAction->setToolTip(tr( "Stop song (Space)" ));
 
-	// M3 item 9: punch in/out on the transport, through the registry (R2.4's audio gate).
-	// On: the punch region is the loop markers' range, as Live's punch uses the loop brace;
-	// off: the region is cleared. A refused call puts the button back and says why.
-	m_punchAction = new QAction(embed::getIconPixmap("record"), tr("Punch in/out (the loop range)"), this);
+	// 0.5.0 L03 (Q050-147): the punch range is the transport's OWN range. Arming it writes
+	// transport.punch_set and never reads the loop markers; disarming writes the same bounds
+	// with enabled:false, so another pass can arm them again. Clearing is a separate action.
+	// Both are the registered commands, so the button and an agent make the same edit.
+	m_punchAction = new QAction(embed::getIconPixmap("record"), tr("Punch in/out"), this);
+	m_punchAction->setObjectName(QStringLiteral("punchAction"));
 	m_punchAction->setCheckable(true);
 	m_punchAction->setProperty("controlCommand", QStringLiteral("transport.punch_set"));
-	m_punchAction->setToolTip(tr("Punch in/out: record only between the loop markers"));
+	m_punchAction->setToolTip(tr("Punch in/out: record only inside the punch range (drag its handles in the ruler)"));
 	connect(m_punchAction, &QAction::toggled, this, [this](bool on) {
-		const Timeline& timeline = m_editor->m_song->getTimeline(Song::PlayMode::Song);
-		const ControlResult result = on
-			? ControlRegistry::instance()->invoke(QStringLiteral("transport.punch_set"),
-				{{QStringLiteral("start"), static_cast<int>(timeline.loopBegin().getTicks())},
-					{QStringLiteral("end"), static_cast<int>(timeline.loopEnd().getTicks())},
-					{QStringLiteral("enabled"), true}})
-			: ControlRegistry::instance()->invoke(QStringLiteral("transport.punch_clear"), {});
+		Timeline& timeline = m_editor->m_song->getTimeline(Song::PlayMode::Song);
+		tick_t begin = timeline.punchBegin();
+		tick_t end = timeline.punchEnd();
+		if (on && end <= begin)
+		{
+			// No range yet: seed it at the play position, NOT at the loop brace. The two ranges
+			// are independent from the first edit, which is what this unit exists for.
+			begin = std::clamp<tick_t>(m_editor->m_song->getPlayPos(Song::PlayMode::Song).getTicks(), 0, MaxSongLength - 1);
+			end = std::min<tick_t>(MaxSongLength, begin + TimePos::ticksPerBar());
+		}
+		if (!on && end <= begin)
+		{
+			// Nothing to disarm: the action is simply unchecked.
+			return;
+		}
+		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("transport.punch_set"),
+			{{QStringLiteral("start"), static_cast<int>(begin)},
+				{QStringLiteral("end"), static_cast<int>(end)},
+				{QStringLiteral("enabled"), on}});
 		if (!result.ok)
 		{
 			const QSignalBlocker block(m_punchAction);
@@ -895,6 +922,20 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 	});
 	m_toolBar->addAction(m_punchAction);
 	m_toolBar->widgetForAction(m_punchAction)->setObjectName("punchButton");
+
+	m_punchClearAction = new QAction(tr("Clear punch range"), this);
+	m_punchClearAction->setObjectName(QStringLiteral("punchClearAction"));
+	m_punchClearAction->setProperty("controlCommand", QStringLiteral("transport.punch_clear"));
+	m_punchClearAction->setToolTip(tr("Forget the punch range and disarm it"));
+	connect(m_punchClearAction, &QAction::triggered, this, [this] {
+		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("transport.punch_clear"), {});
+		if (!result.ok) { m_punchClearAction->setToolTip(result.errorMessage); }
+	});
+	m_toolBar->addAction(m_punchClearAction);
+
+	connect(&m_editor->m_song->getTimeline(Song::PlayMode::Song), &Timeline::punchChanged,
+		this, &SongEditorWindow::syncPunchUi);
+	syncPunchUi();
 
 	// Session sync (link.set_enabled), with its peers and tempo on the button.
 	m_toolBar->addAction(makeSessionSyncAction(this));
@@ -909,6 +950,8 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 	connect(viewsMenu, &QMenu::aboutToShow, viewsMenu, [viewsMenu] { populateVisibilitySetMenu(viewsMenu); });
 	viewsButton->setMenu(viewsMenu);
 	m_toolBar->addWidget(viewsButton);
+	// 0.5.0 theme 10: the arrangement's clips as an editable list (window.item_list, as Ctrl+Shift+L on the arranger).
+	m_toolBar->addWidget(itemlists::listButton(QStringLiteral("clips"), m_editor, m_toolBar));
 
 
 	// Track actions
@@ -924,8 +967,19 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 											 tr("Add automation-track"), this);
 
 	connect(m_addPatternTrackAction, SIGNAL(triggered()), m_editor->m_song, SLOT(addPatternTrack()));
-	connect(m_addSampleTrackAction, SIGNAL(triggered()), m_editor->m_song, SLOT(addSampleTrack()));
-	connect(m_addAutomationTrackAction, SIGNAL(triggered()), m_editor->m_song, SLOT(addAutomationTrack()));
+	// Q050-212: through track.add like an agent's, so the auto-channel preference and one undo step apply here too.
+	m_addSampleTrackAction->setData(QStringLiteral("track.add"));
+	connect(m_addSampleTrackAction, &QAction::triggered, this, [] {
+		ControlRegistry::instance()->invoke(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}});
+	});
+	// cluster gui-1105: like the Pattern Editor's button, a failed allocation is reported, not thrown out of the slot.
+	connect(m_addAutomationTrackAction, &QAction::triggered, this, [this] {
+		try { (void) Track::create(Track::Type::Automation, m_editor->m_song); }
+		catch (const std::bad_alloc&)
+		{
+			getGUI()->mainWindow()->statusBar()->showMessage(tr("Could not add the track: the application is out of memory."), 8000);
+		}
+	});
 
 	trackActionsToolBar->addAction( m_addPatternTrackAction );
 	trackActionsToolBar->addAction( m_addSampleTrackAction );
@@ -939,6 +993,20 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 			{{QStringLiteral("type"), QStringLiteral("folder")}, {QStringLiteral("name"), tr("New folder")}});
 	});
 	trackActionsToolBar->addAction(addFolderTrackAction);
+	// Q050-212: an instrument or sample track with its destination chosen, or several on a new bus.
+	trackActionsToolBar->addWidget(makeAddTrackButton(trackActionsToolBar));
+
+	// Q050-283.1: a neutral row - the row to add before choosing an audio input or an instrument - through
+	// track.add like an agent's.
+	auto* addNeutralTrackAction = new QAction(NeutralTrackView::icon(), tr("Add neutral track"), this);
+	addNeutralTrackAction->setObjectName(QStringLiteral("addNeutralTrackAction"));
+	addNeutralTrackAction->setToolTip(tr("Add a neutral track: a row you give an audio input or an instrument later"));
+	addNeutralTrackAction->setData(QStringLiteral("track.add"));
+	connect(addNeutralTrackAction, &QAction::triggered, this, [] {
+		ControlRegistry::instance()->invoke(QStringLiteral("track.add"),
+			{{QStringLiteral("type"), QStringLiteral("neutral")}, {QStringLiteral("name"), tr("Neutral track")}});
+	});
+	trackActionsToolBar->addAction(addNeutralTrackAction);
 
 
 	// Edit actions
@@ -1119,11 +1187,26 @@ void SongEditorWindow::lostFocus()
 
 
 
+void SongEditorWindow::syncPunchUi()
+{
+	if (m_punchAction == nullptr) { return; }
+	Timeline& timeline = m_editor->m_song->getTimeline(Song::PlayMode::Song);
+	const QSignalBlocker block(m_punchAction);
+	m_punchAction->setChecked(timeline.punchEnabled());
+	m_punchAction->setToolTip(timeline.punchEnd() > timeline.punchBegin()
+		? tr("Punch in/out: record only inside %1 to %2 (drag its handles in the ruler)")
+			.arg(timeline.punchBegin()).arg(timeline.punchEnd())
+		: tr("Punch in/out: arm a range at the play position (or drag its handles in the ruler)"));
+	if (m_punchClearAction != nullptr) { m_punchClearAction->setEnabled(timeline.shouldPersistPunch()); }
+}
+
+
 void SongEditorWindow::adjustUiAfterProjectLoad()
 {
 	// The arranger is a shell panel, always on screen in the Arrange view; a project load
 	// does not switch the user's view.
 	m_editor->scrolled(0);
+	syncPunchUi();
 }
 
 

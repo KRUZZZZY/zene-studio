@@ -132,12 +132,25 @@ void McuSurface::setBank(int first)
 	m_sentLeds.clear();
 }
 
+int McuSurface::bank() const
+{
+	return bankedFirst();
+}
+
+int McuSurface::bankedFirst() const
+{
+	// The track list can shrink under a bank that is already set (tracks deleted, a folder
+	// unlinked): the bank follows it rather than leaving every strip blank until the user
+	// pages. m_bank itself is left as the user set it, so paging back reveals the same tracks.
+	return std::clamp(m_bank, 0, std::max(0, static_cast<int>(bankable().size()) - 1));
+}
+
 Track* McuSurface::stripTrack(int strip) const
 {
 	if (strip < 0 || strip >= mcu::Strips) { return nullptr; }  // 8 is the master fader, never a track
 	const QList<Track*> tracks = bankable();
-	const int index = m_bank + strip;
-	return strip >= 0 && strip < mcu::Strips && index < tracks.size() ? tracks.at(index) : nullptr;
+	const int index = bankedFirst() + strip;
+	return index < tracks.size() ? tracks.at(index) : nullptr;
 }
 
 void McuSurface::processInEvent(const MidiEvent& event, const TimePos&, f_cnt_t)
@@ -181,7 +194,12 @@ bool McuSurface::applyMix(const mcu::Input& input)
 			volume->setValue(volume->minValue() + mcu::faderLevel(input.value) * (volume->maxValue() - volume->minValue()));
 		}
 		return true;
-	case mcu::Kind::FaderTouch: m_touched[static_cast<std::size_t>(input.strip)] = input.pressed; return true;
+	case mcu::Kind::FaderTouch:
+		if (input.strip >= 0 && input.strip <= mcu::MasterStrip)
+		{
+			m_touched[static_cast<std::size_t>(input.strip)] = input.pressed;
+		}
+		return true;
 	case mcu::Kind::VPot:
 		if (FloatModel* pan = trackPanningModel(track)) { pan->setValue(pan->value() + input.value * PanStep); }
 		return true;
@@ -193,8 +211,14 @@ bool McuSurface::applyBank(mcu::Kind kind)
 {
 	switch (kind)
 	{
-	case mcu::Kind::BankLeft: setBank(m_bank - mcu::Strips); return true;
-	case mcu::Kind::BankRight: setBank(m_bank + mcu::Strips); return true;
+	case mcu::Kind::BankLeft:
+	case mcu::Kind::BankRight:
+	{
+		const int lastPage = std::max(0, (static_cast<int>(bankable().size()) - 1) / mcu::Strips) * mcu::Strips;
+		const int offset = kind == mcu::Kind::BankRight ? mcu::Strips : -mcu::Strips;
+		setBank(std::clamp(m_bank + offset, 0, lastPage));
+		return true;
+	}
 	case mcu::Kind::ChannelLeft: setBank(m_bank - 1); return true;
 	case mcu::Kind::ChannelRight: setBank(m_bank + 1); return true;
 	default: return false;
@@ -293,7 +317,7 @@ QJsonObject McuSurface::state() const
 		strips.append(control::trackIdOf(stripTrack(strip)));
 	}
 	return {{QStringLiteral("connected"), true}, {QStringLiteral("input"), m_input}, {QStringLiteral("output"), m_output},
-		{QStringLiteral("bank"), m_bank}, {QStringLiteral("strips"), strips},
+		{QStringLiteral("bank"), bankedFirst()}, {QStringLiteral("strips"), strips},
 		{QStringLiteral("events_in"), m_eventsIn.load(std::memory_order_relaxed)},
 		{QStringLiteral("events_dropped"), m_eventsDropped.load(std::memory_order_relaxed)},
 		{QStringLiteral("events_out"), m_eventsOut}};

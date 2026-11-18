@@ -26,9 +26,13 @@
 #define LMMS_CONVOLUTION_KERNEL_H
 
 #include <complex>
+#include <memory>
+#include <type_traits>
 #include <vector>
 
 #include <fftw3.h>
+
+#include "ConvolutionFftw.h"
 
 namespace lmms
 {
@@ -39,9 +43,16 @@ namespace lmms
  *  the delay line of past input spectra, and one inverse FFT give the next Partition output samples.
  *  The latency is one Partition.
  *
- *  A kernel is built whole on the control thread (every buffer and FFTW plan allocated there) and
- *  handed to the audio thread under the engine's model-change guard; process() then allocates
- *  nothing. A kernel's delay line starts silent, so a new impulse response starts with no tail. */
+ *  A kernel is built whole on the control thread and handed to the audio thread under the engine's
+ *  model-change guard; process() then allocates nothing. A kernel's delay line starts silent, so
+ *  a new impulse response starts with no tail.
+ *
+ *  Its FFTW plans are made and destroyed inside a ConvolutionFftwScope, because FFTW's planner
+ *  API may not run while the audio thread executes a plan (the scope takes the engine's
+ *  model-change guard, which the render thread holds for every period it renders). The impulse
+ *  response's own spectra are computed with fftwf_execute - the one thread-safe FFTW routine -
+ *  so they may be computed next to the audio thread, without holding the guard for a long
+ *  impulse response. */
 class ConvolutionKernel
 {
 public:
@@ -64,6 +75,30 @@ public:
 
 private:
 	using Complex = std::complex<float>;
+	//! FFTW's allocator is part of the planner API: freeing a buffer needs the scope too.
+	struct FftwFree
+	{
+		void operator()(void* allocation) const noexcept
+		{
+			if (allocation == nullptr) { return; }
+			const ConvolutionFftwScope scope;
+			ConvolutionFftwScope::notePlannerCall();
+			fftwf_free(allocation);
+		}
+	};
+	//! Destroying a plan is a planner call: it needs the scope as well.
+	struct FftwPlanFree
+	{
+		void operator()(std::remove_pointer_t<fftwf_plan>* plan) const noexcept
+		{
+			if (plan == nullptr) { return; }
+			const ConvolutionFftwScope scope;
+			ConvolutionFftwScope::notePlannerCall();
+			fftwf_destroy_plan(plan);
+		}
+	};
+	using FftwBuffer = std::unique_ptr<void, FftwFree>;
+	using FftwPlanHandle = std::unique_ptr<std::remove_pointer_t<fftwf_plan>, FftwPlanFree>;
 
 	void transformPartitions(const std::vector<float>& impulse, std::vector<Complex>* spectra);
 	void convolveChannel(int channel, const float* input, float* output) noexcept;
@@ -74,12 +109,12 @@ private:
 	std::vector<Complex> m_spectra[2];   //!< m_partitions x Bins per channel
 	std::vector<Complex> m_history[2];   //!< the delay line of input spectra, the same size
 	std::vector<float> m_previous[2];    //!< the last input block per channel (the overlap)
-	float* m_timeIn = nullptr;           //!< FftSize, fftwf_malloc'd
-	fftwf_complex* m_spectrum = nullptr; //!< Bins
-	fftwf_complex* m_sum = nullptr;      //!< Bins
-	float* m_timeOut = nullptr;          //!< FftSize
-	fftwf_plan m_forward = nullptr;
-	fftwf_plan m_inverse = nullptr;
+	FftwBuffer m_timeIn;                 //!< FftSize
+	FftwBuffer m_spectrum;               //!< Bins
+	FftwBuffer m_sum;                    //!< Bins
+	FftwBuffer m_timeOut;                //!< FftSize
+	FftwPlanHandle m_forward;
+	FftwPlanHandle m_inverse;
 };
 
 } // namespace lmms

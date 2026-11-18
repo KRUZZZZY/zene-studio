@@ -87,6 +87,8 @@ LMMS_EXPORT void paintLabels(QPainter& p, const QRect& area, const LaneScale& sc
 	const QString& status = QString());
 //! A readout badge - @a text on a backed, outlined box - beside @a anchor, kept inside @a area.
 LMMS_EXPORT void paintReadout(QPainter& p, const QRect& area, const QPoint& anchor, const QString& text);
+//! The playhead at @a x across @a area - the note area's line, so it runs on down through the lanes; nothing for x < 0.
+LMMS_EXPORT void paintPlayhead(QPainter& p, const QRect& area, int x);
 //! A stem's head or a curve's point at @a centre.
 LMMS_EXPORT void paintHead(QPainter& p, const QPointF& centre, const QColor& colour, LaneHead head);
 

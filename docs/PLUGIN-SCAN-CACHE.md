@@ -111,8 +111,10 @@ Shape:
   always re-scanned.
 * Failure tolerance is the contract: a missing file, an unreadable file, invalid JSON, a wrong
   format version or an individually malformed record all degrade to a full scan — `load()` returns
-  false and the cache stays empty. `save()` writes through `QSaveFile`, so a failed write leaves the
-  previous cache intact. Nothing in the discovery result depends on the cache file's state; it only
+  false and the cache stays empty. A file larger than 64 MiB (`s_maxCacheFileBytes`) is refused
+  before it is read, and `save()` refuses to write one, so a cache `load()` cannot read back is never
+  left on disk. `save()` writes through `QSaveFile`, so a failed write leaves the previous cache
+  intact. Nothing in the discovery result depends on the cache file's state; it only
   decides how much work a scan repeats.
 
 ### 2.2 Where discovery changes — `src/core/PluginFactory.cpp`
@@ -203,6 +205,27 @@ Every line of the new code runs on the thread that calls `PluginFactory::discove
   The scan does no locking at all (no mutex, no condition variable, no thread), so it cannot
   block or wake an audio thread; it allocates, which is why it must never be called from one, and
   it isn't.
+
+### 2.6 The background run (Q050-090), and why it needs no lock either
+
+`plugin.scan_start` runs the same scan without blocking the window: the run marks itself active, shows
+itself in the task area and returns BEFORE touching a directory or a library - the first turn plans the
+candidate files, each following pre-load turn hands ONE library's load to a pool worker, and each scan turn
+scans ONE file (`PluginFactoryBackgroundScan.cpp`), committing the staged catalogue only when the last file is done.
+The chunks and every control handler run on the same main thread (§2.5). The worker (Q050-010) gets the path and
+nothing of the factory: it calls `QLibrary::load()` and reports with a queued call that names its run, so no member
+needs a lock, a cancel during a load ends the run at once, and the report of an ended run is dropped. A static
+initialiser in a plug-in therefore runs on that worker when the background run is the first to load the library.
+Nothing here meets the audio thread - the realtime argument above holds unchanged, and the
+task, the active status and `plugin.scan_cancel` exist before the first potentially slow plug-in load.
+Three deliberate differences from the synchronous run: the quarantine list is snapshotted when the run
+plans (its first turn, after the start returns - an edit made before that takes effect, one made later
+waits for the next run); records are stored live as they are taken, so the Modules list shows them
+mid-run and a cancelled run's measurements stay cached; and `plugin.rescan` is refused while a run is
+active, because both would commit a catalogue and only the last commit would survive. `plugin.scan_status`
+reports the progress and per-file outcomes, `plugin.scan_cancel` stops the run at its next turn boundary
+and keeps the previous catalogue, and the task area (`task.list`) shows the run with its progress and
+Cancel.
 
 ---
 

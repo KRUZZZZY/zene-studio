@@ -259,6 +259,22 @@ int targetSize()
 	return std::max(size::target, static_cast<int>(std::lround(size::target * targetFactor())));
 }
 
+bool touchWorkspace()
+{
+	static const bool on = appearance::workspaceIsTouch(appearance::startedWith().workspace);  // read once
+	return on;
+}
+
+int tapTargetSize()
+{
+	return touchWorkspace() ? std::max(targetSize(), appearance::touchTargetSide) : targetSize();
+}
+
+int targetSpacing(int standard)
+{
+	return accessibleMode() ? std::max(standard, appearance::accessibleTargetSpacing) : standard;
+}
+
 QString accessibleModeRules()
 {
 	// The base rules colour a focused control's border with @focusRing; three pixels make that ring strong, and
@@ -307,6 +323,7 @@ QString family()
 QFont font(TextRole role)
 {
 	static constexpr std::array<int, 5> pixels{10, 11, 12, 14, 20};
+	if (static_cast<std::size_t>(role) >= pixels.size()) { role = TextRole::Body; }
 	QFont f(family());
 	f.setPixelSize(pixels[static_cast<std::size_t>(role)]);  // the one global zoom scales it (Appearance.h)
 	f.setHintingPreference(QFont::PreferNoHinting);

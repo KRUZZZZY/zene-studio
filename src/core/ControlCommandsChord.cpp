@@ -111,6 +111,68 @@ QJsonObject progressionJson(const ChordProgression::Entry& entry)
 }
 
 
+/*! The catalogue SPELT OUT in one key: every named progression evaluated against
+ *  \a scale (root \a root, octave \a octave), so an interface can show what each
+ *  one WOULD write before anything is written. Each chord is named by the SAME
+ *  vocabulary the generator writes with, so a suggestion and the take it stands
+ *  for cannot disagree. An entry whose walk the scale cannot be built on comes
+ *  back with an empty `chords` and the engine's own `reason`, never silently
+ *  dropped from the list. */
+QJsonArray progressionSuggestions(const QString& scale, int root, int octave)
+{
+	QJsonArray out;
+	for (const ChordProgression::Entry& entry : ChordProgression::catalogue())
+	{
+		ChordProgression::Request request;
+		request.progression = entry.name;
+		request.scale = scale;
+		request.root = root;
+		request.octave = octave;
+		request.steps = static_cast<int>(entry.degrees.size());
+
+		QJsonObject object = progressionJson(entry);
+		std::vector<ChordProgression::ChordStep> chords;
+		QString error;
+		if (!ChordProgression::chordsFor(request, &chords, &error))
+		{
+			object.insert(QStringLiteral("chords"), QJsonArray());
+			object.insert(QStringLiteral("reason"), error);
+			out.append(object);
+			continue;
+		}
+		QJsonArray chordList;
+		for (const ChordProgression::ChordStep& step : chords)
+		{
+			QJsonObject chord;
+			chord.insert(QStringLiteral("degree"), step.degree);
+			chord.insert(QStringLiteral("root"), step.root);
+			chord.insert(QStringLiteral("key"), step.rootKey);
+			chord.insert(QStringLiteral("chord"), step.name);
+			chordList.append(chord);
+		}
+		object.insert(QStringLiteral("chords"), chordList);
+		out.append(object);
+	}
+	return out;
+}
+
+
+//! Reads a pitch-class root argument in 0..11, defaulting to \a fallback when
+//! absent. The schema already bounds it, so out-of-range never reaches here.
+int suggestionRoot(const QJsonObject& args, int fallback)
+{
+	return args.contains(QStringLiteral("root"))
+		? args.value(QStringLiteral("root")).toInt() : fallback;
+}
+
+
+int suggestionOctave(const QJsonObject& args, int fallback)
+{
+	return args.contains(QStringLiteral("octave"))
+		? args.value(QStringLiteral("octave")).toInt() : fallback;
+}
+
+
 ControlResult chordGetState()
 {
 	ChordTrack* track = projectChordTrack();
@@ -175,6 +237,21 @@ ControlResult chordProgressionList(const QJsonObject& args)
 	result.insert(QStringLiteral("max_steps"), ChordProgression::MaxSteps);
 	result.insert(QStringLiteral("max_degree_count"), ChordProgression::MaxDegreeCount);
 	result.insert(QStringLiteral("max_chords"), ChordTrack::MaxEvents);
+
+	// With a scale named, the catalogue is also SPELLED OUT in that key: each
+	// progression's own chords, so a caller can suggest and preview before it
+	// writes. Read-only - the same walk chordsFor() computes for the generator.
+	if (args.contains(QStringLiteral("scale")))
+	{
+		const QString scale = args.value(QStringLiteral("scale")).toString();
+		const int root = suggestionRoot(args, 0);
+		const int octave = suggestionOctave(args, 4);
+		result.insert(QStringLiteral("suggest_scale"), scale);
+		result.insert(QStringLiteral("suggest_root"), root);
+		result.insert(QStringLiteral("suggest_octave"), octave);
+		result.insert(QStringLiteral("suggestions"),
+			progressionSuggestions(scale, root, octave));
+	}
 
 	const QString name = args.value(QStringLiteral("name")).toString();
 	if (!name.isEmpty())
@@ -265,8 +342,18 @@ void registerChordCommands(ControlRegistry& registry)
 			"Every one of those vocabularies is the piano roll's own "
 			"(InstrumentFunctionNoteStacking::ChordTable, the table behind its chord and "
 			"scale selectors) - this group adds no names of its own. Read-only; with 'name' "
-			"one progression is reported on its own.");
-		cmd.argsSchema = objectSchema({{QStringLiteral("name"), stringProperty()}});
+			"one progression is reported on its own. With 'scale' (and optional 'root' "
+			"0..11 and 'octave') every progression is also SPELLED OUT in that key as "
+			"`suggestions[]`: each entry's own chords, named by the same vocabulary the "
+			"generator writes with. That is what the progression panel shows before it "
+			"writes; nothing is written here.");
+		cmd.argsSchema = objectSchema({
+			{QStringLiteral("name"), stringProperty()},
+			{QStringLiteral("scale"), enumProperty(ChordVocabulary::scaleNames())},
+			{QStringLiteral("root"), integerProperty(0, 11)},
+			{QStringLiteral("octave"),
+				integerProperty(ChordVocabulary::MinOctave, ChordVocabulary::MaxOctave)},
+		});
 		cmd.resultSchema = objectSchema({
 			{QStringLiteral("progressions"), arrayProperty()},
 			{QStringLiteral("count"), integerProperty(0, MaxSchemaInteger)},
@@ -278,6 +365,11 @@ void registerChordCommands(ControlRegistry& registry)
 				integerProperty(0, ChordProgression::MaxDegreeCount)},
 			{QStringLiteral("max_chords"), integerProperty(0, ChordTrack::MaxEvents)},
 			{QStringLiteral("progression"), chordProgressionSchema()},
+			{QStringLiteral("suggest_scale"), stringProperty()},
+			{QStringLiteral("suggest_root"), integerProperty(0, 11)},
+			{QStringLiteral("suggest_octave"),
+				integerProperty(ChordVocabulary::MinOctave, ChordVocabulary::MaxOctave)},
+			{QStringLiteral("suggestions"), arrayProperty()},
 		});
 		cmd.mutating = false;
 		cmd.handler = [](const QJsonObject& args) { return chordProgressionList(args); };

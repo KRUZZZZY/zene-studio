@@ -88,6 +88,11 @@ LMMS_EXPORT bool sandboxPaths(const QString& id, QJsonObject& args, QString* err
 //! give such an argument a file picker.
 LMMS_EXPORT bool isPathArgument(const QString& id, const QString& key);
 
+//! Q050-081: the table at @a index as a JSON object (the conversion zene.command uses for its arguments).
+LMMS_EXPORT QJsonObject tableToObject(lua_State* L, int index);
+//! Q050-081: push @a object as a Lua table (the conversion zene.command uses for its reply).
+LMMS_EXPORT void pushJsonObject(lua_State* L, const QJsonObject& object);
+
 } // namespace ScriptCommandBridge
 
 } // namespace lmms

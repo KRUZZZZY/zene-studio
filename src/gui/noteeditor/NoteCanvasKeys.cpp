@@ -43,6 +43,7 @@ namespace
 {
 
 constexpr int kWheelVelocityStep = 5;  //!< Alt+wheel: velocity per notch on the 0..200 scale (Ctrl+Alt: 1)
+constexpr int kWheelNotchAngle = 120;   //!< the angle-delta units of one wheel notch (Qt's 8 steps of 15)
 
 //! Ctrl+B: FL's duplicate (Command+B on macOS, as Qt maps Ctrl there).
 bool isDuplicate(const QKeyEvent* event)
@@ -98,9 +99,14 @@ void NoteCanvas::deleteSelection()
 	commitErase();
 }
 
-bool NoteCanvas::nudgeForKey(int key, bool shift)
+bool NoteCanvas::nudgeForKey(int key, Qt::KeyboardModifiers modifiers)
 {
+	modifiers &= ~Qt::KeypadModifier;
+	const bool ctrlAlt = modifiers == (Qt::ControlModifier | Qt::AltModifier)
+		|| modifiers == (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier);
+	if (modifiers != Qt::NoModifier && modifiers != Qt::ShiftModifier && !ctrlAlt) { return false; }
 	const int step = std::max(1, m_state.gridTicks);
+	const bool shift = modifiers.testFlag(Qt::ShiftModifier);
 	const int octave = shift ? 12 : 1;
 	switch (key)
 	{
@@ -150,7 +156,7 @@ void NoteCanvas::keyPressEvent(QKeyEvent* event)
 {
 	// Theme 10's keys (NoteCanvasAccess.cpp) come before the nudge, which takes the arrows with Shift or nothing.
 	const bool handled = m_state.clip != nullptr && (clipboardKey(event) || selectionKey(event) || editKey(event)
-		|| nudgeForKey(event->key(), event->modifiers().testFlag(Qt::ShiftModifier)));
+		|| nudgeForKey(event->key(), event->modifiers()));
 	if (!handled)
 	{
 		event->ignore();  // the tool letters go on to the editor
@@ -177,7 +183,13 @@ void NoteCanvas::wheelOnNote(const Note* note, int amount, Qt::KeyboardModifiers
 {
 	// FL: Alt+wheel over a note changes its velocity (Ctrl+Alt finely), Shift+Alt nudges it in time - the
 	// selection with it when the note is part of one. One note.edit a notch.
-	const int sign = amount > 0 ? 1 : -1;
+	// The velocity moves by whole notches, not by one step per event: a two-notch event moves two
+	// steps, and a high-resolution wheel's fraction of a notch is kept until it adds up to one.
+	m_wheelNotches += static_cast<double>(amount) / kWheelNotchAngle;
+	const int notches = static_cast<int>(m_wheelNotches);
+	m_wheelNotches -= notches;
+	if (notches == 0) { return; }
+	const int steps = notches;
 	const bool nudge = mods.testFlag(Qt::ShiftModifier);
 	const int step = mods.testFlag(Qt::ControlModifier) ? 1 : kWheelVelocityStep;
 	const std::vector<Note*> targets = note->selected() ? selectedNotes() : std::vector<Note*>{noteById(note->id())};
@@ -186,8 +198,8 @@ void NoteCanvas::wheelOnNote(const Note* note, int amount, Qt::KeyboardModifiers
 	{
 		if (target == nullptr) { continue; }
 		QJsonObject edit{{QStringLiteral("note"), control::noteIdOf(target)}};
-		if (nudge) { edit.insert(QStringLiteral("position"), std::max(0, static_cast<int>(target->pos().getTicks()) + sign * std::max(1, m_state.gridTicks))); }
-		else { edit.insert(QStringLiteral("velocity"), std::clamp(static_cast<int>(target->getVolume()) + sign * step, int{MinVolume}, int{MaxVolume})); }
+		if (nudge) { edit.insert(QStringLiteral("position"), std::max(0, static_cast<int>(target->pos().getTicks()) + steps * std::max(1, m_state.gridTicks))); }
+		else { edit.insert(QStringLiteral("velocity"), std::clamp(static_cast<int>(target->getVolume()) + steps * step, int{MinVolume}, int{MaxVolume})); }
 		edits.append(edit);
 	}
 	if (edits.isEmpty()) { return; }
@@ -198,17 +210,19 @@ void NoteCanvas::wheelView(const QWheelEvent* event, int amount)
 {
 	const Qt::KeyboardModifiers mods = event->modifiers();
 	NoteGrid& g = m_state.grid;
+	// A trackpad sends pixel deltas and no angle deltas: they move the view by their pixels, as a notch by its angle.
+	const int pixels = amount == 0 ? event->pixelDelta().y() : 0;
 	if (mods.testFlag(Qt::ControlModifier))
 	{
 		// Smooth zoom: continuous, anchored under the pointer.
-		g.zoomAround(std::pow(1.0015, amount), event->position().x());
+		g.zoomAround(std::pow(1.0015, amount != 0 ? amount : pixels), event->position().x());
 	}
 	else if (mods.testFlag(Qt::AltModifier)) { g.setRowHeight(g.rowHeight() + (amount > 0 ? 1 : -1)); }  // off the notes
 	else if (mods.testFlag(Qt::ShiftModifier) || event->angleDelta().x() != 0)
 	{
 		g.setScrollTicks(g.scrollTicks() - amount / g.pixelsPerTick() / 4.0);
 	}
-	else { g.setScrollY(g.scrollY() - amount / 2); }
+	else { g.setScrollY(g.scrollY() - (amount != 0 ? amount / 2 : pixels)); }
 }
 
 void NoteCanvas::pressPan()

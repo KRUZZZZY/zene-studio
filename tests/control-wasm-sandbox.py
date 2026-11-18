@@ -27,10 +27,12 @@ Usage: QT_QPA_PLATFORM=offscreen python3 control-wasm-sandbox.py <zene-binary>
 Exit code 0 only when every check held.
 """
 
+import functools
 import itertools
 import json
 import os
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -51,6 +53,24 @@ PROBE_MUTABLE_CHANNELS = os.path.join(PROBES, "mutable-channels.wat")
 DEMO_DIR = os.path.join(REPO, "modules", "wasm")
 DEMO_COUNT = 8
 
+
+def module_dir(binary):
+    """<build>/wasm-modules, looked for from the binary's directory up.
+
+    The demo modules are ASSEMBLED into that directory by the build (the
+    runtime's own assembler, so the build needs no wabt), and the render's
+    worker takes binaries - the .wat text is the HOST's business (wasm.load
+    assembles it), which is why the offline render's checks drive an assembled
+    module and not the .wat example.
+    """
+    here = os.path.dirname(os.path.abspath(binary))
+    for _ in range(4):
+        candidate = os.path.join(here, "wasm-modules")
+        if os.path.isdir(candidate):
+            return candidate
+        here = os.path.dirname(here)
+    return None
+
 WASM_IDS = ("wasm.get_state", "wasm.list", "wasm.load", "wasm.process",
             "wasm.set_param", "wasm.unload")
 MUTATING_IDS = ("wasm.load", "wasm.unload", "wasm.set_param")
@@ -61,6 +81,28 @@ FRAMES = 8
 PROCESS_INPUT = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
 #: The rate the second process() call uses, to show the argument arrives per call.
 SECOND_RATE = 44100.0
+NAN_OUTPUT_MODULE = """(module
+    (memory (export "memory") 3)
+    (global (export "channels") i32 (i32.const 1))
+    (global (export "latency") i32 (i32.const 0))
+    (func (export "process")
+        (param $in_offset i32)
+        (param $out_offset i32)
+        (param $frames i32)
+        (param $sample_rate f32)
+        (result i32)
+        (local $i i32)
+        (block $done
+            (loop $frame
+                (br_if $done (i32.ge_u (local.get $i) (local.get $frames)))
+                (f32.store
+                    (i32.add (local.get $out_offset)
+                        (i32.mul (local.get $i) (i32.const 4)))
+                    (f32.reinterpret_i32 (i32.const -4194304)))
+                (local.set $i (i32.add (local.get $i) (i32.const 1)))
+                (br $frame)))
+        (i32.const 0)))
+"""
 
 REQUEST_IDS = itertools.count(1)
 
@@ -184,6 +226,13 @@ def a_replayable_inverse_exists(records):
                for inverse in inverses_of(records))
 
 
+def overflow_write_was_refused_without_mutation(reply, params):
+    error = reply.get("error") or {}
+    return (reply.get("ok") is not True and error.get("kind") == "invalid_args"
+            and len(params) > 0 and isinstance(params[0], (int, float))
+            and close_enough(params[0], 0.25))
+
+
 def check_registered(session, recorder):
     """The group is in the surface an agent sees, not only in the source."""
     registered = [entry.get("id") for entry in
@@ -266,6 +315,11 @@ def check_param(session, recorder):
     recorder.check("the second write reports the first value as previous",
                    close_enough(second.get("previous", -1), GAIN),
                    "previous=%r" % second.get("previous"))
+    oversized = session.call("wasm.set_param", {"index": 0, "value": 1e300})
+    params = (session.result("wasm.get_state").get("state") or {}).get("params") or []
+    recorder.check("a finite value outside f32 range is invalid_args and leaves its slot alone",
+                   overflow_write_was_refused_without_mutation(oversized, params),
+                   "reply=%r params=%r" % (oversized, params))
     out_of_range = session.error_kind("wasm.set_param", {"index": 99, "value": 1.0})
     recorder.check("an index past the 16 slots is invalid_args",
                    out_of_range == "invalid_args", "kind=%s" % out_of_range)
@@ -304,6 +358,72 @@ def check_process_arguments(session, recorder):
                    later.get("frames") == 3
                    and close_enough(later.get("sample_rate", 0), SECOND_RATE),
                    "frames=%r sample_rate=%r" % (later.get("frames"), later.get("sample_rate")))
+
+
+def check_caller_sample_arrays(session, recorder, render_module):
+    """A caller's sample array is checked before a render or a process runs it.
+
+    The samples are floats, and the array is the STIMULUS: a string in it is
+    not a sample, a double outside the float range is not a float, and an
+    array longer than the frames the call asks for is samples nobody reads.
+    All of them are refused, typed, instead of being turned into something
+    else (a 0, an infinity) and rendered with.
+    """
+    common = {"module": render_module, "block_frames": 2, "repeats": 2}
+    invalid_inputs = (
+        ("a string render sample is refused",
+         dict(common, frames=2, input=["bad", 0.25])),
+        ("a finite render sample outside the float range is refused",
+         dict(common, frames=1, input=[1e300])),
+        ("a render input cannot be longer than the frames asked for",
+         dict(common, frames=1, input=[0.25, 0.5])),
+    )
+    for label, args in invalid_inputs:
+        kind = session.error_kind("wasm.render_offline", args)
+        recorder.check(label, kind == "invalid_args", "kind=%s" % kind)
+
+    valid = session.result("wasm.render_offline",
+                           dict(common, frames=2, input=[0.25, 0.5]))
+    recorder.check("a finite in-range render input still renders",
+                   "error" not in valid and valid.get("frames") == 2,
+                   "reply=%s" % json.dumps(valid))
+
+    # The SAME reader serves wasm.process, so the same arrays are refused there.
+    for label, args in (
+        ("a string process sample is refused", {"frames": 2, "input": ["bad", 0.25]}),
+        ("a finite process sample outside the float range is refused",
+         {"frames": 1, "input": [1e300]}),
+        ("a process input cannot be longer than the frames asked for",
+         {"frames": 1, "input": [0.25, 0.5]}),
+    ):
+        kind = session.error_kind("wasm.process", args)
+        recorder.check(label, kind == "invalid_args", "kind=%s" % kind)
+
+    # The hosted module is untouched by a refused call: the reader refuses
+    # BEFORE the render or the process runs, so nothing was rendered at all.
+    ran = session.result("wasm.process", {"frames": 2, "input": [0.25, 0.5]})
+    recorder.check("a valid process input still runs after a refused one",
+                   ran.get("status") == "ok" and len(ran.get("output") or []) == 2,
+                   "status=%r output=%s" % (ran.get("status"),
+                                            json.dumps(ran.get("output"))))
+
+
+def check_non_finite_output(session, recorder):
+    """A non-finite output sample must invalidate and identify the reported peak."""
+    with tempfile.TemporaryDirectory(prefix="zene-wasm-nan-") as directory:
+        module_path = os.path.join(directory, "nan-output.wat")
+        with open(module_path, "w", encoding="utf-8") as module_file:
+            module_file.write(NAN_OUTPUT_MODULE)
+        session.result("wasm.load", {"path": module_path})
+        ran = session.result("wasm.process", {"frames": 2})
+
+    recorder.check("NaN samples serialize as null in wasm.process output",
+                   ran.get("output") == [None, None],
+                   "output=%s status=%r" % (json.dumps(ran.get("output")), ran.get("status")))
+    recorder.check("wasm.process marks the output peak as non-finite",
+                   ran.get("output_has_non_finite") is True and ran.get("output_peak") is None,
+                   "output_has_non_finite=%r output_peak=%r"
+                   % (ran.get("output_has_non_finite"), ran.get("output_peak")))
 
 
 def check_probes(session, recorder):
@@ -457,9 +577,18 @@ def main(argv):
         H.wait_ready(instance, client, transcript)
         session = Session(client, transcript)
         print("instance: %s\nsocket:   %s\nexample:  %s" % (argv[1], instance.socket_path, EXAMPLE))
+        # The offline render is driven with an ASSEMBLED module (the demo gain
+        # module the build assembles into <build>/wasm-modules): the render's
+        # worker takes binaries, and the .wat text is the HOST's business -
+        # wasm.load assembles it, and the device's own transcript refuses a
+        # .wat for the same reason.
+        render_module = os.path.join(module_dir(argv[1]) or "", "gain.wasm")
         for check in (check_registered, check_no_module, check_listing, check_list_refusals,
                       check_load_example, check_param, check_process_block,
-                      check_process_arguments, check_probes, check_growth_and_mutable_globals,
+                      check_process_arguments,
+                      functools.partial(check_caller_sample_arrays, render_module=render_module),
+                      check_non_finite_output, check_probes,
+                      check_growth_and_mutable_globals,
                       check_undo_of_param, check_unload, check_rehost_undo, check_transactions):
             check(session, recorder)
         check_quit(session, instance, recorder)

@@ -125,6 +125,8 @@ void Piano::handleKeyRelease(int key)
 
 bool Piano::isBlackKey(int key)
 {
+	if (!isValidKey(key)) { return false; }
+
 	int keyCode = key % KeysPerOctave;
 
 	return KEY_ORDER[keyCode] == Piano::KeyType::Black;
@@ -133,7 +135,7 @@ bool Piano::isBlackKey(int key)
 
 bool Piano::isWhiteKey(int key)
 {
-	return !isBlackKey(key);
+	return isValidKey(key) && !isBlackKey(key);
 }
 
 

@@ -39,9 +39,12 @@
 #include <QJsonObject>
 #include <QStringList>
 
+#include <limits>
+
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "ScriptEngine.h"
+#include "ScriptMemoryBudget.h"
 
 using namespace lmms;
 
@@ -207,6 +210,78 @@ private slots:
 			qPrintable(refused.errorMessage));
 
 		engine->setMemoryBudget(ScriptEngine::DefaultMemoryBudgetBytes);
+	}
+
+	//! BUG 12: setting the budget to the value it already has changes nothing,
+	//! so it records nothing. The reply says changed:false, but before the fix
+	//! the call still wrote a reversible transaction whose inverse put back the
+	//! same value, so the next control.undo spent its one step on that no-op and
+	//! left the real change in place. The last record must still be the real one.
+	void settingTheBudgetItAlreadyHasRecordsNoUndoStep()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		ScriptEngine* engine = ScriptEngine::instance();
+		engine->setMemoryBudget(ScriptEngine::DefaultMemoryBudgetBytes);
+
+		const ControlResult real = registry->invoke(QStringLiteral("script.set_memory_budget"),
+			QJsonObject{{QStringLiteral("bytes"), static_cast<int>(2 * OneMiB)}});
+		QVERIFY2(real.ok, qPrintable(real.errorMessage));
+		QVERIFY(real.result.value(QStringLiteral("changed")).toBool());
+
+		const ControlResult same = registry->invoke(QStringLiteral("script.set_memory_budget"),
+			QJsonObject{{QStringLiteral("bytes"), static_cast<int>(2 * OneMiB)}});
+		QVERIFY2(same.ok, qPrintable(same.errorMessage));
+		QVERIFY2(!same.result.value(QStringLiteral("changed")).toBool(),
+			"a repeated budget was reported as a change");
+		QCOMPARE(engine->memoryBudget(), 2 * OneMiB);
+
+		// control.undo reads lastTransaction(): it must still describe the real
+		// change, whose before-state is the default cap, not the no-op.
+		const ControlRegistry::Transaction* last = registry->lastTransaction();
+		QVERIFY2(last != nullptr, "the real budget change recorded no transaction");
+		QCOMPARE(last->command, QStringLiteral("script.set_memory_budget"));
+		QCOMPARE(last->before.value(QStringLiteral("memory_budget")).toInt(),
+			int(ScriptEngine::DefaultMemoryBudgetBytes));
+
+		engine->setMemoryBudget(ScriptEngine::DefaultMemoryBudgetBytes);
+	}
+
+	//! A budget refusal and a system allocation failure reach the run as the
+	//! SAME LUA_ERRMEM with different causes, and only one of them is fixed by
+	//! raising the budget. The allocator counted both as `refused` and every
+	//! LUA_ERRMEM was reported as "memory budget exceeded", so a machine that
+	//! simply could not allocate was told its budget was exhausted.
+	void aSystemAllocationFailureIsNotReportedAsBudgetExhaustion()
+	{
+		// Cap disabled, so only the SYSTEM can refuse below: nothing here is
+		// anywhere near a budget, which is precisely what the shared counter hid.
+		ScriptMemoryState system;
+		system.budget = 0;
+		// A size no allocator can satisfy, so realloc returns null
+		// deterministically without asking the machine to actually run dry.
+		// Volatile, because a constant that size is diagnosed at compile time
+		// rather than handed to realloc, which is the refusal under test.
+		static volatile std::size_t impossible = std::numeric_limits<std::size_t>::max();
+		QVERIFY(ScriptMemoryState::allocate(&system, nullptr, 0,
+			static_cast<std::size_t>(impossible)) == nullptr);
+		QCOMPARE(system.failed, quint64(1));
+		QVERIFY2(system.refused == 0,
+			"a system allocation failure was counted as a budget refusal");
+
+		const QString message = system.memoryErrorMessage(QStringLiteral("not enough memory"));
+		QVERIFY2(!message.contains(QStringLiteral("memory budget exceeded")), qPrintable(message));
+		QVERIFY2(message.contains(QStringLiteral("system allocation failure")), qPrintable(message));
+
+		// ... and the budget wording a client keys on is unchanged when the
+		// budget really is the bound that bit: this is a guard against the fix
+		// going too far and blaming the machine for a budget refusal.
+		ScriptMemoryState budgeted;
+		budgeted.budget = OneMiB;
+		QVERIFY(ScriptMemoryState::allocate(&budgeted, nullptr, 0,
+			static_cast<std::size_t>(OneMiB) + 1) == nullptr);
+		QCOMPARE(budgeted.refused, quint64(1));
+		QVERIFY(budgeted.memoryErrorMessage(QStringLiteral("not enough memory"))
+			.contains(QStringLiteral("memory budget exceeded")));
 	}
 };
 

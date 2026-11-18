@@ -27,6 +27,8 @@
 #ifdef ZENE_HAVE_FFMPEG
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 #include <QFile>
 
@@ -56,7 +58,7 @@ bool MediaStream::open(const QString& path, AVMediaType type, QString* error)
 	if (code >= 0) { code = avcodec_open2(codec, decoder, nullptr); }
 	if (code < 0)
 	{
-		*error = errorText(code);
+		if (error) { *error = errorText(code); }
 		close();
 		return false;
 	}
@@ -103,12 +105,20 @@ bool MediaStream::feed(AVPacket* packet)
 	return true;
 }
 
-void MediaStream::seek(double seconds)
+bool MediaStream::seek(double seconds)
 {
-	const auto target = startPts() + static_cast<int64_t>(std::max(0.0, seconds) / timeBase());
-	av_seek_frame(format, index, target, AVSEEK_FLAG_BACKWARD);
+	const double base = timeBase();
+	if (!std::isfinite(seconds) || !std::isfinite(base) || base <= 0.0) { return false; }
+	const double offsetPts = std::max(0.0, seconds) / base;
+	if (!std::isfinite(offsetPts) || offsetPts >= 0x1p63) { return false; }
+	const int64_t offset = static_cast<int64_t>(offsetPts);
+	const int64_t start = startPts();
+	if (start > 0 && offset > std::numeric_limits<int64_t>::max() - start) { return false; }
+	const int64_t target = start + offset;
+	if (av_seek_frame(format, index, target, AVSEEK_FLAG_BACKWARD) < 0) { return false; }  // the demuxer stayed where it was
 	avcodec_flush_buffers(codec);
 	draining = false;
+	return true;
 }
 
 } // namespace lmms::video

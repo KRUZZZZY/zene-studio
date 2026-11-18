@@ -31,35 +31,147 @@
 
 #include <QtTest>
 
+#define private public // the regression needs a live mixer with the song pointer absent
+#include "Engine.h"
+#undef private
+
 #include <QDataStream>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QTemporaryDir>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
+#include <limits>
+#include <new>
+#include <stdexcept>
+#include <limits>
+#include <limits>
+#include <limits>
 #include <vector>
+
+#include <fftw3.h>
+
+namespace
+{
+	enum class KernelFftwFailure { None, Allocation, Plan };
+	KernelFftwFailure g_kernelFftwFailure = KernelFftwFailure::None;
+	int g_kernelFftwFailureAt = -1;
+	int g_kernelFftwAllocationCalls = 0;
+	int g_kernelFftwPlanCalls = 0;
+	int g_kernelFftwLiveAllocations = 0;
+	int g_kernelFftwLivePlans = 0;
+}
+
+extern "C"
+{
+	void* fftwf_mallocForKernelTest(size_t size)
+	{
+		const int call = g_kernelFftwAllocationCalls++;
+		if (g_kernelFftwFailure == KernelFftwFailure::Allocation && call == g_kernelFftwFailureAt) { return nullptr; }
+		void* allocation = std::calloc(1, size);
+		if (allocation != nullptr) { ++g_kernelFftwLiveAllocations; }
+		return allocation;
+	}
+
+	void fftwf_freeForKernelTest(void* allocation)
+	{
+		if (allocation != nullptr)
+		{
+			--g_kernelFftwLiveAllocations;
+			std::free(allocation);
+		}
+	}
+
+	fftwf_plan fftwf_plan_dft_r2c_1dForKernelTest(int, float* input, fftwf_complex* output, unsigned)
+	{
+		const int call = g_kernelFftwPlanCalls++;
+		if (input == nullptr || output == nullptr ||
+			(g_kernelFftwFailure == KernelFftwFailure::Plan && call == g_kernelFftwFailureAt)) { return nullptr; }
+		++g_kernelFftwLivePlans;
+		return reinterpret_cast<fftwf_plan>(static_cast<std::uintptr_t>(call + 1));
+	}
+
+	fftwf_plan fftwf_plan_dft_c2r_1dForKernelTest(int, fftwf_complex* input, float* output, unsigned)
+	{
+		const int call = g_kernelFftwPlanCalls++;
+		if (input == nullptr || output == nullptr ||
+			(g_kernelFftwFailure == KernelFftwFailure::Plan && call == g_kernelFftwFailureAt)) { return nullptr; }
+		++g_kernelFftwLivePlans;
+		return reinterpret_cast<fftwf_plan>(static_cast<std::uintptr_t>(call + 1));
+	}
+
+	void fftwf_executeForKernelTest(const fftwf_plan) {}
+
+	void fftwf_destroy_planForKernelTest(fftwf_plan plan)
+	{
+		if (plan != nullptr) { --g_kernelFftwLivePlans; }
+	}
+}
+
+#define ConvolutionKernel ConvolutionKernelAllocationTest
+#define fftwf_malloc fftwf_mallocForKernelTest
+#define fftwf_free fftwf_freeForKernelTest
+#define fftwf_plan_dft_r2c_1d fftwf_plan_dft_r2c_1dForKernelTest
+#define fftwf_plan_dft_c2r_1d fftwf_plan_dft_c2r_1dForKernelTest
+#define fftwf_execute fftwf_executeForKernelTest
+#define fftwf_destroy_plan fftwf_destroy_planForKernelTest
+#include "../../../plugins/ConvolutionReverb/ConvolutionKernel.cpp"
+#undef fftwf_destroy_plan
+#undef fftwf_execute
+#undef fftwf_plan_dft_c2r_1d
+#undef fftwf_plan_dft_r2c_1d
+#undef fftwf_free
+#undef fftwf_malloc
+#undef ConvolutionKernel
 
 #include "AllocationProbe.h"
 #include "AudioBus.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "BasicFilters.h"
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "Delay.h"
+#include "DspEffectLibrary.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "ProjectJournal.h"
+#include "QuadratureLfo.h"
+#include "RmsHelper.h"
+#include "OversamplingHelpers.h"
+#include "QuadratureLfo.h"
 #include "SampleFrame.h"
 #include "Song.h"
+#include "../../../src/core/audio/OssSampleConversion.h"
 
 using namespace lmms;
 
 namespace
 {
+
+void armKernelFftwFailure(KernelFftwFailure failure, int call)
+{
+	g_kernelFftwFailure = failure;
+	g_kernelFftwFailureAt = call;
+	g_kernelFftwAllocationCalls = 0;
+	g_kernelFftwPlanCalls = 0;
+}
+
+void constructKernelForFftwFailureTest()
+{
+	const std::vector<float> emptyImpulse;
+	lmms::ConvolutionKernelAllocationTest kernel(emptyImpulse, emptyImpulse);
+}
 
 constexpr double kTwoPi = 6.283185307179586;
 
@@ -174,248 +286,211 @@ int consolesOn(int index)
 	return count;
 }
 
+constexpr int kDelayProbeFrames = 8;
+
+bool nearly(double a, double b) { return std::abs(a - b) < 1.0e-9; }
+
+//! Eight stereo frames through @a delay: an impulse of 1 on the left and of 10 on the right in frame 0.
+template<typename Delay>
+void stereoImpulsePair(Delay& delay, double left[kDelayProbeFrames], double right[kDelayProbeFrames])
+{
+	for (int frame = 0; frame < kDelayProbeFrames; ++frame)
+	{
+		left[frame] = delay.update(frame == 0 ? 1.0 : 0.0, 0);
+		right[frame] = delay.update(frame == 0 ? 10.0 : 0.0, 1);
+	}
+}
+
+//! A ring cursor shared between the channels walks the buffer twice per frame, so the two impulse answers
+//! stop being ten times each other and land before the configured delay.
+template<typename Delay>
+bool channelsStayAligned(Delay& delay, double delayTime)
+{
+	delay.setDelay(delayTime);
+	delay.setGain(0.0);
+	double left[kDelayProbeFrames];
+	double right[kDelayProbeFrames];
+	stereoImpulsePair(delay, left, right);
+	const int answered = static_cast<int>(delayTime);
+	for (int frame = 0; frame < kDelayProbeFrames; ++frame)
+	{
+		if (!nearly(left[frame] * 10.0, right[frame])) { return false; }
+		if (frame < answered && !nearly(left[frame], 0.0)) { return false; }
+	}
+	return nearly(left[answered], 1.0) && nearly(right[answered], 10.0);
+}
+
+//! Both taps of a dual-tap comb must answer on the left channel exactly as they do on the right.
+bool dualTapChannelsStayAligned()
+{
+	StereoCombFeedbackDualtap dualtap(12);
+	dualtap.setDelays(2.0, 5.0);
+	dualtap.setGain(0.0);
+	double left[kDelayProbeFrames];
+	double right[kDelayProbeFrames];
+	stereoImpulsePair(dualtap, left, right);
+	return nearly(left[2], 1.0) && nearly(right[2], 10.0) && nearly(left[5], 1.0) && nearly(right[5], 10.0);
+}
+
+//! A shrinking setMaxDelay folds every channel cursor into the new size.
+bool shrinkingMaxDelayKeepsCursorsInRange()
+{
+	StereoCombFeedback comb(8);
+	comb.setDelay(2.0);
+	comb.setGain(0.0);
+	for (int frame = 0; frame < 6; ++frame) { comb.update(0.0, 0); comb.update(0.0, 1); }
+	comb.setMaxDelay(4);
+	double left[kDelayProbeFrames];
+	double right[kDelayProbeFrames];
+	stereoImpulsePair(comb, left, right);
+	return nearly(left[2], 1.0) && nearly(right[2], 10.0);
+}
+
 } // namespace
+
+template class lmms::CombFeedback<2>;
+template class lmms::CombFeedfwd<2>;
+template class lmms::CombFeedbackDualtap<2>;
+template class lmms::AllpassDelay<2>;
 
 class DeviceDspTest : public QObject
 {
 	Q_OBJECT
 
 private slots:
-	void initTestCase()
-	{
-#ifdef LMMS_TEST_PLUGIN_DIR
-		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
-#endif
-		Engine::init(true);
-		Engine::audioEngine()->audioDev()->stopProcessing();  // the test reads and writes channel buffers itself
-		while (Engine::mixer()->numChannels() <= 3) { Engine::mixer()->createChannel(); }
-		block().assign(Engine::audioEngine()->framesPerPeriod(), SampleFrame());
-		ControlRegistry::setReady(true);
-	}
+	void initTestCase();
 
-	void cleanupTestCase()
-	{
-		ControlRegistry::setReady(false);
-		Engine::destroy();
-	}
+	void cleanupTestCase();
 
-	void init()
-	{
-		for (int i = 0; i < Engine::mixer()->numChannels(); ++i) { chainOf(i).clear(); }
-	}
+	void init();
+
+	void delayLineTemplatesInstantiate();
+
+	//! Each channel keeps its own ring cursor, so a stereo frame's samples delay by the same amount.
+	void stereoDelayPrimitivesAdvanceOneCursorPerChannel();
+
+	//! OSS PCM output must saturate samples before converting them to signed 16-bit values.
+	void ossConversionClipsOverrangeSamples();
+
+	//! Full scale maps to the signed 16-bit limits without wrapping, including the first float above +1.0.
+	void ossConversionFullScaleStaysInRange();
+
+	//! A sample-rate drop must keep an existing LFO frequency at or below the new Nyquist limit.
+	void quadratureLfoDoesNotExceedNyquistAfterSampleRateDrop();
+
+	void rmsHelperRejectsZeroAtConstruction();
+
+	void rmsHelperRejectsZeroResize();
+
+	//! Growing the RMS window must release its new[] buffer with delete[].
+	void growingRmsBufferUsesArrayDeallocation();
+
+	void formantFilterClampsToLastVowel();
+
+	//! The second formant's first stage feeds back its own band-pass history.
+	void formantSecondStageUsesItsOwnHistory();
+
+	void rejectedCombFeedbackDelaysPreserveThePreviousDelay();
+
+	void zeroThresholdFoldbackDistortionBypassesSafely();
+
+	void upsamplerSetupRejectsNegativeStages();
+
+	void upsamplerSetStagesRejectsNegativeStages();
+
+	void downsamplerSetupRejectsNegativeStages();
+
+	void downsamplerSetStagesRejectsNegativeStages();
+
+	void upsamplerSetStagesRejectsStagesAboveMaximum();
+
+	void upsamplerSetupRejectsStagesAboveMaximum();
+
+	void downsamplerSetStagesRejectsStagesAboveMaximum();
+
+	void downsamplerSetupRejectsStagesAboveMaximum();
+
+	void oversamplerStageRangeEndpointsRemainValid();
+
+	void quadratureLfoRejectsNaNFrequency();
+
+	void quadratureLfoRejectsZeroSampleRate();
+
+	void quadratureLfoIgnoresZeroSampleRateUpdate();
+
+	void quadratureLfoIgnoresNonFiniteOffset();
+
+	void nonFiniteFormantFrequenciesUseMinimumFrequency();
 
 	//! MX-147: a loud 9 kHz tone is turned down and reported as reduction; a 200 Hz tone passes.
-	void theDeEsserTurnsDownTheHighBandOnly()
-	{
-		const QString deesser = loadByName(ch(1), QStringLiteral("deesser"));
-		if (deesser.isEmpty()) { QSKIP("this build has no de-esser module"); }
-		set(ch(1), deesser, "Threshold", -40.0);
-		set(ch(1), deesser, "Range", 12.0);
-		long at = 0;
-		const SampleFrame high = runBlocks(chainOf(1), sine(9000.0, 0.5f), 60, &at);
-		QVERIFY2(high[0] < 0.5f * 0.5f, qPrintable(QString::number(high[0])));  // at least 6 dB down
-		QVERIFY(chainOf(1).effects().front()->gainReductionDb() > 6.f);
-		at = 0;
-		const SampleFrame low = runBlocks(chainOf(1), sine(200.0, 0.5f), 60, &at);
-		QVERIFY2(std::abs(low[0] - 0.5f) < 0.03f, qPrintable(QString::number(low[0])));
-	}
+	void theDeEsserTurnsDownTheHighBandOnly();
+
+	//! MX-147: the detector is linked, so sibilance that is loud in BOTH channels is caught even when
+	//! the two are opposite in phase. A mono-sum detector reads R = -L as silence and turns nothing
+	//! down, so this is the same 9 kHz tone at the same level as the case above, phase-inverted on
+	//! the right: it must be reduced just the same.
+	void theDeEsserDetectsOppositePhaseSibilance();
+
+	//! Mute routing must not let the dry mix term reach the output.
+	void theFrequencyShifterMuteRouteDoesNotPassDryInput();
 
 	//! MX-148: +100 % attack lifts the start of a burst; -100 % softens it; neither moves the steady level.
-	void theTransientShaperShapesAnAttack()
-	{
-		const QString shaper = loadByName(ch(1), QStringLiteral("transientshaper"));
-		if (shaper.isEmpty()) { QSKIP("this build has no transient shaper module"); }
-		const Signal burst = [](long) { return SampleFrame(0.25f, 0.25f); };
-		const Signal silence = [](long) { return SampleFrame(); };
-		long at = 0;
-		set(ch(1), shaper, "Attack", 100.0);
-		runBlocks(chainOf(1), silence, 20, &at);
-		QVERIFY(runBlocks(chainOf(1), burst, 1, &at, 64)[0] > 0.25f * 1.5f);
-		QVERIFY(std::abs(runBlocks(chainOf(1), burst, 200, &at)[0] - 0.25f) < 0.01f);
-		set(ch(1), shaper, "Attack", -100.0);
-		runBlocks(chainOf(1), silence, 200, &at);
-		QVERIFY(runBlocks(chainOf(1), burst, 1, &at, 64)[0] < 0.25f * 0.9f);  // the first 1.5 ms of the burst
-	}
+	void theTransientShaperShapesAnAttack();
 
 	//! MX-154: with the voice on the left, the carrier on the right sounds only while the voice does.
-	void theVocoderFollowsTheVoice()
-	{
-		const QString vocoder = loadByName(ch(1), QStringLiteral("vocoder"));
-		if (vocoder.isEmpty()) { QSKIP("this build has no vocoder module"); }
-		set(ch(1), vocoder, "Voice", 1.0);  // the left side is the voice
-		long at = 0;
-		const Signal mute = [](long f) { return SampleFrame(0.f, noise(f, 0.5f)); };
-		const Signal talk = [](long f) {
-			return SampleFrame(static_cast<float>(0.5 * std::sin(kTwoPi * 1000.0 * static_cast<double>(f) / rate())), noise(f, 0.5f));
-		};
-		QVERIFY(runBlocks(chainOf(1), mute, 40, &at)[0] < 1e-3f);
-		QVERIFY(runBlocks(chainOf(1), talk, 40, &at)[0] > 1e-2f);
-		// The realtime rule: a warm block allocates nothing.
-		test::tlCountAllocations = true;
-		test::resetAllocationCount();
-		runBlocks(chainOf(1), talk, 1, &at);
-		const std::uint64_t allocations = test::tlAllocationCount;
-		test::tlCountAllocations = false;
-		QCOMPARE(allocations, std::uint64_t{0});
-	}
+	void theVocoderFollowsTheVoice();
 
 	//! MX-143: transparent at rest; a static cut; a dynamic cut that only a loud band gets; mid only.
-	void theDynamicEqCutsStaticallyDynamicallyAndOnTheMid()
-	{
-		const QString eq = loadByName(ch(1), QStringLiteral("dynamiceq"));
-		if (eq.isEmpty()) { QSKIP("this build has no dynamic EQ module"); }
-		long at = 0;
-		QVERIFY(std::abs(runBlocks(chainOf(1), sine(500.0, 0.5f), 40, &at)[0] - 0.5f) < 0.01f);
-		set(ch(1), eq, "Gain 2", -12.0);
-		QVERIFY(std::abs(runBlocks(chainOf(1), sine(500.0, 0.5f), 40, &at)[0] - 0.126f) < 0.02f);
-		set(ch(1), eq, "Gain 2", 0.0);
-		set(ch(1), eq, "Dynamic 2", -12.0);
-		set(ch(1), eq, "Threshold 2", -40.0);
-		QVERIFY(std::abs(runBlocks(chainOf(1), sine(500.0, 0.5f), 80, &at)[0] - 0.126f) < 0.02f);  // loud: cut
-		QVERIFY(std::abs(runBlocks(chainOf(1), sine(500.0, 0.001f), 200, &at)[0] - 0.001f) < 0.0002f);  // quiet: left alone
-		set(ch(1), eq, "Dynamic 2", 0.0);
-		set(ch(1), eq, "Gain 2", -12.0);
-		set(ch(1), eq, "Channels", 1.0);  // the mid only
-		const Signal sideOnly = [](long f) {
-			const auto x = static_cast<float>(0.5 * std::sin(kTwoPi * 500.0 * static_cast<double>(f) / rate()));
-			return SampleFrame(x, -x);
-		};
-		QVERIFY(std::abs(runBlocks(chainOf(1), sideOnly, 40, &at)[0] - 0.5f) < 0.01f);  // no mid: untouched
-	}
+	void theDynamicEqCutsStaticallyDynamicallyAndOnTheMid();
+
+	//! FFTW allocation and plan failures reject the kernel and release resources already acquired.
+	void theConvolutionKernelRejectsFftwResourceFailures();
 
 	//! MX-152: an impulse response of one click plays the input back one partition late at the
 	//! input's level; a device that is not a convolution reverb, or a missing file, is refused; undo.
-	void theConvolutionReverbPlaysALoadedImpulse()
-	{
-		const QString reverb = loadByName(ch(1), QStringLiteral("convolutionreverb"));
-		if (reverb.isEmpty()) { QSKIP("this build has no convolution reverb module"); }
-		QVERIFY(chainOf(1).latencyFrames() > 0);  // reported to delay compensation
-		QTemporaryDir dir;
-		const QString click = dir.filePath(QStringLiteral("click.wav"));
-		std::vector<qint16> samples(64, 0);
-		samples[0] = 16384;
-		QVERIFY(writeWav(click, samples));
-		const QJsonObject device{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), reverb}};
-		QJsonObject load = device;
-		load.insert(QStringLiteral("path"), click);
-		const ControlResult loaded = run(QStringLiteral("plugin.impulse_load"), load);
-		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
-		long at = 0;
-		const SampleFrame peak = runBlocks(chainOf(1), sine(1000.0, 0.5f), 80, &at);
-		QVERIFY2(std::abs(peak[0] - 0.5f) < 0.03f, qPrintable(QString::number(peak[0])));
-		test::tlCountAllocations = true;
-		test::resetAllocationCount();
-		runBlocks(chainOf(1), sine(1000.0, 0.5f), 2, &at);
-		const std::uint64_t allocations = test::tlAllocationCount;
-		test::tlCountAllocations = false;
-		QCOMPARE(allocations, std::uint64_t{0});
-		load.insert(QStringLiteral("path"), dir.filePath(QStringLiteral("missing.wav")));
-		QCOMPARE(run(QStringLiteral("plugin.impulse_load"), load).errorKind, ControlErrorKind::NotFound);
-		const QString console = loadByName(ch(1), QStringLiteral("console"));
-		QVERIFY(!console.isEmpty());
-		QJsonObject wrong{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), console}, {QStringLiteral("path"), click}};
-		QCOMPARE(run(QStringLiteral("plugin.impulse_load"), wrong).errorKind, ControlErrorKind::Refused);
-		chainOf(1).clear();
-	}
+	void theConvolutionReverbPlaysALoadedImpulse();
 
 	//! W6 (review lane10 #4): an impulse response recorded at twice the engine's rate is resampled band-limited. Its
 	//! click plus a tone above the engine's Nyquist frequency must play as the click alone - flat - and not with
 	//! the tone folded down to a quarter of the rate (the old linear resampler: about 7 times louder there).
-	void aHighRateImpulseIsResampledWithoutAliasing()
-	{
-		const QString reverb = loadByName(ch(1), QStringLiteral("convolutionreverb"));
-		if (reverb.isEmpty()) { QSKIP("this build has no convolution reverb module"); }
-		QTemporaryDir dir;
-		const QString file = dir.filePath(QStringLiteral("high-rate.wav"));
-		std::vector<qint16> samples(2048, 0);
-		samples[0] = 16384;
-		for (std::size_t n = 0; n < samples.size(); ++n)  // 0.375 of the file's rate: 0.75 of the engine's
-		{
-			samples[n] = static_cast<qint16>(samples[n] + 2000.0 * std::sin(kTwoPi * 0.375 * static_cast<double>(n)));
-		}
-		QVERIFY(writeWav(file, samples, static_cast<quint32>(2 * rate())));
-		const ControlResult loaded = run(QStringLiteral("plugin.impulse_load"),
-			{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), reverb}, {QStringLiteral("path"), file}});
-		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
-		long at = 0;
-		const float low = runBlocks(chainOf(1), sine(1000.0, 0.25f), 80, &at)[0];
-		const float folded = runBlocks(chainOf(1), sine(0.99 * rate() / 4.0, 0.25f), 80, &at)[0];
-		QVERIFY2(low > 0.01f, qPrintable(QString::number(low)));
-		QVERIFY2(folded / low < 1.5f && folded / low > 0.67f,
-			qPrintable(QStringLiteral("a quarter of the rate %1, 1 kHz %2").arg(folded).arg(low)));
-		chainOf(1).clear();
-	}
+	void aHighRateImpulseIsResampledWithoutAliasing();
 
 	//! MX-156: the Recorder passes the sound unchanged and writes what passed to its take; the take lands
 	//! on a new audio track as one undo step; a device that is not a Recorder is refused.
-	void theRecorderRecordsWhatPassesIt()
-	{
-		const QString recorder = loadByName(ch(1), QStringLiteral("insertrecorder"));
-		if (recorder.isEmpty()) { QSKIP("this build has no recorder module"); }
-		QTemporaryDir dir;
-		const QString file = dir.filePath(QStringLiteral("take.wav"));
-		const QJsonObject device{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), recorder}};
-		QJsonObject start = device;
-		start.insert(QStringLiteral("on"), true);
-		start.insert(QStringLiteral("file"), file);
-		const ControlResult started = run(QStringLiteral("plugin.record"), start);
-		QVERIFY2(started.ok, qPrintable(started.errorMessage));
-		QVERIFY(started.result.value(QStringLiteral("recording")).toBool());
-		long at = 0;
-		const int blocks = 20;
-		QVERIFY(std::abs(runBlocks(chainOf(1), sine(440.0, 0.5f), blocks, &at)[0] - 0.5f) < 0.01f);  // passes unchanged
-		QJsonObject stop = device;
-		stop.insert(QStringLiteral("on"), false);
-		const ControlResult stopped = run(QStringLiteral("plugin.record"), stop);
-		QVERIFY(stopped.ok);
-		QCOMPARE(stopped.result.value(QStringLiteral("frames")).toDouble(), static_cast<double>(blocks) * static_cast<double>(block().size()));
-		QCOMPARE(stopped.result.value(QStringLiteral("dropped")).toDouble(), 0.0);
-		QVERIFY(QFileInfo(file).size() > 44);
-		const int tracks = static_cast<int>(Engine::getSong()->tracks().size());
-		const ControlResult landed = run(QStringLiteral("plugin.recorder_land"), device);
-		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
-		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracks + 1);
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracks);
-		const QString console = loadByName(ch(1), QStringLiteral("console"));
-		QVERIFY(!console.isEmpty());
-		QCOMPARE(run(QStringLiteral("plugin.record"), {{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), console}}).errorKind,
-			ControlErrorKind::Refused);
-	}
+	void recorderLandRefusesWithoutSong();
+
+	void emptyRecorderFileUsesDefaultTakePath();
+
+	void theRecorderRecordsWhatPassesIt();
 
 	//! MX-150: a quiet signal passes the console unchanged; mixer.console_apply adds one to every channel,
 	//! changes them all on a second call, removes them, and each call undoes in one step.
-	void theConsoleGoesOnEveryChannel()
-	{
-		const QString console = loadByName(ch(1), QStringLiteral("console"));
-		if (console.isEmpty()) { QSKIP("this build has no console module"); }
-		set(ch(1), console, "Drive", 0.0);
-		long at = 0;
-		QVERIFY(std::abs(runBlocks(chainOf(1), sine(1000.0, 0.05f), 60, &at)[0] - 0.05f) < 0.002f);
-		set(ch(1), console, "Oversampling", 2.0);  // MX-100: 4x, still transparent when quiet
-		QVERIFY(std::abs(runBlocks(chainOf(1), sine(1000.0, 0.05f), 60, &at)[0] - 0.05f) < 0.003f);
-		chainOf(1).clear();
-		const int channels = Engine::mixer()->numChannels();
-		const ControlResult applied = run(QStringLiteral("mixer.console_apply"), {{QStringLiteral("drive"), 50.0},
-			{QStringLiteral("character"), QStringLiteral("warm")}});
-		QVERIFY2(applied.ok, qPrintable(applied.errorMessage));
-		QCOMPARE(applied.result.value(QStringLiteral("added")).toInt(), channels);
-		QCOMPARE(consolesOn(2), 1);
-		const QString onTwo = control::effectIdOf(chainOf(2).effects().back());
-		QCOMPARE(parameterValue(ch(2), onTwo, QStringLiteral("Drive")), 50.0);
-		QVERIFY(run(QStringLiteral("mixer.console_apply"), {{QStringLiteral("drive"), 80.0}}).ok);
-		QCOMPARE(consolesOn(2), 1);  // kept, not added again
-		QCOMPARE(parameterValue(ch(2), onTwo, QStringLiteral("Drive")), 80.0);
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(parameterValue(ch(2), onTwo, QStringLiteral("Drive")), 50.0);
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(consolesOn(2), 0);
-		QCOMPARE(run(QStringLiteral("mixer.console_apply"), {{QStringLiteral("drive"), 150.0}}).errorKind, ControlErrorKind::InvalidArgs);
-		QVERIFY(run(QStringLiteral("mixer.console_apply")).ok);
-		QVERIFY(run(QStringLiteral("mixer.console_apply"), {{QStringLiteral("remove"), true}}).ok);
-		QCOMPARE(consolesOn(0), 0);
-	}
+	void theConsoleGoesOnEveryChannel();
+
+	//! Luna 4760: removing consoles from a project that has none changed nothing, so the reply says
+	//! zero and the project must not become dirty.
+	void removingNoConsoleLeavesTheProjectClean();
+
+	//! Luna 3872: 'changed' counts the settings that actually changed - applying the value a
+	//! console already carries changes nothing and must not be reported as a change.
+	void applyingTheValueAlreadyThereReportsNoChange();
+
+	//! Luna new-p15-10: applying settings a console already carries changes nothing, so it must take no
+	//! undo step and must not dirty a project that was saved clean.
+	void applyingTheSameSettingsTakesNoUndoStepAndLeavesTheProjectClean();
+
+	//! Luna 3873: one mixer.console_apply is ONE undo step however many channels it touched -
+	//! the removal of every channel's console has to be a single step, not one per channel.
+	void oneConsoleApplyIsOneUndoStep();
+
+	//! A NaN drive passes the schema's number check, and every range comparison with NaN is false, so it
+	//! used to pass the 0..100 check and reach the consoles. It is refused as InvalidArgs, and the
+	//! console already on a channel keeps its drive.
+	void aNaNDriveIsRefusedAndChangesNothing();
 };
+
+#include "DeviceDspTestParts1.h"
+#include "DeviceDspTestParts2.h"
 
 QTEST_MAIN(DeviceDspTest)
 #include "DeviceDspTest.moc"

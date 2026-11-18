@@ -43,7 +43,8 @@ public:
 
 	inline void setFrequency( double frequency )
 	{
-		if( frequency < 0 || frequency > ( m_samplerate / 2.0 ) || frequency == m_frequency )
+		if( !std::isfinite(frequency) || m_samplerate <= 0 || frequency < 0 ||
+		frequency > ( m_samplerate / 2.0 ) || frequency == m_frequency )
 		{
 			return;
 		}
@@ -58,8 +59,17 @@ public:
 
 	inline void setSampleRate ( int samplerate )
 	{
+		if( samplerate <= 0 )
+		{
+			return;
+		}
 		m_samplerate = samplerate;
 		m_twoPiOverSr = 2 * std::numbers::pi_v<float> / samplerate;
+		// Keep the frequency under the new Nyquist limit, as setFrequency() does.
+		if( m_frequency > m_samplerate / 2.0 )
+		{
+			m_frequency = m_samplerate / 2.0;
+		}
 		m_increment = m_frequency * m_twoPiOverSr;
 	}
 

@@ -310,14 +310,33 @@ private slots:
 				{QStringLiteral("strength"), 1.0}, {QStringLiteral("swing"), 1.0}}).ok);
 		QCOMPARE(takeOf(odd)[0].position, 4);  // 3 + 3 / 2, not 3 + 2 = 5
 
-		// An even grid is unchanged: half of 12 is 6, and 6 is the midpoint.
+		// Keep even-grid swing one tick before the nearest-step midpoint, so a
+		// repeated quantise still selects the same odd step.
 		const QString even = makeClip();
 		QVERIFY2(!even.isEmpty(), "the second fixture clip was not created");
 		QVERIFY(addNote(even, 60, 12, 100));
 		QVERIFY(run(QStringLiteral("groove.quantize"),
 			{{QStringLiteral("clip"), even}, {QStringLiteral("grid"), 12},
 				{QStringLiteral("strength"), 1.0}, {QStringLiteral("swing"), 1.0}}).ok);
-		QCOMPARE(takeOf(even)[0].position, 18);
+		QCOMPARE(takeOf(even)[0].position, 17);
+	}
+
+	//! A repeated full-strength swing must keep its first result instead of
+	//! rounding the midpoint onto the following even grid step.
+	void fullStrengthSwingDoesNotDriftWhenRepeated()
+	{
+		const QString clip = makeClip();
+		QVERIFY2(!clip.isEmpty(), "the fixture clip was not created");
+		QVERIFY(addNote(clip, 60, 12, 100));
+		const QJsonObject args{{QStringLiteral("clip"), clip},
+			{QStringLiteral("grid"), 12}, {QStringLiteral("strength"), 1.0},
+			{QStringLiteral("swing"), 1.0}};
+
+		QVERIFY(run(QStringLiteral("groove.quantize"), args).ok);
+		const int first = takeOf(clip)[0].position;
+		QVERIFY(run(QStringLiteral("groove.quantize"), args).ok);
+		const int repeated = takeOf(clip)[0].position;
+		QCOMPARE(repeated, first);
 	}
 
 	//! A pool edit reverses through the RECORDED ACTION checkpoint: extract,
@@ -420,6 +439,69 @@ private slots:
 			.value(QStringLiteral("name")).toString(), QStringLiteral("after"));
 		QVERIFY(run(QStringLiteral("groove.remove"),
 			{{QStringLiteral("name"), QStringLiteral("after")}}).ok);
+	}
+
+	//! An overlong name is REFUSED on the wire by every command that writes one. It
+	//! is never truncated onto the 64-character groove it begins with: that would
+	//! overwrite the groove, or rename onto it, under a name nobody typed.
+	void overlongNamesAreRefusedOnTheWire()
+	{
+		const QString prefix(GrooveTemplate::MaxNameLength, QLatin1Char('g'));
+		const QString overlong = prefix + QStringLiteral("-two");
+
+		// groove.rename: the overlong target would be stored as 'prefix', a name that
+		// does not exist yet, instead of being refused.
+		QVERIFY(run(QStringLiteral("groove.set"),
+			{{QStringLiteral("name"), QStringLiteral("swing")},
+				{QStringLiteral("length_ticks"), 12}, {QStringLiteral("step_ticks"), 12}}).ok);
+		QCOMPARE(run(QStringLiteral("groove.rename"),
+			{{QStringLiteral("name"), QStringLiteral("swing")}, {QStringLiteral("to"), overlong}})
+			.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(namesInPool().contains(QStringLiteral("swing")), "the refused rename moved swing");
+		QVERIFY2(!namesInPool().contains(prefix), "the overlong rename stored a truncated name");
+	}
+
+	//! groove.set and groove.extract under an overlong name are refused, so they
+	//! cannot replace the 64-character groove the name begins with.
+	void overlongNamesAreRefusedOnSetAndExtract()
+	{
+		const QString prefix(GrooveTemplate::MaxNameLength, QLatin1Char('g'));
+		const QString overlong = prefix + QStringLiteral("-two");
+		const QJsonArray oneStep{QJsonObject{
+			{QStringLiteral("slot"), 0}, {QStringLiteral("timing"), 2},
+			{QStringLiteral("velocity"), 4}}};
+
+		// groove.set and groove.extract under the overlong name would replace the
+		// 64-character groove beside it. Both are refused, and nothing is written.
+		QVERIFY(run(QStringLiteral("groove.set"),
+			{{QStringLiteral("name"), prefix}, {QStringLiteral("length_ticks"), 12},
+				{QStringLiteral("step_ticks"), 12}, {QStringLiteral("steps"), oneStep}}).ok);
+		const ControlResult before = run(QStringLiteral("groove.list"),
+			{{QStringLiteral("name"), prefix}});
+		QVERIFY(before.ok);
+
+		const QJsonArray otherStep{QJsonObject{
+			{QStringLiteral("slot"), 0}, {QStringLiteral("timing"), -2},
+			{QStringLiteral("velocity"), 9}}};
+		QCOMPARE(run(QStringLiteral("groove.set"),
+			{{QStringLiteral("name"), overlong}, {QStringLiteral("length_ticks"), 12},
+				{QStringLiteral("step_ticks"), 12}, {QStringLiteral("steps"), otherStep}})
+			.errorKind, ControlErrorKind::InvalidArgs);
+
+		const QString clip = makeClip();
+		QVERIFY2(!clip.isEmpty(), "the fixture clip was not created");
+		QVERIFY(addNote(clip, 60, 5, 100));
+		QVERIFY(addNote(clip, 62, 17, 100));
+		QCOMPARE(run(QStringLiteral("groove.extract"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("name"), overlong},
+				{QStringLiteral("grid"), 12}}).errorKind, ControlErrorKind::InvalidArgs);
+
+		const ControlResult after = run(QStringLiteral("groove.list"),
+			{{QStringLiteral("name"), prefix}});
+		QVERIFY(after.ok);
+		QVERIFY2(after.result == before.result,
+			"an overlong name changed the groove it would have truncated onto");
+		QVERIFY2(!namesInPool().contains(overlong), "an overlong name was stored");
 	}
 
 	//! Every refusal is typed, and changes nothing - not the pool, not a clip.
@@ -551,6 +633,104 @@ private slots:
 		const QVector<NoteAt> steps = stepsOf(QStringLiteral("saved"));
 		QVERIFY2((steps == QVector<NoteAt>{{5, 100}, {0, -1}, {2, 100}, {0, -1}}),
 			qPrintable(describe(steps)));
+	}
+
+	/*! notes_moved COUNTS NOTES, not the larger of two counts. A groove that
+	 *  pulls one note's POSITION onto the grid while it pulls a DIFFERENT
+	 *  note's VELOCITY to the slot's has moved two notes: one is reported under
+	 *  positions_moved and the other under velocities_moved, and the two notes
+	 *  have nothing to do with each other.
+	 *
+	 *  The fixture is built so the clip's order does not change, so the counts
+	 *  are about the union and not about which note sits at which index.  150
+	 *  ticks is in slot 2, not slot 1: absoluteSlotOf rounds the half up, so the
+	 *  note sits at 192 already by the grid and leaves from 150.
+	 *  - groove: length 384 / step 96, slots 40 / 120 / 40, all timings 0.
+	 *  - key 60 @ 0 vel 40: slot 0 wants tick 0 and velocity 40 - untouched.
+	 *  - key 64 @ 150 vel 40: slot 2 wants tick 192 and velocity 40, so its
+	 *    POSITION travels 150 -> 192 and its velocity is already right.
+	 *  - key 62 @ 192 vel 100: slot 2 wants tick 192 and velocity 40, so its
+	 *    position is already right and its VELOCITY travels 100 -> 40.
+	 *  Both travellers land in slot 2; the clip still sorts them key-descending
+	 *  (64 before 62) exactly as it did before, so the note at each index is
+	 *  the same note before and after. */
+	void notesMovedIsTheUnionOfBothKindsOfChange()
+	{
+		QVERIFY(run(QStringLiteral("groove.set"),
+			{{QStringLiteral("name"), QStringLiteral("split")},
+				{QStringLiteral("length_ticks"), 384}, {QStringLiteral("step_ticks"), 96},
+				{QStringLiteral("steps"), QJsonArray{
+					QJsonObject{{QStringLiteral("slot"), 0}, {QStringLiteral("timing"), 0},
+						{QStringLiteral("velocity"), 40}},
+					QJsonObject{{QStringLiteral("slot"), 1}, {QStringLiteral("timing"), 0},
+						{QStringLiteral("velocity"), 120}},
+					QJsonObject{{QStringLiteral("slot"), 2}, {QStringLiteral("timing"), 0},
+						{QStringLiteral("velocity"), 40}},
+					QJsonObject{{QStringLiteral("slot"), 3}, {QStringLiteral("timing"), 0},
+						{QStringLiteral("velocity"), 40}}}}}).ok);
+
+		const QString clip = makeClip();
+		QVERIFY2(!clip.isEmpty(), "the fixture clip was not created");
+		QVERIFY(addNote(clip, 60, 0, 40));
+		QVERIFY(addNote(clip, 64, 150, 40));
+		QVERIFY(addNote(clip, 62, 192, 100));
+
+		const ControlResult applied = run(QStringLiteral("groove.apply"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("name"), QStringLiteral("split")}});
+		QVERIFY2(applied.ok, qPrintable(applied.errorMessage));
+		QVERIFY2((takeOf(clip) == QVector<NoteAt>{{0, 40}, {192, 40}, {192, 40}}),
+			qPrintable(describe(takeOf(clip))));
+
+		// Two notes moved, each in one of the two ways, on two different notes.
+		QCOMPARE(applied.result.value(QStringLiteral("positions_moved")).toInt(), 1);
+		QCOMPARE(applied.result.value(QStringLiteral("velocities_moved")).toInt(), 1);
+		QCOMPARE(applied.result.value(QStringLiteral("notes_moved")).toInt(), 2);
+	}
+
+	/*! A FRACTIONAL tick is refused, not truncated to the whole part. Every tick
+	 *  argument is declared through tickProperty()/integerProperty(), which
+	 *  ControlSchema's integer check rejects unless the value is whole, and the
+	 *  registry validates the arguments BEFORE the handler runs - so the number
+	 *  never reaches readTicks to be cast.
+	 *
+	 *  The refusals have to change nothing, which is the part that matters: a
+	 *  groove of a fractional length is not created and a clip is not touched. */
+	void fractionalTickArgumentsAreRefused()
+	{
+		const QString clip = makeClip();
+		QVERIFY2(!clip.isEmpty(), "the fixture clip was not created");
+		QVERIFY(addNote(clip, 60, 0, 100));
+		const QVector<NoteAt> beforeTake = takeOf(clip);
+		const int groovesBefore = projectPool().size();
+
+		// length_ticks is read by readTicks, and 12.5 is a whole-tick argument
+		// that is not whole.
+		const ControlResult fracLength = run(QStringLiteral("groove.set"),
+			{{QStringLiteral("name"), QStringLiteral("fractional")},
+				{QStringLiteral("length_ticks"), 12.5}, {QStringLiteral("step_ticks"), 12},
+				{QStringLiteral("steps"), feelSteps()}});
+		QVERIFY2(!fracLength.ok, "a fractional length_ticks was accepted");
+		QCOMPARE(fracLength.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(projectPool().find(QStringLiteral("fractional")) == nullptr,
+			"a groove of a fractional length was created");
+
+		// The same through groove.quantize's grid, and through its humanise.
+		const ControlResult fracGrid = run(QStringLiteral("groove.quantize"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("grid"), 1.5}});
+		QVERIFY2(!fracGrid.ok, "a fractional quantise grid was accepted");
+		QCOMPARE(fracGrid.errorKind, ControlErrorKind::InvalidArgs);
+
+		const ControlResult fracHumanise = run(QStringLiteral("groove.quantize"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("grid"), 12},
+				{QStringLiteral("humanise_ticks"), 1.5}});
+		QVERIFY2(!fracHumanise.ok, "a fractional humanise_ticks was accepted");
+		QCOMPARE(fracHumanise.errorKind, ControlErrorKind::InvalidArgs);
+
+		// Nothing above reached the clip or the pool.
+		QCOMPARE(projectPool().size(), groovesBefore);
+		QVERIFY2(takeOf(clip) == beforeTake,
+			qPrintable(QStringLiteral("a refused fractional argument changed the clip: %1")
+				.arg(describe(takeOf(clip)))));
 	}
 };
 

@@ -97,8 +97,11 @@ These are implemented, not aspirational. Each is proved by a test in
    (1024) and drops on overflow instead of blocking, counting the drops.
    (`ScriptEngineTest::testSandboxInstructionBudget`,
    `testSandboxHookCannotRaiseBudget`, `testCommandQueueOverflowDropsWithoutBlocking`.)
-5. **The sandbox.** `os`, `io`, `package`, `require`, `dofile`, `loadfile`,
-   `load`, `loadstring`, `module` and `collectgarbage` are absent; `debug` is a
+5. **The sandbox.** `os`, `io`, `package`, `dofile`, `loadfile`,
+   `load`, `loadstring`, `module` and `collectgarbage` are absent, and `require`
+   is absent from `runString` scripts; in script files it is a sandboxed loader of
+   sibling modules confined to the script's directory (docs/LUA-PACKAGE-FORMAT.md
+   section 1a); `debug` is a
    restricted table with only `sethook` and `traceback`; `string`, `table`,
    `math`, `utf8` and the base library are present. File access is limited to the
    project directory and refuses symlink and `..` escapes.

@@ -23,6 +23,7 @@
  */
 
 #include "AccessibleCanvas.h"
+#include "DirectChildOfType.h"
 
 #include <QEvent>
 #include <QPainter>
@@ -62,7 +63,7 @@ private:
 
 const CanvasDescription* descriptionOf(const QWidget* widget)
 {
-	return widget != nullptr ? widget->findChild<CanvasDescription*>(QLatin1String(DescriptionName), Qt::FindDirectChildrenOnly)
+	return widget != nullptr ? directChildOfType<CanvasDescription>(widget, QLatin1String(DescriptionName))
 		: nullptr;
 }
 
@@ -145,7 +146,7 @@ CanvasKeyCursor::CanvasKeyCursor(QWidget* canvas)
 
 CanvasKeyCursor* CanvasKeyCursor::of(QWidget* canvas)
 {
-	auto* cursor = canvas->findChild<CanvasKeyCursor*>(QLatin1String(CursorName), Qt::FindDirectChildrenOnly);
+	auto* cursor = directChildOfType<CanvasKeyCursor>(canvas, QLatin1String(CursorName));
 	return cursor != nullptr ? cursor : new CanvasKeyCursor(canvas);
 }
 

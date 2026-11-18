@@ -52,6 +52,12 @@
 #include <QtTest>
 
 #include <cmath>
+#include <limits>
+#include <cstdint>
+#include <memory>
+#include <memory>
+#include <memory>
+#include <limits>
 #include <numbers>
 #include <vector>
 
@@ -59,12 +65,20 @@
 #include <QDir>
 #include <QFile>
 #include <QString>
+#include <QDomDocument>
 #include <QDomElement>
 #include <QTemporaryDir>
 
+#include "DrumSynth.h"
+#include "Engine.h"
 #include "ImportDetection.h"
 #include "ImportDetectionDsp.h"
+#include "ControlDetectSupport.h"
+#include "ControlRegistry.h"
+#include "ControlRegistryGroups.h"
+#include "DrumSynth.h"
 #include "ProjectKey.h"
+#include "../../../src/core/SampleDecoderFrameLoop.h"
 
 using namespace lmms;
 
@@ -79,6 +93,23 @@ constexpr double kFirstBeatSeconds = 0.5;
 constexpr double kOnsetToleranceSeconds = 0.03;
 //! The scale fixture's own answer: A (pitch class 9) major, rooted at 220 Hz.
 constexpr int kExpectedTonic = 9;
+
+std::vector<int16_t> renderDrumSynthPreset(const QString& path, const QByteArray& toneSettings)
+{
+	const QByteArray contents = QByteArrayLiteral(
+		"[General]\nVersion=DrumSynth v2.0\nComment=\n\n[Tone]\nOn=1\n")
+		+ toneSettings + QByteArrayLiteral("\nEnvelope=0,100 2400,0\n");
+	QFile file(path);
+	if (!file.open(QIODevice::WriteOnly) || file.write(contents) != contents.size()) { return {}; }
+	file.close();
+
+	DrumSynth synth;
+	int16_t* raw = nullptr;
+	const int length = synth.GetDSFileSamples(path, raw, 1, 44100);
+	const std::unique_ptr<int16_t[]> samples{raw};
+	if (length <= 0 || !samples) { return {}; }
+	return {samples.get(), samples.get() + length};
+}
 
 /*! Writes \a samples as a canonical 16-bit mono RIFF/WAVE.
  *
@@ -119,11 +150,11 @@ bool writeWave(const QString& path, const std::vector<double>& samples)
 }
 
 //! A click track at \a bpm, 25 ms decaying 1 kHz bursts, first burst at 0.5 s.
-std::vector<double> clickTrack(double bpm, double seconds)
+std::vector<double> clickTrack(double bpm, double seconds, double firstBeatSeconds = kFirstBeatSeconds)
 {
 	std::vector<double> samples(static_cast<std::size_t>(seconds * kSampleRate), 0.0);
 	const int burst = kSampleRate / 40;
-	for (double beat = kFirstBeatSeconds; beat < seconds; beat += 60.0 / bpm)
+	for (double beat = firstBeatSeconds; beat < seconds; beat += 60.0 / bpm)
 	{
 		const std::size_t start = static_cast<std::size_t>(beat * kSampleRate);
 		for (int i = 0; i < burst && start + i < samples.size(); ++i)
@@ -185,6 +216,23 @@ class ImportDetectionTest : public QObject
 	Q_OBJECT
 
 private slots:
+	void sampleFrameIterationStartsForCountsBeyondIntMax()
+	{
+		const auto frameCount = static_cast<std::size_t>(std::numeric_limits<int>::max()) + 1;
+		auto visited = false;
+		auto visitedFrame = std::size_t{};
+		const auto completed = sample_decoder_detail::forEachSampleFrame(frameCount,
+			[&](std::size_t frame) {
+				visited = true;
+				visitedFrame = frame;
+				return false;
+			});
+
+		QVERIFY(visited);
+		QCOMPARE(visitedFrame, std::size_t{0});
+		QVERIFY(!completed);
+	}
+
 	void initTestCase()
 	{
 		QVERIFY2(m_dir.isValid(), "no temporary directory for the detection fixtures");
@@ -198,6 +246,55 @@ private slots:
 		QVERIFY(writeWave(m_clickB, clickTrack(kClickBpmB, 10.0)));
 		QVERIFY(writeWave(m_major, majorFixture()));
 		QVERIFY(writeWave(m_tone, steadyTone()));
+	}
+
+	//! A high dF on an enabled noise band must still render at the default frequency.
+	void anEnabledNoiseBandWithDf110Renders()
+	{
+		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("noise-band-zero-step.ds"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+		const QByteArray fixture = QByteArrayLiteral(
+			"[General]\n"
+			"Version=DrumSynth v2.0\n"
+			"[NoiseBand]\n"
+			"On=1\n"
+			"dF=110\n"
+			"Envelope=0,100 100,100\n");
+		QCOMPARE(file.write(fixture), static_cast<qint64>(fixture.size()));
+		file.close();
+
+		auto drumSynth = DrumSynth{};
+		int16_t* samples = nullptr;
+		const int frames = drumSynth.GetDSFileSamples(path, samples, 1, sample_rate_t{44100});
+		const auto rendered = std::unique_ptr<int16_t[]>{samples};
+		QVERIFY(frames > 0);
+		QVERIFY(rendered);
+	}
+
+	//! A corrupt DS distortion bit count is refused before quantization divides by zero.
+	void distortionRejectsUnderflowingDrumSynthBits()
+	{
+		const QString fixturePath = QDir(QStringLiteral(LMMS_TEST_DATA_DIR)).filePath(
+			QStringLiteral("../../data/samples/drumsynth/misc_fx/click.ds"));
+		QFile fixture(fixturePath);
+		QVERIFY(fixture.open(QIODevice::ReadOnly));
+		QByteArray preset = fixture.readAll();
+		QVERIFY(preset.contains("Bits=6"));
+		preset.replace("Bits=6", "Bits=-100");
+
+		const QString corruptedPath = QDir(m_dir.path()).filePath(
+			QStringLiteral("drumsynth-negative-bits.ds"));
+		QFile corrupted(corruptedPath);
+		QVERIFY(corrupted.open(QIODevice::WriteOnly));
+		QCOMPARE(corrupted.write(preset), static_cast<qint64>(preset.size()));
+		corrupted.close();
+
+		int16_t* generatedData = nullptr;
+		const int frames = DrumSynth{}.GetDSFileSamples(corruptedPath, generatedData, 2, kSampleRate);
+		const std::unique_ptr<int16_t[]> data{generatedData};
+		QVERIFY2(frames == 0 && !data,
+			qPrintable(QStringLiteral("negative distortion bits returned %1 frames").arg(frames)));
 	}
 
 	/*! Two known tempos, through the decoder. The engine reports the method it
@@ -231,6 +328,22 @@ private slots:
 			<= kOnsetToleranceSeconds,
 			qPrintable(QStringLiteral("the fixture's first click is at %1 s, the estimate found %2 s")
 				.arg(kFirstBeatSeconds).arg(analysis.tempo.firstOnsetSeconds, 0, 'f', 3)));
+	}
+
+	//! A click at sample zero is not hidden by the lack of a preceding spectrum.
+	void aTransientAtTheStartOfTheFileIsFound()
+	{
+		const std::vector<double> track = clickTrack(kClickBpmA, 4.0, 0.0);
+		std::vector<float> mono;
+		mono.reserve(track.size());
+		for (const double sample : track) { mono.push_back(static_cast<float>(sample)); }
+		const std::vector<std::int64_t> onsets =
+			detection::detectOnsetFrames(mono.data(), mono.size(), kSampleRate, 4.0);
+
+		QVERIFY2(!onsets.empty(), "the click track's transients were not detected");
+		QVERIFY2(onsets.front() <= static_cast<std::int64_t>(kOnsetToleranceSeconds * kSampleRate),
+			qPrintable(QStringLiteral("the first reported onset is %1 samples after the file start")
+				.arg(onsets.front())));
 	}
 
 	/*! The key, named in the vocabulary that already existed. The name is
@@ -290,6 +403,39 @@ private slots:
 		QVERIFY(!none.found);
 	}
 
+	//! An in-process JSON value can carry NaN even though JSON text cannot.
+	void nonFiniteAnalysisBoundIsRefused()
+	{
+		const QJsonValue nanValue(std::numeric_limits<double>::quiet_NaN());
+		QVERIFY(nanValue.isDouble());
+		QVERIFY(std::isnan(nanValue.toDouble()));
+
+		double bound = 0.0;
+		ControlResult error;
+		QVERIFY(!control::readDetectBound(
+			QJsonObject{{QStringLiteral("max_seconds"), nanValue}}, &bound, &error));
+		QVERIFY(!error.ok);
+		QCOMPARE(error.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! Malformed numeric settings retain the defaults the DrumSynth file format specifies.
+	void malformedDrumSynthNumbersUseDefaults()
+	{
+		const auto validLevel = renderDrumSynthPreset(m_dir.filePath(QStringLiteral("level-valid.ds")),
+			QByteArrayLiteral("Level=128\nF1=200"));
+		const auto invalidLevel = renderDrumSynthPreset(m_dir.filePath(QStringLiteral("level-invalid.ds")),
+			QByteArrayLiteral("Level=oops\nF1=200"));
+		QVERIFY(!validLevel.empty());
+		QVERIFY(invalidLevel == validLevel);
+
+		const auto validFrequency = renderDrumSynthPreset(m_dir.filePath(QStringLiteral("frequency-valid.ds")),
+			QByteArrayLiteral("Level=128\nF1=200"));
+		const auto invalidFrequency = renderDrumSynthPreset(m_dir.filePath(QStringLiteral("frequency-invalid.ds")),
+			QByteArrayLiteral("Level=128\nF1=oops"));
+		QVERIFY(!validFrequency.empty());
+		QVERIFY(invalidFrequency == validFrequency);
+	}
+
 	/*! The project's own field: the XML round trip the A16 action checkpoint
 	 *  rides on, and the reset-on-absence rule. */
 	void theProjectKeyRoundTripsThroughItsXml()
@@ -325,7 +471,80 @@ private slots:
 		QVERIFY(cleared.tonicName().isEmpty());
 	}
 
+	void unreadableProjectKeyNumbersAreRejectedAndCleared()
+	{
+		const QStringList invalidXml = {
+			QStringLiteral("<detected-key scale=\"Major\" tonic=\"D\" pitch-class=\"bad\" confidence=\"1.2\" margin=\"0.1\"/>"),
+			QStringLiteral("<detected-key scale=\"Major\" tonic=\"D\" pitch-class=\"2\" confidence=\"bad\" margin=\"0.1\"/>"),
+			QStringLiteral("<detected-key scale=\"Major\" tonic=\"D\" pitch-class=\"2\" confidence=\"1.2\" margin=\"bad\"/>")
+		};
+
+		ProjectKey key;
+		for (const QString& xml : invalidXml)
+		{
+			key.set(QStringLiteral("A"), 9, QStringLiteral("Major"), 1.16, 0.06,
+				QString::fromLatin1(detection::KeyMethodName), QStringLiteral("/tmp/a-major.wav"));
+			QDomDocument document;
+			QVERIFY2(document.setContent(xml), qPrintable(xml));
+			QVERIFY2(!key.loadSettings(document.documentElement()), qPrintable(xml));
+			QVERIFY(key.empty());
+			QCOMPARE(key.tonicPitchClass(), ProjectKey::UnknownPitchClass);
+		}
+	}
+
+	void omittedProjectKeyNumbersKeepTheirDefaults()
+	{
+		ProjectKey key;
+		QVERIFY(key.fromXml(QStringLiteral("<detected-key scale=\"Major\"/>")));
+		QCOMPARE(key.tonicPitchClass(), ProjectKey::UnknownPitchClass);
+		QCOMPARE(key.confidence(), 0.0);
+		QCOMPARE(key.margin(), 0.0);
+	}
+
+	//! The registry's engine gate runs on the caller's thread, but the handler
+	//! re-reads the song on the UI thread. With no song (this test never starts the
+	//! engine) the handler is driven DIRECTLY, past the gate, and must refuse with a
+	//! typed Busy failure rather than dereference a null song.
+	void detectStateRefusesWhenThereIsNoSong()
+	{
+		QVERIFY2(Engine::getSong() == nullptr, "this test needs an engine-less process");
+		ControlRegistry& registry = detectRegistry();
+		const ControlCommand* getState = registry.command(QStringLiteral("detect.get_state"));
+		QVERIFY(getState != nullptr);
+
+		const ControlResult reply = getState->handler(QJsonObject());
+		QVERIFY(!reply.ok);
+		QVERIFY(reply.errorKind == ControlErrorKind::Busy);
+	}
+
+	//! detect.apply reads the song only after its refusals, so a valid click track
+	//! with `key` off reaches the song read; with no song it must refuse Busy and
+	//! write nothing.
+	void detectApplyRefusesWhenThereIsNoSong()
+	{
+		QVERIFY2(Engine::getSong() == nullptr, "this test needs an engine-less process");
+		ControlRegistry& registry = detectRegistry();
+		const ControlCommand* apply = registry.command(QStringLiteral("detect.apply"));
+		QVERIFY(apply != nullptr);
+
+		QJsonObject args;
+		args.insert(QStringLiteral("path"), m_clickA);
+		args.insert(QStringLiteral("key"), false);
+		const ControlResult reply = apply->handler(args);
+		QVERIFY(!reply.ok);
+		QVERIFY(reply.errorKind == ControlErrorKind::Busy);
+	}
+
 private:
+	//! The process-wide registry with the detect group registered once (a second
+	//! registration is a qFatal), so both refusal tests can share it.
+	static ControlRegistry& detectRegistry()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		if (!registry->hasCommand(QStringLiteral("detect.get_state"))) { registerDetectCommands(*registry); }
+		return *registry;
+	}
+
 	QTemporaryDir m_dir;
 	QString m_clickA;
 	QString m_clickB;

@@ -24,6 +24,8 @@
 
 #include "ControlDeviceSupport.h"
 
+#include "AuComponent.h"
+
 #include <algorithm>
 
 #include <QHash>
@@ -34,6 +36,13 @@
 #include "LadspaBase.h"
 #include "Plugin.h"
 #include "PluginFactory.h"
+#include "PluginVendors.h"
+#include "lmmsconfig.h"
+
+#ifdef LMMS_HAVE_LV2
+#include "Lv2Basics.h"
+#include "Lv2Manager.h"
+#endif
 
 namespace lmms
 {
@@ -79,7 +88,14 @@ void appendBuiltinDevices(Plugin::Type type, const QString& kind, QList<ControlD
 	QList<const Plugin::Descriptor*> descriptors;
 	for (const Plugin::Descriptor* descriptor : getPluginFactory()->descriptors(type))
 	{
-		if (descriptor != nullptr) { descriptors.append(descriptor); }
+		// A descriptor with sub-plugin features is a host container, not a
+		// device by itself. Its keyed devices are listed by their host-specific
+		// catalogue below; advertising the container here would let plugin.load
+		// instantiate it without the key it needs.
+		if (descriptor != nullptr && descriptor->subPluginFeatures == nullptr)
+		{
+			descriptors.append(descriptor);
+		}
 	}
 	// Sorted by plugin name so the catalogue order (and therefore every
 	// dev-<n> id) is deterministic for one build.
@@ -123,7 +139,50 @@ void appendLadspaDevices(QList<ControlDeviceEntry>* out)
 	}
 }
 
+QString ladspaVendorOf(const ControlDeviceEntry& entry)
+{
+	return Engine::getLADSPAManager() != nullptr
+		? Engine::getLADSPAManager()->getMaker(ladspa_key_t(entry.file, entry.label)) : QString();
+}
+
+QString lv2VendorOf(const ControlDeviceEntry& entry)
+{
+#ifdef LMMS_HAVE_LV2
+	if (Engine::getLv2Manager() == nullptr) { return QString(); }
+	if (const LilvPlugin* plugin = Engine::getLv2Manager()->getPlugin(entry.uri))
+	{
+		return qStringFromPluginNode(plugin, lilv_plugin_get_author_name);
+	}
+#else
+	(void)entry;
+#endif
+	return QString();
+}
+
 } // namespace
+
+QString controlDeviceVendor(const ControlDeviceEntry& entry)
+{
+	QString maker;
+	if (entry.format == QLatin1String("builtin")) { maker = QStringLiteral("Zene Studio"); }
+	else if (entry.format == QLatin1String("ladspa")) { maker = ladspaVendorOf(entry); }
+	else if (entry.format == QLatin1String("lv2")) { maker = lv2VendorOf(entry); }
+	// VST3 and CLAP: the vendor the module's own factory reported when the catalogue listed it.
+	else if (entry.format == QLatin1String("vst3"))
+	{
+		maker = pluginvendors::vendorOf(entry.file, entry.className);
+	}
+	else if (entry.format == QLatin1String("clap") || entry.format == QLatin1String("vst2"))
+	{
+		maker = pluginvendors::vendorOf(entry.file, entry.name);
+	}
+	// Q050-491: the maker the registry's "Vendor: Name" carried when the AU host listed the component.
+	else if (entry.format == QLatin1String("au"))
+	{
+		maker = pluginvendors::vendorOf(QStringLiteral("au"), entry.component);
+	}
+	return maker.trimmed();
+}
 
 QList<ControlDeviceEntry> controlDeviceCatalogue()
 {
@@ -137,6 +196,8 @@ QList<ControlDeviceEntry> controlDeviceCatalogue()
 	controlLv2DeviceEntries(&out);
 	controlVst3DeviceEntries(&out);
 	controlClapDeviceEntries(&out);
+	controlAuDeviceEntries(&out);  // Q050-491: macOS builds only, after every format already there
+	controlVst2DeviceEntries(&out);  // Q050-481.1: VST2 through Carla, after every format already there
 	return out;
 }
 
@@ -171,6 +232,10 @@ QJsonObject controlDeviceJson(const ControlDeviceEntry& entry, int index)
 	out.insert(QStringLiteral("format"), entry.format);
 	out.insert(QStringLiteral("kind"), entry.kind);
 	out.insert(QStringLiteral("loadable"), entry.loadable);
+	// Who made it, as its own format reports it (empty when it reports none):
+	// the vendor the device picker's Vendor column shows, minus the
+	// "Not reported" words the window adds. Q050-090.
+	out.insert(QStringLiteral("vendor"), controlDeviceVendor(entry));
 	if (entry.format == QLatin1String("ladspa"))
 	{
 		out.insert(QStringLiteral("file"), entry.file);
@@ -200,6 +265,24 @@ QJsonObject controlDeviceJson(const ControlDeviceEntry& entry, int index)
 		// way.
 		out.insert(QStringLiteral("file"), entry.file);
 		out.insert(QStringLiteral("clap_id"), entry.name);
+	}
+	if (entry.format == QLatin1String("vst2"))
+	{
+		// Q050-481.1: the binary, the plug-in's VST2 unique id, and how Carla reaches it: in process
+		// ("native") or through its Wine bridge ("win64"/"win32", then 'bridged' is true).
+		out.insert(QStringLiteral("file"), entry.file);
+		out.insert(QStringLiteral("unique_id"), entry.vst2Id);
+		out.insert(QStringLiteral("binary"), entry.vst2Binary);
+		out.insert(QStringLiteral("bridged"), entry.vst2Binary != QLatin1String("native"));
+	}
+	if (entry.format == QLatin1String("au"))
+	{
+		// Q050-491: the component's type:subtype:manufacturer - what the host instantiates and a saved
+		// project stores - and its scan-cache path, the one plugin.scan_cache_quarantine_add takes.
+		au::ComponentId id;
+		au::parseComponentKey(entry.component, &id);
+		out.insert(QStringLiteral("component"), entry.component);
+		out.insert(QStringLiteral("scan_cache_path"), au::scanCachePath(id));
 	}
 	return out;
 }

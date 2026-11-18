@@ -69,6 +69,7 @@ NoteGrid::NoteGrid()
 
 void NoteGrid::setPixelsPerTick(double ppt)
 {
+	if (!std::isfinite(ppt)) { return; }
 	m_pixelsPerTick = std::clamp(ppt, minPixelsPerTick, maxPixelsPerTick);
 }
 
@@ -81,11 +82,16 @@ void NoteGrid::zoomAround(double factor, double anchorX)
 
 void NoteGrid::setRowHeight(int px)
 {
-	m_rowHeight = std::clamp(px, 6, 40);
+	const int maximum = m_minRowHeight > 6 ? 64 : 40;  // accessible rows need room for the 52 px touch row
+	m_rowHeight = std::clamp(px, m_minRowHeight, maximum);
 	clampScrollY();
 }
 
-void NoteGrid::setScrollTicks(double ticks) { m_scrollTicks = std::max(0.0, ticks); }
+void NoteGrid::setScrollTicks(double ticks)
+{
+	if (!std::isfinite(ticks)) { return; }
+	m_scrollTicks = std::max(0.0, ticks);
+}
 
 void NoteGrid::setScrollY(int px)
 {

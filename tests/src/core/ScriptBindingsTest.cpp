@@ -33,6 +33,7 @@
 
 #include "AutomatableModel.h"
 #include "AutomationTrack.h"
+#include "ControlRegistry.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
@@ -41,12 +42,27 @@
 #include "SampleTrack.h"
 #include "ScriptBindings.h"
 #include "ScriptApiVersion.h"
+#include "ScriptCommandBridge.h"
+#include "ScriptDawBindings.h"
 #include "ScriptEngine.h"
 #include "Song.h"
 #include "Track.h"
 
 namespace
 {
+
+//! Queue a project.new the way zene.command() does (a RegistryCall the apply side runs), but
+//! without zene.command()'s own flush, so the next read's flush is what applies it.
+bool queueProjectNew(lmms::ScriptCommandBridge::Request& request)
+{
+	using namespace lmms;
+	request.id = QStringLiteral("project.new");
+	ScriptCommand command;
+	command.type = ScriptCommand::Type::DawEdit;
+	command.i0 = static_cast<std::int32_t>(ScriptDawBindings::Op::RegistryCall);
+	command.object0 = &request;
+	return ScriptEngine::instance()->enqueue(command);
+}
 
 //! Run \a fn and report whether it threw a std::exception; its what() lands in
 //! \a message when non-null.
@@ -79,11 +95,13 @@ private slots:
 	{
 		using namespace lmms;
 		Engine::init(true);
+		ControlRegistry::setReady(true);
 	}
 
 	void cleanupTestCase()
 	{
 		using namespace lmms;
+		ControlRegistry::setReady(false);
 		Engine::destroy();
 	}
 
@@ -316,6 +334,33 @@ private slots:
 		QCOMPARE(engine->pendingCommandCount(), 0);
 	}
 
+	/*! A name travels to the apply side in a fixed 256-byte payload, so a name
+	 *  that does not fit must be refused with an error rather than silently
+	 *  truncated - and truncation that splits a multibyte UTF-8 character is
+	 *  worse than a refusal, because the stored name is corrupt. */
+	void anOverlongNameIsRefusedRatherThanTruncated()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		LuaPatternStore store;
+		LuaInstrumentTrack& track = store.addInstrumentTrack();
+		QVERIFY(track.isValid());
+
+		const QString before = track.name();
+		const QString longName(400, QLatin1Char('x'));
+		QString message;
+		QVERIFY(throws([&] { track.setName(longName); }, &message));
+		QVERIFY2(!message.isEmpty(), "the refusal said nothing");
+		engine->processCommands();
+		QCOMPARE(track.name(), before);  // unchanged, not truncated
+
+		// A multibyte name that would be cut mid-character is refused too.
+		const QString multiByte = QString(QChar(0x00E4)).repeated(200);
+		QVERIFY(throws([&] { track.setName(multiByte); }));
+		engine->processCommands();
+		QCOMPARE(track.name(), before);
+	}
+
 	void trackWrapper()
 	{
 		using namespace lmms;
@@ -348,6 +393,235 @@ private slots:
 		QVERIFY(!store.track(99).asInstrumentTrack().isValid());
 		QVERIFY(!store.track(99).volumeModel().isValid());
 		QVERIFY(!store.track(99).muteModel().isValid());
+	}
+
+	/*! A Lua view names a project object it does not own, and a script can
+	 *  destroy that object in the SAME run: zene.command() is applied on the
+	 *  apply side while the run is still on the Lua stack. Every view saved
+	 *  across a project replacement must therefore report itself invalid and
+	 *  answer with the sentinel a null wrapper already answered with, never
+	 *  dereference the freed Track / MidiClip / model. */
+	void savedViewsOfAReplacedProjectAreInvalidated()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		engine->takeLogMessages();
+		const QString source = QStringLiteral(R"(
+local store = zene.patternStore()
+local row = store:addInstrumentTrack()
+row:setName('doomed')
+local index = store:trackCount() - 1
+local view = store:track(index)
+local clip = zene.song():pattern(0, index)
+local volume = row:volumeModel()
+local mute = view:muteModel()
+assert(view:isValid() and row:isValid() and clip:isValid(), 'setup: the views are live')
+assert(volume:isValid() and mute:isValid(), 'setup: the model views are live')
+local reply, err = zene.command('project.new')
+assert(reply ~= nil, tostring(err))
+assert(not view:isValid(), 'a Track view outlived the track it named')
+assert(not row:isValid(), 'an InstrumentTrack view outlived the track it named')
+assert(not clip:isValid(), 'a PatternClip view outlived the clip it named')
+assert(not volume:isValid(), 'a FloatModel view outlived the track that owned it')
+assert(not mute:isValid(), 'a BoolModel view outlived the track that owned it')
+assert(view:name() == '', 'Track:name() on a dead view')
+assert(view:type() == 'invalid', 'Track:type() on a dead view')
+assert(view:index() == -1, 'Track:index() on a dead view')
+assert(view:clipCount() == 0, 'Track:clipCount() on a dead view')
+assert(view:instrumentName() == '', 'Track:instrumentName() on a dead view')
+assert(not view:asInstrumentTrack():isValid(), 'Track:asInstrumentTrack() on a dead view')
+assert(not view:volumeModel():isValid(), 'Track:volumeModel() on a dead view')
+assert(not view:muteModel():isValid(), 'Track:muteModel() on a dead view')
+assert(row:name() == '', 'InstrumentTrack:name() on a dead view')
+assert(row:instrumentName() == '', 'InstrumentTrack:instrumentName() on a dead view')
+assert(row:volume() == 0, 'InstrumentTrack:volume() on a dead view')
+assert(row:panning() == 0, 'InstrumentTrack:panning() on a dead view')
+assert(not row:instrument():isValid(), 'InstrumentTrack:instrument() on a dead view')
+assert(not row:volumeModel():isValid(), 'InstrumentTrack:volumeModel() on a dead view')
+assert(not row:panningModel():isValid(), 'InstrumentTrack:panningModel() on a dead view')
+assert(clip:name() == '', 'PatternClip:name() on a dead view')
+assert(clip:lengthTicks() == 0, 'PatternClip:lengthTicks() on a dead view')
+assert(clip:noteCount() == 0, 'PatternClip:noteCount() on a dead view')
+assert(volume:value() == 0, 'FloatModel:value() on a dead view')
+assert(volume:name() == '', 'FloatModel:name() on a dead view')
+assert(mute:value() == false, 'BoolModel:value() on a dead view')
+row:setName('ignored')
+view:setName('ignored')
+clip:setName('ignored')
+clip:clearNotes()
+volume:setValue(1)
+mute:setValue(true)
+print('dead views are inert')
+)");
+		QString error;
+		QCOMPARE(engine->runString(source, &error, QStringLiteral("=(dead views)")),
+			ScriptEngine::RunResult::Ok);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QVERIFY(engine->takeLogMessages().contains(QStringLiteral("dead views are inert")));
+		// A setter that had queued work on a freed target would show up here.
+		QCOMPARE(engine->pendingCommandCount(), 0);
+		engine->processCommands();
+	}
+
+	/*! The same hazard through the other project-replacing command: opening a
+	 *  project inside the sandbox discards the session the saved views name. */
+	void savedViewsOfAnOpenedProjectAreInvalidated()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		engine->takeLogMessages();
+		QTemporaryDir projectDir;
+		QVERIFY(projectDir.isValid());
+		engine->setProjectDir(projectDir.path());
+		const QString source = QStringLiteral(R"(
+local store = zene.patternStore()
+local row = store:addInstrumentTrack()
+local index = store:trackCount() - 1
+local view = store:track(index)
+local clip = zene.song():pattern(0, index)
+local volume = row:volumeModel()
+assert(view:isValid() and row:isValid() and clip:isValid() and volume:isValid(), 'setup')
+assert(zene.song():saveProject('replacement.mmp'), 'the sandbox project must be writable')
+local opened, err = zene.command('project.open', {path = 'replacement.mmp'})
+assert(opened ~= nil, tostring(err))
+assert(not view:isValid(), 'a Track view outlived the project it named')
+assert(not row:isValid(), 'an InstrumentTrack view outlived the project it named')
+assert(not clip:isValid(), 'a PatternClip view outlived the clip it named')
+assert(not volume:isValid(), 'a FloatModel view outlived the track that owned it')
+assert(view:name() == '' and view:type() == 'invalid' and view:index() == -1)
+assert(row:name() == '' and row:volume() == 0 and not row:instrument():isValid())
+assert(clip:name() == '' and clip:noteCount() == 0 and clip:lengthTicks() == 0)
+assert(volume:value() == 0 and volume:name() == '')
+print('opened views are inert')
+)");
+		QString error;
+		QCOMPARE(engine->runString(source, &error, QStringLiteral("=(opened views)")),
+			ScriptEngine::RunResult::Ok);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QVERIFY(engine->takeLogMessages().contains(QStringLiteral("opened views are inert")));
+		engine->setProjectDir(QDir::currentPath());
+	}
+
+	/*! A read flushes the command queue before it dereferences the object it
+	 *  names. A queued project replacement that the flush applies deletes that
+	 *  object during the read: the check made before the flush passed, so the
+	 *  check made after it must decide. Each read below must answer with the
+	 *  dead-view sentinel and never touch the freed Track / MidiClip / model. */
+	void readAcrossAQueuedProjectReplacementIsSafe()
+	{
+		using namespace lmms;
+
+		{
+			LuaPatternStore store;
+			store.addInstrumentTrack();
+			LuaTrack& track = store.track(0);
+			QVERIFY(track.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(track.name(), QString());
+			QVERIFY(!track.isValid());
+		}
+		{
+			LuaPatternStore store;
+			LuaInstrumentTrack& row = store.addInstrumentTrack();
+			QVERIFY(row.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(row.name(), QString());
+			QVERIFY(!row.isValid());
+		}
+		{
+			LuaPatternStore store;
+			LuaInstrumentTrack& row = store.addInstrumentTrack();
+			QVERIFY(row.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(row.volume(), 0);
+			QVERIFY(!row.isValid());
+		}
+		{
+			LuaPatternStore store;
+			LuaInstrumentTrack& row = store.addInstrumentTrack();
+			QVERIFY(row.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(row.panning(), 0);
+			QVERIFY(!row.isValid());
+		}
+		{
+			LuaPatternStore store;
+			store.addInstrumentTrack();
+			LuaBoolModel& mute = store.track(0).muteModel();
+			QVERIFY(mute.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(mute.value(), false);
+			QVERIFY(!mute.isValid());
+		}
+		{
+			LuaPatternStore store;
+			LuaPatternClip& clip = store.addPattern();
+			QVERIFY(clip.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(clip.name(), QString());
+			QVERIFY(!clip.isValid());
+		}
+		{
+			LuaPatternStore store;
+			LuaPatternClip& clip = store.addPattern();
+			QVERIFY(clip.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(clip.noteCount(), 0);
+			QVERIFY(!clip.isValid());
+		}
+		{
+			LuaPatternStore store;
+			LuaInstrumentTrack& row = store.addInstrumentTrack();
+			LuaFloatModel& volume = row.volumeModel();
+			QVERIFY(volume.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(volume.value(), 0.0f);
+			QVERIFY(!volume.isValid());
+		}
+	}
+
+	/*! A Lua view of an instrument must not outlive the instrument it names:
+	 *  replacing the track's instrument deletes the old one, and the saved
+	 *  view must report itself invalid and answer with the null sentinels. */
+	void instrumentViewInvalidatedWhenTargetDestroyed()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		LuaPatternStore store;
+		LuaInstrumentTrack& track = store.addInstrumentTrack();
+		QVERIFY(track.isValid());
+
+		auto* rawTrack = dynamic_cast<InstrumentTrack*>(engine->trackAt(0));
+		QVERIFY(rawTrack != nullptr);
+
+		// The DummyInstrument fallback gives a live instrument with no plugin module.
+		rawTrack->loadInstrument(QString());
+		QVERIFY(rawTrack->instrument() != nullptr);
+		QVERIFY(!track.instrumentName().isEmpty());
+
+		LuaInstrument& saved = track.instrument();
+		QVERIFY(saved.isValid());
+		QVERIFY(!saved.name().isEmpty());
+
+		// Replacing the instrument deletes the old one.
+		rawTrack->loadInstrument(QString());
+		QVERIFY(!saved.isValid());
+		QVERIFY(saved.name().isEmpty());
+		QCOMPARE(saved.parameterCount(), 0);
+		QVERIFY(saved.parameterName(0).isEmpty());
+		QVERIFY(!saved.parameterModel(0).isValid());
+
+		// A setter on the dead view must be a no-op and must not crash.
+		saved.name(); // read again
+		QCOMPARE(engine->pendingCommandCount(), 0);
 	}
 
 	void trackTypeNames_data()
@@ -483,6 +757,35 @@ private slots:
 		QCOMPARE(engine->processCommands(), 1);
 		QCOMPARE(transport.isPlaying(), false);
 		QCOMPARE(song->isPlaying(), false);
+	}
+
+	/*! A read made right after a queued write must see that write: every
+	 *  getter samples engine state the write has not reached yet, so a getter
+	 *  that skips the flush hands the script the value from before its own
+	 *  call. lengthTicks/tempo/masterVolume are the three that did. */
+	void aGetterRightAfterAQueuedWriteSeesThatWrite()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		LuaSong song;
+
+		LuaPatternClip& clip = song.addPattern();
+		QVERIFY(clip.isValid());
+		const int defaultLength = clip.lengthTicks();
+		QVERIFY(defaultLength > 0);
+
+		// No explicit processCommands()/flush: the getter has to do it.
+		clip.setLengthTicks(100);
+		QCOMPARE(clip.lengthTicks(), 100);
+		QCOMPARE(engine->pendingCommandCount(), 0);
+
+		song.setTempo(140);
+		QCOMPARE(song.tempo(), 140);
+		QCOMPARE(engine->pendingCommandCount(), 0);
+
+		song.setMasterVolume(88);
+		QCOMPARE(song.masterVolume(), 88);
+		QCOMPARE(engine->pendingCommandCount(), 0);
 	}
 
 	void patternStoreWrapper()
@@ -639,6 +942,38 @@ private slots:
 		message.clear();
 		QVERIFY(throws([&] { files.exists(QStringLiteral("x")); }, &message));
 		QVERIFY2(message.contains(QStringLiteral("sandbox root does not exist")), qPrintable(message));
+	}
+
+	/*! saveProject() must capture the state the SCRIPT has already written, not
+	 *  the state the apply side had reached when saveProject() was called: a
+	 *  script that writes and then saves without an explicit processCommands()
+	 *  wrote nothing at all if the save reads Song before the queue drains. */
+	void saveProjectSeesTheScriptsOwnQueuedWrites()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		LuaSong song;
+
+		QTemporaryDir projectDir;
+		QVERIFY(projectDir.isValid());
+		engine->setProjectDir(projectDir.path());
+
+		// No processCommands(): the save itself has to see this write.
+		song.setTempo(150);
+		QCOMPARE(engine->pendingCommandCount(), 1);
+		QVERIFY(song.saveProject(QStringLiteral("queued.mmp")));
+
+		// Drain before the assertions below so this test leaves no queued
+		// command behind for the next case even when one of them fails.
+		engine->processCommands();
+
+		// Read the bpm back OUT of the written document rather than from the
+		// Song, so this asserts what the file holds and not what memory holds.
+		QFile written(QDir(projectDir.path()).absoluteFilePath(QStringLiteral("queued.mmp")));
+		QVERIFY2(written.open(QIODevice::ReadOnly | QIODevice::Text),
+			"the saved project must be readable");
+		const QString xml = QString::fromUtf8(written.readAll());
+		QVERIFY2(xml.contains(QStringLiteral("bpm=\"150\"")), qPrintable(xml.left(200)));
 	}
 
 	void logWrapper()

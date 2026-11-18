@@ -76,7 +76,8 @@ bool Semaphore::tryWait()
 
 Semaphore::Semaphore(unsigned initial)
 {
-	if(CreateSemaphore(nullptr, initial, LONG_MAX, nullptr) == nullptr) {
+	m_sem = CreateSemaphore(nullptr, initial, LONG_MAX, nullptr);
+	if(m_sem == nullptr) {
 		throw std::system_error(GetLastError(), std::system_category(), "Could not create semaphore");
 	}
 }

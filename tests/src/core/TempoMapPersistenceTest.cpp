@@ -36,12 +36,16 @@
 
 #include <QtTest>
 
+#include <QDomDocument>
+#include <QDomDocument>
+#include <QDomElement>
 #include <QFile>
 #include <QTemporaryDir>
 
 #include "Engine.h"
 #include "Song.h"
 #include "TempoMap.h"
+#include "TempoSyncKnobModel.h"
 
 using namespace lmms;
 
@@ -50,6 +54,7 @@ namespace
 
 constexpr int kMappedTempo = 90;
 constexpr int kSecondTempo = 180;
+constexpr int kGlobalTempo = 140;
 
 QString readText(const QString& path)
 {
@@ -154,6 +159,84 @@ private slots:
 		QCOMPARE(song->tempoAtTick(768), kSecondTempo);
 		song->clearProject();
 		QCOMPARE(song->tempoAtTick(768), song->getTempo());
+	}
+
+	//! A `tick` attribute that is not a number, or is outside the tick range, is
+	//! REJECTED: it must not read as tick zero, where a valid BPM would then apply
+	//! from the very start of the map.
+	void aMalformedEventTickIsRejectedRatherThanBecomingZero()
+	{
+		const auto loadEvents = [](const QString & body)
+		{
+			QDomDocument holder;
+			if (!holder.setContent(QStringLiteral("<tempo-map active=\"1\">%1</tempo-map>").arg(body), false))
+			{
+				return TempoMap();
+			}
+			TempoMap map;
+			map.loadSettings(holder.documentElement());
+			return map;
+		};
+
+		// INVERTED CONTROL: the same reader, on a well-formed tick, keeps the event
+		// where it was written - so the refusals below are the parse, not the reader.
+		const TempoMap good = loadEvents(QStringLiteral("<event tick=\"384\" bpm=\"120\"/>"));
+		QCOMPARE(good.size(), 1);
+		QCOMPARE(good[0].tick, tick_t(384));
+		QCOMPARE(good.tempoAtTick(384, kGlobalTempo), 120);
+
+		const TempoMap nonsense = loadEvents(QStringLiteral("<event tick=\"nonsense\" bpm=\"120\"/>"));
+		QCOMPARE(nonsense.size(), 0);
+
+		const TempoMap blank = loadEvents(QStringLiteral("<event tick=\"\" bpm=\"120\"/>"));
+		QCOMPARE(blank.size(), 0);
+
+		// Out of tick_t's range: 2^31 does not fit in the int32 a tick is.
+		const TempoMap huge = loadEvents(QStringLiteral("<event tick=\"99999999999\" bpm=\"120\"/>"));
+		QCOMPARE(huge.size(), 0);
+
+		// A malformed tick on a metre-only event is refused the same way.
+		const TempoMap metre = loadEvents(QStringLiteral("<event tick=\"12x\" numerator=\"4\" denominator=\"4\"/>"));
+		QCOMPARE(metre.size(), 0);
+
+		// A missing tick attribute is not malformed - it is absent, and absent
+		// still means the start of the map, which is what the default has always
+		// said. The refusal is about a tick that is PRESENT and unreadable.
+		const TempoMap absent = loadEvents(QStringLiteral("<event bpm=\"120\"/>"));
+		QCOMPARE(absent.size(), 1);
+		QCOMPARE(absent[0].tick, tick_t(0));
+	}
+
+	void unknownStoredSyncModeFallsBackToNone_data()
+	{
+		QTest::addColumn<int>("serializedMode");
+		QTest::newRow("negative") << -1;
+		QTest::newRow("past-custom") << 999;
+	}
+
+	void unknownStoredSyncModeFallsBackToNone()
+	{
+		QFETCH(int, serializedMode);
+
+		QDomDocument document;
+		QVERIFY(document.setContent(QStringLiteral("<knob/>")));
+		document.documentElement().setAttribute(QStringLiteral("knob_syncmode"), serializedMode);
+
+		TempoSyncKnobModel model(1.0f, 0.0f, 100.0f, 1.0f, 1.0f, nullptr);
+		model.loadSettings(document.documentElement(), QStringLiteral("knob"));
+
+		QVERIFY(model.syncMode() == TempoSyncKnobModel::SyncMode::None);
+	}
+
+	void customStoredSyncModeRemainsValid()
+	{
+		QDomDocument document;
+		QVERIFY(document.setContent(QStringLiteral("<knob knob_syncmode=\"8\"/>")));
+
+		TempoSyncKnobModel model(1.0f, 0.0f, 100.0f, 1.0f, 1.0f, nullptr);
+		model.loadSettings(document.documentElement(), QStringLiteral("knob"));
+
+		QVERIFY(model.syncMode() == TempoSyncKnobModel::SyncMode::Custom);
 	}
 };
 

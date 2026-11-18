@@ -29,6 +29,8 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include <QString>
 #include <QHash>  // IWYU pragma: keep
@@ -36,7 +38,9 @@
 #include <QStringList>
 
 #include "AudioEngine.h"
+#include "AutomationRenderScratch.h"
 #include "Controller.h"
+#include "ExportFilter.h"
 #include "Metronome.h"
 #include "lmms_constants.h"
 #include "lmmsconfig.h"
@@ -104,12 +108,61 @@ public:
 		 * Should we save the project as a project bundle? (with resources)
 		 */
 		BoolModel saveAsProjectBundle{false};
+		/**
+		 * Q050-007: write this save as a `.mmpz` v2 container instead of the
+		 * legacy single blob. A one-shot choice like the two above.
+		 */
+		BoolModel saveAsV2Container{false};
+		/**
+		 * True once the Save As dialog was answered: saveAsV2Container then
+		 * decides the format, ticked or not (unticking is the way a v2 project
+		 * goes back to legacy). False for every other save, which takes
+		 * Song::plannedSaveFormat().
+		 */
+		bool formatChosen = false;
 
 		void setDefaultOptions() {
 			discardMIDIConnections.setValue(false);
 			saveAsProjectBundle.setValue(false);
+			saveAsV2Container.setValue(false);
+			formatChosen = false;
 		}
 	};
+
+	/*! Q050-007: the two shapes a `.mmpz` project can be saved in. Legacy is the
+	 *  single qCompress() blob every earlier build wrote and reads - the default
+	 *  of every save. V2Container is the opt-in STORE-ZIP of one entry per
+	 *  section (ProjectContainer.h): larger, and unreadable by builds that
+	 *  predate it. */
+	enum class SaveFormat { Legacy, V2Container };
+
+	//! The config key (class "app") of the GLOBAL opt-in: "1" makes every save of
+	//! a `.mmpz` project a v2 container. Absent or "0" - the default - saves legacy.
+	static QString containerV2ConfigAttribute();
+	//! True when the global opt-in above is on.
+	static bool globalContainerV2();
+	//! The one-sentence cost of the v2 container, shown wherever a user or an
+	//! agent is offered or told about it: the larger file and the older builds.
+	static QString containerV2Note();
+
+	/*! The format a save to \a target takes when the caller named none: the
+	 *  v2 container when the global opt-in is on OR this project was opened from
+	 *  (or last explicitly saved as) a v2 container, and the target is a `.mmpz`
+	 *  name; the legacy blob otherwise - which is every save of every project
+	 *  that never opted in. */
+	SaveFormat plannedSaveFormat(const QString & target) const;
+	/*! True when \a target names a file a v2 container may be written to. EXACTLY the
+	 *  lowercase `.mmpz` suffix, because that is the spelling DataFile::nameWithExtension()
+	 *  and the writer recognise: a differently-cased suffix is treated as no suffix and gets
+	 *  `.mmpz` appended, so accepting `X.MMPZ` here would save a different file than the one
+	 *  named. One definition, used by the plan, project.save and the GUI save. */
+	static bool isContainerPath(const QString & target);
+	//! True when this session's project is a v2 container (opened as one, or last saved as one).
+	bool isContainerV2Project() const { return m_containerV2Project; }
+	//! Record the format the session's file now has (called after a successful save to the session's file).
+	void setContainerV2Project(bool v2) { m_containerV2Project = v2; }
+	//! The format the most recent saveProjectFile() actually wrote.
+	SaveFormat lastSavedFormat() const { return m_lastSavedFormat; }
 
 	void clearErrors();
 	void collectError( const QString error );
@@ -167,6 +220,9 @@ public:
 	 *  own), and it returns at its first test when no clip has opted in. */
 	void buildAutomationRamps(const TrackList& trackList, const TimePos& blockStart,
 		f_cnt_t frames, int frameOffsetInTick);
+	//! The same publish against one pinned AutomationLatency snapshot; an audio period passes its own.
+	void buildAutomationRamps(const TrackList& trackList, const TimePos& blockStart,
+		f_cnt_t frames, int frameOffsetInTick, const AutomationLatency::ReadSnapshot& latencySnapshot);
 
 	inline int getLoadingTrackCount() const
 	{
@@ -329,7 +385,9 @@ public:
 	 *  looped clip's) - not a seek, which moves the position too. The audio thread bumps it before the
 	 *  wrap's jump is announced, so a playbackPositionJumped listener can tell the two apart; any thread
 	 *  may read it. It only counts up and starts at 0 with the song. */
-	unsigned loopWraps() const { return m_loopWraps.load(std::memory_order_acquire); }
+	std::uint64_t loopWraps() const { return m_loopWraps.load(std::memory_order_acquire); }
+	//! Test seam: sets the wrap count, so a test can start it near the 32-bit limit (2^32 wraps cannot be played).
+	void setLoopWrapsForTest(std::uint64_t wraps) { m_loopWraps.store(wraps, std::memory_order_release); }
 
 	void updateLength();
 	bar_t length() const
@@ -345,8 +403,40 @@ public:
 		return m_globalAutomationTrack;
 	}
 
-	//TODO: Add Q_DECL_OVERRIDE when Qt4 is dropped
-	AutomatedValueMap automatedValuesAt(TimePos time, int clipNum = -1) const override;
+	/*! Every place that adds automation work for the audio thread calls this AFTER it has added it:
+	 *  Track::addClip (\a clips = 1, plus the clip's targets when it already has some),
+	 *  AutomationClip::addObject and the AutomationClip copy constructor (\a targets). Load, undo and redo,
+	 *  paste, duplicate and track add all reach the scratch through those three, and recording only writes
+	 *  nodes into existing clips. The two bounds only ever grow here (removals are not subtracted), so they
+	 *  are an upper bound of the true counts; when the larger passes the reserve, ensureAutomationScratch-
+	 *  Capacity recounts exactly and reserves 2x under the engine change lock. That is O(1) per call and
+	 *  O(project) once per doubling. On the render thread (or inside a RealtimeScope) only the bounds move:
+	 *  nothing there may allocate, and the read's overflow redo covers it. */
+	void noteAutomationGrowth(std::size_t clips, std::size_t targets) noexcept;
+	//! Recounts the clips and automation targets of the song, the global track and the pattern store exactly
+	//! and reserves the scratch for them (control thread; takes the engine change lock itself).
+	void ensureAutomationScratchCapacity();
+	//! Exact counts, for the tests that pin the bounds above.
+	void countAutomationForTest(std::size_t* clips, std::size_t* targets) const;
+	std::size_t automationBoundForTest() const noexcept
+	{
+		return std::max(m_automationClipBound.load(), m_automationTargetBound.load());
+	}
+	//! Test seam: replaces the scratch with one of \a capacity (call with the render locked out).
+	void resizeAutomationScratchForTest(std::size_t capacity);
+	//! How many ticks read more clips or values than the scratch had room for since the song was made.
+	//! Each was redone on an allocating scratch, so the automation applied was still complete; a non-zero
+	//! count means ensureAutomationScratchCapacity had not run for a change (e.g. a load) before it played.
+	std::uint64_t automationScratchOverflows() const noexcept
+	{
+		return m_automationScratchOverflows.load(std::memory_order_relaxed);
+	}
+
+	//! Adds the song's global automation track to the read (see TrackContainer::fillAutomatedValues).
+	//! The 4-argument form pins the current latency snapshot once; an audio period passes its own.
+	using TrackContainer::fillAutomatedValues;
+	void fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
+		TimePos time, int clipNum, const AutomationLatency::ReadSnapshot& snapshot) const override;
 
 	/*! Forgets @p model in the automated-value cache of the live song, if there
 	 *  is one (see `m_oldAutomatedValues`). The cache holds the RAW pointers of
@@ -389,7 +479,32 @@ public:
 	void loadProject( const QString & filename, const QStringList & skipSections = QStringList() );
 	bool guiSaveProject();
 	bool guiSaveProjectAs(const QString & filename);
-	bool saveProjectFile(const QString & filename, bool withResources = false);
+	bool saveProjectFile(const QString & filename, bool withResources = false,
+		SaveFormat format = SaveFormat::Legacy);
+
+	/*! WF-033 (docs/UNDO-HISTORY-PERSISTENCE.md): the project as ONE document,
+	 *  built exactly as saveProjectFile() builds it - the same writers, plug-in
+	 *  state and sample references included - without writing a file. Save
+	 *  callers check isPartialLoad(); an undo snapshot may retain a partial
+	 *  session's skipped-section list out of band. */
+	void buildProjectDocument( DataFile & dataFile );
+	/*! WF-033: the state an undo step returns to, compressed - the document
+	 *  above with the journal ids kept (so a restore gives every object back
+	 *  the id later steps name) and without the append-only <z:provenance> log,
+	 *  which an undo never rewinds. Null for a session that cannot be saved.
+	 *  When \a skippedSections is supplied, a partial load can be captured too;
+	 *  that list is needed to restore its read-only state. */
+	std::shared_ptr<const QByteArray> captureUndoSnapshot(QStringList* skippedSections = nullptr);
+	/*! WF-033: replaces the project with \a compressed IN PLACE - the undo of a
+	 *  step loaded from a file. Keeps what a restore must not touch: the file
+	 *  name, the undo journal around the step, the provenance log, the project's
+	 *  undo-history setting and the id counter (never handed out twice). */
+	bool restoreUndoSnapshot( const QByteArray & compressed );
+	/*! Q050-044: the same restore, putting \a fileName back as the project's file name instead of
+	 *  keeping the current one - undo of project.open and script.run restores the prior file. */
+	bool restoreUndoSnapshot( const QByteArray & compressed, const QString & fileName,
+		const QStringList& skippedSections = QStringList() );
+	bool isRestoringUndoSnapshot() const { return m_restoringSnapshot; }
 
 	/*! The session state a SUCCESSFUL save records: the file that was written,
 	 *  and the clean modified flag.
@@ -407,6 +522,9 @@ public:
 	{
 		return m_fileName;
 	}
+
+	//! Identity of this loaded document; changes whenever clearProject() replaces its contents.
+	quint64 documentIdentity() const { return m_documentIdentity; }
 
 	bool isLoadingProject() const
 	{
@@ -537,7 +655,12 @@ public:
 	//! Seconds from tick 0 to \a tick through the map's tempo segments.
 	double secondsAtTick(tick_t tick) const;
 
-	void exportProjectMidi(QString const & exportFileName) const;
+	/*! Write the session's notes as a Standard MIDI File to \a exportFileName.
+	 *
+	 *  The file is created EXCLUSIVELY: a path that is already there belongs to someone
+	 *  else and is never written to. The outcome says whether THIS call created the file,
+	 *  so the caller knows whether it may remove it. */
+	ExportOutcome exportProjectMidi(QString const & exportFileName) const;
 
 	inline void setLoadOnLaunch(bool value) { m_loadOnLaunch = value; }
 	SaveOptions &getSaveOptions() {
@@ -570,6 +693,9 @@ public:
 public slots:
 	void playSong();
 	void record();
+	//! A recording pass lost \a frames to a full capture ring (they are padded with silence in
+	//! their take). Emits recordTakeDropped on the main thread.
+	void reportRecordTakeDropped(qulonglong frames) { emit recordTakeDropped(frames); }
 	void playAndRecord();
 	void playPattern();
 	void playMidiClip( const lmms::MidiClip * midiClipToPlay, bool loop = true );
@@ -578,6 +704,11 @@ public slots:
 
 	void startExport();
 	void stopExport();
+	//! Prepare every instrument's retained converters, then adopt or discard the set.
+	//! Leading return type: the Qt 5.15.3 moc cannot parse a trailing one on a slot (ci-v041-1).
+	bool prepareConverterModeForInstruments(AudioResampler::Mode mode) noexcept;
+	void adoptPreparedConverterModeForInstruments() noexcept;
+	void discardPreparedConverterModeForInstruments() noexcept;
 
 
 	void setModified();
@@ -672,8 +803,19 @@ private:
 	 *  preserved for. */
 	bool restoreGuiSection(const QDomElement & element);
 
-	void processAutomations(const TrackList& tracks, TimePos timeStart, f_cnt_t frames);
+	void processAutomations(const TrackList& tracks, TimePos timeStart, f_cnt_t frames,
+		const AutomationLatency::ReadSnapshot& latencySnapshot);
+	void noteRecordedModel(const AutomatableModel* model);
+	/*! Applies the automation writes the render thread queued in the clips
+	 *  (cluster 5388). Control thread; the render thread may not edit a clip's
+	 *  node map, and a queued write is not lost when the control thread is
+	 *  late - the clip keeps it until it is applied. */
+	void applyPendingAutomationWrites();
+	//! Drops the queued writes of every clip (the project is being replaced).
+	void discardPendingAutomationWrites();
 	void processMetronome(size_t bufferOffset);
+	//! Recompute every frozen track's overlap allowance on the control thread after loop changes.
+	void updateFrozenTakeVoiceCapacities();
 
 	/*! The tempo-map follower (SPEC-zene-studio D11, docs/TEMPO-MAP.md). Runs
 	 *  once per audio block, and does NOTHING unless the map is active - which
@@ -715,7 +857,7 @@ private:
 	//! thread's followTempoMap() and the control thread's setTempo() both write it.
 	std::atomic<int> m_tempoMapAppliedTempo{-1};
 	//! The loop wraps the audio thread played (loopWraps()).
-	std::atomic<unsigned> m_loopWraps{0};
+	std::atomic<std::uint64_t> m_loopWraps{0};
 	//! The modulation layer and its lock-free hand-off to the audio thread
 	//! (#602, docs/MODULATION.md).
 	ModulationLayerPublisher m_modulationLayer;
@@ -745,6 +887,8 @@ private:
 	ControllerVector m_controllers;
 
 	int m_nLoadingTrack;
+	//! Unique process-wide identity for the current document, distinct across Song instances and reloads.
+	quint64 m_documentIdentity;
 
 	QString m_fileName;
 	QString m_oldFileName;
@@ -752,6 +896,8 @@ private:
 	bool m_loadOnLaunch;
 
 	volatile bool m_recording;
+	//! Record was pressed (Song::record) and the next Play starts a record pass; a stop clears it.
+	bool m_recordLatched = false;
 	volatile bool m_exporting;
 	volatile bool m_exportLoop;
 	volatile bool m_renderBetweenMarkers;
@@ -760,6 +906,8 @@ private:
 
 	bool m_savingProject;
 	bool m_loadingProject;
+	//! WF-033: a snapshot restore's load is in progress (not a file the user opened).
+	bool m_restoringSnapshot = false;
 	bool m_isCancelled;
 
 	SaveOptions m_saveOptions;
@@ -777,6 +925,9 @@ private:
 	QStringList m_notLoadedSections;
 	//! Set by saveProjectFile() when it refuses; empty after a write.
 	QString m_saveRefusal;
+	//! Q050-007: the session's project file is a v2 container (see isContainerV2Project()).
+	bool m_containerV2Project = false;
+	SaveFormat m_lastSavedFormat = SaveFormat::Legacy;
 
 	std::array<Timeline, PlayModeCount> m_timelines;
 
@@ -813,7 +964,24 @@ private:
 	//! `AutomationModesTest` aborting with signal 11 at Song.cpp:778, dereferencing a
 	//! key whose model the test had already destroyed. QPointer nulls itself when the
 	//! model goes, so the restore skips exactly the models that are gone.
-	QMap<QPointer<AutomatableModel>, float> m_oldAutomatedValues;
+	//! A flat list, reserved once in the constructor, and not a QMap: processAutomations rewrites it on
+	//! every tick of the audio thread and a QMap allocates a node per entry (RealtimeSanitizer, hosted
+	//! run 38707621703). Each model is in it at most once.
+	std::vector<std::pair<QPointer<AutomatableModel>, float>> m_oldAutomatedValues;
+
+	//! The audio thread's scratch for processAutomations, reserved in the constructor so a tick never
+	//! allocates: the clips and values of the song's read, those of a pattern clip's nested read, the
+	//! clips the recording pass looks at, and the models it wrote to. Past their capacity extra entries
+	//! are dropped and counted in m_automationScratchOverflows.
+	AutomationRenderScratch m_automationLevel{AutomationRenderScratch::RenderCapacity};
+	AutomationRenderScratch m_automationInner{AutomationRenderScratch::RenderCapacity};
+	AutomationRenderScratch m_automationRecordClips{AutomationRenderScratch::RenderCapacity};
+	std::vector<const AutomatableModel*> m_recordedModels;
+	std::atomic<std::uint64_t> m_automationScratchOverflows{0};
+	std::atomic<std::size_t> m_automationClipBound{0};
+	std::atomic<std::size_t> m_automationTargetBound{0};
+	//! The smallest capacity of the lists above, as of the last reserve.
+	std::atomic<std::size_t> m_automationReserved{AutomationRenderScratch::RenderCapacity};
 
 	//! The song that `Song::forgetAutomatedModel()` reports into, or nullptr.
 	//! Set by `Song::Song()`, cleared at the top of `Song::~Song()`.
@@ -843,7 +1011,14 @@ private:
 	friend class gui::ControllerRackView;
 
 signals:
+	//! A recording pass lost \a frames to capture overflow; the GUI shows a notice. Main thread.
+	void recordTakeDropped(qulonglong frames);
 	void projectLoaded();
+	//! Q050-484: an export is about to start (the main thread, before its render thread does): an instrument that streams
+	//! samples from disk loads them whole now, so the export never waits for a loader.
+	void exportPreparing();
+	//! Q050-484: that export's render thread has finished (the main thread).
+	void exportFinished();
 	void playbackStateChanged();
 	void playbackPositionJumped();
 	void lengthChanged( int bars );

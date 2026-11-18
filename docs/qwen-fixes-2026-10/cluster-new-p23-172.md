@@ -1,0 +1,37 @@
+FIXED
+new-p23-172: FIXED
+new-p14-184: ALREADY-FIXED
+new-p8-163: FIXED
+
+## Evidence and commands
+
+All `./ProjectStateTest ...` commands below ran from `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-172/build/tests`; logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-172.r1/logs`.
+
+**new-p23-172.** `src/core/MixerSnapshots.cpp:131-135` now checks `QString::toFloat(&ok)` and finiteness before returning a parsed value; channel volume/pan and send amount/pan all use this helper at lines 142-151. Regression: `ProjectStateTest::malformedSnapshotFloatsUseFallbacks`. RED: `./ProjectStateTest malformedSnapshotFloatsUseFallbacks` exit 1 (`002-p23-red.log`, actual volume 0 vs fallback 1). Step 4b: `git diff -- src/core/MixerSnapshots.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-172.r1/logs/fix.patch` exit 0; `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-172.r1/logs/fix.patch` exit 0; `/usr/bin/cmake --build /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-172/build --target zene ProjectStateTest` exit 0 (`012-build-p23-reversed.log`); the same test command exit 1 (`013-p23-red-step-4b.log`). Restore: `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-172.r1/logs/fix.patch` exit 0; the same build command exit 0 (`015-build-p23-restored-confirm.log`); the same test command exit 0 (`016-p23-green-after-reapply.log`). Preserved patch copy: `fix-p23.patch`.
+
+**new-p14-184.** This was already covered at `src/core/MixerSnapshots.cpp:129-135`: the branch rejected non-finite values, and `ProjectStateTest::nonFiniteSnapshotFloatsAreReplaced` checked NaN/Inf in channel volume/pan and send amount/pan at `tests/src/core/ProjectStateTest.cpp:179-210`. Baseline test passed (exit 0, `003-p14-baseline-green.log`). Negative control temporarily bypassed the existing finite-value fallback; `git diff -- src/core/MixerSnapshots.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-172.r1/logs/004-p14-negative-control.patch` exit 0; build command above exit 0 (`005-build-p14-negative-control.log`); `./ProjectStateTest nonFiniteSnapshotFloatsAreReplaced` failed with actual NaN (exit 1, `006-p14-red-without-finiteness-check.log`). Restored with `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-172.r1/logs/004-p14-negative-control.patch` exit 0; build command above exit 0 (`007-build-p14-restored.log`); the same test passed (exit 0, `008-p14-green-restored.log`). No product change was needed for this cluster.
+
+**new-p8-163.** `src/core/MixerSnapshots.cpp:241-255` now skips a snapshot when its name is already loaded, preserving the first definition; `store()` still replaces that single unique entry and `MaxSnapshots` remains 64. Regression: `ProjectStateTest::duplicateSnapshotNamesKeepTheFirstDefinition`, which also checks replacement. RED: `./ProjectStateTest duplicateSnapshotNamesKeepTheFirstDefinition` exit 1 (`009-p8-red.log`, two loaded entries vs expected one). Step 4b: `git diff -- src/core/MixerSnapshots.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-172.r1/logs/fix.patch` exit 0; `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-172.r1/logs/fix.patch` exit 0; the build command above exit 0 (`019-build-p8-reversed.log`); the same test command exit 1 (`020-p8-red-step-4b.log`). Restore: `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-172.r1/logs/fix.patch` exit 0; the build command above exit 0 (`021-build-p8-restored.log`); the same test command exit 0 (`022-p8-green-after-reapply.log`). Preserved patch copy: `fix-p8.patch`.
+
+**Affected test family.** `ctest -R '^ProjectStateTest$' --output-on-failure` from `build/tests` exited 0; 1/1 registered ctest passed (`023-ctest-projectstate.log`). Full `./ProjectStateTest` exited 0 with 15 passed, 0 failed (`027-projectstate-all-slots.log`). The targeted RED/GREEN runs each exercised their requested slot plus QtTest init/cleanup (three passes on green).
+
+**Manifest and gates.** Gate 9 initially found the documented stale `tests/all-sources.txt` list with 1,148 vendored sfizz paths excluded by its own recipe (the pre-existing note is at `tests/upstream-modifications.txt:5077-5079`). Re-derived the list from the exact published recipe; the generation command exited 0 (`030-all-sources-regenerated.txt`), and `bash tests/all-sources-reproduce.sh` exited 0 (`031-all-sources-reproduce-fixed.log`). `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-172` exited 0 (`032-feature-check-final.log`): fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, and file-length all PASS. The generated manifest and both edited inherited source files are registered in `tests/upstream-modifications.txt`.
+
+## Test matrix
+
+- Normal values and missing-attribute defaults: existing project snapshot round-trip; new parser retains the defaults for malformed channel/send values.
+- Invalid values: malformed text plus existing NaN/Inf channel/send coverage.
+- Duplicate names: first definition wins, later duplicate is skipped, subsequent `store()` replaces the sole retained entry.
+- Limit and reconfiguration: the existing `MaxSnapshots == 64` guard is unchanged; loading still clears and replaces the in-memory list. No new cap is added.
+- Realtime and undo: edits are confined to project snapshot parsing; no render/audio-thread function, control command, apply path, or undo transaction changed. Existing `applySends()` change guard is untouched.
+- Platform/build: configured C++20/Qt Linux build rebuilt `zene` and `ProjectStateTest`; `QString::toFloat(bool*)` and `std::isfinite` are portable APIs. Qt 5.15/MSVC/macOS builds were not run in this worktree.
+
+## Self-check
+
+- **Regression proof:** each new test fails with its product hunk reversed and passes after restoring it; commands and exit codes are recorded above. The p14-184 negative control likewise fails when its existing finite check is removed and passes when restored.
+- **Determinism:** tests build XML values directly and assert loaded state; they use no clock, waits, sleeps, races, or asynchronous hooks.
+- **Completeness:** `floatAttribute()` has four callers in `channelFrom()` for channel volume/pan and send amount/pan; `channelFrom()` is used by `MixerSnapshots::load()`. Duplicate checks are in that loader; `find()` and `store()` keep their existing first-match/replacement behavior. No command siblings or undo paths were changed.
+- **Compatibility:** valid finite values and missing-field defaults are preserved. Non-finite and malformed floats use the existing defaults. Duplicate names now deterministically retain the first XML entry; the 64-snapshot limit is unchanged.
+- **Realtime:** the changes only affect project loading, which constructs snapshot vectors; no new work runs on the audio thread, and no new allocation, lock, wait, I/O, or logging was added to a realtime path.
+- **Portability:** the configured Linux/Qt build passed. No Qt-6-only API or platform-specific code was introduced; other platform builds remain unverified.
+- **Files committed:** `src/core/MixerSnapshots.cpp`, `tests/src/core/ProjectStateTest.cpp`, `tests/upstream-modifications.txt`, `tests/all-sources.txt`, and this report.

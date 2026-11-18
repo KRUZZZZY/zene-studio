@@ -57,6 +57,7 @@
 #include <QByteArray>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QJsonValue>
 #include <QMap>
 #include <QString>
 #include <QStringList>
@@ -91,6 +92,24 @@ namespace control
 //! BounceInPlace::renderTrack render at the same rate from a live instance.
 constexpr int MasteringRenderSampleRate = 44100;
 
+//! The genre names `mastering.run` accepts: a CLOSED set, lower-case, in the order
+//! published. Matched exactly - no case folding - so the set itself is the contract.
+LMMS_EXPORT QStringList masteringGenreNames();
+
+//! The delivery-target names `mastering.run` accepts, read from each candidate of
+//! MasteringJob::defaultCandidates() (its own target name, first-seen order). Never a
+//! second hard-coded list, so it cannot drift from the engine's own targets.
+LMMS_EXPORT QStringList masteringDeliveryTargetNames();
+
+//! The longest genre name, published as `genre_max_length`. It is computed from the
+//! closed set rather than written as a rule: the registry's schema subset has no
+//! maxLength keyword, so the bound is a property of the set, not a separate check.
+LMMS_EXPORT int masteringGenreMaxLength();
+
+//! A caller's choice as the run document and the ACK carry it: the string when the
+//! caller made one, JSON null when the key was omitted (no choice).
+LMMS_EXPORT QJsonValue masteringChoiceJson(const QString& choice);
+
 /*! Everything ONE in-flight `mastering.run` owns. mastering.run starts the
  *  render child and answers with an ACK, so this outlives the request: the
  *  QProcess that started the child, the scratch directory the run writes into
@@ -116,6 +135,9 @@ struct LMMS_EXPORT MasteringPendingRun
 	QString reportPath;
 	QString errorPath;
 	QString outDir;
+	//! The caller's choices: retained for readback and passed to the child as CLI options.
+	QString genre;
+	QString deliveryTarget;
 	QMap<QString, QByteArray> before;
 };
 

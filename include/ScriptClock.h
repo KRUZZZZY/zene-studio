@@ -94,6 +94,12 @@ public:
 	//! strides to detect against (both must be > 0 or nothing is detected).
 	ScriptTickEvents advance(bool playing, qint64 pos, qint64 ticksPerBar, qint64 ticksPerBeat);
 
+	//! Seed the grid with the transport as it IS, without reporting an edge or
+	//! a crossing for the seed observation. The clock calls this when polling
+	//! starts or resumes, so the first poll after it compares against where
+	//! playback actually is instead of against a stale anchor.
+	void prime(bool playing, qint64 pos, qint64 ticksPerBar, qint64 ticksPerBeat);
+
 	qint64 nextBar() const { return m_nextBar; }
 	qint64 nextBeat() const { return m_nextBeat; }
 	qint64 position() const { return m_pos; }
@@ -104,9 +110,11 @@ public:
 
 private:
 	void regrid(qint64 pos, qint64 ticksPerBar, qint64 ticksPerBeat);
-	static int consume(qint64 pos, qint64 stride, qint64* next, int* coalesced);
+	static int consume(qint64 pos, qint64 stride, qint64* next, bool* hasNext, int* coalesced);
 
 	bool m_playing = false;
+	bool m_hasNextBar = false;
+	bool m_hasNextBeat = false;
 	qint64 m_pos = 0;
 	qint64 m_ticksPerBar = 0;
 	qint64 m_ticksPerBeat = 0;
@@ -154,6 +162,8 @@ public:
 	//! (before + inverse both carry it) and its compile check stay inside
 	//! control::MaxTransactionBytes with room to spare.
 	static constexpr int SourceByteCap = 65536;
+	//! Bound retained sources and the registry scan performed on each poll.
+	static constexpr int MaxScheduleCount = 64;
 
 	//! Never destroyed (the MidiClock singleton's argument): command handlers,
 	//! the timer and tests reach it for the process's life.
@@ -191,6 +201,9 @@ private:
 
 	//! Create/start/stop the QTimer so it runs iff something is scheduled.
 	void syncTimer();
+	//! Anchor the grid to the live transport without emitting an edge, so the
+	//! first poll after polling starts or resumes fires nothing stale.
+	void primeGrid();
 	void fireHook(const QString& hook, int count, qint64 pos);
 	void runEntry(ScriptSchedule& entry, int count, qint64 pos);
 	//! Parse-only check on a scratch state; no code runs and no engine is touched.

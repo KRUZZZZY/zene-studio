@@ -30,12 +30,36 @@
 #include "ModulationLayer.h"
 
 #include <QObject>
+#include <thread>
 
 #include "AutomatableModel.h"
 #include "Instrument.h"
 
 namespace lmms
 {
+
+namespace
+{
+
+void removeUnfollowedVoices(ModulationVoices& voices,
+	const std::array<std::atomic<int>, ModulationLayer::MaxModulators>& triggerTrack,
+	const std::array<std::atomic<bool>, ModulationLayer::MaxModulators>& perVoice)
+{
+	for (int slot = 0; slot < ModulationVoices::VoiceCount; ++slot)
+	{
+		ModulationVoice voice;
+		if (!voices.voice(slot, &voice)) { continue; }
+		bool followed = false;
+		for (std::size_t m = 0; m < triggerTrack.size() && !followed; ++m)
+		{
+			followed = perVoice[m].load(std::memory_order_relaxed)
+				&& triggerTrack[m].load(std::memory_order_relaxed) == voice.track;
+		}
+		if (!followed) { voices.noteOff(voice.track, voice.channel, voice.key); }
+	}
+}
+
+} // namespace
 
 ModulationLayerPublisher::ModulationLayerPublisher()
 {
@@ -47,6 +71,7 @@ ModulationLayerPublisher::ModulationLayerPublisher()
 ModulationLayerPublisher::~ModulationLayerPublisher()
 {
 	for (QMetaObject::Connection& watch : m_watch) { QObject::disconnect(watch); }
+	for (QMetaObject::Connection& watch : m_instrumentWatch) { QObject::disconnect(watch); }
 }
 
 void ModulationLayerPublisher::publishTriggers()
@@ -69,6 +94,7 @@ void ModulationLayerPublisher::publishTriggers()
 	m_anyTrigger.store(any, std::memory_order_release);
 	m_anyPerVoice.store(anyPerVoice, std::memory_order_release);
 	if (!anyPerVoice) { m_voices.clear(); }
+	else { removeUnfollowedVoices(m_voices, m_triggerTrack, m_perVoice); }
 }
 
 void ModulationLayerPublisher::voiceChanged(int trackId, bool on, int channel, int key, f_cnt_t offset) noexcept
@@ -101,6 +127,37 @@ void ModulationLayerPublisher::noteStarted(int trackId) noexcept
 	}
 }
 
+void ModulationLayerPublisher::retireTarget(std::atomic<std::uint32_t>& alive,
+	std::atomic<std::uint64_t>& writers, std::uint32_t token)
+{
+	std::uint64_t state = writers.load(std::memory_order_acquire);
+	while (targetGeneration(state) == token)
+	{
+		if ((targetWriterState(state) & targetClosingBit) == 0)
+		{
+			const std::uint64_t closed = state | targetClosingBit;
+			if (!writers.compare_exchange_weak(state, closed, std::memory_order_acq_rel,
+				std::memory_order_acquire))
+			{
+				continue;
+			}
+			state = closed;
+		}
+
+		while (targetGeneration(state) == token
+			&& (targetWriterState(state) & targetWriterCountMask) != 0)
+		{
+			std::this_thread::yield();
+			state = writers.load(std::memory_order_acquire);
+		}
+		if (targetGeneration(state) != token) { return; }
+
+		std::uint32_t expected = token;
+		alive.compare_exchange_strong(expected, 0, std::memory_order_acq_rel);
+		return;
+	}
+}
+
 double ModulationLayerPublisher::sinceTrigger(int modulator, int triggerTrack, double seconds) const noexcept
 {
 	if (triggerTrack < 0 || modulator < 0 || modulator >= ModulationLayer::MaxModulators) { return seconds; }
@@ -108,11 +165,8 @@ double ModulationLayerPublisher::sinceTrigger(int modulator, int triggerTrack, d
 	return at < 0.0 || seconds < at ? 0.0 : seconds - at;
 }
 
-void ModulationLayerPublisher::publishView()
+void ModulationLayerPublisher::publishView(ModulationAudioView& staged)
 {
-	m_hasLayer.store(m_layer.shouldPersist(), std::memory_order_release);
-	publishTriggers();  // MX-121
-
 	ModulationAudioView view;
 	view.sources = m_runtime.sources;
 	view.sourceCount = m_runtime.sourceCount;
@@ -122,8 +176,27 @@ void ModulationLayerPublisher::publishView()
 		// Every slot is re-issued: a view published before this edit carries
 		// the old tokens, so it skips the slot rather than writing a target
 		// that may since have been re-bound.
+		auto& writers = m_targetWriters[slot];
+		std::uint64_t writerState = writers.load(std::memory_order_acquire);
+		while ((targetWriterState(writerState) & targetClosingBit) == 0)
+		{
+			const std::uint64_t closed = writerState | targetClosingBit;
+			if (writers.compare_exchange_weak(writerState, closed, std::memory_order_acq_rel,
+				std::memory_order_acquire))
+			{
+				writerState = closed;
+				break;
+			}
+		}
+		while ((targetWriterState(writerState) & targetWriterCountMask) != 0)
+		{
+			std::this_thread::yield();
+			writerState = writers.load(std::memory_order_acquire);
+		}
 		QObject::disconnect(m_watch[slot]);
 		m_watch[slot] = QMetaObject::Connection{};
+		QObject::disconnect(m_instrumentWatch[slot]);
+		m_instrumentWatch[slot] = QMetaObject::Connection{};
 		m_alive[slot].store(0, std::memory_order_release);
 		if (slot >= static_cast<std::size_t>(m_runtime.entryCount)) { continue; }
 
@@ -146,17 +219,31 @@ void ModulationLayerPublisher::publishView()
 		to.token = token;
 		m_alive[slot].store(token, std::memory_order_release);
 
-		// destroyed() is emitted from ~QObject, the same moment a QPointer
-		// nulls itself, and on whichever thread destroys the model - hence an
-		// atomic, compared against the token so a stale watch cannot clear a
-		// slot that was re-issued in the meantime.
+		// Close the slot before AutomatableModel tears down its value state, and
+		// wait off the audio thread for any write that already pinned this token.
+		writers.store(targetGateState(token, targetClosingBit), std::memory_order_release);
 		std::atomic<std::uint32_t>* alive = &m_alive[slot];
-		m_watch[slot] = QObject::connect(model, &QObject::destroyed, [alive, token]() {
-			std::uint32_t expected = token;
-			alive->compare_exchange_strong(expected, 0, std::memory_order_acq_rel);
-		});
+		std::atomic<std::uint64_t>* writersPtr = &writers;
+		m_watch[slot] = QObject::connect(model, &AutomatableModel::aboutToBeDestroyed,
+			[alive, writersPtr, token] {
+				ModulationLayerPublisher::retireTarget(*alive, *writersPtr, token);
+			});
+		if (from.instrument != nullptr)
+		{
+			m_instrumentWatch[slot] = QObject::connect(from.instrument, &Instrument::aboutToBeDestroyed,
+				[alive, writersPtr, token] {
+					ModulationLayerPublisher::retireTarget(*alive, *writersPtr, token);
+				});
+		}
+		writers.store(targetGateState(token, 0), std::memory_order_release);
 	}
-	m_view = view;
+	// The staged view is handed to the caller, which swaps it into m_view
+	// inside the reader-visible write window, together with the trigger state
+	// (publishTriggers()). Nothing here is reader-visible yet, so the audio
+	// thread keeps reading the last published view - and running on the last
+	// published trigger timing - while this waits for the writers of the
+	// targets it rebinds.
+	staged = view;
 }
 
 namespace
@@ -212,6 +299,13 @@ void applyModulationBlock(const ModulationLayerPublisher& publisher,
 		const ModulationAudioView::Entry& entry = view.entries[static_cast<std::size_t>(i)];
 		const ModulatorSource* source = drivingSource(publisher, view, i);
 		if (source == nullptr) { continue; }
+		if (!publisher.beginTargetWrite(i, entry.token)) { continue; }
+		struct TargetWritePin
+		{
+			const ModulationLayerPublisher& publisher;
+			int slot;
+			~TargetWritePin() { publisher.endTargetWrite(slot); }
+		} targetPin{publisher, i};
 		// MX-120: per note where the instrument takes it; otherwise the newest note drives the parameter.
 		if (perNoteEntry(*source, entry))
 		{

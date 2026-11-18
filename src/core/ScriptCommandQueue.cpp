@@ -54,6 +54,32 @@ bool ScriptCommandQueue::push(const ScriptCommand& command)
 }
 
 
+bool ScriptCommandQueue::push(const ScriptCommand& first, const ScriptCommand& second)
+{
+	// The reservation is taken BEFORE either command is written: a queue
+	// with room for one of the two would take the first and drop the second,
+	// and a change whose undo checkpoint landed without its write leaves an
+	// empty undo step behind. The producer is the only writer, so a
+	// reservation of two slots holds until the pair is written - the
+	// consumer only ever frees space.
+	if (m_buffer.free() < 2)
+	{
+		m_dropped.fetch_add(2, std::memory_order_relaxed);
+		return false;
+	}
+	const ScriptCommand commands[2]{first, second};
+	const std::size_t written = m_buffer.write(commands, 2);
+	if (written == 2)
+	{
+		return true;
+	}
+	// Unreachable: the reservation above guarantees the room for both. It is
+	// handled anyway rather than left to swallow one half of the change.
+	m_dropped.fetch_add(2 - written, std::memory_order_relaxed);
+	return false;
+}
+
+
 std::size_t ScriptCommandQueue::drain(const std::function<void(const ScriptCommand&)>& fn,
 					std::size_t max)
 {

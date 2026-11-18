@@ -49,9 +49,11 @@
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "ProjectJournal.h"
 #include "ScriptCommandBridge.h"
 #include "ScriptEngine.h"
 
+#include <QByteArray>
 #include <QString>
 #include <QStringList>
 
@@ -59,6 +61,17 @@
 
 namespace lmms
 {
+
+bool setCommandText(ScriptCommand& command, const QString& text)
+{
+	const QByteArray utf8 = text.toUtf8();
+	if (utf8.size() >= static_cast<int>(sizeof(command.text))) { return false; }
+	// The apply side reads the payload back as a C string, so a NUL would end it early.
+	if (utf8.contains('\0')) { return false; }
+	std::strncpy(command.text, utf8.constData(), sizeof(command.text) - 1);
+	command.text[sizeof(command.text) - 1] = '\0';
+	return true;
+}
 
 namespace
 {
@@ -74,39 +87,6 @@ ScriptCommand dawCommand(ScriptDawBindings::Op op, void* target, int i1 = 0)
 	return command;
 }
 
-void enqueueDaw(ScriptCommand command)
-{
-	ScriptEngine::instance()->enqueue(command);
-}
-
-//! A rename travels in the fixed 256-byte payload, like SetTrackName's.
-ScriptCommand namedDawCommand(ScriptDawBindings::Op op, void* target, const QString& name)
-{
-	ScriptCommand command = dawCommand(op, target);
-	const QByteArray utf8 = name.toUtf8();
-	std::strncpy(command.text, utf8.constData(), sizeof(command.text) - 1);
-	return command;
-}
-
-//! Write one model through the existing vocabulary, with the checkpoint that
-//! makes the write undoable queued IMMEDIATELY BEFORE it (the queue is FIFO,
-//! and both are applied by the same drain).
-void enqueueModelWrite(AutomatableModel* model, float value)
-{
-	if (model == nullptr) { return; }
-	ScriptEngine* engine = ScriptEngine::instance();
-	ScriptCommand checkpoint;
-	checkpoint.type = ScriptCommand::Type::AddCheckPoint;
-	checkpoint.object0 = static_cast<JournallingObject*>(model);
-	engine->enqueue(checkpoint);
-
-	ScriptCommand write;
-	write.type = ScriptCommand::Type::SetModelValue;
-	write.object0 = model;
-	write.f0 = value;
-	engine->enqueue(write);
-}
-
 //! Say why a queued op did nothing. The queue is one-way, so a refusal is
 //! reported where the script's own print() goes rather than dropped.
 void logRefusal(const QString& what, const ControlResult& error)
@@ -115,6 +95,66 @@ void logRefusal(const QString& what, const ControlResult& error)
 	engine->logMessage(error.errorMessage.isEmpty()
 		? QStringLiteral("[error] %1 refused").arg(what)
 		: QStringLiteral("[error] %1 refused: %2").arg(what, error.errorMessage));
+}
+
+//! The one reason a queued edit is refused: the bounded queue had no room
+//! left. The edit is dropped (spec section 4: the producer is never blocked)
+//! and the drop is counted - but a lost edit that says nothing is a lie the
+//! script cannot act on, so the refusal is reported on the script's console.
+ControlResult queueFullRefusal()
+{
+	return ControlResult::failure(ControlErrorKind::Refused,
+		QStringLiteral("the script command queue is full (%1 commands); the edit was dropped")
+			.arg(ScriptCommandQueueCapacity));
+}
+
+//! Queue one daw edit. False when the queue refused it: the edit is dropped
+//! and the script is told, because the queue carries no reply.
+bool enqueueDaw(ScriptCommand command, const QString& what)
+{
+	if (ScriptEngine::instance()->enqueue(command)) { return true; }
+	logRefusal(what, queueFullRefusal());
+	return false;
+}
+
+//! A rename travels in the fixed 256-byte payload, like SetTrackName's.
+//! False when the name does not fit whole or holds a NUL byte: the payload is
+//! left empty rather than carrying a truncation that may also be a broken UTF-8
+//! sequence, or a prefix that the apply side would read back as the whole name.
+bool namedDawCommand(ScriptDawBindings::Op op, void* target, const QString& name,
+	ScriptCommand& command)
+{
+	command = dawCommand(op, target);
+	return setCommandText(command, name);
+}
+
+//! Write one model through the existing vocabulary, with the checkpoint that
+//! makes the write undoable queued IMMEDIATELY BEFORE it (the queue is FIFO,
+//! and both are applied by the same drain). False when the queue refused the
+//! write: the model did not move, and the script is told.
+bool enqueueModelWrite(AutomatableModel* model, float value, const QString& what)
+{
+	if (model == nullptr) { return false; }
+	ScriptEngine* engine = ScriptEngine::instance();
+	ScriptCommand checkpoint;
+	checkpoint.type = ScriptCommand::Type::AddCheckPoint;
+	checkpoint.object0 = static_cast<JournallingObject*>(model);
+	ScriptCommand write;
+	write.type = ScriptCommand::Type::SetModelValue;
+	write.object0 = model;
+	write.f0 = value;
+	// The checkpoint and the write are TWO commands for ONE change, and the
+	// change is either wholly queued or wholly refused. A queue with room
+	// for the checkpoint but not for the write would take the checkpoint and
+	// drop the write, leaving an empty undo step behind - one that restores
+	// nothing, while the script was told the change was refused. The pair
+	// reserves its room as a whole.
+	if (!engine->enqueue(checkpoint, write))
+	{
+		logRefusal(what, queueFullRefusal());
+		return false;
+	}
+	return true;
 }
 
 //! The catalogue entry \a reference names: a "dev-<n>" id (plugin.list), or a
@@ -210,7 +250,22 @@ void applyRemoveEffect(EffectChain* chain, int index)
 		return;
 	}
 	Effect* effect = effects[index];
-	chain->removeEffect(effect);
+	// Luna 5332: the removal is recorded before it happens, by the same
+	// implementation plugin.unload and the rack's own delete use, so the
+	// structural undo step re-instantiates the device at its index. A device
+	// whose state cannot be captured (empty, or over the structural budget)
+	// is NOT removed (owner decision 2026-10-08): a script must not take a
+	// device away unrecoverably, so the device stays and the script is told.
+	if (!control::journalEffectRemoval(chain, effect, index))
+	{
+		ControlResult error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("its state cannot be captured, so the removal could not be undone; the device stays"));
+		logRefusal(QStringLiteral("removing effect %1").arg(index), error);
+		return;
+	}
+	// A recorded removal pushes exactly one checkpoint: the structural step. The
+	// emptied chain's enabled flag is restored by that step, not journalled apart.
+	control::detachEffect(chain, effect);
 	effect->deleteLater();
 }
 
@@ -291,7 +346,8 @@ LuaMixerChannel& LuaMixer::addChannel() const
 		return ScriptDawBindings::newMixerChannel(nullptr);
 	}
 	const int before = static_cast<int>(mixer->numChannels());
-	enqueueDaw(dawCommand(ScriptDawBindings::Op::CreateChannel, mixer));
+	enqueueDaw(dawCommand(ScriptDawBindings::Op::CreateChannel, mixer),
+		QStringLiteral("adding a mixer channel"));
 	// Applied now, not "eventually": the wrapper this call returns must
 	// address the channel it just asked for (LuaPatternStore::addInstrumentTrack
 	// resolves its track the same way).
@@ -309,26 +365,40 @@ LuaMixerChannel& LuaMixer::addChannel() const
 
 void LuaMixerChannel::setGain(float gain)
 {
-	if (m_channel == nullptr) { return; }
-	enqueueModelWrite(&m_channel->m_volumeModel, gain);
+	MixerChannel* channel = resolve();
+	if (channel == nullptr) { return; }
+	enqueueModelWrite(&channel->m_volumeModel, gain, QStringLiteral("moving this channel's fader"));
 }
 
 void LuaMixerChannel::setMuted(bool muted)
 {
-	if (m_channel == nullptr) { return; }
-	enqueueModelWrite(&m_channel->m_muteModel, muted ? 1.0f : 0.0f);
+	MixerChannel* channel = resolve();
+	if (channel == nullptr) { return; }
+	enqueueModelWrite(&channel->m_muteModel, muted ? 1.0f : 0.0f,
+		QStringLiteral("muting this channel"));
 }
 
 void LuaMixerChannel::setSoloed(bool soloed)
 {
-	if (m_channel == nullptr) { return; }
-	enqueueModelWrite(&m_channel->m_soloModel, soloed ? 1.0f : 0.0f);
+	MixerChannel* channel = resolve();
+	if (channel == nullptr) { return; }
+	enqueueModelWrite(&channel->m_soloModel, soloed ? 1.0f : 0.0f,
+		QStringLiteral("soloing this channel"));
 }
 
 void LuaMixerChannel::setName(const QString& name)
 {
-	if (m_channel == nullptr) { return; }
-	enqueueDaw(namedDawCommand(ScriptDawBindings::Op::SetChannelName, m_channel, name));
+	MixerChannel* channel = resolve();
+	if (channel == nullptr) { return; }
+	ScriptCommand command;
+	if (!namedDawCommand(ScriptDawBindings::Op::SetChannelName, channel, name, command))
+	{
+		logRefusal(QStringLiteral("renaming this channel"), ControlResult::failure(
+			ControlErrorKind::InvalidArgs, QStringLiteral("name exceeds the %1-byte command payload limit or contains a NUL byte")
+				.arg(ScriptCommandTextSize - 1)));
+		return;
+	}
+	enqueueDaw(command, QStringLiteral("renaming this channel"));
 }
 
 // ---------------------------------------------------------------------------
@@ -337,23 +407,39 @@ void LuaMixerChannel::setName(const QString& name)
 
 LuaEffect& LuaEffectChain::loadEffect(const QString& device) const
 {
-	if (m_chain == nullptr)
+	EffectChain* chain = resolve();
+	if (chain == nullptr)
 	{
-		return ScriptDawBindings::newEffect(nullptr, nullptr);
+		return ScriptDawBindings::newEffect(m_mixerChannelId, nullptr);
 	}
-	const int before = effectCount();
-	enqueueDaw(namedDawCommand(ScriptDawBindings::Op::LoadEffect, m_chain, device));
+	const int before = static_cast<int>(chain->effects().size());
+	ScriptCommand command;
+	if (!namedDawCommand(ScriptDawBindings::Op::LoadEffect, chain, device, command))
+	{
+		logRefusal(QStringLiteral("loading '%1'").arg(device), ControlResult::failure(
+			ControlErrorKind::InvalidArgs, QStringLiteral("device name exceeds the %1-byte command payload limit or contains a NUL byte")
+				.arg(ScriptCommandTextSize - 1)));
+		return ScriptDawBindings::newEffect(m_mixerChannelId, nullptr);
+	}
+	enqueueDaw(command, QStringLiteral("loading '%1'").arg(device));
 	ScriptEngine::instance()->flushCommandsForRead();
 	// The count is the only honest witness that the load happened: the queue
 	// carries no reply. A refusal was logged for the script (logRefusal).
 	return effect(effectCount() > before ? effectCount() - 1 : -1);
 }
 
-void LuaEffectChain::removeEffect(int index)
+bool LuaEffectChain::removeEffect(int index)
 {
-	if (m_chain == nullptr) { return; }
-	enqueueDaw(dawCommand(ScriptDawBindings::Op::RemoveEffect, m_chain, index));
+	EffectChain* chain = resolve();
+	if (chain == nullptr) { return false; }
+	const int before = effectCount();
+	enqueueDaw(dawCommand(ScriptDawBindings::Op::RemoveEffect, chain, index),
+		QStringLiteral("removing effect %1").arg(index));
 	ScriptEngine::instance()->flushCommandsForRead();
+	// The queue carries no reply, so the count is the witness (as in loadEffect): false when the removal was
+	// refused - a bad index, or a device whose state cannot be captured so the removal could not be undone
+	// (owner decision 2026-10-08). The refusal is logged for the script as well.
+	return effectCount() < before;
 }
 
 void LuaEffect::setEnabled(bool enabled)
@@ -365,7 +451,8 @@ void LuaEffect::setEnabled(bool enabled)
 			ControlResult());
 		return;
 	}
-	enqueueDaw(dawCommand(ScriptDawBindings::Op::SetEffectEnabled, effect, enabled ? 1 : 0));
+	enqueueDaw(dawCommand(ScriptDawBindings::Op::SetEffectEnabled, effect, enabled ? 1 : 0),
+		QStringLiteral("switching this effect"));
 }
 
 } // namespace lmms

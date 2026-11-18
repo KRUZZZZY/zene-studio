@@ -33,6 +33,7 @@
 #include "ConfigManager.h"
 #include "ComboBox.h"
 #include "AudioEngine.h"
+#include "CrashReporter.h"
 
 namespace lmms
 {
@@ -252,6 +253,10 @@ void AudioSoundIo::underflowCallback()
 
 void AudioSoundIo::writeCallback(int frameCountMin, int frameCountMax)
 {
+	crashreporter::installAlternateStackForCurrentThread();
+	// Open for the whole callback: pausing the stream does not wait for a write in progress, and
+	// stopProcessing() waits for this scope (cluster new-p14-402).
+	const CallbackScope callback(*this);
 	const auto layout = static_cast<SoundIoChannelLayout*>(&m_outstream->layout);
 	auto areas = static_cast<SoundIoChannelArea*>(nullptr);
 	auto framesLeft = frameCountMax;

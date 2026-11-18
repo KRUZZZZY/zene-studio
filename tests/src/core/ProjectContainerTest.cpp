@@ -322,9 +322,42 @@ private slots:
 		QTemporaryDir dir;
 		QVERIFY( dir.isValid() );
 		QString error;
+		bool unreadable = true;
 		QVERIFY( !projectcontainer::readContainer(
-			dir.filePath( QStringLiteral( "song.mmpz" ) ), QStringList(), nullptr, &error ) );
+			dir.filePath( QStringLiteral( "song.mmpz" ) ), QStringList(), nullptr, &error, &unreadable ) );
 		QVERIFY( !error.isEmpty() );
+		QVERIFY( !unreadable );
+	}
+
+	/*! A read that gives back nothing never checked the container, so the refusal
+	 *  must name the read; a malformed file is refused as malformed, not as an
+	 *  unreadable one. The read fault is the test seam ZENE_TEST_CONTAINER_READ_FAULT. */
+	void aFailedReadIsNamedAsARead()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		const QString path = dir.filePath( QStringLiteral( "song.mmpz" ) );
+		const QString track = projectcontainer::sectionEntryName( 0, QStringLiteral( "track" ) );
+		const std::vector<std::pair<QString, QByteArray>> sections{
+			{ track, QByteArray( "<track id=\"0\"/>" ) } };
+
+		QString error;
+		QVERIFY2( projectcontainer::writeContainer( path, QByteArray( kSkeleton ), sections,
+			&error ), qPrintable( error ) );
+
+		std::vector<std::pair<QString, QByteArray>> read;
+		qputenv( "ZENE_TEST_CONTAINER_READ_FAULT", "1" );
+		const bool ok = projectcontainer::readContainer( path, QStringList(), &read, &error );
+		qunsetenv( "ZENE_TEST_CONTAINER_READ_FAULT" );
+		QVERIFY( !ok );
+		QVERIFY2( error.contains( QStringLiteral( "cannot read" ) ), qPrintable( error ) );
+
+		// Control: bytes that are simply not a container are refused as malformed.
+		QVERIFY( writeBytes( path, opaque() ) );
+		bool unreadable = true;
+		QVERIFY( !projectcontainer::readContainer( path, QStringList(), &read, &error, &unreadable ) );
+		QVERIFY2( !error.contains( QStringLiteral( "cannot read" ) ), qPrintable( error ) );
+		QVERIFY( !unreadable );
 	}
 };
 

@@ -30,6 +30,7 @@
 #include "MultitapEcho.h"
 #include "lmms_math.h"
 #include "base64.h"
+#include "WaveformData.h"
 
 namespace lmms
 {
@@ -84,16 +85,9 @@ void MultitapEchoControls::loadSettings( const QDomElement & elem )
 	m_swapInputs.loadSettings( elem, "swapinputs" );
 	m_stages.loadSettings( elem, "stages" );
 	
-	int size = 0;
-	char * dst = 0;
-	
-	base64::decode( elem.attribute( "ampsteps"), &dst, &size );
-	m_ampGraph.setSamples( (float*) dst );
-
-	base64::decode( elem.attribute( "lpsteps"), &dst, &size );
-	m_lpGraph.setSamples( (float*) dst );
-	
-	delete[] dst;
+	// The graphs are `steps` long by now; each loads only from exactly that many finite values (Q050-486).
+	waveform::loadGraph(elem, QStringLiteral("ampsteps"), m_ampGraph, QStringLiteral("Multitap Echo"));
+	waveform::loadGraph(elem, QStringLiteral("lpsteps"), m_lpGraph, QStringLiteral("Multitap Echo"));
 }
 
 
@@ -130,7 +124,8 @@ void MultitapEchoControls::ampSamplesChanged( int begin, int end )
 	const float * samples = m_ampGraph.samples();
 	for( int i = begin; i <= end; ++i )
 	{
-		m_effect->m_amp[i] = dbfsToAmp( samples[i] );
+		m_effect->m_pendingAmp[static_cast<std::size_t>(i)].store(
+			dbfsToAmp( samples[i] ), std::memory_order_relaxed);
 	}
 }
 
@@ -147,9 +142,9 @@ void MultitapEchoControls::lpSamplesChanged( int begin, int end )
 	const float * samples = m_lpGraph.samples();
 	for( int i = begin; i <= end; ++i )
 	{
-		m_effect->m_lpFreq[i] = 20.0f * fastPow10f(samples[i]);
+		m_effect->m_pendingLpFreq[static_cast<std::size_t>(i)].store(
+			20.0f * fastPow10f(samples[i]), std::memory_order_relaxed);
 	}
-	m_effect->updateFilters( begin, end );
 }
 
 
@@ -166,15 +161,13 @@ void MultitapEchoControls::lengthChanged()
 	ampSamplesChanged( 0, len - 1 );
 	m_lpGraph.setLength( len );
 	lpSamplesChanged( 0, len - 1 );
-	m_effect->updateFilters( 0, len - 1 );
 }
 
 
 void MultitapEchoControls::sampleRateChanged()
 {
-	m_effect->m_sampleRate = Engine::audioEngine()->outputSampleRate();
-	m_effect->m_sampleRatio = 1.0f / m_effect->m_sampleRate;
-	m_effect->updateFilters( 0, 19 );
+	const auto sampleRate = Engine::audioEngine()->outputSampleRate();
+	m_effect->m_sampleRatio.store(1.0f / sampleRate, std::memory_order_relaxed);
 }
 
 

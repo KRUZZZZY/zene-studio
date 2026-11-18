@@ -31,6 +31,7 @@
 #include <QLineEdit>
 #include <QMenu>
 
+#include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "MidiClip.h"
@@ -64,10 +65,15 @@ std::optional<double> askPercent(const QString& title)
 	return ok ? std::optional<double>(value) : std::nullopt;
 }
 
-void run(const char* command, QJsonObject args, const MidiClip* clip)
+//! Runs one groove command and tells the person who asked what it answered: a command
+//! that REFUSED says why, as the floating message every refusal in the interface gets
+//! (announce) - a menu that closes on a silence leaves the failure unexplained.
+void run(const char* command, QJsonObject args, const MidiClip* clip, QWidget* parent)
 {
 	args.insert(QStringLiteral("clip"), control::clipIdOf(clip));
-	ControlRegistry::instance()->invoke(QString::fromLatin1(command), args);
+	const QString id = QString::fromLatin1(command);
+	const ControlResult result = ControlRegistry::instance()->invoke(id, args);
+	if (!result.ok) { announce(parent, CommandCall{id, {}, {}, QString(), false}, result); }
 }
 
 void populate(QMenu* menu, const std::function<const MidiClip*()>& clip, const std::function<int()>& grid)
@@ -78,8 +84,8 @@ void populate(QMenu* menu, const std::function<const MidiClip*()>& clip, const s
 	if (target == nullptr) { return; }
 	QAction* extract = menu->addAction(QMenu::tr("Extract groove from this clip..."));
 	extract->setData(QStringLiteral("groove.extract"));
-	QObject::connect(extract, &QAction::triggered, menu, [clip, grid] {
-		if (const auto name = askName()) { run("groove.extract", {{QStringLiteral("name"), *name}, {QStringLiteral("grid"), grid()}}, clip()); }
+	QObject::connect(extract, &QAction::triggered, menu, [clip, grid, menu] {
+		if (const auto name = askName()) { run("groove.extract", {{QStringLiteral("name"), *name}, {QStringLiteral("grid"), grid()}}, clip(), menu->parentWidget()); }
 	});
 	QMenu* apply = menu->addMenu(QMenu::tr("Apply groove"));
 	const QJsonArray pool = ControlRegistry::instance()->invoke(QStringLiteral("groove.list"), QJsonObject{})
@@ -90,19 +96,19 @@ void populate(QMenu* menu, const std::function<const MidiClip*()>& clip, const s
 		const QString name = value.toObject().value(QStringLiteral("name")).toString();
 		QAction* one = apply->addAction(name);
 		one->setData(QStringLiteral("groove.apply"));
-		QObject::connect(one, &QAction::triggered, menu, [clip, name] {
+		QObject::connect(one, &QAction::triggered, menu, [clip, name, menu] {
 			if (const auto percent = askPercent(QMenu::tr("Apply %1").arg(name)))
 			{
-				run("groove.apply", {{QStringLiteral("name"), name}, {QStringLiteral("strength"), *percent / 100.0}}, clip());
+				run("groove.apply", {{QStringLiteral("name"), name}, {QStringLiteral("strength"), *percent / 100.0}}, clip(), menu->parentWidget());
 			}
 		});
 	}
 	QAction* quantize = menu->addAction(QMenu::tr("Quantize with strength..."));
 	quantize->setData(QStringLiteral("groove.quantize"));
-	QObject::connect(quantize, &QAction::triggered, menu, [clip, grid] {
+	QObject::connect(quantize, &QAction::triggered, menu, [clip, grid, menu] {
 		if (const auto percent = askPercent(QMenu::tr("Quantize")))
 		{
-			run("groove.quantize", {{QStringLiteral("grid"), grid()}, {QStringLiteral("strength"), *percent / 100.0}}, clip());
+			run("groove.quantize", {{QStringLiteral("grid"), grid()}, {QStringLiteral("strength"), *percent / 100.0}}, clip(), menu->parentWidget());
 		}
 	});
 }

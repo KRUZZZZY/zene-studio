@@ -541,6 +541,25 @@ private slots:
 		QCOMPARE(provenance::Section::instance().lastSeq(), lastBefore);
 	}
 
+	//! THE SEQUENCE SPELLING: writeTo uses QString::number, so a leading zero
+	//! is not a spelling this writer could have emitted. Refuse it instead of
+	//! claiming it and normalising it on the next save.
+	void aNoncanonicalSequenceSpellingIsRefusedRatherThanNormalised()
+	{
+		QDomDocument document;
+		document.setContent(QStringLiteral(
+			"<z:provenance v=\"1\" seq=\"1\">"
+			"<z:change seq=\"01\" at=\"2026-01-01T00:00:00Z\""
+			" actor=\"human\" instance=\"0123abcd-456\" command=\"track.add\"/>"
+			"</z:provenance>"));
+		const int heldBefore = heldChanges().size();
+		const quint64 lastBefore = provenance::Section::instance().lastSeq();
+		QVERIFY2(!provenance::Section::instance().load(document.documentElement()),
+			"a sequence spelling the writer never emits must be refused, not normalized");
+		QCOMPARE(heldChanges().size(), heldBefore);
+		QCOMPARE(provenance::Section::instance().lastSeq(), lastBefore);
+	}
+
 	//! THE ORDER: entries this writer produced are strictly ascending in seq
 	//! (it assigns m_nextSeq++ and appends), and the section's own `seq` is
 	//! the highest of them (writeTo sets it to lastSeq()). A section whose
@@ -600,6 +619,39 @@ private slots:
 		refuses(QStringLiteral("<z:change seq=\"1\" at=\"2026-01-01T00:00:00Z\""
 				" actor=\"human\" instance=\"0123abcd-456\"/>"),
 			"an entry with no command must be refused, not rewritten with an empty one");
+	}
+
+	//! An entry with future content is not a shape this writer can reproduce.
+	//! Refuse the entire section so the unclaimed path preserves both elements
+	//! and text rather than rebuilding each <z:change> as an empty element.
+	void aChangeWithChildContentIsPreservedWhenTheProjectIsResaved()
+	{
+		QString xml = readFile(m_pristine);
+		const int closingSong = xml.lastIndexOf(QStringLiteral("</song>"));
+		QVERIFY(closingSong >= 0);
+		xml.insert(closingSong, QStringLiteral(
+			"<z:provenance v=\"1\" seq=\"2\">"
+			"<z:change seq=\"1\" at=\"2026-01-01T00:00:00Z\" actor=\"human\""
+			" instance=\"0123abcd-456\" command=\"track.add\"><z:future/></z:change>"
+			"<z:change seq=\"2\" at=\"2026-01-01T00:00:01Z\" actor=\"human\""
+			" instance=\"0123abcd-456\" command=\"clip.add\">future text</z:change>"
+			"</z:provenance>"));
+
+		const QString input = m_dir.filePath(QStringLiteral("future-content.mmp"));
+		QFile file(input);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		const QByteArray inputBytes = xml.toUtf8();
+		QCOMPARE(file.write(inputBytes), qint64(inputBytes.size()));
+		file.close();
+
+		loadProject(input);
+		const QString output = m_dir.filePath(QStringLiteral("future-content-resaved.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(output, false));
+		const QString saved = readFile(output);
+		QVERIFY2(saved.contains(QStringLiteral("<z:future"))
+			&& saved.contains(QStringLiteral("future text")),
+			"provenance change content must survive a load and save");
+		QVERIFY(heldChanges().isEmpty());
 	}
 
 	//! THE ACTOR: a session KIND, never a person (1.9: "not a credential, not

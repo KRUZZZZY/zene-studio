@@ -22,7 +22,10 @@
  *
  */
 
+#include <limits>
+
 #include <QDomDocument>
+#include <QPointer>
 #include <QSignalSpy>
 #include <QtTest>
 
@@ -82,6 +85,110 @@ private slots:
 		// Never leak an armed learn (or a dangling focus target) into the next test.
 		MidiLearn::instance()->setFocusTarget(nullptr);
 		MidiLearn::instance()->setEnabled(false);
+	}
+
+	void NegativeTickLengthReturnsZeroFrames()
+	{
+		QCOMPARE(TimePos(-1).frames(1.0f), f_cnt_t{0});
+	}
+
+	void NegativeFramesPerTickReturnsZeroFrames()
+	{
+		QCOMPARE(TimePos(1).frames(-1.0f), f_cnt_t{0});
+	}
+
+	// The frame-to-tick direction carries the same contract as the
+	// tick-to-frame one above: a rate that is zero, negative or not a number
+	// describes no tick position at all.  Dividing by it yields NaN or
+	// infinity, and converting that to an int is undefined behaviour, so the
+	// answer is "no position" (0 ticks) - the same answer frames() gives.
+	void InvalidFramesPerTickReturnsNoPosition()
+	{
+		QCOMPARE(TimePos::fromFrames(1024, 0.0f).getTicks(), tick_t{0});
+		QCOMPARE(TimePos::fromFrames(1024, -1.0f).getTicks(), tick_t{0});
+		QCOMPARE(TimePos::fromFrames(1024, std::numeric_limits<float>::quiet_NaN()).getTicks(), tick_t{0});
+		QCOMPARE(TimePos::fromFrames(1024, std::numeric_limits<float>::infinity()).getTicks(), tick_t{0});
+	}
+
+	//! Cluster new-p15-273: replacing a controller connection gives up the old
+	//! one - disconnected and disposed of, not left alive driving the model -
+	//! and a connection that dies later must not clear the connection that
+	//! replaced it. Driven through the binding a learn creates, which is the
+	//! product's own caller.
+	void replacingTheControllerConnectionGivesUpTheOldOne()
+	{
+		FloatModel target(0.5f, 0.0f, 1.0f, 0.01f);
+		MidiLearn::instance()->setFocusTarget(&target);
+		MidiLearn::instance()->setEnabled(true);
+		QVERIFY(MidiLearn::instance()->handleMidiEvent(makeCc(2, 74, 127)));
+		ControllerConnection* const first = target.controllerConnection();
+		QVERIFY(first != nullptr);
+		QPointer<ControllerConnection> watchedFirst(first);
+
+		// Connection B replaces A. A must be disposed of: leaving it alive leaked
+		// it, and kept its valueChanged() wired to the model's dataChanged().
+		QPointer<ControllerConnection> second(new ControllerConnection(nullptr));
+		target.setControllerConnection(second.data());
+		QVERIFY2(watchedFirst.isNull(), "the replaced controller connection was not disposed of");
+		QCOMPARE(target.controllerConnection(), second.data());
+
+		// A connection destroyed while another one is in place must not clear the
+		// connection the model holds: the old connection's destroyed() handler
+		// used to do exactly that.
+		ControllerConnection* const stranger = new ControllerConnection(nullptr);
+		QObject::connect(stranger, &QObject::destroyed, &target,
+			&AutomatableModel::unlinkControllerConnection);
+		delete stranger;
+		QCOMPARE(target.controllerConnection(), second.data());
+
+		// Giving the connection up disposes of it as well (the model owns it).
+		target.setControllerConnection(nullptr);
+		QVERIFY2(second.isNull(), "the connection the model gave up was not disposed of");
+		QVERIFY(target.controllerConnection() == nullptr);
+	}
+
+	//! Cluster new-p14-73: setting a connection to the MIDI controller it already
+	//! owns is a no-op. The owned controller used to be disposed of before the
+	//! new value was assigned, so the connection kept driving a freed controller.
+	//! Driven through the learn binding and the connection's own setController().
+	void settingAnOwnedControllerToItselfKeepsIt()
+	{
+		FloatModel target(0.5f, 0.0f, 1.0f, 0.01f);
+		MidiLearn::instance()->setFocusTarget(&target);
+		MidiLearn::instance()->setEnabled(true);
+		QVERIFY(MidiLearn::instance()->handleMidiEvent(makeCc(2, 74, 127)));
+		ControllerConnection* const connection = target.controllerConnection();
+		QVERIFY(connection != nullptr);
+		MidiController* const owned = boundMidiController(&target);
+		QVERIFY(owned != nullptr);
+		QPointer<MidiController> watched(owned);
+
+		connection->setController(connection->getController());
+
+		// The owned controller must still be alive, still be the one the
+		// connection drives, and still reach the model.
+		QVERIFY2(!watched.isNull(), "the owned controller was disposed of by setting it to itself");
+		QCOMPARE(connection->getController(), static_cast<Controller*>(owned));
+		QCOMPARE(boundMidiController(&target), owned);
+		QSignalSpy spy(&target, SIGNAL(dataChanged()));
+		owned->midiPort().processInEvent(makeCc(2, 74, 100), TimePos());
+		QCOMPARE(spy.count(), 1);
+	}
+
+	// A frame count that no tick count can hold is no position either: the
+	// conversion to a tick_t would be undefined behaviour as well.
+	void UnrepresentableFrameCountReturnsNoPosition()
+	{
+		const auto huge = std::numeric_limits<f_cnt_t>::max();
+		QCOMPARE(TimePos::fromFrames(huge, 1.0f).getTicks(), tick_t{0});
+	}
+
+	// The valid case must keep the exact tick position it had before: the
+	// quotient is still computed in float and truncated towards zero.
+	void ValidFramesPerTickKeepsTheTickPosition()
+	{
+		QCOMPARE(TimePos::fromFrames(192, 4.0f).getTicks(), tick_t{48});
+		QCOMPARE(TimePos::fromFrames(0, 4.0f).getTicks(), tick_t{0});
 	}
 
 	// The positive case: arm learn, point it at a control, feed the same

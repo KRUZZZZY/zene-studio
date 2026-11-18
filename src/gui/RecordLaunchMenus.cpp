@@ -33,6 +33,7 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "LayoutMenu.h"
 #include "MenuBarExtras.h"
 #include "RecordOptions.h"
 #include "SampleTrack.h"
@@ -62,9 +63,9 @@ void cycleEntry(QMenu* menu, const QString& label, const QString& direction)
 	});
 }
 
-//! WF-074: arm (or disarm) every audio track - W1: ONE track.set_arm_many naming them all, so one undo step takes the arm
-//! back. A track already in that state is not a failure; the others' refusals are shown together, the last one's reason
-//! with them.
+//! WF-074: arm (or disarm) every audio track - W1: ONE track.set_arm_many naming them all. Undo refuses the arming (its take
+//! files outlive the captures), so disarming through this menu is the way back. A track already in that state is not a
+//! failure; the others' refusals are shown together, the last one's reason with them.
 void armAllEntry(QMenu* menu, const QString& label, bool armed)
 {
 	QAction* action = menu->addAction(label);
@@ -93,16 +94,17 @@ void armAllEntry(QMenu* menu, const QString& label, bool armed)
 	});
 }
 
-//! Theme 7: Record Mode as two choices that each state their scope ("Replace notes (erase the notes it overlaps,
-//! any pitch; keep controllers and automation)"), the one in use checked, each running transport.record_options.
+//! Theme 7 / Q050-094: Record Mode as the three choices transport.record_options takes - for MIDI and audio - each
+//! stating its scope, the one in use checked, each running transport.record_options.
 void recordModeMenu(QMenu* menu)
 {
-	QMenu* sub = menu->addMenu(QObject::tr("Record Mode (MIDI)"));
+	QMenu* sub = menu->addMenu(QObject::tr("Record Mode"));
 	sub->setToolTipsVisible(true);
 	auto* group = new QActionGroup(sub);
-	for (const recordoptions::Mode mode : {recordoptions::Mode::Overdub, recordoptions::Mode::Replace})
+	for (int index = 0; index < recordoptions::modeNames().size(); ++index)
 	{
-		const QString name = recordoptions::modeNames().at(static_cast<int>(mode));
+		const auto mode = static_cast<recordoptions::Mode>(index);
+		const QString name = recordoptions::modeNames().at(index);
 		QAction* action = addCommandAction(sub, recordoptions::modeChoice(mode), QStringLiteral("transport.record_options"),
 			[name] { return CommandCall{QStringLiteral("transport.record_options"), {{QStringLiteral("mode"), name}}, {}, QString(), false}; });
 		action->setCheckable(true);
@@ -144,6 +146,48 @@ void fillRecord(QMenu* menu)
 	cycleEntry(menu, QObject::tr("Previous Take Here"), QStringLiteral("previous"));
 }
 
+//! Q050-217.2: one "Bind the Note..."/"Bind the Control Change..." pair per saved workflow, plus the
+//! list of what is bound. The target's name is fixed, so the form asks only for the note or CC.
+void fillWorkflowBinding(QMenu* menu)
+{
+	clearRebuiltMenu(menu);
+	QStringList names;
+	for (const QJsonValue& value : ControlRegistry::instance()->invoke(QStringLiteral("workflow.list"))
+		.result.value(QStringLiteral("workflows")).toArray())
+	{
+		names.append(value.toObject().value(QStringLiteral("name")).toString());
+	}
+	names.sort();
+	if (names.isEmpty())
+	{
+		QAction* none = menu->addAction(QObject::tr("No Workflows Yet (Workflows > Record a Workflow...)"));
+		none->setEnabled(false);
+		// a line that reports workflow.list's empty answer, like MacroMenu's status lines: it declares
+		// that command so the agent_surface reflection (which sees it once a walk has opened the menu)
+		// resolves it
+		none->setProperty("controlCommand", QStringLiteral("workflow.list"));
+		return;
+	}
+	for (const QString& name : names)
+	{
+		const QString label = QString(name).replace(QLatin1Char('&'), QStringLiteral("&&"));
+		QMenu* one = menu->addMenu(label);
+		// The target AND the trigger kind are fixed, so the form asks only for the number she plays
+		// (and the channel): the same session.bind_command the agent surface and the socket take.
+		const auto bind = [name](const QString& trigger) {
+			return CommandCall{QStringLiteral("session.bind_command"), {{QStringLiteral("workflow"), name},
+				{QStringLiteral("trigger"), trigger}}, {}};
+		};
+		addCommandAction(one, QObject::tr("Bind a Note..."), QStringLiteral("session.bind_command"),
+			[bind] { return bind(QStringLiteral("note")); });
+		addCommandAction(one, QObject::tr("Bind a Control Change..."), QStringLiteral("session.bind_command"),
+			[bind] { return bind(QStringLiteral("cc")); });
+	}
+	menu->addSeparator();
+	addCommandAction(menu, QObject::tr("Workflow and Command Bindings"), QStringLiteral("session.command_bindings"),
+		[] { return CommandCall{QStringLiteral("session.command_bindings"), {}, {}, QString(), false, true}; });
+}
+
 void fillLauncher(QMenu* menu)
 {
 	QList<QAction*> scenes;
@@ -154,6 +198,8 @@ void fillLauncher(QMenu* menu)
 	followSceneCount(menu, scenes);
 	run(menu, QObject::tr("Stop All Clips"), QStringLiteral("session.stop_all"));
 	run(menu, QObject::tr("Record What I Played Into a Cell..."), QStringLiteral("session.capture_to_slot"), {}, true);
+	// WF-071: perform mode, the launcher's live show window.
+	run(menu, QObject::tr("Perform Mode"), QStringLiteral("window.toggle"), {{QStringLiteral("editor"), QStringLiteral("perform")}});
 	menu->addSeparator();
 	QMenu* controller = menu->addMenu(QObject::tr("Controller"));
 	run(controller, QObject::tr("Connect..."), QStringLiteral("session.bindings_connect"), {}, true);
@@ -162,6 +208,19 @@ void fillLauncher(QMenu* menu)
 	run(controller, QObject::tr("Unbind a Note..."), QStringLiteral("session.unbind"), {}, true);
 	addCommandAction(controller, QObject::tr("Bindings"), QStringLiteral("session.bindings"),
 		[] { return CommandCall{QStringLiteral("session.bindings"), {}, {}, QString(), false, true}; });
+	// Q050-217.1: a note or a control change runs a built-in command that needs no arguments.
+	controller->addSeparator();
+	run(controller, QObject::tr("Bind a Command to a Note or Control Change..."), QStringLiteral("session.bind_command"), {}, true);
+	run(controller, QObject::tr("Unbind a Command..."), QStringLiteral("session.unbind_command"), {}, true);
+	addCommandAction(controller, QObject::tr("Command Bindings"), QStringLiteral("session.command_bindings"),
+		[] { return CommandCall{QStringLiteral("session.command_bindings"), {}, {}, QString(), false, true}; });
+	// Q050-217.2: the same two bind verbs also take a SAVED WORKFLOW as their target. One entry per
+	// workflow in the library in use, each fixing the name the form would otherwise ask for (the same
+	// one-command path the Command entries take), rebuilt as the menu opens so a workflow saved,
+	// renamed or kept with the project is offered as the library is now.
+	QMenu* workflows = controller->addMenu(QObject::tr("Bind a Workflow"));
+	workflows->setObjectName(QStringLiteral("bindWorkflowMenu"));
+	QObject::connect(workflows, &QMenu::aboutToShow, workflows, [workflows] { fillWorkflowBinding(workflows); });
 }
 
 QMenu* install(QMenuBar* bar, const QString& title, const QString& name, void (*fill)(QMenu*))

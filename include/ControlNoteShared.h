@@ -89,6 +89,28 @@ NoteVector scopeNotes(const MidiClip& clip, NoteScope scope, const QString& clip
 //! same string a caller passed in.
 QString scopeName(NoteScope scope);
 
+/*! The undo checkpoint of a note edit - taken ONLY when the edit changes
+ *  something.
+ *
+ *  THE RULE, in one definition so the note.* and scale.* editors cannot drift
+ *  apart: an edit that changes NOTHING takes no undo step. A step that undoes
+ *  nothing sits ON TOP of the real edit behind it, so the next control.undo
+ *  spends itself on it and the edit the caller meant to reverse stays applied -
+ *  and the project is marked modified although no note state changed.
+ *
+ *  The commands that already followed this rule asked the question BEFORE the
+ *  edit and took the checkpoint only when the answer was yes: note.transpose,
+ *  note.velocity_offset, note.velocity_scale and note.slide_clear (Luna
+ *  cluster 3904). The ones that took the checkpoint first and asked nothing
+ *  (note.scale, note.transform_where, note.slide_set, scale.snap_notes - Luna
+ *  clusters new-p14-41 and new-p14-72) left a step behind a no-op.
+ *
+ *  @a changes is the caller's answer to "does this edit change anything?", and
+ *  it has to be known BEFORE the edit runs: the checkpoint captures the state
+ *  the edit is about to replace, so it is taken first.
+ */
+void checkpointNoteEdit(MidiClip* clip, bool changes);
+
 } // namespace control
 
 } // namespace lmms

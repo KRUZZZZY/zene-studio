@@ -324,12 +324,19 @@ bool destinationsAreDistinct(const AutomationClip::timeMap& kept, const std::vec
  *  span to be a slope over: two such points are refused as a collision (see
  *  destinationsAreDistinct), and a lone point keeps the tangents it had rather than the infinity
  *  the quotient would give. */
-void carryTangents(AutomationNode& point, const AutomationNode& source, double timeScale, double valueScale)
+bool carryTangents(AutomationNode& point, const AutomationNode& source, double timeScale, double valueScale)
 {
 	const bool reversed = timeScale < 0.0;
-	const float tangentScale = timeScale == 0.0 ? 1.f : static_cast<float>(valueScale / timeScale);
-	point.setInTangent((reversed ? source.getOutTangent() : source.getInTangent()) * tangentScale);
-	point.setOutTangent((reversed ? source.getInTangent() : source.getOutTangent()) * tangentScale);
+	const double tangentScale = timeScale == 0.0 ? 1.0 : valueScale / timeScale;
+	if (!std::isfinite(tangentScale)) { return false; }
+	const double inTangent = (reversed ? source.getOutTangent() : source.getInTangent()) * tangentScale;
+	const double outTangent = (reversed ? source.getInTangent() : source.getOutTangent()) * tangentScale;
+	const double maxTangent = std::numeric_limits<float>::max();
+	if (!std::isfinite(inTangent) || !std::isfinite(outTangent)
+		|| std::abs(inTangent) > maxTangent || std::abs(outTangent) > maxTangent) { return false; }
+	point.setInTangent(static_cast<float>(inTangent));
+	point.setOutTangent(static_cast<float>(outTangent));
+	return true;
 }
 
 } // namespace
@@ -367,7 +374,7 @@ int AutomationClip::transformRange(int start, int end, double timeScale, int tim
 		point.setLockedTangents(moved[i].second.lockedTangents());
 		if (moved[i].second.lockedTangents())
 		{
-			carryTangents(point, moved[i].second, timeScale, valueScale);
+			if (!carryTangents(point, moved[i].second, timeScale, valueScale)) { return 0; }
 		}
 		kept[tick] = point;
 	}
@@ -401,12 +408,39 @@ void simplify(const std::vector<std::pair<int, float>>& points, std::size_t firs
 	simplify(points, at, last, tolerance, keep);
 }
 
+//! Keep custom-curve nodes and their endpoints as anchors for thinning.
+void markThinningAnchors(const AutomationClip::timeMap& nodes, std::vector<bool>& keep)
+{
+	std::size_t i = 0;
+	for (auto it = nodes.begin(); it != nodes.end(); ++it, ++i)
+	{
+		const bool definesOwnSegment = it.value().curve() != AutomationNode::Curve::Clip
+			|| it.value().lockedTangents();
+		if (INVAL(it) != OUTVAL(it) || definesOwnSegment) { keep[i] = true; }
+		if (definesOwnSegment && i + 1 < keep.size()) { keep[i + 1] = true; }
+	}
+}
+
+//! Simplify only between required anchors so one retained point cannot be skipped over.
+void simplifyAtThinningAnchors(const std::vector<std::pair<int, float>>& points, float tolerance,
+	std::vector<bool>& keep)
+{
+	std::size_t first = 0;
+	for (std::size_t last = 1; last < points.size(); ++last)
+	{
+		if (!keep[last]) { continue; }
+		simplify(points, first, last, tolerance, keep);
+		first = last;
+	}
+}
+
 } // namespace
 
-float AutomationClip::bendValueAt(timeMap::const_iterator v, int offset) const
+float AutomationClip::bendValueAt(timeMap::const_iterator v, std::int64_t offset) const
 {
 	const auto next = std::next(v);
-	const double t = std::clamp(static_cast<double>(offset) / std::max(1, POS(next) - POS(v)), 0.0, 1.0);
+	const std::int64_t tickSpan = static_cast<std::int64_t>(POS(next)) - POS(v);
+	const double t = std::clamp(static_cast<double>(offset) / std::max<std::int64_t>(1, tickSpan), 0.0, 1.0);
 	const double bend = v.value().bend();
 	const double shaped = bend >= 0.0 ? std::pow(t, 1.0 + 4.0 * bend) : 1.0 - std::pow(1.0 - t, 1.0 - 4.0 * bend);
 	return static_cast<float>(OUTVAL(v) + (INVAL(next) - OUTVAL(v)) * shaped);
@@ -420,19 +454,8 @@ int AutomationClip::thin(float tolerance)
 	for (auto it = m_timeMap.begin(); it != m_timeMap.end(); ++it) { points.emplace_back(POS(it), OUTVAL(it)); }
 	std::vector<bool> keep(points.size(), false);
 	keep.front() = keep.back() = true;
-	// A step (in != out) or a point with its own curve is not on any straight line: kept (review L06-L07a #7).
-	// A point whose tangents were locked by hand is kept too: its shape is the point's own and the
-	// measurement below only looks at OUT values against a straight line, so it cannot see that shape.
-	std::size_t i = 0;
-	for (auto it = m_timeMap.begin(); it != m_timeMap.end(); ++it, ++i)
-	{
-		if (INVAL(it) != OUTVAL(it) || it.value().curve() != AutomationNode::Curve::Clip
-		    || it.value().lockedTangents())
-		{
-			keep[i] = true;
-		}
-	}
-	simplify(points, 0, points.size() - 1, tolerance, keep);
+	markThinningAnchors(m_timeMap, keep);
+	simplifyAtThinningAnchors(points, tolerance, keep);
 	int removed = 0;
 	for (std::size_t i = 0; i < points.size(); ++i)
 	{

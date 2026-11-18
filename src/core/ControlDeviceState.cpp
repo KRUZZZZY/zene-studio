@@ -24,6 +24,8 @@
 
 #include "ControlDeviceSupport.h"
 
+#include <utility>
+
 #include <QCryptographicHash>
 #include <QFile>
 #include <QFileInfo>
@@ -39,6 +41,66 @@
 
 namespace lmms
 {
+
+namespace
+{
+
+//! State/preset files use the original control-data cap; project documents
+//! match DataFile's existing recovery bound.
+constexpr qint64 ControlDataReadLimit = 64LL * 1024 * 1024;
+constexpr qint64 ProjectDocumentReadLimit = 256LL * 1024 * 1024;
+constexpr qint64 ControlFileReadChunkSize = 64LL * 1024;
+
+qint64 controlFileReadLimit(ControlFileReadPurpose purpose)
+{
+	return purpose == ControlFileReadPurpose::ProjectDocument
+		? ProjectDocumentReadLimit : ControlDataReadLimit;
+}
+
+bool controlReadBoundedFile(QFile& file, const QString& path, QByteArray* bytes,
+	ControlResult* error, qint64 limit)
+{
+	const qint64 fileSize = file.size();
+	if (fileSize > limit)
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 exceeds the %2-byte control file limit")
+				.arg(path).arg(limit));
+		return false;
+	}
+	QByteArray contents;
+	if (fileSize > 0) { contents.reserve(static_cast<qsizetype>(fileSize)); }
+	while (!file.atEnd())
+	{
+		const qint64 remaining = limit - contents.size();
+		const QByteArray chunk = file.read(qMin(ControlFileReadChunkSize, remaining + 1));
+		if (chunk.size() > remaining)
+		{
+			*error = ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("%1 exceeds the %2-byte control file limit")
+					.arg(path).arg(limit));
+			return false;
+		}
+		if (chunk.isEmpty())
+		{
+			if (file.atEnd() && file.error() == QFileDevice::NoError) { break; }
+			*error = ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("cannot read %1 (%2)").arg(path, file.errorString()));
+			return false;
+		}
+		contents.append(chunk);
+	}
+	if (file.error() != QFileDevice::NoError)
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("cannot read %1 (%2)").arg(path, file.errorString()));
+		return false;
+	}
+	*bytes = std::move(contents);
+	return true;
+}
+
+} // namespace
 
 bool resolveControlDevice(const ControlTarget& target, const QString& pluginId,
 	ControlDeviceHandle* handle, ControlResult* error)
@@ -102,7 +164,21 @@ ControlResult controlRestoreDeviceState(const ControlDeviceHandle& handle, const
 		return controlRestoreEffectState(handle.effect, bytes);
 	}
 	DataFile dataFile(bytes);
-	if (dataFile.content().isNull())
+	// The null check alone is not a validation: DataFile selects its content
+	// element BY the root's `type` attribute (DataFile::loadData's
+	// `root.elementsByTagName(typeName(m_type))`), so ANY other product
+	// document - a saved project, whose root names a `song` content element -
+	// resolves a content element that is not an instrument-track preset at all.
+	// loadPreset was handed it and `restored: true` was reported regardless.
+	// The content `type` this check reads has to HAVE parsed as well: toInt()
+	// answers 0 for a missing or nonnumeric attribute, and 0 is the instrument
+	// track's own type, so an unparsed type would pass this comparison.
+	// This is the check track.preset_load already makes
+	// (ControlCommandsTrackPresets.cpp).
+	bool typeParsed = false;
+	const int presetType = dataFile.content().attribute(QStringLiteral("type")).toInt(&typeParsed);
+	if (dataFile.content().isNull() || !typeParsed
+		|| presetType != static_cast<int>(handle.track->type()))
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("the file is not an instrument-track preset document"));
@@ -136,7 +212,8 @@ QString controlFactoryPresetDir(const ControlDeviceHandle& handle)
 	return ConfigManager::inst()->factoryPresetsDir() + handle.folder + QLatin1Char('/');
 }
 
-bool controlReadFileBytes(const QString& path, QByteArray* bytes, ControlResult* error)
+bool controlReadFileBytes(const QString& path, QByteArray* bytes, ControlResult* error,
+	ControlFileReadPurpose purpose)
 {
 	QFile file(path);
 	if (!file.exists())
@@ -151,8 +228,7 @@ bool controlReadFileBytes(const QString& path, QByteArray* bytes, ControlResult*
 			QStringLiteral("cannot read %1 (%2)").arg(path, file.errorString()));
 		return false;
 	}
-	*bytes = file.readAll();
-	return true;
+	return controlReadBoundedFile(file, path, bytes, error, controlFileReadLimit(purpose));
 }
 
 bool controlWriteFileBytes(const QString& path, const QByteArray& bytes, bool overwrite,

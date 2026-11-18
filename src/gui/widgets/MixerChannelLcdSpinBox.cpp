@@ -67,12 +67,15 @@ void MixerChannelLcdSpinBox::contextMenuEvent(QContextMenuEvent* event)
 
 	QPointer<CaptionMenu> contextMenu = new CaptionMenu(model()->displayName(), this);
 
-	if (QMenu *mixerMenu = m_tv->createMixerMenu(
-		tr("Assign to:"), tr("New Mixer Channel")))
+	if (m_tv)
 	{
-		contextMenu->addMenu(mixerMenu);
+		if (QMenu *mixerMenu = m_tv->createMixerMenu(
+			tr("Assign to:"), tr("New Mixer Channel")))
+		{
+			contextMenu->addMenu(mixerMenu);
 
-		contextMenu->addSeparator();
+			contextMenu->addSeparator();
+		}
 	}
 	addDefaultActions(contextMenu);
 	contextMenu->exec(QCursor::pos());

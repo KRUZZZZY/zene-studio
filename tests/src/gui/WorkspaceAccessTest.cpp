@@ -33,8 +33,10 @@
 #include <QtTest>
 
 #include <cmath>
+#include <limits>
 
 #include <QJsonArray>
+#include <QFile>
 #include <QLabel>
 #include <QPushButton>
 #include <QSlider>
@@ -51,6 +53,7 @@
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "Knob.h"
+#include "UiConfigStore.h"
 #include "WcagContrast.h"
 #include "WorkspaceWindows.h"
 
@@ -210,6 +213,27 @@ private slots:
 		QVERIFY(tokens::themeOverrides().isEmpty());
 	}
 
+	void aMalformedThemeFileCannotEraseOverrides()
+	{
+		const ControlResult set = run(QStringLiteral("theme.set_token"), {{QStringLiteral("name"), QStringLiteral("accent")},
+			{QStringLiteral("color"), QStringLiteral("#ff8800")}, {QStringLiteral("allow_low_contrast"), true}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		const QString path = m_home.filePath(QStringLiteral("missing-colors.theme.json"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		const QByteArray malformed = R"({"format":"zene-theme"})";
+		QCOMPARE(file.write(malformed), static_cast<qint64>(malformed.size()));
+		file.close();
+
+		const ControlResult imported = run(QStringLiteral("theme.import"), {{QStringLiteral("file"), path},
+			{QStringLiteral("replace"), true}});
+		QVERIFY(!imported.ok);
+		QCOMPARE(imported.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(tokens::themeOverrides().value(QStringLiteral("accent")).toString(), QStringLiteral("#ff8800"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(tokens::themeOverrides().isEmpty());
+	}
+
 	void theColourListRunsTheCommands()
 	{
 		CommandListDialog dialog(CommandLists::themeColors());
@@ -233,7 +257,8 @@ private slots:
 		QVERIFY(touch.contains(QStringLiteral("min-height: 36px;")));
 		QVERIFY(touch.contains(QStringLiteral("border-width: 1px;")));
 		QVERIFY(appearance::accessibleTargetFactor > 1.0);
-		QCOMPARE(static_cast<int>(std::lround(tokens::size::target * appearance::accessibleTargetFactor)), 32);
+		// 0.5.0 Q050-141: the touch minimum - 44 x 44 logical pixels with 8 between adjacent targets.
+		QCOMPARE(static_cast<int>(std::lround(tokens::size::target * appearance::accessibleTargetFactor)), 44);
 		QVERIFY(tokens::targetSize() >= tokens::size::target);
 		// Accessible mode's own rules thicken every focusable border and ring the controls the base rules leave bare.
 		QStringList unknown;
@@ -257,6 +282,24 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(!appearance::options().accessible);
 		QCOMPARE(appearance::effectivePalette(appearance::options()), chosen);
+	}
+
+	//! A non-finite zoom is not a zoom: std::clamp leaves NaN untouched (every comparison with it is
+	//! false), so it must be refused before it is stored or the interface is sized from garbage.
+	void aNonFiniteAppearanceScaleIsRefused()
+	{
+		const double before = appearance::options().scale;
+		appearance::Options bad = appearance::options();
+		bad.scale = std::nan("");
+		appearance::setOptions(bad);
+		const double after = appearance::options().scale;
+		QVERIFY(std::isfinite(after));
+		QVERIFY(after >= 0.5 && after <= 3.0);
+		// An infinity is out of range in the other direction, and is refused the same way.
+		bad.scale = std::numeric_limits<double>::infinity();
+		appearance::setOptions(bad);
+		QVERIFY(std::isfinite(appearance::options().scale));
+		QCOMPARE(appearance::options().scale, before);
 	}
 
 	//! The W3 density values still work: comfortable and touch turn accessible mode on, standard turns it off,
@@ -283,6 +326,29 @@ private slots:
 		ConfigManager::inst()->setValue(QStringLiteral("ui"), QStringLiteral("density"), QStringLiteral("touch"));
 		QVERIFY(appearance::options().accessible);
 		ConfigManager::inst()->setValue(QStringLiteral("ui"), QStringLiteral("density"), QStringLiteral("standard"));
+	}
+
+	//! 0.5.0 L14 (Q050-235): the workspace is an appearance field of its own - selectable and readable through
+	//! window.appearance, one undo step back, stored in user configuration, and never implied by a density value.
+	void theWorkspaceIsAnAppearanceFieldOfItsOwn()
+	{
+		QCOMPARE(appearance::options().workspace, QStringLiteral("standard"));  // an absent setting is the default
+		const ControlResult set = run(QStringLiteral("window.appearance"), {{QStringLiteral("workspace"), QStringLiteral("touch")}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QCOMPARE(set.result.value(QStringLiteral("workspace")).toString(), QStringLiteral("touch"));
+		QCOMPARE(appearance::options().workspace, QStringLiteral("touch"));
+		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("ui"), QStringLiteral("workspace")), QStringLiteral("touch"));
+		QVERIFY(set.result.value(QStringLiteral("restart_pending")).toBool());  // drawn from the next start
+		QVERIFY(!set.result.value(QStringLiteral("accessible")).toBool());  // a workspace, not accessible mode
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(appearance::options().workspace, QStringLiteral("standard"));
+		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("ui"), QStringLiteral("workspace")), QStringLiteral("standard"));
+		// A value outside the list is refused typed, and an unreadable stored value falls back to the default.
+		QCOMPARE(run(QStringLiteral("window.appearance"), {{QStringLiteral("workspace"), QStringLiteral("tablet")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		ConfigManager::inst()->setValue(QStringLiteral("ui"), QStringLiteral("workspace"), QStringLiteral("sideways"));
+		QCOMPARE(appearance::options().workspace, QStringLiteral("standard"));
+		ConfigManager::inst()->setValue(QStringLiteral("ui"), QStringLiteral("workspace"), QStringLiteral("standard"));
 	}
 
 	//! One global zoom is the sizing model: the old text-size field asks for the zoom, and reads back as 1.
@@ -409,6 +475,22 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(!crosshairShown());
 		QVERIFY(!overlay->isVisible());
+	}
+
+	//! window.layout_save trims the name (src/gui/ControlCommandsLayouts.cpp saveLayout), so a layout
+	//! saved as " Studio " is stored as "Studio"; the lookup must find it under the name it was saved with.
+	void aLayoutIsFoundUnderTheNameItWasSavedWith()
+	{
+		QVERIFY(gui::uistore::write(QStringLiteral("shell.layouts"),
+			{{QStringLiteral("layouts"), QJsonObject{{QStringLiteral("Studio"), QJsonObject{{QStringLiteral("view"),
+				QStringLiteral("arranger")}}}}}},
+			{}, {}, {}).ok);
+		const ControlResult removed = run(QStringLiteral("window.layout_remove"),
+			{{QStringLiteral("name"), QStringLiteral(" Studio ")}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QCOMPARE(removed.result.value(QStringLiteral("name")).toString(), QStringLiteral("Studio"));
+		QVERIFY(gui::uistore::read(QStringLiteral("shell.layouts"))
+			.value(QStringLiteral("layouts")).toObject().isEmpty());
 	}
 
 	void theWindowVerbsNeedAMainWindow()

@@ -28,8 +28,8 @@ the name is even a known backend, and which device the engine ended up on:
     MainWindow: audio-device-setup backend="..." device_start_failed=0|1 \
         name_known=0|1 device="..." (unattended run: no dialog, the engine continues)
 
-Two scenarios are driven, one per condition of that `else if`, so neither half
-can regress silently:
+The two audio-failure conditions are each driven with both a configured and a
+fresh config, so neither half or startup path can regress silently:
 
   1. "SDL (Simple DirectMedia Layer)" - a real, valid backend name that cannot
      open a device here (the SDL/ALSA probe prints "Host is down"), so
@@ -161,32 +161,40 @@ def expect_blocked(binary):
 
 def expect_fixed(binary):
     for label, backend in SCENARIOS:
-        instance = start_instance(binary, audiodev=backend, extra_env=scenario_env(backend))
-        transcript = Transcript()
-        try:
+        for configured, startup in ((1, "configured"), (0, "fresh")):
+            instance = start_instance(binary, audiodev=backend, configured=configured,
+                                      extra_env=scenario_env(backend))
+            transcript = Transcript()
+            scenario = "%s, %s config" % (label, startup)
             try:
-                client = connect(instance)
-                wait_ready(instance, client, transcript, seconds=READY_TIMEOUT,
-                           ping_timeout=PING_TIMEOUT)
-            except Blocked as error:
-                fail("the no-usable-audio-device case (%s: %r) blocked the instance: %s"
-                     % (label, backend, error), instance, transcript)
+                try:
+                    client = connect(instance)
+                    wait_ready(instance, client, transcript, seconds=READY_TIMEOUT,
+                               ping_timeout=PING_TIMEOUT)
+                except Blocked as error:
+                    fail("the no-usable-audio-device case (%s: %r) blocked the instance: %s"
+                         % (scenario, backend, error), instance, transcript)
 
-            line = audio_line(instance.read_log())
-            if line is None:
-                fail("the instance proceeded but never said so: no '%s' line in the app log"
-                     % AUDIO_MARKER, instance, transcript)
-            try:
-                check_scenario_report(line, backend, must_be_dummy=(backend == SDL_BACKEND))
-            except AssertionError as error:
-                fail(str(error), instance, transcript)
+                app_log = instance.read_log()
+                if not configured and "skipping the first-run setup dialog" not in app_log:
+                    fail("fresh startup did not report skipping setup (%s)" % scenario,
+                         instance, transcript)
+                line = audio_line(app_log)
+                if line is None:
+                    fail("the instance proceeded but never said so: no '%s' line in the app log "
+                         "(%s)" % (AUDIO_MARKER, scenario), instance, transcript)
+                try:
+                    check_scenario_report(line, backend, must_be_dummy=(backend == SDL_BACKEND))
+                except AssertionError as error:
+                    fail(str(error), instance, transcript)
 
-            print("\n---- audio report (%s) ----" % label)
-            print(line)
-            transcript.dump()
-            ok("this test passed for %s: no dialog, the instance proceeded and reported it" % label)
-        finally:
-            instance.close()
+                print("\n---- audio report (%s) ----" % scenario)
+                print(line)
+                transcript.dump()
+                ok("this test passed for %s: no dialog, the instance proceeded and reported it"
+                   % scenario)
+            finally:
+                instance.close()
     return 0
 
 

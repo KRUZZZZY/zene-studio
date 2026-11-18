@@ -34,6 +34,9 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <concepts>
+#include <limits>
+#include <memory>
 #include <numbers>
 
 #include "lmms_constants.h"
@@ -72,14 +75,21 @@ public:
 	inline void setCoeffs( float freq )
 	{
 		using namespace std::numbers;
+		const double nyquist = static_cast<double>(m_sampleRate) * 0.5;
+		const double maxFreq = std::nextafter(nyquist, 0.0);
+		const double minFreq = std::min(
+			static_cast<double>(std::numeric_limits<float>::min()), maxFreq * 0.5);
+		const double requestedFreq = std::isnan(freq) ? minFreq : static_cast<double>(freq);
+		const double safeFreq = std::clamp(requestedFreq, minFreq, maxFreq);
+
 		// wc
-		const double wc = 2 * pi * freq;
+		const double wc = 2 * pi * safeFreq;
 		const double wc2 = wc * wc;
 		const double wc3 = wc2 * wc;
 		m_wc4 = wc2 * wc2;
 
 		// k
-		const double k = wc / std::tan(pi * freq / m_sampleRate);
+		const double k = wc / std::tan(pi * safeFreq / m_sampleRate);
 		const double k2 = k * k;
 		const double k3 = k2 * k;
 		m_k4 = k2 * k2;
@@ -275,7 +285,7 @@ public:
 			: FilterType::Moog;
 		if( m_subFilter == nullptr )
 		{
-			m_subFilter = new BasicFilters<CHANNELS>(
+			m_subFilter = std::make_unique<BasicFilters<CHANNELS>>(
 						static_cast<sample_rate_t>(
 							m_sampleRate ) );
 		}
@@ -283,18 +293,31 @@ public:
 	}
 
 	inline BasicFilters( const sample_rate_t _sample_rate ) :
+		m_type( FilterType::LowPass ),
 		m_doubleFilter( false ),
-		m_sampleRate( (float) _sample_rate ),
+		m_sampleRate( (float)( _sample_rate > 0 ? _sample_rate : 1 ) ),
 		m_sampleRatio( 1.0f / m_sampleRate ),
 		m_subFilter( nullptr )
 	{
 		clearHistory();
 	}
 
-	inline ~BasicFilters()
+	// Signed rates are checked before the conversion to sample_rate_t: a
+	// negative value would otherwise wrap to a large positive rate. A
+	// nonpositive value maps to 0 and takes the zero paths above.
+	template<std::signed_integral SampleRate>
+	static constexpr sample_rate_t toSampleRate( const SampleRate _sample_rate )
 	{
-		delete m_subFilter;
+		return _sample_rate > 0 ? static_cast<sample_rate_t>( _sample_rate ) : 0;
 	}
+
+	template<std::signed_integral SampleRate>
+	inline BasicFilters( const SampleRate _sample_rate ) :
+		BasicFilters( toSampleRate( _sample_rate ) )
+	{
+	}
+
+	inline ~BasicFilters() = default;
 
 	inline void clearHistory()
 	{
@@ -325,10 +348,28 @@ public:
 			m_delay3[_chnl] = 0.0f;
 			m_delay4[_chnl] = 0.0f;
 		}
+
+		if( m_subFilter != nullptr )
+		{
+			m_subFilter->clearHistory();
+		}
+	}
+
+	template<std::signed_integral SampleRate>
+	inline void setSampleRate( const SampleRate _sample_rate )
+	{
+		// a nonpositive value maps to 0 and is rejected below
+		setSampleRate( toSampleRate( _sample_rate ) );
 	}
 
 	inline void setSampleRate(const sample_rate_t sampleRate)
 	{
+		// a zero rate has no reciprocal: reject it and keep the current rate,
+		// otherwise m_sampleRatio becomes infinity and poisons the coefficients
+		if( sampleRate == 0 )
+		{
+			return;
+		}
 		m_sampleRate = sampleRate;
 		m_sampleRatio = 1.f / m_sampleRate;
 		if (m_subFilter != nullptr)
@@ -643,7 +684,7 @@ public:
 					out += bp;
 
 					// second formant
-					in = _in0 + m_vfbp[0][_chnl] * m_vfq;
+					in = _in0 + m_vfbp[1][_chnl] * m_vfq;
 					in = std::clamp(in, -1.0f, 1.0f);
 
 					hp = m_vfc[1] * ( m_vfhp[1][_chnl] + in - m_vflast[1][_chnl] );
@@ -731,6 +772,7 @@ public:
 		if( m_type == FilterType::Formantfilter ||
 			m_type == FilterType::FastFormant )
 		{
+			if( !std::isfinite(_freq) ) { _freq = minFreq(); }
 			_freq = std::clamp(_freq, minFreq(), 20000.0f); // limit freq and q for not getting bad noise out of the filter...
 
 			// formats for a, e, i, o, u, a
@@ -745,8 +787,8 @@ public:
 			m_vfq = _q * 0.25f;
 
 			// frequency in lmms ranges from 1Hz to 14000Hz
-			const float vowelf = _freq * freqRatio;
-			const int vowel = static_cast<int>( vowelf );
+			const float vowelf = std::min(_freq * freqRatio, 5.0f);
+			const int vowel = std::min(static_cast<int>( vowelf ), 4);
 			const float fract = vowelf - vowel;
 
 			// interpolate between formant frequencies
@@ -902,12 +944,13 @@ private:
 	// in/out history for Lowpass_SV (state-variant lowpass)
 	frame m_delay1, m_delay2, m_delay3, m_delay4;
 
+	// LowPass until setFilterType() is called
 	FilterType m_type;
 	bool m_doubleFilter;
 
 	float m_sampleRate;
 	float m_sampleRatio;
-	BasicFilters<CHANNELS> * m_subFilter;
+	std::unique_ptr<BasicFilters<CHANNELS>> m_subFilter;
 
 } ;
 

@@ -25,21 +25,16 @@
 #define LMMS_STEM_JOB_MANAGER_H
 
 #include <atomic>
-#include <deque>
 #include <functional>
 #include <memory>
 
-#include <QMutex>
-#include <QHash>
 #include <QObject>
 #include <QString>
-#include <QWaitCondition>
 
 #include "StemSeparation/StemSeparator.h"
 #include "StemSeparation/StemTypes.h"
+#include "TaskCenter.h"
 #include "lmms_export.h"
-
-class QThread;
 
 namespace lmms
 {
@@ -57,8 +52,10 @@ class SampleBuffer;
 //                     -> Failed
 //
 // and reports progress through the jobProgress() Qt signal. Signals are
-// emitted from the worker thread and delivered to the receiver's thread
-// (Qt::AutoConnection => queued for a manager living in the GUI thread).
+// forwarded from the worker thread to the manager and delivered to the
+// receiver's thread (queued for a manager living in the GUI thread). Destroying
+// the manager requests cancellation and returns without joining the worker; its
+// shared state keeps the backend alive until the current call ends.
 class LMMS_EXPORT StemJobManager : public QObject
 {
 	Q_OBJECT
@@ -74,15 +71,30 @@ public:
 	};
 	Q_ENUM(State)
 
+	/*! Q050-010: makes a job's mix ON THE WORKER, so decoding and resampling never run on the caller's
+	 *  thread. It returns the mix, or null with the reason in its second argument, and should give up
+	 *  early once its first argument turns true. */
+	using MixLoader = std::function<std::shared_ptr<const SampleBuffer>(const std::atomic<bool>& cancel, QString* error)>;
+
 	// One separation job. Progress and cancellation are atomics so that the
 	// worker thread can update them without locking; everything else is only
 	// touched by the worker thread and the owning thread after completion.
 	struct Job
 	{
 		int id = -1;
+		TaskToken taskToken;
 		std::shared_ptr<const SampleBuffer> mix;
+		//! Q050-010: a job from submitFrom() has no mix yet; the worker makes it with this first.
+		MixLoader loader;
+		//! The length of the mix the loader made, 0 before: written by the worker, read by the owner.
+		std::atomic<int> loadedFrames{0};
 		int sampleRate = StemModelSampleRate;
 		int segmentFrames = HTDemucsSegmentFrames;
+		//! Q050-062.1: the segment overlap the backend runs at; set once at submit.
+		StemQuality quality = DefaultStemQuality;
+		//! The quality the worker handed the backend, as an int; -1 until it
+		//! did (atomic: the worker writes it while the owner may read it).
+		std::atomic<int> inferenceQuality{-1};
 		std::atomic<State> state{State::Queued};
 		std::atomic<float> progress{0.0f};
 		std::atomic<bool> cancelRequested{false};
@@ -120,11 +132,29 @@ public:
 	bool fetchingModel(int jobId) const;
 	float downloadProgress(int jobId) const;
 
+	//! Q050-062.1: the quality \a jobId was submitted at (the default for an
+	//! unknown id), and the one the worker passed to the backend's separate():
+	//! false until the worker called it (or for an unknown id).
+	StemQuality quality(int jobId) const;
+	bool inferenceQuality(int jobId, StemQuality* quality) const;
+
 	// Queues a job and returns its id immediately. The caller keeps ownership
 	// of the mix buffer through the shared_ptr. `mix` must not be null.
+	// `quality` is handed to the backend unchanged (StemTypes.h).
 	int submit(std::shared_ptr<const SampleBuffer> mix,
 		int sampleRate,
-		int segmentFrames = HTDemucsSegmentFrames);
+		int segmentFrames = HTDemucsSegmentFrames,
+		StemQuality quality = DefaultStemQuality);
+
+	// Q050-010: as submit(), for a mix the worker makes with @a loader (MixLoader) before separating.
+	// A null mix fails the job with the loader's reason; a cancel while it ran ends the job cancelled.
+	int submitFrom(MixLoader loader,
+		int sampleRate,
+		int segmentFrames = HTDemucsSegmentFrames,
+		StemQuality quality = DefaultStemQuality);
+
+	//! Q050-010: the length of the mix a submitFrom() job's loader made; 0 until it has (or for an unknown id).
+	int loadedFrames(int jobId) const;
 
 	void cancel(int jobId);
 	void cancelAll();
@@ -146,24 +176,33 @@ signals:
 	void jobFailed(int jobId, const QString& error);
 
 private:
-	void workerLoop();
+	//! Everything the worker touches: jobs, queue, backend, provisioner and the
+	//! quit flag. The worker holds it by shared_ptr, so it outlives this object.
+	struct SharedState;
+	static void workerLoop(const std::shared_ptr<SharedState>& state);
 	//! 0.5.0 theme 24: the job signals reported to the task area (TaskCenter.h).
 	void reportToTaskArea();
-	void runJob(const std::shared_ptr<Job>& job);
+	static void runJob(const std::shared_ptr<SharedState>& state, const std::shared_ptr<Job>& job);
 	//! The provisioner step of runJob: false when it ended the job (the
 	//! terminal state and its signal are already published).
-	bool provisionModel(const std::shared_ptr<Job>& job);
+	static bool provisionModel(const std::shared_ptr<SharedState>& state, const std::shared_ptr<Job>& job);
+	//! Everything a job needs before separating: its mix, then its model. False when it ended the job.
+	static bool prepareJob(const std::shared_ptr<SharedState>& state, const std::shared_ptr<Job>& job);
+	//! The loader step of runJob (submitFrom): false when it ended the job.
+	static bool loadMix(const std::shared_ptr<SharedState>& state, const std::shared_ptr<Job>& job);
+	//! Ends @a job as failed with @a error, on the worker.
+	static void failJob(const std::shared_ptr<SharedState>& state, const std::shared_ptr<Job>& job, const QString& error);
+	int enqueue(std::shared_ptr<Job> job);
+	//! The worker's signals: queued to this manager, dropped once it is destroyed.
+	static void emitJobStarted(const std::shared_ptr<SharedState>& state, int jobId);
+	static void emitJobProgress(const std::shared_ptr<SharedState>& state, int jobId, float fraction);
+	static void emitJobFinished(const std::shared_ptr<SharedState>& state, int jobId, double elapsedSeconds);
+	static void emitJobCancelled(const std::shared_ptr<SharedState>& state, int jobId);
+	static void emitJobFailed(const std::shared_ptr<SharedState>& state, int jobId, const QString& error);
 	std::shared_ptr<Job> findJob(int jobId) const;
+	TaskToken taskTokenFor(int jobId) const;
 
-	QThread* m_thread = nullptr;
-	mutable QMutex m_mutex;
-	QWaitCondition m_jobAvailable;
-	std::deque<std::shared_ptr<Job>> m_queue;
-	mutable QHash<int, std::shared_ptr<Job>> m_jobs;
-	std::unique_ptr<StemSeparator> m_separator;
-	ModelProvisioner m_provisioner;
-	int m_nextJobId = 1;
-	bool m_quit = false;
+	std::shared_ptr<SharedState> m_state;
 };
 
 } // namespace lmms

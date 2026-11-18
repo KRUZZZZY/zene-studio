@@ -227,7 +227,7 @@ ControlResult resume(bool skip, const QJsonObject& library)
 	}
 	now.steps = library.value(now.name).toObject().value(QStringLiteral("steps")).toArray();
 	const int from = failedAt + (skip ? 1 : 0);
-	if (from > now.steps.size())
+	if (skip ? from > now.steps.size() : failedAt >= now.steps.size())
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("workflow '%1' has %2 steps now: step %3 is gone")
 			.arg(now.name).arg(now.steps.size()).arg(failedAt + 1));

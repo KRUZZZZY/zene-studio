@@ -23,33 +23,263 @@
  */
 /*! 0.5.0 L07 (W3): what a note carries beyond pitch and time, and how notes are played -
  *  - a note's repeats sound as that many more hits, its recurrence skips the passes it is not on,
- *    and its articulation plays the track's keyswitch first (ED-133, ED-121);
+ *    and its articulation sends the track's keyswitch first (ED-133, ED-121);
  *  - chase sounds a note playback starts inside, only when it is on (ED-075);
  *  - the global swing delays off-beats only, and the MIDI offset delays everything (ED-142, ED-076);
  *  - lyrics split into syllables, groups take ids, and all of it saves only when set (ED-088, ED-069). */
 
 #include <QtTest>
 
+#include <cmath>
+#include <limits>
+
+#include <QDir>
 #include <QDomDocument>
 #include <QJsonArray>
+#include <QTemporaryDir>
+#include <QThread>
+
+#include <algorithm>
+#include <cstdlib>
+#include <cstdint>
+#include <cstring>
+#include <limits>
+#include <cmath>
+#include <new>
+#include <span>
+#include <thread>
+#include <utility>
+#include <vector>
+
+#if defined(Q_OS_LINUX)
+#include <pthread.h>
+#include <sched.h>
+#endif
+
+#include "PortableSync.h"
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "MidiPlayback.h"
 #include "Note.h"
 #include "NoteConditions.h"
 #include "NotePlayHandle.h"
+#include "ProjectJournal.h"
+#include "SampleFrame.h"
 #include "Song.h"
 
 using namespace lmms;
 
+namespace lmms
+{
+LMMS_EXPORT void resetInternLyricLookupWorkForTest() noexcept;
+LMMS_EXPORT std::uint64_t internLyricLookupWorkForTest() noexcept;
+}
+
 namespace
 {
+
+// volatile: operator new updates these, and the optimiser cannot see that across the test's calls.
+// Without it the flag store and the count read are folded away, and every count reads zero.
+thread_local volatile bool countAllocations = false;
+thread_local volatile std::uint64_t allocationCount = 0;
+
+//! A type whose `new` takes the align_val_t overloads rather than the plain ones.
+struct alignas(64) OverAligned
+{
+	char bytes[64];
+};
+
+std::pair<InstrumentTrack*, Instrument*> createModulatedMonstroTrack()
+{
+	auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+	if (track == nullptr) { return {nullptr, nullptr}; }
+	auto* instrument = track->loadInstrument(QStringLiteral("monstro"));
+	if (instrument == nullptr) { return {track, nullptr}; }
+	QDomDocument document;
+	QDomElement settings = document.createElement(QStringLiteral("monstro"));
+	settings.setAttribute(QStringLiteral("l1wav"), 0);
+	settings.setAttribute(QStringLiteral("v1l1"), 1.0);
+	instrument->restoreState(settings);
+	return {track, instrument};
+}
+
+//! Pins the dummy device's rate for one test. The original rate and the sampleRateChanged
+//! listeners are restored however the test leaves.
+class DeviceRatePin
+{
+public:
+	explicit DeviceRatePin(sample_rate_t rate) :
+		m_device(Engine::audioEngine()->audioDev()),
+		m_original(m_device->sampleRate())
+	{
+		m_device->setSampleRateForTesting(rate);
+		emit Engine::audioEngine()->sampleRateChanged();
+	}
+
+	~DeviceRatePin()
+	{
+		m_device->setSampleRateForTesting(m_original);
+		emit Engine::audioEngine()->sampleRateChanged();
+	}
+
+	DeviceRatePin(const DeviceRatePin&) = delete;
+	DeviceRatePin& operator=(const DeviceRatePin&) = delete;
+
+private:
+	AudioDevice* m_device;
+	sample_rate_t m_original;
+};
+
+bool sameSamples(const std::vector<SampleFrame>& lhs, const std::vector<SampleFrame>& rhs)
+{
+	if (lhs.size() != rhs.size()) { return false; }
+	for (std::size_t frame = 0; frame < lhs.size(); ++frame)
+	{
+		if (std::abs(lhs[frame][0] - rhs[frame][0]) > 1.0e-6f ||
+			std::abs(lhs[frame][1] - rhs[frame][1]) > 1.0e-6f)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+int audioEngineRenderContextCount()
+{
+	int count = 0;
+	// AudioEngine owns one QThread child for each worker plus the caller-side context.
+	for (QObject* child : Engine::audioEngine()->children())
+	{
+		if (qobject_cast<QThread*>(child) != nullptr) { ++count; }
+	}
+	return count;
+}
+
+#if defined(Q_OS_LINUX)
+class SingleCpuAffinity
+{
+public:
+	~SingleCpuAffinity()
+	{
+		if (m_changed) { pthread_setaffinity_np(pthread_self(), sizeof(m_original), &m_original); }
+	}
+
+	bool restrictToOneCpu() noexcept
+	{
+		if (pthread_getaffinity_np(pthread_self(), sizeof(m_original), &m_original) != 0) { return false; }
+		for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu)
+		{
+			if (!CPU_ISSET(cpu, &m_original)) { continue; }
+			cpu_set_t singleCpu;
+			CPU_ZERO(&singleCpu);
+			CPU_SET(cpu, &singleCpu);
+			m_changed = pthread_setaffinity_np(pthread_self(), sizeof(singleCpu), &singleCpu) == 0;
+			return m_changed;
+		}
+		return false;
+	}
+
+private:
+	cpu_set_t m_original{};
+	bool m_changed = false;
+};
+#endif
+
+struct MonstroVoiceSet
+{
+	std::vector<NotePlayHandle*> handles;
+	std::vector<std::vector<SampleFrame>> outputs;
+};
+
+MonstroVoiceSet createMonstroVoiceSet(InstrumentTrack* track, std::size_t count, f_cnt_t frames)
+{
+	MonstroVoiceSet voices;
+	voices.handles.reserve(count);
+	voices.outputs.resize(count, std::vector<SampleFrame>(static_cast<std::size_t>(frames)));
+	for (std::size_t voice = 0; voice < count; ++voice)
+	{
+		const Note note(TimePos(384), TimePos(0), 36 + static_cast<int>(voice % 48));
+		voices.handles.push_back(NotePlayHandleManager::acquire(track, 0, frames, note));
+	}
+	return voices;
+}
+
+void primeMonstroVoiceSet(Instrument* instrument, MonstroVoiceSet& voices)
+{
+	for (std::size_t voice = 0; voice < voices.handles.size(); ++voice)
+	{
+		instrument->playNote(voices.handles[voice], voices.outputs[voice]);
+	}
+}
+
+void renderMonstroVoiceSetSerial(Instrument* instrument, MonstroVoiceSet& voices)
+{
+	for (int period = 0; period < 64; ++period)
+	{
+		for (std::size_t voice = 0; voice < voices.handles.size(); ++voice)
+		{
+			instrument->playNote(voices.handles[voice], voices.outputs[voice]);
+		}
+	}
+}
+
+void renderMonstroVoiceSetConcurrent(Instrument* instrument, MonstroVoiceSet& voices)
+{
+	testsupport::Barrier startVoices{static_cast<std::ptrdiff_t>(voices.handles.size())};
+	std::vector<std::thread> workers;
+	workers.reserve(voices.handles.size());
+	for (std::size_t voice = 0; voice < voices.handles.size(); ++voice)
+	{
+		workers.emplace_back([&, voice]
+		{
+			for (int period = 0; period < 64; ++period)
+			{
+				startVoices.arrive_and_wait();
+				instrument->playNote(voices.handles[voice], voices.outputs[voice]);
+			}
+		});
+	}
+	for (auto& worker : workers) { worker.join(); }
+}
+
+void releaseMonstroVoiceSet(MonstroVoiceSet& voices)
+{
+	for (NotePlayHandle* handle : voices.handles) { NotePlayHandleManager::release(handle); }
+}
+
+bool monstroVoiceSetsMatch(const MonstroVoiceSet& lhs, const MonstroVoiceSet& rhs)
+{
+	if (lhs.outputs.size() != rhs.outputs.size()) { return false; }
+	for (std::size_t voice = 0; voice < lhs.outputs.size(); ++voice)
+	{
+		if (!sameSamples(lhs.outputs[voice], rhs.outputs[voice])) { return false; }
+	}
+	return true;
+}
+
+std::pair<InstrumentTrack*, Instrument*> createParallelMonstroTrack(int renderContexts,
+	bool* affinityMismatchEstablished)
+{
+	*affinityMismatchEstablished = true;
+#if defined(Q_OS_LINUX)
+	SingleCpuAffinity affinity;
+	if (!affinity.restrictToOneCpu() || QThread::idealThreadCount() >= renderContexts)
+	{
+		*affinityMismatchEstablished = false;
+		return {nullptr, nullptr};
+	}
+#else
+	Q_UNUSED(renderContexts);
+#endif
+	return createModulatedMonstroTrack();
+}
 
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
@@ -69,7 +299,84 @@ QList<int> handleKeys(const InstrumentTrack* track)
 	return keys;
 }
 
+//! The warnings qWarning printed while it is alive.
+class WarningCapture
+{
+public:
+	WarningCapture()
+	{
+		s_texts.clear();
+		qInstallMessageHandler(&collect);
+	}
+
+	~WarningCapture() { qInstallMessageHandler(nullptr); }
+	QStringList texts() const { return s_texts; }
+
+private:
+	static void collect(QtMsgType, const QMessageLogContext&, const QString& text) { s_texts << text; }
+	static QStringList s_texts;
+};
+
+QStringList WarningCapture::s_texts;
+
 } // namespace
+
+namespace
+{
+
+//! Over-aligned memory from malloc, with the pointer malloc returned stored just below the aligned address.
+void* allocateAligned(std::size_t size, std::size_t alignment)
+{
+	if (countAllocations) { allocationCount = allocationCount + 1; }
+	const std::size_t align = std::max(alignment, sizeof(void*));
+	void* raw = std::malloc((size != 0 ? size : 1) + align + sizeof(void*));
+	if (raw == nullptr) { throw std::bad_alloc{}; }
+	const auto start = reinterpret_cast<std::uintptr_t>(raw) + sizeof(void*);
+	void* memory = reinterpret_cast<void*>((start + align - 1) & ~(static_cast<std::uintptr_t>(align) - 1));
+	std::memcpy(static_cast<char*>(memory) - sizeof(void*), &raw, sizeof(raw));
+	return memory;
+}
+
+void freeAligned(void* memory) noexcept
+{
+	if (memory == nullptr) { return; }
+	void* raw = nullptr;
+	std::memcpy(&raw, static_cast<char*>(memory) - sizeof(void*), sizeof(raw));
+	std::free(raw);
+}
+
+} // namespace
+
+void* operator new(std::size_t size)
+{
+	if (countAllocations) { allocationCount = allocationCount + 1; }
+	if (void* memory = std::malloc(size != 0 ? size : 1)) { return memory; }
+	throw std::bad_alloc{};
+}
+
+void* operator new[](std::size_t size)
+{
+	return ::operator new(size);
+}
+
+void* operator new(std::size_t size, std::align_val_t alignment)
+{
+	return allocateAligned(size, static_cast<std::size_t>(alignment));
+}
+
+void* operator new[](std::size_t size, std::align_val_t alignment)
+{
+	return ::operator new(size, alignment);
+}
+
+void operator delete(void* memory) noexcept { std::free(memory); }
+void operator delete[](void* memory) noexcept { std::free(memory); }
+void operator delete(void* memory, std::size_t) noexcept { std::free(memory); }
+void operator delete[](void* memory, std::size_t) noexcept { std::free(memory); }
+void operator delete(void* memory, std::align_val_t) noexcept { freeAligned(memory); }
+void operator delete[](void* memory, std::align_val_t) noexcept { freeAligned(memory); }
+void operator delete(void* memory, std::size_t, std::align_val_t) noexcept { freeAligned(memory); }
+void operator delete[](void* memory, std::size_t, std::align_val_t) noexcept { freeAligned(memory); }
 
 class NotePlaybackTest : public QObject
 {
@@ -110,192 +417,121 @@ private:
 	}
 
 private slots:
-	void initTestCase()
-	{
-		#ifdef LMMS_TEST_PLUGIN_DIR
-		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);  // a real instrument, so notes start (SessionTuningTest's pattern)
-#endif
-		Engine::init(true);
-		Engine::audioEngine()->audioDev()->stopProcessing();
-		NotePlayHandleManager::init();
-		ControlRegistry::setReady(true);
-	}
+	void initTestCase();
 
-	void cleanupTestCase()
-	{
-		ControlRegistry::setReady(false);
-		Engine::getSong()->clearProject();
-		Engine::destroy();
-	}
+	void cleanupTestCase();
 
-	void repeatsSoundAsMoreHits()
-	{
-		Note* note = oneNote();
-		QVERIFY(run(QStringLiteral("note.edit"), edit(note, {{QStringLiteral("repeats"), 3}})).ok);
-		QCOMPARE(note->conditions().repeats, 3);
-		QCOMPARE(playFrom(0), (QList<int>{60, 60, 60, 60}));
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(m_clip->notes().front()->conditions().repeats, 0);
-	}
+	void importingDistinctLyricsUsesIndexedLookup();
 
-	void aRecurrenceSkipsThePassesItIsNotOn()
-	{
-		Note* note = oneNote();
-		QCOMPARE(run(QStringLiteral("note.edit"), edit(note, {{QStringLiteral("recur_mask"), 2}})).errorKind, ControlErrorKind::InvalidArgs);
-		// The second of every two passes: not on the first.
-		QVERIFY(run(QStringLiteral("note.edit"), edit(note, {{QStringLiteral("recur_length"), 2}, {QStringLiteral("recur_mask"), 2}})).ok);
-		QVERIFY(playFrom(0).isEmpty());
-		NoteConditions conditions = m_clip->notes().front()->conditions();
-		QVERIFY(!conditions.recursOnPass(0) && conditions.recursOnPass(1) && !conditions.recursOnPass(2));
-		// The pass counts a loop wrap (Song::loopWraps) - not a jump back - and a stop starts it again (0.5.0 W2).
-		MidiPlayback& playback = MidiPlayback::instance();
-		playback.stopped();
-		playback.tickPlayed(10, 5);
-		QVERIFY(playback.chasingNow());
-		QCOMPARE(playback.pass(), 0);  // the wraps before the start are no pass
-		playback.tickPlayed(11, 5);
-		QVERIFY(!playback.chasingNow());
-		playback.tickPlayed(0, 5);     // a seek back
-		QVERIFY(playback.chasingNow());
-		QCOMPARE(playback.pass(), 0);
-		playback.tickPlayed(0, 6);     // a wrap
-		QCOMPARE(playback.pass(), 1);
-		playback.stopped();
-		playback.tickPlayed(0, 6);
-		QCOMPARE(playback.pass(), 0);
-	}
+	void monstroNoteStartDoesNotAllocate();
+
+	void nesNoteStartDoesNotAllocate();
+
+	void overAlignedAllocationsAreCounted();
+
+	void plainAllocationsAreCounted();
+
+	void monstroConcurrentVoicesKeepIndependentModulation();
+
+	void monstroRandomLfoAtLowSampleRateRenders();
+
+	void repeatsSoundAsMoreHits();
+
+	//! Q050-294.1: the step view's ratchet and chance are PLAYED, not display values. note.step_set writes the same
+	//! fields the engine reads at trigger time: ratchet 4 is four attacks, chance 0 is none, one undo is one attack.
+	void stepSetRatchetAndChanceArePlayed();
+
+	void upDownArpeggioHandlesRepeatedSinglePitch();
+
+	//! Cluster new-p14-121: with range 3 and repeats 2 the up/down and down/up arpeggios reach every step of the range.
+	void upDownArpeggioWithRepeatsReachesEveryStep();
+
+	//! Note repeats are not rounded to their step, so 1.5 repeats reach the arpeggio. The slot arithmetic
+	//! then divided by range / repeats = 1 / 1.5, which truncates to zero: a cycled arpeggio took the
+	//! modulo by zero in the audio path. 1.5 plays as the whole number below it (1), a single pitch.
+	void cycledArpeggioWithFractionalRepeatsDoesNotDivideByZero();
+
+	//! The downward inversion uses the same slot count as the cycle: with 1.5 repeats and no cycle it
+	//! produced index -1, which is key 48 (an octave down) rather than the chord's only pitch.
+	void downArpeggioWithFractionalRepeatsStaysOnTheChord();
+
+	void aRecurrenceSkipsThePassesItIsNotOn();
+
+	void malformedRecurrenceMaskLeavesNoteOnEveryPass();
 
 	//! 0.5.0 W2: the song counts the loop wraps its render plays, and a seek back while playing is no wrap
 	//! and no pass (the pass used to count every jump back).
-	void aLoopWrapIsAPassAndASeekBackIsNot()
-	{
-		oneNote();
-		Song* song = Engine::getSong();
-		Timeline& timeline = song->getTimeline(Song::PlayMode::Song);
-		timeline.setLoopPoints(TimePos(0), TimePos(48));
-		timeline.setLoopEnabled(true);
-		song->setPlayPos(0, Song::PlayMode::Song);
-		MidiPlayback::instance().stopped();  // the test above fed it by hand: a fresh start, as after a stop
-		song->playSong();
-		const unsigned before = song->loopWraps();
-		for (int period = 0; period < 2000 && song->loopWraps() == before; ++period) { Engine::audioEngine()->renderNextPeriod(); }
-		QCOMPARE(song->loopWraps(), before + 1);
-		QCOMPARE(MidiPlayback::instance().pass(), 1);
-		for (int period = 0; period < 2000 && song->getPlayPos().getTicks() < 24; ++period) { Engine::audioEngine()->renderNextPeriod(); }
-		song->setPlayPos(4, Song::PlayMode::Song);  // a seek back inside the loop
-		Engine::audioEngine()->renderNextPeriod();
-		QCOMPARE(song->loopWraps(), before + 1);
-		QCOMPARE(MidiPlayback::instance().pass(), 1);
-		song->setPlayPos(100, Song::PlayMode::Song);  // a seek past the loop: put back inside, no wrap either
-		Engine::audioEngine()->renderNextPeriod();
-		QVERIFY(song->getPlayPos().getTicks() < 48);
-		QCOMPARE(song->loopWraps(), before + 1);
-		QCOMPARE(MidiPlayback::instance().pass(), 1);
-		song->stop();
-		timeline.setLoopEnabled(false);
-	}
+	void aLoopWrapIsAPassAndASeekBackIsNot();
 
-	void anArticulationPlaysItsKeyswitchFirst()
-	{
-		Note* note = oneNote();
-		const QString track = control::trackIdOf(m_track);
-		QCOMPARE(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), track},
-			{QStringLiteral("articulations"), QJsonArray{QJsonObject{{QStringLiteral("keyswitch"), 200}}}}}).errorKind, ControlErrorKind::InvalidArgs);
-		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), track}, {QStringLiteral("articulations"),
-			QJsonArray{QJsonObject{{QStringLiteral("name"), QStringLiteral("legato")}}, QJsonObject{{QStringLiteral("name"), QStringLiteral("staccato")},
-				{QStringLiteral("keyswitch"), 25}}}}}).ok);
-		QCOMPARE(m_track->articulations().indexOf(QStringLiteral("Staccato")), 2);
-		const ControlResult listed = run(QStringLiteral("track.articulations"), {{QStringLiteral("track"), track}});
-		QVERIFY2(listed.ok, qPrintable(listed.errorMessage));
-		const QJsonArray map = listed.result.value(QStringLiteral("articulations")).toArray();
-		QCOMPARE(map.size(), 2);  // in order: a note's 'articulation' is the 1-based index into it
-		QCOMPARE(map.at(1).toObject().value(QStringLiteral("keyswitch")).toInt(), 25);
-		QVERIFY(run(QStringLiteral("note.edit"), edit(note, {{QStringLiteral("articulation"), 2}})).ok);
-		QCOMPARE(playFrom(0, 1), (QList<int>{25, 60}));  // one period in: the one-tick keyswitch still sounds
-		// Saved with the track, and one undo takes the map away.
-		QDomDocument doc;
-		QDomElement element = doc.createElement(QStringLiteral("track"));
-		m_track->articulations().save(element);
-		QVERIFY(element.attribute(QStringLiteral("articulations")).contains(QStringLiteral("staccato")));
-		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the note's articulation
-		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the map
-		QVERIFY(m_track->articulations().empty());
-	}
+	//! The wrap count only counts up: past 2^32 wraps it keeps going instead of rolling back to 0 (Song.h
+	//! loopWraps). The count starts at the 32-bit limit through the test seam, as 2^32 wraps cannot be played.
+	void aLoopWrapCountPassesTheThirtyTwoBitLimit();
 
-	void aLoopedClipPlaysItsStartAgain()
-	{
-		Note* note = oneNote(60, 24);
-		m_clip->changeLength(TimePos(384));
-		QVERIFY(playFrom(96).isEmpty());  // no loop: nothing starts at 96
-		QVERIFY(run(QStringLiteral("clip.set_loop"), {{QStringLiteral("clip"), control::clipIdOf(m_clip)}, {QStringLiteral("length"), 96}}).ok);
-		QCOMPARE(playFrom(96), (QList<int>{60}));  // 96 folds to 0, where the note is
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(m_clip->clipEdits().loopTicks, 0);
-		(void) note;
-	}
+	void anArticulationPlaysItsKeyswitchFirst();
 
-	void chaseSoundsANotePlaybackStartsInside()
-	{
-		oneNote();
-		QVERIFY(playFrom(96).isEmpty());  // off by default: playback as it always was
-		QVERIFY(run(QStringLiteral("transport.midi_options"), {{QStringLiteral("chase"), true}}).ok);
-		QCOMPARE(playFrom(96), (QList<int>{60}));
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QVERIFY(!MidiPlayback::instance().chase());
-	}
+	void aMalformedArticulationJsonWarnsAndLoadsWithNone();
 
-	void swingDelaysTheOffBeatsOnly()
-	{
-		MidiPlayback& playback = MidiPlayback::instance();
-		QCOMPARE(playback.delayFrames(12, 100.f, 48000), f_cnt_t{0});
-		QVERIFY(run(QStringLiteral("transport.groove"), {{QStringLiteral("swing"), 0.5}}).ok);
-		QCOMPARE(playback.delayFrames(0, 100.f, 48000), f_cnt_t{0});
-		QCOMPARE(playback.delayFrames(12, 100.f, 48000), f_cnt_t{600});  // half of a 12-tick step
-		QCOMPARE(playback.delayFrames(24, 100.f, 48000), f_cnt_t{0});
-		QVERIFY(playback.shouldPersist());
-		QVERIFY(run(QStringLiteral("transport.groove"), {{QStringLiteral("grid"), QStringLiteral("8th")}}).ok);
-		QCOMPARE(playback.delayFrames(12, 100.f, 48000), f_cnt_t{0});
-		QCOMPARE(playback.delayFrames(24, 100.f, 48000), f_cnt_t{1200});
-		QVERIFY(run(QStringLiteral("transport.midi_options"), {{QStringLiteral("offset_ms"), 10}}).ok);
-		QCOMPARE(playback.delayFrames(0, 100.f, 48000), f_cnt_t{480});
-		for (int i = 0; i < 3; ++i) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
-		QCOMPARE(playback.swing(), 0.f);
-		QCOMPARE(playback.offsetMs(), 0);
-		QVERIFY(!playback.shouldPersist());
-		QCOMPARE(run(QStringLiteral("transport.groove"), {{QStringLiteral("swing"), 0.9}}).errorKind, ControlErrorKind::InvalidArgs);
-	}
+	void anInvalidArticulationLeavesNoPrefixLoaded();
 
-	void lyricsAndGroups()
-	{
-		oneNote();
-		for (int i = 1; i < 5; ++i) { m_clip->addNote(Note(TimePos(24), TimePos(i * 48), 60 + i), false); }
-		const QString clip = control::clipIdOf(m_clip);
-		QCOMPARE(run(QStringLiteral("note.lyrics"), {{QStringLiteral("clip"), clip}}).errorKind, ControlErrorKind::InvalidArgs);
-		QVERIFY(run(QStringLiteral("note.lyrics"), {{QStringLiteral("clip"), clip}, {QStringLiteral("text"), QStringLiteral("Hal-le-lu-jah sing")}}).ok);
-		QStringList sung;
-		for (const Note* note : m_clip->notes()) { sung << lyricText(note->conditions().lyric); }
-		QCOMPARE(sung, (QStringList{QStringLiteral("Hal-"), QStringLiteral("le-"), QStringLiteral("lu-"), QStringLiteral("jah"), QStringLiteral("sing")}));
-		for (Note* note : m_clip->notes()) { note->setSelected(note->key() >= 62); }
-		const ControlResult grouped = run(QStringLiteral("note.group"), {{QStringLiteral("clip"), clip}});
-		QVERIFY2(grouped.ok, qPrintable(grouped.errorMessage));
-		QCOMPARE(grouped.result.value(QStringLiteral("notes")).toInt(), 3);
-		Note* last = m_clip->notes().back();
-		QCOMPARE(last->conditions().group, 1);
-		// Saved only when set, and read back whole.
-		QDomDocument doc;
-		QDomElement root = doc.createElement(QStringLiteral("root"));
-		const QDomElement saved = last->saveState(doc, root);
-		QCOMPARE(saved.attribute(QStringLiteral("lyr")), QStringLiteral("sing"));
-		Note restored;
-		restored.restoreState(saved);
-		QVERIFY(restored.conditions() == last->conditions());
-		QVERIFY(!m_clip->notes().front()->saveState(doc, root).hasAttribute(QStringLiteral("grp")));
-		QVERIFY(run(QStringLiteral("note.ungroup"), {{QStringLiteral("clip"), clip}}).ok);
-		QCOMPARE(m_clip->notes().back()->conditions().group, 0);
-		QCOMPARE(run(QStringLiteral("note.group"), {{QStringLiteral("clip"), clip}, {QStringLiteral("scope"), QStringLiteral("clip")}}).result
-			.value(QStringLiteral("group")).toInt(), 1);
-	}
+	void aLoopedClipPlaysItsStartAgain();
+
+	/*! Q050-242: recurrence through a LOCALLY LOOPED clip - the combination no test covered. The
+	 *  clip is 96 ticks long and looped every 24 ticks, so within ONE song pass it folds its note
+	 *  onto ticks 0, 24, 48 and 72 (four local repeats inside a 96-tick song pass). The recurrence mask counts SONG passes
+	 *  (MidiPlayback::pass(), advanced only by a transport loop wrap), not the clip's own repeats:
+	 *  with length 2 and mask 1 (the first of every two passes) the note sounds on every local
+	 *  repeat of pass 0 and on none of pass 1, while the clip keeps folding. The tempo is set to
+	 *  180 BPM so the note handle ends before each local repeat, then restored by the guard below.
+	 *
+	 *  The three cases are the ones a length/mask pair can be wrong about: the selected passes
+	 *  sound and the others do not (2/1), a positive length with mask 0 plays NONE, and length 0
+	 *  plays every pass.
+	 */
+	void recurrenceSelectsThePassesOfALocallyLoopedClip();
+
+	/*! Q050-242, acceptance 1: the pair the properties box writes survives a real project save and
+	 *  load, and a note with no pattern saves exactly as before (no recl/recm attributes at all). */
+	void aRecurrencePairRoundTripsThroughTheProjectFile();
+
+	void chaseSoundsANotePlaybackStartsInside();
+
+	void swingDelaysTheOffBeatsOnly();
+
+	void perNoteLyricsRequireText();
+
+	void perNoteLyricsRequireStringText();
+
+	//! 'text' and 'lyrics' are two spellings of the same request: both together is ambiguous, so the
+	//! command refuses it instead of silently dropping one of them.
+	void lyricsRejectBothInputFormsTogether();
+
+	//! Every note in scope is written: the ones under the syllables get one, the rest are cleared.
+	//! The reply's 'set' counts every note the command changed, not only the syllables.
+	void lyricsReportEveryNoteTheyWrite();
+
+	//! A non-finite swing must not survive setSwing: std::clamp leaves a NaN
+	//! untouched (every comparison against it is false), and the value reaches
+	//! delayFrames(), save() and shouldPersist() from there.
+	void nonFiniteSwingLoadsBounded();
+
+	//! delayFrames() returns a frame count. A frames-per-tick that is negative or not finite has no
+	//! swing to give, and a negative delay must never reach the unsigned result: at full swing,
+	//! -1 frame per tick used to come back as -9 frames, which is 2^64 - 9 frames.
+	void delayFramesStaysAFrameCount();
+
+	void swingRejectsValuesJustAboveMaximum();
+
+	void swingRejectsTinyNegativeValues();
+
+	void clipControllerUsesTheTrackOutputChannel();
+
+	void lyricsAndGroups();
+
+	void emptyPerNoteLyricsDoNotCreateAnUndoStep();
 };
+
+#include "NotePlaybackTestParts1.h"
+#include "NotePlaybackTestParts2.h"
 
 QTEST_MAIN(NotePlaybackTest)
 #include "NotePlaybackTest.moc"

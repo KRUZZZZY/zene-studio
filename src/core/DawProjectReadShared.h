@@ -96,15 +96,32 @@ namespace readdetail
 //! id to track is the only thing this reader needs to keep.
 using IdMap = QMap<QString, int>;
 
+inline QString collapseXmlWhitespace(const QString& value)
+{
+	QString collapsed;
+	collapsed.reserve(value.size());
+	bool pendingSpace = false;
+	for (const QChar character : value)
+	{
+		if (character == QLatin1Char(' ') || character == QLatin1Char('\t') ||
+			character == QLatin1Char('\r') || character == QLatin1Char('\n'))
+		{
+			if (!collapsed.isEmpty()) { pendingSpace = true; }
+			continue;
+		}
+		if (pendingSpace)
+		{
+			collapsed.append(QLatin1Char(' '));
+			pendingSpace = false;
+		}
+		collapsed.append(character);
+	}
+	return collapsed;
+}
+
 inline QString attribute(const QXmlStreamAttributes& attributes, const QString& name)
 {
 	return attributes.value(name).toString();
-}
-
-inline bool flagAttribute(const QXmlStreamAttributes& attributes, const QString& name)
-{
-	const QString value = attribute(attributes, name);
-	return value == QLatin1String("true") || value == QLatin1String("1");
 }
 
 //! Consume the element the reader is standing on, including everything nested
@@ -136,6 +153,25 @@ struct ReadState
 };
 
 
+//! An absent optional boolean is false. A present value must use one of the
+//! XML boolean forms; an invalid value records a refusal instead of becoming false.
+inline bool flagAttribute(const QXmlStreamAttributes& attributes, ReadState& state,
+	const QString& name)
+{
+	if (!attributes.hasAttribute(name)) { return false; }
+	const QString rawValue = attribute(attributes, name);
+	const QString value = collapseXmlWhitespace(rawValue);
+	if (value == QLatin1String("true") || value == QLatin1String("1")) { return true; }
+	if (value == QLatin1String("false") || value == QLatin1String("0")) { return false; }
+	if (state.error.isEmpty())
+	{
+		state.error = QStringLiteral("the attribute %1 carries \"%2\", which is not an XML boolean this "
+			"reader accepts").arg(name, rawValue);
+	}
+	return false;
+}
+
+
 /*! A numeric attribute that is PRESENT but not a number is not an absent
  *  optional one: the fallback is for an attribute the document did not carry,
  *  and a malformed one leaves state.error set so the document is refused
@@ -152,8 +188,15 @@ inline void malformedNumericAttribute(ReadState& state, const QString& name, con
 inline double doubleAttribute(const QXmlStreamAttributes& attributes, ReadState& state,
 	const QString& name, double fallback)
 {
+	// The fallback belongs to an attribute the document did not carry; a present
+	// but EMPTY one ("time=\"\"") is malformed, not absent.
+	if (!attributes.hasAttribute(name)) { return fallback; }
 	const QString value = attribute(attributes, name);
-	if (value.isEmpty()) { return fallback; }
+	if (value.isEmpty())
+	{
+		malformedNumericAttribute(state, name, value);
+		return fallback;
+	}
 	bool ok = false;
 	const double parsed = value.toDouble(&ok);
 	if (!ok || !std::isfinite(parsed))
@@ -167,8 +210,13 @@ inline double doubleAttribute(const QXmlStreamAttributes& attributes, ReadState&
 inline int intAttribute(const QXmlStreamAttributes& attributes, ReadState& state,
 	const QString& name, int fallback)
 {
+	if (!attributes.hasAttribute(name)) { return fallback; }
 	const QString value = attribute(attributes, name);
-	if (value.isEmpty()) { return fallback; }
+	if (value.isEmpty())
+	{
+		malformedNumericAttribute(state, name, value);
+		return fallback;
+	}
 	bool ok = false;
 	const int parsed = value.toInt(&ok);
 	if (!ok)
@@ -180,17 +228,27 @@ inline int intAttribute(const QXmlStreamAttributes& attributes, ReadState& state
 }
 
 
-//! A time value in beats as LMMS ticks, counting a value that was NOT on
+//! A non-negative time in beats as LMMS ticks, counting a value that was NOT on
 //! LMMS' 48-ticks-per-beat grid (`rounded_times`): the count is reported rather
 //! than hidden, the rule the SMF reader follows for a foreign division.
-//! A time past the engine's signed 32-bit tick (or NaN / infinity, which toDouble() accepts) is
-//! clamped into it - 0 for a non-finite one - and counted the same way: converting it as it
-//! stands would be undefined, and an in-range qint64 past the tick domain overflows later.
+//! Negative values set state.error because the writer cannot carry them back.
+//! A time past the engine's signed 32-bit tick is clamped into it and counted
+//! the same way: an in-range qint64 past the tick domain overflows later.
 inline qint64 ticksFromBeats(ReadState& state, double beats)
 {
+	if (beats < 0.0)
+	{
+		if (state.error.isEmpty())
+		{
+			state.error = QStringLiteral("the document contains a negative timeline value %1, which "
+				"this engine cannot read back").arg(beats, 0, 'g', 17);
+		}
+		return 0;
+	}
+
 	constexpr double TickLimit = std::numeric_limits<std::int32_t>::max();
 	const double exact = beats * DawProjectTicksPerQuarterNote;
-	const double held = std::isfinite(exact) ? std::clamp(exact, -TickLimit, TickLimit) : 0.0;
+	const double held = std::isfinite(exact) ? std::min(exact, TickLimit) : 0.0;
 	const double rounded = std::floor(held + 0.5);
 	if (!(std::fabs(exact - rounded) <= 1e-6)) { state.report->loss.roundedTimes++; }
 	return static_cast<qint64>(std::min(rounded, TickLimit));

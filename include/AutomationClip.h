@@ -27,8 +27,11 @@
 #ifndef LMMS_AUTOMATION_CLIP_H
 #define LMMS_AUTOMATION_CLIP_H
 
+#include <array>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include <QMap>
 #include <QPointer>
@@ -37,10 +40,13 @@
 #include "Clip.h"
 
 
+struct AutomationClipRampSettingsTestAccess;
+
 namespace lmms
 {
 
 class AutomationTrack;
+class AutomationLatency;
 class TimePos;
 
 namespace gui
@@ -61,6 +67,8 @@ public:
 		Linear,
 		CubicHermite
 	} ;
+	static_assert(std::atomic<ProgressionType>::is_always_lock_free,
+		"The audio thread reads automation progression without a mutex.");
 
 	//! ED-184: the shapes drawShape writes.
 	enum class Shape { Sine, Triangle, Square, Saw, Random, Adsr };
@@ -71,17 +79,54 @@ public:
 	using TimemapIterator = timeMap::const_iterator;
 
 	AutomationClip( AutomationTrack * _auto_track );
-	~AutomationClip() override = default;
+	~AutomationClip() override;
 
 	bool addObject( AutomatableModel * _obj, bool _search_dup = true );
+	bool removeObject( AutomatableModel * _obj );
+
+#ifdef LMMS_TESTING
+	/*! Test seam: the points of a target-list change - a connection
+	 *  (addObject()) or a removal (removeObject()) - where the changing
+	 *  thread reports to the test:
+	 *  - Before: the thread is inside the change, before it takes the engine's
+	 *    change guard (the lock the render thread holds for a whole period).
+	 *  - Holding: the thread is HOLDING ON - the acquisition of the engine's
+	 *    change guard was CONTENDED, i.e. the render thread held the lock when
+	 *    the acquisition was attempted, so the change waits for the render to
+	 *    let go.
+	 *
+	 *  The report is made AT the acquisition, on the acquiring thread: it is
+	 *  positive evidence that the changing thread really reached the guard,
+	 *  where a report sent before the attempt could not tell a blocked thread
+	 *  from one that has not run yet. Null in product use.
+	 */
+	enum class TargetChangePoint { Before, Holding };
+	using TargetChangeProbe = void (*)(TargetChangePoint);
+	static void setTargetChangeProbeForTest( TargetChangeProbe probe )
+	{
+		s_targetChangeProbe = probe;
+	}
+	inline static TargetChangeProbe s_targetChangeProbe = nullptr;
+#endif
 
 	const AutomatableModel * firstObject() const;
 	const objectVector& objects() const;
+	objectVector objectsSnapshot() const;
+	bool hasObjects() const;
+	//! Whether the clip holds a target, read without m_clipMutex: the render
+	//! thread asks this every tick and may not block. Every change to m_objects
+	//! republishes the answer under the mutex (publishLiveTarget()).
+	bool hasLiveTarget() const noexcept { return m_hasLiveTarget.load(std::memory_order_acquire); }
+#ifdef LMMS_TESTING
+	using ObjectsReadProbe = void (*)(const AutomationClip*);
+	static void setObjectsReadProbeForTest(ObjectsReadProbe probe) { s_objectsReadProbe = probe; }
+	inline static ObjectsReadProbe s_objectsReadProbe = nullptr;
+#endif
 
 	// progression-type stuff
 	inline ProgressionType progressionType() const
 	{
-		return m_progressionType;
+		return m_progressionType.load(std::memory_order_relaxed);
 	}
 	void setProgressionType( ProgressionType _new_progression_type );
 
@@ -122,6 +167,49 @@ public:
 	void resetTangents(const int tick0, const int tick1);
 
 	void recordValue(TimePos time, float value);
+
+	/*! The pending writes the render thread hands to the control thread
+	 *  (cluster 5388).
+	 *
+	 *  Writing an automation point edits the clip's node map, and that edits
+	 *  allocate - so the render thread may not do it. The render thread queues
+	 *  the write here instead, and the control thread applies it (see
+	 *  Song::applyPendingAutomationWrites()).
+	 *
+	 *  The storage lives in the clip, so one clip's backlog can never take
+	 *  another clip's place, and the room a write needs grows with the project
+	 *  instead of with a fixed constant. A write that does not fit is NOT
+	 *  dropped: it takes the place of the clip's newest pending write, so the
+	 *  value the control is at when the store fills is the one that survives.
+	 *  The write it replaced is counted (pendingWriteMerges()), never dropped
+	 *  silently. */
+	static constexpr std::size_t PendingWriteCapacity = 64;
+
+	//! Queues one write for the control thread. Render thread; never allocates.
+	void queuePendingWrite(tick_t tick, float value) noexcept;
+
+	//! Applies the queued writes, oldest first. Control thread. Returns how many it applied.
+	std::size_t applyPendingWrites();
+
+	//! How many writes this clip has queued and not applied yet.
+	std::size_t pendingWriteCount() const noexcept;
+
+	//! Drops the queued writes (control thread): they belong to a project that
+	//! is being replaced, and must not reach the project that replaces it.
+	void discardPendingWrites();
+
+	//! How many queued writes were merged away because the clip's store was full.
+	std::uint64_t pendingWriteMerges() const noexcept
+	{
+		return m_pendingWriteMerges.load(std::memory_order_relaxed);
+	}
+
+	//! How many writes are queued in every clip of the session. The control
+	//! thread's drain reads it to learn whether it has anything to do at all.
+	static std::int64_t pendingWriteTotal() noexcept
+	{
+		return s_pendingWriteTotal.load(std::memory_order_relaxed);
+	}
 
 	TimePos setDragValue( const TimePos & time,
 				const float value,
@@ -169,11 +257,23 @@ public:
 
 	inline bool canEditTangents() const
 	{
-		return supportsTangentEditing(m_progressionType);
+		return supportsTangentEditing(m_progressionType.load(std::memory_order_relaxed));
 	}
 
-	float valueAt( const TimePos & _time ) const;
-	float *valuesAfter( const TimePos & _time ) const;
+	/*! The curve's value at clip-relative time @a _time.
+	 *
+	 *  Q050-037: BEFORE the first node the curve has not begun, so the clip
+	 *  holds the authored parameter's initial value (inverse-scaled, the domain
+	 *  the time map stores) instead of 0. A point drawn at the clip's start is
+	 *  the first node and therefore the explicit start value. When @a
+	 *  beforeFirstNode is not null it is set to true for that pre-first read, so
+	 *  a playback pass can apply each target's OWN initial value without taking
+	 *  the clip mutex a second time. An empty map keeps returning 0: with no
+	 *  curve there is no start value to define. A RELATIVE (trim) clip is
+	 *  unchanged: its value is an offset, so it keeps reading 0 before its first
+	 *  node and never sets @a beforeFirstNode. */
+	float valueAt( const TimePos & _time, bool * beforeFirstNode = nullptr ) const;
+	float *valuesAfter( const TimePos & _time, std::int64_t firstOffset, std::size_t count ) const;
 
 	// -----------------------------------------------------------------------
 	// Sample-accurate automation (feature-list row 9,
@@ -195,14 +295,18 @@ public:
 	 *  project file keeps its bytes; what changes is that an old file's curves now render
 	 *  at sample precision. */
 	enum class RampSetting : std::uint8_t { Default, On, Off };
+	static_assert(std::atomic<RampSetting>::is_always_lock_free,
+		"The audio thread reads ramp settings without a mutex.");
 
 	//! Is this clip rendered at sample precision inside a block? (The resolved setting.)
 	bool sampleAccurate() const
 	{
-		return m_rampSetting == RampSetting::Default ? m_progressionType != ProgressionType::Discrete
-			: m_rampSetting == RampSetting::On;
+		const RampSetting setting = m_rampSetting.load(std::memory_order_relaxed);
+		return setting == RampSetting::Default
+			? m_progressionType.load(std::memory_order_relaxed) != ProgressionType::Discrete
+			: setting == RampSetting::On;
 	}
-	RampSetting rampSetting() const { return m_rampSetting; }
+	RampSetting rampSetting() const { return m_rampSetting.load(std::memory_order_relaxed); }
 	//! Turn it explicitly on or off. Journalled like any other clip edit (the setting is
 	//! serialized, and loadSettings resets it to Default on absence, so a checkpoint
 	//! taken before the first edit takes it back).
@@ -221,15 +325,26 @@ public:
 	 *  the audio thread, allocates nothing (the ramp is the caller's own
 	 *  fixed-capacity object), and takes the clip's own mutex ONCE for the whole
 	 *  block rather than once per evaluation.
-	 */
+	 *
+	 *  @a target selects whose authored initial value the pre-first frames hold
+	 *  (null = the clip's first object, what a single-valued read answers with).
+	 *  When @a firstNodeFrame is not null it receives the first frame of the
+	 *  block whose curve time is at or after the clip's first node (0 when the
+	 *  node is at or before the block, frames+1 when it lies past the block's
+	 *  last frame). Every knot before it belongs to the pre-first region, so a
+	 *  caller publishing to a target with a different initial value can copy the
+	 *  ramp and override only that prefix (`AutomationRamp::setValueBefore`)
+	 *  instead of rebuilding the whole ramp under a second clip lock. */
 	void writeBlockRamp( AutomationRamp & ramp, const TimePos & blockStart, f_cnt_t frames,
-		double framesPerTick, int frameOffsetInTick ) const;
+		double framesPerTick, int frameOffsetInTick,
+		const AutomatableModel * target = nullptr, f_cnt_t * firstNodeFrame = nullptr ) const;
 
-	//! 0.5.0 MX-160: the latency (frames) upstream of the parameter this clip drives, which the
-	//! clip's reading lags by while latency-compensated automation is on (AutomationLatency).
-	//! Written by the control thread, read by the audio thread; never saved (it is derived).
-	int latencyFrames() const { return m_latencyFrames.load( std::memory_order_relaxed ); }
-	void setLatencyFrames( int frames ) { m_latencyFrames.store( frames, std::memory_order_relaxed ); }
+	//! 0.5.0 MX-160: the latency (frames) upstream of this clip's target, which its reading lags by
+	//! while latency-compensated automation is on. Returns -1 when live targets have incompatible
+	//! upstream latencies and the clip is rejected for automation; derived data, never saved.
+	int latencyFrames() const;
+	//! Read only while holding the matching AutomationLatency::ReadSnapshot; may be -1 for incompatible targets.
+	int latencyFramesForSnapshot(unsigned bank) const { return m_latencyFrames[bank]; }
 
 	QString name() const;
 
@@ -259,7 +374,7 @@ public:
 		return new AutomationClip(*this);
 	}
 
-	void clearObjects() { m_objects.clear(); }
+	void clearObjects() { m_objects.clear(); publishLiveTarget(); }
 
 public slots:
 	void clear();
@@ -293,19 +408,26 @@ private:
 	void cleanObjects();
 	void generateTangents();
 	void generateTangents(timeMap::iterator it, int numToGenerate);
-	float valueAt( timeMap::const_iterator v, int offset ) const;
+	float valueAt( timeMap::const_iterator v, std::int64_t offset ) const;
 	//! ED-185: a Bend segment's value (AutomationClipTransforms.cpp).
-	float bendValueAt( timeMap::const_iterator v, int offset ) const;
+	float bendValueAt( timeMap::const_iterator v, std::int64_t offset ) const;
+
+	/*! Q050-037: the value the curve holds before its first node - @a target's
+	 *  authored initial value, inverse-scaled to the domain the time map stores;
+	 *  a null @a target uses the clip's first object. Caller holds m_clipMutex,
+	 *  so this takes no lock of its own. A clip with no object answers 0. */
+	float preFirstValueLocked( const AutomatableModel * target ) const;
 
 	/*! The curve's value at clip-relative tick @a rel (plus @a fraction of the
 	 *  segment that starts there) - the segment, not the node, so a node whose
-	 *  in- and out-values differ does not make the ramp step early. Caller
-	 *  holds m_clipMutex. Allocates nothing. */
-	float rampValueAt( const TimePos & rel, float fraction ) const;
+	 *  in- and out-values differ does not make the ramp step early. Before the
+	 *  first node it returns @a preFirstValue (Q050-037). Caller holds
+	 *  m_clipMutex. Allocates nothing. */
+	float rampValueAt( const TimePos & rel, float fraction, float preFirstValue ) const;
 	//! One knot: the curve at @a frame of the block (whose first sample sits
 	//! @a frameOffsetInTick frames into its tick). Caller holds m_clipMutex.
 	void addRampKnot( AutomationRamp & ramp, const TimePos & relClipStart, int frame,
-		int frameOffsetInTick, double framesPerTick ) const;
+		int frameOffsetInTick, double framesPerTick, float preFirstValue ) const;
 
 	/**
 	 * @brief
@@ -323,19 +445,24 @@ private:
 	AutomationTrack * m_autoTrack;
 	std::vector<jo_id_t> m_idsToResolve;
 	objectVector m_objects;
+	//! Mirrors !m_objects.empty() for hasLiveTarget(). Written under m_clipMutex by publishLiveTarget().
+	std::atomic<bool> m_hasLiveTarget{ false };
+	void publishLiveTarget() noexcept { m_hasLiveTarget.store(!m_objects.empty(), std::memory_order_release); }
 	timeMap m_timeMap;	// actual values
 	timeMap m_oldTimeMap;	// old values for storing the values before setDragValue() is called.
 	float m_tension;
 	bool m_hasAutomation;
-	ProgressionType m_progressionType;
+	std::atomic<ProgressionType> m_progressionType;
 	std::atomic<bool> m_relative{false};  //!< ED-199; atomic: the audio thread reads it
 
 	//! Sample-accurate rendering of this clip's curve (feature-list row 9).
 	//! Serialized only when it is ON, so a project that never asked for it
 	//! saves the bytes it always saved; loadSettings resets it on absence.
-	RampSetting m_rampSetting = RampSetting::Default;
-	//! 0.5.0 MX-160: see latencyFrames(); a copy starts at 0 and the next refresh sets it.
-	std::atomic<int> m_latencyFrames{ 0 };
+	std::atomic<RampSetting> m_rampSetting{ RampSetting::Default };
+	//! 0.5.0 MX-160: double-buffered; refresh writes the inactive bank before publishing it to readers.
+	int m_latencyFrames[2]{ 0, 0 };
+	void setLatencyFramesForSnapshot(unsigned bank, int frames) { m_latencyFrames[bank] = frames; }
+	friend class AutomationLatency;
 
 	bool m_dragging;
 	bool m_dragKeepOutValue; // Should we keep the current dragged node's outValue?
@@ -347,11 +474,30 @@ private:
 	bool m_isRecording;
 	float m_lastRecordedValue;
 
+	//! The writes the render thread queued for the control thread (cluster
+	//! 5388). Each slot holds one packed write (the tick in the high half, the
+	//! value's bits in the low half), so the writer and the reader can never
+	//! see half of one write and half of another. */
+	std::array<std::atomic<std::uint64_t>, PendingWriteCapacity> m_pendingWrites{};
+	//! The newest write, kept for the clip while the slots above are full.
+	std::atomic<std::uint64_t> m_pendingLatest{ 0 };
+	std::atomic<bool> m_pendingLatestSet{ false };
+	//! How many writes were published to the slots above, and how many of them
+	//! the control thread has applied.
+	std::atomic<std::uint64_t> m_pendingWriteCount{ 0 };
+	std::atomic<std::uint64_t> m_pendingWriteApplied{ 0 };
+	//! How many queued writes were merged away because the clip's store was full.
+	std::atomic<std::uint64_t> m_pendingWriteMerges{ 0 };
+
+	//! How many writes are queued in every clip of the session.
+	static std::atomic<std::int64_t> s_pendingWriteTotal;
+
 	static int s_quantization;
 
 	static const float DEFAULT_MIN_VALUE;
 	static const float DEFAULT_MAX_VALUE;
 
+	friend struct ::AutomationClipRampSettingsTestAccess;
 	friend class gui::AutomationClipView;
 	friend class AutomationNode;
 	friend class gui::AutomationEditor;

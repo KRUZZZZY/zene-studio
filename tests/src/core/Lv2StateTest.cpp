@@ -29,7 +29,9 @@
 
 #include <QtTest>
 
+#include <QDir>
 #include <QDomDocument>
+#include <QFile>
 
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
@@ -39,16 +41,45 @@
 #include "Engine.h"
 
 #ifdef LMMS_HAVE_LV2
+#include <memory>
+
+#include "Instrument.h"
+#include "InstrumentTrack.h"
 #include "Lv2ControlBase.h"
+#include "Lv2Features.h"
+#include "Lv2Manager.h"
+#include "Lv2Evbuf.h"
 #include "Lv2Proc.h"
+#include "PluginFactory.h"
+#include "Song.h"
+#include "Track.h"
 #include <lilv/lilv.h>
 #endif
 
 using namespace lmms;
 
 #ifdef LMMS_HAVE_LV2
+namespace lmms
+{
+
+class Lv2FeaturesTestAccess
+{
+public:
+	static auto pointerCount(const Lv2Features& features) { return features.m_featurePointers.size(); }
+};
+
+} // namespace lmms
+
 namespace
 {
+
+//! The URI of the LV2 fixture instrument this build puts on LV2_PATH (the same bundle
+//! the latency test uses): a real LV2 plug-in, so a state restore can be attempted.
+constexpr const char* FixtureUri = "urn:zene:test:lv2-instrument";
+//! The fixture's state keys: it accepts AcceptedKey only as the string it saved, and REFUSES RefusedKey.
+constexpr const char* AcceptedKey = "urn:zene:test:accepted";
+constexpr const char* RefusedKey = "urn:zene:test:refuse";
+constexpr const char* PathKey = "urn:zene:test:path";
 
 //! The first loadable LV2 effect whose State interface saves something, its controls and that state.
 Effect* firstStatefulLv2(EffectChain& chain, Lv2ControlBase** controls, QString* state)
@@ -98,10 +129,57 @@ private slots:
 #ifdef LMMS_TEST_PLUGIN_DIR
 		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
 #endif
+#ifdef LV2_TEST_INSTRUMENT_DIR
+		// The LV2 fixture instrument is found the way lilv finds any plug-in: on
+		// LV2_PATH, read when the engine starts.
+		qputenv("LV2_PATH", LV2_TEST_INSTRUMENT_DIR);
+#endif
 		Engine::init(true);
 	}
 
 	void cleanupTestCase() { Engine::destroy(); }
+
+	void featurePointersResetOnReload()
+	{
+#ifndef LMMS_HAVE_LV2
+		QSKIP("this build has no LV2 host");
+#else
+		Lv2Features features;
+		features.initCommon();
+		features.createFeatureVectors();
+		const auto expectedPointerCount = Engine::getLv2Manager()->supportedFeatureURIs().size() + 1;
+		QCOMPARE(Lv2FeaturesTestAccess::pointerCount(features), expectedPointerCount);
+
+		features.clear();
+		features.initCommon();
+		features.createFeatureVectors();
+		QCOMPARE(Lv2FeaturesTestAccess::pointerCount(features), expectedPointerCount);
+#endif
+	}
+
+	void modelChangedConnectionIsInstalledInConstructor()
+	{
+		const QString sourcePath = QDir{QStringLiteral(QT_TESTCASE_SOURCEDIR)}
+			.filePath(QStringLiteral("../plugins/Lv2Effect/Lv2FxControlDialog.cpp"));
+		QFile sourceFile{sourcePath};
+		QVERIFY2(sourceFile.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(sourcePath));
+		const QString source = QString::fromUtf8(sourceFile.readAll());
+		const QString connection = QStringLiteral(
+			"connect(lv2Controls(), &Lv2FxControls::modelChanged");
+		QCOMPARE(source.count(connection), 1);
+
+		const qsizetype constructorStart = source.indexOf(
+			QStringLiteral("Lv2FxControlDialog::Lv2FxControlDialog("));
+		const qsizetype modelChangedStart = source.indexOf(
+			QStringLiteral("void Lv2FxControlDialog::modelChanged()"));
+		QVERIFY(constructorStart >= 0);
+		QVERIFY(modelChangedStart > constructorStart);
+		const QString constructorBody = source.mid(constructorStart, modelChangedStart - constructorStart);
+		const QString modelChangedBody = source.mid(modelChangedStart,
+			source.indexOf(QLatin1Char('}'), modelChangedStart) - modelChangedStart);
+		QVERIFY(constructorBody.contains(connection));
+		QVERIFY(!modelChangedBody.contains(connection));
+	}
 
 	void aPluginsOwnStateRoundTrips()
 	{
@@ -137,6 +215,271 @@ private slots:
 		QVERIFY(secondControls != nullptr);
 		QCOMPARE(secondControls->control(0)->saveState(), controls->control(0)->saveState());
 		chain.clear();
+#endif
+	}
+
+	/*! The <lv2state> element is written exactly when the plug-in's own state is not empty: a plug-in
+	 *  without the State interface (or with nothing to keep) saves no element, one with state saves one.
+	 *  Checked over the first few loadable LV2 effects of this host, whatever they implement - so the
+	 *  invariant is measured on real plug-ins even where none keeps state. */
+	void theStateElementIsWrittenExactlyWhenThereIsState()
+	{
+#ifndef LMMS_HAVE_LV2
+		QSKIP("this build has no LV2 host");
+#else
+		EffectChain chain{nullptr};
+		int checked = 0;
+		for (const ControlDeviceEntry& entry : controlDeviceCatalogue())
+		{
+			if (checked >= 5) { break; }
+			if (entry.format != QLatin1String("lv2") || entry.kind != QLatin1String("effect") || !entry.loadable) { continue; }
+			ControlResult error;
+			Effect* effect = controlInstantiateDevice(entry, &chain, &error);
+			if (effect == nullptr) { continue; }
+			auto* controls = dynamic_cast<Lv2ControlBase*>(effect->controls());
+			if (controls == nullptr || controls->control(0) == nullptr) { continue; }
+			++checked;
+			const bool hasState = !controls->control(0)->saveState().isEmpty();
+			QDomDocument doc;
+			QDomElement root = doc.createElement(QStringLiteral("root"));
+			doc.appendChild(root);
+			const QDomElement element = effect->controls()->saveState(doc, root);
+			QCOMPARE(!element.firstChildElement(QStringLiteral("lv2state")).isNull(), hasState);
+		}
+		if (checked == 0) { QSKIP("no loadable LV2 effect in this environment"); }
+		chain.clear();
+#endif
+	}
+
+	//! A catalogue entry for the plug-in already loaded is found again by its URI (by name when it has none),
+	//! and instantiating it gives a second device of the same plug-in.
+	void aSecondInstanceIsFoundByTheFirstsUri()
+	{
+#ifndef LMMS_HAVE_LV2
+		QSKIP("this build has no LV2 host");
+#else
+		EffectChain chain{nullptr};
+		for (const ControlDeviceEntry& entry : controlDeviceCatalogue())
+		{
+			if (entry.format != QLatin1String("lv2") || entry.kind != QLatin1String("effect") || !entry.loadable) { continue; }
+			ControlResult error;
+			Effect* first = controlInstantiateDevice(entry, &chain, &error);
+			if (first == nullptr) { continue; }
+			auto* controls = dynamic_cast<Lv2ControlBase*>(first->controls());
+			if (controls == nullptr) { continue; }
+			QVERIFY(samePlugin(entry, first, controls));
+			Effect* second = secondInstance(chain, first, controls, &error);
+			QVERIFY2(second != nullptr, qPrintable(error.errorMessage));
+			QVERIFY(second != first);
+			QCOMPARE(QString::fromUtf8(second->descriptor()->name), QString::fromUtf8(first->descriptor()->name));
+			chain.clear();
+			return;
+		}
+		QSKIP("no loadable LV2 effect in this environment");
+#endif
+	}
+
+	/*! BUG 9 (cluster 3237): a malformed <lv2state> instance attribute must not silently
+	 *  target instance zero - <lv2state instance="bad"> used to restore into the first
+	 *  processor. The decision seam loadSettings uses is checked directly. */
+	void malformedStateInstanceAttributeIsRefused()
+	{
+#ifndef LMMS_HAVE_LV2
+		QSKIP("this build has no LV2 host");
+#else
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("root"));
+		doc.appendChild(root);
+		QDomElement good = doc.createElement(QStringLiteral("lv2state"));
+		good.setAttribute(QStringLiteral("instance"), 1);
+		root.appendChild(good);
+		QDomElement bad = doc.createElement(QStringLiteral("lv2state"));
+		bad.setAttribute(QStringLiteral("instance"), QStringLiteral("bad"));
+		root.appendChild(bad);
+		QDomElement missing = doc.createElement(QStringLiteral("lv2state"));
+		root.appendChild(missing);
+		// Two processors: instance 1 is a valid target.
+		QCOMPARE(lv2StateInstanceIndex(good, 2), 1);
+		QCOMPARE(lv2StateInstanceIndex(bad, 2), -1);
+		QCOMPARE(lv2StateInstanceIndex(missing, 2), -1);
+#endif
+	}
+
+	/*! BUG (cluster new-p17-83): a <lv2state> payload that cannot be restored must be
+	 *  REPORTED. The plug-in stays at its default state, so a load that says nothing
+	 *  loses what the project saved without the user learning about it. The report
+	 *  goes through the project load's error path and names the plug-in, so the user
+	 *  knows WHICH plug-in lost its state. */
+	void aFailedStateRestoreIsReported()
+	{
+#ifndef LMMS_HAVE_LV2
+		QSKIP("this build has no LV2 host");
+#else
+		const PluginFactory::PluginInfo& info = getPluginFactory()->pluginInfo("lv2instrument");
+		if (info.isNull()) { QSKIP("this build has no lv2instrument module"); }
+		Lv2Manager* manager = Engine::getLv2Manager();
+		if (manager == nullptr || manager->getPlugin(QString::fromUtf8(FixtureUri)) == nullptr)
+		{
+			QSKIP("the LV2 fixture instrument is not in this build's LV2 world");
+		}
+
+		// A real LV2 instrument, so the state path under test is the one a project load takes.
+		auto* track = dynamic_cast<InstrumentTrack*>(
+			Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		Plugin::Descriptor::SubPluginFeatures::Key::AttributeMap attributes;
+		attributes.insert(QStringLiteral("uri"), QString::fromUtf8(FixtureUri));
+		Plugin::Descriptor::SubPluginFeatures::Key key(info.descriptor,
+			QStringLiteral("Zene LV2 Test Instrument"), attributes);
+		Instrument* instrument = track->loadInstrument(QStringLiteral("lv2instrument"), &key);
+		QVERIFY(instrument != nullptr);
+		auto* lv2Controls = dynamic_cast<Lv2ControlBase*>(instrument);
+		QVERIFY(lv2Controls != nullptr);
+		QVERIFY(lv2Controls->control(0) != nullptr);
+		// The precondition: the payload the project holds is refused by the processor.
+		QVERIFY(!lv2Controls->control(0)->restoreState(QStringLiteral("this is not a state document")));
+		// An empty document is refused by restoreState's own guard, and reported as false too.
+		QVERIFY(!lv2Controls->control(0)->restoreState(QString()));
+
+		// The state the project holds cannot be parsed.
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("lv2controls"));
+		doc.appendChild(root);
+		QDomElement state = doc.createElement(QStringLiteral("lv2state"));
+		state.setAttribute(QStringLiteral("instance"), 0);
+		state.appendChild(doc.createCDATASection(QStringLiteral("this is not a state document")));
+		root.appendChild(state);
+
+		Engine::getSong()->clearErrors();
+		// The project's own load path: the instrument reads its state back from the element.
+		instrument->restoreState(root);
+
+		const QHash<QString, int>& errors = Engine::getSong()->errors();
+		QVERIFY2(!errors.isEmpty(), "a state that could not be restored is reported");
+		bool namesThePlugin = false;
+		for (auto it = errors.constBegin(); it != errors.constEnd(); ++it)
+		{
+			namesThePlugin = namesThePlugin || it.key().contains(QString::fromUtf8(FixtureUri));
+		}
+		QVERIFY2(namesThePlugin,
+			qPrintable(errors.keys().join(QStringLiteral(" | "))));
+
+		// An element that carries no state at all loses nothing, so it is not
+		// reported: a project that holds one must load as quietly as before.
+		QDomDocument emptyDoc;
+		QDomElement emptyRoot = emptyDoc.createElement(QStringLiteral("lv2controls"));
+		emptyDoc.appendChild(emptyRoot);
+		QDomElement emptyState = emptyDoc.createElement(QStringLiteral("lv2state"));
+		emptyState.setAttribute(QStringLiteral("instance"), 0);
+		emptyRoot.appendChild(emptyState);
+
+		Engine::getSong()->clearErrors();
+		instrument->restoreState(emptyRoot);
+		QVERIFY2(Engine::getSong()->errors().isEmpty(),
+			"an empty state element is not a failed restore");
+#endif
+	}
+
+	/*! BUG (cluster new-p23-144): a state the plug-in itself REFUSES must not load as success. The document
+	 *  is syntactically valid and names this plug-in, but the plug-in's LV2_State_Interface::restore returns an
+	 *  error status for it. lilv discards that status, so the host drives the restore and keeps it:
+	 *  restoreState() reports false, and the project load names the plug-in. The accepted document and the
+	 *  plug-in's own save/restore round trip must still succeed, which exercises the decoded values. */
+	void aPluginRefusingAStateIsReported()
+	{
+#ifndef LMMS_HAVE_LV2
+		QSKIP("this build has no LV2 host");
+#else
+		const PluginFactory::PluginInfo& info = getPluginFactory()->pluginInfo("lv2instrument");
+		if (info.isNull()) { QSKIP("this build has no lv2instrument module"); }
+		Lv2Manager* manager = Engine::getLv2Manager();
+		if (manager == nullptr || manager->getPlugin(QString::fromUtf8(FixtureUri)) == nullptr)
+		{
+			QSKIP("the LV2 fixture instrument is not in this build's LV2 world");
+		}
+
+		auto* track = dynamic_cast<InstrumentTrack*>(
+			Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		Plugin::Descriptor::SubPluginFeatures::Key::AttributeMap attributes;
+		attributes.insert(QStringLiteral("uri"), QString::fromUtf8(FixtureUri));
+		Plugin::Descriptor::SubPluginFeatures::Key key(info.descriptor,
+			QStringLiteral("Zene LV2 Test Instrument"), attributes);
+		Instrument* instrument = track->loadInstrument(QStringLiteral("lv2instrument"), &key);
+		QVERIFY(instrument != nullptr);
+		auto* lv2Controls = dynamic_cast<Lv2ControlBase*>(instrument);
+		QVERIFY(lv2Controls != nullptr);
+		Lv2Proc* proc = lv2Controls->control(0);
+		QVERIFY(proc != nullptr);
+
+		// A syntactically valid Turtle state for THIS plug-in (appliesTo names it) holding one property.
+		const auto documentWith = [](const char* stateKey) {
+			return QStringLiteral("@prefix lv2: <http://lv2plug.in/ns/lv2core#> .\n"
+				"@prefix pset: <http://lv2plug.in/ns/ext/presets#> .\n"
+				"@prefix state: <http://lv2plug.in/ns/ext/state#> .\n"
+				"<urn:zene:test:state> a pset:Preset ; lv2:appliesTo <%1> ;\n"
+				"\tstate:state [ <%2> \"1\" ] .\n")
+				.arg(QString::fromUtf8(FixtureUri), QString::fromUtf8(stateKey));
+		};
+		QVERIFY2(proc->restoreState(documentWith(AcceptedKey)), "a state the plug-in accepts is restored");
+		const QString saved = proc->saveState();
+		QVERIFY2(!saved.isEmpty(), "the fixture saves its state");
+		QVERIFY2(proc->restoreState(saved), "the plug-in's own saved state restores");
+		QVERIFY2(!proc->restoreState(documentWith(RefusedKey)),
+			"a state the plug-in refuses is reported as not restored");
+
+		// The project's load path: the refused state is reported and the report names the plug-in.
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("lv2controls"));
+		doc.appendChild(root);
+		QDomElement state = doc.createElement(QStringLiteral("lv2state"));
+		state.setAttribute(QStringLiteral("instance"), 0);
+		state.appendChild(doc.createCDATASection(documentWith(RefusedKey)));
+		root.appendChild(state);
+
+		Engine::getSong()->clearErrors();
+		instrument->restoreState(root);
+		const QHash<QString, int>& errors = Engine::getSong()->errors();
+		QVERIFY2(!errors.isEmpty(), "a state the plug-in refused is reported");
+		bool namesThePlugin = false;
+		for (auto it = errors.constBegin(); it != errors.constEnd(); ++it)
+		{
+			namesThePlugin = namesThePlugin || it.key().contains(QString::fromUtf8(FixtureUri));
+		}
+		QVERIFY2(namesThePlugin, qPrintable(errors.keys().join(QStringLiteral(" | "))));
+
+		// An unrelated state:state triple is ignored by Lilv; it must not override the selected preset.
+		const QString withUnrelatedState = documentWith(AcceptedKey) +
+			QStringLiteral("<urn:aaa:unrelated> state:state [ <%1> \"1\" ] .\n")
+				.arg(QString::fromUtf8(RefusedKey));
+		QVERIFY2(proc->restoreState(withUnrelatedState),
+			"state properties are decoded from the selected preset subject");
+
+		const QString pathState = QStringLiteral("@prefix atom: <http://lv2plug.in/ns/ext/atom#> .\n"
+			"@prefix lv2: <http://lv2plug.in/ns/lv2core#> .\n"
+			"@prefix pset: <http://lv2plug.in/ns/ext/presets#> .\n"
+			"@prefix state: <http://lv2plug.in/ns/ext/state#> .\n"
+			"<urn:zene:test:path-state> a pset:Preset ; lv2:appliesTo <%1> ;\n"
+			"\tstate:state [ <%2> \"1\" ; <%3> \"relative/state\"^^atom:Path ] .\n")
+			.arg(QString::fromUtf8(FixtureUri), QString::fromUtf8(AcceptedKey), QString::fromUtf8(PathKey));
+		QVERIFY2(proc->restoreState(pathState), "path values can be restored with mapPath and freePath");
+#endif
+	}
+
+	void rejectsAnEventWhosePaddingDoesNotFit()
+
+	{
+#ifndef LMMS_HAVE_LV2
+		QSKIP("this build has no LV2 host");
+#else
+		std::unique_ptr<LV2_Evbuf, decltype(&lv2_evbuf_free)> buffer(
+			lv2_evbuf_new(33, 1, 2), &lv2_evbuf_free);
+		QVERIFY(buffer != nullptr);
+
+		const uint8_t payload = 0x2a;
+		LV2_Evbuf_Iterator iter = lv2_evbuf_begin(buffer.get());
+		QVERIFY(!lv2_evbuf_write(&iter, 0, 3, 1, &payload));
+		QCOMPARE(lv2_evbuf_get_size(buffer.get()), uint32_t{0});
 #endif
 	}
 };

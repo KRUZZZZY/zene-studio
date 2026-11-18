@@ -27,7 +27,10 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <system_error>
 
+#include <QFile>
 #include <QFileInfo>
 #include <QString>
 
@@ -39,6 +42,38 @@
 
 namespace lmms
 {
+
+#ifdef LMMS_TESTING
+namespace
+{
+
+std::atomic<bool> s_failNextWriterThreadStart{false};
+
+}
+
+void TrackRecorder::failNextWriterThreadStartForTesting() noexcept
+{
+	s_failNextWriterThreadStart.store(true, std::memory_order_release);
+}
+#endif
+
+static_assert(TrackRecorder::WriteBatchFrames == recordingjournal::WriterBatchFrames,
+	"the journal's loss bound names the writer batch");
+
+
+namespace recorder_detail
+{
+
+sample_t prepareSampleForPcmWrite(sample_t sample) noexcept
+{
+	if (std::isnan(sample))
+	{
+		return sample_t{0};
+	}
+	return std::clamp(sample, sample_t{-1}, sample_t{1});
+}
+
+} // namespace recorder_detail
 
 
 TrackRecorder::TrackRecorder() :
@@ -73,9 +108,16 @@ int TrackRecorder::inputChannel() const noexcept
 
 
 
-void TrackRecorder::setInputChannelCapacity(int channels) noexcept
+void TrackRecorder::setInputChannelCapacity(int channels)
 {
-	m_inputChannelCapacity.store(channels < 1 ? 1 : channels, std::memory_order_relaxed);
+	const int capacity = channels < 1 ? 1 : channels;
+	m_inputChannelCapacity.store(capacity, std::memory_order_relaxed);
+	if (!inputChannelSelectable(inputChannel()))
+	{
+		// This is an off-audio-thread reconfiguration. Stop the writer here so a
+		// route that lost its selected input cannot remain armed with no frames.
+		disarm();
+	}
 }
 
 
@@ -119,6 +161,7 @@ bool TrackRecorder::arm(const std::string& filePath, int sampleRate, int inputCh
 	m_framesRecorded.store(0, std::memory_order_relaxed);
 	m_writeErrors.store(0, std::memory_order_relaxed);
 	setInputChannel(inputChannel);
+	m_inputUnavailable.store(false, std::memory_order_release);
 	m_filePath = filePath;
 
 	SF_INFO info{};
@@ -163,6 +206,8 @@ bool TrackRecorder::arm(const std::string& filePath, int sampleRate, int inputCh
 	m_journalSampleRate = sampleRate;
 	m_journalIntervalFrames = recordingjournal::updateIntervalFrames(sampleRate);
 	writeJournal();
+	m_commitCount.store(0, std::memory_order_relaxed);
+	m_commitNanos.store(0, std::memory_order_relaxed);
 	if (!QFileInfo::exists(QString::fromStdString(m_journalPath)))
 	{
 		// The journal is the recovery AID, not the recording: a take written into
@@ -171,11 +216,64 @@ bool TrackRecorder::arm(const std::string& filePath, int sampleRate, int inputCh
 		m_journalPath.clear();
 	}
 
-	m_writerThread = std::thread(&TrackRecorder::writerLoop, this);
+	try
+	{
+#ifdef LMMS_TESTING
+		if (s_failNextWriterThreadStart.exchange(false, std::memory_order_acq_rel))
+		{
+			throw std::system_error(std::make_error_code(std::errc::resource_unavailable_try_again));
+		}
+#endif
+		m_writerThread = std::thread(&TrackRecorder::writerLoop, this);
+	}
+	catch (const std::system_error&)
+	{
+		m_stopRequested.store(true, std::memory_order_release);
+		if (m_sf != nullptr)
+		{
+			sf_close(m_sf);
+			m_sf = nullptr;
+		}
+		if (!m_journalPath.empty())
+		{
+			recordingjournal::remove(QString::fromStdString(m_journalPath));
+			m_journalPath.clear();
+		}
+		// The WAV this arm opened by exclusive reservation is its own
+		// artefact: a failed arm leaves none of it behind (new-p17-24).
+		QFile::remove(QString::fromStdString(m_filePath));
+		m_journalTake.clear();
+		m_journalFrames.store(0, std::memory_order_relaxed);
+		m_journalSampleRate = 0;
+		m_journalIntervalFrames = 0;
+		m_filePath.clear();
+		m_writerRunning.store(false, std::memory_order_release);
+		m_armed.store(false, std::memory_order_release);
+		return false;
+	}
 	// Only now does the audio thread see the route: m_armed was claimed above, before the ring
-	// reset and the channel change it must not race.
+	// reset and the channel change it must not race. isArmed() reports the
+	// capturing state, published only after this thread and the take are ready.
 	m_capturing.store(true, std::memory_order_release);
 	return true;
+}
+
+
+void TrackRecorder::commitTake()
+{
+	const auto started = std::chrono::steady_clock::now();
+	// libsndfile writes the WAV header's data size on close or on request only, so
+	// after SIGKILL a take would claim zero frames however much was written.
+	// Rewriting it here is what makes the frames already written readable; the
+	// sync makes them survive an OS crash as well as a process crash.
+	sf_command(m_sf, SFC_UPDATE_HEADER_NOW, nullptr, 0);
+	sf_write_sync(m_sf);
+	m_journalFrames = m_framesRecorded.load(std::memory_order_relaxed);
+	writeJournal();
+	m_commitCount.fetch_add(1, std::memory_order_relaxed);
+	m_commitNanos.fetch_add(static_cast<std::uint64_t>(
+		std::chrono::duration_cast<std::chrono::nanoseconds>(
+			std::chrono::steady_clock::now() - started).count()), std::memory_order_relaxed);
 }
 
 
@@ -195,13 +293,15 @@ void TrackRecorder::writeJournal()
 
 
 
-void TrackRecorder::disarm()
+bool TrackRecorder::disarm()
 {
 	if (!m_armed.exchange(false, std::memory_order_acq_rel))
 	{
-		return; // not armed
+		if (m_journalPath.empty()) { return true; } // nothing outstanding
+		// A previous disarm failed to retire its journal; retry below.
 	}
 	m_capturing.store(false, std::memory_order_release);
+	m_inputUnavailable.store(false, std::memory_order_release);
 
 	m_stopRequested.store(true, std::memory_order_release);
 	if (m_writerThread.joinable())
@@ -220,12 +320,17 @@ void TrackRecorder::disarm()
 	// journal" and "the capture died" the same fact. Removed after the writer
 	// thread is joined and the file is closed, so the frames the journal last
 	// recorded cannot exceed what the take holds.
+	bool retired = true;
 	if (!m_journalPath.empty())
 	{
-		recordingjournal::remove(QString::fromStdString(m_journalPath));
-		m_journalPath.clear();
-		m_journalFrames = 0;
+		retired = recordingjournal::remove(QString::fromStdString(m_journalPath));
+		if (retired)
+		{
+			m_journalPath.clear();
+			m_journalFrames = 0;
+		}
 	}
+	return retired;
 }
 
 
@@ -250,7 +355,8 @@ void TrackRecorder::processInputInterleaved(const sample_t* interleaved, int cha
 	f_cnt_t frames) noexcept
 {
 	if (interleaved == nullptr || channels < 1 || frames == 0
-		|| !m_capturing.load(std::memory_order_acquire))
+		|| !m_capturing.load(std::memory_order_acquire)
+		|| m_inputUnavailable.load(std::memory_order_acquire))
 	{
 		return;
 	}
@@ -261,11 +367,9 @@ void TrackRecorder::processInputInterleaved(const sample_t* interleaved, int cha
 	const auto channel = m_inputChannel.load(std::memory_order_relaxed);
 	if (channel >= channels)
 	{
-		// This route is pointed past the width the engine just delivered (a
-		// 2-channel bus feeding a route armed for channel 5). It records
-		// nothing rather than reading past the end of the block, and the route
-		// still reports the frames it did NOT get - see armTrack's refusal,
-		// which is where such a route is normally stopped before this point.
+		// Publish unavailability without doing route teardown on the audio
+		// thread. The control-thread reconciliation closes the take and journal.
+		m_inputUnavailable.store(true, std::memory_order_release);
 		return;
 	}
 	const auto pushed = m_ring->writeStrided(interleaved + channel,
@@ -299,7 +403,7 @@ void TrackRecorder::writerLoop()
 		// in-range sample bit-identical (see RecordClipTest).
 		for (std::size_t i = 0; i < frames; ++i)
 		{
-			m_writeScratch[i] = std::clamp(m_writeScratch[i], sample_t{-1}, sample_t{1});
+			m_writeScratch[i] = recorder_detail::prepareSampleForPcmWrite(m_writeScratch[i]);
 		}
 
 		const auto written = sf_writef_float(m_sf, m_writeScratch.data(),
@@ -319,15 +423,14 @@ void TrackRecorder::writerLoop()
 				std::memory_order_relaxed);
 		}
 
-		// Keep the take journal current (0.3.0). Once per second of audio, on the
-		// disk-writer thread - the one thread that knows what has actually
-		// reached the file - so the recovery offer's guaranteed count lags real
-		// disk state by at most one update interval.
+		// Commit the take every journal interval (Q050-045: a tenth of a second of
+		// audio; it was a second). On the disk-writer thread - the one thread that
+		// knows what has actually reached the file - so a crash loses at most one
+		// interval plus the batch in flight (recordingjournal::lossBoundFrames).
 		if (m_framesRecorded.load(std::memory_order_relaxed) - m_journalFrames
 			>= m_journalIntervalFrames)
 		{
-			m_journalFrames = m_framesRecorded.load(std::memory_order_relaxed);
-			writeJournal();
+			commitTake();
 		}
 	}
 

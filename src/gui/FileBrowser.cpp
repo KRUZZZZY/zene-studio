@@ -43,6 +43,7 @@
 #include <cassert>
 
 #include "AudioEngine.h"
+#include "ControlTrackRouting.h"
 #include "BrowserTagMenu.h"
 #include "ConfigManager.h"
 #include "DataFile.h"
@@ -220,6 +221,8 @@ void FileBrowser::restoreDirectoriesStates()
 
 void FileBrowser::onSearch(const QString& filter)
 {
+	const auto generation = ++m_searchGeneration;
+
 	if (filter.isEmpty())
 	{
 		m_searchTreeWidget->hide();
@@ -243,11 +246,13 @@ void FileBrowser::onSearch(const QString& filter)
 	m_searchTreeWidget->clear();
 	m_searchTreeWidget->show();
 	m_fileBrowserTreeWidget->hide();
-	m_searchJob.search(searchTask);
+	m_searchJob.search(searchTask, generation);
 }
 
-void FileBrowser::onSearchMatch(const QString& path)
+void FileBrowser::onSearchMatch(quint64 generation, const QString& path)
 {
+	if (generation != m_searchGeneration) { return; }
+
 	const auto fileInfo = QFileInfo{path};
 	auto item = static_cast<QTreeWidgetItem*>(nullptr);
 	if (fileInfo.isDir()) { item = new Directory(fileInfo.fileName(), fileInfo.dir().path(), m_filter); }
@@ -721,6 +726,7 @@ void FileBrowserTreeWidget::openInSlicerT(FileItem* item, bool songEditor)
 
 	track->loadInstrument("slicert");
 	track->instrument()->loadFile(item->fullName());
+	control::assignNewTrackChannel(track);
 }
 
 QList<QAction*> FileBrowserTreeWidget::getContextActions(FileItem* file, bool songEditor)
@@ -970,7 +976,7 @@ void FileBrowserTreeWidget::handleFile(FileItem * f, InstrumentTrack * it)
 		case FileItem::FileHandling::LoadAsProject:
 			if( getGUI()->mainWindow()->mayChangeProject(true) )
 			{
-				Engine::getSong()->loadProject( f->fullName() );
+				getGUI()->mainWindow()->openProjectFile( f->fullName() );
 			}
 			break;
 
@@ -1038,6 +1044,7 @@ void FileBrowserTreeWidget::openInNewInstrumentTrack(TrackContainer* tc, FileIte
 	if(item->isTrack())
 	{
 		auto it = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, tc));
+		control::assignNewTrackChannel(it);
 		handleFile(item, it);
 	}
 }
@@ -1063,6 +1070,7 @@ bool FileBrowserTreeWidget::openInNewSampleTrack(FileItem* item)
 
 	// Create a new sample track for this sample
 	auto sampleTrack = static_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+	control::assignNewTrackChannel(sampleTrack);
 
 	// Add the sample clip to the track
 	Engine::audioEngine()->requestChangeInModel();
@@ -1346,6 +1354,7 @@ QString FileItem::defaultFilters()
 	const auto presetFilters = QStringList{"*.xpf", "*.xml", "*.xiz", "*.lv2"};
 	const auto soundFontFilters = QStringList{"*.sf2", "*.sf3"};
 	const auto patchFilters = QStringList{"*.pat"};
+	const auto sfzFilters = QStringList{"*.sfz"};
 	const auto midiFilters = QStringList{"*.mid", "*.midi", "*.rmi"};
 	
 	auto vstPluginFilters = QStringList{"*.dll"};
@@ -1359,7 +1368,7 @@ QString FileItem::defaultFilters()
 	audioFilters.append("*.mp3");
 #endif
 
-	const auto extensions = projectFilters + presetFilters + soundFontFilters + patchFilters + midiFilters
+	const auto extensions = projectFilters + presetFilters + soundFontFilters + sfzFilters + patchFilters + midiFilters
 		+ vstPluginFilters + audioFilters;
 
 	return extensions.join(" ");

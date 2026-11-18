@@ -26,6 +26,9 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+#include <cstring>
+#include <new>
+
 #include "DataFile.h"
 #include "XmlDepthGuard.h"
 
@@ -78,6 +81,41 @@ QDomElement rootOf( const QString & path )
 	if( !doc.setContent( f.readAll() ) ) { return QDomElement(); }
 	return doc.documentElement();
 }
+
+class SeededDataFile
+{
+public:
+	explicit SeededDataFile( const QString & path )
+	{
+		construct( [&] { return ::new ( static_cast<void *>( m_storage ) ) DataFile( path ); } );
+	}
+
+	explicit SeededDataFile( const QByteArray & bytes )
+	{
+		construct( [&] { return ::new ( static_cast<void *>( m_storage ) ) DataFile( bytes ); } );
+	}
+
+	~SeededDataFile()
+	{
+		m_document->~DataFile();
+	}
+
+	DataFile & document() const
+	{
+		return *m_document;
+	}
+
+private:
+	template<typename Constructor>
+	void construct( Constructor constructor )
+	{
+		std::memset( m_storage, 0xff, sizeof( m_storage ) );
+		m_document = constructor();
+	}
+
+	alignas( DataFile ) unsigned char m_storage[sizeof( DataFile )];
+	DataFile * m_document = nullptr;
+};
 
 } // namespace
 
@@ -172,6 +210,24 @@ private slots:
 		QCOMPARE( static_cast<int>( doc.type() ),
 			static_cast<int>( DataFile::Type::SongProject ) );
 		QVERIFY( !doc.content().isNull() );
+	}
+
+	void missingFileLoadHasUnknownType()
+	{
+		QTemporaryDir tmp;
+		QVERIFY( tmp.isValid() );
+		SeededDataFile document( tmp.path() + "/missing.mmp" );
+		QCOMPARE( static_cast<int>( document.document().type() ),
+			static_cast<int>( DataFile::Type::Unknown ) );
+		QVERIFY( document.document().validate( "wav" ) );
+	}
+
+	void malformedByteArrayLoadHasUnknownType()
+	{
+		SeededDataFile document( QByteArray( "<broken" ) );
+		QCOMPARE( static_cast<int>( document.document().type() ),
+			static_cast<int>( DataFile::Type::Unknown ) );
+		QVERIFY( document.document().validate( "wav" ) );
 	}
 
 	// The legacy `multimedia-project` root (pre-LMMS ZynAddSubFX era) is a

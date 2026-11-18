@@ -164,6 +164,78 @@ private slots:
 		McuSurface::disconnect();
 		qDeleteAll(made);
 	}
+
+	//! The bank follows the track list: deleting tracks past it shows tracks again, not eight blanks.
+	void theBankFollowsTheTrackList()
+	{
+		Song* song = Engine::getSong();
+		QList<Track*> made;
+		for (int i = 0; i < 3; ++i) { made.append(Track::create(Track::Type::Instrument, song)); }
+		McuSurface* surface = McuSurface::connect(QString(), QString());
+		QVERIFY(surface != nullptr);
+		surface->setBank(2);
+		QCOMPARE(surface->bank(), 2);
+		QCOMPARE(surface->stripTrack(0), made.at(2));
+		delete made.takeLast();  // the bank does not move by itself
+		QCOMPARE(static_cast<int>(song->tracks().size()), 2);
+		QVERIFY2(surface->stripTrack(0) != nullptr, "every strip went blank after a track was deleted");
+		// as setBank clamps, the bank falls back to the last track the song still has
+		QCOMPARE(surface->stripTrack(0), made.at(1));
+		QCOMPARE(surface->state().value(QStringLiteral("bank")).toInt(), 1);
+		McuSurface::disconnect();
+		qDeleteAll(made);
+	}
+
+	void invalidFaderTouchDoesNotCorruptTheBank()
+	{
+		McuSurface* surface = McuSurface::connect(QString(), QString());
+		surface->apply({mcu::Kind::FaderTouch, -1, 0, true});
+		const int bank = surface->bank();
+		McuSurface::disconnect();
+		QCOMPARE(bank, 0);
+	}
+
+	void invalidFaderTouchDoesNotCorruptFeedbackState()
+	{
+		Song* song = Engine::getSong();
+		Track* track = Track::create(Track::Type::Instrument, song);
+		McuSurface* surface = McuSurface::connect(QString(), QString());
+		FloatModel* volume = trackVolumeModel(track);
+		volume->setValue(volume->maxValue());
+		QTRY_VERIFY(surface->state().value(QStringLiteral("events_out")).toInt() > 0);
+		QTest::qWait(80);
+		const int sent = surface->state().value(QStringLiteral("events_out")).toInt();
+
+		surface->apply({mcu::Kind::FaderTouch, 12, 0, true});
+		QTest::qWait(80);
+		const int afterInvalidInput = surface->state().value(QStringLiteral("events_out")).toInt();
+		McuSurface::disconnect();
+		qDeleteAll(QList<Track*>{track});
+		QCOMPARE(afterInvalidInput, sent);
+	}
+
+	void bankButtonsStayOnEightTrackPageBoundaries()
+	{
+		Song* song = Engine::getSong();
+		QList<Track*> made;
+		for (int i = 0; i < 10; ++i) { made.append(Track::create(Track::Type::Instrument, song)); }
+		McuSurface* surface = McuSurface::connect(QString(), QString());
+		for (int i = 0; i < mcu::Strips; ++i) { surface->apply({mcu::Kind::ChannelRight, -1, 0, true}); }
+		const int beforeBankRight = surface->bank();
+		surface->apply({mcu::Kind::BankRight, -1, 0, true});
+		const int afterBankRight = surface->bank();
+		surface->apply({mcu::Kind::BankLeft, -1, 0, true});
+		const int afterBankLeft = surface->bank();
+		for (int i = 0; i < 9; ++i) { surface->apply({mcu::Kind::ChannelRight, -1, 0, true}); }
+		const int afterChannelRight = surface->bank();
+		McuSurface::disconnect();
+		qDeleteAll(made);
+
+		QCOMPARE(beforeBankRight, mcu::Strips);
+		QCOMPARE(afterBankRight, mcu::Strips);
+		QCOMPARE(afterBankLeft, 0);
+		QCOMPARE(afterChannelRight, 9);
+	}
 };
 
 QTEST_MAIN(McuSurfaceTest)

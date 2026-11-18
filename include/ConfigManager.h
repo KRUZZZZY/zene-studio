@@ -68,6 +68,8 @@ public:
 		return s_instanceOfMe;
 	}
 
+	//! Destroy the singleton and clear its pointer so a later engine lifetime can recreate it.
+	static void destroy();
 
 	const QString & workingDir() const
 	{
@@ -301,6 +303,9 @@ private:
 	QString m_themeDir;
 	QString m_backgroundPicFile;
 	QString m_configFile;
+	// Set when the config file exists but does not parse; saveConfigFile() then
+	// leaves the file alone instead of replacing the user's settings with defaults.
+	bool m_configUnreadable = false;
 	QString m_version;
 	unsigned int m_configVersion;
 	QStringList m_recentlyOpenedProjects;

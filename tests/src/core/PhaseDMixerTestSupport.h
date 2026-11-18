@@ -26,6 +26,7 @@
 #define LMMS_TESTS_PHASE_D_MIXER_TEST_SUPPORT_H
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -43,11 +44,14 @@
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "AutomatableModel.h"
+#include "AllocationProbe.h"
+#include "Controller.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "Plugin.h"
+#include "RealtimeScope.h"
 #include "SampleFrame.h"
 
 namespace partd
@@ -135,6 +139,9 @@ public:
 	//! Render one period; returns the master output for that period.
 	const std::vector<SampleFrame>& render()
 	{
+		auto changeGuard = Engine::audioEngine()->requestChangesGuard();
+		Engine::audioEngine()->prepareAutomatableModelBuffers();
+		const RealtimeScope realtime;
 		m_mixer->prepareMasterMix();
 		zeroSampleFrames(m_out.data(), m_fpp);
 		m_mixer->masterMix(m_out.data());
@@ -143,6 +150,7 @@ public:
 		// do the same, otherwise a value changed before the render stays
 		// "pending" and its ramp from the default value is replayed in
 		// every measured period.
+		Controller::triggerFrameCounter();
 		AutomatableModel::incrementPeriodCounter();
 		return m_out;
 	}
@@ -155,19 +163,9 @@ private:
 	//! send amount 1.0), which silently breaks exact level assertions.
 	void settleValueRamps()
 	{
-		for (int i = 0; i < m_mixer->numChannels(); ++i)
-		{
-			MixerChannel* ch = m_mixer->mixerChannel(i);
-			ch->m_volumeModel.valueBuffer();
-			for (MixerRoute* route : ch->m_sends)
-			{
-				route->amount()->valueBuffer();
-			}
-			for (MixerSidechainRoute* route : ch->m_sidechainSends)
-			{
-				route->amount()->valueBuffer();
-			}
-		}
+		auto changeGuard = Engine::audioEngine()->requestChangesGuard();
+		Engine::audioEngine()->prepareAutomatableModelBuffers();
+		Controller::triggerFrameCounter();
 		AutomatableModel::incrementPeriodCounter();
 	}
 
@@ -281,6 +279,56 @@ private:
 
 	float m_gainL;
 	float m_gainR;
+};
+
+//! A test effect whose parameter follows the same valueBuffer() path as an
+//! in-tree effect plug-in. It records allocations made by that getter on the
+//! worker which processes the effect.
+class ParameterGainProbeEffect : public Effect
+{
+public:
+	explicit ParameterGainProbeEffect(Model* parent) :
+		Effect{&descriptor(), parent, nullptr}
+	{
+	}
+
+	EffectControls* controls() override { return nullptr; }
+	FloatModel& gainModel() { return m_gainModel; }
+	std::uint64_t valueBufferCalls() const { return m_valueBufferCalls.load(); }
+	std::uint64_t valueBufferAllocations() const { return m_valueBufferAllocations.load(); }
+
+protected:
+	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override
+	{
+		test::resetAllocationCount();
+		const bool wasCounting = test::tlCountAllocations;
+		test::tlCountAllocations = true;
+		const ValueBuffer* const gainBuffer = m_gainModel.valueBuffer();
+		test::tlCountAllocations = wasCounting;
+		m_valueBufferCalls.fetch_add(1, std::memory_order_relaxed);
+		m_valueBufferAllocations.store(test::tlAllocationCount, std::memory_order_relaxed);
+
+		for (f_cnt_t frame = 0; frame < frames; ++frame)
+		{
+			const float gain = gainBuffer != nullptr ? gainBuffer->values()[frame] : m_gainModel.value();
+			buf[frame][0] *= gain;
+			buf[frame][1] *= gain;
+		}
+		return ProcessStatus::Continue;
+	}
+
+private:
+	static const Plugin::Descriptor& descriptor()
+	{
+		static const Plugin::Descriptor d{
+			"partdparametergain", "Phase D parameter gain", "A valueBuffer parameter probe",
+			"Zene Studio", 0x0100, Plugin::Type::Effect, nullptr, nullptr, nullptr};
+		return d;
+	}
+
+	FloatModel m_gainModel{1.0f, 0.0f, 2.0f, 0.001f};
+	std::atomic<std::uint64_t> m_valueBufferCalls{0};
+	std::atomic<std::uint64_t> m_valueBufferAllocations{0};
 };
 
 //! Records the sidechain input the effect is handed for the current block.

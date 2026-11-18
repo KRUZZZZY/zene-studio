@@ -40,6 +40,7 @@
 #include <QTimer>
 #include <QTreeWidget>
 
+#include "ControlTrackRouting.h"
 #include "DesignTokens.h"
 #include "DevicePicker.h"
 #include "EffectPickerOrganiser.h"
@@ -75,7 +76,7 @@ QString formatOf(const Plugin::Descriptor::SubPluginFeatures::Key& key)
 {
 	if (key.desc == nullptr || key.desc->subPluginFeatures == nullptr) { return devicelabels::formatLabel(QStringLiteral("builtin")); }
 	const QString host = QString::fromUtf8(key.desc->name).toLower();
-	for (const QString& format : {QStringLiteral("vst3"), QStringLiteral("clap"), QStringLiteral("lv2"), QStringLiteral("ladspa")})
+	for (const QString& format : {QStringLiteral("vst3"), QStringLiteral("vst2"), QStringLiteral("clap"), QStringLiteral("lv2"), QStringLiteral("ladspa")})
 	{
 		if (host.contains(format)) { return devicelabels::formatLabel(format); }
 	}
@@ -388,9 +389,9 @@ void PluginDescWidget::paintEvent( QPaintEvent * )
 	p.drawText(textX, 15, m_pluginKey.displayName());
 	// Theme 12: the details at the row's right end, in the muted caption colour, cut short before they reach the name.
 	const int nameEnd = textX + QFontMetrics(f).horizontalAdvance(m_pluginKey.displayName()) + tokens::space::md;
-	const QFont small = tokens::font(tokens::TextRole::Small);
-	const QString shown = QFontMetrics(small).elidedText(m_details, Qt::ElideRight, std::max(0, width() - nameEnd - tokens::space::sm));
-	p.setFont(small);
+	const QFont smallFont = tokens::font(tokens::TextRole::Small);
+	const QString shown = QFontMetrics(smallFont).elidedText(m_details, Qt::ElideRight, std::max(0, width() - nameEnd - tokens::space::sm));
+	p.setFont(smallFont);
 	p.setPen(tokens::palette().textMuted);
 	p.drawText(QRect(nameEnd, 0, width() - nameEnd - tokens::space::sm, height()), Qt::AlignRight | Qt::AlignVCenter, shown);
 }
@@ -463,6 +464,7 @@ void PluginDescWidget::openInNewInstrumentTrack(QString value)
 {
 	TrackContainer* tc = Engine::getSong();
 	auto it = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, tc));
+	control::assignNewTrackChannel(it);
 	auto ilt = new InstrumentLoaderThread(this, it, value);
 	ilt->start();
 }

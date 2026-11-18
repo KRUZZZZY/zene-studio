@@ -48,6 +48,8 @@ Lv2FxControlDialog::Lv2FxControlDialog(Lv2FxControls *controls) :
 		connect(m_helpButton, &QPushButton::toggled,
 			this, [this](bool visible){ toggleHelp(visible); });
 	}
+	connect(lv2Controls(), &Lv2FxControls::modelChanged,
+		this, [this](){ this->modelChanged();} );
 	// for Effects, modelChanged only goes to the top EffectView
 	// we need to call it manually
 	modelChanged();
@@ -67,8 +69,6 @@ Lv2FxControls *Lv2FxControlDialog::lv2Controls()
 void Lv2FxControlDialog::modelChanged()
 {
 	Lv2ViewBase::modelChanged(lv2Controls());
-	connect(lv2Controls(), &Lv2FxControls::modelChanged,
-		this, [this](){ this->modelChanged();} );
 }
 
 

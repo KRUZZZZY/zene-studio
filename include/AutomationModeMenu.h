@@ -42,7 +42,8 @@ namespace lmms::gui
  *  for the parameter's own track and '<plugin>/<index>' id. It is added only for a control the
  *  command surface can name (control::addressableParameterForModel): a control the socket
  *  cannot address gets no menu that could not do what it says. The mode is runtime state, not
- *  saved and not journalled - the command's own contract. */
+ *  saved and not journalled - the command's own contract. After it, "Write value to end" (ED-201) runs
+ *  automation.write_to_end: the control's current value held from the song position to the song's end. */
 LMMS_EXPORT void addAutomationModeMenu(QMenu* menu, AutomatableModel* model);
 
 } // namespace lmms::gui

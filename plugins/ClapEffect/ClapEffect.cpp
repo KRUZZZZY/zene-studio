@@ -28,13 +28,17 @@
 #include "SidechainInputs.h"
 
 #include <algorithm>
+#include <exception>
+#include <memory>
 
 #include <QDebug>
 
 #include "ClapEffectControls.h"
 #include "ClapSubPluginFeatures.h"
 #include "Engine.h"
+#include "HostedTrackChannels.h"
 #include "LmmsCommonMacros.h"
+#include "PluginInstantiationFailure.h"
 #include "Song.h"
 #include "plugin_export.h"
 
@@ -57,6 +61,29 @@ Plugin::Descriptor PLUGIN_EXPORT clapeffect_plugin_descriptor =
 	new ClapSubPluginFeatures(Plugin::Type::Effect)
 };
 
+// The module entry point PluginFactory requires of every plug-in library (src/core/PluginFactory.cpp,
+// loadPluginDescriptor). Without it the factory recorded this module as "not a plug-in", so no CLAP
+// effect could be added to a chain - only tests that construct the class directly ever ran one. A class
+// that did not load answers nullptr, so the chain keeps a saved one as its placeholder (DummyEffect, which
+// writes the saved state back) instead of a pass-through that would drop that state on the next save.
+PLUGIN_EXPORT Plugin* lmms_plugin_main(Model* parent, void* data)
+{
+	try
+	{
+		auto effect = std::make_unique<ClapEffect>(parent,
+			static_cast<const Plugin::Descriptor::SubPluginFeatures::Key*>(data));
+		return effect->plugin()->isLoaded() ? effect.release() : nullptr;
+	}
+	catch (const std::exception& error)
+	{
+		// A throw must not cross the extern "C" boundary.
+		qCritical() << "CLAP effect could not be created:" << error.what();
+		pluginload::noteInstantiationFailure(QStringLiteral("the CLAP effect could not be created: %1")
+			.arg(QString::fromUtf8(error.what())));
+		return nullptr;
+	}
+}
+
 }
 
 ClapEffect::ClapEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key)
@@ -70,6 +97,7 @@ ClapEffect::ClapEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* 
 	if (!m_plugin.load(modulePath, pluginId, &error))
 	{
 		qWarning() << "CLAP: could not load" << modulePath << pluginId << ":" << error;
+		pluginload::noteInstantiationFailure(error);
 	}
 	else
 	{
@@ -118,9 +146,7 @@ void ClapEffect::applyLayout()
 	// counts means the common case never needs a re-configuration.
 	const auto mainInputs = std::max<ch_cnt_t>(1, static_cast<ch_cnt_t>(layout.inputs));
 	const auto mainOutputs = std::max<ch_cnt_t>(1, static_cast<ch_cnt_t>(layout.outputs));
-	audioPorts().setAllChannelCounts(
-		std::max<ch_cnt_t>(ch_cnt_t{2}, std::max(mainInputs, mainOutputs)),
-		mainInputs, mainOutputs);
+	audioPorts().setAllChannelCounts(hostedTrackChannels(mainInputs, mainOutputs), mainInputs, mainOutputs);
 	m_appliedLayout = m_plugin.layoutRevision();
 }
 
@@ -204,8 +230,14 @@ auto ClapEffect::processImpl(PlanarBufferView<const float, DynamicChannelCount> 
 	std::array<const float*, MaxHostedInputChannels> inputs{};
 	const float* const* fed = sidechainInputs(in.data(), static_cast<int>(in.channels()), sidechainBuffer(),
 		m_plugin.busLayout().sideChainChannel, inputs);
-	m_plugin.process(fed, out.data(),
-		static_cast<int>(in.channels()), static_cast<int>(out.channels()), frames);
+	if (!m_plugin.process(fed, out.data(),
+		    static_cast<int>(in.channels()), static_cast<int>(out.channels()), frames))
+	{
+		// The plug-in reported a processing error: the rest of the output block is whatever the
+		// buffer already held, so the chain gets the dry signal for the whole block instead.
+		passThrough(in, out, m_plugin.busLayout().sideChainChannel);
+		return lmms::ProcessStatus::Continue;
+	}
 
 	// AudioPlugin's contract: processImpl is responsible for the wet/dry mix.
 	// The plug-in wrote wet output into `out`, `in` still holds the dry signal.

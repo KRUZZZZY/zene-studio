@@ -33,11 +33,15 @@ namespace lmms::gui
 
 /*! 0.5.0 L08/L09: two windows over the mixer -
  *  - Large Meters (MX-131): the master's level as two tall bars, its correlation and loudness, big
- *    enough to read across the room;
+ *    enough to read across the room; and (MX-134) the audio input, live, beside them;
+ *  - Phase Scope (MX-137): a channel's stereo picture as a goniometer beside its correlation
+ *    (window.phase_scope, PhaseScopeView.h);
  *  - Routing Matrix (MX-055): every channel against every channel, each cell the send between them
  *    (routing.matrix, the same data an agent reads); double-click a cell to send there - since 0.5.0
  *    theme 16 its own file, sparse (MixerRoutingMatrix.h);
  *  - Compare Channel EQ (MX-140): two channels' strip EQ curves over each other (mixer.eq_compare).
+ *  - Masking Report (Q050-231.1): which ticked channels clash in which ranges, with a proposed cut on the
+ *    lower-priority one (mixer.masking_report; MixerMaskingReport.h).
  *  Add their entries to @a menu. */
 LMMS_EXPORT void addMixerWindows(QMenu* menu);
 

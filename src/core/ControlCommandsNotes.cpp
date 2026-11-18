@@ -28,8 +28,10 @@
 #include "ClipLinks.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "Engine.h"
 #include "MidiClip.h"
 #include "Note.h"
+#include "NoteConditions.h"
 #include "Song.h"
 
 namespace lmms
@@ -62,7 +64,7 @@ QJsonObject noteArgsOf(const QJsonObject& args, bool withVelocity)
 	inverseArgs.insert(QStringLiteral("key"), args.value(QStringLiteral("key")).toInt());
 	inverseArgs.insert(QStringLiteral("position"), args.value(QStringLiteral("position")).toInt());
 	inverseArgs.insert(QStringLiteral("length"), args.value(QStringLiteral("length")).toInt());
-	if (withVelocity) { inverseArgs.insert(QStringLiteral("velocity"), args.value(QStringLiteral("velocity")).toInt()); }
+	if (withVelocity) { inverseArgs.insert(QStringLiteral("velocity"), args.value(QStringLiteral("velocity")).toInt(DefaultVolume)); }
 	return inverseArgs;
 }
 
@@ -108,6 +110,8 @@ void registerNoteAdd(ControlRegistry& registry)
 		{QStringLiteral("pan"), control::numberProperty()},
 		{QStringLiteral("slide"), control::booleanProperty()},
 		{QStringLiteral("velocity"), control::numberProperty()},
+		{QStringLiteral("recur_length"), control::integerProperty(0, NoteConditions::MaxRecurLength)},
+		{QStringLiteral("recur_mask"), control::integerProperty(0, 65535)},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -195,6 +199,12 @@ void registerNoteRemove(ControlRegistry& registry)
 		clip->removeNote(note);
 		clip->dataChanged();
 
+		// The selection store holds the SELECTED NOTES' IDS (control::selectNotes),
+		// which travel with their notes, so this remove needs no remapping: every
+		// surviving selected note keeps its place and the removed one is simply no
+		// longer in the clip. Every removal path relies on that - note.remove_many,
+		// note.slice and the clipboard verbs shift the list as well.
+
 		QJsonObject result;
 		result.insert(QStringLiteral("removed"), id);
 		result.insert(QStringLiteral("removed_note"), state);
@@ -243,16 +253,37 @@ void registerNoteMove(ControlRegistry& registry)
 		const QString previousId = control::noteIdOf(note);
 		const tick_t previousPos = note->pos().getTicks();
 
+		// The schema bounds the new START (0..MaxSongLength), but the note's END
+		// must fit inside the song too: a positive-length note moved to MaxSongLength
+		// would end past the limit. Refuse before anything changes. Note lengths are
+		// NOT schema-bounded everywhere - Note::loadSettings reads them straight from
+		// XML without a MaxSongLength clamp - so the end is computed in a wide type:
+		// an int32 sum with a near-INT_MAX loaded length would overflow and bypass this.
+		const tick_t position = static_cast<tick_t>(args.value(QStringLiteral("position")).toDouble());
+		const qint64 end = static_cast<qint64>(position) + static_cast<qint64>(note->length().getTicks());
+		if (end > MaxSongLength)
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			 QStringLiteral("the move would put the note's end past the song limit: position %1 + length %2 ends at %3 ticks, past the limit of %4")
+				 .arg(position).arg(note->length().getTicks()).arg(end).arg(MaxSongLength));
+		}
+
+		const QString clipText = control::clipId(ref.id);
+
 		clip->addJournalCheckPoint();
-		note->setPos(TimePos(static_cast<tick_t>(args.value(QStringLiteral("position")).toDouble())));
+		note->setPos(TimePos(position));
 		// Same follow-up calls as a piano-roll drag: re-sort, then let the clip
 		// follow its notes when it is still auto-resizing.
 		clip->rearrangeAllNotes();
 		clip->updateLength();
+		// The re-sort above moved notes around, but the selection store holds the
+		// selected notes' IDS (control::selectNotes), which travel with the note
+		// objects, so the selection follows them. So do the notes' own flags.
 		clip->dataChanged();
 		// Row 6: a content edit to a linked clip is an edit to the whole group -
 		// the members' note lists are rebuilt from this clip's, in the same step.
 		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
+		if (position != previousPos) { Engine::getSong()->setModified(); }
 
 		const int newIndex = indexOfNote(clip, note);
 		if (newIndex < 0)
@@ -309,6 +340,8 @@ void registerNoteResize(ControlRegistry& registry)
 		{QStringLiteral("position"), control::numberProperty()},
 		{QStringLiteral("slide"), control::booleanProperty()},
 		{QStringLiteral("velocity"), control::numberProperty()},
+		{QStringLiteral("recur_length"), control::integerProperty(0, NoteConditions::MaxRecurLength)},
+		{QStringLiteral("recur_mask"), control::integerProperty(0, 65535)},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -319,19 +352,30 @@ void registerNoteResize(ControlRegistry& registry)
 		int index = -1;
 		Note* note = control::resolveNote(clip, args.value(QStringLiteral("note")).toString(), &index, &error);
 		if (note == nullptr) { return error; }
+		const tick_t requestedLength = static_cast<tick_t>(args.value(QStringLiteral("length")).toDouble());
+		const qint64 requestedEnd = static_cast<qint64>(note->pos().getTicks()) + requestedLength;
+		if (requestedEnd > static_cast<qint64>(MaxSongLength))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("resizing the note would end at %1, past the song limit of %2")
+					.arg(requestedEnd).arg(static_cast<qint64>(MaxSongLength)));
+		}
 		const tick_t previous = note->length().getTicks();
+		const bool changed = requestedLength != previous;
 
-		clip->addJournalCheckPoint();
-		note->setLength(TimePos(static_cast<tick_t>(args.value(QStringLiteral("length")).toDouble())));
+		if (changed) { clip->addJournalCheckPoint(); }
+		note->setLength(TimePos(requestedLength));
 		clip->updateLength();
 		clip->dataChanged();
 		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
+		if (changed) { Engine::getSong()->setModified(); }
 
 		QJsonObject result = control::noteState(note, index);
 		result.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		// The note's own id (Note::id(), SPEC-stable-ids.md slice 2): a resize
 		// does not re-sort the list, but the id is still what addresses the note.
 		result.insert(QStringLiteral("note"), control::noteIdOf(note));
+		if (!changed) { return ControlResult::success(result); }
 		QJsonObject inverseArgs;
 		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		inverseArgs.insert(QStringLiteral("note"), control::noteIdOf(note));
@@ -372,6 +416,8 @@ void registerNoteVelocitySet(ControlRegistry& registry)
 		{QStringLiteral("pan"), control::numberProperty()},
 		{QStringLiteral("position"), control::numberProperty()},
 		{QStringLiteral("slide"), control::booleanProperty()},
+		{QStringLiteral("recur_length"), control::integerProperty(0, NoteConditions::MaxRecurLength)},
+		{QStringLiteral("recur_mask"), control::integerProperty(0, 65535)},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -383,16 +429,20 @@ void registerNoteVelocitySet(ControlRegistry& registry)
 		Note* note = control::resolveNote(clip, args.value(QStringLiteral("note")).toString(), &index, &error);
 		if (note == nullptr) { return error; }
 		const volume_t previous = note->getVolume();
+		const volume_t requested = static_cast<volume_t>(args.value(QStringLiteral("velocity")).toDouble());
+		const bool changed = requested != previous;
 
-		clip->addJournalCheckPoint();
-		note->setVolume(static_cast<volume_t>(args.value(QStringLiteral("velocity")).toDouble()));
+		if (changed) { clip->addJournalCheckPoint(); }
+		note->setVolume(requested);
 		clip->dataChanged();
 		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
+		if (changed) { Engine::getSong()->setModified(); }
 
 		QJsonObject result = control::noteState(note, index);
 		result.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		// The note's own id (Note::id(), SPEC-stable-ids.md slice 2).
 		result.insert(QStringLiteral("note"), control::noteIdOf(note));
+		if (!changed) { return ControlResult::success(result); }
 		QJsonObject inverseArgs;
 		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		inverseArgs.insert(QStringLiteral("note"), control::noteIdOf(note));
@@ -403,113 +453,6 @@ void registerNoteVelocitySet(ControlRegistry& registry)
 					{QStringLiteral("note"), control::noteIdOf(note)},
 					{QStringLiteral("velocity"), static_cast<double>(previous)}},
 				QStringLiteral("note.velocity_set"), inverseArgs, true, MechanismClipCheckpoint));
-		return ControlResult::success(result);
-	};
-	registry.registerCommand(cmd);
-}
-
-//! The notes' own selection flags, set to exactly @a positions (BUGS_FOUND 11.33).
-void markSelected(MidiClip* clip, const QVector<int>& positions)
-{
-	for (Note* note : clip->notes()) { note->setSelected(false); }
-	for (int position : positions) { clip->notes()[position]->setSelected(true); }
-}
-
-//! The ids of the notes whose own selection flag is set. The selection STORE holds
-//! note-list positions, which a reorder (note.move, note.split, ...) invalidates, so a
-//! previous selection reported from it names the wrong note; the flags travel with the
-//! note objects.
-QJsonArray selectedNoteIds(const MidiClip* clip)
-{
-	QJsonArray ids;
-	for (const Note* note : clip->notes())
-	{
-		if (note->selected()) { ids.append(control::noteIdOf(note)); }
-	}
-	return ids;
-}
-
-//! 0.5.0 L07 (ED-069): @a positions with every note that shares a group with one of them.
-void withGroupMates(const MidiClip* clip, QVector<int>* positions)
-{
-	QVector<int> groups;
-	for (int position : *positions) { if (const int g = clip->notes()[position]->conditions().group; g > 0) { groups.append(g); } }
-	if (groups.isEmpty()) { return; }
-	for (int i = 0; i < static_cast<int>(clip->notes().size()); ++i)
-	{
-		if (groups.contains(clip->notes()[i]->conditions().group) && !positions->contains(i)) { positions->append(i); }
-	}
-}
-
-void registerNoteSelect(ControlRegistry& registry)
-{
-	ControlCommand cmd;
-	cmd.id = QStringLiteral("note.select");
-	cmd.group = QStringLiteral("note");
-	cmd.verb = QStringLiteral("select");
-	cmd.description = QStringLiteral("Select notes in a clip (an empty list clears the selection); a note of a group "
-		"(note.group) brings the rest of its group. Control-surface state, not project state.");
-	cmd.argsSchema = control::objectSchema({
-		{QStringLiteral("clip"), control::stringProperty()},
-		{QStringLiteral("notes"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
-			{QStringLiteral("items"), control::stringProperty()}}},
-	}, {QStringLiteral("clip"), QStringLiteral("notes")});
-	cmd.resultSchema = control::objectSchema({
-		{QStringLiteral("clip"), control::stringProperty()},
-		{QStringLiteral("selected_notes"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
-		{QStringLiteral("previous_notes"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
-	});
-	// SPEC A16: piano-roll selection is VIEW state (Note::setSelected), not
-	// project state, so this command records no transaction (see clip.select).
-	cmd.mutating = false;
-	cmd.handler = [](const QJsonObject& args) {
-		ControlResult error;
-		control::ClipRef ref;
-		MidiClip* clip = control::resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
-		if (clip == nullptr) { return error; }
-		const QString clipText = control::clipId(ref.id);
-		// Read BEFORE the new selection is marked, and from the notes' own flags: the
-		// store holds positions, which a reorder invalidates.
-		const QJsonArray previous = selectedNoteIds(clip);
-		QVector<int> wanted;
-		for (const QJsonValue& value : args.value(QStringLiteral("notes")).toArray())
-		{
-			// The argument names the OBJECT by its id (Note::id(),
-			// SPEC-stable-ids.md slice 2), exactly as note.remove/note.move
-			// resolve theirs: resolveNote looks the id up in the clip and fills
-			// `position` with where the note currently sits. That position is
-			// what the selection store holds - it is view state (SPEC A16) and
-			// carries no ids of its own - and it is reported back as ids below.
-			int position = -1;
-			Note* note = control::resolveNote(clip, value.toString(), &position, &error);
-			if (note == nullptr) { return error; }
-			wanted.append(position);
-		}
-		withGroupMates(clip, &wanted);
-		control::selectNotes(clipText, static_cast<int>(clip->notes().size()), wanted);
-		// The view state the comment above names: the notes' own selection flags, which the
-		// note editor and the classic piano roll draw and act on. Before 0.5.0 only the index
-		// store above was written, so a selection made over the socket never reached the
-		// editors (BUGS_FOUND 11.33). The flags travel with the note objects through a re-sort.
-		markSelected(clip, wanted);
-		clip->dataChanged();
-
-		// The selection is reported as the IDS of the notes at the stored
-		// positions (rollState reports the same way). A position the clip's list
-		// no longer holds is dropped rather than reported as a dangling id.
-		const NoteVector& noteList = clip->notes();
-		QJsonArray selected;
-		for (int position : control::selectedNoteIndices(clipText))
-		{
-			if (position >= 0 && position < static_cast<int>(noteList.size()))
-			{
-				selected.append(control::noteIdOf(noteList[position]));
-			}
-		}
-		QJsonObject result;
-		result.insert(QStringLiteral("clip"), clipText);
-		result.insert(QStringLiteral("selected_notes"), selected);
-		result.insert(QStringLiteral("previous_notes"), previous);
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);
@@ -535,11 +478,14 @@ void registerRollGetState(ControlRegistry& registry)
 		{QStringLiteral("fade_out"), control::numberProperty()},
 		{QStringLiteral("fade_out_shape"), control::stringProperty()},
 		{QStringLiteral("gain_db"), control::numberProperty()},
+		{QStringLiteral("inverted"), control::booleanProperty()},
 		{QStringLiteral("id"), control::stringProperty()},
 		{QStringLiteral("index_in_track"), control::numberProperty()},
 		{QStringLiteral("length"), control::numberProperty()},
 		{QStringLiteral("muted"), control::booleanProperty()},
 		{QStringLiteral("name"), control::stringProperty()},
+		{QStringLiteral("channels"), control::nullable(control::numberProperty())},
+		{QStringLiteral("layout"), control::nullable(control::stringProperty())},
 		{QStringLiteral("position"), control::numberProperty()},
 		{QStringLiteral("selected"), control::booleanProperty()},
 		{QStringLiteral("selected_notes"), control::arrayProperty()},
@@ -570,7 +516,7 @@ void registerNoteCommands(ControlRegistry& registry)
 	registerNoteMove(registry);
 	registerNoteResize(registry);
 	registerNoteVelocitySet(registry);
-	registerNoteSelect(registry);
+	registerNoteSelectCommands(registry);
 	registerRollGetState(registry);
 }
 

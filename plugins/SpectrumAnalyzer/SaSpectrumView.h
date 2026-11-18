@@ -104,7 +104,7 @@ private:
 	QPainterPath makePath(std::vector<float> &displayBuffer, float resolution);
 
 	// helper variables for path drawing
-	float m_decaySum;		// indicates if there is anything left to draw
+	float m_decaySum = 0.0f;		// indicates if there is anything left to draw
 	bool m_freezeRequest;	// new reference should be acquired
 	bool m_frozen;			// a reference is currently stored in the peakBuffer
 

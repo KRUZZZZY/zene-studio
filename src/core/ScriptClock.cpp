@@ -31,6 +31,7 @@
 #include "ScriptClock.h"
 
 #include <algorithm>
+#include <limits>
 
 #include <QJsonArray>
 #include <QTimer>
@@ -88,6 +89,20 @@ QString errorKindFor(const QString& error)
 		: QStringLiteral("script");
 }
 
+//! Store the first boundary strictly after a pos, or saturate at qint64's
+//! maximum and report that no later position can be represented.
+bool nextBoundaryAfter(qint64 pos, qint64 stride, qint64* next)
+{
+	const qint64 quotient = pos / stride;
+	if (quotient >= std::numeric_limits<qint64>::max() / stride)
+	{
+		*next = std::numeric_limits<qint64>::max();
+		return false;
+	}
+	*next = (quotient + 1) * stride;
+	return true;
+}
+
 } // namespace
 
 
@@ -95,26 +110,50 @@ QString errorKindFor(const QString& error)
 // ScriptClockGrid - the pure detector
 // ---------------------------------------------------------------------------
 
-int ScriptClockGrid::consume(qint64 pos, qint64 stride, qint64* next, int* coalesced)
+int ScriptClockGrid::consume(qint64 pos, qint64 stride, qint64* next, bool* hasNext,
+	int* coalesced)
 {
-	if (stride <= 0 || pos < *next) { return 0; }
-	const qint64 crossed = (pos - *next) / stride + 1;
-	if (crossed > CrossCap)
+	if (stride <= 0 || !*hasNext || pos < *next) { return 0; }
+	const quint64 distance = static_cast<quint64>(pos) - static_cast<quint64>(*next);
+	const quint64 intervals = distance / static_cast<quint64>(stride);
+	if (intervals >= CrossCap)
 	{
-		*coalesced += static_cast<int>(crossed - CrossCap);
-		*next = ((pos / stride) + 1) * stride;
+		const quint64 excess = intervals - (CrossCap - 1);
+		const quint64 remaining = static_cast<quint64>(std::numeric_limits<int>::max() - *coalesced);
+		*coalesced += static_cast<int>(std::min(excess, remaining));
+		*hasNext = nextBoundaryAfter(pos, stride, next);
 		return CrossCap;
 	}
-	*next += crossed * stride;
-	return static_cast<int>(crossed);
+
+	const int crossed = static_cast<int>(intervals) + 1;
+	const qint64 maxStride = std::numeric_limits<qint64>::max() / crossed;
+	if (stride > maxStride || *next > std::numeric_limits<qint64>::max() - stride * crossed)
+	{
+		*next = std::numeric_limits<qint64>::max();
+		*hasNext = false;
+	}
+	else
+	{
+		*next += stride * crossed;
+	}
+	return crossed;
 }
 
 void ScriptClockGrid::regrid(qint64 pos, qint64 ticksPerBar, qint64 ticksPerBeat)
 {
 	m_ticksPerBar = ticksPerBar;
 	m_ticksPerBeat = ticksPerBeat;
-	m_nextBar = ((pos / ticksPerBar) + 1) * ticksPerBar;
-	m_nextBeat = ((pos / ticksPerBeat) + 1) * ticksPerBeat;
+	m_hasNextBar = nextBoundaryAfter(pos, ticksPerBar, &m_nextBar);
+	m_hasNextBeat = nextBoundaryAfter(pos, ticksPerBeat, &m_nextBeat);
+}
+
+void ScriptClockGrid::prime(bool playing, qint64 pos, qint64 ticksPerBar, qint64 ticksPerBeat)
+{
+	if (ticksPerBar <= 0 || ticksPerBeat <= 0) { return; }
+	m_playing = playing;
+	m_pos = pos;
+	if (!playing) { m_nextBar = 0; m_nextBeat = 0; return; }
+	regrid(pos, ticksPerBar, ticksPerBeat);
 }
 
 ScriptTickEvents ScriptClockGrid::advance(bool playing, qint64 pos, qint64 ticksPerBar,
@@ -134,6 +173,8 @@ ScriptTickEvents ScriptClockGrid::advance(bool playing, qint64 pos, qint64 ticks
 		m_pos = pos;
 		m_nextBar = 0;
 		m_nextBeat = 0;
+		m_hasNextBar = false;
+		m_hasNextBeat = false;
 		return events;
 	}
 	// First observation, a seek backwards, or a meter change: re-anchor where
@@ -147,8 +188,8 @@ ScriptTickEvents ScriptClockGrid::advance(bool playing, qint64 pos, qint64 ticks
 		m_pos = pos;
 		return events;
 	}
-	events.bars = consume(pos, ticksPerBar, &m_nextBar, &events.coalesced);
-	events.beats = consume(pos, ticksPerBeat, &m_nextBeat, &events.coalesced);
+	events.bars = consume(pos, ticksPerBar, &m_nextBar, &m_hasNextBar, &events.coalesced);
+	events.beats = consume(pos, ticksPerBeat, &m_nextBeat, &m_hasNextBeat, &events.coalesced);
 	m_pos = pos;
 	return events;
 }
@@ -194,6 +235,15 @@ bool ScriptClock::parses(const QString& source, QString* error)
 	return status == LUA_OK;
 }
 
+void ScriptClock::primeGrid()
+{
+	Song* song = Engine::getSong();
+	if (song == nullptr) { return; }
+	const TimeSig timeSig(song->getTimeSigModel());
+	m_grid.prime(song->isPlaying(), static_cast<qint64>(song->getPlayPos().getTicks()),
+		song->ticksPerBar(), std::max<qint64>(1, TimePos().ticksPerBeat(timeSig)));
+}
+
 void ScriptClock::syncTimer()
 {
 	if (m_timer == nullptr)
@@ -202,11 +252,16 @@ void ScriptClock::syncTimer()
 		m_timer = new QTimer();
 		m_timer->setInterval(PollMs);
 		QObject::connect(m_timer, &QTimer::timeout, [this]() { pollOnce(); });
+		// Anchor the grid to the transport as it is BEFORE the first poll:
+		// adding a schedule to a song that is already rolling must not read as
+		// a play edge, and a timer resuming after an empty period must not
+		// fire boundaries the song crossed while nothing was scheduled.
+		primeGrid();
 		m_timer->start();
 		return;
 	}
 	if (m_schedules.empty()) { m_timer->stop(); }
-	else if (!m_timer->isActive()) { m_timer->start(); }
+	else if (!m_timer->isActive()) { primeGrid(); m_timer->start(); }
 }
 
 bool ScriptClock::setSchedule(const QString& id, const QString& source, const QString& hook,
@@ -227,10 +282,13 @@ bool ScriptClock::setSchedule(const QString& id, const QString& source, const QS
 		*error = QStringLiteral("the source is empty: there is nothing to evaluate on the hook");
 		return false;
 	}
-	if (source.size() > SourceByteCap)
+	// The cap is in BYTES - the transaction records and the compile check carry
+	// the UTF-8 encoding - so count the encoded size, not the UTF-16 units.
+	const int sourceBytes = source.toUtf8().size();
+	if (sourceBytes > SourceByteCap)
 	{
 		*error = QStringLiteral("the source is %1 bytes; a scheduled script is capped at %2")
-			.arg(source.size()).arg(SourceByteCap);
+			.arg(sourceBytes).arg(SourceByteCap);
 		return false;
 	}
 	if (!parses(source, error)) { return false; }
@@ -245,6 +303,12 @@ bool ScriptClock::setSchedule(const QString& id, const QString& source, const QS
 		entry.budget = budget;
 		syncTimer();
 		return true;
+	}
+	if (m_schedules.size() >= static_cast<std::size_t>(MaxScheduleCount))
+	{
+		*error = QStringLiteral("the maximum number of scheduled scripts (%1) has been reached")
+			.arg(MaxScheduleCount);
+		return false;
 	}
 	ScriptSchedule entry;
 	entry.id = id;
@@ -288,7 +352,7 @@ QJsonObject ScriptClock::scheduleState(const QString& id) const
 		out.insert(QStringLiteral("hook"), entry.hook);
 		out.insert(QStringLiteral("budget"), entry.budget);
 		out.insert(QStringLiteral("source"), entry.source);
-		out.insert(QStringLiteral("source_bytes"), entry.source.size());
+		out.insert(QStringLiteral("source_bytes"), entry.source.toUtf8().size());
 		return out;
 	}
 	return QJsonObject();
@@ -296,7 +360,13 @@ QJsonObject ScriptClock::scheduleState(const QString& id) const
 
 QString ScriptClock::newScheduleId()
 {
-	return QStringLiteral("lc-%1").arg(m_nextId++);
+	QString id;
+	do
+	{
+		id = QStringLiteral("lc-%1").arg(m_nextId++);
+	}
+	while (hasSchedule(id));
+	return id;
 }
 
 void ScriptClock::runEntry(ScriptSchedule& entry, int count, qint64 pos)
@@ -328,8 +398,10 @@ void ScriptClock::runEntry(ScriptSchedule& entry, int count, qint64 pos)
 			continue;
 		}
 		entry.errors++;
+		// Classify the raw runString error BEFORE folding in script-controlled
+		// log lines: user log text must not masquerade as an engine failure kind.
 		entry.lastError = foldLogs(error, logs);
-		entry.lastErrorKind = errorKindFor(entry.lastError);
+		entry.lastErrorKind = errorKindFor(error);
 		if (entry.lastErrorKind == QLatin1String("budget")) { entry.budgetExceeded++; }
 	}
 	if (entry.budget > 0) { engine->setInstructionBudget(previous); }
@@ -394,7 +466,7 @@ QJsonObject ScriptClock::stateJson() const
 		one.insert(QStringLiteral("id"), entry.id);
 		one.insert(QStringLiteral("hook"), entry.hook);
 		one.insert(QStringLiteral("budget"), entry.budget);
-		one.insert(QStringLiteral("source_bytes"), entry.source.size());
+		one.insert(QStringLiteral("source_bytes"), entry.source.toUtf8().size());
 		one.insert(QStringLiteral("fires"), static_cast<qint64>(entry.fires));
 		one.insert(QStringLiteral("errors"), static_cast<qint64>(entry.errors));
 		one.insert(QStringLiteral("budget_exceeded"), static_cast<qint64>(entry.budgetExceeded));

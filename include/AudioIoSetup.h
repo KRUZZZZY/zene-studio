@@ -59,6 +59,7 @@ struct Bus
 	QString name;
 	int start = 0;
 	int width = 2;
+	bool operator==(const Bus&) const = default;
 };
 
 //! One direction of the interface.
@@ -67,12 +68,14 @@ struct Side
 	int channels = 2;          //!< outputs: how many to open (the backend may grant fewer); inputs: the capture plan's
 	QStringList names;         //!< one per channel
 	std::vector<Bus> buses;    //!< non-overlapping, inside [0, channels)
+	bool operator==(const Side&) const = default;
 };
 
 struct Setup
 {
 	Side outputs;
 	Side inputs;
+	bool operator==(const Setup&) const = default;
 };
 
 //! Where something is routed on the outputs: first channel (negative: nowhere) and width (1 or 2).
@@ -97,9 +100,10 @@ LMMS_EXPORT int requestedOutputs(const QString& key);
 //! Validate @a setup and keep it for @a key (the config file is saved). False, with @a error, when a
 //! bus overlaps another, leaves the channels, has a width other than 1 or 2, or repeats a name.
 LMMS_EXPORT bool writeSetup(const QString& key, const Setup& setup, QString* error);
-//! The raw stored entry for @a key (empty object: nothing stored) and its restore, for undo.
+//! The raw stored entry for @a key (empty object: nothing stored) and its restore, for undo. Both refuse
+//! (restoreEntry returns false) while the stored setups are not valid JSON, rather than replace them.
 LMMS_EXPORT QJsonObject storedEntry(const QString& key);
-LMMS_EXPORT void restoreEntry(const QString& key, const QJsonObject& entry);
+LMMS_EXPORT bool restoreEntry(const QString& key, const QJsonObject& entry);
 
 //! A side as JSON (channels with names, buses with 1-based channel labels) and back. parseSide fills
 //! only what @a json names, on top of @a side.
@@ -107,8 +111,9 @@ LMMS_EXPORT QJsonObject sideJson(const Side& side, int granted);
 LMMS_EXPORT bool parseSide(const QJsonObject& json, Side* side, QString* error);
 
 /*! Read a routing target: "none"; "3" (output 3, mono); "3/4" (a stereo pair); or the name of one of
- *  @a outputs' buses (any case). False, with @a error, for anything else or a pair that is not two
- *  consecutive channels. */
+ *  @a outputs' buses (any case). False, with @a error, for anything else, a pair that is not two
+ *  consecutive channels, or a number beyond @a outputs' channels - a number names a channel of that
+ *  side, so @a outputs' count is its bound. */
 LMMS_EXPORT bool parseDestination(const QString& text, const Side& outputs, Destination* out, QString* error);
 //! The label of @a destination: its bus's name when one matches exactly, else "3/4" or "3", or "none".
 LMMS_EXPORT QString destinationLabel(const Destination& destination, const Side& outputs);

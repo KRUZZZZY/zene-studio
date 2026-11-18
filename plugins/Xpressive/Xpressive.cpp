@@ -24,6 +24,9 @@
 
 #include "Xpressive.h"
 
+#include <cmath>
+#include <cstring>
+
 #include <QDomElement>
 #include <QPlainTextEdit>
 
@@ -40,6 +43,7 @@
 #include "Song.h"
 
 #include "base64.h"
+#include "WaveformData.h"
 #include "embed.h"
 
 #include "ExprSynth.h"
@@ -87,7 +91,7 @@ Xpressive::Xpressive(InstrumentTrack* instrument_track) :
 	m_rawgraphW1(-1.0f, 1.0f, GRAPH_LENGTH, this),
 	m_rawgraphW2(-1.0f, 1.0f, GRAPH_LENGTH, this),
 	m_rawgraphW3(-1.0f, 1.0f, GRAPH_LENGTH, this),
-	m_selectedGraph(0, 0, 6, this, tr("Selected graph")),
+	m_selectedGraph(0, 0, NUM_EXPRS - 1, this, tr("Selected graph")),
 	m_parameterA1(1, -1.0f, 1.0f, 0.01f, this, tr("A1")),
 	m_parameterA2(1, -1.0f, 1.0f, 0.01f, this, tr("A2")),
 	m_parameterA3(1, -1.0f, 1.0f, 0.01f, this, tr("A3")),
@@ -107,6 +111,13 @@ Xpressive::Xpressive(InstrumentTrack* instrument_track) :
 {
 	m_outputExpression[0]="sinew(integrate(f*(1+0.05sinew(12t))))*(2^(-(1.1+A2)*t)*(0.4+0.1(1+A3)+0.4sinew((2.5+2A1)t))^2)";
 	m_outputExpression[1]="expw(integrate(f*atan(500t)*2/pi))*0.5+0.12";
+
+	// The render path runs on the audio thread, where logging is not allowed. A
+	// failing expression is recorded there and reported from the main thread by this
+	// timer.
+	m_errorReportTimer.setInterval(1000);
+	connect(&m_errorReportTimer, &QTimer::timeout, this, &Xpressive::reportPendingError);
+	m_errorReportTimer.start();
 }
 
 void Xpressive::saveSettings(QDomDocument & _doc, QDomElement & _this) {
@@ -166,20 +177,11 @@ void Xpressive::loadSettings(const QDomElement & _this) {
 	m_panning2.loadSettings(_this,"PAN2");
 	m_relTransition.loadSettings(_this,"RELTRANS");
 
-	int size = 0;
-	char * dst = 0;
-	base64::decode( _this.attribute( "W1sample"), &dst, &size );
-
-	m_rawgraphW1.setSamples( (float*) dst );
-	delete[] dst;
-	base64::decode( _this.attribute( "W2sample"), &dst, &size );
-
-	m_rawgraphW2.setSamples( (float*) dst );
-	delete[] dst;
-	base64::decode( _this.attribute( "W3sample"), &dst, &size );
-
-	m_rawgraphW3.setSamples( (float*) dst );
-	delete[] dst;
+	// A waveform is only replaced by exactly one finite float per graph point; a missing,
+	// truncated or nonfinite attribute keeps the graph's current samples (Q050-486).
+	waveform::loadGraph(_this, QStringLiteral("W1sample"), m_rawgraphW1, QStringLiteral("Xpressive"));
+	waveform::loadGraph(_this, QStringLiteral("W2sample"), m_rawgraphW2, QStringLiteral("Xpressive"));
+	waveform::loadGraph(_this, QStringLiteral("W3sample"), m_rawgraphW3, QStringLiteral("Xpressive"));
 
 	smooth(m_smoothW1.value(),&m_rawgraphW1,&m_graphW1);
 	smooth(m_smoothW2.value(),&m_rawgraphW2,&m_graphW2);
@@ -231,6 +233,39 @@ void Xpressive::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) {
 	const f_cnt_t offset = nph->noteOffset();
 
 	ps->renderOutput(frames, out.data() + offset);
+
+	if (ps->takePendingError())
+	{
+		// The audio thread does not log, it hands the error to the main thread.
+		recordPendingError(ps->pendingError());
+	}
+}
+
+void Xpressive::recordPendingError(const char* message)
+{
+	// The first error wins: a broken expression fails in every period.
+	// Pair with the main thread's release store when it clears the flag, so the
+	// message buffer is not reused until its previous read has completed.
+	if (m_pendingErrorSet.load(std::memory_order_acquire))
+	{
+		return;
+	}
+	std::strncpy(m_pendingError, message != nullptr ? message : "", sizeof(m_pendingError) - 1);
+	m_pendingError[sizeof(m_pendingError) - 1] = '\0';
+	m_pendingErrorSet.store(true, std::memory_order_release);
+}
+
+void Xpressive::reportPendingError()
+{
+	if (!m_pendingErrorSet.load(std::memory_order_acquire))
+	{
+		return;
+	}
+	// The buffer is only written while no error is pending, so it can be read before
+	// the flag is cleared.
+	const QString message = QString::fromLatin1(m_pendingError);
+	m_pendingErrorSet.store(false, std::memory_order_release);
+	qWarning("Xpressive: %s", qPrintable(message));
 }
 
 void Xpressive::deleteNotePluginData(NotePlayHandle* nph) {
@@ -525,24 +560,28 @@ XpressiveView::XpressiveView(Instrument * _instrument, QWidget * _parent) :
 void XpressiveView::expressionChanged() {
 	auto e = castModel<Xpressive>();
 	QByteArray text = m_expressionEditor->toPlainText().toLatin1();
+	QByteArray* stored_expression = nullptr;
 
 	switch (m_selectedGraphGroup->model()->value()) {
 		case W1_EXPR:
-			e->wavesExpression(0) = text;
+			stored_expression = &e->wavesExpression(0);
 			break;
 		case W2_EXPR:
-			e->wavesExpression(1) = text;
+			stored_expression = &e->wavesExpression(1);
 			break;
 		case W3_EXPR:
-			e->wavesExpression(2) = text;
+			stored_expression = &e->wavesExpression(2);
 			break;
 		case O1_EXPR:
-			e->outputExpression(0) = text;
+			stored_expression = &e->outputExpression(0);
 			break;
 		case O2_EXPR:
-			e->outputExpression(1) = text;
+			stored_expression = &e->outputExpression(1);
 			break;
 	}
+	const bool stored_expression_changed = stored_expression && *stored_expression != text;
+	if (stored_expression)
+		*stored_expression = text;
 	if (m_wave_expr)
 		m_graph->setEnabled(m_smoothKnob->model()->value() == 0 && text.size() == 0);
 
@@ -552,7 +591,7 @@ void XpressiveView::expressionChanged() {
 		ExprFront expr(text.constData(),sample_rate);
 		float t=0;
 		const float f=10,key=5,v=0.5;
-		unsigned int frame_counter = 0;
+		f_cnt_t frame_counter = 0;
 		expr.add_variable("t", t);
 
 		if (m_output_expr)
@@ -604,6 +643,8 @@ void XpressiveView::expressionChanged() {
 		else
 		{
 			e->exprValid().setValue(1);
+			if (stored_expression_changed)
+				Engine::getSong()->setModified();
 			if (m_output_expr)
 				m_raw_graph->clear();
 		}
@@ -611,6 +652,8 @@ void XpressiveView::expressionChanged() {
 	else
 	{
 		e->exprValid().setValue(0);
+		if (stored_expression_changed)
+			Engine::getSong()->setModified();
 		if (m_output_expr)
 			m_raw_graph->clear();
 	}
@@ -686,6 +729,11 @@ void XpressiveView::updateLayout() {
 	auto e = castModel<Xpressive>();
 	m_output_expr=false;
 	m_wave_expr=false;
+	if (m_selectedGraphGroup->model()->value() < W1_EXPR ||
+		m_selectedGraphGroup->model()->value() >= NUM_EXPRS)
+	{
+		m_selectedGraphGroup->model()->setValue(W1_EXPR);
+	}
 	switch (m_selectedGraphGroup->model()->value()) {
 	case W1_EXPR:
 		m_wave_expr=true;

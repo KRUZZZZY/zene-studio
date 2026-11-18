@@ -28,19 +28,27 @@
 #include "ArrangerEditPreview.h"
 #include "ArrangerOverlays.h"
 
+#include <cstdint>
+#include <limits>
 #include <set>
 #include <cassert>
 
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QSet>
 
 #include "AutomationClip.h"
+#include "ClipLinks.h"
 #include "ClipLockFeedback.h"
 #include "Clipboard.h"
 #include "ColorChooser.h"
+#include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "DataFile.h"
+#include "DesignTokens.h"
 #include "DeprecationHelper.h"
+#include "ClipGroupEdits.h"
 #include "EditLocks.h"
 #include "Engine.h"
 #include "embed.h"
@@ -50,9 +58,11 @@
 #include "MidiClipView.h"
 #include "PatternClip.h"
 #include "PatternStore.h"
+#include "ProjectJournal.h"
 #include "SampleFrameEdits.h"
 #include "Song.h"
 #include "SongEditor.h"
+#include "ArrangerFileDrop.h"
 #include "StringPairDrag.h"
 #include "TextFloat.h"
 #include "TrackContainer.h"
@@ -86,9 +96,11 @@ tick_t gridLineOf(tick_t start, const Clip* clip, float snapBars)
 {
 	const auto step = std::max<tick_t>(1, static_cast<tick_t>(std::lround(snapBars * TimePos::ticksPerBar())));
 	const tick_t snapPoint = std::max(0, clip->clipEdits().snapTicks);
-	for (const tick_t candidate : {start + snapPoint, start, start + clip->length().getTicks()})
+	const std::int64_t wideStart = start;
+	for (const std::int64_t candidate : {wideStart + snapPoint, wideStart, wideStart + clip->length().getTicks()})
 	{
-		if (candidate % step == 0) { return candidate; }
+		if (candidate < std::numeric_limits<tick_t>::min() || candidate > std::numeric_limits<tick_t>::max()) { continue; }
+		if (candidate % step == 0) { return static_cast<tick_t>(candidate); }
 	}
 	return start;
 }
@@ -100,6 +112,15 @@ int lockedAmong(const QVector<selectableObject*>& objects)
 		auto* view = dynamic_cast<ClipView*>(object);
 		return view != nullptr && EditLocks::instance().locks(view->getClip());
 	}));
+}
+
+
+//! A drop whose crossfade could not be made (a clip too short for it) says so; nothing when \a skipped is empty.
+void announceSkippedOverlap(const QString& skipped)
+{
+	if (skipped.isEmpty()) { return; }
+	TextFloat::displayMessage(ClipView::tr("Crossfade not made"), ClipView::tr("The overlap was left as it was: %1").arg(skipped),
+		embed::getIconPixmap("hint"), 4000);
 }
 
 } // namespace
@@ -147,7 +168,8 @@ ClipView::ClipView( Clip * clip,
 	move( 0, 0 );
 	show();
 
-	setFixedHeight( tv->getTrackContentWidget()->height() - 1);
+	const int contentHeight = tv->getTrackContentWidget()->height() - 1;
+	setFixedHeight(tokens::accessibleMode() ? std::min(tokens::targetSize(), contentHeight) : contentHeight);
 	setAcceptDrops( true );
 	setMouseTracking( true );
 
@@ -297,8 +319,9 @@ void ClipView::updateLength()
 	else
 	{
 		// this std::max function is needed for clips that do not start or end on the beat, otherwise, they "disappear" when zooming to min 
-		// 3 is the minimum width needed to make a clip visible
-		setFixedWidth(std::max(static_cast<int>(m_clip->length() * pixelsPerBar() / TimePos::ticksPerBar() + 1), 3));
+		// 3 is the minimum width needed to make a clip visible; accessible mode makes the clip a touch target.
+		const int minimum = tokens::accessibleMode() ? tokens::targetSize() : 3;
+		setFixedWidth(std::max(static_cast<int>(m_clip->length() * pixelsPerBar() / TimePos::ticksPerBar() + 1), minimum));
 	}
 	m_trackView->trackContainerView()->update();
 }
@@ -346,33 +369,45 @@ void ClipView::resetColor()
  */
 void ClipView::setColor(const std::optional<QColor>& color)
 {
-	std::set<Track*> journaledTracks;
-
 	auto selectedClips = getClickedClips();
+	// 0.5.0 theme 2 (Luna cluster 5578): recoloring edits the clip, so a locked one keeps its color.
+	int kept = 0;
+	// One checkpoint for every clip that will change, linked members included (r3-clips); a clip that
+	// already has the color is not an edit, so it is neither checkpointed nor marks the song modified.
+	QVector<JournallingObject*> toCheckpoint;
+	QSet<Clip*> checkpointed;
+	for (auto clipv : selectedClips)
+	{
+		Clip* clip = clipv->getClip();
+		if (EditLocks::instance().locks(clip) || clip->color() == color) { continue; }
+		const QVector<Clip*> members = clip->linkId() > 0 ? ClipLinks::groupOf(clip) : QVector<Clip*>{clip};
+		for (Clip* member : members)
+		{
+			if (!checkpointed.contains(member))
+			{
+				checkpointed.insert(member);
+				toCheckpoint.append(member);
+			}
+		}
+	}
+	if (ProjectJournal* journal = Engine::projectJournal(); journal != nullptr && !toCheckpoint.isEmpty())
+	{
+		journal->addJournalCheckPoint(toCheckpoint);
+	}
+
+	bool colorChanged = false;
 	for (auto clipv : selectedClips)
 	{
 		auto clip = clipv->getClip();
-		auto track = clip->getTrack();
-
-		// TODO journal whole Song or group of clips instead of one journal entry for each track
-
-		// If only one clip changed, store that in the journal
-		if (selectedClips.length() == 1)
-		{
-			clip->addJournalCheckPoint();
-		}
-		// If multiple clips changed, store whole Track in the journal
-		// Check if track has been journaled already by trying to add it to the set
-		else if (journaledTracks.insert(track).second)
-		{
-			track->addJournalCheckPoint();
-		}
-
+		if (EditLocks::instance().locks(clip)) { ++kept; continue; }
+		if (clip->color() == color) { continue; }
 		clip->setColor(color);
 		clipv->update();
+		colorChanged = true;
 	}
+	cliplocks::announceKept(kept);
 
-	Engine::getSong()->setModified();
+	if (colorChanged) { Engine::getSong()->setModified(); }
 }
 
 
@@ -396,6 +431,13 @@ void ClipView::dragEnterEvent( QDragEnterEvent * dee )
 {
 	TrackContentWidget * tcw = getTrackView()->getTrackContentWidget();
 	TimePos clipPos{m_clip->startPosition()};
+
+	// A file from a plug-in editor or the desktop lands on the lane under this clip (0.5.0 L04, Q050-031).
+	if (arrangerdrop::carriesFile(dee->mimeData()))
+	{
+		dee->acceptProposedAction();
+		return;
+	}
 
 	if( tcw->canPasteSelection( clipPos, dee ) == false )
 	{
@@ -422,6 +464,14 @@ void ClipView::dragEnterEvent( QDragEnterEvent * dee )
  */
 void ClipView::dropEvent( QDropEvent * de )
 {
+	if (arrangerdrop::carriesFile(de->mimeData()))
+	{
+		TrackContentWidget * lane = getTrackView()->getTrackContentWidget();
+		if (lane->dropFile(de->mimeData(), mapTo(lane, position(de)).x(), arrangerdrop::dropModifiers(de))) { de->acceptProposedAction(); }
+		else { de->ignore(); }
+		return;
+	}
+
 	QString type = StringPairDrag::decodeKey( de );
 	QString value = StringPairDrag::decodeValue( de );
 
@@ -597,6 +647,8 @@ void ClipView::paintTextLabel(QString const & text, QPainter & painter)
  */
 void ClipView::mousePressEvent( QMouseEvent * me )
 {
+	// Q050-255: a plain click on a clip is a new selection; Ctrl+click keeps the summary clips beside it.
+	if (me->button() == Qt::LeftButton && !(me->modifiers() & KBD_COPY_MODIFIER)) { FolderSpanSelection::instance().clear(); }
 	// 0.5.0 ED-010: with the arranger's smart tool, a press in a clip's upper half draws a range.
 	auto* overlay = m_trackView->trackContainerView()->findChild<ArrangerRangeOverlay*>();
 	if (overlay != nullptr && overlay->tool() == ArrangerRangeOverlay::Tool::Smart && me->button() == Qt::LeftButton
@@ -715,7 +767,11 @@ void ClipView::mousePressEvent( QMouseEvent * me )
 				if ( m_action != Action::Split) { s_textFloat->show(); }
 			}
 
+			// Null it at once: showing a top-level float can deliver the matching release before this press
+			// returns (a platform flushes its window events when a window appears), and that release deletes
+			// m_hint again - a double free that corrupted the heap on a click in the Terra harness.
 			delete m_hint;
+			m_hint = nullptr;
 			QString hint;
 			if (m_action == Action::Move || m_action == Action::MoveSelection)
 			{
@@ -1038,9 +1094,13 @@ void ClipView::mouseReleaseEvent( QMouseEvent * me )
 		if (m_action == Action::Move)
 		{
 			ArrangerEditPreview::endDrag(this);
+			const bool containerCrossfade = me->modifiers() & Qt::AltModifier;
 			const Clip* locked = arrangement::lockedUnder(m_clip, m_clip->startPosition().getTicks(),
-				m_clip->endPosition().getTicks(), arrangement::modes().overlap);
-			if (!arrangement::afterUserMove(m_clip, m_initialClipPos.getTicks()) && locked != nullptr) { cliplocks::refuseDropOnto(locked); }
+				m_clip->endPosition().getTicks(), containerCrossfade ? arrangement::Overlap::Crossfade : arrangement::modes().overlap);
+			QString skipped;
+			if (!arrangement::afterUserMove(m_clip, m_initialClipPos.getTicks(), &skipped, containerCrossfade)
+				&& locked != nullptr) { cliplocks::refuseDropOnto(locked); }
+			announceSkippedOverlap(skipped);
 		}
 	}
 	else if (m_action == Action::MoveSelection && mouseMovedDistance(me, 2))
@@ -1214,6 +1274,8 @@ QVector<ClipView *> ClipView::getClickedClips()
 void ClipView::remove( QVector<ClipView *> clipvs )
 {
 	int kept = 0;
+	ProjectJournal* journal = Engine::projectJournal();
+	const quint64 undoSerial = journal != nullptr ? journal->topStepSerial() : 0;
 	for( auto clipv: clipvs )
 	{
 		// No need to check if it's nullptr because we check when building the QVector
@@ -1221,6 +1283,7 @@ void ClipView::remove( QVector<ClipView *> clipvs )
 		if (EditLocks::instance().locks(clipv->getClip())) { ++kept; continue; }
 		clipv->remove();
 	}
+	if (journal != nullptr) { journal->mergeCheckpointsSince(undoSerial); }
 	cliplocks::announceKept(kept);  // 0.5.0 theme 2: and the user is told so
 }
 
@@ -1267,24 +1330,41 @@ void ClipView::paste()
 
 void ClipView::toggleMute( QVector<ClipView *> clipvs )
 {
+	// 0.5.0 theme 2 (Luna cluster 5578): the Ctrl+middle-click gesture already refuses a locked
+	// clip at the press, so this menu path refuses it too - the edit must not depend on how it was
+	// asked for.
+	int kept = 0;
 	for( auto clipv: clipvs )
 	{
 		// No need to check for nullptr because we check while building the clipvs QVector
-		clipv->getClip()->toggleMute();
+		if (EditLocks::instance().locks(clipv->getClip())) { ++kept; continue; }
+		// 0.5.0 Q050-040 (L07): the mute is the registered clip.set_mute command - the same
+		// implementation agents use, so the GUI toggle and the agent's unmute chase share one
+		// code path and one undo class. An idempotent request (the value is already set) is
+		// fine: the model checkpoint only moves when the value does.
+		Clip* clip = clipv->getClip();
+		ControlRegistry::instance()->invoke(QStringLiteral("clip.set_mute"), QJsonObject{
+			{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("muted"), !clip->isMuted()}});
 	}
+	cliplocks::announceKept(kept);
 }
 
 void ClipView::toggleSelectedAutoResize()
 {
 	const bool newState = !m_clip->getAutoResize();
 	std::set<Track*> journaledTracks;
+	// 0.5.0 theme 2 (Luna cluster 5578): auto-resize edits the clip, so a locked one keeps its state.
+	int kept = 0;
 	for (auto clipv: getClickedClips())
 	{
 		Clip* clip = clipv->getClip();
+		if (EditLocks::instance().locks(clip)) { ++kept; continue; }
 		if (journaledTracks.insert(clip->getTrack()).second) { clip->getTrack()->addJournalCheckPoint(); }
 		clip->setAutoResize(newState);
 		clip->updateLength();
 	}
+	cliplocks::announceKept(kept);
 }
 
 /*! \brief How many pixels a bar takes for this ClipView.
@@ -1409,7 +1489,7 @@ void ClipView::pressLocked(QMouseEvent* me)
 	if (me->modifiers() & KBD_COPY_MODIFIER) { setSelected(!isSelected()); }
 	else if (!isSelected())
 	{
-		getGUI()->songEditor()->m_editor->selectAllClips(false);
+		if (!(me->modifiers() & Qt::ShiftModifier)) { getGUI()->songEditor()->m_editor->selectAllClips(false); }
 		setSelected(true);
 	}
 	if (m_trackView->trackContainerView()->knifeMode())

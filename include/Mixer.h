@@ -31,6 +31,7 @@
 #include "HardwareIo.h"
 #include "JournallingObject.h"
 #include "LatencyCompensation.h"
+#include "MixerBusFreeze.h"
 #include "MixerPostInserts.h"
 #include "MixerStrip.h"
 #include "MixerSurround.h"
@@ -40,9 +41,13 @@
 
 #include <array>
 #include <atomic>
+#include <bitset>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
+#include <set>
+#include <vector>
 #include <QColor>
 
 namespace lmms
@@ -57,6 +62,9 @@ using MixerSidechainRouteVector = std::vector<MixerSidechainRoute*>;
 
 //! VCA / mix-and-edit group (task #622); defined in VcaGroup.h.
 class VcaGroup;
+
+//! Q050-108: a strip's live loudness meter; defined in StripMeters.h.
+class StripLoudness;
 
 //! Tap point for a sidechain send (Phase D, spec 4.3; Reaper I_SENDMODE 0-3).
 enum class SidechainTapPoint : int
@@ -94,11 +102,20 @@ public:
 	//! stereo, panner off - and nothing saved - unless a project sets them.
 	ChannelSurround m_surround;
 
+	//! Q050-124: the bus's frozen take (MixerBusFreeze.h); empty - and nothing saved - unless the bus is frozen.
+	BusFreeze m_freeze;
+
 	// set to true if any effect in the channel is enabled and running
 	bool m_stillRunning;
 
 	float m_peakLeft;
 	float m_peakRight;
+	//! Q050-100: the same post-fader, post-insert peak, held for the meter SPEECH/watch path.
+	//! The GUI meter consumes and clears m_peakLeft each tick; a command or a peak watch must
+	//! not race that consumer, so these are written by the mixer worker and are never reset by
+	//! the interface. They are atomics, like the strip's other published readings.
+	MeterValue m_speechPeakLeft;
+	MeterValue m_speechPeakRight;
 	//! Interleaved stereo buffer (one track channel pair) this channel is mixed into
 	SampleFrame* m_buffer;
 	//! Bus view over m_buffer, used for effect processing and mixing
@@ -146,10 +163,40 @@ public:
 	std::atomic<bool> m_clipped{false};
 	MeterValue m_gainReduction;
 	MeterValue m_correlation;  //!< 0.5.0 L08 (MX-137): the pre-fader phase correlation, -1..1
-	MeterValue m_livePeakLeft;  //!< 0.5.0 L09 (MX-053): this period's peak after the inserts, before the fader; no reader resets it
+	MeterValue m_livePeakLeft;  //!< 0.5.0 L09 (MX-053): the source peak used by pre-fader sends; no reader resets it
 	MeterValue m_livePeakRight;
+	MeterValue m_liveBakedPeakLeft;  //!< The baked post-fader output peak, for post-fader send meters.
+	MeterValue m_liveBakedPeakRight;
+	std::atomic<bool> m_livePostInsertsBaked{false};  //!< Whether this period's live baked peaks are valid.
+	// Q050-108 (StripMeters.h): the strip's own meter mode (0 follows the mixer view), its VU needle (written by the
+	// mixer worker, read by the interface) and its loudness meter, built on the control thread when first asked for.
+	std::atomic<int> m_meterMode{0};
+	MeterValue m_vuLeft;
+	MeterValue m_vuRight;
+	std::array<float, 4> m_vuState{};  //!< the needle's two stages a side (mixer worker only)
+	bool m_vuRunning = false;  //!< mixer worker only
+	std::unique_ptr<StripLoudness> m_loudnessOwner;  //!< control thread
+	std::atomic<StripLoudness*> m_loudness{nullptr};
 	QString m_name;
-	QMutex m_lock;
+	/*! One render thread's private slice of this channel's input (cluster new-p10-249).
+	 *  Mixer::mixToChannel runs on every AudioEngine render thread, so adding straight
+	 *  into m_bus would be a shared read-modify-write that needs a guard - and a guard
+	 *  on the render path is what AGENTS.md rule 4 forbids ("no allocation, no mutex, no
+	 *  logging"). Instead a render thread adds its block into its OWN partial, which no
+	 *  other thread ever touches, and Mixer::reduceInputPartials() - the single owner,
+	 *  at the period barrier in masterMix - sums the live partials into m_bus. No
+	 *  worker waits or spins: there is no shared guard at all. */
+	struct InputPartial
+	{
+		std::vector<SampleFrame> buffer;      //!< one period of frames, zero unless live
+		std::bitset<MaxTrackChannels> quiet;  //!< this slot's AND of the sources it fed
+		int frames = 0;                       //!< the frames this slot fed
+		bool live = false;                    //!< true when a render thread fed this slot
+	};
+	/*! Indexed by AudioEngineWorkerThread::currentRenderSlot(): one slot per render
+	 *  thread, plus one for a caller that is not on a render thread (the control side
+	 *  and the tests). Sized once, at construction, so the render path never grows it. */
+	std::vector<InputPartial> m_inputPartials;
 	bool m_queued; // are we queued up for rendering yet?
 	//! Are we muted? Updated per period by Mixer::masterMix so the render
 	//! thread and the workers do not call m_muteModel.value() repeatedly.
@@ -248,6 +295,14 @@ public:
 		m_inputLatencyFrames.store(frames, std::memory_order_relaxed);
 	}
 
+	/*! Q050-339: the channel's manual delay in frames at the engine's rate - positive plays its output later,
+	 *  negative earlier (every other path into the same receivers is then delayed instead). It enters the PDC
+	 *  graph as a negative latency on the channel's output (Mixer::resolveLatency), so the sends out of the
+	 *  channel are compensated by it; the master has no later summing point and takes none. 0 by default
+	 *  (nothing saved). Control thread writes, the audio thread reads. */
+	int offsetFrames() const { return m_offsetFrames.load(std::memory_order_relaxed); }
+	void setOffsetFrames(int frames) { m_offsetFrames.store(frames, std::memory_order_relaxed); }
+
 	//! VCA / mix group (#622): the gain the channel's group publishes, applied
 	//! as one extra multiply to the post-FX buffer. 1.0f when the channel is in
 	//! no group (and when its group is at unity). Written on the control thread
@@ -269,6 +324,18 @@ public:
 
 private:
 	void doProcessing() override;
+	//! The trim-to-pan stages after the inputs are summed: the devices (chain or rack), the hardware insert, the
+	//! VCA gain, the strip's output stages and the pan. A frozen bus skips them: its take already carries them.
+	void processInserts(const f_cnt_t fpp);
+	//! The two sets carry the channels already expanded by the ongoing solo
+	//!  propagation, one set per walk direction: a channel reached sender-only
+	//!  must still be expanded by a receiver walk, and the reverse. Feedback
+	//!  mode permits real cycles in the send graph, so each walk expands a
+	//!  channel at most once per direction.
+	void unmuteSenderForSolo(std::set<MixerChannel*>& senderVisited,
+		std::set<MixerChannel*>& receiverVisited);
+	void unmuteReceiverForSolo(std::set<MixerChannel*>& senderVisited,
+		std::set<MixerChannel*>& receiverVisited);
 	int m_channelIndex;
 	/*! The channel's stable id: the number in `ch-<n>`. Assigned once, in the
 	 *  constructor, and taken back from the project file by
@@ -280,6 +347,7 @@ private:
 	std::optional<QColor> m_color;
 	//! PDC alignment point; see inputLatencyFrames().
 	std::atomic<int> m_inputLatencyFrames{0};
+	std::atomic<int> m_offsetFrames{0};  //!< Q050-339: see offsetFrames()
 };
 
 class MixerRoute : public QObject
@@ -477,6 +545,17 @@ public:
 		return m_deferred;
 	}
 
+	//! Luna cluster 4277: restore the persisted deferred flag on load. The
+	//! flag is INFERRED at creation time from the routing graph, and loading
+	//! re-infers it against a half-built graph, so a saved deferred route came
+	//! back gating. The setter only runs on the control thread inside
+	//! loadSettings (before playback starts), the same way setPreFader() is
+	//! applied there.
+	void setDeferred(bool deferred)
+	{
+		m_deferred = deferred;
+	}
+
 	//! Tap snapshot the receiver reads for a deferred route: the sender's
 	//! intermediate as committed at the start of the current period.
 	const AudioBuffer& committed() const
@@ -526,6 +605,11 @@ public:
 
 	void mixToChannel(const AudioBus& bus, mix_ch_t channel);
 
+	//! Sums every render thread's input partial for every channel into the channel
+	//! bus: the single owner of the worker-fed accumulation, run at the period
+	//! barrier (the top of masterMix) once the render workers have joined.
+	void reduceInputPartials();
+
 	void prepareMasterMix();
 	void masterMix( SampleFrame* _buf );
 
@@ -542,9 +626,31 @@ public:
 		return m_totalLatencyFrames.load(std::memory_order_relaxed);
 	}
 
+	/*! PDC (#605): whether any compensation DELAY the graph asked for was above
+	 *  the delay lines' capacity and had to be clamped.
+	 *
+	 *  This is NOT the same question as whether totalLatencyFrames() is at or
+	 *  above LatencyCompensation::MaxFrames: the total adds the master chain's
+	 *  own always-applied latency on top of the alignment point, so an aligned
+	 *  graph (every compensation delay 0, nothing clamped) can still publish a
+	 *  total above the capacity. Ask this for "was anything clamped", and the
+	 *  total for "how much latency does the graph have".
+	 */
+	bool latencyCompensationClamped() const
+	{
+		return m_latencyCompensationClamped.load(std::memory_order_relaxed);
+	}
+
 	//! PDC (#605): the alignment point of a channel's input, or 0 when the
 	//! index is out of range.
 	int channelInputLatency(mix_ch_t channel) const;
+	//! Recompute PDC while project loading still holds the engine's change guard.
+	void publishLatencyCompensationForProjectLoad() { updateLatencyCompensation(); }
+#ifdef LMMS_TESTING
+	using LatencyUpdateProbe = void (*)(Mixer*);
+	static void setLatencyUpdateProbeForTest(LatencyUpdateProbe probe) { s_latencyUpdateProbe = probe; }
+	inline static LatencyUpdateProbe s_latencyUpdateProbe = nullptr;
+#endif
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
 	void loadSettings( const QDomElement & _this ) override;
@@ -556,8 +662,19 @@ public:
 
 	MixerChannel * mixerChannel( int _ch )
 	{
+#ifdef LMMS_TESTING
+		if( _ch < 0 || _ch >= static_cast<int>( m_mixerChannels.size() ) ) { return refusedLookupForTesting(); }
+#endif
 		return m_mixerChannels[_ch];
 	}
+
+#ifdef LMMS_TESTING
+	//! Test seam (cluster new-p14-29): a mixerChannel() call that names no channel is refused and counted here,
+	//! before the channel vector is read. Compiled out of the shipping product; no member is added.
+	static MixerChannel * refusedLookupForTesting();
+	//! The refused lookups since the last call; the count starts again at zero.
+	static int takeRefusedLookupsForTesting();
+#endif
 
 	// make the output of channel fromChannel go to the input of channel toChannel
 	// it is safe to call even if the send already exists
@@ -597,6 +714,11 @@ public:
 	//! Cycle check over the union of regular and sidechain edges, so a
 	//! sidechain edge can never deadlock the dependency counter.
 	bool checkInfiniteLoop( MixerChannel * from, MixerChannel * to );
+	//! The traversal itself: \a visited carries the channels already expanded
+	//! on this walk, so an existing cycle (which the feedback submode permits)
+	//! is cut instead of recursed into forever.
+	bool checkInfiniteLoop( MixerChannel * from, MixerChannel * to,
+		std::vector<MixerChannel*>& visited );
 	//! True when adding from->to would close a cycle made of sidechain sends
 	//! alone. Such a cycle has no regular send to anchor the ordering, so it
 	//! is refused outright (see createSidechainSend).
@@ -704,9 +826,15 @@ private:
 	std::vector<MixerChannel*> m_mixerChannels;
 	//! clear() deletes channel after channel; it announces the result once.
 	bool m_clearing = false;
+	//! loadSettings() applies persisted feedback flags without auto-classifying routes.
+	bool m_loadingSettings = false;
 
-	// make sure we have at least num channels
-	void allocateChannelsTo(int num);
+	// make sure we have at least num channels. describedChannels is the number
+	// of channels the project file being loaded describes: a project-driven
+	// index outside it is refused, so a file can never ask for more channels
+	// than it holds.
+	void allocateChannelsTo(int num, int describedChannels);
+	bool shouldAutoFlagFeedbackRoute(MixerChannel* from, MixerChannel* to);
 
 	//! PDC (#605): recompute inLat/outLat for every channel and publish the
 	//! per-edge compensation delays. Runs on the audio thread once per period;
@@ -728,6 +856,9 @@ private:
 	std::vector<int> m_directSourceLatencyScratch;
 	//! PDC (#605): published total latency; see totalLatencyFrames().
 	std::atomic<int> m_totalLatencyFrames{0};
+	//! PDC (#605): whether any compensation delay was clamped; see
+	//! latencyCompensationClamped().
+	std::atomic<bool> m_latencyCompensationClamped{false};
 
 	//! VCA / mix groups (#622); control thread only.
 	std::vector<VcaGroup*> m_vcaGroups;
@@ -737,6 +868,11 @@ private:
 	bool m_feedbackMode = false;
 
 	int m_lastSoloed;
+
+	//! Luna cluster 1523: the group whose flag muted the mix, if a group solo
+	//! is active. Only that group may restore it, so clearing a group flag that
+	//! never soloed cannot unmute a channel solo in progress. Control thread.
+	VcaGroup* m_soloingGroup = nullptr;
 } ;
 
 

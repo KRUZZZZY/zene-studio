@@ -29,9 +29,11 @@
 
 #include "endian_handling.h"
 #include "AudioEngine.h"
+#include "AudioAlsaWrite.h"
 #include "AudioInputPath.h"
 #include "AudioIoSetup.h"
 #include "ConfigManager.h"
+#include "CrashReporter.h"
 
 namespace lmms
 {
@@ -61,7 +63,9 @@ AudioAlsa::AudioAlsa( bool & _success_ful, AudioEngine*  _audioEngine ) :
 	m_captureChannels( 0 ),
 	m_captureFloat( false ),
 	m_captureStop( false ),
-	m_captureOpen( false )
+	m_captureOpen( false ),
+	m_captureOverrunError( 0 ),
+	m_captureSuspendError( 0 )
 {
 	_success_ful = false;
 
@@ -105,18 +109,28 @@ AudioAlsa::AudioAlsa( bool & _success_ful, AudioEngine*  _audioEngine ) :
 	// set FD_CLOEXEC flag for all file descriptors so forked processes
 	// do not inherit them
 	int count = snd_pcm_poll_descriptors_count( m_handle );
-	auto ufds = new pollfd[count];
-	snd_pcm_poll_descriptors( m_handle, ufds, count );
-	for (int i = 0; i < std::max(3, count); ++i)
+	if (count > 0)
 	{
-		const int fd = ( i >= count ) ? ufds[0].fd+i : ufds[i].fd;
-		int oldflags = fcntl( fd, F_GETFD, 0 );
-		if( oldflags < 0 )
-			continue;
-		oldflags |= FD_CLOEXEC;
-		fcntl( fd, F_SETFD, oldflags );
+		auto ufds = new pollfd[count];
+		// The retrieval can FAIL: ALSA then fills nothing, and the array
+		// still holds whatever was in the fresh allocation. Reading it would
+		// hand an unrelated descriptor to fcntl(), so a failed retrieval
+		// skips the CLOEXEC setup entirely (cluster new-p15-252).
+		const int descriptorCount = snd_pcm_poll_descriptors( m_handle, ufds, count );
+		if (descriptorCount > 0)
+		{
+			for (int i = 0; i < std::max(3, descriptorCount); ++i)
+			{
+				const int fd = ( i >= descriptorCount ) ? ufds[0].fd+i : ufds[i].fd;
+				int oldflags = fcntl( fd, F_GETFD, 0 );
+				if( oldflags < 0 )
+					continue;
+				oldflags |= FD_CLOEXEC;
+				fcntl( fd, F_SETFD, oldflags );
+			}
+		}
+		delete[] ufds;
 	}
-	delete[] ufds;
 	_success_ful = true;
 }
 
@@ -222,7 +236,8 @@ int AudioAlsa::handleError( int _err )
 {
 	if( _err == -EPIPE )
 	{
-		// under-run
+		// under-run: the device ran dry - counted for the diagnostics (Q050-074.2), one relaxed add
+		countBackendXrun();
 		_err = snd_pcm_prepare( m_handle );
 		if( _err < 0 )
 			printf( "Can't recover from underrun, prepare "
@@ -280,15 +295,20 @@ void AudioAlsa::stopProcessingImpl()
 
 void AudioAlsa::run()
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	const auto framesPerAudioBuffer = audioEngine()->framesPerAudioBuffer();
 	auto buf = std::vector<float>(framesPerAudioBuffer * channels());
 	while (AudioDevice::isRunning())
 	{
 		audioEngine()->renderNextBuffer({buf.data(), channels(), framesPerAudioBuffer});
 
-		if (const auto framesWritten = snd_pcm_writei(m_handle, buf.data(), framesPerAudioBuffer); framesWritten < 0)
+		if (const auto framesWritten = alsa::detail::writeAllFrames(buf.data(), framesPerAudioBuffer,
+			static_cast<std::size_t>(channels()), [this](const float* data, snd_pcm_uframes_t frames)
+			{
+				return snd_pcm_writei(m_handle, data, frames);
+			}); framesWritten < 0)
 		{
-			handleError(framesWritten);
+			handleError(static_cast<int>(framesWritten));
 			continue;
 		}
 	}
@@ -411,6 +431,7 @@ bool AudioAlsa::openCapture()
 	if( grantedChannels == 0 ) { grantedChannels = 1; }
 
 	m_captureChannels = static_cast<int>( grantedChannels );
+	m_captureGrantedRate = grantedRate;
 
 	// Everything the capture thread touches is allocated HERE, once, off that
 	// thread: the loop below must not allocate (the realtime rule).
@@ -499,6 +520,12 @@ void AudioAlsa::closeCapture()
 		m_captureHwParams = nullptr;
 	}
 	m_captureChannels = 0;
+	m_captureGrantedRate = 0;
+
+	// The capture thread is gone by now, so the failures it parked are
+	// reported from here - the thread that closes the capture, which is not
+	// an audio thread (cluster 4584).
+	reportCaptureErrors();
 }
 
 
@@ -513,8 +540,10 @@ int AudioAlsa::handleCaptureError( int _err )
 		const int err = snd_pcm_prepare( m_captureHandle );
 		if( err < 0 )
 		{
-			printf( "Can't recover capture from overrun, prepare failed: %s\n",
-				snd_strerror( err ) );
+			// THE CAPTURE THREAD MAY NOT LOG: its own rule says so, and a
+			// stdio call can block it. The code is parked instead, and the
+			// thread that closes the capture reports it (cluster 4584).
+			m_captureOverrunError.store( err, std::memory_order_release );
 		}
 		else
 		{
@@ -536,14 +565,37 @@ int AudioAlsa::handleCaptureError( int _err )
 			err = snd_pcm_prepare( m_captureHandle );
 			if( err < 0 )
 			{
-				printf( "Can't recover capture from suspend, prepare failed: %s\n",
-					snd_strerror( err ) );
+				// Parked, not logged: see the overrun branch above.
+				m_captureSuspendError.store( err, std::memory_order_release );
 			}
 		}
 		return 0;
 	}
 #endif
 	return _err;
+}
+
+
+
+
+void AudioAlsa::reportCaptureErrors()
+{
+	// NOT the capture thread - this runs on the thread that closes the
+	// capture, which is the main thread and not an audio thread. Each parked
+	// failure is reported once, with the text the capture thread used to
+	// print itself.
+	const int overrun = m_captureOverrunError.exchange( 0, std::memory_order_acq_rel );
+	if( overrun < 0 )
+	{
+		printf( "Can't recover capture from overrun, prepare failed: %s\n",
+			snd_strerror( overrun ) );
+	}
+	const int suspend = m_captureSuspendError.exchange( 0, std::memory_order_acq_rel );
+	if( suspend < 0 )
+	{
+		printf( "Can't recover capture from suspend, prepare failed: %s\n",
+			snd_strerror( suspend ) );
+	}
 }
 
 
@@ -556,6 +608,7 @@ int AudioAlsa::handleCaptureError( int _err )
 
 void AudioAlsa::captureLoop()
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	// Realtime rules, kept: no allocation, no locks, no QString and no logging
 	// in this loop - the buffers were allocated in openCapture(), and the
 	// counters it touches are relaxed atomics.
@@ -697,8 +750,40 @@ int AudioAlsa::setHWParams( const ch_cnt_t _channels, snd_pcm_access_t _access )
 							snd_strerror( err ) );
 		return ( err );
 	}
+	// Q050-074.2: what the device granted, for the diagnostics.
+	dir = 0;
+	if (snd_pcm_hw_params_get_rate(m_hwParams, &m_grantedRate, &dir) < 0) { m_grantedRate = 0; }
 
 	return ( 0 );	// all ok
+}
+
+
+
+
+AudioDevice::DeviceTiming AudioAlsa::deviceTiming() const
+{
+	DeviceTiming timing;
+	timing.backend = name();
+	if (m_grantedRate > 0) { timing.sampleRate = static_cast<sample_rate_t>(m_grantedRate); }
+	if (m_periodSize > 0) { timing.periodFrames = static_cast<f_cnt_t>(m_periodSize); }
+	if (m_bufferSize > 0)
+	{
+		timing.bufferFrames = static_cast<f_cnt_t>(m_bufferSize);
+		timing.outputLatencyFrames = static_cast<f_cnt_t>(m_bufferSize);
+		timing.outputLatencyBasis = QStringLiteral("playback_buffer");
+	}
+	// The capture PCM's own rate: a separately selected capture interface negotiates its own.
+	if (m_captureOpen.load(std::memory_order_acquire) && m_captureGrantedRate > 0)
+	{
+		timing.inputSampleRate = static_cast<sample_rate_t>(m_captureGrantedRate);
+	}
+	if (timing.inputSampleRate.has_value() && m_capturePeriodSize > 0)
+	{
+		timing.inputLatencyFrames = static_cast<f_cnt_t>(m_capturePeriodSize);
+		timing.inputLatencyBasis = QStringLiteral("capture_period");
+	}
+	timing.countsXruns = true;
+	return timing;
 }
 
 

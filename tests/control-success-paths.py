@@ -70,6 +70,32 @@ def check_arrangement_record_land(session, recorder):
     session.result("transport.stop")
 
 
+def check_stopped_seek(session, recorder):
+    """Q050-021: a stopped seek is the position the transport starts from."""
+    session.result("project.new")
+    track = session.result("track.add", {"type": "instrument", "name": "Seek target"}).get("track")
+    clip = session.result("clip.add", {"track": track, "position": 0}).get("clip")
+    session.result("note.add", {"clip": clip, "key": 60, "position": 0, "length": 4096, "velocity": 100})
+    target = 960
+    session.result("transport.stop")
+    seek = session.result("transport.seek", {"ticks": target})
+    state = session.result("transport.get_state")
+    arrangement = session.result("arrangement.get_state")
+    recorder.check("stopped transport and arranger playhead report the sought tick",
+                   seek.get("position_ticks") == target and state.get("playing") is False
+                   and state.get("position_ticks") == target
+                   and arrangement.get("playhead_ticks") == target,
+                   "seek=%r state=%r arrangement=%r" % (seek, state, arrangement))
+
+    started = session.result("transport.play")
+    state = session.result("transport.get_state")
+    position = int(state.get("position_ticks", -1))
+    recorder.check("playback starts at the stopped seek tick", started.get("playing") is True
+                   and state.get("playing") is True and target <= position < target + 192,
+                   "play=%r state=%r" % (started, state))
+    session.result("transport.stop")
+
+
 def check_audible_diff(session, recorder, outdir):
     path = os.path.join(outdir, "same.mmp")
     session.result("project.save", {"path": path})
@@ -159,6 +185,43 @@ def check_track_flatten(session, recorder):
                    flattened.get("flattened") == track and str(flattened.get("track", "")).startswith("trk-")
                    and flattened.get("track") != track and os.path.isfile(flattened.get("path") or ""),
                    "reply=%r" % flattened)
+
+
+def check_track_flatten_keeps_folder(session, recorder, outdir):
+    """A folder child remains routed through its folder after flatten, undo and redo."""
+    folder = session.result("track.add", {"type": "folder", "name": "Flatten folder"}).get("track")
+    source = add_track_with_note(session, "Folder child", 63)
+    session.result("track.set_folder", {"track": source, "folder": folder})
+    routed = session.result("track.set_routing", {"track": folder, "routing": True})
+    channel = routed.get("mixer_channel")
+    out = os.path.join(outdir, "flatten-folder-child.wav")
+
+    flattened = session.result("track.flatten", {"track": source, "out": out})
+    landed = flattened.get("track")
+    landed_state = session.result("track.get_state", {"track": landed})
+    children = session.result("track.folder_get_state", {"track": folder}).get("children") or []
+    landed_child = next((child for child in children if child.get("track") == landed), {})
+    recorder.check("track.flatten keeps its replacement in the routing folder",
+                   landed_state.get("folder") == folder and landed_child.get("mixer_channel") == channel,
+                   "state=%r child=%r channel=%r reply=%r" % (landed_state, landed_child, channel, flattened))
+
+    session.result("control.undo")
+    restored = session.result("track.get_state", {"track": source})
+    children = session.result("track.folder_get_state", {"track": folder}).get("children") or []
+    recorder.check("flatten undo restores the source to its folder",
+                   restored.get("folder") == folder
+                   and any(child.get("track") == source for child in children),
+                   "state=%r children=%r" % (restored, children))
+
+    session.result("control.redo")
+    children = session.result("track.folder_get_state", {"track": folder}).get("children") or []
+    candidates = [child for child in children if child.get("track") != source]
+    redone_child = candidates[0] if len(candidates) == 1 else {}
+    redone = session.result("track.get_state", {"track": redone_child.get("track", "")}) if redone_child else {}
+    recorder.check("flatten redo keeps its replacement in the routing folder",
+                   bool(redone_child) and redone.get("folder") == folder
+                   and redone_child.get("mixer_channel") == channel,
+                   "state=%r child=%r channel=%r" % (redone, redone_child, channel))
 
 
 def check_range_bounce(session, recorder, outdir):
@@ -258,6 +321,10 @@ def main(argv):
     if len(argv) < 2:
         print(__doc__)
         return 2
+    stopped_seek_only = len(argv) == 3 and argv[2] == "--stopped-seek-only"
+    if len(argv) > 2 and not stopped_seek_only:
+        print("usage: control-success-paths.py <zene> [--stopped-seek-only]", file=sys.stderr)
+        return 2
     recorder = Recorder()
     transcript = H.Transcript()
     with H.start_instance(argv[1], workingdir=None) as instance:
@@ -265,14 +332,18 @@ def main(argv):
         client = H.connect(instance)
         H.wait_ready(instance, client, transcript)
         session = Session(client, transcript)
-        check_arrangement_record_land(session, recorder)
-        check_audible_diff(session, recorder, instance.tmp)
-        check_project_lifecycle(session, recorder, instance.tmp)
-        check_subprojects(session, recorder, instance.tmp)
-        check_track_flatten(session, recorder)
-        check_range_bounce(session, recorder, instance.tmp)
-        check_bounce_source_undo(session, recorder, instance.tmp)
-        check_window_shell(session, recorder, instance.tmp)
+        if stopped_seek_only:
+            check_stopped_seek(session, recorder)
+        else:
+            check_arrangement_record_land(session, recorder)
+            check_audible_diff(session, recorder, instance.tmp)
+            check_project_lifecycle(session, recorder, instance.tmp)
+            check_subprojects(session, recorder, instance.tmp)
+            check_track_flatten(session, recorder)
+            check_track_flatten_keeps_folder(session, recorder, instance.tmp)
+            check_range_bounce(session, recorder, instance.tmp)
+            check_bounce_source_undo(session, recorder, instance.tmp)
+            check_window_shell(session, recorder, instance.tmp)
         session.call("control.quit")
     report_results(recorder)
     if recorder.problems:

@@ -12,6 +12,13 @@ those two cases when it does not.
 | File | What it is |
 |------|------------|
 | `PR_WAV_Internal.aaf` | 344 KiB, sha256 `c4f3c232d255642940702a0a220e598b995e0ec8991d124d861598a61dd6211b` |
+| `PR_WAV_Internal_TrackGain_250pct.aaf` | Derived fixture with a 250% top-level track gain, for the dry-run clamp regression |
+
+`PR_WAV_Internal_TrackGain_250pct.aaf` is derived from the Premiere fixture
+above. Its mono audio track has a top-level Mono Audio Gain parameter set to
+250% (250000000/100000000), with the embedded essence retained. This fixture
+drives `interchange.aaf_read` through the command path and checks the serialized
+`loss.track_gain_clamps` field; the unmodified fixture keeps the in-range check.
 
 ## Provenance and licence
 

@@ -23,6 +23,7 @@
  */
 
 #include "AccessibleWidgets.h"
+#include "ValueAnnouncementState.h"
 
 #include <QAccessibleWidget>
 #include <QEvent>
@@ -88,13 +89,8 @@ protected:
 private:
 	void noteChange()
 	{
-		if (valueText(m_control) == m_said) { return; }
-		if (m_settle.isActive())
-		{
-			m_pending = true;
-			return;
-		}
-		announce();
+		if (detail::valueChangeAction(valueText(m_control), m_said, m_settle.isActive(), m_pending)
+			== detail::ValueChangeAction::Announce) { announce(); }
 	}
 
 	void announce()
@@ -164,7 +160,12 @@ public:
 
 	void setCurrentValue(const QVariant& value) override
 	{
-		if (AutomatableModel* model = modelOf(widget())) { model->setValue(value.toFloat()); }
+		if (AutomatableModel* model = modelOf(widget()))
+		{
+			bool converted = false;
+			const float number = value.toFloat(&converted);
+			if (converted) { model->setValue(number); }
+		}
 	}
 
 	QStringList actionNames() const override { return QStringList{increaseAction(), decreaseAction()} + Control::actionNames(); }

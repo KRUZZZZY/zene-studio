@@ -44,8 +44,16 @@
 #include <QDomElement>
 
 #include <cmath>
+#include <cstdint>
+#include <fstream>
 #include <memory>
+#include <new>
 #include <vector>
+
+#if defined(Q_OS_LINUX)
+#include <sys/resource.h>
+#include <unistd.h>
+#endif
 
 #include "ClipEdits.h"
 
@@ -70,6 +78,16 @@ std::shared_ptr<const SampleBuffer> constantBuffer(int seconds)
 	return std::make_shared<const SampleBuffer>(
 		std::vector<SampleFrame>(frames, SampleFrame(0.5f, 0.5f)).data(), frames, kSampleRate);
 }
+
+#if defined(Q_OS_LINUX)
+std::uint64_t virtualMemoryBytes()
+{
+	std::ifstream statm("/proc/self/statm");
+	std::uint64_t pages = 0;
+	statm >> pages;
+	return pages * static_cast<std::uint64_t>(sysconf(_SC_PAGESIZE));
+}
+#endif
 
 } // namespace
 
@@ -204,6 +222,50 @@ private slots:
 		QCOMPARE(clipFadeGainAt(0, 0, 10, 10, FadeShape::Linear, FadeShape::Linear), 1.0f);
 	}
 
+	void parsingAnEnvelopeStopsBeforeAllocatingOverflowPoints()
+	{
+#if defined(Q_OS_LINUX)
+		constexpr int kEncodedPoints = 2'000'000;
+		QString text;
+		text.reserve(kEncodedPoints * 4);
+		for (int i = 0; i < kEncodedPoints; ++i)
+		{
+			text += QStringLiteral("0:0;");
+		}
+
+		rlimit originalLimit{};
+		QVERIFY(getrlimit(RLIMIT_AS, &originalLimit) == 0);
+		const auto currentMemory = virtualMemoryBytes();
+		if (currentMemory == 0) { QSKIP("cannot read the process address-space size from /proc"); }
+		const auto memoryLimit = currentMemory + 32 * 1024 * 1024;
+		if (originalLimit.rlim_max != RLIM_INFINITY && memoryLimit > originalLimit.rlim_max)
+		{
+			QSKIP("the process hard address-space limit leaves no room for the regression probe");
+		}
+		rlimit constrainedLimit = originalLimit;
+		constrainedLimit.rlim_cur = static_cast<rlim_t>(memoryLimit);
+		QVERIFY(setrlimit(RLIMIT_AS, &constrainedLimit) == 0);
+
+		ClipEdits edits;
+		bool parsed = false;
+		try
+		{
+			envelopeFromText(text, &edits);
+			parsed = true;
+		}
+		catch (const std::bad_alloc&)
+		{
+		}
+		const int restoreResult = setrlimit(RLIMIT_AS, &originalLimit);
+
+		QVERIFY(restoreResult == 0);
+		QVERIFY2(parsed, "the parser allocated temporary storage for points after MaxGainPoints");
+		QCOMPARE(edits.envelopeCount, MaxGainPoints);
+#else
+		QSKIP("the bounded-memory regression probe uses Linux address-space limits");
+#endif
+	}
+
 	// ------------------------------------------------------------- neutrality
 
 	//! `isNeutral` is the single predicate the audio path branches on. It has to
@@ -310,6 +372,49 @@ private slots:
 		QCOMPARE(repaired->clipEdits().fadeOutTicks, 0);
 		QCOMPARE(static_cast<int>(repaired->clipEdits().fadeInShape),
 			static_cast<int>(FadeShape::Linear));
+	}
+
+	/*! Luna cluster 5576: the gain attribute is attacker- and typo-reachable
+	 *  project data, and a NaN or an unbounded dB value must not reach the
+	 *  render path, where one NaN sample contaminates the whole buffer. An
+	 *  unreadable or non-finite gain loads neutral; a finite out-of-range one
+	 *  clamps to the same range the `clip.set_gain` command accepts. */
+	void malformedGainLoadsNeutralOrClampedInsteadOfNan()
+	{
+		const auto loadGain = [](const QString& text) {
+			QDomDocument doc;
+			QDomElement element = doc.createElement(QStringLiteral("sampleclip"));
+			doc.appendChild(element);
+			element.setAttribute(QStringLiteral("gain"), text);
+
+			SampleTrack track(Engine::getSong());
+			auto* subject = dynamic_cast<SampleClip*>(track.createClip(TimePos(0)));
+			subject->setSampleBuffer(constantBuffer(1));
+			subject->loadSettings(element);
+			return subject->clipEdits().gain;
+		};
+
+		for (const QString& text : { QStringLiteral("nan"), QStringLiteral("-nan"),
+				 QStringLiteral("inf"), QStringLiteral("-inf"), QStringLiteral("1e999") })
+		{
+			const float gain = loadGain(text);
+			QVERIFY2(std::isfinite(gain),
+				qPrintable(QStringLiteral("gain=\"%1\" loaded a non-finite %2").arg(text).arg(gain)));
+		}
+		QVERIFY2(std::fabs(loadGain(QStringLiteral("nan")) - 1.0f) < 1e-6f,
+			"an unreadable gain must load neutral, not as some other value");
+
+		// A finite but absurd dB value clamps into the documented range.
+		const float huge = loadGain(QStringLiteral("100000"));
+		const float veryLow = loadGain(QStringLiteral("-100000"));
+		QVERIFY2(huge <= gainDbToLinear(MaxGainPointDb) + 1e-6f,
+			qPrintable(QStringLiteral("gain=\"100000\" loaded as %1, above the supported +24 dB").arg(huge)));
+		QVERIFY2(veryLow >= gainDbToLinear(MinGainPointDb) - 1e-6f,
+			qPrintable(QStringLiteral("gain=\"-100000\" loaded as %1, below the supported -60 dB").arg(veryLow)));
+
+		// A legal value is still loaded exactly as written.
+		QVERIFY2(std::fabs(loadGain(QStringLiteral("-6")) - gainDbToLinear(-6.0f)) < 1e-5f,
+			"a legal gain attribute no longer round-trips");
 	}
 };
 

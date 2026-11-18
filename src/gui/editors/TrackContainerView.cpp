@@ -26,12 +26,19 @@
 #include "TrackFolder.h"
 
 
+#include <algorithm>
+
 #include <QLayout>
+#include <QPointer>
 #include <QScrollBar>
+#include <QSet>
 #include <QWheelEvent>
 
 #include "TrackContainer.h"
 #include "AudioEngine.h"
+#include "AutomationTrack.h"
+#include "ControlTrackCreation.h"
+#include "ControlTrackRouting.h"
 #include "DataFile.h"
 #include "DpiHelper.h"
 #include "MainWindow.h"
@@ -41,6 +48,8 @@
 #include "InstrumentTrack.h"
 #include "PatternTrack.h"
 #include "Song.h"
+#include "ArrangerFileDrop.h"
+#include "DeprecationHelper.h"
 #include "StringPairDrag.h"
 #include "TrackPinStrip.h"
 #include "TrackSpacers.h"
@@ -121,9 +130,22 @@ TrackContainerView::TrackContainerView( TrackContainer * _tc ) :
 
 	connect( Engine::getSong(), SIGNAL(timeSignatureChanged(int,int)),
 						this, SLOT(realignTracks()));
-	connect( m_tc, SIGNAL(trackAdded(lmms::Track*)),
-			this, SLOT(createTrackView(lmms::Track*)),
-			Qt::QueuedConnection );
+	// The view is built on the next event-loop turn, as before. The track is held in a QPointer, and the view
+	// is built only if the track is still in this container then: a track deleted in the meantime (an undo, a
+	// removal in the same turn) is skipped, never dereferenced (m0 blocker, trackview-uaf). The signal itself is
+	// caught directly, so the track is still alive when it is captured.
+	connect( m_tc, &TrackContainer::trackAdded, this, [this]( Track * track )
+	{
+		QPointer<Track> added( track );
+		QMetaObject::invokeMethod( this, [this, added]
+		{
+			const TrackContainer::TrackList & tracks = m_tc->tracks();
+			if( added && std::find( tracks.begin(), tracks.end(), added.data() ) != tracks.end() )
+			{
+				createTrackView( added.data() );
+			}
+		}, Qt::QueuedConnection );
+	}, Qt::DirectConnection );
 	// A serialization restore deletes the container's tracks wholesale; the
 	// views must be gone before that happens (see the slot and
 	// docs/UNDO-RELEASE-CONFIG.md). Direct connection on purpose: the tracks
@@ -185,6 +207,13 @@ TrackView * TrackContainerView::addTrackView( TrackView * _tv )
 	{
 		connect(folder, &TrackFolder::stateChanged, this, &TrackContainerView::realignTracks, Qt::QueuedConnection);
 	}
+	// 0.5.0 Q050-022: a track's automation-lane fold flag can change from the
+	// agent surface (automation.lanes_set_collapsed) or from an undo/redo of that
+	// command's Track checkpoint, not only from this view's own button. Listening
+	// to the track's signal makes either path re-lay the rows, so no caller has to
+	// call realignTracks() itself.
+	connect(_tv->getTrack(), &Track::automationLanesCollapsedChanged,
+		this, &TrackContainerView::realignTracks, Qt::QueuedConnection);
 	m_scrollLayout->addWidget( _tv );
 	connect(this, &TrackContainerView::positionChanged,
 		_tv->getTrackContentWidget(), &TrackContentWidget::changePosition);
@@ -294,14 +323,105 @@ static bool hiddenByFolder(const Track* track)
 	return false;
 }
 
+/*! 0.5.0 Q050-022: true when @a track is an automation lane that follows an
+ *  owner which is itself hidden or has its lanes folded away. The lane's own
+ *  visibility flag is not consulted: folding the OWNER hides its children, the
+ *  same way collapsing a folder hides its own - which is the whole promise of
+ *  rendering lanes as the owner's children (research R-workflow-197). A lane
+ *  whose owner is gone (an orphan) is NOT hidden here: there is no owner to
+ *  fold, so the row stays reachable so a person or an agent can remove it. */
+static bool hiddenUnderOwner(const Track* track)
+{
+	const auto* lane = dynamic_cast<const AutomationTrack*>(track);
+	if (lane == nullptr || lane->followsTrack() < 0) { return false; }
+	const TrackContainer* container = track->trackContainer();
+	const Track* owner = container != nullptr ? container->findTrackById(lane->followsTrack()) : nullptr;
+	if (owner == nullptr) { return false; }
+	return !owner->isVisible() || owner->automationLanesCollapsed() || hiddenByFolder(owner);
+}
+
+/*! The rows reordered so every owning track is IMMEDIATELY followed by its child
+ *  automation lanes - the arranger's "child" order - while every other row keeps
+ *  its relative order. The relation is derived from followsTrack(), so a
+ *  reordered owner's lanes come with it however the flat track list moved. */
+static QList<TrackView*> groupedWithLaneChildren(const QList<TrackView*>& views)
+{
+	// Which owners THIS list holds: only a lane whose owner is still ahead in
+	// the list may wait for it. A lane whose owner is not in the list at all (a
+	// view of another container, or an orphan) is emitted where it stands below,
+	// so its row stays reachable for a person or an agent to select and remove.
+	QSet<int> ownersHere;
+	for (TrackView* view : views)
+	{
+		const Track* track = view->getTrack();
+		if (track != nullptr) { ownersHere.insert(track->id()); }
+	}
+
+	QList<TrackView*> ordered;
+	QSet<TrackView*> placed;
+	for (TrackView* view : views)
+	{
+		if (placed.contains(view)) { continue; }
+		const auto* lane = dynamic_cast<const AutomationTrack*>(view->getTrack());
+		// A lane met BEFORE its owner is DEFERRED, not placed: emit the owner
+		// first and the lane follows right after it. Before the deferral a
+		// downward move of the owner (which leaves the lane earlier in the flat
+		// list) stranded the lane above it - moveTrackView() realigns and the
+		// regrouping re-detaches the lane again (Q050-022 round-5 review).
+		if (lane != nullptr && lane->followsTrack() >= 0 && ownersHere.contains(lane->followsTrack()))
+		{
+			continue;
+		}
+		ordered.append(view);
+		placed.insert(view);
+		// The owner's own walk, then every placed child too, so a lane that
+		// follows a lane nests under its lane in the same sweep.
+		QList<TrackView*> family{view};
+		for (int parentRow = 0; parentRow < family.size(); ++parentRow)
+		{
+			const Track* owner = family.at(parentRow)->getTrack();
+			if (owner == nullptr) { continue; }
+			for (TrackView* candidate : views)
+			{
+				if (placed.contains(candidate)) { continue; }
+				const auto* child = dynamic_cast<const AutomationTrack*>(candidate->getTrack());
+				if (child != nullptr && child->followsTrack() >= 0 && child->followsTrack() == owner->id())
+				{
+					ordered.append(candidate);
+					placed.insert(candidate);
+					family.append(candidate);
+				}
+			}
+		}
+	}
+	// Defensive tail: a deferred lane whose owner was never reached (a hand-made
+	// follows cycle between lanes) keeps its row too, in its original order -
+	// the regrouping must never delete views from the display list.
+	for (TrackView* view : views)
+	{
+		if (!placed.contains(view))
+		{
+			ordered.append(view);
+			placed.insert(view);
+		}
+	}
+	return ordered;
+}
+
 void TrackContainerView::realignTracks()
 {
+	// Children first: a lane row sits directly under its owner anyway, but a
+	// reorder (track.move, a drag) moves only the owner in the flat list, so the
+	// display order is derived here rather than left wherever the reorder landed.
+	m_trackViews = groupedWithLaneChildren(m_trackViews);
 	for (const auto& trackView : m_trackViews)
 	{
 		// A collapsed folder's children leave the list (M3: the folder's collapse flag had no
 		// affordance reading it); the folder's own row stays.
-		// Hidden by a visibility set (the track's own view flag) or by a collapsed folder.
-		trackView->setVisible(trackView->getTrack()->isVisible() && !hiddenByFolder(trackView->getTrack()));
+		// Hidden by a visibility set (the track's own view flag), by a collapsed folder, or by
+		// an owner whose automation lanes are folded away (Q050-022).
+		trackView->setVisible(trackView->getTrack()->isVisible() && !hiddenByFolder(trackView->getTrack())
+			&& !hiddenUnderOwner(trackView->getTrack()));
 		trackView->updateFolderIndent();
 		trackView->applySpacer();
 		trackView->update();
@@ -358,6 +478,7 @@ const TrackView * TrackContainerView::trackViewAt( const int _y ) const
 	for (const auto& trackView : m_trackViews)
 	{
 		if (trackView->parentWidget() != m_scrollArea->widget()) { continue; } // E21: a pinned row
+		if (!trackView->isVisible()) { continue; }
 		const int y_cnt1 = y_cnt;
 		y_cnt += trackView->height();
 		if (abs_y >= y_cnt1 && abs_y < y_cnt) { return trackView; }
@@ -414,6 +535,12 @@ void TrackContainerView::clearAllTracks()
 
 void TrackContainerView::dragEnterEvent( QDragEnterEvent * _dee )
 {
+	// A file from a plug-in editor or the desktop: taken by the song only (0.5.0 L04, Q050-031).
+	if (arrangerdrop::carriesFile(_dee->mimeData()))
+	{
+		if (m_tc == Engine::getSong()) { _dee->acceptProposedAction(); }
+		return;
+	}
 	StringPairDrag::processDragEnterEvent( _dee,
 		QString( "presetfile,pluginpresetfile,samplefile,instrument,"
 				"importedproject,soundfontfile,patchfile,vstpluginfile,projectfile,"
@@ -436,11 +563,22 @@ void TrackContainerView::stopRubberBand()
 
 void TrackContainerView::dropEvent( QDropEvent * _de )
 {
+	if (arrangerdrop::carriesFile(_de->mimeData()))
+	{
+		// The empty space below the tracks: the file gets a new track of its kind at the drop's time.
+		const bool made = m_tc == Engine::getSong()
+			&& arrangerdrop::dropFileAndReport(_de->mimeData(), nullptr, arrangerdrop::tickAtContainerX(this, position(_de).x()),
+				arrangerdrop::dropModifiers(_de));
+		if (made) { _de->acceptProposedAction(); }
+		else { _de->ignore(); }
+		return;
+	}
 	QString type = StringPairDrag::decodeKey( _de );
 	QString value = StringPairDrag::decodeValue( _de );
 	if( type == "instrument" )
 	{
 		auto it = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, m_tc));
+		control::assignNewTrackChannel(it);
 		auto ilt = new InstrumentLoaderThread(this, it, value);
 		ilt->start();
 		//it->toggledInstrumentTrackButton( true );
@@ -455,6 +593,7 @@ void TrackContainerView::dropEvent( QDropEvent * _de )
 			getPluginFactory()->pluginSupportingExtension(FileItem::extension(value));
 		Instrument * i = it->loadInstrument(piakn.info.name(), &piakn.key);
 		i->loadFile( value );
+		control::assignNewTrackChannel(it);  // after the load: the channel takes the name the file gave the track
 		//it->toggledInstrumentTrackButton( true );
 		_de->accept();
 	}
@@ -463,6 +602,7 @@ void TrackContainerView::dropEvent( QDropEvent * _de )
 		DataFile dataFile( value );
 		auto it = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, m_tc));
 		it->loadPreset(dataFile.content().toElement());
+		control::assignNewTrackChannel(it);  // after the load: a preset resets the route and names the track
 
 		//it->toggledInstrumentTrackButton( true );
 		_de->accept();
@@ -477,7 +617,7 @@ void TrackContainerView::dropEvent( QDropEvent * _de )
 	{
 		if( getGUI()->mainWindow()->mayChangeProject(true) )
 		{
-			Engine::getSong()->loadProject( value );
+			getGUI()->mainWindow()->openProjectFile( value );
 		}
 		_de->accept();
 	}
@@ -485,7 +625,11 @@ void TrackContainerView::dropEvent( QDropEvent * _de )
 	else if( type.left( 6 ) == "track_" )
 	{
 		DataFile dataFile( value.toUtf8() );
-		Track::create( dataFile.content().firstChild().toElement(), m_tc );
+		Track* copy = Track::create( dataFile.content().firstChild().toElement(), m_tc );
+		// The copy is one undo step, as every track a command creates is (control::recordCreatedTrack). Only the
+		// song's own container is journalled: that step removes the track from the song, and a pattern's
+		// container is not the song.
+		if( copy != nullptr && m_tc == Engine::getSong() ) { control::recordCreatedTrack( copy ); }
 		_de->accept();
 	}
 }

@@ -104,8 +104,8 @@ bool readPatternArg(const QJsonObject& args, ChordProgression::Pattern* out, Con
  *  every generator shares. \a chordsWritten receives how many events produced
  *  notes - an event whose name no longer resolves produces none. */
 void writeTrackChords(const ChordTrack& track, ChordProgression::Pattern pattern,
-	tick_t fallback, int velocity, std::vector<ChordProgression::NoteSpec>* specs,
-	int* chordsWritten)
+	tick_t clipNoteOrigin, tick_t fallback, int velocity,
+	std::vector<ChordProgression::NoteSpec>* specs, int* chordsWritten)
 {
 	for (int index = 0; index < track.size(); ++index)
 	{
@@ -113,7 +113,7 @@ void writeTrackChords(const ChordTrack& track, ChordProgression::Pattern pattern
 		const std::vector<int> keys = eventKeys(event);
 		if (keys.empty()) { continue; }
 		const tick_t length = track.effectiveLength(index, fallback);
-		ChordProgression::layOutChord(keys, event.pos, length, pattern, velocity, specs);
+		ChordProgression::layOutChord(keys, event.pos - clipNoteOrigin, length, pattern, velocity, specs);
 		++(*chordsWritten);
 	}
 }
@@ -156,8 +156,9 @@ ControlResult chordTrackWrite(const QJsonObject& args)
 
 	std::vector<ChordProgression::NoteSpec> specs;
 	int chordsWritten = 0;
-	writeTrackChords(*track, pattern, fallback, static_cast<int>(velocity), &specs,
-		&chordsWritten);
+	writeTrackChords(*track, pattern, write.clip->startPosition().getTicks()
+		+ write.clip->startTimeOffset().getTicks(), fallback,
+		static_cast<int>(velocity), &specs, &chordsWritten);
 	const int written = writeNoteSpecs(write.clip, specs);
 
 	QJsonObject result;

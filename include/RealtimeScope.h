@@ -54,6 +54,7 @@ class RealtimeScope
 public:
 	RealtimeScope() noexcept
 	{
+		++s_depth;
 #ifdef LMMS_RTSAN
 		__rtsan_realtime_enter();
 #endif
@@ -63,9 +64,14 @@ public:
 #ifdef LMMS_RTSAN
 		__rtsan_realtime_exit();
 #endif
+		--s_depth;
 	}
 	RealtimeScope(const RealtimeScope&) = delete;
 	RealtimeScope& operator=(const RealtimeScope&) = delete;
+	static bool isActive() noexcept { return s_depth != 0; }
+
+private:
+	inline static thread_local unsigned s_depth = 0;
 };
 
 /*! A call inside a RealtimeScope that RealtimeSanitizer flags but that cannot block, exempted by

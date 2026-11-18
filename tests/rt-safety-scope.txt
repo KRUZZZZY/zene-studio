@@ -3,7 +3,7 @@
 #
 # Format, TAB separated, one path:symbol pair per line:
 #
-#   <path><TAB><symbol><TAB><reason>
+#   <path><TAB><symbol><TAB><reason>[<TAB>rules=<rule-id>[,<rule-id>...]]
 #
 # * <symbol> is a function definition in <path>: `Class::method`, a free
 #   function, or `*` for "every line of this file" (used only for a small
@@ -11,6 +11,9 @@
 # * The reason states WHY this is an audio-thread path. A blank reason is
 #   refused by the sweep (exit 2): a declared path is a claim, and a claim
 #   without a reason is a claim nobody can check.
+# * The optional rules field narrows a region to named checks; without it, all
+#   checks apply. This lets a regression cover one hazard in a callback that
+#   already contains unrelated behavior outside the finding.
 # * The scope is DECLARED, not discovered: the sweep never follows a call.
 #   A path is measured because it is written here, so ADDING A LINE IS THE
 #   ACT that widens the programme - and a new audio-thread path that nobody
@@ -27,12 +30,23 @@ src/core/AudioEngine.cpp	AudioEngine::renderStageNoteSetup	STAGE 0: clears old p
 src/core/AudioEngine.cpp	AudioEngine::renderStageInstruments	STAGE 1: runs and renders every play handle on the audio thread (and on its worker threads)
 src/core/AudioEngine.cpp	AudioEngine::renderStageEffects	STAGE 2: processes effects and retires finished play handles on the audio thread
 src/core/AudioEngine.cpp	AudioEngine::renderStageMix	STAGE 3: master mix, master gain and the passive loudness tap, all on the audio thread
+src/core/Sample.cpp	Sample::play	the sample playback path reached from play handles and sample-playing instruments once per period; its playback state owns the converter and this function must not re-create it or allocate
 src/core/AudioEngine.cpp	AudioEngine::swapBuffers	called once per period from STAGE 0: swaps the period buffers and drains the capture staging areas
-src/core/AudioEngine.cpp	AudioEngine::drainInputStage	the stereo input staging drain, once per period on the audio thread ("no lock, no allocation" by contract)
-src/core/AudioEngine.cpp	AudioEngine::drainWideInputStage	the N-channel (feature row 64) input staging drain, once per period on the audio thread
+src/core/AudioEngine.cpp	AudioEngine::drainCaptureStages	the capture staging drain, once per period on the audio thread: the N-channel (feature row 64) block and the stereo pair are ONE capture block and are drained together (cluster 3705) ("no lock, no allocation" by contract)
 src/core/Song.cpp	Song::processNextBuffer	the song's per-period scheduling, called from STAGE 0 on the audio thread (transport edges, MIDI clock, Session View launch scheduling)
+src/core/LinkAudioFollower.cpp	LinkAudioFollower::instance	the follower singleton is read by followLinkSession from Song::processNextBuffer once per rendered period; setup constructs it before the audio device starts
 src/core/Mixer.cpp	Mixer::prepareMasterMix	called from STAGE 0: clears the mixer's per-period buffers before the render
 src/core/Mixer.cpp	Mixer::masterMix	called from STAGE 3: sums every channel into the master buffer on the audio thread
+src/core/Mixer.cpp	Mixer::mixToChannel	called from every AudioBusHandle::audioCallback in STAGE 1, on the audio thread and on the AudioEngine worker threads: adds one play handle's block into the target channel's input
+src/core/Mixer.cpp	MixerChannel::sumSidechainInputs	called from the receiver channel's own processing on the audio thread once per period: sums each sidechain route's tap using the amount model's prepared cache
+src/core/AudioEngine.cpp	AudioEngine::prepareAutomatableModelBuffers	the serial per-period walk of the published model registry, after Song::processNextBuffer and before worker jobs; fixed iteration and prepared model caches only
+src/core/AutomatableModel.cpp	AutomatableModel::prepareValueBufferForRender	the serial evaluator for one registered model, its linked controller source and fixed period buffer; called by the registry pass, a serial render-owner read or a guarded control-side query
+src/core/AutomatableModel.cpp	AutomatableModel::valueBuffer	parallel mixer and plug-in workers perform a read-only lookup of the prepared cache; only the serial render owner may prepare an early Song-side read, and a worker miss is counted without computation or locking
+src/core/Controller.cpp	Controller::prepareValueBufferForRender	called by the serial model pass or render owner to update a connected controller at most once for the current period
+src/core/Controller.cpp	Controller::valueBuffer	parallel model and plug-in workers perform a read-only lookup of the controller buffer prepared by the model pass; an early serial render-owner read may prepare it before the pass
+src/core/Controller.cpp	Controller::currentValue	controller reads from its prepared buffer on mixer workers; realtime callers do not update shared scalar controller state
+src/core/Controller.cpp	Controller::value	controller buffer sample lookup; a stale realtime lookup is counted and returns without updating the buffer
+src/core/LfoController.cpp	LfoController::updateValueBuffer	serial controller prepass update, including its pre-prepared amount model; one state advance per period
 src/core/SessionScheduler.cpp	SessionScheduler::processAudio	the Session View launch scheduler, called from Song::processNextBuffer on the audio thread once per period
 src/core/SessionScheduler.cpp	SessionScheduler::drainCommands	the bounded drain of the session command queue, called from processAudio on the audio thread
 src/core/SessionScheduler.cpp	SessionScheduler::advanceClock	the session clock's per-period advance, called from processAudio on the audio thread
@@ -43,7 +57,51 @@ src/core/EffectChain.cpp	EffectChain::processThroughGraph	the routing-graph rend
 include/AutomatableModel.h	AutomatableModel::incrementPeriodCounter	called at the end of STAGE 3: advances the automation period counter on the audio thread (inline definition in this header)
 src/core/Controller.cpp	Controller::triggerFrameCounter	called at the end of STAGE 3: advances every controller's frame counter on the audio thread
 src/core/EnvelopeAndLfoParameters.cpp	EnvelopeAndLfoParameters::LfoInstances::trigger	called at the end of STAGE 3: the per-period LFO trigger on the audio thread (EnvelopeAndLfoParameters::instances()->trigger())
+src/core/EnvelopeAndLfoParameters.cpp	EnvelopeAndLfoParameters::fillLevel	the envelope/LFO level fill of an instrument's sound shaping, called from InstrumentSoundShaping on the audio thread; it reads the published parameter snapshot and must not lock
+src/core/EnvelopeAndLfoParameters.cpp	EnvelopeAndLfoParameters::fillLfoLevel	the LFO part of the level fill, reached from fillLevel on the audio thread
+src/core/EnvelopeAndLfoParameters.cpp	EnvelopeAndLfoParameters::lfoShapeSample	the LFO shape sample, reached from updateLfoShapeData on the audio thread
+src/core/EnvelopeAndLfoParameters.cpp	EnvelopeAndLfoParameters::updateLfoShapeData	the per-period LFO shape pre-computation, reached from fillLfoLevel on the audio thread
+src/core/EnvelopeAndLfoParameters.cpp	EnvelopeAndLfoParameters::acquireAudioState	the audio path's claim of the published parameter snapshot, called from fillLevel on the audio thread
+src/core/EnvelopeAndLfoParameters.cpp	EnvelopeAndLfoParameters::releaseAudioState	the audio path's release of the published parameter snapshot, called from fillLevel on the audio thread
 src/core/ScriptEngine.cpp	ScriptEngine::audioThreadTick	the Lua engine's audio-thread tick, called once per period from the audio thread (documented as allocating nothing and taking no locks)
+plugins/SlicerT/SlicerT.cpp	SlicerT::playNoteImpl	SlicerT's per-note render path; a first note claims one preconstructed per-instance playback state and must not allocate
+plugins/SlicerT/SlicerT.cpp	SlicerT::acquirePlaybackSlot	bounded 128-slot scan called by SlicerT::playNoteImpl on the audio render path
+plugins/SlicerT/SlicerT.cpp	SlicerT::deleteNotePluginData	called when a SlicerT note ends on the render owner; resets and returns its preallocated state slot
+plugins/Sf2Player/Sf2Player.cpp	Sf2Instrument::playNoteImpl	the SF2 player's note path: the note is handed from the note stage to the render stage on the audio thread, so it must not allocate, take a lock or grow a container (cluster new-p9-454 / new-p9-453)	rules=alloc-new,grow-container,lock-call,lock-guard
+plugins/Sf2Player/Sf2Player.cpp	Sf2Instrument::acquirePluginDataSlot	bounded slot scan called by Sf2Instrument::playNoteImpl on the audio thread: a note claims one of the instrument's preallocated data slots
+plugins/Sf2Player/Sf2Player.cpp	Sf2Instrument::publishNoteEvent	the note event is published into the bounded, preallocated hand-off queue the render stage drains
+plugins/Sf2Player/Sf2Player.cpp	Sf2Instrument::playImpl	the SF2 player's render path: it adopts an already-built synth and drains the note events into a preallocated list; the synthesis state is applied here, from the numbers the UI published, so the render path must not allocate, grow a container or take a lock (cluster new-p9-454 / new-p9-453)	rules=alloc-new,grow-container,lock-call,lock-guard
+plugins/Sf2Player/Sf2Player.cpp	Sf2Instrument::applyControls	the render thread sends the state the UI published to the synth it owns; the synth runs with FluidSynth's thread-safe API switched off, so none of these calls takes a mutex, and none of them allocates (cluster new-p9-454 / new-p9-453)	rules=alloc-new,grow-container,lock-call,lock-guard
+plugins/Sf2Player/Sf2Player.cpp	Sf2Instrument::serviceSynthHandoff	the render thread adopts a synth the UI built and retires the old one through fixed-capacity queues, with no allocation or lock (cluster new-p9-453)
+plugins/Sf2Player/Sf2Player.cpp	Sf2Instrument::noteOn	the render thread starts a note on the synth it owns; the voice list is a fixed-capacity ArrayVector, so no lock (cluster new-p9-453)	rules=lock-call
+plugins/Sf2Player/Sf2Player.cpp	Sf2Instrument::noteOff	the render thread stops a note on the synth it owns, with no lock (cluster new-p9-453)
+plugins/Sf2Player/Sf2Player.cpp	Sf2Instrument::renderFrames	the render thread writes FluidSynth output into the period buffer it owns, with no lock (cluster new-p9-453)	rules=alloc-new,grow-container,lock-call,lock-guard
+plugins/Sf2Player/Sf2Player.cpp	Sf2Instrument::deleteNotePluginData	called when an SF2 note ends; it queues a pitch-only note-off and returns the preallocated slot, with no allocation or lock (cluster new-p9-454)	rules=alloc-new,lock-call
+plugins/Sf2Player/Sf2Player.cpp	Sf2Instrument::releasePluginDataSlot	returns a preallocated note slot to the pool with one atomic update
+plugins/Sf2Player/Sf2Player.cpp	Sf2Instrument::applyPendingTeardownNoteOffs	the render thread applies the teardown note-offs the bounded note event queue refused; the counters have a fixed size, so the path neither allocates nor takes a lock (cluster new-p9-454)	rules=alloc-new,grow-container,lock-call,lock-guard
+include/Sample.h	Sample::PlaybackState::reset	resets a reused SlicerT resampler state in place when the render owner releases a note slot
+plugins/Stk/Mallets/Mallets.cpp	MalletsInstrument::playNoteImpl	Mallets' per-note render path; a first note reserves one shared voice-budget slot, claims one prepared voice from the instrument's own current pool and arms it in place, so the callback allocates and locks nothing
+plugins/Stk/Mallets/Mallets.cpp	MalletsInstrument::armVoice	resets and arms the prepared voice of the note's STK family on the render path; the voice itself is built off the audio thread
+plugins/Stk/Mallets/Mallets.cpp	MalletsInstrument::deleteNotePluginData	called when a Mallets note ends on the render owner; returns the prepared voice slot and its share of the shared voice budget without deallocation
+plugins/Stk/Mallets/Mallets.cpp	MalletsVoicePool::claim	bounded scan called by MalletsInstrument::playNoteImpl on the audio render path; the pool is built off the audio thread
+plugins/Stk/Mallets/Mallets.cpp	MalletsVoicePool::findFreeSlot	bounded non-blocking compare-exchange scan behind MalletsVoicePool::claim
+plugins/Stk/Mallets/Mallets.cpp	MalletsVoicePool::release	release a claimed Mallets voice slot on the render owner without deallocation
+plugins/Stk/Mallets/Mallets.cpp	acquireVoiceBudget	lock-free compare-exchange that reserves one note of the instrument's one voice budget, shared by the current and every retired pool, on the render path
+plugins/Stk/Mallets/Mallets.cpp	releaseVoiceBudget	lock-free fetch-sub that returns one note of the shared voice budget when a Mallets note ends
+plugins/Stk/Mallets/Mallets.cpp	familyForPreset	picks the STK family of the note's preset on the render path; a branch, not an allocation
+plugins/Stk/Mallets/Mallets.cpp	MalletsSynth::armModalBar	reset and arm a prepared ModalBar voice on the render path without allocating
+plugins/Stk/Mallets/Mallets.cpp	MalletsSynth::armTubeBell	reset and arm a prepared TubeBell voice on the render path without allocating
+plugins/Stk/Mallets/Mallets.cpp	MalletsSynth::armBandedWG	reset and arm a prepared BandedWG voice on the render path without allocating
+plugins/Stk/Mallets/Mallets.cpp	MalletsSynth::resetDelay	zero the preallocated delay buffer of a reused Mallets voice on the render path
+src/core/AudioEngine.cpp	AudioEngine::acquirePooledSampleVoice	bounded claim and arm of a preconstructed metronome/frozen-take voice on the render path
+src/core/AudioEngine.cpp	AudioEngine::SampleVoicePool::acquire	bounded ready-queue pop and render-side SamplePlayHandle re-arm
+src/core/AudioEngine.cpp	AudioEngine::recyclePooledSampleVoice	retire a detached pooled sample handle without destroying it on render
+src/core/SamplePlayHandle.cpp	SamplePlayHandle::armPooledVoice	arm a stable pooled handle with a retained source buffer and frame window
+src/core/SamplePlayHandle.cpp	SamplePlayHandle::resetPooledVoice	clear the retired pooled handle and resampler on the main-thread recycler
+include/Sample.h	Sample::setBuffer	assign the retained source to a preallocated pooled Sample without loading or allocating
+src/core/Track.cpp	Track::playFrozenTake	bounded frozen-take pass start using a pooled voice; sourceIn is sampled at pass start
+src/core/MetronomeOptions.cpp	metronomeoptions::click	select a main-thread-loaded click buffer and claim a reserved pooled voice
+src/core/Metronome.cpp	Metronome::processTick	metronome render scheduling path; skips cleanly when the reserved voice pool is empty
 
 # --- the fork's own realtime paths on the render thread (0.3.0 additions) ------
 # Each of these is reached from the render callback above and each has a runtime
@@ -66,3 +124,77 @@ src/core/RoutingGraph.cpp	RoutingGraph::process	the scheduler's node-execution p
 src/core/AudioEngineWorkerThread.cpp	AudioEngineWorkerThread::run	the worker run loop: every pool thread waits here and drains the shared job queue from inside this loop, so the scheduler's jobs and any node-level work they carry executes on this declared body (SPEC §3.2 item 1)
 src/core/AudioEngineWorkerThread.cpp	AudioEngineWorkerThread::JobQueue::run	the queue's run loop and the ready-list POP: each slot is taken with an atomic exchange and the job runs inline here, both on a worker thread and on the render thread via startAndWaitForJobs (SPEC §3.2 item 1)
 src/core/AudioEngineWorkerThread.cpp	AudioEngineWorkerThread::JobQueue::addJob	the ready-list PUSH: Mixer.cpp:255 and :1729 call it from the audio thread, and this body holds the queue-full refusal branch, which Slice 0 made a counted, allocation-free refusal instead of a qWarning (SPEC §3.2 item 3)
+src/core/AudioEngineWorkerThread.cpp	AudioEngineWorkerThread::notifyWorkers	the render-side worker wake (Q050-167): startAndWaitForJobs() calls it every period on the audio thread, and it must be a pure post - no mutex, no allocation, no wait; the body forwards to workerwake::notify, which the next line declares
+src/core/AudioWorkerWake.cpp	workerwake::notify	the platform half of the render-side wake (Q050-167): __ulock_wake on Apple, FUTEX_WAKE on Linux, std::atomic::notify_all elsewhere - it wakes sleepers and returns, and the generation value it was called after is the actual signal, so it neither locks nor allocates
+plugins/Sid/SidInstrument.cpp	SidInstrument::playNoteImpl	called for active SID notes on the render thread; its audio callback must not write synchronously to stdout	rules=stdio-output
+plugins/Lb302/Lb302.cpp	Lb302Synth::playNoteImpl	the LB302 per-note callback on the render thread: it enqueues the note into a bounded ring buffer, and its enqueue failsafe counts a dropped note instead of logging (Qt logging allocates and takes a lock)
+src/core/SamplePlayHandle.cpp	SamplePlayHandle::applyActiveTakeGate	the loop-take render gate: it reads the clip's active-lane mirror and the track's play-all switch through relaxed atomics, then either leaves the block or zeroes it; no model-vector access, allocation or lock
+src/tracks/SampleTrack.cpp	activeTakeForPlayback	the clip scheduler's active-take predicate: scalar clip fields and the atomic lane mirror only; no allocation or lock
+
+# Carla's audio callback and any-thread MIDI producer share only this bounded hand-off; these paths stay free of a shared lock.
+plugins/CarlaBase/Carla.cpp	CarlaInstrument::playImpl	Carla's per-period audio callback stages queued events and calls the native process function
+plugins/CarlaBase/Carla.cpp	CarlaInstrument::handleMidiEvent	MIDI may arrive on the audio thread, GUI or input thread; this producer only publishes a fixed-size event
+plugins/CarlaBase/CarlaMidiHandoff.h	*	all helper methods run on the render path or MIDI producer path and must stay allocation-free and lock-free
+include/MidiHandoffQueue.h	MidiHandoffQueue::push	Carla's any-thread MIDI producers publish fixed-size events through this bounded queue
+include/MidiHandoffQueue.h	MidiHandoffQueue::pop	Carla's audio callback takes the oldest queued event through this bounded queue
+include/MidiHandoffQueue.h	MidiHandoffQueue::consumed	Carla's audio callback checks the queue position when placing overflow cuts
+include/MidiHandoffQueue.h	MidiChannelOverflow::record	Carla's any-thread MIDI producer records a queue refusal without blocking
+include/MidiHandoffQueue.h	MidiChannelOverflow::stamp	Carla's audio callback reads the pending overflow cut position
+include/MidiHandoffQueue.h	MidiChannelOverflow::due	Carla's audio callback checks when a refused event's channel cut is due
+include/MidiHandoffQueue.h	MidiChannelOverflow::clear	Carla's audio callback clears a channel cut after staging its all-notes-off
+include/MidiHandoffQueue.h	MidiChannelOverflow::raise	Carla's any-thread MIDI producer advances the refused event's cut position
+include/MidiHandoffQueue.h	pushOrRecord	Carla's any-thread MIDI producer publishes an event or records the refusal
+include/MidiHandoffQueue.h	drainMidi	Carla's audio callback stages queued events and all-notes-off cuts in order
+src/core/midi/MidiEventToByteSeq.cpp	writeToByteSeq	Carla's audio callback encodes each queued event into Carla's native MIDI format
+src/core/midi/MpeStreamSnapshot.cpp	MpeStreamSnapshot::acquire	Q050-016: Note's copy constructor runs it on the audio thread - InstrumentTrack::play -> triggerNote -> NotePlayHandleManager::acquire copies the clip's note, stream reference included, into its play handle
+src/core/midi/MpeStreamSnapshot.cpp	MpeStreamSnapshot::tryAddReference	Q050-016: acquire()'s reference increment, on the audio thread for every streamed note a handle is built from
+src/core/midi/MpeStreamSnapshot.cpp	MpeStreamSnapshot::release	Q050-016: a NotePlayHandle's destructor on the realtime teardown path (NotePlayHandleManager::release) drops its stream reference here; the free (destroy) is reached only with no RealtimeScope active
+src/core/midi/MpeStreamSnapshot.cpp	MpeStreamSnapshot::retire	Q050-016: release() pushes a snapshot whose last reference the audio thread dropped onto the lock-free retire list
+src/core/MpeExpressionStreamPlayback.cpp	NotePlayHandle::scheduleMpeExpressionStream	Q050-016: NotePlayHandle::play calls it every period on the audio thread to send the stream points that fall in the period
+src/core/MpeExpressionStreamPlayback.cpp	NotePlayHandle::scheduleMpeStreamAxis	Q050-016: scheduleMpeExpressionStream's per-axis walk, on the audio thread
+plugins/Watsyn/Watsyn.cpp	WatsynInstrument::playNoteImpl	Watsyn's per-note render path on the audio thread: the note state lives in the note handle's own storage, so a note start must not allocate
+plugins/Watsyn/Watsyn.cpp	WatsynInstrument::claimWave	called from WatsynInstrument::playNoteImpl on the audio thread: pins the wavetable snapshot the note renders with
+plugins/Watsyn/Watsyn.cpp	WatsynVoice::renderOutput	called from WatsynInstrument::playNoteImpl on the audio thread: renders the note's oscillators into the note's own buffer
+plugins/Watsyn/Watsyn.cpp	WatsynInstrument::deleteNotePluginData	called when a Watsyn note ends, on the thread that released the note handle: gives the wavetable snapshot back
+
+# VeSTige's VST host: the note path publishes into the same bounded hand-off queue as
+# Carla's, and the render path drains it into the plug-in. Neither may take a lock: the
+# note path is reached from the audio thread (every note of every track), the render path
+# from the render thread. The queue is what keeps the note path off the plug-in mutex
+# (the note path took that mutex with a blocking lock() until the queue existed).
+plugins/Vestige/Vestige.cpp	VestigeInstrument::handleMidiEvent	MIDI may arrive on the audio thread (the note path), the GUI thread or the input thread; this producer only publishes a fixed-size event into the bounded hand-off queue
+plugins/Vestige/Vestige.cpp	VestigeInstrument::processImpl	VeSTige's per-period render path: it drains the queued events into the plug-in and calls the plug-in's process
+# --- Q050-037: the automation read paths the pre-first contract changed ---------
+# Both are reached from Song::processNextBuffer on the audio thread. They add no
+# allocation, container growth or lock of their own: the clip read and its one
+# existing mutex stay in valueAt()/writeBlockRamp(), and the per-target initial
+# values are plain model scalars. A differing target gets a fixed-capacity ramp
+# COPY with only its pre-first prefix overridden (AutomationRamp::setValueBefore).
+src/core/Song.cpp	Song::buildAutomationRamps	the per-block sample-accurate publish: fixed-capacity stack ramps, a bounded per-target prefix override, no allocation and no lock beyond the clip's own existing one
+src/core/TrackContainer.cpp	TrackContainer::collectAutomatedValues	the per-tick automation read: bounded scratch writes plus per-target scalar initial-value reads; the clip lock stays in valueAt() and is taken once per clip as before
+plugins/Kicker/Kicker.cpp	KickerInstrument::playNoteImpl	per-note render path on the audio thread: the note state lives in the note handle's own storage, so a note start must not allocate
+plugins/Kicker/Kicker.cpp	KickerInstrument::deleteNotePluginData	called when a Kicker note ends, on the thread that released the note handle: destroys the note state in place
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::playImpl	the GIG player's audio callback renders the playing notes once per period: it must not lock, allocate or grow a container while the audio thread is inside it
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::playNoteImpl	the GIG player's note-on runs on the audio thread: the note storage it hands out must already exist, so that the callback neither allocates nor locks
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::noteSlot	maps a packed note index to its slot in a published segment: the segment is complete before the index is handed out, so this is a load and an offset, never an allocation
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::voice	maps a packed voice index to its voice in a published segment: the segment is complete before the index is handed out
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::acquireNoteSlot	takes a free note slot from a published segment: it pops a prepared index, and a pool that is full only raises the grow request
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::acquireVoice	takes a free voice from a published segment: it pops a prepared index, and a pool that is full only raises the grow request
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::releaseNote	returns a note slot and its voices to their pools: it pushes prepared indices back and never frees or grows anything
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::releaseVoice	returns one voice to its pool: it pushes a prepared index back and never frees or grows anything
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::appendToNoteOrder	links a note into the intrusive playing order: two slot indices are rewritten, no container grows
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::removeFromNoteOrder	unlinks a note from the intrusive playing order: two slot indices are rewritten, no container grows
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::appendVoiceToNote	appends a voice to its note's intrusive voice list: two voice indices are rewritten, no container grows
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::releaseVoiceOfNote	unlinks one voice from its note's intrusive voice list and returns it to the pool
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::rollBackVoices	gives back the voices a sample pass took when the pool ran out: it only unlinks and pushes prepared indices
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::requestNotePoolGrowth	asks the control thread for another note segment: one atomic store, no allocation and no wait
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::requestVoicePoolGrowth	asks the control thread for another voice segment: one atomic store, no allocation and no wait
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::clearNotes	drops every playing note by walking the intrusive order and releasing each slot
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::addSamples	attaches one voice per matching region of the file to a note: the voices and their resamplers are built by the control thread, so this only links prepared objects
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::deleteNotePluginData	requests the release of a note from another thread: one atomic store into a published slot, then the audio thread picks it up
+plugins/Watsyn/WatsynParamHandoff.h	WatsynParamHandoff::read	called from WatsynVoice::renderOutput on the audio thread: takes the published oscillator parameters once per rendered period, so it must not allocate or lock
+plugins/CarlaVst2/CarlaVst2.cpp	CarlaVst2Instrument::playImpl	Q050-481.1: a VST2-through-Carla instrument's period, called from STAGE 1 via InstrumentPlayHandle; it only reads the render worker's ring (Carla is never called here)
+plugins/CarlaVst2/CarlaVst2Renderer.cpp	Renderer::read	Q050-481.1: the audio thread's half of the VST2 render ring: two atomics and a frame copy, or silence; it never waits (Q050-481.2 review r1: an export waits for the worker between periods, offlinerender::waitForAll)
+plugins/CarlaVst2/CarlaVst2Renderer.cpp	Renderer::take	Q050-481.2: what Renderer::read and Renderer::process copy out of the ring on the audio thread: two atomics and a frame copy, or silence; it never waits, not even in an export
+plugins/CarlaVst2/CarlaVst2Renderer.cpp	Renderer::process	Q050-481.2: the audio thread's half of a VST2 effect's two rings: queues the period's input and takes the processed frames (atomics and copies only; Carla is never called here)
+plugins/CarlaVst2Effect/CarlaVst2Effect.cpp	CarlaVst2Effect::processImpl	Q050-481.2: a VST2-through-Carla effect's period, called by its effect chain on the audio thread; it only exchanges frames with the render worker (Renderer::process)

@@ -36,11 +36,13 @@
 // in docs/KNOWN-LIMITATIONS.md.
 
 #include <algorithm>
+#include <cmath>
 
 #include <QJsonObject>
 
 #include "Clip.h"
 #include "ClipEdits.h"
+#include "ContainedCrossfade.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -53,6 +55,8 @@ namespace lmms
 {
 
 using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
+void registerClipSetRecord(ControlRegistry& registry);
 
 namespace
 {
@@ -83,6 +87,11 @@ QJsonObject editsState(const ClipRef& ref, const ClipEdits& edits)
 	out.insert(QStringLiteral("fade_out"), edits.fadeOutTicks);
 	out.insert(QStringLiteral("fade_in_shape"), fadeShapeName(edits.fadeInShape));
 	out.insert(QStringLiteral("fade_out_shape"), fadeShapeName(edits.fadeOutShape));
+	// Q050-125: the clip's polarity travels with every edits read-back, so a caller sees it without a
+	// second call and a before-state carries it for the inverse.
+	out.insert(QStringLiteral("inverted"), edits.hasPolarity());
+	if (edits.fadeInOffsetTicks != 0) { out.insert(QStringLiteral("fade_in_offset"), edits.fadeInOffsetTicks); }
+	if (edits.fadeOutOffsetTicks != 0) { out.insert(QStringLiteral("fade_out_offset"), edits.fadeOutOffsetTicks); }
 	return out;
 }
 
@@ -132,12 +141,105 @@ bool crossfadeSides(const QJsonObject& args, int overlap, FadeShape* shape, Clip
 	in->fadeInShape = *shape;
 	out->fadeOutTicks = args.value(QStringLiteral("out_length")).toInt(overlap);
 	in->fadeInTicks = args.value(QStringLiteral("in_length")).toInt(overlap);
+	out->fadeInOffsetTicks = 0;
+	out->fadeOutOffsetTicks = 0;
+	out->fadeOffsetGap = false;
+	in->fadeOutOffsetTicks = 0;
+	in->fadeInOffsetTicks = 0;
+	in->fadeOffsetGap = false;
 	if (out->fadeOutTicks < 1 || in->fadeInTicks < 1)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a crossfade side is at least one tick"));
 		return false;
 	}
 	return shapeArg(args, QStringLiteral("out_shape"), &out->fadeOutShape, error) && shapeArg(args, QStringLiteral("in_shape"), &in->fadeInShape, error);
+}
+
+/*! Explicit container mode uses the contained clip's authored fade-in and fade-out lengths for the entry and exit.
+ *  When supplied, out_length/in_length override the one shared edge named by the clip order; both must agree.
+ *  The ramps that go down take out_shape, the ones that go up in_shape. */
+bool containedSides(const QJsonObject& args, const ClipRef& outRef, const ClipRef& inRef, FadeShape* shape,
+	ClipEdits* out, ClipEdits* in, ControlResult* error)
+{
+	const Clip* container = nullptr;
+	const Clip* contained = nullptr;
+	containedcrossfade::containment(outRef.clip, inRef.clip, &container, &contained);
+	const bool containerIsOut = container == outRef.clip;
+	const int outLength = args.value(QStringLiteral("out_length")).toInt(0);
+	const int inLength = args.value(QStringLiteral("in_length")).toInt(0);
+	if (outLength > 0 && inLength > 0 && outLength != inLength)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a crossfade between a clip and "
+			"one inside it has one shared edge length: 'out_length' (%1) and 'in_length' (%2) differ").arg(outLength).arg(inLength));
+		return false;
+	}
+	FadeShape down = FadeShape::EqualPower;
+	FadeShape up = FadeShape::EqualPower;
+	if (!shapeArg(args, QStringLiteral("shape"), shape, error)) { return false; }
+	down = up = *shape;
+	if (!shapeArg(args, QStringLiteral("out_shape"), &down, error) || !shapeArg(args, QStringLiteral("in_shape"), &up, error)) { return false; }
+	int entry = 0;
+	int exit = 0;
+	const QString why = containedcrossfade::ramps(*container, *contained, std::max(outLength, inLength), containerIsOut, &entry, &exit);
+	if (!why.isEmpty())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, why);
+		return false;
+	}
+	ClipEdits& containerEdits = containerIsOut ? *out : *in;
+	ClipEdits& containedEdits = containerIsOut ? *in : *out;
+	containedcrossfade::apply(*container, *contained, entry, exit, down, up, &containerEdits, &containedEdits);
+	return true;
+}
+
+//! A crossfade defaults to edge fades; only the explicit container mode uses offset fades.
+bool crossfadeSidesFor(const QJsonObject& args, const ClipRef& outRef, const ClipRef& inRef, int overlap, FadeShape* shape,
+	ClipEdits* out, ClipEdits* in, ControlResult* error)
+{
+	const QString mode = args.contains(QStringLiteral("mode"))
+		? args.value(QStringLiteral("mode")).toString() : QStringLiteral("clamp");
+	if (mode != QStringLiteral("clamp") && mode != QStringLiteral("container"))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("crossfade mode must be 'clamp' or 'container'"));
+		return false;
+	}
+	const Clip* container = nullptr;
+	const Clip* contained = nullptr;
+	if (mode == QStringLiteral("container"))
+	{
+		if (!containedcrossfade::containment(outRef.clip, inRef.clip, &container, &contained))
+		{
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("mode 'container' requires one clip to lie wholly inside the other"));
+			return false;
+		}
+		return containedSides(args, outRef, inRef, shape, out, in, error);
+	}
+	if (!crossfadeSides(args, overlap, shape, out, in, error)) { return false; }
+	return true;
+}
+
+//! The offsets a crossfade wrote, in the reply, only when there are some.
+void insertOffsets(QJsonObject* result, const ClipEdits& out, const ClipEdits& in)
+{
+	if (out.fadeOutOffsetTicks != 0) { result->insert(QStringLiteral("out_fade_out_offset"), out.fadeOutOffsetTicks); }
+	if (in.fadeInOffsetTicks != 0) { result->insert(QStringLiteral("in_fade_in_offset"), in.fadeInOffsetTicks); }
+}
+
+/*! An offset fade is a pair (withValidOffsetFades): a fade-out that ends early needs a fade-in that starts where it
+ *  ends, or the gain would step there. Refused when \p edits has a lone one or a mismatched one. */
+bool offsetFadesArePaired(const ClipRef& ref, const ClipEdits& before, const ClipEdits& edits, ControlResult* error)
+{
+	// Offsets the caller did not touch are not its to answer for (a clip resized after a crossfade is repaired at render).
+	if (edits.fadeInOffsetTicks == before.fadeInOffsetTicks && edits.fadeOutOffsetTicks == before.fadeOutOffsetTicks) { return true; }
+	if (withValidOffsetFades(edits, ref.clip->length().getTicks()) == edits) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("an offset fade is a pair: set fade_in_offset and fade_out_offset together, both ramps above 0, with "
+			"the fade-in starting where the fade-out ends (fade_in_offset = the clip's length %1 - fade_out_offset); a fade-out "
+			"that ends early with nothing to bring the clip back would step the gain. clip.crossfade makes the pair for a clip "
+			"inside another one, and both offsets 0 clear it.").arg(ref.clip->length().getTicks()));
+	return false;
 }
 
 /*! Rejects a fade pair that cannot both fit inside the clip it ramps over. The
@@ -147,13 +249,66 @@ bool crossfadeSides(const QJsonObject& args, int overlap, FadeShape* shape, Clip
 bool checkFadesFit(const ClipRef& ref, const ClipEdits& edits, ControlResult* error)
 {
 	const int length = ref.clip->length().getTicks();
-	if (edits.fadeInTicks + edits.fadeOutTicks <= length) { return true; }
+	// With offsets the two ramps sit anywhere inside the clip, in either order (a container's V is out, then in):
+	// each must fit on its own. Without, the in-ramp comes first and the pair must fit end to end, as ever.
+	const bool offset = edits.fadeInOffsetTicks != 0 || edits.fadeOutOffsetTicks != 0;
+	const int used = offset ? std::max(edits.fadeInOffsetTicks + edits.fadeInTicks, edits.fadeOutOffsetTicks + edits.fadeOutTicks)
+		: edits.fadeInTicks + edits.fadeOutTicks;
+	if (used <= length) { return true; }
 	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-		QStringLiteral("fade_in (%1) + fade_out (%2) exceed the clip's length (%3 ticks): "
+		QStringLiteral("fade_in (%1) + fade_out (%2) (offsets %4, %5) do not fit the clip's length (%3 ticks): "
 			"the two ramps would overlap inside one clip. Shorten them, or use "
 			"clip.crossfade to ramp two neighbouring clips into each other.")
-			.arg(edits.fadeInTicks).arg(edits.fadeOutTicks).arg(length));
+			.arg(edits.fadeInTicks).arg(edits.fadeOutTicks).arg(length)
+			.arg(edits.fadeInOffsetTicks).arg(edits.fadeOutOffsetTicks));
 	return false;
+}
+
+void assignTicks(const QJsonObject& args, const QString& key, int* value)
+{
+	if (args.contains(key)) { *value = static_cast<int>(args.value(key).toDouble()); }
+}
+
+bool applyFadeArguments(const QJsonObject& args, ClipEdits* after, ControlResult* error)
+{
+	assignTicks(args, QStringLiteral("fade_in"), &after->fadeInTicks);
+	assignTicks(args, QStringLiteral("fade_out"), &after->fadeOutTicks);
+	assignTicks(args, QStringLiteral("fade_in_offset"), &after->fadeInOffsetTicks);
+	assignTicks(args, QStringLiteral("fade_out_offset"), &after->fadeOutOffsetTicks);
+	if (after->fadeInOffsetTicks == 0 && after->fadeOutOffsetTicks == 0) { after->fadeOffsetGap = false; }
+	return shapeArg(args, QStringLiteral("fade_in_shape"), &after->fadeInShape, error)
+		&& shapeArg(args, QStringLiteral("fade_out_shape"), &after->fadeOutShape, error);
+}
+
+bool validateFadeArguments(const ClipRef& ref, const ClipEdits& before, const ClipEdits& after,
+	ControlResult* error)
+{
+	return offsetFadesArePaired(ref, before, after, error) && checkFadesFit(ref, after, error);
+}
+
+ControlResult setClipFade(const QJsonObject& args)
+{
+	ControlResult error;
+	ClipRef ref;
+	if (!resolveAudioClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
+	const ClipEdits before = ref.clip->clipEdits();
+	ClipEdits after = before;
+	if (!applyFadeArguments(args, &after, &error)) { return error; }
+	if (!validateFadeArguments(ref, before, after, &error)) { return error; }
+
+	ref.clip->addJournalCheckPoint();
+	ref.clip->setClipEdits(after);
+	QJsonObject result = editsState(ref, after);
+	QJsonObject inverseArgs = clipArg(ref);
+	inverseArgs.insert(QStringLiteral("fade_in"), before.fadeInTicks);
+	inverseArgs.insert(QStringLiteral("fade_out"), before.fadeOutTicks);
+	inverseArgs.insert(QStringLiteral("fade_in_shape"), fadeShapeName(before.fadeInShape));
+	inverseArgs.insert(QStringLiteral("fade_out_shape"), fadeShapeName(before.fadeOutShape));
+	inverseArgs.insert(QStringLiteral("fade_in_offset"), before.fadeInOffsetTicks);
+	inverseArgs.insert(QStringLiteral("fade_out_offset"), before.fadeOutOffsetTicks);
+	result.insert(QStringLiteral("__transaction"), control::transactionPayload(
+		editsState(ref, before), QStringLiteral("clip.set_fade"), inverseArgs, true, ClauseClipJournalled));
+	return ControlResult::success(result);
 }
 
 void registerClipSetGain(ControlRegistry& registry)
@@ -173,10 +328,13 @@ void registerClipSetGain(ControlRegistry& registry)
 	cmd.resultSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
 		{QStringLiteral("gain_db"), control::numberProperty()},
+		{QStringLiteral("inverted"), control::booleanProperty()},
 		{QStringLiteral("fade_in"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("fade_out"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("fade_in_shape"), control::stringProperty()},
 		{QStringLiteral("fade_out_shape"), control::stringProperty()},
+		{QStringLiteral("fade_in_offset"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("fade_out_offset"), control::integerProperty(0, MaxSongLength)},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -187,7 +345,8 @@ void registerClipSetGain(ControlRegistry& registry)
 			return error;
 		}
 		const double db = args.value(QStringLiteral("gain_db")).toDouble();
-		if (db < kMinGainDb || db > kMaxGainDb)
+		// isfinite FIRST: a NaN compares false against both bounds and would pass.
+		if (!std::isfinite(db) || db < kMinGainDb || db > kMaxGainDb)
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs,
 				QStringLiteral("gain_db %1 is outside %2..%3 dB")
@@ -197,6 +356,7 @@ void registerClipSetGain(ControlRegistry& registry)
 		const ClipEdits before = ref.clip->clipEdits();
 		ClipEdits after = before;
 		after.gain = gainDbToLinear(static_cast<float>(db));
+		if (after == before) { return ControlResult::success(editsState(ref, after)); }
 
 		ref.clip->addJournalCheckPoint();
 		ref.clip->setClipEdits(after);
@@ -213,6 +373,62 @@ void registerClipSetGain(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+void registerClipSetPolarity(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("clip.set_polarity");
+	cmd.group = QStringLiteral("clip");
+	cmd.verb = QStringLiteral("set_polarity");
+	cmd.description = QStringLiteral("Set whether a sample clip renders with its polarity inverted: every frame it "
+		"plays changes sign, and its drawn waveform mirrors around zero. The SOURCE sample is never modified - the "
+		"inversion is a non-destructive stage on top of the clip's gain, like its fades - and an old project loads "
+		"with polarity off. Reversible through the ProjectJournal (Clip checkpoint).");
+	cmd.argsSchema = control::objectSchema({
+		{QStringLiteral("clip"), control::stringProperty()},
+		{QStringLiteral("inverted"), control::booleanProperty()},
+	}, {QStringLiteral("clip"), QStringLiteral("inverted")});
+	cmd.resultSchema = control::objectSchema({
+		{QStringLiteral("clip"), control::stringProperty()},
+		{QStringLiteral("inverted"), control::booleanProperty()},
+		{QStringLiteral("gain_db"), control::numberProperty()},
+		{QStringLiteral("fade_in"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("fade_in_offset"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("fade_out"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("fade_out_offset"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("fade_in_shape"), control::stringProperty()},
+		{QStringLiteral("fade_out_shape"), control::stringProperty()},
+	});
+	cmd.mutating = true;
+	cmd.handler = [](const QJsonObject& args) {
+		ControlResult error;
+		ClipRef ref;
+		if (!resolveAudioClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
+		const bool inverted = args.value(QStringLiteral("inverted")).toBool();
+		const ClipEdits before = ref.clip->clipEdits();
+		ClipEdits after = before;
+		after.polarityInverted = inverted;
+		// An unchanged request records nothing: `setClipEdits` would not emit, and a step that changes
+		// nothing would shadow the edit before it (the registry's no-op rule, BUG-DRYRUN-UNDO's shape).
+		if (after != before)
+		{
+			ref.clip->addJournalCheckPoint();
+			ref.clip->setClipEdits(after);
+			Engine::getSong()->setModified();
+		}
+		QJsonObject result = editsState(ref, after);
+		if (after != before)
+		{
+			QJsonObject inverseArgs = clipArg(ref);
+			inverseArgs.insert(QStringLiteral("inverted"), before.hasPolarity());
+			result.insert(QStringLiteral("__transaction"),
+				control::transactionPayload(editsState(ref, before),
+					QStringLiteral("clip.set_polarity"), inverseArgs, true, ClauseClipJournalled));
+		}
+		return ControlResult::success(result);
+	};
+	registry.registerCommand(cmd);
+}
+
 void registerClipSetFade(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -221,63 +437,31 @@ void registerClipSetFade(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("set_fade");
 	cmd.description = QStringLiteral("Set a clip's fade-in and/or fade-out in ticks, with a shape "
 		"each (linear, exponential, logarithmic, s_curve, equal_power). An omitted argument keeps its current value; "
-		"fade_in + fade_out must fit inside the clip. Reversible through the ProjectJournal "
-		"(Clip checkpoint).");
+		"fade_in + fade_out must fit inside the clip. 'fade_in_offset' / 'fade_out_offset' (ticks, default 0) "
+		"start the fade-in that far after the clip's start / end the fade-out that far before its end; set as a pair, the fade-in starting where the fade-out ends. "
+		"Reversible through the ProjectJournal (Clip checkpoint).");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
 		{QStringLiteral("fade_in"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("fade_out"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("fade_in_shape"), control::stringProperty()},
 		{QStringLiteral("fade_out_shape"), control::stringProperty()},
+		{QStringLiteral("fade_in_offset"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("fade_out_offset"), control::integerProperty(0, MaxSongLength)},
 	}, {QStringLiteral("clip")});
 	cmd.resultSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
 		{QStringLiteral("gain_db"), control::numberProperty()},
+		{QStringLiteral("inverted"), control::booleanProperty()},
 		{QStringLiteral("fade_in"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("fade_out"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("fade_in_shape"), control::stringProperty()},
 		{QStringLiteral("fade_out_shape"), control::stringProperty()},
+		{QStringLiteral("fade_in_offset"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("fade_out_offset"), control::integerProperty(0, MaxSongLength)},
 	});
 	cmd.mutating = true;
-	cmd.handler = [](const QJsonObject& args) {
-		ControlResult error;
-		ClipRef ref;
-		if (!resolveAudioClip(args.value(QStringLiteral("clip")).toString(), &ref, &error))
-		{
-			return error;
-		}
-
-		const ClipEdits before = ref.clip->clipEdits();
-		ClipEdits after = before;
-		if (args.contains(QStringLiteral("fade_in")))
-		{
-			after.fadeInTicks = static_cast<int>(args.value(QStringLiteral("fade_in")).toDouble());
-		}
-		if (args.contains(QStringLiteral("fade_out")))
-		{
-			after.fadeOutTicks = static_cast<int>(args.value(QStringLiteral("fade_out")).toDouble());
-		}
-		if (!shapeArg(args, QStringLiteral("fade_in_shape"), &after.fadeInShape, &error)
-			|| !shapeArg(args, QStringLiteral("fade_out_shape"), &after.fadeOutShape, &error))
-		{
-			return error;
-		}
-		if (!checkFadesFit(ref, after, &error)) { return error; }
-
-		ref.clip->addJournalCheckPoint();
-		ref.clip->setClipEdits(after);
-
-		QJsonObject result = editsState(ref, after);
-		QJsonObject inverseArgs = clipArg(ref);
-		inverseArgs.insert(QStringLiteral("fade_in"), before.fadeInTicks);
-		inverseArgs.insert(QStringLiteral("fade_out"), before.fadeOutTicks);
-		inverseArgs.insert(QStringLiteral("fade_in_shape"), fadeShapeName(before.fadeInShape));
-		inverseArgs.insert(QStringLiteral("fade_out_shape"), fadeShapeName(before.fadeOutShape));
-		result.insert(QStringLiteral("__transaction"),
-			control::transactionPayload(editsState(ref, before), QStringLiteral("clip.set_fade"),
-				inverseArgs, true, ClauseClipJournalled));
-		return ControlResult::success(result);
-	};
+	cmd.handler = setClipFade;
 	registry.registerCommand(cmd);
 }
 
@@ -287,7 +471,11 @@ void registerClipCrossfade(ControlRegistry& registry)
 	cmd.id = QStringLiteral("clip.crossfade");
 	cmd.group = QStringLiteral("clip");
 	cmd.verb = QStringLiteral("crossfade");
-	cmd.description = QStringLiteral("Ramp two overlapping clips on one track into each other: the "
+	cmd.description = QStringLiteral("Ramp two overlapping audio clips on one track into each other. "
+		"mode 'clamp' (default) uses edge fades over the overlap and creates no offset fades. "
+		"mode 'container' opts into the V-shaped fade for a clip lying inside another; it uses the inner clip's "
+		"authored fade-in and fade-out lengths and refuses missing or non-fitting ramps. Holding Alt while dropping "
+		"a clip onto another on the same track invokes that container gesture. "
 		"outgoing clip gets a fade-out and the incoming clip a fade-in, both exactly as long as "
 		"their overlap, with the given shape (default equal_power, which sums the pair to unity "
 		"POWER) - or each side its own: 'out_length' / 'in_length' (ticks) and 'out_shape' / 'in_shape'. "
@@ -295,6 +483,7 @@ void registerClipCrossfade(ControlRegistry& registry)
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("out"), control::stringProperty()},
 		{QStringLiteral("in"), control::stringProperty()},
+		{QStringLiteral("mode"), control::stringProperty()},
 		{QStringLiteral("shape"), control::stringProperty()},
 		{QStringLiteral("out_length"), control::integerProperty(1, MaxSongLength)},
 		{QStringLiteral("in_length"), control::integerProperty(1, MaxSongLength)},
@@ -305,11 +494,14 @@ void registerClipCrossfade(ControlRegistry& registry)
 		{QStringLiteral("out"), control::stringProperty()},
 		{QStringLiteral("in"), control::stringProperty()},
 		{QStringLiteral("overlap"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("mode"), control::stringProperty()},
 		{QStringLiteral("shape"), control::stringProperty()},
 		{QStringLiteral("out_fade_out"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("in_fade_in"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("out_shape"), control::stringProperty()},
 		{QStringLiteral("in_shape"), control::stringProperty()},
+		{QStringLiteral("out_fade_out_offset"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("in_fade_in_offset"), control::integerProperty(0, MaxSongLength)},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -358,7 +550,7 @@ void registerClipCrossfade(ControlRegistry& registry)
 		ClipEdits outAfter = outBefore;
 		ClipEdits inAfter = inBefore;
 		FadeShape shape = FadeShape::EqualPower;
-		if (!crossfadeSides(args, overlap, &shape, &outAfter, &inAfter, &error)) { return error; }
+		if (!crossfadeSidesFor(args, outRef, inRef, overlap, &shape, &outAfter, &inAfter, &error)) { return error; }
 		// Each ramp is bounded by ITS OWN clip, and a clip whose OTHER fade no
 		// longer fits is a refusal naming the fix rather than a silent overwrite
 		// of an edit the caller made deliberately.
@@ -387,12 +579,15 @@ void registerClipCrossfade(ControlRegistry& registry)
 		result.insert(QStringLiteral("out"), clipId(outRef.id));
 		result.insert(QStringLiteral("in"), clipId(inRef.id));
 		result.insert(QStringLiteral("overlap"), overlap);
+		result.insert(QStringLiteral("mode"), args.contains(QStringLiteral("mode"))
+			? args.value(QStringLiteral("mode")).toString() : QStringLiteral("clamp"));
 		result.insert(QStringLiteral("shape"), fadeShapeName(shape));
 		result.insert(QStringLiteral("out_fade_out"), outAfter.fadeOutTicks);
 		result.insert(QStringLiteral("in_fade_in"), inAfter.fadeInTicks);
 		// 'shape' is the shared one; the two sides say what each clip now holds (out_shape / in_shape may differ).
 		result.insert(QStringLiteral("out_shape"), fadeShapeName(outAfter.fadeOutShape));
 		result.insert(QStringLiteral("in_shape"), fadeShapeName(inAfter.fadeInShape));
+		insertOffsets(&result, outAfter, inAfter);
 		QJsonObject inverseArgs;
 		inverseArgs.insert(QStringLiteral("out"), clipId(outRef.id));
 		inverseArgs.insert(QStringLiteral("in"), clipId(inRef.id));
@@ -415,75 +610,10 @@ void registerClipCrossfade(ControlRegistry& registry)
 
 } // namespace
 
-/*! clip.set_record (M3, the record step of the plan's five-user test): arm or disarm ONE audio clip
- *  to receive the input the next time the song plays with recording (Song::playAndRecord - the
- *  song editor's Record while playing). The flag is the one SampleTrack::play reads to start a
- *  SampleRecordHandle; it is not part of the clip's serialized state, so the inverse is a recorded
- *  action step rather than a Clip checkpoint. */
-void registerClipSetRecord(ControlRegistry& registry)
-{
-	ControlCommand cmd;
-	cmd.id = QStringLiteral("clip.set_record");
-	cmd.group = QStringLiteral("clip");
-	cmd.verb = QStringLiteral("set_record");
-	cmd.description = QStringLiteral("Arm (record: true) or disarm an audio clip to receive the "
-		"input the next time the song plays with recording (the song editor's Record while "
-		"playing): the take starts where the clip starts, is latency-compensated, and replaces the "
-		"clip's audio when the transport stops. A MIDI clip is refused - notes are recorded in the "
-		"piano roll. Reversible through a recorded action step (the flag is not serialized).");
-	cmd.argsSchema = control::objectSchema({
-		{QStringLiteral("clip"), control::stringProperty()},
-		{QStringLiteral("record"), control::booleanProperty()},
-	}, {QStringLiteral("clip"), QStringLiteral("record")});
-	cmd.resultSchema = control::objectSchema({
-		{QStringLiteral("clip"), control::stringProperty()},
-		{QStringLiteral("record"), control::booleanProperty()},
-		{QStringLiteral("record_before"), control::booleanProperty()},
-		{QStringLiteral("song_recording"), control::booleanProperty()},
-	});
-	cmd.mutating = true;
-	cmd.handler = [](const QJsonObject& args) {
-		ControlResult error;
-		ClipRef ref;
-		if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
-		auto* clip = dynamic_cast<SampleClip*>(ref.clip);
-		if (clip == nullptr)
-		{
-			return ControlResult::failure(ControlErrorKind::Refused,
-				QStringLiteral("%1 is a %2 clip: only an audio clip records the input; notes are "
-					"recorded in the piano roll").arg(clipId(ref.id), ref.clip->nodeName()));
-		}
-		const bool before = clip->isRecord();
-		const bool wanted = args.value(QStringLiteral("record")).toBool();
-		const QString id = clipId(ref.id);
-		const auto apply = [id](bool on) {
-			ClipRef again;
-			ControlResult ignored;
-			if (!resolveClip(id, &again, &ignored)) { return; }
-			if (auto* audio = dynamic_cast<SampleClip*>(again.clip)) { audio->setRecord(on); }
-		};
-		control::addUndoStep([apply, before] { apply(before); }, [apply, wanted] { apply(wanted); });
-		clip->setRecord(wanted);
-
-		QJsonObject result;
-		result.insert(QStringLiteral("clip"), id);
-		result.insert(QStringLiteral("record"), clip->isRecord());
-		result.insert(QStringLiteral("record_before"), before);
-		result.insert(QStringLiteral("song_recording"), Engine::getSong()->isRecording());
-		result.insert(QStringLiteral("__transaction"),
-			control::transactionPayload(QJsonObject{{QStringLiteral("record"), before}},
-				QStringLiteral("clip.set_record"),
-				QJsonObject{{QStringLiteral("clip"), id}, {QStringLiteral("record"), before}}, true,
-				QStringLiteral("action checkpoint: the recorded undo step sets the clip's record "
-					"flag back to its before-state value, found again by its id")));
-		return ControlResult::success(result);
-	};
-	registry.registerCommand(cmd);
-}
-
 void registerClipEditsCommands(ControlRegistry& registry)
 {
 	registerClipSetGain(registry);
+	registerClipSetPolarity(registry);
 	registerClipSetRecord(registry);
 	registerClipSetFade(registry);
 	registerClipCrossfade(registry);

@@ -39,6 +39,32 @@
 namespace lmms
 {
 
+#ifdef LMMS_TESTING
+namespace
+{
+
+std::atomic<int> s_mixerIndexCacheHitsForTesting{0};
+std::atomic<int> s_mixerIndexFallbacksForTesting{0};
+
+} // namespace
+
+LMMS_EXPORT void resetMixerIndexLookupCountsForTesting()
+{
+	s_mixerIndexCacheHitsForTesting.store(0, std::memory_order_relaxed);
+	s_mixerIndexFallbacksForTesting.store(0, std::memory_order_relaxed);
+}
+
+LMMS_EXPORT auto mixerIndexCacheHitsForTesting() -> int
+{
+	return s_mixerIndexCacheHitsForTesting.load(std::memory_order_relaxed);
+}
+
+LMMS_EXPORT auto mixerIndexFallbacksForTesting() -> int
+{
+	return s_mixerIndexFallbacksForTesting.load(std::memory_order_relaxed);
+}
+#endif
+
 //! One bus's route and the storage its audio passes through.
 struct InstrumentOutputBuses::Slot
 {
@@ -77,12 +103,44 @@ void interleave(SampleFrame* dst, const float* left, const float* right, f_cnt_t
 } // namespace
 
 InstrumentOutputBuses::InstrumentOutputBuses() = default;
-InstrumentOutputBuses::~InstrumentOutputBuses() = default;
+
+InstrumentOutputBuses::~InstrumentOutputBuses()
+{
+	setSourceLatencyFrames(0);  // MX-157: off the mixer's list before the buses go
+}
+
+auto InstrumentOutputBuses::latentList() -> std::vector<InstrumentOutputBuses*>&
+{
+	static std::vector<InstrumentOutputBuses*> list;
+	return list;
+}
+
+void InstrumentOutputBuses::setSourceLatencyFrames(int frames)
+{
+	frames = std::max(0, frames);
+	if ((frames > 0) == m_listed)
+	{
+		m_sourceLatency.store(frames, std::memory_order_relaxed);
+		return;
+	}
+	// The mixer walks the list inside the render period, which holds the guard: it never sees it change.
+	ChangeGuard guard;
+	auto& list = latentList();
+	if (frames > 0) { list.push_back(this); }
+	else { list.erase(std::remove(list.begin(), list.end(), this), list.end()); }
+	m_listed = frames > 0;
+	m_sourceLatency.store(frames, std::memory_order_relaxed);
+}
 
 void InstrumentOutputBuses::setLayout(const std::vector<InstrumentOutputBus>& buses)
 {
 	const auto count = std::min<std::size_t>(buses.size(), MaxBuses);
 	ChangeGuard guard;
+	for (int bus = static_cast<int>(count); bus < busCount(); ++bus)
+	{
+		// A route loaded for a bus absent from the previous layout is retained for a future layout.
+		if (routeOf(bus) >= 0) { storeRoute(bus, -1); }
+	}
 	m_layout.assign(buses.begin(), buses.begin() + static_cast<std::ptrdiff_t>(count));
 }
 
@@ -102,10 +160,16 @@ void InstrumentOutputBuses::prepareSlot(Slot& slot)
 void InstrumentOutputBuses::storeRoute(int bus, int channelId)
 {
 	auto& slot = m_slots[static_cast<std::size_t>(bus)];
-	if (slot == nullptr) { slot = std::make_unique<Slot>(); }
-	// Allocated before the guard is taken: the render never waits on an allocation.
-	if (channelId >= 0) { prepareSlot(*slot); }
+	const f_cnt_t frames = Engine::audioEngine() != nullptr ? Engine::audioEngine()->framesPerPeriod() : 0;
+	std::unique_ptr<Slot> prepared;
+	if (slot == nullptr || (channelId >= 0 && frames != 0 && slot->block.size() != static_cast<std::size_t>(frames)))
+	{
+		prepared = std::make_unique<Slot>();
+		// Prepare detached storage before the guard; render readers only see it after publication.
+		if (channelId >= 0) { prepareSlot(*prepared); }
+	}
 	ChangeGuard guard;
+	if (prepared != nullptr) { slot = std::move(prepared); }
 	slot->channelId.store(channelId, std::memory_order_release);
 	slot->cachedIndex.store(-1, std::memory_order_relaxed);
 }
@@ -167,8 +231,9 @@ void InstrumentOutputBuses::loadSettings(const QDomElement& parent)
 		entry = entry.nextSiblingElement(QStringLiteral("route")))
 	{
 		const int bus = entry.attribute(QStringLiteral("bus")).toInt();
-		const int channel = entry.attribute(QStringLiteral("channel"), QStringLiteral("-1")).toInt();
-		if (bus < 1 || bus >= MaxBuses || channel < 0) { continue; }
+		bool channelValid = false;
+		const int channel = entry.attribute(QStringLiteral("channel"), QStringLiteral("-1")).toInt(&channelValid);
+		if (bus < 1 || bus >= MaxBuses || !channelValid || channel < 0) { continue; }
 		// Through route() when the layout already has the bus (it may need enabling); kept otherwise.
 		if (!route(bus, channel)) { storeRoute(bus, channel); }
 	}
@@ -180,8 +245,17 @@ auto InstrumentOutputBuses::mixerIndexOf(Slot& slot, int channelId) const -> int
 	if (mixer == nullptr) { return -1; }
 	const int channels = static_cast<int>(mixer->numChannels());
 	const int cached = slot.cachedIndex.load(std::memory_order_relaxed);
-	if (cached > 0 && cached < channels && mixer->mixerChannel(cached)->id() == channelId) { return cached; }
+	if (cached >= 0 && cached < channels && mixer->mixerChannel(cached)->id() == channelId)
+	{
+#ifdef LMMS_TESTING
+		s_mixerIndexCacheHitsForTesting.fetch_add(1, std::memory_order_relaxed);
+#endif
+		return cached;
+	}
 	// The master (index 0) is a valid target too; a linear scan of pointers, no allocation.
+#ifdef LMMS_TESTING
+	s_mixerIndexFallbacksForTesting.fetch_add(1, std::memory_order_relaxed);
+#endif
 	for (int i = 0; i < channels; ++i)
 	{
 		if (mixer->mixerChannel(i)->id() != channelId) { continue; }
@@ -191,9 +265,18 @@ auto InstrumentOutputBuses::mixerIndexOf(Slot& slot, int channelId) const -> int
 	return -1;
 }
 
+auto InstrumentOutputBuses::routedIndex(int bus) -> int
+{
+	if (bus < 1 || bus >= busCount() || m_slots[static_cast<std::size_t>(bus)] == nullptr) { return -1; }
+	if (m_layout[static_cast<std::size_t>(bus)].firstChannel < 0) { return -1; }  // inactive: it plays nothing
+	Slot& slot = *m_slots[static_cast<std::size_t>(bus)];
+	const int channelId = slot.channelId.load(std::memory_order_acquire);
+	return channelId < 0 ? -1 : mixerIndexOf(slot, channelId);
+}
+
 auto InstrumentOutputBuses::routedBuffer(int bus, f_cnt_t frames) -> SampleFrame*
 {
-	if (bus < 1 || bus >= MaxBuses || m_slots[static_cast<std::size_t>(bus)] == nullptr) { return nullptr; }
+	if (bus < 1 || bus >= busCount() || m_slots[static_cast<std::size_t>(bus)] == nullptr) { return nullptr; }
 	Slot& slot = *m_slots[static_cast<std::size_t>(bus)];
 	if (slot.channelId.load(std::memory_order_acquire) < 0) { return nullptr; }
 	return slot.block.size() == static_cast<std::size_t>(frames) ? slot.block.data() : nullptr;
@@ -212,7 +295,8 @@ void InstrumentOutputBuses::send(int bus, f_cnt_t frames, bool muted)
 	const int index = mixerIndexOf(slot, slot.channelId.load(std::memory_order_acquire));
 	if (index < 0) { return; }
 	Mixer* mixer = Engine::mixer();
-	slot.delay.setDelayFrames(mixer->channelInputLatency(static_cast<mix_ch_t>(index)));
+	// MX-157: the bus is already as late as the instrument; only the rest of the alignment is added.
+	slot.delay.setDelayFrames(mixer->channelInputLatency(static_cast<mix_ch_t>(index)) - sourceLatencyFrames());
 	slot.delay.processInPlace(block, frames);
 	SampleFrame* pair = block;
 	AudioBus audio{&pair, 1, frames};

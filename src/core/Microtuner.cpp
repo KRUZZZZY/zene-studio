@@ -60,7 +60,7 @@ Microtuner::Microtuner() :
 
 /** \brief Return frequency for a given MIDI key, using the active mapping and scale.
  *  \param key A MIDI key number ranging from 0 to 127.
- *  \return Frequency in Hz; 0 if key is out of range or not mapped.
+ *  \return Frequency in Hz; 0 if key is out of range, not mapped, or the scale has no intervals.
  */
 float Microtuner::keyToFreq(int key, int userBaseNote) const
 {
@@ -72,6 +72,7 @@ float Microtuner::keyToFreq(int key, int userBaseNote) const
 	std::shared_ptr<const Keymap> keymap = song->getKeymap(m_keymapModel.value());
 	std::shared_ptr<const Scale> scale = song->getScale(m_scaleModel.value());
 	const std::vector<Interval> &intervals = scale->getIntervals();
+	if (intervals.empty()) {return 0;}						// no pitches to give; the octave degree below would be -1
 
 	// Convert MIDI key to scale degree + octave offset.
 	// The octaves are primarily driven by the keymap wraparound: octave count is increased or decreased if the key
@@ -84,7 +85,9 @@ float Microtuner::keyToFreq(int key, int userBaseNote) const
 	if (octaveDegree == 0) {								// octave interval is 1/1, i.e. constant base frequency
 		return keymap->getBaseFreq();						// → return the baseFreq directly
 	}
-	const int scaleOctave = keymapDegree / octaveDegree;
+	// Bias negative values by one so C++ truncation toward zero yields floor division.
+	const int scaleOctave = keymapDegree >= 0 ? keymapDegree / octaveDegree
+		: (keymapDegree + 1) / octaveDegree - 1;
 
 	// which interval should be used according to the scale and keymap together
 	const int degree_rem = keymapDegree % octaveDegree;
@@ -95,7 +98,8 @@ float Microtuner::keyToFreq(int key, int userBaseNote) const
 	const int baseKeymapDegree = keymap->getDegree(baseNote);
 	if (baseKeymapDegree == -1) {return 0;}					// base key is not mapped, umm...
 	const int baseKeymapOctave = keymap->getOctave(baseNote);
-	const int baseScaleOctave = baseKeymapDegree / octaveDegree;
+	const int baseScaleOctave = baseKeymapDegree >= 0 ? baseKeymapDegree / octaveDegree
+		: (baseKeymapDegree + 1) / octaveDegree - 1;
 
 	const int baseDegree_rem = baseKeymapDegree % octaveDegree;
 	const int baseScaleDegree = baseDegree_rem >= 0 ? baseDegree_rem : baseDegree_rem + octaveDegree;

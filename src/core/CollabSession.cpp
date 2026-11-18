@@ -26,6 +26,8 @@
 
 #include "CollabSession.h"
 
+#include "CollabSessionAddress.h"
+
 #include <QSysInfo>
 #include <QTimer>
 
@@ -39,6 +41,20 @@
 
 namespace lmms::collab
 {
+
+QString detail::lanInviteAddress(const QHostAddress& lan, ControlResult* refusal)
+{
+	if (lan.isNull())
+	{
+		if (refusal)
+		{
+			*refusal = ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("no LAN address could be detected; connect to the LAN or use scope 'local' for this machine only"));
+		}
+		return QString();
+	}
+	return lan.toString();
+}
 
 namespace
 {
@@ -55,15 +71,15 @@ QString defaultName(const QString& name)
 }
 
 //! This machine's LAN address, the one machines on the same network reach.
-QString lanInviteAddress(const portmap::PortMapping& mapping)
+QString lanInviteAddress(const portmap::PortMapping& mapping, ControlResult* refusal)
 {
 	const QHostAddress lan = mapping.localAddress().isNull() ? portmap::PortMapping::lanAddress(QHostAddress()) : mapping.localAddress();
-	return lan.isNull() ? QStringLiteral("127.0.0.1") : lan.toString();
+	return detail::lanInviteAddress(lan, refusal);
 }
 
-/*! The router's external address. \a strict (scope "public") refuses, with the reason, when there is none;
- *  otherwise (scope "auto") an address the internet cannot reach is passed over for the LAN one. */
-QString mappedInviteAddress(const portmap::PortMapping& mapping, bool strict, QString* warning, ControlResult* refusal)
+/*! The router's external address. \a strict (scope "public") refuses, with the reason, when there is none or it is
+ *  not publicly reachable; otherwise (scope "auto") an address the internet cannot reach is passed over for the LAN one. */
+QString mappedInviteAddress(const portmap::PortMapping& mapping, bool strict, ControlResult* refusal)
 {
 	const portmap::MappingResult& mapped = mapping.result();
 	if (strict && mapping.busy())
@@ -78,8 +94,16 @@ QString mappedInviteAddress(const portmap::PortMapping& mapping, bool strict, QS
 		return QString();
 	}
 	const bool reachable = portmap::isPublicIPv4(mapped.externalAddress);
-	if (!reachable && !strict) { return QString(); }
-	if (!reachable) { *warning = mapped.message; }
+	if (!reachable)
+	{
+		if (strict)
+		{
+			const QString reason = mapped.message.isEmpty()
+				? QStringLiteral("the router reported an external address that is not publicly reachable") : mapped.message;
+			*refusal = refused(QStringLiteral("%1; use scope 'lan' or resolve the upstream NAT").arg(reason));
+		}
+		return QString();
+	}
 	return mapped.externalAddress.toString();
 }
 
@@ -144,6 +168,7 @@ void CollabSession::resetToIdle()
 	m_client.reset();
 	m_dispatcher.reset();
 	m_mode = Mode::Idle;
+	m_autoResyncPending = false;
 }
 
 ControlResult CollabSession::host(quint16 port, bool mapPort, const QString& name)
@@ -188,11 +213,13 @@ ControlResult CollabSession::stop()
 QString CollabSession::inviteAddress(const QString& scope, QString* warning, ControlResult* refusal) const
 {
 	if (scope == QLatin1String("local")) { return QStringLiteral("127.0.0.1"); }
-	if (scope == QLatin1String("lan")) { return lanInviteAddress(*m_mapping); }
-	const QString mapped = mappedInviteAddress(*m_mapping, scope == QLatin1String("public"), warning, refusal);
+	if (scope == QLatin1String("lan")) { return lanInviteAddress(*m_mapping, refusal); }
+	const QString mapped = mappedInviteAddress(*m_mapping, scope == QLatin1String("public"), refusal);
 	if (!mapped.isEmpty() || scope == QLatin1String("public")) { return mapped; }
+	const QString lan = lanInviteAddress(*m_mapping, refusal);
+	if (lan.isEmpty()) { return lan; }
 	*warning = QStringLiteral("a LAN invite: only machines on this network can use it");
-	return lanInviteAddress(*m_mapping);
+	return lan;
 }
 
 ControlResult CollabSession::invite(CollabRole role, const QString& scope)
@@ -248,7 +275,12 @@ ControlResult CollabSession::leave()
 ControlResult CollabSession::setRole(int peerId, CollabRole role)
 {
 	if (m_mode != Mode::Hosting) { return refused(QStringLiteral("only the host sets roles")); }
-	if (!m_host->setPeerRole(peerId, role)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no peer %1").arg(peerId)); }
+	QString error;
+	if (!m_host->setPeerRole(peerId, role, &error))
+	{
+		return error.isEmpty() ? ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no peer %1").arg(peerId))
+			: ControlResult::failure(ControlErrorKind::Refused, error);
+	}
 	return ControlResult::success(state());
 }
 

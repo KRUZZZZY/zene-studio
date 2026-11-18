@@ -31,6 +31,7 @@
 #ifdef LMMS_HAVE_LV2
 
 #include <cassert>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 
@@ -171,8 +172,11 @@ lv2_evbuf_write(LV2_Evbuf_Iterator* iter,
 	const uint8_t* data)
 {
 	LV2_Atom_Sequence* aseq = &iter->evbuf->buf;
-	if (iter->evbuf->capacity - sizeof(LV2_Atom) - aseq->atom.size <
-		sizeof(LV2_Atom_Event) + size) {
+	const std::uint64_t eventSize = sizeof(LV2_Atom_Event) + static_cast<std::uint64_t>(size);
+	const std::uint64_t paddedEventSize = (eventSize + 7U) & ~std::uint64_t{7};
+	const std::uint64_t usedSize = sizeof(LV2_Atom) + static_cast<std::uint64_t>(aseq->atom.size);
+	const std::uint64_t capacity = iter->evbuf->capacity;
+	if (usedSize > capacity || paddedEventSize > capacity - usedSize) {
 		return false;
 	}
 
@@ -183,9 +187,9 @@ lv2_evbuf_write(LV2_Evbuf_Iterator* iter,
 	aev->body.size = size;
 	memcpy(LV2_ATOM_BODY(&aev->body), data, size);
 
-	size = lv2_evbuf_pad_size(sizeof(LV2_Atom_Event) + size);
-	aseq->atom.size += size;
-	iter->offset += size;
+	const auto paddedSize = static_cast<std::uint32_t>(paddedEventSize);
+	aseq->atom.size += paddedSize;
+	iter->offset += paddedSize;
 
 	return true;
 }

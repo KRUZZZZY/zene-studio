@@ -31,13 +31,21 @@
  */
 
 #include <QDir>
+#include <QCryptographicHash>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonObject>
+#include <QSaveFile>
+#include <QUuid>
 
 #include "ConfigManager.h"
+#include "ControlProjectAssets.h"
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "ExportFilter.h"
 #include "ImportFilter.h"
 #include "Metronome.h"
 #include "Song.h"
@@ -47,8 +55,171 @@ namespace lmms
 
 using namespace control;
 
+namespace control
+{
+
+bool controlReplaceFileAtomically(const QString& source, const QString& target, ControlResult* error)
+{
+	QFile input(source);
+	if (!input.open(QIODevice::ReadOnly))
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("cannot read '%1' (%2)").arg(source, input.errorString()));
+		return false;
+	}
+	const QByteArray bytes = input.readAll();
+	input.close();
+	// QSaveFile writes beside the target and renames it over the target only on commit(),
+	// so a failure at any step before that leaves the target as it was.
+	QSaveFile output(target);
+	if (!output.open(QIODevice::WriteOnly) || output.write(bytes) != bytes.size() || !output.commit())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("cannot replace '%1' (%2)").arg(target, output.errorString()));
+		return false;
+	}
+	return true;
+}
+
 namespace
 {
+//! A TEST hook (see setControlExportMidiTempPathHook): empty in every real run.
+ExportMidiTempPathHook s_exportMidiTempPathHook;
+}
+
+QString controlExportMidiTempPath(const QString& targetPath)
+{
+	return targetPath + QStringLiteral(".zene-export-")
+		+ QUuid::createUuid().toString(QUuid::WithoutBraces) + QStringLiteral(".tmp");
+}
+
+void setControlExportMidiTempPathHook(ExportMidiTempPathHook hook)
+{
+	s_exportMidiTempPathHook = std::move(hook);
+}
+
+} // namespace control
+
+namespace
+{
+
+struct TemplateFileSnapshot
+{
+	bool exists = false;
+	QByteArray bytes;
+	QFileDevice::Permissions permissions = {};
+};
+
+bool captureTemplateFile(const QString& path, TemplateFileSnapshot* snapshot, QString* error)
+{
+	snapshot->exists = QFileInfo::exists(path);
+	if (!snapshot->exists) { return true; }
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly))
+	{
+		*error = QStringLiteral("cannot read '%1' (%2)").arg(path, file.errorString());
+		return false;
+	}
+	snapshot->bytes = file.readAll();
+	if (file.error() != QFileDevice::NoError)
+	{
+		*error = QStringLiteral("cannot capture '%1' (%2)").arg(path, file.errorString());
+		return false;
+	}
+	snapshot->permissions = file.permissions();
+	return true;
+}
+
+bool captureTemplateFiles(const QString& path, const QString& backupPath, bool backupChanges,
+	TemplateFileSnapshot* file, TemplateFileSnapshot* backup, QString* error)
+{
+	if (!captureTemplateFile(path, file, error)) { return false; }
+	return !backupChanges || captureTemplateFile(backupPath, backup, error);
+}
+
+bool restoreTemplateFile(const QString& path, const TemplateFileSnapshot& snapshot, QString* error)
+{
+	if (!snapshot.exists)
+	{
+		if (QFileInfo::exists(path) && !QFile::remove(path))
+		{
+			*error = QStringLiteral("cannot remove '%1'").arg(path);
+			return false;
+		}
+		return true;
+	}
+	QSaveFile file(path);
+	if (!file.open(QIODevice::WriteOnly))
+	{
+		*error = QStringLiteral("cannot open '%1' for restore (%2)").arg(path, file.errorString());
+		return false;
+	}
+	if (file.write(snapshot.bytes) != snapshot.bytes.size())
+	{
+		*error = QStringLiteral("cannot write '%1' (%2)").arg(path, file.errorString());
+		return false;
+	}
+	if (!file.setPermissions(snapshot.permissions) || !file.commit())
+	{
+		*error = QStringLiteral("cannot commit '%1' (%2)").arg(path, file.errorString());
+		return false;
+	}
+	return true;
+}
+
+bool restoreTemplateFiles(const QString& path, const QString& backupPath, bool backupChanges,
+	const TemplateFileSnapshot& file, const TemplateFileSnapshot& backup, QString* error)
+{
+	QStringList failures;
+	QString fileError;
+	if (!restoreTemplateFile(path, file, &fileError))
+	{
+		failures << QStringLiteral("%1: %2").arg(path, fileError);
+	}
+	QString backupError;
+	if (backupChanges && !restoreTemplateFile(backupPath, backup, &backupError))
+	{
+		failures << QStringLiteral("%1: %2").arg(backupPath, backupError);
+	}
+	if (failures.isEmpty()) { return true; }
+	*error = failures.join(QStringLiteral("; "));
+	return false;
+}
+
+void restoreTemplateTree(const QString& path, const QString& backupPath, bool backupChanges,
+	const TemplateFileSnapshot& file, const TemplateFileSnapshot& backup)
+{
+	QString error;
+	if (!restoreTemplateFiles(path, backupPath, backupChanges, file, backup, &error))
+	{
+		control::recordActionRestoreFailure(
+			QStringLiteral("could not restore the template file tree: %1").arg(error));
+	}
+}
+
+QJsonObject templateFileSummary(const TemplateFileSnapshot& snapshot)
+{
+	QJsonObject result{{QStringLiteral("exists"), snapshot.exists}};
+	if (snapshot.exists)
+	{
+		result.insert(QStringLiteral("bytes"), snapshot.bytes.size());
+		result.insert(QStringLiteral("sha256"), QString::fromLatin1(
+			QCryptographicHash::hash(snapshot.bytes, QCryptographicHash::Sha256).toHex()));
+	}
+	return result;
+}
+
+qint64 templateUndoBytes(const TemplateFileSnapshot& file, const TemplateFileSnapshot& backup,
+	const TemplateFileSnapshot& redoneFile, const TemplateFileSnapshot& redoneBackup)
+{
+	return file.bytes.size() + backup.bytes.size() + redoneFile.bytes.size() + redoneBackup.bytes.size();
+}
+
+bool validTemplateName(const QString& name)
+{
+	return !name.isEmpty() && !name.contains(QLatin1Char('/')) && !name.contains(QLatin1Char('\\'))
+		&& !name.startsWith(QLatin1Char('.'));
+}
 
 ControlResult refused(const QString& message)
 {
@@ -126,7 +297,8 @@ void registerProjectSaveAsTemplate(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Write the session as the user's DEFAULT TEMPLATE "
 		"(<user template dir>/default.mpt) - what every later project.new starts from. File > "
 		"Save as default template dispatches this after asking before an overwrite. The session "
-		"itself is unchanged; an existing default template is REPLACED (`replaced` says so). 0.5.0 L11 "
+		"itself is unchanged; an existing default template is REPLACED (`replaced` says so), and "
+		"one control.undo restores the template file and any backup the save replaced. 0.5.0 L11 "
 		"(WF-027): with 'name' it writes a NAMED template (<user template dir>/<name>.mpt) instead, which "
 		"the start hub lists and project.new opens.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("name"), stringProperty()}});
@@ -137,13 +309,25 @@ void registerProjectSaveAsTemplate(ControlRegistry& registry)
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
 		const QString name = args.value(QStringLiteral("name")).toString(QStringLiteral("default")).trimmed();
-		if (name.isEmpty() || name.contains(QLatin1Char('/')) || name.contains(QLatin1Char('\\')) || name.startsWith(QLatin1Char('.')))
+		if (!validTemplateName(name))
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'name' is a file name, without a folder"));
 		}
 		const QString path = ConfigManager::inst()->userTemplateDir() + name + QStringLiteral(".mpt");
+		const QString backupPath = path + QStringLiteral(".bak");
 		QDir().mkpath(QFileInfo(path).absolutePath());
 		const bool replaced = QFileInfo::exists(path);
+		const bool backupChanges = replaced
+			&& ConfigManager::inst()->value(QStringLiteral("app"), QStringLiteral("disablebackup")).toInt() == 0;
+		TemplateFileSnapshot previous;
+		TemplateFileSnapshot previousBackup;
+		QString captureError;
+		if (!captureTemplateFiles(path, backupPath, backupChanges,
+				&previous, &previousBackup, &captureError))
+		{
+			return refused(QStringLiteral("the previous template file tree could not be captured for undo: %1")
+				.arg(captureError));
+		}
 		// saveProjectFile() writes the document and leaves the session's own
 		// file name where it was: a template is an artefact, not the project's
 		// new home (guiSaveProjectAs is the call that moves the name).
@@ -153,8 +337,42 @@ void registerProjectSaveAsTemplate(ControlRegistry& registry)
 			return refused(QStringLiteral("the template could not be written to '%1': %2")
 				.arg(path, song->saveRefusal()));
 		}
+		TemplateFileSnapshot written;
+		TemplateFileSnapshot writtenBackup;
+		if (!captureTemplateFiles(path, backupPath, backupChanges,
+				&written, &writtenBackup, &captureError))
+		{
+			QString restoreError;
+			const QString detail = restoreTemplateFiles(path, backupPath, backupChanges,
+				previous, previousBackup, &restoreError)
+				? captureError
+				: QStringLiteral("%1; the previous file tree could not be restored: %2")
+					.arg(captureError, restoreError);
+			return refused(QStringLiteral("the saved template could not be captured for undo: %1").arg(detail));
+		}
+
+		control::addStructuralUndoStep(
+			[path, backupPath, backupChanges, previous, previousBackup]() {
+				restoreTemplateTree(path, backupPath, backupChanges, previous, previousBackup);
+			},
+			[path, backupPath, backupChanges, written, writtenBackup]() {
+				restoreTemplateTree(path, backupPath, backupChanges, written, writtenBackup);
+			},
+			templateUndoBytes(previous, previousBackup, written, writtenBackup));
+
+		QJsonObject before{{QStringLiteral("path"), path},
+			{QStringLiteral("file"), templateFileSummary(previous)}};
+		if (backupChanges)
+		{
+			before.insert(QStringLiteral("backup_path"), backupPath);
+			before.insert(QStringLiteral("backup"), templateFileSummary(previousBackup));
+		}
 		return ControlResult::success(QJsonObject{{QStringLiteral("path"), path},
-			{QStringLiteral("replaced"), replaced}});
+			{QStringLiteral("replaced"), replaced},
+			{QStringLiteral("__transaction"), control::transactionPayload(before,
+				QStringLiteral("control.undo"), QJsonObject(), true,
+				QStringLiteral("action checkpoint: one file-level undo step restores the previous "
+					"template and any backup the save replaced"))}});
 	};
 	registry.registerCommand(cmd);
 }
@@ -209,9 +427,13 @@ void registerProjectExportMidi(ControlRegistry& registry)
 	cmd.group = QStringLiteral("project");
 	cmd.verb = QStringLiteral("export_midi");
 	cmd.description = QStringLiteral("Write the session's notes as a Standard MIDI File (the "
-		"midiexport filter; interchange.smf_export writes the tempo map only). File > Export MIDI "
-		"dispatches this after its file dialog. A missing `.mid` suffix is appended. The session "
-		"is not modified.");
+		"midiexport filter, 480 ppq: track 0 is the tempo-map conductor track - the same events as "
+		"interchange.smf_export - then one track per instrument with its name, program change, MIDI channel "
+		"and notes). File > Export MIDI "
+		"dispatches this after its file dialog. A missing `.mid` suffix is appended. The export is "
+		"written to a temporary file and only replaces an existing file once the new output is "
+		"proven to exist, so a failed export never reports a stale file as a fresh one (and never "
+		"destroys the previous one). The session is not modified.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("path"), stringProperty()}}, {QStringLiteral("path")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("path"), stringProperty()},
@@ -222,15 +444,53 @@ void registerProjectExportMidi(ControlRegistry& registry)
 		QString path = requireAbsolute(args, QStringLiteral("path"), &error);
 		if (path.isEmpty()) { return error; }
 		if (!path.endsWith(QStringLiteral(".mid"))) { path += QStringLiteral(".mid"); }
-		Engine::getSong()->exportProjectMidi(path);
-		const QFileInfo written(path);
-		if (!written.exists())
+
+		//! WHY A TEMPORARY PATH: the midiexport filter can fail to load, and
+		//! Song::exportProjectMidi then writes nothing and says so only through
+		//! qDebug. Exporting straight onto `path` therefore left a PRE-EXISTING
+		//! `.mid` untouched, and checking that `path` exists afterwards called that
+		//! stale file a successful export of this call. The export goes to a sibling
+		//! path with a UNIQUE name (so no file the user keeps beside the target is
+		//! ever removed), and the target is replaced only once that output is proven.
+		const QString temp = controlExportMidiTempPath(path);
+		// A TEST hook: it is called with `temp` just before the exporter claims it, so a
+		// test can put a file there and force the collision case exactly where it
+		// happens. Nothing in the product sets it.
+		if (s_exportMidiTempPathHook) { s_exportMidiTempPathHook(temp); }
+		// The export CREATES the temporary file (exclusively) and says whether it did.
+		// That answer - not an existence check made before the export - is what says who
+		// owns the path: a path that was taken belongs to someone else and is never
+		// written to and never removed; the partial output of a failed export is ours.
+		const ExportOutcome outcome = Engine::getSong()->exportProjectMidi(temp);
+		if (outcome != ExportOutcome::Written)
 		{
-			return refused(QStringLiteral("no MIDI file was written to '%1' (the midiexport "
-				"filter is not loadable in this process)").arg(path));
+			// Only a file THIS call created is ours to remove. When the export says it
+			// created nothing, the path was taken: it is left exactly as it was.
+			if (outcome == ExportOutcome::Incomplete) { QFile::remove(temp); }
+			return refused(QStringLiteral("no MIDI file was written for '%1' (the midiexport "
+				"filter is not loadable in this process, or the temporary path was taken)").arg(path));
+		}
+		const qint64 bytes = QFileInfo(temp).size();
+		if (bytes <= 0)
+		{
+			QFile::remove(temp);
+			return refused(QStringLiteral("no MIDI file was written for '%1' (the midiexport "
+				"filter wrote an empty file)").arg(path));
+		}
+		// The replacement is atomic (controlReplaceFileAtomically): on failure the previous
+		// export at `path` is still there, byte for byte, and the call is refused.
+		ControlResult replaceError;
+		const bool replaced = controlReplaceFileAtomically(temp, path, &replaceError);
+		// The temporary file is ours (this call created it), so it goes either way: after
+		// a successful replacement its bytes are on the target already.
+		QFile::remove(temp);
+		if (!replaced)
+		{
+			return refused(QStringLiteral("the MIDI file was written but could not replace '%1' (%2)")
+				.arg(path, replaceError.errorMessage));
 		}
 		return ControlResult::success(QJsonObject{{QStringLiteral("path"), path},
-			{QStringLiteral("bytes"), static_cast<qint64>(written.size())}});
+			{QStringLiteral("bytes"), bytes}});
 	};
 	registry.registerCommand(cmd);
 }

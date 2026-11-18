@@ -43,14 +43,17 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QPushButton>
 #include <QToolButton>
 
 #include "CommandForm.h"
+#include "CommandFormFields.h"
 #include "CommandMetadata.h"
 #include "CommandListDialog.h"
 #include "ControlRegistry.h"
 #include "ListTable.h"
 #include "MenuTestSupport.h"
+#include "RenameDialog.h"
 #include "ShortcutMap.h"
 
 using namespace lmms;
@@ -66,6 +69,18 @@ int g_fixedRuns = 0;
 QJsonObject prop(const char* type)
 {
 	return QJsonObject{{QStringLiteral("type"), QLatin1String(type)}};
+}
+
+QJsonObject boundedIntegerList()
+{
+	QJsonObject item = prop("integer");
+	item.insert(QStringLiteral("minimum"), 1);
+	item.insert(QStringLiteral("maximum"), 10);
+	QJsonObject list = prop("array");
+	list.insert(QStringLiteral("items"), item);
+	list.insert(QStringLiteral("minItems"), 1);
+	list.insert(QStringLiteral("maxItems"), 3);
+	return list;
 }
 
 void add(const char* id, const QJsonObject& properties, const QJsonArray& required,
@@ -159,6 +174,19 @@ class CommandFormTest : public QObject
 private slots:
 	void initTestCase() { registerFakes(); }
 
+	void closingRenameDialogRestoresUnconfirmedText()
+	{
+		QString name = QStringLiteral("Original name");
+		RenameDialog dialog(name);
+		QLineEdit* editor = dialog.findChild<QLineEdit*>();
+		QVERIFY(editor != nullptr);
+		dialog.show();
+		editor->setText(QStringLiteral("Unconfirmed name"));
+		QCOMPARE(editor->text(), QStringLiteral("Unconfirmed name"));
+		QVERIFY(dialog.close());
+		QCOMPARE(name, QStringLiteral("Original name"));
+	}
+
 	void fieldsFollowTheSchemaAndLeaveFixedOut()
 	{
 		CommandForm form(echo({{QStringLiteral("track"), QStringLiteral("trk-1")}}));
@@ -193,6 +221,90 @@ private slots:
 		QCOMPARE(args.value(QStringLiteral("items")).toArray(), (QJsonArray{1, 2}));
 	}
 
+	//! A number written with setField() comes back as the number given, not rounded to six digits.
+	void aNumberWrittenToAFieldIsReadBackUnrounded()
+	{
+		CommandForm form(echo({{QStringLiteral("track"), QStringLiteral("trk-1")}}));
+		QVERIFY(form.setField(QStringLiteral("name"), QStringLiteral("x")));  // required by the schema
+		QVERIFY(form.setField(QStringLiteral("ratio"), 0.123456789));
+		QJsonObject args;
+		QString error;
+		QVERIFY2(form.collect(&args, &error), qPrintable(error));
+		QCOMPARE(args.value(QStringLiteral("ratio")).toDouble(), 0.123456789);
+	}
+
+	//! A form default is written through the same formatter, so it is not rounded either.
+	void aNumberDefaultIsSentUnrounded()
+	{
+		CommandCall call = echo({{QStringLiteral("track"), QStringLiteral("trk-1")}});
+		call.defaults.insert(QStringLiteral("name"), QStringLiteral("x"));  // required by the schema
+		call.defaults.insert(QStringLiteral("ratio"), 0.123456789);
+		CommandForm form(call);
+		QJsonObject args;
+		QString error;
+		QVERIFY2(form.collect(&args, &error), qPrintable(error));
+		QCOMPARE(args.value(QStringLiteral("ratio")).toDouble(), 0.123456789);
+	}
+
+	//! The text a number reads as stays short: the fix keeps the digits a number needs and no more.
+	void aNumberReadsAsItsShortestExactText()
+	{
+		QCOMPARE(valueText(QJsonValue(0.5)), QStringLiteral("0.5"));
+		QCOMPARE(valueText(QJsonValue(1234567.0)), QStringLiteral("1234567"));
+		QCOMPARE(valueText(QJsonValue(0.1)), QStringLiteral("0.1"));
+		QCOMPARE(valueText(QJsonValue(0.123456789)), QStringLiteral("0.123456789"));
+	}
+
+	//! setField()'s contract: false when the value does not fit the field's type, so a caller never
+	//! takes "accepted" for "this field now holds your value" when it holds the wrong thing.
+	void aValueOfTheWrongTypeIsRefusedByTheFieldItDoesNotFit()
+	{
+		CommandForm form(echo());
+		QVERIFY2(!form.setField(QStringLiteral("count"), QStringLiteral("abc")), "an integer field took a word");
+		QVERIFY2(!form.setField(QStringLiteral("ratio"), QStringLiteral("abc")), "a number field took a word");
+		QVERIFY2(!form.setField(QStringLiteral("name"), 42), "a string field took a number");
+		QVERIFY2(!form.setField(QStringLiteral("items"), QStringLiteral("a, b")), "an array field took a comma list");
+		// Refused means untouched: the field still holds what it held, and a fitting value goes in.
+		QVERIFY(form.setField(QStringLiteral("name"), QStringLiteral("x")));
+		QVERIFY(form.setField(QStringLiteral("count"), 3));
+		QJsonObject args;
+		QString error;
+		QVERIFY2(form.collect(&args, &error), qPrintable(error));
+		QCOMPARE(args.value(QStringLiteral("count")).toInt(), 3);
+		QVERIFY(!args.contains(QStringLiteral("ratio")));
+	}
+
+	void stringFieldsPreserveEdgeWhitespace()
+	{
+		QWidget parent;
+		const QJsonObject spec = prop("string");
+		const auto editor = formfield::makeEditor(&parent, QStringLiteral("formtest.echo"), QStringLiteral("name"), spec, false);
+		auto* line = qobject_cast<QLineEdit*>(editor.value);
+		QVERIFY(line != nullptr);
+		line->setText(QStringLiteral("  take name  "));
+
+		QJsonValue value;
+		QString error;
+		QVERIFY2(formfield::readValue(line, spec, &value, &error), qPrintable(error));
+		QCOMPARE(value.toString(), QStringLiteral("  take name  "));
+	}
+
+	void pathFieldsPreserveEdgeWhitespace()
+	{
+		QWidget parent;
+		QJsonObject spec = prop("string");
+		spec.insert(QStringLiteral("path"), QStringLiteral("input"));
+		const auto editor = formfield::makeEditor(&parent, QStringLiteral("formtest.editors"), QStringLiteral("file"), spec, false);
+		auto* line = qobject_cast<QLineEdit*>(editor.value);
+		QVERIFY(line != nullptr);
+		line->setText(QStringLiteral(" /tmp/ take name .wav "));
+
+		QJsonValue value;
+		QString error;
+		QVERIFY2(formfield::readValue(line, spec, &value, &error), qPrintable(error));
+		QCOMPARE(value.toString(), QStringLiteral(" /tmp/ take name .wav "));
+	}
+
 	void aMissingRequiredOrMistypedFieldIsRefusedBeforeRunning()
 	{
 		CommandForm form(echo());
@@ -201,11 +313,12 @@ private slots:
 		QVERIFY(!form.collect(&args, &error));
 		QVERIFY2(error.contains(QStringLiteral("Name")), qPrintable(error));
 		form.setField(QStringLiteral("name"), QStringLiteral("x"));
-		form.setField(QStringLiteral("count"), QStringLiteral("abc"));
+		// Mistyped text as a user types it: setField() refuses it now, so it goes into the editor.
+		form.findChild<QLineEdit*>(QStringLiteral("field:count"))->setText(QStringLiteral("abc"));
 		QVERIFY(!form.collect(&args, &error));
 		QVERIFY2(error.contains(QStringLiteral("Count")), qPrintable(error));
-		form.setField(QStringLiteral("count"), QString());
-		form.setField(QStringLiteral("items"), QStringLiteral("{not json"));
+		form.findChild<QLineEdit*>(QStringLiteral("field:count"))->clear();
+		form.findChild<QLineEdit*>(QStringLiteral("field:items"))->setText(QStringLiteral("{not json"));
 		QVERIFY(!form.collect(&args, &error));
 		g_lastArgs = {};
 		form.accept();
@@ -227,6 +340,56 @@ private slots:
 		QCOMPARE(form.result().result.value(QStringLiteral("name")).toString(), QStringLiteral("good"));
 		QCOMPARE(form.result().result.value(QStringLiteral("name")).toString(), g_lastArgs.value(QStringLiteral("name")).toString());
 		QCOMPARE(ran.count(), 2);
+	}
+
+	void aFailedRerunDropsTheAnswerThePreviousRunLeft()
+	{
+		CommandForm form(echo());
+		form.setField(QStringLiteral("name"), QStringLiteral("good"));
+		form.accept();
+		QVERIFY(form.result().ok);
+		const QString firstAnswer = form.resultText();
+		QVERIFY2(!firstAnswer.isEmpty(), "the successful run showed no answer to go stale");
+
+		QPushButton* copy = nullptr;
+		for (QPushButton* button : form.findChildren<QPushButton*>())
+		{
+			if (button->text().contains(QStringLiteral("Copy"), Qt::CaseInsensitive)) { copy = button; }
+		}
+		QVERIFY(copy != nullptr);
+		QVERIFY(!copy->isHidden());
+
+		form.setField(QStringLiteral("name"), QStringLiteral("bad"));
+		form.accept();
+		QVERIFY(!form.result().ok);
+		QVERIFY(!form.errorText().isEmpty());
+		QVERIFY2(form.resultText().isEmpty(), "the failed rerun left the previous answer on screen");
+		QVERIFY2(copy->isHidden(), "the failed rerun left Copy Result enabled to copy the failed result");
+	}
+
+	void aRefusedEditorAfterASuccessDropsTheAnswerToo()
+	{
+		CommandForm form(echo());
+		form.setField(QStringLiteral("name"), QStringLiteral("good"));
+		form.accept();
+		QVERIFY(form.result().ok);
+		QVERIFY2(!form.resultText().isEmpty(), "the successful run showed no answer to go stale");
+		QPushButton* copy = nullptr;
+		for (QPushButton* button : form.findChildren<QPushButton*>())
+		{
+			if (button->text().contains(QStringLiteral("Copy"), Qt::CaseInsensitive)) { copy = button; }
+		}
+		QVERIFY(copy != nullptr);
+		QVERIFY(!copy->isHidden());
+
+		// The collect step refuses the form before the command runs: the previous success is no answer now.
+		g_lastArgs = {};
+		form.findChild<QLineEdit*>(QStringLiteral("field:count"))->setText(QStringLiteral("abc"));
+		form.accept();
+		QVERIFY2(g_lastArgs.isEmpty(), "the refused form still ran the command");
+		QVERIFY(!form.errorText().isEmpty());
+		QVERIFY2(form.resultText().isEmpty(), "a refused attempt left the previous answer on screen");
+		QVERIFY2(copy->isHidden(), "a refused attempt left Copy Result enabled");
 	}
 
 	void runCommandDispatchesWhenNothingIsLeftToAsk()
@@ -328,6 +491,114 @@ private slots:
 		QCOMPARE(args.value(QStringLiteral("gain_db")).toDouble(), -6.0);
 	}
 
+	//! A list editor enforces item types and ranges for both supported input syntaxes.
+	void jsonAndCommaListsRejectOutOfRangeItems()
+	{
+		const QJsonObject spec = boundedIntegerList();
+		QWidget parent;
+		const formfield::Editor editor = formfield::makeEditor(&parent, QStringLiteral("formtest.list"), QStringLiteral("values"), spec, true);
+		auto* input = qobject_cast<QLineEdit*>(editor.value);
+		QVERIFY(input != nullptr);
+		QJsonValue value;
+		QString error;
+
+		input->setText(QStringLiteral("[11]"));
+		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "JSON list accepted an item above its maximum");
+		input->setText(QStringLiteral("1, 11"));
+		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "comma list accepted an item above its maximum");
+	}
+
+	//! JSON list elements must match the declared item type, including integer rather than fractional values.
+	void jsonListsRejectNonIntegerItems()
+	{
+		const QJsonObject spec = boundedIntegerList();
+		QWidget parent;
+		const formfield::Editor editor = formfield::makeEditor(&parent, QStringLiteral("formtest.list"), QStringLiteral("values"), spec, true);
+		auto* input = qobject_cast<QLineEdit*>(editor.value);
+		QVERIFY(input != nullptr);
+		input->setText(QStringLiteral("[1.5]"));
+		QJsonValue value;
+		QString error;
+		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "JSON list accepted a fractional integer item");
+	}
+
+	//! Both list syntaxes enforce the array's declared item-count bounds.
+	void jsonAndCommaListsRespectArrayLength()
+	{
+		const QJsonObject spec = boundedIntegerList();
+		QWidget parent;
+		const formfield::Editor editor = formfield::makeEditor(&parent, QStringLiteral("formtest.list"), QStringLiteral("values"), spec, true);
+		auto* input = qobject_cast<QLineEdit*>(editor.value);
+		QVERIFY(input != nullptr);
+		QJsonValue value;
+		QString error;
+
+		input->setText(QStringLiteral("[]"));
+		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "JSON list ignored its minimum item count");
+		input->setText(QStringLiteral("[1, 2, 3, 4]"));
+		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "JSON list ignored its maximum item count");
+		input->setText(QStringLiteral("1, 2, 3, 4"));
+		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "comma list ignored its maximum item count");
+	}
+
+	//! A comma list with an empty item is malformed input, not a shorter list: it is refused, so the
+	//! user hears about it instead of the command running with values they never typed.
+	void commaListsRefuseEmptyItems()
+	{
+		const QJsonObject spec = boundedIntegerList();
+		QWidget parent;
+		const formfield::Editor editor = formfield::makeEditor(&parent, QStringLiteral("formtest.list"), QStringLiteral("values"), spec, true);
+		auto* input = qobject_cast<QLineEdit*>(editor.value);
+		QVERIFY(input != nullptr);
+		QJsonValue value;
+		QString error;
+
+		input->setText(QStringLiteral("1,,2"));
+		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "a comma list with an empty item was read as a shorter list");
+		QVERIFY2(error.contains(QStringLiteral("empty")), qPrintable(error));
+		input->setText(QStringLiteral("1, 2,"));
+		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "a comma list ending in a comma was read as a shorter list");
+		// A blank field is no list at all: it stays empty, and the command's own default is used.
+		input->setText(QString());
+		QVERIFY2(formfield::readValue(editor.value, spec, &value, &error), qPrintable(error));
+		QVERIFY(value.isUndefined());
+	}
+
+	//! A string list's items may hold a comma: the editor's text escapes it, and what it reads
+	//! back is the list that was set - the text is not a lossy rendering of the list.
+	void stringListItemsKeepTheirCommas()
+	{
+		QJsonObject spec = prop("array");
+		spec.insert(QStringLiteral("items"), prop("string"));
+		QWidget parent;
+		const formfield::Editor editor = formfield::makeEditor(&parent, QStringLiteral("formtest.units"), QStringLiteral("names"), spec, false);
+		auto* input = qobject_cast<QLineEdit*>(editor.value);
+		QVERIFY(input != nullptr);
+		QJsonValue value;
+		QString error;
+
+		// What the writer puts in the editor reads back as the same list.
+		QVERIFY(formfield::writeValue(editor.value, spec, QJsonArray{QStringLiteral("take, 1"), QStringLiteral("rest")}));
+		QVERIFY2(formfield::readValue(editor.value, spec, &value, &error), qPrintable(error));
+		QCOMPARE(value.toArray(), (QJsonArray{QStringLiteral("take, 1"), QStringLiteral("rest")}));
+
+		// Typed as text: an escaped comma is one item's comma.
+		input->setText(QStringLiteral("take\\, 1, rest"));
+		QVERIFY2(formfield::readValue(editor.value, spec, &value, &error), qPrintable(error));
+		QCOMPARE(value.toArray(), (QJsonArray{QStringLiteral("take, 1"), QStringLiteral("rest")}));
+
+		// A backslash that escapes nothing stands for itself: "folder\sample" is that path, not
+		// "foldersample".
+		input->setText(QStringLiteral("folder\\sample, rest"));
+		QVERIFY2(formfield::readValue(editor.value, spec, &value, &error), qPrintable(error));
+		QCOMPARE(value.toArray(), (QJsonArray{QStringLiteral("folder\\sample"), QStringLiteral("rest")}));
+
+		// And the writer escapes a backslash, so the list it writes reads back unchanged.
+		QVERIFY(formfield::writeValue(editor.value, spec, QJsonArray{QStringLiteral("folder\\sample"), QStringLiteral("rest")}));
+		QVERIFY2(formfield::readValue(editor.value, spec, &value, &error), qPrintable(error));
+		QCOMPARE(value.toArray(), (QJsonArray{QStringLiteral("folder\\sample"), QStringLiteral("rest")}));
+	}
+
 	//! 0.5.0 theme 5: an enum offers its values in words (the blank entry says "(Default)"), a list of plain
 	//! values is typed as "a, b", and raw JSON waits under Advanced.
 	void choicesListsAndRawJsonHaveTheirPlaces()
@@ -412,8 +683,8 @@ private slots:
 		spec.title = QStringLiteral("Rows");
 		spec.listId = QStringLiteral("formtest.list");
 		spec.arrayKey = QStringLiteral("rows");
-		spec.columns = {QStringLiteral("id"), QStringLiteral("n")};
-		spec.summaryKeys = {QStringLiteral("total")};
+		spec.columns = QStringList{QStringLiteral("id"), QStringLiteral("n")};
+		spec.summaryKeys = QStringList{QStringLiteral("total")};
 		RowAction take;
 		take.label = QStringLiteral("Take");
 		take.id = QStringLiteral("formtest.take");
@@ -428,8 +699,8 @@ private slots:
 		QCOMPARE(dialog.runAction(5, 0).errorKind, ControlErrorKind::InvalidArgs);
 
 		spec.arrayKey = QStringLiteral("groups");
-		spec.nestedKeys = {QStringLiteral("items")};
-		spec.parentFields = {QStringLiteral("id")};
+		spec.nestedKeys = QStringList{QStringLiteral("items")};
+		spec.parentFields = QStringList{QStringLiteral("id")};
 		const QJsonArray rows = listRows(spec, dialog.listResult());
 		QCOMPARE(rows.size(), 2);
 		QCOMPARE(rows.at(1).toObject().value(QStringLiteral("k")).toInt(), 2);
@@ -439,13 +710,25 @@ private slots:
 	//! Design theme 18: the shared list finds, sorts by a column (numbers by value, a third click back to the list's
 	//! order), runs its primary action on Enter - on the row chosen, wherever the sort put it - offers every action
 	//! from the Menu key or Shift+F10, and keeps each outcome in its Results log.
+	void sortsScientificNotationByNumericValue()
+	{
+		ListTable table;
+		const QList<ListRow> rows{
+			{QStringList{QStringLiteral("1e3 ms")}, {}, QString()},
+			{QStringList{QStringLiteral("20 ms")}, {}, QString()}
+		};
+		table.setRows({QStringLiteral("value")}, rows);
+		table.sortRows(0);
+		QCOMPARE(table.item(0, 0)->text(), QStringLiteral("20 ms"));
+	}
+
 	void theListFindsSortsAndActsFromTheKeyboard()
 	{
 		ListSpec spec;
 		spec.title = QStringLiteral("Rows");
 		spec.listId = QStringLiteral("formtest.list");
 		spec.arrayKey = QStringLiteral("rows");
-		spec.columns = {QStringLiteral("id"), QStringLiteral("n")};
+		spec.columns = QStringList{QStringLiteral("id"), QStringLiteral("n")};
 		RowAction take;
 		take.label = QStringLiteral("Take");
 		take.id = QStringLiteral("formtest.take");

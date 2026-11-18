@@ -70,6 +70,10 @@ const ReversibilityRow kArrangerRows[] = {
 	R("clip.gain_envelope_get", RC::NotMutating, false, "it reads a clip's gain envelope. Nothing is written", "no write", ""),
 	R("clip.controllers_get", RC::NotMutating, false, "it reads a clip's controller lanes. Nothing is written", "no write", ""),
 	R("clip.controllers_set", RC::TrueInverse, true, "it replaces one controller lane of a MIDI clip", "MidiClip journal checkpoint", ""),
+	R("clip.controllers_to_automation", RC::TrueInverse, true, "it copies a CC lane onto a parameter's automation clip",
+		"AutomationClip journal checkpoint (or, for a clip the call created, an action step removing its track); one step", ""),
+	R("clip.controllers_from_automation", RC::TrueInverse, true, "it replaces one CC lane of a MIDI clip with a parameter's automation",
+		"MidiClip journal checkpoint: undo restores the clip's lanes", ""),
 	R("clip.gain_envelope_set", RC::TrueInverse, true,
 		"the envelope is part of the clip's edits, which Clip::saveClipEdits writes onto the clip's element",
 		"Clip journal checkpoint: undo restores the clip's previous edits", ""),
@@ -80,13 +84,20 @@ const ReversibilityRow kArrangerRows[] = {
 		"Track journal checkpoint: undo removes every copy", ""),
 	R("clip.time_scale", RC::TrueInverse, true, "it rewrites a clip's notes (or its warp) and its length",
 		"Clip journal checkpoint: undo restores the clip's notes (or warp) and length", ""),
+	// The class is not_mutating because the command writes nothing of its own. The records it leaves are its
+	// children's: one covered track leaves that clip.consolidate's own record; several leave one record named
+	// for this command, whose inverse.children lists each track.
 	R("range.consolidate", RC::NotMutating, false,
-		"it runs clip.consolidate over the range on each covered sample track; each of those records - and undoes - "
-		"as itself (the workflow.run precedent), so this command records nothing of its own",
-		"nothing of its own: undo each track's clip.consolidate", ""),
-	R("arrangement.nudge", RC::NotMutating, false,
-		"it runs clip.move on the selected clip, which records itself; nothing of its own is written",
-		"nothing of its own: clip.move's Clip checkpoint", ""),
+		"its own write is none: it runs clip.consolidate over the range on each covered sample track inside its "
+		"handler; one track's run is recorded as that clip.consolidate's own record, and a run of several tracks as "
+		"one record named for this command (its inverse.children lists each track)",
+		"the journal step the tracks' consolidations share: control.undo reverts every track together", ""),
+	// A non-mutating wrapper that declares coalescing (the target is its nested clip.move's): a burst of
+	// presses is one undo step, joined to the previous run of the same clip (ControlRegistry::flushNestedRecords).
+	{ "arrangement.nudge", RC::NotMutating,
+		"it runs clip.move on the selected clip, which records itself; nothing of its own is written. A burst of "
+		"presses joins one undo step",
+		"nothing of its own: clip.move's Clip checkpoint, merged across a burst", "", false, "clip" },
 	R("arrangement.select_clip", RC::NotMutating, false, "it selects the next or previous clip: interface state", "no write", ""),
 	R("track.version_list", RC::NotMutating, false, "it reads a track's versions. Nothing is written", "no write", ""),
 	R("track.version_save", RC::TrueInverse, true, "it keeps a track's clips as a named version", "closure: the previous versions put back", ""),
@@ -121,11 +132,21 @@ const ReversibilityRow kArrangerRows[] = {
 		"AutomationClip journal checkpoint", ""),
 	R("automation.last_touched", RC::NotMutating, false, "it reads which parameter was last changed. Nothing is written",
 		"no write", ""),
+	R("automation.lanes_set_collapsed", RC::TrueInverse, true,
+		"it folds or unfolds a track's child automation lanes in the arranger (the owner's own `autolanes` attribute)",
+		"ProjectJournal (Track checkpoint: the owner's own <track> element carries `autolanes`, reset on absence)", ""),
 	R("note.scale", RC::TrueInverse, true, "it moves and resizes notes", "MidiClip journal checkpoint", ""),
 	R("note.ratchet", RC::TrueInverse, true, "it splits notes into repeats", "MidiClip journal checkpoint", ""),
 	R("note.add_many", RC::TrueInverse, true, "it adds notes to a clip", "MidiClip journal checkpoint", ""),
 	R("note.restore_timing", RC::TrueInverse, true, "it puts back or forgets the notes' pre-quantise timing", "MidiClip journal checkpoint", ""),
 	R("note.list", RC::NotMutating, false, "it reads a clip's notes. Nothing is written", "no write", ""),
+	R("note.step_set", RC::TrueInverse, true,
+		"it adds, removes and changes notes of one clip (key, velocity, chance, ratchet), all of them state the owner MidiClip serializes in its note list",
+		"MidiClip journal checkpoint (one for the whole batch; a batch that changes nothing takes none)", ""),
+	R("note.step_fill", RC::TrueInverse, true,
+		"it re-pitches the notes of a clip's step columns (and in random mode removes the columns it does not keep), all of them state the owner MidiClip serializes in its note list",
+		"MidiClip journal checkpoint (one for the whole fill; a fill that changes nothing takes none)", ""),
+	R("note.step_get_state", RC::NotMutating, false, "it reads a clip's notes as a step grid. Nothing is written", "no write", ""),
 	R("note.select_where", RC::NotMutating, false, "selection is view state, as note.select",
 		"no transaction: the previous selection is reported in the result", ""),
 	R("note.transform_where", RC::TrueInverse, true, "it changes, mutes or removes the matching notes",

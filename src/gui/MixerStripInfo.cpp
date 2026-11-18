@@ -28,6 +28,7 @@
 
 #include "AudioEngine.h"
 #include "Engine.h"
+#include "HardwareIo.h"
 #include "Mixer.h"
 #include "MixerChannelView.h"
 #include "MixerLatencyText.h"
@@ -258,7 +259,8 @@ void describeStrip(MixerChannelView* view, Mixer* mixer, int index)
 	MixerChannel* channel = mixer->mixerChannel(index);
 	const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
 	QString tip = mixerLatencyText(channel->m_name, channel->m_fxChain.latencyFrames(),
-		channel->inputLatencyFrames(), index == 0 ? mixer->totalLatencyFrames() : -1, rate);
+		channel->inputLatencyFrames(), index == 0 ? mixer->totalLatencyFrames() : -1, rate,
+		hardwareio::insertLatency(*channel), hardwareio::insertLatencySource(*channel));
 	if (!channel->m_note.isEmpty()) { tip += QLatin1Char('\n') + channel->m_note; }
 	if (channel->isBus()) { tip += QLatin1Char('\n') + tr("Return - sends into it are pre-fader"); }
 	view->setToolTip(tip);

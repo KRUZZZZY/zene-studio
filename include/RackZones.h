@@ -124,12 +124,15 @@ public:
 	auto zone(int index) const -> const RackZone*;
 
 	//! Appends a zone and returns its index (the zone-<n> id).
-	auto addZone(const RackZone& zone) -> int;
+	//! @a alongside runs inside the same edit, after the list changes and before the changed hook: a caller
+	//! whose own state must publish with the list (a layer slot) passes it here rather than as a second edit.
+	auto addZone(const RackZone& zone, const std::function<void()>& alongside = {}) -> int;
 	//! Inserts a zone at @a index, for the inverse of a removal.
 	auto insertZone(int index, const RackZone& zone) -> bool;
 	auto removeZone(int index) -> bool;
 	//! 0.5.0 MX-112: replaces the whole list in one edit (a layer removed renumbers the zones it leaves).
-	void assign(std::vector<RackZone> zones);
+	//! @a alongside runs in that edit, as addZone's does.
+	void assign(std::vector<RackZone> zones, const std::function<void()>& alongside = {});
 
 	/**
 	 * The index of the first zone - in the order the zones were added - whose
@@ -143,14 +146,21 @@ public:
 	 */
 	auto resolve(int key, int velocity) const -> int;
 
-	/*! 0.5.0 MX-112: EVERY zone - not the first - whose key range and velocity range both contain the
-	 *  note, one bit per zone index (zones past 63 are not reported). An instrument layer rack sounds
-	 *  each layer a matching zone names, so it needs all of them; the routing racks keep resolve().
-	 *  A read: no allocation, no lock. */
+	/*! 0.5.0 MX-112: every matching instrument layer chain, one bit per chain index, accumulated over
+	 *  all zones whose key range and velocity range contain the note. Layer racks have at most nine
+	 *  chains, so this stays complete regardless of how many zones are stored. The routing racks keep
+	 *  resolve(). A read: no allocation, no lock. */
 	auto matchMask(int key, int velocity) const -> std::uint64_t;
 
 	//! Drops every zone.
 	void clear();
+
+	/*! Luna cluster 5256: keeps the zone list consistent with a rack that lost
+	 *  chain @a removedIndex - a zone that named a LATER chain slides down with
+	 *  it, and a zone that named the removed chain is dropped, because an index
+	 *  that names nothing is a note that silently takes the common path.
+	 *  Called by Rack::removeChain(); the guard nests. */
+	void reindexChains(int removedIndex);
 
 	//! Called after every change, inside the model-change guard (the owning Rack re-wires).
 	void setChangedHook(std::function<void()> hook) { m_changed = std::move(hook); }
@@ -160,7 +170,12 @@ public:
 	//! Writes one <zone> element per zone, or nothing when there are none.
 	void saveSettings(QDomDocument& doc, QDomElement& rackElement) const;
 	//! Reads the <zone> children of @a rackElement; missing ones leave none.
-	void loadSettings(const QDomElement& rackElement);
+	//! @a chainCount is the owning rack's (or layer rack's, or MIDI-part
+	//! player's) chain count: a zone naming a chain the owner does not have
+	//! is discarded rather than stored, through isValidRackZone(). The
+	//! default keeps zones below 64, the most chains the feed can route;
+	//! owners with fewer chains must pass their own count.
+	void loadSettings(const QDomElement& rackElement, int chainCount = 64);
 
 private:
 	//! Runs @a change on the list under the model-change guard, then the hook.

@@ -58,9 +58,11 @@ using namespace browserfixture;
 namespace
 {
 
+// browser.category.set / browser.category.clear take 'category', not 'tag', so
+// they are exercised by their own slots below rather than the tag-shaped sweep.
 const QStringList kMutating = {QStringLiteral("browser.tag.add"), QStringLiteral("browser.tag.remove")};
 const QStringList kReadOnly = {QStringLiteral("browser.roots"), QStringLiteral("browser.query"),
-	QStringLiteral("browser.tags"), QStringLiteral("browser.peaks")};
+	QStringLiteral("browser.tags"), QStringLiteral("browser.peaks"), QStringLiteral("browser.categories")};
 
 ControlResult run(const QString& id, const QJsonObject& args = QJsonObject())
 {
@@ -83,6 +85,17 @@ QStringList tagsOnDisk(const QString& storePath, const QString& path)
 	return tags;
 }
 
+//! The category of \a path as the STORE FILE holds it, read back from disk -
+//! the same evidence standard as tagsOnDisk, for the category facet.
+QString categoryOnDisk(const QString& storePath, const QString& path)
+{
+	const QString saved = BrowserTagStore::instance().storePath();
+	BrowserTagStore::instance().openAt(storePath);
+	const QString category = BrowserTagStore::instance().categoryOf(path);
+	BrowserTagStore::instance().openAt(saved);
+	return category;
+}
+
 } // namespace
 
 class ControlBrowserCommandsTest : public QObject
@@ -95,6 +108,9 @@ private slots:
 		Engine::init(true);
 		ControlRegistry::setReady(true);
 		QVERIFY2(m_dir.isValid(), "no temporary directory for the browser fixtures");
+		// The library index this test reindexes into is its own file, never the
+		// user's real one (the same rule the tag store follows below).
+		qputenv("ZENE_BROWSER_INDEX", QDir(m_dir.path()).filePath(QStringLiteral("index.json")).toUtf8());
 		m_wave = QDir(m_dir.path()).filePath(QStringLiteral("kick_48k.wav"));
 		QVERIFY(writeWave(m_wave, WaveSpec()));
 		m_text = QDir(m_dir.path()).filePath(QStringLiteral("notes.txt"));
@@ -215,6 +231,17 @@ private slots:
 		QCOMPARE(byMetadata.result.value(QStringLiteral("scan_limit")).toInt(), BrowserMaxScanEntries);
 		QCOMPARE(byMetadata.result.value(QStringLiteral("probe_limit")).toInt(), BrowserMaxProbes);
 		QCOMPARE(byMetadata.result.value(QStringLiteral("truncated")).toBool(), false);
+	}
+
+	//! An index query's tag filters contain strings, like browser.query's.
+	void indexQueryRejectsNonStringTags()
+	{
+		QJsonObject args;
+		args.insert(QStringLiteral("tags"), QJsonArray{QStringLiteral("drums"), 4});
+
+		const ControlResult result = run(QStringLiteral("browser.index_query"), args);
+		QVERIFY(!result.ok);
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
 	}
 
 	//! The peaks command answers the waterfall for a file, and the cache is
@@ -351,7 +378,224 @@ private slots:
 		QCOMPARE(tagsOnDisk(m_store, m_wave).size(), 0);
 	}
 
+	//! The category facet's commands (0.5.0 L11, WF-007): the vocabulary
+	//! browser.categories reports is what browser.category.set writes, the
+	//! write reaches the STORE FILE, and both mutating verbs carry the A16
+	//! snapshot row with a command-dispatched inverse that really restores the
+	//! previous category when control.undo runs it.
+	void categoryCommandsWriteTheStoreAndUndoThroughTheRecordedInverse()
+	{
+		const ControlRegistry* registry = ControlRegistry::instance();
+		for (const QString& id : {QStringLiteral("browser.category.set"), QStringLiteral("browser.category.clear")})
+		{
+			QVERIFY2(registry->hasCommand(id), qPrintable(QStringLiteral("missing command %1").arg(id)));
+			const ControlCommand* cmd = registry->command(id);
+			QCOMPARE(cmd->group, QStringLiteral("browser"));
+			QVERIFY(cmd->mutating);
+			const control::ReversibilityEntry* row = contractRow(id);
+			QVERIFY2(row != nullptr, qPrintable(id + " has no contract row"));
+			QCOMPARE(control::reversibilityClassName(row->cls), QStringLiteral("snapshot"));
+			QVERIFY(row->reversible);
+		}
+
+		// The vocabulary starts empty, grows with the assignment, and shrinks back.
+		QCOMPARE(run(QStringLiteral("browser.categories")).result.value(QStringLiteral("distinct")).toInt(), 0);
+		const ControlResult set = run(QStringLiteral("browser.category.set"),
+			{{QStringLiteral("path"), m_wave}, {QStringLiteral("category"), QStringLiteral("Drums")}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QCOMPARE(set.result.value(QStringLiteral("action")).toString(), QStringLiteral("set"));
+		QCOMPARE(categoryOnDisk(m_store, m_wave), QStringLiteral("Drums"));
+		const ControlResult vocabulary = run(QStringLiteral("browser.categories"));
+		QVERIFY2(vocabulary.ok, qPrintable(vocabulary.errorMessage));
+		QCOMPARE(vocabulary.result.value(QStringLiteral("distinct")).toInt(), 1);
+		QCOMPARE(vocabulary.result.value(QStringLiteral("categories")).toArray().first().toObject()
+			.value(QStringLiteral("category")).toString(), QStringLiteral("Drums"));
+		QCOMPARE(vocabulary.result.value(QStringLiteral("categories")).toArray().first().toObject()
+			.value(QStringLiteral("files")).toInt(), 1);
+
+		// THE A16 PROOF, set direction: set -> control.undo -> the category is
+		// GONE FROM THE STORE FILE. The recorded inverse is browser.category.clear.
+		const ControlRegistry::Transaction* tx = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(tx != nullptr);
+		QCOMPARE(tx->command, QStringLiteral("browser.category.set"));
+		QCOMPARE(tx->cls, QStringLiteral("snapshot"));
+		QCOMPARE(tx->inverse.value(QStringLiteral("op")).toString(), QStringLiteral("browser.category.clear"));
+		QCOMPARE(tx->inverse.value(QStringLiteral("applies")).toString(), QStringLiteral("command"));
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(undone.result.value(QStringLiteral("restored_by")).toString(),
+			QStringLiteral("browser.category.clear"));
+		QCOMPARE(categoryOnDisk(m_store, m_wave), QString());
+		QCOMPARE(run(QStringLiteral("browser.categories")).result.value(QStringLiteral("distinct")).toInt(), 0);
+
+		// The harder direction: set OVER an existing category, then undo restores
+		// the PREVIOUS one (not none), and clear -> undo brings the cleared one back.
+		QVERIFY(run(QStringLiteral("browser.category.set"),
+			{{QStringLiteral("path"), m_wave}, {QStringLiteral("category"), QStringLiteral("Hats")}}).ok);
+		QVERIFY(run(QStringLiteral("browser.category.set"),
+			{{QStringLiteral("path"), m_wave}, {QStringLiteral("category"), QStringLiteral("Drums")}}).ok);
+		const ControlRegistry::Transaction* replacement = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(replacement != nullptr);
+		QCOMPARE(replacement->inverse.value(QStringLiteral("op")).toString(),
+			QStringLiteral("browser.category.set"));
+		QCOMPARE(replacement->inverse.value(QStringLiteral("args")).toObject()
+			.value(QStringLiteral("category")).toString(), QStringLiteral("Hats"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(categoryOnDisk(m_store, m_wave), QStringLiteral("Hats"));
+
+		QVERIFY(run(QStringLiteral("browser.category.clear"),
+			{{QStringLiteral("path"), m_wave}}).ok);
+		QCOMPARE(categoryOnDisk(m_store, m_wave), QString());
+		const ControlRegistry::Transaction* cleared = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(cleared != nullptr);
+		QCOMPARE(cleared->inverse.value(QStringLiteral("op")).toString(),
+			QStringLiteral("browser.category.set"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(categoryOnDisk(m_store, m_wave), QStringLiteral("Hats"));
+
+		// An edit that changes nothing is refused, and the refusals are typed:
+		// same category (case-insensitive), no category to clear, bad labels.
+		QCOMPARE(run(QStringLiteral("browser.category.set"),
+			{{QStringLiteral("path"), m_wave}, {QStringLiteral("category"), QStringLiteral("hats")}}).errorKind,
+			ControlErrorKind::Refused);
+		QVERIFY(run(QStringLiteral("browser.category.clear"),
+			{{QStringLiteral("path"), m_text}}).errorKind == ControlErrorKind::NotFound);
+		QCOMPARE(run(QStringLiteral("browser.category.set"),
+			{{QStringLiteral("path"), m_wave}, {QStringLiteral("category"), QString()}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("browser.category.set"),
+			{{QStringLiteral("path"), m_wave},
+				{QStringLiteral("category"), QString(80, QLatin1Char('x'))}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("browser.category.set"),
+			{{QStringLiteral("path"), m_wave},
+				{QStringLiteral("category"), QStringLiteral("bad\nvalue")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("browser.category.set"),
+			{{QStringLiteral("path"), m_dir.path() + QStringLiteral("/absent.wav")},
+				{QStringLiteral("category"), QStringLiteral("Drums")}}).errorKind,
+			ControlErrorKind::NotFound);
+		QCOMPARE(categoryOnDisk(m_store, m_wave), QStringLiteral("Hats"));  // nothing above wrote
+
+		// Leave the store without categories for the tests that follow.
+		QVERIFY(run(QStringLiteral("browser.category.clear"),
+			{{QStringLiteral("path"), m_wave}}).ok);
+		QCOMPARE(categoryOnDisk(m_store, m_wave), QString());
+	}
+
+	//! The same category filter answers the SAME subset in the direct walk and
+	//! over the library index: the facet is a fact about the file (the store
+	//! carries it), not a fact about which query engine walked or read what.
+	//! "Any category" (no argument) restores the full result set in both.
+	void directAndIndexedQueriesAgreeOnTheCategoryFilter()
+	{
+		const QString second = QDir(m_dir.path()).filePath(QStringLiteral("snare_48k.wav"));
+		QVERIFY(writeWave(second, WaveSpec()));
+		QVERIFY(run(QStringLiteral("browser.category.set"),
+			{{QStringLiteral("path"), m_wave}, {QStringLiteral("category"), QStringLiteral("Drums")}}).ok);
+		QVERIFY(run(QStringLiteral("browser.category.set"),
+			{{QStringLiteral("path"), second}, {QStringLiteral("category"), QStringLiteral("Loops")}}).ok);
+		// Rebuild the index over the fixture folder so both engines see both files.
+		QVERIFY2(run(QStringLiteral("browser.reindex"),
+			{{QStringLiteral("path"), m_dir.path()}, {QStringLiteral("features"), false},
+				{QStringLiteral("wait"), true}}).ok, "reindex refused");
+
+		const auto namesOf = [](const ControlResult& listed) {
+			QStringList names;
+			for (const QJsonValue& value : listed.result.value(QStringLiteral("items")).toArray())
+			{
+				names << value.toObject().value(QStringLiteral("name")).toString();
+			}
+			names.sort();
+			return names;
+		};
+		const QJsonObject direct{{QStringLiteral("path"), m_dir.path()},
+			{QStringLiteral("category"), QStringLiteral("Drums")}};
+		const ControlResult walked = run(QStringLiteral("browser.query"), direct);
+		QVERIFY2(walked.ok, qPrintable(walked.errorMessage));
+		const ControlResult indexed = run(QStringLiteral("browser.index_query"),
+			{{QStringLiteral("category"), QStringLiteral("Drums")}});
+		QVERIFY2(indexed.ok, qPrintable(indexed.errorMessage));
+		QCOMPARE(walked.result.value(QStringLiteral("matched")).toInt(), 1);
+		QCOMPARE(indexed.result.value(QStringLiteral("matched")).toInt(), 1);
+		QCOMPARE(namesOf(walked), QStringList{QStringLiteral("kick_48k.wav")});
+		QCOMPARE(namesOf(indexed), namesOf(walked));  // the same subset, both engines
+
+		// The other category finds the other file, in both.
+		const ControlResult walkedLoops = run(QStringLiteral("browser.query"),
+			{{QStringLiteral("path"), m_dir.path()}, {QStringLiteral("category"), QStringLiteral("Loops")}});
+		const ControlResult indexedLoops = run(QStringLiteral("browser.index_query"),
+			{{QStringLiteral("category"), QStringLiteral("Loops")}});
+		QCOMPARE(walkedLoops.result.value(QStringLiteral("matched")).toInt(), 1);
+		QCOMPARE(namesOf(walkedLoops), namesOf(indexedLoops));
+
+		// "Any category" is the absence of the argument: both engines list every
+		// file the query's own text filter lets through. The folder also carries
+		// this test's own index and store files (written as the slots ran), so
+		// the waves are named rather than counted from the whole folder.
+		const auto anyArgs = QJsonObject{{QStringLiteral("path"), m_dir.path()},
+			{QStringLiteral("text"), QStringLiteral("_48k")}};
+		const ControlResult walkedAll = run(QStringLiteral("browser.query"), anyArgs);
+		const ControlResult indexedAll = run(QStringLiteral("browser.index_query"),
+			{{QStringLiteral("text"), QStringLiteral("_48k")}});
+		QCOMPARE(walkedAll.result.value(QStringLiteral("matched")).toInt(), 2);
+		QCOMPARE(indexedAll.result.value(QStringLiteral("matched")).toInt(), 2);
+		QCOMPARE(namesOf(walkedAll), QStringList({QStringLiteral("kick_48k.wav"), QStringLiteral("snare_48k.wav")}));
+		QCOMPARE(namesOf(indexedAll), namesOf(walkedAll));  // the same subset, both engines
+
+		// And the items carry the category on the wire, both ways.
+		QCOMPARE(namesOf(walkedAll).size(), 2);
+		for (const QJsonValue& value : indexedAll.result.value(QStringLiteral("items")).toArray())
+		{
+			const QJsonObject item = value.toObject();
+			if (item.value(QStringLiteral("name")).toString() == QLatin1String("kick_48k.wav"))
+			{
+				QCOMPARE(item.value(QStringLiteral("category")).toString(), QStringLiteral("Drums"));
+			}
+		}
+
+		// Leave the store and the index without categories for the tests that follow.
+		QVERIFY(run(QStringLiteral("browser.category.clear"),
+			{{QStringLiteral("path"), m_wave}}).ok);
+		QVERIFY(run(QStringLiteral("browser.category.clear"),
+			{{QStringLiteral("path"), second}}).ok);
+		QVERIFY(run(QStringLiteral("browser.reindex"),
+			{{QStringLiteral("path"), m_dir.path()}, {QStringLiteral("features"), false},
+				{QStringLiteral("wait"), true}}).ok);
+	}
+
 	//! Every refusal is typed with a message, and nothing is written.
+	//! A filesystem path is addressed EXACTLY: 'kick_48k.wav ' (trailing space)
+	//! and 'kick_48k.wav' are two different files, and a tag edit naming the
+	//! first must not land on the second. Trimming the path before resolving it
+	//! silently redirects the edit to a file the caller never named.
+	void paddedPathsAddressTheFileTheyName()
+	{
+		const QString padded = m_dir.path() + QStringLiteral("/kick_48k.wav ");
+		QVERIFY(writeWave(padded, WaveSpec()));
+		QVERIFY(QFileInfo(padded).isFile());
+
+		// Tagging the padded name must tag the padded FILE: read the store back
+		// for both keys and see which one carries the tag.
+		QVERIFY2(run(QStringLiteral("browser.tag.add"),
+			{{QStringLiteral("path"), padded},
+				{QStringLiteral("tag"), QStringLiteral("spaced")}}).ok, "tag.add refused");
+		QVERIFY(tagsOnDisk(m_store, padded).contains(QStringLiteral("spaced")));
+		QVERIFY2(tagsOnDisk(m_store, m_wave).isEmpty(),
+			"a padded path was redirected onto the unpadded file next to it");
+
+		// And the same for the peaks reader, which resolves a file path too.
+		const ControlResult peaks = run(QStringLiteral("browser.peaks"),
+			{{QStringLiteral("path"), padded}, {QStringLiteral("buckets"), 32}});
+		QVERIFY2(peaks.ok, qPrintable(peaks.errorMessage));
+
+		// Undo the tag so the store this executable shares carries nothing.
+		QVERIFY2(run(QStringLiteral("browser.tag.remove"),
+			{{QStringLiteral("path"), padded},
+				{QStringLiteral("tag"), QStringLiteral("spaced")}}).ok, "tag.remove refused");
+		QVERIFY(tagsOnDisk(m_store, padded).isEmpty());
+	}
+
 	void refusalsAreTypedAndChangeNothing()
 	{
 		// Junk arguments: the sweep that every registered command must survive.
@@ -365,6 +609,14 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 		QCOMPARE(run(QStringLiteral("browser.query"),
 			{{QStringLiteral("path"), m_text}}).errorKind, ControlErrorKind::NotFound);
+		// A PRESENT but empty 'path' is a refusal, not "no path given": the caller
+		// named a directory to walk and named nothing, so answering with a
+		// roots-wide query would silently search somewhere else than asked.
+		QCOMPARE(run(QStringLiteral("browser.query"),
+			{{QStringLiteral("path"), QString()}}).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("browser.query"),
+			{{QStringLiteral("path"), QStringLiteral("   ")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
 		QCOMPARE(run(QStringLiteral("browser.query"),
 			{{QStringLiteral("tags"), QStringLiteral("not-an-array")}}).errorKind,
 			ControlErrorKind::InvalidArgs);

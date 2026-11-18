@@ -160,16 +160,12 @@ ControlResult editMove(const QJsonObject& args)
 	before.insert(QStringLiteral("position"), from);
 	before.insert(QStringLiteral("span_end"), spanEnd);
 	before.insert(QStringLiteral("moved_count"), out.moves.size());
-	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("group"), vcaGroupId(group->id()));
-	inverseArgs.insert(QStringLiteral("clip"), args.value(QStringLiteral("clip")).toString());
-	inverseArgs.insert(QStringLiteral("position"), from);
 	result.insert(QStringLiteral("__transaction"),
 		control::transactionPayload(before,
 			// E19: the inverse IS the merged checkpoint below, so the op names what
 			// replays it (control.undo) rather than a call that does not exist.
 			QStringLiteral("control.undo"),
-			inverseArgs, true,
+			{}, true,
 			QStringLiteral("composite checkpoint: a LIVE Clip checkpoint was taken for every "
 				"clip the lock moved (the anchor plus one or more per member track that had "
 				"clips overlapping the anchor's pre-command span), and the registry merges "
@@ -178,9 +174,8 @@ ControlResult editMove(const QJsonObject& args)
 				"control.undo - or one Ctrl+Z - puts every member back where it was, rather "
 				"than one undo per member. LIMIT: clip ids are index-derived (clip-<n> is the "
 				"clip's ordinal in arrangement order, and a move re-sorts a track's clips), so "
-				"the inverse is the checkpoint and NOT a replayed clip-<n> id - the recorded "
-				"inverseArgs address the anchor by the id the caller used and are reported for "
-				"audit only")));
+				"the inverse is the empty-args control.undo call, which restores the merged "
+				"checkpoint instead of replaying a clip-<n> edit against a reordered track")));
 	return ControlResult::success(result);
 }
 

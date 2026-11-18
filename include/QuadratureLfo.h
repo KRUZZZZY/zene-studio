@@ -38,7 +38,10 @@ public:
 	QuadratureLfo( int sampleRate ) :
 		m_frequency(0),
 		m_phase(0),
-		m_offset(std::numbers::pi * 0.5)
+		m_increment(0),
+		m_twoPiOverSr(0),
+		m_offset(std::numbers::pi * 0.5),
+		m_samplerate(0)
 	{
 		setSampleRate(sampleRate);
 	}
@@ -47,7 +50,8 @@ public:
 
 	inline void setFrequency( double frequency )
 	{
-		if( frequency < 0 || frequency > m_samplerate / 2.0 || frequency == m_frequency )
+		if( m_samplerate <= 0 || !std::isfinite(frequency) || frequency < 0 ||
+			frequency > m_samplerate / 2.0 || frequency == m_frequency )
 		{
 			return;
 		}
@@ -64,7 +68,15 @@ public:
 
 	inline void setSampleRate ( int samplerate )
 	{
+		if( samplerate <= 0 )
+		{
+			return;
+		}
 		m_samplerate = samplerate;
+		if( m_frequency > m_samplerate / 2.0 )
+		{
+			m_frequency = m_samplerate / 2.0;
+		}
 		m_twoPiOverSr = 2 * std::numbers::pi_v<float> / samplerate;
 		m_increment = m_frequency * m_twoPiOverSr;
 	}
@@ -72,6 +84,10 @@ public:
 
 	inline void setOffset( double offsetVal )
 	{
+		if( !std::isfinite(offsetVal) )
+		{
+			return;
+		}
 		m_offset = offsetVal;
 	}
 

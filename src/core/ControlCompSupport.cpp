@@ -116,6 +116,52 @@ QJsonArray lanesState(const Track* track)
 }
 
 
+static bool takeAudible(const TakeLaneModel& model, int activeLane, const Clip* clip)
+{
+	if (model.auditionLane() >= 0) { return clip->laneIndex() == model.auditionLane(); }
+	if (!model.segments().empty())
+	{
+		const int start = clip->startPosition().getTicks();
+		const int end = clip->endPosition().getTicks();
+		for (const TakeLaneSegment& segment : model.segments())
+		{
+			if (segment.laneIndex == clip->laneIndex() && segment.beginTick < end && segment.endTick > start) { return true; }
+		}
+		return false;
+	}
+	return model.playAllTakes() || clip->laneIndex() == activeLane;
+}
+
+
+QJsonArray takeGroupsState(const Track* track)
+{
+	QJsonArray groups;
+	if (track == nullptr) { return groups; }
+	const TakeLaneModel& model = track->takeLanes();
+	for (const TakeGroupSelection& selection : model.takeGroups())
+	{
+		QJsonObject entry;
+		entry.insert(QStringLiteral("group"), selection.groupId);
+		entry.insert(QStringLiteral("active_lane"), selection.activeLane);
+		entry.insert(QStringLiteral("user_chosen"), selection.userChosen);
+		QJsonArray takes;
+		for (const Clip* clip : track->getClips())
+		{
+			if (clip == nullptr || !clip->belongsToTakeGroup(selection.groupId)) { continue; }
+			QJsonObject take;
+			take.insert(QStringLiteral("clip"), takeClipId(clip));
+			take.insert(QStringLiteral("lane"), clip->laneIndex());
+			// Mirrors playback: an audition or comp selects its lanes; otherwise Play all or the active take wins.
+			take.insert(QStringLiteral("audible"), takeAudible(model, selection.activeLane, clip));
+			takes.append(take);
+		}
+		entry.insert(QStringLiteral("takes"), takes);
+		groups.append(entry);
+	}
+	return groups;
+}
+
+
 QJsonObject segmentState(const TakeLaneSegment& seg)
 {
 	QJsonObject out;

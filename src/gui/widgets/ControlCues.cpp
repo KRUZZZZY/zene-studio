@@ -55,6 +55,7 @@ bool holds(const QLayout* layout, const QWidget* widget)
 	for (int i = 0; layout != nullptr && i < layout->count(); ++i)
 	{
 		QLayoutItem* item = layout->itemAt(i);
+		if (item == nullptr) { continue; }  // QLayout::itemAt may return nullptr for an index below count()
 		if (item->widget() == widget || holds(item->layout(), widget)) { return true; }
 	}
 	return false;
@@ -102,7 +103,7 @@ private:
 
 void startCues()
 {
-	QMetaObject::invokeMethod(QCoreApplication::instance(), [] { install(); }, Qt::QueuedConnection);
+	install();
 }
 
 // Every binary that links the interface - the application and each test - gets the cues from its first event loop turn.
@@ -200,7 +201,9 @@ void prepare(QWidget* widget)
 void install()
 {
 	QCoreApplication* app = QCoreApplication::instance();
-	if (app == nullptr || app->findChild<CueFilter*>(QLatin1String(FilterName), Qt::FindDirectChildrenOnly) != nullptr) { return; }
+	// Looked up by name: CueFilter has no Q_OBJECT, so findChild<CueFilter*> only ever matched on QObject's meta-object
+	// (and Qt 6.12 refuses it at compile time).
+	if (app == nullptr || app->findChild<QObject*>(QLatin1String(FilterName), Qt::FindDirectChildrenOnly) != nullptr) { return; }
 	app->installEventFilter(new CueFilter(app));
 }
 

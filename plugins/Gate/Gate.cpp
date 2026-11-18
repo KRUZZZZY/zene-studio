@@ -119,11 +119,21 @@ ProcessStatus GateEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 	{
 		auto& frame = inOut.sampleFrameAt(f);
 		const float peak = keyPeak(key0, key1, frame, f);
-		// The envelope rises at once and falls at the release time: a peak follower.
-		m_envelope = peak > m_envelope ? peak : peak + release * (m_envelope - peak);
-		const float target = held(targetGain(mode, ampToDbfs(std::max(m_envelope, 1e-6f)), threshold, range, ratio), mode, hold);
-		const float coeff = target > m_gain ? attack : release;
-		m_gain = target + coeff * (m_gain - target);
+		if (!std::isfinite(peak))
+		{
+			// Discard stale follower state so a later finite key can reopen the gate.
+			m_envelope = 0.f;
+			m_gain = 1.f;
+			m_holdLeft = 0;
+		}
+		else
+		{
+			// The envelope rises at once and falls at the release time: a peak follower.
+			m_envelope = peak > m_envelope ? peak : peak + release * (m_envelope - peak);
+			const float target = held(targetGain(mode, ampToDbfs(std::max(m_envelope, 1e-6f)), threshold, range, ratio), mode, hold);
+			const float coeff = target > m_gain ? attack : release;
+			m_gain = target + coeff * (m_gain - target);
+		}
 		deepest = std::min(deepest, m_gain);
 		frame = frame * d + frame * (m_gain * w);
 	}

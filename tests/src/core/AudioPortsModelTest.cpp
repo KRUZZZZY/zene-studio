@@ -90,6 +90,11 @@ private slots:
 		Engine::init(true);
 	}
 
+	void cleanupTestCase()
+	{
+		Engine::destroy();
+	}
+
 	//! Dynamic channel counts leave the model uninitialized and unrouted
 	void dynamicConstructor()
 	{
@@ -233,6 +238,30 @@ private slots:
 		// same count again: no-op
 		model.setTrackChannelCount(2);
 		QCOMPARE(spy.count(), 2);
+	}
+
+	//! Shrinking the track channel count clears the used bits of the rows that are gone
+	void shrinkingTrackChannelCountClearsUsedBits()
+	{
+		TestAudioPortsModel model{2, 2, false};
+		model.setTrackChannelCount(4);
+
+		// Connect a fourth track channel, so bit 3 of the used cache is set.
+		model.out().setPin(3, 0, true);
+		QVERIFY(model.out().usedTrackChannels()[3]);
+		QVERIFY(model.in().usedTrackChannels()[0]);
+
+		// Shrinking to two track channels removes those rows ...
+		model.setTrackChannelCount(2);
+		QCOMPARE(model.trackChannelCount(), ch_cnt_t(2));
+		QCOMPARE(model.out().pins().size(), std::size_t(2));
+
+		// ... so the cache must not still report them as connected: PinConnector draws
+		// a passthrough line and the ports control command lists these bits verbatim.
+		QVERIFY(!model.out().usedTrackChannels()[2]);
+		QVERIFY(!model.out().usedTrackChannels()[3]);
+		QVERIFY(!model.in().usedTrackChannels()[2]);
+		QVERIFY(!model.in().usedTrackChannels()[3]);
 	}
 
 	//! Invalid track channel counts are rejected with a clear message
@@ -446,6 +475,44 @@ private slots:
 	//! size the matrices. 134 was applied verbatim - a 134-channel matrix built from
 	//! the file, above the engine's own MaxChannelsPerAudioBuffer ceiling - and a
 	//! negative count wrapped into the unsigned ch_cnt_t.
+	//! Q050-155.2: a matrix saved with pins past the pair carries the track channels they need; a load grows the
+	//! matrix to that validated count so the pins come back, and an out-of-range count is ignored (nothing grows).
+	void loadSettingsGrowsToTheSavedTrackChannels()
+	{
+		TestAudioPortsModel saved{2, 2, false};
+		saved.growTrackChannels(64);
+		saved.out().setPin(40, 0, true);
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("audioengine"));
+		doc.appendChild(root);
+		saved.saveSettings(doc, root);
+		QCOMPARE(root.firstChildElement(QStringLiteral("pins")).attribute(QStringLiteral("track_channels")), QStringLiteral("42"));
+
+		TestAudioPortsModel loaded{2, 2, false};
+		loaded.loadSettings(root);
+		QVERIFY(loaded.trackChannelCount() >= 42);
+		QVERIFY(loaded.out().enabled(40, 0));
+
+		for (const char* wrong : {"999", "-4", "x", "0"})
+		{
+			QDomDocument bad;
+			QVERIFY(bad.setContent(QStringLiteral("<audioengine><pins inputs=\"2\" outputs=\"2\" track_channels=\"%1\">"
+				"<in_matrix c1_1=\"true\"/><out_matrix c41_1=\"true\"/></pins></audioengine>").arg(QString::fromLatin1(wrong))));
+			TestAudioPortsModel model{2, 2, false};
+			model.loadSettings(bad.documentElement());
+			QCOMPARE(model.trackChannelCount(), DEFAULT_CHANNELS);
+			QVERIFY(model.in().enabled(0, 0));
+		}
+
+		// A pair-only matrix (every older project) writes no count.
+		TestAudioPortsModel pairOnly{2, 2, false};
+		QDomDocument plain;
+		QDomElement plainRoot = plain.createElement(QStringLiteral("audioengine"));
+		plain.appendChild(plainRoot);
+		pairOnly.saveSettings(plain, plainRoot);
+		QVERIFY(!plainRoot.firstChildElement(QStringLiteral("pins")).hasAttribute(QStringLiteral("track_channels")));
+	}
+
 	void loadSettingsIgnoresOutOfRangeChannelCounts()
 	{
 		TestAudioPortsModel model{2, 2, false};
@@ -476,6 +543,144 @@ private slots:
 		model.loadSettings(atLimit.documentElement());
 		QCOMPARE(model.in().channelCount(), MaxChannelsPerAudioBuffer);
 		QVERIFY(model.in().enabled(0, 0));
+	}
+
+	/**
+	 * Cluster 23: the pin matrices, their used-channel caches and the direct-routing
+	 * decision are read by the render thread, which owns the engine's model-change
+	 * guard for a whole period. A routing edit that does not take that guard can be
+	 * read half way through by the render thread: the pins are a packed
+	 * std::vector<bool>, so the renderer can read a torn word and route the wrong
+	 * channel, not merely a stale one.
+	 *
+	 * The seam: `AudioEngine::isChangeInModelHeld()` (compiled only with LMMS_TESTING)
+	 * reports whether the CALLING thread holds the engine's model-change guard. Each
+	 * edit emits its model signal from inside the edit, so a direct-connected slot
+	 * reads the guard while the edit is still running. No threads, no sleeps, no wall
+	 * clock, no race.
+	 */
+	void routingEditsHoldTheEngineChangeGuard()
+	{
+		QVERIFY2(Engine::audioEngine() != nullptr,
+			"the test needs an audio engine, because the guard it proves is the engine's");
+
+		TestAudioPortsModel model{2, 2, false};
+		int guardAtSignal = -1;
+		connect(&model, &Model::dataChanged, &model,
+			[&guardAtSignal] { guardAtSignal = Engine::audioEngine()->isChangeInModelHeld() ? 1 : 0; },
+			Qt::DirectConnection);
+		connect(&model, &Model::propertiesChanged, &model,
+			[&guardAtSignal] { guardAtSignal = Engine::audioEngine()->isChangeInModelHeld() ? 1 : 0; },
+			Qt::DirectConnection);
+
+		// The reported function: Matrix::setPin(), the write the pin connector makes.
+		guardAtSignal = -1;
+		model.in().setPin(0, 1, true);
+		QVERIFY2(guardAtSignal == 1,
+			"Matrix::setPin() changed the routing outside the engine model-change guard, so the "
+			"render thread can read the matrix while it is rewritten");
+
+		// The edit still does its work: the guard must not swallow the edit.
+		QVERIFY(model.in().enabled(0, 1));
+		// ...and the routing caches are refreshed with it: the extra pin rules the direct
+		// routing of this processor out, so the cached decision must be gone.
+		QVERIFY(!model.directRouting().has_value());
+
+		// The siblings of the same state are held to the same rule.
+		guardAtSignal = -1;
+		model.setTrackChannelCount(DEFAULT_CHANNELS + 2);
+		QVERIFY2(guardAtSignal == 1,
+			"AudioPortsModel::setTrackChannelCount() changed the routing outside the engine "
+			"model-change guard");
+
+		guardAtSignal = -1;
+		model.setChannelCounts(4, 2);
+		QVERIFY2(guardAtSignal == 1,
+			"AudioPortsModel::setChannelCounts() changed the routing outside the engine "
+			"model-change guard");
+
+		guardAtSignal = -1;
+		model.setAllChannelCounts(DEFAULT_CHANNELS, 2, 2);
+		QVERIFY2(guardAtSignal == 1,
+			"AudioPortsModel::setAllChannelCounts() changed the routing outside the engine "
+			"model-change guard");
+
+		// The project loader writes the same state.
+		guardAtSignal = -1;
+		QDomDocument doc;
+		QVERIFY(doc.setContent(QStringLiteral(
+			"<audioengine><pins inputs=\"2\" outputs=\"2\">"
+			"<in_matrix c1_1=\"true\"/><out_matrix c1_1=\"true\"/>"
+			"</pins></audioengine>")));
+		model.loadSettings(doc.documentElement());
+		QVERIFY2(guardAtSignal == 1,
+			"AudioPortsModel::loadSettings() changed the routing outside the engine model-change "
+			"guard");
+		QVERIFY(model.in().enabled(0, 0));
+	}
+
+	//! Regression: a rejected zero-port project must not erase the model's existing
+	//! connections. `setChannelCounts(0, 0)` refuses the counts ("At least one port
+	//! count must be non-zero"), but the loader used to fall through to both
+	//! matrices, and `Matrix::loadSettings` clears every pin before applying the
+	//! file's attributes - so an initialized processor silently lost its routing.
+	//! The pins must survive a rejected zero-port load, empty or missing matrices.
+	void rejectedZeroPortCountsKeepExistingPins()
+	{
+		TestAudioPortsModel model{2, 2, false};
+
+		// default diagonal connections exist before the load
+		QVERIFY(model.in().enabled(0, 0));
+		QVERIFY(model.in().enabled(1, 1));
+		QVERIFY(model.out().enabled(0, 0));
+		QVERIFY(model.out().enabled(1, 1));
+
+		// empty matrices
+		QDomDocument doc;
+		QVERIFY(doc.setContent(QStringLiteral(
+			"<audioengine><pins inputs=\"0\" outputs=\"0\">"
+			"<in_matrix/><out_matrix/></pins></audioengine>")));
+		model.loadSettings(doc.documentElement());
+
+		// the rejected counts left the channel counts alone
+		QCOMPARE(model.in().channelCount(), ch_cnt_t(2));
+		QCOMPARE(model.out().channelCount(), ch_cnt_t(2));
+
+		// and the existing connections were not erased
+		QVERIFY(model.in().enabled(0, 0));
+		QVERIFY(model.in().enabled(1, 1));
+		QVERIFY(!model.in().enabled(0, 1));
+		QVERIFY(model.out().enabled(0, 0));
+		QVERIFY(model.out().enabled(1, 1));
+		QVERIFY(model.directRouting().has_value());
+		QCOMPARE(model.directRouting().value(), ch_cnt_t(0));
+
+		// missing matrices erase the pins the same way before the fix
+		QDomDocument missing;
+		QVERIFY(missing.setContent(QStringLiteral(
+			"<audioengine><pins inputs=\"0\" outputs=\"0\"></pins></audioengine>")));
+		model.loadSettings(missing.documentElement());
+		QVERIFY(model.in().enabled(0, 0));
+		QVERIFY(model.out().enabled(1, 1));
+	}
+
+	//! A failed count parse can leave a zero default matching a valid zero-port side.
+	//! It must still prevent the associated matrix from clearing existing pins.
+	void outOfRangeCountsKeepExistingPins()
+	{
+		TestAudioPortsModel model{2, 0, false};
+		QVERIFY(model.in().enabled(0, 0));
+		QVERIFY(model.in().enabled(1, 1));
+
+		QDomDocument doc;
+		QVERIFY(doc.setContent(QStringLiteral(
+			"<audioengine><pins inputs=\"2\" outputs=\"134\">"
+			"<in_matrix/><out_matrix/></pins></audioengine>")));
+		model.loadSettings(doc.documentElement());
+
+		QVERIFY(model.in().enabled(0, 0));
+		QVERIFY(model.in().enabled(1, 1));
+		QVERIFY(!model.in().enabled(0, 1));
 	}
 };
 

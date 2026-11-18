@@ -86,8 +86,14 @@ void TrackSpacers::load(const QDomElement& element)
 	for (QDomElement one = element.firstChildElement(QStringLiteral("spacer")); !one.isNull();
 		one = one.nextSiblingElement(QStringLiteral("spacer")))
 	{
+		bool idOk = false;
+		const int trackId = one.attribute(QStringLiteral("track")).toInt(&idOk);
 		const int height = std::clamp(one.attribute(QStringLiteral("height")).toInt(), 0, MaxHeight);
-		if (height > 0) { m_spacers.insert(one.attribute(QStringLiteral("track")).toInt(), {height, one.attribute(QStringLiteral("label"))}); }
+		if (idOk && height > 0)
+		{
+			const QString label = one.attribute(QStringLiteral("label")).left(MaxLabelLength);
+			m_spacers.insert(trackId, {height, label});
+		}
 	}
 	emit changed();
 }

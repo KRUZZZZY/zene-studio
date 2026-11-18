@@ -214,6 +214,8 @@ private:
 	EffectChain* m_baseChain = nullptr;
 	//! Chains 1..n; chain 0 is m_baseChain
 	std::vector<std::unique_ptr<EffectChain>> m_parallelChains;
+	//! A rack from an unsupported format version, retained for a lossless save
+	QDomElement m_unsupportedSettings;
 
 	//! The graph the rack is rendered through and the buffers that carry the
 	//! block in and out of it. Built by rebuildRoutingGraph() on the control

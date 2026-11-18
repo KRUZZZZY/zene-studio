@@ -32,10 +32,16 @@
 
 #include "LmmsTypes.h"
 #include "SessionArrangementRecorder.h"
+#include "SessionAudioRecorder.h"
 #include "SessionFollow.h"
 #include "SessionModel.h"
 #include "SessionPlayback.h"
 #include "lmms_export.h"
+
+#ifdef LMMS_TESTING
+class SessionSchedulerTest;
+class SessionTransitionsTest;
+#endif
 
 namespace lmms
 {
@@ -247,13 +253,15 @@ public:
 	bool followActionsEnabled() const noexcept;
 
 	//! Publishes what a cell holds so a launched slot renders it (#597); one queue push. @a startTicks
-	//! (WF-060): where in its clip the cell starts playing.
+	//! (WF-060): where in its clip the cell starts playing. @a clip (WF-055): an audio cell's clip.
 	bool publishSlotContent( int track, int scene, int patternId, tick_t loopLengthTicks,
-		bool legato = false, tick_t startTicks = 0 ) noexcept;
+		bool legato = false, tick_t startTicks = 0, const SampleBuffer* clip = nullptr, const SessionAudioShape& audio = {} ) noexcept;
 
 	//! What this column should render this period (#597). Audio thread.
 	SessionSlotPlayback playbackForColumn( int track ) const noexcept;
 
+	//! Q050-489: commands that can still be queued now - a lower bound, the audio thread only frees more. Model thread.
+	std::size_t commandQueueSpace() const noexcept { return m_queue.space(); }
 	//! Commands refused because the queue was full. Any thread.
 	std::uint64_t droppedCommands() const noexcept
 	{
@@ -366,8 +374,8 @@ public:
 	std::uint64_t sceneFollowFires() const noexcept;
 
 	/*! R5.3: what column @a track is doing, as the audio thread last published it - the
-	 *  clip-launch grid's reading. Columns past PublishedColumns read as idle. Any thread. */
-	static constexpr int PublishedColumns = 64;
+	 *  clip-launch grid's reading. Covers the Session View's 256 supported tracks. Any thread. */
+	static constexpr int PublishedColumns = 256;
 	struct ColumnState
 	{
 		SlotPhase phase = SlotPhase::Idle;
@@ -378,9 +386,19 @@ public:
 	//! Arrangement Record's event ring (task #641): the model thread consumes it
 	//! (ControlCommandsSessionRecord.cpp); the audio thread feeds it while armed.
 	SessionArrangementRecorder& arrangementRecorder() noexcept;
+
+	//! 0.5.0 L02 (WF-055): the audio take a launcher cell is recording, fed from the launch events
+	//! below and from the period's input (Song::processNextBuffer). include/SessionAudioRecorder.h.
+	SessionAudioRecorder& audioRecorder() noexcept { return m_audioRecorder; }
+	const SessionAudioRecorder& audioRecorder() const noexcept { return m_audioRecorder; }
 	const SessionArrangementRecorder& arrangementRecorder() const noexcept;
 
 private:
+#ifdef LMMS_TESTING
+	friend class ::SessionSchedulerTest;
+	friend class ::SessionTransitionsTest;  // Q050-489: drives drainCommands with a reset between two periods' steps
+#endif
+
 	struct Command
 	{
 		int track = 0;
@@ -395,6 +413,8 @@ private:
 		SessionSlotContent content;
 		//! Only read for Jump (WF-070): ticks into the clip.
 		tick_t position = 0;
+		//! Q050-489: the reset generation it was queued in; one queued before a reset is dropped with what it reset.
+		std::uint32_t generation = 0;
 	};
 
 	/*! Fixed-capacity single-producer/single-consumer queue. The model thread
@@ -418,6 +438,13 @@ private:
 			return true;
 		}
 
+		//! Entries a push can still take. Producer side: the consumer only ever frees more.
+		std::size_t space() const noexcept
+		{
+			const std::size_t used = ( m_write.load( std::memory_order_relaxed ) + storageSize
+				- m_read.load( std::memory_order_acquire ) ) % storageSize;
+			return CommandQueueCapacity - used;
+		}
 		bool pop( Command& command ) noexcept
 		{
 			const std::size_t read = m_read.load( std::memory_order_relaxed );
@@ -468,7 +495,16 @@ private:
 	bool enqueue( const Command& command ) noexcept;
 	ActiveSlot* findSlot( int track, int scene ) noexcept;
 	ActiveSlot* claimSlot( int track, int scene ) noexcept;
-	void drainCommands( const SessionClockContext& ctx ) noexcept;
+	//! Applies at most `budget` queued commands, in order; the rest stay queued for the next period.
+	void drainCommands( const SessionClockContext& snapshot, SessionClockContext& ctx, std::size_t budget ) noexcept;
+	//! The same drain on a period whose clock is @a ctx alone (no reset can move it): the budget's own tests.
+	void drainCommands( const SessionClockContext& ctx, std::size_t budget ) noexcept
+	{
+		SessionClockContext period = ctx;
+		drainCommands( ctx, period, budget );
+	}
+	//! Applies one dequeued command. Audio thread; the body of drainCommands' loop.
+	void applyCommand( const Command& command, const SessionClockContext& ctx ) noexcept;
 	//! Audio thread: applies one published cell's content (#597); body in SessionPlayback.cpp.
 	bool applySlotContent( const SessionSlotContent& content ) noexcept;
 	//! Publishes one start event for the model thread. Audio thread; body in SessionFollow.cpp.
@@ -500,6 +536,8 @@ private:
 	void takeColumnOver( const ActiveSlot& slot ) noexcept;
 	void afterLaunchEvents( ActiveSlot& slot, const SessionClockContext& ctx,
 		LaunchEvent event ) noexcept;
+	//! Records the launched cell's immutable content identity with Arrangement Record.
+	void recordArrangementStart( int track, int scene, tick_t tick ) noexcept;
 	//! Publishes a fire for the model thread. Audio thread; body in SessionFollow.cpp.
 	void publishFollowFire( const FollowFire& fire, tick_t tick ) noexcept;
 	//! Audio thread: how many installed cells have an ENABLED plan.
@@ -579,6 +617,8 @@ private:
 	//! Arrangement Record's ring: fed by the audio thread, drained by the model
 	//! thread (include/SessionArrangementRecorder.h).
 	SessionArrangementRecorder m_recorder;
+	//! WF-055: the cell's audio take (include/SessionAudioRecorder.h).
+	SessionAudioRecorder m_audioRecorder;
 
 	// ---- audio-thread-only session clock (SPEC A2) ---------------------
 	tick_t m_positionTicks = 0;

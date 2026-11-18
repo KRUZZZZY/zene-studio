@@ -64,13 +64,11 @@ inline float hermiteInterpolate( float x0, float x1, float x2, float x3,
 
 inline float cubicInterpolate( float v0, float v1, float v2, float v3, float x )
 {
-	float frsq = x * x;
-	float frcu = frsq * v0;
-	float t1 = v1 * 3.f + v3;
+	const float cubic = 0.5f * (v3 - v0) + 1.5f * (v1 - v2);
+	const float quadratic = v0 - 2.5f * v1 + 2.0f * v2 - 0.5f * v3;
+	const float linear = 0.5f * (v2 - v0);
 
-	return v1 + (0.5f * frcu + x) * (v2 - frcu * (1.0f / 6.0f) -
-		(t1 * (1.0f / 6.0f) - v0) * (1.0f / 3.0f)) + frsq * x * (t1 *
-		(1.0f / 6.0f) - 0.5f * v2) + frsq * (0.5f * v2 - v1);
+	return ((cubic * x + quadratic) * x + linear) * x + v1;
 }
 
 

@@ -966,163 +966,164 @@ def _loc_for(elem, parent_loc, path):
     return (track, pat, pat_pos, note, path)
 
 
-def merge_elem(doc, o, a, b, path, conflicts, sigs=None, loc=(), meter=None,
-               host=None):
-    """3-way merge element `a` (ours) with `b` (theirs) against `o` (base).
+class _ElementMerge:
+    """One recursive merge's context, with separate element, attribute and child steps."""
 
-    Mutates `a`.  Returns the merged element (may be `a`, `b` or None).
+    def __init__(self, doc, path, conflicts, sigs, loc, meter, host):
+        self.doc, self.path, self.conflicts = doc, path, conflicts
+        self.sigs, self.loc, self.meter, self.host = sigs, loc, meter, host
+        self.pending_comment = None
+        self.io, self.ia, self.ib = sigs.get("o", {}), sigs.get("a", {}), sigs.get("b", {})
 
-    `sigs` carries {side: sig_index} snapshots taken *before* any mutation, so
-    "was this subtree modified?" is answered over the whole subtree instead of
-    by attributes plus direct-child count.  The shallow test was the silent
-    data-loss bug: an edit nested two levels down (a note inside a pattern
-    inside a track) is invisible to it, so a delete or rename on one side
-    discarded the other side's notes while reporting a clean merge.
+    def record(self, kind, where, field, base, ours, theirs, detail="", where_loc=None):
+        rec = conflict_record(kind, where_loc or self.loc, field, base, ours, theirs,
+                              detail=detail, path=where)
+        self.conflicts.append(rec)
+        return rec
+
+    def mark(self, rec, host, path):
+        host.appendChild(_conflict_comment(self.doc, rec, self.meter,
+                                           len(self.conflicts), path.count("/")))
+
+    def added(self, a, b, path, loc, host, defer=False):
+        if to_bytes_sig(a) != to_bytes_sig(b):
+            rec = self.record("add/add", path, None, None, _snippet(a), _snippet(b),
+                              detail="both sides added different content", where_loc=loc)
+            if defer:
+                self.pending_comment = (rec, host, path)
+            else:
+                self.mark(rec, host, path)
+        return a
+
+    def deleted(self, survivor, base, side, path, loc, host):
+        signatures = self.ia if side == "theirs" else self.ib
+        if signatures.get(id(survivor)) == self.io.get(id(base)):
+            return None
+        kind = "delete/modify" if side == "theirs" else "modify/delete"
+        detail = "%s deleted, %s changed it (%s)" % (
+            side, "ours" if side == "theirs" else "theirs", describe_change(survivor, base))
+        rec = self.record(kind, path, None, None, None, None,
+                          detail=detail, where_loc=loc)
+        self.mark(rec, host, path)
+        return survivor
+
+    def missing(self, o, a, b):
+        if o is None:
+            if a is None:
+                return b
+            if b is None:
+                return a
+            return self.added(a, b, self.path, self.loc, self.host)
+        if a is None and b is None:
+            return None
+        if b is None:
+            return self.deleted(a, o, "theirs", self.path, self.loc, self.host)
+        return self.deleted(b, o, "ours", self.path, self.loc, self.host)
+
+    def attribute(self, a, key, original, ours, theirs):
+        if ours == theirs:
+            return
+        if ours == original:
+            if theirs is not None:
+                a.setAttribute(key, theirs)
+            elif a.hasAttribute(key):
+                a.removeAttribute(key)
+        elif theirs != original:
+            rec = self.record("attribute", self.path, key, original, ours, theirs)
+            self.mark(rec, self.host, self.path)
+
+    def attributes(self, o, a, b):
+        ao, aa, ab = _attrs(o), _attrs(a), _attrs(b)
+        for key in sorted(set(ao) | set(aa) | set(ab)):
+            self.attribute(a, key, ao.get(key), aa.get(key), ab.get(key))
+
+    @staticmethod
+    def keys(items):
+        return [key for key, _ in items]
+
+    @staticmethod
+    def order_text(keys):
+        return ", ".join(str(key) for key in keys)
+
+    def order(self, om, am, bm):
+        order = self.keys(om)
+        for key in self.keys(am) + self.keys(bm):
+            if key not in order:
+                order.append(key)
+        akeys, bkeys, okeys = self.keys(am), self.keys(bm), self.keys(om)
+        if akeys != bkeys and set(akeys) == set(bkeys) == set(okeys):
+            rec = self.record("order", self.path, None,
+                              self.order_text(okeys),
+                              self.order_text(akeys),
+                              self.order_text(bkeys),
+                              detail="children reordered differently")
+            self.mark(rec, self.host, self.path)
+            return okeys
+        return order
+
+    def child(self, oe, ae, be):
+        elem = ae if ae is not None else be
+        path = self.path + "/" + _label(elem)
+        loc = _loc_for(elem, self.loc, path)
+        # Children were detached before recursion. Carry the safe comment host;
+        # consulting parentNode here would lose it and misplace conflict markers.
+        host = host_of(elem, self.host)
+        if oe is None:
+            return self.added_child(ae, be, path, loc, host)
+        if ae is None:
+            return self.deleted(be, oe, "ours", path, loc, host)
+        if be is None:
+            return self.deleted(ae, oe, "theirs", path, loc, host)
+        return merge_elem(self.doc, oe, ae, be, path, self.conflicts,
+                          self.sigs, loc, self.meter, host)
+
+    def added_child(self, a, b, path, loc, host):
+        if a is None:
+            return b
+        if b is None:
+            return a
+        # Preserve the original ordering: append the surviving child before its
+        # add/add comment when the safe host is the parent being rebuilt.
+        return self.added(a, b, path, loc, host, defer=True)
+
+    def children(self, o, a, b):
+        om, am, bm = keyed_children(o), keyed_children(a), keyed_children(b)
+        odict, adict, bdict = dict(om), dict(am), dict(bm)
+        order = self.order(om, am, bm)
+        for elem in _children(a):
+            a.removeChild(elem)
+        for key in order:
+            self.pending_comment = None
+            merged = self.child(odict.get(key), adict.get(key), bdict.get(key))
+            if merged is not None:
+                a.appendChild(merged)
+            if self.pending_comment is not None:
+                self.mark(*self.pending_comment)
+
+    def run(self, o, a, b):
+        if o is None or a is None or b is None:
+            return self.missing(o, a, b)
+        self.attributes(o, a, b)
+        self.children(o, a, b)
+        return a
+
+
+def merge_elem(doc, o, a, b, path, conflicts, sigs=None, loc=(), meter=None, host=None):
+    """Mutate ours in a three-way subtree merge, retaining deep signature snapshots.
+
+    Signatures must be captured before mutation: shallow attribute/child-count
+    comparisons can silently discard a nested note edit when the other side deletes
+    its track. The safe comment host is passed down before detaching children.
     """
     if meter is None:
         meter = (TICKS_PER_BAR, 4)
     if sigs is None:
         sigs = {}
-    # The caller passed the safe host for a comment about *this* element.
-    # Children are detached before recursion (the parent rebuilds its child
-    # list), so parentNode cannot be consulted here -- it is gone.
     if host is None:
         host = host_of(a, doc.documentElement)
     if host is None:
         host = doc.documentElement
-    io, ia, ib = sigs.get("o", {}), sigs.get("a", {}), sigs.get("b", {})
-
-    def record(kind, where, field, base, ours, theirs, detail="", where_loc=None):
-        conflicts.append(conflict_record(kind, where_loc or loc, field, base,
-                                         ours, theirs, detail=detail, path=where))
-        return conflicts[-1]
-
-    if o is None and a is None:
-        return b
-    if o is None and b is None:
-        return a
-    if o is None:
-        # both sides have it, base does not: an add/add
-        if to_bytes_sig(a) == to_bytes_sig(b):
-            return a
-        record("add/add", path, None, None, _snippet(a), _snippet(b),
-               detail="both sides added different content")
-        host.appendChild(_conflict_comment(doc, conflicts[-1], meter, len(conflicts),
-                                        path.count("/")))
-        return a
-    if b is None:  # deleted by theirs
-        if a is None:
-            return None
-        if ia.get(id(a)) == io.get(id(o)):
-            return None  # clean delete: ours left it alone
-        rec = record("delete/modify", path, None, None, None, None,
-                     detail="theirs deleted, ours changed it (%s)" % describe_change(a, o))
-        host.appendChild(_conflict_comment(doc, rec, meter, len(conflicts),
-                                        path.count("/")))
-        return a
-    if a is None:  # deleted by ours
-        if ib.get(id(b)) == io.get(id(o)):
-            return None
-        rec = record("modify/delete", path, None, None, None, None,
-                     detail="ours deleted, theirs changed it (%s)" % describe_change(b, o))
-        # `b` is the surviving copy; mark it so the file names the conflict too
-        host.appendChild(_conflict_comment(doc, rec, meter, len(conflicts),
-                                        path.count("/")))
-        return b
-
-    # --- attributes ---
-    ao, aa, ab = _attrs(o), _attrs(a), _attrs(b)
-    for k in sorted(set(ao) | set(aa) | set(ab)):
-        ov, av, bv = ao.get(k), aa.get(k), ab.get(k)
-        if av == bv:
-            continue
-        if av == ov:                      # theirs changed it
-            if bv is None:
-                if a.hasAttribute(k):
-                    a.removeAttribute(k)
-            else:
-                a.setAttribute(k, bv)
-        elif bv == ov:                    # ours changed it
-            pass
-        else:                             # both changed differently
-            rec = record("attribute", path, k, ov, av, bv)
-            host.appendChild(_conflict_comment(doc, rec, meter, len(conflicts),
-                                            path.count("/")))
-
-    # --- children ---
-    om, am, bm = keyed_children(o), keyed_children(a), keyed_children(b)
-    odict, adict, bdict = dict(om), dict(am), dict(bm)
-    order = [k for k, _ in om]
-    for k in [k for k, _ in am] + [k for k, _ in bm]:
-        if k not in order:
-            order.append(k)
-
-    # order conflict detection
-    akeys = [k for k, _ in am]
-    bkeys = [k for k, _ in bm]
-    okeys = [k for k, _ in om]
-    if akeys != bkeys and set(akeys) == set(bkeys) == set(okeys):
-        rec = record("order", path, None,
-                     ", ".join(str(k) for k in okeys),
-                     ", ".join(str(k) for k in akeys),
-                     ", ".join(str(k) for k in bkeys),
-                     detail="children reordered differently")
-        host.appendChild(_conflict_comment(doc, rec, meter, len(conflicts),
-                                        path.count("/")))
-        order = okeys  # keep base order
-
-    # rebuild child list in merged order
-    for e in _children(a):
-        a.removeChild(e)
-    for k in order:
-        oe, ae, be = odict.get(k), adict.get(k), bdict.get(k)
-        elem = ae if ae is not None else be
-        child_path = path + "/" + _label(elem)
-        child_loc = _loc_for(elem, loc, child_path)
-        child_host = host_of(elem, host)
-        if ae is not None and be is None and oe is not None:
-            # deleted by theirs
-            if ia.get(id(ae)) != io.get(id(oe)):
-                rec = record("delete/modify", child_path, None, None, None, None,
-                             detail="theirs deleted, ours changed it (%s)"
-                                    % describe_change(ae, oe),
-                             where_loc=_loc_for(ae, loc, child_path))
-                child_host.appendChild(_conflict_comment(doc, rec, meter, len(conflicts),
-                                                        child_path.count("/")))
-                a.appendChild(ae)
-            # else: clean delete -> drop
-        elif ae is None and be is not None and oe is not None:
-            if ib.get(id(be)) != io.get(id(oe)):
-                rec = record("modify/delete", child_path, None, None, None, None,
-                             detail="ours deleted, theirs changed it (%s)"
-                                    % describe_change(be, oe),
-                             where_loc=_loc_for(be, loc, child_path))
-                child_host.appendChild(_conflict_comment(doc, rec, meter, len(conflicts),
-                                                        child_path.count("/")))
-                a.appendChild(be)
-        elif ae is None and be is not None:
-            a.appendChild(be)             # added by theirs only
-        elif ae is not None and be is None and oe is None:
-            a.appendChild(ae)             # added by ours only
-        elif ae is not None and be is not None and oe is None:
-            # add/add
-            if to_bytes_sig(ae) == to_bytes_sig(be):
-                a.appendChild(ae)
-            else:
-                record("add/add", child_path, None, None, _snippet(ae), _snippet(be),
-                       detail="both sides added different content",
-                       where_loc=_loc_for(ae, loc, child_path))
-                a.appendChild(ae)
-                child_host.appendChild(_conflict_comment(doc, conflicts[-1], meter,
-                                                         len(conflicts), child_path.count("/")))
-        elif ae is not None and be is not None:
-            merged = merge_elem(doc, oe, ae, be, child_path, conflicts, sigs,
-                                child_loc, meter, child_host)
-            if merged is not None:
-                a.appendChild(merged)
-        elif ae is not None:
-            a.appendChild(ae)
-    return a
+    return _ElementMerge(doc, path, conflicts, sigs, loc, meter, host).run(o, a, b)
 
 
 def to_bytes_sig(elem) -> bytes:

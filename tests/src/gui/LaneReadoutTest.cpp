@@ -24,12 +24,14 @@
 
 /*! 0.5.0 theme 11: every lane's scale - its name, the values at its edges and marks, each value with its unit
  *  (velocity in %, pan as L/C/R, micro-pitch in cents, raw MIDI 0..127, pitch bend signed around its centre);
- *  the readout of the value under the pointer and of the selection; a short note's minimum click target. */
+ *  the readout of the value under the pointer and of the selection; a short note's minimum click target; the
+ *  playhead across the lanes. */
 
 #include <QtTest>
 
 #include "ControlRegistry.h"
 #include "ControllerLaneView.h"
+#include "DesignTokens.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "LaneScale.h"
@@ -199,7 +201,73 @@ private slots:
 		QCOMPARE(canvas->noteAt(longNote.center()), m_clip->notes()[0]);
 	}
 
+	//! 0.5.0 theme 11 (KNOWN-LIMITATIONS "The lanes have no playhead"): the transport's place in the clip is drawn
+	//! across the expression lane and the controller lane, where the note area draws it, and leaves them with it.
+	void theLanesShowThePlayhead()
+	{
+		const tick_t at = 96;  // between the two notes' stems
+		Engine::getSong()->setPlayPos(at, Song::PlayMode::Song);
+		m_editor->setLane(NoteLane::Velocity);
+		m_editor->updatePlayhead(true);
+		QCOMPARE(m_editor->canvas()->playhead(), static_cast<int>(at));
+		const int x = static_cast<int>(m_editor->state().grid.xOfTick(at));
+		QVERIFY2(playheadRows(m_editor->laneView(), x) * 2 > m_editor->laneView()->height(), "the expression lane draws no playhead");
+		m_editor->setControllerLane(QStringLiteral("cc:1"));
+		QCoreApplication::processEvents();
+		auto* cc = m_editor->findChild<ControllerLaneView*>(QStringLiteral("noteControllerLane"));
+		QVERIFY(cc != nullptr && cc->isVisible());
+		QVERIFY2(playheadRows(cc, x) * 2 > cc->height(), "the controller lane draws no playhead");
+		// Stopped, the playhead leaves the note area and both lanes together.
+		m_editor->updatePlayhead(false);
+		QCOMPARE(m_editor->canvas()->playhead(), -1);
+		QCOMPARE(playheadRows(cc, x), 0);
+		m_editor->setControllerLane(QString());
+		QCOMPARE(playheadRows(m_editor->laneView(), x), 0);
+		Engine::getSong()->setPlayPos(0, Song::PlayMode::Song);
+	}
+
+	void aShortProbabilisticNoteHasAVisibleCue()
+	{
+		m_clip->addNote(Note(TimePos(1), TimePos(384), 60, 100), false);
+		m_clip->rearrangeAllNotes();
+		emit m_editor->stateChanged();
+		NoteCanvas* canvas = m_editor->canvas();
+		Note* shortNote = m_clip->notes().back();
+		const QRect drawn = canvas->noteRect(*shortNote);
+		QVERIFY(drawn.width() <= 4);
+
+		shortNote->setProbability(1.f);
+		emit m_editor->stateChanged();
+		QCoreApplication::processEvents();
+		const QColor alwaysPlayed = canvas->grab().toImage().pixelColor(drawn.center());
+		shortNote->setProbability(0.5f);
+		emit m_editor->stateChanged();
+		QCoreApplication::processEvents();
+		const QColor mayNotPlay = canvas->grab().toImage().pixelColor(drawn.center());
+		QVERIFY2(alwaysPlayed != mayNotPlay, "a narrow note's probability must change its rendered fill");
+
+		shortNote->setSelected(true);
+		shortNote->setProbability(1.f);
+		emit m_editor->stateChanged();
+		QCoreApplication::processEvents();
+		const QColor selectedAlwaysPlayed = canvas->grab().toImage().pixelColor(drawn.center());
+		shortNote->setProbability(0.5f);
+		emit m_editor->stateChanged();
+		QCoreApplication::processEvents();
+		const QColor selectedMayNotPlay = canvas->grab().toImage().pixelColor(drawn.center());
+		QVERIFY2(selectedAlwaysPlayed != selectedMayNotPlay, "selection must not hide a narrow note's probability");
+	}
+
 private:
+	//! How many rows of @a lane's column @a x are drawn in the playhead's colour.
+	static int playheadRows(QWidget* lane, int x)
+	{
+		const QImage image = lane->grab().toImage();
+		int rows = 0;
+		for (int y = 0; y < image.height(); ++y) { rows += image.pixelColor(x, y) == tokens::palette().playhead ? 1 : 0; }
+		return rows;
+	}
+
 	InstrumentTrack* m_track = nullptr;
 	MidiClip* m_clip = nullptr;
 	NoteEditor* m_editor = nullptr;

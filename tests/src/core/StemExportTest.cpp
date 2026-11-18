@@ -47,6 +47,7 @@
 #include <QtTest>
 
 #include <QDir>
+#include <QFileInfo>
 #include <QTemporaryDir>
 
 #include <algorithm>
@@ -58,6 +59,7 @@
 
 #include "Engine.h"
 #include "RenderManager.h"
+#include "ControlRegistry.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
 #include "Song.h"
@@ -136,6 +138,73 @@ private slots:
 				!= RenderManager::stemFileName("Synth", 2, 2, ".wav"));
 		// More than 99 stems widen the field instead of colliding.
 		QCOMPARE(RenderManager::stemFileName("X", 7, 120, ".wav"), QString("007_X.wav"));
+	}
+
+	//! The `out` absolute-path contract (cluster 4873): the refusal must follow
+	//! Qt's platform-aware absolute-path check, not a hardcoded '/'. On Windows
+	//! a drive-rooted destination such as `C:\Exports\Stems` IS absolute, so it
+	//! must not be refused as invalid_args; on POSIX the handler's decision must
+	//! agree with QFileInfo::isAbsolute for the same inputs.
+	void stemExportAbsolutePathIsPlatformAware()
+	{
+		ControlRegistry::setReady(true);
+		ControlRegistry * registry = ControlRegistry::instance();
+
+		// A relative destination is refused on every platform.
+		const ControlResult relative = registry->invoke(QStringLiteral("render.stems"),
+			QJsonObject{{QStringLiteral("out"), QStringLiteral("stems")}});
+		QCOMPARE(relative.errorKind, ControlErrorKind::InvalidArgs);
+
+#ifdef Q_OS_WIN
+		// On Windows the demo project's own temporary directory is drive-rooted
+		// (`C:\...\Temp\...`): absolute, so the export must not be refused as
+		// non-absolute. The pre-fix check rejected every Windows path.
+		const ControlResult drive = registry->invoke(QStringLiteral("render.stems"),
+			QJsonObject{{QStringLiteral("out"), m_dir.path()}});
+		QVERIFY2(drive.errorKind != ControlErrorKind::InvalidArgs,
+			qPrintable(drive.errorMessage));
+#else
+		// On POSIX a Windows-style path is not absolute, and the handler must
+		// agree with Qt's own platform-aware check rather than hardcode either.
+		const QString windowsStyle = QStringLiteral("C:\\Exports\\Stems");
+		const ControlResult drive = registry->invoke(QStringLiteral("render.stems"),
+			QJsonObject{{QStringLiteral("out"), windowsStyle}});
+		QCOMPARE(drive.errorKind == ControlErrorKind::InvalidArgs,
+			!QFileInfo(windowsStyle).isAbsolute());
+#endif
+		ControlRegistry::setReady(false);
+	}
+
+	//! Legacy per-track rendering strips forbidden filename characters before
+	//! joining the name to the output directory.
+	void perTrackExportSanitizesTrackNames()
+	{
+		const auto tracks = Engine::getSong()->tracks();
+		QCOMPARE(int(tracks.size()), 3);
+		std::vector<bool> muted;
+		for (auto* track : tracks) { muted.push_back(track->isMuted()); }
+		Track* track = tracks.front();
+		const QString originalName = track->name();
+		track->setName(QStringLiteral("Bass/illegal"));
+		for (auto* candidate : tracks) { candidate->setMuted(candidate != track); }
+
+		const QString dir = QDir(m_dir.path()).filePath("per-track");
+		QDir().mkpath(dir);
+		QDir().mkpath(QDir(dir).filePath("1_Bass"));
+		{
+			RenderManager manager(settings(), ProjectRenderer::ExportFileFormat::Wave, dir);
+			QEventLoop loop;
+			QObject::connect(&manager, &RenderManager::finished, &loop, &QEventLoop::quit);
+			QTimer::singleShot(120000, &loop, &QEventLoop::quit);
+			manager.renderTracks();
+			loop.exec();
+		}
+		stopHeadlessDevice();
+
+		const bool sanitizedFileExists = QFile::exists(QDir(dir).filePath("1_Bassillegal.wav"));
+		track->setName(originalName);
+		for (std::size_t i = 0; i < tracks.size(); ++i) { tracks[i]->setMuted(muted[i]); }
+		QVERIFY2(sanitizedFileExists, "per-track export did not remove forbidden filename characters");
 	}
 
 	//! 1, plus the naming as it lands on disk: one file per track, named in track

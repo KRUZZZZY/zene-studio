@@ -129,10 +129,9 @@ ControlResult handleUndoDepth(const ControlRegistry& registry)
 /*! control.set_undo_depth: set either cap, or both.
  *
  * The transaction is a SNAPSHOT whose inverse is the command itself
- * (`applies: command`), so one control.undo puts the caps back. What it cannot
- * undo is named in the mechanism: the steps a lower cap evicted are gone, and
- * the result reports how many that cost (`dropped`), so a client is never left
- * guessing why its history is shorter than it was.
+ * (`applies: command`). When no steps were dropped, one control.undo puts the
+ * caps back. If a cap change evicted history, only the caps were captured, so
+ * that transaction is marked irreversible and control.undo refuses it.
  */
 ControlResult handleSetUndoDepth(const QJsonObject& args)
 {
@@ -176,7 +175,16 @@ ControlResult handleSetUndoDepth(const QJsonObject& args)
 	QJsonObject result = boundsReport(journal);
 	result.insert(QStringLiteral("previous_steps"), previousSteps);
 	result.insert(QStringLiteral("previous_bytes"), previousBytes);
-	result.insert(QStringLiteral("dropped"), journal->evictedSteps() - evictedBefore);
+	const int dropped = journal->evictedSteps() - evictedBefore;
+	result.insert(QStringLiteral("dropped"), dropped);
+	const bool reversible = dropped == 0;
+	const QString mechanism = reversible
+		? QStringLiteral("snapshot: the previous caps are in before and no steps were dropped, so one "
+			"control.undo restores the complete change")
+		: QStringLiteral("snapshot: the previous caps are in before, but %1 undo steps were dropped; "
+			"the inverse cannot restore that history, so this change is irreversible and control.undo "
+			"refuses it")
+			.arg(dropped);
 
 	// The inverse restores the CAPS, and says in as many words that the steps a
 	// lower cap evicted are not part of what it restores.
@@ -190,12 +198,8 @@ ControlResult handleSetUndoDepth(const QJsonObject& args)
 					{QStringLiteral("args"),
 						QJsonObject{{QStringLiteral("steps"), previousSteps},
 							{QStringLiteral("bytes"), previousBytes}}}}},
-			{QStringLiteral("reversible"), true},
-			{QStringLiteral("mechanism"),
-				QStringLiteral("snapshot: the previous caps are in before and the recorded inverse is "
-					"the command itself, so one control.undo puts them back. Lowering a cap evicts the "
-					"oldest steps there and then; THOSE are not recoverable - the inverse restores the "
-					"cap, not the history it dropped (docs/UNDO-BOUNDS.md)")}});
+			{QStringLiteral("reversible"), reversible},
+			{QStringLiteral("mechanism"), mechanism}});
 	return ControlResult::success(result);
 }
 
@@ -261,9 +265,9 @@ void registerSetUndoDepthCommand(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("set_undo_depth");
 	cmd.description = QStringLiteral("Set the undo stack's two caps: `steps` (how many undo steps are "
 		"kept) and/or `bytes` (the serialised size they may occupy). Lowering a cap EVICTS the oldest "
-		"steps immediately and the result reports how many (`dropped`); the caps themselves are "
-		"reversible (one control.undo restores them), the evicted steps are not. Refuses a value "
-		"outside the declared ceilings rather than clamping it.");
+		"steps immediately and the result reports how many (`dropped`). If no steps are dropped, one "
+		"control.undo restores the caps; a change that drops history is recorded as irreversible and "
+		"control.undo refuses it. Refuses a value outside the declared ceilings rather than clamping it.");
 	cmd.mutating = true;
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("steps"), integerProperty(1, ProjectJournal::MaxUndoStateLimit)},

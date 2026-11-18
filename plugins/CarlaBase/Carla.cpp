@@ -32,6 +32,7 @@
 #include "Knob.h"
 #include "MidiEventToByteSeq.h"
 #include "MainWindow.h"
+#include "PluginNativeEditor.h"
 #include "FontHelper.h"
 #include "Song.h"
 
@@ -149,12 +150,12 @@ static const char* host_ui_save_file(NativeHostHandle, bool isDir, const char* t
 // -----------------------------------------------------------------------
 
 
-CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const Descriptor* const descriptor, const bool isPatchbay)
-    : Instrument(instrumentTrack, descriptor, nullptr, Flag::IsSingleStreamed | Flag::IsMidiBased | Flag::IsNotBendable),
+CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const Descriptor* const descriptor, const bool isPatchbay,
+    const Descriptor::SubPluginFeatures::Key* key, bool playNow)
+    : Instrument(instrumentTrack, descriptor, key, Flag::IsSingleStreamed | Flag::IsMidiBased | Flag::IsNotBendable),
       kIsPatchbay(isPatchbay),
       fHandle(nullptr),
       fDescriptor(isPatchbay ? carla_get_native_patchbay_plugin() : carla_get_native_rack_plugin()),
-      fMidiEventCount(0),
       m_paramModels()
 {
     fHost.handle      = this;
@@ -194,8 +195,10 @@ CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const D
         fDescriptor->activate(fHandle);
 
     // we need a play-handle which cares for calling play()
-	auto iph = new InstrumentPlayHandle(this, instrumentTrack);
-	Engine::audioEngine()->addPlayHandle( iph );
+    if (playNow)
+    {
+        startPlaying();
+    }
 
 #if CARLA_VERSION_HEX >= CARLA_MIN_PARAM_VERSION
     // text filter completion
@@ -216,6 +219,12 @@ CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const D
 #endif
 
     connect(Engine::audioEngine(), SIGNAL(sampleRateChanged()), this, SLOT(sampleRateChanged()));
+}
+
+void CarlaInstrument::startPlaying()
+{
+	auto iph = new InstrumentPlayHandle(this, instrumentTrack());
+	Engine::audioEngine()->addPlayHandle( iph );
 }
 
 CarlaInstrument::~CarlaInstrument()
@@ -418,7 +427,10 @@ void CarlaInstrument::refreshParams(bool init)
 
 			completerData.push_back(name);
 
-			m_paramModels[i]->setDisplayName(name);
+			// Q050-481.1: a single-plug-in host shows only its plug-in's parameters (an empty
+			// display name is what Instrument::parameterCount() leaves out).
+			const bool hidden = m_hideUnusedParams && !m_paramModels[i]->enabled();
+			m_paramModels[i]->setDisplayName(hidden ? QString() : name);
 			m_paramModels[i]->setRange(paramInfo->ranges.min,
 										paramInfo->ranges.max,
 										paramInfo->ranges.step);
@@ -532,18 +544,18 @@ void CarlaInstrument::playImpl(std::span<SampleFrame> out)
     std::memset(buf1, 0, sizeof(float)*bufsize);
     std::memset(buf2, 0, sizeof(float)*bufsize);
 
+    float** const buffers = rBuf;
+    fMidiHandoff.processPeriod([this, buffers, bufsize](const NativeMidiEvent* events, std::uint32_t eventCount)
     {
-        const QMutexLocker ml(&fMutex);
 // TODO FIXME this is just here so it compiles.
 // https://github.com/falkTX/Carla/blob/8bceb9ed173a10b29038f8abb4383710c0e497c1/source/includes/CarlaNative.h
 //     FIXME for v3.0, use const for the input buffer
 #if CARLA_VERSION_HEX >= CARLA_VERSION_HEX_3
-        fDescriptor->process(fHandle, (const float**)rBuf, rBuf, bufsize, fMidiEvents, fMidiEventCount);
+        fDescriptor->process(fHandle, (const float**)buffers, buffers, bufsize, events, eventCount);
 #else
-        fDescriptor->process(fHandle, rBuf, rBuf, bufsize, fMidiEvents, fMidiEventCount);
+        fDescriptor->process(fHandle, buffers, buffers, bufsize, events, eventCount);
 #endif
-        fMidiEventCount = 0;
-    }
+    });
 
     for (uint i=0; i < bufsize; ++i)
     {
@@ -554,20 +566,10 @@ void CarlaInstrument::playImpl(std::span<SampleFrame> out)
 
 bool CarlaInstrument::handleMidiEvent(const MidiEvent& event, const TimePos&, f_cnt_t offset)
 {
-    const QMutexLocker ml(&fMutex);
-
-    if (fMidiEventCount >= kMaxMidiEvents)
-        return false;
-
-    NativeMidiEvent& nEvent(fMidiEvents[fMidiEventCount++]);
-    std::memset(&nEvent, 0, sizeof(NativeMidiEvent));
-
-    nEvent.port    = 0;
-    nEvent.time    = offset;
-    std::size_t written = writeToByteSeq(event, nEvent.data, sizeof(NativeMidiEvent::data));
-    if(written) { nEvent.size = written; }
-    else { --fMidiEventCount; }
-
+    // Realtime: any thread may call this, the audio thread included, and nothing here waits. The event is
+    // staged by the next processed period (playImpl()). A full queue refuses it.
+    // A refused event is recorded and its channel cut later, which ends its notes just the same.
+    fMidiHandoff.enqueue(event, static_cast<std::uint32_t>(offset));
     return true;
 }
 
@@ -648,6 +650,14 @@ CarlaInstrumentView::CarlaInstrumentView(CarlaInstrument* const instrument, QWid
     // Add widgets to layout
     l->addWidget( m_toggleUIButton );
     l->addWidget(m_toggleParamsWindowButton);
+
+    // Q050-481.1: a single hosted plug-in (plugins/CarlaVst2) opens ITS editor, through the same
+    // plugin.editor_open command an agent sends, instead of Carla's own window.
+    if (instrument->hostsSinglePlugin())
+    {
+        m_toggleUIButton->setVisible(false);
+        l->addWidget(makeNativeEditorButton(instrument, this));
+    }
 
     // Connect signals
     connect(m_toggleUIButton, SIGNAL(clicked(bool)), this, SLOT(toggleUI(bool)));

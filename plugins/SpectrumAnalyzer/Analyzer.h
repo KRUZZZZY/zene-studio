@@ -27,6 +27,13 @@
 #ifndef ANALYZER_H
 #define ANALYZER_H
 
+#ifdef SA_DEBUG
+	#include <atomic>
+	#include <chrono>
+	#include <cstdint>
+	#include <memory>
+	#include <QTimer>
+#endif
 
 #include "AudioPlugin.h"
 #include "DataprocLauncher.h"
@@ -57,8 +64,120 @@ public:
 
 	SaProcessor *getProcessor() {return &m_processor;}
 
+	#ifdef SA_DEBUG
+	//! Realtime-safe collector for the SA_DEBUG audio-thread timing report.
+	//!
+	//! The audio thread records one measurement per callback into a lock-free
+	//! single-producer queue. The GUI thread closes the interval that ends now
+	//! (request()) and takes the measurements of that interval (take()).
+	//!
+	//! The count, the sum and the peak of a report are computed by the GUI
+	//! thread from exactly the measurements of one interval, so one report can
+	//! never mix samples from two intervals: a callback that lands after the
+	//! request belongs to the next interval. The measurements of an interval
+	//! also stay reportable when no callback follows the request, because the
+	//! GUI thread reads them itself instead of waiting for the audio thread to
+	//! publish them.
+	class TimingCollector
+	{
+	public:
+		//! The measurements of exactly one interval.
+		struct Snapshot
+		{
+			std::uint64_t count{0};
+			std::uint64_t sumNs{0};
+			std::uint64_t maxNs{0};
+			//! Measurements that were dropped because the GUI thread did not
+			//! consume the queue for a very long time.
+			std::uint64_t dropped{0};
+		};
+
+		TimingCollector() : m_samples(new std::atomic<std::uint64_t>[kCapacity]) {}
+
+		//! Audio thread: record how long one callback took.
+		void record(std::uint64_t executionNs) noexcept
+		{
+			const auto write = m_writeIndex.load(std::memory_order_relaxed);
+			const auto read = m_readIndex.load(std::memory_order_acquire);
+			if (write - read >= kCapacity - 1)
+			{
+				// The GUI thread has not consumed the queue for a very long
+				// time. Drop this measurement instead of overwriting one that
+				// is still waiting to be reported: a report must never mix
+				// two callbacks. One slot stays free, so the audio thread
+				// never writes into a slot the GUI thread is reading.
+				m_droppedCount.fetch_add(1, std::memory_order_relaxed);
+				return;
+			}
+			m_samples[write & (kCapacity - 1)].store(executionNs, std::memory_order_relaxed);
+			m_writeIndex.store(write + 1, std::memory_order_release);
+		}
+
+		//! GUI thread: close the interval that ends now.
+		void request() noexcept
+		{
+			m_cutIndex.store(m_writeIndex.load(std::memory_order_acquire), std::memory_order_release);
+		}
+
+		//! GUI thread: take the measurements of the closed interval.
+		bool take(Snapshot& out) noexcept
+		{
+			const auto cut = m_cutIndex.load(std::memory_order_acquire);
+			const auto read = m_readIndex.load(std::memory_order_relaxed);
+			if (cut <= read) { return false; }
+			std::uint64_t count = 0;
+			std::uint64_t sumNs = 0;
+			std::uint64_t maxNs = 0;
+			for (auto index = read; index < cut; ++index)
+			{
+				const auto value = m_samples[index & (kCapacity - 1)].load(std::memory_order_relaxed);
+				++count;
+				sumNs += value;
+				if (value > maxNs) { maxNs = value; }
+			}
+			m_readIndex.store(cut, std::memory_order_release);
+			out.count = count;
+			out.sumNs = sumNs;
+			out.maxNs = maxNs;
+			out.dropped = m_droppedCount.exchange(0, std::memory_order_relaxed);
+			return true;
+		}
+
+	private:
+		//! Number of measurements the queue holds. It is a power of two, so
+		//! the index wraps with a mask. At 192 kHz with 32-frame periods the
+		//! audio thread runs 6000 times per second; this holds over ten seconds.
+		static constexpr std::uint64_t kCapacity = 65536;
+
+		// The measurements; written by the audio thread, read by the GUI thread.
+		std::unique_ptr<std::atomic<std::uint64_t>[]> m_samples;
+		// The end of the queue; written by the audio thread.
+		std::atomic<std::uint64_t> m_writeIndex{0};
+		// The start of the queue; written by the GUI thread.
+		std::atomic<std::uint64_t> m_readIndex{0};
+		// The end of the closed interval; written by the GUI thread.
+		std::atomic<std::uint64_t> m_cutIndex{0};
+		// The measurements that were dropped; written by the audio thread.
+		std::atomic<std::uint64_t> m_droppedCount{0};
+
+		static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
+			"the audio-thread timing queue must be lock-free");
+	};
+	#endif // SA_DEBUG
+
 private:
 	ProcessStatus processImpl(InterleavedBufferView<float, 2> in) override;
+
+	#ifdef SA_DEBUG
+	static bool isStatsIntervalElapsed(std::chrono::steady_clock::time_point now,
+		std::chrono::steady_clock::time_point last)
+	{
+		return now - last > std::chrono::seconds{5};
+	}
+
+	// Runs on the GUI thread (see m_reportTimer), never from processImpl().
+	void reportAudioTiming();
+	#endif
 
 	SaProcessor m_processor;
 	SaControls m_controls;
@@ -75,10 +194,14 @@ private:
 	LocklessRingBuffer<SampleFrame> m_inputBuffer;
 
 	#ifdef SA_DEBUG
-		int m_last_dump_time;
-		int m_dump_count;
-		float m_sum_execution;
-		float m_max_execution;
+		// processImpl() records the measurements into the collector, which is
+		// lock-free; the GUI thread closes the interval, sums the
+		// measurements up and prints that, so std::cout never runs on the
+		// audio thread.
+		std::chrono::steady_clock::time_point m_last_dump_time;
+		TimingCollector m_timing;
+		// Declared last so it is destroyed before the collector it reads.
+		QTimer m_reportTimer;
 	#endif
 };
 

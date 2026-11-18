@@ -26,6 +26,7 @@
 #ifndef LMMS_FREEBOY_H
 #define LMMS_FREEBOY_H
 
+#include <atomic>
 
 #include "AutomatableModel.h"
 #include "Instrument.h"
@@ -36,6 +37,7 @@ namespace lmms
 {
 
 class NotePlayHandle;  // IWYU pragma: keep
+class FreeBoyVoicePool;
 
 
 namespace gui
@@ -52,7 +54,7 @@ class FreeBoyInstrument : public Instrument
 public:
 
 	FreeBoyInstrument( InstrumentTrack * _instrument_track );
-	~FreeBoyInstrument() override = default;
+	~FreeBoyInstrument() override;
 
 	void deleteNotePluginData(NotePlayHandle* nph) override;
 
@@ -65,6 +67,10 @@ public:
 
 	gui::PluginView* instantiateView( QWidget * _parent ) override;
 
+#ifdef LMMS_TESTING
+	static auto testPoolPointerIsRealtimeSafe() -> bool;
+#endif
+
 
 /*public slots:
 	void updateKnobHint();
@@ -72,6 +78,7 @@ public:
 
 private:
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
+	std::atomic<FreeBoyVoicePool*> m_voicePool;
 
 	FloatModel m_ch1SweepTimeModel;
 	BoolModel m_ch1SweepDirModel;

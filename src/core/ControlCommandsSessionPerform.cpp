@@ -102,15 +102,6 @@ ControlResult jump(const QJsonObject& args)
 		{QStringLiteral("position_ticks"), static_cast<int>(position)}});
 }
 
-//! Record an edit of the <session> block as one undo step (the block before and after it).
-void recordBlock(const QString& before, const SessionModel& model, const std::function<void()>& rearm = {})
-{
-	const QString after = sessionBlockXml(model);
-	addUndoStep([before, rearm]() { if (Song* song = Engine::getSong()) { restoreSessionBlock(song->sessionModel(), before); if (rearm) { rearm(); } } },
-		[after, rearm]() { if (Song* song = Engine::getSong()) { restoreSessionBlock(song->sessionModel(), after); if (rearm) { rearm(); } } });
-	Engine::getSong()->setModified();
-}
-
 //! Arm each of @a scenes' follow chain in the scheduler when the model has one there, disarm it when not.
 void armScenes(const std::vector<int>& scenes)
 {
@@ -145,7 +136,7 @@ ControlResult captureScene(const QJsonObject& args)
 	if (model->sceneCount() <= row) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the grid holds no more scenes")); }
 	for (const auto& [track, scene] : playing) { model->slot(track, row) = model->slot(track, scene); }
 	model->scene(row).setName(args.value(QStringLiteral("name")).toString(QStringLiteral("Captured")));
-	recordBlock(before, *model);
+	recordSessionEdit(before, *model);
 	return ControlResult::success({{QStringLiteral("scene"), row}, {QStringLiteral("captured"), static_cast<int>(playing.size())}});
 }
 
@@ -189,7 +180,7 @@ ControlResult setPlaylist(const QJsonObject& args)
 	}
 	// Armed (or, cleared, disarmed) now, and again from whatever model an undo or redo puts back (review W3-batchA #5).
 	const auto arm = [scenes]() { armScenes(scenes); };
-	recordBlock(before, *model, arm);
+	recordSessionEdit(before, *model, arm);
 	arm();
 	return ControlResult::success({{QStringLiteral("scenes"), args.value(QStringLiteral("scenes"))}, {QStringLiteral("cleared"), clear}});
 }

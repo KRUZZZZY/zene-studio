@@ -38,18 +38,27 @@
 
 #include <QtTest>
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <memory>
+#include <utility>
 #include <vector>
 
+#include "../core/AllocationProbe.h"
+#include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
+#include "MidiPort.h"
+#include "Note.h"
+#include "NotePlayHandle.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SamplePlayHandle.h"
 #include "SampleTrack.h"
+#include "RealtimeScope.h"
 #include "Song.h"
 #include "TakeLane.h"
 #include "TimePos.h"
@@ -103,6 +112,30 @@ double meanLevel(const std::vector<SampleFrame>& data, std::size_t from, std::si
 	return to > from ? sum / static_cast<double>(to - from) : 0.0;
 }
 
+//! The keys of @a track's note play handles alive now.
+QList<int> noteKeys(const InstrumentTrack* track)
+{
+	QList<int> keys;
+	for (PlayHandle* handle : Engine::audioEngine()->playHandles())
+	{
+		auto* note = dynamic_cast<NotePlayHandle*>(handle);
+		if (note != nullptr && note->instrumentTrack() == track) { keys << note->key(); }
+	}
+	std::sort(keys.begin(), keys.end());
+	return keys;
+}
+//! Play the arrangement from @a tick; the keys the track has sounding then.
+QList<int> playFrom(InstrumentTrack* track, int tick)
+{
+	Song* song = Engine::getSong();
+	song->setPlayPos(tick, Song::PlayMode::Song);
+	song->playSong();
+	for (int period = 0; period < 3; ++period) { Engine::audioEngine()->renderNextPeriod(); }
+	const QList<int> keys = noteKeys(track);
+	song->stop();
+	for (int period = 0; period < 64 && !noteKeys(track).isEmpty(); ++period) { Engine::audioEngine()->renderNextPeriod(); }
+	return keys;
+}
 } // namespace
 
 class TakeLaneCompPlaybackTest : public QObject
@@ -114,6 +147,8 @@ private slots:
 	{
 		Engine::init(true);
 		m_rate = Engine::audioEngine()->outputSampleRate();
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		NotePlayHandleManager::init();
 	}
 
 	void cleanupTestCase() { Engine::destroy(); }
@@ -161,8 +196,7 @@ private slots:
 		SampleClip* first = makeTake(track, m_rate, 0.5f, 0);
 		SampleClip* second = makeTake(track, m_rate, 0.25f, 1);
 		TakeLaneModel& comp = track.takeLanes();
-		comp.addLane();
-		comp.addLane();
+		comp.addLane(); comp.addLane();
 		QVERIFY(comp.selectSegment(0, first->length().getTicks(), 0));
 
 		comp.setAuditionLane(1);
@@ -191,6 +225,85 @@ private slots:
 			QVERIFY(withLanes[i][0] == plain[i][0] && withLanes[i][1] == plain[i][1]);
 		}
 		QVERIFY(std::fabs(meanLevel(plain, 256, plain.size() / 2) - 0.5) < 1e-6);
+	}
+
+	//! A clip assigned to group zero obeys the active-take gate; ordinary clips remain ungated.
+	void aZeroIdTakeGroupIsDistinctFromAnOrdinaryClip()
+	{
+		SampleTrack track(Engine::getSong());
+		SampleClip* zeroGroup = makeTake(track, m_rate, 0.5f, 0);
+		zeroGroup->setTakeGroupId(0);
+		zeroGroup->publishActiveTakeLane(1);
+		SampleClip* ordinary = makeTake(track, m_rate, 0.5f, 0);
+		ordinary->publishActiveTakeLane(1);
+		SamplePlayHandle zeroGroupHandle(zeroGroup, zeroGroup->sampleWindow());
+		SamplePlayHandle ordinaryHandle(ordinary, ordinary->sampleWindow());
+		std::array<SampleFrame, 512> buffer{};
+
+		const auto renderLevel = [&buffer](SamplePlayHandle& handle) {
+			std::fill(buffer.begin(), buffer.end(), SampleFrame(0.0f, 0.0f));
+			test::resetAllocationCount();
+			test::tlCountAllocations = true;
+			{
+				const RealtimeScope realtime;
+				handle.play(std::span<SampleFrame>(buffer));
+			}
+			test::tlCountAllocations = false;
+			double sum = 0.0;
+			for (const SampleFrame& frame : buffer) { sum += std::fabs(frame[0]); }
+			return std::pair{test::tlAllocationCount, sum / static_cast<double>(buffer.size())};
+		};
+
+		const auto [takeAllocations, takeLevel] = renderLevel(zeroGroupHandle);
+		QCOMPARE(takeAllocations, std::uint64_t{0});
+		QCOMPARE(takeLevel, 0.0);
+		const auto [ordinaryAllocations, ordinaryLevel] = renderLevel(ordinaryHandle);
+		QCOMPARE(ordinaryAllocations, std::uint64_t{0});
+		QVERIFY(std::fabs(ordinaryLevel - 0.5) < 1e-6);
+	}
+
+	//! Existing play handles follow the atomic active-take mirror without allocation or a lock.
+	void activeTakeRenderGateIsLockFreeAndAllocationFree()
+	{
+		SampleTrack track(Engine::getSong());
+		SampleClip* first = makeTake(track, m_rate, 0.5f, 0);
+		SampleClip* second = makeTake(track, m_rate, 0.25f, 1);
+		TakeLaneModel& model = track.takeLanes();
+		model.addLane();
+		model.addLane();
+		const int groupId = first->id();
+		first->setTakeGroupId(groupId);
+		second->setTakeGroupId(groupId);
+		QVERIFY(model.recordTake(groupId, 0, track.getClips()));
+		QVERIFY(model.recordTake(groupId, 1, track.getClips()));
+		SamplePlayHandle firstHandle(first, first->sampleWindow());
+		SamplePlayHandle secondHandle(second, second->sampleWindow());
+		std::array<SampleFrame, 512> buffer{};
+
+		const auto playRealtime = [&buffer](SamplePlayHandle& handle) {
+			std::fill(buffer.begin(), buffer.end(), SampleFrame(0.0f, 0.0f));
+			test::resetAllocationCount();
+			test::tlCountAllocations = true;
+			{
+				const RealtimeScope realtime;
+				handle.play(std::span<SampleFrame>(buffer));
+			}
+			test::tlCountAllocations = false;
+			return test::tlAllocationCount;
+		};
+		const auto renderedLevel = [&buffer] {
+		double sum = 0.0;
+		for (const SampleFrame& frame : buffer) { sum += std::fabs(frame[0]); }
+		return sum / static_cast<double>(buffer.size());
+		};
+		QCOMPARE(playRealtime(firstHandle), std::uint64_t{0});
+		QCOMPARE(renderedLevel(), 0.0);
+
+		QVERIFY(model.selectTake(groupId, 0, track.getClips()));
+		QCOMPARE(playRealtime(firstHandle), std::uint64_t{0});	// this handle predates the choice
+		QVERIFY(renderedLevel() > 0.49);
+		QCOMPARE(playRealtime(secondHandle), std::uint64_t{0});
+		QCOMPARE(renderedLevel(), 0.0);
 	}
 
 	//! 0.5.0 E2: a slipped segment READS the take slipped. One take, its first half at 0.5 and its second at 0.25,
@@ -234,8 +347,7 @@ private slots:
 		SampleClip* take = makeTake(track, m_rate, 0.5f, 0);
 		makeTake(track, m_rate, 0.25f, 1);
 		TakeLaneModel& comp = track.takeLanes();
-		comp.addLane();
-		comp.addLane();
+		comp.addLane(); comp.addLane();
 		const int part = take->length().getTicks() / 160;
 		QVERIFY(part > 0);
 		for (int i = 0; i < 80; ++i)
@@ -262,6 +374,52 @@ private slots:
 		QCOMPARE(levelIn(4 * 39 + 1), 0.0);
 	}
 
+	//! Comp authoring must refuse a lane span the fixed render snapshot cannot hold.
+	void refusesSelectionsBeyondThePlaybackSpanBudget()
+	{
+		SampleTrack track(Engine::getSong());
+		TakeLaneModel& comp = track.takeLanes();
+		comp.addLane(); comp.addLane();
+		for (int i = 0; i < 256; ++i)
+		{
+			QVERIFY(comp.selectSegment(2 * i, 2 * i + 1, 0));
+		}
+
+		QVERIFY2(!comp.canSelect(512, 513, 0), "the 257th span cannot be rendered by a play handle");
+		QVERIFY(!comp.selectSegment(512, 513, 0));
+		QCOMPARE(comp.segments().size(), std::size_t{256});
+	}
+
+	//! Rebuild and lane removal are authoring paths too: a result over the budget is refused and the composite is kept.
+	void refusesRebuildAndLaneRemovalBeyondThePlaybackSpanBudget()
+	{
+		SampleTrack rebuilt(Engine::getSong());
+		TakeLaneModel& rebuildComp = rebuilt.takeLanes();
+		rebuildComp.addLane();
+		rebuildComp.addLane();
+		for (int i = 0; i < 256; ++i)
+		{
+			QVERIFY(rebuildComp.selectSegment(2 * i + 1, 2 * i + 2, 1));
+		}
+		// Gap-filling a [0, 513) span puts 257 base-lane spans around the 256 alternate spans.
+		QCOMPARE(rebuildComp.rebuild(0, 513), -1);
+		QCOMPARE(rebuildComp.segments().size(), std::size_t{256});
+
+		SampleTrack removed(Engine::getSong());
+		TakeLaneModel& removeComp = removed.takeLanes();
+		removeComp.addLane();
+		removeComp.addLane();
+		QVERIFY(removeComp.selectSegment(0, 1, 0));
+		for (int i = 0; i < 256; ++i)
+		{
+			QVERIFY(removeComp.selectSegment(2 * i + 2, 2 * i + 3, 1));
+		}
+		// Folding the alternate lane into the base leaves 257 separate base spans.
+		QVERIFY(!removeComp.removeLane(1));
+		QVERIFY(removeComp.hasLane(1));
+		QCOMPARE(removeComp.segments().size(), std::size_t{257});
+	}
+
 	//! R3.3: a MIDI take is comped by note - the gate InstrumentTrack::play asks per note.
 	void midiNotesPlayWhereTheirLaneIsSelected()
 	{
@@ -274,8 +432,7 @@ private slots:
 		QVERIFY2(track->compPlays(first, 120) && track->compPlays(second, 120),
 			"with no composite every note must play");
 		TakeLaneModel& comp = track->takeLanes();
-		comp.addLane();
-		comp.addLane();
+		comp.addLane(); comp.addLane();
 		QVERIFY(comp.selectSegment(0, 96, 0));
 		QVERIFY(comp.selectSegment(96, 192, 1));
 		QVERIFY(track->compPlays(first, 50));
@@ -286,6 +443,79 @@ private slots:
 		QVERIFY(!track->compPlays(first, 50));
 		QVERIFY(track->compPlays(second, 50));
 		comp.setAuditionLane(-1);
+		delete track;
+	}
+
+	//! Cluster new-p16-89: the arrangement's clip collection must not grow on the audio thread.
+	void clipCollectionDoesNotAllocateOnTheAudioThread()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		QVERIFY(track->loadInstrument(QStringLiteral("tripleoscillator")) != nullptr);
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setAutoResize(false); clip->changeLength(TimePos(384));
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		{
+			const RealtimeScope realtime;
+			track->play(TimePos(0), frames, 0, -1);
+		}
+		test::tlCountAllocations = false;
+		QCOMPARE(test::tlAllocationCount, std::uint64_t{0});
+		delete track;
+	}
+
+	//! Cluster 4172: a controller lane of a take the composite does not select never reaches the instrument.
+	void controllerLanesFollowTheComposite()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		QVERIFY(track->loadInstrument(QStringLiteral("tripleoscillator")) != nullptr);
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setAutoResize(false); clip->changeLength(TimePos(384));
+		clip->setLaneIndex(1);
+		clip->setControllerPoints(ControllerKind::ControlChange, 7, {{0, 64}});
+		TakeLaneModel& comp = track->takeLanes();
+		comp.addLane(); comp.addLane();
+		QVERIFY(comp.selectSegment(0, 384, 0));
+		MidiPort* port = track->midiPort();
+		port->setOutputChannel(6);
+		port->setMode(MidiPort::Mode::Output);
+		const quint64 written = port->outputEventsWritten();
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(!track->play(TimePos(0), frames, 0, -1));
+		QCOMPARE(port->outputEventsWritten(), written);
+		// Auditioning the take's own lane must still play its controllers (the gate is the comp, not the feature).
+		comp.setAuditionLane(1);
+		track->play(TimePos(1), frames, 0, -1);
+		QCOMPARE(port->outputEventsWritten(), written + 1);
+		comp.setAuditionLane(-1);
+		delete track;
+	}
+
+	//! Cluster 5080: the comp lookup follows the loop pass playing, not the note's first-pass position.
+	void loopedClipCompReadsThePassPlaying()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		QVERIFY(track->loadInstrument(QStringLiteral("tripleoscillator")) != nullptr);
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setAutoResize(false); clip->changeLength(TimePos(384));
+		QVERIFY(clip->addNote(Note(TimePos(24), TimePos(48), 60), false) != nullptr);
+		TakeLaneModel& comp = track->takeLanes();
+		comp.addLane(); comp.addLane();
+		QVERIFY(comp.selectSegment(0, 192, 0));
+		QVERIFY(comp.selectSegment(192, 384, 1));
+		ClipEdits edits = clip->clipEdits();
+		edits.loopTicks = 96;
+		clip->setClipEdits(edits);
+		QCOMPARE(playFrom(track, 144), (QList<int>{60}));  // second pass: song tick 144 is still lane 0
+		QVERIFY2(playFrom(track, 240).isEmpty(),  // third pass: 240 is lane 1, so the lane-0 note must not play
+			"the comp was read at the note's first-pass position (48) instead of the pass playing (240)");
 		delete track;
 	}
 

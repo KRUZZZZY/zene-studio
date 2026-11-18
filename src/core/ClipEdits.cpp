@@ -22,11 +22,13 @@
  */
 
 #include <QStringList>
+#include <QStringView>
 
 #include "ClipEdits.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 namespace lmms
 {
@@ -128,13 +130,26 @@ QString envelopeToText(const ClipEdits& edits)
 void envelopeFromText(const QString& text, ClipEdits* edits)
 {
 	edits->envelopeCount = 0;
-	for (const QString& part : text.split(QLatin1Char(';'), Qt::SkipEmptyParts))
+	// Walk the separators in place and stop at the point limit: split() would allocate a string for every
+	// point in the attribute before the limit could stop anything.
+	const QStringView input{text};
+	qsizetype start = 0;
+	while (start < input.size() && edits->envelopeCount < MaxGainPoints)
 	{
-		if (edits->envelopeCount >= MaxGainPoints) { break; }
-		const int colon = part.indexOf(QLatin1Char(':'));
+		const qsizetype separator = input.indexOf(QLatin1Char(';'), start);
+		const qsizetype end = separator < 0 ? input.size() : separator;
+		const QStringView part = input.mid(start, end - start);
+		const qsizetype colon = part.indexOf(QLatin1Char(':'));
+		bool tickOk = false;
+		const int tick = part.left(colon).toInt(&tickOk);
 		const float db = part.mid(colon + 1).toFloat();
-		if (colon <= 0 || !std::isfinite(db)) { continue; }  // a damaged file never puts an infinite gain on the audio path
-		edits->envelope[edits->envelopeCount++] = {std::max(0, part.left(colon).toInt()), std::clamp(db, MinGainPointDb, MaxGainPointDb)};
+		// A tick that is not a tick used to convert to 0 and put the point at the clip's start.
+		if (colon > 0 && tickOk && std::isfinite(db))  // a damaged file never puts an infinite gain on the audio path
+		{
+			edits->envelope[edits->envelopeCount++] = {std::max(0, tick), std::clamp(db, MinGainPointDb, MaxGainPointDb)};
+		}
+		if (separator < 0) { break; }
+		start = separator + 1;
 	}
 	std::sort(edits->envelope.begin(), edits->envelope.begin() + edits->envelopeCount,
 		[](const GainPoint& a, const GainPoint& b) { return a.tick < b.tick; });
@@ -150,53 +165,168 @@ float clipSpeedAt(const ClipEdits& edits, f_cnt_t frame, f_cnt_t clipFrames, f_c
 	return static_cast<float>(std::max(speed, 1.0 / 32.0));
 }
 
+namespace
+{
+
+bool isOffsetFadePair(const ClipEdits& edits, tick_t lengthTicks)
+{
+	return edits.fadeInOffsetTicks > 0 && edits.fadeOutOffsetTicks > 0 && edits.fadeInTicks > 0
+		&& edits.fadeOutTicks > 0 && edits.fadeOutOffsetTicks < lengthTicks;
+}
+
+bool hasValidGap(const ClipEdits& edits, tick_t lengthTicks)
+{
+	const std::int64_t length = lengthTicks;
+	const std::int64_t fadeOutEnd = length - edits.fadeOutOffsetTicks;
+	const std::int64_t fadeOutStart = fadeOutEnd - edits.fadeOutTicks;
+	const std::int64_t fadeInStart = edits.fadeInOffsetTicks;
+	const std::int64_t fadeInEnd = fadeInStart + edits.fadeInTicks;
+	return fadeOutStart >= 0 && fadeInStart >= fadeOutEnd && fadeInEnd <= length;
+}
+
+ClipEdits clearOffsetFades(ClipEdits edits)
+{
+	edits.fadeInOffsetTicks = 0;
+	edits.fadeOutOffsetTicks = 0;
+	edits.fadeOffsetGap = false;
+	return edits;
+}
+
+ClipEdits clearGapMarker(ClipEdits edits)
+{
+	edits.fadeOffsetGap = false;
+	return edits;
+}
+
+} // namespace
+
+ClipEdits withValidOffsetFades(const ClipEdits& edits, tick_t lengthTicks)
+{
+	const bool hasOffsets = edits.fadeInOffsetTicks > 0 || edits.fadeOutOffsetTicks > 0;
+	if (!hasOffsets) { return edits.fadeOffsetGap ? clearGapMarker(edits) : edits; }
+	if (!isOffsetFadePair(edits, lengthTicks)) { return clearOffsetFades(edits); }
+	if (edits.fadeOffsetGap && hasValidGap(edits, lengthTicks)) { return edits; }
+	ClipEdits out = edits;
+	out.fadeInOffsetTicks = static_cast<int>(lengthTicks) - edits.fadeOutOffsetTicks;  // where the fade-out ends
+	out.fadeOffsetGap = false;
+	return out;
+}
+
+float clipGainCurveAt(const ClipEdits& rawEdits, tick_t lengthTicks, double tick)
+{
+	const ClipEdits edits = withValidOffsetFades(rawEdits, lengthTicks);
+	const auto length = static_cast<f_cnt_t>(std::max<tick_t>(1, lengthTicks));
+	const float fade = clipFadeGainAt(static_cast<f_cnt_t>(tick), length, edits.fadeInTicks, edits.fadeOutTicks,
+		edits.fadeInShape, edits.fadeOutShape, edits.fadeInOffsetTicks, edits.fadeOutOffsetTicks, edits.fadeOffsetGap);
+	return edits.gain * fade * envelopeGainAt(edits, tick);
+}
+
+namespace
+{
+
+//! The ramp up: the region is the clip's first `fadeInFrames` output frames (after the offset, if any),
+//! so its first frame is exactly silent and the frame after the region is exactly 1.
+double fadeInFactor(f_cnt_t frame, f_cnt_t fadeInFrames, FadeShape shape, f_cnt_t offsetFrames)
+{
+	if (fadeInFrames == 0 || frame < offsetFrames || frame - offsetFrames >= fadeInFrames) { return 1.0; }
+	return fadeShapeGain(shape, static_cast<double>(frame - offsetFrames) / static_cast<double>(fadeInFrames));
+}
+
+//! The ramp down: measured inward from the clip's last output frame (less the offset), so the region is
+//! exactly `fadeOutFrames` long and the ramp is monotonic across it. With an offset the frames after the ramp
+//! are the unfaded tail; with none, the frames past the end stay silent.
+double fadeOutFactor(f_cnt_t frame, f_cnt_t clipFrames, f_cnt_t fadeOutFrames, FadeShape shape, f_cnt_t offsetFrames)
+{
+	if (fadeOutFrames == 0) { return 1.0; }
+	const f_cnt_t end = clipFrames > offsetFrames ? clipFrames - offsetFrames : 0;
+	const f_cnt_t start = end > fadeOutFrames ? end - fadeOutFrames : 0;
+	if (frame < start || (offsetFrames != 0 && frame >= end)) { return 1.0; }
+	const auto remaining = end > frame ? end - frame : 0;
+	return fadeShapeGain(shape, static_cast<double>(remaining) / static_cast<double>(fadeOutFrames));
+}
+
+} // namespace
+
 float clipFadeGainAt(f_cnt_t frame, f_cnt_t clipFrames,
 	f_cnt_t fadeInFrames, f_cnt_t fadeOutFrames,
-	FadeShape fadeInShape, FadeShape fadeOutShape)
+	FadeShape fadeInShape, FadeShape fadeOutShape,
+	f_cnt_t fadeInOffsetFrames, f_cnt_t fadeOutOffsetFrames, bool fadeOffsetGap)
 {
 	if (clipFrames == 0) { return 1.0f; }
-
+	if (fadeOffsetGap && fadeInOffsetFrames > 0 && fadeOutOffsetFrames > 0)
+	{
+		const f_cnt_t fadeOutEnd = clipFrames > fadeOutOffsetFrames ? clipFrames - fadeOutOffsetFrames : 0;
+		if (frame >= fadeOutEnd && frame < fadeInOffsetFrames) { return 0.0f; }
+	}
 	double value = 1.0;
-
-	// The ramp up: the region is the clip's first `fadeInFrames` output frames,
-	// so frame 0 is exactly silent and the frame after the region is exactly 1.
-	if (fadeInFrames > 0 && frame < fadeInFrames)
-	{
-		value *= fadeShapeGain(fadeInShape,
-			static_cast<double>(frame) / static_cast<double>(fadeInFrames));
-	}
-
-	// The ramp down: measured inward from the clip's last output frame, so the
-	// region is exactly `fadeOutFrames` long and the ramp is monotonic across it.
-	if (fadeOutFrames > 0)
-	{
-		const f_cnt_t fadeOutStart = clipFrames > fadeOutFrames ? clipFrames - fadeOutFrames : 0;
-		if (frame >= fadeOutStart)
-		{
-			const auto remaining = clipFrames > frame ? clipFrames - frame : 0;
-			value *= fadeShapeGain(fadeOutShape,
-				static_cast<double>(remaining) / static_cast<double>(fadeOutFrames));
-		}
-	}
-
+	value *= fadeInFactor(frame, fadeInFrames, fadeInShape, fadeInOffsetFrames);
+	value *= fadeOutFactor(frame, clipFrames, fadeOutFrames, fadeOutShape, fadeOutOffsetFrames);
 	return static_cast<float>(value);
 }
 
-float preFadedGainAt(const PreFadeSpan& span, std::int64_t clipPos, FadeShape fadeInShape, FadeShape fadeOutShape)
+namespace
 {
-	double value = 1.0;
+
+//! The pre-faded fade-in at \p clipPos. With no offset it is ONE ramp from preIn frames before the clip to fadeIn
+//! frames into it; with one the lead is a ramp of its own before the clip and the in-clip ramp sits at its offset.
+double preFadedIn(const PreFadeSpan& span, std::int64_t clipPos, FadeShape shape)
+{
+	if (span.fadeInOffsetFrames > 0)
+	{
+		double value = 1.0;
+		if (span.preInFrames > 0 && clipPos < 0)
+		{
+			const std::int64_t into = clipPos + span.preInFrames;
+			value *= into <= 0 ? 0.0 : fadeShapeGain(shape, static_cast<double>(into) / static_cast<double>(span.preInFrames));
+		}
+		return clipPos < 0 ? value : value * fadeInFactor(static_cast<f_cnt_t>(clipPos), static_cast<f_cnt_t>(span.fadeInFrames), shape,
+			static_cast<f_cnt_t>(span.fadeInOffsetFrames));
+	}
 	const std::int64_t inLength = span.preInFrames + span.fadeInFrames;
 	const std::int64_t intoIn = clipPos + span.preInFrames;  // frames since the fade-in began
 	if (inLength > 0 && intoIn < inLength)
 	{
-		value *= intoIn <= 0 ? 0.0 : fadeShapeGain(fadeInShape, static_cast<double>(intoIn) / static_cast<double>(inLength));
+		return intoIn <= 0 ? 0.0 : fadeShapeGain(shape, static_cast<double>(intoIn) / static_cast<double>(inLength));
+	}
+	return 1.0;
+}
+
+//! The pre-faded fade-out at \p clipPos, the mirror of preFadedIn.
+double preFadedOut(const PreFadeSpan& span, std::int64_t clipPos, FadeShape shape)
+{
+	if (span.fadeOutOffsetFrames > 0)
+	{
+		if (clipPos < span.clipFrames)
+		{
+			return clipPos < 0 ? 1.0 : fadeOutFactor(static_cast<f_cnt_t>(clipPos), static_cast<f_cnt_t>(span.clipFrames),
+				static_cast<f_cnt_t>(span.fadeOutFrames), shape, static_cast<f_cnt_t>(span.fadeOutOffsetFrames));
+		}
+		const std::int64_t left = span.clipFrames + span.preOutFrames - clipPos;
+		if (span.preOutFrames <= 0 || left >= span.preOutFrames) { return 1.0; }
+		return left <= 0 ? 0.0 : fadeShapeGain(shape, static_cast<double>(left) / static_cast<double>(span.preOutFrames));
 	}
 	const std::int64_t outLength = span.fadeOutFrames + span.preOutFrames;
 	const std::int64_t left = span.clipFrames + span.preOutFrames - clipPos;  // frames until the fade-out ends
 	if (outLength > 0 && left < outLength)
 	{
-		value *= left <= 0 ? 0.0 : fadeShapeGain(fadeOutShape, static_cast<double>(left) / static_cast<double>(outLength));
+		return left <= 0 ? 0.0 : fadeShapeGain(shape, static_cast<double>(left) / static_cast<double>(outLength));
 	}
+	return 1.0;
+}
+
+} // namespace
+
+float preFadedGainAt(const PreFadeSpan& span, std::int64_t clipPos, FadeShape fadeInShape, FadeShape fadeOutShape)
+{
+	if (span.fadeOffsetGap && span.fadeInOffsetFrames > 0 && span.fadeOutOffsetFrames > 0)
+	{
+		const std::int64_t fadeOutEnd = span.clipFrames > span.fadeOutOffsetFrames
+			? span.clipFrames - span.fadeOutOffsetFrames : 0;
+		if (clipPos >= fadeOutEnd && clipPos < span.fadeInOffsetFrames) { return 0.0f; }
+	}
+	double value = 1.0;
+	value *= preFadedIn(span, clipPos, fadeInShape);
+	value *= preFadedOut(span, clipPos, fadeOutShape);
 	return static_cast<float>(value);
 }
 

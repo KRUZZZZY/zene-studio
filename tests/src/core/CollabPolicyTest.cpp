@@ -32,7 +32,27 @@
 #include "ControlRegistry.h"
 
 #ifdef ZENE_HAVE_COLLAB
+#include <memory>
+
+#include <QByteArray>
+#include <QHostAddress>
+#include <QJsonObject>
+#include <QList>
+#include <QObject>
+#include <QString>
+#include <QUrl>
+
+#include "CollabLink.h"
 #include "CollabInvite.h"
+#include "../../../src/core/CollabSessionAddress.h"
+#include "PortMappingCodec.h"
+#include "lmms_export.h"
+
+// The deterministic invite test seeds a router result without depending on the host's real network.
+#define private public
+#include "CollabSession.h"
+#include "PortMapping.h"
+#undef private
 #endif
 
 using namespace lmms;
@@ -73,6 +93,19 @@ private slots:
 		QCOMPARE(peerRoute(QStringLiteral("settings.set"), true, NoArgs, CollabRole::Editor).route, PeerRoute::Local);
 		QCOMPARE(peerRoute(QStringLiteral("transport.seek"), true, NoArgs, CollabRole::Editor).route, PeerRoute::Local);
 		QCOMPARE(peerRoute(QStringLiteral("collab.leave"), false, NoArgs, CollabRole::Viewer).route, PeerRoute::Local);
+		// Q050-217.1: the controller's bindings belong to one machine, exactly as the launcher's do - a peer's
+		// note binding must not be streamed to the host as a project edit.
+		QCOMPARE(peerRoute(QStringLiteral("session.bind_command"), true,
+			{{QStringLiteral("trigger"), QStringLiteral("note")}, {QStringLiteral("key"), 60}}, CollabRole::Editor).route, PeerRoute::Local);
+		QCOMPARE(peerRoute(QStringLiteral("session.unbind_command"), true,
+			{{QStringLiteral("trigger"), QStringLiteral("cc")}}, CollabRole::Editor).route, PeerRoute::Local);
+		// Q050-217.2: the same call with a WORKFLOW target is the same edit to the same local store - a peer's
+		// workflow binding must not be streamed either, whichever target it names.
+		QCOMPARE(peerRoute(QStringLiteral("session.bind_command"), true,
+			{{QStringLiteral("trigger"), QStringLiteral("note")}, {QStringLiteral("workflow"), QStringLiteral("bounce")}},
+			CollabRole::Editor).route, PeerRoute::Local);
+		QCOMPARE(peerRoute(QStringLiteral("session.command_bindings"), false, NoArgs, CollabRole::Editor).route, PeerRoute::Local);
+		QCOMPARE(peerRoute(QStringLiteral("session.bind"), true, NoArgs, CollabRole::Editor).route, PeerRoute::Local);
 		const QJsonObject withPath{{QStringLiteral("path"), QStringLiteral("/home/me/kick.wav")}};
 		const RouteDecision file = peerRoute(QStringLiteral("clip.add"), true, withPath, CollabRole::Editor);
 		QCOMPARE(file.route, PeerRoute::Refuse);
@@ -235,6 +268,17 @@ private slots:
 		QVERIFY(randomInviteKey() != randomInviteKey());
 	}
 
+	//! A missing LAN address must not produce an invite another machine cannot reach.
+	void lanInviteRequiresDetectedAddress()
+	{
+		ControlResult refusal;
+		const QString address = detail::lanInviteAddress(QHostAddress(), &refusal);
+		QVERIFY(address.isEmpty());
+		QVERIFY(!refusal.ok);
+		QCOMPARE(refusal.errorKind, ControlErrorKind::Refused);
+		QVERIFY(refusal.errorMessage.contains(QStringLiteral("LAN address")));
+	}
+
 	//! A mistyped, truncated or foreign paste is refused before any connection, with a reason.
 	void inviteRejectsDamage()
 	{
@@ -250,9 +294,54 @@ private slots:
 		QString error;
 		QVERIFY(!Invite::decode(flipped, &out, &error));
 		QVERIFY2(error.contains(QStringLiteral("checksum")), qPrintable(error));
+		QString badPaddingBit = text;
+		const QString alphabet = QStringLiteral("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567");
+		const int lastValue = alphabet.indexOf(badPaddingBit.at(badPaddingBit.size() - 1));
+		QVERIFY(lastValue >= 0);
+		badPaddingBit[badPaddingBit.size() - 1] = alphabet.at(lastValue ^ 1);
+		QVERIFY(!Invite::decode(badPaddingBit, &out, &error));
 		QVERIFY(!Invite::decode(text.left(text.size() - 6), &out, &error));
 		QVERIFY(!Invite::decode(QStringLiteral("https://example.org/join"), &out, &error));
 		QVERIFY(!Invite::decode(QStringLiteral("ZENE1-0189"), &out, &error));
+	}
+
+	void inviteRejectsZeroPort()
+	{
+		Invite invite;
+		invite.address = QHostAddress(QStringLiteral("192.168.1.20"));
+		invite.port = 0;
+		invite.key = QByteArray(InviteKeyBytes, 'k');
+
+		Invite out;
+		QString error;
+		QVERIFY2(!Invite::decode(invite.encode(), &out, &error), qPrintable(error));
+	}
+
+	//! A public invite must not encode a router address hidden behind CGNAT.
+	void publicInviteRefusesUnreachableMapping()
+	{
+		const QString tlsUnavailable = tlsPskUnavailableReason();
+		if (!tlsUnavailable.isEmpty()) { QSKIP(qPrintable(tlsUnavailable)); }
+		CollabSession* session = CollabSession::instance();
+		struct StopSession
+		{
+			CollabSession* session;
+			~StopSession() { if (session->mode() == CollabSession::Mode::Hosting) { session->stop(); } }
+		} stop{session};
+		const ControlResult hosted = session->host(0, false, QStringLiteral("invite test"));
+		QVERIFY2(hosted.ok, qPrintable(hosted.errorMessage));
+		QVERIFY(session->m_mapping);
+		auto& mapped = session->m_mapping->m_result;
+		mapped.ok = true;
+		mapped.externalAddress = QHostAddress(QStringLiteral("100.64.12.34"));
+		mapped.externalPort = 41741;
+		mapped.message = QStringLiteral("the router reports a CGNAT address; resolve the upstream NAT");
+
+		const ControlResult result = session->invite(CollabRole::Editor, QStringLiteral("public"));
+		QVERIFY2(!result.ok, qPrintable(result.errorMessage));
+		QCOMPARE(result.errorKind, ControlErrorKind::Refused);
+		QVERIFY(result.errorMessage.contains(QStringLiteral("scope 'lan'")));
+		QVERIFY(result.errorMessage.contains(QStringLiteral("upstream NAT")));
 	}
 #endif
 };

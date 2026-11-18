@@ -313,6 +313,193 @@ private slots:
 		QCOMPARE( output.count( QStringLiteral( "must-survive" ) ), 1 );
 	}
 
+	/*! A pattern attribute that is not an int restores as "no reference" (-1),
+	 *  never as pattern 0: QString::toInt() returns 0 when the conversion
+	 *  fails, and 0 is a VALID pattern id, so a malformed or overflowing
+	 *  reference silently pointed the cell at the first pattern in the store.
+	 */
+	void anUnreadablePatternIdIsNotPatternZero()
+	{
+		QDomDocument doc;
+		doc.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"999999999999\"/>" ) );
+		const QDomElement overflow = doc.documentElement();
+		QVERIFY( overflow.isElement() );
+		ClipSlot slot;
+		slot.restoreState( overflow );
+		QCOMPARE( static_cast<int>( slot.type() ), static_cast<int>( ClipSlot::Type::Midi ) );
+		QCOMPARE( slot.patternId(), -1 );
+
+		doc.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"abc\"/>" ) );
+		ClipSlot text;
+		text.restoreState( doc.documentElement() );
+		QCOMPARE( text.patternId(), -1 );
+
+		// A missing attribute keeps its documented default.
+		doc.setContent( QStringLiteral( "<clip type=\"1\"/>" ) );
+		ClipSlot absent;
+		absent.restoreState( doc.documentElement() );
+		QCOMPARE( absent.patternId(), -1 );
+
+		// A well-formed id still round-trips, including 0 itself.
+		doc.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"7\"/>" ) );
+		ClipSlot good;
+		good.restoreState( doc.documentElement() );
+		QCOMPARE( good.patternId(), 7 );
+		doc.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"0\"/>" ) );
+		ClipSlot zero;
+		zero.restoreState( doc.documentElement() );
+		QCOMPARE( zero.patternId(), 0 );
+	}
+
+	/*! A <session> launchquantisation that is not an integer restores as the
+	 *  default grid (Bar), the fallback a non-grid integer already gets.
+	 *  QString::toInt() returns 0 when the conversion fails, and 0 is the None
+	 *  grid, so a project with launchquantisation="bar" launched at once instead
+	 *  of on the bar line. A real "0" must still restore as None.
+	 */
+	void anUnreadableSessionLaunchQuantisationFallsBackToBar()
+	{
+		const QString block = QStringLiteral(
+			"<session version=\"1\" tracks=\"1\" scenes=\"1\" launchquantisation=\"%1\"><scenes/><clips/></session>" );
+		QDomDocument doc;
+		doc.setContent( block.arg( QStringLiteral( "bar" ) ) );
+		SessionModel text;
+		QVERIFY( text.restoreState( doc.documentElement() ) );
+		QCOMPARE( static_cast<int>( text.globalLaunchQuantisation() ),
+			static_cast<int>( LaunchQuantisation::Bar ) );
+
+		doc.setContent( block.arg( QStringLiteral( "0" ) ) );
+		SessionModel none;
+		QVERIFY( none.restoreState( doc.documentElement() ) );
+		QCOMPARE( static_cast<int>( none.globalLaunchQuantisation() ),
+			static_cast<int>( LaunchQuantisation::None ) );
+	}
+
+	//! The native <z:scenes> section persists the same attribute through the
+	//! same conversion, so a spoiled value there must fall back the same way.
+	void anUnreadableSceneSectionLaunchQuantisationFallsBackToBar()
+	{
+		QDomDocument legacy;
+		legacy.setContent( QStringLiteral( "<session version=\"1\" tracks=\"1\" scenes=\"1\" launchquantisation=\"4\"><scenes/><clips/></session>" ) );
+		SessionModel source;
+		QVERIFY( source.restoreState( legacy.documentElement() ) );
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement( QStringLiteral( "song" ) );
+		doc.appendChild( root );
+		QDomElement section = source.saveScenesSection( doc, root );
+		QVERIFY( !section.isNull() );
+		section.setAttribute( QStringLiteral( "launchquantisation" ), QStringLiteral( "bar" ) );
+
+		SessionModel scenes;
+		QVERIFY( scenes.restoreScenesSection( section ) );
+		QCOMPARE( static_cast<int>( scenes.globalLaunchQuantisation() ),
+			static_cast<int>( LaunchQuantisation::Bar ) );
+	}
+
+	void malformedLegacySessionDimensionsArePreserved()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		Song* song = Engine::getSong();
+		song->clearProject();
+		const QString source = dir.filePath( QStringLiteral( "legacy.mmp" ) );
+		QVERIFY( song->saveProjectFile( source ) );
+		const QString baseProject = readFile( source );
+		const QStringList sessions = {
+			QStringLiteral( "<session version=\"1\" tracks=\"bad\" scenes=\"1\" marker=\"bad-tracks\"><scenes/><clips/></session>" ),
+			QStringLiteral( "<session version=\"1\" tracks=\"257\" scenes=\"1\" marker=\"large-tracks\"><scenes/><clips/></session>" ),
+			QStringLiteral( "<session version=\"1\" tracks=\"1\" scenes=\"513\" marker=\"large-scenes\"><scenes/><clips/></session>" )
+		};
+		const QStringList markers = {
+			QStringLiteral( "bad-tracks" ), QStringLiteral( "large-tracks" ), QStringLiteral( "large-scenes" )
+		};
+
+		int index = 0;
+		for( const QString& session : sessions )
+		{
+			song->clearProject();
+			QString project = baseProject;
+			const int insertion = project.indexOf( QStringLiteral( "</song>" ) );
+			QVERIFY( insertion >= 0 );
+			project.insert( insertion, session );
+			QVERIFY( QFile::remove( source ) );
+			QFile file( source );
+			QVERIFY( file.open( QIODevice::WriteOnly ) );
+			QVERIFY( file.write( project.toUtf8() ) == project.toUtf8().size() );
+			file.close();
+
+			song->loadProject( source );
+			const QString saved = dir.filePath( QStringLiteral( "saved.mmp" ) );
+			QVERIFY( song->saveProjectFile( saved ) );
+			const QString output = readFile( saved );
+			QCOMPARE( output.count( markers.at( index ) ), 1 );
+			QVERIFY( !output.contains( QStringLiteral( "<z:scenes" ) ) );
+			++index;
+		}
+	}
+
+	/*! A legacy <session> block holding more valid sub-scenes than SubScene::MaxCount is refused as a whole, like its
+	 *  malformed dimensions. Reading only the first MaxCount rows silently saved a shorter list than the file held.
+	 *  Rows that do not parse are still left out and do not count towards the limit.
+	 */
+	void excessLegacySubScenesAreRefusedNotTruncated()
+	{
+		const auto legacyBlock = []( int valid, int invalid, const QString& marker ) {
+			QString rows;
+			for( int row = 0; row < valid; ++row )
+			{
+				rows += QStringLiteral( "<subscene name=\"row%1\" scene=\"0\" tracks=\"0\"/>" ).arg( row );
+			}
+			for( int row = 0; row < invalid; ++row )
+			{
+				rows += QStringLiteral( "<subscene name=\"bad\" scene=\"x\" tracks=\"0\"/>" );
+			}
+			return QStringLiteral( "<session version=\"1\" tracks=\"1\" scenes=\"1\" marker=\"%1\"><scenes/><clips/>"
+				"<subscenes>%2</subscenes></session>" ).arg( marker, rows );
+		};
+
+		SessionModel model;
+		QDomDocument atLimit;
+		QVERIFY( atLimit.setContent( legacyBlock( SubScene::MaxCount, 0, QStringLiteral( "at-limit" ) ) ) );
+		QVERIFY( model.restoreState( atLimit.documentElement() ) );
+		QCOMPARE( model.subScenes().size(), std::size_t( SubScene::MaxCount ) );
+
+		QDomDocument overLimit;
+		QVERIFY( overLimit.setContent( legacyBlock( SubScene::MaxCount + 1, 0, QStringLiteral( "over-limit" ) ) ) );
+		QVERIFY( !model.restoreState( overLimit.documentElement() ) );
+		QVERIFY( model.subScenes().empty() );
+
+		QDomDocument unreadableRows;
+		QVERIFY( unreadableRows.setContent( legacyBlock( SubScene::MaxCount, 3, QStringLiteral( "unreadable" ) ) ) );
+		QVERIFY( model.restoreState( unreadableRows.documentElement() ) );
+		QCOMPARE( model.subScenes().size(), std::size_t( SubScene::MaxCount ) );
+
+		// Through a project file the refused block is kept verbatim, as the malformed dimensions are, not re-saved shorter.
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		Song* song = Engine::getSong();
+		song->clearProject();
+		const QString source = dir.filePath( QStringLiteral( "legacy-subscenes.mmp" ) );
+		QVERIFY( song->saveProjectFile( source ) );
+		QString project = readFile( source );
+		const int insertion = project.indexOf( QStringLiteral( "</song>" ) );
+		QVERIFY( insertion >= 0 );
+		project.insert( insertion, legacyBlock( SubScene::MaxCount + 1, 0, QStringLiteral( "excess-subscenes" ) ) );
+		QVERIFY( QFile::remove( source ) );
+		QFile file( source );
+		QVERIFY( file.open( QIODevice::WriteOnly ) );
+		QVERIFY( file.write( project.toUtf8() ) == project.toUtf8().size() );
+		file.close();
+
+		song->loadProject( source );
+		const QString saved = dir.filePath( QStringLiteral( "saved-subscenes.mmp" ) );
+		QVERIFY( song->saveProjectFile( saved ) );
+		const QString output = readFile( saved );
+		QCOMPARE( output.count( QStringLiteral( "excess-subscenes" ) ), 1 );
+		QVERIFY( !output.contains( QStringLiteral( "<z:subscenes" ) ) );
+	}
+
 	//! A slot references either a pattern or an audio clip, never both
 	//! (SPEC-zene-studio A1 mutual exclusivity).
 	void slotReferenceIsMutuallyExclusive()
@@ -336,6 +523,91 @@ private slots:
 		slot.clear();
 		QVERIFY( slot.isEmpty() );
 		QCOMPARE( slot.patternId(), -1 );
+	}
+
+	/*! Every launch quantisation survives a save/load cycle. The conversion from
+	 *  the persisted int recognised only None, Bar, TwoBars and FourBars, so the
+	 *  sub-bar values (Sixteenth, Eighth, Quarter, Half) and EightBars fell to the
+	 *  fallback: a cell set to a 1/16 grid came back as Global, and a GLOBAL
+	 *  EightBars came back as Bar.
+	 */
+	void everyLaunchQuantisationSurvivesAReload()
+	{
+		const struct { LaunchQuantisation value; int persisted; } values[] = {
+			{ LaunchQuantisation::None, 0 },
+			{ LaunchQuantisation::Bar, 1 },
+			{ LaunchQuantisation::TwoBars, 2 },
+			{ LaunchQuantisation::FourBars, 4 },
+			{ LaunchQuantisation::Sixteenth, -2 },
+			{ LaunchQuantisation::Eighth, -3 },
+			{ LaunchQuantisation::Quarter, -4 },
+			{ LaunchQuantisation::Half, -5 },
+			{ LaunchQuantisation::EightBars, 8 },
+		};
+		for( const auto& v : values )
+		{
+			QDomDocument doc;
+			doc.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"5\" quantisation=\"%1\"/>" )
+				.arg( v.persisted ) );
+			ClipSlot slot;
+			slot.restoreState( doc.documentElement() );
+			QCOMPARE( static_cast<int>( slot.launchQuantisation() ),
+				static_cast<int>( v.value ) );
+		}
+
+		// Global is a per-clip pointer to the session default, and it is the
+		// fallback the missing cases took - so it must still restore as itself.
+		QDomDocument global;
+		global.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"5\" quantisation=\"-1\"/>" ) );
+		ClipSlot inherited;
+		inherited.restoreState( global.documentElement() );
+		QCOMPARE( static_cast<int>( inherited.launchQuantisation() ),
+			static_cast<int>( LaunchQuantisation::Global ) );
+
+		// A value that is not a grid at all still falls back rather than
+		// producing an enum no switch has a case for.
+		QDomDocument junk;
+		junk.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"5\" quantisation=\"99\"/>" ) );
+		ClipSlot unknown;
+		unknown.restoreState( junk.documentElement() );
+		QCOMPARE( static_cast<int>( unknown.launchQuantisation() ),
+			static_cast<int>( LaunchQuantisation::Global ) );
+	}
+
+	//! The session-wide setting persists through the native <z:scenes> section
+	//! and had the same recognised-only-four problem: a global EightBars came
+	//! back as Bar. Every grid must survive that save and reload.
+	void everyGlobalLaunchQuantisationSurvivesAReload()
+	{
+		const LaunchQuantisation grids[] = {
+			LaunchQuantisation::None,
+			LaunchQuantisation::Bar,
+			LaunchQuantisation::TwoBars,
+			LaunchQuantisation::FourBars,
+			LaunchQuantisation::Sixteenth,
+			LaunchQuantisation::Eighth,
+			LaunchQuantisation::Quarter,
+			LaunchQuantisation::Half,
+			LaunchQuantisation::EightBars,
+		};
+		for( const LaunchQuantisation grid : grids )
+		{
+			SessionModel source;
+			source.setTrackCount( 1 );
+			source.setSceneCount( 1 );
+			source.setGlobalLaunchQuantisation( grid );
+
+			QDomDocument doc;
+			QDomElement root = doc.createElement( QStringLiteral( "song" ) );
+			doc.appendChild( root );
+			QDomElement section = source.saveScenesSection( doc, root );
+			QVERIFY( !section.isNull() );
+
+			SessionModel reloaded;
+			QVERIFY( reloaded.restoreScenesSection( section ) );
+			QCOMPARE( static_cast<int>( reloaded.globalLaunchQuantisation() ),
+				static_cast<int>( grid ) );
+		}
 	}
 
 	//! Growing and shrinking the grid keeps the slots that remain.

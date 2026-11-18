@@ -44,19 +44,27 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <new>
+#include <vector>
 
 #include <QtTest>
 
+#include <QByteArray>
 #include <QStringList>
 #include <QVector>
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "ControlVocabulary.h"
 #include "Engine.h"
 #include "MidiClient.h"
 #include "MidiClock.h"
+#include "RetroMidiCapture.h"
 #include "Song.h"
+#include "TimePos.h"
 
 using namespace lmms;
 
@@ -86,14 +94,16 @@ quint64 feedPulses(MidiClockTracker& tracker, int bpm, int pulses, quint64 times
 
 //! Feed clock pulses through the ENGINE's own input entry point - the one the
 //! MIDI client's reader thread calls - rather than into a tracker directly, so
-//! the follower test measures the path a real incoming clock takes.
+//! the follower test measures the path a real incoming clock takes. The source
+//! is empty (Q050-026): this file proves the RATE arithmetic and which source may
+//! drive the follower is MidiClockSourceTest's subject.
 quint64 feedClockInput(MidiClock* clock, int bpm, int pulses, quint64 timestampNs)
 {
 	const quint64 interval = pulseIntervalNs(bpm);
 	for (int i = 0; i < pulses; ++i)
 	{
 		timestampNs += interval;
-		clock->handleInputMessage(MidiClockMessage::Clock, 0, timestampNs);
+		clock->handleInputMessage(MidiClockMessage::Clock, 0, timestampNs, QString());
 	}
 	return timestampNs;
 }
@@ -125,18 +135,60 @@ QStringList transportMessages(const QStringList& sequence)
 	return out;
 }
 
-//! A raw MIDI client with no device behind it: it exists only to drive
-//! MidiClientRaw::parseData(), the byte-at-a-time assembler the MIDI reader
-//! threads feed, so a claim about which byte of a system-common message the
-//! engine keeps can be made without hardware. sendByte() is the client half of
-//! the interface and output is not what this harness is for.
+//! A raw MIDI client with no device behind it: it captures the bytes emitted by
+//! the real raw encoder and can also drive parseData(), the byte-at-a-time
+//! assembler the MIDI reader threads feed.
 class ParsingRawClient : public MidiClientRaw
 {
 public:
 	void feed(unsigned char byte) { parseData(byte); }
+	void send(const MidiEvent& event) { processOutEvent(event, TimePos{}, nullptr); }
+	QByteArray bytes;
 
 protected:
-	void sendByte(const unsigned char) override { }
+	void sendByte(const unsigned char byte) override { bytes.append(static_cast<char>(byte)); }
+};
+
+
+ControlResult run(const QString& id, const QJsonObject& args = {})
+{
+	return ControlRegistry::instance()->invoke(id, args);
+}
+
+//! The same client, built over POISONED storage: every byte of the object is
+//! set to kPoison before its constructor runs, so a parser field that the
+//! constructor does not write keeps kPoison instead of whatever the allocator
+//! happened to hand out. midiParserData has no constructor of its own and
+//! MidiClientRaw's is defaulted, so which of its fields the constructor is
+//! obliged to initialise is exactly what this harness measures; the poison is
+//! 0x90 (a note-on status byte), the value that turns a leftover counter into
+//! a completed event rather than a silent drop.
+class PoisonedParsingRawClient
+{
+public:
+	PoisonedParsingRawClient()
+	{
+		std::memset(m_storage, kPoison, sizeof(m_storage));
+		// DEFAULT-initialisation, and that is the whole point of the harness:
+		// `new (p) ParsingRawClient()` with empty parentheses would VALUE-
+		// initialise, and the compiler's zero-fill would hide exactly the
+		// fields under test.
+		m_client = new (static_cast<void*>(m_storage)) ParsingRawClient;
+	}
+
+	~PoisonedParsingRawClient() { m_client->~ParsingRawClient(); }
+
+	PoisonedParsingRawClient(const PoisonedParsingRawClient&) = delete;
+	PoisonedParsingRawClient& operator=(const PoisonedParsingRawClient&) = delete;
+
+	ParsingRawClient& operator*() { return *m_client; }
+	ParsingRawClient* operator->() { return m_client; }
+
+private:
+	static constexpr unsigned char kPoison = 0x90;
+
+	alignas(ParsingRawClient) unsigned char m_storage[sizeof(ParsingRawClient)];
+	ParsingRawClient* m_client = nullptr;
 };
 
 } // namespace
@@ -153,10 +205,14 @@ private slots:
 		// The test drives the clock's periods itself; the Dummy device's own periods (Song.cpp's call) would
 		// interleave with them - the stray stop and continue of BUGS 10.10.
 		Engine::audioEngine()->audioDev()->stopProcessing();
+		// The command half of the clock: these slots drive clock.master_set /
+		// clock.slave_set over the registry, not the engine directly.
+		ControlRegistry::setReady(true);
 	}
 
 	void cleanupTestCase()
 	{
+		ControlRegistry::setReady(false);
 		Engine::destroy();
 	}
 
@@ -168,6 +224,8 @@ private slots:
 		QString ignored;
 		clock->setMasterEnabled(false, QString(), &ignored);
 		clock->setSlaveEnabled(false);
+		clock->setSlaveFollowTempo(false);
+		clock->restoreMaster(false, QString());
 	}
 
 	// ---------------------------------------------------------------- tracker
@@ -405,6 +463,100 @@ private slots:
 		QCOMPARE(clock->emittedTotal(), afterStop);
 	}
 
+	//! LUNA 4241: A SWITCHED DESTINATION IS A SWITCH, not a second subscription.
+	//! Naming port B used to leave port A subscribed, so a clock the user had
+	//! moved off A kept reaching A. The unsubscribe is what makes the setting mean
+	//! what it says, and undo restores both halves of it.
+	void changingTheClockDestinationUnsubscribesTheOldOne()
+	{
+		MidiClock* clock = MidiClock::instance();
+		QString error;
+		QVERIFY2(clock->setMasterEnabled(true, QStringLiteral("zene-a"),
+			&error), qPrintable(error));
+		QVERIFY2(clock->masterSubscribedTo(QStringLiteral("zene-a")),
+			"the named destination must actually be subscribed");
+
+		// The switch: B is added and A must STOP receiving.
+		QVERIFY2(clock->setMasterEnabled(true, QStringLiteral("zene-b"),
+			&error), qPrintable(error));
+		QCOMPARE(clock->masterPort(), QStringLiteral("zene-b"));
+		QVERIFY2(clock->masterSubscribedTo(QStringLiteral("zene-b")),
+			"the new destination must be subscribed");
+		QVERIFY2(!clock->masterSubscribedTo(QStringLiteral("zene-a")),
+			"the previous destination must be unsubscribed: a switched clock that "
+			"still reaches the old port is not switched");
+
+		// Naming the port it is already on is not a change and must not drop it.
+		QVERIFY2(clock->setMasterEnabled(true, QStringLiteral("zene-b"),
+			&error), qPrintable(error));
+		QVERIFY2(clock->masterSubscribedTo(QStringLiteral("zene-b")),
+			"re-naming the current destination must keep it subscribed");
+
+		// Undo: restoring the before-state must bring the old subscription back and
+		// take the new one away - the exact inverse of the switch above.
+		clock->restoreMaster(true, QStringLiteral("zene-a"));
+		QVERIFY2(clock->masterSubscribedTo(QStringLiteral("zene-a")),
+			"the restored destination must be subscribed");
+		QVERIFY2(!clock->masterSubscribedTo(QStringLiteral("zene-b")),
+			"the destination undo moved away from must be unsubscribed");
+
+		// Undoing back to no destination at all unsubscribes everything.
+		clock->restoreMaster(true, QString());
+		QVERIFY2(!clock->masterSubscribedTo(QStringLiteral("zene-a")),
+			"restoring an empty destination must leave nothing subscribed");
+	}
+
+	//! LUNA 4243: A MASTER RE-ENABLED DURING PLAYBACK MUST SAY WHERE IT IS.
+	//! While the master was off, processAudioPeriod() returned before the
+	//! transport was tracked, so the tracked state was stale; re-enabling saw no
+	//! rising edge and resumed the pulses with no position and no CONTINUE - a
+	//! slave that joined then had pulses with no position to interpret them at.
+	void reEnablingTheMasterDuringPlaybackEmitsTheTransportEdge()
+	{
+		MidiClock* clock = MidiClock::instance();
+		QString error;
+		const int frames = 512;
+		quint64 now = 4000000000ULL;
+		const qint64 advance = static_cast<qint64>(static_cast<double>(frames)
+			/ static_cast<double>(Engine::framesPerTick()));
+		qint64 position = advance;
+
+		QVERIFY2(clock->setMasterEnabled(true, QString(), &error), qPrintable(error));
+		clock->processAudioPeriod(frames, true, 0, now += 1000000ULL);
+
+		// Send Clock off mid-playback: pulses stop, nothing else is emitted.
+		QVERIFY2(clock->setMasterEnabled(false, QString(), &error), qPrintable(error));
+		const quint32 totalWhileOff = clock->emittedTotal();
+		clock->processAudioPeriod(frames, true, position, now += 1000000ULL);
+		QCOMPARE(clock->emittedTotal(), totalWhileOff);
+
+		// ... and on again while the song is STILL PLAYING, mid-song.
+		QVERIFY2(clock->setMasterEnabled(true, QString(), &error), qPrintable(error));
+		const quint32 totalBefore = clock->emittedTotal();
+		clock->processAudioPeriod(frames, true, position, now += 1000000ULL);
+
+		const QString measured = QStringLiteral("off=%1 before=%2 monitor=%3")
+			.arg(totalWhileOff).arg(totalBefore)
+			.arg(emittedSequence(*clock, totalBefore).join(QLatin1Char(',')));
+		// A mid-song rise is a Song Position Pointer plus a CONTINUE - never a
+		// START, which would claim the top of the song.
+		QVERIFY2(clock->emittedCount(MidiClockMessage::Continue) >= 1u,
+			qPrintable(QStringLiteral("no CONTINUE on re-enable: %1").arg(measured)));
+		QVERIFY2(clock->emittedCount(MidiClockMessage::SongPosition) >= 1u,
+			qPrintable(QStringLiteral("no position on re-enable: %1").arg(measured)));
+		const QStringList transport =
+			transportMessages(emittedSequence(*clock, totalBefore));
+		QVERIFY2(transport.contains(QStringLiteral("continue"))
+				&& transport.contains(QStringLiteral("song_position")),
+			qPrintable(QStringLiteral("re-enable emitted %1").arg(measured)));
+		QVERIFY2(!transport.contains(QStringLiteral("start")),
+			qPrintable(QStringLiteral("a mid-song re-enable claimed a START: %1")
+				.arg(measured)));
+		// The pulses are back too: the transport edge is not the whole behaviour.
+		QVERIFY2(clock->emittedCount(MidiClockMessage::Clock) >= 1u,
+			qPrintable(QStringLiteral("no pulses after re-enable: %1").arg(measured)));
+	}
+
 	// ------------------------------------------------------------------ slave
 
 	//! THE FOLLOWER WRITES THE SONG'S TEMPO, and only when it has a lock. This is
@@ -452,6 +604,29 @@ private slots:
 		QVERIFY(last > 0);
 	}
 
+	//! THE FOLLOW PREFERENCE IS CONFIGURATION, THE MEASUREMENT IS NOT. Disabling
+	//! the slave forgets the measurement (the tracker is reset), but the saved
+	//! follow-tempo choice survives: a re-enable that names no flag must find the
+	//! mode it was left in, or a plain stop throws the user's choice away.
+	void slaveEnableTogglePreservesFollowTempoPreference()
+	{
+		MidiClock* clock = MidiClock::instance();
+		Engine::getSong()->setTempo(100);
+		clock->setSlaveEnabled(true);
+		clock->setSlaveFollowTempo(true);
+		clock->setSlaveEnabled(false);
+		QVERIFY2(clock->slaveFollowTempo(), "disabling the slave cleared its follow preference");
+		clock->setSlaveEnabled(true);
+		// The pulses carry INJECTED timestamps a minute ahead of the monotonic
+		// clock: the tracker drops its lock when no pulse arrived for half a
+		// second, and the age it measures is the distance from the last pulse to
+		// the audio period's own clock, so a pulse from the future is never aged
+		// out. The measured tempo is 120 whatever the wall clock does.
+		feedClockInput(clock, 120, 48, MidiClock::nowNs() + 60000000000ULL);
+		QCOMPARE(clock->applyMeasuredTempo(), 120);
+		QCOMPARE(Engine::getSong()->getTempo(), 120);
+	}
+
 	//! THE POINTER'S UNIT. A Song Position Pointer is expressed in MIDI BEATS -
 	//! six clock pulses, i.e. a sixteenth note - and this engine resolves a
 	//! sixteenth as twelve ticks. It is the one grid conversion that would
@@ -463,7 +638,9 @@ private slots:
 		QCOMPARE(MidiClock::songPositionOf(DefaultTicksPerBar), 16u);   // one 4/4 bar
 		QCOMPARE(MidiClock::songPositionOf(DefaultTicksPerBar - 1), 15u); // truncated
 		QCOMPARE(MidiClock::songPositionOf(-5), 0u);
-		QVERIFY(MidiClock::songPositionOf(9999 * DefaultTicksPerBar) <= 0x3FFFu);
+		const qint64 lastRepresentableTick = static_cast<qint64>(TicksPerMidiBeat) * 0x3FFF;
+		QCOMPARE(MidiClock::songPositionOf(lastRepresentableTick), 0x3FFFu);
+		QCOMPARE(MidiClock::songPositionOf(lastRepresentableTick + TicksPerMidiBeat), 0x3FFFu);
 	}
 
 	//! The state a caller reads back reports the grid, the mode and - the part
@@ -516,6 +693,104 @@ private slots:
 		client.feed(0xF1);
 		client.feed(0x3A);
 		QCOMPARE(tracker.lastTimeCode(), 0x3A);
+	}
+
+	//! An empty 'port' means "keep the current subscription", so the recorded REDO must
+	//! re-apply the port the command actually ended up on. Capturing the raw (empty) argument
+	//! makes restoreMaster UNSUBSCRIBE the very port the command kept.
+	void masterRedoKeepsThePortTheCallKept()
+	{
+		MidiClock* clock = MidiClock::instance();
+		const QString port = QStringLiteral("zene-bunny-test-port");
+		const ControlResult first = run(QStringLiteral("clock.master_set"),
+			{{QStringLiteral("enabled"), true}, {QStringLiteral("port"), port}});
+		QVERIFY2(first.ok, qPrintable(first.errorMessage));
+		QCOMPARE(clock->masterPort(), port);
+
+		// Enabled again with NO port: the subscription is kept, and the state says so.
+		const ControlResult again = run(QStringLiteral("clock.master_set"), {{QStringLiteral("enabled"), true}});
+		QVERIFY2(again.ok, qPrintable(again.errorMessage));
+		QCOMPARE(clock->masterPort(), port);
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QVERIFY2(clock->masterPort() == port,
+			qPrintable(QStringLiteral("redo dropped the port subscription: '%1'").arg(clock->masterPort())));
+	}
+
+	//! clock.slave_set with only 'enabled: false' stops the follower; it must not also throw
+	//! away the follow preference, or enabling it again without naming follow_tempo leaves
+	//! following off - the user asked to stop, not to un-follow.
+	void disablingTheSlaveKeepsItsFollowPreference()
+	{
+		MidiClock* clock = MidiClock::instance();
+		QVERIFY(run(QStringLiteral("clock.slave_set"),
+			{{QStringLiteral("enabled"), true}, {QStringLiteral("follow_tempo"), true}}).ok);
+		QVERIFY(clock->slaveFollowTempo());
+
+		QVERIFY(run(QStringLiteral("clock.slave_set"), {{QStringLiteral("enabled"), false}}).ok);
+		QVERIFY(!clock->slaveEnabled());
+		QVERIFY2(clock->slaveFollowTempo(), "disabling the slave cleared its follow preference");
+
+		// And enabling it again without naming the flag follows again.
+		QVERIFY(run(QStringLiteral("clock.slave_set"), {{QStringLiteral("enabled"), true}}).ok);
+		QVERIFY(clock->slaveFollowTempo());
+	}
+
+	//! Channel pressure and program change carry one data byte; pitch bend is
+	//! the 14-bit value in LSB/MSB order.
+	void rawOutputEncodesPitchBendPressureAndProgramChange()
+	{
+		ParsingRawClient client;
+
+		client.send(MidiEvent(MidiPitchBend, 5, 0x2345));
+		QCOMPARE(client.bytes, QByteArray::fromHex("e54546"));
+		client.bytes.clear();
+
+		client.send(MidiEvent(MidiChannelPressure, 3, 0x64));
+		QCOMPARE(client.bytes, QByteArray::fromHex("d364"));
+		client.bytes.clear();
+
+		client.send(MidiEvent(MidiProgramChange, 9, 0x2A));
+		QCOMPARE(client.bytes, QByteArray::fromHex("c92a"));
+	}
+
+	//! THE PARSER'S INITIAL STATE. A raw device that is opened while another
+	//! device is mid-message delivers a DATA byte before it has sent a status
+	//! byte of its own; that byte belongs to no event this parser is
+	//! assembling, so it must be dropped and must leave the parser where it
+	//! was. midiParserData has no constructor and MidiClientRaw's is defaulted,
+	//! so before this fix m_status / m_channel / m_bytes / m_bytesTotal and
+	//! the payload slots were whatever the client's memory happened to hold,
+	//! and the stray byte was assembled into an event out of them - over the
+	//! storage poisoned to a note-on status, one leading data byte dispatched a
+	//! phantom note built from the leftover channel, byte counter and payload,
+	//! and a later status byte started counting from that leftover counter
+	//! instead of from zero. Both bytes are fed through the real parser.
+	void aFreshParserDiscardsALeadingDataByte()
+	{
+		PoisonedParsingRawClient client;
+		client->retroCapture().arm(true);
+
+		// The first byte off this wire is data, not status: nothing of it.
+		client->feed(0x40);
+		QCOMPARE(static_cast<qulonglong>(client->retroCapture().ring().bufferedCount()),
+			static_cast<qulonglong>(0));
+
+		// The parser is therefore still at the start of a message, so the next
+		// real message is the first event, with its own key and velocity.
+		client->feed(0x90);
+		client->feed(0x3C);
+		client->feed(0x64);
+		QCOMPARE(static_cast<qulonglong>(client->retroCapture().ring().bufferedCount()),
+			static_cast<qulonglong>(1));
+
+		std::vector<RetroMidiEvent> window(1);
+		QCOMPARE(static_cast<qulonglong>(client->retroCapture().ring().copyOut(window.data(), window.size())),
+			static_cast<qulonglong>(1));
+		QCOMPARE(static_cast<unsigned>(window[0].type), static_cast<unsigned>(lmms::MidiNoteOn));
+		QCOMPARE(static_cast<unsigned>(window[0].param1), 0x3Cu);
+		QCOMPARE(static_cast<unsigned>(window[0].param2), 0x64u);
 	}
 
 	// ------------------------------------------------------------------- A16

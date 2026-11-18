@@ -36,6 +36,26 @@
 namespace lmms::gui
 {
 
+namespace
+{
+
+bool defaultIsDerivedFromBounds(LADSPA_PortRangeHintDescriptor hintDescriptor)
+{
+	switch (hintDescriptor & LADSPA_HINT_DEFAULT_MASK)
+	{
+		case LADSPA_HINT_DEFAULT_MINIMUM:
+		case LADSPA_HINT_DEFAULT_LOW:
+		case LADSPA_HINT_DEFAULT_MIDDLE:
+		case LADSPA_HINT_DEFAULT_HIGH:
+		case LADSPA_HINT_DEFAULT_MAXIMUM:
+			return true;
+		default:
+			return false;
+	}
+}
+
+} // namespace
+
 
 LadspaPortDialog::LadspaPortDialog( const ladspa_key_t & _key )
 {
@@ -88,13 +108,20 @@ LadspaPortDialog::LadspaPortDialog( const ladspa_key_t & _key )
 
 		if( manager->areHintsSampleRateDependent( _key, row ) )
 		{
+			const auto sampleRate = Engine::audioEngine()->outputSampleRate();
 			if( min != NOHINT )
 			{
-				min *= Engine::audioEngine()->outputSampleRate();
+				min *= sampleRate;
 			}
 			if( max != NOHINT )
 			{
-				max *= Engine::audioEngine()->outputSampleRate();
+				max *= sampleRate;
+			}
+			const auto* descriptor = manager->getDescriptor(_key);
+			if (def != NOHINT
+				&& defaultIsDerivedFromBounds(descriptor->PortRangeHints[row].HintDescriptor))
+			{
+				def *= sampleRate;
 			}
 		}
 

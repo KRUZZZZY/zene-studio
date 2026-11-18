@@ -47,6 +47,7 @@
 #include <QTemporaryDir>
 
 #include "ControlChainPresetSupport.h"
+#include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ConfigManager.h"
@@ -107,6 +108,23 @@ ControlChainPresetDevice deviceOf(const QByteArray& state)
 	ControlResult error;
 	controlChainPresetIdentity(&device, &error);
 	return device;
+}
+
+/*! Writes a VALID preset file into the store under \a name.
+ *
+ *  The document is built by hand from a device state document, so a check that
+ *  only needs a READABLE preset does not depend on which devices - or which
+ *  plugins - a build happens to ship. chain.rename reads the preset and moves
+ *  its file; it never loads a device.
+ */
+bool writePresetFile(const QString& name)
+{
+	const QString path = controlChainPresetDir() + name + QStringLiteral(".zcp");
+	if (!QDir().mkpath(controlChainPresetDir())) { return false; }
+	const QList<ControlChainPresetDevice> devices{
+		deviceOf(deviceDocument(QStringLiteral("amplifier"), QString(), QString(), 7))};
+	ControlResult error;
+	return controlWriteFileBytes(path, controlChainPresetDocument(name, devices), true, &error);
 }
 
 //! Every preset the store holds, by name.
@@ -221,6 +239,26 @@ private slots:
 			QJsonObject{{QStringLiteral("name"), QStringLiteral("ControlChainPresetTest Renamed2")}});
 		ControlRegistry::setReady(false);
 		Engine::destroy();
+	}
+
+	//! Files beyond the control reader's documented cap must be refused before
+	//! their contents are copied into a QByteArray.
+	void fileReaderRefusesOversizedFiles()
+	{
+		constexpr qint64 kOversizedFileSize = 64LL * 1024 * 1024 + 1;
+		QTemporaryDir temp;
+		QVERIFY(temp.isValid());
+		const QString path = temp.filePath(QStringLiteral("oversized-state.xpf"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		QVERIFY(file.resize(kOversizedFileSize));
+		file.close();
+
+		QByteArray bytes("sentinel");
+		ControlResult error;
+		QVERIFY(!controlReadFileBytes(path, &bytes, &error));
+		QCOMPARE(error.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(bytes, QByteArray("sentinel"));
 	}
 
 	//! Every command of the group declares the contract's parts.
@@ -386,6 +424,65 @@ private slots:
 		QVERIFY(QFile::remove(path));
 		QVERIFY(!read);
 		QCOMPARE(error.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	void aPresetRefusesAnUnsupportedVersion_data()
+	{
+		QTest::addColumn<QString>("version");
+		for (const QString& version : {QStringLiteral("0"), QStringLiteral("2"),
+			QStringLiteral("1.0"), QStringLiteral("invalid"), QString()})
+		{
+			QTest::newRow(qPrintable(version.isEmpty() ? QStringLiteral("missing") : version))
+				<< version;
+		}
+	}
+
+	//! A document whose version is not the one this build writes is refused, typed,
+	//! and names the version: another format's layout is not read as the current one.
+	void aPresetRefusesAnUnsupportedVersion()
+	{
+		QFETCH(QString, version);
+		QDomDocument doc;
+		QVERIFY(doc.setContent(controlChainPresetDocument(QStringLiteral("version-test"),
+			{deviceOf(deviceDocument(QStringLiteral("amplifier"), {}, {}, 7))})));
+		if (version.isEmpty()) { doc.documentElement().removeAttribute(QStringLiteral("version")); }
+		else { doc.documentElement().setAttribute(QStringLiteral("version"), version); }
+		const QString path = controlChainPresetDir() + QStringLiteral("version-test.zcp");
+		QVERIFY(QDir().mkpath(controlChainPresetDir()));
+		ControlResult error;
+		QVERIFY(controlWriteFileBytes(path, doc.toByteArray(), true, &error));
+		ControlChainPreset preset;
+		const bool read = controlReadChainPreset(path, &preset, &error);
+		QVERIFY(QFile::remove(path));
+		QVERIFY(!read);
+		QCOMPARE(error.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(error.errorMessage.contains(QStringLiteral("version")),
+			qPrintable(error.errorMessage));
+	}
+
+	//! A versionless document that declares no devices is the shape that would
+	//! clear a chain when applied, so it must be refused - and the same document
+	//! with the supported version is still a valid, empty preset.
+	void aVersionlessEmptyPresetCannotClearAChain()
+	{
+		const QString path = controlChainPresetDir() + QStringLiteral("empty-version-test.zcp");
+		QVERIFY(QDir().mkpath(controlChainPresetDir()));
+		ControlResult error;
+		ControlChainPreset preset;
+
+		QVERIFY(controlWriteFileBytes(path,
+			QByteArrayLiteral("<zenechainpreset name=\"empty\" devices=\"0\"/>"), true, &error));
+		const bool versionless = controlReadChainPreset(path, &preset, &error);
+		QVERIFY(!versionless);
+		QCOMPARE(error.errorKind, ControlErrorKind::InvalidArgs);
+
+		QVERIFY(controlWriteFileBytes(path,
+			QByteArrayLiteral("<zenechainpreset version=\"1\" name=\"empty\" devices=\"0\"/>"),
+			true, &error));
+		const bool supported = controlReadChainPreset(path, &preset, &error);
+		QVERIFY(QFile::remove(path));
+		QVERIFY2(supported, qPrintable(error.errorMessage));
+		QCOMPARE(preset.devices.size(), 0);
 	}
 
 	void aFailedApplyKeepsTheOriginalDevicesAndHistory()
@@ -629,7 +726,48 @@ private slots:
 		run(QStringLiteral("chain.remove"), QJsonObject{{QStringLiteral("name"), kPreset}});
 	}
 
-private:
+	//! Renaming a preset to its current name changes nothing and records no undo step.
+	void renamingToTheCurrentNameRecordsNoUndoStep()
+	{
+		const QString renamed = QStringLiteral("ControlChainPresetTest RenamedNoOp");
+		// A VALID preset file, written by hand: chain.rename only reads the preset
+		// and moves its file, it never loads a device, so this check must not depend
+		// on which instruments or effects a build happens to ship.
+		QVERIFY(writePresetFile(kPreset));
+		// One command, one step: the seam that keeps the two renames below from
+		// being coalesced into a single undo step.
+		QVERIFY(run(QStringLiteral("control.set_undo_coalescing"),
+			QJsonObject{{QStringLiteral("window_ms"), 0}}).ok);
+
+		// A REAL rename: the file moves and an undo step is recorded.
+		QVERIFY(run(QStringLiteral("chain.rename"),
+			QJsonObject{{QStringLiteral("name"), kPreset},
+				{QStringLiteral("to"), renamed}}).ok);
+		QVERIFY(storeNames().contains(renamed));
+		QVERIFY(!storeNames().contains(kPreset));
+
+		// The SAME name again: the store does not change - and no undo step is
+		// recorded, so the single undo below still belongs to the real rename.
+		const ControlResult same = run(QStringLiteral("chain.rename"),
+			QJsonObject{{QStringLiteral("name"), renamed}, {QStringLiteral("to"), renamed}});
+		QVERIFY2(same.ok, qPrintable(same.errorMessage));
+		QVERIFY(storeNames().contains(renamed));
+		QVERIFY(!storeNames().contains(kPreset));
+
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QVERIFY2(undone.result.value(QStringLiteral("undone")).toBool(),
+			qPrintable(QStringLiteral("nothing was undone")));
+		QVERIFY(storeNames().contains(kPreset));
+		QVERIFY(!storeNames().contains(renamed));
+
+		run(QStringLiteral("chain.remove"), QJsonObject{{QStringLiteral("name"), kPreset}});
+		run(QStringLiteral("chain.remove"), QJsonObject{{QStringLiteral("name"), renamed}});
+		run(QStringLiteral("control.set_undo_coalescing"),
+			QJsonObject{{QStringLiteral("window_ms"), control::UndoCoalesceWindowMs}});
+	}
+
+	private:
 	QTemporaryDir m_world;
 };
 

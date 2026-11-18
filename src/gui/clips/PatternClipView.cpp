@@ -117,10 +117,12 @@ void PatternClipView::paintEvent(QPaintEvent*)
 	p.fillRect( rect(), QColor( 0, 0, 0 ) );
 
 	const int pixelsPerPattern = Engine::patternStore()->lengthOfPattern(m_patternClip->patternIndex()) * pixelsPerBar();
-	int offset = static_cast<int>(m_patternClip->startTimeOffset() * (pixelsPerBar() / TimePos::ticksPerBar()))
-			% pixelsPerPattern;
+	const tick_t ticksPerPattern = Engine::patternStore()->lengthOfPattern(m_patternClip->patternIndex()) * TimePos::ticksPerBar();
+	tick_t offsetTicks = m_patternClip->startTimeOffset().getTicks() % ticksPerPattern;
+	int offset = static_cast<int>(offsetTicks * (pixelsPerBar() / TimePos::ticksPerBar())) % pixelsPerPattern;
 	if (offset < 2) {
 		offset += pixelsPerPattern;
+		offsetTicks += ticksPerPattern;
 	}
 
 	if( gradient() )
@@ -150,7 +152,9 @@ void PatternClipView::paintEvent(QPaintEvent*)
 	const auto numberEmptyTracks = totalTracks - numberInstrumentTracksUsed;
 
 	const float totalHeight = height() * (1.0f - 2 * m_verticalPadding);
-	const float totalHeightForEmptyTracks = totalHeight * numberEmptyTracks / totalTracks * m_emptyTrackHeightRatio;
+	const float totalHeightForEmptyTracks = totalTracks > 0
+		? totalHeight * numberEmptyTracks / totalTracks * m_emptyTrackHeightRatio
+		: 0.f;
 	const float totalHeightForTracks = totalHeight - totalHeightForEmptyTracks;
 
 	const float trackHeight = numberInstrumentTracksUsed > 0
@@ -174,11 +178,15 @@ void PatternClipView::paintEvent(QPaintEvent*)
 		}
 
 		// Compare how long the clip view is compared to the underlying pattern. First +1 for ceiling, second +1 for possible previous bar.
-		const int maxPossibleRepetions = getClip()->length() / mClip->length() + 1 + 1;
+		// A clip of zero length has no period to repeat, so it has no full repetitions (not a division by zero).
+		const int fullRepetitions = mClip->length() > 0 ? getClip()->length() / mClip->length() : 0;
+		const int maxPossibleRepetions = fullRepetitions + 1 + 1;
 		for (const Note* note : mClip->notes())
 		{
+			const int notePosition = static_cast<int>(
+				(note->pos().getTicks() + offsetTicks) * pixelsPerBar() / TimePos::ticksPerBar());
 			QRect noteRect = QRect(
-				note->pos() * pixelsPerBar() / TimePos::ticksPerBar() + offset + horizontalNoteSpacing / 2,
+				notePosition + horizontalNoteSpacing / 2,
 				lastY + verticalNoteSpacing / 2,
 				std::max(1.0f, pixelsPerBar() / TimePos::stepsPerBar() - horizontalNoteSpacing),
 				std::max(1.0f, trackHeight - verticalNoteSpacing)
@@ -187,7 +195,7 @@ void PatternClipView::paintEvent(QPaintEvent*)
 			const auto noteColor = QColor(m_noteColor.red(), m_noteColor.green(), m_noteColor.blue(), std::clamp(note->getVolume() * 255 / 100, 50, 255));
 			for (int i = -1; i < maxPossibleRepetions - 1; i++)
 			{
-				noteRect.moveLeft(note->pos() * pixelsPerBar() / TimePos::ticksPerBar() + offset + i * pixelsPerPattern + horizontalNoteSpacing / 2);
+				noteRect.moveLeft(notePosition + i * pixelsPerPattern + horizontalNoteSpacing / 2);
 				p.fillRect(noteRect, noteColor);
 			}
 		}

@@ -25,8 +25,10 @@
 #ifndef LMMS_PROJECT_RENDERER_H
 #define LMMS_PROJECT_RENDERER_H
 
+#include <array>
 #include <atomic>
 #include <memory>
+#include <vector>
 
 #include "AudioFileDevice.h"
 #include "AudioEngine.h"
@@ -34,6 +36,10 @@
 #include "OutputSettings.h"
 
 #include "lmms_export.h"
+
+#ifdef LMMS_TESTING
+class SessionSchedulerRenderTest;
+#endif
 
 namespace lmms
 {
@@ -102,6 +108,17 @@ public:
 	//! Why the report could not be written, empty when it was (or none was asked).
 	QString loudnessReportError() const { return m_loudnessReportError; }
 
+	//! 0.5.0 F7: why these settings cannot be rendered (include/SurroundExport.h), empty when they can.
+	//! A refused render has no file device (isReady() is false) and opens no file.
+	QString refusal() const { return m_refusal; }
+	//! The channels the file is written with: 2, or the surround master's for a surround export.
+	int channels() const { return m_channels; }
+
+	/*! True when this render's output could not be written completely - a write failed, or the
+	 *  finalisation (the close, the header) did. Read after finished(); written on the render thread
+	 *  from run(). A failed render also deletes its file, so a caller sees both by one question. */
+	bool hasWriteError() const { return m_writeFailed.load(std::memory_order_relaxed); }
+
 public slots:
 	void startProcessing();
 	void abortProcessing();
@@ -118,10 +135,17 @@ signals:
 
 
 private:
+#ifdef LMMS_TESTING
+	friend class ::SessionSchedulerRenderTest;
+#endif
+
 	void run() override;
 
 	//! Writes the sidecar, tells the console and emits loudnessReportReady().
 	void reportLoudness( const QString& renderedFile );
+	//! 0.5.0 F7: the period's stereo pair and the export tap's side channels, interleaved, to the file.
+	//! False when that write failed, so run() can stop producing bytes the file cannot take.
+	bool writeSurround( const SampleFrame* pair, f_cnt_t frames );
 
 	AudioFileDevice * m_fileDev;
 
@@ -129,8 +153,10 @@ private:
 	QString m_loudnessReportPath;
 	QString m_loudnessReportError;
 
-	volatile int m_progress;
+	std::atomic<int> m_progress;
 	std::atomic<bool> m_abort;  //!< set by abortProcessing() on another thread; volatile is not a synchronisation
+	//! Set in run() when a write or the finalisation failed; read via hasWriteError() after finished().
+	std::atomic<bool> m_writeFailed{false};
 
 	/*! The selection that was in force before this renderer published its own
 	 *  (see ProjectRenderer.cpp): restored by ~ProjectRenderer(), so a render's
@@ -141,6 +167,11 @@ private:
 	 */
 	DitherMode m_previousDither;
 	SrcQuality m_previousSrcQuality;
+
+	//! 0.5.0 F7 (MX-060): the surround export. Default-initialised, so the initialiser list is unchanged.
+	QString m_refusal;
+	int m_channels = DEFAULT_CHANNELS;
+	std::vector<float> m_interleaved;  //!< one period, m_channels wide; sized before the render starts
 
 } ;
 

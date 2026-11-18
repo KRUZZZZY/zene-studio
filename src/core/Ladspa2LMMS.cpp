@@ -49,8 +49,8 @@ Ladspa2LMMS::Ladspa2LMMS()
 			( desc->inputChannels == desc->outputChannels &&
 			( desc->inputChannels == 1 ||
 			desc->inputChannels == 2 ||
-			desc->inputChannels == 4 )/* &&
-			isRealTimeCapable( key )*/ ) )
+			desc->inputChannels == 4 ) &&
+			isRealTimeCapable( key ) ) )
 		{
 			m_validEffects.append( qMakePair( getName( key ),
 								key ) );

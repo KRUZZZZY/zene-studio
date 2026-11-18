@@ -25,10 +25,10 @@
 
 #include "MasteringReport.h"
 
-#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonValue>
+#include <QSaveFile>
 #include <QStringList>
 
 #include <cmath>
@@ -52,6 +52,16 @@ QJsonValue readingJson(float value)
 		return QJsonValue(QJsonValue::Null);
 	}
 	return QJsonValue(static_cast<double>(value));
+}
+
+// A choice label as JSON: an absent choice is null, never an empty string.
+QJsonValue choiceJson(const QString& choice)
+{
+	if (choice.isEmpty())
+	{
+		return QJsonValue(QJsonValue::Null);
+	}
+	return QJsonValue(choice);
 }
 
 } // namespace
@@ -115,7 +125,8 @@ QJsonObject masteringCandidateJson(const MasteringCandidate& candidate)
 	return out;
 }
 
-QJsonObject masteringCandidateReportJson(const MasteringCandidateReport& report)
+QJsonObject masteringCandidateReportJson(const MasteringCandidateReport& report,
+	const QString& genre, const QString& deliveryTarget)
 {
 	QJsonObject target;
 	target.insert(QStringLiteral("name"), report.targetName);
@@ -132,6 +143,8 @@ QJsonObject masteringCandidateReportJson(const MasteringCandidateReport& report)
 	out.insert(QStringLiteral("true_peak_pass"), report.truePeakPass);
 	out.insert(QStringLiteral("short_term_flag"), report.shortTermWarn);
 	out.insert(QStringLiteral("file"), report.outputFile);
+	out.insert(QStringLiteral("genre"), choiceJson(genre));
+	out.insert(QStringLiteral("delivery_target"), choiceJson(deliveryTarget));
 	return out;
 }
 
@@ -140,7 +153,7 @@ QJsonObject masteringRunReportJson(const MasteringJob& job)
 	QJsonArray candidates;
 	for (const MasteringCandidateReport& report : job.reports())
 	{
-		candidates.append(masteringCandidateReportJson(report));
+		candidates.append(masteringCandidateReportJson(report, job.genre(), job.deliveryTarget()));
 	}
 
 	QJsonObject out;
@@ -152,6 +165,8 @@ QJsonObject masteringRunReportJson(const MasteringJob& job)
 	out.insert(QStringLiteral("sample_rate"), static_cast<int>(job.sampleRate()));
 	out.insert(QStringLiteral("source_render_file"), job.sourceRenderFile());
 	out.insert(QStringLiteral("source"), masteringMetricsJson(job.sourceMetrics()));
+	out.insert(QStringLiteral("genre"), choiceJson(job.genre()));
+	out.insert(QStringLiteral("delivery_target"), choiceJson(job.deliveryTarget()));
 	out.insert(QStringLiteral("format"), QStringLiteral("wav"));
 	out.insert(QStringLiteral("note"),
 		QStringLiteral("measurements only: every candidate is scored against its own named "
@@ -159,7 +174,8 @@ QJsonObject masteringRunReportJson(const MasteringJob& job)
 			"streaming CONVENTION with a tolerance this project states). Nothing here ranks "
 			"the candidates, scores a preference or calls one best - no validated preference "
 			"scorer exists for master variants of one song, which is why the choice is the "
-			"user's (docs/AUTO-MASTERING.md section 8)"));
+			"user's (docs/AUTO-MASTERING.md section 8). The genre and delivery_target are "
+			"labels recorded verbatim; they change nothing measured"));
 	return out;
 }
 
@@ -170,8 +186,8 @@ bool writeMasteringReport(const MasteringJob& job, const QString& path, QString*
 	{
 		error = &sink;
 	}
-	QFile file(path);
-	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+	QSaveFile file(path);
+	if (!file.open(QIODevice::WriteOnly))
 	{
 		*error = QStringLiteral("cannot write the mastering report to %1").arg(path);
 		return false;
@@ -181,6 +197,11 @@ bool writeMasteringReport(const MasteringJob& job, const QString& path, QString*
 	if (file.write(bytes) != bytes.size())
 	{
 		*error = QStringLiteral("writing the mastering report to %1 failed").arg(path);
+		return false;
+	}
+	if (!file.commit())
+	{
+		*error = QStringLiteral("committing the mastering report to %1 failed").arg(path);
 		return false;
 	}
 	return true;

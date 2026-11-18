@@ -25,26 +25,39 @@
 #ifndef LMMS_VST3_HOST_H
 #define LMMS_VST3_HOST_H
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <cstddef>
+#include <optional>
+#include <thread>
 #include <vector>
 
 #include <QByteArray>
 #include <QString>
 
 #include "PluginHostChunking.h"
+#include "PluginParamGesture.h"
 #include "Vst3BusMap.h"
 #include "Vst3MidiQueue.h"
 #include "Vst3ParamDescriptor.h"
 
 namespace Steinberg::Vst { class IEditController; }
+namespace lmms { enum class PluginWindowSystem; }  // PluginWindowSystem.h
 
 namespace lmms::vst3
 {
 
 class Vst3EditorSession;
+
+//! 0.5.0 MX-094: how the open editor took the device's zoom (HostedPlugin::setEditorScale).
+enum class EditorScaling
+{
+	Unscaled,  //!< the zoom is 1, or the view could neither scale itself nor be resized
+	ByView,    //!< the view scales itself (IPlugViewContentScaleSupport) and asked for its size
+	ByWindow   //!< the host gave the view the scaled size, through the view's own size constraint
+};
 
 //! A VST3 class as reported by a module's plug-in factory
 struct Vst3ClassInfo
@@ -64,6 +77,64 @@ auto listClasses(const QString& modulePath, QString* error) -> std::vector<Vst3C
  * host is a plugin module and the `plugin.host_chunking` command is not.
  */
 using HostChunkingStats = control::PluginHostChunkingStats;
+
+/*! Lock-free admission gate between audio processing and GUI-side re-prepare.
+ *
+ * The audio side only performs bounded atomic operations. A reconfiguration
+ * closes admission and waits off the audio thread for every admitted call to
+ * leave before it mutates HostedPlugin's prepared buffers.
+ */
+class AudioProcessGate
+{
+public:
+	static_assert(std::atomic<std::uint32_t>::is_always_lock_free,
+		"VST3 audio process admission must be lock free");
+
+	//! Audio thread: enter only if no reconfiguration is pending.
+	auto tryEnterAudioProcess() noexcept -> bool
+	{
+		if (m_reconfiguring.load(std::memory_order_seq_cst)) { return false; }
+		m_activeCalls.fetch_add(1, std::memory_order_seq_cst);
+		if (m_reconfiguring.load(std::memory_order_seq_cst))
+		{
+			m_activeCalls.fetch_sub(1, std::memory_order_seq_cst);
+			return false;
+		}
+		return true;
+	}
+
+	//! Audio thread: leave after the last HostedPlugin access in the call.
+	void leaveAudioProcess() noexcept
+	{
+		m_activeCalls.fetch_sub(1, std::memory_order_seq_cst);
+	}
+
+	//! GUI/control thread only: stop admission and wait for existing calls to leave.
+	void beginReconfigure() noexcept
+	{
+		m_reconfiguring.store(true, std::memory_order_seq_cst);
+		while (m_activeCalls.load(std::memory_order_seq_cst) != 0)
+		{
+			std::this_thread::yield();
+		}
+	}
+
+	//! GUI/control thread only: reopen admission after prepare/cache work is complete.
+	void endReconfigure() noexcept
+	{
+		m_reconfiguring.store(false, std::memory_order_seq_cst);
+	}
+
+	//! Diagnostic state used by the focused concurrency regression.
+	auto reconfigurationPending() const noexcept -> bool
+	{
+		return m_reconfiguring.load(std::memory_order_seq_cst);
+	}
+
+private:
+	std::atomic<std::uint32_t> m_activeCalls{0};
+	std::atomic<bool> m_reconfiguring{false};
+};
 
 //! Process-wide counters behind HostedPlugin::process(). Any thread.
 auto hostChunkingStats() -> HostChunkingStats;
@@ -140,6 +211,8 @@ public:
 	void setParamNormalized(std::uint32_t id, float normalized);
 	//! Lock free, any thread
 	auto paramNormalized(std::uint32_t id) const -> float;
+	//! Lock free, GUI thread only: the editor's gesture reports since the last call, and the value (Q050-214)
+	void readParamEdits(std::uint32_t id, PluginParamGesture::Edits* edits);
 	//! -1 if the plug-in has no such parameter
 	auto paramIndex(std::uint32_t id) const -> int;
 	//! GUI thread: also informs the edit controller (GUI-side value mirror)
@@ -197,24 +270,40 @@ public:
 	 *    frame, bounded to [0, frames - 1], in the chunk that frame falls in and
 	 *    rebased to it (0.5.0 W4), so no point lands past numSamples;
 	 *    MIDI events are delivered in the chunk their sample offset falls in,
-	 *    with the offset rebased to that chunk, and an event whose offset is at
-	 *    or beyond the end of the request is delivered with the LAST chunk at
-	 *    that chunk's end offset - exactly the `std::clamp(offset, 0, frames)`
-	 *    the host applied before it chunked, so a note-off written at a block
-	 *    boundary still releases the note.
+	 *    with the offset rebased to that chunk, so every event offset lies in
+	 *    [0, chunk). An event whose offset is at or beyond the end of the
+	 *    request is carried into the NEXT request and delivered there at offset
+	 *    0, so it is still seen exactly once: a note-off written at a block
+	 *    boundary releases the note, and no event is ever handed to the plug-in
+	 *    at sampleOffset == numSamples.
 	 *
-	 * A request of 0 frames does nothing at all. Calling process() before
-	 * prepare() (or after release()) does nothing at all.
+	 * A request of 0 frames does nothing at all. If there are frames but the
+	 * host is not prepared (or has been released), every supplied output channel
+	 * is cleared to silence and the plug-in is not called.
 	 */
 	void process(const float* const* inputs, float* const* outputs,
 		int numInputs, int numOutputs, int frames);
+
+#ifdef LMMS_TESTING
+	//! Test-only: how many events the LAST chunk handed to the plug-in carried.
+	auto lastChunkEventCount() const -> int;
+	//! Test-only: sample offset of that chunk's event @a index, or -1 when there is none. A VST3
+	//! event offset is always in [0, chunk length).
+	auto lastChunkEventOffset(int index) const -> int;
+	//! Test-only: how many parameters the LAST process() call sent the plug-in a change for.
+	auto lastParameterChangeCount() const -> int;
+#endif
 
 	//! GUI thread: plug-in rendered string for a normalized value
 	auto paramDisplayValue(std::uint32_t id, float normalized) const -> QString;
 
 	// ---- R4.2: the plug-in's own editor (Vst3EditorSession.h) --------------------------
-	//! Main thread: attach the plug-in's editor to @a parentWindow (an X11 window id).
+	//! Main thread: attach the plug-in's editor to @a parentWindow - the platform's native window
+	//! (Q050-490: an X11 window id, an HWND or an NSView*, whatever QWidget::winId() gives there).
 	auto openEditor(void* parentWindow, QString* error) -> bool;
+	//! Q050-490: the window system the next openEditor() embeds in, instead of the running one, so a
+	//! test proves the Windows and macOS selection on any machine. Nothing in the product calls it.
+	void setEditorWindowSystem(PluginWindowSystem system);
 	void closeEditor();
 	auto editorOpen() const -> bool;
 	auto resizeEditor(int width, int height) -> bool;
@@ -222,6 +311,10 @@ public:
 	//! Timers the open editor registered through Linux::IRunLoop, and onTimer calls delivered.
 	auto editorTimerCount() const -> int;
 	auto editorTimerDeliveries() const -> std::uint32_t;
+	//! 0.5.0 MX-094: the zoom the editor opens at - the device's editor-scale option. 1 (the default)
+	//! asks nothing of the view; it applies at the next openEditor(), as the CLAP host's does.
+	void setEditorScale(double scale);
+	auto editorScaling() const -> EditorScaling;
 
 private:
 	struct Impl;
@@ -231,6 +324,8 @@ private:
 	//! R4.2: the open editor, if any. Declared after m_impl so it is destroyed first, and
 	//! reset explicitly in the destructor before the controller is released.
 	std::unique_ptr<Vst3EditorSession> m_editor;
+	double m_editorScale = 1.0;
+	std::optional<PluginWindowSystem> m_editorWindowSystem;
 };
 
 } // namespace lmms::vst3

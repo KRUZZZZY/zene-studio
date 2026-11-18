@@ -23,12 +23,15 @@
  */
 
 
+#include <QFileInfo>
 #include <QGroupBox>
 #include <QLayout>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QRegularExpression>
+
+#include <limits>
 
 #include "DeprecationHelper.h"
 #include "VersionedSaveDialog.h"
@@ -37,6 +40,35 @@
 
 namespace lmms::gui
 {
+
+
+// The hook a test installed to answer "which version number does this name carry?".
+static VersionedSaveDialog::VersionNumberHook s_versionNumberHook;
+
+
+//! The version number the name carries: the hook's answer while a test installed one,
+//! the digits parsed by the product otherwise.
+static bool versionNumberOf(const QString& digits, qulonglong& version)
+{
+	if (s_versionNumberHook) { return s_versionNumberHook(digits, version); }
+	bool ok = false;
+	version = digits.toULongLong(&ok);
+	return ok;
+}
+
+
+// An unparseable number, or an increment past the widest value, must refuse before the name is touched
+static bool parseIncrementableVersion( const QString &number, bool increment, qulonglong &version )
+{
+	const bool ok = versionNumberOf(number, version);
+	return ok && !( increment && version == std::numeric_limits<qulonglong>::max() );
+}
+
+
+void VersionedSaveDialog::setVersionNumberHook( VersionNumberHook hook )
+{
+	s_versionNumberHook = std::move(hook);
+}
 
 
 VersionedSaveDialog::VersionedSaveDialog( QWidget *parent,
@@ -95,7 +127,8 @@ bool VersionedSaveDialog::changeFileNameVersion(QString &fileName, bool incremen
 	int idx = regex.match(fileName).capturedStart();
 	// For file names without extension (no ".mmpz")
 	int insertIndex = fileName.lastIndexOf( '.' );
-	if ( insertIndex < idx+1 )
+	const int basenameStart = fileName.size() - QFileInfo(fileName).fileName().size();
+	if ( insertIndex < basenameStart || insertIndex < idx+1 )
 		insertIndex = fileName.size();
 
 	if ( idx == -1 )
@@ -110,9 +143,9 @@ bool VersionedSaveDialog::changeFileNameVersion(QString &fileName, bool incremen
 	{
 		// Find current version number
 		QString number = fileName.mid( idx+1, insertIndex - idx - 1 );
-		bool ok;
-		ushort version = number.toUShort( &ok );
-		Q_ASSERT( ok );
+		qulonglong version = 0;
+		if ( !parseIncrementableVersion( number, increment, version ) )
+			return false;
 
 		// Can't decrement 0
 		if ( !increment && version == 0 )
@@ -189,8 +222,16 @@ SaveOptionsWidget::SaveOptionsWidget(Song::SaveOptions &saveOptions) {
 	m_saveAsProjectBundleCheckbox->setText(tr("Save As Project Bundle (with resources)"));
 	m_saveAsProjectBundleCheckbox->setModel(&saveOptions.saveAsProjectBundle);
 
+	// Q050-007: the visible choice. Ticked, the project is written as a v2 container; the
+	// cost (a larger file that older builds cannot open) is on the box, not behind a manual.
+	m_saveAsV2ContainerCheckbox = new LedCheckBox(nullptr);
+	m_saveAsV2ContainerCheckbox->setText(tr("Save as v2 container (larger file; older builds cannot open it)"));
+	m_saveAsV2ContainerCheckbox->setToolTip(Song::containerV2Note());
+	m_saveAsV2ContainerCheckbox->setModel(&saveOptions.saveAsV2Container);
+
 	layout->addWidget(m_discardMIDIConnectionsCheckbox);
 	layout->addWidget(m_saveAsProjectBundleCheckbox);
+	layout->addWidget(m_saveAsV2ContainerCheckbox);
 
 	setLayout(layout);
 }

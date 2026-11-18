@@ -142,7 +142,13 @@ void TempoSyncKnobModel::loadSettings( const QDomElement & _this,
 {
 	FloatModel::loadSettings( _this, _name );
 	m_custom.loadSettings( _this, _name );
-	setSyncMode( ( SyncMode ) _this.attribute( _name + "_syncmode" ).toInt() );
+	const int storedSyncMode = _this.attribute( _name + "_syncmode" ).toInt();
+	const int customSyncMode = static_cast<int>( SyncMode::Custom );
+	const SyncMode syncMode = storedSyncMode >= static_cast<int>( SyncMode::None ) &&
+			storedSyncMode <= customSyncMode
+		? static_cast<SyncMode>( storedSyncMode )
+		: SyncMode::None;
+	setSyncMode( syncMode );
 }
 
 
@@ -157,7 +163,7 @@ void TempoSyncKnobModel::setSyncMode( SyncMode _new_mode )
 		{
 			connect( &m_custom, SIGNAL(dataChanged()),
 					this, SLOT(updateCustom()),
-					Qt::DirectConnection );
+					static_cast<Qt::ConnectionType>(Qt::DirectConnection | Qt::UniqueConnection) );
 		}
 	}
 	calculateTempoSyncTime( Engine::getSong()->getTempo() );

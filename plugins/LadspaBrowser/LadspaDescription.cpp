@@ -165,6 +165,11 @@ void LadspaDescription::update( const ladspa_key_t & _key )
 
 void LadspaDescription::rowChanged( int _pluginIndex )
 {
+	// The list reports -1 when its current item is cleared; keep the last selection then.
+	if( _pluginIndex < 0 || _pluginIndex >= m_pluginKeys.size() )
+	{
+		return;
+	}
 	m_currentSelection = m_pluginKeys[_pluginIndex];
 	update( m_currentSelection );
 }

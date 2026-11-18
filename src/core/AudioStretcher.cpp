@@ -51,9 +51,11 @@ constexpr double kTwoPi = 6.28318530717958647692;
  */
 SampleFrame readAt(const SampleFrame* src, f_cnt_t srcFrames, double position)
 {
-	if (position < 0.0) { return SampleFrame{}; }
+	// The range check is on the double, before the conversion: a NaN or a
+	// 1e300 position from a seek (or from an analysis hop that overflowed) is
+	// out of the source, and converting it to an integer is undefined.
+	if (!(position >= 0.0) || position >= static_cast<double>(srcFrames)) { return SampleFrame{}; }
 	const auto index = static_cast<std::int64_t>(position);
-	if (index >= static_cast<std::int64_t>(srcFrames)) { return SampleFrame{}; }
 
 	const SampleFrame first = src[index];
 	// The last frame has no successor to interpolate towards.
@@ -97,6 +99,7 @@ void AudioStretcher::prepare(const Parameters& params)
 	for (int i = 0; i < m_grain; ++i)
 	{
 		m_window[i] = static_cast<float>(0.5 - 0.5 * std::cos(kTwoPi * i / m_grain));
+		m_firstWindow[i] = i < m_hop ? 1.0f : m_window[i];
 	}
 
 	m_prepared = true;
@@ -163,15 +166,7 @@ void AudioStretcher::produceHop(const SampleFrame* src, f_cnt_t srcFrames, doubl
 		}
 	}
 
-	// Windowed overlap-add of the chosen grain onto the carry.
-	const double grainStart = m_sourcePos + static_cast<double>(bestOffset);
-	for (int i = 0; i < m_grain; ++i)
-	{
-		const SampleFrame frame = readAt(src, srcFrames, grainStart + i);
-		const float window = m_window[i];
-		m_accum[i][0] += frame[0] * window;
-		m_accum[i][1] += frame[1] * window;
-	}
+	overlapAddGrain(src, srcFrames, m_sourcePos + static_cast<double>(bestOffset));
 
 	// The hop's frames are complete: they are the sum of the previous grain's
 	// right half and this grain's left half.
@@ -187,6 +182,20 @@ void AudioStretcher::produceHop(const SampleFrame* src, f_cnt_t srcFrames, doubl
 	// OUTPUT advances by the synthesis hop itself, and that is the whole trick.
 	m_sourcePos += static_cast<double>(m_hop) * speed;
 	m_started = true;
+}
+
+void AudioStretcher::overlapAddGrain(const SampleFrame* src, f_cnt_t srcFrames, double grainStart)
+{
+	// The first hop has no overlapping grain to sum its falling window
+	// against, so it uses the flat left half instead of fading the onset in.
+	const auto& window = m_started ? m_window : m_firstWindow;
+	for (int i = 0; i < m_grain; ++i)
+	{
+		const SampleFrame frame = readAt(src, srcFrames, grainStart + i);
+		const float weight = window[i];
+		m_accum[i][0] += frame[0] * weight;
+		m_accum[i][1] += frame[1] * weight;
+	}
 }
 
 f_cnt_t AudioStretcher::process(const SampleFrame* src, f_cnt_t srcFrames, SampleFrame* dst,

@@ -134,6 +134,7 @@ private:
 	void applyDefaults();
 	bool readField(const Field& field, QJsonValue* value, QString* error) const;
 	void showError(const QString& error, QWidget* invalid);
+	void dropAnswer();
 	void showAnswer();
 	//! A read, or a call that asks for its result: success keeps the form open with the answer.
 	bool keepsOpen() const;

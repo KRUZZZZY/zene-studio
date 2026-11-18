@@ -45,6 +45,7 @@
 #include "Song.h"
 #include "TimePos.h"
 #include "UnattendedRun.h"
+#include "WarpMarkers.h"
 
 namespace lmms::gui
 {
@@ -76,7 +77,7 @@ bool run(const Clip* clip, const QString& command, QJsonObject args)
 	const ControlResult result = ControlRegistry::instance()->invoke(command, args);
 	if (result.ok) { return true; }
 	if (isUnattendedRun()) { qWarning("%s refused: %s", qPrintable(command), qPrintable(result.errorMessage)); }
-	else { QMessageBox::warning(QApplication::activeWindow(), QMenu::tr("Gain and fades"), result.errorMessage); }
+	else { QMessageBox::warning(QApplication::activeWindow(), QMenu::tr("Clip edit refused"), result.errorMessage); }
 	return false;
 }
 
@@ -98,6 +99,42 @@ void addFadeMenu(QMenu* parent, Clip* clip, const QString& title, const QString&
 		QObject::connect(action, &QAction::triggered, menu, [clip, key, ticks = ticks] {
 			run(clip, QStringLiteral("clip.set_fade"), {{key, ticks}});
 		});
+	}
+}
+
+/*! Q050-162: the Repeat / Gate interval - tempo divisions that follow the
+ *  project tempo, and free intervals that do not. Each item re-issues
+ *  warp.stretch with the clip's current mode and the new rate (one undo step);
+ *  the rate is kept in every mode, so it can be chosen before the mode. */
+void addRepeatRateMenu(QMenu* menu, SampleClip* audio)
+{
+	QMenu* rates = menu->addMenu(QMenu::tr("Repeat rate"));
+	auto* group = new QActionGroup(rates);
+	const TransientRepeatRate current = audio->transientRepeatRate();
+	const auto add = [&](const QString& text, const TransientRepeatRate& rate) {
+		QAction* action = rates->addAction(text);
+		action->setCheckable(true);
+		action->setChecked(current == rate);
+		action->setData(QStringLiteral("warp.stretch"));
+		group->addAction(action);
+		const QJsonObject args = rate.synced()
+			? QJsonObject{{QStringLiteral("rate_division"), rate.divisionName()}}
+			: QJsonObject{{QStringLiteral("rate_ms"), rate.intervalMs()}};
+		QObject::connect(action, &QAction::triggered, rates, [audio, args] {
+			QJsonObject withMode = args;
+			withMode.insert(QStringLiteral("mode"), warpStretchModeName(audio->warpStretchMode()));
+			run(audio, QStringLiteral("warp.stretch"), withMode);
+		});
+	};
+	for (const int division : {4, 8, 16, 32})
+	{
+		add(QMenu::tr("Synced %1").arg(TransientRepeatRate::syncedTo(division).divisionName()),
+			TransientRepeatRate::syncedTo(division));
+	}
+	rates->addSeparator();
+	for (const int ms : {50, 100, 250, 500})
+	{
+		add(QMenu::tr("Free %1 ms").arg(ms), TransientRepeatRate::freeInterval(ms));
 	}
 }
 
@@ -151,6 +188,42 @@ void addClipTrimActions(QMenu* menu, Clip* clip)
 
 void setClipGainPrompt(std::function<std::optional<double>(double)> prompt) { s_gainPrompt = std::move(prompt); }
 
+void addClipWarpModeMenu(QMenu* menu, Clip* clip)
+{
+	auto* audio = dynamic_cast<SampleClip*>(clip);
+	if (audio == nullptr) { return; }
+	QMenu* sub = menu->addMenu(QMenu::tr("Warp mode"));
+	// The five spec modes in the order the spec names them, then the WSOLA
+	// engine the pitch-preserving modes fall back to and files have called
+	// "wsola" since row 30 (Q050-036). Every item drives warp.stretch - the
+	// same registered command the agent surface takes - so a refusal (a linear
+	// clip with no rate change, a build without librubberband) is its typed one.
+	const std::pair<QString, WarpStretchMode> modes[] = {
+		{QMenu::tr("Beats"), WarpStretchMode::Beats},
+		{QMenu::tr("Tones"), WarpStretchMode::Tones},
+		{QMenu::tr("Texture"), WarpStretchMode::Texture},
+		{QMenu::tr("Re-Pitch"), WarpStretchMode::Resample},
+		{QMenu::tr("Complex"), WarpStretchMode::Complex},
+		{QMenu::tr("Pitch-preserving (WSOLA)"), WarpStretchMode::PreservePitch},
+		// Q050-162: the two transient modes, rated by the submenu below.
+		{QMenu::tr("Repeat transients"), WarpStretchMode::Repeat},
+		{QMenu::tr("Gate transients"), WarpStretchMode::Gate}};
+	auto* group = new QActionGroup(sub);
+	for (const auto& [text, mode] : modes)
+	{
+		QAction* action = sub->addAction(text);
+		action->setCheckable(true);
+		action->setChecked(audio->warpStretchMode() == mode);
+		action->setData(QStringLiteral("warp.stretch"));
+		group->addAction(action);
+		const QString name = warpStretchModeName(mode);
+		QObject::connect(action, &QAction::triggered, sub, [clip, name] {
+			run(clip, QStringLiteral("warp.stretch"), {{QStringLiteral("mode"), name}});
+		});
+	}
+	addRepeatRateMenu(sub, audio);
+}
+
 void addClipEditsMenu(QMenu* menu, Clip* clip)
 {
 	if (clip == nullptr) { return; }
@@ -176,6 +249,18 @@ void addClipEditsMenu(QMenu* menu, Clip* clip)
 
 	addFadeMenu(sub, clip, QMenu::tr("Fade in"), QStringLiteral("fade_in"), edits.fadeInTicks);
 	addFadeMenu(sub, clip, QMenu::tr("Fade out"), QStringLiteral("fade_out"), edits.fadeOutTicks);
+
+	// Q050-125: the polarity, in the same submenu as the gain it scales. The item is checkable and
+	// drives clip.set_polarity - the same registered command the agent surface takes.
+	sub->addSeparator();
+	QAction* polarity = sub->addAction(QMenu::tr("Invert polarity"));
+	polarity->setCheckable(true);
+	polarity->setChecked(edits.hasPolarity());
+	polarity->setData(QStringLiteral("clip.set_polarity"));
+	polarity->setToolTip(QMenu::tr("Render the clip with its sign flipped; the source sample keeps its samples"));
+	QObject::connect(polarity, &QAction::triggered, sub, [clip](bool on) {
+		run(clip, QStringLiteral("clip.set_polarity"), {{QStringLiteral("inverted"), on}});
+	});
 
 	QMenu* shape = sub->addMenu(QMenu::tr("Fade shape"));
 	auto* group = new QActionGroup(shape);

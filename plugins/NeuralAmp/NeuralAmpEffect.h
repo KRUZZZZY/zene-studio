@@ -29,6 +29,8 @@
 #include "NeuralAmpControls.h"
 
 #include <atomic>
+#include <condition_variable>
+#include <cmath>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -41,14 +43,25 @@ namespace lmms
 namespace nam
 {
 class NamModel;
+
+//! A missing model rate is accepted; a declared rate must match the engine within half a hertz.
+inline auto sampleRateMatchesEngine(double modelRate, double engineRate) noexcept -> bool
+{
+	if (modelRate == -1.0) { return true; }
+	return std::isfinite(modelRate) && std::isfinite(engineRate)
+		&& modelRate > 0.0 && engineRate > 0.0 && std::abs(modelRate - engineRate) <= 0.5;
 }
+} // namespace nam
 
 /// Real-time effect that runs a .nam neural amplifier model.
 ///
 /// Threading model:
-///  * setModelPath() starts a worker thread that parses the model file and
-///    publishes it. The audio thread only ever loads an already-built model
-///    pointer, so processImpl() does no allocation, locking or I/O.
+///  * setModelPath() records the requested path and returns at once. One
+///    worker thread at a time parses the requested file and publishes it; a
+///    request that arrives while the worker is busy replaces any request still
+///    waiting (A, B, C quickly loads at most A and C and ends on C). The audio
+///    thread only ever loads an already-built model pointer, so processImpl()
+///    does no allocation, locking or I/O.
 ///  * The worker waits for the audio thread to leave processImpl() before it
 ///    frees a replaced model (safe reclamation; the audio thread never waits).
 class NeuralAmpEffect : public Effect
@@ -65,7 +78,8 @@ public:
 		return &m_controls;
 	}
 
-	/// Load a .nam model on a worker thread. Safe to call from the GUI thread.
+	/// Load a .nam model on a worker thread. An empty path clears the published model instead of
+	/// leaving the previous one active. Safe to call from the GUI thread.
 	void setModelPath(const QString& path);
 	QString modelPath() const;
 
@@ -73,8 +87,11 @@ public:
 	QString modelStatus() const;
 
 private:
-	void loadWorker(QString path);
+	void workerLoop();
+	void clearModel();
+	void loadOne(const QString& path);
 	void publishModel(std::unique_ptr<nam::NamModel> model);
+	void refreshSampleRateCompatibility();
 	void setStatus(const std::string& status);
 
 	NeuralAmpControls m_controls;
@@ -83,7 +100,20 @@ private:
 	std::atomic<nam::NamModel*> m_model;
 	/// True while the audio thread is inside processImpl().
 	std::atomic<bool> m_audioActive;
-	/// Worker thread for the most recent load request.
+	/// The model is bypassed while its declared rate does not match the engine.
+	std::atomic<bool> m_sampleRateCompatible;
+	std::mutex m_rateMutex;
+	double m_modelSampleRate = -1.0;
+	double m_engineSampleRate = 0.0;
+	bool m_modelPublicationInProgress = false;
+	std::string m_loadedStatus;
+	/// Guards the request slot below; never taken on the audio thread.
+	std::mutex m_loadMutex;
+	QString m_pendingPath;
+	bool m_hasPending = false;
+	bool m_workerRunning = false;
+	bool m_shuttingDown = false;
+	/// The worker; a finished one is joined (without waiting) before the next starts.
 	std::thread m_loadThread;
 
 	mutable std::mutex m_statusMutex;
@@ -93,6 +123,13 @@ private:
 	std::vector<float> m_scratchIn;
 	std::vector<float> m_scratchOut;
 
+#ifdef ZENE_NAM_TEST_SEAM
+public:
+	/// Test builds only: called on the worker thread before each file is parsed, so a test
+	/// can hold a load open. Production builds do not contain it.
+	static inline void (*s_testBeforeLoad)(const QString& path) = nullptr;
+private:
+#endif
 	friend class NeuralAmpControls;
 	friend class gui::NeuralAmpControlDialog;
 };

@@ -37,6 +37,7 @@
 
 #include "Engine.h"
 #include "InstrumentTrack.h"
+#include "Midi.h"
 #include "MidiClip.h"
 #include "Note.h"
 #include "Song.h"
@@ -75,6 +76,16 @@ private slots:
 
 		Clip::copyStateTo(&source, &target);
 		QCOMPARE(target.notes().size(), std::size_t{2});
+	}
+
+	void masterKeyKeepsTheTopMidiKeyInRange()
+	{
+		using namespace lmms;
+		InstrumentTrack track(Engine::getSong());
+		track.baseNoteModel()->setValue(DefaultKey - 1);
+
+		const MidiEvent shifted = track.applyMasterKey(MidiEvent(MidiNoteOn, 0, NumKeys - 1, 100));
+		QCOMPARE(shifted.key(), NumKeys - 1);
 	}
 };
 

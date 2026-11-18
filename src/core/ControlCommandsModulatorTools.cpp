@@ -60,8 +60,54 @@ void putModulator(int index, const Modulator& modulator)
 
 using ModulatorEdit = std::function<bool(Modulator*, ControlResult*)>;
 
+//! The compiled program, equal when it would read the same values (plain arrays).
+bool sameProgram(const FormulaProgram& a, const FormulaProgram& b)
+{
+	if (a.count != b.count) { return false; }
+	for (int i = 0; i < a.count; ++i)
+	{
+		if (a.ops[i] != b.ops[i] || a.constants[i] != b.constants[i]) { return false; }
+	}
+	return true;
+}
+
+//! One route, equal when the same project file would carry it.
+bool sameRoute(const ModulationRoute& a, const ModulationRoute& b)
+{
+	return a.channel == b.channel && a.chain == b.chain && a.effect == b.effect && a.parameter == b.parameter
+		&& a.depth == b.depth && a.perSample == b.perSample && a.track == b.track;
+}
+
+//! The LFO's own settings - the shape, the timing and the MX-118 program.
+bool sameLfo(const ModulatorSource& a, const ModulatorSource& b)
+{
+	return a.shape == b.shape && a.rateHz == b.rateHz && a.phase == b.phase && a.unipolar == b.unipolar
+		&& a.active == b.active && a.attack == b.attack && a.stepCount == b.stepCount
+		&& sameProgram(a.formula, b.formula);
+}
+
+//! The whole source, steps and the MX-118/MX-121 extras included.
+bool sameSource(const ModulatorSource& a, const ModulatorSource& b)
+{
+	return sameLfo(a, b) && a.steps == b.steps && a.triggerTrack == b.triggerTrack && a.perVoice == b.perVoice;
+}
+
+//! Two modulators equal on every field the layer SAVES - the persistent state, not the runtime
+//! voices: an edit that leaves them equal wrote nothing the next save would carry.
+bool sameModulator(const Modulator& a, const Modulator& b)
+{
+	if (a.routeCount() != b.routeCount() || a.name != b.name || a.formula != b.formula) { return false; }
+	for (int i = 0; i < a.routeCount(); ++i)
+	{
+		if (!sameRoute(a.routes[static_cast<std::size_t>(i)], b.routes[static_cast<std::size_t>(i)])) { return false; }
+	}
+	return sameSource(a.source, b.source);
+}
+
 //! The modulator 'modulator' names, changed by @a edit, as one undo step (the whole modulator is
-//! captured by value before and after, so the step never holds a pointer into the layer).
+//! captured by value before and after, so the step never holds a pointer into the layer). An edit
+//! that leaves it as it was replies with that state and records NOTHING: no layer write, no undo
+//! step (which would shadow the one under it) and no dirty project.
 ControlResult editModulator(const QJsonObject& args, const ModulatorEdit& edit)
 {
 	const ModulationLayer& layer = songModulationLayer().layer();
@@ -71,6 +117,10 @@ ControlResult editModulator(const QJsonObject& args, const ModulatorEdit& edit)
 	const Modulator before = *layer.modulator(index);
 	Modulator after = before;
 	if (!edit(&after, &error)) { return error; }
+	if (sameModulator(after, before))
+	{
+		return ControlResult::success(modulatorJson(*songModulationLayer().layer().modulator(index), index));
+	}
 	putModulator(index, after);
 	addUndoStep([index, before]() { putModulator(index, before); }, [index, after]() { putModulator(index, after); });
 	Engine::getSong()->setModified();

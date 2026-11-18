@@ -37,10 +37,32 @@
 #include "lmms_constants.h"
 #include "Lv2Manager.h"
 #include "Lv2Proc.h"
+#include "Song.h"
 
 
 namespace lmms
 {
+
+namespace
+{
+
+const LilvPlugin* pluginForUri(const QString& uri)
+{
+	Lv2Manager* manager = Engine::getLv2Manager();
+	return manager != nullptr ? manager->getPlugin(uri) : nullptr;
+}
+
+//! The identity of an LV2 plug-in in a load report: its URI - the stable name an LV2
+//! plug-in is known by, the same name the catalogue and the project file use.
+QString lv2PluginUri(const LilvPlugin* plugin)
+{
+	if (plugin == nullptr) { return QString(); }
+	const LilvNode* node = lilv_plugin_get_uri(plugin);
+	const char* uri = node != nullptr ? lilv_node_as_uri(node) : nullptr;
+	return uri != nullptr ? QString::fromUtf8(uri) : QString();
+}
+
+} // namespace
 
 
 Plugin::Type Lv2ControlBase::check(const LilvPlugin *plugin,
@@ -54,7 +76,7 @@ Plugin::Type Lv2ControlBase::check(const LilvPlugin *plugin,
 
 
 Lv2ControlBase::Lv2ControlBase(Model* that, const QString &uri) :
-	m_plugin(Engine::getLv2Manager()->getPlugin(uri))
+	m_plugin(pluginForUri(uri))
 {
 	if (m_plugin)
 	{
@@ -191,6 +213,17 @@ void Lv2ControlBase::saveSettings(QDomDocument &doc, QDomElement &that)
 
 
 
+//! The processor instance a <lv2state> element names, or -1 when the element is malformed
+//! (missing or non-numeric instance attribute) or names an instance beyond @param procCount.
+int lv2StateInstanceIndex(const QDomElement& element, std::size_t procCount)
+{
+	bool ok = false;
+	const int instance = element.attribute(QStringLiteral("instance")).toInt(&ok);
+	// A missing or non-numeric attribute is malformed state, not instance zero (BUG 9).
+	if (!ok || instance < 0 || static_cast<std::size_t>(instance) >= procCount) { return -1; }
+	return instance;
+}
+
 void Lv2ControlBase::loadSettings(const QDomElement &that)
 {
 	LinkedModelGroups::loadSettings(that);
@@ -198,12 +231,36 @@ void Lv2ControlBase::loadSettings(const QDomElement &that)
 	for (QDomElement element = that.firstChildElement(QStringLiteral("lv2state")); !element.isNull();
 		element = element.nextSiblingElement(QStringLiteral("lv2state")))
 	{
-		const int instance = element.attribute(QStringLiteral("instance")).toInt();
-		if (instance >= 0 && static_cast<std::size_t>(instance) < m_procs.size())
+		const int instance = lv2StateInstanceIndex(element, m_procs.size());
+		if (instance >= 0)
 		{
-			m_procs[static_cast<std::size_t>(instance)]->restoreState(element.text());
+			const QString document = element.text();
+			// An empty element carries no state, so nothing can be lost and nothing
+			// is reported; every other document is restored, and a document the
+			// plug-in refuses is reported.
+			if (!document.isEmpty()
+				&& !m_procs[static_cast<std::size_t>(instance)]->restoreState(document))
+			{
+				// The state is lost: the processor stays at its default. A load that
+				// says nothing about it drops what the project saved in silence
+				// (cluster new-p17-83), so the failure is reported through the
+				// project load's error path, naming the plug-in it belongs to.
+				reportStateRestoreFailure(instance);
+			}
 		}
 	}
+}
+
+
+
+
+void Lv2ControlBase::reportStateRestoreFailure(int instance)
+{
+	Song* song = Engine::getSong();
+	if (song == nullptr) { return; }
+	song->collectError(QObject::tr("LV2 plug-in %1: its state could not be restored (instance %2), "
+		"so the plug-in keeps its default state.")
+		.arg(lv2PluginUri(m_plugin)).arg(instance));
 }
 
 

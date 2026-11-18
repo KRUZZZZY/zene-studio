@@ -24,15 +24,132 @@
 
 
 #include <QDomElement>
+#include <QStringList>
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "Note.h"
 #include "DetuningHelper.h"
 #include "ProjectIds.h"
+#include "Song.h"
 
 namespace lmms
 {
+
+namespace
+{
+
+qint64 readNoteInteger( const QDomElement& element, const char* name )
+{
+	bool ok = false;
+	const qint64 value = element.attribute( QString::fromLatin1( name ) ).toLongLong( &ok );
+	return ok ? value : 0;
+}
+
+
+qint64 legacyNoteKey( const QDomElement& element )
+{
+	const qint64 tone = readNoteInteger( element, "tone" );
+	const qint64 octave = readNoteInteger( element, "oct" );
+	constexpr qint64 scale = KeysPerOctave;
+	constexpr qint64 maximum = std::numeric_limits<qint64>::max();
+	constexpr qint64 minimum = std::numeric_limits<qint64>::min();
+	if( octave > maximum / scale ) { return maximum; }
+	if( octave < minimum / scale ) { return minimum; }
+	const qint64 octaveKey = octave * scale;
+	if( tone > 0 && octaveKey > maximum - tone ) { return maximum; }
+	if( tone < 0 && octaveKey < minimum - tone ) { return minimum; }
+	return octaveKey + tone;
+}
+
+} // namespace
+
+
+namespace
+{
+
+//! The float an optional document attribute spells, or `fallback` when it is
+//! absent, unparseable, or non-finite. QString::toFloat reports failure with 0
+//! and admits "nan"/"inf" as VALID numbers, so neither can be told apart from a
+//! real value by the conversion alone - the caller has to ask, which is what
+//! this does once for both MIDI-depth attributes.
+float loadMidiDepthValue( const QDomElement& element, const char* attribute, float fallback )
+{
+	bool ok = false;
+	const float value = element.attribute( QLatin1String( attribute ) ).toFloat( &ok );
+	return ( ok && std::isfinite( value ) ) ? value : fallback;
+}
+
+//! The saved pre-quantise position and length, when the element carries a pair
+//! that can actually be read. Both are optional: an element with no qpos has no
+//! timing, which is what -1 says. Both are required together, and both must
+//! parse - QString::toInt() reports a failed conversion by yielding 0, which
+//! would otherwise read as "the author had this note at tick 0, one tick long"
+//! and let note.restore_timing move the note there. The pair must also be a
+//! note the song can hold, as loadSettings clamps the note's own pos and len:
+//! a position inside the song and pos + len no longer than MaxSongLength. The
+//! sum is taken in 64 bits, so checking it cannot itself overflow.
+void loadUnquantisedTiming( const QDomElement& element, tick_t& pos, tick_t& length )
+{
+	pos = -1;
+	length = -1;
+
+	bool posOk = false;
+	bool lengthOk = false;
+	const int storedPos = element.attribute( "qpos" ).toInt( &posOk );
+	const int storedLength = element.attribute( "qlen" ).toInt( &lengthOk );
+	if( !posOk || !lengthOk || storedPos < 0 || storedLength < 1 ) { return; }
+	if( storedPos >= MaxSongLength || static_cast<qint64>( storedPos ) + storedLength > MaxSongLength ) { return; }
+
+	pos = storedPos;
+	length = storedLength;
+}
+
+
+//! Q050-016: one stream axis as the optional attribute text
+//! "tick:value,tick:value,..." in the order the points are stored (sorted by
+//! tick). Empty when the axis carries no points, so the attribute is not
+//! written at all.
+QString streamAttributeText( const std::vector<MpeExpressionPoint>& points )
+{
+	QStringList parts;
+	parts.reserve( static_cast<int>( points.size() ) );
+	for( const MpeExpressionPoint& point : points )
+	{
+		parts << QStringLiteral( "%1:%2" ).arg( point.tick ).arg( point.value );
+	}
+	return parts.join( QLatin1Char( ',' ) );
+}
+
+
+//! The points an optional stream attribute spells. A token the file cannot
+//! spell - no colon, text that is not a number, a point past the count cap -
+//! is skipped rather than read as a point at zero: QString::toInt() reports
+//! failure by yielding 0, so a malformed token would otherwise become a real
+//! point at tick 0. Clamping and ordering are the setter's own job, so this
+//! stays a pure parser.
+std::vector<MpeExpressionPoint> parseStreamAttribute( const QString& text )
+{
+	std::vector<MpeExpressionPoint> points;
+	const QStringList tokens = text.split( QLatin1Char( ',' ), Qt::SkipEmptyParts );
+	for( const QString& token : tokens )
+	{
+		if( points.size() >= static_cast<std::size_t>( MpeExpressionStream::MaxPoints ) ) { break; }
+		const int colon = token.indexOf( QLatin1Char( ':' ) );
+		if( colon <= 0 ) { continue; }
+		bool tickOk = false;
+		bool valueOk = false;
+		const int tick = token.left( colon ).toInt( &tickOk );
+		const int value = token.mid( colon + 1 ).toInt( &valueOk );
+		if( !tickOk || !valueOk ) { continue; }
+		points.push_back( { static_cast<tick_t>( tick ), value } );
+	}
+	return points;
+}
+
+} // namespace
 
 
 Note::Note( const TimePos & length, const TimePos & pos,
@@ -48,11 +165,11 @@ Note::Note( const TimePos & length, const TimePos & pos,
 	// notes in document order.
 	m_id( ProjectIds::allocate() ),
 	m_selected( false ),
-	m_oldKey(std::clamp(key, 0, NumKeys)),
+	m_oldKey(std::clamp(key, 0, NumKeys - 1)),
 	m_oldPos( pos ),
 	m_oldLength( length ),
 	m_isPlaying( false ),
-	m_key(std::clamp(key, 0, NumKeys)),
+	m_key(std::clamp(key, 0, NumKeys - 1)),
 	m_volume(std::clamp(volume, MinVolume, MaxVolume)),
 	m_panning(std::clamp(panning, PanningLeft, PanningRight)),
 	m_length( length ),
@@ -91,6 +208,9 @@ Note::Note( const Note & note ) :
 	m_mpePitchCents(note.m_mpePitchCents),
 	m_mpePressure(note.m_mpePressure),
 	m_mpeTimbre(note.m_mpeTimbre),
+	// Round 3: a counted reference to the source's snapshot (lock-free, no
+	// allocation) - the audio thread copies notes into handles through here.
+	m_mpeStream(MpeStreamSnapshot::acquire(note.m_mpeStream)),
 	m_muted(note.m_muted),
 	m_releaseVelocity(note.m_releaseVelocity),
 	m_unquantisedPos(note.m_unquantisedPos),
@@ -125,6 +245,10 @@ Note& Note::operator=(const Note& note)
 	m_unquantisedPos = note.m_unquantisedPos;
 	m_unquantisedLength = note.m_unquantisedLength;
 	m_conditions = note.m_conditions;
+	if( this != &note )
+	{
+		publishMpeStream( MpeStreamSnapshot::acquire( note.m_mpeStream ) );
+	}
 
 	return *this;
 }
@@ -134,9 +258,25 @@ void Note::setReleaseVelocity( int velocity )
 	m_releaseVelocity = velocity < 0 ? -1 : std::min( velocity, static_cast<int>( MaxVolume ) );
 }
 
+int Note::releaseVelocityFromMidi( int midiVelocity, int midiBaseVelocity )
+{
+	if( midiBaseVelocity <= 0 ) { return 0; }
+	// Q050-039: round-half-up. With truncation the round trip through the
+	// volume scale lost a unit (an incoming 96 landed on 152 and came back as
+	// 95 at the default base velocity 63); rounding makes this the exact
+	// inverse of midiReleaseVelocity() below.
+	const int scaled =
+		( 2 * midiVelocity * DefaultVolume + midiBaseVelocity ) / ( 2 * midiBaseVelocity );
+	return std::max( 0, std::min( scaled, static_cast<int>( MaxVolume ) ) );
+}
+
 int Note::midiReleaseVelocity( int midiBaseVelocity ) const
 {
-	return m_releaseVelocity < 0 ? 0 : std::min( MidiMaxVelocity, m_releaseVelocity * midiBaseVelocity / DefaultVolume );
+	if( m_releaseVelocity < 0 ) { return 0; }
+	// Q050-039: round-half-up, the exact inverse of releaseVelocityFromMidi()
+	// - the velocity the note-off carried is the velocity playback sends.
+	return std::min( MidiMaxVelocity,
+		( 2 * m_releaseVelocity * midiBaseVelocity + DefaultVolume ) / ( 2 * DefaultVolume ) );
 }
 
 void Note::rememberTiming()
@@ -188,6 +328,10 @@ void Note::setId(int id)
 
 Note::~Note()
 {
+	// Off the realtime path this frees the last reference at once; inside a
+	// RealtimeScope it retires it (MpeStreamSnapshot::release). A handle has
+	// already retired its reference (retireMpeStreamDeferred), so this is null.
+	MpeStreamSnapshot::release( m_mpeStream.load( std::memory_order_acquire ), false );
 }
 
 
@@ -227,13 +371,19 @@ void Note::setVolume( volume_t volume )
 
 void Note::setProbability( float probability )
 {
-	m_probability = std::clamp( probability, 0.f, 1.f );
+	// A non-finite value is not an out-of-range one: every comparison against a
+	// NaN is false, so std::clamp would hand it straight back unchanged and the
+	// NaN would travel into the playback roll (NoteRandom). Fall back to the
+	// documented neutral default instead - the note always plays.
+	m_probability = std::isfinite( probability ) ? std::clamp( probability, 0.f, 1.f ) : 1.f;
 }
 
 
 void Note::setVelocityJitter( float jitter )
 {
-	m_velocityJitter = std::clamp( jitter, 0.f, 1.f );
+	// As above: an unparseable or non-finite value is not velocity jitter, and
+	// the documented default is an untouched velocity.
+	m_velocityJitter = std::isfinite( jitter ) ? std::clamp( jitter, 0.f, 1.f ) : 0.f;
 }
 
 
@@ -296,14 +446,71 @@ void Note::clearMpeExpression()
 
 
 
+void Note::setMpeStream( const MpeExpressionStream& stream )
+{
+	// The new snapshot is built here, on the editing thread (the allocation),
+	// complete before it is published; the old one is never changed.
+	publishMpeStream( stream.empty() ? nullptr : MpeStreamSnapshot::create( stream ) );
+}
+
+
+
+
+void Note::clearMpeStream()
+{
+	publishMpeStream( nullptr );
+}
+
+
+
+
+void Note::publishMpeStream( const MpeStreamSnapshot* next ) noexcept
+{
+	// One atomic exchange is the publication (seq_cst: its release half makes
+	// the snapshot's contents visible with the pointer, and it is the swap the
+	// reclamation argument in MpeStreamSnapshot.h orders against). The old
+	// snapshot is released after it can no longer be loaded from this note.
+	const MpeStreamSnapshot* previous = m_mpeStream.exchange( next, std::memory_order_seq_cst );
+	MpeStreamSnapshot::release( previous, false );
+}
+
+
+
+
+void Note::retireMpeStreamDeferred() noexcept
+{
+	MpeStreamSnapshot::release( m_mpeStream.exchange( nullptr, std::memory_order_seq_cst ), true );
+}
+
+
+
+
 TimePos Note::quantized( const TimePos & m, const int qGrid )
 {
-	float p = ( (float) m / qGrid );
-	if( p - floorf( p ) < 0.5f )
+	if( qGrid <= 0 )
 	{
-		return static_cast<int>( p ) * qGrid;
+		return m;
 	}
-	return static_cast<int>( p + 1 ) * qGrid;
+	// new-p16-141: tick positions are integers, and a float cannot represent
+	// every one above 2^24 (16,777,217 became 16,777,216 with a grid of 1).
+	// Snap with quotient/remainder arithmetic in 64 bits instead, and keep the
+	// old rounding: the floor remainder decides the direction, the low side
+	// truncates toward zero (as static_cast<int>(p) did for negative p), and
+	// the high side is trunc((ticks + grid) / grid).
+	const qint64 grid = qGrid;
+	const qint64 ticks = m.getTicks();
+	const qint64 truncQuotient = ticks / grid;
+	qint64 remainder = ticks % grid;
+	if( remainder < 0 ) { remainder += grid; }
+	qint64 snapped = 2 * remainder < grid
+		? truncQuotient * grid
+		: ( ( ticks + grid ) / grid ) * grid;
+	// Rounding up can pass tick_t's maximum even though every input fit;
+	// saturate instead of converting an out-of-range value back to tick_t.
+	snapped = std::clamp( snapped,
+		static_cast<qint64>( std::numeric_limits<tick_t>::min() ),
+		static_cast<qint64>( std::numeric_limits<tick_t>::max() ) );
+	return TimePos( static_cast<tick_t>( snapped ) );
 }
 
 
@@ -311,6 +518,10 @@ TimePos Note::quantized( const TimePos & m, const int qGrid )
 
 void Note::quantizeLength( const int qGrid )
 {
+	if( qGrid <= 0 )
+	{
+		return;
+	}
 	setLength( quantized( length(), qGrid ) );
 	if( length() == 0 )
 	{
@@ -323,6 +534,10 @@ void Note::quantizeLength( const int qGrid )
 
 void Note::quantizePos( const int qGrid )
 {
+	if( qGrid <= 0 )
+	{
+		return;
+	}
 	setPos( quantized( pos(), qGrid ) );
 }
 
@@ -393,6 +608,30 @@ void Note::saveSettings( QDomDocument & doc, QDomElement & parent )
 		parent.setAttribute( "mpetimbre", m_mpeTimbre );
 	}
 
+	// Q050-016: the per-note expression event streams, three optional
+	// attributes written only when their axis carries points. A note with no
+	// stream - and a whole project without one - serializes exactly as before
+	// this feature existed, and an older build ignores the attributes it does
+	// not know. Attributes, not child elements: Note::loadSettings treats ANY
+	// child of a note element as detuning, so a stream child would make every
+	// expressive note grow a detuning curve on load.
+	if( hasMpeStream() )
+	{
+		const MpeExpressionStream& stream = mpeStream();
+		if( !stream.pitch().empty() )
+		{
+			parent.setAttribute( "mpepitchpts", streamAttributeText( stream.pitch() ) );
+		}
+		if( !stream.pressure().empty() )
+		{
+			parent.setAttribute( "mpepressurepts", streamAttributeText( stream.pressure() ) );
+		}
+		if( !stream.timbre().empty() )
+		{
+			parent.setAttribute( "mpetimbrepts", streamAttributeText( stream.timbre() ) );
+		}
+	}
+
 	if( m_detuning && m_length )
 	{
 		m_detuning->saveSettings( doc, parent );
@@ -404,12 +643,15 @@ void Note::saveSettings( QDomDocument & doc, QDomElement & parent )
 
 void Note::loadSettings( const QDomElement & _this )
 {
-	const int oldKey = _this.attribute( "tone" ).toInt() + _this.attribute( "oct" ).toInt() * KeysPerOctave;
-	m_key = std::max(oldKey, _this.attribute("key").toInt());
+	const qint64 loadedKey = std::max( legacyNoteKey( _this ), readNoteInteger( _this, "key" ) );
+	setKey( static_cast<int>( std::clamp( loadedKey, qint64{ 0 }, qint64{ NumKeys - 1 } ) ) );
 	m_volume = _this.attribute( "vol" ).toInt();
 	m_panning = _this.attribute( "pan" ).toInt();
-	m_length = _this.attribute( "len" ).toInt();
-	m_pos = _this.attribute( "pos" ).toInt();
+	const qint64 position = std::clamp( readNoteInteger( _this, "pos" ), qint64{ 0 },
+		static_cast<qint64>( MaxSongLength - 1 ) );
+	const qint64 maximumLength = static_cast<qint64>( MaxSongLength ) - position;
+	m_length = TimePos( static_cast<tick_t>( std::clamp( readNoteInteger( _this, "len" ), qint64{ 1 }, maximumLength ) ) );
+	m_pos = TimePos( static_cast<tick_t>( position ) );
 	// Default m_type value is 0, which corresponds to RegularNote
 	static_assert(0 == static_cast<int>(Type::Regular));
 	m_type = static_cast<Type>(_this.attribute("type", "0").toInt());
@@ -451,13 +693,22 @@ void Note::loadSettings( const QDomElement & _this )
 
 	// Absent attributes mean the neutral MIDI-depth values: the note always
 	// plays and its velocity is untouched, which is what every project saved
-	// before this existed expects.
-	m_probability = std::clamp( _this.attribute( "prob", "1" ).toFloat(), 0.f, 1.f );
-	m_velocityJitter = std::clamp( _this.attribute( "veljit", "0" ).toFloat(), 0.f, 1.f );
+	// before this existed expects. An attribute the file CANNOT express - text
+	// that is not a number at all, or a non-finite spelling such as "nan" - is
+	// treated as absent rather than as zero: toFloat() reports failure and
+	// yields 0, and std::clamp leaves a NaN a NaN, either of which would make
+	// the note permanently silent or carry a NaN into the playback roll.
+	// Out-of-range but FINITE text still clamps, as before.
+	setProbability( loadMidiDepthValue( _this, "prob", 1.f ) );
+	setVelocityJitter( loadMidiDepthValue( _this, "veljit", 0.f ) );
 	m_muted = _this.attribute( "mute" ).toInt() != 0;
 	setReleaseVelocity( _this.attribute( "relvel", "-1" ).toInt() );
-	m_unquantisedPos = _this.hasAttribute( "qpos" ) ? std::max( 0, _this.attribute( "qpos" ).toInt() ) : -1;
-	m_unquantisedLength = m_unquantisedPos >= 0 ? std::max( 1, _this.attribute( "qlen", "1" ).toInt() ) : -1;
+	// The pre-quantise timing note.restore_timing puts back is OPTIONAL, and both
+	// halves of it are required. A qpos the file cannot spell - or a qlen it
+	// cannot spell - is not a timing to restore: QString::toInt() reports
+	// failure by yielding 0, so <note qpos="bad"> used to load as "this note was
+	// moved to tick 0" and note.restore_timing faithfully moved it there.
+	loadUnquantisedTiming( _this, m_unquantisedPos, m_unquantisedLength );
 	m_conditions.load( _this );
 
 	// MPE per-note expression (task #601): an old project has none of these, and
@@ -473,6 +724,31 @@ void Note::loadSettings( const QDomElement & _this )
 		m_mpePressure = MpeNoteExpression::clamp7Bit( _this.attribute( "mpepressure" ).toInt() );
 		m_mpeTimbre = MpeNoteExpression::clamp7Bit( _this.attribute( "mpetimbre" ).toInt() );
 	}
+
+	// Q050-016: the per-note expression streams, optional like the scalar
+	// attributes above. A file with none leaves the note with no stream (the
+	// default), and each axis's points are clamped and re-sorted by the setter
+	// so a hostile file cannot carry an out-of-range value or unsorted points
+	// into playback.
+	// Round 3: the axes are parsed into a local value and published once, so
+	// the note never exposes a half-built stream.
+	MpeExpressionStream stream;
+	if( _this.hasAttribute( "mpepitchpts" ) )
+	{
+		stream.setPitch( parseStreamAttribute( _this.attribute( "mpepitchpts" ) ) );
+	}
+	if( _this.hasAttribute( "mpepressurepts" ) )
+	{
+		stream.setPressure( parseStreamAttribute( _this.attribute( "mpepressurepts" ) ) );
+	}
+	if( _this.hasAttribute( "mpetimbrepts" ) )
+	{
+		stream.setTimbre( parseStreamAttribute( _this.attribute( "mpetimbrepts" ) ) );
+	}
+	// An attribute that parsed to no points (empty text, or all tokens
+	// malformed) leaves the stream empty: setMpeStream() then clears, so
+	// hasMpeStream() is false and a re-save writes no attribute.
+	setMpeStream( stream );
 
 	if( _this.hasChildNodes() )
 	{

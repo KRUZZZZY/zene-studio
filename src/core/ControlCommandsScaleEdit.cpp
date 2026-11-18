@@ -86,12 +86,27 @@ ControlResult snapNotes(const QJsonObject& args)
 	const NoteVector notes = scopeNotes(*clip, scope, clipId(ref.id));
 	if (notes.empty())
 	{
+		// "I edited nothing" and "there was nothing to edit" are different answers, and
+		// an empty clip must not be blamed on a selection scope that was never asked
+		// for - the same distinction note.transform already makes
+		// (ControlCommandsNoteTransform.cpp:105-110).
+		if (clip->notes().empty())
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("%1 has no notes: there is nothing to snap").arg(clipId(ref.id)));
+		}
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("%1 has %2 notes and none is selected, so scope 'selection' would edit "
 				"nothing").arg(clipId(ref.id)).arg(clip->notes().size()));
 	}
 
-	clip->addJournalCheckPoint();
+	// The notes the snap WOULD move, counted before it moves them (the engine's
+	// own rule, asked without changing anything): a snap that moves NOTHING
+	// takes no undo step - the empty step it used to push sat on top of the step
+	// of the snap that DID move something, and the next undo was spent on it
+	// (Luna cluster new-p14-72).
+	const bool changes = NoteTransform::countOffScale(notes, resolved.classes) > 0;
+	control::checkpointNoteEdit(clip, changes);
 	const int changed = NoteTransform::snapToScale(notes, resolved.classes);
 	// Keys moved, and the clip's own order is (position, then key), so the list has
 	// to be put back - the call note.move makes after it moves one note.
@@ -126,11 +141,16 @@ ControlResult snapNotes(const QJsonObject& args)
 	QJsonObject inverseArgs;
 	inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
 	inverseArgs.insert(QStringLiteral("scope"), scopeName(scope));
-	result.insert(QStringLiteral("__transaction"),
-		transactionPayload(before, QStringLiteral("control.undo"), inverseArgs, true,
-			grooveClipMechanism() + QStringLiteral("; and the snap itself is NOT an inverse: a "
-				"note it moved is now IN the scale, so re-running it would move nothing and "
-				"would not bring the old key back")));
+	// A snap that moved nothing has no step behind it, so it has no inverse to
+	// record: a record would claim a reverse that does not exist.
+	if (changes)
+	{
+		result.insert(QStringLiteral("__transaction"),
+			transactionPayload(before, QStringLiteral("control.undo"), inverseArgs, true,
+				grooveClipMechanism() + QStringLiteral("; and the snap itself is NOT an inverse: a "
+					"note it moved is now IN the scale, so re-running it would move nothing and "
+					"would not bring the old key back")));
+	}
 	return ControlResult::success(result);
 }
 

@@ -49,46 +49,6 @@ using RC = ReversibilityClass;
 const ReversibilityRow kRecordingRows[] = {
 
 	// =====================================================================
-	// snapshot - the inverse is a bounded recorded state, and for these rows
-	// that state is a COMMAND: control.undo dispatches the paired verb.
-	// =====================================================================
-	R("record.arm_track", RC::Snapshot, true,
-		"arming starts a real capture: a take file is opened and a take journal is "
-		"written beside it, so the state this command changes is on disk rather than "
-		"in the project - the project journal holds nothing for a side file in a take "
-		"directory (record.journal_begin's own reason, and its own class)",
-		"action checkpoint: the recorded undo step is the paired command "
-		"record.disarm_track, which stops the capture, drains the disk-writer and "
-		"RETIRES the journal. The take file itself stays on disk, exactly as a clean "
-		"stop leaves it; a recording is not something the engine can un-happen",
-		"the take file: delete it where it was written (the reply names the path), or "
-		"keep it and use it - the recording is the point of the command"),
-	R("track.set_arm", RC::Snapshot, true,
-		"arming a song track starts a capture on the record route its position maps "
-		"to, and that capture writes a WAV and a take journal beside it. The TRACK is "
-		"not written to: no attribute is added to the track's element, which is why "
-		"the old refusal's objection (inventing a serialization field) no longer "
-		"applies and why this row changed class from not_mutating",
-		"action checkpoint: the recorded undo step is track.set_arm with armed: false, "
-		"which stops the capture and retires the journal. DISARMING records no "
-		"inverse - re-arming starts a NEW take rather than restoring the one that was "
-		"stopped, and the registry records that honestly as 'this command recorded no "
-		"inverse or snapshot'",
-		"the take: delete it where the reply says it is (the default is "
-		"zene-take-trk<N>.wav beside this instance's recovery file)"),
-	// W1: the mixer's Arm All in one call.
-	R("track.set_arm_many", RC::Snapshot, true,
-		"the same capture as track.set_arm, for each named track: every armed route "
-		"writes a WAV and a take journal beside it, and no track's element is "
-		"written to",
-		"action checkpoint: ONE recorded undo step - this command with armed: false "
-		"over exactly the tracks the call armed (a track already armed, or one that "
-		"refused, is not in it) - stops those captures and retires their journals. "
-		"DISARMING records no inverse, as track.set_arm's does not: re-arming starts "
-		"NEW takes",
-		"the takes: delete them where the route replies say they are"),
-
-	// =====================================================================
 	// true_inverse - the inverse is a live checkpoint, reached as a command
 	// because the thing written is the config file, not the project.
 	// =====================================================================
@@ -104,35 +64,86 @@ const ReversibilityRow kRecordingRows[] = {
 		"the config file itself (audioinput/device, audioinput/channels, "
 		"audioinput/left, audioinput/right): edit them back by hand if a client has "
 		"lost the transaction record"),
+	// 2026-10-09 owner decision R3: loop passes stay as takes; selection state,
+	// rather than muting the preceding pass, determines ordinary playback.
+	R("comp.take_select", RC::TrueInverse, true,
+		"the active lane and user-choice flag are entries in the Track's serialized "
+		"take-lane model; each pass clip also carries its stable group id",
+		"ProjectJournal (Track checkpoint): one control.undo restores the active "
+		"lane, the user-choice flag and the lock-free playback mirrors",
+		""),
+	// Q050-054.1: MIDI takes recorded on armed instrument tracks by transport.record.
+	R("record.midi_capture_commit", RC::TrueInverse, true,
+		"the captured passes become MIDI clips (and, for a loop recording, take lanes "
+		"and a take-group selection) on the instrument tracks that recorded them - all "
+		"of it in the Track's serialized state",
+		"ProjectJournal: ONE checkpoint of every track the commit changes, taken before "
+		"the first clip is created; one control.undo removes every take of the pass and "
+		"one control.redo restores them",
+		""),
+	R("comp.play_all_takes", RC::TrueInverse, true,
+		"the track-wide play-all flag is serialized with its take-lane model and "
+		"read by sample renders through an atomic scalar",
+		"ProjectJournal (Track checkpoint): one control.undo restores the previous "
+		"track-wide playback mode",
+		""),
 
 	// =====================================================================
-	// not_mutating - nothing is written that control.undo could reverse. The
-	// read-only verbs, and the two writers whose write is a FILE the engine
-	// cannot put back (the render.render and midi.retro_capture_arm shape).
+	// irreversible - these arm a capture whose take outlives it, or stop one:
+	// the take files stay on disk and cannot be restored by control.undo.
+	// =====================================================================
+	R("track.set_arm", RC::Irreversible, false,
+		"arming a song track starts a capture on the record route its position maps "
+		"to, and that capture writes a WAV and a take journal beside it. The TRACK is "
+		"not written to: no attribute is added to the track's element, which is why "
+		"the old refusal's objection (inventing a serialization field) no longer "
+		"applies. The take file, though, stays on disk once the capture stops, "
+		"outside the project state this command could restore",
+		"no complete inverse exists: disarming can stop the capture and retire the "
+		"journal, but it cannot remove or restore the take. The registry refuses "
+		"control.undo rather than claiming that this partial action reverses the "
+		"command. DISARMING records no inverse either - re-arming starts a NEW take "
+		"rather than restoring the one that was stopped",
+		"stop the capture with track.set_arm armed: false (or with "
+		"record.disarm_track); the take: keep or delete it where the reply says it "
+		"is (the default is zene-take-trk<N>.wav beside this instance's recovery "
+		"file)"),
+
+	// W1: the mixer's Arm All in one call.
+	R("track.set_arm_many", RC::Irreversible, false,
+		"arming the named routes creates WAV take files and journals beside them. "
+		"Disarming retires the journals, but the take files remain on disk, outside "
+		"the project state this command can restore",
+		"no complete inverse exists: disarming can stop the captures, but cannot "
+		"remove or restore the takes. The registry refuses control.undo rather than "
+		"claiming that this partial action reverses the command",
+		"stop each route with record.disarm_track using the route ids in the reply; "
+		"keep or delete each take at the file path returned for that route"),
+
+	R("record.disarm_track", RC::Irreversible, false,
+		"stops one route's capture and retires its journal, and the take file stays "
+		"on disk. Re-arming starts a new take rather than restoring this one",
+		"the registry records the call as irreversible because the retired journal "
+		"is a side file and there is no inverse that restores the stopped take",
+		"the take: it is on disk where the reply says, and re-arming the route writes "
+		"a new one"),
+
+	R("record.disarm_all", RC::Irreversible, false,
+		"stops every armed route and retires its journal, while every take file stays "
+		"where it is",
+		"the registry records the call as irreversible because the retired journals "
+		"are side files and there is no inverse that restores the stopped takes",
+		"the take files: each reply names its route's path"),
+
+	// =====================================================================
+	// not_mutating - no checkpointed session state is written: read-only verbs,
+	// file-only writers and live modes that are intentionally outside undo.
 	// =====================================================================
 	R("record.get_state", RC::NotMutating, false,
 		"reads every route's arm flag, input channel, take path and counters, plus "
 		"the input path's own state; it writes nothing",
 		"no write happens, so no transaction is recorded",
 		""),
-	R("record.disarm_track", RC::NotMutating, false,
-		"stops one route's capture and retires its journal, and the take file stays "
-		"on disk. What it changes is the recorder's live state, which is engine state "
-		"that no project checkpoint holds - and the thing a caller might want back "
-		"(the recording) is a file, not a state",
-		"no state a checkpoint could restore is written: the journal it retires is a "
-		"side file and re-arming writes a NEW take rather than restoring this one, so "
-		"the record states that it recorded no inverse",
-		"the take: it is on disk where the reply says, and re-arming the route writes "
-		"a new one"),
-
-	R("record.disarm_all", RC::NotMutating, false,
-		"the same operation for every route at once: the captures stop and their "
-		"journals are retired, and every take file stays where it is",
-		"no state a checkpoint could restore is written; the record says so rather "
-		"than claiming an inverse",
-		"the take files: each reply names its route's path"),
-
 	R("record.input_get_state", RC::NotMutating, false,
 		"reads the configured plan, the published device state and the engine's two "
 		"input stages; it writes nothing",
@@ -144,6 +155,20 @@ const ReversibilityRow kRecordingRows[] = {
 		"project state (the transport.play precedent). What it RECORDS is written by "
 		"the recording tracks and clips themselves, each through its own journalled path",
 		"nothing to reverse: transport.stop is the operation a client calls",
+		""),
+
+	R("track.set_midi_arm", RC::NotMutating, false,
+		"arms or disarms an instrument track's MIDI take capture: an atomic flag on "
+		"the track's capture object (include/MidiTakeCapture.h), mode state that is "
+		"neither serialized nor checkpointed - the midi.retro_capture_arm precedent. "
+		"What an armed pass records is written by record.midi_capture_commit",
+		"no write happens to anything a checkpoint holds, so no transaction is "
+		"recorded and control.undo is not blocked by it",
+		"the mode itself: call this command with armed: false"),
+	R("record.midi_capture_status", RC::NotMutating, false,
+		"reads the armed tracks, the open capture session and the last commit's "
+		"report; it writes nothing",
+		"no write happens, so no transaction is recorded",
 		""),
 
 	R("record.retro_capture_arm", RC::NotMutating, false,
@@ -168,6 +193,19 @@ const ReversibilityRow kRecordingRows[] = {
 		"restore; the file is the deliverable, not a mutation of the session",
 		"the take file: delete it where the reply says it is, or keep it - and 0.3.0 "
 		"does not insert it into the session (docs/KNOWN-LIMITATIONS.md)"),
+
+	// =====================================================================
+	// irreversible - arming creates a take outside the project journal, and
+	// disarming cannot remove its recorded bytes.
+	// =====================================================================
+	R("record.arm_track", RC::Irreversible, false,
+		"arming opens a WAV outside the project journal and writes a take journal "
+		"beside it. Disarming retires that journal but leaves every captured frame "
+		"in the WAV, so the filesystem is not restored to its pre-arm state",
+		"none: the engine cannot discard a take as an inverse; the transaction "
+		"records no inverse",
+		"explicitly call record.disarm_track to stop writing. The take remains at "
+		"the file path in the arm reply; keep it or delete it manually"),
 
 };
 

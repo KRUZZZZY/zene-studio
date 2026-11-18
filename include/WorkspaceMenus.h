@@ -39,7 +39,7 @@ namespace lmms::gui
 //! The Window menu and the Help menu's additions; installed once, by Shell when it is first shown.
 LMMS_EXPORT void installWorkspaceMenus(QMenuBar* bar);
 
-//! The Customise menu's theme, palette, density and settings entries (ShellCommandMenus::populateCustomise
+//! The Customise menu's theme, palette, workspace, density and settings entries (ShellCommandMenus::populateCustomise
 //! ends with it).
 LMMS_EXPORT void populateCustomiseExtras(QMenu* menu);
 

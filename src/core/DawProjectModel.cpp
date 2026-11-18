@@ -472,8 +472,9 @@ const DawProjectConvention& dawProjectConvention()
 		DawProjectConvention value;
 		value.formatName = QStringLiteral("DAWproject");
 		value.formatVersion = QString::fromLatin1(DawProjectVersionAttribute);
-		value.container = QStringLiteral("ZIP (RFC 1951-free: every entry is stored, not "
-			"compressed; a stored entry is valid in every ZIP reader)");
+		value.container = QStringLiteral("ZIP (written with every entry STORED, which every ZIP "
+			"reader opens; read as STORE or raw DEFLATE (RFC 1951), each entry and the total held to "
+			"a decompressed-size bound)");
 		value.projectEntry = QString::fromLatin1(DawProjectProjectEntry);
 		value.metaDataEntry = QString::fromLatin1(DawProjectMetaDataEntry);
 		value.textEncoding = QStringLiteral("UTF-8");
@@ -483,7 +484,8 @@ const DawProjectConvention& dawProjectConvention()
 			"with six decimals (maximum error 2.4e-5 ticks, so reading back cannot land on a "
 			"neighbouring tick); a FOREIGN time off that grid is rounded and reported in "
 			"rounded_times").arg(DawProjectTicksPerQuarterNote);
-		value.zipMethod = QStringLiteral("store (method 0)");
+		value.zipMethod = QStringLiteral("write: store (method 0); read: store (method 0) and deflate "
+			"(method 8)");
 		value.contentTypeVocabulary = QStringLiteral("audio|automation|notes|video|markers|tracks "
 			"(a space-separated list); LMMS maps instrument and pattern to notes, sample to "
 			"audio, automation and hidden_automation to automation, folder to tracks, and a type "
@@ -492,7 +494,8 @@ const DawProjectConvention& dawProjectConvention()
 			"copied), automation clips and automation content, device/plugin state and "
 			"parameters, sends, fades and crossfades, loop points, scenes and clip slots, folder "
 			"nesting (tracks are flat in LMMS), the mixer's ROUTE graph and its pre/post-fader "
-			"flags, and the sharing of one mixer channel by several tracks. NOT in the format: "
+			"flags. Multiple tracks may share a destination Channel; track types without a mixer "
+			"channel model have no destination IDREF written. NOT in the format: "
 			"LMMS' take lanes, clip link groups, slide notes, note probability and detune. A "
 			"tempo-map event carrying both a tempo and a metre half becomes TWO points, because "
 			"the format has one timeline per half. Also NOT carried: the track type's NAME "

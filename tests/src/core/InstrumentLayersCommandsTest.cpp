@@ -26,6 +26,9 @@
 
 #include <QtTest>
 
+#include <span>
+#include <vector>
+
 #include <QDomDocument>
 #include <QDomElement>
 #include <QJsonArray>
@@ -38,15 +41,17 @@
 #include "ControlInstrumentCommands.h"
 #include "Engine.h"
 #include "ControlMixerSupport.h"
-#include "Instrument.h"
 #include "InstrumentOutputBuses.h"
-#include "InstrumentTrack.h"
+#include "InstrumentNoteOffProbe.h"
 #include "Mixer.h"
 #include "ModulationLayer.h"
+#include "NotePlayHandle.h"
 #include "PluginFactory.h"
+#include "SampleFrame.h"
 #include "Song.h"
 #include "RackTestSupport.h"
 #include "ReversibilityTestSupport.h"
+#include "TrackContainer.h"
 
 //! The directory holding the in-tree CLAP instrument fixture, whose factory carries the multi-output
 //! class the plugin.output_* case loads (tests/data/clap-test-plugin/clap-test-instrument.c). Set by
@@ -94,6 +99,13 @@ QString clapDevice(const QString& clapId)
 	return QString();
 }
 
+//! How many undo steps the registry holds a transaction for. A command that changed
+//! nothing must not grow this: it would hand out a step it never recorded.
+int transactionCount()
+{
+	return run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray().size();
+}
+
 //! The track's state saved and read back into the same track - the project round trip of one track.
 void saveAndReload(InstrumentTrack* track)
 {
@@ -111,6 +123,32 @@ class InstrumentLayersCommandsTest : public QObject
 	Q_OBJECT
 
 private slots:
+	//! A non-instrument track in layer XML is rejected and removed from the private container.
+	void malformedLayerTrackIsRemoved()
+	{
+		auto* owner = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(owner != nullptr);
+		const auto previousAutoAssigned = InstrumentTrack::autoAssignedTrack();
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("trackcontainer"));
+		doc.appendChild(root);
+		QDomElement layers = doc.createElement(QStringLiteral("layers"));
+		QDomElement layer = doc.createElement(QStringLiteral("layer"));
+		QDomElement sample = doc.createElement(QStringLiteral("track"));
+		sample.setAttribute(QStringLiteral("type"), static_cast<int>(Track::Type::Sample));
+		layer.appendChild(sample);
+		layers.appendChild(layer);
+		root.appendChild(layers);
+
+		owner->layers().loadSettings(root);
+
+		QCOMPARE(owner->layers().layerCount(), 0);
+		QVERIFY(owner->layers().m_container != nullptr);
+		QCOMPARE(owner->layers().m_container->tracks().size(), std::size_t(0));
+		QCOMPARE(InstrumentTrack::autoAssignedTrack(), previousAutoAssigned);
+	}
+
 	void initTestCase()
 	{
 #ifdef LMMS_TEST_PLUGIN_DIR
@@ -118,19 +156,146 @@ private slots:
 #endif
 		QString why;
 		QVERIFY2(initRackFixture(&why), qPrintable(why));
+		NotePlayHandleManager::init();
 		m_track = revtest::addInstrumentTrack();
 		m_device = revtest::firstLoadable(QStringLiteral("instrument"));
 	}
 
 	void cleanupTestCase() { teardownRackFixture(); }
 
+	//! MX-112: overlapping same-key notes keep a separate base-instrument note-off for every accepted note-on.
+	void overlappingSameKeyBaseNotesKeepTheirNoteOffs()
+	{
+		if (m_track.isEmpty() || m_device.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
+		InstrumentTrack* track = trackOf(m_track);
+		QVERIFY(track != nullptr);
+		const ControlResult added = run(QStringLiteral("rack.layer_add"), {{QStringLiteral("target"), m_track}, {QStringLiteral("device"), m_device}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+
+		constexpr int key = 117;
+		RackZone zone;
+		zone.lowKey = key;
+		zone.highKey = key;
+		zone.highVelocity = 120;
+		const int zoneIndex = track->layers().zones().addZone(zone);
+		QVERIFY(zoneIndex >= 0);
+
+		auto& layers = track->layers();
+		const bool accepted = layers.baseTakesNoteOn(key, 64);  // zone velocity 100
+		const bool skipped = layers.baseTakesNoteOn(key, 127);  // outside the base zone
+		const bool acceptedOff = layers.baseTakesNoteOff(key);
+		const bool skippedOff = layers.baseTakesNoteOff(key);
+
+		const bool skippedFirst = layers.baseTakesNoteOn(key, 127);
+		const bool acceptedSecond = layers.baseTakesNoteOn(key, 64);
+		const bool firstMixedOff = layers.baseTakesNoteOff(key);
+		const bool secondMixedOff = layers.baseTakesNoteOff(key);
+		const bool removed = track->layers().zones().removeZone(zoneIndex);
+		const bool removedLayer = layers.removeLayer(1);
+
+		QVERIFY(removed);
+		QVERIFY(removedLayer);
+		QVERIFY(accepted);
+		QVERIFY(!skipped);
+		QVERIFY(acceptedOff);
+		QVERIFY(!skippedOff);
+		QVERIFY(!skippedFirst);
+		QVERIFY(acceptedSecond);
+		QVERIFY(firstMixedOff);
+		QVERIFY(!secondMixedOff);
+	}
+
+	//! MX-112: the oldest live route stays first when its sequence is more than half a ring behind the next one.
+	void liveRouteOrderingStaysFifoAcrossTheSequenceWrap() {
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		auto& layers = track->layers();
+		constexpr int key = 121;
+		constexpr std::uint32_t sequenceMask = (1u << 21) - 1, half = 1u << 20, active = 2u << 30;
+		std::uint32_t first = 0, second = 0;
+		const auto takeOldest = [&](auto& routes, auto& rack) {
+			if constexpr (requires { routes.entries; routes.nextSequence; }) {
+				for (auto& entry : routes.entries) { entry.store(0); }
+				routes.nextSequence.store(half + 1); routes.overflowNotes.store(0);
+				routes.entries[0].store(active | (sequenceMask << 9) | 1u); routes.entries[1].store(active | (half << 9) | 2u);
+				first = rack.takeOldestLiveLayers(key); second = rack.takeOldestLiveLayers(key);
+			} else {
+				// The unfixed product has only one mask per key, so its second note-on overwrites the first.
+				routes.store(2u, std::memory_order_relaxed); first = routes.exchange(0u, std::memory_order_relaxed);
+			}
+		};
+		takeOldest(layers.m_liveLayers[key], layers);
+		QCOMPARE(first, 1u);
+		QCOMPARE(second, 2u);
+	}
+
+	//! MX-112: a clip note's duration routes note-off to the base instrument for accepted notes only.
+	void overlappingClipNotesKeepTheirOwnBaseNoteOffRouting()
+	{
+		if (m_track.isEmpty() || m_device.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
+		InstrumentTrack* track = trackOf(m_track);
+		QVERIFY(track != nullptr);
+		QVERIFY(track->instrument() != nullptr);
+		BaseInstrumentDeliveryProbe baseDelivery(track);
+		const ControlResult added = run(QStringLiteral("rack.layer_add"), {{QStringLiteral("target"), m_track}, {QStringLiteral("device"), m_device}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+
+		constexpr int key = 117;
+		RackZone zone;
+		zone.lowKey = key;
+		zone.highKey = key;
+		zone.highVelocity = 120;
+		const int zoneIndex = track->layers().zones().addZone(zone);
+		QVERIFY(zoneIndex >= 0);
+
+		const f_cnt_t period = Engine::audioEngine()->framesPerPeriod();
+		std::vector<SampleFrame> samples(static_cast<std::size_t>(period));
+		const std::span<SampleFrame> buffer(samples);
+
+		// The skipped note is shorter, so its off arrives while the accepted note is still sounding.
+		int skippedShortOffs = 0;
+		int acceptedLongOffs = 0;
+		{
+			const int initialOffs = baseDelivery.noteOffCount();
+			NotePlayHandle acceptedLong(track, 0, period * 4, Note(TimePos(384), TimePos(0), key, 64));
+			NotePlayHandle skippedShort(track, 0, period, Note(TimePos(384), TimePos(0), key, 127));
+			acceptedLong.play(buffer);
+			skippedShort.play(buffer);
+			skippedShort.noteOff(0);
+			skippedShortOffs = baseDelivery.noteOffCount() - initialOffs;
+			acceptedLong.noteOff(0);
+			acceptedLongOffs = baseDelivery.noteOffCount() - initialOffs;
+		}
+
+		// Reverse the durations: the accepted note now ends first, but still owns the routed off.
+		int acceptedShortOffs = 0;
+		int skippedLongOffs = 0;
+		{
+			const int initialOffs = baseDelivery.noteOffCount();
+			NotePlayHandle skippedLong(track, 0, period * 4, Note(TimePos(384), TimePos(0), key, 127));
+			NotePlayHandle acceptedShort(track, 0, period, Note(TimePos(384), TimePos(0), key, 64));
+			skippedLong.play(buffer);
+			acceptedShort.play(buffer);
+			acceptedShort.noteOff(0);
+			acceptedShortOffs = baseDelivery.noteOffCount() - initialOffs;
+			skippedLong.noteOff(0);
+			skippedLongOffs = baseDelivery.noteOffCount() - initialOffs;
+		}
+
+		QVERIFY(track->layers().zones().removeZone(zoneIndex));
+		QVERIFY(track->layers().removeLayer(1));
+		QCOMPARE(skippedShortOffs, 0);  // the skipped note's off must not reach the base instrument
+		QCOMPARE(acceptedLongOffs, 1);  // the accepted note's off must reach it
+		QCOMPARE(acceptedShortOffs, 1);
+		QCOMPARE(skippedLongOffs, 1);  // only the accepted note's off reaches the base instrument
+	}
+
 	//! MX-112: a layer is added with a whole-keyboard zone, zones gate the track's own instrument, a removal
 	//! takes the layer's zones with it, control.undo brings both back, and the rack survives save/load.
 	void layersAddZoneRemoveUndoReload()
 	{
 		if (m_track.isEmpty() || m_device.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
-		const ControlResult added = run(QStringLiteral("rack.layer_add"),
-			{{QStringLiteral("target"), m_track}, {QStringLiteral("device"), m_device}});
+		const ControlResult added = run(QStringLiteral("rack.layer_add"), {{QStringLiteral("target"), m_track}, {QStringLiteral("device"), m_device}});
 		QVERIFY2(added.ok, qPrintable(added.errorMessage));
 		QCOMPARE(added.result.value(QStringLiteral("layer")).toString(), QStringLiteral("layer-1"));
 		QCOMPARE(layerCount(m_track), 1);
@@ -139,36 +304,29 @@ private slots:
 		QVERIFY(track != nullptr);
 		QVERIFY(track->layers().basePlays(80, 100));  // no zone of its own: the track's instrument plays everything
 
-		QVERIFY(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 0},
-			{QStringLiteral("high_key"), 59}}).ok);
+		QVERIFY(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track}, {QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 0}, {QStringLiteral("high_key"), 59}}).ok);
 		QVERIFY(!track->layers().basePlays(80, 100));
 		QVERIFY(track->layers().basePlays(40, 100));
-		QVERIFY(!run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("layer"), QStringLiteral("layer-5")}}).ok);  // no such layer: refused, typed
+		QVERIFY(!run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track}, {QStringLiteral("layer"), QStringLiteral("layer-5")}}).ok);  // no such layer: refused, typed
 
-		const ControlResult parameters = run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("plugin"), QStringLiteral("layer-1")}, {QStringLiteral("index"), 0}});
+		const ControlResult parameters = run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), m_track}, {QStringLiteral("plugin"), QStringLiteral("layer-1")}, {QStringLiteral("index"), 0}});
 		QVERIFY2(parameters.ok || parameters.errorKind == ControlErrorKind::NotFound, qPrintable(parameters.errorMessage));
 
 		saveAndReload(track);
 		QCOMPARE(layerCount(m_track), 1);
 		QCOMPARE(layerZoneCount(m_track), 2);
 
-		QVERIFY(run(QStringLiteral("rack.layer_remove"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("layer"), QStringLiteral("layer-1")}}).ok);
+		QVERIFY(run(QStringLiteral("rack.layer_remove"), {{QStringLiteral("target"), m_track}, {QStringLiteral("layer"), QStringLiteral("layer-1")}}).ok);
 		QCOMPARE(layerCount(m_track), 0);
 		QCOMPARE(layerZoneCount(m_track), 1);  // layer-1's zone went with it; layer-0's stays
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(layerCount(m_track), 1);
 		QCOMPARE(layerZoneCount(m_track), 2);
-		QVERIFY(!run(QStringLiteral("rack.layer_remove"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("layer"), QStringLiteral("layer-0")}}).ok);  // the track's own instrument stays
+		QVERIFY(!run(QStringLiteral("rack.layer_remove"), {{QStringLiteral("target"), m_track}, {QStringLiteral("layer"), QStringLiteral("layer-0")}}).ok);  // the track's own instrument stays
 
 		// rack.layer_zone_remove: dropping layer-0's own zone (zone-1, keys 0..59) gives the track's
 		// instrument the whole keyboard back; control.undo re-inserts the zone at its index.
-		const ControlResult removed = run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("zone"), QStringLiteral("zone-1")}});
+		const ControlResult removed = run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track}, {QStringLiteral("zone"), QStringLiteral("zone-1")}});
 		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
 		QCOMPARE(removed.result.value(QStringLiteral("removed")).toString(), QStringLiteral("zone-1"));
 		QCOMPARE(layerZoneCount(m_track), 1);
@@ -178,10 +336,53 @@ private slots:
 		QCOMPARE(layerZoneCount(m_track), 2);
 		QVERIFY(!track->layers().basePlays(80, 100));
 		QVERIFY(track->layers().basePlays(40, 100));
-		const ControlResult missing = run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("zone"), QStringLiteral("zone-9")}});
+		const ControlResult missing = run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track}, {QStringLiteral("zone"), QStringLiteral("zone-9")}});
 		QVERIFY(!missing.ok);
 		QCOMPARE(missing.errorKind, ControlErrorKind::NotFound);
+	}
+
+	//! Luna 5747: rack.layer_zone_remove advertises rack.layer_zone_add, and that inverse must be
+	//! REPLAYABLE - the command also needs the zone's 'layer' and its four range values, not just
+	//! the track. The inverse args have to rebuild the very zone that was dropped.
+	void layerZoneRemoveAdvertisesAReplayableInverse()
+	{
+		if (m_track.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
+		const int zonesBefore = layerZoneCount(m_track);
+		QVERIFY2(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track}, {QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 70}, {QStringLiteral("high_key"), 107}, {QStringLiteral("low_velocity"), 30}, {QStringLiteral("high_velocity"), 150}}).ok, "rack.layer_zone_add refused");
+		const QString zone = QStringLiteral("zone-%1").arg(zonesBefore);
+		QVERIFY2(run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track}, {QStringLiteral("zone"), zone}}).ok, "rack.layer_zone_remove refused");
+		QCOMPARE(layerZoneCount(m_track), zonesBefore);
+
+		// Luna 5747: the advertised inverse is the exact recorded checkpoint, control.undo, which
+		// re-inserts the zone at its own index. A rack.layer_zone_add replay appended it instead.
+		const QJsonObject inverse = revtest::stateOf(QStringLiteral("rack.layer_zone_remove"))
+			.value(QStringLiteral("inverse")).toObject();
+		QVERIFY2(!inverse.isEmpty(), "rack.layer_zone_remove advertised no inverse at all");
+		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(layerZoneCount(m_track), zonesBefore + 1);
+		InstrumentTrack* track = trackOf(m_track);
+		QVERIFY(track != nullptr);
+		QVERIFY(track->layers().basePlays(90, 100));   // the zone is back: keys 70..107 reach layer-0 again
+		QVERIFY(!track->layers().basePlays(65, 100));  // ... and nothing widened past it
+	}
+
+	//! Luna 5747: removing the FIRST of two overlapping layer zones and undoing it restores the zone order.
+	void layerZoneRemoveFirstOfOverlappingUndoKeepsOrder()
+	{
+		if (m_track.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
+		const int zonesBefore = layerZoneCount(m_track);
+		QVERIFY(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track}, {QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 60}, {QStringLiteral("high_key"), 100}, {QStringLiteral("low_velocity"), 1}, {QStringLiteral("high_velocity"), 200}}).ok);
+		QVERIFY(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track}, {QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 70}, {QStringLiteral("high_key"), 80}, {QStringLiteral("low_velocity"), 1}, {QStringLiteral("high_velocity"), 200}}).ok);
+		const QString first = QStringLiteral("zone-%1").arg(zonesBefore);
+		QVERIFY(run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track}, {QStringLiteral("zone"), first}}).ok);
+		QCOMPARE(layerZoneCount(m_track), zonesBefore + 1);
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(layerZoneCount(m_track), zonesBefore + 2);
+		InstrumentTrack* track = trackOf(m_track);
+		QVERIFY(track != nullptr);
+		QCOMPARE(track->layers().zones().zone(zonesBefore)->lowKey, 60);   // the removed zone is first again
+		QCOMPARE(track->layers().zones().zone(zonesBefore + 1)->lowKey, 70);
 	}
 
 	//! MX-114: a MIDI part is added and removed through the surface, undone, and saved with the track.
@@ -202,10 +403,49 @@ private slots:
 		QVERIFY(run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), m_track},
 			{QStringLiteral("part"), QStringLiteral("part-0")}}).ok);
 		QCOMPARE(partCount(m_track), 0);
+
+		// Luna 5720/5747: the reported inverse is the exact recorded checkpoint, control.undo.
+		// A plugin.midi_part_add replay appended the part and lost its first-match position.
+		const QJsonObject inverse = revtest::stateOf(QStringLiteral("plugin.midi_part_remove"))
+			.value(QStringLiteral("inverse")).toObject();
+		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+		// And it really runs: undoing restores the part.
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(partCount(m_track), 1);
+		QCOMPARE(trackOf(m_track)->midiParts().zones().zone(0)->chain, 2);  // channel 3 is index 2
+		QVERIFY(run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("part"), QStringLiteral("part-0")}}).ok);
+		QCOMPARE(partCount(m_track), 0);
+
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(partCount(m_track), 1);
 		QVERIFY(!run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), m_track},
 			{QStringLiteral("part"), QStringLiteral("part-9")}}).ok);
+	}
+
+	//! Luna 5747: removing the FIRST of two overlapping parts and undoing it must restore the
+	//! original first-match order (part-0 channel 3 wins over part-1 channel 5 on key 60).
+	void midiPartsRemoveFirstOfOverlappingUndoKeepsOrder()
+	{
+		if (m_track.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
+		while (partCount(m_track) > 0)  // earlier cases leave parts on the shared track
+		{
+			QVERIFY(run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), m_track},
+				{QStringLiteral("part"), QStringLiteral("part-0")}}).ok);
+		}
+		QVERIFY(run(QStringLiteral("plugin.midi_part_add"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("midi_channel"), 3}, {QStringLiteral("low_key"), 60}}).ok);
+		QVERIFY(run(QStringLiteral("plugin.midi_part_add"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("midi_channel"), 5}, {QStringLiteral("low_key"), 60}}).ok);
+		QCOMPARE(partCount(m_track), 2);
+		QVERIFY(run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("part"), QStringLiteral("part-0")}}).ok);
+		QCOMPARE(partCount(m_track), 1);
+		QCOMPARE(trackOf(m_track)->midiParts().zones().zone(0)->chain, 4);  // channel 5 is index 4
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(partCount(m_track), 2);
+		QCOMPARE(trackOf(m_track)->midiParts().zones().zone(0)->chain, 2);  // channel 3 wins again
+		QCOMPARE(trackOf(m_track)->midiParts().zones().zone(1)->chain, 4);
 	}
 
 	//! MX-114: a single-output instrument has no buses to route - refused, typed; a hosted one lists them.
@@ -270,6 +510,17 @@ private slots:
 		InstrumentOutputBuses* model = trackOf(target)->instrument()->outputBuses();
 		QVERIFY(model != nullptr);
 		QCOMPARE(QStringLiteral("ch-%1").arg(model->routeOf(1)), channel);
+
+		// Luna 5718: routing Aux to the channel it ALREADY uses is not an edit. A step
+		// recorded here would be the one the next undo consumes, hiding the route above.
+		const int stepsBeforeNoOp = transactionCount();
+		const ControlResult routedAgain = run(QStringLiteral("plugin.output_bus_route"), {{QStringLiteral("target"), target},
+			{QStringLiteral("bus"), 1}, {QStringLiteral("channel"), channel}});
+		QVERIFY2(routedAgain.ok, qPrintable(routedAgain.errorMessage));
+		QCOMPARE(routedAgain.result.value(QStringLiteral("routed_count")).toInt(), 1);
+		QCOMPARE(QStringLiteral("ch-%1").arg(model->routeOf(1)), channel);
+		QCOMPARE(transactionCount(), stepsBeforeNoOp);  // the same route claims no step
+
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(model->routeOf(1), -1);
 		const ControlResult noBus = run(QStringLiteral("plugin.output_bus_route"), {{QStringLiteral("target"), target},
@@ -290,11 +541,52 @@ private slots:
 		QCOMPARE(mixer->numChannels(), channelsBefore + 1);
 		QCOMPARE(QStringLiteral("ch-%1").arg(model->routeOf(1)), madeChannel);
 		QVERIFY(mixer->mixerChannel(mixer->numChannels() - 1)->m_name.endsWith(QStringLiteral(" Aux")));
+
+		// Luna 5719: Aux is already routed, so there is nothing left to create. The answer
+		// must not advertise a reversible transaction: no step was recorded to undo.
+		const int stepsBeforeEmpty = transactionCount();
+		const ControlResult nothingToDo = run(QStringLiteral("plugin.output_buses_create_channels"),
+			{{QStringLiteral("target"), target}});
+		QVERIFY2(nothingToDo.ok, qPrintable(nothingToDo.errorMessage));
+		QVERIFY(nothingToDo.result.value(QStringLiteral("created")).toArray().isEmpty());
+		QCOMPARE(mixer->numChannels(), channelsBefore + 1);  // and it made no channel
+		QCOMPARE(transactionCount(), stepsBeforeEmpty);
+
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(mixer->numChannels(), channelsBefore);
 		QCOMPARE(model->routeOf(1), -1);
 		ControlResult gone;
 		QVERIFY2(control::resolveMixerChannel(madeChannel, &gone) == nullptr, "the created channel survived its undo");
+	}
+
+	//! Cluster new-p11-35: replaying voice_set's inverse clears a trigger that was absent before the edit.
+	void voiceSetInverseClearsTriggerForFreeRunningModulator()
+	{
+		const QString triggerTrack = m_track.isEmpty() ? revtest::addTrack() : m_track;
+		QVERIFY2(!triggerTrack.isEmpty(), "could not create an instrument track for the modulator trigger");
+		const ControlResult created = run(QStringLiteral("modulator.create"), {{QStringLiteral("name"), QStringLiteral("free-running")},
+			{QStringLiteral("rate"), 2.0}, {QStringLiteral("shape"), QStringLiteral("sine")}});
+		QVERIFY2(created.ok, qPrintable(created.errorMessage));
+		const QString modulator = created.result.value(QStringLiteral("modulator")).toString();
+
+		const ControlResult followed = run(QStringLiteral("modulator.voice_set"), {{QStringLiteral("modulator"), modulator},
+			{QStringLiteral("per_voice"), false}, {QStringLiteral("trigger"), triggerTrack}});
+		QVERIFY2(followed.ok, qPrintable(followed.errorMessage));
+		const ControlRegistry::Transaction* transaction = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(transaction != nullptr);
+		QCOMPARE(transaction->command, QStringLiteral("modulator.voice_set"));
+		const QJsonObject inverse = transaction->inverse;
+		const QString inverseOp = inverse.value(QStringLiteral("op")).toString();
+		const QJsonObject inverseArgs = inverse.value(QStringLiteral("args")).toObject();
+		const ControlResult replayed = run(inverseOp, inverseArgs);
+		QVERIFY2(replayed.ok, qPrintable(replayed.errorMessage));
+
+		const QJsonObject state = run(QStringLiteral("modulator.get_state")).result;
+		const QJsonObject modulatorState = state.value(QStringLiteral("modulators")).toArray().last().toObject();
+		QCOMPARE(modulatorState.value(QStringLiteral("id")).toString(), modulator);
+		const QJsonObject source = modulatorState.value(QStringLiteral("source")).toObject();
+		QVERIFY2(!source.contains(QStringLiteral("trigger")), "the replayed inverse left the trigger track assigned");
+		QVERIFY(!source.value(QStringLiteral("per_voice")).toBool());
 	}
 
 	//! MX-120: a per-voice modulator needs a track to follow; bound to the track's instrument it reports

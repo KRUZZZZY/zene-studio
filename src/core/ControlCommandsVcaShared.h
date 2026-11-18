@@ -65,6 +65,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <algorithm>
+#include <vector>
 
 #include <QString>
 
@@ -143,6 +144,8 @@ inline QJsonObject groupState(VcaGroup* group)
 	QJsonArray members;
 	for (mix_ch_t member : group->members())
 	{
+		// A stale position has no live channel to report.
+		if (member >= Engine::mixer()->numChannels()) { continue; }
 		QJsonObject entry;
 		MixerChannel* channel = Engine::mixer()->mixerChannel(member);
 		// The channel's PERSISTENT id (SPEC-stable-ids.md slice 2), read off
@@ -241,6 +244,11 @@ inline int moveLockedClip(LockedEditResult* out, Track* track, Clip* clip, tick_
 
 	QJsonObject move;
 	move.insert(QStringLiteral("track"), control::trackIdOf(track));
+	// The clip, not just its track: one member track can hold SEVERAL clips in
+	// the anchor's span, so `moves` then holds several entries for that track and
+	// only the clip id says which clip an entry moved. (This is the shape
+	// LockedEditResult::moves documents above.)
+	move.insert(QStringLiteral("clip"), control::clipIdOf(clip));
 	move.insert(QStringLiteral("from"), from);
 	move.insert(QStringLiteral("to"), clip->startPosition().getTicks());
 	out->moves.append(move);

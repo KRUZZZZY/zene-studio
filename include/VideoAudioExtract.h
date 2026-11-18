@@ -27,6 +27,7 @@
 
 #include <atomic>
 
+#include <QDir>
 #include <QString>
 
 #include "lmms_export.h"
@@ -47,18 +48,22 @@ struct VideoAudio
 struct VideoExtractControl
 {
 	std::atomic<float> progress{-1.0f};  //!< 0..1 of the video's length decoded, or -1 while its length is unknown
-	std::atomic<bool> cancel{false};     //!< stop at the next decoded frame; the WAV written so far is deleted
+	std::atomic<bool> cancel{false};     //!< stop at the next decoded frame; discard partial output and preserve the destination
 };
 
 /*! 0.5.0 ED-054 (video.extract_audio): decode @a video's best audio stream, convert it with libswresample to
  *  32-bit float stereo at the stream's own rate (mono is spread to both sides, more channels are mixed down), and
  *  write it to @a wav. False, with @a error, when the video has no audio, the file cannot be written, nothing
- *  decodes, or the build has no FFmpeg; a run that decodes nothing deletes the file it wrote; one that fails
- *  before writing touches no file. Runs on the calling thread. */
+ *  decodes, or the build has no FFmpeg; a failed or cancelled run leaves @a wav unchanged, and success replaces it.
+ *  Runs on the calling thread. */
 LMMS_EXPORT bool extractVideoAudio(const QString& video, const QString& wav, VideoAudio* out, QString* error);
-//! The same, reporting its progress to @a control and stopping when it asks (a cancelled run fails, its file deleted).
+//! The same, reporting its progress to @a control and stopping when it asks (a cancelled run fails, leaving @a wav unchanged).
 LMMS_EXPORT bool extractVideoAudio(const QString& video, const QString& wav, VideoAudio* out, QString* error,
 	VideoExtractControl* control);
+
+/*! The default WAV for an extraction: "<stem>.wav" in @a dir, then "<stem>-2.wav" up to "<stem>-<maxNames>.wav", the first
+ *  name no file takes. Empty when all of them are taken; the caller refuses rather than reuse one. */
+LMMS_EXPORT QString firstFreeAudioPath(const QDir& dir, const QString& stem, int maxNames);
 
 } // namespace lmms
 

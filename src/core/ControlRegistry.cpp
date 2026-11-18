@@ -28,6 +28,7 @@
 #include "CollabCommandTap.h"
 #include "ControlReversibility.h"
 #include "EditLocks.h"
+#include "ControlEventHub.h"
 #include "ProjectJournal.h"
 #include "ProvenanceSection.h"
 
@@ -38,6 +39,8 @@
 #include <QJsonValue>
 #include <QMetaObject>
 #include <QThread>
+
+#include <exception>
 
 #include "AudioEngine.h"
 #include "Engine.h"
@@ -55,41 +58,30 @@ constexpr int ControlProtocolVersion = 1;
 namespace
 {
 
-/*! \brief The process's shutdown hooks, and the serial that identifies one
- *  (CODE-8).
- *
- * NOT a member of the registry instance, and that is the whole point. The
- * registry is a singleton that can be destroyed and re-created - main() takes
- * `ControlRegistry::instance()` and ControlSession.cpp's last-resort guard calls
- * `ControlRegistry::instance()->runShutdownHooks()` on the way out - so if the
- * instance that existed at registration time is gone, instance() builds a NEW,
- * EMPTY one and a hook held in a member would die with the first instance. The
- * guard would then run nothing at all and leave the control socket behind on
- * exactly the route the hook exists for.
- *
- * A function-local static gives the right lifetime: one store per process,
- * constructed on first use and destroyed at exit - after every path that can
- * call runShutdownHooks(), and never before a hook that is still registered.
- */
-struct ShutdownHookEntry
+//! The text of a thrown exception, safely (what() may be null).
+QString exceptionText(const std::exception& error)
 {
-	ControlRegistry::ShutdownHookId id = 0;
-	std::function<void()> hook;
-};
-
-QVector<ShutdownHookEntry>& shutdownHooks()
-{
-	static QVector<ShutdownHookEntry> hooks;
-	return hooks;
+	const char* what = error.what();
+	return what != nullptr ? QString::fromUtf8(what) : QString();
 }
 
-//! Serial source for ShutdownHookId. 0 is reserved for "no hook", so the first
-//! registered hook is 1 and a default-initialised id can never match one.
-ControlRegistry::ShutdownHookId nextShutdownHookId()
+/*! The typed control error a handler's exception becomes - the control surface's
+ *  error boundary (a handler that throws is a FAILED command, never a crash and
+ *  never a silent success). The error vocabulary is closed
+ *  (include/ControlRegistry.h) and `refused` is the kind this surface already
+ *  uses for a command that could not be carried out - a file that could not be
+ *  written (src/gui/ControlCommandsShortcuts.cpp), a locked track (WF-044): the
+ *  message names the command and what the handler said, so the agent can tell
+ *  WHICH command failed and why. A mutating command says so as well: it may
+ *  have changed the project before it failed. */
+ControlResult controlErrorFromException(const QString& commandId, bool mutating, const QString& what)
 {
-	static ControlRegistry::ShutdownHookId next = 0;
-	return ++next;
+	QString message = QStringLiteral("command '%1' failed").arg(commandId);
+	if (!what.isEmpty()) { message += QStringLiteral(": %1").arg(what); }
+	if (mutating) { message += QStringLiteral(" (the project may be partly changed)"); }
+	return ControlResult::failure(ControlErrorKind::Refused, message);
 }
+
 
 } // namespace
 
@@ -130,6 +122,7 @@ ControlRegistry::ControlRegistry(QObject* parent) :
 	// (UnattendedRun.h), because MainWindow asks the same question before the
 	// registry exists.
 	m_headless = isUnattendedRun();  // one predicate for one concept: agent instance or no display
+	m_displayAvailable = hasDisplay();  // `requires: display` is about the display alone, not who drives the instance
 }
 
 ControlRegistry* ControlRegistry::instance()
@@ -146,6 +139,9 @@ void ControlRegistry::destroy()
 {
 	delete s_instance;
 	s_instance = nullptr;
+	// Readiness is what the application told the instance that just went away.
+	// The next instance() has not been told, so it starts not ready.
+	s_ready = false;
 }
 
 void ControlRegistry::registerCommand(const ControlCommand& command)
@@ -200,7 +196,7 @@ QString ControlRegistry::checkRequires(const ControlCommand& command) const
 		{
 			return QStringLiteral("command '%1' requires a human").arg(command.id);
 		}
-		if (requirement == QLatin1String("display") && m_headless)
+		if (requirement == QLatin1String("display") && !m_displayAvailable)
 		{
 			return QStringLiteral("command '%1' requires a display (headless instance)").arg(command.id);
 		}
@@ -233,7 +229,15 @@ ControlResult ControlRegistry::runOnUiThread(const std::function<ControlResult()
 	return out;
 }
 
-ControlResult ControlRegistry::invoke(const QString& id, const QJsonObject& args)
+//! The agent surface waits for startup to finish (setReady); the process's own window needs only the engine it edits.
+static bool engineAddressable(bool inProcess)
+{
+	return inProcess ? Engine::getSong() != nullptr && Engine::mixer() != nullptr : ControlRegistry::isEngineReady();
+}
+
+ControlResult ControlRegistry::invoke(const QString& id, const QJsonObject& args) { return dispatch(id, args, false); }
+
+ControlResult ControlRegistry::dispatch(const QString& id, const QJsonObject& args, bool inProcess)
 {
 	const ControlCommand* cmd = command(id);
 	if (cmd == nullptr)
@@ -254,7 +258,7 @@ ControlResult ControlRegistry::invoke(const QString& id, const QJsonObject& args
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, invalid);
 	}
 
-	if (cmd->requiresEngine && !isEngineReady())
+	if (cmd->requiresEngine && !engineAddressable(inProcess))
 	{
 		// Carry the reason (task #626): a bare 'busy' left a client with no way
 		// to tell "still starting" from "your audio device failed" - the agent
@@ -268,10 +272,28 @@ ControlResult ControlRegistry::invoke(const QString& id, const QJsonObject& args
 	const bool mutating = cmd->mutating;
 	const QString commandId = cmd->id;
 	return runOnUiThread([this, handler, mutating, commandId, args]() {
-		// 0.5.0 F6 (WF-050): on a peer that joined a collaboration session, an edit is the host's to apply.
-		ControlResult elsewhere;
-		if (collab::CommandTap::intercepted(commandId, mutating, m_depth, args, &elsewhere)) { return elsewhere; }
-		return runHandler(handler, commandId, mutating, args);
+		/*! The control surface's error boundary: NOTHING a command does escapes
+		 *  invoke() as an exception. A handler's exception is translated by the
+		 *  frame that ran it (runHandler), so its bookkeeping still runs; this
+		 *  catch is the outer guarantee for everything else the dispatch does
+		 *  (the collaboration tap, a step that throws), so the socket answers the
+		 *  agent with a typed control error instead of the application going
+		 *  down with it. */
+		try
+		{
+			// 0.5.0 F6 (WF-050): on a peer that joined a collaboration session, an edit is the host's to apply.
+			ControlResult elsewhere;
+			if (collab::CommandTap::intercepted(commandId, mutating, m_depth, args, &elsewhere)) { return elsewhere; }
+			return runHandler(handler, commandId, mutating, args);
+		}
+		catch (const std::exception& e)
+		{
+			return controlErrorFromException(commandId, mutating, exceptionText(e));
+		}
+		catch (...)
+		{
+			return controlErrorFromException(commandId, mutating, QString());
+		}
 	});
 }
 
@@ -295,17 +317,123 @@ namespace
 //! A true-inverse command leaves a journal step - or, for one with its own mechanism, a transaction payload - whenever it
 //! changes something, so a call that left neither changed nothing (a report-only call, a value it already had) and is
 //! no transaction and no macro step (review W3-batchA #4, #8).
+//! A snapshot command that replies changed:false is the same case (BUG 12): a value it already has leaves nothing to
+//! snapshot, and a record for it would be a reversible no-op on top of the last real change.
 bool changedNothing(bool journalled, quint64 step, const QString& commandId, const ControlResult& result)
 {
-	if (!journalled || step != 0 || result.result.contains(QStringLiteral("__transaction"))) { return false; }
+	if (step != 0 || result.result.contains(QStringLiteral("__transaction"))) { return false; }
 	const control::ReversibilityEntry* row = control::ReversibilityTable::instance().lookup(commandId);
-	return row != nullptr && row->cls == control::ReversibilityClass::TrueInverse;
+	if (row == nullptr) { return false; }
+	if (row->cls == control::ReversibilityClass::Snapshot)
+	{
+		const QJsonValue changed = result.result.value(QStringLiteral("changed"));
+		return changed.isBool() && !changed.toBool();
+	}
+	return journalled && row->cls == control::ReversibilityClass::TrueInverse;
 }
+
+//! WF-033: whether a call is an EDIT whose undo step needs the project as it was before it (the journal's
+//! snapshot bracket). Only a true-inverse command leaves a journal step; an unclassified one is assumed to.
+bool bracketsEdit(const ProjectJournal* journal, bool mutating, const QString& commandId)
+{
+	if (journal == nullptr || !mutating) { return false; }
+	// script.run is a snapshot-class row whose one step also carries the bracket's capture (Q050-044), so a
+	// project that persists its undo history keeps the step instead of losing the history behind it.
+	if (commandId == QLatin1String("script.run")) { return true; }
+	const control::ReversibilityEntry* row = control::ReversibilityTable::instance().lookup(commandId);
+	return row == nullptr || row->cls == control::ReversibilityClass::TrueInverse;
+}
+
+//! WF-033: ProjectJournal::beginEdit/endEdit around one handler (docs/UNDO-HISTORY-PERSISTENCE.md).
+class EditBracket
+{
+public:
+	EditBracket(ProjectJournal* journal, bool mutating, const QString& commandId) :
+		m_journal(bracketsEdit(journal, mutating, commandId) ? journal : nullptr)
+	{
+		if (m_journal != nullptr) { m_journal->beginEdit(); }
+	}
+	~EditBracket()
+	{
+		if (m_journal != nullptr) { m_journal->endEdit(); }
+	}
+	EditBracket(const EditBracket&) = delete;
+	EditBracket& operator=(const EditBracket&) = delete;
+
+private:
+	ProjectJournal* m_journal;
+};
 
 //! WF-044: whether a mutating call would edit a locked track or clip (EditLocks), with the reason in @a why.
 bool lockedOut(bool mutating, const QString& commandId, const QJsonObject& args, QString* why)
 {
 	return mutating && EditLocks::refuses(commandId, args, why);
+}
+
+/*! Whether THIS call records the step it changed. A mutating command another
+ *  mutating command runs inside itself is part of that outer step (the journal
+ *  merges both into ONE checkpoint run, ED-056), so only the call whose enclosing
+ *  handlers are all non-mutating records. A non-mutating wrapper (range.consolidate,
+ *  arrangement.nudge, workflow.run) records nothing of its own, so each mutating
+ *  command it runs still records itself - that is the contract those rows state. */
+bool recordsItsOwnStep(bool mutating, bool changed, bool enclosedByMutating)
+{
+	return mutating && changed && !enclosedByMutating;
+}
+
+/*! Whether a nested call's own record is folded into an enclosing mutating step while
+ *  carrying a descriptor that step does not keep. */
+bool foldsIntoEnclosingStep(bool mutating, bool changed, bool enclosedByMutating, const QJsonObject& result)
+{
+	return mutating && changed && enclosedByMutating && result.contains(QStringLiteral("__transaction"));
+}
+
+//! A script can return an error after it has changed the project and kept its whole-session undo step.
+bool countsAsChangedResult(const ControlResult& result, const QString& commandId, quint64 step)
+{
+	return result.ok || (commandId == QLatin1String("script.run") && step != 0
+		&& result.result.contains(QStringLiteral("__transaction")));
+}
+
+/*! The record an outer mutating call writes for a step that also holds nested
+ *  changes whose own inverse was not kept (the nested record was folded into this
+ *  step): when the outer handler supplied no descriptor, it must not claim the
+ *  journal step alone reverses the nested change. Refuses to claim more than it knows. */
+void markFoldedNestedChanges(ControlResult* result, int folded, int foldedBefore)
+{
+	if (folded == foldedBefore) { return; }
+	// The outer record keeps its own descriptor (before, inverse) but may not claim more than
+	// the step covers: a nested change folded into it is not reversed by that descriptor.
+	QJsonObject descriptor = result->result.value(QStringLiteral("__transaction")).toObject();
+	// A whole-session checkpoint (script.run, Q050-044) restores everything its nested commands did.
+	if (descriptor.value(QStringLiteral("covers_nested")).toBool(false)) { return; }
+	const QString prior = descriptor.value(QStringLiteral("mechanism")).toString();
+	descriptor.insert(QStringLiteral("reversible"), false);
+	descriptor.insert(QStringLiteral("mechanism"), QStringLiteral("a command this call ran inside itself changed the "
+		"project and its own inverse is not part of this record, so this step is not reported as reversible")
+		+ (prior.isEmpty() ? QString() : QStringLiteral(" (") + prior + QStringLiteral(")")));
+	result->result.insert(QStringLiteral("__transaction"), descriptor);
+}
+
+/*! Runs the handler and turns an exception into the typed control error it
+ *  becomes. The translation happens in the frame that ran the handler, so the
+ *  frame's bookkeeping still runs: the records of the children this call ran are
+ *  written by it, and not left for a later command to flush under its own name. */
+ControlResult runHandlerGuarded(const std::function<ControlResult(const QJsonObject&)>& handler,
+	const QString& commandId, bool mutating, const QJsonObject& args)
+{
+	try
+	{
+		return handler(args);
+	}
+	catch (const std::exception& e)
+	{
+		return controlErrorFromException(commandId, mutating, exceptionText(e));
+	}
+	catch (...)
+	{
+		return controlErrorFromException(commandId, mutating, QString());
+	}
 }
 
 } // namespace
@@ -320,21 +448,60 @@ ControlResult ControlRegistry::runHandler(
 	if (lockedOut(mutating, commandId, args, &locked)) { return ControlResult::failure(ControlErrorKind::Refused, locked); }
 
 	ProjectJournal* journal = Engine::projectJournal();
-	const int mark = journal != nullptr ? journal->undoDepth() : -1;
 	const quint64 serialBefore = journal != nullptr ? journal->topStepSerial() : 0;
 
-	++m_depth;
-	ControlResult result = handler(args);
-	--m_depth;
+	// Who else is running: a nested mutating call is part of its outermost mutating
+	// ancestor's step, and the count of folded nested records tells that ancestor
+	// whether its step holds a change it cannot describe by itself.
+	const bool enclosedByMutating = m_mutatingDepth > 0;
+	const bool enclosedByWrapper = m_wrapperDepth > 0;
+	const int foldedBefore = m_foldedNestedRecords;
+	m_mutatingDepth += static_cast<int>(mutating);
+	m_wrapperDepth += static_cast<int>(!mutating);
+	ControlResult result;
+	{
+		/*! Restores the three running-handler counts on EVERY exit. A handler that
+		 *  throws (a filesystem write, a plug-in load) unwinds past a straight-line
+		 *  decrement and an outer dispatch layer catches it: a leaked depth then
+		 *  silences the observer for every later top-level edit and a leaked class
+		 *  count makes the next one look nested or wrapped, so its record is never
+		 *  written. */
+		struct DepthGuard
+		{
+			int& depth;
+			int& mutatingDepth;
+			int& wrapperDepth;
+			const bool mutating;
+			DepthGuard(int& dispatchDepth, int& mutatingCount, int& wrapperCount, bool isMutating) :
+				depth(dispatchDepth), mutatingDepth(mutatingCount), wrapperDepth(wrapperCount), mutating(isMutating)
+			{
+				++depth;
+			}
+			~DepthGuard()
+			{
+				--depth;
+				mutatingDepth -= static_cast<int>(mutating);
+				wrapperDepth -= static_cast<int>(!mutating);
+			}
+		};
+		const EditBracket edit(journal, mutating, commandId);
+		DepthGuard depthGuard{m_depth, m_mutatingDepth, m_wrapperDepth, mutating};
+		// A handler that throws (a file that could not be written, a plug-in that
+		// could not be loaded) becomes a TYPED control error here, in the frame
+		// that ran it - and the frame's bookkeeping below still runs.
+		result = runHandlerGuarded(handler, commandId, mutating, args);
+	}
 
 	bool coalesced = false;
 	quint64 step = 0;
 	if (journal != nullptr)
 	{
-		// The merge first: one command is one step however many models it wrote.
+		// Merge by serial, not by stack index: a bounded journal can evict entries
+		// while this handler runs, but every checkpoint pushed after serialBefore
+		// is still exactly this command's window.
 		// THEN the coalescing rule, which can merge that step into the previous
 		// command's when this call continues the same gesture.
-		journal->mergeCheckpointsFrom(mark);
+		journal->mergeCheckpointsSince(serialBefore);
 		// Did THIS call produce a step? Asked by SERIAL, not by depth: a bound
 		// can evict steps while the handler runs, so the depth can be exactly
 		// what it was before the call even though a step was pushed. (Found by
@@ -343,7 +510,10 @@ ControlResult ControlRegistry::runHandler(
 		if (produced != serialBefore)
 		{
 			step = produced;
-			coalesced = coalesceStepOf(*journal, commandId, args, true);
+			// A call a wrapper runs is never coalesced: its steps are merged into the wrapper's ONE step
+			// (flushNestedRecords). Coalescing one into a step BEFORE the wrapper would leave that step's
+			// record covering it twice.
+			coalesced = mayCoalesce(commandId, enclosedByWrapper, enclosedByMutating) && coalesceStepOf(*journal, commandId, args, true);
 		}
 	}
 	// A dry run changes NOTHING and so must leave the journal exactly as it found
@@ -353,16 +523,42 @@ ControlResult ControlRegistry::runHandler(
 	// handlers share the one `dry_run: true` result field, so the seam is here.
 	const bool dryRunPreview = result.result.value(QStringLiteral("dry_run")).toBool(false);
 	// Review W3-batchA #8: a call that changed nothing (a report-only call, a value already set) records nothing.
-	const bool changed = result.ok && !dryRunPreview && !changedNothing(journal != nullptr, step, commandId, result);
-	if (mutating && changed)
-	{
-		recordTransactionOf(commandId, &result, coalesced, step);
-	}
+	const bool changed = countsAsChangedResult(result, commandId, step) && !dryRunPreview
+		&& !changedNothing(journal != nullptr, step, commandId, result);
+	recordCall(commandId, args, &result, coalesced, step, mutating, changed, enclosedByMutating, enclosedByWrapper, foldedBefore);
 	control::finishResult(commandId, m_commands.value(commandId).resultSchema, &result);
 	notifyObserver(commandId, args, mutating, changed);
 	collab::CommandTap::observed(commandId, args, mutating, changed, m_depth);  // F6: what a host streams to its peers
+	control::ControlEventHub::commandFinished(commandId, args, mutating, changed, enclosedByMutating, m_depth);  // Q050-334.1
 	return result;
 }
+
+//! Records, or holds for its wrapper, the step of one finished call (see runHandler for the rules).
+void ControlRegistry::recordCall(const QString& commandId, const QJsonObject& args, ControlResult* result,
+	bool coalesced, quint64 step, bool mutating, bool changed, bool enclosedByMutating, bool enclosedByWrapper,
+	int foldedBefore)
+{
+	m_foldedNestedRecords += static_cast<int>(foldsIntoEnclosingStep(mutating, changed, enclosedByMutating, result->result));
+	const bool ownStep = recordsItsOwnStep(mutating, changed, enclosedByMutating);
+	// A recorded call that produced NO journal step breaks a coalescing run: its record is not a step the run
+	// can extend, so the next press must open its own step and record (a call that records nothing leaves the
+	// run alone, as documented in ControlUndoCoalescing.cpp).
+	if (ownStep && step == 0) { m_coalescer.breakRun(); }
+	if (ownStep && enclosedByWrapper)
+	{
+		// Held, with its descriptor, until the wrapper's journal step is known (see flushNestedRecords).
+		// A folded nested change is flagged here too, before the descriptor is kept.
+		markFoldedNestedChanges(result, m_foldedNestedRecords, foldedBefore);
+		m_nestedRecords.append(NestedRecord{commandId, *result, args, step});
+	}
+	else if (ownStep)
+	{
+		markFoldedNestedChanges(result, m_foldedNestedRecords, foldedBefore);
+		recordTransactionOf(commandId, result, coalesced, step);
+	}
+	if (!mutating && m_wrapperDepth == 0 && !m_nestedRecords.isEmpty()) { flushNestedRecords(commandId, *result, step); }
+}
+
 
 //! Records what a successful mutating handler described (SPEC A16).
 void ControlRegistry::recordTransactionOf(const QString& commandId, ControlResult* result,
@@ -415,6 +611,23 @@ void ControlRegistry::recordTransactionOf(const QString& commandId, ControlResul
 	tx.reversible = recorded.value(QStringLiteral("reversible")).toBool(false);
 	tx.mechanism = recorded.value(QStringLiteral("mechanism")).toString();
 	tx.step = step;
+	// A JOURNAL inverse with no recorded step cannot be undone: unwinding the
+	// journal now would take back an OLDER edit than the one asked about. The
+	// handler's claim is downgraded here, so the RECORD says what is true
+	// (new-p14-81): a command that claims an inverse and recorded none must not
+	// be reported as reversible.
+	//
+	// Two kinds of inverse need no step of their own and keep the claim: the
+	// PAIRED COMMAND (control.undo dispatches it) and the DEFERRED journal step
+	// (mastering.run records its step after it answered).
+	const QString applies = tx.inverse.value(QStringLiteral("applies")).toString(QStringLiteral("journal"));
+	if (tx.reversible && step == 0
+		&& applies != QLatin1String("command") && applies != QLatin1String("journal_later"))
+	{
+		tx.reversible = false;
+		tx.mechanism.prepend(QStringLiteral("no journal step was recorded for this inverse, so unwinding the "
+			"journal now would take back an OLDER edit than the one asked for; "));
+	}
 	stampContract(commandId, &tx);
 	recordTransaction(tx);
 	provenance::recordChange(commandId, tx.before, result->result);
@@ -477,53 +690,6 @@ QJsonObject ControlRegistry::describeAll() const
 
 
 
-
-ControlRegistry::ShutdownHookId ControlRegistry::addShutdownHook(std::function<void()> hook)
-{
-	const ShutdownHookId id = nextShutdownHookId();
-	shutdownHooks().append(ShutdownHookEntry{id, std::move(hook)});
-	return id;
-}
-
-
-bool ControlRegistry::removeShutdownHook(ShutdownHookId id)
-{
-	if (id == 0)
-	{
-		return false;
-	}
-	QVector<ShutdownHookEntry>& hooks = shutdownHooks();
-	for (int i = 0; i < hooks.size(); ++i)
-	{
-		if (hooks.at(i).id == id)
-		{
-			hooks.remove(i);
-			return true;
-		}
-	}
-	return false;
-}
-
-
-int ControlRegistry::shutdownHookCount() const
-{
-	return shutdownHooks().size();
-}
-
-
-void ControlRegistry::runShutdownHooks()
-{
-	// Take the list and clear it BEFORE running anything: a hook that
-	// re-registers (a re-listen) must not extend the run it is inside, and a
-	// hook that quits or aborts must not leave the store half-consumed for the
-	// next caller on the way out.
-	const QVector<ShutdownHookEntry> hooks = shutdownHooks();
-	shutdownHooks().clear();
-	for (const ShutdownHookEntry& entry : hooks)
-	{
-		if (entry.hook) { entry.hook(); }
-	}
-}
 
 // ---------------------------------------------------------------------------
 // shared helpers

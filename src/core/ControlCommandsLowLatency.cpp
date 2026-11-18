@@ -27,11 +27,17 @@
  *  matter for playing in: with 'scope' armed (the default) the chains of record-armed tracks, the
  *  mixer channels they play into (and those send on to) and the master; with 'scope' all, every chain. Turning it off puts
  *  back exactly the devices it took out (a device another feature had stopped is left alone).
+ *  Q050-174: a latent INSTRUMENT is not an Effect, so it is not stopped - it is what is played. Instead
+ *  an instrument track in scope whose instrument reports more than 'max_ms' is monitored unaligned
+ *  (AudioBusHandle::setMonitorUnaligned): its handle drops the alignment delay PDC adds to land it on a
+ *  later path, so it is heard after its own latency only, while its latency still counts in the graph
+ *  and every other path stays aligned as before. Off clears exactly the tracks it set.
  *  Session state, not project state. */
 
 #include <QJsonArray>
 #include <QPointer>
 #include <QSet>
+#include <algorithm>
 #include <vector>
 
 #include "AudioBusHandle.h"
@@ -62,6 +68,7 @@ struct LowLatency
 	int maxMs = 3;
 	QString scope = QStringLiteral("armed");
 	std::vector<QPointer<Effect>> bypassed;
+	std::vector<QPointer<InstrumentTrack>> unaligned;  //!< Q050-174: the instrument paths monitored unaligned
 };
 
 LowLatency& state()
@@ -112,6 +119,11 @@ void restoreAll()
 		if (effect) { effect->setDontRun(false); }
 	}
 	state().bypassed.clear();
+	for (const QPointer<InstrumentTrack>& track : state().unaligned)
+	{
+		if (track) { track->audioBusHandle()->setMonitorUnaligned(false); }
+	}
+	state().unaligned.clear();
 }
 
 void bypassOverThreshold()
@@ -126,6 +138,35 @@ void bypassOverThreshold()
 			state().bypassed.emplace_back(effect);
 		}
 	}
+	// Q050-174: the latent instruments on the monitored paths (armed tracks, or every track for 'all').
+	const bool all = state().scope == QLatin1String("all");
+	for (Track* track : Engine::getSong()->tracks())
+	{
+		auto* instrument = dynamic_cast<InstrumentTrack*>(track);
+		if (instrument == nullptr || (!all && !trackRecordArmed(track))) { continue; }
+		if (instrument->audioBusHandle()->sourceLatencyFrames() <= frames) { continue; }
+		instrument->audioBusHandle()->setMonitorUnaligned(true);
+		state().unaligned.emplace_back(instrument);
+	}
+}
+
+//! Q050-174: one instrument path monitored unaligned - the track, the channel it plays into, the
+//! instrument's own latency (still heard) and the alignment delay it no longer waits for.
+QJsonObject instrumentPathJson(InstrumentTrack* track)
+{
+	const AudioBusHandle* handle = track->audioBusHandle();
+	const int channel = track->mixerChannelModel()->value();
+	const QString channelName = channel >= 0 && channel < Engine::mixer()->numChannels()
+		? channelIdOf(Engine::mixer()->mixerChannel(channel)) : QString();
+	const int skipped = std::max(0, Engine::mixer()->channelInputLatency(static_cast<mix_ch_t>(std::max(0, channel)))
+		- handle->alignedLatencyFrames());
+	const double rate = Engine::audioEngine()->outputSampleRate();
+	return {{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("name"), track->name()},
+		{QStringLiteral("channel"), channelName},
+		{QStringLiteral("path"), QStringLiteral("%1 -> %2").arg(trackIdOf(track), channelName)},
+		{QStringLiteral("latency_frames"), handle->sourceLatencyFrames()},
+		{QStringLiteral("latency_ms"), handle->sourceLatencyFrames() * 1000.0 / rate},
+		{QStringLiteral("alignment_skipped_frames"), skipped}};
 }
 
 QJsonObject stateJson()
@@ -135,8 +176,14 @@ QJsonObject stateJson()
 	{
 		if (effect) { names.append(QStringLiteral("%1 (%2)").arg(effect->displayName(), effectIdOf(effect))); }
 	}
+	QJsonArray instruments;
+	for (const QPointer<InstrumentTrack>& track : state().unaligned)
+	{
+		if (track) { instruments.append(instrumentPathJson(track)); }
+	}
 	return {{QStringLiteral("enabled"), state().enabled}, {QStringLiteral("max_ms"), state().maxMs},
-		{QStringLiteral("scope"), state().scope}, {QStringLiteral("bypassed"), names}};
+		{QStringLiteral("scope"), state().scope}, {QStringLiteral("bypassed"), names},
+		{QStringLiteral("instruments"), instruments}};
 }
 
 ControlResult lowLatency(const QJsonObject& args)
@@ -162,8 +209,10 @@ void registerLowLatencyCommand(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Low-latency monitoring: with 'enabled', the devices whose latency is over 'max_ms' (0..100, "
 		"3 by default) stop processing on the chains of record-armed tracks, the channels they play into and the master "
 		"('scope' armed) - or on every chain ('scope' all) - so what you play is heard without their delay; off puts them "
-		"back. Each call re-evaluates (arm a track, call again). Answers the devices it took out. Session state: nothing is "
-		"saved or journalled.");
+		"back. A latent instrument on those tracks (over 'max_ms') keeps playing but is monitored without the alignment "
+		"delay PDC adds to line it up with later paths ('instruments': track, channel, path, latency, the frames skipped); "
+		"every other path stays aligned. Each call re-evaluates (arm a track, call again). Answers the devices it took out. "
+		"Session state: nothing is saved or journalled.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("enabled"), booleanProperty()}, {QStringLiteral("max_ms"), integerProperty(0, 100)},
 		{QStringLiteral("scope"), enumProperty({QStringLiteral("armed"), QStringLiteral("all")})}});
 	cmd.resultSchema = objectProperty();

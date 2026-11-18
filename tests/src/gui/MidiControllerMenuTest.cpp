@@ -29,14 +29,22 @@
 
 #include <QtTest>
 
+#include <QDomDocument>
+#include <memory>
+
 #include <QMenu>
 
+#include <cstring>
+
 #include "ControlRegistry.h"
+#include "Controller.h"
 #include "ControllerConnection.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "Knob.h"
+#include "LfoController.h"
 #include "MidiController.h"
+#include "MidiSetupWidget.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -44,6 +52,36 @@ using namespace lmms::gui;
 
 namespace
 {
+
+class LifetimeProbeLfoController final : public LfoController
+{
+public:
+	explicit LifetimeProbeLfoController(Model* parent) : LfoController(parent)
+	{
+		s_connectionCount = &m_connectionCount;
+	}
+
+	static int connectionCountAtDeallocation;
+
+	static void operator delete(void* storage) noexcept
+	{
+		std::memcpy(&connectionCountAtDeallocation, s_connectionCount,
+			sizeof(connectionCountAtDeallocation));
+		::operator delete(storage);
+	}
+
+private:
+	inline static const int* s_connectionCount = nullptr;
+};
+
+int LifetimeProbeLfoController::connectionCountAtDeallocation = -1;
+
+struct TestMidiClient
+{
+	static QString name() { return QStringLiteral("Test MIDI"); }
+	static QString configSection() { return QStringLiteral("test-midi"); }
+	static QString probeDevice() { return QString(); }
+};
 
 QAction* find(QMenu& menu, const QString& text)
 {
@@ -68,6 +106,15 @@ class MidiControllerMenuTest : public QObject
 	Q_OBJECT
 
 private slots:
+	void showingParentlessSetupWidgetIsSafe()
+	{
+		std::unique_ptr<MidiSetupWidget> setup(MidiSetupWidget::create<TestMidiClient>(nullptr));
+
+		setup->show();
+
+		QVERIFY(setup->isVisible());
+	}
+
 	void initTestCase()
 	{
 		Engine::init(true);
@@ -110,6 +157,54 @@ private slots:
 		QMenu none;
 		plain.addDefaultActions(&none);
 		QVERIFY(find(none, QMenu::tr("Soft takeover")) == nullptr);
+	}
+
+	void feedbackTakeoverRestoresPortSettingsAfterReload()
+	{
+		MidiController original(Engine::getSong());
+		original.midiPort().setInputChannel(7);
+		original.midiPort().setOutputChannel(3);
+		QCOMPARE(original.midiPort().mode(), MidiPort::Mode::Input);
+
+		original.setFeedbackEnabled(true);
+		QCOMPARE(original.midiPort().mode(), MidiPort::Mode::Duplex);
+		QCOMPARE(original.midiPort().outputChannel(), 7);
+
+		QDomDocument document;
+		QDomElement settings = document.createElement(QStringLiteral("controller"));
+		document.appendChild(settings);
+		original.saveSettings(document, settings);
+
+		MidiController reloaded(Engine::getSong());
+		reloaded.loadSettings(settings);
+		QVERIFY(reloaded.feedbackEnabled());
+		QCOMPARE(reloaded.midiPort().outputChannel(), 7);
+
+		reloaded.setFeedbackEnabled(false);
+		QCOMPARE(reloaded.midiPort().mode(), MidiPort::Mode::Input);
+		QCOMPARE(reloaded.midiPort().outputChannel(), 3);
+	}
+
+	void destroyingNonMidiControllerDoesNotCallBackIntoIt()
+	{
+		const auto connectionsBefore = ControllerConnection::connections().size();
+		auto* lfo = new LifetimeProbeLfoController(Engine::getSong());
+		new ControllerConnection(lfo);
+		QCOMPARE(lfo->connectionCount(), 1);
+
+		delete lfo;
+
+		QCOMPARE(LifetimeProbeLfoController::connectionCountAtDeallocation, 1);
+		QCOMPARE(ControllerConnection::connections().size(), connectionsBefore);
+	}
+
+	void settingNullControllerRestoresDummy()
+	{
+		ControllerConnection connection(new MidiController(Engine::getSong()));
+		connection.setController(nullptr);
+
+		QVERIFY(connection.getController() != nullptr);
+		QCOMPARE(connection.getController()->type(), Controller::ControllerType::Dummy);
 	}
 };
 

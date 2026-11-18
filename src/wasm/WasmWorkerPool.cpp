@@ -79,9 +79,9 @@ void WasmWorkerPool::shutdown()
 	const bool wasStopped = m_stop.exchange(true, std::memory_order_acq_rel);
 	if (wasStopped) { return; }
 	// Wake every parked lane so it sees the stop flag rather than waiting for
-	// work that will never come.
+	// work that will never come. workerwake wakes every waiter on the word.
 	m_generation.fetch_add(1, std::memory_order_release);
-	m_generation.notify_all();
+	lmms::workerwake::notify(m_generation);
 	for (std::thread& lane : m_threads)
 	{
 		if (lane.joinable()) { lane.join(); }
@@ -114,7 +114,7 @@ void WasmWorkerPool::removeWorker(WasmWorker* worker)
 	for (std::size_t i = 0; i < maxWorkers; ++i)
 	{
 		if (m_workers[i].load(std::memory_order_relaxed) != worker) { continue; }
-		m_workers[i].store(nullptr, std::memory_order_release);
+		m_workers[i].store(nullptr, std::memory_order_seq_cst);
 		// Shrink the dense prefix so lanes stop scanning the far slots. Lanes
 		// may read a stale count for one pass; that is harmless (a null slot is
 		// skipped, and a worker is only reachable through its own claim flag).
@@ -127,6 +127,14 @@ void WasmWorkerPool::removeWorker(WasmWorker* worker)
 				--shrunk;
 			}
 			m_workerCount.store(shrunk, std::memory_order_release);
+		}
+		// A lane increments this slot's reader count before loading its pointer,
+		// then holds that read through claimForLane() and drainOnLane(). Once
+		// the pointer is unpublished, this is the grace period before its owner
+		// may destroy the worker.
+		while (m_workerReaders[i].load(std::memory_order_seq_cst) != 0)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 		return;
 	}
@@ -142,7 +150,10 @@ bool WasmWorkerPool::notifyWork()
 		m_wakesSuppressed.fetch_add(1, std::memory_order_relaxed);
 		return false;
 	}
-	m_generation.notify_one();
+	// One queued block needs one lane: workerwake::notifyOne preserves the
+	// single-waiter wake std::atomic::notify_one had, so the other parked lanes
+	// stay asleep instead of scanning the workers again.
+	lmms::workerwake::notifyOne(m_generation);
 	m_wakeups.fetch_add(1, std::memory_order_relaxed);
 	return true;
 }
@@ -152,10 +163,30 @@ bool WasmWorkerPool::hasPendingWork() const
 	const std::size_t count = m_workerCount.load(std::memory_order_acquire);
 	for (std::size_t i = 0; i < count; ++i)
 	{
-		const WasmWorker* worker = m_workers[i].load(std::memory_order_acquire);
-		if (worker != nullptr && worker->hasPendingWork()) { return true; }
+		WasmWorker* worker = acquireWorker(i);
+		if (worker == nullptr) { continue; }
+		const bool pending = worker->hasPendingWork();
+		releaseWorker(i);
+		if (pending) { return true; }
 	}
 	return false;
+}
+
+WasmWorker* WasmWorkerPool::acquireWorker(std::size_t slot) const
+{
+	if (slot >= maxWorkers) { return nullptr; }
+	m_workerReaders[slot].fetch_add(1, std::memory_order_seq_cst);
+	WasmWorker* worker = m_workers[slot].load(std::memory_order_seq_cst);
+	if (worker == nullptr) { releaseWorker(slot); }
+	return worker;
+}
+
+void WasmWorkerPool::releaseWorker(std::size_t slot) const
+{
+	if (slot < maxWorkers)
+	{
+		m_workerReaders[slot].fetch_sub(1, std::memory_order_seq_cst);
+	}
 }
 
 bool WasmWorkerPool::drainOnce(std::size_t lane)
@@ -165,11 +196,17 @@ bool WasmWorkerPool::drainOnce(std::size_t lane)
 	for (std::size_t i = 0; i < count; ++i)
 	{
 		// Round robin from this lane's own offset, so two lanes tend to take
-		// different workers and a busy worker cannot starve the rest.
-		const std::size_t slot = (lane + i) % maxWorkers;
-		WasmWorker* worker = m_workers[slot].load(std::memory_order_acquire);
+		// different workers and a busy worker cannot starve the rest. Rotate within
+		// the active prefix: any woken lane must be able to reach every worker,
+		// even when there are fewer workers than lanes.
+		const std::size_t slot = (lane + i) % count;
+		WasmWorker* worker = acquireWorker(slot);
 		if (worker == nullptr) { continue; }
-		if (!worker->claimForLane()) { continue; }
+		if (!worker->claimForLane())
+		{
+			releaseWorker(slot);
+			continue;
+		}
 		const bool workerDidWork = worker->drainOnLane();
 		if (workerDidWork)
 		{
@@ -177,6 +214,7 @@ bool WasmWorkerPool::drainOnce(std::size_t lane)
 			m_blocks.fetch_add(1, std::memory_order_relaxed);
 		}
 		worker->releaseLane();
+		releaseWorker(slot);
 	}
 	if (didWork) { m_lanePasses.fetch_add(1, std::memory_order_relaxed); }
 	return didWork;
@@ -193,12 +231,12 @@ void WasmWorkerPool::laneMain(std::size_t lane)
 		// hand-off lossless: a notifyWork() that lands after the scan either
 		// finds this lane idle (and wakes it) or has already bumped the
 		// generation (and the wait below returns immediately).
-		const std::uint64_t generation = m_generation.load(std::memory_order_acquire);
+		const std::uint32_t generation = m_generation.load(std::memory_order_acquire);
 		m_idleLanes.fetch_add(1, std::memory_order_release);
 		if (!hasPendingWork() && !m_stop.load(std::memory_order_acquire))
 		{
 			m_parks.fetch_add(1, std::memory_order_relaxed);
-			m_generation.wait(generation, std::memory_order_acquire);
+			lmms::workerwake::wait(m_generation, generation);
 		}
 		m_idleLanes.fetch_sub(1, std::memory_order_release);
 	}

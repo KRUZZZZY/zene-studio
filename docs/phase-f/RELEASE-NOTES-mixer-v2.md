@@ -34,6 +34,17 @@ phase instead of smearing against its parallel paths:
   and diagnosed rather than silently dropped (`latencyAboveTheCapIsClampedAndDiagnosed`).
 - **No project-format change**: PDC is a runtime behaviour, so `.mmp`/`.mmpz` files are
   unaffected and no version bump is required.
+- *(Added 2026-10-06, MX-157, BUGS 11.34.)* **Latent sources, not only latent chains.** A track's
+  bus handle reports the latency of the source that plays into it as well as its chain's
+  (`AudioBusHandle::latencyFrames()` = source + chain): a hosted CLAP, VST3 or LV2 instrument
+  publishes its plug-in's latency there (`Instrument::reportLatency`, control thread, a lock-free
+  value), so the direct-input pass raises the channel's alignment point and the other tracks are
+  delayed to it. A latent instrument's routed output buses are direct sources of their target
+  channels with the same latency (`InstrumentOutputBuses::forEachLatentRoute`, walked by the same
+  pass without allocating). A source reporting 0 leaves the arithmetic exactly as before. Proven on
+  rendered audio by `InstrumentLatencyPdcTest` (an impulse from a latent fixture and from a plain
+  one land on the same frame, for each format and after a latency change); bounds in
+  `docs/KNOWN-LIMITATIONS.md` ("Hosted instrument latency").
 
 ## 1. What changes in the XML
 

@@ -25,6 +25,8 @@
 #ifndef LMMS_CONTROL_DEVICE_TOOLS_H
 #define LMMS_CONTROL_DEVICE_TOOLS_H
 
+#include <cstddef>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -43,6 +45,8 @@ class Effect;
 namespace lmms::control
 {
 
+struct AbSlotsSnapshot;
+
 //! Registers one command of the 0.5.0 W3 device files (L10): group and verb from the dotted @a id,
 //! the args schema built from @a args / @a required (additionalProperties false), a free-form
 //! object result. Defined in ControlCommandsDeviceTools.cpp - the one copy for these files.
@@ -50,13 +54,24 @@ void addDeviceCommand(ControlRegistry& registry, const char* id, const QString& 
 	const QStringList& required, bool mutating, ControlResult (*handler)(const QJsonObject&));
 
 //! Write each (model, value) of @a writes as ONE undo step: a journal checkpoint of every model
-//! first, then the values (each clamped to its model's range). Defined in ControlCommandsDeviceTools.cpp.
-void writeModelsRecorded(const std::vector<std::pair<AutomatableModel*, float>>& writes);
+//! first, then the values (each clamped to its model's range). A write that leaves its model at the
+//! value it already has is no change: it is neither recorded nor written. Returns how many models
+//! changed (0 means no undo step was taken). Defined in ControlCommandsDeviceTools.cpp.
+int writeModelsRecorded(const std::vector<std::pair<AutomatableModel*, float>>& writes);
 
 //! 0.5.0 L10 (MX-093): the parameter values plugin.ab stored in slots A and B of @a effect, in
 //! plugin.param_get order; false unless both slots are stored for this device. Defined in
 //! ControlCommandsDeviceCopy.cpp, where the slots live.
 bool abSlotValues(Effect* effect, std::vector<float>* a, std::vector<float>* b);
+
+//! Number of retained A/B slot records (one per device id that holds or held slots); DeviceCopyTest uses it to
+//! check that a destroyed device's record is released. Defined in ControlCommandsDeviceCopy.cpp.
+std::size_t abSlotEntryCountForTesting();
+
+//! Keep a device's session A/B state across a recorded removal and restore it on the rebuilt effect.
+std::shared_ptr<AbSlotsSnapshot> captureAbSlotsForRemoval(Effect* effect);
+void restoreAbSlotsAfterRemoval(Effect* effect, const std::shared_ptr<AbSlotsSnapshot>& snapshot);
+std::size_t abSlotsSnapshotSize(const std::shared_ptr<AbSlotsSnapshot>& snapshot);
 
 } // namespace lmms::control
 

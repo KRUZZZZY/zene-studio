@@ -47,6 +47,19 @@ private slots:
 		const QString master = mixerLatencyText(QStringLiteral("Master"), 0, 0, 1323, 44100);
 		QVERIFY2(master.contains(QStringLiteral("Mix latency, compensated: 1323 frames (30.0 ms)")), qPrintable(master));
 	}
+
+	//! Q050-089.1: the hardware insert's effective figure, and where it comes from; nothing while it is off.
+	void theTooltipNamesTheHardwareInsertLatency()
+	{
+		const QString measured = mixerLatencyText(QStringLiteral("Synth"), 0, 0, -1, 44100, 882, QStringLiteral("measured"));
+		QVERIFY2(measured.contains(QStringLiteral("Hardware insert latency: 882 frames (20.0 ms, measured)")), qPrintable(measured));
+		const QString typed = mixerLatencyText(QStringLiteral("Synth"), 0, 0, -1, 44100, 441, QStringLiteral("override"));
+		QVERIFY2(typed.contains(QStringLiteral("Hardware insert latency: 441 frames (10.0 ms, typed)")), qPrintable(typed));
+		const QString unmeasured = mixerLatencyText(QStringLiteral("Synth"), 0, 0, -1, 44100, 0, QStringLiteral("unmeasured"));
+		QVERIFY2(unmeasured.contains(QStringLiteral("Hardware insert latency: not measured")), qPrintable(unmeasured));
+		QCOMPARE(mixerLatencyText(QStringLiteral("Synth"), 0, 0, -1, 44100, 0, QStringLiteral("off")), QStringLiteral("Synth"));
+		QCOMPARE(mixerLatencyText(QStringLiteral("Synth"), 0, 0, -1, 44100, 0, QStringLiteral("bypassed")), QStringLiteral("Synth"));
+	}
 };
 
 QTEST_GUILESS_MAIN(MixerLatencyTextTest)

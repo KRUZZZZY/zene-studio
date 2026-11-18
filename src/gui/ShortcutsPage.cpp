@@ -30,12 +30,14 @@
 #include <QKeySequence>
 #include <QLineEdit>
 #include <QMenu>
+#include <QPushButton>
 #include <QVBoxLayout>
 
-#include "CommandMetadata.h"
 #include "CommandForm.h"
+#include "CommandMetadata.h"
 #include "HelpTasks.h"
 #include "ListTable.h"
+#include "ShortcutPresets.h"
 
 namespace lmms::gui
 {
@@ -93,6 +95,26 @@ ShortcutsPage::ShortcutsPage(QMenuBar* bar, QWidget* parent) :
 	m_filter->setAccessibleName(tr("Filter shortcuts"));
 	m_filter->setClearButtonEnabled(true);
 	layout->addWidget(m_filter);
+	m_presets = new QPushButton(tr("Presets..."), this);
+	m_presets->setObjectName(QStringLiteral("shortcutsPresetButton"));
+	m_presets->setAccessibleName(tr("Apply a shipped keyboard map"));
+	m_presets->setToolTip(tr("Apply the accessibility map or a migration map for Ableton Live, FL Studio or Logic Pro; "
+		"the map it replaces is saved as a backup first"));
+	m_presetMenu = new QMenu(m_presets);
+	m_presetMenu->setObjectName(QStringLiteral("shortcutsPresetMenu"));
+	for (const ShortcutPreset& preset : shortcutPresets())
+	{
+		QAction* action = m_presetMenu->addAction(preset.name);
+		action->setObjectName(QStringLiteral("shortcutPreset_%1").arg(preset.id));
+		action->setToolTip(preset.description);
+		action->setProperty("controlCommand", QStringLiteral("shortcuts.preset_apply"));
+		connect(action, &QAction::triggered, this, [this, preset] {
+			runCommand(this, CommandCall{QStringLiteral("shortcuts.preset_apply"),
+				{{QStringLiteral("preset"), preset.id}}, {}, QString(), false});
+		});
+	}
+	m_presets->setMenu(m_presetMenu);
+	layout->addWidget(m_presets, 0, Qt::AlignLeft);
 
 	// Theme 21: by task - the manual's sections in its order - and within a task by menu, as shortcutEntries orders.
 	std::stable_sort(m_entries.begin(), m_entries.end(), [](const PaletteEntry& a, const PaletteEntry& b) {

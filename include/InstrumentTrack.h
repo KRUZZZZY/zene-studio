@@ -26,7 +26,10 @@
 #ifndef LMMS_INSTRUMENT_TRACK_H
 #define LMMS_INSTRUMENT_TRACK_H
 
+#include <atomic>
+#include <cstdint>
 
+#include <memory>
 #include "ArticulationMap.h"
 #include "AudioBusHandle.h"
 #include "InstrumentFunctions.h"
@@ -38,12 +41,16 @@
 #include "MidiEventProcessor.h"
 #include "MidiInputTransform.h"
 #include "MidiPort.h"
+#include "MidiTakeCapture.h"
 #include "MpeExpression.h"
 #include "NotePlayHandle.h"
 #include "Piano.h"
 #include "Plugin.h"
+#include "RenderDiagnostics.h"
 #include "Track.h"
 
+//! cluster 5186: the modulation-lifetime regression installs a watchable instrument in a track.
+class ModulationAudioViewTest;
 
 namespace lmms
 {
@@ -80,6 +87,9 @@ public:
 
 	void processInEvent( const MidiEvent& event, const TimePos& time = TimePos(), f_cnt_t offset = 0 ) override;
 	void processOutEvent( const MidiEvent& event, const TimePos& time = TimePos(), f_cnt_t offset = 0 ) override;
+	//! NotePlayHandle path: preserve this handle's base-instrument decision through its own note-off.
+	void processOutEventForNote( const MidiEvent& event, const TimePos& time, f_cnt_t offset,
+		std::atomic_bool& baseInstrumentAccepted );
 
 	/*! MPE per-note expression capture (task #601).
 	 *
@@ -90,6 +100,10 @@ public:
 	const MpeExpression& mpeExpression() const { return m_mpeExpression; }
 	//! 0.5.0 L07 (ED-145): what this track does to live MIDI input (MidiInputTransform.h).
 	MidiInputTransform& inputTransform() { return m_inputTransform; }
+	//! Q050-054.1: the arrangement MIDI take capture this track's live input feeds while armed
+	//! (track.set_midi_arm) and transport.record runs (MidiTakeRecorder).
+	MidiTakeCapture& midiTakeCapture() { return m_midiTakeCapture; }
+	const MidiTakeCapture& midiTakeCapture() const { return m_midiTakeCapture; }
 	//! 0.5.0 L09 (MX-035): every note of the track started this many milliseconds later (0..500) - a
 	//! manual offset for a slow instrument or to sit a part behind the beat. Saved only when set.
 	int delayMs() const { return m_delayMs.load(std::memory_order_relaxed); }
@@ -150,6 +164,15 @@ public:
 	void playNote( NotePlayHandle * _n, std::span<SampleFrame> workingBuffer );
 
 	QString instrumentName() const;
+#ifdef LMMS_TESTING
+	/*! Q050-311 test seam: install an instrument the test constructed itself (a built-in compiled into
+	 *  the test executable, because a Windows test host cannot load plug-in modules) the same way
+	 *  loadInstrument() installs one. The track takes ownership. */
+	void setInstrumentForTest( Instrument* instrument );
+#endif
+	//! 0.5.0 Q050-018: the original `<instrument>` XML the file carried, kept while the instrument is a placeholder
+	//! (its module or hosted plug-in binary is missing) and written back unchanged on save; null otherwise.
+	const QDomElement& preservedInstrument() const { return m_preservedInstrument; }
 	const Instrument *instrument() const
 	{
 		return m_instrument;
@@ -187,6 +210,10 @@ public:
 	//! R3.3: whether a note of @a clip at @a songTick plays under the track's
 	//! composite (and audition). True for every note of a track with neither.
 	bool compPlays(const MidiClip* clip, int songTick) const;
+	//! Q050-054.1: whether a loop-recorded take @a clip plays under the active-take model - an ordinary
+	//! clip always does; a take only when it is its group's active take, or a composite, an audition or
+	//! "play all takes" decides instead (the SampleTrack rule). Lock-free: the render thread calls it.
+	bool takePlays(const MidiClip* clip) const;
 	//! What play() applies to a fresh note play handle beyond the note itself: velocity jitter,
 	//! the slide source, the song-global offset (@a songOffset: the song position of the clip's own
 	//! time 0 for the pass playing) and the clip's transpose (InstrumentTrackNotes.cpp).
@@ -206,13 +233,25 @@ public:
 		class PatternTrack* patternTrack;
 		tick_t songTick;  //!< the song position playing now: a looped clip's pass included (swing's phase)
 	};
-	//! Whether a note starts at @a curStart: on it, under the clip's own start, or chased (InstrumentTrackNotes.cpp).
-	bool noteStartsNow(const Note& note, const TimePos& curStart, const MidiClip* clip) const;
+	//! Whether a note starts at @a curStart: on it, under the clip's own start, or chased
+	//! (InstrumentTrackNotes.cpp). @a chaseNow is a start, a jump, a loop or an unmute this
+	//! pass (Q050-040); a note an already-sounding handle covers is not started again.
+	bool noteStartsNow(const Note& note, const TimePos& curStart, const MidiClip* clip, bool chaseNow) const;
+	//! Whether a live (not released) note play handle of this track already plays @a note:
+	//! the chase must not double a note that a seek or loop left sounding (Q050-040). The handle's
+	//! originating clip must be @a clip itself: a same-key note in another overlapping clip is a
+	//! different note (Q050-040 r2).
+	bool noteIsAlreadySounding(const Note& note, const MidiClip* clip) const;
 	//! Whether the note plays this time: not muted, on this pass, past its chance roll (InstrumentTrackNotes.cpp).
 	bool notePlaysNow(const Note& note, uint32_t midiSeed) const;
 	//! Start the note: its articulation, its handle and its repeats, delayed by swing and the MIDI offset.
 	void triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_cnt_t frames, const TimePos& curStart);
-	void sendArticulation(int index, f_cnt_t offset);
+	//! Audio thread (Q050-015): an articulation's program change, control change and keyswitch press, at @a offset
+	//! in the period and @a time, for the note on @a key at @a volume; true when a keyswitch is down and
+	//! releaseKeyswitch() is owed. Nothing is sent when a layer rack leaves this track's instrument out of the note.
+	bool sendArticulationEvents(const ArticulationEvents& events, int channel, int key, int volume, const TimePos& time, f_cnt_t offset);
+	void releaseKeyswitch(int key, int channel, const TimePos& time, f_cnt_t offset);
+	static constexpr int KeyswitchVelocity = 100;
 	//! 0.5.0 ED-029: @a position (clip time) folded into the clip's loop, when it has one.
 	static TimePos loopedPosition(const MidiClip* clip, const TimePos& position);
 	//! Where a note starting in the pass at @a passBase (clip time) is cut: the clip's end, and on a
@@ -228,6 +267,7 @@ public:
 	// called by track
 	void saveTrackSpecificSettings(QDomDocument& doc, QDomElement& parent, bool presetMode) override;
 	void loadTrackSpecificSettings( const QDomElement & _this ) override;
+	void loadTrackSpecificSettings(const QDomElement& _this, bool presetMode) override;
 
 	using Track::setJournalling;
 
@@ -266,6 +306,10 @@ public:
 	{
 		return &m_lastKeyModel;
 	}
+
+	//! Q050-074.1: this track's share of the engine's synthesis stage (its play handles feed it).
+	SynthesisLoad& synthesisLoad() { return m_synthesisLoad; }
+	const SynthesisLoad& synthesisLoad() const { return m_synthesisLoad; }
 
 	bool keyRangeImport() const;
 	bool isKeyMapped(int key) const;
@@ -339,6 +383,24 @@ public:
 	//! Returns a non-owning pointer to the model for the knob at the given index in the track's MIDI CC rack
 	FloatModel* midiCCModel(int index) const { return m_midiCCModel[index].get(); }
 
+	/*! Whether the piano roll is recording right now.
+	 *
+	 *  PUBLISHED BY THE GUI, READ BY THE RENDER THREAD. The piano roll's own flag
+	 *  (PianoRoll::m_recording) is a plain bool the GUI thread writes, so the render
+	 *  path must not read it: InstrumentTrack::play() runs on the audio thread, and
+	 *  asking a QWidget from there is both a data race and a Qt call on the wrong
+	 *  thread (cluster new-p15-83). The state is published here instead, as one
+	 *  atomic word with relaxed ordering - a flag, with no order to keep. */
+	static void setPianoRollRecording(bool recording) noexcept
+	{
+		s_pianoRollRecording.store(recording, std::memory_order_relaxed);
+	}
+	//! The published piano-roll recording state (see setPianoRollRecording).
+	static bool isPianoRollRecording() noexcept
+	{
+		return s_pianoRollRecording.load(std::memory_order_relaxed);
+	}
+
 signals:
 	void instrumentChanged();
 	void midiNoteOn( const lmms::Note& );
@@ -354,6 +416,7 @@ protected:
 
 	// get the name of the instrument in the saved data
 	QString getSavedInstrumentName(const QDomElement & thisElement) const;
+	void capturePlaceholder(const QDomElement& instrumentNode);
 
 
 protected slots:
@@ -364,11 +427,36 @@ protected slots:
 
 
 private:
+	bool loadConvertedInstrument(const QDomElement& instrumentNode);
+
+	struct NoteActivitySnapshot
+	{
+		int activeNotes;
+		std::uint32_t noteOnGeneration;
+	};
+
+	//! GUI-polled activity state; the note event paths update it without emitting Qt signals.
+	void recordNoteOnActivity();
+	void recordNoteOffActivity();
+	NoteActivitySnapshot noteActivitySnapshot() const;
+
+	/*! cluster 5186 (new-p12-159): destroys this track's instrument - the ONE place an instrument
+	 *  is destroyed, whatever the reason (the track goes, the file names another instrument, the
+	 *  user picks another one). The modulation target that points at the instrument is closed
+	 *  FIRST, so the audio thread's block can no longer call into an instrument that is tearing
+	 *  down: the base destructor is too late for that, because it runs after the derived one. */
+	void destroyInstrument();
+
 	void processCCEvent(int controller);
+	void processOutEventImpl(const MidiEvent& event, const TimePos& time, f_cnt_t offset,
+		std::atomic_bool* baseInstrumentAccepted);
 
 	// MPE capture (task #601). Both run on the MIDI-input thread and only
 	// touch fixed arrays plus plain int writes on live note handles.
 	bool trackMpeInputEvent( const MidiEvent& event );
+	//! 0.5.0 Q050-039: stores the release velocity an MPE note-off arrived with
+	//! on the released note's handle, so playback (and a record pass) keeps it.
+	void captureMpeReleaseVelocity( const MidiEvent& event );
 	//! Live input through the track's MIDI input transform (InstrumentTrackNotes.cpp): true when
 	//! the event was handled here - transformed and played, or dropped.
 	bool handleInputTransform( const MidiEvent& event, const TimePos& time, f_cnt_t offset );
@@ -377,8 +465,10 @@ private:
 	// 0.5.0 MX-112/MX-114/MX-120 (InstrumentTrackNotes.cpp)
 	//! processOutEvent's note-on, note-off and other messages to the instrument (@a fallbackChannel is the
 	//! channel the track would use without MIDI parts).
-	void sendNoteOn( const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset );
-	void sendNoteOff( const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset );
+	void sendNoteOn( const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset,
+		std::atomic_bool* baseInstrumentAccepted );
+	void sendNoteOff( const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset,
+		std::atomic_bool* baseInstrumentAccepted );
 	void sendChannelEvent( const MidiEvent& event, const TimePos& time, f_cnt_t offset );
 	//! The <midicontrollers> element: the MIDI CC rack's knob values.
 	void loadMidiControllers( const QDomElement& element );
@@ -388,16 +478,20 @@ private:
 	void noteVoiceChanged( bool on, int channel, int key, f_cnt_t offset );
 	//! The layers, MIDI parts and output-bus routes, saved beside the instrument.
 	void saveZeneInstrumentSettings( QDomDocument& doc, QDomElement& element, bool presetMode );
-	void loadZeneInstrumentSettings( const QDomElement& element );
+	void loadZeneInstrumentSettings(const QDomElement& element, bool presetMode);
 	//! Whether @a name is one of those elements (the loader must not take it for an instrument plug-in).
 	static bool isZeneInstrumentNode( const QString& name );
 
+	//! Before the port: destroyed after it, so no event the port delivers reaches a freed capture.
+	MidiTakeCapture m_midiTakeCapture;
 	MidiPort m_midiPort;
 
 	MpeExpression m_mpeExpression;
 	MidiInputTransform m_inputTransform;
 	ArticulationMap m_articulations;
 	std::atomic<int> m_delayMs{0};
+	std::atomic<int> m_activeUiNotes{0};
+	std::atomic<std::uint32_t> m_noteOnGeneration{0};
 
 	NotePlayHandle* m_notes[NumKeys];
 	NotePlayHandleList m_sustainedNotes;
@@ -409,16 +503,30 @@ private:
 
 	bool m_silentBuffersProcessed;
 
+	//! 0.5.0 Q050-040: this track's mute as the render thread saw it one play() pass back.
+	//! Render thread's own (Song::processNextBuffer is the one scheduler), so a plain bool.
+	bool m_mutedLastPlay = false;
+
 	bool m_previewMode;
 
 	IntModel m_baseNoteModel;	//!< The "A4" or "440 Hz" key (default 69)
 	IntModel m_firstKeyModel;	//!< First key the instrument reacts to
 	IntModel m_lastKeyModel;	//!< Last key the instrument reacts to
+	SynthesisLoad m_synthesisLoad;	//!< Q050-074.1: written by the render workers, read by mixer.cpu_load
 
 	bool m_hasAutoMidiDev;
 	static InstrumentTrack *s_autoAssignedTrack;
 
+	//! The published piano-roll recording state (see setPianoRollRecording): the
+	//! GUI writes it, the render thread reads it, and nothing else touches it.
+	inline static std::atomic_bool s_pianoRollRecording{false};
+
 	NotePlayHandleList m_processHandles;
+
+	//! The clips of the pass playing, in getClipsInRange's order. Its capacity is kept at this track's
+	//! clip count on the control thread (see the clipAdded connection in the constructor), so play()
+	//! never grows it on the audio thread.
+	clipVector m_playClips;
 
 	FloatModel m_volumeModel;
 	FloatModel m_panningModel;
@@ -431,6 +539,8 @@ private:
 	BoolModel m_useMasterPitchModel;
 
 	Instrument * m_instrument;
+	//! 0.5.0 Q050-018: the file's original instrument element while the instrument is only a placeholder (null otherwise)
+	QDomElement m_preservedInstrument;
 	InstrumentSoundShaping m_soundShaping;
 	InstrumentFunctionArpeggio m_arpeggio;
 	InstrumentFunctionNoteStacking m_noteStacking;
@@ -451,6 +561,9 @@ private:
 	friend class NotePlayHandle;
 	friend class gui::InstrumentTuningView;
 	friend class gui::MidiCCRackView;
+	//! cluster 5186: the regression needs an instrument in the track it can watch from its own
+	//! destructor, so that it can see the modulation target close BEFORE the teardown starts.
+	friend class ::ModulationAudioViewTest;
 
 } ;
 

@@ -34,6 +34,7 @@
 #include "NotePlayHandle.h"
 #include "VibratingString.h"
 #include "base64.h"
+#include "WaveformData.h"
 #include "CaptionMenu.h"
 #include "volume.h"
 #include "Song.h"
@@ -122,8 +123,20 @@ Vibed::Vibed(InstrumentTrack* instrumentTrack) :
 		m_powerModels[harm] = std::make_unique<BoolModel>(harm == 0, this, tr("String %1").arg(harm + 1));
 		m_harmonicModels[harm] = std::make_unique<NineButtonSelectorModel>(2, 0, 8, this);
 		m_graphModels[harm] = std::make_unique<graphModel>(-1.0, 1.0, s_sampleLength, this);
+		// Every waveform action on the model - a drag, smooth, normalize, a wave
+		// button, a project load - ends in samplesChanged, so this is the one place
+		// the audio thread's copy is refreshed. The connection is direct, so the
+		// hand-off runs on the thread that made the edit, and the audio thread only
+		// ever reads the published slot.
+		connect(m_graphModels[harm].get(), &graphModel::samplesChanged,
+			this, [this, harm](int, int) { publishWaveform(harm); });
 		m_graphModels[harm]->setWaveToSine();
 	}
+}
+
+void Vibed::publishWaveform(int str)
+{
+	m_waveforms[str].publish(m_graphModels[str]->samples());
 }
 
 void Vibed::saveSettings(QDomDocument& doc, QDomElement& elem)
@@ -185,13 +198,8 @@ void Vibed::loadSettings(const QDomElement& elem)
 			m_randomModels[i]->loadSettings(elem, "slap" + is);
 			m_impulseModels[i]->loadSettings(elem, "impulse" + is);
 
-			int size = 0;
-			float* shp = nullptr;
-			base64::decode(elem.attribute("graph" + is), &shp, &size);
-
-			assert(size == 128 * sizeof(float));
-			m_graphModels[i]->setSamples(shp);
-			delete[] shp;
+			// Exactly s_sampleLength finite values, else the string keeps its shape (Q050-486).
+			waveform::loadGraph(elem, "graph" + is, *m_graphModels[i], QStringLiteral("Vibed"));
 		}
 	}
 }
@@ -218,7 +226,10 @@ void Vibed::playNoteImpl(NotePlayHandle* n, std::span<SampleFrame> out)
 					m_harmonicModels[i]->value(),
 					m_pickModels[i]->value(),
 					m_pickupModels[i]->value(),
-					m_graphModels[i]->samples(),
+					// The published copy, never the graph model: this runs on the
+					// audio thread, where the impulse editor may be rewriting the
+					// model right now.
+					m_waveforms[i].samples(),
 					m_randomModels[i]->value(),
 					m_stiffnessModels[i]->value(),
 					m_detuneModels[i]->value(),

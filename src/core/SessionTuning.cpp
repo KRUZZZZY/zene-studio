@@ -53,6 +53,11 @@
 namespace lmms
 {
 
+#ifdef LMMS_TESTING
+//! Test seam (cluster 5313), compiled only in test builds.
+static void (*s_publicationBoundaryHookForTest)() = nullptr;
+#endif
+
 namespace
 {
 
@@ -140,16 +145,16 @@ double frequencyForKey(int key, const Keymap& keymap, const std::vector<Interval
 		* std::pow(reference.octaveRatio, keymap.getOctave(key) + scaleOctave);
 }
 
-//! Every built entry must survive the float narrowing noteToFreq() does before
-//! the audio thread sees it: an entry outside that range reaches the render
-//! path as infinity. 0 is the unmapped marker and stays allowed.
+//! Every mapped entry must survive the float narrowing noteToFreq() does before
+//! the audio thread sees it. 0 is allowed only for an intentionally unmapped key.
 bool tableFrequenciesAreRenderable(const std::array<double, SessionTuning::TableSize>& table,
-	int* badKey, double* badValue)
+	const Keymap& keymap, int* badKey, double* badValue)
 {
 	for (int key = 0; key < SessionTuning::TableSize; ++key)
 	{
 		const double frequency = table[key];
-		if (!std::isfinite(frequency) || frequency < 0.0 || frequency > MaxTableFrequency)
+		if (!std::isfinite(frequency) || frequency < 0.0 || frequency > MaxTableFrequency
+			|| (keymap.getDegree(key) != -1 && static_cast<float>(frequency) == 0.0f))
 		{
 			*badKey = key;
 			*badValue = frequency;
@@ -219,13 +224,13 @@ bool SessionTuning::buildTable(const Scale* scale, const Keymap& keymap,
 	}
 	int badKey = 0;
 	double badValue = 0.0;
-	if (!tableFrequenciesAreRenderable(out->frequencies, &badKey, &badValue))
+	if (!tableFrequenciesAreRenderable(out->frequencies, keymap, &badKey, &badValue))
 	{
 		// Refused whole, so the table the session already had stays standing.
 		if (error != nullptr)
 		{
-			*error = QStringLiteral("key %1 would be %2 Hz, outside the range the render "
-				"path can use").arg(badKey).arg(badValue);
+			*error = QStringLiteral("key %1 would be %2 Hz, which the render path cannot use")
+				.arg(badKey).arg(badValue);
 		}
 		return false;
 	}
@@ -233,50 +238,59 @@ bool SessionTuning::buildTable(const Scale* scale, const Keymap& keymap,
 	return true;
 }
 
+#ifdef LMMS_TESTING
+void SessionTuning::setPublicationBoundaryHookForTest(void (*hook)())
+{
+	s_publicationBoundaryHookForTest = hook;
+}
+#endif
+
 void SessionTuning::commit(const Table& next, bool nextActive, const QString& source)
 {
-	// Claim a non-published, reader-free slot before writing it. With three
-	// slots, one can remain published while another is held by a reader and
-	// the third is available for this commit. Concurrent writers retry if a
-	// competing commit publishes first, preserving publication order.
-	for (;;)
+	// Cluster 5313: writers are serialised, so no second writer can claim a slot between the moment the
+	// first one drops its claim and the moment it flips the front. The claim bit is dropped BEFORE the
+	// flip: a reader spins while the slot it reads carries WriterBit, so the slot that is published must
+	// never still carry it. (The old order kept the bit set between the flip and the drop, and a writer
+	// descheduled in that interval stalled every reader on the audio thread without bound.)
 	{
-		const int front = m_front.load(std::memory_order_acquire);
-		int back = (front + 1) % TableCount;
-		bool claimed = false;
-		for (int attempt = 0; attempt < TableCount - 1; ++attempt)
+		const std::lock_guard<std::mutex> writeLock(m_writeMutex);
+		for (;;)
 		{
-			unsigned expected = 0u;
-			if (back != front && m_slotStates[back].compare_exchange_weak(
-				expected, WriterBit, std::memory_order_acquire,
-				std::memory_order_relaxed))
+			// Claim a non-published, reader-free slot before writing it. With three
+			// slots, one can remain published while another is held by a reader and
+			// the third is available for this commit.
+			const int front = m_front.load(std::memory_order_acquire);
+			int back = (front + 1) % TableCount;
+			bool claimed = false;
+			for (int attempt = 0; attempt < TableCount - 1; ++attempt)
 			{
-				claimed = true;
-				break;
+				unsigned expected = 0u;
+				if (back != front && m_slotStates[back].compare_exchange_weak(
+					expected, WriterBit, std::memory_order_acquire,
+					std::memory_order_relaxed))
+				{
+					claimed = true;
+					break;
+				}
+				back = (back + 1) % TableCount;
 			}
-			back = (back + 1) % TableCount;
-		}
-		if (!claimed) { continue; }
+			if (!claimed) { continue; }
 
-		if (m_front.load(std::memory_order_acquire) != front)
-		{
+			Table& target = m_tables[back];
+			target = next;
+			target.active = nextActive;
 			m_slotStates[back].fetch_and(~WriterBit, std::memory_order_release);
-			continue;
-		}
-		Table& target = m_tables[back];
-		target = next;
-		target.active = nextActive;
-		int expectedFront = front;
-		if (m_front.compare_exchange_strong(expectedFront, back,
-			std::memory_order_release, std::memory_order_acquire))
-		{
+			m_front.store(back, std::memory_order_release);
+			// In the fixed order the slot is readable while the writer pauses. If the
+			// old publish-before-clear order returns, this same seam pauses with the
+			// published slot still claimed, so the reader must time out here.
+#ifdef LMMS_TESTING
+			if (s_publicationBoundaryHookForTest != nullptr) { s_publicationBoundaryHookForTest(); }
+#endif
 			m_source = source.left(MaxSourceLength);
-			m_slotStates[back].fetch_and(~WriterBit, std::memory_order_release);
 			break;
 		}
-		m_slotStates[back].fetch_and(~WriterBit, std::memory_order_release);
 	}
-
 	retuneSoundingNotes();
 	publishToMtsEsp();
 }
@@ -377,6 +391,11 @@ void SessionTuning::feedScale(std::shared_ptr<const Scale> scale, const QString&
 {
 	Table next;
 	QString buildError;
+	if (!sourceFitsCap(source, &buildError))
+	{
+		qWarning("SessionTuning: refusing the fed scale: %s", qPrintable(buildError));
+		return;
+	}
 	if (!buildTable(scale.get(), *m_keymap, &next, &buildError))
 	{
 		// The dialog already validated what it applied; a table that cannot be
@@ -393,6 +412,11 @@ void SessionTuning::feedKeymap(std::shared_ptr<const Keymap> keymap, const QStri
 {
 	Table next;
 	QString buildError;
+	if (!sourceFitsCap(source, &buildError))
+	{
+		qWarning("SessionTuning: refusing the fed keymap: %s", qPrintable(buildError));
+		return;
+	}
 	if (!buildTable(m_scale.get(), *keymap, &next, &buildError))
 	{
 		qWarning("SessionTuning: refusing the fed keymap: %s", qPrintable(buildError));

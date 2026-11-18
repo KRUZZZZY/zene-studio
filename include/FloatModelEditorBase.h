@@ -53,6 +53,7 @@ public:
 
 	FloatModelEditorBase(DirectionOfManipulation directionOfManipulation = DirectionOfManipulation::Vertical, QWidget * _parent = nullptr, const QString & _name = QString()); //!< default ctor
 	FloatModelEditorBase(const FloatModelEditorBase& other) = delete;
+	void setModel(Model* model, bool isOldModelValid = true) override;
 
 	// TODO: remove
 	inline void setHintText(const QString & txt_before, const QString & txt_after)
@@ -233,6 +234,8 @@ private slots:
 	void toggleScale();
 
 private:
+	void watchModelLifetime(Model* model);
+
 	InteractionType m_interaction = InteractionType::None;
 
 	DirectionOfManipulation m_directionOfManipulation;

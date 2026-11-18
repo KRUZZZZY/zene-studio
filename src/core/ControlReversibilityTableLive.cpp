@@ -95,6 +95,12 @@ const ReversibilityRow kRows[] = {
 		"the project changes",
 		"recorded action step (removes the created track, restores the source's mute)",
 		""),
+	R("record.recovery_place", RC::TrueInverse, true,
+		"it creates one sample track holding the recovered take and rewrites the take's journal to "
+		"'restored'; nothing else in the project changes, and the WAV is never touched",
+		"recorded action step (removes the placed track and rewrites the journal as in_progress; redo "
+		"places it again)",
+		""),
 	R("track.set_mixer_channel", RC::TrueInverse, true,
 		"the track's mixer channel is an IntModel, i.e. a JournallingObject of its own",
 		"ProjectJournal (the track's mixer-channel IntModel checkpoint)",
@@ -102,6 +108,11 @@ const ReversibilityRow kRows[] = {
 	R("track.set_mute", RC::TrueInverse, true,
 		"the muted flag is a BoolModel, i.e. a JournallingObject of its own",
 		"ProjectJournal (Track mute BoolModel checkpoint)",
+		""),
+	R("clip.set_mute", RC::TrueInverse, true,
+		"the muted flag is a BoolModel, i.e. a JournallingObject of its own (0.5.0 Q050-040: "
+		"the song editor's clip mute dispatches this same command)",
+		"ProjectJournal (Clip mute BoolModel checkpoint)",
 		""),
 	R("track.set_solo", RC::TrueInverse, true,
 		"the action is NOT one object: the solo flag rides the solo BoolModel "
@@ -167,6 +178,12 @@ const ReversibilityRow kRows[] = {
 		"the clip gain is part of the same Clip serialized state as the fades",
 		"ProjectJournal (Clip checkpoint)",
 		""),
+	R("clip.set_polarity", RC::TrueInverse, true,
+		"the polarity flag is part of the same Clip serialized state as the gain and the fades "
+		"(Clip::saveClipEdits writes `invert` only when set), so the Clip checkpoint the command "
+		"takes before it writes is a live inverse",
+		"ProjectJournal (Clip checkpoint)",
+		""),
 	R("clip.set_record", RC::TrueInverse, true,
 		"the record flag is not in the clip's serialized state, so no checkpoint could restore "
 		"it; the command records the flag's before-value",
@@ -201,8 +218,10 @@ const ReversibilityRow kRows[] = {
 		"ProjectJournal (Clip checkpoint)",
 		""),
 	R("note.edit", RC::TrueInverse, true,
-		"every field it writes (position, key, length, volume, panning, probability) is part of the "
-		"clip's saved note list, and the whole batch is one checkpoint",
+		"every field it writes (position, key, length, volume, panning, probability, muted, release "
+		"velocity, velocity spread, repeats, recurrence length and pass mask, articulation, group, "
+		"slide, MPE timbre/pressure/pitch) is part of the clip's saved note list, and the whole batch "
+		"is one checkpoint; the recurrence pair is captured together, because a new length cuts the mask",
 		"ProjectJournal (one MidiClip checkpoint for the batch); inverse: note.edit with the previous values",
 		""),
 	RC("mixer.set_volume", RC::TrueInverse, true,
@@ -263,7 +282,8 @@ const ReversibilityRow kRows[] = {
 		"ProjectJournal (Clip checkpoint): SampleClip::saveSettings writes the "
 		"attribute and SampleClip::loadSettings re-reads it, so one undo "
 		"restores the previous mode. The recorded inverse is warp.stretch "
-		"re-issued with the before-state's own mode",
+		"re-issued with the before-state's own mode and (Q050-162) its "
+		"repeat rate - the 'repeat_rate' attribute of the same element",
 		""),
 	R("plugin.bypass", RC::TrueInverse, true,
 		"the On/Off control is the Effect's enabled model",
@@ -392,6 +412,18 @@ const ReversibilityRow kRows[] = {
 		"the note list, attributes included - a cleared expression comes back "
 		"with its presence flag and all three axes)",
 		""),
+	// Q050-016: the time-varying half of the same per-note fields. The stream
+	// lives in the Note's own serialized state (the optional mpepitchpts /
+	// mpepressurepts / mpetimbrepts attributes), so the same MidiClip
+	// checkpoint that reverses note.expression_set reverses it.
+	R("note.expression_stream_set", RC::TrueInverse, true,
+		"the expression stream lives in the Note's own serialized state (three "
+		"optional point-list attributes on the note element), and the MidiClip "
+		"that owns the note list is a JournallingObject",
+		"ProjectJournal (MidiClip checkpoint: MidiClip::loadSettings clears and "
+		"re-loads the clip's note list, point lists included, which is the "
+		"mechanism note.expression_set reverses with)",
+		""),
 	// ---- freeze / bounce-in-place ----
 	// All three freeze verbs write ONE thing: the take, as four ATTRIBUTES on
 	// the track's OWN element - frozenAudio / frozenStart / frozenEnd /
@@ -430,6 +462,29 @@ const ReversibilityRow kRows[] = {
 		"absence and re-loads the clips' muted flags from the XML, so one undo "
 		"brings the exact take back - re-running freeze.track would render a new "
 		"one)",
+		""),
+	// Q050-327: the batch. Nothing is applied until every render succeeded; then one ProjectJournal edit takes a
+	// Track checkpoint of every target and freezes it, merged into ONE step - the freeze.track inverse, per track.
+	R("freeze.tracks", RC::TrueInverse, true,
+		"when the batch completes, every selected track gains its frozenAudio attributes in one edit; a cancelled, "
+		"failed or stale batch changes no track",
+		"the completed batch's single ProjectJournal step (one Track checkpoint per target, merged): one control.undo "
+		"thaws every track of the batch",
+		"the rendered WAVs stay on disk - undoing a freeze is not a delete"),
+	// Q050-124: the bus half. The take is ONE value on the MixerChannel (MixerBusFreeze.h) - its file - and the
+	// mixer's own checkpoint would destroy and recreate every channel (the bus.create row's reason), so each
+	// verb records the ACTION: install or clear the take on the channel named by its stable id.
+	R("freeze.bus", RC::TrueInverse, true,
+		"the freeze sets the bus's frozen take (the mixerchannel element's frozenAudio attribute) and makes "
+		"the bus play it in place of its inputs and devices; the bus's routing, devices, fader and the tracks "
+		"feeding it are NOT touched, so the whole change is that one value",
+		"action checkpoint: ONE recorded step clears the take on the channel with this stable id "
+		"(busfreeze::clear); its redo re-installs the same file",
+		"the rendered WAV stays on disk - undoing a freeze is not a delete"),
+	R("freeze.unfreeze_bus", RC::TrueInverse, true,
+		"dropping the take removes the bus's frozenAudio attribute, a change to its serialized state",
+		"action checkpoint: ONE recorded step re-installs the same take file on the channel with this "
+		"stable id (re-running freeze.bus would render a new one)",
 		""),
 
 	// The two CLIP-editing verbs of the groove group (docs/GROOVE-POOL.md).

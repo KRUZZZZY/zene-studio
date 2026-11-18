@@ -32,6 +32,7 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <cmath>
 #include <functional>
 #include <utility>
 #include <vector>
@@ -48,6 +49,9 @@
 #include "Mixer.h"
 #include "Rack.h"
 #include "RackMacros.h"
+
+#include <cmath>
+#include <limits>
 
 namespace lmms
 {
@@ -67,12 +71,28 @@ QJsonObject unitProperty()
 		{QStringLiteral("maximum"), 1.0}};
 }
 
+//! Read an integer index without narrowing an out-of-range JSON number.
+bool intArg(const QJsonObject& args, const QString& name, int& result)
+{
+	const QJsonValue value = args.value(name);
+	if (!value.isDouble()) { return false; }
+	const double number = value.toDouble();
+	if (!std::isfinite(number) || std::floor(number) != number ||
+		number < static_cast<double>(std::numeric_limits<int>::lowest()) ||
+		number > static_cast<double>(std::numeric_limits<int>::max()))
+	{
+		return false;
+	}
+	result = static_cast<int>(number);
+	return true;
+}
+
 //! The target described by a macro_target_add call.
-RackMacroTarget targetFromArgs(const QJsonObject& args)
+RackMacroTarget targetFromArgs(const QJsonObject& args, int chain, int effect)
 {
 	RackMacroTarget target;
-	target.chain = static_cast<int>(args.value(QStringLiteral("chain")).toDouble());
-	target.effect = static_cast<int>(args.value(QStringLiteral("effect")).toDouble());
+	target.chain = chain;
+	target.effect = effect;
 	target.parameter = args.value(QStringLiteral("parameter")).toString();
 	target.low = static_cast<float>(args.value(QStringLiteral("low")).toDouble(0.0));
 	target.high = static_cast<float>(args.value(QStringLiteral("high")).toDouble(1.0));
@@ -118,6 +138,14 @@ void registerMacroAdd(ControlRegistry& registry)
 		const QString channelIdText = channelIdOf(channel);
 		const int before = rack.macros().macroCount();
 		const int index = rack.macros().addMacro(name, value);
+		// A value that is not a number is refused by the macro list (a macro's
+		// value is a 0..1 scalar, and clamping cannot make NaN one). The schema
+		// lets it through: every comparison against NaN is false.
+		if (index < 0)
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'value' must be a finite number: a macro's value is a 0..1 scalar"));
+		}
 
 		addUndoStep(
 			[channelIdText, index]() {
@@ -229,8 +257,10 @@ void registerMacroTargetAdd(ControlRegistry& registry)
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("channel"), stringProperty()},
 		{QStringLiteral("macro"), stringProperty()},
-		{QStringLiteral("chain"), integerProperty()},
-		{QStringLiteral("effect"), integerProperty()},
+		{QStringLiteral("chain"), integerProperty(std::numeric_limits<int>::lowest(),
+			std::numeric_limits<int>::max())},
+		{QStringLiteral("effect"), integerProperty(std::numeric_limits<int>::lowest(),
+			std::numeric_limits<int>::max())},
 		{QStringLiteral("parameter"), stringProperty()},
 		{QStringLiteral("low"), unitProperty()},
 		{QStringLiteral("high"), unitProperty()},
@@ -255,7 +285,15 @@ void registerMacroTargetAdd(ControlRegistry& registry)
 			&error);
 		if (macro < 0) { return error; }
 
-		const RackMacroTarget target = targetFromArgs(args);
+		int chain = 0;
+		int effect = 0;
+		if (!intArg(args, QStringLiteral("chain"), chain) ||
+			!intArg(args, QStringLiteral("effect"), effect))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'chain' and 'effect' must fit the supported integer range"));
+		}
+		const RackMacroTarget target = targetFromArgs(args, chain, effect);
 		if (!isValidMacroTarget(target))
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs,
@@ -321,7 +359,8 @@ void registerMacroTargetRemove(ControlRegistry& registry)
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("channel"), stringProperty()},
 		{QStringLiteral("macro"), stringProperty()},
-		{QStringLiteral("target"), integerProperty()},
+		{QStringLiteral("target"), integerProperty(std::numeric_limits<int>::lowest(),
+			std::numeric_limits<int>::max())},
 	}, {QStringLiteral("channel"), QStringLiteral("macro"), QStringLiteral("target")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("channel"), stringProperty()},
@@ -341,7 +380,12 @@ void registerMacroTargetRemove(ControlRegistry& registry)
 		if (macro < 0) { return error; }
 
 		const RackMacro* entry = rack.macros().macro(macro);
-		const int index = static_cast<int>(args.value(QStringLiteral("target")).toDouble());
+		int index = 0;
+		if (!intArg(args, QStringLiteral("target"), index))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'target' must fit the supported integer range"));
+		}
 		if (index < 0 || index >= static_cast<int>(entry->targets.size()))
 		{
 			return ControlResult::failure(ControlErrorKind::NotFound,
@@ -429,13 +473,25 @@ void registerMacroSet(ControlRegistry& registry)
 
 		const float previousValue = rack.macros().macro(macro)->value;
 		const QString channelIdText = channelIdOf(channel);
-		const MacroApplied applied = applyMacroValue(rack, channelIdText, macro,
-			static_cast<float>(args.value(QStringLiteral("value")).toDouble()));
+		const float requested = static_cast<float>(args.value(QStringLiteral("value")).toDouble());
+		// A value that is not a number is refused whole: the macro keeps the
+		// value it had and no parameter is written (the schema lets NaN
+		// through, because every comparison against it is false).
+		if (!std::isfinite(requested))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'value' must be a finite number: a macro's value is a 0..1 scalar"));
+		}
+		const MacroApplied applied = applyMacroValue(rack, channelIdText, macro, requested);
+		const bool changed = macroAppliedChanged(applied);
 		// ONE undo step for the macro's own scalar AND every parameter it
 		// wrote: the step re-resolves each target at undo time, so it carries no
 		// raw model pointer.
-		addUndoStep([undo = applied.undo]() { writeMacroAssignments(undo); },
-			[redo = applied.redo]() { writeMacroAssignments(redo); });
+		if (changed)
+		{
+			addUndoStep([undo = applied.undo]() { writeMacroAssignments(undo); },
+				[redo = applied.redo]() { writeMacroAssignments(redo); });
+		}
 
 		QJsonObject result;
 		result.insert(QStringLiteral("channel"), channelIdText);
@@ -445,17 +501,20 @@ void registerMacroSet(ControlRegistry& registry)
 		result.insert(QStringLiteral("skipped"), applied.skipped);
 		result.insert(QStringLiteral("writes"), applied.writes);
 		result.insert(QStringLiteral("macro_state"), macroJson(*rack.macros().macro(macro), macro));
-		QJsonObject beforeState = macroJson(*rack.macros().macro(macro), macro);
-		beforeState.insert(QStringLiteral("value"), static_cast<double>(previousValue));
-		result.insert(QStringLiteral("__transaction"),
-			transactionPayload(beforeState, QStringLiteral("rack.macro_set"),
-				QJsonObject{{QStringLiteral("channel"), channelIdText},
-					{QStringLiteral("macro"), macroId(macro)},
-					{QStringLiteral("value"), static_cast<double>(previousValue)}},
-				true,
-				QStringLiteral("action checkpoint: the recorded undo step puts the macro's own "
-					"value back and writes every parameter the call changed back to the value it "
-					"had, re-resolved by chain/effect/parameter name at undo time")));
+		if (changed)
+		{
+			QJsonObject beforeState = macroJson(*rack.macros().macro(macro), macro);
+			beforeState.insert(QStringLiteral("value"), static_cast<double>(previousValue));
+			result.insert(QStringLiteral("__transaction"),
+				transactionPayload(beforeState, QStringLiteral("rack.macro_set"),
+					QJsonObject{{QStringLiteral("channel"), channelIdText},
+						{QStringLiteral("macro"), macroId(macro)},
+						{QStringLiteral("value"), static_cast<double>(previousValue)}},
+					true,
+					QStringLiteral("action checkpoint: the recorded undo step puts the macro's own "
+						"value back and writes every parameter the call changed back to the value it "
+						"had, re-resolved by chain/effect/parameter name at undo time")));
+		}
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);

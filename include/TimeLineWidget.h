@@ -34,6 +34,8 @@
 #include "embed.h"
 
 
+class QKeyEvent;
+class QMenu;
 class QToolBar;
 
 namespace lmms {
@@ -111,6 +113,14 @@ public:
 	inline int const & getLoopRectangleVerticalPadding() const { return m_loopRectangleVerticalPadding; }
 	inline void setLoopRectangleVerticalPadding(int const & loopRectangleVerticalPadding) { m_loopRectangleVerticalPadding = loopRectangleVerticalPadding; }
 
+	//! 0.5.0 L03 (Q050-147): the punch range has its own band under the loop brace. These are the
+	//! rectangles the paint uses and a test clicks: the band, and the two handles at its ends.
+	//! Empty when the timeline has no non-empty punch range.
+	bool hasPunchRange() const;
+	QRect punchBandRect() const;
+	QRect punchBeginHandleRect() const;
+	QRect punchEndHandleRect() const;
+
 	auto mouseHotspotSelLeft() const -> QSize
 	{
 		const auto point = m_cursorSelectLeft.hotSpot();
@@ -164,6 +174,11 @@ public:
 	bool isPlayheadVisible() const { return m_isPlayheadVisible; }
 	void setPlayheadVisible(bool visible) { m_isPlayheadVisible = visible; }
 
+	//! Q050-322: whether this key event asks for the ruler's loop menu.
+	static bool isMenuKey(int key, Qt::KeyboardModifiers modifiers);
+	//! Open the loop menu at the play position (the mouse and keyboard paths share buildLoopMenu).
+	void openRulerMenu();
+
 signals:
 	void regionSelectedFromPixels( int, int );
 	void selectionFinished();
@@ -181,6 +196,7 @@ protected:
 	void mouseMoveEvent( QMouseEvent * _me ) override;
 	void mouseReleaseEvent( QMouseEvent * _me ) override;
 	void contextMenuEvent(QContextMenuEvent* event) override;
+	void keyPressEvent(QKeyEvent* event) override;
 
 private:
 	enum class Action
@@ -190,12 +206,24 @@ private:
 		MoveLoopBegin,
 		MoveLoopEnd,
 		MoveLoop,
+		MovePunchBegin,
+		MovePunchEnd,
+		MovePunch,
 		SelectSongClip,
 	};
 
 	auto getClickedTime(int xPosition) const -> TimePos;
+	//! Q050-322: the loop menu for @a at, snapped unless @a snap is false; the mouse and keyboard both use it.
+	QMenu* buildLoopMenu(const TimePos& at, bool snap);
 	auto getLoopAction(QMouseEvent* event) const -> Action;
+	//! 0.5.0 L03 (Q050-147): a press in the punch band grabs a handle (or the whole range).
+	auto getPunchAction(QMouseEvent* event) const -> Action;
 	auto actionCursor(Action action) const -> QCursor;
+	//! 0.5.0 L03 (Q050-147): a completed punch drag is ONE transport.punch_set (one undo step):
+	//! the preview wrote the timeline directly, so this puts the old range back and lets the
+	//! command checkpoint it before applying the new one.
+	void commitPunchDrag();
+	void invokePunchSet(tick_t begin, tick_t end, bool enabled);
 
 	QPixmap m_posMarkerPixmap = embed::getIconPixmap("playpos_marker");
 	QPixmap m_recordingPosMarkerPixmap = embed::getIconPixmap("recording_playpos_marker");
@@ -233,6 +261,13 @@ private:
 	// position allows for unquantized drag but fails when toggling quantization.
 	std::array<TimePos, 2> m_oldLoopPos;
 	TimePos m_dragStartPos;
+
+	//! 0.5.0 L03 (Q050-147): the punch drag's start, the range it began with, and whether the
+	//! pointer actually moved it (a click on a handle is not an edit and records no undo step).
+	tick_t m_punchDragStart = 0;
+	tick_t m_oldPunchBegin = 0;
+	tick_t m_oldPunchEnd = 0;
+	bool m_punchDragged = false;
 
 	bool m_isRecording = false;
 	bool m_isPlayheadVisible = true;

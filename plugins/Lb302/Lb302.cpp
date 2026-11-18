@@ -34,6 +34,7 @@
 #include <numbers>
 
 #include <QDebug>
+#include <QTimer>
 
 #include "AutomatableButton.h"
 #include "BandLimitedWave.h"
@@ -229,6 +230,7 @@ Lb302Synth::Lb302Synth(InstrumentTrack* instrumentTrack)
 	, m_vcfs{std::make_unique<Lb302FilterIIR2>(&m_fs), std::make_unique<Lb302Filter3Pole>(&m_fs)}
 {
 	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, &Lb302Synth::filterChanged);
+	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, &Lb302Synth::decayChanged);
 	connect(&m_vcfCutKnob, &FloatModel::dataChanged, this, &Lb302Synth::filterChanged);
 	connect(&m_vcfResKnob, &FloatModel::dataChanged, this, &Lb302Synth::filterChanged);
 	connect(&m_vcfModKnob, &FloatModel::dataChanged, this, &Lb302Synth::filterChanged);
@@ -241,6 +243,14 @@ Lb302Synth::Lb302Synth(InstrumentTrack* instrumentTrack)
 	// need to explicitly call recalcFilter() again.
 	filterChanged();
 	decayChanged();
+
+	// The note-enqueue failsafe runs on the audio thread and may not log, so
+	// it counts the notes it drops. This timer lives in the instrument's own
+	// (control) thread and reports the count from there.
+	auto* dropReporter = new QTimer(this);
+	dropReporter->setInterval(1000);
+	connect(dropReporter, &QTimer::timeout, this, &Lb302Synth::reportDroppedNotes);
+	dropReporter->start();
 
 	Engine::audioEngine()->addPlayHandle(new InstrumentPlayHandle(this, instrumentTrack));
 }
@@ -508,7 +518,10 @@ void Lb302Synth::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>)
 	{
 		if (!tries--)
 		{
-			qDebug() << "Lb302: Note dropped due to catastrophically poor performance! This should never happen!";
+			// The note path runs on the audio thread, which may not log:
+			// logging allocates and takes a lock. The drop is counted in a
+			// lock-free counter that the control thread reports instead.
+			m_droppedNoteCount.fetch_add(1, std::memory_order_relaxed);
 			return;
 		}
 		const auto occupied = static_cast<std::ptrdiff_t>(writeClaimedExpected)
@@ -532,12 +545,25 @@ void Lb302Synth::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>)
 	}
 
 	m_notes[index & s_notesBufMask] = nph;
+	m_notesReadySeq[index & s_notesBufMask].store(nextIndex, std::memory_order_release);
+}
 
-	std::size_t writeCommittedExpected = index;
-	while (!m_notesWriteCommitted.compare_exchange_strong(writeCommittedExpected, nextIndex, std::memory_order_release))
+
+quint64 Lb302Synth::droppedNoteCount() const
+{
+	return m_droppedNoteCount.load(std::memory_order_relaxed);
+}
+
+
+void Lb302Synth::reportDroppedNotes()
+{
+	// The report is the control thread's job: the render thread may not log.
+	if (Engine::audioEngine() != nullptr && Engine::audioEngine()->isRenderThread()) { return; }
+
+	const auto dropped = m_droppedNoteCount.exchange(0, std::memory_order_relaxed);
+	if (dropped > 0)
 	{
-		writeCommittedExpected = index; // Reset this as the CAS will have changed it
-		busyWaitHint();
+		qWarning() << "Lb302:" << dropped << "notes dropped by the note enqueue failsafe";
 	}
 }
 
@@ -574,22 +600,28 @@ void Lb302Synth::processNote(NotePlayHandle* nph)
 void Lb302Synth::playImpl(std::span<SampleFrame> out)
 {
 	const auto readIdx = m_notesReadSeq.load(std::memory_order_relaxed);
-	const auto writeCommitted = m_notesWriteCommitted.load(std::memory_order_acquire);
+	const auto writeClaimed = m_notesWriteClaimed.load(std::memory_order_relaxed);
+	auto writeReady = readIdx;
+	while (writeReady < writeClaimed
+		&& m_notesReadySeq[writeReady & s_notesBufMask].load(std::memory_order_acquire) == writeReady + 1)
+	{
+		++writeReady;
+	}
 	// Process notes, but process new notes last
-	for (auto i = readIdx; i < writeCommitted; ++i)
+	for (auto i = readIdx; i < writeReady; ++i)
 	{
 		const auto& nph = m_notes[i & s_notesBufMask];
 		if (nph->totalFramesPlayed() == 0) { continue; }
 		processNote(nph);
 	}
-	for (auto i = readIdx; i < writeCommitted; ++i)
+	for (auto i = readIdx; i < writeReady; ++i)
 	{
 		const auto& nph = m_notes[i & s_notesBufMask];
 		if (nph->totalFramesPlayed() != 0) { continue; }
 		processNote(nph);
 	}
 	// Mark the processed notes as having been read so that playNote() calls can overwrite them
-	m_notesReadSeq.fetch_add(writeCommitted - readIdx, std::memory_order_release);
+	m_notesReadSeq.fetch_add(writeReady - readIdx, std::memory_order_release);
 
 	process(out.data(), out.size());
 }

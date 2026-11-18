@@ -166,7 +166,8 @@ void LfoGraph::drawInfoText(const EnvelopeAndLfoParameters& params)
 
 	// First configure the font so that we get correct results for the font metrics used below
 	QFont f = p.font();
-	p.setFont(adjustedToPixelSize(f, height() * 0.2));
+	f = adjustedToPixelSize(f, height() * 0.2);
+	p.setFont(f);
 
 	// This is the position where the text and its rectangle will be rendered
 	const QPoint textPosition(4, height() - 6);
@@ -186,6 +187,7 @@ void LfoGraph::drawInfoText(const EnvelopeAndLfoParameters& params)
 void LfoGraph::toggleAmountModel()
 {
 	auto* params = castModel<EnvelopeAndLfoParameters>();
+	if (!params) { return; }
 	auto& lfoAmountModel = params->getLfoAmountModel();
 
 	lfoAmountModel.setValue(lfoAmountModel.value() < 1.0 ? 1.0 : 0.0);

@@ -136,8 +136,11 @@ void resolveEssence(Walk& walk, aafiAudioEssenceFile* essence, const AafReadOpti
 	entry->path = text(essence->usable_file_path);
 	if (!entry->path.isEmpty() && !decodable(entry->path))
 	{
-		walk.loss->warnings.append(QStringLiteral("%1: this build cannot decode .%2 files")
-			.arg(entry->path, QFileInfo(entry->path).suffix()));
+		if (walk.loss != nullptr && walk.loss->warnings.size() < AafMaxWarnings)
+		{
+			walk.loss->warnings.append(QStringLiteral("%1: this build cannot decode .%2 files")
+				.arg(entry->path, QFileInfo(entry->path).suffix()));
+		}
 		entry->path.clear();
 	}
 	entry->missing = entry->path.isEmpty();
@@ -309,18 +312,25 @@ void readComposition(Walk& walk, const AafReadOptions& options)
 	AAF_Iface* aafi = walk.aafi;
 	walk.model->compositionName = text(aafi->compositionName);
 	walk.model->productName = text(aafi->aafd->Identification.ProductName);
-	walk.model->sampleRate = aafi->Audio->samplerate > 0
-		? static_cast<int>(aafi->Audio->samplerate) : AafDefaultSampleRate;
-	readMedia(walk, options);
-	aafiAudioTrack* track = nullptr;
-	AAFI_foreachAudioTrack(aafi, track)
+	//! A video-only composition has no audio aggregate at all: LibAAF leaves it null, and its
+	//! audio macros (essence files, tracks) dereference it - so the audio half is read only
+	//! when there is one, and the model keeps the default sample rate.
+	aafiAudio* audio = aafi->Audio;
+	walk.model->sampleRate = audio != nullptr && audio->samplerate > 0
+		? static_cast<int>(audio->samplerate) : AafDefaultSampleRate;
+	if (audio != nullptr)
 	{
-		if (walk.model->editRate.isEmpty() && track->edit_rate != nullptr)
+		readMedia(walk, options);
+		aafiAudioTrack* track = nullptr;
+		AAFI_foreachAudioTrack(aafi, track)
 		{
-			walk.model->editRate = QStringLiteral("%1/%2").arg(track->edit_rate->numerator)
-				.arg(track->edit_rate->denominator);
+			if (walk.model->editRate.isEmpty() && track->edit_rate != nullptr)
+			{
+				walk.model->editRate = QStringLiteral("%1/%2").arg(track->edit_rate->numerator)
+					.arg(track->edit_rate->denominator);
+			}
+			walk.model->tracks.append(readTrack(walk, track));
 		}
-		walk.model->tracks.append(readTrack(walk, track));
 	}
 	readMarkers(walk);
 	if (aafi->Video != nullptr) { countVideo(walk); }
@@ -354,6 +364,7 @@ bool readAaf(const QString& path, const AafReadOptions& options, AafModel* model
 			"not parse) - export AAF from the source application").arg(path);
 		return false;
 	}
+	*loss = AafLossReport(); // each read starts fresh: a caller may reuse one report across reads
 	Context context;
 	if (context.aafi == nullptr) { *error = QStringLiteral("LibAAF could not allocate a context"); return false; }
 	aafi_set_debug(context.aafi, VERB_WARNING, 0, nullptr, &collectLog, loss);

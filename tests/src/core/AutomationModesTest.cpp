@@ -41,6 +41,9 @@
 
 #include <QtTest>
 
+#include <QFile>
+#include <QTimer>
+
 #include <algorithm>
 #include <atomic>
 #include <bit>
@@ -55,6 +58,8 @@
 #include "AutomationClip.h"
 #include "AutomationTrack.h"
 #include "Engine.h"
+#include "ProjectJournal.h"
+#include "RealtimeScope.h"
 #include "Song.h"
 #include "TimePos.h"
 
@@ -144,6 +149,12 @@ void playFromZero(Song* song, int periods)
 	{
 		song->processNextBuffer();
 	}
+}
+
+bool drainAutomationWrites(Song* song)
+{
+	auto* timer = song->findChild<QTimer*>(QStringLiteral("automationWriteDrainTimer"));
+	return timer != nullptr && QMetaObject::invokeMethod(timer, "timeout", Qt::DirectConnection);
 }
 
 //! A scenario in the mode decision table: a touch made in run @p touchRun
@@ -260,6 +271,7 @@ private slots:
 			song->processNextBuffer();
 		}
 		rig.volume.noteAutomationTouchEnd();
+		QVERIFY(drainAutomationWrites(song));
 		QVERIFY2(timeMapBits(rig.clip) != beforeTouch,
 			"Touch wrote nothing - the Read-mode assertion above proves nothing");
 	}
@@ -292,6 +304,7 @@ private slots:
 			rig.volume.setValue(0.9f - 0.02f * i);
 			song->processNextBuffer();
 		}
+		QVERIFY(drainAutomationWrites(song));
 		QVERIFY2(timeMapBits(rig.clip) != before, "a held Touch pass wrote nothing");
 
 		// Release: Touch returns to reading - unlike Latch (see below).
@@ -354,6 +367,52 @@ private slots:
 		}
 		// ...and the stop that every init() in this file performs.
 		song->stop();
+	}
+
+	//! The last-frame automation cache is read on the render thread. Its removal
+	//! path must take the same AudioEngine guard before erasing from the vector.
+	//! This structural assertion makes that synchronization contract deterministic
+	//! to test, without introducing a timing race into the regression.
+	void automatedCacheRemovalUsesTheRenderGuard()
+	{
+		QFile source(QString::fromUtf8(AUTOMATION_CACHE_SOURCE_FILE));
+		QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
+		const QString text = QString::fromUtf8(source.readAll());
+		const int begin = text.indexOf(QStringLiteral("void Song::forgetAutomatedModel"));
+		QVERIFY(begin >= 0);
+		const int end = text.indexOf(QStringLiteral("void Song::masterVolumeChanged"), begin);
+		QVERIFY(end > begin);
+		const QString body = text.mid(begin, end - begin);
+		const int guard = body.indexOf(QStringLiteral("requestChangesGuard"));
+		const int cache = body.indexOf(QStringLiteral("m_oldAutomatedValues"));
+		QVERIFY2(guard >= 0 && cache > guard,
+			"cache removal must acquire the render guard before accessing m_oldAutomatedValues");
+	}
+
+	//! Write modes must hand points to the control thread. The render pass itself
+	//! leaves the clip untouched; draining the queued points applies them later.
+	void testAutomationWritesAreQueuedOffTheRenderPath()
+	{
+		auto* song = Engine::getSong();
+		Rig rig(song);
+		rig.writeCurve();
+		QCOMPARE(Engine::projectJournal()->journallingObject(
+			static_cast<JournallingObject*>(&rig.clip)->id()),
+			static_cast<JournallingObject*>(&rig.clip));
+		rig.volume.setAutomationMode(AutomationMode::Write);
+		const auto before = timeMapBits(rig.clip);
+
+		song->playSong();
+		song->getTimeline().setTicks(0);
+		song->processNextBuffer();
+		for (int i = 0; i < 8; ++i)
+		{
+			rig.volume.setValue(0.2f + 0.05f * i);
+			song->processNextBuffer();
+		}
+		QCOMPARE(timeMapBits(rig.clip), before);
+		QVERIFY(drainAutomationWrites(song));
+		QVERIFY2(timeMapBits(rig.clip) != before, "the control-thread drain applied no queued writes");
 	}
 
 	//! The touch timeout bounds the write window, so a lost mouse-up cannot
@@ -430,6 +489,7 @@ private slots:
 			rig.volume.setValue(0.8f - 0.02f * i);
 			song->processNextBuffer();
 		}
+		QVERIFY(drainAutomationWrites(song));
 		QVERIFY2(timeMapBits(rig.clip) != before, "a Latch pass wrote nothing");
 
 		// The transport stops: the token drops to zero and the latch is over.
@@ -438,6 +498,32 @@ private slots:
 		QCOMPARE(AutomatableModel::automationTransportRun(), static_cast<quint64>(0));
 		QVERIFY(!rig.volume.automationWantsWrite(
 			AutomatableModel::automationTransportRun(), AutomatableModel::automationClockNs()));
+	}
+
+	//! A mode change ends a Latch engagement: switching away and back inside the
+	//! same transport run must not resume the old engagement without a new touch.
+	void testLeavingLatchClearsTheEngagement()
+	{
+		FloatModel volume(1.0f, 0.0f, 2.0f, 0.001f);
+		volume.setAutomationMode(AutomationMode::Latch);
+
+		const qint64 t0 = 1000000;
+		const quint64 run = 7;
+		volume.noteAutomationTouchStart(t0, run);
+		volume.noteAutomationTouchEnd();
+		QVERIFY(volume.automationWantsWrite(run, t0));
+
+		// Away to Read, then back to Latch - the SAME run, so the run token never
+		// changed. The engagement must not have survived the detour.
+		volume.setAutomationMode(AutomationMode::Read);
+		volume.setAutomationMode(AutomationMode::Latch);
+		QVERIFY2(!volume.automationWantsWrite(run, t0),
+			"a Latch engagement from before the mode change is still active");
+
+		// A fresh touch re-arms it, so the mode is not simply dead.
+		volume.noteAutomationTouchStart(t0, run);
+		volume.noteAutomationTouchEnd();
+		QVERIFY(volume.automationWantsWrite(run, t0));
 	}
 
 	//! Write overwrites the pass without needing a touch at all.
@@ -462,6 +548,7 @@ private slots:
 			rig.volume.setValue(0.2f + 0.05f * i);
 			song->processNextBuffer();
 		}
+		QVERIFY(drainAutomationWrites(song));
 		QVERIFY2(timeMapBits(rig.clip) != before,
 			"a Write pass with the transport running wrote nothing");
 	}
@@ -663,6 +750,7 @@ private slots:
 		rig.volume.setValue(0.7f);
 		song->getTimeline().setTicks(0);
 		for (int i = 0; i < 3; ++i) { song->processNextBuffer(); }
+		QVERIFY(drainAutomationWrites(song));
 		QVERIFY2(rig.clip.getTimeMap().contains(192),
 			"the Write pass erased a node it never reached");
 		QCOMPARE(nodeBitsAt(rig.clip, 192), tailBefore);
@@ -688,6 +776,7 @@ private slots:
 			song->processNextBuffer();
 		}
 		rig.volume.noteAutomationTouchEnd();
+		QVERIFY(drainAutomationWrites(song));
 		const auto afterTouch = timeMapBits(rig.clip);
 
 		rig.volume.setAutomationMode(AutomationMode::Read);
@@ -695,6 +784,49 @@ private slots:
 		for (int i = 0; i < 6; ++i) { song->processNextBuffer(); }
 
 		QCOMPARE(timeMapBits(rig.clip), afterTouch);
+	}
+
+	//! A saturated pending store must not lose the newest write (cluster 5388).
+	//!
+	//! The render thread may not edit a clip's node map - that edit allocates -
+	//! so it queues the write in the clip and the control thread applies it. The
+	//! queue can fill up: the control thread was late, or a great many writes
+	//! arrived. A full store must NOT drop the write that arrives: it takes the
+	//! place of the clip's newest pending write, so the value the control is at
+	//! when the store fills is the one that survives, and the write it replaced
+	//! is counted rather than dropped silently.
+	//!
+	//! The writes go in through the product's own path - AutomationClip::
+	//! recordValue() inside a realtime scope queues instead of editing - and
+	//! come out through the control thread's drain, so the test exercises the
+	//! real queue and not a stand-in for it. The count is larger than any fixed
+	//! queue the product has ever had, so the store is saturated in every
+	//! build: the assertion is about the newest write, not about a capacity.
+	void testSaturatedPendingWritesKeepTheNewestValue()
+	{
+		auto* song = Engine::getSong();
+		Rig rig(song);
+		const auto pendingBefore = AutomationClip::pendingWriteTotal();
+
+		const int writes = 300000;
+		float newest = 0.f;
+		{
+			RealtimeScope scope;
+			for (int i = 0; i < writes; ++i)
+			{
+				newest = static_cast<float>(i) / static_cast<float>(writes);
+				rig.clip.recordValue(TimePos(0), newest);
+			}
+		}
+
+		QVERIFY(drainAutomationWrites(song));
+		QCOMPARE(AutomationClip::pendingWriteTotal(), pendingBefore);
+
+		// The newest write is on the clip. Every write went to the same tick,
+		// so the clip holds one node - and its value is the newest write's.
+		QCOMPARE(static_cast<int>(rig.clip.getTimeMap().size()), 1);
+		QVERIFY(rig.clip.getTimeMap().contains(0));
+		QCOMPARE(rig.clip.getTimeMap()[0].getInValue(), newest);
 	}
 
 	//! The trim offset is an offset on top of the written automation, applied
@@ -768,6 +900,72 @@ private slots:
 		playFromZero(song, 3);
 		QCOMPARE(rig.volume.value(), 0.5f);
 		QCOMPARE(timeMapBits(rig.clip), before);
+	}
+
+	//! A recording automation clip whose target was removed has nothing to record
+	//! from. `AutomationClip::firstObject()` hands back a fallback model for such a
+	//! clip, and the render pass must not queue a write taken from it: the drain
+	//! would plant that fallback's value as nodes in a clip with no control.
+	//! Attaching a target again resumes recording, so the same harness is its own
+	//! inversion: it must queue writes once the target is back.
+	void testRecordingClipWithoutTargetWritesNothing()
+	{
+		auto* song = Engine::getSong();
+		Rig rig(song);
+		rig.writeCurve();
+		rig.clip.setRecording(true);
+		rig.clip.removeObject(&rig.volume);
+		QVERIFY(!rig.clip.hasObjects());
+
+		const auto before = timeMapBits(rig.clip);
+		const auto pendingBefore = rig.clip.pendingWriteCount();
+		playFromZero(song, 8);
+		QCOMPARE(rig.clip.pendingWriteCount(), pendingBefore);
+		QVERIFY(drainAutomationWrites(song));
+		QCOMPARE(timeMapBits(rig.clip), before);
+
+		// --- inversion: the same harness with a target must queue writes -------
+		rig.clip.addObject(&rig.volume);
+		playFromZero(song, 8);
+		QVERIFY2(rig.clip.pendingWriteCount() > pendingBefore,
+			"a recording clip with a target queued no write - the no-target assertion proves nothing");
+	}
+
+	//! The same contract when the target is destroyed rather than removed: a
+	//! deleted control leaves the clip through `objectDestroyed`, and the render
+	//! pass must not write for it. Its inversion attaches a live control again.
+	void testRecordingClipWhoseTargetIsDestroyedWritesNothing()
+	{
+		auto* song = Engine::getSong();
+		AutomationTrack track(song);
+		AutomationClip clip(&track);
+		clip.setProgressionType(AutomationClip::ProgressionType::Linear);
+		clip.putValue(0, 0.5f, false);
+		clip.putValue(96, 0.25f, false);
+		clip.putValue(192, 1.0f, false);
+		clip.changeLength(192);
+		clip.setRecording(true);
+
+		auto* doomed = new FloatModel(1.0f, 0.0f, 2.0f, 0.001f);
+		clip.addObject(doomed);
+		delete doomed;
+		QVERIFY(!clip.hasObjects());
+
+		const auto before = timeMapBits(clip);
+		const auto pendingBefore = clip.pendingWriteCount();
+		playFromZero(song, 8);
+		QCOMPARE(clip.pendingWriteCount(), pendingBefore);
+		QVERIFY(drainAutomationWrites(song));
+		QCOMPARE(timeMapBits(clip), before);
+
+		// --- inversion: a live target attached afterwards is recorded from ------
+		FloatModel replacement(1.0f, 0.0f, 2.0f, 0.001f);
+		clip.addObject(&replacement);
+		playFromZero(song, 8);
+		QVERIFY2(clip.pendingWriteCount() > pendingBefore,
+			"a recording clip with a live target queued no write - the no-target assertion proves nothing");
+		QVERIFY(drainAutomationWrites(song));
+		clip.removeObject(&replacement);
 	}
 
 	//! The realtime contract, stated as a test: the mode state the audio thread

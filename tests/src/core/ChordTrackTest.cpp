@@ -236,6 +236,37 @@ private slots:
 		QCOMPARE(restored.toXml(), xml);
 	}
 
+	/*! A restore that cannot read its snapshot must leave the track alone. The
+	 *  track it is restoring over is the CURRENT project's, so clearing first
+	 *  turns a corrupt checkpoint into lost chords and followers - the same
+	 *  failed-load-destroys-state bug loadSettings avoids for the project walk
+	 *  by being explicit that absence means reset. */
+	void fromXmlFailureKeepsTheExistingTrack()
+	{
+		ChordTrack track;
+		QVERIFY(track.set(eventAt(0, QStringLiteral("Major"))));
+		QVERIFY(track.set(eventAt(96, QStringLiteral("minor"))));
+		QVERIFY(track.setFollow(3, ChordFollowMode::Scale));
+		const QString before = track.toXml();
+
+		QVERIFY2(!track.fromXml(QStringLiteral("<chord-track><chord pos=\"0\"")),
+			"malformed XML parsed as a chord track");
+		QCOMPARE(orderOf(track), QStringLiteral("0,96"));
+		QCOMPARE(track.followOf(3), ChordFollowMode::Scale);
+		QCOMPARE(track.toXml(), before);
+
+		// Well-formed but not a chord track is the same refusal: validation
+		// happens before the state is replaced, not after it has been cleared.
+		QVERIFY2(!track.fromXml(QStringLiteral("<song><bpm>140</bpm></song>")),
+			"a <song> element was accepted as a chord track");
+		QCOMPARE(orderOf(track), QStringLiteral("0,96"));
+		QCOMPARE(track.followOf(3), ChordFollowMode::Scale);
+		QCOMPARE(track.toXml(), before);
+
+		QVERIFY2(!track.fromXml(QString()), "empty text parsed as a chord track");
+		QCOMPARE(track.toXml(), before);
+	}
+
 	/*! A number that does not parse is not a zero: an unreadable event is
 	 *  SKIPPED, like an unresolvable chord name. Defaulting instead would
 	 *  silently invent a different, perfectly valid chord - a malformed `pos`
@@ -272,6 +303,25 @@ private slots:
 		QVERIFY(track.loadSettings(mixed.documentElement()));
 		QCOMPARE(track.size(), 2);
 		QCOMPARE(orderOf(track), QStringLiteral("0,192"));
+	}
+
+	//! Missing optional fields keep their defaults; present empty fields are malformed.
+	void emptyOptionalNumbersAreSkipped()
+	{
+		QDomDocument document;
+		QVERIFY(document.setContent(QStringLiteral(
+			"<chord-track><chord pos=\"100\" len=\"\" chord=\"Major\"/>"
+			"<chord pos=\"200\" root=\"\" chord=\"Major\"/>"
+			"<chord pos=\"300\" octave=\"\" chord=\"Major\"/>"
+			"<chord pos=\"400\" chord=\"Major\"/></chord-track>")));
+
+		ChordTrack track;
+		QVERIFY(track.loadSettings(document.documentElement()));
+		QCOMPARE(track.size(), 1);
+		QCOMPARE(track.at(0).pos, 400);
+		QCOMPARE(track.at(0).length, 0);
+		QCOMPARE(track.at(0).root, 0);
+		QCOMPARE(track.at(0).octave, 4);
 	}
 
 	/*! CLEARED FIRST, unconditionally: the state a restore must be able to
@@ -312,6 +362,34 @@ private slots:
 		song->clearProject();
 		QVERIFY2(song->chordTrack().empty(),
 			"a new project inherited the previous project's chord track");
+	}
+
+	/*! A malformed follower track ID is SKIPPED, not track 0: the same rule the
+	 *  malformed event numbers follow - a number that does not parse is not a
+	 *  zero, and 0 is a perfectly valid track ID, so defaulting would silently
+	 *  make the first track follow the scale. */
+	void malformedFollowerTrackIdsAreSkipped()
+	{
+		ChordTrack track;
+		QDomDocument document;
+		QVERIFY(document.setContent(QStringLiteral(
+			"<chord-track><follow track=\"garbage\" mode=\"scale\"/></chord-track>")));
+		QVERIFY(track.loadSettings(document.documentElement()));
+		QVERIFY2(track.followers().empty(),
+			"a malformed follower track ID became track 0");
+		QCOMPARE(track.followOf(0), ChordFollowMode::Off);
+
+		// The neighbours of a malformed follower are still read: one bad element
+		// must not cost the whole track.
+		QDomDocument mixed;
+		QVERIFY(mixed.setContent(QStringLiteral(
+			"<chord-track><follow track=\"3\" mode=\"chord\"/><follow track=\"nope\" mode=\"scale\"/>"
+			"<follow track=\"5\" mode=\"scale\"/></chord-track>")));
+		QVERIFY(track.loadSettings(mixed.documentElement()));
+		QCOMPARE(track.followers().size(), 2);
+		QCOMPARE(track.followOf(3), ChordFollowMode::Chord);
+		QCOMPARE(track.followOf(5), ChordFollowMode::Scale);
+		QCOMPARE(track.followOf(0), ChordFollowMode::Off);
 	}
 
 	//! 0.5.0 E23, chord follow: a follower's note moves to the nearest tone (down on a tie) of the chord - or

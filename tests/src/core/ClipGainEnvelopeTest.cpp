@@ -28,6 +28,8 @@
  *  dB range and a MIDI clip, and one control.undo takes a set back. (The render is measured in
  *  ClipFadesRenderTest.) */
 
+#include <limits>
+
 #include <QtTest>
 
 #include <QDomDocument>
@@ -106,6 +108,19 @@ private slots:
 		QCOMPARE(again.envelopeCount, MaxGainPoints);
 	}
 
+	void aMalformedTickIsDroppedInsteadOfLandingAtTickZero()
+	{
+		ClipEdits edits;
+		// "oops" is not a tick: it used to convert to 0 and become a -24 dB point at the clip's
+		// start, so the whole clip played 24 dB down. A damaged file keeps only the good point.
+		envelopeFromText(QStringLiteral("oops:-24;48:0"), &edits);
+		QCOMPARE(edits.envelopeCount, 1);
+		QCOMPARE(edits.envelope[0].tick, 48);
+		QCOMPARE(edits.envelope[0].gainDb, 0.f);
+		envelopeFromText(QStringLiteral("99999999999:0"), &edits);
+		QCOMPARE(edits.envelopeCount, 0);
+	}
+
 	void theClipElementCarriesItOnlyWhenThereIsOne()
 	{
 		Song* song = Engine::getSong();
@@ -140,6 +155,20 @@ private slots:
 			{QStringLiteral("points"), QJsonArray{point(0, -12), point(96, -6)}}});
 		QVERIFY2(seeded.ok, qPrintable(seeded.errorMessage));
 		const ClipEdits before = clip->clipEdits();
+		const ControlResult depthBefore = run(QStringLiteral("control.undo_depth"));
+		QVERIFY(depthBefore.ok);
+
+		// The points array is only schema-checked at the top level. A NaN point
+		// must be refused by the element parser, without changing edits or undo.
+		const double nan = std::numeric_limits<double>::quiet_NaN();
+		QVERIFY(point(0, nan).value(QStringLiteral("gain_db")).isDouble());
+		const ControlResult nonFinite = run(QStringLiteral("clip.gain_envelope_set"),
+			{{QStringLiteral("clip"), id}, {QStringLiteral("points"), QJsonArray{point(0, nan)}}});
+		QCOMPARE(nonFinite.ok, false);
+		QCOMPARE(nonFinite.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(clip->clipEdits() == before);
+		QCOMPARE(run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt(),
+			depthBefore.result.value(QStringLiteral("depth")).toInt());
 
 		// Range failures are staged in a local ClipEdits value. Even when a valid
 		// point precedes an invalid one, a refusal must preserve the old envelope.

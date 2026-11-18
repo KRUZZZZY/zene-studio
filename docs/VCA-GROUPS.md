@@ -122,8 +122,13 @@ propagating it would make "mute this one channel" silence the whole group.
 
 ## 4. What a user must do to reach it today
 
-**No GUI was built.** There is no group strip, no VCA fader widget, no "group selected channels"
-command, and no entry in `MixerView`. What exists is the engine API and its persistence:
+**No GUI was built.** *(Dated note 2026-10-18 (Q050-171): partly superseded. Since M3.7 the mixer
+draws a VCA strip per group - fader, mute, solo, plus the strip's Links and Put Inside menus
+(`src/gui/VcaStripView.cpp`, built by `MixerView::refreshVcaStrips`), a mixer channel's context menu
+has a "VCA group" membership submenu, and Project tools ▸ Groups... lists the groups; this section
+is kept as the record of the time, and the current line is the VCA bullet in
+`docs/KNOWN-LIMITATIONS.md`.)* There is no group strip, no VCA fader widget, no "group selected
+channels" command, and no entry in `MixerView`. What exists is the engine API and its persistence:
 
 - **Project file (works today, no code needed).** Add the group by hand to a `.mmp`/`.mmpz`; the
   loader accepts it. The exact edit used for the render proofs:
@@ -147,6 +152,9 @@ knows nothing about groups), no script binding (`src/core/ScriptBindings.cpp` ex
 object at all, so `lmms.mixer`/VCA verbs do not exist), no undo action, no keyboard shortcut. A
 mixer-side GUI is the obvious next slice; the register's "weeks" size band is mostly this plus the
 verification, and this change deliberately spends its budget on the verification half.
+*(2026-10-18 (Q050-171): the mixer-side GUI arrived with M3.7 (see the note at the top of §4), and
+every `vca.*` id is now scriptable through the generic Lua `zene.command()` bridge; what a user
+still lacks is listed in `docs/KNOWN-LIMITATIONS.md`.)*
 
 ---
 
@@ -266,14 +274,22 @@ Gate 3 instead, which parses `set(LMMS_TESTS …)`.
 - **No GUI at all.** No VCA strip in `MixerView`, no fader widget, no "group selected channels",
   no undo action. Reachability is limited to project-file authoring and the C++ API (§4). This is
   the single largest remaining piece, and it is what "a user cannot reach it" means for this
-  feature today.
+  feature today. *(2026-10-18 (Q050-171): superseded by M3.7 - the strip, the channel menu and the
+  Groups dialog exist; the current remainder is in `docs/KNOWN-LIMITATIONS.md`.)*
 - **No scripting surface.** `src/core/ScriptBindings.cpp` has no mixer object, so a Lua script
-  cannot create or move a group.
+  cannot create or move a group. *(2026-10-18 (Q050-171): superseded in part: there is still no
+  dedicated Lua binding, but every `vca.*` id is callable through the generic `zene.command()`
+  bridge (`include/ScriptCommandBridge.h`).)*
 - **The VCA is not sample-exact / automatable.** The group gain is read as a plain scalar once per
   block; a `<vca>` automation clip on the group fader would be interpolated by nothing — the model
   round-trips and saves, but the audio path reads `value()`, not `valueBuffer()`. Channel faders
   have sample-exact support; the group fader does not.
 - **No group nesting, no multi-group membership, no group-of-groups.** One channel, one group.
+  *(2026-10-18 (Q050-171): superseded in part. Nesting exists through `vca.set_parent`, capped at
+  `MaxGroupDepth` (8) and offered in the strip's Put Inside menu, and multi-group membership exists
+  through `vca.assign` with `also: true` (socket or Lua only - the channel's VCA menu never sends
+  it and the default assignment refuses a second group). "One channel, one group" stays true for
+  the interface's own assign line, and a group-of-groups is still nothing but a parent chain.)*
 - **The VCA scales a member's whole output, including its pre-fader sends.** A member's
   pre-fader (bus) send is scaled by the group gain, because the multiply sits on the shared
   post-FX buffer. This is stated rather than fixed: making pre-fader sends VCA-independent needs a

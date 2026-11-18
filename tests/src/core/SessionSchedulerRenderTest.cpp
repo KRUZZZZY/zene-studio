@@ -49,9 +49,13 @@
 
 #include <cstdio>
 #include <memory>
+#include <thread>
+#include <type_traits>
 #include <vector>
 
 #include "Engine.h"
+#include "AllocationProbe.h"
+#include "LinkRealtimeProbe.h"
 #include "OutputSettings.h"
 #include "ProjectRenderer.h"
 #include "SampleBuffer.h"
@@ -91,12 +95,41 @@ class SessionSchedulerRenderTest : public QObject
 	Q_OBJECT
 
 private slots:
+	void progressStorageIsAtomic()
+	{
+		QVERIFY(( std::is_same_v<decltype(ProjectRenderer::m_progress), std::atomic<int>> ));
+	}
+
 	void initTestCase()
 	{
 		Engine::init( true );
 		// The dummy device thread renders in the background; this test drives
 		// the export synchronously through ProjectRenderer, so stop it.
 		Engine::audioEngine()->audioDev()->stopProcessing();
+	}
+
+	//! A stopped Song still reaches followLinkSession() once per real render
+	//! period. Its first call must only read the follower pointer; the follower
+	//! must have been constructed during main-thread Song setup.
+	void stoppedPeriodDoesNotAllocateOnRenderThread()
+	{
+		Song* song = Engine::getSong();
+		QVERIFY(!song->isPlaying());
+		const std::thread::id mainThread = std::this_thread::get_id();
+		std::thread::id renderThread;
+		std::uint64_t allocations = 0;
+		std::thread renderer([&] {
+			renderThread = std::this_thread::get_id();
+			allocations = test::link::allocationsDuring([&] {
+				Engine::audioEngine()->renderNextPeriod();
+			});
+		});
+		renderer.join();
+
+		QVERIFY(renderThread != mainThread);
+		qInfo("stopped render period allocations=%llu",
+			static_cast<unsigned long long>(allocations));
+		QCOMPARE(allocations, std::uint64_t{0});
 	}
 
 	void cleanupTestCase()

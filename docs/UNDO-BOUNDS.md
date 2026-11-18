@@ -113,6 +113,16 @@ registry and `control.undo_depth`:
 | `rack.macro_set` | `channel,macro` | dragging a macro |
 | `rack.macro_set_pair` | `channel,x_macro,y_macro` | dragging the XY pad (two macros, one step) |
 | `chord.set` | `pos` | re-editing the chord event at one timeline position |
+| `arrangement.nudge` (a wrapper, declared on the command: `ControlCommand::coalescesWrapped`) | the target of its one nested `clip.move` | a burst of nudges |
+
+**The wrapper rule (round 4).** Calls a wrapper runs are not coalesced one by one: their steps are merged into the
+wrapper's step, and merging a step into an earlier one would cover a change the record does not contain. A wrapper
+that declares `coalescesWrapped` (only `arrangement.nudge` today) joins its ONE nested call's run as a unit, keyed on
+that call's target: a burst is one undo step and one record (extended per press, `commands` counts the presses), and
+a press after an unrelated command starts a new one. A wrapper with two or more nested calls never joins a run. A call
+a mutating command runs never coalesces into a step below that command (`ControlRegistry::runHandler`). The
+`arrangement.nudge` row is `not_mutating`, so the anti-drift test accepts a declaration on a wrapper only when the
+command is non-mutating and carries `coalescesWrapped`; every other declaration must still be `true_inverse`.
 
 Every one of them is `true_inverse` (a live `ProjectJournal` checkpoint), which is a requirement and not
 a coincidence: a step can only be merged into another step if both restore live state. The anti-drift
@@ -238,7 +248,16 @@ behaviour and is not what this fix addresses.
 1. **There is no undo-history UI.** The depth, the caps and the window are drivable through
    `--control-socket` and the MCP bridge, not from the interface; `docs/KNOWN-LIMITATIONS.md` and the
    0.3.0 release notes carry the one-line statement.
-2. **The history is not persisted.** Close the app and the undo history is gone, as it was before.
+2. **The history is not persisted - unless the project opts in (WF-033, 2026-10-06).** By default,
+   close the app and the undo history is gone, as it was before. A project that opts in
+   (`project.set_undo_history`, or the global default `undohistory/persist`) saves its newest 20 steps
+   as compressed whole-project snapshots under a 64 MB cap - `docs/UNDO-HISTORY-PERSISTENCE.md`. That
+   feature is SEPARATE from everything in this file: its two caps (`undohistory/steps`,
+   `undohistory/capmb`) bound the saved history, the snapshots are never counted against the byte
+   budget here, and the session bounds, eviction and coalescing are unchanged. Two things it adds to
+   this file's mechanism, both additive: a step a project load put back is never merged or coalesced
+   (`CheckPoint::loaded`), and `control.undo` unwinds the steps a `project.open` loaded although the
+   open's own record is irreversible (it still refuses once they are exhausted).
 3. **The caps are session state, not project state.** A reopened project starts at the default caps.
 4. **The rule applies to the command path.** The GUI's own gestures already group themselves (a
    checkpoint at press, journalling off during the drag — §0), and nothing about that changed; a GUI
@@ -247,9 +266,9 @@ behaviour and is not what this fix addresses.
    working, not a defect: a client that needs a boundary sets the window down (or to 0), or issues any
    other command between the two. The reply does not hide it — `control.undo`'s `undone_commands`
    reports how many commands that one step covered (BUG-CTL-4).
-6. **`control.set_undo_depth` cannot restore what it evicted.** The inverse restores the CAP; the steps
-   a lower cap dropped are gone, and the transaction's mechanism says so rather than implying
-   otherwise.
+6. **`control.set_undo_depth` cannot restore what it evicted.** When a cap change drops steps, its
+   transaction is recorded as irreversible and `control.undo` refuses it; restoring the CAP cannot
+   bring those steps back.
 7. **The byte budget measures the checkpoint XML, not the transaction closures.** An action step
    (a deleted track's inverse) serialises no state of its own and counts as 0 bytes against the budget;
    its closure is one recorded operation, not a growing buffer.

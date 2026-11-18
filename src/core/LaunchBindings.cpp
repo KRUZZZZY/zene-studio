@@ -1,5 +1,5 @@
 /*
- * LaunchBindings.cpp - launcher cells and scenes launched from a MIDI controller's notes
+ * LaunchBindings.cpp - the controller's bindings: launcher actions and built-in commands
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -23,6 +23,7 @@
  */
 #include "LaunchBindings.h"
 
+#include <cmath>
 #include <memory>
 
 #include <QJsonDocument>
@@ -43,20 +44,128 @@ namespace
 std::unique_ptr<LaunchBindings> s_bindings;
 const QString kSection = QStringLiteral("launcher");
 const QString kKey = QStringLiteral("bindings");
+//! Q050-217.1: the command bindings' OWN section. The launcher's store keeps its format and meaning.
+const QString kCommandSection = QStringLiteral("midi");
+const QString kCommandKey = QStringLiteral("commandbindings");
 
-//! The binding for @a note: an exact channel first, then one for any channel.
-QJsonObject bindingFor(const LaunchNote& note)
+//! A stored binding's channel: -1 (any channel) or a MIDI channel 0..15. False for anything else (a fraction, a word,
+//! -2), which is no channel at all - the binding is skipped rather than read as any channel. A missing channel is invalid.
+bool storedChannel(const QJsonObject& binding, int* out)
+{
+	const QJsonValue value = binding.value(QStringLiteral("channel"));
+	if (!value.isDouble()) { return false; }
+	const double channel = value.toDouble();
+	if (channel != std::floor(channel) || channel < -1 || channel > 15) { return false; }
+	*out = static_cast<int>(channel);
+	return true;
+}
+
+//! How closely the launcher binds @a note: 0 for an exact channel, 1 for any channel, 2 for none.
+QJsonObject bindingFor(const LaunchNote& note, int* rank)
 {
 	QJsonObject any;
+	*rank = 2;
 	for (const QJsonValue& value : LaunchBindings::bindings())
 	{
 		const QJsonObject binding = value.toObject();
 		if (binding.value(QStringLiteral("key")).toInt(-1) != note.key) { continue; }
-		const int channel = binding.value(QStringLiteral("channel")).toInt(-1);
-		if (channel == note.channel) { return binding; }
-		if (channel < 0) { any = binding; }
+		int channel = -1;
+		if (!storedChannel(binding, &channel)) { continue; }
+		if (channel == note.channel)
+		{
+			*rank = 0;
+			return binding;
+		}
+		if (channel < 0)
+		{
+			any = binding;
+			*rank = 1;
+		}
 	}
 	return any;
+}
+
+//! The launcher binding for @a note: an exact channel first, then one for any channel.
+QJsonObject bindingFor(const LaunchNote& note)
+{
+	int rank = 2;
+	return bindingFor(note, &rank);
+}
+
+/*! Q050-217.1: whether @a binding is the command binding @a trigger activates, and how closely.
+ *  @a rank is 0 for an exact channel and 1 for an any-channel binding, so the closer one wins. */
+bool commandMatch(const QJsonObject& binding, const LaunchTrigger& trigger, int* rank)
+{
+	const bool control = binding.value(QStringLiteral("trigger")).toString() == QLatin1String("cc");
+	if (control != (trigger.kind == LaunchTrigger::Kind::Control)) { return false; }
+	if (control)
+	{
+		if (binding.value(QStringLiteral("controller")).toInt(-1) != trigger.controller) { return false; }
+	}
+	else if (binding.value(QStringLiteral("key")).toInt(-1) != trigger.key)
+	{
+		return false;
+	}
+	int channel = -1;
+	if (!storedChannel(binding, &channel)) { return false; }
+	if (channel == trigger.channel) { *rank = 0; return true; }
+	if (channel < 0) { *rank = 1; return true; }
+	return false;
+}
+
+//! The binding @a trigger activates: the closest command binding (an exact channel first), or empty.
+QJsonObject bindingForTrigger(const LaunchTrigger& trigger, int* rank)
+{
+	QJsonObject best;
+	int bestRank = 2;
+	for (const QJsonValue& value : LaunchBindings::commandBindings())
+	{
+		const QJsonObject binding = value.toObject();
+		int found = 2;
+		if (!commandMatch(binding, trigger, &found) || found >= bestRank) { continue; }
+		// A target that is not there is no target: an empty object is the answer, so the activation is
+		// a no-op rather than a failed dispatch nobody asked for. A target is validated when the
+		// binding is made (session.bind_command); a stale one must simply not fire.
+		if (binding.value(LaunchBindings::targetKey(binding)).toString().isEmpty()) { continue; }
+		best = binding;
+		bestRank = found;
+	}
+	*rank = bestRank;
+	return best;
+}
+
+/*! Q050-217.2: run the workflow @a binding names, through workflow.run - the command the Workflows
+ *  menu and the socket use, so the run is acknowledged and its steps run on the event loop with the
+ *  workflow's own behaviour (each step records and undoes as itself, a stopped run reports where).
+ *  The name is resolved against the library in use by workflow.run ITSELF, when this fires: the
+ *  binding stores the name, never a copy of the steps, so a workflow edited, renamed or kept with
+ *  the project answers as the library does now. A name the library no longer holds is a no-op, as a
+ *  command binding to a command this build no longer has is (workflow.run would only report
+ *  NotFound into the MIDI drain, where nobody is listening). */
+void runWorkflow(const QString& name)
+{
+	ControlRegistry* registry = ControlRegistry::instance();
+	if (!registry->hasCommand(QStringLiteral("workflow.run"))) { return; }  // a core-only build has no workflows
+	(void)registry->invoke(QStringLiteral("workflow.run"), {{QStringLiteral("name"), name}});
+}
+
+//! Run what @a binding names, through the registry. UI thread (applyTrigger).
+void dispatchTarget(const QJsonObject& binding)
+{
+	const QString key = LaunchBindings::targetKey(binding);
+	const QString target = binding.value(key).toString();
+	if (target.isEmpty()) { return; }
+	if (key == QLatin1String("workflow")) { runWorkflow(target); return; }
+	ControlRegistry::instance()->invoke(target, QJsonObject{});
+}
+
+//! Command bindings win ties, but a note's exact-channel launcher takes precedence over an any-channel one.
+//! (A workflow binding is one of these: both target kinds share the store and its specificity rule.)
+bool noteCommandWins(const LaunchTrigger& trigger, int commandRank)
+{
+	int launcherRank = 2;
+	(void)bindingFor(LaunchNote{trigger.channel, trigger.key, true}, &launcherRank);
+	return commandRank <= launcherRank;
 }
 
 void release(const QJsonObject& binding)
@@ -85,10 +194,25 @@ void learnNote(const QJsonObject& action, const LaunchNote& note)
 		if (!same) { list.append(old); }
 	}
 	list.append(binding);
-	// One undo step, as session.bind's (review L10-L03-L02-1 #13): the binding it made comes off again.
+	// Q050-217.1: the learned launcher takes this channel's command binding over; a wildcard command
+	// remains available on the other channels. The removal is part of THIS edit: one undo step puts both
+	// stores back, one redo writes both.
+	QJsonArray commands;
+	for (const QJsonValue& value : LaunchBindings::commandBindings())
+	{
+		const QJsonObject old = value.toObject();
+		const bool control = old.value(QStringLiteral("trigger")).toString() == QLatin1String("cc");
+		const int channel = old.value(QStringLiteral("channel")).toInt(-1);
+		const bool same = !control && old.value(QStringLiteral("key")).toInt() == note.key && channel == note.channel;
+		if (!same) { commands.append(old); }
+	}
 	const QJsonArray before = LaunchBindings::bindings();
+	const QJsonArray commandsBefore = LaunchBindings::commandBindings();
 	LaunchBindings::setBindings(list);
-	control::addUndoStep([before]() { LaunchBindings::setBindings(before); }, [list]() { LaunchBindings::setBindings(list); });
+	LaunchBindings::setCommandBindings(commands);
+	// One undo step, as session.bind's (review L10-L03-L02-1 #13): the binding it made comes off again.
+	control::addUndoStep([before, commandsBefore]() { LaunchBindings::setBindings(before); LaunchBindings::setCommandBindings(commandsBefore); },
+		[list, commands]() { LaunchBindings::setBindings(list); LaunchBindings::setCommandBindings(commands); });
 }
 
 //! A pressed note's action, through the registry.
@@ -137,24 +261,102 @@ void LaunchBindings::setBindings(const QJsonArray& list)
 	ConfigManager::inst()->setValue(kSection, kKey, QString::fromUtf8(QJsonDocument(list).toJson(QJsonDocument::Compact)));
 }
 
-bool LaunchBindings::decode(const MidiEvent& event, LaunchNote* out)
+QJsonArray LaunchBindings::commandBindings()
 {
-	// MIDI client thread: nothing allocated or locked. A note-on at velocity 0 is a release.
-	if (event.type() != MidiNoteOn && event.type() != MidiNoteOff) { return false; }
-	*out = LaunchNote{event.channel(), event.key(), event.type() == MidiNoteOn && event.velocity() > 0};
+	return QJsonDocument::fromJson(ConfigManager::inst()->value(kCommandSection, kCommandKey).toUtf8()).array();
+}
+
+void LaunchBindings::setCommandBindings(const QJsonArray& list)
+{
+	ConfigManager::inst()->setValue(kCommandSection, kCommandKey, QString::fromUtf8(QJsonDocument(list).toJson(QJsonDocument::Compact)));
+}
+
+QString LaunchBindings::targetKey(const QJsonObject& binding)
+{
+	// `workflow` only when the binding actually carries a name; anything else is the Q050-217.1
+	// `command` shape, so an old config keeps its meaning and a binding with neither is simply empty.
+	const QJsonValue workflow = binding.value(QStringLiteral("workflow"));
+	if (workflow.isString() && !workflow.toString().isEmpty()) { return QStringLiteral("workflow"); }
+	return QStringLiteral("command");
+}
+
+bool LaunchBindings::decode(const MidiEvent& event, LaunchTrigger* out)
+{
+	// MIDI client thread: nothing allocated or locked. A note-on at velocity 0 is a release, as every
+	// MIDI source spells one; a control-change is an activation only while its value is above zero.
+	LaunchTrigger trigger;
+	trigger.channel = event.channel();
+	switch (event.type())
+	{
+	case MidiNoteOn:
+	case MidiNoteOff:
+		trigger.kind = LaunchTrigger::Kind::Note;
+		trigger.key = event.key();
+		trigger.on = event.type() == MidiNoteOn && event.velocity() > 0;
+		break;
+	case MidiControlChange:
+		trigger.kind = LaunchTrigger::Kind::Control;
+		trigger.controller = event.controllerNumber();
+		trigger.on = event.controllerValue() > 0;
+		break;
+	default:
+		return false;
+	}
+	*out = trigger;
+	return true;
+}
+
+void LaunchBindings::applyTrigger(const LaunchTrigger& trigger)
+{
+	// UI thread. A release or a zero only re-arms; one activation dispatches at most once.
+	const int latch = trigger.channel * 128 + (trigger.kind == LaunchTrigger::Kind::Control ? trigger.controller : trigger.key);
+	if (trigger.kind == LaunchTrigger::Kind::Control)
+	{
+		if (!trigger.on)
+		{
+			m_controlsHigh.remove(latch);
+			return;
+		}
+		if (m_controlsHigh.contains(latch)) { return; }  // 1..127 of one sweep is one activation
+		m_controlsHigh.insert(latch);
+		int rank = 2;
+		const QJsonObject binding = bindingForTrigger(trigger, &rank);
+		if (!binding.isEmpty()) { dispatchTarget(binding); }
+		return;
+	}
+	if (trigger.on)
+	{
+		// An armed learn takes the next note whatever it was bound to (the launcher's own rule).
+		if (dispatchNoteCommand(trigger, latch)) { return; }
+	}
+	else if (m_commandNotesHeld.remove(latch)) { return; }  // the press ran a command; nothing to release
+	applyNote(LaunchNote{trigger.channel, trigger.key, trigger.on});
+}
+
+bool LaunchBindings::dispatchNoteCommand(const LaunchTrigger& trigger, int latch)
+{
+	if (!m_learning.isEmpty()) { return false; }
+	int rank = 2;
+	const QJsonObject binding = bindingForTrigger(trigger, &rank);
+	if (binding.isEmpty() || !noteCommandWins(trigger, rank)) { return false; }
+	// The command binding takes the note: its release must not release a launcher cell.
+	m_commandNotesHeld.insert(latch);
+	dispatchTarget(binding);
 	return true;
 }
 
 void LaunchBindings::applyNote(const LaunchNote& note)
 {
+	const int held = note.channel * 128 + note.key;
 	if (!m_learning.isEmpty() && note.on)
 	{
 		learnNote(m_learning, note);
 		m_learning = {};
+		m_learnedNotesAwaitingRelease.insert(held);
 		return;
 	}
+	if (!note.on && m_learnedNotesAwaitingRelease.remove(held)) { return; }
 	// A release goes to the binding its press launched, even when the bindings changed while the key was held.
-	const int held = note.channel * 128 + note.key;
 	const QJsonObject binding = !note.on && m_held.contains(held) ? m_held.take(held) : bindingFor(note);
 	if (note.on)
 	{

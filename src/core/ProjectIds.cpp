@@ -243,8 +243,9 @@ void ProjectIds::noteLoadAssignment(int id)
 {
 	++s_loadAssignments;
 	// The object KEEPS this id, so it is live from now on.
-	if (id + 1 > s_documentFloor) { s_documentFloor = id + 1; }
-	if (id >= s_next) { s_next = id + 1; }
+	const int successor = successorOf(id);
+	if (successor > s_documentFloor) { s_documentFloor = successor; }
+	if (id >= s_next) { s_next = successor; }
 }
 
 bool ProjectIds::isDocumentElement(const QDomNode& node)
@@ -303,9 +304,35 @@ void ProjectIds::readRevision(const QDomElement& element, int& rev,
 	contentHash = contentSignature(element);
 }
 
+namespace
+{
+bool s_pureSave = false;
+}
+
+void ProjectIds::setPureSave(bool pure)
+{
+	s_pureSave = pure;
+}
+
+bool ProjectIds::pureSave()
+{
+	return s_pureSave;
+}
+
 void ProjectIds::writeRevision(QDomElement& element, int& rev,
 	QString& writer, QString& contentHash)
 {
+	if (s_pureSave)
+	{
+		// WF-033: the same stamp on copies - the object's state is not a save's to move.
+		int pureRev = rev;
+		QString pureWriter = writer;
+		QString pureHash = contentHash;
+		s_pureSave = false;
+		writeRevision(element, pureRev, pureWriter, pureHash);
+		s_pureSave = true;
+		return;
+	}
 	const QString now = contentSignature(element);
 	if (contentHash.isEmpty())
 	{
@@ -318,7 +345,12 @@ void ProjectIds::writeRevision(QDomElement& element, int& rev,
 		// This writer is about to emit different bytes for the object than the
 		// ones it loaded: that is a revision.
 		contentHash = now;
-		++rev;
+		// Saturating, like successorOf() for the id counter: readRevision()
+		// accepts any positive int, so a document can carry rev INT_MAX, and
+		// `++rev` there is signed overflow - the next save then wrote no
+		// revision at all, silently dropping the pair off the object. The
+		// space is exhausted and the last number repeats.
+		rev = successorOf(rev);
 		writer = writerInstance();
 	}
 	if (rev > 0)

@@ -42,6 +42,8 @@
 
 #define WASM_EXPORT(name) __attribute__((export_name(#name)))
 
+#include <math.h>
+
 extern float host_get_param(int index)
 	__attribute__((import_module("env"), import_name("host_get_param")));
 extern void host_log(const char* ptr, int len)
@@ -54,13 +56,26 @@ int process(int in_ptr, int out_ptr, int frames, float sample_rate)
 {
 	const float* in = (const float*)in_ptr;
 	float* out = (float*)out_ptr;
-	const float gain = host_get_param(0);
+	const float raw_gain = host_get_param(0);
+	const float gain = isfinite(raw_gain) ? raw_gain : 0.0f;
 
 	for (int i = 0; i < frames; ++i)
 	{
 		const float x = in[i] * gain;
-		// soft clip: bounded, monotonic, no branches on the hot path
-		out[i] = x / (1.0f + (x < 0.0f ? -x : x));
+		// NaN has no direction; infinities reach the signed clip limit.
+		if (isnan(x))
+		{
+			out[i] = 0.0f;
+		}
+		else if (isinf(x))
+		{
+			out[i] = x > 0.0f ? 1.0f : -1.0f;
+		}
+		else
+		{
+			// soft clip: bounded and monotonic for finite samples
+			out[i] = x / (1.0f + (x < 0.0f ? -x : x));
+		}
 	}
 
 	if (!g_logged_first_block)

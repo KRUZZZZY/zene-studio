@@ -46,7 +46,10 @@
 #include <QtTest>
 
 
+#include <QDomDocument>
+
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -384,6 +387,52 @@ private slots:
 	//! 440 Hz tone rendered by a 2x leader is a 880 Hz tone. Zero crossings are
 	//! counted over the handle's own length, which the mapping already makes the
 	//! right (halved) length, so this measures the RATE and not the duration.
+	//! A tempo that is not a tempo must not become the clip's rate.
+	//!
+	//! `setSourceTempo` used to reject only `bpm < 0`, so `+Inf` and `NaN` were
+	//! accepted. `clipFramesPerTick()` scales by `projectTempo / sourceTempo`,
+	//! so an infinite tempo makes it exactly ZERO - and `windowTicksFor()` then
+	//! evaluates `window.length() / 0.0` and converts the resulting infinity to
+	//! `int`, which is undefined behaviour. NaN poisons the same expression the
+	//! other way: every comparison against it is false, so the leader silently
+	//! falls back to the project rate with no marker and no warning.
+	//!
+	//! Measured on the two places the value is observable: the stored tempo
+	//! itself and the clip's frames-per-tick, which must stay finite and
+	//! positive for any input.
+	void nonFiniteSourceTempoIsRefused()
+	{
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeClip(track, m_rate);
+		const auto projectTempo = static_cast<float>(Engine::getSong()->getTempo());
+		const auto base = Engine::framesPerTick(m_rate);
+		clip->setWarpTempoMode(WarpTempoMode::SourceTempo);
+		clip->setSourceTempo(projectTempo);
+		QCOMPARE(clip->sourceTempo(), projectTempo);
+
+		// +Inf: accepted before, and it drove clipFramesPerTick() to zero
+		clip->setSourceTempo(std::numeric_limits<float>::infinity());
+		QCOMPARE(clip->sourceTempo(), projectTempo);
+		QVERIFY(std::isfinite(clip->clipFramesPerTick()));
+		QVERIFY(clip->clipFramesPerTick() > 0.0f);
+		QCOMPARE(clip->clipFramesPerTick(), base);
+
+		// NaN: accepted before, and it made the clip follow the project
+		clip->setSourceTempo(std::numeric_limits<float>::quiet_NaN());
+		QCOMPARE(clip->sourceTempo(), projectTempo);
+		QVERIFY(std::isfinite(clip->clipFramesPerTick()));
+		QVERIFY(clip->clipFramesPerTick() > 0.0f);
+		QCOMPARE(clip->clipFramesPerTick(), base);
+
+		// the length arithmetic stays well defined throughout
+		QVERIFY(clip->sampleLength().getTicks() > 0);
+
+		// ... and a real tempo still takes effect
+		clip->setSourceTempo(projectTempo / 2.0f);
+		QCOMPARE(clip->sourceTempo(), projectTempo / 2.0f);
+		QCOMPARE(clip->clipFramesPerTick(), base * 2.0f);
+	}
+
 	void unmarkedLeaderRendersAtItsLeaderRate()
 	{
 		SampleTrack track(Engine::getSong());
@@ -532,6 +581,93 @@ private slots:
 		}
 		test::tlCountAllocations = false;
 
+		QCOMPARE(N(test::tlAllocationCount), N(0));
+	}
+
+	//! BUG 6 (cluster new-p12-204). A project that carries an embedded sample
+	//! with `sample_rate="0"` - and QString::toInt() hands back 0 for a value
+	//! that does not parse, too - used to build a zero-rate buffer on load:
+	//! `clipFramesPerTick()` is then exactly `0.0f`, and the next auto-resize
+	//! update or tempo change runs `sampleLength()` -> `windowTicksFor()` ->
+	//! `window.length() / 0.0`, whose infinity is then narrowed to `int` -
+	//! undefined behaviour, and a garbage clip length at best.
+	//!
+	//! The load treats an invalid rate as an absent one (the engine's own
+	//! output rate), so the mapping stays finite and positive and the clip
+	//! keeps the length its window really has - through sampleLength() and
+	//! through the updateLength() path the finding names.
+	void zeroSampleRateIsRejectedOnProjectLoad()
+	{
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeClip(track, m_rate);
+
+		QDomDocument document;
+		QDomElement parent = document.createElement(QStringLiteral("track"));
+		document.appendChild(parent);
+		QDomElement saved = clip->saveState(document, parent);
+		QVERIFY(saved.hasAttribute(QStringLiteral("sample_rate")));
+		saved.setAttribute(QStringLiteral("sample_rate"), QStringLiteral("0"));
+
+		SampleTrack loadedTrack(Engine::getSong());
+		auto* loaded = makeClip(loadedTrack, m_rate);
+		loaded->restoreState(saved);
+
+		// the invalid rate never reaches the buffer...
+		QCOMPARE(static_cast<int>(loaded->sample().sampleRate()), m_rate);
+		// ...so the mapping is finite and positive...
+		QVERIFY(std::isfinite(loaded->clipFramesPerTick()));
+		QVERIFY(loaded->clipFramesPerTick() > 0.0f);
+
+		// ...and the window's tick length is the real one, not an infinity
+		// narrowed to int. The same expression windowTicksFor() evaluates.
+		const auto framesPerTick = Engine::framesPerTick(m_rate);
+		const auto bufferFrames = static_cast<f_cnt_t>(loaded->sample().sampleSize());
+		const auto expected = static_cast<int>(bufferFrames / framesPerTick);
+		QVERIFY(expected > 0);
+		QCOMPARE(static_cast<int>(loaded->sampleLength().getTicks()), expected);
+
+		loaded->setAutoResize(true);
+		loaded->updateLength();
+		QCOMPARE(static_cast<int>(loaded->length().getTicks()), expected);
+	}
+
+	//! The mapping's own guard, the second half of the fix: a buffer that
+	//! somehow still carries a nonpositive rate maps to no length - a defined
+	//! zero - instead of an infinity narrowed to int.
+	void nonpositiveRateMapsToNoLength()
+	{
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeClip(track, m_rate);
+		auto data = makeTone(m_rate);
+		clip->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), 0));
+
+		QCOMPARE(static_cast<int>(clip->sample().sampleRate()), 0);
+		QCOMPARE(static_cast<int>(clip->sampleLength().getTicks()), 0);
+	}
+
+	//! BUG 4 (cluster new-p16-207). A single-clip pass (_clip_num >= 0) for an index
+	//! the track does not hold went through Track::getClip(), which builds a clip at
+	//! that index and appends it to the track - on the audio thread: an allocation, a
+	//! printf and a clip the GUI can see appear mid-play. InstrumentTrack::play checks
+	//! numOfClips() first; SampleTrack now does the same, so a stale or past-the-end
+	//! index plays nothing and creates nothing. The engine is render-only here, so the
+	//! handles a wrong pass queues are cleared on this thread (no audio thread, no wait).
+	void aSingleClipIndexTheTrackDoesNotHoldCreatesNothing()
+	{
+		SampleTrack track(Engine::getSong());
+		makeClip(track, m_rate);
+		QCOMPARE(track.numOfClips(), 1);
+
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		const bool pastEnd = track.play(TimePos(0), 1024, 0, 1);
+		const bool farPast = track.play(TimePos(0), 1024, 0, 7);
+		test::tlCountAllocations = false;
+		Engine::audioEngine()->clearNewPlayHandles();
+
+		QVERIFY(!pastEnd);
+		QVERIFY(!farPast);
+		QCOMPARE(track.numOfClips(), 1);
 		QCOMPARE(N(test::tlAllocationCount), N(0));
 	}
 

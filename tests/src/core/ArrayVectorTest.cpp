@@ -23,11 +23,16 @@
  */
 
 #include "ArrayVector.h"
+#include "FifoBuffer.h"
+#include "LocklessAllocator.h"
 
 #include <QObject>
 #include <QtTest>
 #include <array>
+#include <initializer_list>
 #include <iterator>
+#include <limits>
+#include <stdexcept>
 
 using lmms::ArrayVector;
 
@@ -59,10 +64,102 @@ struct DestructorCheck
 	bool* destructed;
 };
 
+struct CopyBomb
+{
+	static inline int copies = 0;
+	static inline int throwOnCopy = 0;
+
+	CopyBomb() = default;
+	CopyBomb(const CopyBomb&)
+	{
+		if (++copies == throwOnCopy) { throw std::runtime_error{"unexpected copy past capacity"}; }
+	}
+	CopyBomb& operator=(const CopyBomb&) = default;
+};
+
+struct DefaultConstructionBomb
+{
+	static inline int constructions = 0;
+	static inline int throwOnConstruction = 0;
+
+	DefaultConstructionBomb()
+	{
+		if (++constructions == throwOnConstruction) { throw std::runtime_error{"unexpected construction past capacity"}; }
+	}
+};
+
+struct ConstructionBomb
+{
+	explicit ConstructionBomb(bool shouldThrow = false)
+	{
+		if (shouldThrow) { throw std::runtime_error{"unexpected construction when full"}; }
+	}
+};
+
+class ThrowingInputIterator
+{
+public:
+	using iterator_category = std::input_iterator_tag;
+	using iterator_concept = std::input_iterator_tag;
+	using value_type = int;
+	using difference_type = std::ptrdiff_t;
+	using reference = int;
+
+	ThrowingInputIterator() = default;
+	ThrowingInputIterator(const int* data, std::size_t index, std::size_t throwAt) :
+		m_data{data},
+		m_index{index},
+		m_throwAt{throwAt}
+	{}
+
+	int operator*() const
+	{
+		if (m_index == m_throwAt) { throw std::runtime_error{"read past capacity"}; }
+		return m_data[m_index];
+	}
+
+	ThrowingInputIterator& operator++() { ++m_index; return *this; }
+	ThrowingInputIterator operator++(int) { auto previous = *this; ++*this; return previous; }
+	friend bool operator==(const ThrowingInputIterator&, const ThrowingInputIterator&) = default;
+
+private:
+	const int* m_data = nullptr;
+	std::size_t m_index = 0;
+	std::size_t m_throwAt = 0;
+};
+
 class ArrayVectorTest : public QObject
 {
 	Q_OBJECT
 private slots:
+	void fifoBufferRejectsNonPositiveCapacity()
+	{
+		QVERIFY_EXCEPTION_THROWN((lmms::FifoBuffer<int>(0)), std::invalid_argument);
+		QVERIFY_EXCEPTION_THROWN((lmms::FifoBuffer<int>(-1)), std::invalid_argument);
+	}
+
+	void zeroElementSizeConstructorTest()
+	{
+		QVERIFY_EXCEPTION_THROWN((lmms::LocklessAllocator(1, 0)), std::invalid_argument);
+	}
+
+	void overflowingLocklessAllocatorDimensionsTest()
+	{
+		// Each request wraps size_t somewhere before the pool is allocated;
+		// none of them may produce an allocator whose offsets outrun its pool.
+		constexpr auto maxSize = std::numeric_limits<std::size_t>::max();
+		// Element count rounded up to a multiple of the bitset width wraps.
+		QVERIFY_EXCEPTION_THROWN((lmms::LocklessAllocator(maxSize - 5, 1)), std::length_error);
+		// Element size rounded up to pointer alignment wraps to zero (free() would divide by it).
+		QVERIFY_EXCEPTION_THROWN((lmms::LocklessAllocator(1, maxSize - 3)), std::length_error);
+		// capacity * elementSize == 2^64 wraps to zero.
+		QVERIFY_EXCEPTION_THROWN((lmms::LocklessAllocator(32, std::size_t{1} << 59)), std::length_error);
+		// capacity * elementSize == 2^64 + 256 wraps to a 256-byte pool.
+		QVERIFY_EXCEPTION_THROWN((lmms::LocklessAllocator(32, (std::size_t{1} << 59) + 8)), std::length_error);
+		// A pool larger than ptrdiff_t cannot be addressed by free().
+		QVERIFY_EXCEPTION_THROWN((lmms::LocklessAllocator(1, std::size_t{1} << 63)), std::length_error);
+	}
+
 	void defaultConstructorTest()
 	{
 		// Ensure no elements are constructed
@@ -133,6 +230,33 @@ private slots:
 		QCOMPARE(v.size(), std::size_t{1});
 	}
 
+	void oversizedDefaultConstructorTest()
+	{
+		DefaultConstructionBomb::constructions = 0;
+		DefaultConstructionBomb::throwOnConstruction = 3;
+		QVERIFY_EXCEPTION_THROWN((ArrayVector<DefaultConstructionBomb, 2>(3)), std::length_error);
+		DefaultConstructionBomb::throwOnConstruction = 0;
+	}
+
+	void oversizedFillConstructorTest()
+	{
+		const CopyBomb value;
+		CopyBomb::copies = 0;
+		CopyBomb::throwOnCopy = 3;
+		QVERIFY_EXCEPTION_THROWN((ArrayVector<CopyBomb, 2>(3, value)), std::length_error);
+		CopyBomb::throwOnCopy = 0;
+	}
+
+	void oversizedInitializerListConstructorTest()
+	{
+		const CopyBomb source;
+		const std::initializer_list<CopyBomb> values{source, source, source};
+		CopyBomb::copies = 0;
+		CopyBomb::throwOnCopy = 3;
+		QVERIFY_EXCEPTION_THROWN((ArrayVector<CopyBomb, 2>(values)), std::length_error);
+		CopyBomb::throwOnCopy = 0;
+	}
+
 	void rangeConstructorTest()
 	{
 		{
@@ -158,6 +282,14 @@ private slots:
 			const auto v = ArrayVector<int, 5>(data.begin(), data.end());
 			QVERIFY(std::equal(v.begin(), v.end(), data.begin(), data.end()));
 		}
+	}
+
+	void oversizedInputRangeConstructorTest()
+	{
+		const int values[]{1, 2, 3};
+		const auto first = ThrowingInputIterator{values, 0, 2};
+		const auto last = ThrowingInputIterator{values, 3, 2};
+		QVERIFY_EXCEPTION_THROWN((ArrayVector<int, 2>(first, last)), std::length_error);
 	}
 
 	void initializerListConstructorTest()
@@ -296,6 +428,36 @@ private slots:
 			v = {1, 2, 3};
 			QCOMPARE(v, (ArrayVector<int, 5>{1, 2, 3}));
 		}
+	}
+
+	void oversizedInitializerListAssignmentTest()
+	{
+		const CopyBomb source;
+		const std::initializer_list<CopyBomb> values{source, source, source};
+		auto v = ArrayVector<CopyBomb, 2>{};
+		CopyBomb::copies = 0;
+		CopyBomb::throwOnCopy = 3;
+		QVERIFY_EXCEPTION_THROWN(v = values, std::length_error);
+		CopyBomb::throwOnCopy = 0;
+	}
+
+	void oversizedFillAssignmentTest()
+	{
+		const CopyBomb value;
+		auto v = ArrayVector<CopyBomb, 2>{};
+		CopyBomb::copies = 0;
+		CopyBomb::throwOnCopy = 4;
+		QVERIFY_EXCEPTION_THROWN(v.assign(3, value), std::length_error);
+		CopyBomb::throwOnCopy = 0;
+	}
+
+	void oversizedInputRangeAssignmentTest()
+	{
+		const int values[]{1, 2, 3};
+		const auto first = ThrowingInputIterator{values, 0, 2};
+		const auto last = ThrowingInputIterator{values, 3, 2};
+		auto v = ArrayVector<int, 2>{};
+		QVERIFY_EXCEPTION_THROWN(v.assign(first, last), std::length_error);
 	}
 
 	void fillValueAssignTest()
@@ -543,6 +705,16 @@ private slots:
 		}
 	}
 
+	void oversizedFillInsertTest()
+	{
+		const CopyBomb value;
+		auto v = ArrayVector<CopyBomb, 2>{};
+		CopyBomb::copies = 0;
+		CopyBomb::throwOnCopy = 3;
+		QVERIFY_EXCEPTION_THROWN(v.insert(v.cbegin(), 3, value), std::length_error);
+		CopyBomb::throwOnCopy = 0;
+	}
+
 	void insertRangeTest()
 	{
 		{
@@ -562,6 +734,15 @@ private slots:
 			v.insert(v.cbegin() + 1, data.begin(), data.end());
 			QCOMPARE(v, (ArrayVector<int, 5>{1, 2, 3, 4}));
 		}
+	}
+
+	void oversizedInputRangeInsertTest()
+	{
+		const int values[]{1, 2, 3};
+		const auto first = ThrowingInputIterator{values, 0, 2};
+		const auto last = ThrowingInputIterator{values, 3, 2};
+		auto v = ArrayVector<int, 2>{};
+		QVERIFY_EXCEPTION_THROWN(v.insert(v.cbegin(), first, last), std::length_error);
 	}
 
 	void insertInitializerListTest()
@@ -632,6 +813,16 @@ private slots:
 			v.erase(v.cbegin() + 1, v.cbegin() + 3);
 			QCOMPARE(v, (ArrayVector<int, 5>{1, 2, 3}));
 		}
+		{
+			// An empty range must not move-assign its elements
+			auto v = ArrayVector<Constructible, 3>(3);
+			const auto result = v.erase(v.cbegin() + 1, v.cbegin() + 1);
+			QCOMPARE(result - v.begin(), std::ptrdiff_t{1});
+			QCOMPARE(v.size(), std::size_t{3});
+			for (const auto& element : v) {
+				QCOMPARE(element.construction, Construction::Default);
+			}
+		}
 	}
 
 	void pushBackTest()
@@ -681,6 +872,13 @@ private slots:
 			v.emplace_back(3);
 			QCOMPARE(v, (ArrayVector<int, 5>{1, 2, 3}));
 		}
+	}
+
+	void emplaceBackWhenFullTest()
+	{
+		auto v = ArrayVector<ConstructionBomb, 1>{};
+		v.emplace_back(false);
+		QVERIFY_EXCEPTION_THROWN(v.emplace_back(true), std::length_error);
 	}
 
 	void popBackTest()

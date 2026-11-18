@@ -47,8 +47,11 @@ namespace gui
  *  now" - turns it into the video's time through the tempo map and the video's offset, shows the timecode at
  *  once, and asks the frame pump (VideoFramePump, a worker thread) for that frame only when the picture is stale
  *  AND no frame is still being decoded: a tick that comes while one is in flight is skipped, so when decoding falls
- *  behind, frames are dropped and the picture never lags the music. Outside the video's span it says so. The
- *  timer runs only while the window is shown. */
+ *  behind, frames are dropped and the picture never lags the music. Outside the video's span it says so. With
+ *  several clips (Q050-139/Q050-180.1) it follows the clip active at the play position; a frame of another clip is
+ *  taken down the moment the play position leaves it, and an answer that arrives for a clip no longer active is
+ *  dropped, so no stale picture shows before, after or between clips. The timer runs only while the window is
+ *  shown. */
 class LMMS_EXPORT VideoWindow : public QWidget
 {
 	Q_OBJECT
@@ -62,6 +65,8 @@ public:
 	QString timecode() const { return m_timecode; }
 	QString status() const { return m_status; }
 	double frameSeconds() const { return m_frame.isNull() ? -1.0 : m_frameAt; }
+	//! Whether a picture is actually shown (a status line hides the last frame).
+	bool hasFrame() const { return !m_frame.isNull() && m_status.isEmpty(); }
 	//! One step of the timer (a test's way to drive it).
 	void follow();
 
@@ -71,6 +76,9 @@ protected:
 	void hideEvent(QHideEvent* event) override;
 
 private:
+	//! The play position is in the clip whose source key (id and file) is @a activeSource (empty: in none): a picture
+	//! of any other source is taken down.
+	void noteActiveSource(const QString& activeSource);
 	//! No video attached: the picture and the timecode go, and the window says so.
 	void showNoVideo();
 	//! Where the picture goes: the window above the timecode band.
@@ -84,6 +92,9 @@ private:
 	QImage m_frame;
 	double m_frameAt = -1.0;
 	QString m_framePath;   //!< the file the frame shown (or asked for) came from
+	QString m_requestSource;  //!< the source (clip id and file) the last frame was asked for
+	QString m_frameSource;    //!< the source the frame shown came from
+	QString m_activeSource;   //!< the source at the play position on the last follow(); empty outside every clip
 	QSize m_frameBox;
 	QString m_timecode;
 	QString m_status;

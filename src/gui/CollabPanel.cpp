@@ -135,7 +135,6 @@ void CollabPanel::run(const QString& command, const QJsonObject& args)
 {
 	const ControlResult result = ControlRegistry::instance()->invoke(command, args);
 	if (!result.ok) { m_status->setText(result.errorMessage); return; }
-	if (command == QLatin1String("collab.join")) { m_invite->clear(); }
 	refresh();
 }
 
@@ -166,6 +165,10 @@ void CollabPanel::refresh()
 {
 	const QJsonObject state = collab::CollabSession::instance()->state();
 	const QString mode = state.value(QStringLiteral("mode")).toString();
+	if (state.value(QStringLiteral("peer")).toObject().value(QStringLiteral("state")).toString() == QLatin1String("joined"))
+	{
+		m_invite->clear();
+	}
 	const bool idle = mode == QLatin1String("idle");
 	const bool hosting = mode == QLatin1String("hosting");
 	m_host->setEnabled(idle);

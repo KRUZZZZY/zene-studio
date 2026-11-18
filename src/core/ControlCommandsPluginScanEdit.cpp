@@ -59,6 +59,7 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -160,12 +161,13 @@ ControlResult handleQuarantineAdd(const QJsonObject& args)
 {
 	const QString path = args.value(QStringLiteral("path")).toString();
 	const QString reason = args.value(QStringLiteral("reason")).toString();
-	if (path.isEmpty())
+	if (path.isEmpty() || !QFileInfo(path).isAbsolute())
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("%1 needs 'path': the plugin file to hide, as an absolute path - the quarantine "
-				"list stores paths, and a scan matches a candidate file's absolute path against it")
-				.arg(QuarantineAddName));
+				"list stores paths, and a scan matches a candidate file's absolute path against it. "
+				"Got '%2': a relative path would be stored as an entry no scan can ever match")
+				.arg(QuarantineAddName, path));
 	}
 
 	PluginScanCache* cache = nullptr;
@@ -218,11 +220,12 @@ ControlResult handleQuarantineAdd(const QJsonObject& args)
 ControlResult handleQuarantineRemove(const QJsonObject& args)
 {
 	const QString path = args.value(QStringLiteral("path")).toString();
-	if (path.isEmpty())
+	if (path.isEmpty() || !QFileInfo(path).isAbsolute())
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("%1 needs 'path': the plugin file to un-hide, as an absolute path")
-				.arg(QuarantineRemoveName));
+			QStringLiteral("%1 needs 'path': the plugin file to un-hide, as an absolute path - the list "
+				"stores the absolute paths the scan matches candidates against. Got '%2'")
+				.arg(QuarantineRemoveName, path));
 	}
 
 	PluginScanCache* cache = nullptr;
@@ -304,6 +307,16 @@ ControlResult handleRescan()
 		return ControlResult::failure(ControlErrorKind::NotFound,
 			QStringLiteral("%1: this instance has no plugin factory").arg(RescanName));
 	}
+	// A background run owns the catalogue commit until it ends: a synchronous
+	// scan now would be overwritten by the run's commit (or overwrite the
+	// staging it is still filling). Q050-090.
+	if (factory->backgroundScanActive())
+	{
+		return ControlResult::failure(ControlErrorKind::Busy,
+			QStringLiteral("%1: a background scan is running - follow it with plugin.scan_status, "
+				"wait for it to commit, or stop it with plugin.scan_cancel; nothing was scanned")
+				.arg(RescanName));
+	}
 
 	const QJsonObject before = rescanReport(*factory);
 	// The scan itself. discoverPlugins() resets its own stats, re-reads the
@@ -340,6 +353,9 @@ void registerPluginScanEditCommands(ControlRegistry& registry)
 			"device catalogue on the next scan (plugin.rescan applies it). ONE entry per path: adding a path "
 			"that is already listed is refused rather than silently ignored. Reversible - control.undo "
 			"dispatches the recorded plugin.scan_cache_quarantine_remove.");
+		// This edit writes only the persistent scan-cache quarantine list and is
+		// used by the startup crash offer before project-edit readiness.
+		cmd.requiresEngine = false;
 		cmd.mutating = true;
 		cmd.argsSchema = objectSchema({
 			{QStringLiteral("path"), stringProperty()},
@@ -368,6 +384,9 @@ void registerPluginScanEditCommands(ControlRegistry& registry)
 			"list, write the cache file, and report the reason the entry carried. The next scan loads the "
 			"file again. Reversible - control.undo dispatches the recorded plugin.scan_cache_quarantine_add "
 			"WITH the reason captured before the removal (a path-only re-add would lose it).");
+		// Release edits the same file-backed list, so the release menu can operate
+		// even when this GUI has no control socket to advance registry readiness.
+		cmd.requiresEngine = false;
 		cmd.mutating = true;
 		cmd.argsSchema = objectSchema({
 			{QStringLiteral("path"), stringProperty()},
@@ -397,6 +416,9 @@ void registerPluginScanEditCommands(ControlRegistry& registry)
 			"the cache. This is what APPLIES a quarantine edit. Reports the scan's own numbers before and "
 			"after. Not reversible: the previous fingerprint record of a file the scan replaced is not "
 			"restorable by any command.");
+		// Rescanning only accesses PluginFactory and its derived cache; it is a
+		// valid menu operation before project-edit readiness as well.
+		cmd.requiresEngine = false;
 		cmd.mutating = true;
 		cmd.argsSchema = objectSchema({});
 		cmd.resultSchema = objectSchema({

@@ -25,25 +25,45 @@
 #define LMMS_GUI_STEM_SPLIT_CONTROLLER_H
 
 #include <QObject>
+#include <QPointer>
 #include <QString>
 
-#include "StemSeparation/StemJobManager.h"
+#include <atomic>
+#include <functional>
+#include <memory>
 
+#include "TaskCenter.h"
+#include "TimePos.h"
+
+class QJsonObject;
+class QMenu;
 class QProgressDialog;
+class QTimer;
 class QWidget;
 
 namespace lmms
 {
 
+class SampleBuffer;
 class SampleClip;
+class Song;
+struct ControlResult;
 
 namespace gui
 {
 
-// Owns the job manager and the progress dialog for the "Split to stems" clip
-// action. The controller never touches audio: the heavy work happens on
-// StemJobManager's worker thread, results are materialised as tracks on the GUI
-// thread once the job has finished.
+/*! The "Split to stems" clip action, driven through the SAME registered
+ *  `stem.*` commands the agent surface calls - `stem.job_start` to queue the
+ *  offline job, `stem.job_status` to poll it, `stem.job_cancel` for the
+ *  dialog's Cancel, and `stem.tracks_create` to materialise the four tracks as
+ *  ONE undo step. This class owns no engine: it is a thin client of
+ *  ControlRegistry, so a click and an agent command take the identical path
+ *  (SPEC A11, "every user-facing action is one registered command").
+ *
+ *  It never touches audio: the separation runs on StemJobManager's worker
+ *  thread inside the control surface, progress is read by polling, and the
+ *  tracks are created on the GUI thread by the command.
+ */
 class LMMS_EXPORT StemSplitController : public QObject
 {
 	Q_OBJECT
@@ -59,27 +79,91 @@ public:
 	// explanation (missing interpreter, missing model, ...).
 	static QString availabilityError();
 
-	// Asynchronous entry point of the clip context-menu action.
-	void splitClipToStems(SampleClip* clip);
+	/*! Asynchronous entry point of the clip context-menu action. \a quality is
+	 *  a `stem.job_start` quality name ("fast", "standard", "high"); empty
+	 *  omits it, so the command applies its own default (Q050-062.2). */
+	void splitClipToStems(SampleClip* clip, const QString& quality = QString());
+
+	/*! Q050-062.2: the clip menu's "Split to stems" submenu - one checkable
+	 *  item per quality `stem.job_start` accepts, the last one used checked.
+	 *  Picking an item splits \a clip at that quality through instance(). */
+	static void addSplitToStemsMenu(QMenu* menu, SampleClip* clip);
+
+	//! The quality the menu last started a job at (the command's default
+	//! before the first one).
+	QString lastQuality() const { return m_lastQuality; }
+
+	/*! How the job UI names a job's effective setting, from its `stem.*` job
+	 *  object: "high quality, 75% overlap". Uses `inference_quality` once the
+	 *  worker has run, else `quality`; empty when the job carries neither. */
+	static QString qualityText(const QJsonObject& job);
+
+	//! How pollJob reads one job's `stem.job_status` result. Empty means the
+	//! registry; the pipeline test replaces it to script the states a poll sees.
+	using StatusReader = std::function<ControlResult(int jobId)>;
+	static void setStatusReaderForTest(StatusReader reader);
+	//! Test seam: runs on the worker before an in-memory clip's WAV is written.
+	static void setPreparationHookForTest(std::function<void()> hook);
 
 private slots:
-	void handleProgress(int jobId, float fraction);
-	void handleFinished(int jobId, double elapsedSeconds);
-	void handleCancelled(int jobId);
-	void handleFailed(int jobId, const QString& error);
+	void pollJob();
 
 private:
-	/*! Owner decision 14: true when a job may be submitted - the backend is
+	struct ClipSnapshot
+	{
+		QPointer<Song> song;
+		int trackId = -1;
+		TimePos position;
+		QString name;
+		std::shared_ptr<const SampleBuffer> source;
+	};
+
+	//! Q050-010: an in-memory clip's WAV being written on a worker, before its job can start.
+	struct Preparation
+	{
+		QString path;
+		QString quality;
+		ClipSnapshot snapshot;
+		TaskToken token;
+		std::atomic<bool> cancel{false};
+	};
+
+	/*! Owner decision 14: true when a job may be submitted - the engine is
 	 *  ready, or only the model is missing and the user agreed to fetch it
 	 *  (\a fetching set). False after telling the user why not. */
 	bool ensureBackendReady(bool* fetching);
+	bool captureClipSnapshot(SampleClip* clip, ClipSnapshot* snapshot) const;
+	bool targetStillAvailable(const ClipSnapshot& snapshot) const;
+	//! The absolute file the engine should decode: the clip's own audio file
+	//! when there is one, else empty - beginPreparation() then writes a temporary WAV of the clip's buffer on a worker.
+	bool resolveSourceFile(const ClipSnapshot& snapshot, QString* path, QString* error);
+	void beginPreparation(const ClipSnapshot& snapshot, const QString& quality);
+	void cancelPreparation(const std::shared_ptr<Preparation>& preparation);
+	void preparationEnded(const std::shared_ptr<Preparation>& preparation, bool ok, const QString& error);
+	void showProgress(const QString& label, int maximum);
+	bool startJob(const ClipSnapshot& snapshot, const QString& source, const QString& quality);
+	//! The progress label for \a job's phase and effective quality.
+	QString progressLabel(const QJsonObject& job) const;
+	void completeJob(const QJsonObject& job);
+	void failJob(const QString& error);
 
+	void stopPolling();
 	void closeDialog();
+	void clearTarget();
+	void resetJob();
+	void releaseTemp();
 
 	QWidget* m_parent = nullptr;
-	StemJobManager m_manager;
 	QProgressDialog* m_dialog = nullptr;
-	SampleClip* m_clip = nullptr;
+	QTimer* m_poll = nullptr;
+	QString m_tempPath;  //!< the WAV written for an in-memory clip's job, removed when the job ends
+	std::shared_ptr<Preparation> m_preparation;
+	int m_preparationLocal = 0;
+	QPointer<Song> m_song;
+	int m_trackId = -1;
+	TimePos m_clipPosition;
+	QString m_clipName;
+	QString m_lastQuality;
 	int m_jobId = -1;
 };
 

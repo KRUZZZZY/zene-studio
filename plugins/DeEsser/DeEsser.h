@@ -51,8 +51,9 @@ public:
 	BoolModel m_listenModel;
 };
 
-/*! 0.5.0 L10 (MX-147): a de-esser. A detector follows the level above 'frequency' (a 12 dB / octave
- *  high-pass of the mid signal); while it is over 'threshold' the device turns down by 4:1, at most
+/*! 0.5.0 L10 (MX-147): a de-esser. A linked detector follows the level above 'frequency' (a 12 dB /
+ *  octave high-pass of each channel, the louder one taken); while it is over 'threshold' the device turns
+ *  down by 4:1, at most
  *  'range' dB - only the band above the frequency (split, the default: the input minus its low-pass,
  *  so the two parts add back exactly) or the whole signal (wide).
  *  'listen' plays the detector's band alone, to find the frequency. Its reduction is what the
@@ -85,7 +86,7 @@ private:
 	SampleFrame shaped(const SampleFrame& in, Mode mode, bool listen);
 
 	DeEsserControls m_controls;
-	BiquadSection<1> m_detector;
+	BiquadSection<2> m_detector;
 	BiquadSection<2> m_low;  //!< the split: the band above the frequency is the input minus this
 	float m_frequency = -1.f;
 	float m_rate = 0.f;

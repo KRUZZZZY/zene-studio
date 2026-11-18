@@ -29,8 +29,11 @@
 #include <QDomElement>
 #include <QWriteLocker>
 
+#include <atomic>
+
 #include "AutomationClip.h"
 #include "AutomationLatency.h"
+#include "AutomationRenderScratch.h"
 #include "embed.h"
 #include "Engine.h"
 #include "TrackContainer.h"
@@ -63,14 +66,15 @@ namespace
  *
  *  The two tests are ordered, and the order is load-bearing:
  *
- *   - `Track::create()` reads `type` with QVariant::toInt(), so an element with
- *     NO `type` attribute reads as 0 - an Instrument track. Without the name
- *     test first, every element a newer writer put inside `<trackcontainer>`
- *     would be coerced into an instrument track. That is the same trap
- *     SPEC-stable-ids.md 3.1 records for `<track>`'s children, one level up.
- *     The name is the tag `Track::saveTrack` sets on every track's own element
- *     (src/core/Track.cpp) and the same literal Song::loadProject's pre-count
- *     walk compares against.
+ *   - `Track::create()` reads `type` with a CHECKED QVariant::toInt(), so an
+ *     element whose `type` is missing or unreadable is refused there (it used
+ *     to read as 0 - an Instrument track). Without the name test first, every
+ *     element a newer writer put inside `<trackcontainer>` would be offered to
+ *     the factory at all. That is the same trap SPEC-stable-ids.md 3.1 records
+ *     for `<track>`'s children, one level up. The name is the tag
+ *     `Track::saveTrack` sets on every track's own element (src/core/Track.cpp)
+ *     and the same literal Song::loadProject's pre-count walk compares
+ *     against.
  *   - A `<track>` whose `type` this build has no class for hits
  *     `Track::create`'s `default: break` arm and returns nullptr. That arm
  *     STAYS: it is the forward-compatibility contract documented beside the
@@ -144,6 +148,11 @@ void TrackContainer::loadSettings( const QDomElement & _this )
 	bool journalRestore = _this.parentNode().nodeName() == "journaldata";
 	if( journalRestore )
 	{
+		// These definitions live beside the track container in the project file,
+		// so a track-only journal checkpoint cannot restore them. Preserve them
+		// across the clear; a project load still resets them on absence.
+		const QVector<VisibilitySet> visibilitySets = m_visibilitySets;
+		const QString activeVisibilitySet = m_activeVisibilitySet;
 		// The container's views first, then its tracks. A TrackView is deleted
 		// from a DEFERRED event once its track dies (Qt::WA_DeleteOnClose,
 		// closed from the track's destroyedTrack() signal), so deleting the
@@ -157,6 +166,8 @@ void TrackContainer::loadSettings( const QDomElement & _this )
 		// TrackContainer::aboutToClearTracks() and docs/UNDO-RELEASE-CONFIG.md.
 		emit aboutToClearTracks();
 		clearAllTracks();
+		m_visibilitySets = visibilitySets;
+		m_activeVisibilitySet = activeVisibilitySet;
 	}
 
 	static QProgressDialog * pd = nullptr;
@@ -217,8 +228,10 @@ void TrackContainer::loadSettings( const QDomElement & _this )
 			// build can construct a track from it. Otherwise it is kept verbatim
 			// and re-emitted on save, instead of being dropped (a `type` with no
 			// class here) or coerced into an instrument track (an element that
-			// is not a <track> at all) - Track::create() would do the latter by
-			// reading an absent `type` as 0.
+			// is not a <track> at all, or a <track> whose `type` is missing or
+			// unreadable - Track::create() reads that attribute with a CHECKED
+			// QVariant::toInt() and refuses the element, where it used to read
+			// an absent `type` as 0).
 			//
 			// The `metadata` guard above is unchanged, and it deliberately does
 			// NOT preserve: a marked element is REMOVED on write by
@@ -265,6 +278,44 @@ int TrackContainer::countTracks( Track::Type _tt ) const
 
 
 
+#ifdef LMMS_TESTING
+namespace
+{
+
+//! The seam behind TrackContainer::trackIndexScanCount(): candidates a linear
+//! position lookup examined. The maintained index never increments it, so the
+//! regression fails if the scan comes back. Relaxed because the test reads it
+//! on one thread.
+std::atomic<std::uint64_t> s_trackIndexScans{0};
+
+} // namespace
+#endif
+
+
+int TrackContainer::trackIndex( const Track * _track ) const
+{
+	// The position is maintained on the track by addTrack/removeTrack/moveTrack,
+	// so this is one atomic load. The container check keeps a track of a nested
+	// container from being mistaken for one of ours (a pattern track's own list).
+	if( _track == nullptr || _track->trackContainer() != this ) { return -1; }
+	return _track->containerIndex();
+}
+
+
+#ifdef LMMS_TESTING
+std::uint64_t TrackContainer::trackIndexScanCount() noexcept
+{
+	return s_trackIndexScans.load( std::memory_order_relaxed );
+}
+
+
+void TrackContainer::resetTrackIndexScanCount() noexcept
+{
+	s_trackIndexScans.store( 0, std::memory_order_relaxed );
+}
+#endif
+
+
 void TrackContainer::addTrack( Track * _track )
 {
 	if( _track->type() != Track::Type::HiddenAutomation )
@@ -272,6 +323,7 @@ void TrackContainer::addTrack( Track * _track )
 		_track->lock();
 		m_tracksMutex.lockForWrite();
 		m_tracks.push_back( _track );
+		_track->setContainerIndex( static_cast<int>( m_tracks.size() ) - 1 );
 		m_tracksMutex.unlock();
 		_track->unlock();
 		emit trackAdded( _track );
@@ -294,7 +346,15 @@ void TrackContainer::removeTrack( Track * _track )
 		if (_track->isSolo()) {
 			_track->setSolo(false);
 		}
+		const int removed = static_cast<int>(it - m_tracks.begin());
 		m_tracks.erase(it);
+		_track->setContainerIndex(-1);
+		// The tracks after the gap moved one place down; publish their new
+		// positions before the lock is released (off the audio thread).
+		for (int i = removed; i < static_cast<int>(m_tracks.size()); ++i)
+		{
+			m_tracks[static_cast<std::size_t>(i)]->setContainerIndex(i);
+		}
 		lockTracksAccess.unlock();
 
 		if( Engine::getSong() )
@@ -330,8 +390,19 @@ void TrackContainer::moveTrack(Track* track, int indexTo)
 		control::journalTrackMove(track, from, indexTo);
 	}
 
-	m_tracks.erase(std::find(m_tracks.begin(), m_tracks.end(), track));
-	m_tracks.insert(m_tracks.begin() + indexTo, track);
+	const auto found = std::find(m_tracks.begin(), m_tracks.end(), track);
+	if (found != m_tracks.end())
+	{
+		const int fromIndex = static_cast<int>(found - m_tracks.begin());
+		m_tracks.erase(found);
+		m_tracks.insert(m_tracks.begin() + indexTo, track);
+		// Every track between the two ends of the move shifted; publish the new
+		// positions before returning (off the audio thread, under no render).
+		for (int i = std::min(fromIndex, indexTo); i < static_cast<int>(m_tracks.size()); ++i)
+		{
+			m_tracks[static_cast<std::size_t>(i)]->setContainerIndex(i);
+		}
+	}
 
 	emit trackMoved();
 }
@@ -388,15 +459,18 @@ namespace
 
 //! 0.5.0 ED-199: each relative clip's distance from the middle of its range, added to what the
 //! absolute clips set (or the parameter's own value for the run), clamped to the parameter.
-void applyRelativeClips(const Track::clipVector& clips, TimePos time, AutomatedValueMap& valueMap)
+void applyRelativeClips(const std::vector<Clip*>& clips, TimePos time, AutomationRenderScratch& values,
+	const AutomationLatency::ReadSnapshot& snapshot)
 {
 	const quint64 run = AutomatableModel::automationTransportRun();
 	for (Clip* clip : clips)
 	{
 		auto* p = dynamic_cast<AutomationClip*>(clip);
+		// One relative curve has one read time; reject it if its targets disagree.
+		if (p == nullptr || snapshot.latencyFrames(p) < 0) { continue; }
 		// Read where the absolute clips are read: the latent audio's time when compensation is on (review L19 #3).
-		const TimePos readTime = AutomationLatency::instance().readTime(clip, time);
-		if (p == nullptr || !p->isRelative() || clip->isMuted() || clip->startPosition() > readTime || !p->hasAutomation()) { continue; }
+		const TimePos readTime = AutomationLatency::instance().readTime(clip, time, snapshot);
+		if (!p->isRelative() || clip->isMuted() || clip->startPosition() > readTime || !p->hasAutomation()) { continue; }
 		TimePos relTime = readTime - p->startPosition() - p->startTimeOffset();
 		relTime = std::min(static_cast<int>(relTime), p->length() - p->startTimeOffset());
 		const float offset = p->valueAt(relTime) - (p->getMin() + p->getMax()) / 2.f;
@@ -404,9 +478,10 @@ void applyRelativeClips(const Track::clipVector& clips, TimePos time, AutomatedV
 		{
 			if (model == nullptr) { continue; }
 			// The map holds inverse-scaled values (Song applies scaledValue); so must the base and the bounds.
-			const float base = valueMap.contains(model) ? valueMap[model] : model->inverseScaledValue(model->trimBase(run));
-			valueMap[model] = std::clamp(base + offset, model->inverseScaledValue(model->minValue<float>()),
-				model->inverseScaledValue(model->maxValue<float>()));
+			const float* known = values.find(model);
+			const float base = known != nullptr ? *known : model->inverseScaledValue(model->trimBase(run));
+			values.set(model, std::clamp(base + offset, model->inverseScaledValue(model->minValue<float>()),
+				model->inverseScaledValue(model->maxValue<float>())));
 		}
 	}
 }
@@ -415,51 +490,84 @@ void applyRelativeClips(const Track::clipVector& clips, TimePos time, AutomatedV
 
 AutomatedValueMap TrackContainer::automatedValuesAt(TimePos time, int clipNum) const
 {
-	return automatedValuesFromTracks(tracks(), time, clipNum);
+	// The control thread's read: unbounded scratch, the same code the audio thread runs on its own.
+	const auto snapshot = AutomationLatency::instance().readSnapshot();
+	return automatedValuesAt(time, clipNum, snapshot);
+}
+
+AutomatedValueMap TrackContainer::automatedValuesAt(TimePos time, int clipNum,
+	const AutomationLatency::ReadSnapshot& snapshot) const
+{
+	AutomationRenderScratch level;
+	AutomationRenderScratch inner;
+	fillAutomatedValues(level, &inner, time, clipNum, snapshot);
+	AutomatedValueMap valueMap;
+	for (const AutomationRenderScratch::Entry& entry : level.entries()) { valueMap.insert(entry.model, entry.value); }
+	return valueMap;
 }
 
 
-AutomatedValueMap TrackContainer::automatedValuesFromTracks(const TrackList &tracks, TimePos time, int clipNum)
+void TrackContainer::fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
+	TimePos time, int clipNum) const
 {
-	Track::clipVector clips;
+	// Without a period's own snapshot the caller pins one now (control thread, tests, editors).
+	const auto snapshot = AutomationLatency::instance().readSnapshot();
+	fillAutomatedValues(level, inner, time, clipNum, snapshot);
+}
 
-	for (Track* track: tracks)
+
+void TrackContainer::fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
+	TimePos time, int clipNum, const AutomationLatency::ReadSnapshot& snapshot) const
+{
+	level.clear();
+	for (Track* track : tracks()) { gatherAutomationClips(level, track, time, clipNum); }
+	collectAutomatedValues(level, inner, time, snapshot);
+}
+
+
+void TrackContainer::gatherAutomationClips(AutomationRenderScratch& level, Track* track, TimePos time, int clipNum)
+{
+	if (track == nullptr || track->isMuted()) { return; }
+
+	switch(track->type())
 	{
-		if (track->isMuted()) {
-			continue;
+	case Track::Type::Automation:
+	case Track::Type::HiddenAutomation:
+	case Track::Type::Pattern:
+		if (clipNum < 0) {
+			level.insertClipsInRange(*track, 0, time);
+		} else {
+			Q_ASSERT(track->numOfClips() > clipNum);
+			level.appendClip(track->getClip(clipNum));
 		}
-
-		switch(track->type())
-		{
-		case Track::Type::Automation:
-		case Track::Type::HiddenAutomation:
-		case Track::Type::Pattern:
-			if (clipNum < 0) {
-				track->getClipsInRange(clips, 0, time);
-			} else {
-				Q_ASSERT(track->numOfClips() > clipNum);
-				clips.push_back(track->getClip(clipNum));
-			}
-		default:
-			break;
-		}
+	default:
+		break;
 	}
+}
 
-	AutomatedValueMap valueMap;
+
+void TrackContainer::collectAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
+	TimePos time, const AutomationLatency::ReadSnapshot& snapshot)
+{
+	const std::vector<Clip*>& clips = level.clips();
 
 	Q_ASSERT(std::is_sorted(clips.begin(), clips.end(), Clip::comparePosition));
 
 	for(Clip* clip : clips)
 	{
+		auto* automation = dynamic_cast<AutomationClip*>(clip);
+		// One curve read cannot serve mixed target latencies, so reject the whole clip.
+		if( automation != nullptr && snapshot.latencyFrames(automation) < 0 ) { continue; }
 		// 0.5.0 MX-160: an automation clip is read where the latent audio is - `time` itself unless
 		// the project turned latency-compensated automation on.
-		const TimePos readTime = AutomationLatency::instance().readTime(clip, time);
+		const TimePos readTime = AutomationLatency::instance().readTime(clip, time, snapshot);
 		if (clip->isMuted() || clip->startPosition() > readTime) {
 			continue;
 		}
 
-		if (auto* p = dynamic_cast<AutomationClip *>(clip))
+		if (automation != nullptr)
 		{
+			auto* p = automation;
 			// A relative (trim) clip offsets rather than sets: applied after every absolute one.
 			if (! p->hasAutomation() || p->isRelative()) {
 				continue;
@@ -468,15 +576,24 @@ AutomatedValueMap TrackContainer::automatedValuesFromTracks(const TrackList &tra
 			if (!p->isInPattern()) {
 				relTime = std::min(static_cast<int>(relTime), p->length() - p->startTimeOffset());
 			}
-			float value = p->valueAt(relTime);
+			// Q050-037: before the first node each target holds its OWN authored
+			// initial value. valueAt() reports the pre-first read in the same
+			// lock it already took, so this pass adds no mutex acquisition.
+			bool beforeFirst = false;
+			const float value = p->valueAt(relTime, &beforeFirst);
 
 			for (AutomatableModel* model : p->objects())
 			{
-				valueMap[model] = value;
+				if (model == nullptr) { continue; }
+				level.set(model, beforeFirst
+					? model->inverseScaledValue(model->initValue<float>()) : value);
 			}
 		}
 		else if (auto* pattern = dynamic_cast<PatternClip*>(clip))
 		{
+			// The pattern store holds no pattern clips of its own, so its read gets no scratch to nest in.
+			if (inner == nullptr) { continue; }
+
 			auto patIndex = dynamic_cast<class PatternTrack*>(pattern->getTrack())->patternIndex();
 			auto patStore = Engine::patternStore();
 
@@ -484,11 +601,11 @@ AutomatedValueMap TrackContainer::automatedValuesFromTracks(const TrackList &tra
 			patTime = std::min(patTime, clip->length());
 			patTime = patTime % (patStore->lengthOfPattern(patIndex) * TimePos::ticksPerBar());
 
-			auto patValues = patStore->automatedValuesAt(patTime, patIndex);
-			for (auto it=patValues.begin(); it != patValues.end(); it++)
+			patStore->fillAutomatedValues(*inner, nullptr, patTime, patIndex, snapshot);
+			for (const AutomationRenderScratch::Entry& entry : inner->entries())
 			{
 				// override old values, pattern track with the highest index takes precedence
-				valueMap[it.key()] = it.value();
+				level.set(entry.model, entry.value);
 			}
 		}
 		else
@@ -497,9 +614,8 @@ AutomatedValueMap TrackContainer::automatedValuesFromTracks(const TrackList &tra
 		}
 	}
 
-	applyRelativeClips(clips, time, valueMap);
-	return valueMap;
-};
+	applyRelativeClips(clips, time, level, snapshot);
+}
 
 
 } // namespace lmms

@@ -190,8 +190,16 @@ void ProjectMarkers::load(const QDomElement& element)
 		child = child.nextSiblingElement(QStringLiteral("marker")))
 	{
 		++offered;
+		const QString tickText = child.attribute(QStringLiteral("tick"));
+		bool tickOk = false;
+		const int tick = tickText.toInt(&tickOk);
+		if (!tickOk)
+		{
+			qWarning("ProjectMarkers: ignoring marker with invalid marker tick \"%s\".", qPrintable(tickText));
+			continue;
+		}
 		// A negative tick is clamped as add() and replace() clamp it.
-		loaded.append(Marker{savedId(child), std::max(0, child.attribute(QStringLiteral("tick")).toInt()),
+		loaded.append(Marker{savedId(child), std::max(0, tick),
 			child.attribute(QStringLiteral("name")), child.attribute(QStringLiteral("color")), child.attribute(QStringLiteral("action")),
 			child.attribute(QStringLiteral("args"))});
 	}

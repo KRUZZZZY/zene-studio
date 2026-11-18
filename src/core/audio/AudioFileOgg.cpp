@@ -32,6 +32,8 @@
 
 #include <vorbis/vorbisenc.h>
 
+#include <algorithm>
+
 #include "SampleFrame.h"
 #include "lmms_constants.h"
 
@@ -43,6 +45,7 @@ AudioFileOgg::AudioFileOgg(OutputSettings const& outputSettings, const ch_cnt_t 
 	: AudioFileDevice(outputSettings, channels, file, audioEngine)
 {
 	vorbis_info_init(&m_vi);
+	m_vorbisInfoInitialized = true;
 
 	const auto bitrate = outputSettings.bitrate();
 	static constexpr auto maxBitrate = 320;
@@ -53,15 +56,27 @@ AudioFileOgg::AudioFileOgg(OutputSettings const& outputSettings, const ch_cnt_t 
 		return;
 	}
 
-	vorbis_analysis_init(&m_vds, &m_vi);
+	if (vorbis_analysis_init(&m_vds, &m_vi) != 0)
+	{
+		successful = false;
+		return;
+	}
+	m_vorbisDspInitialized = true;
+
 	vorbis_comment_init(&m_vc);
+	m_vorbisCommentInitialized = true;
 	vorbis_comment_add_tag(&m_vc, "Cool", "This song has been made using Zene Studio");
 
 	auto headerPackets = std::array<ogg_packet, 3>{};
 	vorbis_analysis_headerout(&m_vds, &m_vc, &headerPackets[0], &headerPackets[1], &headerPackets[2]);
 
 	srand(time(nullptr));
-	ogg_stream_init(&m_oss, rand());
+	if (ogg_stream_init(&m_oss, rand()) != 0)
+	{
+		successful = false;
+		return;
+	}
+	m_oggStreamInitialized = true;
 
 	ogg_stream_packetin(&m_oss, &headerPackets[0]);
 	ogg_stream_packetin(&m_oss, &headerPackets[1]);
@@ -69,27 +84,48 @@ AudioFileOgg::AudioFileOgg(OutputSettings const& outputSettings, const ch_cnt_t 
 
 	while (ogg_stream_flush(&m_oss, &m_page))
 	{
-		writeData(m_page.header, m_page.header_len);
-		writeData(m_page.body, m_page.body_len);
+		// The header pages are the stream's opening: a page that did not reach the file is not a
+		// successful OGG export, and `successful` is how the caller learns it right here.
+		if (!writePage())
+		{
+			successful = false;
+			removeOutputFile();
+			return;
+		}
+	}
+	// QFile buffers, so the pages above can still be in memory: the flush is what proves they
+	// reached the file. A stream whose opening never landed is not an OGG file at all.
+	if (!flushOutputFile())
+	{
+		successful = false;
+		removeOutputFile();
+		return;
 	}
 
-	vorbis_block_init(&m_vds, &m_vb);
+	if (vorbis_block_init(&m_vds, &m_vb) != 0)
+	{
+		successful = false;
+		return;
+	}
+	m_vorbisBlockInitialized = true;
 	successful = true;
 }
 
 AudioFileOgg::~AudioFileOgg()
 {
-	// writing 0 frames is how we flush any remaining data to the file
-	writeBuffer(nullptr, 0);
+	// The render already called finishEncoding(); this second call is a no-op then. If it is not -
+	// the renderer was destroyed without finalising - the flush still happens, and a failure is
+	// recorded on the device instead of being dropped.
+	finishEncoding();
 
-	ogg_stream_clear(&m_oss);
-	vorbis_block_clear(&m_vb);
-	vorbis_dsp_clear(&m_vds);
-	vorbis_comment_clear(&m_vc);
-	vorbis_info_clear(&m_vi);
+	if (m_oggStreamInitialized) { ogg_stream_clear(&m_oss); }
+	if (m_vorbisBlockInitialized) { vorbis_block_clear(&m_vb); }
+	if (m_vorbisDspInitialized) { vorbis_dsp_clear(&m_vds); }
+	if (m_vorbisCommentInitialized) { vorbis_comment_clear(&m_vc); }
+	if (m_vorbisInfoInitialized) { vorbis_info_clear(&m_vi); }
 }
 
-void AudioFileOgg::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
+bool AudioFileOgg::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
 {
 	if (_frames == 0)
 	{
@@ -128,11 +164,70 @@ void AudioFileOgg::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
 			do
 			{
 				if (ogg_stream_pageout(&m_oss, &m_page) == 0) { break; }
-				writeData(m_page.header, m_page.header_len);
-				writeData(m_page.body, m_page.body_len);
+				if (!writePage()) { return false; }
 			} while (!ogg_page_eos(&m_page));
 		}
 	}
+	return true;
+}
+
+
+#ifdef LMMS_TESTING
+int AudioFileOgg::s_firstPageWriteShort = -1;
+#endif
+
+
+int AudioFileOgg::writePageBytes(const void* data, int len)
+{
+#ifdef LMMS_TESTING
+	// The constructor case arms the failure before the object exists; the other cases arm it on the
+	// object. Both are one-shot, so exactly one page is short and the rest of the stream is normal.
+	int shortBy = m_nextPageWriteShort;
+	if (shortBy < 0) { shortBy = s_firstPageWriteShort; }
+	if (shortBy >= 0)
+	{
+		m_nextPageWriteShort = -1;
+		s_firstPageWriteShort = -1;
+		const int stored = std::min(shortBy, len);
+		writeData(data, stored);
+		return stored;  // a SHORT positive count: what a nearly-full disk answers
+	}
+#endif
+	return writeData(data, len);
+}
+
+
+bool AudioFileOgg::writePage()
+{
+	// writeData() answers with the bytes it stored, so a short page has to be compared with the
+	// page, not merely checked for a negative result.
+	if (writePageBytes(m_page.header, m_page.header_len) != m_page.header_len
+		|| writePageBytes(m_page.body, m_page.body_len) != m_page.body_len)
+	{
+		// The encoded page did not reach the file: report it rather than leave a truncated
+		// stream the export would call finished.
+		recordWriteError();
+		return false;
+	}
+	return true;
+}
+
+
+bool AudioFileOgg::finishEncoding()
+{
+	// The tail of the stream is written here, not in the destructor: run() calls this before it
+	// reads the verdict, so a failure in the final flush reaches the export result. Idempotent -
+	// the destructor's second call writes nothing and reports the state the file was left in.
+	if (m_finished) { return !hasWriteError(); }
+	m_finished = true;
+	if (!m_vorbisDspInitialized || !m_vorbisBlockInitialized || !m_oggStreamInitialized)
+	{
+		return !hasWriteError();
+	}
+	// Writing 0 frames is how the encoder flushes whatever is still buffered.
+	writeBuffer(nullptr, 0);
+	if (!flushOutputFile()) { return false; }
+	return !hasWriteError();
 }
 
 } // namespace lmms

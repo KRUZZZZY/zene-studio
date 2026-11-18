@@ -48,7 +48,7 @@ MonoDelay::~MonoDelay()
 {
 	if( m_buffer )
 	{
-		delete m_buffer;
+		delete[] m_buffer;
 	}
 }
 
@@ -56,6 +56,8 @@ MonoDelay::~MonoDelay()
 
 void MonoDelay::tick( sample_t* sample )
 {
+	if (m_length == 0.0f) { return; }
+
 	m_writeIndex = ( m_writeIndex + 1 ) % ( int )m_maxLength;
 	int readIndex = m_writeIndex - static_cast<int>(m_length);
 	if (readIndex < 0 ) { readIndex += m_maxLength; }
@@ -71,12 +73,23 @@ void MonoDelay::setSampleRate( int sampleRate )
 {
 	if( m_buffer )
 	{
-		delete m_buffer;
+		delete[] m_buffer;
 	}
 
+	const int newMaxLength = static_cast<int>(sampleRate * m_maxTime);
+	if (m_maxLength > 0)
+	{
+		m_length = static_cast<float>(static_cast<double>(m_length) * newMaxLength / m_maxLength);
+	}
+	else
+	{
+		m_length = static_cast<float>(newMaxLength);
+	}
+	m_maxLength = newMaxLength;
+	m_writeIndex = 0;
 
-	m_buffer = new sample_t[( int )( sampleRate * m_maxTime ) ];
-	memset( m_buffer, 0, sizeof(float) * ( int )( sampleRate * m_maxTime ) );
+	m_buffer = new sample_t[m_maxLength];
+	memset(m_buffer, 0, sizeof(sample_t) * m_maxLength);
 }
 
 

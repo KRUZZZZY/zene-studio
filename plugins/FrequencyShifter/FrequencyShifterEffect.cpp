@@ -99,6 +99,7 @@ ProcessStatus FrequencyShifterEffect::processImpl(InterleavedBufferView<float, 2
 	const float invRing = 1.f - ring;
 	const bool parallelFB = (routeMode >= 1);
 	const bool routeAdd = (routeMode == 1);
+	const bool routeMute = (routeMode == 2);
 
 	const bool doHarm = (harmonics > 0.f);
 	const float harmFactor = harmonics * 20.f + 1.f;
@@ -250,7 +251,7 @@ ProcessStatus FrequencyShifterEffect::processImpl(InterleavedBufferView<float, 2
 		}
 		else
 		{
-			const float dry = 1.f - mix;
+			const float dry = routeMute ? 0.f : 1.f - mix;
 			inOut[i][0] = dry * inL + mix * outL;
 			inOut[i][1] = dry * inR + mix * outR;
 		}
@@ -272,6 +273,12 @@ void FrequencyShifterEffect::updateSampleRate()
 	// +6 provides space for interpolation
 	m_ringBufSize = (m_controls.m_delayLengthLong.maxValue() + m_controls.m_delayLengthShort.maxValue()) * 0.001f * m_sampleRate + 6.f;
 	m_ringBuf.resize(m_ringBufSize);
+	std::fill(m_ringBuf.begin(), m_ringBuf.end(), std::array<float, 2>{});
+	m_writeIndex = 0;
+	m_dampState = {};
+	const float delayLen = (m_controls.m_delayLengthLong.value() + m_controls.m_delayLengthShort.value())
+		* 0.001f * m_sampleRate;
+	m_trueDelay = std::max(delayLen, 1.f);
 }
 
 } // namespace lmms

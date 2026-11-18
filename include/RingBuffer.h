@@ -27,6 +27,8 @@
 #define LMMS_RING_BUFFER_H
 
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <QObject>
 #include "LmmsTypes.h"
 #include "lmms_export.h"
@@ -92,7 +94,7 @@ public:
 /** \brief Moves position forwards/backwards by an amount of frames
  * 	\param amount Number of frames to move, may be negative
  */
-	void movePosition( f_cnt_t amount );
+	void movePosition( std::int64_t amount );
 
 /** \brief Moves position forwards/backwards by an amount of milliseconds
  * 	\param amount Number of milliseconds to move, may be negative
@@ -114,7 +116,7 @@ public:
  * 	\param dst Destination pointer
  * 	\param offset Offset in frames against current position, may be negative
  */
-	void read( SampleFrame* dst, f_cnt_t offset = 0 );
+	void read( SampleFrame* dst, std::int64_t offset = 0 );
 
 /** \brief Reads a period-sized buffer from the ringbuffer and writes it to a specified destination
  * 	\param dst Destination pointer
@@ -127,7 +129,7 @@ public:
  * 	\param offset Offset in frames against current position, may be negative
  * 	\param length Length in frames of the buffer to read - must not be higher than the size of the ringbuffer!
  */
-	void read( SampleFrame* dst, f_cnt_t offset, f_cnt_t length );
+	void read( SampleFrame* dst, std::int64_t offset, f_cnt_t length );
 
 /** \brief Reads a buffer of specified size from the ringbuffer and writes it to a specified destination
  * 	\param dst Destination pointer
@@ -208,9 +210,26 @@ protected slots:
 	void updateSamplerate();
 
 private:
+	/** \brief Converts an already rounded frame count to Int without undefined behaviour: NaN becomes
+	 * 	zero and values outside the range of Int saturate to its limits
+	 */
+	template<typename Int>
+	static Int saturatingFrameCount( float frames )
+	{
+		if( std::isnan( frames ) ) { return 0; }
+		if( frames <= static_cast<float>( std::numeric_limits<Int>::min() ) ) { return std::numeric_limits<Int>::min(); }
+		if( frames >= static_cast<float>( std::numeric_limits<Int>::max() ) ) { return std::numeric_limits<Int>::max(); }
+		return static_cast<Int>( frames );
+	}
+
 	inline f_cnt_t msToFrames( float ms )
 	{
-		return static_cast<f_cnt_t>( ceilf( ms * (float)m_samplerate * 0.001f ) );
+		return saturatingFrameCount<f_cnt_t>( ceilf( ms * (float)m_samplerate * 0.001f ) );
+	}
+
+	inline std::int64_t msToFrameOffset( float ms )
+	{
+		return saturatingFrameCount<std::int64_t>( ceilf( ms * (float)m_samplerate * 0.001f ) );
 	}
 
 	const f_cnt_t m_fpp;

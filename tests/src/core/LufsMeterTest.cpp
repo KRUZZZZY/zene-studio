@@ -285,6 +285,55 @@ private slots:
 		QVERIFY2(lfe == LufsMeter::MinusInfinity, "a tone in the LFE alone must never reach the gate");
 	}
 
+	//! A hot 5.1 programme must not become silence when its level exceeds the
+	//! histogram range; the five measured channels at +15 dBFS read about +19.64 LUFS.
+	void relativeGateKeepsLevelsAboveHistogramRange()
+	{
+		constexpr double LevelDbfs = 15.0;
+		const double expectedLufs = LevelDbfs + 10.0 * std::log10((3.0 + 2.0 * 1.41) / 2.0);
+		const auto frames = static_cast<std::size_t>(1.0 * SampleRate);
+		const auto tone = planarChannel(LevelDbfs, frames);
+		std::array<std::vector<sample_t>, 6> signal{ tone, tone, tone, tone, tone, tone };
+		std::array<const sample_t*, 6> pointers{};
+		for (std::size_t channel = 0; channel < signal.size(); ++channel)
+		{
+			pointers[channel] = signal[channel].data();
+		}
+
+		LufsMeter meter(SampleRate, 6);
+		meter.processPlanar(pointers.data(), 6, frames);
+		const float measured = meter.integratedLufs();
+
+		QVERIFY2(std::fabs(measured - expectedLufs) <= 0.1,
+			qPrintable(describe(measured, expectedLufs, 0.1)));
+	}
+
+	//! Distinct hot levels must remain separate for the relative gate: 5.1 dBFS
+	//! is more than 10 LU below the mean of equal-length 5.1 / 25.1 dBFS passages.
+	void relativeGateExcludesTheLowerHotPassage()
+	{
+		constexpr double LowerDbfs = 5.1;
+		constexpr double UpperDbfs = 25.1;
+		LufsMeter meter(SampleRate, 2);
+		feed(meter, concat(makeSine(LowerDbfs, 10.0), makeSine(UpperDbfs, 10.0)));
+
+		const float measured = meter.integratedLufs();
+		QVERIFY2(std::fabs(measured - UpperDbfs) <= 0.1,
+			qPrintable(describe(measured, UpperDbfs, 0.1)));
+	}
+
+	//! Short-term overflow bands must preserve the spread of changing hot levels
+	//! for LRA's count percentiles instead of collapsing them to one mean value.
+	void loudnessRangePreservesVaryingHotLevels()
+	{
+		LufsMeter meter(SampleRate, 2);
+		feed(meter, concat(makeSine(5.1, 6.0), makeSine(25.1, 6.0)));
+
+		const float range = meter.loudnessRangeLu();
+		QVERIFY2(range > 10.0f && range < 25.0f,
+			qPrintable(QStringLiteral("hot-level LRA %1 LU, expected roughly 20").arg(range)));
+	}
+
 	//! Momentary waits for 400 ms, short-term for 3 s, and feeding the same
 	//! signal in small blocks instead of one buffer must not move the numbers.
 	void windowsFillInOrderAndBlockSizeDoesNotMatter()

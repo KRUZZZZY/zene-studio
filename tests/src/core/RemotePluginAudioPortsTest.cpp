@@ -26,26 +26,56 @@
  */
 
 #include "RemotePluginAudioPorts.h"
+#include "RemotePluginBase.h"
 
 #include <QtTest>
 
 #include <algorithm>
+#include <atomic>
+#include <cstdint>
+#include <functional>
+#include <limits>
+#include <type_traits>
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QList>
+#include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 
+#ifndef SYNC_WITH_SHM_FIFO
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
+
+#include "AllocationProbe.h"
 #include "AudioEngine.h"
 #include "AudioPortsModel.h"
 #include "Engine.h"
+#include "OutOfProcessHosting.h"
 #include "RemotePlugin.h"
 
 using namespace lmms;
 
 namespace
 {
+
+//! Warnings seen while a refusal is processed. Qt's log path allocates through malloc, which the allocation
+//! probe does not see, so a warning is counted directly.
+int g_warningsSeen = 0;
+void countWarnings(QtMsgType type, const QMessageLogContext&, const QString&)
+{
+	if (type == QtWarningMsg) { ++g_warningsSeen; }
+}
+
+//! Criticals seen while a malformed message is refused, for the same reason as above.
+int g_criticalsSeen = 0;
+void countCriticals(QtMsgType type, const QMessageLogContext&, const QString&)
+{
+	if (type == QtCriticalMsg) { ++g_criticalsSeen; }
+}
 
 //! AudioPortsModel is abstract (bufferPropertiesChanging)
 class TestAudioPortsModel : public AudioPortsModel
@@ -74,6 +104,32 @@ public:
 private:
 	int m_activateCalls = 0;
 };
+
+#ifndef SYNC_WITH_SHM_FIFO
+class TestRemotePluginBase final : public RemotePluginBase
+{
+public:
+	explicit TestRemotePluginBase(int socket) : RemotePluginBase()
+	{
+		m_socket = socket;
+	}
+
+	~TestRemotePluginBase() override { ::close(m_socket); }
+
+	bool processMessage(const message&) override { return false; }
+
+	//! Lets a test observe the timeout a receive asks for (and supply the bytes the receive then reads)
+	//! without waiting on the wall clock.
+	bool waitForMessageReadable(int timeoutMs) override
+	{
+		if (waitHook) { return waitHook(timeoutMs); }
+		return RemotePluginBase::waitForMessageReadable(timeoutMs);
+	}
+
+	std::function<bool(int)> waitHook;
+	int lastWaitMs = -1;
+};
+#endif
 
 //! Channel counts that are only known once the remote plugin reports them, i.e.
 //! the shape `VestigeAudioPorts`/`VstEffectAudioPorts` use (#589).
@@ -117,6 +173,7 @@ constexpr auto planeOffset(ch_cnt_t channel, f_cnt_t frames) -> std::ptrdiff_t
  *   "silent"       - read and log everything, never answer
  *   "die-on-start" - exit without answering on the first period request, i.e.
  *                    the client dies mid-period
+ *   "no-connect"   - exit at once without ever connecting to the socket
  */
 auto writeTestPeer(const QString& dir, const QString& python) -> QString
 {
@@ -135,8 +192,14 @@ import socket, struct, sys, time
 ID_QUIT = 3
 ID_START_PROCESSING = 9
 ID_PROCESSING_DONE = 10
+ID_DEBUG_MESSAGE = 25
 
 sock_path, log_path, mode = sys.argv[1], sys.argv[2], sys.argv[3]
+
+if mode == "no-connect":
+    # Launched and gone without ever reaching the host socket: the host's
+    # poll() for a connection can only time out.
+    sys.exit(0)
 
 client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 client.connect(sock_path)
@@ -176,6 +239,12 @@ while True:
         break
     if message_id == ID_START_PROCESSING and mode == "reply":
         client.sendall(struct.pack("<ii", ID_PROCESSING_DONE, 0))
+    if message_id == ID_START_PROCESSING and mode == "debugreply":
+        # A debug text (longer than the pending slot, so decoding it used to grow a string) and the
+        # reply in one write: the audio thread must read the reply that follows it.
+        text = b"debug-" + b"x" * 1000
+        client.sendall(struct.pack("<iii", ID_DEBUG_MESSAGE, 1, len(text)) + text
+                       + struct.pack("<ii", ID_PROCESSING_DONE, 0))
 )PY";
 
 	if (script.write(contents) != contents.size())
@@ -220,6 +289,63 @@ class RemotePluginAudioPortsTest : public QObject
 {
 	Q_OBJECT
 
+	//! True when `ProcessWatcher::m_quit` is a `std::atomic<bool>`. Detection
+	//! fails closed (false) whenever the member is not visible from here - the
+	//! LMMS_TESTING friend seam missing, or the flag not atomic - so the
+	//! shutdown-flag race regression fails at run time instead of failing to
+	//! compile in both states.
+	template<typename T, typename = void>
+	struct WatcherQuitFlagIsAtomic : std::false_type {};
+	template<typename T>
+	struct WatcherQuitFlagIsAtomic<T, std::void_t<decltype(T::m_quit)>>
+		: std::is_same<decltype(T::m_quit), std::atomic<bool>> {};
+
+	//! Test seam for the cached running state of a remote plugin (cluster
+	//! new-p15-172). The QProcess lives in the watcher thread (init() moves it
+	//! there) and the audio thread reads isRunning(), so the running state is
+	//! cached in an atomic the process lifecycle updates. Detection fails closed:
+	//! without the LMMS_TESTING friend seam - i.e. in the unfixed tree, where
+	//! isRunning() reads the QProcess - the cache cannot be steered, so the
+	//! regression fails at run time instead of failing to compile.
+	template<typename T, typename = void>
+	struct CachedRunningState
+	{
+		//! @return false: there is no cached running state to steer.
+		static bool steer(T&, bool) { return false; }
+		//! @return false: the QProcess is not reachable from here.
+		static bool processRunning(T&) { return false; }
+		//! @return false: the process lifecycle cannot be driven from here.
+		static bool finishProcess(T&) { return false; }
+	};
+	template<typename T>
+	struct CachedRunningState<T, std::void_t<decltype(T::m_clientRunning)>>
+	{
+		//! Sets the cached running state, i.e. what the audio thread reads.
+		static bool steer(T& _plugin, bool _running)
+		{
+			_plugin.m_clientRunning.store(_running, std::memory_order_release);
+			return true;
+		}
+		//! The QProcess' own state: what isRunning() used to read from the audio thread.
+		static bool processRunning(T& _plugin)
+		{
+			return _plugin.m_process.state() != QProcess::NotRunning;
+		}
+		//! Emits the QProcess' finished() signal, i.e. what a client that goes away
+		//! does. The host's processFinished() slot is connected to it directly.
+		static bool finishProcess(T& _plugin)
+		{
+			emit _plugin.m_process.finished(0, QProcess::NormalExit);
+			return true;
+		}
+	};
+
+	template<typename T, typename = void>
+	struct RemoteInvalidFlagIsAtomic : std::false_type {};
+	template<typename T>
+	struct RemoteInvalidFlagIsAtomic<T, std::void_t<decltype(T::m_invalid)>>
+		: std::is_same<decltype(T::m_invalid), std::atomic<bool>> {};
+
 private slots:
 	void initTestCase()
 	{
@@ -231,6 +357,81 @@ private slots:
 	void cleanupTestCase()
 	{
 		Engine::destroy();
+	}
+
+	//! `ProcessWatcher::m_quit` is stored by stop()/reset() on the calling
+	//! thread while the watcher's run() loop reads it on its own thread.
+	//! `volatile` does not synchronize those accesses (a C++ data race, so
+	//! shutdown need not be observed reliably); the flag must be an atomic.
+	void processWatcherQuitFlagIsAtomic()
+	{
+		QVERIFY(( WatcherQuitFlagIsAtomic<ProcessWatcher>::value ));
+	}
+
+	//! The audio thread must not read the QProcess' state.
+	//!
+	//! `init()` moves the QProcess into the watcher thread, and `process()` reads
+	//! `isRunning()` on the audio thread: `QProcess::state()` is a plain member of
+	//! a QObject that lives in another thread, and reading it from the audio thread
+	//! is neither synchronized nor allowed. The running state is therefore cached in
+	//! an atomic the process lifecycle updates, and `isRunning()` answers from that
+	//! cache.
+	//!
+	//! What is pinned here: `isRunning()` follows the cache, not the QProcess. The
+	//! QProcess was never started in this test, so its own state is "not running" -
+	//! a QProcess read would answer "not running" even with the cache saying
+	//! "running". The seam is the LMMS_TESTING friend declaration in
+	//! include/RemotePlugin.h; without it the probe cannot steer the cache and this
+	//! test fails at run time (it does not fail to compile).
+	void runningStateIsCachedNotReadFromTheProcess()
+	{
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		// The cache is what isRunning() answers: it can be steered at all.
+		QVERIFY2(CachedRunningState<RemotePlugin>::steer(plugin, true),
+			"the remote plugin does not cache its running state - isRunning() reads the QProcess");
+
+		// The QProcess' own state disagrees with the cache: it was never started.
+		QVERIFY(!CachedRunningState<RemotePlugin>::processRunning(plugin));
+
+		// The cache wins: the client counts as running although the QProcess does not.
+		QVERIFY(plugin.isRunning());
+
+		// ... and the other way round: the client counts as gone although the
+		// QProcess' state was never touched.
+		QVERIFY(CachedRunningState<RemotePlugin>::steer(plugin, false));
+		QVERIFY(!plugin.isRunning());
+	}
+
+	//! The cached running state follows the client's lifecycle.
+	//!
+	//! The cache is what the audio thread reads, so it has to follow the client: a
+	//! client that is there must be asked for periods, and a client that is gone
+	//! must not be. The QProcess emits finished() when the client goes away, and
+	//! the host's processFinished() slot - connected to it directly - is what
+	//! clears the cached state. The signal is emitted here (no client is started
+	//! in this test) to drive the same code path a real exit takes, without a
+	//! process and without waiting for one.
+	void cachedRunningStateFollowsTheProcessLifecycle()
+	{
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		// The client is there: the cached state says so.
+		QVERIFY(CachedRunningState<RemotePlugin>::steer(plugin, true));
+		QVERIFY(plugin.isRunning());
+
+		// The client goes away: the lifecycle signal clears the cached state.
+		QVERIFY(CachedRunningState<RemotePlugin>::finishProcess(plugin));
+		QVERIFY(!plugin.isRunning());
+	}
+
+	//! The socket reader, audio sender and watcher can invalidate or inspect the
+	//! same transport at once, so its connection flag must be atomic.
+	void remoteConnectionInvalidFlagIsAtomic()
+	{
+		QVERIFY(( RemoteInvalidFlagIsAtomic<RemotePluginBase>::value ));
 	}
 
 	//! RemotePlugin's ctor attaches its buffers to the ports and its dtor
@@ -374,6 +575,43 @@ private slots:
 		QCOMPARE(newOut.sample(0, frames - 1), 1.5f);
 	}
 
+	//! A direct oversized updateAudioBuffer request whose wrapped product is
+	//! small must be rejected BEFORE allocation: returns nullptr and the ports
+	//! go inactive (the failedReallocationLeavesBuffersInactive contract).
+	void oversizedUpdateAudioBufferIsRejected()
+	{
+		constexpr f_cnt_t hugeFrames = static_cast<f_cnt_t>(std::numeric_limits<std::size_t>::max() / 2) + 1;
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		// First a small valid allocation so there is state to preserve/invalidate
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+		QVERIFY(plugin.updateAudioBuffer(2, 2, frames) != nullptr);
+		QCOMPARE(ports.buffers()->initialized(), false); // updateAudioBuffer alone doesn't set ports' m_frames
+
+		// Direct oversized request: (4 * hugeFrames) wraps to a small size_t.
+		// Pre-fix it would create() a tiny block and return non-null.
+		QCOMPARE(plugin.updateAudioBuffer(2, 2, hugeFrames), static_cast<float*>(nullptr));
+
+		// Through the ports, the failed reallocation leaves them inactive
+		ports.buffers()->updateBuffers(2, 2, hugeFrames);
+		QCOMPARE(ports.buffers()->initialized(), false);
+		QCOMPARE(ports.buffers()->frames(), f_cnt_t{0});
+	}
+
+	void combinedChannelCountsRetainWideTotal()
+	{
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		// The two 16-bit channel counts can sum to more than ch_cnt_t. The
+		// shared block must retain that total instead of narrowing it to zero.
+		QVERIFY(plugin.updateAudioBuffer(std::numeric_limits<ch_cnt_t>::max(), ch_cnt_t{1}, 1) != nullptr);
+		QCOMPARE(plugin.m_hostBlock.size(), std::size_t{65536});
+	}
+
 	//! A plugin that never initialized has no remote client, so process() must
 	//! report failure and render silence: it zeroes the shared output planes,
 	//! which is what the pre-migration path did to the caller's output buffer.
@@ -475,6 +713,95 @@ private slots:
 		}
 	}
 
+	//! A client reports its channel counts as signed ints on the wire, and the
+	//! host cast them straight to the unsigned `ch_cnt_t`: a negative count
+	//! wrapped (65535 for -1) and an oversized one was accepted, both sizing the
+	//! shared block from a value no client can have. Out-of-range counts must be
+	//! refused at this boundary - the counts and the allocation stay as they
+	//! were.
+	void outOfRangeChannelCountMessagesAreRefused()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+
+		constexpr auto channelsIn = ch_cnt_t{2};
+		constexpr auto channelsOut = ch_cnt_t{2};
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		ports.audioPortsModel().setChannelCounts(channelsIn, channelsOut);
+		QCOMPARE(ports.buffers()->initialized(), true);
+
+		auto inBefore = ports.buffers()->input();
+		auto outBefore = ports.buffers()->output();
+
+		// Negative: -1 and -8 would wrap to 65535 and 65528
+		plugin.processMessage(
+			RemotePlugin::message(IdChangeInputOutputCount).addInt(-1).addInt(2));
+		QCOMPARE(ports.audioPortsModel().in().channelCount(), channelsIn);
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), channelsOut);
+
+		plugin.processMessage(
+			RemotePlugin::message(IdChangeInputOutputCount).addInt(-8).addInt(2));
+		QCOMPARE(ports.audioPortsModel().in().channelCount(), channelsIn);
+
+		// Oversized: far above MaxChannelsPerAudioBuffer, and the value that
+		// wraps an int into positive range when cast
+		plugin.processMessage(
+			RemotePlugin::message(IdChangeInputOutputCount).addInt(100000).addInt(2));
+		QCOMPARE(ports.audioPortsModel().in().channelCount(), channelsIn);
+
+		plugin.processMessage(
+			RemotePlugin::message(IdChangeInputOutputCount).addInt(2).addInt(100000));
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), channelsOut);
+
+		// Refused all the way: neither the counts nor the block moved
+		QCOMPARE(ports.buffers()->initialized(), true);
+		QCOMPARE(ports.buffers()->input().bufferPtr(0), inBefore.bufferPtr(0));
+		QCOMPARE(ports.buffers()->output().bufferPtr(0), outBefore.bufferPtr(0));
+		QCOMPARE(ports.buffers()->input().channels(), channelsIn);
+		QCOMPARE(ports.buffers()->output().channels(), channelsOut);
+	}
+
+	//! processMessage can run on the audio thread, so a refused count must not log there: a log allocates and
+	//! locks. Counted on this thread, refusing a negative and an oversized count allocates nothing.
+	void refusedChannelCountsAllocateNothing()
+	{
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		ports.audioPortsModel().setChannelCounts(ch_cnt_t{2}, ch_cnt_t{2});
+		QCOMPARE(ports.buffers()->initialized(), true);
+		const auto negative = RemotePlugin::message(IdChangeInputOutputCount).addInt(-1).addInt(2);
+		const auto oversized = RemotePlugin::message(IdChangeInputOutputCount).addInt(2).addInt(100000);
+
+		const QtMessageHandler previous = qInstallMessageHandler(countWarnings);
+		g_warningsSeen = 0;
+		lmms::test::tlCountAllocations = true;
+		lmms::test::resetAllocationCount();
+		plugin.processMessage(negative);
+		plugin.processMessage(oversized);
+		const std::uint64_t allocations = lmms::test::tlAllocationCount;
+		lmms::test::tlCountAllocations = false;
+		qInstallMessageHandler(previous);
+
+		QCOMPARE(allocations, std::uint64_t{0});
+		QCOMPARE(g_warningsSeen, 0);
+		QCOMPARE(ports.audioPortsModel().in().channelCount(), ch_cnt_t{2});
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), ch_cnt_t{2});
+	}
+
+	//! The refusal is not lost: the main-thread side writes the warning once, and nothing is left to report after.
+	void refusedChannelCountIsReportedOnceFromTheMainThread()
+	{
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		plugin.processMessage(RemotePlugin::message(IdChangeInputOutputCount).addInt(-1).addInt(2));
+		QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("out-of-range channel count")));
+		QVERIFY(plugin.reportRefusedChannelCounts());
+		QVERIFY(!plugin.reportRefusedChannelCounts());
+	}
+
 	//! A reallocation that fails must leave the buffers reporting NOT
 	//! initialized. `initialized()` is `m_frames != 0`, so a stale frame count
 	//! keeps the ports "active" while the pointer table is null - the router's
@@ -506,6 +833,185 @@ private slots:
 	}
 
 #ifndef SYNC_WITH_SHM_FIFO
+	//! A peer cannot make the host treat a count larger than a full FIFO frame
+	//! as a message, even when it closes before sending any argument payload.
+	void oversizedArgumentCountInvalidatesRemoteMessage()
+	{
+		int sockets[2];
+		QVERIFY(::socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+
+		{
+			TestRemotePluginBase receiver{sockets[0]};
+			constexpr auto maxMessageArguments = (512 * 1024 - 8) / 4;
+			const std::int32_t header[] = {IdDebugMessage, maxMessageArguments + 1};
+			QVERIFY(::write(sockets[1], header, sizeof(header)) ==
+				static_cast<ssize_t>(sizeof(header)));
+			QVERIFY(::shutdown(sockets[1], SHUT_WR) == 0);
+
+			const auto malformed = receiver.receiveMessage();
+			QVERIFY(receiver.isInvalid());
+			QCOMPARE(malformed.id, static_cast<int>(IdUndefined));
+		}
+
+		::close(sockets[1]);
+	}
+
+	//! The bounded socket decoder must enforce the same argument-count cap as the owning socket and FIFO readers.
+	void boundedReceiveRejectsOversizedArgumentCount()
+	{
+		int sockets[2];
+		QVERIFY(::socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+
+		{
+			TestRemotePluginBase receiver{sockets[0]};
+			constexpr int maxMessageArguments = (512 * 1024 - 8) / 4;
+			constexpr std::int32_t count = maxMessageArguments + 1;
+			constexpr std::size_t frameSize = 2 * sizeof(std::int32_t)
+				+ static_cast<std::size_t>(count) * sizeof(std::int32_t);
+			int socketBufferSize = 2 * 1024 * 1024;
+			QVERIFY(::setsockopt(sockets[0], SOL_SOCKET, SO_RCVBUF,
+				&socketBufferSize, sizeof(socketBufferSize)) == 0);
+			QVERIFY(::setsockopt(sockets[1], SOL_SOCKET, SO_SNDBUF,
+				&socketBufferSize, sizeof(socketBufferSize)) == 0);
+
+			std::vector<char> frame(frameSize, '\0'); // every zero-length argument has a zero length prefix
+			const std::int32_t header[] = {IdDebugMessage, count};
+			std::memcpy(frame.data(), header, sizeof(header));
+			QVERIFY(::write(sockets[1], frame.data(), frame.size()) == static_cast<ssize_t>(frame.size()));
+
+			RemotePluginBase::message message;
+			const auto result = receiver.receiveFrameBefore(std::chrono::steady_clock::now(), message, true);
+			QVERIFY(result == RemotePluginBase::ReceiveResult::Lost);
+			QVERIFY(receiver.isInvalid());
+		}
+
+		::close(sockets[1]);
+	}
+
+	//! A frame that has started can be finished slowly, but never past the query's own deadline: a 100 ms
+	//! query that sees a partial message must not wait up to StartedFrameTimeout (2 s) for the rest.
+	//! The receive asks waitForMessageReadable() for each piece; the hook records that bound and reports
+	//! that the rest never arrives, so no wall clock is involved.
+	void startedFrameWaitIsCappedByTheQueryDeadline()
+	{
+		int sockets[2];
+		QVERIFY(::socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+
+		{
+			TestRemotePluginBase receiver{sockets[0]};
+			// Only the header is on the socket: the peek can tell that a frame started, but not its size.
+			const std::int32_t header[] = {IdDebugMessage, 1};
+			QVERIFY(::write(sockets[1], header, sizeof(header)) == static_cast<ssize_t>(sizeof(header)));
+
+			receiver.waitHook = [&receiver](int timeoutMs)
+			{
+				if (timeoutMs == 0) { return true; }
+				receiver.lastWaitMs = timeoutMs;
+				return false; // the rest of the frame never arrives
+			};
+
+			const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{200};
+			RemotePluginBase::message m;
+			const auto result = receiver.receiveWithin(deadline, RemotePluginBase::StartedFrameTimeout, m);
+
+			QVERIFY(result == RemotePluginBase::ReceiveResult::Lost);
+			QVERIFY(receiver.isInvalid());
+			// The old reader asked for the whole 2 s started-frame bound; the query budget is 200 ms.
+			QVERIFY2(receiver.lastWaitMs < 1000,
+				"a started frame ignored the query deadline and asked to wait up to 2 s");
+		}
+
+		::close(sockets[1]);
+	}
+
+	//! A partial frame must not make the host allocate a string the wire length claims before the payload
+	//! has arrived: one argument of 8 MiB is refused as soon as its length exceeds what a frame can hold.
+	//! The hook supplies the length only after the peek has seen the 8-byte header, so the buggy path really
+	//! reaches the allocation, and it stops before any payload read.
+	void oversizedStartedFrameLengthIsRefusedBeforeAllocating()
+	{
+		int sockets[2];
+		QVERIFY(::socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+
+		{
+			TestRemotePluginBase receiver{sockets[0]};
+			const std::int32_t header[] = {IdDebugMessage, 1};
+			QVERIFY(::write(sockets[1], header, sizeof(header)) == static_cast<ssize_t>(sizeof(header)));
+
+			constexpr std::int32_t claimedLength = 8 * 1024 * 1024;
+			int positiveWaits = 0;
+			receiver.waitHook = [&sockets, &positiveWaits](int timeoutMs)
+			{
+				if (timeoutMs == 0) { return true; }
+				++positiveWaits;
+				if (positiveWaits == 3)
+				{
+					// The receive is about to read the argument length: give it the oversized one.
+					const std::int32_t length = claimedLength;
+					return ::write(sockets[1], &length, sizeof(length))
+						== static_cast<ssize_t>(sizeof(length));
+				}
+				return positiveWaits < 4; // the payload never arrives
+			};
+
+			lmms::test::tlCountAllocations = true;
+			lmms::test::resetAllocationCount();
+			RemotePluginBase::message m;
+			const auto result = receiver.receiveWithin(
+				std::chrono::steady_clock::now() + std::chrono::seconds{1},
+				std::chrono::milliseconds{50}, m);
+			const auto allocations = lmms::test::tlAllocationCount;
+			lmms::test::tlCountAllocations = false;
+
+			QVERIFY(result == RemotePluginBase::ReceiveResult::Lost);
+			QVERIFY(receiver.isInvalid());
+			QCOMPARE(allocations, std::uint64_t{0});
+		}
+
+		::close(sockets[1]);
+	}
+
+#endif
+
+#ifndef SYNC_WITH_SHM_FIFO
+	//! A client executable that launches but never connects to the host socket
+	//! is not a start: `oop.*` reports starts, and the crash-loop refusal is
+	//! measured against them, so recording one for a client that never reached
+	//! the host invents history the session did not have. The record must stay
+	//! untouched when the poll for a connection times out.
+	//! Costs the poll() timeout in init(), hence the single case here.
+	void clientThatNeverConnectsIsNotRecordedAsAStart()
+	{
+		const auto python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+		if (python.isEmpty())
+		{
+			QSKIP("the client stand-in needs python3 for the unix-socket protocol");
+		}
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto peer = writeTestPeer(dir.path(), python);
+		QVERIFY(!peer.isEmpty());
+		const auto logPath = dir.filePath(QStringLiteral("peer.log"));
+		const auto client = QFileInfo{peer}.fileName();
+
+		auto& tracker = oop::HostTracker::instance();
+		tracker.resetAll();
+
+		{
+			TestRemotePluginAudioPorts ports{false, nullptr};
+			RemotePlugin plugin{ports.controller()};
+
+			// The peer exits at once without connecting: poll() times out and
+			// no client is on the other end of the socket.
+			plugin.init(peer, false, {logPath, QStringLiteral("no-connect")});
+			QVERIFY(!plugin.isRunning());
+		}
+
+		QCOMPARE(tracker.record(client).starts, 0);
+		tracker.resetAll();
+	}
+
 	//! The client dies mid-period: the wait for IdProcessingDone comes back
 	//! without a reply, and discarding that result made process() report success
 	//! on planes the client may have written only partially - which the router
@@ -603,6 +1109,81 @@ private slots:
 		QCOMPARE(plugin.process(), true);
 	}
 
+	//! The audio-thread receive of a complete debug frame builds argument views, not strings: decoding
+	//! it allocates nothing and the text is still exactly the wire bytes. No peer or deadline is involved.
+	void completeDebugFrameDecodesWithoutAllocating()
+	{
+		int sockets[2];
+		QVERIFY(::socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+
+		{
+			TestRemotePluginBase receiver{sockets[0]};
+			const std::string text(1000, 'x');
+			const std::int32_t header[] = {IdDebugMessage, 1, static_cast<std::int32_t>(text.size())};
+			QVERIFY(::write(sockets[1], header, sizeof(header)) == static_cast<ssize_t>(sizeof(header)));
+			QVERIFY(::write(sockets[1], text.data(), text.size()) == static_cast<ssize_t>(text.size()));
+
+			lmms::test::tlCountAllocations = true;
+			lmms::test::resetAllocationCount();
+			RemotePluginBase::message m;
+			const auto result = receiver.receiveFrameBefore(
+				std::chrono::steady_clock::now() + std::chrono::seconds{1}, m, true);
+			const auto allocations = lmms::test::tlAllocationCount;
+			lmms::test::tlCountAllocations = false;
+
+			QVERIFY(result == RemotePluginBase::ReceiveResult::Got);
+			QCOMPARE(m.id, static_cast<int>(IdDebugMessage));
+			QCOMPARE(m.size(), std::size_t{1});
+			QVERIFY(m.argumentView(0) == std::string_view{text});
+			QCOMPARE(allocations, std::uint64_t{0});
+		}
+
+		::close(sockets[1]);
+	}
+
+	//! A client can send a debug text and then its IdProcessingDone during a period. The audio thread
+	//! reads both, but decoding the text must not allocate: the arguments are views into a preallocated
+	//! frame buffer. The peer writes both frames in one go, so the period really consumes the debug
+	//! message before its reply.
+	void debugMessageDuringPeriodDoesNotAllocate()
+	{
+		const auto python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+		if (python.isEmpty())
+		{
+			QSKIP("the client stand-in needs python3 for the unix-socket protocol");
+		}
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto peer = writeTestPeer(dir.path(), python);
+		QVERIFY(!peer.isEmpty());
+		const auto logPath = dir.filePath(QStringLiteral("peer.log"));
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		QVERIFY2(plugin.init(peer, false, {logPath, QStringLiteral("debugreply")}) == false,
+			"the host started a client that connects");
+		if (!plugin.isRunning())
+		{
+			QSKIP("the client stand-in did not start");
+		}
+
+		plugin.processMessage(RemotePlugin::message(IdChangeInputOutputCount).addInt(2).addInt(2));
+
+		// The first period may allocate for one-time setup; the measured one must not.
+		QCOMPARE(plugin.process(), true);
+
+		lmms::test::tlCountAllocations = true;
+		lmms::test::resetAllocationCount();
+		const bool processed = plugin.process();
+		const auto allocations = lmms::test::tlAllocationCount;
+		lmms::test::tlCountAllocations = false;
+
+		QVERIFY2(processed, "the period did not consume the debug message and its reply");
+		QCOMPARE(allocations, std::uint64_t{0});
+	}
+
 	//! Zero output channels: the ports model accepts channelsOut == 0, so the
 	//! output span is empty and every period returns false. The period request
 	//! must not be sent at all - its reply would never be read, so the client's
@@ -656,6 +1237,112 @@ private slots:
 		QVERIFY(ids.contains(IdSyncKey));
 		QVERIFY(ids.contains(IdChangeSharedMemoryKey));
 		QVERIFY(!ids.contains(IdStartProcessing));
+	}
+
+	//! The wire format carries the argument count with the message, so a structurally
+	//! valid (complete) message can still arrive carrying fewer arguments than the
+	//! handler reads: message::getInt() indexes its vector without bounds-checking, so
+	//! reading argument 1 out of a one-argument IdChangeInputOutputCount is undefined
+	//! behaviour - it returns whatever sits after the message's arguments (garbage
+	//! counts, or a crash). The host must refuse the incomplete report BEFORE indexing:
+	//! nothing is applied, the refusal is reported loudly, and the plugin is failed like
+	//! any other protocol mismatch - the client may already lay its own planes out for
+	//! counts the host never applied.
+	//! The "not failed" precondition needs a real client, hence the stand-in peer.
+	void channelCountMessageMissingAnArgumentIsRefused()
+	{
+		const auto python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+		if (python.isEmpty())
+		{
+			QSKIP("the client stand-in needs python3 for the unix-socket protocol");
+		}
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto peer = writeTestPeer(dir.path(), python);
+		QVERIFY(!peer.isEmpty());
+		const auto logPath = dir.filePath(QStringLiteral("peer.log"));
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		QVERIFY2(plugin.init(peer, false, {logPath, QStringLiteral("silent")}) == false,
+			"the host started a client that connects");
+		if (!plugin.isRunning())
+		{
+			QSKIP("the client stand-in did not start");
+		}
+		QVERIFY(!plugin.failed());
+
+		ports.audioPortsModel().setChannelCounts(ch_cnt_t{2}, ch_cnt_t{2});
+		QVERIFY(ports.buffers()->initialized());
+		auto inBefore = ports.buffers()->input();
+		auto outBefore = ports.buffers()->output();
+
+		// The incomplete message: one argument where the protocol has two.
+		g_criticalsSeen = 0;
+		const QtMessageHandler previous = qInstallMessageHandler(countCriticals);
+		plugin.processMessage(RemotePlugin::message(IdChangeInputOutputCount).addInt(2));
+		qInstallMessageHandler(previous);
+
+		// Refused loudly, once, on the thread that took the message...
+		QCOMPARE(g_criticalsSeen, 1);
+		// ... with the plugin failed, exactly like any other protocol mismatch ...
+		QVERIFY(plugin.failed());
+		// ... and the message never indexed: the counts and the block did not move.
+		QCOMPARE(ports.audioPortsModel().in().channelCount(), ch_cnt_t{2});
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), ch_cnt_t{2});
+		QCOMPARE(ports.buffers()->input().bufferPtr(0), inBefore.bufferPtr(0));
+		QCOMPARE(ports.buffers()->output().bufferPtr(0), outBefore.bufferPtr(0));
+	}
+
+	//! A complete IdDebugMessage with no text in it. The host's handler indexed argument 0 of an empty message.
+	void zeroArgumentDebugMessageIsRefused()
+	{
+		refusesMessageWithoutArguments(RemotePlugin::message(IdDebugMessage));
+	}
+
+	//! A complete IdIsUIVisible with no answer in it. The host's handler indexed argument 0 of an empty message.
+	void zeroArgumentIsUIVisibleMessageIsRefused()
+	{
+		refusesMessageWithoutArguments(RemotePlugin::message(IdIsUIVisible));
+	}
+
+private:
+	//! A message that is complete on the wire but carries fewer arguments than its handler reads is refused before
+	//! anything is read: the refusal is reported once (here, on the main thread) and the plugin is failed.
+	void refusesMessageWithoutArguments(const RemotePlugin::message& _m)
+	{
+		const auto python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+		if (python.isEmpty())
+		{
+			QSKIP("the client stand-in needs python3 for the unix-socket protocol");
+		}
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto peer = writeTestPeer(dir.path(), python);
+		QVERIFY(!peer.isEmpty());
+		const auto logPath = dir.filePath(QStringLiteral("peer.log"));
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		QVERIFY2(plugin.init(peer, false, {logPath, QStringLiteral("silent")}) == false,
+			"the host started a client that connects");
+		if (!plugin.isRunning())
+		{
+			QSKIP("the client stand-in did not start");
+		}
+		QVERIFY(!plugin.failed());
+
+		g_criticalsSeen = 0;
+		const QtMessageHandler previous = qInstallMessageHandler(countCriticals);
+		plugin.processMessage(_m);
+		qInstallMessageHandler(previous);
+
+		QCOMPARE(g_criticalsSeen, 1);
+		QVERIFY(plugin.failed());
 	}
 #endif // SYNC_WITH_SHM_FIFO
 };

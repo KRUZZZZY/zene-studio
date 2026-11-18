@@ -100,6 +100,11 @@ public:
 	///
 	bool mayChangeProject(bool stopPlayback);
 
+	/// Opens \a path over the running session exactly as project.open does (Q050-044): a session with
+	/// unsaved changes is captured first and the open is one undo step; a checkpoint over the undo
+	/// budget refuses the open with a message and changes nothing. Callers ask mayChangeProject() first.
+	void openProjectFile(const QString& path);
+
 	// Auto save timer intervals. The slider in SetupDialog.cpp wants
 	// minutes and the rest milliseconds.
 	static const int DEFAULT_SAVE_INTERVAL_MINUTES = 2;
@@ -166,6 +171,7 @@ public slots:
 	void openProject();
 	bool saveProject();
 	bool saveProjectAs();
+	bool saveProjectAsV2Container();
 	bool saveProjectAsNewVersion();
 	void saveProjectAsDefaultTemplate();
 	void showSettingsDialog();
@@ -231,6 +237,9 @@ private:
 	const QList<QAction*>& floatingWindowActions();
 
 	void exportProject(bool multiExport = false);
+	bool saveProjectAsWithFormat(bool preferV2);
+	//! Q050-007: save through the registered project.save command (the v2 side of the Save As choice).
+	bool saveThroughCommand(const QString & target, bool v2);
 	void handleSaveResult(QString const & filename, bool songSavedSuccessfully);
 	bool guiSaveProject();
 	bool guiSaveProjectAs( const QString & filename );

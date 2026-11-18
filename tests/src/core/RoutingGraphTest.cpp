@@ -467,12 +467,53 @@ void RoutingGraphTest::LoadMalformedDocuments()
 			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"9\">"
 			"<node id=\"0\" type=\"gain\"/>"
 			"</routinggraph></test>"),
+		// a negative output id other than the saved -1 is malformed, not
+		// "no output": it must not be accepted as an absent output node
+		QByteArrayLiteral(
+			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"-2\">"
+			"<node id=\"0\" type=\"gain\"/>"
+			"</routinggraph></test>"),
+		// a missing output attribute must not be converted to the valid id zero
+		QByteArrayLiteral(
+			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\">"
+			"<node id=\"0\" type=\"gain\"/>"
+			"</routinggraph></test>"),
+		// nor may a nonnumeric output attribute select id zero
+		QByteArrayLiteral(
+			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"invalid\">"
+			"<node id=\"0\" type=\"gain\"/>"
+			"</routinggraph></test>"),
 		// a connection whose source port does not exist on the source node
 		// (GainNode has a single output port; fromport=4 is out of range)
 		QByteArrayLiteral(
 			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"-1\">"
 			"<node id=\"0\" type=\"gain\"/><node id=\"1\" type=\"gain\"/>"
 			"<connection from=\"0\" fromport=\"4\" to=\"1\" toport=\"0\"/>"
+			"</routinggraph></test>"),
+		// a connection whose node and port attributes are not numbers at all.
+		// QString::toInt() answers 0 for unparseable text, and file id 0 exists
+		// here, so an unchecked load silently attaches the edge to node 0
+		// (Luna cluster 5293) instead of refusing the document.
+		QByteArrayLiteral(
+			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"-1\">"
+			"<node id=\"0\" type=\"gain\"/><node id=\"1\" type=\"gain\"/>"
+			"<connection from=\"bad\" fromport=\"0\" to=\"1\" toport=\"0\"/>"
+			"</routinggraph></test>"),
+		QByteArrayLiteral(
+			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"-1\">"
+			"<node id=\"0\" type=\"gain\"/><node id=\"1\" type=\"gain\"/>"
+			"<connection from=\"0\" fromport=\"0\" to=\"nope\" toport=\"0\"/>"
+			"</routinggraph></test>"),
+		// the same for the port attributes, which connect() range-checks as 0
+		QByteArrayLiteral(
+			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"-1\">"
+			"<node id=\"0\" type=\"gain\"/><node id=\"1\" type=\"gain\"/>"
+			"<connection from=\"0\" fromport=\"x\" to=\"1\" toport=\"0\"/>"
+			"</routinggraph></test>"),
+		QByteArrayLiteral(
+			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"-1\">"
+			"<node id=\"0\" type=\"gain\"/><node id=\"1\" type=\"gain\"/>"
+			"<connection from=\"0\" fromport=\"0\" to=\"1\" toport=\"zz\"/>"
 			"</routinggraph></test>"),
 	};
 
@@ -486,6 +527,26 @@ void RoutingGraphTest::LoadMalformedDocuments()
 		QVERIFY(graph.connections().empty());
 		QCOMPARE(graph.outputNodeId(), -1);
 	}
+
+	// an explicit -1 is the saved "none selected" and loads as no output,
+	// while an explicit 0 still selects the node with file id zero
+	QDomDocument noOutputDocument;
+	QVERIFY(noOutputDocument.setContent(QByteArrayLiteral(
+		"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"-1\">"
+		"<node id=\"0\" type=\"gain\"/>"
+		"</routinggraph></test>")));
+	RoutingGraph noOutputGraph;
+	QVERIFY(noOutputGraph.load(noOutputDocument.documentElement()));
+	QCOMPARE(noOutputGraph.outputNodeId(), -1);
+
+	QDomDocument zeroOutputDocument;
+	QVERIFY(zeroOutputDocument.setContent(QByteArrayLiteral(
+		"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"0\">"
+		"<node id=\"0\" type=\"gain\"/>"
+		"</routinggraph></test>")));
+	RoutingGraph zeroOutputGraph;
+	QVERIFY(zeroOutputGraph.load(zeroOutputDocument.documentElement()));
+	QCOMPARE(zeroOutputGraph.outputNodeId(), 0);
 }
 
 void RoutingGraphTest::SinkNodeSumsInputs()

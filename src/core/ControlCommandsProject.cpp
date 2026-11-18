@@ -31,9 +31,11 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QProcess>
+#include <QTemporaryFile>
 #include <QtEndian>
 
 #include "ControlExportPresetSupport.h"
+#include "ControlHardwareIoSupport.h"
 #include "ControlRegistry.h"
 
 #include "ControlReversibility.h"
@@ -44,6 +46,7 @@
 #include "ProjectRevisions.h"
 #include "ProjectRenderer.h"
 #include "Song.h"
+#include "SurroundExport.h"
 
 namespace lmms
 {
@@ -96,6 +99,9 @@ QJsonArray renderableFormatNames()
 	}
 	return names;
 }
+
+//! How much of a failed render child's own output a refusal may quote.
+constexpr qint64 RENDER_DIAGNOSTIC = 512;
 
 //! What a RIFF/WAVE header tells us. `-1`/`0` mean "not present".
 struct WavInfo
@@ -208,12 +214,40 @@ namespace
 // render.render
 // ---------------------------------------------------------------------------
 
+/*! 0.5.0 F7 (MX-060): `channels` - "stereo" (absent: the render this command has always made) or
+ *  "surround", one file channel per speaker of the surround master. What the master, the format and the
+ *  loudness report allow is checked HERE, in this process, where the session's master is known, so a
+ *  surround render they cannot carry is refused before the session is serialised or a child spawned. */
+QString parseRenderChannels(const QJsonObject& args, ProjectRenderer::ExportFileFormat format,
+	OutputSettings::ChannelMode* channels)
+{
+	const QString name = args.value(QStringLiteral("channels")).toString(QStringLiteral("stereo"));
+	if (!surroundexport::channelModeFromName(name, channels))
+	{
+		return QStringLiteral("unsupported channels '%1' (expected stereo or surround)").arg(name);
+	}
+	// The probe reads the process-wide loudness choice, as the render child's own settings will.
+	OutputSettings probe(44100, 160, OutputSettings::BitDepth::Depth16Bit);
+	probe.setChannelMode(*channels);
+	return surroundexport::refusal(probe, format == ProjectRenderer::ExportFileFormat::Wave);
+}
+
+//! The reply's `channels` (how many the file has) and `channel_layout` ("stereo", "5.1", ...).
+void insertRenderChannels(QJsonObject& result, OutputSettings::ChannelMode channels)
+{
+	const bool surround = channels == OutputSettings::ChannelMode::Surround;
+	const surround::Format layout = surround ? surroundexport::masterFormat() : surround::Format::Stereo;
+	result.insert(QStringLiteral("channels"), surround::channelCount(layout));
+	result.insert(QStringLiteral("channel_layout"), surround::formatName(layout));
+}
+
 //! Validates the render args; empty string means they are usable.
 QString parseRenderArgs(const QJsonObject& args, QString* out, QString* formatName,
-	ProjectRenderer::ExportFileFormat* format, ControlExportPreset* settings)
+	ProjectRenderer::ExportFileFormat* format, ControlExportPreset* settings,
+	OutputSettings::ChannelMode* channels)
 {
 	*out = args.value(QStringLiteral("out")).toString();
-	if (!out->startsWith(QLatin1Char('/')))
+	if (!QFileInfo(*out).isAbsolute())
 	{
 		return QStringLiteral("'out' must be an absolute path");
 	}
@@ -240,7 +274,7 @@ QString parseRenderArgs(const QJsonObject& args, QString* out, QString* formatNa
 	// its own command line, so an apply changes the render's OPTIONS rather than
 	// its renderer.
 	*settings = ControlExportPresetSettings::effective();
-	return QString();
+	return parseRenderChannels(args, *format, channels);
 }
 
 /*! The render RANGE (feature row 71): both ends in ticks, or neither.
@@ -282,6 +316,32 @@ QString parseRenderRange(const QJsonObject& args, int* begin, int* end)
 	return QString();
 }
 
+/*! The child's own closing words, for a refusal to quote.
+ *
+ *  The whole tail while it fits RENDER_DIAGNOSTIC characters, because the cause
+ *  and the advice are separate lines - the CLI renderer writes "Could not open
+ *  file <path> for writing." and THEN tells you to check write permission - and
+ *  quoting only the last of them drops the one that names the path. A child that
+ *  said more than that gets its last line alone.
+ *
+ *  Read from the tail of a FILE rather than a pipe: a pipe QProcess does not
+ *  drain while nobody reads it can fill and block the child, and a failed render
+ *  is exactly when the child has the most to say.
+ */
+QString lastWordsOf(const QString& path)
+{
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly)) { return QString(); }
+	const qint64 size = file.size();
+	if (size <= 0) { return QString(); }
+	if (!file.seek(qMax<qint64>(0, size - RENDER_DIAGNOSTIC))) { return QString(); }
+	QString text = QString::fromUtf8(file.readAll()).trimmed();
+	text.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+	if (text.size() <= RENDER_DIAGNOSTIC) { return text; }
+	const QStringList lines = text.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+	return lines.isEmpty() ? QString() : lines.last().trimmed();
+}
+
 //! Runs the shipped CLI render path as a child process. The loudness report
 //! (feature row 24) travels with it when the process-wide selection asks for
 //! one: the child is a fresh process whose own ExportRenderSettings start at
@@ -292,18 +352,58 @@ QString parseRenderRange(const QJsonObject& args, int* begin, int* end)
 //! range (row 71) travel the same way, as command-line arguments: the preset
 //! through controlExportPresetRenderArgs (which carries the `-s <rate>` this
 //! call used to pass as a literal), the range through --range-start/--range-end.
-bool runCliRender(const QString& projectPath, const QString& out, const QString& formatName,
-	const ControlExportPreset& settings, int rangeBegin, int rangeEnd, int* exitCode)
+/*! Why a render failed, in the words the caller can act on.
+ *
+ *  The exit code says THAT it failed; the child's own closing words say WHY, and
+ *  one of the two alone is not enough. The child's line is quoted when there is
+ *  one and omitted when there is not - a child killed on timeout rarely gets to
+ *  explain itself.
+ */
+QString renderFailureMessage(int exitCode, const QString& diagnostics)
 {
-	const QStringList arguments = controlRenderCliArguments(projectPath, out, formatName, settings, rangeBegin, rangeEnd);
+	if (diagnostics.isEmpty())
+	{
+		return QStringLiteral("the render failed (exit %1); the session is unchanged").arg(exitCode);
+	}
+	return QStringLiteral("the render failed (exit %1): %2").arg(exitCode).arg(diagnostics);
+}
+
+bool runCliRender(const QString& projectPath, const QString& out, const QString& formatName,
+	const ControlExportPreset& settings, int rangeBegin, int rangeEnd, int* exitCode,
+	QString* diagnostics, OutputSettings::ChannelMode channels = OutputSettings::ChannelMode::Stereo)
+{
+	QStringList arguments = controlRenderCliArguments(projectPath, out, formatName, settings, rangeBegin, rangeEnd);
+	// 0.5.0 F7: only a surround render passes --channels, so a stereo child's command line is unchanged.
+	if (channels == OutputSettings::ChannelMode::Surround)
+	{
+		arguments << QStringLiteral("--channels") << surroundexport::channelModeName(channels);
+	}
+
+	// The child's stderr is kept, to be read back only if the render fails: it
+	// is where the CLI renderer says WHY ("Could not open file ... for
+	// writing", an encoder it could not start), and an exit code alone left the
+	// caller with nothing to act on. Its stdout stays discarded - the CLI
+	// reports progress there, which is not a refusal.
+	QTemporaryFile errorLog(QDir::tempPath() + QStringLiteral("/zene-render-XXXXXX.log"));
+	errorLog.setAutoRemove(true);
+	if (!errorLog.open()) { errorLog.setAutoRemove(false); }
 
 	QProcess renderer;
 	renderer.setStandardOutputFile(QProcess::nullDevice());
-	renderer.setStandardErrorFile(QProcess::nullDevice());
+	if (errorLog.isOpen())
+	{
+		errorLog.flush();
+		renderer.setStandardErrorFile(errorLog.fileName());
+	}
+	else
+	{
+		renderer.setStandardErrorFile(QProcess::nullDevice());
+	}
 	renderer.start(QCoreApplication::applicationFilePath(), arguments);
 	const bool finished = renderer.waitForStarted(30000) && renderer.waitForFinished(600000);
 	if (!finished) { renderer.kill(); }
 	*exitCode = finished ? renderer.exitCode() : -1;
+	*diagnostics = finished ? lastWordsOf(errorLog.fileName()) : QString();
 	return finished;
 }
 
@@ -313,7 +413,8 @@ ControlResult renderSession(const QJsonObject& args)
 	QString formatName;
 	ProjectRenderer::ExportFileFormat format = ProjectRenderer::ExportFileFormat::Wave;
 	ControlExportPreset settings;
-	const QString invalid = parseRenderArgs(args, &out, &formatName, &format, &settings);
+	OutputSettings::ChannelMode channels = OutputSettings::ChannelMode::Stereo;
+	const QString invalid = parseRenderArgs(args, &out, &formatName, &format, &settings, &channels);
 	if (!invalid.isEmpty())
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, invalid);
@@ -348,15 +449,16 @@ ControlResult renderSession(const QJsonObject& args)
 	}
 
 	int exitCode = -1;
+	QString diagnostics;
 	const bool finished = runCliRender(tempProject, out, formatName, settings, rangeBegin,
-		rangeEnd, &exitCode);
+		rangeEnd, &exitCode, &diagnostics, channels);
 	QFile::remove(tempProject);
 
 	QFileInfo info(out);
 	if (!finished || exitCode != 0 || !info.exists() || info.size() == 0)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("the render failed (exit %1); the session is unchanged").arg(exitCode));
+			renderFailureMessage(exitCode, diagnostics));
 	}
 
 	QJsonObject result;
@@ -370,6 +472,7 @@ ControlResult renderSession(const QJsonObject& args)
 	result.insert(QStringLiteral("applied_preset"),
 		ControlExportPresetSettings::activeName());
 	result.insert(QStringLiteral("bytes"), static_cast<qint64>(info.size()));
+	insertRenderChannels(result, channels);
 	const bool wave = format == ProjectRenderer::ExportFileFormat::Wave;
 	result.insert(QStringLiteral("frames"), wave ? wavFrameCount(out) : -1);
 	// The range is reported back as it was applied, so a caller compares the
@@ -389,6 +492,8 @@ ControlResult renderSession(const QJsonObject& args)
 		result.insert(QStringLiteral("range"), QJsonValue());
 	}
 	result.insert(QStringLiteral("sha256"), sha256OfFile(out));
+	// Q050-089.2: the child renders offline, with no device - the hardware inserts that are on were bypassed.
+	result.insert(QStringLiteral("hardware_inserts"), offlineHardwareInsertsJson());
 	return ControlResult::success(result);
 }
 
@@ -404,7 +509,14 @@ void registerRenderRender(ControlRegistry& registry)
 		"no tail bar and no loop repetition - and the reply reports the range and the frame "
 		"count. The render is started with the export settings in force: the preset applied "
 		"through export.preset_apply (sample rate, bit depth, stereo mode), or the render path's "
-		"own defaults when none is applied. Runs in a CHILD process, so the declared bound "
+		"own defaults when none is applied. `channels`: 'stereo' (the default; a surround master is "
+		"folded with the ITU-R BS.775 downmix) or 'surround' - one WAV channel per speaker of the "
+		"surround master (6 for 5.1, 8 for 7.1, WAVE_FORMAT_EXTENSIBLE with its channel mask), refused "
+		"on a stereo master, for a format other than wav, and with the loudness report on; the reply's "
+		"`channels` and `channel_layout` say what the file holds. The render is OFFLINE (no audio device), so hardware "
+		"inserts are bypassed and the dry signal is rendered: the reply's `hardware_inserts` says so (hardware "
+		"'unavailable', `bypassed`, the inserts that are on); render.realtime plays the song through them. "
+		"Runs in a CHILD process, so the declared bound "
 		"applies: this surface does not answer - not even control.ping - until it finishes "
 		"(docs/KNOWN-LIMITATIONS.md).");
 	cmd.argsSchema = objectSchema(
@@ -415,7 +527,9 @@ void registerRenderRender(ControlRegistry& registry)
 				// (BUG-RENDER-MP3).
 				{QStringLiteral("enum"), renderableFormatNames()}}},
 			{QStringLiteral("start_ticks"), tickProperty()},
-			{QStringLiteral("end_ticks"), tickProperty()}},
+			{QStringLiteral("end_ticks"), tickProperty()},
+			{QStringLiteral("channels"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
+				{QStringLiteral("enum"), QJsonArray::fromStringList(surroundexport::channelModeNames())}}}},
 		{QStringLiteral("out")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("path"), stringProperty()},
@@ -428,6 +542,9 @@ void registerRenderRender(ControlRegistry& registry)
 		{QStringLiteral("range"), nullable(objectProperty())},
 		{QStringLiteral("bytes"), numberProperty()},
 		{QStringLiteral("format"), stringProperty()},
+		{QStringLiteral("channels"), integerProperty()},
+		{QStringLiteral("channel_layout"), stringProperty()},
+		{QStringLiteral("hardware_inserts"), objectProperty()},
 	});
 	cmd.handler = [](const QJsonObject& args) { return renderSession(args); };
 	registry.registerCommand(cmd);
@@ -454,7 +571,8 @@ QStringList controlRenderCliArguments(const QString& project, const QString& out
 
 bool controlRenderProjectFile(const QString& project, const QString& out, int* exitCode)
 {
-	const bool finished = runCliRender(project, out, QStringLiteral("wav"), ControlExportPresetSettings::effective(), -1, -1, exitCode);
+	QString unused;
+	const bool finished = runCliRender(project, out, QStringLiteral("wav"), ControlExportPresetSettings::effective(), -1, -1, exitCode, &unused);
 	return finished && *exitCode == 0 && QFileInfo(out).size() > 0;
 }
 
@@ -468,6 +586,7 @@ QStringList controlRenderableFormats()
 void registerProjectCommands(ControlRegistry& registry)
 {
 	registerRenderRender(registry);
+	registerRenderRealtimeCommand(registry);  // Q050-089.2
 	registerProjectFilesCommands(registry);
 }
 

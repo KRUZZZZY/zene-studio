@@ -78,6 +78,34 @@ bool readJournal(const QJsonObject& args, TakeJournal* journal, ControlResult* e
 QJsonObject commandTransaction(const QJsonObject& before, const QString& inverseOp,
 	const QJsonObject& inverseArgs);
 
+// ---------------------------------------------------------------------------
+// Default take allocation (new-p17-24): a default take name must never reuse
+// a path that already holds a take or a journal. The allocator tries a
+// bounded sequence of candidates under \a directory and reserves each one
+// with exclusive creation, so two concurrent allocator instances sharing the
+// directory get distinct paths. It runs on the control thread only; nothing
+// it does is on the audio thread.
+// ---------------------------------------------------------------------------
+
+/*! The bounded number of default take names one allocation tries.
+ *  A caller (and a test) names the whole search space, so exhaustion is a
+ *  deterministic refusal, never an unbounded scan. */
+constexpr int TakeNameProbeBound = 1000;
+
+/*! Reserve the next free take name for \a base (e.g. "zene-take-route0").
+ *  Candidates are `<base>.wav`, `<base>-1.wav`, ... up to \a TakeNameProbeBound
+ *  tries. A candidate whose WAV or journal side file already exists is
+ *  skipped. Each candidate is reserved by exclusive creation of an empty
+ *  file, so the check and the reservation are one atomic filesystem step.
+ *  Empty on exhaustion (or when \a directory is missing). The caller owns
+ *  the reservation: if the subsequent arm fails, it must remove the file. */
+QString reserveDefaultTake(const QString& directory, const QString& base);
+
+/*! Remove a reservation created by reserveDefaultTake(), and the journal
+ *  beside it a failed arm may have written. Only the reserved path itself
+ *  is ever removed - never a sibling candidate another take owns. */
+void releaseDefaultTake(const QString& reservedPath);
+
 //! \a left minus \a right, never negative: a report names a surplus only.
 qint64 surplus(std::uint64_t left, std::uint64_t right);
 
@@ -121,6 +149,44 @@ int routeArg(const QJsonObject& args);
 //! The take file: the caller's absolute path, or one this instance derives from
 //! the directory its own recovery file lives in.
 QString takePathArg(const QJsonObject& args, int route, ControlResult* error);
+
+// ---------------------------------------------------------------------------
+// The recording budget's filesystem identity (record.remaining).
+//
+// The budget of free bytes belongs to the FILESYSTEM, not to a directory: two
+// armed directories on one filesystem draw on one pool. What names a filesystem
+// is the platform's business, so it is asked for here - once - instead of in
+// the command's handler, where no test could reach it.
+// ---------------------------------------------------------------------------
+
+//! How a platform names the filesystem a place sits on.
+enum class VolumeNaming
+{
+	//! POSIX: the device the kernel mounts the filesystem from (st_dev). The device
+	//! LABEL (QStorageInfo::device() there - every tmpfs mount answers "tmpfs") is
+	//! not an identity: two independent filesystems answer the same one.
+	KernelDevice,
+	//! Windows: the volume's GUID (QStorageInfo::device()), which one volume keeps
+	//! under every path it is mounted at.
+	VolumeId,
+};
+
+//! How this platform names the filesystem a place sits on.
+VolumeNaming platformVolumeNaming();
+
+/*! The key that pools the free bytes of the filesystem @a path sits on.
+ *
+ * @a naming says how the platform names it, @a deviceId is the storage info's
+ * device id and @a mountPoint its mount point. The key names the FILESYSTEM, so
+ * every path onto one filesystem - a directory, a link to it, a second mount of
+ * it - shares one budget of free bytes.
+ */
+QString filesystemIdentityKey(const QString& path, VolumeNaming naming, const QString& deviceId,
+	const QString& mountPoint);
+/*! TEST SEAM. While set, record.recovery_place's placement of a recovered take reports that no sample track could be
+ *  created - the failure Track::create never gives for a Sample track, so no loadable build reaches it on its own. A
+ *  production path never sets it. */
+LMMS_EXPORT void setRecoveredTakeFailsForTest(bool fails);
 
 } // namespace control
 

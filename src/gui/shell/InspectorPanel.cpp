@@ -123,7 +123,22 @@ QWidget* titleBar(const QString& text, QWidget* parent, const std::function<void
 class Swatch : public QWidget
 {
 public:
-	Swatch(const QColor& color, QWidget* parent) : QWidget(parent), m_color(color) { setFixedSize(14, 14); }
+	Swatch(const QColor& color, QWidget* parent) : QWidget(parent), m_color(color)
+	{
+		setObjectName(QStringLiteral("inspectorSwatch"));
+		setProperty("color", color);  // what is shown, readable without this private type
+		setFixedSize(14, 14);
+	}
+
+	//! The colour shown now: a recolour elsewhere (the header, a script, an undo) reaches the swatch.
+	const QColor& color() const { return m_color; }
+	void setColor(const QColor& color)
+	{
+		if (m_color == color) { return; }
+		m_color = color;
+		setProperty("color", color);  // what is shown, readable without this private type
+		update();
+	}
 
 protected:
 	void paintEvent(QPaintEvent*) override
@@ -301,7 +316,12 @@ QWidget* InspectorPanel::trackSection(Track* track)
 	}));
 	auto* nameRow = new QHBoxLayout;
 	nameRow->setSpacing(tokens::space::sm);
-	nameRow->addWidget(new Swatch(track->color().value_or(tokens::palette().clipMidi), section));
+	auto* swatch = new Swatch(track->color().value_or(tokens::palette().clipMidi), section);
+	// A colour set elsewhere (the track header, a script, an undo) shows here at once, without a selection change.
+	connect(track, &Track::colorChanged, swatch, [swatch, track] {
+		swatch->setColor(track->color().value_or(tokens::palette().clipMidi));
+	});
+	nameRow->addWidget(swatch);
 	m_name = new QLineEdit(track->name(), section);
 	m_name->setObjectName(QStringLiteral("inspectorName"));
 	m_name->setAccessibleName(tr("Track name"));
@@ -362,12 +382,14 @@ QWidget* InspectorPanel::clipSection(Clip* clip)
 	grid->addWidget(titleBar(tr("Clip"), section, [clip = QPointer<Clip>(clip)](QMenu* menu) {
 		ShellCommandMenus::populateClip(menu, clip.data());
 	}), 0, 0, 1, 2);
-	addRow(grid, tr("Name"), new QLabel(clip->name().isEmpty() ? tr("(untitled)") : clip->name(), section));
+	m_clipName = new QLabel(clip->name().isEmpty() ? tr("(untitled)") : clip->name(), section);
+	addRow(grid, tr("Name"), m_clipName);
 	const QString id = control::clipIdOf(clip);
 	addClipFields(grid, clip, id, section);
 	if (auto* midi = dynamic_cast<MidiClip*>(clip))
 	{
-		addRow(grid, tr("Notes"), new QLabel(QString::number(midi->notes().size()), section));
+		m_noteCount = new QLabel(QString::number(midi->notes().size()), section);
+		addRow(grid, tr("Notes"), m_noteCount);
 		auto* edit = new QPushButton(tr("Edit notes"), section);
 		edit->setAccessibleName(tr("Open the clip in the note editor"));
 		connect(edit, &QPushButton::clicked, this, [edit, id] {
@@ -434,6 +456,7 @@ void InspectorPanel::syncToggles()
 	{
 		if (!field.isNull() && !typingInto(field)) { field->refresh(); }
 	}
+	syncClipLabels();
 	syncChannelName();
 	if (m_track.isNull() || m_mute == nullptr) { return; }
 	m_mute->setChecked(m_track->isMuted());

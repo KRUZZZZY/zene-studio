@@ -32,17 +32,22 @@
 #include <QItemSelectionModel>
 #include <QJsonArray>
 #include <QKeyEvent>
+#include <QAction>
 #include <QLabel>
+#include <QPointer>
 #include <QPushButton>
 #include <QTableView>
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include "Accessibility.h"
 #include "AccessibleWidgets.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "MusicalTime.h"
 #include "NoteGrid.h"
+#include "ShellChrome.h"
+#include "ShellIcons.h"
 
 namespace lmms::gui
 {
@@ -82,9 +87,10 @@ bool keyFromText(const QString& text, int* value)
 	return false;
 }
 
-bool numberFromText(QString text, int* value)
+bool numberFromText(QString text, int* value, bool allowPercent = false)
 {
-	text.remove(QLatin1Char('%'));
+	text = text.trimmed();
+	if (allowPercent && text.endsWith(QLatin1Char('%'))) { text.chop(1); }
 	bool ok = false;
 	const int number = text.trimmed().toInt(&ok);
 	if (ok) { *value = number; }
@@ -107,6 +113,7 @@ bool ItemListSource::parse(ItemColumn::Kind kind, const QString& text, int* valu
 			*value = static_cast<int>(ticks);
 			return true;
 		case ItemColumn::Kind::Key: return numberFromText(text, value) || keyFromText(text.trimmed(), value);
+		case ItemColumn::Kind::Percent: return numberFromText(text, value, true);
 		case ItemColumn::Kind::Text: return false;
 		default: return numberFromText(text, value);
 	}
@@ -252,6 +259,7 @@ ItemListPanel::ItemListPanel(ItemListSource* source, QWidget* surface, const QSt
 	m_table->setAccessibleDescription(tr("Arrows move; F2 or typing edits a cell; + and - step it; Insert adds an item "
 		"after this one, Delete removes the selected ones; Escape closes the list."));
 	m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
+	m_table->setSelectionMode(kind == QStringLiteral("clips") ? QAbstractItemView::ExtendedSelection : QAbstractItemView::SingleSelection);
 	m_table->setEditTriggers(QAbstractItemView::EditKeyPressed | QAbstractItemView::AnyKeyPressed | QAbstractItemView::DoubleClicked);
 	m_table->verticalHeader()->setDefaultSectionSize(tokens::targetSize());  // theme 23: the global zoom and accessible mode
 	m_table->horizontalHeader()->setStretchLastSection(true);
@@ -291,6 +299,7 @@ ItemListPanel* ItemListPanel::find(QWidget* surface, const QString& kind)
 
 ItemListPanel* ItemListPanel::open(QWidget* surface, const QString& kind, const std::function<ItemListSource*(QObject*)>& make)
 {
+	if (surface == nullptr) { return nullptr; }  // no canvas to list or to be placed beside: nothing is made
 	if (ItemListPanel* shown = find(surface, kind)) { return shown; }
 	auto* panel = new ItemListPanel(make(nullptr), surface, kind);
 	// Beside the canvas's window, on the right, where a docked list would be.
@@ -363,7 +372,10 @@ int ItemListPanel::rowOf(const QString& id) const
 void ItemListPanel::selectionEdited()
 {
 	if (m_syncing || !m_source->tracksSelection()) { return; }
-	const QList<int> rows = chosenRows();
+	QList<int> rows;
+	for (const QModelIndex& index : m_table->selectionModel()->selectedRows()) { rows.append(index.row()); }
+	std::sort(rows.begin(), rows.end());
+	if (rows.size() > 1) { return; }  // the arranger has one current clip, while its list can select several to delete; an empty selection still clears it (new-p8-137)
 	if (rows != m_source->selectedRows()) { m_source->select(rows); }
 }
 
@@ -423,6 +435,27 @@ bool ItemListPanel::eventFilter(QObject* watched, QEvent* event)
 		default: return false;
 	}
 	return true;
+}
+
+ShellButton* itemlists::listButton(const QString& surface, QWidget* canvas, QWidget* parent)
+{
+	auto* button = new ShellButton(parent);
+	const QString tip = QObject::tr("Show or hide these items as an editable list beside the canvas (Ctrl+Shift+L)");
+	auto* action = new QAction(shellicons::icon(QStringLiteral("list")), QObject::tr("List"), button);
+	action->setToolTip(tip);
+	action->setProperty("controlCommand", QStringLiteral("window.item_list"));
+	button->setDefaultAction(action);
+	button->setObjectName(QStringLiteral("itemListButton-") + surface);
+	button->setProperty("controlCommand", QStringLiteral("window.item_list"));
+	button->setProperty("itemListSurface", surface);
+	a11y::announce(button, action->text(), tip);
+	QObject::connect(action, &QAction::triggered, button, [surface, target = QPointer<QWidget>(canvas), button] {
+		if (target != nullptr) { target->setFocus(Qt::OtherFocusReason); }
+		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("window.item_list"),
+			{{QStringLiteral("surface"), surface}});
+		if (!result.ok) { a11y::announceTransition(button, a11y::Transition::Refused, result.errorMessage); }
+	});
+	return button;
 }
 
 } // namespace lmms::gui

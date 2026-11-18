@@ -25,6 +25,9 @@
 
 #include "CollabClient.h"
 
+#include <cmath>
+#include <limits>
+
 #include <QSslPreSharedKeyAuthenticator>
 #include <QSslSocket>
 #include <QThread>
@@ -39,6 +42,21 @@ namespace
 {
 
 constexpr int MaxInflight = 256;
+constexpr int MaxBacklogMessages = 1024;
+constexpr qint64 MaxBacklogBytes = MaxHostLineBytes;
+
+//! Reads a wire sequence number. JSON numbers arrive as doubles, and converting one outside [0, 2^64) to quint64 is
+//! undefined, so only a finite, integral value in that range is accepted.
+bool readSequence(const QJsonObject& message, quint64* sequence)
+{
+	const QJsonValue value = message.value(QStringLiteral("seq"));
+	if (!value.isDouble()) { return false; }
+	const double number = value.toDouble();
+	const double limit = std::ldexp(1.0, std::numeric_limits<quint64>::digits);
+	if (!std::isfinite(number) || number < 0.0 || std::trunc(number) != number || number >= limit) { return false; }
+	*sequence = static_cast<quint64>(number);
+	return true;
+}
 
 //! What a failed connection attempt means to the person who pasted the invite.
 QString explainSocketError(QAbstractSocket::SocketError error, const QString& where)
@@ -145,6 +163,7 @@ void CollabClient::leave()
 	m_peers = QJsonArray();
 	m_inflight.clear();
 	m_backlog.clear();
+	m_backlogBytes = 0;
 	m_haveSnapshot = false;
 	m_peerId = 0;
 	if (m_state != State::Idle) { setState(State::Idle, QString()); }
@@ -177,12 +196,23 @@ void CollabClient::onClosed(const QString& reason)
 {
 	if (m_link != nullptr) { m_link->deleteLater(); m_link = nullptr; }
 	m_haveSnapshot = false;
+	m_peers = QJsonArray();
+	emit peersChanged();
 	setState(State::Failed, QStringLiteral("disconnected from %1 (%2); join again with the same invite").arg(m_hostLabel, reason));
 }
 
-void CollabClient::onMessage(const QJsonObject& message, const QByteArray&)
+void CollabClient::onMessage(const QJsonObject& message, const QByteArray& line)
 {
-	m_backlog.append(message);
+	if (m_backlog.size() >= MaxBacklogMessages || line.size() > MaxBacklogBytes - m_backlogBytes)
+	{
+		m_backlog.clear();
+		m_backlogBytes = 0;
+		m_drain->stop();
+		if (m_link != nullptr) { m_link->close(QStringLiteral("the incoming message backlog exceeded its limit")); }
+		return;
+	}
+	m_backlog.append({message, line.size()});
+	m_backlogBytes += line.size();
 	drainBacklog();
 }
 
@@ -191,7 +221,9 @@ void CollabClient::drainBacklog()
 	// The main loop is level 1; anything deeper is a nested loop some handler or dialog is running.
 	while (!m_backlog.isEmpty() && QThread::currentThread()->loopLevel() <= 1)
 	{
-		dispatch(m_backlog.takeFirst());
+		const BacklogEntry entry = m_backlog.takeFirst();
+		m_backlogBytes -= entry.bytes;
+		dispatch(entry.message);
 	}
 	if (!m_backlog.isEmpty()) { m_drain->start(); }
 }
@@ -216,6 +248,13 @@ void CollabClient::onWelcome(const QJsonObject& message)
 
 void CollabClient::onSnapshot(const QJsonObject& message)
 {
+	quint64 sequence = 0;
+	if (!readSequence(message, &sequence))
+	{
+		setState(m_state, QStringLiteral("the host sent an invalid snapshot sequence; asking again"));
+		requestResync(QStringLiteral("invalid snapshot sequence"));
+		return;
+	}
 	const QByteArray project = QByteArray::fromBase64(message.value(QStringLiteral("data")).toString().toLatin1());
 	if (project.isEmpty() || project.size() != message.value(QStringLiteral("bytes")).toInt(-1))
 	{
@@ -224,12 +263,13 @@ void CollabClient::onSnapshot(const QJsonObject& message)
 		return;
 	}
 	QString error;
-	if (m_snapshotSink && !m_snapshotSink(project, &error))
+	if (!m_snapshotSink || !m_snapshotSink(project, &error))
 	{
+		if (!m_snapshotSink) { error = QStringLiteral("snapshot sink is not installed"); }
 		setState(m_state, QStringLiteral("could not open the host's project here: %1").arg(error));
 		return;
 	}
-	m_seq = static_cast<quint64>(message.value(QStringLiteral("seq")).toDouble());
+	m_seq = sequence;
 	m_haveSnapshot = true;
 	emit snapshotApplied();
 }
@@ -239,15 +279,24 @@ void CollabClient::onCommand(const QJsonObject& message)
 	// A command that arrives before the first snapshot has nothing to apply to; the snapshot that follows
 	// carries its effect.
 	if (!m_haveSnapshot) { return; }
-	m_seq = static_cast<quint64>(message.value(QStringLiteral("seq")).toDouble());
+	quint64 sequence = 0;
+	if (!readSequence(message, &sequence))
+	{
+		setState(m_state, QStringLiteral("the host sent an invalid command sequence; asking again"));
+		requestResync(QStringLiteral("invalid command sequence"));
+		return;
+	}
 	QString error;
 	const QString command = message.value(QStringLiteral("cmd")).toString();
-	if (m_commandSink && !m_commandSink(command, message.value(QStringLiteral("args")).toObject(), &error))
+	if (!m_commandSink || !m_commandSink(command, message.value(QStringLiteral("args")).toObject(), &error))
 	{
+		if (!m_commandSink) { error = QStringLiteral("command sink is not installed"); }
+		m_haveSnapshot = false;
 		setState(m_state, QStringLiteral("'%1' from the host failed here (%2); re-syncing").arg(command, error));
 		requestResync(QStringLiteral("a streamed command failed"));
 		return;
 	}
+	m_seq = sequence;
 	emit commandApplied(m_seq);
 }
 
@@ -270,6 +319,8 @@ void CollabClient::onBye(const QJsonObject& message)
 	const QString reason = message.value(QStringLiteral("reason")).toString();
 	if (m_link != nullptr) { m_link->disconnect(this); m_link->close(reason); m_link->deleteLater(); m_link = nullptr; }
 	m_haveSnapshot = false;
+	m_peers = QJsonArray();
+	emit peersChanged();
 	setState(State::Failed, QStringLiteral("the host ended the session: %1").arg(reason));
 }
 
@@ -289,8 +340,13 @@ void CollabClient::onReply(const QJsonObject& message)
 int CollabClient::request(const QString& command, const QJsonObject& args)
 {
 	if (m_link == nullptr || !m_link->isOpen()) { return 0; }
-	if (m_inflight.size() >= MaxInflight) { m_inflight.clear(); }
-	const int id = ++m_nextRequest;
+	if (m_inflight.size() >= MaxInflight) { return 0; }
+	int id = m_nextRequest;
+	do
+	{
+		id = id == std::numeric_limits<int>::max() ? 1 : id + 1;
+	} while (m_inflight.contains(id));
+	m_nextRequest = id;
 	m_inflight.insert(id, command);
 	m_link->send({{QStringLiteral("id"), id}, {QStringLiteral("cmd"), command}, {QStringLiteral("args"), args}});
 	return id;

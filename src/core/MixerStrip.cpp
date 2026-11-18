@@ -35,9 +35,12 @@
 #include "Effect.h"
 #include "AudioEngine.h"
 #include "Engine.h"
+#include "LatencyCompensation.h"
 #include "Mixer.h"
 #include "MixerOptions.h"
+#include "PhaseScopeTap.h"
 #include "SampleFrame.h"
+#include "StripMeters.h"
 #include "ValueBuffer.h"
 
 namespace lmms::mixerstrip
@@ -67,6 +70,14 @@ struct Biquad
 {
 	float b0 = 1.f, b1 = 0.f, b2 = 0.f, a1 = 0.f, a2 = 0.f;
 };
+
+//! A persisted float, or @a fallback when the text is missing, not a number or non-finite
+//! (a NaN/inf would otherwise reach the strip's filter and gain stages).
+float floatAttribute(const QDomElement& element, const QString& name, float fallback)
+{
+	const float value = element.attribute(name, QString::number(fallback)).toFloat();
+	return std::isfinite(value) ? value : fallback;
+}
 
 //! A shelf (@a high or low) or, with @a bell, a peaking band at @a hz, @a db gain, Q 0.7 (RBJ's cookbook).
 Biquad band(double hz, double db, double rate, bool bell, bool high)
@@ -142,6 +153,11 @@ std::array<float, 2> sendLevel(MixerRoute& route)
 {
 	const MixerChannel* from = route.sender();
 	if (!route.enabled() || from->m_muted.load(std::memory_order_relaxed)) { return {0.f, 0.f}; }
+	if (!route.preFader() && !route.feedback() && from->m_livePostInsertsBaked.load(std::memory_order_relaxed))
+	{
+		const float amount = route.amount()->value();
+		return {from->m_liveBakedPeakLeft.get() * amount, from->m_liveBakedPeakRight.get() * amount};
+	}
 	const float gain = route.amount()->value() * (route.preFader() ? 1.f : from->m_volumeModel.value());
 	return {from->m_livePeakLeft.get() * gain, from->m_livePeakRight.get() * gain};
 }
@@ -287,12 +303,19 @@ void updateMeters(MixerChannel& channel, const SampleFrame* buffer, float volume
 	}
 	// MX-137: the phase correlation, +1 in phase (mono), 0 unrelated, -1 out of phase; 1 for silence.
 	channel.m_correlation.set(sumL > 1e-12 && sumR > 1e-12 ? static_cast<float>(sumLR / std::sqrt(sumL * sumR)) : 1.f);
+	// MX-137: and the same block for the phase view - one relaxed load unless it looks at this channel
+	// (PhaseScopeTap.h: a fixed ring of atomics, no allocation, no lock).
+	PhaseScopeTap::instance().push(channel.index(), buffer, frames);
 	// MX-082: baked post-fader inserts put the fader (and their devices) into the buffer; the pre-fader
 	// readings, and the send meters that apply the fader themselves, take the copy kept before them.
-	const SampleFrame pre = channel.m_postInserts.baked() ? getAbsPeakValues(channel.m_postInserts.preFader(), frames)
+	const bool baked = channel.m_postInserts.baked();
+	const SampleFrame pre = baked ? getAbsPeakValues(channel.m_postInserts.preFader(), frames)
 		: SampleFrame(peakL, peakR);
-	channel.m_livePeakLeft.set(pre[0]);  // MX-053: what the send meters read
+	channel.m_livePeakLeft.set(pre[0]);  // MX-053: what pre-fader send meters read
 	channel.m_livePeakRight.set(pre[1]);
+	channel.m_liveBakedPeakLeft.set(peakL);
+	channel.m_liveBakedPeakRight.set(peakR);
+	channel.m_livePostInsertsBaked.store(baked, std::memory_order_relaxed);
 	channel.m_prePeakLeft.raise(pre[0]);
 	channel.m_prePeakRight.raise(pre[1]);
 	channel.m_preMeterLeft.raise(pre[0]);
@@ -302,6 +325,7 @@ void updateMeters(MixerChannel& channel, const SampleFrame* buffer, float volume
 	channel.m_rmsRight.set(std::sqrt(static_cast<float>(sumR) / n) * volume);
 	if (peakL * volume >= 1.f || peakR * volume >= 1.f) { channel.m_clipped.store(true, std::memory_order_relaxed); }
 	channel.m_gainReduction.set(reductionDb(channel));
+	stripmeters::measure(channel, buffer, volume, frames);  // Q050-108: the VU or the loudness meter, when the strip shows one
 }
 
 void silenceMeters(MixerChannel& channel)
@@ -310,9 +334,25 @@ void silenceMeters(MixerChannel& channel)
 	channel.m_rmsRight.set(0.f);
 	channel.m_livePeakLeft.set(0.f);
 	channel.m_livePeakRight.set(0.f);
+	channel.m_liveBakedPeakLeft.set(0.f);
+	channel.m_liveBakedPeakRight.set(0.f);
+	channel.m_livePostInsertsBaked.store(false, std::memory_order_relaxed);
 	channel.m_correlation.set(1.f);  // what silence reads (updateMeters)
 	channel.m_gainReduction.set(0.f);
+	stripmeters::measureSilence(channel, Engine::audioEngine()->framesPerPeriod());  // Q050-108
 }
+
+namespace
+{
+
+//! Q050-108 / Q050-339: the strip's own meter mode and its manual delay, each only off its default.
+void saveStripModes(const MixerChannel& c, QDomElement& e)
+{
+	if (c.offsetFrames() != 0) { e.setAttribute(QStringLiteral("offset"), c.offsetFrames()); }  // Q050-339
+	if (stripmeters::mode(c) != 0) { e.setAttribute(QStringLiteral("metermode"), stripmeters::modeNames().value(stripmeters::mode(c))); }
+}
+
+} // namespace
 
 void save(const MixerChannel& c, QDomElement& e)
 {
@@ -335,27 +375,54 @@ void save(const MixerChannel& c, QDomElement& e)
 	if (c.m_panRightModel.value() != 0.f) { e.setAttribute(QStringLiteral("panright"), static_cast<double>(c.m_panRightModel.value())); }
 	if (c.m_widthModel.value() != 1.f) { e.setAttribute(QStringLiteral("width"), static_cast<double>(c.m_widthModel.value())); }
 	flag(c.m_soloSafeModel, "solosafe");
+	saveStripModes(c, e);
 	if (!c.m_note.isEmpty()) { e.setAttribute(QStringLiteral("note"), c.m_note); }
 }
 
 void load(MixerChannel& c, const QDomElement& e)
 {
-	c.m_trimModel.setValue(e.attribute(QStringLiteral("trim"), QStringLiteral("0")).toFloat());
+	c.m_trimModel.setValue(floatAttribute(e, QStringLiteral("trim"), 0.f));
 	c.m_polarityLeftModel.setValue(e.attribute(QStringLiteral("polarityl")).toInt() != 0);
 	c.m_polarityRightModel.setValue(e.attribute(QStringLiteral("polarityr")).toInt() != 0);
 	c.m_monoModel.setValue(e.attribute(QStringLiteral("mono")).toInt() != 0);
 	c.m_swapModel.setValue(e.attribute(QStringLiteral("swap")).toInt() != 0);
 	c.m_inputMonoModel.setValue(e.attribute(QStringLiteral("inputmono")).toInt() != 0);
 	c.m_crossfadeSideModel.setValue(e.attribute(QStringLiteral("xfade"), QStringLiteral("0")).toInt());
-	c.m_eqLowModel.setValue(e.attribute(QStringLiteral("eqlow"), QStringLiteral("0")).toFloat());
-	c.m_eqMidModel.setValue(e.attribute(QStringLiteral("eqmid"), QStringLiteral("0")).toFloat());
-	c.m_eqMidFreqModel.setValue(e.attribute(QStringLiteral("eqmidf"), QStringLiteral("1000")).toFloat());
-	c.m_eqHighModel.setValue(e.attribute(QStringLiteral("eqhigh"), QStringLiteral("0")).toFloat());
+	c.m_eqLowModel.setValue(floatAttribute(e, QStringLiteral("eqlow"), 0.f));
+	c.m_eqMidModel.setValue(floatAttribute(e, QStringLiteral("eqmid"), 0.f));
+	c.m_eqMidFreqModel.setValue(floatAttribute(e, QStringLiteral("eqmidf"), 1000.f));
+	c.m_eqHighModel.setValue(floatAttribute(e, QStringLiteral("eqhigh"), 0.f));
 	c.m_panModeModel.setValue(e.attribute(QStringLiteral("panmode"), QStringLiteral("0")).toInt());
-	c.m_panRightModel.setValue(e.attribute(QStringLiteral("panright"), QStringLiteral("0")).toFloat());
-	c.m_widthModel.setValue(e.attribute(QStringLiteral("width"), QStringLiteral("1")).toFloat());
+	c.m_panRightModel.setValue(floatAttribute(e, QStringLiteral("panright"), 0.f));
+	c.m_widthModel.setValue(floatAttribute(e, QStringLiteral("width"), 1.f));
 	c.m_soloSafeModel.setValue(e.attribute(QStringLiteral("solosafe")).toInt() != 0);
+	stripmeters::setMode(c, std::max(0, static_cast<int>(stripmeters::modeNames().indexOf(e.attribute(QStringLiteral("metermode"))))));  // Q050-108
+	// Q050-339 (absent: none): bounded as pdc.set_offset bounds it, and never on the master (no later summing point).
+	const int offset = e.attribute(QStringLiteral("offset"), QStringLiteral("0")).toInt();
+	const int bound = LatencyCompensation::MaxManualOffsetFrames;
+	c.setOffsetFrames(c.index() == 0 ? 0 : std::clamp(offset, -bound, bound));
 	c.m_note = e.attribute(QStringLiteral("note"));
+}
+
+void reset(MixerChannel& c)
+{
+	c.m_trimModel.setValue(0.f);
+	c.m_polarityLeftModel.setValue(false);
+	c.m_polarityRightModel.setValue(false);
+	c.m_monoModel.setValue(false);
+	c.m_swapModel.setValue(false);
+	c.m_inputMonoModel.setValue(false);
+	c.m_crossfadeSideModel.setValue(0);
+	c.m_eqLowModel.setValue(0.f);
+	c.m_eqMidModel.setValue(0.f);
+	c.m_eqMidFreqModel.setValue(1000.f);
+	c.m_eqHighModel.setValue(0.f);
+	c.m_panModeModel.setValue(static_cast<int>(PanMode::Balance));
+	c.m_panRightModel.setValue(0.f);
+	c.m_widthModel.setValue(1.f);
+	c.m_soloSafeModel.setValue(false);
+	stripmeters::setMode(c, 0);  // Q050-108
+	c.setOffsetFrames(0);  // Q050-339
 }
 
 bool additiveSolo()
@@ -379,6 +446,8 @@ void Mixer::applyAdditiveSolo()
 	// rest are muted, solo-safe ones excepted. The mute state from before the first solo comes back
 	// when the last solo goes.
 	std::vector<MixerChannel*> soloed;
+	// Luna cluster 1523: a channel solo now owns the mute state.
+	m_soloingGroup = nullptr;
 	for (MixerChannel* channel : m_mixerChannels)
 	{
 		if (channel->m_soloModel.value()) { soloed.push_back(channel); }

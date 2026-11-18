@@ -160,6 +160,61 @@ private slots:
 		QCOMPARE( assigned.slide(), true );
 	}
 
+	void projectNoteKeyIsClampedToMidiRange()
+	{
+		using namespace lmms;
+
+		QDomDocument doc;
+		QDomElement invalid = doc.createElement( "note" );
+		invalid.setAttribute( "key", "128" );
+
+		Note loaded;
+		loaded.restoreState( invalid );
+		QCOMPARE( loaded.key(), NumKeys - 1 );
+	}
+
+	void projectNotePositionIsClampedToSongRange()
+	{
+		using namespace lmms;
+
+		QDomDocument doc;
+		QDomElement invalid = doc.createElement( "note" );
+		invalid.setAttribute( "pos", "-24" );
+		invalid.setAttribute( "len", "1" );
+
+		Note loaded;
+		loaded.restoreState( invalid );
+		QCOMPARE( loaded.pos().getTicks(), 0 );
+	}
+
+	void projectNoteLengthIsClampedToPositiveRange()
+	{
+		using namespace lmms;
+
+		QDomDocument doc;
+		QDomElement invalid = doc.createElement( "note" );
+		invalid.setAttribute( "pos", "0" );
+		invalid.setAttribute( "len", "-12" );
+
+		Note loaded;
+		loaded.restoreState( invalid );
+		QCOMPARE( loaded.length().getTicks(), 1 );
+	}
+
+	void legacyProjectOctaveDoesNotOverflow()
+	{
+		using namespace lmms;
+
+		QDomDocument legacyDoc;
+		QDomElement legacy = legacyDoc.createElement( "note" );
+		legacy.setAttribute( "tone", "0" );
+		legacy.setAttribute( "oct", "2147483647" );
+
+		Note legacyLoaded;
+		legacyLoaded.restoreState( legacy );
+		QCOMPARE( legacyLoaded.key(), NumKeys - 1 );
+	}
+
 	//! (b) A project without slide attributes loads unchanged and re-saves
 	//! byte-identically; no note grows a "slide" attribute.
 	void projectWithoutSlidesRoundTripsUnchanged()

@@ -71,8 +71,9 @@ void swapIn(SampleClip* clip, f_cnt_t from, f_cnt_t to, const SampleWindow& wind
 	const SampleFrame* data = clip->sample().data();
 	std::vector<SampleFrame> frames(data + from, data + to);
 	const int rate = static_cast<int>(clip->sample().sampleRate());
+	const int channels = clip->sample().channels();
 	clip->addJournalCheckPoint();
-	clip->replaceSample(std::make_shared<SampleBuffer>(std::move(frames), rate), window);  // the window written by its owner
+	clip->replaceSample(std::make_shared<SampleBuffer>(std::move(frames), rate, QString(), channels), window);  // the window written by its owner
 	Engine::getSong()->setModified();
 }
 
@@ -114,14 +115,13 @@ ControlResult fadeCurve(const QJsonObject& args)
 	ControlResult error;
 	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
 	const ClipEdits& edits = ref.clip->clipEdits();
-	const auto length = static_cast<f_cnt_t>(std::max<tick_t>(1, ref.clip->length().getTicks()));
+	const tick_t length = std::max<tick_t>(1, ref.clip->length().getTicks());
 	const int points = std::clamp(args.value(QStringLiteral("points")).toInt(64), 2, 1024);
 	QJsonArray curve;
 	for (int i = 0; i < points; ++i)
 	{
 		const double tick = static_cast<double>(length) * i / (points - 1);
-		const float fade = clipFadeGainAt(static_cast<f_cnt_t>(tick), length, edits.fadeInTicks, edits.fadeOutTicks, edits.fadeInShape, edits.fadeOutShape);
-		curve.append(QJsonObject{{QStringLiteral("tick"), tick}, {QStringLiteral("gain"), static_cast<double>(edits.gain * fade * envelopeGainAt(edits, tick))}});
+		curve.append(QJsonObject{{QStringLiteral("tick"), tick}, {QStringLiteral("gain"), static_cast<double>(clipGainCurveAt(edits, length, tick))}});
 	}
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("curve"), curve}});
 }
@@ -138,14 +138,19 @@ ControlResult speed(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a clip that keeps its pitch while stretched cannot change speed: set its stretch mode to resample"));
 	}
-	ClipEdits after = clip->clipEdits();
+	const ClipEdits before = clip->clipEdits();
+	ClipEdits after = before;
 	after.speedFrom = std::clamp(args.value(QStringLiteral("from")).toInt(after.speedFrom), 25, 400);
 	after.speedTo = std::clamp(args.value(QStringLiteral("to")).toInt(args.contains(QStringLiteral("from")) ? after.speedFrom : after.speedTo), 25, 400);
 	after.speedInTicks = std::clamp(args.value(QStringLiteral("fade_in")).toInt(after.speedInTicks), 0, clip->length().getTicks());
 	after.speedOutTicks = std::clamp(args.value(QStringLiteral("fade_out")).toInt(after.speedOutTicks), 0, clip->length().getTicks());
-	clip->addJournalCheckPoint();
-	clip->setClipEdits(after);
-	Engine::getSong()->setModified();
+	if (after.speedFrom != before.speedFrom || after.speedTo != before.speedTo || after.speedInTicks != before.speedInTicks ||
+		after.speedOutTicks != before.speedOutTicks)
+	{
+		clip->addJournalCheckPoint();
+		clip->setClipEdits(after);
+		Engine::getSong()->setModified();
+	}
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("from"), after.speedFrom}, {QStringLiteral("to"), after.speedTo},
 		{QStringLiteral("fade_in"), after.speedInTicks}, {QStringLiteral("fade_out"), after.speedOutTicks}});
 }

@@ -58,6 +58,7 @@
 
 #include "AudioEngine.h"
 #include "Clip.h"
+#include "ClipEdits.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
@@ -202,6 +203,54 @@ QString stretchOf(const QString& clip)
 {
 	return run(QStringLiteral("warp.list"), {{QStringLiteral("clip"), clip}})
 		.result.value(QStringLiteral("stretch")).toString();
+}
+
+//! The speed-fade fixture: silence with one Hann-windowed burst at a QUARTER of
+//! the source, so "where did the marker land" is a question with an answer.
+std::vector<SampleFrame> makeBurst(int rate)
+{
+	const auto frames = static_cast<f_cnt_t>(kSourceSeconds) * rate;
+	std::vector<SampleFrame> data(static_cast<std::size_t>(frames), SampleFrame(0.0f, 0.0f));
+	const auto start = static_cast<f_cnt_t>(frames / 4);
+	const auto burst = static_cast<f_cnt_t>(rate / 10);
+	for (f_cnt_t f = 0; f < burst; ++f)
+	{
+		const double envelope = 0.5 - 0.5 * std::cos(kTwoPi * (f + 0.5) / burst);
+		const auto value = static_cast<sample_t>(envelope * std::sin(kTwoPi * kLowTone * f / rate));
+		data[static_cast<std::size_t>(start + f)] = SampleFrame(value, value);
+	}
+	return data;
+}
+
+SampleClip* makeBurstClip(SampleTrack& track, int rate)
+{
+	auto* clip = dynamic_cast<SampleClip*>(track.createClip(TimePos(0)));
+	Q_ASSERT(clip != nullptr);
+	auto data = makeBurst(rate);
+	clip->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), rate));
+	return clip;
+}
+
+//! Where the burst sits in the render, as a fraction of its length: the middle
+//! of the span that carries at least a quarter of the peak amplitude.
+double burstCenter(const std::vector<SampleFrame>& data)
+{
+	double peak = 0.0;
+	for (const auto& frame : data) { peak = std::max<double>(peak, std::fabs(frame[0])); }
+	if (peak <= 0.0) { return -1.0; }
+	const double threshold = peak * 0.25;
+	std::size_t first = data.size();
+	std::size_t last = 0;
+	for (std::size_t i = 0; i < data.size(); ++i)
+	{
+		if (std::fabs(data[i][0]) >= threshold)
+		{
+			if (first == data.size()) { first = i; }
+			last = i;
+		}
+	}
+	if (first > last) { return -1.0; }
+	return (static_cast<double>(first) + static_cast<double>(last)) / 2.0 / static_cast<double>(data.size());
 }
 
 } // namespace
@@ -417,7 +466,7 @@ private slots:
 		const ControlResult refused = run(QStringLiteral("warp.stretch"),
 			{{QStringLiteral("clip"), clip}, {QStringLiteral("mode"), QStringLiteral("preserve_pitch")}});
 		QVERIFY2(!refused.ok, "warp.stretch accepted a clip that renders linearly");
-		QCOMPARE(stretchOf(clip), QStringLiteral("resample"));
+		QCOMPARE(stretchOf(clip), QStringLiteral("re_pitch"));
 
 		// A mode the engine does not know is invalid_args.
 		const ControlResult bogus = run(QStringLiteral("warp.stretch"),
@@ -436,7 +485,7 @@ private slots:
 		QCOMPARE(stretched.result.value(QStringLiteral("stretch")).toString(),
 			QStringLiteral("preserve_pitch"));
 		QCOMPARE(stretched.result.value(QStringLiteral("previous_mode")).toString(),
-			QStringLiteral("resample"));
+			QStringLiteral("re_pitch"));
 		QCOMPARE(stretched.result.value(QStringLiteral("changed")).toBool(), true);
 		QCOMPARE(stretched.result.value(QStringLiteral("stretch_algorithm")).toString(),
 			QStringLiteral("wsola"));
@@ -454,11 +503,36 @@ private slots:
 		QCOMPARE(transaction->inverse.value(QStringLiteral("op")).toString(),
 			QStringLiteral("warp.stretch"));
 		QCOMPARE(transaction->inverse.value(QStringLiteral("args")).toObject()
-			.value(QStringLiteral("mode")).toString(), QStringLiteral("resample"));
+			.value(QStringLiteral("mode")).toString(), QStringLiteral("re_pitch"));
 
 		// And the engine's own undo is the inverse.
 		QVERIFY2(run(QStringLiteral("control.undo")).ok, "control.undo refused the stretch edit");
-		QCOMPARE(stretchOf(clip), QStringLiteral("resample"));
+		QCOMPARE(stretchOf(clip), QStringLiteral("re_pitch"));
+	}
+
+	//! Repeating the current mode is a no-op and must not hide the preceding edit from undo.
+	void settingTheCurrentStretchModeDoesNotConsumeAnUndoStep()
+	{
+		const QString clip = makeCommandClip();
+		QVERIFY2(!clip.isEmpty(), "the fixture clip was not created");
+		QVERIFY(run(QStringLiteral("warp.set"),
+			{{QStringLiteral("clip"), clip},
+				{QStringLiteral("markers"), QJsonArray{
+					QJsonObject{{QStringLiteral("source_frame"), 0}, {QStringLiteral("offset_ticks"), 0}},
+					QJsonObject{{QStringLiteral("source_frame"), 44100}, {QStringLiteral("offset_ticks"), 48}}}}}).ok);
+
+		const QJsonObject args{{QStringLiteral("clip"), clip},
+			{QStringLiteral("mode"), QStringLiteral("preserve_pitch")}};
+		QVERIFY2(run(QStringLiteral("warp.stretch"), args).ok, "the initial mode change failed");
+		const ControlResult unchanged = run(QStringLiteral("warp.stretch"), args);
+		QVERIFY2(unchanged.ok, qPrintable(unchanged.errorMessage));
+		QCOMPARE(unchanged.result.value(QStringLiteral("changed")).toBool(), false);
+
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(undone.result.value(QStringLiteral("undone_command")).toString(),
+			QStringLiteral("warp.stretch"));
+		QCOMPARE(stretchOf(clip), QStringLiteral("re_pitch"));
 	}
 
 	/*! I8 on the new path: a stretch handle renders a period without
@@ -483,6 +557,50 @@ private slots:
 		test::tlCountAllocations = false;
 		evidence("allocations over 16 stretched periods", static_cast<double>(test::tlAllocationCount));
 		QCOMPARE(N(test::tlAllocationCount), N(0));
+	}
+
+	/*! new-p12-224: the clip's speed curve (ED-152 / ED-179) is part of the rate
+	 *  the source is consumed at in BOTH render modes. The pitch-preserving path
+	 *  hands the stretcher the reciprocal of the SAME converter ratio the
+	 *  resample path hands `AudioResampler` (`SamplePlayHandle.h`), so a speed
+	 *  edit must move the source in the preserving mode exactly as far as it
+	 *  moves it in the resample mode.
+	 *
+	 *  The marker below sits at a quarter of the source; on a 2x warp at a
+	 *  constant half speed the two effects cancel and the render consumes one
+	 *  source frame per output frame, so the marker lands at the MIDDLE of the
+	 *  (half-length) output in both modes - and at a quarter of it when the
+	 *  speed curve is ignored.
+	 */
+	void aSpeedEditMovesTheSourceInBothModes()
+	{
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeBurstClip(track, m_rate);
+		applyTwoTimesWarp(*clip, m_rate);
+		ClipEdits edits = clip->clipEdits();
+		edits.speedFrom = 50;
+		edits.speedTo = 50;
+		clip->setClipEdits(edits);
+
+		clip->setWarpStretchMode(WarpStretchMode::Resample);
+		const std::vector<SampleFrame> resampled = renderClip(clip);
+		clip->setWarpStretchMode(WarpStretchMode::PreservePitch);
+		const std::vector<SampleFrame> stretched = renderClip(clip);
+
+		QVERIFY(!stretched.empty());
+		QCOMPARE(static_cast<int>(resampled.size()), static_cast<int>(stretched.size()));
+		const double resampledAt = burstCenter(resampled);
+		const double stretchedAt = burstCenter(stretched);
+		evidence("speed 0.5 on a 2x warp: burst centre resample", resampledAt);
+		evidence("speed 0.5 on a 2x warp: burst centre preserve", stretchedAt);
+
+		QVERIFY2(stretchedAt > 0.40 && stretchedAt < 0.60,
+			qPrintable(QStringLiteral("preserve_pitch landed the burst at %1 of the render; the speed curve "
+				"says the middle (the resample mode landed it at %2)")
+				.arg(stretchedAt).arg(resampledAt)));
+		QVERIFY2(std::fabs(stretchedAt - resampledAt) < 0.10,
+			qPrintable(QStringLiteral("the two modes disagree on where the source sits: preserve %1, resample %2")
+				.arg(stretchedAt).arg(resampledAt)));
 	}
 
 private:

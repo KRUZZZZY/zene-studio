@@ -44,6 +44,10 @@ namespace
 struct OpenNote
 {
 	tick_t onTick;
+	//! The ALSA source port (include/RetroMidiRing.h:60), 0 for the raw clients.
+	//! Part of the matching key: two ports can play the same channel and key, and
+	//! a release closes the note of ITS OWN port.
+	std::uint16_t source;
 	std::uint8_t channel;
 	std::uint8_t key;
 	std::uint8_t velocity;
@@ -62,13 +66,11 @@ bool isRelease(const RetroMidiEvent& event)
 		|| (event.type == MidiNoteOn && event.param2 == 0);
 }
 
-//! The newest tick among the window's NOTE events - the instant an unmatched
-//! note-on is closed at. Derived from the note events rather than from the last
-//! event of any kind, so a trailing control change or SysEx placeholder cannot
-//! stretch the last note.
-tick_t windowEndOf(const RetroMidiEvent* events, std::size_t count, tick_t fallback)
+//! The capture edge or a later NOTE event. A trailing control change or SysEx
+//! placeholder cannot stretch the last note.
+tick_t windowEndOf(const RetroMidiEvent* events, std::size_t count, tick_t captureEnd)
 {
-	tick_t end = fallback;
+	tick_t end = captureEnd;
 	for (std::size_t i = 0; i < count; ++i)
 	{
 		if (!isNoteEvent(events[i])) { continue; }
@@ -77,13 +79,17 @@ tick_t windowEndOf(const RetroMidiEvent* events, std::size_t count, tick_t fallb
 	return end;
 }
 
-//! Index of the OLDEST open note for this release's channel and key, or
+//! Index of the OLDEST open note for this release's port, channel and key, or
 //! \c open.size() when the release has no note-on before it.
 std::size_t matchOpenNote(const std::vector<OpenNote>& open, const RetroMidiEvent& release)
 {
 	for (std::size_t j = 0; j < open.size(); ++j)
 	{
-		if (open[j].channel == release.channel && open[j].key == release.param1) { return j; }
+		if (open[j].source == release.source && open[j].channel == release.channel
+			&& open[j].key == release.param1)
+		{
+			return j;
+		}
 	}
 	return open.size();
 }
@@ -125,18 +131,20 @@ void closeOpenNotes(MidiClip* clip, const std::vector<OpenNote>& open, tick_t wi
 
 
 RetroMidiClipWrite writeWindowToClip(MidiClip* clip, const RetroMidiEvent* events,
-	std::size_t count, tick_t windowStartTick)
+	std::size_t count, tick_t windowStartTick, std::optional<tick_t> windowEndTick)
 {
 	RetroMidiClipWrite result;
 	result.windowStart = windowStartTick;
 	result.windowEnd = windowStartTick;
 	if (clip == nullptr || events == nullptr || count == 0) { return result; }
 
-	result.windowEnd = windowEndOf(events, count, windowStartTick);
+	result.windowEnd = windowEndOf(events, count,
+		std::max(windowStartTick, windowEndTick.value_or(windowStartTick)));
 
-	// Open notes, oldest first. Matching is per (channel, key) and FIFO, so two
-	// strikes of one key (a repeated note whose first release is late) produce
-	// two notes rather than one note of the wrong length.
+	// Open notes, oldest first. Matching is per (source, channel, key) and FIFO,
+	// so two strikes of one key (a repeated note whose first release is late)
+	// produce two notes rather than one note of the wrong length, and two ports
+	// playing the same channel and key never close each other's note.
 	std::vector<OpenNote> open;
 
 	for (std::size_t i = 0; i < count; ++i)
@@ -151,7 +159,7 @@ RetroMidiClipWrite writeWindowToClip(MidiClip* clip, const RetroMidiEvent* event
 
 		if (!isRelease(event))
 		{
-			open.push_back(OpenNote{static_cast<tick_t>(event.tick), event.channel,
+			open.push_back(OpenNote{static_cast<tick_t>(event.tick), event.source, event.channel,
 				event.param1, event.param2});
 			continue;
 		}

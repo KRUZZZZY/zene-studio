@@ -58,6 +58,7 @@
 
 #include "DawProjectInterchange.h"
 #include "DawProjectReadShared.h"
+#include "InstrumentMidiParts.h"
 
 namespace lmms
 {
@@ -67,40 +68,103 @@ namespace readdetail
 {
 
 
-void parseNotes(QXmlStreamReader& reader, ReadState& state, DawProjectClip* clip)
+//! The reader's MIDI fields must fit both the format's normalized values and
+//! the engine's fixed key and MIDI-channel domains before the session scales them.
+QString noteFieldRangeError(const DawProjectNote& note)
 {
-	// The unit that matters is the one in force where the NOTES are, which the
-	// format's own example leaves to the enclosing lanes.
-	if (state.timeUnit == QLatin1String("seconds"))
+	if (note.channel < 0 || note.channel >= InstrumentMidiParts::Channels)
 	{
-		if (state.error.isEmpty())
+		return QStringLiteral("the <Note> channel is outside the supported range 0..15");
+	}
+	if (note.key < 0 || note.key >= NumKeys)
+	{
+		return QStringLiteral("the <Note> key is outside the supported range 0..127");
+	}
+	if (note.vel < 0.0 || note.vel > 1.0)
+	{
+		return QStringLiteral("the <Note> vel is outside the supported range 0..1");
+	}
+	if (note.rel < 0.0 || note.rel > 1.0)
+	{
+		return QStringLiteral("the <Note> rel is outside the supported range 0..1");
+	}
+	return {};
+}
+
+//! Refuse clip and note endpoints past tick_t; never wrap them or silently alter the document.
+qint64 durationWithinTickRange(ReadState& state, qint64 startTicks, qint64 durationTicks,
+	const QString& kind)
+{
+	const qint64 room = static_cast<qint64>(std::numeric_limits<tick_t>::max()) - startTicks;
+	if (durationTicks <= room) { return durationTicks; }
+	if (state.error.isEmpty())
+	{
+		state.error = QStringLiteral("the %1 start plus duration exceeds the engine's tick range").arg(kind);
+	}
+	return 0;
+}
+
+//! A <Notes> timeline whose timeUnit this module cannot place: say why once, then skip the element.
+void refuseNotesTimeUnit(QXmlStreamReader& reader, ReadState& state)
+{
+	if (state.error.isEmpty())
+	{
+		if (state.timeUnit == QLatin1String("seconds"))
 		{
 			state.error = QStringLiteral("a <Notes> timeline declares timeUnit=\"seconds\"; this "
 				"module places notes on a beat grid and will not guess the tempo curve that would "
 				"convert them");
 		}
-		skipElement(reader);
+		else
+		{
+			state.error = QStringLiteral("a <Notes> timeline declares unsupported timeUnit=\"%1\"; "
+				"this module supports only timeUnit=\"beats\"").arg(state.timeUnit);
+		}
+	}
+	skipElement(reader);
+}
+
+//! Read one <Note> element into @a clip; a field out of range is counted, not written.
+void parseNoteElement(QXmlStreamReader& reader, ReadState& state, DawProjectClip* clip)
+{
+	const QXmlStreamAttributes attributes = reader.attributes();
+	const double duration = doubleAttribute(attributes, state, QStringLiteral("duration"), 0.0);
+	if (duration < 0.0)
+	{
+		if (state.error.isEmpty()) { state.error = QStringLiteral("a <Note> has a negative duration"); }
 		return;
 	}
+	const qint64 startTicks = ticksFromBeats(state,
+		doubleAttribute(attributes, state, QStringLiteral("time"), 0.0));
+	const qint64 durationTicks = durationWithinTickRange(state, startTicks,
+		ticksFromBeats(state, duration), QStringLiteral("note"));
+	DawProjectNote note;
+	note.time = static_cast<double>(startTicks) / DawProjectTicksPerQuarterNote;
+	note.duration = static_cast<double>(durationTicks) / DawProjectTicksPerQuarterNote;
+	note.channel = intAttribute(attributes, state, QStringLiteral("channel"), 0);
+	note.key = intAttribute(attributes, state, QStringLiteral("key"), 60);
+	note.vel = doubleAttribute(attributes, state, QStringLiteral("vel"), 0.5);
+	note.rel = doubleAttribute(attributes, state, QStringLiteral("rel"), note.vel);
+	const QString rangeError = noteFieldRangeError(note);
+	if (!rangeError.isEmpty())
+	{
+		if (state.error.isEmpty()) { state.error = rangeError; }
+	}
+	else { clip->notes.append(note); }
+}
+
+void parseNotes(QXmlStreamReader& reader, ReadState& state, DawProjectClip* clip)
+{
+	// The unit that matters is the one in force where the NOTES are, which the
+	// format's own example leaves to the enclosing lanes.
+	if (state.timeUnit != QLatin1String(DawProjectTimeUnit)) { refuseNotesTimeUnit(reader, state); return; }
 	while (!reader.atEnd())
 	{
 		reader.readNext();
 		if (reader.isEndElement() && reader.name() == QLatin1String("Notes")) { break; }
 		if (!reader.isStartElement()) { continue; }
 		if (reader.name() != QLatin1String("Note")) { skipElement(reader); continue; }
-		const QXmlStreamAttributes attributes = reader.attributes();
-		DawProjectNote note;
-		note.time = static_cast<double>(ticksFromBeats(state,
-			doubleAttribute(attributes, state, QStringLiteral("time"), 0.0)))
-			/ DawProjectTicksPerQuarterNote;
-		note.duration = static_cast<double>(ticksFromBeats(state,
-			doubleAttribute(attributes, state, QStringLiteral("duration"), 0.0)))
-			/ DawProjectTicksPerQuarterNote;
-		note.channel = intAttribute(attributes, state, QStringLiteral("channel"), 0);
-		note.key = intAttribute(attributes, state, QStringLiteral("key"), 60);
-		note.vel = doubleAttribute(attributes, state, QStringLiteral("vel"), 0.5);
-		note.rel = doubleAttribute(attributes, state, QStringLiteral("rel"), note.vel);
-		clip->notes.append(note);
+		parseNoteElement(reader, state, clip);
 	}
 }
 
@@ -125,13 +189,13 @@ void parseClips(QXmlStreamReader& reader, ReadState& state)
 			continue;
 		}
 		const QXmlStreamAttributes attributes = reader.attributes();
+		const qint64 startTicks = ticksFromBeats(state,
+			doubleAttribute(attributes, state, QStringLiteral("time"), 0.0));
+		const qint64 durationTicks = ticksFromBeats(state,
+			doubleAttribute(attributes, state, QStringLiteral("duration"), 0.0));
 		DawProjectClip clip;
-		clip.time = static_cast<double>(ticksFromBeats(state,
-			doubleAttribute(attributes, state, QStringLiteral("time"), 0.0)))
-			/ DawProjectTicksPerQuarterNote;
-		clip.duration = static_cast<double>(ticksFromBeats(state,
-			doubleAttribute(attributes, state, QStringLiteral("duration"), 0.0)))
-			/ DawProjectTicksPerQuarterNote;
+		clip.time = static_cast<double>(startTicks) / DawProjectTicksPerQuarterNote;
+		clip.duration = static_cast<double>(durationTicks) / DawProjectTicksPerQuarterNote;
 		clip.playStart = static_cast<double>(ticksFromBeats(state,
 			doubleAttribute(attributes, state, QStringLiteral("playStart"), 0.0)))
 			/ DawProjectTicksPerQuarterNote;
@@ -147,7 +211,7 @@ void parseClips(QXmlStreamReader& reader, ReadState& state)
 			reader.readNext();
 			if (reader.isEndElement() && reader.name() == QLatin1String("Clip")) { break; }
 			if (!reader.isStartElement()) { continue; }
-			const QStringView child = reader.name();
+			const auto child = reader.name();  // QStringRef on Qt 5, QStringView on Qt 6
 			if (child == QLatin1String("Notes"))
 			{
 				hasNotes = true;
@@ -165,6 +229,8 @@ void parseClips(QXmlStreamReader& reader, ReadState& state)
 		}
 		if (hasNotes)
 		{
+			clip.duration = static_cast<double>(durationWithinTickRange(state, startTicks,
+				durationTicks, QStringLiteral("clip"))) / DawProjectTicksPerQuarterNote;
 			state.model->tracks[state.currentTrack].clips.append(clip);
 		}
 		else if (clip.duration > 0.0)
@@ -210,7 +276,7 @@ void parseLanes(QXmlStreamReader& reader, ReadState& state)
 		reader.readNext();
 		if (reader.isEndElement() && reader.name() == QLatin1String("Lanes")) { break; }
 		if (!reader.isStartElement()) { continue; }
-		const QStringView element = reader.name();
+		const auto element = reader.name();  // QStringRef on Qt 5, QStringView on Qt 6
 		if (element == QLatin1String("Lanes")) { parseNestedLanes(reader, state); }
 		else if (element == QLatin1String("Clips")) { parseClips(reader, state); }
 		else if (element == QLatin1String("Notes") || element == QLatin1String("ClipSlot")
@@ -223,6 +289,83 @@ void parseLanes(QXmlStreamReader& reader, ReadState& state)
 		else { skipElement(reader); }
 	}
 }
+
+	//! The format declares a channel value as a RealParameter carrying its own
+	//! unit and bounds on the element (`<Volume unit="linear" min="0" max="2"
+	//! value="1">`, docs/DAWPROJECT-INTERCHANGE.md:193/198) - the bounds belong to
+	//! the DOCUMENT, so a foreign writer may declare any range. A value outside the
+	//! element's declared bounds is not a value the document can mean: a format-range
+	//! error naming the declared bound. An absent min/max declares no format bound;
+	//! the models' own reach (the mixer fader 0..2, the track volume 0..200/100, the
+	//! panning model -100..100/200) is checked separately, as an import-compatibility
+	//! error - the two refusals are kept distinct. A min/max that is PRESENT but
+	//! empty declares a malformed bound, not an absent one: refused through the
+	//! same malformed-attribute rule that refuses `min="abc"`.
+	inline void refusePresentEmptyBound(ReadState& state, const QXmlStreamAttributes& attributes,
+		const QString& name)
+	{
+		if (attributes.hasAttribute(name) && attribute(attributes, name).isEmpty())
+		{
+			malformedNumericAttribute(state, name, QString());
+		}
+	}
+
+	inline void declaredChannelBounds(ReadState& state, const QXmlStreamAttributes& attributes,
+		const QString& name, double value, double modelMin, double modelMax)
+	{
+		if (!state.error.isEmpty()) { return; }
+		refusePresentEmptyBound(state, attributes, QStringLiteral("min"));
+		refusePresentEmptyBound(state, attributes, QStringLiteral("max"));
+		const QString minText = attribute(attributes, QStringLiteral("min"));
+		const QString maxText = attribute(attributes, QStringLiteral("max"));
+		const double lowest = doubleAttribute(attributes, state, QStringLiteral("min"), modelMin);
+		const double highest = doubleAttribute(attributes, state, QStringLiteral("max"), modelMax);
+		if (!state.error.isEmpty()) { return; }
+		if (!minText.isEmpty() && value < lowest)
+		{
+			state.error = QStringLiteral("the channel %1 carries %2, below the document's declared "
+				"minimum %3").arg(name).arg(value).arg(lowest);
+			return;
+		}
+		if (!maxText.isEmpty() && value > highest)
+		{
+			state.error = QStringLiteral("the channel %1 carries %2, above the document's declared "
+				"maximum %3").arg(name).arg(value).arg(highest);
+			return;
+		}
+		if (value < modelMin || value > modelMax)
+		{
+			state.error = QStringLiteral("the channel %1 carries %2, which Zene's models cannot hold - "
+				"their reach is %3..%4 - an import-compatibility refusal")
+				.arg(name).arg(value).arg(modelMin).arg(modelMax);
+		}
+	}
+
+	//! The unit a RealParameter declares must be one Zene's models speak: the writer
+	//! emits `linear` for Volume and `normalized` for Pan; the schema REQUIRES the
+	//! attribute, so a missing or empty unit is refused outright - the value has no
+	//! declared meaning - and a foreign one (say `decibel`, a valid schema unit the
+	//! models do not speak) means the value is not one the models can convert - an
+	//! import-compatibility refusal, kept distinct from a format-range one.
+	inline void declaredChannelUnit(ReadState& state, const QXmlStreamAttributes& attributes,
+		const QString& name, const QString& modelUnit)
+	{
+		if (!state.error.isEmpty()) { return; }
+		const QString unit = attribute(attributes, QStringLiteral("unit"));
+		if (unit.isEmpty())
+		{
+			state.error = QStringLiteral("the channel %1 carries no unit; the format requires every "
+				"RealParameter to declare one, so its value has no declared meaning").arg(name);
+			return;
+		}
+		if (unit != modelUnit)
+		{
+			state.error = QStringLiteral("the channel %1 declares unit \"%2\"; Zene's models read "
+				"%3 as \"%4\" and cannot convert the difference - an import-compatibility refusal")
+				.arg(name).arg(unit).arg(name).arg(modelUnit);
+		}
+	}
+
 
 /*! The values of one <Channel>, whether it sits inside a <Track> (the track's
  *  own strip) or directly in <Structure> (a mixer strip). The format gives both
@@ -253,28 +396,32 @@ ChannelValues parseChannel(QXmlStreamReader& reader, ReadState& state)
 	values.role = attribute(attributes, QStringLiteral("role"));
 	values.destination = attribute(attributes, QStringLiteral("destination"));
 	values.audioChannels = intAttribute(attributes, state, QStringLiteral("audioChannels"), 2);
-	values.solo = flagAttribute(attributes, QStringLiteral("solo"));
+	values.solo = flagAttribute(attributes, state, QStringLiteral("solo"));
 
 	while (!reader.atEnd())
 	{
 		reader.readNext();
 		if (reader.isEndElement() && reader.name() == QLatin1String("Channel")) { break; }
 		if (!reader.isStartElement()) { continue; }
-		const QStringView child = reader.name();
+		const auto child = reader.name();  // QStringRef on Qt 5, QStringView on Qt 6
 		const QXmlStreamAttributes childAttributes = reader.attributes();
 		if (child == QLatin1String("Volume"))
 		{
 			values.hasVolume = true;
 			values.volume = doubleAttribute(childAttributes, state, QStringLiteral("value"), 1.0);
+			declaredChannelUnit(state, childAttributes, QStringLiteral("Volume"), QStringLiteral("linear"));
+			declaredChannelBounds(state, childAttributes, QStringLiteral("Volume"), values.volume, 0.0, 2.0);
 		}
 		else if (child == QLatin1String("Mute"))
 		{
-			values.mute = flagAttribute(childAttributes, QStringLiteral("value"));
+			values.mute = flagAttribute(childAttributes, state, QStringLiteral("value"));
 		}
 		else if (child == QLatin1String("Pan"))
 		{
 			values.hasPan = true;
 			values.pan = doubleAttribute(childAttributes, state, QStringLiteral("value"), 0.5);
+			declaredChannelUnit(state, childAttributes, QStringLiteral("Pan"), QStringLiteral("normalized"));
+			declaredChannelBounds(state, childAttributes, QStringLiteral("Pan"), values.pan, 0.0, 1.0);
 		}
 		else if (child == QLatin1String("Sends"))
 		{
@@ -340,7 +487,7 @@ void parseTrack(QXmlStreamReader& reader, ReadState& state, int depth)
 		reader.readNext();
 		if (reader.isEndElement() && reader.name() == QLatin1String("Track")) { break; }
 		if (!reader.isStartElement()) { continue; }
-		const QStringView element = reader.name();
+		const auto element = reader.name();  // QStringRef on Qt 5, QStringView on Qt 6
 		if (element == QLatin1String("Channel"))
 		{
 			const ChannelValues values = parseChannel(reader, state);

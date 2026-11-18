@@ -1,5 +1,5 @@
 /*
- * UndoHonestyTest.cpp - W1 (0.5.0 catch-up): undo and redo say what really happened, and a gesture is one step
+ * UndoHonestyTest.cpp - W1 (0.5.0 catch-up): undo and redo say what really happened, and a gesture is one step (state and key-name tests: UndoHonestyStateTest.cpp)
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -25,17 +25,33 @@
 /*! W1: control.redo reports a device it could not re-create as control.undo does; a record whose inverse is the journal
  *  but whose call left no step there is refused rather than unwinding an older edit (E19); Copy to Channels (plugin.copy /
  *  chain.copy with a list of destinations) is one undo step; rack.remove_chain of the last chain is undone with its
- *  devices; rack.macro_set_pair sets two macros as one step; track.set_arm_many arms as one step; undoing controller.map
- *  over an LFO connection puts the LFO back; note.pitch_curve_set's before-state names every note's curve. */
+ *  devices; rack.macro_set_pair sets two macros as one step; Arm All cannot claim to undo take files it leaves behind;
+ *  undoing controller.map over an LFO connection puts the LFO back; note.pitch_curve_set's before-state names every
+ *  note's curve. */
 
 #include <QtTest>
 
+#include <cmath>
+#include <cstring>
+#include <new>
+
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstring>
+#include <new>
+
 #include <QFile>
+#include <QDomDocument>
 #include <QJsonArray>
+#include <QScopeGuard>
 #include <QStringList>
+#include <QTemporaryDir>
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "ConfigManager.h"
+#include "ControlDeviceSupport.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -51,14 +67,44 @@
 #include "MidiController.h"
 #include "Mixer.h"
 #include "Note.h"
+#include "Oscillator.h"
 #include "ProjectJournal.h"
 #include "Rack.h"
+#include "ReversibilityTestSupport.h"
 #include "Song.h"
+#include "TrackKeyNames.h"
 
 using namespace lmms;
 
 namespace
 {
+
+//! A local effect lets the journal's load inverse run without any discovered plugin modules.
+class UndoHonestyEffect final : public Effect
+{
+public:
+	explicit UndoHonestyEffect(EffectChain* parent) : Effect{&s_descriptor, parent, nullptr} {}
+	EffectControls* controls() override { return nullptr; }
+
+protected:
+	ProcessStatus processImpl(SampleFrame*, f_cnt_t) override { return ProcessStatus::Continue; }
+
+private:
+	static const Plugin::Descriptor s_descriptor;
+};
+
+const Plugin::Descriptor UndoHonestyEffect::s_descriptor
+{
+	"undohonestytest",
+	"Undo honesty test effect",
+	"Effect used by UndoHonestyTest",
+	"Zene Studio",
+	0x0100,
+	Plugin::Type::Effect,
+	nullptr,
+	nullptr,
+	nullptr
+};
 
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
@@ -204,6 +250,37 @@ private slots:
 		Engine::projectJournal()->undo();  // the test's own step off the stack again
 	}
 
+	//! An effect-load redo reports when its recorded plugin module is unavailable.
+	void redoReportsLoadedEffectItCannotInstantiate()
+	{
+		EffectChain* chain = &chainOf(4);
+		QVERIFY(chain->effects().empty());
+		Effect* loaded = new UndoHonestyEffect(chain);
+		chain->appendEffect(loaded);
+
+		ControlDeviceEntry unavailable;
+		unavailable.name = QStringLiteral("unavailable_effect_module");
+		unavailable.format = QStringLiteral("builtin");
+		unavailable.kind = QStringLiteral("effect");
+		unavailable.loadable = true;
+		control::journalEffectLoad(chain, loaded, unavailable, 0);
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(chain->effects().empty());
+		const ControlResult redo = run(QStringLiteral("control.redo"));
+		const bool effectStillAbsent = chain->effects().empty();
+
+		// Move this action back off the undo stack, leaving older history alone.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(chain->effects().empty());
+
+		QVERIFY2(!redo.ok, "control.redo answered success when an effect-load callback could not instantiate its plugin");
+		QCOMPARE(redo.errorKind, ControlErrorKind::NotFound);
+		QVERIFY2(redo.errorMessage.contains(QStringLiteral("NOT restored")), qPrintable(redo.errorMessage));
+		QVERIFY2(redo.errorMessage.contains(QStringLiteral("redo")), qPrintable(redo.errorMessage));
+		QVERIFY(effectStillAbsent);
+	}
+
 	//! E19: a record whose inverse is the journal, from a call that pushed no step, is refused - the older edit stays.
 	void anUnjournalledRecordIsRefusedNotMisattributed()
 	{
@@ -325,9 +402,14 @@ private slots:
 		QVERIFY(std::abs(macroValue(channel, x) - x0) < 1e-4);
 	}
 
-	//! Arm All: one track.set_arm_many is ONE undo step that disarms exactly what it armed.
-	void armingSeveralTracksIsOneStep()
+	//! Arm All cannot be undone because its take files remain after capture stops.
+	void armAllRefusesUndoThatWouldLeaveItsTakesBehind()
 	{
+		// The default takes sit beside the working directory's recovery file: keep them in a private folder.
+		QTemporaryDir takes;
+		QVERIFY(takes.isValid());
+		const auto restoreDir = qScopeGuard([previous = ConfigManager::inst()->workingDir()] { ConfigManager::inst()->setWorkingDir(previous); });
+		ConfigManager::inst()->setWorkingDir(takes.path());
 		QJsonArray tracks;
 		for (int i = 0; i < 3; ++i)
 		{
@@ -344,15 +426,17 @@ private slots:
 		QCOMPARE(run(QStringLiteral("track.set_arm_many"), {{QStringLiteral("tracks"), tracks}, {QStringLiteral("armed"), true}}).errorKind,
 			ControlErrorKind::Busy);
 		const ControlResult undo = run(QStringLiteral("control.undo"));
-		QVERIFY2(undo.ok, qPrintable(undo.errorMessage));
-		QCOMPARE(undo.result.value(QStringLiteral("restored_by")).toString(), QStringLiteral("track.set_arm_many"));
-		for (const QJsonValue& id : tracks) { QVERIFY(!control::trackRecordArmed(control::resolveTrack(id.toString(), &error))); }
-		for (const QJsonValue& route : armed.result.value(QStringLiteral("routes")).toArray())  // the takes stay on disk: tidy up
-		{
-			QFile::remove(route.toObject().value(QStringLiteral("file")).toString());
-		}
-		QCOMPARE(run(QStringLiteral("track.set_arm_many"), {{QStringLiteral("tracks"), QJsonArray{}}, {QStringLiteral("armed"), true}}).errorKind,
-			ControlErrorKind::InvalidArgs);
+		const QJsonArray routes = armed.result.value(QStringLiteral("routes")).toArray();
+		bool tracksStillArmed = true, takesRemain = true;
+		for (const QJsonValue& id : tracks) { tracksStillArmed = tracksStillArmed && control::trackRecordArmed(control::resolveTrack(id.toString(), &error)); }
+		for (const QJsonValue& route : routes) { takesRemain = takesRemain && QFile::exists(route.toObject().value(QStringLiteral("file")).toString()); }
+		// Stop each route on either implementation, so a RED run leaves no capture running.
+		for (const QJsonValue& route : routes) { QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), route.toObject().value(QStringLiteral("route")).toInt()}}).ok); }
+		QVERIFY2(!undo.ok, "control.undo claimed it could remove the takes from track.set_arm_many");
+		QCOMPARE(undo.errorKind, ControlErrorKind::Irreversible);
+		QVERIFY2(undo.errorMessage.contains(QStringLiteral("track.set_arm_many")), qPrintable(undo.errorMessage));
+		QVERIFY2(tracksStillArmed && takesRemain, "a refused undo changed the tracks or took the takes away");
+		QCOMPARE(run(QStringLiteral("track.set_arm_many"), {{QStringLiteral("tracks"), QJsonArray{}}, {QStringLiteral("armed"), true}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
 	//! A map over an LFO connection: undo puts the LFO back (it used to leave the parameter unconnected).
@@ -372,6 +456,107 @@ private slots:
 		QCOMPARE(track->volumeModel()->controllerConnection()->getController(), static_cast<Controller*>(lfo));
 		QVERIFY(run(QStringLiteral("control.redo")).ok);
 		QVERIFY(dynamic_cast<MidiController*>(track->volumeModel()->controllerConnection()->getController()) != nullptr);
+	}
+
+	//! note.add without velocity records the same default the newly created note uses.
+	void noteAddWithoutVelocityRecordsTheDefaultVelocity()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		const QString clipId = control::clipIdOf(clip);
+
+		const ControlResult added = run(QStringLiteral("note.add"),
+			{{QStringLiteral("clip"), clipId}, {QStringLiteral("key"), 60},
+				{QStringLiteral("position"), 0}, {QStringLiteral("length"), 24}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		QCOMPARE(added.result.value(QStringLiteral("velocity")).toInt(), static_cast<int>(DefaultVolume));
+
+		const QJsonObject transaction = lastRecord();
+		QCOMPARE(transaction.value(QStringLiteral("command")).toString(), QStringLiteral("note.add"));
+		const QJsonObject note = transaction.value(QStringLiteral("before")).toObject()
+			.value(QStringLiteral("notes")).toObject();
+		QVERIFY(!note.isEmpty());
+		QCOMPARE(note.value(QStringLiteral("velocity")).toInt(),
+			static_cast<int>(DefaultVolume));
+	}
+
+	//! The soft-takeover point is part of the binding: undoing a remap puts the OLD binding back, custom target included.
+	void undoingARemapKeepsTheSoftTakeoverTarget()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		// Named, because the parameter is addressed by its display name and an unnamed
+		// track shares that name with every other one the earlier cases created.
+		track->setName(QStringLiteral("TakeoverTarget"));
+		AutomatableModel* volume = track->volumeModel();
+		const ControlResult mapped = run(QStringLiteral("controller.map"), {{QStringLiteral("target"), volume->fullDisplayName()},
+			{QStringLiteral("controller"), 21}, {QStringLiteral("soft_takeover"), true}});
+		QVERIFY2(mapped.ok, qPrintable(mapped.errorMessage));
+		auto* bound = dynamic_cast<MidiController*>(volume->controllerConnection()->getController());
+		QVERIFY(bound != nullptr);
+		bound->setSoftTakeoverTarget(0.75f);
+		QCOMPARE(bound->softTakeoverTarget(), 0.75f);
+
+		// Remap the same parameter elsewhere: the fresh binding starts from the default point.
+		const ControlResult remapped = run(QStringLiteral("controller.map"), {{QStringLiteral("target"), volume->fullDisplayName()},
+			{QStringLiteral("controller"), 22}});
+		QVERIFY2(remapped.ok, qPrintable(remapped.errorMessage));
+		auto* moved = dynamic_cast<MidiController*>(volume->controllerConnection()->getController());
+		QVERIFY(moved != nullptr);
+		QCOMPARE(moved->midiPort().inputController(), 22);
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		auto* restored = dynamic_cast<MidiController*>(volume->controllerConnection()->getController());
+		QVERIFY(restored != nullptr);
+		QCOMPARE(restored->midiPort().inputController(), 21);
+		QVERIFY2(restored->softTakeoverEnabled(), "undoing the remap must restore the flag, not only the address");
+		QCOMPARE(restored->softTakeoverTarget(), 0.75f);
+	}
+
+	//! The first WhiteNoise buffer has a fresh, finite sample instead of reading the uninitialized hold.
+	void whiteNoiseLfoStartsWithASampledValue()
+	{
+		alignas(LfoController) unsigned char storage[sizeof(LfoController)];
+		std::memset(storage, 0xFF, sizeof(storage));
+		auto* lfo = new (storage) LfoController(nullptr);
+		QDomDocument document;
+		QDomElement settings = document.createElement(QStringLiteral("lfocontroller"));
+		settings.setAttribute(QStringLiteral("type"), static_cast<int>(Controller::ControllerType::Lfo));
+		settings.setAttribute(QStringLiteral("wave"), static_cast<int>(Oscillator::WaveShape::WhiteNoise));
+		lfo->loadSettings(settings);
+		Controller::triggerFrameCounter();
+		const float firstValue = lfo->valueBuffer()->values()[0];
+		lfo->~LfoController();
+		QVERIFY(std::isfinite(firstValue));
+		QVERIFY(firstValue != 0.5f);
+	}
+
+	//! WhiteNoise's first evaluated sample is initialized before the oscillator phase wraps.
+	void whiteNoiseStartsWithAValidHeldSample()
+	{
+		alignas(LfoController) std::array<std::byte, sizeof(LfoController)> storage;
+		std::memset(storage.data(), 0xff, storage.size());
+		auto* lfo = new (storage.data()) LfoController(nullptr);
+		struct LfoCleanup
+		{
+			LfoController* lfo;
+			~LfoCleanup() { lfo->~LfoController(); }
+		} cleanup{lfo};
+
+		QDomDocument settingsDocument;
+		QDomElement settings = settingsDocument.createElement(QStringLiteral("controller"));
+		settings.setAttribute(QStringLiteral("wave"), static_cast<int>(Oscillator::WaveShape::WhiteNoise));
+		lfo->loadSettings(settings);
+
+		Controller::triggerFrameCounter();
+		const ValueBuffer* values = lfo->valueBuffer();
+		QVERIFY(values != nullptr);
+		QVERIFY(values->length() > 0);
+		const float firstSample = values->value(0);
+		QVERIFY(std::isfinite(firstSample));
+		QVERIFY(firstSample >= 0.0f && firstSample <= 1.0f);
 	}
 
 	//! note.pitch_curve_set over several notes: the before-state names each note's curve, not only the first one's.
@@ -432,16 +617,6 @@ private slots:
 		QCOMPARE(devicesOn(track), boosted);
 		QVERIFY(redone());  // ...and its redo takes that one out again
 		QVERIFY(devicesOn(track).isEmpty());
-	}
-
-	//! E19: no record names an "UNIMPLEMENTED" inverse any more - a real one, or an honest one-way record.
-	void noRecordNamesAnUnimplementedInverse()
-	{
-		for (const QJsonValue& record : run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray())
-		{
-			const QString op = record.toObject().value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString();
-			QVERIFY2(!op.contains(QStringLiteral("UNIMPLEMENTED")), qPrintable(op));
-		}
 	}
 };
 

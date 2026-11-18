@@ -42,7 +42,9 @@ float LocalFileMng::readXmlFloat( QDomNode node , const QString& nodeName, float
 	
 	if( !node.isNull() && !element.isNull() ){
 		if(  !element.text().isEmpty() ){
-			return c_locale.toFloat(element.text());
+			bool conversionOk = false;
+			const float value = c_locale.toFloat(element.text(), &conversionOk);
+			return conversionOk ? value : defaultValue;
 		} else {
 			if ( !bCanBeEmpty ) {
 				//_WARNINGLOG( "Using default value in " + nodeName );
@@ -64,7 +66,9 @@ int LocalFileMng::readXmlInt( QDomNode node , const QString& nodeName, int defau
 	
 	if( !node.isNull() && !element.isNull() ){
 		if(  !element.text().isEmpty() ){
-			return c_locale.toInt( element.text() );
+			bool conversionOk = false;
+			const int value = c_locale.toInt(element.text(), &conversionOk);
+			return conversionOk ? value : defaultValue;
 		} else {
 			if ( !bCanBeEmpty ) {
 				//_WARNINGLOG( "Using default value in " + nodeName );
@@ -87,8 +91,10 @@ bool LocalFileMng::readXmlBool( QDomNode node , const QString& nodeName, bool de
 		if(  !element.text().isEmpty() ){
 			if( element.text() == "true"){
 				return true;
-			} else {
+			} else if( element.text() == "false") {
 				return false;
+			} else {
+				return defaultValue;
 			}
 		} else {
 			//_WARNINGLOG( "Using default value in " + nodeName );
@@ -129,12 +135,12 @@ void LocalFileMng::convertFromTinyXMLString( QByteArray* str )
 	 * So, when we know that TinyXML wrote the file, we can
 	 * simply exchange these hex sequences to literal bytes.
 	 */
-	int pos = 0;
-
-	pos = str->indexOf("&#x");
+	int searchFrom = 0;
+	int pos = str->indexOf("&#x", searchFrom);
 	while( pos != -1 ) {
-		if( isxdigit(str->at(pos+3))
-		    && isxdigit(str->at(pos+4))
+		if( str->size() - pos >= 6
+		    && isxdigit(static_cast<unsigned char>(str->at(pos+3)))
+		    && isxdigit(static_cast<unsigned char>(str->at(pos+4)))
 		    && (str->at(pos+5) == ';') ) {
 			char w1 = str->at(pos+3);
 			char w2 = str->at(pos+4);
@@ -151,8 +157,11 @@ void LocalFileMng::convertFromTinyXMLString( QByteArray* str )
 			(*str)[pos] = ch;
 			++pos;
 			str->remove(pos, 5);
+			searchFrom = pos - 1;
+		} else {
+			searchFrom = pos + 3;
 		}
-		pos = str->indexOf("&#x");
+		pos = str->indexOf("&#x", searchFrom);
 	}
 }
 

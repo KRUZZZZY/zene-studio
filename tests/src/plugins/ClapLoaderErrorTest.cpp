@@ -36,15 +36,22 @@
  *   4. A current entry point whose init() returns false is EntryInitFailed, and
  *      its deinit() is NOT called (nothing was initialized to undo).
  *   5. A current entry point with no plugin factory is FactoryMissing.
- *   6. The module fixture from ClapHostTest still loads: Code::None, so the
+ *   6. A current entry point whose required callbacks are null is EntryInvalid,
+ *      and neither init() nor get_factory() is called on it -- a malformed
+ *      callback table is a typed refusal, not a jump to address zero.
+ *   7. The module fixture from ClapHostTest still loads: Code::None, so the
  *      typed path does not fire on success.
- *   7. Every code is distinct from every other code, has a non-empty stable
+ *   8. Every code is distinct from every other code, has a non-empty stable
  *      token and a non-empty summary, and the tokens are one-to-one.
- *   8. The scan path (listClasses) reports the SAME code as the instance path
+ *   9. The scan path (listClasses) reports the SAME code as the instance path
  *      (HostedPlugin::load) for the same module -- a plug-in directory scan and
  *      a load attempt cannot disagree about why a module was rejected.
- *   9. The sentences stay the ones the product already shows: this task added a
+ *   10. The sentences stay the ones the product already shows: this task added a
  *      type to the failures, it did not reword them under the user.
+ *   11. A module whose factory is present but missing one of its three required
+ *       callbacks is FactoryInvalid -- on the ladder, the instance path and the
+ *       scan path alike -- and the factory is not kept, so nothing from it is
+ *       ever called.
  *
  * The subjects are real modules built from tests/data/clap-test-plugin/
  * clap-test-broken.c, one per fault, so the faults are structural and a wrong
@@ -87,6 +94,18 @@
 #ifndef CLAP_TEST_BROKEN_NO_FACTORY_PATH
 #define CLAP_TEST_BROKEN_NO_FACTORY_PATH ""
 #endif
+#ifndef CLAP_TEST_BROKEN_NULL_CALLBACK_PATH
+#define CLAP_TEST_BROKEN_NULL_CALLBACK_PATH ""
+#endif
+#ifndef CLAP_TEST_BROKEN_NULL_FACTORY_COUNT_PATH
+#define CLAP_TEST_BROKEN_NULL_FACTORY_COUNT_PATH ""
+#endif
+#ifndef CLAP_TEST_BROKEN_NULL_FACTORY_DESCRIPTOR_PATH
+#define CLAP_TEST_BROKEN_NULL_FACTORY_DESCRIPTOR_PATH ""
+#endif
+#ifndef CLAP_TEST_BROKEN_NULL_FACTORY_CREATE_PATH
+#define CLAP_TEST_BROKEN_NULL_FACTORY_CREATE_PATH ""
+#endif
 
 namespace lmms::clap
 {
@@ -100,6 +119,10 @@ constexpr const char* NoSymbolModulePath = CLAP_TEST_BROKEN_NO_SYMBOL_PATH;
 constexpr const char* OldVersionModulePath = CLAP_TEST_BROKEN_OLD_VERSION_PATH;
 constexpr const char* InitFailsModulePath = CLAP_TEST_BROKEN_INIT_FAILS_PATH;
 constexpr const char* NoFactoryModulePath = CLAP_TEST_BROKEN_NO_FACTORY_PATH;
+constexpr const char* NullCallbackModulePath = CLAP_TEST_BROKEN_NULL_CALLBACK_PATH;
+constexpr const char* NullFactoryCountModulePath = CLAP_TEST_BROKEN_NULL_FACTORY_COUNT_PATH;
+constexpr const char* NullFactoryDescriptorModulePath = CLAP_TEST_BROKEN_NULL_FACTORY_DESCRIPTOR_PATH;
+constexpr const char* NullFactoryCreateModulePath = CLAP_TEST_BROKEN_NULL_FACTORY_CREATE_PATH;
 
 //! The plug-in id inside the good fixture.
 constexpr const char* GoodPluginId = "org.lmms.test.clap-gain";
@@ -129,10 +152,13 @@ private slots:
 	void testGoodModuleHasNoFailure();
 	void testUnopenableFileIsLibraryUnavailable();
 	void testJunkFileIsLibraryUnavailable();
+	void testBundleDirectoryLoadsItsContentsBinary();
 	void testNoSymbolIsSymbolMissing();
 	void testOldVersionIsVersionUnsupported();
 	void testInitFailureIsEntryInitFailed();
 	void testMissingFactoryIsFactoryMissing();
+	void testNullCallbacksAreEntryInvalid();
+	void testNullFactoryCallbackIsFactoryInvalid();
 	void testUnknownIdIsPluginNotFound();
 	void testFailuresAreDistinctCodes();
 	void testEveryCodeHasAStableToken();
@@ -166,7 +192,7 @@ void ClapLoaderErrorTest::initTestCase()
 			"from the pinned CLAP headers and configure with -DLMMS_CLAP_PATH=<checkout>)");
 	}
 	for (const auto* path : {NoSymbolModulePath, OldVersionModulePath, InitFailsModulePath,
-			NoFactoryModulePath})
+			NoFactoryModulePath, NullCallbackModulePath})
 	{
 		QVERIFY2(QFileInfo::exists(QString::fromLatin1(path)),
 			qPrintable(QStringLiteral("the one-fault fixture is missing: %1").arg(QString::fromLatin1(path))));
@@ -226,6 +252,21 @@ void ClapLoaderErrorTest::testJunkFileIsLibraryUnavailable()
 	verifyCode(plugin.lastLoadFailure(), loader::Code::LibraryUnavailable, "library-unavailable");
 }
 
+void ClapLoaderErrorTest::testBundleDirectoryLoadsItsContentsBinary()
+{
+	QTemporaryDir dir;
+	QVERIFY(dir.isValid());
+	const QString bundle = dir.filePath(QStringLiteral("Fixture.clap"));
+	const QString binary = QDir(bundle).filePath(QStringLiteral("Contents/MacOS/Fixture.clap"));
+	QVERIFY(QDir().mkpath(QFileInfo(binary).absolutePath()));
+	QVERIFY2(QFile::copy(goodModule(), binary), qPrintable(QStringLiteral("could not copy CLAP fixture to %1").arg(binary)));
+
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(bundle, QString::fromLatin1(GoodPluginId), &error), qPrintable(error));
+	QVERIFY(plugin.isLoaded());
+}
+
 void ClapLoaderErrorTest::testNoSymbolIsSymbolMissing()
 {
 	HostedPlugin plugin;
@@ -267,6 +308,79 @@ void ClapLoaderErrorTest::testMissingFactoryIsFactoryMissing()
 	QVERIFY2(error.contains(QString::fromLatin1(CLAP_PLUGIN_FACTORY_ID)), qPrintable(error));
 }
 
+void ClapLoaderErrorTest::testNullCallbacksAreEntryInvalid()
+{
+	// A module that loads and exports a current `clap_entry` whose function
+	// pointers are all null. Before the ladder validated the callback table it
+	// called entry->init() here and jumped to address zero; the fix is that the
+	// malformed entry is refused with its own code and nothing is called. The
+	// check is on the published TOKEN (not the enum value) so this test still
+	// builds and runs -- and crashes on the unfixed ladder -- when the fix is
+	// reverted, which is what makes it a regression proof.
+	const QString token = QStringLiteral("entry-invalid");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY(!plugin.load(QString::fromLatin1(NullCallbackModulePath), QString(), &error));
+	QCOMPARE(tokenOf(plugin.lastLoadFailure()), token);
+	QVERIFY(plugin.lastLoadFailure().failed());
+	QVERIFY2(!plugin.lastLoadFailure().detail.isEmpty(), "a failed load must say what it was looking at");
+	QVERIFY2(error.contains(QStringLiteral("invalid clap_entry")), qPrintable(error));
+	QVERIFY(!plugin.isLoaded());
+
+	// The scan path must refuse the same module for the same reason.
+	loader::Status scanned;
+	QString scanError;
+	const auto classes = listClasses(QString::fromLatin1(NullCallbackModulePath), &scanned, &scanError);
+	QVERIFY(classes.empty());
+	QCOMPARE(tokenOf(scanned), token);
+	QVERIFY(!scanError.isEmpty());
+}
+
+void ClapLoaderErrorTest::testNullFactoryCallbackIsFactoryInvalid()
+{
+	// A module whose clap_entry is well formed and whose init() succeeds, and
+	// whose plugin factory is present but is missing ONE of the three callbacks
+	// the host calls on it. Before the ladder checked the factory, the pointer was
+	// stored as it was, and the scan and the instance path each called the null
+	// callback. The three fixtures differ only in which callback is null.
+	const std::array<const char*, 3> cases{{
+		NullFactoryCountModulePath,
+		NullFactoryDescriptorModulePath,
+		NullFactoryCreateModulePath,
+	}};
+	const QString token = QStringLiteral("factory-invalid");
+	for (const char* path : cases)
+	{
+		const QString modulePath = QString::fromLatin1(path);
+
+		// The ladder itself refuses it with the typed code, and does not keep the
+		// factory: nothing from it is ever called.
+		loader::Library library;
+		loader::Status status;
+		QVERIFY2(!loader::load(modulePath, library, status), qPrintable(modulePath));
+		QCOMPARE(tokenOf(status), token);
+		QVERIFY(status.failed());
+		QVERIFY2(!status.detail.isEmpty(), "a failed load must say what it was looking at");
+		QVERIFY(library.factory == nullptr);
+
+		// The instance path refuses the same module for the same reason, and the
+		// scan path reports the same code and the same sentence.
+		HostedPlugin plugin;
+		QString error;
+		QVERIFY(!plugin.load(modulePath, QString(), &error));
+		QCOMPARE(tokenOf(plugin.lastLoadFailure()), token);
+		QVERIFY2(error.contains(QStringLiteral("invalid")), qPrintable(error));
+		QVERIFY(!plugin.isLoaded());
+
+		loader::Status scanned;
+		QString scanError;
+		const auto classes = listClasses(modulePath, &scanned, &scanError);
+		QVERIFY(classes.empty());
+		QCOMPARE(tokenOf(scanned), token);
+		QCOMPARE(scanError, error);
+	}
+}
+
 void ClapLoaderErrorTest::testUnknownIdIsPluginNotFound()
 {
 	// A module that is entirely fine, asked for a plug-in it does not contain:
@@ -284,16 +398,17 @@ void ClapLoaderErrorTest::testUnknownIdIsPluginNotFound()
 
 void ClapLoaderErrorTest::testFailuresAreDistinctCodes()
 {
-	// The requirement in one place: the six failures a CLAP host actually meets
-	// are six DIFFERENT answers. (Each is also asserted on its own above.)
+	// The requirement in one place: the seven failures a CLAP host actually meets
+	// are seven DIFFERENT answers. (Each is also asserted on its own above.)
 	const QString missing = QDir::temp().filePath(
 		QStringLiteral("zene-no-such-clap-module-%1.clap").arg(QCoreApplication::applicationPid()));
-	const std::array<QPair<QString, QString>, 6> cases{{
+	const std::array<QPair<QString, QString>, 7> cases{{
 		{missing, QString()},
 		{QString::fromLatin1(NoSymbolModulePath), QString()},
 		{QString::fromLatin1(OldVersionModulePath), QString()},
 		{QString::fromLatin1(InitFailsModulePath), QString()},
 		{QString::fromLatin1(NoFactoryModulePath), QString()},
+		{QString::fromLatin1(NullCallbackModulePath), QString()},
 		{goodModule(), QStringLiteral("org.lmms.test.absent")},
 	}};
 	QSet<QString> seen;
@@ -305,7 +420,7 @@ void ClapLoaderErrorTest::testFailuresAreDistinctCodes()
 		QVERIFY2(plugin.lastLoadFailure().failed(), qPrintable(path));
 		seen.insert(tokenOf(plugin.lastLoadFailure()));
 	}
-	QCOMPARE(seen.size(), 6);
+	QCOMPARE(seen.size(), 7);
 	QVERIFY(!seen.contains(QStringLiteral("none")));
 }
 
@@ -341,11 +456,12 @@ void ClapLoaderErrorTest::testScanAndInstanceAgreeOnTheCode()
 	// only say "'<path>' is not a usable CLAP module" for four different
 	// failures. It reports the same codes now, and it must not disagree with
 	// the instance path about the same file.
-	const std::array<std::pair<const char*, const char*>, 4> broken{{
+	const std::array<std::pair<const char*, const char*>, 5> broken{{
 		{NoSymbolModulePath, "symbol-missing"},
 		{OldVersionModulePath, "version-unsupported"},
 		{InitFailsModulePath, "entry-init-failed"},
 		{NoFactoryModulePath, "factory-missing"},
+		{NullCallbackModulePath, "entry-invalid"},
 	}};
 	for (const auto& [path, token] : broken)
 	{
@@ -377,12 +493,14 @@ void ClapLoaderErrorTest::testMessagesKeepTheirShape()
 		const char* second;  //!< what the sentence interpolates at %2, if anything
 		QString substring;
 	};
-	const std::array<Case, 5> cases{{
+	const std::array<Case, 6> cases{{
 		{NoSymbolModulePath, "", nullptr, QStringLiteral("'%1' does not export clap_entry")},
 		{OldVersionModulePath, "", nullptr,
 			QStringLiteral("'%1' is a CLAP 0.0 plug-in, which is not compatible")},
 		{InitFailsModulePath, "", nullptr, QStringLiteral("clap_entry.init() failed for '%1'")},
 		{NoFactoryModulePath, "", CLAP_PLUGIN_FACTORY_ID, QStringLiteral("'%1' has no %2 factory")},
+		{NullCallbackModulePath, "", nullptr,
+			QStringLiteral("'%1' exports an invalid clap_entry (a required callback is null)")},
 		{GoodModulePath, "org.lmms.test.absent", "org.lmms.test.absent",
 			QStringLiteral("'%1' has no plug-in with id '%2'")},
 	}};

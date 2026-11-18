@@ -493,6 +493,51 @@ private slots:
 				+ listed( song->unclaimedElements() ) ) );
 		QCOMPARE( clipCountOfFirstTrack(), 0 );
 	}
+
+	//! Cluster 5426: a clip element under a FOLDER track. A folder carries no
+	//! clips of its own - TrackFolder::createClip() returns null - and the claim
+	//! branch used to dereference that result, so a malformed project crashed
+	//! loading. The element must be preserved like any other child this track
+	//! cannot claim, and the round trip must carry it back.
+	void aClipElementUnderAFolderTrackIsPreservedNotCrashing()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		DataFile fresh( DataFile::Type::SongProject );
+		const QString version = fresh.documentElement().attribute( QStringLiteral( "version" ) );
+		const QString project = dir.filePath( QStringLiteral( "folder-clip.mmp" ) );
+		QVERIFY( writeText( project, QString(
+			"<?xml version=\"1.0\"?>\n"
+			"<lmms-project version=\"%1\" type=\"song\" creator=\"Zene Studio\">\n"
+			"  <head/>\n"
+			"  <song>\n"
+			"    <trackcontainer type=\"song\">\n"
+			"      <track type=\"7\" name=\"f\" muted=\"0\">\n"
+			"        <trackfolder/>\n"
+			"        <midiclip steps=\"16\" name=\"c\" muted=\"0\" pos=\"0\" len=\"192\" type=\"0\"/>\n"
+			"      </track>\n"
+			"    </trackcontainer>\n"
+			"  </song>\n"
+			"</lmms-project>\n" ).arg( version ) ) );
+
+		Song* song = loadFresh( project );
+
+		// The folder claims no clips, so the clip element is preserved, not coerced.
+		QVERIFY2( song->unclaimedElements().contains(
+			"/song/trackcontainer/track[0]/midiclip" ),
+			qPrintable( QStringLiteral( "the clip child of the folder track was not reported: " )
+				+ listed( song->unclaimedElements() ) ) );
+		QCOMPARE( clipCountOfFirstTrack(), 0 );
+
+		// And the round trip keeps it: the next save re-emits it verbatim.
+		const QString save = dir.filePath( QStringLiteral( "round1.mmp" ) );
+		QVERIFY( song->saveProjectFile( save ) );
+		const QString text = readText( save );
+		QVERIFY2( text.contains( QStringLiteral( "len=\"192\"" ) ),
+			"a clip child of a folder track was dropped by a load -> save round trip" );
+		QCOMPARE( text.count( QStringLiteral( "<midiclip" ) ), 1 );
+	}
 };
 
 QTEST_GUILESS_MAIN( UnclaimedElementsTest )

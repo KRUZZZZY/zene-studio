@@ -54,7 +54,7 @@ public:
 	static ReferenceProject& instance();
 
 	//! Parse the project file at @a path (.mmp / .mmpz) as the reference, replacing any other; false and
-	//! @a why when it is not a project with song tracks.
+	//! @a why (when not nullptr) when it is not a project with song tracks.
 	bool open(const QString& path, QString* why);
 	void close();
 	bool isOpen() const { return m_file != nullptr; }
@@ -66,6 +66,8 @@ public:
 
 	//! The reference's song tracks, in its order.
 	QList<QDomElement> tracks() const;
+	//! The project's <mixer> element (null while none is open): copied tracks bring their channels from it.
+	QDomElement mixer() const;
 	//! Its mixer channels (<mixerchannel>), master first.
 	QList<QDomElement> channels() const;
 	//! The clips of a reference @a track element, in its order.
@@ -82,7 +84,8 @@ public:
 	static void setChangeHook(ChangeHook hook);
 
 private:
-	ReferenceProject() = default;
+	ReferenceProject();
+	~ReferenceProject();  // out of line: DataFile is incomplete here (MSVC C2027)
 	std::unique_ptr<DataFile> m_file;
 	QString m_path;
 	QDateTime m_parsedAt;

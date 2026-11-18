@@ -52,7 +52,8 @@ class SampleFrame;
  * plug-in channels to the track - and plays into a mixer channel once it is ROUTED to one. A routed bus
  * bypasses the track's own volume, pan and effects (it is a separate signal, as in every DAW), follows
  * the track's mute, and is delayed by the target channel's PDC alignment like any other source feeding
- * that channel.
+ * that channel. MX-157: it carries the instrument's own latency (setSourceLatencyFrames), which the mixer
+ * counts in that channel's alignment point, so the bus is delayed only by what the alignment adds on top.
  *
  * The host reports the layout (setLayout) whenever it loads or re-prepares the plug-in. A bus can be
  * inactive (a VST3 aux bus is off until a host asks for it): routing one calls the host's enable hook,
@@ -110,7 +111,33 @@ public:
 	//! Mixes routed bus @a bus's block (filled through routedBuffer) into its channel.
 	void send(int bus, f_cnt_t frames, bool muted);
 
+	// --- MX-157 (BUGS 11.34): the instrument's own latency, for delay compensation ---
+	/*! Control thread: the latency the plug-in reports, in frames (Instrument::reportLatency). Every bus
+	 *  carries it; while it is non-zero these buses are listed for the mixer's alignment pass
+	 *  (forEachLatentRoute). 0, the default, leaves every bus exactly as before. */
+	void setSourceLatencyFrames(int frames);
+	auto sourceLatencyFrames() const -> int { return m_sourceLatency.load(std::memory_order_relaxed); }
+	//! Audio thread: the mixer index routed, active bus @a bus plays into now, or -1.
+	auto routedIndex(int bus) -> int;
+	/*! Audio thread, inside the render period (Mixer::updateLatencyCompensation, which runs under the
+	 *  engine's model-change lock - the lock the list is changed under): calls @a visit(mixerIndex,
+	 *  latencyFrames) for every routed bus of every instrument that reports a latency. Allocation-free. */
+	template<typename Visit>
+	static void forEachLatentRoute(Visit&& visit)
+	{
+		for (InstrumentOutputBuses* buses : latentList())
+		{
+			const int latency = buses->sourceLatencyFrames();
+			for (int bus = 1; latency > 0 && bus < buses->busCount(); ++bus)
+			{
+				if (const int index = buses->routedIndex(bus); index >= 0) { visit(index, latency); }
+			}
+		}
+	}
+
 private:
+	//! MX-157: the instruments whose latency is non-zero; changed only under the model-change guard.
+	static auto latentList() -> std::vector<InstrumentOutputBuses*>&;
 	struct Slot;
 
 	//! Allocates @a slot's block and delay line for the engine's period (control thread, before the guard).
@@ -122,6 +149,8 @@ private:
 	std::vector<InstrumentOutputBus> m_layout;
 	std::array<std::unique_ptr<Slot>, MaxBuses> m_slots;
 	EnableHook m_enable;
+	std::atomic<int> m_sourceLatency{0};  //!< MX-157, see setSourceLatencyFrames()
+	bool m_listed = false;                //!< MX-157: in latentList()
 };
 
 } // namespace lmms

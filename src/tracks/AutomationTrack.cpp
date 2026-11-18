@@ -76,7 +76,12 @@ void AutomationTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& 
 
 void AutomationTrack::loadTrackSpecificSettings( const QDomElement & _this )
 {
-	m_followsTrack = _this.attribute("follows", "-1").toInt();
+	// A `follows` that is not a number is not a track id. QString::toInt() answers
+	// 0 for text it cannot parse, and 0 IS a track id (ids start at 0), so the
+	// failed conversion has to become the no-track sentinel -1, not track 0.
+	bool followsOk = false;
+	const int followsId = _this.attribute("follows", "-1").toInt(&followsOk);
+	m_followsTrack = followsOk ? followsId : -1;
 	// just in case something somehow wrent wrong...
 	if( type() == Type::HiddenAutomation )
 	{

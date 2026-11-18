@@ -47,12 +47,17 @@ bool RackZoneVoice::render(const SampleBuffer& sample, SampleFrame* dst, f_cnt_t
 	for (f_cnt_t f = 0; f < frames && !ended; ++f)
 	{
 		const auto index = static_cast<std::size_t>(position);
-		if (index + 1 >= size) { ended = true; break; }
+		if (index >= size) { ended = true; break; }
+		// The last source frame is held: its interpolation partner is itself, so a one-frame sample is
+		// not silence, and a fractional step keeps the frame for the rest of its duration. The voice ends
+		// only once the position has passed the end of the sample.
+		const std::size_t next = index + 1 < size ? index + 1 : index;
 		const auto fraction = static_cast<float>(position - static_cast<double>(index));
 		if (released) { fade -= 1.0f / static_cast<float>(FadeFrames); }
 		if (fade <= 0.0f) { ended = true; break; }
-		dst[f] += (data[index] * (1.0f - fraction) + data[index + 1] * fraction) * (gain * fade);
+		dst[f] += (data[index] * (1.0f - fraction) + data[next] * fraction) * (gain * fade);
 		position += step;
+		if (position >= static_cast<double>(size)) { ended = true; }
 	}
 	return !ended;
 }
@@ -106,8 +111,16 @@ auto RackZoneInputs::voiceFor(const RackZoneNote& note) -> RackZoneVoice*
 	for (RackZoneVoice& voice : m_voices)
 	{
 		if (voice.owner.load(std::memory_order_acquire) != note.id) { continue; }
-		// A pooled play handle reused for a new note has played fewer frames than its voice last saw.
-		if (note.framesPlayed < voice.lastFramesPlayed) { voice.restart(); }
+		// The handle pointer alone cannot tell a continuing note from a pooled handle reused for a new note:
+		// the reused handle keeps the same pointer, and tempo resize rescales and truncates its frame count,
+		// so a continuing note can report a smaller frame count next period. The generation the handle carries
+		// on construction and on every reuse is the stable identity: a changed generation is a new note and
+		// restarts the voice; an unchanged one resumes where the voice left off.
+		if (note.generation != voice.lastGeneration)
+		{
+			voice.restart();
+			voice.lastGeneration = note.generation;
+		}
 		return &voice;
 	}
 	for (RackZoneVoice& voice : m_voices)
@@ -116,6 +129,7 @@ auto RackZoneInputs::voiceFor(const RackZoneNote& note) -> RackZoneVoice*
 		if (voice.owner.compare_exchange_strong(expected, note.id, std::memory_order_acq_rel))
 		{
 			voice.restart();
+			voice.lastGeneration = note.generation;
 			return &voice;
 		}
 	}

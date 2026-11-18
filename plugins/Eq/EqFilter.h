@@ -25,6 +25,8 @@
 #ifndef EQFILTER_H
 #define EQFILTER_H
 
+#include <algorithm>
+#include <cmath>
 #include <numbers>
 
 #include "BasicFilters.h"
@@ -46,6 +48,7 @@ public:
 	EqFilter() :
 		m_sampleRate(0),
 		m_freq(0),
+		m_requestedFreq(0),
 		m_res(0),
 		m_gain(0),
 		m_bw(0)
@@ -61,6 +64,7 @@ public:
 		if( sampleRate != m_sampleRate )
 		{
 			m_sampleRate = sampleRate;
+			m_freq = clampFrequency(m_requestedFreq, m_sampleRate);
 			calcCoefficents();
 		}
 	}
@@ -69,9 +73,10 @@ public:
 
 
 	virtual inline void setFrequency( float freq ){
-		if ( freq != m_freq )
+		if ( freq != m_requestedFreq )
 		{
-			m_freq = freq;
+			m_requestedFreq = freq;
+			m_freq = clampFrequency(m_requestedFreq, m_sampleRate);
 			calcCoefficents();
 		}
 	}
@@ -105,13 +110,14 @@ public:
 	virtual inline void setParameters( float sampleRate, float freq, float res, float gain )
 	{
 		bool hasChanged = ( sampleRate != m_sampleRate ||
-		                    freq != m_freq ||
+		                    freq != m_requestedFreq ||
 		                    res != m_res ||
 		                    gain != m_gain );
 		if ( hasChanged )
 		{
 			m_sampleRate = sampleRate;
-			m_freq = freq;
+			m_requestedFreq = freq;
+			m_freq = clampFrequency(m_requestedFreq, m_sampleRate);
 			m_res = res;
 			m_gain = gain;
 			calcCoefficents();
@@ -144,8 +150,16 @@ public:
 
 
 protected:
+	static inline float clampFrequency(float freq, float sampleRate)
+	{
+		// std::clamp returns NaN unchanged, and a NaN frequency would make
+		// the non-peak filters compute NaN coefficients; use 0 Hz instead
+		if (std::isnan(freq)) { return 0.0f; }
+		return std::clamp(freq, 0.0f, std::max(sampleRate, 0.0f) * 0.5f);
+	}
+
 	///
-	/// \brief calcCoefficents
+	/// \\brief calcCoefficents
 	///  Override this in child classes to provide the coefficents, based on
 	///  Freq, Res and Gain
 	virtual void calcCoefficents(){
@@ -165,6 +179,7 @@ protected:
 
 	float m_sampleRate;
 	float m_freq;
+	float m_requestedFreq;
 	float m_res;
 	float m_gain;
 	float m_bw;
@@ -270,12 +285,38 @@ public:
 	void calcCoefficents() override
 	{
 		using namespace std::numbers;
+		if ( !( m_sampleRate > 0.0f ) || !std::isfinite( m_sampleRate ) )
+		{
+			setCoeffs( 0.0f, 0.0f, 1.0f, 0.0f, 0.0f );
+			return;
+		}
+
+		if ( m_freq >= m_sampleRate * 0.5f )
+		{
+			setCoeffs( 0.0f, 0.0f, 1.0f, 0.0f, 0.0f );
+			return;
+		}
+
+		const float nyquist = m_sampleRate * 0.5f;
+		const float frequency = std::clamp( m_freq, 0.0f, std::nextafter( nyquist, 0.0f ) );
 		// calc intermediate
-		float w0 = 2 * pi_v<float> * m_freq / m_sampleRate;
+		float w0 = 2 * pi_v<float> * frequency / m_sampleRate;
 		float c = std::cos(w0);
 		float s = std::sin(w0);
+		if ( !std::isfinite( s ) || std::abs( s ) < 1.0e-6f )
+		{
+			setCoeffs( 0.0f, 0.0f, 1.0f, 0.0f, 0.0f );
+			return;
+		}
+
 		float A = fastPow10f(m_gain * 0.025);
-		float alpha = s * std::sinh(ln2 / 2 * m_bw * w0 / std::sin(w0));
+		const double sinhArgument = ln2 / 2 * m_bw * w0 / s;
+		if ( !std::isfinite( sinhArgument ) || std::abs( sinhArgument ) > 80.0 )
+		{
+			setCoeffs( 0.0f, 0.0f, 1.0f, 0.0f, 0.0f );
+			return;
+		}
+		float alpha = s * std::sinh( sinhArgument );
 
 		//calc coefficents
 		float b0 = 1 + alpha * A;
@@ -304,9 +345,15 @@ public:
 			m_sampleRate = sampleRate;
 			hasChanged = true;
 		}
-		if ( freq != m_freq )
+		if ( freq != m_requestedFreq )
 		{
-			m_freq = freq;
+			m_requestedFreq = freq;
+			hasChanged = true;
+		}
+		const float clampedFrequency = clampFrequency(m_requestedFreq, m_sampleRate);
+		if (clampedFrequency != m_freq)
+		{
+			m_freq = clampedFrequency;
 			hasChanged = true;
 		}
 		if ( bw != m_bw )

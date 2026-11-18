@@ -32,6 +32,8 @@
 #include <QtTest>
 
 #include <QDir>
+#include <QDomDocument>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QTemporaryDir>
@@ -39,10 +41,15 @@
 #include <sndfile.h>
 
 #include "ControlRegistry.h"
+#include "ControlEdit.h"
 #include "ControlVocabulary.h"
+#include "EditLocks.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
+#include "MidiClip.h"
 #include "Song.h"
+#include "Track.h"
+#include "TrackFolder.h"
 #include "TakeLaneTestSupport.h"
 
 using namespace lmms;
@@ -107,6 +114,31 @@ private slots:
 		sf_close(file);
 		QCOMPARE(run(QStringLiteral("render.convert"), {{QStringLiteral("files"), QJsonArray{QStringLiteral("/no/such.wav")}},
 			{QStringLiteral("out_dir"), outDir}}).errorKind, ControlErrorKind::NotFound);
+	}
+
+	void aConversionLeavesAnUnrelatedDotPartFileAlone()
+	{
+		const QString tone = taketest::writeToneWav(QDir(m_dir.path()).filePath(QStringLiteral("stag.wav")), 440.0);
+		QVERIFY(!tone.isEmpty());
+		const QString outDir = QDir(m_dir.path()).filePath(QStringLiteral("staged"));
+		QVERIFY(QDir().mkpath(outDir));
+		const QString bystander = QDir(outDir).filePath(QStringLiteral("stag.wav.part"));
+		const QByteArray marker("not a staging file", 19);
+		{
+			QFile file(bystander);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QCOMPARE(file.write(marker), marker.size());
+		}
+
+		const ControlResult queued = run(QStringLiteral("render.convert"), {{QStringLiteral("files"), QJsonArray{tone}},
+			{QStringLiteral("out_dir"), outDir}});
+		QVERIFY2(queued.ok, qPrintable(queued.errorMessage));
+		const int job = queued.result.value(QStringLiteral("jobs")).toArray().first().toObject().value(QStringLiteral("job")).toInt();
+		QTRY_COMPARE_WITH_TIMEOUT(stateOf(job), QStringLiteral("done"), 20000);
+
+		QFile file(bystander);
+		QVERIFY2(file.open(QIODevice::ReadOnly), "the conversion overwrote a file that was already there");
+		QCOMPARE(file.readAll(), marker);
 	}
 
 	void aQueuedRenderIsCancelledAndListed()
@@ -180,6 +212,68 @@ private slots:
 			ControlErrorKind::NotFound);
 	}
 
+	//! Luna cluster 4770: detach() dropped the stable ids of tracks, clips and effects but not of
+	//! notes, so a pasted or imported track's notes kept the ids they had in the source project
+	//! and could address the wrong note here through any id-based operation.
+	void pastedNotesAreGivenFreshIds()
+	{
+		Track* lead = Track::create(Track::Type::Instrument, Engine::getSong());
+		lead->setName(QStringLiteral("Lead"));
+		const QString track = control::trackIdOf(lead);
+		const QString clipId = run(QStringLiteral("clip.add"), {{QStringLiteral("track"), track},
+			{QStringLiteral("position"), 0}, {QStringLiteral("length"), 192}}).result.value(QStringLiteral("clip")).toString();
+		QVERIFY(!clipId.isEmpty());
+		QVERIFY(run(QStringLiteral("note.add"), {{QStringLiteral("clip"), clipId},
+			{QStringLiteral("key"), 60}, {QStringLiteral("position"), 0}, {QStringLiteral("length"), 48},
+			{QStringLiteral("velocity"), 100}}).ok);
+		auto* clip = dynamic_cast<MidiClip*>(lead->getClip(0));
+		QVERIFY(clip != nullptr);
+		QCOMPARE(clip->notes().size(), std::size_t(1));
+		const int sourceNoteId = clip->notes().front()->id();
+		QVERIFY(run(QStringLiteral("project.copy_tracks"), {{QStringLiteral("tracks"), QJsonArray{track}}}).ok);
+		const ControlResult pasted = run(QStringLiteral("project.paste_tracks"));
+		QVERIFY2(pasted.ok, qPrintable(pasted.errorMessage));
+
+		Track* copy = nullptr;
+		for (Track* candidate : Engine::getSong()->tracks())
+		{
+			if (candidate->name() == QLatin1String("Lead") && candidate->id() != lead->id()) { copy = candidate; }
+		}
+		QVERIFY(copy != nullptr);
+		auto* copied = dynamic_cast<MidiClip*>(copy->getClip(0));
+		QVERIFY(copied != nullptr);
+		QCOMPARE(copied->notes().size(), std::size_t(1));
+		// The pasted note is a NEW note in THIS project: an id carried over from the source
+		// would let an id-based note operation address a note of another project's track.
+		QVERIFY2(copied->notes().front()->id() != sourceNoteId, "the pasted note kept the source project's note id");
+	}
+
+	//! Luna cluster 5647: both unsaved projects have an empty project filename, so the
+	//! "same project" test said yes and the pasted track kept a folder id from the clipboard -
+	//! joining whatever unrelated folder in this project happens to carry that id.
+	void aPastedTrackFromAnUnsavedProjectDoesNotJoinAForeignFolder()
+	{
+		TrackFolder* folder = dynamic_cast<TrackFolder*>(Track::create(Track::Type::Folder, Engine::getSong()));
+		QVERIFY(folder != nullptr);
+		folder->setName(QStringLiteral("Unrelated"));
+		Track* lead = Track::create(Track::Type::Instrument, Engine::getSong());
+		lead->setName(QStringLiteral("Lead"));
+		lead->setParentFolder(folder);
+		QVERIFY(run(QStringLiteral("project.copy_tracks"), {{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(lead)}}}).ok);
+		QVERIFY(run(QStringLiteral("project.paste_tracks")).ok);
+
+		Track* copy = nullptr;
+		for (Track* candidate : Engine::getSong()->tracks())
+		{
+			if (candidate->name() == QLatin1String("Lead") && candidate->id() != lead->id()) { copy = candidate; }
+		}
+		QVERIFY(copy != nullptr);
+		// Two unsaved projects share no identity, so the folder reference must not survive:
+		// the pasted track belongs at the top level, not in an unrelated folder that happens
+		// to hold the same id.
+		QVERIFY2(copy->parentFolder() != folder, "a track copied from another unsaved project joined a folder by id");
+	}
+
 	void subprojectsRefuseThemselves()
 	{
 		const QString main = QDir(m_dir.path()).filePath(QStringLiteral("song.mmp"));
@@ -231,6 +325,92 @@ private slots:
 		QCOMPARE(alternativeCount(), before + 1);
 		QCOMPARE(run(QStringLiteral("project.alternative_remove"), {{QStringLiteral("name"), QStringLiteral("nope")}}).errorKind,
 			ControlErrorKind::NotFound);
+	}
+
+	void aLockedClipRefusesTrackFlatten()
+	{
+		Track* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		Clip* clip = track->createClip(TimePos(0));
+		const QString trackId = control::trackIdOf(track);
+		const QString clipId = control::clipIdOf(clip);
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), clipId}}).ok);
+
+		const ControlResult refused = run(QStringLiteral("track.flatten"), {{QStringLiteral("track"), trackId}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY(refused.errorMessage.contains(QStringLiteral("locked")));
+		QCOMPARE(track->numOfClips(), 1);
+	}
+
+	void anUnlockedClipAllowsTrackFlatten()
+	{
+		Track* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		track->createClip(TimePos(0));
+		QString why;
+		QVERIFY(!EditLocks::refuses(QStringLiteral("track.flatten"), {{QStringLiteral("track"), control::trackIdOf(track)}}, &why));
+	}
+
+	void aLockedClipRefusesSubprojectRefresh()
+	{
+		Track* track = Track::create(Track::Type::Sample, Engine::getSong());
+		Clip* clip = track->createClip(TimePos(0));
+		const QString trackId = control::trackIdOf(track);
+		const QString clipId = control::clipIdOf(clip);
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), clipId}}).ok);
+
+		const ControlResult refused = run(QStringLiteral("project.subproject_refresh"), {{QStringLiteral("track"), trackId}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY(refused.errorMessage.contains(QStringLiteral("locked")));
+	}
+
+	void anUnlockedClipAllowsSubprojectRefresh()
+	{
+		Track* track = Track::create(Track::Type::Sample, Engine::getSong());
+		track->createClip(TimePos(0));
+		const QString trackId = control::trackIdOf(track);
+		QString why;
+		QVERIFY(!EditLocks::refuses(QStringLiteral("project.subproject_refresh"), {{QStringLiteral("track"), trackId}}, &why));
+		QCOMPARE(run(QStringLiteral("project.subproject_refresh"), {{QStringLiteral("track"), trackId}}).errorKind,
+			ControlErrorKind::NotFound);
+	}
+
+	void duplicateAlternativesAreIgnoredWhenLoading()
+	{
+		const QString projectPath = QDir(m_dir.path()).filePath(QStringLiteral("duplicates.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(projectPath));
+
+		QFile file(projectPath);
+		QVERIFY(file.open(QIODevice::ReadOnly));
+		QDomDocument document;
+		QVERIFY(document.setContent(file.readAll()));
+		file.close();
+
+		QDomElement song = document.documentElement().firstChildElement(QStringLiteral("song"));
+		QVERIFY(!song.isNull());
+		const QDomElement oldList = song.firstChildElement(QStringLiteral("alternatives"));
+		if (!oldList.isNull()) { song.removeChild(oldList); }
+		QDomElement list = document.createElement(QStringLiteral("alternatives"));
+		list.setAttribute(QStringLiteral("main"), projectPath);
+		for (int i = 0; i < 64; ++i)
+		{
+			QDomElement alternative = document.createElement(QStringLiteral("alternative"));
+			alternative.setAttribute(QStringLiteral("name"), QStringLiteral("mix"));
+			list.appendChild(alternative);
+		}
+		QDomElement next = document.createElement(QStringLiteral("alternative"));
+		next.setAttribute(QStringLiteral("name"), QStringLiteral("radio"));
+		list.appendChild(next);
+		song.appendChild(list);
+
+		QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		QVERIFY(file.write(document.toByteArray(2)) > 0);
+		file.close();
+
+		const ControlResult opened = run(QStringLiteral("project.open"), {{QStringLiteral("path"), projectPath}});
+		QVERIFY2(opened.ok, qPrintable(opened.errorMessage));
+		const QJsonArray alternatives = run(QStringLiteral("project.alternatives")).result.value(QStringLiteral("alternatives")).toArray();
+		QCOMPARE(alternatives.size(), 2);
+		QCOMPARE(alternatives.at(0).toObject().value(QStringLiteral("name")).toString(), QStringLiteral("mix"));
+		QCOMPARE(alternatives.at(1).toObject().value(QStringLiteral("name")).toString(), QStringLiteral("radio"));
 	}
 
 private:

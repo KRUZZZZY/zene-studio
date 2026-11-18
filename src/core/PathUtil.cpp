@@ -182,7 +182,12 @@ namespace lmms::PathUtil
 		//Next, handle old relative paths with no prefix
 		QString upgraded = oldRelativeUpgrade(path);
 		Base base = baseLookup(upgraded);
-		return baseLocation(base, error) + upgraded.remove(0, basePrefix(base).length());
+		QString resolved = baseLocation(base, error) + upgraded.remove(0, basePrefix(base).length());
+		// The absolute base has no location of its own, so an unmatched relative
+		// path would come back relative and be resolved against the process
+		// working directory later. Resolve it here, against the working
+		// directory, so the result is the absolute path the contract promises.
+		return base == Base::Absolute ? QFileInfo(resolved).absoluteFilePath() : resolved;
 	}
 
 	QString relativeOrAbsolute(const QString& input, const Base base)
@@ -193,9 +198,9 @@ namespace lmms::PathUtil
 		if (base == Base::Absolute) { return absolutePath; }
 		bool error;
 		QString relativePath = baseQDir(base, &error).relativeFilePath(absolutePath);
-		// Return the relative path if it didn't result in a path starting with ..
-		// and the baseQDir was resolved properly
-		return (relativePath.startsWith("..") || error)
+		// Return relative paths that don't escape the base, and only when the base
+		// directory was resolved properly
+		return (relativePath == ".." || relativePath.startsWith("../") || error)
 			? absolutePath
 			: relativePath;
 	}

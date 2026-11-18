@@ -1,6 +1,6 @@
 /*
- * ArrangingCatchUpTest.cpp - frame-exact cuts and zero-crossing snap, track spacers, the reference project
- *                            and project switching, typed new documents (0.5.0 F3)
+ * ArrangingCatchUpTest.cpp - frame-exact cuts and zero-crossing snap, the lead, and typed new documents (0.5.0 F3)
+ *                            (track spacers, the reference project and project switching: ArrangingSpacerReferenceTest.cpp)
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -28,16 +28,13 @@
  *    cut onto a crossing; clip.trim moves a start to a frame and its undo resets the lead; the lead saves,
  *    loads, and is reset when absent (a clip without one writes no attribute); arrangement.modes keeps the
  *    snap toggle.
- *  - WF-107: track.set_spacer sets a spacer, one undo step, and a save and reload keeps it.
- *  - WF-042: reference.open parses another project; its tracks, clips and devices copy into this one, each
- *    one undo step; a clip of the wrong kind is refused; project.switch saves nothing it should not, keeps
- *    the project it left as the reference, and refuses to lose an untitled session's changes.
  *  - WF-048: project.new_document builds each type's template - unmodified, untitled, typed. */
 
 #include <QtTest>
 
 #include <QDir>
 #include <QDomDocument>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QTemporaryDir>
@@ -66,6 +63,7 @@
 #include "Song.h"
 #include "TrackSpacers.h"
 #include "TakeLaneTestSupport.h"
+#include "DeprecationHelper.h"
 
 using namespace lmms;
 
@@ -152,7 +150,7 @@ private slots:
 		const ControlResult split = run(QStringLiteral("clip.split"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
 			{QStringLiteral("position"), 20}, {QStringLiteral("frames"), 100}, {QStringLiteral("zero_crossing"), false}});
 		QVERIFY2(split.ok, qPrintable(split.errorMessage));
-		const auto frame = static_cast<f_cnt_t>(split.result.value(QStringLiteral("frame")).toInteger());
+		const auto frame = static_cast<f_cnt_t>(jsonInteger(split.result.value(QStringLiteral("frame"))));
 		const double expected = (20.0 + 100.0 / outputPerTick) * framesPerTick;
 		QVERIFY(std::abs(static_cast<double>(frame) - expected) <= 1.0);
 		SampleClip* right = sampleClip(split.result.value(QStringLiteral("right")).toString());
@@ -181,7 +179,7 @@ private slots:
 			{QStringLiteral("position"), 30}, {QStringLiteral("frames"), 37}, {QStringLiteral("zero_crossing"), true}});
 		QVERIFY2(split.ok, qPrintable(split.errorMessage));
 		QVERIFY(split.result.value(QStringLiteral("zero_crossing")).toBool());
-		const auto frame = static_cast<f_cnt_t>(split.result.value(QStringLiteral("frame")).toInteger());
+		const auto frame = static_cast<f_cnt_t>(jsonInteger(split.result.value(QStringLiteral("frame"))));
 		SampleClip* right = sampleClip(split.result.value(QStringLiteral("right")).toString());
 		QVERIFY(right != nullptr);
 		const bool crossesBefore = (summed(right, frame - 1) < 0.0f) != (summed(right, frame) < 0.0f);
@@ -213,7 +211,7 @@ private slots:
 		const ControlResult trimmed = run(QStringLiteral("clip.trim"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
 			{QStringLiteral("start"), 10}, {QStringLiteral("start_frames"), 50}, {QStringLiteral("zero_crossing"), false}});
 		QVERIFY2(trimmed.ok, qPrintable(trimmed.errorMessage));
-		QVERIFY(trimmed.result.value(QStringLiteral("source_in")).toInteger() > 0);
+		QVERIFY(jsonInteger(trimmed.result.value(QStringLiteral("source_in"))) > 0);
 		QCOMPARE(trimmed.result.value(QStringLiteral("position")).toInt(), 10);
 		QVERIFY(clip->leadFrames() > 0);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
@@ -222,18 +220,47 @@ private slots:
 		QCOMPARE(clip->startPosition().getTicks(), 0);
 	}
 
+	void anEndFramesTrimWithoutAnEndIsRefused()
+	{
+		SampleClip* clip = freshClip();
+		const int length = clip->length().getTicks();
+		// 'end_frames' is a frame offset from the 'end' tick, so without that tick there is nothing to
+		// offset from: the frame path took the call and answered success while moving nothing.
+		const ControlResult trimmed = run(QStringLiteral("clip.trim"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("start"), 0}, {QStringLiteral("end_frames"), 100}, {QStringLiteral("zero_crossing"), false}});
+		QCOMPARE(trimmed.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(!trimmed.ok);
+		QCOMPARE(clip->length().getTicks(), length);
+	}
+
+	void aTailTrimPastTheSourceEndsWhereTheSourceEnds()
+	{
+		SampleClip* clip = freshClip();
+		const auto size = static_cast<f_cnt_t>(clip->sample().sampleSize());
+		QString why;
+		QVERIFY2(arrangement::trimTailToFrame(clip, size, &why), qPrintable(why));  // the reference: trimmed to the last frame
+		const auto endAtSource = clip->endPosition().getTicks();
+		QCOMPARE(clip->sampleWindow().sourceOut, size);
+
+		SampleClip* beyond = freshClip();
+		const f_cnt_t past = size + static_cast<f_cnt_t>(beyond->clipFramesPerTick() * 100);
+		QVERIFY2(arrangement::trimTailToFrame(beyond, past, &why), qPrintable(why));
+		QCOMPARE(beyond->sampleWindow().sourceOut, size);  // the window stops at the source...
+		QCOMPARE(beyond->endPosition().getTicks(), endAtSource);  // ...and the timeline stops with it
+	}
+
 	void theLeadSavesLoadsAndIsResetWhenAbsent()
 	{
 		SampleClip* clip = freshClip();
 		QDomDocument doc;
 		QDomElement parent = doc.createElement(QStringLiteral("track"));
 		QVERIFY(!clip->saveState(doc, parent).hasAttribute(QStringLiteral("lead")));  // an unedited clip writes nothing new
-		clip->setLeadFrames(123);
+		clip->setLeadFrames(1);
 		const QDomElement saved = clip->saveState(doc, parent);
-		QCOMPARE(saved.attribute(QStringLiteral("lead")), QStringLiteral("123"));
+		QCOMPARE(saved.attribute(QStringLiteral("lead")), QStringLiteral("1"));
 		auto* other = dynamic_cast<SampleClip*>(m_track->createClip(TimePos(0)));
 		other->restoreState(saved);
-		QCOMPARE(other->leadFrames(), f_cnt_t{123});
+		QCOMPARE(other->leadFrames(), f_cnt_t{1});
 		QDomElement without = saved.cloneNode(true).toElement();
 		without.removeAttribute(QStringLiteral("lead"));
 		other->restoreState(without);
@@ -248,139 +275,6 @@ private slots:
 		QVERIFY(arrangement::modes().snapToZeroCrossings);
 		QVERIFY(run(QStringLiteral("arrangement.modes"), {{QStringLiteral("snap_to_zero_crossings"), before}}).ok);
 		QCOMPARE(arrangement::modes().snapToZeroCrossings, before);
-	}
-
-	void aSpacerIsOneStepAndSurvivesASave()
-	{
-		Track* track = Track::create(Track::Type::Instrument, Engine::getSong());
-		const QString id = control::trackIdOf(track);
-		const ControlResult set = run(QStringLiteral("track.set_spacer"), {{QStringLiteral("track"), id}, {QStringLiteral("height"), 32},
-			{QStringLiteral("label"), QStringLiteral("Drums")}});
-		QVERIFY2(set.ok, qPrintable(set.errorMessage));
-		QCOMPARE(TrackSpacers::instance().spacer(track->id()).height, 32);
-		QCOMPARE(run(QStringLiteral("track.spacers")).result.value(QStringLiteral("count")).toInt(), 1);
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(TrackSpacers::instance().spacer(track->id()).height, 0);
-		QVERIFY(run(QStringLiteral("control.redo")).ok);
-		QCOMPARE(TrackSpacers::instance().spacer(track->id()).label, QStringLiteral("Drums"));
-		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("spacers.mmp"));
-		QVERIFY(Engine::getSong()->saveProjectFile(path));
-		const int trackId = track->id();
-		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), path}}).ok);
-		QCOMPARE(TrackSpacers::instance().spacer(trackId).height, 32);
-		QCOMPARE(TrackSpacers::instance().spacer(trackId).label, QStringLiteral("Drums"));
-		QCOMPARE(run(QStringLiteral("track.set_spacer"), {{QStringLiteral("track"), QStringLiteral("trk-999999")}}).errorKind,
-			ControlErrorKind::NotFound);
-	}
-
-	void aProjectWithoutSpacersWritesNone()
-	{
-		QVERIFY(run(QStringLiteral("project.new")).ok);
-		QVERIFY(!TrackSpacers::instance().shouldPersist());
-	}
-
-	void theReferenceCopiesTracksAndClips()
-	{
-		const QString source = writeSourceProject();
-		QVERIFY(run(QStringLiteral("project.new")).ok);
-		const ControlResult opened = run(QStringLiteral("reference.open"), {{QStringLiteral("path"), source}});
-		QVERIFY2(opened.ok, qPrintable(opened.errorMessage));
-		QVERIFY(opened.result.value(QStringLiteral("open")).toBool());
-		const int lead = indexOfReferenceTrack(QStringLiteral("Lead"));
-		const int vox = indexOfReferenceTrack(QStringLiteral("Vox"));
-		QVERIFY(lead >= 0 && vox >= 0);
-		const std::size_t before = Engine::getSong()->tracks().size();
-		const ControlResult copied = run(QStringLiteral("reference.copy_tracks"), {{QStringLiteral("tracks"), QJsonArray{lead}}});
-		QVERIFY2(copied.ok, qPrintable(copied.errorMessage));
-		QCOMPARE(Engine::getSong()->tracks().size(), before + 1);
-		QCOMPARE(Engine::getSong()->tracks().back()->name(), QStringLiteral("Lead"));
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(Engine::getSong()->tracks().size(), before);
-
-		Track* target = Track::create(Track::Type::Sample, Engine::getSong());
-		const ControlResult clips = run(QStringLiteral("reference.copy_clips"), {{QStringLiteral("track"), vox},
-			{QStringLiteral("to"), control::trackIdOf(target)}, {QStringLiteral("position"), 384}});
-		QVERIFY2(clips.ok, qPrintable(clips.errorMessage));
-		QCOMPARE(target->getClips().size(), std::size_t{1});
-		QCOMPARE(target->getClips().front()->startPosition().getTicks(), 384);
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(target->getClips().size(), std::size_t{0});
-		Track* instrument = Track::create(Track::Type::Instrument, Engine::getSong());
-		QCOMPARE(run(QStringLiteral("reference.copy_clips"), {{QStringLiteral("track"), vox},
-			{QStringLiteral("to"), control::trackIdOf(instrument)}}).errorKind, ControlErrorKind::InvalidArgs);
-		QCOMPARE(run(QStringLiteral("reference.copy_clips"), {{QStringLiteral("track"), 999},
-			{QStringLiteral("to"), control::trackIdOf(target)}}).errorKind, ControlErrorKind::NotFound);
-	}
-
-	void theReferenceCopiesDevices()
-	{
-		EffectChain& master = Engine::mixer()->mixerChannel(0)->m_fxChain;
-		Effect* probe = Effect::instantiate(QStringLiteral("amplifier"), &master, nullptr);
-		if (probe == nullptr || !probe->isOkay())
-		{
-			delete probe;
-			QSKIP("this test binary finds no built-in effect plug-ins");
-		}
-		delete probe;
-		master.clear();
-		master.appendEffect(Effect::instantiate(QStringLiteral("amplifier"), &master, nullptr));
-		const QString source = QDir(m_dir.path()).filePath(QStringLiteral("devices.mmp"));
-		Track::create(Track::Type::Sample, Engine::getSong());
-		QVERIFY(Engine::getSong()->saveProjectFile(source));
-		QVERIFY(run(QStringLiteral("project.new")).ok);
-		QVERIFY(run(QStringLiteral("reference.open"), {{QStringLiteral("path"), source}}).ok);
-		const std::size_t before = Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size();
-		// Channels are addressed by their persistent id, which a new project need not start at 0.
-		const QString masterId = QStringLiteral("ch-%1").arg(Engine::mixer()->mixerChannel(0)->id());
-		const ControlResult copied = run(QStringLiteral("reference.copy_devices"), {{QStringLiteral("channel"), 0},
-			{QStringLiteral("to"), masterId}});
-		QVERIFY2(copied.ok, qPrintable(copied.errorMessage));
-		QCOMPARE(Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size(), before + 1);
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size(), before);
-	}
-
-	void theReferenceCloses()
-	{
-		QVERIFY(run(QStringLiteral("reference.close")).ok);
-		QVERIFY(!run(QStringLiteral("reference.get_state")).result.value(QStringLiteral("open")).toBool());
-		QCOMPARE(run(QStringLiteral("reference.copy_tracks")).errorKind, ControlErrorKind::NotFound);
-		QCOMPARE(run(QStringLiteral("reference.open"), {{QStringLiteral("path"), QStringLiteral("/no/such.mmp")}}).errorKind,
-			ControlErrorKind::NotFound);
-	}
-
-	void aSwitchKeepsTheProjectLeftAsTheReference()
-	{
-		const QString a = QDir(m_dir.path()).filePath(QStringLiteral("a.mmp"));
-		const QString b = QDir(m_dir.path()).filePath(QStringLiteral("b.mmp"));
-		QVERIFY(run(QStringLiteral("project.new")).ok);
-		QVERIFY(Engine::getSong()->saveProjectFile(a));
-		QVERIFY(Engine::getSong()->saveProjectFile(b));
-		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), a}}).ok);
-		const ControlResult switched = run(QStringLiteral("project.switch"), {{QStringLiteral("path"), b},
-			{QStringLiteral("keep_as_reference"), true}});
-		QVERIFY2(switched.ok, qPrintable(switched.errorMessage));
-		QCOMPARE(QFileInfo(Engine::getSong()->projectFileName()).fileName(), QStringLiteral("b.mmp"));
-		QCOMPARE(QFileInfo(ReferenceProject::instance().path()).fileName(), QStringLiteral("a.mmp"));
-		for (const QJsonValue& value : run(QStringLiteral("project.recent")).result.value(QStringLiteral("projects")).toArray())
-		{
-			const QString path = value.toObject().value(QStringLiteral("path")).toString();
-			QVERIFY2(QFileInfo(path).fileName() != QLatin1String("b.mmp"), "the session's own file is not a project to switch to");
-			QVERIFY(!path.endsWith(QStringLiteral(".mpt")));
-		}
-		ReferenceProject::instance().close();
-	}
-
-	void aSwitchRefusesToLoseAnUntitledSession()
-	{
-		const QString a = QDir(m_dir.path()).filePath(QStringLiteral("a.mmp"));
-		QVERIFY(run(QStringLiteral("project.new")).ok);
-		QVERIFY(run(QStringLiteral("project.metadata"), {{QStringLiteral("title"), QStringLiteral("unsaved")}}).ok);
-		QVERIFY(Engine::getSong()->isModified());
-		QCOMPARE(run(QStringLiteral("project.switch"), {{QStringLiteral("path"), a}}).errorKind, ControlErrorKind::Refused);
-		QVERIFY(run(QStringLiteral("project.switch"), {{QStringLiteral("path"), a}, {QStringLiteral("save_current"), false}}).ok);
-		QCOMPARE(run(QStringLiteral("project.switch"), {{QStringLiteral("path"), QStringLiteral("/no/such.mmp")}}).errorKind,
-			ControlErrorKind::NotFound);
 	}
 
 	void newDocumentsCarryTheirTypesTemplate()
@@ -451,6 +345,51 @@ private slots:
 		QVERIFY2(!survived, "monitoring Off left a staged monitor in the render list");
 	}
 
+	/*! The reference's devices come from ONE named source - the command's own words: "the reference's
+	 *  track 'track' or mixer channel 'channel'". Naming both used to copy the channel and ignore the
+	 *  track without a word, and naming neither used to fail as a missing reference track -1: exactly
+	 *  one names the source, and a call with zero or two is refused before any device moves. */
+	void copyDevicesNamesExactlyOneSource()
+	{
+		EffectChain& master = Engine::mixer()->mixerChannel(0)->m_fxChain;
+		Effect* probe = Effect::instantiate(QStringLiteral("amplifier"), &master, nullptr);
+		if (probe == nullptr || !probe->isOkay())
+		{
+			delete probe;
+			QSKIP("this test binary finds no built-in effect plug-ins");
+		}
+		delete probe;
+		master.clear();
+		master.appendEffect(Effect::instantiate(QStringLiteral("amplifier"), &master, nullptr));
+		Track* deviceless = Track::create(Track::Type::Sample, Engine::getSong());
+		deviceless->setName(QStringLiteral("Deviceless"));
+		const QString source = QDir(m_dir.path()).filePath(QStringLiteral("one-source.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(source));
+		QVERIFY(run(QStringLiteral("project.new")).ok);
+		QVERIFY(run(QStringLiteral("reference.open"), {{QStringLiteral("path"), source}}).ok);
+		const QString masterId = QStringLiteral("ch-%1").arg(Engine::mixer()->mixerChannel(0)->id());
+		const int devicelessIndex = indexOfReferenceTrack(QStringLiteral("Deviceless"));
+		QVERIFY(devicelessIndex >= 0);
+		const std::size_t before = Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size();
+		const ControlResult both = run(QStringLiteral("reference.copy_devices"), {{QStringLiteral("track"), devicelessIndex},
+			{QStringLiteral("channel"), 0}, {QStringLiteral("to"), masterId}});
+		QVERIFY2(!both.ok, "two source fields used to copy the channel and ignore the track");
+		QCOMPARE(both.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size(), before);  // nothing was copied
+		const ControlResult neither = run(QStringLiteral("reference.copy_devices"), {{QStringLiteral("to"), masterId}});
+		QVERIFY(!neither.ok);
+		QCOMPARE(neither.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size(), before);
+		// One source still names it: a deviceless track copies nothing, the channel's device copies.
+		QCOMPARE(run(QStringLiteral("reference.copy_devices"), {{QStringLiteral("track"), devicelessIndex},
+			{QStringLiteral("to"), masterId}}).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size(), before);
+		const ControlResult channel = run(QStringLiteral("reference.copy_devices"), {{QStringLiteral("channel"), 0},
+			{QStringLiteral("to"), masterId}});
+		QVERIFY2(channel.ok, qPrintable(channel.errorMessage));
+		QCOMPARE(Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size(), before + 1);
+	}
+
 private:
 	//! A new sample track holding one clip of the tone at the song's start (m_track is that track).
 	SampleClip* freshClip()
@@ -459,21 +398,6 @@ private:
 		auto* clip = dynamic_cast<SampleClip*>(m_track->createClip(TimePos(0)));
 		clip->setSampleFile(m_tone);
 		return clip;
-	}
-
-	//! A project with an instrument track "Lead" and a sample track "Vox" holding one clip.
-	QString writeSourceProject()
-	{
-		run(QStringLiteral("project.new"));
-		Track* lead = Track::create(Track::Type::Instrument, Engine::getSong());
-		lead->setName(QStringLiteral("Lead"));
-		Track* vox = Track::create(Track::Type::Sample, Engine::getSong());
-		vox->setName(QStringLiteral("Vox"));
-		auto* clip = dynamic_cast<SampleClip*>(vox->createClip(TimePos(192)));
-		clip->setSampleFile(m_tone);
-		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("source.mmp"));
-		Engine::getSong()->saveProjectFile(path);
-		return path;
 	}
 
 	QTemporaryDir m_dir;

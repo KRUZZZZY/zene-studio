@@ -23,10 +23,17 @@
  */
 
 #include <QFileInfo>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
 
 #include "ControlDeviceSupport.h"
+#include "Engine.h"
+#include "Instrument.h"
+#include "InstrumentTrack.h"
+#include "PluginFactory.h"
+#include "Song.h"
+#include "ControlEdit.h"
 
 #include "ControlVocabulary.h"
 #include "ControlRegistry.h"
@@ -165,6 +172,14 @@ void registerStateLoad(ControlRegistry& registry)
 			return error;
 		}
 		const QString path = args.value(QStringLiteral("path")).toString();
+		// The rule plugin.state_save applies above and the instrument's file load applies
+		// too: an absolute path to an existing file. A relative name would otherwise be
+		// read from the DAW's working directory.
+		if (!QFileInfo(path).isAbsolute() || !QFileInfo(path).isFile())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'path' must be an absolute path to an existing file"));
+		}
 		QByteArray bytes;
 		if (!controlReadFileBytes(path, &bytes, &error)) { return error; }
 
@@ -176,20 +191,22 @@ void registerStateLoad(ControlRegistry& registry)
 		// pointers, so the step carries ids, not pointers).
 		const QString targetId = args.value(QStringLiteral("target")).toString();
 		const QString pluginId = args.value(QStringLiteral("plugin")).toString();
+		// Restored FIRST: the step is registered only once the load has
+		// succeeded, because a refused document changes nothing - a step taken
+		// for it would undo a device that was never altered and push the real
+		// step before it one further from the keyboard.
+		ControlResult restored = controlRestoreDeviceState(handle, bytes);
+		if (!restored.ok) { return restored; }
 		control::addUndoStep(
 			[targetId, pluginId, previous]() {
 				controlRestoreCapturedState(targetId, pluginId, previous);
 			},
-			[targetId, pluginId, path]() {
-				QByteArray bytes;
-				ControlResult ignored;
-				if (controlReadFileBytes(path, &bytes, &ignored))
-				{
-					controlRestoreCapturedState(targetId, pluginId, bytes);
-				}
+			// The LOADED bytes, not the path: a redo replays what this command
+			// applied. Re-reading the path made a file edited (or replaced) after
+			// the load decide what the redo did.
+			[targetId, pluginId, bytes]() {
+				controlRestoreCapturedState(targetId, pluginId, bytes);
 			});
-		ControlResult restored = controlRestoreDeviceState(handle, bytes);
-		if (!restored.ok) { return restored; }
 
 		QJsonObject result = restored.result;
 		result.insert(QStringLiteral("path"), path);
@@ -202,22 +219,100 @@ void registerStateLoad(ControlRegistry& registry)
 		snapshot.insert(QStringLiteral("state_xml"), boundedState(previous, &truncated));
 		snapshot.insert(QStringLiteral("state_truncated"), truncated);
 
-		QJsonObject transaction;
-		transaction.insert(QStringLiteral("before"), snapshot);
-		transaction.insert(QStringLiteral("inverse"),
-			QJsonObject{{QStringLiteral("op"), QStringLiteral("plugin.state_save")},
-				{QStringLiteral("args"),
-					QJsonObject{{QStringLiteral("note"), QStringLiteral("write before.state_xml "
-						"to a path, then plugin.load (if the device was replaced) and "
-						"plugin.state_load it back")}}}});
-		transaction.insert(QStringLiteral("reversible"), true);
-		transaction.insert(QStringLiteral("mechanism"),
+		// The inverse IS the action checkpoint recorded above, so it is advertised as
+		// the one command that replays it - the same shape every other action
+		// checkpoint carries. Naming plugin.state_save here (with only a `note`)
+		// advertised a command that needs target, plugin and path, and saving a
+		// device's CURRENT state would not restore the previous one anyway.
+		result.insert(QStringLiteral("__transaction"), transactionPayload(snapshot,
+			QStringLiteral("control.undo"), {}, true,
 			QStringLiteral("action checkpoint: the recorded undo step restores the captured "
 				"settings XML by re-resolving the device from the transaction's target and plugin "
-				"ids (a handle's raw device pointers must not outlive the command)"));
-		result.insert(QStringLiteral("__transaction"), transaction);
+				"ids (a handle's raw device pointers must not outlive the command)")));
 		return ControlResult::success(result);
 	};
+	registry.registerCommand(cmd);
+}
+
+//! The first message the instrument reported while opening a file that it had not reported before, else empty.
+QString newInstrumentError(const QHash<QString, int>& before)
+{
+	const QHash<QString, int>& now = Engine::getSong()->errors();
+	for (auto it = now.constBegin(); it != now.constEnd(); ++it)
+	{
+		if (it.value() > before.value(it.key(), 0)) { return it.key(); }
+	}
+	return {};
+}
+
+//! Refuses a file the target's instrument does not open; true when it does (same extension rule as browser.load).
+bool instrumentOpensFile(const ControlTarget& target, const QString& path, ControlResult* error)
+{
+	const QString extension = QFileInfo(path).suffix().toLower();
+	const QString opener = getPluginFactory()->pluginSupportingExtension(extension).info.name();
+	const Instrument* instrument = target.instrumentTrack != nullptr ? target.instrumentTrack->instrument() : nullptr;
+	if (instrument != nullptr && !opener.isEmpty() && opener == QString::fromUtf8(instrument->descriptor()->name)) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::Refused,
+		QStringLiteral("the instrument on %1 does not open .%2 files").arg(target.id, extension));
+	return false;
+}
+
+ControlResult openFileInInstrument(const QJsonObject& args)
+{
+	ControlTarget target;
+	ControlResult error;
+	if (!resolveControlTarget(args.value(QStringLiteral("target")).toString(), &target, &error)) { return error; }
+	const QString path = args.value(QStringLiteral("path")).toString();
+	// The platform's own rule for "absolute": /dir/x.sfz, C:\dir\x.sfz, C:/dir/x.sfz or \\server\share\x.sfz.
+	if (!QFileInfo(path).isAbsolute() || !QFileInfo(path).isFile())
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'path' must be an absolute path to an existing file"));
+	}
+	ControlDeviceHandle handle;
+	if (!instrumentOpensFile(target, path, &error) || !resolveControlDevice(target, QStringLiteral("inst"), &handle, &error)) { return error; }
+
+	const QByteArray previous = controlDeviceStateBytes(handle);
+	const QHash<QString, int> errorsBefore = Engine::getSong()->errors();
+	target.instrumentTrack->instrument()->loadFile(path);
+	if (const QString failure = newInstrumentError(errorsBefore); !failure.isEmpty())
+	{
+		controlRestoreDeviceState(handle, previous);  // the instrument keeps what it had
+		return ControlResult::failure(ControlErrorKind::Refused, failure);
+	}
+	Engine::getSong()->setModified();
+
+	const QByteArray loaded = controlDeviceStateBytes(handle);
+	const QString targetId = args.value(QStringLiteral("target")).toString();
+	control::addUndoStep(
+		[targetId, previous]() { controlRestoreCapturedState(targetId, QStringLiteral("inst"), previous); },
+		[targetId, loaded]() { controlRestoreCapturedState(targetId, QStringLiteral("inst"), loaded); });
+
+	bool truncated = false;
+	QJsonObject snapshot{{QStringLiteral("path"), path}, {QStringLiteral("plugin"), handle.pluginName},
+		{QStringLiteral("state_xml"), boundedState(previous, &truncated)}, {QStringLiteral("state_truncated"), truncated}};
+	QJsonObject result{{QStringLiteral("target"), targetId}, {QStringLiteral("plugin"), QStringLiteral("inst")},
+		{QStringLiteral("device_plugin"), handle.pluginName}, {QStringLiteral("path"), path}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload(snapshot, QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("action checkpoint: the recorded undo step restores the instrument's previous state XML (its file and settings)")));
+	return ControlResult::success(result);
+}
+
+void registerOpenFile(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("plugin.open_file");
+	cmd.group = QStringLiteral("plugin");
+	cmd.verb = QStringLiteral("open_file");
+	cmd.description = QStringLiteral("Open a file in the instrument a track already carries - what the instrument window's Open button "
+		"does: an .sfz in the SFZ Player, a sample in the Audio File Processor. The instrument must be the one that opens the "
+		"file's extension (browser.load puts a file on a NEW track instead). A file the instrument cannot load is refused and the "
+		"instrument keeps what it had. One control.undo step restores the previous file and settings.");
+	cmd.argsSchema = objectSchema({{QStringLiteral("target"), stringProperty()}, {QStringLiteral("path"), stringProperty()}},
+		{QStringLiteral("target"), QStringLiteral("path")});
+	cmd.resultSchema = objectSchema({{QStringLiteral("target"), stringProperty()}, {QStringLiteral("plugin"), stringProperty()},
+		{QStringLiteral("device_plugin"), stringProperty()}, {QStringLiteral("path"), stringProperty()}});
+	cmd.mutating = true;
+	cmd.handler = [](const QJsonObject& args) { return openFileInInstrument(args); };
 	registry.registerCommand(cmd);
 }
 
@@ -227,6 +322,7 @@ void registerPluginStateCommands(ControlRegistry& registry)
 {
 	registerStateSave(registry);
 	registerStateLoad(registry);
+	registerOpenFile(registry);
 	registerPluginPresetCommands(registry);
 }
 

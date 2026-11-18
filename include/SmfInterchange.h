@@ -9,9 +9,11 @@
  * this session obeys, at the same ticks.
  *
  * WHAT THIS FILE IS NOT. It is not the note/clip export: that is
- * plugins/MidiExport (File > Export MIDI) and it is untouched here. This file
- * carries the CONDUCTOR TRACK - the tempo map and nothing else - which is why
- * it is useful to a DAW that only wants the grid.
+ * plugins/MidiExport (File > Export MIDI), which calls exportEvents() below for
+ * its own track 0 so the two agree on tempo, metre, scaling and the tick-0 seed
+ * (Q050-020). This file's own writer carries the CONDUCTOR TRACK - the tempo
+ * map and nothing else - which is why it is useful to a DAW that only wants
+ * the grid.
  *
  * THE CONVENTION, RECORDED (the release contract asks for it explicitly, and
  * `interchange.smf_convention` hands the same values to a client):

@@ -51,12 +51,15 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <limits>
+
 #include <QJsonObject>
 
 #include "Clip.h"
 #include "ControlClipFrames.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "SampleClip.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -131,8 +134,23 @@ bool planTrim(const ClipRef& ref, const QJsonObject& args, TrimPlan* plan, Contr
 	// offset moves by the same delta as the clip's start. srcin frames and `off`
 	// ticks both fold into SampleClip::sourceFrameAt's single origin, which is why
 	// moving the two together holds the audio still on the timeline.
-	plan->offset = ref.clip->startTimeOffset().getTicks() + (oldStart - start);
+	const qint64 offset = static_cast<qint64>(ref.clip->startTimeOffset().getTicks())
+		+ static_cast<qint64>(oldStart) - start;
+	if (offset < std::numeric_limits<tick_t>::min() || offset > std::numeric_limits<tick_t>::max())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("the trim would put the clip's source offset at %1, outside the tick range")
+				.arg(offset));
+		return false;
+	}
+	plan->offset = static_cast<tick_t>(offset);
 	return true;
+}
+
+bool frameTrimOptionRequested(const QJsonObject& args)
+{
+	return args.contains(QStringLiteral("start_frames")) || args.contains(QStringLiteral("end_frames"))
+		|| args.contains(QStringLiteral("zero_crossing"));
 }
 
 void registerClipTrim(ControlRegistry& registry)
@@ -148,7 +166,8 @@ void registerClipTrim(ControlRegistry& registry)
 		"(Clip checkpoint). ED-021, sample clips only: 'start_frames' / 'end_frames' put an edge that many "
 		"engine frames after its tick (frame-exact: the clip's window takes the frame, the sub-tick rest its "
 		"lead), and 'zero_crossing' (default: arrangement.modes' snap_to_zero_crossings) moves each edge to "
-		"the nearest zero crossing within 10 ms; the reply then adds the window's source frames.");
+		"the nearest zero crossing within 10 ms; the reply then adds the window's source frames. Linked instances "
+		"keep independent position, length and source window.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("clip"), stringProperty()},
 		{QStringLiteral("start"), integerProperty(0, MaxSongLength)},
@@ -163,6 +182,7 @@ void registerClipTrim(ControlRegistry& registry)
 		{QStringLiteral("length"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("end"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("offset"), integerProperty(-MaxSongLength, MaxSongLength)},
+		{QStringLiteral("peers_trimmed"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("source_in"), integerProperty()},
 		{QStringLiteral("source_out"), integerProperty()},
 		{QStringLiteral("lead_frames"), integerProperty()},
@@ -173,7 +193,13 @@ void registerClipTrim(ControlRegistry& registry)
 		ControlResult error;
 		ClipRef ref;
 		if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
-		if (clipframes::wanted(ref, args)) { return clipframes::trim(ref, args); }  // ED-021
+		const bool frameTrimWanted = clipframes::wanted(ref, args);
+		if (dynamic_cast<SampleClip*>(ref.clip) == nullptr && frameTrimOptionRequested(args))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("frame-specific trim options require a sample clip"));
+		}
+		if (frameTrimWanted) { return clipframes::trim(ref, args); }  // ED-021
 
 		TrimPlan plan;
 		const QJsonObject before = edgeState(ref);
@@ -184,8 +210,8 @@ void registerClipTrim(ControlRegistry& registry)
 		ref.clip->changeLength(TimePos(plan.length));
 		ref.clip->setStartTimeOffset(TimePos(plan.offset));
 		ref.clip->setAutoResize(false);
-
 		QJsonObject result = edgeState(ref);
+		result.insert(QStringLiteral("peers_trimmed"), 0);
 		QJsonObject inverseArgs;
 		inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
 		inverseArgs.insert(QStringLiteral("start"), before.value(QStringLiteral("position")));

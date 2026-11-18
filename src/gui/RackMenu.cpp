@@ -210,8 +210,7 @@ void addUnbindMenu(QMenu* rack, const QString& channel, const QJsonObject& macro
 	for (int index = 0; index < targets.size(); ++index)
 	{
 		const QJsonObject target = targets.at(index).toObject();
-		QAction* action = commandItem(unbind, QStringLiteral("fx-%1 %2").arg(target.value(QStringLiteral("effect")).toInt())
-			.arg(target.value(QStringLiteral("parameter")).toString()), "rack.macro_target_remove");
+		QAction* action = commandItem(unbind, unbindTargetText(target), "rack.macro_target_remove");
 		QObject::connect(action, &QAction::triggered, rack, [channel, id, index] {
 			run(channel, QStringLiteral("rack.macro_target_remove"), {{QStringLiteral("macro"), id},
 				{QStringLiteral("target"), index}});
@@ -269,6 +268,15 @@ QString rackStatusText(const QJsonObject& state)
 	// One chain is the channel's own whatever the selector says: parallel over one chain is that chain.
 	return chains <= 1 ? QMenu::tr("1 chain (the channel's own)")
 		: QMenu::tr("%1 chains, routed to %2").arg(chains).arg(routing);
+}
+
+QString unbindTargetText(const QJsonObject& target)
+{
+	// The chain belongs in the label: two targets can share an effect index and a parameter
+	// across parallel chains, and then the effect and parameter alone name two different things.
+	return QMenu::tr("chain %1: fx-%2 %3").arg(target.value(QStringLiteral("chain")).toInt())
+		.arg(target.value(QStringLiteral("effect")).toInt())
+		.arg(target.value(QStringLiteral("parameter")).toString());
 }
 
 void addRackMenu(QMenu* menu, const MixerChannel* channel)

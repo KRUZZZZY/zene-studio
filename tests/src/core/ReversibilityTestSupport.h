@@ -59,9 +59,11 @@ namespace revtest
 {
 using namespace lmms;
 
-//! Forward declaration: addInstrumentTrack() uses the catalogue helpers that are
-//! defined below it (one pass, no reordering of the file's narrative).
+//! Forward declaration: addInstrumentTrack() uses the catalogue and state helpers
+//! that are defined below it (one pass, no reordering of the file's narrative).
 inline QString firstLoadable(const QString& kind);
+inline QString firstLoadableInstrument();
+inline bool hasTrack(const QString& id);
 
 inline ControlResult run(const QString& id, const QJsonObject& args = QJsonObject())
 {
@@ -93,18 +95,38 @@ inline QString addTrack(const QString& type = QStringLiteral("instrument"))
 	return added.ok ? added.result.value(QStringLiteral("track")).toString() : QString();
 }
 
-//! An instrument track with a real instrument on it (plugin.load), or empty
-//! when this build exposes none.
-inline QString addInstrumentTrack()
+//! An instrument track carrying \a device (a dev-<n> id), or empty when the
+//! load fails. The explicit device lets a test drive the two failure paths -
+//! no loadable device at all, and a device plugin.load refuses - without
+//! depending on what this build happens to ship.
+inline QString addInstrumentTrackFor(const QString& device)
 {
+	// Resolve the device BEFORE creating the track: a fixture with nothing to
+	// load must not add one at all. A caller that skips on the empty answer is
+	// not left holding a track it never asked to keep.
+	if (device.isEmpty()) { return QString(); }
 	const QString track = addTrack();
 	if (track.isEmpty()) { return QString(); }
-	const QString device = firstLoadable(QStringLiteral("instrument"));
-	if (device.isEmpty()) { return QString(); }
 	const ControlResult loaded = run(QStringLiteral("plugin.load"),
 		{{QStringLiteral("target"), track}, {QStringLiteral("device"), device}});
-	return loaded.ok ? track : QString();
+	if (!loaded.ok)
+	{
+		// track.add recorded the new track's own undo step immediately before
+		// this load, so undoing it removes the track AND leaves no step behind
+		// for the next test of this shared engine. If the journal could not take
+		// it back (no journal), remove the track directly: a track left behind
+		// on a failure path is the bug this helper must not have.
+		run(QStringLiteral("control.undo"));
+		if (hasTrack(track)) { run(QStringLiteral("track.remove"),
+			{{QStringLiteral("track"), track}}); }
+		return QString();
+	}
+	return track;
 }
+
+//! An instrument track with a real instrument on it (plugin.load), or empty
+//! when this build exposes none.
+inline QString addInstrumentTrack() { return addInstrumentTrackFor(firstLoadableInstrument()); }
 
 //! Every loadable device of \a kind, whatever host it came from (built-in,
 //! LADSPA, LV2): the point of these tests is a REAL device to drive.
@@ -124,6 +146,26 @@ inline QString firstLoadable(const QString& kind)
 {
 	const QStringList ids = loadableDevices(kind);
 	return ids.isEmpty() ? QString() : ids.first();
+}
+
+//! Prefer the build-owned synth for note-playing fixtures; keep a fallback for reduced builds.
+inline QString firstLoadableInstrument()
+{
+	const ControlResult listed = run(QStringLiteral("plugin.list"),
+		{{QStringLiteral("kind"), QStringLiteral("instrument")},
+			{QStringLiteral("loadable_only"), true}});
+	QString fallback;
+	for (const QJsonValue& value : listed.result.value(QStringLiteral("devices")).toArray())
+	{
+		const QJsonObject device = value.toObject();
+		const QString id = device.value(QStringLiteral("id")).toString();
+		if (fallback.isEmpty()) { fallback = id; }
+		if (device.value(QStringLiteral("name")).toString() == QLatin1String("tripleoscillator"))
+		{
+			return id;
+		}
+	}
+	return fallback;
 }
 
 inline QString firstLoadableEffect() { return firstLoadable(QStringLiteral("effect")); }
@@ -161,6 +203,21 @@ inline bool trackMuted(const QString& id)
 	return run(QStringLiteral("track.get_state"),
 		QJsonObject{{QStringLiteral("track"), id}})
 		.result.value(QStringLiteral("muted")).toBool();
+}
+
+//! A clip's mute flag, read back through arrangement.get_state (the clipState entry).
+inline bool clipMuted(const QString& id)
+{
+	for (const QJsonValue& value : run(QStringLiteral("arrangement.get_state"))
+		.result.value(QStringLiteral("clips")).toArray())
+	{
+		const QJsonObject clip = value.toObject();
+		if (clip.value(QStringLiteral("id")).toString() == id)
+		{
+			return clip.value(QStringLiteral("muted")).toBool();
+		}
+	}
+	return false;
 }
 
 //! Every track's {id, muted, soloed}: the state track.set_solo writes.

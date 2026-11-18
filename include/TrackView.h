@@ -28,6 +28,7 @@
 #include <QWidget>
 
 #include "JournallingObject.h"
+#include "lmms_export.h"
 #include "ModelView.h"
 #include "TrackContentWidget.h"
 #include "TrackOperationsWidget.h"
@@ -54,6 +55,13 @@ const int TRACK_OP_WIDTH = 78;
 // ruled from config: ui.compacttrackbuttons
 const int DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT = 136;
 const int TRACK_OP_WIDTH_COMPACT = TRACK_OP_WIDTH;
+
+/*! 0.5.0 Q050-141: the track row's dimensions in the mode it was started in. In accessible mode
+ *  (the touch-first layout) the lane is tall enough for a clip target and the operation column
+ *  wide enough for 44 px buttons 8 px apart; standard mode keeps the inherited sizes. */
+LMMS_EXPORT int trackLaneHeight();
+LMMS_EXPORT int trackOperationsWidth(bool compact);
+LMMS_EXPORT int trackSettingsWidth(bool compact);
 
 
 class TrackView : public QWidget, public ModelView, public JournallingObject

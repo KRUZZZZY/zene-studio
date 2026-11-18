@@ -47,15 +47,20 @@ namespace lmms::gui
 class NoteEditor;
 
 //! The properties of one note, as FL Studio's piano roll shows them on a double-click: key, start, length,
-//! velocity, pan, release velocity, Mod X and Mod Y (the note's MPE timbre and pressure), chance, slide and
-//! mute. OK writes the fields that changed as ONE note.edit - one undo step, the command an agent sends - to
-//! the note double-clicked. The note is held by its id, not its address: the clip can change while the box
-//! is open, and a note that went is refused by the command, not written through a stale pointer.
+//! velocity, pan, release velocity, Mod X and Mod Y (the note's MPE timbre and pressure), chance, slide,
+//! mute, and its recurrence - the pass pattern's length and the bit mask of the passes it plays on
+//! (Q050-242, ED-133). OK writes the fields that changed as ONE note.edit - one undo step, the command an
+//! agent sends - to the note double-clicked. The note is held by its id, not its address: the clip can
+//! change while the box is open, and a note that went is refused by the command, not written through a
+//! stale pointer.
 class LMMS_EXPORT NotePropertiesDialog : public QDialog
 {
 	Q_OBJECT
 
 public:
+	//! 0.5.0 ED-133: recurrence length 0 means every pass; the mask's bit n plays on pass n.
+	static constexpr int MaxPassBits = 16;
+
 	NotePropertiesDialog(NoteEditor* editor, const Note& note);
 
 	//! The note.edit entry for what changed: {note, field: value...}; just {note} when nothing did.
@@ -83,12 +88,25 @@ private:
 	void addNumber(QFormLayout* form, const char* name, const QString& label, std::pair<int, int> range, int value,
 		double perUnit = 1.0);
 	void addFlag(QFormLayout* form, const char* name, const QString& label, bool value);
+	//! The recurrence row (Q050-242): the pass pattern's length and one check box per pass bit.
+	void addRecurrence(QFormLayout* form, const Note& note);
+	//! The mask the pass check boxes currently spell.
+	int passMask() const;
+	//! Add recur_length / recur_mask to \p edit when the box's pair differs from what opened.
+	void addRecurrenceChange(QJsonObject* edit) const;
+	//! Show only the pass bits below @a length; at length 0, show all of them disabled because
+	//! every pass plays and the mask is ignored.
+	void showPassBits(int length);
 
 	NoteEditor* m_editor;
 	QString m_clip;
 	QString m_note;
 	std::vector<Field> m_fields;
 	std::vector<Flag> m_flags;
+	QSpinBox* m_recurLength = nullptr;
+	std::vector<QCheckBox*> m_passBits;
+	int m_initialRecurLength = 0;
+	int m_initialRecurMask = 0;
 };
 
 //! Open the properties box for @a note (window-modal, not blocking: OK applies it).

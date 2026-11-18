@@ -412,7 +412,7 @@ build-rel/plugins/nam_harness plugins/NeuralAmp/models/BossWN-nano.nam \
     --blocks 5625 --warmup 20 --block 512
 
 # audio-thread allocations
-build-rel/plugins/rt_alloc_probe plugins/NeuralAmp/models/BossWN-nano.nam --blocks 512
+build-rel/plugins/rt_alloc_probe plugins/NeuralAmp/models/BossWN-nano.nam 512
 
 # LMMS core regression suite (8 tests)
 cmake --build build -j4 --target ArrayVectorTest AudioBufferTest AutomatableModelTest \

@@ -40,9 +40,14 @@
 #include <QShortcut>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QThread>
 
 #include "Accessibility.h"
+#include "MenuBarExtras.h"
+#include "MeterSpeech.h"
+#include "SessionAnnouncements.h"
 #include "AboutDialog.h"
+#include "ArrangerFileDrop.h"
 #include "AudioEngine.h"
 #include "AutomationEditor.h"
 #include "BrowserPanel.h"
@@ -52,6 +57,8 @@
 #include "ControlWindowCommands.h"
 #include "RetroMidiCaptureSettings.h"
 #include "UnattendedRun.h"
+#include "MissingDevicesNotice.h"
+#include "UndoHistory.h"
 #include "ControllerRackView.h"
 #include "DeprecationHelper.h"
 #include "DpiHelper.h"
@@ -59,6 +66,7 @@
 #include "Engine.h"
 #include "ExportProjectDialog.h"
 #include "FileDialog.h"
+#include "MainWindowGeometry.h"
 #include "Metronome.h"
 #include "MixerView.h"
 #include "GuiApplication.h"
@@ -68,6 +76,7 @@
 #include "InspectorPanel.h"
 #include "MicrotunerConfig.h"
 #include "SessionGridView.h"
+#include "PerformView.h"
 #include "MidiLearnGui.h"
 #include "MpeInputAction.h"
 #include "CrashReportMenu.h"
@@ -94,6 +103,7 @@
 #include "RecentProjectsMenu.h"
 #include "RemotePluginBase.h"
 #include "ScriptEngine.h"
+#include "SessionCheckpoint.h"
 #include "SetupDialog.h"
 #include "Shell.h"
 #include "ShellChrome.h"
@@ -107,6 +117,7 @@
 #include "ToolPlugin.h"
 #include "VersionedSaveDialog.h"
 #include "VideoDecoder.h"
+#include "VideoLane.h"
 
 #include "lmmsversion.h"
 
@@ -135,6 +146,7 @@ QWidget* floatingWindow(const QString& editor)
 	if (editor == QLatin1String("project_notes")) { return gui->getProjectNotes(); }
 	if (editor == QLatin1String("microtuner")) { return gui->getMicrotunerConfig(); }
 	if (editor == QLatin1String("classic_piano_roll")) { return gui->pianoRoll(); }
+	if (editor == QLatin1String("perform")) { return PerformView::instance(false); }  // 0.5.0 WF-071
 	return nullptr;
 }
 
@@ -212,12 +224,28 @@ MainWindow::MainWindow() :
 		// is not a clean one and must keep the marker recoverable.
 		connect(qApp, &QCoreApplication::aboutToQuit, this, &MainWindow::sessionCleanup);
 	}
+	// 0.5.0 theme 22: every clean exit keeps where the window was (ui/main.geometry); the next start opens it there.
+	// Not an unattended run's: an agent's or an offscreen instance's window says nothing about the user's screen.
+	connect(qApp, &QCoreApplication::aboutToQuit, this, [this] { if (!isUnattendedRun()) { mainwindowgeometry::save(this); } });
 
 	connect( Engine::getSong(), SIGNAL(playbackStateChanged()),
 				this, SLOT(updatePlayPauseIcons()));
 
 	connect(Engine::getSong(), SIGNAL(modified()), SLOT(onSongModified()));
+	// A recording pass that lost audio to a full capture buffer: a notice, never a modal dialog.
+	connect(Engine::getSong(), &Song::recordTakeDropped, this, [this](qulonglong frames) {
+		const QString text = tr("%1 frames of the recording were lost to a full capture buffer. "
+			"The take is padded with silence where they were lost.").arg(frames);
+		TextFloat::displayMessage(tr("Recording dropped audio"), text,
+			embed::getIconPixmap("record", 24, 24), 8000);
+		statusBar()->showMessage(text, 8000);
+	});
 	connect(Engine::getSong(), SIGNAL(projectFileNameChanged()), SLOT(onProjectFileNameChanged()));
+	// 0.5.0 Q050-018: ONE non-modal notice for the devices an opened project named and this session could not load.
+	connect(Engine::getSong(), &Song::projectLoaded, this, [this] {
+		if (isAgentInstance()) { return; }
+		showMissingDevicesNotice(this, missingdevices::collect(Engine::getSong()));
+	});
 
 	maximized = isMaximized();
 	new QShortcut(QKeySequence(Qt::Key_F11), this, SLOT(toggleFullscreen()));
@@ -236,6 +264,8 @@ MainWindow::MainWindow() :
 	}
 
 	installEventFilter(this);
+	meterspeech::start(this);
+	(new SessionAnnouncer(this))->start();
 }
 
 
@@ -255,6 +285,8 @@ MainWindow::~MainWindow()
 	delete getGUI()->noteEditor();
 	delete getGUI()->pianoRoll();
 	delete getGUI()->songEditor();
+	// the journal may outlive this window until Engine::destroy(), so it must not call back into it
+	if( ProjectJournal* journal = Engine::projectJournal() ) { journal->setStackObserver( {} ); }
 	// destroy engine which will do further cleanups etc.
 	Engine::destroy();
 }
@@ -306,6 +338,11 @@ void MainWindow::finalize()
 
 	declares(addAction(project_menu, "project_save", tr("Save &As..."),
 		keySequence(Qt::CTRL, Qt::SHIFT, Qt::Key_S), &MainWindow::saveProjectAs), "project.save");
+
+	// Q050-007: the opt-in v2 container, as a menu entry of its own (the Save As dialog also carries
+	// the choice as a checkbox). The same project.save command, with format "v2".
+	declares(addAction(project_menu, "project_save", tr("Save as v2 &Container..."),
+		QKeySequence(), &MainWindow::saveProjectAsV2Container), "project.save");
 
 	declares(addAction(project_menu, "project_save", tr("Save as New &Version"),
 		keySequence(Qt::CTRL, Qt::ALT, Qt::Key_S), &MainWindow::saveProjectAsNewVersion),
@@ -373,6 +410,14 @@ void MainWindow::finalize()
 		this, [](){ dispatchShellCommand(QStringLiteral("window.tempo_map")); }), "window.tempo_map");
 	declares(edit_menu->addAction(embed::getIconPixmap("automation"), tr("Modulators..."),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.modulators")); }), "window.modulators");
+	declares(edit_menu->addAction(embed::getIconPixmap("automation"), tr("Progression..."),
+		this, [](){ dispatchShellCommand(QStringLiteral("window.progression")); }), "window.progression");
+	// Q050-294.2: the melodic step grid on the selected MIDI clip (window.step_grid; its edits are note.step_set).
+	declares(edit_menu->addAction(embed::getIconPixmap("piano"), tr("Step Grid..."),
+		this, [](){ dispatchShellCommand(QStringLiteral("window.step_grid")); }), "window.step_grid");
+	// Q050-154: the live-code panel - the socket-only livecode.* group from the interface.
+	declares(edit_menu->addAction(embed::getIconPixmap("tool"), tr("Live Code..."),
+		this, [](){ dispatchShellCommand(QStringLiteral("window.livecode")); }), "window.livecode");
 	declares(edit_menu->addAction(embed::getIconPixmap("edit_undo"), tr("Undo History..."),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.undo_history")); }), "window.undo_history");
 	declares(edit_menu->addAction(embed::getIconPixmap("setup_general"), tr("Collaborate..."),
@@ -390,6 +435,8 @@ void MainWindow::finalize()
 	addMidiClockMenu(edit_menu);
 	addSessionTuningMenu(edit_menu);
 	addPluginQuarantineMenu(edit_menu);
+	// Q050-093: the remembered loop mode of a dropped audio loop (settings.set on import/loopwarp).
+	arrangerdrop::addLoopWarpAction(edit_menu);
 
 	// Saved MIDI mapping sets (controller.template_*), re-read each time the submenu opens.
 	QMenu* templatesMenu = edit_menu->addMenu(tr("Controller Templates"));
@@ -443,6 +490,19 @@ void MainWindow::finalize()
 	applyPersistedRetroCaptureArm();
 
 	connect(edit_menu, SIGNAL(aboutToShow()), this, SLOT(updateUndoRedoButtons()));
+
+	// The stacks also move while the menu is closed: an edit pushes a step, and control.undo or
+	// control.redo unwinds one. A disabled QAction does not fire its shortcut, so Undo and Redo follow
+	// the journal rather than waiting for the menu to open. The journal is GUI-thread only; a change made
+	// on another thread is queued to this one, so the actions are only ever touched here.
+	if( ProjectJournal* journal = Engine::projectJournal() )
+	{
+		journal->setStackObserver( [this]()
+		{
+			if( QThread::currentThread() == thread() ) { updateUndoRedoButtons(); }
+			else { QMetaObject::invokeMethod( this, &MainWindow::updateUndoRedoButtons, Qt::QueuedConnection ); }
+		} );
+	}
 
 	m_viewMenu = new QMenu( this );
 	a11y::announce(m_viewMenu, tr("View"),
@@ -554,12 +614,15 @@ void MainWindow::finalize()
 
 	if( !ConfigManager::inst()->value( "app", "configured" ).toInt() )
 	{
-		ConfigManager::inst()->setValue( "app", "configured", "1" );
 		// no, so show it that user can setup everything
 		if( interactive )
 		{
 			SetupDialog sd;
 			sd.exec();
+			// Only a run that actually showed the dialog counts as configured. An unattended run
+			// skipped it, so recording it here would suppress the dialog on the next launch even
+			// though the user has never been asked.
+			ConfigManager::inst()->setValue( "app", "configured", "1" );
 		}
 		else
 		{
@@ -571,7 +634,7 @@ void MainWindow::finalize()
 	// look whether the audio engine failed to start the audio device selected by the
 	// user and is using AudioDummy as a fallback
 	// or the audio device is set to invalid one
-	else if( Engine::audioEngine()->audioDevStartFailed() || !AudioEngine::isAudioDevNameValid(
+	if( Engine::audioEngine()->audioDevStartFailed() || !AudioEngine::isAudioDevNameValid(
 		ConfigManager::inst()->value( "audioengine", "audiodev" ) ) )
 	{
 
@@ -929,6 +992,21 @@ void MainWindow::createNewProject()
 
 
 
+void MainWindow::openProjectFile(const QString& path)
+{
+	setCursor( Qt::WaitCursor );
+	QString refusal;
+	const bool opened = control::loadProjectWithCheckpoint( path, QStringList(), nullptr, &refusal );
+	setCursor( Qt::ArrowCursor );
+	if( !opened )
+	{
+		QMessageBox::warning( this, tr( "Project not opened" ), refusal );
+	}
+}
+
+
+
+
 void MainWindow::openProject()
 {
 	if( mayChangeProject(false) )
@@ -943,9 +1021,7 @@ void MainWindow::openProject()
 			Song *song = Engine::getSong();
 
 			song->stop();
-			setCursor( Qt::WaitCursor );
-			song->loadProject( ofd.selectedFiles()[0] );
-			setCursor( Qt::ArrowCursor );
+			openProjectFile( ofd.selectedFiles()[0] );
 		}
 	}
 }
@@ -964,16 +1040,16 @@ void MainWindow::runScript()
 		return;
 	}
 
-	QString error;
-	// The engine streams script output onto the DAW's log itself (ScriptConsole),
-	// so this action does not print the captured lines a second time.
-	const auto result = ScriptEngine::instance()->runFile(path, &error);
+	// The menu and the socket share script.run (Q050-044): the project is captured first, the run is
+	// bounded by the undo budget, and everything the script changed is one undo step.
+	const ControlResult result = ControlRegistry::instance()->invoke(
+		QStringLiteral("script.run"), QJsonObject{{QStringLiteral("path"), path}});
 
-	if (result != ScriptEngine::RunResult::Ok)
+	if (!result.ok)
 	{
 		QMessageBox::warning(this, tr("Script failed"),
 			tr("Running \"%1\" failed:\n\n%2")
-				.arg(QFileInfo(path).fileName(), error));
+				.arg(QFileInfo(path).fileName(), result.errorMessage));
 	}
 	else
 	{
@@ -1007,6 +1083,30 @@ bool MainWindow::saveProject()
 
 bool MainWindow::saveProjectAs()
 {
+	return saveProjectAsWithFormat(false);
+}
+
+
+
+
+bool MainWindow::saveProjectAsV2Container()
+{
+	return saveProjectAsWithFormat(true);
+}
+
+
+
+
+bool MainWindow::saveProjectAsWithFormat(bool preferV2)
+{
+	// Q050-007: the dialog's v2 checkbox starts at what a plain Save of this project would
+	// write - ticked for the entry above, for a project that already is a container, and
+	// when the global setting is on - so unticking it is the way back to the legacy blob.
+	Song * song = Engine::getSong();
+	const QString current = song->projectFileName();
+	song->getSaveOptions().saveAsV2Container.setValue(
+		preferV2 || song->plannedSaveFormat(current.isEmpty() ? QStringLiteral(".mmpz") : current)
+			== Song::SaveFormat::V2Container);
 	auto optionsWidget = new SaveOptionsWidget(Engine::getSong()->getSaveOptions());
 	VersionedSaveDialog sfd( this, optionsWidget, tr( "Save Project" ), "",
 			tr( "Zene Studio Project" ) + " (*.mmpz *.mmp);;" +
@@ -1046,7 +1146,24 @@ bool MainWindow::saveProjectAs()
 				}
 			}
 		}
-		if( this->guiSaveProjectAs( fname ) )
+		// The dialog was answered: its v2 checkbox now decides the format (see SaveOptions).
+		// A template (.mpt) is never a container, whatever the box says.
+		Song::SaveOptions & options = song->getSaveOptions();
+		if( fname.endsWith( ".mpt" ) ) { options.saveAsV2Container.setValue( false ); }
+		options.formatChosen = true;
+		const bool v2 = options.saveAsV2Container.value();
+		const QString target = DataFile( DataFile::Type::SongProject ).nameWithExtension( fname );
+
+		// Q050-007: every save whose format the person (or the project) put on the v2 side
+		// of the line is the registered project.save command - the one the agent surface
+		// calls, with its revision rotation and its transaction - and not a private GUI
+		// writer. A plain legacy Save As keeps the dialog's own path (and its bundle and
+		// MIDI-connection options, which project.save does not carry).
+		const bool viaCommand = !options.saveAsProjectBundle.value() && !fname.endsWith( ".mpt" )
+			&& ( v2 || song->plannedSaveFormat( target ) == Song::SaveFormat::V2Container );
+		const bool saved = viaCommand ? saveThroughCommand( target, v2 ) : this->guiSaveProjectAs( fname );
+		options.setDefaultOptions();
+		if( saved )
 		{
 			if( getSession() == SessionState::Recover )
 			{
@@ -1054,8 +1171,23 @@ bool MainWindow::saveProjectAs()
 			}
 			return true;
 		}
+		return false;
 	}
+	song->getSaveOptions().setDefaultOptions();
 	return false;
+}
+
+
+
+
+bool MainWindow::saveThroughCommand( const QString & target, bool v2 )
+{
+	const ControlResult saved = ControlRegistry::instance()->invoke( QStringLiteral( "project.save" ),
+		QJsonObject{ { QStringLiteral( "path" ), target },
+			{ QStringLiteral( "format" ), v2 ? QStringLiteral( "v2" ) : QStringLiteral( "legacy" ) } } );
+	handleSaveResult( target, saved.ok );
+	if( !saved.ok ) { statusBar()->showMessage( saved.errorMessage, 8000 ); }
+	return saved.ok;
 }
 
 
@@ -1249,6 +1381,7 @@ const QList<QAction*>& MainWindow::floatingWindowActions()
 		{"project_notes", tr("Project Notes"), "project_notes", keySequence(Qt::CTRL, Qt::Key_7)},
 		{"microtuner", tr("Scales and Keymaps"), "microtuner", QKeySequence()},
 		{"piano", tr("Classic Piano Roll"), "classic_piano_roll", QKeySequence()},
+		{"play", tr("Perform Mode"), "perform", QKeySequence()},  // 0.5.0 WF-071: the launcher's live show window
 	};
 	for (const Row& row : rows)
 	{
@@ -1284,6 +1417,10 @@ void MainWindow::updateViewMenu()
 	// 0.5.0 ED-054: the project's video in its floating window (greyed out in a build without FFmpeg).
 	declares(m_viewMenu->addAction(tr("Video Window"), this, []() { dispatchShellCommand(QStringLiteral("video.window_show")); }),
 		"video.window_show")->setEnabled(VideoDecoder::available());
+	// Q050-180.1: a clip at the play position - the way to the first clip, while the arranger's video lane is hidden.
+	declares(m_viewMenu->addAction(tr("Add Video Clip..."), this, [this]() {
+		VideoLane::addClipFromDialog(this, Engine::getSong()->getPlayPos(Song::PlayMode::Song).getTicks());
+	}), "video.clip_add")->setEnabled(VideoDecoder::available());
 	m_viewMenu->addSeparator();
 
 	declares(m_viewMenu->addAction(embed::getIconPixmap( "fullscreen" ),
@@ -1311,6 +1448,8 @@ void MainWindow::updateViewMenu()
 	qa->setCheckable( true );
 	qa->setChecked( ConfigManager::inst()->value( "ui", "printnotelabels" ).toInt() );
 	m_viewMenu->addAction(qa);
+	// 0.5.0 theme 17: what a screen reader is told unasked (view.announcements), the level in force checked.
+	addAnnouncementsMenu(m_viewMenu);
 
 }
 
@@ -1406,8 +1545,8 @@ void MainWindow::updatePlayPauseIcons()
 
 void MainWindow::updateUndoRedoButtons()
 {
-	// when the edit menu is shown, grey out the undo/redo buttons if there's nothing to undo/redo
-	// else, un-grey them
+	// when the edit menu is shown, and whenever the journal's stacks move (see finalize()), grey out the
+	// undo/redo buttons if there's nothing to undo/redo; else, un-grey them
 	m_undoAction->setEnabled(Engine::projectJournal()->canUndo());
 	m_redoAction->setEnabled(Engine::projectJournal()->canRedo());
 }
@@ -1632,6 +1771,7 @@ void MainWindow::keyPressEvent( QKeyEvent * _ke )
 		case Qt::Key_Alt: m_keyMods.m_alt = true; break;
 		case Qt::Key_Space:
 		{
+			if (_ke->isAutoRepeat()) { break; }
 			if (Editor::lastPlayedEditor() != nullptr)
 			{
 				if (m_keyMods.m_shift) { Editor::lastPlayedEditor()->togglePause(); }
@@ -1722,8 +1862,12 @@ void MainWindow::showTool( QAction * _idx )
 
 void MainWindow::browseHelp()
 {
-	// M3.2: app.online_help opens the documentation (the menu is its human).
-	dispatchShellCommand(QStringLiteral("app.online_help"));
+	// M3.2: app.online_help opens the documentation (the menu is its human). It declares
+	// `requires: human`, which the registry refuses for EVERY caller, so dispatching it here
+	// meant the entry did nothing at all - not even the handler's own `opened: false` reached
+	// anyone. The action calls the command's implementation instead, the way the Telemetry
+	// action above calls openTelemetryConsentScreen, so the two still share one.
+	openOnlineHelp(this);
 }
 
 
@@ -1890,10 +2034,27 @@ void MainWindow::exportProject(bool multiExport)
 
 void MainWindow::handleSaveResult(QString const & filename, bool songSavedSuccessfully)
 {
-	if (songSavedSuccessfully)
+	// WF-033 (docs/UNDO-HISTORY-PERSISTENCE.md): an undo history the save could not keep is SAID, never
+	// dropped in silence - the same text project.save's undo_history.warning carries.
+	const QString historyWarning = songSavedSuccessfully ? UndoHistory::instance().lastSave().warning : QString();
+	if (songSavedSuccessfully && !historyWarning.isEmpty())
+	{
+		TextFloat::displayMessage( tr( "Project saved - undo history not fully saved" ), historyWarning,
+				embed::getIconPixmap( "project_save", 24, 24 ), 8000 );
+		statusBar()->showMessage( historyWarning, 8000 );
+	}
+	else if (songSavedSuccessfully)
 	{
 		TextFloat::displayMessage( tr( "Project saved" ), tr( "The project %1 is now saved.").arg( filename ),
 				embed::getIconPixmap( "project_save", 24, 24 ), 2000 );
+		// Q050-007: a v2 container is said to be one, with its cost, every time.
+		if (Engine::getSong()->lastSavedFormat() == Song::SaveFormat::V2Container)
+		{
+			statusBar()->showMessage( Song::containerV2Note(), 8000 );
+		}
+	}
+	if (songSavedSuccessfully)
+	{
 		ConfigManager::inst()->addRecentlyOpenedProject(filename);
 		resetWindowTitle();
 	}

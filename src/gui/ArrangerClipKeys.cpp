@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 
 #include <QCoreApplication>
@@ -33,15 +34,23 @@
 
 #include "AccessibleWidgets.h"
 #include "Clip.h"
+#include "Clipboard.h"
+#include "ClipGroupEdits.h"
 #include "ClipView.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "DataFile.h"
 #include "Engine.h"
+#include "FolderSummary.h"
+#include "GuiApplication.h"
 #include "MusicalTime.h"
 #include "ShellSelection.h"
 #include "Song.h"
 #include "SongEditor.h"
 #include "Track.h"
+#include "TrackContentWidget.h"
+#include "TrackFolder.h"
+#include "TrackView.h"
 
 namespace lmms::gui::arrangerkeys
 {
@@ -56,14 +65,21 @@ Qt::KeyboardModifiers modsOf(const QKeyEvent* event) { return event->modifiers()
 bool vertical(int key) { return key == Qt::Key_Up || key == Qt::Key_Down; }
 bool horizontal(int key) { return key == Qt::Key_Left || key == Qt::Key_Right; }
 
+//! Ticks between @a clip's start and @a tick. Widened before the subtraction: two tick_t values can differ by more
+//! than tick_t holds, and std::abs of the narrow minimum is undefined.
+std::int64_t distanceTo(const Clip* clip, tick_t tick)
+{
+	return std::abs(static_cast<std::int64_t>(clip->startPosition().getTicks()) - tick);
+}
+
 //! The clip on @a track starting nearest @a tick, or nullptr when it has none.
 Clip* nearestOn(const Track* track, tick_t tick)
 {
 	Clip* best = nullptr;
 	for (Clip* clip : track->getClips())
 	{
-		const auto distance = std::abs(clip->startPosition().getTicks() - tick);
-		if (best == nullptr || distance < std::abs(best->startPosition().getTicks() - tick)) { best = clip; }
+		const auto distance = distanceTo(clip, tick);
+		if (best == nullptr || distance < distanceTo(best, tick)) { best = clip; }
 	}
 	return best;
 }
@@ -111,6 +127,174 @@ void resizeSelected(SongEditor* editor, bool longer)
 	else { a11y::announceStatus(editor, describeClip(clip)); }
 }
 
+int snapOf(const SongEditor* editor)
+{
+	return std::max(1, static_cast<int>(std::lround(editor->getSnapSize() * TimePos::ticksPerBar())));
+}
+
+//! One group edit over the selected summary clips and the arranger's selected clips, its outcome read out.
+void editSpans(SongEditor* editor, const QString& command, QJsonObject args)
+{
+	args.insert(QStringLiteral("clips"), selectedClipIds());
+	const ControlResult result = ControlRegistry::instance()->invoke(command, args);
+	if (!result.ok) { a11y::announceTransition(editor, a11y::Transition::Refused, result.errorMessage); }
+	else { a11y::announceStatus(editor, tr("Summary clips edited")); }
+}
+
+tick_t playTick() { return Engine::getSong()->getPlayPos(Song::PlayMode::Song).getTicks(); }
+
+//! Which summary clip Ctrl+Alt+G means: the one holding the selected clip, else the first at or after the play position.
+bool spanInFocus(TrackFolder** folder, tick_t* tick)
+{
+	const Clip* clip = ShellSelection::instance()->clip();
+	if (clip != nullptr && clip->getTrack()->parentFolder() != nullptr)
+	{
+		*folder = clip->getTrack()->parentFolder();
+		*tick = clip->startPosition().getTicks();
+		return true;
+	}
+	for (Track* track : Engine::getSong()->tracks())
+	{
+		auto* each = dynamic_cast<TrackFolder*>(track);
+		if (each == nullptr) { continue; }
+		for (const FolderSpan& span : folderSummary(*each))
+		{
+			if (span.end <= playTick()) { continue; }
+			*folder = each;
+			*tick = std::max(span.start, playTick());
+			return true;
+		}
+	}
+	return false;
+}
+
+void chooseSpan(SongEditor* editor, bool add)
+{
+	TrackFolder* folder = nullptr;
+	tick_t tick = 0;
+	if (!spanInFocus(&folder, &tick))
+	{
+		a11y::announceStatus(editor, tr("No summary clip here"));
+		return;
+	}
+	ControlRegistry::instance()->invoke(QStringLiteral("track.folder_span_select"), {{QStringLiteral("folder"), control::trackIdOf(folder)},
+		{QStringLiteral("at"), static_cast<int>(tick)}, {QStringLiteral("add"), add}});
+	a11y::announceStatus(editor, tr("Summary clip of %1 selected").arg(folder->name()));
+}
+
+//! Which command a Ctrl+Alt chord means over the selected summary clips.
+bool chordEdit(int key, bool shift, tick_t snap, QString* command, QJsonObject* args)
+{
+	const int delta = static_cast<int>(snap);
+	if (horizontal(key))
+	{
+		*command = QStringLiteral("track.folder_span_resize");
+		*args = {{QStringLiteral("edge"), shift ? QStringLiteral("start") : QStringLiteral("end")}, {QStringLiteral("delta"), key == Qt::Key_Right ? delta : -delta}};
+		return true;
+	}
+	if (!shift && key == Qt::Key_K)
+	{
+		*command = QStringLiteral("track.folder_span_split");
+		*args = {{QStringLiteral("at"), static_cast<int>(playTick())}};
+		return true;
+	}
+	if (!shift && (key == Qt::Key_PageUp || key == Qt::Key_PageDown))
+	{
+		*command = QStringLiteral("track.folder_span_move");
+		*args = {{QStringLiteral("delta"), key == Qt::Key_PageDown ? delta : -delta}};
+		return true;
+	}
+	return false;
+}
+
+//! The keys that mean something while a summary clip is selected; each edits it, whichever clip is selected too.
+bool editSelectedSpans(SongEditor* editor, int key, Qt::KeyboardModifiers mods)
+{
+	if (mods == Qt::NoModifier && key == Qt::Key_Escape)
+	{
+		ControlRegistry::instance()->invoke(QStringLiteral("track.folder_span_select"));
+		return false;  // the arranger's own Escape still clears its clips
+	}
+	if (mods == Qt::NoModifier && (key == Qt::Key_Delete || key == Qt::Key_Backspace))
+	{
+		editSpans(editor, QStringLiteral("track.folder_span_delete"), {});
+		return true;
+	}
+	QString command;
+	QJsonObject args;
+	if ((mods & ~Qt::ShiftModifier) != (Qt::ControlModifier | Qt::AltModifier)
+		|| !chordEdit(key, (mods & Qt::ShiftModifier) != 0, snapOf(editor), &command, &args)) { return false; }
+	editSpans(editor, command, args);
+	return true;
+}
+
+//! The summary-clip keys; false for any other key, which goes on as before.
+bool handleSpanKeys(SongEditor* editor, const QKeyEvent* event)
+{
+	const Qt::KeyboardModifiers mods = modsOf(event);
+	const Qt::KeyboardModifiers chord = Qt::ControlModifier | Qt::AltModifier;
+	if (event->key() == Qt::Key_G && (mods == chord || mods == (chord | Qt::ShiftModifier)))
+	{
+		chooseSpan(editor, mods != chord);
+		return true;
+	}
+	return !FolderSpanSelection::instance().isEmpty() && editSelectedSpans(editor, event->key(), mods);
+}
+
+//! The arranger's selected clip views, in selection order.
+QVector<ClipView*> selectedViews(SongEditor* editor)
+{
+	QVector<ClipView*> views;
+	for (selectableObject* selected : editor->selectedObjects())
+	{
+		if (auto* view = dynamic_cast<ClipView*>(selected)) { views.push_back(view); }
+	}
+	return views;
+}
+
+//! Where Ctrl+V lands: the selected clip's track, else the track the clipboard's clips were copied from.
+TrackView* pasteTarget(SongEditor* editor, const QVector<ClipView*>& selected, const QMimeData* clips)
+{
+	if (!selected.isEmpty()) { return selected.front()->getTrackView(); }
+	DataFile data(Clipboard::decodeValue(clips).toUtf8());
+	const int index = data.content().firstChildElement(QStringLiteral("copyMetadata"))
+		.attribute(QStringLiteral("initialTrackIndex"), QStringLiteral("-1")).toInt();
+	const Song::TrackList& tracks = Engine::getSong()->tracks();
+	if (index < 0 || static_cast<std::size_t>(index) >= tracks.size()) { return nullptr; }
+	for (TrackView* view : editor->trackViews())
+	{
+		if (view->getTrack() == tracks[index]) { return view; }
+	}
+	return nullptr;
+}
+
+//! Ctrl+V: the copied clips at the play position, the way the track's context menu pastes them at the pointer (one
+//! undo step on the track; a clip pasted onto its own spot moves on a snap step). A clipboard without clips is left.
+void pasteAtPlayPosition(SongEditor* editor, const QVector<ClipView*>& selected)
+{
+	const QMimeData* clips = Clipboard::getMimeData();
+	if (!Clipboard::decodeKey(clips).startsWith(QStringLiteral("clip_"))) { return; }
+	TrackView* target = pasteTarget(editor, selected, clips);
+	if (target == nullptr) { return; }
+	const TimePos at = Engine::getSong()->getPlayPos(Song::PlayMode::Song);
+	TrackContentWidget* lane = target->getTrackContentWidget();
+	if (lane->canPasteSelection(at, clips, true)) { lane->pasteSelection(at, clips, true); }
+}
+
+//! Cluster gui-1106: Ctrl+C / Ctrl+X / Ctrl+V on the arranger's clips, as their context menus' Copy, Cut and Paste.
+//! Only the plain Ctrl chords: Shift+Insert and Shift+Delete stay the arranger's insert / remove bar.
+bool handleClipboard(SongEditor* editor, const QKeyEvent* event)
+{
+	const int key = event->key();
+	if (modsOf(event) != Qt::ControlModifier || (key != Qt::Key_C && key != Qt::Key_X && key != Qt::Key_V)) { return false; }
+	const QVector<ClipView*> selected = selectedViews(editor);
+	if (key == Qt::Key_V) { pasteAtPlayPosition(editor, selected); }
+	else if (selected.isEmpty()) { a11y::announceTransition(editor, a11y::Transition::Refused, tr("no clip is selected")); }
+	else if (key == Qt::Key_C) { selected.front()->copy(selected); }
+	else { selected.front()->cut(selected); }
+	return true;
+}
+
 } // namespace
 
 bool claims(const QKeyEvent* event)
@@ -124,7 +308,9 @@ bool claims(const QKeyEvent* event)
 
 bool handle(SongEditor* editor, const QKeyEvent* event)
 {
-	if (editor == nullptr || !claims(event) || Engine::getSong() == nullptr) { return false; }
+	if (editor == nullptr || Engine::getSong() == nullptr) { return false; }
+	if (handleSpanKeys(editor, event) || handleClipboard(editor, event)) { return true; }
+	if (!claims(event)) { return false; }
 	const int key = event->key();
 	if (vertical(key)) { chooseAcross(editor, key == Qt::Key_Down); }
 	else if (horizontal(key)) { resizeSelected(editor, key == Qt::Key_Right); }
@@ -152,6 +338,17 @@ bool selectClip(SongEditor* editor, Clip* clip)
 		}
 	}
 	return true;
+}
+
+QJsonArray selectedClipIds()
+{
+	QJsonArray ids;
+	if (getGUI() == nullptr || getGUI()->songEditor() == nullptr) { return ids; }
+	for (selectableObject* selected : getGUI()->songEditor()->m_editor->selectedObjects())
+	{
+		if (auto* view = dynamic_cast<ClipView*>(selected)) { ids.append(control::clipIdOf(view->getClip())); }
+	}
+	return ids;
 }
 
 QString describeClip(const Clip* clip)

@@ -159,7 +159,7 @@ bool readDetectBound(const QJsonObject& args, double* out, ControlResult* error)
 	*out = detection::DefaultAnalysisSeconds;
 	if (!args.contains(QStringLiteral("max_seconds"))) { return true; }
 	const double wanted = args.value(QStringLiteral("max_seconds")).toDouble();
-	if (wanted < 1.0 || wanted > detection::MaxAnalysisSeconds)
+	if (!std::isfinite(wanted) || wanted < 1.0 || wanted > detection::MaxAnalysisSeconds)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("max_seconds must be 1..%1").arg(detection::MaxAnalysisSeconds));
@@ -167,6 +167,17 @@ bool readDetectBound(const QJsonObject& args, double* out, ControlResult* error)
 	}
 	*out = wanted;
 	return true;
+}
+
+Song* detectProjectSong(ControlResult* error)
+{
+	Song* song = Engine::getSong();
+	if (song == nullptr)
+	{
+		*error = ControlResult::failure(ControlErrorKind::Busy,
+			QStringLiteral("the engine is not addressable yet: no project song is loaded"));
+	}
+	return song;
 }
 
 //! The detected tempo as the map can hold it. -1 when it is outside the map's

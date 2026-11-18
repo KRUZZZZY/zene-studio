@@ -23,6 +23,7 @@
 #include "WasmEffect.h"
 #include "WasmEffectControls.h"
 #include "WasmSandbox.h"
+#include "WasmSandboxHost.h"
 #include "WasmSpscRingBuffer.h"
 #include "WasmWorker.h"
 
@@ -49,12 +50,16 @@
 #include <wasmtime/trap.h>
 
 #include <atomic>
+#include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
+#include <mutex>
 #include <new>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -67,6 +72,13 @@ namespace
 std::atomic<bool> g_countAllocations{false};
 std::atomic<std::uint64_t> g_allocationCount{0};
 
+// Injected allocation failure: while g_failLargeAllocations is set, the first
+// throwing allocation of at least g_failAllocationThreshold bytes fails. The
+// loader must report that as an error, not let std::bad_alloc escape.
+std::atomic<bool> g_failLargeAllocations{false};
+std::atomic<std::size_t> g_failAllocationThreshold{0};
+std::atomic<std::uint64_t> g_failedAllocations{0};
+
 void noteAllocation() noexcept
 {
 	if (g_countAllocations.load(std::memory_order_relaxed))
@@ -74,11 +86,24 @@ void noteAllocation() noexcept
 		g_allocationCount.fetch_add(1, std::memory_order_relaxed);
 	}
 }
+
+bool shouldFailAllocation(std::size_t size)
+{
+	if (!g_failLargeAllocations.load(std::memory_order_relaxed) ||
+		size < g_failAllocationThreshold.load(std::memory_order_relaxed))
+	{
+		return false;
+	}
+	g_failLargeAllocations.store(false, std::memory_order_relaxed);
+	g_failedAllocations.fetch_add(1, std::memory_order_relaxed);
+	return true;
+}
 } // namespace
 
 void* operator new(std::size_t size)
 {
 	noteAllocation();
+	if (shouldFailAllocation(size)) { throw std::bad_alloc(); }
 	if (void* ptr = std::malloc(size)) { return ptr; }
 	throw std::bad_alloc();
 }
@@ -140,6 +165,71 @@ std::string readFile(const QString& path)
 	return std::string(std::istreambuf_iterator<char>(in),
 		std::istreambuf_iterator<char>());
 }
+
+/*! Holds a module load, so a test can look at the worker while it is Loading.
+ *
+ * The worker's lane stops in the test seam (WasmWorker::setModuleLoadTestHook)
+ * right before it compiles the module, and stays there until the test
+ * releases it. The Loading state is therefore observed, not raced for: no
+ * sleeping, no polling for a state that may already have passed.
+ */
+class ModuleLoadGate
+{
+public:
+	ModuleLoadGate()
+	{
+		WasmWorker::setModuleLoadTestHook(&ModuleLoadGate::onModuleLoad, this);
+	}
+
+	~ModuleLoadGate()
+	{
+		release();
+		WasmWorker::setModuleLoadTestHook(nullptr, nullptr);
+	}
+
+	ModuleLoadGate(const ModuleLoadGate&) = delete;
+	ModuleLoadGate& operator=(const ModuleLoadGate&) = delete;
+
+	//! Waits until the lane reached the seam. Bounded, so a load that never
+	//! gets there fails the test instead of hanging it.
+	bool waitUntilHeld(int timeoutMs)
+	{
+		std::unique_lock<std::mutex> lock(m_mutex);
+		return m_condition.wait_for(lock, std::chrono::milliseconds(timeoutMs),
+			[this] { return m_held; });
+	}
+
+	//! Lets the held load continue.
+	void release()
+	{
+		{
+			std::lock_guard<std::mutex> lock(m_mutex);
+			m_released = true;
+		}
+		m_condition.notify_all();
+	}
+
+private:
+	static void onModuleLoad(void* context)
+	{
+		auto* self = static_cast<ModuleLoadGate*>(context);
+		std::unique_lock<std::mutex> lock(self->m_mutex);
+		if (self->m_held)
+		{
+			// Only the first load is held; a later one (a re-instantiation)
+			// runs straight through.
+			return;
+		}
+		self->m_held = true;
+		self->m_condition.notify_all();
+		self->m_condition.wait(lock, [self] { return self->m_released; });
+	}
+
+	std::mutex m_mutex;
+	std::condition_variable m_condition;
+	bool m_held = false;
+	bool m_released = false;
+};
 } // namespace
 
 class WasmSandboxTest : public QObject
@@ -157,7 +247,10 @@ private slots:
 
 	// ---- ABI / loader robustness ----
 	void loaderRejectsGarbageWithoutCrashing();
+	void loaderRejectsModuleFileOverSizeLimit();
+	void loaderReportsAllocationFailure();
 	void dspModuleMustExportLinearMemory();
+	void loaderRunsStartFunctionWithinFuelBudget();
 
 	// ---- G2: 48-frame block through the frozen audio ABI ----
 	void g2_sandboxProcesses48FrameBlock();
@@ -185,6 +278,15 @@ private slots:
 
 	// ---- mixer audit C1b: the PDC chain cache follows a module load ----
 	void p6_moduleLoadRefreshesTheChainLatencyCache();
+
+	// ---- cluster new-p8-250: a reload keeps the latency compensation ----
+	void p7_reloadKeepsLatencyCompensationWhileLoading();
+
+	// ---- cluster new-p14-379: a refused module load says why ----
+	void p8_failedModuleLoadIsReportedInTheStatusText();
+
+	// ---- cluster 5444: an unload is a completed operation, not a failure ----
+	void p8_emptyPathUnloadReportsSuccess();
 
 private:
 };
@@ -287,6 +389,72 @@ void WasmSandboxTest::loaderRejectsGarbageWithoutCrashing()
 	QCOMPARE(second.callI32("hello").returnValue, 42);
 }
 
+void WasmSandboxTest::loaderRejectsModuleFileOverSizeLimit()
+{
+	QTemporaryDir directory;
+	QVERIFY(directory.isValid());
+	const QString path = directory.filePath(QStringLiteral("oversized.wasm"));
+
+	// A sparse file just over the documented 64 MiB cap: creating it costs no
+	// disk, and the loader must refuse it from its size, before reading bytes.
+	constexpr qint64 kModuleSizeLimit = 64 * 1024 * 1024;
+	QFile file(path);
+	QVERIFY2(file.open(QIODevice::WriteOnly), qPrintable(file.errorString()));
+	QVERIFY(file.resize(kModuleSizeLimit + 1));
+	file.close();
+	QCOMPARE(QFileInfo(path).size(), kModuleSizeLimit + 1);
+
+	WasmSandbox sandbox;
+	std::string error;
+	QVERIFY(!sandbox.loadModuleFile(path.toStdString(), error));
+	QVERIFY2(error.find("module size limit") != std::string::npos,
+		error.c_str());
+	QVERIFY2(error.find(std::to_string(kModuleSizeLimit)) != std::string::npos,
+		error.c_str());
+	QVERIFY(!sandbox.hasProcess());
+	qInfo("loader refused an oversized module file: %s", error.c_str());
+
+	// The control surface's load path is the sibling of loadModuleFile; it
+	// must share the same cap instead of reading the file itself.
+	const HostLoadOutcome outcome =
+		WasmSandboxHost::instance().load(path.toStdString(), 0);
+	QVERIFY(!outcome.ok);
+	QVERIFY2(outcome.error.find("module size limit") != std::string::npos,
+		outcome.error.c_str());
+	qInfo("wasm.load refused the same file: %s", outcome.error.c_str());
+}
+
+void WasmSandboxTest::loaderReportsAllocationFailure()
+{
+	QTemporaryDir directory;
+	QVERIFY(directory.isValid());
+	const QString path = directory.filePath(QStringLiteral("large.wasm"));
+
+	// Big enough that the read buffer allocation crosses the injected failure
+	// threshold, and under the size cap so the loader reaches that allocation.
+	constexpr qint64 kBytes = 2 * 1024 * 1024;
+	QFile file(path);
+	QVERIFY2(file.open(QIODevice::WriteOnly), qPrintable(file.errorString()));
+	QVERIFY(file.resize(kBytes));
+	file.close();
+
+	WasmSandbox sandbox;
+	std::string error;
+	g_failedAllocations.store(0);
+	g_failAllocationThreshold.store(1024 * 1024);
+	g_failLargeAllocations.store(true);
+	const bool loaded = sandbox.loadModuleFile(path.toStdString(), error);
+	g_failLargeAllocations.store(false);
+
+	QVERIFY(!loaded);
+	QCOMPARE(g_failedAllocations.load(), std::uint64_t{1});
+	QVERIFY2(error.find("not enough memory") != std::string::npos,
+		error.c_str());
+	QVERIFY(!sandbox.hasProcess());
+	qInfo("loader reported an allocation failure instead of terminating: %s",
+		error.c_str());
+}
+
 void WasmSandboxTest::dspModuleMustExportLinearMemory()
 {
 	// Exports process() but no memory: the DSP ABI requires linear memory.
@@ -301,6 +469,42 @@ void WasmSandboxTest::dspModuleMustExportLinearMemory()
 	QVERIFY(!sandbox.loadModuleBytes(bytes.data(), bytes.size(), error));
 	QVERIFY(error.find("memory") != std::string::npos);
 	qInfo("loader rejected process() without memory: %s", error.c_str());
+}
+
+void WasmSandboxTest::loaderRunsStartFunctionWithinFuelBudget()
+{
+	// Fuel consumption is enabled in the engine. If the store carries no fuel
+	// budget at instantiation, the module's start function traps out of fuel
+	// and a perfectly valid module is rejected during loading.
+	const std::string wat =
+		"(module"
+		" (memory (export \"memory\") 1)"
+		" (global (export \"channels\") i32 (i32.const 1))"
+		" (global (export \"latency\") i32 (i32.const 0))"
+		" (func $init"
+		"   (local i32)"
+		"   (local.set 0 (i32.const 0))"
+		"   (block (loop"
+		"     (br_if 1 (i32.ge_u (local.get 0) (i32.const 32)))"
+		"     (local.set 0 (i32.add (local.get 0) (i32.const 1)))"
+		"     (br 0))))"
+		" (start $init)"
+		" (func (export \"process\") (param i32 i32 i32 f32) (result i32)"
+		"   (i32.const 0)))";
+	WasmSandbox sandbox;
+	std::string error;
+	std::vector<std::uint8_t> bytes;
+	QVERIFY2(WasmSandbox::assembleWat(wat, bytes, error),
+		qPrintable(QString::fromStdString("assembleWat: " + error)));
+	QVERIFY2(sandbox.loadModuleBytes(bytes.data(), bytes.size(), error),
+		qPrintable(QString::fromStdString(
+			"loadModuleBytes with start function: " + error)));
+	QVERIFY(sandbox.hasProcess());
+
+	auto result = sandbox.callProcess(0, 0, 48, 44100.0f);
+	QVERIFY2(result.ok(),
+		qPrintable(QString::fromStdString("process trapped: " + result.message)));
+	qInfo("loader ran a module start function within the configured fuel budget");
 }
 
 // ---------------------------------------------------------------------------
@@ -1016,6 +1220,209 @@ void WasmSandboxTest::p6_moduleLoadRefreshesTheChainLatencyCache()
 	QCOMPARE(cachedAfterLoad, kTrueLatency);
 	QCOMPARE(reportedAfterBlock, kTrueLatency);
 	QCOMPARE(cachedAfterBlock, kTrueLatency);
+}
+
+// ---------------------------------------------------------------------------
+// Cluster new-p8-250: replacing a loaded module must not take the old
+// module's latency compensation away while the replacement loads.
+//
+// startWorker() stops the worker before the replacement is hosted, and
+// WasmWorker::stop() clears the declared latency with it. While the new
+// module compiled, the effect therefore reported no latency at all and
+// passed the audio through, while the owning chain's PDC cache still held
+// the old figure - so this effect's audio sat 64 frames plus one host
+// period ahead of everything else in the project, exactly as long as the
+// load took.
+//
+// The load is held in the worker's test seam, so the Loading state is
+// observed rather than raced for: no sleeping, no polling for a state that
+// may already have passed.
+// ---------------------------------------------------------------------------
+
+void WasmSandboxTest::p7_reloadKeepsLatencyCompensationWhileLoading()
+{
+	constexpr int kModuleLatency = 64;
+	const int periodFrames = static_cast<int>(Engine::audioEngine()->framesPerPeriod());
+	const int kTrueLatency = kModuleLatency + periodFrames;
+
+	EffectChain chain{nullptr};
+	auto* effect = new WasmEffect(&chain, nullptr);
+	chain.appendEffect(effect);
+	QString error;
+	QVERIFY2(effect->loadModule(modulePath("latency"), &error), qPrintable(error));
+	QCOMPARE(effect->latencyFrames(), kTrueLatency);
+	QCOMPARE(chain.latencyFrames(), kTrueLatency);
+
+	// The replacement declares no latency, so once it is loaded the effect
+	// reports none.
+	const QString replacement = modulePath("gain");
+
+	ModuleLoadGate gate;
+	bool loaded = false;
+	QString loadError;
+	std::thread loader([&]
+	{
+		loaded = effect->loadModule(replacement, &loadError);
+	});
+
+	// The lane is now holding the load: the worker is Loading and the
+	// replacement has not been compiled yet.
+	const bool held = gate.waitUntilHeld(10000);
+	const auto stateWhileLoading = effect->worker().state();
+	const int reportedWhileLoading = effect->latencyFrames();
+	const int cachedWhileLoading = chain.latencyFrames();
+
+	// The dry path has to stay aligned with the reported latency: the
+	// impulse may not come out while the module is not running.
+	AudioBuffer buffer(periodFrames, DEFAULT_CHANNELS);
+	buffer.allocateInterleavedBuffer();
+	for (int f = 0; f < periodFrames; ++f)
+	{
+		buffer.interleavedBuffer()[f][0] = 1.0f;
+		buffer.interleavedBuffer()[f][1] = 1.0f;
+	}
+	buffer.assumeNonSilent(0);
+	buffer.assumeNonSilent(1);
+	const bool processed = effect->processAudioBuffer(buffer);
+	const float firstOutput = buffer.interleavedBuffer()[0][0];
+
+	gate.release();
+	loader.join();
+
+	QVERIFY2(held, "the replacement never reached the worker's load seam");
+	QVERIFY(stateWhileLoading == WasmWorker::State::Loading);
+	QVERIFY2(loaded, qPrintable(loadError));
+	// The compensation the running module declared is still in force, and the
+	// chain's PDC cache still agrees with it.
+	QCOMPARE(reportedWhileLoading, kTrueLatency);
+	QCOMPARE(cachedWhileLoading, kTrueLatency);
+	QVERIFY(processed);
+	QCOMPARE(firstOutput, 0.0f);
+
+	// The replacement resolved: its own latency (none) is in force now, and
+	// the chain's cache follows it.
+	QCOMPARE(effect->worker().declaredLatency(), 0);
+	QCOMPARE(effect->latencyFrames(), 0);
+	QCOMPARE(chain.latencyFrames(), 0);
+
+	qInfo("P7 reload: while the replacement loaded the effect reported %d "
+		"frames and the chain %d (expected %d = %d module + %d host period); "
+		"after it resolved: effect=%d chain=%d",
+		reportedWhileLoading, cachedWhileLoading, kTrueLatency, kModuleLatency,
+		periodFrames, effect->latencyFrames(), chain.latencyFrames());
+}
+
+// ---------------------------------------------------------------------------
+// cluster new-p14-379: a refused module load says why
+//
+// The controls model keeps the reason of a failed load in m_error, but the
+// status line the dialog shows was built from the worker's state alone: after
+// a refused load the user saw "no module loaded" (or "ready", for the module
+// that kept running) and never learned why the module they picked was
+// refused. The reason must appear in the status text, and a later successful
+// load must clear it again.
+//
+// The failure is produced by a file that is not a wasm module at all, so the
+// load is refused by the host's own checks: no timing, no thread and no race
+// is involved.
+// ---------------------------------------------------------------------------
+
+void WasmSandboxTest::p8_failedModuleLoadIsReportedInTheStatusText()
+{
+	QTemporaryDir dir;
+	QVERIFY(dir.isValid());
+	const QString broken = dir.filePath("not-a-module.wasm");
+	QFile brokenFile(broken);
+	QVERIFY(brokenFile.open(QIODevice::WriteOnly));
+	brokenFile.write("this is not a wasm module");
+	brokenFile.close();
+
+	// Nothing loaded yet: the status line has to carry the reason.
+	WasmEffect empty(nullptr, nullptr);
+	auto* emptyControls = empty.controls();
+	QVERIFY(!emptyControls->loadModule(broken));
+	const QString emptyError = emptyControls->lastError();
+	QVERIFY2(!emptyError.isEmpty(), "a refused load must record why it was refused");
+	const QString emptyStatus = emptyControls->statusText();
+	QVERIFY2(emptyStatus.contains(emptyError),
+		qPrintable("the status line hides the load failure: \"" + emptyStatus
+			+ "\" does not contain \"" + emptyError + "\""));
+
+	// A module is running: the refused load leaves it running (all or
+	// nothing), and the status line has to say both - the module still runs
+	// AND the new one was refused.
+	WasmEffect running(nullptr, nullptr);
+	auto* runningControls = running.controls();
+	QVERIFY2(runningControls->loadModule(modulePath("gain")), "the gain module must load");
+	QVERIFY(runningControls->lastError().isEmpty());
+	QCOMPARE(runningControls->statusText().contains("ready"), true);
+	QVERIFY(!runningControls->loadModule(broken));
+	QCOMPARE(running.modulePath(), modulePath("gain"));
+	const QString runningError = runningControls->lastError();
+	QVERIFY(!runningError.isEmpty());
+	const QString runningStatus = runningControls->statusText();
+	QVERIFY2(runningStatus.contains(runningError),
+		qPrintable("the status line hides the load failure: \"" + runningStatus
+			+ "\" does not contain \"" + runningError + "\""));
+	QVERIFY2(runningStatus.contains("ready"),
+		qPrintable("the status line must still report the module that runs: \""
+			+ runningStatus + "\""));
+
+	// A load that succeeds clears the reason again.
+	QVERIFY2(runningControls->loadModule(modulePath("gain")), "the gain module must load");
+	QVERIFY(runningControls->lastError().isEmpty());
+	QVERIFY2(!runningControls->statusText().contains(runningError),
+		qPrintable("the status line still shows the old failure: \""
+			+ runningControls->statusText() + "\""));
+
+	qInfo("P8 refused load: empty -> \"%s\"; with a module running -> \"%s\"; "
+		"after a successful load -> \"%s\"",
+		qPrintable(emptyStatus), qPrintable(runningStatus),
+		qPrintable(runningControls->statusText()));
+}
+
+// ---------------------------------------------------------------------------
+// Cluster 5444: WasmEffect::loadModule("") unloads the module - a completed
+// operation - but returned false, so WasmEffectControls::loadModule() took the
+// failure branch and set "Failed to load " after the unload had happened.
+//
+// The regression drives the caller the finding names, and then the effect
+// directly with a stale error string: an unload must report success, clear the
+// error and leave the effect in its unloaded state.
+// ---------------------------------------------------------------------------
+
+void WasmSandboxTest::p8_emptyPathUnloadReportsSuccess()
+{
+	WasmEffect effect(nullptr, nullptr);
+	QString error;
+	QVERIFY2(effect.loadModule(modulePath("latency"), &error), qPrintable(error));
+	QCOMPARE(effect.worker().declaredLatency(), 64);
+	QVERIFY(effect.isModuleLoaded());
+	QVERIFY(effect.worker().isReady());
+
+	// The caller from the finding: the controls layer treats a false return as
+	// a failed load and records a bogus error.
+	QVERIFY2(effect.controls()->loadModule(QString()),
+		qPrintable(effect.controls()->lastError()));
+	QCOMPARE(effect.controls()->lastError(), QString());
+	QCOMPARE(effect.modulePath(), QString());
+	QCOMPARE(effect.controls()->modulePath(), QString());
+	QVERIFY(!effect.isModuleLoaded());
+	QVERIFY(!effect.worker().isReady());
+	QCOMPARE(effect.latencyFrames(), 0);
+
+	// The effect's own contract: a completed unload returns true and clears
+	// the caller's error string, exactly as a completed load does.
+	error = QStringLiteral("stale error");
+	QVERIFY(effect.loadModule(QString(), &error));
+	QCOMPARE(error, QString());
+
+	// Unloading an already unloaded effect is still a successful operation.
+	QVERIFY(effect.controls()->loadModule(QString()));
+	QCOMPARE(effect.controls()->lastError(), QString());
+
+	qInfo("P8 unload: controls unload returned success, module path empty, "
+		"worker idle, latency 0");
 }
 
 } // namespace lmms::wasm

@@ -52,6 +52,8 @@
 #include "SampleWindow.h"
 #include "Song.h"
 
+#include "../../../src/core/SampleOperators.h"
+
 using namespace lmms;
 using namespace revtest;
 
@@ -337,6 +339,84 @@ private slots:
 			"one undo did not restore the exact frames that were there");
 	}
 
+	//! A destructive edit replaces the clip's SOURCE, not how the clip plays it:
+	//! the reverse toggle, the gain and the pitch the clip carries survive the
+	//! edit. sample.crop replaces the source through SampleClip::replaceSample;
+	//! the frames really are cropped, so the assertions below are about a
+	//! replaced source and not about an edit that never ran.
+	void aSourceEditKeepsTheClipPlaybackSettings()
+	{
+		const QString clip = makeGeneratedClip();
+		QVERIFY(!clip.isEmpty());
+		control::ClipRef ref;
+		ControlResult error;
+		QVERIFY(control::resolveClip(clip, &ref, &error));
+		auto* sampleClip = dynamic_cast<SampleClip*>(ref.clip);
+		QVERIFY(sampleClip != nullptr);
+		const Capture before = captureOf(clip);
+		QVERIFY(before.frames.size() > 64);
+		// crop refuses a clip that plays its whole source, so author a window to crop to
+		const auto from = static_cast<f_cnt_t>(before.frames.size() / 4);
+		const auto to = static_cast<f_cnt_t>(before.frames.size() / 2);
+		sampleClip->setSampleWindow({from, to});
+
+		// The GUI's own settings on the clip's sample (SampleClipView: the reverse
+		// toggle, the gain binding), set here as a user would have set them.
+		sampleClip->sample().setReversed(true);
+		sampleClip->sample().setAmplification(0.5f);
+		sampleClip->sample().setFrequency(220.0f);
+
+		const ControlResult cropped = run(QStringLiteral("sample.crop"),
+			QJsonObject{{QStringLiteral("clip"), clip}});
+		QVERIFY2(cropped.ok, qPrintable(cropped.errorMessage));
+		// the edit happened: the source is now exactly the frames the window played
+		const Capture after = captureOf(clip);
+		QCOMPARE(after.frames.size(), static_cast<size_t>(to - from));
+		QCOMPARE(after.frames.front().left(), before.frames[static_cast<size_t>(from)].left());
+		QCOMPARE(after.frames.back().left(), before.frames[static_cast<size_t>(to - 1)].left());
+
+		QVERIFY2(sampleClip->sample().reversed(), "the edit reset the clip's reversed flag");
+		QCOMPARE(sampleClip->sample().amplification(), 0.5f);
+		QCOMPARE(sampleClip->sample().frequency(), 220.0f);
+	}
+
+	//! A destructive edit through commitBake (sample.amplify, sample.normalize,
+	//! sample.reverse, sample.fade) replaces the clip's SOURCE via setSampleBuffer:
+	//! the reverse toggle, the gain and the pitch the clip carries survive the edit.
+	//! sample.amplify is the probe - it goes through commitBake, which used to call
+	//! setSampleBuffer and reset the three settings to defaults.
+	void aBakeKeepsTheClipPlaybackSettings()
+	{
+		const QString clip = makeGeneratedClip();
+		QVERIFY(!clip.isEmpty());
+		control::ClipRef ref;
+		ControlResult error;
+		QVERIFY(control::resolveClip(clip, &ref, &error));
+		auto* sampleClip = dynamic_cast<SampleClip*>(ref.clip);
+		QVERIFY(sampleClip != nullptr);
+		const Capture before = captureOf(clip);
+		QVERIFY(before.frames.size() > 64);
+
+		// The GUI's own settings on the clip's sample (SampleClipView: the reverse
+		// toggle, the gain binding), set here as a user would have set them.
+		sampleClip->sample().setReversed(true);
+		sampleClip->sample().setAmplification(0.5f);
+		sampleClip->sample().setFrequency(220.0f);
+
+		const ControlResult amplified = run(QStringLiteral("sample.amplify"),
+			QJsonObject{{QStringLiteral("clip"), clip}, {QStringLiteral("gain_db"), -6.0}});
+		QVERIFY2(amplified.ok, qPrintable(amplified.errorMessage));
+		// The edit happened: the source frames are now scaled (the gain was baked)
+		const Capture after = captureOf(clip);
+		QCOMPARE(after.frames.size(), before.frames.size());
+		// The frames changed (the gain was applied), so the edit provably ran
+		QVERIFY2(!sameFrames(before, after), "the amplify bake did not change the frames");
+
+		QVERIFY2(sampleClip->sample().reversed(), "the bake reset the clip's reversed flag");
+		QCOMPARE(sampleClip->sample().amplification(), 0.5f);
+		QCOMPARE(sampleClip->sample().frequency(), 220.0f);
+	}
+
 	//! sample.fade: direction=in starts at exactly 0 and keeps the last frame;
 	//! direction=out keeps the first and ends at exactly 0; the midpoint sits
 	//! on the linear ramp. ONE undo restores the exact frames after each bake,
@@ -493,6 +573,88 @@ private slots:
 		QCOMPARE(oversized.ok, false);
 		QCOMPARE(oversized.errorKind, ControlErrorKind::Refused);
 		QVERIFY(oversized.errorMessage.contains(QStringLiteral("512 MiB")));
+	}
+
+	//! The generation cap counts a SampleFrame ONCE, not twice: SampleFrame is
+	//! already a stereo frame (include/SampleFrame.h: std::array<sample_t,
+	//! DEFAULT_CHANNELS>), so an ask whose real byte size sits under the 512 MiB
+	//! cap must be accepted even though the old half-cap estimate refused it.
+	//! The ask is the smallest whole-tick length whose frames cross the half-cap
+	//! but stay within the real cap, so the assertion pins the boundary rather
+	//! than a lucky constant.
+	void theCapCountsStereoFramesOnce()
+	{
+		const qint64 cap = 512ll * 1024 * 1024;
+		const qint64 bytesPerFrame = static_cast<qint64>(sizeof(SampleFrame));
+		const double fpt = Engine::framesPerTick();
+		QVERIFY(fpt > 0.0);
+		// Smallest whole-tick ask whose frames cross the half-cap but stay
+		// within the real cap: refused by the double-count, accepted once.
+		const tick_t length = static_cast<tick_t>(
+			std::ceil(static_cast<double>(cap) / (2.0 * static_cast<double>(bytesPerFrame) * fpt))) + 1;
+		const auto frames = static_cast<f_cnt_t>(std::llround(
+			static_cast<double>(length) * fpt));
+		QVERIFY(static_cast<qint64>(frames) * bytesPerFrame <= cap);
+		QVERIFY(static_cast<qint64>(frames) * 2 * bytesPerFrame > cap);
+		const QString track = addTrack(QStringLiteral("sample"));
+		QVERIFY(!track.isEmpty());
+		const ControlResult generated = run(QStringLiteral("sample.generate"),
+			QJsonObject{{QStringLiteral("track"), track},
+				{QStringLiteral("position"), 0}, {QStringLiteral("length"), length},
+				{QStringLiteral("kind"), QStringLiteral("white")}});
+		QVERIFY2(generated.ok, qPrintable(
+		(QStringLiteral("within the 512 MiB cap but refused: ") + generated.errorMessage)));
+		QCOMPARE(generated.result.value(QStringLiteral("frames")).toDouble(),
+			static_cast<double>(frames));
+		// The success journaled a real clip: one undo removes it (and frees the
+		// buffer) before the remaining slots run.
+		REV_UNDO_OR_FAIL();
+	}
+
+	//! A tone's phase step is frequency / sampleRate: with no positive rate the
+	//! division yields NaN frames. The helper has no error channel, so a
+	//! non-positive rate generates NOTHING; the rate-independent kinds are unchanged.
+	void toneWithoutAPositiveSampleRateGeneratesNoFrames()
+	{
+		QVERIFY(sampleops::generate(sampleops::Kind::Tone, 440.0, 1.0f, 16, 0).empty());
+		QVERIFY(sampleops::generate(sampleops::Kind::Tone, 440.0, 1.0f, 16, -44100).empty());
+		const auto tone = sampleops::generate(sampleops::Kind::Tone, 440.0, 1.0f, 16, 44100);
+		QCOMPARE(static_cast<int>(tone.size()), 16);
+		for (const SampleFrame& frame : tone) { QVERIFY(std::isfinite(frame.left()) && std::isfinite(frame.right())); }
+		for (sampleops::Kind kind : {sampleops::Kind::Silence, sampleops::Kind::White, sampleops::Kind::Pink})
+			QCOMPARE(static_cast<int>(sampleops::generate(kind, 440.0, 1.0f, 16, 0).size()), 16);
+	}
+
+	//! The start and length are individually in range, but their end must be too.
+	void generateChecksClipEndAgainstSongLimit()
+	{
+		const QString track = addTrack(QStringLiteral("sample"));
+		QVERIFY(!track.isEmpty());
+		const ControlResult pastLimit = run(QStringLiteral("sample.generate"),
+			QJsonObject{{QStringLiteral("track"), track},
+				{QStringLiteral("position"), MaxSongLength - 10},
+				{QStringLiteral("length"), 11}, {QStringLiteral("kind"), QStringLiteral("silence")}});
+		QCOMPARE(pastLimit.ok, false);
+		QCOMPARE(pastLimit.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(pastLimit.errorMessage.contains(QStringLiteral("past the song limit")));
+		REV_UNDO_OR_FAIL();
+		QVERIFY(!hasTrack(track));
+
+		const QString boundaryTrack = addTrack(QStringLiteral("sample"));
+		QVERIFY(!boundaryTrack.isEmpty());
+		const ControlResult atLimit = run(QStringLiteral("sample.generate"),
+			QJsonObject{{QStringLiteral("track"), boundaryTrack},
+				{QStringLiteral("position"), MaxSongLength - 1},
+				{QStringLiteral("length"), 1}, {QStringLiteral("kind"), QStringLiteral("silence")}});
+		QVERIFY2(atLimit.ok, qPrintable(atLimit.errorMessage));
+		const QString clip = atLimit.result.value(QStringLiteral("clip")).toString();
+		control::ClipRef ref;
+		ControlResult error;
+		QVERIFY(control::resolveClip(clip, &ref, &error));
+		QCOMPARE(ref.clip->startPosition().getTicks(), static_cast<int>(MaxSongLength - 1));
+		QCOMPARE(ref.clip->endPosition().getTicks(), static_cast<int>(MaxSongLength));
+		REV_UNDO_OR_FAIL();
+		QVERIFY(!control::resolveClip(clip, &ref, &error));
 	}
 };
 

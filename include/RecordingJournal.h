@@ -20,17 +20,22 @@
  *   GUARANTEED recoverable: the take's file exists and holds at least the
  *   frames the journal recorded at its last update. `recoverableFrames()` is
  *   `min(journal.framesOnDisk, frames the file actually holds)`, so the number
- *   reported is never larger than what is on disk. The journal is updated at
- *   most once per SECOND of audio (RecordingJournal::UpdateIntervalFrames) and
- *   at arm time, so at most one second of material is missing from the count.
+ *   reported is never larger than what is on disk. The disk-writer thread
+ *   (never the audio thread) commits every `updateIntervalFrames()` frames -
+ *   a tenth of a second of audio (Q050-045; it was a whole second): it
+ *   rewrites the take's WAV header so the data chunk size covers what was
+ *   written, syncs the file, then rewrites the journal. A crash therefore
+ *   loses at most `lossBoundFrames()` of what the audio thread captured:
+ *   one commit interval plus the one writer batch in flight. At 48 kHz that
+ *   is 8896 frames, 0.185 s.
  *
- *   NOT guaranteed: (a) the audio written after the last update - the file may
- *   hold more than the journal promised, which is why the report carries both
- *   numbers and lets the caller see the difference; and (b) up to
- *   `capFrames` frames that were still in the recorder's ring buffer when the
- *   process died. That is TrackRecorder::RingCapacityFrames (65536 frames,
- *   ~1.37 s at 48 kHz) and it is IRRECOVERABLE: it never reached a file. In
- *   0.3.0 nothing recovers audio that was never written.
+ *   NOT guaranteed while the disk-writer is HEALTHY: nothing beyond that.
+ *   NOT guaranteed when the writer is STALLED (a disk that stops answering):
+ *   whatever sat in the recorder's ring, up to `RingFramesNotRecoverable`
+ *   frames (TrackRecorder::RingCapacityFrames, 65536, ~1.37 s at 48 kHz) -
+ *   past that the ring drops frames and counts them as overflow. A stalled
+ *   writer is the only way the one-second figure can be exceeded; the
+ *   audio thread never waits for it.
  *
  * There is no recording-recovery UI in 0.3.0 (docs/KNOWN-LIMITATIONS.md).
  *
@@ -118,11 +123,16 @@ std::uint64_t framesInFile(const QString& takePath);
  *  than the file holds, so the number cannot promise material that is not on
  *  disk. */
 std::uint64_t recoverableFrames(const TakeJournal& journal);
-/*! The frames the journal is allowed to be behind by: the journal's update
- *  interval (one second of audio at the take's rate) - the most the count can
- *  understate what is already in the file. */
+/*! The frames between two commits of the take (header, sync, journal): a tenth
+ *  of a second of audio at the take's rate, at least 1. The most the journal's
+ *  count can understate what the writer has already written. */
 std::uint64_t updateIntervalFrames(int sampleRate);
-/*! The frames a crash can lose for good: what was still in the recorder's ring
+//! The frames the disk-writer reads from the ring in one go (TrackRecorder::WriteBatchFrames).
+constexpr std::uint64_t WriterBatchFrames = 4096u;
+/*! THE BOUND: the most audio a crash loses while the disk-writer is healthy -
+ *  one commit interval plus one writer batch. */
+std::uint64_t lossBoundFrames(int sampleRate);
+/*! The frames a crash can lose when the writer is STALLED: what was still in the recorder's ring
  *  buffer. Named as a constant so the limit is a number in the report, not a
  *  sentence in a comment (TrackRecorder::RingCapacityFrames). */
 constexpr std::uint64_t RingFramesNotRecoverable = 65536u;

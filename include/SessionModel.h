@@ -177,6 +177,12 @@ public:
 	void setTranspose( int semitones ) { m_transpose = semitones; }
 	int detune() const { return m_detune; }
 	void setDetune( int cents ) { m_detune = cents; }
+	//! Q050-013: tempo warping of an AUDIO cell. On, the clip - recorded at warpBpm() - is time-stretched
+	//! (pitch preserved) to the session's tempo when the cell is published for a launch.
+	bool warp() const { return m_warp; }
+	void setWarp( bool warp ) { m_warp = warp; }
+	double warpBpm() const { return m_warpBpm; }
+	void setWarpBpm( double bpm ) { m_warpBpm = bpm; }
 	bool ramMode() const { return m_ramMode; }
 	void setRamMode( bool ramMode ) { m_ramMode = ramMode; }
 
@@ -201,6 +207,8 @@ private:
 	float m_gainDb = 0.0f;
 	int m_transpose = 0;
 	int m_detune = 0;
+	bool m_warp = false;
+	double m_warpBpm = 120.0;
 	bool m_ramMode = false;
 	std::vector<FollowAction> m_followActions;
 };
@@ -254,6 +262,42 @@ private:
 	QString m_color;
 };
 
+/*! 0.5.0 L02 (WF-064): a sub-scene - a named subset of one scene's cells (some of its columns), launched on its
+ *  own. It references the row and the columns; the cells themselves stay the grid's, so editing a cell edits what
+ *  every sub-scene naming it launches. A sub-scene may name a column whose cell is empty, or (after the grid
+ *  shrank) a row or column outside the grid: a launch skips what is not there and says so. */
+class LMMS_EXPORT SubScene
+{
+public:
+	//! The most sub-scenes a project holds (a file is read within it; a column is within the grid clamp, 256).
+	static constexpr int MaxCount = 256;
+
+	QString name;
+	int scene = 0;
+	std::vector<int> tracks;  //!< the columns, ascending, each once
+
+	//! @a columns sorted, each once, negatives dropped: the one shape `tracks` is kept in.
+	static std::vector<int> normalised( std::vector<int> columns );
+
+	//! Writes the sub-scene's attributes (name, scene, tracks "0,2,5") onto @a element.
+	void saveState( QDomElement& element ) const;
+	//! Reads them back; false (and *this unchanged) when the scene or a column is missing or out of bounds.
+	bool restoreState( const QDomElement& element );
+
+	bool operator==( const SubScene& other ) const
+	{
+		return name == other.name && scene == other.scene && tracks == other.tracks;
+	}
+};
+
+//! Q050-489: one grid cell as it was, at its coordinates (what a pattern deletion's undo puts back).
+struct SessionCellCopy
+{
+	int track = 0;
+	int scene = 0;
+	ClipSlot slot;
+};
+
 class LMMS_EXPORT SessionModel
 {
 public:
@@ -285,6 +329,10 @@ public:
 
 	// ---- session-wide state -------------------------------------------
 
+	//! 0.5.0 WF-064: the sub-scenes, in the order they were made (a sub-scene's number is its place here).
+	const std::vector<SubScene>& subScenes() const { return m_subScenes; }
+	void setSubScenes( std::vector<SubScene> subScenes ) { m_subScenes = std::move( subScenes ); }
+
 	LaunchQuantisation globalLaunchQuantisation() const { return m_globalLaunchQuantisation; }
 	void setGlobalLaunchQuantisation( LaunchQuantisation quantisation ) { m_globalLaunchQuantisation = quantisation; }
 
@@ -303,6 +351,21 @@ public:
 	bool hadSessionBlock() const { return m_hadSessionBlock; }
 
 	void clear();
+
+	// ---- pattern references (Q050-489; bodies in SessionTransitions.cpp) ----
+
+	/*! Pattern @a removed was deleted and every pattern numbered after it moved down one (PatternTrack's
+	 *  registry renumbers them). A MIDI cell naming the deleted pattern is emptied - its notes went with the
+	 *  pattern, as the pattern's arrangement clips did - and a cell naming a later pattern follows it down, so
+	 *  every remaining cell still names the pattern it named. Returns the cells changed. */
+	int patternRemoved( int removed );
+	//! Patterns @a first and @a second swapped numbers (a pattern track moved): the cells follow their patterns.
+	int patternsSwapped( int first, int second );
+	//! The MIDI cells that play pattern @a pattern - what patternRemoved() would empty - as copies.
+	std::vector<SessionCellCopy> cellsOfPattern( int pattern ) const;
+	/*! Puts @a cells back where they were, each playing pattern @a pattern (a deleted pattern comes back under a
+	 *  new number). A cell the grid no longer reaches is skipped. Returns the cells put back. */
+	int restoreCells( const std::vector<SessionCellCopy>& cells, int pattern );
 
 	// ---- persistence ---------------------------------------------------
 
@@ -357,6 +420,9 @@ private:
 	LaunchQuantisation m_globalLaunchQuantisation = DefaultLaunchQuantisation;
 	bool m_hadSessionBlock = false;
 	QString m_preservedUnknownXml;
+	//! 0.5.0 WF-064. In the <session> block (the undo payload) as a <subscenes> child; in a project FILE as its
+	//! own top-level <z:subscenes> section (SessionSubScenes.cpp), so <z:scenes> keeps the shape older builds claim.
+	std::vector<SubScene> m_subScenes;
 };
 
 } // namespace lmms

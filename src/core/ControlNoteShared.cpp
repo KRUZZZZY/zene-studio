@@ -52,7 +52,7 @@ NoteVector scopeNotes(const MidiClip& clip, NoteScope scope, const QString& clip
 		notes.assign(clip.notes().begin(), clip.notes().end());
 		return notes;
 	}
-	for (int index : selectedNoteIndices(clipIdString))
+	for (int index : selectedNoteIndices(clipIdString, clip))
 	{
 		if (index >= 0 && index < static_cast<int>(clip.notes().size()))
 		{
@@ -65,6 +65,14 @@ NoteVector scopeNotes(const MidiClip& clip, NoteScope scope, const QString& clip
 QString scopeName(NoteScope scope)
 {
 	return scope == NoteScope::Clip ? QStringLiteral("clip") : QStringLiteral("selection");
+}
+
+void checkpointNoteEdit(MidiClip* clip, bool changes)
+{
+	// One undo step for a real change, and NO step for a no-op: a step that
+	// undoes nothing would sit on top of the edit behind it and spend the next
+	// undo (the rule in ControlNoteShared.h).
+	if (clip != nullptr && changes) { clip->addJournalCheckPoint(); }
 }
 
 } // namespace control

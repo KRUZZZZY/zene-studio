@@ -310,6 +310,29 @@ private slots:
 		}
 	}
 
+	void recordingDisarmCommandsAreMutatingAndIrreversible()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const control::ReversibilityTable& table = control::ReversibilityTable::instance();
+		const QStringList commands = {
+			QStringLiteral("record.disarm_track"),
+			QStringLiteral("record.disarm_all"),
+		};
+		for (const QString& id : commands)
+		{
+			const ControlCommand* command = registry->command(id);
+			QVERIFY2(command != nullptr, qPrintable(id + " is not registered"));
+			QVERIFY2(command->mutating, qPrintable(id + " changes recorder and take-file state"));
+
+			const control::ReversibilityEntry* entry = table.lookup(id);
+			QVERIFY2(entry != nullptr, qPrintable(id + " has no reversibility row"));
+			QVERIFY2(entry->cls == control::ReversibilityClass::Irreversible,
+				qPrintable(id + " must be explicitly classified irreversible"));
+			QVERIFY2(!entry->reversible, qPrintable(id + " cannot restore the stopped take"));
+			QVERIFY2(!entry->fallback.isEmpty(), qPrintable(id + " must document a manual fallback"));
+		}
+	}
+
 
 	//! THE HISTOGRAM, DERIVED ON EVERY RUN (0.2.1 coverage gap 3a; board card #677).
 	/*!
@@ -437,9 +460,27 @@ private slots:
 		{
 			if (!entry.coalesces()) { continue; }
 			++declared;
-			QCOMPARE(entry.cls, control::ReversibilityClass::TrueInverse);
-			QVERIFY2(registry->command(entry.command) != nullptr,
-				qPrintable(entry.command + " declares coalescing but is not registered"));
+			const ControlCommand* spec = registry->command(entry.command);
+			QVERIFY2(spec != nullptr, qPrintable(entry.command + " declares coalescing but is not registered"));
+			// A wrapper joins the run of the nested command it names (ControlCommand::coalescesWrapped). That
+			// nested call must be a registered true_inverse coalescing row with the SAME target as the wrapper's row,
+			// so the wrapper's declaration is checked against the call that really records. Every other
+			// declaration is a true_inverse row itself.
+			if (!spec->coalescesWrapped.isEmpty())
+			{
+				QVERIFY2(!spec->mutating, qPrintable(entry.command + " is a coalescing wrapper but is mutating"));
+				const control::ReversibilityEntry* nested = table.lookup(spec->coalescesWrapped);
+				QVERIFY2(nested != nullptr, qPrintable(entry.command + " names a nested command with no row: " + spec->coalescesWrapped));
+				QVERIFY2(registry->command(spec->coalescesWrapped) != nullptr,
+					qPrintable(spec->coalescesWrapped + " is named by " + entry.command + " but is not registered"));
+				QCOMPARE(nested->cls, control::ReversibilityClass::TrueInverse);
+				QVERIFY2(nested->coalesces(), qPrintable(spec->coalescesWrapped + " does not declare coalescing"));
+				QCOMPARE(nested->coalesceTarget, entry.coalesceTarget);
+			}
+			else
+			{
+				QCOMPARE(entry.cls, control::ReversibilityClass::TrueInverse);
+			}
 		}
 		QVERIFY2(declared > 0, "nothing declares coalescing, so the drag rule has no subject");
 
@@ -452,10 +493,11 @@ private slots:
 	}
 
 
-	//! THE NEGATIVE CONTROL (SPEC A16 deliverable 6). script.run has no inverse:
-	//! control.undo must FAIL with the typed 'irreversible' error naming the
-	//! command and its fallback - and must NOT quietly undo the reversible step
-	//! underneath it.
+	//! THE NEGATIVE CONTROL (SPEC A16 deliverable 6). oop.reset_crashes has no
+	//! inverse (the crashes it counted really happened; script.run was the control
+	//! until Q050-044 gave it a whole-project checkpoint): control.undo must FAIL
+	//! with the typed 'irreversible' error naming the command and its fallback -
+	//! and must NOT quietly undo the reversible step underneath it.
 	void irreversibleUndoFailsTypedAndDoesNotUndoAnOlderStep()
 	{
 		ControlRegistry* registry = ControlRegistry::instance();
@@ -467,18 +509,18 @@ private slots:
 		QCOMPARE(run(QStringLiteral("transport.get_state")).result.value(QStringLiteral("tempo")).toInt(),
 			tempoAfter);
 
-		const ControlResult ran = run(QStringLiteral("script.run"),
-			{{QStringLiteral("source"), QStringLiteral("lmms.log():info('a16')\n")}});
+		const ControlResult ran = run(QStringLiteral("oop.reset_crashes"),
+			{{QStringLiteral("client"), QStringLiteral("a16-negative-control")}});
 		QVERIFY2(ran.ok, qPrintable(ran.errorMessage));
-		QCOMPARE(stateOf(QStringLiteral("script.run")).value(QStringLiteral("class")).toString(),
+		QCOMPARE(stateOf(QStringLiteral("oop.reset_crashes")).value(QStringLiteral("class")).toString(),
 			QStringLiteral("irreversible"));
 
 		const ControlResult undo = registry->invoke(QStringLiteral("control.undo"));
 		QVERIFY2(!undo.ok, "control.undo pretended to undo an irreversible command");
 		QCOMPARE(undo.errorKind, ControlErrorKind::Irreversible);
 		QCOMPARE(controlErrorKindName(undo.errorKind), QStringLiteral("irreversible"));
-		QVERIFY2(undo.errorMessage.contains(QStringLiteral("script.run")), qPrintable(undo.errorMessage));
-		QVERIFY2(undo.errorMessage.contains(QStringLiteral("addCheckPoint")),
+		QVERIFY2(undo.errorMessage.contains(QStringLiteral("oop.reset_crashes")), qPrintable(undo.errorMessage));
+		QVERIFY2(undo.errorMessage.contains(QStringLiteral("crashes really happened")),
 			qPrintable(undo.errorMessage));
 
 		// The proof that nothing was silently unwound: the reversible step

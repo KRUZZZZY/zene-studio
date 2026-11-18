@@ -49,7 +49,8 @@ public:
 	Status separate(const SampleBuffer& mix,
 		int sampleRate,
 		int segmentFrames,
-	const ProgressFn& progress,
+		StemQuality quality,
+		const ProgressFn& progress,
 		StemSet& out,
 		QString& error) override;
 
@@ -66,7 +67,8 @@ public:
 	// LMMS_STEM_MODEL, else <AppDataLocation>/models/stems/htdemucs-fp16.onnx.
 	static QString defaultModelPath();
 
-	static bool isAvailable(QString* error = nullptr);
+	// Availability of THIS instance: python + CLI + the configured model path.
+	bool isAvailable(QString* error = nullptr) const;
 
 private:
 	QString m_python;

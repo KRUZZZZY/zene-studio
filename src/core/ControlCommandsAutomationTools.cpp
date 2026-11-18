@@ -27,7 +27,12 @@
  *  - automation.trim_get / trim_set (ED-201): a control's trim - the offset added to its written
  *    automation as it plays, never written into the clip;
  *  - automation.move_point (ED-194): one point moved in time and value, one undo step - what the
- *    keyboard and a drag in the automation editor send. */
+ *    keyboard and a drag in the automation editor send;
+ *  - automation.write_to_end (ED-201): a write-pass helper - from a tick to the song's end the control
+ *    holds one value. */
+
+#include <algorithm>
+#include <iterator>
 
 #include <QJsonArray>
 
@@ -95,7 +100,7 @@ ControlResult trimSet(const QJsonObject& args)
 	if (!resolveAutomationParameter(args, &target, &parameter, &error)) { return error; }
 	const auto offset = static_cast<float>(args.value(QStringLiteral("offset")).toDouble());
 	const float range = parameter.model->maxValue<float>() - parameter.model->minValue<float>();
-	if (offset < -range || offset > range) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'offset' is within the control's range")); }
+	if (offset < -range || offset > range) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'offset' must be within the control's range")); }
 	// Runtime state, as the mode is (not saved): the step puts the previous offset back by the same id.
 	const QJsonObject where{{QStringLiteral("track"), target.id}, {QStringLiteral("parameter"), parameter.id()}};
 	const float before = parameter.model->trimOffset();
@@ -127,6 +132,20 @@ ControlResult occupiedDestination(const AutomationClip* clip, tick_t ticks, tick
 	return ControlResult::success();
 }
 
+void putMovedNode(AutomationClip* clip, tick_t to, const AutomationNode& source, float inValue)
+{
+	const float outValue = source.getValueOffset() == 0.f ? inValue : source.getOutValue();
+	clip->putValues(TimePos(to), inValue, outValue, false);
+	AutomationNode& movedNode = clip->getTimeMap()[TimePos(to)];
+	movedNode.setCurve(source.curve(), source.bend());
+	if (source.lockedTangents())
+	{
+		movedNode.setInTangent(source.getInTangent());
+		movedNode.setOutTangent(source.getOutTangent());
+		movedNode.setLockedTangents(true);
+	}
+}
+
 ControlResult movePoint(const QJsonObject& args)
 {
 	ControlTarget target;
@@ -147,28 +166,95 @@ ControlResult movePoint(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("%1 has no point at %2").arg(parameter.id()).arg(static_cast<qint64>(songTicks)));
 	}
-	const float old = clip->getTimeMap().value(TimePos(ticks)).getInValue();
+	const AutomationNode oldNode = clip->getTimeMap().value(TimePos(ticks));
+	const float old = oldNode.getInValue();
 	const auto to = toSong - origin;
 	const double value = args.value(QStringLiteral("new_value")).toDouble(parameter.model->scaledValue(old));
-	if (value < parameter.model->minValue<float>() || value > parameter.model->maxValue<float>() || to < 0)
+	if (to < 0)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("destination tick %1 is before automation clip start at %2")
+				.arg(static_cast<qint64>(toSong)).arg(static_cast<qint64>(origin)));
+	}
+	// Written as "inside the range", not "outside it": NaN fails both comparisons, so it is refused with the rest.
+	if (!(value >= parameter.model->minValue<float>() && value <= parameter.model->maxValue<float>()))
 	{
 		return automatableRangeRefusal(parameter.model, value);
 	}
 	if (const ControlResult taken = occupiedDestination(clip, ticks, to, parameter.id(), toSong); !taken.ok) { return taken; }
 	const QJsonArray before = automationPointsJson(clip, parameter.model);
-	// The point's own curve is its progression to the next point, and a Bend carries its bend
-	// amount - neither survives removing the node and letting putValue insert a plain one, so
-	// they are carried across to the destination.
-	const AutomationNode& oldNode = clip->getTimeMap()[TimePos(ticks)];
-	const auto curve = oldNode.curve();
-	const auto bend = oldNode.bend();
+	// Moving the node keeps its out side when it is discontinuous, and a requested new in value
+	// moves only that side, as it does in AutomationClip::setDragValue().
+	const float inValue = parameter.model->inverseScaledValue(static_cast<float>(value));
 	clip->addJournalCheckPoint();
 	clip->removeNode(TimePos(ticks));
-	clip->putValue(TimePos(to), parameter.model->inverseScaledValue(static_cast<float>(value)), false);
-	clip->getTimeMap()[TimePos(to)].setCurve(curve, bend);
+	putMovedNode(clip, to, oldNode, inValue);
 	QJsonObject result{{QStringLiteral("track"), target.id}, {QStringLiteral("parameter"), parameter.id()}, {QStringLiteral("ticks"), static_cast<double>(toSong)},
 		{QStringLiteral("value"), value}, {QStringLiteral("automation"), automationJson(clip, parameter.model)}};
 	result.insert(QStringLiteral("__transaction"), automationTransaction(parameter, before, before.size(), false));
+	return ControlResult::success(result);
+}
+
+//! The song's end in ticks: the end of its last clip, never before @a from.
+tick_t songEndFrom(tick_t from)
+{
+	Song* song = Engine::getSong();
+	song->updateLength();
+	return std::max<tick_t>(from, static_cast<tick_t>(song->length()) * TimePos::ticksPerBar());
+}
+
+//! The clip's value arriving at local @a tick: a point there keeps its own in-value, else the curve's.
+float arrivingValue(const AutomationClip* clip, tick_t tick)
+{
+	const auto& map = clip->getTimeMap();
+	return map.contains(TimePos(tick)) ? map.value(TimePos(tick)).getInValue() : clip->valueAt(TimePos(tick));
+}
+
+//! Every point of @a clip after local @a tick, removed; how many there were.
+int removeAfter(AutomationClip* clip, tick_t tick)
+{
+	const auto& map = clip->getTimeMap();
+	const auto first = map.upperBound(TimePos(tick));
+	const int removed = static_cast<int>(std::distance(first, map.constEnd()));
+	if (removed > 0) { clip->removeNodes(tick + 1, std::prev(map.constEnd()).key()); }
+	return removed;
+}
+
+/*! ED-201, write to end: from 'ticks' to the song's end the control holds 'value' (its current value when left
+ *  out). Every point after 'ticks' goes; the point at 'ticks' arrives at the curve's value there and leaves at the
+ *  new one (an in/out step, so the curve before it keeps its shape); a point at the song's end holds it. */
+ControlResult writeToEnd(const QJsonObject& args)
+{
+	ControlTarget target;
+	AutomationParameter parameter;
+	ControlResult error;
+	if (!resolveAutomationParameter(args, &target, &parameter, &error)) { return error; }
+	AutomatableModel* model = parameter.model;
+	const double value = args.value(QStringLiteral("value")).toDouble(model->value<float>());
+	if (!(value >= model->minValue<float>() && value <= model->maxValue<float>())) { return automatableRangeRefusal(model, value); }
+	const auto fromSong = static_cast<tick_t>(args.value(QStringLiteral("ticks")).toDouble());
+	AutomationClip* existing = existingAutomationClip(model);
+	if (fromSong < 0 || (existing != nullptr && fromSong < existing->startPosition().getTicks()))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'ticks' is before the automation clip of %1").arg(parameter.id()));
+	}
+	const QJsonArray before = existing != nullptr ? automationPointsJson(existing, model) : QJsonArray{};
+	const tick_t endSong = songEndFrom(fromSong);
+	bool created = false;
+	AutomationClip* clip = automationClipForEdit(model, &created, &error);  // checked above: nothing is refused after this
+	if (clip == nullptr) { return error; }
+	const tick_t from = fromSong - clip->startPosition().getTicks();
+	const float stored = model->inverseScaledValue(static_cast<float>(value));
+	const float arriving = arrivingValue(clip, from);
+	const int removed = removeAfter(clip, from);
+	clip->putValues(TimePos(from), arriving, stored, false);
+	const tick_t end = endSong - clip->startPosition().getTicks();
+	if (end > from) { clip->putValue(TimePos(end), stored, false); }
+	Engine::getSong()->setModified();
+	QJsonObject result{{QStringLiteral("track"), target.id}, {QStringLiteral("parameter"), parameter.id()},
+		{QStringLiteral("ticks"), static_cast<double>(fromSong)}, {QStringLiteral("end"), static_cast<double>(endSong)},
+		{QStringLiteral("value"), value}, {QStringLiteral("removed"), removed}, {QStringLiteral("automation"), automationJson(clip, model)}};
+	result.insert(QStringLiteral("__transaction"), automationTransaction(parameter, before, before.size(), created));
 	return ControlResult::success(result);
 }
 
@@ -205,6 +291,15 @@ void registerAutomationToolCommands(ControlRegistry& registry)
 	add(registry, "automation.move_point", QStringLiteral("Move the automation point at 'ticks' to 'new_ticks' and/or 'new_value' (the "
 		"control's own unit, range-checked) - what the automation editor's arrow keys and drags send. One undo step."),
 		move, {QStringLiteral("track"), QStringLiteral("parameter"), QStringLiteral("ticks")}, true, movePoint);
+	QJsonObject toEnd = which;
+	toEnd.insert(QStringLiteral("ticks"), tickProperty());
+	toEnd.insert(QStringLiteral("value"), numberProperty());
+	add(registry, "automation.write_to_end", QStringLiteral("Write to end: from 'ticks' (song ticks) to the song's end the control holds "
+		"'value' (its own unit, range-checked; its current value when left out). Every later point is removed, the point at "
+		"'ticks' steps from the curve's value there to the new one, and a point at the song's end (the end of its last clip) "
+		"holds it - what a write pass leaves to the end. Creates the automation clip when the control has none. Answers "
+		"{track, parameter, ticks, end, value, removed, automation}. One undo step."),
+		toEnd, {QStringLiteral("track"), QStringLiteral("parameter"), QStringLiteral("ticks")}, true, writeToEnd);
 }
 
 } // namespace lmms

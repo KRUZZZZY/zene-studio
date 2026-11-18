@@ -25,6 +25,7 @@
 #ifndef LMMS_INLINE_AUTOMATION_H
 #define LMMS_INLINE_AUTOMATION_H
 
+#include <memory>
 #include "AutomationNode.h"
 #include "AutomationClip.h"
 
@@ -41,10 +42,13 @@ public:
 
 	InlineAutomation(const InlineAutomation& _copy) :
 		FloatModel(_copy.value(), _copy.minValue(), _copy.maxValue(), _copy.step<float>()),
-		m_autoClip(_copy.m_autoClip->clone())
+		m_autoClip(_copy.m_autoClip != nullptr ? _copy.m_autoClip->clone() : nullptr)
 	{
-		m_autoClip->clearObjects();
-		m_autoClip->addObject(this);
+		if (m_autoClip != nullptr)
+		{
+			m_autoClip->clearObjects();
+			m_autoClip->addObject(this);
+		}
 	}
 
 	~InlineAutomation() override

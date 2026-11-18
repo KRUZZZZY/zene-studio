@@ -31,10 +31,13 @@
 
 #include <array>
 #include <cmath>
+#include <limits>
 
 #include <QDomDocument>
 #include <QJsonArray>
+#include <QTemporaryDir>
 
+#include "ControlMeterSupport.h"
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -44,6 +47,7 @@
 #include "InstrumentTrack.h"
 #include "Mixer.h"
 #include "MixerOptions.h"
+#include "ProjectJournal.h"
 #include "MixerStrip.h"
 #include "AudioBusHandle.h"
 #include "PreviewOutput.h"
@@ -67,6 +71,18 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 MixerChannel* channel(int index) { return Engine::mixer()->mixerChannel(index); }
 
 QString ch(int index) { return control::channelIdOf(channel(index)); }
+
+void verifyLastUndoTransaction(const QString& command)
+{
+	const QJsonArray records = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray();
+	QVERIFY(!records.isEmpty());
+	if (records.isEmpty()) { return; }
+	const QJsonObject record = records.last().toObject();
+	QCOMPARE(record.value(QStringLiteral("command")).toString(), command);
+	QVERIFY(!record.value(QStringLiteral("before")).toObject().isEmpty());
+	QCOMPARE(record.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+	QVERIFY(record.value(QStringLiteral("reversible")).toBool());
+}
 
 void fill(int index, float left, float right)
 {
@@ -132,6 +148,7 @@ private slots:
 			{QStringLiteral("amount"), 0.5}}).ok);
 		QVERIFY(run(QStringLiteral("mixer.send_enable"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(2)},
 			{QStringLiteral("enabled"), false}}).ok);
+		verifyLastUndoTransaction(QStringLiteral("mixer.send_enable"));
 		MixerRoute* route = control::findMixerRoute(1, 2);
 		QVERIFY(route != nullptr && !route->enabled());
 		QCOMPARE(route->amount()->value(), 0.5f);
@@ -141,12 +158,50 @@ private slots:
 			{QStringLiteral("enabled"), false}}).errorKind, ControlErrorKind::NotFound);
 	}
 
+	//! BUG 6: mixer.send_enable's undo captured the endpoints' POSITIONS, so a
+	//! reorder outside that undo sequence made the step act on whatever route now
+	//! sits at those positions - toggling an unrelated send - instead of the send
+	//! it recorded. The step must follow its channels by persistent id, as the
+	//! routing verbs do.
+	void aSendEnableUndoFollowsItsChannelsThroughAReorder()
+	{
+		Engine::getSong()->clearProject();
+		while (Engine::mixer()->numChannels() <= 4) { Engine::mixer()->createChannel(); }
+		const QString fromId = ch(1);
+		const QString toId = ch(2);
+		const QString otherId = ch(3);
+		// The recorded send (1 -> 2) and an unrelated send (1 -> 3) that a stale
+		// position would hit instead. Both are switched off.
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), toId},
+			{QStringLiteral("amount"), 0.5}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), otherId},
+			{QStringLiteral("amount"), 0.5}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.send_enable"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), otherId},
+			{QStringLiteral("enabled"), false}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.send_enable"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), toId},
+			{QStringLiteral("enabled"), false}}).ok);
+		MixerRoute* other = control::findMixerRoute(1, 3);
+		QVERIFY(other != nullptr);
+		QVERIFY(!control::findMixerRoute(1, 2)->enabled());
+		QVERIFY(!other->enabled());
+		// A reorder outside the undo sequence: the two receivers trade positions,
+		// so the recorded positions (1, 2) now name the unrelated send (1 -> 3).
+		Engine::mixer()->moveChannelLeft(3);
+		QVERIFY(control::findMixerRoute(1, 2) == other);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		MixerRoute* restored = control::findMixerRoute(1, 3);
+		QVERIFY2(restored != nullptr, "the recorded route moved with its receiver");
+		QVERIFY2(restored->enabled(), "the send-enable undo must follow its channels through a reorder");
+		QVERIFY2(!other->enabled(), "the send-enable undo must never toggle the route now at the recorded positions");
+	}
+
 	void aReturnIsABusFedByASend()
 	{
 		const int before = Engine::mixer()->numChannels();
 		const ControlResult made = run(QStringLiteral("mixer.create_return"), {{QStringLiteral("channel"), ch(1)},
 			{QStringLiteral("name"), QStringLiteral("Plate")}});
 		QVERIFY2(made.ok, qPrintable(made.errorMessage));
+		verifyLastUndoTransaction(QStringLiteral("mixer.create_return"));
 		QCOMPARE(Engine::mixer()->numChannels(), before + 1);
 		MixerChannel* back = channel(before);
 		QVERIFY(back->isBus());
@@ -169,6 +224,36 @@ private slots:
 		QCOMPARE(channel(2)->m_panModel.value(), 0.25f);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(channel(2)->m_volumeModel.value(), 0.5f);
+	}
+
+	void mixerAdjustRejectsNaNDecibels()
+	{
+		channel(1)->m_volumeModel.setValue(0.375f);
+		channel(1)->m_panModel.setValue(-0.25f);
+		const ControlResult result = run(QStringLiteral("mixer.adjust"), {{QStringLiteral("channels"), QJsonArray{ch(1)}},
+			{QStringLiteral("volume_db"), std::numeric_limits<double>::quiet_NaN()}, {QStringLiteral("pan"), 0.0}});
+		const bool unchanged = channel(1)->m_volumeModel.value() == 0.375f && channel(1)->m_panModel.value() == -0.25f;
+		if (result.ok) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+		channel(1)->m_volumeModel.setValue(0.375f);
+		channel(1)->m_panModel.setValue(-0.25f);
+		QVERIFY2(!result.ok, "mixer.adjust must reject NaN volume_db");
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(unchanged);
+	}
+
+	void mixerAdjustRejectsNaNPan()
+	{
+		channel(1)->m_volumeModel.setValue(0.375f);
+		channel(1)->m_panModel.setValue(-0.25f);
+		const ControlResult result = run(QStringLiteral("mixer.adjust"), {{QStringLiteral("channels"), QJsonArray{ch(1)}},
+			{QStringLiteral("volume_db"), 0.0}, {QStringLiteral("pan"), std::numeric_limits<double>::quiet_NaN()}});
+		const bool unchanged = channel(1)->m_volumeModel.value() == 0.375f && channel(1)->m_panModel.value() == -0.25f;
+		if (result.ok) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+		channel(1)->m_volumeModel.setValue(0.375f);
+		channel(1)->m_panModel.setValue(-0.25f);
+		QVERIFY2(!result.ok, "mixer.adjust must reject NaN pan");
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(unchanged);
 	}
 
 	void theMixerFollowsTheTracks()
@@ -234,6 +319,15 @@ private slots:
 		QVERIFY(usage.result.value(QStringLiteral("sends_to")).toArray().contains(ch(0)));  // every channel feeds the master
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(run(QStringLiteral("routing.usage"), {{QStringLiteral("channel"), QStringLiteral("nope")}}).ok, false);
+	}
+
+	//! BUG 14: a non-finite 'dbfs' must not become the meter reference -
+	//! NaN passes the -30..0 range check and was stored as the reference.
+	void aNonfiniteMeterReferenceIsRefused()
+	{
+		const double nan = std::numeric_limits<double>::quiet_NaN();
+		QCOMPARE(run(QStringLiteral("meter.set_reference"), {{QStringLiteral("dbfs"), nan}}).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(control::meterReferenceDbfs(), -18.0);
 	}
 
 	//! A track delay is set, reported, saved on the track and undone.
@@ -329,6 +423,26 @@ private slots:
 		QCOMPARE(heard[3][1], 0.f);  // neutral again: untouched
 	}
 
+	void theControlRoomSurvivesAnOutOfRangeState()
+	{
+		const controlroom::State previous = controlroom::state();
+		controlroom::State bad = previous;
+		bad.speaker = 3;
+		bad.trimsDb[0] = std::numeric_limits<float>::quiet_NaN();
+		bad.dim = true;
+		bad.dimDb = std::numeric_limits<float>::infinity();
+		controlroom::setState(bad);
+		const controlroom::State settled = controlroom::state();
+		QVERIFY(settled.speaker >= 0 && settled.speaker <= 2);  // not indexed out of trims
+		for (const float db : settled.trimsDb) { QVERIFY(std::isfinite(db)); }
+		QVERIFY(std::isfinite(settled.dimDb));
+		std::array<SampleFrame, 4> heard;
+		heard.fill(SampleFrame(1.f, 0.f));
+		controlroom::apply(heard.data(), 4);  // no undefined output reaches the audio path
+		QVERIFY(std::isfinite(heard[0][0]));
+		controlroom::setState(previous);
+	}
+
 	void theCrossfaderFadesItsSidesOnly()
 	{
 		QVERIFY(run(QStringLiteral("mixer.crossfader"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("side"), QStringLiteral("A")}}).ok);
@@ -346,6 +460,22 @@ private slots:
 		QCOMPARE(run(QStringLiteral("mixer.crossfader"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("side"), QStringLiteral("C")}}).ok, false);
 	}
 
+	void loadingNanCrossfaderUsesCentre()
+	{
+		MixerOptions& options = MixerOptions::instance();
+		const float beforeCrossfader = options.crossfader();
+		const PanLaw beforePanLaw = options.panLaw();
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("mixer-options"));
+		element.setAttribute(QStringLiteral("crossfader"), QStringLiteral("nan"));
+		options.load(element);
+		const float loadedCrossfader = options.crossfader();
+		options.setCrossfader(beforeCrossfader);
+		options.setPanLaw(beforePanLaw);
+		QVERIFY(std::isfinite(loadedCrossfader));
+		QCOMPARE(loadedCrossfader, 0.f);
+	}
+
 	void aGroupColoursItsMembers()
 	{
 		VcaGroup* group = Engine::mixer()->createVcaGroup(QStringLiteral("Drums"));
@@ -357,6 +487,111 @@ private slots:
 		QVERIFY(!channel(2)->color().has_value());
 		QCOMPARE(run(QStringLiteral("vca.color_members"), {{QStringLiteral("group"), group->id()}, {QStringLiteral("color"), QStringLiteral("nope")}}).errorKind,
 			ControlErrorKind::InvalidArgs);
+	}
+
+	//! A group that holds a stale member (an index past the channel list) colours the members that exist, and the
+	//! stale index is refused before the channel list is read - observed through the LMMS_TESTING refusal seam.
+	void aStaleMemberIsSkippedNotRead()
+	{
+		Engine::mixer()->takeRefusedLookupsForTesting();  // start with no refusals counted
+		VcaGroup* group = Engine::mixer()->createVcaGroup(QStringLiteral("Stale"));
+		QVERIFY(group->addMember(4));  // channels 1 and 2 belong to the Drums group, 3 is taken later
+		const auto stale = static_cast<mix_ch_t>(Engine::mixer()->numChannels());
+		QVERIFY(group->addMember(stale));
+		QVERIFY(!channel(4)->color().has_value());
+		const ControlResult painted = run(QStringLiteral("vca.color_members"), {{QStringLiteral("group"), group->id()}, {QStringLiteral("color"), QStringLiteral("#445566")}});
+		QVERIFY2(painted.ok, qPrintable(painted.errorMessage));
+		QCOMPARE(painted.result.value(QStringLiteral("colored")).toInt(), 1);
+		QCOMPARE(channel(4)->color().value_or(QColor()).name(), QStringLiteral("#445566"));
+		QCOMPARE(Engine::mixer()->takeRefusedLookupsForTesting(), 0);  // the stale member was never looked up
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!channel(4)->color().has_value());
+		QVERIFY(group->removeMember(stale));
+		QVERIFY(group->removeMember(4));
+	}
+
+	void aClampOnlyAdjustmentDoesNothing()
+	{
+		Song* song = Engine::getSong();
+		ProjectJournal* journal = Engine::projectJournal();
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const bool wasModified = song->isModified();
+		const QString previousProjectFile = song->projectFileName();
+		MixerChannel* selected = channel(1);
+		const float oldVolume = selected->m_volumeModel.value();
+		const float oldPan = selected->m_panModel.value();
+		selected->m_volumeModel.setValue(selected->m_volumeModel.maxValue());
+		selected->m_panModel.setValue(1.f);
+		journal->clearJournal();
+		const QString fixtureFile = directory.filePath(QStringLiteral("mixer-adjust.mmp"));
+		QVERIFY(song->saveProjectFile(fixtureFile, false));
+		song->noteProjectSaved(fixtureFile);
+		QVERIFY(!song->isModified());
+
+		const ControlResult adjusted = run(QStringLiteral("mixer.adjust"), {{QStringLiteral("channels"), QJsonArray{ch(1)}},
+			{QStringLiteral("volume_db"), 6.0}, {QStringLiteral("pan"), 1.0}});
+		const int undoDepth = journal->undoDepth();
+		const bool remainedClean = !song->isModified();
+		const bool valuesStayedPut = selected->m_volumeModel.value() == selected->m_volumeModel.maxValue()
+			&& selected->m_panModel.value() == 1.f;
+
+		selected->m_volumeModel.setValue(oldVolume);
+		selected->m_panModel.setValue(oldPan);
+		journal->clearJournal();
+		song->noteProjectSaved(previousProjectFile);
+		if (wasModified) { song->setModified(); }
+
+		QVERIFY2(adjusted.ok, qPrintable(adjusted.errorMessage));
+		QCOMPARE(undoDepth, 0);
+		QVERIFY(valuesStayedPut);
+		QVERIFY(remainedClean);
+		QCOMPARE(adjusted.result.value(QStringLiteral("adjusted")).toInt(), 0);
+	}
+
+	//! MX-067 edge: colouring an empty group, or one whose members already wear that colour, changes
+	//! nothing - it must not dirty the project nor journal an undo step.
+	void colouringWhatIsAlreadyColoured()
+	{
+		VcaGroup* empty = Engine::mixer()->createVcaGroup(QStringLiteral("Empty"));
+		const ControlResult none = run(QStringLiteral("vca.color_members"), {{QStringLiteral("group"), empty->id()}, {QStringLiteral("color"), QStringLiteral("#112233")}});
+		QVERIFY2(none.ok, qPrintable(none.errorMessage));
+		QCOMPARE(none.result.value(QStringLiteral("colored")).toInt(), 0);
+		// A real change followed by a no-op: one undo must still reach the real change.
+		QVERIFY(run(QStringLiteral("mixer.channel_eq"), {{QStringLiteral("channel"), ch(4)}, {QStringLiteral("low"), 12.0}}).ok);
+		QVERIFY(run(QStringLiteral("vca.color_members"), {{QStringLiteral("group"), empty->id()}, {QStringLiteral("color"), QStringLiteral("#112233")}}).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(channel(4)->m_eqLowModel.value(), 0.f);  // the no-op did not swallow the undo
+		// A group whose members already wear the colour: colouring again changes nothing.
+		VcaGroup* painted = Engine::mixer()->createVcaGroup(QStringLiteral("Painted"));
+		QVERIFY(painted->addMember(3));  // channel 1 and 2 already belong to the Drums group
+		QVERIFY(run(QStringLiteral("vca.color_members"), {{QStringLiteral("group"), painted->id()}, {QStringLiteral("color"), QStringLiteral("#336699")}}).ok);
+		QCOMPARE(channel(3)->color().value_or(QColor()).name(), QStringLiteral("#336699"));
+		QVERIFY(run(QStringLiteral("vca.color_members"), {{QStringLiteral("group"), painted->id()}, {QStringLiteral("color"), QStringLiteral("#336699")}}).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!channel(3)->color().has_value());  // one undo reaches the first colouring
+	}
+
+	//! MX-172: setting the position and a channel's side in one command is one undoable edit.
+	void settingCrossfaderPositionAndSideUsesOneUndoStep()
+	{
+		MixerOptions& options = MixerOptions::instance();
+		MixerChannel* selected = channel(4);
+		options.setCrossfader(0.25f);
+		selected->m_crossfadeSideModel.setValue(2);
+
+		QVERIFY(run(QStringLiteral("mixer.crossfader"), {{QStringLiteral("position"), -0.5},
+			{QStringLiteral("channel"), ch(4)}, {QStringLiteral("side"), QStringLiteral("A")}}).ok);
+		QCOMPARE(options.crossfader(), -0.5f);
+		QCOMPARE(selected->m_crossfadeSideModel.value(), 1);
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(options.crossfader(), 0.25f);
+		QCOMPARE(selected->m_crossfadeSideModel.value(), 2);
+
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCOMPARE(options.crossfader(), -0.5f);
+		QCOMPARE(selected->m_crossfadeSideModel.value(), 1);
 	}
 };
 

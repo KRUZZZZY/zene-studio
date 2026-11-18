@@ -47,10 +47,9 @@ using namespace control;
 namespace
 {
 
-QJsonArray namesJson(int trackId)
+QJsonArray namesJson(const QHash<int, QString>& names)
 {
 	QJsonArray out;
-	const QHash<int, QString> names = TrackKeyNames::instance().names(trackId);
 	for (auto it = names.begin(); it != names.end(); ++it)
 	{
 		out.append(QJsonObject{{QStringLiteral("key"), it.key()}, {QStringLiteral("name"), it.value()}});
@@ -58,17 +57,33 @@ QJsonArray namesJson(int trackId)
 	return out;
 }
 
+QJsonArray namesJson(int trackId)
+{
+	return namesJson(TrackKeyNames::instance().names(trackId));
+}
+
 //! Replace track @a track's names with @a next as ONE undo step.
 ControlResult storeNames(Track* track, const QHash<int, QString>& next)
 {
 	const int id = track->id();
 	const QHash<int, QString> before = TrackKeyNames::instance().names(id);
+	// Reapplying the names the track already has is not an edit: a step here would put
+	// a no-op on the undo stack, so the next undo would consume it and leave the real
+	// edit in place (new-p14-19 BUG 13). An unchanged map also leaves the project clean.
+	if (next == before)
+	{
+		return ControlResult::success({{QStringLiteral("track"), trackIdOf(track)},
+			{QStringLiteral("names"), namesJson(before)}});
+	}
 	addUndoStep([id, before] { TrackKeyNames::instance().setNames(id, before); },
 		[id, next] { TrackKeyNames::instance().setNames(id, next); });
 	TrackKeyNames::instance().setNames(id, next);
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("names"), namesJson(id)}};
-	result.insert(QStringLiteral("__transaction"), transactionPayload({}, QStringLiteral("control.undo"), {}, true,
+	// The recorded step restores `before`, so the transaction has to carry it: a reversible
+	// record with an empty before-state describes no state to return to.
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("names"), namesJson(before)}},
+		QStringLiteral("control.undo"), {}, true,
 		QStringLiteral("action checkpoint: the recorded undo step puts the track's previous key names back")));
 	return ControlResult::success(result);
 }
@@ -78,6 +93,13 @@ ControlResult setName(const QJsonObject& args)
 	ControlResult error;
 	Track* track = resolveTrack(args.value(QStringLiteral("track")).toString(), &error);
 	if (track == nullptr) { return error; }
+	// An absent 'name' is a mistake, not a removal: an empty string says "remove this key"
+	// and must be asked for. Reading a missing value as "" deleted the label with no word.
+	if (!args.contains(QStringLiteral("name")))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("key_names.set needs 'name' (pass \"\" to remove the key's name)"));
+	}
 	QHash<int, QString> next = TrackKeyNames::instance().names(track->id());
 	const int key = args.value(QStringLiteral("key")).toInt();
 	const QString name = args.value(QStringLiteral("name")).toString().trimmed();

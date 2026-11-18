@@ -95,7 +95,20 @@ bool SessionScheduler::installFollowPlan( int track, int scene, const FollowPlan
 	{
 		if( installed.track == track && installed.scene == scene )
 		{
-			installed.plan = plan;
+			if( plan.enabled )
+			{
+				installed.plan = plan;
+			}
+			else
+			{
+				// A disarmed plan does nothing, so its entry is GIVEN BACK rather
+				// than left addressed to the cell. The free-entry loop below only
+				// claims entries whose track is negative, so an entry that kept
+				// its track and scene was unreachable again: 16 cells armed and
+				// disarmed once each exhausted the table and every later plan was
+				// refused (MaxFollowPlans).
+				installed = InstalledFollowPlan();
+			}
 			recountArmedFollowCells();
 			return true;
 		}
@@ -191,6 +204,7 @@ void SessionScheduler::takeColumnOver( const ActiveSlot& slot ) noexcept
 		other.state.held = false;
 		other.phaseOriginFor = -1;
 		m_recorder.recordStop( other.track, other.scene, slot.state.startedTick );
+		m_audioRecorder.slotStopped( other.track, other.scene, slot.state.startedTick );  // WF-055
 	}
 }
 
@@ -212,7 +226,16 @@ void SessionScheduler::afterLaunchEvents( ActiveSlot& slot, const SessionClockCo
 		slot.phaseOrigin = event == LaunchEvent::Started ? legatoOriginFor( slot ) : slot.state.startedTick;
 		slot.phaseOriginFor = slot.state.startedTick;
 		if( event == LaunchEvent::Started ) { takeColumnOver( slot ); }
-		m_recorder.recordStart( slot.track, slot.scene, slot.state.startedTick );
+		else { m_recorder.recordStop( slot.track, slot.scene, slot.state.startedTick ); }
+		recordArrangementStart( slot.track, slot.scene, slot.state.startedTick );
+		// WF-055: a cell recording a fixed length is given its stop now, at the line the take ends on.
+		const tick_t length = event == LaunchEvent::Started
+			? m_audioRecorder.slotStarted( slot.track, slot.scene, slot.state.startedTick, ctx.framesPerTick ) : 0;
+		if( length > 0 )
+		{
+			slot.state.phase = SlotPhase::StopPending;
+			slot.state.pendingTick = slot.state.startedTick + length;
+		}
 		return;
 	}
 
@@ -220,6 +243,7 @@ void SessionScheduler::afterLaunchEvents( ActiveSlot& slot, const SessionClockCo
 	{
 		slot.phaseOriginFor = -1;
 		m_recorder.recordStop( slot.track, slot.scene, slot.state.pendingTick );
+		m_audioRecorder.slotStopped( slot.track, slot.scene, slot.state.pendingTick );  // WF-055
 		return;
 	}
 
@@ -271,6 +295,7 @@ void SessionScheduler::evaluateFollow( ActiveSlot& slot, const SessionClockConte
 	// FollowPlan::sceneCount).
 	eval.sceneCount = plan->sceneCount;
 	eval.rngUnit = followRandomUnit( m_followRng );
+	eval.targetRngUnit = followRandomUnit( m_followRng );
 
 	const FollowFire fire = decideFollowFire( *plan, eval );
 	// The action time this evaluation has reached, taken BEFORE the advance so
@@ -341,7 +366,7 @@ void SessionScheduler::evaluateFollow( ActiveSlot& slot, const SessionClockConte
 			slot.quantisation = plan->quantisation;
 			m_launches.fetch_add( 1, std::memory_order_relaxed );
 			publishStart( firedAt, ctx.positionTicks );
-			m_recorder.recordStart( slot.track, fire.targetScene, firedAt );
+			recordArrangementStart( slot.track, fire.targetScene, firedAt );
 			return;
 		}
 		case FollowOutcome::Refused:
@@ -431,6 +456,7 @@ bool SessionScheduler::consumeResetRequest() noexcept
 				|| slot.state.phase == SlotPhase::StopPending ) )
 		{
 			m_recorder.recordStop( slot.track, slot.scene, m_positionTicks );
+			m_audioRecorder.slotStopped( slot.track, slot.scene, m_positionTicks );  // WF-055
 		}
 	}
 	for( auto& slot : m_active )
@@ -479,6 +505,18 @@ void SessionScheduler::setFollowActionsEnabled( bool enabled ) noexcept
 
 bool SessionScheduler::followActionsEnabled() const noexcept
 { return m_followEnabled.load( std::memory_order_relaxed ); }
+
+
+void SessionScheduler::recordArrangementStart( int track, int scene, tick_t tick ) noexcept
+{
+	const SessionSlotContent* content = m_slotContent.find( track, scene );
+	if( content == nullptr )
+	{
+		m_recorder.recordStart( track, scene, tick );
+		return;
+	}
+	m_recorder.recordStart( track, scene, tick, content->patternId, content->clip );
+}
 
 
 void SessionScheduler::publishStart( tick_t line, tick_t observed ) noexcept

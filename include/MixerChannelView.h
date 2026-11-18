@@ -25,6 +25,7 @@
 #ifndef LMMS_GUI_MIXER_CHANNEL_VIEW_H
 #define LMMS_GUI_MIXER_CHANNEL_VIEW_H
 
+#include <QList>
 #include <QWidget>
 
 #include "MixerOverlays.h"
@@ -41,6 +42,7 @@ class MixerChannel;
 
 namespace lmms::gui {
 class AutomatableButton;
+class ConsoleStripSection;
 class EffectRackView;
 class Fader;
 class Knob;
@@ -63,6 +65,7 @@ public:
 	MixerChannelView(QWidget* parent, MixerView* mixerView, int channelIndex);
 	void paintEvent(QPaintEvent* event) override;
 	void contextMenuEvent(QContextMenuEvent*) override;
+	bool eventFilter(QObject* watched, QEvent* event) override;
 	void mousePressEvent(QMouseEvent*) override;
 	void mouseDoubleClickEvent(QMouseEvent*) override;
 	void keyPressEvent(QKeyEvent* ke) override;
@@ -97,6 +100,8 @@ public:
 	QLabel* meterInfo() const { return m_meterInfo; }
 	QLabel* insertList() const { return m_insertList; }
 	MacroKnobs* macroKnobs() const { return m_macroKnobs; }
+	//! Q050-088: the Console section (window.mixer_view 'show_console').
+	ConsoleStripSection* consoleSection() const { return m_consoleSection; }
 	//! The mixer view's "sends" option: false hides the send row and its space; true gives the space back
 	//! (which of its widgets show is the current channel's business, MixerView::updateMixerChannel).
 	void setSendsShown(bool shown);
@@ -113,6 +118,10 @@ public:
 	QLabel* routingLine() const { return m_routingLine; }
 	QLabel* stateLine() const { return m_stateLine; }
 	AutomatableButton* soloButton() const { return m_soloButton; }
+	/*! The controls Tab reaches in this strip, in the order the eye reads them (send, solo, mute,
+	 *  pan, macros, fader) - only what is visible and enabled now. Ctrl+Tab searches the adjacent
+	 *  strip for the same one. */
+	QList<QWidget*> keyboardFocusOrder() const;
 
 public slots:
 	void renameChannel();
@@ -132,6 +141,14 @@ private:
 	QString elideName(const QString& name);
 	MixerChannel* mixerChannel() const;
 	auto isMasterChannel() const -> bool { return m_channelIndex == 0; }
+	//! True when @a key is one of this strip's traversal keys (Tab, Shift+Tab, Ctrl+Tab, Ctrl+Shift+Tab).
+	bool handleTraversalKey(QKeyEvent* key, QWidget* from);
+	void moveFocusWithinStrip(QWidget* from, bool forward);
+	void moveFocusToAdjacentChannel(QWidget* from, bool forward);
+	//! A stable identity for @a control across strips (-1 for anything that is not a traversal target).
+	int focusRank(const QWidget* control) const;
+	//! Each control's name carries the strip's name, so two strips' "Mute" read apart.
+	void updateAccessibleNames();
 
 private:
 	SendButtonIndicator* m_sendButton;
@@ -151,6 +168,7 @@ private:
 	QLabel* m_meterInfo = nullptr;  // 0.5.0 L08: the clip light and the gain reduction
 	QLabel* m_insertList = nullptr;  // 0.5.0 L10 (MX-073): the inserts, by name
 	MacroKnobs* m_macroKnobs = nullptr;  // 0.5.0 L10 (MX-090): the rack's first macros
+	ConsoleStripSection* m_consoleSection = nullptr;  // Q050-088: trim, polarity, EQ, the Console's drive and glue
 	Knob* m_panKnob;
 	Fader* m_fader;
 	QLabel* m_faderTarget = nullptr;  // 0.5.0 theme 6: what the fader drives, with the faders on a return's sends

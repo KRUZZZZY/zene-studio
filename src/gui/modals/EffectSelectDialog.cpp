@@ -239,7 +239,7 @@ void EffectSelectDialog::addOrganiserControls(QVBoxLayout* rightSection)
 	row->addWidget(m_folderBox, 1);
 	row->addWidget(showHidden);
 	rightSection->addLayout(row);
-	connect(m_folderBox, &QComboBox::currentIndexChanged, this, [this] {
+	connect(m_folderBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] {
 		pickerorganiser::Filter filter = m_model.organiserFilter();
 		filter.folder = m_folderBox->currentIndex() > 0 ? m_folderBox->currentText() : QString();
 		m_model.setOrganiserFilter(filter);

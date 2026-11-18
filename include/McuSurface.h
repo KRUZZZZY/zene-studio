@@ -72,8 +72,8 @@ public:
 	static McuSurface* connect(const QString& input, const QString& output);
 	static void disconnect();
 
-	//! The first strip's index among the bankable tracks.
-	int bank() const { return m_bank; }
+	//! The first strip's index among the bankable tracks, as clamped to the tracks that exist now.
+	int bank() const;
 	void setBank(int first);
 	//! The track strip @a strip (0..7) drives, or nullptr past the song's tracks.
 	Track* stripTrack(int strip) const;
@@ -88,6 +88,8 @@ public:
 	void processOutEvent(const MidiEvent& event, const TimePos& time = TimePos(), f_cnt_t offset = 0) override;
 
 private:
+	//! m_bank clamped to the bankable tracks that exist now (the list can shrink under it).
+	int bankedFirst() const;
 	void sendFeedback();
 	void sendStrip(int strip);
 	void sendLed(mcu::Kind kind, int strip, bool lit);

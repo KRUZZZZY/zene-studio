@@ -26,7 +26,9 @@
 #ifndef LMMS_DELAY_H
 #define LMMS_DELAY_H
 
+#include <array>
 #include <cmath>
+#include <limits>
 
 #include "LmmsTypes.h"
 
@@ -68,8 +70,7 @@ public:
 
 	CombFeedback( int maxDelay ) :
 		m_size( maxDelay ),
-		m_position( 0 ),
-		m_feedBack( 0.0 ),
+		m_gain( 0.0 ),
 		m_delay( 0 ),
 		m_fraction( 0.0 )
 	{
@@ -90,7 +91,10 @@ public:
 			memset( m_buffer, 0, sizeof( frame ) * maxDelay );
 		}
 		m_size = maxDelay;
-		m_position %= m_size;
+		for (int& position : m_positions)
+		{
+			position %= m_size;
+		}
 	}
 	
 	inline void clearHistory()
@@ -100,6 +104,11 @@ public:
 	
 	inline void setDelay( double delay )
 	{
+		if( !std::isfinite( delay ) || delay < 0.0 || delay > static_cast<double>( std::numeric_limits<int>::max() ) )
+		{
+			return;
+		}
+
 		m_delay = static_cast<int>( ceil( delay ) );
 		m_fraction = 1.0 - ( delay - floor( delay ) );
 	}
@@ -111,21 +120,21 @@ public:
 	
 	inline double update( double in, ch_cnt_t ch )
 	{
-		int readPos = m_position - m_delay;
+		int readPos = m_positions[ch] - m_delay;
 		if( readPos < 0 ) { readPos += m_size; }
 		
 		const double y = std::lerp(m_buffer[readPos][ch], m_buffer[(readPos + 1) % m_size][ch], m_fraction);
 		
-		++m_position %= m_size;
+		m_positions[ch] = (m_positions[ch] + 1) % m_size;
 		
-		m_buffer[m_position][ch] = in + m_gain * y;
+		m_buffer[m_positions[ch]][ch] = in + m_gain * y;
 		return y;
 	}
 
 private:
 	frame * m_buffer;
 	int m_size;
-	int m_position;
+	std::array<int, CHANNELS> m_positions{};
 	double m_gain;
 	int m_delay;
 	double m_fraction;
@@ -135,12 +144,12 @@ private:
 template<ch_cnt_t CHANNELS>
 class CombFeedfwd
 {
+public:
 	using frame = std::array<double, CHANNELS>;
 
 	CombFeedfwd( int maxDelay ) :
 		m_size( maxDelay ),
-		m_position( 0 ),
-		m_feedBack( 0.0 ),
+		m_gain( 0.0 ),
 		m_delay( 0 ),
 		m_fraction( 0.0 )
 	{
@@ -161,7 +170,10 @@ class CombFeedfwd
 			memset( m_buffer, 0, sizeof( frame ) * maxDelay );
 		}
 		m_size = maxDelay;
-		m_position %= m_size;
+		for (int& position : m_positions)
+		{
+			position %= m_size;
+		}
 	}
 	
 	inline void clearHistory()
@@ -182,21 +194,21 @@ class CombFeedfwd
 	
 	inline double update( double in, ch_cnt_t ch )
 	{
-		int readPos = m_position - m_delay;
+		int readPos = m_positions[ch] - m_delay;
 		if( readPos < 0 ) { readPos += m_size; }
 		
 		const double y = std::lerp(m_buffer[readPos][ch], m_buffer[(readPos + 1) % m_size][ch], m_fraction) + in * m_gain;
 		
-		++m_position %= m_size;
+		m_positions[ch] = (m_positions[ch] + 1) % m_size;
 		
-		m_buffer[m_position][ch] = in;
+		m_buffer[m_positions[ch]][ch] = in;
 		return y;
 	}
 
 private:
 	frame * m_buffer;
 	int m_size;
-	int m_position;
+	std::array<int, CHANNELS> m_positions{};
 	double m_gain;
 	int m_delay;
 	double m_fraction;
@@ -206,14 +218,16 @@ private:
 template<ch_cnt_t CHANNELS>
 class CombFeedbackDualtap
 {
+public:
 	using frame = std::array<double, CHANNELS>;
 
 	CombFeedbackDualtap( int maxDelay ) :
 		m_size( maxDelay ),
-		m_position( 0 ),
-		m_feedBack( 0.0 ),
-		m_delay( 0 ),
-		m_fraction( 0.0 )
+		m_gain( 0.0 ),
+		m_delay1( 0 ),
+		m_delay2( 0 ),
+		m_fraction1( 0.0 ),
+		m_fraction2( 0.0 )
 	{
 		m_buffer = new frame[maxDelay];
 		memset( m_buffer, 0, sizeof( frame ) * maxDelay );
@@ -232,7 +246,10 @@ class CombFeedbackDualtap
 			memset( m_buffer, 0, sizeof( frame ) * maxDelay );
 		}
 		m_size = maxDelay;
-		m_position %= m_size;
+		for (int& position : m_positions)
+		{
+			position %= m_size;
+		}
 	}
 	
 	inline void clearHistory()
@@ -256,25 +273,25 @@ class CombFeedbackDualtap
 	
 	inline double update( double in, ch_cnt_t ch )
 	{
-		int readPos1 = m_position - m_delay1;
+		int readPos1 = m_positions[ch] - m_delay1;
 		if( readPos1 < 0 ) { readPos1 += m_size; }
 		
-		int readPos2 = m_position - m_delay2;
+		int readPos2 = m_positions[ch] - m_delay2;
 		if( readPos2 < 0 ) { readPos2 += m_size; }
 		
 		const double y = std::lerp(m_buffer[readPos1][ch], m_buffer[(readPos1 + 1) % m_size][ch], m_fraction1)
 			+ std::lerp(m_buffer[readPos2][ch], m_buffer[(readPos2 + 1) % m_size][ch], m_fraction2);
 		
-		++m_position %= m_size;
+		m_positions[ch] = (m_positions[ch] + 1) % m_size;
 		
-		m_buffer[m_position][ch] = in + m_gain * y;
+		m_buffer[m_positions[ch]][ch] = in + m_gain * y;
 		return y;
 	}
 
 private:
 	frame * m_buffer;
 	int m_size;
-	int m_position;
+	std::array<int, CHANNELS> m_positions{};
 	double m_gain;
 	int m_delay1;
 	int m_delay2;
@@ -291,8 +308,7 @@ public:
 
 	AllpassDelay( int maxDelay ) :
 		m_size( maxDelay ),
-		m_position( 0 ),
-		m_feedBack( 0.0 ),
+		m_gain( 0.0 ),
 		m_delay( 0 ),
 		m_fraction( 0.0 )
 	{
@@ -313,7 +329,10 @@ public:
 			memset( m_buffer, 0, sizeof( frame ) * maxDelay );
 		}
 		m_size = maxDelay;
-		m_position %= m_size;
+		for (int& position : m_positions)
+		{
+			position %= m_size;
+		}
 	}
 	
 	inline void clearHistory()
@@ -334,22 +353,22 @@ public:
 	
 	inline double update( double in, ch_cnt_t ch )
 	{
-		int readPos = m_position - m_delay;
+		int readPos = m_positions[ch] - m_delay;
 		if( readPos < 0 ) { readPos += m_size; }
 		
 		const double y = std::lerp(m_buffer[readPos][ch], m_buffer[(readPos + 1) % m_size][ch], m_fraction) + in * -m_gain;
 		const double x = in + m_gain * y;
 		
-		++m_position %= m_size;
+		m_positions[ch] = (m_positions[ch] + 1) % m_size;
 		
-		m_buffer[m_position][ch] = x;
+		m_buffer[m_positions[ch]][ch] = x;
 		return y;
 	}
 
 private:
 	frame * m_buffer;
 	int m_size;
-	int m_position;
+	std::array<int, CHANNELS> m_positions{};
 	double m_gain;
 	int m_delay;
 	double m_fraction;	

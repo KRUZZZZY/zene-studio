@@ -72,12 +72,25 @@ LMMS_EXPORT void registerShellCommands(ControlRegistry& registry);
 //! so the action and the socket share one implementation (SPEC A11).
 LMMS_EXPORT void dispatchShellCommand(const QString& id, const QJsonObject& args = QJsonObject());
 
+//! Help > Online Help's implementation: hands the documentation URL to the desktop and,
+//! when the desktop will not take it (no URL handler), says so in the window's status bar -
+//! the menu discards the command's own `opened: false`, so nothing else would.
+//! app.online_help declares `requires: human`, which the registry refuses for EVERY
+//! caller (ControlRegistry::checkRequires), so the action calls this directly - the same
+//! arrangement as the Telemetry action and its openTelemetryConsentScreen (MainWindow.cpp).
+//! @a window is the window the menu belongs to; it must not be null. Returns whether the
+//! desktop took the URL.
+LMMS_EXPORT bool openOnlineHelp(gui::MainWindow* window);
+
 //! The `editor` values window.toggle accepts, in the menu's Ctrl+1..7 order.
 LMMS_EXPORT QStringList windowEditorNames();
 
 //! window.note_editor_set - the note editor's view over the socket
 //! (src/gui/ControlCommandsNoteEditor.cpp); registered by registerWindowCommands.
 LMMS_EXPORT void registerNoteEditorWindowCommands(ControlRegistry& registry);
+//! window.step_grid - open a MIDI clip in the melodic step grid (src/gui/ControlCommandsStepGrid.cpp,
+//! Q050-294.2); registered by registerWindowCommands.
+LMMS_EXPORT void registerStepGridWindowCommand(ControlRegistry& registry);
 //! The note editor's state (NoteEditor::describe), or {} with no interface.
 LMMS_EXPORT QJsonObject noteEditorState();
 
@@ -91,6 +104,12 @@ LMMS_EXPORT QJsonObject shellSelectionState();
 //! keys, src/gui/ControlCommandsShortcuts.cpp), window.layout_* / detach / attach / header_*
 //! (src/gui/ControlCommandsLayouts.cpp) and macro.* (src/gui/ControlCommandsMacros.cpp).
 LMMS_EXPORT void registerShortcutCommands(ControlRegistry& registry);
+//! Q050-055.2: the keyboard's plug-in actions - plugin.selected_editor_open, plugin.selected_load, shortcuts.bind_plugin
+LMMS_EXPORT void registerPluginActionCommands(ControlRegistry& registry);
+//! 0.5.0 L13, the context-aware keyboard map's stage 1: automation.editor_mode, the automation
+//! editor's four edit modes (src/gui/ControlCommandsAutomationMode.cpp); registered by
+//! registerWindowCommands.
+LMMS_EXPORT void registerAutomationEditorCommands(ControlRegistry& registry);
 //! 0.5.0 L09 (MX-049/066): window.mixer_view (src/gui/ControlCommandsMixerView.cpp).
 LMMS_EXPORT void registerMixerViewCommands(ControlRegistry& registry);
 //! 0.5.0 L14: app.help / app.tours / app.tour / window.appearance (ControlCommandsHelp.cpp).

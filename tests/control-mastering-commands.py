@@ -32,6 +32,10 @@ WHAT IT ASSERTS, in numbers read off the wire:
     files (an empty candidate list would be a different fact);
   * every refusal is typed and writes nothing: a missing out_dir, a relative one, and
     junk argument types;
+  * the platform's absolute-path rule end-to-end (cluster 5653): on a Windows
+    host a drive-letter out_dir is ACCEPTED, completes within the bound and
+    writes the candidate set; on a POSIX host a Qt resource out_dir (':/...')
+    - absolute to QFileInfo on every platform - is refused as invalid_args;
   * the run: candidate_count 5 from render_count 1, six wav files on disk matching the
     reported paths, every candidate's loudness inside its own target's tolerance and
     its measured true peak at or below its ceiling - compared against the TARGET the
@@ -154,6 +158,12 @@ def check_refusals(session, recorder, outdir):
             ("mastering.run", {"out_dir": "", "extra": 0}),
             ("mastering.run", {"out_dir": 0}),
             ("mastering.run", {"out_dir": [], "x": {}})]
+    if os.name != "nt":
+        # Cluster 5653 (BUG 11): the absolute-path rule is the platform's own
+        # (QFileInfo::isAbsolute), not a leading '/'. On a POSIX host a drive-letter
+        # path is a relative filename, so the platform rule must still refuse it -
+        # the fix keeps host semantics instead of accepting foreign names.
+        junk.append(("mastering.run", {"out_dir": "C:\\Masters"}))
     failures = []
     for command, args in junk:
         error = session.typed_error(command, args)
@@ -163,6 +173,59 @@ def check_refusals(session, recorder, outdir):
                    not failures, "; ".join(failures))
     recorder.check("no refusal wrote a file",
                    wav_names(outdir) == before, "after=%r" % (wav_names(outdir),))
+
+
+def wait_for_mastering_run(session):
+    """Poll mastering.get_state until its state leaves "running" inside the
+    run-completion bound; the final state, or {} if the bound expired."""
+    deadline = time.monotonic() + RUN_COMPLETION_BOUND
+    state = {}
+    while time.monotonic() < deadline:
+        state = session.result("mastering.get_state")
+        if state.get("state") != "running":
+            break
+        time.sleep(0.5)
+    return state
+
+
+def check_platform_absolute_outdir(session, recorder, tmp):
+    """Cluster 5653 (BUG 11), the platform's absolute rule end-to-end.
+
+    The rule must be the platform's own FILESYSTEM rule: QFileInfo::isAbsolute
+    is true for Qt resource paths (':/...') on EVERY platform - measured on this
+    host: ':/res' ABS - and a resource path is not a filesystem output path, so
+    it must be refused on every platform.
+
+    Windows host: a drive-letter out_dir (the harness's tmp is one) is absolute
+    per the platform rule; the pre-fix leading-'/' rule refused it, so the run
+    never started - the RED. The patched build must ACCEPT the request (ok ACK,
+    not any refusal), finish within RUN_COMPLETION_BOUND, and leave the whole
+    candidate set on disk: an unrelated refusal, a failed run, or a poll that
+    times out while a run is still in flight all fail this check.
+    POSIX host: the divergent path is ':/...' - the committed bare-QFileInfo
+    build accepts it (RED here); the fixed build refuses it typed as invalid_args
+    and writes nothing (GREEN).
+    """
+    if os.name == "nt":
+        winpath = os.path.join(tmp, "win-abs-masters")
+        ack = session.call("mastering.run", {"out_dir": winpath}, timeout=H.SOCKET_TIMEOUT)
+        state = wait_for_mastering_run(session) if ack.get("ok") is True else {}
+        files = wav_names(winpath)
+        recorder.check("Windows host: a drive-letter out_dir is accepted, completes, and writes its output",
+                       ack.get("ok") is True and state.get("state") == "completed"
+                       and len(files) == CANDIDATES + 1 and SOURCE_RENDER in files,
+                       "accepted=%r state=%r files=%r" % (ack.get("ok"), state.get("state"), files))
+        return
+    reply = session.call("mastering.run", {"out_dir": ":/win-abs-masters"})
+    if reply.get("ok") is True:
+        # A build that accepts a resource path leaves a render in flight: take it
+        # back to the wire before the checks that follow, so the RED names the
+        # refusal itself and not a later "busy".
+        wait_for_mastering_run(session)
+    error = reply.get("error") or {}
+    recorder.check("POSIX host: a Qt resource out_dir (':/...') is refused, not treated as a filesystem path",
+                   reply.get("ok") is False and error.get("kind") == "invalid_args",
+                   "reply=%r" % (reply,))
 
 
 def run_mastering(session, outdir):
@@ -470,6 +533,7 @@ def main(argv):
         check_transaction(session, recorder)
         check_undo_removes_the_run(session, recorder, outdir)
         check_a_replaced_revision_comes_back(session, recorder, outdir)
+        check_platform_absolute_outdir(session, recorder, instance.tmp)
         check_the_capture_bound(session, recorder, outdir)
         check_quit(session, instance, recorder)
 

@@ -27,7 +27,8 @@
 #define LMMS_TIME_POS_H
 
 #include <algorithm>
-#include <cassert>
+#include <cmath>
+#include <limits>
 #include "lmms_export.h"
 #include "LmmsTypes.h"
 
@@ -110,18 +111,38 @@ public:
 	// calculate number of frame that are needed this time
 	f_cnt_t frames(const float framesPerTick) const
 	{
-		// Before, step notes used to have negative length. This
-		// assert is a safeguard against negative length being
-		// introduced again (now using Note Types instead #5902)
-		assert(m_ticks >= 0);
-		return static_cast<f_cnt_t>(m_ticks * framesPerTick);
+		// Before, step notes used to have negative length. Keep invalid lengths
+		// and rates out of the unsigned frame-count conversion in release builds.
+		if (m_ticks < 0 || !std::isfinite(framesPerTick) || framesPerTick < 0.0f) { return 0; }
+
+		const float frameCount = m_ticks * framesPerTick;
+		if (!std::isfinite(frameCount)
+			|| static_cast<double>(frameCount) >= static_cast<double>(std::numeric_limits<f_cnt_t>::max()))
+		{
+			return 0;
+		}
+
+		return static_cast<f_cnt_t>(frameCount);
 	}
 
 	double getTimeInMilliseconds(bpm_t beatsPerMinute) const { return ticksToMilliseconds(getTicks(), beatsPerMinute); }
 
+	// The frame-to-tick direction mirrors frames() above: a rate that is
+	// zero, negative or not a number describes no tick position at all.
+	// Dividing by it yields NaN or infinity, and converting that to an int
+	// is undefined behaviour - as is converting a quotient that no tick
+	// count can hold.  Such an input has no position, so report "none".
 	static TimePos fromFrames(const f_cnt_t frames, const float framesPerTick)
 	{
-		return TimePos(static_cast<int>(frames / framesPerTick));
+		if (!std::isfinite(framesPerTick) || framesPerTick <= 0.0f) { return TimePos(0); }
+
+		const float ticks = frames / framesPerTick;
+		if (!std::isfinite(ticks) || ticks >= static_cast<float>(std::numeric_limits<int>::max()))
+		{
+			return TimePos(0);
+		}
+
+		return TimePos(static_cast<int>(ticks));
 	}
 
 	static tick_t ticksPerBar() { return s_ticksPerBar; }

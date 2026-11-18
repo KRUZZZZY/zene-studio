@@ -30,16 +30,28 @@
 #include <QtTest>
 
 #include <QAction>
+#include <QDomDocument>
+#include <QApplication>
+#include <QComboBox>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMenu>
+#include <QInputDialog>
+#include <QTemporaryDir>
+#include <QTimer>
 
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "Effect.h"
 #include "EffectChain.h"
+#include "EffectDeviceMenu.h"
 #include "EffectHostingMenu.h"
+#include "EffectPickerOrganiser.h"
+#include "EffectSelectDialog.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "PluginOrganiser.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -70,6 +82,8 @@ class EffectHostingMenuTest : public QObject
 private slots:
 	void initTestCase()
 	{
+		QVERIFY(m_home.isValid());
+		ConfigManager::inst()->loadConfigFile(m_home.filePath(QStringLiteral("zene.xml")));
 #ifdef LMMS_TEST_PLUGIN_DIR
 		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
 #endif
@@ -88,6 +102,43 @@ private slots:
 		QCOMPARE(hostingStatusText({{QStringLiteral("hosting"), QJsonObject{{QStringLiteral("state"), QStringLiteral("in-process")}}}}),
 			QStringLiteral("Hosting: in-process"));
 		QCOMPARE(hostingStatusText(QJsonObject{}), QStringLiteral("Hosting: unknown"));
+	}
+
+	void aLoadedDummyEffectHasADeviceAddress()
+	{
+		const int index = Engine::mixer()->createChannel();
+		MixerChannel* channel = Engine::mixer()->mixerChannel(index);
+
+		QDomDocument document;
+		QDomElement chain = document.createElement(QStringLiteral("fxchain"));
+		chain.setAttribute(QStringLiteral("numofeffects"), 1);
+		document.appendChild(chain);
+		QDomElement missingEffect = document.createElement(QStringLiteral("effect"));
+		missingEffect.setAttribute(QStringLiteral("name"), QStringLiteral("missing-effect-for-device-address-test"));
+		missingEffect.appendChild(document.createElement(QStringLiteral("key")));
+		chain.appendChild(missingEffect);
+
+		channel->m_fxChain.loadSettings(chain);
+		QCOMPARE(channel->m_fxChain.effects().size(), size_t{1});
+		Effect* effect = channel->m_fxChain.effects().front();
+		QVERIFY(effect != nullptr);
+		QCOMPARE(effect->effectChain(), &channel->m_fxChain);
+		QVERIFY(!deviceAddress(effect).isEmpty());
+	}
+
+	void anchoredSearchIncludesFavouriteRows()
+	{
+		QStandardItemModel source;
+		source.setColumnCount(2);
+		source.appendRow({new QStandardItem(QStringLiteral("Foo")), new QStandardItem(QStringLiteral("Zene Studio"))});
+		source.appendRow({new QStandardItem(QStringLiteral("★ Foo")), new QStandardItem(QStringLiteral("Zene Studio"))});
+		source.item(1, 0)->setData(true, pickerorganiser::FavouriteRole);
+
+		DualColumnFilterProxyModel filter;
+		filter.setSourceModel(&source);
+		filter.setFilterRegularExpression(QRegularExpression(QStringLiteral("^Foo$"), QRegularExpression::CaseInsensitiveOption));
+
+		QCOMPARE(filter.rowCount(), 2);
 	}
 
 	void theSubmenuFollowsTheDevicesEntry()
@@ -134,6 +185,35 @@ private slots:
 		addEffectHostingMenu(&none, nullptr);
 		QVERIFY(none.actions().isEmpty());
 	}
+
+	void returnKeepsAnUnfiledEffectUnfiled()
+	{
+		const QString key = QStringLiteral("test.return.unfiled.effect");
+		pluginorganiser::setEntry(key, {});
+		pluginorganiser::Entry folderEntry;
+		folderEntry.folder = QStringLiteral("Existing folder");
+		pluginorganiser::setEntry(QStringLiteral("test.return.folder.source"), folderEntry);
+		QVERIFY(pluginorganiser::folders().contains(folderEntry.folder));
+
+		QMenu menu;
+		pickerorganiser::fillKeyMenu(&menu, key, nullptr, [] {});
+		QAction* move = item(&menu, QStringLiteral("Move to Folder..."));
+		QVERIFY(move != nullptr);
+		QTimer::singleShot(0, [] {
+			auto* dialog = qobject_cast<QInputDialog*>(QApplication::activeModalWidget());
+			QVERIFY(dialog != nullptr);
+			auto* combo = dialog->findChild<QComboBox*>();
+			QVERIFY(combo != nullptr);
+			QVERIFY(combo->isEditable());
+			QTest::keyClick(combo->lineEdit(), Qt::Key_Return);
+		});
+		move->trigger();
+
+		QVERIFY(pluginorganiser::entry(key).folder.isEmpty());
+	}
+
+private:
+	QTemporaryDir m_home;
 };
 
 QTEST_MAIN(EffectHostingMenuTest)

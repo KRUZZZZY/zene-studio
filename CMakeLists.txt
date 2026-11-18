@@ -141,6 +141,7 @@ option(WANT_DEBUG_CPACK "Show detailed logs for packaging commands" OFF)
 option(WANT_CPACK_TARBALL "Request CPack to create a tarball instead of an installer" OFF)
 option(WANT_QT6 "Build with experimental Qt6 support" OFF)
 option(WANT_WASM "Include the WASM DSP sandbox (requires the wasmtime C API)" ON)
+option(WANT_ABLETON_LINK "Include Ableton Link session sync (vendored in src/3rdparty/ableton-link, GPL-2.0-or-later; docs/LINK-SYNC.md)" ON)
 
 # Opt-in telemetry client (anonymous platform statistics, default off at
 # runtime). This option is the packager kill switch: -DZENE_TELEMETRY=OFF
@@ -150,6 +151,15 @@ option(WANT_WASM "Include the WASM DSP sandbox (requires the wasmtime C API)" ON
 option(ZENE_TELEMETRY "Compile the opt-in telemetry client (OFF removes it and its networking code entirely)" ON)
 IF(ZENE_TELEMETRY)
 	SET(ZENE_TELEMETRY_ENABLED 1)
+ENDIF()
+
+# Update check (Q050-501): off at run time until the user says yes. A packager whose
+# builds are updated by something else sets -DZENE_UPDATE_CHECK=OFF: the checker, its
+# commands and its menu entry are then not compiled at all (a Flatpak or Snap copy
+# hides them at run time instead). Independent of ZENE_TELEMETRY.
+option(ZENE_UPDATE_CHECK "Compile the opt-in check for a newer release (OFF for builds updated by something else)" ON)
+IF(ZENE_UPDATE_CHECK)
+	SET(ZENE_UPDATE_CHECK_ENABLED 1)
 ENDIF()
 
 # Peer-to-peer collaboration and remote control (WF-050/WF-052, 0.5.0 F6): no server, TLS-PSK over
@@ -251,6 +261,20 @@ elseif(TARGET_UARCH STREQUAL "native")
 endif()
 
 IF(LMMS_BUILD_APPLE)
+	# The supported macOS floor (README, "macOS Intel and Apple Silicon"). It is Qt 5.15's own
+	# minimum deployment target, and it is above the oldest target the worker wake's __ulock
+	# calls are available on (10.12), so every supported build can use that path. CI's
+	# macos-env.sh derives MACOSX_DEPLOYMENT_TARGET from a dependency binary and today yields
+	# 11.0+ on the hosted runners; that is above this floor and is supported. Warn rather than
+	# fail, so a third-party packager building below it still gets a build and one clear line
+	# saying what the project supports.
+	SET(ZENE_MACOS_MINIMUM "10.13")
+	IF(DEFINED MACOSX_DEPLOYMENT_TARGET AND MACOSX_DEPLOYMENT_TARGET VERSION_LESS ZENE_MACOS_MINIMUM)
+		MESSAGE(WARNING
+			"MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET} is below Zene Studio's "
+			"supported macOS minimum ${ZENE_MACOS_MINIMUM}; the build may fail or crash there.")
+	ENDIF()
+	MESSAGE(STATUS "macOS deployment floor: ${ZENE_MACOS_MINIMUM} (target: ${MACOSX_DEPLOYMENT_TARGET})")
 	# Fix linking on 10.14+. See issue #4762 on github
 	LINK_DIRECTORIES("${APPLE_PREFIX}/lib")
 	SET(WANT_SOUNDIO OFF)
@@ -384,6 +408,11 @@ IF(ZENE_TELEMETRY_ENABLED)
 	# The telemetry transport is the only other Qt Network user. With the kill
 	# switch off this package is not required and no networking code from the
 	# telemetry client is compiled.
+	FIND_PACKAGE(Qt${QT_VERSION_MAJOR} COMPONENTS Network REQUIRED)
+	LIST(APPEND QT_LIBRARIES Qt${QT_VERSION_MAJOR}::Network)
+ENDIF()
+
+IF(ZENE_UPDATE_CHECK_ENABLED)
 	FIND_PACKAGE(Qt${QT_VERSION_MAJOR} COMPONENTS Network REQUIRED)
 	LIST(APPEND QT_LIBRARIES Qt${QT_VERSION_MAJOR}::Network)
 ENDIF()
@@ -740,6 +769,10 @@ IF(LMMS_BUILD_LINUX OR LMMS_BUILD_APPLE OR LMMS_BUILD_OPENBSD OR LMMS_BUILD_FREE
 	FIND_PACKAGE(Threads)
 ENDIF(LMMS_BUILD_LINUX OR LMMS_BUILD_APPLE OR LMMS_BUILD_OPENBSD OR LMMS_BUILD_FREEBSD OR LMMS_BUILD_HAIKU)
 
+# Threads::Threads is linked by consumers on every platform (the sfizz tests, the
+# plugins); the gate above only runs on the pthread platforms, so ensure it everywhere.
+include(${CMAKE_SOURCE_DIR}/cmake/modules/EnsureThreads.cmake)
+
 # check for sndio (roaraudio won't work yet)
 IF(WANT_SNDIO)
 	FIND_PACKAGE(Sndio)
@@ -1024,6 +1057,27 @@ else()
 	SET(STATUS_WASM "Disabled")
 endif()
 
+# Ableton Link (WF-051, docs/LINK-SYNC.md): the vendored reference library in
+# src/3rdparty/ableton-link (Link 4.1, GPL-2.0-or-later, with the standalone asio
+# it bundles, BSL-1.0 - see README.lmms there). Header-only, so there is nothing to
+# find: the option decides whether the link.* commands speak real Ableton Link
+# (ON) or fall back to the zene-link-style model that only other Zene instances
+# understand (OFF). The one platform it is refused on is a MinGW cross build from
+# a case-sensitive host: Link's Windows headers include <Windows.h>, which the
+# cross toolchain spells <windows.h>, so the fallback is chosen there and said so.
+if(WANT_ABLETON_LINK)
+	if(MINGW AND NOT CMAKE_HOST_WIN32)
+		SET(LMMS_HAVE_ABLETON_LINK FALSE)
+		SET(STATUS_ABLETON_LINK "not built: a MinGW cross build cannot compile Link's <Windows.h> includes; the zene-link-style fallback is used")
+	else()
+		SET(LMMS_HAVE_ABLETON_LINK TRUE)
+		SET(STATUS_ABLETON_LINK "OK (vendored Ableton Link 4.1)")
+	endif()
+else()
+	SET(LMMS_HAVE_ABLETON_LINK FALSE)
+	SET(STATUS_ABLETON_LINK "not built as requested (the zene-link-style fallback is used)")
+endif()
+
 # make sub-directories
 ADD_SUBDIRECTORY(cmake)
 ADD_SUBDIRECTORY(src)
@@ -1157,6 +1211,7 @@ MESSAGE(
 "* Debug assertions                  : ${STATUS_ASSERTIONS}\n"
 "* Experimental Qt6 support          : ${STATUS_QT6}\n"
 "* WASM DSP sandbox                  : ${STATUS_WASM}\n"
+"* Ableton Link session sync         : ${STATUS_ABLETON_LINK}\n"
 )
 
 MESSAGE(

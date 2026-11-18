@@ -429,6 +429,38 @@ private slots:
 
 	void cleanupTestCase() { teardownRackFixture(); }
 
+	//! A creation action must redo the track and point it undid, as its reversible transaction promises.
+	void aCreatedAutomationPointSurvivesUndoAndRedo()
+	{
+		control::AutomationParameter gain;
+		QString why;
+		QVERIFY2(channelGainParameter(&gain, &why), qPrintable(why));
+		QVERIFY(control::existingAutomationClip(gain.model) == nullptr);
+		const tick_t ticks = 96;
+		const float value = 73.25f;
+		const float storedValue = gain.model->inverseScaledValue(value);
+		const ControlResult added = run(QStringLiteral("automation.add_point"),
+			QJsonObject{{QStringLiteral("track"), channelIdOf()}, {QStringLiteral("parameter"), gain.id()},
+				{QStringLiteral("ticks"), static_cast<double>(ticks)}, {QStringLiteral("value"), static_cast<double>(value)}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		QVERIFY(added.result.value(QStringLiteral("created_automation_track")).toBool());
+
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QVERIFY(control::existingAutomationClip(gain.model) == nullptr);
+
+		const ControlResult redone = run(QStringLiteral("control.redo"));
+		QVERIFY2(redone.ok, qPrintable(redone.errorMessage));
+		QVERIFY(redone.result.value(QStringLiteral("redone")).toBool());
+		AutomationClip* restored = control::existingAutomationClip(gain.model);
+		QVERIFY(restored != nullptr);
+		QVERIFY(restored->getTimeMap().contains(static_cast<int>(ticks)));
+		QCOMPARE(restored->getTimeMap().value(static_cast<int>(ticks)).getOutValue(), storedValue);
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(control::existingAutomationClip(gain.model) == nullptr);
+	}
+
 	//! THE LOAD-BEARING CASE, with its own negative control in the same run.
 	void theAudioPathFollowsTheCurveInsideTheBlock()
 	{
@@ -522,7 +554,8 @@ private slots:
 	 *  `std::prev(upperBound(ticks))` without asking whether that iterator was
 	 *  `begin()`. The tick-0 node is removed through the surface, so the first
 	 *  node really is at tick 10 and every tick of this block precedes it -
-	 *  which is the shape a user builds by deleting the first point. */
+	 *  which is the shape a user builds by deleting the first point. Q050-037:
+	 *  that pre-first value is the parameter's authored initial value, not 0. */
 	void aBlockBeforeTheFirstPointReadsThePreFirstValue()
 	{
 		control::AutomationParameter gain;
@@ -540,6 +573,11 @@ private slots:
 		QVERIFY(clip != nullptr);
 		clip->setProgressionType(AutomationClip::ProgressionType::Discrete);
 
+		// The authored initial value, inverse-scaled into the domain the map stores.
+		const float expected = gain.model->inverseScaledValue(gain.model->initValue<float>());
+		QVERIFY2(expected != 0.0f,
+			"the fixture's parameter has no non-zero initial value, so this would pass vacuously");
+
 		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
 		const double framesPerTick = static_cast<double>(Engine::framesPerTick());
 		AutomationRamp ramp;
@@ -547,18 +585,21 @@ private slots:
 		// so every frame of it lies before the first node at tick 10.
 		clip->writeBlockRamp(ramp, clip->startPosition(), frames, framesPerTick, 0);
 		evidence("ramp-before-first-point",
-			QStringLiteral("knots=%1 refusals=%2 value@0=%3")
-				.arg(ramp.knotCount()).arg(ramp.refusals()).arg(ramp.valueAt(0), 0, 'g', 6));
+			QStringLiteral("knots=%1 refusals=%2 value@0=%3 expected=%4")
+				.arg(ramp.knotCount()).arg(ramp.refusals()).arg(ramp.valueAt(0), 0, 'g', 6)
+				.arg(expected, 0, 'g', 6));
 		QCOMPARE(ramp.refusals(), std::uint32_t{0});
 
 		// Before the first node no segment has started: the clip's value there is
 		// the one valueAt(TimePos) returns, so the whole block must hold it.
 		for (f_cnt_t f = 0; f < frames; ++f)
 		{
-			QVERIFY2(ramp.valueAt(f) == 0.0f,
+			QVERIFY2(ramp.valueAt(f) == expected,
 				qPrintable(QStringLiteral("frame %1 of a block entirely before the first point "
-					"reads %2, not the clip's pre-first value").arg(f).arg(ramp.valueAt(f), 0, 'g', 6)));
+					"reads %2, not the parameter's initial value %3")
+					.arg(f).arg(ramp.valueAt(f), 0, 'g', 6).arg(expected, 0, 'g', 6)));
 		}
+		QCOMPARE(clip->valueAt(TimePos(0)), expected);
 	}
 
 	/*! A Discrete step that lands EXACTLY on a sample must be HELD until that

@@ -49,6 +49,8 @@ public:
 	{
 	}
 
+	virtual ~ThreadableJob() = default;
+
 	inline ProcessingState state() const
 	{
 		return m_state.load();

@@ -25,10 +25,13 @@
  *
  * THE CONTAINER is a ZIP with a `project.xml` entry and an optional
  * `metadata.xml` entry, XML, UTF-8 (README.md, "Format Specification"). This
- * module writes both entries and reads either; the ZIP is written with the
- * STORE method so the container needs no compression dependency: a stored entry
- * is a valid entry in every ZIP reader, and the spec constrains the entries, not
- * the compression method.
+ * module writes both entries and reads either; the ZIP is WRITTEN with the
+ * STORE method (a stored entry is a valid entry in every ZIP reader, and the
+ * spec constrains the entries, not the compression method) and READ in STORE or
+ * raw DEFLATE (method 8, what the other DAWs write). Reading is bounded - every
+ * entry's decompressed size, and the total - and TOLERANT: a corrupt, oversized
+ * or unsupported entry never stops the entries around it, and every deviation
+ * is listed in DawProjectReadReport::deviations.
  *
  * LOSSY MAPPINGS. Every one is recorded here, in one line each, and in full -
  * with the reasoning - in docs/DAWPROJECT-INTERCHANGE.md, which is the document
@@ -51,9 +54,9 @@
  *      per Channel must carry LMMS' two - a MixerChannel fader (0..2, unity
  *      1.0) on the bare <Channel>, the track volume (0..200, unity 100) on the
  *      track's own, divided by 100.
- *   7. MIXER ROUTING AND SHARING: `destination` names the strip a track feeds
- *      (written); LMMS' wider MixerRoute graph, its pre/post-fader flags and
- *      WHICH other tracks share a strip are not carried.
+	 *   7. MIXER ROUTING: `destination` names the strip a track feeds, and
+	 *      multiple tracks may name the same strip. LMMS' wider MixerRoute graph
+	 *      and its pre/post-fader flags are not carried.
  *   8. TEMPO BOUNDS: written as 10..999, and a file outside them is REFUSED.
  *   9. TIME VALUES are beats; a FOREIGN time off LMMS' 48-per-beat grid is
  *      rounded onto it and counted in `rounded_times`.
@@ -86,8 +89,10 @@
 #define LMMS_DAWPROJECT_INTERCHANGE_H
 
 #include <QByteArray>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
 #include <utility>
@@ -265,9 +270,8 @@ struct DawProjectTrack
 	//! The mixer strip this track feeds: the id of a DawProjectMixerChannel.
 	QString destinationChannelId;
 	//! The LMMS MixerChannel index behind destinationChannelId (-1 when none,
-	//! or when the model came from a file). LOSSY #7: the format's
-	//! one-Channel-per-Track model has no way to say "two tracks share this
-	//! strip", so the SHARING is not carried and this is a conversion-time note.
+	//! or when the model came from a file). Session-generated ids are temporary,
+	//! so this index preserves the destination when writing the model.
 	int mixerChannelIndex = -1;
 
 	QVector<DawProjectClip> clips;
@@ -352,9 +356,9 @@ struct DawProjectLossReport
 	int panNotWritten = 0;
 	//! Mixer routes other than "everything to master", not carried.
 	int routingLost = 0;
-	//! Tracks whose assigned MixerChannel is SHARED with another track, or is
-	//! not the one the engine would have given them: the format is
-	//! one-Channel-per-Track and has no way to say it (LOSSY #7).
+	//! Not counted: a folder has no mixer channel by design, and tracks that
+	//! share a strip are written as shared IDREFs. No code path increments it
+	//! now; the key stays in the report so its shape does not change.
 	int mixerSharingLost = 0;
 	//! Notes or clips whose time was not on LMMS' grid and was rounded.
 	int roundedTimes = 0;
@@ -389,6 +393,64 @@ struct DawProjectWriteReport
 	DawProjectLossReport loss;
 };
 
+// ---------------------------------------------------------------------------
+// Deviations: what a container did that this reader could not take as written
+// ---------------------------------------------------------------------------
+
+//! The `kind` of a DawProjectDeviation. A fixed vocabulary, because a client
+//! (and a test) switches on it.
+constexpr const char* DeviationCorruptEntry = "corrupt_entry";          //!< bytes that do not decode
+constexpr const char* DeviationCrcMismatch = "crc_mismatch";            //!< decoded, but not what the CRC says
+constexpr const char* DeviationUnsupportedMethod = "unsupported_method"; //!< a compression method not read
+constexpr const char* DeviationUnsupportedFeature = "unsupported_feature"; //!< encryption, ZIP64
+constexpr const char* DeviationOversized = "oversized_entry";           //!< past the per-entry bound
+constexpr const char* DeviationTotalOversized = "total_oversized";      //!< past the whole-container bound
+constexpr const char* DeviationTruncatedDirectory = "truncated_directory"; //!< the central directory ends early
+constexpr const char* DeviationMissingProject = "missing_project_entry"; //!< no project.xml to import
+constexpr const char* DeviationMissingReferenced = "missing_referenced_file"; //!< a <File path> the container lacks
+constexpr const char* DeviationDuplicateEntry = "duplicate_entry";      //!< one name twice; the last one is used
+
+//! One deviation. `entry` is the ZIP entry (or the referenced path) it concerns,
+//! empty when it concerns the container as a whole.
+struct DawProjectDeviation
+{
+	QString entry;
+	QString kind;
+	QString detail;
+
+	QJsonObject toJson() const;
+};
+
+//! The bounds the reader holds every entry to. The decompressed size is what is
+//! bounded, not the file's: a few kilobytes of DEFLATE can claim gigabytes.
+struct DawProjectZipLimits
+{
+	//! The most one entry may inflate to; a larger entry is skipped and reported.
+	qint64 maxEntryBytes = 512LL * 1024 * 1024;
+	//! The most all entries may inflate to together; the entry that would pass it
+	//! is skipped and reported.
+	qint64 maxTotalBytes = 1024LL * 1024 * 1024;
+	//! False reads STORE only (an entry using DEFLATE is a deviation): the
+	//! `.mmpz` v2 container is written STORE by this program and keeps that contract.
+	bool allowDeflate = true;
+};
+
+//! What a container read saw, entry by entry.
+struct DawProjectZipReport
+{
+	//! Every entry name the central directory lists, readable or not.
+	QStringList entryNames;
+	int entriesRead = 0;       //!< entries whose bytes were decoded and CRC-checked
+	int entriesDeflated = 0;   //!< of those, the ones that were DEFLATE-compressed
+	qint64 inflatedBytes = 0;  //!< every byte decoded, good entry or not: what the total bound counts
+	std::vector<DawProjectDeviation> deviations;
+};
+
+//! \a deviations as the JSON array both `dawproject.*` replies carry.
+LMMS_EXPORT QJsonArray dawProjectDeviationsJson(const std::vector<DawProjectDeviation>& deviations);
+//! \a deviations as one sentence-per-deviation text, for a refusal message or a dialog.
+LMMS_EXPORT QString dawProjectDeviationText(const std::vector<DawProjectDeviation>& deviations);
+
 //! What one successful read produced.
 struct DawProjectReadReport
 {
@@ -407,6 +469,12 @@ struct DawProjectReadReport
 	int meterPointCount = 0;
 	//! Entries the container carried that this module does not use.
 	QStringList unusedEntries;
+	int entryCount = 0;            //!< entries the central directory lists
+	int deflatedEntryCount = 0;    //!< entries read from DEFLATE
+	int referencedFileCount = 0;   //!< distinct internal <File path> references in project.xml
+	//! Everything the container did that was not taken as written, in the order
+	//! met. Filled on a refusal too, so a refusal can list all of it.
+	std::vector<DawProjectDeviation> deviations;
 	DawProjectLossReport loss;
 };
 
@@ -448,7 +516,8 @@ LMMS_EXPORT DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossRe
  *  declaration prefix beyond the format's own, no namespace: Project.xsd
  *  declares no targetNamespace). False - with \\a error set - when the model
  *  holds a value the format cannot express (a tempo outside 10..999, a metre
- *  whose denominator is not a power of two, a negative time). */
+ *  numerator outside 1..32, a denominator that is not a power of two, a
+ *  negative time). */
 LMMS_EXPORT bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml,
 	QString* error);
 
@@ -493,11 +562,28 @@ using DawProjectEntry = std::pair<QString, QByteArray>;
 LMMS_EXPORT bool dawProjectZipWrite(const QString& path,
 	const std::vector<DawProjectEntry>& entries, QString* error);
 
-/*! Read every entry of the ZIP at \\a path, in central-directory order.
- *  Bounds-checked against the file's own sizes: a truncated or hostile
- *  container is refused with \\a error rather than read past its end. */
+/*! Read every entry of the ZIP at \\a path, in central-directory order, STRICTLY:
+ *  STORE entries only, and the first deviation of any kind refuses the whole
+ *  container with \\a error. Bounds-checked against the file's own sizes: a
+ *  truncated or hostile container is refused rather than read past its end.
+ *  This is the `.mmpz` v2 container's reader. */
 LMMS_EXPORT bool dawProjectZipRead(const QString& path,
-	std::vector<DawProjectEntry>* entries, QString* error);
+	std::vector<DawProjectEntry>* entries, QString* error, bool* unreadable = nullptr);
+
+/*! Read the ZIP at \\a path TOLERANTLY: STORE and raw DEFLATE entries, each held
+ *  to \\a limits, and an entry that is corrupt, fails its CRC, uses an unsupported
+ *  method or is oversized is skipped and LISTED in \\a report rather than ending
+ *  the read - the entries around it are still returned. \\a entries receives the
+ *  entries that decoded cleanly, in central-directory order; when \\a retain is
+ *  non-empty only those names are kept (the others are still decoded and
+ *  CRC-checked, so a damaged one is still reported, but their bytes are dropped).
+ *  False - with \\a error set - only when there is no usable directory at all:
+ *  the file is unreadable, is not a ZIP, is spanned, or declares a directory
+ *  past its own end. */
+LMMS_EXPORT bool dawProjectZipReadTolerant(const QString& path,
+	std::vector<DawProjectEntry>* entries, DawProjectZipReport* report, QString* error,
+	const DawProjectZipLimits& limits = DawProjectZipLimits(),
+	const QStringList& retain = QStringList(), bool* unreadable = nullptr);
 
 //! The SHA-256 of \\a bytes, lowercase hex - the writer's own file identity.
 LMMS_EXPORT QString dawProjectSha256(const QByteArray& bytes);

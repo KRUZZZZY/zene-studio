@@ -24,6 +24,8 @@
 
 #include <QtTest>
 
+#include <limits>
+
 #include "NoteGrid.h"
 #include "NoteLanes.h"
 #include "TempoMap.h"
@@ -131,6 +133,23 @@ private slots:
 		QCOMPARE(g.pixelsPerTick(), NoteGrid::minPixelsPerTick);
 	}
 
+	void nonFiniteZoomAndScrollValuesAreIgnored()
+	{
+		NoteGrid g;
+		g.setPixelsPerTick(0.5);
+		g.setScrollTicks(96);
+		const double infinity = std::numeric_limits<double>::infinity();
+		const double nan = std::numeric_limits<double>::quiet_NaN();
+
+		for (double value : {nan, infinity, -infinity})
+		{
+			g.setPixelsPerTick(value);
+			QCOMPARE(g.pixelsPerTick(), 0.5);
+			g.setScrollTicks(value);
+			QCOMPARE(g.scrollTicks(), 96.0);
+		}
+	}
+
 	void rowsRunFromTheHighestKeyDown()
 	{
 		NoteGrid g;
@@ -138,6 +157,8 @@ private slots:
 		QCOMPARE(g.rows().front(), 127);
 		QCOMPARE(g.rowOfKey(127), 0);
 		QCOMPARE(g.rowOfKey(0), 127);
+		g.setRowHeight(64);
+		QCOMPARE(g.rowHeight(), 40);  // the larger cap belongs to accessible mode only
 		g.setRowHeight(10);
 		g.setViewport(400, 300);
 		QCOMPARE(g.keyAtY(5), 127);

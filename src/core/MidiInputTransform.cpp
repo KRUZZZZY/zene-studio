@@ -236,7 +236,10 @@ void MidiInputTransform::load(const QDomElement& trackElement)
 	// track at the identity when the attribute was malformed, which is a way of
 	// losing what the user had with no word and nothing to undo.
 	const QJsonDocument document = QJsonDocument::fromJson(text.toUtf8());
-	if (document.isNull()) { return; }
+	// An OBJECT, not merely valid JSON: "[]" parses, but document.object()
+	// answers an empty object for it, and the empty candidate would replace
+	// the transform in force with the identity.
+	if (!document.isObject()) { return; }
 	MidiInputTransform candidate;
 	QString ignored;
 	if (!candidate.fromJson(document.object(), &ignored)) { return; }

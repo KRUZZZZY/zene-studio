@@ -58,6 +58,7 @@ class LMMS_EXPORT SubWindow : public QMdiSubWindow
 
 public:
 	SubWindow( QWidget *parent = nullptr, Qt::WindowFlags windowFlags = QFlag(0) );
+	~SubWindow() override;
 	// same as QWidet::normalGeometry, but works properly under X11 (see https://bugreports.qt.io/browse/QTBUG-256)
 	QRect getTrueNormalGeometry() const;
 	QBrush activeColor() const;
@@ -117,6 +118,8 @@ private:
 	QGraphicsDropShadowEffect * m_shadow;
 	bool m_hasFocus;
 	bool m_isDetachable;
+	//! The MDI area's subWindowActivated -> focusChanged link, severed in the destructor.
+	QMetaObject::Connection m_mdiAreaConnection;
 
 	static void elideText( QLabel *label, QString text );
 	void adjustTitleBar();

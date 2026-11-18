@@ -80,6 +80,7 @@ void NoteLaneView::paintEvent(QPaintEvent*)
 	const int baseY = scale.low < 0 ? yOfValue(0) : height() - 1;
 	p.fillRect(QRect(0, baseY, width(), 1), pal.gridBeat);
 	if (m_state.clip != nullptr) { paintStems(p, baseY); }
+	lanescale::paintPlayhead(p, rect(), m_editor->playheadX());
 	const QString status = selectionReadout();
 	lanescale::paintLabels(p, rect(), scale, yOf, status);
 	if (m_hover.x() >= 0) { lanescale::paintReadout(p, rect(), m_hover, pointerReadout(scale)); }

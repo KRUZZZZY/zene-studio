@@ -24,6 +24,7 @@
 #define LMMS_WASM_WORKER_H
 
 #include "WasmAbi.h"
+#include "WasmLogBuffer.h"
 #include "WasmSandbox.h"
 #include "WasmSpscRingBuffer.h"
 
@@ -121,10 +122,42 @@ public:
 	//! Control/test helper: block until every submitted block has been processed.
 	bool waitForIdle(int timeoutMs);
 
+#ifdef LMMS_TESTING
+	//! Test seam: called on the pool lane right before the module is compiled,
+	//! so a test can hold the load and observe the Loading state instead of
+	//! racing it.
+	using ModuleLoadTestHook = void (*)(void*);
+	static void setModuleLoadTestHook(ModuleLoadTestHook hook, void* context);
+	static void notifyModuleLoadForTest();
+#endif
+
 private:
 	//! The pool's lanes drive claimForLane()/drainOnLane()/releaseLane(); they
 	//! are the only callers that may, and nothing else reaches them.
 	friend class WasmWorkerPool;
+	friend class WasmWorkerPoolTest;
+
+#ifdef LMMS_TESTING
+	using AudioEndpointEntryTestHook = void (*)(void*);
+	static void setAudioEndpointEntryTestHook(AudioEndpointEntryTestHook hook, void* context);
+	static void notifyAudioEndpointEnteredForTest();
+#endif
+
+	//! Pin the audio submit/collect endpoints so stop() can safely take over
+	//! both SPSC queues after the audio side has quiesced.
+	class AudioEndpointPin
+	{
+	public:
+		explicit AudioEndpointPin(WasmWorker& worker) :
+			m_worker(worker.beginAudioEndpoint() ? &worker : nullptr)
+		{
+		}
+		~AudioEndpointPin() { if (m_worker != nullptr) { m_worker->endAudioEndpoint(); } }
+		explicit operator bool() const { return m_worker != nullptr; }
+
+	private:
+		WasmWorker* m_worker;
+	};
 
 	enum class SlotState : std::uint32_t
 	{
@@ -148,6 +181,14 @@ private:
 	 *  makes "one block of one worker at a time, in FIFO order" true. */
 	bool claimForLane();
 	void releaseLane();
+	void openAudioEndpoints();
+	void closeAudioEndpointsAndWait();
+	bool audioEndpointsClosed() const
+	{
+		return (m_audioEndpointState.load(std::memory_order_acquire) & audioEndpointClosedBit) != 0;
+	}
+	bool beginAudioEndpoint();
+	void endAudioEndpoint();
 	//! Whether a lane would find work here: a module to load, or blocks queued.
 	bool hasPendingWork() const;
 	/*! Load the module if needed, then run every queued block in order.
@@ -157,6 +198,10 @@ private:
 
 	void processSlot(Slot& slot, float sampleRate);
 	void passthrough(Slot& slot);
+	//! Lane: move the sandbox's latest log into the worker-owned snapshot.
+	//! takeLog() only ever reads that snapshot, so it never dereferences a
+	//! sandbox the lane may be replacing or destroying.
+	void transferLogFromLane();
 	//! Lane: load the module named by m_modulePath (the first load and every
 	//! re-instantiation go through here).
 	bool loadModuleOnLane();
@@ -168,6 +213,11 @@ private:
 	//! lanes run drainOnLane().
 	std::atomic<bool> m_laneClaimed{false};
 	std::atomic<bool> m_stop{false};
+	//! A single modification order arbitrates entry against shutdown: bit 31
+	//! closes the gate, and the low bits count audio-side pins.
+	static constexpr std::uint32_t audioEndpointClosedBit = std::uint32_t{1} << 31;
+	static constexpr std::uint32_t audioEndpointUsersMask = audioEndpointClosedBit - 1;
+	std::atomic<std::uint32_t> m_audioEndpointState{audioEndpointClosedBit};
 	//! Control thread only: whether this worker is in the pool's registry.
 	bool m_registeredWithPool = false;
 	std::atomic<State> m_state{State::Idle};
@@ -181,6 +231,9 @@ private:
 	std::atomic<std::uint64_t> m_reinstantiated{0};
 
 	std::unique_ptr<WasmSandbox> m_sandbox;
+	//! Lane-written, control-thread-read log snapshot; survives stop() so the
+	//! last message of a module is still readable after the sandbox is gone.
+	WasmLogBuffer m_logs;
 	std::array<Slot, slotCount> m_slots{};
 	SpscRingBuffer<std::uint32_t, commandQueueCapacity> m_commands;
 	SpscRingBuffer<std::uint32_t, resultQueueCapacity> m_results;

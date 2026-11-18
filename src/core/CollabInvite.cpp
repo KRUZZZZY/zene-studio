@@ -100,9 +100,15 @@ bool readBody(const QByteArray& body, Invite* out, QString* error)
 		*error = QStringLiteral("this invite names a role this version does not know");
 		return false;
 	}
-	out->address = addressFrom(body.mid(2, addressLength));
 	const auto* port = reinterpret_cast<const uchar*>(body.constData() + 2 + addressLength);
-	out->port = static_cast<quint16>((port[0] << 8) | port[1]);
+	const auto decodedPort = static_cast<quint16>((port[0] << 8) | port[1]);
+	if (decodedPort == 0)
+	{
+		*error = QStringLiteral("this invite has an invalid port");
+		return false;
+	}
+	out->address = addressFrom(body.mid(2, addressLength));
+	out->port = decodedPort;
 	out->key = body.right(InviteKeyBytes);
 	return true;
 }
@@ -146,6 +152,7 @@ bool base32Decode(const QString& text, QByteArray* out)
 			bits -= 8;
 		}
 	}
+	if (bits > 0 && (buffer & ((1U << bits) - 1U)) != 0U) { return false; }
 	return true;
 }
 

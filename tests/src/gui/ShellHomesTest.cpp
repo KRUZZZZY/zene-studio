@@ -33,6 +33,7 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QFontMetrics>
 #include <QJsonArray>
 #include <QLayout>
 #include <QMdiArea>
@@ -44,6 +45,7 @@
 
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
+#include "DesignTokens.h"
 #include "Engine.h"
 #include "LayoutMenu.h"
 #include "Shell.h"
@@ -174,6 +176,124 @@ private slots:
 		QVERIFY(!world.shell.findChild<QWidget*>(QStringLiteral("shellBottom"))->isVisible());
 	}
 
+	void aMouseClickOnATabOpensItsPanel()
+	{
+		World world;
+		QVERIFY(QTest::qWaitForWindowExposed(&world.shell));
+		ShellRegionTabs* tabs = world.shell.regionTabs(ShellRegion::Bottom);
+		QVERIFY(tabs->isVisible());
+		QCOMPARE(tabs->currentId(), QStringLiteral("detail"));  // a fresh shell: the Note Editor is open
+		for (const QString& id : {QStringLiteral("mixer"), QStringLiteral("devices"), QStringLiteral("detail")})
+		{
+			const int index = static_cast<int>(tabs->tabIds().indexOf(id));
+			QVERIFY(index >= 0);
+			QTest::mouseClick(tabs->bar(), Qt::LeftButton, Qt::NoModifier, tabs->bar()->tabRect(index).center());
+			QVERIFY2(world.shell.model().isVisible(id), qPrintable(id));
+			QVERIFY2(world.content.value(id)->isVisible(), qPrintable(id));
+			QCOMPARE(tabs->currentId(), id);
+		}
+	}
+
+	//! gui-1105-main-automation: a real mouse click on the Automation tab, from a fresh layout with the Note
+	//! Editor open below, opens Automation in its place - also after the Inspector has gone to a window of its
+	//! own and the tabs have moved (the sweep's click had landed on that floating window, not on the tab).
+	void aMouseClickOnTheAutomationTabOpensIt()
+	{
+		World world;
+		QVERIFY(QTest::qWaitForWindowExposed(&world.shell));
+		ShellRegionTabs* tabs = world.shell.regionTabs(ShellRegion::Bottom);
+		const QString automation = QStringLiteral("automation");
+		const QString detail = QStringLiteral("detail");
+		auto clickTab = [&](const QString& id) {
+			const QRect rect = tabs->bar()->tabRect(static_cast<int>(tabs->tabIds().indexOf(id)));
+			QVERIFY(rect.isValid());
+			QTest::mouseClick(tabs->bar(), Qt::LeftButton, Qt::NoModifier, rect.center());
+		};
+		QCOMPARE(tabs->currentId(), detail);
+		clickTab(automation);
+		QVERIFY(world.shell.model().isVisible(automation));
+		QVERIFY(!world.shell.model().isVisible(detail));
+		QVERIFY(world.content.value(automation)->isVisible());
+		QCOMPARE(tabs->currentId(), automation);
+
+		clickTab(detail);
+		QCOMPARE(tabs->currentId(), detail);
+		QVERIFY(world.shell.detachPanel(QStringLiteral("inspector")));
+		clickTab(automation);
+		QVERIFY(world.shell.model().isVisible(automation));
+		QCOMPARE(tabs->currentId(), automation);
+		QVERIFY(world.shell.attachPanel(QStringLiteral("inspector")));
+	}
+
+
+	void aMouseClickOnATabOpensItsPanelWithTheInspectorFloating()
+	{
+		// gui-1105: the GUI sweep clicked "Pattern Editor" where the Inspector it had popped out was lying over the
+		// strip. The click itself, delivered to the tab, opens the panel - also with the left region emptied.
+		World world;
+		QVERIFY(QTest::qWaitForWindowExposed(&world.shell));
+		QVERIFY(world.shell.detachPanel(QStringLiteral("inspector")));
+		ShellRegionTabs* tabs = world.shell.regionTabs(ShellRegion::Bottom);
+		QCOMPARE(tabs->currentId(), QStringLiteral("detail"));
+		QTabBar* bar = tabs->bar();
+		const int index = static_cast<int>(tabs->tabIds().indexOf(QStringLiteral("pattern")));
+		QVERIFY(index >= 0);
+		QVERIFY(bar->rect().contains(bar->tabRect(index)));  // the whole tab is on the bar, none scrolled away
+		QTest::mouseClick(bar, Qt::LeftButton, {}, bar->tabRect(index).center());
+		QVERIFY(world.shell.model().isVisible(QStringLiteral("pattern")));
+		QVERIFY(world.content.value(QStringLiteral("pattern"))->isVisible());
+		QCOMPARE(tabs->currentId(), QStringLiteral("pattern"));
+		QVERIFY(world.shell.attachPanel(QStringLiteral("inspector")));
+	}
+
+	//! gui-1106: on a fresh layout the Note Editor is the bottom region's open panel; Hide closes the region with
+	//! no tab chosen first, and the footer switch that reopens it stays.
+	void theHideButtonClosesAFreshNoteEditorRegion()
+	{
+		World world;
+		QVERIFY(QTest::qWaitForWindowExposed(&world.shell));
+		ShellRegionTabs* tabs = world.shell.regionTabs(ShellRegion::Bottom);
+		QCOMPARE(world.shell.model().openIn(ShellRegion::Bottom), QStringLiteral("detail"));
+		QCOMPARE(tabs->currentId(), QStringLiteral("detail"));
+		ShellButton* hide = nullptr;
+		for (ShellButton* button : tabs->findChildren<ShellButton*>())
+		{
+			if (button->accessibleName() == QStringLiteral("Hide the bottom panels")) { hide = button; }
+		}
+		QVERIFY(hide != nullptr);
+		QVERIFY(hide->isVisible());
+		QTest::mouseClick(hide, Qt::LeftButton);
+		QVERIFY(!world.shell.model().isVisible(QStringLiteral("detail")));
+		QVERIFY(world.shell.model().openIn(ShellRegion::Bottom).isEmpty());
+		QVERIFY(!world.shell.findChild<QWidget*>(QStringLiteral("shellBottom"))->isVisible());
+		QAction* footerSwitch = world.shell.panelAction(QStringLiteral("detail"));
+		QVERIFY(footerSwitch != nullptr);
+		QVERIFY(footerSwitch->isEnabled());
+		QVERIFY(!footerSwitch->isChecked());
+		// The footer switch's window.toggle lands in Shell::togglePanel (no MainWindow here to dispatch to).
+		QVERIFY(world.shell.togglePanel(QStringLiteral("detail")));
+		QVERIFY(world.shell.model().isVisible(QStringLiteral("detail")));
+		QVERIFY(footerSwitch->isChecked());
+	}
+
+	//! A real left-click on the Pattern Editor tab's own rectangle opens its panel (finding gui-1106-main-pattern-editor:
+	//! the sweep's click had landed outside the strip, not on the tab).
+	void aMouseClickOnThePatternEditorTabOpensIt()
+	{
+		World world;
+		QVERIFY(QTest::qWaitForWindowExposed(&world.shell));
+		ShellRegionTabs* tabs = world.shell.regionTabs(ShellRegion::Bottom);
+		QCOMPARE(tabs->currentId(), QStringLiteral("detail"));
+		const int index = static_cast<int>(tabs->tabIds().indexOf(QStringLiteral("pattern")));
+		QVERIFY(index >= 0);
+		QCOMPARE(tabs->bar()->tabText(index), QStringLiteral("Pattern Editor"));
+		QTest::mouseClick(tabs->bar(), Qt::LeftButton, Qt::NoModifier, tabs->bar()->tabRect(index).center());
+		QVERIFY(world.shell.model().isVisible(QStringLiteral("pattern")));
+		QVERIFY(world.content.value(QStringLiteral("pattern"))->isVisible());
+		QCOMPARE(tabs->currentId(), QStringLiteral("pattern"));
+		QCOMPARE(world.shell.model().openIn(ShellRegion::Bottom), QStringLiteral("pattern"));
+	}
+
 	void aRegionWithOnePanelShowsNoTabs()
 	{
 		World world;
@@ -195,6 +315,32 @@ private slots:
 		QVERIFY(!tabs->tabIds().contains(QStringLiteral("devices")));
 		QVERIFY(world.shell.attachPanel(QStringLiteral("devices")));
 		QVERIFY(tabs->tabIds().contains(QStringLiteral("devices")));
+	}
+
+	void aMouseClickOnATabOpensItsPanelAfterTheSidePanelsPopOut()
+	{
+		// gui-1105-main-devices: the sweep popped out the Browser and the Inspector, then clicked the bottom tabs.
+		// The tabs move left with the empty left region and still open their panel on a real click.
+		World world;
+		QVERIFY(QTest::qWaitForWindowExposed(&world.shell));
+		ShellRegionTabs* tabs = world.shell.regionTabs(ShellRegion::Bottom);
+		QTabBar* bar = tabs->bar();
+		const auto devicesRect = [&] {
+			return bar->tabRect(static_cast<int>(tabs->tabIds().indexOf(QStringLiteral("devices"))));
+		};
+		const int docked = bar->mapTo(&world.shell, devicesRect().center()).x();
+		QVERIFY(world.shell.detachPanel(QStringLiteral("browser")));
+		QVERIFY(world.shell.detachPanel(QStringLiteral("inspector")));
+		QCoreApplication::processEvents();
+		QVERIFY(bar->mapTo(&world.shell, devicesRect().center()).x() < docked);  // where the sweep's click went
+		QCOMPARE(tabs->currentId(), QStringLiteral("detail"));
+		QTest::mouseClick(bar, Qt::LeftButton, Qt::NoModifier, devicesRect().center());
+		QCOMPARE(tabs->currentId(), QStringLiteral("devices"));
+		QVERIFY(world.shell.model().isVisible(QStringLiteral("devices")));
+		QVERIFY(world.content.value(QStringLiteral("devices"))->isVisible());
+		QVERIFY(!world.shell.model().isVisible(QStringLiteral("detail")));
+		QVERIFY(world.shell.attachPanel(QStringLiteral("inspector")));
+		QVERIFY(world.shell.attachPanel(QStringLiteral("browser")));
 	}
 
 	void aRowLabelsThenCompactsThenOverflows()
@@ -243,6 +389,17 @@ private slots:
 		QCOMPARE(row->fitting(), shelloverflow::Fit::Labelled);
 		QVERIFY(!buttons.at(2)->isVisible());
 		QVERIFY(row->moreButton()->overflowed().isEmpty());
+	}
+
+	void aLabelPreservesAnEscapedAmpersand()
+	{
+		ShellButton button;
+		button.setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+		button.setText(QStringLiteral("Rock && Roll"));
+		const QFontMetrics fm(tokens::font(tokens::TextRole::Small));
+		const int expected = button.iconSize().width() + tokens::space::xs +
+			fm.horizontalAdvance(QStringLiteral("Rock & Roll")) + 2 * tokens::space::md;
+		QCOMPARE(button.sizeHint().width(), expected);
 	}
 
 	void theFooterHasAToolsHomeForEveryToolWindow()
@@ -312,6 +469,19 @@ private slots:
 		QVERIFY(!Shell::personalAside());
 		QVERIFY(!world.shell.restorePersonal());  // nothing aside: nothing changes
 		QCOMPARE(world.shell.model().view(), ShellView::Mix);
+	}
+
+	void aMalformedPersonalLayoutRemainsAvailableForRecovery()
+	{
+		World world;
+		const QString malformed = QStringLiteral("{\"view\":");
+		ConfigManager::inst()->setValue(QStringLiteral("ui"), QStringLiteral("shell.personal"), malformed);
+		world.shell.setView(ShellView::Edit);
+
+		QVERIFY(Shell::personalAside());
+		QVERIFY(!world.shell.restorePersonal());
+		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("ui"), QStringLiteral("shell.personal")), malformed);
+		QCOMPARE(world.shell.model().view(), ShellView::Edit);
 	}
 
 	void theNextStartPrefersThePersonalLayout()

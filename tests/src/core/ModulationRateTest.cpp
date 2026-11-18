@@ -36,11 +36,14 @@
 #include <QDomDocument>
 
 #include <cmath>
+#include <stdexcept>
+#include <vector>
 
 #include "AllocationProbe.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "AutomatableModel.h"
+#include "EnvelopeAndLfoParameters.h"
 #include "Engine.h"
 #include "ModulationLayer.h"
 #include "ValueBuffer.h"
@@ -121,6 +124,11 @@ private slots:
 
 	void cleanupTestCase() { Engine::destroy(); }
 
+	void negativeLengthIsRejectedAsInvalidArgument()
+	{
+		QVERIFY_EXCEPTION_THROWN(ValueBuffer(-1), std::invalid_argument);
+	}
+
 	void theZipperIsMeasuredAndThePerSampleRouteRemovesIt()
 	{
 		const int blocks = 2 * kRate / static_cast<int>(Engine::audioEngine()->framesPerPeriod());  // two seconds
@@ -132,6 +140,26 @@ private slots:
 		QVERIFY2(stepped > 0.01, qPrintable(QStringLiteral("the block rate measured no zipper: %1").arg(stepped)));
 		// R1.3 must beat it by two orders of magnitude.
 		QVERIFY2(smooth < stepped / 100.0, qPrintable(QStringLiteral("per sample %1 vs per block %2").arg(smooth).arg(stepped)));
+	}
+
+	void negativeOffsetsWrapToTheBufferEnd()
+	{
+		ValueBuffer buffer(3);
+		buffer.values()[0] = 1.0f;
+		buffer.values()[1] = 2.0f;
+		buffer.values()[2] = 3.0f;
+		const auto readNegative = [&buffer](int offset) {
+			try { return buffer.value(offset); }
+			catch (...) { return -1.0f; }
+		};
+		QCOMPARE(readNegative(-1), 3.0f);
+		QCOMPARE(readNegative(-4), 3.0f);
+	}
+
+	void emptyBufferValueIsZero()
+	{
+		const ValueBuffer buffer;
+		QCOMPARE(buffer.value(0), 0.0f);
 	}
 
 	void theDefaultRouteIsTheOldWriteAndThePerSamplePathDoesNotAllocate()
@@ -184,6 +212,41 @@ private slots:
 		QCOMPARE(loaded.modulator(0)->routes.size(), std::size_t{2});
 		QVERIFY(!loaded.modulator(0)->routes[0].perSample);
 		QVERIFY(loaded.modulator(0)->routes[1].perSample);
+	}
+
+	void aZeroPredelayStartsTheLfoInTheFirstBlock()
+	{
+		EnvelopeAndLfoParameters parameters(0.0f, nullptr);
+		parameters.getLfoAmountModel().setValue(1.0f);
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		std::vector<float> levels(static_cast<std::size_t>(frames));
+
+		parameters.fillLevel(levels.data(), 0, frames + 1, frames);
+
+		QVERIFY(levels[1] > 0.0f);
+	}
+
+	void aBlockCrossingThePredelayStartsAtTheBoundary()
+	{
+		EnvelopeAndLfoParameters parameters(0.0f, nullptr);
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		const auto sampleRate = Engine::audioEngine()->outputSampleRate();
+		const float predelay = std::sqrt(static_cast<float>(frames / 2) /
+					(20.0f * static_cast<float>(sampleRate)));
+		QDomDocument document;
+		QDomElement settings = document.createElement(QStringLiteral("el"));
+		settings.setAttribute(QStringLiteral("lpdel"), predelay);
+		parameters.loadSettings(settings);
+		parameters.getLfoAmountModel().setValue(1.0f);
+		const f_cnt_t predelayFrames = parameters.getLfoPredelayFrames();
+		std::vector<float> levels(static_cast<std::size_t>(frames));
+
+		QVERIFY(predelayFrames > 0);
+		QVERIFY(predelayFrames < frames);
+		parameters.fillLevel(levels.data(), 0, frames + 1, frames);
+
+		QCOMPARE(levels[static_cast<std::size_t>(predelayFrames - 1)], 0.0f);
+		QVERIFY(levels[static_cast<std::size_t>(predelayFrames)] > 0.0f);
 	}
 };
 

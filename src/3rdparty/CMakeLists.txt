@@ -1,5 +1,7 @@
 set_directory_properties(PROPERTIES SYSTEM TRUE)
 
+ADD_SUBDIRECTORY(libsamplerate)
+
 if(LMMS_BUILD_LINUX AND LMMS_HAVE_VST AND NOT WANT_QT6)
 	set(BUILD_SHARED_LIBS OFF)
 	add_subdirectory(qt5-x11embed)
@@ -46,3 +48,10 @@ ADD_SUBDIRECTORY(lua)
 # LuaBridge 2.10 (MIT) -- header-only C++ <-> Lua binding layer.
 # See luabridge/LICENSE and luabridge/README.lmms.
 ADD_SUBDIRECTORY(luabridge)
+
+# Ableton Link 4.1 (GPL-2.0-or-later) with the standalone asio it bundles
+# (BSL-1.0) -- header-only session sync for the link.* commands (WF-051).
+# See ableton-link/README.lmms and docs/LINK-SYNC.md.
+IF(LMMS_HAVE_ABLETON_LINK)
+	ADD_SUBDIRECTORY(ableton-link)
+ENDIF()

@@ -27,6 +27,8 @@
 
 #include <QSemaphore>
 
+#include <stdexcept>
+
 
 namespace lmms
 {
@@ -37,7 +39,7 @@ class FifoBuffer
 {
 public:
 	FifoBuffer(int size) :
-		m_readSem(size),
+		m_readSem(checkedSize(size)),
 		m_writeSem(size),
 		m_readIndex(0),
 		m_writeIndex(0),
@@ -83,6 +85,15 @@ public:
 
 
 private:
+	static int checkedSize(int size)
+	{
+		if (size <= 0)
+		{
+			throw std::invalid_argument("FifoBuffer size must be positive");
+		}
+		return size;
+	}
+
 	QSemaphore m_readSem;
 	QSemaphore m_writeSem;
 	int m_readIndex;

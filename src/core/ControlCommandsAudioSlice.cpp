@@ -71,6 +71,29 @@ std::vector<tick_t> gridInside(tick_t start, tick_t end, int step)
 	return out;
 }
 
+//! `at: "positions"`: the song ticks @a args names, each one a whole number.
+//! toInt() answers 0 for anything it cannot convert, and cutPoints' out-of-range
+//! filter drops that 0 as quietly as it drops a real cut past the end - so a call
+//! naming one bad entry used to succeed having cut at the good entries only. An
+//! entry that is not a whole number of ticks is a caller error, and is refused
+//! here, before anything is cut.
+bool askedTicks(const QJsonObject& args, std::vector<tick_t>* out, ControlResult* error)
+{
+	const QJsonArray asked = args.value(QStringLiteral("positions")).toArray();
+	for (int i = 0; i < asked.size(); ++i)
+	{
+		const QJsonValue& value = asked.at(i);
+		if (!value.isDouble() || static_cast<double>(value.toInt()) != value.toDouble())
+		{
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'positions' entry %1 is not a whole number of song ticks").arg(i));
+			return false;
+		}
+		out->push_back(value.toInt());
+	}
+	return true;
+}
+
 //! The song ticks @a args name for a cut of @a clip, or false (with @a error).
 bool cutPoints(Clip* clip, const QJsonObject& args, std::vector<tick_t>* out, ControlResult* error)
 {
@@ -85,7 +108,8 @@ bool cutPoints(Clip* clip, const QJsonObject& args, std::vector<tick_t>* out, Co
 	}
 	else if (at == QStringLiteral("positions"))
 	{
-		for (const QJsonValue& value : args.value(QStringLiteral("positions")).toArray()) { out->push_back(value.toInt()); }
+		// A whole number outside the clip is still ignored below, as this command documents.
+		if (!askedTicks(args, out, error)) { return false; }
 	}
 	else
 	{
@@ -150,7 +174,7 @@ ControlResult splitAt(const QJsonObject& args)
 }
 
 //! SlicerT's state for @a sample cut at @a frames (source frames, ascending): points normalised to
-//! the whole sample, 0 first and 1 last, synced off so the slices play at their own speed.
+//! the source sample, from 0 through the clip window's end, synced off so slices play at their own speed.
 QDomElement slicerState(QDomDocument& doc, SampleClip& clip, const std::vector<f_cnt_t>& frames)
 {
 	QDomElement state = doc.createElement(QStringLiteral("slicert"));
@@ -159,9 +183,10 @@ QDomElement slicerState(QDomDocument& doc, SampleClip& clip, const std::vector<f
 	state.setAttribute(QStringLiteral("src"), sample.sampleFile());
 	if (sample.sampleFile().isEmpty()) { state.setAttribute(QStringLiteral("sampledata"), sample.toBase64()); }
 	const double size = static_cast<double>(std::max<std::size_t>(1, sample.sampleSize()));
+	const SampleWindow window = clip.sampleWindow();
 	std::vector<double> points{0.0};
 	for (const f_cnt_t frame : frames) { points.push_back(frame / size); }
-	points.push_back(1.0);
+	points.push_back(static_cast<double>(window.sourceOut) / size);
 	state.setAttribute(QStringLiteral("totalSlices"), static_cast<int>(points.size()));
 	for (std::size_t i = 0; i < points.size(); ++i) { state.setAttribute(QStringLiteral("slice_%1").arg(i), points[i]); }
 	state.setAttribute(QStringLiteral("syncEnable"), 0);

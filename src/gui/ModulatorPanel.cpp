@@ -24,6 +24,10 @@
 
 #include "ModulatorPanel.h"
 
+#include <functional>
+#include <utility>
+
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
@@ -38,6 +42,7 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 
+#include "AccessibleWidgets.h"
 #include "CommandForm.h"
 #include "ModulationLayer.h"
 #include "ControlRegistry.h"
@@ -48,6 +53,22 @@ namespace lmms::gui
 namespace
 {
 
+class RefreshingComboBox final : public QComboBox
+{
+public:
+	explicit RefreshingComboBox(QWidget* parent) : QComboBox(parent) {}
+	void setRefresh(std::function<void()> refresh) { m_refresh = std::move(refresh); }
+
+	void showPopup() override
+	{
+		if (m_refresh) { m_refresh(); }
+		QComboBox::showPopup();
+	}
+
+private:
+	std::function<void()> m_refresh;
+};
+
 ControlResult run(const char* command, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(QString::fromLatin1(command), args);
@@ -55,12 +76,23 @@ ControlResult run(const char* command, const QJsonObject& args = {})
 
 QString refusal(const ControlResult& result) { return result.ok ? QString() : result.errorMessage; }
 
+bool sameRouteAddress(const QJsonObject& left, const QJsonObject& right)
+{
+	return left.value(QStringLiteral("channel")) == right.value(QStringLiteral("channel"))
+		&& left.value(QStringLiteral("chain")) == right.value(QStringLiteral("chain"))
+		&& left.value(QStringLiteral("effect")) == right.value(QStringLiteral("effect"))
+		&& left.value(QStringLiteral("parameter")) == right.value(QStringLiteral("parameter"))
+		&& left.value(QStringLiteral("track")) == right.value(QStringLiteral("track"));
+}
+
 QPushButton* commandButton(const QString& label, const char* command, QWidget* parent)
 {
 	auto* button = new QPushButton(label, parent);
 	button->setProperty("controlCommand", QString::fromLatin1(command));
 	return button;
 }
+
+constexpr int PerSampleColumn = 4;
 
 QJsonArray modulators() { return run("modulator.get_state").result.value(QStringLiteral("modulators")).toArray(); }
 
@@ -121,6 +153,9 @@ ModulatorPanel::ModulatorPanel(QWidget* parent) :
 	setAccessibleName(tr("Modulators"));
 	m_modulators = new QListWidget(this);
 	m_modulators->setAccessibleName(tr("Modulators"));
+	m_status = new QLabel(this);
+	m_status->setAccessibleName(tr("Last refused command"));
+	m_status->setWordWrap(true);
 	m_shape = new QComboBox(this);
 	m_shape->addItems(shapes());
 	m_shape->setProperty("controlCommand", QStringLiteral("modulator.rate_set"));
@@ -129,15 +164,18 @@ ModulatorPanel::ModulatorPanel(QWidget* parent) :
 	m_rate->setDecimals(2);
 	m_rate->setSuffix(tr(" Hz"));
 	m_rate->setProperty("controlCommand", QStringLiteral("modulator.rate_set"));
-	m_targets = new QTableWidget(0, 4, this);
-	m_targets->setHorizontalHeaderLabels({tr("Channel"), tr("Effect"), tr("Parameter"), tr("Depth")});
+	m_targets = new QTableWidget(0, PerSampleColumn + 1, this);
+	m_targets->setHorizontalHeaderLabels({tr("Channel"), tr("Effect"), tr("Parameter"), tr("Depth"), tr("Per sample")});
 	m_targets->horizontalHeader()->setStretchLastSection(true);
 	m_targets->setSelectionBehavior(QAbstractItemView::SelectRows);
 	m_targets->setEditTriggers(QAbstractItemView::NoEditTriggers);
 	m_targets->setAccessibleName(tr("Parameters this modulator drives"));
-	m_channel = new QComboBox(this);
-	m_effect = new QComboBox(this);
-	m_parameter = new QComboBox(this);
+	auto* channel = new RefreshingComboBox(this);
+	m_channel = channel;
+	auto* effect = new RefreshingComboBox(this);
+	m_effect = effect;
+	auto* parameter = new RefreshingComboBox(this);
+	m_parameter = parameter;
 	m_depth = new QDoubleSpinBox(this);
 	m_depth->setRange(-1.0, 1.0);
 	m_depth->setSingleStep(0.05);
@@ -155,18 +193,23 @@ ModulatorPanel::ModulatorPanel(QWidget* parent) :
 	auto* remove = selectionButton(tr("Remove"), "modulator.remove", this);
 	auto* bindButton = selectionButton(tr("Bind"), "modulator.target_set", this);
 	auto* unbind = selectionButton(tr("Unbind"), "modulator.target_remove", this);
-	connect(add, &QPushButton::clicked, this, [this] { addModulator(m_shape->currentText(), m_rate->value()); });
-	connect(remove, &QPushButton::clicked, this, [this] { removeSelected(); });
+	// The command a refused button ran reports why, and the user has to see it: the panel showed
+	// nothing at all, so Add at the modulator limit (or Remove with nothing selected) just did nothing.
+	connect(add, &QPushButton::clicked, this, [this] { say(addModulator(m_shape->currentText(), m_rate->value())); });
+	connect(remove, &QPushButton::clicked, this, [this] { say(removeSelected()); });
 	connect(bindButton, &QPushButton::clicked, this, [this] {
-		bind(m_channel->currentData().toString(), m_effect->currentData().toInt(), m_parameter->currentText(),
-			m_depth->value());
+		say(bind(m_channel->currentData().toString(), m_effect->currentData().toInt(), m_parameter->currentText(),
+			m_depth->value()));
 	});
-	connect(unbind, &QPushButton::clicked, this, [this] { unbindRow(m_targets->currentRow()); });
+	connect(unbind, &QPushButton::clicked, this, [this] { say(unbindRow(m_targets->currentRow())); });
 	connect(m_modulators, &QListWidget::currentRowChanged, this, [this] { showSelected(); });
-	connect(m_shape, &QComboBox::currentTextChanged, this, [this] { setShapeAndRate(m_shape->currentText(), m_rate->value()); });
+	connect(m_shape, &QComboBox::currentTextChanged, this, [this] { setShape(m_shape->currentText()); });
 	connect(m_rate, &QDoubleSpinBox::editingFinished, this, [this] { setShapeAndRate(m_shape->currentText(), m_rate->value()); });
 	connect(m_channel, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { fillEffects(); });
 	connect(m_effect, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { fillParameters(); });
+	channel->setRefresh([this] { fillChannels(); });
+	effect->setRefresh([this] { fillEffects(); });
+	parameter->setRefresh([this] { fillParameters(); });
 
 	auto* listButtons = new QHBoxLayout;
 	listButtons->addWidget(add);
@@ -213,6 +256,7 @@ ModulatorPanel::ModulatorPanel(QWidget* parent) :
 	layout->addWidget(new QLabel(tr("Parameters it drives (a mixer channel's effects):"), this));
 	layout->addWidget(m_targets, 1);
 	layout->addLayout(bindRow);
+	layout->addWidget(m_status);
 	resize(620, 480);
 	fillChannels();
 	refresh();
@@ -236,6 +280,13 @@ void ModulatorPanel::refresh()
 	}
 	if (m_modulators->count() > 0) { m_modulators->setCurrentRow(std::min(keep, m_modulators->count() - 1)); }
 	showSelected();
+}
+
+void ModulatorPanel::say(const QString& message)
+{
+	m_status->setText(message);
+	// A refusal is an error, so it is spoken at once rather than after whatever is being said.
+	if (!message.isEmpty()) { a11y::announceStatus(m_status, message, a11y::Politeness::Assertive); }
 }
 
 void ModulatorPanel::showSelected()
@@ -267,13 +318,31 @@ void ModulatorPanel::showSelected()
 			{
 				m_targets->setItem(row, column, new QTableWidgetItem(cells.at(column)));
 			}
+			m_targets->setCellWidget(row, PerSampleColumn, perSampleSwitch(row, id, target));
 		}
 	}
+}
+
+QWidget* ModulatorPanel::perSampleSwitch(int row, const QString& modulator, const QJsonObject& route)
+{
+	auto* box = new QCheckBox(m_targets);
+	box->setChecked(route.value(QStringLiteral("per_sample")).toBool());
+	box->setProperty("controlCommand", QStringLiteral("modulator.per_sample_set"));
+	box->setAccessibleName(tr("Evaluate %1 per sample").arg(route.value(QStringLiteral("parameter")).toString()));
+	box->setToolTip(tr("On: this parameter moves smoothly inside each audio block. Off: it moves once per block."));
+	connect(box, &QCheckBox::clicked, this, [this, box, row, modulator, route](bool checked) {
+		const QString why = setRowPerSample(row, checked, modulator, route);
+		say(why);
+		// A refused click must not leave the box showing a value the route does not have.
+		if (!why.isEmpty()) { box->setChecked(!checked); }
+	});
+	return box;
 }
 
 void ModulatorPanel::fillChannels()
 {
 	const QSignalBlocker block(m_channel);
+	const QString selected = m_channel->currentData().toString();
 	m_channel->clear();
 	for (const QJsonValue& chain : channelChains())
 	{
@@ -281,12 +350,15 @@ void ModulatorPanel::fillChannels()
 		if (object.value(QStringLiteral("count")).toInt() == 0) { continue; }
 		m_channel->addItem(object.value(QStringLiteral("id")).toString(), object.value(QStringLiteral("id")).toString());
 	}
+	const int selectedIndex = m_channel->findData(selected);
+	if (selectedIndex >= 0) { m_channel->setCurrentIndex(selectedIndex); }
 	fillEffects();
 }
 
 void ModulatorPanel::fillEffects()
 {
 	const QSignalBlocker block(m_effect);
+	const QString selected = m_effect->currentData(Qt::UserRole + 1).toString();
 	m_effect->clear();
 	for (const QJsonValue& chain : channelChains())
 	{
@@ -296,13 +368,17 @@ void ModulatorPanel::fillEffects()
 		{
 			const QJsonObject device = devices.at(i).toObject();
 			m_effect->addItem(QStringLiteral("fx-%1 %2").arg(i).arg(device.value(QStringLiteral("display_name")).toString()), i);
+			m_effect->setItemData(m_effect->count() - 1, device.value(QStringLiteral("id")).toString(), Qt::UserRole + 1);
 		}
 	}
+	const int selectedIndex = m_effect->findData(selected, Qt::UserRole + 1);
+	if (selectedIndex >= 0) { m_effect->setCurrentIndex(selectedIndex); }
 	fillParameters();
 }
 
 void ModulatorPanel::fillParameters()
 {
+	const QString selected = m_parameter->currentText();
 	m_parameter->clear();
 	for (const QJsonValue& chain : channelChains())
 	{
@@ -315,6 +391,8 @@ void ModulatorPanel::fillParameters()
 			m_parameter->addItem(parameter.toObject().value(QStringLiteral("name")).toString());
 		}
 	}
+	const int selectedIndex = m_parameter->findText(selected);
+	if (selectedIndex >= 0) { m_parameter->setCurrentIndex(selectedIndex); }
 }
 
 QString ModulatorPanel::selectedId() const
@@ -358,6 +436,17 @@ QString ModulatorPanel::setShapeAndRate(const QString& shape, double rateHz)
 	return result;
 }
 
+QString ModulatorPanel::setShape(const QString& shape)
+{
+	if (selectedId().isEmpty()) { return tr("no modulator is selected"); }
+	// The rate box shows two decimals, so its value is not the modulator's exact rate: sending it
+	// back would round a rate like 1.234 Hz on a shape change. rate_set keeps what a call omits.
+	const QString result = refusal(run("modulator.rate_set", {{QStringLiteral("modulator"), selectedId()},
+		{QStringLiteral("shape"), shape}}));
+	refresh();
+	return result;
+}
+
 QString ModulatorPanel::bind(const QString& channel, int effect, const QString& parameter, double depth)
 {
 	if (selectedId().isEmpty()) { return tr("no modulator is selected"); }
@@ -375,6 +464,19 @@ QString ModulatorPanel::unbindRow(int row)
 		{QStringLiteral("target"), row}}));
 	refresh();
 	return result;
+}
+
+QString ModulatorPanel::setRowPerSample(int row, bool perSample, const QString& modulator,
+	const QJsonObject& expectedRoute)
+{
+	if (modulator.isEmpty() || selectedId() != modulator || row < 0) { return tr("no target is selected"); }
+	const QJsonArray targets = modulatorById(modulator).value(QStringLiteral("targets")).toArray();
+	if (row >= targets.size() || !sameRouteAddress(targets.at(row).toObject(), expectedRoute))
+	{
+		return tr("modulation routes changed; refresh the panel and try again");
+	}
+	return refusal(run("modulator.per_sample_set", {{QStringLiteral("modulator"), modulator},
+		{QStringLiteral("target"), row}, {QStringLiteral("per_sample"), perSample}}));
 }
 
 } // namespace lmms::gui

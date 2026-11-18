@@ -35,8 +35,10 @@
 #include <QMenu>
 
 #include "Accessibility.h"
+#include "ControlRegistry.h"
 #include "ControlScaleShared.h"
 #include "DesignTokens.h"
+#include "ItemList.h"
 #include "MidiClip.h"
 #include "Note.h"
 #include "NoteCanvas.h"
@@ -73,6 +75,22 @@ constexpr ToolChoice kTools[] = {
 	{NoteTool::Slice, "slice", "Slice", Qt::Key_C}, {NoteTool::Select, "select", "Select", Qt::Key_E},
 	{NoteTool::Audition, "audition", "Play", Qt::Key_Y},
 };
+
+//! ED-130: the controllers the lane chooser lists after its five common ones - every other number 0..127, named
+//! where MIDI names it.
+QString controllerTitle(int cc)
+{
+	static const struct { int cc; const char* name; } named[] = {{0, "Bank select"}, {4, "Foot"}, {5, "Portamento time"},
+		{6, "Data entry"}, {8, "Balance"}, {10, "Pan"}, {32, "Bank select LSB"}, {65, "Portamento"}, {66, "Sostenuto"},
+		{67, "Soft pedal"}, {68, "Legato"}, {71, "Resonance"}, {72, "Release"}, {73, "Attack"}, {74, "Cutoff"},
+		{84, "Portamento control"}, {91, "Reverb"}, {93, "Chorus"}, {120, "All sound off"}, {121, "Reset controllers"},
+		{123, "All notes off"}};
+	for (const auto& n : named)
+	{
+		if (n.cc == cc) { return NoteEditor::tr("%1 (CC %2)").arg(NoteEditor::tr(n.name)).arg(cc); }
+	}
+	return NoteEditor::tr("CC %1").arg(cc);
+}
 
 //! The tool a plain key picks: its FL letter, or 1..7 in NoteTool's order (kept as aliases); false for any other key.
 bool toolForKey(const QKeyEvent* event, NoteTool* tool)
@@ -122,7 +140,8 @@ QWidget* NoteEditor::buildToolbar()
 	bar->setPalette(pal);
 	auto* row = new QHBoxLayout(bar);
 	row->setContentsMargins(tokens::space::sm, tokens::space::xs, tokens::space::sm, tokens::space::xs);
-	row->setSpacing(tokens::space::xxs);
+	// 0.5.0 Q050-141: adjacent targets keep the touch minimum apart in accessible mode.
+	row->setSpacing(tokens::targetSpacing(tokens::space::xxs));
 
 	m_clipLabel = new QLabel(bar);
 	m_clipLabel->setFont(tokens::font(tokens::TextRole::Title));
@@ -167,6 +186,7 @@ void NoteEditor::addGridControls(QWidget* bar, QHBoxLayout* row)
 	m_gridBox = new QComboBox(bar);
 	for (const GridChoice& choice : kGrid) { m_gridBox->addItem(tr(choice.label), choice.ticks); }
 	m_gridBox->setCurrentIndex(m_gridBox->findData(m_state.gridTicks));
+	m_gridBox->setMinimumHeight(tokens::targetSize());  // 0.5.0 Q050-141: a target a finger can hit
 	a11y::announce(m_gridBox, tr("Grid"), tr("The snap grid for drawing, moving and resizing notes; Alt while dragging turns it off. "
 		"Right-click it to set the length a new note takes."));
 	// FL: right-clicking the snap control sets a default length for new notes instead of the last note's.
@@ -259,6 +279,8 @@ void NoteEditor::addViewButtons(QWidget* bar, QHBoxLayout* row)
 	fit->setProperty("controlCommand", QStringLiteral("window.note_editor_set"));
 	connect(fit, &QAction::triggered, this, &NoteEditor::zoomToSelection);
 	row->addWidget(toolButton(bar, fit));
+	// Theme 10: the clip's notes as an editable list (window.item_list, as Ctrl+Shift+L on the notes).
+	row->addWidget(itemlists::listButton(QStringLiteral("notes"), this, bar));
 	row->addStretch(1);
 }
 
@@ -273,8 +295,17 @@ void NoteEditor::buildLaneChooser()
 		{"Breath (CC 2)", "cc:2"}, {"Volume (CC 7)", "cc:7"}, {"Expression (CC 11)", "cc:11"}, {"Sustain (CC 64)", "cc:64"},
 		{"Pitch bend", "pitchbend"}, {"Aftertouch", "aftertouch"}, {"Program change", "program"}};
 	for (const auto& c : controllers) { m_laneBox->addItem(tr(c.title), QString::fromLatin1(c.id)); }
+	// Then any other controller number (ED-130): the five above are the common ones, not the only ones.
+	m_laneBox->insertSeparator(m_laneBox->count());
+	for (int cc = 0; cc <= 127; ++cc)
+	{
+		const QString id = QStringLiteral("cc:%1").arg(cc);
+		if (m_laneBox->findData(id) < 0) { m_laneBox->addItem(controllerTitle(cc), id); }
+	}
+	m_laneBox->setMaxVisibleItems(24);
 	a11y::announce(m_laneBox, tr("Expression lane"), tr("Which per-note value, or which controller curve of the clip, the lane below the notes edits."));
 	m_laneBox->setFixedWidth(84);
+	m_laneBox->setMinimumHeight(tokens::targetSize());  // 0.5.0 Q050-141: a target a finger can hit
 	m_laneBox->setStyleSheet(QStringLiteral("QComboBox { padding: 2px 16px 2px 6px; }"));
 	// The box is as narrow as the keys; its list opens wide enough for every name, and the
 	// tooltip names the lane shown.
@@ -284,7 +315,7 @@ void NoteEditor::buildLaneChooser()
 		[this](int index) {
 			m_laneBox->setToolTip(m_laneBox->itemText(index));
 			const QVariant data = m_laneBox->itemData(index);
-			if (data.typeId() == QMetaType::QString) { setControllerLane(data.toString()); return; }
+			if (data.userType() == QMetaType::QString) { setControllerLane(data.toString()); return; }
 			setControllerLane(QString());
 			setLane(static_cast<NoteLane>(data.toInt()));
 		});
@@ -323,6 +354,14 @@ void NoteEditor::fillScaleMenu(QMenu* menu)
 
 void NoteEditor::readScale()
 {
+	// scale.get_state is refused until the engine is ready, and an editor built at startup asks before
+	// then: leave the query to followScale(), which asks on a later playhead tick once the engine answers.
+	if (!ControlRegistry::isEngineReady())
+	{
+		m_scaleDeferred = true;
+		return;
+	}
+	m_scaleDeferred = false;
 	// The scale context (scale.get_state): the mask both highlights and folds.
 	m_scaleRoot = control::scaleContext().root;  // what followScale() compares against
 	m_scaleSeen = control::scaleContext().scale;

@@ -167,6 +167,12 @@ MasteringJob::MasteringJob(const OutputSettings& outputSettings,
 {
 }
 
+void MasteringJob::setRunChoices(const QString& genre, const QString& deliveryTarget)
+{
+	m_genre = genre;
+	m_deliveryTarget = deliveryTarget;
+}
+
 QVector<MasteringCandidate> MasteringJob::defaultCandidates()
 {
 	MasteringTarget streaming;
@@ -370,6 +376,8 @@ MasteringCandidateReport MasteringJob::measureCandidate(const MasteringCandidate
 
 bool MasteringJob::run(QString* error)
 {
+	m_renderCount = 0;
+
 	QString sink;
 	if (error == nullptr)
 	{

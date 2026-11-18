@@ -144,18 +144,13 @@ void SaWaterfallView::paintEvent(QPaintEvent *event)
 	// draw the spectrogram precomputed in SaProcessor
 	if (m_processor->waterfallNotEmpty())
 	{
-		QMutexLocker lock(&m_processor->m_reallocationAccess);
-		QImage temp = QImage(m_processor->getHistory(),			// raw pixel data to display
-							 m_processor->waterfallWidth(),		// width = number of frequency bins
-							 m_processor->waterfallHeight(),	// height = number of history lines
-							 QImage::Format_RGB32);
-		lock.unlock();
-		temp.setDevicePixelRatio(devicePixelRatio());			// display at native resolution
+		QImage history = m_processor->historySnapshot();		// owned copy, safe to use after locks are released
+		history.setDevicePixelRatio(devicePixelRatio());		// display at native resolution
 		painter.drawImage(m_displayLeft, m_displayTop,
-						  temp.scaled(m_displayWidth * devicePixelRatio(),
-									  m_displayHeight * devicePixelRatio(),
-									  Qt::IgnoreAspectRatio,
-									  Qt::SmoothTransformation));
+						  history.scaled(m_displayWidth * devicePixelRatio(),
+										 m_displayHeight * devicePixelRatio(),
+										 Qt::IgnoreAspectRatio,
+										 Qt::SmoothTransformation));
 		m_processor->flipRequest();
 	}
 	else

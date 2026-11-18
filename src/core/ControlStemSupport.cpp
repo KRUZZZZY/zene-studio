@@ -24,6 +24,7 @@
  */
 
 #include "ControlStemSupport.h"
+#include "ControlStemSource.h"
 #include "SampleBufferResample.h"
 
 #include <algorithm>
@@ -60,14 +61,6 @@ namespace control
 
 namespace
 {
-
-//! Whether @a mix at the model's rate is at least one frame and still fits a job's int frame count - checked
-//! before the resampler allocates for it, so a pathological source rate cannot ask for billions of frames.
-bool fitsAtModelRate(const SampleBuffer& mix)
-{
-	const double frames = static_cast<double>(mix.size()) * StemModelSampleRate / std::max(1, static_cast<int>(mix.sampleRate()));
-	return frames >= 1.0 && frames <= static_cast<double>(std::numeric_limits<int>::max());
-}
 
 //! The fixed stem order of the model contract, as wire names
 //! (include/StemSeparation/StemTypes.h:35-46).
@@ -195,6 +188,10 @@ public:
 		QJsonArray order;
 		for (const QString& name : stemOrder()) { order.append(name); }
 		out.insert(QStringLiteral("stem_order"), order);
+		QJsonArray qualities;
+		for (const QString& name : stemQualityNames()) { qualities.append(name); }
+		out.insert(QStringLiteral("qualities"), qualities);
+		out.insert(QStringLiteral("default_quality"), QString::fromLatin1(stemQualityName(DefaultStemQuality)));
 		out.insert(QStringLiteral("jobs"), jobCounts());
 		out.insert(QStringLiteral("fetch_on_first_use"), fetchable(nullptr));
 		return out;
@@ -202,6 +199,7 @@ public:
 
 	bool start(const QString& source,
 		int segmentFrames,
+		StemQuality quality,
 		int* jobId,
 		QJsonObject* job,
 		QString* error)
@@ -222,30 +220,20 @@ public:
 			*error = QStringLiteral("there is no source file at '%1'").arg(source);
 			return false;
 		}
-		auto mix = SampleBuffer::fromFile(source);
-		if (!mix || mix->empty())
-		{
-			*error = QStringLiteral("could not decode '%1' as stereo audio (the decoders this "
-				"build carries are the browser's own; a mono or unsupported file cannot be split)")
-				.arg(source);
-			return false;
-		}
-		// 0.5.0 (engine audit E27): a source at another rate is resampled to the model's own,
-		// offline, instead of refused (SPEC-stem-split.md OQ-1 is answered by this).
-		if (!fitsAtModelRate(*mix))
-		{
-			*error = QStringLiteral("'%1' is too long or too short to split at the model's %2 Hz").arg(source).arg(StemModelSampleRate);
-			return false;
-		}
-		mix = resampleBuffer(mix, StemModelSampleRate);
+		// Q050-010: only the source's length is read here, for the refusals and the reply; the worker decodes and resamples.
+		qint64 sourceFrames = 0;
+		int sourceRate = StemModelSampleRate;
+		if (!stemSourceLength(source, &sourceFrames, &sourceRate, error)) { return false; }
 		JobRecord record;
 		record.source = source;
 		record.sampleRate = StemModelSampleRate;
-		record.frames = static_cast<int>(mix->size());
+		record.frames = stemFramesAtModelRate(sourceFrames, sourceRate);
 		record.segmentFrames = segmentFrames > 0 ? segmentFrames : HTDemucsSegmentFrames;
 		record.submittedMs = QDateTime::currentMSecsSinceEpoch();
 
-		const int id = m_manager.submit(std::move(mix), record.sampleRate, record.segmentFrames);
+		const int id = m_manager.submitFrom([source](const std::atomic<bool>& cancel, QString* why) {
+			return stemDecodeAtModelRate(source, cancel, why);
+		}, record.sampleRate, record.segmentFrames, quality);
 		if (id < 0)
 		{
 			*error = QStringLiteral("the stem engine refused the job");
@@ -305,6 +293,29 @@ public:
 		}
 		m_manager.cancel(jobId);
 		*job = jobObject(jobId, m_jobs.value(jobId), m_manager.state(jobId));
+		return true;
+	}
+
+	/*! The four buffers of a COMPLETED job, for the track materialiser. The same
+	 *  instance ledger and the same completed-only rule as writeResult() - the
+	 *  only difference is that the caller wants the audio, not files. */
+	bool takeResult(int jobId, StemSet* stems, QString* error)
+	{
+		if (!m_jobs.contains(jobId))
+		{
+			*error = QStringLiteral("no stem job with id %1 was issued by this instance "
+				"(stem.job_status lists the ones that were)").arg(jobId);
+			return false;
+		}
+		const auto state = m_manager.state(jobId);
+		if (state != StemJobManager::State::Completed)
+		{
+			*error = QStringLiteral("stem job %1 is %2, not completed: only a completed job has "
+				"four stems to materialise (stem.job_status reports the state, and the job's own "
+				"error is in it when it failed)").arg(jobId).arg(stateName(state));
+			return false;
+		}
+		*stems = m_manager.result(jobId);
 		return true;
 	}
 
@@ -403,7 +414,7 @@ private:
 		}
 		return true;
 #else
-		return ExternalProcessStemSeparator::isAvailable(error);
+		return ExternalProcessStemSeparator().isAvailable(error);
 #endif
 	}
 
@@ -435,13 +446,28 @@ private:
 	{
 		QJsonObject out;
 		out.insert(QStringLiteral("job_id"), jobId);
+		out.insert(QStringLiteral("task"), QStringLiteral("stem-%1").arg(jobId));
 		out.insert(QStringLiteral("state"), stateName(state));
 		out.insert(QStringLiteral("progress"), static_cast<double>(m_manager.progress(jobId)));
 		out.insert(QStringLiteral("source"), record.source);
 		out.insert(QStringLiteral("sample_rate"), record.sampleRate);
-		out.insert(QStringLiteral("frames"), record.frames);
-		out.insert(QStringLiteral("seconds"), static_cast<double>(record.frames) / record.sampleRate);
+		// A source whose header gave no length (.ds, .ogg) has one once the worker decoded it.
+		const int frames = record.frames > 0 ? record.frames : m_manager.loadedFrames(jobId);
+		out.insert(QStringLiteral("frames"), frames);
+		out.insert(QStringLiteral("seconds"), static_cast<double>(frames) / record.sampleRate);
 		out.insert(QStringLiteral("segment_frames"), record.segmentFrames);
+		// Q050-062.1: the setting the backend was handed, and the overlap and hop
+		// it derives from it (the one formula every backend uses, StemTypes.h).
+		// The ENGINE's answers, not this surface's record of the request: the
+		// quality the manager holds for the job, and the one its worker handed
+		// the backend (empty until the job started inference).
+		const StemQuality quality = m_manager.quality(jobId);
+		out.insert(QStringLiteral("quality"), QString::fromLatin1(stemQualityName(quality)));
+		out.insert(QStringLiteral("overlap"), stemOverlapFraction(quality));
+		out.insert(QStringLiteral("hop_frames"), stemHopFrames(record.segmentFrames, quality));
+		StemQuality ran = DefaultStemQuality;
+		out.insert(QStringLiteral("inference_quality"), m_manager.inferenceQuality(jobId, &ran)
+			? QString::fromLatin1(stemQualityName(ran)) : QString());
 		// The SURFACE's clock, named as such: the engine keeps its own elapsed
 		// time on the job and publishes none of it through an accessor, so this
 		// is the wall time since submit and never a claim about inference time.
@@ -471,17 +497,80 @@ StemSurface* surface()
 } // namespace
 
 
+static bool isPathSeparator(QChar c)
+{
+	return c == QLatin1Char('\\') || c == QLatin1Char('/');
+}
+
+//! Whether the leading separator pair is a UNC prefix on this host.
+static bool hasUncPrefixForHost(const QString& value)
+{
+#if defined(Q_OS_WIN)
+	return value.size() >= 2 && isPathSeparator(value.at(0)) && isPathSeparator(value.at(1));
+#else
+	return value.startsWith(QStringLiteral("\\\\"));
+#endif
+}
+
+//! The index of the first separator at or after \a from, or the size when none.
+static int nextSeparator(const QString& value, int from)
+{
+	while (from < value.size() && !isPathSeparator(value.at(from))) { ++from; }
+	return from;
+}
+
+//! Whether \a value opens with two separators, then a non-empty server, a
+//! separator and a non-empty share (any trailing path is not checked).
+static bool isCompleteUncPath(const QString& value)
+{
+	if (!isPathSeparator(value.at(0)) || !isPathSeparator(value.at(1))) { return false; }
+	const int serverEnd = nextSeparator(value, 2);
+	const int shareEnd = nextSeparator(value, serverEnd + 1);
+	return serverEnd > 2 && serverEnd < value.size() && shareEnd > serverEnd + 1;
+}
+
+/*! Whether \a value is a Windows absolute path, whatever this host is: a drive
+ *  path (`C:\…` or `C:/…`, but NOT `C:…`, which is drive-relative) or a UNC
+ *  share (`\\server\share…` / `//server/share…`: a non-empty server AND a
+ *  non-empty share, so `\\server` alone is NOT one). `stemRequireAbsolutePath`
+ *  consults this for every drive-prefixed value BEFORE `QDir::isAbsolutePath`,
+ *  which on Qt 5 Windows answers any `X:` prefix as absolute and would let the
+ *  drive-relative `C:relative.wav` through; for every other form QDir answers
+ *  on Windows, and this helper's UNC arm accepts a Windows share on a Unix host
+ *  where the GUI that hands it over cannot be run to prove it.
+ */
+static bool isWindowsAbsolutePath(const QString& value)
+{
+	if (value.size() < 3) { return false; }
+	if (isPathSeparator(value.at(0))) { return isCompleteUncPath(value); }
+	return value.at(0).isLetter() && value.at(1) == QLatin1Char(':') && isPathSeparator(value.at(2));
+}
+
 QString stemRequireAbsolutePath(const QString& value, const QString& name)
 {
 	if (value.isEmpty())
 	{
 		return QStringLiteral("'%1' is required").arg(name);
 	}
-	if (!value.startsWith(QLatin1Char('/')))
+	/* A drive-prefixed path is decided here, before the generic QDir check:
+	 * Qt 5's `QDir::isAbsolutePath` answers any `X:` prefix as absolute on
+	 * Windows, which would let the drive-relative `C:relative.wav` through.
+	 * Only `X:\…` or `X:/…` is drive-absolute; `X:…` is drive-relative and
+	 * refused. A backslash pair is a Windows UNC form on every host, and either
+	 * separator pair is one on Windows, so neither can fall through to QDir
+	 * unless it names a complete server+share. On Unix, `//...` keeps QDir's
+	 * absolute-path meaning. */
+	const bool hasDrive = value.size() >= 2
+		&& value.at(0).isLetter() && value.at(1) == QLatin1Char(':');
+	const bool uncPrefix = hasUncPrefixForHost(value);
+	const bool absolute = hasDrive
+		? isWindowsAbsolutePath(value)
+		: (isWindowsAbsolutePath(value) || (!uncPrefix && QDir::isAbsolutePath(value)));
+	if (absolute)
 	{
-		return QStringLiteral("'%1' must be an absolute path, and '%2' is not").arg(name, value);
+		return QString();
 	}
-	return QString();
+	return QStringLiteral("'%1' must be an absolute path, and '%2' is not").arg(name, value);
 }
 
 
@@ -492,11 +581,35 @@ QJsonObject stemState()
 
 bool stemStartJob(const QString& source,
 	int segmentFrames,
+	StemQuality quality,
 	int* jobId,
 	QJsonObject* job,
 	QString* error)
 {
-	return surface()->start(source, segmentFrames, jobId, job, error);
+	return surface()->start(source, segmentFrames, quality, jobId, job, error);
+}
+
+QStringList stemQualityNames()
+{
+	QStringList names;
+	for (int q = 0; q < NumStemQualities; ++q)
+	{
+		names << QString::fromLatin1(stemQualityName(static_cast<StemQuality>(q)));
+	}
+	return names;
+}
+
+bool stemQualityFromName(const QString& name, StemQuality* quality)
+{
+	for (int q = 0; q < NumStemQualities; ++q)
+	{
+		if (name == QLatin1String(stemQualityName(static_cast<StemQuality>(q))))
+		{
+			*quality = static_cast<StemQuality>(q);
+			return true;
+		}
+	}
+	return false;
 }
 
 bool stemHasJob(int jobId)
@@ -517,6 +630,11 @@ bool stemCancelJob(int jobId, QJsonObject* job, QString* error)
 bool stemWriteResult(int jobId, const QString& directory, QJsonObject* result, QString* error)
 {
 	return surface()->writeResult(jobId, directory, result, error);
+}
+
+bool stemTakeResult(int jobId, StemSet* stems, QString* error)
+{
+	return surface()->takeResult(jobId, stems, error);
 }
 
 } // namespace control

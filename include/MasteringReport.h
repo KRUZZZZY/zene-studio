@@ -80,7 +80,8 @@ LMMS_EXPORT QJsonObject masteringCandidateJson(const MasteringCandidate& candida
  *  true peak at or below the ceiling) and the level-consistency FLAG (a
  *  lane-defined warning, never a standard's verdict).
  */
-LMMS_EXPORT QJsonObject masteringCandidateReportJson(const MasteringCandidateReport& report);
+LMMS_EXPORT QJsonObject masteringCandidateReportJson(const MasteringCandidateReport& report,
+	const QString& genre, const QString& deliveryTarget);
 
 /*! The whole run: the candidate rows, how many project renders it cost
  *  (MasteringJob's own counted number), the sample rate, the single source

@@ -83,6 +83,14 @@ void Editor::togglePause()
 	Engine::getSong()->togglePause();
 }
 
+Editor::~Editor()
+{
+	if (s_lastPlayedEditor == this)
+	{
+		s_lastPlayedEditor = nullptr;
+	}
+}
+
 void Editor::toggleMaximize()
 {
 	isMaximized() ? showNormal() : showMaximized();
@@ -90,7 +98,7 @@ void Editor::toggleMaximize()
 
 Editor::Editor(bool record, bool stepRecord) :
 	QMainWindow(),
-	m_toolBar(new DropToolBar(this)),
+	m_toolBar(nullptr),
 	m_playAction(nullptr),
 	m_recordAction(nullptr),
 	m_recordAccompanyAction(nullptr),
@@ -143,6 +151,7 @@ void Editor::keyPressEvent(QKeyEvent* ke)
 {
 	if (ke->key() == Qt::Key_Space)
 	{
+		if (ke->isAutoRepeat()) { return; }
 		if (ke->modifiers() & Qt::ShiftModifier)
 		{
 			togglePause();

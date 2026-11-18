@@ -37,6 +37,7 @@
 #include "CollabClient.h"
 #include "CollabCommandTap.h"
 #include "CollabHost.h"
+#include "CollabLink.h"
 #include "ConfigManager.h"
 #include "ControlServer.h"
 #include "Engine.h"
@@ -135,7 +136,19 @@ void CollabSession::observe(const QString& id, const QJsonObject& args, bool mut
 
 QByteArray CollabSession::handlePeerRequest(const QByteArray& line, CollabRole role, const QString& origin)
 {
-	const QJsonDocument document = QJsonDocument::fromJson(line.trimmed());
+	const QByteArray trimmed = line.trimmed();
+	if (trimmed.isEmpty())
+	{
+		QJsonParseError parseError;
+		QJsonDocument::fromJson(trimmed, &parseError);
+		const QString message = parseError.errorString().isEmpty()
+			? QStringLiteral("malformed JSON request")
+			: QStringLiteral("malformed JSON request: %1").arg(parseError.errorString());
+		return QJsonDocument(QJsonObject{{QStringLiteral("id"), -1}, {QStringLiteral("ok"), false},
+			{QStringLiteral("error"), QJsonObject{{QStringLiteral("kind"), controlErrorKindName(ControlErrorKind::InvalidArgs)},
+				{QStringLiteral("message"), message}}}}).toJson(QJsonDocument::Compact);
+	}
+	const QJsonDocument document = QJsonDocument::fromJson(trimmed);
 	// A line that is not a request object is answered by the dispatcher's own typed refusal.
 	if (!document.isObject()) { return m_dispatcher->dispatchLine(line); }
 	const QJsonObject request = document.object();
@@ -164,7 +177,43 @@ QByteArray CollabSession::writeSnapshot(QString* error) const
 		return QByteArray();
 	}
 	QFile file(path);
-	return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+	if (!file.open(QIODevice::ReadOnly))
+	{
+		*error = QStringLiteral("the project snapshot could not be read: %1").arg(file.errorString());
+		return QByteArray();
+	}
+	const qint64 fileSize = file.size();
+	if (fileSize >= MaxHostLineBytes)
+	{
+		*error = QStringLiteral("the project is too large to share (%1 MB; the limit is %2 MB)")
+			.arg(fileSize / (1024 * 1024)).arg(MaxHostLineBytes / (1024 * 1024) * 3 / 4);
+		return QByteArray();
+	}
+	// Refuse before reading the whole file into memory: the snapshot is base64-framed, so an oversized
+	// project cannot fit the host's line limit anyway.
+	const qint64 base64Size = ((fileSize + 2) / 3) * 4;
+	const QByteArray frameHeader = QJsonDocument(QJsonObject{{QStringLiteral("type"), QStringLiteral("snapshot")},
+		{QStringLiteral("seq"), static_cast<double>(m_host->sequence())},
+		{QStringLiteral("bytes"), fileSize}, {QStringLiteral("data"), QString()}})
+		.toJson(QJsonDocument::Compact);
+	if (base64Size + frameHeader.size() >= MaxHostLineBytes)
+	{
+		*error = QStringLiteral("the project is too large to share (%1 MB; the limit is %2 MB)")
+			.arg(file.size() / (1024 * 1024)).arg(MaxHostLineBytes / (1024 * 1024) * 3 / 4);
+		return QByteArray();
+	}
+	const QByteArray snapshot = file.readAll();
+	if (file.error() != QFileDevice::NoError)
+	{
+		*error = QStringLiteral("the project snapshot could not be read: %1").arg(file.errorString());
+		return QByteArray();
+	}
+	if (snapshot.size() != fileSize)
+	{
+		*error = QStringLiteral("the project snapshot could not be read completely");
+		return QByteArray();
+	}
+	return snapshot;
 }
 
 bool CollabSession::applySnapshot(const QByteArray& project, QString* error)
@@ -186,6 +235,7 @@ bool CollabSession::applySnapshot(const QByteArray& project, QString* error)
 	}
 	m_graceUntilMs = nowMs() + SnapshotGraceMs;
 	recordFingerprint();
+	m_autoResyncPending = false;
 	if (!opened.ok) { *error = opened.errorMessage; }
 	return opened.ok;
 }
@@ -219,20 +269,33 @@ void CollabSession::recordFingerprint()
 	m_fingerprint = journalFingerprint();
 }
 
-void CollabSession::pollJournal()
+bool CollabSession::trackUntrackedEdit(const QByteArray& fingerprint)
 {
-	const QByteArray now = journalFingerprint();
-	if (now == m_fingerprint) { return; }
-	m_fingerprint = now;
-	if (nowMs() < m_graceUntilMs) { return; }
+	if (nowMs() < m_graceUntilMs) { return false; }
+	// Keep the previous fingerprint during the grace window so a real edit is revisited once it closes.
+	m_fingerprint = fingerprint;
 	if (m_mode == Mode::Hosting)
 	{
 		scheduleResync(QStringLiteral("an edit made outside the command surface"), UntrackedResyncMs);
-		return;
+		return false;
 	}
 	const bool joined = m_mode == Mode::Joined && m_client->hasSnapshot();
-	if (!joined || nowMs() - m_lastAutoResyncMs < AutoResyncIntervalMs) { return; }
-	m_lastAutoResyncMs = nowMs();
+	if (!joined) { return false; }
+	m_autoResyncPending = true;
+	return true;
+}
+
+void CollabSession::pollJournal()
+{
+	const QByteArray now = journalFingerprint();
+	const bool changed = now != m_fingerprint;
+	if (!changed && !m_autoResyncPending) { return; }
+	if (changed && !trackUntrackedEdit(now)) { return; }
+	if (m_mode != Mode::Joined || !m_client->hasSnapshot()) { return; }
+	const qint64 nowTime = nowMs();
+	if (nowTime - m_lastAutoResyncMs < AutoResyncIntervalMs) { return; }
+	m_autoResyncPending = false;
+	m_lastAutoResyncMs = nowTime;
 	m_client->requestResync(QStringLiteral("a local edit outside the command surface"));
 	setNotice(QStringLiteral("That edit was made with a tool that does not go through commands yet, so it cannot be shared; "
 		"your copy is being re-synced from the host."));

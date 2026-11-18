@@ -25,6 +25,7 @@
 
 #include "CollabLink.h"
 
+#include <QHostAddress>
 #include <QJsonDocument>
 #include <QSslCipher>
 #include <QSslSocket>
@@ -144,7 +145,7 @@ void CollabLink::send(const QJsonObject& message)
 void CollabLink::sendLine(const QByteArray& line)
 {
 	if (!isOpen()) { return; }
-	if (m_socket->bytesToWrite() + line.size() > MaxQueuedBytes)
+	if (m_socket->bytesToWrite() + line.size() + 1 > MaxQueuedBytes)
 	{
 		close(QStringLiteral("the other side stopped reading"));
 		return;
@@ -181,8 +182,16 @@ void CollabLink::onReadyRead()
 	if (m_closed) { return; }
 	m_buffer.append(m_socket->readAll());
 	QByteArray line;
-	while (!m_closed && takeLine(&line))
+	while (!m_closed)
 	{
+		const qsizetype end = m_buffer.indexOf('\n');
+		if (end < 0) { break; }
+		if (end > m_maxLineBytes)
+		{
+			close(QStringLiteral("a message was over the size limit"));
+			return;
+		}
+		if (!takeLine(&line)) { break; }
 		const QJsonDocument document = QJsonDocument::fromJson(line.trimmed());
 		emit received(document.isObject() ? document.object() : QJsonObject(), line);
 	}

@@ -32,9 +32,12 @@
 #include "ClapHostInternals.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
+#include <new>
 #include <vector>
 
 #include <clap/clap.h>
@@ -47,15 +50,45 @@ namespace lmms::clap
 namespace
 {
 
+//! CLAP wants a finite [min_value, max_value] with min <= max, and every host-side clamp/normalization
+//! depends on it (std::clamp is undefined behaviour with unordered bounds). A plug-in that reports
+//! anything else gets valid bounds here: non-finite ones become 0..1, a reversed pair is swapped, so the
+//! range stays as close to the plug-in's own as it can be validly expressed. The SPAN must be finite too:
+//! -DBL_MAX..DBL_MAX has two finite endpoints but max - min overflows to +inf, and normalize() then divides
+//! by it (half-way normalizes to inf/inf = NaN, every ordinary value to 0), so such a range falls back to
+//! 0..1 like a non-finite endpoint does.
+void sanitizedRange(const clap_param_info_t& info, ParamDescriptor* descriptor)
+{
+	if (!std::isfinite(info.min_value) || !std::isfinite(info.max_value))
+	{
+		descriptor->minValue = 0.0;
+		descriptor->maxValue = 1.0;
+	}
+	else
+	{
+		descriptor->minValue = std::min(info.min_value, info.max_value);
+		descriptor->maxValue = std::max(info.min_value, info.max_value);
+		// A span that overflows cannot be divided by. The pair is replaced by the same harmless 0..1 a
+		// non-finite bound gets; a finite span (0..DBL_MAX) is left exactly as the plug-in reported it.
+		if (!std::isfinite(descriptor->maxValue - descriptor->minValue))
+		{
+			descriptor->minValue = 0.0;
+			descriptor->maxValue = 1.0;
+		}
+	}
+	descriptor->defaultValue
+		= std::isfinite(info.default_value) ? info.default_value : descriptor->minValue;
+	descriptor->defaultValue
+		= std::clamp(descriptor->defaultValue, descriptor->minValue, descriptor->maxValue);
+}
+
 auto descriptorOf(const clap_param_info_t& info) -> ParamDescriptor
 {
 	ParamDescriptor descriptor;
 	descriptor.id = info.id;
 	descriptor.title = QString::fromUtf8(info.name);
 	descriptor.module = QString::fromUtf8(info.module);
-	descriptor.minValue = info.min_value;
-	descriptor.maxValue = info.max_value;
-	descriptor.defaultValue = info.default_value;
+	sanitizedRange(info, &descriptor);
 	descriptor.stepped = (info.flags & CLAP_PARAM_IS_STEPPED) != 0;
 	descriptor.periodic = (info.flags & CLAP_PARAM_IS_PERIODIC) != 0;
 	descriptor.readOnly = (info.flags & CLAP_PARAM_IS_READONLY) != 0;
@@ -107,7 +140,7 @@ void HostedPlugin::Impl::scanParams()
 		double value = params[i].defaultValue;
 		if (paramsExt != nullptr && paramsExt->get_value(plugin, params[i].id, &value))
 		{
-			value = std::clamp(value, params[i].minValue, params[i].maxValue);
+			value = sanitizedValue(params[i], value);
 		}
 		paramSlots[i].value.store(value, std::memory_order_relaxed);
 	}
@@ -152,7 +185,7 @@ void HostedPlugin::Impl::serviceRescan(std::uint32_t flags)
 	// A rescan of values, text or info re-reads the values; info re-reads the descriptors in place, and text only
 	// needs what shows them to draw again. A rescan of the whole list was taken when it was asked for
 	// (paramsRescan): it waits for the next prepare(), deactivated.
-	if ((flags & (CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT | CLAP_PARAM_RESCAN_INFO)) != 0) { mirrorParamValues(); }
+	if ((flags & (CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT | CLAP_PARAM_RESCAN_INFO)) != 0) { mirrorParamValues(true); }
 	if ((flags & CLAP_PARAM_RESCAN_INFO) != 0) { refreshParamInfo(); }
 	else if ((flags & CLAP_PARAM_RESCAN_TEXT) != 0) { ++paramsRevision; }
 }
@@ -166,6 +199,15 @@ auto HostedPlugin::paramPlain(std::uint32_t id) const -> double
 	const auto& impl = *m_impl;
 	const auto index = impl.indexOfParam(id);
 	return index >= 0 ? impl.paramSlots[index].value.load(std::memory_order_relaxed) : 0.0;
+}
+
+void HostedPlugin::readParamEdits(std::uint32_t id, PluginParamGesture::Edits* edits)
+{
+	auto& impl = *m_impl;
+	const auto index = impl.indexOfParam(id);
+	if (index < 0) { *edits = {}; return; }
+	auto& slot = impl.paramSlots[index];
+	slot.gesture.read(slot.value, edits);
 }
 
 auto HostedPlugin::paramNormalized(std::uint32_t id) const -> float
@@ -196,7 +238,7 @@ void HostedPlugin::setParamPlain(std::uint32_t id, double value)
 	const auto index = impl.indexOfParam(id);
 	if (index < 0 || impl.params[index].readOnly) { return; }
 	auto& descriptor = impl.params[index];
-	const auto clamped = std::clamp(value, descriptor.minValue, descriptor.maxValue);
+	const auto clamped = sanitizedValue(descriptor, value);
 	auto& slot = impl.paramSlots[index];
 	if (slot.value.load(std::memory_order_relaxed) == clamped) { return; }
 	slot.value.store(clamped, std::memory_order_relaxed);
@@ -213,6 +255,29 @@ void HostedPlugin::setParamNormalized(std::uint32_t id, float normalized)
 	setParamPlain(id, range > 0.0 ? descriptor.minValue + normalized * range : descriptor.minValue);
 }
 
+//! The clap.state output stream: the host's blob and whether a write was refused. A failed write is
+//! remembered here, because a plug-in is free to ignore write()'s answer and report success anyway.
+struct StateStream
+{
+	QByteArray* out;
+	bool failed = false;
+};
+
+//! Largest length QByteArray::append() can be handed on this Qt. Qt 6.8 added QByteArray::maxSize(); on
+//! earlier Qt 6 releases, bound it by qsizetype's signed maximum. Qt 5's append() takes an int, so the bound
+//! is the int maximum. These bounds stay inside the append length type; append() can still reject a lower
+//! allocation limit, which is handled below.
+constexpr auto maxStateWrite() -> std::uint64_t
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+	return static_cast<std::uint64_t>(QByteArray::maxSize());
+#elif QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	return static_cast<std::uint64_t>(std::numeric_limits<qsizetype>::max());
+#else
+	return static_cast<std::uint64_t>(std::numeric_limits<int>::max());
+#endif
+}
+
 auto HostedPlugin::saveState(QByteArray* state) const -> bool
 {
 	const auto& impl = *m_impl;
@@ -220,14 +285,45 @@ auto HostedPlugin::saveState(QByteArray* state) const -> bool
 	state->clear();
 	if (!impl.stateExt) { return false; }
 
+	StateStream sink{state};
 	clap_ostream_t stream{};
-	stream.ctx = state;
+	stream.ctx = &sink;
 	stream.write = [](const clap_ostream_t* self, const void* buffer, std::uint64_t size) -> std::int64_t {
-		auto* out = static_cast<QByteArray*>(self->ctx);
-		out->append(static_cast<const char*>(buffer), static_cast<qsizetype>(size));
+		auto* sink = static_cast<StateStream*>(self->ctx);
+		// The count is a uint64 and QByteArray's length is a SIGNED qsizetype (Qt 5: an int): narrowing
+		// it first turns a huge size negative, and append() then copies strlen(buffer) bytes while the
+		// callback reports the original size - a truncated blob reported as a complete save. Refuse the
+		// write instead, and let the plug-in see a short write (-1).
+		const auto written = static_cast<std::uint64_t>(sink->out->size());
+		const auto room = written < maxStateWrite() ? maxStateWrite() - written : 0;
+		if (size > room || (size > 0 && buffer == nullptr))
+		{
+			sink->failed = true;
+			return -1;
+		}
+		const auto before = sink->out->size();
+		try
+		{
+			sink->out->append(static_cast<const char*>(buffer), static_cast<qsizetype>(size));
+		}
+		catch (const std::bad_alloc&)
+		{
+			// Nothing escaped the host: the blob is rolled back to the length it had before this write.
+			sink->out->truncate(before);
+			sink->failed = true;
+			return -1;
+		}
 		return static_cast<std::int64_t>(size);
 	};
-	return impl.stateExt->save(impl.plugin, &stream);
+	const bool saved = impl.stateExt->save(impl.plugin, &stream);
+	if (!saved || sink.failed)
+	{
+		// Never hand a half-written blob to a caller: saveSettings() stores any non-empty QByteArray, so an
+		// empty one is what a failed save must leave behind (the "no state" answer it already understands).
+		state->clear();
+		return false;
+	}
+	return true;
 }
 
 auto HostedPlugin::loadState(const QByteArray& state) -> bool

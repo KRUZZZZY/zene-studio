@@ -72,6 +72,13 @@ void RenameDialog::keyPressEvent( QKeyEvent * _ke )
 
 
 
+void RenameDialog::reject()
+{
+	m_stringToEdit = m_originalString;
+	QDialog::reject();
+}
+
+
 void RenameDialog::textChanged( const QString & _new_string )
 {
 	m_stringToEdit = _new_string;

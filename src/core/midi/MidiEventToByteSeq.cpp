@@ -24,7 +24,7 @@
 
 #include "MidiEventToByteSeq.h"
 
-#include <QtGlobal>
+#include <cstring>
 
 #include "MidiEvent.h"
 
@@ -33,24 +33,58 @@ namespace lmms
 {
 
 
+namespace
+{
+
+//! A MIDI data byte carries 7 bits: 0..127.
+constexpr int kMaxDataByte = 0x7F;
+
+/*! A 7-bit data field of a MIDI message (a key, a velocity, a controller number
+ *  and value, a program, a channel pressure): 0..127. A value outside that range
+ *  is not MIDI: writing it either masks it into a different message or puts a
+ *  byte with the high bit set into the stream, so the message is refused. */
+bool isDataByte( int value )
+{
+	return value >= 0 && value <= kMaxDataByte;
+}
+
+/*! The pitch bend is the one 14-bit field of a MIDI message: 0..16383. Its high
+ *  byte is a data byte like any other, so the value has to fit before it is
+ *  split into two. */
+bool isPitchBendValue( int value )
+{
+	return value >= MidiMinPitchBend && value <= MidiMaxPitchBend;
+}
+
+/*! A note message (note on, note off, key pressure): the key is a 7-bit field
+ *  and the velocity - the release time of a note off - is a 7-bit data byte. */
+bool isValidNoteMessage( const MidiEvent& ev )
+{
+	return ev.key() >= 0 && ev.key() <= MidiMaxKey && isDataByte( ev.param( 1 ) );
+}
+
+} // namespace
+
+
 std::size_t writeToByteSeq(
 	const MidiEvent& ev, uint8_t *data, std::size_t bufsize)
 {
-	Q_ASSERT(bufsize >= 3);
-
+	// The message is built here and copied out only once its length is known to
+	// fit into bufsize: nothing may be written to data before that.
+	uint8_t msg[3] = {};
 	std::size_t size = 0;
-	data[0] = ev.type() | (ev.channel() & 0x0F);
+	msg[0] = ev.type() | (ev.channel() & 0x0F);
 
 	switch (ev.type())
 	{
 		case MidiNoteOn:
 			if (ev.velocity() > 0)
 			{
-				if (ev.key() < 0 || ev.key() > MidiMaxKey)
+				if (!isValidNoteMessage(ev))
 					break;
 
-				data[1] = ev.key();
-				data[2] = ev.velocity();
+				msg[1] = ev.key();
+				msg[2] = ev.velocity();
 				size    = 3;
 				break;
 			}
@@ -61,43 +95,54 @@ std::size_t writeToByteSeq(
 				// These messages are equivalent to Note Off in standard
 				// MIDI streams, but here only proper Note Off messages
 				// are allowed."
-				data[0] = MidiNoteOff | (ev.channel() & 0x0F);
+				msg[0] = MidiNoteOff | (ev.channel() & 0x0F);
 				// nobreak
 			}
 
 		case MidiNoteOff:
-			if (ev.key() < 0 || ev.key() > MidiMaxKey)
+			if (!isValidNoteMessage(ev))
 				break;
-			data[1] = ev.key();
-			data[2] = ev.velocity(); // release time
+			msg[1] = ev.key();
+			msg[2] = ev.velocity(); // release time
 			size    = 3;
 			break;
 
 		case MidiKeyPressure:
-			data[1] = ev.key();
-			data[2] = ev.velocity();
+			if (!isValidNoteMessage(ev))
+				break;
+			msg[1] = ev.key();
+			msg[2] = ev.velocity();
 			size    = 3;
 			break;
 
 		case MidiControlChange:
-			data[1] = ev.controllerNumber();
-			data[2] = ev.controllerValue();
+			// the controller number and the controller value are 7-bit data bytes
+			if (!isDataByte(ev.param(0)) || !isDataByte(ev.param(1)))
+				break;
+			msg[1] = ev.controllerNumber();
+			msg[2] = ev.controllerValue();
 			size    = 3;
 			break;
 
 		case MidiProgramChange:
-			data[1] = ev.program();
+			if (!isDataByte(ev.param(0)))
+				break;
+			msg[1] = ev.program();
 			size    = 2;
 			break;
 
 		case MidiChannelPressure:
-			data[1] = ev.channelPressure();
+			if (!isDataByte(ev.param(0)))
+				break;
+			msg[1] = ev.channelPressure();
 			size    = 2;
 			break;
 
 		case MidiPitchBend:
-			data[1] = ev.pitchBend() & 0x7f;
-			data[2] = ev.pitchBend() >> 7;
+			if (!isPitchBendValue(ev.param(0)))
+				break;
+			msg[1] = ev.pitchBend() & 0x7f;
+			msg[2] = ev.pitchBend() >> 7;
 			size    = 3;
 			break;
 
@@ -106,6 +151,11 @@ std::size_t writeToByteSeq(
 			break;
 	}
 
+	if (size == 0 || bufsize < size)
+	{
+		return 0;
+	}
+	std::memcpy(data, msg, size);
 	return size;
 }
 

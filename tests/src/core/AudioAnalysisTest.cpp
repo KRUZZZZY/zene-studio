@@ -23,27 +23,136 @@
  */
 /*! 0.5.0 L05 (W3): a held 220 Hz tone reads as one A3 and silence as nothing (ED-160); audio to MIDI
  *  writes the line onto a new track and one undo removes it; the spectrogram's loudest band holds a
- *  1 kHz tone (ED-158); every clip of a folder moves together, one undo step (ED-035). */
+ *  1 kHz tone (ED-158); every clip of a folder moves together, one undo step (ED-035), and so does one of its
+ *  summary clips alone. */
 
 #include <QtTest>
 
 #include <QJsonArray>
 
+#include <algorithm>
+#include <array>
 #include <cmath>
+#include <iterator>
+#include <span>
+#include <cstdlib>
+#include <new>
 #include <vector>
 
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "FolderSummary.h"
+#include "fft_helpers.h"
+#include "fft_helpers.h"
+#include "fft_helpers.h"
 #include "PitchTrack.h"
+#include "PitchTrackCmndBoundary.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
+#include "SampleWindow.h"
 #include "Song.h"
 #include "TrackFolder.h"
 
+// Compile the private plugin analyser into this test so it can be exercised directly.
+#include "GuiApplication.h"
+#include "MainWindow.h"
+#include "../../../plugins/Eq/EqCurve.h"
+#pragma push_macro("Q_OBJECT")
+#undef Q_OBJECT
+#define Q_OBJECT
+#include "../../../plugins/Eq/EqSpectrumView.cpp"
+#pragma pop_macro("Q_OBJECT")
+
+namespace lmms::gui
+{
+
+// EqAnalyser does not use the view's coordinate mapper; satisfy the unused view code.
+float EqHandle::freqToXPixel(float, int) { return 0.0f; }
+
+} // namespace lmms::gui
+
 using namespace lmms;
+
+namespace
+{
+
+thread_local bool g_trackLargestAllocation = false;
+thread_local std::size_t g_largestAllocation = 0;
+
+//! Read the spectrum the way the GUI reads it. An analyser that publishes a snapshot
+//! hands it out; an analyser without that API leaves the reader with the band array the
+//! audio thread writes. The helper compiles against both, so the regression is a failing
+//! assertion and not a build error.
+template <typename Analyser>
+bool readPublishedSpectrum(Analyser& analyser, std::vector<float>& bands, float& energy, bool* current = nullptr)
+{
+	if constexpr (requires { analyser.copySpectrum(bands.data(), energy); })
+	{
+		const bool isCurrent = analyser.copySpectrum(bands.data(), energy);
+		if (current != nullptr) { *current = isCurrent; }
+		return true;
+	}
+	else
+	{
+		std::copy(std::begin(analyser.m_bands), std::end(analyser.m_bands), bands.begin());
+		energy = analyser.getEnergy();
+		return false;
+	}
+}
+
+//! What a reader that arrives during a publication sees.
+struct PublishRead
+{
+	EqAnalyser* analyser = nullptr;
+	std::vector<float> bands;
+	float energy = 0.f;
+	bool current = true;
+	bool hasSnapshot = false;
+	bool called = false;
+};
+
+//! Take a copy of the spectrum in the middle of a publication.
+void readDuringPublication(void* context, int)
+{
+	auto* read = static_cast<PublishRead*>(context);
+	read->called = true;
+	read->hasSnapshot = readPublishedSpectrum(*read->analyser, read->bands, read->energy, &read->current);
+}
+
+//! Install the publish hook, if the analyser has one. The analyser that publishes a
+//! snapshot can be read while it publishes; an analyser without that API cannot.
+template <typename Analyser>
+bool installPublishHook(Analyser& analyser, PublishRead* read)
+{
+	if constexpr (requires { analyser.setPublishHook(nullptr, nullptr); })
+	{
+		analyser.setPublishHook(&readDuringPublication, read);
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
+} // namespace
+
+void* operator new(std::size_t size)
+{
+	if (g_trackLargestAllocation && size > g_largestAllocation) { g_largestAllocation = size; }
+	const std::size_t tail = g_fillAllocationTail ? AllocationTail : 0;
+	if (void* ptr = std::malloc(size + tail != 0 ? size + tail : 1)) { std::fill_n(static_cast<unsigned char*>(ptr) + size, tail, g_tailByte); return ptr; }
+	throw std::bad_alloc();
+}
+
+void* operator new[](std::size_t size) { return ::operator new(size); }
+void operator delete(void* ptr) noexcept { std::free(ptr); }
+void operator delete[](void* ptr) noexcept { std::free(ptr); }
+void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
+void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
 
 namespace
 {
@@ -60,10 +169,30 @@ std::vector<float> tone(double hz, int rate, double seconds)
 	return out;
 }
 
+std::vector<float> toneWithSilence(int rate, std::size_t start, std::size_t end)
+{
+	std::vector<float> out(static_cast<std::size_t>(rate), 0.f);
+	for (std::size_t i = start; i < end; ++i) { out[i] = 0.5f * static_cast<float>(std::sin(2.0 * M_PI * 220.0 * static_cast<double>(i) / rate)); }
+	return out;
+}
+
 SampleClip* toneClip(Track* track, double hz, tick_t at)
 {
 	const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
 	const std::vector<float> mono = tone(hz, rate, 1.0);
+	std::vector<SampleFrame> frames;
+	for (const float v : mono) { frames.emplace_back(v, v); }
+	auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(at)));
+	clip->setSampleBuffer(std::make_shared<SampleBuffer>(frames.data(), frames.size(), rate));
+	clip->movePosition(TimePos(at));
+	return clip;
+}
+
+//! A tone clip whose sample buffer carries @a rate as its own rate, so a clip can
+//! be built in the malformed state @a rate names (a buffer that never recorded one).
+SampleClip* toneClipAtRate(Track* track, double hz, tick_t at, int rate)
+{
+	const std::vector<float> mono = tone(hz, 44100, 1.0);
 	std::vector<SampleFrame> frames;
 	for (const float v : mono) { frames.emplace_back(v, v); }
 	auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(at)));
@@ -91,6 +220,18 @@ private slots:
 		Engine::destroy();
 	}
 
+	void unnormalizedFftWindowsKeepTheirPeakAmplitude()
+	{
+		std::array<float, 9> window{};
+		for (const FFTWindow type : {FFTWindow::BlackmanHarris, FFTWindow::Hamming, FFTWindow::Hanning})
+		{
+			QVERIFY(precomputeWindow(window.data(), window.size(), type, false) == 0);
+			QVERIFY(std::abs(window[4] - 1.0f) < 0.0001f);
+		}
+	}
+
+	void pitchNeverReadsPastItsCmndVector() { checkPitchNeverReadsPastCmnd(); }
+
 	void aHeldToneIsOneNote()
 	{
 		const std::vector<float> a3 = tone(220.0, 44100, 1.0);
@@ -99,6 +240,64 @@ private slots:
 		QCOMPARE(notes.front().key, 57);
 		const std::vector<float> silence(44100, 0.f);
 		QVERIFY(pitchtrack::detectNotes(silence.data(), silence.size(), 44100).empty());
+	}
+
+	void rejectsShortCosineSumWindows()
+	{
+		constexpr FFTWindow windows[] = {FFTWindow::BlackmanHarris, FFTWindow::Hamming, FFTWindow::Hanning};
+		float sample = 1.0f;
+		for (const FFTWindow window : windows)
+		{
+			QCOMPARE(precomputeWindow(&sample, 0, window), -1);
+			QCOMPARE(precomputeWindow(&sample, 1, window), -1);
+		}
+	}
+
+	void aNoteStartsNearItsAudioOnset()
+	{
+		constexpr int rate = 44100;
+		constexpr std::size_t onset = rate * 3 / 40;
+		const std::vector<float> audio = toneWithSilence(rate, onset, rate * 3 / 4);
+		const std::vector<pitchtrack::PitchNote> notes = pitchtrack::detectNotes(audio.data(), audio.size(), rate);
+		QCOMPARE(notes.size(), std::size_t{1});
+		const f_cnt_t tolerance = static_cast<f_cnt_t>(rate / 50);
+		QVERIFY2(notes.front().start >= onset - tolerance && notes.front().start <= onset + tolerance,
+			qPrintable(QStringLiteral("detected onset %1, expected %2").arg(static_cast<qulonglong>(notes.front().start))
+				.arg(static_cast<qulonglong>(onset))));
+	}
+
+	void aLegatoPitchChangeStartsNearItsTransition()
+	{
+		constexpr int rate = 44100;
+		constexpr std::size_t transition = rate * 11 / 20;
+		std::vector<float> audio(static_cast<std::size_t>(rate));
+		for (std::size_t i = 0; i < audio.size(); ++i)
+		{
+			const double phase = i < transition
+				? 2.0 * M_PI * 220.0 * static_cast<double>(i) / rate
+				: 2.0 * M_PI * (220.0 * static_cast<double>(transition) + 330.0 * static_cast<double>(i - transition)) / rate;
+			audio[i] = 0.5f * static_cast<float>(std::sin(phase));
+		}
+		const std::vector<pitchtrack::PitchNote> notes = pitchtrack::detectNotes(audio.data(), audio.size(), rate);
+		QCOMPARE(notes.size(), std::size_t{2});
+		QCOMPARE(notes.back().key, 64);
+		const f_cnt_t tolerance = static_cast<f_cnt_t>(rate / 200);
+		QVERIFY2(notes.back().start >= transition - tolerance && notes.back().start <= transition + tolerance,
+			qPrintable(QStringLiteral("detected transition %1, expected %2").arg(static_cast<qulonglong>(notes.back().start))
+				.arg(static_cast<qulonglong>(transition))));
+	}
+
+	void aNoteEndsNearItsAudioOffset()
+	{
+		constexpr int rate = 44100;
+		constexpr std::size_t offset = rate * 3 / 4;
+		const std::vector<float> audio = toneWithSilence(rate, rate / 4, offset);
+		const std::vector<pitchtrack::PitchNote> notes = pitchtrack::detectNotes(audio.data(), audio.size(), rate);
+		QCOMPARE(notes.size(), std::size_t{1});
+		const f_cnt_t tolerance = static_cast<f_cnt_t>(rate / 50);
+		QVERIFY2(notes.front().end >= offset - tolerance && notes.front().end <= offset + tolerance,
+			qPrintable(QStringLiteral("detected offset %1, expected %2").arg(static_cast<qulonglong>(notes.front().end))
+				.arg(static_cast<qulonglong>(offset))));
 	}
 
 	void audioBecomesATrackOfNotes()
@@ -132,6 +331,123 @@ private slots:
 		QVERIFY2(std::abs(loudest - expected) <= 1, qPrintable(QStringLiteral("loudest band %1, expected %2").arg(loudest).arg(expected)));
 	}
 
+	//! A clip whose sample buffer names no rate has no Nyquist to work from: the
+	//! spectrogram's band bins divide by it and clip.audio_to_midi hands it straight
+	//! to the pitch detector. Both refuse the clip instead of analysing an impossible rate.
+	void anAudioClipWithNoSampleRateIsRefused()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		SampleClip* clip = toneClipAtRate(track, 1000.0, 0, 0);
+		QCOMPARE(clip->sample().sampleRate(), 0);
+		QVERIFY(clip->sample().data() != nullptr);  // the malformed part is the rate, not the data
+		const QString id = control::clipIdOf(clip);
+
+		const ControlResult midi = run(QStringLiteral("clip.audio_to_midi"), {{QStringLiteral("clip"), id}});
+		QVERIFY2(!midi.ok, "a clip with no sample rate was analysed as if it had one");
+		QCOMPARE(midi.errorKind, ControlErrorKind::InvalidArgs);
+
+		const ControlResult spec = run(QStringLiteral("sample.spectrogram"),
+			{{QStringLiteral("clip"), id}, {QStringLiteral("rows"), 4}, {QStringLiteral("bands"), 32}});
+		QVERIFY2(!spec.ok, "a spectrogram was computed from a clip with no sample rate");
+		QCOMPARE(spec.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	void antiPhaseStereoHasZeroEnergy()
+	{
+		constexpr auto frameCount = static_cast<f_cnt_t>(FFT_BUFFER_SIZE);
+		const std::vector<SampleFrame> input(frameCount, SampleFrame{0.5f, -0.5f});
+		EqAnalyser analyser;
+		analyser.analyze(InterleavedBufferView<const float, 2>{input.data(), frameCount});
+		QVERIFY(std::isfinite(analyser.getEnergy()));
+		QCOMPARE(analyser.getEnergy(), 0.0f);
+	}
+
+	//! The analyser must not drop the samples that do not fit into an FFT window: a block
+	//! that crosses the window boundary keeps its tail for the next window. A stream of N
+	//! frames is therefore analysed in exactly N / window whole windows - the dropped tail
+	//! used to delay every following window, so the analyser ran fewer of them.
+	void theAnalyserKeepsTheSamplesThatDoNotFitIntoTheWindow()
+	{
+		EqAnalyser analyser;
+		constexpr f_cnt_t blockFrames = 300;
+		constexpr int blocks = 41;
+		const std::vector<SampleFrame> block(blockFrames, SampleFrame{0.f, 0.f});
+		int analyses = 0;
+		for (int i = 0; i < blocks; ++i)
+		{
+			// The GUI re-arms the analyser on every refresh, the analyser disarms itself
+			// after the analysis it ran.
+			analyser.setActive(true);
+			analyser.analyze(InterleavedBufferView<const float, 2>{block.data(), blockFrames});
+			if (!analyser.getActive()) { ++analyses; }
+		}
+		const int expected = static_cast<int>(blocks * blockFrames / FFT_BUFFER_SIZE);
+		QCOMPARE(analyses, expected);
+	}
+
+	//! The analyser publishes the finished spectrum and the GUI reads that snapshot: a
+	//! reader that arrives while the analyser publishes must get a whole spectrum, never
+	//! a half written one.
+	void theSpectrumIsPublishedAsAWholeSnapshot()
+	{
+		EqAnalyser analyser;
+		std::vector<float> bands(MAX_BANDS, 0.f);
+		float energy = 0.f;
+		bool current = false;
+
+		constexpr auto frameCount = static_cast<f_cnt_t>(FFT_BUFFER_SIZE);
+		const std::vector<SampleFrame> constant(frameCount, SampleFrame{0.5f, 0.5f});
+		analyser.analyze(InterleavedBufferView<const float, 2>{constant.data(), frameCount});
+		QVERIFY2(readPublishedSpectrum(analyser, bands, energy, &current),
+			"the analyser publishes no snapshot, so the GUI reads the band array the audio thread writes");
+		QVERIFY(current);
+		const std::vector<float> firstSpectrum = bands;
+
+		// The next spectrum is published while a reader takes a copy of it.
+		PublishRead read;
+		read.analyser = &analyser;
+		read.bands.assign(MAX_BANDS, 0.f);
+		installPublishHook(analyser, &read);
+		analyser.setActive(true);
+		const std::vector<SampleFrame> silence(frameCount, SampleFrame{0.f, 0.f});
+		analyser.analyze(InterleavedBufferView<const float, 2>{silence.data(), frameCount});
+		QVERIFY2(read.called, "the analyser did not publish the second spectrum");
+		QVERIFY2(read.hasSnapshot, "the analyser publishes no snapshot");
+		QVERIFY2(!read.current, "a reader that arrived during the publication was served the half written spectrum");
+		QVERIFY2(read.bands == firstSpectrum, "the reader got a mixture of two spectra");
+		QVERIFY(readPublishedSpectrum(analyser, bands, energy, &current));
+		QVERIFY(current);
+		QVERIFY2(bands != firstSpectrum, "the second spectrum was not published");
+	}
+
+	void normalizationRejectsAOneSampleBlock()
+	{
+		const std::vector<float> spectrum{1.0f};
+		std::vector<float> normalized{42.0f};
+		QCOMPARE(normalize(spectrum, normalized, 1), -1);
+		QCOMPARE(normalized.front(), 42.0f);
+	}
+
+	void theSpectrogramDoesNotAllocateTheWholeClip()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+		SampleClip* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		{
+			const std::size_t frameCount = static_cast<std::size_t>(rate) * 60;
+			std::vector<SampleFrame> frames(frameCount, SampleFrame(0.f));
+			clip->setSampleBuffer(std::make_shared<SampleBuffer>(frames.data(), frames.size(), rate));
+		}
+
+		g_largestAllocation = 0;
+		g_trackLargestAllocation = true;
+		const ControlResult got = run(QStringLiteral("sample.spectrogram"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("rows"), 2}, {QStringLiteral("bands"), 4}});
+		g_trackLargestAllocation = false;
+		QVERIFY2(got.ok, qPrintable(got.errorMessage));
+		QVERIFY2(g_largestAllocation < 1024 * 1024, qPrintable(QStringLiteral("largest allocation was %1 bytes").arg(g_largestAllocation)));
+	}
+
 	void aRangeIsEdited()
 	{
 		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
@@ -149,6 +465,93 @@ private slots:
 			{QStringLiteral("to"), 5}, {QStringLiteral("op"), QStringLiteral("gain")}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! Two warp markers inside a one-second tone: source frames at its quarter and half.
+	void setMarkers(SampleClip* clip)
+	{
+		const auto size = static_cast<int>(clip->sample().sampleSize());
+		const std::array<WarpMarker, 2> markers{WarpMarker{static_cast<f_cnt_t>(size / 4), 24},
+			WarpMarker{static_cast<f_cnt_t>(size / 2), 96}};
+		QVERIFY2(clip->setWarpMarkers(std::span<const WarpMarker>(markers.data(), markers.size())),
+			"the two-marker set was rejected");
+	}
+
+	void aRangeEditRespectsWarpMarkers()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		SampleClip* clip = toneClip(track, 440.0, 3840);
+		const auto size = static_cast<int>(clip->sample().sampleSize());
+		setMarkers(clip);
+		// A crop from inside the source makes the new frame 0 the OLD frame `from`, so every marker
+		// would be on the wrong audio - the same refusal sample.crop makes for its own window.
+		const ControlResult cropped = run(QStringLiteral("sample.edit_range"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("from"), size / 8}, {QStringLiteral("to"), size / 2}, {QStringLiteral("op"), QStringLiteral("crop")}});
+		QCOMPARE(cropped.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(static_cast<int>(clip->sample().sampleSize()), size);
+		QCOMPARE(clip->warpMarkers().size(), 2);
+		// A delete over the first marker drops it, and one after it shifts the frame it pins.
+		const ControlResult deleted = run(QStringLiteral("sample.edit_range"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("from"), 0}, {QStringLiteral("to"), size / 2}, {QStringLiteral("op"), QStringLiteral("delete")}});
+		QCOMPARE(deleted.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(static_cast<int>(clip->sample().sampleSize()), size);
+		QCOMPARE(clip->warpMarkers().size(), 2);
+		// A frame-for-frame op moves no source frame, so the same clip still takes them.
+		QVERIFY(run(QStringLiteral("sample.edit_range"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("from"), size / 8}, {QStringLiteral("to"), size / 4}, {QStringLiteral("op"), QStringLiteral("silence")}}).ok);
+		QCOMPARE(clip->warpMarkers().size(), 2);
+	}
+
+	void aRangeFadeReachesItsEndpoint()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		SampleClip* clip = toneClip(track, 440.0, 3840);
+		const auto size = static_cast<int>(clip->sample().sampleSize());
+		const int frame = size / 8;
+		QVERIFY2(std::abs(clip->sample().data()[frame][0]) > 0.001f, "the frame under test is silent");
+		// A one-frame range is all endpoint: the fade_out's last (and only) frame is 0, not unity.
+		QVERIFY(run(QStringLiteral("sample.edit_range"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("from"), frame}, {QStringLiteral("to"), frame + 1}, {QStringLiteral("op"), QStringLiteral("fade_out")}}).ok);
+		QCOMPARE(clip->sample().data()[frame][0], 0.f);
+		QCOMPARE(clip->sample().data()[frame][1], 0.f);
+	}
+
+	void aRangeIgnoresAnUnrelatedGain()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		SampleClip* clip = toneClip(track, 440.0, 3840);
+		const auto size = static_cast<int>(clip->sample().sampleSize());
+		// gain_db is 'gain's parameter; a crop that ignores it must not be refused over it.
+		QVERIFY2(run(QStringLiteral("sample.edit_range"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("from"), size / 4}, {QStringLiteral("to"), size / 2}, {QStringLiteral("op"), QStringLiteral("crop")},
+			{QStringLiteral("gain_db"), 30.0}}).ok, "a crop was refused over an unused gain_db");
+		QCOMPARE(static_cast<int>(clip->sample().sampleSize()), size / 4);
+		// 'gain' itself still validates the parameter it applies.
+		QCOMPARE(run(QStringLiteral("sample.edit_range"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("from"), 0}, {QStringLiteral("to"), size / 4}, {QStringLiteral("op"), QStringLiteral("gain")},
+			{QStringLiteral("gain_db"), 30.0}}).errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! A delete covering the clip's whole window is refused; one that leaves frames of it keeps the window over them.
+	void aDeleteOverTheWholeWindowIsRefused()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		SampleClip* clip = toneClip(track, 440.0, 7680);
+		clip->setSampleWindow(SampleWindow(10, 20));
+		QCOMPARE(clip->sampleWindow().sourceIn, f_cnt_t{10});
+		QCOMPARE(clip->sampleWindow().sourceOut, f_cnt_t{20});
+		const auto size = static_cast<int>(clip->sample().sampleSize());
+		const ControlResult whole = run(QStringLiteral("sample.edit_range"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("from"), 5}, {QStringLiteral("to"), 25}, {QStringLiteral("op"), QStringLiteral("delete")}});
+		QCOMPARE(whole.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(static_cast<int>(clip->sample().sampleSize()), size);
+		QCOMPARE(clip->sampleWindow().sourceIn, f_cnt_t{10});
+		QCOMPARE(clip->sampleWindow().sourceOut, f_cnt_t{20});
+		QVERIFY(run(QStringLiteral("sample.edit_range"), {{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("from"), 12},
+			{QStringLiteral("to"), 18}, {QStringLiteral("op"), QStringLiteral("delete")}}).ok);
+		QCOMPARE(static_cast<int>(clip->sample().sampleSize()), size - 6);
+		QCOMPARE(clip->sampleWindow().sourceIn, f_cnt_t{10});
+		QCOMPARE(clip->sampleWindow().sourceOut, f_cnt_t{14});
+	}
+
 	void aFolderMovesAsOne()
 	{
 		Song* song = Engine::getSong();
@@ -163,6 +566,52 @@ private slots:
 		QCOMPARE(dynamic_cast<SampleClip*>(child->getClips().front())->startPosition().getTicks(), tick_t{384});
 		QCOMPARE(run(QStringLiteral("track.folder_move"), {{QStringLiteral("folder"), control::trackIdOf(child)}, {QStringLiteral("delta"), 1}}).errorKind,
 			ControlErrorKind::InvalidArgs);
+	}
+
+	//! 0.5.0 ED-035: the folder's summary clips - the merged spans of its children's clips - and a span moved
+	//! alone through track.folder_move's 'start'/'end', one undo step; the other span stays where it was.
+	void aFolderSummarySpanMovesAlone()
+	{
+		Song* song = Engine::getSong();
+		auto* folder = dynamic_cast<TrackFolder*>(Track::create(Track::Type::Folder, song));
+		auto* a = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		auto* b = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		for (Track* child : {static_cast<Track*>(a), static_cast<Track*>(b)})
+		{
+			QVERIFY(run(QStringLiteral("track.set_folder"), {{QStringLiteral("track"), control::trackIdOf(child)},
+				{QStringLiteral("folder"), control::trackIdOf(folder)}}).ok);
+		}
+		SampleClip* first = toneClip(a, 440.0, 0);
+		const tick_t length = first->length().getTicks();
+		SampleClip* overlapping = toneClip(b, 440.0, length / 2);       // overlaps the first: one span
+		SampleClip* later = toneClip(a, 440.0, 4 * length);            // a gap before it: a second span
+		const std::vector<FolderSpan> spans = folderSummary(*folder);
+		QCOMPARE(spans.size(), std::size_t{2});
+		QCOMPARE(spans[0].start, tick_t{0});
+		QCOMPARE(spans[0].end, length / 2 + length);
+		QCOMPARE(spans[0].clips, 2);
+		QCOMPARE(spans[1].start, 4 * length);
+		QCOMPARE(spans[1].clips, 1);
+
+		const QJsonObject span{{QStringLiteral("folder"), control::trackIdOf(folder)}, {QStringLiteral("delta"), 192},
+			{QStringLiteral("start"), static_cast<int>(spans[0].start)}, {QStringLiteral("end"), static_cast<int>(spans[0].end)}};
+		const ControlResult moved = run(QStringLiteral("track.folder_move"), span);
+		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
+		QCOMPARE(moved.result.value(QStringLiteral("moved")).toInt(), 2);
+		QCOMPARE(first->startPosition().getTicks(), tick_t{192});
+		QCOMPARE(overlapping->startPosition().getTicks(), length / 2 + 192);
+		QCOMPARE(later->startPosition().getTicks(), 4 * length);  // outside the span: untouched
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(folderSummary(*folder).front().start, tick_t{0});
+		QCOMPARE(a->getClips().front()->startPosition().getTicks(), tick_t{0});
+
+		QJsonObject halfSpan = span;
+		halfSpan.remove(QStringLiteral("end"));
+		QCOMPARE(run(QStringLiteral("track.folder_move"), halfSpan).errorKind, ControlErrorKind::InvalidArgs);
+		QJsonObject empty = span;
+		empty.insert(QStringLiteral("start"), static_cast<int>(2 * length + length / 2));
+		empty.insert(QStringLiteral("end"), static_cast<int>(3 * length));
+		QCOMPARE(run(QStringLiteral("track.folder_move"), empty).errorKind, ControlErrorKind::NotFound);
 	}
 };
 

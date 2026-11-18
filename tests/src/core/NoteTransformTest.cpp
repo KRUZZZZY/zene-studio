@@ -32,6 +32,7 @@
 #include <QString>
 #include <QStringList>
 
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -319,6 +320,15 @@ private slots:
 		QCOMPARE( NoteTransform::scaleVelocity( { a }, 10.f ), 1 );
 		QCOMPARE( static_cast<int>( a->getVolume() ), 200 );
 
+		// a factor that is not a number has no velocity to scale BY, so it moves
+		// nothing at all rather than rounding an undefined product into the rail
+		QCOMPARE( NoteTransform::scaleVelocity( { a }, std::numeric_limits<float>::quiet_NaN() ), 0 );
+		QCOMPARE( static_cast<int>( a->getVolume() ), 200 );
+		QCOMPARE( NoteTransform::scaleVelocity( { a }, std::numeric_limits<float>::infinity() ), 0 );
+		QCOMPARE( static_cast<int>( a->getVolume() ), 200 );
+		QCOMPARE( NoteTransform::scaleVelocity( { a }, -std::numeric_limits<float>::infinity() ), 0 );
+		QCOMPARE( static_cast<int>( a->getVolume() ), 200 );
+
 		// a factor that rounds back to the same value counts as unchanged
 		QCOMPARE( NoteTransform::scaleVelocity( { a }, 1.0001f ), 0 );
 		QCOMPARE( static_cast<int>( a->getVolume() ), 200 );
@@ -358,6 +368,60 @@ private slots:
 		QCOMPARE( NoteTransform::quantizePositions( t.vector(), 0, NoteTransform::QuantizeMode::Nearest ), 0 );
 		QCOMPARE( NoteTransform::quantizePositions( t.vector(), -8, NoteTransform::QuantizeMode::Nearest ), 0 );
 		QCOMPARE( dump( positionsOf( t.vector() ) ), QString( "48,96,144" ) );
+	}
+
+	void nonPositiveNoteQuantizeGridIsANoop()
+	{
+		QCOMPARE( Note::quantized( TimePos( 123 ), 0 ).getTicks(), 123 );
+		QCOMPARE( Note::quantized( TimePos( 123 ), -8 ).getTicks(), 123 );
+
+		Note note( TimePos( 48 ), TimePos( 123 ), 60 );
+		note.quantizePos( 0 );
+		note.quantizeLength( 0 );
+		QCOMPARE( note.pos().getTicks(), 123 );
+		QCOMPARE( note.length().getTicks(), 48 );
+
+		Note empty( TimePos( 0 ), TimePos( 123 ), 60 );
+		empty.quantizeLength( -8 );
+		QCOMPARE( empty.length().getTicks(), 0 );
+	}
+
+	//! BUG new-p9-487: TimePos::quantize() divided by the snap interval without
+	//! a check, so a zero bar count (or one that truncates to zero ticks)
+	//! divided by zero. A grid below one tick snaps nothing, so the input comes
+	//! back unchanged, the same no-op Note::quantized() gives a non-positive grid.
+	void subTickTimePosGridIsANoop()
+	{
+		QCOMPARE( TimePos( 123 ).quantize( 0.f ).getTicks(), 123 );
+		QCOMPARE( TimePos( 123 ).quantize( 0.f, true ).getTicks(), 123 );
+		QCOMPARE( TimePos( 123 ).quantize( -1.f ).getTicks(), 123 );
+		// 192 ticks per bar * 0.001 bar is 0.192 ticks, which truncates to zero.
+		QCOMPARE( TimePos( 123 ).quantize( 0.001f ).getTicks(), 123 );
+		// A one-tick grid snaps every whole tick to itself.
+		QCOMPARE( TimePos( 123 ).quantize( 1.f / DefaultTicksPerBar ).getTicks(), 123 );
+		// A real grid still snaps: 123 on a 12-tick grid rounds down to 120.
+		QCOMPARE( TimePos( 123 ).quantize( 1.f / 16 ).getTicks(), 120 );
+	}
+
+	//! BUG new-p16-141: a float cannot represent every tick above 2^24, so a
+	//! grid of 1 used to move 16,777,217 down to 16,777,216, and near the
+	//! tick_t limit the float-to-int conversion left the type's range.
+	void quantizeKeepsTickPrecisionPastTheFloatMantissa()
+	{
+		const tick_t aboveMantissa = 16777217; // 2^24 + 1
+		QCOMPARE( Note::quantized( TimePos( aboveMantissa ), 1 ).getTicks(), aboveMantissa );
+		QCOMPARE( Note::quantized( TimePos( aboveMantissa ), 2 ).getTicks(), 16777218 );
+
+		// The same value through the note's own quantise path.
+		Note note( TimePos( 48 ), TimePos( aboveMantissa ), 60 );
+		note.quantizePos( 1 );
+		QCOMPARE( note.pos().getTicks(), aboveMantissa );
+
+		// A round-up that leaves tick_t saturates instead of converting an
+		// out-of-range float back to int.
+		const tick_t maximum = std::numeric_limits<tick_t>::max();
+		QCOMPARE( Note::quantized( TimePos( maximum ), 1 ).getTicks(), maximum );
+		QCOMPARE( Note::quantized( TimePos( maximum ), 2 ).getTicks(), maximum );
 	}
 
 	//! quantizeNotes() - the options form the groove menu and groove.quantize use - by every mode,
@@ -434,6 +498,19 @@ private slots:
 		// an empty scale is a no-op
 		QCOMPARE( NoteTransform::snapToScale( { dSharp }, {} ), 0 );
 		QCOMPARE( dSharp->key(), 62 );
+
+		// A scale whose only pitch class is 11 is eleven semitones from the
+		// bottom key, which is further than the octave the search covers - and
+		// yet 11 is a perfectly legal key, so the note must be taken there
+		// rather than left out of scale with the boundary note claiming it is.
+		Note* lowest = t.add( 0, 384, 96, 100 );
+		QCOMPARE( NoteTransform::snapToScale( { lowest }, { 11 } ), 1 );
+		QCOMPARE( lowest->key(), 11 );
+
+		// and at the top of the range, the other way round
+		Note* highest = t.add( 127, 480, 96, 100 );
+		QCOMPARE( NoteTransform::snapToScale( { highest }, { 0 } ), 1 );
+		QCOMPARE( highest->key(), 120 );
 
 		// a note that has nowhere to go keeps its key and is not counted
 		Note* railed = t.add( 0, 336, 96, 100 );

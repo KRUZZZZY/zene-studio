@@ -38,6 +38,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QTemporaryDir>
 
 #include <algorithm>
@@ -46,6 +48,8 @@
 #include <memory>
 #include <vector>
 
+#include "ControlMasteringSupport.h"
+#include "ControlRegistry.h"
 #include "Engine.h"
 #include "MasteringChain.h"
 #include "MasteringJob.h"
@@ -152,6 +156,7 @@ private slots:
 		QVERIFY(m_dir.isValid());
 		QString projectPath;
 		QVERIFY2(writeFixture(m_dir.path(), projectPath), "fixture project could not be written");
+		m_projectPath = projectPath;
 		Engine::getSong()->loadProject(projectPath);
 		QVERIFY(!Engine::getSong()->isEmpty());
 		// Three sample tracks, so a non-silent mix is a real mix and not one
@@ -223,6 +228,16 @@ private slots:
 
 		m_candidateReport = job.reports();
 		m_sourceMetrics = job.sourceMetrics();
+	}
+
+	void reusingJobReportsOnlyTheCurrentRunRenderCount()
+	{
+		ProjectRenderer::resetRenderCount();
+		MasteringJob job(m_outputSettings, ProjectRenderer::ExportFileFormat::Wave, m_dir.path(),
+			twinCandidates());
+		QVERIFY2(job.run() && job.run(), "both mastering runs must succeed");
+		QCOMPARE(job.renderCount(), 1);
+		QCOMPARE(ProjectRenderer::renderCount(), 2);
 	}
 
 	//! Settings that differ must be visible in the measurements. The candidate
@@ -442,6 +457,29 @@ private slots:
 		QVERIFY(parsed.isObject());
 		QCOMPARE(parsed.object(), document);
 
+		// Replacing a report must leave its previous contents intact if a new
+		// report cannot be created beside it.
+		const QString failureDirectory = m_dir.filePath(QStringLiteral("report-write-failure"));
+		QVERIFY(QDir().mkdir(failureDirectory));
+		const QString previousReport = QStringLiteral("previous report contents");
+		const QString protectedPath = QDir(failureDirectory).filePath(QStringLiteral("run.json"));
+		QFile protectedFile(protectedPath);
+		QVERIFY(protectedFile.open(QIODevice::WriteOnly));
+		QCOMPARE(protectedFile.write(previousReport.toUtf8()),
+			static_cast<qint64>(previousReport.toUtf8().size()));
+		protectedFile.close();
+		const QFileDevice::Permissions directoryPermissions = QFile::permissions(failureDirectory);
+		QVERIFY(QFile::setPermissions(failureDirectory,
+			QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+		const bool replacementSucceeded = writeMasteringReport(job, protectedPath, &error);
+		const QString replacementError = error;
+		const bool restoredPermissions = QFile::setPermissions(failureDirectory,
+			directoryPermissions);
+		QVERIFY2(restoredPermissions, "could not restore the test directory permissions");
+		QVERIFY2(!replacementSucceeded, qPrintable(replacementError));
+		QVERIFY(protectedFile.open(QIODevice::ReadOnly));
+		QCOMPARE(protectedFile.readAll(), previousReport.toUtf8());
+
 		// A reading the meter could not make is NULL in the document, never a
 		// fabricated number: silence has no gated loudness and no measured peak.
 		const std::vector<SampleFrame> silence(static_cast<std::size_t>(44100),
@@ -456,6 +494,141 @@ private slots:
 		std::fflush(stdout);
 		QVERIFY2(silent.value(QStringLiteral("lufs_i")).isNull(),
 			"a loudness the meter could not measure was reported as a number");
+	}
+
+	//! `--report` belongs to `master`; an ordinary render must refuse it before rendering.
+	void reportOptionIsRejectedOutsideMaster()
+	{
+		const QString reportPath = m_dir.filePath(QStringLiteral("unexpected-report.json"));
+		const QString renderPath = m_dir.filePath(QStringLiteral("ordinary-render.wav"));
+		const CliRun run = runCli(m_dir.path(), {QStringLiteral("--allowroot"),
+			QStringLiteral("render"), m_projectPath, QStringLiteral("--output"), renderPath,
+			QStringLiteral("--report"), reportPath});
+		QVERIFY2(run.status == QProcess::NormalExit, run.output.constData());
+		QVERIFY2(run.exitCode != 0, run.output.constData());
+		QVERIFY2(run.output.contains("only valid with master"), run.output.constData());
+		// Refused BEFORE anything ran: no report was written, and the render the
+		// command asked for did not happen either.
+		QVERIFY(!QFileInfo::exists(reportPath));
+		QVERIFY(!QFileInfo::exists(renderPath));
+	}
+
+	//! The other shapes of the same mistake: a --report that an action which
+	//! returns early never sees, and a --report with no path to write to.
+	void reportOptionIsRefused_data()
+	{
+		QTest::addColumn<QStringList>("arguments");
+		QTest::addColumn<QString>("message");
+		QTest::addColumn<QStringList>("absentFiles");
+
+		// The report is parsed before the action, and the action (upgrade)
+		// returns from the option parse - so without the refusal the file
+		// would be upgraded and the report would silently never be written.
+		QTest::newRow("a report before an early-returning action")
+			<< QStringList{QStringLiteral("--allowroot"), QStringLiteral("--report"),
+				m_dir.filePath(QStringLiteral("early-report.json")), QStringLiteral("upgrade"),
+				m_projectPath, m_dir.filePath(QStringLiteral("upgraded.mmp"))}
+			<< QStringLiteral("only valid with master")
+			<< QStringList{m_dir.filePath(QStringLiteral("early-report.json")),
+				m_dir.filePath(QStringLiteral("upgraded.mmp"))};
+
+		// An empty path is not a report: the option was given, so it is
+		// refused - and nothing is rendered.
+		QTest::newRow("an empty report path")
+			<< QStringList{QStringLiteral("--allowroot"), QStringLiteral("render"), m_projectPath,
+				QStringLiteral("--output"), m_dir.filePath(QStringLiteral("empty-render.wav")),
+				QStringLiteral("--report"), QString()}
+			<< QStringLiteral("only valid with master")
+			<< QStringList{m_dir.filePath(QStringLiteral("empty-render.wav"))};
+
+		// For master the option is right, but there is no file to write: the
+		// run is refused, and no candidate directory appears.
+		QTest::newRow("an empty report path for master")
+			<< QStringList{QStringLiteral("--allowroot"), QStringLiteral("master"), m_projectPath,
+				QStringLiteral("-o"), m_dir.filePath(QStringLiteral("empty-candidates")),
+				QStringLiteral("--report"), QString()}
+			<< QStringLiteral("No report path specified")
+			<< QStringList{m_dir.filePath(QStringLiteral("empty-candidates"))};
+
+		// --genre belongs to master: an ordinary render refuses it before rendering.
+		QTest::newRow("a genre before an ordinary render")
+			<< QStringList{QStringLiteral("--allowroot"), QStringLiteral("--genre"),
+				QStringLiteral("pop"), QStringLiteral("render"), m_projectPath,
+				QStringLiteral("--output"), m_dir.filePath(QStringLiteral("genre-render.wav"))}
+			<< QStringLiteral("--genre is only valid with master")
+			<< QStringList{m_dir.filePath(QStringLiteral("genre-render.wav"))};
+
+		// --delivery-target belongs to master too, and is refused the same way.
+		QTest::newRow("a delivery target before an ordinary render")
+			<< QStringList{QStringLiteral("--allowroot"), QStringLiteral("--delivery-target"),
+				QStringLiteral("streaming"), QStringLiteral("render"), m_projectPath,
+				QStringLiteral("--output"), m_dir.filePath(QStringLiteral("target-render.wav"))}
+			<< QStringLiteral("--delivery-target is only valid with master")
+			<< QStringList{m_dir.filePath(QStringLiteral("target-render.wav"))};
+	}
+
+	void reportOptionIsRefused()
+	{
+		QFETCH(QStringList, arguments);
+		QFETCH(QString, message);
+		QFETCH(QStringList, absentFiles);
+
+		const CliRun run = runCli(m_dir.path(), arguments);
+		QVERIFY2(run.status == QProcess::NormalExit, run.output.constData());
+		QVERIFY2(run.exitCode != 0, run.output.constData());
+		QVERIFY2(run.output.contains(message.toUtf8()), run.output.constData());
+		for (const QString& path : absentFiles)
+		{
+			QVERIFY2(!QFileInfo::exists(path), qPrintable(path));
+		}
+	}
+
+	/*! A WAV the run cannot read is REFUSED, never quietly left out. The
+	 *  before-state capture has to hold every .wav the run may overwrite: a file
+	 *  filtered out of the capture is a file whose old bytes are not recorded and
+	 *  which the inverse does not know to restore, so the run would report a
+	 *  working inverse over a directory it never looked at.
+	 *
+	 *  The refusal has to happen BEFORE the child runs, which is what
+	 *  captureMasteringWavDirectory returning false means. */
+	void anUnreadableWavRefusesTheRunInsteadOfBeingOmitted()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString readable = dir.filePath(QStringLiteral("a.wav"));
+		const QString sealed = dir.filePath(QStringLiteral("b.wav"));
+		QFile out(readable);
+		QVERIFY(out.open(QIODevice::WriteOnly));
+		out.write("readable");
+		out.close();
+		QFile copy(readable);
+		QVERIFY(copy.open(QIODevice::ReadOnly));
+		QVERIFY(copy.copy(sealed));
+		copy.close();
+
+		// Write-only, so the entry is there and its bytes are not available to us.
+		QVERIFY(QFile::setPermissions(sealed, QFileDevice::WriteOwner | QFileDevice::ExeOwner));
+		QVERIFY2(!QFile(sealed).open(QIODevice::ReadOnly),
+			"the fixture file is readable, so this proves nothing");
+
+		// Every .wav is enumerated - the unreadable one included.
+		const QStringList files = control::masteringWavFiles(dir.path());
+		QCOMPARE(files.size(), 2);
+		QVERIFY2(files.contains(sealed),
+			"the unreadable wav is missing from the enumeration the capture scans");
+
+		// ... and the capture refuses the run rather than recording an inverse
+		// over a directory it could not read.
+		QMap<QString, QByteArray> capture;
+		ControlResult error;
+		QVERIFY2(!control::captureMasteringWavDirectory(dir.path(), &capture, &error),
+			"an unreadable wav was captured as if it could be read");
+		QCOMPARE(error.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(error.errorMessage.contains(sealed),
+			qPrintable(QStringLiteral("the refusal does not name the file: %1")
+				.arg(error.errorMessage)));
+
+		QVERIFY(QFile::setPermissions(sealed, QFileDevice::ReadOwner | QFileDevice::WriteOwner));
 	}
 
 private:
@@ -480,6 +653,7 @@ private:
 	}
 
 	QTemporaryDir m_dir;
+	QString m_projectPath;
 	OutputSettings m_outputSettings{44100, 160, OutputSettings::BitDepth::Depth16Bit,
 		OutputSettings::StereoMode::Stereo};
 	QVector<MasteringCandidateReport> m_candidateReport;

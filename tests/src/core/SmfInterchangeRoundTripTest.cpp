@@ -390,6 +390,33 @@ private slots:
 		QCOMPARE(digest(mapEvents()), digest(before));  // a refusal writes nothing
 	}
 
+	//! A zero numerator cannot name a number of beats per bar and is refused
+	//! before it becomes a candidate time-signature event.
+	void aZeroMeterNumeratorIsRefused()
+	{
+		QByteArray bytes = plainFile(480, {{0, 120, 4, 4}});
+		const int signatureAt = bytes.indexOf(QByteArrayLiteral("\xFF\x58\x04"));
+		QVERIFY(signatureAt > 0);
+		// nn is payload byte 0: FF 58 04 nn dd cc bb.
+		const int numeratorAt = signatureAt + 3;
+		QCOMPARE(static_cast<int>(static_cast<unsigned char>(bytes[numeratorAt])), 4);
+		bytes[numeratorAt] = 0;
+		const QString file = path(m_directory, QStringLiteral("zero-numerator.mid"));
+		QVERIFY(writeFile(file, bytes));
+
+		const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY2(!read.ok, "a time signature with zero beats per bar was accepted");
+		QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(read.errorMessage.contains(QStringLiteral("time signature")),
+			qPrintable(read.errorMessage));
+
+		const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY(!imported.ok);
+		QCOMPARE(digest(mapEvents()), QString());
+	}
+
 	//! A dd this engine cannot hold is refused, not turned into a different
 	//! metre. dd is log2(denominator) and the map holds a power of two up to 32,
 	//! so dd is 0..5; masking the byte with 0x1F turned 32 into 0 - a silent 4/1
@@ -699,6 +726,98 @@ private slots:
 		QVERIFY(writeFile(good, honest));
 		QVERIFY2(run(QStringLiteral("interchange.smf_read"),
 			{{QStringLiteral("path"), good}}).ok, "a representable tick is read");
+	}
+
+	//! A tempo meta event whose payload is not the format's three bytes is
+	//! malformed: FF 51 names microseconds-per-quarter in exactly three bytes,
+	//! and a payload of any other length does not name a tempo this reader can
+	//! place. The reader recorded the event only when the length was exactly 3
+	//! and let every other length fall through as an unknown meta event, so a
+	//! file with a two-byte tempo and a valid end-of-track read as valid with
+	//! the tempo silently dropped - importing it lost the file's tempo change.
+	void aTempoEventWithAWrongPayloadLengthIsRefused()
+	{
+		for (const int payloadLength : {0, 2, 4})
+		{
+			QByteArray body;
+			appendVlq(body, 0);
+			QByteArray payload;
+			for (int i = 0; i < payloadLength; ++i) { payload.append(static_cast<char>(0x07)); }
+			appendMeta(body, 0x51, payload);
+			body += bodyEndingWithEndOfTrack();
+			const QString file = path(m_directory,
+				 QStringLiteral("bad-tempo-length-%1.mid").arg(payloadLength));
+			QVERIFY(writeFile(file, smfFileWithBody(body)));
+			const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+				{{QStringLiteral("path"), file}});
+			QVERIFY2(!read.ok,
+				qPrintable(QStringLiteral("an FF 51 with %1 payload bytes was accepted").arg(payloadLength)));
+			QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+			QVERIFY2(read.errorMessage.contains(QStringLiteral("tempo")),
+				qPrintable(read.errorMessage));
+			const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+				{{QStringLiteral("path"), file}});
+			QVERIFY(!imported.ok);
+			QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
+		}
+
+		// The control: the same event with the format's three bytes is read.
+		QByteArray good;
+		appendVlq(good, 0);
+		appendMeta(good, 0x51, QByteArray("\x07\xA1\x20", 3));  // 120 bpm
+		good += bodyEndingWithEndOfTrack();
+		const QString exact = path(m_directory, QStringLiteral("exact-tempo-length.mid"));
+		QVERIFY(writeFile(exact, smfFileWithBody(good)));
+		const ControlResult goodRead = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), exact}});
+		QVERIFY2(goodRead.ok, "a three-byte tempo event is refused");
+		QCOMPARE(goodRead.result.value(QStringLiteral("event_count")).toVariant().toLongLong(), 1LL);
+	}
+
+	//! A time signature meta event whose payload is not the format's four bytes is
+	//! malformed: FF 58 names nn/dd/cc/bb in exactly four bytes, and a payload of
+	//! any other length does not name a metre this reader can place. The reader
+	//! recorded the event whenever the length was at least two and let shorter
+	//! or longer payloads fall through (silently dropping extra bytes or reading
+	//! past the payload), so a file with a two-byte time signature still
+	//! imported as 4/4. Require exactly four bytes, like the tempo event above.
+	void aTimeSignatureEventWithAWrongPayloadLengthIsRefused()
+	{
+		for (const int payloadLength : {0, 1, 2, 3, 5})
+		{
+			QByteArray body;
+			appendVlq(body, 0);
+			QByteArray payload;
+			for (int i = 0; i < payloadLength; ++i) { payload.append(static_cast<char>(0x04)); }
+			appendMeta(body, 0x58, payload);
+			body += bodyEndingWithEndOfTrack();
+			const QString file = path(m_directory,
+				QStringLiteral("bad-time-signature-length-%1.mid").arg(payloadLength));
+			QVERIFY(writeFile(file, smfFileWithBody(body)));
+			const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+				{{QStringLiteral("path"), file}});
+			QVERIFY2(!read.ok,
+				qPrintable(QStringLiteral("an FF 58 with %1 payload bytes was accepted").arg(payloadLength)));
+			QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+			QVERIFY2(read.errorMessage.contains(QStringLiteral("time signature")),
+				qPrintable(read.errorMessage));
+			const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+				{{QStringLiteral("path"), file}});
+			QVERIFY(!imported.ok);
+			QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
+		}
+
+		// The control: the same event with the format's four bytes is read.
+		QByteArray good;
+		appendVlq(good, 0);
+		appendMeta(good, 0x58, QByteArray("\x04\x02\x18\x08", 4));  // 4/4
+		good += bodyEndingWithEndOfTrack();
+		const QString exact = path(m_directory, QStringLiteral("exact-time-signature-length.mid"));
+		QVERIFY(writeFile(exact, smfFileWithBody(good)));
+		const ControlResult goodRead = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), exact}});
+		QVERIFY2(goodRead.ok, "a four-byte time signature event is refused");
+		QCOMPARE(goodRead.result.value(QStringLiteral("event_count")).toVariant().toLongLong(), 1LL);
 	}
 
 private:

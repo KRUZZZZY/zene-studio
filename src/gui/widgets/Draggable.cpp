@@ -87,7 +87,7 @@ void Draggable::mouseMoveEvent(QMouseEvent* me)
 	updateInteractionState(me);
 
 	QPoint pPos = mapToParent(me->pos());
-	if (currentInteraction() == InteractionType::MouseDrag && pPos != m_lastMousePos)
+	if (currentInteraction() == InteractionType::MouseDrag && pPos != m_lastMousePos && m_pointA != m_pointB)
 	{
 		float point = (directionOfManipulation() == DirectionOfManipulation::Vertical) ? pPos.y() : pPos.x();
 		float progress = (point - m_pointA) / (m_pointB - m_pointA);
@@ -115,7 +115,13 @@ void Draggable::mouseMoveEvent(QMouseEvent* me)
 
 void Draggable::handleMovement()
 {
-	float newCoord = std::lerp(m_pointA, m_pointB, (model()->value() - model()->minValue()) / (model()->maxValue() - model()->minValue()));
+	const float modelRange = model()->maxValue() - model()->minValue();
+	if (modelRange == 0.f)
+	{
+		return;
+	}
+
+	float newCoord = std::lerp(m_pointA, m_pointB, (model()->value() - model()->minValue()) / modelRange);
 	if (directionOfManipulation() == DirectionOfManipulation::Vertical)
 	{
 		move(x(), newCoord - m_pixmap.height() / 2.f);

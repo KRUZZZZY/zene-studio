@@ -38,8 +38,18 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include <chrono>
+#include <limits>
+#include <type_traits>
+
+#include <limits>
+
 #include "ControlReversibility.h"
+#include "DeprecationHelper.h"
+#include "Engine.h"
+#include "MicroTimer.h"
 #include "ScriptClock.h"
+#include "Song.h"
 
 using namespace lmms;
 
@@ -65,6 +75,18 @@ QJsonObject entryFor(const QJsonObject& state, const QString& id)
 	return QJsonObject();
 }
 
+//! How many times the clock has actually RUN a hook body since it started -
+//! fires + errors + busy_skips. A spurious edge is the defect, and every path
+//! out of a fire moves one of the three (this suite runs no Lua engine, so the
+//! run lands in errors or busy_skips, not in fires).
+int hookRuns(const ScriptClock& clock)
+{
+	const QJsonObject counters = clock.stateJson().value(QStringLiteral("counters")).toObject();
+	return counters.value(QStringLiteral("fires")).toInt()
+		+ counters.value(QStringLiteral("errors")).toInt()
+		+ counters.value(QStringLiteral("busy_skips")).toInt();
+}
+
 } // namespace
 
 class ScriptClockTest : public QObject
@@ -72,6 +94,21 @@ class ScriptClockTest : public QObject
 	Q_OBJECT
 
 private slots:
+	void initTestCase()
+	{
+		using namespace lmms;
+		Engine::init(true);
+	}
+
+	void cleanupTestCase()
+	{
+		using namespace lmms;
+		Engine::destroy();
+	}
+
+	//! Elapsed microseconds must saturate before int overflows after about 36 minutes.
+	void elapsedMicrosecondsSaturateAtIntMax();
+
 	//! A transport hook's half: the EDGE is detected from the flag, from a
 	//! parked grid and from a playing one, with no bar or beat crossing
 	//! smuggled in with it.
@@ -94,6 +131,13 @@ private slots:
 	//! count the rest as coalesced instead of firing a thousand stale bars.
 	void overshootCapCoalesces();
 
+	//! Regridding at the largest tick cannot represent a later boundary, so it
+	//! must saturate instead of wrapping the stored next position.
+	void maximumPositionSaturatesGrid();
+
+	//! A crossing excess larger than int is reported with the bounded maximum.
+	void coalescedCountSaturates();
+
 	//! Degenerate strides (meter arithmetic that produced 0) detect nothing
 	//! rather than dividing by zero.
 	void degenerateStridesAreInert();
@@ -103,16 +147,56 @@ private slots:
 	//! reports it all back through stateJson - none of which needs an engine.
 	void registryRefusalsAreTyped();
 
+	//! The source cap counts UTF-8 BYTES, not UTF-16 code units: a multi-byte
+	//! source inside the unit count but over the byte cap is refused (with the
+	//! byte count in the message), and one inside the byte cap is accepted.
+	void byteCapCountsBytes();
+
+	//! The state reports `source_bytes` as the stored source's UTF-8 size, the
+	//! same unit the cap is measured in, both per id and in stateJson.
+	void scheduleStateReportsUtf8Bytes();
+
+	//! Unique schedules stop at the registry limit, while a live edit still
+	//! replaces an existing entry at the limit.
+	void registryCountIsBounded();
+
 	//! Re-scheduling the same id REPLACES the definition in place (the live
 	//! edit) and keeps the id's place; unscheduling takes it off and the
 	//! counters reset with the slot.
 	void registryReplaceAndRemove();
+
+	//! A transport schedule added while the song is ALREADY playing must not
+	//! fire on the clock's first poll: the grid was never primed, so it read
+	//! "stopped -> playing" as a play edge that never happened.
+	void aScheduleAddedDuringPlaybackDoesNotFireAPlayEdge();
+
+	//! Removing the last schedule stops the timer. A later schedule resumes
+	//! polling, and must not fire bar/beat boundaries the song crossed while
+	//! nothing was scheduled.
+	void resumingAfterAnEmptyPeriodDoesNotFireStaleBoundaries();
+
+	//! A script's own log text must not retype its failure: a scheduled script
+	//! that prints the engine's budget wording and then fails for an unrelated
+	//! reason is a "script" failure, not a "budget" one - the KIND comes from
+	//! the raw run error, while the folded lastError still shows the log line.
+	void aLogLineCannotMasqueradeAsABudgetFailure();
 
 	//! The contract table classes the group's three ids the way the card
 	//! demands: two snapshots with their inverse named, one read that mutates
 	//! nothing. Read out of the table itself, not restated from this file.
 	void a16RowsCarryTheGroup();
 };
+
+void ScriptClockTest::elapsedMicrosecondsSaturateAtIntMax()
+{
+	static_assert(std::is_standard_layout_v<MicroTimer>);
+	MicroTimer timer;
+	using TimePoint = std::chrono::steady_clock::time_point;
+	// The standard-layout timer's first member is its start time.
+	const auto start = std::chrono::steady_clock::now() - std::chrono::minutes{37};
+	*reinterpret_cast<TimePoint*>(&timer) = start;
+	QCOMPARE(timer.elapsed(), std::numeric_limits<int>::max());
+}
 
 void ScriptClockTest::playAndStopEdges()
 {
@@ -208,6 +292,29 @@ void ScriptClockTest::overshootCapCoalesces()
 	QCOMPARE(grid.nextBar(), static_cast<qint64>(11 * 192));
 }
 
+void ScriptClockTest::maximumPositionSaturatesGrid()
+{
+	ScriptClockGrid grid;
+	const qint64 maximum = std::numeric_limits<qint64>::max();
+
+	const ScriptTickEvents atLimit = grid.advance(true, maximum, 1, 1);
+	QCOMPARE(atLimit.bars, 0);
+	QCOMPARE(atLimit.beats, 0);
+	QCOMPARE(grid.nextBar(), maximum);
+	QCOMPARE(grid.nextBeat(), maximum);
+}
+
+void ScriptClockTest::coalescedCountSaturates()
+{
+	ScriptClockGrid grid;
+	grid.advance(true, 0, 1, 1);
+
+	const ScriptTickEvents jump = grid.advance(true, std::numeric_limits<qint64>::max(), 1, 1);
+	QCOMPARE(jump.bars, ScriptClockGrid::CrossCap);
+	QCOMPARE(jump.beats, ScriptClockGrid::CrossCap);
+	QCOMPARE(jump.coalesced, std::numeric_limits<int>::max());
+}
+
 void ScriptClockTest::degenerateStridesAreInert()
 {
 	ScriptClockGrid grid;
@@ -261,6 +368,60 @@ void ScriptClockTest::registryRefusalsAreTyped()
 	QVERIFY(error.contains(QStringLiteral("no scheduled script")));
 }
 
+void ScriptClockTest::byteCapCountsBytes()
+{
+	ScriptClock& clock = ScriptClock::instance();
+	QString error;
+
+	// A Lua comment padded with 2-byte characters: 40003 UTF-16 code units
+	// (inside the cap) but 80003 UTF-8 bytes (outside it). Counting units let
+	// this through; the cap and its message are in bytes.
+	const QString oversized = QStringLiteral("-- ") + QString(40000, QChar(0x00E9));
+	QVERIFY2(!clock.setSchedule(QStringLiteral("lc-t-bytes"), oversized,
+		QStringLiteral("bar"), 0, &error),
+		"a source over the byte cap must be refused");
+	QVERIFY(error.contains(QStringLiteral("capped at")));
+	QVERIFY(error.contains(QStringLiteral("80003")));
+
+	// A multi-byte source that fits inside the BYTE cap is still accepted.
+	const QString fits = QStringLiteral("-- ") + QString(30000, QChar(0x00E9)); // 60003 bytes
+	QVERIFY2(clock.setSchedule(QStringLiteral("lc-t-bytes-ok"), fits,
+		QStringLiteral("bar"), 0, &error), qPrintable(error));
+	QVERIFY(clock.hasSchedule(QStringLiteral("lc-t-bytes-ok")));
+	QVERIFY2(clock.removeSchedule(QStringLiteral("lc-t-bytes-ok"), &error), qPrintable(error));
+}
+
+void ScriptClockTest::scheduleStateReportsUtf8Bytes()
+{
+	ScriptClock& clock = ScriptClock::instance();
+	QString error;
+
+	// U+00E9 is one UTF-16 unit but two UTF-8 bytes, so the source is 13 units
+	// and 14 bytes: a state that counts units reports the wrong size.
+	const QString source = QStringLiteral("-- ") + QChar(0x00E9) + QStringLiteral("\nreturn 1");
+	const qint64 expected = source.toUtf8().size();
+	QVERIFY(expected != source.size());
+	const QString id = QStringLiteral("lc-t-state-bytes");
+	QVERIFY2(clock.setSchedule(id, source, QStringLiteral("bar"), 0, &error), qPrintable(error));
+
+	// Read everything first and unschedule before any assertion, so a failure
+	// here cannot leave the id registered for the tests that follow.
+	const qint64 perId = jsonInteger(clock.scheduleState(id).value(QStringLiteral("source_bytes")), -1);
+	qint64 inState = -1;
+	const QJsonArray schedules = clock.stateJson().value(QStringLiteral("schedules")).toArray();
+	for (const QJsonValue& value : schedules)
+	{
+		const QJsonObject one = value.toObject();
+		if (one.value(QStringLiteral("id")).toString() != id) { continue; }
+		inState = jsonInteger(one.value(QStringLiteral("source_bytes")), -1);
+	}
+	QVERIFY2(clock.removeSchedule(id, &error), qPrintable(error));
+
+	QCOMPARE(perId, expected);
+	QVERIFY2(inState != -1, "stateJson must list the scheduled id");
+	QCOMPARE(inState, expected);
+}
+
 void ScriptClockTest::registryReplaceAndRemove()
 {
 	ScriptClock& clock = ScriptClock::instance();
@@ -284,6 +445,143 @@ void ScriptClockTest::registryReplaceAndRemove()
 	QVERIFY(!clock.hasSchedule(QStringLiteral("lc-t-r")));
 	QVERIFY2(clock.scheduleState(QStringLiteral("lc-t-r")).isEmpty(),
 		"a removed schedule must report no state, so an undo's before-state cannot lie");
+}
+
+void ScriptClockTest::aScheduleAddedDuringPlaybackDoesNotFireAPlayEdge()
+{
+	Song* song = Engine::getSong();
+	QVERIFY(song != nullptr);
+	ScriptClock& clock = ScriptClock::instance();
+	QString error;
+
+	// Nothing scheduled, nothing playing: the grid is parked and believes the
+	// transport is stopped. That is the state a script inherits when it adds
+	// its transport hook to a song that is ALREADY rolling.
+	QCOMPARE(clock.scheduleCount(), 0);
+	clock.pollOnce();
+	QVERIFY(!clock.grid().playing());
+
+	song->playSong();
+	QVERIFY(song->isPlaying());
+
+	QVERIFY2(clock.setSchedule(QStringLiteral("lc-t-edge"), QStringLiteral("return 1"),
+		QStringLiteral("transport"), 0, &error), qPrintable(error));
+	const int before = hookRuns(clock);
+	clock.pollOnce();
+	QCOMPARE(hookRuns(clock) - before, 0);
+
+	song->stop();
+	QVERIFY2(clock.removeSchedule(QStringLiteral("lc-t-edge"), &error), qPrintable(error));
+}
+
+void ScriptClockTest::resumingAfterAnEmptyPeriodDoesNotFireStaleBoundaries()
+{
+	Song* song = Engine::getSong();
+	QVERIFY(song != nullptr);
+	ScriptClock& clock = ScriptClock::instance();
+	QString error;
+
+	song->playSong();
+	QVERIFY(song->isPlaying());
+	QVERIFY2(clock.setSchedule(QStringLiteral("lc-t-bar"), QStringLiteral("return 1"),
+		QStringLiteral("bar"), 0, &error), qPrintable(error));
+	clock.pollOnce();   // anchors the grid where the play head IS
+
+	// Removing the last schedule stops the timer. The grid keeps its anchor.
+	QVERIFY2(clock.removeSchedule(QStringLiteral("lc-t-bar"), &error), qPrintable(error));
+	QVERIFY(!clock.hasSchedule(QStringLiteral("lc-t-bar")));
+
+	// The song plays on for five bars with nothing scheduled to notice.
+	song->setPlayPos(song->getPlayPos().getTicks() + 192 * 5);
+
+	QVERIFY2(clock.setSchedule(QStringLiteral("lc-t-bar2"), QStringLiteral("return 1"),
+		QStringLiteral("bar"), 0, &error), qPrintable(error));
+	const int before = hookRuns(clock);
+	clock.pollOnce();
+	QCOMPARE(hookRuns(clock) - before, 0);
+
+	song->stop();
+	QVERIFY2(clock.removeSchedule(QStringLiteral("lc-t-bar2"), &error), qPrintable(error));
+}
+
+void ScriptClockTest::aLogLineCannotMasqueradeAsABudgetFailure()
+{
+	Song* song = Engine::getSong();
+	QVERIFY(song != nullptr);
+	ScriptClock& clock = ScriptClock::instance();
+	QString error;
+
+	// The script LOGS the engine's own budget wording, then fails for an
+	// unrelated reason. The read-back must still fold the log line into
+	// last_error, but the KIND and the budget_exceeded counter must come
+	// from the raw run error, not from the script's text.
+	QVERIFY2(clock.setSchedule(QStringLiteral("lc-t-masq"), QStringLiteral(
+		"print('instruction budget exceeded') error('unrelated boom')"),
+		"transport", 0, &error), qPrintable(error));
+
+	// Fire exactly once: park the grid, start the transport, poll the edge.
+	clock.pollOnce();
+	song->playSong();
+	clock.pollOnce();
+
+	const QJsonObject entry = entryFor(clock.stateJson(), QStringLiteral("lc-t-masq"));
+	QCOMPARE(entry.value(QStringLiteral("errors")).toInt(), 1);
+	// A failed dispatch is also a completed one: `fires` counts every dispatch
+	// that completed (Ok or an error) and `errors` the failed subset, as
+	// ScriptClock.h documents. Pinned so the overlap is not "fixed" away.
+	QCOMPARE(entry.value(QStringLiteral("fires")).toInt(), 1);
+	QCOMPARE(entry.value(QStringLiteral("budget_exceeded")).toInt(), 0);
+	QCOMPARE(entry.value(QStringLiteral("last_error_kind")).toString(),
+		QStringLiteral("script"));
+	const QString folded = entry.value(QStringLiteral("last_error")).toString();
+	QVERIFY2(folded.contains(QLatin1String("unrelated boom")),
+		"the failure itself must be in the read-back");
+	QVERIFY2(folded.contains(QLatin1String("instruction budget exceeded")),
+		"the script's log line must still be folded into last_error");
+
+	song->stop();
+	QVERIFY2(clock.removeSchedule(QStringLiteral("lc-t-masq"), &error), qPrintable(error));
+}
+
+void ScriptClockTest::registryCountIsBounded()
+{
+	constexpr int ExpectedMaxSchedules = 64;
+	ScriptClock& clock = ScriptClock::instance();
+	QString error;
+	QCOMPARE(clock.scheduleCount(), 0);
+
+	for (int index = 0; index < ExpectedMaxSchedules; ++index)
+	{
+		error.clear();
+		QVERIFY2(clock.setSchedule(QStringLiteral("lc-t-cap-%1").arg(index),
+			QStringLiteral("return 1"), QStringLiteral("bar"), 0, &error), qPrintable(error));
+	}
+
+	// Replacing a live id does not consume another slot.
+	error.clear();
+	QVERIFY2(clock.setSchedule(QStringLiteral("lc-t-cap-0"), QStringLiteral("return 2"),
+		QStringLiteral("beat"), 0, &error), qPrintable(error));
+	QCOMPARE(clock.scheduleCount(), ExpectedMaxSchedules);
+
+	error.clear();
+	const QString overflowId = QStringLiteral("lc-t-cap-overflow");
+	const bool accepted = clock.setSchedule(overflowId, QStringLiteral("return 1"),
+		QStringLiteral("bar"), 0, &error);
+	const QString overflowError = error;
+	if (accepted)
+	{
+		error.clear();
+		QVERIFY2(clock.removeSchedule(overflowId, &error), qPrintable(error));
+	}
+	for (int index = 0; index < ExpectedMaxSchedules; ++index)
+	{
+		error.clear();
+		QVERIFY2(clock.removeSchedule(QStringLiteral("lc-t-cap-%1").arg(index), &error), qPrintable(error));
+	}
+
+	QVERIFY2(!accepted, qPrintable(overflowError));
+	QVERIFY(overflowError.contains(QStringLiteral("maximum number of scheduled scripts")));
+	QCOMPARE(clock.scheduleCount(), 0);
 }
 
 void ScriptClockTest::a16RowsCarryTheGroup()

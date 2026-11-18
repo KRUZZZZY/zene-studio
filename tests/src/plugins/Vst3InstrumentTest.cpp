@@ -46,6 +46,7 @@
 
 #include <QtTest>
 
+#include <QDir>
 #include <QFileInfo>
 #include <QString>
 
@@ -60,6 +61,9 @@
 
 #ifndef VST3_TEST_INSTRUMENT_BUNDLE
 #define VST3_TEST_INSTRUMENT_BUNDLE ""
+#endif
+#ifndef VST3_TEST_MONO_INSTRUMENT_BUNDLE
+#define VST3_TEST_MONO_INSTRUMENT_BUNDLE ""
 #endif
 
 namespace lmms::vst3
@@ -165,14 +169,22 @@ private slots:
 
 	void testTheFixtureIsAnInstrumentWithAnEventBus();
 	void testNoEventsIsExactlySilent();
+	void testExtraOutputChannelIsCleared();
+	void testMonoPluginClearsSecondHostOutput();
+	void testUnpreparedProcessClearsOutputs();
 	void testSampleAccurateNoteOff();
 	void testNoteOnOffsetIsHonoured();
 	void testDistinctInputGivesDistinctOutput();
 	void testNoEventLeaksBetweenBlocks();
+	void testBoundaryMidiEventsAreCarriedIntoTheNextBlock();
 	void testTheQueueIsBoundedAndCountsWhatItDrops();
 	void testStateRoundTripsIntoAFreshInstance();
 	void testProcessAllocatesNothing();
-	void testTheEditorAttachesResizesAndDetaches();
+	void testTheHostActivatesTheAudioOutputBus();
+	void testAnInstrumentWithItsOutputOffByDefaultStillPlays();
+	void testTheHostSendsOnlyTheParameterChangesItMade();
+	void testThirdPartyJuceInstrumentsRenderANote_data();
+	void testThirdPartyJuceInstrumentsRenderANote();
 
 private:
 	auto renderWith(const std::vector<MidiEventIn>& events) -> Block;
@@ -245,6 +257,61 @@ void Vst3InstrumentTest::testNoEventsIsExactlySilent()
 	// (not a stale one), so the output is exact zero rather than the sentinel.
 	const auto block = renderWith({});
 	QVERIFY2(block.isSilent(), "a block with no MIDI events rendered non-silence");
+}
+
+void Vst3InstrumentTest::testExtraOutputChannelIsCleared()
+{
+	constexpr float Stale = -1.0f;
+	std::vector<float> left(TestBlockSize, Stale);
+	std::vector<float> right(TestBlockSize, Stale);
+	std::vector<float> extra(TestBlockSize, Stale);
+	float* outputs[3] = {left.data(), right.data(), extra.data()};
+
+	// The instrument exposes two bus channels. The host may supply more; the
+	// extra channel must not retain samples from a prior render.
+	m_plugin.process(nullptr, outputs, 0, 3, TestBlockSize);
+	QVERIFY2(std::all_of(extra.begin(), extra.end(), [](float sample) { return sample == 0.0f; }),
+		"an output channel outside the active VST3 buses retained stale samples");
+}
+
+void Vst3InstrumentTest::testMonoPluginClearsSecondHostOutput()
+{
+	HostedPlugin mono;
+	QString error;
+	QVERIFY2(mono.load(QStringLiteral(VST3_TEST_MONO_INSTRUMENT_BUNDLE), QString{}, &error),
+		qPrintable(error));
+	QCOMPARE(mono.busLayout().outputs, 1);
+	QVERIFY2(mono.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+
+	constexpr float Stale = -1.0f;
+	std::vector<float> monoOutput(TestBlockSize, Stale);
+	std::vector<float> extraOutput(TestBlockSize, Stale);
+	float* outputs[2] = {monoOutput.data(), extraOutput.data()};
+	mono.process(nullptr, outputs, 0, 2, TestBlockSize);
+
+	QVERIFY2(std::all_of(extraOutput.begin(), extraOutput.end(),
+		[](float sample) { return sample == 0.0f; }),
+		"the mono instrument left its second host output channel stale");
+}
+
+void Vst3InstrumentTest::testUnpreparedProcessClearsOutputs()
+{
+	HostedPlugin unprepared;
+	QString error;
+	QVERIFY2(unprepared.load(QStringLiteral(VST3_TEST_INSTRUMENT_BUNDLE), QString{}, &error),
+		qPrintable(error));
+	QVERIFY(!unprepared.isPrepared());
+
+	constexpr float Stale = -1.0f;
+	std::vector<float> left(TestBlockSize, Stale);
+	std::vector<float> right(TestBlockSize, Stale);
+	float* outputs[2] = {left.data(), right.data()};
+	unprepared.process(nullptr, outputs, 0, 2, TestBlockSize);
+
+	QVERIFY2(std::all_of(left.begin(), left.end(), [](float sample) { return sample == 0.0f; }),
+		"the unprepared host left the first supplied output channel stale");
+	QVERIFY2(std::all_of(right.begin(), right.end(), [](float sample) { return sample == 0.0f; }),
+		"the unprepared host left the second supplied output channel stale");
 }
 
 void Vst3InstrumentTest::testSampleAccurateNoteOff()
@@ -351,6 +418,44 @@ void Vst3InstrumentTest::testNoEventLeaksBetweenBlocks()
 
 	const auto released = renderWith({noteOff(74, 0)});
 	QVERIFY2(released.isSilent(), "the note lasted past its note-off");
+}
+
+/*! A MIDI event written at the request's end must not be handed to the plug-in at
+ *  sampleOffset == the chunk length: every VST3 event offset lies inside the block. It is carried
+ *  into the next request at offset 0 instead, so it is still seen exactly once. The host's
+ *  test-only chunk witness shows the event list the plug-in actually received. */
+void Vst3InstrumentTest::testBoundaryMidiEventsAreCarriedIntoTheNextBlock()
+{
+	// A note-on at exactly the end of the request: it belongs to the next block, at its first
+	// sample, and must not be in this block's list at all.
+	m_plugin.pushMidiEvent(noteOn(60, 1, TestBlockSize));
+	const auto first = renderWith({});
+	QCOMPARE(m_plugin.lastChunkEventCount(), 0);
+	QVERIFY2(first.isSilent(), "a note-on at the request boundary sounded in the request it ended");
+
+	const auto second = renderWith({});
+	QCOMPARE(m_plugin.lastChunkEventCount(), 1);
+	QCOMPARE(m_plugin.lastChunkEventOffset(0), 0);
+	QVERIFY2(second.allEqual(FixtureLevel),
+		"the boundary note-on did not reach the next block at offset 0");
+	const auto released = renderWith({noteOff(60, 0)});
+	QVERIFY2(released.isSilent(), "the carried note lasted past its note-off");
+
+	// The note-off side: a note-off written at the request's end leaves in the next block, so
+	// the note is still held for the whole request it ends, and the next block starts released.
+	m_plugin.pushMidiEvent(noteOn(61, 1, 0));
+	m_plugin.pushMidiEvent(noteOff(61, TestBlockSize));
+	const auto held = renderWith({});
+	QCOMPARE(m_plugin.lastChunkEventCount(), 1);
+	QCOMPARE(m_plugin.lastChunkEventOffset(0), 0);
+	QVERIFY2(held.allEqual(FixtureLevel),
+		"a note-off at the request boundary released the note before the request ended");
+
+	const auto afterBoundary = renderWith({});
+	QCOMPARE(m_plugin.lastChunkEventCount(), 1);
+	QCOMPARE(m_plugin.lastChunkEventOffset(0), 0);
+	QVERIFY2(afterBoundary.isSilent(),
+		"the carried boundary note-off did not reach the next block at offset 0");
 }
 
 void Vst3InstrumentTest::testTheQueueIsBoundedAndCountsWhatItDrops()
@@ -470,43 +575,152 @@ void Vst3InstrumentTest::testProcessAllocatesNothing()
 namespace lmms::vst3
 {
 
-/*! R4.2's acceptance, offscreen: the fixture's editor attaches, resizes (honouring the view's
- *  own minimum), runs its repaint timer on the host's loop through Linux::IRunLoop, detaches,
- *  and attaches again - no leak, no double release (a release too many is a crash here). The
- *  test runs without an X server, so the parent is a stand-in id the fixture does not draw
- *  into; the manual check with a real plug-in on X11 is what proves the embedding itself. */
-void Vst3InstrumentTest::testTheEditorAttachesResizesAndDetaches()
+void Vst3InstrumentTest::testTheHostActivatesTheAudioOutputBus()
 {
-	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+	// Cluster stress-2: a VST3 bus starts INACTIVE (the SDK's Bus) and kDefaultActive only asks the host to
+	// activate it (ivstcomponent.h). The fixture renders nothing into a bus nobody activated - the rule a
+	// JUCE plug-in (Surge XT, Dexed, Vitalium, JC303, Vaporizer2) follows - so a prepared host that never
+	// calls activateBus() renders a held note as silence. Both fixture shapes, a fresh instance each.
+	for (const auto* bundle : {VST3_TEST_INSTRUMENT_BUNDLE, VST3_TEST_MONO_INSTRUMENT_BUNDLE})
+	{
+		HostedPlugin plugin;
+		QString error;
+		QVERIFY2(plugin.load(QString::fromUtf8(bundle), QString{}, &error), qPrintable(error));
+		QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+		std::vector<float> left(TestBlockSize, -1.0f);
+		std::vector<float> right(TestBlockSize, -1.0f);
+		float* outputs[2] = {left.data(), right.data()};
+		plugin.pushMidiEvent(noteOn(60, 1, 0));
+		plugin.process(nullptr, outputs, 0, plugin.busLayout().outputs, TestBlockSize);
+		QVERIFY2(left[0] == FixtureLevel && left[TestBlockSize - 1] == FixtureLevel,
+			qPrintable(QString("%1: a held note rendered %2, not %3 - the host never activated the audio "
+				"output bus").arg(QString::fromUtf8(bundle)).arg(left[0]).arg(FixtureLevel)));
+		plugin.release();
+	}
+}
+
+void Vst3InstrumentTest::testAnInstrumentWithItsOutputOffByDefaultStillPlays()
+{
+	// Cluster stress-2: Vitalium declares its only output bus without kDefaultActive. The host mapped
+	// no output at all for it, so it rendered nothing; like the event input, the first bus is the one an
+	// instrument plays into when none is on by default. The fixture reads the variable at creation.
+	qputenv("VST3_TEST_INSTRUMENT_OUTPUT_OFF", "1");
+	HostedPlugin plugin;
 	QString error;
-	QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(error));
-	QVERIFY(m_plugin.editorOpen());
-	int width = 0;
-	int height = 0;
-	m_plugin.editorSize(&width, &height);
-	QCOMPARE(width, 400);
-	QCOMPARE(height, 300);
-	QVERIFY(m_plugin.resizeEditor(640, 480));
-	m_plugin.editorSize(&width, &height);
-	QCOMPARE(width, 640);
-	QCOMPARE(height, 480);
-	QVERIFY(m_plugin.resizeEditor(10, 10));  // the view's constraint raises it to its minimum
-	m_plugin.editorSize(&width, &height);
-	QCOMPARE(width, 100);
-	QCOMPARE(height, 80);
+	const bool loaded = plugin.load(QStringLiteral(VST3_TEST_INSTRUMENT_BUNDLE), QString{}, &error);
+	qunsetenv("VST3_TEST_INSTRUMENT_OUTPUT_OFF");
+	QVERIFY2(loaded, qPrintable(error));
+	QCOMPARE(plugin.outputBusDescriptors().size(), std::size_t{1});
+	QCOMPARE(plugin.busLayout().outputs, 2);
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	std::vector<float> left(TestBlockSize, -1.0f);
+	std::vector<float> right(TestBlockSize, -1.0f);
+	float* outputs[2] = {left.data(), right.data()};
+	plugin.pushMidiEvent(noteOn(60, 1, 0));
+	plugin.process(nullptr, outputs, 0, 2, TestBlockSize);
+	QCOMPARE(left[0], FixtureLevel);
+	QCOMPARE(right[TestBlockSize - 1], FixtureLevel);
+	plugin.release();
+}
 
-	QCOMPARE(m_plugin.editorTimerCount(), 1);
-	QTest::qWait(150);
-	const std::uint32_t delivered = m_plugin.editorTimerDeliveries();
-	std::printf("VST3_EDITOR_EVIDENCE 10 ms repaint timer: %u onTimer calls in 150 ms\n", delivered);
-	QVERIFY2(delivered >= 5, qPrintable(QStringLiteral("%1 onTimer calls").arg(delivered)));
+void Vst3InstrumentTest::testTheHostSendsOnlyTheParameterChangesItMade()
+{
+	// Cluster stress-2: the host sent EVERY parameter's reported value as a change on the first block
+	// after each prepare(). Dexed's controller reports 0 for Output and Cutoff while the patch plays other
+	// values, so that flush silenced it (and Surge XT). A change is now sent
+	// only when the host's value moves away from the last one the processor has.
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(VST3_TEST_INSTRUMENT_BUNDLE), QString{}, &error), qPrintable(error));
+	// A value the host set before the plug-in was prepared still reaches it.
+	plugin.setParamNormalized(LevelParamId, 0.25f);
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	std::vector<float> left(TestBlockSize, 0.0f);
+	std::vector<float> right(TestBlockSize, 0.0f);
+	float* outputs[2] = {left.data(), right.data()};
+	plugin.process(nullptr, outputs, 0, 2, TestBlockSize);
+	QCOMPARE(plugin.lastParameterChangeCount(), 1);
+	plugin.process(nullptr, outputs, 0, 2, TestBlockSize);
+	QCOMPARE(plugin.lastParameterChangeCount(), 0);
 
-	m_plugin.closeEditor();
-	QVERIFY(!m_plugin.editorOpen());
-	QCOMPARE(m_plugin.editorTimerCount(), 0);
-	QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(error));
-	QCOMPARE(m_plugin.editorTimerCount(), 1);
-	m_plugin.closeEditor();
+	// A fresh instance the host never touched: nothing to send, on the first block or after a re-prepare.
+	HostedPlugin untouched;
+	QVERIFY2(untouched.load(QStringLiteral(VST3_TEST_INSTRUMENT_BUNDLE), QString{}, &error), qPrintable(error));
+	QVERIFY2(untouched.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	untouched.process(nullptr, outputs, 0, 2, TestBlockSize);
+	QVERIFY2(untouched.lastParameterChangeCount() == 0,
+		qPrintable(QString("the first block sent %1 parameter change(s) nobody made")
+			.arg(untouched.lastParameterChangeCount())));
+	QVERIFY2(untouched.prepare(TestSampleRate * 2, TestBlockSize, &error), qPrintable(error));
+	untouched.process(nullptr, outputs, 0, 2, TestBlockSize);
+	QCOMPARE(untouched.lastParameterChangeCount(), 0);
+	// ...and the host's own change is sent once.
+	untouched.setParamNormalized(LevelParamId, 0.75f);
+	untouched.process(nullptr, outputs, 0, 2, TestBlockSize);
+	QCOMPARE(untouched.lastParameterChangeCount(), 1);
+	untouched.release();
+	plugin.release();
+}
+
+void Vst3InstrumentTest::testThirdPartyJuceInstrumentsRenderANote_data()
+{
+	QTest::addColumn<QString>("package");
+	QTest::addColumn<QString>("bundle");
+	// The plug-ins of the 2026-10-27 stress run (research/plugin-stress-2026-10-27) that rendered silence
+	// as VST3. Stochas is left out: it is a MIDI step sequencer, its audio output is silent by design.
+	QTest::newRow("Surge XT") << "surge-xt-vst3-" << "Surge XT.vst3";
+	QTest::newRow("Dexed") << "dexed-vst3-" << "Dexed.vst3";
+	QTest::newRow("Vitalium") << "distrho-ports-vst3-" << "vitalium.vst3";
+	QTest::newRow("JC303") << "jc303-vst3-" << "JC303.vst3";
+	QTest::newRow("Vaporizer2") << "vaporizer2-vst3-" << "VASTvaporizer2.vst3";
+}
+
+void Vst3InstrumentTest::testThirdPartyJuceInstrumentsRenderANote()
+{
+	QFETCH(QString, package);
+	QFETCH(QString, bundle);
+	// The farm of unpacked distribution packages (one folder per package); ZENE_PLUGIN_FARM overrides it.
+	const QString farm = qEnvironmentVariableIsSet("ZENE_PLUGIN_FARM")
+		? qEnvironmentVariable("ZENE_PLUGIN_FARM")
+		: QDir::homePath() + "/.cache/zene-plugin-farm/root";
+	const auto folders = QDir(farm).entryList({package + "*"}, QDir::Dirs, QDir::Name);
+	const QString path = folders.isEmpty() ? QString{} : farm + "/" + folders.last() + "/usr/lib/vst3/" + bundle;
+	if (path.isEmpty() || !QFileInfo::exists(path))
+	{
+		QSKIP(qPrintable(QString("third-party plug-in absent (%1*/usr/lib/vst3/%2 under %3); the fixture "
+			"regression testTheHostActivatesTheAudioOutputBus still runs").arg(package, bundle, farm)));
+	}
+
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(path, QString{}, &error), qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	QVERIFY2(plugin.busLayout().outputs >= 2, qPrintable(bundle + " maps no stereo output bus"));
+	std::vector<std::vector<float>> channels(static_cast<std::size_t>(plugin.busLayout().outputs),
+		std::vector<float>(TestBlockSize, 0.0f));
+	std::vector<float*> outputs;
+	for (auto& channel : channels) { outputs.push_back(channel.data()); }
+
+	// A held middle C at full velocity for ~0.5 s: the loudest sample of the main stereo pair. The
+	// transport is what Vst3Instrument::processImpl reports every block.
+	plugin.setTempo(120.0);
+	plugin.setTransportPlaying(true);
+	float peak = 0.0f;
+	plugin.pushMidiEvent(noteOn(60, 127, 0));
+	for (int block = 0; block < 44; ++block)
+	{
+		plugin.process(nullptr, outputs.data(), 0, static_cast<int>(outputs.size()), TestBlockSize);
+		for (int c = 0; c < 2; ++c)
+		{
+			for (const float sample : channels[static_cast<std::size_t>(c)]) { peak = std::max(peak, std::abs(sample)); }
+		}
+	}
+	plugin.pushMidiEvent(noteOff(60, 0));
+	plugin.process(nullptr, outputs.data(), 0, static_cast<int>(outputs.size()), TestBlockSize);
+	plugin.release();
+	qInfo("%s: %d output channel(s), peak %.4f over 44 blocks of a held note", qPrintable(bundle),
+		static_cast<int>(outputs.size()), static_cast<double>(peak));
+	QVERIFY2(peak > 0.001f, qPrintable(bundle + " rendered a held note as silence"));
 }
 
 } // namespace lmms::vst3

@@ -122,9 +122,8 @@ ControlResult recoveryRestore(const QJsonObject& args)
 	result.insert(QStringLiteral("audio_untouched"), true);
 	result.insert(QStringLiteral("audio"), journal.takePath);
 	result.insert(QStringLiteral("next_step"),
-		QStringLiteral("the take is left where the crash left it; 0.3.0 has no command that "
-			"imports an audio file into the session as a clip, so bringing the material in "
-			"is the deferred half (docs/KNOWN-LIMITATIONS.md)"));
+		QStringLiteral("the take is left where the crash left it; record.recovery_place brings it "
+			"into the project on a new sample track as one undo step"));
 	result.insert(QStringLiteral("__transaction"),
 		commandTransaction(before, QStringLiteral("record.journal_begin"), inverseArgs));
 	return ControlResult::success(result);
@@ -178,8 +177,9 @@ void registerRecoveryGetState(ControlRegistry& registry)
 		"recorded at its last update), frames_in_file (measured from the take's RIFF header, "
 		"falling back to the file's real length when a crashed header was never updated) and "
 		"frames_recoverable (the SMALLER of the two - the guaranteed count). The bound travels "
-		"with every entry: the journal lags by up to one second of audio, and up to 65536 "
-		"frames still in the recorder's ring at the crash are gone for good. Writes nothing.");
+		"with every entry: a crash loses at most journal_lag_bound_frames plus one 4096-frame writer batch "
+		"(0.185 s at 48 kHz, Q050-045) while the disk-writer is healthy; only a STALLED writer can lose "
+		"up to 65536 frames still in the recorder's ring. Writes nothing.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("dir"), stringProperty()},
 	});
@@ -205,9 +205,8 @@ void registerRecoveryRestore(ControlRegistry& registry)
 		"material the journal recovered and mark the journal `restored`, so the next start "
 		"stops offering it. The take's WAV is NOT moved, rewritten or deleted - the material "
 		"stays exactly where the crash left it, and the result says so (`audio_untouched`). "
-		"WHAT 0.3.0 DOES NOT DO: bring the take into the session as a clip. No command in "
-		"this release imports an audio file onto a track, so that half is deferred and named "
-		"in `next_step` (docs/KNOWN-LIMITATIONS.md). Reversible: the recorded inverse is "
+		"This verb only resolves the offer; record.recovery_place is the one that also puts "
+		"the take on a new sample track, undoably. Reversible: the recorded inverse is "
 		"record.journal_begin with the journal that was restored.");
 	cmd.argsSchema = journalArgsSchema(true);
 	cmd.resultSchema = objectSchema({

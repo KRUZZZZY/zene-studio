@@ -41,9 +41,9 @@
  * inside the seqlock while the control thread drops it touches freed memory,
  * and destroying the copy can free on the audio thread (2026-09-28 survey, G1).
  * What the audio thread copies is ModulationAudioView: raw pointers, each
- * paired with a per-slot liveness token that QObject::destroyed clears at the
- * same moment a QPointer would null itself. A destroyed target is skipped
- * exactly as before, and the copy is plain bytes.
+ * paired with a per-slot token. Before a target tears down its value state,
+ * the publisher closes that slot and waits on the control thread for existing
+ * audio writes to release their atomic pins. The view remains plain bytes.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -85,6 +85,8 @@
 #include "ModulationFormula.h"
 #include "ModulationVoices.h"
 #include "lmms_export.h"
+
+class ModulationAudioViewTest;
 
 namespace lmms
 {
@@ -200,6 +202,10 @@ public:
 	//! Appends (or inserts at @a index) and returns the modulator's index, or
 	//! -1 when the layer is full. @a source must be valid.
 	int addModulator(const QString& name, const ModulatorSource& source);
+	/*! Inserts @a modulator at @a index, or false when the layer is full, when
+	 *  @a modulator carries more routes than MaxRoutesPerModulator, or when its
+	 *  source is not a valid one - the same bound and the same source rule
+	 *  addModulator() is held to. */
 	bool insertModulator(int index, const Modulator& modulator);
 	bool removeModulator(int index);
 	bool setSource(int index, const ModulatorSource& source);
@@ -210,6 +216,14 @@ public:
 	bool insertRoute(int modulator, int route, const ModulationRoute& incoming);
 	bool removeRoute(int modulator, int route);
 	bool setDepth(int modulator, int route, float depth);
+	//! R1.3's flag on an existing route: evaluate it inside each block, or once per block.
+	bool setPerSample(int modulator, int route, bool perSample)
+	{
+		Modulator* const entry = this->modulator(modulator);
+		if (entry == nullptr || route < 0 || route >= entry->routeCount()) { return false; }
+		entry->routes[static_cast<std::size_t>(route)].perSample = perSample;
+		return true;
+	}
 
 	//! Replaces every route's depth with 0. Used by the deactivate paths.
 	void zeroDepths();
@@ -284,8 +298,8 @@ struct ModulationRuntime
 };
 
 /*! The audio thread's copy of the runtime: the same sources and entries, as
- *  plain values. An entry's model is valid only while its slot's liveness token
- *  (ModulationLayerPublisher::targetAlive) still equals the entry's token.
+ *  plain values. An entry's model may be written only after its slot's token
+ *  and atomic writer gate (ModulationLayerPublisher::targetAlive) are checked.
  */
 struct ModulationAudioView
 {
@@ -328,6 +342,12 @@ inline float modulatedValue(const ModulatorSource& source, float base, float dep
  *  forgotten publish is impossible, and a reader that copies a fixed-size value
  *  and re-checks the version, retrying while a write is in progress but never
  *  blocking.
+ *
+ *  The write window holds the view swap and the trigger state that belongs to
+ *  that view, and nothing else. The publication work - including the wait for
+ *  the audio writes that pinned a target an edit rebinds - happens before it,
+ *  so a reader never retries for as long as an edit takes: the retry would be
+ *  bounded by the writer, not by the audio thread.
  */
 class LMMS_EXPORT ModulationLayerPublisher
 {
@@ -342,13 +362,34 @@ public:
 	/*! One mutation of the layer, published the moment it lands. @a fn receives
 	 *  the authored layer and the runtime to rebuild; it returns true when it
 	 *  changed the layer. Callers that only clear stale write targets pass
-	 *  false. */
+	 *  false.
+	 *
+	 *  The mutation and the publication work happen OUTSIDE the reader-visible
+	 *  write window: only the view swap and its paired trigger state are inside
+	 *  it. An edit can wait for the audio writes that pinned a target it
+	 *  rebinds, and that wait belongs to the writer and the edit - a reader
+	 *  that retried for the whole edit would spin for as long as the edit
+	 *  takes, which the audio thread cannot bound. The hand-off is bounded:
+	 *  fixed-size copies inside the window. The trigger timing an edit resets
+	 *  (a modulator that starts following another track waits for its first
+	 *  note again) commits HERE, with the view it belongs to: published before
+	 *  the writer wait it would reset the phase of the still-published OLD
+	 *  view, which can keep writing a still-open slot throughout that wait. */
 	template <typename Fn>
 	bool edit(Fn&& fn)
 	{
-		m_version.fetch_add(1, std::memory_order_acq_rel);
 		const bool changed = fn(m_layer, m_runtime);
-		publishView();
+		ModulationAudioView staged;
+		publishView(staged);
+		// The write window: the odd version says "a write is in progress", the
+		// even one says "the view below is the published one". The view swap
+		// and the trigger state it carries land together, both fixed-size - a
+		// reader that retries does so for the length of these copies, never
+		// for the length of an edit.
+		m_version.fetch_add(1, std::memory_order_acq_rel);
+		m_view = staged;
+		m_hasLayer.store(m_layer.shouldPersist(), std::memory_order_release);
+		publishTriggers();
 		m_version.fetch_add(1, std::memory_order_acq_rel);
 		return changed;
 	}
@@ -367,8 +408,38 @@ public:
 	//! Whether @a slot's target is still the one @a token was issued for.
 	bool targetAlive(int slot, std::uint32_t token) const noexcept
 	{
-		return token != 0
-			&& m_alive[static_cast<std::size_t>(slot)].load(std::memory_order_acquire) == token;
+		if (slot < 0 || slot >= ModulationRuntime::MaxEntries || token == 0) { return false; }
+		const auto index = static_cast<std::size_t>(slot);
+		const std::uint64_t state = m_targetWriters[index].load(std::memory_order_acquire);
+		return m_alive[index].load(std::memory_order_acquire) == token
+			&& targetGeneration(state) == token && (targetWriterState(state) & targetClosingBit) == 0;
+	}
+	//! Audio thread: pin a target's value state until endTargetWrite(). No allocation or wait.
+	bool beginTargetWrite(int slot, std::uint32_t token) const noexcept
+	{
+		if (!targetAlive(slot, token)) { return false; }
+		auto& writers = m_targetWriters[static_cast<std::size_t>(slot)];
+		std::uint64_t state = writers.load(std::memory_order_acquire);
+		while (targetGeneration(state) == token && (targetWriterState(state) & targetClosingBit) == 0)
+		{
+			if ((targetWriterState(state) & targetWriterCountMask) == targetWriterCountMask) { return false; }
+			if (writers.compare_exchange_weak(state, state + 1, std::memory_order_acq_rel,
+				std::memory_order_acquire))
+			{
+				if (targetAlive(slot, token)) { return true; }
+				writers.fetch_sub(1, std::memory_order_release);
+				return false;
+			}
+		}
+		return false;
+	}
+	//! Audio thread: release a pin after the target write.
+	void endTargetWrite(int slot) const noexcept
+	{
+		if (slot >= 0 && slot < ModulationRuntime::MaxEntries)
+		{
+			m_targetWriters[static_cast<std::size_t>(slot)].fetch_sub(1, std::memory_order_release);
+		}
 	}
 
 	/*! 0.5.0 L10 (MX-121): a note started on track @a trackId - audio thread (any worker), atomics
@@ -409,17 +480,41 @@ public:
 	}
 
 private:
-	//! Rebuilds m_view and the liveness watches from m_runtime (control thread,
-	//! inside edit()'s write window).
-	void publishView();
-	//! MX-121: each modulator's trigger track from m_runtime (control thread, from publishView()).
+	friend class ::ModulationAudioViewTest;
+	static constexpr std::uint32_t targetClosingBit = std::uint32_t{1} << 31;
+	static constexpr std::uint32_t targetWriterCountMask = targetClosingBit - 1;
+	static std::uint32_t targetGeneration(std::uint64_t state) noexcept
+	{
+		return static_cast<std::uint32_t>(state >> 32);
+	}
+	static std::uint32_t targetWriterState(std::uint64_t state) noexcept
+	{
+		return static_cast<std::uint32_t>(state);
+	}
+	static std::uint64_t targetGateState(std::uint32_t token, std::uint32_t writerState) noexcept
+	{
+		return (static_cast<std::uint64_t>(token) << 32) | writerState;
+	}
+	static void retireTarget(std::atomic<std::uint32_t>& alive, std::atomic<std::uint64_t>& writers,
+		std::uint32_t token);
+	//! Rebuilds the staged view and the liveness watches from m_runtime (control
+	//! thread, OUTSIDE the reader-visible write window: the writer quiescence
+	//! this waits for belongs to the edit, not to the audio thread). Touches no
+	//! reader-visible state - the view and its trigger state commit together in
+	//! edit().
+	void publishView(ModulationAudioView& staged);
+	//! MX-121: each modulator's trigger track from m_runtime (control thread,
+	//! from edit(), INSIDE the reader-visible write window so the timing an
+	//! edit resets stays paired with the view it belongs to).
 	void publishTriggers();
 
 	ModulationLayer m_layer{};
 	ModulationRuntime m_runtime{};
 	ModulationAudioView m_view{};
 	std::array<std::atomic<std::uint32_t>, ModulationRuntime::MaxEntries> m_alive{};
+	mutable std::array<std::atomic<std::uint64_t>, ModulationRuntime::MaxEntries> m_targetWriters{};
 	std::array<QMetaObject::Connection, ModulationRuntime::MaxEntries> m_watch{};
+	std::array<QMetaObject::Connection, ModulationRuntime::MaxEntries> m_instrumentWatch{};
 	std::uint32_t m_nextToken = 0;
 	std::atomic<bool> m_hasLayer{false};
 	//! MX-121: each modulator's trigger track (-1: none) as of the last edit, the song time of its

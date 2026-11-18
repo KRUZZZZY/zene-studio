@@ -28,8 +28,55 @@
 #include <QPixmap>
 #include <QtTest>
 
+#include <array>
+#include <utility>
+
+#include "AutomatableModelView.h"
+#include "CaptionMenu.h"
 #include "ConfigManager.h"
+#include "Engine.h"
 #include "embed.h"
+#include "PixmapButton.h"
+
+// Exercise the production constructor in this configured GUI test. The
+// selector's generated metaobject belongs to its plugin target; construction
+// does not use its signal, so suppress Q_OBJECT and stub that unused signal.
+#pragma push_macro("Q_OBJECT")
+#undef Q_OBJECT
+#define Q_OBJECT
+#include "../../../plugins/Vibed/NineButtonSelector.cpp"
+#pragma pop_macro("Q_OBJECT")
+
+namespace
+{
+
+// Every value the selector emits, in order. The stubbed signal below records
+// into it so the test can see what an out-of-range click would have announced.
+QList<int> emittedSelections;
+
+} // namespace
+
+namespace lmms::gui
+{
+
+void NineButtonSelector::NineButtonSelection(int button)
+{
+	emittedSelections.append(button);
+}
+
+} // namespace lmms::gui
+
+namespace
+{
+
+class EngineScope
+{
+public:
+	EngineScope() { lmms::Engine::init(true); }
+	~EngineScope() { lmms::Engine::destroy(); }
+};
+
+} // namespace
 
 using namespace lmms;
 
@@ -84,6 +131,82 @@ private slots:
 		const QPixmap missing = embed::getIconPixmap( "zene-plugin-logo-does-not-exist" );
 		QCOMPARE( missing.size(), QSize( 1, 1 ) );
 		QCOMPARE( missing.width(), 1 );
+	}
+
+	void invalidDefaultSelectsNearestButton()
+	{
+		EngineScope engine;
+		const std::array<QPixmap, 18> icons{};
+		for (const auto& [defaultButton, expectedButton] : {std::pair{-1, 0}, std::pair{9, 8}})
+		{
+			gui::NineButtonSelector selector{icons, defaultButton, 0, 0, nullptr};
+			const auto buttons = selector.findChildren<gui::PixmapButton*>();
+			QCOMPARE(buttons.size(), 9);
+
+			int selectedCount = 0;
+			bool expectedButtonSelected = false;
+			for (const auto* button : buttons)
+			{
+				if (!static_cast<const BoolModel*>(button->model())->value())
+				{
+					continue;
+				}
+
+				++selectedCount;
+				expectedButtonSelected = button->pos() == QPoint{
+					1 + (expectedButton % 3) * 17,
+					1 + (expectedButton / 3) * 17};
+			}
+
+			QCOMPARE(selectedCount, 1);
+			QVERIFY(expectedButtonSelected);
+		}
+	}
+
+	// A click (or a direct buttonClicked call) with an ID outside the 0-8 button
+	// range must select the nearest button, not index m_buttons out of bounds.
+	void outOfRangeClickSelectsNearestButton()
+	{
+		EngineScope engine;
+		const std::array<QPixmap, 18> icons{};
+		for (const auto& [clickedButton, expectedButton] : {std::pair{-1, 0}, std::pair{9, 8}})
+		{
+			gui::NineButtonSelector selector{icons, 4, 0, 0, nullptr};
+			emittedSelections.clear();
+
+			selector.buttonClicked(clickedButton);
+
+			QCOMPARE(selector.model()->value(), expectedButton);
+			QVERIFY2(!emittedSelections.isEmpty(),
+				"the selector must announce the selection it made");
+			for (const int announced : emittedSelections)
+			{
+				QVERIFY2(announced >= 0 && announced <= 8,
+					qPrintable(QString("the selector announced %1, outside its 0-8 button range")
+						.arg(announced)));
+			}
+			QCOMPARE(emittedSelections.last(), expectedButton);
+
+			const auto buttons = selector.findChildren<gui::PixmapButton*>();
+			QCOMPARE(buttons.size(), 9);
+			int selectedCount = 0;
+			bool expectedButtonSelected = false;
+			for (const auto* button : buttons)
+			{
+				if (!static_cast<const BoolModel*>(button->model())->value())
+				{
+					continue;
+				}
+
+				++selectedCount;
+				expectedButtonSelected = button->pos() == QPoint{
+					1 + (expectedButton % 3) * 17,
+					1 + (expectedButton / 3) * 17};
+			}
+
+			QCOMPARE(selectedCount, 1);
+			QVERIFY(expectedButtonSelected);
+		}
 	}
 };
 

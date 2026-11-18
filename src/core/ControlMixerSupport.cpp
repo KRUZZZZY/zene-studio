@@ -26,13 +26,18 @@
 
 #include "ControlReversibility.h"
 
+#include <algorithm>
+
 #include <QJsonArray>
 #include <QStringList>
 
 #include "ControlVocabulary.h"
 #include "EffectChain.h"
 #include "Engine.h"
+#include "HardwareIo.h"
 #include "Mixer.h"
+#include "MixerSurround.h"
+#include "Song.h"
 
 namespace lmms
 {
@@ -156,6 +161,10 @@ QJsonObject channelLatencyJson(MixerChannel& channel)
 	// What this channel's own effect chain adds to its output
 	// (EffectChain::latencyFrames, refreshed by EffectChain::refreshLatency).
 	out.insert(QStringLiteral("chain_latency_frames"), channel.m_fxChain.latencyFrames());
+	// Q050-089.1: what the channel's hardware insert adds, the figure the mixer's PDC counts
+	// (hardwareio::insertLatency: the override, else the measured figure; 0 while off or bypassed).
+	out.insert(QStringLiteral("hardware_insert_latency_frames"), hardwareio::insertLatency(channel));
+	out.insert(QStringLiteral("hardware_insert_latency_source"), hardwareio::insertLatencySource(channel));
 
 	QJsonArray sends;
 	for (MixerRoute* route : channel.m_sends) { sends.append(routeJson(*route)); }
@@ -181,7 +190,10 @@ QJsonObject channelLatencyJson(MixerChannel& channel)
 
 MixerRoute* findMixerRoute(mix_ch_t fromIndex, mix_ch_t toIndex)
 {
-	MixerChannel* from = Engine::mixer()->mixerChannel(fromIndex);
+	Mixer* mixer = Engine::mixer();
+	if (mixer == nullptr || fromIndex >= mixer->numChannels()) { return nullptr; }
+	MixerChannel* from = mixer->mixerChannel(fromIndex);
+	if (from == nullptr) { return nullptr; }
 	for (MixerRoute* route : from->m_sends)
 	{
 		if (route->receiverIndex() == toIndex) { return route; }
@@ -253,15 +265,106 @@ QJsonObject mixerSidechainBeforeState(MixerSidechainRoute* route)
 	return before;
 }
 
-void recordMixerRouteStep(mix_ch_t fromIndex, mix_ch_t toIndex, const QJsonObject& before,
+namespace
+{
+
+/*! The live positions \a fromId and \a toId name right now, or (0, 0) with
+ *  *ok false when either channel is gone.
+ *
+ *  A retained route step must resolve its channels AT THE TIME IT RUNS, not at
+ *  the time it was recorded: the command surface itself resolves "ch-<n>" by
+ *  persistent id (resolveMixerChannel, SPEC-stable-ids.md slice 2), so a step
+ *  that kept the POSITION it was recorded at would act on a different channel
+ *  after a reorder, or dereference a missing one after a removal.
+ */
+bool liveRouteEnds(const QString& fromId, const QString& toId,
+	mix_ch_t* fromIndex, mix_ch_t* toIndex)
+{
+	ControlResult ignored;
+	MixerChannel* from = resolveMixerChannel(fromId, &ignored);
+	if (from == nullptr) { return false; }
+	MixerChannel* to = resolveMixerChannel(toId, &ignored);
+	if (to == nullptr) { return false; }
+	*fromIndex = from->index();
+	*toIndex = to->index();
+	return true;
+}
+
+//! The channel whose persistent id is @a id, or nullptr.
+MixerChannel* channelWithId(int id)
+{
+	for (int i = 0; i < Engine::mixer()->numChannels(); ++i)
+	{
+		if (Engine::mixer()->mixerChannel(i)->id() == id) { return Engine::mixer()->mixerChannel(i); }
+	}
+	return nullptr;
+}
+
+//! MX-085: the strip EQ's four values, read from and written to a channel found by its persistent id.
+struct EqValues
+{
+	float low = 0.f;
+	float mid = 0.f;
+	float midFreq = 1000.f;
+	float high = 0.f;
+};
+
+EqValues eqOf(const MixerChannel* channel)
+{
+	return {channel->m_eqLowModel.value(), channel->m_eqMidModel.value(), channel->m_eqMidFreqModel.value(), channel->m_eqHighModel.value()};
+}
+
+bool sameEq(const EqValues& a, const EqValues& b)
+{
+	return a.low == b.low && a.mid == b.mid && a.midFreq == b.midFreq && a.high == b.high;
+}
+
+void setEq(int id, const EqValues& eq)
+{
+	MixerChannel* channel = channelWithId(id);
+	if (channel == nullptr) { return; }
+	channel->m_eqLowModel.setValue(eq.low);
+	channel->m_eqMidModel.setValue(eq.mid);
+	channel->m_eqMidFreqModel.setValue(eq.midFreq);
+	channel->m_eqHighModel.setValue(eq.high);
+}
+
+} // namespace
+
+ControlResult applyChannelEq(MixerChannel& channelRef, const QJsonObject& args)
+{
+	MixerChannel* channel = &channelRef;
+	const EqValues before = eqOf(channel);
+	const EqValues after{static_cast<float>(std::clamp(args.value(QStringLiteral("low")).toDouble(before.low), -18.0, 18.0)),
+		static_cast<float>(std::clamp(args.value(QStringLiteral("mid")).toDouble(before.mid), -18.0, 18.0)),
+		static_cast<float>(std::clamp(args.value(QStringLiteral("mid_freq")).toDouble(before.midFreq), 100.0, 10000.0)),
+		static_cast<float>(std::clamp(args.value(QStringLiteral("high")).toDouble(before.high), -18.0, 18.0))};
+	const int id = channel->id();
+	if (!sameEq(before, after))  // with only 'channel' it is a report: no write, no step, nothing modified
+	{
+		setEq(id, after);
+		addUndoStep([id, before]() { setEq(id, before); }, [id, after]() { setEq(id, after); });
+		Engine::getSong()->setModified();
+	}
+	return ControlResult::success({{QStringLiteral("channel"), channelIdOf(channel)}, {QStringLiteral("low"), static_cast<double>(after.low)},
+		{QStringLiteral("mid"), static_cast<double>(after.mid)}, {QStringLiteral("mid_freq"), static_cast<double>(after.midFreq)},
+		{QStringLiteral("high"), static_cast<double>(after.high)}});
+}
+
+void recordMixerRouteStep(const QString& fromId, const QString& toId, const QJsonObject& before,
 	float wantedAmount, bool wantedPreFader)
 {
 	const bool existed = before.value(QStringLiteral("existed")).toBool();
 	const float amount = static_cast<float>(before.value(QStringLiteral("amount")).toDouble(1.0));
 	const bool preFader = before.value(QStringLiteral("pre_fader")).toBool();
 	Mixer* mixer = Engine::mixer();
+	// A channel the run has since removed has no route to take back, so the step
+	// is a no-op rather than a write through a stale position.
 	control::addUndoStep(
-		[mixer, fromIndex, toIndex, existed, amount, preFader]() {
+		[mixer, fromId, toId, existed, amount, preFader]() {
+			mix_ch_t fromIndex = 0;
+			mix_ch_t toIndex = 0;
+			if (!liveRouteEnds(fromId, toId, &fromIndex, &toIndex)) { return; }
 			if (!existed) { mixer->deleteChannelSend(fromIndex, toIndex); return; }
 			MixerRoute* route = findMixerRoute(fromIndex, toIndex);
 			if (route != nullptr)
@@ -270,12 +373,15 @@ void recordMixerRouteStep(mix_ch_t fromIndex, mix_ch_t toIndex, const QJsonObjec
 				route->setPreFader(preFader);
 			}
 		},
-		[mixer, fromIndex, toIndex, wantedAmount, wantedPreFader]() {
+		[mixer, fromId, toId, wantedAmount, wantedPreFader]() {
+			mix_ch_t fromIndex = 0;
+			mix_ch_t toIndex = 0;
+			if (!liveRouteEnds(fromId, toId, &fromIndex, &toIndex)) { return; }
 			mixer->createChannelSend(fromIndex, toIndex, wantedAmount, wantedPreFader);
 		});
 }
 
-void recordMixerSidechainStep(mix_ch_t fromIndex, mix_ch_t toIndex, const QJsonObject& before,
+void recordMixerSidechainStep(const QString& fromId, const QString& toId, const QJsonObject& before,
 	float wantedAmount, SidechainTapPoint wantedMode)
 {
 	const bool existed = before.value(QStringLiteral("existed")).toBool();
@@ -284,7 +390,10 @@ void recordMixerSidechainStep(mix_ch_t fromIndex, mix_ch_t toIndex, const QJsonO
 	sidechainTapPointFromName(before.value(QStringLiteral("tap_point")).toString(), &mode);
 	Mixer* mixer = Engine::mixer();
 	control::addUndoStep(
-		[mixer, fromIndex, toIndex, existed, amount, mode]() {
+		[mixer, fromId, toId, existed, amount, mode]() {
+			mix_ch_t fromIndex = 0;
+			mix_ch_t toIndex = 0;
+			if (!liveRouteEnds(fromId, toId, &fromIndex, &toIndex)) { return; }
 			if (!existed) { mixer->deleteSidechainSend(fromIndex, toIndex); return; }
 			MixerSidechainRoute* route = mixer->channelSidechainSend(fromIndex, toIndex);
 			if (route != nullptr)
@@ -293,7 +402,10 @@ void recordMixerSidechainStep(mix_ch_t fromIndex, mix_ch_t toIndex, const QJsonO
 				route->setMode(mode);
 			}
 		},
-		[mixer, fromIndex, toIndex, wantedAmount, wantedMode]() {
+		[mixer, fromId, toId, wantedAmount, wantedMode]() {
+			mix_ch_t fromIndex = 0;
+			mix_ch_t toIndex = 0;
+			if (!liveRouteEnds(fromId, toId, &fromIndex, &toIndex)) { return; }
 			mixer->createSidechainSend(fromIndex, toIndex, wantedAmount, wantedMode);
 		});
 }
@@ -325,6 +437,32 @@ QJsonObject mixerRouteResult(const RoutingEnds& ends, MixerRoute* route,
 				"damaging audio equipment (REAPER User Guide, main changes 6.66-6.70)")
 			: QString());
 	return result;
+}
+
+void addRouteChannels(QJsonObject* send, const MixerRoute& route)
+{
+	const surround::Format from = route.sender()->m_surround.format();
+	const surround::Format to = route.receiver()->m_surround.format();
+	if (from == surround::Format::Stereo && to == surround::Format::Stereo) { return; }
+	const int fromCount = surround::channelCount(from);
+	const int toCount = surround::channelCount(to);
+	QString routing = QStringLiteral("pair");
+	int channels = std::min(fromCount, 2);
+	if (surround::isDiscrete(from) || surround::isDiscrete(to))
+	{
+		// MixerSurroundMix.cpp addSideChannels: by index, up to the narrower side; a stereo or mono side
+		// still carries just its pair.
+		routing = QStringLiteral("index");
+		channels = std::min(fromCount, toCount);
+	}
+	else if (route.sender()->m_surround.isSurround() && route.receiver()->m_surround.isSurround()
+		&& from != surround::Format::Mono && to != surround::Format::Mono)
+	{
+		routing = QStringLiteral("speakers");
+		channels = fromCount;
+	}
+	send->insert(QStringLiteral("channels"), channels);
+	send->insert(QStringLiteral("channel_routing"), routing);
 }
 
 } // namespace control

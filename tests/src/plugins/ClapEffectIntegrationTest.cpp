@@ -25,6 +25,7 @@
 #include <QtTest>
 
 #include <QApplication>
+#include <QLabel>
 #include <QToolButton>
 #include <QWidget>
 
@@ -36,6 +37,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <vector>
 
 #include "AudioBuffer.h"
@@ -44,18 +46,28 @@
 #include "BufferManager.h"
 #include "ClapEffect.h"
 #include "ClapEffectControls.h"
+#include "ClapKnobGrid.h"
+#include "ClapSubPluginFeatures.h"
+#include "ConfigManager.h"
+#include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "EffectChain.h"
 #include "EffectControlDialog.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "Plugin.h"
+#include "PluginWindowPlatform.h"
+#include "PluginWindowSystem.h"
 #include "Song.h"
 #include "Track.h"
 #include "plugin_export.h" // PLUGIN_EXPORT of the clapeffect plug-in
 
 #ifndef CLAP_TEST_PLUGIN_PATH
 #define CLAP_TEST_PLUGIN_PATH ""
+#endif
+#ifndef CLAP_TEST_BROKEN_NO_SYMBOL_PATH
+#define CLAP_TEST_BROKEN_NO_SYMBOL_PATH ""
 #endif
 
 namespace lmms
@@ -71,13 +83,20 @@ private slots:
 	void testProcessesAudioThroughAudioBus();
 	void testMultiChannelBusPassesThroughExtraChannels();
 	void testStateRoundTripThroughMmp();
+	void testAValueTheStateDoesNotCarryIsRestoredFromTheHost();
 	void testRendersBeforeAfterWav();
 	void testLegacyAudioBufferPathRoutesPlanarPorts();
 	void testTheEffectsOwnEditorOpensInItsOwnWindow();
 	void testTheControlDialogsButtonOpensTheEditor();
+	void testTheButtonNamesThePlatformAPluginCannotEmbedOn();
+	void testOnNativeWaylandTheEditorRefusesWithTheReason();
 	void testThePluginsLatencyReachesTheChain();
 	void testThePluginsTailKeepsItRunning();
 	void testParameterRescansRebuildTheModels();
+	void testReadOnlyParametersGetNoKnob();
+	void testReadOnlyParametersAreReportedReadOnly();
+	void testAProcessingErrorFallsBackToDryAudio();
+	void testScanFailuresAreReported();
 
 private:
 	auto makeKey() const -> Plugin::Descriptor::SubPluginFeatures::Key;
@@ -87,6 +106,33 @@ namespace
 {
 
 constexpr double kPi = 3.14159265358979323846;
+
+//! qWarning() text collected while a WarningCapture is alive. File-scope so the
+//! static handler Qt wants can reach the capture currently in progress.
+QStringList g_warnings;
+bool g_capturingWarnings = false;
+
+void collectWarning(QtMsgType type, const QMessageLogContext&, const QString& message)
+{
+	if (g_capturingWarnings && type == QtWarningMsg) { g_warnings.push_back(message); }
+}
+
+//! Collects qWarning() text for the length of one scope, so a test can prove that a
+//! scan SAID why a module did not appear instead of dropping the reason on the floor.
+class WarningCapture
+{
+public:
+	WarningCapture() { m_previous = qInstallMessageHandler(&collectWarning); g_capturingWarnings = true; }
+	~WarningCapture()
+	{
+		g_capturingWarnings = false;
+		qInstallMessageHandler(m_previous);
+	}
+	auto warnings() const -> const QStringList& { return g_warnings; }
+
+private:
+	QtMessageHandler m_previous = nullptr;
+};
 
 auto rms(const std::vector<float>& samples) -> double
 {
@@ -312,6 +358,50 @@ void ClapEffectIntegrationTest::testStateRoundTripThroughMmp()
 		storage[0][0]);
 }
 
+/*! stress-4 (b): a SUCCESSFUL clap.state load that does not bring a writable parameter back must not lose it.
+ *  The stress run lost Surge XT's parameters this way, and an effect that has not heard audio yet loses every
+ *  edit: the host hands a change to the plug-in only in process(), so a save before the next block writes the
+ *  plug-in's old value into its state. Here Gain is set to 0.3 and the effect saved with no block in between, so
+ *  the plug-in's state holds its default and the host's saved <parameters> hold 0.3. Loading it back leaves Gain
+ *  at 0.3, and the next block applies it to the audio. */
+void ClapEffectIntegrationTest::testAValueTheStateDoesNotCarryIsRestoredFromTheHost()
+{
+	constexpr f_cnt_t fpp = 48;
+	BufferManager::init(fpp);
+
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	auto* controls = dynamic_cast<ClapEffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	auto* gain = controls->modelForParam(1);
+	QVERIFY(gain != nullptr);
+	gain->setValue(0.3f);
+
+	QDomDocument doc;
+	QDomElement element = doc.createElement("effect");
+	effect->saveSettings(doc, element);
+	QVERIFY2(!element.elementsByTagName(QStringLiteral("state")).isEmpty(),
+		"the effect wrote no plug-in state: this case is about a SUCCESSFUL state load");
+
+	gain->setValue(0.9f);
+	effect->loadSettings(element);
+	QVERIFY2(std::abs(gain->value() - 0.3f) < 1e-6f, qPrintable(QStringLiteral("restored %1").arg(gain->value())));
+
+	SampleFrame storage[fpp];
+	for (f_cnt_t frame = 0; frame < fpp; ++frame)
+	{
+		storage[frame][0] = 0.5f;
+		storage[frame][1] = 0.5f;
+	}
+	SampleFrame* busData[1] = {storage};
+	AudioBus bus{busData, 1, fpp};
+	QVERIFY(chain.processAudioBuffer(bus));
+	QVERIFY2(std::abs(storage[0][0] - 0.15f) < 1e-6f, qPrintable(QStringLiteral("processed %1").arg(storage[0][0])));
+	chain.clear();
+}
+
 void ClapEffectIntegrationTest::testRendersBeforeAfterWav()
 {
 	constexpr f_cnt_t fpp = 48;
@@ -498,6 +588,109 @@ void lmms::ClapEffectIntegrationTest::testTheControlDialogsButtonOpensTheEditor(
 	QVERIFY2(opened, "the dialog's button did not open the editor");
 }
 
+/*! Q050-490 through the product's own button: a plug-in whose editor embeds only in some OTHER
+ *  platform's window is refused - the dialog's "Show plugin editor" runs plugin.editor_open, which
+ *  refuses typed, and the refusal line under the button names this platform and its CLAP window API.
+ *  No editor is open and no window titled after the effect is left on screen. */
+void lmms::ClapEffectIntegrationTest::testTheButtonNamesThePlatformAPluginCannotEmbedOn()
+{
+	const PluginWindowSystem native = currentPluginWindowSystem();
+	const char* nativeApi = native == PluginWindowSystem::Win32 ? "win32" : native == PluginWindowSystem::Cocoa ? "cocoa" : "x11";
+	qputenv("CLAP_TEST_GAIN_GUI_API", native == PluginWindowSystem::Win32 ? "x11" : "win32");
+	EffectChain& master = Engine::mixer()->mixerChannel(0)->m_fxChain;
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&master, &key};
+	master.appendEffect(effect);
+	ControlRegistry::setReady(true);
+	const bool headless = ControlRegistry::instance()->isHeadless();
+	ControlRegistry::instance()->setHeadless(false);  // the offscreen platform is a display
+	QWidget parent;
+	gui::EffectControlDialog* dialog = effect->controls()->createView();
+	dialog->setParent(&parent);
+	QToolButton* show = nullptr;
+	for (QToolButton* button : dialog->findChildren<QToolButton*>())
+	{
+		if (button->property("controlCommand").toString() == QLatin1String("plugin.editor_open")) { show = button; }
+	}
+	QVERIFY2(show != nullptr, "the effect's control dialog has no plugin-editor button");
+	QTest::mouseClick(show, Qt::LeftButton);
+	const bool opened = effect->nativeEditorOpen();
+	QString reason;
+	for (const QLabel* label : show->parentWidget()->findChildren<QLabel*>())
+	{
+		if (!label->isHidden()) { reason = label->text(); }
+	}
+	bool windowLeft = false;
+	for (QWidget* top : QApplication::topLevelWidgets())
+	{
+		if (top->isVisible() && top->windowTitle() == effect->displayName()) { windowLeft = true; }
+	}
+	effect->closeNativeEditor();
+	ControlRegistry::instance()->setHeadless(headless);
+	ControlRegistry::setReady(false);
+	master.removeEffect(effect);
+	delete effect;
+	qunsetenv("CLAP_TEST_GAIN_GUI_API");
+	QVERIFY2(!opened, "an editor that cannot embed here reported open");
+	QVERIFY2(!windowLeft, "a refused editor left a window on screen");
+	const QString expected = QStringLiteral("cannot embed on %1 (CLAP window API %2)").arg(pluginWindowSystemName(native),
+		QLatin1String(nativeApi));
+	QVERIFY2(reason.contains(expected), qPrintable(QStringLiteral("refusal line: '%1'").arg(reason)));
+	std::printf("CLAP_EDITOR_BUTTON_REFUSAL_EVIDENCE %s\n", qPrintable(reason));
+}
+
+/*! Q050-502: on Qt's native wayland platform (here: the user forced it) the plug-in's clap.gui is never created with a
+ *  window that is not an X11 window: the effect's open, plugin.editor_open (typed 'requires') and the control dialog's
+ *  button all refuse with the reason naming the override. Faked through the module's test seam (no compositor);
+ *  back on the real platform the dialog's button opens the editor as before. */
+void lmms::ClapEffectIntegrationTest::testOnNativeWaylandTheEditorRefusesWithTheReason()
+{
+	EffectChain& master = Engine::mixer()->mixerChannel(0)->m_fxChain;
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&master, &key};
+	master.appendEffect(effect);
+	ControlRegistry::setReady(true);
+	const bool headless = ControlRegistry::instance()->isHeadless();
+	ControlRegistry::instance()->setHeadless(false);
+	QWidget parent;
+	gui::EffectControlDialog* dialog = effect->controls()->createView();
+	dialog->setParent(&parent);
+	QToolButton* show = nullptr;
+	for (QToolButton* button : dialog->findChildren<QToolButton*>())
+	{
+		if (button->property("controlCommand").toString() == QLatin1String("plugin.editor_open")) { show = button; }
+	}
+
+	pluginwindow::setPlatformForTesting(QStringLiteral("wayland"), pluginwindow::Decision{pluginwindow::Choice::UserChoice, {}});
+	QString error;
+	const bool openedDirectly = effect->openNativeEditor(&error);
+	const ControlResult refused = ControlRegistry::instance()->invoke(QStringLiteral("plugin.editor_open"),
+		{{QStringLiteral("target"), control::channelIdOf(Engine::mixer()->mixerChannel(0))}, {QStringLiteral("plugin"), control::effectIdOf(effect)}});
+	if (show != nullptr) { QTest::mouseClick(show, Qt::LeftButton); }
+	const bool openedByButton = effect->nativeEditorOpen();
+	const QLabel* reason = show != nullptr ? show->parentWidget()->findChild<QLabel*>() : nullptr;
+	const QString shown = reason != nullptr && reason->isVisibleTo(&parent) ? reason->text() : QString();
+	pluginwindow::setPlatformForTesting({}, {});
+
+	if (show != nullptr) { QTest::mouseClick(show, Qt::LeftButton); }
+	const bool openedAfter = effect->nativeEditorOpen();
+	effect->closeNativeEditor();
+	ControlRegistry::instance()->setHeadless(headless);
+	ControlRegistry::setReady(false);
+	delete dialog;
+	master.removeEffect(effect);
+	delete effect;
+
+	QVERIFY2(show != nullptr, "the effect's control dialog has no plugin-editor button");
+	QVERIFY2(!openedDirectly, "the CLAP gui was given a Wayland window id");
+	QVERIFY2(error.contains(QStringLiteral("QT_QPA_PLATFORM")), qPrintable(error));
+	QCOMPARE(refused.errorKind, ControlErrorKind::Requires);
+	QVERIFY2(refused.errorMessage.contains(QStringLiteral("X11 windows")), qPrintable(refused.errorMessage));
+	QVERIFY2(!openedByButton, "the dialog's button opened an editor on Wayland");
+	QVERIFY2(shown.contains(QStringLiteral("QT_QPA_PLATFORM")), qPrintable(shown));
+	QVERIFY2(openedAfter, "the dialog's button no longer opens the editor on the real platform");
+}
+
 /*! BUGS 11.34: the latency a CLAP plug-in declares (clap.latency) is what the effect reports
  *  and what its chain adds up for delay compensation - before the fix every hosted plug-in
  *  read as zero-latency. */
@@ -585,6 +778,152 @@ void lmms::ClapEffectIntegrationTest::testParameterRescansRebuildTheModels()
 	QVERIFY2(std::abs(storage[0][0] - 0.25f) < 1e-6f, qPrintable(QString::number(storage[0][0])));
 	chain.clear();
 }
+
+/*! stress-4 (a): a CLAP_PARAM_IS_READONLY parameter is the plug-in's to set, so the control surface's parameter
+ *  object - what plugin.param_get and dsp.get_state report - says read_only, and plugin.param_set refuses it
+ *  (the refusal is the shared one Vst3InstrumentIntegrationTest drives). The writable Gain says nothing new. */
+void lmms::ClapEffectIntegrationTest::testReadOnlyParametersAreReportedReadOnly()
+{
+	BufferManager::init(48);
+	qputenv("CLAP_TEST_GAIN_READONLY", "1");
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	qunsetenv("CLAP_TEST_GAIN_READONLY");
+	auto* controls = dynamic_cast<ClapEffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	auto* readOnly = controls->modelForParam(2);
+	QVERIFY(readOnly != nullptr && readOnly->descriptor().readOnly);
+
+	const QList<AutomatableModel*> models = controlEffectParameters(effect);
+	const int readOnlyIndex = models.indexOf(readOnly);
+	QVERIFY(readOnlyIndex >= 0);
+	QVERIFY2(controlParameterJson(readOnly, readOnlyIndex).value(QStringLiteral("read_only")).toBool(),
+		"the CLAP_PARAM_IS_READONLY parameter is not reported read_only");
+	auto* gain = controls->modelForParam(1);
+	QVERIFY(gain != nullptr && !gain->descriptor().readOnly);
+	QVERIFY2(!controlParameterJson(gain, static_cast<int>(models.indexOf(gain))).contains(QStringLiteral("read_only")),
+		"the writable Gain is reported read-only");
+	chain.clear();
+}
+
+/*! BUGS 1902: a read-only CLAP parameter (CLAP_PARAM_IS_READONLY) ignores every write, so the knob the
+ *  dialog used to build for it moved and snapped back on the next poll. The grid now skips it. */
+void lmms::ClapEffectIntegrationTest::testReadOnlyParametersGetNoKnob()
+{
+	BufferManager::init(48);
+	qputenv("CLAP_TEST_GAIN_READONLY", "1");
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	auto* controls = dynamic_cast<ClapEffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	qunsetenv("CLAP_TEST_GAIN_READONLY");
+	auto* bypass = controls->modelForParam(2);
+	QVERIFY(bypass != nullptr);
+	QVERIFY(bypass->descriptor().readOnly);
+
+	QWidget parent;
+	QGridLayout grid;
+	const auto rows = gui::fillClapKnobGrid(&grid, controls->paramModels(), &parent,
+		QStringLiteral("no parameters"));
+	QCOMPARE(rows, 1);  // one row: only Gain is left
+	auto knobCount = 0;
+	auto* first = static_cast<gui::Knob*>(nullptr);
+	for (int i = 0; i < grid.count(); ++i)
+	{
+		auto* knob = dynamic_cast<gui::Knob*>(grid.itemAt(i)->widget());
+		if (knob == nullptr) { continue; }
+		++knobCount;
+		if (first == nullptr) { first = knob; }
+	}
+	QCOMPARE(knobCount, 1);
+	QVERIFY(first != nullptr);
+	QCOMPARE(first->getLabel(), QStringLiteral("Gain"));
+	chain.clear();
+}
+
+/*! BUGS 5514: a plug-in that reports CLAP_PROCESS_ERROR leaves the rest of the output block as the host
+ *  handed it over, so the effect must hand the chain the dry signal instead of mixing stale wet audio. */
+void lmms::ClapEffectIntegrationTest::testAProcessingErrorFallsBackToDryAudio()
+{
+	constexpr f_cnt_t fpp = 48;
+	BufferManager::init(fpp);
+	qputenv("CLAP_TEST_GAIN_PROCESS_ERROR", "1");
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	auto* controls = dynamic_cast<ClapEffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	controls->modelForParam(1)->setValue(0.5f);  // a successful block would come out at 0.25
+
+	SampleFrame storage[fpp];
+	for (f_cnt_t f = 0; f < fpp; ++f)
+	{
+		storage[f][0] = 0.5f;
+		storage[f][1] = -0.25f;
+	}
+	SampleFrame* busData[1] = {storage};
+	AudioBus bus{busData, 1, fpp};
+	QVERIFY(chain.processAudioBuffer(bus));
+	qunsetenv("CLAP_TEST_GAIN_PROCESS_ERROR");
+
+	for (f_cnt_t f = 0; f < fpp; ++f)
+	{
+		QVERIFY2(std::abs(storage[f][0] - 0.5f) < 1e-6f,
+			qPrintable(QStringLiteral("left %1 is not the dry signal").arg(storage[f][0])));
+		QVERIFY2(std::abs(storage[f][1] + 0.25f) < 1e-6f,
+			qPrintable(QStringLiteral("right %1 is not the dry signal").arg(storage[f][1])));
+	}
+	chain.clear();
+}
+
+namespace lmms
+{
+
+void ClapEffectIntegrationTest::testScanFailuresAreReported()
+{
+	// A module that is not a usable CLAP module has to be SAYED to be one: the scan
+	// used to fill the error QString that listClasses writes and then throw it away,
+	// so a broken .clap simply vanished from the browser with no reason anywhere.
+	const auto modulePath = QString::fromLatin1(CLAP_TEST_BROKEN_NO_SYMBOL_PATH);
+	if (!QFileInfo::exists(modulePath))
+	{
+		QSKIP("no broken CLAP test module available (build tests/data/clap-test-plugin "
+			"from the pinned CLAP headers)");
+	}
+
+	auto* config = ConfigManager::inst();
+	const auto previousVstDir = config->vstDir();
+	config->setVSTDir(QFileInfo{modulePath}.absolutePath());
+
+	QStringList reported;
+	{
+		WarningCapture capture;
+		ClapSubPluginFeatures features{Plugin::Type::Effect};
+		Plugin::Descriptor::SubPluginFeatures::KeyList keys;
+		features.listSubPluginKeys(nullptr, keys);
+		reported = capture.warnings();
+	}
+	config->setVSTDir(previousVstDir);
+
+	// The reason the typed ladder gives for this fixture, and the module it is about:
+	// a scan that says neither cannot be told apart from a scan that never looked.
+	const auto moduleName = QFileInfo{modulePath}.fileName();
+	auto named = false;
+	for (const auto& line : reported)
+	{
+		if (line.contains(moduleName) && line.contains(QStringLiteral("symbol-missing"))) { named = true; }
+	}
+	QVERIFY2(named,
+		qPrintable(QStringLiteral("the scan reported %1 warning(s), none naming %2 and its typed reason: %3")
+			.arg(reported.size()).arg(moduleName, reported.join(QStringLiteral(" | ")))));
+}
+
+} // namespace lmms
 
 QTEST_MAIN(lmms::ClapEffectIntegrationTest)
 
