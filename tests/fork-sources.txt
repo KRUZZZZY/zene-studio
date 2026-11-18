@@ -3974,3 +3974,6 @@ tests/src/plugins/CarlaVst2LegacyStateTest.cpp
 tests/src/gui/LegacyVst2ProjectTest.cpp
 tests/data/legacy-projects/vst2-vestige-vsteffect.mmp
 tests/data/legacy-projects/vst2-vestige-vsteffect.reference.json
+
+# Q050-224.1: the LV2 worker's alternate-stack proof (a live worker's first work() and a forked overflow).
+tests/src/core/WorkerAltStackTest.cpp
