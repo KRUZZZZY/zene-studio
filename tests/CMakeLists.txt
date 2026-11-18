@@ -2081,6 +2081,13 @@ list(APPEND LMMS_TESTS src/core/WideDiscreteBusTest.cpp)
 list(APPEND LMMS_TESTS src/core/WidePinRoutingTest.cpp src/gui/WidePinRoutingGuiTest.cpp)
 # Q050-296.1: 5.1/7.1 speakers processed by pinned channel devices and delivered on their matching outputs.
 list(APPEND LMMS_TESTS src/core/SurroundDevicePathTest.cpp)
+# Q050-224.1: the crash reporter installs its handlers with SA_ONSTACK, but
+# sigaltstack() is per-thread. A live Lv2Worker's fake work() callback proves
+# the registration happens before its first work, and a forked child makes
+# that callback overflow on the worker thread: bounded report, thread != pid,
+# death by SIGSEGV. The other three launch sites are covered by the source gate
+# tests/worker-altstack-registration-check.py.
+list(APPEND LMMS_TESTS src/core/WorkerAltStackTest.cpp)
 
 # Q050-054.1: MIDI takes recorded on armed instrument tracks by transport.record - the capture queue,
 # plain and loop passes, undo/redo, the active-take model and save/load (core); the Record menu entry
@@ -5269,6 +5276,14 @@ if(WANT_WASM)
 		${CMAKE_SOURCE_DIR}/src/wasm/WasmWorkerPool.cpp
 		${CMAKE_SOURCE_DIR}/src/wasm/WasmOfflineRender.cpp
 		${CMAKE_SOURCE_DIR}/src/core/AudioWorkerWake.cpp
+		# Q050-224.1: WasmWorkerPool.cpp now registers the reporter's alternate
+		# stack on each lane, so the test must carry the reporter's three units
+		# (the POSIX half + its formatters, and the Windows no-op half). They
+		# are compiled INTO this binary for the same reason the pool is: this
+		# test deliberately does not link lmmsobjs.
+		${CMAKE_SOURCE_DIR}/src/core/CrashReporter.cpp
+		${CMAKE_SOURCE_DIR}/src/core/CrashReporterFormat.cpp
+		${CMAKE_SOURCE_DIR}/src/core/CrashReporterWindows.cpp
 	)
 	add_test(NAME WasmWorkerPoolTest COMMAND WasmWorkerPoolTest)
 	target_include_directories(WasmWorkerPoolTest PRIVATE
@@ -6816,6 +6831,21 @@ if(PYTHON3_EXECUTABLE AND NOT WIN32 AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|A
 			${CMAKE_C_COMPILER}
 			${CMAKE_CURRENT_SOURCE_DIR}/data/vst2-test-instrument/vst2-test-instrument.c)
 	set_tests_properties(Vst2FixtureDarwinHeaders PROPERTIES TIMEOUT 60)
+endif()
+
+# Q050-224.1: the crash reporter's handlers are installed with SA_ONSTACK, but
+# sigaltstack() is per-thread. Four engine workers start their own threads and
+# three of them have no callback a test can inject into, so this source gate is
+# their coverage proof: the registration must be the first statement of each
+# thread-launch lambda, before workerFunc()/run()/workerLoop()/laneMain() is
+# called. Negative probes prove the predicate rejects a missing registration, a
+# registration after the work, and one placed on the caller's thread instead.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME WorkerAltStackRegistration
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/worker-altstack-registration-check.py
+			--root ${CMAKE_SOURCE_DIR})
+	set_tests_properties(WorkerAltStackRegistration PROPERTIES TIMEOUT 60)
 endif()
 
 # The crash reporter's ARM/DISARM proof redeclares sigaction() to inject a failed
