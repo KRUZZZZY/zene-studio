@@ -659,7 +659,8 @@ void ClipView::mousePressEvent( QMouseEvent * me )
 	}
 	// 0.5.0 L12 (WF-044): a locked clip (or a clip of a locked track) is not moved, resized or deleted by the mouse;
 	// 0.5.0 theme 2: it is still selected, for inspection, and an edit tried on it says why it is refused.
-	if (EditLocks::instance().locks(m_clip) && me->button() != Qt::RightButton)
+	if (EditLocks::instance().locks(m_clip) && me->button() != Qt::RightButton
+		&& !(me->button() == Qt::MiddleButton && (me->modifiers() & Qt::ControlModifier)))
 	{
 		if (me->button() == Qt::LeftButton) { pressLocked(me); }
 		return;
