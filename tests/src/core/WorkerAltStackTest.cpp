@@ -43,7 +43,7 @@
 // callback injected into them without shipping test hooks in the product, so
 // their coverage proof is the source gate
 // tests/worker-altstack-registration-check.py, which reads all four launch
-// lambdas and has two negative probes. That is stated in docs/050-features/
+// lambdas and has three negative probes. That is stated in docs/050-features/
 // Q050-224.1.md rather than dressed up as a runtime test.
 //
 // Under ASan this is skipped: ASan intercepts stack overflow itself, and the
@@ -61,6 +61,8 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 
+#include <atomic>
+
 #ifndef Q_OS_WIN
 #include <csignal>
 #include <cstdint>
@@ -69,8 +71,6 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-
-#include <atomic>
 #endif
 
 #ifdef LMMS_HAVE_LV2
@@ -162,9 +162,11 @@ struct FakeInstance
 	bool overflow = false;
 };
 
+#if !defined(Q_OS_WIN)
 //! Consumes the stack without bound. The volatile frame and the use of the
 //! recursive result keep the compiler from turning this into a loop or a tail
-//! call, so the guard page is reached for real.
+//! call, so the guard page is reached for real. POSIX only: Windows has no
+//! sigaltstack() and the reporter is a documented no-op there.
 #if defined(__GNUC__)
 __attribute__((noinline))
 #endif
@@ -175,6 +177,7 @@ int overflowNow(unsigned depth) noexcept
 	if (depth > (1u << 20)) { return 0; }
 	return overflowNow(depth + 1) + frame[0];
 }
+#endif
 
 LV2_Worker_Status fakeWork(LV2_Handle handle,
 	LV2_Worker_Respond_Function /*respond*/,
@@ -183,6 +186,14 @@ LV2_Worker_Status fakeWork(LV2_Handle handle,
 	const void* /*data*/) noexcept
 {
 	auto* self = static_cast<FakeInstance*>(handle);
+#if defined(Q_OS_WIN)
+	// Windows has no sigaltstack(), and the reporter is the documented no-op
+	// there (CrashReporterWindows.cpp): the live worker still reaches work()
+	// with the launch lambda's registration call on its start-up path.
+	(void)self->overflow;
+	self->probe->ran.store(true, std::memory_order_release);
+	return LV2_WORKER_SUCCESS;
+#else
 	if (self->overflow)
 	{
 		overflowNow(0);
@@ -206,6 +217,7 @@ LV2_Worker_Status fakeWork(LV2_Handle handle,
 		&& address < probe->stackBase + probe->stackSize;
 	probe->ran.store(true, std::memory_order_release);
 	return LV2_WORKER_SUCCESS;
+#endif
 }
 
 const LV2_Worker_Interface kFakeInterface = { &fakeWork, nullptr, nullptr };
@@ -253,6 +265,13 @@ void WorkerAltStackTest::lv2_worker_has_alternate_stack_before_first_work()
 		QCOMPARE(worker.scheduleWork(sizeof(request), request), LV2_WORKER_SUCCESS);
 
 		QTRY_VERIFY_WITH_TIMEOUT(probe.ran.load(std::memory_order_acquire), 10000);
+#if defined(Q_OS_WIN)
+		// The Windows reporter is the documented no-op, so there is no
+		// per-thread stack to observe; the contract itself is what can be
+		// asserted, from the same call the launch lambdas make.
+		QVERIFY2(!lmms::crashreporter::installAlternateStackForCurrentThread(),
+			"on Windows the crash reporter must be a no-op (CrashReporterWindows.cpp)");
+#else
 		QVERIFY2(probe.queried,
 			"the work() callback could not read its thread's sigaltstack()");
 		QVERIFY2(probe.enabled,
@@ -262,6 +281,7 @@ void WorkerAltStackTest::lv2_worker_has_alternate_stack_before_first_work()
 		QVERIFY2(!probe.callbackOnAltStack,
 			"work() itself must run on the ordinary stack; the alternate stack is "
 			"for the handler (a callback running on it would prove the wrong thing)");
+#endif
 	}
 #endif
 }
