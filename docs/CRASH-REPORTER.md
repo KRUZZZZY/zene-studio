@@ -455,16 +455,19 @@ none:
    separation worker (`src/core/StemJobManager.cpp`) and every wasm DSP lane
    (`src/wasm/WasmWorkerPool.cpp`); a source gate
    (`tests/worker-altstack-registration-check.py`) holds all four in place.
-   Deliberately not covered in that stage, and why: the recorder's own
-   disk-writer thread (`src/core/audio/TrackRecorder.cpp`, `sndfile` I/O for an
-   armed take) and the diagnostics-only profiler writer are not audio render or
-   DSP workers; the Windows control-server accept/worker threads are not either;
-   the transport owns no long-running thread of its own; MIDI I/O threads are
-   started by their backends (ALSA/OSS/JACK/Sndio) as `QThread`s rather than by
-   a Zene launch lambda; and GUI `QThreadPool` jobs do file work, not DSP. A
-   thread that never reaches a registration point (for example, a plugin's
-   private thread) still has no alternate stack, so a stack-overflow crash on
-   that thread is not covered.
+   Deliberately not covered in that stage, and why: the recorder family's own
+   disk-writer threads (`src/core/audio/TrackRecorder.cpp` and
+   `src/core/TakeRecorder.cpp`, `sndfile` I/O for an armed take) and the
+   diagnostics-only profiler writer are not audio render or DSP workers; the
+   Windows control-server accept/worker threads are not either; the
+   Ableton-Link audio stream's thread (`src/core/LinkAudioStream.cpp`) is
+   network I/O; the transport owns no long-running thread of its own; the
+   wavetable threads in `src/core/Oscillator.cpp` are one-shot start-up work
+   joined before any render; MIDI I/O threads are started by their backends
+   (ALSA/OSS/JACK/Sndio) as `QThread`s rather than by a Zene launch lambda; and
+   GUI `QThreadPool` jobs do file work, not DSP. A thread that never reaches a
+   registration point (for example, a plugin's private thread) still has no
+   alternate stack, so a stack-overflow crash on that thread is not covered.
 4. **`pc` is architecture-dependent.** It is read from the signal `ucontext` on
    `aarch64` and on `x86_64` when `REG_RIP` is visible to the toolchain;
    elsewhere it is `0x0`. Only `x86_64` was exercised here.
