@@ -1620,6 +1620,7 @@ plugins/WasmEffect/WasmEffectControlDialog.h
 plugins/WasmEffect/WasmEffectControls.cpp
 plugins/WasmEffect/WasmEffectControls.h
 plugins/Watsyn/WatsynParamHandoff.h
+plugins/ZeneRack/ZeneRack.cpp
 scripts/capabilities-dump.py
 src/core/AafImportBuild.cpp
 src/core/AafImportModel.cpp
