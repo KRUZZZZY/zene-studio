@@ -62,11 +62,12 @@ to run on)`. Both return with the product change in place.
 
 ## Exclusions (stated, per the review)
 
-The inventory is in `docs/050-features/Q050-224.1.md` and `docs/CRASH-REPORTER.md` limitation 3: recorder
-writers (no Zene-owned thread; the device capture thread already registers), the diagnostics-only profiler
-writer, transport (no long-running thread of its own), MIDI (backend-owned `QThread`s, not a Zene launch
-lambda), the control-server pool (Windows accept/worker threads) and GUI `QThreadPool` jobs (file work,
-not DSP), plus third-party plug-in threads (the documented remaining limitation).
+The inventory is in `docs/050-features/Q050-224.1.md` and `docs/CRASH-REPORTER.md` limitation 3: the
+recorder's own disk-writer thread (`src/core/audio/TrackRecorder.cpp`, `sndfile` I/O rather than DSP), the
+diagnostics-only profiler writer, transport (no long-running thread of its own), MIDI (backend-owned
+`QThread`s, not a Zene launch lambda), the control-server pool (Windows accept/worker threads) and GUI
+`QThreadPool` jobs (file work, not DSP), plus third-party plug-in threads (the documented remaining
+limitation).
 
 ## Self-check
 
