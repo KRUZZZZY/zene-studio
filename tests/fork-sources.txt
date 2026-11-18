@@ -3975,3 +3975,7 @@ tests/src/plugins/CarlaVst2LegacyStateTest.cpp
 tests/src/gui/LegacyVst2ProjectTest.cpp
 tests/data/legacy-projects/vst2-vestige-vsteffect.mmp
 tests/data/legacy-projects/vst2-vestige-vsteffect.reference.json
+
+# Q050-267.1: the external-host regression for the Zene Rack VST3 bundle - it opens the
+# built bundle through the VST3 SDK's hosting loader (fork-NEW test, measured by the fork ratchets).
+tests/src/plugins/ZeneRackTest.cpp
