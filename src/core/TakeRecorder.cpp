@@ -71,6 +71,21 @@ bool TakeRecorder::start(const QString& path, int sampleRate, QString* why)
 		return false;
 	}
 	QDir().mkpath(QFileInfo(path).absolutePath());
+	// Create the file only if nothing is at the path yet: NewOnly makes the open fail on an existing file, so a
+	// take never truncates one and there is no check-then-open race. The empty file is then reopened for writing.
+	{
+		QFile created(path);
+		if (!created.open(QIODevice::WriteOnly | QIODevice::NewOnly))
+		{
+			if (why != nullptr)
+			{
+				*why = QFileInfo::exists(path)
+					? QStringLiteral("%1 already exists: choose a new file; nothing was overwritten").arg(path)
+					: QStringLiteral("cannot write %1: %2").arg(path, created.errorString());
+			}
+			return false;
+		}
+	}
 	SF_INFO info{};
 	info.samplerate = sampleRate;
 	info.channels = 2;
@@ -78,6 +93,7 @@ bool TakeRecorder::start(const QString& path, int sampleRate, QString* why)
 	m_file = sf_open(QFile::encodeName(path).constData(), SFM_WRITE, &info);
 	if (m_file == nullptr)
 	{
+		QFile::remove(path); // created empty just above, so removing it loses nothing
 		if (why != nullptr) { *why = QStringLiteral("cannot write %1: %2").arg(path, QString::fromUtf8(sf_strerror(nullptr))); }
 		return false;
 	}
