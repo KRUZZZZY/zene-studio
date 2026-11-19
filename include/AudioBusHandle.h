@@ -64,6 +64,9 @@ public:
 	AudioBusHandle(const QString& name, bool hasEffectChain = true,
 		FloatModel* volumeModel = nullptr, FloatModel* panningModel = nullptr,
 		BoolModel* mutedModel = nullptr);
+	//! Destructor contract: a bus built on the audio path has engine links (registration, retirement,
+	//! port update) and must be destroyed through AudioEngine::destroyAudioBusHandle. A plain delete on
+	//! the audio or render path frees an object a link still names. Stack and track buses have no links.
 	virtual ~AudioBusHandle();
 
 	// indicate whether JACK & Co should provide output-buffer at ext. port

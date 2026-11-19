@@ -1319,7 +1319,6 @@ void AudioEngine::serviceAudioBusHandlesOnControlThread()
 	serviceRegistrations();
 	serviceRetirements();
 	servicePortUpdates();
-	ensureAudioBusHandleCapacityOnControlThread();
 }
 
 
@@ -1338,9 +1337,13 @@ void AudioEngine::serviceRegistrations()
 			AudioBusHandle::RegistrationState::Registered, std::memory_order_acq_rel))
 		{
 			busHandle->prepareStorage();
-			m_audioBusHandles.push_back(busHandle);
+			// A bus re-added while it is listed is registered again, but listed once.
+			if (std::find(m_audioBusHandles.begin(), m_audioBusHandles.end(), busHandle) == m_audioBusHandles.end())
+			{
+				m_audioBusHandles.push_back(busHandle);
+			}
 		}
-		else
+		else if (busHandle->registrationState() == AudioBusHandle::RegistrationState::Retired)
 		{
 			// Retired before this tick: it is never registered, and it is in no list.
 			busHandle->m_registrationState.store(AudioBusHandle::RegistrationState::Handled,
@@ -1406,19 +1409,6 @@ void AudioEngine::servicePortUpdates()
 		}
 		busHandle = next;
 	}
-}
-
-
-void AudioEngine::ensureAudioBusHandleCapacityOnControlThread()
-{
-	// The control thread, and only when a room request is pending: the bus list may only grow
-	// under the model lock, which also waits for the render period that could still be reading it.
-	if (!m_audioBusHandleCapacityRefreshRequested.exchange(false, std::memory_order_relaxed))
-	{
-		return;
-	}
-	const auto renderLock = requestChangesGuard();
-	reserveAudioBusHandleCapacity();
 }
 
 

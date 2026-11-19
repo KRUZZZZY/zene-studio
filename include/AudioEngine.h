@@ -694,9 +694,7 @@ private:
 
 	//! Removes a bus from the bus list. The caller holds the model lock.
 	void eraseAudioBusHandle(AudioBusHandle* busHandle);
-	//! Keeps room in the bus list for the render owner to grow it without allocating.
-	void ensureAudioBusHandleCapacityOnControlThread();
-	//! Grows the bus list. The caller holds the model lock.
+	//! Grows the bus list, keeping room for the buses the control-thread add path registers. The caller holds the model lock.
 	void reserveAudioBusHandleCapacity();
 	//! Service phase 1. Takes the registration stack; under the model lock, registers each bus
 	//! still pending (prepares its storage, appends it). A bus retired meanwhile is marked handled.
@@ -746,8 +744,6 @@ private:
 	std::atomic<std::uint64_t> m_droppedAudioBusHandleRetirements{0};
 	//! Buses kept alive because a link still pointed at them (diagnostics).
 	std::atomic<std::uint64_t> m_heldAudioBusHandleFrees{0};
-	//! A room request for the bus list, read by ensureAudioBusHandleCapacityOnControlThread.
-	std::atomic<bool> m_audioBusHandleCapacityRefreshRequested{false};
 
 	f_cnt_t m_framesPerAudioBuffer;
 	//! R2.2: the cached round trip; the audio thread reads it when a take starts.

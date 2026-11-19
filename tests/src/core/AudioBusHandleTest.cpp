@@ -439,6 +439,19 @@ private slots:
 		QCOMPARE(handles.size(), before + 1);
 		QVERIFY(listed());
 		QCOMPARE(bus->registrationState(), State::Registered);
+
+		// A second audio-path add of a listed bus is registered again by the service, but the
+		// bus must not be listed twice.
+		const std::size_t registered = handles.size();
+		{
+			const RealtimeScope realtime;
+			engine->addAudioBusHandle(raw);
+		}
+		QCOMPARE(bus->registrationState(), State::Pending);
+		engine->serviceAudioBusHandlesOnControlThread();
+		QCOMPARE(handles.size(), registered);
+		QCOMPARE(bus->registrationState(), State::Registered);
+		QCOMPARE(std::count(handles.begin(), handles.end(), raw), std::ptrdiff_t{1});
 	}
 
 	//! Cluster new-p15-253: a bus whose owner retires it while its registration is
