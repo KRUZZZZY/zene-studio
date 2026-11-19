@@ -47,7 +47,7 @@ and run with `ctest -R WasmOfflineRenderLimitTest`. Each `ctest` exited 8 (from 
 | m1 | `frames > maxOfflineRenderFrames` becomes `>=` | `acceptsExactlyTheLimit`, `validatorBoundsTheFrameCount` | `m1-test.log` |
 | m2 | limit doubled (`maxOfflineRenderFrames * 2u`) | `rejectsOneFrameOverTheLimit`, `validatorBoundsTheFrameCount` | `m2-test.log` |
 | m2b | comparison done after casting to `int32` | `rejectsTheLargestFrameCount`, `validatorBoundsTheFrameCount` | `m2b-test.log` |
-| m3 | validator block moved after the first `renderInline` | `rejectsOneFrameOverTheLimit`, `rejectsTheLargestFrameCount`, both on the `loadModuleFileCalls` QCOMPARE | `m3-test.log` |
+| m3 | validator block moved (not removed) from before the control loop to directly after the first `renderInline` call, inside the loop | `rejectsOneFrameOverTheLimit`, `rejectsTheLargestFrameCount`, both fail the `loadModuleFileCalls` QCOMPARE at `WasmOfflineRenderLimitTest.cpp:76` (expected 0, actual 1): the first render loads the module before the bound is checked | `m3-test.log` |
 
 m2 does not fail `rejectsTheLargestFrameCount`, because a doubled limit still refuses `UINT32_MAX`.
 
@@ -63,7 +63,9 @@ m2 does not fail `rejectsTheLargestFrameCount`, because a doubled limit still re
 - Builds: `zene` was relinked only at 019 (`Linking CXX executable ../zene`); at 024 it was already up to date.
   Apart from that, only the test target was built. Only `WasmOfflineRenderLimitTest` was run (`ctest` reports
   `out of 1`), so the wider suite was not run.
-- In these logs, `src/wasm/WasmOfflineRender.cpp` is compiled only into `WasmOfflineRenderLimitTest`.
+- In this tree the real `src/wasm/WasmOfflineRender.cpp` is built only by the new `WasmOfflineRenderLimitTest`
+  target. The `WANT_WASM`-guarded targets that also build it (`WasmWorkerPoolTest`, and the library through
+  `src/wasm/CMakeLists.txt`) do not exist here, because `WANT_WASM=OFF`.
 - The `acceptsExactlyTheLimit` slot shows that the cap does not refuse `2^22` frames. It does not show that the
   output is correct.
 - `renderOffline`'s cyclomatic complexity (CCN) is already above 10. A manual count gives about 22 before the fix
