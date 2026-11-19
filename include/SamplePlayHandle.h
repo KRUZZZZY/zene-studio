@@ -38,6 +38,7 @@
 #include "AudioStretcher.h"
 #include "RubberBandStretch.h"
 #include "ClipEdits.h"
+#include "CompSlip.h"
 #include "SampleWindow.h"
 #include "WarpMarkers.h"
 #include "PlayHandle.h"
@@ -274,7 +275,9 @@ private:
 	std::array<std::pair<f_cnt_t, f_cnt_t>, MaxCompSpans> m_compSpans{};
 	//! 0.5.0 E2: the reads of this take's SLIPPED spans (include/CompSlip.h); null - and nothing extra runs - when
 	//! the clip's lane has no slipped span, or the clip does not render linearly at its own pitch.
-	std::unique_ptr<CompSlipReaders> m_compSlip;
+	std::unique_ptr<CompSlipReaders, CompSlipRecycler> m_compSlip;
+		//! Set when the last snapshot found the reader pool empty: the slipped spans could not play, so the start must wait.
+		bool m_compSlipExhausted = false;
 
 	/*! 0.5.0 W3 (ED-179): a clip with pre-fades (include/ClipPreFades.h) plays a copy of its Sample whose window
 	 *  reaches past the clip's own, and its envelope is measured from the clip's first frame with the frames before

@@ -1327,6 +1327,7 @@ include/RackZoneFeed.h
 include/RackZoneInputs.h
 include/RackZones.h
 include/RealtimeExport.h
+include/RealtimeFreeList.h
 include/RealtimeScope.h
 include/RecordLaunchMenus.h
 include/RecordOptions.h

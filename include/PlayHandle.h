@@ -36,6 +36,7 @@
 #include "Flags.h"
 #include "ThreadableJob.h"
 #include "LmmsTypes.h"
+#include "BufferManager.h"
 #include "SampleFrame.h"
 
 class QThread;
@@ -67,7 +68,10 @@ public:
 
 	constexpr static std::size_t MaxNumber = 1024;
 
-	PlayHandle( const Type type, f_cnt_t offset = 0 );
+	/*! @a poolBuffer: inside a RealtimeScope the frame buffer comes from the audio pool (BufferManager::acquire());
+	 *  an empty pool leaves the handle without a buffer (bufferExhausted()). Otherwise, and for every other handle,
+	 *  the buffer is heap-allocated, as it always was. */
+	PlayHandle( const Type type, f_cnt_t offset = 0, bool poolBuffer = false );
 
 	PlayHandle & operator = ( PlayHandle & p )
 	{
@@ -161,13 +165,15 @@ public:
 	void releaseBuffer();
 	
 	std::span<SampleFrame> buffer();
+	//! True when this handle uses a frame buffer but the pool had none to give: it renders nothing this period.
+	bool bufferExhausted() const noexcept { return m_usesBuffer && !m_playHandleBuffer; }
 
 private:
 	Type m_type;
 	f_cnt_t m_offset;
 	QThread* m_affinity;
 	QMutex m_processingLock;
-	std::vector<SampleFrame> m_playHandleBuffer;
+	BufferManager::Lease m_playHandleBuffer;
 	bool m_bufferReleased;
 	bool m_usesBuffer;
 	AudioBusHandle* m_audioBusHandle{nullptr};
