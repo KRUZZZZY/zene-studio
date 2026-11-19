@@ -16,12 +16,12 @@ a null or empty value and the loader adds 0 to its loop bound.
 |---|---|---|---|
 | E1 | Call site | `src/core/Song.cpp:2138` | `n += nd.toElement().elementsByTagName("patterntrack").at(0).toElement().firstChildElement().childNodes().count();` inside the trackcontainer loop, for `type == Track::Type::Pattern` tracks |
 | E2 | `at()` is `item()` | `/usr/include/qt6/QtXml/qdom.h:230-231` | `QDomNode item(int index) const;` and `inline QDomNode at(int index) const { return item(index); }` |
-| E3 | Bounds check and null return | `logs/qt-at-disassembly.log` (`QDomNodeList::item`, libQt6Xml.so.6.12.0) | `e4f0: jge e520` (index >= length goes to the null path), `e4f4: js e520` (negative index goes to the null path), `e520: movq $0x0,0x0(%rbp)` writes a null node. The list pointer is also null-tested at `e4d0: test %rbx,%rbx` / `e4d3: je e520`. |
-| E4 | Empty-list chain is null with count 0 | `logs/qdom-at-probe.log` (PySide6 + Qt 6.12.0) | No `patterntrack`: `at(0).isNull()` True, `at(0).toElement().firstChildElement().isNull()` True, `childNodes().count()` = 0. With content: `at(0)` non-null, `childNodes().count()` = 3. Empty `patterntrack`: `at(0)` non-null, `firstChildElement()` null, count 0. |
-| E5 | Real missing-patterntrack load reaches the call site | `logs/load-branch-proof.log` and `logs/load-branch-proof-summary.log` | gdb breakpoint at `Song::loadProject+0x9d8` (0x55555629eaa8 - 0x55555629e0d0 = 0x9d8), `index=0 length=0`, `#1 main`, then `hello.lua finished`, then `[Inferior 1 (process 306) exited normally]`. The gdb `length` value is only the breakpoint's own print. It is not proof that the list is empty; E4 is the proof of the empty-list chain. |
+| E3 | Bounds check and null return | `logs/qt-at-disassembly-2.log` (`QDomNodeList::item`, libQt6Xml.so.6.12.0) | `e4f0: jge e520` (index >= length goes to the null path), `e4f4: js e520` (negative index goes to the null path), `e520: movq $0x0,0x0(%rbp)` writes a null node. The list pointer is also null-tested at `e4d0: test %rbx,%rbx` / `e4d3: je e520`. |
+| E4 | Empty-list chain is null with count 0 | `logs/qdom-at-probe-2.log` (PySide6 + Qt 6.12.0) | No `patterntrack`: `at(0).isNull()` True, `at(0).toElement().firstChildElement().isNull()` True, `childNodes().count()` = 0. With content: `at(0)` non-null, `childNodes().count()` = 3. Empty `patterntrack`: `at(0)` non-null, `firstChildElement()` null, count 0. |
+| E5 | Real missing-patterntrack load reaches the call site | `logs/load-branch-proof-2.log` | gdb breakpoint at `Song::loadProject+0x9d8` (0x55555629eaa8 - 0x55555629e0d0 = 0x9d8), `index=0 length=0`, `#1 main`, then `hello.lua finished`, then `[Inferior 1 (process 405) exited normally]`. The gdb `length` value is only the breakpoint's own print. It is not proof that the list is empty; E4 is the proof of the empty-list chain. |
 | E6 | Control also hits the call site and exits normally | `logs/load-branch-control-2.log`, `logs/control-identity.log` | Same breakpoint address, `control index=0 length=0`, `hello.lua finished`, `[Inferior 1 (process 458) exited normally]`. The input is named by the gdb `show args` line after `run`: `Argument list ... hello.lua .../logs/scratch/control.mmp`. `control-identity.log` shows `logs/scratch/control.mmp` and `tests/emptyproject.mmp` both have sha256 `d4075c73c93ed972dc567e76a512425a77a268b179f3ee9d00a89f2da3279c5c` and `cmp -s` exit 0, so the control input is `tests/emptyproject.mmp`. |
-| E7 | Missing and empty runs print the non-fatal diagnostic | `logs/load-missing-patterntrack.log`, `logs/load-empty-patterntrack.log` | Each prints `called Track::getClip( 1 ), but Clip 1 doesn't exist`, then `hello.lua finished`. |
-| E8 | Control does not print it | `logs/load-control.log` | No `getClip` line (`grep -c getClip` = 0 in `load-control.log` and in `load-branch-control.log`). |
+| E7 | Missing and empty runs print the non-fatal diagnostic | `logs/load-missing-2.log`, `logs/load-empty-2.log` | Each prints `called Track::getClip( 1 ), but Clip 1 doesn't exist`, then `hello.lua finished`. |
+| E8 | Control does not print it | `logs/load-control-2.log`, `logs/load-branch-control-2.log` | No `getClip` line (`rg getClip` finds no match in `load-control-2.log` or `load-branch-control-2.log`). |
 | E9 | Absent child is skipped in the track loop | `src/core/Track.cpp:947-955` | `if( node.isElement() )` guards the child loop; a missing `patterntrack` child is not visited. |
 | E10 | `namedItem` is guarded | `src/tracks/PatternTrack.cpp:229-234` | `QDomNode node = _this.namedItem(...)` followed by `if( node.isElement() )` before `restoreState`. |
 
@@ -37,8 +37,8 @@ message and creates the missing clip.
 | Case | Input | Result | Evidence |
 |---|---|---|---|
 | Normal control | control project `tests/emptyproject.mmp`, copied byte-identical to `scratch/control.mmp` (`control-identity.log`; input named by the `show args` line in `load-branch-control-2.log`) | Call site hit with `index=0 length=0`; `hello.lua finished`; exit normal; no `getClip` line | `load-branch-control-2.log`, `control-identity.log`, `load-control-2.log` |
-| Failure: missing `patterntrack` | `scratch/missing-patterntrack.mmp` | Call site hit at `+0x9d8`; `getClip(1)` diagnostic; `hello.lua finished`; exit normal | `load-branch-proof.log`, `load-missing-patterntrack.log` |
-| Empty `patterntrack` | `scratch/empty-patterntrack.mmp` | `getClip(1)` diagnostic; `hello.lua finished`. No gdb run logged for this case. | `load-empty-patterntrack.log` |
+| Failure: missing `patterntrack` | `scratch/missing-patterntrack.mmp` | Call site hit at `+0x9d8`; `getClip(1)` diagnostic; `hello.lua finished`; exit normal | `load-branch-proof-2.log`, `load-missing-2.log` |
+| Empty `patterntrack` | `scratch/empty-patterntrack.mmp` | `getClip(1)` diagnostic; `hello.lua finished`. No gdb run logged for this case. | `load-empty-2.log` |
 | Reconfiguration | n/a | Not applicable: no reconfiguration path is in scope and no product code changed. | n/a |
 | Audio thread untouched | n/a | Not applicable: no product code changed; the gdb log shows the call on Thread 1, the loader thread, not the audio thread. | `load-branch-proof-2.log` |
 | Platform-independent contract | n/a | Not applicable: no product code changed; the Qt `at()` contract is platform-independent. | `qt-at-disassembly-2.log`, `qdom-at-probe-2.log` |
@@ -57,8 +57,10 @@ message and creates the missing clip.
 ## Command and EXIT table
 
 Commands were run from the worktree root. Each evidence command writes its own `echo EXIT=$?` line into
-its log. The run of this report is `logs/*-2.log`; the earlier logs (`build-1.log`, `load-*.log` without `-2`)
-are kept on disk and were not re-run. Their commands were not recorded.
+its log. Every evidence row that cites a log cites the `logs/*-2.log` run, except `control-identity.log`,
+which has no `-2` variant and is listed in the table below. The earlier logs (`build-1.log`, `load-*.log`
+without `-2`, `load-branch-proof-summary.log`) are kept on disk for reference only. No evidence row cites them,
+and their commands were not recorded.
 
 ```sh
 export LOG=/home/kruzzzzy/.config/kads/zene/state/runs/1727.r1/logs
@@ -72,10 +74,10 @@ HOME="$LOG/scratch/home" QT_QPA_PLATFORM=offscreen gdb -nx -batch -ex "break 'lm
 HOME="$LOG/scratch/home" QT_QPA_PLATFORM=offscreen build/zene --allowroot --run-script data/scripts/hello.lua "$LOG/scratch/control.mmp" > "$LOG/load-control-2.log" 2>&1; echo EXIT=$? >> "$LOG/load-control-2.log"
 HOME="$LOG/scratch/home" QT_QPA_PLATFORM=offscreen build/zene --allowroot --run-script data/scripts/hello.lua "$LOG/scratch/missing-patterntrack.mmp" > "$LOG/load-missing-2.log" 2>&1; echo EXIT=$? >> "$LOG/load-missing-2.log"
 HOME="$LOG/scratch/home" QT_QPA_PLATFORM=offscreen build/zene --allowroot --run-script data/scripts/hello.lua "$LOG/scratch/empty-patterntrack.mmp" > "$LOG/load-empty-2.log" 2>&1; echo EXIT=$? >> "$LOG/load-empty-2.log"
-git add docs/qwen-fixes-2026-10/cluster-1727.md
-git commit -m "docs(cluster-1727): record EXIT codes and control identity for FALSE-POSITIVE report" -m "Cluster 1727 report: exact commands with EXIT codes; control input verified by sha256 and cmp." -m "Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>"
-git status --short
-git rev-parse --short HEAD
+git add docs/qwen-fixes-2026-10/cluster-1727.md; echo GIT_ADD_EXIT=$? >> "$LOG/git-record-3.log"
+git commit -m 'docs(cluster-1727): align report evidence with the -2 logs' -m 'Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>'; echo GIT_COMMIT_EXIT=$? >> "$LOG/git-record-3.log"
+git status --short; echo GIT_STATUS_EXIT=$? >> "$LOG/git-record-3.log"
+git rev-parse HEAD; echo GIT_REV_EXIT=$? >> "$LOG/git-record-3.log"
 ```
 
 | Step | Log | EXIT |
@@ -90,7 +92,7 @@ git rev-parse --short HEAD
 | Control load | `logs/load-control-2.log` | 0 |
 | Missing-`patterntrack` load | `logs/load-missing-2.log` | 0 |
 | Empty-`patterntrack` load | `logs/load-empty-2.log` | 0 |
-| `git add`, `git commit`, `git status`, `git rev-parse` | `logs/git-record-2.log` | Recorded in that log. The commit exit code cannot be written into the commit that produces it. |
+| `git add`, `git commit`, `git status`, `git rev-parse` | `logs/git-record-3.log` (labels `GIT_ADD_EXIT`, `GIT_COMMIT_EXIT`, `GIT_STATUS_EXIT`, `GIT_REV_EXIT`) | The values are written after the commit runs, so they cannot appear inside the commit they describe. Read them from that log. |
 
 ## Self-check
 
@@ -108,6 +110,6 @@ git rev-parse --short HEAD
    No change was made, so no project or caller is affected. No limit or check was added.
 5. **"If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract that shows it."**
    The contract is the Qt API: `QDomNodeList::at(int)` is `item(int)` (`/usr/include/qt6/QtXml/qdom.h:230-231`), which
-   returns a null node for an out-of-range index (`qt-at-disassembly.log`, `e4f0`/`e4f4`/`e520`). The caller is
-   `src/core/Song.cpp:2138`. The empty chain is null with count 0 (`qdom-at-probe.log`). The loader skips absent children
+   returns a null node for an out-of-range index (`qt-at-disassembly-2.log`, `e4f0`/`e4f4`/`e520`). The caller is
+   `src/core/Song.cpp:2138`. The empty chain is null with count 0 (`qdom-at-probe-2.log`). The loader skips absent children
    (`src/core/Track.cpp:947-955`) and guards `namedItem` (`src/tracks/PatternTrack.cpp:229-234`).
