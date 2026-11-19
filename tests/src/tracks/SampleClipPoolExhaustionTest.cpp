@@ -323,6 +323,92 @@ private slots:
 		QCOMPARE(allocR2, std::uint64_t{0});
 		for (std::uint64_t alloc : allocLater) { QCOMPARE(alloc, std::uint64_t{0}); }
 	}
+
+	// Forced refusal: the handle pool is drained, so the start is refused. The control thread then grows the pool by
+	// one block, and the retry at the same position lands.
+	void aRefusedStartIsDeferredThenLandsAfterTheControlThreadGrowsThePool()
+	{
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		const int rate = Engine::audioEngine()->outputSampleRate();
+
+		std::vector<SampleFrame> longData(static_cast<std::size_t>(2 * rate), SampleFrame(0.25f, 0.25f));
+		const auto longBuffer = std::make_shared<SampleBuffer>(longData.data(), longData.size(), rate);
+
+		std::vector<std::unique_ptr<SampleTrack>> tracks;
+		HandleSweep sweep{&tracks};
+		// Declared after the sweep, so the drained handles are deleted before the sweep runs and before the tracks go.
+		// They are never added to the engine.
+		std::vector<SamplePlayHandle*> drained;
+		struct DrainedHandles
+		{
+			std::vector<SamplePlayHandle*>* handles;
+			~DrainedHandles()
+			{
+				for (SamplePlayHandle* handle : *handles) { delete handle; }
+			}
+		} drainedGuard{&drained};
+
+		tracks.push_back(std::make_unique<SampleTrack>(Engine::getSong()));
+		SampleTrack& track = *tracks.back();
+		auto* clip = dynamic_cast<SampleClip*>(track.createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setSampleBuffer(longBuffer);
+
+		// Drain the handle pool on this (non-audio) thread until tryCreate refuses. The bound keeps the loop finite.
+		constexpr int DrainLimit = 100000;
+		bool poolEmptied = false;
+		for (int i = 0; i < DrainLimit && !poolEmptied; ++i)
+		{
+			SamplePlayHandle* handle = SamplePlayHandle::tryCreate(clip, clip->sampleWindow());
+			if (handle == nullptr) { poolEmptied = true; }
+			else { drained.push_back(handle); }
+		}
+		QVERIFY2(poolEmptied, "the handle pool did not run empty within the drain bound");
+		QVERIFY2(!drained.empty(), "the handle pool held no blocks to drain");
+
+		// play() at TimePos(0), armed: whether a clip started, and the allocations the call made.
+		struct PlayResult
+		{
+			bool started;
+			std::uint64_t allocations;
+		};
+		auto armedTrackPlay = [&]() {
+			RealtimeScope realtime;
+			lmms::test::resetAllocationCount();
+			lmms::test::tlCountAllocations = true;
+			const bool started = track.play(TimePos(0), frames, 0);
+			lmms::test::tlCountAllocations = false;
+			return PlayResult{started, static_cast<std::uint64_t>(lmms::test::tlAllocationCount)};
+		};
+
+		// Refused start: the pool is empty, so the start is deferred and its latch is cleared.
+		const std::uint64_t deferredBefore = SampleTrack::deferredClipStarts();
+		const PlayResult refused = armedTrackPlay();
+		const std::uint64_t deferredAfterRefused = SampleTrack::deferredClipStarts();
+		{
+			RealtimeScope realtime;
+			Engine::audioEngine()->renderNextPeriod();
+		}
+		QVERIFY2(!refused.started, "a refused start must not report that a clip started");
+		QVERIFY2(!clip->isPlaying(), "the refused clip's latch was not cleared, so it could not retry");
+		QCOMPARE(deferredAfterRefused - deferredBefore, std::uint64_t{1});
+		QCOMPARE(handlesFromTrack(track), 0);
+
+		// The control thread grows the pool by one block, outside any RealtimeScope. The retry at the same position lands.
+		SamplePlayHandle::reserveBlocks(1);
+		const PlayResult retried = armedTrackPlay();
+		QVERIFY2(retried.started, "the retried start did not land after the pool grew");
+		QVERIFY2(clip->isPlaying(), "the retried start did not set the latch");
+		{
+			RealtimeScope realtime;
+			Engine::audioEngine()->renderNextPeriod();
+		}
+		QCOMPARE(handlesFromTrack(track), 1);
+
+		// Allocation checks come last.
+		QCOMPARE(refused.allocations, std::uint64_t{0});
+		QCOMPARE(retried.allocations, std::uint64_t{0});
+	}
 };
 
 QTEST_GUILESS_MAIN(SampleClipPoolExhaustionTest)
