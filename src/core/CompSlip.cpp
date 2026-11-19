@@ -26,12 +26,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
+#include <vector>
 
 #include "AudioEngine.h"  // DEFAULT_BUFFER_SIZE
 #include "RealtimeScope.h"
-
-#include <memory>
-#include <vector>
 #include "SampleClip.h"
 #include "SampleFrame.h"
 #include "TakeLane.h"

@@ -69,8 +69,8 @@ using CompSlipOwner = std::unique_ptr<CompSlipReaders, CompSlipRecycler>;
  *  position-dependent rate does not give. Such a take, and an auditioned lane, play unslipped. A slipped span
  *  sounds where the take's clip is on the timeline (its handle's lifetime); the slip chooses what it reads there.
  *
- *  Threading: create() runs where the handle is constructed (it allocates the readers, as the handle's own
- *  construction does); render() is the audio thread's and neither allocates nor locks.
+ *  Threading: create() takes a pooled object on the audio thread and never allocates; control-thread and
+ *  offline callers allocate. render() is the audio thread's and neither allocates nor locks.
  */
 class LMMS_EXPORT CompSlipReaders : public RealtimeFreeNode<CompSlipReaders>
 {
@@ -80,9 +80,11 @@ public:
 
 	/*! The readers for @a clip's slipped spans in @a comp, or nullptr when the clip has none (the handle then pays
 	 *  nothing). @a sourceIn is the source frame the handle starts on; @a outputFramesPerTick converts the spans
-	 *  to output frames from the clip's start (the frame base SamplePlayHandle's own comp spans use). */
-	//! Taken from the pool when the audio thread asks (RealtimeScope active). An empty pool sets @a exhausted and
-	//! returns nullptr: the caller must wait, not play unslipped. @a exhausted, when given, is set on every call.
+	 *  to output frames from the clip's start (the frame base SamplePlayHandle's own comp spans use).
+	 *
+	 *  Audio thread (RealtimeScope active): takes a pooled object and never allocates. An empty pool returns
+	 *  nullptr and sets @a exhausted (true on a pool miss, false on a hit): the caller must wait, not play
+	 *  unslipped. Control-thread and offline callers allocate. */
 	static CompSlipOwner create(const TakeLaneModel& comp, const SampleClip& clip, f_cnt_t sourceIn,
 		double outputFramesPerTick, bool* exhausted = nullptr);
 	//! Control thread only: grows the pool until it holds at least @a readers free objects.
