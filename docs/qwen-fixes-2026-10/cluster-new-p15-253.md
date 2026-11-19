@@ -7,7 +7,7 @@ REAL verdict: FIXED. A bus constructed on the audio path no longer takes the mod
 
 Before this fix, the audio-path constructor registered the bus inline (model lock and bus-list growth in `addAudioBusHandle`), and `setExtOutputEnabled` called the device on the audio path. Both allocate or block, so both are unsafe on the realtime thread.
 
-## Evidence (file:line, HEAD = 19e6c2eaa5 when the final proof was run; product commits bd268757cb and 951bf3cace)
+## Evidence (file:line, product commits bd268757cb and 951bf3cace; test-file commit 7d56dff7a2)
 
 - Realtime constructor branch: `src/core/AudioBusHandle.cpp:88-95`. Under `RealtimeScope` it calls `addAudioBusHandle(this)` and `setExtOutputEnabled(true)` and returns. It does not call `prepareStorage()`. Storage is prepared on the control thread (`:98`, reserve at `:104-107`, control-thread `addAudioBusHandle` at `:108`).
 - Link path: `src/core/AudioEngine.cpp:1173-1176` (`linkOnce`: `enqueued.exchange(true, seq_cst)`, then push). `:1181-1196` (`addAudioBusHandle` on the audio path: state set to Pending at `:1191`, linked onto `m_registrationHead` at `:1193-1194`, counter at `:1195`). The control-thread branch sets Registered at `:1204` under the model lock.
@@ -34,7 +34,7 @@ Before this fix, the audio-path constructor registered the bus inline (model loc
 - Pending→Registered: a bus built on the audio path is Pending until `serviceAudioBusHandlesOnControlThread()` registers it.
 - Pending→Retired→Handled: a bus retired while Pending is marked Retired. The control-thread service then consumes its entry and marks it Handled, and it is never registered.
 
-Final proof, run on the final test file. Product diff is `730db9d871..19e6c2eaa5` (the four product files). Each EXIT is the last line of the log named beside it, except `fix-final-exit.log`, which records the `git diff` exit.
+Final proof, run on the final test file. The product commits are `bd268757cb` and `951bf3cace`. The test-file commit is `7d56dff7a2`, which changes only comments in `tests/src/core/AudioBusHandleTest.cpp` and no assertion. Later report commits change no product or test assertion. Each EXIT is the last line of the log named beside it, except `fix-final-exit.log`, which records the `git diff` exit.
 
 - Product patch: `logs/fix-final.patch` (749 lines); `logs/fix-final-exit.log`: EXIT=0.
 - Whole-product RED: `logs/apply-reverse-final.log` EXIT=0 (reverse apply); `logs/build-4-red-final.log` EXIT=0; `logs/test-3-red-final.log` EXIT=8 (`0% tests passed, 2 tests failed out of 2`: AudioBusHandleTest and AudioBusPlayHandleQueueTest).
@@ -46,6 +46,7 @@ Checks run in this round:
 
 - `python3 feature_check.py <worktree> > logs/gate-1-feature-check.log 2>&1; echo EXIT=$?` gave `EXIT=0`, `RESULT: PASS`, and eight rows PASS (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length). Before the test-file fix the same gate exited 1 on `file-length` (`NEW: new file over 500 lines: tests/src/core/AudioBusHandleTest.cpp (503)`).
 - Test-file fix, commit 1c36c59c16: `AudioBusHandleTest.cpp` had four identical local `BusDeleter`/`BusPtr` blocks. They now share one definition. No assertion changed.
+- Final gate: `python3 feature_check.py <worktree> > logs/gate-2-feature-check.log 2>&1; echo EXIT=$?` gave `EXIT=0` and `RESULT: PASS` (`logs/gate-2-feature-check.log`).
 - `cmake --build build --target AudioBusHandleTest` gave exit 0 (`build-8-dedupe`). `cmake --build build --target AudioBusTest` gave exit 0 (`build-9-audiobus`).
 - `ctest -R AudioBus` from `build/tests`, first run before AudioBusTest was built: `EXIT=8`, AudioBusTest "Not Run" (`logs/test-8-dedupe-full.log`). Superseded by the next run.
 - `ctest -R AudioBus` from `build/tests`, after the build: `EXIT=0`, `100% tests passed out of 3` (AudioBusHandleTest, AudioBusTest, AudioBusPlayHandleQueueTest; `logs/test-9-dedupe-family.log`).
