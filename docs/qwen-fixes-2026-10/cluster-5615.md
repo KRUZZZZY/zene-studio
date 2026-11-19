@@ -74,14 +74,33 @@ The RED and GREEN rebuild logs were not retained. The retained RED and GREEN tes
 
 ## Self-check
 
-The packet mentions submit_check ASK items but does not list them, so I answer by topic.
+The submit_check ASK list is `/home/kruzzzzy/.config/kads/zene/state/runs/5615.r1/logs/submit-1.log` (RESULT: PASS). Each ASK is quoted below and answered with its evidence. Items marked UNVERIFIED were not checked.
 
-- Determinism: the permission seam is real. The runner is uid 1000, so the write-only file is not readable by it, and neither QSKIP branch fired. Each run was done once.
-- Completeness: checked the only caller (`chain.save`, :284 and :334-338) and the sibling (`ControlCommandsExportPresets.cpp:147`). A search of `src/`, `include/` and `tests/src/` for `storeWrite(` found only the definition and that one call.
-- No collateral: no product or test file changed. The reversal was reverted. `git status --short` shows only this report. Pre-existing failures are named under Other findings.
-- ALREADY-FIXED code evidence: see Code evidence above.
-- Sibling commands: export guard at `ControlCommandsExportPresets.cpp:147`. The export row PASSes in both RED and GREEN.
-- Undo honesty: the guard returns before `recordStoreWrite` (:171), so a refused overwrite records no journal step. Without the guard, the RED run shows `history unchanged=0`, meaning a journal step was recorded. That is the state the guard prevents.
-- Audio thread: this job changes no product code. Whether the control path runs on the audio thread was not checked.
-- Old projects: no product change, so no effect on existing projects.
-- Edge cases: normal (`test-chainpreset-1.log` lines 35-36 PASS), unreadable (tested and passing with the guard), oversized (refused by the bounded reader; `fileReaderRefusesOversizedFiles` PASS at `test-chainpreset-1.log` line 8).
+1. ASK: "The regression test FAILS with your product change reverted and PASSES with it (exit codes)."
+   - Reverted: the guard line `src/core/ControlCommandsChain.cpp:161` was removed with `sed` (one-line hunk saved as `reversal-5615.patch`). RED: `test-unreadable-red-1.log` EXIT=1 (line 12); the chain row FAILs (line 6) with `overwrite refused=0, file unchanged=1, history unchanged=0`.
+   - With the guard: `test-unreadable-green-1.log` EXIT=0 (line 11) and `test-unreadable-green-2.log` EXIT=0 (line 11); both runs show 4 passed, 0 failed.
+   - The restore step's exit code was not retained. The tree is at HEAD: `git status --short` shows only this report.
+
+2. ASK: "The test is deterministic: no wall-clock timing, sleeps or races (name the seam or injected values it uses)."
+   - The test uses no clock, sleep, or thread. Its seam is the file permission: it calls `QFile::setPermissions(path, WriteOwner)` to make the preset write-only.
+   - The QSKIP guards cover the two cases that would make the result vacuous: no built-in instrument, and a runner that can read write-only files (for example root). Neither skip fired; the runner is uid 1000 and both rows reported PASS or FAIL.
+   - The RED and GREEN runs were not repeated to test for flakiness: UNVERIFIED.
+
+3. ASK: "The fix is at the cause and complete: every caller and sibling of what you changed was checked and stays consistent."
+   - No product change was made in this job. The guard at :161 predates it (commit 9c7a95196e, an ancestor of HEAD, `ANCESTOR_EXIT=0` in `evidence-1.log:77`).
+   - Caller: `storeWrite` has one caller, `chain.save` (handler :334-338, registered at :284). A search of `src/`, `include/` and `tests/src/` for `storeWrite(` finds only the definition and that call (`evidence-2.log`).
+   - Sibling: `src/core/ControlCommandsExportPresets.cpp:147` has the same guard. The export row PASSes in RED and GREEN (`test-unreadable-red-1.log` line 8).
+   - UNVERIFIED: other readers of `controlReadFileBytes` beyond `storeWrite` were not searched.
+
+4. ASK: "No collateral damage: old projects and saved data still load as before, and any limit or check you added does not hit other callers that legitimately exceed it."
+   - No limit or check was added by this job, and no product or test file changed.
+   - The only size limit involved is the existing 64 MiB `ControlDataReadLimit` (`src/core/ControlDeviceState.cpp:50`), enforced by `controlReadBoundedFile`. The oversized refusal passes (`test-chainpreset-1.log` line 8).
+   - Normal readable store edits and rename still pass (`test-chainpreset-1.log` lines 35-36).
+   - UNVERIFIED: old projects and saved data loading (no load test was run), and whether any legitimate caller exceeds 64 MiB.
+   - The ctest EXIT=8 (`test-chainpreset-1.log` line 49) comes from pre-existing failures named under Other findings, not from this job.
+
+5. ASK: "If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract that shows it."
+   - Verdict is ALREADY-FIXED. `src/core/ControlCommandsChain.cpp:161`: `if (*existed && !controlReadFileBytes(path, &previous, error)) { return false; }`. It returns before the write at :170 and before `recordStoreWrite` at :171, so a refused overwrite leaves the file alone and records no journal step.
+   - The sibling guard is at `src/core/ControlCommandsExportPresets.cpp:147`. Full chain under Code evidence above.
+
+Not checked: whether the control path runs on the audio thread (no call-graph check). This job changes no product code.
