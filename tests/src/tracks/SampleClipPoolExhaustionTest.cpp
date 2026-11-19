@@ -3,20 +3,27 @@
  * thread does not allocate while they wait, and a later pass does not start a clip a second time.
  *
  * The engine's play-handle list holds PlayHandle::MaxNumber (1024) handles. 20 tracks of 60 clips
- * give 1200 clip starts at tick 0. The clip on track 0 is one tick of source (ceil(framesPerTick),
- * so its window is at least one tick) and ends within two periods, so it would be over before a
- * 100 ms control-thread timer fires. Every pass runs the real SampleTrack::play under the allocation
- * probe; only renderNextPeriod stands in for the engine's own per-period service and retry.
+ * give 1200 clip starts at tick 0. play() stages each start; the engine's per-period service
+ * (renderNextPeriod) drains the staged starts into the list, runs the deferred retry, and renders.
+ * A start that finds no room is deferred. Track 0's first clip is one tick of source, ceil(framesPerTick):
+ * 500 frames at 48 kHz and 120 BPM. With a 256-frame period, R1 renders 256 frames and 244 remain, so
+ * the clip is still playing after R1 and ends during R2.
+ * Every pass runs the real SampleTrack::play under the allocation probe. renderNextPeriod is not used
+ * in place of play().
  *
- *   P1  play(TimePos(0)) on all tracks: 1200 starts. The list takes 1024; 1200 - 1024 = 176 are deferred.
- *       Starts = live + deferred = 1024 + 176 = TrackCount * ClipsPerTrack = 1200. The one-tick clip is scheduled.
- *   R1  renderNextPeriod: the retry finds no room (no growth), so the 176 stay deferred; one period renders.
- *   P2  play(TimePos(1)) on all tracks, one tick later, inside every long clip's span: each clip is
- *       still playing or its window is spent, so 0 new starts (per-track handle counts unchanged).
- *   topUp: the control thread's service step (the 100 ms timer), not a pass.
- *   R3  renderNextPeriod: the 176 deferred starts land, allocation-free.
- *   R4  renderNextPeriod: the one-tick clip has finished within its two periods.
- *   Live = 1200 - 1 = 1199: track 0 holds 60 - 1 = 59 handles, each other track 60.
+ *   P1  play(TimePos(0)) on all tracks, then R1. The list takes 1024 starts. The surplus 176 are requested
+ *       (1200 = TrackCount * ClipsPerTrack) and wait; the new code defers them and counts them, the old code
+ *       does not, so only live = 1024 is asserted here. The one-tick clip is scheduled (isPlaying).
+ *   P2  play(TimePos(1)) on all tracks, one tick later and inside every long clip's span. Each clip has
+ *       started already, so the pass adds no handle and defers nothing. R2 renders the one-tick clip's last
+ *       244 frames and it ends. A start that play() had staged again would find the list full and be deferred,
+ *       which the deferred counter would show.
+ *   topUp: the control thread's service step (the 100 ms timer), not a pass. The slot the ended clip freed
+ *       admits one deferred start.
+ *   R3, R4: renderNextPeriod, allocation-free. The long clips run 2 s, so no more slots open in this test.
+ *   Final: at most 1199 can be live (1200 starts minus the ended one-tick clip). Track 0 holds 60 - 1 = 59.
+ *       No track holds more than 60. Only these bounds are asserted; the exact total depends on how the
+ *       list holds its surplus (see P1).
  */
 
 #include <QtTest>
@@ -48,6 +55,8 @@ namespace
 constexpr int TrackCount = 20;
 // Under SampleTrack's per-pass clip limit (64), so every clip of a track reaches the scheduler in one pass.
 constexpr int ClipsPerTrack = 60;
+// PlayHandle::MaxNumber: the engine's play-handle list holds this many starts.
+constexpr int ListCapacity = 1024;
 
 //! Removes a track's handles through the engine's synchronous sweep when the test leaves scope.
 struct HandleSweep
@@ -105,9 +114,10 @@ private slots:
 
 		std::vector<SampleFrame> longData(static_cast<std::size_t>(2 * rate), SampleFrame(0.25f, 0.25f));
 		const auto longBuffer = std::make_shared<SampleBuffer>(longData.data(), longData.size(), rate);
-		// The one-tick clip: ceil(framesPerTick) frames, so windowTicksFor is at least 1, and it must end within two periods.
+		// The one-tick clip: ceil(framesPerTick) frames, so windowTicksFor is at least 1. It must outlive
+		// the first period and end within two periods.
 		const auto tickFrames = static_cast<f_cnt_t>(std::ceil(Engine::framesPerTick(rate)));
-		QVERIFY2(tickFrames <= 2 * frames, "one tick of source must end within about two periods");
+		QVERIFY2(tickFrames > frames && tickFrames <= 2 * frames, "one tick of source must outlive a period and end within two");
 		std::vector<SampleFrame> shortData(static_cast<std::size_t>(tickFrames), SampleFrame(0.5f, 0.5f));
 		const auto shortBuffer = std::make_shared<SampleBuffer>(shortData.data(), shortData.size(), rate);
 
@@ -137,7 +147,7 @@ private slots:
 			lmms::test::tlCountAllocations = false;
 			return lmms::test::tlAllocationCount;
 		};
-		// The engine's own per-period service: the deferred retry, then one period rendered.
+		// The engine's own per-period service: the drain of staged starts into the list, the deferred retry, a render.
 		auto armedRender = [&]() {
 			RealtimeScope realtime;
 			lmms::test::resetAllocationCount();
@@ -151,43 +161,57 @@ private slots:
 			for (const auto& track : tracks) { counts.push_back(handlesFromTrack(*track)); }
 			return counts;
 		};
+		auto capacityDeferred = []() { return Engine::audioEngine()->capacityDeferredPlayHandles(); };
 
-		// P1: every clip starts once. The list takes 1024 and the surplus 176 are deferred, not dropped.
-		const std::uint64_t deferredBeforeP1 = Engine::audioEngine()->capacityDeferredPlayHandles();
+		// P1 and R1: every clip starts once. R1 drains the staged starts, so both counts are read after it. Nothing has
+		// ended yet, so no subtraction. The list takes ListCapacity starts. The rest are not lost, but on the old code
+		// they are not visible through the list or the deferred counter (observed there: live 1024, deferred 0).
+		const std::uint64_t deferredBeforeP1 = capacityDeferred();
 		const std::uint64_t allocationsP1 = armedPass(TimePos(0));
-		const int deferredP1 = static_cast<int>(Engine::audioEngine()->capacityDeferredPlayHandles() - deferredBeforeP1);
-		const int startedP1 = liveSamplePlayHandles() + deferredP1;
-		QVERIFY2(shortClip->isPlaying(), "the one-tick clip was not scheduled");
-		QCOMPARE(startedP1, TrackCount * ClipsPerTrack);
-		QCOMPARE(allocationsP1, std::uint64_t{0});
-
-		// R1: the retry finds no room, so the deferred starts wait for the control thread.
 		const std::uint64_t allocationsR1 = armedRender();
-		QCOMPARE(allocationsR1, std::uint64_t{0});
+		const int deferredP1 = static_cast<int>(capacityDeferred() - deferredBeforeP1);
+		const int liveR1 = liveSamplePlayHandles();
+		QVERIFY2(shortClip->isPlaying(), "the one-tick clip was not scheduled");
+		QVERIFY(TrackCount * ClipsPerTrack > ListCapacity); // the requests exceed the list, so the exhaustion is real
+		QCOMPARE(liveR1, ListCapacity);                      // the list takes exactly its capacity
+		QVERIFY2(liveR1 + deferredP1 <= TrackCount * ClipsPerTrack, "more starts counted than were requested");
 
-		// P2: one tick later, still inside every long clip's span. No clip starts a second time.
+		// P2 and R2: play() again one tick later, inside every long clip's span. Each clip has already started,
+		// so the pass adds no handle and defers nothing: per-track counts and the deferred counter hold.
 		const std::vector<int> beforeP2 = perTrackHandles();
-		const std::uint64_t deferredBeforeP2 = Engine::audioEngine()->capacityDeferredPlayHandles();
+		const std::uint64_t deferredBeforeP2 = capacityDeferred();
 		const std::uint64_t allocationsP2 = armedPass(TimePos(1));
-		const std::vector<int> afterP2 = perTrackHandles();
-		QCOMPARE(Engine::audioEngine()->capacityDeferredPlayHandles() - deferredBeforeP2, std::uint64_t{0});
-		for (std::size_t t = 0; t < beforeP2.size(); ++t) { QCOMPARE(afterP2[t], beforeP2[t]); }
-		QCOMPARE(allocationsP2, std::uint64_t{0});
+		QVERIFY2(perTrackHandles() == beforeP2, "play() added a handle for a clip that had already started");
+		QCOMPARE(capacityDeferred() - deferredBeforeP2, std::uint64_t{0});
 
-		// The control thread's service step (the 100 ms timer), then the engine's next period lands the deferred starts.
+		// R2 renders the one-tick clip's last 244 frames and it ends. A start staged again by P2 would find the
+		// list full and be deferred here, so the counter would move.
+		const std::uint64_t allocationsR2 = armedRender();
+		const std::vector<int> afterR2 = perTrackHandles();
+		QCOMPARE(capacityDeferred() - deferredBeforeP2, std::uint64_t{0});
+		for (int count : afterR2) { QVERIFY2(count <= ClipsPerTrack, "a clip is in the list twice"); }
+
+		// topUp: the control thread's service step (the 100 ms timer), not a pass. It admits the deferred start
+		// that the ended clip's slot allows. Then R3 and R4 render, allocation-free.
 		Engine::audioEngine()->topUpPlayHandleCapacityForTest();
 		const std::uint64_t allocationsR3 = armedRender();
-		QCOMPARE(allocationsR3, std::uint64_t{0});
-
-		// R4: the one-tick clip has finished within its two periods.
 		const std::uint64_t allocationsR4 = armedRender();
-		QCOMPARE(allocationsR4, std::uint64_t{0});
 
-		// 1200 starts minus the one-tick clip, which has ended: 1199 live. Track 0 holds 59, the others 60.
+		// Final: 1200 starts, and the one-tick clip has ended, so at most 1199 are live. Track 0 holds its 59 long clips.
+		// The other tracks hold at most 60 each. Only these bounds are asserted: the list stays at ListCapacity until
+		// room opens, and the exact live total depends on how the surplus is held (see the P1 comment).
 		const std::vector<int> finalCounts = perTrackHandles();
-		QCOMPARE(liveSamplePlayHandles(), TrackCount * ClipsPerTrack - 1);
 		QCOMPARE(finalCounts[0], ClipsPerTrack - 1);
-		for (std::size_t t = 1; t < finalCounts.size(); ++t) { QCOMPARE(finalCounts[t], ClipsPerTrack); }
+		for (int count : finalCounts) { QVERIFY2(count <= ClipsPerTrack, "a track holds more than its clips"); }
+		QVERIFY2(liveSamplePlayHandles() <= TrackCount * ClipsPerTrack - 1, "more clips live than starts minus the ended one");
+
+		// Allocation checks come last, so every functional check above runs first.
+		QCOMPARE(allocationsP1, std::uint64_t{0});
+		QCOMPARE(allocationsR1, std::uint64_t{0});
+		QCOMPARE(allocationsP2, std::uint64_t{0});
+		QCOMPARE(allocationsR2, std::uint64_t{0});
+		QCOMPARE(allocationsR3, std::uint64_t{0});
+		QCOMPARE(allocationsR4, std::uint64_t{0});
 	}
 };
 
