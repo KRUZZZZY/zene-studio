@@ -47,7 +47,7 @@ The test file `tests/src/core/ControlServerDrainTest.cpp` has one test function,
 - test-3 family: `logs/005-test-3-family.log` EXIT=0.
 - test-3 control-all: `logs/006-test-3-control-all.log` EXIT=8 (see Other findings).
 - build-3b: `logs/build-3b.log`. No EXIT line in the log; not re-run.
-- Final HEAD (`c64d452b18`), re-run for this report:
+- Final HEAD (`9e7f7181c0`), re-run for this report:
   - build: `logs/build-5.log` EXIT=0 (`cmake --build build --target zene ControlServerDrainTest ControlShutdownHookTest`).
   - GREEN: `logs/test-5-green.log` EXIT=0, `100% tests passed out of 1` (`ctest -R ControlServerDrain`).
   - family: `logs/test-5-family.log` EXIT=0, `100% tests passed out of 6` (run with `TMPDIR=/tmp/z5010`).
@@ -58,7 +58,7 @@ The test file `tests/src/core/ControlServerDrainTest.cpp` has one test function,
     - GREEN: `logs/test-5-green2.log` EXIT=0, `100% tests passed out of 1`. The consumed lines are 21-24 (65536 each) and PASS is line 25.
     - Tree after the redo: `logs/status-5.log` and `logs/diff-head-5.log` each have EXIT=0 and no output.
   - The old p4 logs `logs/test-4-baseline.log`, `logs/test-4-red.log`, `logs/test-4-withfix.log`, `logs/test-4-green.log` have no EXIT line. They are superseded by the `test-5-*` logs above. `logs/test-4-red.log:8-10` shows the same RED numbers. `logs/fix.patch` is present.
-- gates: `logs/gates-first-run-FAIL.log` and `logs/gates.log` have `RESULT: FAIL` and `RESULT: PASS` lines but no EXIT line. The EXIT=1 and EXIT=0 values were echoed in the session and are not in either log. They were not re-run here.
+- gates: `logs/gates-first-run-FAIL.log` and `logs/gates.log` have `RESULT: FAIL` and `RESULT: PASS` lines but no EXIT line. The EXIT=1 and EXIT=0 values were echoed in the session and are not in either log. They were not re-run here. The re-run for this report is `logs/gates-6.log` EXIT=0, `RESULT: PASS`, with no FAIL row.
 
 ## f) Control command canary
 
@@ -98,4 +98,8 @@ The first run (`logs/gates-first-run-FAIL.log`) failed `fork-sources` and `all-s
 
 ## Self-check
 
-(to be filled after the completion check in p6)
+1. **Fails with the change reverted, passes with it (exit codes).** Reverted with `git apply -R logs/fix2.patch` (`logs/fix2-reverse.log` EXIT=0). `logs/test-5-red.log` EXIT=8, `0% tests passed, 1 tests failed out of 1`. Line 9 is the FAIL: `consumed = 8228544 bytes in ONE activation; limit = DrainBytesPerActivation (65536) + 8192`. Reapplied (`logs/fix2-reapply.log` EXIT=0). `logs/test-5-green2.log` EXIT=0, `100% tests passed out of 1`.
+2. **Deterministic: no wall-clock timing, sleeps or races.** The test header says so (`tests/src/core/ControlServerDrainTest.cpp:31`). A grep for sleep, usleep, wait, chrono, time, Timer and QTest finds no call in the code. The seams are: the socket send buffer, set with `SO_SNDBUF` (`:164`); a fill of at least `2 * DrainBytesPerActivation` (`:195-197`); the per-round count taken by `writeUntilWouldBlock` (`:208`); and the tolerance `ConsumedSlackBytes = 8192` (`:75`). The exact counts depend on kernel AF_UNIX buffer accounting (see g).
+3. **Fix at the cause; callers and siblings checked.** The cause is the unbounded `while (true)` in `drainPeer` (`fa4a5f2e78:src/core/ControlServer.cpp:260-266`). The only call site is `src/core/ControlServer.cpp:359`, checked with `grep -rn 'drainPeer(' src include`. The sibling `readChunk` is already bounded (`:281`, `:288`, 1 MiB cap at `include/ControlServer.h:83`) and is unchanged. Not verified: the Windows drain in `src/core/ControlServerWin32.cpp:513-534` is a separate path. It was not changed or built here, and I did not check whether it has the same unbounded loop.
+4. **No collateral damage.** The bound applies only on the draining branch of `onClientReadable` (`src/core/ControlServer.cpp:356-359`), after a request line is over the 1 MiB cap. No saved data or file format is involved. The budget can delay the close of a client that was already refused by one pass. It does not refuse any request, and the level-triggered notifier resumes the drain (`:257-258`). Evidence: `logs/test-5-family.log` EXIT=0, `100% tests passed out of 6`; `logs/test-5-canary.log` EXIT=0 (`ControlCommandsSnapshot`, 933 ids). The 31 Control tests that fail do so with and without the fix. `logs/fail-withfix-after.txt` is byte-identical to `logs/fail-without-fix.txt`. `logs/fail-with-fix.txt` has the same 31 names in a different order (sorted diff empty).
+5. **Verdict clause.** Not applicable: the verdict is FIXED (line 1 of this report), so the ALREADY-FIXED and FALSE-POSITIVE clause does not apply.
