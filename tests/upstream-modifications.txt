@@ -5997,3 +5997,5 @@ src/core/AudioBusHandle.cpp	p3a (new-p12-221-port): the bus buffer keeps its vec
 src/core/AudioEngine.cpp	p3a (new-p12-221-port): reserves the frame and comp-slip pools at init and in the play-handle capacity top-up
 include/SamplePlayHandle.h	p3a (new-p12-221-port): comp-slip readers are a CompSlipOwner; m_compSlipExhausted records a pool miss
 src/core/SamplePlayHandle.cpp	p3a (new-p12-221-port): snapshotComp passes the exhaustion flag to CompSlipReaders::create()
+include/SamplePlayHandle.h	p2 (new-p12-221-port): declares the pooled storage (operator new/delete routing plain heap handles and pooled blocks), tryCreate() and reserveBlocks(), plus <cstddef> for std::size_t; constructors and the rest of the class are unchanged.
+src/core/CMakeLists.txt	p2 (new-p12-221-port): builds core/SamplePlayHandlePool.cpp next to core/SamplePlayHandle.cpp.

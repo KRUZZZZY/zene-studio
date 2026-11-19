@@ -29,6 +29,7 @@
 #include "Sample.h"
 #include <atomic>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <limits>
@@ -69,6 +70,17 @@ public:
 	 *  #611: docs/CLIP-CAPTURE-DESIGN.md §2.5, invariant I1). */
 	SamplePlayHandle( SampleClip* clip, const SampleWindow& window );
 	~SamplePlayHandle() override;
+
+	//! Heap path for every plain `new SamplePlayHandle`; a subclass (PreviewPlayHandle) takes it with its own size.
+	static void* operator new(std::size_t size);
+	static void operator delete(void* p) noexcept;
+
+	/*! Audio thread. Builds a handle in a pooled block. Returns nullptr when the pool is empty, or when the handle has
+	 *  no buffer or no comp-slip readers (the block goes back to the pool). Never allocates, locks, waits or logs. */
+	static SamplePlayHandle* tryCreate(SampleClip* clip, const SampleWindow& window) noexcept;
+
+	//! Control thread only. Grows the pool until its free list holds at least `blocks` blocks.
+	static void reserveBlocks(std::size_t blocks);
 
 	inline bool affinityMatters() const override
 	{

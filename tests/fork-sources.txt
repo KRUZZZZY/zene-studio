@@ -2207,6 +2207,7 @@ src/core/SampleDecoderFrameLoop.h
 src/core/SampleFrameEdits.cpp
 src/core/SampleOperators.cpp
 src/core/SampleOperators.h
+src/core/SamplePlayHandlePool.cpp
 src/core/ScoreExport.cpp
 src/core/ScriptApiVersion.cpp
 src/core/ScriptBindings.cpp

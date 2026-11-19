@@ -1082,6 +1082,7 @@ set(LMMS_SRCS
 	core/SampleClipEffects.cpp
 	core/SampleDecoder.cpp
 	core/SamplePlayHandle.cpp
+	core/SamplePlayHandlePool.cpp
 	core/SampleRecordHandle.cpp
 	core/Scale.cpp
 	core/ScriptApiVersion.cpp
