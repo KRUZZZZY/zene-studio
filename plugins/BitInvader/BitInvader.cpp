@@ -22,9 +22,11 @@
  *
  */
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <memory>
+#include <QDebug>
 #include <QDomElement>
 
 #include "BitInvader.h"
@@ -196,6 +198,11 @@ void BitInvader::loadSettings( const QDomElement & _this )
 	}
 	if (shape.ok())
 	{
+		// Decode guarantees finite values; clamp them to the wavetable's range before they reach the graph.
+		for (int i = 0; i < shape.count; ++i)
+		{
+			shape.samples[i] = std::clamp(shape.samples[i], -1.0f, 1.0f);
+		}
 		// Clear wavetable before loading a new
 		m_graph.setLength(previousLength);
 		m_graph.clear();
@@ -206,6 +213,7 @@ void BitInvader::loadSettings( const QDomElement & _this )
 	else
 	{
 		waveform::reportRefused(QStringLiteral("BitInvader"), shapeAttribute, shape, sampleLength, wavetableSize);
+		qWarning() << "BitInvader: refused saved wavetable in" << shapeAttribute << "; the current wavetable is kept";
 	}
 
 	// Load LED normalize 
