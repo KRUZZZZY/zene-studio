@@ -92,7 +92,9 @@ git rev-parse HEAD; echo GIT_REV_EXIT=$? >> "$LOG/git-record-3.log"
 | Control load | `logs/load-control-2.log` | 0 |
 | Missing-`patterntrack` load | `logs/load-missing-2.log` | 0 |
 | Empty-`patterntrack` load | `logs/load-empty-2.log` | 0 |
-| `git add`, `git commit`, `git status`, `git rev-parse` | `logs/git-record-3.log` (labels `GIT_ADD_EXIT`, `GIT_COMMIT_EXIT`, `GIT_STATUS_EXIT`, `GIT_REV_EXIT`) | The values are written after the commit runs, so they cannot appear inside the commit they describe. Read them from that log. |
+| `git add`, `git commit`, `git status`, `git rev-parse` | `logs/git-record-3.log` (labels `GIT_ADD_EXIT`, `GIT_COMMIT_EXIT`, `GIT_STATUS_EXIT`, `GIT_REV_EXIT`) | `git add` 0, `git commit` 0, `git status` 0, `git rev-parse` 0 (all from `logs/git-record-3.log`). `git rev-parse HEAD` output: `cde7c77ffa9a9c7ce3753a1a7722ef8fd7de9ea6`. The values are written after the commit runs, so they cannot appear inside the commit they describe. |
+
+The labeled exits for the final docs-only commit that carries this correction are in `logs/git-record-4.log`, which is created after that commit.
 
 ## Self-check
 
