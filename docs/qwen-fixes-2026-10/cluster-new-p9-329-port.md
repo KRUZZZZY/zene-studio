@@ -4,17 +4,15 @@ FIXED
 
 ## The finding
 
-Luna's patrol reported, against `plugins/OpulenZ/OpulenZ.cpp:222` (historical line
-numbers): the OpulenZ instrument's destructor destroyed its emulator before it
-removed the instrument's play handles, and it did so without the emulator mutex,
-so an audio callback that was processing a play handle of that track could enter
+At the base commit, `plugins/OpulenZ/OpulenZ.cpp:225-231`, the OpulenZ
+instrument's destructor destroyed its emulator before it removed the
+instrument's play handles, and it did so without the emulator mutex, so an audio
+callback that was processing a play handle of that track could enter
 `playImpl()` and use the freed emulator.
 
-This is a PORT job: the fix was accepted on `bugs/qwen-new-p9-329` (commit
-`31d137921`) but could not go on the newest train because of a merge conflict in
-`plugins/OpulenZ/OpulenZ.cpp`. The fix was re-applied by hand onto this branch
-(no merge, no cherry-pick, no rebase) and the regression test was rebuilt on the
-current tree.
+This is a PORT job: the fix was re-applied by hand onto this branch (no merge,
+no cherry-pick, no rebase) and the regression test was rebuilt on the current
+tree.
 
 ## Verdict evidence (REAL, not ALREADY-FIXED)
 
@@ -37,15 +35,16 @@ still registered with the audio engine, and outside `emulatorMutex` (declared in
 the render buffer and the register writes).
 
 The audio engine's `removePlayHandlesOfTypes()`
-(`src/core/AudioEngine.cpp:1367`) takes the engine's change-in-model lock
-(`requestChangeInModel()`), which the render path holds for a whole period - so
-it is the operation that synchronises the control thread with the audio thread.
-Calling it AFTER the emulator was deleted left a window in which a running
-callback could still reach the freed emulator.
+(`src/core/AudioEngine.cpp:1626-1702`) calls `requestChangeInModel()` at its
+entry (line 1628), which takes the engine's change-in-model lock
+(`m_changeMutex`, `src/core/AudioEngine.cpp:1707-1720`); the render path holds
+that lock for a whole period, so the call waits out a running period before it
+sweeps the handle lists. Calling it AFTER the emulator was deleted left a window
+in which a running callback could still reach the freed emulator.
 
 ## The fix (at the cause)
 
-`plugins/OpulenZ/OpulenZ.cpp:225-237` now:
+`plugins/OpulenZ/OpulenZ.cpp:225-235` now:
 
 ```cpp
 OpulenzInstrument::~OpulenzInstrument() {
@@ -80,7 +79,7 @@ no new lock, no logging and no wait was added to the audio thread.
 
 ### Siblings and callers checked (definition of done #3)
 
-* `reloadEmulator()` (`plugins/OpulenZ/OpulenZ.cpp:241-252`) - the sibling with
+* `reloadEmulator()` (`plugins/OpulenZ/OpulenZ.cpp:238-250`) - the sibling with
   the same defect shape. On THIS line it is already correct: the emulator
   deletion, the replacement, the voice-state reset and the patch write all run
   inside one `emulatorMutex` section (this is cluster new-p9-328's port,
@@ -94,9 +93,10 @@ no new lock, no logging and no wait was added to the audio thread.
   under the mutex and registers the `InstrumentPlayHandle` with the engine; the
   destructor is now its exact mirror image (handles removed, then the emulator
   freed).
-* The engine side is unchanged: `removePlayHandlesOfTypes()` already sweeps both
-  the active list and the staged list (`src/core/AudioEngine.cpp:1385-1419`), so
-  the handle the constructor staged is really disposed of.
+* The engine side is unchanged: `removePlayHandlesOfTypes()` already sweeps the
+  active list (`src/core/AudioEngine.cpp:1629-1642`), the staged
+  `m_newPlayHandles` list (`1644-1679`) and the capacity-deferred list
+  (`1681-1700`), so the handle the constructor staged is really disposed of.
 
 ### Realtime / undo / commands
 
@@ -173,12 +173,11 @@ logs are in
 
 | Check | Exact command and result |
 | --- | --- |
-| Manifest regeneration | The recipe from the `Regenerate with` lines of `tests/all-sources.txt` (git ls-files + C-collation sort) was run and its output replaced the entry list: **EXIT=0**, exactly one entry added (`tests/src/plugins/OpulenZLifetimeTest.cpp`), `git diff --numstat` = `1 0`. |
-| Manifest reproduce | `bash tests/all-sources-reproduce.sh > .../logs/allsources.log 2>&1`; **EXIT=0**, log ends `REPRODUCES: the entry list in all-sources.txt is the recipe's own output.` |
-| Build regression target | `cmake --build build --target OpulenZLifetimeTest`; **EXIT=0** (`build-opulenz-lifetime`). |
-| Regression GREEN | `cd build/tests && ctest -R '^OpulenZLifetimeTest$' --output-on-failure`; **EXIT=0**, `100% tests passed out of 1`, 0.65 s (`ctest-opulenz`). |
-| Feature gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > .../logs/feature-check.log 2>&1`; **EXIT=0**. Table: `fork-sources` PASS, `all-sources-reproduce` PASS, `no-upstream-regression` PASS, `check-namespace` PASS, `no-tautology` PASS, `doc-figures` PASS, `complexity` no new item, `file-length` no new item. `RESULT: PASS`. |
-| Pre-submit check | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-329-port > .../logs/submit-check.log 2>&1`; **EXIT=0** after the fix commit. |
+| Reverse the fix (RED) | `git diff -- plugins/OpulenZ/OpulenZ.cpp > logs/fix.patch && git apply -R logs/fix.patch`; rebuild; `cd build/tests && ctest -R OpulenZLifetime --output-on-failure` gave **exit 8**, `0% tests passed, 1 tests failed out of 1`, in `logs/test-4-red.log`. Earlier a wrapper had recorded exit 0 only because a trailing `echo` masked ctest's status; the real ctest exit was re-captured as 8. |
+| Restore the fix (GREEN) | `git apply logs/fix.patch`; rebuild; `ctest -R OpulenZLifetime` gave **exit 0**, `100% tests passed out of 1` (0.71 s), in `logs/test-5-green.log`. |
+| Regression family | `cd build/tests && ctest -R OpulenZ --output-on-failure` gave **exit 0**, `100% tests passed, 0 tests failed out of 5`, in `logs/test-6-family.log`. |
+| Feature gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > .../logs/feature-check-2.log 2>&1`; **exit 0**. Table: `fork-sources` PASS, `all-sources-reproduce` PASS, `no-upstream-regression` PASS, `check-namespace` PASS, `no-tautology` PASS, `doc-figures` PASS, `complexity` no new item, `file-length` no new item. `RESULT: PASS`. |
+| Pre-submit check | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-329-port > .../logs/submit-check-2.log 2>&1`; **exit 0**, `RESULT: PASS - submit`. |
 | Working tree | `git status --short`; empty output. |
 
 ## Files committed
@@ -197,14 +196,17 @@ logs are in
 ## Self-check
 
 * **Does the regression test FAIL with the product change reverted and PASS
-  with it (exit codes)?** The earlier branch's runs on this same test show
-  RED before the fix (`ctest ...` **EXIT=8**, assertion
-  `'g_events.handleDestroyedAt < g_events.emulatorDestroyedAt' returned FALSE`,
-  play handle disposed at 2, emulator freed at 1) and GREEN after it
-  (**EXIT=0**); the reverse-patch run failed again with **EXIT=8** and the
-  restored fix passed with **EXIT=0**. On this work tree the GREEN run was
-  repeated: **EXIT=0**, 1/1 (`ctest-opulenz`). The RED leg was not re-run on
-  this box after the port because the build tree already carried the fix.
+  with it (exit codes)?** Yes, on this work tree this session. The product
+  change was reverted with `git apply -R logs/fix.patch`, the target was
+  rebuilt, and `ctest -R OpulenZLifetime` gave **exit 8** in
+  `logs/test-4-red.log` with the assertion
+  `'g_events.handleDestroyedAt < g_events.emulatorDestroyedAt' returned FALSE`
+  (play handle disposed at 2, emulator freed at 1; 1 of 1 failed). The fix was
+  restored with `git apply logs/fix.patch`, rebuilt, and the same ctest gave
+  **exit 0** in `logs/test-5-green.log` (1/1 passed). The wider `ctest -R
+  OpulenZ` family run passed 5/5, **exit 0**, in `logs/test-6-family.log`. An
+  earlier wrapper had captured exit 0 only because of a trailing `echo`; the
+  real ctest status was re-captured as 8.
 * **Is the test deterministic?** Yes - the verdict is the ORDER of two recorded
   events (the play handle's disposal and the emulator's destruction), captured
   in one sequence counter. There is no sleep, no timing threshold and no race;
@@ -212,11 +214,12 @@ logs are in
 * **Is the fix at the cause and complete?** Yes - the destructor stops the audio
   thread (the play-handle removal, the engine's synchronisation point) before it
   frees the emulator, and it frees it under the mutex that guards it
-  (`plugins/OpulenZ/OpulenZ.cpp:225-237`). Every caller and sibling was checked:
+  (`plugins/OpulenZ/OpulenZ.cpp:225-235`). Every caller and sibling was checked:
   `playImpl()` (lines 400-423) renders under `emulatorMutex`; `reloadEmulator()`
-  (lines 241-252) already replaces the emulator under that mutex; the
+  (lines 238-250) already replaces the emulator under that mutex; the
   constructor is the destructor's mirror image; the engine's
-  `removePlayHandlesOfTypes()` sweeps both handle lists.
+  `removePlayHandlesOfTypes()` sweeps the active, staged and deferred handle
+  lists.
 * **No collateral damage?** None outside the OpulenZ teardown: no saved data, no
   project format, no other plugin, no control command, no undo step, and no
   gate limit was changed.
@@ -227,14 +230,8 @@ logs are in
 
 ## Other findings
 
-* `tests/all-sources.txt` was 1151 entries out of date on the earlier branch
-  (the `plugins/SfzPlayer/sfizz/...` block that its own recipe excludes).
-  Regeneration here produced exactly one line of difference, the new test file,
-  so the drift was already repaired by the base snapshot. No further change to
-  the manifest was needed or made.
-* The failing `PluginPortsMigrationTest::nonRealtimeLadspaEffectsAreInvalid`
-  case ("SWH Decimator test fixture was not loaded") seen on the earlier branch
-  is unrelated and pre-existing: the SWH LADSPA plug-ins are not built in this
-  tree.
-* No ThreadSanitizer runtime is installed on this box, so the race argument
-  above is an ordering argument rather than an instrumented result.
+* No ThreadSanitizer runtime is available for this session's builds, so the race
+  argument above is an ordering argument rather than an instrumented result.
+* The `ctest -R OpulenZ` family log was written to this run's
+  `logs/test-6-family.log`; the earlier copy had lived in a worker's temporary
+  directory.
