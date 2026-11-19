@@ -212,7 +212,8 @@ private slots:
 		QCOMPARE(effect->tailFrames(), tailBefore);
 	}
 
-	//! A two-frame response at twice the engine's rate resamples to one frame or none: the one-frame fallback still loads it.
+	//! Covers the normal short-resample branch: two frames at twice the engine's rate resample to one frame (expected 1), which loads.
+	//! It does not pin the one-frame fallback; that is emptyResampleOfAShortImpulseKeepsTheFallback.
 	void veryShortImpulseStillLoads()
 	{
 		QTemporaryDir dir;
@@ -228,6 +229,28 @@ private slots:
 		QVERIFY2(error.isEmpty(), qPrintable(QStringLiteral("loadImpulse threw on a very short impulse: %1").arg(error)));
 		QVERIFY2(loaded, "a very short impulse that resamples to at most one frame was refused; the one-frame fallback should load it");
 		QCOMPARE(effect->impulsePath(), shortWav);
+	}
+
+	//! A one-frame response at four times the engine's rate resamples to no frames (expected 0), so the one-frame fallback keeps it and it loads.
+	void emptyResampleOfAShortImpulseKeepsTheFallback()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const int engineRate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+		const QString oneFrame = dir.filePath(QStringLiteral("impulse-one-frame.wav"));
+		QVERIFY(writeWav(oneFrame, 4 * engineRate, 1));
+
+		const std::shared_ptr<const SampleBuffer> decoded = SampleBuffer::fromFile(oneFrame);
+		QVERIFY2(decoded != nullptr && decoded->size() == 1 && decoded->sampleRate() == static_cast<sample_rate_t>(4 * engineRate),
+			"precondition failed: the one-frame WAV did not decode as a 1-frame buffer at four times the engine's rate");
+
+		EffectChain chain{nullptr};
+		auto effect = std::make_unique<ConvolutionReverbEffect>(&chain, nullptr);
+		QString error;
+		const bool loaded = tryLoad(*effect, oneFrame, error);
+		QVERIFY2(error.isEmpty(), qPrintable(QStringLiteral("loadImpulse threw on a one-frame impulse: %1").arg(error)));
+		QVERIFY2(loaded, "a one-frame impulse that resamples to no frames was refused; the one-frame fallback should keep it");
+		QCOMPARE(effect->impulsePath(), oneFrame);
 	}
 
 	//! Positive control: a normal response loads at the engine's rate, and at another valid rate.
