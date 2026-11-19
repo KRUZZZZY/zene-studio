@@ -100,7 +100,7 @@ ctest -R DataFileSaveIntegrity --output-on-failure
 # EXIT=8
 
 # from the repository root, revert only the production diff for the reverted run
-git diff > /home/kruzzzzy/.config/kads/zene/state/runs/new-p8-109.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.config/kads/zene/state/runs/new-p8-109.r1/logs/fix.patch
+git diff -- src/core/DataFile.cpp > /home/kruzzzzy/.config/kads/zene/state/runs/new-p8-109.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.config/kads/zene/state/runs/new-p8-109.r1/logs/fix.patch
 # EXIT=0; rebuild, then ctest as above gives EXIT=8 again
 
 git apply /home/kruzzzzy/.config/kads/zene/state/runs/new-p8-109.r1/logs/fix.patch
