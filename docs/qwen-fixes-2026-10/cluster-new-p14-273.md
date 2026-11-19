@@ -3,78 +3,108 @@ FIXED
 # Cluster new-p14-273: pitch-preserving output ignored the clip's sample amplification
 
 Product commit: 540f980dc7 (fix(stretch): apply sample amplification to pitch-preserving output).
-Logs: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p14-273.r1/logs/` (called L below).
+Baseline HEAD for this round: 9ee79d903a (`L/head-01-baseline.txt`).
+Logs: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p14-273.r2/logs/` (called L below). This report cites round r2 only.
 
-## 1. Evidence
+## 1. Decision and evidence
 
-- The resample path applies the clip gain: `src/core/Sample.cpp:243-245` multiplies each frame by `m_amplification`.
-- The resample path reaches `Sample::play` at `src/core/SamplePlayHandle.cpp:602`, inside the branch that also calls `m_compSlip->render` at line 607.
-- The fix is in `renderPreservingPitch`, `src/core/SamplePlayHandle.cpp:738-745`. The stretcher still reads the raw input, so WSOLA and Rubber Band share one gain multiply. The gain is applied only to the `written` frames. The zero-filled tail is untouched (line 746).
-- `amplification()` is a relaxed atomic load (`include/Sample.h:123`), so the new read adds no shared mutable state.
-- Sibling: `renderTransientRepeat` already applies amplification (`src/core/TransientRepeat.cpp:284`, grep finds 3 references in that file). It is unchanged.
-- `src/core/CompSlip.cpp` has 0 references to amplification (verified by grep). See section 6.
+Decision: `renderPreservingPitch` multiplies the frames the stretcher wrote by the clip's sample amplification, the same gain `Sample::render` applies on the resample path.
+
+- Single caller: `src/core/SamplePlayHandle.cpp:596` calls `renderPreservingPitch`. The definition is at `src/core/SamplePlayHandle.cpp:704`, and no other call site exists in `src/` or `include/` (grep).
+- Fix block: `src/core/SamplePlayHandle.cpp:741-745` reads `m_sample->amplification()` and scales `dst[0..written)` when the gain is not 1.0. Line 746 zero-fills the unwritten tail, and the fix leaves it alone.
+- Resample-path gain: `src/core/Sample.cpp:243-245` multiplies each frame by `m_amplification`. The fix copies this behaviour.
+- Gain sibling: `src/core/TransientRepeat.cpp:284` multiplies each frame by `source.amplification`. `renderTransientRepeat` was already correct and is unchanged.
+- Atomic read: `include/Sample.h:123` `amplification()` is a relaxed atomic load.
+- The stretcher input stays raw, so WSOLA and Rubber Band share one multiply.
 
 ## 2. Test matrix
 
-New slot: `aPreservedPitchClipHonoursTheSampleAmplification`, `tests/src/tracks/SampleClipStretchTest.cpp:609-654`.
-- It renders a 2x-warped clip in PreservePitch mode at gains 1.0, 0.5 and 2.0.
-- It measures the level at 440 Hz (baseline about 0.5) and at 660 Hz (baseline about 0.3) over the middle half of the render.
-- It checks the baselines first, then requires the gain 0.5 and gain 2.0 ratios to match 0.5 and 2.0 within 5%.
+Regression slot: `aPreservedPitchClipHonoursTheSampleAmplification`, `tests/src/tracks/SampleClipStretchTest.cpp:609-654`.
+It renders a 2x-warped clip in PreservePitch mode at gains 1.0, 0.5 and 2.0 (one clip, gain changed between renders). It measures the 440 Hz and 660 Hz levels (`kLowTone` line 79, `kHighTone` line 80) over the middle half of each render. It checks the gain 1.0 baselines first (440 Hz in 0.35-0.65, 660 Hz in 0.20-0.40), then requires gain 0.5 at 642 and 645 and gain 2.0 for both tones to match within 5%.
 
-Families run by ctest (4 of 4): AudioStretcherTest, SampleClipStretchTest, TakeLaneCompPlaybackTest, SampleClipRubberBandTest.
-
-Mutants:
-- Reversed fix: the slot fails with the expected message.
-- Gain applied twice: ratio 0.25, the slot fails (`EXIT=8`, `L/exit-mutant.txt`, log `L/test-4-mutant.log`); see section 3.
-- Frames-span mutant: not run, because it is equivalent to the shipped code.
+| Area | Coverage in this round | Evidence |
+|---|---|---|
+| Normal gains 1.0 / 0.5 / 2.0 | Covered by the slot. The per-gain values appear in the r2 RED log only; the r2 GREEN logs hold the ctest summary only. | `L/test-02-red.log` rows 23-25: 440 Hz 0.4992 and 660 Hz 0.2990 at all three gains, which is the unfixed state. |
+| Failure (fix absent) | Covered: the RED run fails at the gain 0.5 check, line 642. | `L/test-02-red.log`: `FAIL!` "gain 0.5 at 440 Hz is 1 of gain 1.0; expected 0.5"; `Totals: 9 passed, 1 failed`. |
+| Reversal | `git apply -R` removes the fix. | `L/exit-02-reverse.txt` EXIT=0; `L/diff-02-reversed.txt`: 8 deletions in `src/core/SamplePlayHandle.cpp`. |
+| Double-gain mutant | Covered: the mutant fails at the same check with ratio 0.25. | `L/test-03-mutant.log`: "gain 0.5 at 440 Hz is 0.25 of gain 1.0". |
+| Tail / exhaustion | Not tested. The code scales only the `written` frames, and line 746 zero-fills the tail. No test checks a window that runs out. | Code reading only. |
+| Reconfiguration between renders | Covered in part: the slot changes the gain between three renders of the same clip. A change made in the middle of a render is not tested. | Slot loop, `tests/src/tracks/SampleClipStretchTest.cpp:609-654`. |
+| Audio-thread constraint | Argued (section 4). The stretched-render allocation test passes in the RED and mutant runs. | `L/test-02-red.log` and `L/test-03-mutant.log`: `aStretchedClipRendersWithoutAllocating` PASS. |
+| Unity-gain behaviour | Covered: unchanged renders and the project round trip pass in the RED and mutant runs. | `aClipWithoutARateChangeRendersIdenticallyInBothModes` (line 359) and `theStretchModeRoundTripsThroughTheProjectFile` (line 391) PASS in `L/test-02-red.log`. |
+| Linux / GUI-less build | Ran with ctest on this Linux machine (`build/tests`). A GUI-less build was not separately verified. | `L/test-02-red.log` header: `Test project .../kads-new-p14-273/build/tests`. |
+| Four test families | 4 of 4 pass. | `L/test-03-families.log`: AudioStretcherTest (1/4), SampleClipStretchTest (2/4), TakeLaneCompPlaybackTest (3/4), SampleClipRubberBandTest (4/4), `100% tests passed out of 4`. |
 
 ## 3. Commands and exit codes
 
-Exit codes are listed only where a log or tool output shows them. Where the log has no exit line, it says so.
+The command text is not recorded in the r2 run folder. Each row names the log and exit file it produced. Exit codes are taken only from the files listed.
 
-| Run | Log | Exit code | What the log shows |
-|---|---|---|---|
-| RED (fix absent) | `L/test-red.log` (build `L/build-1.log`) | not captured: no exit line in the log, and no RED exit file | `Test #636 ***Failed`; 9 PASS lines; 1 FAIL: `ratioMatches(lowLevel[1], lowLevel[0], 0.5)` returned FALSE, "gain 0.5 at 440 Hz is 1 of gain 1.0". Evidence rows show 0.4992 at all three gains. |
-| Reversed fix (`git apply -R fix.patch`) | `L/test-4-reversed.log` (build `L/build-4-reversed.log`, `L/exit-reversed.txt`); earlier `L/test-reversed.log` (build `L/build-3-reversed.log`) | **8** (`EXIT=8` in `L/exit-reversed.txt`) | `636 - SampleClipStretchTest (Failed)`; `FAIL!` on `ratioMatches(lowLevel[1], lowLevel[0], 0.5)`, "gain 0.5 at 440 Hz is 1 of gain 1.0; expected 0.5", `Loc: SampleClipStretchTest.cpp(642)`. The earlier log has the same failure and evidence rows as RED; `cmp` first differs at line 3. |
-| Reapplied GREEN, ctest | `L/test-4-green.log` (build `L/build-4-green.log`, `L/exit-green.txt`); earlier `L/test-green.log` | **0** (`EXIT=0` in `L/exit-green.txt`) | `100% tests passed out of 1`. |
-| Reapplied GREEN, binary | `L/test-green-slot.log` (run as `./SampleClipStretchTest`) | not captured: this run has no exit file | `Totals: 10 passed, 0 failed, 0 skipped`. Gain 0.5 rows 0.2496 / 0.1495 (ratio 0.500). Gain 2.0 rows 0.9983 / 0.5981 (ratio 2.00). |
-| Four families | `L/test-4-families.log` (`L/exit-families.txt`); earlier `L/test-families.log` | **0** (`EXIT=0` in `L/exit-families.txt`) | `100% tests passed out of 4`. |
-| Fresh re-check at HEAD (this report) | `duet/14-worker/tmp/001-green-recheck-p5.log` under the run folder | **0** (quiet-run) | `ctest -R SampleClipStretchTest`: `100% tests passed out of 1`. |
-| Mutant (gain applied twice, on the fix) | `L/test-4-mutant.log` (build `L/build-4-mutant.log`, `L/exit-mutant.txt`) | **8** (`EXIT=8` in `L/exit-mutant.txt`) | `FAIL!` on `ratioMatches(lowLevel[1], lowLevel[0], 0.5)`, "gain 0.5 at 440 Hz is 0.25 of gain 1.0; expected 0.5". Ratio 0.25, as expected. |
-| Gates | `L/gates.log` | per-gate exit 0 on all 8 lines; the runner's own exit is not printed | 8 of 8 gates PASS; `RESULT: PASS`. |
-| Gates without lizard | `L/gates-nolizard.log` | per-gate exit 0 on all 8 lines; runner exit not printed | Same 8 PASS lines and `RESULT: PASS`. |
-| submit_check | `L/submit-check.log` (run after the report commit `8d953131d2`) | **0** (`EXIT=0`) | 5 PASS (commits, clean tree, report, tests, gates); no FAIL; `RESULT: PASS - submit`; 5 `?` questions, answered in the Self-check section. |
+| Step | Log | Exit file | Exit | Key output |
+|---|---|---|---|---|
+| Baseline build | `L/build-01-baseline.log` | `L/exit-01-baseline.txt` | 0 | build |
+| Baseline test | `L/test-01-baseline.log` | `L/exit-01-baseline-test.txt` | 0 | 1/1 passed |
+| Status at baseline | - | `L/exit-01-status.txt` | 0 | `L/status-01-baseline.txt` |
+| RED build (fix absent) | `L/build-02-red.log` | `L/exit-02-build-red.txt` | 0 | build |
+| RED test | `L/test-02-red.log` | `L/exit-02-red.txt` | **8** | 9 passed, 1 failed; ratio 1 of 1.0 at 440 Hz |
+| Reverse patch | `L/diff-02-reversed.txt` | `L/exit-02-reverse.txt` | 0 | 8 deletions |
+| Apply `fix.patch` (step 02) | - | `L/exit-02-patch.txt` | 0 | `L/fix.patch` (8 added lines) |
+| GREEN build | `L/build-03-green.log` | `L/exit-03-build-green.txt` | 0 | build |
+| GREEN test | `L/test-03-green.log` | `L/exit-03-green.txt` | **0** | 1/1 passed |
+| Mutant build | `L/build-03-mutant.log` | `L/exit-03-build-mutant.txt` | 0 | build |
+| Mutant apply / reverse | - | `L/exit-03-mutant-patch.txt`, `L/exit-03-mutant-reverse.txt` | 0, 0 | `L/mutant.patch` |
+| Mutant test (gain applied twice) | `L/test-03-mutant.log` | `L/exit-03-mutant.txt` | **8** | ratio 0.25 |
+| Re-apply fix | - | `L/exit-03-reapply.txt` | 0 | `L/status-03-reapply.txt` |
+| GREEN again build | `L/build-03-green2.log` | `L/exit-03-build-green2.txt` | 0 | build |
+| GREEN again test | `L/test-03-green2.log` | `L/exit-03-green2.txt` | 0 | 1/1 passed |
+| Four families | `L/test-03-families.log` | `L/exit-03-families.txt` | 0 | 4/4 passed |
+| Determinism grep | `L/grep-03-nondeterminism.txt` | (in the file) | `GREP_EXIT=1` | no matches |
+| Gates | `L/gates-04.log` | `L/exit-04-gates.txt` | 0 | 8 PASS, `RESULT: PASS` |
 
-The reversed exit code is `EXIT=8` from this session (`L/exit-reversed.txt`). `git apply -R` left only the 8 deleted lines in the tree (`git diff --stat`), so that run is the fix-absent state. The RED exit code is not captured: `L/test-red.log` has no exit line and no RED exit file exists.
+The RED, mutant and GREEN codes are 8, 8 and 0, matching `L/exit-02-red.txt`, `L/exit-03-mutant.txt` and `L/exit-03-green.txt`.
 
-## 4. Gate caveats
+Determinism grep, rerun this session on the worktree test file with the call-level pattern `sleep|QThread|std::thread|chrono|rand\(|time\(|QTime|clock|QElapsed`: no matches, exit 1. A looser pattern matches comments such as "time stretch", so it is not used.
 
-- The `complexity` line in `L/gates.log` reads "no new item in your files", which is identical to `L/gates-nolizard.log`. Neither log mentions lizard, so the gate logs do not show that the gate measured anything.
-- lizard CCN for `renderPreservingPitch`, measured this session with lizard in a temporary venv (since deleted): CCN 7 at `fa4a5f2e78` (NLOC 26, length 43, `L/lizard-base.txt`) and CCN 9 at HEAD (NLOC 31, length 51, `L/lizard-head.txt`). Both lizard runs exited 1. The output files contain the function line; the reason for the exit 1 was not checked.
+## 4. Realtime argument
 
-## 5. Unverified
+`renderPreservingPitch` runs on the audio thread, inside `SamplePlayHandle::play`. The change adds one relaxed atomic float load (`include/Sample.h:123`), one comparison with 1.0, and a loop of at most `frames` float multiplies over a buffer the stretcher has already filled. It takes no lock, allocates nothing, adds no shared mutable state, and blocks on nothing. The load is relaxed, so it adds no ordering requirement on the audio thread. This is an argument from reading the code. No TSan or realtime profiler was run.
 
-- No TSan on this machine. The argument is that the change adds one relaxed atomic float load and no shared state, so it adds no race. That is an argument, not a TSan run.
-- The `m_rubberBand` branch has no amplification test. `tests/src/tracks/SampleClipRubberBandTest.cpp` has 0 references to amplification (verified by grep). That branch relies on the shared code after the ternary, `SamplePlayHandle.cpp:738-745`.
-- The frames-span mutant was not run, because it is equivalent.
-- The `m_compSlip->render` call at line 607 is in the resample branch only; that is not re-verified here. The whole branch structure was not re-read for this report.
+## 5. Collateral analysis
 
-## 6. Other findings
+- No save-format field, limit or check is added. The commit adds 8 lines to `src/core/SamplePlayHandle.cpp`, 50 test lines and 1 registration row (`git show --stat 540f980dc7`: 3 files, 59 insertions, 0 deletions).
+- The multiply is skipped when the gain is exactly 1.0 (`if (gain != 1.0f)`), so unity-gain renders are unchanged.
+- The one intended behaviour change: a pitch-preserved clip with a non-unity gain now renders at that gain. Before, it ignored the gain. Projects saved with such a clip will sound quieter or louder than before. Not verified on a real saved project.
+- Callers and siblings: the only caller is `SamplePlayHandle.cpp:596`; the sibling `renderTransientRepeat` already applies the gain (`TransientRepeat.cpp:284`).
 
-- The complexity gate passes vacuously when lizard is not installed. `L/gates-nolizard.log` shows the PASS line with no measurement.
-- `src/core/CompSlip.cpp` has no reference to amplification. Whether slipped comp reads on the resample path carry the clip gain is unverified, and may be a separate defect.
-- The window-overrun and mute-cursor bugs were not touched.
+## 6. Gate caveats
+
+- `L/gates-04.log` shows 8 PASS lines. The `complexity` and `file-length` lines read "no new item in your files". The log does not show that lizard ran, so the complexity gate may pass without measuring anything.
+- No lizard figures are repeated this round. Earlier CCN numbers from round r1 were not re-measured.
+
+## 7. Unverified
+
+- No TSan run. The realtime point in section 4 is an argument.
+- The r2 GREEN logs hold only the ctest summary, so the per-gain GREEN ratios are not in the r2 logs. The GREEN pass is shown by exit codes only.
+- No tail or exhaustion test, and no test for a gain changed in the middle of a render.
+- The `SampleClipRubberBandTest.cpp` file has 0 references to amplification (grep). The Rubber Band branch is covered only by the shared multiply at `SamplePlayHandle.cpp:741-745` and by the 4/4 family run.
+- GUI-less build not verified separately.
 
 ## Self-check
 
-These answer the five `?` questions that `submit_check.py` printed for this cluster. The first check passed with no FAIL lines (`L/submit-check.log`, `EXIT=0`).
+`submit_check.py` was run once on this worktree before this report was written: `L/submit-check-05-pre.log`, EXIT=0, 5 PASS, `RESULT: PASS - submit`. The five questions it printed are answered below.
 
-1. **The regression test fails with the product change reverted and passes with it.** Reverted: `L/test-red.log` and `L/test-reversed.log` both show `Test #636 ***Failed`, 9 PASS lines and 1 FAIL line, "gain 0.5 at 440 Hz is 1 of gain 1.0; expected 0.5". Fixed: `L/test-green-slot.log` shows `Totals: 10 passed, 0 failed`, including `aPreservedPitchClipHonoursTheSampleAmplification`. A fresh run at HEAD gave exit 0 (section 3). The RED and reversed logs do not record an exit code, so no exit code is claimed for those two runs.
+1. **The regression test fails with the product change reverted and passes with it (exit codes).** Reverted: `L/exit-02-red.txt` is EXIT=8 and `L/test-02-red.log` shows `FAIL!` at line 642 with `Totals: 9 passed, 1 failed`. Reverted with `git apply -R`: `L/exit-02-reverse.txt` EXIT=0 and `L/diff-02-reversed.txt` 8 deletions. Fixed: `L/exit-03-green.txt` is EXIT=0 and `L/exit-03-green2.txt` is EXIT=0 after the re-apply. The slot is the only failing test in the RED and mutant runs.
 
-2. **The test is deterministic.** `tests/src/tracks/SampleClipStretchTest.cpp` has no sleep, thread, clock or random call (grep for `sleep|QThread|std::thread|chrono|rand|time` finds nothing). Its inputs are fixed: synthetic tones at 440 Hz and 660 Hz at `m_rate`, a fixed 2x warp (`applyTwoTimesWarp`), gains 1.0, 0.5 and 2.0, and levels measured over the middle half of the render. The baseline is the same in every log: 0.4992 at 440 Hz and 0.2990 at 660 Hz in RED, reversed and green runs.
+2. **The test is deterministic (name the seam or injected values).** The determinism grep (section 3) finds no sleep, thread, clock or random call in `tests/src/tracks/SampleClipStretchTest.cpp` (`GREP_EXIT=1`, and `L/grep-03-nondeterminism.txt` GREP_EXIT=1). The inputs are fixed: the synthetic tones at `kLowTone` 440 Hz (line 79) and `kHighTone` 660 Hz (line 80), a fixed 2x warp (`applyTwoTimesWarp`, line 116, called at line 613), fixed gains 1.0 / 0.5 / 2.0, and levels measured over the middle half of each render.
 
-3. **The fix is at the cause, and complete only for the pitch-preserving path.** `renderPreservingPitch` has one caller, `src/core/SamplePlayHandle.cpp:596`. Its sibling `renderTransientRepeat` (line 592) already applies the gain (`src/core/TransientRepeat.cpp:284`). The resample path (`Sample::play`, line 602) applies the gain in `src/core/Sample.cpp:243-245`. The new code uses that same gain, and WSOLA and Rubber Band share one multiply. Not shown: `CompSlip.cpp` has 0 references to amplification, and whether its reads need the gain has not been checked (section 6). So "complete" holds only for the paths listed here.
+3. **The fix is at the cause and complete for every caller and sibling.** The only caller of `renderPreservingPitch` is `SamplePlayHandle.cpp:596`. The gain that the resample path applies is at `Sample.cpp:243-245`, and the sibling `TransientRepeat.cpp:284` already applies it. The fix uses the same gain, and WSOLA and Rubber Band share one multiply. Not checked: `CompSlip.cpp` has 0 references to amplification (grep), so whether slipped comp reads need the gain is unverified (see Other findings).
 
-4. **No collateral damage.** Commit `540f980dc7` is additive: `git show --stat` gives 3 files, 59 insertions and 0 deletions (`SamplePlayHandle.cpp` +8, `SampleClipStretchTest.cpp` +50, `tests/upstream-modifications.txt` +1). It adds no save-format field and no limit or check. The multiply is skipped when the gain is exactly 1.0 (`if (gain != 1.0f)`). Unity-gain renders are covered by `aClipWithoutARateChangeRendersIdenticallyInBothModes` (line 359) and `theStretchModeRoundTripsThroughTheProjectFile` (line 391), both PASS in `L/test-green-slot.log`. One behaviour change is intended: a pitch-preserved clip with a non-unity gain now renders at a different level than before. No saved project was loaded to confirm this.
+4. **No collateral damage.** No save format, limit or check is changed (section 5). The unity-gain tests at lines 359 and 391 are in the RED and mutant runs and pass. The only behaviour change is a non-unity gain on a pitch-preserved clip, which is intended. Not verified on a real saved project.
 
-5. **Verdict.** The verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE, so this item does not apply.
+5. **Verdict.** The verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE, so the file:line evidence for those verdicts does not apply.
+
+## Other findings
+
+- The complexity gate passes with "no new item in your files" and no lizard output. It may pass without measuring anything (section 6).
+- `src/core/CompSlip.cpp` has no reference to amplification. Whether slipped comp reads on the resample path carry the clip gain is unverified and may be a separate defect.
+- The window-overrun and mute-cursor bugs were not touched.
+- Registration row: `tests/upstream-modifications.txt:5685` records the change to `src/core/SamplePlayHandle.cpp`.
