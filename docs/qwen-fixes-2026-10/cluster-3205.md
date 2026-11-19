@@ -21,19 +21,27 @@ FIXED
 
 ## Commands and exit codes
 
+Log paths are under `/home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/`. Each EXIT value is the last line of that log. Rows marked † have no literal command recorded in the logs; the command shown is the invocation form for that step and is not confirmed against shell history.
+
 | Command | Log | EXIT |
 |---|---|---|
-| Build, green tree | 3205-build-green.log | 0 |
-| Green slot, signed | 3205-test-green-signed.log | 0 |
-| Green slot, unsigned | 3205-test-green-unsigned.log | 0 |
-| Green CTest | 3205-test-green-ctest.log | 0 |
-| Patch ops (apply/check) | 3205-patch-ops.log | 0 and 0 |
-| Build, reversed guard | 3205-build-reversed.log | 0 |
-| Reversed guard, unsigned slot | 3205-test-reversed-unsigned.log | 139 |
-| Reversed guard, signed slot | 3205-test-reversed-signed.log | 139 |
-| Build, restored guard | 3205-build-restored.log | 0 |
-| Restored slots, signed and unsigned | 3205-test-restored-signed.log, 3205-test-restored-unsigned.log | 0 and 0 |
-| Test run 3 | 3205-test-3.log | 0 |
+| `{ cmake --build build --target zene SessionTuningTest; echo EXIT=$?; } > /home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/3205-build-green.log 2>&1` | 3205-build-green.log | 0 |
+| `{ (cd build/tests && ./SessionTuningTest localMtsParseIgnoresNullUnsignedBuffer); echo EXIT=$?; } > /home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/3205-test-green-unsigned.log 2>&1` | 3205-test-green-unsigned.log | 0 |
+| † `{ (cd build/tests && ./SessionTuningTest localMtsParseIgnoresNullSignedBuffer); echo EXIT=$?; } > /home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/3205-test-green-signed.log 2>&1` | 3205-test-green-signed.log | 0 |
+| † `{ (cd build/tests && ctest -R SessionTuningTest); echo EXIT=$?; } > /home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/3205-test-green-ctest.log 2>&1` | 3205-test-green-ctest.log | 0 |
+| † `{ git apply -R /home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/fix.patch; echo EXIT=$?; } > /home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/3205-patch-ops.log 2>&1` (reverse apply, first EXIT line) | 3205-patch-ops.log | 0 |
+| † `{ git apply /home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/fix.patch; echo EXIT=$?; } >> /home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/3205-patch-ops.log 2>&1` (re-apply, second EXIT line) | 3205-patch-ops.log | 0 |
+| † `{ cmake --build build --target zene SessionTuningTest; echo EXIT=$?; } > /home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/3205-build-reversed.log 2>&1` | 3205-build-reversed.log | 0 |
+| † `{ (cd build/tests && ./SessionTuningTest localMtsParseIgnoresNullUnsignedBuffer); echo EXIT=$?; } > /home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/3205-test-reversed-unsigned.log 2>&1` | 3205-test-reversed-unsigned.log | 139 |
+| † `{ (cd build/tests && ./SessionTuningTest localMtsParseIgnoresNullSignedBuffer); echo EXIT=$?; } > /home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/3205-test-reversed-signed.log 2>&1` | 3205-test-reversed-signed.log | 139 |
+| † `{ cmake --build build --target zene SessionTuningTest; echo EXIT=$?; } > /home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/3205-build-restored.log 2>&1` | 3205-build-restored.log | 0 |
+| † `{ (cd build/tests && ./SessionTuningTest localMtsParseIgnoresNullUnsignedBuffer); echo EXIT=$?; } > /home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/3205-test-restored-unsigned.log 2>&1` | 3205-test-restored-unsigned.log | 0 |
+| † `{ (cd build/tests && ./SessionTuningTest localMtsParseIgnoresNullSignedBuffer); echo EXIT=$?; } > /home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/3205-test-restored-signed.log 2>&1` | 3205-test-restored-signed.log | 0 |
+| † `{ (cd build/tests && ctest -R SessionTuningTest); echo EXIT=$?; } > /home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/3205-test-3.log 2>&1` (restored CTest; see the Test run note below) | 3205-test-3.log | 0 |
+| `{ python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-3205; echo EXIT=$?; } > /home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/3205-gates-1.log 2>&1` | 3205-gates-1.log | 0 (RESULT: PASS, no FAIL rows) |
+| `{ python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-3205; echo EXIT=$?; } > /home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/3205-gates-2.log 2>&1` | 3205-gates-2.log | 0 (RESULT: PASS, no FAIL rows) |
+
+Test run note: no log named for the restored CTest exists. `3205-test-3.log` is the only other CTest log (`100% tests passed out of 1`, EXIT=0), and it is mapped to the restored row here. Its order relative to the restore is not recorded.
 
 ## Self-check
 
