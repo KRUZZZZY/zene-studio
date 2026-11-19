@@ -557,6 +557,18 @@ private slots:
 		QCOMPARE(model->routeOf(1), -1);
 		ControlResult gone;
 		QVERIFY2(control::resolveMixerChannel(madeChannel, &gone) == nullptr, "the created channel survived its undo");
+
+		// If a later bus refuses activation, the command reports it and rolls back the earlier route/channel.
+		model->setLayout({{QStringLiteral("Out"), 2, 0}, {QStringLiteral("Aux"), 2, 2},
+			{QStringLiteral("Unavailable"), 2, -1}});
+		const ControlResult refused = run(QStringLiteral("plugin.output_buses_create_channels"),
+			{{QStringLiteral("target"), target}});
+		QVERIFY(!refused.ok);
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY(refused.errorMessage.contains(QStringLiteral("bus 2")));
+		QCOMPARE(mixer->numChannels(), channelsBefore);
+		QCOMPARE(model->routeOf(1), -1);
+		QCOMPARE(model->routedCount(), 0);
 	}
 
 	//! Cluster new-p11-35: replaying voice_set's inverse clears a trigger that was absent before the edit.
