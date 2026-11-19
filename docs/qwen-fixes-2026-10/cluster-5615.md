@@ -80,7 +80,7 @@ The RED and GREEN rebuild logs are retained (`build-red-1.log`, `build-green-1.l
 
 ## Self-check
 
-The round-1 submit_check ASK list (`submit-1.log`, RESULT: PASS) is not retained in round 2, so that PASS is not re-verified here. Each ASK is quoted below and answered with its evidence. Items marked UNVERIFIED were not checked.
+The round-2 submit_check (`/home/kruzzzzy/.config/kads/zene/state/runs/5615.r2/logs/submit-1.log`, EXIT=0, RESULT: PASS, with gates PASS in `gates-1.log`, EXIT=0) lists the same five ASKs as below. Each ASK is quoted below and answered with its evidence. Items marked UNVERIFIED were not checked.
 
 1. ASK: "The regression test FAILS with your product change reverted and PASSES with it (exit codes)."
    - Reverted: the guard line `src/core/ControlCommandsChain.cpp:161` was removed with `sed` (one-line hunk saved as `reversal-5615.patch`). RED: `test-unreadable-red-1.log` EXIT=1 (line 12); the chain row FAILs (line 6) with `overwrite refused=0, file unchanged=1, history unchanged=0`.
