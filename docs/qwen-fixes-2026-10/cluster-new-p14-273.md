@@ -37,28 +37,30 @@ It renders a 2x-warped clip in PreservePitch mode at gains 1.0, 0.5 and 2.0 (one
 
 ## 3. Commands and exit codes
 
-The command text is not recorded in the r2 run folder. Each row names the log and exit file it produced. Exit codes are taken only from the files listed.
+Command lines for the rows from the baseline build through the gates were not recovered. No record of them exists in the r2 run folder: `duet/14-worker/session.log` covers only the p5 session, and the build and test logs hold tool output, not command text. Those rows give the log and exit file only, and their exit codes are read from the exit files. The determinism grep was rerun in p5 and its exact command is given below.
 
-| Step | Log | Exit file | Exit | Key output |
-|---|---|---|---|---|
-| Baseline build | `L/build-01-baseline.log` | `L/exit-01-baseline.txt` | 0 | build |
-| Baseline test | `L/test-01-baseline.log` | `L/exit-01-baseline-test.txt` | 0 | 1/1 passed |
-| Status at baseline | - | `L/exit-01-status.txt` | 0 | `L/status-01-baseline.txt` |
-| RED build (fix absent) | `L/build-02-red.log` | `L/exit-02-build-red.txt` | 0 | build |
-| RED test | `L/test-02-red.log` | `L/exit-02-red.txt` | **8** | 9 passed, 1 failed; ratio 1 of 1.0 at 440 Hz |
-| Reverse patch | `L/diff-02-reversed.txt` | `L/exit-02-reverse.txt` | 0 | 8 deletions |
-| Apply `fix.patch` (step 02) | - | `L/exit-02-patch.txt` | 0 | `L/fix.patch` (8 added lines) |
-| GREEN build | `L/build-03-green.log` | `L/exit-03-build-green.txt` | 0 | build |
-| GREEN test | `L/test-03-green.log` | `L/exit-03-green.txt` | **0** | 1/1 passed |
-| Mutant build | `L/build-03-mutant.log` | `L/exit-03-build-mutant.txt` | 0 | build |
-| Mutant apply / reverse | - | `L/exit-03-mutant-patch.txt`, `L/exit-03-mutant-reverse.txt` | 0, 0 | `L/mutant.patch` |
-| Mutant test (gain applied twice) | `L/test-03-mutant.log` | `L/exit-03-mutant.txt` | **8** | ratio 0.25 |
-| Re-apply fix | - | `L/exit-03-reapply.txt` | 0 | `L/status-03-reapply.txt` |
-| GREEN again build | `L/build-03-green2.log` | `L/exit-03-build-green2.txt` | 0 | build |
-| GREEN again test | `L/test-03-green2.log` | `L/exit-03-green2.txt` | 0 | 1/1 passed |
-| Four families | `L/test-03-families.log` | `L/exit-03-families.txt` | 0 | 4/4 passed |
-| Determinism grep | `L/grep-03-nondeterminism.txt` | (in the file) | `GREP_EXIT=1` | no matches |
-| Gates | `L/gates-04.log` | `L/exit-04-gates.txt` | 0 | 8 PASS, `RESULT: PASS` |
+| Step | Command | Log | Exit file | Exit | Key output |
+|---|---|---|---|---|---|
+| Baseline build | not recovered | `L/build-01-baseline.log` | `L/exit-01-baseline.txt` | 0 | build |
+| Baseline test | not recovered | `L/test-01-baseline.log` | `L/exit-01-baseline-test.txt` | 0 | 1/1 passed |
+| Status at baseline | not recovered | - | `L/exit-01-status.txt` | 0 | `L/status-01-baseline.txt` |
+| RED build (fix absent) | not recovered | `L/build-02-red.log` | `L/exit-02-build-red.txt` | 0 | build |
+| RED test | not recovered | `L/test-02-red.log` | `L/exit-02-red.txt` | **8** | 9 passed, 1 failed; ratio 1 of 1.0 at 440 Hz |
+| Reverse patch (`git apply -R`) | not recovered | `L/diff-02-reversed.txt` | `L/exit-02-reverse.txt` | 0 | 8 deletions |
+| Generate `fix.patch` | not recovered | - | - | - | `L/fix.patch` (8 added lines) |
+| Apply `fix.patch` (step 02) | not recovered | - | `L/exit-02-patch.txt` | 0 | `L/fix.patch` (8 added lines) |
+| GREEN build | not recovered | `L/build-03-green.log` | `L/exit-03-build-green.txt` | 0 | build |
+| GREEN test | not recovered | `L/test-03-green.log` | `L/exit-03-green.txt` | **0** | 1/1 passed |
+| Mutant build | not recovered | `L/build-03-mutant.log` | `L/exit-03-build-mutant.txt` | 0 | build |
+| Mutant apply / reverse | not recovered | - | `L/exit-03-mutant-patch.txt`, `L/exit-03-mutant-reverse.txt` | 0, 0 | `L/mutant.patch` |
+| Mutant test (gain applied twice) | not recovered | `L/test-03-mutant.log` | `L/exit-03-mutant.txt` | **8** | ratio 0.25 |
+| Re-apply fix | not recovered | - | `L/exit-03-reapply.txt` | 0 | `L/status-03-reapply.txt` |
+| GREEN again build | not recovered | `L/build-03-green2.log` | `L/exit-03-build-green2.txt` | 0 | build |
+| GREEN again test | not recovered | `L/test-03-green2.log` | `L/exit-03-green2.txt` | 0 | 1/1 passed |
+| Four families | not recovered | `L/test-03-families.log` | `L/exit-03-families.txt` | 0 | 4/4 passed |
+| Determinism grep (r2, p3) | pattern `sleep\|QThread\|std::thread\|chrono\|rand\(\|time\(\|QTime\|clock\|QElapsed` on `tests/src/tracks/SampleClipStretchTest.cpp`; exact command not recovered | `L/grep-03-nondeterminism.txt` | (in the file) | `GREP_EXIT=1` | no matches |
+| Determinism grep (p5 rerun) | `grep -nE 'sleep\|QThread\|std::thread\|chrono\|rand\(\|time\(\|QTime\|clock\|QElapsed' tests/src/tracks/SampleClipStretchTest.cpp > L/grep-05-nondeterminism.txt; echo GREP_EXIT=$? >> L/grep-05-nondeterminism.txt` | `L/grep-05-nondeterminism.txt` | (in the file) | `GREP_EXIT=1` | no matches |
+| Gates | not recovered | `L/gates-04.log` | `L/exit-04-gates.txt` | 0 | 8 PASS, `RESULT: PASS` |
 
 The RED, mutant and GREEN codes are 8, 8 and 0, matching `L/exit-02-red.txt`, `L/exit-03-mutant.txt` and `L/exit-03-green.txt`.
 
@@ -94,7 +96,7 @@ Determinism grep, rerun this session on the worktree test file with the call-lev
 
 1. **The regression test fails with the product change reverted and passes with it (exit codes).** Reverted: `L/exit-02-red.txt` is EXIT=8 and `L/test-02-red.log` shows `FAIL!` at line 642 with `Totals: 9 passed, 1 failed`. Reverted with `git apply -R`: `L/exit-02-reverse.txt` EXIT=0 and `L/diff-02-reversed.txt` 8 deletions. Fixed: `L/exit-03-green.txt` is EXIT=0 and `L/exit-03-green2.txt` is EXIT=0 after the re-apply. The slot is the only failing test in the RED and mutant runs.
 
-2. **The test is deterministic (name the seam or injected values).** The determinism grep (section 3) finds no sleep, thread, clock or random call in `tests/src/tracks/SampleClipStretchTest.cpp` (`GREP_EXIT=1`, and `L/grep-03-nondeterminism.txt` GREP_EXIT=1). The inputs are fixed: the synthetic tones at `kLowTone` 440 Hz (line 79) and `kHighTone` 660 Hz (line 80), a fixed 2x warp (`applyTwoTimesWarp`, line 116, called at line 613), fixed gains 1.0 / 0.5 / 2.0, and levels measured over the middle half of each render.
+2. **The test is deterministic (name the seam or injected values).** The determinism grep (section 3) finds no sleep, thread, clock or random call in `tests/src/tracks/SampleClipStretchTest.cpp` (`L/grep-05-nondeterminism.txt` GREP_EXIT=1, the p5 rerun with the exact command in section 3; `L/grep-03-nondeterminism.txt` GREP_EXIT=1, from r2). The inputs are fixed: the synthetic tones at `kLowTone` 440 Hz (line 79) and `kHighTone` 660 Hz (line 80), a fixed 2x warp (`applyTwoTimesWarp`, line 116, called at line 613), fixed gains 1.0 / 0.5 / 2.0, and levels measured over the middle half of each render.
 
 3. **The fix is at the cause and complete for every caller and sibling.** The only caller of `renderPreservingPitch` is `SamplePlayHandle.cpp:596`. The gain that the resample path applies is at `Sample.cpp:243-245`, and the sibling `TransientRepeat.cpp:284` already applies it. The fix uses the same gain, and WSOLA and Rubber Band share one multiply. Not checked: `CompSlip.cpp` has 0 references to amplification (grep), so whether slipped comp reads need the gain is unverified (see Other findings).
 
