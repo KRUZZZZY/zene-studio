@@ -5346,6 +5346,31 @@ if(WANT_WASM)
 	target_compile_definitions(ControlWasmRenderTest PRIVATE LMMS_TESTING)
 endif()
 
+# Offline-render frame cap (route A): links the real WasmOfflineRender.cpp against
+# test-only stubs for the wasmtime-backed WasmSandbox/WasmWorker members, so the cap
+# is tested without WANT_WASM. Kept outside the guard on purpose.
+add_executable(WasmOfflineRenderLimitTest
+	src/wasm/WasmOfflineRenderLimitTest.cpp
+	src/wasm/WasmOfflineRenderLimitStubs.cpp
+	${CMAKE_SOURCE_DIR}/src/wasm/WasmOfflineRender.cpp
+)
+add_test(NAME WasmOfflineRenderLimitTest COMMAND WasmOfflineRenderLimitTest)
+target_include_directories(WasmOfflineRenderLimitTest PRIVATE
+	${CMAKE_BINARY_DIR}
+	${CMAKE_BINARY_DIR}/src
+	${CMAKE_BINARY_DIR}/include
+	${CMAKE_SOURCE_DIR}/include
+	${CMAKE_SOURCE_DIR}/src/wasm
+)
+target_link_libraries(WasmOfflineRenderLimitTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(WasmOfflineRenderLimitTest PRIVATE cxx_std_20)
+target_compile_definitions(WasmOfflineRenderLimitTest PRIVATE LMMS_TESTING)
+set_tests_properties(WasmOfflineRenderLimitTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 if(TARGET nam_profile)
 	add_executable(NeuralAmpProfileArgumentsTest src/plugins/NeuralAmpProfileArgumentsTest.cpp)
 	add_test(NAME NeuralAmpProfileArgumentsTest COMMAND NeuralAmpProfileArgumentsTest)
