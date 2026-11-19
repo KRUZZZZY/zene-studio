@@ -91,4 +91,19 @@ RESULT: PASS
 
 ## Self-check
 
-(Pending: to be filled in by the self-check step.)
+No product code changed. The branch diff against the base is this report only: `git diff --stat fa4a5f2e7 HEAD` lists `docs/qwen-fixes-2026-10/cluster-new-p9-199.md` alone (94 insertions). Answers are checked against the worktree in the self-check run.
+
+1. **Regression test fails with the change reverted and passes with it: N/A.** There is no product change to revert, and no regression test is committed (Verdict). The only test run was a scratch probe, ChordRootProbeTest (CTest #328). With the unmodified code it passed, EXIT=0 (`logs/probe-green.log:3`). With a control mutation at `src/tracks/InstrumentTrack.cpp:780` (`== false` changed to `true`) it failed, EXIT=8, with `Actual (rootCount): 2`, `Expected (1)` (`logs/probe-red.log:9,13`). The exit codes come from the command output recorded in "Commands and results", not from the log files. The mutation was reverted: `git diff --quiet HEAD -- src/tracks/InstrumentTrack.cpp` returned EXIT=0 in the self-check run.
+
+2. **Deterministic: not verified.** The probe is not kept (`git ls-files tests/src/core/ChordRootProbeTest.cpp` returned 0 lines), so no committed test exists to check for timing or races. The scratch probe injected its seam as a spy on `InstrumentTrack::playNote` (Commands and results, Control mutation). The logs show runtime only (`Passed 1.46 sec`), not an assertion on time.
+
+3. **Fix at the cause and complete: N/A as a fix; sibling coverage is partial.** Nothing was changed. The verdict rests on the chord stacking path and the master-note skip (item 5 below). The arpeggio path calls `setMasterNote()` at `src/core/InstrumentFunctions.cpp:351`, but its body was not read (Not verified). The layer path (`src/tracks/InstrumentTrackNotes.cpp:297`, `src/core/InstrumentLayers.cpp:471-483`) was traced only as far as `acquire` (Not verified, Other findings).
+
+4. **No collateral damage: N/A.** No product code has changed since the base `fa4a5f2e7`, so old projects and saved data are unaffected. No limit or check was added.
+
+5. **FALSE-POSITIVE evidence (file:line, checked in the self-check run):**
+   - `include/NotePlayHandle.h:279-282`: `isMasterNote()` returns `m_subNotes.size() > 0 || m_hadChildren`.
+   - `src/core/NotePlayHandle.cpp:99-100`: building a child appends it to `parent->m_subNotes` and sets `m_hadChildren = true`.
+   - `src/core/InstrumentFunctions.cpp:263-269`: the chord copy is acquired with `_n` as parent (line 269) and passed to `addPlayHandle` (line 267).
+   - `src/tracks/InstrumentTrack.cpp:780`: `n->isMasterNote() == false` gates playing, so the parent with children is skipped.
+   - `src/core/InstrumentFunctions.cpp:44-145`: all 95 chord table entries start with `{ 0,`, so the interval-0 clone is the only sounding root.
