@@ -106,7 +106,7 @@ declared under `#ifdef LMMS_TESTING` in `include/AudioResampler.h`.
 `tests/upstream-modifications.txt` records the test coverage and the
 `LMMS_TESTING`-only counter/friend hooks.
 
-## Mutation checks (r11 logs)
+## Mutation checks (r11 logs, final test file)
 
 Build before each test:
 
@@ -115,27 +115,48 @@ Build before each test:
 Test, from `build/tests`, `--output-on-failure` so a RED mutation names the
 failing assertion:
 
-    ctest -R PatmanLoadTest --output-on-failure
+    ctest -R 'PatmanLoadTest|AudioResamplerPoolMemoryTest|AudioPluginTest' --output-on-failure
 
-Every build below ended `EXIT=0`; every RED test run ended `EXIT=8` (CTest
-failure); the reverted tree ends `EXIT=0`. Logs are under
-`~/.config/kads/zene/state/runs/new-p9-348-port-port.r11/logs/`.
+Every build below ended `EXIT=0`; every RED test run is non-zero; the reverted
+tree ends `EXIT=0`. Logs are under
+`~/.config/kads/zene/state/runs/new-p9-348-port-port.r11/logs/`. The line
+numbers are those of the final `tests/src/plugins/PatmanLoadTest.cpp`; M4's log
+numbers are three lines higher because that mutation inserted lines above the
+assertions.
 
 | Mutation | Exact edit | Build log / EXIT | RED log / EXIT | Observed failure |
 | --- | --- | --- | --- | --- |
-| M1 | `RealtimeVoiceConverterPool::adoptSlot` returns early | `024-m1-build.log` / 0 | `025-m1-test.log` / 8 | T1 `reacquired.back().mode()` 1 != 4 (line 453); T4 `state->converterMode()` 1 != 4 (520); T2 `!blocksMatch(sincBestReference, linearReference)` false (604); T3 oracle indistinguishable from Linear (677) |
-| M2 | `acquire()` returns nullptr after 4 SincBest acquisitions | `026-m2-build.log` / 0 | `027-m2-test.log` / 8 | T2 aborts with an unhandled `std::runtime_error` (`No prepared realtime voice converter is available`), not a QCOMPARE |
-| M3 | `PatmanInstrument::prepareConverterModeForNote` returns true without preparing | `028-m3-build.log` / 0 | `029-m3-test.log` / 8 | T1 `reacquired.back().mode()` 1 != 4 (line 453); T4 `state->converterMode()` 1 != 4 (520) |
-| M4 | `referenceBlock` oracle forced to Linear | `030-m4-build.log` / 0 | `031-m4-test.log` / 8 | T2 `!blocksMatch(sincBestReference, linearReference)` false (605); T3 oracle indistinguishable from Linear (678) |
-| M5 | the note's prepared-mode adoption is skipped, so the render path lazily converts | `032-m5-build.log` / 0 | `033-m5-test.log` / 8 | T1 realtime allocations 3 != 0 (431); T4 realtime allocations 3 != 0 (514); T2 realtime allocations 3 != 0 (627) |
+| M1 | `RealtimeVoiceConverterPool::adoptSlot` returns early | `052-m1-build.log` / 0 | `053-m1-test.log` / 8 | T1 `reacquired.back().mode()` 1 != 4 (line 446); T4 `state->converterMode()` 1 != 4 (507); T2 `!blocksMatch(sincBestReference, linearReference)` false (591); T3 oracle indistinguishable from Linear (654) |
+| M2 | `acquire()` returns nullptr after 4 SincBest acquisitions | `054-m2-build.log` / 0 | `055-m2-test.log` / 8 | T2 aborts with an unhandled `std::runtime_error` (`No prepared realtime voice converter is available`), not a QCOMPARE |
+| M3 | `PatmanInstrument::prepareConverterModeForNote` returns true without preparing | `056-m3-build.log` / 0 | `057-m3-test.log` / 8 | T1 `reacquired.back().mode()` 1 != 4 (446); T4 `state->converterMode()` 1 != 4 (507) |
+| M4 | `referenceBlock` oracle forced to Linear | `058-m4-build.log` / 0 | `059-m4-test.log` / 8 | T2 mismatched 232 != 0 (581; log 584); T3 oracle indistinguishable from Linear (654; log 657) |
+| M5 | M3 plus a lazy conversion in `playNoteImpl` (no hooks) | `060-m5-build.log` / 0 | `061-m5-test.log` / 8 | T1 realtime allocations 3 != 0 (424); T4 realtime allocations 3 != 0 (503); T2 realtime allocations 3 != 0 (612) |
+| M6 | `adoptPreparedConverterModeForNote` no-op plus `adoptPreparedConverterMode()` before `play` in `playNoteImpl` | `062-m6-build.log` / 0 | `063-m6-test.log` / 8 | T4 realtime deletions 1 != 0 (514, the pending-prepare guard) |
+| M7 | M5 but the lazy conversion fires only on the first note that needs it | `064-m7-build.log` / 0 | `065-m7-test.log` / 1 (single test `lazyRenderPathConversionIsDetected`) | T4 realtime allocations 1 != 0 (503) |
 
-The stale line numbers in the older table are replaced above by the values in
-the r11 logs (the test file grew again when T4 was added). After each mutation
-the edit was reverted and the same build/test pair was rerun: restored build
-`034-final-build.log` `EXIT=0`, restored test `035-final-test.log` `EXIT=0`
-(`100% tests passed out of 1`). The strengthened suite after the counter and T4
-were added: `022-strengthened-build.log` `EXIT=0`,
-`023-strengthened-test.log` `EXIT=0`.
+M7 is the proof that all three held notes are counted: a conversion on the
+first note of the three-note render is caught, so the earlier per-note reset
+(which measured only the last note) cannot hide it. T4 now resets both counters
+once, renders all three notes in one `RealtimeScope`, and compares creations and
+deletions after the scope closes. T2's held render is likewise bounded: its
+`RealtimeScope` closes before the QCOMPAREs, cleanup, `switchQuality` and the
+`freeSlots` compare.
+
+M6's history is recorded separately. The first M6 run against the
+unstrengthened tests did **not** fire: `040-build-m6.log` `EXIT=0`,
+`041-test-m6.log` `EXIT=0` (100% passed). T4's pending-prepare guard was added
+afterwards; the same M6 edit then failed `042-build-m6-strengthened.log`
+`EXIT=0` / `043-test-m6-strengthened.log` `EXIT=8`, and the restored tree passed
+`044-build-restored.log` `EXIT=0` / `045-test-restored.log` `EXIT=0`.
+
+The reversal attempt also fails, as it must: `git apply -R --check` of
+`fix-hooks.patch` exits 1 (`error: patch failed: src/core/Song.cpp:1345` /
+`error: src/core/Song.cpp: patch does not apply`, `068-revert-hooks.log`), and
+the same for `fix-pool.patch` (`error: patch failed: src/core/Sample.cpp:103`,
+`069-revert-pool.log`). The mutation proof therefore rests on M1-M7, not on
+reverting the saved patches. After the last mutation the restored build is
+`066-restored-build.log` `EXIT=0` and the restored test is
+`067-restored-test.log` `EXIT=0` (100% tests passed out of 3).
 
 ## Six focused ctest runs
 
@@ -153,7 +174,7 @@ The p1 baseline run of the same six is `.../duet/02-worker/tmp/003-p1-test-basel
 ## feature_check
 
     python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <repo>
-    # 020-feature-check.log, EXIT=0
+    # 070-feature-check.log, EXIT=0
 
 | Gate | Result |
 | --- | --- |
@@ -171,7 +192,7 @@ The p1 baseline run of the same six is `.../duet/02-worker/tmp/003-p1-test-basel
 ## submit_check
 
     python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <repo> new-p9-348-port-port
-    # 021-submit-check.log, rerun after the commit
+    # 071-submit-check.log, EXIT=0, rerun after the final commit
 
 | Item | Result |
 | --- | --- |
@@ -201,7 +222,8 @@ windows.
       release; non-testing releases stay plain `src_delete`.
 - [x] T1/T2 assert zero creations and zero deletions; T4 checks each held note's
       real `PlaybackState` mode and the counted render.
-- [x] All five mutations are RED and the reverted tree is GREEN.
+- [x] All seven mutations (M1-M7) are RED and the reverted tree is GREEN;
+      M7 catches a conversion on the first of T4's three notes.
 - [x] `feature_check.py` has no new FAIL (`RESULT: PASS`, EXIT=0).
 - [x] No product behaviour changed; only the `LMMS_TESTING`-only counter and
       friend hooks were added.
@@ -211,10 +233,12 @@ windows.
 
 ### Answers to the pre-submit questions
 
-1. **RED with the fix reverted, GREEN with it (exit codes).** M1-M5 each fail
-   `PatmanLoadTest` (CTest EXIT=8; `025`, `027`, `029`, `031`, `033`); each
-   mutation build is EXIT=0. Reverting the mutations builds cleanly
-   (`034`, EXIT=0) and the test passes (`035`, EXIT=0, 100% of 1).
+1. **RED with the fix reverted, GREEN with it (exit codes).** M1-M7 each fail
+   `PatmanLoadTest` or its T4 function (CTest EXIT=8; M7 EXIT=1; logs `053`,
+   `055`, `057`, `059`, `061`, `063`, `065`); each mutation build is EXIT=0.
+   The restored tree builds cleanly (`066`, EXIT=0) and the test passes (`067`,
+   EXIT=0, 100% of 3). The saved-patch reversal is not authoritative: both
+   `git apply -R --check` calls exit 1 (`068`, `069`).
 2. **Deterministic.** There are no sleeps or wall-clock deadlines. The load test
    uses the `AudioEngine::modelChangeWaiters()` event seam; playback tests use
    `RealtimeScope`, `framesPerPeriod()`, real `NotePlayHandle` objects, and
