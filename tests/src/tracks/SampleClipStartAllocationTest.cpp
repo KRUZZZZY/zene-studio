@@ -81,6 +81,8 @@ struct Pass
 };
 
 //! One period of `track` at tick 0. The allocation probe is armed for the play() call only.
+//! The handle reaches playHandles() only when renderNextPeriod() drains the engine's staging list in
+//! renderStageNoteSetup (AudioEngine.cpp:1071), so each slot renders one period after this returns, outside the probe.
 Pass armedPlay(SampleTrack& track)
 {
 	Pass pass;
@@ -123,6 +125,7 @@ private slots:
 
 		const Pass pass = armedPlay(track);
 		const std::uint64_t allocations = pass.allocations;
+		Engine::audioEngine()->renderNextPeriod(); // drains the staged handle into playHandles()
 		QVERIFY2(pass.played, "SampleTrack::play scheduled no plain clip");
 		QCOMPARE(handlesFromTrack(track), 1);
 		QCOMPARE(allocations, std::uint64_t{0});
@@ -139,14 +142,18 @@ private slots:
 		clip->setSampleBuffer(makeBuffer(rate));
 		clip->setLaneIndex(0);
 
-		// The comp selects the clip's lane across its whole span, with a slip: CompSlipReaders::create
-		// returns readers only for a segment on the clip's lane whose sourceOffset is non-zero.
+		// The comp selects the clip's lane across its whole span, with a slip. CompSlipReaders::create
+		// (CompSlip.cpp:42-54) returns nullptr only when the comp auditions a lane (auditionLane() >= 0)
+		// or outputFramesPerTick <= 0. Otherwise it adds a span for each segment with
+		// segment.laneIndex == clip.laneIndex() and segment.sourceOffset != 0 that overlaps the clip, so
+		// the slipped segment (sourceOffset == SlipTicks) yields readers as long as the clip has length.
 		TakeLaneModel& comp = track.takeLanes();
 		comp.addLane(QStringLiteral("take 1"));
 		QVERIFY(comp.selectSegment(0, clip->length().getTicks(), 0, SlipTicks));
 
 		const Pass pass = armedPlay(track);
 		const std::uint64_t allocations = pass.allocations;
+		Engine::audioEngine()->renderNextPeriod(); // drains the staged handle into playHandles()
 		QVERIFY2(pass.played, "SampleTrack::play scheduled no comped clip");
 		QCOMPARE(handlesFromTrack(track), 1);
 		QCOMPARE(allocations, std::uint64_t{0});
@@ -161,14 +168,17 @@ private slots:
 		auto* clip = dynamic_cast<SampleClip*>(track.createClip(TimePos(0)));
 		QVERIFY(clip != nullptr);
 		clip->setSampleBuffer(makeBuffer(rate));
-		// A rate change: half a second of source across two beats (96 ticks). Warp markers make the clip
-		// not rendersLinearly(), so its stretcher is prepared (SamplePlayHandle.cpp:164, 183).
+		// A rate change: half a second of source across two beats (96 ticks). With warp markers, passWarp()
+		// returns them (Clip.cpp:869-873), so rendersLinearly() (SampleClip.h:233-236) is false. Then
+		// rendersThroughStretcher(PreservePitch, false, 0) (SamplePlayHandle.cpp:129-134) is true, and the
+		// handle prepares its stretcher (SamplePlayHandle.cpp:183; WSOLA fallback at 208-210).
 		const WarpMarker markers[] = {{0, 0}, {static_cast<f_cnt_t>(rate / 2), 96}};
 		QVERIFY(clip->setWarpMarkers(markers));
 		clip->setWarpStretchMode(WarpStretchMode::PreservePitch);
 
 		const Pass pass = armedPlay(track);
 		const std::uint64_t allocations = pass.allocations;
+		Engine::audioEngine()->renderNextPeriod(); // drains the staged handle into playHandles()
 		QVERIFY2(pass.played, "SampleTrack::play scheduled no PreservePitch clip");
 		QCOMPARE(handlesFromTrack(track), 1);
 		QCOMPARE(allocations, std::uint64_t{0});
