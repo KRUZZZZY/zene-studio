@@ -18,6 +18,8 @@
 #include <vector>
 
 #include "RealtimeFreeList.h"
+#include "RealtimeScope.h"
+#include "SampleClip.h"
 
 namespace lmms
 {
@@ -108,6 +110,14 @@ void SamplePlayHandle::reserveBlocks(std::size_t blocks)
 		owners().push_back(std::move(storage));
 		pool().push(header);
 	}
+}
+
+void SamplePlayHandle::reserveForClips()
+{
+	if (RealtimeScope::isActive()) { return; }
+	const int live = SampleClip::liveClipCount();
+	const std::size_t clips = live > 0 ? static_cast<std::size_t>(live) : std::size_t{0};
+	reserveBlocks(clips + clips / 4 + 8);
 }
 
 } // namespace lmms

@@ -1567,6 +1567,7 @@ void AudioEngine::topUpPlayHandleCapacityOnControlThread()
 	}
 	BufferManager::reserve(static_cast<std::size_t>(m_playHandles.capacity()));
 	CompSlipReaders::reserve(static_cast<std::size_t>(m_playHandles.capacity()) / 8);
+	SamplePlayHandle::reserveForClips();
 	for (AudioBusHandle* bus : m_audioBusHandles) { bus->topUpPlayHandleCapacityUnderEngineChangeLock(); }
 }
 

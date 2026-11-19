@@ -82,6 +82,10 @@ public:
 	//! Control thread only. Grows the pool until its free list holds at least `blocks` blocks.
 	static void reserveBlocks(std::size_t blocks);
 
+	//! Control thread only. Tops the pool up for the live clips: reserveBlocks(clips + clips / 4 + 8).
+	//! A no-op inside a RealtimeScope, so no clip can grow the pool on the audio thread.
+	static void reserveForClips();
+
 	inline bool affinityMatters() const override
 	{
 		// Pool slots are constructed on the engine/control thread and reused by
