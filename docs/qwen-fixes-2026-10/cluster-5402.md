@@ -1,83 +1,106 @@
 FIXED
 
-Reason: 9e3fa27359 (`fix(take): refuse an existing file in TakeRecorder::start`) is only on `bugs/qwen-5402`. `git merge-base --is-ancestor 9e3fa27359 master` exited 1. That commit added no test. The regression test in this commit is the test for it.
+## Verdict and reason
 
-## Open gap: no RED run for the current test
+`9e3fa27359` (`fix(take): refuse an existing file in TakeRecorder::start`) is only on `bugs/qwen-5402`: `git merge-base --is-ancestor 9e3fa27359 master` exited 1, so the fix is not yet on `master`. That commit changed only `src/core/TakeRecorder.cpp` (16 insertions) and added no test.
 
-- The test file was last written at 06:17:38. The p3 GREEN and family runs ended at 06:05–06:10, so they ran an earlier version of the test. That version had slots `startingATakeNeverTruncatesAnExistingFile` and `startingATakeOverADirectoryIsRefused`, 9 passed. No log in the run folder mentions `takeRefusesExistingFile`.
-- The current test, `takeRefusesExistingFile` (ReceiverEffectTest.cpp:308), has no RED run. The packet expected the RED failure at ReceiverEffectTest.cpp(325). Line 325 is `QVERIFY(!take->start(sentinel, 44100, &why));` in the current file, but it has not been observed failing.
-- The RED logs in the run folder (`test-1-red.log`, `test-1b-red.log`) are for the earlier version. They fail at `'!started' returned FALSE` and record no exit code.
-- Reproducing RED needs the reversed fix built, which means editing `src/core/TakeRecorder.cpp`. This run did not do that, because the packet forbids it.
-- GREEN was rerun on the current file in this session (see Commands). Only the RED half is open.
+The regression test `takeRefusesExistingFile` is in `db57d9e28a`. This commit adds only this report. The test fails with the fix reverted (RED, exit 8) and passes with the fix applied (GREEN, exit 0). See the logs below.
 
-## Finding
+## Evidence for the fix: `src/core/TakeRecorder.cpp:73-99`
 
-Before the fix, `TakeRecorder::start()` accepted a path that already held a file, and the take replaced it. The RED message in `test-1-red.log` says: "start() accepted a path that already holds a file: a take would replace it."
+- 74-75 (comment): `NewOnly` makes the open fail on an existing file, so a take never truncates one and there is no check-then-open race.
+- 76-88: the file is created with `QIODevice::WriteOnly | QIODevice::NewOnly`. If the open fails, `why` is set (82-84): "`<path>` already exists: choose a new file; nothing was overwritten" when `QFileInfo::exists(path)`, otherwise "cannot write ...". Returns false.
+- 93: `sf_open(..., SFM_WRITE, ...)` opens the file just created.
+- 96: if `sf_open` fails, `QFile::remove(path)` removes the empty file the code created at 77.
 
-After the fix, `src/core/TakeRecorder.cpp:73-99`:
-- lines 76-88: the file is created with `QIODevice::NewOnly`. If the open fails, `start()` returns false with `why` set (line 82 uses `QFileInfo::exists`, so an existing path gets "already exists: choose a new file; nothing was overwritten").
-- line 93: `sf_open(..., SFM_WRITE, ...)`.
-- line 96: if `sf_open` fails, `QFile::remove(path)` removes the empty file that the code itself created just above.
+## Caller audit
 
-## Audit of callers
+- The only production caller of `TakeRecorder::start` is `src/core/ControlCommandsRecorder.cpp:88`. Its path comes from line 86: `TakeRecorder::defaultTakePath()` or the requested file's absolute path. I searched `src` for `.start(` and `->start(`; the other matches are timers and threads.
+- `src/core/ControlCommandsSamplerTake.cpp:258` and `src/core/ControlCommandsSessionAudioRecord.cpp:250` also call `defaultTakePath()`. Neither file has a `.start(` or `->start(` call. I did not trace where their paths go.
+- `TakeRecorder::defaultTakePath()` is at `src/core/TakeRecorder.cpp:202-212`. Its uniqueness loop is at line 209: `for (int n = 2; QFileInfo::exists(path); ++n)` appends ` (n)` while the path exists.
+- Test call sites in `tests/src/core/ReceiverEffectTest.cpp`: 130 (`take.start` inside the `recordTake` helper defined at 127; used at 333 and 347), 325, 338, 355. Line 276 is in another slot.
 
-- Production callers of `start()` (checked with rg over `src/*.cpp`): only `src/core/ControlCommandsRecorder.cpp:88`. Its path is either `TakeRecorder::defaultTakePath()` or the user's file. `defaultTakePath()` (TakeRecorder.cpp:202-212) adds ` (n)` suffixes while the path exists.
-- The packet cites `ReceiverEffectTest.cpp:226` as a caller. That line is stale. The current file calls `start()` at 130 (the `recordTake` helper, used at 333 and 347), 276, 325, 338 and 355.
-
-## Test matrix (`takeRefusesExistingFile`, lines 308-358)
+## Test matrix: `takeRefusesExistingFile`, `tests/src/core/ReceiverEffectTest.cpp:308-358`
 
 | Part | Lines | What it asserts |
 |---|---|---|
-| (a) | 319-330 | A file at the path: start refused with "already exists", not recording, bytes unchanged, `lastTake` unchanged |
+| (a) | 319-329 | A file at the path: start refused, message says "already exists", not recording, bytes unchanged, `lastTake` unchanged |
 | (b) | 331-343 | A recorded take: a second start on its path is refused; frames and bytes unchanged |
 | (c) | 345-349 | A fresh path under a folder that does not exist yet still records |
-| (d) | 351-358 | A directory at the path: refused, still a directory, still empty |
-| (e) | — | `plugin.record` not covered. Per the packet, no fixture builds a Recorder target (not re-checked here) |
+| (d) | 351-358 | A directory at the path: start refused, not recording, still a directory, still empty |
+| (e) | — | `plugin.record` is not covered |
 
-The packet says the reversed-fix RED aborts at the first assertion (a), so (b), (c) and (d) were exercised only under GREEN. (d) before the fix is unverified. The only pre-fix RED in the logs is for the earlier version (see Open gap).
+## Commands and exit codes
 
-## Commands and exit codes (from this session's logs)
+`LOGS` = `/home/kruzzzzy/.config/kads/zene/state/runs/5402.r1/logs`.
 
-- `cmake --build <wt>/build --parallel 8 --target zene ReceiverEffectTest` → EXIT 0 (`duet/08-worker/tmp/007-p4-build-green.log`). The log has no "Building CXX" line. The object `ReceiverEffectTest.cpp.o` (06:19:10) is newer than the source, and the GREEN output lists `takeRefusesExistingFile`, so the binary includes the current test.
-- GREEN: `ctest -R ReceiverEffectTest -V` in `build/tests` → EXIT 0. Totals: 8 passed, 0 failed. `takeRefusesExistingFile()` PASS (`008-p4-test-green.log`).
-- Family: `ctest -R "Recorder|Take|ControlCommands" --output-on-failure` → EXIT 0. 100% passed out of 19. `ControlMidiTakeRecord` is **Skipped** (`009-p4-test-family.log`). The packet's "6 tests; none skipped" is wrong.
-- Gates: `python3 feature_check.py <wt> > logs/gates-2.log 2>&1` → EXIT=0, `RESULT: PASS`. The complexity and file-length gates report "no new item in your files". `gates-1.log` was run before the registration line was added and is also EXIT=0 PASS.
-- Baseline: not run in this session.
-- RED: not run in this session (see Open gap). The packet's "RED=8" is not supported by a log for the current test. The only `exit 8` in the run folder is the p3 first family run (16 Not Run, targets not built). That run is in `p3-test-family-first.log`.
+Preflight:
+- `git status --short` → empty. `git rev-parse HEAD` → `db57d9e28aa18a5867d19094e3190a862c51890b`.
+- `grep -c '^+[^+]' LOGS/fix.patch` → 16. `grep '^+++' LOGS/fix.patch` → `+++ b/src/core/TakeRecorder.cpp`.
+- `git diff 9e3fa27359~1 9e3fa27359 -- src/core/TakeRecorder.cpp | cmp - LOGS/fix.patch` → EXIT 0 (identical).
 
-## Registration and diff checks
+Baseline (fix applied):
+- `cmake --build build --target zene ReceiverEffectTest > LOGS/p4b-base-build.log 2>&1` → EXIT 0.
+- `(cd build/tests && ctest -R '^ReceiverEffectTest$' --output-on-failure > LOGS/p4b-base-test.log 2>&1)` → EXIT 0; "100% tests passed out of 1". Plain ctest does not name passing slots.
+- `(cd build/tests && ctest -V -R '^ReceiverEffectTest$' > LOGS/p4b-base-test-verbose.log 2>&1)` → EXIT 0; line 344: `PASS : ReceiverEffectTest::takeRefusesExistingFile()`; `Totals: 8 passed, 0 failed, 0 skipped`.
 
-- `tests/fork-sources.txt:2933` lists `ReceiverEffectTest.cpp` as inherited. `tests/upstream-modifications.txt` had no entry for it, so one was added, tab-separated, with a reason. The file still ends with a newline.
-- `git diff --numstat -- tests/src/core/ReceiverEffectTest.cpp` → `104 0`.
-- `git diff --stat -- src/core/TakeRecorder.cpp` → empty. The product change is already in `9e3fa27359`.
-- `LOGS/fix.patch` (1427 bytes) is what the packet says was built from `git diff 9e3fa27359~1 9e3fa27359 -- src/core/TakeRecorder.cpp`. It was not regenerated here.
+RED (fix reverted):
+- `git apply -R LOGS/fix.patch` → EXIT 0. `git diff --stat -- src/core/TakeRecorder.cpp` → `1 file changed, 16 deletions(-)`.
+- `cmake --build build --target zene ReceiverEffectTest > LOGS/p4b-red-build.log 2>&1` → EXIT 0. The log shows `Building CXX object src/CMakeFiles/lmmsobjs.dir/core/TakeRecorder.cpp.o` (line 14), `Linking CXX executable ../zene` (18) and `Linking CXX executable ReceiverEffectTest` (40). There is no compile line for `ReceiverEffectTest.cpp.o`: its source did not change, so the object was not rebuilt. The test binary was relinked against the rebuilt library object.
+- `(cd build/tests && ctest -R '^ReceiverEffectTest$' --output-on-failure > LOGS/p4b-red-test.log 2>&1)` → EXIT 8. Line 16: `FAIL!  : ReceiverEffectTest::takeRefusesExistingFile() '!take->start(sentinel, 44100, &why)' returned FALSE`. Line 17: `Loc: [../../tests/src/core/ReceiverEffectTest.cpp(325)]`. `Totals: 7 passed, 1 failed, 0 skipped`.
 
-## Race reasoning (from the packet; threading not re-checked here)
+GREEN (fix re-applied):
+- `git apply LOGS/fix.patch` → EXIT 0. `git diff --stat -- src/core/TakeRecorder.cpp` → empty. `git status --short` → empty.
+- `cmake --build build --target zene ReceiverEffectTest > LOGS/p4b-green-build.log 2>&1` → EXIT 0.
+- `(cd build/tests && ctest -R '^ReceiverEffectTest$' --output-on-failure > LOGS/p4b-green-test.log 2>&1)` → EXIT 0; "100% tests passed out of 1".
 
-- `start()` runs on the control path only.
-- `NewOnly` makes create-or-fail atomic, so there is no check-then-open window.
-- `push()` and `copyIn()` are untouched by the fix.
-- Nothing new allocates, locks or logs on the audio thread.
+Family (fix applied):
+- `(cd build/tests && ctest -R 'ReceiverEffect|EffectDeviceMenu|Recorder|Take|ControlCommands' --output-on-failure > LOGS/p4b-family-test.log 2>&1)` → EXIT 0; 21 tests matched; "100% tests passed out of 21". `ControlMidiTakeRecord` is **Skipped** (log line 39), so 20 ran and passed and 1 was skipped.
+
+Gates:
+- `LOGS/gates-2.log` (an earlier run) ends with `RESULT: PASS`. Its EXIT code is not recorded in the file. The gates rerun for this commit is logged separately in `LOGS/p4b-gates.log`.
+
+## Which assertion fails under RED
+
+Part (a), line 325: `QVERIFY(!take->start(sentinel, 44100, &why));`. The message shows the expression `!take->start(...)` evaluated to false, so `start()` returned true: with the fix reverted, a take started on a path that already held a file.
+
+`QVERIFY` aborts the slot, so (b), (c) and (d) are not reached under RED. (d) before the fix is therefore unverified. Under GREEN, all of (a) to (d) run and pass (verbose baseline line 344).
+
+## Provenance of `fix.patch`
+
+`LOGS/fix.patch` was already present and passed its checks. The working-tree diff of `src/core/TakeRecorder.cpp` was empty, so the patch is the fix commit's own diff. The `cmp` above confirms it.
+
+## Registration
+
+`tests/upstream-modifications.txt` gained one tab-separated line in `db57d9e28a`: `tests/src/core/ReceiverEffectTest.cpp` with the reason "cluster 5402-take-existing-file: adds the takeRefusesExistingFile regression slot for TakeRecorder::start refusing an existing file (product fix 9e3fa27359); test code only".
+
+## Race and audio-thread reasoning (read from `src/core/TakeRecorder.cpp`, not measured)
+
+- `start()` is reached from a control command (`ControlCommandsRecorder.cpp:88`). I did not trace the thread model further.
+- `NewOnly` makes create-or-fail atomic, so there is no window between the existence check and the open.
+- The fix adds 16 lines inside `start()` and nothing else. `push()` and `copyIn()` are unchanged.
 - No control command was added.
 
-## Directory path
+## Directory-path wording
 
-A directory at the path is refused with "already exists" (`QFileInfo::exists`, TakeRecorder.cpp:82). Nothing is overwritten. The wording is slightly off for a directory, which is acceptable.
+A directory at the path is refused with the "already exists" message (`QFileInfo::exists`, `TakeRecorder.cpp:82`). Nothing is overwritten. The wording says "choose a new file", which is slightly off for a directory, but no data is lost. Part (d) checks that the directory is untouched (lines 355-358), not the wording.
 
 ## Gaps
 
-- Part (e), `plugin.record`, is not covered.
+- Part (e), `plugin.record`, is not covered. It would need a Recorder fixture, which this test does not build.
 - TSan was not run.
-- No RED run for the current test (see Open gap).
+- Part (d) before the fix is unverified (see RED).
 
 ## Other findings
 
-Truncating `SFM_WRITE` sites not examined for safety. They may write temp files or caller-checked paths:
-- `ClipConsolidate.cpp:112`
-- `BounceInPlace.cpp:581`
-- `ControlCommandsRenderRealtime.cpp:152`
-- `RenderQueue.cpp:135`
-- `TrackRecorder.cpp:171`
+Five truncating `SFM_WRITE` sites, not examined for whether they are safe. They may write temp files or caller-checked paths:
+- `src/core/ClipConsolidate.cpp:112`
+- `src/core/BounceInPlace.cpp:581`
+- `src/core/ControlCommandsRenderRealtime.cpp:152`
+- `src/core/RenderQueue.cpp:135`
+- `src/core/audio/TrackRecorder.cpp:171`
+
+`grep -rl --include='*.cpp' SFM_WRITE src` lists 13 files, so these five are not all of them. The other files are not examined either.
 
 ## Self-check
 
