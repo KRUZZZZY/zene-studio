@@ -131,6 +131,32 @@ windows.
 - [x] New test functions stay within CCN <= 10 (complexity gate: no new item).
 - [x] `submit_check.py` has no FAIL and every `?` item is answered.
 
+### Answers to the pre-submit questions
+
+1. **RED with the fix reverted, GREEN with it (exit codes).** M1-M4 each fail
+   `PatmanLoadTest` (CTest exit 8; `005`, `007`, `009`, `011`). Reverting the
+   mutations builds cleanly (exit 0) and the test passes (exit 0; `012`, `013`).
+2. **Deterministic.** There are no sleeps or wall-clock deadlines. The load test
+   uses the `AudioEngine::modelChangeWaiters()` event seam; playback tests use
+   `RealtimeScope`, `framesPerPeriod()`, real `NotePlayHandle` objects, and
+   bit-for-bit block comparison against a separately rendered SincBest oracle.
+3. **Cause and complete.** The only caller of
+   `applyConverterModeToRetainedStates()` is
+   `AudioEngine::setSrcQuality()` (`AudioEngine.cpp:409`); it drives the prepare/
+   adopt/discard hooks at `AudioEngine.cpp:388-393`, and the `Instrument`
+   defaults (`include/Instrument.h:143-150`) keep every other instrument
+   consistent. Patman is the only override (`Patman.h:66-68`).
+4. **No collateral damage.** No product file or persistence format changed.
+   Saved projects load through the unchanged file readers, and the tests add no
+   new product limit: they use a temporary GF1 patch and the existing test seams
+   only.
+5. **ALREADY-FIXED evidence.** `src/core/AudioEngine.cpp:298-320` prepares every
+   retained state, `plugins/Patman/Patman.cpp:247-267` forwards prepare/adopt/
+   discard to held Patman notes, and `src/core/AudioResampler.cpp:219-264`
+   caches the prepared converter before adoption. The reserved capacity at
+   `src/core/AudioEngine.cpp:145-149` and the throw at
+   `src/core/AudioResampler.cpp:392` keep allocation out of the render thread.
+
 ## Other findings
 
 - The mutation logs predate this report and did not store per-command exit
