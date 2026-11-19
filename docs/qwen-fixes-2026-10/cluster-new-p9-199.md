@@ -1,111 +1,55 @@
-FALSE-POSITIVE
+FIXED
 
-# Cluster new-p9-199: false-positive report
+# Cluster new-p9-199: duplicate source root in chord stacking
 
 ## Verdict
 
-The reported doubled root does not occur on this code. A note with children is a master note, and the track does not render master notes, so the root sounds once, through its interval-0 sub-note. No regression test is committed with this report. The evidence is the code references below and a scratch probe run, recorded in the commands section.
+FIXED. A MIDI-driven instrument sounded the chord root twice: once from the parent note's MIDI note-on, and again from the zero-interval chord child that the stacking step creates. The guard in `InstrumentFunctionNoteStacking::processNote` now skips that one child when the track's instrument is MIDI-based. Note-handle instruments keep the child, as before.
 
-## Why not real
+## Cause
 
-1. `include/NotePlayHandle.h:279-282`: `isMasterNote()` returns true when the note has sub-notes or `m_hadChildren` is set.
-2. `src/core/NotePlayHandle.cpp:99-100`: constructing a child appends it to `parent->m_subNotes` and sets `parent->m_hadChildren = true`. This happens synchronously, in the constructor.
-3. `src/core/InstrumentFunctions.cpp:263-269`: note stacking copies the base note for each chord interval and passes a child handle, with the base note as parent, into `addPlayHandle` (line 267). The child is constructed inside that call's argument list, so the parent has children once the call completes, and `isMasterNote()` is true for it.
-4. `src/tracks/InstrumentTrack.cpp:780`: a note is played only when `n->isMasterNote() == false` (plus the instrument and layer checks). The parent with children is therefore skipped.
-5. All 95 chord table entries (`src/core/InstrumentFunctions.cpp:44-145`) start with interval 0. A check with rg found 95 of 95 entries beginning `{ 0,`. The clone at interval 0 is therefore the only sounding root.
-6. The arpeggio path calls `_n->setMasterNote()` at `src/core/InstrumentFunctions.cpp:351` for the same purpose. Its comment says that without it the note "will play as an ordinary note". The body of `setMasterNote()` was not read in this check.
+- `src/core/NotePlayHandle.cpp:325-329`: the parent note sends its MidiNoteOn to the instrument (`processOutEventForNote`) before chord stacking runs.
+- `src/tracks/InstrumentTrack.cpp:776`: `m_noteStacking.processNote( n )` runs afterward and creates the chord children, including the interval-0 child at the base key.
+- For a MIDI-based instrument, that interval-0 child re-sends the root. The root therefore sounds twice.
+- `include/Instrument.h:65` defines `IsMidiBased`; `include/Instrument.h:184-186` reads it through `isMidiBased()`.
+
+## Fix
+
+- `src/core/InstrumentFunctions.cpp:257-264`: when `sub_note_key == base_note_key`, the track has a non-null instrument, and `isMidiBased()` is true, the loop `continue`s. No child is created for that interval. The include of `Instrument.h` is added at `:30`.
+- Note-handle instruments, and tracks with no instrument, take the same path as before.
+- `tests/src/plugins/MpeTestConsumer.cpp:169`: the logging test instrument is constructed with `Flag::IsMidiBased`, so the regression test runs through the guarded path.
+
+## Tests
+
+- `tests/src/core/ArticulationPlaybackTest.cpp:227-236` (`isArticulatedMajorChord`): a group is one articulation-led chord only if it is `p7`, `c11=90`, `k25`, `k60` (the one source root), then exactly `k64` and `k67` in any order. Two root sounds fail this check.
+- `tests/src/core/ArticulationPlaybackTest.cpp:563-589`: `everyStackedArpeggioStepFollowsItsArticulation` and `aStackedChordFollowsItsArticulation` assert that the articulation comes before every key and that each step is sent once.
+- `tests/src/core/NoteCurvesAcrossTest.cpp:335`: `QCOMPARE(stackedKeys, QList<int>{NumKeys - 1})` requires the interval-0 child to exist for that source. It passed in p2 (see below), so the zero-interval child is still created on the note-handle path.
 
 ## Commands and results
 
-Log directory: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p9-199.r1/logs`
+Logs: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p9-199.r3/logs`
 
-Exit codes. These are the exit codes the probe runs returned, as shown in the command output of the run. The log files themselves do not contain `EXIT` lines (`rg -c EXIT` on the log directory returned no matches).
+Exit codes: the packet's p1-p4 record gives the exit codes below. The log files in this folder contain no `EXIT` lines, so these exit codes are not independently verified from the logs. The test output lines are verified from the logs.
 
-- build-1: EXIT=0
-- probe-green: EXIT=0
-- build-2: EXIT=0
-- probe-red: EXIT=8
-- build-4: EXIT=0
-
-Log contents, rechecked in this check with rg:
-
-- `probe-green.log` (ChordRootProbeTest, CTest #328): `1/1 Test #328: ChordRootProbeTest ... Passed 1.46 sec`; `100% tests passed out of 1`. The green log does not print the root counts (no `rootCount` line); the passing QCOMPARE checks imply the count was 1.
-- `probe-red.log` (same test): `1/1 Test #328: ChordRootProbeTest ... ***Failed 1.30 sec`; `FAIL!  : ChordRootProbeTest::rootSoundsOnceWithMajorChordOn() Compared values are not the same`; `Actual (rootCount): 2`; `Expected (1): 1`; `Loc: [../../tests/src/core/ChordRootProbeTest.cpp(132)]`; `Totals: 2 passed, 1 failed, 0 skipped`; `0% tests passed, 1 tests failed out of 1`; `Errors while running CTest`.
-- `build-1.log` and `build-2.log`: last line `[100%] Built target ChordRootProbeTest`. Build-2 relinked the target.
-- `build-4.log`: full `zene` build; last line `[100%] Built target zene`.
-
-### Control mutation
-
-The probe source, `tests/src/core/ChordRootProbeTest.cpp`, counted root sounds through a spy instrument on `InstrumentTrack::playNote`. It was scratch and is not kept.
-
-The control mutation replaced the term `n->isMasterNote() == false` at `src/tracks/InstrumentTrack.cpp:780` with `true`. That disables the master skip. The mutant was built and run and gave RED (rootCount 2, expected 1; see `probe-red.log`). It was then reverted with `git checkout`. The logs do not record the mutation; this description comes from the record of the scratch run, not from a log.
-
-Revert state, checked in this run: `git diff --quiet HEAD -- src/tracks/InstrumentTrack.cpp` returned EXIT=0, so the file matches HEAD. `tests/src/core/ChordRootProbeTest.cpp` is absent from the worktree and is not tracked (`git ls-files` returned no lines).
+- p1 red (before the fix): `cd build/tests && ctest -R '^ArticulationPlaybackTest$' --output-on-failure`. Log `n199-r3-01-test-red.log`: `Test #333: ArticulationPlaybackTest ***Failed`; `333 - ArticulationPlaybackTest (Failed)`. Exit 8 (from the p1 record).
+- p2 green (with the fix), sibling suite: `n199-r3-02-test-green.log`: `1/4 Test #176: MpePlaybackTest Passed`; `2/4 Test #327: NoteCurvesAcrossTest Passed`; `3/4 Test #330: NotePlaybackTest Passed`; `4/4 Test #333: ArticulationPlaybackTest Passed`; `100% tests passed out of 4`.
+- p2 direct run: `n199-r3-02-artic-direct.log`: `Totals: 17 passed, 0 failed, 0 skipped`.
+- p3 reversed (guard removed, build and test): `n199-r3-03-build-reverted.log` and `n199-r3-03-test-reverted.log`: `Test #333: ArticulationPlaybackTest ***Failed`. Exit 8 (from the p3 record).
+- p3 restored: `n199-r3-03-test-restored.log`: `Test #333: ArticulationPlaybackTest Passed`; `100% tests passed out of 1`. Exit 0 (from the p3 record). `cmp` of the restored product file: exit 0 (from the p3 record).
+- p4 gates: `n199-r3-04-gates.log`: `PASS fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity`; `RESULT: PASS`. Exit 0 (from the p4 record).
+- p4 test matrix: `n199-r3-04-matrix.md`.
 
 ## Not verified
 
-- No audio rendering through a real instrument plugin. The check is code references plus a probe that counts root sounds; no rendered audio was compared.
-- No ThreadSanitizer run. This report changes no product code, so nothing new runs on the audio thread. The audio-thread status of the existing paths was not checked.
-- The body of `setMasterNote()` was not read.
-- The layer path below was traced only as far as the `acquire` call.
-
-## Registration
-
-The fork-sources gate passed with this doc unregistered, so no entry was added to `tests/fork-sources.txt`.
-
-## Other findings
-
-- Layer copies and the parent's chord (design question). `src/tracks/InstrumentTrackNotes.cpp:297` calls `InstrumentLayers::playNote` (`src/core/InstrumentLayers.cpp:471-483`) before `addPlayHandle` at line 298. Each layer track gets a copy acquired without a parent (`InstrumentLayers.cpp:479`), so the copy is not a chord sub-note of the parent, and the parent's chord stacking is not applied to it on this path. That copy plays a different instrument by design (MX-112), so it is not a doubled root. Whether layers should inherit the parent's chord is an undocumented product decision; this report does not settle it.
-
-## Gates
-
-Run 1: `feature_check.py` on `kads-new-p9-199`, log `gates-1.log`. The log has no exit-code line. The exit code `EXIT=0` comes from the command output of that run; it was not re-run for this report.
-
-```
-feature-check kads-new-p9-199 (base fa4a5f2e7, 1 changed files; logs in /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p9-199/build/feature-check)
-  PASS  fork-sources            exit 0
-  PASS  all-sources-reproduce   exit 0
-  PASS  no-upstream-regression  exit 0
-  PASS  check-namespace         exit 0
-  PASS  no-tautology            exit 0
-  PASS  doc-figures             exit 0
-  PASS  complexity              no new item in your files
-  PASS  file-length             no new item in your files
-RESULT: PASS
-```
-
-Run 2: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p9-199 > .../logs/gates-2.log 2>&1; echo EXIT=$?` gave `EXIT=0`. The table below is from `gates-2.log`.
-
-```
-feature-check kads-new-p9-199 (base fa4a5f2e7, 2 changed files; logs in /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p9-199/build/feature-check)
-  PASS  fork-sources            exit 0
-  PASS  all-sources-reproduce   exit 0
-  PASS  no-upstream-regression  exit 0
-  PASS  check-namespace         exit 0
-  PASS  no-tautology            exit 0
-  PASS  doc-figures             exit 0
-  PASS  complexity              no new item in your files
-  PASS  file-length             no new item in your files
-RESULT: PASS
-```
-
-Run 4: gates-4.log, EXIT=0, RESULT: PASS (`feature_check.py` run unpiped with `echo EXIT=$?` before the self-check citation commit; the RESULT line is `logs/gates-4.log:10`).
+- No audio rendering through a real plugin. The regression check counts events on a logging test instrument, not rendered audio.
+- No ThreadSanitizer run. The guard is a pointer check and a flag read, with no allocation, lock, wait, I/O or logging.
+- The layer path (`src/tracks/InstrumentTrackNotes.cpp:297`, then `InstrumentLayers::playNote`) is not changed by this fix and was not re-checked here.
+- The exit codes listed above, other than the logged test lines, come from the p1-p4 record and are not in the logs.
 
 ## Self-check
 
-No product code changed. The branch diff against the base is this report only: `git diff --stat fa4a5f2e7 HEAD` lists `docs/qwen-fixes-2026-10/cluster-new-p9-199.md` alone. Answers are checked against the worktree in the self-check run.
-
-1. **Regression test fails with the change reverted and passes with it: N/A.** There is no product change to revert, and no regression test is committed (Verdict). The only test run was a scratch probe, ChordRootProbeTest (CTest #328). With the unmodified code it passed, EXIT=0 (`logs/probe-green.log:3`). With a control mutation at `src/tracks/InstrumentTrack.cpp:780` (`== false` changed to `true`) it failed, EXIT=8, with `Actual (rootCount): 2`, `Expected (1)` (`logs/probe-red.log:9,10`). The exit codes come from the command output recorded in "Commands and results", not from the log files. The mutation was reverted: `git diff --quiet HEAD -- src/tracks/InstrumentTrack.cpp` returned EXIT=0 in the self-check run.
-
-2. **Deterministic: not verified.** The probe is not kept (`git ls-files tests/src/core/ChordRootProbeTest.cpp` returned 0 lines), so no committed test exists to check for timing or races. The scratch probe injected its seam as a spy on `InstrumentTrack::playNote` (Commands and results, Control mutation). The logs show runtime only (`Passed 1.46 sec`), not an assertion on time.
-
-3. **Fix at the cause and complete: N/A as a fix; sibling coverage is partial.** Nothing was changed. The verdict rests on the chord stacking path and the master-note skip (item 5 below). The arpeggio path calls `setMasterNote()` at `src/core/InstrumentFunctions.cpp:351`, but its body was not read (Not verified). The layer path (`src/tracks/InstrumentTrackNotes.cpp:297`, `src/core/InstrumentLayers.cpp:471-483`) was traced only as far as `acquire` (Not verified, Other findings).
-
-4. **No collateral damage: N/A.** No product code has changed since the base `fa4a5f2e7`, so old projects and saved data are unaffected. No limit or check was added.
-
-5. **FALSE-POSITIVE evidence (file:line, checked in the self-check run):**
-   - `include/NotePlayHandle.h:279-282`: `isMasterNote()` returns `m_subNotes.size() > 0 || m_hadChildren`.
-   - `src/core/NotePlayHandle.cpp:99-100`: building a child appends it to `parent->m_subNotes` and sets `m_hadChildren = true`.
-   - `src/core/InstrumentFunctions.cpp:263-269`: the chord copy is acquired with `_n` as parent (line 269) and passed to `addPlayHandle` (line 267).
-   - `src/tracks/InstrumentTrack.cpp:780`: `n->isMasterNote() == false` gates playing, so the parent with children is skipped.
-   - `src/core/InstrumentFunctions.cpp:44-145`: all 95 chord table entries start with `{ 0,`, so the interval-0 clone is the only sounding root.
+1. **Regression red/green.** Red: p1 ArticulationPlaybackTest failed (Test #333, exit 8 per the p1 record). Green: p3 restored test passed (Test #333, exit 0 per the p3 record). Sibling suite green 4/4 in p2 (`n199-r3-02-test-green.log`). The guard reverted (p3 reversed) fails again, so the test is tied to the guard.
+2. **Determinism / seam.** The test accepts the two non-root voices in any order (`ArticulationPlaybackTest.cpp:230-235` sorts them), because the engine orders handles created in one period by its own rule. What the test requires is that the articulation comes before all keys and that the root sounds once. The seam is `MpeTestConsumer.cpp:169` (`Flag::IsMidiBased`), which routes the test through the guarded path without a real plugin.
+3. **Cause and sibling coverage.** Cause: the parent MIDI note-on is sent at `NotePlayHandle.cpp:325-329` before chord stacking at `InstrumentTrack.cpp:776`, so the interval-0 child re-sends the root. Siblings: the arpeggio path (`everyStackedArpeggioStepFollowsItsArticulation`) and the chord path (`aStackedChordFollowsItsArticulation`) are both in the green run. The note-handle path is covered by NoteCurvesAcrossTest (green in p2): its assertion at `NoteCurvesAcrossTest.cpp:335` needs the interval-0 child, and it passed, so the guard did not drop that child on that path.
+4. **Collateral / persistence.** The guard only skips when the track has a non-null, MIDI-based instrument. Note-handle and no-instrument tracks create the interval-0 child as before. No saved data format, setting or limit changes. `tests/upstream-modifications.txt` gains one line for the test-side changes.
+5. **Verdict evidence.** The verdict rests on the red/green pair (p1 red, p2 and p3 green), the cause references above, and the p4 gates log (`RESULT: PASS`). The fix is the commit that contains this report, `src/core/InstrumentFunctions.cpp`, the two test files and `tests/upstream-modifications.txt`.
