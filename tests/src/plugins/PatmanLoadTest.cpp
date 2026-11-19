@@ -421,6 +421,12 @@ void PatmanLoadTest::qualityChangeKeepsHeldPatmanSlotsAtTheNewMode()
 			instrument->deleteNotePluginData(note);
 			note->m_pluginData = nullptr;
 		}
+		for (NotePlayHandle* const note : notes)
+		{
+			// removePlayHandle() disposes the handle, which releases a
+			// NotePlayHandle back to NotePlayHandleManager itself.
+			engine->removePlayHandle(note);
+		}
 		QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), baseline - fillerCount);
 
 		// The only free slots are the three the notes just released.

@@ -77,13 +77,20 @@ names the failing assertion:
 The builds all ended `[100%] Built target PatmanLoadTest` (exit 0). RED test
 runs return CTest's failure status 8; the GREEN run returns 0. The stored logs
 are under `~/.config/kads/zene/state/runs/new-p9-348-port-port.r10/logs/`.
+T1 is `qualityChangeKeepsHeldPatmanSlotsAtTheNewMode()`, T2 is
+`overPolyphonyKeepsEverySincBestBlockAudible()`, T3 is
+`sincBestReferenceDiffersFromLinearReference()`.
 
-| Mutation | What it breaks | RED log | RED exit | Observed failure |
+| Mutation | Exact edit | RED log | RED exit | Observed failure |
 | --- | --- | --- | --- | --- |
-| M1 | converter mode mapping degrades SincBest to Linear | `005-test-m1.log` | 8 | mode 1 != expected 4; SincBest oracle indistinguishable from Linear (lines 432, 512, 549) |
-| M2 | realtime voice converter pool capacity cut below the reserved play-handle count | `007-test-m2.log` | 8 | `overPolyphonyKeepsEverySincBestBlockAudible()` caught an unhandled exception (`No prepared realtime voice converter is available`) |
-| M3 | Patman notes do not adopt the prepared mode for held slots | `009-test-m3.log` | 8 | reacquired slot mode 1 != expected 4 (line 432) |
-| M4 | over-polyphony Patman notes silently fall back to Linear when no prepared converter is free | `011-test-m4.log` | 8 | 231 mismatched blocks (expected 0, line 508); SincBest oracle indistinguishable from Linear (line 555) |
+| M1 | `RealtimeVoiceConverterPool::adoptSlot` returns early | `005-test-m1.log` | 8 | T1 `reacquired.back().mode()` 1 != 4 (line 432); T2 `!blocksMatch(sincBestReference, linearReference)` false (line 512); T3 SincBest oracle indistinguishable from Linear (line 549) |
+| M2 | `acquire()` returns nullptr after 4 SincBest acquisitions | `007-test-m2.log` | 8 | T2 aborts with an unhandled `std::runtime_error` (`No prepared realtime voice converter is available`), not a QCOMPARE |
+| M3 | `PatmanInstrument::prepareConverterModeForNote` returns true without preparing | `009-test-m3.log` | 8 | T1 `reacquired.back().mode()` 1 != 4 (line 432) |
+| M4 | `referenceBlock` oracle forced to Linear | `011-test-m4.log` | 8 | T2 231 mismatched blocks vs 0 (line 508); T3 SincBest oracle indistinguishable from Linear (line 555) |
+
+M1 and M3 were re-run after T1's play handles were released: `033-test-m1.log`
+and `035-test-m3.log` both end `EXIT=8` with T1 failing, and the restored tree
+ends `EXIT=0` in `037-test-final.log`.
 
 GREEN after reverting all four mutations:
 
@@ -159,9 +166,11 @@ windows.
 
 ## Other findings
 
-- The mutation logs predate this report and did not store per-command exit
-  codes; the RED values above are CTest's failure status (8), and the GREEN
-  exit 0 was re-run and captured.
+- The `005`/`007`/`009`/`011` logs predate this report and did not store
+  per-command exit codes; their RED values are CTest's failure status (8).
+  After T1 gained handle cleanup, M1 and M3 were re-run with explicit `EXIT`
+  capture (`033`, `035`: `EXIT=8`) and the restored tree was re-run
+  (`037`: `EXIT=0`).
 - No product defect was found outside the packet. The over-polyphony path
   intentionally throws when the reserved pool is exhausted rather than
   allocating on the audio thread.
