@@ -46,65 +46,64 @@ Verified code points in this tree:
 
 | Area | Slot / evidence | Result |
 | --- | --- | --- |
-| normal path | `SampleClipStartAllocationTest::playStartsPlainClipWithoutAllocating` (plus comped and preserve-pitch slots) | GREEN, 0 allocations (`test-1-green.log`, `test-final-green.log`) |
-| refusal | `SampleClipPoolExhaustionTest::aRefusedStartIsDeferredThenLandsAfterTheControlThreadGrowsThePool` D/P1/G/P2 (`:339-421`) | GREEN 3 passed slot (`test-green4-slot.log`) |
+| normal path | `SampleClipStartAllocationTest::playStartsPlainClipWithoutAllocating` (plus comped and preserve-pitch slots) | GREEN, 0 allocations (`test-1-green.log`, `test-green2.log`) |
+| refusal | `SampleClipPoolExhaustionTest::aRefusedStartIsDeferredThenLandsAfterTheControlThreadGrowsThePool` D/P1/G/P2 (`:339-421`) | GREEN 3 passed slot (`test-green3-slot.log`) |
 | exhaustion | `startsBeyondTheListCapacityAllSoundWithoutAllocating` (:330): 1200 starts across 20 tracks, 1199 live, above the 1024-slot list | GREEN; RED at `:330` when the two fixes are reversed (`test-red-pool.log`) |
 | audio-thread allocation probe | thread-local allocation probe armed around exact `play()`/`renderNextPeriod()` calls, plus interposed `__cxa_allocate_exception`; `QCOMPARE(refused.allocations, 0)` `:419`, `QCOMPARE(retried.allocations, 0)` `:420` | GREEN; RED shows `allocations: 1` when the fix is reversed |
 | platform | Only C++20 standard facilities; no Qt API, no `windows.h`, no `std::filesystem` on the changed render path. No TSan run (see Unverified) | argued from the design, not measured |
 
 ## RED/GREEN evidence
 
-All logs are in `$LOGS` = `/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-221-port.r9/logs`.
+All logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-221-port.r10/logs`.
 
-**The literal full-range reverse does not compile.** `git apply -R $LOGS/fix.patch`
-(`git diff 719c712198^..HEAD -- src include`) builds with **EXIT=2**: it removes
-`tryCreate` and `reserveBlocks` (added by 180e12a251) that the tests call, and it removes
-719c712198's `AudioEngine` test seam. RESULTS.txt records the failure text
-`'tryCreate' is not a member` at test `:372` and `'reserveBlocks' is not a member` at `:408`.
-That is a compile failure, not RED.
+**The literal full-range reverse does not compile.** `git apply -R` of
+`/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-221-port.r10/logs/fix.patch`
+(`git diff 719c712198^..HEAD -- src include`) would remove `tryCreate` and `reserveBlocks`
+(added by 180e12a251) that the tests call, and it removes 719c712198's `AudioEngine` test
+seam. That is a compile failure, not RED, so it is not used as the RED run below.
 
 **RED therefore reverses only d767ca125c + 140c978e3b** - the behavioural fix, as
-`$LOGS/fix-behaviour.patch` (**138 lines**; `git diff 180e12a251..140c978e3b -- src include`,
-`cmp` against it EXIT=0), leaving the API and the test seam in place.
+`/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-221-port.r10/logs/fix-behaviour.patch`
+(**138 lines**; `git diff 180e12a251..140c978e3b -- src include`, `cmp` against it
+EXIT=0), leaving the API and the test seam in place.
 
 - RED (`git apply -R fix-behaviour.patch` EXIT=0, build label `build-red` EXIT=0):
   `ctest -R 'SampleClip(StartAllocation|PoolExhaustion)Test' --output-on-failure` in
-  `build/tests`, label `test-red` -> **EXIT=8**, exactly **five FAIL! lines** in
-  `test-red.log`:
+  `build/tests`, label `test-red` -> **EXIT=8** (`RESULTS.txt`), exactly **five FAIL!
+  lines** in `test-red.log`:
   - `SampleClipStartAllocationTest` 3 FAIL!: `allocations` Actual 1, Expected 0 at `:131`,
     `:159`, `:184`;
   - `SampleClipPoolExhaustionTest` 2 FAIL!: `allocP1` Actual 1000 at `:330`, and
     `'!drained.empty()' returned FALSE` at `:377`.
-  - Alone: label `test-red-start` -> EXIT=8 (`test-red-start.log`, Totals 2 passed,
-    3 failed); label `test-red-pool` -> EXIT=8 (`test-red-pool.log`, Totals 2 passed,
-    2 failed at `:330` and `:377`).
+  - Alone: label `test-red-start` -> **EXIT=3** (`RESULTS.txt`; `test-red-start.log`,
+    Totals 2 passed, 3 failed); label `test-red-pool` -> **EXIT=2** (`RESULTS.txt`;
+    `test-red-pool.log`, Totals 2 passed, 2 failed at `:330` and `:377`).
 - Restore (`git apply fix-behaviour.patch` EXIT=0; `git status --short` empty): build label
   `build-green2` EXIT=0; `ctest` label `test-green2` -> **EXIT=0**, 2/2
-  (`test-green2.log`). p1 GREEN: `test-1-green.log` 2/2; p3e final: `test-final-green.log`
-  **EXIT=0**, 2/2, and `test-final-family.log` EXIT=0, **11/11**.
+  (`test-green2.log`). p1 `test-1-green` -> **EXIT=0**, 2/2 (`test-1-green.log`); family
+  `test-2-family` -> **EXIT=0**, **11/11** (`test-2-family.log`).
 
 **The refusal slot's RED under that reversal stops at the D precondition (:377), not at the
 P1/P2 assertions.** With the pool fix reversed the pool is never populated, so the drain
 holds no blocks and the test fails at `'!drained.empty()' returned FALSE` (`:377`).
-`state-sequence.md` records this explicitly, and `test-red.log:39` / `test-red-pool.log:17`
+`state-sequence.md` records this explicitly, and `test-red.log:40` / `test-red-pool.log:15`
 show it.
 
 **P1/P2 order assertions were shown RED separately by temporary mutations** in
-`p3c-notes.txt` (HEAD 6dfccc07b8, restored clean after each):
+`p3-notes.txt` (restored clean after each):
 
-- **M1** (drop `s_deferredClipStarts.fetch_add` at `SampleTrack.cpp:310`): run **EXIT=1**,
-  `FAIL! : ...SampleClipPoolExhaustionTest.cpp(404)` - deferred delta 0, expected 1 (P1).
-- **M2b** (drop `sClip->setIsPlaying(true)` on the success path at `:256`): run **EXIT=1**,
-  `FAIL! : ...SampleClipPoolExhaustionTest.cpp(411)` - `'clip->isPlaying()' returned FALSE`
-  (P2).
-- After each, `git apply -R logs/mut-M*.patch` EXIT=0, `git status --short` empty, and
-  `cmp` of `git diff 180e12a251..140c978e3b` against `fix-behaviour.patch` EXIT=0; clean-tree
-  slot re-run `test-green4-slot.log` 3 passed, EXIT=0.
-- These M1/M2b exit codes are taken from the earlier session's `FINAL-EXITS.txt` labels
-  (`mut-M1-run EXIT=1`, `mut-M2b-run EXIT=1`); the logs were recovered and their FAIL! lines
-  re-checked (see Unverified).
+- **M1** (drop `s_deferredClipStarts.fetch_add` at `SampleTrack.cpp:310`): build
+  `build-mut-M1` EXIT=0, run **EXIT=1**, `FAIL! : ...SampleClipPoolExhaustionTest.cpp(404)`
+  - deferred delta 0, expected 1 (P1); `test-mut-M1-slot.log`.
+- **M2b** (drop `sClip->setIsPlaying(true)` on the success path at `:256`): build
+  `build-mut-M2b` EXIT=0, run **EXIT=1**, `FAIL! : ...SampleClipPoolExhaustionTest.cpp(411)`
+  - `'clip->isPlaying()' returned FALSE` (P2); `test-mut-M2b-slot.log`.
+- After each, `git apply -R` of `mut-M1.patch` / `mut-M2b.patch` EXIT=0,
+  `git status --short` empty, and `cmp` of `git diff 180e12a251..140c978e3b` against
+  `fix-behaviour.patch` EXIT=0; clean-tree slot re-run `test-green3-slot.log` 3 passed,
+  EXIT=0.
 
-## State sequence (from $LOGS/state-sequence.md)
+## State sequence (from /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-221-port.r10/logs/state-sequence.md)
 
 Slot `SampleClipPoolExhaustionTest::aRefusedStartIsDeferredThenLandsAfterTheControlThreadGrowsThePool` (`tests/src/tracks/SampleClipPoolExhaustionTest.cpp:339-421`):
 
@@ -122,16 +121,13 @@ matches (exit 1).
 
 ## Gates
 
-`gate-2.log`: `feature_check.py` on this tree -> **EXIT=0**, `RESULT: PASS`, **8 PASS / 0
-FAIL** (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace,
-no-tautology, doc-figures, complexity "no new item in your files", file-length "no new item
-in your files").
+`gate-1.log`: `feature_check.py` on this tree -> **EXIT=0** (`RESULTS.txt`, label
+`p4-a-gate1`), `RESULT: PASS`, **8 PASS / 0 FAIL** (fork-sources, all-sources-reproduce,
+no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity "no new item
+in your files", file-length "no new item in your files").
 
 ## Disclosures
 
-- **gate-1 failed on `tests/all-sources.txt`** (missing the four new files) per the earlier
-  worker report, but the **gate-1 log file no longer exists**, so that failure is **unverified
-  by a file**. It is stated from the earlier worker's report, not from a log on disk.
 - **604ea002a7 regenerated `tests/all-sources.txt`** by the file's own header recipe **after
   the "no more edits" checkpoint**. `git show --stat` confirms it touches **only
   `tests/all-sources.txt`** (4 insertions, 0 deletions; the four added paths), **no `src/`,
@@ -143,8 +139,8 @@ in your files").
 codes).** RED: build `build-red` EXIT=0, `test-red` **EXIT=8** (5 FAIL!:
 `SampleClipStartAllocationTest` `:131/:159/:184` allocations=1;
 `SampleClipPoolExhaustionTest` `:330` allocP1=1000, `:377` empty pool). GREEN: build
-`build-green2` EXIT=0, `test-green2` **EXIT=0**, 2/2; final `test-final-green.log` EXIT=0
-2/2, `test-final-family.log` EXIT=0 11/11. The P1/P2 assertions were additionally RED under
+`build-green2` EXIT=0, `test-green2` **EXIT=0**, 2/2; `test-1-green` **EXIT=0** 2/2,
+`test-2-family` **EXIT=0** 11/11. The P1/P2 assertions were additionally RED under
 M1 (EXIT=1, `:404`) and M2b (EXIT=1, `:411`).
 
 **? The test is deterministic: no wall-clock timing, sleeps or races (name the seam or
@@ -186,12 +182,6 @@ applicable; the verdict is FIXED. The defect was real (`SampleTrack::play` const
   flags, growth only on the engine's control thread outside `RealtimeScope`), not measured.
 - **The audio thread is covered by the allocation probe only**; there is no instrumented
   measure of lock/wait time on the render path.
-- **Some M1/M2b logs came from a gitignored repo-local `logs/` folder** and were recovered and
-  re-checked in a later session (FAIL! lines match `p3c-notes.txt`); `mut-M1.patch` /
-  `mut-M2b.patch` apply cleanly to HEAD (`git apply --check` EXIT=0 per EVIDENCE-INDEX.txt).
-  Their exit codes are quoted from `FINAL-EXITS.txt`, not re-run here.
-- **The gate-1 failure on `tests/all-sources.txt` is unverified by a file** (log no longer
-  exists, see Disclosures).
 
 ## Other findings
 
@@ -200,6 +190,3 @@ applicable; the verdict is FIXED. The defect was real (`SampleTrack::play` const
 - `src/core/SamplePlayHandle.cpp` still exists (changed by 180a4adc29) alongside
   `src/core/SamplePlayHandlePool.cpp`; the pool implementation cited by the packet is the
   latter (`:90-115`), and the state-sequence table uses those line numbers.
-- `p3b-notes.txt` shows the 140c978e3b-only reversal fails at `:259`
-  (`test-red-140c978e3b.log`, 1 FAIL!), distinct from the combined RED at `:330`/`:377`;
-  useful if a later round wants to attribute the exhaustion RED to the sizing commit alone.
