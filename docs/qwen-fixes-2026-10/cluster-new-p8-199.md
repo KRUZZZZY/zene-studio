@@ -68,18 +68,18 @@ Logs are under
 | `test-1b-red.log` | `cd build/tests && ctest -R RoutingGraphTest --output-on-failure` | exit not recorded in the log; ctest reported failures - 16 passed, 13 failed. This is the RED for the final test set. |
 | `build-2.log` | `cmake --build build --target zene RoutingGraphTest RoutingGraphLiveTest RoutingGraphScheduleTest` | exit not recorded in the log; all four targets built (`[100%] Built target zene`, `... RoutingGraphTest`, `... RoutingGraphLiveTest`, `... RoutingGraphScheduleTest`) |
 | `test-2-green.log` | `cd build/tests && ctest -R RoutingGraph --output-on-failure` | exit not recorded in the log; 3/3 passed (`100% tests passed out of 3`) |
-| `build-3-red.log` | `cmake --build build --target RoutingGraphTest` | EXIT=0 (`[100%] Built target RoutingGraphTest`) |
-| `test-3-red.log` | `cd build/tests && ctest -R '^RoutingGraphTest$' --output-on-failure` | EXIT=8; 16 passed, 13 failed (0% of 1 test) |
-| `build-3-green.log` | `cmake --build build --target RoutingGraphTest` | EXIT=0 (`[100%] Built target RoutingGraphTest`) |
-| `test-3-green.log` | `cd build/tests && ctest -R '^RoutingGraphTest$' --output-on-failure` | EXIT=0; 1/1 passed, 100% |
+| `build-3-red.log` | `cmake --build build --target RoutingGraphTest` | exit not recorded in the log; build finished with `[100%] Built target RoutingGraphTest` |
+| `test-3-red.log` | `cd build/tests && ctest -R RoutingGraphTest --output-on-failure` | exit not recorded in the log; ctest reported failures - 16 passed, 13 failed (0% of 1 test) |
+| `build-3-green.log` | `cmake --build build --target RoutingGraphTest` | exit not recorded in the log; build finished with `[100%] Built target RoutingGraphTest` |
+| `test-3-green.log` | `cd build/tests && ctest -R RoutingGraphTest --output-on-failure` | exit not recorded in the log; 1/1 passed, 100% |
 | `build-mut1.log` / `test-mut1.log` | rebuilt `RoutingGraphTest` with the upper clamp removed (`std::max` only), then `cd build/tests && ctest -R RoutingGraphTest --output-on-failure` | build exit not recorded in the log, target built; test exit not recorded in the log, ctest reported failures - 24 passed, 5 failed |
 | `build-mut2.log` / `test-mut2.log` | rebuilt `RoutingGraphTest` with the `isfinite` guard removed, then `cd build/tests && ctest -R RoutingGraphTest --output-on-failure` | build exit not recorded in the log, target built; test exit not recorded in the log, ctest reported failures - 21 passed, 8 failed |
 | `build-mut3.log` / `test-mut3.log` | rebuilt `RoutingGraphTest` with the `setAlpha` clamp removed, then `cd build/tests && ctest -R RoutingGraphTest --output-on-failure` | build exit not recorded in the log, target built; test exit not recorded in the log, ctest reported failures - 28 passed, 1 failed |
 | `build-3b-1.log` / `test-3b-1.log` | rebuilt `RoutingGraphTest` with mutation (iv), the `loadSettings` bypass (settings assigned unchecked), then `cd build/tests && ctest -R '^RoutingGraphTest$' --output-on-failure` | build exit not recorded in the log, target built; test exit not recorded in the log, ctest reported failures - 18 passed, 11 failed |
 | `build-3b-2.log` / `test-3b-2.log` | rebuilt `RoutingGraphTest` with mutation (v), the constructor bypass (`m_alpha(alpha)`), then `cd build/tests && ctest -R '^RoutingGraphTest$' --output-on-failure` | build exit not recorded in the log, target built; test exit not recorded in the log, ctest reported failures - 28 passed, 1 failed (`ConstructorSanitisesAlpha`) |
 | `test-3b-green.log` | `cd build/tests && ctest -R RoutingGraph --output-on-failure` | exit not recorded in the log; 3/3 passed |
-| `gates-1.log` | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p8-199` | EXIT=0; 8/8 PASS, RESULT: PASS |
-| `gates-final.log` | same feature check after this report was written | EXIT=0; 8/8 PASS, RESULT: PASS |
+| `gates-1.log` | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p8-199` | exit not recorded in the log; 8/8 PASS, RESULT: PASS |
+| `gates-final.log` | same feature check after this report was written | exit not recorded in the log; 8/8 PASS, RESULT: PASS |
 
 ### Step 4b, re-run against the committed fix (`bd71b7293c`)
 
