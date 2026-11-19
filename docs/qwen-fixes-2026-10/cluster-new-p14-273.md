@@ -25,7 +25,7 @@ Families run by ctest (4 of 4): AudioStretcherTest, SampleClipStretchTest, TakeL
 
 Mutants:
 - Reversed fix: the slot fails with the expected message.
-- Gain applied twice: ratio 0.25, the slot fails. This run is reported by the lead's packet (p3 worker); see section 3.
+- Gain applied twice: ratio 0.25, the slot fails (`EXIT=8`, `L/exit-mutant.txt`, log `L/test-4-mutant.log`); see section 3.
 - Frames-span mutant: not run, because it is equivalent to the shipped code.
 
 ## 3. Commands and exit codes
@@ -34,30 +34,30 @@ Exit codes are listed only where a log or tool output shows them. Where the log 
 
 | Run | Log | Exit code | What the log shows |
 |---|---|---|---|
-| RED (fix absent) | `L/test-red.log` (build `L/build-1.log`) | not recorded in the log | `Test #636 ***Failed`; 9 PASS lines; 1 FAIL: `ratioMatches(lowLevel[1], lowLevel[0], 0.5)` returned FALSE, "gain 0.5 at 440 Hz is 1 of gain 1.0". Evidence rows show 0.4992 at all three gains. |
-| Reversed fix | `L/test-reversed.log` (command: `ctest -R SampleClipStretchTest --output-on-failure`, header in `L/002-test-reversed.log`; build `L/build-3-reversed.log`, "Built target SampleClipStretchTest") | not recorded in the log | Same failure and same evidence rows as RED. `cmp` first differs at line 3. |
-| Reapplied GREEN, ctest | `L/test-green.log` (header in `L/004-test-green.log`) | not recorded in the log | `100% tests passed out of 1`. |
-| Reapplied GREEN, binary | `L/test-green-slot.log` (run as `./SampleClipStretchTest`) | not recorded in the log | `Totals: 10 passed, 0 failed, 0 skipped`. Gain 0.5 rows 0.2496 / 0.1495 (ratio 0.500). Gain 2.0 rows 0.9983 / 0.5981 (ratio 2.00). |
-| Four families | `L/test-families.log` (header in `L/005-test-families.log`) | not recorded in the log | `100% tests passed out of 4`. |
+| RED (fix absent) | `L/test-red.log` (build `L/build-1.log`) | not captured: no exit line in the log, and no RED exit file | `Test #636 ***Failed`; 9 PASS lines; 1 FAIL: `ratioMatches(lowLevel[1], lowLevel[0], 0.5)` returned FALSE, "gain 0.5 at 440 Hz is 1 of gain 1.0". Evidence rows show 0.4992 at all three gains. |
+| Reversed fix (`git apply -R fix.patch`) | `L/test-4-reversed.log` (build `L/build-4-reversed.log`, `L/exit-reversed.txt`); earlier `L/test-reversed.log` (build `L/build-3-reversed.log`) | **8** (`EXIT=8` in `L/exit-reversed.txt`) | `636 - SampleClipStretchTest (Failed)`; `FAIL!` on `ratioMatches(lowLevel[1], lowLevel[0], 0.5)`, "gain 0.5 at 440 Hz is 1 of gain 1.0; expected 0.5", `Loc: SampleClipStretchTest.cpp(642)`. The earlier log has the same failure and evidence rows as RED; `cmp` first differs at line 3. |
+| Reapplied GREEN, ctest | `L/test-4-green.log` (build `L/build-4-green.log`, `L/exit-green.txt`); earlier `L/test-green.log` | **0** (`EXIT=0` in `L/exit-green.txt`) | `100% tests passed out of 1`. |
+| Reapplied GREEN, binary | `L/test-green-slot.log` (run as `./SampleClipStretchTest`) | not captured: this run has no exit file | `Totals: 10 passed, 0 failed, 0 skipped`. Gain 0.5 rows 0.2496 / 0.1495 (ratio 0.500). Gain 2.0 rows 0.9983 / 0.5981 (ratio 2.00). |
+| Four families | `L/test-4-families.log` (`L/exit-families.txt`); earlier `L/test-families.log` | **0** (`EXIT=0` in `L/exit-families.txt`) | `100% tests passed out of 4`. |
 | Fresh re-check at HEAD (this report) | `duet/14-worker/tmp/001-green-recheck-p5.log` under the run folder | **0** (quiet-run) | `ctest -R SampleClipStretchTest`: `100% tests passed out of 1`. |
-| Mutant (gain applied twice) | packet says `duet/06-worker/tmp` | not verified | That path does not exist under the run folder, so this result is **unverified here**. |
+| Mutant (gain applied twice, on the fix) | `L/test-4-mutant.log` (build `L/build-4-mutant.log`, `L/exit-mutant.txt`) | **8** (`EXIT=8` in `L/exit-mutant.txt`) | `FAIL!` on `ratioMatches(lowLevel[1], lowLevel[0], 0.5)`, "gain 0.5 at 440 Hz is 0.25 of gain 1.0; expected 0.5". Ratio 0.25, as expected. |
 | Gates | `L/gates.log` | per-gate exit 0 on all 8 lines; the runner's own exit is not printed | 8 of 8 gates PASS; `RESULT: PASS`. |
 | Gates without lizard | `L/gates-nolizard.log` | per-gate exit 0 on all 8 lines; runner exit not printed | Same 8 PASS lines and `RESULT: PASS`. |
 | submit_check | `L/submit-check.log` (run after the report commit `8d953131d2`) | **0** (`EXIT=0`) | 5 PASS (commits, clean tree, report, tests, gates); no FAIL; `RESULT: PASS - submit`; 5 `?` questions, answered in the Self-check section. |
 
-The packet's RED and reversed exit code of 8 does not appear in any log in the run folder, so it is not claimed here.
+The reversed exit code is `EXIT=8` from this session (`L/exit-reversed.txt`). `git apply -R` left only the 8 deleted lines in the tree (`git diff --stat`), so that run is the fix-absent state. The RED exit code is not captured: `L/test-red.log` has no exit line and no RED exit file exists.
 
 ## 4. Gate caveats
 
-- The packet says the complexity gate was measured with lizard from a temporary venv, since deleted. The `complexity` line in `L/gates.log` reads "no new item in your files", which is identical to `L/gates-nolizard.log`. Neither log mentions lizard, so the logs do not show that the gate measured anything.
-- The packet says `renderPreservingPitch` CCN went from 7 to 9. No CCN values appear in these logs, so this is unverified here.
+- The `complexity` line in `L/gates.log` reads "no new item in your files", which is identical to `L/gates-nolizard.log`. Neither log mentions lizard, so the gate logs do not show that the gate measured anything.
+- lizard CCN for `renderPreservingPitch`, measured this session with lizard in a temporary venv (since deleted): CCN 7 at `fa4a5f2e78` (NLOC 26, length 43, `L/lizard-base.txt`) and CCN 9 at HEAD (NLOC 31, length 51, `L/lizard-head.txt`). Both lizard runs exited 1. The output files contain the function line; the reason for the exit 1 was not checked.
 
 ## 5. Unverified
 
-- No TSan on this machine. The packet's argument is that the change adds one relaxed atomic float load and no shared state, so it adds no race. That is an argument, not a TSan run.
+- No TSan on this machine. The argument is that the change adds one relaxed atomic float load and no shared state, so it adds no race. That is an argument, not a TSan run.
 - The `m_rubberBand` branch has no amplification test. `tests/src/tracks/SampleClipRubberBandTest.cpp` has 0 references to amplification (verified by grep). That branch relies on the shared code after the ternary, `SamplePlayHandle.cpp:738-745`.
 - The frames-span mutant was not run, because it is equivalent.
-- The `m_compSlip->render` call at line 607 is in the resample branch; the packet says it is in that branch only. The whole branch structure was not re-read for this report.
+- The `m_compSlip->render` call at line 607 is in the resample branch only; that is not re-verified here. The whole branch structure was not re-read for this report.
 
 ## 6. Other findings
 
