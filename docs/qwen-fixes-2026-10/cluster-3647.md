@@ -74,8 +74,8 @@ m2 does not fail `rejectsTheLargestFrameCount`, because a doubled limit still re
 
 ## Commands and exit codes
 
-Exit codes below were recorded from the command echo of the run (run record `3647.r2`). No log file in `logs/`
-contains an exit line, so the exit codes are not verified from the logs. The "What the log shows" column is what
+Exit codes below were recorded from the command echo of the run (run record `3647.r2`). Only two logs carry an exit line: `003-build-red.log` (`check rc=0`, `build rc=0`) and
+`004-test-red.log` (`ctest rc=8`). The other logs contain no exit line, so their exit codes are not verified from the logs. The "What the log shows" column is what
 each log does contain.
 
 | Log | Step | EXIT | What the log shows |
@@ -116,3 +116,38 @@ No file under `src/core` changed, and no command was added, so the ControlComman
   in this worktree.
 - Direct `renderOffline` callers bypass the control schema. This is why the bound is enforced in `src/wasm`
   and not only in the schema.
+
+## Self-check
+
+Verdict: FIXED (line 1). The ALREADY-FIXED and FALSE-POSITIVE answers do not apply.
+
+1. Red and green, with exit codes.
+   - Reversed fix (step 022, `git apply -R fix.patch`, then build): `ctest -R WasmOfflineRenderLimitTest` reports
+     `Totals: 5 passed, 3 failed` and `Errors while running CTest` (023). The exit 8 comes from the run record.
+     023 has no numeric exit line. The same failing `ctest` in the earlier red run logs `ctest rc=8` (`004-test-red.log:83`).
+   - Restored fix: 025 and 026 report `100% tests passed out of 1`. A fresh run in this session,
+     `cd build/tests && ctest -R WasmOfflineRenderLimitTest` through the quiet runner (label `p5-green`), exited 0 with
+     `100% tests passed out of 1`. Its log is `duet/14-worker/tmp/002-p5-green.log` in the run folder.
+2. Deterministic. A grep for `sleep`, `chrono`, `QElapsedTimer`, `std::thread`, `QThread`, `rand` and `time(` in
+   `WasmOfflineRenderLimitTest.cpp` and `WasmOfflineRenderLimitStubs.cpp` found nothing. The inputs are integer frame
+   counts (the cap, one over it, and `UINT32_MAX`) and a test-only sandbox stub. The assertion seam is the stub's
+   `loadModuleFileCalls` counter (`WasmOfflineRenderLimitTest.cpp:76`).
+3. Fix at the cause and complete.
+   - The cause is that `renderOffline` had no upper bound on `frames`. The check is now the first check in
+     `renderOffline` (`WasmOfflineRender.cpp:266-271`), before any module load or allocation.
+   - Callers of `renderOffline` in the tree: `src/core/ControlCommandsWasmRender.cpp:241`, which sits behind the schema
+     cap at `:336`. The fix commit changed no line under `src/core` (`git show --stat 7d1d32bd99 -- src/core` is empty).
+     `tests/src/wasm/WasmWorkerPoolTest.cpp` has 7 calls (`:759` to `:987`), not built here (`WANT_WASM=OFF`). They
+     pass 2 frames or `TestFrames` (8192, line 84). The new test is the eighth.
+   - Siblings: a grep of `src/wasm` for `uint32_t offset` finds no frame-offset loop. Its hits are `WasmSandbox` memory
+     offsets (`WasmSandbox.h:105-106`), which are byte addresses. The block loops at `WasmOfflineRender.cpp:95` and `:175`
+     use `std::size_t`.
+4. No collateral damage.
+   - Control callers: the same 4194304 cap already applies through the schema (`ControlCommandsWasmRender.cpp:336`),
+     and the fix did not change that file. A control call above the cap was already refused by `validateArgs`, so the
+     new check refuses no control call that was accepted before.
+   - Direct callers: the one behaviour change is that a direct `renderOffline` call above 2^22 frames is now refused.
+     No in-tree caller goes above it. Any out-of-tree direct caller that renders longer than 2^22 frames (about 87 s at
+     48 kHz) would be affected. That case is unverified.
+   - Saved data: the fix changes no project file format, loader or saved state. The files-changed list has none of them,
+     so old projects and saved data load as before.
