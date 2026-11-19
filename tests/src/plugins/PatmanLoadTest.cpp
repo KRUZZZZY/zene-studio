@@ -18,12 +18,15 @@
 #include <QFile>
 #include <QTemporaryDir>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <new>
+#include <span>
 #include <thread>
+#include <vector>
 
 #include "AudioEngine.h"
 #include "AudioResampler.h"
@@ -72,32 +75,33 @@ void writeLittleEndian32(QByteArray& data, qsizetype offset, std::uint32_t value
 	}
 }
 
-//! A valid one-sample GF1 patch.
-auto makePatch() -> QByteArray
+//! A valid GF1 patch. The default four-frame sample keeps the load tests
+//! small; the render tests ask for a longer square wave so two consecutive
+//! render blocks are both audible.
+auto makePatch(qsizetype sampleFrames = 4) -> QByteArray
 {
-	constexpr qsizetype SampleFrames = 4;
-	auto patch = QByteArray(PatchHeaderSize + PatchSampleHeaderSize + SampleFrames, '\0');
+	auto patch = QByteArray(PatchHeaderSize + PatchSampleHeaderSize + sampleFrames, '\0');
 	std::memcpy(patch.data(), "GF1PATCH110\0ID#000002", 22);
 	patch[198] = 1;
 
 	const qsizetype sample = PatchHeaderSize;
-	writeLittleEndian32(patch, sample + 8, SampleFrames);
-	writeLittleEndian32(patch, sample + 16, SampleFrames);
+	writeLittleEndian32(patch, sample + 8, static_cast<std::uint32_t>(sampleFrames));
+	writeLittleEndian32(patch, sample + 16, static_cast<std::uint32_t>(sampleFrames));
 	writeLittleEndian16(patch, sample + 20, 22050);
 	writeLittleEndian32(patch, sample + 30, 440000);
 	const int sampleAt = static_cast<int>(PatchHeaderSize + PatchSampleHeaderSize);
-	patch[sampleAt] = 32;
-	patch[sampleAt + 1] = -32;
-	patch[sampleAt + 2] = 64;
-	patch[sampleAt + 3] = -64;
+	for (qsizetype i = 0; i < sampleFrames; ++i)
+	{
+		patch[sampleAt + static_cast<int>(i)] = static_cast<char>((i % 8) < 4 ? 64 : -64);
+	}
 	return patch;
 }
 
-bool writePatch(const QString& filename)
+bool writePatch(const QString& filename, qsizetype sampleFrames = 4)
 {
 	QFile file(filename);
 	if (!file.open(QIODevice::WriteOnly)) { return false; }
-	const auto patch = makePatch();
+	const auto patch = makePatch(sampleFrames);
 	if (file.write(patch) != static_cast<qint64>(patch.size())) { return false; }
 	file.close();
 	return true;
@@ -139,6 +143,65 @@ void operator delete[](void* memory, std::size_t) noexcept
 namespace lmms
 {
 
+namespace
+{
+
+//! The engine entry point the SRC setting uses: it prepares every retained
+//! converter (pool, sample voices, instrument notes, play handles) and only
+//! then publishes and adopts the new quality.
+auto switchQuality(SrcQuality quality) -> bool
+{
+	AudioEngine* const engine = Engine::audioEngine();
+	return engine != nullptr
+		&& engine->applyConverterModeToRetainedStates(AudioResampler::modeForSrcQuality(quality), quality);
+}
+
+auto acquireNote(InstrumentTrack& track, f_cnt_t frames) -> NotePlayHandle*
+{
+	return NotePlayHandleManager::acquire(&track, 0, frames, Note(TimePos(), TimePos(), 60, 100));
+}
+
+//! Render exactly one block. Clear first so a short or failed render is
+//! reported as silence instead of stale samples from the previous block.
+void renderBlock(PatmanInstrument& instrument, NotePlayHandle* note, std::vector<SampleFrame>& block)
+{
+	std::fill(block.begin(), block.end(), SampleFrame{});
+	instrument.playNote(note, std::span<SampleFrame>(block.data(), block.size()));
+}
+
+auto hasAudio(const std::vector<SampleFrame>& block) -> bool
+{
+	for (const SampleFrame& frame : block)
+	{
+		if (frame.left() != 0.0f || frame.right() != 0.0f) { return true; }
+	}
+	return false;
+}
+
+auto blocksMatch(const std::vector<SampleFrame>& left, const std::vector<SampleFrame>& right) -> bool
+{
+	return left.size() == right.size()
+		&& std::memcmp(left.data(), right.data(), left.size() * sizeof(SampleFrame)) == 0;
+}
+
+//! One real Patman note, primed on block 0, with block 1 rendered outside the
+//! realtime scope. Every note of the same pitch and patch renders block 1 bit
+//! for bit, so this is the deterministic oracle for one quality.
+auto referenceBlock(InstrumentTrack& track, PatmanInstrument& instrument, f_cnt_t frames)
+	-> std::vector<SampleFrame>
+{
+	std::vector<SampleFrame> block(static_cast<std::size_t>(frames));
+	NotePlayHandle* const note = acquireNote(track, frames * 4);
+	renderBlock(instrument, note, block); // block 0 primes the converter
+	renderBlock(instrument, note, block); // block 1 is the oracle
+	instrument.deleteNotePluginData(note);
+	note->m_pluginData = nullptr;
+	NotePlayHandleManager::release(note);
+	return block;
+}
+
+} // namespace
+
 class PatmanLoadTest : public QObject
 {
 	Q_OBJECT
@@ -156,6 +219,8 @@ private slots:
 	}
 
 	void patmanPatchLoadWaitsForTheRenderPeriodToReleaseTheModel();
+
+	void qualityChangeKeepsHeldPatmanSlotsAtTheNewMode();
 
 	void rejectsHugeTruncatedSampleWithoutAllocating()
 	{
@@ -218,6 +283,10 @@ private slots:
 		QVERIFY(ExportRenderSettings::setSrcQuality(SrcQuality::Linear));
 		QCOMPARE(realtimeAllocations, std::uint64_t{0});
 	}
+
+	void overPolyphonyKeepsEverySincBestBlockAudible();
+
+	void sincBestReferenceDiffersFromLinearReference();
 };
 
 //! The audio thread picks its sample out of the patch bank while it renders
@@ -275,6 +344,209 @@ void PatmanLoadTest::patmanPatchLoadWaitsForTheRenderPeriodToReleaseTheModel()
 		"the patch was replaced while the render period owned the model state");
 	// The deferred load still lands once the render period is over.
 	QCOMPARE(patmanSource(instrument), PathUtil::toShortestRelative(secondPatch));
+}
+
+//! A quality change runs through AudioEngine::applyConverterModeToRetainedStates,
+//! not through the settings store alone. Hold real Patman notes (and fill every
+//! other slot so the released note slots are the next ones acquire() hands out),
+//! switch quality, render the held notes under RealtimeScope, then release and
+//! reacquire. A slot skipped by prepareAll() and never reached by the note hook
+//! would still say "old quality" here, and the next acquire() would hand it out.
+void PatmanLoadTest::qualityChangeKeepsHeldPatmanSlotsAtTheNewMode()
+{
+	QTemporaryDir directory;
+	QVERIFY(directory.isValid());
+	const QString patchPath = directory.filePath(QStringLiteral("held.pat"));
+	QVERIFY(writePatch(patchPath, 4096));
+
+	InstrumentTrack track{Engine::getSong()};
+	auto* const instrument = new PatmanInstrument(&track);
+	track.setInstrumentForTest(instrument); // the engine routes note hooks through track->instrument()
+	instrument->loadFile(patchPath);
+	QVERIFY(!instrument->nodeName().isEmpty());
+
+	AudioEngine* const engine = Engine::audioEngine();
+	QVERIFY(engine != nullptr);
+	QVERIFY(switchQuality(SrcQuality::Linear));
+
+	const f_cnt_t frames = engine->framesPerPeriod();
+	const std::size_t capacity = AudioResampler::realtimeVoiceConverterCapacityForTest();
+	const std::size_t noteCount = 3;
+	QVERIFY(capacity > noteCount + 1);
+	const std::size_t fillerCount = capacity - noteCount;
+
+	for (const SrcQuality target : {SrcQuality::SincBest, SrcQuality::Linear})
+	{
+		const std::size_t baseline = AudioResampler::freeRealtimeVoiceConvertersForTest();
+		QCOMPARE(baseline, capacity);
+		const auto expectedMode = AudioResampler::modeForSrcQuality(target);
+
+		// Occupy every slot except the ones the notes will take. These voices are
+		// deliberately not retained states the engine can walk: prepareAll must
+		// skip them, and the note hook is the only path that reaches held slots.
+		std::vector<AudioResampler> fillers;
+		fillers.reserve(fillerCount);
+		for (std::size_t i = 0; i < fillerCount; ++i)
+		{
+			fillers.emplace_back(AudioResampler::RealtimeVoiceTag{});
+		}
+		QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), baseline - fillerCount);
+
+		std::vector<NotePlayHandle*> notes;
+		notes.reserve(noteCount);
+		std::vector<SampleFrame> block(static_cast<std::size_t>(frames));
+		for (std::size_t i = 0; i < noteCount; ++i)
+		{
+			NotePlayHandle* const note = acquireNote(track, frames * 8);
+			QVERIFY(note->m_pluginData == nullptr);
+			renderBlock(*instrument, note, block); // creates the note's pool slot
+			QVERIFY(note->m_pluginData != nullptr);
+			QVERIFY(engine->addPlayHandle(note)); // makes the note reachable by the hook
+			notes.push_back(note);
+		}
+		QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), baseline - capacity);
+
+		QVERIFY(switchQuality(target));
+		QCOMPARE(ExportRenderSettings::srcQuality(), target);
+
+		AudioResampler::resetRealtimeConverterAllocationsForTest();
+		{
+			const RealtimeScope realtime;
+			for (NotePlayHandle* const note : notes) { renderBlock(*instrument, note, block); }
+		}
+		QCOMPARE(AudioResampler::realtimeConverterAllocationsForTest(), std::uint64_t{0});
+
+		for (NotePlayHandle* const note : notes)
+		{
+			instrument->deleteNotePluginData(note);
+			note->m_pluginData = nullptr;
+		}
+		QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), baseline - fillerCount);
+
+		// The only free slots are the three the notes just released.
+		std::vector<AudioResampler> reacquired;
+		reacquired.reserve(noteCount);
+		for (std::size_t i = 0; i < noteCount; ++i)
+		{
+			reacquired.emplace_back(AudioResampler::RealtimeVoiceTag{});
+			QCOMPARE(reacquired.back().mode(), expectedMode);
+		}
+		QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), baseline - capacity);
+		reacquired.clear();
+		QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), baseline - fillerCount);
+
+		fillers.clear();
+		QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), baseline);
+	}
+
+	QVERIFY(switchQuality(SrcQuality::Linear));
+}
+
+//! More simultaneous Patman voices than the claimed 128/129 limit, all at
+//! SincBest. Every block must be audible, bit-for-bit equal to a SincBest
+//! reference, and rendered without creating or deleting a converter. The
+//! global pool is far larger than this, so "capacity + k" is bounded at the
+//! audited 200-voice case; the hook capacity is the whole global pool (thousands
+//! of slots) and exceeding it is not a polyphony scenario.
+void PatmanLoadTest::overPolyphonyKeepsEverySincBestBlockAudible()
+{
+	QTemporaryDir directory;
+	QVERIFY(directory.isValid());
+	const QString patchPath = directory.filePath(QStringLiteral("poly.pat"));
+	QVERIFY(writePatch(patchPath, 4096));
+
+	InstrumentTrack track{Engine::getSong()};
+	PatmanInstrument instrument{&track};
+	instrument.loadFile(patchPath);
+	QVERIFY(!instrument.nodeName().isEmpty());
+
+	AudioEngine* const engine = Engine::audioEngine();
+	QVERIFY(engine != nullptr);
+	QVERIFY(switchQuality(SrcQuality::SincBest));
+
+	const f_cnt_t frames = engine->framesPerPeriod();
+	constexpr std::size_t Polyphony = 200;
+	constexpr std::size_t ExtraOverPolyphony = 32;
+	constexpr std::size_t NoteCount = Polyphony + ExtraOverPolyphony;
+	const std::size_t capacity = AudioResampler::realtimeVoiceConverterCapacityForTest();
+	QVERIFY(capacity > NoteCount);
+	const std::size_t freeBefore = AudioResampler::freeRealtimeVoiceConvertersForTest();
+
+	const std::vector<SampleFrame> sincBestReference = referenceBlock(track, instrument, frames);
+
+	std::vector<NotePlayHandle*> notes;
+	notes.reserve(NoteCount);
+	std::vector<SampleFrame> block(static_cast<std::size_t>(frames));
+	for (std::size_t i = 0; i < NoteCount; ++i)
+	{
+		NotePlayHandle* const note = acquireNote(track, frames * 4);
+		renderBlock(instrument, note, block); // prime block 0
+		notes.push_back(note);
+	}
+	QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), freeBefore - NoteCount);
+
+	std::size_t silent = 0;
+	std::size_t mismatched = 0;
+	AudioResampler::resetRealtimeConverterAllocationsForTest();
+	{
+		const RealtimeScope realtime;
+		for (NotePlayHandle* const note : notes)
+		{
+			renderBlock(instrument, note, block);
+			silent += !hasAudio(block);
+			mismatched += !blocksMatch(block, sincBestReference);
+		}
+	}
+	const std::uint64_t realtimeAllocations = AudioResampler::realtimeConverterAllocationsForTest();
+	QCOMPARE(silent, std::size_t{0});
+	QCOMPARE(mismatched, std::size_t{0});
+	QCOMPARE(realtimeAllocations, std::uint64_t{0});
+	QCOMPARE(AudioResampler::realtimeVoiceConverterCapacityForTest(), capacity);
+	QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), freeBefore - NoteCount);
+
+	// The helper must actually distinguish the qualities: a Linear oracle must
+	// not be accepted as a SincBest reference.
+	QVERIFY(switchQuality(SrcQuality::Linear));
+	const std::vector<SampleFrame> linearReference = referenceBlock(track, instrument, frames);
+	QVERIFY(hasAudio(linearReference));
+	QVERIFY(!blocksMatch(sincBestReference, linearReference));
+
+	for (NotePlayHandle* const note : notes)
+	{
+		instrument.deleteNotePluginData(note);
+		note->m_pluginData = nullptr;
+		NotePlayHandleManager::release(note);
+	}
+	QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), freeBefore);
+	QVERIFY(switchQuality(SrcQuality::Linear));
+}
+
+//! T3: the comparison helper reports a mismatch across qualities. If it did
+//! not, T2's "matches SincBest, differs from Linear" would be vacuous.
+void PatmanLoadTest::sincBestReferenceDiffersFromLinearReference()
+{
+	QTemporaryDir directory;
+	QVERIFY(directory.isValid());
+	const QString patchPath = directory.filePath(QStringLiteral("oracle.pat"));
+	QVERIFY(writePatch(patchPath, 4096));
+
+	InstrumentTrack track{Engine::getSong()};
+	PatmanInstrument instrument{&track};
+	instrument.loadFile(patchPath);
+	QVERIFY(!instrument.nodeName().isEmpty());
+
+	AudioEngine* const engine = Engine::audioEngine();
+	QVERIFY(engine != nullptr);
+	const f_cnt_t frames = engine->framesPerPeriod();
+
+	QVERIFY(switchQuality(SrcQuality::SincBest));
+	const std::vector<SampleFrame> sincBest = referenceBlock(track, instrument, frames);
+	QVERIFY(switchQuality(SrcQuality::Linear));
+	const std::vector<SampleFrame> linear = referenceBlock(track, instrument, frames);
+
+	QVERIFY(hasAudio(sincBest));
+	QVERIFY(hasAudio(linear));
+	QVERIFY2(!blocksMatch(sincBest, linear), "the SincBest oracle is indistinguishable from Linear");
 }
 
 } // namespace lmms
