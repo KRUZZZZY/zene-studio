@@ -1,7 +1,9 @@
 /*
  * SampleClipPoolExhaustionTest.cpp - 1200 clip starts across two groups, more than the nominal 1024-entry play-handle
  * list. Every start lands exactly once (none lost, none started twice), and the audio thread does not allocate.
- * The forced-refusal path is covered by the second slot (added next), not by this one.
+ * The forced-refusal path is covered by the second slot, `aRefusedStartIsDeferredThenLandsAfterTheControlThreadGrowsThePool`,
+ * not by this one. That slot drains the handle pool, shows the refused start is deferred (latch cleared, deferred counter
+ * +1, no handle), and shows that it lands once the control thread grows the pool.
  *
  * Capacity: the play-handle list's nominal size is PlayHandle::MaxNumber (1024). The engine grows the list ahead of
  * demand, so all 1199 live starts are admitted with no deferral (see the state sequence). A push into the staging list
@@ -34,6 +36,14 @@
  *
  * Every play() and render pass runs under the allocation probe, and the allocation checks run last. renderNextPeriod
  * is the engine's own service step. It is not used in place of play().
+ *
+ * Second slot, aRefusedStartIsDeferredThenLandsAfterTheControlThreadGrowsThePool (step: what runs -> expected counts).
+ * The allocation count is 0 in both play() calls, and those checks run last.
+ *   D    drain the handle pool via SamplePlayHandle::tryCreate until it refuses, on the non-audio thread. The drained
+ *        handles are never added to the engine.
+ *   P1   play(TimePos(0)), armed -> returns false, latch clear, deferred +1. renderNextPeriod -> 0 handles from the track.
+ *   G    SamplePlayHandle::reserveBlocks(1) on the control thread, outside any RealtimeScope.
+ *   P2   play(TimePos(0)), armed -> returns true, latch set. renderNextPeriod -> 1 handle from the track.
  */
 
 #include <QDebug>
