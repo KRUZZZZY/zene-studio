@@ -166,7 +166,7 @@ struct BusDeleter
 };
 using BusPtr = std::unique_ptr<AudioBusHandle, BusDeleter>;
 
-//! Control-thread cleanup: the engine frees the bus, or holds it while a pending entry still names it.
+//! Control-thread cleanup: the engine frees the bus, or holds it while a registration link still names it.
 void releaseOnControlThread(AudioBusHandle* bus)
 {
 	Engine::audioEngine()->destroyAudioBusHandle(bus);
@@ -346,7 +346,7 @@ private slots:
 		// The service-prepared buffer is sized from BufferManager, so set it to the engine period.
 		BufferManager::init(engine->framesPerPeriod());
 		// Owns the bus from its construction onwards: every return path, including a failed
-		// QVERIFY, hands it to the engine, so no pending entry is left behind.
+		// QVERIFY, hands it to the engine, so no registration link is left behind.
 
 		BusPtr bus;
 		bool threw = false;
@@ -415,7 +415,7 @@ private slots:
 
 		const std::size_t before = handles.size();
 		{
-			// The audio path: the engine publishes the bus to its pending queue instead of registering it inline.
+			// The audio path: the engine links the bus onto its registration link instead of registering it inline.
 			const RealtimeScope realtime;
 			engine->addAudioBusHandle(raw);
 		}
@@ -450,7 +450,7 @@ private slots:
 
 	//! Cluster new-p15-253: a bus whose owner retires it while its registration is
 	//! still pending must not be registered by the control-thread service afterwards. The
-	//! control-thread service consumes the pending entry later - by then the bus is gone, and
+	//! control-thread service consumes the registration link later - by then the bus is gone, and
 	//! the engine may already be about to free it, so registering it would put a freed
 	//! bus into the list the render stage walks.
 	void busRetiredWhileItsRegistrationIsPendingIsNotRegistered()
@@ -467,7 +467,7 @@ private slots:
 		const std::size_t before = engine->audioBusHandles().size();
 
 		{
-			// The audio path: the bus is published to the engine's pending queue.
+			// The audio path: the bus is linked onto the engine's registration link.
 			const RealtimeScope realtime;
 			engine->addAudioBusHandle(bus);
 		}
@@ -485,7 +485,7 @@ private slots:
 	//! Cluster new-p15-253: a bus that is destroyed while its registration is still
 	//! pending must not be registered by the control-thread service afterwards either. The engine
 	//! owns the bus from that moment on: it frees it once the render path may no longer
-	//! reach it, and until the control-thread service has consumed the pending entry it keeps the bus
+	//! reach it, and until the control-thread service has consumed the registration link it keeps the bus
 	//! alive - the registration link still names it.
 	void busDestroyedWhileItsRegistrationIsPendingIsNotRegistered()
 	{
@@ -495,7 +495,7 @@ private slots:
 		const std::size_t before = engine->audioBusHandles().size();
 		AudioBusHandle* bus = nullptr;
 		{
-			// The audio path: the bus is published to the engine's pending queue
+			// The audio path: the bus is linked onto the engine's registration link
 			// instead of being registered inline.
 			const RealtimeScope realtime;
 			bus = new AudioBusHandle(QStringLiteral("DestroyedPendingBus"), false);
@@ -504,7 +504,7 @@ private slots:
 		// may no longer reach it.
 		engine->destroyAudioBusHandle(bus);
 
-		// The control thread consumes the pending entry. The bus was retired, so it is
+		// The control thread consumes the registration link. The bus was retired, so it is
 		// not registered - and the engine kept it alive until that entry was consumed,
 		// so the render path never walks a freed bus.
 		engine->serviceAudioBusHandlesOnControlThread();
@@ -577,7 +577,7 @@ private slots:
 		engine->serviceAudioBusHandlesOnControlThread();
 	}
 
-	//! Cluster new-p15-253: a burst of realtime registrations larger than the pending queue is registered in full.
+	//! Cluster new-p15-253: a burst of realtime registrations, each on its own registration link, is registered in full.
 	void realtimeRegistrationsBeyondQueueCapacityAreAllRegistered()
 	{
 		using namespace lmms;

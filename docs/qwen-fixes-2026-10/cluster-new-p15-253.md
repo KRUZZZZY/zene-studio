@@ -7,7 +7,7 @@ REAL verdict: FIXED. A bus constructed on the audio path no longer takes the mod
 
 Before this fix, the audio-path constructor registered the bus inline (model lock and bus-list growth in `addAudioBusHandle`), and `setExtOutputEnabled` called the device on the audio path. Both allocate or block, so both are unsafe on the realtime thread.
 
-## Evidence (file:line, HEAD = 1c36c59c16 with product commits bd268757cb and 951bf3cace)
+## Evidence (file:line, HEAD = 19e6c2eaa5 when the final proof was run; product commits bd268757cb and 951bf3cace)
 
 - Realtime constructor branch: `src/core/AudioBusHandle.cpp:88-95`. Under `RealtimeScope` it calls `addAudioBusHandle(this)` and `setExtOutputEnabled(true)` and returns. It does not call `prepareStorage()`. Storage is prepared on the control thread (`:98`, reserve at `:104-107`, control-thread `addAudioBusHandle` at `:108`).
 - Link path: `src/core/AudioEngine.cpp:1173-1176` (`linkOnce`: `enqueued.exchange(true, seq_cst)`, then push). `:1181-1196` (`addAudioBusHandle` on the audio path: state set to Pending at `:1191`, linked onto `m_registrationHead` at `:1193-1194`, counter at `:1195`). The control-thread branch sets Registered at `:1204` under the model lock.
@@ -34,16 +34,13 @@ Before this fix, the audio-path constructor registered the bus inline (model loc
 - Pending→Registered: a bus built on the audio path is Pending until `serviceAudioBusHandlesOnControlThread()` registers it.
 - Pending→Retired→Handled: a bus retired while Pending is marked Retired. The control-thread service then consumes its entry and marks it Handled, and it is never registered.
 
-## Commands and exit codes
+Final proof, run on the final test file. Product diff is `730db9d871..19e6c2eaa5` (the four product files). Each EXIT is the last line of the log named beside it, except `fix-final-exit.log`, which records the `git diff` exit.
 
-Exit codes for p1 to p4 are the ones recorded in the p1–p4 run records. They are not written into the log files, and I did not re-derive them this round.
-
-- p1 test-1d-red: EXIT 8 (record).
-- p2 build-2-green, build-2a-green, test-2a-green: EXIT 0 (record).
-- p3 build-3-family: EXIT 0 (record). test-2-family: 20/20 passed, EXIT 0 (record; `logs/test-2-family.log` shows "100% tests passed out of 20").
-- p4 build-4-red and test-3-red: EXIT 8 (record). build-5-green and test-4-green: EXIT 0 (record).
-- p4 targeted build-6 and test-5: EXIT 1 (record). Verified in `logs/test-5-target-red.log`: `FAIL! engineBusRegistrationOnTheRealtimePathIsDeferred`, `Actual (handles.size()): 4`, `Expected (registered): 3`.
-- p4 build-7 and test-6: EXIT 0 (record). Verified in `logs/test-6-target-green.log`: `Totals: 3 passed, 0 failed`.
+- Product patch: `logs/fix-final.patch` (749 lines); `logs/fix-final-exit.log`: EXIT=0.
+- Whole-product RED: `logs/apply-reverse-final.log` EXIT=0 (reverse apply); `logs/build-4-red-final.log` EXIT=0; `logs/test-3-red-final.log` EXIT=8 (`0% tests passed, 2 tests failed out of 2`: AudioBusHandleTest and AudioBusPlayHandleQueueTest).
+- Whole-product GREEN: `logs/apply-forward-final.log` EXIT=0; `logs/build-5-green-final.log` EXIT=0; `logs/test-4-green-final.log` EXIT=0 (`100% tests passed out of 2`).
+- Targeted p2 re-add mutation: `logs/p2fix-final.patch` (72 lines, from `git diff 951bf3cace^ 951bf3cace -- include/AudioEngine.h src/core/AudioEngine.cpp`); `logs/p2fix-final-exit.log` EXIT=0; `logs/apply-p2fix-reverse.log` EXIT=0; `logs/build-6-target-red-final.log` EXIT=0; `logs/test-5-target-red-final.log` EXIT=1: `FAIL! engineBusRegistrationOnTheRealtimePathIsDeferred()`, `Actual (handles.size()): 4`, `Expected (registered): 3`, at `tests/src/core/AudioBusHandleTest.cpp(446)`.
+- Targeted restore: `logs/apply-p2fix-forward.log` EXIT=0; `logs/build-7-target-green-final.log` EXIT=0; `logs/test-6-target-green-final.log` EXIT=0.
 
 Checks run in this round:
 
@@ -57,8 +54,8 @@ Checks run in this round:
 
 ## Self-check (submit_check ASK items)
 
-- RED/GREEN: RED is shown by p1 test-1d-red EXIT 8 and p4 build-4-red/test-3-red EXIT 8, and by the targeted run `FAIL` at size 4 vs 3 (test-5). GREEN is shown by p4 build-5-green/test-4-green EXIT 0 and build-7/test-6 EXIT 0.
-- Determinism: the realtime cases run inside `RealtimeScope` and drive the control-thread service explicitly (`flushOnControlThread`, `releaseOnControlThread`, `serviceAudioBusHandlesOnControlThread`). `grep -c -E "sleep|usleep|msleep|wait_for" tests/src/core/AudioBusHandleTest.cpp` returns 0, so no test waits on time.
+- RED/GREEN: with the product reversed, the final test file is RED (`logs/test-3-red-final.log` EXIT=8) and, with the product restored, GREEN (`logs/test-4-green-final.log` EXIT=0). The targeted p2 re-add mutation is RED at `logs/test-5-target-red-final.log` (EXIT=1, size 4 vs 3) and GREEN at `logs/test-6-target-green-final.log` (EXIT=0).
+- Determinism: the realtime cases run inside `RealtimeScope` and drive the control-thread service explicitly (`flushOnControlThread`, `releaseOnControlThread`, `serviceAudioBusHandlesOnControlThread`). There is no `sleep_for` (and no `sleep`, `usleep` or `msleep`) in `tests/src/core/AudioBusHandleTest.cpp` or `tests/src/core/AudioBusPlayHandleQueueTest.cpp`. The held-lock test in `tests/src/core/AudioBusPlayHandleQueueTest.cpp` (lines 500-513) forces the lock and uses a bounded `constructedFuture.wait_for(2s)` as a deadlock detector. It is not a race test and it makes no timing assertion.
 - Caller completeness: see the every-caller audit above. The only heap bus is SamplePlayHandle, and it is destroyed through `destroyAudioBusHandle`.
 - No collateral damage: `git diff --stat b61e5f965 HEAD` shows 9 files. The product changes are in `include/AudioBusHandle.h`, `include/AudioEngine.h`, `src/core/AudioBusHandle.cpp`, `src/core/AudioEngine.cpp`, `src/core/SamplePlayHandle.cpp`, and the two audio-bus test files. The test-file commit is a dedupe with no assertion change. The gate reports no new item in the changed files.
 - Verdict-specific items: N/A. The verdict is FIXED, so the items that apply only to a NOT FIXED verdict do not apply.
