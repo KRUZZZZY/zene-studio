@@ -341,6 +341,9 @@ set(LMMS_TESTS
 	# (a hook left behind on a destroyed server, and a re-created registry
 	# running an empty list on exactly the route the socket must be unlinked by).
 	src/core/ControlShutdownHookTest.cpp
+	# ControlServer's per-activation drain bound: one readable activation of a
+	# client's socket consumes at most ControlServer::DrainBytesPerActivation (+ slack).
+	src/core/ControlServerDrainTest.cpp
 	src/core/ControlTempoMapCommandsTest.cpp
 	# The 0.3.0 verb wave's four ids (clip.trim, clip.slip, note.probability_set,
 	# render.stems): the three EDIT verbs' inverses are exercised for real -

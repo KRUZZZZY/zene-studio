@@ -89,6 +89,10 @@ public:
 	//! line). The bound is far above any legitimate answer: the largest reply on
 	//! this surface (control.commands_list) is a few hundred kilobytes.
 	static constexpr int MaxQueuedReplyBytes = 8 * 1024 * 1024;
+		//! Largest number of bytes read from one client in one readable activation:
+		//! the per-activation drain bound. A peer that keeps its socket full must not
+		//! hold the event loop inside one drain; the rest waits for the next activation.
+		static constexpr int DrainBytesPerActivation = 64 * 1024;
 	//! Maximum simultaneous local peers. Excess accepted sockets are refused and
 	//! closed before they can allocate a per-client buffer.
 	static constexpr int MaxClients = 64;
