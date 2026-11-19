@@ -8,7 +8,7 @@ Overwriting a chain or export preset whose existing bytes cannot be read is alre
 
 ## Round 2 note
 
-The round-1 log folder for this cluster is gone. Every citation now points to the round-2 logs in `/home/kruzzzzy/.config/kads/zene/state/runs/5615.r2/logs/`, which were produced by the round-2 runs. The code is unchanged and the verdict remains ALREADY-FIXED. The round-2 test logs show the same results as round 1: GREEN (`test-unreadable-green-1.log`), RED (`test-unreadable-red-1.log`), then GREEN again (`test-unreadable-green-2.log`). Round 2 also kept `build-red-1.log` and `build-green-1.log`; this report does not cite them. Where a sentence below says a log was not retained, it refers to round 1.
+The round-1 log folder for this cluster is gone. Every citation now points to the round-2 logs in `/home/kruzzzzy/.config/kads/zene/state/runs/5615.r2/logs/`, which were produced by the round-2 runs. The code is unchanged and the verdict remains ALREADY-FIXED. The round-2 test logs show the same results as round 1: GREEN (`test-unreadable-green-1.log`), RED (`test-unreadable-red-1.log`), then GREEN again (`test-unreadable-green-2.log`). Round 2 also kept `build-red-1.log` and `build-green-1.log` (both end EXIT=0); they are cited in the RED/GREEN section below.
 
 ## Code evidence (HEAD)
 
@@ -16,7 +16,7 @@ The round-1 log folder for this cluster is gone. Every citation now points to th
 - `src/core/ControlCommandsExportPresets.cpp:147`: the sibling guard, same shape, in `writePresetDocument`.
 - `src/core/ControlDeviceState.cpp:50`: `ControlDataReadLimit = 64 MiB`. `controlReadBoundedFile` (:60-99) refuses with `return false` at :69, :82, :89 and :97. `controlReadFileBytes` (:215-231) returns false at :223 and :229 and calls the bounded reader at :231.
 - `include/ControlDeviceSupport.h:299-300`: `purpose = ControlFileReadPurpose::ControlData` is the default.
-- Callers: `chain.save` is registered at `src/core/ControlCommandsChain.cpp:284` (`cmd.id = QStringLiteral("chain.save")`), and its handler calls `storeWrite` at :334-338. The round-1 `evidence-2.log`, which showed the `chain.save` id, the 64 MB limit and a `storeWrite(` search, is no longer retained. The round-2 `/home/kruzzzzy/.config/kads/zene/state/runs/5615.r2/logs/evidence-1.log` shows the `storeWrite` definition at :150 (log line 123), the guard at :161 (log line 124), the call at :334 (log line 126), and `ControlDataReadLimit` at log line 31. It does not show the `chain.save` registration at :284, so that registration and the single-caller claim are UNVERIFIED in round 2. `storeWrite` is inside the anonymous namespace opened at `ControlCommandsChain.cpp:72` and closed at :356, so no other translation unit can call it. This search covers `storeWrite` only, not every reader of `controlReadFileBytes`.
+- Callers: `chain.save` is registered at `src/core/ControlCommandsChain.cpp:284` (`cmd.id = QStringLiteral("chain.save")`), and its handler calls `storeWrite` at :334-338. The round-2 `/home/kruzzzzy/.config/kads/zene/state/runs/5615.r2/logs/evidence-2.log` shows the `chain.save` registration at :284 (log line 6), the `storeWrite` definition at :150 (log line 69), its one call at :334 (log lines 56 and 71), and the guard at :161 (log line 74). The round-2 `evidence-1.log` also shows the guard and `ControlDataReadLimit` (log line 31). `storeWrite` is inside the anonymous namespace opened at `ControlCommandsChain.cpp:72` and closed at :356, so no other translation unit can call it. This search covers `storeWrite` only, not every reader of `controlReadFileBytes`.
 
 ## Historical fix record
 
@@ -34,12 +34,12 @@ It creates a preset, makes the file write-only (`QFile::setPermissions(path, Wri
 
 Procedure: `sed` deleted only line 161, and the one-line deletion (hunk `@@ -158,7 +158,6 @@`, removed line 9) was saved as `/home/kruzzzzy/.config/kads/zene/state/runs/5615.r2/logs/reversal-5615.patch`. I rebuilt, ran the test, restored with `git apply -R` on that patch, rebuilt, and ran the test again.
 
-The retained logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/5615.r2/logs/`. The RED and GREEN rebuild logs were not retained (quiet-run), so the retained RED and GREEN test logs are the evidence. No RED build log is claimed.
+The retained logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/5615.r2/logs/`. The RED and GREEN rebuild logs are retained: `build-red-1.log` (EXIT=0, line 20) and `build-green-1.log` (EXIT=0, line 20). The retained RED and GREEN test logs are the test evidence.
 
 - GREEN 1 (`/home/kruzzzzy/.config/kads/zene/state/runs/5615.r2/logs/test-unreadable-green-1.log`): EXIT=0 (line 11). Both rows PASS (lines 6-7). Totals 4 passed, 0 failed (line 9).
 - RED (`/home/kruzzzzy/.config/kads/zene/state/runs/5615.r2/logs/test-unreadable-red-1.log`): EXIT=1 (line 12). The chain row FAILs at line 6 with `overwrite refused=0, file unchanged=1, history unchanged=0`. The export row PASSes (line 8), as expected, since only the chain guard was removed. Totals 3 passed, 1 failed (line 10).
-- Restore: the restore step's exit code and the post-restore `git diff` check were not retained as logs. The `git status --short` run for this report shows only the report, so the tree is at HEAD.
-- GREEN 2 (`/home/kruzzzzy/.config/kads/zene/state/runs/5615.r2/logs/test-unreadable-green-2.log`): EXIT=0 (line 11). Both rows PASS (lines 6-7). Totals 4 passed, 0 failed (line 9). Its rebuild log was not retained.
+- Restore: the restore step's own exit code was not retained. The `git status --short` run for this report shows only the report, so the tree is at HEAD.
+- GREEN 2 (`/home/kruzzzzy/.config/kads/zene/state/runs/5615.r2/logs/test-unreadable-green-2.log`): EXIT=0 (line 11). Both rows PASS (lines 6-7). Totals 4 passed, 0 failed (line 9). Its rebuild is `build-green-1.log` (EXIT=0, line 20).
 
 The reversal was temporary. The tree is back at HEAD with no product or test file changed.
 
@@ -50,14 +50,14 @@ The reversal was temporary. The tree is back at HEAD with no product or test fil
 | build-tripleoscillator-1 | `cmake --build build --target tripleoscillator` | 0 | EXIT=0 (line 18) | `build-tripleoscillator-1.log` |
 | build-chainpreset-1 | `cmake --build build --target ControlChainPresetTest` | 0 | EXIT=0 (line 17) | `build-chainpreset-1.log` |
 | test-unreadable-green-1 | `cd build/tests && ZENE_CONTROL_CHECK_RESULTS=1 QT_QPA_PLATFORM=offscreen ./ControlChainPresetTest anUnreadablePresetCannotBeOverwritten` | 0 | 4 passed, 0 failed (line 9) | `test-unreadable-green-1.log` |
-| RED build (guard line removed) | same build | — | not retained (quiet-run) | none |
+| RED build (guard line removed) | rebuild after the `sed` deletion | 0 | EXIT=0 (line 20) | `build-red-1.log` |
 | test-unreadable-red-1 | same test, guard line removed | 1 | chain FAIL: `overwrite refused=0, file unchanged=1, history unchanged=0`; 3 passed, 1 failed (line 10) | `test-unreadable-red-1.log` |
 | restore | `git apply -R` on the reversal patch | not retained | tree at HEAD; `git status --short` shows only the report | `reversal-5615.patch` |
-| GREEN 2 rebuild | rebuild on restored tree | — | not retained (quiet-run) | none |
+| GREEN 2 rebuild | rebuild on restored tree | 0 | EXIT=0 (line 20) | `build-green-1.log` |
 | test-unreadable-green-2 | same test, restored | 0 | 4 passed, 0 failed (line 9) | `test-unreadable-green-2.log` |
 | test-chainpreset-1 | `cd build/tests && ctest -R '^ControlChainPresetTest$' --output-on-failure` | 8 | 24 passed, 2 failed (line 38); EXIT=8 (line 49) | `test-chainpreset-1.log` |
 
-The RED and GREEN rebuild logs were not retained. The retained RED and GREEN test logs are the key evidence.
+The RED and GREEN rebuild logs are retained (`build-red-1.log`, `build-green-1.log`, both EXIT=0). The retained RED and GREEN test logs are the key evidence.
 
 ## Test matrix
 
@@ -76,6 +76,8 @@ The RED and GREEN rebuild logs were not retained. The retained RED and GREEN tes
 - The Python `ControlChainPresets` test was run by p2 twice (round-1 logs `test-1.log`, `test-2.log` and `build-ladspaeffect-1.log`; none is retained in round 2, so these findings are not re-verified here). `test-1.log` (before the LADSPA host was built) fails with "this build loaded only 0 effect(s), the proof needs 2" (line 7) and "the LADSPA host plugin 'ladspaeffect' is not in this build" (line 61). `test-2.log` (after `ladspaeffect` was built, `build-ladspaeffect-1.log` line 36 EXIT=0) reports 13 failed checks (lines 210-237; summary line 243).
 - In `test-2.log`, the six apply checks (lines 210-226) and the rename, remove and undo checks (lines 231-237) fail. The `amp_mono (amp)` identity mismatch appears in the apply path (`test-2.log` lines 74 and 215). The logs show that message only there, so the rename, remove and undo failures are not diagnosed here. `docs/qwen-fixes-2026-10/cluster-new-p10-29.md:61-67` documents the same `amp_mono (amp)` mechanism for `ChainPresetMenuTest` and the Python test.
 
+- A worker-chosen `ctest -R Control` run (96 failures, no baseline) is not evidence and was not diagnosed.
+
 ## Self-check
 
 The round-1 submit_check ASK list (`submit-1.log`, RESULT: PASS) is not retained in round 2, so that PASS is not re-verified here. Each ASK is quoted below and answered with its evidence. Items marked UNVERIFIED were not checked.
@@ -91,8 +93,8 @@ The round-1 submit_check ASK list (`submit-1.log`, RESULT: PASS) is not retained
    - The RED and GREEN runs were not repeated to test for flakiness: UNVERIFIED.
 
 3. ASK: "The fix is at the cause and complete: every caller and sibling of what you changed was checked and stays consistent."
-   - No product change was made in this job. The guard at :161 predates it (commit 9c7a95196e, an ancestor of HEAD, `ANCESTOR_EXIT=0` in `evidence-1.log:77`).
-   - Caller: `storeWrite` has one caller, `chain.save` (handler :334-338, registered at :284). A search of `src/`, `include/` and `tests/src/` for `storeWrite(` finds only the definition and that call (round-1 `evidence-2.log`, not retained; the round-2 log shows the `storeWrite` occurrences, see Code evidence).
+   - No product change was made in this job. The guard at :161 predates it (commit 9c7a95196e, an ancestor of HEAD, `ANCESTOR_EXIT=0` in `evidence-1.log:132`; also `evidence-2.log` line 79).
+   - Caller: within `src/core`, `storeWrite` has one call, in the `chain.save` handler (call at :334, registered at :284; `evidence-2.log` lines 6, 56 and 71). The `rg` search of `src/core` for `storeWrite` lists the definition at :150 and that call; the other two matches (:177, :350) are `storeWriteTransaction` (`evidence-2.log` lines 68-72). The round-1 search of `src/`, `include/` and `tests/src/` is not retained.
    - Sibling: `src/core/ControlCommandsExportPresets.cpp:147` has the same guard. The export row PASSes in RED and GREEN (`test-unreadable-red-1.log` line 8).
    - UNVERIFIED: other readers of `controlReadFileBytes` beyond `storeWrite` were not searched.
 
