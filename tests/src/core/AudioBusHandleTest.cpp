@@ -156,6 +156,16 @@ void flushOnControlThread()
 	engine->serviceAudioBusHandlesOnControlThread();
 }
 
+//! Owns a bus until the engine takes it back through destroyAudioBusHandle().
+struct BusDeleter
+{
+	void operator()(AudioBusHandle* busHandle) const
+	{
+		Engine::audioEngine()->destroyAudioBusHandle(busHandle);
+	}
+};
+using BusPtr = std::unique_ptr<AudioBusHandle, BusDeleter>;
+
 //! Control-thread cleanup: the engine frees the bus, or holds it while a pending entry still names it.
 void releaseOnControlThread(AudioBusHandle* bus)
 {
@@ -337,14 +347,6 @@ private slots:
 		BufferManager::init(engine->framesPerPeriod());
 		// Owns the bus from its construction onwards: every return path, including a failed
 		// QVERIFY, hands it to the engine, so no pending entry is left behind.
-		struct BusDeleter
-		{
-			void operator()(AudioBusHandle* busHandle) const
-			{
-				Engine::audioEngine()->destroyAudioBusHandle(busHandle);
-			}
-		};
-		using BusPtr = std::unique_ptr<AudioBusHandle, BusDeleter>;
 
 		BusPtr bus;
 		bool threw = false;
@@ -402,14 +404,6 @@ private slots:
 		BufferManager::init(engine->framesPerPeriod());
 		const auto& handles = engine->audioBusHandles();
 		// Owns the bus from its construction onwards: every return path hands it to the engine.
-		struct BusDeleter
-		{
-			void operator()(AudioBusHandle* busHandle) const
-			{
-				Engine::audioEngine()->destroyAudioBusHandle(busHandle);
-			}
-		};
-		using BusPtr = std::unique_ptr<AudioBusHandle, BusDeleter>;
 
 		// Built on the control thread and taken out again, so the audio-path registration below
 		// is the only one that can put it back.
@@ -464,14 +458,6 @@ private slots:
 		using namespace lmms;
 
 		auto* engine = Engine::audioEngine();
-		struct BusDeleter
-		{
-			void operator()(AudioBusHandle* busHandle) const
-			{
-				Engine::audioEngine()->destroyAudioBusHandle(busHandle);
-			}
-		};
-		using BusPtr = std::unique_ptr<AudioBusHandle, BusDeleter>;
 
 		auto* bus = new AudioBusHandle(QStringLiteral("RetiredPendingBus"), false);
 		BusPtr owner{bus};
@@ -540,14 +526,6 @@ private slots:
 		// Each bus is owned by a unique_ptr from its construction onwards. The deleter hands
 		// the bus to the engine on the control thread, so an early return from a failed
 		// assertion still leaves the bus to the engine.
-		struct BusDeleter
-		{
-			void operator()(AudioBusHandle* busHandle) const
-			{
-				Engine::audioEngine()->destroyAudioBusHandle(busHandle);
-			}
-		};
-		using BusPtr = std::unique_ptr<AudioBusHandle, BusDeleter>;
 
 		auto* engine = Engine::audioEngine();
 
