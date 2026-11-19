@@ -38,8 +38,9 @@ namespace lmms
 namespace detail
 {
 // Split a delay in frames into the whole-frame tap and the interpolation weight.
-// The delay clamps to one frame.  The weight belongs to the older tap so that
-// update() can lerp from the older ring slot toward the next one.
+// The delay clamps to one frame.  update() lerps(buf[readPos], buf[readPos + 1], frac):
+// slot readPos is the delay-(whole + 1) sample and slot readPos + 1 is the delay-whole
+// sample, with weights (1 - frac) and frac.
 inline void splitDelay( double delay, int& whole, double& frac )
 {
 	const double d = delay < 1.0 ? 1.0 : delay;

@@ -1,5 +1,5 @@
 /*
- * DeviceDspTest.cpp - the de-esser, transient shaper, vocoder and console devices, and the console across the mix
+ * DeviceDspTestParts3.h - impulse-response tests for the fractional delays in Delay.h
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -201,7 +201,9 @@ void DeviceDspTest::combFeedbackReconfiguredFractionalDelay()
 		});
 }
 
-//! Gain 0.5 at 1.5 frames: with s[n] the written sample, y[n] = 0.5*s[n-2] + 0.5*s[n-1].
+//! Gain 0.5 at 1.5 frames: with s[n] the sample written at call n and buf[k] the ring slot
+//! holding s[k-1], update() lerps buf[readPos] = s[n-2] and buf[readPos + 1] = s[n-1] with
+//! equal weights, so y[n] = 0.5*s[n-2] + 0.5*s[n-1].
 //! y[1] = 0.5*1 = 0.5; s[1] = 0.5*y[1] = 0.25; y[2] = 0.5*(s[0] + s[1]) = 0.625;
 //! s[2] = 0.5*y[2] = 0.3125; y[3] = 0.5*(s[1] + s[2]) = 0.28125.  The loop keeps decaying:
 //! y[4] = 0.2265625, y[5] = 0.126953125, y[6] = 0.08837890625, y[7] = 0.0538330078125.
