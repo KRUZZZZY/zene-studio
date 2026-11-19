@@ -3974,3 +3974,4 @@ tests/src/plugins/CarlaVst2LegacyStateTest.cpp
 tests/src/gui/LegacyVst2ProjectTest.cpp
 tests/data/legacy-projects/vst2-vestige-vsteffect.mmp
 tests/data/legacy-projects/vst2-vestige-vsteffect.reference.json
+tests/src/core/AudioOssDeviceConfigTest.cpp
