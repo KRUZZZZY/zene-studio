@@ -30,23 +30,23 @@ In-range frames are unchanged. For any `frame <= sampleSize()`, `min(frame, samp
 
 ## Test evidence
 
-The RED/GREEN sequence was run again in this session. Its output is in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p10-349.r1/duet/14-worker/tmp/` (files `001`-`005`, `p4b-*`). All commands run in the worktree, and the cache is `XDG_CACHE_HOME=logs/cache-p4b`.
+The RED/GREEN sequence was re-run in this session. Every log is in the run log folder `/home/kruzzzzy/.config/kads/zene/state/runs/new-p10-349.r1/logs/`. In the commands below this folder is `$LOGS`, and `logs/` elsewhere in this report means the same folder. `LOGS=/home/kruzzzzy/.config/kads/zene/state/runs/new-p10-349.r1/logs`. The worktree is `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p10-349`. Each command ran bare, with its output redirected into the named log, and each log ends with an `EXIT=` line. Before the RED ctest, `mkdir -p $LOGS/cache-13-red $LOGS/cache-13-green` ran with no output and no recorded exit line. The ctest runs use `XDG_CACHE_HOME` set to the writable folders `cache-13-red` and `cache-13-green` inside `$LOGS`.
 
-| Step | Command | Exit | Evidence |
+| Step | Exact command (worktree root unless `cd` is shown) | Exit | Log and evidence |
 |---|---|---|---|
-| Patch | generation of `logs/fix.patch` | not recorded in any log, not re-run | the patch itself is `logs/fix.patch` (22 lines) |
-| Revert fix | `git apply -R logs/fix.patch` | 0 | |
-| RED build | `cmake --build build --target ArrangingCatchUpTest` | 0 | `001-p4b-red-build.log` |
-| RED ctest | `ctest -R '^ArrangingCatchUpTest$' --output-on-failure` in `build/tests` | 8 | `002-p4b-red-ctest.log`: `aTailTrimPastTheSourceEndsWhereTheSourceEnds()` fails, `beyond->endPosition().getTicks()` is 324, expected 224. Same in `logs/test-07-red.log` lines 16-17. |
-| Restore fix | `git apply logs/fix.patch` | 0 | |
-| Product diff | `git diff --quiet HEAD -- src tests` after restore | 0 | |
-| GREEN build | same build command | 0 | `003-p4b-green-build.log` |
-| GREEN ctest | same ctest command | 0 | `004-p4b-green-ctest.log`: 100% tests passed, 1 of 1 |
-| Tail slot | `./ArrangingCatchUpTest aTailTrimPastTheSourceEndsWhereTheSourceEnds` in `build/tests` | 0 | `005-p4b-green-tail.log`: 3 passed, 0 failed |
-| Final product diff | `git diff --quiet HEAD -- src tests` | 0 | |
-| Clean status | `git status --porcelain` | empty | |
+| Patch | `git diff 49e9bb16c0^ 49e9bb16c0 -- src/core/SampleFrameEdits.cpp > $LOGS/fix.patch; echo EXIT=$? > $LOGS/patch-13.log` | 0 | `patch-13.log`; the patch is `fix.patch` (22 lines) |
+| Revert fix | `git apply -R $LOGS/fix.patch > $LOGS/apply-reverse-13.log 2>&1; echo EXIT=$? >> $LOGS/apply-reverse-13.log` | 0 | `apply-reverse-13.log` |
+| Revert check | `git diff --stat -- src/core/SampleFrameEdits.cpp > $LOGS/revert-stat-13.log 2>&1; echo EXIT=$? >> $LOGS/revert-stat-13.log` | 0 | `revert-stat-13.log`: 1 file changed, 3 insertions(+), 4 deletions(-) |
+| RED build | `cmake --build build --target zene ArrangingCatchUpTest > $LOGS/build-13-red.log 2>&1; echo EXIT=$? >> $LOGS/build-13-red.log` | 0 | `build-13-red.log` |
+| RED ctest | `cd build/tests && XDG_CACHE_HOME=$LOGS/cache-13-red ctest -R '^ArrangingCatchUpTest$' --output-on-failure > $LOGS/test-13-red.log 2>&1; echo EXIT=$? >> $LOGS/test-13-red.log` | 8 | `test-13-red.log` lines 15-17: `aTailTrimPastTheSourceEndsWhereTheSourceEnds()` fails; `beyond->endPosition().getTicks()` is 324, expected 224. Summary: "0% tests passed, 1 tests failed out of 1". The earlier `logs/test-07-red.log` lines 16-17 show the same failure. |
+| Restore fix | `git apply $LOGS/fix.patch > $LOGS/apply-restore-13.log 2>&1; echo EXIT=$? >> $LOGS/apply-restore-13.log` | 0 | `apply-restore-13.log` |
+| GREEN build | `cmake --build build --target zene ArrangingCatchUpTest > $LOGS/build-13-green.log 2>&1; echo EXIT=$? >> $LOGS/build-13-green.log` | 0 | `build-13-green.log` |
+| GREEN ctest | `cd build/tests && XDG_CACHE_HOME=$LOGS/cache-13-green ctest -R '^ArrangingCatchUpTest$' --output-on-failure > $LOGS/test-13-green.log 2>&1; echo EXIT=$? >> $LOGS/test-13-green.log` | 0 | `test-13-green.log`: "100% tests passed out of 1" |
+| Tail slot | `cd build/tests && XDG_CACHE_HOME=$LOGS/cache-13-green ./ArrangingCatchUpTest aTailTrimPastTheSourceEndsWhereTheSourceEnds > $LOGS/test-13-green-tail.log 2>&1; echo EXIT=$? >> $LOGS/test-13-green-tail.log` | 0 | `test-13-green-tail.log`: "Totals: 3 passed, 0 failed, 0 skipped" |
+| Product diff | `git diff --exit-code -- src/core/SampleFrameEdits.cpp > $LOGS/product-diff-13.log 2>&1; echo EXIT=$? >> $LOGS/product-diff-13.log` (after the restore) | 0 | `product-diff-13.log` |
+| Status | `git status --porcelain > $LOGS/status-13.log 2>&1; echo EXIT=$? >> $LOGS/status-13.log` | 0 | `status-13.log`: no porcelain lines (clean) |
 
-The earlier logs in `logs/` (`build-07-green-body.log`, `test-07-green-body.log`, `test-07-green-tail.log`) show the same results without exit-code lines. The exit codes above come from the re-run.
+The earlier logs in `logs/` (`build-07-green-body.log`, `test-07-green-body.log`, `test-07-green-tail.log`) show the same results but have no `EXIT=` lines, so they are not cited for exit codes. Every exit code above comes from a command in the table.
 
 ## Canonical test command and the default-environment failure
 
@@ -63,7 +63,14 @@ The earlier logs in `logs/` (`build-07-green-body.log`, `test-07-green-body.log`
 
 2. **Determinism.** `tests/src/core/ArrangingCatchUpTest.cpp` has no wall-clock, sleep, or timer calls (a grep for `sleep`, `qWait`, `QTime`, `QDateTime`, `QElapsedTimer`, and `rand` found nothing). The slot uses `freshClip()` and direct frame values (`size` and `size + clipFramesPerTick() * 100`). The cache is injected with `XDG_CACHE_HOME`, and the tail slot passes in both the default and override runs.
 
-3. **Cause and completeness.** The clamp at line 233 runs before `tailTick` (line 234) and `applyTail` (line 240). `checkTrim` (`src/core/ControlCommandsClipFrames.cpp:91-100`) compares the raw `frames.tail <= frames.head` before clamping. The control path's `frameFor` (`ControlCommandsClipFrames.cpp:58-61`) calls `arrangement::frameAtTimeline`, which clamps to `[0, sampleSize()]` (`src/core/SampleFrameEdits.cpp:183`). So both frames are already clamped there, and `trimTailToFrame` clamps again at line 233. Because `min` is monotone, a raw `tail <= head` implies the clamped `tail <= head`. The raw check can only refuse earlier, with a more specific message. This is read-code reasoning; no test isolates this case. Sibling caller: `splitAtFrame` (`src/core/SampleFrameEdits.cpp:204`) passes its unclamped `frame` to `tailTick`. It is guarded by `canSplitAtFrame`, whose bound was not read here, so the fix's completeness for that caller is not verified.
+3. **Cause and completeness.** The clamp at line 233 runs before `tailTick` (line 234) and `applyTail` (line 240). `checkTrim` (`src/core/ControlCommandsClipFrames.cpp:91-100`) compares the raw `frames.tail <= frames.head` before clamping. The control path's `frameFor` (`ControlCommandsClipFrames.cpp:58-61`) calls `arrangement::frameAtTimeline`, which clamps to `[0, sampleSize()]` (`src/core/SampleFrameEdits.cpp:183`). So both frames are already clamped there, and `trimTailToFrame` clamps again at line 233. Because `min` is monotone, a raw `tail <= head` implies the clamped `tail <= head`. The raw check can only refuse earlier, with a more specific message. This is read-code reasoning; no test isolates this case. Sibling caller `splitAtFrame` (`src/core/SampleFrameEdits.cpp:198-213`) passes its raw `frame` to `tailTick` at line 204 with no clamp. The raw frame is bounded by the split guard, as follows:
+   - `splitAtFrame` calls `canSplitAtFrame` at line 200 (defined at line 154), which calls `splitFits` at line 156.
+   - `splitFits` (lines 110-127) rejects `frame >= window.sourceOut` at line 113.
+   - `replaceSample` stores `SampleWindow::clamped(window.sourceIn, window.sourceOut, frames)` with `frames = sampleSize()` (`src/core/SampleClip.cpp:479`). An empty result falls back to `SampleWindow::full(frames)` (line 480).
+   - `SampleWindow::clamped` caps `sourceOut` at `bufferFrames` (`include/SampleWindow.h:64-69`; the comment at lines 58-63 says the window is clamped into [0, bufferFrames]).
+   - So an accepted `frame` is below `sourceOut`, and `sourceOut` is at most `sampleSize()`. The raw `frame` at line 204 is therefore below `sampleSize()`, and `splitAtFrame` needs no clamp of its own.
+   - `snapEdgeToZeroCrossing` (line 254) reaches `trimTailToFrame` at line 261 through `frameAtTimeline` (line 259). `frameAtTimeline` clamps to `[0, sampleSize()]` at `SampleFrameEdits.cpp:183`, so that path is already clamped before the fix's clamp at line 233.
+   - This chain was read from the code. No test isolates the `splitAtFrame` bound.
 
 4. **Collateral damage.** None. The change is docs-only, so the product diff is empty (`git diff --quiet HEAD -- src tests` exit 0). The clamp is the identity for in-range frames: for `frame <= sampleSize()`, `min(frame, sampleSize())` is `frame`.
 
