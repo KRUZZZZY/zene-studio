@@ -257,6 +257,11 @@ public:
 	//! Applies one device port update. Control thread.
 	void applyDevicePortUpdate(AudioBusHandle* busHandle, bool enable);
 
+	//! The control-thread bus service, one entry point: applies the pending device port
+	//! updates, removes the buses the render workers handed over, frees the held buses and
+	//! keeps room in the bus list. The play-handle capacity timer runs it. Control thread.
+	void serviceAudioBusHandlesOnControlThread();
+
 	//! Read-only view of the registered handles (#605). The audio thread
 	//! iterates this under m_changeMutex (see renderStageEffects), which is the
 	//! same protection the add/remove path takes.

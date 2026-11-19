@@ -379,10 +379,7 @@ AudioEngine::AudioEngine(bool renderOnly)
 		// thread requested, removes (and frees) the buses a render worker handed over,
 		// frees the buses the engine kept alive because their pending entry was not
 		// consumed yet, and keeps room in the bus list for the render owner to grow it.
-		applyPendingDevicePortUpdates();
-		drainPendingAudioBusHandleRetirements();
-		drainHeldAudioBusHandles();
-		ensureAudioBusHandleCapacityOnControlThread();
+		serviceAudioBusHandlesOnControlThread();
 	});
 	m_playHandleCapacityTimer.start(100);
 }
@@ -1367,6 +1364,15 @@ void AudioEngine::holdAudioBusHandle(AudioBusHandle* busHandle)
 	// freed either (the render owner may still reach it). Leaking it is the only safe
 	// answer; the counter makes the refusal visible.
 	m_droppedAudioBusHandleRetirements.fetch_add(1, std::memory_order_relaxed);
+}
+
+
+void AudioEngine::serviceAudioBusHandlesOnControlThread()
+{
+	applyPendingDevicePortUpdates();
+	drainPendingAudioBusHandleRetirements();
+	drainHeldAudioBusHandles();
+	ensureAudioBusHandleCapacityOnControlThread();
 }
 
 
