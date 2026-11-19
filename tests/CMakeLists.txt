@@ -1689,6 +1689,8 @@ set(LMMS_TESTS
 	src/plugins/SlicerTWaveformTest.cpp
 	# BitInvader's note state lives in the note handle: no heap allocation on the render path.
 	src/plugins/BitInvaderAllocationTest.cpp
+	# BitInvader's loadSettings clamps out-of-range wavetable values and refuses malformed payloads.
+	src/plugins/BitInvaderLoadSettingsTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
 	src/tracks/HeadlessGuiGuardTest.cpp
@@ -2584,7 +2586,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	# BitInvader is a plug-in module, so the test compiles the product's own note code in.
 	# Its generated plugin_export.h (PLUGIN_EXPORT) sits beside the plug-in's build output.
-	if(LMMS_TEST_NAME STREQUAL "BitInvaderAllocationTest")
+	if(LMMS_TEST_NAME STREQUAL "BitInvaderAllocationTest" OR LMMS_TEST_NAME STREQUAL "BitInvaderLoadSettingsTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/BitInvader/BitInvader.cpp
 			${CMAKE_SOURCE_DIR}/plugins/BitInvader/BitInvader.h)
