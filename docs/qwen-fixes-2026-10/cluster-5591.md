@@ -49,26 +49,27 @@ Family run (unrelated failure; per the run notes, `test-7.log` is with the fix a
 
 ## Exit codes
 
-No log in the logs folder records an exit code. The numbered quiet-run logs for p4 (001-005) are not on disk: the duet worker tmp folder (`/home/kruzzzzy/.config/kads/zene/state/runs/5591.r1/duet/18-worker/tmp`) holds no `NNN-*.log` files. `quiet-run` writes the command's output to its log and prints `exit N` only to its own stdout. The `EXIT=` values in earlier notes do not appear in any log, so each code below is marked.
+`logs/exits.log` (written by the p4b run) is the only exit-code record. Each code below is copied from it. The numbered quiet-run logs for p4 (001-005) are not on disk (the duet worker tmp folder holds no `NNN-*.log` files), so no other exit codes exist for this work.
 
-Command text is not recorded in these logs (no command header). The step labels come from the run notes.
+"proof field" means the command is the one in the p6 packet's proof fields (`red_command` / `green_command`). The p4b command text itself is not on disk, so "not on disk" means no command was recorded.
 
-| Step | Log | What the log shows | Exit code |
+| Step | Command | Log | EXIT |
 |---|---|---|---|
-| fix.patch, `apply -R` | none | `fix.patch` and `fix-reapplied.patch` are patch files; no run output | not found in logs |
-| apply | none | no log for this step | not found in logs |
-| build 2 | `build-2.log` | AudioEditingTest built (1 match) | not found in logs |
-| build 6 | `build-6.log` | `Built target AudioEditingTest` (line 36) | not found in logs |
-| build 7 | `build-7.log` | `Built target AudioEditingTest` (line 36) | not found in logs |
-| test 1 (RED) | `test-1.log` | Totals 14 passed, 2 failed | not found in logs |
-| test 2 | `test-2.log` | Totals 14 passed, 2 failed | not found in logs |
-| test 2 final | `test-2-final.log` | Totals 14 passed, 2 failed | not found in logs |
-| test 6 | `test-6.log` | AudioEditingTest 1 of 1 passed | not found in logs |
-| test 7 | `test-7.log` | 10 of 11 passed | not found in logs |
-| test 8 (red) | `test-8-red.log` | Totals 12 passed, 3 failed | not found in logs |
-| test 9 (red) | `test-9-red.log` | 10 of 11 passed | not found in logs |
-| test 10 (green) | `test-10-green.log` | Totals 15 passed, 0 failed | not found in logs |
-| re-check (`cmake --build` of AudioEditingTest, `ctest -R '^AudioEditingTest$'`) | none | an earlier note says it ran on the current tree; no log in the logs folder | not found in logs |
+| patch | not on disk (patch file `logs/fix.patch`) | none | 0 |
+| apply-R | `git apply -R fix-committed.patch` (proof field) | none | 0 |
+| build-8 | `cmake --build build --target zene AudioEditingTest` (proof field) | `build-8.log` | 0 |
+| test-11-red | `cd build/tests && ctest -R AudioEditingTest -V`, fix reversed (proof field) | `test-11-red.log` | 8 |
+| test-12-red | not on disk (family run, 11 tests) | `test-12-red.log` | 8 |
+| apply | not on disk (patch file `logs/fix-committed.patch`) | none | 0 |
+| build-9 | `cmake --build build --target zene AudioEditingTest` (proof field) | `build-9.log` | 0 |
+| test-13-green | `cd build/tests && ctest -R AudioEditingTest -V`, fix applied (proof field) | `test-13-green.log` | 0 |
+| test-14-green | not on disk (family run, 11 tests) | `test-14-green.log` | 8 |
+| gates-3 | not on disk | `gates-3.log` | 0 |
+
+- `test-12-red` and `test-14-green` both fail on `ControlStableIdsSlice2` only (1 of 11), with `'ladspaeffect' is not in this build`. The failure is the same as in `test-7.log` and `test-9-red.log`, so it is not caused by this change.
+- The authoritative RED/GREEN pair is `test-11-red` (EXIT=8) and `test-13-green` (EXIT=0). RED: 12 passed, 3 failed, 0 skipped, with the fix reversed via `fix-committed.patch`; the failing tests are `slicingToASamplerTrack`, `slicingTransientsKeepsTheLeadIn`, `slicingLeadInStartsAtTheTrimmedInPoint`. GREEN: 15 passed, 0 failed, 0 skipped.
+- The earlier logs have no exit codes: `test-1.log`, `test-2.log`, `test-2-final.log`, `test-6.log`, `test-7.log`, `test-8-red.log`, `test-9-red.log`, `test-10-green.log`, and the build logs `build-2.log`, `build-6.log`, `build-7.log`. Their results are in the RED / GREEN evidence section above.
+- `test-1.log` is the pre-fix RED of the two new slots (`slicingTransientsKeepsTheLeadIn`, `slicingLeadInStartsAtTheTrimmedInPoint`). It has no exit code.
 
 ## Notes on the change
 
@@ -82,8 +83,10 @@ Command text is not recorded in these logs (no command header). The step labels 
 
 ## Gates and file size
 
-- `gates-2.log` (the later gate run, `RESULT: PASS`): `complexity` PASS "no new item in your files"; `file-length` PASS "no new item in your files". The log prints no CCN value, so no CCN number is recorded here.
-- `gates-1.log`: same PASS lines. Neither gate log mentions lizard, so these logs do not show that the complexity gate was vacuous.
+- `gates-3.log` (`EXIT=0` in `exits.log`, `RESULT: PASS`): `complexity` PASS "no new item in your files"; `file-length` PASS "no new item in your files".
+- Lizard is not installed: `command -v lizard` EXIT=1 and `python3 -I -c 'import lizard'` EXIT=1, checked 2026-11-19. So the CCN of `withLeadIn` (3, by code reading) is not measured by the tool, and the `complexity` PASS may not have measured anything. Not verified: the logic of `feature_check.py` was not read.
+- `gates-2.log` (no exit code in `exits.log`, `RESULT: PASS`): same PASS lines. The log prints no CCN value, so no CCN number is recorded here.
+- `gates-1.log`: same PASS lines. No gate log mentions lizard.
 - `/tmp/kads-lizard-venv` and `/tmp/kads5591-p3c-backup`: both absent when checked on 2026-11-19. The logs do not show whether lizard was used.
 - `tests/src/core/AudioEditingTest.cpp` grew from 431 to 552 raw lines (`git show fa4a5f2e78:tests/src/core/AudioEditingTest.cpp` = 431; `142394e0ec:...` = 552). The `file-length` line in `gates-2.log` does not name the file, so the log does not show that this growth was checked.
 
