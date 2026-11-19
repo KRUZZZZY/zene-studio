@@ -56,11 +56,12 @@ Verified code points in this tree:
 
 All logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-221-port.r10/logs`.
 
-**The literal full-range reverse does not compile.** `git apply -R` of
+**The literal full-range reverse is not used as the RED run.** `git apply -R` of
 `/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-221-port.r10/logs/fix.patch`
 (`git diff 719c712198^..HEAD -- src include`) would remove `tryCreate` and `reserveBlocks`
 (added by 180e12a251) that the tests call, and it removes 719c712198's `AudioEngine` test
-seam. That is a compile failure, not RED, so it is not used as the RED run below.
+seam. That would be a compile failure, not a RED, so it is not used as the RED run below.
+It was not re-run in this round.
 
 **RED therefore reverses only d767ca125c + 140c978e3b** - the behavioural fix, as
 `/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-221-port.r10/logs/fix-behaviour.patch`
@@ -128,6 +129,12 @@ in your files", file-length "no new item in your files").
 
 ## Disclosures
 
+- **No `schemas/proof.json` exists on disk** and `submit_check.py` does not validate a
+  manifest (see
+  `/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-221-port.r10/logs/schema-notes.txt`).
+  `proof.json` therefore uses the brief's field names (the regression-test keys are from the
+  brief's example; the state-sequence keys `kind`, `test_file`, `test`, `states` are a
+  reading of the brief) and has not been checked against a schema.
 - **604ea002a7 regenerated `tests/all-sources.txt`** by the file's own header recipe **after
   the "no more edits" checkpoint**. `git show --stat` confirms it touches **only
   `tests/all-sources.txt`** (4 insertions, 0 deletions; the four added paths), **no `src/`,
