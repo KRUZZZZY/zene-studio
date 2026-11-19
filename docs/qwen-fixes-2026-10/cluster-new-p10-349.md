@@ -55,7 +55,7 @@ The earlier logs in `logs/` (`build-07-green-body.log`, `test-07-green-body.log`
   - `queuedInstrumentHandlesAreRemovedBeforeTheirTrackCanDie()`: compared values are not the same.
 - `logs/test-02.log`: 12 passed, 1 failed. The only failure is the cache one. The queued-instrument check and the tail slot pass (`PASS` at line 16). The queued-instrument failure is gone here; the cause (building the tripleoscillator artefact) was not re-checked in this session.
 - The tail slot passes in both runs, so the default-environment failure comes from the unwritable cache path, not from the clip-trim code.
-- Canonical command: ctest with `XDG_CACHE_HOME` pointed at a writable directory under the run's log folder. `logs/test-03-xdg-override.log` shows 13 passed, 0 failed, 1 skipped. `logs/test-04-ctest-xdg-override.log` shows 100% tests passed, 1 of 1. The GREEN ctest above (`004-p4b-green-ctest.log`) uses the same override and is also green.
+- Canonical command: ctest with `XDG_CACHE_HOME` pointed at a writable directory under the run's log folder. `logs/test-03-xdg-override.log` shows 13 passed, 0 failed, 1 skipped. `logs/test-04-ctest-xdg-override.log` shows 100% tests passed, 1 of 1. The GREEN ctest above (`test-13-green.log`) uses the same override and is also green.
 
 ## Self-check
 
