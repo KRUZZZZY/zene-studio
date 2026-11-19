@@ -37,11 +37,11 @@ Fix, `plugins/ClapInstrument/ClapInstrument.cpp` (HEAD):
 
 | case | expectation | slot |
 |------|-------------|------|
-| (a) normal block | every channel/frame == gain*0.25, second render byte-identical | `successfulBlockIsUnchanged` |
+| (a) normal block | a note-on, then one block; every sample == 0.25f (`kFixtureLevel`); no second render | `successfulBlockIsUnchanged` |
 | (b) error on first chunk | caller prefill 0.5f erased; every sample 0.0f; `Continue` | `errorOnFirstChunkSilencesTheWholeBlock` |
-| (c) error on a later chunk (`prepare(rate, 64)`, 128 frames) | chunk 1's marker write also erased; whole block 0.0f | `errorOnLaterChunkSilencesTheWholeBlock` |
+| (c) error on a later chunk (`CLAP_TEST_INSTRUMENT_PROCESS_ERROR=2`, block of 4 × `framesPerPeriod` frames) | the host chunks the block by the prepared block size; chunk 1's marker write also erased; whole block 0.0f; no `prepare()` call in the test | `errorOnLaterChunkSilencesTheWholeBlock` |
 | (d) unprepared (`release()`) | all 0.0f and `needsReprepare()` still true | `unpreparedPluginClearsOutputAndRequestsReprepare` |
-| (e) recovery | after `reprepare()` and a fresh NOTE_ON, next block renders normally | `blockAfterTheErrorRendersNormally` |
+| (e) recovery | the first block errors (`CLAP_TEST_INSTRUMENT_PROCESS_ERROR=1`), then a note-on and the next block renders 0.25f; no `reprepare()` call in the test | `blockAfterTheErrorRendersNormally` |
 | (f) audio thread | `silenceOutput` is a `std::fill` over `out` only; no vector/QString/qDebug in the path | reviewed diff |
 | (g) extra buses | clear happens before `deliver`, deliver still called | reviewed diff |
 | (h) build | module and test build clean (C++20, Qt6/Linux) | `build-1/2/5*.log` |
@@ -58,7 +58,7 @@ Logs: `/home/kruzzzzy/.config/kads/zene/state/runs/5550.r1/logs/`.
 | step | command | EXIT | log / evidence |
 |------|---------|------|----------------|
 | gates | `python3 .../feature_check.py <wt>` | **0** | `gates-1.log`: 8 PASS, RESULT: PASS |
-| submit before report | `python3 .../submit_check.py <wt> 5550` | **1** | `submit-1.log`: only missing report + Self-check |
+| submit before report | `python3 .../submit_check.py <wt> 5550` | **1** | `submit-1.log`: RESULT FAIL, 2 items: report missing; `Self-check` section missing |
 | RED before fix | `cd build/tests && ctest -R ClapInstrumentViewTest --output-on-failure` | 8 | `test-1-red.log`: 6 passed, 3 failed |
 | build fix | `cmake --build build --target zene ClapInstrumentViewTest` | 0 | `build-1/2.log` |
 | GREEN | `cd build/tests && ctest -R ClapInstrumentViewTest --output-on-failure` | **0** | `test-2-green.log`: 1/1 Passed |
@@ -74,8 +74,10 @@ Logs: `/home/kruzzzzy/.config/kads/zene/state/runs/5550.r1/logs/`.
 | mutation iii (channel 0 only) | apply/build/test | 0 / 0 / **8** | `test-mut-iii.log`: 3 failed |
 | final build | `cmake --build build --target zene ClapInstrumentViewTest` | 0 | `build-5-final.log` |
 | final GREEN | `cd build/tests && ctest -R ClapInstrumentViewTest --output-on-failure` | **0** | `test-6-final.log`: 1/1 Passed |
-| live family re-run at HEAD | `quiet-run p5-clap-family -- ctest -R "Clap.*"` | **0** | `.../tmp/001-p5-clap-family.log`: 8/8 Passed |
-| submit after report | `python3 .../submit_check.py <wt> 5550` | 1 | `submit-2.log`: only the p6 proof manifest remains |
+| family re-run at HEAD | `cd build/tests && ctest -R 'Clap' --output-on-failure` | **0** | `test-7-family-head.log`: 8/8 Passed |
+| submit after report, before commit | `python3 .../submit_check.py <wt> 5550` | **1** | `submit-2.log`: RESULT FAIL, 1 item: working tree clean (untracked report) |
+| submit after commit | `python3 .../submit_check.py <wt> 5550` | **0** | `submit-3.log`: RESULT PASS |
+| submit final (this report commit) | `python3 .../submit_check.py <wt> 5550` | **0** | `submit-4.log`: RESULT PASS |
 
 Mutation patches revert exactly one half of the fix: (i) clears only the unprepared
 path, (ii) clears only the error path, (iii) clears only channel 0. Each turns the
@@ -109,10 +111,11 @@ own `out` buffer, with no allocation, lock or log.
   also fail (EXIT 8 each), pinning each half of the fix.
 - **Deterministic.** No wall-clock, sleeps or races: the seam is
   `CLAP_TEST_INSTRUMENT_PROCESS_ERROR=n`, a 1-based `process()` call count since
-  `activate()`; the multi-chunk case fixes chunk size with
-  `prepare(rate, 64)` and renders 128 frames; every buffer is pre-filled with
-  `0.5f` and checked sample by sample. The fixture's call counter is cleared on
-  `activate()`; the host is driven on one thread.
+  `activate()`; the multi-chunk case renders 4 × `framesPerPeriod` frames and the
+  host splits it at the prepared block size; every buffer is pre-filled with
+  `0.5f` and checked sample by sample. The fixture's call counter is reset in
+  `instrument_activate()` (`tests/data/clap-test-plugin/clap-test-instrument.c:702`);
+  the host is driven on one thread.
 - **At the cause and complete.** `processImpl` is the only product site changed.
   The host contract (`ClapHost.h:250-253`) says the failing chunk stops the
   request and leaves later frames untouched, so the caller must own the whole
