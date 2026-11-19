@@ -40,6 +40,8 @@ for d=1.5. The old code produced
 - `0b66147cb3` chore(tests): re-derive all-sources manifest for
   DeviceDspTestParts3.h - adds `tests/all-sources.txt` entry for the new part
   file after the first gate run failed on it (see below).
+- `1cbf284b8a` docs(new-p16-56): make the fractional-delay report exact
+  (cluster new-p16-56).
 
 ## Commands and exit codes
 
@@ -48,18 +50,18 @@ are `logs/`, i.e. `~/.config/kads/zene/state/runs/new-p16-56.r1/logs/`.
 
 | # | Command | EXIT | Result |
 |---|---|---|---|
-| fix.patch | `git diff -- include/Delay.h > logs/fix.patch` | EXIT not recorded; result read from log | patch contains the four `ceil` sites and the helper; applied and reverted in 020-023 |
+| fix.patch | `git diff 1cdfc2a6f~1 HEAD -- include/Delay.h > logs/fix.patch && git apply -R logs/fix.patch` | 0 | patch covers the whole product change (the five `splitDelay` call sites and the helper, including the comment commit `fb721f299a`); applied and reverted in 020-023 |
 | 007 | build `DeviceDspTest` (build-tool invocation not echoed; output in `logs/007-build-red.log`) | EXIT not recorded; result read from log | `Built target DeviceDspTest` |
 | 008 | `cd build/tests && ctest -R DeviceDspTest --output-on-failure > logs/008-test-red.log 2>&1` | 8 | `Totals: 40 passed, 9 failed`; `381 - DeviceDspTest (Failed)`; `Errors while running CTest` |
 | 009 | build `DeviceDspTest` after the `Delay.h` fix (output in `logs/009-build-green.log`) | EXIT not recorded; result read from log | `Built target DeviceDspTest` |
 | 010 | `cd build/tests && ctest -R DeviceDspTest --output-on-failure > logs/010-test-green.log 2>&1` | EXIT not recorded; result read from log | `100% tests passed out of 2` |
 | 011 | delay-family ctest, regex `StereoDelay` or `MonoDelay` or `DelayControls` (verbatim below) | EXIT not recorded; result read from log | `100% tests passed out of 3` |
-| 020 | build with the non-test hunks reversed (output in `logs/020-build-reversed.log`) | EXIT not recorded; result read from log | `Built target DeviceDspTest` |
-| p4 reverse | `git apply -R logs/fix.patch` (reverts the `include/Delay.h` hunks, keeps the tests) | EXIT not recorded; result read from log | reverse applied; reversed build in 020 keeps the tests |
+| 020 | build with the non-test hunks reversed (output in `logs/020-build-reversed.log`) | 0 | `Built target DeviceDspTest` |
+| p4 reverse | `git apply -R logs/fix.patch` (reverts the `include/Delay.h` hunks, keeps the tests) | 0 | reverse applied; reversed build in 020 keeps the tests |
 | 021 | `cd build/tests && ctest -R DeviceDspTest --output-on-failure > logs/021-test-reversed-red.log 2>&1` | 8 | `Totals: 40 passed, 9 failed`; `381 - DeviceDspTest (Failed)`; `Errors while running CTest` |
-| 022 | build restored (output in `logs/022-build-restored.log`) | EXIT not recorded; result read from log | `Built target DeviceDspTest` |
-| p4 restore | `git apply logs/fix.patch` | EXIT not recorded; result read from log | fix restored; restored build in 022 |
-| 023 | `cd build/tests && ctest -R DeviceDspTest --output-on-failure > logs/023-test-restored-green.log 2>&1` | EXIT not recorded; result read from log | `100% tests passed out of 1` |
+| 022 | build restored (output in `logs/022-build-restored.log`) | 0 | `Built target DeviceDspTest` |
+| p4 restore | `git apply logs/fix.patch` | 0 | fix restored; restored build in 022 |
+| 023 | `cd build/tests && ctest -R DeviceDspTest --output-on-failure > logs/023-test-restored-green.log 2>&1` | 0 | `100% tests passed out of 1` |
 | 024 | `python3 feature_check.py <worktree> > logs/024-gates.log 2>&1` | EXIT not recorded; result read from log | 8/8 PASS, `RESULT: PASS` (see disclosure below) |
 | 025 | `python3 submit_check.py <worktree> new-p16-56 > logs/025-submit.log 2>&1` | EXIT not recorded; result read from log | `RESULT: PASS - submit` |
 | 026 | final-green ctest, regex `DeviceDspTest` or `AudioResamplerRatio` (verbatim below) | 0 | `100% tests passed out of 2`; logged `EXIT=0` - final green |
