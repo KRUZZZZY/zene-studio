@@ -491,19 +491,20 @@ void PatmanLoadTest::lazyRenderPathConversionIsDetected()
 	// the counted render so a lazy conversion that fixes the mode is still
 	// caught by the creation/deletion counters.
 	const auto countedRender = [&](NotePlayHandle* const note) {
-		AudioResampler::resetRealtimeConverterAllocationsForTest();
-		AudioResampler::resetRealtimeConverterDeletionsForTest();
+		AudioResampler::resetRealtimeConverterAllocationsForTest(); AudioResampler::resetRealtimeConverterDeletionsForTest();
 		const RealtimeScope realtime;
 		renderBlock(*instrument, note, block);
 	};
-	for (NotePlayHandle* const note : notes) { countedRender(note); }
+	AudioResampler::resetRealtimeConverterAllocationsForTest(); AudioResampler::resetRealtimeConverterDeletionsForTest();
+	{
+		const RealtimeScope realtime;
+		for (NotePlayHandle* const note : notes) { renderBlock(*instrument, note, block); }
+	}
 	QCOMPARE(AudioResampler::realtimeConverterAllocationsForTest(), std::uint64_t{0});
 	QCOMPARE(AudioResampler::realtimeConverterDeletionsForTest(), std::uint64_t{0});
 	for (NotePlayHandle* const note : notes)
 	{
-		auto* const handle = static_cast<PatmanInstrument::handle_data*>(note->m_pluginData);
-		QVERIFY(handle != nullptr && handle->state != nullptr);
-		QCOMPARE(handle->state->converterMode(), expectedMode);
+		auto* const handle = static_cast<PatmanInstrument::handle_data*>(note->m_pluginData); QVERIFY(handle != nullptr && handle->state != nullptr); QCOMPARE(handle->state->converterMode(), expectedMode);
 	}
 
 	// A state the engine has prepared but not adopted yet must stay pending
@@ -598,15 +599,16 @@ void PatmanLoadTest::overPolyphonyKeepsEverySincBestBlockAudible()
 		for (std::size_t i = 0; i < 3; ++i)
 		{
 			NotePlayHandle* const note = acquireNote(track, frames * 8);
-			renderBlock(instrument, note, block);
-			QVERIFY(engine->addPlayHandle(note));
+			renderBlock(instrument, note, block); QVERIFY(engine->addPlayHandle(note));
 			held.push_back(note);
 		}
 		QVERIFY(switchQuality(SrcQuality::SincBest));
 		AudioResampler::resetRealtimeConverterAllocationsForTest();
 		AudioResampler::resetRealtimeConverterDeletionsForTest();
-		const RealtimeScope realtime;
-		for (NotePlayHandle* const note : held) { renderBlock(instrument, note, block); }
+		{
+			const RealtimeScope realtime;
+			for (NotePlayHandle* const note : held) { renderBlock(instrument, note, block); }
+		}
 		QCOMPARE(AudioResampler::realtimeConverterAllocationsForTest(), std::uint64_t{0});
 		QCOMPARE(AudioResampler::realtimeConverterDeletionsForTest(), std::uint64_t{0});
 		for (NotePlayHandle* const note : held)
@@ -618,9 +620,7 @@ void PatmanLoadTest::overPolyphonyKeepsEverySincBestBlockAudible()
 
 	for (NotePlayHandle* const note : notes)
 	{
-		instrument.deleteNotePluginData(note);
-		note->m_pluginData = nullptr;
-		NotePlayHandleManager::release(note);
+		instrument.deleteNotePluginData(note); note->m_pluginData = nullptr; NotePlayHandleManager::release(note);
 	}
 	QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), freeBefore);
 	QVERIFY(switchQuality(SrcQuality::Linear));
