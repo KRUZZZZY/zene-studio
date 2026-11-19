@@ -187,13 +187,13 @@ private slots:
 		}
 	}
 
-	//! A 1 Hz impulse resamples to nothing at the engine's rate: it is refused, and the state is left as it was.
+	//! A 1 Hz impulse is refused, not loaded: the resampler rejects the engine-rate-to-1-Hz ratio (outside [1/256, 256]), so loadImpulse must return false without throwing and leave the state as it was.
 	void unresamplableImpulseIsRefused()
 	{
 		QTemporaryDir dir;
 		QVERIFY(dir.isValid());
 		const QString wav1Hz = dir.filePath(QStringLiteral("impulse-1hz.wav"));
-		QVERIFY(writeWav(wav1Hz, 1, 300));
+		QVERIFY(writeWav(wav1Hz, 1, 8));
 
 		const std::shared_ptr<const SampleBuffer> decoded = SampleBuffer::fromFile(wav1Hz);
 		QVERIFY2(decoded != nullptr && decoded->size() > 0 && decoded->sampleRate() == 1,

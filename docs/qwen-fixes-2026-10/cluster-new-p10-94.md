@@ -3,7 +3,7 @@ FIXED
 # Cluster new-p10-94: refuse an impulse the resampler cannot convert
 
 Product fix: commit `429eaf572a` (`plugins/ConvolutionReverb/ConvolutionReverb.cpp`).
-This cluster adds the regression tests in `tests/src/plugins/ConvolutionFftwPlanScopeTest.cpp` and this report.
+This cluster adds the regression tests in `tests/src/plugins/ConvolutionFftwPlanScopeTest.cpp` and `tests/src/core/DeviceDspTestParts2.h`, and this report. Round 3 (below) adds a second product change in `src/core/ControlCommandsDeviceTools.cpp`. It is in the commit whose message names this cluster.
 
 ## Evidence
 
@@ -25,7 +25,7 @@ Five slots in `tests/src/plugins/ConvolutionFftwPlanScopeTest.cpp` exercise the 
 
 | Slot | Line | What it checks |
 |---|---|---|
-| `unresamplableImpulseIsRefused` | 191 | A 1 Hz impulse resamples to nothing at the engine rate: it is refused and the state is unchanged. This is the bug-catching slot (RED with the fix reversed, EXIT=8). |
+| `unresamplableImpulseIsRefused` | 191 | A 1 Hz impulse is refused, not loaded: the resampler rejects the engine-rate-to-1-Hz ratio (outside [1/256, 256]), and the state is unchanged. The WAV has 8 frames; the ratio, not the length, is what fails. This is the bug-catching slot (RED with the fix reversed, EXIT=8). |
 | `veryShortImpulseStillLoads` | 217 | Covers the normal short-resample branch: 2 frames at 2x the engine rate resample to 1 frame (expected 1), which loads. It does not pin the one-frame fallback. |
 | `emptyResampleOfAShortImpulseKeepsTheFallback` | 235 | 1 frame at 4x the engine rate resamples to 0 frames (expected 0), so the one-frame fallback keeps it and it loads. This slot pins the fallback (section 3). |
 | `validImpulseLoads` | 257 | Positive control: a normal response loads at the engine rate and at another valid rate. |
@@ -73,12 +73,63 @@ Disclosures:
 - Gates were rerun at HEAD for the final pass: `gates-2.log` (the gate row above). The earlier `gates-1.log` row is superseded.
 - For `build-10`, `test-10-final`, `test-11-family`, `gates-2` and `submit-1`, the log files first held only the quiet-runner summary. They were replaced with the full output of the same runs, and the recorded `EXIT=` line was kept.
 
+## Round 3: `impulseLoad` reports the refusal
+
+**Cause.** `controlRestoreEffectState` (`src/core/ControlDeviceSupport.cpp:567-572`) calls `effect->restoreState(body)`, which returns `void`, and then returns success whenever the XML is valid. `ConvolutionReverbControls::loadSettings` (`plugins/ConvolutionReverb/ConvolutionReverb.cpp:164`) calls `loadImpulse` and drops its `bool`. A refused impulse left the previous impulse in place, but `impulseLoad` still reported success: it added an undo step and marked the song modified.
+
+**Fix.** In `impulseLoad` (`src/core/ControlCommandsDeviceTools.cpp:363`), after the restore succeeds, `impulseOf` (`:356-362`) reads the `impulse` attribute the plugin holds after the restore. If it is not the requested path, `impulseLoad` restores the previous state (`:390`) and returns `ControlErrorKind::Refused` with a message that names the path (`:391`). The undo step and `setModified()` (`:393-395`) come after this check, so a refusal adds no undo step and marks nothing modified. The helper `convolutionControls` (`:338`) is shared with `withImpulse` (`:348`). No plugin file changed.
+
+**Why at the cause, and why core does not link the plugin.** Core cannot link `ConvolutionReverb`, so it cannot receive `loadImpulse`'s `bool`. The state the plugin keeps is what core can read: `controlEffectStateXml` is what `plugin.state_save` writes. The check reads the outcome the plugin kept, not what it reported. It is an exact string match against the path `impulseLoad` holds. A valid load passes it: the DeviceDsp slot asserts `loaded.ok` for a valid click (`tests/src/core/DeviceDspTestParts2.h:76`).
+
+**GUI confirmation (by reading, not a GUI run).** A failed `ControlResult` reaches the user on both paths. On the direct path, `announce` (`src/gui/CommandRun.cpp:103-112`) shows `errorMessage` for a failed result. On the form path, `src/gui/CommandForm.cpp:354-358` calls `showError(m_result.errorMessage)` and the form stays open. The effect menu calls `runCommand` at `src/gui/EffectDeviceMenu.cpp:167-168`.
+
+**New slot.** `anUnresamplableImpulseIsRefusedThroughTheCommand` (`tests/src/core/DeviceDspTestParts2.h:64-108`, declared at `tests/src/core/DeviceDspTest.cpp:462`) calls `plugin.impulse_load` through `ControlRegistry::instance()->invoke`, the entry the GUI uses. It loads a valid click, asserts `loaded.ok`, and saves the project. It then loads an 8-frame 1 Hz WAV and checks that the result is `Refused` with a message, that the saved impulse path is unchanged, that the audio output is unchanged (within 0.03), that `Engine::projectJournal()->undoDepth()` is unchanged, and that `Engine::getSong()->isModified()` stays false. Finally it reloads the click and asserts `ok`.
+
+**Commands and exit codes.** The logs below are from the round-3 run (`new-p10-94.r3/logs/`). They are not the earlier run's `logs/` files, whose names overlap. Each log ends with an `EXIT=` line; the codes were checked by grep in this session.
+
+| Run | Log | EXIT | Result |
+|---|---|---|---|
+| Red, before the fix | `test-1-red.log`, `test-2-red.log` | 8 | `'!refused.ok'` returned FALSE |
+| With the fix | `build-10.log`, `test-10-green.log` | 0, 0 | - |
+| Family, four targets | `test-11-family.log` | 8 | 3 of 4 pass; the failure is the transcript test (see Disclosures) |
+| Fix reversed | `test-4-red-reversed.log` | 8 | `'!refused.ok'` returned FALSE |
+| Fix reapplied | `test-5-green-reapplied.log` | 0 | - |
+| Undo-depth mutant | `test-6-mutated.log` | 8 | `undoDepth() == undoDepthBefore` returned FALSE |
+| Modified-only mutant | `test-6b-mutated-modified.log` | 8 | `!Engine::getSong()->isModified()` returned FALSE (`Parts2.h:105`) |
+| Restored | `test-7-restored.log`, `test-7b-restored.log` | 0, 0 | - |
+
+Runs in this session (the same worktree, after the edits):
+
+- `build-7` and `test-8` (fix in place, 8-frame WAV): EXIT 0 and 0, `100% tests passed out of 1`.
+- `build-7b-rev` and `test-8b-red` (effect fix reverted): EXIT 0 and 8. `FAIL! : ...unresamplableImpulseIsRefused() 'error.isEmpty()' returned FALSE` (`SRC ratio outside [1/256, 256]`).
+- `build-7c` and `test-8c-green` (fix reapplied): EXIT 0 and 0. `git diff 429eaf572a -- plugins/ConvolutionReverb/ConvolutionReverb.cpp` is empty.
+- `gates-1.log`: EXIT 0, `RESULT: PASS`, no FAIL line.
+- `build-12-dsp` and `test-12-dsp` (DeviceDsp target, with the new slot): EXIT 0 and 0, `100% tests passed out of 1`. The ctest line covers the whole executable; per-slot results are not printed.
+
+Disclosures (round 3):
+
+- The slot calls `project.save` to get a clean modified flag, because `Song::setModified(bool)` is private. The save writes `session.mmp` inside the test's `QTemporaryDir`.
+- `ControlReversibilityTranscript` fails with `plugin.list offered no 'amplifier' device` in the reversed state (`test-4b-transcript-reversed.log`, EXIT 8) and in the fixed state (`test-5b-transcript-reapplied.log`, EXIT 8; `test-11-family.log`). It does not depend on this change. Its cause, a missing amplifier module in this build, is not verified.
+- The earlier table above lists a family run of 4 of 4 (`test-11-family`, EXIT 0). That is from the earlier run. The round-3 family run is 3 of 4, and the difference is the transcript test.
+- Five DeviceDspTest slots are skipped. I did not inspect the reasons.
+- `canUndo()` was replaced by `undoDepth()` so that the slot can check the count.
+- The CCN of `impulseLoad` was counted by hand. The gate result (`gates-1.log`) is the record.
+- TSan was not run. The handler runs on the control thread only (`ControlRegistry.h:108`), and no audio-thread code changed.
+- Portability: standard C++20 and Qt API only, no platform code. `QDomDocument` is already used in this file.
+
 ## Other findings
 
 Not changed in this cluster.
 
 - **Callers ignore the `bool` from `loadImpulse`.** The call in `ConvolutionReverbControls::loadSettings` (`ConvolutionReverb.cpp:164`), the constructor (`:173`), and the `sampleRateChanged` lambda (`:176`) are bare statements. A refused impulse is silent at all three. (An earlier note cited line 151 for `loadSettings`; line 151 is in `saveSettings`. The call is at line 164.)
-- **`impulseLoad` reports success from `restored.ok`.** `src/core/ControlCommandsDeviceTools.cpp:349-375` restores the effect state with `controlRestoreEffectState` and returns success when `restored.ok` (lines 370-371). It never checks whether `loadImpulse` accepted the path. I did not trace `controlRestoreEffectState` to confirm that it reaches `loadSettings`. If it does, a refused impulse is reported as a success.
+- **Siblings restore the same state without checking the impulse (not changed here).** `plugin.state_load`, preset load, chain preset, device copy, structural/rack and wasm edit each restore device state through the same path. None checks whether `loadImpulse` accepted the impulse, so a refused impulse could be reported as a success there too. I did not run them. Locations, from the p1 matrix in the round-3 run logs:
+  - `plugin.state_load`: `src/core/ControlCommandsPluginState.cpp:202`, `:208` (undo), `:287-288`
+  - preset load: `src/core/ControlCommandsPluginPreset.cpp:311`, `:319`
+  - chain preset: `src/core/ControlChainPresetSupport.cpp:498` (via `controlRestoreDeviceState`)
+  - device copy: `src/core/ControlCommandsDeviceCopy.cpp:353` (result ignored), `:365`
+  - structural/rack: `src/core/ControlStructuralSupport.cpp:487` (rack wrap not traced)
+  - wasm edit: `src/core/ControlCommandsWasmEdit.cpp:336`, `:368`
+  - Also in the matrix, not in the packet's list: `src/core/ControlCommandsChainEdit.cpp:125` (not traced)
 
 ## Self-check
 
@@ -86,7 +137,7 @@ Answers to the five ASK items that `submit_check.py` printed (`logs/submit-1.log
 
 1. **Fails with the change reverted, passes with it (exit codes).** Reverted: `logs/test-5-red-reversed.log:11` reads `FAIL! : ConvolutionFftwPlanScopeTest::unresamplableImpulseIsRefused() 'error.isEmpty()' returned FALSE` (loadImpulse threw on a 1 Hz impulse, `SRC ratio outside [1/256, 256]`), and the run exits `EXIT=8` (`:30`). Reapplied: `logs/test-6-green-reapplied.log:8` `EXIT=0`. At HEAD: `logs/test-10-final.log` `EXIT=0` (1/1), and the family run `logs/test-11-family.log` `EXIT=0` (4/4).
 2. **Deterministic.** The test file has no sleep, timer, thread or random source: a grep of `tests/src/plugins/ConvolutionFftwPlanScopeTest.cpp` for `sleep|qWait|QElapsedTimer|std::chrono|QTimer|msleep|usleep|QThread|rand|time(` found nothing. The inputs are injected. `writeWav` (`:50`) writes a WAV at a chosen rate into a `QTemporaryDir` (`:193`, `:219`, `:237`, `:259`, `:287`), at 1 Hz, at 2x and 4x the engine rate, and at the engine rate. The engine rate is read from `Engine::audioEngine()->outputSampleRate()` (`:221`, `:239`, `:261`), and the engine is started at `:110-111` with the device stopped. Repeat runs agree: `logs/test-1-red.log:11` and `logs/test-2-red.log:11` give the same failure message.
-3. **Fix at the cause; callers and siblings: partly.** The changed unit is `atRate` (`ConvolutionReverb.cpp:105-127`). Its only caller is `loadImpulse` (`:207`), which returns false on a null result (`:208`). Two gaps stay open. First, the three callers of `loadImpulse` ignore its bool: `:164`, `:173` and `:176` are bare calls, so a refused impulse is silent there (see Other findings). Second, the other `resampleBuffer` callers, `src/core/ControlStemSource.cpp:130` and `src/core/RenderQueue.cpp:207`, do not pass through `atRate` and were not changed. I did not check whether they catch the resampler's exception. Not traced: whether `impulseLoad` (`src/core/ControlCommandsDeviceTools.cpp:349-375`) reaches `loadImpulse`.
+3. **Fix at the cause; callers and siblings: partly.** The changed unit is `atRate` (`ConvolutionReverb.cpp:105-127`). Its only caller is `loadImpulse` (`:207`), which returns false on a null result (`:208`). Two gaps stay open. First, the three callers of `loadImpulse` ignore its bool: `:164`, `:173` and `:176` are bare calls, so a refused impulse is silent there (see Other findings). Second, the other `resampleBuffer` callers, `src/core/ControlStemSource.cpp:130` and `src/core/RenderQueue.cpp:207`, do not pass through `atRate` and were not changed. I did not check whether they catch the resampler's exception. `impulseLoad` now compares the path the plugin kept after the restore with the requested one, and returns `Refused` when they differ (`src/core/ControlCommandsDeviceTools.cpp:388-391`; see Round 3).
 4. **No collateral damage: partly.** The normal path is unchanged. A non-empty resample is returned as before (`:124`). `veryShortImpulseStillLoads` (`:217`) and `validImpulseLoads` (`:257`) pass: all 10 QTest entries pass in `logs/test-9-restored.log`, and the ctest entry passes at HEAD in `logs/test-10-final.log`. Two changes can reach saved projects, both intended:
    - An impulse that used to throw is now refused, and the previous kernel stays (`unresamplableImpulseIsRefused`, `:191`). Before, the exception escaped `loadImpulse`.
    - An impulse whose resample came back empty while frames were expected used to load as the wrong-rate `source` (`429eaf572a~1`, `ConvolutionReverb.cpp:113`: `return resampled != nullptr && resampled->size() > 0 ? resampled : source;`). Now it is refused (`:126`, `:208`). I did not establish that a real file reaches this case, and no slot tests it.
