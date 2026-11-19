@@ -54,11 +54,32 @@ message and creates the missing clip.
    The loop therefore runs over more entries than the number of trackcontainers when a pattern track
    has children. Not fixed in this packet; it is a separate question about intent and is noted for the lead.
 
+## Gates
+
+Command (run from the worktree root, with `LOG` exported as in the block below):
+
+```sh
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-1727 > "$LOG/feature-check-1.log" 2>&1; echo EXIT=$? >> "$LOG/feature-check-1.log"
+```
+
+Log: `logs/feature-check-1.log`. It ends `RESULT: PASS` and `EXIT=0`, with no FAIL rows.
+
+| Gate | Row |
+|---|---|
+| fork-sources | PASS |
+| all-sources-reproduce | PASS |
+| no-upstream-regression | PASS |
+| check-namespace | PASS |
+| no-tautology | PASS |
+| doc-figures | PASS |
+| complexity | PASS |
+| file-length | PASS |
+
 ## Command and EXIT table
 
 Commands were run from the worktree root. Each evidence command writes its own `echo EXIT=$?` line into
-its log. Every evidence row that cites a log cites the `logs/*-2.log` run, except `control-identity.log`,
-which has no `-2` variant and is listed in the table below. The earlier logs (`build-1.log`, `load-*.log`
+its log. Every evidence row that cites a log cites the `logs/*-2.log` run, except `control-identity.log` and `feature-check-1.log`,
+which have no `-2` variant and are listed in the table below. The earlier logs (`build-1.log`, `load-*.log`
 without `-2`, `load-branch-proof-summary.log`) are kept on disk for reference only. No evidence row cites them,
 and their commands were not recorded.
 
@@ -74,6 +95,7 @@ HOME="$LOG/scratch/home" QT_QPA_PLATFORM=offscreen gdb -nx -batch -ex "break 'lm
 HOME="$LOG/scratch/home" QT_QPA_PLATFORM=offscreen build/zene --allowroot --run-script data/scripts/hello.lua "$LOG/scratch/control.mmp" > "$LOG/load-control-2.log" 2>&1; echo EXIT=$? >> "$LOG/load-control-2.log"
 HOME="$LOG/scratch/home" QT_QPA_PLATFORM=offscreen build/zene --allowroot --run-script data/scripts/hello.lua "$LOG/scratch/missing-patterntrack.mmp" > "$LOG/load-missing-2.log" 2>&1; echo EXIT=$? >> "$LOG/load-missing-2.log"
 HOME="$LOG/scratch/home" QT_QPA_PLATFORM=offscreen build/zene --allowroot --run-script data/scripts/hello.lua "$LOG/scratch/empty-patterntrack.mmp" > "$LOG/load-empty-2.log" 2>&1; echo EXIT=$? >> "$LOG/load-empty-2.log"
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-1727 > "$LOG/feature-check-1.log" 2>&1; echo EXIT=$? >> "$LOG/feature-check-1.log"
 git add docs/qwen-fixes-2026-10/cluster-1727.md; echo GIT_ADD_EXIT=$? >> "$LOG/git-record-3.log"
 git commit -m 'docs(cluster-1727): align report evidence with the -2 logs' -m 'Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>'; echo GIT_COMMIT_EXIT=$? >> "$LOG/git-record-3.log"
 git status --short; echo GIT_STATUS_EXIT=$? >> "$LOG/git-record-3.log"
@@ -92,6 +114,7 @@ git rev-parse HEAD; echo GIT_REV_EXIT=$? >> "$LOG/git-record-3.log"
 | Control load | `logs/load-control-2.log` | 0 |
 | Missing-`patterntrack` load | `logs/load-missing-2.log` | 0 |
 | Empty-`patterntrack` load | `logs/load-empty-2.log` | 0 |
+| `feature_check (gates)` | `logs/feature-check-1.log` | 0 (`RESULT: PASS`; 8 PASS rows, 0 FAIL) |
 | `git add`, `git commit`, `git status`, `git rev-parse` | `logs/git-record-3.log` (labels `GIT_ADD_EXIT`, `GIT_COMMIT_EXIT`, `GIT_STATUS_EXIT`, `GIT_REV_EXIT`) | `git add` 0, `git commit` 0, `git status` 0, `git rev-parse` 0 (all from `logs/git-record-3.log`). `git rev-parse HEAD` output: `cde7c77ffa9a9c7ce3753a1a7722ef8fd7de9ea6`. The values are written after the commit runs, so they cannot appear inside the commit they describe. |
 
 The labeled exits for the final docs-only commit that carries this correction are in `logs/git-record-4.log`, which is created after that commit.
