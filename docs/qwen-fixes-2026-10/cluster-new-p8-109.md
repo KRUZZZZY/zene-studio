@@ -97,3 +97,39 @@ The RED test is a real behavior failure, not a compile failure: the build in
   displayed `.bak` names. Neither is a second backup writer.
 - `tests/src/core/DataFileSaveIntegrityTest.cpp` already had `occupy()` and
   `writeText()` helpers; the new cases reuse them and add no helper.
+
+## Self-check
+
+- **Regression fails reverted and passes with the change.** Reverted production
+  code with the new tests kept: build EXIT=0 (`logs/07-build-reverted.log`),
+  `ctest -R DataFileSaveIntegrityTest` EXIT=1 with the same `"current"` vs
+  `"older generation"` assertion (`logs/08-test-reverted.log`). Reapplied:
+  build EXIT=0 (`logs/09-build-reapplied.log`), test EXIT=0, 1/1 passed
+  (`logs/10-test-reapplied.log`). The original RED run shows the identical
+  failure (`logs/04-test-red.log`).
+- **Deterministic, no timing.** Both cases use a `QTemporaryDir` and plain files;
+  there is no sleep, clock or thread. The failure is injected by pre-creating
+  `<target>.bak.new` as a non-empty directory with the existing `occupy()`
+  helper, so `QFile::copy` into it fails every time. The success case asserts
+  only on file contents and existence, not timing.
+- **Cause-level and complete.** The change is in `DataFile::writeFile()`, the
+  single backup writer. `replaceBackup()` is the only new helper and is called
+  once (`src/core/DataFile.cpp:964`). Sibling callers of `.bak` were checked in
+  `logs/01-bak-callers.log` and `logs/sibling-callers.md`:
+  `ControlCommandsProjectLifecycle.cpp` snapshots/restores templates without a
+  remove-before-copy and its project save goes through `writeFile`, so it
+  inherits the fix; `ProjectRecovery.cpp` removes the recovery file, not `.bak`;
+  `RevisionTimeline.cpp` only displays paths. No other backup writer exists.
+- **No collateral damage.** The normal save keeps its existing behavior: the
+  older `.bak` is replaced by the previous canonical content, just via a staged
+  copy and atomic rename; `ordinarySaveStillWritesAndKeepsABackup` and the rest
+  of `DataFileSaveIntegrityTest` still pass (1/1 in `logs/06-test-green.log`,
+  `logs/10-test-reapplied.log`). `disablebackup=1` still skips the block, and an
+  unremovable existing `.bak` still refuses the save. Saving a new project with
+  no `.bak` is unchanged. No limit, baseline or gate was modified; the eight
+  feature-check rows are PASS (`logs/11-gates.log`).
+- **Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE.** The old order is
+  visible at `src/core/DataFile.cpp:937-938` of `HEAD` before this commit
+  (`QFile::remove(fullNameBak)` then `QFile::copy(...)`), and the RED/reverted
+  runs fail on the new assertion; the corrected order is committed in this
+  change.
