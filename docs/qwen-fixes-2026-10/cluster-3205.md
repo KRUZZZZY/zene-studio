@@ -21,7 +21,8 @@ FIXED
 
 ## Commands and exit codes
 
-Log paths are under `/home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/`. Each EXIT value is the last line of that log.
+Log paths are under `/home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/`. Every EXIT value below is the last line of its log, except 3205-patch-ops.log, where the first line is the reverse apply and the second is the re-apply.
+
 | Command | Log | EXIT |
 |---|---|---|
 | `{ cmake --build build --target zene SessionTuningTest; echo EXIT=$?; } > /home/kruzzzzy/.config/kads/zene/state/runs/3205.r1/logs/3205-build-green.log 2>&1` | 3205-build-green.log | 0 |
