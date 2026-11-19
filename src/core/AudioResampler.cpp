@@ -43,7 +43,25 @@ namespace {
 std::atomic<int> s_allocationsBeforeFailure{0};
 std::atomic<int> s_failuresToInject{0};
 std::atomic<std::uint64_t> s_realtimeConverterAllocations{0};
+std::atomic<std::uint64_t> s_realtimeConverterDeletions{0};
+#endif
 
+//! Drops one converter state. Every pool and resampler release goes through
+//! here so the test counter sees the whole render path; outside LMMS_TESTING
+//! this is a plain src_delete with no count, allocation, lock or log.
+void deleteConverterState(SRC_STATE* state) noexcept
+{
+	if (state == nullptr) { return; }
+#ifdef LMMS_TESTING
+	if (RealtimeScope::isActive())
+	{
+		s_realtimeConverterDeletions.fetch_add(1, std::memory_order_relaxed);
+	}
+#endif
+	src_delete(state);
+}
+
+#ifdef LMMS_TESTING
 bool converterAllocationMustFailForTest() noexcept
 {
 	if (s_allocationsBeforeFailure.load(std::memory_order_relaxed) > 0)
@@ -255,7 +273,7 @@ public:
 		if (!slot.hasPrepared) { return; }
 		if (slot.prepared != nullptr)
 		{
-			src_delete(slot.state);
+			deleteConverterState(slot.state);
 			slot.state = slot.prepared;
 			slot.prepared = nullptr;
 		}
@@ -307,14 +325,14 @@ private:
 			slot.mode = mode;
 		}
 		if (initialized == chunk->items.size()) { return chunk; }
-		for (std::size_t i = 0; i < initialized; ++i) { src_delete(chunk->items[i].state); }
+		for (std::size_t i = 0; i < initialized; ++i) { deleteConverterState(chunk->items[i].state); }
 		delete chunk;
 		return nullptr;
 	}
 
 	static void discard(Slot& slot) noexcept
 	{
-		if (slot.prepared != nullptr) { src_delete(slot.prepared); }
+		if (slot.prepared != nullptr) { deleteConverterState(slot.prepared); }
 		slot.prepared = nullptr;
 		slot.hasPrepared = false;
 	}
@@ -326,8 +344,8 @@ private:
 			Chunk* const next = chunk->next;
 			for (Slot& slot : chunk->items)
 			{
-				if (slot.prepared != nullptr) { src_delete(slot.prepared); }
-				if (slot.state != nullptr) { src_delete(slot.state); }
+				if (slot.prepared != nullptr) { deleteConverterState(slot.prepared); }
+				if (slot.state != nullptr) { deleteConverterState(slot.state); }
 			}
 			delete chunk;
 			chunk = next;
@@ -616,6 +634,16 @@ void AudioResampler::resetRealtimeConverterAllocationsForTest() noexcept
 	s_realtimeConverterAllocations.store(0, std::memory_order_relaxed);
 }
 
+auto AudioResampler::realtimeConverterDeletionsForTest() noexcept -> std::uint64_t
+{
+	return s_realtimeConverterDeletions.load(std::memory_order_relaxed);
+}
+
+void AudioResampler::resetRealtimeConverterDeletionsForTest() noexcept
+{
+	s_realtimeConverterDeletions.store(0, std::memory_order_relaxed);
+}
+
 auto AudioResampler::realtimeVoiceConverterCapacityForTest() noexcept -> std::size_t
 {
 	return realtimeVoiceConverterPool().capacity();
@@ -625,7 +653,7 @@ auto AudioResampler::freeRealtimeVoiceConvertersForTest() noexcept -> std::size_
 {
 	return realtimeVoiceConverterPool().freeSlots();
 }
-#endif
+#endif // LMMS_TESTING
 
 auto AudioResampler::modeForSrcQuality(SrcQuality quality) noexcept -> Mode
 {
@@ -649,7 +677,7 @@ auto AudioResampler::modeForCurrentSrcQuality() noexcept -> Mode
 
 void AudioResampler::StateDeleter::operator()(void* state)
 {
-	src_delete(static_cast<SRC_STATE*>(state));
+	deleteConverterState(static_cast<SRC_STATE*>(state));
 }
 
 } // namespace lmms

@@ -205,6 +205,7 @@ auto referenceBlock(InstrumentTrack& track, PatmanInstrument& instrument, f_cnt_
 class PatmanLoadTest : public QObject
 {
 	Q_OBJECT
+
 private slots:
 	void initTestCase()
 	{
@@ -221,6 +222,8 @@ private slots:
 	void patmanPatchLoadWaitsForTheRenderPeriodToReleaseTheModel();
 
 	void qualityChangeKeepsHeldPatmanSlotsAtTheNewMode();
+
+	void lazyRenderPathConversionIsDetected();
 
 	void rejectsHugeTruncatedSampleWithoutAllocating()
 	{
@@ -272,16 +275,19 @@ private slots:
 			Note(TimePos(), TimePos(), 60, 100));
 		std::vector<SampleFrame> output(static_cast<std::size_t>(frames));
 		AudioResampler::resetRealtimeConverterAllocationsForTest();
+		AudioResampler::resetRealtimeConverterDeletionsForTest();
 		{
 			const RealtimeScope realtime;
 			instrument.playNote(note, output);
 		}
 		const auto realtimeAllocations = AudioResampler::realtimeConverterAllocationsForTest();
+		const auto realtimeDeletions = AudioResampler::realtimeConverterDeletionsForTest();
 		instrument.deleteNotePluginData(note);
 		note->m_pluginData = nullptr;
 		NotePlayHandleManager::release(note);
 		QVERIFY(ExportRenderSettings::setSrcQuality(SrcQuality::Linear));
 		QCOMPARE(realtimeAllocations, std::uint64_t{0});
+		QCOMPARE(realtimeDeletions, std::uint64_t{0});
 	}
 
 	void overPolyphonyKeepsEverySincBestBlockAudible();
@@ -410,11 +416,13 @@ void PatmanLoadTest::qualityChangeKeepsHeldPatmanSlotsAtTheNewMode()
 		QCOMPARE(ExportRenderSettings::srcQuality(), target);
 
 		AudioResampler::resetRealtimeConverterAllocationsForTest();
+		AudioResampler::resetRealtimeConverterDeletionsForTest();
 		{
 			const RealtimeScope realtime;
 			for (NotePlayHandle* const note : notes) { renderBlock(*instrument, note, block); }
 		}
 		QCOMPARE(AudioResampler::realtimeConverterAllocationsForTest(), std::uint64_t{0});
+		QCOMPARE(AudioResampler::realtimeConverterDeletionsForTest(), std::uint64_t{0});
 
 		for (NotePlayHandle* const note : notes)
 		{
@@ -445,6 +453,70 @@ void PatmanLoadTest::qualityChangeKeepsHeldPatmanSlotsAtTheNewMode()
 		QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), baseline);
 	}
 
+	QVERIFY(switchQuality(SrcQuality::Linear));
+}
+
+//! T4: the review's lazy-conversion scenario. Three real notes hold their pool
+//! slots across a quality switch; every note's own PlaybackState already says
+//! the new quality, and the render that follows creates and deletes nothing.
+void PatmanLoadTest::lazyRenderPathConversionIsDetected()
+{
+	QTemporaryDir directory;
+	QVERIFY(directory.isValid());
+	const QString patchPath = directory.filePath(QStringLiteral("lazy.pat"));
+	QVERIFY(writePatch(patchPath, 4096));
+
+	InstrumentTrack track{Engine::getSong()};
+	auto* const instrument = new PatmanInstrument(&track);
+	track.setInstrumentForTest(instrument); // the engine routes note hooks through track->instrument()
+	instrument->loadFile(patchPath);
+	QVERIFY(!instrument->nodeName().isEmpty());
+
+	AudioEngine* const engine = Engine::audioEngine();
+	QVERIFY(engine != nullptr);
+	QVERIFY(switchQuality(SrcQuality::Linear));
+	const f_cnt_t frames = engine->framesPerPeriod();
+	std::vector<NotePlayHandle*> notes;
+	std::vector<SampleFrame> block(static_cast<std::size_t>(frames));
+	for (std::size_t i = 0; i < 3; ++i)
+	{
+		NotePlayHandle* const note = acquireNote(track, frames * 8);
+		renderBlock(*instrument, note, block); QVERIFY(engine->addPlayHandle(note)); // creates the slot, hook-reachable
+		notes.push_back(note);
+	}
+	QVERIFY(switchQuality(SrcQuality::SincBest)); const auto expectedMode = AudioResampler::modeForSrcQuality(SrcQuality::SincBest);
+
+	// The switch reached the states the notes already hold: this render must
+	// not discover an old converter and replace it. The mode is checked after
+	// the counted render so a lazy conversion that fixes the mode is still
+	// caught by the creation/deletion counters.
+	const auto countedRender = [&](NotePlayHandle* const note) {
+		AudioResampler::resetRealtimeConverterAllocationsForTest();
+		AudioResampler::resetRealtimeConverterDeletionsForTest();
+		const RealtimeScope realtime;
+		renderBlock(*instrument, note, block);
+	};
+	for (NotePlayHandle* const note : notes) { countedRender(note); }
+	QCOMPARE(AudioResampler::realtimeConverterAllocationsForTest(), std::uint64_t{0});
+	QCOMPARE(AudioResampler::realtimeConverterDeletionsForTest(), std::uint64_t{0});
+	for (NotePlayHandle* const note : notes)
+	{
+		auto* const handle = static_cast<PatmanInstrument::handle_data*>(note->m_pluginData);
+		QVERIFY(handle != nullptr && handle->state != nullptr);
+		QCOMPARE(handle->state->converterMode(), expectedMode);
+	}
+
+	// A state the engine has prepared but not adopted yet must stay pending
+	// through the render: the render path itself must never swap converters.
+	const auto pendingMode = AudioResampler::modeForSrcQuality(SrcQuality::SincMedium); QVERIFY(instrument->prepareConverterModeForNote(notes.front(), pendingMode));
+	countedRender(notes.front());
+	QCOMPARE(AudioResampler::realtimeConverterDeletionsForTest(), std::uint64_t{0});
+	QCOMPARE(AudioResampler::realtimeConverterAllocationsForTest(), std::uint64_t{0});
+
+	for (NotePlayHandle* const note : notes)
+	{
+		instrument->deleteNotePluginData(note); note->m_pluginData = nullptr; engine->removePlayHandle(note);
+	}
 	QVERIFY(switchQuality(SrcQuality::Linear));
 }
 
@@ -516,6 +588,33 @@ void PatmanLoadTest::overPolyphonyKeepsEverySincBestBlockAudible()
 	const std::vector<SampleFrame> linearReference = referenceBlock(track, instrument, frames);
 	QVERIFY(hasAudio(linearReference));
 	QVERIFY(!blocksMatch(sincBestReference, linearReference));
+
+	// A held note must follow the switch without converting during render. These
+	// notes are reachable by the engine hook, so the switch itself has to move
+	// their converter; a render that lazily converts would allocate and free.
+	{
+		const std::size_t heldBaseline = AudioResampler::freeRealtimeVoiceConvertersForTest();
+		std::vector<NotePlayHandle*> held;
+		for (std::size_t i = 0; i < 3; ++i)
+		{
+			NotePlayHandle* const note = acquireNote(track, frames * 8);
+			renderBlock(instrument, note, block);
+			QVERIFY(engine->addPlayHandle(note));
+			held.push_back(note);
+		}
+		QVERIFY(switchQuality(SrcQuality::SincBest));
+		AudioResampler::resetRealtimeConverterAllocationsForTest();
+		AudioResampler::resetRealtimeConverterDeletionsForTest();
+		const RealtimeScope realtime;
+		for (NotePlayHandle* const note : held) { renderBlock(instrument, note, block); }
+		QCOMPARE(AudioResampler::realtimeConverterAllocationsForTest(), std::uint64_t{0});
+		QCOMPARE(AudioResampler::realtimeConverterDeletionsForTest(), std::uint64_t{0});
+		for (NotePlayHandle* const note : held)
+		{
+			instrument.deleteNotePluginData(note); note->m_pluginData = nullptr; engine->removePlayHandle(note);
+		}
+		QVERIFY(switchQuality(SrcQuality::Linear)); QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), heldBaseline);
+	}
 
 	for (NotePlayHandle* const note : notes)
 	{

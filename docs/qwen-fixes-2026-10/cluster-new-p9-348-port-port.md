@@ -4,15 +4,49 @@ ALREADY-FIXED
 
 The reported defect (a quality change leaving held Patman notes on the old
 resampler mode, and over-polyphony SincBest notes losing their converter) is
-already fixed on `HEAD`. This cluster adds regression tests that pin the
-existing behaviour; no product file changes in this branch.
+already fixed on `HEAD`. This cluster adds regression tests and a
+`LMMS_TESTING`-only deletion counter beside the existing creation counter. No
+product behaviour changes: outside `LMMS_TESTING` every converter release is the
+same plain `src_delete` as before.
 
 ## The r8 commit is not in this history
 
-    git merge-base --is-ancestor cb06a9fbc3 HEAD   # exit 1
+    git merge-base --is-ancestor cb06a9fbc3 HEAD   # EXIT=1
 
 `cb06a9fbc3` (r8) is **not** an ancestor of `HEAD`. The fix is present as the
-current product code, not as a cherry-pick of that commit.
+current product code, not as a cherry-pick of that commit. The r8 review's cited
+lines therefore belong to a lineage that is absent here: on this `HEAD`,
+`plugins/Patman/Patman.cpp:618-677` is `PatmanView::openFile()` (GUI file
+dialog), not the slot-pool code the review describes.
+
+## Round 11: audit result and p1 caller table
+
+The read-only audit (`logs/001-audit.md`) found no render-path caller that
+creates, frees or switches a converter. Verdict: **no real render-path defect**
+in this lineage; the report's cited `HEAD` lines are still accurate.
+
+| Site | What it is | Can it run on the render path? |
+| --- | --- | --- |
+| `include/Sample.h:67` | `PlaybackState::setConverterMode()` inline -> `m_resampler.setMode()` | Definition only; reachable only from SlicerT. No direct render-path call. |
+| `plugins/SlicerT/SlicerT.cpp:126` | `SlicerT::applyConverterMode()` calls `slot.state.setConverterMode(mode)` | No: `applyConverterMode` has zero call sites in `src plugins include`; `playNoteImpl` makes no converter call. |
+| `src/core/AudioResampler.cpp:511` | `AudioResampler::setMode()` -> `trySetMode()` | No render-path caller; `Sample::play` never calls it. |
+| `src/core/AudioResampler.cpp:530` | `AudioResampler::trySetMode()` definition | Called only by `setMode()`. No render-path caller. |
+| `include/AudioResampler.h:151,155` | declarations of `setMode`/`trySetMode` | Declarations; no caller. |
+
+The only `setConverterMode` call site (`SlicerT.cpp:126`) is unreachable dead
+virtual code today. The render-path play functions (`Sample::play`,
+`PatmanInstrument::playNoteImpl`, `AudioFileProcessor::playNoteImpl`,
+`SlicerT::playNoteImpl`) contain no converter create/free/switch.
+
+## The deletion-counter hook and what it covers
+
+`src/core/AudioResampler.cpp` routes every converter release through
+`deleteConverterState()`: the pool's `adoptSlot()` replacement, the chunk build
+failure path, `discard()`, the pool destructor, and `AudioResampler::
+StateDeleter`. The helper increments `s_realtimeConverterDeletions` only under
+`LMMS_TESTING` and only while `RealtimeScope` is active; otherwise it is a plain
+`src_delete` with no count, allocation, lock or log. The matching seams are
+declared under `#ifdef LMMS_TESTING` in `include/AudioResampler.h`.
 
 ## Evidence that the fix is already in the product
 
@@ -51,54 +85,70 @@ current product code, not as a cherry-pick of that commit.
 
 `tests/src/plugins/PatmanLoadTest.cpp` adds:
 
-- `qualityChangeKeepsHeldPatmanSlotsAtTheNewMode()` -- holds three real Patman
-  notes through `AudioEngine::applyConverterModeToRetainedStates()`, releases
-  and reacquires them, and asserts each reacquired slot reports the requested
-  `SrcQuality` mode.
-- `overPolyphonyKeepsEverySincBestBlockAudible()` -- renders 200 notes plus 32
-  notes beyond the nominal polyphony under `RealtimeScope`, and asserts every
-  SincBest block is audible and matches the SincBest oracle.
-- `sincBestReferenceDiffersFromLinearReference()` -- proves the oracle is a
+- `qualityChangeKeepsHeldPatmanSlotsAtTheNewMode()` (T1) -- holds three real
+  Patman notes through `AudioEngine::applyConverterModeToRetainedStates()`,
+  releases and reacquires them, and asserts each reacquired slot reports the
+  requested `SrcQuality` mode. Strengthened in r11: the counted render must also
+  delete zero converters.
+- `lazyRenderPathConversionIsDetected()` (T4) -- holds three real notes across a
+  quality switch, reads each note's own `Sample::PlaybackState` through
+  `PatmanInstrument::handle_data` (not a layout mirror), asserts every note
+  already reports the new mode before rendering, and asserts the following
+  `RealtimeScope` render creates and deletes zero converters. It also keeps a
+  prepared-but-not-adopted state pending through a render.
+- `overPolyphonyKeepsEverySincBestBlockAudible()` (T2) -- renders 200 notes plus
+  32 notes beyond the nominal polyphony under `RealtimeScope`, asserts every
+  SincBest block is audible and matches the SincBest oracle, and (r11) asserts
+  a held-note switch render creates and deletes zero converters.
+- `sincBestReferenceDiffersFromLinearReference()` (T3) -- proves the oracle is a
   real SincBest render, not the Linear fallback.
 
-`tests/upstream-modifications.txt` records the new test coverage.
+`tests/upstream-modifications.txt` records the test coverage and the
+`LMMS_TESTING`-only counter/friend hooks.
 
-## Mutation checks
+## Mutation checks (r11 logs)
 
-Build command (from the repository root), run before each test invocation:
+Build before each test:
 
     cmake --build build --target zene PatmanLoadTest
 
-Test command (from `build/tests`), `-V --output-on-failure` so a RED mutation
-names the failing assertion:
+Test, from `build/tests`, `--output-on-failure` so a RED mutation names the
+failing assertion:
 
-    ctest -R PatmanLoadTest -V --output-on-failure
+    ctest -R PatmanLoadTest --output-on-failure
 
-The builds all ended `[100%] Built target PatmanLoadTest` (exit 0). RED test
-runs return CTest's failure status 8; the GREEN run returns 0. The stored logs
-are under `~/.config/kads/zene/state/runs/new-p9-348-port-port.r10/logs/`.
-T1 is `qualityChangeKeepsHeldPatmanSlotsAtTheNewMode()`, T2 is
-`overPolyphonyKeepsEverySincBestBlockAudible()`, T3 is
-`sincBestReferenceDiffersFromLinearReference()`.
+Every build below ended `EXIT=0`; every RED test run ended `EXIT=8` (CTest
+failure); the reverted tree ends `EXIT=0`. Logs are under
+`~/.config/kads/zene/state/runs/new-p9-348-port-port.r11/logs/`.
 
-| Mutation | Exact edit | RED log | RED exit | Observed failure |
+| Mutation | Exact edit | Build log / EXIT | RED log / EXIT | Observed failure |
 | --- | --- | --- | --- | --- |
-| M1 | `RealtimeVoiceConverterPool::adoptSlot` returns early | `005-test-m1.log` | 8 | T1 `reacquired.back().mode()` 1 != 4 (line 432); T2 `!blocksMatch(sincBestReference, linearReference)` false (line 512); T3 SincBest oracle indistinguishable from Linear (line 549) |
-| M2 | `acquire()` returns nullptr after 4 SincBest acquisitions | `007-test-m2.log` | 8 | T2 aborts with an unhandled `std::runtime_error` (`No prepared realtime voice converter is available`), not a QCOMPARE |
-| M3 | `PatmanInstrument::prepareConverterModeForNote` returns true without preparing | `009-test-m3.log` | 8 | T1 `reacquired.back().mode()` 1 != 4 (line 432) |
-| M4 | `referenceBlock` oracle forced to Linear | `011-test-m4.log` | 8 | T2 231 mismatched blocks vs 0 (line 508); T3 SincBest oracle indistinguishable from Linear (line 555) |
+| M1 | `RealtimeVoiceConverterPool::adoptSlot` returns early | `024-m1-build.log` / 0 | `025-m1-test.log` / 8 | T1 `reacquired.back().mode()` 1 != 4 (line 453); T4 `state->converterMode()` 1 != 4 (520); T2 `!blocksMatch(sincBestReference, linearReference)` false (604); T3 oracle indistinguishable from Linear (677) |
+| M2 | `acquire()` returns nullptr after 4 SincBest acquisitions | `026-m2-build.log` / 0 | `027-m2-test.log` / 8 | T2 aborts with an unhandled `std::runtime_error` (`No prepared realtime voice converter is available`), not a QCOMPARE |
+| M3 | `PatmanInstrument::prepareConverterModeForNote` returns true without preparing | `028-m3-build.log` / 0 | `029-m3-test.log` / 8 | T1 `reacquired.back().mode()` 1 != 4 (line 453); T4 `state->converterMode()` 1 != 4 (520) |
+| M4 | `referenceBlock` oracle forced to Linear | `030-m4-build.log` / 0 | `031-m4-test.log` / 8 | T2 `!blocksMatch(sincBestReference, linearReference)` false (605); T3 oracle indistinguishable from Linear (678) |
+| M5 | the note's prepared-mode adoption is skipped, so the render path lazily converts | `032-m5-build.log` / 0 | `033-m5-test.log` / 8 | T1 realtime allocations 3 != 0 (431); T4 realtime allocations 3 != 0 (514); T2 realtime allocations 3 != 0 (627) |
 
-M1 and M3 were re-run after T1's play handles were released: `033-test-m1.log`
-and `035-test-m3.log` both end `EXIT=8` with T1 failing, and the restored tree
-ends `EXIT=0` in `037-test-final.log`.
+The stale line numbers in the older table are replaced above by the values in
+the r11 logs (the test file grew again when T4 was added). After each mutation
+the edit was reverted and the same build/test pair was rerun: restored build
+`034-final-build.log` `EXIT=0`, restored test `035-final-test.log` `EXIT=0`
+(`100% tests passed out of 1`). The strengthened suite after the counter and T4
+were added: `022-strengthened-build.log` `EXIT=0`,
+`023-strengthened-test.log` `EXIT=0`.
 
-GREEN after reverting all four mutations:
+## Six focused ctest runs
 
-    cmake --build build --target zene PatmanLoadTest   # 012-build-final.log, exit 0
-    ctest -R PatmanLoadTest -V --output-on-failure     # 013-test-final.log, exit 0
+From `build/tests`:
 
-Re-run at commit time: `ctest -R PatmanLoadTest --output-on-failure` from
-`build/tests` -> exit 0, `100% tests passed out of 1`.
+    ctest -R 'AudioResamplerPoolMemoryTest|ControlDeviceCatalogueTest|PatmanLoadTest|AudioPluginTest|RtSafetySweep|RtSafetySelfTest' --output-on-failure
+
+`AudioResamplerPoolMemoryTest`, `ControlDeviceCatalogueTest`, `PatmanLoadTest`,
+`AudioPluginTest`, `RtSafetySweep`, and `RtSafetySelfTest` all pass:
+`100% tests passed out of 6`, **EXIT=0**. Log:
+`.../new-p9-348-port-port.r11/duet/14-worker/tmp/002-r11-six-focused.log`.
+The p1 baseline run of the same six is `.../duet/02-worker/tmp/003-p1-test-baseline.log`
+(also EXIT=0).
 
 ## feature_check
 
@@ -118,6 +168,21 @@ Re-run at commit time: `ctest -R PatmanLoadTest --output-on-failure` from
 
 `RESULT: PASS`.
 
+## submit_check
+
+    python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <repo> new-p9-348-port-port
+    # 021-submit-check.log, rerun after the commit
+
+| Item | Result |
+| --- | --- |
+| commits on the branch | PASS |
+| working tree clean | PASS (after the commit) |
+| report | PASS |
+| tests added or changed | PASS (claim-only closure: independent QA must verify the cited code/contract) |
+| gates (feature_check.py) | PASS (all eight gates) |
+
+`RESULT: PASS`; the five `?` items are answered in `## Self-check`.
+
 ## Thread safety
 
 TSan is not available in this environment. The argument is from the design and
@@ -129,34 +194,45 @@ windows.
 
 ## Self-check
 
-- [x] `cb06a9fbc3` is not an ancestor of `HEAD` (`git merge-base` exit 1).
-- [x] Evidence cites the exact product lines for prepare/adopt (a) and the
-      reserved render capacity (b).
-- [x] All four mutations are RED and the reverted tree is GREEN.
+- [x] `cb06a9fbc3` is not an ancestor of `HEAD` (`git merge-base` EXIT=1).
+- [x] The r11 audit found no render-path caller that creates, frees or switches
+      a converter; the only `setConverterMode` site is dead SlicerT code.
+- [x] The deletion counter is `LMMS_TESTING`-only and wraps every pool/resampler
+      release; non-testing releases stay plain `src_delete`.
+- [x] T1/T2 assert zero creations and zero deletions; T4 checks each held note's
+      real `PlaybackState` mode and the counted render.
+- [x] All five mutations are RED and the reverted tree is GREEN.
 - [x] `feature_check.py` has no new FAIL (`RESULT: PASS`, EXIT=0).
-- [x] No product file changed; the tests pin existing behaviour.
-- [x] New test functions stay within CCN <= 10 (complexity gate: no new item).
+- [x] No product behaviour changed; only the `LMMS_TESTING`-only counter and
+      friend hooks were added.
+- [x] New test functions stay within CCN <= 10 and the file is at or below 500
+      code lines (both gates: no new item).
 - [x] `submit_check.py` has no FAIL and every `?` item is answered.
 
 ### Answers to the pre-submit questions
 
-1. **RED with the fix reverted, GREEN with it (exit codes).** M1-M4 each fail
-   `PatmanLoadTest` (CTest exit 8; `005`, `007`, `009`, `011`). Reverting the
-   mutations builds cleanly (exit 0) and the test passes (exit 0; `012`, `013`).
+1. **RED with the fix reverted, GREEN with it (exit codes).** M1-M5 each fail
+   `PatmanLoadTest` (CTest EXIT=8; `025`, `027`, `029`, `031`, `033`); each
+   mutation build is EXIT=0. Reverting the mutations builds cleanly
+   (`034`, EXIT=0) and the test passes (`035`, EXIT=0, 100% of 1).
 2. **Deterministic.** There are no sleeps or wall-clock deadlines. The load test
    uses the `AudioEngine::modelChangeWaiters()` event seam; playback tests use
    `RealtimeScope`, `framesPerPeriod()`, real `NotePlayHandle` objects, and
    bit-for-bit block comparison against a separately rendered SincBest oracle.
+   The deletion/creation counters are atomic and reset immediately before the
+   counted render.
 3. **Cause and complete.** The only caller of
-   `applyConverterModeToRetainedStates()` is
-   `AudioEngine::setSrcQuality()` (`AudioEngine.cpp:409`); it drives the prepare/
-   adopt/discard hooks at `AudioEngine.cpp:388-393`, and the `Instrument`
-   defaults (`include/Instrument.h:143-150`) keep every other instrument
-   consistent. Patman is the only override (`Patman.h:66-68`).
-4. **No collateral damage.** No product file or persistence format changed.
-   Saved projects load through the unchanged file readers, and the tests add no
-   new product limit: they use a temporary GF1 patch and the existing test seams
-   only.
+   `applyConverterModeToRetainedStates()` is `AudioEngine::setSrcQuality()`
+   (`AudioEngine.cpp:409`); it drives the prepare/adopt/discard hooks at
+   `AudioEngine.cpp:388-393`, and the `Instrument` defaults
+   (`include/Instrument.h:143-150`) keep every other instrument consistent.
+   Patman is the only override (`Patman.h:66-68`). The p1 table shows no
+   render-path converter setter.
+4. **No collateral damage.** No product file or persistence format changed. The
+   deletion hook has no effect outside `LMMS_TESTING`: it calls plain
+   `src_delete` and adds no allocation, free, lock or log. Saved projects load
+   through the unchanged readers, and the tests use a temporary GF1 patch and
+   the existing test seams only.
 5. **ALREADY-FIXED evidence.** `src/core/AudioEngine.cpp:298-320` prepares every
    retained state, `plugins/Patman/Patman.cpp:247-267` forwards prepare/adopt/
    discard to held Patman notes, and `src/core/AudioResampler.cpp:219-264`
@@ -166,11 +242,14 @@ windows.
 
 ## Other findings
 
-- The `005`/`007`/`009`/`011` logs predate this report and did not store
-  per-command exit codes; their RED values are CTest's failure status (8).
-  After T1 gained handle cleanup, M1 and M3 were re-run with explicit `EXIT`
-  capture (`033`, `035`: `EXIT=8`) and the restored tree was re-run
-  (`037`: `EXIT=0`).
+- `PatmanRealtimeTest` does not exist in this design: `ctest -N | rg
+  PatmanRealtime` has no match (exit 1). The relevant suite is `PatmanLoadTest`.
+- A four-slot SincBest capacity does not exist in this design. The realtime pool
+  is the whole global capacity (thousands of slots); T2 bounds the audited case
+  at 200 voices plus 32 beyond nominal polyphony because exceeding the global
+  pool is not a polyphony scenario.
+- The review's cited lines belong to the absent r8 lineage (see the top of this
+  report). On this `HEAD` those lines are `PatmanView::openFile()`.
 - No product defect was found outside the packet. The over-polyphony path
   intentionally throws when the reserved pool is exhausted rather than
   allocating on the audio thread.

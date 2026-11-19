@@ -38,6 +38,10 @@ class AudioPluginTest;
 namespace lmms
 {
 
+#ifdef LMMS_TESTING
+class PatmanLoadTest;
+#endif
+
 namespace gui
 {
 class PixmapButton;
@@ -126,6 +130,7 @@ private:
 	friend class gui::PatmanView;
 #ifdef LMMS_TESTING
 	friend class ::AudioPluginTest;
+	friend class ::lmms::PatmanLoadTest;
 #endif
 
 signals:
