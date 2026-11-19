@@ -13,13 +13,13 @@ Fix commits on `bugs/qwen-5010`: `876b219d5a` (fix) and `70f70f34f0` (style). Th
 
 ## b) Sibling paths
 
-- `readChunk` (`src/core/ControlServer.cpp:288`) returns `false` once `buffer.size() > MaxRequestLineBytes` (1 MiB, `include/ControlServer.h:83`). It was already bounded and is not changed.
+- `readChunk` (`src/core/ControlServer.cpp:281`; its bound is the return at `:288`) returns `false` once `buffer.size() > MaxRequestLineBytes` (1 MiB, `include/ControlServer.h:83`). It was already bounded and is not changed.
 - Windows: the drain runs in a per-pipe thread in `src/core/ControlServerWin32.cpp` (the plan's range :472-531; the `draining` flag is at :513 and the drain branch at :524-534). It is a separate code path, so this fix does not change it.
-- Idle deadline: unchanged. The `deadline` grep over the two fix commits' diff of `src/core/ControlServer.cpp` returns no lines.
+- Idle deadline: unchanged. `git diff fa4a5f2e78 HEAD -- src/core/ControlServer.cpp | rg -c deadline` has no match (saved as `logs/fix2.patch`, grep in `logs/deadline-count.log` EXIT=1).
 
 ## c) Test matrix
 
-The test file `tests/src/core/ControlServerDrainTest.cpp` has one test function, `drainIsBoundedPerActivation` (line 131).
+The test file `tests/src/core/ControlServerDrainTest.cpp` has one test function, `drainIsBoundedPerActivation` (declared at line 131, defined at line 134).
 
 | Path | Covered |
 |---|---|
@@ -38,21 +38,31 @@ The test file `tests/src/core/ControlServerDrainTest.cpp` has one test function,
 
 ## e) Commands and EXIT codes (copied from the logs)
 
-- build-1: `logs/build-1.log`. No EXIT line in the log.
-- test-1: `logs/test-1.log`. No EXIT line in the log.
+- build-1: `logs/build-1.log`. No EXIT line in the log; not re-run.
+- test-1: `logs/test-1.log`. No EXIT line in the log; not re-run.
 - build-2: `logs/build-2.log` EXIT=0. An earlier attempt, `logs/build-2-attempt1.log`, has EXIT=2.
 - test-2-red: `logs/test-2-red.log` EXIT=8 (expected failure on the unfixed code).
-- build-3: `logs/001-build-3.log`, `logs/002-build-3.log`. No EXIT line in either log.
-- test-3 green: `logs/003-test-3-green.log`. No EXIT line in the log. `logs/004-test-3-green-short.log` EXIT=0.
+- build-3: `logs/001-build-3.log`, `logs/002-build-3.log`. No EXIT line in either log; not re-run.
+- test-3 green: `logs/003-test-3-green.log`. No EXIT line in the log; not re-run. `logs/004-test-3-green-short.log` EXIT=0.
 - test-3 family: `logs/005-test-3-family.log` EXIT=0.
 - test-3 control-all: `logs/006-test-3-control-all.log` EXIT=8 (see Other findings).
-- build-3b: `logs/build-3b.log`. No EXIT line in the log.
-- p4 (fix.patch, reverse, RED, reapply, GREEN): `logs/test-4-baseline.log`, `logs/test-4-red.log`, `logs/test-4-withfix.log`, `logs/test-4-green.log`. None has an EXIT line. No separate reverse or reapply log was found by name. `logs/fix.patch` is present.
-- gates: `logs/gates-first-run-FAIL.log` EXIT=1 and `logs/gates.log` EXIT=0. These codes were echoed by the command in the session; the logs themselves contain `RESULT: FAIL` and `RESULT: PASS`.
+- build-3b: `logs/build-3b.log`. No EXIT line in the log; not re-run.
+- Final HEAD (`c64d452b18`), re-run for this report:
+  - build: `logs/build-5.log` EXIT=0 (`cmake --build build --target zene ControlServerDrainTest ControlShutdownHookTest`).
+  - GREEN: `logs/test-5-green.log` EXIT=0, `100% tests passed out of 1` (`ctest -R ControlServerDrain`).
+  - family: `logs/test-5-family.log` EXIT=0, `100% tests passed out of 6` (run with `TMPDIR=/tmp/z5010`).
+  - p4 redo, with the .cpp-only patch `logs/fix2.patch` (`git diff fa4a5f2e78 HEAD -- src/core/ControlServer.cpp`):
+    - reverse: `logs/fix2-reverse.log` EXIT=0; build `logs/build-5a.log` EXIT=0.
+    - RED: `logs/test-5-red.log` EXIT=8. Line 8 is round 0 with 8228544 consumed; line 9 is the FAIL on `consumed`.
+    - reapply: `logs/fix2-reapply.log` EXIT=0; build `logs/build-5b.log` EXIT=0.
+    - GREEN: `logs/test-5-green2.log` EXIT=0, `100% tests passed out of 1`. The consumed lines are 21-24 (65536 each) and PASS is line 25.
+    - Tree after the redo: `logs/status-5.log` and `logs/diff-head-5.log` each have EXIT=0 and no output.
+  - The old p4 logs `logs/test-4-baseline.log`, `logs/test-4-red.log`, `logs/test-4-withfix.log`, `logs/test-4-green.log` have no EXIT line. They are superseded by the `test-5-*` logs above. `logs/test-4-red.log:8-10` shows the same RED numbers. `logs/fix.patch` is present.
+- gates: `logs/gates-first-run-FAIL.log` and `logs/gates.log` have `RESULT: FAIL` and `RESULT: PASS` lines but no EXIT line. The EXIT=1 and EXIT=0 values were echoed in the session and are not in either log. They were not re-run here.
 
 ## f) Control command canary
 
-No control command was added. The files changed since the base `fa4a5f2e78` are `include/ControlServer.h`, `src/core/ControlServer.cpp`, `tests/CMakeLists.txt`, `tests/fork-sources.txt`, and `tests/src/core/ControlServerDrainTest.cpp`. No command registration file is in that list. The feature gate table has no `ControlCommandsSnapshot` row, and I did not run that test. The canary's status is therefore not shown by any gate run here.
+No control command was added. The files changed since the base `fa4a5f2e78` (`git diff --stat fa4a5f2e78 HEAD`) are `include/ControlServer.h`, `src/core/ControlServer.cpp`, `tests/CMakeLists.txt`, `tests/all-sources.txt`, `tests/fork-sources.txt`, `tests/src/core/ControlServerDrainTest.cpp`, and this report. No command registration file is in that list. The canary is the test `ControlCommandsSnapshot` (ctest #934, listed by `ctest -N` in `logs/canary-list.log`). It passed: `logs/test-5-canary.log` EXIT=0, `100% tests passed out of 1`; its output says the committed snapshot and this binary register the same 933 command ids. It is not a row in the gate table, so no gate run shows it.
 
 ## g) Limits
 
