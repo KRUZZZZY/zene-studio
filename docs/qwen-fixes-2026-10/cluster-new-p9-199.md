@@ -51,11 +51,43 @@ Revert state, checked in this run: `git diff --quiet HEAD -- src/tracks/Instrume
 
 ## Registration
 
-Registration of this report in `tests/fork-sources.txt` is not decided here. It is deferred to the feature_check result.
+The fork-sources gate passed with this doc unregistered, so no entry was added to `tests/fork-sources.txt`.
 
 ## Other findings
 
 - Layer copies and the parent's chord (design question). `src/tracks/InstrumentTrackNotes.cpp:297` calls `InstrumentLayers::playNote` (`src/core/InstrumentLayers.cpp:471-483`) before `addPlayHandle` at line 298. Each layer track gets a copy acquired without a parent (`InstrumentLayers.cpp:479`), so the copy is not a chord sub-note of the parent, and the parent's chord stacking is not applied to it on this path. That copy plays a different instrument by design (MX-112), so it is not a doubled root. Whether layers should inherit the parent's chord is an undocumented product decision; this report does not settle it.
+
+## Gates
+
+Run 1: `feature_check.py` on `kads-new-p9-199`, log `gates-1.log`. The log has no exit-code line. The exit code `EXIT=0` comes from the command output of that run; it was not re-run for this report.
+
+```
+feature-check kads-new-p9-199 (base fa4a5f2e7, 1 changed files; logs in /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p9-199/build/feature-check)
+  PASS  fork-sources            exit 0
+  PASS  all-sources-reproduce   exit 0
+  PASS  no-upstream-regression  exit 0
+  PASS  check-namespace         exit 0
+  PASS  no-tautology            exit 0
+  PASS  doc-figures             exit 0
+  PASS  complexity              no new item in your files
+  PASS  file-length             no new item in your files
+RESULT: PASS
+```
+
+Run 2 (final result): `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p9-199 > .../logs/gates-2.log 2>&1; echo EXIT=$?` gave `EXIT=0`. The table below is from `gates-2.log`.
+
+```
+feature-check kads-new-p9-199 (base fa4a5f2e7, 2 changed files; logs in /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p9-199/build/feature-check)
+  PASS  fork-sources            exit 0
+  PASS  all-sources-reproduce   exit 0
+  PASS  no-upstream-regression  exit 0
+  PASS  check-namespace         exit 0
+  PASS  no-tautology            exit 0
+  PASS  doc-figures             exit 0
+  PASS  complexity              no new item in your files
+  PASS  file-length             no new item in your files
+RESULT: PASS
+```
 
 ## Self-check
 
