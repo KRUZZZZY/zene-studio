@@ -52,7 +52,7 @@ Exit codes are copied from the logs where the log records one. Where the log has
 - `tests/CMakeLists.txt` registers `src/core/AudioOssDeviceConfigTest.cpp` in `LMMS_TESTS` under `IF(LMMS_HAVE_OSS)`. It sets `QT_QPA_PLATFORM=offscreen` for this test only.
 - `tests/fork-sources.txt` and `tests/all-sources.txt` list `tests/src/core/AudioOssDeviceConfigTest.cpp`.
 
-## (e) Self-check
+## Self-check
 
 1. Red and green. Red: `logs/test-1.log` (3 passed, 2 failed; `probeDevice = "/dev/dsp"`), with the reversed-fix run `logs/test-4-reversed.log` (EXIT=8 per p4). Green: `logs/test-2.log`, `logs/test-3.log`, `logs/test-5-restored.log`, and `logs/test-5-verbose.log` (all five pass). The final green run from the committed tree is `logs/test-6-final.log` with its EXIT in the final message.
 2. Deterministic. Each test uses its own `QTemporaryDir` (`tests/src/core/AudioOssDeviceConfigTest.cpp:134`, `:155`, `:180`). Saved values are injected through `ConfigManager::setValue`. `AUDIODEV` is saved at `:109-110`, cleared at `:140` and `:161`, and restored in cleanup at `:122-126`. The test has no sleeps and no timing dependence. `Engine::init(true)` at `:111` reaches `AudioEngine.cpp:795-796`, which builds `AudioDummy` when `m_renderOnly` is set; I did not re-read the code that sets `m_renderOnly` in this packet, so the no-device-I/O claim rests on the p2 record.
@@ -60,7 +60,7 @@ Exit codes are copied from the logs where the log records one. Where the log has
 4. No collateral damage. The only saved data is `audiooss`/`device`, written by `saveSettings` (`AudioOss.cpp:287`), and the fix makes the probe honour it. The `AUDIODEV` then `/dev/dsp` fallback is unchanged and is covered by `emptyKeyKeepsEnvironmentPrecedence` (`:178-188`). No limit was added. The product diff is one line.
 5. Verdict. The verdict is FIXED, backed by the reversed-fix red run and the restored green run. It is not a claim-only closure, so no code-reference verdict is needed.
 
-## (f) Other findings
+## Other findings
 
 - Fontconfig prints `No writable cache directories` (`/var/cache/fontconfig`, `~/.cache/fontconfig`, `~/.fontconfig`). This is a resource-lookup warning, not a test failure.
 - `QWARN: Error loading icon pixmap "lcd_19green": "File not found"` in `savedDeviceIsProbedOnNextStartup`. This is a resource-lookup warning, not a test failure.
