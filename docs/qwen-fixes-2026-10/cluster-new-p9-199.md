@@ -23,7 +23,7 @@ FIXED. A MIDI-driven instrument sounded the chord root twice: once from the pare
 
 - `tests/src/core/ArticulationPlaybackTest.cpp:227-236` (`isArticulatedMajorChord`): a group is one articulation-led chord only if it is `p7`, `c11=90`, `k25`, `k60` (the one source root), then exactly `k64` and `k67` in any order. Two root sounds fail this check.
 - `tests/src/core/ArticulationPlaybackTest.cpp:563-589`: `everyStackedArpeggioStepFollowsItsArticulation` and `aStackedChordFollowsItsArticulation` assert that the articulation comes before every key and that each step is sent once.
-- `tests/src/core/NoteCurvesAcrossTest.cpp:335`: `QCOMPARE(stackedKeys, QList<int>{NumKeys - 1})` requires the interval-0 child to exist for that source. It passed in p2 (see below), so the zero-interval child is still created on the note-handle path.
+- `tests/src/core/NoteCurvesAcrossTest.cpp:335`: `QCOMPARE(stackedKeys, QList<int>{NumKeys - 1})` requires the interval-0 child to exist for that source. `NoteCurvesAcrossTest.cpp:111` creates the track with `Track::create` and no instrument, so the assertion at `:335` proves that the no-instrument path keeps the interval-0 child. It passed in p2 (see below). Non-MIDI instruments take the same false branch: `isMidiBased()` is false, so the new `continue` does not apply to them. This is covered by the guard condition and by the unchanged NoteCurves run.
 
 ## Commands and results
 
@@ -39,6 +39,32 @@ Exit codes: the packet's p1-p4 record gives the exit codes below. The log files 
 - p4 gates: `n199-r3-04-gates.log`: `PASS fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity`; `RESULT: PASS`. Exit 0 (from the p4 record).
 - p4 test matrix: `n199-r3-04-matrix.md`.
 
+### Exact commands and exit codes
+
+These are the command lines executed, in order. `$LOGS` is the logs folder above. Exit codes are from the worker records, not from the logs. A `<...>` marks an argument the packet abbreviated; the full value is not recorded here, so it was not reconstructed. The p1-p4 build and test output was captured through quiet-run, which preserved the same exit codes (per the worker record).
+
+p1 (red, before the fix):
+1. `git show <rev> -- <test paths> > n199-r3-01-test-side.patch` (exit not recorded)
+2. `git apply <args> n199-r3-01-test-side.patch` (exit not recorded)
+3. `cmake --build build --target ArticulationPlaybackTest zene` (exit not recorded)
+4. `cd build/tests && ctest -R '^ArticulationPlaybackTest$' --output-on-failure` → exit 8
+
+p2 (green, with the fix, sibling suite):
+5. `cmake --build build --target zene ArticulationPlaybackTest NoteCurvesAcrossTest MpePlaybackTest NotePlaybackTest` (exit not recorded)
+6. `cd build/tests && ctest -R '<four-test regex>'` → exit 0
+
+p3 (fix reversed, then restored):
+7. `git diff -- src/core/InstrumentFunctions.cpp > $LOGS/fix.patch` (exit not recorded)
+8. `git apply -R $LOGS/fix.patch` (exit not recorded)
+9. The same build as step 3, then the same ctest as step 4 → exit 8 (build exit not recorded)
+10. `git apply $LOGS/fix.patch` (exit not recorded)
+11. The same build as step 3, then the same ctest as step 4 → exit 0 (build exit not recorded)
+12. `git diff <args as step 7> > $LOGS/fix-restored.patch` (exit not recorded)
+13. `cmp $LOGS/fix.patch $LOGS/fix-restored.patch` → exit 0
+
+p4:
+14. `python3 <path>/feature_check.py <args>` → exit 0 (path and args not recorded)
+
 ## Not verified
 
 - No audio rendering through a real plugin. The regression check counts events on a logging test instrument, not rendered audio.
@@ -50,6 +76,6 @@ Exit codes: the packet's p1-p4 record gives the exit codes below. The log files 
 
 1. **Regression red/green (the test fails with the change reverted and passes with it).** Red: p1 ArticulationPlaybackTest failed (`n199-r3-01-test-red.log`, Test #333, exit 8 per the p1 record). Reverted: p3 build and test failed again (`n199-r3-03-test-reverted.log`, Test #333, exit 8 per the p3 record). Green: p3 restored test passed (`n199-r3-03-test-restored.log`, Test #333, exit 0 per the p3 record). Sibling suite green 4/4 in p2 (`n199-r3-02-test-green.log`). The exit codes are not in the logs (no EXIT lines), so they are unverified from the logs; the test-status lines are verified.
 2. **Determinism / seam.** `ArticulationPlaybackTest.cpp` contains no `sleep`, `qWait`, `msleep`, `usleep`, `chrono`, `QElapsedTimer` or `QTime` (grep: 0 matches). The test accepts the two non-root voices in any order: `isArticulatedMajorChord` sorts them (`:234-235`), because the engine orders handles created in one period by its own rule. The injected seam is `MpeTestConsumer.cpp:169` (`Flag::IsMidiBased`), which routes the test through the guarded path without a real plugin. Not verified: the bodies of `play()` and `heard()` were not read, so engine-level frame determinism is not checked here.
-3. **Cause and sibling coverage.** Cause: the parent MIDI note-on is sent at `NotePlayHandle.cpp:325-329` before chord stacking at `InstrumentTrack.cpp:776`, so the interval-0 child re-sends the root. Call sites: a grep of `src` and `include` for `noteStacking.processNote` returns one line, `InstrumentTrack.cpp:776`. Siblings: the chord path (`aStackedChordFollowsItsArticulation`) and the arpeggio path (`everyStackedArpeggioStepFollowsItsArticulation`) are both in the green run. The note-handle path is covered by NoteCurvesAcrossTest (green in p2): its assertion at `NoteCurvesAcrossTest.cpp:335` needs the interval-0 child, and it passed, so the guard did not drop that child there. Not checked: the other `ChordTable` users (`ChordVocabulary.cpp`, `ControlCommandsChord.cpp`, `ControlCommandsScale.cpp`) read the table and were not traced further.
+3. **Cause and sibling coverage.** Cause: the parent MIDI note-on is sent at `NotePlayHandle.cpp:325-329` before chord stacking at `InstrumentTrack.cpp:776`, so the interval-0 child re-sends the root. Call sites: a grep of `src` and `include` for `noteStacking.processNote` returns one line, `InstrumentTrack.cpp:776`. Siblings: the chord path (`aStackedChordFollowsItsArticulation`) and the arpeggio path (`everyStackedArpeggioStepFollowsItsArticulation`) are both in the green run. The no-instrument path is covered by NoteCurvesAcrossTest (green in p2; the track is created with no instrument at `NoteCurvesAcrossTest.cpp:111`): its assertion at `NoteCurvesAcrossTest.cpp:335` needs the interval-0 child, and it passed, so that child is kept on that path. Not checked: the other `ChordTable` users (`ChordVocabulary.cpp`, `ControlCommandsChord.cpp`, `ControlCommandsScale.cpp`) read the table and were not traced further.
 4. **Collateral / persistence.** The guard changes behavior only when the track has a non-null, MIDI-based instrument. Note-handle and no-instrument tracks create the interval-0 child as before. No saved-data format, setting or limit is added. Loading of old projects was not run. `tests/upstream-modifications.txt` gains one line (diff: +1).
 5. **Verdict evidence.** The verdict is FIXED, so the ALREADY-FIXED / FALSE-POSITIVE clause does not apply. The verdict rests on the red/green pair (p1 red, p2 and p3 green), the cause references above, and the p4 gates log (`gates` `RESULT: PASS`, `n199-r3-04-gates.log`). The fix is the commit that contains this report, `src/core/InstrumentFunctions.cpp`, the two test files and `tests/upstream-modifications.txt`.
