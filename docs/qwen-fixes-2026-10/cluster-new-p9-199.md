@@ -74,7 +74,7 @@ feature-check kads-new-p9-199 (base fa4a5f2e7, 1 changed files; logs in /home/kr
 RESULT: PASS
 ```
 
-Run 2 (final result): `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p9-199 > .../logs/gates-2.log 2>&1; echo EXIT=$?` gave `EXIT=0`. The table below is from `gates-2.log`.
+Run 2: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p9-199 > .../logs/gates-2.log 2>&1; echo EXIT=$?` gave `EXIT=0`. The table below is from `gates-2.log`.
 
 ```
 feature-check kads-new-p9-199 (base fa4a5f2e7, 2 changed files; logs in /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p9-199/build/feature-check)
@@ -89,11 +89,13 @@ feature-check kads-new-p9-199 (base fa4a5f2e7, 2 changed files; logs in /home/kr
 RESULT: PASS
 ```
 
+Run 4: gates-4.log, EXIT=0, RESULT: PASS (`feature_check.py` run unpiped with `echo EXIT=$?` before the self-check citation commit; the RESULT line is `logs/gates-4.log:10`).
+
 ## Self-check
 
 No product code changed. The branch diff against the base is this report only: `git diff --stat fa4a5f2e7 HEAD` lists `docs/qwen-fixes-2026-10/cluster-new-p9-199.md` alone (94 insertions). Answers are checked against the worktree in the self-check run.
 
-1. **Regression test fails with the change reverted and passes with it: N/A.** There is no product change to revert, and no regression test is committed (Verdict). The only test run was a scratch probe, ChordRootProbeTest (CTest #328). With the unmodified code it passed, EXIT=0 (`logs/probe-green.log:3`). With a control mutation at `src/tracks/InstrumentTrack.cpp:780` (`== false` changed to `true`) it failed, EXIT=8, with `Actual (rootCount): 2`, `Expected (1)` (`logs/probe-red.log:9,13`). The exit codes come from the command output recorded in "Commands and results", not from the log files. The mutation was reverted: `git diff --quiet HEAD -- src/tracks/InstrumentTrack.cpp` returned EXIT=0 in the self-check run.
+1. **Regression test fails with the change reverted and passes with it: N/A.** There is no product change to revert, and no regression test is committed (Verdict). The only test run was a scratch probe, ChordRootProbeTest (CTest #328). With the unmodified code it passed, EXIT=0 (`logs/probe-green.log:3`). With a control mutation at `src/tracks/InstrumentTrack.cpp:780` (`== false` changed to `true`) it failed, EXIT=8, with `Actual (rootCount): 2`, `Expected (1)` (`logs/probe-red.log:9,10`). The exit codes come from the command output recorded in "Commands and results", not from the log files. The mutation was reverted: `git diff --quiet HEAD -- src/tracks/InstrumentTrack.cpp` returned EXIT=0 in the self-check run.
 
 2. **Deterministic: not verified.** The probe is not kept (`git ls-files tests/src/core/ChordRootProbeTest.cpp` returned 0 lines), so no committed test exists to check for timing or races. The scratch probe injected its seam as a spy on `InstrumentTrack::playNote` (Commands and results, Control mutation). The logs show runtime only (`Passed 1.46 sec`), not an assertion on time.
 
