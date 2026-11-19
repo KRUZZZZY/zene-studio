@@ -43,7 +43,7 @@ Exit codes are listed only where a log or tool output shows them. Where the log 
 | Mutant (gain applied twice) | packet says `duet/06-worker/tmp` | not verified | That path does not exist under the run folder, so this result is **unverified here**. |
 | Gates | `L/gates.log` | per-gate exit 0 on all 8 lines; the runner's own exit is not printed | 8 of 8 gates PASS; `RESULT: PASS`. |
 | Gates without lizard | `L/gates-nolizard.log` | per-gate exit 0 on all 8 lines; runner exit not printed | Same 8 PASS lines and `RESULT: PASS`. |
-| submit_check | `L/submit-check.log` | see the Self-check section | |
+| submit_check | `L/submit-check.log` (run after the report commit `8d953131d2`) | **0** (`EXIT=0`) | 5 PASS (commits, clean tree, report, tests, gates); no FAIL; `RESULT: PASS - submit`; 5 `?` questions, answered in the Self-check section. |
 
 The packet's RED and reversed exit code of 8 does not appear in any log in the run folder, so it is not claimed here.
 
@@ -64,3 +64,17 @@ The packet's RED and reversed exit code of 8 does not appear in any log in the r
 - The complexity gate passes vacuously when lizard is not installed. `L/gates-nolizard.log` shows the PASS line with no measurement.
 - `src/core/CompSlip.cpp` has no reference to amplification. Whether slipped comp reads on the resample path carry the clip gain is unverified, and may be a separate defect.
 - The window-overrun and mute-cursor bugs were not touched.
+
+## Self-check
+
+These answer the five `?` questions that `submit_check.py` printed for this cluster. The first check passed with no FAIL lines (`L/submit-check.log`, `EXIT=0`).
+
+1. **The regression test fails with the product change reverted and passes with it.** Reverted: `L/test-red.log` and `L/test-reversed.log` both show `Test #636 ***Failed`, 9 PASS lines and 1 FAIL line, "gain 0.5 at 440 Hz is 1 of gain 1.0; expected 0.5". Fixed: `L/test-green-slot.log` shows `Totals: 10 passed, 0 failed`, including `aPreservedPitchClipHonoursTheSampleAmplification`. A fresh run at HEAD gave exit 0 (section 3). The RED and reversed logs do not record an exit code, so no exit code is claimed for those two runs.
+
+2. **The test is deterministic.** `tests/src/tracks/SampleClipStretchTest.cpp` has no sleep, thread, clock or random call (grep for `sleep|QThread|std::thread|chrono|rand|time` finds nothing). Its inputs are fixed: synthetic tones at 440 Hz and 660 Hz at `m_rate`, a fixed 2x warp (`applyTwoTimesWarp`), gains 1.0, 0.5 and 2.0, and levels measured over the middle half of the render. The baseline is the same in every log: 0.4992 at 440 Hz and 0.2990 at 660 Hz in RED, reversed and green runs.
+
+3. **The fix is at the cause, and complete only for the pitch-preserving path.** `renderPreservingPitch` has one caller, `src/core/SamplePlayHandle.cpp:596`. Its sibling `renderTransientRepeat` (line 592) already applies the gain (`src/core/TransientRepeat.cpp:284`). The resample path (`Sample::play`, line 602) applies the gain in `src/core/Sample.cpp:243-245`. The new code uses that same gain, and WSOLA and Rubber Band share one multiply. Not shown: `CompSlip.cpp` has 0 references to amplification, and whether its reads need the gain has not been checked (section 6). So "complete" holds only for the paths listed here.
+
+4. **No collateral damage.** Commit `540f980dc7` is additive: `git show --stat` gives 3 files, 59 insertions and 0 deletions (`SamplePlayHandle.cpp` +8, `SampleClipStretchTest.cpp` +50, `tests/upstream-modifications.txt` +1). It adds no save-format field and no limit or check. The multiply is skipped when the gain is exactly 1.0 (`if (gain != 1.0f)`). Unity-gain renders are covered by `aClipWithoutARateChangeRendersIdenticallyInBothModes` (line 359) and `theStretchModeRoundTripsThroughTheProjectFile` (line 391), both PASS in `L/test-green-slot.log`. One behaviour change is intended: a pitch-preserved clip with a non-unity gain now renders at a different level than before. No saved project was loaded to confirm this.
+
+5. **Verdict.** The verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE, so this item does not apply.
