@@ -3143,9 +3143,9 @@ tests/src/plugins/SlicerTWaveformTest.cpp
 tests/src/plugins/MpeConsumerProbe.h
 tests/src/plugins/MpeTestConsumer.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
-# RED (p2): a clip start through SampleTrack::play does not allocate on the audio thread.
+# A clip start through SampleTrack::play does not allocate on the audio thread.
 tests/src/tracks/SampleClipStartAllocationTest.cpp
-# RED (p2): clip starts past the 1024-handle pool land on the next pass, allocation-free.
+# Clip starts past the 1024-handle pool land on the next pass, allocation-free.
 tests/src/tracks/SampleClipPoolExhaustionTest.cpp
 # cluster new-p10-116: the anchored-name regression for favourite effects in the picker.
 tests/src/gui/EffectSelectDialogFilterTest.cpp
