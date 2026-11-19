@@ -48,8 +48,7 @@ Verified code points in this tree:
 | --- | --- | --- |
 | normal path | `SampleClipStartAllocationTest::playStartsPlainClipWithoutAllocating` (plus comped and preserve-pitch slots) | GREEN, 0 allocations (`test-1-green.log`, `test-final-green.log`) |
 | refusal | `SampleClipPoolExhaustionTest::aRefusedStartIsDeferredThenLandsAfterTheControlThreadGrowsThePool` D/P1/G/P2 (`:339-421`) | GREEN 3 passed slot (`test-green4-slot.log`) |
-| exhaustion | `framePoolExhaustion...`, `handlePoolExhaustion...`, `compSlipPoolExhaustion...`; `moreLiveHandlesThanTheStartingPoolAllExist`; `startsBeyondTheListCapacityAllSoundWithoutAllocating` (:330) | GREEN; RED at `:330` when the two fixes are reversed (`test-red-pool.log`) |
-| reconfiguration | `periodSizeChangesKeepLiveBuffersValid` (BufferManager re-init with a new period, and pool growth, keep live buffers valid) | GREEN in `SampleClipPoolExhaustionTest` |
+| exhaustion | `startsBeyondTheListCapacityAllSoundWithoutAllocating` (:330): 1200 starts across 20 tracks, 1199 live, above the 1024-slot list | GREEN; RED at `:330` when the two fixes are reversed (`test-red-pool.log`) |
 | audio-thread allocation probe | thread-local allocation probe armed around exact `play()`/`renderNextPeriod()` calls, plus interposed `__cxa_allocate_exception`; `QCOMPARE(refused.allocations, 0)` `:419`, `QCOMPARE(retried.allocations, 0)` `:420` | GREEN; RED shows `allocations: 1` when the fix is reversed |
 | platform | Only C++20 standard facilities; no Qt API, no `windows.h`, no `std::filesystem` on the changed render path. No TSan run (see Unverified) | argued from the design, not measured |
 
@@ -161,7 +160,8 @@ test file (grep exit 1).
 consistent.** `SamplePlayHandle::tryCreate` has one product caller
 (`src/tracks/SampleTrack.cpp:304`); other constructions (`src/gui/FileBrowser.cpp`,
 `src/core/ControlCommandsBrowserMedia.cpp`, a preview handle) are off the render path.
-`BufferManager::acquire` has two callers (`src/core/PlayHandle.cpp`, `src/core/AudioBusHandle.cpp`);
+`BufferManager::acquire` has one caller (`src/core/PlayHandle.cpp:42`);
+`src/core/AudioBusHandle.cpp:78` uses `acquireBlocking()`, not `acquire`;
 `CompSlipReaders::create` has one (`SamplePlayHandle::snapshotComp`), and its predicate is
 shared with `slipsComp()`. `FixedBlockPool`'s accessors were rewritten with the segment list.
 `AudioEngine.cpp:1497-1509` (add path) and `:1546-1571` (control-thread top-up) stay on the
@@ -170,11 +170,11 @@ control thread; `:508` remains the staging bound.
 **? No collateral damage: old projects and saved data still load as before, and any limit or
 check added does not hit other callers that legitimately exceed it.** No file format, project
 data, undo stack or command was touched. The pools grow (`reserveBlocks`,
-`growSampleClipPoolsOnControlThread`) instead of capping, so a project with more live clips
+`reserveForClips`) instead of capping, so a project with more live clips
 than the starting pool is delayed one pass and then starts;
-`moreLiveHandlesThanTheStartingPoolAllExist` holds 1200 live handles over four tracks/buses,
-above the old 1024 starting blocks, and `periodSizeChangesKeepLiveBuffersValid` proves a
-re-init with a new period never moves a live buffer.
+`startsBeyondTheListCapacityAllSoundWithoutAllocating` starts 1200 clips across 20 tracks
+(1199 live, one one-tick clip ended), above the 1024-slot list; no slot covers a period
+re-init, so none is claimed.
 
 **? If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code or intended contract.** Not
 applicable; the verdict is FIXED. The defect was real (`SampleTrack::play` constructed with
