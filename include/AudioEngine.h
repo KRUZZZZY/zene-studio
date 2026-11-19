@@ -254,8 +254,8 @@ public:
 	//! A realtime thread only publishes the request; the control thread calls the device.
 	void requestDevicePortUpdate(AudioBusHandle* busHandle, bool enable);
 
-	//! Applies one device port update. Control thread.
-	void applyDevicePortUpdate(AudioBusHandle* busHandle, bool enable);
+	//! Brings the device port in line with what the bus wants. Control thread.
+	void applyDevicePortState(AudioBusHandle* busHandle);
 
 	//! The control-thread bus service, one entry point: applies the pending device port
 	//! updates, removes the buses the render workers handed over, frees the held buses and

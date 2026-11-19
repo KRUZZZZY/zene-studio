@@ -27,10 +27,14 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <map>
+#include <memory>
 #include <new>
+#include <vector>
 
 #include "AudioBus.h"
 #include "AudioBusHandle.h"
+#include "AudioDevice.h"
 #include "BufferManager.h"
 #include "Effect.h"
 #include "EffectChain.h"
@@ -109,6 +113,54 @@ const Plugin::Descriptor TestEffect::s_descriptor
 	nullptr,
 	nullptr
 };
+
+//! Audio device that never runs and counts the bus ports the engine registers and unregisters.
+class CountingDevice : public AudioDevice
+{
+public:
+	explicit CountingDevice(AudioEngine* engine) : AudioDevice(8, engine) {}
+	void registerPort(AudioBusHandle* port) override { ++registrations[port]; }
+	void unregisterPort(AudioBusHandle* port) override { ++unregistrations[port]; }
+
+	std::map<AudioBusHandle*, int> registrations;
+	std::map<AudioBusHandle*, int> unregistrations;
+
+private:
+	void startProcessingImpl() override {}
+	void stopProcessingImpl() override {}
+};
+
+//! Bus that counts its own destructions.
+class CountedBus : public AudioBusHandle
+{
+public:
+	CountedBus(const QString& name, bool hasEffectChain) : AudioBusHandle(name, hasEffectChain) {}
+	~CountedBus() override { ++destructions; }
+
+	inline static int destructions = 0;
+};
+
+//! True while the engine lists the bus. Compares pointer values only, so a freed bus may be passed.
+bool isListed(const AudioBusHandle* bus)
+{
+	const auto& handles = Engine::audioEngine()->audioBusHandles();
+	return std::find(handles.begin(), handles.end(), bus) != handles.end();
+}
+
+//! One control-thread period: service, render, service.
+void flushOnControlThread()
+{
+	auto* engine = Engine::audioEngine();
+	engine->serviceAudioBusHandlesOnControlThread();
+	engine->renderNextPeriod();
+	engine->serviceAudioBusHandlesOnControlThread();
+}
+
+//! Control-thread cleanup: the engine frees the bus, or holds it while a pending entry still names it.
+void releaseOnControlThread(AudioBusHandle* bus)
+{
+	Engine::audioEngine()->destroyAudioBusHandle(bus);
+}
 
 } // namespace
 
@@ -395,6 +447,173 @@ private slots:
 		QCOMPARE(engine->audioBusHandles().size(), before);
 		QVERIFY(std::find(engine->audioBusHandles().begin(), engine->audioBusHandles().end(), bus)
 			== engine->audioBusHandles().end());
+	}
+
+	//! Cluster new-p15-253: the registration states of a bus follow the control-thread
+	//! handoff in order. A bus constructed on the audio path is Pending until the control
+	//! service registers it: Pending→Registered. A bus retired while Pending is Retired,
+	//! and the control service then consumes its entry: Pending→Retired→Handled. The proof
+	//! manifest copies the two sequences listed here.
+	void realtimeBusRegistrationStatesFollowTheControlThreadHandoff()
+	{
+		using namespace lmms;
+		using State = AudioBusHandle::RegistrationState;
+
+		// Each bus is owned by a unique_ptr from its construction onwards. The deleter hands
+		// the bus to the engine on the control thread, so an early return from a failed
+		// assertion still leaves the bus to the engine.
+		struct BusDeleter
+		{
+			void operator()(AudioBusHandle* busHandle) const
+			{
+				Engine::audioEngine()->destroyAudioBusHandle(busHandle);
+			}
+		};
+		using BusPtr = std::unique_ptr<AudioBusHandle, BusDeleter>;
+
+		auto* engine = Engine::audioEngine();
+
+		// Pending→Registered
+		BusPtr bus;
+		{
+			const RealtimeScope realtime;
+			bus.reset(new AudioBusHandle(QStringLiteral("StatesBus"), false));
+		}
+		QCOMPARE(bus->registrationState(), State::Pending);
+
+		engine->serviceAudioBusHandlesOnControlThread();
+		QCOMPARE(bus->registrationState(), State::Registered);
+		QVERIFY(std::find(engine->audioBusHandles().begin(), engine->audioBusHandles().end(), bus.get())
+			!= engine->audioBusHandles().end());
+
+		// Pending→Retired→Handled
+		BusPtr bus2;
+		{
+			const RealtimeScope realtime;
+			bus2.reset(new AudioBusHandle(QStringLiteral("StatesRetiredBus"), false));
+		}
+		QCOMPARE(bus2->registrationState(), State::Pending);
+
+		engine->removeAudioBusHandle(bus2.get());
+		QCOMPARE(bus2->registrationState(), State::Retired);
+
+		engine->serviceAudioBusHandlesOnControlThread();
+		QCOMPARE(bus2->registrationState(), State::Handled);
+		QVERIFY(std::find(engine->audioBusHandles().begin(), engine->audioBusHandles().end(), bus2.get())
+			== engine->audioBusHandles().end());
+
+		bus2.reset();
+		bus.reset();
+		engine->serviceAudioBusHandlesOnControlThread();
+		engine->renderNextPeriod();
+		engine->serviceAudioBusHandlesOnControlThread();
+	}
+
+	//! Cluster new-p15-253: a burst of realtime registrations larger than the pending queue is registered in full.
+	void realtimeRegistrationsBeyondQueueCapacityAreAllRegistered()
+	{
+		using namespace lmms;
+
+		std::vector<AudioBusHandle*> buses;
+		buses.reserve(200);
+		{
+			const RealtimeScope realtime;
+			for (int i = 0; i < 200; ++i) { buses.push_back(new AudioBusHandle(QStringLiteral("BurstBus"), false)); }
+		}
+		flushOnControlThread();
+
+		const int listed = static_cast<int>(std::count_if(buses.begin(), buses.end(), isListed));
+		for (auto* bus : buses) { releaseOnControlThread(bus); }
+		flushOnControlThread();
+		QVERIFY2(listed == 200, qPrintable(QStringLiteral("listed %1 of 200").arg(listed)));
+	}
+
+	//! Cluster new-p15-253: destructions requested on the audio path beyond the queue's capacity are all freed.
+	void realtimeDestructionsBeyondQueueCapacityAreAllFreed()
+	{
+		using namespace lmms;
+
+		CountedBus::destructions = 0;
+		std::vector<AudioBusHandle*> buses;
+		buses.reserve(200);
+		for (int i = 0; i < 200; ++i) { buses.push_back(new CountedBus(QStringLiteral("DoomedBus"), false)); }
+		{
+			const RealtimeScope realtime;
+			for (auto* bus : buses) { Engine::audioEngine()->destroyAudioBusHandle(bus); }
+		}
+		flushOnControlThread();
+
+		QCOMPARE(CountedBus::destructions, 200);
+		QVERIFY2(std::none_of(buses.begin(), buses.end(), isListed), "a destroyed bus is still listed");
+	}
+
+	//! Cluster new-p15-253: removals requested on the audio path beyond the queue's capacity are all applied.
+	void realtimeRemovalsBeyondQueueCapacityAreAllApplied()
+	{
+		using namespace lmms;
+
+		std::vector<AudioBusHandle*> buses;
+		buses.reserve(200);
+		for (int i = 0; i < 200; ++i) { buses.push_back(new AudioBusHandle(QStringLiteral("RemovedBus"), false)); }
+		{
+			const RealtimeScope realtime;
+			for (auto* bus : buses) { Engine::audioEngine()->removeAudioBusHandle(bus); }
+		}
+		Engine::audioEngine()->serviceAudioBusHandlesOnControlThread();
+
+		const bool noneListed = std::none_of(buses.begin(), buses.end(), isListed);
+		for (auto* bus : buses) { releaseOnControlThread(bus); }
+		flushOnControlThread();
+		QVERIFY2(noneListed, "a removal requested on the audio path was not applied");
+	}
+
+	//! Cluster new-p15-253: port enables requested on the audio path beyond the queue's capacity all reach the device.
+	void realtimePortEnablesBeyondQueueCapacityAreAllApplied()
+	{
+		using namespace lmms;
+
+		auto* engine = Engine::audioEngine();
+		auto* device = new CountingDevice(engine);
+		engine->setAudioDevice(device, false);
+		std::vector<AudioBusHandle*> buses;
+		buses.reserve(200);
+		for (int i = 0; i < 200; ++i) { buses.push_back(new AudioBusHandle(QStringLiteral("PortBus"), false)); }
+		for (auto* bus : buses) { bus->setExtOutputEnabled(false); }
+		device->registrations.clear();
+		device->unregistrations.clear();
+		{
+			const RealtimeScope realtime;
+			for (auto* bus : buses) { bus->setExtOutputEnabled(true); }
+		}
+		engine->serviceAudioBusHandlesOnControlThread();
+
+		const int exactlyOne = static_cast<int>(std::count_if(buses.begin(), buses.end(),
+			[&](AudioBusHandle* bus) { return device->registrations[bus] == 1; }));
+		for (auto* bus : buses) { releaseOnControlThread(bus); }
+		flushOnControlThread();
+		engine->restoreAudioDevice();
+		QCOMPARE(exactlyOne, 200);
+	}
+
+	//! Cluster new-p15-253: a bus built on the audio path gets exactly one device port.
+	void realtimeBusGetsExactlyOneDevicePort()
+	{
+		using namespace lmms;
+
+		auto* engine = Engine::audioEngine();
+		auto* device = new CountingDevice(engine);
+		engine->setAudioDevice(device, false);
+		AudioBusHandle* bus = nullptr;
+		{
+			const RealtimeScope realtime;
+			bus = new AudioBusHandle(QStringLiteral("PortOnceBus"), false);
+		}
+		flushOnControlThread();
+		const int registrations = device->registrations[bus];
+		releaseOnControlThread(bus);
+		flushOnControlThread();
+		engine->restoreAudioDevice();
+		QCOMPARE(registrations, 1);
 	}
 };
 

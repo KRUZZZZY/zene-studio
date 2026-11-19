@@ -1449,15 +1449,18 @@ void AudioEngine::requestDevicePortUpdate(AudioBusHandle* busHandle, bool enable
 }
 
 
-void AudioEngine::applyDevicePortUpdate(AudioBusHandle* busHandle, bool enable)
+void AudioEngine::applyDevicePortState(AudioBusHandle* busHandle)
 {
 	// The control thread calls the device directly. It must not take the model lock here:
 	// a bus is destroyed under that lock (a play handle's own bus), and the lock is not
 	// recursive.
 	AudioDevice* const device = m_audioDev;
 	if (device == nullptr) { return; }
-	if (enable) { device->registerPort(busHandle); }
+	const bool wanted = busHandle->m_extOutputWanted.load(std::memory_order_acquire);
+	if (wanted == busHandle->m_extOutputApplied) { return; }
+	if (wanted) { device->registerPort(busHandle); }
 	else { device->unregisterPort(busHandle); }
+	busHandle->m_extOutputApplied = wanted;
 }
 
 
@@ -1476,22 +1479,14 @@ void AudioEngine::applyPendingDevicePortUpdates()
 	for (std::size_t i = 0; i < count; ++i)
 	{
 		const DevicePortUpdate& update = updates[i];
-		// The bus is registered under this address: a setup may be applied (the bus is
-		// alive), a teardown may not (it would unregister the port of the bus that took
-		// the address).
+		// The bus is registered under this address, so it is alive: the device follows the
+		// state the bus wants (applyDevicePortState). A bus that is gone is not read.
 		const bool registered = std::find(m_audioBusHandles.begin(), m_audioBusHandles.end(),
 			update.bus) != m_audioBusHandles.end();
-		if (update.enable)
-		{
-			// The setup names a live bus: a bus that was destroyed in the meantime is no
-			// longer in the list, and the device must not be handed a freed pointer.
-			if (!registered) { continue; }
-			device->registerPort(update.bus);
-			continue;
-		}
-		// The teardown names a bus that may be gone already: the device uses the pointer
-		// as a key only.
-		if (registered) { continue; }
+		if (registered) { applyDevicePortState(update.bus); continue; }
+		// The bus is gone: a setup is dropped, and a teardown still unregisters the port under
+		// the address (the device uses the pointer as a key only).
+		if (update.enable) { continue; }
 		device->unregisterPort(update.bus);
 	}
 }

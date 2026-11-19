@@ -74,22 +74,20 @@ AudioBusHandle::AudioBusHandle(const QString& name, bool hasEffectChain,
 	FloatModel* volumeModel, FloatModel* panningModel,
 	BoolModel* mutedModel) :
 	m_bufferUsage(false),
-	m_buffer(BufferManager::acquire()),
-	m_trackChannels(m_buffer.data()),
-	m_bus(&m_trackChannels, 1, m_buffer.size()),
-	m_extOutputEnabled(false),
+	m_trackChannels(nullptr),
+	m_bus(&m_trackChannels, 1, 0),
 	m_nextMixerChannel(0),
 	m_name(name),
-	m_effects(hasEffectChain ? new EffectChain(nullptr) : nullptr),
+	m_hasEffectChain(hasEffectChain),
 	m_volumeModel(volumeModel),
 	m_panningModel(panningModel),
 	m_mutedModel(mutedModel)
 {
 	// Mark all track channels as quiet
 	m_bus.quietChannels().set();
+	// Buffer, compensation history and effect chain (PDC #605 preallocates on the control thread).
+	prepareStorage();
 
-	// PDC (#605): preallocate the compensation history on the control thread.
-	m_compensation.init(m_buffer.size());
 	// Track and instrument buses reserve one full bounded polyphony batch on the
 	// control thread. Standalone sample buses created on the audio path use the
 	// inline handle slot below until the main thread tops up their list.
@@ -100,6 +98,20 @@ AudioBusHandle::AudioBusHandle(const QString& name, bool hasEffectChain,
 
 	Engine::audioEngine()->addAudioBusHandle(this);
 	setExtOutputEnabled(true);
+}
+
+
+void AudioBusHandle::prepareStorage()
+{
+	if (!m_buffer.empty()) { return; }
+	m_buffer = BufferManager::acquire();
+	m_trackChannels = m_buffer.data();
+	// AudioBus has const members, so it cannot be assigned: rebuild it in place.
+	std::destroy_at(&m_bus);
+	std::construct_at(&m_bus, &m_trackChannels, 1, m_buffer.size());
+	m_bus.quietChannels().set();
+	m_compensation.init(m_buffer.size());
+	if (m_hasEffectChain && !m_effects) { m_effects = std::make_unique<EffectChain>(nullptr); }
 }
 
 
@@ -129,19 +141,15 @@ AudioBusHandle::~AudioBusHandle()
 
 void AudioBusHandle::setExtOutputEnabled(bool enabled)
 {
-	if (enabled != m_extOutputEnabled)
+	if (m_extOutputWanted.exchange(enabled, std::memory_order_acq_rel) == enabled) { return; }
+	// The device call allocates and can block (the JACK backend registers a port per
+	// channel), so a realtime thread only requests it (cluster new-p15-253 / new-p12-313).
+	if (RealtimeScope::isActive())
 	{
-		m_extOutputEnabled = enabled;
-		if (RealtimeScope::isActive())
-		{
-			// The device port setup allocates and can block (the JACK backend registers a
-			// port per channel), so the audio path may not do it (cluster new-p15-253 /
-			// new-p12-313). The control thread applies the update.
-			Engine::audioEngine()->requestDevicePortUpdate(this, enabled);
-			return;
-		}
-		Engine::audioEngine()->applyDevicePortUpdate(this, enabled);
+		Engine::audioEngine()->requestDevicePortUpdate(this, enabled);
+		return;
 	}
+	Engine::audioEngine()->applyDevicePortState(this);
 }
 
 

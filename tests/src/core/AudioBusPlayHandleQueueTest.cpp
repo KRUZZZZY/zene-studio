@@ -31,6 +31,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <new>
 #include <span>
 #include <thread>
 
@@ -394,6 +395,53 @@ private slots:
 		bus.removePlayHandle(&second);
 		bus.doProcessing();
 		QVERIFY(bus.m_playHandles.isEmpty());
+	}
+
+	//! Cluster new-p15-253 (Luna r6): constructing a bus on the audio path must not allocate or free.
+	void realtimeBusConstructionAllocatesNothing()
+	{
+		auto* engine = Engine::audioEngine();
+		const QString name = QStringLiteral("RealtimeCtorBus");
+		alignas(AudioBusHandle) std::byte storage[sizeof(AudioBusHandle)];
+		AudioBusHandle* bus = nullptr;
+		std::uint64_t allocations = 0;
+		std::uint64_t frees = 0;
+		bool threw = false;
+		try
+		{
+			const RealtimeScope realtime;
+			lmms::test::resetAllocationCount();
+			lmms::test::tlCountAllocations = true;
+			bus = new (storage) AudioBusHandle(name, true);
+		}
+		catch (const std::bad_alloc&) { threw = true; }
+		lmms::test::tlCountAllocations = false;
+		allocations = lmms::test::tlAllocationCount;
+		frees = lmms::test::tlFreeCount;
+
+		if (threw)
+		{
+			QCOMPARE(allocations, std::uint64_t{0});
+			QFAIL("the bus constructor threw std::bad_alloc on the realtime path");
+		}
+
+		engine->serviceAudioBusHandlesOnControlThread();
+		engine->renderNextPeriod();
+		engine->serviceAudioBusHandlesOnControlThread();
+		const auto& handles = engine->audioBusHandles();
+		const bool listed = std::find(handles.begin(), handles.end(), bus) != handles.end();
+		const bool periodSized = bus->buffer().size() == static_cast<std::size_t>(engine->framesPerPeriod());
+		const bool hasEffects = bus->effects() != nullptr;
+
+		bus->~AudioBusHandle();
+		const bool stillListed = std::find(handles.begin(), handles.end(), bus) != handles.end();
+
+		QCOMPARE(allocations, std::uint64_t{0});
+		QCOMPARE(frees, std::uint64_t{0});
+		QVERIFY(listed);
+		QVERIFY(periodSized);
+		QVERIFY(hasEffects);
+		QVERIFY(!stillListed);
 	}
 
 private:
