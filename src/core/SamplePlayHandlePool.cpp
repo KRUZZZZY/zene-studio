@@ -17,6 +17,8 @@
 #include <utility>
 #include <vector>
 
+#include "BufferManager.h"
+#include "CompSlip.h"
 #include "RealtimeFreeList.h"
 #include "RealtimeScope.h"
 #include "SampleClip.h"
@@ -117,7 +119,13 @@ void SamplePlayHandle::reserveForClips()
 	if (RealtimeScope::isActive()) { return; }
 	const int live = SampleClip::liveClipCount();
 	const std::size_t clips = live > 0 ? static_cast<std::size_t>(live) : std::size_t{0};
-	reserveBlocks(clips + clips / 4 + 8);
+	// Target per live clip, 25 percent headroom plus 8. Each live clip can own one play handle (~33.9 KB), one frame
+	// block (~2 KB) and one comp-slip bundle (~9.3 KB): about 45 KB per live clip, about 56 KB with the headroom.
+	// The frame and slip pools take the same target, so a start is not refused for want of either before a top-up.
+	const std::size_t target = clips + clips / 4 + 8;
+	reserveBlocks(target);
+	BufferManager::reserve(target);
+	CompSlipReaders::reserve(target);
 }
 
 } // namespace lmms

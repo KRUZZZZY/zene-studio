@@ -69,10 +69,10 @@ public:
 	SampleClip(Track* track);
 	~SampleClip() override;
 
-		//! Live SampleClip objects in the process: each constructor counts up, the destructor counts down.
-		//! SamplePlayHandle::reserveForClips() sizes the handle pool from this count on the control thread.
-		static inline std::atomic<int> s_liveClipCount{0};
-		static int liveClipCount() noexcept { return s_liveClipCount.load(std::memory_order_relaxed); }
+	//! Live SampleClip objects in the process: each constructor counts up, the destructor counts down.
+	//! SamplePlayHandle::reserveForClips() sizes the handle pool from this count on the control thread.
+	static inline std::atomic<int> s_liveClipCount{0};
+	static int liveClipCount() noexcept { return s_liveClipCount.load(std::memory_order_relaxed); }
 
 	SampleClip& operator=( const SampleClip& that ) = delete;
 
