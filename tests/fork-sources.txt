@@ -780,6 +780,7 @@ tests/src/core/DataFileSaveIntegrityTestParts1.h
 tests/src/core/DataFileSaveIntegrityTestParts2.h
 tests/src/core/DeviceDspTestParts1.h
 tests/src/core/DeviceDspTestParts2.h
+tests/src/core/DeviceDspTestParts3.h
 tests/src/core/DeviceToolsTestParts1.h
 tests/src/core/DrumSynthTestParts1.h
 tests/src/core/HardwareIoTestParts1.h

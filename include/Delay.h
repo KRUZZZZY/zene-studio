@@ -35,6 +35,20 @@
 namespace lmms
 {
 
+namespace detail
+{
+// Split a delay in frames into the whole-frame tap and the interpolation weight.
+// The delay clamps to one frame.  The weight belongs to the older tap so that
+// update() can lerp from the older ring slot toward the next one.
+inline void splitDelay( double delay, int& whole, double& frac )
+{
+	const double d = delay < 1.0 ? 1.0 : delay;
+	const double wholeFrames = std::floor( d );
+	whole = static_cast<int>( wholeFrames );
+	frac = 1.0 - ( d - wholeFrames );
+}
+} // namespace detail
+
 // brief usage 
 
 // Classes:
@@ -49,7 +63,7 @@ namespace lmms
 // Methods (for all classes):
 
 // setDelay sets delay amount in frames. It's up to you to make this samplerate-agnostic. 
-// Fractions are allowed - linear interpolation is used to deal with them
+// Delay d gives output[n] = lerp of the inputs at n-floor(d) and n-floor(d)-1, with a minimum of 1 frame.
 // CombFeedbackDualTap is a special case: it requires 2 delay times
 
 // setMaxDelay (re)sets the maximum allowed delay, in frames
@@ -109,8 +123,7 @@ public:
 			return;
 		}
 
-		m_delay = static_cast<int>( ceil( delay ) );
-		m_fraction = 1.0 - ( delay - floor( delay ) );
+		detail::splitDelay( delay, m_delay, m_fraction );
 	}
 	
 	inline void setGain( double gain )
@@ -183,8 +196,7 @@ public:
 	
 	inline void setDelay( double delay )
 	{
-		m_delay = static_cast<int>( ceil( delay ) );
-		m_fraction = 1.0 - ( delay - floor( delay ) );
+		detail::splitDelay( delay, m_delay, m_fraction );
 	}
 	
 	inline void setGain( double gain )
@@ -259,11 +271,8 @@ public:
 	
 	inline void setDelays( double delay1, double delay2 )
 	{
-		m_delay1 = static_cast<int>( ceil( delay1 ) );
-		m_fraction1 = 1.0 - ( delay1 - floor( delay1 ) );
-		
-		m_delay2 = static_cast<int>( ceil( delay2 ) );
-		m_fraction2 = 1.0 - ( delay2 - floor( delay2 ) );
+		detail::splitDelay( delay1, m_delay1, m_fraction1 );
+		detail::splitDelay( delay2, m_delay2, m_fraction2 );
 	}
 	
 	inline void setGain( double gain )
@@ -342,8 +351,7 @@ public:
 	
 	inline void setDelay( double delay )
 	{
-		m_delay = static_cast<int>( ceil( delay ) );
-		m_fraction = 1.0 - ( delay - floor( delay ) );
+		detail::splitDelay( delay, m_delay, m_fraction );
 	}
 	
 	inline void setGain( double gain )
