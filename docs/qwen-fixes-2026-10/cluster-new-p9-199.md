@@ -93,7 +93,7 @@ Run 4: gates-4.log, EXIT=0, RESULT: PASS (`feature_check.py` run unpiped with `e
 
 ## Self-check
 
-No product code changed. The branch diff against the base is this report only: `git diff --stat fa4a5f2e7 HEAD` lists `docs/qwen-fixes-2026-10/cluster-new-p9-199.md` alone (94 insertions). Answers are checked against the worktree in the self-check run.
+No product code changed. The branch diff against the base is this report only: `git diff --stat fa4a5f2e7 HEAD` lists `docs/qwen-fixes-2026-10/cluster-new-p9-199.md` alone. Answers are checked against the worktree in the self-check run.
 
 1. **Regression test fails with the change reverted and passes with it: N/A.** There is no product change to revert, and no regression test is committed (Verdict). The only test run was a scratch probe, ChordRootProbeTest (CTest #328). With the unmodified code it passed, EXIT=0 (`logs/probe-green.log:3`). With a control mutation at `src/tracks/InstrumentTrack.cpp:780` (`== false` changed to `true`) it failed, EXIT=8, with `Actual (rootCount): 2`, `Expected (1)` (`logs/probe-red.log:9,10`). The exit codes come from the command output recorded in "Commands and results", not from the log files. The mutation was reverted: `git diff --quiet HEAD -- src/tracks/InstrumentTrack.cpp` returned EXIT=0 in the self-check run.
 
