@@ -3974,3 +3974,5 @@ tests/src/plugins/CarlaVst2LegacyStateTest.cpp
 tests/src/gui/LegacyVst2ProjectTest.cpp
 tests/data/legacy-projects/vst2-vestige-vsteffect.mmp
 tests/data/legacy-projects/vst2-vestige-vsteffect.reference.json
+tests/src/plugins/OpulenZLifetimeTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p9-329-port.md

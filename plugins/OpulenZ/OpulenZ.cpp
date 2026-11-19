@@ -223,11 +223,15 @@ OpulenzInstrument::OpulenzInstrument( InstrumentTrack * _instrument_track ) :
 }
 
 OpulenzInstrument::~OpulenzInstrument() {
-	delete theEmulator;
 	Engine::audioEngine()->removePlayHandlesOfTypes( instrumentTrack(),
 				PlayHandle::Type::NotePlayHandle
 				| PlayHandle::Type::InstrumentPlayHandle );
+
+	QMutexLocker locker(&emulatorMutex);
+	delete theEmulator;
+	theEmulator = nullptr;
 	delete [] renderbuffer;
+	renderbuffer = nullptr;
 }
 
 // Samplerate changes when choosing oversampling, so this is more or less mandatory

@@ -693,6 +693,12 @@ set(LMMS_TESTS
 	# is told, and a REFUSED load is not a partial one.
 	src/core/PartialLoadTest.cpp
 	src/plugins/PatmanLoadTest.cpp
+	# cluster new-p9-329-port: the OpulenZ instrument's teardown must stop the
+	# audio thread (by removing the play handles) BEFORE the emulator and its
+	# render buffer are freed, and it must free them under the mutex that
+	# guards them. The test compiles the plugin's own sources so that it can
+	# watch the real teardown.
+	src/plugins/OpulenZLifetimeTest.cpp
 	# cluster new-p10-380-port-port: a short sid_fillbuffer fill must leave the un-written tail silent.
 	src/plugins/SidInstrument.cpp
 	src/core/ProjectOpenIntegrityTest.cpp
@@ -1993,6 +1999,13 @@ if(NOT TARGET vsteffect)
 	list(REMOVE_ITEM LMMS_TESTS src/plugins/VstEffectControlsTest.cpp)
 endif()
 
+# cluster new-p9-329-port: the OpulenZ teardown regression compiles the plug-in's
+# own sources into the test, so it needs that plug-in (and the adplug emulator it
+# drives) in this build.
+if(NOT TARGET adplug)
+	list(REMOVE_ITEM LMMS_TESTS src/plugins/OpulenZLifetimeTest.cpp)
+endif()
+
 # Targets that compile plugins/NeuralAmp/nam/*.cpp pull in vendored Eigen, whose NEON kernels trip
 # -Wdeprecated-enum-enum-conversion on aarch64; -DUSE_WERROR must not make that an error (the plugin
 # target does the same, plugins/NeuralAmp/CMakeLists.txt).
@@ -2244,6 +2257,26 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# executable does.
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 	endif()
+	# cluster new-p9-329-port: OpulenZLifetimeTest compiles the OpulenZ plug-in's
+	# own sources into the test (the Vibed tests' shape) so that it can watch the
+	# instrument's real teardown. The plug-in's header is added as a source so
+	# that AUTOMOC generates its moc file for this target, and the plug-in's own
+	# build directory provides plugin_export.h.
+	if(LMMS_TEST_NAME STREQUAL "OpulenZLifetimeTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/OpulenZ/OpulenZ.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/OpulenZ
+			${CMAKE_BINARY_DIR}/plugins/OpulenZ)
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE adplug)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=opulenz)
+		if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+			# adplug's mididata.h defines a static table the plugin does not
+			# use; the plugin's own build does not treat that as an error.
+			target_compile_options(${LMMS_TEST_NAME} PRIVATE -Wno-unused-variable)
+		endif()
+		add_dependencies(${LMMS_TEST_NAME} opulenz)
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "CompressorVisualizerTest")
 		# Cluster new-p15-300: the regression reads the compressor's header to check that the
 		# visualizer state the control dialog and the audio thread share is published
@@ -2322,6 +2355,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	lmms_link_allocation_probe(${LMMS_TEST_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/${LMMS_TEST_SRC}")
 	if(LMMS_TEST_NAME STREQUAL "EqCurveTest")
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "OpulenZLifetimeTest")
+		# The test drives the real engine (it creates a track and an instrument),
+		# so it needs the headless Qt platform like the other engine tests.
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "RnnoiseDenoiserEffectTest")
