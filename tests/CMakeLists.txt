@@ -1711,6 +1711,10 @@ set(LMMS_TESTS
 	src/tracks/SampleClipTransientRepeatSafetyTest.cpp
 	src/tracks/SampleClipWarpTest.cpp
 	src/tracks/SampleClipWindowTest.cpp
+	# RED (p2): a clip start through SampleTrack::play does not allocate on the audio thread.
+	src/tracks/SampleClipStartAllocationTest.cpp
+	# RED (p2): clip starts past the 1024-handle pool land on the next pass, allocation-free.
+	src/tracks/SampleClipPoolExhaustionTest.cpp
 	# Soundpipe lifecycle methods must report SP_OK on successful setup and teardown.
 	src/plugins/ReverbSCBaseTest.cpp
 	# The undo half of session.arrangement_record_land: the pass is ONE undo step, whatever it lands.
