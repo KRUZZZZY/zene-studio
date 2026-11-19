@@ -37,22 +37,22 @@ FIXED. A flam grace note from an audible source could round to volume 0 and soun
 
 ## Commands
 
-`<worktree>` is `kads-new-p16-25`. The logs record EXIT lines only, not command text, so each command below is the one recorded for its log in the run packet. Exit codes are from the log's `EXIT=` line.
+Paths are absolute, under the worktree `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p16-25`. The logs record EXIT lines only, not command text, so each command below is the one recorded for its log in the run packet. Exit codes are from the log's `EXIT=` line.
 
 | Log | Command | EXIT |
 |---|---|---|
-| build-24-p1b-red.log | `cmake --build <worktree>/build --target NoteToolsValidationTest` | 0 |
-| test-24-p1b-red.log | `cd <worktree>/build/tests && ctest -R '^NoteToolsValidationTest$' --output-on-failure` | 8 |
-| build-25b-mutant.log | `cmake --build <worktree>/build --target NoteToolsValidationTest` (mutant) | 0 |
-| test-25b-mutant.log | `cd <worktree>/build/tests && ctest -R '^NoteToolsValidationTest$'` (mutant) | 8 |
-| apply-reverse-4.log | `git apply -R logs/fix.patch` | 0 |
-| build-26-reversed.log | `cmake --build <worktree>/build --target NoteToolsValidationTest` (reversed) | 0 |
-| test-26-reversed-red.log | ctest on `NoteToolsValidationTest` (reversed). The packet gives no separate flags for this run. | 8 |
-| apply-forward-4.log | `git apply logs/fix.patch` | 0 |
-| build-27-restored.log | `cmake --build <worktree>/build --target zene NoteToolsValidationTest` (restored) | 0 |
-| test-27-restored-green.log | `cd <worktree>/build/tests && ctest -R '^(NoteToolsTest\|NoteToolsValidationTest)$'` | 0 |
-| patch-compare.log | `git diff -- src/core/ControlCommandsNoteTools.cpp \| diff - logs/fix.patch` | 0 |
-| feature-check-4.log | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 |
+| build-24-p1b-red.log | `cmake --build /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p16-25/build --target NoteToolsValidationTest` | 0 |
+| test-24-p1b-red.log | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p16-25/build/tests && ctest -R '^NoteToolsValidationTest$' --output-on-failure` | 8 |
+| build-25b-mutant.log | `cmake --build /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p16-25/build --target NoteToolsValidationTest` (mutant) | 0 |
+| test-25b-mutant.log | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p16-25/build/tests && ctest -R '^NoteToolsValidationTest$'` (mutant) | 8 |
+| apply-reverse-4.log | `git apply -R /home/kruzzzzy/.config/kads/zene/state/runs/new-p16-25.r1/logs/fix.patch` | 0 |
+| build-26-reversed.log | `cmake --build /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p16-25/build --target NoteToolsValidationTest` (reversed) | 0 |
+| test-26-reversed-red.log | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p16-25/build/tests && ctest -R '^NoteToolsValidationTest$' --output-on-failure` (reversed) | 8 |
+| apply-forward-4.log | `git apply /home/kruzzzzy/.config/kads/zene/state/runs/new-p16-25.r1/logs/fix.patch` | 0 |
+| build-27-restored.log | `cmake --build /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p16-25/build --target zene NoteToolsValidationTest` (restored) | 0 |
+| test-27-restored-green.log | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p16-25/build/tests && ctest -R '^(NoteToolsTest\|NoteToolsValidationTest)$'` | 0 |
+| patch-compare.log | `git diff -- src/core/ControlCommandsNoteTools.cpp \| diff - /home/kruzzzzy/.config/kads/zene/state/runs/new-p16-25.r1/logs/fix.patch` | 0 |
+| feature-check-4.log | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p16-25` | 0 |
 
 ## Evidence
 
@@ -104,8 +104,8 @@ The diff adds and removes no undo checkpoint. The flam edit is still one clip st
    - Inside `ControlCommandsNoteTools.cpp`, the only `lround` call is line 236. Line 212 is a comment. The ratio gate at line 216 keeps the ratio >= 0.05.
    - `note.velocity_scale` multiplies volume: `std::lround(current * boundedFactor)`, clamped to 0..200, at `src/core/ControlCommandsNoteTransform.cpp:326`. The write is at :331 and `dataChanged` at :332, so the multiply is at :320-332. Its contract is at :427-434 and promises no "always sounds" floor. Factor 0 is a legitimate mute ("0 silences the notes"), so it is deliberately not floored.
    - `note.edit` sets volume absolutely: `src/core/ControlCommandsNoteEdit.cpp:333`. There is no scaling and no rounding.
-   - `note.randomize` rolls velocity by a random factor. It clamps the rounded result to 0..200 at `src/core/ControlCommandsNoteRandom.cpp:130-131` and writes it at :134. The clamp is to the engine range, not a floor. I did not read its contract, so I have not judged whether a silent result from an audible note is intended there.
-   - `arpeggiate` copies whole notes (`ControlCommandsNoteTools.cpp:182`, `:186`) and does not scale volume. `repeat` copies notes (return at `ControlCommandsNoteTools.cpp:323`) and does not scale volume. I did not re-read the copy lines for `repeat`.
+   - `note.randomize` rolls velocity by a random factor. It clamps the rounded result to 0..200 at `src/core/ControlCommandsNoteRandom.cpp:130-131` and writes it at :134. The clamp is to the engine range, not a floor. Its contract (`ControlCommandsNoteRandom.cpp:469-478`) says velocity is multiplied by a factor in [1-j, 1+j], so a factor of 0 (a zeroed note) is a documented possible roll. The contract promises no always-sounding ornament, so it is deliberately not floored here.
+   - `arpeggiate` copies whole notes (`ControlCommandsNoteTools.cpp:183` `voices.push_back(*note)`, `:188` `Note step = voices[...]`). `repeat` copies notes (`ControlCommandsNoteTools.cpp:316` `Note copy = *note;` through `:323`). Neither scales volume.
    - `rg 'grace' src include`, excluding `src/3rdparty` and Wasm files, finds flam as the only grace-note writer (`ControlCommandsNoteTools.cpp:232-238`). The other hits are unrelated: "graceful" in `Song.cpp:1328`, grace periods in `CollabSession*` and `AbletonLinkSession.cpp:119`, and the registry row `ControlReversibilityTableDevices.cpp:156`.
    - The GUI Flam menu uses the same command id: `src/gui/noteeditor/NoteEditorMenus.cpp:91`.
 4. **No collateral damage.** No change to serialization or loading, and no new limit or check. The only behavioural change: a grace note whose source volume is > 0 and would round to 0 is now 1. Normal values are asserted unchanged (60).
