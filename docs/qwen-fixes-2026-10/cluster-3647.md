@@ -7,23 +7,25 @@ Route A, with test-only stubs.
 ## Defect (before the fix)
 
 - `renderOffline` checked only `frames == 0` and had no upper bound on `frames`.
-  Evidence: `git show HEAD:src/wasm/WasmOfflineRender.cpp` line 263:
+  Evidence: `git show 7d1d32bd99^:src/wasm/WasmOfflineRender.cpp` line 263 (the parent of the fix commit):
   `if (modulePath.empty() || frames == 0 || blockFrames == 0 || blockFrames > WasmWorker::maxBlockFrames)`.
 - The block loops used `std::uint32_t offset`, so `offset += blockFrames` was 32-bit arithmetic.
-  Evidence at HEAD: `WasmOfflineRender.cpp:55` (`fillStimulus` offset parameter), `:94` (`renderInline` loop),
-  `:173` (`renderThroughPool` loop).
+  Evidence at `7d1d32bd99^`: `WasmOfflineRender.cpp:55` (`fillStimulus` offset parameter; the function starts at
+  line 54), `:94` (`renderInline` loop; the function starts at 70), `:173` (`renderThroughPool` loop; the function
+  starts at 152).
 
 ## Fix
 
 - Cap: `src/wasm/WasmOfflineRenderLimits.h:24` `maxOfflineRenderFrames = 4194304` (2^22). The refusal helper
   `offlineRenderFramesError` is at `:27`.
 - The check runs in `renderOffline` before the module-path check, so it comes before any load or allocation:
-  `src/wasm/WasmOfflineRender.cpp:266-272`.
-- Loop offsets widened to `std::size_t` at `WasmOfflineRender.cpp:56`, `:95`, `:175`. The per-block count is
-  narrowed back to `std::uint32_t` with an explicit `static_cast` after `std::min<std::size_t>`.
+  `src/wasm/WasmOfflineRender.cpp:266-271`. The module-path check follows at `:273`.
+- Loop offsets widened to `std::size_t`: the `fillStimulus` parameter at `WasmOfflineRender.cpp:56`, and the loops
+  at `:95` and `:175`. The per-block count is narrowed back to `std::uint32_t` with an explicit `static_cast`
+  (`:97-98`) after `std::min<std::size_t>`.
 - Schema cap, which is the client-facing contract: `src/core/ControlCommandsWasmRender.cpp:336`
-  `integerProperty(1, 4194304)` for `frames`. It is enforced by `validateArgs` in
-  `src/core/ControlRegistry.cpp:255-259`, which returns `InvalidArgs` on failure.
+  `integerProperty(1, 4194304)` for `frames`. The call site at `src/core/ControlRegistry.cpp:255-259` runs
+  `validateArgs` on the command's schema and returns `InvalidArgs` when it fails.
 - The bound lives in `src/wasm` because direct callers of `renderOffline` bypass the control schema.
 
 ## Tests
@@ -34,6 +36,21 @@ Route A, with test-only stubs.
 - Red/green evidence from the logs (see the table below): 018 and 023 show 3 of 8 tests failing; 020, 025 and 026
   show all tests passing. The log names are "red", "green", "reversed" and "restored".
 
+## Mutation checks
+
+Each mutation was applied as a patch in the log folder (`m1.patch`, `m2.patch`, `m2b.patch`, `m3.patch`), built,
+and run with `ctest -R WasmOfflineRenderLimitTest`. Each `ctest` exited 8 (from the run record; the logs show
+`Errors while running CTest`).
+
+| Mutation | Change | Failing slots | Log |
+|---|---|---|---|
+| m1 | `frames > maxOfflineRenderFrames` becomes `>=` | `acceptsExactlyTheLimit`, `validatorBoundsTheFrameCount` | `m1-test.log` |
+| m2 | limit doubled (`maxOfflineRenderFrames * 2u`) | `rejectsOneFrameOverTheLimit`, `validatorBoundsTheFrameCount` | `m2-test.log` |
+| m2b | comparison done after casting to `int32` | `rejectsTheLargestFrameCount`, `validatorBoundsTheFrameCount` | `m2b-test.log` |
+| m3 | validator block moved after the first `renderInline` | `rejectsOneFrameOverTheLimit`, `rejectsTheLargestFrameCount`, both on the `loadModuleFileCalls` QCOMPARE | `m3-test.log` |
+
+m2 does not fail `rejectsTheLargestFrameCount`, because a doubled limit still refuses `UINT32_MAX`.
+
 ## Limits of verification
 
 - `WasmWorkerPoolTest` and `ControlWasmRenderTest` were NOT built. This tree is `WANT_WASM=OFF`
@@ -43,35 +60,39 @@ Route A, with test-only stubs.
 - The stub sandbox is not real wasmtime. The tests exercise the bound and the loops through stubs, not a real
   module load.
 - No threading changed, so TSan was not run.
+- Builds: `zene` was relinked only at 019 (`Linking CXX executable ../zene`); at 024 it was already up to date.
+  Apart from that, only the test target was built. Only `WasmOfflineRenderLimitTest` was run (`ctest` reports
+  `out of 1`), so the wider suite was not run.
+- In these logs, `src/wasm/WasmOfflineRender.cpp` is compiled only into `WasmOfflineRenderLimitTest`.
+- The `acceptsExactlyTheLimit` slot shows that the cap does not refuse `2^22` frames. It does not show that the
+  output is correct.
+- `renderOffline`'s cyclomatic complexity (CCN) is already above 10. A manual count gives about 22 before the fix
+  and about 23 after; no CCN tool is installed here. The complexity gate reported no new item (`026-gates.log`),
+  so the gate does not flag this.
 
 ## Commands and exit codes
 
-Logs 016-025 record tool output only. They do not record the command lines or EXIT codes. The outcome per log is
-what the log shows; no exit code is inferred from it.
+Exit codes below were recorded from the command echo of the run (run record `3647.r2`). No log file in `logs/`
+contains an exit line, so the exit codes are not verified from the logs. The "What the log shows" column is what
+each log does contain.
 
-| Log | Shown in log |
-|---|---|
-| 016-regen.log | CMake configure ends with "Build files have been written" |
-| 017-build-red.log | target `WasmOfflineRenderLimitTest` built |
-| 018-test-red.log | `Totals: 5 passed, 3 failed`; `0% tests passed, 1 tests failed out of 1` |
-| 019-build-green.log | target built |
-| 020-test-green.log | `100% tests passed out of 1` |
-| 021-syntax-after.log | empty (0 lines); purpose not recorded |
-| 022-build-reversed.log | target built |
-| 023-test-reversed.log | `Totals: 5 passed, 3 failed`; `0% tests passed, 1 tests failed out of 1` |
-| 024-build-restored.log | target built |
-| 025-test-restored.log | `100% tests passed out of 1` |
-| 026-test-final-green.log | `100% tests passed out of 1` |
-
-Commands run in this session (with exit codes):
-
-- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > .../logs/026-gates.log 2>&1; echo EXIT=$?`
-  gives `EXIT=0`, `RESULT: PASS`. All eight checks PASS: fork-sources, all-sources-reproduce,
-  no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity ("no new item in your files"),
-  file-length ("no new item in your files"). This run is before the commit.
-- `quiet-run p4-test-final -- sh -c 'cmake --build build --target WasmOfflineRenderLimitTest && cd build/tests && ctest -R WasmOfflineRenderLimitTest --output-on-failure'`
-  gives `exit 0`, `100% tests passed out of 1`.
-- The post-commit gate re-run is logged at `.../logs/027-gates-postcommit.log`.
+| Log | Step | EXIT | What the log shows |
+|---|---|---|---|
+| 016-regen.log | CMake configure | not recorded | ends with "Build files have been written" |
+| 017-build-red.log | build `WasmOfflineRenderLimitTest` (red) | 0 | target built, no error lines |
+| 018-test-red.log | `ctest` (red) | 8 | `Totals: 5 passed, 3 failed`; `Errors while running CTest` |
+| 019-build-green.log | build (green) | 0 | `Linking CXX executable ../zene`; test target built |
+| 020-test-green.log | `ctest` (green) | 0 | `100% tests passed out of 1` |
+| 021-syntax-after.log | `g++ -std=c++20 -fsyntax-only` on `WasmOfflineRender.cpp` | 0 | empty log (0 bytes). Purpose: the real file compiles without wasmtime |
+| 022-build-reversed.log | `git diff -- WasmOfflineRenderLimits.h WasmOfflineRender.cpp > fix.patch`, then `git apply -R fix.patch`, then build | 0, 0, 0 | `Building CXX ... WasmOfflineRender.cpp.o`; target built |
+| 023-test-reversed.log | `ctest` (reversed) | 8 | `Totals: 5 passed, 3 failed`; `rejectsOneFrameOverTheLimit` and `rejectsTheLargestFrameCount` fail on the `loadModuleFileCalls` QCOMPARE (Actual 1, Expected 0, `WasmOfflineRenderLimitTest.cpp:76`); `validatorBoundsTheFrameCount` fails |
+| (none) | `git apply fix.patch` | 0 | no log |
+| 024-build-restored.log | build (restored) | 0 | test target rebuilt; `zene` up to date |
+| 025-test-restored.log | `ctest` (restored) | 0 | `100% tests passed out of 1` |
+| 026-test-final-green.log | `ctest -R WasmOfflineRenderLimitTest` (final green) | 0 | `100% tests passed out of 1` |
+| 026-gates.log | `feature_check.py` (before the commit) | not recorded | `RESULT: PASS`; the eight checks PASS, including complexity and file-length with "no new item in your files" |
+| 027-gates-postcommit.log | `feature_check.py` (after the commit) | not recorded | `RESULT: PASS` |
+| m1, m2, m2b, m3 | build, then `ctest -R WasmOfflineRenderLimitTest` | build not recorded; `ctest` 8 | `m*-build.log` shows the target built; `m*-test.log` shows `Errors while running CTest` |
 
 ## Files changed
 
@@ -91,7 +112,5 @@ No file under `src/core` changed, and no command was added, so the ControlComman
 
 - The lane tree lacks `WANT_WASM` (`build/CMakeCache.txt` has it OFF), so the wasm suites that need it cannot run
   in this worktree.
-- Earlier, the round-2 scaffold was lost from the worktree. This is taken from the packet and was not re-verified
-  in this session.
 - Direct `renderOffline` callers bypass the control schema. This is why the bound is enforced in `src/wasm`
   and not only in the schema.
