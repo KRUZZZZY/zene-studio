@@ -82,9 +82,11 @@ cd WT/build/tests && ctest -R '^(SampleClipStretchTest|SampleClipRubberBandTest|
 cd WT && grep -nE 'sleep|QThread|std::thread|chrono|rand\(|QTest::qWait' tests/src/tracks/SampleClipStretchTest.cpp > L/grep-03-nondeterminism.txt; echo GREP_EXIT=$? >> L/grep-03-nondeterminism.txt
 # C19 (p4): gates
 python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py WT > L/gates-04.log 2>&1; echo EXIT=$? > L/exit-04-gates.txt
+# C20 (p5 rerun): determinism grep, ERE alternation
+cd WT && grep -nE 'sleep|QThread|std::thread|chrono|rand\(|time\(|QTime|clock|QElapsed' tests/src/tracks/SampleClipStretchTest.cpp > L/grep-05-nondeterminism.txt; echo GREP_EXIT=$? >> L/grep-05-nondeterminism.txt
 ```
 
-The exit codes in the table come from the named exit files, each of which holds the `EXIT=` line its command wrote. A first families attempt used `ctest --test-dir` and was refused by the guard (EXIT=97); it produced no counted result, and the passing families log comes from C17. The p5 determinism grep (grep-05) keeps its own command in its row.
+The exit codes in the table come from the named exit files, each of which holds the `EXIT=` line its command wrote. A first families attempt used `ctest --test-dir` and was refused by the guard (EXIT=97); it produced no counted result, and the passing families log comes from C17. The p5 determinism grep (grep-05) is C20 in the bash block.
 
 | Step | Command | Log | Exit file | Exit | Key output |
 |---|---|---|---|---|---|
@@ -106,7 +108,7 @@ The exit codes in the table come from the named exit files, each of which holds 
 | GREEN again test | C16 (p3) | `L/test-03-green2.log` | `L/exit-03-green2.txt` | 0 | 1/1 passed |
 | Four families | C17 (p3) | `L/test-03-families.log` | `L/exit-03-families.txt` | 0 | 4/4 passed |
 | Determinism grep (r2, p3) | C18 (p3) | `L/grep-03-nondeterminism.txt` | (in the file) | `GREP_EXIT=1` | no matches |
-| Determinism grep (p5 rerun) | `grep -nE 'sleep\|QThread\|std::thread\|chrono\|rand\(\|time\(\|QTime\|clock\|QElapsed' tests/src/tracks/SampleClipStretchTest.cpp > L/grep-05-nondeterminism.txt; echo GREP_EXIT=$? >> L/grep-05-nondeterminism.txt` | `L/grep-05-nondeterminism.txt` | (in the file) | `GREP_EXIT=1` | no matches |
+| Determinism grep (p5 rerun) | C20 (p5) | `L/grep-05-nondeterminism.txt` | (in the file) | `GREP_EXIT=1` | no matches |
 | Gates | C19 (p4) | `L/gates-04.log` | `L/exit-04-gates.txt` | 0 | 8 PASS, `RESULT: PASS` |
 
 The RED, mutant and GREEN codes are 8, 8 and 0, matching `L/exit-02-red.txt`, `L/exit-03-mutant.txt` and `L/exit-03-green.txt`.
@@ -143,7 +145,7 @@ Determinism grep, rerun this session on the worktree test file with the call-lev
 
 1. **The regression test fails with the product change reverted and passes with it (exit codes).** Reverted: `L/exit-02-red.txt` is EXIT=8 and `L/test-02-red.log` shows `FAIL!` at line 642 with `Totals: 9 passed, 1 failed`. Reverted with `git apply -R`: `L/exit-02-reverse.txt` EXIT=0 and `L/diff-02-reversed.txt` 8 deletions. Fixed: `L/exit-03-green.txt` is EXIT=0 and `L/exit-03-green2.txt` is EXIT=0 after the re-apply. The slot is the only failing test in the RED and mutant runs.
 
-2. **The test is deterministic (name the seam or injected values).** The determinism grep (section 3) finds no sleep, thread, clock or random call in `tests/src/tracks/SampleClipStretchTest.cpp` (`L/grep-05-nondeterminism.txt` GREP_EXIT=1, the p5 rerun with the exact command in section 3; `L/grep-03-nondeterminism.txt` GREP_EXIT=1, from r2). The inputs are fixed: the synthetic tones at `kLowTone` 440 Hz (line 79) and `kHighTone` 660 Hz (line 80), a fixed 2x warp (`applyTwoTimesWarp`, line 116, called at line 613), fixed gains 1.0 / 0.5 / 2.0, and levels measured over the middle half of each render.
+2. **The test is deterministic (name the seam or injected values).** The determinism grep (section 3) finds no sleep, thread, clock or random call in `tests/src/tracks/SampleClipStretchTest.cpp` (`L/grep-05-nondeterminism.txt` GREP_EXIT=1, the C20 rerun, the command in the bash block; `L/grep-03-nondeterminism.txt` GREP_EXIT=1, from r2). The inputs are fixed: the synthetic tones at `kLowTone` 440 Hz (line 79) and `kHighTone` 660 Hz (line 80), a fixed 2x warp (`applyTwoTimesWarp`, line 116, called at line 613), fixed gains 1.0 / 0.5 / 2.0, and levels measured over the middle half of each render.
 
 3. **The fix is at the cause and complete for every caller and sibling.** The only caller of `renderPreservingPitch` is `SamplePlayHandle.cpp:596`. The gain that the resample path applies is at `Sample.cpp:243-245`, and the sibling `TransientRepeat.cpp:284` already applies it. The fix uses the same gain, and WSOLA and Rubber Band share one multiply. Not checked: `CompSlip.cpp` has 0 references to amplification (grep), so whether slipped comp reads need the gain is unverified (see Other findings).
 
