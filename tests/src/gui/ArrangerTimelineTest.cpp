@@ -255,6 +255,23 @@ private slots:
 
 	void recoloringOnlyLockedClipsKeepsTheSongClean();
 
+	void aLockedClipCanBeMutedButNotDeletedByMiddleClick()
+	{
+		Clip* clip = clipAt(m_track, 0, 2 * Bar);
+		QCoreApplication::processEvents();
+		ClipView* view = viewOf(clip);
+		QVERIFY(view != nullptr);
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), control::clipIdOf(clip)}}).ok);
+
+		const QPoint center(view->width() / 2, view->height() * 3 / 4);
+		QTest::mouseClick(view, Qt::MiddleButton, Qt::ControlModifier, center);
+		QVERIFY2(clip->isMuted(), "Ctrl-middle-click did not mute the locked clip");
+
+		QTest::mouseClick(view, Qt::MiddleButton, Qt::NoModifier, center);
+		QCOMPARE(m_track->getClips().size(), std::size_t{1});
+		QCOMPARE(clip->startPosition().getTicks(), 0);
+	}
+
 	//! 0.5.0 theme 9 (wave 3): a wheel turn zooms by its size - a touchpad's tenth-of-a-notch deltas add up to a
 	//! notch's steps - around the tick under the pointer, and one gesture joins the zoom history once.
 	void aWheelZoomIsContinuousAroundThePointer();
