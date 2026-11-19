@@ -74,24 +74,51 @@ Both are already covered by the existing registrations: `tests/CMakeLists.txt:42
 | Step | Command | Result |
 | --- | --- | --- |
 | RED build | `cmake --build build --target DataFileSaveIntegrityTest` | EXIT=0 (`logs/03-build-red.log`) |
-| RED test | `ctest -R DataFileSaveIntegrityTest --output-on-failure` (from `build/tests`) | EXIT=1, 0/1 passed; `failedBackupCopyKeepsThePreviousBackup` fails (`logs/04-test-red.log`) |
+| RED test | `ctest -R DataFileSaveIntegrity --output-on-failure` (from `build/tests`) | EXIT=8, 0/1 ctest tests; binary totals 21 passed, 1 failed; `failedBackupCopyKeepsThePreviousBackup` fails (`logs/04-test-red.log`) |
 | GREEN build | same build command | EXIT=0 (`logs/05-build-green.log`) |
-| GREEN test | same ctest command | EXIT=0, 1/1 passed (`logs/06-test-green.log`) |
+| GREEN test | same ctest command | EXIT=0, 1/1 ctest tests passed, no `FAIL!` (`logs/06-test-green.log`; ctest hides the binary's totals on success) |
 | REVERTED build | production change removed, test kept | EXIT=0 (`logs/07-build-reverted.log`) |
-| REVERTED test | same ctest command | EXIT=1, 0/1 passed, same `"current"` vs `"older generation"` failure (`logs/08-test-reverted.log`) |
+| REVERTED test | same ctest command | EXIT=8, 0/1 ctest tests; binary totals 21 passed, 1 failed, same `"current"` vs `"older generation"` failure (`logs/08-test-reverted.log`) |
 | REAPPLIED build | production change restored | EXIT=0 (`logs/09-build-reapplied.log`) |
 | REAPPLIED test | same ctest command | EXIT=0, 1/1 passed (`logs/10-test-reapplied.log`) |
 | Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <repo>` | EXIT=0; all eight rows PASS, complexity and file-length "no new item in your files" (`logs/11-gates.log`) |
+| Submit check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <repo> new-p8-109` | EXIT=0 (`logs/12-submit-check.log`) |
 
 The RED test is a real behavior failure, not a compile failure: the build in
-`03-build-red.log` completes and `04-test-red.log` shows the assertion.
+`03-build-red.log` completes and `04-test-red.log` shows the assertion. The
+ctest logs record the failure but not the numeric exit code; EXIT=8 is what the
+p2b and p4 runs returned.
+
+## Commands run
+
+Run directory: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p8-109.r1`.
+`<repo>` is `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p8-109`.
+
+```sh
+# from build/tests, RED (production fix not yet in the tree)
+ctest -R DataFileSaveIntegrity --output-on-failure
+# EXIT=8
+
+# from the repository root, revert only the production diff for the reverted run
+git diff > /home/kruzzzzy/.config/kads/zene/state/runs/new-p8-109.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.config/kads/zene/state/runs/new-p8-109.r1/logs/fix.patch
+# EXIT=0; rebuild, then ctest as above gives EXIT=8 again
+
+git apply /home/kruzzzzy/.config/kads/zene/state/runs/new-p8-109.r1/logs/fix.patch
+# EXIT=0
+
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <repo>
+# EXIT=0
+
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <repo> new-p8-109
+# EXIT=0
+```
 
 ## Other findings
 
-- `src/core/ControlCommandsProjectLifecycle.cpp:133-187` snapshots and restores
-  template files including `.bak`, but it does not remove a `.bak` before
-  copying into it; its actual project save goes through `DataFile::writeFile`,
-  so it inherits this fix. No separate change made.
+- `src/core/ControlCommandsProjectLifecycle.cpp:113-187` snapshots and restores
+  template files; the `.bak` path is built at `:317`. It does not remove a `.bak`
+  before copying into it; its actual project save goes through
+  `DataFile::writeFile`, so it inherits this fix. No separate change made.
 - `src/core/ProjectRecovery.cpp:243-244` removes the recovery file and its
   sidecar, not `.bak`. `src/core/RevisionTimeline.cpp:138-140` only derives the
   displayed `.bak` names. Neither is a second backup writer.
@@ -102,11 +129,13 @@ The RED test is a real behavior failure, not a compile failure: the build in
 
 - **Regression fails reverted and passes with the change.** Reverted production
   code with the new tests kept: build EXIT=0 (`logs/07-build-reverted.log`),
-  `ctest -R DataFileSaveIntegrityTest` EXIT=1 with the same `"current"` vs
-  `"older generation"` assertion (`logs/08-test-reverted.log`). Reapplied:
-  build EXIT=0 (`logs/09-build-reapplied.log`), test EXIT=0, 1/1 passed
-  (`logs/10-test-reapplied.log`). The original RED run shows the identical
-  failure (`logs/04-test-red.log`).
+  `ctest -R DataFileSaveIntegrity --output-on-failure` EXIT=8 with the same
+  `"current"` vs `"older generation"` assertion, binary totals 21 passed and
+  1 failed (`logs/08-test-reverted.log`). Reapplied:
+  build EXIT=0 (`logs/09-build-reapplied.log`), test EXIT=0, 1/1 ctest tests
+  passed (`logs/10-test-reapplied.log`). The original RED run shows the
+  identical failure and the same EXIT=8, 21 passed / 1 failed
+  (`logs/04-test-red.log`).
 - **Deterministic, no timing.** Both cases use a `QTemporaryDir` and plain files;
   there is no sleep, clock or thread. The failure is injected by pre-creating
   `<target>.bak.new` as a non-empty directory with the existing `occupy()`
