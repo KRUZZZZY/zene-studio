@@ -56,7 +56,10 @@ Exit codes are from the run record for each step. The steps marked "`EXIT=` line
 | Mutation: test | `test-8-mutated.log` | `FAIL! : emptyResampleOfAShortImpulseKeepsTheFallback() 'loaded' returned FALSE`; `Totals: 9 passed, 1 failed` | 8 (`EXIT=8` line in log) |
 | Restored: build | `build-9-restored.log` | built | 0 (`EXIT=0` line in log) |
 | Restored: test, verbose | `test-9-restored.log` | all 10 QTest entries PASS (8 slots + initTestCase and cleanupTestCase); `Totals: 10 passed, 0 failed` | 0 (`EXIT=0` line in log) |
-| Gates | `gates-1.log` | `RESULT: PASS`; complexity and file-length: `no new item in your files` | 0 (`EXIT=0`) |
+| Gates at HEAD | `gates-2.log` | `RESULT: PASS`; no FAIL; complexity and file-length: `no new item in your files` | 0 (`EXIT=0` line in log) |
+| Final build, four family targets, at HEAD | `build-10.log` | exit 0 | 0 (`EXIT=0` line in log) |
+| Final test, ConvolutionFftwPlanScopeTest, at HEAD | `test-10-final.log` | `100% tests passed out of 1` | 0 (`EXIT=0` line in log) |
+| Family test, Convolution, SampleBufferResample, AudioResampler, at HEAD | `test-11-family.log` | `100% tests passed out of 4` (4/4) | 0 (`EXIT=0` line in log) |
 
 Disclosures:
 
@@ -67,7 +70,8 @@ Disclosures:
 - Threads: `loadImpulse` is called from the constructor (`ConvolutionReverb.cpp:173`), from `ConvolutionReverbControls::loadSettings` (`:164`), and from the `sampleRateChanged` lambda (`:176`). `atRate` is called only from `loadImpulse` (`:207`). Nothing on the audio thread calls them. The emitting thread of `sampleRateChanged` was not checked.
 - Fallback-pin pass, first build: the new slot's comparison of `sampleRate()` (an unsigned `sample_rate_t`) with a signed value failed `-Werror=sign-compare`. The expected value is now cast to `sample_rate_t`. This changes no behaviour.
 - Fallback-pin pass, mutation: deleting the fallback line alone did not compile. `expected` (line 114) became unused, and the build treats warnings as errors (`-Werror=unused-variable`). That first mutated build exited 2, and the ctest run after it used the stale binary and exited 0. That run is not evidence and its logs were overwritten. The mutant therefore replaces the deleted line with `(void)expected;`; nothing else differs. The patch is the run's `logs/mutate.patch`, not committed. The product file was restored and equals `429eaf572a` (`git diff HEAD` empty).
-- Gates were not rerun for this pass. The gate row above is from the earlier run.
+- Gates were rerun at HEAD for the final pass: `gates-2.log` (the gate row above). The earlier `gates-1.log` row is superseded.
+- For `build-10`, `test-10-final`, `test-11-family`, `gates-2` and `submit-1`, the log files first held only the quiet-runner summary. They were replaced with the full output of the same runs, and the recorded `EXIT=` line was kept.
 
 ## Other findings
 
@@ -78,4 +82,14 @@ Not changed in this cluster.
 
 ## Self-check
 
-(To be filled in by p6.)
+Answers to the five ASK items that `submit_check.py` printed (`logs/submit-1.log`). Paths are given where they are not `plugins/ConvolutionReverb/ConvolutionReverb.cpp`.
+
+1. **Fails with the change reverted, passes with it (exit codes).** Reverted: `logs/test-5-red-reversed.log:11` reads `FAIL! : ConvolutionFftwPlanScopeTest::unresamplableImpulseIsRefused() 'error.isEmpty()' returned FALSE` (loadImpulse threw on a 1 Hz impulse, `SRC ratio outside [1/256, 256]`), and the run exits `EXIT=8` (`:30`). Reapplied: `logs/test-6-green-reapplied.log:8` `EXIT=0`. At HEAD: `logs/test-10-final.log` `EXIT=0` (1/1), and the family run `logs/test-11-family.log` `EXIT=0` (4/4).
+2. **Deterministic.** The test file has no sleep, timer, thread or random source: a grep of `tests/src/plugins/ConvolutionFftwPlanScopeTest.cpp` for `sleep|qWait|QElapsedTimer|std::chrono|QTimer|msleep|usleep|QThread|rand|time(` found nothing. The inputs are injected. `writeWav` (`:50`) writes a WAV at a chosen rate into a `QTemporaryDir` (`:193`, `:219`, `:237`, `:259`, `:287`), at 1 Hz, at 2x and 4x the engine rate, and at the engine rate. The engine rate is read from `Engine::audioEngine()->outputSampleRate()` (`:221`, `:239`, `:261`), and the engine is started at `:110-111` with the device stopped. Repeat runs agree: `logs/test-1-red.log:11` and `logs/test-2-red.log:11` give the same failure message.
+3. **Fix at the cause; callers and siblings: partly.** The changed unit is `atRate` (`ConvolutionReverb.cpp:105-127`). Its only caller is `loadImpulse` (`:207`), which returns false on a null result (`:208`). Two gaps stay open. First, the three callers of `loadImpulse` ignore its bool: `:164`, `:173` and `:176` are bare calls, so a refused impulse is silent there (see Other findings). Second, the other `resampleBuffer` callers, `src/core/ControlStemSource.cpp:130` and `src/core/RenderQueue.cpp:207`, do not pass through `atRate` and were not changed. I did not check whether they catch the resampler's exception. Not traced: whether `impulseLoad` (`src/core/ControlCommandsDeviceTools.cpp:349-375`) reaches `loadImpulse`.
+4. **No collateral damage: partly.** The normal path is unchanged. A non-empty resample is returned as before (`:124`). `veryShortImpulseStillLoads` (`:217`) and `validImpulseLoads` (`:257`) pass: all 10 QTest entries pass in `logs/test-9-restored.log`, and the ctest entry passes at HEAD in `logs/test-10-final.log`. Two changes can reach saved projects, both intended:
+   - An impulse that used to throw is now refused, and the previous kernel stays (`unresamplableImpulseIsRefused`, `:191`). Before, the exception escaped `loadImpulse`.
+   - An impulse whose resample came back empty while frames were expected used to load as the wrong-rate `source` (`429eaf572a~1`, `ConvolutionReverb.cpp:113`: `return resampled != nullptr && resampled->size() > 0 ? resampled : source;`). Now it is refused (`:126`, `:208`). I did not establish that a real file reaches this case, and no slot tests it.
+
+   The code added is a try/catch and two null returns inside `atRate` (`:120-126`). No limit was added. `loadImpulse` is the only caller of `atRate`.
+5. **ALREADY-FIXED or FALSE-POSITIVE.** Not applicable: the verdict is FIXED (line 1 of this report).
