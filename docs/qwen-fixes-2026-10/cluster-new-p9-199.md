@@ -41,15 +41,15 @@ Exit codes: the packet's p1-p4 record gives the exit codes below. The log files 
 
 ### Exact commands and exit codes
 
-These are the literal command lines, in order. Runs were made in the work tree `kads-new-p9-199`. p1 and p2 were run through quiet-run; p3 and p4 were run directly (cmake, ctest, git and feature_check were not wrapped). All exit codes are the worker records, not the logs: the copied logs contain no EXIT lines, so the exit codes are not independently verified from the logs.
+These are the literal command lines, in order. Runs were made in the work tree `kads-new-p9-199`. p1's git show and git apply, and the p3 and p4 commands, were run directly; the p1 and p2 cmake and ctest runs were captured through quiet-run, which preserved the same exit codes (per the worker record). All exit codes are the worker records, not the logs: the copied logs contain no EXIT lines, so the exit codes are not independently verified from the logs.
 
-p1 (red, before the fix; through quiet-run):
+p1 (red, before the fix; build and ctest through quiet-run):
 1. `git show 2c1029ec3d135da9f35318c0b0688f5222a78a88 -- tests/src/core/ArticulationPlaybackTest.cpp tests/src/plugins/MpeTestConsumer.cpp > /home/kruzzzzy/.config/kads/zene/state/runs/new-p9-199.r3/logs/n199-r3-01-test-side.patch` → exit 0
 2. `git apply /home/kruzzzzy/.config/kads/zene/state/runs/new-p9-199.r3/logs/n199-r3-01-test-side.patch` → exit 0
 3. `cmake --build build --target ArticulationPlaybackTest zene` → exit 0
 4. `cd build/tests && ctest -R '^ArticulationPlaybackTest$' --output-on-failure` → exit 8
 
-p2 (green, with the fix, sibling suite; through quiet-run):
+p2 (green, with the fix, sibling suite; build and ctest through quiet-run):
 5. `cmake --build build --target zene ArticulationPlaybackTest NoteCurvesAcrossTest MpePlaybackTest NotePlaybackTest` → exit 0
 6. `cd build/tests && ctest -R '^(ArticulationPlaybackTest|NoteCurvesAcrossTest|MpePlaybackTest|NotePlaybackTest)$' --output-on-failure` → exit 0
 
