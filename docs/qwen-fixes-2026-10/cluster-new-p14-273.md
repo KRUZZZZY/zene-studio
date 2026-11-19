@@ -37,30 +37,77 @@ It renders a 2x-warped clip in PreservePitch mode at gains 1.0, 0.5 and 2.0 (one
 
 ## 3. Commands and exit codes
 
-Command lines for the rows from the baseline build through the gates were not recovered. No record of them exists in the r2 run folder: `duet/14-worker/session.log` covers only the p5 session, and the build and test logs hold tool output, not command text. Those rows give the log and exit file only, and their exit codes are read from the exit files. The determinism grep was rerun in p5 and its exact command is given below.
+The commands below are transcribed verbatim from the lead's p1b–p4 packets. Only the `WT` and `L` abbreviations are used, defined once here:
+
+```
+WT=/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p14-273
+L=/home/kruzzzzy/.config/kads/zene/state/runs/new-p14-273.r2/logs
+```
+
+```bash
+# C1 (p1b): status at baseline
+cd WT && git rev-parse HEAD > L/head-01-baseline.txt && git status --porcelain > L/status-01-baseline.txt; echo EXIT=$? > L/exit-01-status.txt
+# C2 (p1b): baseline build
+cd WT && cmake --build build --target zene SampleClipStretchTest > L/build-01-baseline.log 2>&1; echo EXIT=$? > L/exit-01-baseline.txt
+# C3 (p1b): baseline test
+cd WT/build/tests && ctest -R '^SampleClipStretchTest$' --output-on-failure > L/test-01-baseline.log 2>&1; echo EXIT=$? > L/exit-01-baseline-test.txt
+# C4 (p2): generate fix.patch
+cd WT && git diff 540f980dc7^ 540f980dc7 -- src/core/SamplePlayHandle.cpp > L/fix.patch; echo EXIT=$? > L/exit-02-patch.txt
+# C5 (p2): reverse the fix
+cd WT && git apply -R L/fix.patch; echo EXIT=$? > L/exit-02-reverse.txt; git diff --stat > L/diff-02-reversed.txt 2>&1
+# C6 (p2): RED build
+cd WT && cmake --build build --target zene SampleClipStretchTest > L/build-02-red.log 2>&1; echo EXIT=$? > L/exit-02-build-red.txt
+# C7 (p2): RED test
+cd WT/build/tests && ctest -R '^SampleClipStretchTest$' --output-on-failure > L/test-02-red.log 2>&1; echo EXIT=$? > L/exit-02-red.txt
+# C8 (p3): forward apply of fix.patch
+cd WT && git apply L/fix.patch; echo EXIT=$? > L/exit-03-reapply.txt; git status --porcelain > L/status-03-reapply.txt
+# C9 (p3): GREEN build
+cd WT && cmake --build build --target zene SampleClipStretchTest > L/build-03-green.log 2>&1; echo EXIT=$? > L/exit-03-build-green.txt
+# C10 (p3): GREEN test
+cd WT/build/tests && ctest -R '^SampleClipStretchTest$' --output-on-failure > L/test-03-green.log 2>&1; echo EXIT=$? > L/exit-03-green.txt
+# C11 (p3): mutant source change. This is an edit-tool action, not a shell command: src/core/SamplePlayHandle.cpp:744, `dst[i] *= gain;` -> `dst[i] *= gain * gain;`
+# C12 (p3): mutant diff
+cd WT && git diff -- src/core/SamplePlayHandle.cpp > L/mutant.patch; echo EXIT=$? > L/exit-03-mutant-patch.txt
+# C13 (p3): mutant build
+cd WT && cmake --build build --target zene SampleClipStretchTest > L/build-03-mutant.log 2>&1; echo EXIT=$? > L/exit-03-build-mutant.txt
+# C14 (p3): mutant test
+cd WT/build/tests && ctest -R '^SampleClipStretchTest$' --output-on-failure > L/test-03-mutant.log 2>&1; echo EXIT=$? > L/exit-03-mutant.txt
+# C15 (p3): reverse the mutant
+cd WT && git apply -R L/mutant.patch; echo EXIT=$? > L/exit-03-mutant-reverse.txt; git status --porcelain > L/status-03-final.txt
+# C16 (p3): GREEN again, build then test
+cd WT && cmake --build build --target zene SampleClipStretchTest > L/build-03-green2.log 2>&1; echo EXIT=$? > L/exit-03-build-green2.txt; cd build/tests && ctest -R '^SampleClipStretchTest$' --output-on-failure > L/test-03-green2.log 2>&1; echo EXIT=$? > L/exit-03-green2.txt
+# C17 (p3): four test families
+cd WT/build/tests && ctest -R '^(SampleClipStretchTest|SampleClipRubberBandTest|AudioStretcherTest|TakeLaneCompPlaybackTest)$' --output-on-failure > L/test-03-families.log 2>&1; echo EXIT=$? > L/exit-03-families.txt
+# C18 (p3): determinism grep
+cd WT && grep -nE 'sleep|QThread|std::thread|chrono|rand\(|QTest::qWait' tests/src/tracks/SampleClipStretchTest.cpp > L/grep-03-nondeterminism.txt; echo GREP_EXIT=$? >> L/grep-03-nondeterminism.txt
+# C19 (p4): gates
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py WT > L/gates-04.log 2>&1; echo EXIT=$? > L/exit-04-gates.txt
+```
+
+The exit codes in the table come from the named exit files, each of which holds the `EXIT=` line its command wrote. A first families attempt used `ctest --test-dir` and was refused by the guard (EXIT=97); it produced no counted result, and the passing families log comes from C17. The p5 determinism grep (grep-05) keeps its own command in its row.
 
 | Step | Command | Log | Exit file | Exit | Key output |
 |---|---|---|---|---|---|
-| Baseline build | not recovered | `L/build-01-baseline.log` | `L/exit-01-baseline.txt` | 0 | build |
-| Baseline test | not recovered | `L/test-01-baseline.log` | `L/exit-01-baseline-test.txt` | 0 | 1/1 passed |
-| Status at baseline | not recovered | - | `L/exit-01-status.txt` | 0 | `L/status-01-baseline.txt` |
-| RED build (fix absent) | not recovered | `L/build-02-red.log` | `L/exit-02-build-red.txt` | 0 | build |
-| RED test | not recovered | `L/test-02-red.log` | `L/exit-02-red.txt` | **8** | 9 passed, 1 failed; ratio 1 of 1.0 at 440 Hz |
-| Reverse patch (`git apply -R`) | not recovered | `L/diff-02-reversed.txt` | `L/exit-02-reverse.txt` | 0 | 8 deletions |
-| Generate `fix.patch` | not recovered | - | - | - | `L/fix.patch` (8 added lines) |
-| Apply `fix.patch` (step 02) | not recovered | - | `L/exit-02-patch.txt` | 0 | `L/fix.patch` (8 added lines) |
-| GREEN build | not recovered | `L/build-03-green.log` | `L/exit-03-build-green.txt` | 0 | build |
-| GREEN test | not recovered | `L/test-03-green.log` | `L/exit-03-green.txt` | **0** | 1/1 passed |
-| Mutant build | not recovered | `L/build-03-mutant.log` | `L/exit-03-build-mutant.txt` | 0 | build |
-| Mutant apply / reverse | not recovered | - | `L/exit-03-mutant-patch.txt`, `L/exit-03-mutant-reverse.txt` | 0, 0 | `L/mutant.patch` |
-| Mutant test (gain applied twice) | not recovered | `L/test-03-mutant.log` | `L/exit-03-mutant.txt` | **8** | ratio 0.25 |
-| Re-apply fix | not recovered | - | `L/exit-03-reapply.txt` | 0 | `L/status-03-reapply.txt` |
-| GREEN again build | not recovered | `L/build-03-green2.log` | `L/exit-03-build-green2.txt` | 0 | build |
-| GREEN again test | not recovered | `L/test-03-green2.log` | `L/exit-03-green2.txt` | 0 | 1/1 passed |
-| Four families | not recovered | `L/test-03-families.log` | `L/exit-03-families.txt` | 0 | 4/4 passed |
-| Determinism grep (r2, p3) | pattern `sleep\|QThread\|std::thread\|chrono\|rand\(\|time\(\|QTime\|clock\|QElapsed` on `tests/src/tracks/SampleClipStretchTest.cpp`; exact command not recovered | `L/grep-03-nondeterminism.txt` | (in the file) | `GREP_EXIT=1` | no matches |
+| Status at baseline | C1 (p1b) | - | `L/exit-01-status.txt` | 0 | `L/head-01-baseline.txt`, `L/status-01-baseline.txt` |
+| Baseline build | C2 (p1b) | `L/build-01-baseline.log` | `L/exit-01-baseline.txt` | 0 | build |
+| Baseline test | C3 (p1b) | `L/test-01-baseline.log` | `L/exit-01-baseline-test.txt` | 0 | 1/1 passed |
+| RED build (fix absent) | C6 (p2) | `L/build-02-red.log` | `L/exit-02-build-red.txt` | 0 | build |
+| RED test | C7 (p2) | `L/test-02-red.log` | `L/exit-02-red.txt` | **8** | 9 passed, 1 failed; ratio 1 of 1.0 at 440 Hz |
+| Reverse patch (`git apply -R`) | C5 (p2) | `L/diff-02-reversed.txt` | `L/exit-02-reverse.txt` | 0 | 8 deletions |
+| Generate `fix.patch` | C4 (p2) | - | `L/exit-02-patch.txt` | 0 | `L/fix.patch` (8 added lines) |
+| Mutant source change | C11 (p3): edit-tool action, not a shell command | - | - | - | `src/core/SamplePlayHandle.cpp:744`: `dst[i] *= gain;` -> `dst[i] *= gain * gain;` |
+| GREEN build | C9 (p3) | `L/build-03-green.log` | `L/exit-03-build-green.txt` | 0 | build |
+| GREEN test | C10 (p3) | `L/test-03-green.log` | `L/exit-03-green.txt` | **0** | 1/1 passed |
+| Mutant build | C13 (p3) | `L/build-03-mutant.log` | `L/exit-03-build-mutant.txt` | 0 | build |
+| Mutant diff / reverse | C12, C15 (p3) | - | `L/exit-03-mutant-patch.txt`, `L/exit-03-mutant-reverse.txt` | 0, 0 | `L/mutant.patch`; `L/status-03-final.txt` |
+| Mutant test (gain applied twice) | C14 (p3) | `L/test-03-mutant.log` | `L/exit-03-mutant.txt` | **8** | ratio 0.25 |
+| Forward apply of `fix.patch` (p3) | C8 (p3) | - | `L/exit-03-reapply.txt` | 0 | `L/status-03-reapply.txt` |
+| GREEN again build | C16 (p3) | `L/build-03-green2.log` | `L/exit-03-build-green2.txt` | 0 | build |
+| GREEN again test | C16 (p3) | `L/test-03-green2.log` | `L/exit-03-green2.txt` | 0 | 1/1 passed |
+| Four families | C17 (p3) | `L/test-03-families.log` | `L/exit-03-families.txt` | 0 | 4/4 passed |
+| Determinism grep (r2, p3) | C18 (p3) | `L/grep-03-nondeterminism.txt` | (in the file) | `GREP_EXIT=1` | no matches |
 | Determinism grep (p5 rerun) | `grep -nE 'sleep\|QThread\|std::thread\|chrono\|rand\(\|time\(\|QTime\|clock\|QElapsed' tests/src/tracks/SampleClipStretchTest.cpp > L/grep-05-nondeterminism.txt; echo GREP_EXIT=$? >> L/grep-05-nondeterminism.txt` | `L/grep-05-nondeterminism.txt` | (in the file) | `GREP_EXIT=1` | no matches |
-| Gates | not recovered | `L/gates-04.log` | `L/exit-04-gates.txt` | 0 | 8 PASS, `RESULT: PASS` |
+| Gates | C19 (p4) | `L/gates-04.log` | `L/exit-04-gates.txt` | 0 | 8 PASS, `RESULT: PASS` |
 
 The RED, mutant and GREEN codes are 8, 8 and 0, matching `L/exit-02-red.txt`, `L/exit-03-mutant.txt` and `L/exit-03-green.txt`.
 
