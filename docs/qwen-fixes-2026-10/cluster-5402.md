@@ -15,7 +15,7 @@ The regression test `takeRefusesExistingFile` is in `db57d9e28a`. This commit ad
 
 ## Caller audit
 
-- The only production caller of `TakeRecorder::start` is `src/core/ControlCommandsRecorder.cpp:88`. Its path comes from line 86: `TakeRecorder::defaultTakePath()` or the requested file's absolute path. I searched `src` for `.start(` and `->start(`; the other matches are timers and threads.
+- The only production caller of `TakeRecorder::start` is `src/core/ControlCommandsRecorder.cpp:88`. Its path comes from line 86: `TakeRecorder::defaultTakePath()` or the requested file's absolute path. The 11 `.cpp` files under `src` that mention `TakeRecorder` (`rg -l TakeRecorder src --glob '*.cpp'`) were checked with `rg -n 'TakeRecorder::of|->start\(|\.start\('`. No other call to `TakeRecorder::start` exists in them. The other `.start(` matches are timers and threads (`MidiTakeRecorder.cpp:153`, `AudioEngine.cpp:557` and `570`, `Song.cpp:157`). The other `TakeRecorder::of` matches are the definition (`TakeRecorder.cpp:196`) and lookups (`ControlCommandsRecorder.cpp:61`, `EffectDeviceMenu.cpp:149`). `rg -n 'start\(' src/core/TakeRecorder.cpp` finds only the definition at line 66.
 - `src/core/ControlCommandsSamplerTake.cpp:258` and `src/core/ControlCommandsSessionAudioRecord.cpp:250` also call `defaultTakePath()`. Neither file has a `.start(` or `->start(` call. I did not trace where their paths go.
 - `TakeRecorder::defaultTakePath()` is at `src/core/TakeRecorder.cpp:202-212`. Its uniqueness loop is at line 209: `for (int n = 2; QFileInfo::exists(path); ++n)` appends ` (n)` while the path exists.
 - Test call sites in `tests/src/core/ReceiverEffectTest.cpp`: 130 (`take.start` inside the `recordTake` helper defined at 127; used at 333 and 347), 325, 338, 355. Line 276 is in another slot.
@@ -58,7 +58,7 @@ Family (fix applied):
 - `(cd build/tests && ctest -R 'ReceiverEffect|EffectDeviceMenu|Recorder|Take|ControlCommands' --output-on-failure > LOGS/p4b-family-test.log 2>&1)` → EXIT 0; 21 tests matched; "100% tests passed out of 21". `ControlMidiTakeRecord` is **Skipped** (log line 39), so 20 ran and passed and 1 was skipped.
 
 Gates:
-- `LOGS/gates-2.log` (an earlier run) ends with `RESULT: PASS`. Its EXIT code is not recorded in the file. The gates rerun for this commit is logged separately in `LOGS/p4b-gates.log`.
+- `LOGS/p5-gates.log` is the gates run for this report: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > LOGS/p5-gates.log 2>&1; echo EXIT=$?` → EXIT 0. The log ends with `RESULT: PASS`. (`LOGS/gates-2.log` is no longer cited: its exit code is not recorded.)
 
 ## Which assertion fails under RED
 
@@ -103,4 +103,10 @@ Five truncating `SFM_WRITE` sites, not examined for whether they are safe. They 
 `grep -rl --include='*.cpp' SFM_WRITE src` lists 13 files, so these five are not all of them. The other files are not examined either.
 
 ## Self-check
+
+1. **RED and GREEN exit codes.** Yes. RED (fix reverted with `git apply -R LOGS/fix.patch`): exit 8 was recorded when the run was made (see RED above). `LOGS/p4b-red-test.log` has no exit-code line, but it shows `FAIL!  : ReceiverEffectTest::takeRefusesExistingFile() '!take->start(sentinel, 44100, &why)' returned FALSE` at `tests/src/core/ReceiverEffectTest.cpp(325)` and `Totals: 7 passed, 1 failed`. GREEN (fix applied): `LOGS/p4b-green-test.log` shows `100% tests passed out of 1`. A fresh run of the same ctest command in this session, through the quiet runner, printed `exit 0` (log `duet/12-worker/tmp/001-p5-green-now.log`).
+2. **Deterministic.** Yes, with one gap. A search of `tests/src/core/ReceiverEffectTest.cpp` for `sleep|qWait|QTimer|msleep|usleep|QThread|wait|QElapsedTimer|currentTime|QDateTime` found no matches. The test uses fixed values: sample rate 44100 (lines 325, 338, 355; helper line 130), a `QTemporaryDir` (line 316), 10 blocks of `stereoBlock(0.25f, 0.5f)` (helper lines 133-135), and exact frame counts `10 * Frames` (lines 336, 342, 349). Not traced: whether `TakeRecorder::stop` returns only after the writer thread has finished. So the test alone does not show the absence of races. It passed in `LOGS/p4b-green-test.log` and in the fresh run above.
+3. **Fix at the cause and complete.** The cause is the open with `QIODevice::NewOnly` at `src/core/TakeRecorder.cpp:76-88`, which makes create-or-fail atomic. The only caller of `TakeRecorder::start` is `src/core/ControlCommandsRecorder.cpp:88` (see the corrected caller audit). The fix changes only `start()`: `git show --stat 9e3fa27359` shows 16 insertions in `src/core/TakeRecorder.cpp`. The family run in `LOGS/p4b-family-test.log` shows `100% tests passed out of 21` (line 45) and one skipped test, `ControlMidiTakeRecord` (line 49). This is complete for `TakeRecorder::start` only; the five other truncating `SFM_WRITE` sites under Other findings were not examined.
+4. **No collateral damage.** The check refuses only a path that already exists. `git show --stat 9e3fa27359` shows no file outside `src/core/TakeRecorder.cpp`, so project-loading and saved-data code is not touched. Generated paths never hit the refusal: `defaultTakePath()` (`src/core/TakeRecorder.cpp:202-211`) loops at line 209 until the name is unused. The one caller with a user-given path, `src/core/ControlCommandsRecorder.cpp:88`, now gets a refusal where it used to truncate an existing file; that is the intended change. Loading old projects and saved data was not run, and no test here loads a project.
+5. **ALREADY-FIXED or FALSE-POSITIVE evidence.** Not applicable: the verdict on line 1 is FIXED.
 
