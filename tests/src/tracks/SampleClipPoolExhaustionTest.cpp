@@ -1,12 +1,13 @@
 /*
- * SampleClipPoolExhaustionTest.cpp - clip starts beyond the engine's play-handle list capacity are not lost and not
- * started twice, are deferred, and are admitted on later passes; the audio thread does not allocate meanwhile.
+ * SampleClipPoolExhaustionTest.cpp - 1200 clip starts across two groups, more than the nominal 1024-entry play-handle
+ * list. Every start lands exactly once (none lost, none started twice), and the audio thread does not allocate.
+ * The forced-refusal path is covered by the second slot (added next), not by this one.
  *
- * Capacity: the play-handle list's nominal size is PlayHandle::MaxNumber (1024), but this build admitted more starts than
- * that without a deferral (see the state sequence). A start that finds the
- * staging list full is dropped without a count (AudioEngine::addPlayHandle, AudioEngine.cpp:1497-1509; staging list
- * sized at AudioEngine.cpp:508). That is an existing engine limit. This test never stages more than 1000 starts in one
- * pass, so the limit is not hit and no start is dropped (asserted as droppedPlayHandles() unchanged).
+ * Capacity: the play-handle list's nominal size is PlayHandle::MaxNumber (1024). The engine grows the list ahead of
+ * demand, so all 1199 live starts are admitted with no deferral (see the state sequence). A push into the staging list
+ * beyond 1024 disposes the handle (AudioEngine::addPlayHandle, AudioEngine.cpp:1497-1509; staging list sized at
+ * AudioEngine.cpp:508). That is an existing engine limit. This test never stages more than 1000 starts in one pass, so
+ * the limit is not hit and no start is dropped (asserted as droppedPlayHandles() unchanged).
  *
  * Clips: tracks 0..19 (TrackCount 20) each hold 60 clips of 2 s source. Group A is 50 clips per track at TimePos(0):
  * 1000 in all. Group B is 10 clips per track at TimePos(1): 200 in all. Track 0's first clip is the one-tick clip:
@@ -272,6 +273,8 @@ private slots:
 		const std::uint64_t defR2Delta = deferredDelta();
 		QVERIFY2(static_cast<std::int64_t>(defR2Delta) >= 0, "the deferred counter moved backwards");
 		const int defR2 = static_cast<int>(defR2Delta);
+		// stillDeferredR2 counts latched clips without a handle. In the observed run it and defR2 are both 0, so the check
+		// holds trivially (0 = 0). It would catch a latched clip that has no handle.
 		const int stillDeferredR2 = latched() - liveR2;              // latched clips without a handle yet
 		QCOMPARE(stillDeferredR2, defR2);                            // every latched clip without a handle is a deferred start
 		// Live + deferred = 1199 = 1200 started - 1 ended. This holds only if the one-tick handle is gone.
@@ -282,11 +285,13 @@ private slots:
 			"track 0 must hold 49 group A clips plus the group B starts admitted so far");
 		QCOMPARE(Engine::audioEngine()->droppedPlayHandles(), droppedStart);                // no start was dropped by the engine
 
-		// TU: the control thread's service step, not armed. The list capacity grows. The deferred starts still wait.
+		// TU: models the control thread's service step, not armed. Nothing is waiting at this point (R2 admitted every
+		// staged start), so no count changes.
 		Engine::audioEngine()->topUpPlayHandleCapacityForTest();
 		record("TU");
 
-		// R3 onward: renders until the deferred starts are admitted. Bounded to MaxRendersAfterTopUp renders.
+		// R3 onward: a bounded loop. When live already equals 1199 after R2 it runs no render. Otherwise it gives
+		// deferred starts a fixed number of renders (MaxRendersAfterTopUp) to be admitted.
 		std::vector<std::uint64_t> allocLater;
 		for (int i = 0; i < MaxRendersAfterTopUp && liveSamplePlayHandles() != ExpectedLive; ++i)
 		{
