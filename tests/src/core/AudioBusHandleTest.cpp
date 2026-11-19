@@ -326,68 +326,124 @@ private slots:
 	//! it with the engine inline. The registration takes the engine's model lock - a
 	//! render worker would deadlock against the render owner, which holds that lock for
 	//! the whole period and waits for the worker - and it grows the bus list, which is an
-	//! allocation on the audio path. The render owner registers the bus instead.
-	void busCreatedOnTheRealtimePathIsRegisteredByTheRenderOwner()
+	//! allocation on the audio path. The control-thread service registers the bus instead.
+	void realtimeBusConstructorIsActivatedByControlService()
 	{
 		using namespace lmms;
+		using State = AudioBusHandle::RegistrationState;
 
-		AudioBusHandle* bus = nullptr;
+		auto* engine = Engine::audioEngine();
+		// The service-prepared buffer is sized from BufferManager, so set it to the engine period.
+		BufferManager::init(engine->framesPerPeriod());
+		// Owns the bus from its construction onwards: every return path, including a failed
+		// QVERIFY, hands it to the engine, so no pending entry is left behind.
+		struct BusDeleter
+		{
+			void operator()(AudioBusHandle* busHandle) const
+			{
+				Engine::audioEngine()->destroyAudioBusHandle(busHandle);
+			}
+		};
+		using BusPtr = std::unique_ptr<AudioBusHandle, BusDeleter>;
+
+		BusPtr bus;
+		bool threw = false;
 		{
 			// The realtime scope marks this thread as the audio path: the constructor
-			// must behave as it does on the render thread.
+			// only marks the bus Pending and publishes it.
 			const RealtimeScope realtime;
-			bus = new AudioBusHandle(QStringLiteral("RealtimeBus"), false);
+			try
+			{
+				bus.reset(new AudioBusHandle(QStringLiteral("RealtimeBus"), true));
+			}
+			catch (const std::bad_alloc&)
+			{
+				threw = true;
+			}
 		}
+		if (threw)
+		{
+			QFAIL("the realtime constructor allocated an EffectChain before the control service");
+		}
+		AudioBusHandle* raw = bus.get();
 
-		const auto& handles = Engine::audioEngine()->audioBusHandles();
-		QVERIFY(std::find(handles.begin(), handles.end(), bus) == handles.end());
+		const auto& handles = engine->audioBusHandles();
+		const auto listed = [&] { return std::find(handles.begin(), handles.end(), raw) != handles.end(); };
+		QCOMPARE(bus->registrationState(), State::Pending);
+		QVERIFY(bus->buffer().empty());
+		QVERIFY(!listed());
+		QVERIFY(bus->effects() == nullptr);
 
-		// The render owner registers the published bus at the start of the next period.
-		Engine::audioEngine()->renderNextPeriod();
-		QVERIFY(std::find(handles.begin(), handles.end(), bus) != handles.end());
+		// The render owner neither registers nor activates a pending bus.
+		engine->renderNextPeriod();
+		QCOMPARE(bus->registrationState(), State::Pending);
+		QVERIFY(!listed());
 
-		delete bus;
-		QVERIFY(std::find(handles.begin(), handles.end(), bus) == handles.end());
+		// The control-thread service is the only activation point.
+		engine->serviceAudioBusHandlesOnControlThread();
+		QCOMPARE(bus->registrationState(), State::Registered);
+		QVERIFY(listed());
+		QCOMPARE(static_cast<f_cnt_t>(bus->buffer().size()), engine->framesPerPeriod());
+		QVERIFY(bus->effects() != nullptr);
+
+		bus.reset();
+		QVERIFY(!listed());
 	}
 
 	//! Cluster new-p12-313: the engine's registration path (addAudioBusHandle) must not
 	//! lock the model nor grow the bus list when it runs on the audio path. The bus is
-	//! registered by the render owner at the start of the next period instead.
+	//! registered by the control-thread service instead, not by the render owner.
 	void engineBusRegistrationOnTheRealtimePathIsDeferred()
 	{
 		using namespace lmms;
+		using State = AudioBusHandle::RegistrationState;
 
 		auto* engine = Engine::audioEngine();
-		auto* bus = new AudioBusHandle(QStringLiteral("DeferredBus"), false);
-		// The constructor registered it on the control thread; take it out again so the
-		// registration below is the only one that can put it back.
-		engine->removeAudioBusHandle(bus);
-		const std::size_t before = engine->audioBusHandles().size();
-		QVERIFY(std::find(engine->audioBusHandles().begin(), engine->audioBusHandles().end(), bus)
-			== engine->audioBusHandles().end());
-
+		BufferManager::init(engine->framesPerPeriod());
+		const auto& handles = engine->audioBusHandles();
+		// Owns the bus from its construction onwards: every return path hands it to the engine.
+		struct BusDeleter
 		{
+			void operator()(AudioBusHandle* busHandle) const
+			{
+				Engine::audioEngine()->destroyAudioBusHandle(busHandle);
+			}
+		};
+		using BusPtr = std::unique_ptr<AudioBusHandle, BusDeleter>;
+
+		// Built on the control thread and taken out again, so the audio-path registration below
+		// is the only one that can put it back.
+		BusPtr bus{new AudioBusHandle(QStringLiteral("DeferredBus"), true)};
+		AudioBusHandle* raw = bus.get();
+		const auto listed = [&] { return std::find(handles.begin(), handles.end(), raw) != handles.end(); };
+		engine->removeAudioBusHandle(raw);
+		QVERIFY(!listed());
+
+		const std::size_t before = handles.size();
+		{
+			// The audio path: the engine publishes the bus to its pending queue instead of registering it inline.
 			const RealtimeScope realtime;
-			engine->addAudioBusHandle(bus);
+			engine->addAudioBusHandle(raw);
 		}
+		QCOMPARE(bus->registrationState(), State::Pending);
+		QVERIFY(!listed());
 
-		// The registration was deferred: the bus list did not grow on the audio path.
-		QCOMPARE(engine->audioBusHandles().size(), before);
-		QVERIFY(std::find(engine->audioBusHandles().begin(), engine->audioBusHandles().end(), bus)
-			== engine->audioBusHandles().end());
-
-		// The render owner registers it at the start of the next period.
+		// The registration was deferred: the list did not grow on the audio path, and the
+		// render owner does not register the pending bus.
 		engine->renderNextPeriod();
-		QCOMPARE(engine->audioBusHandles().size(), before + 1);
-		QVERIFY(std::find(engine->audioBusHandles().begin(), engine->audioBusHandles().end(), bus)
-			!= engine->audioBusHandles().end());
+		QCOMPARE(handles.size(), before);
+		QVERIFY(!listed());
 
-		delete bus;
+		// The control-thread service registers it, exactly once.
+		engine->serviceAudioBusHandlesOnControlThread();
+		QCOMPARE(handles.size(), before + 1);
+		QVERIFY(listed());
+		QCOMPARE(bus->registrationState(), State::Registered);
 	}
 
 	//! Cluster new-p15-253: a bus whose owner retires it while its registration is
-	//! still pending must not be registered by the render owner afterwards. The render
-	//! owner consumes the pending entry one period later - by then the bus is gone, and
+	//! still pending must not be registered by the control-thread service afterwards. The
+	//! control-thread service consumes the pending entry later - by then the bus is gone, and
 	//! the engine may already be about to free it, so registering it would put a freed
 	//! bus into the list the render stage walks.
 	void busRetiredWhileItsRegistrationIsPendingIsNotRegistered()
@@ -395,7 +451,17 @@ private slots:
 		using namespace lmms;
 
 		auto* engine = Engine::audioEngine();
+		struct BusDeleter
+		{
+			void operator()(AudioBusHandle* busHandle) const
+			{
+				Engine::audioEngine()->destroyAudioBusHandle(busHandle);
+			}
+		};
+		using BusPtr = std::unique_ptr<AudioBusHandle, BusDeleter>;
+
 		auto* bus = new AudioBusHandle(QStringLiteral("RetiredPendingBus"), false);
+		BusPtr owner{bus};
 		// The constructor registered it on the control thread; take it out again so the
 		// registration below is the only one that can put it back.
 		engine->removeAudioBusHandle(bus);
@@ -406,23 +472,22 @@ private slots:
 			const RealtimeScope realtime;
 			engine->addAudioBusHandle(bus);
 		}
-		// The owner retires the bus before the render owner consumed the entry.
+		// The owner retires the bus before the control-thread service consumed the entry.
 		engine->removeAudioBusHandle(bus);
 
-		// The render owner consumes the entry: a retired bus is not registered.
-		engine->renderNextPeriod();
+		// The control thread consumes the entry: a retired bus is not registered.
+		engine->serviceAudioBusHandlesOnControlThread();
 		QCOMPARE(engine->audioBusHandles().size(), before);
 		QVERIFY(std::find(engine->audioBusHandles().begin(), engine->audioBusHandles().end(), bus)
 			== engine->audioBusHandles().end());
 
-		delete bus;
 	}
 
 	//! Cluster new-p15-253: a bus that is destroyed while its registration is still
-	//! pending must not be registered by the render owner afterwards either. The engine
+	//! pending must not be registered by the control-thread service afterwards either. The engine
 	//! owns the bus from that moment on: it frees it once the render path may no longer
-	//! reach it, and until the render owner consumed the pending entry it keeps the bus
-	//! alive - the queue still names it.
+	//! reach it, and until the control-thread service has consumed the pending entry it keeps the bus
+	//! alive - the registration link still names it.
 	void busDestroyedWhileItsRegistrationIsPendingIsNotRegistered()
 	{
 		using namespace lmms;
@@ -440,10 +505,10 @@ private slots:
 		// may no longer reach it.
 		engine->destroyAudioBusHandle(bus);
 
-		// The render owner consumes the pending entry. The bus was retired, so it is
+		// The control thread consumes the pending entry. The bus was retired, so it is
 		// not registered - and the engine kept it alive until that entry was consumed,
 		// so the render path never walks a freed bus.
-		engine->renderNextPeriod();
+		engine->serviceAudioBusHandlesOnControlThread();
 		QCOMPARE(engine->audioBusHandles().size(), before);
 		QVERIFY(std::find(engine->audioBusHandles().begin(), engine->audioBusHandles().end(), bus)
 			== engine->audioBusHandles().end());
@@ -473,6 +538,10 @@ private slots:
 
 		auto* engine = Engine::audioEngine();
 
+		// The state sequence of each bus, recorded as the handoff proceeds.
+		std::vector<State> registeredPath;
+		std::vector<State> retiredPath;
+
 		// Pending→Registered
 		BusPtr bus;
 		{
@@ -480,9 +549,11 @@ private slots:
 			bus.reset(new AudioBusHandle(QStringLiteral("StatesBus"), false));
 		}
 		QCOMPARE(bus->registrationState(), State::Pending);
+		registeredPath.push_back(bus->registrationState());
 
 		engine->serviceAudioBusHandlesOnControlThread();
 		QCOMPARE(bus->registrationState(), State::Registered);
+		registeredPath.push_back(bus->registrationState());
 		QVERIFY(std::find(engine->audioBusHandles().begin(), engine->audioBusHandles().end(), bus.get())
 			!= engine->audioBusHandles().end());
 
@@ -493,19 +564,25 @@ private slots:
 			bus2.reset(new AudioBusHandle(QStringLiteral("StatesRetiredBus"), false));
 		}
 		QCOMPARE(bus2->registrationState(), State::Pending);
+		retiredPath.push_back(bus2->registrationState());
 
 		engine->removeAudioBusHandle(bus2.get());
 		QCOMPARE(bus2->registrationState(), State::Retired);
+		retiredPath.push_back(bus2->registrationState());
 
 		engine->serviceAudioBusHandlesOnControlThread();
 		QCOMPARE(bus2->registrationState(), State::Handled);
+		retiredPath.push_back(bus2->registrationState());
 		QVERIFY(std::find(engine->audioBusHandles().begin(), engine->audioBusHandles().end(), bus2.get())
 			== engine->audioBusHandles().end());
+
+		QVERIFY(registeredPath == (std::vector<State>{State::Pending, State::Registered}));
+		QVERIFY(retiredPath == (std::vector<State>{State::Pending, State::Retired, State::Handled}));
 
 		bus2.reset();
 		bus.reset();
 		engine->serviceAudioBusHandlesOnControlThread();
-		engine->renderNextPeriod();
+		engine->serviceAudioBusHandlesOnControlThread();
 		engine->serviceAudioBusHandlesOnControlThread();
 	}
 

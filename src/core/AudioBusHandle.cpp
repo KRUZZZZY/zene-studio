@@ -85,13 +85,22 @@ AudioBusHandle::AudioBusHandle(const QString& name, bool hasEffectChain,
 {
 	// Mark all track channels as quiet
 	m_bus.quietChannels().set();
+	if (RealtimeScope::isActive())
+	{
+		// The audio path (cluster new-p15-253): no storage, no lock, no device call. The engine links
+		// the bus onto its registration stack (pending), and the port request is linked too; the control
+		// thread prepares the storage and applies the port on its next service tick.
+		Engine::audioEngine()->addAudioBusHandle(this);
+		setExtOutputEnabled(true);
+		return;
+	}
 	// Buffer, compensation history and effect chain (PDC #605 preallocates on the control thread).
 	prepareStorage();
 
 	// Track and instrument buses reserve one full bounded polyphony batch on the
 	// control thread. Standalone sample buses created on the audio path use the
 	// inline handle slot below until the main thread tops up their list.
-	if (!RealtimeScope::isActive() && QThread::currentThread() == Engine::audioEngine()->thread())
+	if (QThread::currentThread() == Engine::audioEngine()->thread())
 	{
 		m_playHandles.reserve(static_cast<qsizetype>(PlayHandle::MaxNumber));
 	}
@@ -200,6 +209,8 @@ void AudioBusHandle::applyVolumeAndPanning(const f_cnt_t fpp)
 
 void AudioBusHandle::doProcessing()
 {
+	// Not prepared yet (a bus on the audio path before the control thread prepared it): nothing to do.
+	if (m_buffer.empty()) { return; }
 	// Cluster 5467: non-worker off-stage edits land here before this bus reads the list. Worker-stage
 	// edits are drained by the render owner after the worker queue joins.
 	applyPlayHandleEdits();

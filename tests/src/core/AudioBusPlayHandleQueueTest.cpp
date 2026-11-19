@@ -31,6 +31,8 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <future>
+#include <memory>
 #include <new>
 #include <span>
 #include <thread>
@@ -404,6 +406,24 @@ private slots:
 		const QString name = QStringLiteral("RealtimeCtorBus");
 		alignas(AudioBusHandle) std::byte storage[sizeof(AudioBusHandle)];
 		AudioBusHandle* bus = nullptr;
+		// Cleans up on every return path once the placement construction has succeeded: the
+		// control thread registers a pending bus, then the bus is destroyed in its storage.
+		// A failing allocation assertion therefore cannot leave a queued, dangling bus.
+		struct PlacedBusGuard
+		{
+			AudioBusHandle*& placed;
+			~PlacedBusGuard()
+			{
+				if (placed == nullptr) { return; }
+				auto* engine = Engine::audioEngine();
+				engine->serviceAudioBusHandlesOnControlThread();
+				engine->renderNextPeriod();
+				engine->serviceAudioBusHandlesOnControlThread();
+				placed->~AudioBusHandle();
+				placed = nullptr;
+			}
+		};
+		PlacedBusGuard placedGuard{bus};
 		std::uint64_t allocations = 0;
 		std::uint64_t frees = 0;
 		bool threw = false;
@@ -421,27 +441,92 @@ private slots:
 
 		if (threw)
 		{
-			QCOMPARE(allocations, std::uint64_t{0});
-			QFAIL("the bus constructor threw std::bad_alloc on the realtime path");
+			QFAIL("the realtime bus constructor threw std::bad_alloc before the control-thread service ran");
 		}
 
-		engine->serviceAudioBusHandlesOnControlThread();
-		engine->renderNextPeriod();
-		engine->serviceAudioBusHandlesOnControlThread();
 		const auto& handles = engine->audioBusHandles();
+		const bool listedBeforeService = std::find(handles.begin(), handles.end(), bus) != handles.end();
+
+		// The constructor leaves the storage empty: the control-thread service sizes it.
+		QCOMPARE(allocations, std::uint64_t{0});
+		QCOMPARE(frees, std::uint64_t{0});
+		QVERIFY(bus->buffer().empty());
+		QVERIFY(!listedBeforeService);
+		QVERIFY(bus->effects() == nullptr);
+
+		// The control-thread service is the only activation point; the render owner is not asked to promote.
+		engine->serviceAudioBusHandlesOnControlThread();
 		const bool listed = std::find(handles.begin(), handles.end(), bus) != handles.end();
 		const bool periodSized = bus->buffer().size() == static_cast<std::size_t>(engine->framesPerPeriod());
 		const bool hasEffects = bus->effects() != nullptr;
 
-		bus->~AudioBusHandle();
-		const bool stillListed = std::find(handles.begin(), handles.end(), bus) != handles.end();
+		// Destroyed here, so the guard above must not destroy it again.
+		AudioBusHandle* destroyed = bus;
+		bus = nullptr;
+		destroyed->~AudioBusHandle();
+		const bool stillListed = std::find(handles.begin(), handles.end(), destroyed) != handles.end();
 
-		QCOMPARE(allocations, std::uint64_t{0});
-		QCOMPARE(frees, std::uint64_t{0});
 		QVERIFY(listed);
 		QVERIFY(periodSized);
 		QVERIFY(hasEffects);
 		QVERIFY(!stillListed);
+	}
+
+	//! Cluster new-p15-253: the realtime constructor must not take the engine's change lock.
+	//! This checks a forced lock order, not a race: the main thread holds the model lock,
+	//! a worker constructs a bus on the audio path, and the constructor must return without
+	//! waiting for the lock. The bounded wait below is a diagnostic window, not a
+	//! synchronisation point: if the constructor blocks on the held lock, the window expires,
+	//! the lock is released, the worker is joined, and the test fails.
+	//! Regression guard: the constructor already defers the lock at this HEAD, so the lock
+	//! half passes. The RED part is the service-activation assertion at the end.
+	void realtimeConstructorDoesNotTakeEngineChangeLockHeldByAnotherThread()
+	{
+		using namespace lmms;
+		using State = AudioBusHandle::RegistrationState;
+
+		struct BusDeleter
+		{
+			void operator()(AudioBusHandle* busHandle) const
+			{
+				Engine::audioEngine()->destroyAudioBusHandle(busHandle);
+			}
+		};
+		using BusPtr = std::unique_ptr<AudioBusHandle, BusDeleter>;
+
+		auto* engine = Engine::audioEngine();
+		std::atomic<AudioBusHandle*> published{nullptr};
+		std::promise<void> constructed;
+		std::future<void> constructedFuture = constructed.get_future();
+
+		// The main thread holds the engine's model lock for the whole window.
+		engine->requestChangeInModel();
+		std::thread worker{[&] {
+			{
+				const RealtimeScope realtime;
+				published.store(new AudioBusHandle(QStringLiteral("HeldLockBus"), false), std::memory_order_release);
+			}
+			constructed.set_value();
+		}};
+
+		// Bounded diagnostic window: the future is set once the constructor has returned; no polling.
+		const bool finished = constructedFuture.wait_for(std::chrono::seconds{2}) == std::future_status::ready;
+
+		// Release the lock in both outcomes, and join before any assertion can return.
+		engine->doneChangeInModel();
+		worker.join();
+
+		// Owns the bus from here on, so every return path hands it to the engine.
+		BusPtr bus{published.load(std::memory_order_acquire)};
+		if (!finished)
+		{
+			QFAIL("the realtime constructor did not return within 2 s: it blocked on the change lock held by another thread");
+		}
+		QVERIFY(bus != nullptr);
+		QCOMPARE(bus->registrationState(), State::Pending);
+
+		engine->serviceAudioBusHandlesOnControlThread();
+		QCOMPARE(bus->registrationState(), State::Registered);
 	}
 
 private:
