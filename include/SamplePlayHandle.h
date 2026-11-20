@@ -29,6 +29,7 @@
 #include "Sample.h"
 #include <atomic>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <limits>
@@ -38,6 +39,7 @@
 #include "AudioStretcher.h"
 #include "RubberBandStretch.h"
 #include "ClipEdits.h"
+#include "CompSlip.h"
 #include "SampleWindow.h"
 #include "WarpMarkers.h"
 #include "PlayHandle.h"
@@ -68,6 +70,21 @@ public:
 	 *  #611: docs/CLIP-CAPTURE-DESIGN.md §2.5, invariant I1). */
 	SamplePlayHandle( SampleClip* clip, const SampleWindow& window );
 	~SamplePlayHandle() override;
+
+	//! Heap path for every plain `new SamplePlayHandle`; a subclass (PreviewPlayHandle) takes it with its own size.
+	static void* operator new(std::size_t size);
+	static void operator delete(void* p) noexcept;
+
+	/*! Audio thread. Builds a handle in a pooled block. Returns nullptr when the pool is empty, or when the handle has
+	 *  no buffer or no comp-slip readers (the block goes back to the pool). Never allocates, locks, waits or logs. */
+	static SamplePlayHandle* tryCreate(SampleClip* clip, const SampleWindow& window) noexcept;
+
+	//! Control thread only. Grows the pool until its free list holds at least `blocks` blocks.
+	static void reserveBlocks(std::size_t blocks);
+
+	//! Control thread only. Tops the pool up for the live clips: reserveBlocks(clips + clips / 4 + 8).
+	//! A no-op inside a RealtimeScope, so no clip can grow the pool on the audio thread.
+	static void reserveForClips();
 
 	inline bool affinityMatters() const override
 	{
@@ -274,7 +291,9 @@ private:
 	std::array<std::pair<f_cnt_t, f_cnt_t>, MaxCompSpans> m_compSpans{};
 	//! 0.5.0 E2: the reads of this take's SLIPPED spans (include/CompSlip.h); null - and nothing extra runs - when
 	//! the clip's lane has no slipped span, or the clip does not render linearly at its own pitch.
-	std::unique_ptr<CompSlipReaders> m_compSlip;
+	std::unique_ptr<CompSlipReaders, CompSlipRecycler> m_compSlip;
+	//! Set when the last snapshot found the reader pool empty: the slipped spans could not play, so the start must wait.
+	bool m_compSlipExhausted = false;
 
 	/*! 0.5.0 W3 (ED-179): a clip with pre-fades (include/ClipPreFades.h) plays a copy of its Sample whose window
 	 *  reaches past the clip's own, and its envelope is measured from the clip's first frame with the frames before
