@@ -29,7 +29,9 @@
 #include <cstdint>
 #include <cstdlib>
 
+#include <QApplication>
 #include <QCoreApplication>
+#include <QJsonObject>
 #include <QKeyEvent>
 
 #include "AccessibleWidgets.h"
@@ -315,6 +317,29 @@ bool handle(SongEditor* editor, const QKeyEvent* event)
 	if (vertical(key)) { chooseAcross(editor, key == Qt::Key_Down); }
 	else if (horizontal(key)) { resizeSelected(editor, key == Qt::Key_Right); }
 	else { ControlRegistry::instance()->invoke(QStringLiteral("window.item_list"), {{QStringLiteral("surface"), QStringLiteral("clips")}}); }
+	return true;
+}
+
+//! Plain Tab / Shift+Tab, and only while the arranger itself has focus.
+static bool claimsTransient(const SongEditor* editor, const QKeyEvent* event)
+{
+	if (event == nullptr || event->type() != QEvent::KeyPress) { return false; }
+	const int key = event->key();
+	if (key != Qt::Key_Tab && key != Qt::Key_Backtab) { return false; }
+	// Only Shift is allowed through: Ctrl/Alt/Meta+Tab stay the window's, and a keypad modifier is not a chord.
+	if ((modsOf(event) & ~Qt::ShiftModifier) != Qt::NoModifier) { return false; }
+	// A focused text field (or any other widget) keeps Tab for itself.
+	return QApplication::focusWidget() == editor;
+}
+
+bool handleTransientKey(SongEditor* editor, const QKeyEvent* event)
+{
+	if (editor == nullptr || Engine::getSong() == nullptr) { return false; }
+	if (!claimsTransient(editor, event)) { return false; }
+	const bool backward = event->key() == Qt::Key_Backtab || (modsOf(event) & Qt::ShiftModifier);
+	const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("arrangement.next_transient"),
+		backward ? QJsonObject{{QStringLiteral("direction"), QStringLiteral("previous")}} : QJsonObject{});
+	if (!result.ok) { a11y::announceTransition(editor, a11y::Transition::Refused, result.errorMessage); }
 	return true;
 }
 
