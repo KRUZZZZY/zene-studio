@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Red/green compiler regressions for the four case51 hosted test failures."""
+"""Red/green compiler regressions for hosted test-source failures.
+
+Covers the four case51 failures plus the Qt 5.15 portability of the
+MixerSendsOnFadersTest faders answer (cluster ci-ec26fd9bddef0dd4).
+"""
 
 # Copyright (c) 2026 Zene Studio contributors
 #
@@ -162,6 +166,45 @@ void probe(Clip* clip) {
     compile_source(compiler, original, temporary, "touch-unqualified-original", success=False)
 
 
+def mixer_faders_probe(root, compiler, temporary):
+    """The faders answer's expected list must compile against Qt 5.15.
+
+    Qt 6 makes QStringList an alias of QList, so QStringList(count, value)
+    resolves to QList's count/value constructor.  Qt 5's QStringList is a
+    distinct class without it, and the linux-arm64 job builds with Qt 5.
+    Compile the assertion block the test actually ships, on both Qt majors.
+    """
+    source = (root / "tests/src/gui/MixerSendsOnFadersTest.cpp").read_text(encoding="utf-8")
+    marker = "// Back on the channel faders"
+    start = source.index(marker)
+    assertion = "QVERIFY(faders == "
+    finish = source.index(");", source.index(assertion, start)) + 2
+    block = source[start:finish]
+    lines = [line for line in block.splitlines()
+             if line.strip() and not line.strip().startswith("//")
+             and "drivesOf(" not in line]
+    if not any(assertion in line for line in lines):
+        fail("MixerSendsOnFadersTest faders assertion block changed")
+    fixture = """#include <QStringList>
+#include <QString>
+#define QVERIFY(...) do { (void)(__VA_ARGS__); } while (0)
+void probe() {
+    QStringList faders;
+    const int channels = 3;
+%s
+}
+""" % "\n".join(lines)
+    qt5 = pkg_flags("pkg-config", ["Qt5Core"])
+    compile_source(compiler, fixture, temporary, "mixer-faders-qt5", success=True,
+                   flags=[*qt5, "-fPIC"])
+    if pkg_exists("pkg-config", ["Qt6Core"]):
+        qt6 = pkg_flags("pkg-config", ["Qt6Core"])
+        compile_source(compiler, fixture, temporary, "mixer-faders-qt6", success=True,
+                       flags=[*qt6, "-fPIC"])
+    else:
+        print("OMITTED mixer-faders-qt6: Qt6Core unavailable")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", required=True, type=Path)
@@ -176,6 +219,7 @@ def main():
         midi_probe(root, compiler, temporary)
         sfz_probe(root, compiler, temporary)
         touch_probe(root, compiler, temporary)
+        mixer_faders_probe(root, compiler, temporary)
     return 0
 
 
