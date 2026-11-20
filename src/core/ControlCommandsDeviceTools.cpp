@@ -334,16 +334,30 @@ ControlResult consoleApply(const QJsonObject& args)
 // the convolution reverb's impulse response
 // ---------------------------------------------------------------------------
 
+//! The convolution reverb's controls element in @a doc (a device's settings document); null when there is none.
+QDomElement convolutionControls(const QDomDocument& doc)
+{
+	return doc.elementsByTagName(QStringLiteral("ConvolutionReverbControls")).item(0).toElement();
+}
+
 //! @a state (a device's settings document) with the controls element's 'impulse' set to @a path.
 bool withImpulse(const QString& state, const QString& path, QString* changed)
 {
 	QDomDocument doc;
 	if (!doc.setContent(state)) { return false; }
-	QDomElement controls = doc.elementsByTagName(QStringLiteral("ConvolutionReverbControls")).item(0).toElement();
+	QDomElement controls = convolutionControls(doc);
 	if (controls.isNull()) { return false; }
 	controls.setAttribute(QStringLiteral("impulse"), path);
 	*changed = doc.toString();
 	return true;
+}
+
+//! The impulse path @a state (a device's settings document) holds; empty when there is none.
+QString impulseOf(const QString& state)
+{
+	QDomDocument doc;
+	if (!doc.setContent(state)) { return {}; }
+	return convolutionControls(doc).attribute(QStringLiteral("impulse"));
 }
 
 ControlResult impulseLoad(const QJsonObject& args)
@@ -369,6 +383,13 @@ ControlResult impulseLoad(const QJsonObject& args)
 	}
 	const ControlResult restored = controlRestoreEffectState(effect, after.toUtf8());
 	if (!restored.ok) { return restored; }
+	// The restore reports success once the XML is valid, but the plugin drops an impulse it cannot convert and keeps
+	// the previous one. Refused BEFORE any undo step or modified mark, with the previous state put back.
+	if (impulseOf(controlEffectStateXml(effect)) != path)
+	{
+		controlRestoreEffectState(effect, before.toUtf8());
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1 could not be resampled or loaded as an impulse response").arg(path));
+	}
 	addUndoStep([targetId, pluginId, before]() { controlRestoreCapturedState(targetId, pluginId, before.toUtf8()); },
 		[targetId, pluginId, after]() { controlRestoreCapturedState(targetId, pluginId, after.toUtf8()); });
 	Engine::getSong()->setModified();
