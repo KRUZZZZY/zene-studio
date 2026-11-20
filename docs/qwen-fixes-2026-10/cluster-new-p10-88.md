@@ -56,9 +56,11 @@ to the save path. `git diff -U2 src/core/DataFile.cpp` shows one hunk,
 
 | Label | Command | Exit | Log |
 |---|---|---|---|
-| p5-green-now | `cmake --build build --target DataFileFormatTest && ctest -R "^DataFileFormatTest$"` on the fixed tree | 0 (1/1 passed) | `duet/12-worker/tmp/001-p5-green-now.log` |
-| p5-red-hunk-reversed | same, with `src/core/DataFile.cpp` replaced by `git show HEAD:src/core/DataFile.cpp` | 8 (6 failed of 17 test functions, see below) | `duet/12-worker/tmp/002-p5-red-hunk-reversed.log` |
-| p5-green-restored-family | after `cp` restored the fixed file (`cmp` identical), `cmake --build` of four targets and `ctest -R "DataFile\|StableTrackIds"` | 0 (4/4 passed) | `duet/12-worker/tmp/003-p5-green-restored-family.log` |
+| p5-red-hunk-reversed | `git diff HEAD~1^ HEAD -- src/core/DataFile.cpp > logs/fix.patch`, then `git apply -R logs/fix.patch`, then `cmake --build build --target zene DataFileFormatTest` and `ctest -R '^DataFileFormatTest$' --output-on-failure` | build 0; ctest 8 (11 passed, 6 failed of 17 test functions, see below) | `logs/evidence-1-patch.log`, `logs/build-7-red.log`, `logs/test-7-red.log` (ends `EXIT=8`) |
+| p5-green-restored | after `git apply logs/fix.patch` (`logs/evidence-2-restore.log`, EXIT=0), same build and ctest | build 0; ctest 0 (1/1 passed) | `logs/build-8-green.log`, `logs/test-8-green.log` (ends `EXIT=0`) |
+| p5-family | ctest run over eight tests (DataFileFormatTest, DataFileSaveIntegrityTest, DataFileContainerRecoveryTest, ProjectOpenIntegrityTest, ProjectVersionTest, LanesUpconvertTest, ScenesUpconvertTest, StableTrackIdsTest); the log records no exit code | 8/8 Passed | `logs/test-4-family.log` (corroboration) |
+
+All paths above are under `/home/kruzzzzy/.config/kads/zene/state/runs/new-p10-88.r1/`.
 
 Runs in the run folder `logs/` also record `DataFileFormatTest` results (for example
 `test-3-green.log` and `test-6-restored.log` at 100%, `test-5-reverted.log` with 6
@@ -74,13 +76,18 @@ and `dottedVersionDoesNotRunLegacyUpgrades` ("Compared doubles are not the same"
 
 ## Self-check
 
-(1) Red/green with the product hunk reversed and restored: the green run before
-the reversal exited 0 (`p5-green-now`, log 001). With the hunk reversed, the same
-build and ctest exited 8, with the six failures listed above (`p5-red-hunk-reversed`,
-log 002). The fixed file was then copied back, and `cmp` against the saved copy
-reported identical. `git diff --stat src/core/DataFile.cpp` gave 14 insertions and
-3 deletions, with exit 0. The restored green run exited 0 with 4/4 tests passed
-(`p5-green-restored-family`, log 003).
+(1) Red/green with the product hunk reversed and restored. `git diff HEAD~1^ HEAD --
+src/core/DataFile.cpp` was saved to `logs/fix.patch` and reversed with `git apply -R`
+(`logs/evidence-1-patch.log`, both steps EXIT=0). With the hunk reversed, the build
+exited 0 (`logs/build-7-red.log`), and `ctest -R '^DataFileFormatTest$'` exited 8 with
+the six failures listed above (`logs/test-7-red.log`, ends `EXIT=8`). The
+`sampleTrackVolume( doc )` failures show actual 100 against expected 1.0, and the
+`originalFileVersion()` failures show actual 0 against expected 17 or 16. The hunk was
+then restored with `git apply` (`logs/evidence-2-restore.log`, EXIT=0). `git status
+--porcelain` printed nothing directly after that restore, before the rebuild. The
+rebuild exited 0 (`logs/build-8-green.log`), and the green run exited 0 with 1/1
+passed (`logs/test-8-green.log`, ends `EXIT=0`). `git diff --stat HEAD~1^ HEAD --
+src/core/DataFile.cpp` gave 14 insertions and 3 deletions.
 
 (2) Determinism: `probeProject` (`tests/src/core/DataFileFormatTest.cpp:122-130`)
 builds an in-memory `QByteArray` from its argument. The new tests call the
@@ -100,16 +107,17 @@ exited 0. `upgrade()` at `:2638` is not in the diff (see Change). The absent or
 `"1.0"` branch at `:2825-2830` is unchanged.
 
 (4) Collateral:
-- Version 31: `currentVersionSkipsUpgrades` passes in the green runs (log 001 and
-  log 003). Versions 40 and 75 are not exercised by any test in this change, so
-  they are unverified here.
+- Version 31: `currentVersionSkipsUpgrades` passes in the green run (`logs/test-8-green.log`,
+  DataFileFormatTest 1/1, which contains this function).
+- Versions 40 and 75: `DataFileContainerRecoveryTest` (version 40) and `LanesUpconvertTest`
+  (version 75) pass in `logs/test-4-family.log`.
 - Absent or `"1.0"` legacy files: the branch is unchanged, and the existing
   `DataFileFormatTest` fixture at `tests/src/core/DataFileFormatTest.cpp:262` uses
   `version="1.0"`. All pre-existing `DataFileFormatTest` functions pass in the green
-  run (log 001).
+  run (`logs/test-8-green.log`).
 - `version="1.2"`: now derives from creatorversion (`dottedVersionFallsBackToCreatorVersion`,
-  green in log 001). `StableTrackIdsTest` passes (log 003, 4/4 with `DataFile|StableTrackIds`).
-- Saved bytes: `DataFileSaveIntegrityTest` passes (log 003). I did not read its
+  green in `logs/test-8-green.log`). `StableTrackIdsTest` passes (`logs/test-4-family.log`).
+- Saved bytes: `DataFileSaveIntegrityTest` passes (`logs/test-4-family.log`). I did not read its
   assertions, so I do not claim more than that it passes.
 
 (5) ALREADY-FIXED / FALSE-POSITIVE item: not applicable. The verdict is FIXED, so
@@ -118,7 +126,6 @@ branch at `src/core/DataFile.cpp:2831-2846`, which before this commit read
 `toUInt()`'s 0 at `:2834`.
 
 Verdict evidence lines:
-- FIXED: green exit 0 before reversal (log 001).
-- FIXED: red exit 8 with the product hunk reversed, six functions failing (log 002).
-- FIXED: restored tree green, exit 0, 4/4 (log 003).
+- FIXED: red exit 8 with the product hunk reversed, six functions failing (`logs/test-7-red.log`).
+- FIXED: restored tree green, exit 0, 1/1 (`logs/test-8-green.log`); family run 8/8 Passed (`logs/test-4-family.log`).
 - FIXED: `git diff` shows only the one hunk in `src/core/DataFile.cpp`.
