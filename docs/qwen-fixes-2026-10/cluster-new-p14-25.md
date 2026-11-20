@@ -65,3 +65,8 @@ The existing test `commandsAreRegisteredAndUndoable` (`tests/src/core/LinkAudioS
 - **Cause and sole caller audit.** Cause: the unconditional `else` in `mergeArgs` (pre-fix lines 109-110). Sole caller: `ControlCommandsLinkAudio.cpp:187`, verified with grep over `src` and `tests`. No sibling path changed.
 - **No collateral damage.** Stream config is session state and is not saved in projects (`docs/LINK-AUDIO.md:77`). The no-peer default is pinned by the existing `commandsAreRegisteredAndUndoable` test, which is unmodified.
 - **ALREADY-FIXED / FALSE-POSITIVE.** Not applicable: the verdict is FIXED.
+- **Sibling commands (each id listed by submit_check).**
+  - `link.audio_get_state` (`ControlCommandsLinkAudio.cpp:140-152`): read-only, handler returns `stateJson()` and never calls `mergeArgs`. Not affected.
+  - `link.audio_set_enabled` (`ControlCommandsLinkAudio.cpp:159`): this command. The fix is at `:108`.
+  - `link.get_state`, `link.set_enabled`, `link.set_quantum`, `link.set_session_tempo`, `link.set_start_stop_sync`: defined in `src/core/ControlCommandsLink.cpp`, not in the changed file. None calls `mergeArgs`: the only call site in `src` or `tests` is `ControlCommandsLinkAudio.cpp:187`, found by grep. `theStreamLeavesLinkSyncAlone` (`tests/src/core/LinkAudioStreamTestParts2.h:124`) checks that the `link.get_state` keys (`enabled`, `model`, `quantum`, `start_stop_sync`, `session_tempo`, `peer_count`) are unchanged while the audio stream runs. Not affected.
+  - Additions: this change adds no commands, so there is no new sibling.
