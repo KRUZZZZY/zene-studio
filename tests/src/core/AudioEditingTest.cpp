@@ -72,6 +72,39 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 
 int clipsOn(const Track* track) { return static_cast<int>(track->getClips().size()); }
 
+//! The transient count clip.transients reports for @a clip (the onset rule the slices are cut at).
+int transientCount(SampleClip* clip)
+{
+	return run(QStringLiteral("clip.transients"), {{QStringLiteral("clip"), control::clipIdOf(clip)}})
+		.result.value(QStringLiteral("count")).toInt();
+}
+
+//! One MIDI note of a slice track: its start and end ticks in the slice clip, and its key.
+struct SliceNote { int start; int end; int key; };
+
+//! The notes of a slice track's MIDI clip, in the order they are stored.
+std::vector<SliceNote> sliceNotes(const MidiClip& clip)
+{
+	std::vector<SliceNote> out;
+	for (const Note* note : clip.notes())
+	{
+		out.push_back({static_cast<int>(note->pos().getTicks()), static_cast<int>(note->endPos().getTicks()), note->key()});
+	}
+	return out;
+}
+
+//! The boundaries SlicerT saved for @a track: slice_0 .. slice_(totalSlices - 1), normalised to the source sample.
+std::vector<double> savedBoundaries(InstrumentTrack& track)
+{
+	QDomDocument doc;
+	QDomElement root = doc.createElement(QStringLiteral("root"));
+	const QDomElement state = track.saveState(doc, root).elementsByTagName(QStringLiteral("slicert")).at(0).toElement();
+	const int count = state.attribute(QStringLiteral("totalSlices")).toInt();
+	std::vector<double> out;
+	for (int i = 0; i < count; ++i) { out.push_back(state.attribute(QStringLiteral("slice_%1").arg(i)).toDouble()); }
+	return out;
+}
+
 } // namespace
 
 class AudioEditingTest : public QObject
@@ -260,10 +293,94 @@ private slots:
 		auto* slices = dynamic_cast<InstrumentTrack*>(Engine::getSong()->tracks().back());
 		QVERIFY(slices != nullptr);
 		auto* notes = dynamic_cast<MidiClip*>(slices->getClips().front());
-		QCOMPARE(notes->notes().size(), std::size_t{4});
+		// 5, not 4: the four bursts plus the lead-in at the in-point, which starts before the first burst and is a slice too
+		QCOMPARE(notes->notes().size(), std::size_t{5});
 		QCOMPARE(notes->notes().front()->key(), slices->baseNote() + 2);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before);
+	}
+
+	void slicingTransientsKeepsTheLeadIn()
+	{
+		SampleClip* audio = test::sampleClipOf(test::burstAudio(200, {58, 106, 154}));
+		const f_cnt_t sourceIn = audio->sampleWindow().sourceIn;
+		const double sourceSize = static_cast<double>(audio->sample().sampleSize());
+		QVERIFY(sourceSize > 1);
+		const double inPoint = static_cast<double>(sourceIn) / sourceSize;
+		const int transients = transientCount(audio);
+		QCOMPARE(transients, 3);  // setup: the three bursts are all found
+		const int clipTicks = static_cast<int>(audio->endPosition().getTicks() - audio->startPosition().getTicks());
+
+		for (const bool explicitAt : {false, true})
+		{
+			QJsonObject args{{QStringLiteral("clip"), control::clipIdOf(audio)}};
+			if (explicitAt) { args.insert(QStringLiteral("at"), QStringLiteral("transients")); }
+			const ControlResult sliced = run(QStringLiteral("clip.slice_to_instrument"), args);
+			if (sliced.errorKind == ControlErrorKind::Requires) { QSKIP("this build's plug-in folder has no SlicerT"); }
+			QVERIFY2(sliced.ok, qPrintable(sliced.errorMessage));
+			auto* slices = dynamic_cast<InstrumentTrack*>(Engine::getSong()->tracks().back());
+			QVERIFY(slices != nullptr);
+			auto* notes = dynamic_cast<MidiClip*>(slices->getClips().front());
+			QVERIFY(notes != nullptr);
+
+			// (1) the lead-in is the first note, at tick 0 on SlicerT's slice 1; one note per transient plus that one
+			const std::vector<SliceNote> spans = sliceNotes(*notes);
+			QCOMPARE(spans.size(), static_cast<std::size_t>(transients + 1));
+			QCOMPARE(spans.front().start, 0);
+			QCOMPARE(spans.front().key, slices->baseNote() + 2);
+			// (2) each note ends where the next starts, so the notes tile the clip
+			for (std::size_t i = 0; i + 1 < spans.size(); ++i) { QCOMPARE(spans[i].end, spans[i + 1].start); }
+			QCOMPARE(spans.back().end, clipTicks);
+			// (3) the saved slicer state: slice 1 is the in-point, slice 2 the first transient after it
+			const std::vector<double> bounds = savedBoundaries(*slices);
+			QVERIFY(bounds.size() >= 3);
+			QVERIFY2(std::abs(bounds[1] - inPoint) < 1e-6,
+				qPrintable(QStringLiteral("slice 1 %1 should be the in-point %2").arg(bounds[1]).arg(inPoint)));
+			QVERIFY2(bounds[2] > bounds[1],
+				qPrintable(QStringLiteral("slice 2 %1 should be after the lead-in %2").arg(bounds[2]).arg(bounds[1])));
+			// (4) the result counts the lead-in: the transients plus the head and the lead-in boundary
+			QCOMPARE(sliced.result.value(QStringLiteral("slices")).toInt(), transients + 2);
+			QVERIFY(run(QStringLiteral("control.undo")).ok);
+		}
+	}
+
+	void slicingLeadInStartsAtTheTrimmedInPoint()
+	{
+		SampleClip* audio = test::sampleClipOf(test::burstAudio(200, {58, 106, 154}));
+		const double sourceSize = static_cast<double>(audio->sample().sampleSize());
+		QVERIFY(sourceSize > 1);
+		const f_cnt_t sourceIn = static_cast<f_cnt_t>(30 * Engine::framesPerTick());  // 30 ticks in, before the burst at 58
+		audio->setSampleWindow(SampleWindow(sourceIn, audio->sampleWindow().sourceOut));
+		QCOMPARE(audio->sampleWindow().sourceIn, sourceIn);
+		QVERIFY(sourceIn > 0);
+		const int transients = transientCount(audio);
+		QCOMPARE(transients, 3);  // setup: the bursts after the in-point are all found
+		const int clipTicks = static_cast<int>(audio->endPosition().getTicks() - audio->startPosition().getTicks());
+
+		const ControlResult sliced = run(QStringLiteral("clip.slice_to_instrument"), {{QStringLiteral("clip"), control::clipIdOf(audio)}});
+		if (sliced.errorKind == ControlErrorKind::Requires) { QSKIP("this build's plug-in folder has no SlicerT"); }
+		QVERIFY2(sliced.ok, qPrintable(sliced.errorMessage));
+		auto* slices = dynamic_cast<InstrumentTrack*>(Engine::getSong()->tracks().back());
+		QVERIFY(slices != nullptr);
+		auto* notes = dynamic_cast<MidiClip*>(slices->getClips().front());
+		QVERIFY(notes != nullptr);
+
+		// (1) the lead-in starts at the clip's start, before the first transient
+		const std::vector<SliceNote> spans = sliceNotes(*notes);
+		QCOMPARE(spans.size(), static_cast<std::size_t>(transients + 1));
+		QCOMPARE(spans.front().start, 0);
+		QCOMPARE(spans.front().key, slices->baseNote() + 2);
+		// (2) the notes tile the clip
+		for (std::size_t i = 0; i + 1 < spans.size(); ++i) { QCOMPARE(spans[i].end, spans[i + 1].start); }
+		QCOMPARE(spans.back().end, clipTicks);
+		// (3) the first boundary is the trimmed in-point
+		const std::vector<double> bounds = savedBoundaries(*slices);
+		QVERIFY(bounds.size() >= 3);
+		const double inPoint = static_cast<double>(sourceIn) / sourceSize;
+		QVERIFY2(std::abs(bounds[1] - inPoint) < 1e-6,
+			qPrintable(QStringLiteral("slice 1 %1 should be the in-point %2").arg(bounds[1]).arg(inPoint)));
+		QVERIFY(bounds[2] > bounds[1]);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
 	}
 
 	void slicingStopsAtTheTrimmedSourceEnd()
@@ -345,6 +462,10 @@ private slots:
 		}
 		QVERIFY(waveform != nullptr);
 		waveform->resize(640, 128);
+		// The view is never shown, so the waveform's pending resize event has not run and its editor width is stale;
+		// deliver it now so clicks at x = fraction * width() map to the same points the widget hit-tests.
+		QResizeEvent resized(waveform->size(), QSize());
+		QApplication::sendEvent(waveform, &resized);
 		QVERIFY(waveform->width() > 0);
 		QVERIFY(waveform->height() > 50);
 
