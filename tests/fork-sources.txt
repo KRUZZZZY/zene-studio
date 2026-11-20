@@ -3995,3 +3995,5 @@ docs/qwen-fixes-2026-10/cluster-Q050-183.1.md
 # Q050-267.1: the external-host regression for the Zene Rack VST3 bundle - it opens the
 # built bundle through the VST3 SDK's hosting loader (fork-NEW test, measured by the fork ratchets).
 tests/src/plugins/ZeneRackTest.cpp
+# Q050-224.1: the LV2 worker's alternate-stack proof (a live worker's first work() and a forked overflow).
+tests/src/core/WorkerAltStackTest.cpp

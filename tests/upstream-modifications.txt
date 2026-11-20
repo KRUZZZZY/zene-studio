@@ -5999,3 +5999,4 @@ tests/control-socket-integration.py	# Switch audio devices live with route and s
 data/manual/index.html	Q050-183.1: Settings > Audio running-output box and the test tone.
 include/PlayHandle.h	Q050-183.1: PlayHandle::handOverToOwner lets an owner free a finished handle off the render path; disposePlayHandle honours it.
 src/core/AudioEngine.cpp	Q050-183.1: PlayHandle::handOverToOwner lets an owner free a finished handle off the render path; disposePlayHandle honours it.
+src/core/lv2/Lv2Worker.cpp	Q050-224.1: the worker thread registers the crash reporter's alternate signal stack in its std::thread launch lambda before workerFunc() runs a plug-in's work(); a stack overflow inside the plug-in is now reportable from the worker thread. No change to the LV2 request/response path; covered by tests/src/core/WorkerAltStackTest.cpp and the four-site source gate tests/worker-altstack-registration-check.py.
