@@ -406,6 +406,18 @@ void SongEditor::toggleProportionalSnap()
 
 
 
+bool SongEditor::event( QEvent * e )
+{
+	// QWidget::event runs focusNextPrevChild for Tab/Backtab before keyPressEvent, so intercept them here
+	// (ArrangerClipKeys.h): only the focused arranger itself claims them.
+	if( e->type() == QEvent::KeyPress && arrangerkeys::handleTransientKey(this, static_cast<QKeyEvent*>(e)) )
+	{
+		e->accept();
+		return true;
+	}
+	return TrackContainerView::event( e );
+}
+
 void SongEditor::keyPressEvent( QKeyEvent * ke )
 {
 	// 0.5.0 theme 10: clip selection across tracks and clip resizing from the keyboard (ArrangerClipKeys.h).
