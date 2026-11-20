@@ -191,6 +191,18 @@ private slots:
 	//! still moves the previous version aside to <name>.bak.
 	void ordinarySaveStillWritesAndKeepsABackup();
 
+	//! A backup that cannot be staged must leave the PREVIOUS backup intact.
+	//! The old code removed <name>.bak before copying, so a failed copy
+	//! destroyed the only older generation. The staged copy (<name>.bak.new)
+	//! is blocked here, the save is refused, and the old backup stands.
+	void failedBackupCopyKeepsThePreviousBackup();
+
+	//! The normal path: once the staged backup is complete it atomically
+	//! replaces the older one, so <name>.bak holds the previous save and the
+	//! staging name is gone. Fails against an implementation that never
+	//! replaces the backup.
+	void successfulBackupReplacesTheOlderBackupAtomically();
+
 	//! A stale <name>.bak that cannot be removed must not block saving a
 	//! project to a path that has none yet: only the destination decides.
 	void unremovableBackupDoesNotBlockANewProject();
