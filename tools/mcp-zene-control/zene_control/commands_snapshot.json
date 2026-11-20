@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-16T00:11:35Z",
+  "captured_at": "2026-11-16T09:57:16Z",
   "commands": [
     {
       "args_schema": {
@@ -881,7 +881,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The audio backends this build knows, with the one that is running and the one the config file selects. Requires no audio device: the running name is whatever the engine opened, the dummy device when nothing else would open.",
+      "description": "The audio backends this build knows, with the one that is running and the one the config file selects. Requires no audio device: the running name is whatever the engine opened, the dummy device when nothing else would open. With an engine running it also says what was requested, why the device could not start (failure_reason) and whether the running backend is a fallback.",
       "group": "audio",
       "id": "audio.device_list",
       "mutating": false,
@@ -900,6 +900,15 @@
           },
           "devices": {
             "type": "array"
+          },
+          "failure_reason": {
+            "type": "string"
+          },
+          "fallback": {
+            "type": "boolean"
+          },
+          "requested": {
+            "type": "string"
           },
           "start_failed": {
             "type": "boolean"
@@ -1014,6 +1023,48 @@
       "group": "audio",
       "id": "audio.io_setup",
       "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "frequency": {
+            "type": "number"
+          },
+          "level_db": {
+            "type": "number"
+          },
+          "seconds": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Play a short sine tone through the running audio output, to check that sound comes out. 'frequency' Hz (20..20000, 440 when left out), 'seconds' (0.1..10, 1.0), 'level_db' (-60..-6, -18), with a 10 ms fade in and out. A new tone replaces the last. Result: 'playing', 'output' (the running backend), 'configured' (the backend the config selects) and 'audible' (false when the output is the dummy device or the configured one failed to start). Session audio only: it writes no project state.",
+      "group": "audio",
+      "id": "audio.test_tone",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Stop the test tone started by audio.test_tone. 'was_playing' says whether one was sounding. Session audio only: it writes no project state.",
+      "group": "audio",
+      "id": "audio.test_tone_stop",
+      "mutating": false,
       "requires": [],
       "result_schema": {
         "type": "object"
@@ -40206,23 +40257,23 @@
       }
     }
   ],
-  "count": 933,
+  "count": 935,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-183.1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-gm3gtp0e/zene.sock",
-    "version": "0.4.0-alpha.7154+f3b5426"
+    "source_socket": "/tmp/zctl-run-q4_sbeyz/zene.sock",
+    "version": "0.4.0-alpha.7163+6828471"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 78,
-    "id_count": 933,
-    "ids_sha256": "6ed23e1bffa34d2831b9e0af2639a94ac164f9d40f6b62d49aefd0a2bc912313"
+    "id_count": 935,
+    "ids_sha256": "fc62eb9f915262a9a888ac3ee986dc17fba54227a7daf914bca2096f5ecbf38c"
   }
 }

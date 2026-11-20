@@ -5804,6 +5804,7 @@ tests/CMakeLists.txt	Q050-501: registers UpdateCheckTest, UpdateCheckWindowsTest
 tests/fork-sources.txt	Q050-501: adds the update check's new sources and tests.
 tests/all-sources.txt	Q050-501: re-derived from its header recipe with the update check's new sources.
 src/gui/modals/SetupDialog.cpp	Q050-501: Settings > General > Updates, two check boxes saved through app.update_check_set; absent where the command is. No other setting changes (held by UpdateCheckWindowsTest).
+src/gui/modals/SetupDialog.cpp	Q050-183.1: Settings > Audio shows the running output box (running/configured/fallback reason, test tone through audio.test_tone).
 include/SetupDialog.h	Q050-501: declares the two Updates check boxes for Settings > General.
 data/manual/index.html	Q050-501: the Access section's help paragraphs describe the update check, exactly what it sends, and that installation stays manual.
 docs/KNOWN-LIMITATIONS.md	Q050-501: the update check's limits, exactly what is sent, and that installation stays manual.
@@ -5993,3 +5994,8 @@ tests/src/core/RecordingCrashLossTest.cpp	# CI regression: build / mingw64
 tests/CMakeLists.txt	cluster ci-d2bfae2f2ab57bfb: give SfzPlayerTest the vendored Abseil include root so the nested absl includes of the header its state-saver regression compiles resolve inside the vendored tree on every platform (windows-arm64 has no system Abseil); registration only, no existing target, test, environment or property changes.
 tests/src/core/RemotePluginAudioPortsTest.cpp	cluster ci-21b94bcfc72522e8: g_criticalsSeen/countCriticals are compiled only without SYNC_WITH_SHM_FIFO, because every test that uses them is socket-transport-only; the mingw64 test build selects the shared-memory FIFO and -Werror rejected the unused helper.
 tests/CMakeLists.txt	cluster ci-21b94bcfc72522e8: registers RemotePluginAudioPortsShmCompileCheck, an OBJECT library that compiles the real RemotePluginAudioPortsTest.cpp with SYNC_WITH_SHM_FIFO on every host, so the Windows-only branch is checked by the Linux build and the unused-helper defect cannot regress.
+src/core/ControlCommandsSettings.cpp	Q050-183.1: audio.device_list also reports requested, failure_reason and fallback
+tests/control-socket-integration.py	# Switch audio devices live with route and status feedback - stage 1/2: Show running audio backend and test output
+data/manual/index.html	Q050-183.1: Settings > Audio running-output box and the test tone.
+include/PlayHandle.h	Q050-183.1: PlayHandle::handOverToOwner lets an owner free a finished handle off the render path; disposePlayHandle honours it.
+src/core/AudioEngine.cpp	Q050-183.1: PlayHandle::handOverToOwner lets an owner free a finished handle off the render path; disposePlayHandle honours it.
