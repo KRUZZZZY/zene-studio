@@ -3977,3 +3977,5 @@ tests/data/legacy-projects/vst2-vestige-vsteffect.reference.json
 
 # cluster ci-d2bfae2f2ab57bfb (2026-11): the windows-arm64 SfzPlayerTest include-root fix and its evidence.
 docs/qwen-fixes-2026-10/cluster-ci-d2bfae2f2ab57bfb.md
+# Cluster ci-21b94bcfc72522e8: the mingw64 test TU compiles its socket-only helpers out; this report records the guard and the SHM-configuration compile check.
+docs/qwen-fixes-2026-10/cluster-ci-21b94bcfc72522e8.md

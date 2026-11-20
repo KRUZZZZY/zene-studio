@@ -70,12 +70,16 @@ void countWarnings(QtMsgType type, const QMessageLogContext&, const QString&)
 	if (type == QtWarningMsg) { ++g_warningsSeen; }
 }
 
+#ifndef SYNC_WITH_SHM_FIFO
 //! Criticals seen while a malformed message is refused, for the same reason as above.
+//! The malformed-message tests that use this are socket-transport-only, so on a build
+//! that selects SYNC_WITH_SHM_FIFO the helper is not used (and -Werror rejects it).
 int g_criticalsSeen = 0;
 void countCriticals(QtMsgType type, const QMessageLogContext&, const QString&)
 {
 	if (type == QtCriticalMsg) { ++g_criticalsSeen; }
 }
+#endif // SYNC_WITH_SHM_FIFO
 
 //! AudioPortsModel is abstract (bufferPropertiesChanging)
 class TestAudioPortsModel : public AudioPortsModel
