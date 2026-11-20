@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <exception>
 #include <new>
 
 #include <QDomElement>
@@ -99,7 +100,8 @@ void normalise(std::vector<float>* left, std::vector<float>* right)
 //! @a decoded at @a rate Hz, through the engine's band-limited (windowed-sinc) resampler: a linear one folds a
 //! high-rate response's content above the new Nyquist frequency back into the audible band (review lane10 #4).
 //! Only the frames that can be kept are converted - a few more for the filter's reach - and a response so short
-//! that it would resample to nothing stays as it is: one frame, not silence.
+//! that it would resample to nothing stays as it is: one frame, not silence. Returns nullptr when the resampler
+//! fails: it throws (std::bad_alloc included), returns nothing, or returns empty although frames were expected.
 std::shared_ptr<const SampleBuffer> atRate(const std::shared_ptr<const SampleBuffer>& decoded, float rate, std::size_t limit)
 {
 	const double ratio = static_cast<double>(decoded->sampleRate()) / static_cast<double>(rate);
@@ -109,8 +111,19 @@ std::shared_ptr<const SampleBuffer> atRate(const std::shared_ptr<const SampleBuf
 	{
 		source = std::make_shared<const SampleBuffer>(decoded->data(), wanted, decoded->sampleRate());
 	}
-	const std::shared_ptr<const SampleBuffer> resampled = resampleBuffer(source, static_cast<sample_rate_t>(rate));
-	return resampled != nullptr && resampled->size() > 0 ? resampled : source;
+	const auto expected = static_cast<std::size_t>(std::llround(static_cast<double>(source->size()) * rate / source->sampleRate()));
+	std::shared_ptr<const SampleBuffer> resampled;
+	try
+	{
+		resampled = resampleBuffer(source, static_cast<sample_rate_t>(rate));
+	}
+	catch (const std::exception&)
+	{
+		return nullptr;
+	}
+	if (resampled != nullptr && resampled->size() > 0) { return resampled; }
+	if (expected == 0) { return source; }
+	return nullptr;
 }
 
 //! One channel of @a buffer, at most @a limit long.
@@ -192,6 +205,7 @@ bool ConvolutionReverbEffect::loadImpulse(const QString& path)
 		const std::shared_ptr<const SampleBuffer> decoded = SampleBuffer::fromFile(path);
 		if (decoded == nullptr || decoded->size() == 0 || decoded->sampleRate() == 0) { return false; }
 		const std::shared_ptr<const SampleBuffer> impulse = atRate(decoded, rate, limit);
+		if (impulse == nullptr) { return false; }
 		left = channelOf(*impulse, 0, limit);
 		right = channelOf(*impulse, 1, limit);
 	}
