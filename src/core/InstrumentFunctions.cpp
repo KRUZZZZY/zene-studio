@@ -27,6 +27,7 @@
 #include "AudioEngine.h"
 #include "embed.h"
 #include "Engine.h"
+#include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "lmms_math.h"
 #include "PresetPreviewPlayHandle.h"
@@ -253,6 +254,14 @@ void InstrumentFunctionNoteStacking::processNote( NotePlayHandle * _n )
 			{
 				// add interval to sub-note-key
 				const int sub_note_key = sub_note_key_base + (int) chord_table.chords()[selected_chord][i];
+				// The base note's MIDI note-on was sent before this function created its chord children.
+				// MIDI-driven instruments therefore already have the root; only note-handle instruments
+				// need the zero-interval child because the parent becomes a master note below.
+				if( sub_note_key == base_note_key && _n->instrumentTrack()->instrument() != nullptr &&
+					_n->instrumentTrack()->instrument()->isMidiBased() )
+				{
+					continue;
+				}
 				// maybe we're out of range -> let's get outta
 				// here!
 				if( sub_note_key >= NumKeys )
