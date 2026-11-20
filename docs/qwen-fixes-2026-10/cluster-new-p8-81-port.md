@@ -6,7 +6,7 @@ Verdict: **FIXED**. The branch's own commits are the fix: `70a924a8a2` (product 
 
 Finding: "`track.set_arm_many` is marked reversible although undo leaves its takes behind."
 
-Evidence source: the logs of this round in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p8-81-port.r2/logs` (cited as `logs/<name>`). No result from an earlier round is used here.
+Evidence source for the sections before 'Round 3': the round-2 logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p8-81-port.r2/logs (cited as logs/<name> there).
 
 Sections before 'Round 3' cite the round-2 log folder (new-p8-81-port.r2/logs); the Round 3 section cites new-p8-81-port.r3/logs.
 
