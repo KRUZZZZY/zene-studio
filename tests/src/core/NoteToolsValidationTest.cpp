@@ -149,6 +149,66 @@ private slots:
 		QCOMPARE(clip->notes().size(), std::size_t{1});  // no grace note at a garbage velocity
 	}
 
+	//! A flam grace note is the source note at a fraction of its volume, and the
+	//! ratio's floor is 0.05. A sounding source (volume 1) times 0.05 used to round
+	//! to 0 - a silent grace note - while the command still answered ok. Driven
+	//! through the same invoke path as the GUI Flam menu, with no timing.
+	void aFlamGraceNoteAtTheMinimumRatioStaysAudible()
+	{
+		// The note whose start is at `tick`, or nullptr. Looked up by position so that a
+		// missing or misplaced grace note fails the test instead of passing vacuously.
+		const auto noteAt = [](MidiClip* c, int tick) -> const Note*
+		{
+			for (const Note* note : c->notes()) { if (note->pos().getTicks() == tick) { return note; } }
+			return nullptr;
+		};
+
+		MidiClip* clip = clipWith({{60, 24}});
+		clip->notes()[0]->setVolume(volume_t{1});
+		QJsonObject args = self(clip);
+		args.insert(QStringLiteral("velocity"), 0.05);
+		QVERIFY2(run(QStringLiteral("note.flam"), args).ok, "note.flam must accept the 0.05 floor");
+		QCOMPARE(clip->notes().size(), std::size_t{2});
+		const Note* grace = noteAt(clip, 21);
+		QVERIFY2(grace != nullptr, "the grace note must sit at tick 21");
+		QCOMPARE(grace->length().getTicks(), tick_t{3});
+		QVERIFY2(grace->getVolume() >= 1, "a flam grace note must sound, but it rounded to 0");
+
+		// Negative control: a silent source keeps a silent grace note.
+		MidiClip* silent = clipWith({{60, 24}});
+		silent->notes()[0]->setVolume(volume_t{0});
+		QJsonObject silentArgs = self(silent);
+		silentArgs.insert(QStringLiteral("velocity"), 0.05);
+		QVERIFY(run(QStringLiteral("note.flam"), silentArgs).ok);
+		QCOMPARE(silent->notes().size(), std::size_t{2});
+		const Note* silentGrace = noteAt(silent, 21);
+		QVERIFY2(silentGrace != nullptr, "the silent-source grace note must sit at tick 21");
+		QCOMPARE(silentGrace->getVolume(), volume_t{0});
+
+		// Normal path unchanged: volume 100 at the default ratio 0.6 gives 60.
+		MidiClip* normal = clipWith({{60, 24}});
+		normal->notes()[0]->setVolume(volume_t{100});
+		QVERIFY(run(QStringLiteral("note.flam"), self(normal)).ok);
+		QCOMPARE(normal->notes().size(), std::size_t{2});
+		const Note* normalGrace = noteAt(normal, 21);
+		QVERIFY2(normalGrace != nullptr, "the normal-path grace note must sit at tick 21");
+		QCOMPARE(normalGrace->getVolume(), volume_t{60});
+
+		// One undo step removes the grace note and restores the single source at volume 1.
+		MidiClip* undone = clipWith({{60, 24}});
+		undone->notes()[0]->setVolume(volume_t{1});
+		QJsonObject undoneArgs = self(undone);
+		undoneArgs.insert(QStringLiteral("velocity"), 0.05);
+		QVERIFY(run(QStringLiteral("note.flam"), undoneArgs).ok);
+		QCOMPARE(undone->notes().size(), std::size_t{2});
+		const Note* undoneGrace = noteAt(undone, 21);
+		QVERIFY2(undoneGrace != nullptr, "the grace note must exist before the undo");
+		QVERIFY2(undoneGrace->getVolume() >= 1, "the grace note must sound before the undo");
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(undone->notes().size(), std::size_t{1});
+		QCOMPARE(undone->notes()[0]->getVolume(), volume_t{1});
+	}
+
 };
 
 QTEST_MAIN(NoteToolsValidationTest)
