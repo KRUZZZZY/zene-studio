@@ -26,8 +26,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
+#include <vector>
 
 #include "AudioEngine.h"  // DEFAULT_BUFFER_SIZE
+#include "RealtimeScope.h"
 #include "SampleClip.h"
 #include "SampleFrame.h"
 #include "TakeLane.h"
@@ -36,12 +39,88 @@
 namespace lmms
 {
 
-std::unique_ptr<CompSlipReaders> CompSlipReaders::create(const TakeLaneModel& comp, const SampleClip& clip,
-	f_cnt_t sourceIn, double outputFramesPerTick)
+namespace
 {
+
+RealtimeFreeList<CompSlipReaders>& readerPool()
+{
+	static RealtimeFreeList<CompSlipReaders> pool;
+	return pool;
+}
+
+//! Every pooled object, owned here. Control thread only.
+std::vector<std::unique_ptr<CompSlipReaders>>& readerOwners()
+{
+	static std::vector<std::unique_ptr<CompSlipReaders>> owners;
+	return owners;
+}
+
+//! True when @a clip has a span of its own lane that the comp slips: the only case that needs readers.
+bool hasSlippedSpan(const TakeLaneModel& comp, const SampleClip& clip)
+{
+	const int start = clip.startPosition().getTicks();
+	const int end = clip.endPosition().getTicks();
+	for (const TakeLaneSegment& segment : comp.segments())
+	{
+		if (segment.laneIndex != clip.laneIndex() || segment.sourceOffset == 0) { continue; }
+		if (std::min(segment.endTick, end) > std::max(segment.beginTick, start)) { return true; }
+	}
+	return false;
+}
+
+} // namespace
+
+void CompSlipRecycler::operator()(CompSlipReaders* readers) const noexcept
+{
+	if (readers == nullptr) { return; }
+	if (!readers->m_pooled)
+	{
+		delete readers;
+		return;
+	}
+	readers->resetForReuse();
+	readerPool().push(readers);
+}
+
+void CompSlipReaders::reserve(std::size_t readers)
+{
+	while (readerPool().count() < readers)
+	{
+		std::unique_ptr<CompSlipReaders> made(new CompSlipReaders());
+		made->m_pooled = true;
+		readerOwners().push_back(std::move(made));
+		readerPool().push(readerOwners().back().get());
+	}
+}
+
+void CompSlipReaders::resetForReuse() noexcept
+{
+	for (auto& reader : m_readers) { reader.reset(); }
+	m_readerCount = 0;
+	m_spanCount = 0;
+}
+
+CompSlipOwner CompSlipReaders::create(const TakeLaneModel& comp, const SampleClip& clip,
+	f_cnt_t sourceIn, double outputFramesPerTick, bool* exhausted)
+{
+	if (exhausted != nullptr) { *exhausted = false; }
 	// An auditioned lane sounds whole and unslipped; the comp is set aside (R3.1).
-	if (comp.auditionLane() >= 0 || outputFramesPerTick <= 0.0) { return nullptr; }
-	std::unique_ptr<CompSlipReaders> readers(new CompSlipReaders());
+	if (comp.auditionLane() >= 0 || outputFramesPerTick <= 0.0 || !hasSlippedSpan(comp, clip)) { return nullptr; }
+	CompSlipReaders* taken = nullptr;
+	if (RealtimeScope::isActive())
+	{
+		taken = readerPool().pop();
+		if (taken == nullptr)
+		{
+			if (exhausted != nullptr) { *exhausted = true; }
+			return nullptr;
+		}
+	}
+	else
+	{
+		taken = new CompSlipReaders();
+	}
+	CompSlipOwner readers(taken);
 	const int start = clip.startPosition().getTicks();
 	const int end = clip.endPosition().getTicks();
 	for (const TakeLaneSegment& segment : comp.segments())
