@@ -63,4 +63,24 @@ No registration edit was needed. The changed product files already appear in `te
 
 ## Self-check
 
-Written before the post-commit `submit_check` run. Its table, exit code, and the answers to any FAIL or `?` lines are recorded in the follow-up commit that edits this section.
+Commit `0fe7e7852d08b19c7eae8e492969a7d7f4224bd4` (cluster new-p16-210) contains the four product and test files and this report. `git status --short` after the commit printed nothing (exit 0).
+
+`python3 .../submit_check.py <worktree> new-p16-210 > .../logs/submit-1.log 2>&1` → EXIT=0, `RESULT: PASS - submit`.
+
+| Check | Result |
+|---|---|
+| commits on the branch | PASS |
+| working tree clean | PASS |
+| report `docs/qwen-fixes-2026-10/cluster-new-p16-210.md` | PASS |
+| tests added or changed `tests/src/core/ScriptEngineTest.cpp` | PASS |
+| gates (`feature_check.py`) | PASS |
+
+No FAIL lines. The five `?` questions, answered:
+
+1. **Regression test fails reverted, passes with the change.** Reverted: `test-1` EXIT=8 (`FAIL! printDoesNotAssemblePastTheCaptureLimit`, 40000399 chars; `test-1.log:27`). Restored: `test-2` EXIT=0. The reversed run `test-4` is also EXIT=8 (inferred from CTest; see the table above).
+2. **Deterministic.** No clock, sleep, or race in the test. Inputs are constants (`string.rep('x', 100000)` × 400 `print` args). The accumulator is a `std::atomic` max. The `DirectConnection` lambda runs on the emitting thread during `runString`, and `runString` returns synchronously (`RunResult`), so the lambda has finished before `QVERIFY`. The same synchronous pattern is used by the existing "fresh run" test directly above.
+3. **Fix at the cause, siblings checked.** The cause is the single print loop in `ScriptEngine.cpp:265-290`; the log call is now `:289`, previously `:282`. Other `logMessage` producers were checked by grep: `ScriptEngine.cpp:606` (short MIDI string, fixed size) and `:767` (not inspected in this run). `CaptureBuffer::append` in `ScriptConsole.cpp` is unchanged, so the per-line and character caps still apply to every producer. **Not verified:** the body of `:767`.
+4. **No collateral damage.** Messages under 1 MiB take the same path: the tab separator logic and per-argument conversion are unchanged for sub-limit totals. Only a `print` whose total would exceed 1 MiB is cut at the limit. The capture is an in-memory per-run console buffer (`CaptureBuffer::reset`), not saved project data, so saved data is not affected. Whether any other caller legitimately exceeds 1 MiB in one `print` was not checked; none is known from this change.
+5. **Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE.** The pre-fix behaviour is shown by the reversed run (`test-1.log:27`, 40000399 chars), so the question does not apply.
+
+The `ScriptMemoryBudgetTest` failure is the pre-existing one in "Other findings" and is not a submit-check item.
