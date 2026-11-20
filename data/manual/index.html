@@ -947,6 +947,7 @@ the waveform the device now holds.</p>
 by you alone); anything connected to it can do whatever the menus can - save, render, delete - so connect only programs
 you trust. A controller can drive the remote-control pages (eight knobs following the selected device), a Mackie
 Control surface, or any parameter through MIDI learn. window.note_editor_set opens a clip in the note editor and sets its tool and view; window.get_state's note_editor reports the active tool and the same zoom, row height and visible top and bottom key.</p>
+<p><b>MIDI 2.0 and UMP input.</b> MIDI 2.0 / Universal MIDI Packet (UMP) input is not yet supported, and no date is set for it. Today's input is MIDI 1; see docs/MIDI-INPUT-SUPPORT.md for the platform boundary.</p>
 <p><b>Closing a MIDI device.</b> When you quit (File &gt; Quit, or <code>control.quit</code>), an ALSA Raw-MIDI
 device (the MIDI interface chosen in Settings) that is waiting for input closes at once: its reader is woken
 and stopped before the device is released, instead of being waited on for a second and then killed. On ALSA Raw-MIDI, ALSA Sequencer, JACK, WinMM and CoreMIDI, incoming MIDI stops before the
