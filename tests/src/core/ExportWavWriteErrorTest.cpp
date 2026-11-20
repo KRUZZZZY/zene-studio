@@ -190,7 +190,9 @@ bool finalisationReportedFailure(T& device)
 #ifdef Q_OS_UNIX
 //! The WAV header fields libsndfile rewrites at close: the RIFF size and the data
 //! chunk's own size. Read straight from the file so the test asserts on what a
-//! reader sees, not on the code's own notion of the layout.
+//! reader sees, not on the code's own notion of the layout. Unix-only: its only
+//! caller is the size-cap case below, and MinGW's -Werror=unused-function fails
+//! the build when a helper is defined on a platform that never calls it.
 struct RiffSizes
 {
 	quint32 riff = 0;
@@ -224,7 +226,6 @@ RiffSizes riffSizes(const QString& path)
 }
 #endif // Q_OS_UNIX
 
-#ifdef Q_OS_UNIX
 //! Caps the size of the files this process writes: a write that would grow a
 //! file past the cap fails with EFBIG. SIGXFSZ is ignored while the cap is
 //! in place, so the failure is an error return and not a signal that kills
