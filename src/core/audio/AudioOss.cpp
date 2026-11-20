@@ -170,7 +170,7 @@ AudioOss::~AudioOss()
 
 QString AudioOss::probeDevice()
 {
-	QString dev = ConfigManager::inst()->value( "AudioOss", "Device" );
+	QString dev = ConfigManager::inst()->value( "audiooss", "device" );
 	if( dev.isEmpty() )
 	{
 		char * adev = getenv( "AUDIODEV" );	// Is there a standard
