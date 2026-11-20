@@ -1449,6 +1449,47 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore);
 	}
 
+	//! A null buffer with len 0, -5 or 1 must be ignored: the local client keeps its scale.
+	void localMtsParseIgnoresNullUnsignedBuffer()
+	{
+		MtsClientPtr client(MTS_RegisterClient(), &MTS_DeregisterClient);
+		QVERIFY(client != nullptr);
+		seedLocalMtsScale(client.get());
+		const QByteArray name(MTS_GetScaleName(client.get()));
+		QCOMPARE(name, QByteArrayLiteral("Test scale"));
+		const signed char mapSize = MTS_GetMapSize(client.get());
+		const signed char mapStartKey = MTS_GetMapStartKey(client.get());
+		const double frequency = MTS_NoteToFrequency(client.get(), 60, 0);
+
+		MTS_ParseMIDIDataU(client.get(), nullptr, 0);
+		MTS_ParseMIDIDataU(client.get(), nullptr, -5);
+		MTS_ParseMIDIDataU(client.get(), nullptr, 1);
+		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), name);
+		QCOMPARE(MTS_GetMapSize(client.get()), mapSize);
+		QCOMPARE(MTS_GetMapStartKey(client.get()), mapStartKey);
+		QCOMPARE(MTS_NoteToFrequency(client.get(), 60, 0), frequency);
+
+		seedLocalMtsScale(client.get());
+		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), name);
+		QCOMPARE(MTS_NoteToFrequency(client.get(), 60, 0), frequency);
+	}
+
+	//! A null signed buffer with len 3 must be ignored: no MTS sysex is recorded.
+	void localMtsParseIgnoresNullSignedBuffer()
+	{
+		MtsClientPtr client(MTS_RegisterClient(), &MTS_DeregisterClient);
+		QVERIFY(client != nullptr);
+		QCOMPARE(MTS_HasReceivedMTSSysEx(client.get()), false);
+		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), QByteArrayLiteral("12-TET"));
+
+		MTS_ParseMIDIData(client.get(), nullptr, 3);
+		QCOMPARE(MTS_HasReceivedMTSSysEx(client.get()), false);
+		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), QByteArrayLiteral("12-TET"));
+
+		seedLocalMtsScale(client.get());
+		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), QByteArrayLiteral("Test scale"));
+		QCOMPARE(MTS_HasReceivedMTSSysEx(client.get()), true);
+	}
 };
 
 QTEST_GUILESS_MAIN(SessionTuningTest)
