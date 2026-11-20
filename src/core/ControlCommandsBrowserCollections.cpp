@@ -129,9 +129,17 @@ ControlResult store(const QJsonObject& next, const QJsonObject& answer)
 	return ControlResult::success(answer);
 }
 
+//! The name a save, run or remove acts on: save stores the trimmed name, so run and remove
+//! trim the same way - otherwise a collection saved as "  drums  " can neither be run nor
+//! removed by the name it was saved with.
+QString collectionName(const QJsonObject& args)
+{
+	return args.value(QStringLiteral("name")).toString().trimmed();
+}
+
 ControlResult save(const QJsonObject& args)
 {
-	const QString name = args.value(QStringLiteral("name")).toString().trimmed();
+	const QString name = collectionName(args);
 	if (name.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a collection needs a 'name'")); }
 	QJsonObject query;
 	// 0.5.0 L11 (WF-007): the category facet rides along, so a collection saved
@@ -154,7 +162,7 @@ ControlResult save(const QJsonObject& args)
 
 ControlResult remove(const QJsonObject& args)
 {
-	const QString name = args.value(QStringLiteral("name")).toString();
+	const QString name = collectionName(args);
 	QJsonObject all;
 	ControlResult error;
 	if (!readForEdit(&all, &error)) { return error; }
@@ -181,7 +189,7 @@ ControlResult run(const QJsonObject& args)
 	QJsonObject all;
 	ControlResult error;
 	if (!readAll(&all, &error)) { return error; }
-	const QString name = args.value(QStringLiteral("name")).toString();
+	const QString name = collectionName(args);
 	if (!all.contains(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no collection '%1'").arg(name)); }
 	QJsonObject query = all.value(name).toObject();
 	for (const char* key : {"limit", "offset", "probe"})
