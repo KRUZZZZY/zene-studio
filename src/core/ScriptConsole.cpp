@@ -43,7 +43,7 @@ namespace
 //! diagnostic switch, never a synchronisation point, and a reader on any thread
 //! (including a future one on the audio side) must not be able to block.
 std::atomic<bool> s_enabled{true};
-constexpr qsizetype CaptureCharacterLimit = 1024 * 1024;
+constexpr qsizetype CaptureCharacterLimit = CaptureBuffer::characterLimit();
 constexpr qsizetype CaptureLineLimit = 4096;
 const QString s_captureLimitNotice =
 	QStringLiteral("[script output truncated: further lines dropped]");
