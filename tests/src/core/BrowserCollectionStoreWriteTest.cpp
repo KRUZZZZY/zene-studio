@@ -23,13 +23,17 @@
  */
 /*! cluster new-p17-271: browser.collection_save and browser.collection_remove write the whole collections store
  *  (browser-collections.json) or nothing. A write the kernel cuts short (RLIMIT_FSIZE, so it is deterministic) is
- *  refused, and the store on disk keeps what it had. */
+ *  refused, and the store on disk keeps what it had.
+ *  cluster new-p17-270: a collection name is trimmed by save, run and remove alike, so the name a
+ *  collection was saved with always runs and removes it. */
 
 #include <QtTest>
 
+#include <QDir>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 
 #if defined(Q_OS_UNIX)
@@ -50,6 +54,13 @@ namespace
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(id, args);
+}
+
+void touch(const QString& path)
+{
+	QFile file(path);
+	QVERIFY(file.open(QIODevice::WriteOnly));
+	file.write("x");
 }
 
 #if defined(Q_OS_UNIX)
@@ -112,6 +123,64 @@ private slots:
 	{
 		ControlRegistry::setReady(false);
 		Engine::destroy();
+	}
+
+	//! cluster new-p17-270: save() trims a collection's name before it stores it, so run and
+	//! remove must trim the same input. Before this, a collection saved from "  Trim Probe  "
+	//! was stored as "Trim Probe" but running or removing it with that same input answered
+	//! "no collection '  Trim Probe  '".
+	void aCollectionNameIsTrimmedWhenRunAndRemoved()
+	{
+		const auto listed = [](const QString& name) {
+			const QJsonArray collections = run(QStringLiteral("browser.collections")).result
+				.value(QStringLiteral("collections")).toArray();
+			for (const QJsonValue& value : collections)
+			{
+				if (value.toObject().value(QStringLiteral("name")).toString() == name) { return true; }
+			}
+			return false;
+		};
+		const QString samples = ConfigManager::inst()->userSamplesDir();
+		QVERIFY(QDir().mkpath(samples));
+		touch(samples + QStringLiteral("/trim-probe.wav"));
+
+		const QString unpadded = QStringLiteral("Trim Probe");
+		// A failed assertion returns from the slot early: remove the collection even then, so the
+		// store the other slots count is not left holding this one.
+		const auto cleanup = qScopeGuard([&] {
+			run(QStringLiteral("browser.collection_remove"), {{QStringLiteral("name"), unpadded}});
+		});
+		const ControlResult saved = run(QStringLiteral("browser.collection_save"),
+			{{QStringLiteral("name"), QStringLiteral("  Trim Probe  ")},
+				{QStringLiteral("text"), QStringLiteral("name:trim-probe")},
+				{QStringLiteral("root"), QStringLiteral("samples")}});
+		QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
+		QCOMPARE(saved.result.value(QStringLiteral("name")).toString(), unpadded);
+		QVERIFY(listed(unpadded));
+		QVERIFY(!listed(QStringLiteral("  Trim Probe  ")));
+
+		// The name the store holds is the one run accepts, whichever spelling of it is supplied.
+		const ControlResult ran = run(QStringLiteral("browser.collection_run"),
+			{{QStringLiteral("name"), QStringLiteral("  Trim Probe  ")}});
+		QVERIFY2(ran.ok, qPrintable(ran.errorMessage));
+		QCOMPARE(ran.result.value(QStringLiteral("collection")).toString(), unpadded);
+		QCOMPARE(ran.result.value(QStringLiteral("matched")).toInt(), 1);
+		QVERIFY(run(QStringLiteral("browser.collection_run"), {{QStringLiteral("name"), unpadded}}).ok);
+
+		// A name that is not stored after trimming is still not found.
+		QCOMPARE(run(QStringLiteral("browser.collection_run"), {{QStringLiteral("name"), QStringLiteral("  Missing  ")}}).errorKind,
+			ControlErrorKind::NotFound);
+
+		// Removal takes the same spelling and is still one undo step.
+		const ControlResult removed = run(QStringLiteral("browser.collection_remove"),
+			{{QStringLiteral("name"), QStringLiteral("  Trim Probe  ")}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QCOMPARE(removed.result.value(QStringLiteral("removed")).toString(), unpadded);
+		QVERIFY(!listed(unpadded));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(listed(unpadded));
+		QVERIFY(run(QStringLiteral("browser.collection_remove"), {{QStringLiteral("name"), unpadded}}).ok);
+		QVERIFY(!listed(unpadded));
 	}
 
 	//! A store write the kernel cuts short is a failed save or removal, and the store keeps what it had.
