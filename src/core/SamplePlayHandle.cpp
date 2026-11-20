@@ -62,7 +62,7 @@ AudioStretcher::Parameters wsolaParametersFor(WarpStretchMode mode)
 }
 
 SamplePlayHandle::SamplePlayHandle(Sample* sample, bool ownAudioBusHandle)
-	: PlayHandle(Type::SamplePlayHandle)
+	: PlayHandle(Type::SamplePlayHandle, 0, true)
 	, m_sample(sample)
 	, m_ownAudioBusHandle(ownAudioBusHandle)
 {
@@ -74,7 +74,7 @@ SamplePlayHandle::SamplePlayHandle(Sample* sample, bool ownAudioBusHandle)
 
 SamplePlayHandle::SamplePlayHandle(Sample* sample, bool ownAudioBusHandle,
 	AudioResampler::RealtimeVoiceTag realtimeVoice)
-	: PlayHandle(Type::SamplePlayHandle)
+	: PlayHandle(Type::SamplePlayHandle, 0, true)
 	, m_state(realtimeVoice)
 	, m_sample(sample)
 	, m_ownAudioBusHandle(ownAudioBusHandle)
@@ -371,7 +371,8 @@ void SamplePlayHandle::snapshotComp(const SampleClip* clip)
 		return;
 	}
 	// 0.5.0 E2: a slipped span reads the take slipped - linear clips at their own pitch (include/CompSlip.h).
-	if (m_rendersLinearly && !m_preservePitch) { m_compSlip = CompSlipReaders::create(comp, *clip, m_window.sourceIn, fpt); }
+	m_compSlipExhausted = false;
+	if (m_rendersLinearly && !m_preservePitch) { m_compSlip = CompSlipReaders::create(comp, *clip, m_window.sourceIn, fpt, &m_compSlipExhausted); }
 	for (const TakeLaneSegment& segment : comp.segments())
 	{
 		if (segment.laneIndex != lane || m_compSpanCount >= MaxCompSpans) { continue; }
