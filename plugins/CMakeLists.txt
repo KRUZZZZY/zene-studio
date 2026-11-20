@@ -15,3 +15,10 @@ include_directories("${CMAKE_BINARY_DIR}/src")
 FOREACH(PLUGIN ${PLUGIN_LIST})
 	ADD_SUBDIRECTORY(${PLUGIN})
 ENDFOREACH()
+
+# The Zene Rack product plug-in is a VST3 bundle for OTHER hosts, not one of
+# Zene's own modules, so it is not in PLUGIN_LIST. It needs the pinned VST3
+# SDK, which Vst3Effect creates as lmms_vst3_sdk when that module is configured.
+IF(TARGET lmms_vst3_sdk)
+	ADD_SUBDIRECTORY(ZeneRack)
+ENDIF()
