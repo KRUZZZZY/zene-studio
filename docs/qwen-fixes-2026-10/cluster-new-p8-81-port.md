@@ -8,6 +8,8 @@ Finding: "`track.set_arm_many` is marked reversible although undo leaves its tak
 
 Evidence source: the logs of this round in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p8-81-port.r2/logs` (cited as `logs/<name>`). No result from an earlier round is used here.
 
+Sections before 'Round 3' cite the round-2 log folder (new-p8-81-port.r2/logs); the Round 3 section cites new-p8-81-port.r3/logs.
+
 **Exit codes:** the EXIT values below are the codes the commands printed when they were run. The logs themselves do not contain them. Quoted result lines are from the logs.
 
 ## Is the finding real (base `4eb8d6e8a`)
@@ -143,3 +145,69 @@ Answers to the six checks in `logs/submit-1.log`.
 - **`comp.assign`.** Not checked in this round. Its name appears on no changed line (see self-check 6).
 - **Submit check.** `logs/submit-1.log` ends with `RESULT: PASS - submit`. The log does not say which commit it checked. It is to be rerun at the final commit (step p6).
 - **`logs/test-1.log`** is the green baseline: `ctest -R UndoHonestyTest` on unmodified HEAD, before any mutation (step p1), built by `logs/build-1.log`. The log shows `1/1 Test #274: UndoHonestyTest ... Passed` and `100% tests passed out of 1`. EXIT 0 is as step p1 recorded it.
+- **Harness scripts hardcode the test import path.** `logs/arm_all_shot.py:12` and `logs/arm_all_negative.py:9` set `TESTS` to this worktree's `tests` folder, and `sys.path.insert` uses it (lines 14 and 11). The scripts import only from that location.
+- **Take files are under `/tmp/zctl-run-*`.** The take paths in `logs/shot-3.log` are `/tmp/zctl-run-<id>/workspace/zene-take-trk<N>.wav`. Neither harness script contains `zctl-run`, so the code that picks that folder is not identified.
+- **`logs/test-4.log` line 10 quotes two breakdowns of 828.** `416 + 39 + 22 + 351` and `416 + 38 + 23 + 351` both sum to 828 but differ in two classes. The 837 vs 828 gap in the bullet above is still unexplained.
+
+## Round 3
+
+Luna's round-2 QA asked for a state sequence and a screenshot artifact. Both are below. Log names are relative to `new-p8-81-port.r3/logs`.
+
+### State sequence
+
+Source: `logs/state-sequence.txt`, checked against `tests/src/core/UndoHonestyTest.cpp:406-440`. Steps 1, 2 and 5 are mirrored by `logs/arm_all_shot.py`. Steps 3 and 6 are state reads with no command.
+
+1. `track.add` (type `sample`) three times (lines 413-419).
+2. `track.set_arm_many` with the three tracks, `armed=true`: ok (420-421); `result.tracks` size 3 (422). Routes are not asserted at arm time.
+3. State read: `control::trackRecordArmed` is true for each track (423-424).
+4. The same `track.set_arm_many` again: `errorKind Busy` (426).
+5. `control.undo` runs (427). Its result is not asserted yet.
+6. State reads (428-431): routes from the arm reply, `tracksStillArmed`, `takesRemain`. Not asserted yet.
+7. `record.disarm_track` for each route in the arm reply; each must be ok (432-433). This runs before any assertion, so a failing run still stops every capture.
+8. `QCOMPARE(routes.size(), 3)` at line 434.
+9. The refusal: `!undo.ok` (435), `errorKind Irreversible` (436), message contains `track.set_arm_many` (437).
+10. `QVERIFY(tracksStillArmed && takesRemain)` (438).
+11. `track.set_arm_many` with `tracks=[]`, `armed=true`: `errorKind InvalidArgs` (439).
+
+### Screenshot
+
+- File `logs/arm-all.png`, 1600x1000, taken by `window.screenshot` (`logs/shot-3.log`: `window.screenshot ok=True`, `shot_size=1600x1000 exists=True`) from a real run of `build/zene`.
+- sha256 `d3cb4f5683be514557cb4898995b4776d5ea74b418324c109f415ee86ca7e766`. It matches `logs/arm-all.png.sha256` (recomputed this round). It also matched an earlier run (`logs/exit-codes.txt`). No byte-determinism claim is made.
+- What it shows (viewed this round): the arrange view, with the record buttons of Arm 0, Arm 1 and Arm 2 outlined. It does not show the Arm All menu. That menu is in the menu-bar Record menu, and no control command opens it. So the comment-only change in `src/gui/RecordLaunchMenus.cpp` (`//!` lines) does not appear in the image.
+- The armed state is proved by `logs/shot-3.log`: `record.get_state ok=True`, then `STILL_ARMED track=trk-9 armed=True`, `trk-10 armed=True`, `trk-11 armed=True`, and `STILL_ARMED_ALL=True`. The same log shows `control.undo ok=False`, `kind: irreversible`, with a message naming `track.set_arm_many`.
+- The check can fail: `logs/shot-neg.log` (EXIT 1, `logs/exit-codes.txt`) runs `NEGATIVE record.disarm_track route=4 ok=True` before the read. It then prints `STILL_ARMED track=trk-9 armed=False`, `trk-10` and `trk-11` `armed=True`, and `STILL_ARMED_ALL=False`.
+- Take files in both runs are under `/tmp/zctl-run-*/workspace/`.
+
+### Commit 8a45fbab44
+
+A comment-only change at `src/core/ControlCommandsArrangementState.cpp:351` (one line; `git show 8a45fbab44`). The old comment said the batch records ONE transaction. The new comment says `track.set_arm` records its own undo step and the batch records none. The `remove` call is unchanged.
+
+### RED and GREEN
+
+The fix patch is `git diff 4eb8d6e8a HEAD -- src/core/ControlCommandsArrangementState.cpp src/core/ControlReversibilityTableRecording.cpp`: 80 lines, and `logs/fix.patch` is identical. The EXIT values for these steps come from the earlier-round block of `logs/exit-codes.txt`; the runner output was not seen this round.
+
+- Reverted: `git apply -R` EXIT 0; build-2 EXIT 0; test-2 EXIT 8. `logs/test-2.log:19`: `FAIL!  : UndoHonestyTest::armAllRefusesUndoThatWouldLeaveItsTakesBehind() '!undo.ok' returned FALSE. (control.undo claimed it could remove the takes from track.set_arm_many)`
+- Fixed: `git apply` EXIT 0; build-3 EXIT 0; test-3 EXIT 0 (`logs/test-3.log:5`: `100% tests passed out of 1`).
+- Baseline: test-1 EXIT 0 on unmodified HEAD (`logs/test-1.log`). This round's quiet-runner run of test-1b printed EXIT 0 and `100% tests passed`, 1/1; its log is under the duet worker tmp folder, not in `$LOG`.
+
+Mutations:
+- Row-only mutation: `ReversibilityContractTest` catches it. test-4 EXIT 8; `logs/test-4.log:10`: `FAIL!  : ReversibilityContractTest::theTableHistogramIsTheDocumentedOne() ...`. `UndoHonestyTest` does not catch it: test-4b EXIT 0 (`logs/test-4b-undohonesty-under-row-mutation.log`).
+- Restored: test-5 EXIT 0 (`logs/test-5.log:5`: `100% tests passed out of 1`).
+- Handler-only mutation: not observable, because `ControlRegistry.cpp:563` stamps the transaction irreversible (round-2 finding, not rerun).
+
+### Family
+
+build-7 EXIT 0. test-7a (`ControlEditCommandsTest` under a private HOME) EXIT 0 (`logs/test-7a.log:5`: `100% tests passed out of 1`). test-7b EXIT 0 (`logs/test-7b.log:15`: `100% tests passed out of 6`).
+
+### Gates
+
+- `logs/gate-1.log:10`: `RESULT: PASS`, with lizard from `logs/lizard-venv`.
+- `logs/complexity.log:1`: `17653 functions in the fork scope; 68 exceed CCN 10`. `logs/complexity.log` has 7 `REGRESSION` lines and `logs/file-length.log` has 14: 21 entries over 20 distinct paths (`logs/regression-paths.txt`). None of the 20 paths is in `git diff --name-only 4eb8d6e8a HEAD`.
+- The first FAIL line in each: `logs/complexity.log:108`: `FAIL: complexity ratchet regressed (check mode: baseline not written)`; `logs/file-length.log:38`: `FAIL: file-length ratchet regressed (check mode: baseline not written)`. gate-1 still reports `RESULT: PASS`, so that result does not reflect these FAIL lines.
+- `logs/lizard-head.log` is 0 bytes and has no marker that lizard scanned the changed files. So "no function over CCN 10 in the changed files" is unverified.
+
+### Where the evidence lives
+
+- The build-1b, test-1b and build-6 quiet-runner logs are under the duet worker tmp folders, as `logs/exit-codes.txt` records. They are not in `$LOG`.
+- EXIT values for runs with no log here come from the runner's printed output and `logs/exit-codes.txt`, not from the log files.
+- The field names `kind`, `states` and `test` follow the brief's wording and are unverified against a schema. The brief says `workflow_capture.py:130-131` requires only string `path` and `sha256`; that line was not re-read this round.
