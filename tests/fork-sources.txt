@@ -2511,6 +2511,7 @@ src/wasm/WasmAbi.h
 src/wasm/WasmLogBuffer.h
 src/wasm/WasmOfflineRender.cpp
 src/wasm/WasmOfflineRender.h
+src/wasm/WasmOfflineRenderLimits.h
 src/wasm/WasmSandbox.cpp
 src/wasm/WasmSandbox.h
 src/wasm/WasmSandboxHost.cpp
@@ -3997,3 +3998,5 @@ docs/qwen-fixes-2026-10/cluster-Q050-183.1.md
 tests/src/plugins/ZeneRackTest.cpp
 # Q050-224.1: the LV2 worker's alternate-stack proof (a live worker's first work() and a forked overflow).
 tests/src/core/WorkerAltStackTest.cpp
+tests/src/wasm/WasmOfflineRenderLimitStubs.cpp
+tests/src/wasm/WasmOfflineRenderLimitTest.cpp
