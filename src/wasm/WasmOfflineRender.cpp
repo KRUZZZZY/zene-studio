@@ -25,6 +25,7 @@
 
 #include "SampleFrame.h"
 #include "WasmAbi.h"
+#include "WasmOfflineRenderLimits.h"
 #include "WasmSandbox.h"
 #include "WasmWorker.h"
 
@@ -52,11 +53,11 @@ constexpr float kRenderParam0 = 0.5f;
 //! stereo, both channels the same value, so a mono and a stereo module see the
 //! same plane 0.
 void fillStimulus(SampleFrame* block, std::uint32_t frames, const std::vector<float>& input,
-	std::uint32_t offset)
+	std::size_t offset)
 {
 	for (std::uint32_t frame = 0; frame < frames; ++frame)
 	{
-		const std::size_t source = static_cast<std::size_t>(offset) + frame;
+		const std::size_t source = offset + frame;
 		const float value = source < input.size() ? input[source] : 0.0f;
 		block[frame][0] = value;
 		block[frame][1] = value;
@@ -91,9 +92,10 @@ auto renderInline(const std::string& modulePath, std::uint32_t frames, std::uint
 	sandbox.setParam(0, kRenderParam0);
 
 	std::vector<SampleFrame> block(blockFrames);
-	for (std::uint32_t offset = 0; offset < frames; offset += blockFrames)
+	for (std::size_t offset = 0; offset < frames; offset += blockFrames)
 	{
-		const std::uint32_t count = std::min(blockFrames, frames - offset);
+		const auto count = static_cast<std::uint32_t>(
+			std::min<std::size_t>(blockFrames, frames - offset));
 		fillStimulus(block.data(), count, input, offset);
 
 		const std::uint32_t planeBytes = count * static_cast<std::uint32_t>(sizeof(float));
@@ -170,9 +172,10 @@ auto renderThroughPool(const std::string& modulePath, std::uint32_t frames,
 
 	std::vector<SampleFrame> submitted(blockFrames);
 	std::vector<SampleFrame> collected(blockFrames);
-	for (std::uint32_t offset = 0; offset < frames; offset += blockFrames)
+	for (std::size_t offset = 0; offset < frames; offset += blockFrames)
 	{
-		const std::uint32_t count = std::min(blockFrames, frames - offset);
+		const auto count = static_cast<std::uint32_t>(
+			std::min<std::size_t>(blockFrames, frames - offset));
 		fillStimulus(submitted.data(), count, input, offset);
 		if (!worker.submit(submitted.data(), count, sampleRate))
 		{
@@ -259,6 +262,13 @@ auto renderOffline(const std::string& modulePath, std::uint32_t frames, std::uin
 	outcome.blockFrames = blockFrames;
 	outcome.repeats = repeats;
 	outcome.sampleRate = sampleRate;
+
+	const std::string framesError = offlineRenderFramesError(frames);
+	if (!framesError.empty())
+	{
+		outcome.error = framesError;
+		return outcome;
+	}
 
 	if (modulePath.empty() || frames == 0 || blockFrames == 0 || blockFrames > WasmWorker::maxBlockFrames)
 	{
