@@ -268,6 +268,8 @@ const ReversibilityRow kPassiveRows[] = {
 	R("app.version", RC::NotMutating, false, "reads the build identity", "no write", ""),
 	R("arrangement.get_state", RC::NotMutating, false, "reads the model", "no write", ""),
 	R("audio.device_list", RC::NotMutating, false, "reads the device table", "no write", ""),
+	R("audio.test_tone", RC::NotMutating, false, "it plays a short tone through the running output: session audio, not the project", "no write (audio.test_tone_stop)", ""),
+	R("audio.test_tone_stop", RC::NotMutating, false, "it stops the test tone: session audio", "no write", ""),
 	R("automation.get_state", RC::NotMutating, false, "reads the model", "no write", ""),
 	R("project.undo_history", RC::NotMutating, false,
 		"reads whether the project saves its undo history, the caps, what a save would keep now and what the last save and load did - and writes nothing",
