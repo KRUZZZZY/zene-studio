@@ -12,25 +12,19 @@ FIXED
 
 ## 2. Commands and results
 
-RED/GREEN sequence, all run in the worktree `kads-new-p14-25`. Logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p14-25.r1/logs/`.
+RED/GREEN sequence, all run in the worktree `kads-new-p14-25`. Logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p14-25.r2/logs/`. Each r2 log ends with its own `EXIT=` line, and the EXIT values below are read from those lines.
 
 | Step | Command (summary) | Exit | What the log shows |
 |---|---|---|---|
-| build-1b | build `LinkAudioStreamTest` with the new test, fix not applied | 0 | ends `Built target LinkAudioStreamTest` (build-1b.log) |
-| test-1b-red | run `LinkAudioStreamTest` | 1 | `FAIL!` `omittedSendKeepsSendingOffWhileThePeerStays` at `LinkAudioStreamTestParts2.h(83)`; `Totals: 2 passed, 1 failed` (test-1b-red.log) |
-| build-2 | build with fix applied | 0 | ends `Built target` (build-2.log) |
-| test-2-green | run `LinkAudioStreamTest` | 0 | `Totals: 3 passed, 0 failed` (test-2-green.log) |
-| test-2-family | run `LinkAudioStreamTest` + `LinkAudioCodecTest` | 0 | `100% tests passed out of 2` (test-2-family.log, `EXIT=0` line present) |
-| fix.patch reverse | `git apply -R` of the fix | 0 | fix.patch saved |
-| build-3-reversed | build with fix reversed | 0 | ends `Built target` (build-3-reversed.log) |
-| test-3-red-reversed | run `LinkAudioStreamTest` | 1 | same `FAIL!` at `Parts2.h(83)`; `Totals: 2 passed, 1 failed` (test-3-red-reversed.log) |
-| forward apply | re-apply the fix | 0 | fix.patch restored |
-| build-4-restored | build with fix restored | 0 | ends `Built target` (build-4-restored.log) |
-| test-4-green-restored | run `LinkAudioStreamTest` | 0 | `Totals: 3 passed, 0 failed` (test-4-green-restored.log) |
-| gates-1 | project gates | 0 | `RESULT: PASS` (gates-1.log) |
-
-**Note on exit codes.** The build and test EXIT values in the table are the values recorded for the worker runs of this session. The on-disk logs confirm the outcomes shown in the right-hand column. Most of them do not contain an `EXIT=` line, so the numeric exit codes for those steps are not independently re-checked from the log files. `test-2-family.log` is the only log that contains an `EXIT=` line.
-
+| fix.patch | `git diff fa4a5f2e78 39a57e71d7 -- src/core/ControlCommandsLinkAudio.cpp docs/LINK-AUDIO.md` saved to fix.patch | 0 (from the generating command; fix.patch itself has no EXIT line) | 2 `diff --git` entries (fix.patch) |
+| apply-reverse | `git apply -R` of the fix | 0 | `EXIT=0` (apply-reverse.log) |
+| build-1-reversed | build with fix reversed | 0 | `EXIT=0` (build-1-reversed.log) |
+| test-1-red | run `LinkAudioStreamTest` | 1 | `FAIL!` `omittedSendKeepsSendingOffWhileThePeerStays` on `'!kept.result.value(QStringLiteral("send")).toBool()' returned FALSE`; `Totals: 2 passed, 1 failed`; `EXIT=1` (test-1-red.log) |
+| apply-forward | re-apply the fix | 0 | `EXIT=0` (apply-forward.log) |
+| build-2-restored | build with fix restored | 0 | `EXIT=0` (build-2-restored.log) |
+| test-2-green | run `LinkAudioStreamTest` | 0 | `Totals: 3 passed, 0 failed`; `EXIT=0` (test-2-green.log) |
+| test-3-family | run `LinkAudioStreamTest` + `LinkAudioCodecTest` | 0 | `100% tests passed out of 2`; `EXIT=0` (test-3-family.log) |
+| gates-1 | project gates | 0 | `RESULT: PASS`; `EXIT=0` (gates-1.log) |
 ## 3. Test matrix
 
 One test, `LinkAudioStreamTest::omittedSendKeepsSendingOffWhileThePeerStays` (`tests/src/core/LinkAudioStreamTestParts2.h:59-122`), covers the cases below.
@@ -50,7 +44,7 @@ The existing test `commandsAreRegisteredAndUndoable` (`tests/src/core/LinkAudioS
 
 - The change is in `mergeArgs`, which is called only from the command handler at `ControlCommandsLinkAudio.cpp:187`. The change itself adds no allocation, lock, log, or IO: it replaces an unconditional assignment with a conditional one that reads `hadPeer`.
 - `mergeArgs` already converts strings with `toStdString()`. That existing behaviour is unchanged.
-- The packet states that this handler runs on the command thread. That was not re-verified in this session.
+- Thread evidence (code read in this session): `ControlRegistry::invoke` (`src/core/ControlRegistry.cpp:238`) calls `dispatch` (`:240`). `runHandler` (`:441`) calls `runHandlerGuarded` (`:492`), and `runHandlerGuarded` (`:422`) calls the handler synchronously at `:427`. `mergeArgs` is reached only through this path, so the handler runs in the thread that invoked the control command or test. No engine process or render path calls it: the sole-caller audit in section 1 found `ControlCommandsLinkAudio.cpp:187` as the only caller of `mergeArgs`.
 - No new control command is added. No header is changed. No audio-thread code is changed.
 - Undo still records the existing single before/requested step.
 
@@ -60,7 +54,7 @@ The existing test `commandsAreRegisteredAndUndoable` (`tests/src/core/LinkAudioS
 
 ## Self-check
 
-- **RED/GREEN exit codes and log names.** RED: `test-1b-red.log` exit 1, failing at `LinkAudioStreamTestParts2.h(83)`. GREEN: `test-2-green.log` exit 0 (3 passed). Reversed RED: `test-3-red-reversed.log` exit 1 (2 passed, 1 failed, same assertion). Restored GREEN: `test-4-green-restored.log` exit 0 (3 passed). Family: `test-2-family.log` exit 0. Gates: `gates-1.log` `RESULT: PASS`. The build and test EXIT values are from the worker runs recorded this session; see the note in section 2.
+- **RED/GREEN exit codes and log names.** RED: `test-1-red.log` ends with `EXIT=1`, shows `FAIL!` on the send-retention assertion (`omittedSendKeepsSendingOffWhileThePeerStays`, `Totals: 2 passed, 1 failed`). GREEN: `test-2-green.log` ends with `EXIT=0` and shows `Totals: 3 passed, 0 failed`. Family: `test-3-family.log` ends with `EXIT=0` and shows `100% tests passed out of 2`. Gates: `gates-1.log` ends with `EXIT=0` and shows `RESULT: PASS`. All four EXIT values were read from the r2 log files.
 - **Deterministic seams.** The new test uses loopback only (`127.0.0.1`), `listen_port` 0, and no sleeps or threads (`Parts2.h:60, 68, 94`). The stream is stopped by a scope guard (`Parts2.h:73-78`).
 - **Cause and sole caller audit.** Cause: the unconditional `else` in `mergeArgs` (pre-fix lines 109-110). Sole caller: `ControlCommandsLinkAudio.cpp:187`, verified with grep over `src` and `tests`. No sibling path changed.
 - **No collateral damage.** Stream config is session state and is not saved in projects (`docs/LINK-AUDIO.md:77`). The no-peer default is pinned by the existing `commandsAreRegisteredAndUndoable` test, which is unmodified.
