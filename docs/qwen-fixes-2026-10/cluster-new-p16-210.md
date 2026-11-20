@@ -8,8 +8,9 @@ FIXED. `print()` in a script assembled the whole message before the 1 MiB captur
 
 ## Evidence
 
-- `src/core/ScriptEngine.cpp:264-285` (the print binding) built the whole `QString` from every argument before the log call at `:282`. The 1 MiB cap in `src/core/ScriptConsole.cpp:66-79` was applied only after that assembly, so the cap came too late to limit memory or work.
-- Reversed-fix run (`test-1.log:27`): `print assembled 40000399 chars; limit is 1048576`. The regression script prints 400 × 100000-char strings.
+- `src/core/ScriptEngine.cpp:264-292` (the print binding) built the whole `QString` from every argument before the log call. In the fixed tree that call is `:289`; before the fix it was `:282`. The 1 MiB cap in `src/core/ScriptConsole.cpp:66-79` was applied only after that assembly, so the cap came too late to limit memory or work.
+- Pre-fix baseline (`test-1.log:27`): the new test was added and the product code was unmodified. Result: `print assembled 40000399 chars; limit is 1048576`. The regression script prints 400 × 100000-char strings.
+- Reversed-fix run (`test-8.log:27`; `EXIT=8` appended at `test-8.log:97`): the product patch was reversed with `git apply -R` and the same assertion failed with 40000399 chars. The earlier reversed run `test-4` also exited 8 (from CTest; no appended EXIT line).
 
 ## Cause-level fix
 
@@ -21,7 +22,7 @@ FIXED. `print()` in a script assembled the whole message before the 1 MiB captur
 
 | Case | Coverage in this change | Result |
 |---|---|---|
-| Exhaustion is capped (400 × 100000 chars) | New test `ScriptEngineTest::printDoesNotAssemblePastTheCaptureLimit` | RED with fix reverted (`test-1.log:27`), GREEN with fix (`test-2`, exit 0) |
+| Exhaustion is capped (400 × 100000 chars) | New test `ScriptEngineTest::printDoesNotAssemblePastTheCaptureLimit` | RED on the pre-fix baseline (`test-1.log:27`); RED with the fix reversed (`test-8.log:27`, EXIT=8); GREEN with fix (`test-2`, exit 0) |
 | Normal sub-limit print is unchanged | Not added by this change; covered only by the existing `ScriptEngineTest` run | Full `ScriptEngineTest` binary exit 0 with fix (`test-2`); not separately verified |
 | Non-string / `tostring` args via `luaL_tolstring` | Not added by this change; conversion call unchanged | Code read only; not separately tested |
 | Per-run reset | Existing regression directly above the new test (`takeLogMessages() == {"fresh run"}`) | Passes in both states (`test-2` exit 0; `test-1` shows 29 other tests passing) |
@@ -32,24 +33,31 @@ FIXED. `print()` in a script assembled the whole message before the 1 MiB captur
 
 The quiet runner prints only the exit code and summary, so the inner command lines are not recorded in the logs. Log directory: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p16-210.r1/logs/`.
 
+"Pre-fix baseline" means the test was added and the product code was unmodified. "Reversed" means `git apply -R` of `logs/fix.patch` was applied to the product files. "Restored" means the patch was re-applied and the tree matched HEAD again.
+
 | Step | Exit | Source |
 |---|---|---|
 | build-0 | 0 | Log ends `Built target tripleoscillator`; no EXIT line in log (inferred) |
 | test-0 | 0 | `100% tests passed out of 1`; no EXIT line in log (inferred) |
-| build-1 (fix reverted) | 0 | `build-1.log:37` `EXIT=0` |
-| test-1 (fix reverted) | 8 | `test-1.log:97` `EXIT=8`; RED: `FAIL! printDoesNotAssemblePastTheCaptureLimit`, 40000399 chars |
+| build-1 (pre-fix baseline) | 0 | `build-1.log:37` `EXIT=0` |
+| test-1 (pre-fix baseline) | 8 | `test-1.log:97` `EXIT=8`; RED: `FAIL! printDoesNotAssemblePastTheCaptureLimit`, 40000399 chars (`test-1.log:27`) |
 | build-2 (fix restored) | 0 | `build-2.log:147` `EXIT=0` |
 | test-2 (fix restored) | 0 | `test-2.log:8` `EXIT=0`; GREEN |
 | test-3 (fix restored, ScriptMemoryBudgetTest) | 8 | `test-3.log:33` `EXIT=8`; see Other findings |
-| fix.patch | 0 | Patch file recorded; step exit as stated in the packet |
-| git apply -R | 0 | Packet record (no log line) |
+| git apply -R (first reversal) | 0 | Packet record (no log line) |
 | build-3 (reversed) | 0 | Log ends `Built target ScriptBudgetActionTest`; no EXIT line (inferred) |
 | test-4 (reversed) | 8 | CTest `ScriptEngineTest (Failed)`; no EXIT line (inferred) |
 | test-5 (reversed, ScriptMemoryBudgetTest) | 8 | CTest `ScriptMemoryBudgetTest (Failed)`; `test-5.log:17` same failure |
-| git apply | 0 | Packet record (no log line) |
+| git apply (first restore) | 0 | Packet record (no log line) |
 | build-4 (restored) | 0 | Log ends `Built target ScriptBudgetActionTest`; no EXIT line (inferred) |
 | test-6 (restored) | 0 | `100% tests passed out of 1`; no EXIT line (inferred) |
 | test-7 (restored, ScriptMemoryBudgetTest) | 8 | CTest `ScriptMemoryBudgetTest (Failed)`; `test-7.log:17` same failure |
+| git apply -R (second reversal) | 0 | `EXIT=0` from the packet command; patch check (`git apply --check -R`) also exit 0 |
+| build-5 (reversed) | 0 | `build-5.log:107` `EXIT=0` (appended) |
+| test-8 (reversed) | 8 | `test-8.log:97` `EXIT=8` (appended); RED: `test-8.log:27` `FAIL! printDoesNotAssemblePastTheCaptureLimit`, 40000399 chars |
+| git apply (second restore) | 0 | `EXIT=0` from the packet command; tree clean afterwards (`git status --short` empty) |
+| build-6 (restored) | 0 | `build-6.log:107` `EXIT=0` (appended) |
+| test-9 (restored) | 0 | `test-9.log:8` `EXIT=0` (appended); `100% tests passed out of 1` at `test-9.log:5` |
 | gates-1 | 0 | `RESULT: PASS`; `gates-1.log:2-5` all PASS (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace) |
 
 ## Registration
@@ -63,7 +71,7 @@ No registration edit was needed. The changed product files already appear in `te
 
 ## Self-check
 
-Commit `0fe7e7852d08b19c7eae8e492969a7d7f4224bd4` (cluster new-p16-210) contains the four product and test files and this report. `git status --short` after the commit printed nothing (exit 0).
+Commit `0fe7e7852d08b19c7eae8e492969a7d7f4224bd4` (cluster new-p16-210) contains the product and test changes, plus an earlier 66-line version of this report. It does not contain the later self-check text, which was added in `8282b0b`. The final docs commit is the one with the message `docs(cluster new-p16-210): correct the RED attribution and record exact reversal exit codes`; `git log -1 -- docs/qwen-fixes-2026-10/cluster-new-p16-210.md` gives its sha.
 
 `python3 .../submit_check.py <worktree> new-p16-210 > .../logs/submit-1.log 2>&1` → EXIT=0, `RESULT: PASS - submit`.
 
@@ -77,10 +85,13 @@ Commit `0fe7e7852d08b19c7eae8e492969a7d7f4224bd4` (cluster new-p16-210) contains
 
 No FAIL lines. The five `?` questions, answered:
 
-1. **Regression test fails reverted, passes with the change.** Reverted: `test-1` EXIT=8 (`FAIL! printDoesNotAssemblePastTheCaptureLimit`, 40000399 chars; `test-1.log:27`). Restored: `test-2` EXIT=0. The reversed run `test-4` is also EXIT=8 (inferred from CTest; see the table above).
+1. **Regression test fails on the pre-fix baseline and with the fix reversed; passes with the change.** Pre-fix baseline: `test-1` EXIT=8 (`FAIL! printDoesNotAssemblePastTheCaptureLimit`, 40000399 chars; `test-1.log:27`). Fix reversed: `test-8` EXIT=8, appended (`test-8.log:27`, `test-8.log:97`); the earlier reversed run `test-4` is also EXIT=8 (from CTest, no appended EXIT line). Restored: `test-2` EXIT=0 and `test-9` EXIT=0 (`test-9.log:8`).
 2. **Deterministic.** No clock, sleep, or race in the test. Inputs are constants (`string.rep('x', 100000)` × 400 `print` args). The accumulator is a `std::atomic` max. The `DirectConnection` lambda runs on the emitting thread during `runString`, and `runString` returns synchronously (`RunResult`), so the lambda has finished before `QVERIFY`. The same synchronous pattern is used by the existing "fresh run" test directly above.
-3. **Fix at the cause, siblings checked.** The cause is the single print loop in `ScriptEngine.cpp:265-290`; the log call is now `:289`, previously `:282`. Other `logMessage` producers were checked by grep: `ScriptEngine.cpp:606` (short MIDI string, fixed size) and `:767` (not inspected in this run). `CaptureBuffer::append` in `ScriptConsole.cpp` is unchanged, so the per-line and character caps still apply to every producer. **Not verified:** the body of `:767`.
-4. **No collateral damage.** Messages under 1 MiB take the same path: the tab separator logic and per-argument conversion are unchanged for sub-limit totals. Only a `print` whose total would exceed 1 MiB is cut at the limit. The capture is an in-memory per-run console buffer (`CaptureBuffer::reset`), not saved project data, so saved data is not affected. Whether any other caller legitimately exceeds 1 MiB in one `print` was not checked; none is known from this change.
-5. **Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE.** The pre-fix behaviour is shown by the reversed run (`test-1.log:27`, 40000399 chars), so the question does not apply.
+3. **Fix at the cause; siblings checked.** The cause is the single print loop, `ScriptEngine.cpp:264-292`; its log call is `:289` in the fixed tree (`:282` before the fix). Other `logMessage` producers in `ScriptEngine.cpp`:
+   - `:606` is the MIDI-out note: a short, fixed-format string (`MIDI out: <note-on|note-off> ch<n> key<n> vel<n>`).
+   - `:767` is in `ScriptEngine::reportRunResult` (`:757-767`). It logs the single run-error `message` it is passed, once, when the run did not return `RunResult::Ok`. It does no per-argument concatenation, so it is not a print sibling. Its size is that of the Lua error string; this was not checked further.
+   - `CaptureBuffer::append` in `ScriptConsole.cpp` is unchanged, so the per-line (4096) and character (1 MiB) caps still apply to every producer, including `:767`.
+4. **No collateral damage.** Messages under 1 MiB take the same path: the tab separator logic and per-argument conversion are unchanged for sub-limit totals. Only a `print` whose total would exceed 1 MiB is cut at the limit. The cap equals the pre-existing 1 MiB capture limit (`CaptureCharacterLimit = 1024 * 1024` at `src/core/ScriptConsole.cpp:46` in `0fe7e78^`), so any print line above it was already dropped from the capture buffer and no captured caller loses output. The capture is an in-memory per-run console buffer (`CaptureBuffer::reset`), not saved project data, so saved data is not affected.
+5. **Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE.** The pre-fix behaviour is shown by the baseline run (`test-1.log:27`, 40000399 chars), so the question does not apply.
 
 The `ScriptMemoryBudgetTest` failure is the pre-existing one in "Other findings" and is not a submit-check item.
