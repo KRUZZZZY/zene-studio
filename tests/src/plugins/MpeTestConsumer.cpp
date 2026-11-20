@@ -166,7 +166,7 @@ class MpeTestConsumer final : public Instrument, public testmpe::ConsumerProbe
 {
 public:
 	explicit MpeTestConsumer( InstrumentTrack* instrumentTrack ) :
-		Instrument( instrumentTrack, &mpe_test_consumer_plugin_descriptor )
+		Instrument( instrumentTrack, &mpe_test_consumer_plugin_descriptor, nullptr, Flag::IsMidiBased )
 	{
 	}
 

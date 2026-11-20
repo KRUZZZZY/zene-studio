@@ -224,16 +224,16 @@ private:
 			QJsonArray{entry(QStringLiteral("Everything"), 25, 7, 11, 90)}}}).ok);
 	}
 
-	//! True when @a group is one articulation-led chord: the articulation, the key that carried it, then the three
+	//! True when @a group is one articulation-led chord: the articulation, the source root, then the two non-root
 	//! stacked voices of a Major chord on 60 in any order (the engine starts handles created in one period in an
 	//! order of its own; what matters is that none of them comes before the articulation).
 	static bool isArticulatedMajorChord(const QStringList& group)
 	{
 		const QStringList lead{QStringLiteral("p7"), QStringLiteral("c11=90"), QStringLiteral("k25"), QStringLiteral("k60")};
-		if (group.size() != 7 || group.mid(0, 4) != lead) { return false; }
+		if (group.size() != 6 || group.mid(0, 4) != lead) { return false; }
 		QStringList voices = group.mid(4);
 		voices.sort();
-		return voices == QStringList{QStringLiteral("k60"), QStringLiteral("k64"), QStringLiteral("k67")};
+		return voices == QStringList{QStringLiteral("k64"), QStringLiteral("k67")};
 	}
 
 	//! @a tokens cut into groups that each start at an articulation ("p7 c11=90 k25"); a token before the first
