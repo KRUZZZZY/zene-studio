@@ -33,10 +33,18 @@ namespace lmms
 {
 
 // Packs a MidiEvent into the 32-bit word that midiOutShortMsg() expects.
-// Byte 0 = status (type + channel), byte 1 = param(0), byte 2 = param(1).
+// Byte 0 = status (type + channel). Bytes 1 and 2 are the two 7-bit data bytes:
+// for most messages byte 1 = param(0) and byte 2 = param(1), each masked to 8 bits.
+// For MidiPitchBend the 14-bit value from pitchBend() is split low 7 bits into
+// byte 1, then high 7 bits into byte 2.
 inline std::uint32_t winmmShortMessage(const MidiEvent& event) noexcept
 {
 	const std::uint32_t status = static_cast<std::uint32_t>(event.type() + event.channel());
+	if (event.type() == MidiPitchBend)
+	{
+		const std::uint32_t bend = static_cast<std::uint32_t>(event.pitchBend()) & 0x3FFFu;
+		return status | ((bend & 0x7Fu) << 8) | (((bend >> 7) & 0x7Fu) << 16);
+	}
 	return status | ((static_cast<std::uint32_t>(event.param(0)) & 0xFFu) << 8)
 	              | ((static_cast<std::uint32_t>(event.param(1)) & 0xFFu) << 16);
 }

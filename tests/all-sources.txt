@@ -606,6 +606,7 @@ include/MidiSurfaceInput.h
 include/MidiTakeCapture.h
 include/MidiTakeRecorder.h
 include/MidiWinMM.h
+include/MidiWinMMShortMessage.h
 include/MissingDevices.h
 include/MissingDevicesNotice.h
 include/MixHelpers.h
@@ -3074,6 +3075,7 @@ tests/src/core/MidiRetroCaptureTest.cpp
 tests/src/core/MidiSndioTest.cpp
 tests/src/core/MidiSurfaceInputTest.cpp
 tests/src/core/MidiTakeRecordTest.cpp
+tests/src/core/MidiWinMMShortMessageTest.cpp
 tests/src/core/MidiWorkflowBindingsTest.cpp
 tests/src/core/MissingDevicesPreserveTest.cpp
 tests/src/core/MissingDevicesRound2Test.cpp

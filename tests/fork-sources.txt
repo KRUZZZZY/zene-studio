@@ -2411,6 +2411,9 @@ include/MidiInputGate.h
 tests/src/core/MidiInputGateTest.cpp
 tests/src/core/MidiAlsaSeqShutdownTest.cpp
 tests/src/core/MidiAlsaRawShutdownTest.cpp
+# WinMM short-message packing: the pitch-bend regression for the WinMM output path (new-p14-179).
+include/MidiWinMMShortMessage.h
+tests/src/core/MidiWinMMShortMessageTest.cpp
 # Train 27 tools-complexity refactor: cause, unchanged enforcement, negative controls and validation.
 docs/qwen-fixes-2026-10/sol-train-27-tools-complexity.md
 docs/050-features/Q050-488.md
