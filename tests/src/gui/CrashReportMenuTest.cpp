@@ -97,6 +97,10 @@ private slots:
 			{QStringLiteral("pending"), true}}), QStringLiteral("Armed, one report not yet offered"));
 		QCOMPARE(crashReportStatusText({{QStringLiteral("armed"), true}, {QStringLiteral("report_count"), 1},
 			{QStringLiteral("pending"), false}}), QStringLiteral("Armed, one report (already offered)"));
+		QCOMPARE(crashReportStatusText({{QStringLiteral("armed"), true}, {QStringLiteral("report_count"), 2},
+			{QStringLiteral("pending"), true}}), QStringLiteral("Armed, 2 reports not yet offered"));
+		QCOMPARE(crashReportStatusText({{QStringLiteral("armed"), true}, {QStringLiteral("report_count"), 2},
+			{QStringLiteral("pending"), false}}), QStringLiteral("Armed, 2 reports (already offered)"));
 	}
 
 	void theReportIsKeptOrDeletedFromTheMenu()
