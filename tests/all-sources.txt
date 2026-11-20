@@ -3577,6 +3577,7 @@ tests/src/gui/XyPadPairTest.cpp
 tests/src/plugins/AuParameterHandoffTest.cpp
 tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/BitInvaderAllocationTest.cpp
+tests/src/plugins/BitInvaderLoadSettingsTest.cpp
 tests/src/plugins/BusesTestInstrument.cpp
 tests/src/plugins/CarlaMidiHandoffTest.cpp
 tests/src/plugins/CarlaParamFloatModelTest.cpp
