@@ -2830,9 +2830,20 @@ void DataFile::loadData( const QByteArray & _data, const QString & _sourceFile,
 	}
 	else
 	{
-		bool success;
-		m_fileVersion = root.attribute( "version" ).toUInt( &success );
-		if( !success ) qWarning("File Version conversion failure.");
+		bool success = false;
+		const unsigned int parsed = root.attribute( "version" ).toUInt( &success );
+		if( success )
+		{
+			m_fileVersion = parsed;
+		}
+		else
+		{
+			qWarning("File Version conversion failure.");
+			// A version that does not parse as a number cannot name a file
+			// version, so derive it from creatorversion like the legacy path
+			// does instead of falling back to 0 (every upgrade).
+			m_fileVersion = legacyFileVersion();
+		}
 	}
 
 	// The root's format attributes AS THE FILE HAD THEM, taken before any
