@@ -26,6 +26,8 @@
 
 #include <cassert>
 
+#include "CrashReporter.h"
+
 #ifdef LMMS_HAVE_LV2
 
 
@@ -76,7 +78,18 @@ Lv2Worker::Lv2Worker(Semaphore* commonWorkLock, bool threaded) :
 			return worker->scheduleWork(size, data);
 		};
 
-	if (threaded) { m_thread = std::thread(&Lv2Worker::workerFunc, this); }
+	if (threaded)
+	{
+		// Signal dispositions are process-wide, but sigaltstack() is per-thread:
+		// this thread runs a plug-in's work() and can overflow the ordinary
+		// stack there. Register before the first work() call, or a handler has
+		// nowhere to run.
+		m_thread = std::thread([](Lv2Worker* self)
+		{
+			crashreporter::installAlternateStackForCurrentThread();
+			self->workerFunc();
+		}, this);
+	}
 
 	m_requests.mlock();
 	m_responses.mlock();
