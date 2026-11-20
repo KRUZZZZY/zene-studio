@@ -11,7 +11,7 @@ FIXED
 
 ## 2. Reachability
 
-The defect is real but latent in the product. The callers pass routes that were parsed and bounded to `MaxChannels` before they reach the bus: `HardwareIo.cpp:121`, `HardwareIo.cpp:129`, `HardwareIo.cpp:278` (verified this session by grep) and `AudioIoSetup.cpp:187` (named in the packet, not re-checked this session). So this is a latent bus-API defect. The direct `add()` test is the reported surface.
+The defect is real but latent in the product. The callers pass routes that were parsed and bounded to `MaxChannels` before they reach the bus: `HardwareIo.cpp:121`, `HardwareIo.cpp:129`, `HardwareIo.cpp:278` (verified this session by grep) and `AudioIoSetup.cpp:187` (verified this session: that line rejects a parsed route with `first - 1 + width > MaxChannels`). So this is a latent bus-API defect. The direct `add()` test is the reported surface.
 
 ## 3. Test matrix and reverse-patch proof
 
@@ -50,13 +50,13 @@ Reverse-patch proof: `fix.patch` was reverse-applied (log 05, EXIT=0), the bus t
 
 ## Self-check
 
-The judgement items of submit_check are answered here by topic. Each answer names its evidence.
+Answers to the five ASK items of submit_check, in its order.
 
-1. Realtime safety: `add()` gains one integer comparison and loses one per-channel comparison. It still writes only to the storage that `init()` allocated; no allocation, lock or container change is added (`src/core/HardwareOutputBus.cpp:59-61`).
-2. Test proves the change: slots 1 and 4 of the focused test fail on the reverted code (log 07, EXIT=8) and pass with the fix (log 10, EXIT=0). Slots 2 and 3 guard against over-dropping.
-3. Sibling code: the diff touches only the bus `add()` path and its header comment. The callers (`HardwareIo.cpp:121,129,278`) pass unchanged arguments; their behaviour changes only for routes that previously half-wrote the bus. No command files, registrations or gates are changed.
-4. Criterion met: the defect (half-written route past the last channel) is shown by a failing test, fixed, and the test passes again (sections 1-3).
-5. Docs and manual: the header comments that promised "channel outside the bus is dropped" for `add()` are updated (section 4). `add_plane()` keeps its own per-channel contract, which is a different call.
+1. The regression test fails with the change reverted and passes with it. Reverted: log 07-test-reversed.log shows `Totals: 5 passed, 2 failed` (slots 1 and 4 FAIL), EXIT=8. Applied: log 10-test-reapplied.log, EXIT=0. Post-commit run: log 16-test-post-commit.log, `100% tests passed`, EXIT=0.
+2. The test is deterministic. It uses no wall clock, sleep, thread or randomness. Each slot calls `init(4)`, uses fixed `SampleFrame` values and a route start computed from `HardwareOutputBus::MaxChannels`. The expected values are exact (0.25, 0.75; the mono average 0.6 is compared within 1e-5).
+3. The fix is at the cause, and the callers and siblings were checked. The cause is the in-loop bound check (section 1). Grep this session: `bus.add(` appears only at `HardwareIo.cpp:121,129,278`; `MixerSurroundMix.cpp` and `AudioEngine.cpp` make no `add()` call on the bus. `AudioIoSetup.cpp:187` rejects any parsed route past `MaxChannels`, so no caller produces a route that crosses the edge. `add_plane()` is a different call with its own per-channel check; none of those four files calls it, and it is unchanged.
+4. No collateral damage. The diff touches only `add()` and its header comments: no project-load, save or file-format code. Routes that fit inside the bus still play, including the last full pair and a mono route on the last channel (slots 2 and 3, which pass before and after the fix). Only a route whose last channel is past `MaxChannels - 1` is dropped, and no parsed route in the tree can be one.
+5. Verdict REAL, not ALREADY-FIXED or FALSE-POSITIVE. The defect is in the original code at `src/core/HardwareOutputBus.cpp:59-68` (section 1); the fix is at `src/core/HardwareOutputBus.cpp:59-61`.
 
 ## Other findings
 
