@@ -1,0 +1,142 @@
+FIXED
+
+# cluster-ci-ec26fd9bddef0dd4 — build / linux-arm64
+
+## Verdict and classification
+
+REAL, and it is a **test-source portability defect**, not a product defect. The
+hosted `linux-arm64` job builds with Qt 5.15; this worktree is configured with
+`WANT_QT6:BOOL=ON`, which is why the train and the local build did not see it.
+
+The failing expression was `QStringList(channels, QStringLiteral("volume"))` in
+`tests/src/gui/MixerSendsOnFadersTest.cpp:278` at
+`fa4a5f2e785c73e32216931e33cdbe140c06647d`. In Qt 6 `QStringList` is
+`QList<QString>` (`/usr/include/qt6/QtCore/qcontainerfwd.h:41`), so the call
+resolves to `QList(qsizetype, parameter_type)` (`/usr/include/qt6/QtCore/qlist.h:311`).
+In Qt 5.15 `QStringList` is a distinct class with only the default, single
+`QString`, `QList`, initializer-list and iterator constructors
+(`/usr/include/qt/QtCore/qstringlist.h:115-121`); there is no count/value
+constructor. The hosted compiler reported exactly that:
+
+```
+tests/src/gui/MixerSendsOnFadersTest.cpp:278:81: error: no matching function
+for call to 'QStringList::QStringList(const int&, QString)'
+```
+
+(Hosted evidence: `run-43786984969-job-133036727623.log`, treated as data only.)
+
+## Fix at the cause
+
+`tests/src/gui/MixerSendsOnFadersTest.cpp:277-282` now builds the expected list
+portably — the same count copies of `"volume"` the Qt 6 constructor produced —
+instead of relying on a Qt-6-only aliasing accident:
+
+```cpp
+const QStringList faders = drivesOf(run(...empty sends_on_faders...));
+// QStringList(count, value) is a Qt 6 alias for QList's count/value constructor; Qt 5.15's QStringList has no
+// such constructor (the linux-arm64 job builds with Qt 5), so fill the expected list portably.
+QStringList expected;
+for (int i = 0; i < channels; ++i) { expected.append(QStringLiteral("volume")); }
+QVERIFY(faders == expected);
+```
+
+This preserves the assertion exactly (one entry per mixer channel, every entry
+`"volume"`), changes no product code, no behaviour, no save data, no command,
+no undo step and nothing on the audio thread.
+
+## Regression test
+
+`tests/train-51-portability-check.py` is the existing red/green compiler-
+regression harness for hosted test-source failures. It gains
+`mixer_faders_probe()` (`tests/train-51-portability-check.py:169-205`), which
+reads the assertion block **actually shipped** in
+`MixerSendsOnFadersTest.cpp`, substitutes the surrounding helpers with a small
+fixture (`channels = 3`, a stub `QVERIFY`), and compiles that exact block
+against `pkg-config Qt5Core` and, where present, `Qt6Core`. There is no timing,
+sleep, race or external service: the only inputs are the source text and the
+injected channel count. The existing `Train51Portability` CTest runs it.
+
+### Test matrix
+
+| Path | Coverage | Result |
+|---|---|---|
+| Supported platform build: Qt 5.15 (hosted linux-arm64) | exact shipped expected-list block compiled with Qt5Core | RED before fix, GREEN after |
+| Supported platform build: Qt 6 (this worktree, `WANT_QT6=ON`) | same block compiled with Qt6Core | GREEN both before and after (confirms why the train missed it) |
+| Normal runtime path | `window.mixer_view` with a chosen return: one `drives` entry per channel; sender `send`, silent `no_send`, return and channel 0 `volume`; roles limited to volume/send/no_send | `MixerSendsOnFadersTest` PASS |
+| Reconfiguration path | empty `sends_on_faders` returns every fader to its level: size == channels and every entry == `"volume"` | `MixerSendsOnFadersTest` PASS |
+| Failure/exhaustion | not applicable: no limit, allocation, error return or retry is touched; the cleanup/restore path (`sendsBanner()->exitButton()`) is unchanged and still covered by the same test class | PASS |
+| Audio thread | no product/audio-path code changed; the test runs on the Qt test thread only | safe by construction |
+| Save/load, undo, commands | untouched; no command ids added or changed | unchanged |
+
+## Evidence table (exact commands, copied exit codes)
+
+Logs: the requested folder
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-ec26fd9bddef0dd4.r1/logs`
+is **not writable in this session** even though it is owned by the user:
+`touch` and the `write` tool both return `EACCES: permission denied`, as do
+`~/.local/share` and `$HOME`. Logs were therefore written to the git-ignored
+`build/qwen-logs-ci-ec26fd9bddef0dd4/` in the worktree; `fix.patch` lives there
+too.
+
+| Step | Command | Exit |
+|---|---|---|
+| Reproduce the exact CDB error on Qt5 | `c++ -std=c++20 -fPIC $(pkg-config --cflags Qt5Core) -c build/qwen-logs-ci-ec26fd9bddef0dd4/qts5-repro.cpp -o build/qwen-logs-ci-ec26fd9bddef0dd4/qts5-repro.o` | 1 |
+| Baseline Qt6 target build (proves Qt6 hides it) | `cmake --build build --target MixerSendsOnFadersTest` | 0 |
+| RED, probe before fix | `python3 tests/train-51-portability-check.py --source-root .` | 1 |
+| GREEN, probe after fix | `python3 tests/train-51-portability-check.py --source-root .` | 0 |
+| Make proof patch | `git diff -- tests/src/gui/MixerSendsOnFadersTest.cpp > build/qwen-logs-ci-ec26fd9bddef0dd4/fix.patch` | 0 |
+| Reverse fix | `git apply -R build/qwen-logs-ci-ec26fd9bddef0dd4/fix.patch` | 0 |
+| RED on rebuilt/reverted source | `python3 tests/train-51-portability-check.py --source-root .` | 1 |
+| Rebuild reverted target (Qt6 still compiles) | `cmake --build build --target MixerSendsOnFadersTest` | 0 |
+| Restore fix | `git apply build/qwen-logs-ci-ec26fd9bddef0dd4/fix.patch` | 0 |
+| Rebuild fixed target | `cmake --build build --target MixerSendsOnFadersTest` | 0 |
+| GREEN, probe restored | `python3 tests/train-51-portability-check.py --source-root .` | 0 |
+| Fixed test | `cd build/tests && ctest -R '^MixerSendsOnFadersTest$' --output-on-failure` | 0 (1/1) |
+| Portability CTest | `cd build/tests && ctest -R '^Train51Portability$' --output-on-failure` | 0 (1/1) |
+| Affected family (built siblings) | `cd build/tests && ctest -R '^(MixerSendsOnFadersTest|MixerModesTest|Train51Portability)$' --output-on-failure` | 0 (3/3) |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 |
+
+A broader `ctest -R Mixer` first reported 21 `Not Run` entries because those
+executables are simply not built in this worktree (for example
+`MixerBusFreezeTest`, `MixerModesTest` before it was built); that is a missing
+binary, not a failing test. `MixerModesTest` was then built and the three
+available targets all passed (3/3). The RED/GREEN proof above is the Qt5
+compile probe, because the defect is a compile-time portability defect: on the
+Qt6-configured host the reverted source still compiles, which is precisely how
+it escaped.
+
+`feature_check.py` output (exit 0):
+
+```
+PASS fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace,
+     no-tautology, doc-figures, complexity, file-length
+RESULT: PASS
+```
+
+## Self-check
+
+- **Regression FAILS reverted, PASSES restored.** Reverted:
+  `git apply -R .../fix.patch` (exit 0) then
+  `python3 tests/train-51-portability-check.py --source-root .` → exit 1 with
+  `mixer-faders-qt5: expected compile success; ... no matching function for call
+  to 'QStringList::QStringList(const int&, QString)'`. Restored:
+  `git apply .../fix.patch` (exit 0) then the same probe → exit 0
+  (`PASS mixer-faders-qt5: compiled`, `PASS mixer-faders-qt6: compiled`).
+- **Deterministic.** No wall-clock timing, sleep or race. The probe extracts the
+  shipped assertion block from the test source and compiles it with
+  `pkg-config` Qt5/Qt6 flags; it injects `channels = 3` and a stub `QVERIFY`.
+- **Cause complete.** `grep -rnE "QStringList\([A-Za-z_][A-Za-z0-9_]*, *QStringLiteral"`
+  over the tree finds exactly one occurrence, the fixed line. The only changed
+  test is the one the hosted job failed on; its sibling commands/helpers
+  (`drivesOf`, `run`, `ch`) are unchanged and still compile in the same test.
+  `qsizetype` used elsewhere in the test exists in Qt 5.10+.
+- **No collateral damage.** Only `tests/src/gui/MixerSendsOnFadersTest.cpp` and
+  its compile-regression harness `tests/train-51-portability-check.py` change.
+  No product source, save format, command, undo or audio-path code is touched;
+  existing projects and data are unaffected.
+- **Verdict evidence.** The verdict is FIXED (not ALREADY-FIXED/FALSE-POSITIVE):
+  the Qt5 header at `/usr/include/qt/QtCore/qstringlist.h:115-121` has no
+  count/value constructor, the Qt6 alias at
+  `/usr/include/qt6/QtCore/qcontainerfwd.h:41` plus
+  `/usr/include/qt6/QtCore/qlist.h:311` explains the Qt6-only success, and the
+  hosted linux-arm64 log shows the exact compiler diagnostic at line 278.
