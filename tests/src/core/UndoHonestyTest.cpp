@@ -423,15 +423,15 @@ private slots:
 		ControlResult error;
 		for (const QJsonValue& id : tracks) { QVERIFY(control::trackRecordArmed(control::resolveTrack(id.toString(), &error))); }
 		// Every one already armed: a typed busy, not a second take.
-		QCOMPARE(run(QStringLiteral("track.set_arm_many"), {{QStringLiteral("tracks"), tracks}, {QStringLiteral("armed"), true}}).errorKind,
-			ControlErrorKind::Busy);
+		QCOMPARE(run(QStringLiteral("track.set_arm_many"), {{QStringLiteral("tracks"), tracks}, {QStringLiteral("armed"), true}}).errorKind, ControlErrorKind::Busy);
 		const ControlResult undo = run(QStringLiteral("control.undo"));
 		const QJsonArray routes = armed.result.value(QStringLiteral("routes")).toArray();
 		bool tracksStillArmed = true, takesRemain = true;
 		for (const QJsonValue& id : tracks) { tracksStillArmed = tracksStillArmed && control::trackRecordArmed(control::resolveTrack(id.toString(), &error)); }
-		for (const QJsonValue& route : routes) { takesRemain = takesRemain && QFile::exists(route.toObject().value(QStringLiteral("file")).toString()); }
+		for (const QJsonValue& route : routes) { const QString file = route.toObject().value(QStringLiteral("file")).toString(); takesRemain = takesRemain && !file.isEmpty() && QFile::exists(file); }
 		// Stop each route on either implementation, so a RED run leaves no capture running.
 		for (const QJsonValue& route : routes) { QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), route.toObject().value(QStringLiteral("route")).toInt()}}).ok); }
+		QCOMPARE(routes.size(), 3);  // after the disarm loop above, so a failure here still stops every capture
 		QVERIFY2(!undo.ok, "control.undo claimed it could remove the takes from track.set_arm_many");
 		QCOMPARE(undo.errorKind, ControlErrorKind::Irreversible);
 		QVERIFY2(undo.errorMessage.contains(QStringLiteral("track.set_arm_many")), qPrintable(undo.errorMessage));
