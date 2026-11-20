@@ -28,6 +28,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QTemporaryDir>
+#include <atomic>
 #include <cmath>
 
 #include "AutomatableModel.h"
@@ -252,6 +253,42 @@ private slots:
 		QVERIFY2(engine->runString(QStringLiteral("print('fresh run')"), &error)
 			== ScriptEngine::RunResult::Ok, qPrintable(error));
 		QCOMPARE(engine->takeLogMessages(), QStringList{QStringLiteral("fresh run")});
+	}
+
+	void printDoesNotAssemblePastTheCaptureLimit()
+	{
+		using namespace lmms;
+		constexpr qsizetype captureLimit = 1024 * 1024;
+		auto* engine = ScriptEngine::instance();
+		QString error;
+
+		// Record the largest message emitted on the log surface. DirectConnection
+		// runs the lambda on the emitting worker, so no event loop is needed.
+		std::atomic<qsizetype> largest{0};
+		const auto connection = QObject::connect(engine, &ScriptEngine::logged, engine,
+			[&largest](const QString& message) {
+				const qsizetype size = message.size();
+				qsizetype seen = largest.load();
+				while (size > seen && !largest.compare_exchange_weak(seen, size)) {}
+			},
+			Qt::DirectConnection);
+
+		// Keep the large lines out of Qt's test output.
+		ScriptConsole::setEnabled(false);
+		const auto result = engine->runString(QStringLiteral(
+			"local chunk = string.rep('x', 100000)\n"
+			"local refs = {}\n"
+			"for i = 1, 400 do refs[i] = chunk end\n"
+			"print(table.unpack(refs))"), &error);
+		ScriptConsole::setEnabled(true);
+		QObject::disconnect(connection);
+
+		QVERIFY2(result == ScriptEngine::RunResult::Ok, qPrintable(error));
+		QVERIFY2(largest.load() > 0, "the print did not reach the log surface");
+		QVERIFY2(largest.load() <= captureLimit,
+			qPrintable(QStringLiteral("print assembled %1 chars; limit is %2")
+				.arg(static_cast<qlonglong>(largest.load()))
+				.arg(static_cast<qlonglong>(captureLimit))));
 	}
 
 	// The scripting namespace and API header were renamed `zene`; both
