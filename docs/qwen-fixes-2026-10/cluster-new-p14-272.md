@@ -93,6 +93,7 @@ the log shows, not an exit code.
 | gates-1-feature-check | feature check | not recorded | log only: 8 items PASS, `RESULT: PASS` |
 | gates-2-all-sources-selftest | all-sources reproduce self-test | not recorded | log only: `SELF-TEST PASS` |
 | gates-3-status | status snapshot | not recorded | log only: the staged/unstaged entries listed in the log |
+| gates-4-feature-check-postcommit | `feature_check.py` on committed tree `bee761508b` | 0 | observed (packet command): `RESULT: PASS`; log `gates-4-feature-check-postcommit.log` |
 | check-1-whitespace | `git diff --check` | 0 | observed; log `check-1-whitespace.log` is empty |
 
 The packet's "build-5", "test-7" and "test-8" steps correspond to the
@@ -102,45 +103,52 @@ The packet's "build-5", "test-7" and "test-8" steps correspond to the
 
 The feature-check log lists eight items: `fork-sources`, `all-sources-reproduce`,
 `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`,
-`complexity` and `file-length`. The log's last line is `RESULT: PASS`. The gate
-exit code was not recorded, and the gate was not re-run in this session.
+`complexity` and `file-length`. The `gates-1` log's last line is `RESULT: PASS`,
+but its exit code was not recorded. The post-commit feature check on the
+committed tree `bee761508b` (`gates-4-feature-check-postcommit.log`) exited
+`EXIT=0` with `RESULT: PASS`. That is the observed gate result for the product
+tree this report describes. The all-sources and status gates were not re-run.
 
 ## Self-check
 
-The packet names five non-feature `submit_check` asks but does not list them.
-The five below follow the topics that earlier cluster reports answer and that
-this packet's context names. The lead should confirm they match the real asks.
+The five `submit_check` asks, as listed in the packet instructions, answered
+with evidence:
 
-* **Regression fails with the fix reverted and passes with it restored.**
-  RED: `p5-red-test` EXIT=8, 0/1, with the assertion quoted above. GREEN:
-  `p5-restored-test` EXIT=0, 1/1. The family run (`p5-green-family` EXIT=0, 4/4)
-  and the callers run (`p5-green-callers` EXIT=0, 2/2) also pass with the fix
-  in place.
-* **Deterministic test.** The test lines read (120-170) use fixed frame counts
-  (1000, 1, and a header-only FLAC declaring 160) and write into a
-  `QTemporaryDir`. The bodies of the helpers `writeTone` and
-  `writeHeaderOnlyFlac` were not re-read in this run, so the absence of clocks,
-  sleeps and threads is not verified for them. `decodeLimited(file, 1.0)` checks
-  that libsndfile opened the file before the refusal is asserted.
-* **Cause fixed; callers checked.** The return value of the read was ignored, so
-  a short file was padded with zeros. The fix refuses a short read at the single
-  decode point. Both callers (`SampleBuffer.cpp:95`, `ImportDetection.cpp:128`)
-  go through `decode`, and `BrowserCatalogTest` and `ImportDetectionTest` pass.
-* **No collateral damage.** The controls `completeWavStillDecodesItsFrames`
-  (`:134`) and `oneFrameWavStillDecodes` (`:151`) pass with the fix in place, so
-  a complete WAV, including a one-frame file, decodes as before. Only a file
-  that is shorter than its header is changed. Old valid projects load unchanged.
-* **Realtime, undo and commands unchanged.** The change is in the import/decode
-  path. It adds no audio-thread work, no undo step and no control command. The
-  product diff is one 13-line hunk in `SampleDecoder.cpp` at line 142 (6 lines
-  net added).
+1. **Regression fails with the product change reverted and passes with it.**
+   RED: `p5-red-test` EXIT=8, 0/1, `shortSoundFileReadIsNotPadded()` failed on
+   `!full.has_value()` (a 160-frame FLAC with no audio decoded to 160 padded
+   frames). GREEN: `p5-restored-test` EXIT=0, 1/1. The family run
+   (`p5-green-family` EXIT=0, 4/4) and callers run (`p5-green-callers` EXIT=0,
+   2/2) also pass with the fix in place.
+2. **Deterministic.** The fixtures are a fixed 1000-frame WAV
+   (`completeWavStillDecodesItsFrames`, `tests/src/core/SampleDecoderShortReadTest.cpp:137`),
+   a fixed 1-frame WAV (`oneFrameWavStillDecodes`, `:154`) and a fixed 160-frame
+   header-only FLAC (`shortSoundFileReadIsNotPadded`, `:166`), written by
+   `writeTone` (`:50`) and `writeHeaderOnlyFlac` (`:75`) into a `QTemporaryDir`
+   (`:127`). A grep of the whole test file finds no `sleep`, clock, timer or
+   thread use.
+3. **Fix is at the cause and complete.** The `sf_readf_float` return value at
+   `src/core/SampleDecoder.cpp:145` was not checked against the requested frame
+   count, so a short read was padded. The fix refuses the short read at
+   `SampleDecoder.cpp:145-151` and returns `std::nullopt`. The sibling
+   `boundedSF` (`:273`) reads its return count at `:292` and is not changed by
+   this fix. Callers `SampleBuffer.cpp:95` and `ImportDetection.cpp:128` both
+   call `SampleDecoder::decode`. `BrowserCatalogTest` and `ImportDetectionTest`
+   pass (`p5-green-callers` EXIT=0, 2/2).
+4. **No collateral damage.** The controls `completeWavStillDecodesItsFrames`
+   and `oneFrameWavStillDecodes` are slots in the same binary as the regression
+   test, which exits 0 with the fix in place (`p5-restored-test` EXIT=0). Only a
+   file shorter than its header changes behavior, because the refusal fires only
+   when `framesRead != sfInfo.frames`.
+5. **ALREADY-FIXED / FALSE-POSITIVE ask: not applicable.** The verdict is FIXED.
+   The RED run fails on the unfixed tree and the GREEN runs pass on the fixed tree.
 
 ## Other findings
 
 * The earlier run logs record no exit codes, so the packet's EXIT values for the
   log-only rows are not verified. The rerun rows above are the observed evidence.
 * The gate exit codes (`gates-1`, `gates-2`, `gates-3`) were not re-run here.
-* The text of the five `submit_check` asks was not in the packet, so the
-  self-check uses the mapping stated above.
-* The callers' handling of `nullopt` at `SampleBuffer.cpp:95` and
-  `ImportDetection.cpp:128` was not re-read in this session.
+* The five `submit_check` asks are the (1)-(5) list in the packet instructions;
+  the self-check above answers that list in order.
+* The call lines `SampleBuffer.cpp:95` and `ImportDetection.cpp:128` were checked;
+  how each caller handles a `nullopt` result was not read in this session.
