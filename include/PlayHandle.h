@@ -86,6 +86,13 @@ public:
 		return false;
 	}
 
+	//! True when the handle's owner frees it: the engine then drops its reference without deleting it. Must not
+	//! allocate, lock or block (called on the render path).
+	virtual bool handOverToOwner() noexcept
+	{
+		return false;
+	}
+
 	const QThread* affinity() const
 	{
 		return m_affinity;
