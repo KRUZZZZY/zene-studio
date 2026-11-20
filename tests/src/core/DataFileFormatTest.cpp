@@ -117,6 +117,26 @@ private:
 	DataFile * m_document = nullptr;
 };
 
+// A song project whose root carries only the given version attributes. Its one
+// <sampletrack vol="1"/> is what upgrade_0_2_1_20070501 rescales by 100 when it runs.
+QByteArray probeProject( const char * versionAttributes )
+{
+	return QByteArray( "<?xml version=\"1.0\"?>\n<zene-project " ) + versionAttributes +
+		" type=\"song\" creator=\"Zene Studio\">\n"
+		"  <head/>\n"
+		"  <song>\n"
+		"    <trackcontainer type=\"song\">\n"
+		"      <sampletrack vol=\"1\"/>\n"
+		"    </trackcontainer>\n"
+		"  </song>\n"
+		"</zene-project>\n";
+}
+
+double sampleTrackVolume( const DataFile & doc )
+{
+	return doc.elementsByTagName( "sampletrack" ).item( 0 ).toElement().attribute( "vol" ).toDouble();
+}
+
 } // namespace
 
 class DataFileFormatTest : public QObject
@@ -247,6 +267,71 @@ private slots:
 		QCOMPARE( static_cast<int>( doc.type() ),
 			static_cast<int>( DataFile::Type::InstrumentTrackSettings ) );
 		QVERIFY( !doc.content().isNull() );
+	}
+
+	// A current-format root is read as written: no upgrade routine runs on it.
+	void currentVersionSkipsUpgrades()
+	{
+		DataFile doc( probeProject( "version=\"31\" creatorversion=\"1.3.0\"" ) );
+		QCOMPARE( doc.originalFileVersion(), 31 );
+		QVERIFY( !doc.sourceFormatChanged() );
+		QCOMPARE( sampleTrackVolume( doc ), 1.0 );
+	}
+
+	// A version that does not parse must not be read as 0 (which runs every
+	// upgrade); it derives from creatorversion, as a file with no version does.
+	void invalidVersionFallsBackToCreatorVersion()
+	{
+		DataFile bad( probeProject( "version=\"invalid\" creatorversion=\"1.3.0\"" ) );
+		DataFile companion( probeProject( "creatorversion=\"1.3.0\"" ) );
+		QCOMPARE( companion.originalFileVersion(), 17 );
+		QCOMPARE( bad.originalFileVersion(), companion.originalFileVersion() );
+		QCOMPARE( sampleTrackVolume( bad ), 1.0 );
+	}
+
+	// A numeric version too large for an unsigned int fails to parse like any
+	// other bad version and takes the same creatorversion-derived value.
+	void overflowingVersionFallsBackToCreatorVersion()
+	{
+		DataFile big( probeProject( "version=\"4294967296\" creatorversion=\"1.3.0\"" ) );
+		DataFile companion( probeProject( "creatorversion=\"1.3.0\"" ) );
+		QCOMPARE( companion.originalFileVersion(), 17 );
+		QCOMPARE( big.originalFileVersion(), companion.originalFileVersion() );
+		QCOMPARE( sampleTrackVolume( big ), 1.0 );
+	}
+
+	// A dotted version (the StableTrackIdsTest fixture format) is not a file
+	// version number; it derives from creatorversion like its no-version companion.
+	void dottedVersionFallsBackToCreatorVersion()
+	{
+		DataFile dotted( probeProject( "version=\"1.2\" creatorversion=\"1.2.0\"" ) );
+		DataFile companion( probeProject( "creatorversion=\"1.2.0\"" ) );
+		QCOMPARE( companion.originalFileVersion(), 16 );
+		QCOMPARE( dotted.originalFileVersion(), companion.originalFileVersion() );
+		QCOMPARE( sampleTrackVolume( dotted ), 1.0 );
+	}
+
+	// An unparsable version must not run the legacy upgrade chain: the volume
+	// stays at its current-format value.
+	void invalidVersionDoesNotRunLegacyUpgrades()
+	{
+		DataFile doc( probeProject( "version=\"invalid\" creatorversion=\"1.3.0\"" ) );
+		QCOMPARE( sampleTrackVolume( doc ), 1.0 );
+	}
+
+	// An overflowing version must not run the legacy upgrade chain either.
+	void overflowingVersionDoesNotRunLegacyUpgrades()
+	{
+		DataFile doc( probeProject( "version=\"4294967296\" creatorversion=\"1.3.0\"" ) );
+		QCOMPARE( sampleTrackVolume( doc ), 1.0 );
+	}
+
+	// A dotted version is not a file version number and must not run the
+	// legacy upgrade chain.
+	void dottedVersionDoesNotRunLegacyUpgrades()
+	{
+		DataFile doc( probeProject( "version=\"1.2\" creatorversion=\"1.2.0\"" ) );
+		QCOMPARE( sampleTrackVolume( doc ), 1.0 );
 	}
 };
 
