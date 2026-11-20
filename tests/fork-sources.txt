@@ -4010,3 +4010,4 @@ tests/src/wasm/WasmOfflineRenderLimitStubs.cpp
 tests/src/wasm/WasmOfflineRenderLimitTest.cpp
 # cluster new-p10-541: BitInvader's loadSettings clamp and refusal regression.
 tests/src/plugins/BitInvaderLoadSettingsTest.cpp
+tests/src/core/AudioOssDeviceConfigTest.cpp
