@@ -45,8 +45,8 @@ namespace lmms
  *  routed elsewhere).
  *
  *  Realtime: init() allocates both sides once, off the audio thread (the engine's constructor). swap(),
- *  add() and the reads only touch that storage - no allocation, no lock. A channel number outside the bus
- *  is dropped, never written. All of it runs on the render thread; nothing else touches it.
+ *  add() and the reads only touch that storage - no allocation, no lock. A route that does not fit entirely
+ *  inside the bus is dropped whole, never written. All of it runs on the render thread; nothing else touches it.
  *
  *  Inactive - nothing added, the master on outputs 1/2 - the device feed takes the engine's old path, so
  *  a project that routes nothing to the hardware plays exactly as before. */
@@ -72,7 +72,8 @@ public:
 	//! write side is cleared (only the channels the last period used).
 	void swap() noexcept;
 	//! Render thread: add @a src (a stereo period) at channel @a start - both sides for @a width 2, their
-	//! average for width 1 - times @a gain. Channels outside the bus are dropped.
+	//! average for width 1 - times @a gain. A route that does not fit entirely inside the bus (its last channel
+	//! past MaxChannels - 1) is dropped whole: neither channel is written.
 	void add(int start, int width, const SampleFrame* src, f_cnt_t frames, float gain = 1.f) noexcept;
 	//! Render thread, 0.5.0 F7 (MX-060): add one plane @a src at @a channel - a surround channel's speaker
 	//! beyond its pair - times @a gains[f] when given, else @a gain. A channel outside the bus is dropped.
