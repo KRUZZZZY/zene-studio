@@ -318,6 +318,11 @@ public:
 		return m_playHandles;
 	}
 
+#ifdef LMMS_TESTING
+	//! Test seam (RED p2): runs the control-thread play-handle capacity top-up now, not on the 100 ms timer.
+	void topUpPlayHandleCapacityForTest() { topUpPlayHandleCapacityOnControlThread(); }
+#endif
+
 	void removePlayHandlesOfTypes(Track * track, PlayHandle::Types types);
 
 	AudioEngineProfiler& profiler()
