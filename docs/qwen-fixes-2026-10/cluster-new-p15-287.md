@@ -64,10 +64,10 @@ The baseline failures are caused by the missing `~/Documents/Zene Studio` workin
 2. `src/core/ConfigManager.cpp:627-629`: `createWorkingDir()` runs only when `hasWorkingDir()` is true. A missing working dir therefore gets no subdirectories created.
 3. `src/core/BrowserCatalog.cpp:565-567`: `browserTagStorePath()` returns `workingDir/browser-tags.json`.
 4. `src/core/BrowserTagStore.cpp:225-230`: `save()` opens `QSaveFile file(storePath())` and returns false with `m_error` set when `open` fails. The failing tests show the save failing (`setCategory` returned FALSE, and the name/tag query matched 0 expected 1).
-5. Controlled comparison: the same binary passes 16/16 with HOME pointing at a copy that has the directory (`p3b-isolated.log`), and fails 2 of 16 with the real HOME that lacks it (`p3b-baseline.log`). Check 9, run in the earlier session and not written to a file, gives the directory state:
+5. Controlled comparison: the same binary passes 16/16 with HOME pointing at a copy that has the directory (`p3b-isolated.log`), and fails 2 of 16 with the real HOME that lacks it (`p3b-baseline.log`). The real-HOME directory state is logged in `logs/p3d-home-check.log`:
 
-   `ls -ld "$HOME/Documents/Zene Studio" > /dev/null 2>&1; echo EXIT=$?` -> `EXIT=2`
-   (`ls: cannot access '/home/kruzzzzy/Documents/Zene Studio': No such file or directory`, while `~/Documents` exists.)
+   `ls -ld "$HOME/Documents/Zene Studio"` -> `EXIT=2`
+   (`ls: cannot access '/home/kruzzzzy/Documents/Zene Studio': No such file or directory`, the `EXIT=2` line is the last line of the log.)
 
 Caveat: the step 4 claim that `QSaveFile::open` fails when the parent directory is absent is Qt behavior, not re-checked in this session. The controlled comparison in step 5 is the evidence that does not depend on that.
 
@@ -86,3 +86,4 @@ The two baseline failures are `theQueryMatchesNameTagAndMetadata` (matched 0, ex
 
 - **Symlinks:** not tested. No symlink claim is made.
 - **Hang not reproduced:** The mutation run returned in 0.18 s with the FIFO walked. The test shows the FIFO is admitted by the walk; it does not show that the metadata probe blocks on it.
+- **Baseline tag-store failures:** The two baseline failures are an unrelated environment issue, caused by the missing `~/Documents/Zene Studio` working directory (see the Baseline failure cause section). They are not caused by the FIFO finding.
