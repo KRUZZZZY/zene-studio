@@ -26,27 +26,26 @@ FIXED. `AudioOss::probeDevice()` read `("AudioOss", "Device")`, but the OSS setu
 
 ## (c) Commands and exit codes, p2-p5
 
-Exit codes are copied from the logs where the log records one. Where the log has no EXIT line, the entry says so and gives the value the earlier packet recorded.
+Each entry names its log. EXIT is copied from that log. "no EXIT line" means the log holds no exit code, so none is recorded for that command. The earlier draft's claims of exit codes "per the p4 record" or "per the p5 record" are withdrawn: no log backs them.
 
-- p2 `syntax-p2.log`: compile before MOC generation failed with `AudioOssDeviceConfigTest.moc: No such file or directory`. No EXIT line in the log. Superseded by the build below.
-- p2 `reconfigure.log`: configure refused by the lane guard (`configuring is the parent's job`). No EXIT line. The existing build tree was used.
-- p2 `build-1.log`: `cmake --build build --target AudioOssDeviceConfigTest` built the test. No EXIT line.
-- p3 `build-2.log`: rebuilt `AudioOss.cpp.o` and linked the test. No EXIT line.
-- p3 `build-3.log`: built the `zene` target. No EXIT line.
-- p3 `build-4.log`: built `AudioOssWriteTest`. No EXIT line.
-- p2c pre-fix RED `test-1.log` (recorded before the product change; this is the p2c run, not p3): `ctest -R AudioOssDeviceConfigTest --output-on-failure`. Totals: 3 passed, 2 failed. `savedDeviceIsProbedOnNextStartup` and `savedDevicePrefillsTheNextSetupWidget` both got `probeDevice() = "/dev/dsp"` instead of the saved temp path. `0% tests passed, 1 tests failed`. The log has no EXIT line; its exit is EXIT=8 per `test-4-reversed.log`.
-- p3 GREEN `test-2.log`: `ctest -R AudioOssDeviceConfigTest --output-on-failure`. `100% tests passed out of 1`, Passed 1.11 sec.
-- p3 GREEN `test-3.log`: `ctest -R AudioOss --output-on-failure`. `100% tests passed out of 2`. Both `AudioOss` tests Passed.
-- p4 reversal: `git apply -R fix.patch` returned EXIT=0 per the p4 record; no log. `build-5-reversed.log` rebuilt `AudioOss.cpp.o`.
-- p4 `test-4-reversed.log`: `ctest -R AudioOssDeviceConfigTest --output-on-failure`. Totals: 3 passed, 2 failed. Both saved-device slots fail with `/dev/dsp`. `0% tests passed`. EXIT=8 per the p4 record; the log has no EXIT line.
-- p4 re-apply: `git apply fix.patch` returned EXIT=0 per the p4 record; no log. `build-6-restored.log` rebuilt `AudioOss.cpp.o`.
-- p5 `test-5-restored.log`: `ctest -R AudioOssDeviceConfigTest --output-on-failure`. `100% tests passed out of 1`, Passed 1.08 sec. EXIT=0 per the p5 record; no EXIT line.
-- Red and green, stated explicitly: the red command `ctest -R AudioOssDeviceConfigTest --output-on-failure` gives EXIT=8 in `test-4-reversed.log` (fix reverted). The green command `ctest -R AudioOssDeviceConfigTest --output-on-failure` gives EXIT=0 in `test-5-restored.log` (fix applied).
-- Final committed-tree run: `test-6-final.log`, `ctest -R AudioOssDeviceConfigTest --output-on-failure`, `100% tests passed out of 1`, EXIT=0.
-- p5 `test-5-verbose.log`: all five slots PASS: `initTestCase`, `savedDeviceIsProbedOnNextStartup`, `savedDevicePrefillsTheNextSetupWidget`, `emptyKeyKeepsEnvironmentPrecedence`, `cleanupTestCase`. Totals: 5 passed, 0 failed.
-- Gate table `feature-check-1.log`: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity (no new item), file-length (no new item). All 8 PASS. `RESULT: PASS`.
-- all-sources: `all-sources-1.log` and `all-sources-2.log` both print `REPRODUCES: the entry list in all-sources.txt is the recipe's own output.` The mutant controls in `all-sources-self-test.log` and `all-sources-self-test-2.log` print `SELF-TEST PASS`: a dropped path (exit 1) and an underivable path (exit 1) are both refused.
-- Whitespace: `git diff --cached --check` on the staged set. Result and EXIT are in `logs/whitespace-final.log` (see the final-check section below). The earlier `whitespace.log` is empty.
+- p2 `syntax-p2.log`: compile before MOC generation failed (`AudioOssDeviceConfigTest.moc: No such file or directory`). EXIT: no EXIT line. Superseded by the builds below.
+- p2 `reconfigure.log`: configure refused by the lane guard (`configuring is the parent's job`). EXIT: no EXIT line.
+- p2 `build-1.log`: `cmake --build build --target AudioOssDeviceConfigTest`. EXIT: no EXIT line.
+- p3 `build-2.log`: rebuild and link of the test. EXIT: no EXIT line.
+- p3 `build-3.log`: build of the `zene` target. EXIT: no EXIT line.
+- p3 `build-4.log`: build of `AudioOssWriteTest`. EXIT: no EXIT line.
+- p2c RED before the product change, `test-1.log`: `ctest -R AudioOssDeviceConfigTest --output-on-failure`; the log lists `727 - AudioOssDeviceConfigTest (Failed)`. EXIT: no EXIT line.
+- p3 GREEN `test-2.log`: `ctest -R AudioOssDeviceConfigTest --output-on-failure`. EXIT: no EXIT line.
+- p3 GREEN `test-3.log`: `ctest -R AudioOss --output-on-failure`. EXIT: no EXIT line.
+- p4 reversal `apply-reverse.log`: `git apply -R fix.patch`. EXIT=0.
+- p4 reversed rebuild `build-5-reversed.log`: relink of `AudioOssDeviceConfigTest`. EXIT: no EXIT line.
+- p4 RED with the fix reverted, `test-8-red.log`: `ctest -R AudioOssDeviceConfigTest --output-on-failure`; the log lists `727 - AudioOssDeviceConfigTest (Failed)` and two `/dev/dsp` lines. EXIT=8. `test-4-reversed.log` shows the same failure lines but has no EXIT line, so it is not used as an exit-code source.
+- p4 re-apply `apply-restore.log`: `git apply fix.patch`. EXIT=0.
+- p4 restored rebuild `build-6-restored.log`: relink of `AudioOssDeviceConfigTest`. EXIT: no EXIT line.
+- p5 GREEN with the fix applied, quiet-run log `duet/12-worker/tmp/006-p5-green.log`: `ctest -R AudioOssDeviceConfigTest --output-on-failure`; `100% tests passed out of 1`. EXIT=0 (quiet-run's exit). This run was made in p5 for the exit code only; the diff is unchanged.
+- Other ctest logs with no EXIT line: `test-5-restored.log`, `test-5-verbose.log`, `test-6-final.log`, `test-7-final.log`, `test-9-green.log`, `test-10-family.log`.
+- Gates: `feature-check-3.log` `RESULT: PASS`, EXIT=0. `feature-check-1.log` `RESULT: PASS`, no EXIT line.
+- Whitespace: no result is recorded. `whitespace-final.log` and `whitespace.log` are both empty (0 lines) and have no EXIT line.
 
 ## (d) Registration
 
@@ -56,11 +55,15 @@ Exit codes are copied from the logs where the log records one. Where the log has
 
 ## Self-check
 
-1. Red and green. Red: `logs/test-1.log` (3 passed, 2 failed; `probeDevice = "/dev/dsp"`), with the reversed-fix run `logs/test-4-reversed.log` (EXIT=8 per p4). Green: `logs/test-2.log`, `logs/test-3.log`, `logs/test-5-restored.log`, and `logs/test-5-verbose.log` (all five pass). The final green run from the committed tree is `logs/test-6-final.log` (`100% tests passed out of 1`, EXIT=0).
-2. Deterministic. Each test uses its own `QTemporaryDir` (`tests/src/core/AudioOssDeviceConfigTest.cpp:134`, `:155`, `:180`). Saved values are injected through `ConfigManager::setValue`. `AUDIODEV` is saved at `:109-110`, cleared at `:140` and `:161`, and restored in cleanup at `:122-126`. The test has no sleeps and no timing dependence. `src/core/AudioEngine.cpp:485` sets `m_renderOnly` from the constructor argument, and `:795-799` builds `AudioDummy` and `MidiDummy` when `m_renderOnly` is set. So `Engine::init(true)` (`:111`) opens no real device.
+1. Red and green exits. Red: `logs/test-8-red.log`, `ctest -R AudioOssDeviceConfigTest --output-on-failure` with the fix reverted (the state set by `apply-reverse.log`, EXIT=0), `727 - AudioOssDeviceConfigTest (Failed)`, two `/dev/dsp` lines, EXIT=8. Green: quiet-run log `duet/12-worker/tmp/006-p5-green.log`, `100% tests passed out of 1`, EXIT=0, with the fix applied (state set by `apply-restore.log`, EXIT=0). The green logs with no EXIT line are listed in (c) and are not used as exit sources.
+2. Deterministic. Each test uses its own `QTemporaryDir` (`tests/src/core/AudioOssDeviceConfigTest.cpp:134`, `:155`, `:180`). Saved values are injected through `ConfigManager::setValue`. `AUDIODEV` is saved at `:109-110`, cleared at `:140` and `:161`, and restored in cleanup at `:122-126`. The test has no sleeps and no timing dependence. `src/core/AudioEngine.cpp:485` sets `m_renderOnly` from the constructor argument, and `:795-799` builds `AudioDummy` and `MidiDummy` when `m_renderOnly` is set. So `Engine::init(true)` (`:111`) opens no real device. Line numbers are from the earlier draft and were not re-read in p5.
 3. Cause and completeness. `probeDevice` has exactly two call sites in `AudioOss.cpp`: `:78` (the constructor, which opens the device) and `:258` (the setup dialog). Both use the one fixed key. `AudioIoSetup.cpp:59` is the canonical table entry. The sibling keys were audited (`logs/sibling-audit.log` and the grep in (a)). `MidiOss` keeps `midioss`/`device` (`MidiOss.cpp:172`) and was not changed. Open item: `MidiAlsaSeq` (`Midialsaseq`, `MidiAlsaSeq.cpp:325`) and `MidiSndio` (`MidiSndio.cpp:154`) read mixed-case keys. I did not check their writers in this packet, so they are out of scope and unverified.
-4. No collateral damage. The only saved data is `audiooss`/`device`, written by `saveSettings` (`AudioOss.cpp:287`), and the fix makes the probe honour it. The `AUDIODEV` then `/dev/dsp` fallback is unchanged and is covered by `emptyKeyKeepsEnvironmentPrecedence` (`:178-188`). No limit was added. The product diff is one line.
-5. Verdict. The verdict is FIXED, backed by the reversed-fix red run and the restored green run. It is not a claim-only closure, so no code-reference verdict is needed.
+4. No collateral damage. The only saved data is `audiooss`/`device`, written by `saveSettings` (`AudioOss.cpp:287`), and the fix makes the probe honour it. The `AUDIODEV` then `/dev/dsp` fallback is unchanged and is covered by `emptyKeyKeepsEnvironmentPrecedence` (`:178-188`). No limit was added. The product diff is one line. The fix touches no audio-thread function: the changed line is in `probeDevice()`, which runs only from the constructor (`:78`) and the setup dialog (`:258`), never from the process or render path (see (e)).
+5. Verdict evidence. The verdict is FIXED. It is backed by the red exit (EXIT=8, `test-8-red.log`) and the green exit (EXIT=0, `006-p5-green.log`). `test-5-verbose.log` has no EXIT line; its five-slot PASS result comes from the earlier draft and was not re-read in p5. The verdict does not depend on the claim-only path, so no code-reference verdict is needed.
+6. Mutation controls.
+   - Gate self-test, passed: `all-sources-self-test.log` and `all-sources-self-test-2.log` print `SELF-TEST PASS`. A dropped path (exit 1) and an underivable path (exit 1) are both refused.
+   - fork-sources pair, not counted as a control: `mutation-fork-sources.log` (EXIT=0, fork-sources PASS) and `mutation-fork-sources-repaired.log` (EXIT=1, fork-sources FAIL). The logs do not say which file each run checked (`fork-sources.mutant` is 475972 bytes; `fork-sources.backup` is 476016 bytes). The file names suggest the reverse of what the results show, so the lead must check this pair before relying on it.
+   - `mutation-report.log`: EXIT=1, a pre-submit run made while the tree was dirty. Its verdict-word FAIL is cleared by line 1 (FIXED). Its working-tree FAIL clears when this commit lands. It was not rerun.
 
 ## Other findings
 
