@@ -348,7 +348,7 @@ ArmBatch armEach(const QJsonArray& ids, bool armed)
 			// refuse - so the batch has to ask the route's own before-state, or it
 			// reports tracks whose state it never changed.
 			if (!armed && !one.result.value(QStringLiteral("armed_before")).toBool()) { continue; }
-			one.result.remove(QStringLiteral("__transaction"));  // the batch records ONE transaction for all of them
+			one.result.remove(QStringLiteral("__transaction"));  // track.set_arm records its own undo step; the batch records none (its takes outlive the captures), so drop it
 			out.changed.append(trackId);
 			out.routes.append(one.result);
 			continue;
