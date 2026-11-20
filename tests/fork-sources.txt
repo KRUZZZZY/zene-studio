@@ -4007,3 +4007,4 @@ tests/src/plugins/ZeneRackTest.cpp
 tests/src/core/WorkerAltStackTest.cpp
 # cluster new-p10-541: BitInvader's loadSettings clamp and refusal regression.
 tests/src/plugins/BitInvaderLoadSettingsTest.cpp
+tests/src/core/AudioOssDeviceConfigTest.cpp
