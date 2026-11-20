@@ -29,31 +29,32 @@ Why this report exists: the earlier patrol re-reported a bug that was already fi
 
 ## Evidence from this session
 
-Logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/5376.r1/logs/` unless a path is given. The `-3` logs record test output but not exit codes. Exit codes below are only those seen this session.
+Logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/5376.r1/logs/`. The `-4` logs are this session's evidence: each command's output and its `*_EXIT=` line are in the same file, written by a shell group. The `-3` logs have no exit lines, so none of their results is cited for an exit code.
 
 | Step | Command / source | Result | Exit |
 |---|---|---|---|
-| Base measurement | `git diff --stat fa4a5f2e78 HEAD` (run before this commit) | 1 file changed, 76 insertions: this report only | `DIFF_BASE_EXIT=0` |
-| Feature gates | `gates-3.log` | 8 gates PASS, `RESULT: PASS` | not logged (RESULT: PASS only) |
-| fix.patch generation | `git diff 270796e7c^ 270796e7c -- src/core/SmfInterchangeReader.cpp`, regenerated and compared with saved `fix.patch` | byte-identical (`PATCH_SAME`) | `REGEN_EXIT=0` |
-| fix.patch check | `git apply -R --check fix.patch` on the fixed tree | 1 file, 15 insertions, 0 deletions | `REVCHECK_EXIT=0` |
-| Revert and red build | `build-red-3.log` | `Built target SmfInterchangeRoundTripTest` | not logged |
-| Red test | `test-red-3.log`: `FAIL! ... aTrackWithoutAnEndOfTrackEventIsRefused() '!read.ok' returned FALSE. (a track that never ends was accepted)`, `Loc: SmfInterchangeRoundTripTest.cpp(666)` | `Totals: 17 passed, 1 failed`; `0% tests passed, 1 tests failed out of 1` | not logged |
-| Restore | `git apply fix.patch` | not logged this session | not logged |
-| Green build | `build-green-3.log` | `Linking CXX executable`, `Built target SmfInterchangeRoundTripTest` | not logged |
-| Green test | `test-green-3.log` | `100% tests passed out of 1` | not logged |
-| Green test, re-run | `ctest -R '^SmfInterchangeRoundTripTest$'` from `build/tests`, via quiet runner (`duet/12-worker/tmp/003-p5-green.log`) | `100% tests passed out of 1` | `GREEN_QUIET_EXIT=0` |
-| Family list | `test-family-list-3.log` | 3 tests: #409 SmfInterchangeTest, #410 SmfInterchangeRoundTripTest, #705 SmfNoteReadTest | not logged |
-| Family | `test-family-3.log`; re-run `ctest -R '^Smf'` via quiet runner (`duet/12-worker/tmp/004-p5-family.log`) | `100% tests passed out of 3` | `FAMILY_QUIET_EXIT=0` |
+| Base file list | `git diff --name-only "$BASE..HEAD"`, `BASE` = merge-base with `FIX-BASE` (`base-4.log`) | Only `docs/qwen-fixes-2026-10/cluster-5376.md` differs (report only) | `BASE_DIFF_EXIT=0` |
+| Feature gates | `gates-4.log` (`feature_check.py`) | `RESULT: PASS` | `GATES_EXIT=0` |
+| fix.patch generation | `patch-4.log`: `git diff 270796e7c^ 270796e7c -- src/core/SmfInterchangeReader.cpp > fix.patch` | written | `DIFF_EXIT=0` |
+| fix.patch check | `revcheck-4.log`: `git apply -R --check fix.patch` on the fixed tree | passes | `CHECK_EXIT=0` |
+| Revert | `revert-4.log`: `git apply -R fix.patch` | tree shows only `M src/core/SmfInterchangeReader.cpp` | `REVERT_EXIT=0` |
+| Red build | `build-red-4.log` | `SmfInterchangeReader.cpp.o` recompiled; `Built target SmfInterchangeRoundTripTest` | `BUILD_RED_EXIT=0` |
+| Red test | `test-red-4.log`: `FAIL! ... aTrackWithoutAnEndOfTrackEventIsRefused() '!read.ok' returned FALSE. (a track that never ends was accepted)` | `0% tests passed, 1 tests failed out of 1` | `RED_EXIT=8` |
+| Restore | `restore-4.log`: `git apply fix.patch` | restored | `RESTORE_EXIT=0` |
+| Clean tree | `restore-4.log`: `git diff --quiet` | tree clean | `CLEAN_EXIT=0` |
+| Green build | `build-green-4.log` | `SmfInterchangeReader.cpp.o` recompiled; `Built target SmfInterchangeRoundTripTest` | `BUILD_GREEN_EXIT=0` |
+| Green test | `test-green-4.log` | `100% tests passed out of 1` | `GREEN_EXIT=0` |
+| Family list | `test-family-list-4.log`: `ctest -N -R '^Smf'` | `Total Tests: 3` | `LIST_EXIT=0` |
+| Family | `test-family-4.log`: `ctest -R '^Smf'` | `100% tests passed out of 3` | `FAMILY_EXIT=0` |
 
-The red run's exit code is not in `test-red-3.log`. `RED_EXIT=8` appears only in `redproof-4b.log` (earlier session, 19:00). That value is not cited as this session's red result.
+Earlier quiet-runner re-runs from p5 (`duet/12-worker/tmp/003-p5-green.log`, `004-p5-family.log`) also passed, with `GREEN_QUIET_EXIT=0` and `FAMILY_QUIET_EXIT=0`. They are not the evidence for the rows above.
 
 ## Test matrix
 
 | Case | Covered by | Result |
 |---|---|---|
-| Normal path (track ends with end-of-track) | Round-trip family | Pass: `test-family-3.log` (3/3); `FAMILY_QUIET_EXIT=0` |
-| Failure: tempo event, then chunk ends with no end-of-track | `aTrackWithoutAnEndOfTrackEventIsRefused` (fixture above) | Red with fix reverted: `test-red-3.log` (17 passed, 1 failed). Green with fix restored: `test-green-3.log`; `GREEN_QUIET_EXIT=0` |
+| Normal path (track ends with end-of-track) | Round-trip family | Pass: `test-family-4.log` (3/3); `FAMILY_EXIT=0` |
+| Failure: tempo event, then chunk ends with no end-of-track | `aTrackWithoutAnEndOfTrackEventIsRefused` (fixture above) | Red with fix reverted: `test-red-4.log`, `RED_EXIT=8`. Green with fix restored: `test-green-4.log`, `GREEN_EXIT=0` |
 | Exhaustion: chunk ends immediately after the tempo bytes | Same test and fixture | Refused with the end-of-track reason; nothing imported |
 | Reconfiguration | N/A | Pure reader, no runtime reconfiguration |
 | Audio thread | N/A | Reader runs on the caller's thread; no audio-thread path |
@@ -63,10 +64,10 @@ The red run's exit code is not in `test-red-3.log`. `RED_EXIT=8` appears only in
 
 Answers to the five ASK items from `submit-1.log`. Anything not checked this session is marked unverified.
 
-1. **Regression test fails with the change reverted and passes with it.** Red: `test-red-3.log` shows FAIL on `aTrackWithoutAnEndOfTrackEventIsRefused` (17 passed / 1 failed, `0% tests passed`). The red run's exit code is not logged this session, so the red exit is **unverified this session**. Green: `GREEN_QUIET_EXIT=0` (1/1 passed, this session). Family: `FAMILY_QUIET_EXIT=0` (3/3 passed, this session).
+1. **Regression test fails with the change reverted and passes with it.** Red: `test-red-4.log` shows FAIL on `aTrackWithoutAnEndOfTrackEventIsRefused` (`0% tests passed, 1 tests failed out of 1`), `RED_EXIT=8`; `build-red-4.log` shows `SmfInterchangeReader.cpp.o` recompiled, `BUILD_RED_EXIT=0`. Green: `test-green-4.log`, `GREEN_EXIT=0` (100% of 1). Family: `test-family-4.log`, `FAMILY_EXIT=0` (100% of 3). All from this session.
 2. **Deterministic: no wall-clock timing, sleeps or races.** This session I read the test body (`:660-674`) and the fixture (`:137-143`). The fixture is fixed bytes. The test body has no clock, sleep or thread. It writes the file under its own temp directory and calls the real `interchange.smf_read` and `interchange.smf_import` control surface. Repeated runs for flakiness were **not** done this session.
 3. **Fix at the cause and complete.** The check is in the one track walk, `readTrack` (`SmfInterchangeReader.cpp:320-365`). The caller chain above (verified this session) reaches it for both `smf_read` and `smf_import`, and the regression test asserts both. This cluster's fix does not touch the note reader. `src/core/SmfNoteRead.cpp:260-268` is a separate reader that still accepts a track ending without end-of-track (verified this session by reading the code). It is listed under Other findings and is outside this cluster.
-4. **No collateral damage.** The branch diff against `fa4a5f2e78` is this report only (`DIFF_BASE_EXIT=0`, 1 file, 76 insertions, measured before this commit). The Smf family passed 3/3. This is an import reader and there are no save/load or project data changes. Other test suites were **not** run this session, so collateral in them is unverified. Whether any file in this repository's data lacks end-of-track was **not** checked.
+4. **No collateral damage.** The branch diff against the `FIX-BASE` merge-base lists only `docs/qwen-fixes-2026-10/cluster-5376.md` (`base-4.log`, `BASE_DIFF_EXIT=0`). The Smf family passed 3/3 (`FAMILY_EXIT=0`). This is an import reader and there are no save/load or project data changes. Other test suites were **not** run this session, so collateral in them is unverified. Whether any file in this repository's data lacks end-of-track was **not** checked.
 5. **ALREADY-FIXED: the code and the contract.** Code, verified this session: `src/core/SmfInterchangeReader.cpp:320` (`bool sawEndOfTrack = false;`), `:348` (`sawEndOfTrack = true;`), `:359-365` (the `if (!sawEndOfTrack)` refusal, with the message at `:361`). Introduced by `270796e7c`, an ancestor of HEAD (`ANCESTOR_EXIT=0`). Contract: an SMF track is ended by its end-of-track meta event; a chunk that stops without one is truncated and must be refused. Test: `tests/src/core/SmfInterchangeRoundTripTest.cpp:660-674`, verified this session.
 
 ## Other findings
