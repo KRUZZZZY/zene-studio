@@ -2977,6 +2977,7 @@ tests/src/core/DeviceCopyTest.cpp
 tests/src/core/DeviceDspTest.cpp
 tests/src/core/DeviceDspTestParts1.h
 tests/src/core/DeviceDspTestParts2.h
+tests/src/core/DeviceDspTestParts3.h
 tests/src/core/DeviceMovesUndoTest.cpp
 tests/src/core/DeviceOrganiserTest.cpp
 tests/src/core/DeviceToolsChainTest.cpp
