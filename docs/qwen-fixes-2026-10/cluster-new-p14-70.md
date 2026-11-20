@@ -37,22 +37,31 @@ Test file: `tests/src/core/ImportTrackIoTest.cpp`, 472 lines (under the 500-line
 | Malformed child element | `loud` / `sideways` | 1.0 / 0.0 | :441-442 | yes |
 | Non-finite `nan`, `1e999` | | 1.0 / 0.0 | no row (same `isfinite` branch as `inf`, :68) | NO, not separately tested |
 
-## Commands and exit codes (from the logs in `runs/new-p14-70.r1/logs/`)
+## Commands and exit codes
 
-- build-1: `cmake --build build --target ImportTrackIoTest`, ends "Built target ImportTrackIoTest". No EXIT line in the log.
-- build-2, build-3, build-4: builds end with "Built target" lines. No EXIT line in these logs.
-- build-5: EXIT=0. build-6: EXIT=0.
-- test-1: `ctest -R ImportTrackIoTest --output-on-failure`. Test #376 Passed. No EXIT line.
-- test-2: Test #376 ***Failed. No EXIT line.
-- test-3: Test #376 ***Failed. `malformedImportedChannelValuesFallBackToTheDefaults` FAIL rows (fuzzy compare). No EXIT line.
-- test-4: Test #376 Passed. `test-4-verbose.log:34` PASS `malformedImportedChannelValuesFallBackToTheDefaults`. 9 PASS rows, "100% tests passed out of 1".
-- test-5: ImportDetectionTest (Test #134) Passed; MixerChannelPanTest (Test #262) Passed; 2/2.
-- apply-reverse: EXIT=0 (reverse patch applied to the product file).
-- test-6 (RED, reversed product file): Test #376 ***Failed; FAIL rows on the malformed test. **EXIT=8**.
-- apply-restore: EXIT=0 (patch restored).
-- fix-after.patch.log: CMP_EXIT=0 (`cmp fix.patch fix-after.patch` identical).
-- test-7 (GREEN, restored): Test #376 Passed; "100% tests passed out of 1". **EXIT=0**.
-- feature-check: `feature_check.py` on this worktree, `RESULT: PASS`, all rows PASS, **EXIT=0** (appended unpiped, `feature-check.log`).
+Logs: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/`
+Worktree: `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p14-70`
+
+The command text below comes from the packets and the worker execution reports. The logs hold each step's result and, where present, its EXIT line. Only `build-1.log` and `test-1.log` carry their own command as a `$` header; the `test-1.log` header shows the wrapper `bash -c cd ... && ctest ...`. Where a log has no EXIT line, the step's exit code is not recorded.
+
+Steps, in order:
+- build-1: `cmake --build /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p14-70/build --target ImportTrackIoTest`. Log ends "Built target ImportTrackIoTest". No EXIT line.
+- test-1: `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p14-70/build/tests && ctest -R ImportTrackIoTest --output-on-failure`. Test #376 Passed; "100% tests passed out of 1". No EXIT line.
+- build-2, build-3: same build command as build-1. Each log ends "Built target ImportTrackIoTest". No EXIT line.
+- test-2, test-3: same ctest command as test-1. Test #376 ***Failed. test-3 also shows FAIL rows on `malformedImportedChannelValuesFallBackToTheDefaults` (fuzzy compare). No EXIT line.
+- build-4: `cmake --build /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p14-70/build --target zene ImportTrackIoTest MixerChannelPanTest ImportDetectionTest > /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/build-4.log 2>&1; echo EXIT=$?`. Log shows "Built target" for zene, ImportTrackIoTest, MixerChannelPanTest and ImportDetectionTest. No EXIT line in the log, so this step's exit code is not recorded.
+- test-4: `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p14-70/build/tests && ctest -R ImportTrackIoTest --output-on-failure > /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/test-4.log 2>&1; echo EXIT=$?`. Test #376 Passed (1.53 sec); "100% tests passed out of 1". No EXIT line in the log.
+- test-4-verbose: same as test-4 with `-V` added, output to `test-4-verbose.log`. Line 34: PASS `malformedImportedChannelValuesFallBackToTheDefaults`. 9 PASS rows; "100% tests passed out of 1". No EXIT line.
+- test-5: `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p14-70/build/tests && ctest -R 'MixerChannelPanTest|ImportDetectionTest' --output-on-failure > /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/test-5.log 2>&1; echo EXIT=$?`. Test #134 ImportDetectionTest Passed; Test #262 MixerChannelPanTest Passed; "100% tests passed out of 2". No EXIT line.
+- diff: `git -C /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p14-70 diff -- src/core/ControlProjectTransplantChannels.cpp > /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/fix.patch`. Writes `fix.patch` (1719 bytes). No EXIT line.
+- apply-reverse: `git -C /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p14-70 apply -R /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/fix.patch > /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/apply-reverse.log 2>&1; echo EXIT=$? >> /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/apply-reverse.log`. **EXIT=0** (reverse patch applied to the product file).
+- build-5: `cmake --build /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p14-70/build --target zene ImportTrackIoTest > /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/build-5.log 2>&1; echo EXIT=$? >> /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/build-5.log`. **EXIT=0**.
+- test-6 (RED, reversed product file): `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p14-70/build/tests && ctest -R ImportTrackIoTest --output-on-failure > /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/test-6.log 2>&1; echo EXIT=$? >> /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/test-6.log`. Test #376 ***Failed; 4 `FAIL!` rows on `malformedImportedChannelValuesFallBackToTheDefaults` (fuzzy compare); "0% tests passed, 1 tests failed out of 1". **EXIT=8**.
+- apply-restore: `git -C /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p14-70 apply /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/fix.patch > /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/apply-restore.log 2>&1; echo EXIT=$? >> /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/apply-restore.log`. **EXIT=0** (patch restored).
+- build-6: same as build-5, output to `build-6.log`. **EXIT=0**.
+- test-7 (GREEN, restored): same as test-6, output to `test-7.log`. Test #376 Passed; "100% tests passed out of 1". **EXIT=0**.
+- cmp: `git -C /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p14-70 diff -- src/core/ControlProjectTransplantChannels.cpp > /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/fix-after.patch; cmp -s /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/fix.patch /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/fix-after.patch; echo CMP_EXIT=$?`. **CMP_EXIT=0** (`fix.patch` and `fix-after.patch` identical), recorded in `fix-after.patch.log`.
+- feature-check: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p14-70 > /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/feature-check.log 2>&1; echo EXIT=$? >> /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-70.r1/logs/feature-check.log`. Header "feature-check kads-new-p14-70 (base fa4a5f2e7, 2 changed files ...)"; `RESULT: PASS`; all rows PASS; **EXIT=0**.
 
 Registration: `tests/fork-sources.txt:1969` lists `src/core/ControlProjectTransplantChannels.cpp`. `tests/fork-sources.txt:2816` lists `tests/src/core/ImportTrackIoTest.cpp`. `tests/upstream-modifications.txt:52` already lists the test file. No manifest change is needed.
 
