@@ -213,3 +213,90 @@ void DeviceDspTest::combFeedbackFractionalFeedbackPath()
 		{0.0, 0.5, 0.625, 0.28125, 0.2265625, 0.126953125, 0.08837890625, 0.0538330078125},
 		[](StereoCombFeedback& delay) { delay.setGain(0.5); delay.setDelay(1.5); });
 }
+
+//! The feed-forward comb uses the splitDelay weights.  For delay d with whole = floor(max(d, 1)) and
+//! frac = 1 - (d - whole), y[n] = (1 - frac)*in[n-whole-1] + frac*in[n-whole].  With a unit impulse
+//! at in[0] that is frac on frame whole and (1 - frac) on frame whole + 1.
+//! 1.25: whole 1, frac 0.75: y[1] = 0.75*in[0] = 0.75, y[2] = 0.25*in[0] = 0.25.
+//! 2.75: whole 2, frac 0.25: y[2] = 0.25*in[0] = 0.25, y[3] = 0.75*in[0] = 0.75.
+//! 0.5 clamps to 1: whole 1, frac 1: y[1] = 1, y[2] = 0.
+//! 2.0: whole 2, frac 1: y[2] = 1 (the integer case).
+void DeviceDspTest::combFeedfwdFractionalDelays()
+{
+	verifyFractionalImpulse<StereoCombFeedfwd>(QStringLiteral("CombFeedfwd 1.25"), 8,
+		{0.0, 0.75, 0.25}, [](StereoCombFeedfwd& delay) { delay.setGain(0.0); delay.setDelay(1.25); });
+	verifyFractionalImpulse<StereoCombFeedfwd>(QStringLiteral("CombFeedfwd 2.75"), 8,
+		{0.0, 0.0, 0.25, 0.75}, [](StereoCombFeedfwd& delay) { delay.setGain(0.0); delay.setDelay(2.75); });
+	verifyFractionalImpulse<StereoCombFeedfwd>(QStringLiteral("CombFeedfwd 0.5"), 8,
+		{0.0, 1.0}, [](StereoCombFeedfwd& delay) { delay.setGain(0.0); delay.setDelay(0.5); });
+	verifyFractionalImpulse<StereoCombFeedfwd>(QStringLiteral("CombFeedfwd 2.0"), 8,
+		{0.0, 0.0, 1.0}, [](StereoCombFeedfwd& delay) { delay.setGain(0.0); delay.setDelay(2.0); });
+}
+
+//! The allpass delayed branch uses the same weights.  With gain 0 the stored value is the input and
+//! the returned value is the interpolated tap, so the frames are the feed-forward ones above:
+//! 1.25 -> {0, 0.75, 0.25}; 2.75 -> {0, 0, 0.25, 0.75}; 0.5 clamps to 1 -> {0, 1}; 2.0 -> {0, 0, 1}.
+void DeviceDspTest::allpassFractionalDelays()
+{
+	verifyFractionalImpulse<StereoAllpassDelay>(QStringLiteral("AllpassDelay 1.25"), 8,
+		{0.0, 0.75, 0.25}, [](StereoAllpassDelay& delay) { delay.setGain(0.0); delay.setDelay(1.25); });
+	verifyFractionalImpulse<StereoAllpassDelay>(QStringLiteral("AllpassDelay 2.75"), 8,
+		{0.0, 0.0, 0.25, 0.75}, [](StereoAllpassDelay& delay) { delay.setGain(0.0); delay.setDelay(2.75); });
+	verifyFractionalImpulse<StereoAllpassDelay>(QStringLiteral("AllpassDelay 0.5"), 8,
+		{0.0, 1.0}, [](StereoAllpassDelay& delay) { delay.setGain(0.0); delay.setDelay(0.5); });
+	verifyFractionalImpulse<StereoAllpassDelay>(QStringLiteral("AllpassDelay 2.0"), 8,
+		{0.0, 0.0, 1.0}, [](StereoAllpassDelay& delay) { delay.setGain(0.0); delay.setDelay(2.0); });
+}
+
+namespace
+{
+
+//! Run a ramp longer than the ring through a 1.5-frame delay with gain 0.  Channel 0 carries 1, 2, 3, ...
+//! and channel 1 carries 10, 20, 30, ..., so a cross-channel leak would show.  Each output must equal
+//! 0.5*x[n-1] + 0.5*x[n-2] for its own channel, with x[k] = 0 for k < 0.  The ring holds 4 frames and
+//! the run is 12 frames, so reads cross the wrap several times.  The values are small dyadic numbers,
+//! so the comparison is exact.
+template <typename Delay>
+void verifyRingWrapRamp(const QString& label)
+{
+	auto ramp = [](int channel, int n) {
+		if (n < 0) { return 0.0; }
+		return channel == 0 ? n + 1.0 : 10.0 * (n + 1.0);
+	};
+
+	Delay delay(4);
+	delay.setGain(0.0);
+	delay.setDelay(1.5);
+
+	QStringList failures;
+	for (int n = 0; n < 12; ++n)
+	{
+		for (int c = 0; c < 2; ++c)
+		{
+			const double got = delay.update(ramp(c, n), static_cast<ch_cnt_t>(c));
+			const double want = 0.5 * ramp(c, n - 1) + 0.5 * ramp(c, n - 2);
+			if (got != want)
+			{
+				failures << QStringLiteral("channel %1 frame %2 got %3 want %4")
+					.arg(c).arg(n).arg(got, 0, 'g', 17).arg(want, 0, 'g', 17);
+			}
+		}
+	}
+
+	QVERIFY2(failures.isEmpty(),
+		qPrintable(QStringLiteral("%1: %2").arg(label, failures.join(QStringLiteral("; ")))));
+}
+
+} // namespace
+
+//! The feedback comb's ring wraps every four frames here, so each read may cross the wrap.
+void DeviceDspTest::combFeedbackRingWrapRamp()
+{
+	verifyRingWrapRamp<StereoCombFeedback>(QStringLiteral("CombFeedback ring 4, delay 1.5"));
+}
+
+//! The feed-forward comb has its own copy of the same wrap arithmetic, so it gets the same ramp.
+void DeviceDspTest::combFeedfwdRingWrapRamp()
+{
+	verifyRingWrapRamp<StereoCombFeedfwd>(QStringLiteral("CombFeedfwd ring 4, delay 1.5"));
+}
