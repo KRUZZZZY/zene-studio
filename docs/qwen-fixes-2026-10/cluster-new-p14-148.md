@@ -70,6 +70,14 @@ Each guard is therefore caught by its own test.
 
 Answers to the ASK items. Each one is backed by the diff (`git diff HEAD~1 --stat` is the two files plus this report) or a logged run.
 
+ASK items printed by `submit_check.py` (commit `4f738a8756`, log `submit-check-1.log`):
+
+- **Regression fails reverted, passes with change.** Reverted or mutated: test-1 (exit 8), test-1b (exit 1), test-1c (exit 124), test-3-reverted-red (exit 8), test-5 (exit 8), test-6 (exit 1). With the change: test-2b-green (0), test-2b-direct (0), test-4-restored-green (0), test-7-mut-restored-green (0).
+- **Deterministic.** The new tests use fixed constants only: `2^63` and `SIZE_MAX`, and `AudioRing(2/3/AudioRingFrames/AudioRingFrames+1)`. No wall-clock timing, sleeps, threads, or races. The one timing-looking result, the SIZE_MAX hang, is a non-terminating call under a 60 s ctest limit (see above). It is deterministic, not a race.
+- **At the cause and complete.** The cause is the unbounded rounding loop (`HEAD:src/core/LinkAudioCodec.cpp:64`) and the unchecked product (`HEAD:src/core/LinkAudioCodec.cpp:157`). Both are guarded. The sibling `InputChannelRing.h` has the same two guards (`:196-199`, `:207-214`). `SampleFrameRingBuffer.h` has the rounding guard (`:155-158`) and no product, since its storage is one element per frame. The only product `AudioRing` construction is `LinkAudioStream.cpp:107-108`.
+- **No collateral.** `AudioRing` is a runtime buffer. The diff touches no serialization or project-load code, so saved projects are unchanged. The new throws fire only above 2^63 frames or a storage product above `SIZE_MAX`. The only real caller uses 65536, so no legitimate caller reaches a limit.
+- **Verdict is FIXED, not ALREADY-FIXED.** The bug is present at HEAD (`HEAD:src/core/LinkAudioCodec.cpp:64` and `:157`, cited above), and the fix is in this commit.
+
 - **Regression RED/GREEN.** RED: test-1 (exit 8, storage-wrap FAIL then SIZE_MAX timeout), test-1b (exit 1), test-1c (exit 124), test-3-reverted-red (exit 8). GREEN: test-2b-green (0), test-2b-family (0), test-2b-direct (0, 7 passed), test-4-restored-green (0), test-7-mut-restored-green (0). Mutation runs in test-5, test-6 and test-6b show each guard is individually covered.
 - **Realtime.** The new `throw` sites are in `roundUpPowerOfTwo` and `ringStorageSize`. Both run only from the `AudioRing` constructor initializer (`src/core/LinkAudioCodec.cpp:172-173`). `write`, `read` and `skip` are not in the diff. The change adds no allocation, lock, or log on the audio path.
 - **Undo.** No undo code and no control command changed. `ControlCommandsSnapshot` is not in the diff.
