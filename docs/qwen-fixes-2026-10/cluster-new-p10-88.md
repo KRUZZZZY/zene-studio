@@ -112,7 +112,12 @@ exited 0. `upgrade()` at `:2638` is not in the diff (see Change). The absent or
 - Saved bytes: `DataFileSaveIntegrityTest` passes (log 003). I did not read its
   assertions, so I do not claim more than that it passes.
 
-(5) Verdict evidence lines:
+(5) ALREADY-FIXED / FALSE-POSITIVE item: not applicable. The verdict is FIXED, so
+no already-fixed or false-positive contract is cited. The change is the parse-failure
+branch at `src/core/DataFile.cpp:2831-2846`, which before this commit read
+`toUInt()`'s 0 at `:2834`.
+
+Verdict evidence lines:
 - FIXED: green exit 0 before reversal (log 001).
 - FIXED: red exit 8 with the product hunk reversed, six functions failing (log 002).
 - FIXED: restored tree green, exit 0, 4/4 (log 003).
