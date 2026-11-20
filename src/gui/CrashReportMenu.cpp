@@ -103,13 +103,20 @@ void setCrashReportFolderOpener(std::function<void(const QString&)> opener) { s_
 QString crashReportStatusText(const QJsonObject& state)
 {
 	const QString armed = state.value(QStringLiteral("armed")).toBool() ? QMenu::tr("Armed") : QMenu::tr("Not armed");
-	if (state.value(QStringLiteral("report_count")).toInt() == 0)
+	const int reportCount = state.value(QStringLiteral("report_count")).toInt();
+	if (reportCount == 0)
 	{
 		return QMenu::tr("%1, no report").arg(armed);
 	}
+	if (reportCount == 1)
+	{
+		return state.value(QStringLiteral("pending")).toBool()
+			? QMenu::tr("%1, one report not yet offered").arg(armed)
+			: QMenu::tr("%1, one report (already offered)").arg(armed);
+	}
 	return state.value(QStringLiteral("pending")).toBool()
-		? QMenu::tr("%1, one report not yet offered").arg(armed)
-		: QMenu::tr("%1, one report (already offered)").arg(armed);
+		? QMenu::tr("%1, %2 reports not yet offered").arg(armed).arg(reportCount)
+		: QMenu::tr("%1, %2 reports (already offered)").arg(armed).arg(reportCount);
 }
 
 QMenu* addCrashReportMenu(QMenu* menu)
