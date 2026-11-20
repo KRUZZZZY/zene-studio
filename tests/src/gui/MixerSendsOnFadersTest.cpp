@@ -275,7 +275,11 @@ private slots:
 
 		// Back on the channel faders (an empty sends_on_faders) every entry is the level.
 		const QStringList faders = drivesOf(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("sends_on_faders"), QString()}}));
-		QVERIFY(faders == QStringList(channels, QStringLiteral("volume")));
+		// QStringList(count, value) is a Qt 6 alias for QList's count/value constructor; Qt 5.15's QStringList has no
+		// such constructor (the linux-arm64 job builds with Qt 5), so fill the expected list portably.
+		QStringList expected;
+		for (int i = 0; i < channels; ++i) { expected.append(QStringLiteral("volume")); }
+		QVERIFY(faders == expected);
 	}
 
 private:
