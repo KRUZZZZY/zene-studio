@@ -35,6 +35,7 @@
 #include <QPointer>
 #include <QWaitCondition>
 
+#include "CrashReporter.h"
 #include "SampleBuffer.h"
 #include "TaskCenter.h"
 
@@ -82,7 +83,13 @@ StemJobManager::StemJobManager(QObject* parent) :
 	m_state(std::make_shared<SharedState>())
 {
 	m_state->signalTarget = this;
-	std::thread([state = m_state] { workerLoop(state); }).detach();
+	std::thread([state = m_state]
+	{
+		// The backend is native code that can overflow a stack; sigaltstack()
+		// is per-thread, so register on this thread before workerLoop() calls it.
+		crashreporter::installAlternateStackForCurrentThread();
+		workerLoop(state);
+	}).detach();
 	reportToTaskArea();
 }
 
