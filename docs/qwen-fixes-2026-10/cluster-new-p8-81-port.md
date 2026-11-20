@@ -6,93 +6,138 @@ Verdict: **FIXED**. The branch's own commits are the fix: `70a924a8a2` (product 
 
 Finding: "`track.set_arm_many` is marked reversible although undo leaves its takes behind."
 
-Evidence source: this session's logs in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p8-81-port.r2/logs` (cited as `logs/<name>`). No result from an earlier round is used here.
+Evidence source: the logs of this round in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p8-81-port.r2/logs` (cited as `logs/<name>`). No result from an earlier round is used here.
 
-**Exit codes:** the log files do not record exit codes. Where an EXIT value appears below it comes from the run record in the packet, and is marked as such. The result lines quoted are from the logs.
+**Exit codes:** the EXIT values below are the codes the commands printed when they were run. The logs themselves do not contain them. Quoted result lines are from the logs.
 
 ## Is the finding real (base `4eb8d6e8a`)
 
-- `git show 4eb8d6e8a:src/core/ControlReversibilityTableRecording.cpp`, line 69: `R("track.set_arm_many", RC::Snapshot, true, ...)`. Its recorded inverse is described as "ONE recorded undo step".
-- `git show 4eb8d6e8a:src/core/ControlCommandsArrangementState.cpp`, line 385: on arming, `setArmMany` inserts a `__transaction` whose inverse disarms the batch's tracks. So `control.undo` could claim to remove the batch while the takes stayed on disk.
-- The RED run shows that claim. With the fix reverted, `logs/test-3.log` contains: `FAIL! : UndoHonestyTest::armAllRefusesUndoThatWouldLeaveItsTakesBehind() '!undo.ok' returned FALSE. (control.undo claimed it could remove the takes from track.set_arm_many)`.
+- `git show 4eb8d6e8a:src/core/ControlReversibilityTableRecording.cpp`, line 69: `R("track.set_arm_many", RC::Snapshot, true, ...)`.
+- `git show 4eb8d6e8a:src/core/ControlCommandsArrangementState.cpp`, line 385: the arm path inserts a `__transaction` into the command's result.
+- The RED log shows the defect with the fix reverted. `logs/test-3.log`, line 19: `FAIL!  : UndoHonestyTest::armAllRefusesUndoThatWouldLeaveItsTakesBehind() '!undo.ok' returned FALSE. (control.undo claimed it could remove the takes from track.set_arm_many)`
 
 ## The fix at HEAD
 
-The branch diff against `4eb8d6e8a` changes these files:
+The diff against `4eb8d6e8a` changes seven files: six code, test, doc or snapshot files, plus this report.
 
 | File (HEAD) | Change |
 | --- | --- |
-| `src/core/ControlReversibilityTableRecording.cpp:69-78` | Row is now `RC::Irreversible, false`. The reason says take files outlive the captures. The fallback says to stop each route with `record.disarm_track` using the route ids in the reply. |
-| `src/core/ControlCommandsArrangementState.cpp:363-366` | Doc comment rewritten. The `if (armed)` block that inserted the `__transaction` (base line 385) is removed. |
-| `src/core/ControlCommandsArrangementState.cpp:388-398` | Command description: `control.undo` refuses this command and names `record.disarm_track`. No command added or removed. |
+| `src/core/ControlReversibilityTableRecording.cpp:69` | Row is now `RC::Irreversible, false`. The fallback text says to stop each route with `record.disarm_track` using the route ids in the reply. |
+| `src/core/ControlCommandsArrangementState.cpp:363-365` | Doc comment rewritten. |
+| `src/core/ControlCommandsArrangementState.cpp:381` | The `if (armed)` block that inserted the `__transaction` (base lines 382-386) is removed. |
+| `src/core/ControlCommandsArrangementState.cpp:395-397` | Command description: `control.undo` refuses this command and names `record.disarm_track`. No command added or removed. |
 | `src/gui/RecordLaunchMenus.cpp:65-67` | Comment only. |
-| `docs/RELEASE-NOTES-v0.3.0-alpha.md:999,1002` | A16 histogram now reads `snapshot=41 irreversible=23`. No HEAD run of `ReversibilityContractTest` is in these logs (see Other findings). |
-| `tests/src/core/UndoHonestyTest.cpp:406-439` | Regression test `armAllRefusesUndoThatWouldLeaveItsTakesBehind`. It uses a `QTemporaryDir` working directory (line 409). It asserts `routes.size()==3` (line 434) and `!undo.ok` with an `Irreversible` kind whose message names `track.set_arm_many` (lines 435-436). `git grep` finds no `armingSeveralTracksIsOneStep` at HEAD. |
-| `tools/mcp-zene-control/zene_control/commands_snapshot.json` | Three fields changed: `captured_at`, `source_file`, and the `track.set_arm_many` description (commit `a6d4c81a4e`). |
+| `docs/RELEASE-NOTES-v0.3.0-alpha.md:999,1002` | A16 histogram now reads `snapshot=41 irreversible=23`. |
+| `tests/src/core/UndoHonestyTest.cpp:406-439` | Regression test `armAllRefusesUndoThatWouldLeaveItsTakesBehind`. It uses a `QTemporaryDir` working directory (line 409). |
+| `tools/mcp-zene-control/zene_control/commands_snapshot.json` | Changed in commit `a6d4c81a4e`. Three fields changed (not re-read in this round). |
 
-The option taken is the typed refusal (the row becomes Irreversible), which is the first option in the finding.
+The option taken is the typed refusal: the row becomes `Irreversible`.
 
 ## Evidence
 
-| Step | Log | Result |
+### Reproducing the RED and GREEN runs
+
+The fix patch covers the two product files only (`grep '^diff --git'` on `logs/fix.patch` lists `ControlCommandsArrangementState.cpp` and `ControlReversibilityTableRecording.cpp`). The steps, run from the worktree root with the tree at HEAD:
+
+```
+LOG=/home/kruzzzzy/.config/kads/zene/state/runs/new-p8-81-port.r2/logs
+# from the worktree root; build-2 is the HEAD run, build-3 the reverted run, build-4 the restored run
+cmake --build build --target zene UndoHonestyTest > $LOG/build-2.log 2>&1
+cd build/tests && ctest -R UndoHonestyTest --output-on-failure > $LOG/test-2.log 2>&1
+cd ../..
+git diff 4eb8d6e8a HEAD -- src/core/ControlReversibilityTableRecording.cpp src/core/ControlCommandsArrangementState.cpp > $LOG/fix.patch
+git apply -R --check $LOG/fix.patch
+git apply -R $LOG/fix.patch
+cmake --build build --target zene UndoHonestyTest > $LOG/build-3.log 2>&1
+cd build/tests && ctest -R UndoHonestyTest --output-on-failure > $LOG/test-3.log 2>&1
+cd ../..
+git apply $LOG/fix.patch
+cmake --build build --target zene UndoHonestyTest > $LOG/build-4.log 2>&1
+cd build/tests && ctest -R UndoHonestyTest --output-on-failure > $LOG/test-4.log 2>&1
+cd ../..
+```
+
+These commands do not reproduce the mutation runs (build-5 to build-9); the logs do not record the diff applied for each mutation.
+
+### Log to step mapping
+
+The State column comes from the step list, not from the logs. The logs show the build target lines and the test result lines.
+
+| Step | Build log (target lines) | Test log (result) | State | EXIT printed |
+| --- | --- | --- | --- | --- |
+| build-1 | `[100%] Built target ControlEditCommandsTest` (UndoHonestyTest and ReversibilityContractTest also built) | test-1-extra: `1/3 Test #55: ControlEditCommandsTest ...***Failed`; `67% tests passed, 1 tests failed out of 3`; `Totals: 16 passed, 1 failed, 0 skipped` (see Other findings) | family, real HOME | not recorded |
+| (no build step) | — | test-1: `1/1 Test #274: UndoHonestyTest ... Passed`; `100% tests passed out of 1` | not recorded | not recorded |
+| build-2 | `[100%] Built target UndoHonestyTest` | test-2: `1/1 Test #274: UndoHonestyTest ... Passed`; `100% tests passed out of 1` | GREEN on HEAD | 0 |
+| build-3 | `[100%] Built target UndoHonestyTest` | test-3: `1/1 Test #274: UndoHonestyTest ...***Failed`; `FAIL!  : UndoHonestyTest::armAllRefusesUndoThatWouldLeaveItsTakesBehind() '!undo.ok' returned FALSE.`; `Totals: 12 passed, 1 failed, 4 skipped` | RED: fix reverted (`git apply -R`) | 8 |
+| build-4 | `[94%] Linking CXX executable UndoHonestyTest`, then `[100%] Built target UndoHonestyTest` | test-4: `1/1 Test #274: UndoHonestyTest ... Passed`; `100% tests passed out of 1` | GREEN after restoring the patch (`git apply`) | 0 |
+| build-5 | `[100%] Built target UndoHonestyTest` | test-5: `100% tests passed out of 1` | row-only mutation (`RC::Snapshot`, true at `ControlReversibilityTableRecording.cpp:69`); test passed | 0 |
+| build-6 | `[100%] Built target UndoHonestyTest` | test-6: `100% tests passed out of 1` | handler-only mutation (restored `__transaction` insertion; row kept `Irreversible`); test passed | 0 |
+| build-7 | `[100%] Built target UndoHonestyTest` | test-7: `100% tests passed out of 1` | HEAD restored and rerun | 0 |
+| build-8 | `[100%] Built target ReversibilityContractTest`, `[100%] Built target UndoHonestyTest` | test-8: `1/1 Test #167: ReversibilityContractTest ...***Failed`; `Totals: 8 passed, 1 failed, 0 skipped` | row-only mutation | 8 |
+| build-9 | `[100%] Built target ReversibilityContractTest`, `[100%] Built target UndoHonestyTest` | test-9: `1/1 Test #167: ReversibilityContractTest ... Passed`; `100% tests passed out of 1` | HEAD restored | 0 |
+| build-10 | `[100%] Built target ControlEditCommandsTest` (UndoHonestyTest and ReversibilityContractTest also built) | test-10a (private HOME): `1/1 Test #55: ControlEditCommandsTest ... Passed`; `100% tests passed out of 1`. test-10b: `100% tests passed out of 6`: ReversibilityContractTest (#167), ReversibilityUndoTest (#168), ReversibilityUndoDeviceTest (#169), UndoHonestyTest (#274), UndoHonestyStateTest (#275), ControlCommandsSnapshot (#574) | family (test-10a on a private HOME) | not recorded |
+
+### Mutation notes
+
+- test-5 (row-only mutation): the regression test passes, so this test does not catch that mutation.
+- test-6 (handler-only mutation): the regression test passes. A reading of the code, not shown by the log: `src/core/ControlRegistry.cpp:563` marks the transaction irreversible when the row is `Irreversible`, and `src/core/ControlCommandsControl.cpp:402-405` returns the typed refusal, so the regression still sees a refusal.
+- test-8 (row-only mutation, contract test): `ReversibilityContractTest` fails on the histogram (see Histogram below).
+- The mutation descriptions in the table come from this round's step plan, not from the logs.
+
+### Test matrix
+
+| Case | Where | Status |
 | --- | --- | --- |
-| Fix patch | `logs/fix.patch` | 71 lines (the patch's generating command is not in the logs) |
-| build-2 (fixed tree) | `logs/build-2.log` | ends `[100%] Built target UndoHonestyTest` |
-| test-2 (GREEN) | `logs/test-2.log` | `100% tests passed, 0 tests failed out of 1`. Run record: EXIT 0 |
-| build-4 (RED build) | `logs/build-4.log` | ends `Linking CXX executable UndoHonestyTest`, then `Built target UndoHonestyTest`. The revert step itself is not in a log (build-3 not read) |
-| test-3 (RED, fix reverted) | `logs/test-3.log` | `1/1 Test #274: UndoHonestyTest ...Failed`. `FAIL!` line quoted in the finding section. `Totals: 12 passed, 1 failed, 4 skipped`. Run record: EXIT 8 |
-| test-4 (GREEN) | `logs/test-4.log` | `100% tests passed, 0 tests failed out of 1`. Run record: EXIT 0 |
-
-### Mutation runs (mutation definitions come from the packet, not the logs)
-
-| Run | Log | Result |
-| --- | --- | --- |
-| test-5, row-only mutation | `logs/test-5.log` | UndoHonestyTest passes (`100% tests passed out of 1`): the mutation survived this test |
-| test-8, same mutation, contract test | `logs/test-8.log` | `ReversibilityContractTest ...Failed`. `FAIL! : ReversibilityContractTest::theTableHistogramIsTheDocumentedOne()`. `Totals: 8 passed, 1 failed`. Run record: EXIT 8 |
-| test-6, handler-only mutation | `logs/test-6.log` | UndoHonestyTest passes (`100% tests passed out of 1`): survived. Why: `src/core/ControlRegistry.cpp:563` stamps the transaction irreversible when the row is Irreversible, and `src/core/ControlCommandsControl.cpp:402-405` (`answerIrreversibleTop`) returns the typed refusal, so the regression still sees a refusal |
-| test-7, test-9 | `logs/test-7.log`, `logs/test-9.log` | Both `100% tests passed out of 1`. What each mutation was: not stated in the packet, unverified |
-
-### Family and environment
-
-| Run | Log | Result |
-| --- | --- | --- |
-| test-1-extra (family, real HOME) | `logs/test-1-extra.log` | `ControlEditCommandsTest.cpp(634)` fails: `trackSetArmManyReportsOnlyTheTracksItChanged() 'armed.ok' returned FALSE`, with `the take file /home/kruzzzzy/Documents/Zene Studio/zene...` not openable for writing. `Totals: 16 passed, 1 failed`. The sandbox cannot write the owner's default take folder. Environmental. |
-| test-10a (private HOME) | `logs/test-10a.log` | `100% tests passed out of 1`. Run record: the private HOME is set for this run. The log does not show the environment. |
-| test-10b | `logs/test-10b.log` | `100% tests passed out of 6` (names not in the log) |
-| build-10 | `logs/build-10.log` | Build log; the family build (no summary line in the log) |
+| Normal: three tracks armed, `control.undo` refused, takes remain | `armAllRefusesUndoThatWouldLeaveItsTakesBehind` | Covered. Passes at HEAD (test-2, test-4, test-7); fails with the fix reverted (test-3). |
+| Empty `tracks` gives `InvalidArgs` | same test, line 439 | Covered (asserted in the same test). |
+| All tracks already armed gives `Busy` | same test, line 426 | Covered (asserted in the same test). |
+| Refused as its own outcome | asserted only inside the normal case, lines 435-437 | Not covered as a separate case. |
+| Undo with loaded history at the top | none | Not covered by any log here. |
 
 ### Gates
 
-| Gate | Log | Result |
-| --- | --- | --- |
-| feature_check (run 1) | `logs/gate-1.log` | `RESULT: PASS`, base `4eb8d6e8a`, 7 changed files, every check PASS. Run record: exit status not in log |
-| feature_check (run 2) | `logs/gate-2.log` | `RESULT: PASS`, same base |
-| file-length ratchet | `logs/gate-len.log`, `logs/gate-len-baseline.log` | `FAIL: file-length ratchet regressed` in both, with 14 `REGRESSION` entries (for example `src/core/TakeLane.cpp (520)`, `tests/src/core/ControlEditCommandsTest.cpp (511)`). None of the 14 is a file this branch changes. See Other findings. |
+- **gate-1.log** (feature_check, file time 00:35:17): eight rows, all `PASS`. The complexity row reads `PASS  complexity  no new item in your files`. `RESULT: PASS`. The log has no lizard line. `lizard-install.log` was written at 00:35:55, after this run, so by timestamp this run had no lizard. The log does not say the complexity check was skipped, so this PASS row is a gate-reporting defect (see Other findings).
+- **gate-2.log** (feature_check, file time 00:36:37, after the lizard venv at `lizard-venv` was written at 00:36:17): eight rows, all `PASS`. Complexity and file-length both read `no new item in your files`. `RESULT: PASS`. The log contains no `FAIL` line. The lizard version is not shown in the logs.
+- **File-length gate** (`logs/gate-len.log`, file time 00:24:37, and `logs/gate-len-baseline.log`): `file-length-gate: 1790 fork-scope sources measured; 19 exceed 500 code lines`. Each lists 14 `REGRESSION: new file over 500 lines` entries and ends with `FAIL: file-length ratchet regressed` (line 38 in each). The 14 files are `src/core/SmfInterchangeReader.cpp`, `src/core/TakeLane.cpp`, `tests/src/core/CollabTransportTest.cpp`, `tests/src/core/ControlAutomationScriptTest.cpp`, `tests/src/core/ControlDeviceCatalogueTest.cpp`, `tests/src/core/ControlEditCommandsTest.cpp`, `tests/src/core/CustomAccessTest.cpp`, `tests/src/core/DeviceDspTest.cpp`, `tests/src/core/HardwareIoTest.cpp`, `tests/src/core/NotePlaybackTest.cpp`, `tests/src/core/RackMacrosTest.cpp`, `tests/src/core/RevisionTimelineTest.cpp`, `tests/src/core/VideoTrackTest.cpp`, `tests/src/gui/ArrangerTimelineTest.cpp`.
+- **Complexity FAIL** (68 functions over CCN 10, 7 REGRESSION entries): this text is not in any log in the logs directory. **Unverified.**
+- `logs/regression-files.txt` lists 21 paths. The logs do not record where that list came from. None of the 21 is a file this branch changes: the seven files in `git diff --name-only 4eb8d6e8a HEAD` have no match in the list (checked with `grep -Fx`).
+- `UndoHonestyTest.cpp`: its name does not appear in either gate-len log, so it is not among the files the gate reports as over 500. The gate prints no count for it. **Unverified:** the count of that file.
 
-### Test matrix (from the packet's p1 matrix, not re-derived)
+### Histogram
 
-| Case | Covered | Gap |
-| --- | --- | --- |
-| Arm All arms, refuses undo, takes remain | Yes: regression test | |
-| Refusal named as a separate outcome | Asserted inside the regression test only | No test row for "refused" on its own |
-| Undo path with loaded history at the top | No | See Self-check 4 |
+- `docs/RELEASE-NOTES-v0.3.0-alpha.md` line 999: `rows=837 true_inverse=417 snapshot=41 irreversible=23 not_mutating=356` (`DECLARED rows=837 entries=837 duplicates=0`). Line 1002, inside the A16 comment block: `measured: rows=837 true_inverse=417 snapshot=41 irreversible=23 not_mutating=356`. The four counts sum to 837.
+- `logs/test-8.log` line 10: the histogram test fails under the row-only mutation. The message says "the table measures 828 rows = 416 true_inverse + 39 snapshot + 22 irreversible + 351 not_mutating" and that the release notes "publish 837 rows = 417 true_inverse + 41 snapshot + 23 irreversible". The four measured counts sum to 828.
+- At HEAD (test-9, HEAD restored) the same test passes, so the HEAD measurement matches what the test expects.
+- **Unverified:** why the mutated run measures 828. The logs do not show the mutation. A change that only moves one row between classes would keep the total at 837, so the 9-row gap is not explained by the logs.
 
 ## Self-check
 
-1. **RED and GREEN with exit codes.** Reverted: `logs/test-3.log` shows the `FAIL!` line and `1 failed` (quoted above). Run record: EXIT 8. Fixed: `logs/test-2.log` and `logs/test-4.log` show `100% tests passed out of 1`. Run record: EXIT 0. The exit codes are not in the logs.
-2. **Deterministic.** A grep of `tests/src/core/UndoHonestyTest.cpp` for `sleep`, `QThread`, `QTimer`, `chrono`, `wait(` and `thread` matches only the test's own name line. No timing or sleep is used. The seams are: a `QTemporaryDir` working directory (line 409), three tracks created with `track.add`, and the route ids and take-file paths read from the reply of `track.set_arm_many`. I did not read the `run()` helper.
-3. **Fix at the cause, siblings and callers.** The cause is the row's class and the arm-time `__transaction` (base line 385). Both are changed at HEAD. Callers: `src/gui/RecordLaunchMenus.cpp:71-82` (the Arm All menu; comment changed only) and `src/core/CollabPolicy.cpp:112`, where `track.set_arm_many` sits in `hostDeniedIds()`, so a host never runs it for a peer. The single-track sibling `track.set_arm` is in the same file. It still records a `__transaction` (line 229, inverse `armed: false`) and is still `RC::Snapshot, true` at `ControlReversibilityTableRecording.cpp:55-67`. Its row fallback says to delete the take, so it has the same defect class. **It is not fixed.** That was the packet's decision, and it stays open (see Other findings).
-4. **No collateral damage.** The diff adds no check, no limit and no load or save path. None of the seven changed files is a save or load file. The one visible change: `control.undo` on an Arm All now refuses, where it used to disarm. The refusal names the route ids for `record.disarm_track`. The loaded-history branch `undoesLoadedHistory` (`ControlCommandsControl.cpp:388` predicate, `:402` branch) was not analysed beyond the regression's refusal. **Unverified**: whether a loaded-history top can reach a different outcome for this command.
-5. **Verdict.** FIXED, not ALREADY-FIXED or FALSE-POSITIVE. The defect is shown at base lines 69 and 385 (see "Is the finding real").
-6. **Sibling commands in the changed command file.** The changed file is `src/core/ControlCommandsArrangementState.cpp`. Of the named ids, only `arrangement.get_state` is registered there, and the diff does not touch its code (the hunks are the `setArmMany` comment, the arm branch and the description). The other named ids are registered elsewhere. `arrangement.fit_tracks`, `modes`, `zoom`, `nudge`, `scroll`, `set_tool` and `select_clip` occur in `src/core/ControlCommandsRange.cpp`, `ControlReversibilityTableArranger.cpp` and `ControlReversibilityTableCustomisation.cpp`; I did not check each one. `comp.audition` appears in `src/gui/TakeLanesPanel.cpp`. **Unverified**: `arrangement.zoom_back`, `arrangement.next_transient`, `arrangement.ruler_lanes`, `arrangement.modifier_tools`, `comp.assign`, and the per-id consistency of the others.
-7. **Other ASK items.** No audio-thread file is in the diff. The changes are a command handler, a table row, a GUI comment and tests. No command is added: `ids_sha256` is `8e2d5b9a0774e7005e5832777c552b2d4f09efbc56e71322c5fd72e5f3385c6a` at both `4eb8d6e8a` and HEAD, and the snapshot diff is the three fields named above.
+Answers to the six checks in `logs/submit-1.log`.
+
+1. **RED and GREEN with exit codes.** Reverted: `logs/test-3.log` line 19 (quoted above), `Totals: 12 passed, 1 failed, 4 skipped`; EXIT 8. Fixed: `logs/test-2.log` and `logs/test-4.log`, each `100% tests passed out of 1`; EXIT 0. `logs/test-7.log` (HEAD restored and rerun) is also `100% tests passed out of 1`; EXIT 0.
+
+2. **Deterministic.** `grep -n "sleep\|QThread\|QTimer\|chrono\|wait(\|thread" tests/src/core/UndoHonestyTest.cpp` at HEAD prints no lines. The seams are a `QTemporaryDir` used as the working directory (line 409), three tracks made by `track.add` with type `sample`, and the route ids and take-file paths read from the reply of `track.set_arm_many`. The `run()` helper was not read in this round.
+
+3. **Fix at the cause and complete.** The cause is the row class at `ControlReversibilityTableRecording.cpp:69` (base: `RC::Snapshot, true`) and the arm-time `__transaction` (base line 385). Both are changed at HEAD. Callers checked by grep: `src/gui/RecordLaunchMenus.cpp:71-82` (Arm All; only the comment at 65-67 changed), `src/core/CollabPolicy.cpp:112` (`track.set_arm_many` in a list of ids; the function that holds the list was not identified in this round), and `tests/src/core/ControlEditCommandsTest.cpp:619-632` (see Other findings). Sibling: `track.set_arm` (single track) is `RC::Snapshot, true` at `ControlReversibilityTableRecording.cpp:55`, unchanged, and its arm path inserts a `__transaction` at `ControlCommandsArrangementState.cpp:229`. **Not fixed in this branch.** Whether its undo leaves take files is **unverified**.
+
+4. **No collateral damage.** No log in this round loads or saves a project, so loading of old projects is **unverified**. The changed hunks add no check or limit (see the fix table). The one behaviour change: `control.undo` on an Arm All now refuses instead of disarming, and the refusal message names `track.set_arm_many` (asserted at `UndoHonestyTest.cpp:437`). The loaded-history branch is `ControlCommandsControl.cpp:403` (`undoesLoadedHistory`, defined at line 384), reached from `answerIrreversibleTop` (line 400). No log exercises it. Whether its outcome changes for this command is **unverified**.
+
+5. **Verdict.** FIXED. ALREADY-FIXED and FALSE-POSITIVE do not apply. The defect is shown by `logs/test-3.log` line 19 and by base lines 69 and 385.
+
+6. **Sibling commands.** None of these is touched by this diff: `arrangement.fit_tracks`, `arrangement.get_state`, `arrangement.modes`, `arrangement.modifier_tools`, `arrangement.navigator`, `arrangement.next_transient`, `arrangement.nudge`, `arrangement.ruler_lanes`, `arrangement.scroll`, `arrangement.select_clip`, `arrangement.set_tool`, `arrangement.zoom`, `arrangement.zoom_back`, `comp.assign`, `comp.audition`. A diff line that touches a command would have to contain its name, and no changed code or snapshot line contains any of these names (the only matches are in this report's own text). In the changed command file, `arrangement.get_state` is registered at line 56, outside the changed lines (363-365, 381, 395-397).
+
+7. **Other checks.** Not applicable: the list in `logs/submit-1.log` has six checks, and the six above are all of them.
 
 ## Other findings
 
-- **`track.set_arm` (single track) stays reversible, and its take file likely remains.** Its row fallback says "the take: delete it" (`ControlReversibilityTableRecording.cpp:55-67`). It is pinned by `tests/control-record-inputs.py:483-487` (arm recorded as snapshot with `track.set_arm` as inverse) and `tests/src/core/ControlEditCommandsTest.cpp:453-486` (arm, re-arm, disarm, missing). **Unverified**: that the take file survives an undo of `track.set_arm`. No log in this session exercises it.
-- **No test for "refused" as its own outcome** (the gap in the matrix above).
-- **Docs histogram, unverified.** `docs/RELEASE-NOTES-v0.3.0-alpha.md:999` and `:1002` say `rows=837`. The contract test's failure under mutation (`logs/test-8.log`, line 10) prints `828 rows = 416 true_inverse` and `837 rows = 417 true_inverse`. The log does not say which side is measured, nor why the count differs under the mutation. Unverified.
-- **Real-HOME dependence of `ControlEditCommandsTest`.** Its track.set_arm_many test fails on the real HOME in this sandbox (`logs/test-1-extra.log`, line 634) and passes under a private HOME (`logs/test-10a.log`). The branch did not change that test. It is environmental, but it is a test of the changed command.
-- **Gate FAILs.** The file-length ratchet fails (`logs/gate-len.log`, `logs/gate-len-baseline.log`) with 14 entries. None is in a file this branch changes: the changed files are `ControlCommandsArrangementState.cpp`, `ControlReversibilityTableRecording.cpp`, `RecordLaunchMenus.cpp`, `UndoHonestyTest.cpp` and the release notes. The packet says p4 classified these as pre-existing. I did not see p4's classification or a base-commit log, so **unverified** as pre-existing by me.
-- **`comp.assign`** was not located in the code. **Unverified** that it is consistent.
-- **Skips.** `UndoHonestyTest` skips four tests with "this build loads no effect" (`logs/test-3.log`). This is the build's effect configuration. It is unrelated to this change.
+- **`track.set_arm` (single track) stays reversible.** `ControlReversibilityTableRecording.cpp:55`; not changed by this branch. **Unverified:** that its take file survives an undo. No log exercises it.
+- **No test for "refused" as its own outcome.** See the test matrix.
+- **Histogram reconciliation.** 837 (published) and 828 (measured under the mutation) are not reconciled by the logs. See Histogram.
+- **Real-HOME dependence of `ControlEditCommandsTest`.** `logs/test-1-extra.log` (real HOME, `Totals: 16 passed, 1 failed, 0 skipped`) fails `ControlEditCommandsTest.cpp:634` in `trackSetArmManyReportsOnlyTheTracksItChanged()` with `'armed.ok' returned FALSE` ("no track was armed: route 10 could not be armed: the take file ..."), a take file in the default take folder. `logs/test-10a.log` (private HOME) passes. This branch did not change the test. It is environmental, but it tests the changed command.
+- **Gate reporting defect.** `logs/gate-1.log` reports the complexity row as `PASS` (`no new item in your files`) when lizard was not installed at that run (by timestamp; see Gates). A check that did not run should not report PASS.
+- **File-length gate FAIL.** `logs/gate-len.log` and `logs/gate-len-baseline.log` report 14 REGRESSION entries; none is a file this branch changes (see Gates).
+- **Complexity gate FAIL.** The 68-function complexity result is not in any log here. **Unverified.**
+- **Skips.** `logs/test-3.log` has four skips: three say "this build loads no effect" (lines 12, 14, 16) and one says "this build has no amplifier or bass booster module" (line 29). The messages name build content, not this change.
+- **`comp.assign`.** Not checked in this round. Its name appears on no changed line (see self-check 6).
+- **Submit check.** `logs/submit-1.log` ends with `RESULT: PASS - submit`. The log does not say which commit it checked. It is to be rerun at the final commit (step p6).
+- **`logs/test-1.log`** (UndoHonestyTest, `100% tests passed out of 1`) is not assigned to a step in the step list. **Unverified** what it was for.
