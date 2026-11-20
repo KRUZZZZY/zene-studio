@@ -539,6 +539,18 @@ reordering and removing devices work as usual. Wiring you author is not saved wi
 LV2 plug-ins that were tried, each by its package, version and file hash, with whether it loaded, whether its own editor opened and whether its saved state
 came back, and every failure. A plug-in that is not on that page is untested - that Zene lists it as loadable only means the host accepted it.</p>
 
+<p><b>Zene Rack inside another DAW.</b> The build also produces <code>ZeneRack.vst3</code>, an installable VST3
+effect you can load in another DAW's plug-in list (<code>cmake --install</code> places it under
+<code>&lt;libdir&gt;/vst3/ZeneRack.vst3</code>). It carries one documented chain and processes it in this order:
+<em>Amplifier</em> (gain) → <em>BassBooster</em> (fixed 100&nbsp;Hz at 44.1&nbsp;kHz, ratio 2.0, adjustable gain) →
+<em>WaveShaper</em> (input drive, then a hard clip at ±1). The host shows the chain in two places: the parameter list
+names them <em>1 Amplifier Gain</em>, <em>2 BassBooster Gain</em> and <em>3 WaveShaper Drive</em>, and the read-only
+<em>Chain</em> parameter and the plug-in's program list both report the string
+<code>Amplifier &gt; BassBooster &gt; WaveShaper</code>. The saved plug-in state records the same chain and the stage
+values. The Rack is a separate bundle: it does not load Zene's own device modules and does not need Zene Studio to be
+running. It is a stereo-in, stereo-out effect. This first version has one fixed chain, not a rack editor; building a
+chain in Zene Studio and transferring it to the plug-in is the next stage of the same feature.</p>
+
 <p>A VST3 or CLAP plug-in's own editor (Show plugin editor, or Open Editor in a device card's Actions menu; the agent command
 <code>plugin.editor_open</code>) opens in a window of its own on Linux, Windows and macOS: Zene puts the editor inside the system's own kind of
 window (an X11 window on Linux, a Windows window, a macOS view). A plug-in whose editor cannot go inside that kind of window does not
