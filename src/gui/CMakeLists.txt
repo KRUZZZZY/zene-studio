@@ -367,6 +367,7 @@ SET(LMMS_SRCS
 	gui/menus/TemplatesMenu.cpp
 
 	gui/modals/AboutDialog.cpp
+	gui/modals/AudioOutputStatusBox.cpp
 	gui/modals/ColorChooser.cpp
 	gui/modals/ControllerConnectionDialog.cpp
 	gui/modals/EffectPickerOrganiser.cpp
