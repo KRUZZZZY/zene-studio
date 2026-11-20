@@ -9039,6 +9039,14 @@ if(PYTHON3_EXECUTABLE)
 		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/doc-figures-gate.py)
 endif()
 
+# Q050-356: docs/MIDI-INPUT-SUPPORT.md must keep the UMP position (not yet supported, scope not defined)
+# and every path:line citation in it must still resolve.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME MidiInputSupportDoc
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/midi-input-support-doc-check.py
+		WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+endif()
+
 # Q050-308 (R-workflow-117): the MIDI Clock docs must describe BOTH routes to source_port and
 # drift_bound_ms - Edit > MIDI Clock > Clock Source, and Project tools > Sync > Follow MIDI Clock...
 # (the clock.slave_set form) - and no current page may still call either field socket-only. The gate
