@@ -25,6 +25,7 @@ RED/GREEN sequence, all run in the worktree `kads-new-p14-25`. Logs are in `/hom
 | test-2-green | run `LinkAudioStreamTest` | 0 | `Totals: 3 passed, 0 failed`; `EXIT=0` (test-2-green.log) |
 | test-3-family | run `LinkAudioStreamTest` + `LinkAudioCodecTest` | 0 | `100% tests passed out of 2`; `EXIT=0` (test-3-family.log) |
 | gates-1 | project gates | 0 | `RESULT: PASS`; `EXIT=0` (gates-1.log) |
+
 ## 3. Test matrix
 
 One test, `LinkAudioStreamTest::omittedSendKeepsSendingOffWhileThePeerStays` (`tests/src/core/LinkAudioStreamTestParts2.h:59-122`), covers the cases below.
