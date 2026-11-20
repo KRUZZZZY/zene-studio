@@ -489,7 +489,7 @@ private slots:
 	void aNaNDriveIsRefusedAndChangesNothing();
 	void combFeedbackFractionalHalfDelay(); void combFeedbackFractionalQuarterDelay(); void combFeedbackFractionalThreeQuarterDelay(); void combFeedbackIntegerDelayUnchanged(); void combFeedfwdFractionalHalfDelay();
 	void allpassFractionalHalfDelay(); void combFeedbackDualtapFractionalDelays(); void combFeedbackSubSampleClampedToOne(); void combFeedbackReconfiguredFractionalDelay(); void combFeedbackFractionalFeedbackPath();
-		void combFeedfwdFractionalDelays(); void allpassFractionalDelays(); void combFeedbackRingWrapRamp(); void combFeedfwdRingWrapRamp();
+	void combFeedfwdFractionalDelays(); void allpassFractionalDelays(); void combFeedbackRingWrapRamp(); void combFeedfwdRingWrapRamp();
 };
 
 #include "DeviceDspTestParts1.h"
