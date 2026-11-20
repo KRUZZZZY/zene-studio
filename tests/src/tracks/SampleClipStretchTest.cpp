@@ -603,6 +603,56 @@ private slots:
 				.arg(stretchedAt).arg(resampledAt)));
 	}
 
+	/*! The clip's own amplification must survive the preserve-pitch path. A 2x
+	 *  warp routes the clip through the stretcher, so the gain has to reach the
+	 *  stretched output the same way it reaches the resampled output. */
+	void aPreservedPitchClipHonoursTheSampleAmplification()
+	{
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeClip(track, m_rate);
+		applyTwoTimesWarp(*clip, m_rate);
+		clip->setWarpStretchMode(WarpStretchMode::PreservePitch);
+
+		const std::array<float, 3> gains{ 1.0f, 0.5f, 2.0f };
+		std::array<double, 3> lowLevel{};
+		std::array<double, 3> highLevel{};
+		for (std::size_t i = 0; i < gains.size(); ++i)
+		{
+			clip->sample().setAmplification(gains[i]);
+			const std::vector<SampleFrame> rendered = renderClip(clip);
+			const int frames = static_cast<int>(rendered.size());
+			QVERIFY(frames > 0);
+			lowLevel[i] = amplitudeAt(rendered, frames / 4, 3 * frames / 4, kLowTone, m_rate);
+			highLevel[i] = amplitudeAt(rendered, frames / 4, 3 * frames / 4, kHighTone, m_rate);
+			evidence("preserve amplification: gain, 440 Hz, 660 Hz", gains[i], lowLevel[i], highLevel[i]);
+		}
+
+		// Baseline first: a silent or broken render has to fail here, before any ratio is read.
+		QVERIFY2(lowLevel[0] > 0.35 && lowLevel[0] < 0.65,
+			qPrintable(QStringLiteral("gain 1.0 baseline at 440 Hz is %1; the fixture tone is about 0.5")
+				.arg(lowLevel[0])));
+		QVERIFY2(highLevel[0] > 0.20 && highLevel[0] < 0.40,
+			qPrintable(QStringLiteral("gain 1.0 baseline at 660 Hz is %1; the fixture tone is about 0.3")
+				.arg(highLevel[0])));
+
+		// Gain 0.5 halves both tones and gain 2.0 doubles them, to within 5% of the expected level.
+		const auto ratioMatches = [](double measured, double baseline, double expected) {
+			return std::fabs(measured / baseline - expected) <= 0.05 * expected;
+		};
+		QVERIFY2(ratioMatches(lowLevel[1], lowLevel[0], 0.5),
+			qPrintable(QStringLiteral("gain 0.5 at 440 Hz is %1 of gain 1.0; expected 0.5")
+				.arg(lowLevel[1] / lowLevel[0])));
+		QVERIFY2(ratioMatches(highLevel[1], highLevel[0], 0.5),
+			qPrintable(QStringLiteral("gain 0.5 at 660 Hz is %1 of gain 1.0; expected 0.5")
+				.arg(highLevel[1] / highLevel[0])));
+		QVERIFY2(ratioMatches(lowLevel[2], lowLevel[0], 2.0),
+			qPrintable(QStringLiteral("gain 2.0 at 440 Hz is %1 of gain 1.0; expected 2.0")
+				.arg(lowLevel[2] / lowLevel[0])));
+		QVERIFY2(ratioMatches(highLevel[2], highLevel[0], 2.0),
+			qPrintable(QStringLiteral("gain 2.0 at 660 Hz is %1 of gain 1.0; expected 2.0")
+				.arg(highLevel[2] / highLevel[0])));
+	}
+
 private:
 	int m_rate = 44100;
 };
