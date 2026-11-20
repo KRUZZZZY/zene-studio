@@ -2787,6 +2787,7 @@ tests/src/core/ControlSampleOperatorTest.cpp
 tests/src/core/ControlRegistryNestingTest.cpp
 tests/src/core/ControlSampleArrayTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
+tests/src/core/ControlServerDrainTest.cpp
 tests/src/core/ControlSurfaceReferenceTest.cpp
 tests/src/core/ControlStemExportTest.cpp
 tests/src/core/ControlStemWavTest.cpp

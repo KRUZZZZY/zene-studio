@@ -249,21 +249,27 @@ void ControlServer::onNewConnection()
 namespace
 {
 
-//! Read and DISCARD everything a draining peer has sent, one bounded chunk at a
-//! time. Returns true at EOF: the tail of the over-cap request line has been read
-//! and nobody kept it, so closing now is a clean FIN rather than an RST that
-//! would make the peer's kernel throw away the typed refusal already in its
-//! receive buffer (see Client::draining).
-bool drainPeer(int fd)
+//! Read and DISCARD what a draining peer has sent, reading at most \p budgetBytes
+//! in this activation. Returns true only at EOF: the tail of the over-cap request
+//! line has been read and nobody kept it, so closing now is a clean FIN rather
+//! than an RST that would make the peer's kernel throw away the typed refusal
+//! already in its receive buffer (see Client::draining). False on EAGAIN and once
+//! the budget is spent; the socket is still readable then, so the level-triggered
+//! notifier fires again on the next loop pass and the rest is drained there.
+bool drainPeer(int fd, int budgetBytes)
 {
 	char sink[8192];
-	while (true)
+	int consumed = 0;
+	while (consumed < budgetBytes)
 	{
-		const ssize_t got = ::read(fd, sink, sizeof(sink));
-		if (got > 0) { continue; }
+		const int room = budgetBytes - consumed;
+		const size_t want = room < static_cast<int>(sizeof(sink)) ? static_cast<size_t>(room) : sizeof(sink);
+		const ssize_t got = ::read(fd, sink, want);
+		if (got > 0) { consumed += static_cast<int>(got); continue; }
 		if (got < 0 && errno == EINTR) { continue; }
 		return got == 0;
 	}
+	return false;
 }
 
 //! Read one chunk into \p buffer (appending it) and say whether to read again.
@@ -350,7 +356,7 @@ void ControlServer::onClientReadable(int fd)
 	{
 		// The rest of an over-cap request line: read it and keep none of it, so the
 		// close below is a clean FIN (see Client::draining).
-		if (drainPeer(fd)) { dropClient(fd); }
+		if (drainPeer(fd, ControlServer::DrainBytesPerActivation)) { dropClient(fd); }
 		return;
 	}
 
