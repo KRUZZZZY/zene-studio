@@ -487,10 +487,13 @@ private slots:
 	//! used to pass the 0..100 check and reach the consoles. It is refused as InvalidArgs, and the
 	//! console already on a channel keeps its drive.
 	void aNaNDriveIsRefusedAndChangesNothing();
+	void combFeedbackFractionalHalfDelay(); void combFeedbackFractionalQuarterDelay(); void combFeedbackFractionalThreeQuarterDelay(); void combFeedbackIntegerDelayUnchanged(); void combFeedfwdFractionalHalfDelay();
+	void allpassFractionalHalfDelay(); void combFeedbackDualtapFractionalDelays(); void combFeedbackSubSampleClampedToOne(); void combFeedbackReconfiguredFractionalDelay(); void combFeedbackFractionalFeedbackPath();
 };
 
 #include "DeviceDspTestParts1.h"
 #include "DeviceDspTestParts2.h"
+#include "DeviceDspTestParts3.h"
 
 QTEST_MAIN(DeviceDspTest)
 #include "DeviceDspTest.moc"
