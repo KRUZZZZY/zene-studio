@@ -211,3 +211,54 @@ build-7 EXIT 0. test-7a (`ControlEditCommandsTest` under a private HOME) EXIT 0 
 - The build-1b, test-1b and build-6 quiet-runner logs are under the duet worker tmp folders, as `logs/exit-codes.txt` records. They are not in `$LOG`.
 - EXIT values for runs with no log here come from the runner's printed output and `logs/exit-codes.txt`, not from the log files.
 - The field names `kind`, `states` and `test` follow the brief's wording and are unverified against a schema. The brief says `workflow_capture.py:130-131` requires only string `path` and `sha256`; that line was not re-read this round.
+
+## Round 4
+
+This round is a diagnostic checkpoint with no product or test change. `git diff 8a45fbab44 HEAD --stat -- src tests` is empty; its output is saved as `logs/src-tests-diff-since-8a45fbab44.txt` (0 bytes).
+
+Logs for this round are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p8-81-port.r4/logs`, cited as `logs/<name>`. EXIT values come from `logs/exit-codes.txt`, which records what each command printed; the log files hold no exit lines.
+
+### RED and GREEN
+
+- `git diff 4eb8d6e8a HEAD -- src/core/ControlReversibilityTableRecording.cpp src/core/ControlCommandsArrangementState.cpp > logs/fix.patch`: EXIT 0, 80 lines.
+- `git apply -R --check` EXIT 0; `git apply -R` EXIT 0; build-2 (RED build) EXIT 0.
+- test-2 (RED) EXIT 8. `logs/test-2.log:19`: `FAIL!  : UndoHonestyTest::armAllRefusesUndoThatWouldLeaveItsTakesBehind() '!undo.ok' returned FALSE. (control.undo claimed it could remove the takes from track.set_arm_many)`
+- `git apply logs/fix.patch` EXIT 0; build-3 EXIT 0; test-3 (GREEN) EXIT 0.
+- Family: test-4a (ControlEditCommandsTest under a private HOME) EXIT 0, `100% tests passed out of 1`; test-4b (family regex) EXIT 0, `100% tests passed out of 6` (`logs/test-4b.log:15`).
+- Row-class mutation: build-4m EXIT 0; test-5 EXIT 8. `logs/test-5.log:10`: `FAIL!  : ReversibilityContractTest::theTableHistogramIsTheDocumentedOne() ...`; `logs/test-5.log:21`: `0% tests passed, 1 tests failed out of 1`.
+- Restore: `git checkout` EXIT 0; build-5 EXIT 0; test-6 EXIT 0, `100% tests passed out of 1` (`logs/test-6.log:5`).
+
+### Gates
+
+- gate-1 (`logs/gate-1.log`): EXIT 0, `RESULT: PASS`. Lines 8-9: `complexity  PASS no new item in your files` and `file-length  PASS no new item in your files`.
+- The lizard venv was created this round because the round-3 venv is gone: `logs/lizard-venv.log`, venv create EXIT 0, `pip install lizard` EXIT 0.
+- complexity: `logs/complexity.log:1`: `17653 functions in the fork scope; 68 exceed CCN 10`. This is a measurement, not `lizard is not installed`.
+- REGRESSION entries: `logs/complexity.log` has 7 and `logs/file-length.log` has 14. None of the 7 changed files (`git diff --name-only 4eb8d6e8a HEAD`) appears in any of them, checked by full path and by basename with `grep -F`.
+- Still open, unchanged from round 3: `logs/complexity.log:108` and `logs/file-length.log:38` each hold `FAIL: ... ratchet regressed (check mode: baseline not written)`. gate-1 still prints PASS. No gate limit or baseline was edited.
+- No build was run by this round's commands, and `build/zene` and `CMakeCache.txt` were not touched.
+
+### Evidence capture
+
+- The GUI-harness driver was written fresh this round: `logs/arm_all_driver.py` and `logs/arm_all_driver_negative.py`. The round-3 scripts and round-3 log folder no longer exist.
+- Dry run, `logs/driver-dry.log`: steps 1-10 printed and `RESULT: PASS (0 problem(s))` at line 48. The steps cover trk-9..11 (line 6), routes 4, 5, 6 (lines 10-13), the busy refusal (line 20), the irreversible undo naming track.set_arm_many (line 22), 3 take files existing (lines 26-28), the arrange screenshot at 1600x1000 (line 34, `logs/dry-arm-all.png`), disarm ok for routes 4-6 (lines 35-41), invalid_args (line 43), and the palette screenshot at 720x460 (line 45, `logs/dry-palette.png`).
+- The driver's exit code is not in `exit-codes.txt` or in the log. Unverified this round.
+- Negative variant, `logs/driver-neg-dry.log:15`: `STILL_ARMED track=trk-9 armed=False`. Its exit code is also unverified.
+- Arm All visibility: the primary screenshot is the arrange view with the three armed tracks, and it does not show the Arm All entry. `window.command_palette` reports 926 entries (`logs/driver-dry.log:45`). A grep this round found no `Arm All Audio Tracks` string in `src/`, so the claim that `ControlCommandsShell.cpp:196-215` lists that entry is unverified. The dry palette shot was not viewed this round; an earlier note records it as showing File menu entries, not the Arm All row. The menu-bar Record menu cannot be opened through the control socket.
+- Evidence folder: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p8-81-port.r4/evidence` does not exist yet. It is created after this commit with `workflow_capture.py init --repo <worktree> --base 4eb8d6e8a --build build --binary build/zene`. It is planned to hold the screenshot, the state-sequence file, and the RED/GREEN logs, with its manifest `evidence.json`. `verify` output goes to `logs/workflow-verify.log`. This section names paths only, because any later commit stales the freshness check.
+- Incident (from the p1b notes, not re-verified this round): during the p1b dry runs `git status` briefly showed the two fix files and `src/gui/RecordLaunchMenus.cpp` modified (18, 19 and 6 lines, mtime 01:43:13). The files were rewritten at 01:43:44 and the tree was clean again. The writer is unidentified: the worktree reflog shows reset entries at 01:35:52, 01:35:53 and 01:40:19 that this job did not run. The content of that change could not be recovered, and HEAD never moved. The dry run's binary refused undo as irreversible (`logs/driver-dry.log:22`). Evidence capture will fail honestly if anything drifts between `init` and `verify`.
+- `schemas/proof.json` does not exist (checked this round), and `submit_check.py` has no reference to `proof` (checked this round). The `kind`, `states` and `test` names follow the brief's wording and are unverified against a schema.
+
+### Round 4 self-check
+
+Answers to the six `?` items in `logs/submit-1.log` (lines 8-13). The submit check printed `RESULT: PASS - submit` (line 14, EXIT 0).
+
+1. The regression test fails with the change reverted and passes with it: yes. RED: test-2 EXIT 8 (`logs/test-2.log:19`). GREEN: test-3 EXIT 0 after `git apply`.
+2. Deterministic: the test uses a `QTemporaryDir` (`tests/src/core/UndoHonestyTest.cpp:409`). A grep of the whole file for sleep, wait, QTime, QElapsed, QTimer, QThread, msleep, usleep and random finds only the `QTemporaryDir` include (line 49) and use (line 409). The test body was not read this round, so the seam is unverified beyond that grep.
+3. The fix is at the cause: the row was `RC::Snapshot, true` and the arm path inserted a `__transaction`. HEAD has `RC::Irreversible, false` at `src/core/ControlReversibilityTableRecording.cpp:69`, and the transaction insert is gone from the arm block in `src/core/ControlCommandsArrangementState.cpp` (lines 363-397). Callers were not audited beyond the tests this round, so that part is unverified.
+4. No collateral damage: the family tests pass (test-4a EXIT 0; test-4b EXIT 0, 6 of 6). Loading old projects and saved data was not tested this round, so that part is unverified. The fix adds no limit or check (per the round-2 change table; `logs/fix.patch` was not re-read in full this round). The gates show no new item in changed files (`logs/gate-1.log:8-9`).
+5. The verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE, so this item does not apply. The code at HEAD: `src/core/ControlReversibilityTableRecording.cpp:69` and `src/core/ControlCommandsArrangementState.cpp:388`.
+6. Sibling commands (arrangement.fit_tracks through comp.audition, 15 names): none of them is on a changed line of `logs/fix.patch`. A grep of its +/- lines for dotted command ids finds only `track.set_arm_many`. Whether any of them shares a helper with the arm path was not audited this round: unverified.
+
+### Not checked this round
+
+Project and saved-data loading (item 4), caller audit beyond the tests (item 3), helper sharing (item 6), the driver exit codes, the screenshot contents, and the palette source line.
