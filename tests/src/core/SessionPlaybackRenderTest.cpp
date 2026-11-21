@@ -193,6 +193,7 @@ private slots:
 	{
 		Song* song = Engine::getSong();
 		song->clearProject();
+		QVERIFY(Track::create(Track::Type::Pattern, song) != nullptr);
 		QVERIFY2( run( QStringLiteral( "session.set_grid" ),
 			{{QStringLiteral( "tracks" ), 1}, {QStringLiteral( "scenes" ), 1}} ).ok,
 			"session.set_grid refused" );

@@ -47,6 +47,8 @@ from freeze_bounce_evidence import Recorder, Session, report_results
 
 def check_arrangement_record_land(session, recorder):
     session.result("track.add", {"type": "instrument", "name": "Performed"})
+    # The cell below names pattern 1; set_slot refuses an id the store does not hold.
+    session.result("track.add", {"type": "pattern", "name": "Pattern 1"})
     session.result("session.set_grid", {"tracks": 1, "scenes": 1})
     slot = session.result("session.set_slot", {"track": 0, "scene": 0, "type": "midi", "pattern": 1,
                                                "name": "take", "mode": "trigger",

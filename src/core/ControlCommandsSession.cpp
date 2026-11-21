@@ -50,6 +50,7 @@
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "PatternStore.h"
 #include "SessionModel.h"
 #include "SessionScheduler.h"
 #include "Song.h"
@@ -155,6 +156,21 @@ bool applySlotReference(ClipSlot& slot, const QJsonObject& args, ControlResult* 
 	}
 	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 		QStringLiteral("'type' must be empty, midi or audio - and audio needs a non-empty 'source'"));
+	return false;
+}
+
+// A midi reference names a PatternStore id, and that id must exist: the store is
+// what a PatternTrack fills. The key choice mirrors applySlotReference (type empty
+// or 'midi' reads 'pattern'); the check runs before any write, so a refusal leaves
+// the grid as it was. Restored sessions are not checked here (SessionModel stays permissive).
+bool checkSlotPatternExists(const QJsonObject& args, ControlResult* error)
+{
+	const QString type = args.value(QStringLiteral("type")).toString();
+	if (!(type.isEmpty() || type == QLatin1String("midi")) || !args.contains(QStringLiteral("pattern"))) { return true; }
+	const int id = args.value(QStringLiteral("pattern")).toInt();
+	const int count = Engine::patternStore() != nullptr ? Engine::patternStore()->numOfPatterns() : 0;
+	if (id >= 0 && id < count) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("pattern %1 is not in the PatternStore (it holds %2): add a pattern track; session.pattern_list lists the stored patterns").arg(id).arg(count));
 	return false;
 }
 
@@ -499,6 +515,7 @@ void registerSessionSetSlot(ControlRegistry& registry)
 		const int track = args.value(QStringLiteral("track")).toInt();
 		const int scene = args.value(QStringLiteral("scene")).toInt();
 		if (!gridContains(*model, track, scene, &error)) { return error; }
+		if (!checkSlotPatternExists(args, &error)) { return error; }
 		const QString captured = captureSession(*model);
 		const QJsonObject before = gridState(*model, clipSlots(*model));
 		// Parsed BEFORE anything is written, so a refused chain leaves the slot as it was.
