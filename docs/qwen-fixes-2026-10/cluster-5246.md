@@ -6,7 +6,8 @@ FIXED
 
 `include/RecordRingBuffer.h:2` (and the class comment at `:43-58`) documents the ring as
 single-producer/single-consumer. Before this fix, `recordertaps::set()` published a tap
-immediately at `src/core/RecorderTaps.cpp:100-104`. Mixer workers run `channelAt` for the
+immediately at `src/core/RecorderTaps.cpp:88-99`; the fixed pending store is now at
+`src/core/RecorderTaps.cpp:100-104`. Mixer workers run `channelAt` for the
 channel taps (`Mixer.cpp:987` and `Mixer.cpp:1022-1023`), and after the join at
 `Mixer.cpp:2547` the render thread runs `master()` at `Mixer.cpp:2569`, all inside the same
 period. A tap change made between those two points therefore let the channel tap and the master
@@ -32,7 +33,10 @@ immediately); audio code uses `audioTapped()`, and `MultiTrackRecorder.cpp:125` 
 `masterMix` to activate the Channel tap, performs a mid-period Channel-to-Master edit that must
 not push, then runs the next period's `masterMix`, which must push exactly once. There are no
 sleeps, threads or timing dependencies: the two producer calls are forced in one period by
-construction.
+construction. The truly concurrent production case is two Channel taps on different mixer
+workers; this deterministic Channel-to-Master probe exercises the same period-boundary defect,
+because the workers run `channelAt` and then the render thread takes `master` after the join. The
+one active snapshot prevents both variants.
 
 ## Test matrix
 
@@ -80,8 +84,10 @@ p4 changed only comments after the p3 behavioural proof; it introduced no behavi
   `channelAt` and `master` in the same simulated period, with no sleeps, threads or timing.
 - All callers and siblings were checked: `get()`/`tapped()` remain the pending UI view,
   `audioTapped()` is the audio view, and `MultiTrackRecorder.cpp:125` is the audio consumer.
-- No collateral damage: the 6-test family run passes, and `get()`/`tapped()`/undo behaviour is
-  preserved (12/12 in the detailed run).
+- No collateral damage: the 6-test family run passes; `ControlRecordingRoutesTest` 12/12 covers
+  the new test plus the route undo/journal tests, and the tap `get()`/`tapped()` assertions are
+  proven by `RecordToolsTest::aRouteTakesTheMasterOrAChannel`, which PASSES in
+  `test-4-record-tools.log` (26 passed, only the environmental `theRemainingRecordTime` failure).
 - Nothing on the audio path allocates, locks, logs or waits; the changed path only reads or
   stores atomics.
 - No new command and no undo change.
