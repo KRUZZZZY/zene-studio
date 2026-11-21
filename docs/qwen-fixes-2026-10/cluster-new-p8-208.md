@@ -143,22 +143,43 @@ path that the fix misses.
 
 ## Self-check (every submit_check ASK)
 
-- **RED/GREEN exits** — red-1 and red-2 each record `FAIL!` and `1 failed` (nonzero);
-  green-1 and green-2 each record `0 failed` (exit 0). Logs listed above.
-- **Determinism of the 1024-frame ring** — the ring is a fixed 1024 frames and 4096 are
-  offered, so exactly 3072 are dropped; the test asserts the exact take length and
-  every frame's content. It passed in `test-1a.log` and again in `green-1.log`.
-- **Injected `droppedFrames=5`** — `red-2.log` shows 0 notices; `green-2.log` shows one
-  notice carrying 5, `lastTakeDroppedFrames() == 5` and the same value on the command
-  surface.
-- **Cause completeness / siblings** — the chain accumulator → handle → clip → song →
-  command surface → GUI is cited above with file:line, and the three sibling recorders
-  share the same accumulator.
-- **No collateral damage** — this job touches only this report; the feature gate passes
-  and `git status --porcelain` is empty after the commit.
-- **ALREADY-FIXED code reference** — `SampleRecordAccumulator.h:201-213` still holds the
-  `m_gaps->note(...)` block and `SampleClip.cpp:304-305` still stores and reports the
-  loss; both mutation patches are reverted in the tree.
+- **Regression test fails before / passes after (exit codes)** — with `fix.patch`
+  applied `red-1.log` ends `EXIT=1` (2 passed, 1 failed, `FAIL!` at
+  `RecordingRealtimeTest.cpp:851`); after `git apply -R` `green-1.log` ends `EXIT=0`
+  (3 passed, 0 failed). With `fix2.patch` applied `red-2.log` ends `EXIT=1` (`FAIL!` at
+  `RecordingRealtimeTest.cpp:1539`); `green-2.log` ends `EXIT=0`. The reverted tree
+  itself is confirmed clean by `submit-1.log` (`PASS working tree clean`, `RESULT: PASS`).
+- **Determinism (no clock, sleeps or races)** — both tests drive the units through
+  injected values only: `ringFrames = 1024` and `offered = 4096` are compile-time
+  constants handed to `SampleRecordAccumulator` (`RecordingRealtimeTest.cpp:836-838`),
+  and the second test injects `droppedFrames = 5` through
+  `acceptRecordedTake(..., 5, ...)` (`:1538`) with a `QSignalSpy`, no waits. The exact
+  shortfall 4096 − 1024 = 3072 follows from the constants, so the same input yields the
+  same assertions; `test-1a.log` and `green-1.log` both end `EXIT=0`.
+- **Cause complete / every caller and sibling checked** — the chain accumulator
+  (`SampleRecordAccumulator.h:201-213`) → `SampleRecordHandle.cpp:172-188` →
+  `SampleClip.cpp:304-305` → `Song::reportRecordTakeDropped` →
+  `ControlCommandsRecordingRoutes.cpp:180-187` → `MainWindow.cpp:236-241` is cited with
+  file:line above, and the three sibling recorders all construct the same accumulator
+  (`RealtimeExport.cpp:62`, `SessionAudioRecorder.cpp:58`,
+  `SamplerTakeRecorder.cpp:45`) with no private gap/pad path.
+- **No collateral damage** — this job changes no product code (`git show --stat HEAD`
+  lists only this report), so saved projects and data load exactly as before. The fix
+  adds no new limit or check: padding fires only when `framesDropped() > 0`, so a
+  recorder whose ring never overflows gets byte-identical output, and sibling recorders
+  keep their own ring capacity. Normal paths still pass in `test-1.log` (ctest, exit 0)
+  and the gate passes in `gate-1.log` (exit 0, `RESULT: PASS`).
+- **ALREADY-FIXED code reference** — `include/SampleRecordAccumulator.h:201-213` still
+  contains the `m_gaps->note(...)` block and `src/core/SampleClip.cpp:304-305` still
+  stores `m_lastTakeDroppedFrames` and calls `reportRecordTakeDropped`; both mutation
+  patches are reverted (`git status --porcelain` empty, `submit-1.log` PASS).
+- **Sibling commands** — no command file is changed by this job (`git show --stat HEAD`
+  lists only this report), so every sibling named in the ASK (`app.about`, `app.ask`,
+  `app.help`, `app.online_help`, `app.task_cancel`, `app.tasks`, `app.tour`, `app.tours`,
+  `app.update_check_get`, `app.update_check_run`, `app.update_check_set`, and the rest
+  of the list) is untouched and none can be affected. The only command surface in the
+  chain, `record.get_state`, is exercised and reports the injected 5 in `green-2.log`
+  (`EXIT=0`).
 
 ## Other findings
 
