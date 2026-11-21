@@ -66,13 +66,15 @@ Logs are in `~/.config/kads/zene/state/runs/ci-v041-2.r1/logs/`.
 | 06-ctest-nam.attempt1.log | first `ctest -R` run | EXIT=8, 46%: 7 of 13 `Not Run` because those executables were not built |
 | 06-ctest-nam.log | after building the 13 tests | EXIT=0, 100% of 13 |
 | 07-build-red.log, 10-redgreen-exits.log | `reverse-fix.patch` applied (removes `tests/CMakeLists.txt:6286`) (`APPLY_EXIT=0`) and rebuilt | `RED_BUILD_EXIT=2`, `07-build-red.log:253: NamModelEigenWarningProbe.cpp:58:34: error: ... [-Werror=deprecated-enum-enum-conversion]` |
-| 08/09 + 10-redgreen-exits.log | `reverse-fix.patch` re-applied (`REVERSE_EXIT=0`), rebuilt, retested | `GREEN_BUILD_EXIT=0`, `GREEN_TEST_EXIT=0` |
+| 08/09 + 10-redgreen-exits.log | `git apply -R reverse-fix.patch` restores line 6286 (`REVERSE_EXIT=0`), rebuilt, retested | `GREEN_BUILD_EXIT=0`, `GREEN_TEST_EXIT=0` |
 | 10-feature-check.log | `feature_check.py` before this report existed | `RESULT: PASS`, EXIT=0, 8/8 PASS |
 | 11-feature-check-post-commit.log | `feature_check.py` on the committed tree | `RESULT: PASS`, EXIT=0 |
 | 12-submit-check.log | `submit_check.py` before the rerun | `RESULT: PASS - submit`, EXIT=0 |
 | 13-submit-check.log | `submit_check.py` rerun | `RESULT: PASS - submit`, EXIT=0 |
 | 14-feature-check.log | `feature_check.py` rerun after this correction commit | `RESULT: PASS`, EXIT=0 |
 | 15-submit-check.log | `submit_check.py` rerun after this correction commit | `RESULT: PASS - submit`, EXIT=0 |
+| 16-feature-check.log | `feature_check.py` rerun after this wording commit | `RESULT: PASS`, EXIT=0 |
+| 17-submit-check.log | `submit_check.py` rerun after this wording commit | `RESULT: PASS - submit`, EXIT=0 |
 
 The RED build shows the probe really reproduces the CI diagnostic class on this box once the suppression is
 removed, and the GREEN build/test shows it goes away.
@@ -83,7 +85,7 @@ removed, and the GREEN build/test shows it goes away.
   cannot run here). The probe reproduces the same diagnostic class with host GCC, which is why the RED build
   carries the same `-Werror=deprecated-enum-enum-conversion` text; hosted CI on an `ci/*` branch is the final
   confirmation.
-- No product file changes in this packet, so there is no behaviour change to test.
+- No product file changes in this job, so there is no behaviour change to test.
 
 ## Other findings
 
