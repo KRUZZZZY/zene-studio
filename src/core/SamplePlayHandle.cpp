@@ -735,6 +735,14 @@ void SamplePlayHandle::renderPreservingPitch(SampleFrame* dst, f_cnt_t frames)
 	const f_cnt_t written = m_rubberBand != nullptr
 		? m_rubberBand->render(window, windowFrames, dst, frames, speed)
 		: m_stretcher.process(window, windowFrames, dst, frames, speed);
+	// The clip's own gain, as Sample::render applies it on the resample path. The
+	// stretcher input stays raw, so this one multiply serves WSOLA and Rubber Band
+	// alike; only the rendered frames are scaled, the zero-filled tail is untouched.
+	const float gain = m_sample->amplification();
+	if (gain != 1.0f)
+	{
+		for (f_cnt_t i = 0; i < written; ++i) { dst[i] *= gain; }
+	}
 	if (written < frames) { zeroSampleFrames(dst + written, frames - written); }
 
 	// The analysis cursor IS the source position this period reached; the next
