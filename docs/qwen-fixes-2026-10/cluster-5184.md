@@ -29,9 +29,9 @@ or empty block loads as an EMPTY layer, and that nothing is guessed. The address
   malformed. Absent fields keep their documented defaults: channel 0, chain 0, effect 0, track -1. The track clamp
   `std::max(-1, ...)` (`:191`) is kept.
 - The route's per-sample flag is checked in `readRoute` by one `boolAttribute` line (`:190`), after the address checks.
-  It is reached only for a named route. A nameless route returns true earlier (`:184`).
+  It is reached only for a named route. A nameless route returns true earlier (`:185`).
 - `readRoutes` (`:199`) refuses the whole modulator (`return false`) when `readRoute` fails (`:207`).
-- A nameless route still returns true from `readRoute` (`:184`), and `readRoutes` drops it at `:208` without
+- A nameless route still returns true from `readRoute` (`:185`), and `readRoutes` drops it at `:208` without
   inspecting its other fields. A nameless route with `channel="bad"` or `persample="bad"` therefore still loads.
 
 ## Compression (follow-up commit)
@@ -42,8 +42,8 @@ change to any validation order:
 - `intAttribute` body reduced from 9 to 7 code lines. The failure path now writes `toInt`'s return (0) into `*out`
   before returning false. The only caller is `readRoute`, which returns false at once and discards the route, so no
   written value is observed.
-- `readRouteFlags` (a 4-line function plus its call in `readRoutes`) was folded into `readRoute` as the one checked
-  `persample` line `:190`. The function and its call are deleted.
+- The route's per-sample flag had its own 4-line helper and a call in `readRoutes`. Both are deleted, and the flag is
+  checked in `readRoute` by one line (`:190`).
 
 The gate's `--check` log lists only the four files over 500 (`file-length-check.log`); `ModulationLayer.cpp` is not in
 that list. The gate does not print a per-file count.
