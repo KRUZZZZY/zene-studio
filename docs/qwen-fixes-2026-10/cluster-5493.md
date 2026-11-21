@@ -36,8 +36,10 @@ const QString renderTarget = trimmed ? tempPath(QStringLiteral("wav")) : outPath
 ```
 
 i.e. a whole-track render wrote **directly to the caller's output path**, so a child
-that died part-way left its partial bytes at the destination. The ancestor check
-returned `ANCESTOR_EXIT=0` (logs/01-evidence.log:2). Commit `f6498a18f3` introduced the
+that died part-way left its partial bytes at the destination. This session re-checked
+the ancestor with `git show f6498a18f3^:src/core/BounceInPlace.cpp | sed -n
+'348,358p'`, which returned `EXIT=0` and printed the line quoted above
+(`logs/36-historical-line.log`). Commit `f6498a18f3` introduced the
 staged path above. No ancestor commit in this job's history modifies it: `git log -S
 'next.stagedPath'` and `-S 'installPreparedOutput'` both report only `f6498a18f3`
 (log 30).
@@ -90,12 +92,12 @@ from the worktree root, except ctest which ran against `build/tests`.
 | Log | Exact command | Result |
 | --- | --- | --- |
 | `18-build-baseline.log` | `cmake --build build --target BounceInPlaceTest` | EXIT=0, target built |
-| `19-test-baseline.log` | `ctest -R BounceInPlaceTest -V` | **EXIT=0**, 10 passed (1/1 CTest target) |
+| `19-test-baseline.log` | `cd build/tests && ctest -R '^BounceInPlaceTest$' --output-on-failure` | **EXIT=0**, 1/1 CTest target Passed (no QTest `Totals` line in this log) |
 | `20-build-red.log` | `cmake --build build --target BounceInPlaceTest` | EXIT=0 (rebuilt after reversal) |
-| `21-test-red.log` | `ctest -R BounceInPlaceTest --output-on-failure` | **RED_EXIT=8**, 8 passed / 2 failed |
+| `21-test-red.log` | `ctest -R '^BounceInPlaceTest$' --output-on-failure` | **RED_EXIT=8**, `Totals: 8 passed, 2 failed` |
 | `23-build-green.log` | `cmake --build build --target BounceInPlaceTest` | EXIT=0 |
-| `24-test-green.log` | `ctest -R BounceInPlaceTest -V` | **GREEN_EXIT=0**, `Totals: 10 passed, 0 failed`, 100% out of 1 |
-| `25-family-test.log` | `ctest` on the 8-test bounce/freeze family | **FAMILY_EXIT=0**, 8/8, 100% out of 8 |
+| `24-test-green.log` | `ctest -R '^BounceInPlaceTest$' -V` (rerun after the packet command passed) | **GREEN_EXIT=0**, `Totals: 10 passed, 0 failed`, 100% out of 1; the `-V` rerun produced the per-slot PASS lines |
+| `25-family-test.log` | `ctest -R 'BounceInPlaceTest\|ControlBounceRenderTest\|ControlBounceSupportTest\|ControlRenderJobTest\|BatchFreezeTest\|RenderSourceGuardTest\|FreezeRegionRepairTest\|MixerBusFreezeTest' --output-on-failure` | **FAMILY_EXIT=0**, 8/8, 100% out of 8 |
 | `26-build-zene.log` | `cmake --build build --target zene` | EXIT=0, `Built target zene` |
 | `30-feature-check.log` | `python3 .../feature_check.py` | **RESULT: PASS**, EXIT=0 |
 | `31-submit-check.log` | `python3 .../submit_check.py <tree> 5493` | **RESULT: PASS - submit**, EXIT=0 |
@@ -106,7 +108,15 @@ RED provenance: the failure was produced by the one-line historical reversal in
 `failedBounceKeepsAnExistingDestination` failing at `BounceInPlaceTest.cpp:160`, actual
 `"partial render"` vs expected `"previous output"`, plus the expected positive-control
 collateral failure `successfulBounceReplacesAnExistingDestination` at `:173`
-(`"the render produced no audio"`). The patch was reverted; `git diff --
+(`"the render produced no audio"`). The reversal was produced and undone with:
+
+| Step | Exact command | Result |
+| --- | --- | --- |
+| Produce reversal patch | `git diff -- src/core/BounceInPlace.cpp > logs/fix.patch` (after the one-line `sed` reversal) | **PATCH_EXIT=0**, patch saved as `logs/fix.patch` |
+| Undo reversal | `git apply -R logs/fix.patch` | **REVERSE_EXIT=0** |
+| Confirm product file restored | `git diff --exit-code -- src/core/BounceInPlace.cpp` | EXIT=0, `22-restored.log` empty |
+
+The patch was reverted; `git diff --
 src/core/BounceInPlace.cpp` is empty and the worktree is clean, so **no product file
 remains changed**.
 
@@ -141,7 +151,8 @@ CMake or fork-source edit was needed.
    the `ZENE_FAKE_RENDER_PARTIAL` environment variable consumed by the stand-in child:
    it writes the fixed bytes `"partial render"` and exits 3. The assertion at `:160`
    is an exact byte comparison of the destination; there are no sleeps, timeouts based
-   on wall clock, or timing windows (`19`/`24` repeat identically).
+   on wall clock, or timing windows (the slot passes in both the baseline run 19 and the
+   green run 24).
 3. **The fix is at the cause and complete; every caller and sibling stays consistent.**
    No product change is made in this job. The completeness walk covers every caller
    and sibling listed above: they all flow through `renderTracks` /
