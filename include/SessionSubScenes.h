@@ -57,7 +57,7 @@ public:
 	bool shouldPersist() const override;
 	void save(QDomDocument& doc, QDomElement& parent) const override;
 	void load(const QDomElement& element) override;
-	void clear() override { m_preserved.clear(); }
+	void clear() override;
 
 private:
 	SessionSubScenes() = default;
