@@ -74,6 +74,27 @@ inline QString finalPathForHandle(HANDLE handle)
 	}
 }
 
+inline bool directoryIsUnderRoot(const QString& directory, const QString& root)
+{
+	auto finalDirectoryPath = [](const QString& path) {
+		const std::wstring name = path.toStdWString();
+		const HANDLE handle = CreateFileW(name.c_str(), FILE_READ_ATTRIBUTES,
+				FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+				FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+		if (handle == INVALID_HANDLE_VALUE) { return QString(); }
+		const QString finalPath = finalPathForHandle(handle);
+		CloseHandle(handle);
+		return finalPath;
+	};
+
+	const QString directoryPath = finalDirectoryPath(directory);
+	const QString rootPath = finalDirectoryPath(root);
+	if (directoryPath.isEmpty() || rootPath.isEmpty()) { return false; }
+	QString rootPrefix = rootPath;
+	if (!rootPrefix.endsWith(QLatin1Char('/'))) { rootPrefix += QLatin1Char('/'); }
+	return directoryPath.startsWith(rootPrefix, Qt::CaseInsensitive);
+}
+
 //! Resolve both handles, so a junction/reparse point cannot hide an outside target.
 inline bool openedModuleIsUnderRoot(const QFile& file, const QString& root, QString* error)
 {

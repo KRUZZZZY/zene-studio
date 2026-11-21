@@ -25,6 +25,9 @@
 #include "MpeExpression.h"
 
 #include <algorithm>
+#include <cmath>
+#include <iterator>
+#include <utility>
 
 #include "Midi.h"
 #include "MidiEvent.h"
@@ -84,6 +87,84 @@ bool MpeNoteExpression::operator==( const MpeNoteExpression& other ) const
 
 
 
+namespace
+{
+
+//! One stream axis's writes share this: bound the point count, clamp each
+//! point's tick (never negative) and value, then order by tick. A stable sort
+//! keeps the caller's order for two points sharing a tick, so a save/reload
+//! round trip cannot reorder a stream the user authored.
+void sanitizeStreamPoints( std::vector<MpeExpressionPoint>& points, int low, int high )
+{
+	if( points.size() > static_cast<std::size_t>( MpeExpressionStream::MaxPoints ) )
+	{
+		points.resize( MpeExpressionStream::MaxPoints );
+	}
+	for( MpeExpressionPoint& point : points )
+	{
+		point.tick = std::max<tick_t>( 0, point.tick );
+		point.value = std::clamp( point.value, low, high );
+	}
+	std::stable_sort( points.begin(), points.end(),
+		[]( const MpeExpressionPoint& a, const MpeExpressionPoint& b ) { return a.tick < b.tick; } );
+}
+
+} // namespace
+
+
+void MpeExpressionStream::setPitch( std::vector<MpeExpressionPoint> points )
+{
+	sanitizeStreamPoints( points, -MpeNoteExpression::MaxPitchCents, MpeNoteExpression::MaxPitchCents );
+	m_pitch = std::move( points );
+}
+
+
+
+
+void MpeExpressionStream::setPressure( std::vector<MpeExpressionPoint> points )
+{
+	sanitizeStreamPoints( points, 0, MidiMaxVelocity );
+	m_pressure = std::move( points );
+}
+
+
+
+
+void MpeExpressionStream::setTimbre( std::vector<MpeExpressionPoint> points )
+{
+	sanitizeStreamPoints( points, 0, MidiMaxVelocity );
+	m_timbre = std::move( points );
+}
+
+
+
+
+void MpeExpressionStream::clear()
+{
+	m_pitch.clear();
+	m_pressure.clear();
+	m_timbre.clear();
+}
+
+
+
+
+int MpeExpressionStream::valueAt( const std::vector<MpeExpressionPoint>& points, tick_t tick, int fallback )
+{
+	if( points.empty() || tick < points.front().tick )
+	{
+		return fallback;
+	}
+	// upper_bound gives the first point after `tick`; the point before it is
+	// the one in force. O(log n), no allocation - safe from the audio thread.
+	const auto after = std::upper_bound( points.begin(), points.end(), tick,
+		[]( tick_t wanted, const MpeExpressionPoint& point ) { return wanted < point.tick; } );
+	return std::prev( after )->value;
+}
+
+
+
+
 MpeExpression::MpeExpression() = default;
 
 
@@ -130,6 +211,19 @@ int MpeExpression::pitchCentsForBend( int bend14, int bendRangeSemitones )
 	const int offset = std::clamp( bend14, 0, MidiMaxPitchBend ) - halfSpan;
 	const long cents = static_cast<long>( offset ) * range * 100 / halfSpan;
 	return MpeNoteExpression::clampPitchCents( static_cast<int>( cents ) );
+}
+
+
+
+
+int MpeExpression::bendForPitchCents( int cents, int bendRangeSemitones )
+{
+	const int halfSpan = ( MidiMaxPitchBend + 1 ) / 2;	// 8192
+	const int range = std::clamp( bendRangeSemitones, 1,
+		MpeNoteExpression::MaxPitchCents / 100 );
+	const int clampedCents = MpeNoteExpression::clampPitchCents( cents );
+	const long offset = std::lround( static_cast<double>( clampedCents ) * halfSpan / ( range * 100.0 ) );
+	return std::clamp<int>( static_cast<int>( offset ) + halfSpan, MidiMinPitchBend, MidiMaxPitchBend );
 }
 
 

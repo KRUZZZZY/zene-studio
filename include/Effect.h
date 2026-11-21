@@ -30,6 +30,9 @@
 #include <limits>
 #include <span>
 
+#include <QMap>
+#include <QString>
+
 #include "AudioEngine.h"
 #include "AutomatableModel.h"
 #include "DeltaTap.h"
@@ -65,6 +68,61 @@ public:
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
 	void loadSettings( const QDomElement & _this ) override;
+
+	/**
+	 * @brief Writes this device's GENERIC settings onto @a element: its
+	 *        enabled flag, its wet/dry mix, its auto-quit knob, its stable id
+	 *        and the user's device options (DeviceOptions.h).
+	 *
+	 * Effect::saveSettings() writes them onto the device's own element; a
+	 * device whose plug-in binary is missing writes them onto an imported copy
+	 * of the FILE's own XML instead (EffectChain::saveSettings), so the
+	 * plug-in's state is kept and the settings the user changed on the
+	 * placeholder are not lost.
+	 */
+	void saveGenericSettings( QDomDocument & _doc, QDomElement & _element );
+
+	/**
+	 * @brief This device's generic settings as the attributes a save writes.
+	 *
+	 * The same values saveGenericSettings() writes, read back as a name/value
+	 * map. A device whose plug-in is missing is a placeholder: the chain keeps
+	 * the file's XML for it and writes that back, and the settings that differ
+	 * from the ones the placeholder was loaded with are the ones the user
+	 * changed - they are written into the file's copy (new-p14-97).
+	 */
+	QMap<QString, QString> genericSettings();
+
+	/**
+	 * @brief Remembers the generic settings this device was loaded with.
+	 *
+	 * Called when the file's XML is preserved for it (setPreservedPluginData)
+	 * and by a placeholder that takes the device's settings out of the file's
+	 * XML itself (DummyEffect). What the device holds after that is what the
+	 * file said, so a later difference is the user's edit.
+	 */
+	void rememberLoadedGenericSettings();
+
+	//! The generic settings this device was loaded with (@see rememberLoadedGenericSettings)
+	const QMap<QString, QString>& preservedGenericSettings() const { return m_preservedGenericSettings; }
+
+	/**
+	 * @brief The file's own XML for this device, with the generic settings the
+	 *        user changed on it merged in.
+	 *
+	 * A device whose plug-in is missing is a placeholder: the chain keeps the
+	 * file's XML for it and writes that back, so nothing of the device is
+	 * lost. The placeholder holds generic settings of its own as well - its
+	 * enabled flag, its wet/dry mix, its auto-quit knob, the user's device
+	 * options - and a setting the user changed on it must survive the save.
+	 * So the settings that differ from the ones the device was loaded with are
+	 * written into the file's copy (new-p14-97); a placeholder nobody touched
+	 * keeps the file's bytes exactly.
+	 *
+	 * @param _doc the document the copy is imported into (the one being saved)
+	 * @param _preserved the file's own XML for this device
+	 */
+	QDomElement preservedXmlWithChangedGenericSettings( QDomDocument & _doc, const QDomElement & _preserved );
 
 	inline QString nodeName() const override
 	{
@@ -113,7 +171,14 @@ public:
 	//! the file's original effect XML (preservedPluginData) and writes it back on save.
 	virtual QString unavailableReason() const { return {}; }
 	const QDomElement& preservedPluginData() const { return m_preservedPluginData; }
-	void setPreservedPluginData(const QDomElement& data) { m_preservedPluginData = data; }
+	void setPreservedPluginData(const QDomElement& data)
+	{
+		m_preservedPluginData = data;
+		// The device's state was taken out of the file's XML a moment ago, so
+		// what it holds now is what the file said: a later difference is the
+		// user's edit (new-p14-97).
+		rememberLoadedGenericSettings();
+	}
 
 	//! @returns true if the processing outputted corrupted audio (infs/nans).
 	bool isCorrupted() const { return m_corrupted.load(std::memory_order_relaxed); }
@@ -313,6 +378,8 @@ private:
 
 	bool m_okay;
 	QDomElement m_preservedPluginData;
+	//! The generic settings this device was loaded with (@see preservedGenericSettings)
+	QMap<QString, QString> m_preservedGenericSettings;
 	bool m_noRun;
 	std::atomic<bool> m_awake;  //!< written on the audio thread, read by the device card's activity light
 	std::atomic<bool> m_corrupted = false;

@@ -83,6 +83,27 @@ const ReversibilityRow kLivecodeRows[] = {
 		"read of the same Song accessors transport.get_state already reports, and a fire it "
 		"reports happened happened whether or not this read was made",
 		""),
+	R("livecode.get_source", RC::NotMutating, false,
+		"reads ONE schedule's captured definition - its source text, hook and budget - by id; it "
+		"schedules nothing, fires nothing and writes no engine or registry state",
+		"no write. It is the source-readback companion of livecode.get_state (which reports "
+		"source BYTES only, so a poll never carries every definition): the definition it returns "
+		"was captured by livecode.schedule/unschedule, whose own snapshot rows carry the undo",
+		""),
+	R("events.subscribe", RC::NotMutating, false,
+		"subscribes this connection to project-change events (Q050-334.1): connection bookkeeping in memory, which "
+		"never touches the project, the undo stack or a project file",
+		"no project write. The subscription ends with events.unsubscribe, an overflow or the connection",
+		""),
+	R("events.unsubscribe", RC::NotMutating, false,
+		"ends this connection's subscription: connection bookkeeping in memory, which never touches the project, the "
+		"undo stack or a project file",
+		"no project write. events.subscribe starts a new subscription; undelivered events are not replayed",
+		""),
+	R("events.get_state", RC::NotMutating, false,
+		"reads the event stream's position, its subscriptions and their queue depths; it writes nothing",
+		"no write, so there is nothing to invert",
+		""),
 };
 
 constexpr int kLivecodeRowCount =

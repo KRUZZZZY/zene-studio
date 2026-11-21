@@ -58,6 +58,7 @@ struct PendingRecordTake
 	QPointer<SampleClip> clip;
 	bool claimed = false;  //!< the clip claimed it: it was recording (see SampleRecordHandle::markClaimed)
 	std::uint64_t generation = 0;  //!< the clip's arming when the take was prepared
+	PendingRecordTake* nextRetired = nullptr;  //!< intrusive fallback link; uses no audio-thread allocation
 };
 
 
@@ -67,10 +68,13 @@ namespace
 //! Takes queued by destroyed handles (any thread, pushes) for the main thread (the one consumer).
 //! 256 slots: the main-thread reaper runs every 10 ms, so this only fills if it stops running.
 MpscQueue<PendingRecordTake*, 256> s_retiredTakes;
+//! Lossless fallback links existing takes when the bounded ring is full. Its size is bounded by
+//! the number of already-prepared/in-flight take objects; it allocates no queue nodes on audio.
+std::atomic<PendingRecordTake*> s_overflowRetiredTakes{nullptr};
 std::atomic<std::uint64_t> s_framesDropped{0};
 std::atomic<std::uint64_t> s_framesPadded{0};
 std::atomic<std::uint64_t> s_unpreparedTakes{0};
-//! Takes that could not be queued (the queue was full): leaked rather than freed on the audio thread.
+//! Takes diverted to the intrusive fallback because the bounded primary queue was full.
 std::atomic<std::uint64_t> s_queueOverflows{0};
 std::atomic<std::uint64_t> s_takesReaped{0};
 
@@ -89,6 +93,18 @@ void ensureReaperTimer()
 	timer->start();
 }
 
+//! Audio thread: link the take's existing object into the fallback, with no allocation or lock.
+void pushOverflowTake(PendingRecordTake* take) noexcept
+{
+	auto* head = s_overflowRetiredTakes.load(std::memory_order_relaxed);
+	do
+	{
+		take->nextRetired = head;
+	}
+	while (!s_overflowRetiredTakes.compare_exchange_weak(head, take,
+		std::memory_order_release, std::memory_order_relaxed));
+}
+
 } // namespace
 
 
@@ -103,8 +119,9 @@ SampleRecordHandle::SampleRecordHandle( SampleClip* clip ) :
 	m_patternTrack( nullptr ),
 	m_clip( clip ),
 	// R2.2: the round trip this take lags the playback by - dropped from its head, so the
-	// take lines up with what was playing when it was performed. A cached atomic: this
-	// constructor runs on the audio thread (SampleTrack::play).
+	// take lines up with what was playing when it was performed. A cached atomic: it is read
+	// here on the main thread, where SampleClip::prepareRecordTake builds the handle (the
+	// audio thread only claims it - see SampleTrack::play).
 	m_compensationFrames( Engine::audioEngine() != nullptr ? Engine::audioEngine()->recordingLatencyFrames() : 0 ),
 	m_offsetApplied( false )
 {
@@ -129,7 +146,14 @@ SampleRecordHandle::~SampleRecordHandle()
 	if (m_take == nullptr) { return; }
 	m_accum->requestFinish();
 	m_take->claimed = m_claimed;
-	if (!s_retiredTakes.push(m_take)) { s_queueOverflows.fetch_add(1, std::memory_order_relaxed); }
+	// Once the fallback has a head, keep later takes behind it until the main thread
+	// snapshots that list; otherwise a newly freed ring slot could reorder take installation.
+	if (s_overflowRetiredTakes.load(std::memory_order_acquire) != nullptr
+		|| !s_retiredTakes.push(m_take))
+	{
+		s_queueOverflows.fetch_add(1, std::memory_order_relaxed);
+		pushOverflowTake(m_take);
+	}
 	m_take = nullptr;
 	m_accum = nullptr;
 }
@@ -139,8 +163,7 @@ SampleRecordHandle::~SampleRecordHandle()
 
 void SampleRecordHandle::reapRetiredTakes()
 {
-	PendingRecordTake* taken = nullptr;
-	while (s_retiredTakes.pop(&taken))
+	const auto reapTake = [](PendingRecordTake* taken)
 	{
 		std::unique_ptr<PendingRecordTake> take{ taken };
 		s_takesReaped.fetch_add(1, std::memory_order_relaxed);
@@ -154,7 +177,7 @@ void SampleRecordHandle::reapRetiredTakes()
 				static_cast<unsigned long long>(dropped));
 		}
 		// A take the clip never claimed was never recording: it only stops its drain thread.
-		if (!take->claimed) { continue; }
+		if (!take->claimed) { return; }
 		if (SampleClip* clip = take->clip.data())
 		{
 			// The transport still records: this pass ended at a loop wrap or a jump, so the take is a
@@ -163,6 +186,28 @@ void SampleRecordHandle::reapRetiredTakes()
 			const bool continues = clip->isRecord() && song->isRecording() && song->isPlaying();
 			clip->acceptRecordedTake(std::move(buffer), take->accum->framesDropped(), continues, take->generation);
 		}
+	};
+	PendingRecordTake* taken = nullptr;
+	while (s_retiredTakes.pop(&taken))
+	{
+		reapTake(taken);
+	}
+	// Reverse the stack to restore publication order for the takes that overflowed the ring.
+	auto* overflow = s_overflowRetiredTakes.exchange(nullptr, std::memory_order_acquire);
+	PendingRecordTake* ordered = nullptr;
+	while (overflow != nullptr)
+	{
+		auto* next = overflow->nextRetired;
+		overflow->nextRetired = ordered;
+		ordered = overflow;
+		overflow = next;
+	}
+	while (ordered != nullptr)
+	{
+		auto* next = ordered->nextRetired;
+		ordered->nextRetired = nullptr;
+		reapTake(ordered);
+		ordered = next;
 	}
 }
 

@@ -28,6 +28,12 @@
 
 #include <QtTest>
 
+#include <cerrno>
+#include <cstdio>
+#include <fcntl.h>
+#include <poll.h>
+#include <unistd.h>
+
 using namespace lmms;
 
 namespace
@@ -35,6 +41,10 @@ namespace
 
 int pollDescriptorCount = -1;
 int pollDescriptorCountCalls = 0;
+//! The descriptor the fake hands out when the retrieval FAILS. A real,
+//! open descriptor, so the garbage the unfilled array carries is observable
+//! through its FD_CLOEXEC flag instead of being an unusable number.
+int failedRetrievalFd = -1;
 
 } // namespace
 
@@ -42,6 +52,21 @@ extern "C" int snd_pcm_poll_descriptors_count(snd_pcm_t*)
 {
 	++pollDescriptorCountCalls;
 	return pollDescriptorCount;
+}
+
+//! The failure the finding is about: ALSA could not fill the array, so it
+//! reports an error and leaves the caller's entries as they were. The fake
+//! hands out a valid descriptor instead, so a caller that trusts the array
+//! marks THAT descriptor close-on-exec - visible in the test.
+extern "C" int snd_pcm_poll_descriptors(snd_pcm_t*, struct pollfd* pfds, unsigned int nfds)
+{
+	for (unsigned int i = 0; i < nfds; ++i)
+	{
+		pfds[i].fd = failedRetrievalFd;
+		pfds[i].events = 0;
+		pfds[i].revents = 0;
+	}
+	return -1;
 }
 
 class AudioAlsaPollDescriptorTest : public QObject
@@ -80,6 +105,41 @@ private slots:
 		QCOMPARE(pollDescriptorCountCalls, 1);
 		QVERIFY2(constructionCompleted, "a negative ALSA descriptor count must skip CLOEXEC setup");
 		QVERIFY(successful);
+	}
+
+	void failedDescriptorRetrievalSkipsCloexecSetup()
+	{
+		// A descriptor that is open and has NO close-on-exec flag yet: the
+		// one an unfilled pollfd array would carry into fcntl().
+		FILE* const temp = tmpfile();
+		QVERIFY(temp != nullptr);
+		const int fd = fileno(temp);
+		QVERIFY(fd >= 0);
+		const int initialFlags = fcntl(fd, F_GETFD, 0);
+		QVERIFY(initialFlags >= 0);
+		QVERIFY(fcntl(fd, F_SETFD, initialFlags & ~FD_CLOEXEC) >= 0);
+
+		pollDescriptorCount = 3;
+		failedRetrievalFd = fd;
+		pollDescriptorCountCalls = 0;
+
+		bool successful = false;
+		{
+			AudioAlsa device(successful, Engine::audioEngine());
+		}
+
+		pollDescriptorCount = -1;
+		failedRetrievalFd = -1;
+
+		QCOMPARE(pollDescriptorCountCalls, 1);
+		QVERIFY(successful);
+
+		const int flags = fcntl(fd, F_GETFD, 0);
+		QVERIFY(flags >= 0);
+		QVERIFY2((flags & FD_CLOEXEC) == 0,
+			"a failed snd_pcm_poll_descriptors must not mark an unrelated descriptor close-on-exec");
+
+		fclose(temp);
 	}
 };
 

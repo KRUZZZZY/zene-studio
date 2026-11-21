@@ -44,6 +44,7 @@
 #include "SampleClip.h"
 #include "Song.h"
 #include "Track.h"
+#include "TrackFolder.h"
 
 namespace lmms
 {
@@ -64,17 +65,36 @@ namespace
 {
 
 //! landAudioTrack, answering the new track's stable id (-1 for none): the undo step below holds ids, never
-//! pointers, because track.remove and its undo free a track and build an equal one.
-int landAudioTrackId(const QString& name, const QString& path, tick_t at, int index)
+//! pointers, because track.remove and its undo free a track and build an equal one. A source inside a folder
+//! lands back in it (folderId, -1 for none), so the replacement keeps its folder's routing and membership.
+int landAudioTrackId(const QString& name, const QString& path, tick_t at, int index, int folderId)
 {
-	const Track* track = landAudioTrack(name, path, at, index);
-	return track != nullptr ? track->id() : -1;
+	Track* track = landAudioTrack(name, path, at, index);
+	if (track == nullptr) { return -1; }
+	if (auto* folder = dynamic_cast<TrackFolder*>(Engine::getSong()->findTrackById(folderId)); folder != nullptr)
+	{
+		track->setParentFolder(folder);
+	}
+	return track->id();
+}
+
+//! The track a flatten acts on: `track` resolved, and refused (in \a error) when it makes no audio to render.
+Track* resolveFlattenSource(const QJsonObject& args, ControlResult* error)
+{
+	Track* source = resolveTrack(args.value(QStringLiteral("track")).toString(), error);
+	if (source == nullptr) { return nullptr; }
+	if (const QString refusal = flattenRefusal(source); !refusal.isEmpty())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused, refusal);
+		return nullptr;
+	}
+	return source;
 }
 
 ControlResult flatten(const QJsonObject& args)
 {
 	ControlResult error;
-	Track* source = resolveTrack(args.value(QStringLiteral("track")).toString(), &error);
+	Track* source = resolveFlattenSource(args, &error);
 	if (source == nullptr) { return error; }
 	BounceInPlace::Range range;
 	if (const QString problem = parseRange(args, false, &range); !problem.isEmpty())
@@ -96,6 +116,7 @@ ControlResult flatten(const QJsonObject& args)
 	const QString sourceId = trackIdOf(source);
 	const QString path = rendered.path;
 	const tick_t at = range.start;
+	const int folderId = source->parentFolder() != nullptr ? source->parentFolder()->id() : -1;
 	auto landed = std::make_shared<int>(-1);
 	auto restored = std::make_shared<int>(-1);
 	addStructuralUndoStep(
@@ -106,14 +127,14 @@ ControlResult flatten(const QJsonObject& args)
 			*restored = back != nullptr ? back->id() : -1;
 			if (back != nullptr) { moveTrackToIndex(back, index); }
 		},
-		[landed, restored, name, path, at, index]() {
+		[landed, restored, name, path, at, index, folderId]() {
 			if (Track* live = trackWithId(*restored)) { removeTrack(live); }
 			*restored = -1;
-			*landed = landAudioTrackId(name, path, at, index);
+			*landed = landAudioTrackId(name, path, at, index, folderId);
 		},
 		xml.size());
 	removeTrack(source);
-	*landed = landAudioTrackId(name, path, at, index);
+	*landed = landAudioTrackId(name, path, at, index, folderId);
 
 	QJsonObject result = renderJson(rendered);
 	result.insert(QStringLiteral("flattened"), sourceId);

@@ -80,6 +80,12 @@ struct ControlExportPreset
 	sample_rate_t sampleRate = 44100;
 	OutputSettings::BitDepth bitDepth = OutputSettings::BitDepth::Depth16Bit;
 	OutputSettings::StereoMode stereoMode = OutputSettings::StereoMode::JointStereo;
+	//! The file format (a name of controlRenderableFormats(): "wav", "flac", ...) and the channel
+	//! mode ("stereo" or "surround", surroundexport::channelModeNames()). EMPTY means the preset
+	//! does not state one (documents written before Q050-009 round 4, or a caller that left it
+	//! out): applying it then leaves the dialog's own choice alone.
+	QString format;
+	QString channels;
 };
 
 //! The store's directory (trailing slash included) and its file suffix. Named

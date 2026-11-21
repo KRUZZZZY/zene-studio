@@ -38,8 +38,11 @@ namespace MidiFile
 //! position is written exactly (the old 128 truncated 3 of every 8 positions).
 const int TICKSPERBEAT = 480;
 
+//! The largest chunk body an SMF chunk can record: the chunk length field is 32 bits.
+const uint64_t SmfMaxChunkBody = 0xFFFFFFFFu;
+
 // Every writer below APPENDS to a growable byte vector. Nothing is written into a fixed-size buffer,
-// so a track of any size is written whole: there is no cap to exceed and nothing to truncate.
+// so a track is written whole up to the 32-bit SMF chunk length; a larger track is refused, never truncated.
 
 
 inline int writeVarLength(uint32_t val, vector<uint8_t> &out)
@@ -94,7 +97,7 @@ class MIDIHeader
 
 	MIDIHeader(uint16_t nTracks, uint16_t ticksPB=TICKSPERBEAT): numTracks(nTracks), ticksPerBeat(ticksPB) {}
 
-	inline void writeToBuffer(vector<uint8_t> &out) const
+	inline bool writeToBuffer(vector<uint8_t> &out) const
 	{
 		// chunk ID
 		out.push_back('M'); out.push_back('T'); out.push_back('h'); out.push_back('d');
@@ -104,6 +107,7 @@ class MIDIHeader
 		writeBigEndian2(1, out);
 		writeBigEndian2(numTracks, out);
 		writeBigEndian2(ticksPerBeat, out);
+		return true;
 	}
 
 };
@@ -214,6 +218,9 @@ class MIDITrack
 
 	inline void addEvent(const Event &e)
 	{
+		// A zero tempo is not a tempo: Event::writeToBuffer divides by it. Refused here, the one
+		// place every event enters, so addTempo() and a direct addEvent() both keep it out.
+		if (e.type == Event::TEMPO && e.tempo == 0) { return; }
 		Event E = e;
 		events.push_back(E);
 	}
@@ -292,7 +299,9 @@ class MIDITrack
 
 	//! Appends one complete MTrk chunk: the events, then the end-of-track meta event.
 	//! Every event is written, however many there are; the chunk length is the real length.
-	inline void writeToBuffer(vector<uint8_t> &out) const
+	//! A body larger than maxBody (the 32-bit SMF limit in production) cannot be recorded, so
+	//! nothing is appended and false is returned: a wrapped length would misparse for every reader.
+	inline bool writeToBuffer(vector<uint8_t> &out, uint64_t maxBody = SmfMaxChunkBody) const
 	{
 		vector<uint8_t> body;
 		writeEventsToBuffer(body);
@@ -301,12 +310,14 @@ class MIDITrack
 		body.push_back(0xFF);
 		body.push_back(0x2F);
 		body.push_back(0x00);
+		if (uint64_t(body.size()) > maxBody) { return false; }
 
 		// chunk ID
 		out.push_back('M'); out.push_back('T'); out.push_back('r'); out.push_back('k');
 		// chunk size
 		writeBigEndian4(uint32_t(body.size()), out);
 		out.insert(out.end(), body.begin(), body.end());
+		return true;
 	}
 };
 

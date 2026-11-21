@@ -118,6 +118,14 @@ void ControllerConnection::setController( int /*_controllerId*/ )
 void ControllerConnection::setController( Controller * _controller )
 {
 	auto changeGuard = connectionChangeGuard();
+	if( _controller != nullptr && _controller == m_controller )
+	{
+		// Already bound to this controller: nothing to change. Disposing of an
+		// owned controller below would leave _controller dangling.
+		m_controllerId = -1;
+		return;
+	}
+
 	if( m_ownsController && m_controller )
 	{
 		delete m_controller;

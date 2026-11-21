@@ -31,6 +31,7 @@
 #include <QHostAddress>
 #include <QJsonObject>
 #include <QList>
+#include <QMetaType>
 #include <QObject>
 #include <QString>
 #include <QUrl>
@@ -74,7 +75,8 @@ public:
 	void setRetrySchedule(const QList<int>& delaysMs) { m_schedule = delaysMs; }
 
 	void map(quint16 internalPort, quint16 externalPort, quint32 lifetime);
-	//! Best effort: sends the delete for whichever protocol mapped, once, and does not wait.
+	//! Cancels a pending attempt (its late answers are ignored), then, best effort, sends the delete for whichever
+	//! protocol mapped or may have mapped, once, and does not wait.
 	void unmap();
 
 signals:
@@ -132,7 +134,7 @@ private:
 	void onSsdpReadyRead();
 	void onSearchTimeout();
 	void fetchDescription(const QUrl& location);
-	void onDescription(QNetworkReply* reply);
+	void onDescription(QNetworkReply* reply, const QUrl& location);
 	void addMapping(quint32 lease);
 	void onAdded(QNetworkReply* reply, quint32 lease);
 	void onExternalAddress(QNetworkReply* reply);
@@ -149,8 +151,11 @@ private:
 	bool m_allowLoopbackRouter = false;
 	quint16 m_internal = 0;
 	quint16 m_external = 0;
+	quint32 m_requestedLease = 0;  //!< the lease map() was asked for; used when the router is found later
 	bool m_searching = false;
 	bool m_mapped = false;
+	bool m_active = false;  //!< true from map() until unmap(): the newest attempt owns the router's entry for its port
+	quint64 m_generation = 0;  //!< bumped by map() and unmap(); a callback from an older generation is ignored
 	MappingResult m_result;
 };
 
@@ -212,10 +217,14 @@ private:
 	bool m_hasTestEndpoints = false;
 	quint16 m_internal = 0;
 	bool m_busy = false;
+	bool m_stopped = false;  //!< true once stop() ran, until start() begins a fresh attempt
 	QString m_pmpFailure;
 	MappingResult m_result;
 };
 
 } // namespace lmms::portmap
+
+//! MappingResult travels through QSignalSpy and QVariant in the port-mapping tests.
+Q_DECLARE_METATYPE(lmms::portmap::MappingResult)
 
 #endif // LMMS_PORT_MAPPING_H

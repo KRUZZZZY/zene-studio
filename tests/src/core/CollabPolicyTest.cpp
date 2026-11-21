@@ -44,6 +44,7 @@
 
 #include "CollabLink.h"
 #include "CollabInvite.h"
+#include "../../../src/core/CollabSessionAddress.h"
 #include "PortMappingCodec.h"
 #include "lmms_export.h"
 
@@ -92,6 +93,19 @@ private slots:
 		QCOMPARE(peerRoute(QStringLiteral("settings.set"), true, NoArgs, CollabRole::Editor).route, PeerRoute::Local);
 		QCOMPARE(peerRoute(QStringLiteral("transport.seek"), true, NoArgs, CollabRole::Editor).route, PeerRoute::Local);
 		QCOMPARE(peerRoute(QStringLiteral("collab.leave"), false, NoArgs, CollabRole::Viewer).route, PeerRoute::Local);
+		// Q050-217.1: the controller's bindings belong to one machine, exactly as the launcher's do - a peer's
+		// note binding must not be streamed to the host as a project edit.
+		QCOMPARE(peerRoute(QStringLiteral("session.bind_command"), true,
+			{{QStringLiteral("trigger"), QStringLiteral("note")}, {QStringLiteral("key"), 60}}, CollabRole::Editor).route, PeerRoute::Local);
+		QCOMPARE(peerRoute(QStringLiteral("session.unbind_command"), true,
+			{{QStringLiteral("trigger"), QStringLiteral("cc")}}, CollabRole::Editor).route, PeerRoute::Local);
+		// Q050-217.2: the same call with a WORKFLOW target is the same edit to the same local store - a peer's
+		// workflow binding must not be streamed either, whichever target it names.
+		QCOMPARE(peerRoute(QStringLiteral("session.bind_command"), true,
+			{{QStringLiteral("trigger"), QStringLiteral("note")}, {QStringLiteral("workflow"), QStringLiteral("bounce")}},
+			CollabRole::Editor).route, PeerRoute::Local);
+		QCOMPARE(peerRoute(QStringLiteral("session.command_bindings"), false, NoArgs, CollabRole::Editor).route, PeerRoute::Local);
+		QCOMPARE(peerRoute(QStringLiteral("session.bind"), true, NoArgs, CollabRole::Editor).route, PeerRoute::Local);
 		const QJsonObject withPath{{QStringLiteral("path"), QStringLiteral("/home/me/kick.wav")}};
 		const RouteDecision file = peerRoute(QStringLiteral("clip.add"), true, withPath, CollabRole::Editor);
 		QCOMPARE(file.route, PeerRoute::Refuse);
@@ -252,6 +266,17 @@ private slots:
 		}
 		QCOMPARE(randomInviteKey().size(), InviteKeyBytes);
 		QVERIFY(randomInviteKey() != randomInviteKey());
+	}
+
+	//! A missing LAN address must not produce an invite another machine cannot reach.
+	void lanInviteRequiresDetectedAddress()
+	{
+		ControlResult refusal;
+		const QString address = detail::lanInviteAddress(QHostAddress(), &refusal);
+		QVERIFY(address.isEmpty());
+		QVERIFY(!refusal.ok);
+		QCOMPARE(refusal.errorKind, ControlErrorKind::Refused);
+		QVERIFY(refusal.errorMessage.contains(QStringLiteral("LAN address")));
 	}
 
 	//! A mistyped, truncated or foreign paste is refused before any connection, with a reason.

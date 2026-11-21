@@ -129,22 +129,10 @@ void AudioFileProcessor::playNote( NotePlayHandle * _n,
 			m_nextPlayStartPoint = m_sample.startFrame();
 			m_nextPlayBackwards = false;
 		}
-		// set interpolation mode for libsamplerate
-		auto interpolationMode = AudioResampler::Mode::Linear;
-		switch( m_interpolationModel.value() )
-		{
-			case 0:
-				interpolationMode = AudioResampler::Mode::ZOH;
-				break;
-			case 1:
-				interpolationMode = AudioResampler::Mode::Linear;
-				break;
-			case 2:
-				interpolationMode = AudioResampler::Mode::SincMedium;
-				break;
-		}
-
-		_n->m_pluginData = new Sample::PlaybackState(interpolationMode);
+		// Sample::play used to replace this state mode with the selected export
+		// quality before rendering. The reference is linked against the new
+		// play path, so construct it with that same selected converter here.
+		_n->m_pluginData = new Sample::PlaybackState(AudioResampler::modeForCurrentSrcQuality());
 		static_cast<Sample::PlaybackState*>(_n->m_pluginData)->setFrameIndex(m_nextPlayStartPoint);
 		static_cast<Sample::PlaybackState*>(_n->m_pluginData)->setBackwards(m_nextPlayBackwards);
 

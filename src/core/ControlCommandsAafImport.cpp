@@ -104,7 +104,7 @@ ControlResult convention(const QJsonObject&)
 			"rate (rounded) -> ticks at the project's global tempo, 48 ticks per quarter note; an active tempo "
 			"map is not followed")},
 		{QStringLiteral("media_rule"), QStringLiteral("embedded essence is extracted to WAV files in 'media_dir' "
-			"(default: <project>-aaf-media/<aaf name> beside a saved project, else <aaf name>-aaf-media beside "
+			"(default: <project>-aaf-media/<aaf name>-<hash of the AAF path> beside a saved project, else <aaf name>-aaf-media beside "
 			"the AAF); external essence is found by LibAAF (beside the AAF, or in 'media_location'); a file not "
 			"found, or in a format this build cannot decode, is listed in missing_media and its clips are not "
 			"built")},
@@ -255,7 +255,9 @@ QJsonObject buildJson(const aaf::AafBuildReport& report, const std::vector<int>&
 	return {{QStringLiteral("tracks"), ids}, {QStringLiteral("built_tracks"), report.tracks},
 		{QStringLiteral("built_clips"), report.clips}, {QStringLiteral("built_markers"), report.markers},
 		{QStringLiteral("skipped_missing_media"), report.missingMediaClips},
-		{QStringLiteral("skipped_beyond_song_length"), report.beyondSongLength}};
+		{QStringLiteral("skipped_beyond_song_length"), report.beyondSongLength},
+		{QStringLiteral("skipped_markers_beyond_song_length"), report.markersBeyondSongLength},
+		{QStringLiteral("skipped_markers_refused"), report.markersRefused}};
 }
 
 ControlResult importFile(const QJsonObject& args)
@@ -278,6 +280,8 @@ ControlResult importFile(const QJsonObject& args)
 	aaf::AafBuildReport report;
 	const std::vector<int> made = buildAsOneStep(model, build, &report);
 	loss.beyondSongLength = report.beyondSongLength;
+	loss.markersBeyondSongLength = report.markersBeyondSongLength;
+	loss.markersRefused = report.markersRefused;
 	loss.trackGainClamps = report.trackGainClamps;
 	Engine::getSong()->setModified();
 	QJsonObject result = summary(path, model, loss);

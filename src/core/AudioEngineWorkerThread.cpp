@@ -27,12 +27,13 @@
 #include <QDebug>
 
 #include <atomic>
-#include <condition_variable>
 #include <cstdint>
-#include <mutex>
+#include <thread>
 
 #include "AudioEngine.h"
 #include "AudioBusHandle.h"
+#include "CrashReporter.h"
+#include "AudioWorkerWake.h"
 #include "Hardware.h"
 #include "RealtimeScope.h"
 #include "ThreadableJob.h"
@@ -48,13 +49,37 @@ thread_local AudioEngineWorkerThread::DeferredPlayHandleEdits*
 	AudioEngineWorkerThread::s_currentDeferredPlayHandleEdits = nullptr;
 AudioEngineWorkerThread::DeferredPlayHandleEdits AudioEngineWorkerThread::s_inlineDeferredPlayHandleEdits;
 std::atomic<std::uint64_t> AudioEngineWorkerThread::s_deferredPlayHandleEditOverflows{0};
+thread_local int AudioEngineWorkerThread::s_renderSlot = -1;
+int AudioEngineWorkerThread::s_inlineRenderSlot = 0;
 
 //! Off when the engine starts: live playback keeps the pool (see the header).
 static std::atomic<bool> s_deterministicProcessing{false};
+std::atomic<AudioEngineWorkerThread::WorkerDrainProbe> AudioEngineWorkerThread::s_workerDrainProbe{nullptr};
+std::atomic<int> AudioEngineWorkerThread::s_activeDrains{0};
 
 void AudioEngineWorkerThread::setDeterministicProcessing(bool deterministic)
 {
-	s_deterministicProcessing.store(deterministic, std::memory_order_release);
+	// Seq_cst on both sides of this handshake is deliberate: the setter writes the
+	// switch and then reads the drain count, while a worker increments the count and
+	// then re-reads the switch (a Dekker-style pattern). Without a total order the
+	// setter's count load could pass its own switch store and both sides could miss
+	// each other, so use the sequentially consistent order for those four operations.
+	s_deterministicProcessing.store(deterministic, std::memory_order_seq_cst);
+	if (!deterministic) { return; }
+
+	// A worker that read the switch as off just before the store may be about to
+	// enter globalJobQueue::run(). Do not return until every such worker has left,
+	// so the renderer that queues its jobs after this call is the only drainer.
+	// Only the export thread calls this with true; the workers never block here.
+	while (s_activeDrains.load(std::memory_order_seq_cst) != 0)
+	{
+		std::this_thread::yield();
+	}
+}
+
+void AudioEngineWorkerThread::setWorkerDrainProbeForTesting(WorkerDrainProbe probe)
+{
+	s_workerDrainProbe.store(probe, std::memory_order_release);
 }
 
 bool AudioEngineWorkerThread::deterministicProcessing()
@@ -96,14 +121,8 @@ void AudioEngineWorkerThread::drainDeferredPlayHandleEdits() noexcept
 	for (AudioEngineWorkerThread* worker : workerThreads) { drain(worker->m_deferredPlayHandleEdits); }
 }
 
-// Counted queue-full refusals since the process started (SPEC-MULTICORE-SCHEDULING
-// §2.6 / §3.2.3: "a counted, lock-free refusal"). addJob()'s overflow branch runs on
-// the audio thread - Mixer.cpp:255 and :1729 seed this queue from masterMix - so it
-// increments this counter and formats nothing: qWarning() there would build a QString
-// on the path tests/rt-safety-scope.txt declares. External linkage so
-// tests/src/core/RoutingGraphScheduleTest.cpp can assert the refusal fired and was
-// counted, without a header/ABI change (the member accessor lands when a later slice
-// touches AudioEngineWorkerThread.h).
+// Counted queue-full fallbacks. This test-only symbol retains its historical name.
+// addJob() runs on the audio thread, so this records no formatted log output.
 std::atomic<std::uint64_t> queueFullRefusals{0};
 
 // implementation of internal JobQueue
@@ -128,13 +147,11 @@ void AudioEngineWorkerThread::JobQueue::addJob( ThreadableJob * _job )
 		if (index < JOB_QUEUE_SIZE) {
 			m_items[index] = _job;
 		} else {
-			// Counted refusal instead of a bare qWarning (multicore Slice 0,
-			// SPEC-MULTICORE-SCHEDULING §2.6 / §3.2.3). The refusal itself is
-			// unchanged - the job is dropped and m_itemsDone is still advanced, so
-			// wait() terminates - but the event is now a lock-free increment on the
-			// audio thread rather than formatted log text, and it is readable by the
-			// registered test that proves the branch fires.
+			// The queue cannot grow on the audio path. Process the excess job here
+			// instead of reporting it complete without doing its work.
 			queueFullRefusals.fetch_add(1, std::memory_order_relaxed);
+			const RealtimeScope realtime;
+			_job->process();
 			++m_itemsDone;
 		}
 	}
@@ -218,52 +235,25 @@ void AudioEngineWorkerThread::quit()
 namespace
 {
 
-// libc++ marks std::atomic::wait / notify_all unavailable below macOS 11 (hosted run
-// 36802800273, macos-x86_64: "'notify_all' is unavailable: introduced in macOS 11.0"). There the
-// wake is a mutex and a condition variable - with the generation checked and the wait entered
-// under the mutex the notifier takes, so a wake still cannot be lost. Everywhere else it is the
-// atomic's own futex / wait-on-address, which takes no lock (BUGS_FOUND 11.22 a).
-#if defined(__APPLE__) && defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) \
-	&& __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 110000
-#define LMMS_WORKER_WAKE_CONDVAR 1
-// Built once and never destroyed, as the QWaitCondition it replaces was: a worker can still be
-// parked in wait() when the process exits, and a static mutex / condition variable torn down under it
-// makes libc++ abort - hosted macos-x86_64 (run 36829602079) ended ControlChainPresets with code -6
-// after control.quit.
-std::mutex& wakeMutex()
-{
-	static auto* mutex = new std::mutex;
-	return *mutex;
-}
-std::condition_variable& wakeCond()
-{
-	static auto* cond = new std::condition_variable;
-	return *cond;
-}
-#endif
+// The wake used to be a mutex and a condition variable on Apple deployment targets below
+// macOS 11 (libc++ marks std::atomic::wait unavailable there), and that mutex was taken on
+// the render thread every period, with a lazy `new` of both objects on its first call.
+// AudioWorkerWake now posts and waits on the generation word itself on Apple and Linux:
+// __ulock_wake / __ulock_wait on Apple (available since macOS 10.12, below the 10.13 floor),
+// FUTEX_WAKE / FUTEX_WAIT on Linux. Neither side allocates or locks, and the value - not the
+// post - is the signal, so a wake cannot be lost. See include/AudioWorkerWake.h.
 
 } // namespace
 
 void AudioEngineWorkerThread::notifyWorkers()
 {
-#ifdef LMMS_WORKER_WAKE_CONDVAR
-	const std::lock_guard<std::mutex> lock(wakeMutex());
-	wakeCond().notify_all();
-#else
-	// FUTEX_WAKE does not block; RealtimeSanitizer flags it only as a syscall (RealtimeExemption).
-	const RealtimeExemption wakeCannotBlock;
-	s_wakeGeneration.notify_all();
-#endif
+	// A pure post: no mutex, no allocation, and it does not wait for a woken worker.
+	workerwake::notify(s_wakeGeneration);
 }
 
 void AudioEngineWorkerThread::waitForWake(std::uint32_t seen)
 {
-#ifdef LMMS_WORKER_WAKE_CONDVAR
-	std::unique_lock<std::mutex> lock(wakeMutex());
-	wakeCond().wait(lock, [seen] { return s_wakeGeneration.load(std::memory_order_acquire) != seen; });
-#else
-	s_wakeGeneration.wait(seen, std::memory_order_acquire);
-#endif
+	workerwake::wait(s_wakeGeneration, seen);
 }
 
 void AudioEngineWorkerThread::wakeWorkers()
@@ -274,6 +264,8 @@ void AudioEngineWorkerThread::wakeWorkers()
 
 void AudioEngineWorkerThread::startAndWaitForJobs()
 {
+	const int previousRenderSlot = s_renderSlot;
+	if (previousRenderSlot < 0) { s_renderSlot = s_inlineRenderSlot; }
 	DeferredPlayHandleEdits* const previousPending = s_currentDeferredPlayHandleEdits;
 	s_currentDeferredPlayHandleEdits = &s_inlineDeferredPlayHandleEdits;
 	if (deterministicProcessing())
@@ -292,6 +284,7 @@ void AudioEngineWorkerThread::startAndWaitForJobs()
 		globalJobQueue.wait();
 		s_currentDeferredPlayHandleEdits = previousPending;
 		drainDeferredPlayHandleEdits();
+		s_renderSlot = previousRenderSlot;
 		return;
 	}
 
@@ -303,6 +296,7 @@ void AudioEngineWorkerThread::startAndWaitForJobs()
 	globalJobQueue.wait();
 	s_currentDeferredPlayHandleEdits = previousPending;
 	drainDeferredPlayHandleEdits();
+	s_renderSlot = previousRenderSlot;
 }
 
 
@@ -310,13 +304,17 @@ void AudioEngineWorkerThread::startAndWaitForJobs()
 
 void AudioEngineWorkerThread::run()
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	disableDenormals();
+	s_renderSlot = m_renderSlot;
 	DeferredPlayHandleEdits* const previousPending = s_currentDeferredPlayHandleEdits;
 	s_currentDeferredPlayHandleEdits = &m_deferredPlayHandleEdits;
 
 	std::uint32_t seen = s_wakeGeneration.load(std::memory_order_acquire);
 	while( !m_quit.load( std::memory_order_acquire ) )
 	{
+		const WorkerDrainProbe probe = s_workerDrainProbe.load(std::memory_order_acquire);
+		if( probe != nullptr ) { probe( WorkerDrainProbeStage::BeforeWait ); }
 		// Sleep until the generation moves. This used to be a QWaitCondition with a 100 ms
 		// bound, and the bound was load-bearing: a worker preempted between reading m_quit and
 		// reaching wait() missed the wake meant for it (13 of 64 PdcMixerTest runs under load,
@@ -336,10 +334,22 @@ void AudioEngineWorkerThread::run()
 		// thread on both macOS jobs without this check).
 		if( !deterministicProcessing() )
 		{
-			globalJobQueue.run();
+			if( probe != nullptr ) { probe( WorkerDrainProbeStage::BeforeQueue ); }
+			// Re-check after publishing that this worker may drain: an enable that
+			// landed between the read above and here either sees this worker counted
+			// (and waits) or is seen by the re-check, so the worker cannot take a job
+			// the export queued after its setDeterministicProcessing(true) returned.
+			s_activeDrains.fetch_add(1, std::memory_order_seq_cst);
+			if( !s_deterministicProcessing.load( std::memory_order_seq_cst ) )
+			{
+				globalJobQueue.run();
+			}
+			s_activeDrains.fetch_sub(1, std::memory_order_release);
+			if( probe != nullptr ) { probe( WorkerDrainProbeStage::AfterQueue ); }
 		}
 	}
 	s_currentDeferredPlayHandleEdits = previousPending;
+	s_renderSlot = -1;
 }
 
 } // namespace lmms

@@ -33,7 +33,7 @@ ListSpec themeColors()
 {
 	ListSpec out = spec("Theme Colours", "theme.get", "colors", {QStringLiteral("name"), QStringLiteral("color"),
 		QStringLiteral("overridden")});
-	out.summaryKeys = {QStringLiteral("palette"), QStringLiteral("applies")};
+	out.summaryKeys = QStringList{QStringLiteral("palette"), QStringLiteral("applies")};
 	const QHash<QString, QString> role{{QStringLiteral("name"), QStringLiteral("name")}};
 	out.actions = {act("Change...", "theme.set_token", role, {}, true),
 		act("Use the Palette's Colour", "theme.set_token", role, {{QStringLiteral("color"), QString()}})};
@@ -49,7 +49,7 @@ ListSpec trackManager()
 	ListSpec out = spec("Track Manager", "track.overview", "tracks", {QStringLiteral("name"), QStringLiteral("type"),
 		QStringLiteral("icon"), QStringLiteral("color"), QStringLiteral("muted"), QStringLiteral("soloed"), QStringLiteral("visible"),
 		QStringLiteral("channel"), QStringLiteral("devices"), QStringLiteral("cpu_percent")});
-	out.summaryKeys = {QStringLiteral("count")};
+	out.summaryKeys = QStringList{QStringLiteral("count")};
 	const QHash<QString, QString> track{{QStringLiteral("track"), QStringLiteral("id")}};
 	RowAction remove = act("Remove", "track.remove", track);
 	remove.confirm = true;
@@ -89,7 +89,7 @@ ListSpec settingsCatalogue()
 {
 	ListSpec out = spec("Settings", "settings.search", "settings", {QStringLiteral("page"), QStringLiteral("title"),
 		QStringLiteral("value"), QStringLiteral("key")}, {{QStringLiteral("text"), QString()}});
-	out.summaryKeys = {QStringLiteral("count")};
+	out.summaryKeys = QStringList{QStringLiteral("count")};
 	// The list command is settings.search: the find field narrows the list itself (it was a Search... button floating raw JSON).
 	out.filterArg = QStringLiteral("text");
 	out.filterLabel = tr("Find a setting by a word");

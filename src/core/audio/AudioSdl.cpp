@@ -34,6 +34,7 @@
 #include <SDL.h>
 
 #include "AudioEngine.h"
+#include "CrashReporter.h"
 #include "ConfigManager.h"
 
 namespace lmms
@@ -170,6 +171,7 @@ void AudioSdl::sdlAudioCallback( void * _udata, Uint8 * _buf, int _len )
 
 void AudioSdl::sdlAudioCallback( Uint8 * _buf, int _len )
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	if (!isRunning())
 	{
 		memset( _buf, 0, _len );
@@ -187,6 +189,7 @@ void AudioSdl::sdlInputAudioCallback(void *_udata, Uint8 *_buf, int _len) {
 }
 
 void AudioSdl::sdlInputAudioCallback(Uint8 *_buf, int _len) {
+	crashreporter::installAlternateStackForCurrentThread();
 	// R2.3: through the ONE capture publisher, so SDL also feeds the N-channel path the
 	// record routes read and the capture counter - it fed the stereo bus alone.
 	const int inputChannels = std::max<int>(m_inputAudioHandle.channels, 1);

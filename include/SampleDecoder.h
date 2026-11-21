@@ -72,6 +72,18 @@ public:
 	};
 	static void resetDecodeCallCountsForTesting();
 	static auto decodeCallCountsForTesting() -> DecodeCallCountsForTesting;
+
+	//! Test seam: decodes @a audioFile with the Ogg Vorbis decoder alone - the fallback decoder that
+	//! decode() reaches when libsndfile cannot read the file. Refuses (nullopt) without Ogg support.
+	static auto decodeOggVorbisOnlyForTesting(const QString& audioFile) -> std::optional<Result>;
+	//! Test seam: makes the next Ogg Vorbis read fail, so the decoder's read-error path can be driven
+	//! deterministically (a corrupt file is not needed to reach it).
+	static void failNextOggReadForTesting();
+	//! Test seam: the number of times the Ogg Vorbis decoder's file-close callback ran. The callback
+	//! is what libvorbisfile calls when the decoder state is released (ov_clear), so the count is the
+	//! number of decoder states that were released.
+	static void resetOggCloseCountForTesting();
+	static auto oggCloseCountForTesting() -> int;
 #endif
 
 	static auto supportedAudioTypes() -> const std::vector<AudioType>&;

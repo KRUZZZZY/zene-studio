@@ -139,6 +139,26 @@ public:
 	static void setDeterministicProcessing(bool deterministic);
 	static bool deterministicProcessing();
 
+	//! Test-only observation point on the worker's queue-drain decision. Production
+	//! never installs one. `BeforeWait` lets a test establish that the worker has read
+	//! the current wake generation (so its next wake cannot be lost); `BeforeQueue`
+	//! holds a worker in the window between reading the switch and taking the queue;
+	//! `AfterQueue` reports that the worker has left that path.
+	enum class WorkerDrainProbeStage { BeforeWait, BeforeQueue, AfterQueue };
+	using WorkerDrainProbe = void (*)(WorkerDrainProbeStage);
+	static void setWorkerDrainProbeForTesting(WorkerDrainProbe probe);
+
+	//! The render slot of the calling thread, or -1 outside a render job (cluster new-p10-249).
+	//! Every render thread owns one slot in [0, AudioEngine::renderThreadCount()): the pool
+	//! workers 0..n-1 and the inline (engine) thread n. The mixer hands a render thread its
+	//! OWN private input partial, so the workers never write the same memory and never wait
+	//! for each other (AGENTS.md rule 4).
+	static int currentRenderSlot() noexcept { return s_renderSlot; }
+	//! Give this worker its stable slot; called once by AudioEngine at construction.
+	void setRenderSlot(int slot) noexcept { m_renderSlot = slot; }
+	//! The slot the inline (engine) thread renders on; set once by AudioEngine.
+	static void setInlineRenderSlot(int slot) noexcept { s_inlineRenderSlot = slot; }
+
 
 private:
 	static constexpr std::size_t DeferredPlayHandleEditCapacity = JobQueue::JOB_QUEUE_SIZE;
@@ -164,10 +184,25 @@ private:
 	static void waitForWake(std::uint32_t seen);
 
 	static JobQueue globalJobQueue;
-	//! The wake (R7.2, BUGS_FOUND 11.22 a): startAndWaitForJobs() and quit() bump it and
-	//! notify; a worker waits for it to move. Replaces a QWaitCondition, whose wakeAll() took a
-	//! mutex on the render thread every period. A wait on a value that has already moved returns
-	//! at once, so no wake can be lost between reading m_quit and sleeping.
+	static std::atomic<WorkerDrainProbe> s_workerDrainProbe;
+	//! Workers currently inside globalJobQueue::run(). Enabling deterministic
+	//! processing waits for this to reach zero (see setDeterministicProcessing()),
+	//! so a worker that read the switch as off cannot still drain an export's queue.
+	static std::atomic<int> s_activeDrains;
+	//! The render slot of the calling thread; -1 until it runs a render job
+	//! (cluster new-p10-249). A worker sets it to its own m_renderSlot for the whole run
+	//! loop; startAndWaitForJobs() sets it to the inline slot for the length of the call.
+	static thread_local int s_renderSlot;
+	//! The inline (engine) thread's render slot, set once by AudioEngine.
+	static int s_inlineRenderSlot;
+	//! This worker's stable render slot, set by AudioEngine at construction.
+	int m_renderSlot = -1;
+	//! The wake (R7.2, BUGS_FOUND 11.22 a; Q050-167): startAndWaitForJobs() and quit() bump it
+	//! and notify; a worker waits for it to move. A wait on a value that has already moved
+	//! returns at once, so no wake can be lost between reading m_quit and sleeping. The wait
+	//! and the post are on the value itself (AudioWorkerWake): __ulock on Apple, FUTEX on
+	//! Linux, std::atomic::wait elsewhere - so neither a mutex nor an allocation is on the
+	//! render-side notification path (the old Apple-below-11 path had both).
 	static std::atomic<std::uint32_t> s_wakeGeneration;
 	static QList<AudioEngineWorkerThread *> workerThreads;
 

@@ -1,7 +1,8 @@
 /*
  * ControlCommandsModulatorRoutes.cpp - the modulator.* command group's ROUTE
  *                                      half (SPEC A11-A16): bind a parameter to
- *                                      a modulator, set a depth, unbind.
+ *                                      a modulator, set a depth or the per-sample
+ *                                      switch, unbind.
  *
  * The other half (the layer, the LFO source and the read-only inspector) is
  * ControlCommandsModulator.cpp. They are separate translation units for the
@@ -35,6 +36,7 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <cmath>
 #include <functional>
 
 #include <QJsonObject>
@@ -109,6 +111,17 @@ void recordDepth(int modulator, int route, float previous, float written)
 				layer.setDepth(modulator, route, written);
 			});
 		});
+}
+
+//! The per-sample switch. Like a depth, it never re-reads the route's base.
+void recordPerSample(int modulator, int route, bool written)
+{
+	const auto write = [modulator, route](bool perSample) {
+		editModulationLayer([modulator, route, perSample](ModulationLayer& layer, ModulationRuntime&) {
+			layer.setPerSample(modulator, route, perSample);
+		});
+	};
+	addUndoStep([write, written]() { write(!written); }, [write, written]() { write(written); });
 }
 
 QJsonObject layerResult(const ModulationLayer& layer, int index)
@@ -202,7 +215,8 @@ void registerTargetSet(ControlRegistry& registry)
 		"parameter already has. 'per_sample' true evaluates the route INSIDE each block (the value "
 		"is published as a ramp and read per sample, so a fast LFO does not zipper) - off, the "
 		"route moves once per block, as it always has. Refused when the parameter does not resolve or is already driven, "
-		"so a modulator never carries a route that can only fail. Reversible through the "
+		"so a modulator never carries a route that can only fail. Optional 'target' inserts at a route index; "
+		"omitting it appends. Reversible through the "
 		"ProjectJournal.");
 	cmd.argsSchema = objectSchema(routeSchema(true),
 		{QStringLiteral("modulator"), QStringLiteral("channel"), QStringLiteral("effect"),
@@ -221,19 +235,25 @@ void registerTargetSet(ControlRegistry& registry)
 				QStringLiteral("modulator %1 already drives %2 parameters (the cap)")
 					.arg(modulatorId(index)).arg(ModulationLayer::MaxRoutesPerModulator));
 		}
+		const double depth = args.value(QStringLiteral("depth")).toDouble();
+		if (!std::isfinite(depth) || depth < -1.0 || depth > 1.0)
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'depth' %1 is outside -1..1 (a fraction of the target's range)")
+					.arg(depth));
+		}
 		const ModulationRoute route = modulationRouteFromArgs(args);
 		const ControlResult refused = refusedRoute(layer, route);
 		if (!refused.ok) { return refused; }
-
+		const int requestedIndex = args.value(QStringLiteral("target")).toInt(layer.modulator(index)->routeCount());
 		const QJsonObject before = modulationLayerJson(layer);
 		int routeIndex = -1;
 		editModulationLayer([&](ModulationLayer& target, ModulationRuntime&) {
-			routeIndex = target.addRoute(index, route);
+			routeIndex = insertModulationRouteAtIndex(target, index, requestedIndex, route);
 		});
 		if (routeIndex < 0)
 		{
-			return ControlResult::failure(ControlErrorKind::Refused,
-				QStringLiteral("modulator %1 is full").arg(modulatorId(index)));
+			return modulationRouteInsertFailure(args, QStringLiteral("target"));
 		}
 		recordRouteCreation(index, routeIndex, route);
 
@@ -291,6 +311,13 @@ void registerDepthSet(ControlRegistry& registry)
 				QStringLiteral("'depth' %1 is outside -1..1 (a fraction of the target's range)")
 					.arg(static_cast<double>(depth)));
 		}
+		if (previous == depth)
+		{
+			QJsonObject result = layerResult(layer, index);
+			result.insert(QStringLiteral("target_index"), route);
+			result.insert(QStringLiteral("target_count"), modulator->routeCount());
+			return ControlResult::success(result);
+		}
 		editModulationLayer([&](ModulationLayer& target, ModulationRuntime&) {
 			target.setDepth(index, route, depth);
 		});
@@ -298,7 +325,8 @@ void registerDepthSet(ControlRegistry& registry)
 
 		QJsonObject result = layerResult(songModulationLayer().layer(), index);
 		result.insert(QStringLiteral("target_index"), route);
-		result.insert(QStringLiteral("target_count"), modulator->routeCount());
+		const Modulator* current = songModulationLayer().layer().modulator(index);
+		result.insert(QStringLiteral("target_count"), current != nullptr ? current->routeCount() : 0);
 		result.insert(QStringLiteral("__transaction"),
 			transactionPayload(QJsonObject{{QStringLiteral("depth"), static_cast<double>(previous)}},
 				QStringLiteral("modulator.depth_set"),
@@ -308,6 +336,69 @@ void registerDepthSet(ControlRegistry& registry)
 				QStringLiteral("action checkpoint: the recorded undo step writes the previous "
 					"depth back through ModulationLayer::setDepth; the route's captured base is "
 					"untouched, because a depth change never re-reads the parameter")));
+		return ControlResult::success(result);
+	};
+	registry.registerCommand(cmd);
+}
+
+void registerPerSampleSet(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("modulator.per_sample_set");
+	cmd.group = kGroup;
+	cmd.verb = QStringLiteral("per_sample_set");
+	cmd.description = QStringLiteral("Switch one bound route's per-sample evaluation. True evaluates "
+		"it INSIDE each block (a ramp read per sample, so a fast LFO does not zipper); false moves it "
+		"once per block. The route's depth and base are kept; modulator.get_state reports the value as "
+		"the target's 'per_sample'. Reversible through the ProjectJournal.");
+	cmd.argsSchema = objectSchema({
+		{QStringLiteral("modulator"), stringProperty()},
+		{QStringLiteral("target"), integerProperty()},
+		{QStringLiteral("per_sample"), booleanProperty()},
+	}, {QStringLiteral("modulator"), QStringLiteral("target"), QStringLiteral("per_sample")});
+	cmd.resultSchema = routeResultSchema();
+	cmd.mutating = true;
+	cmd.handler = [](const QJsonObject& args) {
+		ModulationLayer& layer = songModulationLayer().layer();
+		ControlResult error;
+		const int index = resolveModulatorIndex(layer,
+			args.value(QStringLiteral("modulator")).toString(), &error);
+		if (index < 0) { return error; }
+		const Modulator* modulator = layer.modulator(index);
+		const int route = args.value(QStringLiteral("target")).toInt(-1);
+		if (route < 0 || route >= modulator->routeCount())
+		{
+			return ControlResult::failure(ControlErrorKind::NotFound,
+				QStringLiteral("modulator %1 has no target %2 (it has %3)")
+					.arg(modulatorId(index)).arg(route).arg(modulator->routeCount()));
+		}
+		if (!args.value(QStringLiteral("per_sample")).isBool())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'per_sample' must be true or false"));
+		}
+		const bool perSample = args.value(QStringLiteral("per_sample")).toBool();
+		const bool previous = modulator->routes[static_cast<std::size_t>(route)].perSample;
+		QJsonObject result;
+		if (previous != perSample)
+		{
+			editModulationLayer([&](ModulationLayer& target, ModulationRuntime&) {
+				target.setPerSample(index, route, perSample);
+			});
+			recordPerSample(index, route, perSample);
+			result.insert(QStringLiteral("__transaction"),
+				transactionPayload(QJsonObject{{QStringLiteral("per_sample"), previous}},
+					QStringLiteral("modulator.per_sample_set"),
+					QJsonObject{{QStringLiteral("modulator"), modulatorId(index)},
+						{QStringLiteral("target"), route},
+						{QStringLiteral("per_sample"), previous}}, true,
+					QStringLiteral("action checkpoint: the recorded undo step writes the previous "
+						"switch back through ModulationLayer::setPerSample and republishes the route")));
+		}
+		const QJsonObject state = layerResult(songModulationLayer().layer(), index);
+		for (auto it = state.begin(); it != state.end(); ++it) { result.insert(it.key(), it.value()); }
+		result.insert(QStringLiteral("target_index"), route);
+		result.insert(QStringLiteral("target_count"), modulator->routeCount());
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);
@@ -353,15 +444,32 @@ void registerTargetRemove(ControlRegistry& registry)
 
 		QJsonObject result = layerResult(songModulationLayer().layer(), index);
 		result.insert(QStringLiteral("removed"), modulationRouteJson(captured, route));
-		result.insert(QStringLiteral("target_count"), modulator->routeCount());
+		const Modulator* current = songModulationLayer().layer().modulator(index);
+		result.insert(QStringLiteral("target_count"), current != nullptr ? current->routeCount() : 0);
+		QString inverseCommand = QStringLiteral("modulator.target_set");
+		QJsonObject inverseArgs{{QStringLiteral("modulator"), modulatorId(index)},
+			{QStringLiteral("depth"), static_cast<double>(captured.depth)},
+			{QStringLiteral("per_sample"), captured.perSample}};
+		if (captured.track >= 0)
+		{
+			inverseCommand = QStringLiteral("modulator.instrument_target_set");
+			inverseArgs.insert(QStringLiteral("target"), trackId(captured.track));
+			inverseArgs.insert(QStringLiteral("target_index"), route);
+		}
+		else
+		{
+			inverseArgs.insert(QStringLiteral("target"), route);
+			inverseArgs.insert(QStringLiteral("channel"), channelId(captured.channel));
+			inverseArgs.insert(QStringLiteral("chain"), captured.chain);
+			inverseArgs.insert(QStringLiteral("effect"), captured.effect);
+		}
+		inverseArgs.insert(QStringLiteral("parameter"), captured.parameter);
 		result.insert(QStringLiteral("__transaction"),
-			transactionPayload(before, QStringLiteral("modulator.target_set"),
-				QJsonObject{{QStringLiteral("modulator"), modulatorId(index)}}, true,
+			transactionPayload(before, inverseCommand, inverseArgs, true,
 				QStringLiteral("action checkpoint: the recorded undo step re-inserts the captured "
 					"route at its own index, so the bind order - which is the order the routes are "
-					"applied in - comes back exactly; a hand replay is modulator.target_set with "
-					"removed.channel, removed.chain, removed.effect, removed.parameter and "
-					"removed.depth")));
+					"applied in - comes back exactly; a hand replay binds its captured address, "
+					"depth and per_sample setting")));
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);
@@ -373,6 +481,7 @@ void registerModulatorRouteCommands(ControlRegistry& registry)
 {
 	registerTargetSet(registry);
 	registerDepthSet(registry);
+	registerPerSampleSet(registry);
 	registerTargetRemove(registry);
 }
 

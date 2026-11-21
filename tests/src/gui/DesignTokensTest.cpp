@@ -153,7 +153,13 @@ private slots:
 		for (const QString& id : ids)
 		{
 			QVERIFY2(!shellicons::svg(id).isEmpty(), qPrintable(id));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 			const QImage image = shellicons::icon(id).pixmap(QSize(24, 24), 1.0).toImage();
+#else
+			// Qt 5 has no QIcon::pixmap(size, devicePixelRatio); the offscreen test display is 1.0,
+			// so the default overload paints the same 24x24 image.
+			const QImage image = shellicons::icon(id).pixmap(QSize(24, 24)).toImage();
+#endif
 			bool inked = false;
 			for (int y = 0; y < image.height() && !inked; ++y)
 			{

@@ -123,6 +123,23 @@ def sha256_of(path):
     return digest.hexdigest()
 
 
+def wav_chunks(handle):
+    """(fmt payload, data chunk size) read off a WAV's chunk stream, either None."""
+    fmt = None
+    data_bytes = None
+    while True:
+        chunk_header = handle.read(8)
+        if len(chunk_header) < 8:
+            break
+        chunk_id, chunk_size = struct.unpack("<4sI", chunk_header)
+        payload = handle.read(chunk_size + (chunk_size & 1))
+        if chunk_id == b"fmt ":
+            fmt = payload
+        elif chunk_id == b"data":
+            data_bytes = chunk_size
+    return fmt, data_bytes
+
+
 def wav_facts(path):
     """(bytes, frames, audio_format, channels, rate, bits) of one WAV, or None."""
     if not os.path.isfile(path):
@@ -131,21 +148,10 @@ def wav_facts(path):
         header = handle.read(12)
         if len(header) != 12 or header[0:4] != b"RIFF" or header[8:12] != b"WAVE":
             return None
-        fmt = None
-        data_bytes = None
-        while True:
-            chunk_header = handle.read(8)
-            if len(chunk_header) < 8:
-                break
-            chunk_id, chunk_size = struct.unpack("<4sI", chunk_header)
-            payload = handle.read(chunk_size + (chunk_size & 1))
-            if chunk_id == b"fmt ":
-                fmt = payload
-            elif chunk_id == b"data":
-                data_bytes = chunk_size
-        if fmt is None or data_bytes is None:
-            return None
-        audio_format, channels, rate, _, _, bits = struct.unpack("<HHIIHH", fmt[:16])
+        fmt, data_bytes = wav_chunks(handle)
+    if fmt is None or data_bytes is None:
+        return None
+    audio_format, channels, rate, _, _, bits = struct.unpack("<HHIIHH", fmt[:16])
     return (os.path.getsize(path), data_bytes // (channels * (bits // 8)) if bits else 0,
             audio_format, channels, rate, bits)
 
@@ -282,6 +288,35 @@ def check_refusals(session, recorder, outdir):
     return status
 
 
+def check_windows_absolute_sources(session, recorder):
+    """The GUI's "Split to stems" calls `stem.job_start` with `PathUtil::toAbsolute()`'s
+    result, which on Windows is a drive path (`C:/…`) or a UNC share
+    (`//server/share/…`). The validator once accepted only a leading '/', so the
+    GUI route could never start a job on Windows. These go through the SAME
+    registered command the GUI calls: a Windows path must get PAST the validator
+    to the engine's own refusal (a missing file), never the argument refusal.
+    """
+    drive = "C:/definitely-not-here/mix.wav"
+    accepted = session.result("stem.job_start", {"source": drive})
+    recorder.check("stem.job_start accepts a Windows drive path (the GUI route)",
+                   error_kind(accepted) == "refused" and "no source file" in error_message(accepted),
+                   "kind=%r message=%r" % (error_kind(accepted), error_message(accepted)))
+    unc = "//server/share/definitely-not-here/mix.wav"
+    accepted_unc = session.result("stem.job_start", {"source": unc})
+    recorder.check("stem.job_start accepts a Windows UNC path (the GUI route)",
+                   error_kind(accepted_unc) == "refused" and "no source file" in error_message(accepted_unc),
+                   "kind=%r message=%r" % (error_kind(accepted_unc), error_message(accepted_unc)))
+    drive_backslash = "C:\\definitely-not-here\\mix.wav"
+    accepted_backslash = session.result("stem.job_start", {"source": drive_backslash})
+    recorder.check("stem.job_start accepts a Windows drive path with backslashes",
+                   error_kind(accepted_backslash) == "refused"
+                   and "no source file" in error_message(accepted_backslash),
+                   "kind=%r message=%r" % (error_kind(accepted_backslash), error_message(accepted_backslash)))
+    relative = session.result("stem.job_start", {"source": "C:definitely-not-here.wav"})
+    recorder.check("a drive-relative path (C:foo) is still refused typed",
+                   error_kind(relative) == "invalid_args", repr(relative)[:200])
+
+
 def start_job(session, recorder, source, label):
     ok, started = session.ok_and_result("stem.job_start", {"source": source})
     accepted = ok and isinstance(started.get("job_id"), int)
@@ -296,7 +331,7 @@ def start_job(session, recorder, source, label):
     return started["job_id"]
 
 
-def poll_until(session, job_id, wanted, timeout=JOB_TIMEOUT):
+def poll_until(session, job_id, wanted, timeout=JOB_TIMEOUT, interval=POLL_INTERVAL):
     """Poll stem.job_status until the state is in `wanted`; returns (state, seen, seconds)."""
     deadline = time.time() + timeout
     seen = []
@@ -308,7 +343,7 @@ def poll_until(session, job_id, wanted, timeout=JOB_TIMEOUT):
             seen.append(state)
         if state in wanted:
             return state, seen, time.time() - started
-        time.sleep(POLL_INTERVAL)
+        time.sleep(interval)
     return (seen[-1] if seen else None), seen, time.time() - started
 
 
@@ -380,7 +415,8 @@ def check_cancel(session, recorder, source, outdir):
     job_id = start_job(session, recorder, source, "the cancel job")
     if job_id is None:
         return
-    state, seen, _ = poll_until(session, job_id, ("running",), timeout=60.0)
+    # Polled fast: the in-process backend can finish this source inside one POLL_INTERVAL.
+    state, seen, _ = poll_until(session, job_id, ("running",), timeout=60.0, interval=0.01)
     recorder.check("the slowed job reaches `running` (the cancel has a subject)",
                    state == "running", "state=%r seen=%r" % (state, seen))
     accepted, cancelled = session.ok_and_result("stem.job_cancel", {"job_id": job_id})
@@ -484,7 +520,52 @@ def check_transactions(session, recorder):
     records = session.result("control.transactions")
     entries = records.get("transactions") or []
     named = [entry for entry in entries if str(entry.get("command", "")).startswith("stem.")]
-    recorder.check("the whole stem.* group leaves no project transaction",
+    recorder.check("the job and model-store verbs leave no project transaction",
                    not named, "records=%r" % (named[:2],))
+
+
+def check_tracks_create(session, recorder, job_id):
+    """The user-facing half of the feature: the four stems as four SampleTracks.
+
+    This is the SAME registered command the GUI's "Split to stems" clip action
+    calls (src/gui/StemSplitController.cpp), so this transcript proves the
+    command the click shares, and that ONE control.undo removes all four tracks
+    together (the one-undo-step contract).
+    """
+    def tracks():
+        return session.result("arrangement.get_state").get("tracks") or []
+
+    # Refusals first, before anything is created.
+    missing = session.result("stem.tracks_create")
+    recorder.check("stem.tracks_create without job_id is refused typed",
+                   error_kind(missing) == "invalid_args", repr(missing)[:200])
+    unknown = session.result("stem.tracks_create", {"job_id": 999999})
+    recorder.check("stem.tracks_create on an id this instance never issued is not_found",
+                   error_kind(unknown) == "not_found", repr(unknown)[:200])
+
+    before = tracks()
+    created = session.result("stem.tracks_create",
+                             {"job_id": job_id, "position": 0, "name": "Mix"})
+    recorder.check("stem.tracks_create materialises the four stems as four tracks",
+                   created.get("track_count") == 4 and len(created.get("tracks") or []) == 4,
+                   repr(created)[:240])
+    after = tracks()
+    recorder.check("the four stem tracks are in the song",
+                   len(after) == len(before) + 4,
+                   "before=%d after=%d" % (len(before), len(after)))
+    names = [t.get("name") for t in after[len(before):]]
+    recorder.check("the tracks are named '<name> - <stem>' in the model's order",
+                   names == ["Mix - %s" % stem for stem in STEM_ORDER], "names=%r" % (names,))
+
+    records = session.result("control.transactions")
+    named = [entry for entry in records.get("transactions") or []
+             if entry.get("command") == "stem.tracks_create"]
+    recorder.check("stem.tracks_create records exactly one project transaction",
+                   len(named) == 1, "records=%r" % (named[:2],))
+
+    session.result("control.undo")
+    recorder.check("ONE control.undo removes all four stem tracks together",
+                   len(tracks()) == len(before),
+                   "after=%d before=%d" % (len(tracks()), len(before)))
 
 

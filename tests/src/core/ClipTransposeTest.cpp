@@ -217,7 +217,7 @@ private slots:
 			return;
 		}
 		QVERIFY2(set.ok, qPrintable(set.errorMessage));
-		QCOMPARE(clip->warpStretchMode(), WarpStretchMode::RubberBand);
+		QCOMPARE(clip->warpStretchMode(), WarpStretchMode::Complex);
 		QCOMPARE(clip->clipEdits().transpose, 3);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(clip->warpStretchMode(), WarpStretchMode::PreservePitch);

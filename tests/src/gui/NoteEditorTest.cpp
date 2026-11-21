@@ -24,10 +24,12 @@
 
 #include <QtTest>
 
+#include <QActionGroup>
 #include <QComboBox>
 #include <QImage>
 #include <QJsonArray>
 #include <QPainter>
+#include <QTimer>
 #include <QToolButton>
 #include <QWheelEvent>
 
@@ -43,6 +45,9 @@
 #include "NoteEditorParts.h"
 #include "NotePlayHandle.h"
 #include "Piano.h"
+#include "Shell.h"
+#include "ShellChrome.h"
+#include "ShellLayout.h"
 #include "MenuTestSupport.h"
 #include "Song.h"
 #include "StepRecorderWidget.h"
@@ -120,6 +125,66 @@ private slots:
 		m_editor = nullptr;
 		delete m_clip;
 		m_clip = nullptr;
+	}
+
+	//! gui-1030-main-paint / -delete / -mute / -slice (Terra sweep m0-train-24): a click on a tool button of the
+	//! toolbar selects that tool. Each tool is its own scenario, driven by a real mouse click on the button the
+	//! user sees - not by calling setTool. The sweep's failed clicks landed on the Inspector's floating window
+	//! (see thePoppedOutInspectorCoversTheToolbarsFirstToolsNotTheEditorsClicks), never on these buttons.
+	void aClickOnThePaintButtonSelectsThePaintTool() { clickSelectsTool(QStringLiteral("Paint"), NoteTool::Paint); }
+	void aClickOnTheDeleteButtonSelectsTheDeleteTool() { clickSelectsTool(QStringLiteral("Delete"), NoteTool::Erase); }
+	void aClickOnTheMuteButtonSelectsTheMuteTool() { clickSelectsTool(QStringLiteral("Mute"), NoteTool::Mute); }
+	void aClickOnTheSliceButtonSelectsTheSliceTool() { clickSelectsTool(QStringLiteral("Slice"), NoteTool::Slice); }
+
+	//! The sweep's recorded layout: it had popped the Inspector out first (Terra step 13). A popped-out panel opens
+	//! as a top-level window at least 480 px wide where the panel was (Shell::floatSize), so on a 240 px Inspector
+	//! it grows over the editor and the centre reflows to the window's left edge: the tools sit under that window,
+	//! which is where the sweep's clicks (Paint 180, Delete 210, Mute 240, Slice 270; y 742) went. The buttons
+	//! themselves still take a click.
+	void thePoppedOutInspectorCoversTheToolbarsFirstToolsNotTheEditorsClicks()
+	{
+		Shell shell;
+		auto* editor = new NoteEditor;
+		for (const ShellPanelSpec& spec : ShellLayout::panels())
+		{
+			shell.mount(spec.id, spec.id == QLatin1String("detail") ? static_cast<QWidget*>(editor) : new QWidget);
+		}
+		shell.resize(1600, 1000);
+		shell.show();
+		QVERIFY(QTest::qWaitForWindowExposed(&shell));
+		if (!editor->isVisible()) { shell.togglePanel(QStringLiteral("detail")); }
+		QVERIFY2(editor->isVisible(), "the note editor is not on screen in the shell");
+		QVERIFY(shell.detachPanel(QStringLiteral("inspector")));
+		QTest::qWait(0);  // the reflow of the centre
+		QWidget* inspector = shell.floatingWindow(QStringLiteral("inspector"));
+		QVERIFY(inspector != nullptr && inspector->isVisible());
+		QVERIFY2(inspector->width() >= 480, "a popped-out panel opens at least 480 px wide");
+
+		const auto centreOf = [editor](const QString& name) {
+			for (ShellButton* button : editor->findChildren<ShellButton*>())
+			{
+				if (button->defaultAction() != nullptr && button->defaultAction()->text() == name)
+				{
+					return button->mapToGlobal(button->rect().center());
+				}
+			}
+			return QPoint(-1, -1);
+		};
+		for (const QString& covered : {QStringLiteral("Paint"), QStringLiteral("Delete"), QStringLiteral("Mute"), QStringLiteral("Slice")})
+		{
+			const QPoint at = centreOf(covered);
+			QVERIFY2(at.x() >= 0, qPrintable(covered + QStringLiteral(" has no button")));
+			QVERIFY2(inspector->frameGeometry().contains(at),
+				qPrintable(QStringLiteral("%1 at %2,%3 is outside the floating Inspector %4,%5 %6x%7").arg(covered).arg(at.x()).arg(at.y())
+					.arg(inspector->x()).arg(inspector->y()).arg(inspector->width()).arg(inspector->height())));
+		}
+		// Delivered to the button itself, the click selects the tool even in this layout.
+		for (ShellButton* button : editor->findChildren<ShellButton*>())
+		{
+			if (button->defaultAction() == nullptr || button->defaultAction()->text() != QLatin1String("Paint")) { continue; }
+			QTest::mouseClick(button, Qt::LeftButton, Qt::NoModifier, button->rect().center());
+		}
+		QCOMPARE(editor->state().tool, NoteTool::Paint);
 	}
 
 	void stepRecorderRulerUsesTheRightMargin()
@@ -394,6 +459,33 @@ private slots:
 		QCOMPARE(m_clip->notes().size(), std::size_t{1});
 	}
 
+	//! cluster gui-1105-main-delete: a left click on a toolbar tool button (Delete among them) checks that
+	//! button, unchecks the one before it and picks its tool - the click path, not only the keys.
+	void aClickOnAToolButtonSelectsItInTheToolbar()
+	{
+		auto* bar = m_editor->findChild<QWidget*>(QStringLiteral("noteEditorToolbar"));
+		QVERIFY(bar != nullptr);
+		int tools = 0;
+		for (QToolButton* button : bar->findChildren<QToolButton*>())
+		{
+			QAction* action = button->defaultAction();
+			if (action == nullptr || action->property("controlCommand").toString() != QStringLiteral("window.note_editor_set")
+				|| !action->isCheckable() || action->actionGroup() == nullptr || !action->actionGroup()->isExclusive())
+			{
+				continue;
+			}
+			++tools;
+			const QPoint centre = button->rect().center();
+			QVERIFY2(bar->childAt(button->mapTo(bar, centre)) == button, qPrintable(action->text() + " is covered"));
+			QTest::mouseClick(button, Qt::LeftButton, Qt::NoModifier, centre);
+			QVERIFY2(button->isChecked(), qPrintable(action->text() + " did not become selected"));
+			QCOMPARE(static_cast<int>(m_editor->state().tool), action->data().toInt());
+			QCOMPARE(action->actionGroup()->checkedAction(), action);
+		}
+		QCOMPARE(tools, 7);
+		QCOMPARE(m_editor->state().tool, NoteTool::Audition);  // the last button, Play
+	}
+
 	void noteEditIsValidatedWholeBeforeAnythingIsWritten()
 	{
 		const QString clip = control::clipIdOf(m_clip);
@@ -445,6 +537,73 @@ private slots:
 
 	// --- 0.5.0 L07 ------------------------------------------------------------------------
 
+	//! Q050-064: opening a clip fits its used pitch range with a margin, and a wide range falls back to
+	//! the smallest readable row centred on it; a second clip never keeps the first one's view.
+	void openingClipsFitsTheirPitchRangeAndZoom()
+	{
+		MidiClip* narrow = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
+		QVERIFY(narrow != nullptr);
+		narrow->addNote(Note(TimePos(48), TimePos(0), 60, 100), false);
+		narrow->addNote(Note(TimePos(48), TimePos(48), 64, 100), false);
+		narrow->rearrangeAllNotes();
+		narrow->changeLength(TimePos(192));
+		m_editor->setClip(narrow);
+		const QJsonObject close = m_editor->describe();
+		const int closeTop = close.value(QStringLiteral("top_key")).toInt();
+		const int closeBottom = close.value(QStringLiteral("bottom_key")).toInt();
+		QVERIFY2(closeTop >= 64 && closeBottom <= 60, "both used pitches are visible");
+		QVERIFY2(closeTop > 64 || closeBottom < 60, "with a margin above or below, not at the edge");
+		QVERIFY2(close.value(QStringLiteral("row_height")).toInt() > 14, "a narrow range gets taller rows");
+		QVERIFY2(close.value(QStringLiteral("visible_rows")).toInt() >= 4, "the fitted range fills the view");
+
+		MidiClip* wide = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
+		QVERIFY(wide != nullptr);
+		wide->addNote(Note(TimePos(48), TimePos(0), 20, 100), false);
+		wide->addNote(Note(TimePos(48), TimePos(0), 110, 100), false);
+		wide->rearrangeAllNotes();
+		wide->changeLength(TimePos(768));
+		m_editor->setClip(wide);
+		const QJsonObject far = m_editor->describe();
+		const int farTop = far.value(QStringLiteral("top_key")).toInt();
+		const int farBottom = far.value(QStringLiteral("bottom_key")).toInt();
+		QVERIFY2(far.value(QStringLiteral("zoom")).toDouble() < close.value(QStringLiteral("zoom")).toDouble(),
+			"the longer clip is zoomed further out horizontally");
+		QVERIFY2(far.value(QStringLiteral("row_height")).toInt() == 6, "a range too wide for the view falls back to the smallest row");
+		QVERIFY2(farTop >= 65 && farBottom <= 65, "the fallback is centred on the used range, not left where the last clip was");
+		QVERIFY2(farTop < 110 && farBottom > 20, "and shows a useful part of it");
+		QVERIFY2(far.value(QStringLiteral("visible_rows")).toInt() >= 30, "with more rows than a stale narrow view would show");
+
+		// In Used fold the two pitches are adjacent visible rows even though their MIDI keys are far apart.
+		m_editor->setFold(NoteFold::Used);
+		m_editor->setClip(wide);
+		const QJsonObject folded = m_editor->describe();
+		QCOMPARE(folded.value(QStringLiteral("rows")).toInt(), 2);
+		QVERIFY2(folded.value(QStringLiteral("row_height")).toInt() > 14,
+			"fit uses the two displayed rows, not the hidden pitches between them");
+		QCOMPARE(folded.value(QStringLiteral("visible_rows")).toInt(), 2);
+
+		m_editor->setFold(NoteFold::None);
+		m_editor->setClip(m_clip);
+		delete wide;
+		delete narrow;
+	}
+
+	void openingAnEmptyClipFallsBackToTheDefaultKey()
+	{
+		MidiClip* empty = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
+		QVERIFY(empty != nullptr);
+		empty->changeLength(TimePos(192));
+		m_editor->setClip(empty);
+		const QJsonObject state = m_editor->describe();
+		const int top = state.value(QStringLiteral("top_key")).toInt();
+		const int bottom = state.value(QStringLiteral("bottom_key")).toInt();
+		QCOMPARE(state.value(QStringLiteral("row_height")).toInt(), 14);
+		QVERIFY2(top > DefaultKey && bottom < DefaultKey, "the default key sits in the middle of a normal view");
+		QVERIFY(state.value(QStringLiteral("zoom")).toDouble() > 0.0);
+		m_editor->setClip(m_clip);
+		delete empty;
+	}
+
 	void thePaintToolLaysANoteOnEveryCellItCrossesAsOneEdit()
 	{
 		m_editor->setTool(NoteTool::Paint);
@@ -459,6 +618,123 @@ private slots:
 			QVERIFY2(note != nullptr, qPrintable(QStringLiteral("no painted note at %1").arg(at)));
 			QCOMPARE(static_cast<int>(note->length().getTicks()), 12);
 		}
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{2});
+	}
+
+	void aSparsePaintStrokeAtNarrowZoomPaintsEveryCellThroughTheRelease()
+	{
+		m_editor->setTool(NoteTool::Paint);
+		m_editor->setZoom(0.02);  // a 12-tick cell is narrower than one screen pixel
+		const int y = point(300, 62).y();
+		const QPoint from(6, y);     // tick 300
+		const QPoint move(8, y);     // tick 400
+		const QPoint release(10, y); // tick 500
+		QTest::mousePress(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mouseMove(m_editor->canvas(), move);  // one sparse move event across several grid cells
+		QTest::mouseRelease(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, release);
+
+		// Cells 300..492 (17 of them): the press's, the cells between the move and the press, and those
+		// between the move and the release, which no event lands on.
+		for (int tick = 300; tick <= 492; tick += 12)
+		{
+			QVERIFY2(noteAt(m_clip, tick, 62) != nullptr, qPrintable(QStringLiteral("no painted note at %1").arg(tick)));
+		}
+		QCOMPARE(m_clip->notes().size(), std::size_t{19});
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{2});
+	}
+
+	void aSparseVerticalPaintStrokeInOneColumnPaintsEveryKeyRowItCrosses()
+	{
+		m_editor->setTool(NoteTool::Paint);
+		// One time column (tick 300), keys 60 to 66: the press and one sparse move land on the first and last
+		// rows, and the path between them crosses the five rows in between, which no event lands on.
+		const QPoint top = point(300, 60);
+		const QPoint bottom = point(300, 66);
+		QTest::mousePress(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, top);
+		QTest::mouseMove(m_editor->canvas(), bottom);
+		QTest::mouseRelease(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, bottom);
+		for (int key = 60; key <= 66; ++key)
+		{
+			QVERIFY2(noteAt(m_clip, 300, key) != nullptr, qPrintable(QStringLiteral("no painted note on key %1").arg(key)));
+		}
+		QCOMPARE(m_clip->notes().size(), std::size_t{9});
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{2});
+	}
+
+	void aSparseDiagonalPaintStrokePaintsEveryCellThePathCrosses()
+	{
+		m_editor->setTool(NoteTool::Paint);
+		// The path from the middle of key 66 at tick 300 to the middle of key 61 at tick 402, delivered as a
+		// press, two moves and a release. It leaves key 66's row a hair after tick 310, so it crosses the cell
+		// at tick 312 on key 66 before it enters key 65's row, and no event lands in that cell: painting only
+		// the sampled events, or rounding the row at a cell's edge, misses it.
+		drag(point(300, 66), point(402, 61));
+		for (const auto& cell : {std::pair{312, 66}, std::pair{312, 65}, std::pair{324, 65}, std::pair{324, 64},
+			     std::pair{336, 64}, std::pair{372, 62}, std::pair{396, 61}})
+		{
+			QVERIFY2(noteAt(m_clip, cell.first, cell.second) != nullptr,
+				qPrintable(QStringLiteral("no painted note at %1, key %2").arg(cell.first).arg(cell.second)));
+		}
+		QCOMPARE(m_clip->notes().size(), std::size_t{16});
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{2});
+	}
+
+	void aBackwardTimeBoundaryPaintStrokePaintsTheCellsItEnters()
+	{
+		m_editor->setTool(NoteTool::Paint);
+		const NoteGrid& g = m_editor->state().grid;
+		// Start exactly on a 12-tick boundary (tick 300) and leave key 62's row at once while moving left:
+		// after the press the path is in cell 288 on key 63, then on key 64, and never enters cell 300 on
+		// key 63 (the cell on the far side of the boundary it started on).
+		const QPoint from(static_cast<int>(g.xOfTick(300)), g.yOfKey(62));
+		const QPoint to(static_cast<int>(g.xOfTick(288)), g.yOfKey(64));
+		QTest::mousePress(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mouseMove(m_editor->canvas(), to);
+		QTest::mouseRelease(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, to);
+		QVERIFY2(noteAt(m_clip, 288, 63) != nullptr, "the path enters cell 288 on key 63");
+		QVERIFY2(noteAt(m_clip, 288, 64) != nullptr, "the release cell on key 64 is painted");
+		QVERIFY2(noteAt(m_clip, 300, 63) == nullptr, "cell 300 is never entered on key 63");
+		QCOMPARE(m_clip->notes().size(), std::size_t{5});
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{2});
+	}
+
+	void aBackwardRowBoundaryPaintStrokePaintsTheCellsItEnters()
+	{
+		m_editor->setTool(NoteTool::Paint);
+		const NoteGrid& g = m_editor->state().grid;
+		// Start exactly on the top of key 60's row and move left and up: after the press the path is on key
+		// 61 in cell 288, then enters cell 276 on key 61. It never enters cell 276 on key 60.
+		const QPoint from(static_cast<int>(g.xOfTick(295)), g.yOfKey(60));
+		const QPoint to(static_cast<int>(g.xOfTick(283)), g.yOfKey(61));
+		QTest::mousePress(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mouseMove(m_editor->canvas(), to);
+		QTest::mouseRelease(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, to);
+		QVERIFY2(noteAt(m_clip, 288, 61) != nullptr, "the path enters cell 288 on key 61");
+		QVERIFY2(noteAt(m_clip, 276, 61) != nullptr, "the path enters cell 276 on key 61");
+		QVERIFY2(noteAt(m_clip, 276, 60) == nullptr, "cell 276 is never entered on key 60");
+		QCOMPARE(m_clip->notes().size(), std::size_t{5});
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{2});
+	}
+
+	void aBackwardPaintStrokeEndingOnACellBoundaryDoesNotPaintTheCellBeyondIt()
+	{
+		m_editor->setTool(NoteTool::Paint);
+		const NoteGrid& g = m_editor->state().grid;
+		// A stroke that ends exactly on the boundary at tick 288 stays in cell 288: it never enters cell 276.
+		const QPoint from(static_cast<int>(g.xOfTick(295)), g.yOfKey(62) + g.rowHeight() / 2);
+		const QPoint to(static_cast<int>(g.xOfTick(288)), from.y());
+		QTest::mousePress(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mouseMove(m_editor->canvas(), to);
+		QTest::mouseRelease(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, to);
+		QVERIFY2(noteAt(m_clip, 288, 62) != nullptr, "the release cell is painted");
+		QVERIFY2(noteAt(m_clip, 276, 62) == nullptr, "cell 276 is beyond the release and is never entered");
+		QCOMPARE(m_clip->notes().size(), std::size_t{3});
 		QVERIFY(undo());
 		QCOMPARE(m_clip->notes().size(), std::size_t{2});
 	}
@@ -490,6 +766,30 @@ private slots:
 		m_editor->setKeepInScale(false);
 		QTest::mouseClick(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, point(148, 61));
 		QVERIFY(noteAt(m_clip, 144, 61) != nullptr);
+		QVERIFY(invoke(QStringLiteral("scale.set"), {{QStringLiteral("scale"), QString()}}).ok);
+	}
+
+	//! An editor built while the engine is still starting cannot ask for the scale yet (the query is refused);
+	//! it asks on the playhead tick once the engine is ready, so the scale it shows is the context's scale.
+	void scaleIsReadWhenTheEngineIsReadyAfterStartup()
+	{
+		QVERIFY(invoke(QStringLiteral("scale.root_set"), {{QStringLiteral("root"), 0}}).ok);
+		QVERIFY(invoke(QStringLiteral("scale.set"), {{QStringLiteral("scale"), QStringLiteral("Major")}}).ok);
+		const QJsonObject context = invoke(QStringLiteral("scale.get_state")).result;
+		QVERIFY(context.value(QStringLiteral("scale_set")).toBool());
+		const QString expected = context.value(QStringLiteral("root_name")).toString() + QLatin1Char(' ')
+			+ context.value(QStringLiteral("scale")).toString();
+
+		ControlRegistry::setReady(false);
+		auto* starting = new NoteEditor;  // the engine is still starting while the editor is built
+		ControlRegistry::setReady(true);
+		// The editor's playhead timer (33 ms) is where the scale is followed: fire it once, without waiting.
+		QTimer* tick = nullptr;
+		for (QTimer* timer : starting->findChildren<QTimer*>()) { if (timer->interval() == 33) { tick = timer; } }
+		QVERIFY(tick != nullptr);
+		QMetaObject::invokeMethod(tick, "timeout");
+		QCOMPARE(starting->state().scaleName, expected);
+		delete starting;
 		QVERIFY(invoke(QStringLiteral("scale.set"), {{QStringLiteral("scale"), QString()}}).ok);
 	}
 
@@ -660,7 +960,104 @@ private slots:
 		QCOMPARE(m_editor->state().tool, NoteTool::Paint);
 	}
 
+	//! gui-1105-main-paint (Terra sweep m0-train-25): in a fresh project - no clip open - a real left click on the
+	//! toolbar's Paint button selects Paint: the editor's tool, the button's checked state, and no other tool shown
+	//! selected. Driven through the button the user sees, not through setTool.
+	void aClickOnThePaintButtonWithNoClipOpenSelectsPaint()
+	{
+		m_editor->setClip(nullptr);
+		m_editor->setTool(NoteTool::Draw);  // a fresh editor's tool
+		ShellButton* paint = toolButtonIn(m_editor, QStringLiteral("Paint"));
+		QVERIFY2(paint != nullptr, "the toolbar has no Paint button");
+		QVERIFY(paint->isVisible() && paint->isEnabled() && !paint->isChecked());
+		QTest::mouseClick(paint, Qt::LeftButton, Qt::NoModifier, paint->rect().center());
+		QCOMPARE(m_editor->state().tool, NoteTool::Paint);
+		QVERIFY2(paint->isChecked(), "Paint is not shown selected after its click");
+		for (ShellButton* other : m_editor->findChildren<ShellButton*>())
+		{
+			if (other != paint && other->defaultAction() != nullptr
+				&& other->defaultAction()->actionGroup() == paint->defaultAction()->actionGroup())
+			{
+				QVERIFY2(!other->isChecked(), qPrintable(other->defaultAction()->text() + QStringLiteral(" is still selected")));
+			}
+		}
+	}
+
+	//! gui-1105-main-paint: the sweep's layout. It popped the Inspector out (its step 13) before clicking Paint
+	//! (step 23). A popped-out panel opens as a top-level window at least 480 px wide where the panel was, and the
+	//! centre reflows under it, so the Paint button sits beneath that window: the sweep's click at x=180 landed on the
+	//! Inspector (its after-shot shows the pointer on empty Inspector space). Delivered to the button, the click works.
+	void thePoppedOutInspectorCoversThePaintButtonTheSweepClicked()
+	{
+		Shell shell;
+		auto* editor = new NoteEditor;
+		for (const ShellPanelSpec& spec : ShellLayout::panels())
+		{
+			shell.mount(spec.id, spec.id == QLatin1String("detail") ? static_cast<QWidget*>(editor) : new QWidget);
+		}
+		shell.resize(1600, 1000);
+		shell.show();
+		QVERIFY(QTest::qWaitForWindowExposed(&shell));
+		if (!editor->isVisible()) { shell.togglePanel(QStringLiteral("detail")); }
+		QVERIFY2(editor->isVisible(), "the note editor is not on screen in the shell");
+		QVERIFY(shell.detachPanel(QStringLiteral("inspector")));
+		QCoreApplication::processEvents();  // the centre's reflow
+		QWidget* inspector = shell.floatingWindow(QStringLiteral("inspector"));
+		QVERIFY(inspector != nullptr && inspector->isVisible());
+		ShellButton* paint = toolButtonIn(editor, QStringLiteral("Paint"));
+		QVERIFY2(paint != nullptr, "the toolbar has no Paint button");
+		const QPoint at = paint->mapToGlobal(paint->rect().center());
+		QVERIFY2(inspector->frameGeometry().contains(at),
+			qPrintable(QStringLiteral("Paint at %1,%2 is outside the floating Inspector %3,%4 %5x%6").arg(at.x()).arg(at.y())
+				.arg(inspector->x()).arg(inspector->y()).arg(inspector->width()).arg(inspector->height())));
+		QTest::mouseClick(paint, Qt::LeftButton, Qt::NoModifier, paint->rect().center());
+		QCOMPARE(editor->state().tool, NoteTool::Paint);
+		QVERIFY(paint->isChecked());
+	}
+
 private:
+	//! The toolbar's button for the action named @a text, found as a user finds it: by its label.
+	ShellButton* toolButtonNamed(const QString& text) const
+	{
+		for (ShellButton* button : m_editor->findChildren<ShellButton*>())
+		{
+			if (button->defaultAction() != nullptr && button->defaultAction()->text() == text) { return button; }
+		}
+		return nullptr;
+	}
+
+	//! A real left click on the @a text button picks @a tool: the editor's tool, the button's checked state and
+	//! the exclusivity of the group - the one the user sees as the selected tool.
+	void clickSelectsTool(const QString& text, NoteTool tool)
+	{
+		m_editor->setTool(NoteTool::Draw);  // a fresh editor's tool
+		ShellButton* button = toolButtonNamed(text);
+		QVERIFY2(button != nullptr, qPrintable(text + QStringLiteral(" has no toolbar button")));
+		QVERIFY(button->isVisible() && button->isEnabled());
+		QVERIFY(!button->isChecked());
+		QTest::mouseClick(button, Qt::LeftButton, Qt::NoModifier, button->rect().center());
+		QCOMPARE(m_editor->state().tool, tool);
+		QVERIFY2(button->isChecked(), qPrintable(text + QStringLiteral(" is not shown selected after the click")));
+		for (ShellButton* other : m_editor->findChildren<ShellButton*>())
+		{
+			if (other != button && other->isCheckable() && other->defaultAction() != nullptr
+				&& other->defaultAction()->actionGroup() == button->defaultAction()->actionGroup())
+			{
+				QVERIFY2(!other->isChecked(), qPrintable(other->defaultAction()->text() + QStringLiteral(" is still selected")));
+			}
+		}
+	}
+
+	//! The toolbar button of @a editor whose action is labelled @a text, found as a user finds it.
+	static ShellButton* toolButtonIn(NoteEditor* editor, const QString& text)
+	{
+		for (ShellButton* button : editor->findChildren<ShellButton*>())
+		{
+			if (button->defaultAction() != nullptr && button->defaultAction()->text() == text) { return button; }
+		}
+		return nullptr;
+	}
+
 	QPoint point(int tick, int key) const
 	{
 		const NoteGrid& g = m_editor->state().grid;

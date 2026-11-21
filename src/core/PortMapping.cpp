@@ -117,6 +117,7 @@ void PortMapping::start(quint16 internalPort)
 	stop();
 	m_internal = internalPort;
 	m_busy = true;
+	m_stopped = false;
 	m_pmpFailure.clear();
 	if (m_hasTestEndpoints)
 	{
@@ -149,15 +150,17 @@ void PortMapping::setTestEndpoints(const TestEndpoints& endpoints)
 
 void PortMapping::stop()
 {
+	m_busy = false;
+	m_stopped = true;
 	m_renew->stop();
 	m_pmp->unmap();
 	m_upnp->unmap();
-	m_busy = false;
 	m_result = MappingResult();
 }
 
 void PortMapping::onPmpFinished(const MappingResult& result)
 {
+	if (m_stopped) { return; }  // a completion of an attempt stop() canceled
 	if (result.ok) { succeed(result); return; }
 	m_pmpFailure = result.message + (m_gatewayGuessed ? QStringLiteral(" (the gateway address was guessed)") : QString());
 	m_upnp->map(m_internal, m_internal, UpnpLeaseS, m_local);
@@ -165,6 +168,7 @@ void PortMapping::onPmpFinished(const MappingResult& result)
 
 void PortMapping::onUpnpFinished(const MappingResult& result)
 {
+	if (m_stopped) { return; }  // a completion of an attempt stop() canceled
 	if (result.ok) { succeed(result); return; }
 	m_busy = false;
 	m_result = MappingResult();

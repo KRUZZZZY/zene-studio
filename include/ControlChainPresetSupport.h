@@ -54,6 +54,7 @@
 #include <QStringList>
 
 #include "ControlDeviceSupport.h" // ControlDeviceEntry, ControlResult
+#include "PresetBindings.h"
 #include "lmms_export.h"
 
 namespace lmms
@@ -77,6 +78,9 @@ struct ControlChainPresetDevice
 	QString file;      //!< hosted_file, empty for a built-in device
 	QString label;     //!< hosted_id (the LADSPA label), empty otherwise
 	QString uri;       //!< hosted_uri (the LV2 URI), empty otherwise
+	//! Q050-331: the MIDI controller bindings the state carries, named relative to the device (the manifest
+	//! written beside the state; empty for a preset older than it).
+	QList<presetbindings::Binding> bindings;
 };
 
 //! One stored chain preset: its name, its file and its devices in order.
@@ -113,9 +117,10 @@ LMMS_EXPORT QString controlChainPresetName(const QString& path);
 LMMS_EXPORT QStringList controlChainPresetFiles();
 
 /*! The preset file \\a path holds. False and *error set when the file cannot be
- *  read, is not XML, is not a <zenechainpreset> document, or carries a device
- *  with no state document - a half-readable preset is refused rather than
- *  applied with a device silently missing its settings.
+ *  read, is not XML, is not a <zenechainpreset> document, has no version or a
+ *  version other than the one this build writes, or carries a device with no
+ *  state document - a half-readable preset is refused rather than applied with
+ *  a device silently missing its settings.
  */
 LMMS_EXPORT bool controlReadChainPreset(const QString& path, ControlChainPreset* out,
 	ControlResult* error);

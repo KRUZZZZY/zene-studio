@@ -22,8 +22,8 @@
  *
  */
 /*! 0.5.0 L03: the recording pass on the spine.
- *  - transport.record_options (WF-080 / WF-082): count-in and pre-roll bars and the record mode
- *    (RecordOptions.h) - a preference in the config file, one undo step;
+ *  - transport.record_options (WF-080 / WF-082, Q050-094): count-in and pre-roll bars and the record mode - overdub, replace
+ *    or keep_history, for MIDI and audio (RecordOptions.h) - a preference in the config file, one undo step;
  *  - transport.time_format (theme 7): bars|beats, ticks or time in every musician-facing position and
  *    length (MusicalTime.h) - a preference in the config file, one undo step;
  *  - comp.cycle (ED-168): the comp segment at a position plays the next (or previous) take lane -
@@ -149,9 +149,13 @@ void registerRecordingPassCommands(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("record_options");
 	cmd.description = QStringLiteral("How a recording pass starts and what it keeps: 'count_in_bars' (0..4 - the metronome clicks "
 		"them before the play position, on or not), 'pre_roll_bars' (0..8 - played without the click), so the transport starts "
-		"that many bars early and audio is captured only from the play position; 'mode' overdub (a MIDI pass keeps the notes "
-		"it plays over) or replace (a recorded note erases the notes already in the clip that it overlaps, at any pitch - "
-		"notes only: the clip's controller lanes and all automation are kept; the reply's 'mode_scope' says so). A field left "
+		"that many bars early and audio is captured only from the play position; 'mode' - the same choice for MIDI and audio - is "
+		"overdub (a MIDI pass keeps the notes it plays over; an audio pass is mixed into the clip's audio, so the old audio stays "
+		"audible), replace (a recorded note erases the notes already in the clip that it overlaps, at any pitch - notes only: the "
+		"clip's controller lanes and all automation are kept; an audio pass replaces the clip's audio) or keep_history (an audio "
+		"pass keeps the clip's earlier audio and the new pass as take lanes, the new pass active - comp.take_select chooses another; "
+		"MIDI keeps notes as overdub does); the reply's 'mode_scope', 'midi_scope' and 'audio_scope' say so and 'modes' lists the "
+		"choices. A field left "
 		"out keeps its value; none reads them. A preference in the config file, not the project; a change is one undo step.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("count_in_bars"), integerProperty(0, 4)},
 		{QStringLiteral("pre_roll_bars"), integerProperty(0, 8)}, {QStringLiteral("mode"), enumProperty(recordoptions::modeNames())}});

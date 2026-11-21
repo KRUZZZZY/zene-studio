@@ -41,6 +41,8 @@
 #include "SampleWindow.h"
 #include "WarpMarkers.h"
 #include "PlayHandle.h"
+#include "TakeLane.h"
+#include "TransientRepeat.h"
 
 namespace lmms
 {
@@ -87,6 +89,12 @@ public:
 	 *  handle that never reaches the engine; the live path never sets it. */
 	void setIgnoresTrackMute(bool ignores) { m_ignoresTrackMute = ignores; }
 
+	/*! Q050-111: run @a clip's own effects (SampleClip::processClipEffects) on every period this handle renders,
+	 *  after the clip's fades, gain and take gating and before the track sums it with its other clips. Only the
+	 *  live schedule (SampleTrack::play) sets it; an offline render of the clip's source (clip.consolidate, the
+	 *  previews) leaves it null and renders the source as it always did. */
+	void setClipEffects(SampleClip* clip) { m_effectsClip = clip; }
+
 	inline f_cnt_t framesDone() const
 	{
 		return( m_frame );
@@ -114,8 +122,15 @@ public:
 	void armPooledVoice(std::shared_ptr<const SampleBuffer> buffer, int sourceIn, int sourceOut,
 		float amplification, f_cnt_t offset, Track* track) noexcept;
 	void resetPooledVoice() noexcept;
+	//! Prepare/adopt/discard the handle state and its comp-slip readers together.
+	auto prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool;
+	void adoptPreparedConverterMode() noexcept;
+	void discardPreparedConverterMode() noexcept;
 
 private:
+	SamplePlayHandle(Sample* sample, bool ownAudioBusHandle, AudioResampler::RealtimeVoiceTag realtimeVoice);
+	void initializeSampleState();
+
 	Sample::PlaybackState m_state;
 	//! The source window this handle renders, snapshotted at construction: nothing
 	//! that happens to the clip or the Sample afterwards changes this handle's
@@ -151,6 +166,17 @@ private:
 	 *  clip's pool, or nullptr (WSOLA renders). Borrowed, never owned: released
 	 *  dirty in the destructor, reset by the pool's recycler off this thread. */
 	RubberBandVoice* m_rubberBand = nullptr;
+	/*! Q050-162: a warped clip in the Repeat or Gate mode renders its transient
+	 *  segments through `m_transientRepeat` (include/TransientRepeat.h) instead
+	 *  of the resampler or a stretcher. Snapshotted at construction - the
+	 *  segments, the clip window they are read from and the interval at the
+	 *  tempo of that moment - in fixed arrays; false for every other clip.
+	 *  Defined in src/core/TransientRepeat.cpp. */
+	bool m_repeatsTransients = false;
+	SampleWindow m_repeatWindow;
+	TransientRepeatRenderer m_transientRepeat;
+	void snapshotTransientRepeat(const SampleClip* clip, WarpStretchMode mode);
+	void renderTransientRepeat(SampleFrame* dst, f_cnt_t frames);
 	/*! The clip's fades and its gain, snapshotted at construction exactly as the
 	 *  window and the warp are (invariant I1): a live handle renders the envelope
 	 *  it was created with, and nothing the control thread does to the clip
@@ -184,6 +210,7 @@ private:
 	bool m_doneMayReturnTrue = true;
 	bool m_ownAudioBusHandle = false;
 	bool m_ignoresTrackMute = false;
+	SampleClip* m_effectsClip = nullptr;  //!< Q050-111: see setClipEffects(); borrowed, like m_sample
 	std::uint16_t m_poolSlot = NotPooled;
 	bool m_frozenTakePoolVoice = false;
 
@@ -199,12 +226,13 @@ private:
 	 *  `m_stretcher` instead of `Sample::play`'s resampler.
 	 *
 	 *  The source frames per output frame are
-	 *  `(1 / warpRatio()) / (sampleRateRatio * freqRatio)` — the reciprocal of
-	 *  the converter ratio the resample path would hand `AudioResampler`, so
-	 *  both modes put the same source frames on the same timeline and differ
-	 *  only in what they do to the waveform's period. The handle's playback
-	 *  state is advanced to the stretcher's own analysis cursor, which is what
-	 *  the next period's rate is derived from. */
+	 *  `(speedHere() / warpRatio()) / (sampleRateRatio * freqRatio)` — the
+	 *  reciprocal of the converter ratio the resample path would hand
+	 *  `AudioResampler` (`warpRatio() / speedHere()` times the sample's own
+	 *  ratios), so both modes put the same source frames on the same timeline
+	 *  and differ only in what they do to the waveform's period. The handle's
+	 *  playback state is advanced to the stretcher's own analysis cursor, which
+	 *  is what the next period's rate is derived from. */
 	void renderPreservingPitch(SampleFrame* dst, f_cnt_t frames);
 
 	/*! Multiplies the clip's fade-and-gain envelope into the frames this period
@@ -229,17 +257,14 @@ private:
 	void applyComp(SampleFrame* buffer, f_cnt_t frames) const;
 	//! Lock-free active-take gate; comp playback bypasses this selection entirely.
 	void applyActiveTakeGate(SampleFrame* buffer, f_cnt_t frames) const;
-	//! How many selected spans of this clip's own lane one handle can hold. The
-	//! composite (include/TakeLane.h) stores its segments in a plain vector with no
-	//! count limit, so this is the RENDER budget, not the model's: a fixed array keeps
-	//! applyComp() allocation-free and bounded on the render path. 32 was below what
-	//! real comps reach - a take selected in 40 places played its first 32 and was
-	//! silent for the rest (Luna cluster 3511). 256 covers a heavily comped take and
-	//! costs at most 256 pair comparisons per rendered frame.
-	static constexpr int MaxCompSpans = 256;
+	//! How many selected spans of this clip's own lane one handle can hold. This is the
+	//! composite's per-lane budget (TakeLaneModel::MaxCompositeSpansPerLane), which the
+	//! comp's authoring paths enforce, so a rendered comp is never silently cut. A fixed
+	//! array keeps applyComp() allocation-free and bounded on the render path.
+	static constexpr int MaxCompSpans = TakeLaneModel::MaxCompositeSpansPerLane;
 	static constexpr f_cnt_t CompRampFrames = 64;
 	bool m_comped = false;
-	int m_takeGroupId = 0;
+	int m_takeGroupId = -1;
 	int m_takeLaneIndex = 0;
 	const std::atomic<int>* m_activeTakeLane = nullptr;
 	const std::atomic<bool>* m_playAllTakes = nullptr;

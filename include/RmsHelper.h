@@ -85,7 +85,7 @@ public:
 		{
 			if( m_size < size )
 			{
-				delete m_buffer;
+				delete[] m_buffer;
 				m_buffer = new float[ size ];
 				m_size = size;
 				reset();

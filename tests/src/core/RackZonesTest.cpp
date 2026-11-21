@@ -41,6 +41,8 @@
 
 #include <QtTest>
 
+#include <stdexcept>
+
 #include <QDomDocument>
 #include <QDomElement>
 #include <QJsonObject>
@@ -488,6 +490,115 @@ private slots:
 		printEvidence("chain-removal-reindexes-zones",
 			QStringLiteral("chains 5 -> 4; zone on chain 4 -> chain 3; zone on the removed "
 				"chain 2 dropped"));
+	}
+
+	//! Luna cluster new-p9-378: an exception inside RackZones::edit must still
+	//! release the audio model-change guard. The alongside step throws after the
+	//! mutation and the changed hook throws after the mutation: both unwind
+	//! while the guard is held. The LMMS_TESTING seam reports whether the
+	//! calling thread still holds the guard afterwards, with no timing.
+	void throwingEditReleasesTheModelChangeGuard()
+	{
+		auto* engine = Engine::audioEngine();
+		QVERIFY(engine != nullptr);
+		QVERIFY(!engine->isChangeInModelHeld());
+
+		RackZone zone;
+		zone.lowKey = 0;
+		zone.highKey = 127;
+		zone.chain = 0;
+
+		RackZones zones;
+		bool alongsideThrew = false;
+		try
+		{
+			zones.addZone(zone, [] { throw std::runtime_error("alongside"); });
+		}
+		catch (const std::runtime_error&)
+		{
+			alongsideThrew = true;
+		}
+		QVERIFY(alongsideThrew);
+		QCOMPARE(zones.zoneCount(), 1);
+		const bool heldAfterAlongside = engine->isChangeInModelHeld();
+		if (heldAfterAlongside) { engine->doneChangeInModel(); }
+		QVERIFY2(!heldAfterAlongside,
+			"edit left the model-change guard held after the alongside step threw");
+
+		RackZones hooked;
+		hooked.setChangedHook([] { throw std::runtime_error("hook"); });
+		bool hookThrew = false;
+		try
+		{
+			hooked.addZone(zone);
+		}
+		catch (const std::runtime_error&)
+		{
+			hookThrew = true;
+		}
+		QVERIFY(hookThrew);
+		const bool heldAfterHook = engine->isChangeInModelHeld();
+		if (heldAfterHook) { engine->doneChangeInModel(); }
+		QVERIFY2(!heldAfterHook,
+			"edit left the model-change guard held after the changed hook threw");
+
+		RackZones normal;
+		QCOMPARE(normal.addZone(zone), 0);
+		QVERIFY(!engine->isChangeInModelHeld());
+		printEvidence("guard-released-on-throw",
+			QStringLiteral("alongside throw and hook throw both leave the guard released"));
+	}
+
+	//! Luna cluster 5244: a project zone naming a chain the rack does not have
+	//! is discarded on load, not stored. The rack in the document has two
+	//! chains; the first zone names chain 99.
+	void projectZoneNamingAMissingChainIsDiscarded()
+	{
+		QDomDocument doc;
+		QVERIFY(doc.setContent(QStringLiteral(
+			"<channel><rack version=\"2\" selected=\"1\">"
+			"<chain index=\"1\"><fxchain numofeffects=\"0\" enabled=\"0\"/></chain>"
+			"<zone low_key=\"0\" high_key=\"127\" low_velocity=\"0\" high_velocity=\"200\" "
+			"chain=\"99\"/>"
+			"<zone low_key=\"60\" high_key=\"72\" low_velocity=\"0\" high_velocity=\"200\" "
+			"chain=\"1\"/>"
+			"</rack></channel>")));
+
+		Rack& rack = rackUnderTest();
+		rack.loadSettings(doc.documentElement());
+		QCOMPARE(rack.chainCount(), 2);
+		QCOMPARE(rack.zones().zoneCount(), 1);
+		QCOMPARE(rack.zones().zone(0)->chain, 1);
+		QCOMPARE(rack.zones().resolve(65, 100), 0);
+		printEvidence("loaded-zone-chain-validated",
+			QStringLiteral("chain=99 zone discarded on load; chain=1 zone kept and resolves"));
+	}
+
+	//! Luna cluster new-p16-178: an invalid first zone must not hide a later
+	//! valid zone. The first zone covers the note but names chain 999, which
+	//! the feed cannot route; the second zone covers the same note and names
+	//! chain 1.
+	void invalidFirstZoneDoesNotHideAValidLaterZone()
+	{
+		QDomDocument doc;
+		QVERIFY(doc.setContent(QStringLiteral(
+			"<channel><rack version=\"2\" selected=\"1\">"
+			"<chain index=\"1\"><fxchain numofeffects=\"0\" enabled=\"0\"/></chain>"
+			"<zone low_key=\"36\" high_key=\"60\" low_velocity=\"0\" high_velocity=\"200\" "
+			"chain=\"999\"/>"
+			"<zone low_key=\"36\" high_key=\"60\" low_velocity=\"0\" high_velocity=\"200\" "
+			"chain=\"1\"/>"
+			"</rack></channel>")));
+
+		Rack& rack = rackUnderTest();
+		rack.loadSettings(doc.documentElement());
+		QCOMPARE(rack.chainCount(), 2);
+		QCOMPARE(rack.zones().zoneCount(), 1);
+		const int hit = rack.zones().resolve(40, 100);
+		QCOMPARE(hit, 0);
+		QCOMPARE(rack.zones().zone(hit)->chain, 1);
+		printEvidence("invalid-zone-does-not-hide-valid",
+			QStringLiteral("chain=999 zone discarded; (40,100) resolves to the chain=1 zone"));
 	}
 };
 

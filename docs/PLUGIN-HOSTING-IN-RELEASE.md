@@ -503,3 +503,8 @@ names none. For CLAP it is the descriptor's `vendor`. It is kept out of the sub-
 The key's attributes are saved in projects and name the organiser's favourites, so a vendor added there
 would change both. Test: `ControlDeviceCatalogueTest::hostedVendorsAreTheFactoriesOwn` (red: "Not
 reported" where the fixture's factory says "Zene Studio test fixture").
+
+*(Extended 2026-10-16, Q050-090.)* The same vendor now travels on the wire: every `plugin.list`
+entry carries `vendor` (empty when the format reports none), resolved once in the core
+(`controlDeviceVendor`) and read by both the command and the picker, so the two cannot disagree.
+Test: `ControlDeviceCatalogueTest::listedVendorIsThePickerVendor`.

@@ -201,6 +201,30 @@ SessionSlotPlayback SessionScheduler::playbackForColumn( int track ) const noexc
 	return view;
 }
 
+bool publishSessionCell( SessionScheduler& scheduler, int track, int scene, const ClipSlot& slot ) noexcept
+{
+	// A MIDI cell publishes the pattern it references. Anything else -
+	// an empty cell, or an audio cell (whose playback path is a later
+	// slice) - publishes "nothing to render" explicitly, so a cell that
+	// changed kind stops rendering instead of keeping a stale pattern.
+	const int patternId = slot.isEmpty() ? -1 : slot.patternId();
+	// WF-055: an audio cell's clip, loaded (and its column's track given a renderer) here, on the
+	// model thread; nullptr for every other cell, so a cell that stopped being audio stops sounding.
+	Song* song = Engine::getSong();
+	sessionaudio::Prepared audio;
+	if( song != nullptr && slot.type() == ClipSlot::Type::Audio )
+	{
+		audio = sessionaudio::prepare( *song, track, slot, song->getTempo() );
+	}
+	const SampleBuffer* clip = audio.clip;
+
+	// The loop length is left 0: PatternStore::play wraps the position
+	// by the pattern's own length (src/core/PatternStore.cpp:56), so the
+	// render is correct without the model computing one, and a length
+	// published here would be a second source of truth for it.
+	return scheduler.publishSlotContent( track, scene, patternId, 0, slot.legato(), slot.loopStart(), clip, audio.shape );
+}
+
 int publishSessionSlotContent( SessionScheduler& scheduler, const SessionModel& model ) noexcept
 {
 	const int tracks = model.trackCount();
@@ -210,28 +234,7 @@ int publishSessionSlotContent( SessionScheduler& scheduler, const SessionModel& 
 	{
 		for( int scene = 0; scene < scenes; ++scene )
 		{
-			const ClipSlot& slot = model.slot( track, scene );
-
-			// A MIDI cell publishes the pattern it references. Anything else -
-			// an empty cell, or an audio cell (whose playback path is a later
-			// slice) - publishes "nothing to render" explicitly, so a cell that
-			// changed kind stops rendering instead of keeping a stale pattern.
-			const int patternId = slot.isEmpty() ? -1 : slot.patternId();
-			// WF-055: an audio cell's clip, loaded (and its column's track given a renderer) here, on the
-			// model thread; nullptr for every other cell, so a cell that stopped being audio stops sounding.
-			Song* song = Engine::getSong();
-			sessionaudio::Prepared audio;
-			if( song != nullptr && slot.type() == ClipSlot::Type::Audio )
-			{
-				audio = sessionaudio::prepare( *song, track, slot, song->getTempo() );
-			}
-			const SampleBuffer* clip = audio.clip;
-
-			// The loop length is left 0: PatternStore::play wraps the position
-			// by the pattern's own length (src/core/PatternStore.cpp:56), so the
-			// render is correct without the model computing one, and a length
-			// published here would be a second source of truth for it.
-			if( scheduler.publishSlotContent( track, scene, patternId, 0, slot.legato(), slot.loopStart(), clip, audio.shape ) )
+			if( publishSessionCell( scheduler, track, scene, model.slot( track, scene ) ) )
 			{
 				++published;
 			}

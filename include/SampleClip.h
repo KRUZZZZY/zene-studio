@@ -25,12 +25,14 @@
 #ifndef LMMS_SAMPLE_CLIP_H
 #define LMMS_SAMPLE_CLIP_H
 
+#include <array>
 #include <atomic>
 #include <memory>
 #include <span>
 #include <vector>
 
 #include "Clip.h"
+#include "LoopSource.h"
 #include "RubberBandStretch.h"
 #include "Sample.h"
 #include "SampleWindow.h"
@@ -39,8 +41,10 @@
 namespace lmms
 {
 
+class EffectChain;
 class SampleBuffer;
 class SampleRecordHandle;
+class SampleTrack;
 
 namespace gui
 {
@@ -86,14 +90,42 @@ public:
 		return m_sample;
 	}
 
+	//! The take's audio, read-only: the waveform painters (TakeWaveform) need its peaks.
+	const Sample& sample() const
+	{
+		return m_sample;
+	}
+
 	TimePos sampleLength() const;
 
 	/*! The clip's authored window into its source audio (design §2.2).
 	 *
 	 *  This is the state a trim, a slip or a split authors. The playback path
 	 *  reads it and never writes it: a playback pass derives the window it renders
-	 *  and hands it to the play handle as a snapshot (I1). */
+	 *  and hands it to the play handle as a snapshot (I1).
+	 *
+	 *  The window is a PLAY range: the frames the clip plays, in play order. */
 	SampleWindow sampleWindow() const { return m_window; }
+
+	/*! The source frames the clip actually sounds.
+	 *
+	 *  For a forward source that is the window itself. For a reversed source it
+	 *  is the window's MIRROR: Sample::render reverses the WHOLE buffer, so the
+	 *  frame played at play frame `p` is the buffer frame `size - 1 - p` and a
+	 *  reversed clip sounds the mirror of the window it was given. Everything
+	 *  that looks at the clip's AUDIO - the transient detector, the slice and
+	 *  the quantise commands - has to look at this range, not at the window. */
+	SampleWindow audibleWindow() const;
+
+	/*! The play frame of a source frame: the position in the window traversal.
+	 *
+	 *  This is the coordinate the warp map is written in (the render path asks
+	 *  the map about play frames) and the coordinate a reversed clip's
+	 *  transients have to be ordered in: for a reversed source the play frame
+	 *  of the buffer frame `f` is `size - 1 - f`. A source frame outside the
+	 *  window is clamped to the window's nearest edge, exactly as the timeline
+	 *  mapping clamps it. */
+	f_cnt_t playFrameFor(f_cnt_t sourceFrame) const;
 
 	/*! Authors the window; the single place the well-formedness rule (I4) lives.
 	 *
@@ -108,7 +140,16 @@ public:
 	void setSampleStartFrame( f_cnt_t startFrame );
 	void setSamplePlayLength( f_cnt_t length );
 
+	/*! The play frame a timeline position plays: the position in the window
+	 *  traversal, which is the coordinate the warp map is written in and the
+	 *  one the play handles unfold. For a forward source it is the source
+	 *  frame; for a reversed source it is the position whose source frame is
+	 *  the buffer's mirror. */
 	f_cnt_t sourceFrameAt(TimePos timelinePos) const override;
+
+	/*! The timeline position a SOURCE frame is reached at: where the buffer
+	 *  frame `sourceFrame` sounds, in the clip's play direction. A frame
+	 *  outside the window is clamped to the window's nearest edge. */
 	TimePos timelinePosAt(f_cnt_t sourceFrame) const override;
 
 	/*! The clip's own rate: source frames per project tick (#597).
@@ -121,7 +162,7 @@ public:
 	float clipFramesPerTick() const;
 
 	//! The clip's warp map. Empty means "no warp": the linear map is the answer.
-	const WarpMarkers& warpMarkers() const { return m_warp; }
+	const WarpMarkers& warpMarkers() const { return passWarp(); }
 
 	/*! Authors the marker set (control thread). Returns false — leaving the
 	 *  previous set intact — for a set that is not strictly increasing in both
@@ -132,23 +173,49 @@ public:
 	WarpTempoMode warpTempoMode() const { return m_tempoMode; }
 	void setWarpTempoMode(WarpTempoMode mode);
 
-	/*! How this clip renders a rate change: plain resampling (the default,
-	 *  and the pitch moves with the rate) or the pitch-preserving stretch
-	 *  (WSOLA, feature-list row 30). Only read for a clip that does not
-	 *  `rendersLinearly()`: with no rate change both modes are the same
-	 *  render, and the playback path takes the historical one. */
-	WarpStretchMode warpStretchMode() const { return m_stretchMode; }
+	/*! How this clip renders a rate change: varispeed resampling (the default
+	 *  and the spec's Re-Pitch — the pitch moves with the rate) or one of the
+	 *  pitch-keeping stretches (WSOLA at its default parameters, the
+	 *  WSOLA-parameterised Tones / Texture, or the Rubber Band-backed Beats /
+	 *  Complex, Q050-036). Only read for a clip that
+	 *  does not `rendersLinearly()`: with no rate change every mode is the
+	 *  same render, and the playback path takes the historical one. */
+	WarpStretchMode warpStretchMode() const { return m_stretchMode.load(std::memory_order_acquire); }
 	void setWarpStretchMode(WarpStretchMode mode);
 
 	/*! The Rubber Band voices this clip's play handles claim (owner decision
-	 *  12), or nullptr. Built on the control thread the first time the clip is
-	 *  in the RubberBand mode - by the setter, a restore or a copy - and kept
-	 *  for the clip's lifetime, because a handle may still hold a voice when
-	 *  the mode changes back. */
-	RubberBandPool* rubberBandPool() const { return m_rubberBand.get(); }
+	 *  12), or nullptr when the current mode renders no pool. Built on the
+	 *  control thread the first time the clip takes one of the two
+	 *  Rubber Band-backed modes (Beats, Complex) - by the setter, a restore or
+	 *  a copy - and kept for the clip's lifetime, one pool per mode (Q050-036),
+	 *  because a voice's options are fixed at construction and a handle may
+	 *  still hold a voice when the mode changes again. The unused mode's pool
+	 *  is simply never claimed. */
+	RubberBandPool* rubberBandPool() const;
+	//! The pool of @a mode (nullptr for a mode without one, or one not built): a
+	//! reader that took the mode with warpStretchMode() asks for THAT mode's pool,
+	//! so a switch between the two reads cannot hand it the other mode's voices.
+	RubberBandPool* rubberBandPool(WarpStretchMode mode) const;
 
 	//! Clip::restoreState plus the Rubber Band pool a restored mode may need.
 	void restoreState(const QDomElement& element) override;
+
+	/*! Q050-162: the interval the Repeat and Gate modes retrigger / cut at - a
+	 *  tempo division or a free interval in ms (include/TransientRepeat.h).
+	 *  Stored with the warp state (one atomic word) and kept whatever the mode,
+	 *  so switching away from Repeat and back keeps the user's rate. */
+	TransientRepeatRate transientRepeatRate() const
+	{
+		return TransientRepeatRate::unpack(m_transientRate.load(std::memory_order_acquire));
+	}
+	void setTransientRepeatRate(const TransientRepeatRate& rate);
+
+	/*! Q050-162: the clip's transients as play frames, a value copy - what a
+	 *  Repeat / Gate play handle segments the clip at. Analysed on the control
+	 *  thread (clipTransientFrames) when the clip enters one of those modes and
+	 *  again when its audio or window changes while it is in one; the render
+	 *  path only ever copies the published table. Empty in every other mode. */
+	TransientTable transientTable() const { return m_transients.read(); }
 
 	//! The tempo the clip was recorded at, in BPM; only read in `SourceTempo`.
 	float sourceTempo() const { return m_sourceTempo; }
@@ -165,10 +232,15 @@ public:
 	 *  keep the historical length arithmetic bit for bit. */
 	bool rendersLinearly() const
 	{
-		return m_warp.empty() && m_tempoMode == WarpTempoMode::FollowProject;
+		return passWarp().empty() && m_tempoMode == WarpTempoMode::FollowProject;
 	}
 
 	void setStartTimeOffset(const TimePos& startTimeOffset) override;
+
+	//! Q050-093: what an import detected in this clip's file and which loop mode it took (LoopSource.h).
+	//! Control thread only; the playback path never reads it.
+	const LoopSource& loopSource() const { return m_loopSource; }
+	void setLoopSource(const LoopSource& source) { m_loopSource = source; }
 
 	/*! 0.5.0 ED-021: the sub-tick part of a frame-exact edit. The clip's audio starts this many SOURCE
 	 *  frames after its tick origin (start + offset), less than one tick's worth: a split or a trim at a
@@ -179,7 +251,8 @@ public:
 	f_cnt_t leadFrames() const { return m_leadFrames.load(std::memory_order_relaxed); }
 	void setLeadFrames(f_cnt_t frames);
 	/*! The OUTPUT frames of silence still owed before the audio starts when a pass begins at @a at - what
-	 *  SampleTrack adds to the play handle's offset. 0 without a lead, or once the lead has passed. */
+	 *  SampleTrack adds to the play handle's offset. 0 without a lead, or once the lead has passed. A warped
+	 *  clip owes the silence before its map reaches the window's start (Q050-063: the first marker moved later). */
 	f_cnt_t leadOutputFramesAt(TimePos at) const;
 
 	gui::ClipView * createView( gui::TrackView * _tv ) override;
@@ -212,6 +285,17 @@ public:
 	{
 		return new SampleClip(*this);
 	}
+
+	/*! Q050-111: the clip's own realtime effects - an ordered EffectChain this clip owns, processed on the
+	 *  clip's audio BEFORE the track sums its clips, so it never touches a sibling clip. Empty (and switched
+	 *  off) for every clip nobody gave an effect; never null; lives as long as the clip. Control thread only:
+	 *  edits go through EffectChain's own model-change guard, exactly as a track's chain does. */
+	EffectChain* clipEffects() const { return m_clipEffects.get(); }
+	/*! Audio thread (the clip's play handle): runs the clip's effects in place on one period. Allocates
+	 *  nothing, takes no lock and never waits: a chain that is empty or off returns at once, and a second
+	 *  handle of the same clip rendering in the same period (never the case for the live schedule, which
+	 *  holds one handle per clip) skips the effects rather than share the chain's state. */
+	void processClipEffects(std::span<SampleFrame> buffer) noexcept;
 
 public slots:
 	void setSampleFile(const QString& sf);
@@ -254,17 +338,58 @@ private:
 	void releaseRecordTakes();
 	//! Main thread, at the arm: one journal step, a checkpoint of the track as it was before the arm.
 	void journalArmStep();
-	//! Main thread: an armed clip's take on a new take lane.
-	void addRecordedLane(std::shared_ptr<const SampleBuffer> take);
-	//! See rubberBandPool(); never replaced once built.
-	std::unique_ptr<RubberBandPool> m_rubberBand;
-	//! Builds m_rubberBand if the mode asks for it and it does not exist yet.
+	//! Main thread: an armed clip's take on a new take lane; \a newestIsActive makes it the active
+	//! take even over a take the user chose (Keep History).
+	//! \a loopPass: the pass of a loop recording; in Overdub it switches the track's Play all takes on, so the
+	//! earlier passes stay audible (Replace and Keep History keep only the newest active).
+	void addRecordedLane(std::shared_ptr<const SampleBuffer> take, bool newestIsActive = false, bool loopPass = false);
+	//! Main thread (Q050-094): this clip's own audio, as a copy, on a new take lane of its group.
+	void addHistoryLane();
+	//! Main thread: a clip for take lane \a lane of this clip's group, a copy of \a source or (no source)
+	//! holding \a take. Called with the engine's change lock held.
+	SampleClip* newLaneClip(SampleTrack* track, SampleClip* source, std::shared_ptr<const SampleBuffer> take, int lane);
+	//! Main thread (Q050-094): the first pass of an arming lands according to the record mode.
+	void installFirstPass(std::shared_ptr<const SampleBuffer> take);
+	//! Main thread: the Overdub landing - mixed into this clip's audio, or a clip of its own over it.
+	void overdub(std::shared_ptr<const SampleBuffer> take);
+	//! See rubberBandPool(): one slot per Rubber Band-backed mode, each built
+	//! at most once (the mode's own voices; never replaced once built).
+	std::array<std::unique_ptr<RubberBandPool>, WarpRubberBandModeSlots> m_rubberBands;
+	//! The same pools as raw pointers, published with release AFTER construction;
+	//! the render thread reads these, never the unique_ptrs.
+	std::array<std::atomic<RubberBandPool*>, WarpRubberBandModeSlots> m_rubberBandPublished{};
+	//! Builds the current mode's pool if the mode asks for one and it is absent.
 	void ensureRubberBandPool();
+	//! Builds @a mode's pool if it asks for one and it is absent, then publishes it.
+	void ensureRubberBandPool(WarpStretchMode mode);
+	void prepareWarpStretchMode(WarpStretchMode mode) override;
+	/*! Q050-162: the transient table as the render thread may read it - three
+	 *  pinned slots, never written while a reader copies one (see
+	 *  PublishedTransients). The key of the last analysis - buffer, window,
+	 *  direction - skips re-analysing audio that did not change (control thread). */
+	PublishedTransients m_transients;
+	std::weak_ptr<const SampleBuffer> m_transientsBuffer;
+	SampleWindow m_transientsWindow;
+	bool m_transientsReversed = false;
+	//! Control thread: (re)analyse the transients when the audio, window or direction changed.
+	void analyseTransients();
+	//! Control thread (queued when announced off it): analyseTransients() for a Repeat / Gate clip.
+	void refreshTransients();
+	//! Q050-111: see clipEffects(). Built with the clip; saved as an `<fxchain>` child only when it holds a device.
+	std::unique_ptr<EffectChain> m_clipEffects;
+	//! Q050-111: set while one play handle runs the chain this period (see processClipEffects()).
+	std::atomic<bool> m_clipEffectsBusy{false};
+	//! Q050-111 (src/core/SampleClipEffects.cpp): the chain's part of the clip's state, copy and save/load.
+	void copyClipEffects(const SampleClip& orig);
+	void saveClipEffects(QDomDocument& doc, QDomElement& element) const;
+	void loadClipEffects(const QDomElement& element);
 	bool m_isPlaying;
 	int m_startFrameOffset;
 	//! ED-021: see leadFrames(). Written on the UI thread, read by the playback path: a relaxed atomic, the
 	//! pattern Sample's own frame fields use.
 	std::atomic<f_cnt_t> m_leadFrames = 0;
+	//! Q050-093: see loopSource().
+	LoopSource m_loopSource;
 
 	//! Points the window (and Sample's frame fields) at the whole buffer; called
 	//! wherever the source buffer is replaced.

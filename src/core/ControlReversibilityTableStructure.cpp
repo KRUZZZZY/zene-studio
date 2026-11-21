@@ -83,7 +83,18 @@ const ReversibilityRow kStructureRows[] = {
 		"instrument track carries only defaults, so removing it restores the "
 		"container exactly. The project-scoped next-id counter is monotonic and "
 		"is NOT rewound: a re-add gets a fresh trk-<n>, which is the documented "
-		"limit of this inverse",
+		"limit of this inverse. An `output` destination is the new track's own "
+		"model, and a channel made for it (app/autotrackchannel) goes in the same "
+		"step: undo deletes it through Mixer::deleteChannel, redo makes it again "
+		"under the same ch-<n>",
+		""),
+	R("track.add_to_new_bus", RC::TrueInverse, true,
+		"created tracks and a created channel have no before-state, so the inverse "
+		"is the operation, the track.add shape",
+		"action checkpoint: ONE recorded undo step removes every created track "
+		"through control::removeTrack and deletes the created channel through "
+		"Mixer::deleteChannel; the redo makes the channel again under the same "
+		"ch-<n> and fresh tracks routed to it",
 		""),
 	R("track.move", RC::TrueInverse, true,
 		"a container's ORDER is not a serialized property of any track, so no "
@@ -95,6 +106,18 @@ const ReversibilityRow kStructureRows[] = {
 		"step puts the track back at its previous index through the engine's own "
 		"TrackContainer::moveTrack, the same call the product's drag and the "
 		"arrow-key moves make; the redo sends it forward again",
+		""),
+	R("track.set_role", RC::TrueInverse, true,
+		"a role is the class of the row's Track object, so a switch replaces the "
+		"object (keeping the row's id and index): a deleted object has no live "
+		"checkpoint, the track.remove case, so the inverse is the operation",
+		"action checkpoint (structural step): the row's own XML is captured before "
+		"and after the switch (bounded; a larger track is refused and nothing "
+		"changes), and the one recorded step replaces the row by the other document "
+		"at the same index through control::removeTrack and Track::create(element). "
+		"The instrument role - plug-in, settings, clips - is in the instrument "
+		"document and is the kept role of the neutral one, so undo and redo both "
+		"give it back",
 		""),
 	R("track.remove", RC::TrueInverse, true,
 		"a deleted JournallingObject's journal id resolves to nullptr, so a "

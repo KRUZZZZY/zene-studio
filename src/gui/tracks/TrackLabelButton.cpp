@@ -26,9 +26,12 @@
 
 #include "TrackLabelButton.h"
 
+#include <algorithm>
+
 #include <QMouseEvent>
 
 #include "ConfigManager.h"
+#include "DesignTokens.h"
 #include "DeprecationHelper.h"
 #include "embed.h"
 #include "Instrument.h"
@@ -48,20 +51,21 @@ TrackLabelButton::TrackLabelButton( TrackView * _tv, QWidget * _parent ) :
 	m_iconName()
 {
 	setAcceptDrops( true );
-	setFocusPolicy(Qt::NoFocus);
+	setFocusPolicy(Qt::StrongFocus);
 	setCursor(Qt::PointingHandCursor);
 	setToolButtonStyle( Qt::ToolButtonTextBesideIcon );
+	setAccessibleName(tr("Track header: %1").arg(m_trackView->getTrack()->name()));
+	setAccessibleDescription(tr("Press Menu or Shift+F10 for this track's actions"));
 
 	m_renameLineEdit = new TrackRenameLineEdit( this );
 	m_renameLineEdit->hide();
 	
-	if (isInCompactMode())
+	// 0.5.0 Q050-141: in the touch-first layout the label is a target a finger can hit.
+	const int labelWidth = isInCompactMode() ? 32 : 160;
+	const int labelHeight = tokens::accessibleMode() ? std::max(29, tokens::targetSize()) : 29;
+	setFixedSize(std::max(labelWidth, tokens::accessibleMode() ? tokens::targetSize() : 0), labelHeight);
+	if (!isInCompactMode())
 	{
-		setFixedSize( 32, 29 );
-	}
-	else
-	{
-		setFixedSize( 160, 29 );
 		connect( m_renameLineEdit, SIGNAL(editingFinished()), this, SLOT(renameFinished()));
 	}
 	
@@ -134,6 +138,7 @@ void TrackLabelButton::renameFinished()
 void TrackLabelButton::nameChanged()
 {
 	setText( elideName( m_trackView->getTrack()->name() ) );
+	setAccessibleName(tr("Track header: %1").arg(m_trackView->getTrack()->name()));
 }
 
 
@@ -157,11 +162,33 @@ void TrackLabelButton::dropEvent( QDropEvent * _de )
 
 
 
+bool TrackLabelButton::isMenuKey(int key, Qt::KeyboardModifiers modifiers)
+{
+	return key == Qt::Key_Menu || (key == Qt::Key_F10 && modifiers.testFlag(Qt::ShiftModifier));
+}
+
+void TrackLabelButton::openActionsMenu()
+{
+	m_trackView->getTrackOperationsWidget()->showActionsMenu(mapToGlobal(QPoint(0, height())));
+}
+
+void TrackLabelButton::keyPressEvent(QKeyEvent* event)
+{
+	if (isMenuKey(event->key(), event->modifiers()))
+	{
+		openActionsMenu();
+		event->accept();
+		return;
+	}
+	QToolButton::keyPressEvent(event);
+}
+
 void TrackLabelButton::mousePressEvent( QMouseEvent * _me )
 {
 	if( _me->button() == Qt::RightButton )
 	{
-		rename();
+		openActionsMenu();
+		_me->accept();
 	}
 	else
 	{

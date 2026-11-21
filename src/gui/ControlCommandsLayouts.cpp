@@ -159,8 +159,16 @@ ControlResult rememberLayout(const QJsonObject&)
 	QJsonObject result{{QStringLiteral("replaced"), replaced}, {QStringLiteral("captures"), capturesOf(snapshot)},
 		{QStringLiteral("changed"), snapshot != projectLayout()}};
 	if (snapshot == projectLayout()) { return ControlResult::success(result); }  // already remembered just so: no undo step
+	// The step this writes is a layout step, so undoing (or redoing) it puts the project's layout BACK ON
+	// SCREEN, not only in the project - the mechanism UiConfigStore::writeProject's own reason states.
+	// An empty layout (the project kept none before this save) leaves the screen alone: the inverse named
+	// for that case is window.layout_project_clear, and clearing a layout does not re-arrange the mixer.
+	const auto apply = [s] {
+		const QJsonObject doc = ProjectWorkspace::instance().part(ProjectWorkspace::Part::Layout);
+		if (!doc.isEmpty() && doc != s->snapshot()) { s->restoreSnapshot(doc); }
+	};
 	return gui::uistore::writeProject(ProjectWorkspace::Part::Layout, snapshot, result, replaced
-		? gui::uistore::Inverse{QStringLiteral("control.undo"), {}} : gui::uistore::Inverse{QStringLiteral("window.layout_project_clear"), {}}, {});
+		? gui::uistore::Inverse{QStringLiteral("control.undo"), {}} : gui::uistore::Inverse{QStringLiteral("window.layout_project_clear"), {}}, apply);
 }
 
 ControlResult recallLayout(const QJsonObject&)

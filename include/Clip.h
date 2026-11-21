@@ -36,6 +36,9 @@
 // The warp vocabulary and WarpMarkers, the base clip's warp state's value type
 // (SPEC-ARCH-4 census row 5: warp is native to the base clip).
 #include "WarpMarkers.h"
+// Q050-162: the repeat interval of the Repeat / Gate modes rides the warp state.
+#include "TransientRepeat.h"
+#include "WarpPublication.h"
 
 // GLOBAL scope, never inside namespace lmms: a `class QDomDocument;` declared
 // after `namespace lmms {` declares the DIFFERENT type lmms::QDomDocument, and
@@ -171,7 +174,7 @@ public:
 	 *  in the play handle, never in `Sample::render`, which the browser preview
 	 *  and the metronome share). */
 	const ClipEdits& clipEdits() const { return m_edits; }
-	void setClipEdits(const ClipEdits& edits) { m_edits = edits; }
+	void setClipEdits(const ClipEdits& edits);
 
 	/*! The take lane this clip belongs to (comping; docs/COMPING.md and
 	 *  docs/CLIP-CAPTURE-DESIGN.md §2.2), 0 by default.
@@ -192,15 +195,21 @@ public:
 	void setLaneIndex(int laneIndex) { m_laneIndex = laneIndex < 0 ? 0 : laneIndex; }
 
 	/*! The group of loop-recorded passes this clip belongs to, keyed by the
-	 *  stable id of the clip that was armed. Zero means an ordinary clip. The
-	 *  group id is project state; the active lane mirror below is published by
-	 *  TakeLaneModel and is never serialized here. */
-	int takeGroupId() const noexcept { return m_takeGroupId; }
+	 *  stable id of the clip that was armed. Group id zero is valid, so callers
+	 *  use hasTakeGroup() to distinguish an ordinary clip. The group id is
+	 *  project state; the active lane mirror below is published by TakeLaneModel. */
+	int takeGroupId() const noexcept { return m_takeGroupId < 0 ? 0 : m_takeGroupId; }
+	bool hasTakeGroup() const noexcept { return m_takeGroupId >= 0; }
+	bool belongsToTakeGroup(int groupId) const noexcept
+	{
+		return m_takeGroupId >= 0 && m_takeGroupId == groupId;
+	}
 	void setTakeGroupId(int groupId) noexcept
 	{
-		m_takeGroupId = groupId > 0 ? groupId : 0;
+		m_takeGroupId = groupId >= 0 ? groupId : -1;
 		m_activeTakeLane.store(-1, std::memory_order_relaxed);
 	}
+	void clearTakeGroupId() noexcept { setTakeGroupId(-1); }
 	//! Lock-free render mirror of the take group's active lane (-1 until published).
 	int activeTakeLane() const noexcept { return m_activeTakeLane.load(std::memory_order_relaxed); }
 	void publishActiveTakeLane(int lane) noexcept { m_activeTakeLane.store(lane, std::memory_order_relaxed); }
@@ -274,16 +283,35 @@ protected:
 	//! The warp map (#597): markers pinning source frames to clip-relative
 	//! ticks. Empty for every project written before #597, and an empty map is
 	//! what makes the mapping the linear one (design §2.4). A fixed-capacity
-	//! value type, so reading it on the audio thread allocates nothing.
+	//! value type. The control thread's copy, read and written only there and
+	//! written ONLY through publishWarp(); a render pass reads m_warpLive instead.
 	WarpMarkers m_warp;
+	//! The map as the render thread sees it: immutable generations (WarpPublication.h).
+	WarpPublication m_warpLive;
 	//! Follow the project tempo (default), or lead it with `m_sourceTempo`.
 	WarpTempoMode m_tempoMode = WarpTempoMode::FollowProject;
 	//! The clip's declared source tempo in BPM; only read in `SourceTempo`.
 	float m_sourceTempo = 0.0f;
 	/*! How a rate change is rendered (feature-list row 30): the historical
 	 *  resampling, or the pitch-preserving WSOLA stretch. `Resample` is the
-	 *  default, so a clip that does not ask renders exactly as it did. */
-	WarpStretchMode m_stretchMode = WarpStretchMode::Resample;
+	 *  default, so a clip that does not ask renders exactly as it did.
+	 *  Atomic: the control thread publishes it (release) while the render
+	 *  thread reads it at play-handle construction (acquire); a Rubber
+	 *  Band-backed mode is only stored AFTER prepareWarpStretchMode() built
+	 *  its voices, so a reader that sees the mode finds the pool. */
+	std::atomic<WarpStretchMode> m_stretchMode{WarpStretchMode::Resample};
+	/*! Q050-162: the Repeat / Gate interval (a tempo division or free ms),
+	 *  packed into one word (TransientRepeatRate::pack) so the control thread
+	 *  publishes it in one store and a play handle reads it in one load. Only
+	 *  rendered in those two modes; the default (synced 1/16) writes nothing. */
+	std::atomic<std::int32_t> m_transientRate{TransientRepeatRate{}.pack()};
+	//! Control thread, before a mode is published: lets a subclass build what the
+	//! mode needs (SampleClip: the Rubber Band voices). Never called on the audio thread.
+	virtual void prepareWarpStretchMode(WarpStretchMode mode) { Q_UNUSED(mode); }
+
+	/*! Q050-063: the one write of m_warp, for an already validated map: it also publishes the map as a new
+	 *  generation for the render thread. Never waits for the audio thread, and the audio thread never waits for it. */
+	void publishWarp(const WarpMarkers& map);
 
 	//! Writes the `<warp>` child (mode/tempo/stretch/marker — the vocabulary
 	//! ports unchanged) ONLY when the clip is not at every default: additive,
@@ -296,6 +324,25 @@ protected:
 	void loadWarp(const QDomElement& element);
 
 public:
+	//! Q050-063: the generation a render pass takes, once per clip (audio-thread safe).
+	WarpSnapshot snapshotWarp() const noexcept { return WarpSnapshot(m_warpLive); }
+
+	/*! Q050-063: while this lives, this thread's reads of @a clip's map (passWarp() and all the mapping built on it)
+	 *  answer from @a snapshot, so everything one pass derives comes from one generation. Audio-thread safe. */
+	class LMMS_EXPORT WarpPassScope
+	{
+	public:
+		WarpPassScope(const Clip& clip, const WarpSnapshot& snapshot) noexcept;
+		~WarpPassScope();
+		WarpPassScope(const WarpPassScope&) = delete;
+		WarpPassScope& operator=(const WarpPassScope&) = delete;
+	private:
+		const Clip* m_previousClip;
+		const WarpMarkers* m_previousMap;
+	};
+
+	//! The map this thread may read: the pass's generation inside a WarpPassScope, else the control thread's copy.
+	const WarpMarkers& passWarp() const noexcept;
 
 	// Will copy the state of a clip to another clip
 	static void copyStateTo( Clip *src, Clip *dst );
@@ -306,6 +353,13 @@ public:
 	*/
 	virtual Clip* clone() = 0;
 
+	/*! 0.5.0 Q050-040 (L07): whether the render thread saw this clip muted on its last play pass.
+	 *  Written and read on the audio thread only - Song::processNextBuffer is the one thread that
+	 *  schedules notes - so a plain bool, no atomic. It is what lets an unmute during playback
+	 *  chase the notes already under the playhead exactly once (InstrumentTrack::play). */
+	bool playbackWasMuted() const { return m_playbackWasMuted; }
+	void setPlaybackWasMuted(bool muted) { m_playbackWasMuted = muted; }
+
 public slots:
 	void toggleMute();
 
@@ -315,6 +369,7 @@ signals:
 	void positionChanged();
 	void destroyedClip();
 	void colorChanged();
+	void clipEditsChanged();
 
 protected:
 	Clip(const Clip& other);
@@ -368,13 +423,16 @@ private:
 	//! The take lane this clip is a take of: its per-track INDEX into the
 	//! track's `<z:lane id>` entities (comping; docs/COMPING.md section 3).
 	int m_laneIndex = 0;
-	//! Loop-pass group, keyed by the armed source clip's stable id; zero when ordinary.
-	int m_takeGroupId = 0;
+	//! Loop-pass group key; -1 means ordinary, and 0 is a valid group id.
+	int m_takeGroupId = -1;
 	//! Runtime mirror only: TakeLaneModel publishes its group's active lane here.
 	std::atomic<int> m_activeTakeLane{-1};
 
 	//! The link group this clip shares its content with (row 6; 0 = unlinked).
 	int m_linkId = 0;
+
+	//! 0.5.0 Q050-040: the render thread's own memory of this clip's mute, one pass back.
+	bool m_playbackWasMuted = false;
 
 	friend class ClipView;
 

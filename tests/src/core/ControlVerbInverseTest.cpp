@@ -47,6 +47,7 @@
 #include <limits>
 
 #include <QDir>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QStringList>
 #include <QTemporaryDir>
@@ -56,6 +57,7 @@
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
+#include "MidiClip.h"
 #include "ReversibilityTestSupport.h"
 #include "Song.h"                  // Track::create takes a TrackContainer: the base must be complete
 #include "TakeLaneTestSupport.h"   // the shared WAV fixture (ONE definition)
@@ -86,6 +88,19 @@ bool clipAutoResize(const QString& id)
 	ControlResult error;
 	if (!control::resolveClip(id, &ref, &error)) { return false; }
 	return ref.clip->getAutoResize();
+}
+
+//! A note's probability, read from note.list: the one command that publishes the
+//! field. roll.get_state (noteState) does not carry it, so reading the roll would
+//! assert on a field that is never there. NaN for a missing note, so the comparison
+//! fails rather than passing on a default.
+double noteProbability(const QString& clip, int index)
+{
+	const QJsonArray notes = run(QStringLiteral("note.list"),
+		QJsonObject{{QStringLiteral("clip"), clip}}).result.value(QStringLiteral("notes")).toArray();
+	return index < notes.size()
+		? notes.at(index).toObject().value(QStringLiteral("probability")).toDouble()
+		: std::numeric_limits<double>::quiet_NaN();
 }
 
 //! A track with one clip and (for the note verbs) one note on it.
@@ -218,6 +233,29 @@ private slots:
 			"the undo must restore the auto-resize flag the trim cleared, not just the edges");
 	}
 
+	//! Frame-exact trim options are supported only for sample clips. An instrument
+	//! track's MIDI clip must reject them instead of silently applying the tick.
+	void clipTrimRefusesFrameOptionsOnMidiClips()
+	{
+		Fixture fixture;
+		QVERIFY2(makeFixture(&fixture, false), "could not build an instrument track + MIDI clip fixture");
+		control::ClipRef ref;
+		ControlResult resolveError;
+		QVERIFY2(control::resolveMidiClip(fixture.clip, &ref, &resolveError) != nullptr,
+			qPrintable(resolveError.errorMessage));
+		const int posBefore = clipPosition(fixture.clip);
+		const int lenBefore = clipLength(fixture.clip);
+		const int start = posBefore + 24;
+
+		const ControlResult trimmed = run(QStringLiteral("clip.trim"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("start"), start},
+				{QStringLiteral("start_frames"), 12}});
+		QVERIFY(!trimmed.ok);
+		QCOMPARE(trimmed.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(clipPosition(fixture.clip), posBefore);
+		QCOMPARE(clipLength(fixture.clip), lenBefore);
+	}
+
 	//! clip.slip: the clip's rectangle does not move and the source does, and the
 	//! undo puts the source back. This is the offset-only inverse.
 	void clipSlipIsOneUndoableStep()
@@ -245,8 +283,10 @@ private slots:
 
 	//! note.probability_set from the trap state: the note starts at the DEFAULT,
 	//! so the checkpoint's XML carries no 'prob' attribute and the restore depends
-	//! on Note::loadSettings reading attribute("prob", "1"). This is the assertion
-	//! that fails if that reset is ever guarded behind hasAttribute().
+	//! on Note::loadSettings reading attribute("prob", "1"). The probability read
+	//! below is what catches a checkpoint taken after the write (Luna cluster 5032).
+	//! It does NOT catch a reset guarded behind hasAttribute(): the note is freshly
+	//! built at the default 1.0 (Note.h m_probability), so that guard is equivalent here.
 	void noteProbabilitySetIsOneUndoableStep()
 	{
 		Fixture fixture;
@@ -259,6 +299,8 @@ private slots:
 				{QStringLiteral("probability"), 0.5}});
 		QVERIFY2(set.ok, qPrintable(set.errorMessage));
 		QCOMPARE(set.result.value(QStringLiteral("probability")).toDouble(), 0.5);
+		// The edit is visible before the undo, so the undo below has something to undo.
+		QCOMPARE(noteProbability(fixture.clip, 0), 0.5);
 
 		REV_UNDO_OR_FAIL();
 		// The FIRST edit back is the one the reset-on-absence rule carries: the
@@ -267,6 +309,9 @@ private slots:
 			QJsonObject{{QStringLiteral("clip"), fixture.clip}});
 		QVERIFY2(after.ok, qPrintable(after.errorMessage));
 		QCOMPARE(after.result.value(QStringLiteral("notes")).toArray().size(), 1);
+		// Luna cluster 5032: the note count above passes even when the undo leaves the
+		// note at 0.5. The probability itself must be the default again.
+		QCOMPARE(noteProbability(fixture.clip, 0), 1.0);
 	}
 
 	//! A probability outside [0, 1] is refused typed BEFORE the checkpoint, so a
@@ -369,6 +414,24 @@ private slots:
 			QJsonObject{{QStringLiteral("out"), wanted},
 				{QStringLiteral("tail_bars"), -1}});
 		QCOMPARE(badTail.errorKind, ControlErrorKind::InvalidArgs);
+
+		// The values the handler's own int cast could never take: a fraction, a value
+		// past INT_MAX and one past the declared maximum of 64. The schema refuses them
+		// before the handler runs (ControlSchema.cpp integer and range checks), so the
+		// cast in parseStemArgs only ever sees 0..64 integers.
+		const double fractionalTail = 1.9;
+		const double pastIntMaxTail = 3.0e9;
+		const int pastDeclaredMaxTail = 65;
+		for (const QJsonValue& tail : {QJsonValue(fractionalTail), QJsonValue(pastIntMaxTail),
+			QJsonValue(pastDeclaredMaxTail)})
+		{
+			const ControlResult refused = run(QStringLiteral("render.stems"),
+				QJsonObject{{QStringLiteral("out"), wanted},
+					{QStringLiteral("tail_bars"), tail}});
+			QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+			QVERIFY2(refused.errorMessage.contains(QStringLiteral("tail_bars")),
+				qPrintable(refused.errorMessage));
+		}
 
 		QVERIFY2(!QDir(wanted).exists(),
 			"no render may have been attempted: the refused calls must not create the output "

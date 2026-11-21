@@ -626,6 +626,77 @@ private slots:
 		QVERIFY2(error.contains(QStringLiteral("DEFLATE")) && error.contains(QStringLiteral("project.xml")),
 			qPrintable(error));
 	}
+
+	//! A read that gives back nothing is refused AS A READ by both readers, so an
+	//! import or a container recovery names the file it could not read. The same
+	//! file read without the fault is a valid import. The fault is ZENE_TEST_CONTAINER_READ_FAULT.
+	void aFailedReadIsNamedAsARead()
+	{
+		const QString path = containerOf(QStringLiteral("read-fault.dawproject"),
+			{stored(QStringLiteral("project.xml"), m_projectXml)});
+		std::vector<DawProjectEntry> entries;
+		DawProjectZipReport report;
+		QString error;
+		QVERIFY2(dawProjectZipReadTolerant(path, &entries, &report, &error), qPrintable(error));
+
+		qputenv("ZENE_TEST_CONTAINER_READ_FAULT", "1");
+		const bool tolerant = dawProjectZipReadTolerant(path, &entries, &report, &error);
+		const bool strict = dawProjectZipRead(path, &entries, &error);
+		qunsetenv("ZENE_TEST_CONTAINER_READ_FAULT");
+		QVERIFY(!tolerant);
+		QVERIFY2(error.contains(QStringLiteral("cannot read")), qPrintable(error));
+		QVERIFY(!strict);
+		QVERIFY2(error.contains(QStringLiteral("cannot read")), qPrintable(error));
+	}
+
+	//! 0xFFFF in the end record is the ZIP64 sentinel once a 65,536th record follows the 65,535 it counts: that
+	//! container is refused by name, never half-read with the rest dropped silently.
+	void aZip64OverflowOfTheEntryCountIsRefusedNotTruncated()
+	{
+		std::vector<Spec> many;
+		many.reserve(65536);
+		for (int index = 0; index < 65536; index++)
+		{
+			many.push_back(stored(QStringLiteral("e%1").arg(index), QByteArray()));
+		}
+		const QString overflow = containerOf(QStringLiteral("zip64-overflow.dawproject"), many, 0xFFFF);
+		std::vector<DawProjectEntry> entries;
+		DawProjectZipReport report;
+		QString error;
+		QVERIFY(!dawProjectZipReadTolerant(overflow, &entries, &report, &error));
+		QVERIFY2(error.contains(QStringLiteral("ZIP64")), qPrintable(error));
+		QVERIFY(entries.empty());
+		QVERIFY(!dawProjectZipRead(overflow, &entries, &error));
+		QVERIFY2(error.contains(QStringLiteral("ZIP64")), qPrintable(error));
+		QVERIFY(!run(QStringLiteral("dawproject.import"), {{QStringLiteral("path"), overflow}}).ok);
+	}
+
+	//! A classic directory of exactly 65,535 entries declares 0xFFFF and is complete: nothing follows the count, so
+	//! it reads in full, through both readers. A count of 0xFFFE, one below, reads as before.
+	void aClassicDirectoryOfExactly65535EntriesReadsInFull()
+	{
+		std::vector<Spec> many;
+		many.reserve(65535);
+		for (int index = 0; index < 65535; index++)
+		{
+			many.push_back(stored(QStringLiteral("e%1").arg(index), QByteArray()));
+		}
+		const QString exact = containerOf(QStringLiteral("classic-65535.dawproject"), many, 0xFFFF);
+		std::vector<DawProjectEntry> entries;
+		DawProjectZipReport report;
+		QString error;
+		QVERIFY2(dawProjectZipReadTolerant(exact, &entries, &report, &error), qPrintable(error));
+		QCOMPARE(entries.size(), static_cast<std::size_t>(65535));
+		QVERIFY(report.deviations.empty());
+		QVERIFY2(dawProjectZipRead(exact, &entries, &error), qPrintable(error));
+		QCOMPARE(entries.size(), static_cast<std::size_t>(65535));
+
+		many.pop_back();  // 65,534 entries: a count of 0xFFFE is a real count
+		const QString below = containerOf(QStringLiteral("classic-65534.dawproject"), many, 0xFFFE);
+		QVERIFY2(dawProjectZipReadTolerant(below, &entries, &report, &error), qPrintable(error));
+		QCOMPARE(entries.size(), static_cast<std::size_t>(65534));
+		QVERIFY(report.deviations.empty());
+	}
 };
 
 QTEST_GUILESS_MAIN(DawProjectDeflateImportTest)

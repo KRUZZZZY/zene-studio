@@ -271,6 +271,20 @@ Telemetry::SubmitResult Telemetry::submit()
 
 // --- coarse environment ----------------------------------------------------
 
+//! Only recognized session type labels are sent. The environment value can be
+//! free text (a path, a user name, anything a wrapper exported), so every value
+//! outside the finite list - including an unset variable - collapses to the
+//! fixed "unknown" label instead of travelling verbatim.
+static QString sessionBucket(const QString & sessionType)
+{
+	if(sessionType == QStringLiteral("x11")) { return QStringLiteral("x11"); }
+	if(sessionType == QStringLiteral("wayland")) { return QStringLiteral("wayland"); }
+	if(sessionType == QStringLiteral("tty")) { return QStringLiteral("tty"); }
+	if(sessionType == QStringLiteral("mir")) { return QStringLiteral("mir"); }
+	if(sessionType == QStringLiteral("web")) { return QStringLiteral("web"); }
+	return QStringLiteral("unknown");
+}
+
 static QString memoryBucket()
 {
 	QFile meminfo(QStringLiteral("/proc/meminfo"));
@@ -301,7 +315,7 @@ TelemetryHardware TelemetryHardware::collect()
 		? QStringLiteral("unknown")
 		: QStringLiteral("kernel-") + kernel.section('.', 0, 0);
 	hw.cpuArch = QSysInfo::currentCpuArchitecture();
-	hw.desktopSession = qEnvironmentVariable("XDG_SESSION_TYPE", QStringLiteral("unknown"));
+	hw.desktopSession = sessionBucket(qEnvironmentVariable("XDG_SESSION_TYPE"));
 	hw.ramBucket = memoryBucket();
 	return hw;
 }

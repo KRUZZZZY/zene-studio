@@ -40,6 +40,8 @@
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "MidiController.h"
+#include "ProjectMarkers.h"
+#include "ProjectJournal.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -245,6 +247,31 @@ private slots:
 		QCOMPARE(static_cast<int>(b->notes().back()->pos().getTicks()), top - 100);
 	}
 
+	//! A note whose moved START is representable but whose moved END is not: the preflight checked only the
+	//! start, so the join stored a note whose Note::endPos() wrapped through int. It is refused whole now,
+	//! with the project and the journal untouched.
+	void joiningRefusesANoteEndPastTheLargestTick()
+	{
+		MidiClip* a = clipAt(0, 96, 60);
+		MidiClip* b = clipAt(192, 96, 64);
+		const int top = std::numeric_limits<tick_t>::max();
+		b->addNote(Note(TimePos(12), TimePos(top - 200), 62), false);  // moved by 192: start top-8, end top+4
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int depthBefore = journal->undoDepth();
+
+		const ControlResult joined = run(QStringLiteral("clip.join"), {{QStringLiteral("clips"),
+			QJsonArray{control::clipIdOf(a), control::clipIdOf(b)}}});
+		QVERIFY(!joined.ok);
+		QCOMPARE(joined.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(journal->undoDepth(), depthBefore);
+		QCOMPARE(m_track->getClips().size(), std::size_t{2});
+		QCOMPARE(a->notes().size(), std::size_t{1});
+		QCOMPARE(b->notes().size(), std::size_t{2});
+		QCOMPARE(static_cast<int>(b->notes().back()->pos().getTicks()), top - 200);
+		QCOMPARE(static_cast<int>(b->notes().back()->length().getTicks()), 12);
+	}
+
 	//! A later clip's controller point that the join moves past the largest tick used to wrap
 	//! in the signed add; the join is refused before anything moves.
 	void joiningRefusesAControllerPointPastTheLargestTick()
@@ -316,6 +343,22 @@ private slots:
 		QCOMPARE(startsOf(m_track), (QList<int>{0, 96, 192, 288}));  // the follower moved 192 later
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(startsOf(m_track), (QList<int>{0, 96}));
+	}
+
+	void edgeSnapKeepsDistancesWithinTickRange()
+	{
+		QVERIFY(ProjectMarkers::instance().add(0, QStringLiteral("zero"), QString()) > 0);
+		constexpr tick_t length = 1;
+		constexpr tick_t tolerance = 4;
+		const tick_t maximum = std::numeric_limits<tick_t>::max();
+		const tick_t minimum = std::numeric_limits<tick_t>::min();
+
+		const arrangement::SnapHit nearMaximum = arrangement::snapToEdgesHit(maximum, length, nullptr, tolerance);
+		QCOMPARE(nearMaximum.start, maximum);
+		QVERIFY(nearMaximum.kind == arrangement::SnapHit::Kind::None);
+		const arrangement::SnapHit nearMinimum = arrangement::snapToEdgesHit(minimum, length, nullptr, tolerance);
+		QCOMPARE(nearMinimum.start, minimum);
+		QVERIFY(nearMinimum.kind == arrangement::SnapHit::Kind::None);
 	}
 
 	void aMappingIsMadeAndRemovedOverTheSocket()

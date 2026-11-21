@@ -148,7 +148,10 @@ void registerGetStateCommand(ControlRegistry& registry)
 		{QStringLiteral("scale_vocabulary"), objectProperty()},
 	});
 	cmd.handler = [](const QJsonObject&) {
-		return ControlResult::success(detectStateJson(Engine::getSong()));
+		ControlResult error;
+		Song* song = detectProjectSong(&error);
+		if (song == nullptr) { return error; }
+		return ControlResult::success(detectStateJson(song));
 	};
 	registry.registerCommand(cmd);
 }

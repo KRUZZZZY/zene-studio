@@ -49,6 +49,8 @@
 
 #include <clap/clap.h>
 
+#include "clap-test-gesture.h"
+
 #define TEST_INSTRUMENT_ID "org.lmms.test.clap-instrument"
 #define TEST_INSTRUMENT_NAME "LMMS CLAP Test Instrument"
 #define TEST_INSTRUMENT_MAGIC 0x4C4D494Eu /* "LMIN" */
@@ -65,9 +67,25 @@
 #define TEST_INSTRUMENT_MULTIOUT_NAME "LMMS CLAP Test Instrument (multi-out)"
 /* The Aux port's level, relative to the main port's. */
 #define TEST_INSTRUMENT_AUX_SCALE 0.5
-/* The largest latency a latent instance takes, and the size of its delay ring. */
-#define TEST_INSTRUMENT_MAX_LATENCY 16384u
+/* The largest latency a latent instance takes, and the size of its delay ring.
+ * 32768 since 2026-10-19 (Q050-169): the over-capacity case the limitations page documents
+ * (a latency above LatencyCompensation::MaxFrames, 16384) needs a fixture that can really
+ * report one, so the clamp can be measured rather than asserted. The ring is allocated only
+ * for a latent instance, so the extra 64 KB is per latent fixture, not per module. */
+#define TEST_INSTRUMENT_MAX_LATENCY 32768u
 #define TEST_INSTRUMENT_LATENCY_ENV "CLAP_TEST_INSTRUMENT_LATENCY"
+/* CLAP_TEST_INSTRUMENT_PROCESS_ERROR=n: the nth process() call (1-based) returns
+   CLAP_PROCESS_ERROR without writing; the calls before it write a marker level
+   instead of the voice level. Read once at instantiate time like the latency
+   switch, so the audio path only compares a counter. */
+#define TEST_INSTRUMENT_PROCESS_ERROR_ENV "CLAP_TEST_INSTRUMENT_PROCESS_ERROR"
+#define TEST_INSTRUMENT_ERROR_LEVEL 0.75
+/* CLAP_TEST_INSTRUMENT_LAYOUT: set (to any value) and the single-output class reports a
+   SECOND stereo output port, i.e. its audio-port layout changes while the host runs. During
+   activate() (the !active_state callback), the instance checks that the host supports a list
+   rescan, requests CLAP_AUDIO_PORTS_RESCAN_LIST, and asks for a restart - the subject of the
+   instrument view's stale-channel-count case. Unset, the class is unchanged. */
+#define TEST_INSTRUMENT_LAYOUT_ENV "CLAP_TEST_INSTRUMENT_LAYOUT"
 
 enum
 {
@@ -90,8 +108,8 @@ typedef struct instrument_state
 	uint32_t version;
 	uint32_t declared_max_frames; /* what activate() was told */
 	uint32_t blocks;              /* process() calls since activate() */
-	uint32_t max_block;           /* largest frames_count seen */
-	uint32_t oversized_calls;     /* calls with frames_count > declared_max_frames */
+	uint32_t max_block;           /* largest frames_count since activate() */
+	uint32_t oversized_calls;     /* oversized calls since activate() */
 	uint32_t event_count;         /* every event in every input list */
 	uint32_t param_event_count;   /* CLAP_EVENT_PARAM_VALUE events */
 	uint32_t note_on_count;
@@ -118,6 +136,7 @@ typedef struct instrument_plugin
 	clap_plugin_t plugin;
 	const clap_host_t* host;
 	const clap_plugin_params_t* params;
+	long gesture_seen;     /* clap-test-gesture.h: the last sequence this instance reported */
 	double gain;
 	double frames_processed;
 	uint32_t declared_max_frames;
@@ -146,8 +165,12 @@ typedef struct instrument_plugin
 	uint32_t release_left; /* frames left of the release, 0 when silent */
 	/* 0 for the original class; 1 for TEST_INSTRUMENT_MULTIOUT_ID */
 	int multiout;
+	/* The output-port count this instance's clap.audio-ports currently reports (see
+	   TEST_INSTRUMENT_LAYOUT_ENV); activate() re-reads the variable and announces a change. */
+	uint32_t layout_ports;
 	/* the latency (see LATENCY above); all 0 for an instance that is not latent */
 	int latent;               /* created while TEST_INSTRUMENT_LATENCY_ENV was set */
+	int32_t error_at;         /* process() call that returns CLAP_PROCESS_ERROR, 0 for none */
 	uint32_t latency;         /* frames, read at activate() */
 	int restart_requested;    /* a new count was seen; the restart has not come yet */
 	float* delay_ring;        /* TEST_INSTRUMENT_MAX_LATENCY levels, allocated at activate() */
@@ -288,22 +311,28 @@ static const clap_plugin_note_ports_t s_note_ports = {
 
 /* ----------------------------------------------------------- audio ports -- */
 
-/* A GENERATOR: no input port at all, one main stereo output. */
+/* A GENERATOR: no input port at all, one main stereo output - or two when
+   TEST_INSTRUMENT_LAYOUT_ENV asked for a runtime layout change (see the define). */
+static uint32_t instrument_output_ports(void)
+{
+	return getenv(TEST_INSTRUMENT_LAYOUT_ENV) != NULL ? 2u : 1u;
+}
+
 static uint32_t instrument_audio_ports_count(const clap_plugin_t* plugin, bool is_input)
 {
 	(void)plugin;
-	return is_input ? 0 : 1;
+	return is_input ? 0 : instrument_output_ports();
 }
 
 static bool instrument_audio_ports_get(const clap_plugin_t* plugin, uint32_t index,
 	bool is_input, clap_audio_port_info_t* info)
 {
 	(void)plugin;
-	if (is_input || index != 0) { return false; }
+	if (is_input || index >= instrument_output_ports()) { return false; }
 	memset(info, 0, sizeof(*info));
-	info->id = AUDIO_PORT_ID;
-	strncpy(info->name, "Out", CLAP_NAME_SIZE - 1);
-	info->flags = CLAP_AUDIO_PORT_IS_MAIN;
+	info->id = index == 0 ? AUDIO_PORT_ID : AUX_AUDIO_PORT_ID;
+	strncpy(info->name, index == 0 ? "Out" : "Aux", CLAP_NAME_SIZE - 1);
+	info->flags = index == 0 ? CLAP_AUDIO_PORT_IS_MAIN : 0;
 	info->channel_count = 2;
 	info->port_type = CLAP_PORT_STEREO;
 	info->in_place_pair = CLAP_INVALID_ID;
@@ -393,6 +422,10 @@ static bool instrument_state_load(const clap_plugin_t* plugin,
 	{
 		return false;
 	}
+	if (!isfinite(state.gain) || state.gain < 0.0 || state.gain > 1.0)
+	{
+		return false;
+	}
 	/* Only the value a user set is restored: the counters describe what this
 	   instance has been asked to process and belong to the host's session. */
 	self->gain = state.gain;
@@ -440,6 +473,23 @@ static void instrument_follow_latency(instrument_plugin_t* self)
 {
 	if (!self->latent || self->restart_requested || instrument_env_latency() == self->latency) { return; }
 	self->restart_requested = 1;
+	self->host->request_restart(self->host);
+}
+
+/* The output-port count the environment names now differs from what this instance reports:
+   announce it the CLAP way. rescan() is a main-thread call (activate() is one); request_restart()
+   is the restart an active plug-in must ask for before the host re-reads its layout. */
+static void instrument_follow_layout(instrument_plugin_t* self)
+{
+	if (self->multiout) { return; }
+	const uint32_t ports = instrument_output_ports();
+	if (ports == self->layout_ports) { return; }
+	const clap_host_audio_ports_t* host_ports =
+		(const clap_host_audio_ports_t*)self->host->get_extension(self->host, CLAP_EXT_AUDIO_PORTS);
+	if (!host_ports || !host_ports->is_rescan_flag_supported || !host_ports->rescan ||
+		!host_ports->is_rescan_flag_supported(self->host, CLAP_AUDIO_PORTS_RESCAN_LIST)) { return; }
+	self->layout_ports = ports;
+	host_ports->rescan(self->host, CLAP_AUDIO_PORTS_RESCAN_LIST);
 	self->host->request_restart(self->host);
 }
 
@@ -535,12 +585,17 @@ static clap_process_status instrument_process(const clap_plugin_t* plugin,
 		for (uint32_t i = 0; i < size; ++i)
 		{
 			const clap_event_header_t* header = process->in_events->get(process->in_events, i);
-			if (!header || header->space_id != CLAP_CORE_EVENT_SPACE_ID)
+			if (!header)
 			{
 				++self->ignored_event_count;
 				continue;
 			}
 			++self->event_count;
+			if (header->space_id != CLAP_CORE_EVENT_SPACE_ID)
+			{
+				++self->ignored_event_count;
+				continue;
+			}
 			switch (header->type)
 			{
 			case CLAP_EVENT_NOTE_ON:
@@ -571,6 +626,19 @@ static clap_process_status instrument_process(const clap_plugin_t* plugin,
 		}
 	}
 	self->active_voices = (self->sounding || self->release_left > 0) ? 1u : 0u;
+
+	clap_test_report_gesture(process->out_events, PARAM_GAIN, &self->gain, &self->gesture_seen);
+
+	/* --- the process-error mode: marker levels, then one failed call ------ */
+	if (self->error_at > 0)
+	{
+		if (self->blocks < (uint32_t)self->error_at)
+		{
+			instrument_write_level(self, process, TEST_INSTRUMENT_ERROR_LEVEL, frames);
+			return CLAP_PROCESS_CONTINUE;
+		}
+		if (self->blocks == (uint32_t)self->error_at) { return CLAP_PROCESS_ERROR; }
+	}
 
 	/* --- a latent instance asks for a restart when its count changes ----- */
 	instrument_follow_latency(self);
@@ -630,6 +698,11 @@ static bool instrument_activate(const clap_plugin_t* plugin, double sample_rate,
 	(void)min_frames_count;
 	instrument_plugin_t* self = (instrument_plugin_t*)plugin->plugin_data;
 	self->declared_max_frames = max_frames_count;
+	self->frames_processed = 0.0;
+	self->blocks = 0;
+	self->max_block = 0;
+	self->oversized_calls = 0;
+	instrument_follow_layout(self);
 	return self->latent ? instrument_activate_latency(self) : true;
 }
 
@@ -686,7 +759,12 @@ static const clap_plugin_t* instrument_create(const clap_host_t* host, int multi
 
 	self->host = host;
 	self->multiout = multiout;
+	self->layout_ports = multiout ? 2u : instrument_output_ports();
 	self->latent = getenv(TEST_INSTRUMENT_LATENCY_ENV) != NULL;
+	{
+		const char* errorAt = getenv(TEST_INSTRUMENT_PROCESS_ERROR_ENV);
+		self->error_at = errorAt ? atoi(errorAt) : 0;
+	}
 	self->gain = 1.0;
 	self->first_note_time = -1;
 	self->last_note_time = -1;

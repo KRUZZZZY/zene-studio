@@ -46,6 +46,12 @@ public:
 					const QPixmap & _icon, QWidget * _w );
 	~StringPairDrag() override;
 
+	/*! The MIME data a StringPair drag of \a _key and \a _value publishes: the StringPair payload
+	 *  every internal drop target decodes, plus - when \a _key is one the browser drags a file under
+	 *  (its value is that file's local path) - the same file as a `text/uri-list` URL, so a plug-in
+	 *  editor or a file manager that takes file URLs receives it too. */
+	static QMimeData * createMimeData( const QString & _key, const QString & _value );
+
 	static bool processDragEnterEvent( QDragEnterEvent * _dee,
 						const QString & _allowed_keys );
 	static QString decodeKey( QDropEvent * _de );

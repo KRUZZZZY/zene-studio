@@ -59,4 +59,5 @@
 #cmakedefine LMMS_HAVE_PROCESS_H
 
 #cmakedefine ZENE_TELEMETRY_ENABLED
+#cmakedefine ZENE_UPDATE_CHECK_ENABLED
 #cmakedefine ZENE_HAVE_COLLAB

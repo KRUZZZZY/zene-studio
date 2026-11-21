@@ -323,6 +323,8 @@ private slots:
 			{{QStringLiteral("path"), slow}}).result;
 		QCOMPARE(slowRead.value(QStringLiteral("events")).toArray().at(0).toObject()
 			.value(QStringLiteral("bpm")).toInt(), 4);
+		QCOMPARE(slowRead.value(QStringLiteral("importable")).toBool(), false);
+		QVERIFY(!slowRead.value(QStringLiteral("importability_error")).toString().isEmpty());
 		const ControlResult tooFast = run(QStringLiteral("interchange.smf_import"),
 			{{QStringLiteral("path"), slow}});
 		QVERIFY(!tooFast.ok);
@@ -335,6 +337,33 @@ private slots:
 	//! most FOUR bytes (0x0FFFFFFF file ticks), and a file tick is ten LMMS
 	//! ticks, so the widest gap the format can carry is 26,843,545 LMMS ticks.
 	//! A wider one used to be written as the five-byte quantity appendVlq can
+	//! An export to a path that holds a DANGLING symbolic link is refused without
+	//! `overwrite`. QFileInfo::exists is false for a link whose target is gone, so
+	//! the guard let the export through and the commit replaced the link. A link
+	//! is occupied, as it is for the hand-off and the clip save: nothing is written
+	//! and the link stays. Unix-only: QFile::link writes a .lnk shortcut on Windows.
+	void aDanglingLinkAtTheExportPathIsOccupied()
+	{
+#ifndef Q_OS_UNIX
+		QSKIP("symlinks are exercised on Unix only: QFile::link writes a .lnk shortcut on Windows");
+#else
+		QVERIFY(run(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 0}, {QStringLiteral("bpm"), 90}}).ok);
+		const QString file = path(m_directory, QStringLiteral("dangling.mid"));
+		const QString target = path(m_directory, QStringLiteral("never-created.mid"));
+		QVERIFY2(QFile::link(target, file), "the fixture symlink was not created");
+		QVERIFY2(!QFileInfo::exists(file), "the fixture link is not dangling");
+
+		const ControlResult exported = run(QStringLiteral("interchange.smf_export"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY2(!exported.ok, "an export replaced a dangling link without overwrite");
+		QCOMPARE(exported.errorKind, ControlErrorKind::Refused);
+		QVERIFY(exported.errorMessage.contains(QStringLiteral("already exists")));
+		QVERIFY2(QFileInfo(file).isSymLink(), "the refused export replaced the link");
+		QVERIFY2(!QFileInfo::exists(target), "the refused export wrote the link's target");
+#endif
+	}
+
 	//! emit - a file no reader of the format would accept - and the scaled tick
 	//! was narrowed to quint32, which wraps above 429,496,729 LMMS ticks. A map
 	//! the format cannot carry is refused, and no file is left behind; one it
@@ -459,6 +488,34 @@ private slots:
 		QVERIFY2(interchange::writeConductorTrack(file, TempoMap{}, TempoMapMinTempo,
 			TempoMapTimeSignature{4, 4}, nullptr, &error), qPrintable(error));
 		QVERIFY(QFile::exists(file));
+	}
+
+	//! A global metre becomes the tick-0 seed when the map has no signature there.
+	//! Refuse values the engine cannot hold instead of silently changing them in
+	//! the SMF payload; ordinary signatures such as 3/4 remain valid.
+	void aGlobalTimeSignatureTheEngineDoesNotHoldIsRefused()
+	{
+		const QString file = path(m_directory, QStringLiteral("bad-global-signature.mid"));
+		for (const TempoMapTimeSignature signature : {TempoMapTimeSignature{0, 4},
+				TempoMapTimeSignature{33, 4}, TempoMapTimeSignature{3, 3},
+				TempoMapTimeSignature{3, 64}})
+		{
+			QString error;
+			QVERIFY2(!interchange::writeConductorTrack(file, TempoMap{}, 120, signature,
+				nullptr, &error), qPrintable(QStringLiteral("global signature %1/%2 was accepted")
+					.arg(signature.numerator).arg(signature.denominator)));
+			QVERIFY(!error.isEmpty());
+			QVERIFY(!QFile::exists(file));
+		}
+
+		QString error;
+		QVERIFY2(interchange::writeConductorTrack(file, TempoMap{}, 120,
+			TempoMapTimeSignature{3, 4}, nullptr, &error), qPrintable(error));
+		const interchange::SmfReadReport read = interchange::readConductorTrack(file);
+		QVERIFY2(read.ok, qPrintable(read.error));
+		QCOMPARE(read.events.size(), static_cast<std::size_t>(1));
+		QCOMPARE(read.events.front().numerator, 3);
+		QCOMPARE(read.events.front().denominator, 4);
 	}
 
 	//! A required tick-zero seed cannot make a full tempo map unreadable.

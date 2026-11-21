@@ -25,7 +25,9 @@
 /*! The VCA model had no interface (plan R8.6). The strip's controls must be the GROUP's own
  *  models - so the strip, the file, undo and vca.* move one state - and the channel menu
  *  must edit membership through the vca.* commands, so a menu edit is the same recorded,
- *  undoable step the socket makes. Both held here on a real Engine.
+ *  undoable step the socket makes. Both held here on a real Engine. Q050-171 adds the two
+ *  remaining surfaces: Project tools ▸ Groups... (the list dialog's spec over vca.*) and the
+ *  Inspector's Clip menu entry for vca.edit_move.
  */
 
 #include <QtTest>
@@ -33,25 +35,40 @@
 #include <QAction>
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QCoreApplication>
+#include <QFile>
 #include <QMenu>
 #include <QPointer>
+#include <QRegularExpression>
 #include <QTemporaryDir>
 #include <QTimer>
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "AutomatableButton.h"
+#include "CommandForm.h"
+#include "CommandListDialog.h"
+#include "CommandLists.h"
 #include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Fader.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
 #include "Mixer.h"
+#include "SampleClip.h"
+#include "SampleTrack.h"
+#include "ShellCommandMenus.h"
+#include "Song.h"
+#include "TimePos.h"
+#include "Track.h"
 #include "VcaGroup.h"
 #include "VcaStripView.h"
 
 using namespace lmms;
 using namespace lmms::gui;
+using lmms::control::clipIdOf;
+using lmms::control::trackIdOf;
 
 class VcaStripViewTest : public QObject
 {
@@ -122,6 +139,232 @@ private slots:
 		QVERIFY2(made->contains(2), "control.undo did not restore the membership the menu removed");
 	}
 
+	// Q050-171: "New VCA group" is TWO command invocations (vca.create, then vca.assign), so it
+	// is two undo steps - not the one step every other menu line takes. Held here because the
+	// limitation note states it.
+	void newVcaGroupIsCreateThenAssignTwoUndoSteps()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clearVcaGroups();
+		QMenu menu;
+		populateVcaMenu(&menu, 2, [] {});
+		menu.actions().last()->trigger();
+		QCOMPARE(mixer->vcaGroups().size(), std::size_t{1});
+		VcaGroup* made = mixer->vcaGroups().back();
+		QVERIFY(made->contains(2));
+
+		// First undo: the assignment (vca.assign) goes, the group stays.
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok);
+		QCOMPARE(mixer->vcaGroups().size(), std::size_t{1});
+		QVERIFY2(!made->contains(2), "the first undo removed the group instead of the assignment");
+		// Second undo: the creation (vca.create) goes, the group is gone.
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok);
+		QVERIFY2(mixer->vcaGroups().empty(), "the second undo did not remove the created group");
+	}
+
+	// Q050-171: Project tools ▸ Groups... is the list dialog over vca.* - rename, remove, the edit
+	// set and the phase lock - and its "New Group..." is vca.create. The spec is checked, then the
+	// dialog is DRIVEN: each action is run through the dialog (forms filled and submitted), and the
+	// result is read back and undone through the same registered commands the socket offers.
+	void theGroupsListOffersCreateEditSetAndPhaseLock()
+	{
+		const ListSpec spec = CommandLists::vcaGroups();
+		QCOMPARE(spec.title, QStringLiteral("Groups"));
+		QCOMPARE(spec.listId, QStringLiteral("vca.list"));
+		QCOMPARE(spec.arrayKey, QStringLiteral("groups"));
+		QCOMPARE(spec.columns, QStringList({QStringLiteral("id"), QStringLiteral("name"),
+			QStringLiteral("gain"), QStringLiteral("muted"), QStringLiteral("soloed"),
+			QStringLiteral("member_count")}));
+		const struct { const char* label; const char* id; } expected[] = {
+			{"Rename...", "vca.rename"},
+			{"Remove", "vca.remove"},
+			{"Add Track to Edit Set...", "vca.track_add"},
+			{"Remove Track from Edit Set...", "vca.track_remove"},
+			{"Phase Lock On", "vca.set_phase_lock"},
+			{"Phase Lock Off", "vca.set_phase_lock"}};
+		QCOMPARE(spec.actions.size(), 6);
+		for (int i = 0; i < 6; ++i)
+		{
+			QCOMPARE(spec.actions[i].label, QString::fromLatin1(expected[i].label));
+			QCOMPARE(spec.actions[i].id, QString::fromLatin1(expected[i].id));
+			QCOMPARE(spec.actions[i].fromRow.value(QStringLiteral("group")), QStringLiteral("id"));
+			const ControlCommand* command = ControlRegistry::instance()->command(spec.actions[i].id);
+			QVERIFY2(command != nullptr && command->group == QStringLiteral("vca"), expected[i].id);
+		}
+		// Phase Lock On and Off are ONE command with the argument fixed, so the row says which.
+		QVERIFY(spec.actions[4].fixed.value(QStringLiteral("locked")).toBool());
+		QVERIFY(!spec.actions[5].fixed.value(QStringLiteral("locked")).toBool());
+		// The two edits ask (the track named in a form), Remove confirms, Rename asks.
+		QVERIFY(spec.actions[0].ask && spec.actions[2].ask && spec.actions[3].ask);
+		QVERIFY(spec.actions[1].confirm);
+		QCOMPARE(spec.extras.size(), 1);
+		QCOMPARE(spec.extras[0].label, QStringLiteral("New Group..."));
+		QCOMPARE(spec.extras[0].call.id, QStringLiteral("vca.create"));
+
+		// Opened from the menu entry the musician uses (Project tools ▸ Groups...).
+		Mixer* mixer = Engine::mixer();
+		mixer->clearVcaGroups();
+		QMenu projectMenu;
+		ShellCommandMenus::populateProject(&projectMenu);
+		QAction* entry = actionNamed(&projectMenu, QStringLiteral("Groups..."));
+		QVERIFY2(entry != nullptr, "Project tools has no Groups... entry");
+		QCOMPARE(entry->property("controlCommand").toString(), QStringLiteral("vca.list"));
+		entry->trigger();
+		CommandListDialog* dialog = nullptr;
+		for (QWidget* widget : QApplication::topLevelWidgets())
+		{
+			auto* found = qobject_cast<CommandListDialog*>(widget);
+			if (found != nullptr && found->isVisible()) { dialog = found; }
+		}
+		QVERIFY2(dialog != nullptr, "Groups... opened no list dialog");
+		QCOMPARE(dialog->rowCount(), 0);
+
+		// "New Group..." is vca.create through its form: a name, submitted.
+		QCOMPARE(dialog->runExtra(0).errorKind, ControlErrorKind::Busy);
+		QVERIFY(fillAndSubmit(dialog, {{QStringLiteral("name"), QStringLiteral("Strings")}}).ok);
+		QCOMPARE(mixer->vcaGroups().size(), std::size_t{1});
+		VcaGroup* group = mixer->vcaGroups().back();
+		QCOMPARE(group->name(), QStringLiteral("Strings"));
+		QCOMPARE(dialog->rowCount(), 1);  // the list was read again
+		QCOMPARE(dialog->row(0).value(QStringLiteral("name")).toString(), QStringLiteral("Strings"));
+
+		// Rename... asks for the name (the group's id comes from the row); one undo restores it.
+		QCOMPARE(dialog->runAction(0, 0).errorKind, ControlErrorKind::Busy);
+		QVERIFY(fillAndSubmit(dialog, {{QStringLiteral("name"), QStringLiteral("Brass")}}).ok);
+		QCOMPARE(group->name(), QStringLiteral("Brass"));
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok);
+		QCOMPARE(group->name(), QStringLiteral("Strings"));
+
+		// Add Track to Edit Set... names the track in its form; Remove Track... takes it out again.
+		SampleTrack* member = newSampleTrack();
+		QVERIFY(member != nullptr);
+		const QString track = trackIdOf(member);
+		QCOMPARE(dialog->runAction(0, 2).errorKind, ControlErrorKind::Busy);
+		QVERIFY(fillAndSubmit(dialog, {{QStringLiteral("track"), track}}).ok);
+		QCOMPARE(group->editTracks().size(), std::size_t{1});
+		QCOMPARE(dialog->runAction(0, 3).errorKind, ControlErrorKind::Busy);
+		QVERIFY(fillAndSubmit(dialog, {{QStringLiteral("track"), track}}).ok);
+		QVERIFY(group->editTracks().empty());
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok);  // the removal, one step
+		QCOMPARE(group->editTracks().size(), std::size_t{1});
+
+		// Phase Lock Off / On run at once (no form: both arguments are known) and are one step each.
+		QVERIFY(group->isPhaseLocked());
+		QVERIFY(dialog->runAction(0, 5).ok);
+		QVERIFY2(!group->isPhaseLocked(), "Phase Lock Off left the group locked");
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok);
+		QVERIFY2(group->isPhaseLocked(), "control.undo did not restore the phase lock");
+		QVERIFY(dialog->runAction(0, 5).ok);
+		QVERIFY(dialog->runAction(0, 4).ok);
+		QVERIFY(group->isPhaseLocked());
+
+		dialog->close();
+		mixer->clearVcaGroups();
+	}
+
+	// Q050-171: the Inspector's Clip menu carries Move With Edit Group..., the vca.edit_move form.
+	// Triggered from the menu, the form is filled and submitted: every track of the group's edit
+	// set moves by the anchor's delta, and ONE control.undo puts them all back.
+	void theClipsMenuCarriesMoveWithEditGroup()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clearVcaGroups();
+		SampleTrack* first = newSampleTrack();
+		SampleTrack* second = newSampleTrack();
+		QVERIFY(first != nullptr && second != nullptr);
+		SampleClip* anchor = newClipAt(first, 1000, 500);
+		SampleClip* partner = newClipAt(second, 1000, 500);
+		QVERIFY(anchor != nullptr && partner != nullptr);
+		const QString group = createAndFill(QStringLiteral("Take"), {first, second});
+
+		QMenu menu;
+		ShellCommandMenus::populateClip(&menu, anchor);
+		QAction* move = nullptr;
+		for (QAction* action : menu.actions())
+		{
+			if (action->property("controlCommand").toString() == QStringLiteral("vca.edit_move")) { move = action; }
+		}
+		QVERIFY2(move != nullptr, "the Clip menu has no Move With Edit Group entry");
+		QVERIFY2(move->isEnabled(), "Move With Edit Group is disabled while its command is registered");
+		QVERIFY(move->text().contains(QStringLiteral("Move With Edit Group")));
+		QVERIFY(ControlRegistry::instance()->hasCommand(QStringLiteral("vca.edit_move")));
+
+		move->trigger();
+		CommandForm* form = visibleForm(nullptr);
+		QVERIFY2(form != nullptr, "Move With Edit Group... opened no form");
+		QVERIFY(form->fields().contains(QStringLiteral("group")));
+		// The form starts from where the clip is; a submission without a group is refused, not run.
+		QJsonObject args;
+		QString error;
+		QVERIFY(!form->collect(&args, &error));
+		QVERIFY(form->setField(QStringLiteral("group"), group));
+		QVERIFY(form->setField(QStringLiteral("position"), 1500));
+		QVERIFY2(form->collect(&args, &error), qPrintable(error));
+		QCOMPARE(args.value(QStringLiteral("clip")).toString(), clipIdOf(anchor));
+		form->accept();
+		const ControlResult moved = form->result();
+		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
+		QCOMPARE(moved.result.value(QStringLiteral("moved_count")).toInt(), 2);
+		QCOMPARE(moved.result.value(QStringLiteral("delta")).toInt(), 500);
+		QCOMPARE(static_cast<int>(anchor->startPosition()), 1500);
+		QCOMPARE(static_cast<int>(partner->startPosition()), 1500);
+
+		// ONE recorded step: control.undo puts both clips back.
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok);
+		QCOMPARE(static_cast<int>(anchor->startPosition()), 1000);
+		QCOMPARE(static_cast<int>(partner->startPosition()), 1000);
+		mixer->clearVcaGroups();
+	}
+
+	// Q050-171: the limitation note and the Groups list's header comment must keep matching the
+	// interface they describe. Every row action and extra the real ListSpec carries is named in the
+	// note, so a menu line added or renamed without the note fails here; the pre-M3.7 "no
+	// interface" sentence may appear only after the heading that dates it as history.
+	void theLimitationNoteAndHeaderMatchTheInterface()
+	{
+		const QString raw = readSource(QStringLiteral("docs/KNOWN-LIMITATIONS.md"));
+		const QString note = QString(raw).replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral(" "));  // wrapped lines read as one
+		const QString header = readSource(QStringLiteral("include/CommandLists.h"));
+		QVERIFY2(!raw.isEmpty(), "docs/KNOWN-LIMITATIONS.md is not reachable from the build directory");
+		QVERIFY2(!header.isEmpty(), "include/CommandLists.h is not reachable from the build directory");
+
+		const qsizetype history = note.indexOf(QStringLiteral("The pre-M3.7 record"));
+		QVERIFY2(history >= 0, "the note does not label the pre-M3.7 claim as history");
+		const qsizetype stale = note.indexOf(QStringLiteral("nothing in the interface created a group"));
+		QVERIFY2(stale > history, "the stale no-interface claim is not confined to the historical record");
+		QVERIFY2(!note.contains(QStringLiteral("nothing in the interface creates a group")),
+			"the note still states the no-interface claim in the present tense");
+		const qsizetype current = note.indexOf(QStringLiteral("A VCA group's mix half and its main edit-half gestures are in the interface"));
+		QVERIFY2(current >= 0 && current < history, "the current interface description does not come before the history");
+
+		// The surfaces the note names, and the corrected undo wording.
+		for (const char* entry : {"**VCA group** submenu", "**New VCA group**", "**Project tools ▸ Groups...**",
+				"Colour a Group's Channels...", "**Move With Edit Group...**", "two recorded undo steps"})
+		{
+			QVERIFY2(note.contains(QString::fromUtf8(entry)), entry);
+		}
+		// Every action of the Groups list, by label, and its "New Group..." extra.
+		const ListSpec spec = CommandLists::vcaGroups();
+		for (const RowAction& action : spec.actions)
+		{
+			QVERIFY2(note.contains(action.label), qPrintable(QStringLiteral("the note never names the Groups action ") + action.label));
+		}
+		QVERIFY2(note.contains(spec.extras.at(0).label), "the note never names the Groups list's New Group...");
+		// The limits it keeps: socket-only phase-locked edits, the unshared membership form, the
+		// deleted track that stays in the set, and the edits the lock does not carry.
+		for (const char* limit : {"vca.edit_split", "also: true", "missing_tracks", "clip.delete"})
+		{
+			QVERIFY2(note.contains(QString::fromUtf8(limit)), limit);
+		}
+
+		// The header comment above vcaGroups() names the whole spec, not only rename/remove/create.
+		const qsizetype declaration = header.indexOf(QStringLiteral("ListSpec vcaGroups();"));
+		QVERIFY(declaration > 0);
+		const QString comment = header.left(declaration).right(300);
+		QVERIFY2(comment.contains(QStringLiteral("edit set")) && comment.contains(QStringLiteral("phase lock")),
+			"include/CommandLists.h's vcaGroups() comment leaves out the edit set and the phase lock");
+	}
+
 	void theStripsMenuChoosesLinksAndNestingThroughTheCommands()
 	{
 		Mixer* mixer = Engine::mixer();
@@ -184,12 +427,13 @@ private slots:
 		Mixer* mixer = Engine::mixer();
 		mixer->clearVcaGroups();
 		VcaGroup* group = mixer->createVcaGroup(QStringLiteral("Doomed"));
-		auto* strip = new VcaStripView(group);
+		QPointer<VcaStripView> strip = new VcaStripView(group);
 		strip->show();
 		QVERIFY(strip->isVisible());
 		QVERIFY(mixer->deleteVcaGroup(group->id()));
 		QVERIFY2(!strip->isVisible(), "the strip stayed up over freed models");
-		QTRY_VERIFY(QPointer<VcaStripView>(strip).isNull());  // deleteLater() ran
+		// Held as a QPointer from the start: rebuilding one from the raw pointer after deleteLater() ran reads freed memory.
+		QTRY_VERIFY(strip.isNull());  // deleteLater() ran
 	}
 
 	void theContextMenuEventOpensTheSameMenu()
@@ -208,6 +452,77 @@ private slots:
 	}
 
 private:
+	//! A file of the source tree (the test binary runs from <build>/tests), or empty when it is not reachable.
+	static QString readSource(const QString& relative)
+	{
+		for (const char* up : {"/../../", "/../../../"})
+		{
+			QFile file(QCoreApplication::applicationDirPath() + QString::fromLatin1(up) + relative);
+			if (file.open(QIODevice::ReadOnly | QIODevice::Text)) { return QString::fromUtf8(file.readAll()); }
+		}
+		return QString();
+	}
+
+	//! A sample track in the song.
+	static SampleTrack* newSampleTrack()
+	{
+		return dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+	}
+
+	//! A clip of @a length ticks at @a position on @a track.
+	static SampleClip* newClipAt(SampleTrack* track, int position, int length)
+	{
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(position)));
+		if (clip != nullptr) { clip->changeLength(TimePos(length)); }
+		return clip;
+	}
+
+	//! A group made and filled the way an agent would: vca.create, then vca.track_add per track.
+	static QString createAndFill(const QString& name, const QList<SampleTrack*>& tracks)
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString group = registry->invoke(QStringLiteral("vca.create"), {{QStringLiteral("name"), name}})
+			.result.value(QStringLiteral("group")).toString();
+		for (SampleTrack* track : tracks)
+		{
+			registry->invoke(QStringLiteral("vca.track_add"),
+				{{QStringLiteral("group"), group}, {QStringLiteral("track"), trackIdOf(track)}});
+		}
+		return group;
+	}
+
+	//! The newest form still on screen under @a parent (anywhere when null), or nullptr.
+	static CommandForm* visibleForm(QWidget* parent)
+	{
+		CommandForm* found = nullptr;
+		const QList<CommandForm*> forms = parent != nullptr ? parent->findChildren<CommandForm*>() : allForms();
+		for (CommandForm* form : forms) { if (form->isVisible()) { found = form; } }
+		return found;
+	}
+
+	static QList<CommandForm*> allForms()
+	{
+		QList<CommandForm*> forms;
+		for (QWidget* widget : QApplication::allWidgets())
+		{
+			if (auto* form = qobject_cast<CommandForm*>(widget)) { forms.append(form); }
+		}
+		return forms;
+	}
+
+	//! The form the last form-asking action opened under @a dialog, filled with @a fields and submitted.
+	static ControlResult fillAndSubmit(QWidget* dialog, const QJsonObject& fields)
+	{
+		CommandForm* form = visibleForm(dialog);
+		if (form == nullptr) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no form opened")); }
+		for (auto it = fields.begin(); it != fields.end(); ++it)
+		{
+			if (!form->setField(it.key(), it.value())) { return ControlResult::failure(ControlErrorKind::InvalidArgs, it.key()); }
+		}
+		form->accept();
+		return form->result();
+	}
+
 	//! Once the strip's menu is up (it is shown inside exec(), so it is polled for, not waited a fixed time), notes
 	//! whether it carries the Links submenu and closes it.
 	static void closePopupWhenUp(bool* sawLinks, int triesLeft = 200)

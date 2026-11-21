@@ -1,5 +1,5 @@
 /*
- * ControlReversibilityTableStems.cpp - the seven `stem.*` rows of THE SPEC A16
+ * ControlReversibilityTableStems.cpp - the eight `stem.*` rows of THE SPEC A16
  *                                       classification table.
  *
  * Feature row 26 of docs/FEATURE-LIST-0.3.0.md (board task #653). The rows are
@@ -9,12 +9,14 @@
  * WHAT THE INVERSE IS, and a file is split off a block when the file-length
  * ratchet says so, not when a command group asks for it.
  *
- * ALL SEVEN ARE `not_mutating`, for the reason `render.stems` is: the engine
- * they drive writes OUTPUT ARTEFACTS (four stem WAVs; a checksum-verified model
- * file) and holds its jobs in the instance's memory. A separation job is not a
+ * SEVEN ARE `not_mutating`, for the reason `render.stems` is: the engine they
+ * drive writes OUTPUT ARTEFACTS (four stem WAVs; a checksum-verified model file)
+ * and holds its jobs in the instance's memory. A separation job is not a
  * document - it does not survive a reload - and a written stem is an output, so
  * there is nothing for a checkpoint to capture and nothing for control.undo to
- * take back.
+ * take back. THE EIGHTH, `stem.tracks_create`, DOES edit the project: it
+ * materialises the four stems as four SampleTracks, so it is a `true_inverse`
+ * action checkpoint whose ONE undo step removes all four.
  *
  * THE WHOLE BLOCK IS GUARDED, because the ids are: without LMMS_HAVE_STEM_SPLIT
  * there is no engine, so ControlRegistry does not register these commands
@@ -68,10 +70,12 @@ using RC = ReversibilityClass;
 
 #ifdef LMMS_HAVE_STEM_SPLIT
 	// ---------- stem.* (the offline stem-separation engine; feature row 26) ----
-	// Seven rows for the one group. All seven are not_mutating for the reason
+	// Eight rows for the one group. Seven are not_mutating for the reason
 	// render.stems is: the engine they drive writes OUTPUT ARTEFACTS and holds
 	// its jobs in memory, and none of it is project state (a stem job does not
 	// survive a reload, and a written stem WAV is an output, not a document).
+	// The eighth, stem.tracks_create, is the one PROJECT edit: it materialises
+	// the four stems as four SampleTracks, so its inverse is a recorded action.
 const ReversibilityRow kStemRows[] = {
 	R("stem.get_state", RC::NotMutating, false,
 		"reads the engine's own facts: the backend, whether it can run (and the "
@@ -123,6 +127,16 @@ const ReversibilityRow kStemRows[] = {
 		"not answer - control.ping included - until it finishes or fails (the "
 		"bound docs/RENDER-CHILD-WAIT.md:120-126 records for the child-process "
 		"renders, docs/KNOWN-LIMITATIONS.md)",
+		""),
+	R("stem.tracks_create", RC::TrueInverse, true,
+		"it edits the project: the four stems of a COMPLETED job become four "
+		"SampleTracks, each carrying a clip of its stem (drums, bass, other, "
+		"vocals) at the caller's position",
+		"one recorded ACTION checkpoint (control::addUndoStep) removes all four "
+		"created tracks - and their clips - in ONE control.undo or Ctrl+Z. The "
+		"tracks share the job's immutable stem buffers, so the redo rebuilds them "
+		"from those buffers rather than from a captured XML snapshot (a stem "
+		"clip's XML would carry its whole waveform as base64)",
 		""),
 };
 

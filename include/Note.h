@@ -33,6 +33,7 @@
 #include "volume.h"
 #include "panning.h"
 #include "MpeExpression.h"
+#include "MpeStreamSnapshot.h"
 #include "SerializingObject.h"
 #include "NoteConditions.h"
 #include "TimePos.h"
@@ -187,6 +188,16 @@ public:
 	int releaseVelocity() const { return m_releaseVelocity; }
 	void setReleaseVelocity( int velocity );
 	int midiReleaseVelocity( int midiBaseVelocity ) const;
+	/*! 0.5.0 Q050-039: the velocity an incoming MIDI note-off carries, as this
+	 *  note's volume scale (0..200, 100 = the base velocity) stores it. The
+	 *  exact inverse of midiReleaseVelocity() at the same base velocity, so
+	 *  the velocity that arrived is the velocity playback emits: both convert
+	 *  with rounding, because at the default base velocity (63) one velocity
+	 *  step is 1.587 volume units and truncation handed back 95 for an
+	 *  incoming 96. The scale names velocities up to twice the base velocity,
+	 *  so MIDI velocity 127 saturates to it at base velocities below 64.
+	 *  A non-positive base velocity has no usable scale and converts to zero. */
+	static int releaseVelocityFromMidi( int midiVelocity, int midiBaseVelocity );
 
 	/*! The timing the note had before its first quantise, kept until it is
 	 *  restored or frozen (note.restore_timing) - Cubase's "undo quantize" that
@@ -229,6 +240,36 @@ public:
 	void setMpeTimbre( int timbre );
 	//! Drops the expression entirely (and the serialized attributes with it).
 	void clearMpeExpression();
+
+	/*! Q050-016: the note's time-varying MPE expression stream (pitch,
+	 *  pressure, timbre points at tick offsets from the note's start), the
+	 *  per-note curves the scalar expression above is a single sample of.
+	 *
+	 *  A note that carries no stream - every note saved before this feature,
+	 *  and a note whose stream was cleared - has `hasMpeStream() == false` and
+	 *  serializes exactly as before: the stream is three optional attributes,
+	 *  written only when non-empty. Playback reads the stream to schedule the
+	 *  axes at their own offsets; a note without one keeps the scalar path.
+	 *
+	 *  Round 3 (realtime): the stream is an immutable MpeStreamSnapshot behind
+	 *  an atomic pointer (include/MpeStreamSnapshot.h has the protocol and its
+	 *  memory-ordering argument). An edit never changes a snapshot in place: it
+	 *  builds a new one and publishes it, so a copy taken concurrently - the
+	 *  audio thread's NotePlayHandle - holds either the old snapshot or the new
+	 *  one, never a half-written vector, and the old one is never freed on the
+	 *  realtime path. mpeStream() is valid until this note publishes again,
+	 *  i.e. for the thread that edits the note, and for a handle's own copy. */
+	bool hasMpeStream() const
+	{
+		const MpeStreamSnapshot* snapshot = m_mpeStream.load( std::memory_order_acquire );
+		return snapshot != nullptr && !snapshot->stream().empty();
+	}
+	const MpeExpressionStream& mpeStream() const { return m_mpeStream.load( std::memory_order_acquire )->stream(); }
+	//! Publish \a stream as a new snapshot (an empty one clears). Allocates:
+	//! editing threads only.
+	void setMpeStream( const MpeExpressionStream& stream );
+	//! Drops the whole stream (and its serialized attributes with it).
+	void clearMpeStream();
 
 	//! Types of per-note automation. Currently only detuning/pitch bending is supported.
 	enum class ParameterType
@@ -365,6 +406,13 @@ public:
 
 
 protected:
+	/*! Q050-016 round 3: hand this note's stream reference to the deferred
+	 *  reclaimer instead of freeing it here. NotePlayHandle's destructor - the
+	 *  realtime teardown path - calls it, so the final release of a stream on
+	 *  the audio thread never frees (MpeStreamSnapshot::reclaimRetired does,
+	 *  later, on a control thread). */
+	void retireMpeStreamDeferred() noexcept;
+
 	void saveSettings( QDomDocument & doc, QDomElement & parent ) override;
 	void loadSettings( const QDomElement & _this ) override;
 
@@ -405,6 +453,17 @@ private:
 	int m_mpePitchCents = 0;
 	int m_mpePressure = 0;
 	int m_mpeTimbre = 0;
+
+	// Q050-016: the optional per-note expression stream, an immutable
+	// snapshot behind an atomic pointer (round 3; MpeStreamSnapshot.h). Copies
+	// take a counted reference (lock-free, allocation-free - the audio thread
+	// builds its NotePlayHandle that way); setMpeStream()/clearMpeStream()/
+	// operator= swap the pointer with one atomic exchange and release the old
+	// snapshot, which is freed only off the realtime path.
+	std::atomic<const MpeStreamSnapshot*> m_mpeStream{ nullptr };
+	//! Swap m_mpeStream to \a next (taking over its reference) and release
+	//! the previous snapshot.
+	void publishMpeStream( const MpeStreamSnapshot* next ) noexcept;
 
 	// 0.5.0 L07: mute, release velocity, the pre-quantise timing (-1 = none).
 	bool m_muted = false;

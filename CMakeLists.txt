@@ -153,6 +153,15 @@ IF(ZENE_TELEMETRY)
 	SET(ZENE_TELEMETRY_ENABLED 1)
 ENDIF()
 
+# Update check (Q050-501): off at run time until the user says yes. A packager whose
+# builds are updated by something else sets -DZENE_UPDATE_CHECK=OFF: the checker, its
+# commands and its menu entry are then not compiled at all (a Flatpak or Snap copy
+# hides them at run time instead). Independent of ZENE_TELEMETRY.
+option(ZENE_UPDATE_CHECK "Compile the opt-in check for a newer release (OFF for builds updated by something else)" ON)
+IF(ZENE_UPDATE_CHECK)
+	SET(ZENE_UPDATE_CHECK_ENABLED 1)
+ENDIF()
+
 # Peer-to-peer collaboration and remote control (WF-050/WF-052, 0.5.0 F6): no server, TLS-PSK over
 # Qt Network, off at runtime until collab.host / collab.join. OFF compiles the transport out; the
 # collab.* ids still register and refuse 'unavailable'.
@@ -252,6 +261,20 @@ elseif(TARGET_UARCH STREQUAL "native")
 endif()
 
 IF(LMMS_BUILD_APPLE)
+	# The supported macOS floor (README, "macOS Intel and Apple Silicon"). It is Qt 5.15's own
+	# minimum deployment target, and it is above the oldest target the worker wake's __ulock
+	# calls are available on (10.12), so every supported build can use that path. CI's
+	# macos-env.sh derives MACOSX_DEPLOYMENT_TARGET from a dependency binary and today yields
+	# 11.0+ on the hosted runners; that is above this floor and is supported. Warn rather than
+	# fail, so a third-party packager building below it still gets a build and one clear line
+	# saying what the project supports.
+	SET(ZENE_MACOS_MINIMUM "10.13")
+	IF(DEFINED MACOSX_DEPLOYMENT_TARGET AND MACOSX_DEPLOYMENT_TARGET VERSION_LESS ZENE_MACOS_MINIMUM)
+		MESSAGE(WARNING
+			"MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET} is below Zene Studio's "
+			"supported macOS minimum ${ZENE_MACOS_MINIMUM}; the build may fail or crash there.")
+	ENDIF()
+	MESSAGE(STATUS "macOS deployment floor: ${ZENE_MACOS_MINIMUM} (target: ${MACOSX_DEPLOYMENT_TARGET})")
 	# Fix linking on 10.14+. See issue #4762 on github
 	LINK_DIRECTORIES("${APPLE_PREFIX}/lib")
 	SET(WANT_SOUNDIO OFF)
@@ -385,6 +408,11 @@ IF(ZENE_TELEMETRY_ENABLED)
 	# The telemetry transport is the only other Qt Network user. With the kill
 	# switch off this package is not required and no networking code from the
 	# telemetry client is compiled.
+	FIND_PACKAGE(Qt${QT_VERSION_MAJOR} COMPONENTS Network REQUIRED)
+	LIST(APPEND QT_LIBRARIES Qt${QT_VERSION_MAJOR}::Network)
+ENDIF()
+
+IF(ZENE_UPDATE_CHECK_ENABLED)
 	FIND_PACKAGE(Qt${QT_VERSION_MAJOR} COMPONENTS Network REQUIRED)
 	LIST(APPEND QT_LIBRARIES Qt${QT_VERSION_MAJOR}::Network)
 ENDIF()
@@ -740,6 +768,10 @@ ENDIF(WANT_GIG)
 IF(LMMS_BUILD_LINUX OR LMMS_BUILD_APPLE OR LMMS_BUILD_OPENBSD OR LMMS_BUILD_FREEBSD OR LMMS_BUILD_HAIKU)
 	FIND_PACKAGE(Threads)
 ENDIF(LMMS_BUILD_LINUX OR LMMS_BUILD_APPLE OR LMMS_BUILD_OPENBSD OR LMMS_BUILD_FREEBSD OR LMMS_BUILD_HAIKU)
+
+# Threads::Threads is linked by consumers on every platform (the sfizz tests, the
+# plugins); the gate above only runs on the pthread platforms, so ensure it everywhere.
+include(${CMAKE_SOURCE_DIR}/cmake/modules/EnsureThreads.cmake)
 
 # check for sndio (roaraudio won't work yet)
 IF(WANT_SNDIO)

@@ -45,6 +45,7 @@
 #include "Mixer.h"
 #include "MixerChannelLcdSpinBox.h"
 #include "MixerView.h"
+#include "PathUtil.h"
 #include "GuiApplication.h"
 #include "Knob.h"
 #include "SampleClip.h"
@@ -52,6 +53,7 @@
 #include "SongEditor.h"
 #include "StringPairDrag.h"
 #include "TrackContainerView.h"
+#include "DesignTokens.h"
 #include "TrackLabelButton.h"
 
 
@@ -62,7 +64,7 @@ namespace lmms::gui
 SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	TrackView( _t, tcv )
 {
-	setFixedHeight( 32 );
+	setFixedHeight(trackLaneHeight());
 
 	m_tlb = new TrackLabelButton(this, getTrackSettingsWidget());
 	m_tlb->setCheckable(true);
@@ -72,6 +74,7 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	m_tlb->show();
 
 	m_mixerChannelNumber = new MixerChannelLcdSpinBox(2, getTrackSettingsWidget(), tr("Mixer channel"), this);
+	if (tokens::accessibleMode()) { m_mixerChannelNumber->setMinimumSize(tokens::targetSize(), tokens::targetSize()); }
 	m_mixerChannelNumber->show();
 
 	m_volumeKnob = new VolumeKnob(KnobType::Small17, tr("VOL"), getTrackSettingsWidget(), Knob::LabelRendering::LegacyFixedFontSize, tr("Track volume"));
@@ -85,7 +88,8 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	m_panningKnob->show();
 
 	m_activityIndicator = new FadeButton(getTrackSettingsWidget());
-	m_activityIndicator->setFixedSize(8, 28);
+	m_activityIndicator->setFixedSize(tokens::accessibleMode() ? tokens::targetSize() : 8,
+		tokens::accessibleMode() ? tokens::targetSize() : 28);
 	m_activityIndicator->show();
 
 	// R2.1: the input monitor, a registry action like every other (M3.2): the button runs
@@ -93,7 +97,8 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	// change the same state through the same verb.
 	m_monitorButton = new QToolButton(getTrackSettingsWidget());
 	// 0.5.0: wide enough for its longest word (AUT) in the interface's typeface.
-	m_monitorButton->setFixedSize(34, 22);
+	m_monitorButton->setFixedSize(tokens::accessibleMode() ? tokens::targetSize() : 34,
+		tokens::accessibleMode() ? tokens::targetSize() : 22);
 	m_monitorButton->setProperty("controlCommand", QStringLiteral("track.set_monitor"));
 	m_monitorButton->setAccessibleName(tr("Input monitoring"));
 	connect(m_monitorButton, &QToolButton::clicked, this, &SampleTrackView::cycleMonitor);
@@ -105,7 +110,7 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	// 0.5.0 (docs/UI-SHELL.md §1): a gap between the header's controls, so the knobs' captions
 	// no longer run together ("VOLPAN") and the row reads as separate controls.
 	layout->setContentsMargins(0, 0, 4, 0);
-	layout->setSpacing(4);
+	layout->setSpacing(tokens::targetSpacing(4));
 	layout->addWidget(m_tlb);
 	layout->addWidget(m_mixerChannelNumber);
 	layout->addWidget(m_activityIndicator);
@@ -231,24 +236,10 @@ void SampleTrackView::dropEvent(QDropEvent *de)
 
 	if (type == "samplefile")
 	{
-		int trackHeadWidth = ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt()==1
-				? DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT + TRACK_OP_WIDTH_COMPACT
-				: DEFAULT_SETTINGS_WIDGET_WIDTH + TRACK_OP_WIDTH;
-
-		const int deX = position(de).x();
-		int xPos = deX < trackHeadWidth
-				? trackHeadWidth
-				: deX;
-
-		const float snapSize = getGUI()->songEditor()->m_editor->getSnapSize();
-		TimePos clipPos = trackContainerView()->fixedClips()
-				? TimePos(0)
-				: TimePos(((xPos - trackHeadWidth) / trackContainerView()->pixelsPerBar()
-							* TimePos::ticksPerBar()) + trackContainerView()->currentPosition()
-						).quantize(snapSize, true);
-
-		auto sClip = static_cast<SampleClip*>(getTrack()->createClip(clipPos));
-		if (sClip) { sClip->setSampleFile(value); }
+		// 0.5.0 L05 (Q050-093): the browser's sample drag imports through clip.import_file like a file drag does -
+		// one undo step, the loop's tempo and key detected and the loop mode taken (Alt: the other one).
+		const TimePos clipPos = arrangerdrop::tickAtContainerX(trackContainerView(), position(de).x());
+		arrangerdrop::importFileAndReport(PathUtil::toAbsolute(value), getTrack(), clipPos, arrangerdrop::dropModifiers(de));
 	}
 }
 
@@ -283,6 +274,7 @@ void SampleTrackView::corruptStateUpdate()
 	// A closed view waits for its deferred deletion after its track has died, and the periodic tick can land
 	// in that window: the model is gone then, so there is no state to read (m0 blocker, trackview-uaf).
 	if (model() == nullptr) { return; }
+	model()->notifyPlayingChanged();
 	// The monitor mode can change under the view (an agent, an undo): the periodic tick
 	// that already polls the bus state re-reads it too.
 	showMonitorMode();

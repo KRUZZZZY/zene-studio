@@ -55,6 +55,9 @@ class LMMS_EXPORT LatencyCompensation
 public:
 	//! Largest delay the line accepts. Longer requests are clamped.
 	static constexpr int MaxFrames = 1 << 14; // 16384 frames ~ 0.37 s @ 44.1 kHz
+	//! Q050-339: the largest manual offset (track or channel delay) either way, half a line, so an offset
+	//! and a device's latency still fit one delay line.
+	static constexpr int MaxManualOffsetFrames = MaxFrames / 2;
 
 	LatencyCompensation() = default;
 

@@ -199,7 +199,9 @@ MicrotunerConfig::MicrotunerConfig() :
 	// Add to the main window and setup fixed size etc.
 	SubWindow* subWin = getGUI()->mainWindow()->addWindowedWidget(this);
 	subWin->setAttribute(Qt::WA_DeleteOnClose, false);
-	setMinimumSize(300, 300);
+	// The lower-right keymap range is fixed-width: the window may never be narrower
+	// than the layout needs, or its labels are laid out past the right edge.
+	setMinimumSize(microtunerLayout->minimumSize().expandedTo(QSize(300, 300)));
 	setMaximumSize(500, 700);
 	subWin->hide();
 
@@ -207,6 +209,15 @@ MicrotunerConfig::MicrotunerConfig() :
 	Qt::WindowFlags flags = subWin->windowFlags();
 	flags &= ~Qt::WindowMaximizeButtonHint;
 	subWin->setWindowFlags(flags);
+}
+
+
+QSize MicrotunerConfig::sizeHint() const
+{
+	// Opening the window at a size smaller than the layout's minimum lays the keymap
+	// range out past the right edge; the layout decides how wide the window must open.
+	const QSize preferred(300, 400);
+	return layout() != nullptr ? layout()->minimumSize().expandedTo(preferred) : preferred;
 }
 
 
@@ -334,8 +345,9 @@ bool MicrotunerConfig::validateScaleForm()
 		if (firstSection.contains('.'))		// cent mode
 		{
 			bool ok = true;
-			firstSection.toFloat(&ok);
+			const float cents = firstSection.toFloat(&ok);
 			if (!ok) {fail(tr("Interval defined in cents cannot be converted to a number")); return false;}
+			if (!Interval::centsGiveUsableRatio(cents)) {fail(tr("Interval defined in cents is out of range: its ratio is not a finite positive number")); return false;}
 		}
 		else								// ratio mode
 		{
@@ -495,30 +507,55 @@ bool MicrotunerConfig::loadScaleFromFile()
 {
 	QString fileName = FileDialog::getOpenFileName(this, tr("Open scale"), "", tr("Scala scale definition (*.scl)"));
 	if (fileName == "") {return false;}
-	QFile file(fileName);
-	if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+	QString error;
+	if (!loadScaleFile(fileName, &error))
 	{
-		QMessageBox::critical(this, tr("Scale load failure"), tr("Unable to open selected file."));
+		if (!error.isEmpty()) {QMessageBox::critical(this, tr("Scale load failure"), error);}
 		return false;
 	}
-	QTextStream stream(&file);
-	int i = -2, limit = 0;
+	return true;
+}
 
-	m_scaleNameEdit->setText("");
-	m_scaleTextEdit->clear();
-	while (!stream.atEnd() && i < limit)
+
+/**
+ * \brief Parse an .scl file and apply the loaded scale if it is valid
+ * \param fileName the .scl file to read
+ * \param error the reason the file was refused, if it was
+ * \return true if the scale was applied, false if problems were detected
+ */
+bool MicrotunerConfig::loadScaleFile(const QString& fileName, QString* error)
+{
+	QString name;
+	QStringList intervals;
+	QString reason;
+	if (!SessionTuning::parseScaleFile(fileName, &name, &intervals, &reason))
 	{
-		QString line = stream.readLine();
-		if (line != "" && line[0] == '!') {continue;}					// comment
-		switch(i) {
-			case -2:	m_scaleNameEdit->setText(line); break;			// first non-comment line = name or description
-			case -1:	limit = line.toInt(); break;					// second non-comment line = degree count
-			default:	m_scaleTextEdit->appendPlainText(line); break;	// all other lines = interval definitions
-		}
-		i++;
+		// A file that describes no scale - no name, no degree count, a
+		// non-positive count, or fewer interval lines than it declared - is
+		// refused HERE, before the form is touched: the old path cleared the
+		// form and handed applyScale() an empty interval list, which built
+		// the 1/1 interval the apply code always starts with and installed a
+		// scale in which every key has the same pitch. The core reads the
+		// file with the same rules the mts.load_scale command applies, so
+		// both refuse exactly the same files.
+		if (error != nullptr) {*error = reason;}
+		return false;
 	}
+	const QString previousName = m_scaleNameEdit->text();
+	const QString previousIntervals = m_scaleTextEdit->toPlainText();
+	m_scaleNameEdit->setText(name);
+	m_scaleTextEdit->clear();
+	for (const QString& line : intervals) {m_scaleTextEdit->appendPlainText(line);}
 
-	return applyScale();
+	if (applyScale()) {return true;}
+
+	m_scaleNameEdit->setText(previousName);
+	m_scaleTextEdit->setPlainText(previousIntervals);
+	if (error != nullptr && Engine::getSong() == nullptr)
+	{
+		*error = tr("No song is available to apply the scale.");
+	}
+	return false;
 }
 
 

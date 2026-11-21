@@ -163,8 +163,8 @@ void registerCompSelect(ControlRegistry& registry)
 			// taken for a write that never happens would leave an undo step
 			// behind and shadow the undo of the real edit under it.
 			return ControlResult::failure(ControlErrorKind::Refused,
-				QStringLiteral("the take-lane model refuses [%1, %2) on lane %3 (srcpos %4)")
-					.arg(begin).arg(end).arg(lane).arg(srcpos));
+				QStringLiteral("the take-lane model refuses [%1, %2) on lane %3 (srcpos %4); each lane supports at most %5 spans")
+					.arg(begin).arg(end).arg(lane).arg(srcpos).arg(TakeLaneModel::MaxCompositeSpansPerLane));
 		}
 		const QJsonObject before = compositeState(track);
 		track->addJournalCheckPoint();
@@ -236,6 +236,12 @@ void registerCompRebuild(ControlRegistry& registry)
 		TakeLaneModel& model = track->takeLanes();
 		const QJsonObject before = compositeState(track);
 		const int beforeCount = before.value(QStringLiteral("segments")).toArray().size();
+		if (!model.canRebuild(hasBegin ? begin : -1, hasBegin ? end : -1))
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("rebuilding would exceed the %1-span playback limit on a lane")
+					.arg(TakeLaneModel::MaxCompositeSpansPerLane));
+		}
 
 		track->addJournalCheckPoint();
 		const int after = model.rebuild(hasBegin ? begin : -1, hasBegin ? end : -1);

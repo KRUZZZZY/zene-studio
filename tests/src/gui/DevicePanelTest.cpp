@@ -46,32 +46,51 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <memory>
 
+#include <QApplication>
+#include <QContextMenuEvent>
+#include <QDialog>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPointer>
 #include <QMenu>
+#include <QTemporaryDir>
+#include <QTimer>
+#include <QToolTip>
 #include <QToolButton>
 
+#include <sndfile.h>
+
+#include "AudioBusHandle.h"
+#include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "DevicePanel.h"
 #include "DevicePicker.h"
 #include "Effect.h"
 #include "EffectChain.h"
+#include "EffectControls.h"
 #include "Engine.h"
 #include "InspectorPanel.h"
+#include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
+#include "MusicalTime.h"
 #include "MenuTestSupport.h"
 #include "Mixer.h"
+#include "Model.h"
 #include "RemoteControls.h"
+#include "SampleBuffer.h"
+#include "SampleClip.h"
 #include "SampleTrack.h"
 #include "ChannelLevelMeter.h"
 #include "CommandLists.h"
+#include "DeviceCardState.h"
 #include "ShellCommandMenus.h"
 #include "ShellSelection.h"
 #include "TransportReadouts.h"
@@ -133,6 +152,88 @@ bool allDeclareRegisteredCommands(QMenu* menu, QString* stray)
 	return true;
 }
 
+ReadoutField* selectedNoteLength(InspectorPanel& inspector)
+{
+	for (ReadoutField* candidate : inspector.findChildren<ReadoutField*>())
+	{
+		if (candidate->caption() == QStringLiteral("Length")
+			&& candidate->parentWidget()->objectName() == QStringLiteral("inspectorNotes")
+			&& candidate->isVisibleTo(&inspector)) { return candidate; }
+	}
+	return nullptr;
+}
+
+bool typeReadout(ReadoutField* field, const QString& text)
+{
+	if (field == nullptr) { return false; }
+	QTest::mouseDClick(field, Qt::LeftButton);
+	auto* editor = field->findChild<QLineEdit*>();
+	if (editor == nullptr) { return false; }
+	editor->selectAll();
+	QTest::keyClicks(editor, text);
+	emit editor->editingFinished();
+	return true;
+}
+
+struct RestoreMusicalTimeFormat
+{
+	musicaltime::Format format = musicaltime::currentFormat();
+	~RestoreMusicalTimeFormat() { musicaltime::setFormat(format); }
+};
+
+struct ClearInspectorTrack
+{
+	Track* track;
+	~ClearInspectorTrack()
+	{
+		ShellSelection::instance()->setTrack(nullptr);
+		delete track;
+	}
+};
+
+//! The menu a right-click opened: the visible QMenu among the application's widgets (the offscreen
+//! platform has no active popup widget, so the menu is found by what it shows).
+QMenu* visibleMenu()
+{
+	for (QWidget* widget : QApplication::allWidgets())
+	{
+		if (auto* menu = qobject_cast<QMenu*>(widget); menu != nullptr && menu->isVisible()) { return menu; }
+	}
+	return nullptr;
+}
+
+//! A device whose controls have no view of their own: the card's fallback editor cannot be created.
+class NoViewEffectControls final : public EffectControls
+{
+public:
+	explicit NoViewEffectControls(Effect* effect) : EffectControls{effect} {}
+	int controlCount() override { return 0; }
+	void saveSettings(QDomDocument&, QDomElement&) override {}
+	void loadSettings(const QDomElement&) override {}
+	QString nodeName() const override { return QStringLiteral("NoViewEffectControls"); }
+	gui::EffectControlDialog* createView() override { return nullptr; }
+};
+
+//! The test device: a plug-in with no editor of its own and no control view either - so the card's
+//! "Open Editor" has nothing to open, neither the device's own window nor the built-in dialog.
+class NoViewEffect final : public Effect
+{
+public:
+	explicit NoViewEffect(Model* parent) : Effect{&s_descriptor, parent, nullptr}, m_controls{this} {}
+	EffectControls* controls() override { return &m_controls; }
+
+protected:
+	ProcessStatus processImpl(SampleFrame*, const f_cnt_t) override { return ProcessStatus::Continue; }
+
+private:
+	NoViewEffectControls m_controls;
+	static const Plugin::Descriptor s_descriptor;
+};
+
+const Plugin::Descriptor NoViewEffect::s_descriptor{
+	"zene-no-view-test-effect", "No view test effect", "", "Zene", 0x0100,
+	Plugin::Type::Effect, nullptr, nullptr, nullptr};
+
 } // namespace
 
 using lmms::test::menuAction;
@@ -178,6 +279,50 @@ private slots:
 		selection->setTrack(track);
 		QVERIFY(selection->channel().isEmpty());
 		delete track;
+		QCOMPARE(selection->track(), static_cast<Track*>(nullptr));
+	}
+
+	void deletingSelectedTrackNotifiesListeners()
+	{
+		ShellSelection* selection = ShellSelection::instance();
+		auto* oldTrack = Track::create(Track::Type::Instrument, Engine::getSong());
+		auto* selectedTrack = Track::create(Track::Type::Instrument, Engine::getSong());
+		Clip* selectedClip = selectedTrack->createClip(TimePos(0));
+		selection->setTrack(oldTrack);
+		selection->setClip(selectedClip);
+		QSignalSpy changed(selection, &ShellSelection::changed);
+
+		delete oldTrack;
+		QCOMPARE(changed.count(), 0);
+		QCOMPARE(selection->track(), selectedTrack);
+		QCOMPARE(selection->clip(), selectedClip);
+
+		delete selectedTrack;
+		QCOMPARE(changed.count(), 1);
+		QCOMPARE(selection->track(), static_cast<Track*>(nullptr));
+		QVERIFY(selection->clip() == nullptr);
+	}
+
+	void deletingSelectedClipNotifiesListeners()
+	{
+		ShellSelection* selection = ShellSelection::instance();
+		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		Clip* oldClip = track->createClip(TimePos(0));
+		Clip* selectedClip = track->createClip(TimePos(1));
+		selection->setClip(oldClip);
+		selection->setClip(selectedClip);
+		QSignalSpy changed(selection, &ShellSelection::changed);
+
+		delete oldClip;
+		QCOMPARE(changed.count(), 0);
+		QCOMPARE(selection->clip(), selectedClip);
+
+		delete selectedClip;
+		QCOMPARE(changed.count(), 1);
+		QCOMPARE(selection->track(), track);
+		QVERIFY(selection->clip() == nullptr);
+		delete track;
+		QCOMPARE(changed.count(), 2);
 		QCOMPARE(selection->track(), static_cast<Track*>(nullptr));
 	}
 
@@ -284,6 +429,8 @@ private slots:
 		ShellCommandMenus::populateClip(&audio, sampleClip);
 		QVERIFY2(allDeclareRegisteredCommands(&audio, &stray), qPrintable(stray));
 		QVERIFY(menuAction(&audio, {QStringLiteral("Process"), QStringLiteral("Reverse")}) != nullptr);
+		QVERIFY(menuAction(&audio, {QStringLiteral("Process"), QStringLiteral("Convert to Mono")}) != nullptr);
+		QVERIFY(menuAction(&audio, {QStringLiteral("Process"), QStringLiteral("Split Stereo to Two Mono Files...")}) != nullptr);
 		QVERIFY(menuAction(&audio, {QStringLiteral("Tempo and Warp"), QStringLiteral("Stretch Algorithm"), QStringLiteral("preserve_pitch")}) != nullptr);
 		QVERIFY2(!menuAction(&audio, {QStringLiteral("Crossfade Into Next Clip...")})->isEnabled(), "the last clip offered a crossfade");
 
@@ -329,6 +476,234 @@ private slots:
 		emit more->menu()->aboutToShow();
 		QVERIFY(menuAction(more->menu(), {QStringLiteral("Scale and Chords"), QStringLiteral("Detect Chords")}) != nullptr);
 		ShellSelection::instance()->setTrack(nullptr);
+		delete instrument;
+		delete sample;
+	}
+
+	/*! Q050-106 AC3: the clip Process menu offers BOTH stereo operations as registered
+	 *  commands, and triggering Convert to Mono really bakes the mean through
+	 *  sample.edit_range - one undo puts the stereo samples back. */
+	void theProcessMenuConvertsAClipToMonoThroughTheCommand()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		std::vector<SampleFrame> stereo;
+		for (int i = 0; i < 64; ++i)
+		{
+			stereo.emplace_back(0.02f * static_cast<float>(i + 1), -0.03f * static_cast<float>(i + 1));
+		}
+		clip->setSampleBuffer(std::make_shared<SampleBuffer>(stereo.data(), stereo.size(), 44100));
+		const QString id = control::clipIdOf(clip);
+
+		QMenu audio;
+		ShellCommandMenus::populateClip(&audio, clip);
+		QAction* mono = menuAction(&audio, {QStringLiteral("Process"), QStringLiteral("Convert to Mono")});
+		QVERIFY(mono != nullptr);
+		QCOMPARE(mono->property("controlCommand").toString(), QStringLiteral("sample.edit_range"));
+		QVERIFY(mono->isEnabled());
+		mono->trigger();
+
+		const auto layoutOf = [id]()
+		{
+			for (const QJsonValue& value : run(QStringLiteral("arrangement.get_state"))
+				.result.value(QStringLiteral("clips")).toArray())
+			{
+				const QJsonObject state = value.toObject();
+				if (state.value(QStringLiteral("id")).toString() == id) { return state; }
+			}
+			return QJsonObject();
+		};
+		QCOMPARE(layoutOf().value(QStringLiteral("layout")).toString(), QStringLiteral("mono"));
+		for (int i = 0; i < 64; ++i)
+		{
+			const float mean = (stereo[static_cast<std::size_t>(i)].left()
+				+ stereo[static_cast<std::size_t>(i)].right()) / 2.0f;
+			QCOMPARE(clip->sample().data()[i].left(), mean);
+			QCOMPARE(clip->sample().data()[i].right(), mean);
+		}
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(layoutOf().value(QStringLiteral("layout")).toString(), QStringLiteral("stereo"));
+		for (int i = 0; i < 64; ++i)
+		{
+			QCOMPARE(clip->sample().data()[i].left(), stereo[static_cast<std::size_t>(i)].left());
+			QCOMPARE(clip->sample().data()[i].right(), stereo[static_cast<std::size_t>(i)].right());
+		}
+
+		QAction* split = menuAction(&audio, {QStringLiteral("Process"), QStringLiteral("Split Stereo to Two Mono Files...")});
+		QVERIFY(split != nullptr);
+		QCOMPARE(split->property("controlCommand").toString(), QStringLiteral("sample.split_stereo"));
+		QVERIFY(split->isEnabled());
+		ShellSelection::instance()->setTrack(nullptr);
+		delete track;
+	}
+
+	/*! Q050-106 AC1/AC3: TRIGGERING the clip Process menu's Split Stereo action opens the
+	 *  destination dialog; filled with two distinct paths it writes both mono files (left
+	 *  and right samples, source rate and length) and leaves the clip's source alone. */
+	void theProcessMenuSplitsAClipIntoTwoMonoFiles()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		std::vector<SampleFrame> stereo;
+		for (int i = 0; i < 64; ++i)
+		{
+			stereo.emplace_back(0.02f * static_cast<float>(i + 1), -0.03f * static_cast<float>(i + 1));
+		}
+		clip->setSampleBuffer(std::make_shared<SampleBuffer>(stereo.data(), stereo.size(), 44100));
+
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QString leftPath = directory.filePath(QStringLiteral("menu-left.wav"));
+		const QString rightPath = directory.filePath(QStringLiteral("menu-right.wav"));
+
+		QMenu audio;
+		ShellCommandMenus::populateClip(&audio, clip);
+		QAction* split = menuAction(&audio, {QStringLiteral("Process"), QStringLiteral("Split Stereo to Two Mono Files...")});
+		QVERIFY(split != nullptr);
+		QVERIFY(split->isEnabled());
+
+		// The dialog is modal (exec), so a timer inside its event loop fills and accepts it.
+		bool dialogSeen = false;
+		QTimer probe;
+		probe.setInterval(10);
+		connect(&probe, &QTimer::timeout, this, [&]
+		{
+			auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+			if (dialog == nullptr || dialog->objectName() != QStringLiteral("stereoSplitDialog")) { return; }
+			dialogSeen = true;
+			auto* leftField = dialog->findChild<QLineEdit*>(QStringLiteral("leftPath"));
+			auto* rightField = dialog->findChild<QLineEdit*>(QStringLiteral("rightPath"));
+			if (leftField == nullptr || rightField == nullptr) { dialog->reject(); probe.stop(); return; }
+			leftField->setText(leftPath);
+			rightField->setText(rightPath);
+			dialog->accept();
+			probe.stop();
+		});
+		QTimer watchdog;
+		watchdog.setSingleShot(true);
+		connect(&watchdog, &QTimer::timeout, []
+		{
+			if (auto* modal = QApplication::activeModalWidget()) { modal->close(); }
+		});
+		probe.start();
+		watchdog.start(5000);
+		split->trigger();
+		probe.stop();
+		watchdog.stop();
+		QVERIFY(dialogSeen);
+
+		const auto decode = [](const QString& path, std::vector<float>* samples, int* channels, int* rate)
+		{
+			SF_INFO info{};
+			SNDFILE* file = sf_open(QFile::encodeName(path).constData(), SFM_READ, &info);
+			if (file == nullptr) { return false; }
+			*channels = info.channels;
+			*rate = info.samplerate;
+			samples->resize(static_cast<std::size_t>(info.frames) * static_cast<std::size_t>(info.channels));
+			const sf_count_t got = sf_readf_float(file, samples->data(), info.frames);
+			sf_close(file);
+			return got == info.frames;
+		};
+		std::vector<float> left;
+		std::vector<float> right;
+		int leftChannels = 0;
+		int rightChannels = 0;
+		int leftRate = 0;
+		int rightRate = 0;
+		QVERIFY2(decode(leftPath, &left, &leftChannels, &leftRate), qPrintable(leftPath));
+		QVERIFY2(decode(rightPath, &right, &rightChannels, &rightRate), qPrintable(rightPath));
+		QCOMPARE(leftChannels, 1);
+		QCOMPARE(rightChannels, 1);
+		QCOMPARE(leftRate, 44100);
+		QCOMPARE(rightRate, 44100);
+		QCOMPARE(left.size(), stereo.size());
+		QCOMPARE(right.size(), stereo.size());
+		for (std::size_t i = 0; i < stereo.size(); ++i)
+		{
+			QCOMPARE(left[i], stereo[i].left());
+			QCOMPARE(right[i], stereo[i].right());
+		}
+
+		// The source clip is untouched: same frames, same samples, still stereo.
+		QCOMPARE(static_cast<std::size_t>(clip->sample().sampleSize()), stereo.size());
+		for (std::size_t i = 0; i < stereo.size(); ++i)
+		{
+			QCOMPARE(clip->sample().data()[i].left(), stereo[i].left());
+			QCOMPARE(clip->sample().data()[i].right(), stereo[i].right());
+		}
+		ShellSelection::instance()->setTrack(nullptr);
+		delete track;
+	}
+
+	/*! Q050-343: the sample generator's interface route is a CLICK, not just a registered id.
+	 *  A sample track's More menu (the track header's and the Inspector's are the same
+	 *  populateTrack) offers Insert Test Signal...; the action opens the SHARED sample.generate
+	 *  command form with the track fixed and position 0, length 192 and kind tone pre-filled, and
+	 *  running the form creates the clip in ONE undo step. An instrument track offers no such
+	 *  entry. The form's about text is the registry description - the same help an agent reads -
+	 *  so the route is checked where the menu actually puts it. */
+	void theSampleGeneratorsMenuActionOpensItsFormAndMakesAClip()
+	{
+		auto* sample = Track::create(Track::Type::Sample, Engine::getSong());
+		auto* instrument = Track::create(Track::Type::Instrument, Engine::getSong());
+		dynamic_cast<InstrumentTrack*>(instrument)->loadInstrument(QStringLiteral("tripleoscillator"));
+		const int before = sample->numOfClips();
+
+		QMenu menu;
+		ShellCommandMenus::populateTrack(&menu, sample);
+		QAction* entry = menuAction(&menu, {QStringLiteral("Insert Test Signal...")});
+		QVERIFY2(entry != nullptr, "a sample track's menu offered no Insert Test Signal...");
+		QCOMPARE(entry->property("controlCommand").toString(), QStringLiteral("sample.generate"));
+
+		entry->trigger();
+		CommandForm* form = nullptr;
+		for (QWidget* widget : QApplication::topLevelWidgets())
+		{
+			if (qobject_cast<CommandForm*>(widget) != nullptr && widget->isVisible()) { form = qobject_cast<CommandForm*>(widget); }
+		}
+		QVERIFY2(form != nullptr, "Insert Test Signal... opened no command form");
+		// The form shows the registered description, and that description names the route that
+		// opened it (the same text control.commands_list / MCP hand an agent).
+		auto* about = form->findChild<QLabel*>(QStringLiteral("commandFormAbout"));
+		QVERIFY(about != nullptr);
+		QCOMPARE(about->text(), ControlRegistry::instance()->command(QStringLiteral("sample.generate"))->description);
+		QVERIFY2(about->text().contains(QStringLiteral("Insert Test Signal...")),
+			"the form's help did not name the route that opened it");
+		// Where it was asked from is fixed, and the brief's defaults are what the fields start at.
+		QJsonObject args;
+		QString error;
+		QVERIFY2(form->collect(&args, &error), qPrintable(error));
+		QCOMPARE(args.value(QStringLiteral("track")).toString(), control::trackIdOf(sample));
+		QCOMPARE(args.value(QStringLiteral("position")).toInt(), 0);
+		QCOMPARE(args.value(QStringLiteral("length")).toInt(), 192);
+		QCOMPARE(args.value(QStringLiteral("kind")).toString(), QStringLiteral("tone"));
+
+		// The form is WA_DeleteOnClose, so the outcome is captured from its ran() signal instead
+		// of read off a widget that is already on its way out.
+		ControlResult made;
+		int ran = 0;
+		QObject::connect(form, &CommandForm::ran, form,
+			[&made, &ran](const ControlResult& result) { made = result; ++ran; });
+		form->accept();
+		QCOMPARE(ran, 1);
+		QVERIFY2(made.ok, qPrintable(made.errorMessage));
+		const QString clip = made.result.value(QStringLiteral("clip")).toString();
+		QVERIFY2(!clip.isEmpty(), "the form's run reported no clip");
+		QCOMPARE(made.result.value(QStringLiteral("kind")).toString(), QStringLiteral("tone"));
+		QCOMPARE(sample->numOfClips(), before + 1);
+		// ONE undo removes the clip the click made; the sample track is as it was.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(sample->numOfClips(), before);
+
+		QMenu other;
+		ShellCommandMenus::populateTrack(&other, instrument);
+		QVERIFY2(menuAction(&other, {QStringLiteral("Insert Test Signal...")}) == nullptr,
+			"an instrument track offered a test signal clip");
+
 		delete instrument;
 		delete sample;
 	}
@@ -391,6 +766,124 @@ private slots:
 		QCOMPARE(static_cast<int>(clip->notes().front()->getVolume()), 64);  // the 0..200 note volume scale
 		ShellSelection::instance()->setTrack(nullptr);
 		delete track;
+	}
+
+	//! Cluster 4168: a registered Inspector edit's refusal is shown verbatim in the field's error tooltip.
+	void theInspectorShowsARegisteredNoteEditRefusal()
+	{
+		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		Note* note = clip->addNote(Note(TimePos(96), TimePos(0), 60, 100), false);
+		QVERIFY(note != nullptr);
+		note->setSelected(true);
+		InspectorPanel inspector;
+		inspector.show();
+		ShellSelection::instance()->setClip(clip);
+		inspector.rebuild();
+		QCoreApplication::processEvents();
+		ReadoutField* key = nullptr;
+		for (ReadoutField* candidate : inspector.findChildren<ReadoutField*>())
+		{
+			if (candidate->caption() == QStringLiteral("Key") && candidate->isVisibleTo(&inspector)) { key = candidate; }
+		}
+		QVERIFY(key != nullptr);
+
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlCommand* registered = registry->command(QStringLiteral("note.transpose"));
+		QVERIFY(registered != nullptr);
+		ControlCommand* command = const_cast<ControlCommand*>(registered);
+		const auto originalHandler = command->handler;
+		const QString refusal = QStringLiteral("the note is locked by the test");
+		bool dispatched = false;
+		command->handler = [&dispatched, refusal](const QJsonObject&) {
+			dispatched = true;
+			return ControlResult::failure(ControlErrorKind::Refused, refusal);
+		};
+
+		QToolTip::hideText();
+		QTest::mouseDClick(key, Qt::LeftButton);
+		auto* editor = key->findChild<QLineEdit*>();
+		const bool hasEditor = editor != nullptr;
+		if (hasEditor)
+		{
+			editor->selectAll();
+			QTest::keyClicks(editor, QStringLiteral("D4"));
+			emit editor->editingFinished();
+		}
+		const QString shownError = QToolTip::text();
+		command->handler = originalHandler;
+		QVERIFY(hasEditor);
+		QVERIFY(dispatched);
+		QVERIFY2(shownError.contains(refusal), qPrintable(shownError));
+
+		ShellSelection::instance()->setTrack(nullptr);
+		delete track;
+	}
+
+	//! new-p10-171: note time origins are widened and range-checked before parsing or display.
+	void theInspectorHandlesAnOutOfRangeNoteTimeOrigin()
+	{
+		RestoreMusicalTimeFormat restoreFormat;
+		musicaltime::setFormat(musicaltime::Format::Time);
+		{
+			auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+			ClearInspectorTrack cleanup{track};
+			auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+			QVERIFY(clip != nullptr);
+			Note* note = clip->addNote(Note(TimePos(48), TimePos(200), 60, 100), false);
+			QVERIFY(note != nullptr);
+			note->setSelected(true);
+			InspectorPanel inspector;
+			inspector.show();
+			ShellSelection::instance()->setClip(clip);
+			inspector.rebuild();
+			QCoreApplication::processEvents();
+			ReadoutField* length = selectedNoteLength(inspector);
+			QVERIFY(length != nullptr);
+			QVERIFY(!length->valueText().contains(QStringLiteral("out of range")));
+			QVERIFY(typeReadout(length, QStringLiteral("1s")));
+			QVERIFY(note->length().getTicks() > 0);
+			QVERIFY(note->length().getTicks() != 48);
+		}
+
+		const tick_t clipPosition = std::numeric_limits<tick_t>::max() - 100;
+		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		ClearInspectorTrack cleanup{track};
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(clipPosition)));
+		QVERIFY(clip != nullptr);
+		Note* note = clip->addNote(Note(TimePos(48), TimePos(200), 60, 100), false);
+		QVERIFY(note != nullptr);
+		note->setSelected(true);
+		{
+			InspectorPanel inspector;
+			inspector.show();
+			ShellSelection::instance()->setClip(clip);
+			inspector.rebuild();
+			QCoreApplication::processEvents();
+			ReadoutField* length = selectedNoteLength(inspector);
+			QVERIFY(length != nullptr);
+			const QString shownLength = length->valueText();
+			QVERIFY(typeReadout(length, QStringLiteral("96 ticks")));
+			QCOMPARE(note->length().getTicks(), 96);
+
+			ControlRegistry* registry = ControlRegistry::instance();
+			const ControlCommand* registered = registry->command(QStringLiteral("note.edit"));
+			QVERIFY(registered != nullptr);
+			ControlCommand* command = const_cast<ControlCommand*>(registered);
+			const auto originalHandler = command->handler;
+			bool dispatched = false;
+			command->handler = [&dispatched](const QJsonObject&) {
+				dispatched = true;
+				return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("origin was not checked"));
+			};
+			const bool typed = typeReadout(length, QStringLiteral("1s"));
+			command->handler = originalHandler;
+			QVERIFY(typed);
+			const QString evidence = QStringLiteral("shown length: %1; note.edit dispatched: %2")
+				.arg(shownLength).arg(dispatched);
+			QVERIFY2(shownLength == QStringLiteral("out of range") && !dispatched, qPrintable(evidence));
+		}
 	}
 
 	void theInspectorShowsAChannelsSendsAndStrip()
@@ -607,6 +1100,48 @@ private slots:
 		ShellSelection::instance()->setTrack(nullptr);
 	}
 
+	//! gui-1030: a device whose family ships no client executable (TripleOscillator: refused-no-client) runs in this
+	//! process by design - its card must not say "Quarantined after repeated crashes". Only a crash-loop refusal does.
+	void aDeviceWithoutAHostIsNotCalledQuarantined()
+	{
+		using devicestate::hostingProblemOf;
+		const auto hosting = [](const QString& state, bool refused) {
+			return QJsonObject{{QStringLiteral("state"), state}, {QStringLiteral("refused"), refused}};
+		};
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("refused-no-client"), true)), QString());
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("in-process"), false)), QString());
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("separate-process"), false)), QString());
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("refused-crash-loop"), true)), QStringLiteral("quarantined"));
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("refused-crash-loop"), false)), QStringLiteral("quarantined"));
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("separate-process"), true)), QStringLiteral("quarantined"));
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("client-exited"), false)), QStringLiteral("crashed"));
+
+		// The real path: a TripleOscillator track, oop.get_state, the card.
+		const QString track = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("instrument")}})
+			.result.value(QStringLiteral("track")).toString();
+		Track* resolved = nullptr;
+		for (Track* t : Engine::getSong()->tracks()) { if (control::trackIdOf(t) == track) { resolved = t; } }
+		QVERIFY(resolved != nullptr);
+		dynamic_cast<InstrumentTrack*>(resolved)->loadInstrument(QStringLiteral("tripleoscillator"));
+		QJsonObject device;
+		for (const QJsonValue& chain : run(QStringLiteral("oop.get_state")).result.value(QStringLiteral("chains")).toArray())
+		{
+			if (chain.toObject().value(QStringLiteral("id")).toString() == track) { device = chain.toObject().value(QStringLiteral("instrument")).toObject(); }
+		}
+		QCOMPARE(device.value(QStringLiteral("hosting")).toObject().value(QStringLiteral("state")).toString(), QStringLiteral("refused-no-client"));
+		QVERIFY(!devicestate::hostingProblems().contains(devicestate::hostingKey(track, QStringLiteral("inst"))));
+		DevicePanel panel;
+		panel.show();
+		ShellSelection::instance()->setTrack(resolved);
+		panel.rebuild();
+		const QJsonArray drawn = cards(panel);
+		QVERIFY(!drawn.isEmpty());
+		const QJsonObject state = drawn.first().toObject().value(QStringLiteral("state")).toObject();
+		QCOMPARE(state.value(QStringLiteral("hosting")).toString(), QString());
+		QVERIFY2(!state.value(QStringLiteral("text")).toString().contains(QStringLiteral("Quarantined")), "TripleOscillator card says quarantined");
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
 	//! Theme 12: the card's Actions button and its right-click offer one menu; its first part - bypass, editor,
 	//! presets, A/B, replace, move, remove - names registered commands, and Move Right is plugin.move, one undo step.
 	void theCardsActionMenuOffersEachAction()
@@ -645,6 +1180,158 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(control::effectIdOf(mixerChannel->m_fxChain.effects().front()), first);
 		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	/*! BUG new-p9-104: the card's right-click menu is a stack object, and one of its own entries (Remove)
+	 *  retires the card - so the menu must not be the card's child: a card deleted while the menu's event
+	 *  loop runs would take the stack menu with it and the menu's destructor would run twice. */
+	void theContextMenuIsNotTheCardsChild()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(index));
+		if (loadAnEffect(channel).isEmpty()) { QSKIP("this host loads no effect module"); }
+		DevicePanel panel;
+		panel.resize(1200, 300);
+		panel.show();
+		ShellSelection::instance()->setChannel(channel);
+		panel.rebuild();
+		QCoreApplication::processEvents();
+		DeviceCard* card = shownChildren<DeviceCard>(&panel).first();
+		QVERIFY(card != nullptr);
+
+		// The menu the right-click opens, and the widget it belongs to.
+		bool opened = false;
+		QWidget* host = nullptr;
+		QTimer::singleShot(0, card, [&opened, &host] {
+			if (QMenu* menu = visibleMenu())
+			{
+				opened = true;
+				host = menu->parentWidget();
+				menu->close();
+			}
+		});
+		QContextMenuEvent event(QContextMenuEvent::Mouse, card->rect().center(), card->mapToGlobal(card->rect().center()));
+		QCoreApplication::sendEvent(card, &event);
+		QVERIFY2(opened, "the card's right-click did not open its action menu");
+		QVERIFY2(host != card, "the action menu is a child of the card: a card retired by the menu's own Remove entry takes the stack menu with it");
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	/*! BUG new-p9-104: removing the device from the card's own menu retires the card while the menu's event
+	 *  loop still runs - the card must not take the stack menu with it (the menu would be destroyed twice). */
+	void removingADeviceFromItsOwnMenuDoesNotDestroyTheMenu()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(index));
+		if (loadAnEffect(channel).isEmpty()) { QSKIP("this host loads no effect module"); }
+		DevicePanel panel;
+		panel.resize(1200, 300);
+		panel.show();
+		ShellSelection::instance()->setChannel(channel);
+		panel.rebuild();
+		QCoreApplication::processEvents();
+		DeviceCard* card = shownChildren<DeviceCard>(&panel).first();
+		QVERIFY(card != nullptr);
+		const QPointer<DeviceCard> retired = card;
+
+		QWidget* host = nullptr;
+		QTimer::singleShot(0, card, [&host] {
+			QMenu* menu = visibleMenu();
+			if (menu == nullptr) { return; }
+			host = menu->parentWidget();
+			if (QAction* remove = menuAction(menu, {QStringLiteral("Remove")})) { remove->trigger(); }
+			menu->close();
+		});
+		QContextMenuEvent event(QContextMenuEvent::Mouse, card->rect().center(), card->mapToGlobal(card->rect().center()));
+		QCoreApplication::sendEvent(card, &event);
+		QCoreApplication::processEvents();
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+		QVERIFY2(host != card, "the action menu is a child of the card: the card the menu removes takes the stack menu with it");
+		QVERIFY2(retired.isNull(), "the card of the removed device is still there");
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	/*! BUG new-p17-49: an "Open Editor" that opens nothing must say why - the failed plugin.editor_open
+	 *  was discarded, and the built-in dialog is a fallback that can fail too, so the user was left with
+	 *  no window and no word. The card reports the command's own reason. */
+	void theCardSaysWhyTheEditorDidNotOpen()
+	{
+		const int index = Engine::mixer()->createChannel();
+		MixerChannel* mixerChannel = Engine::mixer()->mixerChannel(index);
+		const QString channel = control::channelIdOf(mixerChannel);
+		auto* effect = new NoViewEffect(&mixerChannel->m_fxChain);
+		mixerChannel->m_fxChain.appendEffect(effect);
+		const QString plugin = control::effectIdOf(effect);
+		DeviceCard::Spec spec;
+		spec.target = channel;
+		spec.plugin = plugin;
+		spec.title = QStringLiteral("No view effect");
+		spec.effect = effect;
+		DeviceCard card(spec, {});
+		card.show();
+		QCoreApplication::processEvents();
+
+		// The command's own refusal: the card has to report THIS one, not a word of its own.
+		const ControlResult failed = run(QStringLiteral("plugin.editor_open"),
+			{{QStringLiteral("target"), channel}, {QStringLiteral("plugin"), plugin}});
+		QVERIFY2(!failed.ok, "the test device has no editor of its own");
+		QVERIFY2(!failed.errorMessage.isEmpty(), "the command refused without saying why");
+
+		card.openEditor();
+		auto* state = card.findChild<QLabel*>(QStringLiteral("deviceState"));
+		QVERIFY(state != nullptr);
+		QVERIFY2(state->text().contains(failed.errorMessage), qPrintable(state->text()));
+		QVERIFY2(state->accessibleName().contains(failed.errorMessage), qPrintable(state->accessibleName()));
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	/*! BUG new-p15-48: the fold handler touched the card's body after the dispatch - and the dispatch runs
+	 *  a command, which can retire the card, so the body would be a dangling pointer. A card that is gone
+	 *  is not touched: the body keeps the state it had. */
+	void foldingACardThatTheDispatchRetiresTouchesNothing()
+	{
+		const int index = Engine::mixer()->createChannel();
+		MixerChannel* mixerChannel = Engine::mixer()->mixerChannel(index);
+		const QString channel = control::channelIdOf(mixerChannel);
+		const QString effect = loadAnEffect(channel);
+		if (effect.isEmpty()) { QSKIP("this host loads no effect module"); }
+		Effect* device = mixerChannel->m_fxChain.effects().front();
+		DeviceCard::Spec spec;
+		spec.target = channel;
+		spec.plugin = effect;
+		spec.title = device->displayName();
+		spec.effect = device;
+		auto* card = new DeviceCard(spec, {});
+		card->show();
+		QCoreApplication::processEvents();
+		auto* fold = childNamed<QToolButton>(card, QStringLiteral("Fold or open %1").arg(spec.title));
+		QVERIFY(fold != nullptr);
+		// The card's body: the widget the fold hides. It is let out of the card, so it outlives it and
+		// the test can watch what the handler does to it.
+		QWidget* body = nullptr;
+		for (QWidget* child : card->findChildren<QWidget*>())
+		{
+			if (child->parentWidget() == card && child->objectName().isEmpty()) { body = child; }
+		}
+		QVERIFY(body != nullptr);
+		QVERIFY(body->isVisible());
+
+		// A listener that retires the card while the fold command runs (a chain's own signal can do it).
+		bool folding = false;
+		const QPointer<DeviceCard> retired = card;
+		QObject::connect(&mixerChannel->m_fxChain, &EffectChain::dataChanged, &mixerChannel->m_fxChain,
+			[&folding, body, retired] {
+				if (!folding || retired.isNull()) { return; }
+				body->setParent(nullptr);
+				body->show();
+				delete retired.data();
+			});
+		folding = true;
+		fold->click();
+		folding = false;
+		QVERIFY2(retired.isNull(), "the card was not retired while the fold was dispatched");
+		QVERIFY2(body->isVisible(), "the fold touched a card that was already gone");
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the fold the test made
 	}
 
 	//! Theme 12: the device picker lists the catalogue's effects with their type and format in words, and its search
@@ -836,6 +1523,43 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(mixerChannel->m_name, before);
 		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	/*! Q050-174: Project -> Low-Latency Monitoring is the GUI half of transport.low_latency for a latent
+	 *  instrument: clicking On takes the armed track whose instrument reports more than 3 ms off its
+	 *  alignment (the same session flag the command sets), Off puts it back; an unarmed one is untouched. */
+	void theProjectMenuMonitorsAnArmedLatentInstrument()
+	{
+		QTemporaryDir takes;
+		QVERIFY(takes.isValid());
+		auto* armed = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* unarmed = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(armed != nullptr && unarmed != nullptr);
+		for (InstrumentTrack* track : {armed, unarmed})
+		{
+			track->loadInstrument(QStringLiteral("tripleoscillator"));
+			QVERIFY(track->instrument() != nullptr);
+			track->instrument()->reportLatency(1000);  // ~23 ms, what a latent hosted instrument reports
+		}
+		QVERIFY(run(QStringLiteral("track.set_arm"), {{QStringLiteral("track"), control::trackIdOf(armed)},
+			{QStringLiteral("armed"), true}, {QStringLiteral("file"), takes.filePath(QStringLiteral("take.wav"))}}).ok);
+		QMenu project;
+		ShellCommandMenus::populateProject(&project);
+		QAction* on = menuAction(&project, {QStringLiteral("Low-Latency Monitoring"), QStringLiteral("On")});
+		QAction* off = menuAction(&project, {QStringLiteral("Low-Latency Monitoring"), QStringLiteral("Off")});
+		QVERIFY(on != nullptr && off != nullptr);
+		on->trigger();
+		QVERIFY2(armed->audioBusHandle()->monitorUnaligned(), "the menu's On left the armed latent instrument aligned");
+		QVERIFY(!unarmed->audioBusHandle()->monitorUnaligned());
+		const QJsonArray paths = run(QStringLiteral("transport.low_latency")).result.value(QStringLiteral("instruments")).toArray();
+		QCOMPARE(paths.size(), 1);
+		QCOMPARE(paths.at(0).toObject().value(QStringLiteral("track")).toString(), control::trackIdOf(armed));
+		off->trigger();
+		QVERIFY(!armed->audioBusHandle()->monitorUnaligned());
+		QVERIFY(run(QStringLiteral("track.set_arm"), {{QStringLiteral("track"), control::trackIdOf(armed)},
+			{QStringLiteral("armed"), false}}).ok);
+		delete armed;
+		delete unarmed;
 	}
 };
 

@@ -29,7 +29,8 @@
  *    section first. Offline by design: no network call is made and nothing is sent anywhere;
  *  - app.whats_new (WF-141): the release notes the program ships (data/whatsnew/notes.json) for this
  *    version, and whether they have been shown here (window.whats_new shows them, once per version, at
- *    start). There is no update check: nothing is fetched. */
+ *    start). This reads what is shipped and fetches nothing; asking for newer releases is app.update_check_*
+ *    (Q050-501, src/core/ControlCommandsUpdateCheck.cpp), which also says what 'update_check' reports here. */
 
 #include <algorithm>
 #include <cmath>
@@ -47,6 +48,8 @@
 #include "ControlRegistryGroups.h"
 #include "ControlVocabulary.h"
 #include "JsonFile.h"
+#include "UpdateCheck.h"
+#include "lmmsconfig.h"
 #include "lmmsversion.h"
 
 namespace lmms
@@ -223,6 +226,15 @@ QJsonObject notesForThisVersion(const QJsonArray& versions)
 	return versions.isEmpty() ? QJsonObject() : versions.first().toObject();
 }
 
+bool updateChecksOn()
+{
+#ifdef ZENE_UPDATE_CHECK_ENABLED
+	return updatecheck::managedBy().isEmpty() && updatecheck::preferences().enabled;
+#else
+	return false;
+#endif
+}
+
 ControlResult whatsNew(const QJsonObject&)
 {
 	QString error;
@@ -234,7 +246,7 @@ ControlResult whatsNew(const QJsonObject&)
 	}
 	const QString current = QString::fromUtf8(LMMS_VERSION);
 	return ControlResult::success({{QStringLiteral("version"), current}, {QStringLiteral("notes"), notesForThisVersion(versions)},
-		{QStringLiteral("seen"), seenVersion() == current}, {QStringLiteral("all"), versions}, {QStringLiteral("update_check"), false}});
+		{QStringLiteral("seen"), seenVersion() == current}, {QStringLiteral("all"), versions}, {QStringLiteral("update_check"), updateChecksOn()}});
 }
 
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,
@@ -261,7 +273,8 @@ void registerAssistantCommands(ControlRegistry& registry)
 			{QStringLiteral("question")}), ask);
 	add(registry, "whats_new", QStringLiteral("The release notes the program ships for this version ('notes': version, "
 		"title, items), every version's ('all'), and whether they have been shown here ('seen'; window.whats_new shows "
-		"them, and the interface does so once per version at start). Nothing is fetched: there is no update check."),
+		"them, and the interface does so once per version at start). Nothing is fetched; 'update_check' says whether "
+		"the separate check for newer releases is on (app.update_check_get)."),
 		objectSchema({}), whatsNew);
 }
 

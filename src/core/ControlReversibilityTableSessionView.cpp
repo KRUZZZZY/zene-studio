@@ -119,11 +119,11 @@ const ReversibilityRow kSessionViewRows[] = {
 	R("session.arrangement_record_land", RC::TrueInverse, true,
 		"creates one arrangement clip per completed launch/stop pair on that column's song "
 		"track, at the tick the transition fired on. The clip list is part of the Track's "
-		"serialized state, which is why the inverse is the Track's own journal checkpoint "
-		"- the clip.add and midi.retro_capture_to_clip shape - taken once per touched "
-		"track before its first clip is created, plus (for a FOLLOW-ACTION pass) the two "
+		"serialized state, which is why the inverse is one composite ProjectJournal "
+		"checkpoint containing every touched Track's before-state, taken before its first "
+		"clip is created, plus (for a FOLLOW-ACTION pass) the two "
 		"clips of every SwitchScene pair",
-		"ProjectJournal (one Track checkpoint per touched track; Track::restoreState "
+		"ProjectJournal (one composite checkpoint covering all touched tracks; Track::restoreState "
 		"re-loads the track's serialized clips, which is how the GUI's own clip "
 		"add/delete paths reverse themselves). The recorded inverse names the FIRST clip "
 		"of the pass - clip.delete removes that one exactly - because a pass creates one "

@@ -24,6 +24,7 @@
 #define LMMS_WASM_WORKER_H
 
 #include "WasmAbi.h"
+#include "WasmLogBuffer.h"
 #include "WasmSandbox.h"
 #include "WasmSpscRingBuffer.h"
 
@@ -121,6 +122,15 @@ public:
 	//! Control/test helper: block until every submitted block has been processed.
 	bool waitForIdle(int timeoutMs);
 
+#ifdef LMMS_TESTING
+	//! Test seam: called on the pool lane right before the module is compiled,
+	//! so a test can hold the load and observe the Loading state instead of
+	//! racing it.
+	using ModuleLoadTestHook = void (*)(void*);
+	static void setModuleLoadTestHook(ModuleLoadTestHook hook, void* context);
+	static void notifyModuleLoadForTest();
+#endif
+
 private:
 	//! The pool's lanes drive claimForLane()/drainOnLane()/releaseLane(); they
 	//! are the only callers that may, and nothing else reaches them.
@@ -188,6 +198,10 @@ private:
 
 	void processSlot(Slot& slot, float sampleRate);
 	void passthrough(Slot& slot);
+	//! Lane: move the sandbox's latest log into the worker-owned snapshot.
+	//! takeLog() only ever reads that snapshot, so it never dereferences a
+	//! sandbox the lane may be replacing or destroying.
+	void transferLogFromLane();
 	//! Lane: load the module named by m_modulePath (the first load and every
 	//! re-instantiation go through here).
 	bool loadModuleOnLane();
@@ -217,6 +231,9 @@ private:
 	std::atomic<std::uint64_t> m_reinstantiated{0};
 
 	std::unique_ptr<WasmSandbox> m_sandbox;
+	//! Lane-written, control-thread-read log snapshot; survives stop() so the
+	//! last message of a module is still readable after the sandbox is gone.
+	WasmLogBuffer m_logs;
 	std::array<Slot, slotCount> m_slots{};
 	SpscRingBuffer<std::uint32_t, commandQueueCapacity> m_commands;
 	SpscRingBuffer<std::uint32_t, resultQueueCapacity> m_results;

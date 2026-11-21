@@ -31,8 +31,11 @@
 
 #include <QtTest>
 
+#include <QDir>
 #include <QDomDocument>
 #include <QDomElement>
+#include <QFile>
+#include <QFileInfo>
 #include <QTemporaryDir>
 
 #include <sndfile.h>
@@ -87,6 +90,53 @@ QDomElement settings(QDomDocument& doc, float level, bool replace)
 	element.setAttribute(QStringLiteral("level"), static_cast<double>(level));
 	element.setAttribute(QStringLiteral("replace"), replace ? 1 : 0);
 	return element;
+}
+
+//! The bytes of the file at @a path, or nothing when it cannot be read.
+QByteArray bytesOf(const QString& path)
+{
+	QFile file(path);
+	return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+}
+
+//! Writes @a bytes to the file at @a path, replacing what is there.
+void writeBytes(const QString& path, const QByteArray& bytes)
+{
+	QFile file(path);
+	QVERIFY2(file.open(QIODevice::WriteOnly | QIODevice::Truncate), qPrintable(file.errorString()));
+	QCOMPARE(file.write(bytes), static_cast<qint64>(bytes.size()));
+}
+
+//! The frame count of the WAV at @a path, or -1 when it cannot be opened.
+sf_count_t wavFrames(const QString& path)
+{
+	SF_INFO info{};
+	SNDFILE* wav = sf_open(path.toLocal8Bit().constData(), SFM_READ, &info);
+	if (wav == nullptr) { return -1; }
+	sf_close(wav);
+	return info.frames;
+}
+
+//! True when @a why reports that the file at @a path was refused because it already exists.
+bool refusedAsExisting(const QString& why, const QString& path)
+{
+	return why.contains(path) && why.contains(QStringLiteral("already exists"));
+}
+
+//! Records @a blocks blocks of sound passing through @a chain to a new take at @a path, then stops it.
+void recordTake(EffectChain& chain, TakeRecorder& take, const QString& path, int blocks)
+{
+	QString why;
+	const bool started = take.start(path, 44100, &why);
+	QVERIFY2(started, qPrintable(why));
+	QVERIFY(take.recording());
+	for (int i = 0; i < blocks; ++i)
+	{
+		AudioBuffer passing = stereoBlock(0.25f, 0.5f);
+		chain.processAudioBuffer(passing, nullptr);
+	}
+	take.stop();
+	QVERIFY(!take.recording());
 }
 
 } // namespace
@@ -252,6 +302,60 @@ private slots:
 		second->controls()->restoreState(element);
 		QCOMPARE(TakeRecorder::of(second)->lastTake(), path);
 		delete second;
+		chain.clear();
+	}
+
+	void takeRefusesExistingFile()
+	{
+		EffectChain chain{nullptr};
+		Effect* recorder = Effect::instantiate(QStringLiteral("insertrecorder"), &chain, nullptr);
+		QVERIFY2(recorder != nullptr, "the InsertRecorder module did not load: it is built with this test, so this is a failure");
+		chain.appendEffect(recorder);
+		TakeRecorder* take = TakeRecorder::of(recorder);
+		QVERIFY(take != nullptr);
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		// A file already at the path is refused: its bytes stay, and no take starts or is named.
+		const QString sentinel = dir.filePath(QStringLiteral("sentinel.wav"));
+		const QByteArray known = QByteArrayLiteral("not a take: keep these bytes");
+		writeBytes(sentinel, known);
+		const QString lastBefore = take->lastTake();
+		QString why;
+		QVERIFY(!take->start(sentinel, 44100, &why));
+		QVERIFY2(refusedAsExisting(why, sentinel), qPrintable(why));
+		QVERIFY(!take->recording());
+		QCOMPARE(bytesOf(sentinel), known);
+		QCOMPARE(take->lastTake(), lastBefore);
+
+		// A recorded take is not truncated by a second start on its path: the refusal keeps every frame and byte.
+		const QString first = dir.filePath(QStringLiteral("first.wav"));
+		recordTake(chain, *take, first, 10);
+		QCOMPARE(take->lastTake(), first);
+		const QByteArray firstBytes = bytesOf(first);
+		QCOMPARE(wavFrames(first), static_cast<sf_count_t>(10 * Frames));
+		QString again;
+		QVERIFY(!take->start(first, 44100, &again));
+		QVERIFY2(refusedAsExisting(again, first), qPrintable(again));
+		QVERIFY(!take->recording());
+		QCOMPARE(take->lastTake(), first);
+		QCOMPARE(wavFrames(first), static_cast<sf_count_t>(10 * Frames));
+		QCOMPARE(bytesOf(first), firstBytes);
+
+		// After the refusal a fresh path under a folder that does not exist yet still records.
+		const QString nested = dir.filePath(QStringLiteral("not/yet/there/take.wav"));
+		recordTake(chain, *take, nested, 10);
+		QCOMPARE(take->lastTake(), nested);
+		QCOMPARE(wavFrames(nested), static_cast<sf_count_t>(10 * Frames));
+
+		// A directory at the path is refused: it is still a directory, and nothing was created in it.
+		const QString folder = dir.filePath(QStringLiteral("folder"));
+		QVERIFY(QDir(dir.path()).mkdir(QStringLiteral("folder")));
+		QString asDirectory;
+		QVERIFY(!take->start(folder, 44100, &asDirectory));
+		QVERIFY(!take->recording());
+		QVERIFY(QFileInfo(folder).isDir());
+		QVERIFY(QDir(folder).isEmpty());
 		chain.clear();
 	}
 };

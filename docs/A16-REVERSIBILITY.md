@@ -76,6 +76,7 @@ Edit->Undo (Ctrl+Z) makes:
 | `clip.duplicate` | yes | the duplicate is a second clip in the same Track | ProjectJournal (Track checkpoint) | - |
 | `clip.move` | yes | position is a Clip property and the Clip is a JournallingObject | ProjectJournal (Clip checkpoint) | - |
 | `clip.resize` | yes | length is a Clip property | ProjectJournal (Clip checkpoint) | - |
+| `clip.set_mute` | yes | the muted flag is a BoolModel, i.e. a JournallingObject of its own (0.5.0 Q050-040: the song editor's clip mute dispatches this same command) | ProjectJournal (Clip mute BoolModel checkpoint) | - |
 | `clip.split` | yes | the split rewrites the clip list of one Track | ProjectJournal (Track checkpoint) | - |
 | `mixer.add_channel` | yes | a created MixerChannel has no before-state; the mixer is a JournallingObject but restoring its checkpoint would destroy and recreate every channel, and a MixerView holds those pointers - the same GUI-safety reason the TrackContainer checkpoints are commented out upstream. DISAGREEMENT with A16-STATUS-MEASURED.md, which records this as reversible:false | action checkpoint: the recorded undo step deletes the channel it created (Mixer::deleteChannel), through the same code path mixer.remove_channel uses; a fresh channel carries only defaults, so removing it restores the mixer exactly | - |
 | `mixer.set_volume` | yes | the fader is a FloatModel, i.e. a JournallingObject | ProjectJournal (MixerChannel volume model checkpoint) | - |
@@ -497,3 +498,17 @@ gestures were already one step each (a checkpoint at mouse-press, journalling of
 > notes carry the new class, and `ReversibilityContractTest`'s histogram and its documented-refusal list were
 > updated in the same commit. The other three refusals (`mixer.set_pan`, `automation.mode_set`,
 > `crash.upload_report`) are unchanged.
+
+> **2026-10-20 (cluster new-p8-81-port-port, the recording arm verbs).** `track.set_arm` and
+> `track.set_arm_many` have moved again: both rows are now `irreversible` with `reversible=false`, in the
+> group file `src/core/ControlReversibilityTableRecording.cpp`. The reason is the same on both rows - the
+> capture writes a take WAV (and a take journal) beside the recovery file, and that take stays on disk once
+> the capture stops, outside the project state a checkpoint could restore. The recorded inverse the single
+> arm used to carry (this command with `armed: false`) only STOPPED the capture and retired the journal: it
+> left the take behind, so `control.undo` claimed to reverse an arming whose recorded state it could not
+> restore. The arming now records no inverse at all, and `control.undo` refuses both commands with a typed
+> `irreversible` error that names the command and its fallback (`track.set_arm` with `armed: false`, or
+> `record.disarm_track`, stops the capture; the take is kept or deleted by hand at the path the reply
+> names). The measurement above is that lane's record of the tree it described and is kept as written; the
+> live table, the counts (`snapshot=40 irreversible=24`), the release notes and the command descriptions
+> carry the current class, and `ReversibilityContractTest`'s histogram checks them on every run.

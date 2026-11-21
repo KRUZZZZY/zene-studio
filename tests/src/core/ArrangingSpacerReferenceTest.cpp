@@ -258,6 +258,14 @@ private slots:
 			{QStringLiteral("to"), masterId}});
 		QVERIFY2(copied.ok, qPrintable(copied.errorMessage));
 		QCOMPARE(Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size(), before + 1);
+		const QJsonArray transactions = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray();
+		QVERIFY(!transactions.isEmpty());
+		const QJsonObject record = transactions.last().toObject();
+		QCOMPARE(record.value(QStringLiteral("command")).toString(), QStringLiteral("reference.copy_devices"));
+		QCOMPARE(record.value(QStringLiteral("reversible")).toBool(), true);
+		QCOMPARE(record.value(QStringLiteral("before")).toObject().value(QStringLiteral("target")).toString(), masterId);
+		QCOMPARE(record.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+		QVERIFY(record.value(QStringLiteral("mechanism")).toString().contains(QStringLiteral("recorded undo step restores the target chain")));
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size(), before);
 	}

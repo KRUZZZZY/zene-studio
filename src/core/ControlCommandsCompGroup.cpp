@@ -167,9 +167,15 @@ ControlResult moveEdge(const QJsonObject& args)
 	QJsonObject result{{QStringLiteral("track"), id}, {QStringLiteral("edge"), to}};
 	if (to == left.endTick) { return ControlResult::success(result); }  // nothing moved: no record
 	const TakeLaneSegment move = edgeMove(left, right, to);
-	if (!takeReaches(*track, move) || !model.canSelect(move.beginTick, move.endTick, move.laneIndex, move.sourceOffset))
+	if (!takeReaches(*track, move))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the take on that side does not reach %1").arg(to));
+	}
+	if (!model.canSelect(move.beginTick, move.endTick, move.laneIndex, move.sourceOffset))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the take-lane model refuses this edge move (each lane supports at most %1 spans)")
+				.arg(TakeLaneModel::MaxCompositeSpansPerLane));
 	}
 	const QJsonObject before{{QStringLiteral("track"), id}, {QStringLiteral("composite"), compositeState(track)}};
 	track->addJournalCheckPoint();
@@ -216,8 +222,10 @@ ControlResult selectGroup(const QJsonObject& args)
 		if (!slipAccepted(track, srcpos, &error)) { return error; }
 		if (!track->takeLanes().hasLane(lane) || !track->takeLanes().canSelect(begin, end, lane, srcpos))
 		{
-			return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1 cannot take lane %2 over [%3, %4)")
-				.arg(trackIdOf(track)).arg(lane).arg(begin).arg(end));
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("%1 cannot take lane %2 over [%3, %4); a lane supports at most %5 spans")
+					.arg(trackIdOf(track)).arg(lane).arg(begin).arg(end)
+					.arg(TakeLaneModel::MaxCompositeSpansPerLane));
 		}
 	}
 	QJsonArray done;
@@ -261,6 +269,12 @@ ControlResult splitPasses(const QJsonObject& args)
 	{
 		// Capping the cuts would leave every pass past the 32nd merged into the last take.
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip spans %1 passes; at most 32 can be split").arg(passes));
+	}
+	// addLane() returns -1 once the track's lane numbers run out, and setLaneIndex would clamp that to the
+	// base lane. Refuse before the clip is cut: one lane per piece must be available, or none is taken.
+	if (!ref.track->takeLanes().canAddLanes(static_cast<int>(passes)))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the track has no lane numbers left for the clip's %1 passes").arg(passes));
 	}
 	const QString id = trackIdOf(ref.track);
 	// A16 §3: the Track checkpoint below is what control.undo replays, so the record says so and
@@ -328,7 +342,7 @@ void registerTakeSelect(ControlRegistry& registry)
 		const int groupId = ref.clip->takeGroupId();
 		const int lane = args.value(QStringLiteral("lane")).toInt(-1);
 		TakeLaneModel& model = ref.track->takeLanes();
-		if (groupId <= 0 || !model.canSelectTake(groupId, lane, ref.track->getClips()))
+		if (!ref.clip->hasTakeGroup() || groupId < 0 || !model.canSelectTake(groupId, lane, ref.track->getClips()))
 		{
 			return ControlResult::failure(ControlErrorKind::NotFound,
 				QStringLiteral("%1 is not in a recorded take group containing lane %2")

@@ -263,6 +263,30 @@ private slots:
 		QCOMPARE(tempoAtPosition(), global);
 	}
 
+	//! The add reply describes the merged event, including its untouched half.
+	void addReplyReportsTheMergedEvent()
+	{
+		const ControlResult metre = run(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 384}, {QStringLiteral("numerator"), 7},
+				{QStringLiteral("denominator"), 8}});
+		QVERIFY2(metre.ok, qPrintable(metre.errorMessage));
+
+		const ControlResult tempo = run(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 384}, {QStringLiteral("bpm"), 137}});
+		QVERIFY2(tempo.ok, qPrintable(tempo.errorMessage));
+
+		const QJsonArray events = mapState().value(QStringLiteral("events")).toArray();
+		QCOMPARE(events.size(), 1);
+		QCOMPARE(events.at(0).toObject().value(QStringLiteral("numerator")).toInt(), 7);
+		QCOMPARE(events.at(0).toObject().value(QStringLiteral("denominator")).toInt(), 8);
+
+		QCOMPARE(tempo.result.value(QStringLiteral("bpm")).toInt(), 137);
+		QCOMPARE(tempo.result.value(QStringLiteral("has_tempo")).toBool(), true);
+		QCOMPARE(tempo.result.value(QStringLiteral("has_time_signature")).toBool(), true);
+		QCOMPARE(tempo.result.value(QStringLiteral("numerator")).toInt(), 7);
+		QCOMPARE(tempo.result.value(QStringLiteral("denominator")).toInt(), 8);
+	}
+
 	//! set_active switches authority WITHOUT editing events, and the events are
 	//! still there (and still saved) while it is off.
 	void setActiveSwitchesWithoutEditingEvents()

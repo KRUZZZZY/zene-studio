@@ -22,6 +22,7 @@
  */
 
 #include <QStringList>
+#include <QStringView>
 
 #include "ClipEdits.h"
 
@@ -129,16 +130,26 @@ QString envelopeToText(const ClipEdits& edits)
 void envelopeFromText(const QString& text, ClipEdits* edits)
 {
 	edits->envelopeCount = 0;
-	for (const QString& part : text.split(QLatin1Char(';'), Qt::SkipEmptyParts))
+	// Walk the separators in place and stop at the point limit: split() would allocate a string for every
+	// point in the attribute before the limit could stop anything.
+	const QStringView input{text};
+	qsizetype start = 0;
+	while (start < input.size() && edits->envelopeCount < MaxGainPoints)
 	{
-		if (edits->envelopeCount >= MaxGainPoints) { break; }
-		const int colon = part.indexOf(QLatin1Char(':'));
+		const qsizetype separator = input.indexOf(QLatin1Char(';'), start);
+		const qsizetype end = separator < 0 ? input.size() : separator;
+		const QStringView part = input.mid(start, end - start);
+		const qsizetype colon = part.indexOf(QLatin1Char(':'));
 		bool tickOk = false;
 		const int tick = part.left(colon).toInt(&tickOk);
 		const float db = part.mid(colon + 1).toFloat();
 		// A tick that is not a tick used to convert to 0 and put the point at the clip's start.
-		if (colon <= 0 || !tickOk || !std::isfinite(db)) { continue; }  // a damaged file never puts an infinite gain on the audio path
-		edits->envelope[edits->envelopeCount++] = {std::max(0, tick), std::clamp(db, MinGainPointDb, MaxGainPointDb)};
+		if (colon > 0 && tickOk && std::isfinite(db))  // a damaged file never puts an infinite gain on the audio path
+		{
+			edits->envelope[edits->envelopeCount++] = {std::max(0, tick), std::clamp(db, MinGainPointDb, MaxGainPointDb)};
+		}
+		if (separator < 0) { break; }
+		start = separator + 1;
 	}
 	std::sort(edits->envelope.begin(), edits->envelope.begin() + edits->envelopeCount,
 		[](const GainPoint& a, const GainPoint& b) { return a.tick < b.tick; });

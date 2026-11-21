@@ -37,6 +37,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTemporaryDir>
+#include <QTimer>
 
 #include "ConfigManager.h"
 #include "Telemetry.h"
@@ -157,6 +158,29 @@ private slots:
 		closing.findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Close)->click();
 		QVERIFY(!closing.isVisible());
 		QVERIFY(!Telemetry::loadConsent().crashCounts);
+	}
+
+	void execReportsWhetherThisOpeningWasSaved()
+	{
+		TelemetryConsentDialog rejected;
+		QVERIFY(!rejected.property("zeneConsentSaved").toBool());
+		QTimer::singleShot(0, &rejected, [&rejected]
+		{
+			rejected.findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Close)->click();
+		});
+		QCOMPARE(rejected.exec(), QDialog::Rejected);
+		QVERIFY(!rejected.property("zeneConsentSaved").toBool());
+
+		TelemetryConsentDialog saved;
+		QVERIFY(!saved.property("zeneConsentSaved").toBool());
+		QTimer::singleShot(0, &saved, [&saved]
+		{
+			auto* buttons = saved.findChild<QDialogButtonBox*>();
+			buttons->button(QDialogButtonBox::Save)->click();
+			buttons->button(QDialogButtonBox::Close)->click();
+		});
+		QCOMPARE(saved.exec(), QDialog::Rejected);
+		QVERIFY(saved.property("zeneConsentSaved").toBool());
 	}
 
 private:

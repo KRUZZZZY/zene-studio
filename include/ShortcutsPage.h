@@ -32,7 +32,9 @@
 #include "lmms_export.h"
 
 class QLineEdit;
+class QMenu;
 class QMenuBar;
+class QPushButton;
 
 namespace lmms::gui
 {
@@ -63,6 +65,8 @@ public:
 	QString taskOf(int row) const;
 	//! Run the action of row @a row (its data index); false when it has no action left.
 	bool runRow(int row);
+	//! Q050-202: the shipped keymap presets, as a menu of shortcuts.preset_apply calls.
+	QMenu* presetMenu() const { return m_presetMenu; }
 
 private:
 	void openRowMenu(int row, const QPoint& at);
@@ -71,6 +75,8 @@ private:
 	QStringList m_tasks;
 	QLineEdit* m_filter = nullptr;
 	ListTable* m_table = nullptr;
+	QMenu* m_presetMenu = nullptr;
+	QPushButton* m_presets = nullptr;
 };
 
 } // namespace lmms::gui

@@ -265,16 +265,23 @@ private:
 	{
 		ScriptWorker* worker = workerFromState(L);
 		const int count = lua_gettop(L);
+		const qsizetype limit = ScriptConsole::CaptureBuffer::characterLimit();
 		QString message;
 		for (int i = 1; i <= count; ++i)
 		{
+			if (message.size() >= limit)
+			{
+				break;
+			}
 			std::size_t length = 0;
 			const char* text = luaL_tolstring(L, i, &length);
-			if (i > 1)
+			if (i > 1 && message.size() < limit)
 			{
 				message += QLatin1Char('\t');
 			}
-			message += QString::fromUtf8(text, static_cast<int>(length));
+			const auto room = static_cast<std::size_t>(limit - message.size());
+			message += QString::fromUtf8(text,
+				static_cast<int>(qMin<std::size_t>(length, room)));
 			lua_pop(L, 1);
 		}
 		if (worker != nullptr)
@@ -325,17 +332,11 @@ ScriptEngine::~ScriptEngine()
 
 ScriptEngine::RunResult ScriptEngine::runFile(const QString& path, QString* error)
 {
-	QFile file(path);
-	if (!file.open(QIODevice::ReadOnly))
+	QString source;
+	if (!readScriptSource(path, MaxScriptSourceBytes, source, error))
 	{
-		if (error != nullptr)
-		{
-			*error = QStringLiteral("cannot open script '%1': %2").arg(path, file.errorString());
-		}
 		return RunResult::ScriptError;
 	}
-	const QString source = QString::fromUtf8(file.readAll());
-	file.close();
 
 	const QString version = parseVersionHeader(source);
 	if (version.isEmpty())
@@ -718,9 +719,15 @@ QString ScriptEngine::lastError() const
 }
 
 
-void ScriptEngine::enqueue(const ScriptCommand& command)
+bool ScriptEngine::enqueue(const ScriptCommand& command)
 {
-	m_commands.push(command);
+	return m_commands.push(command);
+}
+
+
+bool ScriptEngine::enqueue(const ScriptCommand& first, const ScriptCommand& second)
+{
+	return m_commands.push(first, second);
 }
 
 
@@ -809,7 +816,7 @@ QString ScriptEngine::resolveProjectPath(const QString& path, bool forWrite, QSt
 void ScriptEngine::pushMidiInEvent(int channel, int key, int velocity, bool noteOn)
 {
 	const ScriptMidiEvent event{channel, key, velocity, noteOn ? 1 : 0};
-	m_midiIn.write(&event, 1);
+	countDroppedMidiInEvent(m_midiIn.write(&event, 1));
 }
 
 

@@ -137,14 +137,15 @@ bool loadConnections(const QDomElement& graphElement, RoutingGraph& loaded, cons
 	return true;
 }
 
-//! The graph's output node, which file id -1 (the saved "none selected") names as absent.
+//! The graph's output node, which file id -1 (the saved "none selected") names as absent. Every
+//! other negative id is malformed and refused, not read as absent.
 bool applyOutputNode(const QDomElement& graphElement, RoutingGraph& loaded, const QHash<int, int>& idMap)
 {
 	bool parsed = false;
 	const int output = graphElement.attribute(QStringLiteral("output")).toInt(&parsed);
 	if (!parsed) { return false; }
-	if (output < 0) { return true; }
-	if (!idMap.contains(output)) { return false; }
+	if (output == -1) { return true; }
+	if (output < 0 || !idMap.contains(output)) { return false; }
 	loaded.setOutputNode(idMap.value(output));
 	return true;
 }

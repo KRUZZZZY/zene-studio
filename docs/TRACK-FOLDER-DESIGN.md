@@ -867,6 +867,10 @@ undo step:
 | Ctrl+drag | `range.set` over the span's tracks, `range.copy`, `range.paste` at the drop (the paste is the step) |
 | menu: Duplicate summary clip | the same copy, pasted at the span's end |
 | menu: Delete summary clip | `range.set` over the span's tracks, `range.delete` (the arranger's ripple mode applies) |
+| click, Shift/Ctrl+click (Q050-255) | `track.folder_span_select`: interface state, each entry following one child clip |
+| drag an edge (Q050-255) | `track.folder_span_resize`, on the selection and the arranger's selected clips when the span is selected |
+| menu: Split summary clip here (Q050-255) | `track.folder_span_split` |
+| drag of a selected span, keys (Q050-255) | `track.folder_span_move`, `_delete`, `_resize`, `_split` (`include/ArrangerClipKeys.h`) |
 
 The range is interface state: the lane reads it first (`range.get`) and puts it back (or clears it)
 after the edit. The span arguments of `track.folder_move` are additive - without them the command moves

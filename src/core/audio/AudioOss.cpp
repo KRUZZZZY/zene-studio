@@ -33,6 +33,8 @@
 #include "endian_handling.h"
 #include "LcdSpinBox.h"
 #include "AudioEngine.h"
+#include "AudioOssWrite.h"
+#include "CrashReporter.h"
 #include "OssSampleConversion.h"
 
 #ifdef LMMS_HAVE_UNISTD_H
@@ -168,7 +170,7 @@ AudioOss::~AudioOss()
 
 QString AudioOss::probeDevice()
 {
-	QString dev = ConfigManager::inst()->value( "AudioOss", "Device" );
+	QString dev = ConfigManager::inst()->value( "audiooss", "device" );
 	if( dev.isEmpty() )
 	{
 		char * adev = getenv( "AUDIODEV" );	// Is there a standard
@@ -222,6 +224,7 @@ void AudioOss::stopProcessingImpl()
 
 void AudioOss::run()
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	auto buf = std::vector<float>(audioEngine()->framesPerAudioBuffer() * channels());
 	auto pcmBuf = std::vector<int16_t>(buf.size());
 	const auto bytesToWrite = static_cast<int>(pcmBuf.size() * sizeof(int16_t));
@@ -235,7 +238,12 @@ void AudioOss::run()
 			pcmBuf[i] = audio::oss::toPcmSample(buf[i]);
 		}
 
-		if (write(m_audioFD, pcmBuf.data(), bytesToWrite) != bytesToWrite) { break; }
+		if (!audio::writeAll(
+				[this](const void* data, std::size_t size) { return ::write(m_audioFD, data, size); },
+				pcmBuf.data(), static_cast<std::size_t>(bytesToWrite)))
+		{
+			break;
+		}
 	}
 }
 

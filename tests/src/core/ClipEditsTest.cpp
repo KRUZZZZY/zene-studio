@@ -44,8 +44,16 @@
 #include <QDomElement>
 
 #include <cmath>
+#include <cstdint>
+#include <fstream>
 #include <memory>
+#include <new>
 #include <vector>
+
+#if defined(Q_OS_LINUX)
+#include <sys/resource.h>
+#include <unistd.h>
+#endif
 
 #include "ClipEdits.h"
 
@@ -70,6 +78,16 @@ std::shared_ptr<const SampleBuffer> constantBuffer(int seconds)
 	return std::make_shared<const SampleBuffer>(
 		std::vector<SampleFrame>(frames, SampleFrame(0.5f, 0.5f)).data(), frames, kSampleRate);
 }
+
+#if defined(Q_OS_LINUX)
+std::uint64_t virtualMemoryBytes()
+{
+	std::ifstream statm("/proc/self/statm");
+	std::uint64_t pages = 0;
+	statm >> pages;
+	return pages * static_cast<std::uint64_t>(sysconf(_SC_PAGESIZE));
+}
+#endif
 
 } // namespace
 
@@ -202,6 +220,50 @@ private slots:
 		}
 		// a degenerate clip is unity rather than a division by zero
 		QCOMPARE(clipFadeGainAt(0, 0, 10, 10, FadeShape::Linear, FadeShape::Linear), 1.0f);
+	}
+
+	void parsingAnEnvelopeStopsBeforeAllocatingOverflowPoints()
+	{
+#if defined(Q_OS_LINUX)
+		constexpr int kEncodedPoints = 2'000'000;
+		QString text;
+		text.reserve(kEncodedPoints * 4);
+		for (int i = 0; i < kEncodedPoints; ++i)
+		{
+			text += QStringLiteral("0:0;");
+		}
+
+		rlimit originalLimit{};
+		QVERIFY(getrlimit(RLIMIT_AS, &originalLimit) == 0);
+		const auto currentMemory = virtualMemoryBytes();
+		if (currentMemory == 0) { QSKIP("cannot read the process address-space size from /proc"); }
+		const auto memoryLimit = currentMemory + 32 * 1024 * 1024;
+		if (originalLimit.rlim_max != RLIM_INFINITY && memoryLimit > originalLimit.rlim_max)
+		{
+			QSKIP("the process hard address-space limit leaves no room for the regression probe");
+		}
+		rlimit constrainedLimit = originalLimit;
+		constrainedLimit.rlim_cur = static_cast<rlim_t>(memoryLimit);
+		QVERIFY(setrlimit(RLIMIT_AS, &constrainedLimit) == 0);
+
+		ClipEdits edits;
+		bool parsed = false;
+		try
+		{
+			envelopeFromText(text, &edits);
+			parsed = true;
+		}
+		catch (const std::bad_alloc&)
+		{
+		}
+		const int restoreResult = setrlimit(RLIMIT_AS, &originalLimit);
+
+		QVERIFY(restoreResult == 0);
+		QVERIFY2(parsed, "the parser allocated temporary storage for points after MaxGainPoints");
+		QCOMPARE(edits.envelopeCount, MaxGainPoints);
+#else
+		QSKIP("the bounded-memory regression probe uses Linux address-space limits");
+#endif
 	}
 
 	// ------------------------------------------------------------- neutrality

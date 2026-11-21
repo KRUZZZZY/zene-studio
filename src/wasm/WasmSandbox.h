@@ -77,6 +77,12 @@ public:
 	//! wat2wasm so the build needs no extra tooling.
 	static bool assembleWat(const std::string& wat, std::vector<std::uint8_t>& out, std::string& error);
 
+	//! Read a module file into \p out, enforcing abi::maxModuleBytes. The size
+	//! is checked before the buffer is allocated, and a failed allocation is
+	//! reported through \p error instead of escaping the loader.
+	static bool readModuleFile(const std::string& path, std::vector<std::uint8_t>& out,
+		std::string& error);
+
 	//! Compile and instantiate a module. Returns false and sets \p error on
 	//! malformed input or failed instantiation; never aborts the process.
 	bool loadModuleFile(const std::string& path, std::string& error);
@@ -114,6 +120,17 @@ public:
 	bool hasProcess() const;
 	void setFuelBudget(std::uint64_t fuel);
 	std::uint64_t fuelBudget() const;
+
+#ifdef LMMS_TESTING
+	//! Test seam: lets a test substitute the host view of linear memory for one
+	//! query, so the stale-pointer path after process() can be driven
+	//! deterministically instead of depending on wasmtime moving its mapping.
+	//! The hook receives the real view for a data or a size query and may
+	//! replace either; production builds never call it.
+	using MemoryViewTestHook = void (*)(void* context, bool dataQuery,
+		std::uint8_t*& data, std::size_t& size);
+	static void setMemoryViewTestHook(MemoryViewTestHook hook, void* context);
+#endif
 
 private:
 	struct Impl;

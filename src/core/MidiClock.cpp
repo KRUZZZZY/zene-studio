@@ -19,8 +19,18 @@
  *     handleInputMessage() instead of dropping it, and processOutEvent() sends
  *     the one- and three-byte forms through sendByte().
  *   * src/core/midi/MidiAlsaSeq.cpp - processOutEvent() sends the same family
- *     as ALSA-sequencer events, DIRECT (not on the tick queue the note path
- *     uses), because a clock must not be scheduled behind a queue.
+ *     as ALSA-sequencer events, through the sequencer's own output QUEUE (the
+ *     sequencer worker owns the mutex and the ALSA calls, so the audio thread
+ *     that emits the clock never touches either); and run()
+ *     names the SENDER of an incoming clock-family event to handleInputMessage()
+ *     (Q050-026), which is what the follower's source is matched against.
+ *
+ * WHICH CLOCK, stated (Q050-026). The follower follows the source its caller
+ * names, and nothing else: handleInputMessage() drops a message from any other
+ * source before it reaches the tracker and counts it in slaveIgnoredCount(). An
+ * empty source is "any source", which is what this file did before the source
+ * became load-bearing and what a client with ONE unnamed input (every raw
+ * client) can express at all.
  *
  * MTC, stated rather than implied: this file sends and receives the MIDI CLOCK
  * family (0xF8/0xFA/0xFB/0xFC/0xF2) and counts MTC quarter-frames (0xF1) on the
@@ -271,10 +281,13 @@ void MidiClock::setSlaveEnabled(bool enabled) noexcept
 	m_slaveEnabled.store(enabled);
 	if (!enabled)
 	{
-		m_slaveFollowTempo.store(false);
-		// Leaving slave mode forgets the measurement: a caller that re-enables
-		// following must not be handed a tempo measured from a clock it stopped
-		// listening to (the same reason the lock drops when pulses stop).
+		// Leaving slave mode forgets the MEASUREMENT, but not the follow
+		// PREFERENCE. The preference is configuration: it says whether this
+		// follower follows the tempo, and a caller that re-enables the slave
+		// without naming the flag must find the mode it was left in. The
+		// measurement is the opposite - a caller that re-enables following must
+		// not be handed a tempo measured from a clock it stopped listening to
+		// (the same reason the lock drops when pulses stop).
 		m_tracker.reset();
 	}
 }
@@ -289,9 +302,116 @@ QString MidiClock::slaveSourcePort() const
 	return m_slavePort;
 }
 
-void MidiClock::setSlaveSourcePort(const QString& port)
+QString MidiClock::sourcePortProblem(const QString& port)
 {
+	if (port.size() <= SourceNameCapacity) { return QString(); }
+	return QStringLiteral("a MIDI clock source name may hold %1 characters at most and this one "
+		"has %2. The name is stored whole rather than truncated, because a source that "
+		"silently became a different name would follow no clock at all while reporting "
+		"that it was following one. midi.device_list lists the names that fit.")
+		.arg(SourceNameCapacity).arg(port.size());
+}
+
+bool MidiClock::setSlaveSourcePort(const QString& port, QString* error)
+{
+	QString problem = sourcePortProblem(port);
+	if (!problem.isEmpty())
+	{
+		if (error != nullptr) { *error = problem; }
+		return false;
+	}
+	// Re-naming the current source is not a change: the lock the live source gave
+	// must survive being named twice (the same reason setMasterEnabled keeps the
+	// tracked transport across a repeat of the same call).
+	if (port == m_slavePort) { return true; }
 	m_slavePort = port;
+	publishSource(port);
+	// A SWITCH forgets the measurement, for the reason leaving slave mode does: a
+	// follower that moved off a device must not still be holding - and writing -
+	// a tempo measured from the device it left.
+	m_tracker.reset();
+	return true;
+}
+
+void MidiClock::publishSource(const QString& port) noexcept
+{
+	// THE WRITER HALF OF A SEQUENCE LOCK, with the snapshot consistency the C++
+	// memory model guarantees. The payload accesses are RELAXED; the order that
+	// matters is carried by the two release fences around them (this is the
+	// canonical std::atomic_thread_fence seqlock, not a bare odd/even counter).
+	//
+	// m_sourceVersion is ODD while a write is in flight. The first release fence
+	// orders the odd marker BEFORE the payload stores, so a reader can never
+	// observe a new code unit while the version still reads as the PREVIOUS even
+	// value - the case a plain counter with a relaxed payload left open. The
+	// second release fence orders the payload stores BEFORE the closing even
+	// marker, so they all become visible together with the value the reader
+	// closes on. A reader that still straddles the two markers fails its closing
+	// re-check in acceptsSource() and drops that one message.
+	m_sourceVersion.fetch_add(1, std::memory_order_relaxed); // odd: writing
+	std::atomic_thread_fence(std::memory_order_release);
+	for (int i = 0; i < port.size(); ++i)
+	{
+		m_sourceChars[static_cast<std::size_t>(i)].store(
+			static_cast<quint16>(port.at(i).unicode()), std::memory_order_relaxed);
+	}
+	m_sourceLength.store(port.size(), std::memory_order_relaxed);
+	std::atomic_thread_fence(std::memory_order_release);
+	m_sourceVersion.fetch_add(1, std::memory_order_relaxed); // even: published
+}
+
+bool MidiClock::acceptsSource(const QString& source) const noexcept
+{
+	// THE READER HALF. The first acquire fence orders the payload loads AFTER the
+	// version read, so a version read that saw an even value cannot be paired
+	// with code units from the write that followed it; the second acquire fence
+	// orders the closing version read AFTER the payload loads, so the closing
+	// read cannot slip in front of the units it validates. When the two even
+	// version reads agree, no write was in flight across the payload loads, so
+	// every unit read belongs to the one generation the version names: the old
+	// name or the new one, never a half-written mixture. Relaxed loads plus the
+	// fences keep the comparison alloc- and lock-free on the MIDI reader thread.
+	for (int attempt = 0; attempt < SourceReadAttempts; ++attempt)
+	{
+		const quint32 before = m_sourceVersion.load(std::memory_order_relaxed);
+		if ((before & 1u) != 0u) { continue; }
+		std::atomic_thread_fence(std::memory_order_acquire);
+		const int length = m_sourceLength.load(std::memory_order_relaxed);
+		bool matches;
+		if (length == 0)
+		{
+			// No port chosen: a clock from wherever it arrives is followed, which
+			// is what this release did before the source became load-bearing.
+			matches = true;
+		}
+		else if (length != source.size())
+		{
+			matches = false;
+		}
+		else
+		{
+			matches = true;
+			for (int i = 0; i < length; ++i)
+			{
+				if (source.at(i).unicode()
+					!= m_sourceChars[static_cast<std::size_t>(i)].load(std::memory_order_relaxed))
+				{
+					matches = false;
+					break;
+				}
+			}
+		}
+		std::atomic_thread_fence(std::memory_order_acquire);
+		if (m_sourceVersion.load(std::memory_order_relaxed) == before) { return matches; }
+	}
+	// Reconfigured under the reader four times over: this ONE message is dropped
+	// rather than measured against a name that was being rewritten.
+	return false;
+}
+
+quint32 MidiClock::slaveIgnoredCount() const noexcept
+{
+	return m_ignoredTotal.load(std::memory_order_relaxed);
 }
 
 void MidiClock::setSlaveDriftBoundMs(double ms) noexcept
@@ -301,13 +421,18 @@ void MidiClock::setSlaveDriftBoundMs(double ms) noexcept
 
 void MidiClock::startFollowTimer()
 {
-	if (m_followTimer != nullptr) { return; }
-	m_followTimer = new QTimer();
-	// A functor connection with the timer itself as the context: no receiver
-	// object is needed, and the timer lives on the thread that creates it here
-	// (the control thread - `clock.*` handlers always run on the UI thread).
-	QObject::connect(m_followTimer, &QTimer::timeout, [this]() { applyMeasuredTempo(); });
-	m_followTimer->start(FollowPollMs);
+	if (m_followTimer == nullptr)
+	{
+		m_followTimer = new QTimer();
+		// A functor connection with the timer itself as the context: no receiver
+		// object is needed, and the timer lives on the thread that creates it here
+		// (the control thread - `clock.*` handlers always run on the UI thread).
+		QObject::connect(m_followTimer, &QTimer::timeout, [this]() { applyMeasuredTempo(); });
+	}
+	// The timer is created ONCE, but stopping it does not destroy it: a
+	// disable/re-enable cycle has to start it again, or the follower never
+	// writes the measured tempo to the Song again.
+	if (!m_followTimer->isActive()) { m_followTimer->start(FollowPollMs); }
 }
 
 void MidiClock::stopFollowTimer()
@@ -343,32 +468,48 @@ void MidiClock::record(MidiClockMessage message, qint64 positionTicks) noexcept
 	m_monitor[slot].ticks.store(positionTicks);
 }
 
-void MidiClock::emitMessage(MidiClockMessage message, qint64 positionTicks, quint32 payload) noexcept
+namespace
 {
-	record(message, positionTicks);
-	MidiClient* midi = m_client.load();
-	MidiPort* port = m_outputPort.load();
-	if (midi == nullptr || port == nullptr) { return; }
 
+//! The MidiEvent a clock message is on the wire.
+MidiEvent clockEventOf(MidiClockMessage message, quint32 payload) noexcept
+{
 	const MidiEventTypes type = midiClockEventType(message);
-	MidiEvent event;
 	switch (message)
 	{
 		// The two messages with a payload: a Song Position Pointer carries the
 		// position as two 7-bit bytes (LSB first), and a quarter-frame carries
 		// one 7-bit nibble.
 		case MidiClockMessage::SongPosition:
-			event = MidiEvent(type, 0, static_cast<int16_t>(payload & 0x7F),
+			return MidiEvent(type, 0, static_cast<int16_t>(payload & 0x7F),
 				static_cast<int16_t>((payload >> 7) & 0x7F));
-			break;
 		case MidiClockMessage::TimeCode:
-			event = MidiEvent(type, 0, static_cast<int16_t>(payload & 0x7F));
-			break;
+			return MidiEvent(type, 0, static_cast<int16_t>(payload & 0x7F));
 		default:
-			event = MidiEvent(type);
-			break;
+			return MidiEvent(type);
 	}
-	midi->processOutEvent(event, TimePos(), port);
+}
+
+} // namespace
+
+void MidiClock::emitMessage(MidiClockMessage message, qint64 positionTicks, quint32 payload) noexcept
+{
+	record(message, positionTicks);
+	MidiClient* midi = m_client.load();
+	MidiPort* port = m_outputPort.load();
+	if (midi == nullptr || port == nullptr) { return; }
+	midi->processOutEvent(clockEventOf(message, payload), TimePos(), port);
+}
+
+bool MidiClock::deliverOffAudio(MidiClockMessage message, qint64 tick) noexcept
+{
+	MidiClient* midi = m_client.load();
+	MidiPort* port = m_outputPort.load();
+	// Q050-277: the client's off-audio path (serialized, its own queue where the audio path has a single-producer one),
+	// so the sender never becomes a second producer of what processOutEvent() feeds from the audio thread.
+	if (midi != nullptr && port != nullptr && !midi->sendFromNonAudioThread(clockEventOf(message, 0), port)) { return false; }
+	record(message, tick);
+	return true;
 }
 
 void MidiClock::transportEdge(bool running, qint64 playPosTicks) noexcept
@@ -455,18 +596,41 @@ void MidiClock::processAudioPeriod(int frames, bool transportRunning, qint64 pla
 	// clock that simply STOPS arriving loses its lock and a caller never reads a
 	// tempo from a stream that has ended.
 	m_tracker.update(timestampNs);
-	if (!m_masterEnabled.load()) { return; }
+	if (!m_masterEnabled.load())
+	{
+		// Turned off mid-capture: the span ends here with a STOP and no catch-up (Q050-277); the take goes on.
+		if (m_captureActive.load()) { captureAbort(); }
+		return;
+	}
 	const float framesPerTick = Engine::framesPerTick();
 	const qint64 expected = framesPerTick > 0.0f
 		? static_cast<qint64>(static_cast<double>(frames) / static_cast<double>(framesPerTick))
 		: 0;
+	if (m_captureActive.load())
+	{
+		// An open capture span owns the clock (Q050-277): it pulses on its own time whatever the transport does,
+		// and the transport's edges are not sent - START and STOP belong to the capture's boundaries.
+		emitCapturePulses(frames);
+		return;
+	}
+	// A capture's last messages are still on their way to the client: the transport's own START/CONTINUE must not
+	// overtake the STOP, so it waits (one period at most) until they are delivered.
+	if (captureOutputPending()) { return; }
 	trackTransport(transportRunning, playPosTicks, expected);
 	if (transportRunning) { emitPulses(frames); }
 }
 
 void MidiClock::handleInputMessage(MidiClockMessage message, quint32 value,
-	quint64 timestampNs) noexcept
+	quint64 timestampNs, const QString& sourcePort) noexcept
 {
+	// Q050-026: the source is checked BEFORE the tracker sees anything, so a device
+	// the user did not choose cannot move this session's tempo at all - not by
+	// locking the tracker and not by writing a Song tempo from it.
+	if (!acceptsSource(sourcePort))
+	{
+		m_ignoredTotal.fetch_add(1, std::memory_order_relaxed);
+		return;
+	}
 	m_tracker.received(message, value, timestampNs);
 }
 

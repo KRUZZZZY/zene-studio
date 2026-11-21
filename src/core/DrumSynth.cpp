@@ -27,11 +27,13 @@
 
 #include <QFile>
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
+#include <new>
 #include <sstream>
+#include <string>
 
 #include "lmms_math.h"
 
@@ -44,6 +46,26 @@ namespace lmms {
 
 using namespace std;
 
+namespace {
+
+bool checkedWaveSampleCount(int channels, long length, std::size_t& sampleCount)
+{
+	if (channels <= 0 || length <= 0) { return false; }
+	if (static_cast<unsigned long long>(length) > numeric_limits<std::size_t>::max()) { return false; }
+	const auto channelCount = static_cast<std::size_t>(channels);
+	const auto frameCount = static_cast<std::size_t>(length);
+	const auto maxSamplesByBytes = numeric_limits<std::size_t>::max() / sizeof(int16_t);
+	if (frameCount > static_cast<std::size_t>(numeric_limits<long>::max()) / channelCount
+		|| frameCount > maxSamplesByBytes / channelCount)
+	{
+		return false;
+	}
+	sampleCount = channelCount * frameCount;
+	return true;
+}
+
+} // namespace
+
 // const int     Fs    =  44100;
 const int MAX = 0;
 const int ENV = 1;
@@ -53,16 +75,25 @@ const int NEXTT = 4;
 
 // Bah, I'll move these into the class once I separate DrumsynthFile from DrumSynth
 // llama
-float envpts[8][3][32];	 // envelope/time-level/point
-float envData[8][6];	 // envelope running status
-int chkOn[8], sliLev[8]; // section on/off and level
-float timestretch;		 // overall time scaling
-short DD[1200], clippoint;
-float DF[1200];
-float phi[1200];
+//
+// The parser state is thread local: a .ds file can be parsed while another thread
+// parses one too, and the render state of one parse must not leak into the other.
+thread_local float envpts[8][3][32];	 // envelope/time-level/point
+thread_local float envData[8][6];	 // envelope running status
+thread_local int chkOn[8], sliLev[8]; // section on/off and level
+thread_local float timestretch;		 // overall time scaling
+thread_local short DD[1200], clippoint;
+thread_local float DF[1200];
+thread_local float phi[1200];
 
-long wavewords, wavemode = 0;
-float mem_t = 1.0f, mem_o = 1.0f, mem_n = 1.0f, mem_b = 1.0f, mem_tune = 1.0f, mem_time = 1.0f;
+thread_local long wavewords, wavemode = 0;
+thread_local float mem_t = 1.0f, mem_o = 1.0f, mem_n = 1.0f, mem_b = 1.0f, mem_tune = 1.0f, mem_time = 1.0f;
+
+// The renderer holds an open envelope end for this long, in 44.1 kHz samples. The longest envelope in the
+// shipped library is 438020 samples (data/samples/drumsynth/misc/verylong.ds), so no real sample reaches it.
+constexpr float maxEnvelopeHold = 442000.f;
+// The largest stretch factor the parser allows; Stretch is clamped to 1000%.
+constexpr float maxStretch = 10.f;
 
 int DrumSynth::LongestEnv()
 {
@@ -88,7 +119,12 @@ int DrumSynth::LongestEnv()
 	}
 	// l *= timestretch;
 
-	return 2400 + (1200 * static_cast<int>(l / 1200));
+	constexpr int blockLength = 1200;
+	constexpr int baseLength = 2 * blockLength;
+	constexpr int maxSteps = (numeric_limits<int>::max() - baseLength) / blockLength;
+	const float steps = l / blockLength;
+	if (!std::isfinite(steps) || steps >= static_cast<float>(maxSteps) + 1.0f) { return 0; }
+	return baseLength + (blockLength * static_cast<int>(steps));
 }
 
 float DrumSynth::LoudestEnv()
@@ -113,7 +149,7 @@ void DrumSynth::UpdateEnv(int e, long t)
 	envData[e][NEXTT] = envpts[e][0][static_cast<long>(envData[e][PNT] + 1.f)] * timestretch; // get next point
 	if (envData[e][NEXTT] < 0)
 	{
-		envData[e][NEXTT] = 442000 * timestretch; // if end point, hold
+		envData[e][NEXTT] = maxEnvelopeHold * timestretch; // if end point, hold
 	}
 	envData[e][ENV] = envpts[e][1][static_cast<long>(envData[e][PNT] + 0.f)] * 0.01f;		  // this level
 	float endEnv = envpts[e][1][static_cast<long>(envData[e][PNT] + 1.f)] * 0.01f;			  // next level
@@ -124,6 +160,23 @@ void DrumSynth::UpdateEnv(int e, long t)
 	}
 	envData[e][dENV] = (endEnv - envData[e][ENV]) / dT;
 	envData[e][PNT] = envData[e][PNT] + 1.0f;
+}
+
+// Each envelope row has 32 points; the last slot is reserved for the end-of-envelope sentinel.
+constexpr int maxEnvelopePoints = 31;
+
+// Stores one parsed envelope value. Points past the capacity are dropped, and malformed, empty or overlong
+// tokens become 0. sscanf returns EOF (not 0) for an empty token, so only exactly one conversion is accepted.
+static void storeEnvelopeValue(int env, int row, int point, const char* token, bool tokenTooLong)
+{
+	if (point >= maxEnvelopePoints)
+	{
+		return;
+	}
+	if (tokenTooLong || sscanf(token, "%f", &envpts[env][row][point]) != 1 || !std::isfinite(envpts[env][row][point]))
+	{
+		envpts[env][row][point] = 0.f;
+	}
 }
 
 void DrumSynth::GetEnv(int env, const char* sec, const char* key, QString ini)
@@ -141,22 +194,21 @@ void DrumSynth::GetEnv(int env, const char* sec, const char* key, QString ini)
 	{
 		if (en[i] == ',')
 		{
-			if (tokenTooLong || sscanf(s, "%f", &envpts[env][0][ep]) == 0)
-			{
-				envpts[env][0][ep] = 0.f;
-			}
+			storeEnvelopeValue(env, 0, ep, s, tokenTooLong);
 			o = 0;
+			s[0] = 0;
 			tokenTooLong = false;
 		}
 		else if (en[i] == ' ')
 		{
-			if (tokenTooLong || sscanf(s, "%f", &envpts[env][1][ep]) == 0)
-			{
-				envpts[env][1][ep] = 0.f;
-			}
+			storeEnvelopeValue(env, 1, ep, s, tokenTooLong);
 			o = 0;
+			s[0] = 0;
 			tokenTooLong = false;
-			ep++;
+			if (ep < maxEnvelopePoints)
+			{
+				ep++;
+			}
 		}
 		else
 		{
@@ -173,13 +225,12 @@ void DrumSynth::GetEnv(int env, const char* sec, const char* key, QString ini)
 		}
 		i++;
 	}
-	if (tokenTooLong || sscanf(s, "%f", &envpts[env][1][ep]) == 0)
-	{
-		envpts[env][1][ep] = 0.f;
-	}
-	envpts[env][0][ep + 1] = -1;
+	storeEnvelopeValue(env, 1, ep, s, tokenTooLong);
+	// ep saturates at the last usable point, so the sentinel always fits in its row
+	const int lastPoint = std::min(ep, maxEnvelopePoints - 1);
+	envpts[env][0][lastPoint + 1] = -1;
 
-	envData[env][MAX] = envpts[env][0][ep];
+	envData[env][MAX] = envpts[env][0][lastPoint];
 }
 
 float DrumSynth::waveform(float ph, int form)
@@ -198,6 +249,19 @@ float DrumSynth::waveform(float ph, int form)
 	return (saw01 < 0.5f) ? 1.f : -1.f;
 }
 
+// The tone envelope can end at time zero, which leaves no positive duration to divide by.
+static float durationOrOneSample(float duration)
+{
+	return duration == 0.f ? 1.f : duration;
+}
+
+// A tone without a positive envelope duration has no sweep to run, so it keeps its start frequency.
+static float tonePhaseAtSample(float start, float difference, long sample, float duration)
+{
+	if (duration <= 0.f) { return start; }
+	return start + (sample / duration) * difference;
+}
+
 std::size_t DrumSynth::GetPrivateProfileString(const char* sec,
 	const char* key, const char* def, char* buffer, std::size_t size,
 	QString file)
@@ -205,7 +269,10 @@ std::size_t DrumSynth::GetPrivateProfileString(const char* sec,
 	const auto maxlen = std::max(std::size_t{1}, size) - 1; // TODO C++26: Use std::sub_sat(size, 1)
 	stringstream is;
 	bool inSection = false;
-	std::array<char, 200> line = {};
+	// The lines are read into a dynamically sized string: a fixed buffer sets the
+	// stream's failure state on an over-long line, which ends the scan and leaves
+	// the settings behind it at their defaults without any error.
+	std::string line;
 
 	// Use QFile to handle unicode file name on Windows
 	// Previously we used ifstream directly
@@ -225,26 +292,57 @@ std::size_t DrumSynth::GetPrivateProfileString(const char* sec,
 			is.ignore(numeric_limits<streamsize>::max(), '[');
 			if (!is.eof())
 			{
-				is.getline(line.data(), line.size(), ']');
-				if (!strcasecmp(line.data(), sec)) { inSection = true; }
+				std::string section;
+				std::getline(is, section, ']');
+				if (!strcasecmp(section.c_str(), sec)) { inSection = true; }
 			}
 		}
 		else if (!is.eof())
 		{
-			is.getline(line.data(), line.size());
-			if (line[0] == '[') { break; }
+			std::getline(is, line);
+			if (!line.empty() && line[0] == '[') { break; }
 
-			char* k = std::strtok(line.data(), " \t=");
-			char* b = std::strtok(nullptr, "\n\r\0");
-			if (k && !strcasecmp(k, key))
+			// Tokenise without strtok (process-wide state; unsafe across threads).
+			const auto keyStart = line.find_first_not_of(" \t=");
+			std::string keyToken;
+			std::size_t valueStart = std::string::npos;
+			if (keyStart != std::string::npos)
 			{
-				if (b)
+				const auto keyEnd = line.find_first_of(" \t=", keyStart);
+				if (keyEnd == std::string::npos)
 				{
-					// Trim trailing whitespace
-					k = &b[std::strlen(b)];
-					while (k >= b && (*k == ' ' || *k == '\t')) { --k; }
-					k[1] = '\0'; // k == b - 1 when string is empty or all whitespace
-					std::strncpy(buffer, b, maxlen);
+					keyToken = line.substr(keyStart);
+				}
+				else
+				{
+					keyToken = line.substr(keyStart, keyEnd - keyStart);
+					valueStart = keyEnd + 1;
+				}
+			}
+			// Skip leading CR/LF (matching strtok's second delimiter set).
+			while (valueStart != std::string::npos && valueStart < line.size()
+				&& (line[valueStart] == '\n' || line[valueStart] == '\r' || line[valueStart] == '\0'))
+			{
+				++valueStart;
+			}
+			std::string valueToken;
+			if (valueStart != std::string::npos && valueStart < line.size())
+			{
+				const auto valueEnd = line.find_first_of("\n\r", valueStart);
+				if (valueEnd == std::string::npos) { valueToken = line.substr(valueStart); }
+				else { valueToken = line.substr(valueStart, valueEnd - valueStart); }
+			}
+			// Trim trailing whitespace from the value.
+			auto last = valueToken.find_last_not_of(" \t");
+			if (last == std::string::npos) { valueToken.clear(); }
+			else { valueToken.erase(last + 1); }
+
+			if (!keyToken.empty() && !strcasecmp(keyToken.c_str(), key))
+			{
+				if (!valueToken.empty())
+				{
+					std::strncpy(buffer, valueToken.c_str(), maxlen);
+					buffer[maxlen] = '\0';
 				}
 				break;
 			}
@@ -278,7 +376,7 @@ float DrumSynth::GetPrivateProfileFloat(const char* sec, const char* key, float 
 	float f = 0.f;
 
 	GetPrivateProfileString(sec, key, "", tmp, sizeof(tmp), file);
-	if (sscanf(tmp, "%f", &f) != 1)
+	if (sscanf(tmp, "%f", &f) != 1 || !std::isfinite(f))
 	{
 		f = def;
 	}
@@ -290,6 +388,16 @@ float DrumSynth::GetPrivateProfileFloat(const char* sec, const char* key, float 
 //  But, the original did this, and we know it works.  Will store file into
 //  an associative array or something once we have a datastructure to load in to.
 //  llama
+
+// Converts a noise-band step quotient to a whole step count of at least one. A NaN quotient (a negative
+// frequency makes the square root undefined) has no step and gives one. Other quotients are clamped into
+// the int range before the conversion, so the cast is always defined and in-range values are unchanged.
+long DrumSynth::noiseBandStepCount(double quotient)
+{
+	if (std::isnan(quotient)) { return 1; }
+	const double clamped = std::clamp(quotient, 0.0, static_cast<double>(std::numeric_limits<int>::max() - 1));
+	return 1 + static_cast<long>(clamped);
+}
 
 int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sample_rate_t Fs)
 {
@@ -366,9 +474,9 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	{
 		timestretch = 0.2f;
 	}
-	if (timestretch > 10.f)
+	if (timestretch > maxStretch)
 	{
-		timestretch = 10.f;
+		timestretch = maxStretch;
 	}
 	// the unit of envelope lengths is a sample in 44100Hz sample rate, so correct it
 	timestretch *= Fs / 44100.f;
@@ -424,9 +532,10 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	if (TDroopRate > 0.f)
 	{
 		TDroopRate = fastPow10f((TDroopRate - 20.0f) / 30.0f);
-		TDroopRate = TDroopRate * -4.f / envData[1][MAX];
-		TDroop = 1;
-		F2 = F1 + ((F2 - F1) / (1.f - std::exp(TDroopRate * envData[1][MAX])));
+		const float duration = durationOrOneSample(envData[1][MAX]);
+		TDroop = envData[1][MAX] > 0.f;
+		TDroopRate = TDroopRate * -4.f / duration;
+		F2 = F1 + ((F2 - F1) / (1.f - std::exp(TDroopRate * duration)));
 		ddF = F1 - F2;
 	}
 	else
@@ -493,8 +602,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	BFStep = GetPrivateProfileInt(sec, "dF", 50, dsfile);
 	BQ = static_cast<float>(BFStep);
 	BQ = BQ * BQ / (10000.f - 6600.f * (std::sqrt(BF) - 0.19f));
-	BFStep = 1 + static_cast<int>((40.f - (BFStep / 2.5f)) / (BQ + 1.f + (1.f * BF)));
-	BFStep = std::max(BFStep, 1L);
+	BFStep = noiseBandStepCount((40.f - (BFStep / 2.5f)) / (BQ + 1.f + (1.f * BF)));
 
 	std::strcpy(sec, "NoiseBand2");
 	chkOn[4] = GetPrivateProfileInt(sec, "On", 0, dsfile);
@@ -507,8 +615,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	BFStep2 = GetPrivateProfileInt(sec, "dF", 50, dsfile);
 	BQ2 = static_cast<float>(BFStep2);
 	BQ2 = BQ2 * BQ2 / (10000.f - 6600.f * (std::sqrt(BF2) - 0.19f));
-	BFStep2 = 1 + static_cast<int>((40 - (BFStep2 / 2.5)) / (BQ2 + 1 + (1 * BF2)));
-	BFStep2 = std::max(BFStep2, 1L);
+	BFStep2 = noiseBandStepCount((40 - (BFStep2 / 2.5)) / (BQ2 + 1 + (1 * BF2)));
 
 	// read distortion parameters
 	std::strcpy(sec, "Distortion");
@@ -525,7 +632,10 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 
 	if (DiON == 1)
 	{
-		DAtten = DGain * static_cast<short>(LoudestEnv());
+		// LoudestEnv() can exceed the short range (Level=50000 gives 2.5e9), and converting
+		// such a float to short is undefined, so clamp it first.
+		const float loudestEnv = std::clamp(LoudestEnv(), 0.f, 32767.f);
+		DAtten = DGain * static_cast<short>(loudestEnv);
 		clippoint = DAtten > 32700 ? 32700 : static_cast<short>(DAtten);
 		const int distortionBits = GetPrivateProfileInt(sec, "Bits", 0, dsfile);
 		if (distortionBits < 0 || distortionBits > 7) { return 0; }
@@ -541,11 +651,16 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 		envData[i][PNT] = 0;
 	}
 	Length = LongestEnv();
+	// Refuse a duration past the renderer's own hold at the largest stretch, before any buffer is sized from it.
+	// LongestEnv adds a 2400 sample base and rounds down to whole blocks, so Length exceeds the envelope by at most 2400.
+	if (static_cast<float>(Length) > maxEnvelopeHold * maxStretch * (Fs / 44100.f) + 2400.f) { return 0; }
+	std::size_t waveSampleCount = 0;
+	if (!checkedWaveSampleCount(channels, Length, waveSampleCount)) { return 0; }
 
 	// allocate the buffer
 	// if(wave!=NULL) free(wave);
 	// wave = new int16_t[channels * (Length + 1280)]; //wave memory buffer
-	wave = new int16_t[channels * Length]; // wave memory buffer
+	wave = new (std::nothrow) int16_t[waveSampleCount]; // wave memory buffer
 	if (wave == nullptr)
 	{
 		return 0;
@@ -638,7 +753,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 			{
 				for (t = tpos; t <= tplus; t++)
 				{
-					phi[t - tpos] = F1 + (t / envData[1][MAX]) * ddF;
+					phi[t - tpos] = tonePhaseAtSample(F1, ddF, t, envData[1][MAX]);
 				}
 			}
 			for (t = tpos; t <= tplus; t++)
@@ -880,6 +995,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 		{
 			for (j = 0; j < 1200; j++)
 			{
+				if (!std::isfinite(DF[j])) { DF[j] = 0.f; }
 				DF[j] = DGain * static_cast<int>(DF[j] / DAtten);
 			}
 
@@ -909,6 +1025,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 
 		for (j = 0; j < 1200; j++) // clipping + output
 		{
+			if (!std::isfinite(DF[j])) { DF[j] = 0.f; }
 			if (DF[j] > clippoint)
 			{
 				wave[wavewords++] = clippoint;

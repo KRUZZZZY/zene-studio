@@ -236,6 +236,37 @@ private slots:
 		QCOMPARE(restored.toXml(), xml);
 	}
 
+	/*! A restore that cannot read its snapshot must leave the track alone. The
+	 *  track it is restoring over is the CURRENT project's, so clearing first
+	 *  turns a corrupt checkpoint into lost chords and followers - the same
+	 *  failed-load-destroys-state bug loadSettings avoids for the project walk
+	 *  by being explicit that absence means reset. */
+	void fromXmlFailureKeepsTheExistingTrack()
+	{
+		ChordTrack track;
+		QVERIFY(track.set(eventAt(0, QStringLiteral("Major"))));
+		QVERIFY(track.set(eventAt(96, QStringLiteral("minor"))));
+		QVERIFY(track.setFollow(3, ChordFollowMode::Scale));
+		const QString before = track.toXml();
+
+		QVERIFY2(!track.fromXml(QStringLiteral("<chord-track><chord pos=\"0\"")),
+			"malformed XML parsed as a chord track");
+		QCOMPARE(orderOf(track), QStringLiteral("0,96"));
+		QCOMPARE(track.followOf(3), ChordFollowMode::Scale);
+		QCOMPARE(track.toXml(), before);
+
+		// Well-formed but not a chord track is the same refusal: validation
+		// happens before the state is replaced, not after it has been cleared.
+		QVERIFY2(!track.fromXml(QStringLiteral("<song><bpm>140</bpm></song>")),
+			"a <song> element was accepted as a chord track");
+		QCOMPARE(orderOf(track), QStringLiteral("0,96"));
+		QCOMPARE(track.followOf(3), ChordFollowMode::Scale);
+		QCOMPARE(track.toXml(), before);
+
+		QVERIFY2(!track.fromXml(QString()), "empty text parsed as a chord track");
+		QCOMPARE(track.toXml(), before);
+	}
+
 	/*! A number that does not parse is not a zero: an unreadable event is
 	 *  SKIPPED, like an unresolvable chord name. Defaulting instead would
 	 *  silently invent a different, perfectly valid chord - a malformed `pos`

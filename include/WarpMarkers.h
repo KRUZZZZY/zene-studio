@@ -28,6 +28,9 @@
 #include <algorithm>
 #include <array>
 #include <span>
+#include <utility>
+
+#include <QString>
 
 #include "LmmsTypes.h"
 
@@ -81,29 +84,152 @@ enum class WarpTempoMode
 };
 
 /*! How a clip whose mapping changes the rate renders that rate change
- *  (0.3.0, feature-list row 30 — pitch-preserving time-stretch).
+ *  (0.3.0, feature-list row 30 — pitch-preserving time-stretch; 0.5.0 L05,
+ *  Q050-036 — the full mode set the spec promises).
  *
  *  `Resample` is the historical behaviour and the default, so every project
  *  written before this feature (and every clip that does not ask) renders
- *  through `AudioResampler` exactly as it did. `PreservePitch` routes the
- *  clip's audio through `AudioStretcher` (WSOLA) instead, which keeps the
- *  waveform's period — the pitch — where it was and moves only the grain
- *  positions, at the cost of the alignment search (see AudioStretcher.h).
+ *  through `AudioResampler` exactly as it did — the wire name of the spec's
+ *  **Re-Pitch** (A4: "Re-Pitch = varispeed"), with the legacy name
+ *  `resample` still accepted wherever a mode name is read.
+ *
+ *  The other five all keep the pitch where the mapping put it, on three
+ *  engines:
+ *
+ *  - `PreservePitch` is the WSOLA stretch (`AudioStretcher`, its default
+ *    grain and search parameters) that row 30 introduced; files say `wsola`.
+ *  - `Beats` (spec: "transient-preserving granular") renders through the
+ *    optional Rubber Band R3 engine restricted to its single short window —
+ *    the crispest timing R3 offers, at some spectral cost.
+ *  - `Complex` (spec: "Rubberband Pro-equivalent settings") is the R3 engine
+ *    at its full multi-resolution settings — exactly how the mode owner
+ *    decision 12 introduced under the name `rubberband` has always rendered;
+ *    that name still selects it, and files carrying it keep their sound.
+ *  - `Tones` and `Texture` are the WSOLA stretch parameterised for their
+ *    material, because the R3 engine's remaining options (transients,
+ *    phase, long window) are R2-only and would render identically:
+ *    **Tones** doubles the alignment search's reach (±256 frames ≈ 5.8 ms,
+ *    i.e. periods down to ~172 Hz), for monophonic and tonal material whose
+ *    periods the default reach cannot align; **Texture** halves the grain
+ *    (11.6 ms), which blurs the phase relationships between grains sooner —
+ *    the phasier, more diffuse render that suits polyphonic and ambient
+ *    material. All fixed-size, allocation-free parameters of the same
+ *    engine (docs/PITCH-STRETCH.md).
  *
  *  The mode only means anything for a clip that is NOT `rendersLinearly()`:
  *  a clip with no marker and no source tempo has no rate change to preserve
  *  pitch across, and the playback path deliberately does not route it through
- *  the stretcher at all (docs/PITCH-STRETCH.md §5). */
+ *  any stretcher at all (docs/PITCH-STRETCH.md §5). */
 enum class WarpStretchMode
 {
 	Resample = 0,
 	PreservePitch = 1,
-	//! Owner decision 12: the optional Rubber Band R3 stretch, for tonal and
-	//! polyphonic material (include/RubberBandStretch.h). A build without the
-	//! library keeps the mode (and the file keeps asking for it) and renders
-	//! the clip through WSOLA, exactly as PreservePitch.
-	RubberBand = 2
+	Beats = 2,
+	Tones = 3,
+	Texture = 4,
+	Complex = 5,
+	//! Q050-162: transient repeat - each transient segment plays at its own
+	//! rate from its transient and is RETRIGGERED at every repeat interval
+	//! (TransientRepeatRate) until the next transient's slot begins.
+	Repeat = 6,
+	//! Q050-162: transient gate - each segment plays once from its transient
+	//! and its tail is CUT at the first repeat interval.
+	Gate = 7
 };
+
+//! The mode's canonical name — the one clip state reports, the agent command
+//! takes and the project file writes: `re_pitch`, `preserve_pitch`, `beats`,
+//! `tones`, `texture`, `complex`, and (Q050-162) `repeat`, `gate`. (Q050-036: the five spec names are the
+//! canonical vocabulary; `preserve_pitch` names the WSOLA engine.)
+QString warpStretchModeName(WarpStretchMode mode);
+
+/*! The mode a wire name selects — canonical names plus the two legacy aliases
+ *  every file written before Q050-036 may carry: `resample` (→ Re-Pitch,
+ *  the same varispeed engine under its old name) and `rubberband` (→
+ *  Complex, the same R3 settings under theirs). False for a name the engine
+ *  does not know. */
+bool warpStretchModeFromName(const QString& name, WarpStretchMode* mode);
+
+//! Q050-162: the two modes that fill a warped slot by repeating or gating the
+//! clip's transient segments (include/TransientRepeat.h) instead of stretching.
+constexpr bool warpModeRepeatsTransients(WarpStretchMode mode)
+{
+	return mode == WarpStretchMode::Repeat || mode == WarpStretchMode::Gate;
+}
+
+//! True for every mode that renders a rate change through a pitch-keeping
+//! stretcher — everything but Re-Pitch, whose whole point is that the pitch
+//! moves with the rate.
+constexpr bool warpModeKeepsPitch(WarpStretchMode mode)
+{
+	return mode != WarpStretchMode::Resample;
+}
+
+//! True for the two modes rendered by the Rubber Band R3 engine when the
+//! build links it — Beats (the short single window) and Complex (the full
+//! multi-resolution settings); without the library they render through
+//! WSOLA, exactly as `PreservePitch` (owner decision 12). `Tones` and
+//! `Texture` are WSOLA-backed everywhere, so the spec's mode set survives a
+//! build without the library minus those two.
+constexpr bool warpModeUsesRubberBand(WarpStretchMode mode)
+{
+	return mode == WarpStretchMode::Beats || mode == WarpStretchMode::Complex;
+}
+
+//! One Rubber Band-backed mode per pool slot, so a clip that switches between
+//! them never frees voices a live play handle may still hold: a pool is built
+//! on the control thread when a mode first asks and kept for the clip's
+//! lifetime. -1 for the modes no pool renders.
+constexpr int WarpRubberBandModeSlots = 2;
+constexpr int warpModeRubberBandSlot(WarpStretchMode mode)
+{
+	switch (mode)
+	{
+	case WarpStretchMode::Beats: return 0;
+	case WarpStretchMode::Complex: return 1;
+	default: return -1;
+	}
+}
+
+inline QString warpStretchModeName(WarpStretchMode mode)
+{
+	switch (mode)
+	{
+	case WarpStretchMode::Beats: return QStringLiteral("beats");
+	case WarpStretchMode::Tones: return QStringLiteral("tones");
+	case WarpStretchMode::Texture: return QStringLiteral("texture");
+	case WarpStretchMode::Complex: return QStringLiteral("complex");
+	case WarpStretchMode::PreservePitch: return QStringLiteral("preserve_pitch");
+	case WarpStretchMode::Repeat: return QStringLiteral("repeat");
+	case WarpStretchMode::Gate: return QStringLiteral("gate");
+	case WarpStretchMode::Resample: break;
+	}
+	// The varispeed default under the spec's name; "resample" remains the
+	// accepted alias for it (warpStretchModeFromName).
+	return QStringLiteral("re_pitch");
+}
+
+inline bool warpStretchModeFromName(const QString& name, WarpStretchMode* mode)
+{
+	// The canonical names, then the legacy aliases every older file may carry:
+	// `resample` (Re-Pitch), `wsola` (PreservePitch) and `rubberband` (Complex).
+	static const std::pair<const char*, WarpStretchMode> names[] = {
+		{"re_pitch", WarpStretchMode::Resample}, {"preserve_pitch", WarpStretchMode::PreservePitch},
+		{"beats", WarpStretchMode::Beats}, {"tones", WarpStretchMode::Tones},
+		{"texture", WarpStretchMode::Texture}, {"complex", WarpStretchMode::Complex},
+		{"repeat", WarpStretchMode::Repeat}, {"gate", WarpStretchMode::Gate},
+		{"resample", WarpStretchMode::Resample}, {"wsola", WarpStretchMode::PreservePitch},
+		{"rubberband", WarpStretchMode::Complex}};
+	for (const auto& [text, value] : names)
+	{
+		if (name == QLatin1String(text))
+		{
+			*mode = value;
+			return true;
+		}
+	}
+	return false;
+}
 
 /*! A monotonic marker set and the piecewise-linear map it defines.
  *

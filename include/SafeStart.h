@@ -84,9 +84,13 @@ namespace lmms::safestart
 // offer of a normal start is `safestart.get_state`'s `offer` block plus the one
 // stderr line main() prints; accepting it (safestart.acknowledge) writes the
 // acknowledgement file, which only ever means "the NEXT launch is a normal one".
-// The next launch CONSUMES it - reads it, deletes it, and loads with third-party
-// plugins enabled - so a second crash cannot be masked by a decision taken about
-// the first. A clean exit clears both files; that is the whole lifecycle.
+// The offer is made in a SAFE session and nowhere else, so the acknowledgement
+// is only ever written there: an acknowledgement made in an ordinary session
+// would be consumed by the next launch and would hide the crash marker that
+// launch finds. The next launch CONSUMES it - reads it, deletes it, and loads
+// with third-party plugins enabled - so a second crash cannot be masked by a
+// decision taken about the first. A clean exit clears both files; that is the
+// whole lifecycle.
 //
 // ---------------------------------------------------------------------------
 // What "third-party" means here (a definition, not a vibe)
@@ -265,6 +269,10 @@ ActivePlugin crashSuspect();
 //! Accept the offer of a normal start: write the acknowledgement, so the NEXT
 //! launch loads with third-party plugins enabled. Keeps the marker (the crash is
 //! still there to look at) and does NOT un-skip instances already loaded.
+//! The offer is made in a SAFE session and nowhere else, so that is the only
+//! place the acknowledgement is written: in an ordinary session it would be
+//! consumed by the NEXT launch, and it would hide the crash marker that launch
+//! finds.
 void acknowledge();
 
 //! Clear the marker now: unlink the marker and the acknowledgement, so the next

@@ -37,16 +37,19 @@
  * clip, and audio cells are loaded into a sample clip. A content/track mismatch
  * or unreadable audio source is refused before the ring is consumed.
  *
- * THE INVERSE. The pass creates clips over one Track journal checkpoint per
- * touched track - the clip.add and midi.retro_capture_to_clip shape - so ONE
- * control.undo takes the whole pass back. `before`/`inverse` in the recorded
- * transaction describe the FIRST clip the pass created, which is a complete and
- * exact inverse for that clip (clip.delete removes it); the mechanism names the
- * checkpoints that carry the rest, because a pass creates one clip per completed
- * launch and a transaction carries one inverse.
+ * THE INVERSE. The pass creates clips over ONE composite journal checkpoint
+ * covering every touched track - the clip.add and midi.retro_capture_to_clip
+ * shape - so ONE control.undo takes the whole pass back. `before`/`inverse` in
+ * the recorded transaction describe the FIRST clip the pass created, which is a
+ * complete and exact inverse for that clip (clip.delete removes it); the
+ * mechanism names the checkpoint that carries the rest, because a pass creates
+ * one clip per completed launch and a transaction carries one inverse.
  */
 
+#include <cstddef>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include <QHash>
 #include <QJsonArray>
@@ -85,19 +88,14 @@ namespace
 
 QString trackTypeName(Track::Type type)
 {
-	switch (type)
-	{
-	case Track::Type::Instrument: return QStringLiteral("instrument");
-	case Track::Type::Pattern: return QStringLiteral("pattern");
-	case Track::Type::Sample: return QStringLiteral("sample");
-	case Track::Type::Event: return QStringLiteral("event");
-	case Track::Type::Video: return QStringLiteral("video");
-	case Track::Type::Automation: return QStringLiteral("automation");
-	case Track::Type::HiddenAutomation: return QStringLiteral("hidden automation");
-	case Track::Type::Folder: return QStringLiteral("folder");
-	case Track::Type::Count: break;
-	}
-	return QStringLiteral("unknown");
+	// A table (see control::trackTypeNameOf); this reader's own wording for the hidden lane has a space.
+	static const char* const names[] = {"instrument", "pattern", "sample", "event", "video", "automation",
+		"hidden automation", "folder", "neutral"};
+	static_assert(sizeof(names) / sizeof(names[0]) == static_cast<std::size_t>(Track::Type::Count),
+		"every Track::Type needs a name");
+	const int index = static_cast<int>(type);
+	if (index < 0 || index >= static_cast<int>(Track::Type::Count)) { return QStringLiteral("unknown"); }
+	return QString::fromLatin1(names[index]);
 }
 
 ControlResult validateOpenStarts(const OpenStart* open, int openCount)
@@ -121,6 +119,22 @@ bool pairHasSlot(const Song& song, const SessionModel& model, const LandPair& pa
 		&& pair.track < model.trackCount() && pair.scene >= 0 && pair.scene < model.sceneCount();
 }
 
+//! Why a pair's song track or session-grid cell cannot take it, or empty when both are there.
+QString pairSlotBlocker(const Song& song, const SessionModel& model, const LandPair& pair)
+{
+	if (pair.track < 0 || pair.track >= static_cast<int>(song.tracks().size()))
+	{
+		return QStringLiteral("column_has_no_song_track");
+	}
+	// The song track is there; only the session-grid cell is gone (session.set_grid
+	// shrank the scene or the grid track away) - a different fact, with its own count.
+	if (pair.track >= model.trackCount() || pair.scene < 0 || pair.scene >= model.sceneCount())
+	{
+		return QStringLiteral("session_grid_cell_removed");
+	}
+	return QString();
+}
+
 bool canLandMidiOn(Track* track, int pattern)
 {
 	if (dynamic_cast<InstrumentTrack*>(track) != nullptr) { return true; }
@@ -128,13 +142,13 @@ bool canLandMidiOn(Track* track, int pattern)
 	return patternTrack != nullptr && patternTrack->patternIndex() == pattern;
 }
 
-ControlResult validateMidiDestination(const ClipSlot& slot, Track* track, const LandPair& pair)
+ControlResult validateMidiDestination(int pattern, Track* track, const LandPair& pair)
 {
-	if (canLandMidiOn(track, slot.patternId())) { return ControlResult::success(); }
+	if (canLandMidiOn(track, pattern)) { return ControlResult::success(); }
 	return ControlResult::failure(ControlErrorKind::InvalidArgs,
 		QStringLiteral("cannot land MIDI pattern %1 from (track %2, scene %3) onto a %4 track; "
 			"this destination cannot hold copied MIDI notes, nothing was consumed")
-			.arg(slot.patternId()).arg(pair.track).arg(pair.scene)
+			.arg(pattern).arg(pair.track).arg(pair.scene)
 			.arg(track == nullptr ? QStringLiteral("missing") : trackTypeName(track->type())));
 }
 
@@ -169,13 +183,53 @@ ControlResult validateAudioDestination(const ClipSlot& slot, Track* track, const
 	return ControlResult::success();
 }
 
+ControlResult validateRecordedAudioDestination(const LandPair& pair, Track* track,
+	std::shared_ptr<const SampleBuffer>* audioSamples, int pairIndex,
+	QHash<const SampleBuffer*, std::shared_ptr<const SampleBuffer>>& audioCache)
+{
+	if (dynamic_cast<SampleTrack*>(track) == nullptr)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("cannot land recorded audio cell from (track %1, scene %2) onto a %3 track; "
+				"this destination cannot hold copied audio, nothing was consumed")
+				.arg(pair.track).arg(pair.scene)
+				.arg(track == nullptr ? QStringLiteral("missing") : trackTypeName(track->type())));
+	}
+	if (pair.audioClip == nullptr || pair.audioClip->empty())
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("cannot land the recorded audio cell from (track %1, scene %2): its launched "
+				"audio is unavailable; nothing was consumed").arg(pair.track).arg(pair.scene));
+	}
+	if (!audioCache.contains(pair.audioClip))
+	{
+		std::vector<SampleBuffer::value_type> frames(pair.audioClip->data(),
+			pair.audioClip->data() + pair.audioClip->size());
+		audioCache.insert(pair.audioClip, std::make_shared<const SampleBuffer>(
+			std::move(frames), static_cast<int>(pair.audioClip->sampleRate()), pair.audioClip->audioFile()));
+	}
+	audioSamples[pairIndex] = audioCache.value(pair.audioClip);
+	return ControlResult::success();
+}
+
 ControlResult validatePairContent(const Song& song, const SessionModel& model, const LandPair& pair,
 	int pairIndex, std::shared_ptr<const SampleBuffer>* audioSamples,
-	QHash<QString, std::shared_ptr<const SampleBuffer>>& audioCache)
+	QHash<QString, std::shared_ptr<const SampleBuffer>>& audioCache,
+	QHash<const SampleBuffer*, std::shared_ptr<const SampleBuffer>>& recordedAudioCache)
 {
-	const ClipSlot& slot = model.slot(pair.track, pair.scene);
+	using ContentKind = SessionArrangementRecorder::Event::ContentKind;
 	Track* track = song.tracks()[static_cast<std::size_t>(pair.track)];
-	if (slot.type() == ClipSlot::Type::Midi) { return validateMidiDestination(slot, track, pair); }
+	if (pair.contentKind == ContentKind::Midi)
+	{
+		return validateMidiDestination(pair.patternId, track, pair);
+	}
+	if (pair.contentKind == ContentKind::Audio)
+	{
+		return validateRecordedAudioDestination(pair, track, audioSamples, pairIndex, recordedAudioCache);
+	}
+	if (pair.contentKind == ContentKind::Empty) { return ControlResult::success(); }
+	const ClipSlot& slot = model.slot(pair.track, pair.scene);
+	if (slot.type() == ClipSlot::Type::Midi) { return validateMidiDestination(slot.patternId(), track, pair); }
 	if (slot.type() == ClipSlot::Type::Audio)
 	{
 		return validateAudioDestination(slot, track, pair, audioSamples, pairIndex, audioCache);
@@ -185,14 +239,15 @@ ControlResult validatePairContent(const Song& song, const SessionModel& model, c
 
 ControlResult validateLandPairs(const Song& song, const SessionModel& model,
 	const LandPair* pairs, int pairCount, std::shared_ptr<const SampleBuffer>* audioSamples,
-	QHash<QString, std::shared_ptr<const SampleBuffer>>& audioCache)
+	QHash<QString, std::shared_ptr<const SampleBuffer>>& audioCache,
+	QHash<const SampleBuffer*, std::shared_ptr<const SampleBuffer>>& recordedAudioCache)
 {
 	for (int i = 0; i < pairCount; ++i)
 	{
 		const LandPair& pair = pairs[i];
 		if (!pairHasSlot(song, model, pair) || pair.stopTick <= pair.startTick) { continue; }
 		if (ControlResult validation = validatePairContent(song, model, pair, i,
-			audioSamples, audioCache); !validation.ok) { return validation; }
+			audioSamples, audioCache, recordedAudioCache); !validation.ok) { return validation; }
 	}
 	return ControlResult::success();
 }
@@ -200,10 +255,11 @@ ControlResult validateLandPairs(const Song& song, const SessionModel& model,
 ControlResult validateLandRequest(const Song& song, const SessionModel& model,
 	const OpenStart* open, int openCount, const LandPair* pairs, int pairCount,
 	std::shared_ptr<const SampleBuffer>* audioSamples,
-	QHash<QString, std::shared_ptr<const SampleBuffer>>& audioCache)
+	QHash<QString, std::shared_ptr<const SampleBuffer>>& audioCache,
+	QHash<const SampleBuffer*, std::shared_ptr<const SampleBuffer>>& recordedAudioCache)
 {
 	if (openCount > 0) { return validateOpenStarts(open, openCount); }
-	return validateLandPairs(song, model, pairs, pairCount, audioSamples, audioCache);
+	return validateLandPairs(song, model, pairs, pairCount, audioSamples, audioCache, recordedAudioCache);
 }
 
 int copyPatternNotes(MidiClip& destination, int pattern)
@@ -225,19 +281,24 @@ int copyPatternNotes(MidiClip& destination, int pattern)
 }
 
 QString copySlotContent(Clip* clip, const ClipSlot& slot,
-	const std::shared_ptr<const SampleBuffer>& audioSample)
+	const std::shared_ptr<const SampleBuffer>& audioSample, const LandPair& pair)
 {
-	if (slot.type() == ClipSlot::Type::Midi)
+	const bool captured = pair.contentKind != SessionArrangementRecorder::Event::ContentKind::Unspecified;
+	const bool midi = captured ? pair.contentKind == SessionArrangementRecorder::Event::ContentKind::Midi
+		: slot.type() == ClipSlot::Type::Midi;
+	if (midi)
 	{
 		if (auto* destination = dynamic_cast<MidiClip*>(clip))
 		{
-			copyPatternNotes(*destination, slot.patternId());
+			copyPatternNotes(*destination, captured ? pair.patternId : slot.patternId());
 			return QStringLiteral("midi_pattern_copied");
 		}
 		// PatternTrack clips are references to their track's PatternStore column.
 		return QStringLiteral("pattern_reference");
 	}
-	if (slot.type() == ClipSlot::Type::Audio)
+	const bool audio = captured ? pair.contentKind == SessionArrangementRecorder::Event::ContentKind::Audio
+		: slot.type() == ClipSlot::Type::Audio;
+	if (audio)
 	{
 		if (auto* destination = dynamic_cast<SampleClip*>(clip))
 		{
@@ -267,7 +328,7 @@ QJsonObject pairNotLanded(const LandPair& pair, const QString& reason)
 }
 
 void addLandedClipFields(QJsonObject* landed, const Clip* clip, const Track* track,
-	const ClipSlot& slot, const QString& content)
+	const ClipSlot& slot, int pattern, const QString& content)
 {
 	landed->insert(QStringLiteral("landed"), true);
 	landed->insert(QStringLiteral("track"), control::trackIdOf(track));
@@ -275,8 +336,20 @@ void addLandedClipFields(QJsonObject* landed, const Clip* clip, const Track* tra
 	landed->insert(QStringLiteral("position"), static_cast<int>(clip->startPosition().getTicks()));
 	landed->insert(QStringLiteral("length"), static_cast<int>(clip->length().getTicks()));
 	landed->insert(QStringLiteral("name"), clip->name());
-	landed->insert(QStringLiteral("pattern"), slot.patternId());
+	landed->insert(QStringLiteral("pattern"), pattern);
 	landed->insert(QStringLiteral("content"), content);
+}
+
+//! Sorts one NOT-LANDED pair into the pass's summary counts: a column that never had
+//! a song track, a session-grid cell removed since the recording (its song track still
+//! exists), or a pair that collapsed (an empty span, a track that made no clip).
+void countNotLandedPair(const QJsonObject& entry, int* skippedColumns,
+	int* removedGridCells, int* collapsed)
+{
+	const QString reason = entry.value(QStringLiteral("reason")).toString();
+	if (reason == QStringLiteral("column_has_no_song_track")) { ++(*skippedColumns); }
+	else if (reason == QStringLiteral("session_grid_cell_removed")) { ++(*removedGridCells); }
+	else { ++(*collapsed); }
 }
 
 } // namespace
@@ -285,10 +358,8 @@ QJsonObject sessionrecord::landPairState(Song& song, const SessionModel& model, 
 	const std::shared_ptr<const SampleBuffer>& audioSample)
 {
 	QJsonObject landed = pairState(pair);
-	if (pair.track < 0 || pair.track >= static_cast<int>(song.tracks().size()))
-	{
-		return pairNotLanded(pair, QStringLiteral("column_has_no_song_track"));
-	}
+	const QString blocker = pairSlotBlocker(song, model, pair);
+	if (!blocker.isEmpty()) { return pairNotLanded(pair, blocker); }
 	const tick_t length = pair.stopTick - pair.startTick;
 	if (length <= 0)
 	{
@@ -297,16 +368,19 @@ QJsonObject sessionrecord::landPairState(Song& song, const SessionModel& model, 
 	Track* track = song.tracks()[static_cast<std::size_t>(pair.track)];
 	if (track == nullptr) { return pairNotLanded(pair, QStringLiteral("track_created_no_clip")); }
 	const ClipSlot& slot = model.slot(pair.track, pair.scene);
-	track->addJournalCheckPoint();
+	const bool captured = pair.contentKind != SessionArrangementRecorder::Event::ContentKind::Unspecified;
+	const int pattern = captured
+		? pair.contentKind == SessionArrangementRecorder::Event::ContentKind::Midi ? pair.patternId : -1
+		: slot.patternId();
 	Clip* clip = track->createClip(TimePos(pair.startTick));
 	if (clip == nullptr) { return pairNotLanded(pair, QStringLiteral("track_created_no_clip")); }
-	const QString content = copySlotContent(clip, slot, audioSample);
+	const QString content = copySlotContent(clip, slot, audioSample, pair);
 	clip->changeLength(TimePos(length));
 	clip->setAutoResize(false);
 	if (!slot.name().isEmpty()) { clip->setName(slot.name()); }
 	clip->dataChanged();
 
-	addLandedClipFields(&landed, clip, track, slot, content);
+	addLandedClipFields(&landed, clip, track, slot, pattern, content);
 	return landed;
 }
 
@@ -325,8 +399,8 @@ void registerRecordLand(ControlRegistry& registry)
 		"is still open, because a half-landed performance would lose starts or invent their ends; "
 		"stop the session first (session.stop_all, or session.back_to_arrangement). Also REFUSED "
 		"without consuming anything when MIDI or audio content cannot be copied to the destination "
-		"track or an audio source cannot be loaded. Reversible: one Track journal "
-		"checkpoint per touched track, so one control.undo takes the whole pass back.");
+		"track or an audio source cannot be loaded. Reversible: one composite ProjectJournal "
+		"checkpoint covering all touched tracks, so one control.undo takes the whole pass back.");
 	cmd.argsSchema = objectSchema();
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("landed"), arrayProperty()},
@@ -334,6 +408,7 @@ void registerRecordLand(ControlRegistry& registry)
 		{QStringLiteral("pairs"), integerProperty()},
 		{QStringLiteral("events"), integerProperty()},
 		{QStringLiteral("skipped_columns"), integerProperty()},
+		{QStringLiteral("removed_grid_cells"), integerProperty()},
 		{QStringLiteral("collapsed"), integerProperty()},
 		{QStringLiteral("unmatched_stops"), integerProperty()},
 		{QStringLiteral("recorded"), integerProperty()},
@@ -358,30 +433,35 @@ void registerRecordLand(ControlRegistry& registry)
 		LandPair pairs[MaxLandEvents];
 		std::shared_ptr<const SampleBuffer> audioSamples[MaxLandEvents]{};
 		QHash<QString, std::shared_ptr<const SampleBuffer>> audioCache;
+		QHash<const SampleBuffer*, std::shared_ptr<const SampleBuffer>> recordedAudioCache;
 		OpenStart open[MaxLandEvents];
 		int openCount = 0;
 		int unmatchedStops = 0;
 		const int pairCount = landPairEvents(events, count, pairs, MaxLandEvents,
 			open, &openCount, MaxLandEvents, &unmatchedStops);
 		if (ControlResult validation = validateLandRequest(*song, *model, open, openCount,
-			pairs, pairCount, audioSamples, audioCache); !validation.ok) { return validation; }
+				pairs, pairCount, audioSamples, audioCache, recordedAudioCache); !validation.ok) { return validation; }
 
 		// Every event is paired or an unmatched stop (which has no clip to make),
 		// so the pass can consume the whole ring.
 		consumeLandEvents(recorder, count);
 
+		// ONE composite checkpoint over the distinct touched tracks, taken here -
+		// before the loop below creates anything - so the pass is one undo action
+		// however many clips or tracks it touches.
+		checkpointLandTracks(*song, pairs, pairCount);
+
 		QJsonArray landed;
 		int clips = 0;
 		int skippedColumns = 0;
+		int removedGridCells = 0;
 		int collapsed = 0;
 		for (int i = 0; i < pairCount; ++i)
 		{
 			const QJsonObject entry = landPairState(*song, *model, pairs[i], audioSamples[i]);
 			if (!entry.value(QStringLiteral("landed")).toBool())
 			{
-				if (entry.value(QStringLiteral("reason")).toString()
-					== QStringLiteral("column_has_no_song_track")) { ++skippedColumns; }
-				else { ++collapsed; }
+				countNotLandedPair(entry, &skippedColumns, &removedGridCells, &collapsed);
 			}
 			else { ++clips; }
 			landed.append(entry);
@@ -393,6 +473,7 @@ void registerRecordLand(ControlRegistry& registry)
 		result.insert(QStringLiteral("pairs"), pairCount);
 		result.insert(QStringLiteral("events"), static_cast<int>(count));
 		result.insert(QStringLiteral("skipped_columns"), skippedColumns);
+		result.insert(QStringLiteral("removed_grid_cells"), removedGridCells);
 		result.insert(QStringLiteral("collapsed"), collapsed);
 		result.insert(QStringLiteral("unmatched_stops"), unmatchedStops);
 		result.insert(QStringLiteral("recorded"), static_cast<double>(recorder.recorded()));
@@ -422,8 +503,8 @@ void registerRecordLand(ControlRegistry& registry)
 					QJsonObject{{QStringLiteral("clip"),
 						firstClip.value(QStringLiteral("clip"))}},
 					true,
-					QStringLiteral("ProjectJournal (one Track checkpoint per touched track, "
-						"taken before the pass created its clips: Track::restoreState re-loads "
+					QStringLiteral("ProjectJournal (one composite checkpoint covering all touched "
+						"tracks, taken before the pass created its clips: Track::restoreState re-loads "
 						"the track's serialized clips, which is how the GUI's own clip "
 						"add/delete paths reverse themselves). The recorded inverse names the "
 						"FIRST clip of the pass, which clip.delete removes exactly; "

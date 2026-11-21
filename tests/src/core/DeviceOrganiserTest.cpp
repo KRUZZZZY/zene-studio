@@ -33,6 +33,7 @@
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "Mixer.h"
@@ -152,6 +153,29 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(changed.count(), 4);
 		QVERIFY(pluginorganiser::preferredFormat().isEmpty());
+	}
+
+	//! A call names one device - 'device' (dev-<n>) or 'key', not both. Naming both used to edit the key's entry and
+	//! ignore the device (namedKey preferred 'key'), so a plug-in the caller did not name was changed. Now it is refused
+	//! before anything is edited: no entry changes, no signal, no undo step.
+	void aDeviceAndAKeyAreNotBothAccepted()
+	{
+		QVERIFY(!controlDeviceCatalogue().isEmpty());  // dev-0 is a real device id
+		const QString namedKey = QStringLiteral("amplifier");
+		QVERIFY(pluginorganiser::entry(namedKey).isDefault());
+		QSignalSpy changed(pluginorganiser::notifier(), &pluginorganiser::Notifier::changed);
+		const auto stepCount = [] {
+			return revtest::run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray().size();
+		};
+		const int stepsBefore = stepCount();
+
+		const ControlResult both = run(QStringLiteral("plugin.organise"), {{QStringLiteral("key"), namedKey},
+			{QStringLiteral("device"), QStringLiteral("dev-0")}, {QStringLiteral("favourite"), true}});
+		QVERIFY(!both.ok);
+		QCOMPARE(both.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(pluginorganiser::entry(namedKey).isDefault());
+		QCOMPARE(changed.count(), 0);
+		QCOMPARE(stepCount(), stepsBefore);
 	}
 };
 

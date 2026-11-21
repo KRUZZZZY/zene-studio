@@ -25,6 +25,7 @@
 #ifndef LMMS_SCRIPT_ENGINE_H
 #define LMMS_SCRIPT_ENGINE_H
 
+#include <QFile>
 #include <QFileInfo>
 #include <QMutex>
 #include <QObject>
@@ -64,6 +65,79 @@ inline QString deepestExistingAncestor(const QString& path, const QString& root)
 		probe = QFileInfo(probe).absolutePath();
 	}
 	return probe;
+}
+
+/*! \brief Largest script source the host reads from a FILE, in bytes.
+ *
+ * The Lua memory budget (ScriptEngine::memoryBudget) bounds what the SCRIPT
+ * may hold inside its Lua state. The host's own copies of the source - the
+ * bytes read from the file and the QString they decode into - are made before
+ * Lua ever sees the script and are NOT charged to that budget, so the source
+ * is bounded independently by this fixed cap: a file above it is refused
+ * before it is read, regardless of the Lua budget.
+ */
+constexpr quint64 MaxScriptSourceBytes = 16ull * 1024ull * 1024ull;
+
+//! Bytes read per chunk while a script file is read (bounds the read buffer).
+constexpr qint64 ScriptSourceChunkBytes = 64 * 1024;
+
+/*! \brief Read a script file into \a source, refusing anything above \a limit.
+ *
+ * The file is refused on its SIZE before it is read, so a huge file never
+ * reaches the host's memory; the read that follows is bounded as well (a file
+ * that grew since the size check, or a stream of unknown size, is cut off at
+ * the limit). The conversion to \a source therefore never sees more than
+ * \a limit bytes.
+ *
+ * \return false when the file cannot be read or is above the limit; \a error
+ * then says which.
+ */
+inline bool readScriptSource(const QString& path, quint64 limit, QString& source, QString* error)
+{
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly))
+	{
+		if (error != nullptr)
+		{
+			*error = QStringLiteral("cannot open script '%1': %2").arg(path, file.errorString());
+		}
+		return false;
+	}
+	const qint64 size = file.size();
+	if (size > static_cast<qint64>(limit))
+	{
+		if (error != nullptr)
+		{
+			*error = QStringLiteral("script '%1' is too large: %2 bytes, the limit is %3 bytes")
+					.arg(path).arg(size).arg(limit);
+		}
+		return false;
+	}
+	QByteArray bytes;
+	if (size > 0)
+	{
+		bytes.reserve(static_cast<int>(size));
+	}
+	while (true)
+	{
+		const QByteArray chunk = file.read(ScriptSourceChunkBytes);
+		if (chunk.isEmpty())
+		{
+			break;
+		}
+		bytes += chunk;
+		if (static_cast<quint64>(bytes.size()) > limit)
+		{
+			if (error != nullptr)
+			{
+				*error = QStringLiteral("script '%1' is too large: the limit is %2 bytes")
+						.arg(path).arg(limit);
+			}
+			return false;
+		}
+	}
+	source = QString::fromUtf8(bytes);
+	return true;
 }
 
 //! Capacity of the script -> apply-side command queue, in commands.
@@ -123,8 +197,11 @@ struct ScriptCommand
  * longer name truncates it - and a truncation that lands mid-character splits a
  * UTF-8 sequence, leaving a corrupt name rather than merely a short one. Callers
  * that carry a user-visible string refuse instead of storing a damaged one.
+ * An embedded NUL is refused for the same reason: the payload is read back as a
+ * C string, so the bytes after it would be lost.
  *
- * \return false when \a text does not fit whole (the payload is left untouched).
+ * \return false when \a text does not fit whole or contains a NUL byte (the
+ *         payload is left untouched).
  */
 bool setCommandText(ScriptCommand& command, const QString& text);
 
@@ -143,6 +220,20 @@ public:
 
 	//! Producer side. Returns false when the queue is full (command dropped).
 	bool push(const ScriptCommand& command);
+
+	/*! Producer side, for the TWO commands one change needs: its undo
+	 *  checkpoint and its value write.
+	 *
+	 *  The pair is all-or-nothing. A queue with room for the checkpoint but
+	 *  not for the write would take the checkpoint and drop the write, and
+	 *  the change would leave an empty undo step behind - one that restores
+	 *  nothing. Both slots are reserved before either command is queued, so
+	 *  the change is either wholly queued or wholly refused.
+	 *
+	 *  \return false when the pair did not fit: both commands are dropped and
+	 *  counted, as two dropped commands are.
+	 */
+	bool push(const ScriptCommand& first, const ScriptCommand& second);
 
 	//! Consumer side: hands at most \a max commands to \a fn. Returns count.
 	std::size_t drain(const std::function<void(const ScriptCommand&)>& fn,
@@ -288,6 +379,19 @@ public:
 	bool popMidiInEvent(ScriptMidiEvent* event);
 	//! Number of queued MIDI-in events (worker thread only).
 	int midiInPending() const;
+	/*! MIDI-in events the ring buffer REFUSED because it was full.
+	 *
+	 * The buffer is a fixed-size ring and the policy is non-blocking: an
+	 * event that does not fit is dropped rather than stalling the MIDI
+	 * thread. A dropped event is a LOST event (a lost note-off leaves a note
+	 * sounding), so the loss is counted and the count is readable by the host
+	 * that feeds the buffer - the same shape as the command queue's
+	 * droppedCommandCount().
+	 */
+	quint64 droppedMidiInEventCount() const
+	{
+		return m_midiInDropped.load(std::memory_order_relaxed);
+	}
 
 	//! Parse a `--! lmms-api <major>.<minor>` header. Empty when absent.
 	static QString parseVersionHeader(const QString& source);
@@ -295,7 +399,24 @@ public:
 	static bool isCompatibleVersion(const QString& version, QString* reason = nullptr);
 
 	// --- used by the binding layer, which runs on the worker thread ---
-	void enqueue(const ScriptCommand& command);
+	/*! Queue \a command for the apply side.
+	 *
+	 *  \return false when the bounded queue was full and the command was
+	 *  DROPPED (spec section 4: the producer is never blocked, and the drop
+	 *  is counted). The caller owns the refusal - only it knows what the
+	 *  command was for, so only it can tell the script what was lost. The
+	 *  count is unchanged either way (droppedCommandCount()).
+	 */
+	bool enqueue(const ScriptCommand& command);
+
+	/*! Queue a checkpoint and a write as ONE reservation: both are queued, or
+	 *  neither is.
+	 *
+	 *  \return false when the queue had no room for BOTH: the change is
+	 *  refused whole, so it never leaves a checkpoint behind without its
+	 *  write (an empty undo step).
+	 */
+	bool enqueue(const ScriptCommand& first, const ScriptCommand& second);
 	//! Apply pending commands synchronously so reads see a consistent state.
 	void flushCommandsForRead();
 	void logMessage(const QString& message);
@@ -339,6 +460,20 @@ private:
 	ScriptCommandQueue m_commands;
 	LocklessRingBuffer<ScriptMidiEvent> m_midiIn;
 	LocklessRingBufferReader<ScriptMidiEvent> m_midiInReader;
+	//! MIDI-in events the ring buffer refused (it was full). Written by the
+	//! producer thread, read by anyone - the same atomic discipline the
+	//! command queue's drop counter uses.
+	std::atomic<quint64> m_midiInDropped{0};
+
+	//! Count a MIDI-in event the ring buffer refused: a write of zero means
+	//! the buffer was full and the event was dropped.
+	void countDroppedMidiInEvent(std::size_t written)
+	{
+		if (written == 0)
+		{
+			m_midiInDropped.fetch_add(1, std::memory_order_relaxed);
+		}
+	}
 
 	std::atomic<bool> m_running{false};
 	std::atomic<bool> m_autoApply{true};

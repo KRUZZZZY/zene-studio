@@ -59,6 +59,13 @@ LMMS_EXPORT void addClipRecordAction(QMenu* menu, Clip* clip);
  *  a clip that stays put). Each is one control.undo step. */
 LMMS_EXPORT void addClipTrimActions(QMenu* menu, Clip* clip);
 
+/*! Q050-036: a "Warp mode" submenu on an audio clip's menu - the five spec modes Beats, Tones,
+ *  Texture, Re-Pitch and Complex plus the WSOLA engine, each routed through the same warp.stretch
+ *  command the agent surface takes (so a refusal - a linear clip with no rate change, or a
+ *  Rubber Band-backed mode on a build without the library - is the command's own typed one), with
+ *  the clip's current mode checked. Nothing for a MIDI clip. Each change is one control.undo step. */
+LMMS_EXPORT void addClipWarpModeMenu(QMenu* menu, Clip* clip);
+
 /*! ED-085 (0.5.0 L07): on a step clip, the step under the menu - Step Chance (100/75/50/25 %,
  *  note.probability_set) and Step Ratchet (x2, x3, x4: the step selected, then note.ratchet on the
  *  selection). Nothing when that step is empty. Each is one control.undo step. */

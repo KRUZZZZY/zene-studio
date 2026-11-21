@@ -153,6 +153,7 @@ ControlResult handleRouteWrite(const QJsonObject& args, bool auxiliary)
 			QStringLiteral("the mixer refused to create %1 -> %2")
 				.arg(channelIdOf(ends.from), channelIdOf(ends.to)));
 	}
+	Engine::getSong()->setModified();
 
 	QJsonObject result = mixerRouteResult(ends, route, before);
 	const QString inverseOp = auxiliary ? QStringLiteral("mixer.send_to")
@@ -218,6 +219,7 @@ ControlResult handleSidechainWrite(const QJsonObject& args)
 				"never creates a circular wait, so the mixer refuses that one outright)")
 				.arg(channelIdOf(ends.from), channelIdOf(ends.to)));
 	}
+	Engine::getSong()->setModified();
 
 	QJsonObject result;
 	result.insert(QStringLiteral("from"), channelIdOf(ends.from));
@@ -269,6 +271,7 @@ ControlResult removeSidechainSend(Mixer* mixer, const RoutingEnds& ends)
 		},
 		[mixer, fromIndex, toIndex]() { mixer->deleteSidechainSend(fromIndex, toIndex); });
 	mixer->deleteSidechainSend(route);
+	Engine::getSong()->setModified();
 
 	QJsonObject result;
 	result.insert(QStringLiteral("removed"), true);
@@ -332,6 +335,7 @@ ControlResult removeRegularSend(Mixer* mixer, const RoutingEnds& ends)
 		},
 		[mixer, fromIndex, toIndex]() { mixer->deleteChannelSend(fromIndex, toIndex); });
 	mixer->deleteChannelSend(route);
+	Engine::getSong()->setModified();
 
 	QJsonObject result;
 	result.insert(QStringLiteral("removed"), true);

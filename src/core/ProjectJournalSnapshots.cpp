@@ -179,6 +179,7 @@ void ProjectJournal::pruneSnapshots()
 void ProjectJournal::pushLoadedStep( std::function<void()> undo, std::function<void()> redo,
 	Snapshot before )
 {
+	const StackChangeNotice stackNotice( this );
 	if( !undo ) { return; }
 	m_redoCheckPoints.clear();
 	CheckPoint step = actionCheckPoint( std::move( undo ), std::move( redo ) );
@@ -194,11 +195,13 @@ void ProjectJournal::pushLoadedStep( std::function<void()> undo, std::function<v
 
 ProjectJournal::DetachedHistory ProjectJournal::detachHistory()
 {
+	const StackChangeNotice stackNotice( this );
 	DetachedHistory history;
 	history.undo = std::move( m_undoCheckPoints );
 	history.redo = std::move( m_redoCheckPoints );
 	history.retainedBytes = m_retainedBytes;
 	history.evicted = m_evicted;
+	history.newestEvictedSerial = m_newestEvictedSerial;
 	history.coalesced = m_coalesced;
 	m_undoCheckPoints.clear();
 	m_redoCheckPoints.clear();
@@ -210,10 +213,12 @@ ProjectJournal::DetachedHistory ProjectJournal::detachHistory()
 
 void ProjectJournal::reattachHistory( DetachedHistory && history )
 {
+	const StackChangeNotice stackNotice( this );
 	m_undoCheckPoints = std::move( history.undo );
 	m_redoCheckPoints = std::move( history.redo );
 	m_retainedBytes = history.retainedBytes;
 	m_evicted = history.evicted;
+	m_newestEvictedSerial = history.newestEvictedSerial;
 	m_coalesced = history.coalesced;
 }
 

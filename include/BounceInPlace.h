@@ -40,6 +40,7 @@ class QTemporaryDir;
 namespace lmms
 {
 
+class MixerChannel;
 class Track;
 
 /*! The offline render behind bounce-in-place and freeze.
@@ -130,6 +131,13 @@ public:
 	static Result renderTrack(Track* track, const QString& outPath, const Range& range,
 			int sampleRate = 44100);
 
+	/*! Q050-124: renders mixer bus @a bus's own output - its routed inputs through its trim, inserts, VCA and pan,
+	 *  i.e. the signal just before its fader - to @a outPath (32-bit float WAV at the engine's rate). The child
+	 *  render captures that channel instead of the master (`render ... --capture-channel <id>`), so the session is
+	 *  not modified. Refuses a channel that is not a bus, a frozen bus, a bus nothing is routed to and a project
+	 *  whose tempo map is in force. Defined in MixerBusFreeze.cpp. */
+	static Result renderBus(MixerChannel* bus, const QString& outPath);
+
 	/*! 0.5.0 L12 (ED-205): the same render with every track of @a tracks unmuted - their summed
 	 *  contribution to the mix (a selection bounced to one file). The tracks' own state decides
 	 *  their sends and pans, exactly as for one track. */
@@ -155,6 +163,10 @@ public:
 	//! Whether the output path uses the current platform's absolute-path syntax.
 	static bool isAbsoluteOutputPath(const QString& outPath);
 
+	//! Whether \a target and \a source name one file: the same resolved path, or the same device and inode
+	//! (a symlink or a hard link). A name that does not exist names no file.
+	static bool namesTheSameFile(const QString& source, const QString& target);
+
 	//! The whole-track bounce: the same call with an empty range. Declared here
 	//! and defined in the .cpp because a default argument of `Range{}` is
 	//! ill-formed for a NESTED class (its default member initializers are not
@@ -174,6 +186,10 @@ public:
 	//! Frames in a WAV file, -1 when it is not a readable WAV. Used for the
 	//! `frames` a render reports, measured from the file rather than asserted.
 	static qint64 wavFrameCount(const QString& path);
+
+	//! Frames from tick @a from to @a to, following the tempo map when it is active and non-empty.
+	static double framesBetweenTicks(tick_t from, tick_t to, float framesPerTick, const TempoMap& map,
+			int globalTempo, int sampleRate);
 
 	//! sha256 of a file, empty when it cannot be read.
 	static QString sha256OfFile(const QString& path);

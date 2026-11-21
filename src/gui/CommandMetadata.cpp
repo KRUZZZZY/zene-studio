@@ -30,6 +30,7 @@
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QLocale>
 #include <QMessageBox>
 #include <QSet>
 
@@ -38,6 +39,7 @@
 #include "ControlReversibility.h"
 #include "GuiApplication.h"
 #include "ScriptCommandBridge.h"
+#include "UnattendedRun.h"
 
 namespace lmms::gui
 {
@@ -176,12 +178,14 @@ QStringList wordsOf(const QString& text)
 	return text.split(QLatin1Char('_'), Qt::SkipEmptyParts);
 }
 
-//! A whole number in full (a tick, a size - never "1.23457e+06"), else as Qt writes it.
+//! A whole number in full (a tick, a size - never "1.23457e+06"), else the shortest text that reads back as the same
+//! number: a value typed into a form or taken from a default must not change on its way to the command.
 QString numberText(double number)
 {
 	constexpr double MaxExactWhole = 9007199254740992.0;  // 2^53: every whole number below it is exact in a double
 	const bool whole = std::abs(number) < MaxExactWhole && number == std::floor(number);
-	return whole ? QString::number(static_cast<qint64>(number)) : QString::number(number);
+	if (whole) { return QString::number(static_cast<qint64>(number)); }
+	return QString::number(number, 'g', QLocale::FloatingPointShortest);
 }
 
 bool isPrimitiveArray(const QJsonArray& array)
@@ -430,17 +434,34 @@ QString summaryValue(const QString& key, const QJsonValue& value)
 QString resultSummary(const QJsonObject& result, int maxLines)
 {
 	QStringList lines;
+	bool truncated = false;
+	const auto add = [&](const QString& key, const QJsonValue& value) {
+		if (lines.size() >= maxLines) { truncated = true; return; }
+		lines.append(QStringLiteral("%1: %2").arg(fieldLabel(key), summaryValue(key, value)));
+	};
+	// A nested "summary" object IS the answer in brief (the accessibility audit's per-check counts): read its
+	// entries first, as lines of their own. The notice is capped, and the audit's bookkeeping fields would
+	// otherwise push the five counts past the cap and show "Summary: 5 value(s)" instead.
+	const QJsonValue summary = result.value(QStringLiteral("summary"));
+	if (summary.isObject())
+	{
+		const QJsonObject counts = summary.toObject();
+		for (auto it = counts.begin(); it != counts.end(); ++it) { add(it.key(), it.value()); }
+	}
 	for (auto it = result.begin(); it != result.end(); ++it)
 	{
-		if (lines.size() >= maxLines) { lines.append(QStringLiteral("…")); break; }
-		lines.append(QStringLiteral("%1: %2").arg(fieldLabel(it.key()), summaryValue(it.key(), it.value())));
+		if (it.key() == QLatin1String("summary") && it.value().isObject()) { continue; }
+		add(it.key(), it.value());
 	}
+	if (truncated) { lines.append(QStringLiteral("…")); }
 	return lines.isEmpty() ? tr("Done.") : lines.join(QLatin1Char('\n'));
 }
 
 bool confirmAction(QWidget* parent, const QString& label, const QString& target, const QString& caution)
 {
-	if (ControlRegistry::instance()->isHeadless() || getGUI() == nullptr) { return true; }
+	// An agent instance asks no modal question even on a visible display (A13);
+	// the registry's headless flag is only about the display.
+	if (ControlRegistry::instance()->isHeadless() || isAgentInstance() || getGUI() == nullptr) { return true; }
 	const QString what = target.isEmpty() ? label : tr("%1 \"%2\"").arg(label, target);
 	const QString question = caution.isEmpty() ? tr("%1 - are you sure?").arg(what)
 		: tr("%1 - %2 Are you sure?").arg(what, caution);

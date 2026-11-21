@@ -141,7 +141,7 @@ PhaseScopeWindow::PhaseScopeWindow(QWidget* parent) :
 	layout->addWidget(m_correlation);
 	layout->addWidget(m_correlationBar);
 	fillChannels();
-	connect(m_channels, &QComboBox::activated, this, [this](int row) { setChannel(indexOfId(m_channels->itemData(row).toInt())); });
+	connect(m_channels, QOverload<int>::of(&QComboBox::activated), this, [this](int row) { setChannel(indexOfId(m_channels->itemData(row).toInt())); });
 	m_sinceNew.start();
 	auto* timer = new QTimer(this);
 	connect(timer, &QTimer::timeout, this, [this] { refresh(); });

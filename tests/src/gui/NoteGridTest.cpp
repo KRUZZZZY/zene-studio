@@ -157,6 +157,8 @@ private slots:
 		QCOMPARE(g.rows().front(), 127);
 		QCOMPARE(g.rowOfKey(127), 0);
 		QCOMPARE(g.rowOfKey(0), 127);
+		g.setRowHeight(64);
+		QCOMPARE(g.rowHeight(), 40);  // the larger cap belongs to accessible mode only
 		g.setRowHeight(10);
 		g.setViewport(400, 300);
 		QCOMPARE(g.keyAtY(5), 127);

@@ -352,7 +352,7 @@ QJsonObject ScriptClock::scheduleState(const QString& id) const
 		out.insert(QStringLiteral("hook"), entry.hook);
 		out.insert(QStringLiteral("budget"), entry.budget);
 		out.insert(QStringLiteral("source"), entry.source);
-		out.insert(QStringLiteral("source_bytes"), entry.source.size());
+		out.insert(QStringLiteral("source_bytes"), entry.source.toUtf8().size());
 		return out;
 	}
 	return QJsonObject();
@@ -360,7 +360,13 @@ QJsonObject ScriptClock::scheduleState(const QString& id) const
 
 QString ScriptClock::newScheduleId()
 {
-	return QStringLiteral("lc-%1").arg(m_nextId++);
+	QString id;
+	do
+	{
+		id = QStringLiteral("lc-%1").arg(m_nextId++);
+	}
+	while (hasSchedule(id));
+	return id;
 }
 
 void ScriptClock::runEntry(ScriptSchedule& entry, int count, qint64 pos)
@@ -460,7 +466,7 @@ QJsonObject ScriptClock::stateJson() const
 		one.insert(QStringLiteral("id"), entry.id);
 		one.insert(QStringLiteral("hook"), entry.hook);
 		one.insert(QStringLiteral("budget"), entry.budget);
-		one.insert(QStringLiteral("source_bytes"), entry.source.size());
+		one.insert(QStringLiteral("source_bytes"), entry.source.toUtf8().size());
 		one.insert(QStringLiteral("fires"), static_cast<qint64>(entry.fires));
 		one.insert(QStringLiteral("errors"), static_cast<qint64>(entry.errors));
 		one.insert(QStringLiteral("budget_exceeded"), static_cast<qint64>(entry.budgetExceeded));

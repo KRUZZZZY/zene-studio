@@ -24,6 +24,10 @@
 
 #include "ParameterControls.h"
 
+#include <algorithm>
+
+#include <QDebug>
+
 #include "AutomatableModel.h"
 #include "ParameterGridDialog.h"
 
@@ -38,6 +42,16 @@ ParameterControls::ParameterControls(Effect* effect, const QString& nodeName) :
 
 void ParameterControls::addParameter(AutomatableModel* model, const QString& key)
 {
+	// A key is the model's name in the save file: a second model under it would overwrite the first one's
+	// saved value, and a load would give both the same value. The first registration keeps the key.
+	const bool taken = std::any_of(m_parameters.begin(), m_parameters.end(),
+		[&key](const auto& parameter) { return parameter.second == key; });
+	if (taken)
+	{
+		qWarning("ParameterControls: key '%s' is already registered; the second parameter is neither saved nor loaded",
+			qUtf8Printable(key));
+		return;
+	}
 	m_parameters.emplace_back(model, key);
 }
 

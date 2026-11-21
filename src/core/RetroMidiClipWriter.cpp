@@ -131,14 +131,15 @@ void closeOpenNotes(MidiClip* clip, const std::vector<OpenNote>& open, tick_t wi
 
 
 RetroMidiClipWrite writeWindowToClip(MidiClip* clip, const RetroMidiEvent* events,
-	std::size_t count, tick_t windowStartTick, tick_t windowEndTick)
+	std::size_t count, tick_t windowStartTick, std::optional<tick_t> windowEndTick)
 {
 	RetroMidiClipWrite result;
 	result.windowStart = windowStartTick;
 	result.windowEnd = windowStartTick;
 	if (clip == nullptr || events == nullptr || count == 0) { return result; }
 
-	result.windowEnd = windowEndOf(events, count, std::max(windowStartTick, windowEndTick));
+	result.windowEnd = windowEndOf(events, count,
+		std::max(windowStartTick, windowEndTick.value_or(windowStartTick)));
 
 	// Open notes, oldest first. Matching is per (source, channel, key) and FIFO,
 	// so two strikes of one key (a repeated note whose first release is late)

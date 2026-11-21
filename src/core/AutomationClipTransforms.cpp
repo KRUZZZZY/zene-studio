@@ -436,10 +436,11 @@ void simplifyAtThinningAnchors(const std::vector<std::pair<int, float>>& points,
 
 } // namespace
 
-float AutomationClip::bendValueAt(timeMap::const_iterator v, int offset) const
+float AutomationClip::bendValueAt(timeMap::const_iterator v, std::int64_t offset) const
 {
 	const auto next = std::next(v);
-	const double t = std::clamp(static_cast<double>(offset) / std::max(1, POS(next) - POS(v)), 0.0, 1.0);
+	const std::int64_t tickSpan = static_cast<std::int64_t>(POS(next)) - POS(v);
+	const double t = std::clamp(static_cast<double>(offset) / std::max<std::int64_t>(1, tickSpan), 0.0, 1.0);
 	const double bend = v.value().bend();
 	const double shaped = bend >= 0.0 ? std::pow(t, 1.0 + 4.0 * bend) : 1.0 - std::pow(1.0 - t, 1.0 - 4.0 * bend);
 	return static_cast<float>(OUTVAL(v) + (INVAL(next) - OUTVAL(v)) * shaped);

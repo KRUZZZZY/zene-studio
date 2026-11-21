@@ -35,6 +35,7 @@
 #include "AutomationEditor.h"
 #include "AutomationClip.h"
 #include "ClipLinks.h"
+#include "AudioEngine.h"
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "ProjectIds.h"
@@ -93,7 +94,8 @@ Clip::Clip(const Clip& other):
 	m_warp(other.m_warp),
 	m_tempoMode(other.m_tempoMode),
 	m_sourceTempo(other.m_sourceTempo),
-	m_stretchMode(other.m_stretchMode),
+	m_stretchMode(other.m_stretchMode.load(std::memory_order_relaxed)),
+	m_transientRate(other.m_transientRate.load(std::memory_order_relaxed)),
 	m_track(other.m_track),
 	m_name(other.m_name),
 	// A COPY IS A NEW CLIP: it gets its own id and does NOT inherit the
@@ -114,6 +116,8 @@ Clip::Clip(const Clip& other):
 	m_activeTakeLane(other.m_activeTakeLane.load(std::memory_order_relaxed)),
 	m_linkId(other.m_linkId)
 {
+	// Before the track holds this clip: a pass must never find the copy without its generation.
+	if (!m_warp.empty()) { m_warpLive.publish(m_warp); }
 	if (getTrack())
 	{
 		getTrack()->addClip(this);
@@ -242,6 +246,14 @@ void Clip::setId( int id )
 	}
 	m_id = id;
 	ProjectIds::observe( id );
+}
+
+void Clip::setClipEdits(const ClipEdits& edits)
+{
+	if (m_edits == edits) { return; }
+	m_edits = edits;
+	emit clipEditsChanged();
+	emit dataChanged();
 }
 
 /*! \brief Destroy a Clip
@@ -455,7 +467,7 @@ void Clip::saveClipEdits(QDomElement& element) const
 	}
 	// The group is additive clip state: ordinary clips keep the old bytes, and
 	// the track-owned TakeLaneModel persists the active lane and user-choice bit.
-	if (m_takeGroupId > 0)
+	if (m_takeGroupId >= 0)
 	{
 		element.setAttribute("takegroup", m_takeGroupId);
 	}
@@ -513,6 +525,9 @@ void Clip::saveClipEdits(QDomElement& element) const
 	{
 		element.setAttribute("gainenv", envelopeToText(m_edits));
 	}
+	// Q050-125: the clip's polarity, written only when it is inverted (I9, additive): every project
+	// written before this loads with polarity off and renders exactly as it did.
+	if (m_edits.hasPolarity()) { element.setAttribute("invert", "1"); }
 }
 
 
@@ -543,8 +558,9 @@ void Clip::saveWarp(QDomDocument& doc, QDomElement& element) const
 	{
 		return;
 	}
+	const TransientRepeatRate rate = TransientRepeatRate::unpack(m_transientRate.load(std::memory_order_acquire));
 	if (!m_warp.empty() || m_tempoMode != WarpTempoMode::FollowProject
-		|| m_stretchMode != WarpStretchMode::Resample)
+		|| m_stretchMode != WarpStretchMode::Resample || !rate.isDefault())
 	{
 		QDomElement warp = doc.createElement( "warp" );
 		warp.setAttribute( "mode", m_tempoMode == WarpTempoMode::SourceTempo ? "source" : "follow" );
@@ -555,14 +571,30 @@ void Clip::saveWarp(QDomDocument& doc, QDomElement& element) const
 		// Row 30 of the 0.3.0 list: how the rate change is rendered. Written
 		// only when it is not the historical resampling, so a clip that never
 		// chose the stretch serialises byte for byte as #597 left it.
-		if (m_stretchMode == WarpStretchMode::PreservePitch)
+		//
+		// The FILE vocabulary is the one the two older modes have always used:
+		// "wsola" (PreservePitch) and "rubberband" (Complex) keep every file
+		// this and older builds wrote mutually readable, so only the three
+		// genuinely new modes introduce new tokens (Q050-036). The wire and UI
+		// vocabulary is the canonical one (warpStretchModeName); both are read
+		// back by warpStretchModeFromName.
+		if (m_stretchMode != WarpStretchMode::Resample)
 		{
-			warp.setAttribute( "stretch", "wsola" );
+			switch (m_stretchMode)
+			{
+			case WarpStretchMode::PreservePitch: warp.setAttribute("stretch", "wsola"); break;
+			case WarpStretchMode::Complex: warp.setAttribute("stretch", "rubberband"); break;
+			case WarpStretchMode::Beats: warp.setAttribute("stretch", "beats"); break;
+			case WarpStretchMode::Tones: warp.setAttribute("stretch", "tones"); break;
+			case WarpStretchMode::Texture: warp.setAttribute("stretch", "texture"); break;
+			case WarpStretchMode::Repeat: warp.setAttribute("stretch", "repeat"); break;
+			case WarpStretchMode::Gate: warp.setAttribute("stretch", "gate"); break;
+			case WarpStretchMode::Resample: break;
+			}
 		}
-		else if (m_stretchMode == WarpStretchMode::RubberBand)
-		{
-			warp.setAttribute( "stretch", "rubberband" );
-		}
+		// Q050-162: the Repeat / Gate interval ("1/8", "125ms"), only when it is
+		// not the default, so every file that never set it is unchanged.
+		if (!rate.isDefault()) { warp.setAttribute("repeat_rate", rate.name()); }
 		for (const auto& marker : m_warp.all())
 		{
 			QDomElement node = doc.createElement( "marker" );
@@ -686,6 +718,9 @@ void Clip::loadClipEdits(const QDomElement& element)
 	}
 	edits.snapTicks = std::max(0, element.attribute("snappoint", "0").toInt());
 	loadSpeed(element, &edits);
+	// Q050-125: polarity is reset by absence, so every file written before this attribute loads
+	// non-inverted - the same additive rule as the gain and the envelope above.
+	edits.polarityInverted = element.attribute("invert", "0").toInt() != 0;
 
 	m_edits = edits;
 	// Reset-on-absence for `lane` and `link`: both defaults live once in
@@ -696,7 +731,10 @@ void Clip::loadClipEdits(const QDomElement& element)
 	// it restores "unlinked" exactly - the inverse of a first link is a real
 	// inverse rather than a no-op.
 	m_laneIndex = std::max(0, element.attribute("lane", clipRestoreDefault("lane")).toInt());
-	m_takeGroupId = std::max(0, element.attribute("takegroup", clipRestoreDefault("takegroup")).toInt());
+	bool takeGroupOk = false;
+	const int takeGroupId = element.attribute("takegroup", clipRestoreDefault("takegroup")).toInt(&takeGroupOk);
+	m_takeGroupId = element.hasAttribute("takegroup") && takeGroupOk && takeGroupId >= 0
+		? takeGroupId : -1;
 	m_activeTakeLane.store(-1, std::memory_order_relaxed); // rebound from TakeLaneModel after load
 	/* An id read from a file is OBSERVED by the project-scoped counter
 	 * (SPEC-stable-ids.md R3), so a group number that a project already uses can
@@ -749,35 +787,89 @@ void Clip::loadWarp(const QDomElement& element)
 			markers[count++] = { node.attribute("src", "0").toULongLong(),
 				node.attribute("pos", "0").toInt() };
 		}
+		// The engine keeps the first MaxMarkers entries (the loop above). The
+		// rest are not loaded, so the next save would not write them: say so
+		// instead of shrinking the map silently (BUG 10, cluster new-p16-325).
+		if (const int stored = warpNode.elementsByTagName("marker").count(); stored > WarpMarkers::MaxMarkers)
+		{
+			Engine::getSong()->collectError(tr("Warp markers in the project file: %1 found, "
+				"but this build keeps %2; the other %3 were left out and will not be saved again.")
+				.arg(stored).arg(WarpMarkers::MaxMarkers).arg(stored - WarpMarkers::MaxMarkers));
+		}
 
 		m_tempoMode = warpNode.attribute("mode", "follow") == "source"
 			? WarpTempoMode::SourceTempo : WarpTempoMode::FollowProject;
 		m_sourceTempo = warpNode.attribute("tempo", "0").toFloat();
-		// Row 30: absent means resampling, which is what every file written
-		// before this attribute existed asks for.
-		// Owner decision 12 adds "rubberband"; any other value is the default.
-		const QString stretch = warpNode.attribute("stretch", "resample");
-		m_stretchMode = stretch == "wsola" ? WarpStretchMode::PreservePitch
-			: stretch == "rubberband" ? WarpStretchMode::RubberBand
-			: WarpStretchMode::Resample;
+		// Row 30: absent means varispeed resampling, which is what every file
+		// written before this attribute existed asks for. The vocabulary is
+		// the FILE one ("wsola", "rubberband") plus the canonical mode names
+		// and the "resample" alias — all through one mapping, so a name the
+		// engine does not know is the default, not an error (owner decision 12).
+		WarpStretchMode mode = WarpStretchMode::Resample;
+		warpStretchModeFromName(warpNode.attribute("stretch", "resample"), &mode);
+		// Q050-162: absent (or unreadable) is the default interval, before the
+		// mode is published so a handle that sees a Repeat mode sees its rate.
+		TransientRepeatRate rate;
+		TransientRepeatRate::fromName(warpNode.attribute("repeat_rate"), &rate);
+		m_transientRate.store(rate.pack(), std::memory_order_release);
+		// Voices first, mode second: a render thread that sees the mode finds its pool.
+		prepareWarpStretchMode(mode);
+		m_stretchMode.store(mode, std::memory_order_release);
 
-		m_warp.clear();
-		if (count > 0 && !m_warp.set(std::span<const WarpMarker>(markers.data(), count)))
+		WarpMarkers loaded;
+		if (count > 0 && !loaded.set(std::span<const WarpMarker>(markers.data(), count)))
 		{
 			Engine::getSong()->collectError(tr("Warp markers in the project file "
 				"are not strictly increasing; they were ignored."));
 		}
+		publishWarp(loaded);
 	}
 	else
 	{
 		// Reset-on-absence: see the function comment — this branch IS the
 		// negative control's subject (neuter it and the two tests named above
 		// fail, because a restored checkpoint would keep its warp).
-		m_warp.clear();
+		publishWarp(WarpMarkers{});
 		m_tempoMode = WarpTempoMode::FollowProject;
 		m_sourceTempo = 0.0f;
-		m_stretchMode = WarpStretchMode::Resample;
+		m_stretchMode.store(WarpStretchMode::Resample, std::memory_order_release);
+		m_transientRate.store(TransientRepeatRate{}.pack(), std::memory_order_release);
 	}
+}
+
+void Clip::publishWarp(const WarpMarkers& map)
+{
+	// Only this (control) thread touches m_warp. An old project's clip has no markers and publishes nothing on load.
+	if (m_warp == map) { return; }
+	m_warp = map;
+	m_warpLive.publish(m_warp);
+}
+
+namespace
+{
+const WarpMarkers s_noWarp{};
+thread_local const Clip* s_passClip = nullptr;
+thread_local const WarpMarkers* s_passMap = nullptr;
+} // namespace
+
+Clip::WarpPassScope::WarpPassScope(const Clip& clip, const WarpSnapshot& snapshot) noexcept :
+	m_previousClip(s_passClip),
+	m_previousMap(s_passMap)
+{
+	s_passClip = &clip;
+	s_passMap = snapshot.map();
+}
+
+Clip::WarpPassScope::~WarpPassScope()
+{
+	s_passClip = m_previousClip;
+	s_passMap = m_previousMap;
+}
+
+const WarpMarkers& Clip::passWarp() const noexcept
+{
+	if (s_passClip != this) { return m_warp; }
+	return s_passMap != nullptr ? *s_passMap : s_noWarp;
 }
 
 void Clip::setName(const QString& name)

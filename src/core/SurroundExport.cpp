@@ -49,12 +49,12 @@ struct Speaker
 //! By surround::Role (L R C LFE Ls Rs Lrs Rrs). LCR, quad and 5.1 put Ls/Rs on the back pair, as
 //! Microsoft's KSAUDIO_SPEAKER_QUAD / _5POINT1 do (mask 0x33 / 0x3F); 7.1 has both pairs, Lrs/Rrs at
 //! the back and Ls/Rs at the sides (KSAUDIO_SPEAKER_7POINT1_SURROUND, mask 0x63F).
-constexpr std::array<Speaker, surround::MaxChannels> BackSurrounds{{
+constexpr std::array<Speaker, surround::MaxSpeakers> BackSurrounds{{
 	{SF_CHANNEL_MAP_LEFT, 0x1}, {SF_CHANNEL_MAP_RIGHT, 0x2}, {SF_CHANNEL_MAP_CENTER, 0x4}, {SF_CHANNEL_MAP_LFE, 0x8},
 	{SF_CHANNEL_MAP_REAR_LEFT, 0x10}, {SF_CHANNEL_MAP_REAR_RIGHT, 0x20},
 	{SF_CHANNEL_MAP_REAR_LEFT, 0x10}, {SF_CHANNEL_MAP_REAR_RIGHT, 0x20},
 }};
-constexpr std::array<Speaker, surround::MaxChannels> SideSurrounds{{
+constexpr std::array<Speaker, surround::MaxSpeakers> SideSurrounds{{
 	{SF_CHANNEL_MAP_LEFT, 0x1}, {SF_CHANNEL_MAP_RIGHT, 0x2}, {SF_CHANNEL_MAP_CENTER, 0x4}, {SF_CHANNEL_MAP_LFE, 0x8},
 	{SF_CHANNEL_MAP_SIDE_LEFT, 0x200}, {SF_CHANNEL_MAP_SIDE_RIGHT, 0x400},
 	{SF_CHANNEL_MAP_REAR_LEFT, 0x10}, {SF_CHANNEL_MAP_REAR_RIGHT, 0x20},
@@ -62,6 +62,8 @@ constexpr std::array<Speaker, surround::MaxChannels> SideSurrounds{{
 
 Speaker speakerAt(surround::Format format, int channel)
 {
+	if (format == surround::Format::Mono) { return {SF_CHANNEL_MAP_MONO, 0x4}; }  // SPEAKER_FRONT_CENTER
+	if (surround::isDiscrete(format)) { return {SF_CHANNEL_MAP_INVALID, 0}; }  // no speaker positions
 	const auto& table = format == surround::Format::Surround71 ? SideSurrounds : BackSurrounds;
 	return table[static_cast<std::size_t>(surround::roleOf(format, channel))];
 }
@@ -139,8 +141,12 @@ QString refusal(const OutputSettings& settings, bool wave)
 	return QString();
 }
 
-surround::Format formatForChannels(int channels)
+surround::Format formatForChannels(int channels, surround::Format preferred)
 {
+	if (channels == static_cast<int>(DEFAULT_CHANNELS)) { return surround::Format::Stereo; }  // a plain stereo file
+	// The selected master keeps its identity even when a named layout has the same channel count:
+	// discrete-6 must stay discrete-6 (mask 0), not become 5.1.
+	if (preferred != surround::Format::Stereo && surround::channelCount(preferred) == channels) { return preferred; }
 	for (int f = 1; f < surround::FormatCount; ++f)
 	{
 		const auto format = static_cast<surround::Format>(f);

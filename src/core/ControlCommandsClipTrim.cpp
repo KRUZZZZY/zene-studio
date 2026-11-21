@@ -51,12 +51,15 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <limits>
+
 #include <QJsonObject>
 
 #include "Clip.h"
 #include "ControlClipFrames.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "SampleClip.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -131,8 +134,23 @@ bool planTrim(const ClipRef& ref, const QJsonObject& args, TrimPlan* plan, Contr
 	// offset moves by the same delta as the clip's start. srcin frames and `off`
 	// ticks both fold into SampleClip::sourceFrameAt's single origin, which is why
 	// moving the two together holds the audio still on the timeline.
-	plan->offset = ref.clip->startTimeOffset().getTicks() + (oldStart - start);
+	const qint64 offset = static_cast<qint64>(ref.clip->startTimeOffset().getTicks())
+		+ static_cast<qint64>(oldStart) - start;
+	if (offset < std::numeric_limits<tick_t>::min() || offset > std::numeric_limits<tick_t>::max())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("the trim would put the clip's source offset at %1, outside the tick range")
+				.arg(offset));
+		return false;
+	}
+	plan->offset = static_cast<tick_t>(offset);
 	return true;
+}
+
+bool frameTrimOptionRequested(const QJsonObject& args)
+{
+	return args.contains(QStringLiteral("start_frames")) || args.contains(QStringLiteral("end_frames"))
+		|| args.contains(QStringLiteral("zero_crossing"));
 }
 
 void registerClipTrim(ControlRegistry& registry)
@@ -175,7 +193,13 @@ void registerClipTrim(ControlRegistry& registry)
 		ControlResult error;
 		ClipRef ref;
 		if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
-		if (clipframes::wanted(ref, args)) { return clipframes::trim(ref, args); }  // ED-021
+		const bool frameTrimWanted = clipframes::wanted(ref, args);
+		if (dynamic_cast<SampleClip*>(ref.clip) == nullptr && frameTrimOptionRequested(args))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("frame-specific trim options require a sample clip"));
+		}
+		if (frameTrimWanted) { return clipframes::trim(ref, args); }  // ED-021
 
 		TrimPlan plan;
 		const QJsonObject before = edgeState(ref);

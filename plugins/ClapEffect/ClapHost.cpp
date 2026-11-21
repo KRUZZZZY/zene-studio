@@ -188,10 +188,11 @@ auto HostedPlugin::load(const QString& modulePath, const QString& pluginId, QStr
 	unload();
 	auto& impl = *m_impl;
 
-	// The module ladder (open -> clap_entry -> version -> init -> factory) is
-	// ClapLoader.cpp's job now, and every step of it leaves a TYPED answer in
-	// impl.status: LibraryUnavailable / SymbolMissing / VersionUnsupported /
-	// EntryInitFailed / FactoryMissing. The sentence it carries is unchanged.
+	// The module ladder (open -> clap_entry -> callbacks -> version -> init ->
+	// factory) is ClapLoader.cpp's job now, and every step of it leaves a TYPED
+	// answer in impl.status: LibraryUnavailable / SymbolMissing / EntryInvalid /
+	// VersionUnsupported / EntryInitFailed / FactoryMissing. The sentence it
+	// carries is unchanged.
 	if (!loader::load(modulePath, impl.loaded, impl.status))
 	{
 		setError(error, impl.status.message());
@@ -270,8 +271,8 @@ auto HostedPlugin::load(const QString& modulePath, const QString& pluginId, QStr
 		(impl.layout.inputs > 0 || impl.info.isInstrument);
 	if (!usableAudio)
 	{
-		impl.status = {loader::Code::NoAudioPorts,
-			QStringLiteral("'%1' has no usable audio ports").arg(pluginId)};
+		impl.status = {loader::Code::NoAudioPorts, QStringLiteral("'%1' has no usable audio ports (%2 input, %3 output "
+			"channels; a note-only plug-in has none)").arg(pluginId).arg(impl.layout.inputs).arg(impl.layout.outputs)};
 		setError(error, impl.status.message());
 		unload();
 		return false;
@@ -380,6 +381,7 @@ auto HostedPlugin::process(const float* const* inputs, float* const* outputs, in
 		const auto revision = impl.paramSlots[i].revision.load(std::memory_order_relaxed);
 		if (revision == impl.lastSeenRevision[i]) { continue; }
 		impl.lastSeenRevision[i] = revision;
+		impl.paramSlots[i].delivered.store(revision, std::memory_order_relaxed);
 		auto& event = impl.paramEvents[eventCount];
 		event = {};
 		event.header.size = sizeof(clap_event_param_value_t);

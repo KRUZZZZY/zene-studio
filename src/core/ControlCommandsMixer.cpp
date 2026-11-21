@@ -26,10 +26,12 @@
 
 #include "ControlRegistry.h"
 
+#include "ControlMixerSupport.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "MixerSurround.h"
 
 namespace lmms
 {
@@ -95,9 +97,22 @@ QJsonObject channelState(MixerChannel* channel)
 		send.insert(QStringLiteral("to"), control::channelIdOf(route->receiver()));
 		send.insert(QStringLiteral("amount"), static_cast<double>(route->amount()->value()));
 		send.insert(QStringLiteral("pre_fader"), route->preFader());
+		control::addRouteChannels(&send, *route);  // Q050-155.2: only when a side is not stereo
 		sends.append(send);
 	}
 	entry.insert(QStringLiteral("sends"), sends);
+	// A non-stereo channel also reads back its layout: stereo projects keep the shape mixer.get_state has
+	// always had, and a channel set to mono or discrete-N says how many channels it has and how they are
+	// addressed. A discrete layout has no speaker roles; its channels are the indices 1..N.
+	const surround::Format format = channel->m_surround.format();
+	if (channel->m_surround.isSurround())
+	{
+		entry.insert(QStringLiteral("format"), surround::formatName(format));
+		entry.insert(QStringLiteral("channels"), surround::channelCount(format));
+		entry.insert(QStringLiteral("speakers"), QJsonArray::fromStringList(surround::speakerNames(format)));
+		entry.insert(QStringLiteral("channel_roles"), QJsonArray::fromStringList(surround::channelLabels(format)));
+		entry.insert(QStringLiteral("discrete"), surround::isDiscrete(format));
+	}
 	return entry;
 }
 

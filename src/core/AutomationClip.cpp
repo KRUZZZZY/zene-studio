@@ -24,11 +24,15 @@
  *
  */
 
+#include <bit>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "AutomationRamp.h"
 #include "AutomationClip.h"
+#include "AutomationLatency.h"
 
 #include "AudioEngine.h"
 
@@ -40,15 +44,77 @@
 #include "Note.h"
 #include "PatternStore.h"
 #include "ProjectJournal.h"
+#include "RealtimeScope.h"
 #include "Song.h"
 
 
 namespace lmms
 {
 
+void queueAutomationClipWrite(AutomationClip* clip, const TimePos& time, float value) noexcept;
+
 int AutomationClip::s_quantization = 1;
 const float AutomationClip::DEFAULT_MIN_VALUE = 0;
 const float AutomationClip::DEFAULT_MAX_VALUE = 1;
+
+std::atomic<std::int64_t> AutomationClip::s_pendingWriteTotal{ 0 };
+
+
+namespace
+{
+
+/*! One pending write, packed into a single 64-bit word: the tick in the high
+ *  half, the value's bit pattern in the low half. A tick is a tick_t (32 bits)
+ *  and a value is a float (32 bits), so both fit exactly - and because the
+ *  whole write is one atomic word, the render thread that stores it and the
+ *  control thread that reads it can never see half of one write and half of
+ *  another. */
+std::uint64_t packPendingWrite(tick_t tick, float value)
+{
+	return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(tick)) << 32)
+		| static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(value));
+}
+
+std::pair<tick_t, float> unpackPendingWrite(std::uint64_t packed)
+{
+	const auto tick = static_cast<tick_t>(static_cast<std::int32_t>(packed >> 32));
+	const auto value = std::bit_cast<float>(static_cast<std::uint32_t>(packed));
+	return { tick, value };
+}
+
+#ifdef LMMS_TESTING
+/*! The seam's report of a CONTENDED guard acquisition: the changing thread
+ *  really tried to take the render's lock, and the render held it. */
+void reportContendedGuardAcquisition( void* )
+{
+	if( AutomationClip::s_targetChangeProbe != nullptr )
+	{
+		AutomationClip::s_targetChangeProbe( AutomationClip::TargetChangePoint::Holding );
+	}
+}
+#endif
+
+/*! Takes the engine's change guard - the lock the render thread holds for a
+ *  whole render period, and which keeps the render thread out of the clip's
+ *  target list while a change runs.
+ *
+ *  In a test build the guard reports a CONTENDED acquisition through the
+ *  clip's target-change seam: the report is made at the acquisition itself, so
+ *  a test can observe that the changing thread really reached the guard (and
+ *  was held off by the render) instead of inferring it from a timeout on a
+ *  thread that may not have run yet.
+ */
+AudioEngine::RequestChangesGuard targetChangeGuard( AudioEngine* engine )
+{
+	if( engine == nullptr ) { return {}; }
+#ifdef LMMS_TESTING
+	return engine->requestChangesGuardForTest( &reportContendedGuardAcquisition, nullptr );
+#else
+	return engine->requestChangesGuard();
+#endif
+}
+
+} // namespace
 
 
 AutomationClip::AutomationClip( AutomationTrack * _auto_track ) :
@@ -65,36 +131,73 @@ AutomationClip::AutomationClip( AutomationTrack * _auto_track ) :
 }
 
 
+int AutomationClip::latencyFrames() const
+{
+	const auto snapshot = AutomationLatency::instance().readSnapshot();
+	return snapshot.latencyFrames(this);
+}
 
 
 AutomationClip::AutomationClip( const AutomationClip & _clip_to_copy ) :
 	Clip(_clip_to_copy),
 	m_autoTrack( _clip_to_copy.m_autoTrack ),
 	m_objects( _clip_to_copy.m_objects ),
+	m_hasLiveTarget( !_clip_to_copy.m_objects.empty() ),
 	m_tension( _clip_to_copy.m_tension ),
-	m_progressionType(_clip_to_copy.m_progressionType),
+	m_progressionType(_clip_to_copy.m_progressionType.load(std::memory_order_relaxed)),
 	m_relative(_clip_to_copy.isRelative()),
-	m_rampSetting(_clip_to_copy.m_rampSetting),
+	m_rampSetting(_clip_to_copy.m_rampSetting.load(std::memory_order_relaxed)),
 	m_dragging(false),
 	m_isRecording(_clip_to_copy.m_isRecording),
 	m_lastRecordedValue(0)
 {
 	// Locks the mutex of the copied AutomationClip to make sure it
 	// doesn't change while it's being copied
-	QMutexLocker m(&_clip_to_copy.m_clipMutex);
-
-	for( timeMap::const_iterator it = _clip_to_copy.m_timeMap.begin();
-				it != _clip_to_copy.m_timeMap.end(); ++it )
 	{
-		// Copies the automation node (in/out values and in/out tangents)
-		m_timeMap[POS(it)] = it.value();
-		// Sets the node's clip to this one
-		m_timeMap[POS(it)].setClip(this);
+		QMutexLocker m(&_clip_to_copy.m_clipMutex);
+
+		for( timeMap::const_iterator it = _clip_to_copy.m_timeMap.begin();
+					it != _clip_to_copy.m_timeMap.end(); ++it )
+		{
+			// Copies the automation node (in/out values and in/out tangents)
+			m_timeMap[POS(it)] = it.value();
+			// Sets the node's clip to this one
+			m_timeMap[POS(it)].setClip(this);
+		}
 	}
+	// The copy carries the original's targets. Told with no clip mutex held: growing the audio thread's
+	// scratch takes the engine change lock, which the render holds while it takes this mutex.
+	if( Song* song = Engine::getSong() ) { song->noteAutomationGrowth( 0, m_objects.size() ); }
 }
 
 bool AutomationClip::addObject( AutomatableModel * _obj, bool _search_dup )
 {
+#ifdef LMMS_TESTING
+	// The test seam: the thread is inside the change, before it takes the guard.
+	if( s_targetChangeProbe != nullptr ) { s_targetChangeProbe( TargetChangePoint::Before ); }
+#endif
+	/*! The engine change guard comes FIRST, before the clip mutex - the order
+	 *  removeObject() takes it in, and the order the render thread takes the two
+	 *  in (it holds the engine's change lock for the whole render period and
+	 *  takes the clip mutex inside it).
+	 *
+	 *  The guard is what makes the push_back() below safe: the render thread
+	 *  walks this clip's targets through objects(), which hands the walk a
+	 *  REFERENCE to the vector after the clip mutex is released, so a
+	 *  push_back() that reallocates the vector while that walk is running pulls
+	 *  the ground out from under the reader. The guard waits for the running
+	 *  render period to finish and keeps the render thread out until the list
+	 *  is consistent again.
+	 */
+	AudioEngine* const engine = Engine::audioEngine();
+	const auto changes = targetChangeGuard( engine );
+	// Declared before the lock so it runs after the lock is released (see the copy constructor).
+	bool added = false;
+	struct TellSong
+	{
+		const bool& added;
+		~TellSong() { if( added ) { if( Song* song = Engine::getSong() ) { song->noteAutomationGrowth( 0, 1 ); } } }
+	} tellSong{ added };
 	QMutexLocker m(&m_clipMutex);
 
 	if (_search_dup && std::find(m_objects.begin(), m_objects.end(), _obj) != m_objects.end())
@@ -110,13 +213,37 @@ bool AutomationClip::addObject( AutomatableModel * _obj, bool _search_dup )
 	}
 
 	m_objects.push_back(_obj);
+	publishLiveTarget();
 
 	connect( _obj, SIGNAL(destroyed(lmms::jo_id_t)),
 			this, SLOT(objectDestroyed(lmms::jo_id_t)),
 						Qt::DirectConnection );
+	added = true;
 
 	emit dataChanged();
 
+	return true;
+}
+
+
+
+
+bool AutomationClip::removeObject( AutomatableModel * _obj )
+{
+#ifdef LMMS_TESTING
+	// The test seam: the thread is inside the change, before it takes the guard.
+	if( s_targetChangeProbe != nullptr ) { s_targetChangeProbe( TargetChangePoint::Before ); }
+#endif
+	AudioEngine* const engine = Engine::audioEngine();
+	const auto changes = targetChangeGuard( engine );
+	QMutexLocker m(&m_clipMutex);
+
+	auto it = std::find(m_objects.begin(), m_objects.end(), _obj);
+	if (it == m_objects.end()) { return false; }
+
+	m_objects.erase(it);
+	publishLiveTarget();
+	emit dataChanged();
 	return true;
 }
 
@@ -132,7 +259,7 @@ void AutomationClip::setProgressionType(
 		_new_progression_type == ProgressionType::Linear ||
 		_new_progression_type == ProgressionType::CubicHermite )
 	{
-		m_progressionType = _new_progression_type;
+		m_progressionType.store(_new_progression_type, std::memory_order_relaxed);
 		emit dataChanged();
 	}
 }
@@ -170,11 +297,62 @@ const AutomatableModel * AutomationClip::firstObject() const
 	return &fm;
 }
 
+
+
+
+float AutomationClip::preFirstValueLocked( const AutomatableModel * target ) const
+{
+	// A relative (trim) clip's value is an offset from the range's middle, not a
+	// parameter value (applyRelativeClips), so it keeps its old pre-first 0.
+	if( isRelative() )
+	{
+		return 0.0f;
+	}
+	const AutomatableModel* model = target;
+	if( model == nullptr && !m_objects.empty() )
+	{
+		model = m_objects.front().data();
+	}
+	if( model == nullptr )
+	{
+		return 0.0f;
+	}
+	// The map stores inverse-scaled values (playback applies scaledValue), so the
+	// authored initial value goes through the same conversion the nodes do.
+	return model->inverseScaledValue( model->initValue<float>() );
+}
+
+
+
+
 const AutomationClip::objectVector& AutomationClip::objects() const
 {
-	QMutexLocker m(&m_clipMutex);
+	{
+		QMutexLocker m(&m_clipMutex);
+	}
+#ifdef LMMS_TESTING
+	// Probe the exact unlocked interval before the legacy reference is consumed.
+	if (s_objectsReadProbe != nullptr) { s_objectsReadProbe(this); }
+#endif
 
 	return m_objects;
+}
+
+
+
+
+AutomationClip::objectVector AutomationClip::objectsSnapshot() const
+{
+	QMutexLocker m(&m_clipMutex);
+	return m_objects;
+}
+
+
+
+bool AutomationClip::hasObjects() const
+{
+	QMutexLocker m(&m_clipMutex);
+	return !m_objects.empty();
 }
 
 
@@ -442,6 +620,12 @@ void AutomationClip::resetTangents(const int tick0, const int tick1)
 
 void AutomationClip::recordValue(TimePos time, float value)
 {
+	if (RealtimeScope::isActive())
+	{
+		queueAutomationClipWrite(this, time, value);
+		return;
+	}
+
 	QMutexLocker m(&m_clipMutex);
 
 	if( value != m_lastRecordedValue )
@@ -453,6 +637,116 @@ void AutomationClip::recordValue(TimePos time, float value)
 	{
 		removeNode(time - startTimeOffset());
 	}
+}
+
+
+
+
+//! The writes the render thread queues for the control thread (cluster 5388).
+//! See the header for the contract: the render thread never allocates and never
+//! blocks, and a write is never dropped because the store is full - it takes
+//! the place of the clip's newest pending write instead, and the write it
+//! replaced is counted.
+void AutomationClip::queuePendingWrite(tick_t tick, float value) noexcept
+{
+	const auto packed = packPendingWrite(tick, value);
+	const auto count = m_pendingWriteCount.load(std::memory_order_relaxed);
+	const auto applied = m_pendingWriteApplied.load(std::memory_order_acquire);
+
+	if (count - applied >= PendingWriteCapacity)
+	{
+		// The clip's store is full. The newest write wins: it is the value the
+		// control is at right now, and a curve that ends at the value the user
+		// last dialled is worth more than the intermediate point it replaces.
+		const bool replacingLatest = m_pendingLatestSet.load(std::memory_order_relaxed);
+		if (replacingLatest)
+		{
+			m_pendingWriteMerges.fetch_add(1, std::memory_order_relaxed);
+		}
+		else
+		{
+			// Count pending writes, not arrivals that overwrite an already queued
+			// latest value; the drain decrements this once for this slot.
+			s_pendingWriteTotal.fetch_add(1, std::memory_order_relaxed);
+		}
+		m_pendingLatest.store(packed, std::memory_order_relaxed);
+		m_pendingLatestSet.store(true, std::memory_order_release);
+		return;
+	}
+
+	// Publish the count before the write so the control thread cannot miss work.
+	s_pendingWriteTotal.fetch_add(1, std::memory_order_relaxed);
+	m_pendingWrites[count % PendingWriteCapacity].store(packed, std::memory_order_relaxed);
+	m_pendingWriteCount.store(count + 1, std::memory_order_release);
+}
+
+
+
+
+std::size_t AutomationClip::applyPendingWrites()
+{
+	std::size_t applied = 0;
+	const auto count = m_pendingWriteCount.load(std::memory_order_acquire);
+	auto index = m_pendingWriteApplied.load(std::memory_order_relaxed);
+
+	while (index < count)
+	{
+		const auto write = unpackPendingWrite(m_pendingWrites[index % PendingWriteCapacity]
+			.load(std::memory_order_acquire));
+		// Applied before the index is published: a write is applied at least
+		// once, never lost because the control thread was interrupted.
+		recordValue(TimePos(write.first), write.second);
+		++index;
+		m_pendingWriteApplied.store(index, std::memory_order_release);
+		++applied;
+		s_pendingWriteTotal.fetch_sub(1, std::memory_order_relaxed);
+	}
+
+	// The newest write, kept while the store was full. It is newer than every
+	// write applied above, so it goes last.
+	if (m_pendingLatestSet.exchange(false, std::memory_order_acq_rel))
+	{
+		const auto write = unpackPendingWrite(m_pendingLatest.load(std::memory_order_relaxed));
+		recordValue(TimePos(write.first), write.second);
+		++applied;
+		s_pendingWriteTotal.fetch_sub(1, std::memory_order_relaxed);
+	}
+
+	return applied;
+}
+
+
+
+
+std::size_t AutomationClip::pendingWriteCount() const noexcept
+{
+	const auto count = m_pendingWriteCount.load(std::memory_order_acquire);
+	const auto applied = m_pendingWriteApplied.load(std::memory_order_acquire);
+	const auto queued = count > applied ? count - applied : 0;
+	return queued + (m_pendingLatestSet.load(std::memory_order_acquire) ? 1 : 0);
+}
+
+
+
+
+void AutomationClip::discardPendingWrites()
+{
+	const auto dropped = pendingWriteCount();
+	const auto applied = m_pendingWriteApplied.load(std::memory_order_acquire);
+	m_pendingWriteCount.store(applied, std::memory_order_release);
+	m_pendingLatestSet.store(false, std::memory_order_release);
+	s_pendingWriteTotal.fetch_sub(static_cast<std::int64_t>(dropped), std::memory_order_relaxed);
+}
+
+
+
+
+AutomationClip::~AutomationClip()
+{
+	// The writes this clip had queued die with it. The session-wide count of
+	// queued writes follows, or the control thread's drain would keep looking
+	// for work that no longer exists.
+	s_pendingWriteTotal.fetch_sub(pendingWriteCount(), std::memory_order_relaxed);
 }
 
 
@@ -565,9 +859,11 @@ void AutomationClip::applyDragValue()
 
 
 
-float AutomationClip::valueAt( const TimePos & _time ) const
+float AutomationClip::valueAt( const TimePos & _time, bool * beforeFirstNode ) const
 {
 	QMutexLocker m(&m_clipMutex);
+
+	if( beforeFirstNode != nullptr ) { *beforeFirstNode = false; }
 
 	if( m_timeMap.isEmpty() )
 	{
@@ -588,7 +884,18 @@ float AutomationClip::valueAt( const TimePos & _time ) const
 
 	if( v == m_timeMap.begin() )
 	{
-		return 0;
+		// Q050-037: _time is before the FIRST node. The curve has not begun, so
+		// the clip holds the authored parameter's initial value rather than the
+		// arbitrary 0 (the parameter's minimum) that used to slam the control
+		// down on every start and return to the beginning. A point at tick 0 is
+		// simply the first node, so it remains the explicit start value.
+		// A relative (trim) clip is unchanged: it still reads 0 here.
+		if( isRelative() )
+		{
+			return 0;
+		}
+		if( beforeFirstNode != nullptr ) { *beforeFirstNode = true; }
+		return preFirstValueLocked( nullptr );
 	}
 
 	const auto pv = std::prev(v);
@@ -599,7 +906,8 @@ float AutomationClip::valueAt( const TimePos & _time ) const
 		return OUTVAL(pv);
 	}
 
-	return valueAt(pv, _time - POS(pv));
+	const std::int64_t offset = static_cast<std::int64_t>(_time.getTicks()) - POS(pv);
+	return valueAt(pv, offset);
 }
 
 
@@ -607,7 +915,7 @@ float AutomationClip::valueAt( const TimePos & _time ) const
 
 // This method will get the value at an offset from a node, so we use the outValue of
 // that node and the inValue of the next node for the calculations.
-float AutomationClip::valueAt( timeMap::const_iterator v, int offset ) const
+float AutomationClip::valueAt( timeMap::const_iterator v, std::int64_t offset ) const
 {
 	QMutexLocker m(&m_clipMutex);
 
@@ -618,7 +926,8 @@ float AutomationClip::valueAt( timeMap::const_iterator v, int offset ) const
 	// 0.5.0 ED-185: a point may carry its own curve to the next point.
 	const AutomationNode::Curve curve = v.value().curve();
 	if (curve == AutomationNode::Curve::Bend) { return bendValueAt(v, offset); }
-	const ProgressionType type = curve == AutomationNode::Curve::Clip ? m_progressionType
+	const ProgressionType type = curve == AutomationNode::Curve::Clip
+		? m_progressionType.load(std::memory_order_relaxed)
 		: curve == AutomationNode::Curve::Hold ? ProgressionType::Discrete
 		: curve == AutomationNode::Curve::Linear ? ProgressionType::Linear : ProgressionType::CubicHermite;
 	if (type == ProgressionType::Discrete)
@@ -628,9 +937,11 @@ float AutomationClip::valueAt( timeMap::const_iterator v, int offset ) const
 	else if( type == ProgressionType::Linear )
 	{
 		auto const nv = std::next(v);
+		const std::int64_t tickSpan = static_cast<std::int64_t>(POS(nv)) - POS(v);
+		if (tickSpan <= 0) { return OUTVAL(v); }
 		float slope =
 			(INVAL(nv) - OUTVAL(v))
-			/ (POS(nv) - POS(v));
+			/ static_cast<float>(tickSpan);
 
 		return OUTVAL(v) + offset * slope;
 	}
@@ -646,8 +957,10 @@ float AutomationClip::valueAt( timeMap::const_iterator v, int offset ) const
 		// tangents _m1 and _m2
 		auto const nv = std::next(v);
 
-		int numValues = (POS(nv) - POS(v));
-		float t = (float) offset / (float) numValues;
+		const std::int64_t tickSpan = static_cast<std::int64_t>(POS(nv)) - POS(v);
+		if (tickSpan <= 0) { return OUTVAL(v); }
+		const float numValues = static_cast<float>(tickSpan);
+		float t = static_cast<float>(static_cast<double>(offset) / static_cast<double>(tickSpan));
 		float m1 = OUTTAN(v) * numValues * m_tension;
 		float m2 = INTAN(nv) * numValues * m_tension;
 
@@ -699,13 +1012,13 @@ void AutomationClip::setSampleAccurate( bool on )
 void AutomationClip::setRampSetting( RampSetting setting )
 {
 	QMutexLocker m(&m_clipMutex);
-	m_rampSetting = setting;
+	m_rampSetting.store(setting, std::memory_order_relaxed);
 }
 
 
-float AutomationClip::rampValueAt( const TimePos & rel, float fraction ) const
+float AutomationClip::rampValueAt( const TimePos & rel, float fraction, float preFirstValue ) const
 {
-	if( m_timeMap.isEmpty() || rel < 0 )
+	if( m_timeMap.isEmpty() )
 	{
 		return 0.0f;
 	}
@@ -727,9 +1040,9 @@ float AutomationClip::rampValueAt( const TimePos & rel, float fraction ) const
 	if( next == m_timeMap.begin() )
 	{
 		// Before the FIRST node no segment has started, and stepping back from
-		// upperBound() would step off the map: the clip's value there is the one
-		// valueAt(TimePos) returns for the same ticks, which is no value at all.
-		return 0.0f;
+		// upperBound() would step off the map: the clip holds the same pre-first
+		// value valueAt(TimePos) returns for the same ticks (Q050-037).
+		return preFirstValue;
 	}
 	const timeMap::const_iterator v = std::prev( next );
 	const int offset = ticks - POS( v );
@@ -740,7 +1053,7 @@ float AutomationClip::rampValueAt( const TimePos & rel, float fraction ) const
 
 
 void AutomationClip::addRampKnot( AutomationRamp & ramp, const TimePos & relClipStart,
-	int frame, int frameOffsetInTick, double framesPerTick ) const
+	int frame, int frameOffsetInTick, double framesPerTick, float preFirstValue ) const
 {
 	// The knot's own POSITION inside its tick, from the frame it is written on,
 	// so a knot is exactly on the curve rather than at a rounded boundary.
@@ -753,17 +1066,21 @@ void AutomationClip::addRampKnot( AutomationRamp & ramp, const TimePos & relClip
 	{
 		rel = std::min( static_cast<int>( rel ), length() - startTimeOffset() );
 	}
-	ramp.addKnot( static_cast<f_cnt_t>( frame ), rampValueAt( rel, fraction ) );
+	ramp.addKnot( static_cast<f_cnt_t>( frame ), rampValueAt( rel, fraction, preFirstValue ) );
 }
 
 
 void AutomationClip::writeBlockRamp( AutomationRamp & ramp, const TimePos & blockStart,
-	f_cnt_t frames, double framesPerTick, int frameOffsetInTick ) const
+	f_cnt_t frames, double framesPerTick, int frameOffsetInTick,
+	const AutomatableModel * target, f_cnt_t * firstNodeFrame ) const
 {
 	QMutexLocker m(&m_clipMutex);
 
+	if( firstNodeFrame != nullptr ) { *firstNodeFrame = 0; }
 	ramp.reset( frames );
-	if( m_timeMap.isEmpty() || frames == 0 || framesPerTick <= 0.0 )
+	// BUG 19 (new-p10-510): a NaN passes "<= 0.0" and then never ends the tick
+	// loop below, so the framesPerTick must be finite as well as positive.
+	if( m_timeMap.isEmpty() || frames == 0 || !std::isfinite( framesPerTick ) || framesPerTick <= 0.0 )
 	{
 		return;
 	}
@@ -774,9 +1091,34 @@ void AutomationClip::writeBlockRamp( AutomationRamp & ramp, const TimePos & bloc
 		return; // the block starts before this clip does
 	}
 
+	const float preFirstValue = preFirstValueLocked( target );
+
+	// Q050-037: report where the first node starts inside the block (frame 0
+	// when it is at or before the block). A caller that publishes the same ramp
+	// to several targets can then copy it and replace only the pre-first prefix
+	// for a target whose authored initial value differs, under the one clip lock
+	// this build already takes.
+	if( firstNodeFrame != nullptr && !isRelative() )
+	{
+		const std::int64_t firstTick = m_timeMap.constBegin().key();
+		const double nodeFrame = ( static_cast<double>( firstTick )
+			- static_cast<double>( relStart.getTicks() ) ) * framesPerTick
+			- static_cast<double>( frameOffsetInTick );
+		if( nodeFrame > 0.0 )
+		{
+			// frames + 1 means "past the block's last frame": every knot,
+			// including the block's end knot, still belongs to the pre-first
+			// prefix. A node exactly ON the last frame keeps that frame on the
+			// curve (ceil() == frames), so only the knots before it are replaced.
+			const double first = std::ceil( nodeFrame );
+			*firstNodeFrame = static_cast<f_cnt_t>(
+				std::min( first, static_cast<double>( frames ) + 1.0 ) );
+		}
+	}
+
 	// The block's own geometry travels with each knot call.
 	// Knot 0 is the block's first sample, at its own position inside its tick.
-	addRampKnot( ramp, relStart, 0, frameOffsetInTick, framesPerTick );
+	addRampKnot( ramp, relStart, 0, frameOffsetInTick, framesPerTick, preFirstValue );
 
 	// Then one PAIR of knots per tick boundary inside the block: the frame
 	// before the boundary holds the value the curve had coming into it, the
@@ -811,44 +1153,48 @@ void AutomationClip::writeBlockRamp( AutomationRamp & ramp, const TimePos & bloc
 		// so it is the one frame that must not be written twice.
 		if( before > 0 )
 		{
-			addRampKnot( ramp, relStart, before, frameOffsetInTick, framesPerTick );
+			addRampKnot( ramp, relStart, before, frameOffsetInTick, framesPerTick, preFirstValue );
 		}
 		if( after > 0 && after < static_cast<int>( frames ) )
 		{
-			addRampKnot( ramp, relStart, after, frameOffsetInTick, framesPerTick );
+			addRampKnot( ramp, relStart, after, frameOffsetInTick, framesPerTick, preFirstValue );
 		}
 	}
 
 	// ...and the block's end, so the samples after the last boundary
 	// interpolate to where the curve actually is when the block runs out,
 	// instead of holding the last boundary's value.
-	addRampKnot( ramp, relStart, static_cast<int>( frames ), frameOffsetInTick, framesPerTick );
+	addRampKnot( ramp, relStart, static_cast<int>( frames ), frameOffsetInTick, framesPerTick, preFirstValue );
 }
 
 
-float *AutomationClip::valuesAfter( const TimePos & _time ) const
+float *AutomationClip::valuesAfter( const TimePos & _time, std::int64_t firstOffset, std::size_t count ) const
 {
 	QMutexLocker m(&m_clipMutex);
 
 	timeMap::const_iterator v = m_timeMap.lowerBound(_time);
-	if (v == m_timeMap.end())
-	{
-		return nullptr;
-	}
+	if (v == m_timeMap.end()) { return nullptr; }
 
 	auto const nv = std::next(v);
 
-	if (nv == m_timeMap.end())
+	if (nv == m_timeMap.end() || firstOffset < 0 || count == 0)
 	{
 		return nullptr;
 	}
 
-	int numValues = POS(nv) - POS(v);
-	auto ret = new float[numValues];
-
-	for( int i = 0; i < numValues; i++ )
+	const std::int64_t tickSpan = static_cast<std::int64_t>(POS(nv)) - POS(v);
+	if (tickSpan <= 0 || firstOffset > tickSpan
+		|| static_cast<std::uint64_t>(count) > static_cast<std::uint64_t>(tickSpan - firstOffset)
+		|| count > std::numeric_limits<std::size_t>::max() / sizeof(float))
 	{
-		ret[i] = valueAt( v, i );
+		return nullptr;
+	}
+
+	auto ret = new float[count];
+
+	for( std::size_t i = 0; i < count; i++ )
+	{
+		ret[i] = valueAt(v, firstOffset + static_cast<std::int64_t>(i));
 	}
 
 	return ret;
@@ -880,9 +1226,10 @@ void AutomationClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	// asked serialises exactly what it always did. loadSettings resets it to the default
 	// on absence, which is what lets a journal checkpoint taken before the first edit
 	// take it back.
-	if( m_rampSetting != RampSetting::Default )
+	const RampSetting rampSetting = m_rampSetting.load(std::memory_order_relaxed);
+	if( rampSetting != RampSetting::Default )
 	{
-		_this.setAttribute( "sample_accurate", QString::number( m_rampSetting == RampSetting::On ? 1 : 0 ) );
+		_this.setAttribute( "sample_accurate", QString::number( rampSetting == RampSetting::On ? 1 : 0 ) );
 	}
 
 	if (const auto& c = color())
@@ -1212,6 +1559,7 @@ void AutomationClip::objectDestroyed( jo_id_t _id )
 			break;
 		}
 	}
+	publishLiveTarget();
 
 	emit dataChanged();
 }
@@ -1234,6 +1582,7 @@ void AutomationClip::cleanObjects()
 			it = m_objects.erase( it );
 		}
 	}
+	publishLiveTarget();
 }
 
 

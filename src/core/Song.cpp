@@ -29,9 +29,12 @@
 #include <QFile>
 #include <QMessageBox>
 #include <QSet>
+#include <QTimer>
+#include <QUuid>
 #include <QThread>
 
 #include <algorithm>
+#include <functional>
 #include <cmath>
 
 #include "ControlRoom.h"
@@ -52,16 +55,19 @@
 #include "MixerView.h"
 #include "GuiApplication.h"
 #include "ExportFilter.h"
+#include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "Keymap.h"
 #include "NotePlayHandle.h"
 #include "NoteRandom.h"
 #include "MidiClip.h"
 #include "MidiPlayback.h"
+#include "MidiTakeRecorder.h"
 #include "MidiClock.h"
 #include "LinkAudioFollower.h"
 #include "PatternEditor.h"
 #include "PatternStore.h"
+#include "RealtimeScope.h"
 #include "PatternTrack.h"
 #include "PianoRoll.h"
 #include "ProjectJournal.h"
@@ -89,13 +95,24 @@ namespace lmms
 static bool s_provenanceAdoptedThisLoad = false;
 static std::atomic<quint64> s_nextDocumentIdentity{0};
 
+#ifdef LMMS_TESTING
+namespace
+{
+void (*s_tempoMapMemoBoundaryHookForTest)(Song*) = nullptr;
+}
+
+void setTempoMapMemoBoundaryHookForTest(void (*hook)(Song*)) noexcept
+{
+	s_tempoMapMemoBoundaryHookForTest = hook;
+}
+#endif
+
 static quint64 nextDocumentIdentity()
 {
 	return s_nextDocumentIdentity.fetch_add(1, std::memory_order_relaxed) + 1;
 }
 
 tick_t TimePos::s_ticksPerBar = DefaultTicksPerBar;
-
 
 
 Song::Song() :
@@ -133,11 +150,33 @@ Song::Song() :
 	m_loopRenderRemaining(1),
 	m_oldAutomatedValues()
 {
+	auto* automationWriteTimer = new QTimer(this);
+	automationWriteTimer->setObjectName(QStringLiteral("automationWriteDrainTimer"));
+	automationWriteTimer->setInterval(10);
+	connect(automationWriteTimer, &QTimer::timeout, this, &Song::applyPendingAutomationWrites);
+	automationWriteTimer->start();
+
+	// Frozen takes keep the committed tempo map in step with every publication (control thread, render period
+	// held), so a pass whose pinned read loses to a publication still places the take on the current map.
+	m_tempoMap.setPublishHook( []( void* owner, const TempoMap& map )
+	{
+		auto* song = static_cast<Song*>( owner );
+		AudioEngine* audio = Engine::audioEngine();
+		if( audio == nullptr ) { return; }
+		const auto renderLock = audio->requestChangesGuard();
+		for( Track* track : song->tracks() ) { track->adoptTempoMapForFrozenTake( map ); }
+	}, this );
+
+	// Reserved here, on the constructing thread, so processAutomations never has to grow them.
+	m_oldAutomatedValues.reserve(AutomationRenderScratch::RenderCapacity);
+	m_recordedModels.reserve(AutomationRenderScratch::RenderCapacity);
 	// A model being destroyed reports itself here, before anything in this
 	// object is torn down (see Song::forgetAutomatedModel and
 	// s_automationCacheSong): the automation cache holds the models automated on
 	// the last frame as raw pointers, and the hook needs a song it can reach.
 	s_automationCacheSong = this;
+	// Keep this runtime-only identity off disk but available to default output paths.
+	setProperty("_zeneUnsavedProjectId", QUuid::createUuid().toString(QUuid::WithoutBraces));
 
 	// 0.5.0 (review W3-batchA #1): the project sections and the singletons the audio thread reads, built here, on
 	// the thread that builds the song, in every mode - not on the audio thread, and not only once the control
@@ -215,10 +254,62 @@ Song::Song() :
 
 	// Inform VST plugins if the user moved the play head
 	connect(this, &Song::playbackPositionJumped, this, [this](){ m_vstSyncController.setPlaybackJumped(true); }, Qt::DirectConnection);
+	// Q050-054.1: armed instrument tracks record MIDI takes while transport.record runs.
+	new MidiTakeRecorder(this);  // a child of the song: MidiTakeRecorder::instance()
+}
+
+void queueAutomationClipWrite(AutomationClip* clip, const TimePos& time, float value) noexcept
+{
+	clip->queuePendingWrite(static_cast<tick_t>(time.getTicks()), value);
+}
+
+
+//! Drops the queued writes of every clip: they belong to a project that is
+//! being replaced and must not reach the project that replaces it.
+void Song::discardPendingAutomationWrites()
+{
+	ProjectJournal* const journal = Engine::projectJournal();
+	if (journal == nullptr) { return; }
+	for (JournallingObject* object : journal->journallingObjects())
+	{
+		auto* clip = dynamic_cast<AutomationClip*>(object);
+		if (clip != nullptr) { clip->discardPendingWrites(); }
+	}
 }
 
 
 
+
+//! The control thread's half of the deferred automation write (cluster 5388).
+//! The render thread queued the writes it wanted in the clips it wrote to;
+//! here they are applied, in the order they were queued.
+void Song::applyPendingAutomationWrites()
+{
+	// Nothing queued: the drain has no work and does not touch the engine.
+	if (AutomationClip::pendingWriteTotal() <= 0) { return; }
+
+	// The clips that have queued writes are found through the project journal,
+	// which knows every clip of the session - the ones on the song's tracks,
+	// the ones on the pattern store's, and the inline automation clip of a
+	// note, which is on no track at all. The walk is a control-thread walk
+	// over the journal's own map, so it runs without the render guard: only
+	// the edits below need the render thread out of the way.
+	ProjectJournal* const journal = Engine::projectJournal();
+	if (journal == nullptr) { return; }
+
+	std::vector<AutomationClip*> clips;
+	for (JournallingObject* object : journal->journallingObjects())
+	{
+		auto* clip = dynamic_cast<AutomationClip*>(object);
+		if (clip != nullptr && clip->pendingWriteCount() != 0) { clips.push_back(clip); }
+	}
+	if (clips.empty()) { return; }
+
+	AudioEngine* const audio = Engine::audioEngine();
+	if (audio == nullptr) { return; }
+	const auto renderLock = audio->requestChangesGuard();
+	for (AutomationClip* clip : clips) { clip->applyPendingWrites(); }
+}
 
 Song::~Song()
 {
@@ -259,9 +350,15 @@ Song* Song::s_automationCacheSong = nullptr;
 
 void Song::forgetAutomatedModel( AutomatableModel* model )
 {
+	AudioEngine* const audio = Engine::audioEngine();
+	const auto renderLock = audio == nullptr
+		? AudioEngine::RequestChangesGuard{}
+		: audio->requestChangesGuard();
 	if( s_automationCacheSong != nullptr )
 	{
-		s_automationCacheSong->m_oldAutomatedValues.remove( model );
+		auto& cache = s_automationCacheSong->m_oldAutomatedValues;
+		cache.erase( std::remove_if( cache.begin(), cache.end(),
+			[model]( const auto& entry ) { return entry.first == model; } ), cache.end() );
 	}
 }
 
@@ -278,9 +375,10 @@ void Song::masterVolumeChanged()
 
 void Song::setTempo()
 {
-	Engine::audioEngine()->requestChangeInModel();
+	AudioEngine* const audio = Engine::audioEngine();
+	audio->requestChangeInModel();
 	const auto tempo = (bpm_t)m_tempoModel.value();
-	PlayHandleList & playHandles = Engine::audioEngine()->playHandles();
+	PlayHandleList & playHandles = audio->playHandles();
 	for (const auto& playHandle : playHandles)
 	{
 		auto nph = dynamic_cast<NotePlayHandle*>(playHandle);
@@ -291,15 +389,19 @@ void Song::setTempo()
 			nph->unlock();
 		}
 	}
-	Engine::audioEngine()->doneChangeInModel();
-
-	Engine::updateFramesPerTick();
-
 	// With a tempo map in force, the global model is only the tempo of the
-	// region BEFORE the map's first event, so the scalar just recomputed is not
-	// the tempo at the play head. Invalidate the follower's memo so the next
-	// audio block re-applies the mapped tempo (docs/TEMPO-MAP.md section 4).
-	if( m_tempoMap.map().active() ) { m_tempoMapAppliedTempo = -1; }
+	// region BEFORE the map's first event. Reset the follower's memo before
+	// releasing the guard that excludes followTempoMap().
+	if( m_tempoMap.map().active() ) { m_tempoMapAppliedTempo.store(-1, std::memory_order_relaxed); }
+	Engine::updateFramesPerTick();
+	audio->doneChangeInModel();
+
+	#ifdef LMMS_TESTING
+	if( s_tempoMapMemoBoundaryHookForTest != nullptr )
+	{
+		s_tempoMapMemoBoundaryHookForTest( this );
+	}
+	#endif
 
 	m_vstSyncController.setTempo( tempo );
 
@@ -415,6 +517,8 @@ void Song::processNextBuffer()
 	// a capture that is armed but not rolling stamps nothing new. Placed after
 	// followTempoMap() so the tick published is the one this block's tempo map sets.
 	RetroMidiCapture::publishTick( getPlayPos().getTicks() );
+	// Q050-054.1: the same position, with the loop pass, for the arrangement MIDI take capture. One relaxed store.
+	MidiTakeCapture::publishPosition( getPlayPos().getTicks(), m_loopWraps.load( std::memory_order_relaxed ) );
 
 	// At the beginning of the song, we have to reset the LFOs
 	if (m_playMode == PlayMode::Song && getPlayPos() == 0)
@@ -465,6 +569,9 @@ void Song::processNextBuffer()
 
 	const auto framesPerTick = Engine::framesPerTick();
 	const auto framesPerPeriod = Engine::audioEngine()->framesPerPeriod();
+	// 0.5.0 MX-160: one latency snapshot pins every clip's latency for the WHOLE period (ramps and
+	// per-tick reads alike), so a refresh publishing new latencies mid-period cannot mix banks here.
+	const auto latencySnapshot = AutomationLatency::instance().readSnapshot();
 
 	// Sample-accurate automation (feature row 9). BEFORE the tick loop, because
 	// the whole block's curve has to be in the parameters before the first
@@ -473,7 +580,7 @@ void Song::processNextBuffer()
 	// clips that opted in (automation.ramp_set), plus default Discrete clips
 	// whose latency compensation needs the frame offset that per-tick reads lose.
 	buildAutomationRamps(trackList, getPlayPos(), framesPerPeriod,
-		static_cast<int>(timeline.frameOffset()));
+		static_cast<int>(timeline.frameOffset()), latencySnapshot);
 
 	f_cnt_t frameOffsetInPeriod = 0;
 
@@ -540,7 +647,7 @@ void Song::processNextBuffer()
 		{
 			// First frame of tick: process automation and play tracks
 			MidiPlayback::instance().tickPlayed(getPlayPos().getTicks(), m_loopWraps.load(std::memory_order_relaxed));  // 0.5.0 L07/W2: chase and the loop pass
-			processAutomations(trackList, getPlayPos(), framesToPlay);
+			processAutomations(trackList, getPlayPos(), framesToPlay, latencySnapshot);
 			processMetronome(frameOffsetInPeriod);
 
 			// Column index of the next track in the song's own track list;
@@ -602,12 +709,9 @@ bool Song::enforceLoop(const TimePos& begin, const TimePos& end, bool wrapping)
 }
 
 
-void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_cnt_t)
+void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_cnt_t,
+	const AutomationLatency::ReadSnapshot& latencySnapshot)
 {
-	AutomatedValueMap values;
-
-	QSet<const AutomatableModel*> recordedModels;
-
 	TrackContainer* container = this;
 	int clipNum = -1;
 
@@ -628,16 +732,46 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 		return;
 	}
 
-	values = container->automatedValuesAt(timeStart, clipNum);
+	// Everything this tick builds lives in the Song's scratch, reserved in the constructor: the read runs on
+	// the audio thread, where RealtimeSanitizer reported the vector and map it used to allocate.
+	// A read that overflowed the reserved scratch is incomplete. It is redone on an unbounded one (these
+	// stay empty, and allocate nothing, unless that happens): late, but never wrong.
+	AutomationRenderScratch spillValues;
+	AutomationRenderScratch spillInner;
+	AutomationRenderScratch spillClips;
+	AutomationRenderScratch* valuesIn = &m_automationLevel;
+	container->fillAutomatedValues(*valuesIn, &m_automationInner, timeStart, clipNum, latencySnapshot);
+	if (valuesIn->overflows() != 0 || m_automationInner.overflows() != 0)
+	{
+		m_automationScratchOverflows.fetch_add(1, std::memory_order_relaxed);
+		valuesIn->takeOverflows();
+		m_automationInner.takeOverflows();
+		container->fillAutomatedValues(spillValues, &spillInner, timeStart, clipNum, latencySnapshot);
+		valuesIn = &spillValues;
+	}
+	AutomationRenderScratch& values = *valuesIn;
 	const TrackList& tracks = container->tracks();
 
-	Track::clipVector clips;
+	AutomationRenderScratch* clipsIn = &m_automationRecordClips;
+	clipsIn->clear();
 	for (Track* track : tracks)
 	{
 		if (track->type() == Track::Type::Automation) {
-			track->getClipsInRange(clips, 0, timeStart);
+			clipsIn->insertClipsInRange(*track, 0, timeStart);
 		}
 	}
+	if (clipsIn->overflows() != 0)
+	{
+		m_automationScratchOverflows.fetch_add(1, std::memory_order_relaxed);
+		clipsIn->takeOverflows();
+		for (Track* track : tracks)
+		{
+			if (track->type() == Track::Type::Automation) { spillClips.insertClipsInRange(*track, 0, timeStart); }
+		}
+		clipsIn = &spillClips;
+	}
+	AutomationRenderScratch& clips = *clipsIn;
+	m_recordedModels.clear();
 
 	// Process recording
 	//
@@ -651,14 +785,17 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 	const quint64 automationRun = AutomatableModel::automationTransportRun();
 	qint64 automationNowNs = 0;
 	bool automationClockRead = false;
-	for (Clip* clip : clips)
+	for (Clip* clip : clips.clips())
 	{
 		auto p = dynamic_cast<AutomationClip *>(clip);
 		TimePos relTime = timeStart - p->startPosition();
 		if (relTime >= 0 && relTime < p->length())
 		{
 			const AutomatableModel* recordedModel = p->firstObject();
-			bool writes = p->isRecording();
+			// A clip with no live target has nothing to record from: firstObject() hands back a
+			// fallback model for it, which must not be written (new-p9-439). hasLiveTarget() is a
+			// lock-free read of the flag the clip publishes on every change to its targets.
+			bool writes = p->isRecording() && p->hasLiveTarget();
 			if( !writes && recordedModel
 				&& recordedModel->automationMode() != AutomatableModel::AutomationMode::Read )
 			{
@@ -677,9 +814,14 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 				// you can see that the true values are stored by their inverse scaled value....which is wrong, since they weren't scaled in the first place...?
 				// Anyhow, in the meantime before we redo the automation system, when recording automations, we have to get the inverseScaledValue
 				// and store that so that when playing it back, it scales the value correctly.
-				p->recordValue(relTime, recordedModel->inverseScaledValue(recordedModel->value<float>()));
+				// The write is queued in the clip itself and applied by the
+				// control thread (cluster 5388): the render thread may not
+				// edit the clip's node map, and a queued write is not lost
+				// when the control thread is late.
+				p->queuePendingWrite(relTime.getTicks(),
+					recordedModel->inverseScaledValue(recordedModel->value<float>()));
 
-				recordedModels << recordedModel;
+				noteRecordedModel(recordedModel);
 			}
 		}
 	}
@@ -689,9 +831,9 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 	// destroyed while it was cached has already dropped itself out of this map
 	// (AutomatableModel's destructor calls Song::forgetAutomatedModel), so no key
 	// here is a stale pointer.
-	for (auto it = m_oldAutomatedValues.begin(); it != m_oldAutomatedValues.end(); it++)
+	for (const auto& entry : m_oldAutomatedValues)
 	{
-		AutomatableModel * am = it.key();
+		AutomatableModel * am = entry.first;
 		// A guarded key can be null here: the model was destroyed between the frame
 		// that automated it and this restore (see the member's comment). There is
 		// nothing to move back to a controller for a model that no longer exists.
@@ -701,16 +843,23 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 		}
 	}
 	m_oldAutomatedValues.clear();
-	for (auto it = values.begin(); it != values.end(); ++it)
+	for (const AutomationRenderScratch::Entry& entry : values.entries())
 	{
-		m_oldAutomatedValues.insert(it.key(), it.value());
+		// Past the reserved capacity this grows (an allocation, counted): dropping an entry would leave
+		// a model on the automation's control with nothing to hand it back.
+		if (m_oldAutomatedValues.size() >= m_oldAutomatedValues.capacity())
+		{
+			m_automationScratchOverflows.fetch_add(1, std::memory_order_relaxed);
+		}
+		m_oldAutomatedValues.emplace_back(entry.model, entry.value);
 	}
 
 	// Apply values
-	for (auto it = values.begin(); it != values.end(); it++)
+	for (const AutomationRenderScratch::Entry& entry : values.entries())
 	{
-		AutomatableModel* model = it.key();
-		bool isRecording = recordedModels.contains(model);
+		AutomatableModel* model = entry.model;
+		bool isRecording = std::binary_search(m_recordedModels.begin(), m_recordedModels.end(),
+			static_cast<const AutomatableModel*>(model), std::less<const AutomatableModel*>{});
 		model->setUseControllerValue(isRecording);
 
 		// Automation modes: a control in Off IGNORES its written automation -
@@ -729,9 +878,93 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 			// applied here, where the written automation is read out to the
 			// control, and is never written back into the clip - which is what
 			// makes it non-destructive.
-			model->setValue(model->effectiveAutomationValue(model->scaledValue(it.value())), true);
+			model->setValue(model->effectiveAutomationValue(model->scaledValue(entry.value)), true);
 		}
 	}
+
+}
+
+//! Remembers \a model as written to this tick (kept sorted for the lookup in the apply pass). A full list drops it.
+void Song::noteRecordedModel(const AutomatableModel* model)
+{
+	const auto at = std::lower_bound(m_recordedModels.begin(), m_recordedModels.end(), model,
+		std::less<const AutomatableModel*>{});
+	if (at != m_recordedModels.end() && *at == model) { return; }
+	// Past the reserved capacity this grows (counted); a recorded model must never be forgotten.
+	if (m_recordedModels.size() >= m_recordedModels.capacity())
+	{
+		m_automationScratchOverflows.fetch_add(1, std::memory_order_relaxed);
+	}
+	m_recordedModels.insert(at, model);
+}
+
+void Song::countAutomationForTest(std::size_t* clips, std::size_t* targets) const
+{
+	*clips = 0;
+	*targets = 0;
+	const auto countTrack = [clips, targets](Track* track) {
+		*clips += track->getClips().size();
+		if (track->type() != Track::Type::Automation && track->type() != Track::Type::HiddenAutomation) { return; }
+		for (Clip* clip : track->getClips())
+		{
+			if (auto* automation = dynamic_cast<AutomationClip*>(clip)) { *targets += automation->objects().size(); }
+		}
+	};
+	for (Track* track : tracks()) { countTrack(track); }
+	if (m_globalAutomationTrack != nullptr) { countTrack(m_globalAutomationTrack); }
+	if (PatternStore* patterns = Engine::patternStore())
+	{
+		for (Track* track : patterns->tracks()) { countTrack(track); }
+	}
+}
+
+void Song::noteAutomationGrowth(std::size_t clips, std::size_t targets) noexcept
+{
+	const auto clipBound = m_automationClipBound.fetch_add(clips, std::memory_order_relaxed) + clips;
+	const auto targetBound = m_automationTargetBound.fetch_add(targets, std::memory_order_relaxed) + targets;
+	if (std::max(clipBound, targetBound) + 64 <= m_automationReserved.load(std::memory_order_relaxed)) { return; }
+	if (RealtimeScope::isActive() || Engine::audioEngine() == nullptr || Engine::audioEngine()->isRenderThread()) { return; }
+	try { ensureAutomationScratchCapacity(); }
+	catch (...) { /* out of memory: the read's overflow redo keeps the automation right */ }
+}
+
+void Song::ensureAutomationScratchCapacity()
+{
+	if (RealtimeScope::isActive()) { return; }
+	// With the render locked out nothing reads or rewrites the lists being resized.
+	const auto changes = Engine::audioEngine()->requestChangesGuard();
+	std::size_t clips = 0;
+	std::size_t targets = 0;
+	countAutomationForTest(&clips, &targets);
+	m_automationClipBound.store(clips, std::memory_order_relaxed);
+	m_automationTargetBound.store(targets, std::memory_order_relaxed);
+
+	const std::size_t need = std::max(clips, targets) + 64;
+	if (need <= m_automationReserved.load(std::memory_order_relaxed)) { return; }
+	// Headroom, so a project that keeps growing re-counts once per doubling, not once per edit.
+	const std::size_t target = 2 * need;
+	m_automationLevel.reserve(target);
+	m_automationInner.reserve(target);
+	m_automationRecordClips.reserve(target);
+	m_oldAutomatedValues.reserve(target);
+	m_recordedModels.reserve(target);
+	m_automationReserved.store(std::min({m_automationLevel.capacity(), m_automationInner.capacity(),
+		m_automationRecordClips.capacity(), m_oldAutomatedValues.capacity(), m_recordedModels.capacity()}),
+		std::memory_order_relaxed);
+}
+
+void Song::resizeAutomationScratchForTest(std::size_t capacity)
+{
+	m_automationLevel = AutomationRenderScratch(capacity);
+	m_automationInner = AutomationRenderScratch(capacity);
+	m_automationRecordClips = AutomationRenderScratch(capacity);
+	m_oldAutomatedValues.clear();
+	m_oldAutomatedValues.shrink_to_fit();
+	m_oldAutomatedValues.reserve(capacity);
+	m_recordedModels.clear();
+	m_recordedModels.shrink_to_fit();
+	m_recordedModels.reserve(capacity);
+	m_automationReserved.store(capacity, std::memory_order_relaxed);
 }
 
 void Song::processMetronome(size_t bufferOffset)
@@ -860,6 +1093,8 @@ void Song::playAndRecord()
 	startSongPlayback( true );
 	// Stop goes back to where Record was pressed, not to the start of the count-in (review #4).
 	if (start >= 0) { getTimeline(PlayMode::Song).setPlayStartPosition(TimePos(start)); }
+	// Q050-054.1: a MIDI take keeps what was played from there on, too.
+	if (start >= 0) { MidiTakeRecorder::instance()->setRecordFrom(start); }
 }
 
 
@@ -1037,9 +1272,9 @@ void Song::stop()
 	// that is destroyed while it is cached removes itself from it (the model's
 	// destructor calls Song::forgetAutomatedModel), so nothing here can be a
 	// stale pointer.
-	for (auto it = m_oldAutomatedValues.begin(); it != m_oldAutomatedValues.end(); it++)
+	for (const auto& entry : m_oldAutomatedValues)
 	{
-		AutomatableModel * am = it.key();
+		AutomatableModel * am = entry.first;
 		// Null when the model was destroyed while the transport was playing (the
 		// member's comment has the mechanism); skipping it is the whole point of
 		// guarding the keys - this loop has no other way to tell.
@@ -1053,6 +1288,9 @@ void Song::stop()
 	m_playMode = PlayMode::None;
 
 	Engine::audioEngine()->doneChangeInModel();
+	// The last points must be applied before a caller can save or replace the
+	// project immediately after Stop.
+	if (!RealtimeScope::isActive()) { applyPendingAutomationWrites(); }
 
 	emit stopped();
 	emit playbackStateChanged();
@@ -1114,6 +1352,48 @@ void Song::startExport()
 	playSong();
 
 	m_vstSyncController.setPlaybackState( true );
+}
+
+
+bool Song::prepareConverterModeForInstruments(AudioResampler::Mode mode) noexcept
+{
+	for (Track* const track : tracks())
+	{
+		if (track == nullptr || track->type() != Track::Type::Instrument) { continue; }
+		auto* const instrumentTrack = dynamic_cast<InstrumentTrack*>(track);
+		if (instrumentTrack == nullptr) { continue; }
+		Instrument* const instrument = instrumentTrack->instrument();
+		if (instrument != nullptr && !instrument->prepareConverterMode(mode)) { return false; }
+	}
+	return true;
+}
+
+void Song::adoptPreparedConverterModeForInstruments() noexcept
+{
+	for (Track* const track : tracks())
+	{
+		if (track == nullptr || track->type() != Track::Type::Instrument) { continue; }
+		auto* const instrumentTrack = dynamic_cast<InstrumentTrack*>(track);
+		if (instrumentTrack == nullptr) { continue; }
+		if (Instrument* const instrument = instrumentTrack->instrument())
+		{
+			instrument->adoptPreparedConverterMode();
+		}
+	}
+}
+
+void Song::discardPreparedConverterModeForInstruments() noexcept
+{
+	for (Track* const track : tracks())
+	{
+		if (track == nullptr || track->type() != Track::Type::Instrument) { continue; }
+		auto* const instrumentTrack = dynamic_cast<InstrumentTrack*>(track);
+		if (instrumentTrack == nullptr) { continue; }
+		if (Instrument* const instrument = instrumentTrack->instrument())
+		{
+			instrument->discardPreparedConverterMode();
+		}
+	}
 }
 
 
@@ -1219,16 +1499,24 @@ void Song::followTempoMap()
 	// must pay nothing for it: no snapshot copy, no arithmetic, no write to the
 	// frame/tick scalar. This early return IS the byte-identity guarantee on the
 	// timing path, and TempoMapTest measures it.
-	if( !m_tempoMap.map().active() )
+	// The map is read pinned (include/TempoMap.h, TempoMapPublisher::withRealtimeMap): bounded, no lock, no
+	// allocation, no data race, and the active flag comes from the pinned map itself. A read that loses every
+	// attempt to a publication keeps the tempo already applied; the next block reads again.
+	bool active = false;
+	int bpm = -1;
+	const int globalTempo = static_cast<int>( m_tempoModel.value() );
+	const tick_t tick = currentTick();
+	const bool pinned = m_tempoMap.withRealtimeMap( [&]( const TempoMap& map )
+	{
+		active = map.active();
+		if( active ) { bpm = map.tempoAtTick( tick, globalTempo ); }
+	} );
+	if( !pinned ) { return; }
+	if( !active )
 	{
 		m_tempoMapAppliedTempo = -1;
 		return;
 	}
-
-	// The snapshot is a fixed-size value copy with a version re-check - no lock,
-	// no allocation, no growth (include/TempoMap.h, TempoMapPublisher).
-	const TempoMap map = m_tempoMap.snapshot();
-	const int bpm = map.tempoAtTick( currentTick(), static_cast<int>( m_tempoModel.value() ) );
 	if( bpm == m_tempoMapAppliedTempo ) { return; }
 
 	m_tempoMapAppliedTempo = bpm;
@@ -1268,6 +1556,14 @@ void Song::processModulation()
 void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & blockStart,
 	f_cnt_t frames, int frameOffsetInTick )
 {
+	// A caller with no period's own snapshot pins one now (the tests' direct entry; the engine pins once).
+	const auto latencySnapshot = AutomationLatency::instance().readSnapshot();
+	buildAutomationRamps(trackList, blockStart, frames, frameOffsetInTick, latencySnapshot);
+}
+
+void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & blockStart,
+	f_cnt_t frames, int frameOffsetInTick, const AutomationLatency::ReadSnapshot& latencySnapshot )
+{
 	/*! Sample-accurate automation (feature-list row 9,
 	 *  docs/SAMPLE-ACCURATE-AUTOMATION.md). Runs ONCE PER AUDIO BLOCK, at the
 	 *  block's own play position, and only over the automation clips that asked
@@ -1293,7 +1589,7 @@ void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & bl
 	const double framesPerTick = Engine::framesPerTick();
 	// The song-wide read switch (ED-200) gates the ramp exactly as it gates the per-tick apply in
 	// processAutomations(): with reads off, every control keeps its manual value, so nothing is published.
-	if( frames == 0 || framesPerTick <= 0.0 || !AutomationSwitches::instance().reads() )
+	if( frames == 0 || !std::isfinite( framesPerTick ) || framesPerTick <= 0.0 || !AutomationSwitches::instance().reads() )
 	{
 		return;
 	}
@@ -1312,14 +1608,20 @@ void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & bl
 		for( Clip* clip : track->getClips() )
 		{
 			auto* automationClip = dynamic_cast<AutomationClip*>( clip );
+			// Do not publish one sample-accurate curve at the wrong time to mixed-latency targets.
+			if( automationClip != nullptr && latencySnapshot.latencyFrames(automationClip) < 0 )
+			{
+				continue;
+			}
 			const bool latencyNeedsRamp = automationClip != nullptr
 				&& automationClip->rampSetting() == AutomationClip::RampSetting::Default
-				&& AutomationLatency::instance().enabled() && automationClip->latencyFrames() > 0;
+				&& latencySnapshot.enabled() && latencySnapshot.latencyFrames(automationClip) > 0;
 			// 0.5.0 MX-160: the block as the latent audio sees it - the same start unless the project
 			// turned latency-compensated automation on (moved before the song's start, it reads nothing).
 			TimePos readStart = blockStart;
 			int readOffsetInTick = frameOffsetInTick;
-			AutomationLatency::instance().shiftBlock( automationClip, framesPerTick, &readStart, &readOffsetInTick );
+			AutomationLatency::instance().shiftBlock(automationClip, framesPerTick, &readStart,
+				&readOffsetInTick, latencySnapshot);
 			if( automationClip == nullptr || (!automationClip->sampleAccurate() && !latencyNeedsRamp)
 				|| !automationClip->hasAutomation() || automationClip->isMuted()
 				|| automationClip->startPosition() > readStart )
@@ -1327,9 +1629,24 @@ void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & bl
 				continue;
 			}
 
+			// The clip's targets, read once through the existing accessor. The
+			// ramp is then built under ONE clip lock, as before: a target whose
+			// authored initial value differs gets a COPY of the ramp with only
+			// the pre-first knots overridden, never a second rebuild.
+			const AutomationClip::objectVector& targets = automationClip->objects();
+			const AutomatableModel* baseTarget = nullptr;
+			for( const QPointer<AutomatableModel>& candidate : targets )
+			{
+				if( candidate != nullptr ) { baseTarget = candidate; break; }
+			}
+			const float basePreFirst = baseTarget == nullptr ? 0.0f
+				: baseTarget->inverseScaledValue( baseTarget->initValue<float>() );
+
 			AutomationRamp ramp;
-			automationClip->writeBlockRamp( ramp, readStart, frames, framesPerTick, readOffsetInTick );
-			for( const QPointer<AutomatableModel>& model : automationClip->objects() )
+			f_cnt_t firstNodeFrame = 0;
+			automationClip->writeBlockRamp( ramp, readStart, frames, framesPerTick,
+				readOffsetInTick, baseTarget, &firstNodeFrame );
+			for( const QPointer<AutomatableModel>& model : targets )
 			{
 				// Automation modes: a control in Off IGNORES its written
 				// automation - the manual value stands - and this publish is a
@@ -1337,22 +1654,43 @@ void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & bl
 				// apply pass obeys (Song::processAutomations). Without it the
 				// ramp reaches an Off parameter before the apply pass can skip
 				// it, and that is the one place the two features meet.
-				if( model != nullptr
-					&& model->automationMode() != AutomatableModel::AutomationMode::Off )
+				if( model == nullptr
+					|| model->automationMode() == AutomatableModel::AutomationMode::Off )
+				{
+					continue;
+				}
+				if( firstNodeFrame == 0 )
+				{
+					// The first node is at or before the block: every frame is
+					// on the curve, so all targets share this ramp.
+					model->publishAutomationRamp( ramp );
+					continue;
+				}
+				const float targetPreFirst =
+					model->inverseScaledValue( model->initValue<float>() );
+				if( targetPreFirst == basePreFirst )
 				{
 					model->publishAutomationRamp( ramp );
+					continue;
 				}
+				AutomationRamp own = ramp;
+				own.setValueBefore( firstNodeFrame, targetPreFirst );
+				model->publishAutomationRamp( own );
 			}
 		}
 	}
 }
 
 
-AutomatedValueMap Song::automatedValuesAt(TimePos time, int clipNum) const
+void Song::fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
+	TimePos time, int clipNum, const AutomationLatency::ReadSnapshot& snapshot) const
 {
-	auto trackList = TrackList{m_globalAutomationTrack};
-	trackList.insert(trackList.end(), tracks().begin(), tracks().end());
-	return TrackContainer::automatedValuesFromTracks(trackList, time, clipNum);
+	// The global automation track first, then the song's own tracks: the same order the clips were always
+	// gathered in, and with no track list built on the way (that vector was an audio-thread allocation).
+	level.clear();
+	gatherAutomationClips(level, m_globalAutomationTrack, time, clipNum);
+	for (Track* track : tracks()) { gatherAutomationClips(level, track, time, clipNum); }
+	collectAutomatedValues(level, inner, time, snapshot);
 }
 
 
@@ -1365,12 +1703,31 @@ void Song::clearProject()
 	m_containerV2Project = false;
 
 	m_documentIdentity = nextDocumentIdentity();
+	// The CALLER owns the journalling state across a project replacement: loadProject() turns it off
+	// for the whole load and on again when the load is done. Re-enabling it here unconditionally
+	// ended that window in the middle of the load, so every journalled write the rest of the load
+	// (or a GUI refresh it triggers) made became an undo step of the freshly loaded project - a
+	// fresh document then opened Edit > Undo History on one step to undo. clearProject() only has
+	// to keep journalling off while it clears; it restores what it found on the way out.
+	const bool wasJournalling = Engine::projectJournal()->isJournalling();
 	Engine::projectJournal()->setJournalling( false );
+	// The Song object survives project replacement, so issue a fresh path identity here.
+	setProperty("_zeneUnsavedProjectId", QUuid::createUuid().toString(QUuid::WithoutBraces));
 
 	if( m_playing )
 	{
 		stop();
 	}
+	// The writes the render thread queued belong to the project that is being
+	// cleared: they are dropped with it, not carried into the project that
+	// replaces it.
+	discardPendingAutomationWrites();
+
+	// A pending Record press (or an active recording pass) belongs to the
+	// project being cleared - the latch must not survive into the next one
+	// (BUGS new-p12-257 BUG 8).
+	m_recordLatched = false;
+	m_recording = false;
 
 	for (auto i = std::size_t{0}; i < PlayModeCount; i++)
 	{
@@ -1393,6 +1750,10 @@ void Song::clearProject()
 		getGUI()->mixerView()->clear();
 	}
 	QCoreApplication::sendPostedEvents();
+	// Q050-489: the grid goes BEFORE the tracks. A deleted pattern track renumbers the patterns and the session
+	// cells follow it (PatternTrack.cpp); the cells of a project being closed must not be rewritten one track at a
+	// time on the way out.
+	m_sessionModel.clear();
 	Engine::patternStore()->clearAllTracks();
 	clearAllTracks();
 
@@ -1434,7 +1795,6 @@ void Song::clearProject()
 
 	removeAllControllers();
 
-	m_sessionModel.clear();
 	ProjectSection::clearAll();
 	m_sessionScheduler.reset();
 
@@ -1488,7 +1848,8 @@ void Song::clearProject()
 
 	Engine::projectJournal()->clearJournal();
 
-	Engine::projectJournal()->setJournalling( true );
+	// Restore the caller's state, not "on": see the top of this function.
+	Engine::projectJournal()->setJournalling( wasJournalling );
 }
 
 
@@ -1558,6 +1919,7 @@ void Song::createNewProject()
 
 	setModified(false);
 	m_loadOnLaunch = false;
+	ProjectJournal::notifyChange( ProjectJournal::Change::ProjectReplaced );
 }
 
 
@@ -1685,6 +2047,8 @@ void Song::loadProject( const QString & fileName, const QStringList & skipSectio
 	{
 		if( m_loadOnLaunch )
 		{
+			// A failed fallback template must not ask this branch to fall back again.
+			m_loadOnLaunch = false;
 			createNewProject();
 		}
 		setProjectFileName(m_oldFileName);
@@ -1930,6 +2294,9 @@ void Song::loadProject( const QString & fileName, const QStringList & skipSectio
 	// resolve all IDs so that autoModels are automated
 	AutomationClip::resolveAllIDs();
 
+	// Publish PDC and its automation offsets before the first period can render this project.
+	Engine::mixer()->publishLatencyCompensationForProjectLoad();
+	AutomationLatency::instance().refreshAfterProjectLoad();
 
 	Engine::audioEngine()->doneChangeInModel();
 
@@ -1938,6 +2305,7 @@ void Song::loadProject( const QString & fileName, const QStringList & skipSectio
 	if( !m_restoringSnapshot ) { ConfigManager::inst()->addRecentlyOpenedProject( fileName ); }
 
 	Engine::projectJournal()->setJournalling( true );
+	ProjectJournal::notifyChange( ProjectJournal::Change::ProjectReplaced );
 
 	emit projectLoaded();
 
@@ -2097,6 +2465,9 @@ bool Song::saveProjectFile(const QString & filename, bool withResources, SaveFor
 			.arg(m_notLoadedSections.join(QStringLiteral(", ")));
 		return false;
 	}
+
+	// Include every queued write in an immediate save made during playback.
+	if (!RealtimeScope::isActive()) { applyPendingAutomationWrites(); }
 
 	DataFile dataFile( DataFile::Type::SongProject );
 	buildProjectDocument( dataFile );
@@ -2651,7 +3022,7 @@ QStringList Song::unclaimedElements() const
  *  walk carries one test for both elements instead of one each. */
 
 
-void Song::exportProjectMidi(QString const & exportFileName) const
+ExportOutcome Song::exportProjectMidi(QString const & exportFileName) const
 {
 	// instantiate midi export plugin
 	TrackContainer::TrackList const & tracks = this->tracks();
@@ -2660,13 +3031,33 @@ void Song::exportProjectMidi(QString const & exportFileName) const
 	ExportFilter *exf = dynamic_cast<ExportFilter *> (Plugin::instantiate("midiexport", nullptr, nullptr));
 	if (exf)
 	{
-		exf->tryExport(tracks, patternStoreTracks, getTempo(), m_masterPitchModel.value(), exportFileName);
+		return exf->tryExport(tracks, patternStoreTracks, getTempo(), m_masterPitchModel.value(), exportFileName);
 	}
-	else
-	{
-		qDebug() << "failed to load midi export filter!";
-	}
+	qDebug() << "failed to load midi export filter!";
+	return ExportOutcome::NotCreated;
 
+}
+
+namespace
+{
+//! A TEST hook (see setExportCloseFailureHook): empty in every real run.
+ExportCloseFailureHook s_exportCloseFailureHook;
+}
+
+ExportOutcome exportOutcomeAfterClose(const QFileDevice& file, bool writeOk)
+{
+	// A TEST hook: the close is forced to count as failed, the way a flush error or an
+	// error the close itself reports would.
+	if (s_exportCloseFailureHook && s_exportCloseFailureHook()) { return ExportOutcome::Incomplete; }
+	// The file's state AFTER the close: a flush error (the bytes the device still held)
+	// and an error the close itself reports only show up then.
+	if (file.error() != QFileDevice::NoError) { return ExportOutcome::Incomplete; }
+	return writeOk ? ExportOutcome::Written : ExportOutcome::Incomplete;
+}
+
+void setExportCloseFailureHook(ExportCloseFailureHook hook)
+{
+	s_exportCloseFailureHook = std::move(hook);
 }
 
 
@@ -2781,7 +3172,14 @@ std::shared_ptr<const Scale> Song::getScale(unsigned int index) const
 {
 	if (index >= MaxScaleCount) {index = 0;}
 
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 	return std::atomic_load(&m_scales[index]);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 }
 
 
@@ -2789,7 +3187,14 @@ std::shared_ptr<const Keymap> Song::getKeymap(unsigned int index) const
 {
 	if (index >= MaxKeymapCount) {index = 0;}
 
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 	return std::atomic_load(&m_keymaps[index]);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 }
 
 
@@ -2798,7 +3203,14 @@ void Song::setScale(unsigned int index, std::shared_ptr<Scale> newScale)
 	if (index >= MaxScaleCount) {index = 0;}
 
 	Engine::audioEngine()->requestChangeInModel();
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 	std::atomic_store(&m_scales[index], newScale);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 	emit scaleListChanged(index);
 	Engine::audioEngine()->doneChangeInModel();
 }
@@ -2809,7 +3221,14 @@ void Song::setKeymap(unsigned int index, std::shared_ptr<Keymap> newMap)
 	if (index >= MaxKeymapCount) {index = 0;}
 
 	Engine::audioEngine()->requestChangeInModel();
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 	std::atomic_store(&m_keymaps[index], newMap);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 	emit keymapListChanged(index);
 	Engine::audioEngine()->doneChangeInModel();
 }

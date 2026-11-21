@@ -25,7 +25,11 @@
 
 #include <algorithm>
 
+#include "DeprecationHelper.h"
+
+#include <QDebug>
 #include <QDir>
+#include <QAbstractScrollArea>
 #include <QFileInfo>
 #include <QFile>
 #include <QFrame>
@@ -40,6 +44,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QTabWidget>
 #include <QTextBrowser>
 #include <QTextDocumentFragment>
@@ -75,6 +80,22 @@ QPoint bubbleAt(const QRect& hole, const QSize& bubble, const QSize& area)
 	if (hole.right() + Gap + bubble.width() <= area.width() - Margin) { return {hole.right() + Gap, hole.top()}; }
 	if (hole.left() - Gap - bubble.width() >= Margin) { return {hole.left() - Gap - bubble.width(), hole.top()}; }
 	return {hole.left(), hole.bottom() + Gap};
+}
+
+bool shouldRepositionTour(QEvent::Type type)
+{
+	switch (type)
+	{
+	case QEvent::Move:
+	case QEvent::Resize:
+	case QEvent::Show:
+	case QEvent::Hide:
+	case QEvent::LayoutRequest:
+	case QEvent::Scroll:
+		return true;
+	default:
+		return false;
+	}
 }
 
 } // namespace
@@ -218,7 +239,10 @@ HelpCenter* HelpCenter::showHelp(const QString& topic, bool reference)
 	if (!topic.isEmpty()) { s_center->m_manual->scrollToAnchor(topic); }
 	s_center->m_tabs->setCurrentIndex(reference ? 1 : 0);
 	s_center->QDialog::show();
+	// Raise AND activate: an already-open centre behind other open windows (About, Keyboard Shortcuts) stays
+	// behind them when only raised, so Help > Manual seemed to do nothing (gui-1106).
 	s_center->raise();
+	s_center->activateWindow();
 	return s_center;
 }
 
@@ -240,21 +264,6 @@ void HelpCenter::filterReference(const QString& text)
 
 // ---------------------------------------------------------------------------
 
-QJsonArray GuidedTour::tours()
-{
-	QJsonArray out;
-	const QDir dir(dataPath(QStringLiteral("tours")));
-	for (const QString& file : dir.entryList({QStringLiteral("*.json")}, QDir::Files, QDir::Name))
-	{
-		QFile in(dir.filePath(file));
-		if (!in.open(QIODevice::ReadOnly)) { continue; }
-		const QJsonObject tour = QJsonDocument::fromJson(in.readAll()).object();
-		out.append(QJsonObject{{QStringLiteral("name"), QFileInfo(file).completeBaseName()}, {QStringLiteral("title"), tour.value(QStringLiteral("title"))},
-			{QStringLiteral("steps"), tour.value(QStringLiteral("steps")).toArray().size()}});
-	}
-	return out;
-}
-
 namespace
 {
 
@@ -264,17 +273,55 @@ bool isTourName(const QString& name)
 	return !name.isEmpty() && QFileInfo(name).fileName() == name && !name.contains(QLatin1Char('\\'));
 }
 
+//! Whether @a step has something to show: an object with a title or some text. One with neither would show blank.
+bool isUsableStep(const QJsonValue& step)
+{
+	const QJsonObject object = step.toObject();
+	return step.isObject() && (!object.value(QStringLiteral("title")).toString().isEmpty()
+		|| !object.value(QStringLiteral("text")).toString().isEmpty());
+}
+
+//! The tour in @a in when it is usable: a JSON object whose 'steps' are a non-empty array of usable steps.
+//! An empty object otherwise - the file is not JSON, has no steps, or has a step that would show blank.
+QJsonObject usableTour(QFile& in)
+{
+	const QJsonObject tour = QJsonDocument::fromJson(in.readAll()).object();
+	const QJsonArray steps = tour.value(QStringLiteral("steps")).toArray();
+	const bool usable = !steps.isEmpty() && std::all_of(steps.begin(), steps.end(), isUsableStep);
+	return usable ? tour : QJsonObject();
+}
+
 } // namespace
+
+QJsonArray GuidedTour::tours()
+{
+	QJsonArray out;
+	const QDir dir(dataPath(QStringLiteral("tours")));
+	for (const QString& file : dir.entryList({QStringLiteral("*.json")}, QDir::Files, QDir::Name))
+	{
+		QFile in(dir.filePath(file));
+		if (!in.open(QIODevice::ReadOnly)) { continue; }
+		const QJsonObject tour = usableTour(in);
+		if (tour.isEmpty())
+		{
+			qWarning() << "guided tour" << in.fileName() << "is left out: it is not JSON, has no steps, or has a step with no title or text";
+			continue;
+		}
+		out.append(QJsonObject{{QStringLiteral("name"), QFileInfo(file).completeBaseName()}, {QStringLiteral("title"), tour.value(QStringLiteral("title"))},
+			{QStringLiteral("steps"), tour.value(QStringLiteral("steps")).toArray().size()}});
+	}
+	return out;
+}
 
 GuidedTour* GuidedTour::start(const QString& name, QWidget* window, QString* error)
 {
 	QFile in(QDir(dataPath(QStringLiteral("tours"))).filePath(name + QStringLiteral(".json")));
 	const bool found = isTourName(name) && in.open(QIODevice::ReadOnly);
-	const QJsonArray steps = found ? QJsonDocument::fromJson(in.readAll()).object().value(QStringLiteral("steps")).toArray() : QJsonArray();
+	const QJsonArray steps = found ? usableTour(in).value(QStringLiteral("steps")).toArray() : QJsonArray();
 	if (steps.isEmpty() || window == nullptr)
 	{
 		*error = window == nullptr ? tr("there is no window to show a tour in")
-			: found ? tr("the tour '%1' has no steps: its file is empty or not valid JSON").arg(name)
+			: found ? tr("the tour '%1' is not usable: its file is empty, not valid JSON, or has a step with no title or text").arg(name)
 			: tr("there is no tour '%1'").arg(name);
 		return nullptr;
 	}
@@ -326,6 +373,14 @@ GuidedTour::GuidedTour(const QJsonArray& steps, QWidget* window) :
 bool GuidedTour::eventFilter(QObject* watched, QEvent* event)
 {
 	if (watched == parentWidget() && event->type() == QEvent::Resize) { place(); }
+	else if (shouldRepositionTour(event->type()))
+	{
+		for (QWidget* ancestor = targetOf(m_step); ancestor != nullptr; ancestor = ancestor->parentWidget())
+		{
+			if (ancestor == watched) { place(); break; }
+			if (ancestor == parentWidget()) { break; }
+		}
+	}
 	return QWidget::eventFilter(watched, event);
 }
 
@@ -361,7 +416,17 @@ void GuidedTour::showStep(int index)
 void GuidedTour::place()
 {
 	setGeometry(parentWidget()->rect());
-	const QWidget* target = targetOf(m_step);
+	QWidget* target = targetOf(m_step);
+	for (QWidget* ancestor = target; ancestor != nullptr; ancestor = ancestor->parentWidget())
+	{
+		ancestor->installEventFilter(this);
+		if (auto* scrollArea = qobject_cast<QAbstractScrollArea*>(ancestor))
+		{
+			connect(scrollArea->horizontalScrollBar(), &QScrollBar::valueChanged, this, &GuidedTour::place, Qt::UniqueConnection);
+			connect(scrollArea->verticalScrollBar(), &QScrollBar::valueChanged, this, &GuidedTour::place, Qt::UniqueConnection);
+		}
+		if (ancestor == parentWidget()) { break; }
+	}
 	m_hole = target != nullptr && target->isVisible() ? QRect(target->mapTo(parentWidget(), QPoint(0, 0)), target->size()) : QRect();
 	m_bubble->adjustSize();
 	const QPoint beside = bubbleAt(m_hole, m_bubble->size(), size());
@@ -406,7 +471,7 @@ void installHelpEntries(QMenuBar* bar)
 	QAction* whatsThis = addCommandAction(help, HelpCenter::tr("What's This?"), QStringLiteral("app.help"),
 		[] { return CommandCall{QStringLiteral("app.help"), {{QStringLiteral("whats_this"), true}}, {}, QString(), false}; });
 	whatsThis->setObjectName(QStringLiteral("helpWhatsThis"));
-	whatsThis->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F1));
+	whatsThis->setShortcut(keySequence(Qt::SHIFT, Qt::Key_F1));
 	// Design theme 21: help for the focused control from the keyboard - no hovering, no click needed.
 	QAction* forThis = addCommandAction(help, HelpCenter::tr("Help for This"), QStringLiteral("app.help"),
 		[] { return CommandCall{QStringLiteral("app.help"), {{QStringLiteral("context"), true}}, {}, QString(), false}; });

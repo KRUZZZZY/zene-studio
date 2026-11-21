@@ -51,6 +51,12 @@ void registerHardwareInsertCommands(ControlRegistry& registry);
 //! 0.5.0 F7 (MX-060): mixer.channel_format / surround_pan / downmix_options / surround_get
 //! (ControlCommandsMixerSurround.cpp), registered with the hardware I/O commands they play through.
 void registerSurroundCommands(ControlRegistry& registry);
+//! Q050-089.2 (R-mixing-18): render.realtime - the project played through the device, so the hardware inserts are
+//! heard (ControlCommandsRenderRealtime.cpp). Registered beside render.render.
+LMMS_EXPORT void registerRenderRealtimeCommand(ControlRegistry& registry);
+//! Q050-089.2: render.render's `hardware_inserts` - the inserts that are on, which an offline render bypasses (it
+//! runs no device, so the hardware is unavailable and the dry signal is rendered).
+LMMS_EXPORT QJsonObject offlineHardwareInsertsJson();
 
 //! 0.5.0 F1: the hardware I/O commands' shared pieces (ControlCommandsHardwareIo*.cpp, ControlCommandsCueMix.cpp).
 namespace control::hardware

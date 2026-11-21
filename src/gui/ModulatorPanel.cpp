@@ -24,6 +24,10 @@
 
 #include "ModulatorPanel.h"
 
+#include <functional>
+#include <utility>
+
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
@@ -49,6 +53,22 @@ namespace lmms::gui
 namespace
 {
 
+class RefreshingComboBox final : public QComboBox
+{
+public:
+	explicit RefreshingComboBox(QWidget* parent) : QComboBox(parent) {}
+	void setRefresh(std::function<void()> refresh) { m_refresh = std::move(refresh); }
+
+	void showPopup() override
+	{
+		if (m_refresh) { m_refresh(); }
+		QComboBox::showPopup();
+	}
+
+private:
+	std::function<void()> m_refresh;
+};
+
 ControlResult run(const char* command, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(QString::fromLatin1(command), args);
@@ -56,12 +76,23 @@ ControlResult run(const char* command, const QJsonObject& args = {})
 
 QString refusal(const ControlResult& result) { return result.ok ? QString() : result.errorMessage; }
 
+bool sameRouteAddress(const QJsonObject& left, const QJsonObject& right)
+{
+	return left.value(QStringLiteral("channel")) == right.value(QStringLiteral("channel"))
+		&& left.value(QStringLiteral("chain")) == right.value(QStringLiteral("chain"))
+		&& left.value(QStringLiteral("effect")) == right.value(QStringLiteral("effect"))
+		&& left.value(QStringLiteral("parameter")) == right.value(QStringLiteral("parameter"))
+		&& left.value(QStringLiteral("track")) == right.value(QStringLiteral("track"));
+}
+
 QPushButton* commandButton(const QString& label, const char* command, QWidget* parent)
 {
 	auto* button = new QPushButton(label, parent);
 	button->setProperty("controlCommand", QString::fromLatin1(command));
 	return button;
 }
+
+constexpr int PerSampleColumn = 4;
 
 QJsonArray modulators() { return run("modulator.get_state").result.value(QStringLiteral("modulators")).toArray(); }
 
@@ -133,15 +164,18 @@ ModulatorPanel::ModulatorPanel(QWidget* parent) :
 	m_rate->setDecimals(2);
 	m_rate->setSuffix(tr(" Hz"));
 	m_rate->setProperty("controlCommand", QStringLiteral("modulator.rate_set"));
-	m_targets = new QTableWidget(0, 4, this);
-	m_targets->setHorizontalHeaderLabels({tr("Channel"), tr("Effect"), tr("Parameter"), tr("Depth")});
+	m_targets = new QTableWidget(0, PerSampleColumn + 1, this);
+	m_targets->setHorizontalHeaderLabels({tr("Channel"), tr("Effect"), tr("Parameter"), tr("Depth"), tr("Per sample")});
 	m_targets->horizontalHeader()->setStretchLastSection(true);
 	m_targets->setSelectionBehavior(QAbstractItemView::SelectRows);
 	m_targets->setEditTriggers(QAbstractItemView::NoEditTriggers);
 	m_targets->setAccessibleName(tr("Parameters this modulator drives"));
-	m_channel = new QComboBox(this);
-	m_effect = new QComboBox(this);
-	m_parameter = new QComboBox(this);
+	auto* channel = new RefreshingComboBox(this);
+	m_channel = channel;
+	auto* effect = new RefreshingComboBox(this);
+	m_effect = effect;
+	auto* parameter = new RefreshingComboBox(this);
+	m_parameter = parameter;
 	m_depth = new QDoubleSpinBox(this);
 	m_depth->setRange(-1.0, 1.0);
 	m_depth->setSingleStep(0.05);
@@ -173,6 +207,9 @@ ModulatorPanel::ModulatorPanel(QWidget* parent) :
 	connect(m_rate, &QDoubleSpinBox::editingFinished, this, [this] { setShapeAndRate(m_shape->currentText(), m_rate->value()); });
 	connect(m_channel, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { fillEffects(); });
 	connect(m_effect, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { fillParameters(); });
+	channel->setRefresh([this] { fillChannels(); });
+	effect->setRefresh([this] { fillEffects(); });
+	parameter->setRefresh([this] { fillParameters(); });
 
 	auto* listButtons = new QHBoxLayout;
 	listButtons->addWidget(add);
@@ -281,13 +318,31 @@ void ModulatorPanel::showSelected()
 			{
 				m_targets->setItem(row, column, new QTableWidgetItem(cells.at(column)));
 			}
+			m_targets->setCellWidget(row, PerSampleColumn, perSampleSwitch(row, id, target));
 		}
 	}
+}
+
+QWidget* ModulatorPanel::perSampleSwitch(int row, const QString& modulator, const QJsonObject& route)
+{
+	auto* box = new QCheckBox(m_targets);
+	box->setChecked(route.value(QStringLiteral("per_sample")).toBool());
+	box->setProperty("controlCommand", QStringLiteral("modulator.per_sample_set"));
+	box->setAccessibleName(tr("Evaluate %1 per sample").arg(route.value(QStringLiteral("parameter")).toString()));
+	box->setToolTip(tr("On: this parameter moves smoothly inside each audio block. Off: it moves once per block."));
+	connect(box, &QCheckBox::clicked, this, [this, box, row, modulator, route](bool checked) {
+		const QString why = setRowPerSample(row, checked, modulator, route);
+		say(why);
+		// A refused click must not leave the box showing a value the route does not have.
+		if (!why.isEmpty()) { box->setChecked(!checked); }
+	});
+	return box;
 }
 
 void ModulatorPanel::fillChannels()
 {
 	const QSignalBlocker block(m_channel);
+	const QString selected = m_channel->currentData().toString();
 	m_channel->clear();
 	for (const QJsonValue& chain : channelChains())
 	{
@@ -295,12 +350,15 @@ void ModulatorPanel::fillChannels()
 		if (object.value(QStringLiteral("count")).toInt() == 0) { continue; }
 		m_channel->addItem(object.value(QStringLiteral("id")).toString(), object.value(QStringLiteral("id")).toString());
 	}
+	const int selectedIndex = m_channel->findData(selected);
+	if (selectedIndex >= 0) { m_channel->setCurrentIndex(selectedIndex); }
 	fillEffects();
 }
 
 void ModulatorPanel::fillEffects()
 {
 	const QSignalBlocker block(m_effect);
+	const QString selected = m_effect->currentData(Qt::UserRole + 1).toString();
 	m_effect->clear();
 	for (const QJsonValue& chain : channelChains())
 	{
@@ -310,13 +368,17 @@ void ModulatorPanel::fillEffects()
 		{
 			const QJsonObject device = devices.at(i).toObject();
 			m_effect->addItem(QStringLiteral("fx-%1 %2").arg(i).arg(device.value(QStringLiteral("display_name")).toString()), i);
+			m_effect->setItemData(m_effect->count() - 1, device.value(QStringLiteral("id")).toString(), Qt::UserRole + 1);
 		}
 	}
+	const int selectedIndex = m_effect->findData(selected, Qt::UserRole + 1);
+	if (selectedIndex >= 0) { m_effect->setCurrentIndex(selectedIndex); }
 	fillParameters();
 }
 
 void ModulatorPanel::fillParameters()
 {
+	const QString selected = m_parameter->currentText();
 	m_parameter->clear();
 	for (const QJsonValue& chain : channelChains())
 	{
@@ -329,6 +391,8 @@ void ModulatorPanel::fillParameters()
 			m_parameter->addItem(parameter.toObject().value(QStringLiteral("name")).toString());
 		}
 	}
+	const int selectedIndex = m_parameter->findText(selected);
+	if (selectedIndex >= 0) { m_parameter->setCurrentIndex(selectedIndex); }
 }
 
 QString ModulatorPanel::selectedId() const
@@ -400,6 +464,19 @@ QString ModulatorPanel::unbindRow(int row)
 		{QStringLiteral("target"), row}}));
 	refresh();
 	return result;
+}
+
+QString ModulatorPanel::setRowPerSample(int row, bool perSample, const QString& modulator,
+	const QJsonObject& expectedRoute)
+{
+	if (modulator.isEmpty() || selectedId() != modulator || row < 0) { return tr("no target is selected"); }
+	const QJsonArray targets = modulatorById(modulator).value(QStringLiteral("targets")).toArray();
+	if (row >= targets.size() || !sameRouteAddress(targets.at(row).toObject(), expectedRoute))
+	{
+		return tr("modulation routes changed; refresh the panel and try again");
+	}
+	return refusal(run("modulator.per_sample_set", {{QStringLiteral("modulator"), modulator},
+		{QStringLiteral("target"), row}, {QStringLiteral("per_sample"), perSample}}));
 }
 
 } // namespace lmms::gui

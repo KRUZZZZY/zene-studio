@@ -100,7 +100,7 @@ ControlResult switchVersion(const QJsonObject& args)
 	Set before;
 	ControlResult error;
 	if (!versionsOf(args, &track, &before, &error)) { return error; }
-	const QString name = args.value(QStringLiteral("name")).toString();
+	const QString name = args.value(QStringLiteral("name")).toString().trimmed();
 	if (!before.clips.contains(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the track has no version '%1'").arg(name)); }
 	if (name == before.active) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("'%1' is the version playing").arg(name)); }
 	const QString stored = before.clips.value(name);
@@ -123,7 +123,7 @@ ControlResult removeVersion(const QJsonObject& args)
 	Set before;
 	ControlResult error;
 	if (!versionsOf(args, &track, &before, &error)) { return error; }
-	const QString name = args.value(QStringLiteral("name")).toString();
+	const QString name = args.value(QStringLiteral("name")).toString().trimmed();
 	if (!before.clips.contains(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the track has no version '%1'").arg(name)); }
 	Set after = before;
 	after.clips.remove(name);

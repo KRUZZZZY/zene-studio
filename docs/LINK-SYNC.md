@@ -280,6 +280,11 @@ true in general across machines, which is precisely the class of thing Link's ow
 protocol spends its handshake on. `link.get_state` carries the assumption in
 `interop.clock` so no reader has to find it here.
 
+On receipt, the sender timestamp must be no later than the receiver's monotone
+clock and no more than `PeerTimeoutMs` (1,500 ms) old. Older announcements are
+discarded before they refresh peer liveness or affect the adopted phase; this
+prevents an integral but stale timestamp from counting most of local uptime as
+network transit.
 
 ## 5. What is NOT here (each is a limitation, not an omission)
 
@@ -305,7 +310,7 @@ protocol spends its handshake on. `link.get_state` carries the assumption in
 7. **Not built for a MinGW cross build** (§1) - that build gets the fallback.
    The Linux build is the one verified here; the Windows (MSVC, MSYS2 clang) and
    macOS builds compile the same vendored sources but were not built in this lane.
-8. **No LinkAudio** (Link 4's audio sharing) - not vendored.
+8. **No Ableton LinkAudio** (Link 4's audio sharing) - not vendored. Zene-to-Zene audio is a separate stream of our own, `link.audio_*`, which is not transport sync: docs/LINK-AUDIO.md.
 9. **Start/stop is not shared during an export render** (an offline render is
    not a transport start).
 

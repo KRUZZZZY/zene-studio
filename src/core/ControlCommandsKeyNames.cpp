@@ -67,6 +67,14 @@ ControlResult storeNames(Track* track, const QHash<int, QString>& next)
 {
 	const int id = track->id();
 	const QHash<int, QString> before = TrackKeyNames::instance().names(id);
+	// Reapplying the names the track already has is not an edit: a step here would put
+	// a no-op on the undo stack, so the next undo would consume it and leave the real
+	// edit in place (new-p14-19 BUG 13). An unchanged map also leaves the project clean.
+	if (next == before)
+	{
+		return ControlResult::success({{QStringLiteral("track"), trackIdOf(track)},
+			{QStringLiteral("names"), namesJson(before)}});
+	}
 	addUndoStep([id, before] { TrackKeyNames::instance().setNames(id, before); },
 		[id, next] { TrackKeyNames::instance().setNames(id, next); });
 	TrackKeyNames::instance().setNames(id, next);

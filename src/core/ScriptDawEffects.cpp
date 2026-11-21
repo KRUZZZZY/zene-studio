@@ -46,21 +46,29 @@ namespace lmms
 namespace
 {
 
-//! The effect the wrapper addresses, but only while it is STILL in its chain:
-//! a script may remove an effect and then read the wrapper it kept, and the
-//! pointer the wrapper holds would otherwise dangle.
-Effect* resolveLiveEffect(EffectChain* chain, Effect* effect)
+//! The chain the wrapper names, resolved through the stable id of the channel
+//! that owns it: a channel that is gone has no chain, and a chain that is gone
+//! is never read (cluster 1663 - the wrapper holds no pointer to it).
+EffectChain* liveChain(const QString& mixerChannelId)
 {
-	if (chain == nullptr || effect == nullptr)
-	{
-		return nullptr;
-	}
+	if (mixerChannelId.isEmpty()) { return nullptr; }
+	ScriptDawBindings::syncForRead();
+	return ScriptDawBindings::mixerChannelEffectChain(mixerChannelId);
+}
+
+//! The device the wrapper names, but only while it is STILL in its chain: a
+//! script may remove a device and then read the wrapper it kept. The device
+//! is found by its own id, not by its position: a position names a slot, and a
+//! slot can hold another device after a removal.
+Effect* liveEffect(EffectChain* chain, int effectId)
+{
+	if (chain == nullptr || effectId < 0) { return nullptr; }
 	const std::vector<Effect*>& effects = chain->effects();
-	if (std::find(effects.begin(), effects.end(), effect) == effects.end())
+	for (Effect* effect : effects)
 	{
-		return nullptr;
+		if (effect != nullptr && effect->id() == effectId) { return effect; }
 	}
-	return effect;
+	return nullptr;
 }
 
 //! The parameter models of \a effect, in the engine's own order - the list
@@ -99,9 +107,9 @@ LuaEffect& LuaEffectChain::effect(int index) const
 	EffectChain* chain = resolve();
 	if (chain == nullptr || index < 0 || index >= static_cast<int>(chain->effects().size()))
 	{
-		return ScriptDawBindings::newEffect(chain, nullptr);
+		return ScriptDawBindings::newEffect(m_mixerChannelId, nullptr);
 	}
-	return ScriptDawBindings::newEffect(chain, chain->effects()[index]);
+	return ScriptDawBindings::newEffect(m_mixerChannelId, chain->effects()[index]);
 }
 
 LuaEffect& LuaEffectChain::effectById(const QString& id) const
@@ -113,23 +121,27 @@ LuaEffect& LuaEffectChain::effectById(const QString& id) const
 // LuaEffect
 // ---------------------------------------------------------------------------
 
+EffectChain* LuaEffect::m_chain() const
+{
+	return liveChain(m_mixerChannelId);
+}
+
 Effect* LuaEffect::m_effective() const
 {
-	if (m_effect == nullptr) { return nullptr; }
-	// Chain-less construction (a bare `Effect()` from Lua) still resolves:
-	// only a wrapper that HAS a chain checks that the effect is still in it.
-	if (m_chain == nullptr) { return m_effect; }
-	return resolveLiveEffect(m_chain, m_effect);
+	return liveEffect(m_chain(), m_effectId);
 }
 
 int LuaEffect::index() const
 {
-	Effect* effect = m_effective();
-	if (effect == nullptr || m_chain == nullptr) { return -1; }
-	const std::vector<Effect*>& effects = m_chain->effects();
+	EffectChain* chain = m_chain();
+	if (chain == nullptr) { return -1; }
+	const std::vector<Effect*>& effects = chain->effects();
 	for (std::size_t i = 0; i < effects.size(); ++i)
 	{
-		if (effects[i] == effect) { return static_cast<int>(i); }
+		if (effects[i] != nullptr && effects[i]->id() == m_effectId)
+		{
+			return static_cast<int>(i);
+		}
 	}
 	return -1;
 }

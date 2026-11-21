@@ -429,6 +429,95 @@ private slots:
 		QCOMPARE(layer.modulator(0)->source.phase, 0.0f);
 	}
 
+	//! A boolean attribute that is present and is not "0" or "1" is a corrupt
+	//! block. toInt() != 0 read "bad" as false, so a modulator with active="bad"
+	//! loaded and drove nothing; unipolar, pervoice and persample failed the same way.
+	void aMalformedBooleanIsRefused()
+	{
+		const QStringList sourceFlags = {QStringLiteral("active"), QStringLiteral("unipolar"),
+			QStringLiteral("pervoice")};
+		for (const QString& flag : sourceFlags)
+		{
+			ModulationLayer layer;
+			QDomDocument doc;
+			QDomElement root = doc.createElement(QStringLiteral("modulation-layer"));
+			doc.appendChild(root);
+			QDomElement bad = doc.createElement(QStringLiteral("modulator"));
+			bad.setAttribute(QStringLiteral("name"), QStringLiteral("Broken"));
+			bad.setAttribute(QStringLiteral("shape"), QStringLiteral("sine"));
+			bad.setAttribute(QStringLiteral("rate"), QStringLiteral("1"));
+			bad.setAttribute(flag, QStringLiteral("bad"));
+			root.appendChild(bad);
+			QCOMPARE(layer.loadSettings(root), false);
+			QCOMPARE(layer.modulatorCount(), 0);
+		}
+
+		// The same refusal holds for a route's persample flag: the whole block is
+		// refused, so a route is never kept with its flag quietly read as off.
+		ModulationLayer layer;
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("modulation-layer"));
+		doc.appendChild(root);
+		QDomElement block = doc.createElement(QStringLiteral("modulator"));
+		block.setAttribute(QStringLiteral("name"), QStringLiteral("Routed"));
+		block.setAttribute(QStringLiteral("shape"), QStringLiteral("sine"));
+		block.setAttribute(QStringLiteral("rate"), QStringLiteral("1"));
+		QDomElement route = doc.createElement(QStringLiteral("route"));
+		route.setAttribute(QStringLiteral("channel"), kChannel);
+		route.setAttribute(QStringLiteral("chain"), kDrivenChain);
+		route.setAttribute(QStringLiteral("effect"), 0);
+		route.setAttribute(QStringLiteral("parameter"), QStringLiteral("Gain"));
+		route.setAttribute(QStringLiteral("depth"), QStringLiteral("0.5"));
+		route.setAttribute(QStringLiteral("persample"), QStringLiteral("bad"));
+		block.appendChild(route);
+		root.appendChild(block);
+		QCOMPARE(layer.loadSettings(root), false);
+		QCOMPARE(layer.modulatorCount(), 0);
+
+		// "0" and "1" read as written, and the absent flags keep their defaults.
+		QDomDocument valid;
+		QDomElement validRoot = valid.createElement(QStringLiteral("modulation-layer"));
+		valid.appendChild(validRoot);
+		QDomElement off = valid.createElement(QStringLiteral("modulator"));
+		off.setAttribute(QStringLiteral("name"), QStringLiteral("Off"));
+		off.setAttribute(QStringLiteral("shape"), QStringLiteral("sine"));
+		off.setAttribute(QStringLiteral("rate"), QStringLiteral("1"));
+		off.setAttribute(QStringLiteral("active"), QStringLiteral("0"));
+		off.setAttribute(QStringLiteral("unipolar"), QStringLiteral("1"));
+		off.setAttribute(QStringLiteral("pervoice"), QStringLiteral("1"));
+		QDomElement onRoute = valid.createElement(QStringLiteral("route"));
+		onRoute.setAttribute(QStringLiteral("channel"), kChannel);
+		onRoute.setAttribute(QStringLiteral("chain"), kDrivenChain);
+		onRoute.setAttribute(QStringLiteral("effect"), 0);
+		onRoute.setAttribute(QStringLiteral("parameter"), QStringLiteral("Gain"));
+		onRoute.setAttribute(QStringLiteral("depth"), QStringLiteral("0.5"));
+		onRoute.setAttribute(QStringLiteral("persample"), QStringLiteral("1"));
+		off.appendChild(onRoute);
+		// A route without a parameter is ignored, so its unrelated malformed flag
+		// must not make this otherwise valid modulator disappear.
+		QDomElement unnamedRoute = valid.createElement(QStringLiteral("route"));
+		unnamedRoute.setAttribute(QStringLiteral("persample"), QStringLiteral("bad"));
+		off.appendChild(unnamedRoute);
+		validRoot.appendChild(off);
+		QDomElement plain = valid.createElement(QStringLiteral("modulator"));
+		plain.setAttribute(QStringLiteral("name"), QStringLiteral("Plain"));
+		plain.setAttribute(QStringLiteral("shape"), QStringLiteral("sine"));
+		plain.setAttribute(QStringLiteral("rate"), QStringLiteral("1"));
+		validRoot.appendChild(plain);
+
+		ModulationLayer loaded;
+		QVERIFY(loaded.loadSettings(validRoot));
+		QCOMPARE(loaded.modulatorCount(), 2);
+		QCOMPARE(loaded.modulator(0)->source.active, false);
+		QCOMPARE(loaded.modulator(0)->source.unipolar, true);
+		QCOMPARE(loaded.modulator(0)->source.perVoice, true);
+		QCOMPARE(loaded.modulator(0)->routeCount(), 1);
+		QCOMPARE(loaded.modulator(0)->routes.front().perSample, true);
+		QCOMPARE(loaded.modulator(1)->source.active, true);
+		QCOMPARE(loaded.modulator(1)->source.unipolar, false);
+		QCOMPARE(loaded.modulator(1)->source.perVoice, false);
+	}
+
 
 	//! Cluster 1530: every step value survives save and reload EXACTLY. Six
 	//! significant digits is not enough to round-trip a float, so a step like
@@ -507,6 +596,47 @@ private slots:
 		float output = 0.0f;
 		lfo->fillLevel(&output, 1, std::numeric_limits<f_cnt_t>::max(), 1);
 		QVERIFY2(std::isfinite(output), "random LFO rendered an uninitialized sample");
+	}
+
+	//! Cluster new-p16-139: a track route (track >= 0) names an instrument parameter
+	//! by its track and display name alone - channel, chain and effect are unused for
+	//! it. findRoute compared those unused fields too, so two track routes on the same
+	//! parameter that differed only there both passed duplicate detection and resolved
+	//! to the same model. Rack routes keep the full address.
+	void aTrackRouteIsFoundByItsTrackAndParameterAlone()
+	{
+		ModulationLayer layer;
+		const int sine = layer.addModulator(QStringLiteral("Wobble"), sineAt(1.0f, 0.0f, false));
+		ModulationRoute bound = routeOf("Cutoff", 0.5f);
+		bound.channel = -1;
+		bound.chain = 0;
+		bound.effect = 0;
+		bound.track = 7;
+		QCOMPARE(layer.addRoute(sine, bound), 0);
+
+		// The same track and parameter with other unused fields is the same binding.
+		ModulationRoute again = bound;
+		again.channel = 3;
+		again.chain = 2;
+		again.effect = 5;
+		again.depth = -0.25f;
+		QVERIFY(layer.findRoute(again) != nullptr);
+
+		// The same parameter name on another track is a different binding.
+		ModulationRoute otherTrack = bound;
+		otherTrack.track = 8;
+		QVERIFY(layer.findRoute(otherTrack) == nullptr);
+
+		// A rack route with that display name is not the track's parameter.
+		QVERIFY(layer.findRoute(routeOf("Cutoff", 0.5f)) == nullptr);
+
+		// Rack routes still bind by the full rack address: another channel is another binding.
+		ModulationRoute rack = routeOf("Gain", 0.5f);
+		QCOMPARE(layer.addRoute(sine, rack), 1);
+		ModulationRoute otherChannel = rack;
+		otherChannel.channel = rack.channel + 1;
+		QVERIFY(layer.findRoute(otherChannel) == nullptr);
+		QVERIFY(layer.findRoute(rack) != nullptr);
 	}
 };
 

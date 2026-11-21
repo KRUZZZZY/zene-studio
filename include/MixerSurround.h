@@ -32,6 +32,7 @@
 #include <QStringList>
 
 #include "LmmsTypes.h"
+#include "SampleFrame.h"
 #include "lmms_export.h"
 
 class QDomDocument;
@@ -40,23 +41,28 @@ class QDomElement;
 namespace lmms
 {
 
+class AudioBuffer;
 class HardwareOutputBus;
 class Mixer;
 class MixerChannel;
 class MixerRoute;
-class SampleFrame;
 
 /*! 0.5.0 F7 (MX-060): surround channels, opted into one mixer channel at a time.
  *
  *  The engine's audio path stays stereo: a channel's buffer, its devices, its meters, the sends' PDC
  *  delay lines, the listen bus, the cue mixes and the recorder all carry L/R. A channel set to a surround
  *  format keeps its other speakers (centre, LFE, the surrounds) in a SIDE buffer next to its stereo one,
- *  allocated once with the channel for the largest layout (8 channels), so changing the format never
- *  allocates. Its devices process L/R only; the side channels pass by them with the channel's trim, VCA
+ *  allocated with the channel for the largest named layout (8 channels). Q050-155.1: a wider discrete
+ *  layout (up to 64 channels) grows that buffer when the format is set - on the control thread, under the
+ *  change lock, never on the audio path - and it never shrinks, so going back to a narrower format does not
+ *  allocate. Its devices process L/R only; the side channels pass by them with the channel's trim, VCA
  *  gain, its pan as a balance on each left/right pair, its fader and mute.
  *
  *  - Formats: stereo (the default), LCR, quad, 5.1, 7.1, in the WAVE channel order
- *    (L R C LFE Ls Rs; 7.1: L R C LFE Lrs Rrs Ls Rs).
+ *    (L R C LFE Ls Rs; 7.1: L R C LFE Lrs Rrs Ls Rs), mono (one M role) and discrete-2..discrete-64,
+ *    whose channels have no speaker roles: channel i is routed to output i by index, never folded or
+ *    reordered by speaker. A discrete channel name carries its count ("discrete-5"), so a save and a
+ *    load keep both the layout and how many channels it has.
  *  - The panner: a stereo channel sending into a surround channel can pan to a point of the room (x, y in
  *    -1..1, front is y = 1) with an LFE send and a spread, in place of its stereo pan. Constant-power
  *    pairwise panning between the two speakers either side of the point's direction; the spread, and a
@@ -81,9 +87,14 @@ class SampleFrame;
 namespace surround
 {
 
-//! The largest layout's channels, and those beyond the stereo pair a side buffer holds.
-constexpr int MaxChannels = 8;
+//! The largest layout's channels (the widest discrete bus, Q050-155.1), and those beyond the stereo pair
+//! a side buffer can hold.
+constexpr int MaxChannels = 64;
 constexpr int SideChannels = MaxChannels - 2;
+//! The largest NAMED speaker layout (7.1): the downmix matrices and the panner's gains cover this many
+//! channels. A discrete layout never needs either - it is routed by index (isDiscrete()).
+constexpr int MaxSpeakers = 8;
+constexpr int SpeakerSideChannels = MaxSpeakers - 2;
 
 enum class Format : int
 {
@@ -91,14 +102,32 @@ enum class Format : int
 	Lcr,
 	Quad,
 	Surround51,
-	Surround71
+	Surround71,
+	Mono,
+	Discrete2,
+	Discrete3,
+	Discrete4,
+	Discrete5,
+	Discrete6,
+	Discrete7,
+	Discrete8,
+	// Q050-155.1: Discrete9 .. Discrete64 follow in count order (Discrete2 + N - 2); discreteFormat() names
+	// them. Only the landmarks are spelled out.
+	Discrete16 = Discrete2 + 14,
+	Discrete32 = Discrete2 + 30,
+	Discrete64 = Discrete2 + 62
 };
-constexpr int FormatCount = 5;
+constexpr int FormatCount = static_cast<int>(Format::Discrete64) + 1;
+
+//! The discrete layouts' count range: Mono is the one-channel layout, Discrete2..Discrete64 the rest.
+constexpr int MinDiscreteChannels = 2;
+constexpr int MaxDiscreteChannels = MaxChannels;
 
 //! Where a speaker sits: its role (what a downmix knows it by) and its point in the panner's square room.
+//! M is mono's single role; None is a role-less discrete channel.
 enum class Role : int
 {
-	L, R, C, Lfe, Ls, Rs, Lrs, Rrs
+	L, R, C, Lfe, Ls, Rs, Lrs, Rrs, M, None
 };
 
 //! A channel's panner, as a sender into a surround channel.
@@ -122,9 +151,10 @@ struct DownmixOptions
 	bool operator==(const DownmixOptions&) const = default;
 };
 
-//! One receiver channel from each sender channel: [to][from].
-using Matrix = std::array<std::array<float, MaxChannels>, MaxChannels>;
-using Gains = std::array<float, MaxChannels>;
+//! One receiver channel from each sender channel: [to][from]. A named layout's speakers only; a discrete
+//! layout's channels beyond the first MaxSpeakers are routed by index, never through a matrix.
+using Matrix = std::array<std::array<float, MaxSpeakers>, MaxSpeakers>;
+using Gains = std::array<float, MaxSpeakers>;
 
 LMMS_EXPORT int channelCount(Format format);
 LMMS_EXPORT Role roleOf(Format format, int channel);
@@ -133,14 +163,30 @@ LMMS_EXPORT int channelOf(Format format, Role role);
 LMMS_EXPORT QString formatName(Format format);
 LMMS_EXPORT bool formatFromName(const QString& name, Format* format);
 LMMS_EXPORT QStringList formatNames();
-//! "L", "R", "C", "LFE", "Ls", ...: @a format's speakers in channel order.
+//! Q050-155.2 / Q050-296.1: the channel count of the surround layout a saved mixer channel element names when
+//! it is wider than its pair (named 5.1/7.1/... or discrete), else 0. Read before the channel's devices load
+//! (AudioPortsModel::HostBusScope).
+LMMS_EXPORT int savedDiscreteChannels(const QDomElement& channelElement);
+//! Whether @a format is one of the role-less discrete layouts (Discrete2..Discrete64).
+LMMS_EXPORT bool isDiscrete(Format format);
+//! @a format's discrete channel count (2..64), or -1 when it is not discrete.
+LMMS_EXPORT int discreteChannels(Format format);
+//! The discrete layout with @a channels (2..64), or Stereo when the count is outside the range.
+LMMS_EXPORT Format discreteFormat(int channels);
+//! "L", "R", "C", "LFE", "Ls", ...: @a format's speakers in channel order. Empty for a discrete layout:
+//! its channels have no speaker roles.
 LMMS_EXPORT QStringList speakerNames(Format format);
-//! A speaker's point in the panner's room (the LFE has none: 0, 0).
+//! The channel-address labels a reader gets: speaker names, "M" for mono, or "1".."N" for discrete.
+LMMS_EXPORT QStringList channelLabels(Format format);
+//! A speaker's point in the panner's room (the LFE has none: 0, 0; a discrete channel has no position).
 LMMS_EXPORT void speakerPoint(Format format, int channel, float* x, float* y);
 
 //! The panner's gains for @a pan over @a format's channels (unit power over the speakers, plus the LFE send).
+//! All zero for a discrete layout: the panner does not act on one.
 LMMS_EXPORT Gains panGains(Format format, const PanPosition& pan);
-//! The mix from @a from into @a to with the current downmix options (built when they change).
+//! The mix from @a from into @a to with the current downmix options (built when they change). Either
+//! side discrete: the identity over the first MaxSpeakers channels; the render path routes discrete
+//! channels by index (channel i to channel i) and does not read the matrix for them.
 LMMS_EXPORT const Matrix& matrix(Format from, Format to);
 
 LMMS_EXPORT const DownmixOptions& downmixOptions();
@@ -157,8 +203,11 @@ struct LMMS_EXPORT ChannelSurround
 
 	surround::Format format() const { return m_format; }
 	bool isSurround() const { return m_format != surround::Format::Stereo; }
-	//! Control thread, under the change lock. The side buffer is cleared.
+	//! Control thread, under the change lock. The side buffer is cleared, and grown first when @a format
+	//! has more channels than it holds (a wide discrete layout); it never shrinks.
 	void setFormat(surround::Format format);
+	//! How many channels the side buffer holds now, its stereo pair included (8 .. 64).
+	int capacity() const;
 
 	const surround::PanPosition& pan() const { return m_pan; }
 	//! Control thread, under the change lock: the panner and its gains for every format.
@@ -166,10 +215,16 @@ struct LMMS_EXPORT ChannelSurround
 	//! The panner's gains into a receiver of @a format.
 	const surround::Gains& gains(surround::Format format) const { return m_gains[static_cast<std::size_t>(format)]; }
 
-	//! Side channel @a channel (2..7) of the period: frames() floats.
+	//! Side channel @a channel (2 .. channelCount(format()) - 1) of the period: frames() floats.
 	float* plane(int channel) { return m_side.data() + static_cast<std::size_t>(channel - 2) * m_frames; }
 	const float* plane(int channel) const { return m_side.data() + static_cast<std::size_t>(channel - 2) * m_frames; }
 	f_cnt_t frames() const { return m_frames; }
+	/*! Q050-155.2: the interleaved pairs a discrete layout's insert devices see beyond the channel's own pair:
+	 *  pair @a pair (1 .. insertPairCapacity() - 1) carries channels 2 * pair and 2 * pair + 1, frames() frames.
+	 *  Allocated by setFormat() with the side buffer (control thread, change lock), never on the audio path. */
+	SampleFrame* insertPair(int pair) { return m_pairs.data() + static_cast<std::size_t>(pair - 1) * m_frames; }
+	//! How many pairs the insert bus can hold now, the channel's own pair included (1 .. 32).
+	int insertPairCapacity() const;
 	//! Whether the side buffer holds anything this period (its owner wrote it).
 	bool written() const { return m_written; }
 	void markWritten() { m_written = true; }
@@ -188,6 +243,8 @@ private:
 	surround::PanPosition m_pan;
 	std::array<surround::Gains, surround::FormatCount> m_gains{};
 	std::vector<float> m_side;
+	//! Q050-155.2: insertPair()'s storage; empty until a discrete layout wider than its pair is set.
+	std::vector<SampleFrame> m_pairs;
 	f_cnt_t m_frames = 0;
 	bool m_written = false;
 };
@@ -206,6 +263,16 @@ LMMS_EXPORT void panSend(MixerRoute& route, const SampleFrame* src, f_cnt_t fram
 //! The receiver's worker, after a send's stereo part: a surround sender's side channels into the
 //! receiver - carried or folded (matrix()). Not for feedback sends (their snapshot is stereo).
 LMMS_EXPORT void addSideChannels(MixerRoute& route, f_cnt_t frames);
+/*! Q050-155.2 / Q050-296.1: whether @a channel's insert chain runs on its wide bus this period: a surround
+ *  layout (named 5.1/7.1/... or discrete) wider than its pair, a non-empty enabled chain, and an insert bus
+ *  allocated for @a frames. */
+LMMS_EXPORT bool insertsTakeWideBus(const MixerChannel& channel, f_cnt_t frames);
+/*! The channel's worker, its insert stage (insertsTakeWideBus()): the chain on one bus of every channel - the
+ *  pair, then the side channels as interleaved pairs in index order - so a device's pins reach channel 0 .. 63
+ *  by index. A legacy device (no pins) still processes the pair only; the sides pass it untouched. The side
+ *  buffer is written back afterwards. @a sidechain as EffectChain::processAudioBuffer takes it. Returns
+ *  whether the chain keeps running. */
+LMMS_EXPORT bool processWideInserts(MixerChannel& channel, f_cnt_t frames, const AudioBuffer* sidechain);
 //! The channel's worker, after its pan stage: trim, VCA gain and the pan's balance on the side channels.
 LMMS_EXPORT void processChannel(MixerChannel& channel, f_cnt_t frames);
 //! The render thread, after the master's fader: a surround master's side channels onto the hardware

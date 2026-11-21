@@ -27,10 +27,13 @@
 #ifndef LMMS_DEPRECATIONHELPER_H
 #define LMMS_DEPRECATIONHELPER_H
 
+#include <cmath>
 #include <type_traits>
 
 #include <QDomDocument>
 #include <QFontMetrics>
+#include <QColor>
+#include <QJsonValue>
 #include <QKeySequence>
 #include <QVariant>
 #include <QWheelEvent>
@@ -95,6 +98,34 @@ inline QPoint globalPosition(const QMouseEvent* me)
 	return me->globalPosition().toPoint();
 #else
 	return me->globalPos();
+#endif
+}
+
+//! Backwards-compatible adapter for QJsonValue::toInteger (Qt 6 only). Qt 6 returns the default for anything
+//! that is not a whole number representable as qint64; so does the Qt 5 branch (a Qt 5 number is a double).
+inline qint64 jsonInteger(const QJsonValue& value, qint64 defaultValue = 0)
+{
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+	return value.toInteger(defaultValue);
+#else
+	if (!value.isDouble()) { return defaultValue; }
+	const double number = value.toDouble();
+	// NaN fails the first test, infinities and out-of-range values the others; 2^63 itself is out of range.
+	if (!(number == std::floor(number)) || number < -9223372036854775808.0 || number >= 9223372036854775808.0)
+	{
+		return defaultValue;
+	}
+	return static_cast<qint64>(number);
+#endif
+}
+
+//! Backwards-compatible adapter for QColor::isValidColorName (Qt 6.4); Qt 5 spells it isValidColor.
+inline bool isValidColorName(const QString& name)
+{
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 4, 0))
+	return QColor::isValidColorName(name);
+#else
+	return QColor::isValidColor(name);
 #endif
 }
 

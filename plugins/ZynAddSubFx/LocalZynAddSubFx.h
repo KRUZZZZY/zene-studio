@@ -26,8 +26,11 @@
 #define LOCAL_ZYNADDSUBFX_H
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
 
 #include "AudioBufferView.h"
+#include "LmmsTypes.h"
 #include "Note.h"
 
 class Master;
@@ -60,9 +63,17 @@ public:
 
 	void setPitchWheelBendRange( int semitones );
 
-	void processMidiEvent( const MidiEvent& event );
+	//! The event is applied at `offset` frames into the period that is rendered next.
+	//! An offset of 0 applies the event at once, the way the callers that have no
+	//! position for it use it.
+	void processMidiEvent( const MidiEvent& event, f_cnt_t offset = 0 );
 
 	void process(PlanarBufferView<float, 2> out);
+
+	//! The granularity Zyn renders in: the synth computes its voices in blocks of this
+	//! many frames. A block that is smaller than the period is what lets a scheduled
+	//! MIDI event take effect inside the period it was scheduled for.
+	static constexpr int SynthBlockSize = 64;
 
 	inline Master * master()
 	{
@@ -73,11 +84,44 @@ public:
 protected:
 	static int s_instanceCount;
 
+	//! One MIDI event that waits for its frame in the period that is rendered next.
+	struct ScheduledEvent
+	{
+		std::uint8_t type = 0;
+		std::int8_t channel = 0;
+		std::int16_t param1 = 0;
+		std::int16_t param2 = 0;
+		std::uint32_t offset = 0;
+	};
+
+	//! Applies the event to the synth's state at once.
+	void applyMidiEvent( const MidiEvent& event );
+
+	//! Applies one scheduled event to the synth's state.
+	void applyScheduledEvent( const ScheduledEvent& event );
+
+	//! Renders the frames [from, to) of the period into the caller's planes.
+	void renderFrames( PlanarBufferView<float, 2> out, f_cnt_t from, f_cnt_t to );
+
 	std::string m_presetsDir;
 
-	std::array<int, NumKeys> m_runningNotes = {};
+	//! How many notes run on each key, per MIDI channel: an all-notes-off ends only its own channel's.
+	std::array<std::array<int, NumKeys>, 16> m_runningNotes = {};
 	Master * m_master;
 	NulEngine* m_ioEngine;
+
+	//! The number of frames the host renders per period (the transport block).
+	int m_transportSize = 256;
+
+	//! The events that wait for their frame in the period that is rendered next. The array is a
+	//! member, so queueing an event allocates nothing. One drain of the instrument's handoff queue
+	//! takes 256 events, and one all-notes-off per channel can fall due at each of the 257 queue
+	//! boundaries around them. All of them fit: an event that finds the list full is applied at once,
+	//! which would put a recovery cut ahead of the notes it has to end.
+	static constexpr std::size_t MaxQueuedEventsPerDrain = 256;
+	static constexpr std::size_t MaxCutsPerBoundary = 16;
+	std::array<ScheduledEvent, MaxQueuedEventsPerDrain + MaxCutsPerBoundary * (MaxQueuedEventsPerDrain + 1)> m_scheduled{};
+	std::size_t m_scheduledCount = 0;
 
 } ;
 

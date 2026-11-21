@@ -28,12 +28,18 @@
 #include "AudioFileProcessorWaveView.h"
 
 #include <QPainter>
+#include <QPushButton>
+#include <QTimer>
 
 #include "ComboBox.h"
 #include "DataFile.h"
 #include "FileDialog.h"
 #include "FontHelper.h"
+#include "Knob.h"
+#include "LcdSpinBox.h"
+#include "InstrumentTrack.h"
 #include "PixmapButton.h"
+#include "SamplerTakeButton.h"
 #include "Song.h"
 #include "StringPairDrag.h"
 #include "Track.h"
@@ -60,6 +66,14 @@ AudioFileProcessorView::AudioFileProcessorView(Instrument* instrument,
 	connect(m_openAudioFileButton, SIGNAL(clicked()),
 					this, SLOT(openAudioFile()));
 	m_openAudioFileButton->setToolTip(tr("Open sample"));
+
+	// Q050-156: record the input straight into this sampler - the same registered
+	// record.sampler_capture* commands an agent runs (SamplerTakeButton.h).
+	m_recordTakeButton = new QPushButton(tr("Record take"), this);
+	m_recordTakeButton->setObjectName(QStringLiteral("audioFileProcessorRecordTake"));
+	m_recordTakeButton->setGeometry(5, 148, 90, 20);
+	m_recordTakeButton->setToolTip(tr("Record the input into this sampler; click again to stop"));
+	connect(m_recordTakeButton, &QPushButton::clicked, this, &AudioFileProcessorView::recordTake);
 
 	m_reverseButton = new PixmapButton(this);
 	m_reverseButton->setCheckable(true);
@@ -134,12 +148,33 @@ AudioFileProcessorView::AudioFileProcessorView(Instrument* instrument,
 	m_interpBox = new ComboBox(this);
 	m_interpBox->setGeometry(142, 62, 82, ComboBox::DEFAULT_HEIGHT);
 
+// attack / release (ms) and the voice limit - the strip between the logo and the file name
+	m_attackKnob = new Knob(KnobType::Small17, this);
+	m_attackKnob->move(10, 62);
+	m_attackKnob->setHintText(tr("Attack:"), " ms");
+
+	m_releaseKnob = new Knob(KnobType::Small17, this);
+	m_releaseKnob->move(52, 62);
+	m_releaseKnob->setHintText(tr("Release:"), " ms");
+
+	m_voiceLimitBox = new LcdSpinBox(2, this, "Voice limit");
+	m_voiceLimitBox->move(94, 63);
+	m_voiceLimitBox->setToolTip(tr("Voice limit: at this many sounding notes a new note takes over the voice that was released the longest ago, or else the oldest held one"));
+
 // wavegraph
 	m_waveView = 0;
 	newWaveView();
 
 	connect(castModel<AudioFileProcessor>(), SIGNAL(isPlaying(lmms::f_cnt_t)),
 			m_waveView, SLOT(isPlaying(lmms::f_cnt_t)));
+
+	// Cluster p12-315: the playhead leaves the render thread through a single
+	// polling timer, so render periods never post GUI events or allocate for
+	// playhead updates. The view polls; the model publishes from the render path.
+	auto* const playheadPoll = new QTimer(this);
+	playheadPoll->setObjectName(QStringLiteral("audioFileProcessorPlayheadPoll"));
+	connect(playheadPoll, &QTimer::timeout, castModel<AudioFileProcessor>(), &AudioFileProcessor::pollPlayhead);
+	playheadPoll->start(20);
 
 	qRegisterMetaType<lmms::f_cnt_t>("lmms::f_cnt_t");
 
@@ -245,6 +280,12 @@ void AudioFileProcessorView::paintEvent(QPaintEvent*)
 
 	p.setPen(QColor(255, 255, 255));
 	p.drawText(8, 99, file_name);
+
+	// captions of the attack / release / voice controls
+	p.setPen(QColor(200, 200, 200));
+	p.drawText(6, 59, tr("ATTACK"));
+	p.drawText(48, 59, tr("RELEASE"));
+	p.drawText(96, 59, tr("VOICES"));
 }
 
 void AudioFileProcessorView::sampleUpdated()
@@ -264,6 +305,12 @@ void AudioFileProcessorView::openAudioFile()
 	m_waveView->updateSampleRange();
 }
 
+void AudioFileProcessorView::recordTake()
+{
+	samplerTakeButtonStep(m_recordTakeButton,
+		QStringLiteral("trk-%1").arg(castModel<AudioFileProcessor>()->instrumentTrack()->id()));
+}
+
 void AudioFileProcessorView::modelChanged()
 {
 	auto a = castModel<AudioFileProcessor>();
@@ -276,6 +323,9 @@ void AudioFileProcessorView::modelChanged()
 	m_loopGroup->setModel(&a->loopModel());
 	m_stutterButton->setModel(&a->stutterModel());
 	m_interpBox->setModel(&a->interpolationModel());
+	m_attackKnob->setModel(&a->attackModel());
+	m_releaseKnob->setModel(&a->releaseModel());
+	m_voiceLimitBox->setModel(&a->voiceLimitModel());
 	sampleUpdated();
 }
 

@@ -21,8 +21,10 @@
  * Boston, MA 02110-1301 USA.
  *
  */
-
 #include "DelayEffect.h"
+
+#include <atomic>
+
 #include "Engine.h"
 #include "embed.h"
 #include "Lfo.h"
@@ -90,7 +92,10 @@ ProcessStatus DelayEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 	SampleFrame peak;
 	float length = m_delayControls.m_delayTimeModel.value();
 	float amplitude = m_delayControls.m_lfoAmountModel.value();
-	float lfoTime = 1.0 / m_delayControls.m_lfoTimeModel.value();
+	// The model holds the LFO PERIOD in seconds, like the amount above: the
+	// static path and the automated path carry the same unit and the
+	// conversion to the unit the LFO wants happens where it is used.
+	float lfoPeriod = m_delayControls.m_lfoTimeModel.value();
 	float feedback =  m_delayControls.m_feedbackModel.value();
 	ValueBuffer *lengthBuffer = m_delayControls.m_delayTimeModel.valueBuffer();
 	ValueBuffer *feedbackBuffer = m_delayControls.m_feedbackModel.valueBuffer();
@@ -98,11 +103,11 @@ ProcessStatus DelayEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 	ValueBuffer *lfoAmountBuffer = m_delayControls.m_lfoAmountModel.valueBuffer();
 	int lengthInc = lengthBuffer ? 1 : 0;
 	int amplitudeInc = lfoAmountBuffer ? 1 : 0;
-	int lfoTimeInc = lfoTimeBuffer ? 1 : 0;
+	int lfoPeriodInc = lfoTimeBuffer ? 1 : 0;
 	int feedbackInc = feedbackBuffer ? 1 : 0;
 	float *lengthPtr = lengthBuffer ? &( lengthBuffer->values()[ 0 ] ) : &length;
 	float *amplitudePtr = lfoAmountBuffer ? &( lfoAmountBuffer->values()[ 0 ] ) : &amplitude;
-	float *lfoTimePtr = lfoTimeBuffer ? &( lfoTimeBuffer->values()[ 0 ] ) : &lfoTime;
+	float *lfoPeriodPtr = lfoTimeBuffer ? &( lfoTimeBuffer->values()[ 0 ] ) : &lfoPeriod;
 	float *feedbackPtr = feedbackBuffer ? &( feedbackBuffer->values()[ 0 ] ) : &feedback;
 
 	if( m_delayControls.m_outGainModel.isValueChanged() )
@@ -117,7 +122,9 @@ ProcessStatus DelayEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 
 		// Prepare delay for current sample
 		m_delay->setFeedback( *feedbackPtr );
-		m_lfo->setFrequency( *lfoTimePtr );
+		// setFrequency() wants Hz, the model holds the period in seconds.
+		const float lfoFrequency = 1.0 / *lfoPeriodPtr;
+		m_lfo->setFrequency( lfoFrequency );
 		m_currentLength = static_cast<int>(*lengthPtr * Engine::audioEngine()->outputSampleRate());
 		m_delay->setLength( m_currentLength + ( *amplitudePtr * sr * ( float )m_lfo->tick() ) );
 
@@ -133,12 +140,15 @@ ProcessStatus DelayEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 
 		lengthPtr += lengthInc;
 		amplitudePtr += amplitudeInc;
-		lfoTimePtr += lfoTimeInc;
+		lfoPeriodPtr += lfoPeriodInc;
 		feedbackPtr += feedbackInc;
 	}
 
-	m_delayControls.m_outPeakL = peak.left();
-	m_delayControls.m_outPeakR = peak.right();
+	// cluster new-p9-122 (new-p16-57): publish the block peaks to the GUI's
+	// EqFader as relaxed atomic stores - the old plain assignments raced with
+	// the fader's read-and-clear on the timer.
+	m_delayControls.m_outPeakL.store(peak.left(), std::memory_order_relaxed);
+	m_delayControls.m_outPeakR.store(peak.right(), std::memory_order_relaxed);
 
 	return ProcessStatus::ContinueIfNotQuiet;
 }

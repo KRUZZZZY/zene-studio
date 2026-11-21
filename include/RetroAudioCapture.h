@@ -104,11 +104,34 @@ public:
 	//! True while frames are being recorded. False on construction.
 	bool isArmed() const noexcept { return m_armed.load(std::memory_order_relaxed); }
 
-	//! Audio thread: record one rendered period of the engine's input.
-	//! Realtime-safe (see the class comment). While disarmed this is one
-	//! relaxed atomic load and nothing else.
-	void push(const SampleFrame* frames, f_cnt_t count) noexcept;
+	//! Audio thread: record one rendered period of the engine's input at
+	//! \a sampleRate. Realtime-safe (see the class comment). While disarmed
+	//! this is one relaxed atomic load and nothing else.
+	//!
+	//! The retained window must hold frames recorded at ONE sample rate, or a
+	//! take would label frames from several rates with a single rate (Luna
+	//! cluster new-p12-200, BUG 5). When a period arrives at a rate different
+	//! from the frames already retained, the stale frames are dropped through
+	//! the ring's producer-side discard so the window stays rate-homogeneous.
+	//! While a consumer snapshot is in flight the transition is DEFERRED to
+	//! the next period after the snapshot releases the ring: the window and
+	//! the rate the consumer reads are then one validated snapshot, even when
+	//! the consumer's quiesce wait timed out (Luna new-p12-200 rework).
+	//! \a sampleRate must be a positive rate.
+	void push(const SampleFrame* frames, f_cnt_t count, int sampleRate) noexcept;
 
+#ifdef LMMS_TESTING
+	//! Test hook: invoked inside push() after the snapshot-pending state has
+	//! been observed for the rate decision and before the period is admitted
+	//! (or dropped). Used by RetroAudioCaptureTest to reproduce the race where
+	//! a snapshot releases between the pending check and ring admission.
+	using PushPauseTestHook = void (*)(void*);
+	static void setPushPauseTestHook(PushPauseTestHook hook, void* context) noexcept
+	{
+		s_pushPauseTestContext.store(context, std::memory_order_relaxed);
+		s_pushPauseTestHook.store(hook, std::memory_order_release);
+	}
+#endif
 	//! The ring behind this capture (the consumer side, the UI/control thread).
 	RetroAudioRing& ring() noexcept { return m_ring; }
 	const RetroAudioRing& ring() const noexcept { return m_ring; }
@@ -124,16 +147,51 @@ public:
 		//! is written: read afterwards it also counts frames the window's frames
 		//! never contained.
 		std::size_t overwritten = 0;
+		//! The single sample rate the retained frames were recorded at, validated
+		//! together with the frames themselves: one atomic rate-tag read around the
+		//! copy (Luna cluster new-p12-200 rework). The window is rate-homogeneous,
+		//! so a take can be labelled with this rate without mis-scaling any frame.
+		//! 0 until a frame has been retained.
+		int sampleRate = 0;
 	};
 
 	//! Consumer side. Never blocks the audio thread: the producer is asked to
 	//! stand still, waited for briefly, and released again even when the wait
-	//! timed out (the same handshake midi.retro_capture_status uses).
+	//! timed out (the same handshake midi.retro_capture_status uses). The frames
+	//! and their sample rate are read as ONE validated snapshot: when a rate
+	//! transition kept landing across the copy, the window comes back refused
+	//! rather than relabelled (Luna cluster new-p12-200 rework).
 	Window takeWindow() const;
 
 private:
 	RetroAudioRing m_ring;
 	std::atomic<bool> m_armed{false};
+	//! The rate of the frames currently retained AND the generation of the
+	//! window they belong to, published as ONE atomic value
+	//! (generation << 32 | rate). The producer (audio thread) is the only
+	//! writer: it bumps the generation whenever a rate transition discards the
+	//! stale window. takeWindow() requires the value to be unchanged around its
+	//! copy, so the frames and the sample rate that labels them always come
+	//! from one validated snapshot - also on the quiesce-timeout path (Luna
+	//! cluster new-p12-200 rework). 0 until the first period is pushed.
+	std::atomic<std::uint64_t> m_rateTag{0};
+
+#ifdef LMMS_TESTING
+	static std::atomic<PushPauseTestHook> s_pushPauseTestHook;
+	static std::atomic<void*> s_pushPauseTestContext;
+	static void notifyPushPauseTestHook() noexcept
+	{
+		if (const auto hook = s_pushPauseTestHook.load(std::memory_order_acquire))
+		{
+			hook(s_pushPauseTestContext.load(std::memory_order_relaxed));
+		}
+	}
+#endif
+
+	//! Apply (or defer) a rate transition for this period. Returns true when
+	//! the period was deferred because a snapshot was in flight (caller drops
+	//! it without admitting to the ring).
+	bool transitionRateIfNeeded(int sampleRate, bool pending, std::uint64_t tag) noexcept;
 } ;
 
 

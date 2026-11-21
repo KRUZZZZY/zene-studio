@@ -25,7 +25,9 @@
 /*! The submenu's items follow clock.get_state: Follow External Clock enables the slave and Follow
  *  Its Tempo is offered only while it follows; Send Clock's check mark is the master's enabled flag
  *  whether the switch was accepted or refused (a headless engine may have no MIDI client to send
- *  through), and a refusal is named on the indicator line. The line's text is pinned per state. */
+ *  through), and a refusal is named on the indicator line. The line's text is pinned per state.
+ *  Clock Source is the GUI half of Q050-026's source selection: it lists what midi.device_list lists,
+ *  choosing an entry drives clock.slave_set, and it never changes the follower's mode by itself. */
 
 #include <QtTest>
 
@@ -37,7 +39,9 @@
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "MidiClock.h"
 #include "MidiClockMenu.h"
+#include "Song.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -60,6 +64,22 @@ QAction* item(QMenu* menu, const QString& text)
 	return nullptr;
 }
 
+//! Every entry label of \a menu, comma separated: the evidence for "what this
+//! submenu offers" when the assertion below fails.
+QString labels(QMenu* menu)
+{
+	QStringList names;
+	for (QAction* action : menu->actions()) { names.append(action->text()); }
+	return names.join(QStringLiteral(", "));
+}
+
+//! The Clock Source SUBMENU of a freshly built clock menu, or nullptr.
+QMenu* sourceMenu(QMenu* clock)
+{
+	QAction* entry = item(clock, QStringLiteral("Clock Source"));
+	return entry != nullptr ? entry->menu() : nullptr;
+}
+
 } // namespace
 
 class MidiClockMenuTest : public QObject
@@ -73,6 +93,15 @@ private slots:
 		ConfigManager::inst()->loadConfigFile(m_home.filePath(QStringLiteral("zene.xml")));
 		Engine::init(true);
 		ControlRegistry::setReady(true);
+	}
+
+	void cleanup()
+	{
+		// Never leak a clock mode into the next slot: the follower is one object
+		// for the whole run, and a slot that stops early (a failed assertion
+		// returns from the slot) must not leave the slave following.
+		ControlRegistry::instance()->invoke(QStringLiteral("clock.slave_set"),
+			{{QStringLiteral("enabled"), false}, {QStringLiteral("follow_tempo"), false}});
 	}
 
 	void cleanupTestCase()
@@ -141,6 +170,59 @@ private slots:
 		QVERIFY(!followTempo->isEnabled());
 	}
 
+	//! The follow preference SURVIVES a disable, and the re-enable actually
+	//! follows again: the poll timer has to be running, or the measured tempo is
+	//! never written to the Song. The menu sends only 'enabled' on the way back,
+	//! so the saved preference is the only thing that carries the mode.
+	void slaveSetRetainsFollowPreferenceAcrossDisable()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		MidiClock* midiClock = MidiClock::instance();
+		Song* song = Engine::getSong();
+		song->setTempo(100);
+
+		registry->invoke(QStringLiteral("clock.slave_set"),
+			{{QStringLiteral("enabled"), false}, {QStringLiteral("follow_tempo"), false}});
+		registry->invoke(QStringLiteral("clock.slave_set"),
+			{{QStringLiteral("enabled"), true}, {QStringLiteral("follow_tempo"), true}});
+		QVERIFY(clockPart("slave").value(QStringLiteral("follow_tempo")).toBool());
+
+		// The menu sends only enabled:false here; the saved tempo preference must survive.
+		registry->invoke(QStringLiteral("clock.slave_set"), {{QStringLiteral("enabled"), false}});
+		QVERIFY(!clockPart("slave").value(QStringLiteral("enabled")).toBool());
+		QVERIFY(clockPart("slave").value(QStringLiteral("follow_tempo")).toBool());
+
+		// Re-enable using the menu's enabled-only command and send a fresh clock stream.
+		registry->invoke(QStringLiteral("clock.slave_set"), {{QStringLiteral("enabled"), true}});
+		QVERIFY(clockPart("slave").value(QStringLiteral("follow_tempo")).toBool());
+		// The pulses carry INJECTED timestamps: exact 120 BPM intervals, so the
+		// measured tempo is 120 whatever the wall clock does. The stream starts a
+		// minute ahead of the monotonic clock, because the tracker's lock is
+		// dropped when no pulse has arrived for half a second - and the age it
+		// measures is the distance from the LAST pulse to the audio period's own
+		// clock, so a pulse from the future is never aged out. Nothing in this
+		// test waits for the wall clock.
+		const quint64 pulseInterval = 60000000000ULL / (120ULL * MidiClockPulsesPerQuarter);
+		quint64 timestamp = MidiClock::nowNs() + 60000000000ULL;
+		for (int pulse = 0; pulse < 48; ++pulse)
+		{
+			timestamp += pulseInterval;
+			midiClock->handleInputMessage(MidiClockMessage::Clock, 0, timestamp, QString());
+		}
+		QVERIFY(midiClock->slaveEnabled());
+		QVERIFY(midiClock->slaveFollowTempo());
+		QVERIFY(midiClock->tracker().locked());
+		const int measuredTempo = qRound(midiClock->tracker().tempoBpm());
+		QCOMPARE(measuredTempo, 120);
+		// The command must have restarted its existing poll timer: the tempo
+		// changes only when that timer's callback applies the fresh measurement.
+		// The poll runs every 250 ms, so the 1500 ms bound is six polls' worth.
+		QTRY_COMPARE_WITH_TIMEOUT(song->getTempo(), measuredTempo, 1500);
+
+		registry->invoke(QStringLiteral("clock.slave_set"),
+			{{QStringLiteral("enabled"), false}, {QStringLiteral("follow_tempo"), false}});
+	}
+
 	void sendClockShowsTheMasterAcceptedOrRefused()
 	{
 		QMenu parent;
@@ -153,6 +235,55 @@ private slots:
 		const QString line = clock->actions().last()->text();
 		QVERIFY2(sending ? line.startsWith(QStringLiteral("Clock sending")) : line.startsWith(QStringLiteral("Refused: ")),
 			qPrintable(line));
+	}
+
+	// Q050-026: choosing a source in the GUI must reach the ENGINE through the
+	// registered command (not a private field), must not switch the follower's
+	// mode by itself, and must be offered what midi.device_list offers - with no
+	// MIDI backend that list is empty, which is why "Any Input" is there alone and
+	// why this test pins that shape rather than a device it cannot have.
+	void theSourceSubmenuDrivesTheSameCommand()
+	{
+		QMenu parent;
+		QMenu* clock = addMidiClockMenu(&parent);
+		QMenu* source = sourceMenu(clock);
+		QVERIFY2(source != nullptr, "the clock menu must offer a Clock Source submenu");
+		QAction* any = item(source, QStringLiteral("Any Input"));
+		QVERIFY2(any != nullptr, qPrintable(QStringLiteral("entries: %1").arg(labels(source))));
+		QCOMPARE(clockPart("slave").value(QStringLiteral("enabled")).toBool(), false);
+		QCOMPARE(any->isChecked(), true);
+
+		// With no readable port there is exactly one choice, and it is the empty
+		// source: the state says so.
+		QCOMPARE(source->actions().size(), 1);
+		QCOMPARE(clockPart("slave").value(QStringLiteral("source_port")).toString(), QString());
+
+		// Following first, then choosing: the choice is reported back by the engine
+		// (an agent or the menu can read the same number) and the MODE is unchanged,
+		// because picking a port is not a decision to start following.
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("clock.slave_set"),
+			{{QStringLiteral("enabled"), true}}).ok);
+		any->trigger();
+		QJsonObject slave = clockPart("slave");
+		QVERIFY2(slave.value(QStringLiteral("enabled")).toBool(), "choosing a source must not stop following");
+		QCOMPARE(slave.value(QStringLiteral("source_port")).toString(), QString());
+
+		// AND "Any Input" CLEARS a source that was configured, which is the whole
+		// reason an empty string is a selectable state rather than "no opinion":
+		// with no client port to pick (this run has no MIDI backend) the entry is
+		// proved against the engine's own vocabulary instead of a device list.
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("clock.slave_set"),
+			{{QStringLiteral("enabled"), true},
+				{QStringLiteral("source_port"), QStringLiteral("128:0 Sequencer:Ableton Push")}}).ok);
+		QCOMPARE(clockPart("slave").value(QStringLiteral("source_port")).toString(),
+			QStringLiteral("128:0 Sequencer:Ableton Push"));
+		any->trigger();
+		slave = clockPart("slave");
+		QCOMPARE(slave.value(QStringLiteral("source_port")).toString(), QString());
+		QVERIFY2(slave.value(QStringLiteral("enabled")).toBool(), "clearing the source must not stop following");
+
+		// The state line is still the LAST item: the submenu was inserted above it.
+		QVERIFY(clock->actions().last()->text().startsWith(QStringLiteral("Clock ")));
 	}
 
 private:

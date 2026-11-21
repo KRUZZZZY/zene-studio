@@ -18,9 +18,10 @@
  * is `id<n>` in document order, assigned before the elements that point at it.
  *
  * WHAT IT REFUSES RATHER THAN ROUNDS: a tempo outside the engine's own bounds, a
- * metre whose denominator is not a power of two, or a clip whose lane has no
- * track id - the format could express all three, this engine cannot read them
- * back - plus the id rules in elementId below. See the doc, section 3.
+ * metre whose numerator is outside 1..32 or whose denominator is not a power
+ * of two, or a clip whose lane has no track id - the format could express all
+ * three, this engine cannot read them back - plus the id rules in elementId
+ * below. See the doc, section 3.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -53,6 +54,7 @@
 #include <vector>
 
 #include "DawProjectInterchange.h"
+#include "DawProjectWriteRefusal.h"
 #include "LmmsTypes.h"
 
 namespace lmms
@@ -115,11 +117,6 @@ QString elementId(int* counter, const QString& candidate, QSet<QString>& used)
 
 QString beatsText(double beats) { return number(beats, TimeDecimals); }
 
-bool isPowerOfTwo(int value)
-{
-	return value > 0 && (value & (value - 1)) == 0;
-}
-
 //! A beat position the format can carry: finite, not before the timeline, and
 //! still within tick_t after the six-decimal value is rounded to the reader's
 //! tick grid. Check the unformatted value first so a huge finite input is
@@ -151,13 +148,6 @@ QString unsupportedTime(const QString& what, double beats)
 		.arg(what).arg(beats);
 }
 
-//! The tempo of one point or of the session, in bounds AND finite. A NaN
-//! compares false against both bounds, so the range test alone lets it through.
-bool isSupportedTempo(double bpm)
-{
-	return std::isfinite(bpm) && bpm >= DawProjectMinTempo && bpm <= DawProjectMaxTempo;
-}
-
 QString clipRefusal(const DawProjectClip& clip, const DawProjectTrack& track)
 {
 	if (!isSupportedTime(clip.time))
@@ -184,6 +174,8 @@ QString clipRefusal(const DawProjectClip& clip, const DawProjectTrack& track)
 			return unsupportedTime(QStringLiteral("note duration in the clip on track %1").arg(track.id), note.duration);
 		}
 		if (!endFitsTickRange(note.time, note.duration)) { return unsupportedTime(QStringLiteral("note end"), note.time + note.duration); }
+		const QString noteFieldError = noteFieldsRefusal(note);
+		if (!noteFieldError.isEmpty()) { return noteFieldError; }
 	}
 	return QString();
 }
@@ -195,44 +187,6 @@ QString pointRefusal(const QVector<DawProjectPoint>& points, const QString& arm)
 		if (!isSupportedTime(point.time))
 		{
 			return unsupportedTime(QStringLiteral("time of a %1 point").arg(arm), point.time);
-		}
-	}
-	return QString();
-}
-
-QString tempoRefusal(const DawProjectModel& model)
-{
-	if (!isSupportedTempo(model.tempo))
-	{
-		return QStringLiteral("the session tempo %1 is outside the engine's own %2..%3, so "
-			"the file would say something this engine cannot read back")
-			.arg(model.tempo).arg(DawProjectMinTempo).arg(DawProjectMaxTempo);
-	}
-	for (const DawProjectPoint& point : model.tempoPoints)
-	{
-		if (!isSupportedTempo(point.value))
-		{
-			return QStringLiteral("a tempo-map point at beat %1 carries %2 bpm, outside the "
-				"engine's own %3..%4").arg(point.time).arg(point.value)
-				.arg(DawProjectMinTempo).arg(DawProjectMaxTempo);
-		}
-	}
-	return QString();
-}
-
-QString meterRefusal(const DawProjectModel& model)
-{
-	if (!isPowerOfTwo(model.denominator))
-	{
-		return QStringLiteral("the time signature's denominator %1 is not a power of two")
-			.arg(model.denominator);
-	}
-	for (const DawProjectPoint& point : model.meterPoints)
-	{
-		if (!isPowerOfTwo(point.denominator))
-		{
-			return QStringLiteral("a metre point at beat %1 has denominator %2, which is not a "
-				"power of two").arg(point.time).arg(point.denominator);
 		}
 	}
 	return QString();
@@ -279,7 +233,7 @@ QString timesRefusal(const DawProjectModel& model)
 QString modelRefusal(const DawProjectModel& model)
 {
 	for (const QString& refusal : {tempoRefusal(model), meterRefusal(model),
-		identityRefusal(model), timesRefusal(model)})
+		identityRefusal(model), timesRefusal(model), scalarFieldsRefusal(model)})
 	{
 		if (!refusal.isEmpty()) { return refusal; }
 	}
@@ -627,23 +581,25 @@ bool writeDawProject(const QString& path, const DawProjectModel& model,
 
 	// The report's file identity is the FILE: `bytes` and `sha256` are
 	// documented as describing the written .dawproject, so both are taken from
-	// the bytes on disk - the ZIP, not the project.xml entry inside it.
-	QFile written(path);
-	QByteArray container;
-	if (!written.open(QIODevice::ReadOnly))
-	{
-		if (error)
-		{
-			*error = QStringLiteral("the container was written but cannot be read back: %1")
-				.arg(written.errorString());
-		}
-		return false;
-	}
-	container = written.readAll();
-	written.close();
-	const qint64 bytes = container.size();
+	// the bytes on disk - the ZIP, not the project.xml entry inside it. The
+	// read-back and hash exist only to fill those report fields, so they are
+	// skipped entirely when no report is requested.
 	if (report != nullptr)
 	{
+		QFile written(path);
+		QByteArray container;
+		if (!written.open(QIODevice::ReadOnly))
+		{
+			if (error)
+			{
+				*error = QStringLiteral("the container was written but cannot be read back: %1")
+					.arg(written.errorString());
+			}
+			return false;
+		}
+		container = written.readAll();
+		written.close();
+		const qint64 bytes = container.size();
 		report->path = path;
 		report->bytes = bytes;
 		report->sha256 = dawProjectSha256(container);

@@ -25,7 +25,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
+#include <QDomDocument>
 #include <QDir>
 #include <QFile>
 #include <QObject>
@@ -46,6 +48,21 @@ double configDouble(const char* key, double fallback)
 	bool ok = false;
 	const double value = ConfigManager::inst()->value(kSection, QLatin1String(key), QString::number(fallback)).toDouble(&ok);
 	return ok ? value : fallback;
+}
+
+std::optional<double> selectedConfigScale(const QString& configFile)
+{
+	if (configFile.isEmpty()) { return std::nullopt; }
+	QFile file(configFile);
+	if (!file.open(QIODevice::ReadOnly)) { return std::nullopt; }
+	QDomDocument document;
+	if (!document.setContent(&file)) { return std::nullopt; }
+	const QDomElement ui = document.documentElement().firstChildElement(kSection);
+	if (ui.isNull() || !ui.hasAttribute(QStringLiteral("scale"))) { return std::nullopt; }
+
+	bool ok = false;
+	const double scale = ui.attribute(QStringLiteral("scale")).toDouble(&ok);
+	return ok && std::isfinite(scale) ? std::clamp(scale, 0.5, 3.0) : 1.0;
 }
 
 //! The zoom to store or draw with: a finite value inside 0.5..3. std::clamp alone does NOT do
@@ -70,6 +87,17 @@ const QStringList& densityNames()
 	return names;
 }
 
+const QStringList& workspaceNames()
+{
+	static const QStringList names{QStringLiteral("standard"), QStringLiteral("touch")};
+	return names;
+}
+
+bool workspaceIsTouch(const QString& name)
+{
+	return name == QLatin1String("touch");
+}
+
 bool densityIsAccessible(const QString& name)
 {
 	return name == QLatin1String("accessible") || name == QLatin1String("comfortable") || name == QLatin1String("touch");
@@ -87,6 +115,9 @@ Options options()
 	const QString palette = ConfigManager::inst()->value(kSection, QStringLiteral("palette"), QStringLiteral("dark"));
 	out.palette = paletteNames().contains(palette) ? palette : QStringLiteral("dark");
 	out.accessible = densityIsAccessible(ConfigManager::inst()->value(kSection, QStringLiteral("density")));
+	// An absent setting is standard: a config from before this preference opens exactly as it did.
+	const QString workspace = ConfigManager::inst()->value(kSection, QStringLiteral("workspace"), QStringLiteral("standard"));
+	out.workspace = workspaceNames().contains(workspace) ? workspace : QStringLiteral("standard");
 	return out;
 }
 
@@ -99,6 +130,11 @@ bool setOptions(const Options& next)
 	ConfigManager::inst()->setValue(kSection, QStringLiteral("palette"), next.palette);
 	ConfigManager::inst()->setValue(kSection, QStringLiteral("density"),
 		next.accessible ? QStringLiteral("accessible") : QStringLiteral("standard"));
+	ConfigManager::inst()->setValue(kSection, QStringLiteral("workspace"),
+		workspaceNames().contains(next.workspace) ? next.workspace : QStringLiteral("standard"));
+	// Written now, as the other preference writers do (settings.set), so a crash cannot forget a choice
+	// the person was told was saved.
+	ConfigManager::inst()->saveConfigFile();
 	return syncScaleFile();
 }
 
@@ -131,6 +167,7 @@ const Options& startedWith()
 QJsonObject toJson(const Options& o)
 {
 	QJsonObject out{{QStringLiteral("scale"), o.scale}, {QStringLiteral("palette"), o.palette}, {QStringLiteral("accessible"), o.accessible},
+		{QStringLiteral("workspace"), o.workspace},
 		{QStringLiteral("font_scale"), 1.0}, {QStringLiteral("density"), o.accessible ? QStringLiteral("comfortable") : QStringLiteral("standard")},
 		{QStringLiteral("restart_pending"), !(o == startedWith())}};
 	const QJsonObject timing = applyTiming();
@@ -155,8 +192,15 @@ double storedScale()
 
 void applyStoredScale()
 {
+	applyStoredScale(QString());
+}
+
+void applyStoredScale(const QString& configFile)
+{
 	if (!qEnvironmentVariableIsEmpty("QT_SCALE_FACTOR")) { return; }
-	if (const double scale = storedScale(); scale > 0.0 && scale != 1.0) { qputenv("QT_SCALE_FACTOR", QByteArray::number(scale)); }
+	const std::optional<double> configured = selectedConfigScale(configFile);
+	const double scale = configured.value_or(storedScale());
+	if (scale > 0.0 && scale != 1.0) { qputenv("QT_SCALE_FACTOR", QByteArray::number(scale)); }
 }
 
 } // namespace lmms::appearance

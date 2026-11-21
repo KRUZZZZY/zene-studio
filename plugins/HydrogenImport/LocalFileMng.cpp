@@ -139,8 +139,8 @@ void LocalFileMng::convertFromTinyXMLString( QByteArray* str )
 	int pos = str->indexOf("&#x", searchFrom);
 	while( pos != -1 ) {
 		if( str->size() - pos >= 6
-		    && isxdigit(str->at(pos+3))
-		    && isxdigit(str->at(pos+4))
+		    && isxdigit(static_cast<unsigned char>(str->at(pos+3)))
+		    && isxdigit(static_cast<unsigned char>(str->at(pos+4)))
 		    && (str->at(pos+5) == ';') ) {
 			char w1 = str->at(pos+3);
 			char w2 = str->at(pos+4);

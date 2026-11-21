@@ -27,6 +27,7 @@ Usage: QT_QPA_PLATFORM=offscreen python3 control-wasm-sandbox.py <zene-binary>
 Exit code 0 only when every check held.
 """
 
+import functools
 import itertools
 import json
 import os
@@ -51,6 +52,24 @@ PROBE_MUTABLE_CHANNELS = os.path.join(PROBES, "mutable-channels.wat")
 #: The eight demo modules the build assembles (src/wasm/CMakeLists.txt).
 DEMO_DIR = os.path.join(REPO, "modules", "wasm")
 DEMO_COUNT = 8
+
+
+def module_dir(binary):
+    """<build>/wasm-modules, looked for from the binary's directory up.
+
+    The demo modules are ASSEMBLED into that directory by the build (the
+    runtime's own assembler, so the build needs no wabt), and the render's
+    worker takes binaries - the .wat text is the HOST's business (wasm.load
+    assembles it), which is why the offline render's checks drive an assembled
+    module and not the .wat example.
+    """
+    here = os.path.dirname(os.path.abspath(binary))
+    for _ in range(4):
+        candidate = os.path.join(here, "wasm-modules")
+        if os.path.isdir(candidate):
+            return candidate
+        here = os.path.dirname(here)
+    return None
 
 WASM_IDS = ("wasm.get_state", "wasm.list", "wasm.load", "wasm.process",
             "wasm.set_param", "wasm.unload")
@@ -341,6 +360,54 @@ def check_process_arguments(session, recorder):
                    "frames=%r sample_rate=%r" % (later.get("frames"), later.get("sample_rate")))
 
 
+def check_caller_sample_arrays(session, recorder, render_module):
+    """A caller's sample array is checked before a render or a process runs it.
+
+    The samples are floats, and the array is the STIMULUS: a string in it is
+    not a sample, a double outside the float range is not a float, and an
+    array longer than the frames the call asks for is samples nobody reads.
+    All of them are refused, typed, instead of being turned into something
+    else (a 0, an infinity) and rendered with.
+    """
+    common = {"module": render_module, "block_frames": 2, "repeats": 2}
+    invalid_inputs = (
+        ("a string render sample is refused",
+         dict(common, frames=2, input=["bad", 0.25])),
+        ("a finite render sample outside the float range is refused",
+         dict(common, frames=1, input=[1e300])),
+        ("a render input cannot be longer than the frames asked for",
+         dict(common, frames=1, input=[0.25, 0.5])),
+    )
+    for label, args in invalid_inputs:
+        kind = session.error_kind("wasm.render_offline", args)
+        recorder.check(label, kind == "invalid_args", "kind=%s" % kind)
+
+    valid = session.result("wasm.render_offline",
+                           dict(common, frames=2, input=[0.25, 0.5]))
+    recorder.check("a finite in-range render input still renders",
+                   "error" not in valid and valid.get("frames") == 2,
+                   "reply=%s" % json.dumps(valid))
+
+    # The SAME reader serves wasm.process, so the same arrays are refused there.
+    for label, args in (
+        ("a string process sample is refused", {"frames": 2, "input": ["bad", 0.25]}),
+        ("a finite process sample outside the float range is refused",
+         {"frames": 1, "input": [1e300]}),
+        ("a process input cannot be longer than the frames asked for",
+         {"frames": 1, "input": [0.25, 0.5]}),
+    ):
+        kind = session.error_kind("wasm.process", args)
+        recorder.check(label, kind == "invalid_args", "kind=%s" % kind)
+
+    # The hosted module is untouched by a refused call: the reader refuses
+    # BEFORE the render or the process runs, so nothing was rendered at all.
+    ran = session.result("wasm.process", {"frames": 2, "input": [0.25, 0.5]})
+    recorder.check("a valid process input still runs after a refused one",
+                   ran.get("status") == "ok" and len(ran.get("output") or []) == 2,
+                   "status=%r output=%s" % (ran.get("status"),
+                                            json.dumps(ran.get("output"))))
+
+
 def check_non_finite_output(session, recorder):
     """A non-finite output sample must invalidate and identify the reported peak."""
     with tempfile.TemporaryDirectory(prefix="zene-wasm-nan-") as directory:
@@ -510,9 +577,17 @@ def main(argv):
         H.wait_ready(instance, client, transcript)
         session = Session(client, transcript)
         print("instance: %s\nsocket:   %s\nexample:  %s" % (argv[1], instance.socket_path, EXAMPLE))
+        # The offline render is driven with an ASSEMBLED module (the demo gain
+        # module the build assembles into <build>/wasm-modules): the render's
+        # worker takes binaries, and the .wat text is the HOST's business -
+        # wasm.load assembles it, and the device's own transcript refuses a
+        # .wat for the same reason.
+        render_module = os.path.join(module_dir(argv[1]) or "", "gain.wasm")
         for check in (check_registered, check_no_module, check_listing, check_list_refusals,
                       check_load_example, check_param, check_process_block,
-                      check_process_arguments, check_non_finite_output, check_probes,
+                      check_process_arguments,
+                      functools.partial(check_caller_sample_arrays, render_module=render_module),
+                      check_non_finite_output, check_probes,
                       check_growth_and_mutable_globals,
                       check_undo_of_param, check_unload, check_rehost_undo, check_transactions):
             check(session, recorder)

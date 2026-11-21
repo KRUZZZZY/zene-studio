@@ -82,7 +82,8 @@ void NoteGrid::zoomAround(double factor, double anchorX)
 
 void NoteGrid::setRowHeight(int px)
 {
-	m_rowHeight = std::clamp(px, 6, 40);
+	const int maximum = m_minRowHeight > 6 ? 64 : 40;  // accessible rows need room for the 52 px touch row
+	m_rowHeight = std::clamp(px, m_minRowHeight, maximum);
 	clampScrollY();
 }
 

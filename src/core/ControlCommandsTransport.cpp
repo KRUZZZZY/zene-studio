@@ -28,10 +28,12 @@
 #include "ControlRegistry.h"
 
 #include "ControlReversibility.h"
+#include "ControlTrackRole.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "SampleTrack.h"
 #include "InputMonitor.h"
+#include "MidiTakeRecorder.h"
 #include "Song.h"
 #include "Track.h"
 #include "TrackFolder.h"
@@ -57,20 +59,7 @@ void setTransportPosition(Song* song, tick_t ticks)
 
 QString trackTypeName(Track::Type type)
 {
-	switch (type)
-	{
-		case Track::Type::Instrument: return QStringLiteral("instrument");
-		case Track::Type::Pattern: return QStringLiteral("pattern");
-		case Track::Type::Sample: return QStringLiteral("sample");
-		case Track::Type::Event: return QStringLiteral("event");
-		case Track::Type::Video: return QStringLiteral("video");
-		case Track::Type::Automation: return QStringLiteral("automation");
-		case Track::Type::HiddenAutomation: return QStringLiteral("hidden_automation");
-		// A folder track (owner items 3+20+21).
-		case Track::Type::Folder: return QStringLiteral("folder");
-		case Track::Type::Count: break;
-	}
-	return QStringLiteral("unknown");
+	return control::trackTypeNameOf(type);
 }
 
 QJsonObject trackState(Track* track, int index)
@@ -104,6 +93,12 @@ QJsonObject trackState(Track* track, int index)
 		static_cast<qint64>(track->frozenTake().endTicks));
 	entry.insert(QStringLiteral("frozen_muted_clips"),
 		static_cast<int>(track->frozenTake().mutedClips.size()));
+	if (track->frozenTakeFileMissing())
+	{
+		entry.insert(QStringLiteral("frozen_audio_missing"), true);
+		entry.insert(QStringLiteral("frozen_recovery"), QStringLiteral("project.missing_assets then project.relink, "
+			"or freeze.unfreeze (undoable)"));
+	}
 	// The folder relation and the visibility flag (owner items 3+20+21): the
 	// parent folder's trk-<n>, empty at the container root, and whether this
 	// track is part of the visible set. A folder reports its own mode, child
@@ -122,6 +117,7 @@ QJsonObject trackState(Track* track, int index)
 		entry.insert(QStringLiteral("collapsed"), folder->isCollapsed());
 		entry.insert(QStringLiteral("pinned"), folder->isPinned());
 	}
+	control::insertTrackRoleFields(&entry, track);  // Q050-283.2: role, and a neutral row's kept roles
 	return entry;
 }
 
@@ -165,12 +161,16 @@ void registerTransportCommands(ControlRegistry& registry)
 			"armed for recording write, while it plays (Song::playAndRecord). Starting from a "
 			"stopped transport only: while the song is already playing the record mode cannot be "
 			"switched on mid-run, so this is refused, typed - stop first. transport.stop ends it. "
-			"Audio capture on a record route is armed per track (track.set_arm) and runs on its own.");
+			"Audio capture on a record route is armed per track (track.set_arm) and runs on its own. "
+			"Instrument tracks armed with track.set_midi_arm record the MIDI played into them alongside "
+			"(Q050-054.1): 'midi_tracks' lists them, and Stop leaves their takes in the arrangement through "
+			"record.midi_capture_commit - one MIDI clip per plain pass, a take lane per loop pass.");
 		cmd.requiresDecl = QStringList{QStringLiteral("device")};
 		cmd.argsSchema = objectSchema({});
 		cmd.resultSchema = objectSchema({
 			{QStringLiteral("playing"), booleanProperty()},
 			{QStringLiteral("recording"), booleanProperty()},
+			{QStringLiteral("midi_tracks"), arrayProperty()},
 		});
 		cmd.handler = [](const QJsonObject&) {
 			Song* song = Engine::getSong();
@@ -181,7 +181,8 @@ void registerTransportCommands(ControlRegistry& registry)
 			}
 			song->playAndRecord();
 			return ControlResult::success(QJsonObject{{QStringLiteral("playing"), song->isPlaying()},
-				{QStringLiteral("recording"), song->isRecording()}});
+				{QStringLiteral("recording"), song->isRecording()},
+				{QStringLiteral("midi_tracks"), MidiTakeRecorder::instance()->sessionTracks()}});
 		};
 		registry.registerCommand(cmd);
 	}
@@ -377,6 +378,8 @@ void registerTransportCommands(ControlRegistry& registry)
 			{QStringLiteral("frozen_start_ticks"), integerProperty()},
 			{QStringLiteral("frozen_end_ticks"), integerProperty()},
 			{QStringLiteral("frozen_muted_clips"), integerProperty()},
+			{QStringLiteral("frozen_audio_missing"), booleanProperty()},
+			{QStringLiteral("frozen_recovery"), stringProperty()},
 			{QStringLiteral("child_count"), numberProperty()},
 			{QStringLiteral("collapsed"), booleanProperty()},
 			{QStringLiteral("folder"), stringProperty()},
@@ -388,6 +391,8 @@ void registerTransportCommands(ControlRegistry& registry)
 			{QStringLiteral("pinned"), booleanProperty()},
 			{QStringLiteral("soloed"), booleanProperty()},
 			{QStringLiteral("visible"), booleanProperty()},
+			{QStringLiteral("role"), stringProperty()},
+			{QStringLiteral("kept_roles"), arrayProperty()},
 		});
 		cmd.handler = [](const QJsonObject& args) {
 			const QString id = args.value(QStringLiteral("track")).toString();

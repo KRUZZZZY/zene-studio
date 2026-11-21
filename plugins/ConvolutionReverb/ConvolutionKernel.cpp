@@ -34,17 +34,25 @@ namespace lmms
 ConvolutionKernel::ConvolutionKernel(const std::vector<float>& left, const std::vector<float>& right) :
 	m_length(static_cast<int>(std::max(left.size(), right.size())))
 {
-	m_timeIn.reset(fftwf_malloc(sizeof(float) * FftSize));
-	m_timeOut.reset(fftwf_malloc(sizeof(float) * FftSize));
-	m_spectrum.reset(fftwf_malloc(sizeof(fftwf_complex) * Bins));
-	m_sum.reset(fftwf_malloc(sizeof(fftwf_complex) * Bins));
-	if (!m_timeIn || !m_timeOut || !m_spectrum || !m_sum) { throw std::bad_alloc{}; }
-	m_forward.reset(fftwf_plan_dft_r2c_1d(FftSize, static_cast<float*>(m_timeIn.get()),
-		static_cast<fftwf_complex*>(m_spectrum.get()), FFTW_ESTIMATE));
-	if (!m_forward) { throw std::bad_alloc{}; }
-	m_inverse.reset(fftwf_plan_dft_c2r_1d(FftSize, static_cast<fftwf_complex*>(m_sum.get()),
-		static_cast<float*>(m_timeOut.get()), FFTW_ESTIMATE));
-	if (!m_inverse) { throw std::bad_alloc{}; }
+	{
+		// FFTW's planner API is not safe while the audio thread executes a plan, so the buffers
+		// and the plans are made inside the scope that quiesces the audio thread.
+		const ConvolutionFftwScope scope;
+		m_timeIn.reset(fftwf_malloc(sizeof(float) * FftSize));
+		m_timeOut.reset(fftwf_malloc(sizeof(float) * FftSize));
+		m_spectrum.reset(fftwf_malloc(sizeof(fftwf_complex) * Bins));
+		m_sum.reset(fftwf_malloc(sizeof(fftwf_complex) * Bins));
+		if (!m_timeIn || !m_timeOut || !m_spectrum || !m_sum) { throw std::bad_alloc{}; }
+		m_forward.reset(fftwf_plan_dft_r2c_1d(FftSize, static_cast<float*>(m_timeIn.get()),
+			static_cast<fftwf_complex*>(m_spectrum.get()), FFTW_ESTIMATE));
+		if (!m_forward) { throw std::bad_alloc{}; }
+		m_inverse.reset(fftwf_plan_dft_c2r_1d(FftSize, static_cast<fftwf_complex*>(m_sum.get()),
+			static_cast<float*>(m_timeOut.get()), FFTW_ESTIMATE));
+		if (!m_inverse) { throw std::bad_alloc{}; }
+		ConvolutionFftwScope::notePlannerCall();
+	}
+	// The impulse response's own spectra: fftwf_execute is the one thread-safe FFTW routine, so
+	// this may run next to the audio thread - and the guard is not held for a long impulse.
 	m_partitions = std::max(1, (m_length + Partition - 1) / Partition);
 	transformPartitions(left, &m_spectra[0]);
 	transformPartitions(right, &m_spectra[1]);
@@ -55,7 +63,19 @@ ConvolutionKernel::ConvolutionKernel(const std::vector<float>& left, const std::
 	}
 }
 
-ConvolutionKernel::~ConvolutionKernel() = default;
+ConvolutionKernel::~ConvolutionKernel()
+{
+	// The plans and their buffers are FFTW planner calls, so they die inside the scope that
+	// quiesces the audio thread. The scope is declared first, so it outlives the members moved
+	// out below - they are destroyed with it, in one guard, not one per member.
+	const ConvolutionFftwScope scope;
+	auto forward = std::move(m_forward);
+	auto inverse = std::move(m_inverse);
+	auto timeIn = std::move(m_timeIn);
+	auto timeOut = std::move(m_timeOut);
+	auto spectrum = std::move(m_spectrum);
+	auto sum = std::move(m_sum);
+}
 
 void ConvolutionKernel::transformPartitions(const std::vector<float>& impulse, std::vector<Complex>* spectra)
 {

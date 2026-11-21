@@ -29,18 +29,19 @@
 #include "ConfigManager.h"
 #include "ControllerConnection.h"
 #include "DataFile.h"
-#include "GuiApplication.h"
 #include "Mixer.h"
 #include "InstrumentTrackView.h"
 #include "Instrument.h"
 #include "Keymap.h"
+#include "LegacyVst2Conversion.h"
 #include "MidiClient.h"
 #include "MidiClip.h"
+#include "MidiPlayback.h"
 #include "MixHelpers.h"
+#include "MpeSynthExpression.h"
 #include "NoteRandom.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
-#include "PianoRoll.h"
 #include "Pitch.h"
 #include "Song.h"
 #include "MissingDevices.h"
@@ -113,6 +114,12 @@ InstrumentTrack::InstrumentTrack(TrackContainer* tc) :
 	connect(&m_pitchModel, SIGNAL(dataChanged()), this, SLOT(updatePitch()), Qt::DirectConnection);
 	connect(&m_pitchRangeModel, SIGNAL(dataChanged()), this, SLOT(updatePitchRange()), Qt::DirectConnection);
 	connect(&m_mixerChannelModel, SIGNAL(dataChanged()), this, SLOT(updateMixerChannel()), Qt::DirectConnection);
+
+	// Cluster new-p16-89: play() collects the clips of a pass. Reserve that storage on the control
+	// thread as the track's clip list grows, so the audio thread never grows it.
+	connect(this, &Track::clipAdded, this, [this](Clip*) {
+		if (getClips().size() > m_playClips.capacity()) { m_playClips.reserve(getClips().size()); }
+	});
 
 	autoAssignMidiDevice(true);
 }
@@ -226,7 +233,28 @@ InstrumentTrack::~InstrumentTrack()
 	Engine::audioEngine()->doneChangeInModel();
 
 	// now we're save deleting the instrument
-	if( m_instrument ) delete m_instrument;
+	destroyInstrument();
+}
+
+
+/*! cluster 5186 (new-p12-159): the ONE place this track's instrument is destroyed.
+ *
+ *  The per-voice modulation target that points at the instrument is closed BEFORE the instrument's
+ *  own teardown starts. The audio thread's block calls the instrument under a pin on that target,
+ *  and the pin keeps the TARGET alive - not the instrument: a target that outlives the instrument
+ *  is a call into a half-destroyed object. Closing the target here (the notification retires the
+ *  slot and waits for the in-flight write to drain) means that from the first line of the
+ *  instrument's destructor onwards the block skips the entry.
+ *
+ *  The notification cannot come from Instrument's own destructor: a base destructor runs AFTER the
+ *  derived one, so by then the derived teardown has already begun. The owner knows when the
+ *  teardown starts, so the owner notifies. */
+void InstrumentTrack::destroyInstrument()
+{
+	if (m_instrument == nullptr) { return; }
+	emit m_instrument->aboutToBeDestroyed();
+	delete m_instrument;
+	m_instrument = nullptr;
 }
 
 
@@ -274,6 +302,12 @@ void InstrumentTrack::processAudioBuffer( SampleFrame* buf, const f_cnt_t frames
 	{
 		const f_cnt_t offset = n->noteOffset();
 		m_soundShaping.processAudioBuffer( buf + offset, frames - offset, n );
+		// Q050-311: the note's MPE pressure and timbre, heard on the built-in
+		// synthesisers (which never see MIDI). A note without expression is not touched.
+		if( !m_instrument->appliesMpeExpressionItself() )
+		{
+			MpeSynthExpression::applyToNote( *n, buf + offset, frames - offset );
+		}
 		const float vol = ( (float) n->getVolume() * DefaultVolumeRatio );
 		const panning_t pan = std::clamp(n->getPanning(), PanningLeft, PanningRight);
 		StereoVolumeVector vv = panningToVolumeVector( pan, vol );
@@ -350,6 +384,11 @@ bool InstrumentTrack::trackMpeInputEvent( const MidiEvent& event )
 			return false;
 
 		case MidiNoteOff:
+			// 0.5.0 Q050-039: the note-off's velocity is release velocity. The
+			// note model can store it (Note::setReleaseVelocity) and playback
+			// already sends it back (NotePlayHandle::noteOff), but live MPE
+			// input dropped it here.
+			captureMpeReleaseVelocity( event );
 			m_mpeExpression.noteOff( event.channel(), event.key() );
 			return false;
 
@@ -364,6 +403,44 @@ bool InstrumentTrack::trackMpeInputEvent( const MidiEvent& event )
 
 	loadMpeExpressionOntoChannelNotes( event.channel() );
 	return true;
+}
+
+
+
+
+void InstrumentTrack::captureMpeReleaseVelocity( const MidiEvent& event )
+{
+	if( !m_mpeExpression.isMemberChannel( event.channel() ) )
+	{
+		return;
+	}
+	if( event.key() < 0 || event.key() >= NumKeys )
+	{
+		return;
+	}
+	// Velocity 0 is what an MPE controller sends when it has no release
+	// velocity to report, so the note keeps its "unset" release and playback
+	// sends velocity 0 exactly as it did before this capture existed.
+	const int velocity = event.velocity();
+	if( velocity <= 0 )
+	{
+		return;
+	}
+
+	NotePlayHandle* note = m_notes[event.key()];
+	if( note == nullptr || note->midiChannel() != event.channel() )
+	{
+		// Released, never started, or another channel's note holding this key
+		// - the same window loadMpeExpressionOntoChannelNotes() lives with.
+		return;
+	}
+
+	// The velocity is stored on the note's own volume scale (0..200, 100 =
+	// default) through the conversion that is the exact inverse of the
+	// playback emission (Note::midiReleaseVelocity), so the velocity the
+	// note-off carried is the velocity playback sends (Q050-039).
+	note->setReleaseVelocity(
+		Note::releaseVelocityFromMidi( velocity, midiPort()->baseVelocity() ) );
 }
 
 
@@ -418,6 +495,9 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 	}
 	// 0.5.0 L07 (ED-145): live input through the track's MIDI input transform.
 	if (handleInputTransform(event, time, offset)) { return; }
+	// Q050-054.1: an armed track records what is played while transport.record runs - before the
+	// monitoring gate, so a track that is not heard still records. Lock- and allocation-free.
+	if (event.source() == MidiEvent::Source::External) { m_midiTakeCapture.capture(event); }
 	// R2.1: monitoring Off keeps live notes out of the instrument. Only the NOTE-ON is
 	// dropped - a note-off still reaches a note that sounded before the mode changed.
 	if (event.type() == MidiNoteOn && event.source() == MidiEvent::Source::External
@@ -433,6 +513,9 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 	// the instrument at once).
 	if (trackMpeInputEvent(event))
 	{
+		// MPE expression is consumed before the ordinary layer-forwarding
+		// path, so pass it to the live layer notes before returning.
+		m_layers.forwardInEvent(event, time, offset);
 		return;
 	}
 
@@ -790,6 +873,7 @@ void InstrumentTrack::updateMixerChannel()
 {
 	m_audioBusHandle.setNextMixerChannel(m_mixerChannelModel.value());
 	m_layers.followMixerChannel(m_mixerChannelModel.value());  // 0.5.0 MX-112: the layers play where the track does
+	reconcileLinkedChannelName();  // Q050-212
 }
 
 
@@ -827,26 +911,62 @@ bool InstrumentTrack::compPlays(const MidiClip* clip, int songTick) const
 
 
 
+bool InstrumentTrack::takePlays(const MidiClip* clip) const
+{
+	if (!clip->hasTakeGroup()) { return true; }
+	const TakeLaneModel& comp = takeLanes();
+	return !comp.segments().empty() || comp.auditionLane() >= 0 || comp.playAllTakes()
+		|| clip->activeTakeLane() == clip->laneIndex();
+}
+
+
+
+
 bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 							const f_cnt_t _offset, int _clip_num )
 {
+	// 0.5.0 Q050-040 (L07): playing with chase on, a note already under the playhead starts when its
+	// track or clip is unmuted. The render thread's own view of the mute, one pass back, and the
+	// one-pass unmute edge: a start, a jump, a loop and an unmute all chase (noteStartsNow).
+	const bool muted = isMuted();
+	const bool chase = MidiPlayback::instance().chase();
+	const bool trackUnmutedNow = chase && !muted && m_mutedLastPlay;
+
 	// The frozen take (freeze / bounce-in-place): the render IS this track's
 	// output, so a pass inside the take's window plays the take and never
 	// reaches the instrument - which is what "the source is disabled" means in
 	// the engine. A single-clip playback (_clip_num >= 0: the piano roll's and
 	// the beat/bassline editor's own play mode) is NOT the arrangement and keeps
-	// playing the source.
+	// playing the source. The take's pass locks nothing of this track, so it still records the mute.
 	if (isFrozen() && _clip_num < 0)
 	{
-		return playFrozenTake(_start, _frames, _offset);
+		// A whole-track take owns every pass; a region take only its window, and a take whose audio is
+		// missing none (frozenTakeSilencesSource): outside that the source plays on.
+		const bool played = playFrozenTake(_start, _frames, _offset);
+		if (frozenTakeSilencesSource(_start.getTicks()))
+		{
+			m_mutedLastPlay = muted;
+			return played;
+		}
 	}
 	if( ! m_instrument || ! tryLock() )
 	{
+		// No pass happened - there is no instrument, or another thread holds the processing
+		// lock - so the edge is kept for the pass that does take the lock (Q050-040 r2).
+		return false;
+	}
+	m_mutedLastPlay = muted;
+	// With chase on a muted track schedules nothing: a silent handle left under the playhead would
+	// block the unmute chase below (and double the note on a seek into it) instead of starting once.
+	if (chase && muted)
+	{
+		unlock();
 		return false;
 	}
 	const float frames_per_tick = Engine::framesPerTick();
 
-	clipVector clips;
+	clipVector& clips = m_playClips;
+	clips.clear();
 	class PatternTrack * pattern_track = nullptr;
 	if( _clip_num >= 0 )
 	{
@@ -870,8 +990,11 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	// Handle automation: detuning
 	for (const auto& processHandle : m_processHandles)
 	{
+		// The recording state comes from the published flag, not from the piano roll:
+		// this loop runs on the audio thread, and the piano roll is a Qt object the
+		// GUI thread owns (cluster new-p15-83).
 		processHandle->processTimePos(
-			_start, m_pitchModel.value(), gui::getGUI() && gui::getGUI()->pianoRoll()->isRecording());
+			_start, m_pitchModel.value(), isPianoRollRecording());
 	}
 
 	if ( clips.size() == 0 )
@@ -885,12 +1008,20 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	for (const auto& clip : clips)
 	{
 		auto c = dynamic_cast<MidiClip*>(clip);
-		// everything which is not a MIDI clip won't be played
-		// A MIDI clip playing in the Piano Roll window will always play
-		if (c == nullptr || (Engine::getSong()->playMode() != Song::PlayMode::MidiClip && clip->isMuted()))
+		if (c == nullptr) { continue; }
+		// A MIDI clip playing in the Piano Roll window will always play. Everything else is
+		// skipped while muted - and the render thread remembers that, so unmuting it during
+		// playback chases the notes already under the playhead once (Q050-040).
+		const bool clipMuted = Engine::getSong()->playMode() != Song::PlayMode::MidiClip && clip->isMuted();
+		const bool controllerResumed = !clipMuted && clip->playbackWasMuted();
+		const bool clipUnmutedNow = chase && !clipMuted && clip->playbackWasMuted();
+		clip->setPlaybackWasMuted(clipMuted);
+		if (clipMuted)
 		{
 			continue;
 		}
+		// Q050-054.1: a loop-recorded take that is not its group's active take is silent in the arrangement.
+		if (_clip_num < 0 && !takePlays(c)) { continue; }
 		TimePos cur_start = _start;
 		tick_t passBase = 0;  // where the pass of a looped clip playing now starts, in the clip's own time
 		if( _clip_num < 0 )
@@ -899,8 +1030,22 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			cur_start = loopedPosition(c, unfolded);  // 0.5.0 ED-029: a looped clip
 			passBase = unfolded - cur_start;
 		}
+		// A start, a jump or a loop (MidiPlayback), this track's or this clip's unmute (Q050-040).
+		const bool chaseNow = (chase && MidiPlayback::instance().chasingNow()) || trackUnmutedNow || clipUnmutedNow;
 		// 0.5.0 L07: the clip's CC / pitch-bend / aftertouch lanes (InstrumentTrackNotes.cpp).
-		if (!c->controllers().empty()) { playClipControllers(c, cur_start.getTicks(), _offset); }
+		// R3.3: a controller lane follows the same composite as the notes - a take the comp (or an
+		// audition) does not select must not reach the instrument. The clip's own time at this pass
+		// start maps to the song tick playing now.
+		if (!c->controllers().empty()
+			&& (_clip_num >= 0 || compPlays(c, c->startPosition().getTicks()
+				+ c->startTimeOffset().getTicks() + cur_start.getTicks() + passBase)))
+		{
+			if (controllerResumed)
+			{
+				for (const ControllerLane& lane : c->controllers().lanes()) { lane.lastSent = -1; }
+			}
+			playClipControllers(c, cur_start.getTicks(), _offset);
+		}
 
 		// get all notes from the given clip...
 		const NoteVector & notes = c->notes();
@@ -923,7 +1068,7 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		{
 			const auto currentNote = *nit;
 			// Skip any notes not at the current time pos, not under the clip's start and not chased.
-			if (!noteStartsNow(*currentNote, cur_start, c))
+			if (!noteStartsNow(*currentNote, cur_start, c, chaseNow))
 			{
 				++nit;
 				continue;
@@ -934,7 +1079,7 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			// NOTE: a note that starts inside a selected span plays whole. A track
 			// with no composite and no audition skips this entirely.
 			if (_clip_num < 0 && !compPlays(c, c->startPosition().getTicks()
-				+ c->startTimeOffset().getTicks() + currentNote->pos().getTicks()))
+				+ c->startTimeOffset().getTicks() + currentNote->pos().getTicks() + passBase))
 			{
 				++nit;
 				continue;
@@ -995,6 +1140,7 @@ void InstrumentTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& 
 	if (!presetMode) { m_inputTransform.save(thisElement); }  // 0.5.0 L07: an attribute, only when set
 	m_articulations.save(thisElement);  // 0.5.0 L07 (ED-121): an attribute, only when there is one
 	if (delayMs() > 0) { thisElement.setAttribute("delayms", delayMs()); }  // 0.5.0 L09 (MX-035)
+	if (m_audioBusHandle.offsetFrames() != 0) { thisElement.setAttribute("offsetframes", m_audioBusHandle.offsetFrames()); }  // Q050-339
 
 	m_mixerChannelModel.saveSettings( doc, thisElement, "mixch" );
 	m_baseNoteModel.saveSettings( doc, thisElement, "basenote" );
@@ -1065,6 +1211,13 @@ void InstrumentTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& 
 
 void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement )
 {
+	loadTrackSpecificSettings(thisElement, false);
+}
+
+
+
+void InstrumentTrack::loadTrackSpecificSettings(const QDomElement& thisElement, bool presetMode)
+{
 	// don't delete instrument in preview mode if it's the same
 	// we can't do this for other situations due to some issues with linked models
 	bool reuseInstrument = m_previewMode && m_instrument && m_instrument->nodeName() == getSavedInstrumentName(thisElement);
@@ -1098,6 +1251,7 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 	m_inputTransform.load(thisElement);  // 0.5.0 L07 (absent: left as it is)
 	m_articulations.load(thisElement);  // 0.5.0 L07 (ED-121; absent: none)
 	setDelayMs(thisElement.attribute("delayms", "0").toInt());  // 0.5.0 L09 (MX-035; absent: none)
+	m_audioBusHandle.setOffsetFrames(thisElement.attribute("offsetframes", "0").toInt());  // Q050-339 (absent: none)
 
 	QDomNode node = thisElement.firstChild();
 	while( !node.isNull() )
@@ -1133,10 +1287,9 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 				{
 					m_instrument->restoreState(node.firstChildElement());
 				}
-				else
+				else if (!loadConvertedInstrument(node.toElement()))
 				{
-					delete m_instrument;
-					m_instrument = nullptr;
+					destroyInstrument();
 					m_instrument = Instrument::instantiate(
 						node.toElement().attribute("name"), this, &key);
 					m_instrument->restoreState(node.firstChildElement());
@@ -1159,8 +1312,19 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 					ControllerConnection::classNodeName() != node.nodeName() &&
 					!node.toElement().hasAttribute( "id" ))
 			{
-				delete m_instrument;
-				m_instrument = nullptr;
+				if (node.nodeName() == "vestige")
+				{
+					QDomDocument doc = node.ownerDocument();
+					QDomElement wrapped = doc.createElement("instrument");
+					wrapped.setAttribute("name", "vestige");
+					wrapped.appendChild(node.cloneNode(true));
+					if (loadConvertedInstrument(wrapped))
+					{
+						node = node.nextSibling();
+						continue;
+					}
+				}
+				destroyInstrument();
 				m_instrument = Instrument::instantiate(
 					node.nodeName(), this, nullptr, true);
 				if (m_instrument->nodeName() == node.nodeName())
@@ -1180,10 +1344,31 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 	updatePitchRange();
 	unlock();
 
-	loadZeneInstrumentSettings(thisElement);
+	loadZeneInstrumentSettings(thisElement, presetMode);
 }
 
 
+
+
+bool InstrumentTrack::loadConvertedInstrument(const QDomElement& instrumentNode)
+{
+	const QDomElement converted = legacyvst2::convertInstrument(instrumentNode);
+	if (converted.isNull()) { return false; }
+	destroyInstrument();
+	using PluginKey = Plugin::Descriptor::SubPluginFeatures::Key;
+	PluginKey key(converted.elementsByTagName("key").item(0).toElement());
+	m_instrument = Instrument::instantiate(converted.attribute("name"), this, &key);
+	m_instrument->restoreState(converted.firstChildElement());
+	if (m_instrument->nodeName() != "carlavst2" || !m_instrument->unavailableReason().isEmpty())
+	{
+		destroyInstrument();
+		return false;
+	}
+	capturePlaceholder(converted);
+	emit instrumentChanged();
+	qInfo("Converted legacy VeSTige instrument '%s' to Carla", qPrintable(key.attributes.value("file")));
+	return true;
+}
 
 
 void InstrumentTrack::capturePlaceholder(const QDomElement& instrumentNode)
@@ -1257,8 +1442,7 @@ Instrument * InstrumentTrack::loadInstrument(const QString & _plugin_name,
 	// 0.5.0 MX-120: the old instrument goes while the render is held off - a per-voice modulator's block
 	// may be handing it a per-note value (ModulationLayerPublisher.cpp).
 	Engine::audioEngine()->requestChangeInModel();
-	delete m_instrument;
-	m_instrument = nullptr;
+	destroyInstrument();
 	m_preservedInstrument = QDomElement();  // 0.5.0 Q050-018: the user chose a new instrument; no placeholder remains
 	Engine::audioEngine()->doneChangeInModel();
 	m_instrument = Instrument::instantiate(_plugin_name, this,
@@ -1270,6 +1454,23 @@ Instrument * InstrumentTrack::loadInstrument(const QString & _plugin_name,
 
 	return m_instrument;
 }
+
+
+
+#ifdef LMMS_TESTING
+void InstrumentTrack::setInstrumentForTest( Instrument* instrument )
+{
+	silenceAllNotes( true );
+	lock();
+	Engine::audioEngine()->requestChangeInModel();
+	destroyInstrument();
+	m_preservedInstrument = QDomElement();
+	Engine::audioEngine()->doneChangeInModel();
+	m_instrument = instrument;
+	unlock();
+	emit instrumentChanged();
+}
+#endif
 
 
 

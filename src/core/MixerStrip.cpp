@@ -35,10 +35,12 @@
 #include "Effect.h"
 #include "AudioEngine.h"
 #include "Engine.h"
+#include "LatencyCompensation.h"
 #include "Mixer.h"
 #include "MixerOptions.h"
 #include "PhaseScopeTap.h"
 #include "SampleFrame.h"
+#include "StripMeters.h"
 #include "ValueBuffer.h"
 
 namespace lmms::mixerstrip
@@ -68,6 +70,14 @@ struct Biquad
 {
 	float b0 = 1.f, b1 = 0.f, b2 = 0.f, a1 = 0.f, a2 = 0.f;
 };
+
+//! A persisted float, or @a fallback when the text is missing, not a number or non-finite
+//! (a NaN/inf would otherwise reach the strip's filter and gain stages).
+float floatAttribute(const QDomElement& element, const QString& name, float fallback)
+{
+	const float value = element.attribute(name, QString::number(fallback)).toFloat();
+	return std::isfinite(value) ? value : fallback;
+}
 
 //! A shelf (@a high or low) or, with @a bell, a peaking band at @a hz, @a db gain, Q 0.7 (RBJ's cookbook).
 Biquad band(double hz, double db, double rate, bool bell, bool high)
@@ -315,6 +325,7 @@ void updateMeters(MixerChannel& channel, const SampleFrame* buffer, float volume
 	channel.m_rmsRight.set(std::sqrt(static_cast<float>(sumR) / n) * volume);
 	if (peakL * volume >= 1.f || peakR * volume >= 1.f) { channel.m_clipped.store(true, std::memory_order_relaxed); }
 	channel.m_gainReduction.set(reductionDb(channel));
+	stripmeters::measure(channel, buffer, volume, frames);  // Q050-108: the VU or the loudness meter, when the strip shows one
 }
 
 void silenceMeters(MixerChannel& channel)
@@ -328,7 +339,20 @@ void silenceMeters(MixerChannel& channel)
 	channel.m_livePostInsertsBaked.store(false, std::memory_order_relaxed);
 	channel.m_correlation.set(1.f);  // what silence reads (updateMeters)
 	channel.m_gainReduction.set(0.f);
+	stripmeters::measureSilence(channel, Engine::audioEngine()->framesPerPeriod());  // Q050-108
 }
+
+namespace
+{
+
+//! Q050-108 / Q050-339: the strip's own meter mode and its manual delay, each only off its default.
+void saveStripModes(const MixerChannel& c, QDomElement& e)
+{
+	if (c.offsetFrames() != 0) { e.setAttribute(QStringLiteral("offset"), c.offsetFrames()); }  // Q050-339
+	if (stripmeters::mode(c) != 0) { e.setAttribute(QStringLiteral("metermode"), stripmeters::modeNames().value(stripmeters::mode(c))); }
+}
+
+} // namespace
 
 void save(const MixerChannel& c, QDomElement& e)
 {
@@ -351,26 +375,32 @@ void save(const MixerChannel& c, QDomElement& e)
 	if (c.m_panRightModel.value() != 0.f) { e.setAttribute(QStringLiteral("panright"), static_cast<double>(c.m_panRightModel.value())); }
 	if (c.m_widthModel.value() != 1.f) { e.setAttribute(QStringLiteral("width"), static_cast<double>(c.m_widthModel.value())); }
 	flag(c.m_soloSafeModel, "solosafe");
+	saveStripModes(c, e);
 	if (!c.m_note.isEmpty()) { e.setAttribute(QStringLiteral("note"), c.m_note); }
 }
 
 void load(MixerChannel& c, const QDomElement& e)
 {
-	c.m_trimModel.setValue(e.attribute(QStringLiteral("trim"), QStringLiteral("0")).toFloat());
+	c.m_trimModel.setValue(floatAttribute(e, QStringLiteral("trim"), 0.f));
 	c.m_polarityLeftModel.setValue(e.attribute(QStringLiteral("polarityl")).toInt() != 0);
 	c.m_polarityRightModel.setValue(e.attribute(QStringLiteral("polarityr")).toInt() != 0);
 	c.m_monoModel.setValue(e.attribute(QStringLiteral("mono")).toInt() != 0);
 	c.m_swapModel.setValue(e.attribute(QStringLiteral("swap")).toInt() != 0);
 	c.m_inputMonoModel.setValue(e.attribute(QStringLiteral("inputmono")).toInt() != 0);
 	c.m_crossfadeSideModel.setValue(e.attribute(QStringLiteral("xfade"), QStringLiteral("0")).toInt());
-	c.m_eqLowModel.setValue(e.attribute(QStringLiteral("eqlow"), QStringLiteral("0")).toFloat());
-	c.m_eqMidModel.setValue(e.attribute(QStringLiteral("eqmid"), QStringLiteral("0")).toFloat());
-	c.m_eqMidFreqModel.setValue(e.attribute(QStringLiteral("eqmidf"), QStringLiteral("1000")).toFloat());
-	c.m_eqHighModel.setValue(e.attribute(QStringLiteral("eqhigh"), QStringLiteral("0")).toFloat());
+	c.m_eqLowModel.setValue(floatAttribute(e, QStringLiteral("eqlow"), 0.f));
+	c.m_eqMidModel.setValue(floatAttribute(e, QStringLiteral("eqmid"), 0.f));
+	c.m_eqMidFreqModel.setValue(floatAttribute(e, QStringLiteral("eqmidf"), 1000.f));
+	c.m_eqHighModel.setValue(floatAttribute(e, QStringLiteral("eqhigh"), 0.f));
 	c.m_panModeModel.setValue(e.attribute(QStringLiteral("panmode"), QStringLiteral("0")).toInt());
-	c.m_panRightModel.setValue(e.attribute(QStringLiteral("panright"), QStringLiteral("0")).toFloat());
-	c.m_widthModel.setValue(e.attribute(QStringLiteral("width"), QStringLiteral("1")).toFloat());
+	c.m_panRightModel.setValue(floatAttribute(e, QStringLiteral("panright"), 0.f));
+	c.m_widthModel.setValue(floatAttribute(e, QStringLiteral("width"), 1.f));
 	c.m_soloSafeModel.setValue(e.attribute(QStringLiteral("solosafe")).toInt() != 0);
+	stripmeters::setMode(c, std::max(0, static_cast<int>(stripmeters::modeNames().indexOf(e.attribute(QStringLiteral("metermode"))))));  // Q050-108
+	// Q050-339 (absent: none): bounded as pdc.set_offset bounds it, and never on the master (no later summing point).
+	const int offset = e.attribute(QStringLiteral("offset"), QStringLiteral("0")).toInt();
+	const int bound = LatencyCompensation::MaxManualOffsetFrames;
+	c.setOffsetFrames(c.index() == 0 ? 0 : std::clamp(offset, -bound, bound));
 	c.m_note = e.attribute(QStringLiteral("note"));
 }
 
@@ -391,6 +421,8 @@ void reset(MixerChannel& c)
 	c.m_panRightModel.setValue(0.f);
 	c.m_widthModel.setValue(1.f);
 	c.m_soloSafeModel.setValue(false);
+	stripmeters::setMode(c, 0);  // Q050-108
+	c.setOffsetFrames(0);  // Q050-339
 }
 
 bool additiveSolo()

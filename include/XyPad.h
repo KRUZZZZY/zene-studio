@@ -31,6 +31,7 @@
 #include <QString>
 #include <QWidget>
 
+#include "RackMacros.h"
 #include "lmms_export.h"
 
 class QComboBox;
@@ -47,13 +48,16 @@ class LMMS_EXPORT XyPadArea : public QWidget
 {
 	Q_OBJECT
 public:
+	//! The axes a move changed: a pointer can move both, while a key moves one.
+	enum Axis : unsigned { NoAxis = 0, XAxis = 1, YAxis = 2, BothAxes = XAxis | YAxis };
 	explicit XyPadArea(QWidget* parent = nullptr);
 	void setPoint(QPointF point);
 	QPointF point() const { return m_point; }
 	//! The names the value is read with ("Cutoff", "Drive").
 	void setAxisNames(const QString& x, const QString& y);
 	QString accessibleValue() const;
-	std::function<void(QPointF)> moved;
+	//! The dot moved: its new place and the axes that move changed.
+	std::function<void(QPointF, unsigned)> moved;
 	QSize sizeHint() const override { return {220, 220}; }
 
 protected:
@@ -61,13 +65,21 @@ protected:
 	void paintEvent(QPaintEvent* event) override;
 	void mousePressEvent(QMouseEvent* event) override;
 	void mouseMoveEvent(QMouseEvent* event) override;
+	void mouseReleaseEvent(QMouseEvent* event) override;
 	void keyPressEvent(QKeyEvent* event) override;
 
 private:
-	void moveTo(const QPoint& at);
+	void moveTo(const QPoint& at, bool startOfDrag);
 	//! The place a key moves the dot to, or the current one for a key the pad does not use.
 	QPointF keyed(const QKeyEvent* event) const;
+	//! The axis a supported key moves, or NoAxis when another key or modifier is used.
+	unsigned keyAxis(const QKeyEvent* event) const;
+	//! The axes whose pointer pixel changed from @a from to @a next.
+	unsigned changedAxes(QPointF next, QPointF from) const;
 	QPointF m_point{0.5, 0.5};
+	//! The previous pointer place in a drag, independent of the dot following external macro values.
+	QPointF m_pointer{0.0, 0.0};
+	bool m_dragging = false;
 	QString m_xName;
 	QString m_yName;
 };
@@ -82,6 +94,7 @@ class LMMS_EXPORT XyPadDialog : public QDialog
 	Q_OBJECT
 public:
 	XyPadDialog(const QString& channel, QWidget* parent = nullptr);
+	~XyPadDialog() override;
 
 	//! What the editable axis list (theme 10) reads and writes: the rack's channel, an axis's macro id
 	//! ("macro-<n>", empty when the rack has none) and name, and the pad.
@@ -89,8 +102,10 @@ public:
 	QString macroId(bool y) const;
 	QString macroName(bool y) const;
 	XyPadArea* area() const { return m_area; }
-	//! Show where the chosen macros stand now (after an edit made elsewhere).
-	void refresh() { syncPoint(); }
+	//! Show where the chosen macros stand now (after a VALUE edit made elsewhere). The axis lists
+	//! and the enabled state follow rack macro add/remove on their own (the constructor listens to
+	//! the rack's own macro list), so a list change needs no refresh call.
+	void refresh() { fillMacros(); }
 
 signals:
 	//! The dot moved or the axes changed: the list re-reads.
@@ -100,13 +115,16 @@ private:
 	void fillMacros();
 	//! The dot at the chosen macros' current values, and the pad's tooltip for the choice.
 	void syncPoint();
-	void send(QPointF point);
+	void send(QPointF point, unsigned axes);
 	QString m_channel;
 	QComboBox* m_x;
 	QComboBox* m_y;
 	XyPadArea* m_area;
 	//! W1: the last refused move's reason, cleared by the next move that lands (one line, never a box per move).
 	QLabel* m_status;
+	//! The rack macro-list listener this pad opened (RackMacros::addChangeListener); 0 when the
+	//! channel resolved to no rack. Removed in the destructor - by id, never through a pointer.
+	RackMacros::ChangeListenerId m_macroListener = 0;
 };
 
 } // namespace lmms::gui

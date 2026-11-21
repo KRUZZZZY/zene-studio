@@ -41,6 +41,7 @@
 
 #include "ControlCommandsNoteShared.h"
 #include "ControlCommandDef.h"
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlScaleShared.h"
@@ -122,6 +123,13 @@ ControlResult splitByPitch(const QJsonObject& args)
 	// The source by name for the same reason: undoing track.remove rebuilds it as a new object, so a
 	// Track* or MidiClip* kept across the undo is null when the redo runs.
 	const QString sourceName = clipIdOf(clip);
+	// The before-state the reversibility record names: the clip, the track it is on and the keys
+	// the split makes a track each. The track is named, never pointed at: undoing track.remove
+	// rebuilds it as a new object.
+	QJsonArray keysBefore;
+	for (const int key : keys) { keysBefore.append(key); }
+	const QJsonObject before{{QStringLiteral("clip"), sourceName}, {QStringLiteral("track"), trackIdOf(ref.track)},
+		{QStringLiteral("keys"), keysBefore}};
 	const auto build = [made, sourceName, keys]() {
 		ClipRef ref;
 		ControlResult error;
@@ -137,7 +145,10 @@ ControlResult splitByPitch(const QJsonObject& args)
 	QJsonArray ids;
 	for (const int id : *made) { ids.append(trackId(id)); }
 	Engine::getSong()->setModified();
-	return ControlResult::success({{QStringLiteral("tracks"), ids}, {QStringLiteral("keys"), static_cast<int>(keys.size())}});
+	QJsonObject result{{QStringLiteral("tracks"), ids}, {QStringLiteral("keys"), static_cast<int>(keys.size())}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload(before, QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("Action checkpoint: control.undo removes the per-key tracks created by this split")));
+	return ControlResult::success(result);
 }
 
 //! How well pitch classes @a weight fit the scale @a classes: the share of the note time inside it.

@@ -24,12 +24,18 @@
 
 #include "ScriptPackage.h"
 
+#ifdef _WIN32
+#include "ScriptImportWindows.h"
+#endif
+
+#include <QByteArray>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
 
 #include <algorithm>
+#include <atomic>
 
 namespace lmms
 {
@@ -40,8 +46,6 @@ namespace
 {
 
 //! `--! lmms-package <name> [<version>]` anywhere in the first 4 KB.
-//! The same 4 KB window ScriptEngine::parseVersionHeader() reads, so a manifest
-//! that is too far down the file is missed by both, consistently.
 const QRegularExpression& manifestExpression()
 {
 	static const QRegularExpression expression(
@@ -50,7 +54,98 @@ const QRegularExpression& manifestExpression()
 	return expression;
 }
 
+//! The manifest window: the first 4 KB of the entry script. Counted in BYTES,
+//! because 4 KB is a size of the file, not a number of characters: a manifest
+//! that starts past byte 4096 is outside the window however few characters it
+//! takes to get there.
 constexpr int ManifestScanBytes = 4096;
+
+/*! The window of \a bytes the manifest may live in.
+ *
+ *  \a sourceContinues says whether the source has more bytes behind \a bytes.
+ *  When it does, the window is cut back to the last COMPLETE line: a line the
+ *  window cuts through is not a declaration, and matching half of one would
+ *  report a truncated name or version.
+ */
+QByteArray manifestWindow(QByteArray bytes, bool sourceContinues)
+{
+	if (bytes.size() > ManifestScanBytes)
+	{
+		bytes.truncate(ManifestScanBytes);
+		sourceContinues = true;
+	}
+	if (!sourceContinues)
+	{
+		return bytes;
+	}
+	const int lastNewline = bytes.lastIndexOf('\n');
+	return bytes.left(lastNewline + 1);
+}
+
+/*! Is the canonical path \a canonicalPath inside the scripts root?
+ *
+ *  \a canonicalRoot is the canonical path of the scripts root. A package must
+ *  not escape the root through a symlink: a package directory outside the root
+ *  would make the package's imports load from outside it. A path that could
+ *  not be canonicalised (it does not exist) is not inside the root.
+ */
+bool isInsideRoot(const QString& canonicalPath, const QString& canonicalRoot)
+{
+	if (canonicalPath.isEmpty() || canonicalRoot.isEmpty())
+	{
+		return false;
+	}
+	if (canonicalPath == canonicalRoot)
+	{
+		return true;
+	}
+	QString prefix = canonicalRoot;
+	if (!prefix.endsWith(QLatin1Char('/')))
+	{
+		prefix += QLatin1Char('/');
+	}
+	return canonicalPath.startsWith(prefix);
+}
+
+bool packageDirectoryIsInsideRoot(const QString& directory, const QString& rootPath,
+								const QString& canonicalRoot)
+{
+#ifdef _WIN32
+	return isInsideRoot(QFileInfo(directory).canonicalFilePath(), canonicalRoot)
+			&& scriptimportwindows::directoryIsUnderRoot(directory, rootPath);
+#else
+	Q_UNUSED(rootPath);
+	return isInsideRoot(QFileInfo(directory).canonicalFilePath(), canonicalRoot);
+#endif
+}
+
+//! Bytes read from package entry scripts. A test seam (see
+//! entryScriptBytesReadForTesting()), not part of the package format.
+std::atomic<qint64> s_entryScriptBytesRead{0};
+
+/*! \brief Parse a manifest out of the raw bytes of an entry script.
+ *
+ *  \a sourceContinues says whether more of the file follows \a bytes; the
+ *  window is then cut back to the last complete line.
+ */
+ScriptPackage parseManifestBytes(const QByteArray& bytes, bool sourceContinues)
+{
+	ScriptPackage package;
+	const QRegularExpressionMatch match =
+		manifestExpression().match(QString::fromUtf8(manifestWindow(bytes, sourceContinues)));
+	if (!match.hasMatch())
+	{
+		return package;
+	}
+	const QString declaredName = match.captured(1);
+	if (!isValidName(declaredName))
+	{
+		return package;
+	}
+	package.name = declaredName;
+	package.version = match.captured(2);
+	return package;
+}
 
 } // namespace
 
@@ -67,20 +162,10 @@ bool isValidName(const QString& name)
 
 ScriptPackage parseManifest(const QString& source)
 {
-	ScriptPackage package;
-	const QRegularExpressionMatch match = manifestExpression().match(source.left(ManifestScanBytes));
-	if (!match.hasMatch())
-	{
-		return package;
-	}
-	const QString declaredName = match.captured(1);
-	if (!isValidName(declaredName))
-	{
-		return package;
-	}
-	package.name = declaredName;
-	package.version = match.captured(2);
-	return package;
+	// The limit is a limit on the BYTES of the source, so it is enforced on
+	// the encoded bytes, before the text is decoded.
+	const QByteArray bytes = source.toUtf8();
+	return parseManifestBytes(bytes, bytes.size() > ManifestScanBytes);
 }
 
 QVector<ScriptPackage> scan(const QString& scriptsRoot)
@@ -92,6 +177,10 @@ QVector<ScriptPackage> scan(const QString& scriptsRoot)
 	}
 
 	const QDir root(scriptsRoot);
+	// The root is canonicalised once, and every candidate is compared against
+	// the real root: a package directory or entry script that is a symlink
+	// out of the root is not a package of this root.
+	const QString canonicalRoot = QFileInfo(root.absolutePath()).canonicalFilePath();
 	const QStringList entries = root.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
 	for (const QString& entry : entries)
 	{
@@ -100,9 +189,18 @@ QVector<ScriptPackage> scan(const QString& scriptsRoot)
 			continue;
 		}
 		const QString directory = root.absoluteFilePath(entry);
+		if (!packageDirectoryIsInsideRoot(directory, root.absolutePath(), canonicalRoot))
+		{
+			continue;
+		}
 		const QString entryPath = QDir(directory).absoluteFilePath(
 				QString::fromLatin1(EntryFileName));
-		if (!QFileInfo(entryPath).isFile())
+		const QFileInfo entryInfo(entryPath);
+		if (!entryInfo.isFile())
+		{
+			continue;
+		}
+		if (!isInsideRoot(entryInfo.canonicalFilePath(), canonicalRoot))
 		{
 			continue;
 		}
@@ -116,10 +214,16 @@ QVector<ScriptPackage> scan(const QString& scriptsRoot)
 		// name that disagrees with the directory is ignored rather than
 		// trusted, because the directory is what a host lists and runs.
 		QFile file(entryPath);
-		if (file.open(QIODevice::ReadOnly | QIODevice::Text))
+		if (file.open(QIODevice::ReadOnly))
 		{
-			const ScriptPackage declared = parseManifest(QString::fromUtf8(file.readAll()));
+			// Only the manifest window is read: the manifest lives in the first
+			// 4 KB, and an entry script may be arbitrarily large, so reading it
+			// whole would make listing cost memory proportional to the file.
+			const QByteArray head = file.read(ManifestScanBytes);
+			s_entryScriptBytesRead.fetch_add(head.size(), std::memory_order_relaxed);
+			const bool continues = file.size() > head.size();
 			file.close();
+			const ScriptPackage declared = parseManifestBytes(head, continues);
 			if (declared.name == package.name)
 			{
 				package.version = declared.version;
@@ -132,6 +236,11 @@ QVector<ScriptPackage> scan(const QString& scriptsRoot)
 	std::sort(packages.begin(), packages.end(),
 			[](const ScriptPackage& a, const ScriptPackage& b) { return a.name < b.name; });
 	return packages;
+}
+
+qint64 entryScriptBytesReadForTesting()
+{
+	return s_entryScriptBytesRead.load(std::memory_order_relaxed);
 }
 
 } // namespace ScriptPackages

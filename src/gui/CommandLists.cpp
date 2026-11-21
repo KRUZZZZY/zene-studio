@@ -34,7 +34,7 @@ ListSpec revisions()
 	ListSpec out = spec("Revisions", "revisions.list", "revisions",
 		{QStringLiteral("id"), QStringLiteral("source"), QStringLiteral("timestamp"), QStringLiteral("bytes")},
 		{{QStringLiteral("include_git"), true}});
-	out.summaryKeys = {QStringLiteral("file"), QStringLiteral("count")};
+	out.summaryKeys = QStringList{QStringLiteral("file"), QStringLiteral("count")};
 	RowAction restore = act("Restore", "revisions.restore", {{QStringLiteral("id"), QStringLiteral("id")}});
 	restore.confirm = true;
 	RowAction compare = act("Compare With Now", "revisions.compare", {{QStringLiteral("a"), QStringLiteral("id")}});
@@ -49,7 +49,7 @@ ListSpec missingFiles(const QString& project)
 	ListSpec out = spec("Project Files", "project.missing_assets", "references",
 		{QStringLiteral("tag"), QStringLiteral("raw"), QStringLiteral("resolved"), QStringLiteral("exists"),
 			QStringLiteral("missing")}, where);
-	out.summaryKeys = {QStringLiteral("file"), QStringLiteral("missing_count"), QStringLiteral("present_count"),
+	out.summaryKeys = QStringList{QStringLiteral("file"), QStringLiteral("missing_count"), QStringLiteral("present_count"),
 		QStringLiteral("reference_count")};
 	out.actions = {act("Relink...", "project.relink", {{QStringLiteral("from"), QStringLiteral("raw")}}, where, true)};
 	out.extras = {extra("Collect Media...", "project.collect_media", where)};
@@ -78,7 +78,7 @@ ListSpec warpMarkers(const QString& clip)
 	const QJsonObject where{{QStringLiteral("clip"), clip}};
 	ListSpec out = spec("Warp Markers", "warp.list", "markers",
 		{QStringLiteral("index"), QStringLiteral("source_frame"), QStringLiteral("offset_ticks")}, where);
-	out.summaryKeys = {QStringLiteral("tempo_mode"), QStringLiteral("stretch"), QStringLiteral("source_tempo"),
+	out.summaryKeys = QStringList{QStringLiteral("tempo_mode"), QStringLiteral("stretch"), QStringLiteral("source_tempo"),
 		QStringLiteral("marker_count")};
 	const QHash<QString, QString> marker{{QStringLiteral("source_frame"), QStringLiteral("source_frame")}};
 	RowAction remove = act("Remove", "warp.remove", marker, where);
@@ -94,7 +94,7 @@ ListSpec rackZones(const QString& channel)
 	ListSpec out = spec("Rack Zones", "rack.get_state", "zones", {QStringLiteral("zone"), QStringLiteral("low_key"),
 		QStringLiteral("high_key"), QStringLiteral("low_velocity"), QStringLiteral("high_velocity"),
 		QStringLiteral("chain"), QStringLiteral("sample")}, where);
-	out.summaryKeys = {QStringLiteral("chain_count"), QStringLiteral("zone_count")};
+	out.summaryKeys = QStringList{QStringLiteral("chain_count"), QStringLiteral("zone_count")};
 	RowAction remove = act("Remove", "rack.zone_remove", {{QStringLiteral("zone"), QStringLiteral("zone")}}, where);
 	remove.confirm = true;
 	out.actions = {remove};
@@ -106,8 +106,8 @@ ListSpec pluginsInProject()
 {
 	ListSpec out = spec("Plug-ins in Project", "oop.get_state", "chains", {QStringLiteral("label"),
 		QStringLiteral("kind"), QStringLiteral("target"), QStringLiteral("device"), QStringLiteral("plugin")});
-	out.nestedKeys = {QStringLiteral("instrument"), QStringLiteral("devices")};
-	out.summaryKeys = {QStringLiteral("separate_process_count"), QStringLiteral("refused_count")};
+	out.nestedKeys = QStringList{QStringLiteral("instrument"), QStringLiteral("devices")};
+	out.summaryKeys = QStringList{QStringLiteral("separate_process_count"), QStringLiteral("refused_count")};
 	const QHash<QString, QString> device{{QStringLiteral("target"), QStringLiteral("target")},
 		{QStringLiteral("plugin"), QStringLiteral("device")}};
 	RowAction remove = act("Remove", "plugin.unload", device);
@@ -121,14 +121,17 @@ ListSpec pluginsInProject()
 ListSpec pluginManager()
 {
 	ListSpec out = spec("Plug-in Manager", "plugin.list", "devices", {QStringLiteral("display_name"), QStringLiteral("format"),
-		QStringLiteral("kind"), QStringLiteral("loadable"), QStringLiteral("id")});
+		QStringLiteral("kind"), QStringLiteral("vendor"), QStringLiteral("loadable"), QStringLiteral("id")});
 	const QHash<QString, QString> device{{QStringLiteral("device"), QStringLiteral("id")}};
 	out.actions = {act("Add to Favourites", "plugin.organise", device, {{QStringLiteral("favourite"), true}}),
 		act("Remove from Favourites", "plugin.organise", device, {{QStringLiteral("favourite"), false}}),
 		act("Hide", "plugin.organise", device, {{QStringLiteral("hidden"), true}}),
 		act("Show", "plugin.organise", device, {{QStringLiteral("hidden"), false}}),
 		act("Move to Folder...", "plugin.organise", device, {}, true)};
-	out.extras = {extra("Rescan", "plugin.rescan", {}, false), readExtra("Plug-in Folders", "plugin.paths_get"),
+	out.extras = {extra("Rescan", "plugin.scan_start", {}, false),
+		extra("Scan Progress", "plugin.scan_status", {}, false),
+		extra("Cancel Scan", "plugin.scan_cancel", {}, false),
+		readExtra("Plug-in Folders", "plugin.paths_get"),
 		extra("Set Folders...", "plugin.paths_set"), readExtra("Organised Plug-ins", "plugin.organisation")};
 	return out;
 }
@@ -136,12 +139,14 @@ ListSpec pluginManager()
 ListSpec pluginModules()
 {
 	ListSpec out = spec("Plug-in Modules", "plugin.scan_cache_list", "entries", {QStringLiteral("path"), QStringLiteral("status"),
-		QStringLiteral("name"), QStringLiteral("error")});
+		QStringLiteral("name"), QStringLiteral("author"), QStringLiteral("error")});
 	const QHash<QString, QString> path{{QStringLiteral("path"), QStringLiteral("path")}};
 	out.actions = {act("Quarantine...", "plugin.scan_cache_quarantine_add", path, {}, true),
 		act("Release", "plugin.scan_cache_quarantine_remove", path)};
-	out.summaryKeys = {QStringLiteral("count"), QStringLiteral("load_failed_count")};
-	out.extras = {extra("Rescan", "plugin.rescan", {}, false)};
+	out.summaryKeys = QStringList{QStringLiteral("count"), QStringLiteral("load_failed_count")};
+	out.extras = {extra("Rescan", "plugin.scan_start", {}, false),
+		extra("Scan Progress", "plugin.scan_status", {}, false),
+		extra("Cancel Scan", "plugin.scan_cancel", {}, false)};
 	return out;
 }
 
@@ -150,7 +155,7 @@ ListSpec takeLanes(const QString& track)
 	const QJsonObject where{{QStringLiteral("track"), track}};
 	ListSpec out = spec("Take Lanes", "comp.lane_list", "tracks", {QStringLiteral("lane"), QStringLiteral("name"),
 		QStringLiteral("take_count")}, where);
-	out.nestedKeys = {QStringLiteral("lanes")};
+	out.nestedKeys = QStringList{QStringLiteral("lanes")};
 	RowAction remove = act("Remove", "comp.lane_remove", {{QStringLiteral("lane"), QStringLiteral("lane")}}, where);
 	remove.confirm = true;
 	out.actions = {remove};
@@ -162,7 +167,7 @@ ListSpec grooves()
 {
 	ListSpec out = spec("Grooves", "groove.list", "templates", {QStringLiteral("name"), QStringLiteral("length_ticks"),
 		QStringLiteral("step_ticks"), QStringLiteral("slot_count")});
-	out.summaryKeys = {QStringLiteral("count"), QStringLiteral("max_grooves")};
+	out.summaryKeys = QStringList{QStringLiteral("count"), QStringLiteral("max_grooves")};
 	const QHash<QString, QString> name{{QStringLiteral("name"), QStringLiteral("name")}};
 	RowAction remove = act("Remove", "groove.remove", name);
 	remove.confirm = true;
@@ -175,7 +180,7 @@ ListSpec safeStart()
 {
 	ListSpec out = spec("Safe Start", "safestart.get_state", "skipped",
 		{QStringLiteral("plugin"), QStringLiteral("file"), QStringLiteral("reason")});
-	out.summaryKeys = {QStringLiteral("previous_run_exited_cleanly"), QStringLiteral("safe_start"),
+	out.summaryKeys = QStringList{QStringLiteral("previous_run_exited_cleanly"), QStringLiteral("safe_start"),
 		QStringLiteral("skip_enabled"), QStringLiteral("skipped_count"), QStringLiteral("note")};
 	ListExtra clear = extra("Clear", "safestart.clear", {}, false);
 	clear.confirm = true;  // the crash marker is deleted for good (safestart.clear is irreversible)
@@ -187,15 +192,24 @@ ListSpec safeStart()
 
 ListSpec shortcuts()
 {
-	ListSpec out = spec("Keyboard Shortcuts", "shortcuts.list", "bindings", {QStringLiteral("id"), QStringLiteral("keys"),
-		QStringLiteral("default"), QStringLiteral("overridden"), QStringLiteral("command")});
-	out.summaryKeys = {QStringLiteral("count"), QStringLiteral("overridden_count")};
-	const QHash<QString, QString> id{{QStringLiteral("id"), QStringLiteral("id")}};
+	// 0.5.0 L13 stage 1: a row carries its context (`scope`), because the same key may mean four
+	// different things - a clash is only two actions of ONE context on one key. The row actions
+	// pass the scope back, so "Set Keys..." on the note editor's Draw Tool edits THAT binding and
+	// never the menu action or another panel's.
+	ListSpec out = spec("Keyboard Shortcuts", "shortcuts.list", "bindings", {QStringLiteral("scope"), QStringLiteral("id"),
+		QStringLiteral("keys"), QStringLiteral("default"), QStringLiteral("overridden"), QStringLiteral("command"),
+		QStringLiteral("conflict")});
+	out.summaryKeys = QStringList{QStringLiteral("count"), QStringLiteral("overridden_count"),
+		QStringLiteral("conflict_count")};
+	const QHash<QString, QString> id{{QStringLiteral("id"), QStringLiteral("id")},
+		{QStringLiteral("scope"), QStringLiteral("scope")}};
 	out.actions = {act("Set Keys...", "shortcuts.set", id, {}, true), act("Unbind", "shortcuts.set", id,
 		{{QStringLiteral("keys"), QString()}}), act("Reset", "shortcuts.reset", id)};
 	ListExtra resetAll = extra("Reset All", "shortcuts.reset", {}, false);
 	resetAll.confirm = true;
-	out.extras = {extra("Export...", "shortcuts.export"), extra("Import...", "shortcuts.import"), resetAll};
+	// Q050-055.2: a chosen plug-in gets a row of its own once it has a key.
+	out.extras = {extra("Bind a Plug-in...", "shortcuts.bind_plugin"), extra("Export...", "shortcuts.export"),
+		extra("Import...", "shortcuts.import"), resetAll};
 	return out;
 }
 
@@ -203,7 +217,7 @@ ListSpec macros()
 {
 	ListSpec out = spec("Workflows", "workflow.list", "workflows", {QStringLiteral("name"), QStringLiteral("step_count"),
 		QStringLiteral("steps")});
-	out.summaryKeys = {QStringLiteral("count"), QStringLiteral("max_workflows"), QStringLiteral("scope")};
+	out.summaryKeys = QStringList{QStringLiteral("count"), QStringLiteral("max_workflows"), QStringLiteral("scope")};
 	const QHash<QString, QString> name{{QStringLiteral("name"), QStringLiteral("name")}};
 	RowAction remove = act("Remove", "workflow.remove", name);
 	remove.confirm = true;
@@ -217,7 +231,7 @@ ListSpec controllerMappings()
 	ListSpec out = spec("MIDI Mappings", "controller.surface_state", "controls", {QStringLiteral("control"),
 		QStringLiteral("channel"), QStringLiteral("controller"), QStringLiteral("soft_takeover"), QStringLiteral("feedback"),
 		QStringLiteral("value")});
-	out.summaryKeys = {QStringLiteral("count")};
+	out.summaryKeys = QStringList{QStringLiteral("count")};
 	const QHash<QString, QString> control{{QStringLiteral("control"), QStringLiteral("control")}};
 	out.actions = {act("Soft Takeover On", "controller.soft_takeover", control, {{QStringLiteral("enabled"), true}}),
 		act("Soft Takeover Off", "controller.soft_takeover", control, {{QStringLiteral("enabled"), false}}),
@@ -256,7 +270,7 @@ ListSpec clips()
 {
 	ListSpec out = spec("Clip List", "clip.list", "clips", {QStringLiteral("name"), QStringLiteral("track_name"), QStringLiteral("start"),
 		QStringLiteral("length"), QStringLiteral("kind")});
-	out.summaryKeys = {QStringLiteral("count")};
+	out.summaryKeys = QStringList{QStringLiteral("count")};
 	out.filterArg = QStringLiteral("name");  // clip.list keeps the clips whose name holds it
 	out.filterLabel = tr("Find a clip by name");
 	const QHash<QString, QString> clip{{QStringLiteral("clip"), QStringLiteral("clip")}};
@@ -284,7 +298,7 @@ ListSpec noteEvents(const QString& clip)
 	ListSpec out = spec("MIDI Event List", "note.list", "notes", {QStringLiteral("key"), QStringLiteral("position"),
 		QStringLiteral("length"), QStringLiteral("velocity"), QStringLiteral("pan"), QStringLiteral("probability"),
 		QStringLiteral("muted"), QStringLiteral("release_velocity"), QStringLiteral("quantised")}, where);
-	out.summaryKeys = {QStringLiteral("count")};
+	out.summaryKeys = QStringList{QStringLiteral("count")};
 	const QHash<QString, QString> note{{QStringLiteral("note"), QStringLiteral("note")}};
 	out.actions = {act("Velocity...", "note.velocity_set", note, where, true), act("Move...", "note.move", note, where, true),
 		act("Length...", "note.resize", note, where, true), act("Probability...", "note.probability_set", note, where, true),
@@ -368,6 +382,39 @@ ListSpec subprojects()
 	out.actions = {act("Render Again", "project.subproject_refresh", {{QStringLiteral("track"), QStringLiteral("track")}}), open};
 	out.extras = {extra("Add Subproject...", "project.subproject_add")};
 	return out;
+}
+
+ListSpec masteringSequence()
+{
+	// Q050-317.1: the mastering release sequence. The rows are the songs in release order, and
+	// every entry is one of the mastering.song_* commands - so the page and an agent edit the
+	// same list, and every edit is one undo step. "Move to Top"/"Move to Bottom" (rather than
+	// up/down) keep the row actions to arguments the row itself carries; the form of "Move to
+	// Position..." reaches any other place in the release.
+	ListSpec out = spec("Mastering Release", "mastering.sequence_list", "songs",
+		{QStringLiteral("index"), QStringLiteral("title"), QStringLiteral("processing"), QStringLiteral("fade_in_ms"),
+			QStringLiteral("fade_out_ms"), QStringLiteral("gap_ms"), QStringLiteral("source")});
+	out.summaryKeys = QStringList{QStringLiteral("count"), QStringLiteral("document_type")};
+	const QHash<QString, QString> song{{QStringLiteral("song"), QStringLiteral("song")}};
+	RowAction remove = act("Remove", "mastering.song_remove", song);
+	remove.confirm = true;
+	out.actions = {act("Edit...", "mastering.song_set", song, {}, true),
+		act("Move to Top", "mastering.song_move", song, {{QStringLiteral("to"), 0}}),
+		act("Move to Bottom", "mastering.song_move", song, {{QStringLiteral("to"), 511}}),
+		act("Move to Position...", "mastering.song_move", song, {}, true), remove};
+	out.extras = {extra("Add Song...", "mastering.song_add")};
+	return out;
+}
+
+ListSpec masteringReport()
+{
+	// The rows are the last completed run's own candidate rows, and this surface reads the SAME command
+	// an agent reads (mastering.get_state). So the genre and delivery target a person chose are visible per
+	// candidate. `metrics` renders as a value count by design. Read-only: no row actions.
+	return spec("Mastering Report", "mastering.get_state", "candidates",
+		{QStringLiteral("name"), QStringLiteral("genre"), QStringLiteral("delivery_target"),
+			QStringLiteral("loudness_pass"), QStringLiteral("true_peak_pass"), QStringLiteral("file"),
+			QStringLiteral("metrics")});
 }
 
 ListSpec alternatives()

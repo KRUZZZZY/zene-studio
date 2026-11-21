@@ -102,13 +102,13 @@ private slots:
 		QVERIFY(!capture.isArmed());
 
 		const auto frames = makeFrames(4096);
-		capture.push(frames.data(), static_cast<lmms::f_cnt_t>(frames.size()));
+		capture.push(frames.data(), static_cast<lmms::f_cnt_t>(frames.size()), SampleRate);
 		QCOMPARE(capture.ring().bufferedCount(), std::size_t{0});
 		QCOMPARE(capture.ring().overwrittenCount(), std::uint64_t{0});
 
 		QVERIFY(capture.arm(true));
 		QVERIFY(capture.isArmed());
-		capture.push(frames.data(), static_cast<lmms::f_cnt_t>(frames.size()));
+		capture.push(frames.data(), static_cast<lmms::f_cnt_t>(frames.size()), SampleRate);
 		QCOMPARE(capture.ring().bufferedCount(), std::size_t{4096});
 
 		// Disarming stops recording, and what was already retained stays: the
@@ -116,7 +116,7 @@ private slots:
 		// there to be written.
 		QVERIFY(!capture.arm(false));
 		QVERIFY(!capture.isArmed());
-		capture.push(frames.data(), static_cast<lmms::f_cnt_t>(frames.size()));
+		capture.push(frames.data(), static_cast<lmms::f_cnt_t>(frames.size()), SampleRate);
 		QCOMPARE(capture.ring().bufferedCount(), std::size_t{4096});
 	}
 
@@ -159,7 +159,7 @@ private slots:
 		lmms::test::tlCountAllocations = true;
 		for (int period = 0; period < 16; ++period)
 		{
-			capture.push(frames.data(), static_cast<lmms::f_cnt_t>(frames.size()));
+			capture.push(frames.data(), static_cast<lmms::f_cnt_t>(frames.size()), SampleRate);
 		}
 		const auto allocations = lmms::test::tlAllocationCount;
 		lmms::test::tlCountAllocations = false;
@@ -174,7 +174,7 @@ private slots:
 		RetroAudioCapture capture;
 		capture.arm(true);
 		const auto frames = makeFrames(1000, 100);
-		capture.push(frames.data(), static_cast<lmms::f_cnt_t>(frames.size()));
+		capture.push(frames.data(), static_cast<lmms::f_cnt_t>(frames.size()), SampleRate);
 
 		const RetroAudioCapture::Window window = capture.takeWindow();
 		QCOMPARE(window.frames.size(), std::size_t{1000});
@@ -208,9 +208,9 @@ private slots:
 		const auto chunk = makeFrames(1024, 100);
 		while (capture.ring().bufferedCount() < capacity)
 		{
-			capture.push(chunk.data(), static_cast<lmms::f_cnt_t>(chunk.size()));
+			capture.push(chunk.data(), static_cast<lmms::f_cnt_t>(chunk.size()), SampleRate);
 		}
-		capture.push(chunk.data(), static_cast<lmms::f_cnt_t>(chunk.size()));
+		capture.push(chunk.data(), static_cast<lmms::f_cnt_t>(chunk.size()), SampleRate);
 		const std::uint64_t atSnapshot = capture.ring().overwrittenCount();
 		QVERIFY(atSnapshot > 0);
 
@@ -220,7 +220,7 @@ private slots:
 
 		// ...and the producer keeps overwriting after the copy, as it does while
 		// the take file is being written.
-		capture.push(chunk.data(), static_cast<lmms::f_cnt_t>(chunk.size()));
+		capture.push(chunk.data(), static_cast<lmms::f_cnt_t>(chunk.size()), SampleRate);
 		QVERIFY(capture.ring().overwrittenCount() > atSnapshot);
 		// A window already taken still reports the count it was copied with.
 		QCOMPARE(static_cast<std::uint64_t>(window.overwritten), atSnapshot);
@@ -232,7 +232,7 @@ private slots:
 		RetroAudioCapture capture;
 		capture.arm(true);
 		const auto frames = makeFrames(700);
-		capture.push(frames.data(), static_cast<lmms::f_cnt_t>(frames.size()));
+		capture.push(frames.data(), static_cast<lmms::f_cnt_t>(frames.size()), SampleRate);
 		const RetroAudioCapture::Window window = capture.takeWindow();
 
 		QTemporaryDir dir;
@@ -385,6 +385,172 @@ private slots:
 		QVERIFY(!error.isEmpty());
 		QCOMPARE(written, std::uint64_t{0});
 		QVERIFY(!QFileInfo::exists(path));
+	}
+
+	//! Luna cluster new-p12-200, BUG 5: a take must not label frames recorded at
+	//! several sample rates with a single rate. While armed, if the engine's
+	//! rate changes the stale (pre-change) frames must be dropped so the window
+	//! stays rate-homogeneous and the take is labelled with the one rate its
+	//! frames were actually captured at.
+	void aTakeLabelsOneSampleRateEvenAfterAnEngineRateChange()
+	{
+		constexpr int FirstRate = 48000;
+		constexpr int SecondRate = 96000;
+
+		RetroAudioCapture capture;
+		capture.arm(true);
+
+		// The engine records at 48 kHz for a while...
+		const auto firstFrames = makeFrames(700);
+		capture.push(firstFrames.data(), static_cast<lmms::f_cnt_t>(firstFrames.size()), FirstRate);
+
+		// ...then the engine's sample rate changes while the capture is STILL
+		// armed, and more audio arrives.
+		const auto secondFrames = makeFrames(200, 700);
+		capture.push(secondFrames.data(), static_cast<lmms::f_cnt_t>(secondFrames.size()), SecondRate);
+
+		const RetroAudioCapture::Window window = capture.takeWindow();
+		// The window is rate-homogeneous: only the 96 kHz frames remain, and the
+		// window reports that single rate - not 0, and not the old 48 kHz.
+		QCOMPARE(window.sampleRate, SecondRate);
+		QCOMPARE(window.frames.size(), std::size_t{200});
+		for (std::size_t i = 0; i < window.frames.size(); ++i)
+		{
+			QCOMPARE(window.frames[i].left(), secondFrames[i].left());
+			QCOMPARE(window.frames[i].right(), secondFrames[i].right());
+		}
+
+		// The take written from this window is labelled with the one rate the
+		// window's frames were recorded at.
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("retro-rate.wav"));
+		std::uint64_t written = 0;
+		QString error;
+		QVERIFY2(lmms::writeRetroAudioTake(path, window.frames, window.sampleRate,
+			&written, &error), qPrintable(error));
+		QCOMPARE(written, std::uint64_t{200});
+
+		SF_INFO info{};
+		SNDFILE* file = sf_open(path.toUtf8().constData(), SFM_READ, &info);
+		QVERIFY(file != nullptr);
+		QCOMPARE(info.samplerate, static_cast<int>(SecondRate));
+		sf_close(file);
+	}
+
+	//! Luna cluster new-p12-200 (rework): a rate transition overlapping an
+	//! unacknowledged (timed-out) snapshot must not erase or relabel its window.
+	void aRateTransitionDuringAnInFlightSnapshotKeepsTheWindow()
+	{
+		constexpr int OldRate = 48000;
+		constexpr int NewRate = 96000;
+		RetroAudioCapture capture;
+		capture.arm(true);
+		const auto oldFrames = makeFrames(300);
+		capture.push(oldFrames.data(), static_cast<lmms::f_cnt_t>(oldFrames.size()), OldRate);
+
+		// Nothing acknowledges this snapshot: takeWindow()'s quiesce wait times out.
+		capture.ring().beginSnapshot();
+		const auto newFrames = makeFrames(100, 300);
+		capture.push(newFrames.data(), static_cast<lmms::f_cnt_t>(newFrames.size()), NewRate);
+
+		const RetroAudioCapture::Window window = capture.takeWindow();
+		QVERIFY(!window.quiesced);
+		QCOMPARE(window.sampleRate, OldRate);
+		QCOMPARE(window.frames.size(), std::size_t{300});
+		capture.push(newFrames.data(), static_cast<lmms::f_cnt_t>(newFrames.size()), NewRate);
+		const RetroAudioCapture::Window next = capture.takeWindow();
+		QCOMPARE(next.sampleRate, NewRate);
+		QCOMPARE(next.frames.size(), std::size_t{100});
+	}
+
+	//! Luna cluster new-p12-200 (rework): the producer drops the stale window
+	//! through the ring's publication protocol, not the consumer-only reset().
+	void aRateTransitionKeepsTheCumulativeCounters()
+	{
+		RetroAudioCapture capture;
+		capture.arm(true);
+		const auto chunk = makeFrames(1024);
+		// Overfill the ring in one push so the overwrite counter is non-zero.
+		const auto fill = makeFrames(capture.ring().capacity() + chunk.size());
+		capture.push(fill.data(), static_cast<lmms::f_cnt_t>(fill.size()), SampleRate);
+		const std::uint64_t lost = capture.ring().overwrittenCount();
+		QVERIFY(lost > 0);
+
+		capture.push(chunk.data(), static_cast<lmms::f_cnt_t>(chunk.size()), 96000);
+		const RetroAudioCapture::Window window = capture.takeWindow();
+		QCOMPARE(window.sampleRate, 96000);
+		QCOMPARE(window.frames.size(), std::size_t{1024});
+		QCOMPARE(static_cast<std::uint64_t>(window.overwritten), lost);
+	}
+
+	//! Luna cluster new-p12-200 (r3): a period that observes a pending snapshot
+	//! must not be admitted to the old-rate ring even if the snapshot releases
+	//! before ring admission. Pauses the producer after the pending check,
+	//! releases the snapshot, then resumes; a subsequent take must hold only
+	//! the old-rate frames.
+	void aDeferredTransitionPeriodIsNotAdmittedAfterTheSnapshotReleases()
+	{
+		constexpr int OldRate = 48000;
+		constexpr int NewRate = 96000;
+
+		RetroAudioCapture capture;
+		capture.arm(true);
+		const auto oldFrames = makeFrames(300);
+		capture.push(oldFrames.data(), static_cast<lmms::f_cnt_t>(oldFrames.size()), OldRate);
+
+		struct State
+		{
+			std::atomic<bool> paused{false};
+			std::atomic<bool> release{false};
+		} state;
+
+		RetroAudioCapture::setPushPauseTestHook([](void* ctx)
+		{
+			auto* s = static_cast<State*>(ctx);
+			s->paused.store(true, std::memory_order_release);
+			while (!s->release.load(std::memory_order_acquire))
+			{
+				std::this_thread::yield();
+			}
+		}, &state);
+
+		capture.ring().beginSnapshot();
+		const auto newFrames = makeFrames(100, 300);
+
+		std::thread producer([&]()
+		{
+			capture.push(newFrames.data(), static_cast<lmms::f_cnt_t>(newFrames.size()), NewRate);
+		});
+
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+		while (!state.paused.load(std::memory_order_acquire)
+			&& std::chrono::steady_clock::now() < deadline)
+		{
+			std::this_thread::yield();
+		}
+
+		// Release the snapshot, signal the producer to resume, and join it on
+		// EVERY path - including a timed-out pause wait - so the test can never
+		// leak a spinning producer thread or leave the ring mid-snapshot (Luna
+		// r3 rework). The hook is cleared here too, before any assertion.
+		capture.ring().endSnapshot();
+		state.release.store(true, std::memory_order_release);
+		producer.join();
+		RetroAudioCapture::setPushPauseTestHook(nullptr, nullptr);
+
+		// NOW assert the pause was reached; the producer and snapshot are
+		// already clean, so a failure here can only terminate the test cleanly.
+		QVERIFY(state.paused.load(std::memory_order_acquire));
+
+		const RetroAudioCapture::Window window = capture.takeWindow();
+		QCOMPARE(window.sampleRate, OldRate);
+		QCOMPARE(window.frames.size(), std::size_t{300});
+		for (std::size_t i = 0; i < window.frames.size(); ++i)
+		{
+			QCOMPARE(window.frames[i].left(), oldFrames[i].left());
+			QCOMPARE(window.frames[i].right(), oldFrames[i].right());
+		}
 	}
 
 private:

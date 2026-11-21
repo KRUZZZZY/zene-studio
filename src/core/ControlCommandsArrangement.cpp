@@ -32,6 +32,8 @@
 #include "ControlReversibility.h"
 #include "ControlStructuralSupport.h"
 #include "ControlTrackCreation.h"
+#include "ControlTrackRouting.h"
+#include "ControlTrackRouting.h"
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "JournallingObject.h"
@@ -68,6 +70,8 @@ Track::Type trackTypeForName(const QString& typeName)
 	// path goes through createTrackOfType with this same value, so the two
 	// cannot disagree about what "folder" created.
 	if (typeName == QLatin1String("folder")) { return Track::Type::Folder; }
+	// A neutral row (Q050-283.1): the row a musician adds before choosing audio input or instrument.
+	if (typeName == QLatin1String("neutral")) { return Track::Type::Neutral; }
 	return Track::Type::Instrument;
 }
 
@@ -95,6 +99,57 @@ QJsonObject trackSnapshot(const QJsonObject& before, const QString& inverseOp,
 	return control::transactionPayload(before, inverseOp, QJsonObject(), reversible, mechanism);
 }
 
+/*! 0.5.0 Q050-022: the track.remove transaction. The inverse is recorded over the
+ *  owner AND its child automation lanes as ONE step, so \a laneCount says how big
+ *  the group was and \a captured whether the all-or-nothing capture succeeded. Kept
+ *  out of the command lambda so the remove handler's own branch count stays low. */
+QJsonObject trackRemovalTransaction(const QJsonObject& before, bool captured, int laneCount)
+{
+	if (captured && laneCount > 0)
+	{
+		return trackSnapshot(before,
+			QStringLiteral("recreate the track and its %1 child automation lanes from their captured XML").arg(laneCount),
+			QStringLiteral("action checkpoint (structural step): the track's own XML (Track::saveState - "
+				"its clips and their notes included) AND the XML of each of its %1 child automation lanes "
+				"(every AutomationTrack following this track by id) are captured together BEFORE the delete, "
+				"and the recorded undo step recreates the whole group at its original indices with "
+				"Track::create(element, song), the same call the project loader makes. THE CLIPS AND THE "
+				"LANES COME BACK with it, because each is IN its captured document; a checkpoint taken after "
+				"the delete could not, since ~Track destroys them first").arg(laneCount),
+			true);
+	}
+	if (captured)
+	{
+		return trackSnapshot(before, QStringLiteral("recreate the track from its captured XML"),
+			QStringLiteral("action checkpoint (structural step): the track's own XML "
+				"(Track::saveState - its clips and their notes included) is captured "
+				"before the delete and the recorded undo step recreates it with "
+				"Track::create(element, song), the same call the project loader makes, "
+				"at the index it was removed from. THE CLIPS COME BACK with it, "
+				"because they are IN the captured document; a checkpoint taken after "
+				"the delete could not, since ~Track destroys them first"),
+			true);
+	}
+	if (laneCount > 0)
+	{
+		return trackSnapshot(before,
+			QStringLiteral("none: the track and its lanes could not all be captured"),
+			QStringLiteral("snapshot only: the inverse is all-or-nothing, and this track OR at least one "
+				"of its %1 child automation lanes could not be captured - a member's serialized state is "
+				"larger than the %2-character cap, or a member's container index could not be read. A "
+				"truncated or partial group is a corrupt one, so NO inverse was recorded and a lane that "
+				"fails takes the whole step with it; the before-state names what was removed")
+				.arg(laneCount).arg(MaxTrackSnapshotChars),
+			false);
+	}
+	return trackSnapshot(before, QStringLiteral("none: this track was too large to capture"),
+		QStringLiteral("snapshot only: this track's serialized state is larger than the "
+			"%1-character cap, and a truncated track is a corrupt track, so no inverse "
+			"was recorded - the before-state names what was removed")
+			.arg(MaxTrackSnapshotChars),
+		false);
+}
+
 //! The new track is the last one the container holds (TrackContainer::addTrack
 //! pushes back, and the Track constructor adds itself).
 QJsonObject trackAddResult(Track* track, Song* song)
@@ -115,17 +170,28 @@ void registerTrackAdd(ControlRegistry& registry)
 	cmd.id = QStringLiteral("track.add");
 	cmd.group = QStringLiteral("track");
 	cmd.verb = QStringLiteral("add");
-	cmd.description = QStringLiteral("Append a track of the given type (default instrument) and return "
-		"its stable trk-<n> id. Undo removes the track; redo recreates it with a fresh stable "
-		"trk-<n> id.");
+	cmd.description = QStringLiteral("Append a track of the given type (default instrument; 'neutral' is a row that holds "
+		"no clips and is given an audio input or an instrument later) and return "
+		"its stable trk-<n> id. An instrument or sample track can name its destination: `output` is a "
+		"ch-<n> id (mixer.get_state lists them; a parallel bus takes no track input and is refused). Without "
+		"`output`, the preference app/autotrackchannel (settings.set, \"1\" on) gives the track its own mixer "
+		"channel, named after it and kept in step when either is renamed; off, the track plays into the master "
+		"as before. `instrument` loads that plug-in. Undo removes the track and any channel made for it; redo "
+		"recreates both, the track with a fresh stable trk-<n> id.");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("type"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
 			{QStringLiteral("enum"), QJsonArray{QStringLiteral("instrument"), QStringLiteral("pattern"),
-				QStringLiteral("sample"), QStringLiteral("automation"), QStringLiteral("folder")}}}},
+				QStringLiteral("sample"), QStringLiteral("automation"), QStringLiteral("folder"),
+				QStringLiteral("neutral")}}}},
 		{QStringLiteral("name"), control::stringProperty()},
+		{QStringLiteral("output"), control::stringProperty()},
+		{QStringLiteral("instrument"), control::stringProperty()},
 	});
 	cmd.resultSchema = control::objectSchema({
 		{QStringLiteral("track"), control::stringProperty()},
+		{QStringLiteral("channel"), control::stringProperty()},
+		{QStringLiteral("channel_name"), control::stringProperty()},
+		{QStringLiteral("channel_linked"), control::booleanProperty()},
 		{QStringLiteral("index"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("name"), control::stringProperty()},
 		{QStringLiteral("type"), control::stringProperty()},
@@ -159,16 +225,20 @@ void registerTrackAdd(ControlRegistry& registry)
 		// unwinds the same ProjectJournal - removes the track again. The holder
 		// shares the track's id between the two lambdas, never its pointer:
 		// track.remove and its undo free the track and build an equal one.
-		const QString name = args.value(QStringLiteral("name")).toString();
+		ControlResult refusal;
+		control::NewTrackSpec spec;
+		if (!control::readNewTrackSpec(args, type, &spec, &refusal)) { return refusal; }
 		auto holder = std::make_shared<int>(-1);
+		auto channelHolder = std::make_shared<int>(-1);  // the channel made for it; a redo makes it under the same id
 		control::addUndoStep(
-			[holder]() {
+			[holder, channelHolder]() {
 				if (Track* live = control::trackWithId(*holder)) { control::removeTrack(live); }
 				*holder = -1;
+				control::deleteChannelWithId(*channelHolder);
 			},
-			[song, type, name, holder]() {
+			[song, type, spec, holder, channelHolder]() {
 				Track* created = createTrackOfType(type, song);
-				if (created != nullptr && !name.isEmpty()) { created->setName(name); }
+				if (created != nullptr) { control::finishNewTrack(created, spec, channelHolder.get()); }
 				*holder = created != nullptr ? created->id() : -1;
 			});
 
@@ -178,12 +248,13 @@ void registerTrackAdd(ControlRegistry& registry)
 		// they themselves call - see Song.cpp).
 		Track* track = createTrackOfType(type, song);
 		*holder = track->id();
-		if (!name.isEmpty()) { track->setName(name); }
+		control::finishNewTrack(track, spec, channelHolder.get());
 		QJsonObject result = trackAddResult(track, song);
+		control::insertChannelFields(&result, track);
 		result.insert(QStringLiteral("__transaction"),
 			trackSnapshot(beforeState, QStringLiteral("remove the created track"),
 				QStringLiteral("action checkpoint: the recorded undo step removes the created "
-					"track through the product's own TrackContainerView::deleteTrackView path, "
+					"track, and the mixer channel made for it if any, through the product's own TrackContainerView::deleteTrackView path, "
 					"and a fresh track carries only defaults, so removing it restores the "
 					"container. LIMIT: the project's id counter is monotonic and is not rewound, "
 					"so a re-add gets a fresh trk-<n>"),
@@ -221,6 +292,7 @@ void registerTrackRemove(ControlRegistry& registry)
 		{QStringLiteral("name"), control::stringProperty()},
 		{QStringLiteral("soloed"), control::booleanProperty()},
 		{QStringLiteral("type"), control::stringProperty()},
+		{QStringLiteral("lanes_removed"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("visible"), control::booleanProperty()},
 	});
 	cmd.mutating = true;
@@ -259,35 +331,31 @@ void registerTrackRemove(ControlRegistry& registry)
 		// Bounded: a track whose XML is over the cap refuses the inverse rather
 		// than keeping a truncated (corrupt) one, and the transaction then says
 		// so instead of claiming a reversibility that does not exist.
-		const bool captured = control::journalTrackRemoval(track);
+		//
+		// 0.5.0 Q050-022: an owner's child automation lanes go WITH it. A lane is
+		// an AutomationTrack following this track by id; leaving it behind would
+		// keep a row whose owner is gone. journalTrackRemovalWithLanes captures
+		// the owner AND every lane as ONE structural step, so a single Ctrl+Z
+		// brings the whole group back with each lane still following its owner.
+		const std::vector<Track*> lanes = track->automationLaneChildren();
+		const bool captured = lanes.empty()
+			? control::journalTrackRemoval(track)
+			: control::journalTrackRemovalWithLanes(track);
 		const int removedIndex = index;
+		for (Track* lane : lanes) { removeTrack(lane); }
 		removeTrack(track);
 
 		QJsonObject result;
 		result.insert(QStringLiteral("removed"), id);
-		result.insert(QStringLiteral("track_count"), before - 1);
+		result.insert(QStringLiteral("track_count"), before - 1 - static_cast<int>(lanes.size()));
+		result.insert(QStringLiteral("lanes_removed"), static_cast<int>(lanes.size()));
 		result.insert(QStringLiteral("dry_run"), false);
 		// The index it was removed from: the one number an undo cannot read back
 		// off the song afterwards (the restored track would be appended), so the
 		// reply states it and the proof checks the track really comes back there.
 		result.insert(QStringLiteral("index"), removedIndex);
 		result.insert(QStringLiteral("__transaction"),
-			captured
-				? trackSnapshot(snapshot, QStringLiteral("recreate the track from its captured XML"),
-					QStringLiteral("action checkpoint (structural step): the track's own XML "
-						"(Track::saveState - its clips and their notes included) is captured "
-						"before the delete and the recorded undo step recreates it with "
-						"Track::create(element, song), the same call the project loader makes, "
-						"at the index it was removed from. THE CLIPS COME BACK with it, "
-						"because they are IN the captured document; a checkpoint taken after "
-						"the delete could not, since ~Track destroys them first"),
-					true)
-				: trackSnapshot(snapshot, QStringLiteral("none: this track was too large to capture"),
-					QStringLiteral("snapshot only: this track's serialized state is larger than the "
-						"%1-character cap, and a truncated track is a corrupt track, so no inverse "
-						"was recorded - the before-state names what was removed")
-						.arg(MaxTrackSnapshotChars),
-					false));
+			trackRemovalTransaction(snapshot, captured, static_cast<int>(lanes.size())));
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);

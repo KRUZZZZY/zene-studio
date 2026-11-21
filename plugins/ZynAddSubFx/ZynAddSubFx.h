@@ -28,6 +28,8 @@
 #include <QMap>
 #include <QMutex>
 
+#include <functional>
+
 #include <globals.h>
 
 #include "AudioPlugin.h"
@@ -143,17 +145,43 @@ private slots:
 	void updateResBandwidth();
 
 
-private:
+protected:
 	auto processImpl(PlanarBufferView<const float, 0> in, PlanarBufferView<float, 2> out) -> ProcessStatus override;
 
-	auto processLock() -> bool override;
-	void processUnlock() override;
-
+private:
 	void initPlugin();
 	void sendControlChange( MidiControllers midiCtl, float value );
 
+	//! Test seam: called where a regression test has to look at the plugin lock - the
+	//! choice of a plugin and its use, and the hosting getters' read of the plugin
+	//! pointer (see tests/src/plugins/ZynAddSubFxInstrumentTest.cpp). It does nothing
+	//! in a build without the test seams.
+	void testHook() const;
+
+protected:
+	auto processLock() -> bool override;
+	void processUnlock() override;
+
+	//! Whether the render is an export. The production answer is the song's own flag; a
+	//! test can answer differently, so the export path can be driven without a render.
+	virtual auto renderIsExporting() const -> bool;
+
+	//! How long the audio path may wait for the plugin mutex, in milliseconds. 0 means
+	//! "do not wait at all": the audio thread must never wait, because the main thread
+	//! holds that mutex for as long as a plugin operation takes - a client handshake is
+	//! seconds - and an export that waits for it stalls for the whole reload.
+	auto audioLockWaitMs() const -> int;
+
+	//! Forwards the MIDI events that were queued since the last period to the plugin that
+	//! is running, in order. Called by processImpl() on the audio thread.
+	void forwardQueuedMidi();
+
 	bool m_hasGUI;
-	QMutex m_pluginMutex;
+	//! The plugin mutex. It guards the plugin instances: their creation, their use and
+	//! their deletion, and the state the instrument keeps with them. A reader that wants
+	//! to know which plugin is running has to hold it, because the instance it points at
+	//! can be deleted and replaced by a hosting-mode switch at any time.
+	mutable QMutex m_pluginMutex;
 
 	//! MIDI from any thread (processInEvent() runs on the GUI, the MIDI input and the audio thread), waiting
 	//! for the next processed period. handleMidiEvent() only pushes here; processImpl() forwards it under
@@ -163,6 +191,13 @@ private:
 	MidiChannelOverflow m_midiOverflow;
 	LocalZynAddSubFx * m_localPlugin;
 	ZynAddSubFxRemotePlugin * m_remotePlugin;
+
+#ifdef LMMS_TESTING
+	//! Test seam: the hook a regression test installs to observe the plugin lock.
+	std::function<void()> m_testHook;
+	//! Test seam: the offset of the last MIDI event forwardQueuedMidi() handed over.
+	int m_testLastForwardedOffset = -1;
+#endif
 
 	FloatModel m_portamentoModel;
 	FloatModel m_filterFreqModel;

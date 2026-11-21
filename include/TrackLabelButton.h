@@ -29,6 +29,8 @@
 
 #include <QToolButton>
 
+class QKeyEvent;
+
 namespace lmms::gui
 {
 
@@ -44,6 +46,10 @@ public:
 	TrackLabelButton( TrackView * _tv, QWidget * _parent );
 	~TrackLabelButton() override = default;
 
+	//! Q050-322: whether this key event asks for the header's actions menu.
+	static bool isMenuKey(int key, Qt::KeyboardModifiers modifiers);
+	//! Open the header's existing Actions menu (the mouse and keyboard paths both call this).
+	void openActionsMenu();
 
 public slots:
 	void rename();
@@ -57,6 +63,7 @@ protected:
 	void mousePressEvent( QMouseEvent * _me ) override;
 	void mouseDoubleClickEvent( QMouseEvent * _me ) override;
 	void mouseReleaseEvent( QMouseEvent * _me ) override;
+	void keyPressEvent(QKeyEvent* event) override;
 	void paintEvent(QPaintEvent* pe) override;
 	void resizeEvent( QResizeEvent * _re ) override;
 

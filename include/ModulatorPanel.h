@@ -42,7 +42,8 @@ namespace lmms::gui
 /*! Edit > Modulators (KNOWN-LIMITATIONS "The modulation layer is in the engine and on the socket, and
  *  there is no interface for it"): every modulator modulator.get_state reports, Add LFO and Remove
  *  (modulator.create / modulator.remove), the selected one's shape and rate (modulator.rate_set),
- *  the parameters it drives with their depth (modulator.target_remove to unbind), and a Bind row that
+ *  the parameters it drives with their depth and per-sample switch (modulator.per_sample_set;
+ *  modulator.target_remove to unbind), and a Bind row that
  *  picks a mixer channel's effect and parameter from dsp.get_state and a depth (modulator.target_set).
  *  Every change is its command's one undo step. */
 class LMMS_EXPORT ModulatorPanel : public QDialog
@@ -61,6 +62,8 @@ public:
 	QString setShape(const QString& shape);
 	QString bind(const QString& channel, int effect, const QString& parameter, double depth);
 	QString unbindRow(int row);
+	//! Does not rebuild the table: the switch that calls this lives in it.
+	QString setRowPerSample(int row, bool perSample, const QString& modulator, const QJsonObject& expectedRoute);
 	void selectModulator(int row);
 
 private:
@@ -68,6 +71,7 @@ private:
 	//! Show a command's refusal in the status label (and speak it). An empty message clears the label.
 	void say(const QString& message);
 	void showSelected();
+	QWidget* perSampleSwitch(int row, const QString& modulator, const QJsonObject& route);
 	void fillChannels();
 	void fillEffects();
 	void fillParameters();

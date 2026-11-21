@@ -146,6 +146,32 @@ private slots:
 		QVERIFY(sawPing);
 	}
 
+	//! Q050-343: sample.generate's help names BOTH routes - the command surface an
+	//! agent uses and the sample track's More menu, where the same registered id is
+	//! offered as Insert Test Signal... - and rejects the stale "Socket-only / no
+	//! interface reaches this verb" claim the description carried while the menu
+	//! action already existed. A description is what `control.commands_list`, the
+	//! MCP tool text and the CommandForm's about line all show, so this is the one
+	//! place the route can drift.
+	void sampleGenerateHelpNamesItsTrackMenuRoute()
+	{
+		const ControlCommand* command =
+			ControlRegistry::instance()->command(QStringLiteral("sample.generate"));
+		QVERIFY(command != nullptr);
+		const QString help = command->description;
+		QVERIFY2(help.contains(QStringLiteral("Insert Test Signal...")) &&
+			help.contains(QStringLiteral("More")) && help.contains(QStringLiteral("sample track")),
+			qPrintable(QStringLiteral("sample.generate does not name its menu route: %1").arg(help)));
+		QVERIFY2(help.contains(QStringLiteral("control socket")) && help.contains(QStringLiteral("MCP")),
+			qPrintable(QStringLiteral("sample.generate dropped its command-surface route: %1").arg(help)));
+		QVERIFY2(!help.contains(QStringLiteral("Socket-only"), Qt::CaseInsensitive) &&
+			!help.contains(QStringLiteral("no interface reaches")),
+			qPrintable(QStringLiteral("sample.generate still denies an interface: %1").arg(help)));
+		QVERIFY2(help.contains(QStringLiteral("NEW audio clip")),
+			qPrintable(QStringLiteral("sample.generate stopped describing the generated clip: %1").arg(help)));
+		QCOMPARE(command->id, QStringLiteral("sample.generate"));  // the id the snapshot carries
+	}
+
 	//! An unknown command id is the typed not_found error, never an empty success.
 	void unknownCommandIsNotFound()
 	{
@@ -392,7 +418,12 @@ private slots:
 			transaction.insert(QStringLiteral("before"), QJsonObject{{QStringLiteral("value"), 1}});
 			transaction.insert(QStringLiteral("inverse"),
 				QJsonObject{{QStringLiteral("op"), QStringLiteral("test.mutator")},
-					{QStringLiteral("args"), QJsonObject{{QStringLiteral("value"), 1}}}});
+					{QStringLiteral("args"), QJsonObject{{QStringLiteral("value"), 1}}},
+					// The inverse is the PAIRED COMMAND, and says so: a command
+					// inverse needs no journal step of its own (new-p14-81), while
+					// the default ("journal") means the inverse rests on a step this
+					// call recorded - and this test command records none.
+					{QStringLiteral("applies"), QStringLiteral("command")}});
 			transaction.insert(QStringLiteral("reversible"), true);
 			transaction.insert(QStringLiteral("mechanism"), QStringLiteral("test"));
 			QJsonObject result;
@@ -635,15 +666,21 @@ private slots:
 		{
 			QVERIFY2(!id.startsWith(QStringLiteral("telemetry.")), qPrintable(id));
 		}
-		// 85 is the product surface this instance reports here (87 with the
-		// telemetry.* pair), plus the five synthetic commands the slots above
-		// declare. rack.* (#599) and transport.tempo_map_* (D11) are in the 85;
-		// script.set_memory_budget (CODE-6) is new.
-		//   + 7 (feature row 19, board task #651): the controller.* ids -
-		//   surface_state, soft_takeover, feedback, template_save,
-		//   template_list, template_apply, template_delete.
-		// MEASUREMENT, re-taken by the merge train: base 102 + sample 5 + livecode 3 + 3 feedback = 113, + 7 mts (#712) = 120; mismatch at tip = finding. LANE-LOCAL, board cards #709/#712: the merge tip must re-measure.
-		QCOMPARE(registry->commandCount(), 85 + 7 + 5 + 5 + 5 + 3 + 3 + 7);
+		// MEASUREMENT (Q050-156, round 6): the whole registry of a telemetry-OFF
+		// build of the Q050-156 branch (`-DZENE_TELEMETRY=OFF`, ControlRegistryTest
+		// run from its build tree) reported 842 commands while its live snapshot
+		// held 837 ids. Integrated onto 050/m0-train-16 the live snapshot holds 853
+		// ids (16 more train ids, none of them telemetry.*), so the same build
+		// reports 842 + 16 = 858; the 4 record.sampler_capture* ids are in it. The
+		// older hand-summed figure (85 + 7 + 5 + 5 + 5 + 3 + 3 + 7 + 4 = 124) had
+		// stopped matching long before. A mismatch at the tip = finding: the merge
+		// train must re-measure.
+		// Q050-317.1 adds the mastering release sequence's five ids
+		// (mastering.sequence_list and the four mastering.song_* verbs), so the
+		// telemetry-OFF count moves 858 -> 863. Measured on this branch: the live
+		// snapshot (telemetry ON) holds 883 ids, and telemetry.consent/status are
+		// the two the option removes.
+		QCOMPARE(registry->commandCount(), 863);
 	}
 #endif
 };

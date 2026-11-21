@@ -43,18 +43,24 @@ What it drives, in order:
   9. `record.disarm_all`                   every capture stops, every journal is
      RETIRED (asserted on disk: the side file is gone) and every take file stays;
  10. `track.set_arm`                       the id that used to be a refusal stub
-     starts a real capture on a real song track, and `control.undo` takes it back
-     through the recorded inverse (the disarm);
+     starts a real capture on a real song track, and `control.undo` REFUSES it
+     (typed): the take it writes outlives the capture, so the route and the take
+     both survive the refusal;
  11. `record.retro_capture_arm` / `_status` / `_to_take`  the retrospective AUDIO
      window: off, then armed, its capacity in frames and seconds, and then either
      the take (when this host actually captured frames) or the typed refusal that
      says the window is empty - never a zero-length file;
- 12. `control.transactions`                the A16 records: `record.arm_track` is
+12. `control.transactions`                the A16 records: `record.arm_track` is
      irreversible with no command inverse (its take remains after disarming),
-     `track.set_arm` is a `snapshot` with its own command inverse,
+     `track.set_arm` is `irreversible` with no command inverse either (its take
+     stays on disk, so the disarm is not a full inverse),
      `record.input_set` is `true_inverse`, the disarm verbs are `irreversible`
      because they leave the take files on disk, and the inspectors and
-     non-mutating verbs stay `not_mutating`.
+     non-mutating verbs stay `not_mutating`;
+
+ 13. `record.remaining`                    the estimate the header's Rec left readout
+      shows keeps the reply shape it has always had (0.5.0 Q050-179) - keys, types
+      and a non-negative seconds number.
 
 Started through the shared harness (tests/control_socket_harness.py), so this file
 adds no second launch path and no second launch recipe.
@@ -215,6 +221,19 @@ def check_arbitrary_input_count_instance_a(session, recorder, shared, instance):
                    before.get("input_channel_capacity") == 2,
                    "input_channel_capacity=%r" % before.get("input_channel_capacity"))
 
+    before_plan = (session.result("record.input_get_state").get("configured") or {})
+    first_write = session.result("record.input_set", {"channels": 8})
+    first_after = session.result("record.input_get_state").get("configured") or {}
+    undone = session.result("control.undo")
+    restored = session.result("record.input_get_state").get("configured") or {}
+    recorder.check("one control.undo restores record.input_set's exact previous plan",
+                   first_write.get("channels") == 8 and first_after.get("channels") == 8
+                   and undone.get("undone") is True and restored == before_plan,
+                   "before=%r after=%r undo=%r restored=%r"
+                   % (before_plan, first_after, undone, restored))
+
+    # Keep the end-to-end next-start check below: undo the first write above,
+    # then write the same plan again for instance B to consume.
     raised = session.result("record.input_set", {"channels": 8})
     recorder.check("record.input_set accepts an eight-channel input count",
                    raised.get("channels") == 8 and raised.get("restart_required") is True,
@@ -359,7 +378,14 @@ def check_instance_b(session, recorder, shared):
 
 
 def check_track_set_arm_and_undo(session, recorder, shared):
-    """The id that used to be a refusal, and the A16 inverse control.undo runs."""
+    """The id that used to be a refusal, and the typed refusal its undo now gives.
+
+    The arm writes a take file that outlives the capture, so the arming has no
+    complete inverse: control.undo must REFUSE it, and the route and the take
+    must both survive that refusal. The way back is the command itself with
+    armed: false, which stops the capture and retires the journal - the take
+    stays, as the row's fallback says.
+    """
     tracks = session.result("track.list").get("tracks", [])
     recorder.check("the instance has a song track to arm", bool(tracks),
                    "tracks=%r" % tracks)
@@ -379,14 +405,24 @@ def check_track_set_arm_and_undo(session, recorder, shared):
                    bool(journal) and os.path.exists(journal),
                    "journal=%r" % journal)
 
-    undone = session.result("control.undo")
-    recorder.check("control.undo dispatches the recorded inverse", undone.get("undone") is True,
-                   "result=%r" % undone)
+    error = session.typed_error("control.undo")
+    recorder.check("control.undo refuses the arming, typed, and names the command",
+                   error.get("kind") == "irreversible"
+                   and "track.set_arm" in (error.get("message") or ""),
+                   "error=%r" % error)
     after = session.result("record.get_state")
-    recorder.check("the undo stopped the capture and retired its journal",
-                   not os.path.exists(journal)
-                   and all(entry.get("armed") is False for entry in after.get("routes", [])),
-                   "journal exists=%r routes=%r" % (os.path.exists(journal), after.get("routes")))
+    recorder.check("the refused undo left the route armed and the take on disk",
+                   any(entry.get("armed") is True for entry in after.get("routes", []))
+                   and os.path.exists(take),
+                   "routes=%r take_exists=%r" % (after.get("routes"), os.path.exists(take)))
+
+    stopped = session.result("track.set_arm", {"track": track, "armed": False})
+    recorder.check("disarming stops the capture and retires the journal, and the "
+                   "take stays",
+                   stopped.get("armed") is False and not os.path.exists(journal)
+                   and os.path.exists(take),
+                   "result=%r journal_exists=%r take_exists=%r"
+                   % (stopped, os.path.exists(journal), os.path.exists(take)))
 
 
 def check_retro_audio(session, recorder, shared):
@@ -439,6 +475,24 @@ def check_retro_audio(session, recorder, shared):
     session.result("record.retro_capture_arm", {"armed": False})
 
 
+def check_remaining_shape(session, recorder):
+    """record.remaining's socket reply keeps the keys it has always reported.
+
+    The header's Rec left readout now shows this command's answer, so the estimate a
+    musician sees and the one an agent reads must be THE SAME RESULT - and, unchanged
+    in shape: seconds, armed_routes, free_bytes, directory (0.5.0 Q050-179)."""
+    reply = session.result("record.remaining")
+    recorder.check("record.remaining replies with the keys it has always shown",
+                   set(reply or {}) == {"seconds", "armed_routes", "free_bytes", "directory"},
+                   "reply=%r" % reply)
+    recorder.check("the reply holds a seconds estimate and the route count",
+                   isinstance(reply.get("seconds"), (int, float)) and reply.get("seconds") >= 0
+                   and isinstance(reply.get("armed_routes"), int)
+                   and isinstance(reply.get("free_bytes"), (int, float))
+                   and isinstance(reply.get("directory"), str),
+                   "reply=%r" % reply)
+
+
 def check_transactions(session, recorder, expect_input_set, expect_arms):
     """The A16 records, read back from the instance that produced them.
 
@@ -480,16 +534,19 @@ def check_transactions(session, recorder, expect_input_set, expect_arms):
                        "record=%r" % entry)
 
     if expect_arms:
-        track_arm = find("track.set_arm", True)
-        recorder.check("track.set_arm's arm is recorded as snapshot with track.set_arm "
-                       "as its inverse",
-                       track_arm is not None and track_arm.get("class") == "snapshot"
-                       and (track_arm.get("inverse") or {}).get("op") == "track.set_arm",
+        arm_records = [entry for entry in records if entry.get("command") == "track.set_arm"]
+        track_arm = arm_records[0] if arm_records else None
+        recorder.check("track.set_arm's arm is recorded as irreversible and "
+                       "non-reversible, without a command inverse: the take it "
+                       "writes stays on disk, so disarming is not a full inverse",
+                       track_arm is not None and track_arm.get("class") == "irreversible"
+                       and track_arm.get("reversible") is False
+                       and not (track_arm.get("inverse") or {}).get("op"),
                        "record=%r" % track_arm)
 
         # The DISARM records no inverse, and says so rather than claiming one: that
         # is the honest half of "re-arming writes a NEW take".
-        track_disarm = find("track.set_arm", False)
+        track_disarm = arm_records[-1] if len(arm_records) > 1 else None
         recorder.check("the disarm half records no inverse and says why",
                        track_disarm is not None
                        and "no inverse or snapshot" in (track_disarm.get("mechanism") or ""),
@@ -549,6 +606,7 @@ def run_instance_b(binary, recorder, shared, transcript, written_config):
     check_instance_b(session, recorder, shared)
     check_track_set_arm_and_undo(session, recorder, shared)
     check_retro_audio(session, recorder, shared)
+    check_remaining_shape(session, recorder)
     check_transactions(session, recorder, expect_input_set=False, expect_arms=True)
     check_transcript_is_evidence(transcript, recorder)
     reply = session.call("control.quit")

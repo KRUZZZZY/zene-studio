@@ -272,6 +272,7 @@ QString ExternalProcessStemSeparator::backendName() const
 StemSeparator::Status ExternalProcessStemSeparator::separate(const SampleBuffer& mix,
 	int sampleRate,
 	int segmentFrames,
+	StemQuality quality,
 	const ProgressFn& progress,
 	StemSet& out,
 	QString& error)
@@ -334,6 +335,7 @@ StemSeparator::Status ExternalProcessStemSeparator::separate(const SampleBuffer&
 		QStringLiteral("--out-dir"), outDir,
 		QStringLiteral("--out-format"), QStringLiteral("f32"),
 		QStringLiteral("--segment"), QString::number(segmentFrames),
+		QStringLiteral("--quality"), QString::fromLatin1(stemQualityName(quality)),
 		QStringLiteral("--progress-json"),
 		QStringLiteral("--cancel-file"), cancelPath,
 	};

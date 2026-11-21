@@ -118,10 +118,7 @@ void RowTableView::setModel( QAbstractItemModel * model )
 		return;
 	}
 
-	for ( int i = 0; i < model->rowCount(); i++ )
-	{
-		setItemDelegateForRow( i, m_rowDelegate );
-	}
+	setItemDelegate( m_rowDelegate );
 
 }
 
@@ -134,9 +131,12 @@ void RowTableView::keyPressEvent( QKeyEvent * event )
 	{
 		case Qt::Key_Tab:
 		case Qt::Key_Backtab:
-			for( int i = 0; i < model()->columnCount() - 1; i++ )
+			if( model() != nullptr )
 			{
-				QTableView::keyPressEvent( event );
+				for( int i = 0; i < model()->columnCount() - 1; i++ )
+				{
+					QTableView::keyPressEvent( event );
+				}
 			}
 		default:
 			QTableView::keyPressEvent( event );

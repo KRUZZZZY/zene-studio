@@ -107,6 +107,25 @@ private slots:
 		QVERIFY(hasTrackNamed(QStringLiteral("From Lua")));
 	}
 
+	void aFullCommandQueueReturnsATypedRefusal()
+	{
+		ScriptEngine* engine = ScriptEngine::instance();
+		engine->processCommands();
+		ScriptCommand filler;
+		filler.type = ScriptCommand::Type::AddCheckPoint;
+		const quint64 droppedBefore = engine->droppedCommandCount();
+		const int attempts = 4 * static_cast<int>(ScriptCommandQueueCapacity);
+		for (int i = 0; i < attempts; ++i) { engine->enqueue(filler); }
+		QVERIFY(engine->droppedCommandCount() > droppedBefore);
+		QVERIFY(engine->pendingCommandCount() > 0);
+
+		const QStringList out = run(QStringLiteral(
+			"local reply, err, kind = zene.command('track.list')\n"
+			"print(type(reply) .. ' ' .. tostring(kind))\n"));
+		engine->processCommands();
+		QCOMPARE(out, QStringList{QStringLiteral("nil refused")});
+	}
+
 	void stringsWithEmbeddedNullBytesKeepTheirLengthAcrossCommands()
 	{
 		const QString seededName = QString::fromUtf8("A\0B", 3);
@@ -121,6 +140,21 @@ private slots:
 			"print(tostring(err == nil) .. ' ' .. #fromLua.name .. ' ' .. (string.byte(fromLua.name, 2) or -1))\n"
 			"print(#fromJson.name .. ' ' .. (string.byte(fromJson.name, 2) or -1))\n").arg(seeded.result.value(QStringLiteral("track")).toString()));
 		QCOMPARE(out, (QStringList{QStringLiteral("true 3 0"), QStringLiteral("3 0")}));
+	}
+
+	void aNonTableArgumentIsRejectedTyped()
+	{
+		// A scalar second argument used to be silently swapped for {}, so the registry
+		// validated (and ran) defaults the caller never asked for (review L17 #17).
+		const QStringList out = run(QStringLiteral(
+			"local reply, err, kind = zene.command('track.list', 'oops')\n"
+			"print(tostring(reply) .. ' ' .. kind)\n"
+			"local reply2, err2, kind2 = zene.command('track.list', 42)\n"
+			"print(tostring(reply2) .. ' ' .. kind2)\n"
+			"local reply3, err3 = zene.command('track.list', nil)\n"
+			"print(tostring(reply3 ~= nil) .. ' ' .. tostring(err3 == nil))\n"));
+		QCOMPARE(out, (QStringList{QStringLiteral("nil invalid_args"), QStringLiteral("nil invalid_args"),
+			QStringLiteral("true true")}));
 	}
 
 	void aRegistryRefusalComesBackTyped()

@@ -22,6 +22,7 @@
  *
  */
 #include "ArrangementSections.h"
+#include "DeprecationHelper.h"
 
 #include <algorithm>
 #include <limits>
@@ -131,7 +132,7 @@ bool sectionOf(const QDomElement& child, ArrangementSection* out)
 	if (!startOk || !endOk) { return false; }
 	ArrangementSection section{child.attribute(QStringLiteral("id")).toInt(), start, end,
 		child.attribute(QStringLiteral("name")), child.attribute(QStringLiteral("color"))};
-	if (!section.color.isEmpty() && !QColor::isValidColorName(section.color)) { section.color.clear(); }
+	if (!section.color.isEmpty() && !isValidColorName(section.color)) { section.color.clear(); }
 	*out = section;
 	return true;
 }

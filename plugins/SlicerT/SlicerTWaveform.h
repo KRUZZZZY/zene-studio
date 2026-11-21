@@ -47,6 +47,9 @@ public slots:
 public:
 	SlicerTWaveform(int totalWidth, int totalHeight, SlicerT* instrument, QWidget* parent);
 
+	//! Q050-263: shades the slice (0-based) the per-slice controls edit; -1 shades none.
+	void setSelectedSlice(int slice);
+
 	// predefined sizes
 	static constexpr int s_seekerHorMargin = 5;
 	static constexpr int s_seekerVerMargin = 6;
@@ -92,6 +95,7 @@ private:
 	UIObjects m_closestObject;
 	int m_closestSlice = -1;
 	int m_draggedSlice = -1;
+	int m_selectedSlice = -1;
 	float m_dragStartSlicePosition = 0.0f;
 
 	float m_seekerStart = 0;

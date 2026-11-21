@@ -36,6 +36,7 @@
 
 #include "BrowserSearchView.h"
 #include "ControlRegistry.h"
+#include "DeprecationHelper.h"
 #include "embed.h"
 #include "GuiApplication.h"
 #include "MainWindow.h"
@@ -50,15 +51,6 @@ namespace
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(id, args);
-}
-
-//! The drag key a row of @a kind carries, as the file lists' rows carry it.
-QString dragKey(const QString& kind)
-{
-	if (kind == QLatin1String("preset")) { return QStringLiteral("presetfile"); }
-	if (kind == QLatin1String("project")) { return QStringLiteral("projectfile"); }
-	if (kind == QLatin1String("midi")) { return QStringLiteral("importedproject"); }
-	return QStringLiteral("samplefile");
 }
 
 QString pathOf(const QModelIndex& row) { return row.siblingAtColumn(0).data(browserresults::PathRole).toString(); }
@@ -95,13 +87,22 @@ QPixmap kindIcon(const QString& kind)
 	return embed::getIconPixmap("sample_file");
 }
 
+//! The drag key a row of @a kind carries, as the file lists' rows carry it.
+QString dragKey(const QString& kind)
+{
+	if (kind == QLatin1String("preset")) { return QStringLiteral("presetfile"); }
+	if (kind == QLatin1String("project")) { return QStringLiteral("projectfile"); }
+	if (kind == QLatin1String("midi")) { return QStringLiteral("importedproject"); }
+	return QStringLiteral("samplefile");
+}
+
 QTreeWidgetItem* rowOf(const QJsonObject& item)
 {
 	auto* row = new QTreeWidgetItem;
 	row->setText(Name, item.value(QStringLiteral("name")).toString());
 	row->setText(Kind, item.value(QStringLiteral("kind")).toString());
-	const auto sizeBytes = item.value(QStringLiteral("size_bytes")).toInteger();
-	const auto modifiedMs = item.value(QStringLiteral("modified_ms")).toInteger();
+	const auto sizeBytes = jsonInteger(item.value(QStringLiteral("size_bytes")));
+	const auto modifiedMs = jsonInteger(item.value(QStringLiteral("modified_ms")));
 	// A missing file has no metadata: show a placeholder rather than a real-looking 0 KB / 1970-01-01.
 	if (sizeBytes < 0) { row->setText(Size, QStringLiteral("-")); }
 	else { row->setData(Size, Qt::DisplayRole, sizeBytes / 1024); }
@@ -110,6 +111,14 @@ QTreeWidgetItem* rowOf(const QJsonObject& item)
 	QStringList tags;
 	for (const QJsonValue& tag : item.value(QStringLiteral("tags")).toArray()) { tags << tag.toString(); }
 	row->setText(Tags, tags.join(QStringLiteral(", ")));
+
+	// Q050-121: Project Media's usage count and the explicit state that keeps a
+	// missing, external or unresolved reference visibly out of the unused set.
+	if (item.contains(QStringLiteral("usage_count")))
+	{
+		row->setData(Usage, Qt::DisplayRole, item.value(QStringLiteral("usage_count")).toInt());
+	}
+	if (item.contains(QStringLiteral("state"))) { row->setText(State, item.value(QStringLiteral("state")).toString()); }
 	row->setData(Name, PathRole, item.value(QStringLiteral("path")).toString());
 	row->setData(Name, KindRole, item.value(QStringLiteral("kind")).toString());
 	row->setToolTip(Name, item.value(QStringLiteral("path")).toString());
@@ -176,6 +185,7 @@ bool BrowserResultActions::load(const QModelIndex& row, bool sampleTrack)
 
 bool BrowserResultActions::loadPath(const QString& path, const QString& kind, bool sampleTrack)
 {
+	if (kind == BrowserSearchView::tr("missing")) { return false; }  // a project's missing file: nothing on disk to load, so no command
 	stopPreview();  // nothing keeps playing over what was just loaded
 	const ControlResult loaded = loadFile(path, kind, sampleTrack);
 	if (!loaded.ok && !loaded.errorMessage.isEmpty()) { emit failed(loaded.errorMessage); }

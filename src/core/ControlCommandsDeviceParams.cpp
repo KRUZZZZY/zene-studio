@@ -34,8 +34,11 @@
  *  Options are carried by the device (include/DeviceOptions.h); every write is one undo step. */
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <random>
 #include <utility>
 
@@ -59,6 +62,7 @@
 #include "Mixer.h"
 #include "MixerPostInserts.h"
 #include "ParameterAliases.h"
+#include "ParameterReadOnly.h"
 #include "Rack.h"
 #include "Song.h"
 #include "Track.h"
@@ -162,7 +166,8 @@ bool readScale(const QJsonObject& args, DeviceOptions* options, ControlResult* e
 {
 	if (!args.contains(QStringLiteral("editor_scale"))) { return true; }
 	const double scale = args.value(QStringLiteral("editor_scale")).toDouble();
-	if (scale < DeviceOptions::MinEditorScale || scale > DeviceOptions::MaxEditorScale)
+	// std::isfinite FIRST: a NaN compares false against both bounds, so the range test alone would let it be stored.
+	if (!std::isfinite(scale) || scale < DeviceOptions::MinEditorScale || scale > DeviceOptions::MaxEditorScale)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'editor_scale' is a zoom between %1 and %2")
 			.arg(static_cast<double>(DeviceOptions::MinEditorScale)).arg(static_cast<double>(DeviceOptions::MaxEditorScale)));
@@ -270,10 +275,12 @@ ControlResult paramSearch(const QJsonObject& args)
 // ---------------------------------------------------------------------------
 
 //! A parameter a new setting may change: not the device's own switch, mix and decay (models owned
-//! by the Effect itself), nor a tempo-synced knob's meter.
+//! by the Effect itself), nor a tempo-synced knob's meter, nor a parameter the plug-in declares read-only
+//! (stress-4: plugin.param_set refuses it, and the plug-in overwrites whatever is written to it).
 bool isSetting(const AutomatableModel* model)
 {
-	return qobject_cast<const Effect*>(model->parent()) == nullptr && qobject_cast<const MeterModel*>(model->parent()) == nullptr;
+	return qobject_cast<const Effect*>(model->parent()) == nullptr && qobject_cast<const MeterModel*>(model->parent()) == nullptr
+		&& !isParameterReadOnly(model);
 }
 
 //! Write @a values (one per model) as one undo step, and answer @a reply with the count.
@@ -289,16 +296,39 @@ ControlResult writeValues(const QList<AutomatableModel*>& models, const std::vec
 		if (model->value<float>() == value) { continue; }
 		writes.emplace_back(model, value);
 	}
-	writeModelsRecorded(writes);
-	if (!writes.empty()) { Engine::getSong()->setModified(); }
+	const int changed = writeModelsRecorded(writes);
+	if (changed > 0) { Engine::getSong()->setModified(); }
 	QJsonObject result = reply;
-	result.insert(QStringLiteral("changed"), static_cast<int>(writes.size()));
+	result.insert(QStringLiteral("changed"), changed);
 	return ControlResult::success(result);
 }
 
-double amountOf(const QJsonObject& args, double fallback)
+//! The 'amount' of a randomise or blend, clamped to [0, 1]. A non-finite one is refused, not clamped: std::clamp hands
+//! NaN straight back (every comparison with NaN is false), so it would reach every value the device is set to.
+bool amountOf(const QJsonObject& args, double fallback, double* amount, ControlResult* error)
 {
-	return std::clamp(args.value(QStringLiteral("amount")).toDouble(fallback), 0.0, 1.0);
+	const double number = args.value(QStringLiteral("amount")).toDouble(fallback);
+	if (!std::isfinite(number))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'amount' must be a finite number from 0 to 1"));
+		return false;
+	}
+	*amount = std::clamp(number, 0.0, 1.0);
+	return true;
+}
+
+//! The 'seed' of a randomise is an unsigned 32-bit integer. One outside that range is refused, not truncated:
+//! a truncated seed would be a different roll reported as the one that was asked for.
+bool seedOf(const QJsonObject& args, std::uint32_t* seed, ControlResult* error)
+{
+	const double number = args.value(QStringLiteral("seed")).toDouble(-1.0);
+	if (number < 0.0 || number > static_cast<double>(std::numeric_limits<std::uint32_t>::max()))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'seed' must be an unsigned 32-bit integer"));
+		return false;
+	}
+	*seed = static_cast<std::uint32_t>(number);
+	return true;
 }
 
 ControlResult randomise(const QJsonObject& args)
@@ -312,9 +342,16 @@ ControlResult randomise(const QJsonObject& args)
 	QList<AutomatableModel*> models;
 	std::copy_if(all.begin(), all.end(), std::back_inserter(models), isSetting);
 	if (models.isEmpty()) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the device has no settings to randomise")); }
-	const double amount = amountOf(args, 0.5);
-	std::mt19937 random(args.contains(QStringLiteral("seed")) ? static_cast<std::uint32_t>(args.value(QStringLiteral("seed")).toInt())
-		: std::random_device{}());
+	double amount = 0.0;
+	if (!amountOf(args, 0.5, &amount, &error)) { return error; }
+	std::mt19937 random;
+	if (args.contains(QStringLiteral("seed")))
+	{
+		std::uint32_t seed = 0;
+		if (!seedOf(args, &seed, &error)) { return error; }
+		random.seed(seed);
+	}
+	else { random.seed(std::random_device{}()); }
 	std::vector<float> values;
 	for (const AutomatableModel* model : models)
 	{
@@ -339,7 +376,8 @@ ControlResult blend(const QJsonObject& args)
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("store the two settings to blend first: plugin.ab 'store' in slot a and in slot b"));
 	}
-	const double amount = amountOf(args, 0.5);
+	double amount = 0.0;
+	if (!amountOf(args, 0.5, &amount, &error)) { return error; }
 	QList<AutomatableModel*> models;
 	std::vector<float> values;
 	for (int i = 0; i < all.size(); ++i)

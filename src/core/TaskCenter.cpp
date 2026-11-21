@@ -25,6 +25,7 @@
 #include "TaskCenter.h"
 
 #include <algorithm>
+#include <utility>
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -89,17 +90,61 @@ TaskCenter::Entry* TaskCenter::findActive(const void* owner, int localId)
 	return it != m_entries.end() ? &*it : nullptr;
 }
 
-void TaskCenter::begin(const void* owner, int localId, TaskSpec spec)
+TaskCenter::Entry* TaskCenter::findActive(const void* owner, int localId, quint64 generation)
 {
-	onMainThread([this, owner, localId, spec = std::move(spec)]() mutable { doBegin(owner, localId, std::move(spec)); });
+	const auto it = std::find_if(m_entries.begin(), m_entries.end(), [owner, localId, generation](const Entry& e) {
+		return e.owner == owner && e.localId == localId && e.generation == generation && e.info.active();
+	});
+	return it != m_entries.end() ? &*it : nullptr;
 }
 
-void TaskCenter::doBegin(const void* owner, int localId, TaskSpec spec)
+quint64 TaskCenter::currentGeneration(const void* owner, int localId) const
 {
-	if (findActive(owner, localId) != nullptr) { doFinish(owner, localId, TaskState::Cancelled, QString()); }  // a stale one
+	std::lock_guard lock(m_generationMutex);
+	const auto ownerIt = m_generations.find(owner);
+	if (ownerIt == m_generations.end()) { return 0; }
+	const auto taskIt = ownerIt->second.find(localId);
+	return taskIt != ownerIt->second.end() ? taskIt->second : 0;
+}
+
+void TaskCenter::clearGeneration(const void* owner, int localId, quint64 generation)
+{
+	std::lock_guard lock(m_generationMutex);
+	auto ownerIt = m_generations.find(owner);
+	if (ownerIt == m_generations.end()) { return; }
+	auto taskIt = ownerIt->second.find(localId);
+	if (taskIt == ownerIt->second.end() || taskIt->second != generation) { return; }
+	ownerIt->second.erase(taskIt);
+	if (ownerIt->second.empty()) { m_generations.erase(ownerIt); }
+}
+
+TaskToken TaskCenter::begin(const void* owner, int localId, TaskSpec spec)
+{
+	quint64 generation;
+	{
+		std::lock_guard lock(m_generationMutex);
+		generation = m_nextGeneration++;
+		m_generations[owner][localId] = generation;
+	}
+	onMainThread([this, owner, localId, generation, spec = std::move(spec)]() mutable {
+		doBegin(owner, localId, generation, std::move(spec));
+	});
+	return TaskToken(owner, localId, generation);
+}
+
+void TaskCenter::doBegin(const void* owner, int localId, quint64 generation, TaskSpec spec)
+{
+	if (generation != currentGeneration(owner, localId)) { return; }  // a newer begin() for this id has been called
+	if (Entry* stale = findActive(owner, localId))
+	{
+		const quint64 staleGeneration = stale->generation;
+		doFinish(owner, localId, staleGeneration, TaskState::Cancelled, QString());  // a stale one
+	}
+	if (generation != currentGeneration(owner, localId)) { return; }
 	Entry entry;
 	entry.owner = owner;
 	entry.localId = localId;
+	entry.generation = generation;
 	entry.info.id = m_nextId++;
 	entry.info.kind = spec.kind;
 	entry.info.title = spec.title;
@@ -113,10 +158,10 @@ void TaskCenter::doBegin(const void* owner, int localId, TaskSpec spec)
 	emit changed();
 }
 
-void TaskCenter::progress(const void* owner, int localId, double fraction, const QString& status)
+void TaskCenter::progress(const TaskToken& token, double fraction, const QString& status)
 {
-	onMainThread([this, owner, localId, fraction, status] {
-		Entry* entry = findActive(owner, localId);
+	onMainThread([this, token, fraction, status] {
+		Entry* entry = findActive(token.m_owner, token.m_localId, token.m_generation);
 		if (entry == nullptr) { return; }
 		entry->info.state = TaskState::Running;
 		entry->info.progress = fraction < 0.0 ? -1.0 : std::min(fraction, 1.0);
@@ -125,14 +170,16 @@ void TaskCenter::progress(const void* owner, int localId, double fraction, const
 	});
 }
 
-void TaskCenter::finish(const void* owner, int localId, TaskState state, const QString& status)
+void TaskCenter::finish(const TaskToken& token, TaskState state, const QString& status)
 {
-	onMainThread([this, owner, localId, state, status] { doFinish(owner, localId, state, status); });
+	onMainThread([this, token, state, status] {
+		doFinish(token.m_owner, token.m_localId, token.m_generation, state, status);
+	});
 }
 
-void TaskCenter::doFinish(const void* owner, int localId, TaskState state, const QString& status)
+void TaskCenter::doFinish(const void* owner, int localId, quint64 generation, TaskState state, const QString& status)
 {
-	Entry* entry = findActive(owner, localId);
+	Entry* entry = findActive(owner, localId, generation);
 	if (entry == nullptr) { return; }
 	entry->info.state = state == TaskState::Queued || state == TaskState::Running ? TaskState::Done : state;
 	entry->info.status = status;
@@ -140,6 +187,7 @@ void TaskCenter::doFinish(const void* owner, int localId, TaskState state, const
 	entry->info.finishedMs = now();
 	entry->cancel = nullptr;  // the job's own objects may be gone from here on
 	entry->probe = nullptr;
+	clearGeneration(owner, localId, generation);
 	trimFinished();
 	emit changed();
 }
@@ -147,12 +195,15 @@ void TaskCenter::doFinish(const void* owner, int localId, TaskState state, const
 void TaskCenter::forget(const void* owner)
 {
 	onMainThread([this, owner] {
-		std::vector<int> open;
+		std::vector<std::pair<int, quint64>> open;
 		for (const Entry& e : m_entries)
 		{
-			if (e.owner == owner && e.info.active()) { open.push_back(e.localId); }
+			if (e.owner == owner && e.info.active()) { open.emplace_back(e.localId, e.generation); }
 		}
-		for (const int localId : open) { doFinish(owner, localId, TaskState::Cancelled, QString()); }
+		for (const auto& [localId, generation] : open)
+		{
+			doFinish(owner, localId, generation, TaskState::Cancelled, QString());
+		}
 	});
 }
 

@@ -68,7 +68,11 @@ const LADSPA_Descriptor OverflowDescriptor = descriptor(91003,
 
 } // namespace
 
-#if defined(_WIN32)
+#if defined(_MSC_VER)
+// ladspa.h declares ladspa_descriptor without dllexport, and MSVC rejects a later definition
+// that adds it (C2375); the CMake target exports the symbol with /EXPORT instead.
+#define LADSPA_TEST_EXPORT
+#elif defined(_WIN32)
 #define LADSPA_TEST_EXPORT __declspec(dllexport)
 #else
 #define LADSPA_TEST_EXPORT __attribute__((visibility("default")))

@@ -27,6 +27,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
+#include <QFileInfo>
 #include <QLibrary>
 #include <QList>
 #include <QRegularExpression>
@@ -55,7 +56,14 @@ LadspaManager::LadspaManager()
 								split( LADSPA_PATH_SEPERATOR );
 	ladspaDirectories += ConfigManager::inst()->ladspaDir().split( ',' );
 
+	// Two bundled locations, both scanned: "plugins:ladspa" is the LADSPA
+	// directory of the "plugins" search path - the plugin directory relative
+	// to the application, where a build or an installation keeps its modules -
+	// and "plugins/ladspa" the LADSPA directory relative to the working
+	// directory. Neither entry reaches the other location, so replacing one
+	// by the other loses the modules of the location it did not name.
 	ladspaDirectories.push_back( "plugins:ladspa" );
+	ladspaDirectories.push_back( "plugins/ladspa" );
 #ifndef LMMS_BUILD_WIN32
 	ladspaDirectories.push_back( qApp->applicationDirPath() + '/' + LIB_DIR + "ladspa" );
 	ladspaDirectories.push_back( "/usr/lib/ladspa" );
@@ -92,20 +100,21 @@ LadspaManager::LadspaManager()
 				continue;
 			}
 
-			QLibrary plugin_lib( f.absoluteFilePath() );
+			auto plugin_lib = std::make_shared<QLibrary>( f.absoluteFilePath() );
 
-			if( plugin_lib.load() == true )
+			if( plugin_lib->load() == true )
 			{
-				auto descriptorFunction = (LADSPA_Descriptor_Function)plugin_lib.resolve("ladspa_descriptor");
+				auto descriptorFunction = (LADSPA_Descriptor_Function)plugin_lib->resolve("ladspa_descriptor");
 				if( descriptorFunction != nullptr )
 				{
 					addPlugins( descriptorFunction,
 							f.fileName() );
+					m_loadedLibraries.push_back( plugin_lib );
 				}
 			}
 			else
 			{
-				qWarning() << plugin_lib.errorString();
+				qWarning() << plugin_lib->errorString();
 			}
 		}
 	}
@@ -706,6 +715,21 @@ bool LadspaManager::cleanup( const ladspa_key_t & _plugin,
 	}
 	return( false );
 }
+
+#ifdef LMMS_TESTING
+bool LadspaManager::isLibraryLoaded( const QString & fileName ) const
+{
+	for( const auto & library : m_loadedLibraries )
+	{
+		if( library && library->isLoaded() &&
+			QFileInfo( library->fileName() ).fileName() == fileName )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+#endif
 
 
 } // namespace lmms

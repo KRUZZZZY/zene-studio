@@ -98,13 +98,15 @@ public:
 		m_controls( this ),
 		m_originalPluginData( originalPluginData )
 	{
-		if( ProjectIds::isDocumentElement( m_originalPluginData ) )
-		{
-			bool idOk = false;
-			const int storedId = m_originalPluginData.attribute( "id" ).toInt( &idOk );
-			if( idOk && storedId >= 0 ) { setId( storedId ); }
-			else { ProjectIds::noteLoadAssignment( id() ); }
-		}
+		// The placeholder stands in for the device the file named, so it holds
+		// that device's settings: the generic ones (its enabled flag, its
+		// wet/dry mix, its auto-quit knob, the user's device options) and its
+		// stable id. The chain writes the file's own XML back for the
+		// placeholder and merges the settings the user changed on it into that
+		// copy, so the file's values are kept and the user's edits are not
+		// lost (new-p14-97).
+		loadSettings( m_originalPluginData );
+		rememberLoadedGenericSettings();
 		setName();
 		setDontRun(true);
 	}

@@ -36,6 +36,8 @@
 #include <QStyleOption>
 #include <QToolTip>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 
 #include "ActionGroup.h"
 #include "AutomationNode.h"
@@ -1047,6 +1049,11 @@ void AutomationEditor::paintEvent(QPaintEvent * pe )
 
 	// start drawing at the bottom
 	int grid_bottom = height() - SCROLLBAR_SIZE - 1;
+	const long double ticksPerPixel = static_cast<long double>(TimePos::ticksPerBar()) / m_ppb;
+	const std::int64_t visibleStartTick = static_cast<std::int64_t>(std::floor(
+		m_currentPosition.getTicks() - VALUES_WIDTH * ticksPerPixel)) - 1;
+	const std::int64_t visibleEndTick = static_cast<std::int64_t>(std::ceil(
+		m_currentPosition.getTicks() + (width() - VALUES_WIDTH) * ticksPerPixel)) + 2;
 
 	if (!validClip())
 	{
@@ -1326,7 +1333,17 @@ void AutomationEditor::paintEvent(QPaintEvent * pe )
 			int x = xCoordOfTick(POS(it));
 			if (x > width()) { break; }
 
-			float* values = m_clip->valuesAfter(POS(it));
+			const std::int64_t segmentStart = POS(it);
+			const std::int64_t segmentEnd = POS(nit);
+			const std::int64_t segmentSpan = segmentEnd - segmentStart;
+			if (segmentSpan <= 0) { ++it; continue; }
+			const std::int64_t firstSample = std::max(segmentStart, visibleStartTick);
+			const std::int64_t endSample = std::min(segmentEnd, visibleEndTick);
+			if (firstSample >= endSample) { ++it; continue; }
+			const auto sampleCount = static_cast<std::size_t>(endSample - firstSample);
+			float* values = m_clip->valuesAfter(TimePos(static_cast<tick_t>(segmentStart)),
+				firstSample - segmentStart, sampleCount);
+			if (values == nullptr) { ++it; continue; }
 
 			// We are creating a path to draw a polygon representing the values between two
 			// nodes. When we have two nodes with discrete progression, we will basically have
@@ -1339,14 +1356,16 @@ void AutomationEditor::paintEvent(QPaintEvent * pe )
 
 			p.setRenderHints(QPainter::Antialiasing, true);
 			QPainterPath path;
-			path.moveTo(QPointF(xCoordOfTick(POS(it)), yCoordOfLevel(0)));
-			for (int i = 0; i < POS(nit) - POS(it); ++i)
+			const int firstTick = static_cast<int>(firstSample);
+			path.moveTo(QPointF(xCoordOfTick(firstTick), yCoordOfLevel(0)));
+			for (std::size_t i = 0; i < sampleCount; ++i)
 			{
-				path.lineTo(QPointF(xCoordOfTick(POS(it) + i), yCoordOfLevel(values[i])));
+				const int tick = static_cast<int>(firstSample + static_cast<std::int64_t>(i));
+				path.lineTo(QPointF(xCoordOfTick(tick), yCoordOfLevel(values[i])));
 			}
 			path.lineTo(QPointF(xCoordOfTick(POS(nit)), yCoordOfLevel(nextValue)));
 			path.lineTo(QPointF(xCoordOfTick(POS(nit)), yCoordOfLevel(0)));
-			path.lineTo(QPointF(xCoordOfTick(POS(it)), yCoordOfLevel(0)));
+			path.lineTo(QPointF(xCoordOfTick(firstTick), yCoordOfLevel(0)));
 			p.fillPath(path, m_graphColor);
 			p.setRenderHints(QPainter::Antialiasing, false);
 			delete[] values;
@@ -1432,8 +1451,10 @@ void AutomationEditor::paintEvent(QPaintEvent * pe )
 
 int AutomationEditor::xCoordOfTick(int tick )
 {
-	return VALUES_WIDTH + ( ( tick - m_currentPosition )
-		* m_ppb / TimePos::ticksPerBar() );
+	const std::int64_t delta = static_cast<std::int64_t>(tick) - m_currentPosition.getTicks();
+	const std::int64_t x = VALUES_WIDTH + delta * m_ppb / TimePos::ticksPerBar();
+	return static_cast<int>(std::clamp(x, static_cast<std::int64_t>(std::numeric_limits<int>::min()),
+		static_cast<std::int64_t>(std::numeric_limits<int>::max())));
 }
 
 
@@ -2328,6 +2349,39 @@ void AutomationEditorWindow::updateEditTanButton()
 	auto progType = currentClip()->progressionType();
 	m_editTanAction->setEnabled(AutomationClip::supportsTangentEditing(progType));
 	if (!m_editTanAction->isEnabled() && m_editTanAction->isChecked()) { m_drawAction->trigger(); }
+}
+
+
+QString AutomationEditorWindow::editorModeName() const
+{
+	// One spelling per mode, the same words automation.editor_mode takes (ControlCommandsAutomationMode.cpp).
+	switch (m_editor->m_editMode)
+	{
+		case AutomationEditor::EditMode::Draw: return QStringLiteral("draw");
+		case AutomationEditor::EditMode::Erase: return QStringLiteral("erase");
+		case AutomationEditor::EditMode::DrawOutValues: return QStringLiteral("draw_out_values");
+		case AutomationEditor::EditMode::EditTangents: return QStringLiteral("edit_tangents");
+	}
+	return QString();
+}
+
+
+bool AutomationEditorWindow::setEditorMode(AutomationEditor::EditMode mode)
+{
+	QAction* action = nullptr;
+	switch (mode)
+	{
+		case AutomationEditor::EditMode::Draw: action = m_drawAction; break;
+		case AutomationEditor::EditMode::Erase: action = m_eraseAction; break;
+		case AutomationEditor::EditMode::DrawOutValues: action = m_drawOutAction; break;
+		case AutomationEditor::EditMode::EditTangents: action = m_editTanAction; break;
+	}
+	// A mode the toolbar has disabled (Edit Tangents on a discrete or linear curve) cannot be
+	// entered, and saying so is better than entering a mode the window cannot draw.
+	if (action == nullptr || !action->isEnabled()) { return false; }
+	// Through the toolbar's own action: that is what checks the button and reaches setEditMode.
+	action->trigger();
+	return m_editor->m_editMode == mode;
 }
 
 } // namespace lmms::gui

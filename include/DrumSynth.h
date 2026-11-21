@@ -40,10 +40,11 @@ class DrumSynth
 public:
 	DrumSynth() = default;
 	int GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sample_rate_t Fs);
+	int LongestEnv();
+	static long noiseBandStepCount(double quotient);
 
 private:
 	float LoudestEnv();
-	int LongestEnv();
 	void UpdateEnv(int e, long t);
 	void GetEnv(int env, const char* sec, const char* key, QString ini);
 

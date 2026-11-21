@@ -165,7 +165,8 @@ ControlResult collectMedia(const QJsonObject& args)
 	ProjectAssetScan scan;
 	if (!controlHashProjectAssets(project, &scan, &error)) { return error; }
 	QByteArray previous;
-	if (!controlReadFileBytes(project, &previous, &error)) { return error; }
+	if (!controlReadFileBytes(project, &previous, &error,
+		ControlFileReadPurpose::ProjectDocument)) { return error; }
 	if (!projectDir.mkpath(folderName))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("cannot create '%1'").arg(folderName));
@@ -181,7 +182,8 @@ ControlResult collectMedia(const QJsonObject& args)
 	collectAll(project, projectDir, folder, scan, &copied, &failed);
 	QByteArray written;
 	// Read back for the undo step: one that cannot be read is reported, not recorded as an empty file a redo would write.
-	if (!controlReadFileBytes(project, &written, &error)) { return error; }
+	if (!controlReadFileBytes(project, &written, &error,
+		ControlFileReadPurpose::ProjectDocument)) { return error; }
 	QJsonObject result{{QStringLiteral("project"), project}, {QStringLiteral("dir"), folder.absolutePath()},
 		{QStringLiteral("copied"), copied}, {QStringLiteral("failed"), failed},
 		{QStringLiteral("missing"), scan.missingCount()}};

@@ -58,6 +58,8 @@ public:
 	{
 		m_input = input;
 		m_output = output;
+		// No engine (before startup, after teardown): no MIDI client to open on, so the surface stays closed.
+		if (Engine::audioEngine() == nullptr) { return; }
 		m_port = std::make_unique<MidiPort>(name, Engine::audioEngine()->midiClient(), this, nullptr, MidiPort::Mode::Duplex);
 		if (!input.isEmpty()) { m_port->subscribeReadablePort(input); }
 		if (!output.isEmpty()) { m_port->subscribeWritablePort(output); }
@@ -86,12 +88,19 @@ public:
 	//! name opens the surface but nothing will ever arrive - said so, not hidden).
 	bool subscribed() const
 	{
-		MidiClient* client = Engine::audioEngine()->midiClient();
+		// An open surface can outlive the engine (Engine::destroy() does not close it): then there is no client.
+		MidiClient* client = Engine::audioEngine() != nullptr ? Engine::audioEngine()->midiClient() : nullptr;
 		return isOpen() && !m_input.isEmpty() && client != nullptr && client->readablePorts().contains(m_input);
 	}
 	const QString& input() const { return m_input; }
 	const QString& output() const { return m_output; }
 	int eventsIn() const { return m_eventsIn.load(std::memory_order_relaxed); }
+
+	//! Apply everything the MIDI thread has queued so far, now, on the caller's (UI) thread.
+	//! The drain timer does this by itself in the running application; a harness that feeds
+	//! processInEvent() directly calls it instead of waiting for a timer tick, so a count of
+	//! "one dispatch per activation" is exact and not a timing race.
+	void drainPending() { drain(); }
 
 protected:
 	//! MIDI thread: what @a event means, or false to ignore it.

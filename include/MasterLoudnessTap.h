@@ -26,6 +26,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <type_traits>
 
 #include "LmmsTypes.h"
 #include "LufsMeter.h"
@@ -114,6 +115,11 @@ public:
 		//! programme's level moves.
 		float loudnessRangeLu = LufsMeter::MinusInfinity;
 		float peakToLoudnessRatioDb = LufsMeter::MinusInfinity;
+		//! Q050-100: the sample peak (linear, absolute) of the master mix since the last
+		//! reset() or takeSamplePeak(), measured even while the loudness meter is disarmed.
+		//! This is the value a peak watch compares with its threshold; it is not the
+		//! BS.1770 true peak above.
+		float samplePeak = 0.f;
 	};
 
 	/*! @param sampleRate   The engine's PROCESSING rate, which is the rate of
@@ -147,13 +153,17 @@ public:
 	 *
 	 *  Disabling keeps the last reading readable - `snapshot()` still answers
 	 *  with what was measured - so a caller can disarm and then read the result.
+	 *  Returns false if the bounded quiet wait expires. Any failed state change
+	 *  restores the prior enabled flag and leaves the measurement unreset; an
+	 *  in-flight feed may still publish, so the snapshot is not final until a
+	 *  later successful quiet wait.
 	 *
 	 *  Allocates nothing, and never replaces the meter object: the algorithm is
 	 *  designed so the tap can be armed and disarmed while the transport is
 	 *  running (the tap goes quiet for a bounded moment, its own fixed arrays are
 	 *  zeroed, and it is let back in).
 	 */
-	void setEnabled(bool enabled) noexcept;
+	bool setEnabled(bool enabled) noexcept;
 
 	/*! Drops the accumulated measurement and starts a new one, keeping the
 	 *  current enabled state. CONTROL THREAD. Returns false when the tap did not
@@ -164,12 +174,27 @@ public:
 	bool reset() noexcept;
 
 	/*! Feeds one period of the master mix. AUDIO THREAD. Reads \p frames only;
-	 *  allocates nothing, locks nothing. A disabled tap does nothing at all.
+	 *  allocates nothing, locks nothing. A disabled tap still scans the period for the
+	 *  Q050-100 sample peak (the peak watch must work before the loudness tap is armed);
+	 *  the loudness meter itself does nothing while disabled.
 	 */
 	void feed(const SampleFrame* frames, f_cnt_t frameCount) noexcept;
+	template <typename FrameCount>
+	requires (std::is_integral_v<FrameCount> && std::is_signed_v<FrameCount>)
+	void feed(const SampleFrame* frames, FrameCount frameCount) noexcept
+	{
+		if (frames == nullptr || frameCount <= 0) { return; }
+		feed(frames, static_cast<f_cnt_t>(frameCount));
+	}
 
 	//! Snapshot of everything the tap knows. Any thread, any time.
 	Snapshot snapshot() const noexcept;
+
+	/*! Q050-100: read and clear the sample peak since the last call. The peak watch uses this,
+	 *  so its latch can re-arm when the master falls below the threshold. `snapshot().samplePeak`
+	 *  keeps the held maximum since reset for a one-off reading. Any thread; audio-safe (one
+	 *  atomic exchange, no lock or allocation). */
+	float takeSamplePeak() noexcept { return m_samplePeak.exchange(0.f, std::memory_order_relaxed); }
 
 	//! The bound on how long reset()/setEnabled() wait for the audio thread to
 	//! leave the tap before touching the meter, in milliseconds. Generous: one
@@ -206,12 +231,20 @@ private:
 	std::atomic<float> m_truePeakDbtp{LufsMeter::MinusInfinity};
 	std::atomic<float> m_loudnessRangeLu{LufsMeter::MinusInfinity};
 	std::atomic<float> m_peakToLoudnessRatioDb{LufsMeter::MinusInfinity};
+	//! Q050-100: independent of m_enabled, because a peak watch has to work before the
+	//! loudness tap is armed. Audio thread writes it; any thread reads it.
+	std::atomic<float> m_samplePeak{0.f};
 
 	//! The loudest short-term window so far. Written by the audio thread only
 	//! (the same rule LoudnessReport::m_shortTermMax follows on the render
 	//! path), published through m_shortTermMaxLufs.
 	float m_shortTermMax = LufsMeter::MinusInfinity;
 };
+
+#ifdef LMMS_TESTING
+//! TEST SEAM: overrides the next control-side quiet wait without sleeping.
+LMMS_EXPORT void setMasterLoudnessTapNextQuietWaitResultForTesting(bool quiet) noexcept;
+#endif
 
 } // namespace lmms
 

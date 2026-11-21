@@ -45,18 +45,10 @@ namespace lmms::gui::devicestate
 namespace
 {
 
-//! What one oop.get_state device entry says is wrong with its host, or empty.
-QString problemOf(const QJsonObject& hosting)
-{
-	if (hosting.value(QStringLiteral("refused")).toBool()
-		|| hosting.value(QStringLiteral("state")).toString() == QLatin1String("refused-crash-loop")) { return QStringLiteral("quarantined"); }
-	return hosting.value(QStringLiteral("state")).toString() == QLatin1String("client-exited") ? QStringLiteral("crashed") : QString();
-}
-
 void collect(const QJsonValue& device, QHash<QString, QString>* out)
 {
 	const QJsonObject entry = device.toObject();
-	const QString problem = problemOf(entry.value(QStringLiteral("hosting")).toObject());
+	const QString problem = hostingProblemOf(entry.value(QStringLiteral("hosting")).toObject());
 	if (problem.isEmpty()) { return; }
 	out->insert(hostingKey(entry.value(QStringLiteral("target")).toString(), entry.value(QStringLiteral("device")).toString()), problem);
 }
@@ -74,6 +66,16 @@ QString hostingText(const QString& hosting)
 }
 
 } // namespace
+
+//! What one oop.get_state device entry says is wrong with its host, or empty.
+QString hostingProblemOf(const QJsonObject& hosting)
+{
+	const QString state = hosting.value(QStringLiteral("state")).toString();
+	// `refused` is also true for refused-no-client: a family with no client executable runs in this process by design.
+	if (state == QLatin1String("refused-no-client")) { return QString(); }
+	if (hosting.value(QStringLiteral("refused")).toBool() || state == QLatin1String("refused-crash-loop")) { return QStringLiteral("quarantined"); }
+	return state == QLatin1String("client-exited") ? QStringLiteral("crashed") : QString();
+}
 
 QString hostingKey(const QString& target, const QString& plugin) { return target + QLatin1Char('|') + plugin; }
 
@@ -192,7 +194,11 @@ void DeviceCard::refreshStateLine()
 {
 	if (m_state == nullptr) { return; }  // the header's first refresh runs before the line is made
 	const devicestate::State state = stateOf(m_spec, m_hosting);
-	const QString text = devicestate::text(state);
+	QString text = devicestate::text(state);
+	if (!m_editorError.isEmpty())  // why the last "Open Editor" did nothing
+	{
+		text += QStringLiteral(" · ") + tr("Open Editor failed: %1").arg(m_editorError);
+	}
 	if (m_state->text() != text)  // set only on a change: each set is announced
 	{
 		m_state->setText(text);

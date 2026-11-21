@@ -38,6 +38,8 @@ namespace lmms::vst3
 void MidiControllerMap::build(IEditController* controller, std::int32_t busIndex)
 {
 	m_params.fill(Unmapped);
+	m_deferred.fill(Deferred{});
+	m_deferredCount = 0;
 	m_mapped = 0;
 	if (controller == nullptr || busIndex < 0) { return; }
 	FUnknownPtr<IMidiMapping> mapping(controller);
@@ -57,7 +59,7 @@ void MidiControllerMap::build(IEditController* controller, std::int32_t busIndex
 	}
 }
 
-auto MidiControllerMap::apply(const MidiEventIn& midi, IParameterChanges* changes, std::int32_t sampleOffset) const
+auto MidiControllerMap::apply(const MidiEventIn& midi, IParameterChanges* changes, std::int32_t sampleOffset)
 	-> bool
 {
 	int number = -1;
@@ -69,30 +71,71 @@ auto MidiControllerMap::apply(const MidiEventIn& midi, IParameterChanges* change
 	case MidiPitchBend: number = PitchBend; value = ((midi.data1 << 7) | midi.data0) / 16383.0; break;
 	default: return false;
 	}
-	const std::uint32_t id = m_params[static_cast<std::size_t>((midi.channel & 0x0f) * Controllers + number)];
+	const auto key = static_cast<std::size_t>((midi.channel & 0x0f) * Controllers + number);
+	const std::uint32_t id = m_params[key];
 	if (id == Unmapped || changes == nullptr) { return false; }
 	int32 queueIndex = 0;
 	if (IParamValueQueue* queue = changes->addParameterData(static_cast<ParamID>(id), queueIndex))
 	{
 		// 0.5.0 W4: sample accurate - the point sits at the controller's own frame, not at the
 		// request's first frame (HostedPlugin::Impl::runChunk slices it into the right chunk).
-		addBoundedPoint(queue, sampleOffset, value);
+		if (!addBoundedPoint(queue, sampleOffset, value)) { defer(key, sampleOffset, value); }
 	}
 	return true;
 }
 
-void addBoundedPoint(IParamValueQueue* queue, std::int32_t sampleOffset, double value)
+void MidiControllerMap::defer(std::size_t key, std::int32_t sampleOffset, double value)
 {
-	const int32 count = queue->getPointCount();
-	int32 lastOffset = 0;
-	ParamValue lastValue = 0.0;
-	// Full: write over the last point (addPoint replaces a point at an equal offset in place).
-	if (count >= kMaxPointsPerParameter && queue->getPoint(count - 1, lastOffset, lastValue) == kResultTrue)
+	// Two controllers can be mapped to one parameter (an alias) and share its queue, so the
+	// pending point of that parameter is the newest one, whichever controller carried it.
+	const std::uint32_t parameter = m_params[key];
+	for (int n = 0; n < m_deferredCount; ++n)
 	{
-		sampleOffset = lastOffset;
+		const auto deferredKey = m_deferredKeys[static_cast<std::size_t>(n)];
+		if (m_params[deferredKey] != parameter) { continue; }
+		Deferred& deferred = m_deferred[deferredKey];
+		deferred.sampleOffset = sampleOffset;
+		deferred.value = value;
+		return;
 	}
+	Deferred& deferred = m_deferred[key];
+	if (!deferred.pending)
+	{
+		deferred.pending = true;
+		m_deferredKeys[static_cast<std::size_t>(m_deferredCount++)] = static_cast<std::uint16_t>(key);
+	}
+	// Events arrive in time order (drainMidiIntoEventList sorts them), so this is the newest point.
+	deferred.sampleOffset = sampleOffset;
+	deferred.value = value;
+}
+
+void MidiControllerMap::flush(IParameterChanges* changes)
+{
+	for (int n = 0; n < m_deferredCount; ++n)
+	{
+		const auto key = m_deferredKeys[static_cast<std::size_t>(n)];
+		Deferred& deferred = m_deferred[key];
+		int32 queueIndex = 0;
+		// The last slot addBoundedPoint kept free; the SDK queue holds it without growing.
+		if (changes != nullptr)
+		{
+			if (IParamValueQueue* queue = changes->addParameterData(static_cast<ParamID>(m_params[key]), queueIndex);
+				queue != nullptr && queue->getPointCount() < kMaxPointsPerParameter)
+			{
+				queue->addPoint(deferred.sampleOffset, deferred.value, queueIndex);
+			}
+		}
+		deferred.pending = false;
+	}
+	m_deferredCount = 0;
+}
+
+bool addBoundedPoint(IParamValueQueue* queue, std::int32_t sampleOffset, double value)
+{
+	if (queue->getPointCount() >= kMaxPointsPerParameter - 1) { return false; }
 	int32 pointIndex = 0;
 	queue->addPoint(sampleOffset, value, pointIndex);
+	return true;
 }
 
 namespace

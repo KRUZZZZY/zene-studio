@@ -27,6 +27,8 @@
 #ifndef LMMS_GUI_VERSIONED_SAVE_DIALOG_H
 #define LMMS_GUI_VERSIONED_SAVE_DIALOG_H
 
+#include <functional>
+
 #include "FileDialog.h"
 #include "Song.h"
 
@@ -60,6 +62,19 @@ public:
 	// Returns true if file name was changed, returns false if it wasn't
 	static bool changeFileNameVersion( QString &fileName, bool increment );
 	static bool fileExistsQuery( QString FileName, QString WindowTitle );
+
+	/*! TEST SEAM, C++ only (no command, Lua binding or setting reaches it). The hook
+	 *  answers WHICH VERSION NUMBER a file name carries: it is called with the digits
+	 *  the name ends in and fills in the number, answering false for a name that carries
+	 *  no number. The product parses the digits itself while no hook is installed, so
+	 *  the shipped behaviour is exactly what it was.
+	 *
+	 *  A test installs one to BOUND a loop that would otherwise never end: a name whose
+	 *  version cannot be advanced stays the same, so a caller that looks for the next
+	 *  free name keeps finding the same file. The hook lets the test say what the next
+	 *  name is without touching a file - no timing, no race on the project. */
+	using VersionNumberHook = std::function<bool(const QString& digits, qulonglong& version)>;
+	static void setVersionNumberHook( VersionNumberHook hook );
 
 public slots:
 	void incrementVersion();

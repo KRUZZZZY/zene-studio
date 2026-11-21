@@ -1,0 +1,55 @@
+FIXED
+
+new-p18-10: FIXED
+Decision: REAL at the mutation-result boundary. The original default cross-group path is already refused by `heldElsewhere` in `src/core/ControlCommandsVcaShared.h:311-320` (also called at line 386). `assignChannel` still ignored a false `VcaGroup::addMember` result and recorded the undo step before that call. The handler now refuses before recording anything at `src/core/ControlCommandsVcaMix.cpp:416-421`. The regression exercises the existing default refusal and preserved `also:true` shared membership, then uses a detached live group to reach the handler's false-return path and checks unchanged membership, gain, undo depth and transaction count (`tests/src/core/ControlVcaCommandsTest.cpp:289-363`). `VcaGroup::addMember`'s refusal conditions are at `src/core/VcaGroup.cpp:105-115`.
+
+new-p8-64: FIXED
+Decision: REAL. `Mixer::applyGroupSolo` clears other linked groups, while the old transaction inverse restored only the requested group. `setSolo` now captures the complete prior group/channel state and includes it in the inverse args at `src/core/ControlCommandsVcaMix.cpp:335-385`; replay restores flags and mute models at lines 202-229. `replayingSoloInverseRestoresPreviousExclusiveSolo` solos A then B, evicts B's journal step at cap 1, replays B's reported inverse, and checks A, B, channel mutes, and the final unsolo state (`tests/src/core/ControlVcaCommandsTest.cpp:367-439`).
+
+new-p8-65: FIXED
+Decision: REAL. The solo checkpoint did not include transient `MixerChannel::m_muteBeforeSolo`. Solo now snapshots that cache by stable channel ID and restores the before/after cache as a structural action in the same journal step (`src/core/ControlCommandsVcaMix.cpp:116-165, 345-369`); the transaction inverse carries it with the channel mute models at lines 210-229 and 374-384. `soloUndoRestoresPreSoloMuteCache` creates a stale cache through controlled mute-model changes while journalling is disabled, then proves undo restores both the cache and mute models (`tests/src/core/ControlVcaCommandsTest.cpp:443-500`). The reversibility entry documents the full state at `src/core/ControlReversibilityTableVca.cpp:130-140`.
+
+## Red/green proof
+
+For each RED run, the product-only patch was saved with `git diff -- src/core/ControlCommandsVcaMix.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/fix.patch` and reversed with `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/fix.patch` (both exit 0). After the failing test, the same patch was restored with `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/fix.patch` (exit 0). Build commands ran at the worktree root; individual Qt tests ran from `build/tests`.
+
+| Cluster | RED command and exit | GREEN command and exit |
+|---|---|---|
+| new-p18-10 | `cmake --build build --target zene ControlVcaCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/007-build-red-assign-valid.log 2>&1; echo EXIT=$?` → 0; `./ControlVcaCommandsTest failedAssignmentMutationLeavesNoUndoOrTransaction > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/008-red-assign-valid.log 2>&1; echo EXIT=$?` → 1 (`!failed.ok` was false). | `cmake --build build --target zene ControlVcaCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/009-build-green-assign-valid.log 2>&1; echo EXIT=$?` → 0; `./ControlVcaCommandsTest failedAssignmentMutationLeavesNoUndoOrTransaction > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/010-green-assign.log 2>&1; echo EXIT=$?` → 0. |
+| new-p8-64 | `cmake --build build --target zene ControlVcaCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/015-build-red-solo-inverse-reverse.log 2>&1; echo EXIT=$?` → 0; `./ControlVcaCommandsTest replayingSoloInverseRestoresPreviousExclusiveSolo > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/016-red-solo-inverse-reverse.log 2>&1; echo EXIT=$?` → 1 (`firstRestored` was false). | `cmake --build build --target zene ControlVcaCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/017-build-green-solo-inverse-reapply.log 2>&1; echo EXIT=$?` → 0; `./ControlVcaCommandsTest replayingSoloInverseRestoresPreviousExclusiveSolo > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/018-green-solo-inverse-reapply.log 2>&1; echo EXIT=$?` → 0. |
+| new-p8-65 | `cmake --build build --target zene ControlVcaCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/033-build-red-solo-cache-final-reverse.log 2>&1; echo EXIT=$?` → 0; `./ControlVcaCommandsTest soloUndoRestoresPreSoloMuteCache > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/034-red-solo-cache-final-reverse.log 2>&1; echo EXIT=$?` → 1 (cache lists differed at index 1). | `cmake --build build --target zene ControlVcaCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/035-build-green-solo-cache-final-reapply.log 2>&1; echo EXIT=$?` → 0; `./ControlVcaCommandsTest soloUndoRestoresPreSoloMuteCache > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/036-green-solo-cache-final-reapply.log 2>&1; echo EXIT=$?` → 0. |
+
+## Test matrix and gates
+
+| Check | Command / evidence | Result |
+|---|---|---|
+| Final build | `cmake --build build --target zene ControlVcaCommandsTest VcaRefreshAtomicityTest UndoBoundsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/050-build-post-length-fix.log 2>&1; echo EXIT=$?` | Exit 0 |
+| Affected test family | From `build/tests`: `ctest -R 'ControlVcaCommandsTest|VcaRefreshAtomicityTest|UndoBoundsTest' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/051-test-vca-family-final.log 2>&1; echo EXIT=$?` | Exit 0; 3/3 tests passed |
+| Realtime publication | From `build/tests`: `./VcaRefreshAtomicityTest aGroupedChannelNeverReadsATransientGain > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/057-test-realtime-final.log 2>&1; echo EXIT=$?` | Exit 0; 200,000 refreshes, 133,447,688 reads, 0 wrong readings; assignment/undo and solo inverse passed |
+| Command snapshot | From `build/tests`: `ctest -R '^ControlCommandsSnapshot$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/054-test-command-snapshot.log 2>&1; echo EXIT=$?` | Exit 0; 1/1 passed. Snapshot was regenerated from the live built instance because `vca.set_solo` now accepts its schema-validated inverse state; command IDs are unchanged. |
+| Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-10 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/056-feature-check-final.log 2>&1; echo EXIT=$?` | Exit 0; every gate PASS |
+| Completion gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-10 new-p18-10 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-10.r1/logs/059-submit-check-final.log 2>&1; code=$?; echo EXIT=$code` | Exit 0; `PASS - submit` |
+
+The current configured Linux build ran the C++ tests with Qt 6.12.0 and GCC 16.2. macOS and MSVC builds were not available in this environment, so those platform runs remain for CI. The code changes add no persisted project fields or load/save path changes; the solo cache and transaction inverse are runtime state. `also:true` still permits multiple group membership and its compounded gain and undo are asserted by the assignment regression. The full-state solo action and cache restoration remain one journal step.
+
+## Self-check
+
+1. **Reverted test proof:** Each regression fails after reversing its product hunk and passes after reapplying it. RED/GREEN command exit codes and failing assertions are in the table above. `ControlVcaCommandsTest` is registered in the existing CMake test target; the final VCA family run executed three tests.
+2. **Determinism:** The assignment failure uses a detached live group as a deterministic `addMember(false)` seam and stable channel IDs; the solo test sets explicit mutes and journal capacity 1. There are no sleeps or wall-clock assertions. The realtime check synchronizes reader startup with an atomic flag and uses a fixed 200,000 refresh count; `MixerChannel::vcaGain()` reads `std::atomic<float>` (`include/Mixer.h:280-282`), and the reader's counters are atomic.
+3. **Cause, undo, and siblings:** `VcaGroup::addMember` callers were checked. The command write now checks its result before journalling (`ControlCommandsVcaMix.cpp:416-421`); assign undo/redo preserves the original `also` mode at lines 427-435, and unassign captures `sharedElsewhere` before removal and restores the same mode at lines 484-500. `restoreGroup` in `ControlCommandsVca.cpp:109-125` restores members onto a newly created group; project loading in `Mixer.cpp:3130` is unchanged. The other VCA siblings `vca.color_members`, `vca.create`, `vca.edit_fade`, `vca.edit_move`, `vca.edit_slip`, `vca.edit_split`, `vca.edit_trim`, `vca.get_state`, `vca.list`, `vca.remove`, `vca.rename`, `vca.set_gain`, `vca.set_links`, `vca.set_mute`, `vca.set_parent`, `vca.set_phase_lock`, `vca.track_add`, `vca.track_remove`, and `vca.unassign` do not use the changed assign or solo-cache helpers. `vca.unassign`'s shared-membership inverse remains explicitly paired with `also`. `vca.assign` and `vca.set_solo` remain `RC::TrueInverse`: a successful assignment is one action step and a refusal adds none; solo's group/channel checkpoint and cache structural action share one journal step. Both entries are in `ControlReversibilityTableVca.cpp`.
+4. **Collateral and persistence:** No project serialization, saved field, channel limit, or audio-thread code was changed. The new snapshot only refreshes derived command metadata. Existing projects therefore continue through the unchanged load/render paths; no separate save/load integration test was run because the fixes add no persisted data. The explicit `also:true` behavior and gain multiplication remain covered.
+5. **Verdicts:** All three verdicts are FIXED, supported by the per-bug reverted RED and restored GREEN runs above; none relies on an ALREADY-FIXED or FALSE-POSITIVE claim.
+
+## Files committed
+
+Batch commits: `f99e636f6` (`new-p18-10`), `dd1b3beca` (`new-p8-64`), and the `new-p8-65` fix/report commit. Explicit files across the batch:
+
+- `src/core/ControlCommandsVcaMix.cpp`
+- `src/core/ControlReversibilityTableVca.cpp`
+- `docs/VCA-EDIT-GROUPS.md`
+- `tests/src/core/ControlVcaCommandsTest.cpp`
+- `tests/src/core/VcaRefreshAtomicityTest.cpp`
+- `tests/all-sources.txt`
+- `tests/upstream-modifications.txt`
+- `tools/mcp-zene-control/zene_control/commands_snapshot.json`
+- `docs/qwen-fixes-2026-10/cluster-new-p18-10.md`

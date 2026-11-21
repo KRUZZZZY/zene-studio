@@ -98,9 +98,10 @@ class LMMS_EXPORT GuidedTour : public QWidget
 {
 	Q_OBJECT
 public:
-	//! The tours there are: their names (the file names) and titles.
+	//! The usable tours there are: their names (the file names) and titles. A file that is not a usable tour
+	//! (not JSON, no steps, or a step with no title or text) is left out and reported.
 	static QJsonArray tours();
-	//! Start the tour @a name over @a window; nullptr (and @a error) when there is no such tour.
+	//! Start the tour @a name over @a window; nullptr (and @a error) when there is no such usable tour.
 	static GuidedTour* start(const QString& name, QWidget* window, QString* error);
 	int stepCount() const { return static_cast<int>(m_steps.size()); }
 	int step() const { return m_step; }
@@ -110,14 +111,15 @@ protected:
 	void paintEvent(QPaintEvent* event) override;
 	//! Escape ends the tour.
 	void keyPressEvent(QKeyEvent* event) override;
-	//! The window resized: the overlay, the hole and the step's frame follow it.
+	//! The window, target or a scrolling ancestor changed: update the overlay, hole and step frame.
 	bool eventFilter(QObject* watched, QEvent* event) override;
+
+private slots:
+	void place();
 
 private:
 	GuidedTour(const QJsonArray& steps, QWidget* window);
 	QWidget* targetOf(int index) const;
-	//! Cover the window, cut the hole over the step's target and put the frame beside it.
-	void place();
 
 	QJsonArray m_steps;
 	int m_step = 0;

@@ -129,8 +129,28 @@ bool g_bigdebug = false;
 bool g_bigdebugUsed = false;
 constexpr std::size_t BigDebugBytes = 900000;
 
+//! "debug" mode: every IdStartProcessing is answered with a debug text (DebugTextBytes long, starting with
+//! DebugMarker) and a sample-rate request before the reply, so the host parses a client message that carries
+//! an argument while it waits for the period's reply - on the audio thread - and has to answer it there too.
+bool g_debug = false;
+constexpr std::size_t DebugTextBytes = 200;
+constexpr const char* DebugMarker = "zene-remote-debug-marker";
+
 //! "deafquery" mode: the client never answers IdIsUIVisible, as a hung editor would not.
 bool g_deafQuery = false;
+
+//! "deafsamplerate" mode: the client never acknowledges a sample-rate update (no
+//! IdInformationUpdated), as a client that is busy or broken would not. Every other
+//! mode acknowledges it, exactly like the real client (RemotePluginClient::
+//! processMessage answers IdSampleRateInformation with IdInformationUpdated).
+bool g_deafSampleRate = false;
+
+//! "badhostinfo" mode: when the host asks for the client's host info (IdSyncKey), the
+//! client first sends a message the host has to refuse - the retired single-count id
+//! IdChangeInputCount - and only then the IdHostInfoGotten itself. The host refuses
+//! the retired id and fails the plugin, and the wait for the host info that follows
+//! must not erase that verdict.
+bool g_badHostInfo = false;
 
 //! "latequery" mode: the first IdIsUIVisible is answered "1" after LateQueryDelayMs (later than the host waits);
 //! the next one is answered "0" at once.
@@ -140,6 +160,10 @@ constexpr int LateQueryDelayMs = 300;
 
 //! "dropquery" mode: the first IdIsUIVisible is never answered (the reply is lost); the later ones are answered "1".
 bool g_dropQuery = false;
+
+//! "emptyquery" mode: every IdIsUIVisible is answered with no argument at all - a complete message the host must
+//! refuse rather than read an answer out of.
+bool g_emptyQuery = false;
 
 //! "garbage" mode: the reply to the first period is a frame whose argument count is negative, which is not a
 //! message at all: the connection is lost on the host.
@@ -157,13 +181,21 @@ bool g_orderer = false;
 bool g_ordererCut = false;
 int g_ordererAfterCut = 0;
 
-//! "capper" mode: each period asks for 2 outputs plus one per 128 note-ons received in the period before it.
+//! "capper" mode: each period asks for 2 outputs, plus 1 if the period before it carried 1-128 note-ons and 2 if it
+//! carried more than 128 (the host's per-period cap broken).
 bool g_capper = false;
 int g_capperNoteOns = 0;
 int g_capperLastPeriod = 0;
 
 //! Host's IdIsUIVisible (RemoteMessageIDs), answered by every mode with "1".
 constexpr int IdIsUIVisibleWire = 18;
+
+//! The arguments of the visibility answer for the current query: none in "emptyquery" mode.
+std::vector<std::string> visibilityAnswer()
+{
+	if (g_emptyQuery) { return {}; }
+	return {g_lateQuery && g_queriesSeen > 1 ? "0" : "1"};
+}
 
 //! "midi" mode: the client counts the IdMidiEvent messages it receives, and in each period asks for
 //! (count + 1) outputs before its reply, so the host can see how many events arrived before the period.
@@ -378,8 +410,27 @@ auto handleMessage(const Message& message) -> bool
 	case IdQuit:
 		return false;
 
+	case IdSyncKey:
+		// The host asks for the client's host info (the VST handshake). In
+		// "badhostinfo" mode the client sends a message the host has to refuse
+		// first, and only then the host info, so the host's wait for the host info
+		// is the one that has to keep the failure the refusal recorded.
+		if (g_badHostInfo)
+		{
+			if (!sendMessage(IdChangeInputCount, {"0"})) { return false; }
+			if (!sendMessage(IdHostInfoGotten, {})) { return false; }
+		}
+		break;
+
 	case IdChangeSharedMemoryKey:
 		if (!message.args.empty()) { attachSharedBlock(message.args[0]); }
+		break;
+
+	case IdSampleRateInformation:
+		// The real client takes the new rate and acknowledges it
+		// (RemotePluginClient::processMessage). "deafsamplerate" is the client that
+		// does not: it keeps running at the old rate.
+		if (!g_deafSampleRate && !sendMessage(IdInformationUpdated, {})) { return false; }
 		break;
 
 	case IdBufferSizeInformation:
@@ -396,7 +447,7 @@ auto handleMessage(const Message& message) -> bool
 		++g_queriesSeen;
 		if (g_lateQuery && g_queriesSeen == 1) { ::usleep(LateQueryDelayMs * 1000); }
 		if (g_dropQuery && g_queriesSeen == 1) { break; }
-		if (!sendMessage(IdIsUIVisibleWire, {g_lateQuery && g_queriesSeen > 1 ? "0" : "1"})) { return false; }
+		if (!sendMessage(IdIsUIVisibleWire, visibilityAnswer())) { return false; }
 		break;
 	case IdMidiEvent:
 		if (g_midi) { ++g_midiEvents; }
@@ -433,6 +484,19 @@ auto handleMessage(const Message& message) -> bool
 			if (!sendMessage(IdProcessingDone, {})) { return false; }
 			break;
 		}
+		if (g_debug)
+		{
+			// The debug text and the sample-rate request arrive while the host waits for the period's
+			// reply, so the host reads them on its audio thread.
+			std::string text(DebugMarker);
+			text.append(DebugTextBytes, 'd');
+			if (!writeInt32(IdDebugMessageWire) || !writeInt32(1)
+				|| !writeInt32(static_cast<std::int32_t>(text.size()))) { return false; }
+			if (!writeAll(text.data(), text.size())) { return false; }
+			if (!sendMessage(IdSampleRateInformation, {})) { return false; }
+			if (!sendMessage(IdProcessingDone, {})) { return false; }
+			break;
+		}
 		if (g_orderer)
 		{
 			const int outputs = g_ordererCut ? (g_ordererAfterCut > 0 ? 3 : 2) : 2;
@@ -442,7 +506,7 @@ auto handleMessage(const Message& message) -> bool
 		}
 		if (g_capper)
 		{
-			const int outputs = 2 + g_capperLastPeriod / 128;
+			const int outputs = 2 + (g_capperLastPeriod > 128 ? 2 : (g_capperLastPeriod > 0 ? 1 : 0));
 			g_capperLastPeriod = g_capperNoteOns;
 			g_capperNoteOns = 0;
 			if (!sendMessage(IdChangeInputOutputCount, {"0", std::to_string(outputs)})) { return false; }
@@ -598,7 +662,7 @@ int main(int argc, char** argv)
 {
 	if (argc < 2)
 	{
-		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer|bigdebug|orderer|capper|deafquery|halfhandshake|latequery|garbage|dropquery]\n");
+		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer|bigdebug|debug|orderer|capper|deafquery|halfhandshake|latequery|garbage|dropquery|emptyquery|badhostinfo|deafsamplerate]\n");
 		return 1;
 	}
 	const std::string mode = argc > 2 ? argv[2] : "modern";
@@ -610,15 +674,20 @@ int main(int argc, char** argv)
 	g_midframe = mode == "midframe";
 	g_silencer = mode == "silencer";
 	g_bigdebug = mode == "bigdebug";
+	g_debug = mode == "debug";
 	g_orderer = mode == "orderer";
 	g_capper = mode == "capper";
 	g_deafQuery = mode == "deafquery";
 	g_lateQuery = mode == "latequery";
 	g_dropQuery = mode == "dropquery";
+	g_emptyQuery = mode == "emptyquery";
+	g_badHostInfo = mode == "badhostinfo";
+	g_deafSampleRate = mode == "deafsamplerate";
 	g_garbage = mode == "garbage";
 	g_halfHandshake = mode == "halfhandshake";
 	static const char* const knownModes[] = {"modern", "stale", "stall", "recount", "midi", "late", "midframe",
-		"silencer", "bigdebug", "orderer", "capper", "deafquery", "halfhandshake", "latequery", "garbage", "dropquery"};
+		"silencer", "bigdebug", "debug", "orderer", "capper", "deafquery", "halfhandshake", "latequery", "garbage",
+		"dropquery", "emptyquery", "badhostinfo", "deafsamplerate"};
 	if (std::find_if(std::begin(knownModes), std::end(knownModes),
 			[&mode](const char* known) { return mode == known; }) == std::end(knownModes))
 	{

@@ -115,7 +115,7 @@ bool readPoint(const QJsonValue& value, int clipTicks, GainPoint* point, Control
 		return false;
 	}
 	const double db = dbValue.toDouble();
-	if (tick < 0 || tick > clipTicks || db < MinDb || db > MaxDb)
+	if (tick < 0 || tick > clipTicks || !std::isfinite(db) || db < MinDb || db > MaxDb)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("a point needs 0 <= tick <= %1 and %2 <= gain_db <= %3").arg(clipTicks).arg(MinDb).arg(MaxDb));
@@ -190,7 +190,7 @@ ControlResult setTranspose(const QJsonObject& args)
 	// One checkpoint covers both: the edits and the warp element (the stretch mode) are the clip's.
 	ref.clip->addJournalCheckPoint();
 	ref.clip->setClipEdits(after);
-	if (sample != nullptr && semitones != 0) { sample->setWarpStretchMode(WarpStretchMode::RubberBand); }
+	if (sample != nullptr && semitones != 0) { sample->setWarpStretchMode(WarpStretchMode::Complex); }
 	QJsonObject result{{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("semitones"), semitones},
 		{QStringLiteral("previous"), before.transpose}};
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("semitones"), before.transpose}},
@@ -274,7 +274,7 @@ ControlResult setFormant(const QJsonObject& args)
 	after.formant = args.value(QStringLiteral("semitones")).toInt(after.formant);
 	ref.clip->addJournalCheckPoint();
 	ref.clip->setClipEdits(after);
-	if (after.keepFormants || after.formant != 0) { static_cast<SampleClip*>(ref.clip)->setWarpStretchMode(WarpStretchMode::RubberBand); }
+	if (after.keepFormants || after.formant != 0) { static_cast<SampleClip*>(ref.clip)->setWarpStretchMode(WarpStretchMode::Complex); }
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("keep"), after.keepFormants},
 		{QStringLiteral("semitones"), after.formant}});
 }

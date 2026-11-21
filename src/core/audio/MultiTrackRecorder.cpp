@@ -48,9 +48,10 @@ MultiTrackRecorder::MultiTrackRecorder(int routeCapacity, int inputChannelCapaci
 	// The prototype's default mapping survives: route k starts on channel k
 	// when the selectable range reaches that far, and on the last selectable
 	// channel when it does not (a 2-route recorder over a 1-channel input).
+	const int lastChannel = std::max(0, this->inputChannelCapacity() - 1);
 	for (int i = 0; i < routes; ++i)
 	{
-		m_tracks[static_cast<std::size_t>(i)]->setInputChannel(i);
+		m_tracks[static_cast<std::size_t>(i)]->setInputChannel(std::min(i, lastChannel));
 	}
 }
 
@@ -68,11 +69,28 @@ int MultiTrackRecorder::inputChannelCapacity() const noexcept
 }
 
 
-void MultiTrackRecorder::setInputChannelCapacity(int channels) noexcept
+void MultiTrackRecorder::setInputChannelCapacity(int channels)
 {
 	for (auto& track : m_tracks)
 	{
 		track->setInputChannelCapacity(channels);
+	}
+}
+
+
+void MultiTrackRecorder::reconcileInputChannelCapacity()
+{
+	const int deliveredChannels = m_lastDeliveredInputChannels.exchange(0, std::memory_order_acq_rel);
+	if (deliveredChannels > 0 && deliveredChannels != inputChannelCapacity())
+	{
+		setInputChannelCapacity(deliveredChannels);
+	}
+	for (auto& track : m_tracks)
+	{
+		if (track->hasUnavailableInput())
+		{
+			track->disarm();
+		}
 	}
 }
 
@@ -96,6 +114,10 @@ void MultiTrackRecorder::processInputInterleaved(const sample_t* interleaved, in
 	if (interleaved == nullptr || channels < 1)
 	{
 		return;
+	}
+	if (frames > 0)
+	{
+		m_lastDeliveredInputChannels.store(channels, std::memory_order_release);
 	}
 	for (std::size_t route = 0; route < m_tracks.size(); ++route)
 	{

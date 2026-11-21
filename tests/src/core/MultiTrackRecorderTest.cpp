@@ -28,17 +28,20 @@
 #include <QtTest>
 
 #include <cstdint>
+#include <system_error>
 #include <vector>
 
 #include <QFile>
 #include <QFileInfo>
 #include <QTemporaryDir>
+#include <QTextStream>
 
 #include "RecordingJournal.h"
 #include "SampleFrame.h"
 
 using lmms::MultiTrackRecorder;
 using lmms::SampleFrame;
+using lmms::TrackRecorder;
 using lmms::TakeJournal;
 namespace recjournal = lmms::recordingjournal;
 
@@ -76,6 +79,46 @@ private slots:
 		QVERIFY(!recorder.track(0).isArmed());
 	}
 
+	//! A portable startup failure must leave one route retryable without disturbing another.
+	void writerStartFailureLeavesRouteRetryable()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		MultiTrackRecorder recorder;
+		const QString healthyTake = dir.filePath(QStringLiteral("healthy.wav"));
+		const QString retryTake = dir.filePath(QStringLiteral("retry.wav"));
+		QVERIFY(recorder.armTrack(0, healthyTake.toStdString(), 48000, 0));
+
+		TrackRecorder::failNextWriterThreadStartForTesting();
+		bool failedArmReturned = false;
+		bool failureEscaped = false;
+		try
+		{
+			failedArmReturned = recorder.armTrack(1, retryTake.toStdString(), 48000, 1);
+		}
+		catch (const std::system_error&)
+		{
+			failureEscaped = true;
+		}
+
+		QVERIFY(!recorder.track(1).isArmed());
+		QVERIFY(!failureEscaped);
+		QVERIFY(!failedArmReturned);
+		QVERIFY(recorder.track(0).isArmed());
+		QVERIFY(!QFileInfo::exists(recjournal::journalPathFor(retryTake)));
+		// The failed attempt's own WAV must not be left claiming the take.
+		QVERIFY(!QFileInfo::exists(retryTake));
+
+		QVERIFY(recorder.armTrack(1, retryTake.toStdString(), 48000, 1));
+		std::vector<SampleFrame> period(32, SampleFrame{0.25f, -0.5f});
+		recorder.processInput(period.data(), static_cast<lmms::f_cnt_t>(period.size()));
+		QCOMPARE(recorder.track(0).framesPushed(), std::uint64_t{32});
+		QCOMPARE(recorder.track(1).framesPushed(), std::uint64_t{32});
+		recorder.disarmAll();
+		QCOMPARE(recorder.track(0).framesRecorded(), std::uint64_t{32});
+		QCOMPARE(recorder.track(1).framesRecorded(), std::uint64_t{32});
+	}
+
 	//! totalOverflowCount() sums the per-track ring-buffer counters.
 	void TotalOverflowCountAggregatesBothTracks()
 	{
@@ -101,6 +144,35 @@ private slots:
 		recorder.disarmAll();
 		QVERIFY(!recorder.track(0).isArmed());
 		QVERIFY(!recorder.track(1).isArmed());
+	}
+
+	//! The constructor's default route mapping (the same rule the control command
+	//! applies): route k starts on channel k, and a route past the input width
+	//! starts on the LAST selectable channel - not on channel 0.
+	void DefaultRouteMappingStartsOnTheLastSelectableChannel()
+	{
+		MultiTrackRecorder narrow(3, 2);
+		QCOMPARE(narrow.trackCount(), 3);
+		QCOMPARE(narrow.track(0).inputChannel(), 0);
+		QCOMPARE(narrow.track(1).inputChannel(), 1);
+		QCOMPARE(narrow.track(2).inputChannel(), 1);
+
+		// A 2-route recorder over a 1-channel input: both routes read channel 0.
+		MultiTrackRecorder mono(2, 1);
+		QCOMPARE(mono.track(0).inputChannel(), 0);
+		QCOMPARE(mono.track(1).inputChannel(), 0);
+
+		// Every default is selectable, so every route can be armed as it stands.
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		for (int route = 0; route < narrow.trackCount(); ++route)
+		{
+			const int channel = narrow.track(route).inputChannel();
+			QVERIFY(narrow.track(route).inputChannelSelectable(channel));
+			QVERIFY2(narrow.armTrack(route, dir.filePath(QStringLiteral("default%1.wav").arg(route)).toStdString(),
+				48000, channel), "a default route channel must arm");
+		}
+		narrow.disarmAll();
 	}
 
 	//! 0.3.0 (recording crash recovery): arming a capture JOURNALS the take, the
@@ -177,6 +249,71 @@ private slots:
 		// the whole point: recovery must find the take it journalled
 		QVERIFY(recjournal::isRecoverable(opened));
 		QCOMPARE(recjournal::scan(dir.path()).size(), 1);
+	}
+
+	//! A line break in a valid POSIX filename must survive journal recovery.
+	//! The journal is a `key=value` file read one line at a time, so a raw
+	//! newline inside the path split the value across two lines: the reader
+	//! looked for a take that was never recorded and recovery offered nothing
+	//! for a capture that really happened.
+	void JournalRecoversTakePathContainingNewline()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString take = dir.filePath(QStringLiteral("take\npart.wav"));
+		// isRecoverable() asks the filesystem whether the take is there, so the
+		// take itself must exist for this to be about the journal's own format.
+		QFile takeFile(take);
+		QVERIFY(takeFile.open(QIODevice::WriteOnly));
+		takeFile.close();
+
+		TakeJournal written;
+		written.state = QStringLiteral("in_progress");
+		written.takePath = take;
+		written.sampleRate = 48000;
+		written.channels = 2;
+		const QString journal = recjournal::journalPathFor(take);
+		QVERIFY(recjournal::write(journal, written));
+
+		TakeJournal opened;
+		QVERIFY(recjournal::read(journal, &opened));
+		QCOMPARE(opened.takePath, take);
+		QVERIFY(recjournal::isRecoverable(opened));
+		const QList<TakeJournal> recovered = recjournal::scan(dir.path());
+		QCOMPARE(recovered.size(), 1);
+		QCOMPARE(recovered.front().takePath, take);
+	}
+
+	//! A journal written by an OLDER build (version 1) holds LITERAL values:
+	//! its fields were never escaped, so decoding them would rewrite a path
+	//! that merely CONTAINS a backslash. Old journals must still load exactly
+	//! as they did.
+	void JournalReadsAVersion1FileLiterally()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString take = dir.filePath(QStringLiteral("literal\\n take.wav"));
+		QFile takeFile(take);
+		QVERIFY(takeFile.open(QIODevice::WriteOnly));
+		takeFile.close();
+
+		const QString journal = recjournal::journalPathFor(take);
+		QFile file(journal);
+		QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+		QTextStream out(&file);
+		out << "# zene-studio recording journal - a side file, never part of a project\n";
+		out << "version=1\n";
+		out << "state=in_progress\n";
+		out << "take=" << take << "\n";
+		out << "sample_rate=48000\n";
+		out.flush();
+		file.close();
+
+		TakeJournal opened;
+		QVERIFY(recjournal::read(journal, &opened));
+		QCOMPARE(opened.takePath, take);
+		// the backslash is still a backslash: nothing decoded a version 1 value.
+		QVERIFY(opened.takePath.contains(QLatin1Char('\\')));
 	}
 } ;
 

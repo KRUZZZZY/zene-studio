@@ -244,6 +244,75 @@ private slots:
 		QCOMPARE(ClipLinks::contentFingerprint(members[0]), ClipLinks::contentFingerprint(members[1]));
 	}
 
+	void aDestructiveSplitDividesAndRebasesControllerCurves()
+	{
+		MidiClip* clip = midiClipAt(m_track, 0, Bar);
+		clip->setControllerPoints(ControllerKind::ControlChange, 74, {{0, 0}, {96, 127}});
+		m_editor->realignTracks();
+		QCoreApplication::processEvents();
+		MidiClipView* view = viewOf(clip);
+		QVERIFY(view != nullptr);
+
+		m_editor->setEditModeKnife();
+		const QPoint at(view->width() / 4, view->height() / 2);
+		QTest::mousePress(view, Qt::LeftButton, Qt::ShiftModifier, at);
+		QTest::mouseRelease(view, Qt::LeftButton, Qt::ShiftModifier, at);
+		m_editor->setEditModeDraw();
+		QCoreApplication::processEvents();
+
+		QCOMPARE(clipsOnTrack(), 2);
+		MidiClip* left = nullptr;
+		MidiClip* right = nullptr;
+		for (Clip* item : m_track->getClips())
+		{
+			auto* midi = static_cast<MidiClip*>(item);
+			if (midi->startPosition().getTicks() == 0) { left = midi; }
+			else { right = midi; }
+		}
+		QVERIFY(left != nullptr && right != nullptr);
+		QCOMPARE(right->startPosition().getTicks(), 48);
+
+		const ControllerLane* leftLane = left->controllers().lane(ControllerKind::ControlChange, 74);
+		const ControllerLane* rightLane = right->controllers().lane(ControllerKind::ControlChange, 74);
+		QVERIFY(leftLane != nullptr && rightLane != nullptr);
+		QCOMPARE(static_cast<int>(leftLane->points.size()), 2);
+		QCOMPARE(leftLane->points[0].tick, tick_t{0});
+		QCOMPARE(leftLane->points[0].value, 0);
+		QCOMPARE(leftLane->points[1].tick, tick_t{48});
+		QCOMPARE(leftLane->points[1].value, 64);
+		QCOMPARE(static_cast<int>(rightLane->points.size()), 2);
+		QCOMPARE(rightLane->points[0].tick, tick_t{0});
+		QCOMPARE(rightLane->points[0].value, 64);
+		QCOMPARE(rightLane->points[1].tick, tick_t{48});
+		QCOMPARE(rightLane->points[1].value, 127);
+	}
+
+	void trimmingAClipCropsAndRebasesControllerCurves()
+	{
+		MidiClip* clip = midiClipAt(m_track, 0, Bar);
+		clip->setStartTimeOffset(TimePos(-24));
+		clip->setControllerPoints(ControllerKind::ControlChange, 74, {{0, 0}, {96, 127}, {240, 40}});
+		m_editor->realignTracks();
+		QCoreApplication::processEvents();
+		MidiClipView* view = viewOf(clip);
+		QVERIFY(view != nullptr);
+
+		MidiClipView::bulkClearNotesOutOfBounds(QVector<ClipView*>{view});
+		QCoreApplication::processEvents();
+
+		QCOMPARE(clipsOnTrack(), 1);
+		auto* trimmed = static_cast<MidiClip*>(m_track->getClip(0));
+		const ControllerLane* lane = trimmed->controllers().lane(ControllerKind::ControlChange, 74);
+		QVERIFY(lane != nullptr);
+		QCOMPARE(static_cast<int>(lane->points.size()), 3);
+		QCOMPARE(lane->points[0].tick, tick_t{0});
+		QCOMPARE(lane->points[0].value, 32);
+		QCOMPARE(lane->points[1].tick, tick_t{72});
+		QCOMPARE(lane->points[1].value, 127);
+		QCOMPARE(lane->points[2].tick, tick_t{192});
+		QCOMPARE(lane->points[2].value, 55);
+	}
+
 	//! The owner ruling changes the former peer-compensation assertion: shared rebased notes do not rewrite a peer's window.
 	void aHeadTrimmedLinkedClipLeavesThePeerWindowAlone()
 	{

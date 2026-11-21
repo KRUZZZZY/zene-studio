@@ -24,6 +24,8 @@
 
 #include "TrackContentWidget.h"
 
+#include <algorithm>
+
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QMenu>
@@ -45,6 +47,7 @@
 #include "StringPairDrag.h"
 #include "TrackContainerView.h"
 #include "ClipView.h"
+#include "DesignTokens.h"
 #include "TrackView.h"
 
 namespace lmms::gui
@@ -211,9 +214,10 @@ void TrackContentWidget::removeClipView( ClipView * clipv )
  */
 void TrackContentWidget::update()
 {
+	const int clipHeight = tokens::accessibleMode() ? std::min(tokens::targetSize(), height() - 1) : height() - 1;
 	for (const auto& clipView : m_clipViews)
 	{
-		clipView->setFixedHeight(height() - 1);
+		clipView->setFixedHeight(clipHeight);
 		clipView->update();
 	}
 	QWidget::update();
@@ -527,11 +531,13 @@ bool TrackContentWidget::pasteSelection( TimePos clipPos, const QMimeData * md, 
 		if (offset == 0 && initialTrackIndex == currentTrackIndex) { pos += shift; }
 
 		Clip * clip = t->createClip( pos );
+		// A folder or neutral row holds no clips (createClip answers null): skip it, do not dereference.
+		if( clip == nullptr ) { continue; }
 		clip->restoreState( clipElement );
 		// A pasted clip is independent of the source take group. Keeping the
 		// copied group/lane would leave it with no active-lane mirror when
 		// pasted onto another track (or make it share a take choice by accident).
-		clip->setTakeGroupId(0);
+		clip->clearTakeGroupId();
 		control::assignTakeLane(clip, 0);  // the lane tag's one writer (ControlCommandsComp.cpp)
 		clip->movePosition(pos); // Because we restored the state, we need to move the Clip again.
 		if( wasSelection )
@@ -550,14 +556,14 @@ bool TrackContentWidget::pasteSelection( TimePos clipPos, const QMimeData * md, 
  *
  * \param de the Drop Event to respond to
  */
-bool TrackContentWidget::dropFile( const QMimeData * mime, int laneX )
+bool TrackContentWidget::dropFile( const QMimeData * mime, int laneX, Qt::KeyboardModifiers modifiers )
 {
 	if (!arrangerdrop::carriesFile(mime)) { return false; }
 	const float snapSize = getGUI()->songEditor()->m_editor->getSnapSize();
 	const TimePos tick = m_trackView->trackContainerView()->fixedClips()
 		? TimePos(0)
 		: TimePos(getPosition(laneX)).quantize(snapSize, true);
-	return arrangerdrop::dropFileAndReport(mime, getTrack(), tick);
+	return arrangerdrop::dropFileAndReport(mime, getTrack(), tick, modifiers);
 }
 
 
@@ -569,7 +575,7 @@ void TrackContentWidget::dropEvent( QDropEvent * de )
 
 	if (arrangerdrop::carriesFile(de->mimeData()))
 	{
-		if (dropFile(de->mimeData(), pos.x())) { de->acceptProposedAction(); }
+		if (dropFile(de->mimeData(), pos.x(), arrangerdrop::dropModifiers(de))) { de->acceptProposedAction(); }
 		else { de->ignore(); }
 		return;
 	}

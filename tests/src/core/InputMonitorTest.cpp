@@ -52,6 +52,7 @@
 #include "ReversibilityTestSupport.h"
 #include "SampleTrack.h"
 #include "Song.h"
+#include "TrackContainer.h"
 
 using namespace lmms;
 using namespace revtest;
@@ -188,6 +189,82 @@ private slots:
 		QCOMPARE(track->monitorMode(), MonitorMode::Auto);
 		QVERIFY(track->monitorHandle() != nullptr);
 		track->setMonitorMode(MonitorMode::Off);
+	}
+
+	/*! The finding: each period, every monitoring handle searched the whole song for its
+	 *  own position. The seam counts the candidates a position lookup examined; playing
+	 *  one period of N monitored tracks must examine none, because the container maintains
+	 *  the index off the audio thread. Before the fix this is N(N+1)/2, i.e. O(N^2). */
+	void routeLookupDoesNotScanTheSongPerPeriod()
+	{
+		constexpr int monitored = 24;
+		QStringList ids;
+		for (int i = 0; i < monitored; ++i)
+		{
+			const QString id = addTrack(QStringLiteral("sample"));
+			ControlResult error;
+			auto* track = dynamic_cast<SampleTrack*>(control::resolveTrack(id, &error));
+			QVERIFY2(track != nullptr, qPrintable(error.errorMessage));
+			const ControlResult set = run(QStringLiteral("track.set_monitor"),
+				{{QStringLiteral("track"), id}, {QStringLiteral("mode"), QStringLiteral("in")}});
+			QVERIFY2(set.ok, qPrintable(set.errorMessage));
+			QVERIFY(track->monitorHandle() != nullptr);
+			ids.append(id);
+		}
+
+		TrackContainer::resetTrackIndexScanCount();
+		std::vector<SampleFrame> block(256, SampleFrame(0.0f, 0.0f));
+		for (const QString& id : ids)
+		{
+			ControlResult error;
+			auto* track = dynamic_cast<SampleTrack*>(control::resolveTrack(id, &error));
+			QVERIFY2(track != nullptr, qPrintable(error.errorMessage));
+			const_cast<InputMonitorHandle*>(track->monitorHandle())->play(block);
+		}
+		const std::uint64_t scans = TrackContainer::trackIndexScanCount();
+		std::printf("ROUTE_LOOKUP_EVIDENCE %d handles, %llu candidate track scans in one period\n",
+			monitored, static_cast<unsigned long long>(scans));
+		QVERIFY2(scans == 0u, qPrintable(QStringLiteral(
+			"the per-period route lookup examined %1 track(s): it still scans the song")
+			.arg(static_cast<qulonglong>(scans))));
+
+		for (const QString& id : ids)
+		{
+			QVERIFY(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), id}}).ok);
+		}
+	}
+
+	/*! The regression's own guard: the maintained position follows a reorder and a
+	 *  removal, so replacing the scan with a stale cache cannot pass the slot above. */
+	void theRouteIndexFollowsMovesAndRemovals()
+	{
+		Song* song = Engine::getSong();
+		const QString first = addTrack(QStringLiteral("sample"));
+		const QString second = addTrack(QStringLiteral("sample"));
+		const QString third = addTrack(QStringLiteral("sample"));
+		ControlResult error;
+		Track* a = control::resolveTrack(first, &error);
+		Track* b = control::resolveTrack(second, &error);
+		Track* c = control::resolveTrack(third, &error);
+		QVERIFY(a != nullptr && b != nullptr && c != nullptr);
+		const int base = song->trackIndex(a);
+		QVERIFY(base >= 0);
+		QCOMPARE(song->trackIndex(b), base + 1);
+		QCOMPARE(song->trackIndex(c), base + 2);
+
+		const int last = static_cast<int>(song->tracks().size()) - 1;
+		QVERIFY(run(QStringLiteral("track.move"),
+			{{QStringLiteral("track"), first}, {QStringLiteral("index"), last}}).ok);
+		QCOMPARE(song->trackIndex(a), last);
+		QCOMPARE(song->trackIndex(b), base);
+		QCOMPARE(song->trackIndex(c), base + 1);
+
+		QVERIFY(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), second}}).ok);
+		QCOMPARE(song->trackIndex(c), base);
+		QCOMPARE(song->trackIndex(a), last - 1);
+
+		QVERIFY(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), first}}).ok);
+		QVERIFY(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), third}}).ok);
 	}
 
 private:

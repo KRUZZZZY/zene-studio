@@ -25,10 +25,14 @@
 #ifndef LMMS_CONTROL_BOUNCE_SUPPORT_H
 #define LMMS_CONTROL_BOUNCE_SUPPORT_H
 
+#include <vector>
+
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
 
 #include "BounceInPlace.h"
+#include "Track.h"
 #include "lmms_export.h"
 
 namespace lmms
@@ -45,8 +49,18 @@ LMMS_EXPORT QString parseRange(const QJsonObject& args, bool required, BounceInP
 //! `out`, or the default `<project>-bounces/<trk>-<verb>[-<start>-<end>].wav`.
 LMMS_EXPORT QString resolveOutPath(const QJsonObject& args, Track* track, const QString& verb,
 	const BounceInPlace::Range& range);
+//! Why a flatten (track.flatten, or render.queue_bounce's flatten) cannot commit \a track: the refusal text, or
+//! empty when it can. Only a track that makes audio has a render to replace it with.
+LMMS_EXPORT QString flattenRefusal(const Track* track);
 //! A render's reply fields (path, rate, frames, bytes, sha256, the ticks it covers).
 LMMS_EXPORT QJsonObject renderJson(const BounceInPlace::Result& rendered);
+//! Region freeze preparation: cuts the track's clips that cross the region's edges at those edges and returns
+//! the clips now inside it (the ones the freeze mutes); \a cut lists the clips that were cut, as they were.
+LMMS_EXPORT std::vector<Track::FrozenTake::MutedClip> isolateFreezeRegion(Track* track,
+	const BounceInPlace::Range& range, QJsonArray* cut);
+//! Adds `audio_missing` and `recovery` to a frozen-take report when the take's file is gone: the ways out are
+//! project.missing_assets / project.relink (point it at the moved file) and freeze.unfreeze (undoable).
+LMMS_EXPORT void insertFrozenRecovery(Track* track, QJsonObject* report);
 //! 0.5.0 L12 (ED-207, WF-045): a new audio track named @a name playing the file @a path from tick @a at,
 //! moved to @a index in the song's list (left at the end when @a index is negative); nullptr when it
 //! could not be made (ControlCommandsTrackFlatten.cpp).

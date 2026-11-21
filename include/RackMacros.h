@@ -25,6 +25,7 @@
 #ifndef LMMS_RACK_MACROS_H
 #define LMMS_RACK_MACROS_H
 
+#include <functional>
 #include <vector>
 
 #include <QDomDocument>
@@ -92,8 +93,11 @@ struct RackMacroWrite
 	float written = 0.0f;
 };
 
-//! True when the target's window is a sane fraction pair. The chain, the
-//! effect and the parameter name are checked against the live rack instead
+//! True when the target's window is a sane fraction pair - a finite low and
+//! high inside 0..1 and a finite curve inside -1..1. A nonfinite one is not a
+//! fraction: it survives every range comparison (they are all false against a
+//! NaN) and would be applied as a NaN parameter value. The chain, the effect
+//! and the parameter name are checked against the live rack instead
 //! (rackMacroTargetModel), because only the rack knows them.
 LMMS_EXPORT bool isValidMacroTarget(const RackMacroTarget& target);
 
@@ -129,18 +133,40 @@ public:
 	RackMacros(const RackMacros&) = delete;
 	auto operator=(const RackMacros&) -> RackMacros& = delete;
 
+	/*! Who wants to hear that this macro LIST changed - a macro was added, removed, inserted,
+	 *  cleared or reloaded (value and target edits do NOT notify: the list is the same list).
+	 *  Listeners run synchronously, on the thread inside the mutating call itself - the control
+	 *  thread; the audio thread never touches macros. A listener may open or close a UI watcher,
+	 *  so a notification walks a snapshot of the callbacks, never the live store. */
+	//! Listener args are the changed index and index shift (+1 insert, -1 remove; -1 means unchanged).
+	using ChangeListener = std::function<void(int, int)>;
+	/*! An un-register token; 0 means "no listener". The store is PROCESS-lifetime (as
+	 *  ControlRegistry's shutdown hooks) and keyed by these ids, so removeChangeListener stays
+	 *  safe after THIS list - or the listener's owner - is gone: a UI watcher holds the id, never
+	 *  a pointer into a rack that a channel removal may already have destroyed. */
+	using ChangeListenerId = int;
+	ChangeListenerId addChangeListener(ChangeListener listener);
+	//! False when @a id is 0 or unknown (already removed, or its list was destroyed).
+	static bool removeChangeListener(ChangeListenerId id);
+
+	~RackMacros();
+
 	auto macroCount() const -> int;
 	auto macro(int index) const -> const RackMacro*;
 	auto macro(int index) -> RackMacro*;
 
-	//! Appends a macro and returns its index (the macro-<n> id).
+	//! Appends a macro and returns its index (the macro-<n> id), or -1 when
+	//! @a value is not a finite number: a macro's value is a 0..1 scalar, and
+	//! clamping cannot make a nonfinite value one (std::clamp hands NaN back).
 	auto addMacro(const QString& name, float value) -> int;
 	//! Inserts a macro at @a index, for the inverse of a removal: the list and
-	//! the macro-<n> ids come back exactly, not merely the contents.
+	//! the macro-<n> ids come back exactly, not merely the contents. False
+	//! when @a index is out of range or the macro's value is not a finite number.
 	auto insertMacro(int index, const RackMacro& macro) -> bool;
 	auto removeMacro(int index) -> bool;
 
-	//! Stores @a value clamped to 0..1. False when there is no such macro.
+	//! Stores @a value clamped to 0..1. False when there is no such macro or
+	//! @a value is not a finite number - then the macro keeps the value it had.
 	auto setValue(int index, float value) -> bool;
 
 	//! Appends a target; -1 when there is no such macro.
@@ -182,6 +208,9 @@ public:
 	void loadSettings(const QDomElement& rackElement);
 
 private:
+	//! Runs every listener registered for THIS list (see addChangeListener).
+	void notifyListChanged(int index = -1, int shift = 0) const;
+
 	std::vector<RackMacro> m_macros;
 };
 

@@ -234,7 +234,7 @@ private slots:
 			QVector<QString> out = kept;
 			QVERIFY2(!control::cliplink::readClipList(
 				QJsonObject{{QStringLiteral("clips"), clips}}, &out, &error),
-				qPrintable(QStringLiteral("a refused list was accepted: %1").arg(QJsonDocument(clips).toJson())));
+				qPrintable(QStringLiteral("a refused list was accepted: %1").arg(QString::fromUtf8(QJsonDocument(clips).toJson()))));
 			QCOMPARE(error.errorKind, ControlErrorKind::InvalidArgs);
 			QVERIFY2(out == kept,
 				qPrintable(QStringLiteral("a refused list wrote %1 of %2 ids into the caller's vector")

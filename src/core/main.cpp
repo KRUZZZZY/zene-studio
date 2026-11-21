@@ -64,6 +64,7 @@
 #include "CrashReporter.h"
 #include "SafeStart.h"
 #include "Appearance.h"
+#include "PluginWindowPlatform.h"
 #include "ConfigManager.h"
 #include "DataFile.h"
 #include "NotePlayHandle.h"
@@ -76,6 +77,7 @@
 #include "PluginQuarantineMenu.h"
 #include "MainWindowGeometry.h"
 #include "MixHelpers.h"
+#include "Mixer.h"
 #include "OutputSettings.h"
 #include "ProjectContainer.h"
 #include "ProjectRecovery.h"
@@ -230,6 +232,8 @@ void printHelp()
 		"          If -e is specified zene exits after importing the file.\n"
 		"\nOptions for \"render\", \"rendertracks\" and \"exportstems\":\n"
 		"  -a, --float                    Use 32bit float bit depth\n"
+		"      --capture-channel <id>     Write mixer channel <id>'s output before\n"
+		"          its fader instead of the master (the bus-freeze render)\n"
 		"  -b, --bitrate <bitrate>        Specify output bitrate in KBit/s\n"
 		"          Default: 160.\n"
 		"      --bit-depth <bits>         Bit depth of the render: 16 (default),\n"
@@ -303,7 +307,13 @@ void printHelp()
 		"          as a JSON document: one row per candidate with its\n"
 		"          LUFS-I, short-term maximum, measured true peak, crest\n"
 		"          and the verdict against its own named target. The\n"
-		"          printed table is unchanged\n\n",
+		"          printed table is unchanged\n"
+		"      --genre <genre>            Label recorded in the --report document; one of\n"
+		"          the genres mastering.list_candidates publishes. A label only:\n"
+		"          it changes no measurement and picks, grades or reorders no candidate\n"
+		"      --delivery-target <target> Label recorded in the --report document; one of\n"
+		"          the delivery_targets mastering.list_candidates publishes. A label\n"
+		"          only, as above\n\n",
 		LMMS_VERSION, LMMS_PROJECT_COPYRIGHT );
 }
 
@@ -479,6 +489,7 @@ int main( int argc, char * * argv )
 	bool renderTracks = false;
 	bool renderStems = false;
 	int stemTailBars = 1;
+	bool stemTailBarsSpecified = false;
 	// The render RANGE (feature row 71, "selection to audio"): the span of ticks
 	// the render is limited to, or -1 for "the whole project" - which is what
 	// every render this product has produced so far rendered. Both ends are
@@ -489,11 +500,30 @@ int main( int argc, char * * argv )
 	// span rather than two renderers.
 	tick_t renderRangeBegin = -1;
 	tick_t renderRangeEnd = -1;
+	// Q050-124: the mixer channel (stable id) a bus-freeze render writes in place of the master; -1 = the master.
+	int captureChannelId = -1;
 	bool mastering = false;
 	// The machine-readable half of `master`: the JSON document the control
 	// surface's mastering.run reads back from the child process it starts. Empty
 	// unless the caller asks for it, so the CLI's printed output is unchanged.
 	QString masteringReportPath;
+	// The run's choice labels (--genre, --delivery-target): recorded in the --report
+	// document, never used to pick, grade or reorder a candidate.
+	QString masteringGenre;
+	QString masteringDeliveryTarget;
+	// Whether the --report option was GIVEN, which is a different fact from
+	// the path it carries: `--report ''` gives an empty path, and that is a
+	// refusal, not a request for no report. The first parsing stage records
+	// it, because the second stage's actions (upgrade, makebundle, dump,
+	// compress) return from there and would never see the option.
+	bool reportGiven = false;
+	// Whether the path the --report option carries is empty (the option was
+	// given without one, or with an empty one).
+	bool reportPathEmpty = true;
+	// Whether --genre or --delivery-target was GIVEN, and which one named it: like
+	// --report, a choice only `master` reads is refused before any other action runs.
+	bool masteringChoiceGiven = false;
+	const char* masteringChoiceFlag = "--genre";
 	// One flag for "the user gave -o": the stem export's directory check and the
 	// mastering job's candidate-directory check read the same fact. The two lanes
 	// named it differently (outputSpecified / outputGiven); merge train 3C keeps
@@ -510,7 +540,14 @@ int main( int argc, char * * argv )
 	{
 		QString arg = argv[i];
 
-		if (arg == "--help" || arg == "-h")
+		if (arg == "--config" || arg == "-c")
+		{
+			// Qt reads the interface scale before QApplication exists. Remember
+			// the selected file in this pass so Appearance can read its ui/scale;
+			// stage two still validates the option and loads the complete config.
+			if (i + 1 < argc) { configFile = QString::fromLocal8Bit(argv[++i]); }
+		}
+		else if (arg == "--help" || arg == "-h")
 		{
 			printHelp();
 			return EXIT_SUCCESS;
@@ -546,6 +583,24 @@ int main( int argc, char * * argv )
 			// Scripts always run headless; the script's LuaLog output goes to
 			// stdout and the process exit code reports success.
 			coreOnly = true;
+		}
+		else if (arg == "--report")
+		{
+			// The report option belongs to "master" alone, so this stage - the
+			// one that runs before ANY action - is where it is noticed. The
+			// value belongs to the option, so it is consumed here as well: a
+			// path that reads like an action keyword ("master") must not be
+			// taken for that action.
+			reportGiven = true;
+			++i;
+			reportPathEmpty = ( i >= argc ) || QString::fromLocal8Bit( argv[i] ).isEmpty();
+		}
+		else if (arg == "--genre" || arg == "--delivery-target")
+		{
+			// Stage-1 record only (see reportGiven): the option's value is consumed here too.
+			masteringChoiceGiven = true;
+			masteringChoiceFlag = ( arg == "--genre" ) ? "--genre" : "--delivery-target";
+			if( i + 1 < argc ) { ++i; }
 		}
 		else if (arg == "--allowroot")
 		{
@@ -633,8 +688,58 @@ int main( int argc, char * * argv )
 	QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 #endif
 
+	// The --report path belongs to "master": the report is the machine-readable
+	// half of that action's measurements, and no other action writes one. An
+	// ordinary command that accepted the option would store the path and then
+	// ignore it - the action would succeed and the requested report would never
+	// appear, which a caller cannot detect.
+	//
+	// The refusal is here, before the second parsing stage and before the
+	// application exists, because that stage's actions (upgrade, makebundle,
+	// dump, compress) return from it: a --report they never looked at would be
+	// accepted and then ignored, and the action would have run already. The
+	// order of the arguments does not matter - the first stage saw the option
+	// wherever it stood.
+	//
+	// The message goes to stderr DIRECTLY, not through usageError()'s Qt
+	// message handler: where the toolchain's Qt writes its log to the system
+	// journal rather than to stderr (stderr is not a console there), the
+	// qCritical is swallowed and the operator is left with a non-zero exit and
+	// no word about the option that caused it. The other CLI refusals in this
+	// file (dump:, compress:, master:, the control socket) print the same way.
+	if( reportGiven )
+	{
+		if( !mastering )
+		{
+			fprintf( stderr, "\n--report is only valid with master.\n\nTry \"%s --help\" for more "
+				"information.\n\n", argv[0] );
+			return EXIT_FAILURE;
+		}
+		if( reportPathEmpty )
+		{
+			fprintf( stderr, "\nNo report path specified.\n\nTry \"%s --help\" for more "
+				"information.\n\n", argv[0] );
+			return EXIT_FAILURE;
+		}
+	}
+	// --genre / --delivery-target: the same defect class as --report. Only master reads
+	// these labels, so any other action would succeed and silently ignore them.
+	if( masteringChoiceGiven && !mastering )
+	{
+		fprintf( stderr, "\n%s is only valid with master.\n\nTry \"%s --help\" for more "
+			"information.\n\n", masteringChoiceFlag, argv[0] );
+		return EXIT_FAILURE;
+	}
+
 	// 0.5.0 L14 (WF-131): the interface scale the user chose; Qt reads it only before the application exists.
-	if (!coreOnly) { lmms::appearance::applyStoredScale(); }
+	if (!coreOnly) { lmms::appearance::applyStoredScale(configFile); }
+	// Q050-502: plug-in editors embed only in X11 windows, so a Wayland desktop runs the GUI on XWayland
+	// unless the user chose a platform (include/PluginWindowPlatform.h). Qt reads it only before the application exists.
+	if (!coreOnly)
+	{
+		const QString platformNote = pluginwindow::describe(pluginwindow::chooseStartupPlatform(argc, argv));
+		if (!platformNote.isEmpty()) { fprintf(stderr, "%s\n", qPrintable(platformNote)); }
+	}
 
 	QCoreApplication * app = coreOnly ?
 			new QCoreApplication( argc, argv ) :
@@ -849,6 +954,7 @@ int main( int argc, char * * argv )
 				return usageError( QString( "Invalid tail length %1" ).arg( argv[i] ) );
 			}
 			stemTailBars = bars;
+			stemTailBarsSpecified = true;
 		}
 		else if( arg == "--range-start" || arg == "--range-end" )
 		{
@@ -919,6 +1025,28 @@ int main( int argc, char * * argv )
 			}
 
 			masteringReportPath = QString::fromLocal8Bit( argv[i] );
+		}
+		else if( arg == "--genre" )
+		{
+			++i;
+
+			if( i == argc )
+			{
+				return usageError( "No genre specified" );
+			}
+
+			masteringGenre = QString::fromLocal8Bit( argv[i] );
+		}
+		else if( arg == "--delivery-target" )
+		{
+			++i;
+
+			if( i == argc )
+			{
+				return usageError( "No delivery target specified" );
+			}
+
+			masteringDeliveryTarget = QString::fromLocal8Bit( argv[i] );
 		}
 		else if( arg == "--format" || arg == "-f" )
 		{
@@ -1030,6 +1158,17 @@ int main( int argc, char * * argv )
 		{
 			os.setBitDepth(OutputSettings::BitDepth::Depth32Bit);
 		}
+		else if( arg == "--capture-channel" )
+		{
+			// Q050-124: BounceInPlace::renderBus's child - the bus's pre-fader output instead of the master.
+			++i;
+			bool ok = false;
+			captureChannelId = i < argc ? QString::fromLocal8Bit( argv[i] ).toInt( &ok ) : -1;
+			if( !ok || captureChannelId < 0 )
+			{
+				return usageError( "--capture-channel takes a mixer channel id" );
+			}
+		}
 		else if( arg == "--loudness-report" )
 		{
 			// Ask the render for an EBU R128 loudness report: the measured
@@ -1098,7 +1237,10 @@ int main( int argc, char * * argv )
 					"sinc_fastest, sinc_medium or sinc_best)" ).arg( argv[i] ) );
 			}
 			os.setSrcQuality( quality );
-			ExportRenderSettings::setSrcQuality( quality );
+			if (!ExportRenderSettings::setSrcQuality(quality))
+			{
+				return usageError("The requested SRC converter could not be created");
+			}
 		}
 		else if( arg == "--import" )
 		{
@@ -1182,6 +1324,14 @@ int main( int argc, char * * argv )
 		}
 	}
 
+	// `--tail-bars` feeds exportStems() only, so accepting it for another action
+	// would silently drop it. Refuse it before the project is loaded or an
+	// output is opened, including the explicit zero that still names the option.
+	if( stemTailBarsSpecified && !renderStems )
+	{
+		return usageError( "--tail-bars is only valid for exportstems" );
+	}
+
 	// Test file argument before continuing
 	if( !fileToLoad.isEmpty() )
 	{
@@ -1222,6 +1372,20 @@ int main( int argc, char * * argv )
 	}
 
 	ConfigManager::inst()->loadConfigFile(configFile);
+
+	// Stem output is known from the CLI arguments. Validate it before arming the
+	// session markers or starting the engine, since this is a normal refusal.
+	if (renderStems)
+	{
+		if (!outputGiven)
+		{
+			return usageError( "exportstems needs an output directory (-o <dir>)" );
+		}
+		if (!QDir().mkpath( renderOut ))
+		{
+			return usageError( QString( "Could not create output directory %1" ).arg( renderOut ) );
+		}
+	}
 
 	// Install the local crash reporter as soon as the user's working directory
 	// is known.  It writes ONE bounded text file and dies exactly as the
@@ -1300,6 +1464,8 @@ int main( int argc, char * * argv )
 		if( !controlServer->listen( controlSocket, &controlError ) )
 		{
 			fprintf( stderr, "control socket: %s\n", controlError.toUtf8().constData() );
+			crashreporter::endSession();
+			safestart::endSession();
 			return EXIT_FAILURE;
 		}
 		printf( "control socket listening on %s\n", controlSocket.toUtf8().constData() );
@@ -1327,6 +1493,15 @@ int main( int argc, char * * argv )
 			exit( EXIT_FAILURE );
 		}
 		printf( "Done\n" );
+
+		QString captureError;
+		if( captureChannelId >= 0 && !busfreeze::armCapture( *Engine::mixer(), captureChannelId, &captureError ) )
+		{
+			fprintf( stderr, "Render refused: %s\n", captureError.toUtf8().constData() );
+			crashreporter::endSession();
+			safestart::endSession();
+			exit( EXIT_FAILURE );
+		}
 
 		// 0.5.0 F7: what the master's format and the file format allow is known now that the
 		// project is loaded; a surround export they cannot carry is refused before a file opens.
@@ -1364,6 +1539,7 @@ int main( int argc, char * * argv )
 			// The job runs on this thread; the render runs on ProjectRenderer's.
 			// Nothing here is reachable from the audio callback.
 			MasteringJob job( os, eff, renderOut, MasteringJob::defaultCandidates() );
+			job.setRunChoices( masteringGenre, masteringDeliveryTarget );
 			QString error;
 			if( job.run( &error ) )
 			{
@@ -1398,22 +1574,22 @@ int main( int argc, char * * argv )
 					ProjectRenderer::getFileExtensionFromFormat(eff);
 			}
 
-			if ( renderStems )
-			{
-				// A stem export writes many files, so the destination must be a
-				// directory the user asked for -- never a guess next to the project.
-				if ( !outputGiven )
-				{
-					return usageError( "exportstems needs an output directory (-o <dir>)" );
-				}
-				if ( !QDir().mkpath( renderOut ) )
-				{
-					return usageError( QString( "Could not create output directory %1" ).arg( renderOut ) );
-				}
-			}
-
 			// create renderer
 			auto r = new RenderManager(os, eff, renderOut);
+			// A render whose output could not be written completely (a full disk, an
+			// unwritable path - the renderer removed the broken file) is a FAILED
+			// render: the CLI's exit code is how a script watching this process sees
+			// it. Connected before the quit() below, so the verdict is recorded
+			// while the event loop is still running.
+			QObject::connect( r, &RenderManager::finished, QCoreApplication::instance(),
+				[r, &headlessExitCode]()
+				{
+					if( r->hasWriteError() )
+					{
+						fprintf( stderr, "render: the output could not be written completely; the incomplete file was removed\n" );
+						headlessExitCode = EXIT_FAILURE;
+					}
+				} );
 			QCoreApplication::instance()->connect( r,
 					SIGNAL(finished()), SLOT(quit()));
 
@@ -1734,10 +1910,11 @@ int main( int argc, char * * argv )
 
 	// The application is fully constructed and the initial project exists: from
 	// here the agent surface may drive the model (before this point every
-	// command returns the typed 'busy' refusal).
+	// command returns the typed 'busy' refusal). Unconditional: the interface's own actions
+	// reach the same registry (Q050-212), and without a socket nothing else would ever open it.
+	ControlRegistry::setReady( true );
 	if( controlServer )
 	{
-		controlServer->registry()->setReady( true );
 		// A client may have asked to quit before startup finished (the socket is
 		// up first, by design). Apply it now that the normal shutdown path - and
 		// the main event loop - actually exist (task #626).

@@ -31,6 +31,7 @@
 
 #include "AudioEngine.h"
 #include "AudioPortAudio.h"
+#include "CrashReporter.h"
 
 #include <algorithm>
 #include "ConfigManager.h"
@@ -210,6 +211,7 @@ void AudioPortAudio::stopProcessingImpl()
 int AudioPortAudio::processCallback(const void* input, void* output, unsigned long frameCount,
 	const PaStreamCallbackTimeInfo*, PaStreamCallbackFlags, void* userData)
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	const auto device = static_cast<AudioPortAudio*>(userData);
 	const auto channels = device->channels();
 	const auto outputBuffer = reinterpret_cast<float*>(output);

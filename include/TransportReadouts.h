@@ -31,6 +31,7 @@
 #include <QWidget>
 
 #include "AutomatableModel.h"
+#include "ControlRegistry.h"
 #include "lmms_export.h"
 
 class QActionGroup;
@@ -60,6 +61,8 @@ public:
 	//! A readout whose text comes from @a text, refreshed by refresh(); with @a typed it can be
 	//! typed into (double-click), the handler returning false for text it refuses.
 	void bindText(std::function<QString()> text, std::function<bool(const QString&)> typed = {});
+	//! Like bindText(), but preserves a registered command's refusal message for the field's error display.
+	void bindTextResult(std::function<QString()> text, std::function<ControlResult(const QString&)> typed);
 	void refresh();
 
 	QString caption() const { return m_caption; }
@@ -85,6 +88,7 @@ private:
 	std::function<QString(int)> m_format;
 	std::function<QString()> m_text;
 	std::function<bool(const QString&)> m_typed;
+	std::function<ControlResult(const QString&)> m_typedResult;
 	int m_pixelsPerStep = 4;
 	int m_pressY = 0;
 	int m_pressValue = 0;
@@ -102,8 +106,15 @@ LMMS_EXPORT bool ticksFromBarBeat(const QString& text, int* ticks);
 //! the one in use checked. For every field that shows a musical position or length.
 LMMS_EXPORT void addTimeFormatChoices(QWidget* widget);
 
-//! The header's readouts, laid out in the strip: tempo, meter, position (in the time format, theme 7) and
-//! time, the record mode with its scope (theme 7), master level and transposition, and the engine load.
+//! WF-085: the words the header's Rec left readout shows for @a state - the transcription of
+//! record.remaining's seconds: "2h 3m" (rounded down to the minute), "0m" when the budget is
+//! spent (a zero estimate), "-" when the command refused (a volume it could not measure).
+//! Exported for the readout's tests; not a JSON value, whatever the estimate is:
+QString recordRemainingLabel(const ControlResult& state);
+
+//! The header's transport readouts, laid out in the strip: tempo, meter, position (in the time format, theme 7) and
+//! time, the record mode with its scope (theme 7), the recording budget (record.remaining, WF-085), master level and
+//! transposition, and the engine load.
 //! Replaces the song editor's LCD boxes, sliders and scope (docs/UI-SHELL.md §1).
 class LMMS_EXPORT TransportReadouts : public QWidget
 {
@@ -111,12 +122,23 @@ class LMMS_EXPORT TransportReadouts : public QWidget
 
 public:
 	explicit TransportReadouts(QWidget* parent = nullptr);
-	//! Re-read what moves on its own: the position, the time and the load (60 Hz from the
-	//! main window's periodic update).
+	//! Re-read what moves on its own: the position, the time, the load and the recording budget (60 Hz from the
+	//! main window's periodic update; the budget once a second, the disk's free space does not move faster).
 	void tick();
+
+	//! WF-085 test seam: while @a source is set, the Rec left readout takes its ControlResult instead of
+	//! asking ControlRegistry for record.remaining, so a test can present a value that changed since the
+	//! bind. A null function restores the live command (the default; UI thread only, like the readout).
+	using RemainingTestSource = std::function<ControlResult()>;
+	static void setRemainingTestSource(RemainingTestSource source);
 
 	ReadoutField* tempo() const { return m_tempo; }
 	ReadoutField* loudness() const { return m_loudness; }
+	ReadoutField* recordRemaining() const { return m_recordRemaining; }
+	//! Q050-094: the Rec mode readout (overdub, replace or keep history; right-click chooses).
+	ReadoutField* recordMode() const { return m_recordMode; }
+	//! Q050-074.1: the CPU readout (right-click: CPU diagnostics, CpuDiagnosticsDialog.h).
+	ReadoutField* load() const { return m_load; }
 
 private:
 	void bindToSong(Song* song);
@@ -128,6 +150,7 @@ private:
 	ReadoutField* m_position;
 	ReadoutField* m_time;
 	ReadoutField* m_recordMode;
+	ReadoutField* m_recordRemaining;
 	QActionGroup* m_recordModes = nullptr;
 	int m_shownRecordMode = -1;
 	ReadoutField* m_volume;

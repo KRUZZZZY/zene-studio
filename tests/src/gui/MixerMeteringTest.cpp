@@ -32,18 +32,25 @@
 
 #include <QtTest>
 
+#include <limits>
 #include <vector>
 
+#include <QAction>
 #include <QApplication>
 #include <QComboBox>
 #include <QDialog>
+#include <QAccessible>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QLabel>
 #include <QMenu>
 #include <QPushButton>
 #include <QSignalSpy>
 
+#include "AccessibleWidgets.h"
+#include "AudioEngine.h"
 #include "ConfigManager.h"
+#include "ControlMeterSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -51,15 +58,24 @@
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
 #include "InputLevelMeter.h"
+#include "InputMeter.h"
 #include "MainWindow.h"
+#include "MasterLoudnessTap.h"
+#include "MeterSpeech.h"
 #include "Mixer.h"
 #include "MixerChannelView.h"
 #include "MixerModeBar.h"
 #include "MixerView.h"
 #include "MixerViewOptions.h"
 #include "MixerWindows.h"
+#include "PeakIndicator.h"
 #include "PhaseScopeTap.h"
 #include "PhaseScopeView.h"
+#include "ShellSelection.h"
+#include "Song.h"
+#include "SongEditor.h"
+#include "Track.h"
+#include "TrackView.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -79,10 +95,68 @@ void syncMixer()
 	getGUI()->mixerView()->syncWithMixer();
 }
 
+/*! MX-021: run what is queued for the mixer view, and only that. No event-loop turn: the view's half-second sync
+ *  timer cannot fire and mask a missing connection, and a deferred delete stays queued. */
+void deliverQueuedRefresh()
+{
+	QCoreApplication::sendPostedEvents(getGUI()->mixerView(), QEvent::MetaCall);
+}
+
+/*! The arranger builds a view for a new track from a queued call. Deliver the queued calls only: a full event-loop
+ *  turn also runs window activation, which the later shortcut test (speakMeter...) needs left alone. */
+void buildTrackViews()
+{
+	QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+}
+
+//! Leave the view as the other tests expect it: every channel shown, nothing picked, not following.
+void restoreViewDefaults()
+{
+	const ControlResult reset = run(QStringLiteral("window.mixer_view"), {{QStringLiteral("selected_channels"), QJsonArray{}},
+		{QStringLiteral("filter"), QStringLiteral("all")}, {QStringLiteral("follow_selection"), false}});
+	QVERIFY2(reset.ok, qPrintable(reset.errorMessage));
+	syncMixer();
+}
+
+/*! Remove a fixture track the way the arranger does: its view first, while the track it reads is alive
+ *  (TrackContainerView::deleteTrackView; ~InstrumentTrackView reads its model). False when the track has no view:
+ *  the arranger builds one a turn after the track is added, so a fixture turns the event loop once after adding. */
+bool removeTrack(Track* track)
+{
+	SongEditor* arranger = getGUI()->songEditor()->m_editor;
+	for (TrackView* trackView : arranger->trackViews())
+	{
+		if (trackView->getTrack() == track)
+		{
+			arranger->deleteTrackView(trackView);
+			return true;
+		}
+	}
+	return false;
+}
+
 //! One meter tick (the main window's 60 Hz periodicUpdate drives it).
 void tick()
 {
 	QVERIFY(QMetaObject::invokeMethod(getGUI()->mixerView(), "updateFaders", Qt::DirectConnection));
+}
+
+QStringList s_emitted;
+
+//! Stands in for the platform bridge: the text a screen reader would be given for an announcement.
+void recordAccessibilityEvent(QAccessibleEvent* event)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+	if (event->type() == QAccessible::Announcement)
+	{
+		s_emitted << static_cast<QAccessibleAnnouncementEvent*>(event)->message();
+	}
+#else
+	if (event->type() == QAccessible::Alert && event->accessibleInterface() != nullptr)
+	{
+		s_emitted << event->accessibleInterface()->text(QAccessible::Name);
+	}
+#endif
 }
 
 QString ch(int index) { return control::channelIdOf(Engine::mixer()->mixerChannel(index)); }
@@ -210,6 +284,151 @@ private slots:
 		}
 	}
 
+	//! MX-021: an older configuration has no followchannel key, which reads as off.
+	void followSelectionDefaultsOff()
+	{
+		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("ui"), QStringLiteral("followchannel")), QString());
+		QVERIFY(!mixerviewoptions::followSelection());
+		QCOMPARE(run(QStringLiteral("window.mixer_view")).result.value(QStringLiteral("follow_selection")).toBool(), false);
+	}
+
+	//! MX-021: the Selected filter follows the focused arranger track (or clip owner) when the preference is on;
+	//! the manual set is kept while it follows and returns unchanged when it is turned off. Nothing here calls the
+	//! view's sync between a selection and what is asserted about the strips: the selection's own queued refresh
+	//! has to re-lay them (see deliverQueuedRefresh).
+	void theSelectedFilterFollowsTheArrangerSelection()
+	{
+		m_other = Engine::mixer()->createChannel();
+		const int secondChannel = Engine::mixer()->createChannel();
+		Track* first = Track::create(Track::Type::Instrument, Engine::getSong());
+		Track* second = Track::create(Track::Type::Instrument, Engine::getSong());
+		first->mixerChannelModel()->setValue(m_channel);
+		second->mixerChannelModel()->setValue(secondChannel);
+		buildTrackViews();
+		syncMixer();
+		// A manual pick, then following: the pick is kept but not shown while a track is focused.
+		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("selected_channels"), QJsonArray{ch(m_other)}},
+			{QStringLiteral("filter"), QStringLiteral("selected")}, {QStringLiteral("follow_selection"), false}}).ok);
+		syncMixer();
+		MixerView* view = getGUI()->mixerView();
+		QVERIFY(view->channelView(m_other)->isVisibleTo(view));
+		QVERIFY(!view->channelView(m_channel)->isVisibleTo(view));
+		const ControlResult on = run(QStringLiteral("window.mixer_view"), {{QStringLiteral("follow_selection"), true}});
+		QVERIFY2(on.ok, qPrintable(on.errorMessage));
+		QCOMPARE(on.result.value(QStringLiteral("follow_selection")).toBool(), true);
+		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("ui"), QStringLiteral("followchannel")), QStringLiteral("1"));
+		QVERIFY(mixerviewoptions::followSelection());
+		deliverQueuedRefresh();  // the command's own refresh is not the one under test
+		ShellSelection::instance()->setTrack(first);
+		QVERIFY(!view->channelView(m_channel)->isVisibleTo(view));  // queued: nothing has moved yet
+		deliverQueuedRefresh();
+		QVERIFY(view->channelView(0)->isVisibleTo(view));  // the master always shows
+		QVERIFY(view->channelView(m_channel)->isVisibleTo(view));
+		QVERIFY(!view->channelView(m_other)->isVisibleTo(view));
+		QCOMPARE(run(QStringLiteral("window.mixer_view")).result.value(QStringLiteral("visible_channels")).toArray(),
+			(QJsonArray{ch(0), ch(m_channel)}));
+		// A clip on another track focuses its owner's channel.
+		Clip* clip = second->createClip(TimePos(0));
+		ShellSelection::instance()->setClip(clip);
+		QVERIFY(!view->channelView(secondChannel)->isVisibleTo(view));
+		deliverQueuedRefresh();
+		QVERIFY(view->channelView(secondChannel)->isVisibleTo(view));
+		QVERIFY(!view->channelView(m_channel)->isVisibleTo(view));
+		// Off: the manual set is still there, and arranger selection no longer moves the filter.
+		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("follow_selection"), false}}).ok);
+		ShellSelection::instance()->setTrack(first);
+		deliverQueuedRefresh();
+		QVERIFY(view->channelView(m_other)->isVisibleTo(view));
+		QVERIFY(!view->channelView(m_channel)->isVisibleTo(view));
+		QVERIFY(!view->channelView(secondChannel)->isVisibleTo(view));
+		QCOMPARE(run(QStringLiteral("window.mixer_view")).result.value(QStringLiteral("selected_channels")).toArray(),
+			(QJsonArray{ch(m_other)}));
+		// The mode bar's toggle is the same preference, through the same command.
+		QPushButton* follow = view->modeBar()->followButton();
+		QVERIFY(follow != nullptr);
+		QCOMPARE(follow->property("controlCommand").toString(), QStringLiteral("window.mixer_view"));
+		follow->click();
+		QVERIFY(mixerviewoptions::followSelection());
+		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("ui"), QStringLiteral("followchannel")), QStringLiteral("1"));
+		follow->click();
+		QVERIFY(!mixerviewoptions::followSelection());
+		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("ui"), QStringLiteral("followchannel")), QStringLiteral("0"));
+		ShellSelection::instance()->setTrack(nullptr);
+		QVERIFY(removeTrack(first));
+		QVERIFY(removeTrack(second));
+		restoreViewDefaults();
+	}
+
+	//! MX-021: while following, nothing to follow shows the master alone (the manual set stays out of it); of
+	//! selections made before the refresh runs the last one wins; a selected track or clip that is removed leaves
+	//! no stale strip, and the manual set comes back when following is turned off.
+	void theFollowedFilterSurvivesEmptyAndStaleSelections()
+	{
+		const int manual = Engine::mixer()->createChannel();  // the channel picked by hand
+		const int firstChannel = Engine::mixer()->createChannel();
+		const int secondChannel = Engine::mixer()->createChannel();
+		Track* first = Track::create(Track::Type::Instrument, Engine::getSong());
+		Track* second = Track::create(Track::Type::Instrument, Engine::getSong());
+		Track* unmapped = Track::create(Track::Type::Instrument, Engine::getSong());
+		Track* automation = Track::create(Track::Type::Automation, Engine::getSong());
+		first->mixerChannelModel()->setValue(firstChannel);
+		second->mixerChannelModel()->setValue(secondChannel);
+		unmapped->mixerChannelModel()->setValue(0);
+		buildTrackViews();
+		ShellSelection* selection = ShellSelection::instance();
+		selection->setTrack(first);
+		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("selected_channels"), QJsonArray{ch(manual)}},
+			{QStringLiteral("filter"), QStringLiteral("selected")}, {QStringLiteral("follow_selection"), true}}).ok);
+		syncMixer();
+		MixerView* view = getGUI()->mixerView();
+		const auto shown = [view](int index) { return view->channelView(index)->isVisibleTo(view); };
+		QVERIFY(shown(firstChannel));
+		deliverQueuedRefresh();
+		const auto masterOnly = [&] { return shown(0) && !shown(manual) && !shown(firstChannel) && !shown(secondChannel); };
+
+		selection->setTrack(nullptr);  // no selection
+		deliverQueuedRefresh();
+		QVERIFY(masterOnly());
+		selection->setTrack(first);
+		deliverQueuedRefresh();
+		QVERIFY(shown(firstChannel));
+		selection->setTrack(unmapped);  // plays straight into the master
+		deliverQueuedRefresh();
+		QVERIFY(masterOnly());
+		selection->setTrack(first);
+		deliverQueuedRefresh();
+		QVERIFY(shown(firstChannel));
+		selection->setTrack(automation);  // has no mixer channel at all
+		QVERIFY(automation->mixerChannelModel() == nullptr);
+		deliverQueuedRefresh();
+		QVERIFY(masterOnly());
+
+		selection->setTrack(first);  // rapid selections: only the last one counts
+		selection->setTrack(unmapped);
+		selection->setClip(second->createClip(TimePos(0)));
+		deliverQueuedRefresh();
+		QVERIFY(shown(secondChannel));
+		QVERIFY(!shown(firstChannel));
+
+		QVERIFY(removeTrack(second));  // the focused clip's owner goes: its pointers read as nothing selected
+		QVERIFY(selection->track() == nullptr);
+		QVERIFY(selection->clip() == nullptr);
+		syncMixer();  // a removal is not a selection change: the view's periodic sync is what re-lays it
+		QVERIFY(masterOnly());
+
+		selection->setTrack(first);  // removed with its refresh still queued
+		QVERIFY(removeTrack(first));
+		deliverQueuedRefresh();
+		QVERIFY(masterOnly());
+
+		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("follow_selection"), false}}).ok);
+		deliverQueuedRefresh();
+		QVERIFY(shown(manual));
+		QVERIFY(removeTrack(unmapped));
+		QVERIFY(removeTrack(automation));
+		restoreViewDefaults();
+	}
+
 	//! MX-005: the Selected filter shows the master and the channels picked for it, nothing else.
 	void theSelectedFilterShowsOnlyThePickedChannels()
 	{
@@ -331,6 +550,309 @@ private slots:
 		meters->close();
 	}
 
+	//! Q050-100: Speak Meter reports the focused channel's post-fader peak and the
+	//! master's LUFS-S, and does not arm the tap. The action and its Ctrl+Shift+M
+	//! shortcut dispatch the same registered command.
+	void speakMeterReportsTheFocusedChannelAndMasterLufs()
+	{
+		MasterLoudnessTap* tap = Engine::audioEngine()->masterLoudness();
+		QVERIFY(tap != nullptr);
+		tap->setEnabled(true);
+		const sample_rate_t rate = tap->sampleRate();
+		std::vector<SampleFrame> signal(static_cast<std::size_t>(rate * 3) + 4096);
+		for (std::size_t i = 0; i < signal.size(); ++i)
+		{
+			const auto value = static_cast<sample_t>(0.1 * std::sin(2.0 * M_PI * 1000.0 * static_cast<double>(i) / rate));
+			signal[i] = SampleFrame(value, value);
+		}
+		for (std::size_t at = 0; at < signal.size(); at += 512)
+		{
+			tap->feed(signal.data() + at, static_cast<f_cnt_t>(std::min<std::size_t>(512, signal.size() - at)));
+		}
+		const double expectedLufs = tap->snapshot().shortTermLufs;
+		QVERIFY(std::isfinite(expectedLufs));
+		MixerChannel* channel = Engine::mixer()->mixerChannel(m_channel);
+		QVERIFY(channel != nullptr);
+		AudioDevice* device = Engine::audioEngine()->audioDev();
+		QVERIFY(device != nullptr);
+		device->stopProcessing();
+		// A real controlled signal through mixer processing, so the published post-fader peak is the mixer's own.
+		const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+		std::vector<SampleFrame> input(fpp, SampleFrame(0.5f, 0.25f));
+		std::vector<SampleFrame> masterOut(fpp);
+		SampleFrame* busData[1] = {input.data()};
+		for (int period = 0; period < 2; ++period)
+		{
+			Engine::mixer()->mixToChannel(AudioBus{busData, 1, fpp}, static_cast<mix_ch_t>(m_channel));
+			Engine::mixer()->prepareMasterMix();
+			zeroSampleFrames(masterOut.data(), fpp);
+			Engine::mixer()->masterMix(masterOut.data());
+			AutomatableModel::incrementPeriodCounter();
+		}
+		getGUI()->mixerView()->setCurrentMixerChannel(m_channel);
+
+		QVERIFY(run(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("all")}}).ok);
+		const ControlResult spoken = run(QStringLiteral("meter.speak"), {{QStringLiteral("channel"), ch(m_channel)}});
+		QVERIFY2(spoken.ok, qPrintable(spoken.errorMessage));
+		QVERIFY(std::fabs(spoken.result.value(QStringLiteral("peak_db")).toDouble() - (-6.0206)) < 0.01);
+		QVERIFY(spoken.result.value(QStringLiteral("master_lufs_available")).toBool());
+		QVERIFY(std::fabs(spoken.result.value(QStringLiteral("master_lufs")).toDouble() - expectedLufs) < 0.001);
+		QVERIFY(spoken.result.value(QStringLiteral("spoken")).toString().contains(QStringLiteral("Master short-term loudness")));
+		QCOMPARE(a11y::lastAnnouncement(), spoken.result.value(QStringLiteral("spoken")).toString());
+		QVERIFY(tap->enabled());  // a report never arms or resets the tap
+
+		// The disarmed case says why, and reports null rather than a plausible zero.
+		tap->setEnabled(false);
+		const ControlResult unavailable = run(QStringLiteral("meter.speak"), {{QStringLiteral("channel"), ch(m_channel)}});
+		QVERIFY(unavailable.ok);
+		QVERIFY(!unavailable.result.value(QStringLiteral("master_lufs_available")).toBool());
+		QVERIFY(unavailable.result.value(QStringLiteral("master_lufs")).isNull());
+		QVERIFY(unavailable.result.value(QStringLiteral("spoken")).toString().contains(QStringLiteral("not armed")));
+
+		// The strip's action and the shortcut both go through the real GUI control.
+		QAction* action = getGUI()->mixerView()->speakMeterAction();
+		QVERIFY(action != nullptr);
+		QCOMPARE(action->shortcut(), QKeySequence(QStringLiteral("Ctrl+Shift+M")));
+		QCOMPARE(action->property("controlCommand").toString(), QStringLiteral("meter.speak"));
+		getGUI()->mainWindow()->revealPanel(QStringLiteral("mixer"));
+		getGUI()->mainWindow()->show();
+		QApplication::setActiveWindow(getGUI()->mainWindow());
+		getGUI()->mixerView()->channelView(m_channel)->setFocus();
+		QTest::qWait(50);
+		QSignalSpy triggered(action, &QAction::triggered);
+		QTest::keySequence(getGUI()->mixerView()->channelView(m_channel), action->shortcut());
+		QTRY_COMPARE(triggered.count(), 1);
+		action->trigger();
+		QTRY_COMPARE(triggered.count(), 2);
+		device->startProcessing();
+		tap->setEnabled(false);
+	}
+
+	//! Q050-100: one announcement per rising crossing for input and master; staying
+	//! above says nothing, falling below re-arms, and view.announcements gates it.
+	void peakWatchAnnouncesOncePerCrossingAndHonoursTheLevel()
+	{
+		QVERIFY(run(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("all")}}).ok);
+		QVERIFY(run(QStringLiteral("meter.set_peak_watch"), {{QStringLiteral("enabled"), true},
+			{QStringLiteral("threshold_dbfs"), -6}}).ok);
+		meterspeech::reset();
+		a11y::announceStatus(getGUI()->mainWindow(), QStringLiteral("peak watch marker zero"));
+		a11y::announceStatus(getGUI()->mainWindow(), QStringLiteral("peak watch marker one"));
+		const QString marker = a11y::lastAnnouncement();
+		meterspeech::observe(0.25f, 0.0f);  // below -12 dBFS
+		QCOMPARE(a11y::lastAnnouncement(), marker);
+		meterspeech::observe(0.6f, 0.0f);  // input rises through -6
+		QVERIFY2(a11y::lastAnnouncement().startsWith(QStringLiteral("Input peak")), qPrintable(a11y::lastAnnouncement()));
+		const QString firstCrossing = a11y::lastAnnouncement();
+		meterspeech::observe(0.7f, 0.0f);  // still above: no second word
+		QCOMPARE(a11y::lastAnnouncement(), firstCrossing);
+		meterspeech::observe(0.0f, 0.0f);  // falls below: re-arms
+		meterspeech::observe(0.0f, 0.6f);  // master rises
+		QVERIFY2(a11y::lastAnnouncement().startsWith(QStringLiteral("Master peak")), qPrintable(a11y::lastAnnouncement()));
+		const QString masterCrossing = a11y::lastAnnouncement();
+		meterspeech::observe(0.0f, 0.7f);
+		QCOMPARE(a11y::lastAnnouncement(), masterCrossing);
+
+		// The strip menu sets the same preference through meter.set_peak_watch.
+		QMenu watch;
+		getGUI()->mixerView()->populatePeakWatchMenu(&watch);
+		QAction* minus12 = watch.findChild<QAction*>(QStringLiteral("peakWatchMinus12"));
+		QVERIFY(minus12 != nullptr);
+		minus12->trigger();
+		QVERIFY(control::meterPeakWatchEnabled());
+		QCOMPARE(control::meterPeakWatchThresholdDbfs(), -12.0);
+		QAction* off = watch.findChild<QAction*>(QStringLiteral("peakWatchOff"));
+		QVERIFY(off != nullptr);
+		off->trigger();
+		QVERIFY(!control::meterPeakWatchEnabled());
+
+		// Put the watch back for the level checks below.
+		QVERIFY(run(QStringLiteral("meter.set_peak_watch"), {{QStringLiteral("enabled"), true},
+			{QStringLiteral("threshold_dbfs"), -6}}).ok);
+
+		// errors: an ordinary peak crossing is suppressed; off: nothing is spoken.
+		QVERIFY(run(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("errors")}}).ok);
+		meterspeech::reset();
+		a11y::announceStatus(getGUI()->mainWindow(), QStringLiteral("peak watch marker two"));
+		const QString errorsMarker = a11y::lastAnnouncement();
+		meterspeech::observe(0.8f, 0.8f);
+		QCOMPARE(a11y::lastAnnouncement(), errorsMarker);
+		QVERIFY(!meterspeech::lastMessage().isEmpty());  // the crossing was evaluated, just not spoken
+		QVERIFY(run(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("off")}}).ok);
+		meterspeech::reset();
+		a11y::announceStatus(getGUI()->mainWindow(), QStringLiteral("peak watch marker three"));
+		const QString offMarker = a11y::lastAnnouncement();
+		meterspeech::observe(0.9f, 0.9f);
+		QCOMPARE(a11y::lastAnnouncement(), offMarker);
+
+		// Threshold changes are one undo step and restore both values.
+		QVERIFY(run(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("all")}}).ok);
+		const ControlResult set = run(QStringLiteral("meter.set_peak_watch"), {{QStringLiteral("enabled"), true},
+			{QStringLiteral("threshold_dbfs"), -3}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QCOMPARE(set.result.value(QStringLiteral("threshold_dbfs")).toDouble(), -3.0);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		const ControlResult afterUndo = run(QStringLiteral("meter.set_peak_watch"));
+		QVERIFY(afterUndo.ok);
+		QCOMPARE(afterUndo.result.value(QStringLiteral("threshold_dbfs")).toDouble(), -6.0);  // the value before the set
+		QVERIFY(run(QStringLiteral("meter.set_peak_watch"), {{QStringLiteral("enabled"), false},
+			{QStringLiteral("threshold_dbfs"), -6}}).ok);
+	}
+
+	//! Q050-100: the REAL master tap drives the watch, not only the observe() seam: a loud period
+	//! crosses, a quiet one lets the latch fall, and a later loud period crosses again. This is the
+	//! property that a held-maximum sample peak would fail.
+	void theRealMasterTapReArmsTheWatch()
+	{
+		MasterLoudnessTap* tap = Engine::audioEngine()->masterLoudness();
+		QVERIFY(tap != nullptr);
+		AudioDevice* device = Engine::audioEngine()->audioDev();
+		QVERIFY(device != nullptr);
+		device->stopProcessing();
+		QVERIFY(run(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("all")}}).ok);
+		QVERIFY(run(QStringLiteral("meter.set_peak_watch"), {{QStringLiteral("enabled"), true},
+			{QStringLiteral("threshold_dbfs"), -6}}).ok);
+		tap->setEnabled(false);
+		tap->reset();
+		float left = 0.f;
+		float right = 0.f;
+		inputmeter::watch(&left, &right);  // drain any input peak from the engine
+		meterspeech::reset();
+		const auto feed = [tap](float peak) {
+			std::vector<SampleFrame> block(512);
+			for (std::size_t i = 0; i < block.size(); ++i)
+			{
+				const auto value = static_cast<sample_t>(i % 2 == 0 ? peak : -peak);
+				block[i] = SampleFrame(value, value);
+			}
+			tap->feed(block.data(), static_cast<f_cnt_t>(block.size()));
+			meterspeech::poll();
+		};
+		feed(0.6f);
+		QVERIFY2(a11y::lastAnnouncement().startsWith(QStringLiteral("Master peak")), qPrintable(a11y::lastAnnouncement()));
+		const QString first = a11y::lastAnnouncement();
+		feed(0.0f);  // below: re-arms, says nothing
+		QCOMPARE(a11y::lastAnnouncement(), first);
+		const int spokenBefore = a11y::announcementCount();
+		feed(0.6f);  // the SAME peak, well inside the repeat window: a new crossing is still spoken
+		QCOMPARE(a11y::lastAnnouncement(), first);
+		QCOMPARE(a11y::announcementCount(), spokenBefore + 1);
+		feed(0.6f);  // still above: no further word
+		QCOMPARE(a11y::announcementCount(), spokenBefore + 1);
+		QVERIFY(run(QStringLiteral("meter.set_peak_watch"), {{QStringLiteral("enabled"), false},
+			{QStringLiteral("threshold_dbfs"), -6}}).ok);
+		device->startProcessing();
+	}
+
+	//! Q050-100: the policy's repeat window drops a re-sent status but not an explicit event.
+	void aRepeatCanBeAllowedPastTheDebounce()
+	{
+		QVERIFY(run(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("all")}}).ok);
+		const QString text = QStringLiteral("repeat policy marker");
+		const int before = a11y::announcementCount();
+		QVERIFY(a11y::shouldAnnounce(text, a11y::Politeness::Polite));
+		QVERIFY(!a11y::shouldAnnounce(text, a11y::Politeness::Polite));
+		QVERIFY(a11y::shouldAnnounce(text, a11y::Politeness::Polite, a11y::Repeat::Allow));
+		QCOMPARE(a11y::announcementCount(), before + 2);
+	}
+
+	//! Q050-100/Q050-320: on Qt before 6.8 the alert is raised on a source whose accessible name is the message,
+	//! so the screen reader reads the text; a source that already shows the message is used as it is.
+	void theAlertSourceCarriesTheMessage()
+	{
+		getGUI()->mainWindow()->show();
+		QApplication::setActiveWindow(getGUI()->mainWindow());
+		const QString message = QStringLiteral("Input peak -3.0 dBFS crossed the -6.0 dBFS threshold.");
+		QObject* source = a11y::announcementSource(QCoreApplication::instance(), message);
+		QVERIFY(source != nullptr);
+		QVERIFY(source != QCoreApplication::instance());
+		QAccessibleInterface* iface = QAccessible::queryAccessibleInterface(source);
+		QVERIFY(iface != nullptr);
+		QCOMPARE(iface->text(QAccessible::Name), message);
+		// The next message re-names the same region.
+		const QString next = QStringLiteral("Master peak -2.0 dBFS crossed the -6.0 dBFS threshold.");
+		QCOMPARE(a11y::announcementSource(QCoreApplication::instance(), next), source);
+		QCOMPARE(QAccessible::queryAccessibleInterface(source)->text(QAccessible::Name), next);
+		// A label that already shows the message is its own source.
+		QLabel shown(next);
+		QCOMPARE(a11y::announcementSource(&shown, next), static_cast<QObject*>(&shown));
+	}
+
+	//! Q050-100: the Speak Meter shortcut speaks the strip that has keyboard focus, even when a different
+	//! strip is the selected one (focus moves by keyboard, only a mouse press selects).
+	void theShortcutSpeaksTheFocusedStrip()
+	{
+		QVERIFY(run(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("all")}}).ok);
+		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("filter"), QStringLiteral("all")}}).ok);
+		syncMixer();
+		MixerView* view = getGUI()->mixerView();
+		getGUI()->mainWindow()->revealPanel(QStringLiteral("mixer"));
+		getGUI()->mainWindow()->show();
+		QApplication::setActiveWindow(getGUI()->mainWindow());
+		view->setCurrentMixerChannel(m_channel);
+		MixerChannelView* focused = view->channelView(m_other);
+		focused->setFocus();
+		QTest::qWait(50);
+		QCOMPARE(view->currentMixerChannel(), view->channelView(m_channel));
+		QCOMPARE(view->focusedChannelView(), focused);
+		a11y::announceStatus(getGUI()->mainWindow(), QStringLiteral("focused strip marker"));
+		QTest::keySequence(focused, view->speakMeterAction()->shortcut());
+		const QString expected = QStringLiteral("Channel %1 peak").arg(Engine::mixer()->mixerChannel(m_other)->m_name);
+		QTRY_VERIFY2(a11y::lastAnnouncement().startsWith(expected), qPrintable(a11y::lastAnnouncement()));
+	}
+
+	//! Q050-100: the live input handoff. Audio-thread measure() -> the poller's read of the watch pair ->
+	//! one announcement per rising crossing; held above says nothing; a quiet period re-arms.
+	void theLiveInputPeakReachesThePollerAndReArms()
+	{
+		AudioDevice* device = Engine::audioEngine()->audioDev();
+		QVERIFY(device != nullptr);
+		device->stopProcessing();
+		QVERIFY(run(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("all")}}).ok);
+		QVERIFY(run(QStringLiteral("meter.set_peak_watch"), {{QStringLiteral("enabled"), true},
+			{QStringLiteral("threshold_dbfs"), -6}}).ok);
+		Engine::audioEngine()->masterLoudness()->setEnabled(false);
+		meterspeech::poll();  // drain whatever the engine measured before
+		meterspeech::reset();
+		const auto measure = [](float peak) {
+			std::vector<SampleFrame> block(256, SampleFrame(peak, 0.f));
+			inputmeter::measure(block.data(), static_cast<f_cnt_t>(block.size()));
+			meterspeech::poll();
+		};
+		const int before = a11y::announcementCount();
+		measure(0.25f);  // below -6 dBFS
+		QCOMPARE(a11y::announcementCount(), before);
+		measure(0.6f);  // rises through -6
+		QCOMPARE(a11y::announcementCount(), before + 1);
+		QVERIFY2(a11y::lastAnnouncement().startsWith(QStringLiteral("Input peak")), qPrintable(a11y::lastAnnouncement()));
+		measure(0.7f);  // held above
+		QCOMPARE(a11y::announcementCount(), before + 1);
+		meterspeech::poll();  // a quiet period: the latch falls
+		measure(0.6f);  // rises again, same text as the first crossing
+		QCOMPARE(a11y::announcementCount(), before + 2);
+		QVERIFY(run(QStringLiteral("meter.set_peak_watch"), {{QStringLiteral("enabled"), false},
+			{QStringLiteral("threshold_dbfs"), -6}}).ok);
+		device->startProcessing();
+	}
+
+	//! Q050-100/Q050-320: the dynamic message reaches Qt's accessibility layer. A test update handler stands in
+	//! for the platform bridge and records what a screen reader would be given.
+	void theAnnouncementIsEmittedToTheAccessibilityLayer()
+	{
+		QVERIFY(run(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("all")}}).ok);
+		getGUI()->mainWindow()->show();
+		QApplication::setActiveWindow(getGUI()->mainWindow());
+		const bool wasActive = QAccessible::isActive();
+		QAccessible::setActive(true);
+		s_emitted.clear();
+		const QAccessible::UpdateHandler previous = QAccessible::installUpdateHandler(&recordAccessibilityEvent);
+		const QString message = QStringLiteral("Master peak -3.0 dBFS crossed the -6.0 dBFS threshold.");
+		a11y::announceStatus(QCoreApplication::instance(), message, a11y::Politeness::Polite, a11y::Repeat::Allow);
+		QAccessible::installUpdateHandler(previous);
+		QAccessible::setActive(wasActive);
+		QCOMPARE(s_emitted, QStringList{message});
+	}
+
 	//! MX-137: the goniometer turns the stereo picture 45 degrees - mono stands up the middle, out of phase lies flat.
 	void theGoniometerShowsMonoUprightAndOutOfPhaseFlat()
 	{
@@ -405,6 +927,47 @@ private slots:
 	{
 		getGUI()->mixerView()->clear();
 		QVERIFY(selection().isEmpty());
+	}
+
+	//! A non-finite peak (+inf, NaN) must not latch the readout: it reads "-inf", and finite peaks still show.
+	void anInfinitePeakDoesNotLatchTheIndicator()
+	{
+		PeakIndicator indicator(nullptr);
+		indicator.updatePeak(std::numeric_limits<float>::infinity());
+		QCOMPARE(indicator.text(), QStringLiteral("-inf"));
+		indicator.updatePeak(0.5f);
+		QCOMPARE(indicator.text(), QStringLiteral("-6.0"));
+		indicator.updatePeak(std::numeric_limits<float>::quiet_NaN());
+		indicator.updatePeak(2.0f);
+		QCOMPARE(indicator.text(), QStringLiteral("6.0"));
+	}
+
+	//! A non-finite channel peak must not latch the strip's meter either: the strip reads on from the next finite peak.
+	void anInfiniteChannelPeakDoesNotLatchTheStripMeter()
+	{
+		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("peak_hold"), QStringLiteral("off")},
+			{QStringLiteral("meter_mode"), QStringLiteral("peak")}, {QStringLiteral("meter_falloff"), QStringLiteral("fast")}}).ok);
+		const int index = Engine::mixer()->createChannel();
+		syncMixer();
+		MixerView* view = getGUI()->mixerView();
+		MixerChannelView* strip = view->channelView(index);
+		QVERIFY(strip != nullptr);
+		Fader* stripFader = strip->fader();
+		auto* indicator = strip->findChild<PeakIndicator*>();
+		QVERIFY(stripFader != nullptr);
+		QVERIFY(indicator != nullptr);
+		QCOMPARE(stripFader->peakHoldMs(), 0);
+		stripFader->setPeak_L(0.f);
+		stripFader->setPeak_R(0.f);
+		indicator->resetPeakToMinusInf();
+		feed(Engine::mixer()->mixerChannel(index), QStringLiteral("peak"), 0.5f);
+		tick();
+		QCOMPARE(indicator->text(), QStringLiteral("-6.0"));
+		feed(Engine::mixer()->mixerChannel(index), QStringLiteral("peak"), std::numeric_limits<float>::infinity());
+		tick();
+		feed(Engine::mixer()->mixerChannel(index), QStringLiteral("peak"), 0.8f);
+		tick();
+		QCOMPARE(indicator->text(), QStringLiteral("-1.9"));
 	}
 
 private:

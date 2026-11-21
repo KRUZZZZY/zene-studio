@@ -35,7 +35,7 @@ empty scope, a declared path that is not in the tree) — no verdict was reached
 |---|---|
 | `tests/rt-safety-scope.txt` | the **declared** audio-thread path set: `<path><TAB><symbol><TAB><reason>`, with an optional rules filter. 32 pairs today, each with a reason. A blank reason is refused (exit 2); a symbol that resolves to nothing is a failure (exit 1); a path that is not in the tree is a setup error (exit 2); an **empty scope is an error, never a pass**. |
 | `tests/rt-safety-allowlist.txt` | the **accepted** hits: `<path><TAB><symbol><TAB><rule><TAB><count><TAB><reason>`. Three lines today (4 hits). A blank reason or an unknown rule id is refused (exit 2). |
-| `tests/rt_safety_source.py` | the rules (allocation / locking / growth / synchronous stdio output) and the source reader: comments and literals are blanked with the line structure preserved, and a declared symbol is resolved by brace-matching its body. |
+| `tests/rt_safety_source.py` | the rules (allocation / locking / growth / synchronous stdio output / Qt logging) and the source reader: comments and literals are blanked with the line structure preserved, and a declared symbol is resolved by brace-matching its body. |
 | `tests/rt_safety_lib.py` | the two ledgers, the judgement and the report — which prints the programme's **BOUND** on every run. |
 | `tests/rt_safety_selftest.py` | the controls (ctest `RtSafetySelfTest`). |
 | `tests/rt-safety-sweep.py` | the gate (ctest `RtSafetySweep`, Gate 12, CI `static-gates`). |
@@ -160,8 +160,12 @@ the audio thread is real-time safe:
 * **NO VIRTUAL DISPATCH, FUNCTION POINTERS, MACROS OR INCLUDES.** An
   implementation reached through an interface is checked only if the scope names
   it too; a macro that expands to an allocation is invisible.
-* **LIMITED I/O CHECK.** Synchronous stdio output is rejected on declared
-  paths. Other system calls and I/O mechanisms are not measured. Lock-free
+* **LIMITED I/O CHECK.** Synchronous stdio output and Qt logging
+  (`qDebug`/`qInfo`/`qWarning`/`qCritical`) are rejected on declared paths:
+  logging formats a message, which allocates and takes the logging lock, so
+  it may not run on the audio thread. `qFatal` is not covered — it aborts the
+  process instead of logging and continuing, which is another hazard. Other
+  system calls and I/O mechanisms are not measured. Lock-free
   *correctness* (memory ordering, ABA, torn reads) is not measured; the
   mixer-concurrency TSAN job and the per-feature probes are where that lives.
 * **NO ALIASING ANALYSIS.** A hit is a *mention* of a construct, not proof that

@@ -31,8 +31,11 @@
 
 #include <QDomDocument>
 #include <QJsonArray>
+#include <QSemaphore>
 
+#include <atomic>
 #include <cmath>
+#include <thread>
 #include <vector>
 
 #include "AutomationClip.h"
@@ -65,9 +68,43 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 	return ControlRegistry::instance()->invoke(id, args);
 }
 
+AutomationClip* g_objectsReadClip = nullptr;
+AutomatableModel* g_objectsReadTarget = nullptr;
+
+void removeTargetAfterObjectsUnlock(const AutomationClip* clip)
+{
+	if (clip == g_objectsReadClip) { const_cast<AutomationClip*>(clip)->removeObject(g_objectsReadTarget); }
+}
+
 MixerChannel* channel(int index) { return Engine::mixer()->mixerChannel(index); }
 
 QString ch(int index) { return control::channelIdOf(channel(index)); }
+
+//! Stops refresh while it is calculating the clip behind this effect, after the earlier clip was visited.
+class RefreshGateEffect final : public partd::LatentDelayEffect
+{
+public:
+	using partd::LatentDelayEffect::LatentDelayEffect;
+
+	int latencyFrames() const override
+	{
+		if (m_blockNext.exchange(false, std::memory_order_relaxed))
+		{
+			m_entered.release();
+			m_resume.acquire();
+		}
+		return partd::LatentDelayEffect::latencyFrames();
+	}
+
+	void arm() const { m_blockNext.store(true, std::memory_order_relaxed); }
+	bool waitUntilEntered() const { return m_entered.tryAcquire(1, 3000); }
+	void resume() const { m_resume.release(); }
+
+private:
+	mutable std::atomic<bool> m_blockNext{false};
+	mutable QSemaphore m_entered;
+	mutable QSemaphore m_resume;
+};
 
 //! The value the per-tick read gives @a model at song tick @a tick.
 float readAt(const AutomatableModel* model, int tick)
@@ -210,20 +247,173 @@ private slots:
 		channel(1)->setInputLatencyFrames(0);
 	}
 
+	void latencyRefreshKeepsOneReadOnPublishedClipValues()
+	{
+		AutomationLatency& latency = AutomationLatency::instance();
+		latency.setEnabled(false);
+
+		EffectChain& chain = channel(1)->m_fxChain;
+		channel(1)->setInputLatencyFrames(0);
+		auto* firstEffect = new RefreshGateEffect(&chain, 1, 1);
+		auto* secondEffect = new partd::FixedGainEffect(&chain, 1.f, 1.f);
+		chain.appendEffect(firstEffect);
+		chain.appendEffect(secondEffect);
+
+		auto* firstModel = new FloatModel(0.f, 0.f, 1.f, 0.001f, firstEffect, QStringLiteral("First"));
+		auto* secondModel = new FloatModel(0.f, 0.f, 1.f, 0.001f, secondEffect, QStringLiteral("Second"));
+		auto* track = Track::create(Track::Type::Automation, Engine::getSong());
+		auto* firstClip = dynamic_cast<AutomationClip*>(track->createClip(TimePos(0)));
+		auto* secondClip = dynamic_cast<AutomationClip*>(track->createClip(TimePos(1)));
+		firstClip->addObject(firstModel);
+		secondClip->addObject(secondModel);
+		for (AutomationClip* clip : {firstClip, secondClip})
+		{
+			clip->setProgressionType(AutomationClip::ProgressionType::Linear);
+			clip->putValue(TimePos(0), 0.f, false);
+			clip->putValue(TimePos(800), 1.f, false);
+		}
+
+		latency.setEnabled(true);
+		const AutomatedValueMap before = Engine::getSong()->automatedValuesAt(TimePos(200));
+		const float firstBefore = before.value(firstModel, -1.f);
+		const float secondBefore = before.value(secondModel, -1.f);
+		channel(1)->setInputLatencyFrames(static_cast<int>(std::ceil(Engine::framesPerTick() * 40.0)));
+		firstEffect->arm();
+		std::thread refresher([&latency] { latency.refresh(); });
+		const bool refreshPausedBetweenClips = firstEffect->waitUntilEntered();
+		const AutomatedValueMap during = Engine::getSong()->automatedValuesAt(TimePos(200));
+		const float firstDuring = during.value(firstModel, -1.f);
+		const float secondDuring = during.value(secondModel, -1.f);
+		firstEffect->resume();
+		refresher.join();
+
+		latency.setEnabled(false);
+		channel(1)->setInputLatencyFrames(0);
+		delete track;
+		chain.removeEffect(firstEffect);
+		chain.removeEffect(secondEffect);
+		delete firstEffect;
+		delete secondEffect;
+
+		QVERIFY(refreshPausedBetweenClips);
+		QVERIFY(firstBefore >= 0.f && secondBefore >= 0.f);
+		QCOMPARE(firstDuring, firstBefore);
+		QCOMPARE(secondDuring, secondBefore);
+	}
+
+	void latencyRefreshUsesTargetStateCapturedUnderItsLock()
+	{
+		AutomationLatency& latency = AutomationLatency::instance();
+		latency.setEnabled(false);
+		EffectChain& chain = channel(1)->m_fxChain;
+		channel(1)->setInputLatencyFrames(0);
+		auto* latent = new partd::LatentDelayEffect(&chain, 64);
+		auto* target = new partd::FixedGainEffect(&chain, 1.f, 1.f);
+		chain.appendEffect(latent);
+		chain.appendEffect(target);
+		auto* model = new FloatModel(0.f, 0.f, 1.f, 0.001f, target, QStringLiteral("Probe"));
+		auto* track = Track::create(Track::Type::Automation, Engine::getSong());
+		auto* clip = dynamic_cast<AutomationClip*>(track->createClip(TimePos(0)));
+		clip->addObject(model);
+		QCOMPARE(AutomationLatency::upstreamFrames(model), 64);
+
+		g_objectsReadClip = clip;
+		g_objectsReadTarget = model;
+		AutomationClip::setObjectsReadProbeForTest(removeTargetAfterObjectsUnlock);
+		latency.setEnabled(true);
+		const int stampedFrames = clip->latencyFrames();
+		AutomationClip::setObjectsReadProbeForTest(nullptr);
+		g_objectsReadClip = nullptr;
+		g_objectsReadTarget = nullptr;
+
+		latency.setEnabled(false);
+		delete track;
+		chain.removeEffect(target);
+		chain.removeEffect(latent);
+		delete target;
+		delete latent;
+		channel(1)->setInputLatencyFrames(0);
+
+		QCOMPARE(stampedFrames, 64);
+	}
+
+	void mixedLatencyTargetsAreRejectedUntilCompatible()
+	{
+		AutomationLatency& latency = AutomationLatency::instance();
+		latency.setEnabled(false);
+		EffectChain& chain = channel(1)->m_fxChain;
+		channel(1)->setInputLatencyFrames(0);
+		auto* latent = new partd::LatentDelayEffect(&chain, 64);
+		auto* after = new partd::FixedGainEffect(&chain, 1.f, 1.f);
+		chain.appendEffect(latent);
+		chain.appendEffect(after);
+		auto* afterModel = new FloatModel(0.f, 0.f, 1.f, 0.001f, after, QStringLiteral("After"));
+		auto* latentModel = new FloatModel(0.f, 0.f, 1.f, 0.001f, latent, QStringLiteral("Before"));
+		QCOMPARE(AutomationLatency::upstreamFrames(afterModel), 64);
+		QCOMPARE(AutomationLatency::upstreamFrames(latentModel), 0);
+
+		auto* track = Track::create(Track::Type::Automation, Engine::getSong());
+		auto* clip = dynamic_cast<AutomationClip*>(track->createClip(TimePos(0)));
+		clip->addObject(afterModel);
+		clip->addObject(latentModel);
+		latency.setEnabled(true);
+		const auto absoluteValues = Engine::getSong()->automatedValuesAt(TimePos(0));
+		const bool absoluteRejected = !absoluteValues.contains(afterModel) && !absoluteValues.contains(latentModel);
+
+		clip->setRelative(true);
+		const auto relativeValues = Engine::getSong()->automatedValuesAt(TimePos(0));
+		const bool relativeRejected = !relativeValues.contains(afterModel) && !relativeValues.contains(latentModel);
+
+		clip->setSampleAccurate(true);
+		AutomatableModel::incrementPeriodCounter();
+		Engine::getSong()->buildAutomationRamps(Engine::getSong()->tracks(), TimePos(0), 256, 0);
+		const bool rampRejected = afterModel->automationRamp() == nullptr && latentModel->automationRamp() == nullptr;
+
+		clip->setSampleAccurate(false);
+		clip->setRelative(false);
+		const bool targetRemoved = clip->removeObject(latentModel);
+		latency.refresh();
+		const int compatibleFrames = clip->latencyFrames();
+		const auto compatibleValues = Engine::getSong()->automatedValuesAt(TimePos(0));
+		const bool compatibleResumed = compatibleValues.contains(afterModel) && !compatibleValues.contains(latentModel);
+
+		latency.setEnabled(false);
+		delete track;
+		chain.removeEffect(after);
+		chain.removeEffect(latent);
+		delete after;
+		delete latent;
+		channel(1)->setInputLatencyFrames(0);
+
+		QVERIFY(absoluteRejected);
+		QVERIFY(relativeRejected);
+		QVERIFY(rampRejected);
+		QVERIFY(targetRemoved);
+		QCOMPARE(compatibleFrames, 64);
+		QVERIFY(compatibleResumed);
+	}
+
 	void discreteAutomationCompensationKeepsItsFrameOffset()
 	{
+		constexpr int latencyFrames = 64;
+		EffectChain& chain = channel(1)->m_fxChain;
+		channel(1)->setInputLatencyFrames(0);
+		auto* latent = new partd::LatentDelayEffect(&chain, latencyFrames);
+		auto* target = new partd::FixedGainEffect(&chain, 1.f, 1.f);
+		chain.appendEffect(latent);
+		chain.appendEffect(target);
+
 		Song* song = Engine::getSong();
 		auto* track = Track::create(Track::Type::Automation, song);
 		auto* clip = dynamic_cast<AutomationClip*>(track->createClip(TimePos(0)));
-		auto* model = new FloatModel(0.f, 0.f, 1.f, 0.001f);
+		auto* model = new FloatModel(0.f, 0.f, 1.f, 0.001f, target, QStringLiteral("Probe"));
 		clip->addObject(model);
 		clip->putValue(TimePos(0), 0.f, false);
 		clip->putValue(TimePos(8), 1.f, false);
 		clip->setProgressionType(AutomationClip::ProgressionType::Discrete);
 
-		constexpr int latencyFrames = 64;
 		AutomationLatency::instance().setEnabled(true);
-		clip->setLatencyFrames(latencyFrames);
+		QCOMPARE(clip->latencyFrames(), latencyFrames);
 		const double framesPerTick = Engine::framesPerTick();
 		const int frameOffset = static_cast<int>(std::floor(framesPerTick)) - latencyFrames;
 		const int expectedStepFrame = static_cast<int>(std::ceil(framesPerTick - frameOffset + latencyFrames));
@@ -236,7 +426,11 @@ private slots:
 		const float atStep = hasRamp ? ramp->valueAt(expectedStepFrame) : -1.f;
 		AutomationLatency::instance().setEnabled(false);
 		delete track;
-		delete model;
+		chain.removeEffect(target);
+		chain.removeEffect(latent);
+		delete target;
+		delete latent;
+		channel(1)->setInputLatencyFrames(0);
 
 		QVERIFY2(hasRamp, "a compensated Discrete clip did not publish its frame-shifted ramp");
 		QCOMPARE(before, 0.f);
@@ -332,6 +526,20 @@ private slots:
 		QCOMPARE(channel(3)->m_fxChain.effects().size(), devices);
 	}
 
+	void aReceiveRefusesANonFiniteLevel()
+	{
+		// std::clamp passes a NaN through; the JSON wire cannot carry one, an in-process caller's QJsonValue can.
+		const std::size_t devices = channel(3)->m_fxChain.effects().size();
+		for (const double level : {std::nan(""), HUGE_VAL, -HUGE_VAL})
+		{
+			const ControlResult refused = run(QStringLiteral("chain.receive"), {{QStringLiteral("target"), ch(3)},
+				{QStringLiteral("from"), ch(1)}, {QStringLiteral("level"), level}});
+			if (refused.ok) { QVERIFY(run(QStringLiteral("control.undo")).ok); }  // a RED run leaves no receive behind
+			QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+			QVERIFY(Engine::mixer()->channelSidechainSend(1, 3) == nullptr && channel(3)->m_fxChain.effects().size() == devices);
+		}
+	}
+
 	void thePreFadeEnvelope()
 	{
 		const PreFadeSpan span{1000, 100, 200, 0, 0};
@@ -385,6 +593,7 @@ private slots:
 		delete instrument;
 		delete track;
 	}
+
 };
 
 QTEST_MAIN(W3EngineTest)

@@ -46,7 +46,11 @@ const LADSPA_Descriptor descriptor = {
 
 } // namespace
 
-#if defined(_WIN32)
+#if defined(_MSC_VER)
+// ladspa.h declares ladspa_descriptor without dllexport, and MSVC rejects a later definition
+// that adds it (C2375); the CMake target exports the symbol with /EXPORT instead.
+#define LADSPA_FIXTURE_EXPORT
+#elif defined(_WIN32)
 #define LADSPA_FIXTURE_EXPORT __declspec(dllexport)
 #else
 #define LADSPA_FIXTURE_EXPORT __attribute__((visibility("default")))

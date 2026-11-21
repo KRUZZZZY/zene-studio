@@ -43,8 +43,12 @@
 #include "ClipLockFeedback.h"
 #include "Clipboard.h"
 #include "ColorChooser.h"
+#include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "DataFile.h"
+#include "DesignTokens.h"
 #include "DeprecationHelper.h"
+#include "ClipGroupEdits.h"
 #include "EditLocks.h"
 #include "Engine.h"
 #include "embed.h"
@@ -164,7 +168,8 @@ ClipView::ClipView( Clip * clip,
 	move( 0, 0 );
 	show();
 
-	setFixedHeight( tv->getTrackContentWidget()->height() - 1);
+	const int contentHeight = tv->getTrackContentWidget()->height() - 1;
+	setFixedHeight(tokens::accessibleMode() ? std::min(tokens::targetSize(), contentHeight) : contentHeight);
 	setAcceptDrops( true );
 	setMouseTracking( true );
 
@@ -314,8 +319,9 @@ void ClipView::updateLength()
 	else
 	{
 		// this std::max function is needed for clips that do not start or end on the beat, otherwise, they "disappear" when zooming to min 
-		// 3 is the minimum width needed to make a clip visible
-		setFixedWidth(std::max(static_cast<int>(m_clip->length() * pixelsPerBar() / TimePos::ticksPerBar() + 1), 3));
+		// 3 is the minimum width needed to make a clip visible; accessible mode makes the clip a touch target.
+		const int minimum = tokens::accessibleMode() ? tokens::targetSize() : 3;
+		setFixedWidth(std::max(static_cast<int>(m_clip->length() * pixelsPerBar() / TimePos::ticksPerBar() + 1), minimum));
 	}
 	m_trackView->trackContainerView()->update();
 }
@@ -461,7 +467,7 @@ void ClipView::dropEvent( QDropEvent * de )
 	if (arrangerdrop::carriesFile(de->mimeData()))
 	{
 		TrackContentWidget * lane = getTrackView()->getTrackContentWidget();
-		if (lane->dropFile(de->mimeData(), mapTo(lane, position(de)).x())) { de->acceptProposedAction(); }
+		if (lane->dropFile(de->mimeData(), mapTo(lane, position(de)).x(), arrangerdrop::dropModifiers(de))) { de->acceptProposedAction(); }
 		else { de->ignore(); }
 		return;
 	}
@@ -641,6 +647,8 @@ void ClipView::paintTextLabel(QString const & text, QPainter & painter)
  */
 void ClipView::mousePressEvent( QMouseEvent * me )
 {
+	// Q050-255: a plain click on a clip is a new selection; Ctrl+click keeps the summary clips beside it.
+	if (me->button() == Qt::LeftButton && !(me->modifiers() & KBD_COPY_MODIFIER)) { FolderSpanSelection::instance().clear(); }
 	// 0.5.0 ED-010: with the arranger's smart tool, a press in a clip's upper half draws a range.
 	auto* overlay = m_trackView->trackContainerView()->findChild<ArrangerRangeOverlay*>();
 	if (overlay != nullptr && overlay->tool() == ArrangerRangeOverlay::Tool::Smart && me->button() == Qt::LeftButton
@@ -759,7 +767,11 @@ void ClipView::mousePressEvent( QMouseEvent * me )
 				if ( m_action != Action::Split) { s_textFloat->show(); }
 			}
 
+			// Null it at once: showing a top-level float can deliver the matching release before this press
+			// returns (a platform flushes its window events when a window appears), and that release deletes
+			// m_hint again - a double free that corrupted the heap on a click in the Terra harness.
 			delete m_hint;
+			m_hint = nullptr;
 			QString hint;
 			if (m_action == Action::Move || m_action == Action::MoveSelection)
 			{
@@ -1326,7 +1338,14 @@ void ClipView::toggleMute( QVector<ClipView *> clipvs )
 	{
 		// No need to check for nullptr because we check while building the clipvs QVector
 		if (EditLocks::instance().locks(clipv->getClip())) { ++kept; continue; }
-		clipv->getClip()->toggleMute();
+		// 0.5.0 Q050-040 (L07): the mute is the registered clip.set_mute command - the same
+		// implementation agents use, so the GUI toggle and the agent's unmute chase share one
+		// code path and one undo class. An idempotent request (the value is already set) is
+		// fine: the model checkpoint only moves when the value does.
+		Clip* clip = clipv->getClip();
+		ControlRegistry::instance()->invoke(QStringLiteral("clip.set_mute"), QJsonObject{
+			{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("muted"), !clip->isMuted()}});
 	}
 	cliplocks::announceKept(kept);
 }
@@ -1470,7 +1489,7 @@ void ClipView::pressLocked(QMouseEvent* me)
 	if (me->modifiers() & KBD_COPY_MODIFIER) { setSelected(!isSelected()); }
 	else if (!isSelected())
 	{
-		getGUI()->songEditor()->m_editor->selectAllClips(false);
+		if (!(me->modifiers() & Qt::ShiftModifier)) { getGUI()->songEditor()->m_editor->selectAllClips(false); }
 		setSelected(true);
 	}
 	if (m_trackView->trackContainerView()->knifeMode())

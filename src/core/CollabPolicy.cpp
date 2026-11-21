@@ -71,7 +71,9 @@ const QSet<QString>& localIds()
 		QStringLiteral("plugin.preset_rename"), QStringLiteral("project.save"), QStringLiteral("project.save_version"),
 		QStringLiteral("project.save_as_template"), QStringLiteral("project.export_midi"), QStringLiteral("chain.save"),
 		QStringLiteral("chain.remove"), QStringLiteral("chain.rename"), QStringLiteral("scale.define"),
+		// Q050-217.1: the controller's bindings are the machine's, like the launcher's.
 		QStringLiteral("session.bind"), QStringLiteral("session.unbind"), QStringLiteral("session.setlist"),
+		QStringLiteral("session.bind_command"), QStringLiteral("session.unbind_command"),
 		QStringLiteral("controller.template_save"), QStringLiteral("controller.template_delete"),
 		QStringLiteral("track.preset_save"), QStringLiteral("meter.arm"), QStringLiteral("record.journal_begin"),
 		QStringLiteral("record.journal_update"), QStringLiteral("record.journal_finish")};

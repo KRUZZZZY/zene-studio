@@ -39,6 +39,7 @@
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "MasteringJob.h"
 #include "TaskCenter.h"
 
 namespace lmms
@@ -66,6 +67,7 @@ struct RunState
 {
 	QString state = QStringLiteral("idle");
 	QString error;
+	TaskToken task;  //!< the task-area token of the run in flight (setMasteringRunState)
 };
 
 RunState& runStateStore()
@@ -82,6 +84,39 @@ bool isWavName(const QString& name)
 }
 
 } // namespace
+
+QStringList masteringGenreNames()
+{
+	return {QStringLiteral("ambient"), QStringLiteral("classical"),
+		QStringLiteral("contemporary-alt-r-and-b"), QStringLiteral("electronic"),
+		QStringLiteral("folk"), QStringLiteral("hip-hop"), QStringLiteral("jazz"),
+		QStringLiteral("pop"), QStringLiteral("rock")};
+}
+
+QStringList masteringDeliveryTargetNames()
+{
+	QStringList names;
+	for (const MasteringCandidate& candidate : MasteringJob::defaultCandidates())
+	{
+		if (!names.contains(candidate.target.name)) { names.append(candidate.target.name); }
+	}
+	return names;
+}
+
+int masteringGenreMaxLength()
+{
+	int longest = 0;
+	for (const QString& name : masteringGenreNames())
+	{
+		longest = std::max(longest, static_cast<int>(name.size()));
+	}
+	return longest;
+}
+
+QJsonValue masteringChoiceJson(const QString& choice)
+{
+	return choice.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(choice);
+}
 
 QStringList masteringWavFiles(const QString& directory)
 {
@@ -248,10 +283,10 @@ void setMasteringRunState(const QString& state, const QString& error)
 	const void* key = &runStateStore();
 	if (state == QLatin1String("running"))
 	{
-		TaskCenter::instance().begin(key, 0, {QStringLiteral("mastering"), QObject::tr("Master the mix"), {}, {}, false});
+		runStateStore().task = TaskCenter::instance().begin(key, 0, {QStringLiteral("mastering"), QObject::tr("Master the mix"), {}, {}, false});
 	}
-	else if (state == QLatin1String("completed")) { TaskCenter::instance().finish(key, 0, TaskState::Done); }
-	else if (state == QLatin1String("failed")) { TaskCenter::instance().finish(key, 0, TaskState::Failed, error); }
+	else if (state == QLatin1String("completed")) { TaskCenter::instance().finish(runStateStore().task, TaskState::Done); }
+	else if (state == QLatin1String("failed")) { TaskCenter::instance().finish(runStateStore().task, TaskState::Failed, error); }
 }
 
 bool readMasteringReportFile(const QString& path, QJsonObject* report,
@@ -313,10 +348,42 @@ QStringList filesCreatedBy(const QStringList& before, const QStringList& after)
  *  run created and how many revisions it replaced.
  */
 QJsonObject runResultDocument(const QJsonObject& report, const QString& outDir,
-	const QStringList& created, const QMap<QString, QByteArray>& before)
+	const QStringList& created, const QMap<QString, QByteArray>& before,
+	const QString& genre, const QString& deliveryTarget)
 {
 	QJsonObject result = report;
 	result.insert(QStringLiteral("out_dir"), outDir);
+	// The child's own choice labels win: they are what the child wrote into its report.
+	// This side fills a key only when the child's document lacks it, so the two cannot
+	// silently disagree.
+	if (!result.contains(QStringLiteral("genre")))
+	{
+		result.insert(QStringLiteral("genre"), masteringChoiceJson(genre));
+	}
+	if (!result.contains(QStringLiteral("delivery_target")))
+	{
+		result.insert(QStringLiteral("delivery_target"), masteringChoiceJson(deliveryTarget));
+	}
+	// Every candidate row carries the same two labels, so a row read on its own still says
+	// what the run was asked for.
+	if (result.value(QStringLiteral("candidates")).isArray())
+	{
+		QJsonArray rows = result.value(QStringLiteral("candidates")).toArray();
+		for (int i = 0; i < rows.size(); ++i)
+		{
+			QJsonObject row = rows.at(i).toObject();
+			if (!row.contains(QStringLiteral("genre")))
+			{
+				row.insert(QStringLiteral("genre"), masteringChoiceJson(genre));
+			}
+			if (!row.contains(QStringLiteral("delivery_target")))
+			{
+				row.insert(QStringLiteral("delivery_target"), masteringChoiceJson(deliveryTarget));
+			}
+			rows.replace(i, row);
+		}
+		result.insert(QStringLiteral("candidates"), rows);
+	}
 	result.insert(QStringLiteral("files"), masteringFileFacts(masteringWavFiles(outDir)));
 	result.insert(QStringLiteral("created"), QJsonArray::fromStringList(created));
 	result.insert(QStringLiteral("created_count"), created.size());
@@ -463,7 +530,8 @@ void completeMasteringRun(MasteringPendingRun* run, bool finished, int exitCode)
 		const QStringList created =
 			filesCreatedBy(run->before.keys(), masteringWavFiles(run->outDir));
 		recordMasteringUndo(created, run->before);
-		setMasteringLastRun(runResultDocument(report, run->outDir, created, run->before));
+		setMasteringLastRun(runResultDocument(report, run->outDir, created, run->before,
+			run->genre, run->deliveryTarget));
 		setMasteringRunState(QStringLiteral("completed"));
 	}
 

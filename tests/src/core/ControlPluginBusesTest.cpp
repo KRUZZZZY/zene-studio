@@ -27,10 +27,13 @@
  *  instrument tests/src/plugins/BusesTestInstrument.cpp: Main plus Kick and Snare active, Aux that turns on when
  *  asked, Locked that never does): the listing and its fields, routing a bus to a channel and un-routing it,
  *  the refusals (a parallel bus, a missing channel, a bus past the list, a bus the plug-in will not activate, an
- *  instrument with no buses at all), that routing to the channel a bus already uses records no undo step, and the
- *  one-step "a channel per bus" setup with its undo. */
+ *  instrument with no buses at all), that routing to the channel a bus already uses records no undo step, the
+ *  one-step "a channel per bus" setup with its undo, and that the setup is atomic: a bus the plug-in will not
+ *  activate refuses the whole command and leaves no channel and no route behind. */
 
 #include <QtTest>
+
+#include <vector>
 
 #include <QFile>
 #include <QJsonArray>
@@ -64,6 +67,13 @@ QString channelId(int mixerIndex) { return QStringLiteral("ch-%1").arg(Engine::m
 QJsonObject busEntry(const ControlResult& state, int bus)
 {
 	return state.result.value(QStringLiteral("buses")).toArray().at(bus).toObject();
+}
+
+//! How many undo steps the registry holds a transaction for. A command that changed
+//! nothing must not grow this: it would hand out a step it never recorded.
+int transactionCount()
+{
+	return run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray().size();
 }
 
 } // namespace
@@ -221,13 +231,43 @@ private slots:
 		QCOMPARE(model()->routedCount(), 0);
 	}
 
+	//! Cluster new-p11-36: the setup is atomic. A bus the plug-in will not activate refuses the
+	//! whole command, and the channels made for the buses before it are taken away again - the
+	//! caller is told which bus refused instead of getting a half-done setup with no reason.
+	void aBusThePluginWillNotActivateRefusesTheWholeSetup()
+	{
+		Mixer* mixer = Engine::mixer();
+		const auto channelsBefore = mixer->numChannels();
+		const int stepsBefore = transactionCount();
+		const ControlResult refused = run(QStringLiteral("plugin.output_buses_create_channels"),
+			{{QStringLiteral("target"), m_target}});
+		QVERIFY2(!refused.ok, "the command hid the bus the plug-in would not activate");
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY(refused.errorMessage.contains(QStringLiteral("bus 4")));
+		// Nothing is left half-done: no channel, no route, and no undo step for a command that
+		// did not do its work.
+		QCOMPARE(mixer->numChannels(), channelsBefore);
+		QCOMPARE(model()->routeOf(1), -1);
+		QCOMPARE(model()->routedCount(), 0);
+		QCOMPARE(transactionCount(), stepsBefore);
+	}
+
 	void oneStepMakesAChannelForEveryUnroutedBusAndOneUndoRemovesThem()
 	{
 		Mixer* mixer = Engine::mixer();
 		const auto channelsBefore = mixer->numChannels();
+		// The setup is atomic (cluster new-p11-36): the instrument's own layout has a bus the
+		// plug-in never activates (Locked), and that bus refuses the whole command - the case
+		// above. The success path is therefore measured on the buses the plug-in does activate;
+		// the instrument's own layout is put back afterwards.
+		std::vector<InstrumentOutputBus> own;
+		for (int i = 0; i < model()->busCount(); ++i) { own.push_back(*model()->bus(i)); }
+		model()->setLayout({{QStringLiteral("Main"), 2, 0}, {QStringLiteral("Kick"), 2, 2},
+			{QStringLiteral("Snare"), 2, 4}, {QStringLiteral("Aux"), 2, 6}});
 		const ControlResult created = run(QStringLiteral("plugin.output_buses_create_channels"), {{QStringLiteral("target"), m_target}});
 		QVERIFY2(created.ok, qPrintable(created.errorMessage));
-		// Kick, Snare and Aux get a channel; Locked cannot be routed, so its channel is deleted again at once.
+		// Kick, Snare and Aux get a channel; the instrument's own fourth bus (Locked) is not in
+		// this layout, so every bus of it is routed.
 		const QJsonArray made = created.result.value(QStringLiteral("created")).toArray();
 		QCOMPARE(made.size(), 3);
 		QCOMPARE(made.at(0).toObject().value(QStringLiteral("bus")).toInt(), 1);
@@ -237,7 +277,7 @@ private slots:
 		QCOMPARE(QStringLiteral("ch-%1").arg(model()->routeOf(1)), made.at(0).toObject().value(QStringLiteral("channel")).toString());
 		QCOMPARE(model()->routeOf(4), -1);
 
-		// Nothing left to create (Locked still refuses): no channel, no created entries, no step to undo.
+		// Nothing left to create: no channel, no created entries, no step to undo.
 		const ControlResult nothing = run(QStringLiteral("plugin.output_buses_create_channels"), {{QStringLiteral("target"), m_target}});
 		QVERIFY2(nothing.ok, qPrintable(nothing.errorMessage));
 		QVERIFY(nothing.result.value(QStringLiteral("created")).toArray().isEmpty());
@@ -249,6 +289,9 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.redo")).ok);
 		QCOMPARE(mixer->numChannels(), channelsBefore + 3);
 		QCOMPARE(model()->routedCount(), 3);
+		// The instrument's own layout again: the bus the plug-in never activates is back, and
+		// the case above measures the refusal it causes.
+		model()->setLayout(own);
 	}
 };
 

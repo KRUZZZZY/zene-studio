@@ -25,6 +25,7 @@
 #include "Scale.h"
 
 #include <cmath>
+#include <limits>
 #include <QDomElement>
 
 namespace lmms
@@ -43,7 +44,7 @@ bool hasValidIntervalData(const QDomElement& element)
 		if (!hasCents) { return false; }
 		bool validCents = false;
 		const float cents = element.attribute(QStringLiteral("cents")).toFloat(&validCents);
-		return validCents && std::isfinite(cents);
+		return validCents && Interval::centsGiveUsableRatio(cents);
 	}
 	if (!hasNumerator || !hasDenominator || hasCents) { return false; }
 
@@ -56,6 +57,12 @@ bool hasValidIntervalData(const QDomElement& element)
 
 } // namespace
 
+
+bool Interval::centsGiveUsableRatio(float cents)
+{
+	const float ratio = std::exp2(cents / 1200.f);
+	return std::isfinite(ratio) && ratio > 0.f;
+}
 
 Interval::Interval(float cents) :
 	m_numerator(0),
@@ -90,8 +97,27 @@ void Interval::saveSettings(QDomDocument &document, QDomElement &element)
 
 void Interval::loadSettings(const QDomElement &element)
 {
-	m_numerator = element.attribute("num", "0").toULong();
-	m_denominator = element.attribute("den", "0").toULong();
+	// the stored ratio is read as a 64 bit number and only narrowed once it is
+	// KNOWN to fit the 32 bit members: an oversized or unparsable value must
+	// not wrap (4294967298 would become 2) - it falls back to the cents
+	// representation, which is a unison when no cents were stored.
+	bool numeratorOk = false;
+	bool denominatorOk = false;
+	const qulonglong numerator = element.attribute("num", "0").toULongLong(&numeratorOk);
+	const qulonglong denominator = element.attribute("den", "0").toULongLong(&denominatorOk);
+	const bool ratioFits = numeratorOk && denominatorOk
+		&& numerator <= std::numeric_limits<uint32_t>::max()
+		&& denominator <= std::numeric_limits<uint32_t>::max();
+	if (ratioFits)
+	{
+		m_numerator = static_cast<uint32_t>(numerator);
+		m_denominator = static_cast<uint32_t>(denominator);
+	}
+	else
+	{
+		m_numerator = 0;
+		m_denominator = 0;
+	}
 	m_cents = element.attribute("cents", "0").toDouble();
 	if (m_denominator) {m_ratio = static_cast<float>(m_numerator) / m_denominator;}
 	else { m_ratio = std::exp2(m_cents / 1200.f); }
@@ -157,6 +183,9 @@ void Scale::loadSettings(const QDomElement &element)
 		}
 		node = node.nextSibling();
 	}
+	// Keep the constructor's unison fallback when every stored interval is
+	// invalid. Microtuner::keyToFreq assumes a scale has at least one interval.
+	if (m_intervals.empty()) { m_intervals.emplace_back(1, 1); }
 }
 
 

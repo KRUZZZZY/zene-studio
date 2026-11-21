@@ -30,7 +30,7 @@
  *  address, so no packet leaves this machine and no real router can answer. The recorded shapes are a miniupnpd
  *  IGD's. Cases: a mapping and its removal, a renewal that needs no new search, a router that refuses (718), one that
  *  only takes permanent leases (725 then lease 0), a device that is not a gateway, a description that cannot be
- *  read, and no router at all (the search time-out). Then PortMapping::start() end to end: NAT-PMP answered, a silent
+ *  read, a description redirect that is refused rather than followed, and no router at all (the search time-out). Then PortMapping::start() end to end: NAT-PMP answered, a silent
  *  gateway falling back to UPnP, both failing, and no gateway at all. */
 
 #include "lmmsconfig.h"
@@ -39,8 +39,12 @@
 
 #ifdef ZENE_HAVE_COLLAB
 
+#include <algorithm>
 #include <QHash>
+#include <QNetworkAccessManager>
 #include <QNetworkDatagram>
+#include <QNetworkReply>
+#include <QPointer>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QUdpSocket>
@@ -76,6 +80,7 @@ enum class Mode
 	PermanentOnly,     //!< AddPortMapping with a lease: 725 OnlyPermanentLeasesSupported
 	NotAnIgd,          //!< a description without a WAN connection service
 	DescriptionError,  //!< the description is an HTTP 500
+	Redirect,          //!< the description is a 302 to another URL on this machine
 	Silent,            //!< never answers the search
 };
 
@@ -84,6 +89,13 @@ struct Recorded
 	QByteArray requestLine;
 	QByteArray soapAction;
 	QByteArray body;
+};
+
+//! A SOAP action whose answer the test releases by hand: the connection stays open until then.
+struct HeldAction
+{
+	QPointer<QTcpSocket> socket;
+	Recorded request;
 };
 
 QByteArray soapFault(int code, const char* text)
@@ -107,6 +119,16 @@ class FakeRouter : public QObject
 public:
 	Mode mode = Mode::Normal;
 	QList<Recorded> requests;
+	bool holdActions = false;  //!< when set, SOAP answers wait in `held` until releaseHeld() sends them
+	QList<HeldAction> held;
+
+	//! Sends the answer to a held action (by its index in arrival order); the action leaves `held`.
+	void releaseHeld(int index)
+	{
+		if (index < 0 || index >= held.size()) { return; }
+		const HeldAction action = held.takeAt(index);
+		if (action.socket) { answer(action.socket.data(), action.request); }
+	}
 
 	bool start(QString* why)
 	{
@@ -199,6 +221,20 @@ private:
 
 	void respond(QTcpSocket* socket, const Recorded& request)
 	{
+		if (holdActions && !request.requestLine.startsWith("GET")) { held.append({socket, request}); return; }
+		answer(socket, request);
+		return;
+	}
+
+	void answer(QTcpSocket* socket, const Recorded& request)
+	{
+		if (mode == Mode::Redirect && request.requestLine.startsWith("GET /rootDesc.xml"))
+		{
+			socket->write("HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:" + QByteArray::number(m_http.serverPort())
+				+ "/moved/rootDesc.xml\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+			socket->disconnectFromHost();
+			return;
+		}
 		int status = 200;
 		QByteArray body;
 		if (request.requestLine.startsWith("GET")) { body = describe(&status); }
@@ -313,179 +349,42 @@ class UpnpMapperFakeRouterTest : public QObject
 	}
 
 private slots:
-	void initTestCase()
-	{
-		qRegisterMetaType<lmms::portmap::MappingResult>("lmms::portmap::MappingResult");
-		QString why;
-		QVERIFY2(m_router.start(&why), qPrintable(why));
-		QVERIFY(m_gateway.start());
-	}
+	void initTestCase();
 
-	void init()
-	{
-		m_router.mode = Mode::Normal;
-		m_router.requests.clear();
-		m_gateway.silent = false;
-		m_gateway.requests.clear();
-	}
+	void init();
 
-	void aMappingIsMadeRenewedAndRemoved()
-	{
-		UpnpMapper mapper;
-		const MappingResult result = map(mapper, 41740, 3600);
-		QVERIFY2(result.ok, qPrintable(result.message));
-		QCOMPARE(result.method, QStringLiteral("upnp"));
-		QCOMPARE(result.externalPort, quint16(41740));
-		QCOMPARE(result.lifetime, quint32(3600));
-		QCOMPARE(result.externalAddress, QHostAddress(QStringLiteral("203.0.113.9")));
-		QVERIFY(result.message.contains(QStringLiteral("41740")));
+	void aMappingIsMadeRenewedAndRemoved();
 
-		// The description was fetched once, then the two SOAP actions in order.
-		QCOMPARE(m_router.count("GET /rootDesc.xml"), 1);
-		const Recorded add = m_router.last("AddPortMapping");
-		QVERIFY(add.soapAction.contains("urn:schemas-upnp-org:service:WANIPConnection:1#AddPortMapping"));
-		QVERIFY(add.body.contains("<NewExternalPort>41740</NewExternalPort>"));
-		QVERIFY(add.body.contains("<NewInternalPort>41740</NewInternalPort>"));
-		QVERIFY(add.body.contains("<NewProtocol>TCP</NewProtocol>"));
-		QVERIFY(add.body.contains("<NewInternalClient>" + m_lan.toLatin1() + "</NewInternalClient>"));
-		QVERIFY(add.body.contains("<NewLeaseDuration>3600</NewLeaseDuration>"));
-		QVERIFY(add.body.contains("Zene Studio collaboration"));
-		QCOMPARE(m_router.count("GetExternalIPAddress"), 1);
+	//! The first AddPortMapping after a discovery must ask for the lease the caller asked for, not a fixed one.
+	void theFirstMappingAfterDiscoveryAsksForTheRequestedLease();
 
-		// A renewal knows the router already: no new search or description, just the mapping again.
-		const MappingResult renewed = map(mapper, 41740, 3600);
-		QVERIFY2(renewed.ok, qPrintable(renewed.message));
-		QCOMPARE(m_router.count("GET /rootDesc.xml"), 1);
-		QCOMPARE(m_router.count("AddPortMapping"), 2);
+	void aRouterThatRefusesIsReportedWithItsOwnWords();
 
-		// Removing it tells the router, once; a second removal has nothing to remove.
-		mapper.unmap();
-		QTRY_COMPARE_WITH_TIMEOUT(m_router.count("DeletePortMapping"), 1, 5000);
-		const Recorded removal = m_router.last("DeletePortMapping");
-		QVERIFY(removal.body.contains("<NewExternalPort>41740</NewExternalPort>"));
-		QVERIFY(removal.body.contains("<NewProtocol>TCP</NewProtocol>"));
-		mapper.unmap();
-		QTest::qWait(100);
-		QCOMPARE(m_router.count("DeletePortMapping"), 1);
-	}
+	void aRouterThatOnlyTakesPermanentLeasesIsAskedAgainWithoutOne();
 
-	void aRouterThatRefusesIsReportedWithItsOwnWords()
-	{
-		m_router.mode = Mode::Refuse718;
-		UpnpMapper mapper;
-		const MappingResult result = map(mapper, 41741, 3600);
-		QVERIFY(!result.ok);
-		QVERIFY2(result.message.contains(QStringLiteral("refused the UPnP mapping")), qPrintable(result.message));
-		QVERIFY2(result.message.contains(QStringLiteral("UPnP error 718: ConflictInMappingEntry")), qPrintable(result.message));
-		QCOMPARE(m_router.count("GetExternalIPAddress"), 0);
-		mapper.unmap();  // nothing was mapped: nothing is removed
-		QTest::qWait(100);
-		QCOMPARE(m_router.count("DeletePortMapping"), 0);
-	}
+	void aDeviceThatIsNotAGatewayAndAnUnreadableDescriptionAreRefusedPlainly();
 
-	void aRouterThatOnlyTakesPermanentLeasesIsAskedAgainWithoutOne()
-	{
-		m_router.mode = Mode::PermanentOnly;
-		UpnpMapper mapper;
-		const MappingResult result = map(mapper, 41742, 3600);
-		QVERIFY2(result.ok, qPrintable(result.message));
-		QCOMPARE(result.lifetime, quint32(0));  // permanent
-		QCOMPARE(m_router.count("AddPortMapping"), 2);
-		QVERIFY(m_router.last("AddPortMapping").body.contains("<NewLeaseDuration>0</NewLeaseDuration>"));
-	}
+	void aRedirectedDescriptionIsRefusedNotFollowed();
 
-	void aDeviceThatIsNotAGatewayAndAnUnreadableDescriptionAreRefusedPlainly()
-	{
-		m_router.mode = Mode::NotAnIgd;
-		{
-			UpnpMapper mapper;
-			const MappingResult result = map(mapper, 41743, 3600);
-			QVERIFY(!result.ok);
-			QVERIFY2(result.message.contains(QStringLiteral("not an internet gateway")), qPrintable(result.message));
-		}
-		m_router.mode = Mode::DescriptionError;
-		{
-			UpnpMapper mapper;
-			const MappingResult result = map(mapper, 41744, 3600);
-			QVERIFY(!result.ok);
-			QVERIFY2(result.message.contains(QStringLiteral("description could not be read")), qPrintable(result.message));
-		}
-		QCOMPARE(m_router.count("AddPortMapping"), 0);
-	}
+	void noRouterAtAllEndsTheSearchWithAPlainMessage();
 
-	void noRouterAtAllEndsTheSearchWithAPlainMessage()
-	{
-		m_router.mode = Mode::Silent;
-		UpnpMapper mapper;
-		const MappingResult result = map(mapper, 41745, 3600, 8000);
-		QVERIFY(!result.ok);
-		QVERIFY2(result.message.contains(QStringLiteral("no UPnP router answered")), qPrintable(result.message));
-		QCOMPARE(m_router.count("GET"), 0);
-	}
+	void startMapsThroughNatPmpWhenTheGatewayAnswers();
 
-	void startMapsThroughNatPmpWhenTheGatewayAnswers()
-	{
-		PortMapping mapping;
-		aim(mapping);
-		const MappingResult result = start(mapping, 41750);
-		QVERIFY2(result.ok, qPrintable(result.message));
-		QCOMPARE(result.method, QStringLiteral("nat-pmp"));
-		QCOMPARE(result.externalPort, quint16(40000));
-		QCOMPARE(m_router.requests.size(), 0);  // UPnP was never needed
-		const QJsonObject json = mapping.toJson();
-		QCOMPARE(json.value(QStringLiteral("gateway")).toString(), QStringLiteral("127.0.0.1"));
-		QCOMPARE(json.value(QStringLiteral("gateway_guessed")).toBool(), false);
-		QCOMPARE(json.value(QStringLiteral("lan_address")).toString(), QStringLiteral("127.0.0.1"));
-		QCOMPARE(json.value(QStringLiteral("internal_port")).toInt(), 41750);
-		QVERIFY(!mapping.busy());
-		mapping.stop();
-		QVERIFY(!mapping.result().ok);
-	}
+	void aSilentGatewayFallsBackToUpnpAndStopRemovesTheMapping();
 
-	void aSilentGatewayFallsBackToUpnpAndStopRemovesTheMapping()
-	{
-		m_gateway.silent = true;
-		PortMapping mapping;
-		aim(mapping);
-		const MappingResult result = start(mapping, 41751);
-		QVERIFY2(result.ok, qPrintable(result.message));
-		QCOMPARE(result.method, QStringLiteral("upnp"));
-		QVERIFY(m_gateway.requests.size() >= 2);  // PCP then NAT-PMP were tried first
-		QVERIFY(m_router.last("AddPortMapping").body.contains("<NewInternalClient>127.0.0.1</NewInternalClient>"));
-		QVERIFY(m_router.last("AddPortMapping").body.contains("<NewExternalPort>41751</NewExternalPort>"));
-		mapping.stop();
-		QTRY_COMPARE_WITH_TIMEOUT(m_router.count("DeletePortMapping"), 1, 5000);
-	}
+	//! stop() and start() again while the first AddPortMapping is still out: its stale answer must not make the router
+	//! delete the mapping that the newer attempt is adding on the same port.
+	void staleAddAfterStopAndRestartKeepsTheNewerMapping();
 
-	void whenBothFailTheMessageNamesBothAndWhatToDo()
-	{
-		m_gateway.silent = true;
-		m_router.mode = Mode::Refuse718;
-		PortMapping mapping;
-		aim(mapping);
-		const MappingResult result = start(mapping, 41752);
-		QVERIFY(!result.ok);
-		QVERIFY2(result.message.contains(QStringLiteral("did not answer PCP or NAT-PMP")), qPrintable(result.message));
-		QVERIFY2(result.message.contains(QStringLiteral("UPnP error 718")), qPrintable(result.message));
-		QVERIFY2(result.message.contains(QStringLiteral("forward TCP port 41752 to 127.0.0.1")), qPrintable(result.message));
-		QVERIFY(!mapping.busy());
-	}
+	//! With nothing newer running, a stale AddPortMapping answer is still taken back: stop() leaves no entry behind.
+	void staleAddAfterStopIsTakenBack();
 
-	void withNoGatewayItGoesStraightToUpnp()
-	{
-		PortMapping mapping;
-		PortMapping::TestEndpoints endpoints;  // no gateway at all
-		endpoints.local = QHostAddress(QHostAddress::LocalHost);
-		endpoints.upnpSearch = QHostAddress(QHostAddress::LocalHost);
-		endpoints.upnpSearchPort = m_router.searchPort();
-		mapping.setTestEndpoints(endpoints);
-		const MappingResult result = start(mapping, 41753);
-		QVERIFY2(result.ok, qPrintable(result.message));
-		QCOMPARE(result.method, QStringLiteral("upnp"));
-		QCOMPARE(m_gateway.requests.size(), 0);
-		mapping.stop();
-	}
+	void whenBothFailTheMessageNamesBothAndWhatToDo();
+
+	void withNoGatewayItGoesStraightToUpnp();
 };
+
+#include "UpnpMapperFakeRouterTestParts1.h"
 
 QTEST_GUILESS_MAIN(UpnpMapperFakeRouterTest)
 #include "UpnpMapperFakeRouterTest.moc"

@@ -23,23 +23,76 @@
 
 #include <QtTest>
 
+#include <QDataStream>
+#include <QDomDocument>
+#include <QDropEvent>
+#include <QFile>
 #include <QFontMetrics>
+#include <QMimeData>
 #include <QPainter>
+#include <QTemporaryDir>
 
+#include "Clipboard.h"
 #include "Engine.h"
 #include "EnvelopeAndLfoParameters.h"
+#include "EnvelopeAndLfoView.h"
 #include "FontHelper.h"
 #include "LfoGraph.h"
 
 using namespace lmms;
 using namespace lmms::gui;
 
+namespace
+{
+
+//! A small wave file, so the LFO has a user-defined shape to sample.
+bool writeWaveFile(const QString& path, bool rising)
+{
+	QFile file(path);
+	if (!file.open(QIODevice::WriteOnly)) { return false; }
+	QDataStream out(&file);
+	out.setByteOrder(QDataStream::LittleEndian);
+	constexpr quint32 sampleCount = 8;
+	constexpr quint32 dataBytes = sampleCount * sizeof(qint16);
+	out.writeRawData("RIFF", 4);
+	out << quint32(36 + dataBytes);
+	out.writeRawData("WAVEfmt ", 8);
+	out << quint32(16) << quint16(1) << quint16(1) << quint32(44100)
+		<< quint32(88200) << quint16(2) << quint16(16);
+	out.writeRawData("data", 4);
+	out << dataBytes;
+	for (quint32 i = 0; i < sampleCount; ++i)
+	{
+		out << static_cast<qint16>(rising ? i * 1000 : (sampleCount - i) * 1000);
+	}
+	return out.status() == QDataStream::Ok;
+}
+
+//! The envelope view with its drop handler reachable, so that a test can
+//! drive the drop path without a running drag.
+class TestableEnvelopeAndLfoView : public EnvelopeAndLfoView
+{
+public:
+	using EnvelopeAndLfoView::EnvelopeAndLfoView;
+	using EnvelopeAndLfoView::dropEvent;
+};
+
+} // namespace
+
 class LfoGraphTest : public QObject
 {
 	Q_OBJECT
 
 private slots:
-	void initTestCase() { Engine::init(true); }
+	void initTestCase()
+	{
+		Engine::init(true);
+		QVERIFY(m_tempDir.isValid());
+		m_wavePath = m_tempDir.filePath(QStringLiteral("custom-lfo.wav"));
+		QVERIFY(writeWaveFile(m_wavePath, true));
+		m_otherWavePath = m_tempDir.filePath(QStringLiteral("custom-lfo-2.wav"));
+		QVERIFY(writeWaveFile(m_otherWavePath, false));
+	}
 	void cleanupTestCase() { Engine::destroy(); }
 
 	void labelBackingUsesAdjustedFontMetrics()
@@ -91,6 +144,44 @@ private slots:
 		QVERIFY2(backingPixelsOutsideOriginalMetrics > 0,
 			"the label background did not cover the adjusted-font area beyond the original metrics");
 	}
+
+	/*! Dropping a wave file on the envelope view must publish the new wave:
+	 *  the audio path samples the wave of the published parameters, also when
+	 *  the LFO wave shape is already the user-defined one and no model value
+	 *  changes (that is the case that used to leave playback on the old wave). */
+	void droppingAUserWavePublishesIt()
+	{
+		EnvelopeAndLfoParameters params(0.f, nullptr);
+		QDomDocument document;
+		QDomElement settings = document.createElement(QStringLiteral("elvol"));
+		settings.setAttribute(QStringLiteral("lshp"),
+			QString::number(static_cast<int>(EnvelopeAndLfoParameters::LfoShape::UserDefinedWave)));
+		settings.setAttribute(QStringLiteral("userwavefile"), m_wavePath);
+		params.loadSettings(settings);
+		const auto before = params.getLfoUserWave();
+		QVERIFY(before != nullptr);
+		QVERIFY(before->size() > 0);
+
+		TestableEnvelopeAndLfoView view(nullptr);
+		view.setModel(&params);
+
+		QMimeData mime;
+		mime.setData(Clipboard::mimeType(Clipboard::MimeType::StringPair),
+			QStringLiteral("samplefile:").append(m_otherWavePath).toUtf8());
+		QDropEvent drop(QPointF(10, 10), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+		view.dropEvent(&drop);
+
+		const auto after = params.getLfoUserWave();
+		QVERIFY2(after != before,
+			"the dropped wave was not published: playback would keep the previous wave");
+		QVERIFY(after != nullptr);
+		QVERIFY(after->size() > 0);
+	}
+
+private:
+	QTemporaryDir m_tempDir;
+	QString m_wavePath;
+	QString m_otherWavePath;
 };
 
 QTEST_MAIN(LfoGraphTest)

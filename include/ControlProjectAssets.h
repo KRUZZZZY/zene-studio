@@ -28,6 +28,8 @@
 #ifndef LMMS_CONTROL_PROJECT_ASSETS_H
 #define LMMS_CONTROL_PROJECT_ASSETS_H
 
+#include <functional>
+
 #include <QJsonArray>
 #include <QString>
 #include <QStringList>
@@ -178,6 +180,23 @@ LMMS_EXPORT bool controlScanProjectAssets(const QString& projectPath, ProjectAss
  *  still holds exactly the bytes it held before (a missing source, or a target that cannot be
  *  replaced, leaves it alone). @a source is left in place for the caller to remove. */
 LMMS_EXPORT bool controlReplaceFileAtomically(const QString& source, const QString& target, ControlResult* error);
+
+/*! The path `project.export_midi` writes the export to BEFORE it replaces the target: a SIBLING
+ *  of the target with a unique, unpredictable name (a UUID), so a file the user keeps beside the
+ *  target is never written to and never removed. A collision is therefore practically impossible -
+ *  but the export still has to behave correctly WHEN it happens, and only a test can make it
+ *  happen on purpose: see setControlExportMidiTempPathHook(). */
+LMMS_EXPORT QString controlExportMidiTempPath(const QString& targetPath);
+
+/*! A TEST hook, called with the temporary path just BEFORE the export claims it (creates it
+ *  exclusively). A test that puts a file at that path forces the collision case exactly where it
+ *  happens - between the export's decision to write and its claim on the path - deterministically
+ *  and without a race. Nothing in the product sets it; passing an empty function restores the
+ *  product's own behaviour. */
+using ExportMidiTempPathHook = std::function<void(const QString& tempPath)>;
+
+/*! Installs the hook above (see setControlExportMidiTempPathHook's contract). */
+LMMS_EXPORT void setControlExportMidiTempPathHook(ExportMidiTempPathHook hook);
 
 /*! Inflates a qCompress() stream (4-byte big-endian expanded size, then zlib) into \a out, refusing
  *  as soon as the bytes PRODUCED would pass \a cap. False when the stream does not inflate, would pass the

@@ -27,15 +27,20 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <QCryptographicHash>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QStringList>
+#include <QtGlobal>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QByteArrayView>
+#endif
 
 #include "ConfigManager.h"
 #include "ControlAutomationSupport.h"
-#include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
@@ -83,25 +88,42 @@ QString resolveScriptDir()
 	return firstExisting;
 }
 
+//! SHA-256 of a script, hashed in 64 KiB reads so a script of any size costs one chunk
+//! of memory. An unreadable script yields an EMPTY hash, never the well-known SHA-256 of
+//! zero bytes: 'bytes: 412' beside that hash would read as a claim about 412 bytes, and
+//! it is a claim about none.
+QString scriptFileSha256(const QString& path)
+{
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly)) { return {}; }
+
+	QCryptographicHash hash(QCryptographicHash::Sha256);
+	while (!file.atEnd())
+	{
+		const QByteArray chunk = file.read(64 * 1024);
+		if (chunk.isEmpty())
+		{
+			if (file.atEnd() && file.error() == QFileDevice::NoError) { break; }
+			return {};
+		}
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+		hash.addData(QByteArrayView(chunk));
+#else
+		// Qt 5 (hosted CI) has no QByteArrayView; its QByteArray overload hashes the same bytes.
+		hash.addData(chunk);
+#endif
+	}
+	if (file.error() != QFileDevice::NoError) { return {}; }
+	return QString::fromLatin1(hash.result().toHex());
+}
+
 QJsonObject scriptEntryJson(const QFileInfo& file)
 {
-	QByteArray bytes;
-	// The helper writes its refusal into the ControlResult, so a local one is
-	// passed rather than a null: an unreadable script is reported with an empty
-	// hash instead of taking the socket down. The hash is EMPTY, never the
-	// well-known SHA-256 of zero bytes: 'bytes: 412' beside that hash would read as
-	// a claim about 412 bytes, and it is a claim about none.
-	ControlResult unreadable;
-	const bool readable = controlReadFileBytes(file.absoluteFilePath(), &bytes, &unreadable);
-	if (!readable)
-	{
-		bytes.clear();
-	}
 	QJsonObject entry;
 	entry.insert(QStringLiteral("name"), file.fileName());
 	entry.insert(QStringLiteral("path"), file.absoluteFilePath());
 	entry.insert(QStringLiteral("bytes"), static_cast<qint64>(file.size()));
-	entry.insert(QStringLiteral("sha256"), readable ? controlSha256OfBytes(bytes) : QString());
+	entry.insert(QStringLiteral("sha256"), scriptFileSha256(file.absoluteFilePath()));
 	return entry;
 }
 
@@ -288,6 +310,10 @@ ControlResult scriptRun(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, checkpoint.note);
 	}
+	if (!checkpoint.taken())
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, checkpoint.note);
+	}
 	ProjectJournal* journal = Engine::projectJournal();
 	const quint64 serialBefore = journal != nullptr ? journal->topStepSerial() : 0;
 
@@ -375,16 +401,21 @@ ControlResult scriptSetMemoryBudget(const QJsonObject& args)
 	ScriptEngine* engine = ScriptEngine::instance();
 	const quint64 previous = engine->memoryBudget();
 	const quint64 bytes = static_cast<quint64>(requested);
-	engine->setMemoryBudget(bytes);
+	const bool changed = previous != bytes;
+	// BUG 12: a cap the engine already has is neither set again nor recorded. A
+	// transaction for it would be a reversible no-op on top of the last real
+	// change, and the next control.undo would spend its one step on that no-op.
+	if (changed) { engine->setMemoryBudget(bytes); }
 
 	QJsonObject out;
 	out.insert(QStringLiteral("memory_budget"), static_cast<qint64>(bytes));
 	out.insert(QStringLiteral("previous_memory_budget"), static_cast<qint64>(previous));
-	out.insert(QStringLiteral("changed"), previous != bytes);
+	out.insert(QStringLiteral("changed"), changed);
 	out.insert(QStringLiteral("min_memory_budget"),
 		static_cast<qint64>(ScriptEngine::MinMemoryBudgetBytes));
 	out.insert(QStringLiteral("max_memory_budget"),
 		static_cast<qint64>(ScriptEngine::MaxMemoryBudgetBytes));
+	if (!changed) { return ControlResult::success(out); }
 	out.insert(QStringLiteral("__transaction"),
 		QJsonObject{{QStringLiteral("before"),
 						QJsonObject{{QStringLiteral("memory_budget"), static_cast<qint64>(previous)}}},

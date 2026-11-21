@@ -61,6 +61,7 @@
 #include "SampleClip.h"
 #include "Song.h"
 #include "Track.h"
+#include "DeprecationHelper.h"
 
 using namespace lmms;
 
@@ -238,7 +239,7 @@ private slots:
 		const WavFacts facts = wavFacts(wav);
 		QCOMPARE(facts.frames, static_cast<qint64>(FakeRate) * FakeSeconds);
 		QVERIFY2(std::fabs(facts.peak - 0.1f) < 0.01f, qPrintable(QStringLiteral("peak %1").arg(facts.peak)));
-		QCOMPARE(landed.result.value(QStringLiteral("frames")).toInteger(), facts.frames);
+		QCOMPARE(jsonInteger(landed.result.value(QStringLiteral("frames"))), facts.frames);
 
 		// A NEW audio track named after the source holds the file; the source is muted.
 		QCOMPARE(trackCount(), before + 1);
@@ -272,7 +273,7 @@ private slots:
 		// 96 ticks of the project's tempo, not the render's whole length.
 		const qint64 frames = wavFacts(wav).frames;
 		QVERIFY2(frames > 0 && frames < static_cast<qint64>(FakeRate) * FakeSeconds / 2, qPrintable(QString::number(frames)));
-		QCOMPARE(landed.result.value(QStringLiteral("frames")).toInteger(), frames);
+		QCOMPARE(jsonInteger(landed.result.value(QStringLiteral("frames"))), frames);
 		Track* landedTrack = resolved(landed.result.value(QStringLiteral("landed_track")).toString());
 		QVERIFY(landedTrack != nullptr);
 		QCOMPARE(static_cast<int>(landedTrack->getClips().front()->startPosition().getTicks()), 48);
@@ -309,6 +310,37 @@ private slots:
 		QVERIFY(!source->isMuted());
 		QVERIFY(!QFileInfo::exists(wav));
 		QCOMPARE(before + 1, tracks);
+	}
+
+	/*! A bounce whose output path IS the open project file must refuse. The render
+	 *  is staged and then installed over the output path, so without the guard the
+	 *  session file is replaced by WAV bytes. The session is saved for real first,
+	 *  so it is the open project; the refusal must leave those bytes identical and
+	 *  add no track.
+	 */
+	void bounceRefusesToOverwriteTheOpenProjectFile()
+	{
+		Track* source = trackWithClip(QStringLiteral("Lead"));
+		const QString project = out(QStringLiteral("session.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(project));
+		Engine::getSong()->noteProjectSaved(project);  // what save-as does once the file is written
+		QCOMPARE(Engine::getSong()->projectFileName(), project);
+		QFile saved(project);
+		QVERIFY(saved.open(QIODevice::ReadOnly));
+		const QByteArray session = saved.readAll();
+		saved.close();
+		QVERIFY(!session.isEmpty());
+		const int tracks = trackCount();
+
+		const ControlResult refused = run(QStringLiteral("bounce.land"), {{QStringLiteral("track"), control::trackIdOf(source)}, {QStringLiteral("out"), project}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(refused.errorMessage.contains(QStringLiteral("open project file")), qPrintable(refused.errorMessage));
+		QCOMPARE(trackCount(), tracks);
+		QVERIFY(!source->isMuted());
+
+		QFile after(project);
+		QVERIFY(after.open(QIODevice::ReadOnly));
+		QCOMPARE(after.readAll(), session);
 	}
 
 	void flattenReplacesTheTrackWithItsRenderAndUndoRestoresIt()
@@ -359,6 +391,45 @@ private slots:
 		QCOMPARE(trackCount(), 1);
 		QCOMPARE(Engine::getSong()->tracks().front(), source);  // the same object: nothing was replaced
 		QVERIFY(!QFileInfo::exists(wav));
+	}
+
+	/*! A flatten REPLACES the track, so a track that makes no audio must be refused before anything changes: an
+	 *  automation lane renders silence and flattening it would delete its automation. The lane holds a clip, so
+	 *  the empty-track refusal does not catch it; a folder holds no clip and is refused by that check instead of
+	 *  by its type, so both are pinned here.
+	 */
+	void flattenRefusesATrackThatCarriesNoAudio()
+	{
+		trackWithClip(QStringLiteral("Keep"));
+		Track* lane = Track::create(Track::Type::Automation, Engine::getSong());
+		lane->createClip(TimePos(0));
+		Track* folder = Track::create(Track::Type::Folder, Engine::getSong());
+		const int before = trackCount();
+		const QString wav = out(QStringLiteral("automation-flat.wav"));
+
+		for (Track* track : {lane, folder})
+		{
+			const ControlResult flat = run(QStringLiteral("track.flatten"), {{QStringLiteral("track"), control::trackIdOf(track)}, {QStringLiteral("out"), wav}});
+			QCOMPARE(flat.errorKind, ControlErrorKind::Refused);
+			QVERIFY2(flat.errorMessage.contains(QStringLiteral("no audio")), qPrintable(flat.errorMessage));
+		}
+		QCOMPARE(trackCount(), before);
+		QVERIFY(std::find(Engine::getSong()->tracks().begin(), Engine::getSong()->tracks().end(), lane) != Engine::getSong()->tracks().end());
+		QCOMPARE(lane->numOfClips(), 1);
+		QVERIFY(!QFileInfo::exists(wav));
+	}
+
+	//! The queued flatten is the same command, so it refuses the same track at submit - before any job exists.
+	void queuedFlattenRefusesATrackThatCarriesNoAudio()
+	{
+		Track* lane = Track::create(Track::Type::Automation, Engine::getSong());
+		lane->createClip(TimePos(0));
+		const int before = trackCount();
+		const ControlResult accepted = run(QStringLiteral("render.queue_bounce"), {{QStringLiteral("operation"), QStringLiteral("flatten")},
+			{QStringLiteral("track"), control::trackIdOf(lane)}, {QStringLiteral("out"), out(QStringLiteral("automation-queued.wav"))}});
+		QCOMPARE(accepted.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(accepted.errorMessage.contains(QStringLiteral("no audio")), qPrintable(accepted.errorMessage));
+		QCOMPARE(trackCount(), before);
 	}
 
 	void rangeBounceRendersTheSelectedTracksTogetherOntoOneNewTrack()

@@ -48,15 +48,17 @@
  *     call for the same reason ("If we are running without the project loaded
  *     (from CLI), 'local:' base prefixes aren't converted, so we need to convert
  *     it ourselves", src/core/DataFile.cpp:569-575).
- *   - a legacy relative path (no prefix) that names no user/factory sample comes
- *     back from PathUtil::toAbsolute still relative (PathUtil::oldRelativeUpgrade
- *     returns the input unchanged when nothing matched). It is then resolved
- *     against the project's directory - again the rule copyResources uses.
+ *   - a legacy relative path (no prefix) that names no user/factory sample is
+ *     resolved against the PROJECT'S OWN DIRECTORY - again the rule
+ *     copyResources uses. It used to fall out of PathUtil::toAbsolute handing
+ *     such a path back still relative (PathUtil::oldRelativeUpgrade returns the
+ *     input unchanged when nothing matched); toAbsolute now resolves an
+ *     unmatched relative path against the working directory, so the project
+ *     directory is applied here instead - see resolveAssetPath.
  */
 
 #include "ControlProjectAssets.h"
 
-#include <QByteArrayView>
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -64,6 +66,10 @@
 #include <QStringList>
 #include <QTextStream>
 #include <QtEndian>
+#include <QtGlobal>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QByteArrayView>
+#endif
 
 #include <algorithm>
 
@@ -85,11 +91,13 @@ namespace projectassets
 //! Defined once, declared in the shared header: the elements a project file
 //! references a file from. See AssetElement's own comment for the four sites
 //! that write these attributes.
-const AssetElement kAssetElements[4] = {
+const AssetElement kAssetElements[6] = {
 	{"sampleclip", "src", "data", ""},
 	{"audiofileprocessor", "src", "sampledata", ""},
 	{"sf2player", "src", "", ""},
+	{"sfzplayer", "src", "", ""},  // SfzPlayer::saveSettings (the .sfz; its samples are read by the SFZ itself)
 	{"clip", "src", "", "session/clips"},
+	{"track", "frozenAudio", "", ""},  // Track::saveTrack: a frozen take's render
 };
 
 bool elementMatches(const AssetElement& spec, const QString& tag, const QString& parentChain)
@@ -118,9 +126,22 @@ Resolution resolveAssetPath(const QString& projectDir, const QString& raw)
 	}
 
 	// PathUtil owns every other prefix (factorysample:, usersample:, ...) and
-	// the legacy no-prefix form; it returns the input unchanged when none of
-	// its bases holds the file.
+	// the legacy no-prefix form.
 	const PathUtil::Base base = PathUtil::baseLookup(forward);
+	// A legacy relative path (no prefix) that names no user/factory sample is
+	// relative to the PROJECT's own directory. toAbsolute resolves such a path
+	// against the working directory, so the project directory has to be applied
+	// here - before toAbsolute is asked - or the reference would be taken away
+	// from the project that carries it.
+	if (base == PathUtil::Base::Absolute && !QFileInfo(forward).isAbsolute()
+		&& PathUtil::baseLookup(PathUtil::oldRelativeUpgrade(forward)) == PathUtil::Base::Absolute)
+	{
+		out.path = QDir::cleanPath(projectDir + QLatin1Char('/') + forward);
+		out.via = QStringLiteral("project-dir");
+		out.resolved = QFileInfo(out.path).isAbsolute();
+		return out;
+	}
+
 	const QString absolute = PathUtil::toAbsolute(forward);
 	if (QFileInfo(absolute).isAbsolute())
 	{
@@ -544,7 +565,11 @@ void projectassets::hashReference(ProjectAssetReference* ref, qint64 byteCap)
 			return;
 		}
 		bytesRead += count;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 		hasher.addData(QByteArrayView(buffer, static_cast<qsizetype>(count)));
+#else
+		hasher.addData(buffer, static_cast<int>(count));   // Qt 5 (hosted CI); count <= the read buffer's size
+#endif
 	}
 	ref->sha256 = QString::fromLatin1(hasher.result().toHex());
 	ref->hashed = true;

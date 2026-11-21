@@ -53,7 +53,9 @@ namespace sampleops
 enum class Kind { Tone, White, Pink, Silence };
 
 //! \p amplitude is the peak scale in linear 0..1 applied to tone and noise
-//! (silence ignores it); \p frequencyHz only reaches the tone generator.
+//! (silence ignores it); \p frequencyHz only reaches the tone generator. A tone
+//! needs a positive \p sampleRate: at zero or below it returns no frames at all
+//! (never NaN frames). \p sampleRate does not affect the other kinds.
 std::vector<SampleFrame> generate(Kind kind, double frequencyHz, float amplitude,
 	f_cnt_t frames, int sampleRate);
 
@@ -72,6 +74,21 @@ std::vector<SampleFrame> fade(const SampleFrame* in, f_cnt_t frames, bool fadeIn
 //! The largest absolute sample across both channels (0 for an empty range),
 //! which is the number `sample.normalize` scales against.
 float peakOf(const SampleFrame* in, f_cnt_t frames);
+
+//! The two channels of a stereo source as separate mono signals, frame for
+//! frame - `sample.split_stereo`'s two output files. No resampling, no
+//! trimming and no mixing: index i is source frame i.
+struct StereoChannels
+{
+	std::vector<float> left;
+	std::vector<float> right;
+};
+StereoChannels splitStereo(const SampleFrame* in, f_cnt_t frames);
+
+//! The documented mono downmix of `sample.edit_range` op "mono": every frame
+//! becomes (L + R) / 2 on BOTH channels (SampleFrame::average's arithmetic),
+//! so playback is dual-mono and the source keeps its rate and frame count.
+std::vector<SampleFrame> toMono(const SampleFrame* in, f_cnt_t frames);
 
 } // namespace sampleops
 } // namespace lmms

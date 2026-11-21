@@ -67,6 +67,10 @@ struct SessionCheckpoint
 	qint64 limit = 0;          //!< the byte budget it was measured against
 	QString fileBefore;        //!< the project file name the session had
 	QStringList skippedBefore; //!< sections omitted from a partial session before the action
+	//! The container format each captured session had: a restore keeps the format of the session it
+	//! replaces, so the format of a restored snapshot has to travel with the checkpoint.
+	bool containerV2Before = false; //!< the pre-action session was a v2 container
+	bool containerV2After = false;  //!< the post-action session was a v2 container (the redo state)
 	QString note;              //!< the plain-words reason when not Taken
 	bool pushed = false;       //!< the undo step is on the journal
 

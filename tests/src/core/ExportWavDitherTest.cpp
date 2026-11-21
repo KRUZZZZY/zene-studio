@@ -55,7 +55,14 @@
 #include <cmath>
 #include <cstdio>
 #include <memory>
+#include <type_traits>
+#include <utility>
 #include <vector>
+
+#ifdef Q_OS_UNIX
+#include <csignal>
+#include <sys/resource.h>
+#endif
 
 #include <sndfile.h>
 
@@ -100,6 +107,26 @@ std::vector<float> lowLevelSine(std::size_t count, double cycles, double amplitu
 	return signal;
 }
 
+//! Deterministic, nontrivial stereo-friendly material: two partials plus a
+//! fixed-seed LCG noise floor, so a FLAC encoder has real prediction work to
+//! do and different compression settings pack it differently. No libc rand(),
+//! no clock: the same samples on every run and every platform.
+std::vector<float> richSignal(std::size_t count)
+{
+	constexpr double kPi = 3.14159265358979323846;
+	std::vector<float> signal(count);
+	std::uint32_t state = 12345u;
+	for (std::size_t i = 0; i < count; ++i)
+	{
+		state = state * 1664525u + 1013904223u;
+		const double noise = static_cast<double>(state >> 8) / 8388608.0 - 1.0; // [-1, 1)
+		const double t = static_cast<double>(i) / 44100.0;
+		signal[i] = static_cast<float>(0.5 * std::sin(2.0 * kPi * 440.0 * t)
+			+ 0.25 * std::sin(2.0 * kPi * 3137.0 * t) + 0.1 * noise);
+	}
+	return signal;
+}
+
 void evidence(const char* label, double a, double b = 0.0)
 {
 	std::printf("DITHER_EVIDENCE %-52s %14.9f %14.9f\n", label, a, b);
@@ -116,6 +143,59 @@ int maxSampleDelta(const std::vector<std::int16_t>& expected,
 			static_cast<int>(expected[i]) - static_cast<int>(actual[i])));
 	}
 	return maximum;
+}
+
+//! True when the device's writeBuffer() hands back a result (the API the
+//! new-p12-317 fix introduced). The tree WITHOUT the fix returns nothing, so it
+//! cannot report a failed write - the test then fails on the other evidence,
+//! never on a compile error.
+template <typename T, typename = void>
+struct WriteBufferReports : std::false_type {};
+
+template <typename T>
+struct WriteBufferReports<T, std::void_t<decltype(std::declval<T&>().writeBuffer(
+	std::declval<const SampleFrame*>(), std::declval<f_cnt_t>()))>>
+	: std::bool_constant<!std::is_void_v<decltype(std::declval<T&>().writeBuffer(
+		std::declval<const SampleFrame*>(), std::declval<f_cnt_t>()))>> {};
+
+//! Writes the frames and reports whether the device reported success. A device
+//! whose writeBuffer() returns nothing (the tree without the fix) cannot report
+//! a failure, so it answers "no failure" here.
+template <typename T>
+bool writeBufferSucceeded(T& device, const SampleFrame* frames, f_cnt_t count)
+{
+	if constexpr (WriteBufferReports<T>::value)
+	{
+		return device.writeBuffer(frames, count);
+	}
+	else
+	{
+		device.writeBuffer(frames, count);
+		return true;
+	}
+}
+
+//! True when the device can report a write error (the API the fix introduced).
+template <typename T, typename = void>
+struct HasWriteError : std::false_type {};
+
+template <typename T>
+struct HasWriteError<T, std::void_t<decltype(std::declval<const T&>().hasWriteError())>>
+	: std::true_type {};
+
+//! The write error the device reports; false when it cannot report one (the tree
+//! without the fix), so the test still compiles there.
+template <typename T>
+bool reportedWriteError(const T& device)
+{
+	if constexpr (HasWriteError<T>::value)
+	{
+		return device.hasWriteError();
+	}
+	else
+	{
+		return false;
+	}
 }
 
 } // namespace
@@ -306,6 +386,39 @@ private slots:
 		evidence("32-bit float off == on", 1.0);
 	}
 
+	//! Cluster new-p15-258: the FLAC compression level must reach the encoder.
+	//! The same deterministic audio written at the two ends of the scale must
+	//! pack differently when libsndfile exposes its compression-level command
+	//! (before the fix both used the default), and both must decode to identical
+	//! samples. Builds without that optional command retain the default output.
+	void aFlacCompressionLevelReachesTheEncoder()
+	{
+		const std::vector<float> signal = richSignal(22050);
+		const QString fastest = writeFlac(signal, 0.0, "flac-level-0.flac");
+		const QString best = writeFlac(signal, 1.0, "flac-level-1.flac");
+		QVERIFY2(!fastest.isEmpty(), "the FLAC device at level 0.0 did not open");
+		QVERIFY2(!best.isEmpty(), "the FLAC device at level 1.0 did not open");
+
+		const QByteArray fastBytes = readBytes(fastest);
+		const QByteArray bestBytes = readBytes(best);
+		evidence("flac bytes: level 0.0 vs level 1.0", static_cast<double>(fastBytes.size()),
+			static_cast<double>(bestBytes.size()));
+	#ifdef LMMS_HAVE_SF_COMPLEVEL
+		QVERIFY2(fastBytes != bestBytes,
+			"FLAC at compression level 0.0 and 1.0 encoded to the same bytes: the level "
+			"never reached the encoder");
+	#else
+		QVERIFY2(fastBytes == bestBytes,
+			"FLAC output changed even though this build lacks compression-level support");
+	#endif
+
+		const std::vector<std::int16_t> fastSamples = readWavS16(fastest);
+		const std::vector<std::int16_t> bestSamples = readWavS16(best);
+		QCOMPARE(fastSamples.size(), signal.size() * 2);
+		QVERIFY2(fastSamples == bestSamples,
+			"the two compression levels decoded to different samples: the encoding is not lossless");
+	}
+
 	//! Owner decision 13: 'noise_shaped' at 16-bit is reproducible, is NOT the TPDF file,
 	//! stays within a few counts of the undithered quantisation, and at 24-bit falls back
 	//! to plain TPDF byte for byte (libsndfile quantises 24-bit, so nothing can be shaped).
@@ -331,6 +444,51 @@ private slots:
 		ExportRenderSettings::reset();
 	}
 
+#ifdef Q_OS_UNIX
+	//! BUG 14 (new-p12-317): a short write is reported instead of being ignored.
+	void aShortWavWriteIsReported()
+	{
+		struct rlimit previousLimit{};
+		struct sigaction previousAction{};
+		struct sigaction ignoredAction{};
+		ignoredAction.sa_handler = SIG_IGN;
+		sigemptyset(&ignoredAction.sa_mask);
+
+		QVERIFY(getrlimit(RLIMIT_FSIZE, &previousLimit) == 0);
+		QVERIFY(sigaction(SIGXFSZ, &ignoredAction, &previousAction) == 0);
+
+		struct rlimit highLimit = previousLimit;
+		if (highLimit.rlim_cur < 100000) { highLimit.rlim_cur = 100000; }
+		QVERIFY(setrlimit(RLIMIT_FSIZE, &highLimit) == 0);
+
+		OutputSettings settings(44100, 160, OutputSettings::BitDepth::Depth16Bit,
+			OutputSettings::StereoMode::Stereo);
+		ExportRenderSettings::setDither(false);
+		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("short-write.wav"));
+		bool successful = false;
+		std::unique_ptr<AudioFileDevice> device(
+			AudioFileWave::getInst(path, settings, DEFAULT_CHANNELS, Engine::audioEngine(), successful));
+		QVERIFY(successful);
+
+		struct rlimit shortLimit = previousLimit;
+		shortLimit.rlim_cur = 44;
+		QVERIFY(setrlimit(RLIMIT_FSIZE, &shortLimit) == 0);
+
+		std::vector<SampleFrame> frames(1024, SampleFrame(0.5f, 0.5f));
+		const bool writeOk = writeBufferSucceeded(*device, frames.data(),
+			static_cast<f_cnt_t>(frames.size()));
+
+		const bool restoredLimit = setrlimit(RLIMIT_FSIZE, &previousLimit) == 0;
+		const bool restoredSignal = sigaction(SIGXFSZ, &previousAction, nullptr) == 0;
+		QVERIFY(restoredLimit);
+		QVERIFY(restoredSignal);
+
+		QVERIFY(!writeOk);
+		QVERIFY(reportedWriteError(*device));
+		ExportRenderSettings::reset();
+	}
+#endif
+
 private:
 
 	QString writeWavMode(const std::vector<float>& signal, DitherMode mode,
@@ -348,6 +506,30 @@ private:
 		for (std::size_t i = 0; i < signal.size(); ++i) { frames[i] = SampleFrame(signal[i], signal[i]); }
 		device->writeBuffer(frames.data(), static_cast<f_cnt_t>(frames.size()));
 		return out;
+	}
+
+	//! Writes \p signal through the real FLAC export path at 16-bit and the given
+	//! compression level, and returns the file path ("" if the device would not open).
+	QString writeFlac(const std::vector<float>& signal, double level, const QString& name)
+	{
+		OutputSettings settings(44100, 160, OutputSettings::BitDepth::Depth16Bit,
+			OutputSettings::StereoMode::Stereo);
+		settings.setCompressionLevel(level);
+
+		const QString path = QDir(m_dir.path()).filePath(name);
+		bool successful = false;
+		std::unique_ptr<AudioFileDevice> device(
+			AudioFileFlac::getInst(path, settings, DEFAULT_CHANNELS, Engine::audioEngine(),
+				successful));
+		if (device == nullptr || !successful) { return QString(); }
+
+		std::vector<SampleFrame> frames(signal.size());
+		for (std::size_t i = 0; i < signal.size(); ++i)
+		{
+			frames[i] = SampleFrame(signal[i], signal[i]);
+		}
+		device->writeBuffer(frames.data(), static_cast<f_cnt_t>(frames.size()));
+		return path;   // device closes the file in its destructor
 	}
 
 	QByteArray readBytes(const QString& path)

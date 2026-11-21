@@ -139,9 +139,10 @@ void RemoteControls::setPage(int page)
 bool RemoteControls::applyKnob(int knob, int value)
 {
 	const QList<AutomatableModel*> models = parametersOf(m_target, m_plugin);
-	const int index = pageWithin(m_page, models) * Knobs + knob;
-	if (knob < 0 || knob >= Knobs || index >= models.size()) { return false; }
-	AutomatableModel* model = models.at(index);
+	if (knob < 0 || knob >= Knobs) { return false; }
+	const qlonglong index = static_cast<qlonglong>(pageWithin(m_page, models)) * Knobs + static_cast<qlonglong>(knob);
+	if (index < 0 || index >= models.size()) { return false; }
+	AutomatableModel* model = models.at(static_cast<int>(index));
 	const float lo = model->minValue<float>();
 	const float hi = model->maxValue<float>();
 	model->setValue(lo + (hi - lo) * static_cast<float>(std::clamp(value, 0, 127)) / 127.f);
@@ -163,11 +164,11 @@ void RemoteControls::sendPage()
 {
 	if (!isOpen() || output().isEmpty()) { return; }
 	const QList<AutomatableModel*> models = parametersOf(m_target, m_plugin);
-	const int first = pageWithin(m_page, models) * Knobs;
+	const qlonglong first = static_cast<qlonglong>(pageWithin(m_page, models)) * Knobs;
 	for (int knob = 0; knob < Knobs; ++knob)
 	{
-		const int index = first + knob;
-		const int value = index < models.size() ? ccValueOf(models.at(index)) : 0;
+		const qlonglong index = first + knob;
+		const int value = (index >= 0 && index < models.size()) ? ccValueOf(models.at(static_cast<int>(index))) : 0;
 		send(MidiEvent(MidiControlChange, static_cast<int8_t>(std::max(0, m_channel)),
 			static_cast<int16_t>(m_firstCc + knob), static_cast<int16_t>(value)));
 	}
@@ -180,10 +181,10 @@ QJsonObject RemoteControls::state() const
 	QJsonArray page;
 	for (int knob = 0; knob < Knobs; ++knob)
 	{
-		const int index = shown * Knobs + knob;
+		const qlonglong index = static_cast<qlonglong>(shown) * Knobs + knob;
 		if (index >= models.size()) { break; }
-		page.append(QJsonObject{{QStringLiteral("knob"), knob}, {QStringLiteral("name"), models.at(index)->displayName()},
-			{QStringLiteral("value"), static_cast<double>(models.at(index)->value<float>())}});
+		page.append(QJsonObject{{QStringLiteral("knob"), knob}, {QStringLiteral("name"), models.at(static_cast<int>(index))->displayName()},
+			{QStringLiteral("value"), static_cast<double>(models.at(static_cast<int>(index))->value<float>())}});
 	}
 	return {{QStringLiteral("connected"), isOpen()}, {QStringLiteral("subscribed"), subscribed()}, {QStringLiteral("input"), input()},
 		{QStringLiteral("output"), output()},

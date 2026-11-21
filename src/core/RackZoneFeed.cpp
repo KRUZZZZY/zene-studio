@@ -91,6 +91,7 @@ auto RackZoneFeed::noteOf(PlayHandle* handle, f_cnt_t framesPerPeriod) -> RackZo
 	note.key = nph->key();
 	note.velocity = nph->getVolume();
 	note.framesPlayed = nph->totalFramesPlayed();
+	note.generation = nph->generation();
 	// The first period of a note starts at its offset; NotePlayHandle::play has already counted this period.
 	note.startOffset = note.framesPlayed + nph->offset() <= framesPerPeriod ? nph->offset() : 0;
 	note.pitch = nph->frequency() / DefaultBaseFreq;

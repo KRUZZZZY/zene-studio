@@ -195,6 +195,12 @@ void registerCompLaneRemove(ControlRegistry& registry)
 				QStringLiteral("%1 has no take lane %2 (its lanes: %3)")
 					.arg(id).arg(lane).arg(laneIndexList(model)));
 		}
+		if (!model.canRemoveLane(lane))
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("removing lane %1 would exceed the %2-span playback limit on the base lane")
+					.arg(lane).arg(TakeLaneModel::MaxCompositeSpansPerLane));
+		}
 		const QString name = laneNameOf(model, lane);
 		const QJsonArray beforeLanes = lanesState(track);
 		const QJsonObject beforeComposite = compositeState(track);

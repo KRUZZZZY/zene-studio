@@ -38,6 +38,7 @@
 #include "LmmsTypes.h"
 #include <optional>
 #include "TakeLane.h"
+#include "TempoMap.h"
 #include "UnclaimedElements.h"
 
 
@@ -45,6 +46,7 @@ namespace lmms
 {
 
 class TimePos;
+class MixerChannel;
 class TrackContainer;
 class TrackFolder;
 class Clip;
@@ -107,6 +109,11 @@ public:
 		 *  element, resolved after the load walk (Song::resolveTrackFolders).
 		 */
 		Folder,
+		/*! A NEUTRAL ROW (0.5.0 Q050-283.1): an arrangement row that is not yet an audio or
+		 *  an instrument track. It goes after Folder and still before Count for the same reason
+		 *  Folder does: every earlier value keeps its persisted integer, and only Count moves.
+		 *  An older build reading type=8 drops the row like it would an unknown type. */
+		Neutral,
 		Count
 	} ;
 
@@ -135,6 +142,8 @@ public:
 
 	virtual void saveTrackSpecificSettings(QDomDocument& doc, QDomElement& parent, bool presetMode) = 0;
 	virtual void loadTrackSpecificSettings( const QDomElement & element ) = 0;
+	//! Mode-aware load hook; older track types keep their existing one-argument loader by default.
+	virtual void loadTrackSpecificSettings(const QDomElement& element, bool presetMode);
 
 	// Saving and loading of presets which do not necessarily contain all the track information
 	void savePreset(QDomDocument & doc, QDomElement & element);
@@ -219,6 +228,10 @@ public:
 			tick_t lengthTicks = 0;
 		};
 		std::vector<MutedClip> mutedClips;
+		//! True for a freeze.region take: the source keeps playing outside
+		//! [startTicks, endTicks) and is silent only inside it. A whole-track
+		//! take (false) replaces the source everywhere.
+		bool region = false;
 
 		bool isFrozen() const { return !path.isEmpty(); }
 	};
@@ -227,6 +240,19 @@ public:
 	const FrozenTake& frozenTake() const { return m_frozen; }
 	//! True when the take's audio is in memory, i.e. it will actually sound.
 	bool frozenAudioReady() const { return m_frozenBuffer != nullptr; }
+	//! True when the take's file is gone from disk (moved or removed). Control thread only: it stats the file.
+	bool frozenTakeFileMissing() const;
+	/*! Whether the take, not the source, owns the pass starting at \a position. False when the
+	 *  take's audio is not loaded (the source then plays: a missing take never silences a track)
+	 *  and, for a region take, outside its window. Audio-thread safe: no allocation, lock or I/O. */
+	bool frozenTakeSilencesSource(tick_t position) const noexcept;
+	/*! Hands the committed tempo map to a frozen take's cache (control thread, with the render period held),
+	 *  so a pass whose pinned read loses to a publication still places the take on the current map. */
+	void adoptTempoMapForFrozenTake(const TempoMap& map);
+	/*! Source frame of the take (at \a bufferRate) for timeline tick \a position, \a takeStart being the take's
+	 *  first tick. Follows the tempo map exactly as BounceInPlace's range-to-frames mapping does. */
+	static qint64 frozenTakeSourceFrame(const class TempoMap& map, int globalTempo, tick_t takeStart,
+			tick_t position, int bufferRate, float constantFramesPerTick) noexcept;
 
 	/*! SPEC-ARCH-4 1.6.1: the children of this track's own <track> element that
 	 *  the last load did not claim - not this track type's own element, not
@@ -244,10 +270,16 @@ public:
 	 *  never on the audio thread. Returns false, with \a error filled, when the
 	 *  file cannot be opened - in which case nothing is changed. */
 	bool freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
-			const std::vector<FrozenTake::MutedClip>& mutedClips, QString* error);
+			const std::vector<FrozenTake::MutedClip>& mutedClips, QString* error, bool region = false);
+	/*! A region take covers [startTicks, endTicks) and must end past its start: an inverted or empty window
+	 *  has no end boundary, so the source would stay silent from its start onward. freezeTo() refuses one,
+	 *  and so does the project load; the freeze verbs check it before they cut any clip. */
+	static bool isValidRegionWindow(tick_t startTicks, tick_t endTicks) noexcept { return endTicks > startTicks; }
 	//! Test seam called after any load work and immediately before the frozen-take render lock.
 #ifdef LMMS_TESTING
 	static void setFrozenTakeLockProbeForTest(void (*probe)());
+	//! Test seam: \a probe runs inside Track::create once the track exists; a probe that throws proves the failure path.
+	static void setCreateFaultProbeForTest(void (*probe)());
 #endif
 	//! Unmutes the clips this freeze muted and drops the take: the track plays
 	//! its own clips again.
@@ -270,6 +302,15 @@ public:
 	inline TrackContainer* trackContainer() const
 	{
 		return m_trackContainer;
+	}
+
+	/*! This track's position in its TrackContainer, maintained by the container
+	 *  whenever the list changes; -1 for a track the container has not indexed.
+	 *  The input monitor reads it once per audio period (one acquire load) instead
+	 *  of scanning the song for the route it already knows. */
+	int containerIndex() const noexcept
+	{
+		return m_containerIndex.load( std::memory_order_acquire );
 	}
 
 	/*! The FOLDER this track sits in, or nullptr when it is in none
@@ -330,6 +371,43 @@ public:
 	{
 		m_visible = visible;
 	}
+
+	/*! 0.5.0 Q050-022 (L06): whether this track's automation lanes are FOLDED AWAY
+	 *  in the arranger - the collapsible-child half of "automation lanes under
+	 *  their owning track" (research R-workflow-197).
+	 *
+	 *  A lane is an AutomationTrack whose followsTrack() is this track's id()
+	 *  (automation.lane_add places it right below and following this track). This
+	 *  flag is the OWNER's: true hides every such lane row exactly as a collapsed
+	 *  folder hides its children, and it is persisted on the owner's own <track>
+	 *  element (`autolanes`, written only when folded, reset on absence) so a
+	 *  project that never folded a track re-saves the bytes it always had and one
+	 *  checkpoint restore can take the fold back off. A VIEW flag with no audio
+	 *  meaning: folding a track changes no render. */
+	bool automationLanesCollapsed() const
+	{
+		return m_automationLanesCollapsed;
+	}
+	void setAutomationLanesCollapsed( bool collapsed )
+	{
+		if( m_automationLanesCollapsed == collapsed ) { return; }
+		m_automationLanesCollapsed = collapsed;
+		// 0.5.0 Q050-022: announce the fold so the arranger can re-lay its rows
+		// whichever path set the flag - the view's own button/menu, the agent
+		// surface's command, or an undo/redo of that command (which restores
+		// through loadTrack below). Emitted on the control/GUI thread, never the
+		// render thread.
+		emit automationLanesCollapsedChanged();
+	}
+
+	/*! The automation lanes that FOLLOW this track (its id), in container order -
+	 *  the same relation automation.lane_add writes and the arranger renders as
+	 *  child rows. A track that follows no track is not a lane; a lane whose owner
+	 *  is gone is not returned by anyone. Defined in Track.cpp, which can see
+	 *  AutomationTrack and TrackContainer. */
+	std::vector<Track*> automationLaneChildren() const;
+	//! True when automationLaneChildren() is non-empty.
+	bool hasAutomationLaneChildren() const;
 
 	/*! The mixer channel this track's own output is bound to, or nullptr for a
 	 *  track type that has no channel of its own (a folder, an automation
@@ -413,6 +491,20 @@ public:
 public slots:
 	virtual void setName(const QString& newName);
 
+	/*! Q050-212: the stable id (MixerChannel::id) of the mixer channel that was made for this track, or -1. While the
+	 *  track plays into that channel the two share a name; a track routed elsewhere keeps the id but renames nothing,
+	 *  so taking its reroute back restores the link and the shared name (reconcileLinkedChannelName()). Saved as `mixlink` on the track's element, never in a preset or a
+	 *  copy of the track: a duplicate does not own the channel. */
+	int linkedChannelId() const { return m_linkedChannelId; }
+	void setLinkedChannelId(int id) { m_linkedChannelId = id; }
+	//! The channel the link names, while this track plays into it; nullptr otherwise.
+	MixerChannel* linkedChannel();
+	/*! Called when this track's route changes, by whichever control changed it. A track routed back to its linked
+	 *  channel gives the channel its name, which may have changed while it was routed away. That is part of the routing
+	 *  edit: its one undo puts the channel's old name back. Nothing during a load, an undo or a redo, which restore the
+	 *  names they recorded, nor off the track's own thread. */
+	void reconcileLinkedChannelName();
+
 	void setMutedBeforeSolo(const bool muted)
 	{
 		m_mutedBeforeSolo = muted;
@@ -469,6 +561,15 @@ private:
 	void updateFrozenVoiceCapacity(bool loopEnabled, tick_t loopBegin, tick_t loopEnd) noexcept;
 	friend class AudioEngine;
 	friend class Song;
+	friend class TrackContainer;
+
+	//! Control-thread update the container makes when the list changes. Release so
+	//! the audio thread's acquire load sees the position the list was reindexed to.
+	void setContainerIndex( int index ) noexcept
+	{
+		m_containerIndex.store( index, std::memory_order_release );
+	}
+	std::atomic<int> m_containerIndex{ -1 };
 
 	bool m_mutedBeforeSolo;
 
@@ -499,6 +600,13 @@ private:
 	FrozenTake m_frozen;
 	std::shared_ptr<const SampleBuffer> m_frozenBuffer;
 	std::atomic<bool> m_frozenTakePlaying{false};
+	//! The last tempo map the audio thread read pinned while it started a take pass, and whether it was in
+	//! force (active and non-empty). Written only by the audio thread (and reset under the render lock), it
+	//! is what a pass uses when every pin attempt loses to a publication, so the take's frame stays on the
+	//! tempo map instead of falling back to a wrong constant-rate frame.
+	TempoMap m_frozenLastMap{};
+	bool m_frozenLastMapInForce = false;
+	bool m_frozenLastMapKnown = false;  //!< a pinned read has succeeded since the take was installed
 	std::atomic<std::uint16_t> m_frozenActiveVoiceCount{0};
 	//! The control thread grows this logical pool limit from the take/loop overlap bound.
 	std::atomic<std::uint16_t> m_frozenVoiceCapacity{8};
@@ -520,6 +628,13 @@ private:
 	//! The visibility flag a named visibility set writes; true unless the file
 	//! says otherwise (reset on absence in loadTrack).
 	bool m_visible{true};
+	//! 0.5.0 Q050-022: the owner-side fold flag for this track's following
+	//! automation lanes; false unless the file says otherwise (reset on absence
+	//! in loadTrack, the same rule m_visible follows).
+	bool m_automationLanesCollapsed{false};
+	//! Q050-212: the stable id of the mixer channel made for this track, or -1 (see linkedChannelId()).
+	int m_linkedChannelId{-1};
+	void syncLinkedChannelName();
 
 	friend class gui::TrackView;
 	friend class TrackFolder;
@@ -530,6 +645,10 @@ signals:
 	void nameChanged();
 	void clipAdded( lmms::Clip * );
 	void colorChanged();
+	//! 0.5.0 Q050-022: this track's automation-lane fold flag changed. The
+	//! arranger listens so a fold from the agent surface, the menu, or an
+	//! undo/redo redraws without the caller touching the view.
+	void automationLanesCollapsedChanged();
 } ;
 
 

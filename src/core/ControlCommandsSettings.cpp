@@ -273,6 +273,12 @@ QJsonObject audioDevicesJson()
 	if (Engine::audioEngine() != nullptr)
 	{
 		out.insert(QStringLiteral("start_failed"), Engine::audioEngine()->audioDevStartFailed());
+		// Q050-183.1: what was asked for, why it could not start, and whether the running backend is a fallback.
+		const QString requested = Engine::audioEngine()->audioDevRequestName();
+		out.insert(QStringLiteral("requested"), requested);
+		out.insert(QStringLiteral("failure_reason"), Engine::audioEngine()->audioDevStartReason());
+		out.insert(QStringLiteral("fallback"), Engine::audioEngine()->audioDevStartFailed()
+			|| (!requested.isEmpty() && requested != current));
 	}
 	return out;
 }
@@ -285,7 +291,9 @@ void registerAudioDeviceList(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("device_list");
 	cmd.description = QStringLiteral("The audio backends this build knows, with the one that is "
 		"running and the one the config file selects. Requires no audio device: the running "
-		"name is whatever the engine opened, the dummy device when nothing else would open.");
+		"name is whatever the engine opened, the dummy device when nothing else would open. With an engine running it "
+			"also says what was requested, why the device could not start (failure_reason) and whether the running "
+			"backend is a fallback.");
 	cmd.argsSchema = objectSchema({});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("devices"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
@@ -293,6 +301,9 @@ void registerAudioDeviceList(ControlRegistry& registry)
 		{QStringLiteral("current"), stringProperty()},
 		{QStringLiteral("configured"), stringProperty()},
 		{QStringLiteral("start_failed"), booleanProperty()},
+		{QStringLiteral("requested"), stringProperty()},
+		{QStringLiteral("failure_reason"), stringProperty()},
+		{QStringLiteral("fallback"), booleanProperty()},
 	});
 	cmd.handler = [](const QJsonObject&) { return ControlResult::success(audioDevicesJson()); };
 	registry.registerCommand(cmd);
@@ -358,15 +369,17 @@ void registerAudioDeviceSet(ControlRegistry& registry)
 		transaction.insert(QStringLiteral("before"),
 			QJsonObject{{QStringLiteral("device"), previous},
 				{QStringLiteral("present"), present}});
-		// An absent key is reversed by the action checkpoint, which deletes it.
-		// Naming audio.device_set here would name the empty previous value, and
-		// this command REFUSES an empty device name - so the inverse it advertised
-		// could not even be replayed (Luna cluster 4941).
+		// An absent key, or a present key whose value is not a backend this build
+		// accepts, is reversed by the action checkpoint instead: audio.device_set
+		// refuses such a name, so advertising it as the inverse would be unusable.
+		// (Luna cluster 4941 / new-p12-46.)
+		const bool previousDeviceValid = AudioEngine::isAudioDevNameValid(previous);
+		const QJsonObject inverseArgs = previousDeviceValid
+			? QJsonObject{{QStringLiteral("device"), previous}} : QJsonObject();
 		transaction.insert(QStringLiteral("inverse"),
-			present ? QJsonObject{{QStringLiteral("op"), QStringLiteral("audio.device_set")},
-					{QStringLiteral("args"), QJsonObject{{QStringLiteral("device"), previous}}}}
-				: QJsonObject{{QStringLiteral("op"), QStringLiteral("control.undo")},
-					{QStringLiteral("args"), QJsonObject()}});
+			QJsonObject{{QStringLiteral("op"), previousDeviceValid
+				? QStringLiteral("audio.device_set") : QStringLiteral("control.undo")},
+				{QStringLiteral("args"), inverseArgs}});
 		transaction.insert(QStringLiteral("reversible"), true);
 		transaction.insert(QStringLiteral("mechanism"),
 			QStringLiteral("action checkpoint: the recorded undo step writes the previous device "

@@ -35,6 +35,7 @@
 #include <QtEndian>
 
 #include "ControlExportPresetSupport.h"
+#include "ControlHardwareIoSupport.h"
 #include "ControlRegistry.h"
 
 #include "ControlReversibility.h"
@@ -491,6 +492,8 @@ ControlResult renderSession(const QJsonObject& args)
 		result.insert(QStringLiteral("range"), QJsonValue());
 	}
 	result.insert(QStringLiteral("sha256"), sha256OfFile(out));
+	// Q050-089.2: the child renders offline, with no device - the hardware inserts that are on were bypassed.
+	result.insert(QStringLiteral("hardware_inserts"), offlineHardwareInsertsJson());
 	return ControlResult::success(result);
 }
 
@@ -510,7 +513,10 @@ void registerRenderRender(ControlRegistry& registry)
 		"folded with the ITU-R BS.775 downmix) or 'surround' - one WAV channel per speaker of the "
 		"surround master (6 for 5.1, 8 for 7.1, WAVE_FORMAT_EXTENSIBLE with its channel mask), refused "
 		"on a stereo master, for a format other than wav, and with the loudness report on; the reply's "
-		"`channels` and `channel_layout` say what the file holds. Runs in a CHILD process, so the declared bound "
+		"`channels` and `channel_layout` say what the file holds. The render is OFFLINE (no audio device), so hardware "
+		"inserts are bypassed and the dry signal is rendered: the reply's `hardware_inserts` says so (hardware "
+		"'unavailable', `bypassed`, the inserts that are on); render.realtime plays the song through them. "
+		"Runs in a CHILD process, so the declared bound "
 		"applies: this surface does not answer - not even control.ping - until it finishes "
 		"(docs/KNOWN-LIMITATIONS.md).");
 	cmd.argsSchema = objectSchema(
@@ -538,6 +544,7 @@ void registerRenderRender(ControlRegistry& registry)
 		{QStringLiteral("format"), stringProperty()},
 		{QStringLiteral("channels"), integerProperty()},
 		{QStringLiteral("channel_layout"), stringProperty()},
+		{QStringLiteral("hardware_inserts"), objectProperty()},
 	});
 	cmd.handler = [](const QJsonObject& args) { return renderSession(args); };
 	registry.registerCommand(cmd);
@@ -579,6 +586,7 @@ QStringList controlRenderableFormats()
 void registerProjectCommands(ControlRegistry& registry)
 {
 	registerRenderRender(registry);
+	registerRenderRealtimeCommand(registry);  // Q050-089.2
 	registerProjectFilesCommands(registry);
 }
 

@@ -129,12 +129,15 @@ ControlResult masterSet(const QJsonObject& args)
 
 //! Put the follower's configuration back: the recorded inverse of
 //! clock.slave_set, and the ONE place that knows a follow flag needs the poll
-//! started with it.
+//! started with it. \a source was either validated before this call (the command
+//! path) or is a name this tree accepted before (the undo path), so the return
+//! value of setSlaveSourcePort is deliberately not checked here.
 void restoreSlaveState(bool enabled, bool follow, const QString& source, double bound)
 {
 	MidiClock* clock = MidiClock::instance();
 	clock->setSlaveDriftBoundMs(bound);
-	clock->setSlaveSourcePort(source);
+	QString ignored;
+	clock->setSlaveSourcePort(source, &ignored);
 	clock->setSlaveEnabled(enabled);
 	clock->setSlaveFollowTempo(follow);
 	if (enabled && follow)
@@ -163,7 +166,21 @@ ControlResult slaveSet(const QJsonObject& args)
 	const QString wasSource = clock->slaveSourcePort();
 	const double wasBound = clock->slaveDriftBoundMs();
 
-	const QString wantedSource = source.isEmpty() ? wasSource : source;
+	/* Q050-026: "no source chosen" is a SELECTABLE state (any input), not the
+	 * absence of a choice, so the PRESENCE of the property decides and an explicit
+	 * empty string clears the source. Omitting it keeps the current one, as
+	 * clock.master_set's `port` does. Read this way, Edit > MIDI Clock > Clock
+	 * Source > Any Input is a real choice rather than a no-op. */
+	const QString wantedSource =
+		args.contains(QStringLiteral("source_port")) ? source : wasSource;
+	// Q050-026: a source name the follower cannot hold is refused BEFORE anything is
+	// applied, so a rejected call leaves the whole configuration as it was - and the
+	// reason is MidiClock's own, which is where the storage is.
+	const QString sourceProblem = MidiClock::sourcePortProblem(wantedSource);
+	if (!sourceProblem.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, sourceProblem);
+	}
 	// The follow PREFERENCE is configuration and survives a disable: `enabled` alone decides
 	// whether the poll runs (restoreSlaveState), so disabling must not store follow_tempo:false
 	// and leave the next bare enable with following off.
@@ -218,12 +235,13 @@ void registerClockCommands(ControlRegistry& registry)
 		cmd.description = QStringLiteral("What this engine's MIDI clock is doing: the master's "
 			"enabled flag, the port it sends on and whether that port is subscribed to a client "
 			"destination, the message counters it has emitted and a bounded monitor of the last "
-			"messages in order; and the slave's enabled flag, its source port, whether it "
-			"follows the measured tempo, whether it is LOCKED, the measured tempo, the drift of "
-			"the last interval from the window's mean, the drift bound, the tempo error the pulse "
-			"jitter can produce, the window it measures over, the pulse count and the last song "
-			"position and time-code values received. Read-only. `mtc` reports \"absent\": this "
-			"release generates no MIDI time code (see docs/KNOWN-LIMITATIONS.md).");
+			"messages in order; and the slave's enabled flag, its source port, the number of "
+			"clock messages IGNORED for arriving on another port, whether it follows the measured "
+			"tempo, whether it is LOCKED, the measured tempo, the drift of the last interval from "
+			"the window's mean, the drift bound, the tempo error the pulse jitter can produce, "
+			"the window it measures over, the pulse count and the last song position and "
+			"time-code values received. Read-only. `mtc` reports \"absent\": this release generates "
+			"no MIDI time code (see docs/KNOWN-LIMITATIONS.md).");
 		cmd.argsSchema = objectSchema({});
 		cmd.resultSchema = objectSchema({
 			{QStringLiteral("master"), objectProperty()},
@@ -284,14 +302,22 @@ void registerClockCommands(ControlRegistry& registry)
 			"when follow_tempo is on, write that tempo to the Song once it has left the dead "
 			"band. A slave that is enabled with NO clock arriving never locks, writes nothing and "
 			"does not move the transport - clock.get_state reports locked:false. `source_port` "
-			"names the readable client port to follow (informational: the engine's MIDI readers "
-			"deliver a clock from wherever it arrives). `drift_bound_ms` is how far one pulse "
-			"interval may stray from the window's mean and still count as locked. Reversible for "
-			"the CONFIGURATION: the tempo a following slave wrote is a trajectory of writes, not "
-			"one state, and control.undo does not restore it (the transaction names the value). "
-			"Receiving START/STOP/CONTINUE/SONG POSITION is counted and reported; moving the "
-			"transport FROM the incoming clock is not in this release (see "
-			"docs/KNOWN-LIMITATIONS.md).");
+			"names the readable client port to follow, spelled as midi.device_list spells it "
+			"(Edit > MIDI Clock > Clock Source offers the same list): clock messages from any "
+			"OTHER port are ignored and counted in `ignored`, and choosing a different source "
+			"forgets the measurement so the device moved off cannot keep writing its tempo. An "
+			"empty source_port follows a clock from wherever it arrives - that is how the "
+			"choice is CLEARED, while OMITTING the property keeps the current one - and it is "
+			"the only value a client with one unnamed input (ALSA Raw-MIDI, JACK, OSS, sndio, "
+			"the dummy) can follow, because those cannot say which of their ports a byte came "
+			"from. A name "
+			"longer than the follower can hold is refused (invalid_args), never truncated. "
+			"`drift_bound_ms` is how far one pulse interval may stray from the window's mean and "
+			"still count as locked. Reversible for the CONFIGURATION: the tempo a following "
+			"slave wrote is a trajectory of writes, not one state, and control.undo does not "
+			"restore it (the transaction names the value). Receiving START/STOP/CONTINUE/SONG "
+			"POSITION is counted and reported; moving the transport FROM the incoming clock is "
+			"not in this release (see docs/KNOWN-LIMITATIONS.md).");
 		cmd.argsSchema = objectSchema({
 			{QStringLiteral("enabled"), booleanProperty()},
 			{QStringLiteral("follow_tempo"), booleanProperty()},
@@ -310,6 +336,7 @@ void registerClockCommands(ControlRegistry& registry)
 			{QStringLiteral("drift_ms"), numberProperty()},
 			{QStringLiteral("drift_bound_ms"), numberProperty()},
 			{QStringLiteral("source_port"), stringProperty()},
+			{QStringLiteral("ignored"), integerProperty()},
 			{QStringLiteral("interval_ms"), numberProperty()},
 			{QStringLiteral("messages"), objectProperty()},
 			{QStringLiteral("pulses"), numberProperty()},

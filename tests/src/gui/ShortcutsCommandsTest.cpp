@@ -29,7 +29,9 @@
 
 #include <QtTest>
 
+#include <QFileInfo>
 #include <QJsonArray>
+#include <QMap>
 #include <QTemporaryDir>
 
 #include "ControlRegistry.h"
@@ -67,6 +69,21 @@ Row binding(const QString& id)
 		const QJsonObject row = value.toObject();
 		if (row.value(QStringLiteral("id")).toString() == id) { return {id, row.value(QStringLiteral("keys")).toString(),
 			row.value(QStringLiteral("default")).toString(), row.value(QStringLiteral("overridden")).toBool()}; }
+	}
+	return {};
+}
+
+//! The first binding of @a command, as shortcuts.list reports it (the command, not a menu path, is stable).
+Row commandBinding(const QString& command)
+{
+	for (const QJsonValue& value : run(QStringLiteral("shortcuts.list")).result.value(QStringLiteral("bindings")).toArray())
+	{
+		const QJsonObject row = value.toObject();
+		if (row.value(QStringLiteral("command")).toString() == command)
+		{
+			return {row.value(QStringLiteral("id")).toString(), row.value(QStringLiteral("keys")).toString(),
+				row.value(QStringLiteral("default")).toString(), row.value(QStringLiteral("overridden")).toBool()};
+		}
 	}
 	return {};
 }
@@ -110,6 +127,8 @@ private slots:
 		QVERIFY(gui::getGUI() != nullptr);
 		ControlRegistry::setReady(true);
 		gui::getGUI()->mainWindow()->show();
+		QTest::qWaitForWindowExposed(gui::getGUI()->mainWindow());
+		QTest::qWait(100);
 	}
 
 	void cleanupTestCase()
@@ -206,6 +225,53 @@ private slots:
 		QVERIFY2(!after.overridden, "a value that is not key text was counted as an override");
 	}
 
+	//! Q050-202: the four shipped maps apply to real menu actions, each leaves a recoverable
+	//! safety copy, and export/import round-trips every one.
+	void theShippedMapsApplyRoundTripAndLeaveABackup()
+	{
+		const ControlResult presets = run(QStringLiteral("shortcuts.preset_list"));
+		QVERIFY2(presets.ok, qPrintable(presets.errorMessage));
+		QCOMPARE(presets.result.value(QStringLiteral("count")).toInt(), 4);
+		QStringList ids;
+		for (const QJsonValue& value : presets.result.value(QStringLiteral("presets")).toArray())
+		{
+			ids << value.toObject().value(QStringLiteral("preset")).toString();
+		}
+		QCOMPARE(ids, (QStringList{QStringLiteral("accessibility"), QStringLiteral("ableton-live"),
+			QStringLiteral("fl-studio"), QStringLiteral("logic-pro")}));
+
+		for (const QString& id : ids)
+		{
+			QVERIFY(run(QStringLiteral("shortcuts.reset")).ok);
+			const ControlResult applied = run(QStringLiteral("shortcuts.preset_apply"), {{QStringLiteral("preset"), id}});
+			QVERIFY2(applied.ok, qPrintable(applied.errorMessage));
+			const QString backup = applied.result.value(QStringLiteral("backup")).toString();
+			QVERIFY2(!backup.isEmpty() && QFileInfo::exists(backup), qPrintable(backup));
+			QVERIFY(applied.result.value(QStringLiteral("imported")).toInt() > 0);
+			QVERIFY(applied.result.value(QStringLiteral("invalid")).toArray().isEmpty());
+			const QMap<QString, QString> expectedKeys{{QStringLiteral("accessibility"), QStringLiteral("Ctrl+R")},
+				{QStringLiteral("ableton-live"), QStringLiteral("F9")}, {QStringLiteral("fl-studio"), QStringLiteral("R")},
+				{QStringLiteral("logic-pro"), QStringLiteral("R")}};
+			QCOMPARE(commandBinding(QStringLiteral("transport.record")).keys, expectedKeys.value(id));
+
+			// The safety copy restores the map the preset replaced.
+			QVERIFY(run(QStringLiteral("shortcuts.import"), {{QStringLiteral("file"), backup},
+				{QStringLiteral("replace"), true}}).ok);
+			QCOMPARE(commandBinding(QStringLiteral("transport.record")).keys, commandBinding(QStringLiteral("transport.record")).defaults);
+
+			// Export and re-import the preset itself: the bindings survive unchanged.
+			QVERIFY(run(QStringLiteral("shortcuts.preset_apply"), {{QStringLiteral("preset"), id}}).ok);
+			const QString exported = m_home.filePath(QStringLiteral("%1.json").arg(id));
+			QVERIFY(run(QStringLiteral("shortcuts.export"), {{QStringLiteral("file"), exported}}).ok);
+			QVERIFY(run(QStringLiteral("shortcuts.reset")).ok);
+			QVERIFY(run(QStringLiteral("shortcuts.import"), {{QStringLiteral("file"), exported},
+				{QStringLiteral("replace"), true}}).ok);
+			QCOMPARE(commandBinding(QStringLiteral("transport.record")).keys, expectedKeys.value(id));
+		}
+		QVERIFY(run(QStringLiteral("shortcuts.preset_apply"), {{QStringLiteral("preset"), QStringLiteral("no-such-map")}}).errorKind
+			== ControlErrorKind::NotFound);
+	}
+
 	//! BUG 7 (cluster 4014): an id no menu has is refused, not reported as a reset of nothing.
 	void resettingAnActionNoMenuHasIsRefused()
 	{
@@ -237,6 +303,55 @@ private slots:
 		QVERIFY(!binding(two.second.id).overridden);
 		QCOMPARE(binding(two.first.id).keys, two.first.defaults);
 		QCOMPARE(binding(two.second.id).keys, two.second.defaults);
+	}
+
+	//! Menu rows pass an explicit empty scope; the command schema must still accept the menu map.
+	void anExplicitEmptyScopeCanRebindAMenuAction()
+	{
+		const QPair<Row, Row> two = twoBoundActions();
+		QVERIFY(!two.first.id.isEmpty());
+		const QString chosen = QStringLiteral("Ctrl+Alt+F8");
+		const ControlResult set = run(QStringLiteral("shortcuts.set"), {{QStringLiteral("id"), two.first.id},
+			{QStringLiteral("scope"), QString()}, {QStringLiteral("keys"), chosen}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QCOMPARE(binding(two.first.id).keys, chosen);
+		const ControlResult reset = run(QStringLiteral("shortcuts.reset"), {{QStringLiteral("id"), two.first.id},
+			{QStringLiteral("scope"), QString()}});
+		QVERIFY2(reset.ok, qPrintable(reset.errorMessage));
+		QCOMPARE(binding(two.first.id).keys, two.first.defaults);
+	}
+
+	//! Q050-055.1 x Q050-202: a shipped preset maps menu actions only, so a panel binding survives
+	//! it and its undo, and the preset's safety copy carries the panel map so it restores that too.
+	void aPresetKeepsPanelBindingsAndItsBackupCarriesThem()
+	{
+		const QJsonArray arranger = run(QStringLiteral("shortcuts.list"), {{QStringLiteral("scope"), QStringLiteral("arranger")}})
+			.result.value(QStringLiteral("bindings")).toArray();
+		QVERIFY(!arranger.isEmpty());
+		const QString id = arranger.first().toObject().value(QStringLiteral("id")).toString();
+		const QString chosen = QStringLiteral("Ctrl+Alt+F7");
+		const auto panelKeys = [&id] {
+			for (const QJsonValue& value : run(QStringLiteral("shortcuts.list"), {{QStringLiteral("scope"), QStringLiteral("arranger")}})
+				.result.value(QStringLiteral("bindings")).toArray())
+			{
+				if (value.toObject().value(QStringLiteral("id")).toString() == id) { return value.toObject().value(QStringLiteral("keys")).toString(); }
+			}
+			return QString();
+		};
+		QVERIFY(run(QStringLiteral("shortcuts.set"), {{QStringLiteral("id"), id}, {QStringLiteral("scope"), QStringLiteral("arranger")},
+			{QStringLiteral("keys"), chosen}}).ok);
+
+		const ControlResult applied = run(QStringLiteral("shortcuts.preset_apply"), {{QStringLiteral("preset"), QStringLiteral("ableton-live")}});
+		QVERIFY2(applied.ok, qPrintable(applied.errorMessage));
+		QVERIFY2(panelKeys() == chosen, qPrintable(QStringLiteral("the preset left the arranger binding on '%1'").arg(panelKeys())));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(panelKeys(), chosen);
+
+		QVERIFY(run(QStringLiteral("shortcuts.reset")).ok);
+		QVERIFY(panelKeys() != chosen);
+		QVERIFY(run(QStringLiteral("shortcuts.import"), {{QStringLiteral("file"), applied.result.value(QStringLiteral("backup")).toString()},
+			{QStringLiteral("replace"), true}}).ok);
+		QVERIFY2(panelKeys() == chosen, "the preset's safety copy did not restore the panel binding");
 	}
 };
 

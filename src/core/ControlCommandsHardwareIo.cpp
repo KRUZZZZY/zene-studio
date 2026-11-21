@@ -130,9 +130,19 @@ ControlResult ioSetup(const QJsonObject& args)
 {
 	const QString key = audioio::currentDeviceKey();
 	audioio::Setup setup = currentSetup();
+	const audioio::Setup setupBefore = setup;
 	const int countBefore = setup.outputs.channels;
 	ControlResult error;
 	if (!readSides(args, &setup, &error)) { return error; }
+	if (setup == setupBefore)
+	{
+		QJsonObject result = ioReport();
+		const bool countChanged = setup.outputs.channels != countBefore;
+		const bool reopen = setup.outputs.channels != deviceChannels().outputs;
+		result.insert(QStringLiteral("applied"), countChanged ? QStringLiteral("names_now_count_next_start") : QStringLiteral("now"));
+		result.insert(QStringLiteral("restart_required"), reopen);
+		return ControlResult::success(result);
+	}
 	const QJsonObject before = audioio::storedEntry(key);
 	QString message;
 	if (!audioio::writeSetup(key, setup, &message)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, message); }
@@ -179,6 +189,11 @@ ControlResult hardwareOutput(const QJsonObject& args)
 	const QString id = channelIdOf(channel);
 	const bool setBefore = channel->m_hardwareIo.outputSet;
 	const audioio::Destination before = channel->m_hardwareIo.output;
+	if (setBefore == !reset && before == to)
+	{
+		QJsonObject result{{QStringLiteral("channel"), id}, {QStringLiteral("output"), outputJson(*channel)}};
+		return ControlResult::success(result);
+	}
 	applyOutput(id, !reset, to);
 	addUndoStep([id, setBefore, before]() { applyOutput(id, setBefore, before); }, [id, reset, to]() { applyOutput(id, !reset, to); });
 	Engine::getSong()->setModified();

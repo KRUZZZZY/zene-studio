@@ -95,6 +95,18 @@ const ReversibilityRow kMeterRows[] = {
 		"registered proof measures the file's sha256 before and after the call and compares",
 		"no write",
 		""),
+	R("meter.speak", RC::NotMutating, false,
+		"it reads the focused channel's published post-fader peak and the master tap's short-term "
+		"loudness and speaks the result. It never arms, resets or writes the tap, and it writes no "
+		"project, file or audio byte",
+		"no write",
+		""),
+	R("meter.set_peak_watch", RC::TrueInverse, true,
+		"it writes two bounded preferences, the peak-watch enabled flag and threshold, in the config "
+		"file (meter/peakwatchenabled, meter/peakwatchdbfs). It is not project state",
+		"action checkpoint: the recorded undo step writes the previous enabled flag and threshold back, "
+		"and the watcher notices the change and re-arms both latches",
+		""),
 	R("meter.arm", RC::TrueInverse, true,
 		"it writes ONE bounded value, the live tap's armed flag, on a subsystem (the "
 		"AudioEngine's MasterLoudnessTap) that is not a JournallingObject and owns no serialized "

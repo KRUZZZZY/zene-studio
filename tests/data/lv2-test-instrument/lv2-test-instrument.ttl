@@ -4,6 +4,7 @@
 @prefix doap: <http://usefulinc.com/ns/doap#> .
 @prefix lv2: <http://lv2plug.in/ns/lv2core#> .
 @prefix midi: <http://lv2plug.in/ns/ext/midi#> .
+@prefix state: <http://lv2plug.in/ns/ext/state#> .
 @prefix urid: <http://lv2plug.in/ns/ext/urid#> .
 
 <urn:zene:test:lv2-instrument>
@@ -11,6 +12,7 @@
 	doap:name "Zene LV2 Test Instrument" ;
 	doap:license <http://opensource.org/licenses/MIT> ;
 	lv2:requiredFeature urid:map ;
+	lv2:extensionData state:interface ;
 	lv2:port [
 		a lv2:InputPort , atom:AtomPort ;
 		atom:bufferType atom:Sequence ;

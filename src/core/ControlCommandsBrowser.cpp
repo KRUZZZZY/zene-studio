@@ -44,6 +44,7 @@
 
 #include "BrowserCatalog.h"
 #include "BrowserPeakCache.h"
+#include "PeakJobs.h"
 #include "ControlBrowserSupport.h"
 #include "ControlRegistry.h"
 
@@ -117,12 +118,43 @@ ControlResult browserTagsHandler(const QJsonObject&)
 	return ControlResult::success(result);
 }
 
+//! 0.5.0 L11 (WF-007): the category facet's vocabulary - every distinct
+//! category a library file carries, with its file count. What the Search
+//! view's category filter is populated from: a category is listed because a
+//! file in the catalog carries it, and "Any category" is the caller's.
+ControlResult browserCategoriesHandler(const QJsonObject&)
+{
+	BrowserTagStore& store = BrowserTagStore::instance();
+	const bool loaded = store.load();  // as browser.tags: the store is the user's library
+
+	QJsonArray categories;
+	for (const QString& category : store.allCategories())
+	{
+		QJsonObject entry;
+		entry.insert(QStringLiteral("category"), category);
+		entry.insert(QStringLiteral("files"), store.filesWithCategory(category));
+		categories.append(entry);
+	}
+	QJsonObject result;
+	result.insert(QStringLiteral("categories"), categories);
+	result.insert(QStringLiteral("distinct"), categories.size());
+	const QJsonObject summary = storeSummaryJson();
+	for (auto it = summary.begin(); it != summary.end(); ++it) { result.insert(it.key(), it.value()); }
+	result.insert(QStringLiteral("read_ok"), loaded);
+	return ControlResult::success(result);
+}
+
 ControlResult browserQueryHandler(const QJsonObject& args)
 {
 	BrowserQuery query;
 	ControlResult error;
 	if (!readBrowserQueryArguments(args, &query, &error)) { return error; }
 
+	// As browser.index_query: the walk reads the tags and the category out of the
+	// store, so the store is re-read from its file first - a second instance may
+	// have edited it since this one last looked, and a fresh process has an empty
+	// memory until something loads it.
+	BrowserTagStore::instance().load();
 	const BrowserQueryResult found = runBrowserQuery(query);
 	QJsonArray items;
 	for (const BrowserItem& item : found.items) { items.append(browserItemJson(item, query.probe)); }
@@ -138,6 +170,26 @@ ControlResult browserQueryHandler(const QJsonObject& args)
 	result.insert(QStringLiteral("scan_limit"), BrowserMaxScanEntries);
 	result.insert(QStringLiteral("probe_limit"), BrowserMaxProbes);
 	result.insert(QStringLiteral("roots"), QJsonArray::fromStringList(found.roots));
+	return ControlResult::success(result);
+}
+
+//! Q050-010: browser.peaks_start - the same read as browser.peaks, off the interface thread.
+ControlResult browserPeaksStartHandler(const QJsonObject& args)
+{
+	QString key;
+	ControlResult error;
+	if (!readBrowserFileArgument(args, &key, &error)) { return error; }
+	const QFileInfo info(key);
+	if (!info.exists() || !info.isFile())
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("there is no file at '%1'").arg(key));
+	}
+	const int id = PeakJobs::instance().start(key);
+	QJsonObject result;
+	result.insert(QStringLiteral("task"), QStringLiteral("peak-%1").arg(id));
+	result.insert(QStringLiteral("task_id"), id);
+	result.insert(QStringLiteral("path"), key);
+	result.insert(QStringLiteral("cached"), !PeakJobs::instance().isOpen(id));
 	return ControlResult::success(result);
 }
 
@@ -219,7 +271,13 @@ void registerBrowserCommands(ControlRegistry& registry)
 		cmd.description = QStringLiteral("Find files in the browser by name, by tag, or - "
 			"with 'probe' - by what the audio file itself says it is (sample rate, channels, "
 			"length, and the embedded title/artist/album/comment/genre tags). Every 'tags' "
-			"entry must be present (AND). Sorted by path, so paging with offset is stable. "
+			"entry must be present (AND). 'category' narrows to the files carrying that one "
+			"category (browser.category.set assigns it; empty matches every category). "
+			"'tempo_min' and 'tempo_max' narrow to the audio files whose MEASURED tempo is in "
+			"that range (BPM, 0 = open) and 'key' to the measured pitch class (C, C#, Db ... B, "
+			"0..11, or 'any') - the same measurement browser.index_query filters on, so both "
+			"answer the same files; a file whose tempo or key is unknown matches neither. "
+			"Sorted by path, so paging with offset is stable. "
 			"The walk is bounded by scan_limit entries and the probe by probe_limit files, "
 			"and a result that hit either bound says truncated: true. 'text' is one substring, or an "
 			"expression: words ANDed, OR (or |) between groups, -word to exclude, \"a phrase\", and the "
@@ -229,6 +287,10 @@ void registerBrowserCommands(ControlRegistry& registry)
 			{QStringLiteral("tags"), browserStringListProperty()},
 			{QStringLiteral("kind"), stringProperty()},
 			{QStringLiteral("root"), stringProperty()},
+			{QStringLiteral("category"), stringProperty()},
+			{QStringLiteral("tempo_min"), numberProperty()},
+			{QStringLiteral("tempo_max"), numberProperty()},
+			{QStringLiteral("key"), stringProperty()},
 			{QStringLiteral("path"), stringProperty()},
 			{QStringLiteral("probe"), booleanProperty()},
 			{QStringLiteral("limit"), integerProperty(1, 500)},
@@ -274,6 +336,27 @@ void registerBrowserCommands(ControlRegistry& registry)
 
 	{
 		ControlCommand cmd;
+		cmd.id = QStringLiteral("browser.categories");
+		cmd.group = QStringLiteral("browser");
+		cmd.verb = QStringLiteral("categories");
+		cmd.description = QStringLiteral("The category vocabulary of the library (0.5.0 L11, "
+			"WF-007): every distinct category a file carries, with the number of files "
+			"carrying it, and whether the store could be read. The Search view's category "
+			"filter is populated from this; browser.category.set / browser.category.clear "
+			"edit it. Read-only.");
+		cmd.argsSchema = objectSchema();
+		cmd.resultSchema = objectSchema(withStoreSummary({
+			{QStringLiteral("categories"), arrayProperty()},
+			{QStringLiteral("distinct"), integerProperty(0, MaxDistinctTags)},
+			{QStringLiteral("read_ok"), booleanProperty()},
+		}));
+		cmd.mutating = false;
+		cmd.handler = [](const QJsonObject& args) { return browserCategoriesHandler(args); };
+		registry.registerCommand(cmd);
+	}
+
+	{
+		ControlCommand cmd;
 		cmd.id = QStringLiteral("browser.peaks");
 		cmd.group = QStringLiteral("browser");
 		cmd.verb = QStringLiteral("peaks");
@@ -281,8 +364,9 @@ void registerBrowserCommands(ControlRegistry& registry)
 			"min/max pairs over the interleaved samples, the frames each bucket covers, the "
 			"file's rate, channels and length, and whether the answer came out of the cache "
 			"('cached') or off the disk. The cache is bounded (capacity entries, base_buckets "
-			"per file) and its hit and miss counts are reported. Read-only: it writes no "
-			"project state and nothing at all on disk.");
+			"per file) and its hit and miss counts are reported. An uncached file is read before this "
+			"answers, holding the interface for a long one: browser.peaks_start reads it in the background. "
+			"Read-only: it writes no project state and nothing at all on disk.");
 		cmd.argsSchema = objectSchema({
 			{QStringLiteral("path"), stringProperty()},
 			{QStringLiteral("buckets"), integerProperty(1, BrowserPeakCache::BaseBuckets)},
@@ -301,6 +385,28 @@ void registerBrowserCommands(ControlRegistry& registry)
 		});
 		cmd.mutating = false;
 		cmd.handler = [](const QJsonObject& args) { return browserPeaksHandler(args); };
+		registry.registerCommand(cmd);
+	}
+
+	{
+		ControlCommand cmd;
+		cmd.id = QStringLiteral("browser.peaks_start");
+		cmd.group = QStringLiteral("browser");
+		cmd.verb = QStringLiteral("peaks_start");
+		cmd.description = QStringLiteral("Read an audio file's waveform peaks on a background worker, so the "
+			"window keeps working during a long file. Returns at once with 'task', the id app.tasks lists it "
+			"under (kind browser_peak, with progress) and app.task_cancel stops it by; a cancelled job leaves "
+			"the cache as it was. When the task is done, browser.peaks answers from the cache ('cached' true). "
+			"Read-only: it writes no project state and nothing at all on disk.");
+		cmd.argsSchema = objectSchema({{QStringLiteral("path"), stringProperty()}}, {QStringLiteral("path")});
+		cmd.resultSchema = objectSchema({
+			{QStringLiteral("task"), stringProperty()},
+			{QStringLiteral("task_id"), integerProperty()},
+			{QStringLiteral("path"), stringProperty()},
+			{QStringLiteral("cached"), booleanProperty()},
+		});
+		cmd.mutating = false;
+		cmd.handler = [](const QJsonObject& args) { return browserPeaksStartHandler(args); };
 		registry.registerCommand(cmd);
 	}
 

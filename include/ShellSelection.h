@@ -25,6 +25,7 @@
 #ifndef LMMS_GUI_SHELL_SELECTION_H
 #define LMMS_GUI_SHELL_SELECTION_H
 
+#include <QMetaObject>
 #include <QObject>
 #include <QPointer>
 
@@ -38,7 +39,8 @@ namespace lmms::gui
 //! What the user is working on: one track and, optionally, one clip on it - or one mixer channel. The Inspector and
 //! the Device panel show whatever this says; a click on a track header, opening a clip in the
 //! note editor and window.select (the agent's way) all set it. Interface state, not project
-//! state. Pointers are QPointers: a deleted track or clip simply reads as nothing selected.
+//! state. A destroyed track clears the selection; a destroyed clip clears the clip and emits
+//! changed(), leaving its still-live track selected.
 class LMMS_EXPORT ShellSelection : public QObject
 {
 	Q_OBJECT
@@ -72,9 +74,13 @@ signals:
 
 private:
 	ShellSelection() = default;
+	void watchSelectedObjects();
+	void clearDestroyedSelection();
 
 	QPointer<Track> m_track;
 	QPointer<Clip> m_clip;
+	QMetaObject::Connection m_trackDestroyedConnection;
+	QMetaObject::Connection m_clipDestroyedConnection;
 	QString m_channel;
 	//! MX-021: the track playing into channel @a channelId when following is on, else nullptr.
 	static Track* followedTrack(const QString& channelId);

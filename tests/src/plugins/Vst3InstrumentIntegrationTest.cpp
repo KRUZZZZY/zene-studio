@@ -50,6 +50,7 @@
 #include <QApplication>
 #include <QJsonObject>
 #include <QWidget>
+#include <QLabel>
 #include <QToolButton>
 
 #include "ControlVocabulary.h"
@@ -74,6 +75,8 @@
 #include "DeviceOptions.h"
 #include "Effect.h"
 #include "EffectChain.h"
+#include "EffectControlDialog.h"
+#include "EffectControls.h"
 #include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
@@ -84,6 +87,7 @@
 #include "Plugin.h"
 #include "PluginFactory.h"
 #include "PluginView.h"
+#include "PluginWindowPlatform.h"
 #include "Knob.h"
 #include "Vst3Instrument.h"
 #include "Song.h"
@@ -167,6 +171,68 @@ public:
 	}
 };
 
+//! The host's message handler while ScopedWarningCounter is installed.
+QtMessageHandler g_previousHandler = nullptr;
+//! How many "re-prepare failed" warnings the host has printed.
+int g_reprepareWarnings = 0;
+
+//! Counts the host's failed re-prepare warnings and passes every other
+//! message on, so a failure elsewhere in the test is still reported.
+void countReprepareWarnings(QtMsgType type, const QMessageLogContext& context, const QString& message)
+{
+	if (message.contains(QStringLiteral("re-prepare failed")))
+	{
+		++g_reprepareWarnings;
+		return;
+	}
+	if (g_previousHandler != nullptr) { g_previousHandler(type, context, message); }
+}
+
+//! Counts the host's failed re-prepare warnings for the lifetime of the scope.
+class ScopedWarningCounter
+{
+public:
+	ScopedWarningCounter()
+	{
+		g_reprepareWarnings = 0;
+		g_previousHandler = qInstallMessageHandler(countReprepareWarnings);
+	}
+
+	~ScopedWarningCounter()
+	{
+		qInstallMessageHandler(g_previousHandler);
+		g_previousHandler = nullptr;
+	}
+
+	auto count() const -> int { return g_reprepareWarnings; }
+
+private:
+	QtMessageHandler m_previous = nullptr;
+};
+
+//! Sets an environment variable for the lifetime of the scope and puts the
+//! previous value back (the fixture reads it while it prepares).
+class ScopedEnv
+{
+public:
+	ScopedEnv(const char* name, const char* value) :
+		m_name(name),
+		m_previous(qgetenv(name))
+	{
+		qputenv(name, value);
+	}
+
+	~ScopedEnv()
+	{
+		if (m_previous.isNull()) { qunsetenv(m_name.constData()); }
+		else { qputenv(m_name.constData(), m_previous); }
+	}
+
+private:
+	QByteArray m_name;
+	QByteArray m_previous;
+};
+
 } // namespace
 
 class Vst3InstrumentIntegrationTest : public QObject
@@ -181,6 +247,7 @@ private slots:
 	void testUnpreparedInstrumentClearsAudioPortsOutput();
 	void testAMidiClipDrivesAudioWithSampleAccuracy();
 	void testAnUnpreparedInstrumentClearsItsOutput();
+	void testAFailedReprepareIsNotRetriedForEver();
 	void testDistinctInputGivesDistinctOutput();
 	void testTheLevelParameterReachesTheInstrument();
 	void testStateSurvivesTheProjectFile();
@@ -188,8 +255,12 @@ private slots:
 	void testAGuiLessInstrumentExposesItsParameters();
 	void testTheViewsEntryPointIsSafeOutsideAnInstrumentTrackWindow();
 	void testTheInstrumentsOwnEditorOpensInItsOwnWindow();
+	void testOnNativeWaylandTheEditorRefusesWithTheReason();
 	void testAnEffectsEditorOpensAtItsDeviceScale();
 	void testReadOnlyParametersAreNotKnobs();
+	void testReadOnlyParametersAreNotEffectKnobs();
+	void testReadOnlyParametersAreReportedAndRefusedOverControl();
+	void testAValueTheChunksDoNotCarryIsRestoredFromTheHost();
 
 private:
 	//! The real module, loaded exactly as the plugin factory loads it.
@@ -452,6 +523,42 @@ void Vst3InstrumentIntegrationTest::testAnUnpreparedInstrumentClearsItsOutput()
 	}));
 }
 
+void Vst3InstrumentIntegrationTest::testAFailedReprepareIsNotRetriedForEver()
+{
+	auto track = makeTrack();
+	auto* instrument = static_cast<Vst3Instrument*>(makeInstrument(track.get()));
+	QVERIFY(instrument != nullptr);
+	QVERIFY(instrument->vst3Plugin()->isPrepared());
+
+	// The plug-in is loaded, but from now on it REFUSES to be set up: the
+	// "unsupported sample rate" case. Every prepare the host attempts fails.
+	ScopedEnv failPrepare("VST3_TEST_INSTRUMENT_FAIL_PREPARE", "1");
+	ScopedWarningCounter warnings;
+
+	instrument->vst3Plugin()->release();
+	QVERIFY(!instrument->vst3Plugin()->isPrepared());
+
+	// One audio block per cycle: the unprepared plug-in makes the audio thread
+	// record the re-prepare request, and the GUI thread's poll() services it.
+	// poll() is called directly (not by its 100 ms timer), so the test is
+	// deterministic: no waiting, no sleeping, no race with the timer.
+	constexpr int Cycles = 8;
+	std::vector<SampleFrame> output(BlockFrames, SampleFrame{0.0f, 0.0f});
+	for (int cycle = 0; cycle < Cycles; ++cycle)
+	{
+		instrument->play(std::span<SampleFrame>{output});
+		QVERIFY(instrument->needsReprepare());
+		QVERIFY(QMetaObject::invokeMethod(instrument, "poll", Qt::DirectConnection));
+	}
+
+	// The host must not set the plug-in up again and again for the SAME
+	// configuration: the failure is reported a few times, not once per poll.
+	// Without a retry policy every cycle warns again (one warning per poll).
+	QVERIFY2(warnings.count() > 0, "the failed re-prepare was not reported at all");
+	QVERIFY2(warnings.count() < Cycles,
+		"the failed re-prepare was retried on every poll: the request is never given up");
+}
+
 void Vst3InstrumentIntegrationTest::testDistinctInputGivesDistinctOutput()
 {
 	auto track = makeTrack();
@@ -611,7 +718,11 @@ void Vst3InstrumentIntegrationTest::testStateSurvivesTheProjectFile()
 	QVERIFY2(freshInstrument != nullptr, "the project carried no instrument to reload");
 	QCOMPARE(QString::fromLatin1(freshInstrument->descriptor()->name),
 		QStringLiteral("vst3instrument"));
-	QCOMPARE(freshInstrument->parameterModel(0)->value<float>(), FixtureLevel);
+	// The fixture's controller does not read the component state back, so straight after the chunks are applied
+	// it still reports its default (0.5) while the processor renders the saved 0.75. The host's saved value of
+	// the parameter is put back over that disagreement (stress-4), so the model now shows what is rendered -
+	// it used to show the stale FixtureLevel.
+	QCOMPARE(freshInstrument->parameterModel(0)->value<float>(), WrittenLevel);
 
 	const auto restored = renderNote(freshTrack.get(), freshInstrument, note, 0,
 		Blocks * BlockFrames);
@@ -789,6 +900,56 @@ void Vst3InstrumentIntegrationTest::testTheInstrumentsOwnEditorOpensInItsOwnWind
 	ControlRegistry::setReady(false);
 }
 
+/*! Q050-502: on Qt's native wayland platform a window id is not an X11 window, so the VST3 view is never handed one:
+ *  the instrument's open, plugin.editor_open (typed 'requires') and the view's "Show plugin editor" button all refuse
+ *  with the reason, and no editor opens. The platform is faked through the module's test seam (no compositor here);
+ *  back on the real platform the same command opens the editor as before. */
+void Vst3InstrumentIntegrationTest::testOnNativeWaylandTheEditorRefusesWithTheReason()
+{
+	auto track = makeTrack();
+	auto* instrument = makeInstrument(track.get());
+	QVERIFY(instrument != nullptr);
+	const QJsonObject address{{QStringLiteral("target"), control::trackIdOf(track.get())},
+		{QStringLiteral("plugin"), QStringLiteral("inst")}};
+	ControlRegistry::setReady(true);
+	const bool headless = ControlRegistry::instance()->isHeadless();
+	ControlRegistry::instance()->setHeadless(false);
+	QWidget parent;
+	gui::PluginView* view = instrument->createView(&parent);
+	QToolButton* show = nullptr;
+	for (QToolButton* button : view->findChildren<QToolButton*>())
+	{
+		if (button->property("controlCommand").toString() == QLatin1String("plugin.editor_open")) { show = button; }
+	}
+
+	pluginwindow::setPlatformForTesting(QStringLiteral("wayland"), pluginwindow::Decision{pluginwindow::Choice::NoXWayland, {}});
+	QString error;
+	const bool openedDirectly = instrument->openNativeEditor(&error);
+	const ControlResult refused = ControlRegistry::instance()->invoke(QStringLiteral("plugin.editor_open"), address);
+	if (show != nullptr) { QTest::mouseClick(show, Qt::LeftButton); }
+	const bool openedByButton = instrument->nativeEditorOpen();
+	const QLabel* reason = show != nullptr ? show->parentWidget()->findChild<QLabel*>() : nullptr;
+	const QString shown = reason != nullptr && reason->isVisibleTo(&parent) ? reason->text() : QString();
+	pluginwindow::setPlatformForTesting({}, {});
+
+	const ControlResult opened = ControlRegistry::instance()->invoke(QStringLiteral("plugin.editor_open"), address);
+	instrument->closeNativeEditor();
+	ControlRegistry::instance()->setHeadless(headless);
+	ControlRegistry::setReady(false);
+
+	QVERIFY2(show != nullptr, "the instrument view has no plugin-editor button");
+	QVERIFY2(!openedDirectly, "the VST3 view was handed a Wayland window id");
+	QVERIFY2(error.contains(QStringLiteral("no XWayland")), qPrintable(error));
+	QVERIFY(!refused.ok);
+	QCOMPARE(refused.errorKind, ControlErrorKind::Requires);
+	QVERIFY2(refused.errorMessage.contains(address.value(QStringLiteral("target")).toString())
+		&& refused.errorMessage.contains(QStringLiteral("X11 windows")), qPrintable(refused.errorMessage));
+	QVERIFY2(!openedByButton, "the view's button opened an editor on Wayland");
+	QVERIFY2(shown.contains(QStringLiteral("XWayland")), qPrintable(shown));
+	QVERIFY2(opened.ok, qPrintable(opened.errorMessage));  // the X11 (here: offscreen) path is unchanged
+	QVERIFY(opened.result.value(QStringLiteral("open")).toBool());
+}
+
 /*! 0.5.0 MX-094, through the product's own path: the installed vst3effect module, hosting the
  *  fixture's class in an effect chain, opens the plug-in's editor at the device's editor-scale
  *  option (plugin.options editor_scale). The fixture's view scales itself, so the window takes the
@@ -860,6 +1021,120 @@ void Vst3InstrumentIntegrationTest::testReadOnlyParametersAreNotKnobs()
 	QVERIFY2(knobs.first()->model() == instrument->parameterModel(0),
 		"the surviving knob is not the automatable Level parameter");
 
+}
+
+/*! cluster new-p14-364 BUG 4, on the effect side: the vst3effect module hosting the same
+ *  fixture builds its generated effect view from the same descriptors. Its read-only "Meter"
+ *  must not own a knob either - the effect's view filters hidden parameters only otherwise,
+ *  and a knob dragged there writes into a value the plug-in owns. Only "Level" may keep one. */
+void Vst3InstrumentIntegrationTest::testReadOnlyParametersAreNotEffectKnobs()
+{
+	Plugin::Descriptor::SubPluginFeatures::Key key;
+	key.name = QStringLiteral("Zene VST3 Test Instrument");
+	key.attributes[QStringLiteral("file")] = QStringLiteral(VST3_TEST_INSTRUMENT_BUNDLE);
+	key.attributes[QStringLiteral("class")] = QStringLiteral("Zene VST3 Test Instrument");
+	EffectChain chain(nullptr);
+	Effect* effect = Effect::instantiate(QStringLiteral("vst3effect"), &chain, &key);
+	QVERIFY2(effect != nullptr, "the vst3effect module did not instantiate through the plug-in factory");
+	chain.appendEffect(effect);
+
+	// Declared after the chain, so the view is destroyed before the effect its knobs edit
+	std::unique_ptr<gui::EffectControlDialog> view{effect->controls()->createView()};
+	QVERIFY2(view != nullptr, "the effect has no generated view");
+
+	const auto knobs = view->findChildren<gui::Knob*>();
+	QCOMPARE(knobs.size(), 1);
+	QVERIFY2(knobs.first()->model()->displayName() == QStringLiteral("Level"),
+		"the surviving effect knob is not the automatable Level parameter");
+}
+
+/*! stress-4 (a): the plug-in stress run's state round-trip "lost" read-only parameters - DPF's "Buffer Size"
+ *  and "Sample Rate", AIDA-X's "Meter Out" - because plugin.param_get listed them with a range and
+ *  plugin.param_set accepted a write the plug-in then overwrote. The fixture's "Meter" is declared with
+ *  ParameterInfo::kIsReadOnly: over the control surface it must say read_only, a write to it must be refused
+ *  with a typed error and leave it as it was, and plugin.randomise must not move it - while "Level", the
+ *  writable parameter beside it, keeps working exactly as before. */
+void Vst3InstrumentIntegrationTest::testReadOnlyParametersAreReportedAndRefusedOverControl()
+{
+	auto track = makeTrack();
+	auto* instrument = makeInstrument(track.get());
+	QVERIFY(instrument != nullptr);
+	QCOMPARE(instrument->parameterName(1), QStringLiteral("Meter"));
+
+	ControlRegistry::setReady(true);
+	auto* registry = ControlRegistry::instance();
+	const auto address = [&track](int index) {
+		return QJsonObject{{QStringLiteral("target"), control::trackIdOf(track.get())},
+			{QStringLiteral("plugin"), QStringLiteral("inst")}, {QStringLiteral("index"), index}};
+	};
+	const auto parameterOf = [](const ControlResult& reply) {
+		return reply.result.value(QStringLiteral("parameter")).toObject();
+	};
+
+	const ControlResult meter = registry->invoke(QStringLiteral("plugin.param_get"), address(1));
+	QVERIFY2(meter.ok, qPrintable(meter.errorMessage));
+	QVERIFY2(parameterOf(meter).value(QStringLiteral("read_only")).toBool(),
+		"plugin.param_get does not report the kIsReadOnly Meter as read_only");
+	const ControlResult level = registry->invoke(QStringLiteral("plugin.param_get"), address(0));
+	QVERIFY2(level.ok, qPrintable(level.errorMessage));
+	QVERIFY2(!parameterOf(level).contains(QStringLiteral("read_only")), "the writable Level is reported read-only");
+
+	AutomatableModel* meterModel = instrument->parameterModel(1);
+	const float before = meterModel->value<float>();
+	QJsonObject write = address(1);
+	write.insert(QStringLiteral("value"), before < 0.5f ? 1.0 : 0.0);
+	const ControlResult refused = registry->invoke(QStringLiteral("plugin.param_set"), write);
+	QVERIFY2(!refused.ok, "plugin.param_set wrote a read-only parameter");
+	QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+	QCOMPARE(meterModel->value<float>(), before);
+
+	// A sibling write path: plugin.randomise changes the device's settings, and a read-only one is not one.
+	const QJsonObject randomise{{QStringLiteral("target"), control::trackIdOf(track.get())},
+		{QStringLiteral("plugin"), QStringLiteral("inst")}, {QStringLiteral("amount"), 1.0}, {QStringLiteral("seed"), 7}};
+	const ControlResult randomised = registry->invoke(QStringLiteral("plugin.randomise"), randomise);
+	QVERIFY2(randomised.ok, qPrintable(randomised.errorMessage));
+	QCOMPARE(meterModel->value<float>(), before);
+
+	// The writable parameter is untouched by any of it.
+	QJsonObject levelWrite = address(0);
+	levelWrite.insert(QStringLiteral("value"), 0.25);
+	const ControlResult written = registry->invoke(QStringLiteral("plugin.param_set"), levelWrite);
+	QVERIFY2(written.ok, qPrintable(written.errorMessage));
+	QCOMPARE(instrument->parameterModel(0)->value<float>(), 0.25f);
+	ControlRegistry::setReady(false);
+}
+
+/*! stress-4 (b): a SUCCESSFUL chunk load that does not bring a writable parameter back must not lose it. The
+ *  stress run lost parameters this way on real instruments (Odin2, Vitalium: the controller reports the old value
+ *  after setComponentState; Surge: slots it resets on load). Here the chunk is made to disagree with the host the
+ *  way a project saved before the plug-in processed an edit does: "Level" is set and the instrument is saved
+ *  before any block or poll has carried it to the processor, so its component state still holds the default
+ *  while the host's saved <parameters> hold the edit. Loading that state back must leave Level at the edit - in
+ *  the host's model AND in what the instrument renders. No timers: nothing here spins the event loop. */
+void Vst3InstrumentIntegrationTest::testAValueTheChunksDoNotCarryIsRestoredFromTheHost()
+{
+	auto track = makeTrack();
+	auto* instrument = makeInstrument(track.get());
+	QVERIFY(instrument != nullptr);
+	auto* level = instrument->parameterModel(0);
+	QVERIFY(level != nullptr);
+	level->setValue(WrittenLevel);
+
+	QDomDocument doc;
+	QDomElement parent = doc.createElement(QStringLiteral("parent"));
+	QDomElement state = instrument->saveState(doc, parent);
+	QVERIFY2(!state.firstChildElement(QStringLiteral("componentstate")).isNull(),
+		"the instrument wrote no state chunk: this case is about a SUCCESSFUL chunk load");
+	QVERIFY(!state.firstChildElement(QStringLiteral("parameters")).isNull());
+
+	level->setValue(0.25f);
+	instrument->restoreState(state);
+	QCOMPARE(level->value<float>(), WrittenLevel);
+
+	const Note note{TimePos::fromFrames(Blocks * BlockFrames, 1.0), TimePos(0), 60, DefaultVolume};
+	const auto rendered = renderNote(track.get(), instrument, note, 0, Blocks * BlockFrames);
+	QVERIFY2(std::all_of(rendered.begin(), rendered.end(), [](float sample) { return sample == WrittenLevel; }),
+		"the instrument does not render the Level the host restored");
 }
 
 } // namespace lmms

@@ -49,6 +49,60 @@ class GrooveTemplateTest : public QObject
 	Q_OBJECT
 private slots:
 
+	//! An overlong name is REFUSED, never truncated: a name longer than
+	//! MaxNameLength is a different name from its first 64 characters, so truncating
+	//! it would let it replace that other groove, or be refused as if it were that one.
+	void overlongNamesAreRefusedNotTruncated()
+	{
+		const QString prefix(GrooveTemplate::MaxNameLength, QLatin1Char('g'));
+		const QString first = prefix + QStringLiteral("-one");
+		const QString second = prefix + QStringLiteral("-two");
+
+		QVERIFY(GrooveTemplate::isWritable(prefix, 48, 12));
+		QVERIFY(!GrooveTemplate::isWritable(first, 48, 12));
+		QVERIFY(!GrooveTemplate::isWritable(second, 48, 12));
+		// Blanks are trimmed before the bound applies, so they do not count against it.
+		QVERIFY(GrooveTemplate::isWritable(QStringLiteral("  ") + prefix + QStringLiteral("  "),
+			48, 12));
+	}
+
+	//! An overlong name must not rename onto, or load over, the groove it would
+	//! truncate to: the pool and the project file both hold the name as the key.
+	void overlongNamesDoNotRenameOrLoadOntoOtherGrooves()
+	{
+		const QString prefix(GrooveTemplate::MaxNameLength, QLatin1Char('g'));
+		const QString first = prefix + QStringLiteral("-one");
+
+		// A rename onto the overlong name is refused and creates no truncated alias.
+		GroovePool pool;
+		QVERIFY(pool.set(GrooveTemplate(QStringLiteral("swing"), 48, 12), nullptr));
+		QVERIFY2(!pool.rename(QStringLiteral("swing"), first),
+			"rename accepted an overlong name");
+		QVERIFY(pool.find(QStringLiteral("swing")) != nullptr);
+		QVERIFY2(pool.find(prefix) == nullptr, "rename stored the truncated name");
+	}
+
+	//! A project holding two grooves whose names differ only after the 64th
+	//! character must not let the second replace the first.
+	void overlongGroovesDoNotLoadOverEachOther()
+	{
+		const QString prefix(GrooveTemplate::MaxNameLength, QLatin1Char('g'));
+		const QString first = prefix + QStringLiteral("-one");
+		const QString second = prefix + QStringLiteral("-two");
+		GroovePool pool;
+
+		// A project holding two grooves that differ only after the 64th character loads
+		// neither of them, and the valid groove beside them still loads.
+		QVERIFY(pool.fromXml(QStringLiteral("<groove-pool>"
+			"<groove name=\"%1\" length=\"48\" step=\"12\"/>"
+			"<groove name=\"%2\" length=\"48\" step=\"12\"/>"
+			"<groove name=\"shuffle\" length=\"48\" step=\"12\"/>"
+			"</groove-pool>").arg(first, second)));
+		QCOMPARE(pool.size(), 1);
+		QVERIFY(pool.find(QStringLiteral("shuffle")) != nullptr);
+		QVERIFY2(pool.find(prefix) == nullptr, "loading an overlong name stored a truncated groove");
+	}
+
 	//! The geometry the engine accepts, and the bounds every refusal names.
 	void theGeometryBoundsAreTheEnginesOwn()
 	{
@@ -62,7 +116,8 @@ private slots:
 			(GrooveTemplate::MaxSteps + 1) * 12, 12));
 		QVERIFY(GrooveTemplate::isWritable(QStringLiteral("feel"),
 			GrooveTemplate::MaxSteps * 12, 12));
-		// A name is trimmed and bounded, not rejected at 65 characters.
+		// normalisedName is the STORED form (trimmed and bounded). It is not the admission
+		// test: isWritable refuses an overlong name, see overlongNamesAreRefusedNotTruncated.
 		QCOMPARE(GrooveTemplate::normalisedName(QStringLiteral("  feel \n")),
 			QStringLiteral("feel"));
 		QCOMPARE(GrooveTemplate::normalisedName(QString(80, QLatin1Char('x'))).size(),
@@ -406,6 +461,41 @@ private slots:
 		{
 			QVERIFY2(captured.step(slot).timing >= -6 && captured.step(slot).timing <= 6,
 				"a slot's shift came out of the arithmetic as garbage");
+		}
+	}
+
+	/*! The timing offset is added to the grid in wide arithmetic and narrowed
+	 *  CLAMPED. A note at the end of the timeline whose slot carries a positive
+	 *  shift stays on the last tick, where tick_t addition would wrap it negative. */
+	void theTimingOffsetDoesNotWrapAtTheEndOfTheTimeline()
+	{
+		GrooveTemplate groove(QStringLiteral("late"), 48, 12);
+		QVERIFY(groove.setStep(0, GrooveStep{5, GrooveStep::NoVelocityOpinion}));
+		const tick_t last = std::numeric_limits<tick_t>::max();
+		QCOMPARE(groove.targetTickFor(last), last);
+	}
+
+	/*! The random jitter is added to the moved position in wide arithmetic too.
+	 *  A note on the last tick that the groove leaves in place, drawn a positive
+	 *  jitter, stays within the jitter of the last tick. Tick_t addition would
+	 *  wrap it negative, and the floor would then pull the note to tick 0. The
+	 *  seeds are fixed and there are enough of them that some draw a positive
+	 *  jitter, so this is deterministic, not a sampled probability. */
+	void theRandomJitterDoesNotWrapAtTheEndOfTheTimeline()
+	{
+		const tick_t last = std::numeric_limits<tick_t>::max();
+		const tick_t randomTicks = 6;
+		const GrooveTemplate flat(QStringLiteral("flat"), 48, 12);
+		QVERIFY(flat.neutral());
+		for (std::uint32_t seed = 1; seed <= 64; ++seed)
+		{
+			NoteTable notes;
+			notes.add(60, static_cast<int>(last), 12, 100);
+			applyGroove(notes.vector(), flat, 1.0f, randomTicks, 0, seed);
+			const tick_t moved = notes.vector().front()->pos().getTicks();
+			QVERIFY2(moved >= last - randomTicks && moved <= last,
+				qPrintable(QStringLiteral("seed %1 moved the last-tick note to %2")
+					.arg(seed).arg(moved)));
 		}
 	}
 

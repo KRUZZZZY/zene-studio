@@ -118,11 +118,11 @@ bool timeFrom(const QString& text, const Context& context, qint64* frame)
 	static const QRegularExpression clock(QStringLiteral("^(?:(\\d+):)?(?:(\\d+):)?(\\d+(?:\\.\\d*)?)$"));
 	const QRegularExpressionMatch match = clock.match(text);
 	if (!match.hasMatch()) { return false; }
-	const bool hours = match.hasCaptured(2);
+	const bool hours = (match.capturedStart(2) >= 0);
 	const double h = hours ? match.captured(1).toDouble() : 0.0;
 	const double m = hours ? match.captured(2).toDouble() : match.captured(1).toDouble();
 	const double s = match.captured(3).toDouble();
-	if ((match.hasCaptured(1) && s >= 60.0) || (hours && m >= 60.0)) { return false; }
+	if (((match.capturedStart(1) >= 0) && s >= 60.0) || (hours && m >= 60.0)) { return false; }
 	*frame = frameOfSeconds(h * 3600.0 + m * 60.0 + s, context);
 	return true;
 }
@@ -200,7 +200,8 @@ bool frameFromText(const QString& text, const Context& context, Unit unit, qint6
 	{
 		return barsFrom(body, context, length, at, frame);
 	}
-	if (body.contains(QLatin1Char(':')) || stripWord(&body, secondWords)) { return timeFrom(body, context, frame); }
+	// The word off first: a clock keeps its colon and its "s" word, and one names the unit just as well.
+	if (stripWord(&body, secondWords) || body.contains(QLatin1Char(':'))) { return timeFrom(body, context, frame); }
 	switch (unit)
 	{
 	case Unit::Samples: return framesFrom(body, frame);

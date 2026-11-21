@@ -197,6 +197,52 @@ private slots:
 		QCOMPARE(mapping.toJson().value(QStringLiteral("ok")).toBool(), false);
 	}
 
+	//! A completion that arrives after stop() belongs to the attempt the stop canceled: it must not report a success.
+	void aLateAnswerAfterStopIsIgnored()
+	{
+		PortMapping mapping;
+		auto* pmp = mapping.findChild<PmpMapper*>();
+		auto* upnp = mapping.findChild<UpnpMapper*>();
+		QSignalSpy finished(&mapping, &PortMapping::finished);
+		mapping.stop();  // the host stopped the mapping while the request was still out
+
+		emit pmp->finished(success(QStringLiteral("nat-pmp"), QStringLiteral("8.8.8.8"), 40000, 7200));
+
+		QCOMPARE(finished.size(), 0);
+		QVERIFY(!mapping.busy());
+		QVERIFY(!mapping.result().ok);
+		QVERIFY(!mapping.findChild<QTimer*>()->isActive());  // and no renewal is planned for a canceled attempt
+
+		emit upnp->finished(success(QStringLiteral("upnp"), QStringLiteral("8.8.4.4"), 5000, 0));
+
+		QCOMPARE(finished.size(), 0);
+		QVERIFY(!mapping.busy());
+		QVERIFY(!mapping.result().ok);
+	}
+
+	//! A late refusal after stop() must not start the UPnP fallback either: that search would open the port the
+	//! stop just canceled.
+	void aLateRefusalAfterStopDoesNotStartTheUpnpFallback()
+	{
+		PortMapping mapping;
+		auto* pmp = mapping.findChild<PmpMapper*>();
+		auto* upnp = mapping.findChild<UpnpMapper*>();
+		QUdpSocket searchEndpoint;  // where a UPnP search would go: on the loopback, so nothing leaves this machine
+		QVERIFY(searchEndpoint.bind(QHostAddress(QHostAddress::LocalHost), 0));
+		upnp->setSearchEndpoint(QHostAddress(QHostAddress::LocalHost), searchEndpoint.localPort(), true);
+		QSignalSpy finished(&mapping, &PortMapping::finished);
+		mapping.stop();
+
+		MappingResult refusal;
+		refusal.message = QStringLiteral("the router did not answer");
+		emit pmp->finished(refusal);
+
+		QCOMPARE(finished.size(), 0);
+		QVERIFY(!mapping.busy());
+		QVERIFY(!upnp->findChild<QTimer*>()->isActive());  // the fallback search never started
+		QVERIFY(!searchEndpoint.hasPendingDatagrams());
+	}
+
 	//! The renewal asks the SAME mapper for the SAME external port again: here a PCP gateway on 127.0.0.1.
 	void aRenewalAsksTheGatewayForTheSameExternalPort()
 	{

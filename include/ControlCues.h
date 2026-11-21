@@ -40,7 +40,7 @@ class QWidget;
  *    description, which a screen reader would repeat at every focus; a fader, slider, number or combo box with a tooltip adds a one-line reminder
  *    under it (a knob shows its value in its own floating label; a button's click needs no reminder);
  *  - sizing: the one global zoom scales every control, as Bitwig's does. In accessible mode a control a layout
- *    places is given at least tokens::targetSize() (32 px) on each side; one a panel places by coordinates - an
+ *    places is given at least tokens::targetSize() (44 px in accessible mode) on each side; one a panel places by coordinates - an
  *    instrument's or an effect's fixed artwork - keeps its size, so nothing there overlaps.
  *  An application event filter does it as each control is first shown (it runs by itself when the application object
  *  is made, as the accessibility helpers do). It looks only at polish and tooltip events, and answers only the tooltip

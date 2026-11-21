@@ -59,6 +59,9 @@ namespace
 
 //! The bias that makes the curve slightly asymmetric (even-order colour).
 constexpr float kBias = 0.05f;
+//! Q050-088: the glue stage's fixed ballistics, a bus compressor's.
+constexpr float kGlueAttackMs = 10.f;
+constexpr float kGlueReleaseMs = 100.f;
 
 } // namespace
 
@@ -67,7 +70,11 @@ ConsoleControls::ConsoleControls(ConsoleEffect* effect) :
 	m_characterModel(this, tr("Character")),
 	m_driveModel(30.f, 0.f, 100.f, 0.1f, this, tr("Drive")),
 	m_outputModel(0.f, -12.f, 12.f, 0.1f, this, tr("Output")),
-	m_oversamplingModel(this, tr("Oversampling"))
+	m_oversamplingModel(this, tr("Oversampling")),
+	m_glueModel(false, this, tr("Glue")),
+	m_glueThresholdModel(-10.f, -40.f, 0.f, 0.1f, this, tr("Glue threshold")),
+	m_glueRatioModel(4.f, 1.f, 20.f, 0.1f, this, tr("Glue ratio")),
+	m_glueMakeupModel(0.f, 0.f, 24.f, 0.1f, this, tr("Glue makeup"))
 {
 	m_oversamplingModel.addItem(tr("No oversampling"));
 	m_oversamplingModel.addItem(tr("2x oversampling"));
@@ -79,6 +86,11 @@ ConsoleControls::ConsoleControls(ConsoleEffect* effect) :
 	addParameter(&m_driveModel, QStringLiteral("drive"));
 	addParameter(&m_outputModel, QStringLiteral("output"));
 	addParameter(&m_oversamplingModel, QStringLiteral("oversampling"));
+	// Q050-088: an absent key loads its default (AutomatableModel::loadSettings resets it), so the stage is off.
+	addParameter(&m_glueModel, QStringLiteral("glue"));
+	addParameter(&m_glueThresholdModel, QStringLiteral("gluethreshold"));
+	addParameter(&m_glueRatioModel, QStringLiteral("glueratio"));
+	addParameter(&m_glueMakeupModel, QStringLiteral("gluemakeup"));
 }
 
 ConsoleEffect::ConsoleEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key) :
@@ -93,6 +105,26 @@ float ConsoleEffect::saturate(float x, float drive)
 	const float offset = std::tanh(drive * kBias);
 	const float slope = drive * (1.f - offset * offset);
 	return (std::tanh(drive * (x + kBias)) - offset) / slope;
+}
+
+float ConsoleEffect::glueGainDb(float levelDb, float thresholdDb, float ratio)
+{
+	if (levelDb <= thresholdDb || ratio <= 1.f) { return 0.f; }
+	return (levelDb - thresholdDb) * (1.f / ratio - 1.f);
+}
+
+void ConsoleEffect::glue(SampleFrame& frame, float attack, float release)
+{
+	// Stereo-linked: the louder side sets the gain both take, so the image does not move.
+	const float level = std::max(std::abs(frame[0]), std::abs(frame[1]));
+	const float levelDb = level > 1e-6f ? ampToDbfs(level) : -120.f;
+	const float target = glueGainDb(levelDb, m_controls.m_glueThresholdModel.value(), m_controls.m_glueRatioModel.value());
+	// Falling gain (more reduction) moves at the attack, rising gain at the release - one pole each.
+	const float coefficient = target < m_glueEnvelopeDb ? attack : release;
+	m_glueEnvelopeDb = target + coefficient * (m_glueEnvelopeDb - target);
+	const float gain = dbfsToAmp(m_glueEnvelopeDb + m_controls.m_glueMakeupModel.value());
+	frame[0] *= gain;
+	frame[1] *= gain;
 }
 
 void ConsoleEffect::design(Character character, float rate)
@@ -135,6 +167,9 @@ ProcessStatus ConsoleEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 	const float output = dbfsToAmp(m_controls.m_outputModel.value());
 	const float d = dryLevel();
 	const float w = wetLevel();
+	const bool glued = m_controls.m_glueModel.value();
+	const float attack = std::exp(-1000.f / (kGlueAttackMs * rate));
+	const float release = std::exp(-1000.f / (kGlueReleaseMs * rate));
 	for (f_cnt_t f = 0; f < inOut.frames(); ++f)
 	{
 		auto& frame = inOut.sampleFrameAt(f);
@@ -142,10 +177,13 @@ ProcessStatus ConsoleEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 		for (int c = 0; c < 2; ++c)
 		{
 			const float driven = m_dcBlock.run(saturated(c, frame[c], drive), c);
-			shaped[c] = m_high.run(m_low.run(driven, c), c) * output;
+			shaped[c] = m_high.run(m_low.run(driven, c), c);
 		}
-		frame = frame * d + shaped * w;
+		if (glued) { glue(shaped, attack, release); }  // Q050-088: skipped while off - the pre-glue arithmetic, bit for bit
+		frame = frame * d + shaped * output * w;
 	}
+	if (!glued) { m_glueEnvelopeDb = 0.f; }  // switched back on, it starts from no reduction
+	m_reductionDb.store(-m_glueEnvelopeDb, std::memory_order_relaxed);
 	return ProcessStatus::ContinueIfNotQuiet;
 }
 

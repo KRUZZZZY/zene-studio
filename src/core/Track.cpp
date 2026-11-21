@@ -30,7 +30,11 @@
 #include "Track.h"
 
 #include <QDomElement>
+#include <QFileInfo>
+#include <QThread>
 #include <QVariant>
+
+#include <limits>
 
 #include "AutomationClip.h"
 #include "AutomationTrack.h"
@@ -39,17 +43,22 @@
 #include "ConfigManager.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
+#include "NeutralTrack.h"
 #include "MidiClip.h"
+#include "Mixer.h"
 #include "PatternClip.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
 #include "ProjectIds.h"
+#include "ProjectJournal.h"
 #include "Sample.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SamplePlayHandle.h"
 #include "SampleTrack.h"
 #include "Song.h"
+#include "BounceInPlace.h"
+#include "TempoMap.h"
 #include "TrackContainer.h"
 #include "TrackFolder.h"
 #include "UnclaimedElements.h"
@@ -86,11 +95,15 @@ struct TrackRestoreRule
 constexpr TrackRestoreRule TRACK_RESTORE_SCHEMA[] = {
 	{ "folder", "-1" }, // absent => the track is in no folder (-1 = no id)
 	{ "visible", "1" },  // absent => visible
+	{ "autolanes", "0" }, // absent => this track's automation lanes are shown
+	{ "mixlink", "-1" }, // absent => no mixer channel was made for this track (Q050-212)
 };
 
 //! Test seam for FrozenTakeHandoffTest; null in product use.
 #ifdef LMMS_TESTING
 void (*s_frozenTakeLockProbeForTest)() = nullptr;
+//! Test seam for Track::create: called once the new track exists, before it is finished; null in product use.
+void (*s_createFaultProbeForTest)() = nullptr;
 #endif
 
 //! The schema's default for \a attribute (SPEC-ARCH-4 1.7 R6).
@@ -208,6 +221,19 @@ QString mutedClipsAttribute(const std::vector<Track::FrozenTake::MutedClip>& mut
 	return parts.join(QLatin1Char(','));
 }
 
+bool parseTick(const QString& text, tick_t& ticks)
+{
+	bool ok = false;
+	const qint64 value = text.toLongLong(&ok);
+	if (!ok || value < std::numeric_limits<tick_t>::min()
+		|| value > std::numeric_limits<tick_t>::max())
+	{
+		return false;
+	}
+	ticks = static_cast<tick_t>(value);
+	return true;
+}
+
 std::vector<Track::FrozenTake::MutedClip> parseMutedClipsAttribute(const QString& text)
 {
 	std::vector<Track::FrozenTake::MutedClip> muted;
@@ -216,16 +242,30 @@ std::vector<Track::FrozenTake::MutedClip> parseMutedClipsAttribute(const QString
 		const QStringList pair = part.split(QLatin1Char(':'));
 		if (pair.size() != 2) { continue; }
 		Track::FrozenTake::MutedClip clip;
-		clip.startTicks = static_cast<tick_t>(pair.at(0).toLongLong());
-		clip.lengthTicks = static_cast<tick_t>(pair.at(1).toLongLong());
+		if (!parseTick(pair.at(0), clip.startTicks) || !parseTick(pair.at(1), clip.lengthTicks)) { continue; }
 		muted.push_back(clip);
 	}
 	return muted;
 }
 
+/*! Releases the mute a frozen take put on each clip it names. A clip the take
+ *  no longer finds (moved or removed since the freeze) is skipped. */
+void unmuteFrozenClips(const std::vector<Track::FrozenTake::MutedClip>& muted, Track::clipVector& clips)
+{
+	for (const Track::FrozenTake::MutedClip& clip : muted)
+	{
+		if (Clip* found = clipAt(clips, clip.startTicks, clip.lengthTicks)) { found->setMuted(false); }
+	}
+}
+
 } // namespace
 
 #ifdef LMMS_TESTING
+void Track::setCreateFaultProbeForTest(void (*probe)())
+{
+	s_createFaultProbeForTest = probe;
+}
+
 void Track::setFrozenTakeLockProbeForTest(void (*probe)())
 {
 	s_frozenTakeLockProbeForTest = probe;
@@ -271,11 +311,27 @@ Track::Track( Type type, TrackContainer * tc ) :
 	                                 * rejects; C++ initialises in declaration order
 	                                 * either way, so the order here is a no-op). */
 	m_clips()        /*!< The clips (segments) */
-{	
-m_trackContainer->addTrack( this );
-m_height = -1;
-// R2.1: the behaviour this track type had before monitoring existed (Track.h).
-m_monitorMode.store( static_cast<int>( defaultMonitorMode() ), std::memory_order_relaxed );
+{
+	try
+	{
+		m_trackContainer->addTrack( this );
+#ifdef LMMS_TESTING
+		if (s_createFaultProbeForTest != nullptr) { s_createFaultProbeForTest(); }
+#endif
+		m_height = -1;
+		// R2.1: the behaviour this track type had before monitoring existed (Track.h).
+		m_monitorMode.store( static_cast<int>( defaultMonitorMode() ), std::memory_order_relaxed );
+		// Q050-212: through the signal, not a call in setName: InstrumentLoaderThread names a track off the UI thread, and
+		// this connection brings that rename back to the thread the channel's name lives on.
+		connect( this, &Track::nameChanged, this, [this] { syncLinkedChannelName(); } );
+	}
+	catch (...)
+	{
+		// Track's destructor does not run if its constructor throws. Undo the raw-pointer registration here so an
+		// allocation failure in connect() cannot leave a dangling entry in the container.
+		m_trackContainer->removeTrack( this );
+		throw;
+}
 }
 
 
@@ -409,6 +465,64 @@ void Track::setParentFolder( TrackFolder* folder )
 
 
 
+/*! The automation lanes that FOLLOW this track: every AutomationTrack of this
+ *  track's container whose followsTrack() is this track's stable id, in
+ *  container (document) order. The relation is DERIVED from that one field,
+ *  never stored twice - the same shape a folder's child list has (and indeed a
+ *  lane is often a member of the same flat track list as everything else).
+ *
+ *  The walk takes the container's read lock. That excludes the writers that also
+ *  take the lock - TrackContainer::addTrack and ::removeTrack - but NOT every
+ *  writer of the list: TrackContainer::moveTrack and ::clearAllTracks mutate
+ *  m_tracks without it. So the lock is not a complete barrier against a
+ *  concurrent reorder; what actually serializes this walk against a move is that
+ *  every caller and every mutator runs on the GUI/control thread (control
+ *  commands are marshalled to the UI thread by ControlRegistry::runOnUiThread),
+ *  and nothing on the audio thread calls this - by the realtime rule nothing may,
+ *  since the lock can wait.
+ */
+std::vector<Track*> Track::automationLaneChildren() const
+{
+	std::vector<Track*> lanes;
+	if (m_trackContainer == nullptr) { return lanes; }
+	m_trackContainer->m_tracksMutex.lockForRead();
+	for (Track* each : m_trackContainer->m_tracks)
+	{
+		auto* lane = dynamic_cast<AutomationTrack*>(each);
+		if (lane != nullptr && lane != this && lane->followsTrack() == m_id) { lanes.push_back(each); }
+	}
+	m_trackContainer->m_tracksMutex.unlock();
+	return lanes;
+}
+
+bool Track::hasAutomationLaneChildren() const
+{
+	return !automationLaneChildren().empty();
+}
+
+
+
+
+namespace
+{
+
+//! The steps after a new track exists: its clips for the existing patterns, and the container's own follow-up (the
+//! Pattern Editor's first pattern track).
+void finishCreatedTrack(Track* t, TrackContainer* tc)
+{
+#ifdef LMMS_TESTING
+	if (s_createFaultProbeForTest != nullptr) { s_createFaultProbeForTest(); }
+#endif
+	if (tc == Engine::patternStore() && t)
+	{
+		t->createClipsForPattern(Engine::patternStore()->numOfPatterns() - 1);
+	}
+
+	tc->updateAfterTrackAdd();
+}
+
+} // namespace
+
 /*! \brief Create a track based on the given track type and container.
  *
  *  \param tt The type of track to create
@@ -416,7 +530,9 @@ void Track::setParentFolder( TrackFolder* folder )
  */
 Track * Track::create( Type tt, TrackContainer * tc )
 {
-	Engine::audioEngine()->requestChangeInModel();
+	// cluster gui-1105: the change lock is held by a guard, so an exception out of the construction below (a
+	// std::bad_alloc) releases it on the way out instead of leaving the audio engine's model lock taken for good.
+	const auto changeGuard = Engine::audioEngine()->requestChangesGuard();
 
 	Track * t = nullptr;
 
@@ -435,17 +551,22 @@ Track * Track::create( Type tt, TrackContainer * tc )
 		// `default: break` below and drops the row - the forward-compatibility
 		// cost TRACK-FOLDER-DESIGN.md section 4.4 states rather than hides.
 		case Type::Folder: t = new class TrackFolder( tc ); break;
+		// A neutral row (Q050-283.1): type=8, one more row of the same flat list.
+		case Type::Neutral: t = new class NeutralTrack( tc ); break;
 		default: break;
 	}
 
-	if (tc == Engine::patternStore() && t)
+	// The track is already in the container's list here. A failure while it is being finished takes it back out
+	// (its destructor unlinks it) so no half-made row is left behind, then reaches the caller.
+	try
 	{
-		t->createClipsForPattern(Engine::patternStore()->numOfPatterns() - 1);
+		finishCreatedTrack(t, tc);
 	}
-
-	tc->updateAfterTrackAdd();
-
-	Engine::audioEngine()->doneChangeInModel();
+	catch (...)
+	{
+		delete t;
+		throw;
+	}
 
 	return t;
 }
@@ -457,20 +578,57 @@ Track * Track::create( Type tt, TrackContainer * tc )
  *
  *  \param element The QDomElement containing the type of track to create
  *  \param tc The track container to attach to
+ *
+ *  TWO rules are checked here, at the ONE place an element is turned into a
+ *  track, so that EVERY caller of this factory gets the same answer:
+ *
+ *   - The element must BE a track element. The name is the tag
+ *     `Track::saveTrack` sets on every track's own element (it renames the
+ *     element it is given to "track"), and it is the same literal
+ *     Song::loadProject's pre-count walk compares against. The LOADER carried
+ *     that test in its own claim helper (src/core/TrackContainer.cpp); every
+ *     OTHER caller - the capture/restore path (control::restoreTrackFromXml),
+ *     the clone path, the drag-and-drop path, the track transplant - hands
+ *     this factory whatever element it has, and an element that is NOT a
+ *     <track> was fabricated into an Instrument track: 0 is Type::Instrument,
+ *     so an element with a `type` of its own became a track nobody wrote.
+ *     `control::restoreTrackFromXml` PROMISES nullptr "when the XML ... names
+ *     no track element" (include/ControlEdit.h) - this is where that promise
+ *     is kept.
+ *   - The `type` must be one this build can name. It is read with a CHECKED
+ *     QVariant::toInt(): a missing attribute and a value that does not convert
+ *     both read as 0 WITHOUT the check, and 0 IS Type::Instrument - so a
+ *     <track> with no `type` (or with `type="bad"`) used to be fabricated into
+ *     an INSTRUMENT track, with its own children read as clips (cluster
+ *     new-p12-287). A type outside the recognised range is refused for the
+ *     same reason.
+ *
+ *  A refusal answers nullptr - the same answer a type this build has no class
+ *  for gives - so the caller keeps the element verbatim instead of modelling a
+ *  track nobody wrote (SPEC-ARCH-4 1.6.2).
  */
 Track * Track::create( const QDomElement & element, TrackContainer * tc )
 {
-	Engine::audioEngine()->requestChangeInModel();
+	if( element.nodeName() != QStringLiteral( "track" ) )
+	{
+		return nullptr;
+	}
 
-	Track * t = create(
-		static_cast<Type>( element.attribute( "type" ).toInt() ),
-									tc );
+	bool typeOk = false;
+	const int typeValue = element.attribute( "type" ).toInt( &typeOk );
+	if( !typeOk || typeValue < 0 || typeValue >= static_cast<int>( Type::Count ) )
+	{
+		return nullptr;
+	}
+
+	// Held by a guard, like Track::create(Type, ...): a throw out of create() or restoreState() releases the lock.
+	const auto changeGuard = Engine::audioEngine()->requestChangesGuard();
+
+	Track* t = create( static_cast<Type>( typeValue ), tc );
 	if( t != nullptr )
 	{
 		t->restoreState( element );
 	}
-
-	Engine::audioEngine()->doneChangeInModel();
 
 	return t;
 }
@@ -557,6 +715,18 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 	{
 		element.setAttribute("visible", 0);
 	}
+	// 0.5.0 Q050-022: the owner-side fold flag for following automation lanes.
+	// Written only when folded (default is shown), so a track that never folded
+	// its lanes re-saves the bytes it always had.
+	if (!presetMode && m_automationLanesCollapsed)
+	{
+		element.setAttribute("autolanes", 1);
+	}
+	// Q050-212: written only for a track that has a channel of its own.
+	if (!presetMode && m_linkedChannelId >= 0)
+	{
+		element.setAttribute("mixlink", m_linkedChannelId);
+	}
 	
 	QDomElement tsDe = doc.createElement( nodeName() );
 	// let actual track (InstrumentTrack, PatternTrack, SampleTrack etc.) save its settings
@@ -624,6 +794,7 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 			QString::number(static_cast<qint64>(m_frozen.endTicks)));
 		element.setAttribute(QStringLiteral("frozenMuted"),
 			mutedClipsAttribute(m_frozen.mutedClips));
+		if (m_frozen.region) { element.setAttribute(QStringLiteral("frozenRegion"), 1); }
 	}
 
 	// now save settings of all Clip's
@@ -706,7 +877,7 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 		{
 			if( node.isElement() && node.nodeName() == nodeName() )
 			{
-				loadTrackSpecificSettings( node.toElement() );
+				loadTrackSpecificSettings(node.toElement(), true);
 				break;
 			}
 			node = node.nextSibling();
@@ -752,10 +923,11 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 			m_revisionContentHash);
 	}
 
-	{
-		auto guard = Engine::audioEngine()->requestChangesGuard();
-		deleteClips();
-	}
+	// ProjectJournal restores a live Track through this path without the outer
+	// project-load lock. Keep clip deletion, reconstruction, and post-load clip
+	// adjustments out of audio traversal; project loading can nest this guard.
+	auto guard = Engine::audioEngine()->requestChangesGuard();
+	deleteClips();
 
 	// Reset-on-absence for the take lanes: a track element with no <takelanes>
 	// child empties the model rather than inheriting whatever it held before
@@ -779,7 +951,7 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 		{
 			if( node.nodeName() == nodeName() )
 			{
-				loadTrackSpecificSettings( node.toElement() );
+				loadTrackSpecificSettings(node.toElement(), false);
 			}
 			else if( node.nodeName() == "takelanes" )
 			{
@@ -807,6 +979,24 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 		node = node.nextSibling();
 	}
 
+	// A region take whose audio could not be loaded must not leave the clips the freeze muted silent: the file
+	// carries them muted, and with no take there is nothing to cover for them. Releasing the mute is safe
+	// while the take is there too, because a loaded take silences its window by itself
+	// (frozenTakeSilencesSource), so relinking it later changes nothing audible.
+	if (m_frozen.isFrozen() && m_frozenBuffer == nullptr)
+	{
+		unmuteFrozenClips(m_frozen.mutedClips, m_clips);
+	}
+
+	// A take this load rejected (a start or end tick that does not parse) is discarded by loadFrozenTake(), but
+	// the file still carries the clips its freeze muted as muted. Their record is read from the attribute here,
+	// once the clips are loaded, so they come back unmuted with the take gone. The condition is exactly a
+	// rejection: frozenAudio names a file, yet no take was installed.
+	if (!m_frozen.isFrozen() && !element.attribute(QStringLiteral("frozenAudio")).isEmpty())
+	{
+		unmuteFrozenClips(parseMutedClipsAttribute(element.attribute(QStringLiteral("frozenMuted"))), m_clips);
+	}
+
 	int storedHeight = element.attribute( "trackheight" ).toInt();
 	if( storedHeight >= MINIMAL_TRACK_HEIGHT )
 	{
@@ -832,6 +1022,23 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 		trackRestoreDefault( "folder" ) ).toInt();
 	m_visible = element.attribute( "visible",
 		trackRestoreDefault( "visible" ) ).toInt() != 0;
+	// 0.5.0 Q050-022: a checkpoint restore re-reads this track's own XML (an
+	// undo/redo of automation.lanes_set_collapsed lands here), so the fold flag
+	// is announced when it actually changes - the same signal the setter emits -
+	// and the arranger follows the undo/redo without the caller realigning it.
+	const bool lanesCollapsedBefore = m_automationLanesCollapsed;
+	m_automationLanesCollapsed = element.attribute( "autolanes",
+		trackRestoreDefault( "autolanes" ) ).toInt() != 0;
+	if( lanesCollapsedBefore != m_automationLanesCollapsed )
+	{
+		emit automationLanesCollapsedChanged();
+	}
+	// Q050-212: a preset leaves the track's link alone; a copy (ProjectIds::isDocumentElement) has none of its own.
+	if( !presetMode )
+	{
+		m_linkedChannelId = ProjectIds::isDocumentElement( element )
+			? element.attribute( "mixlink", trackRestoreDefault( "mixlink" ) ).toInt() : -1;
+	}
 	{
 		TrackFolder* resolved = m_pendingFolderId >= 0
 			? m_trackContainer->findTrackFolderById( m_pendingFolderId ) : nullptr;
@@ -850,6 +1057,12 @@ void Track::savePreset(QDomDocument & doc, QDomElement & element)
 void Track::loadPreset(const QDomElement & element)
 {
 	loadTrack(element, true);
+}
+
+void Track::loadTrackSpecificSettings(const QDomElement& element, bool presetMode)
+{
+	Q_UNUSED(presetMode)
+	loadTrackSpecificSettings(element);
 }
 
 void Track::saveSettings(QDomDocument& doc, QDomElement& element)
@@ -874,6 +1087,12 @@ void Track::loadSettings(const QDomElement& element)
 Clip * Track::addClip( Clip * clip )
 {
 	m_clips.push_back( clip );
+	if( Song* song = Engine::getSong() )
+	{
+		// A clip that arrives already holding targets (moved from another track) brings them along.
+		const auto* automation = dynamic_cast<const AutomationClip*>( clip );
+		song->noteAutomationGrowth( 1, automation != nullptr ? automation->objects().size() : 0 );
+	}
 
 	emit clipAdded( clip );
 
@@ -892,10 +1111,11 @@ void Track::removeClip( Clip * clip )
 	clipVector::iterator it = std::find( m_clips.begin(), m_clips.end(), clip );
 	if( it != m_clips.end() )
 	{
+		const bool hasTakeGroup = clip->hasTakeGroup();
 		const int takeGroupId = clip->takeGroupId();
 		const int takeLane = clip->laneIndex();
 		m_clips.erase( it );
-		if( takeGroupId > 0 ) { m_takeLanes.removeTakeClip( takeGroupId, takeLane, m_clips ); }
+		if( hasTakeGroup ) { m_takeLanes.removeTakeClip( takeGroupId, takeLane, m_clips ); }
 		if( Engine::getSong() )
 		{
 			Engine::getSong()->updateLength();
@@ -1140,8 +1360,13 @@ bar_t Track::length() const
  *  \param error Filled with a reason when this returns false
  */
 bool Track::freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
-		const std::vector<FrozenTake::MutedClip>& mutedClips, QString* error)
+		const std::vector<FrozenTake::MutedClip>& mutedClips, QString* error, bool region)
 {
+	if (region && !isValidRegionWindow(startTicks, endTicks))
+	{
+		if (error != nullptr) { *error = QStringLiteral("a region must end past its start"); }
+		return false;
+	}
 	if (path.isEmpty())
 	{
 		if (error != nullptr) { *error = QStringLiteral("the take names no audio file"); }
@@ -1176,8 +1401,10 @@ bool Track::freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
 	m_frozen.startTicks = startTicks;
 	m_frozen.endTicks = endTicks;
 	m_frozen.mutedClips = mutedClips;
+	m_frozen.region = region;
 	m_frozenBuffer = buffer;
 	m_frozenTakePlaying.store(false, std::memory_order_relaxed);
+	adoptTempoMapForFrozenTake(Engine::getSong()->tempoMap().map());
 	const Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
 	updateFrozenVoiceCapacity(timeline.loopEnabled(), timeline.loopBegin().getTicks(), timeline.loopEnd().getTicks());
 	return true;
@@ -1213,6 +1440,8 @@ void Track::clearFrozenTake()
 	m_frozenBuffer.reset();
 	m_frozenTakePlaying.store(false, std::memory_order_relaxed);
 	m_frozenVoiceCapacity.store(8, std::memory_order_relaxed);
+	m_frozenLastMapInForce = false;
+	m_frozenLastMapKnown = false;
 }
 
 
@@ -1226,20 +1455,80 @@ void Track::loadFrozenTake(const QDomElement& element)
 	m_frozen.path = element.attribute(QStringLiteral("frozenAudio"));
 	if (m_frozen.path.isEmpty()) { return; }
 
-	m_frozen.startTicks = static_cast<tick_t>(
-		element.attribute(QStringLiteral("frozenStart")).toLongLong());
-	m_frozen.endTicks = static_cast<tick_t>(
-		element.attribute(QStringLiteral("frozenEnd")).toLongLong());
+	if ((element.hasAttribute(QStringLiteral("frozenStart"))
+			&& !parseTick(element.attribute(QStringLiteral("frozenStart")), m_frozen.startTicks))
+		|| (element.hasAttribute(QStringLiteral("frozenEnd"))
+			&& !parseTick(element.attribute(QStringLiteral("frozenEnd")), m_frozen.endTicks)))
+	{
+		// loadTrack() releases the clips this rejected take muted, once those clips are loaded.
+		m_frozen = FrozenTake{};
+		return;
+	}
 	m_frozen.mutedClips = parseMutedClipsAttribute(
 		element.attribute(QStringLiteral("frozenMuted")));
+	// A file written before the flag existed: a take that starts after tick 0 or muted clips is a region.
+	m_frozen.region = element.hasAttribute(QStringLiteral("frozenRegion"))
+		? element.attribute(QStringLiteral("frozenRegion")).toInt() != 0
+		: (m_frozen.startTicks > 0 || !m_frozen.mutedClips.empty());
+	if (m_frozen.region && !isValidRegionWindow(m_frozen.startTicks, m_frozen.endTicks))
+	{
+		// A region that ends before it starts is refused like an unparseable tick: the track keeps its own
+		// clips, and loadTrack() releases the clips this rejected take muted.
+		m_frozen = FrozenTake{};
+		return;
+	}
 
 	// The clips the file carries are already muted (the freeze saved them that
 	// way), so the record is NOT replayed here: a load must not write to the
 	// clips it is still reading.
 	subscribeFrozenTakeSignals();
 	m_frozenBuffer = SampleBuffer::fromFile(m_frozen.path);
+	{
+		const auto renderLock = Engine::audioEngine()->requestChangesGuard();
+		adoptTempoMapForFrozenTake(Engine::getSong()->tempoMap().map());
+	}
+	if (m_frozenBuffer == nullptr || m_frozenBuffer->empty())
+	{
+		// The take's file moved or cannot be decoded: the track stays frozen (state is kept so project.relink
+		// and freeze.unfreeze can repair it) but the source plays; the load report names both ways out.
+		m_frozenBuffer.reset();
+		Engine::getSong()->collectError(tr("Frozen take not found: %1 (project.relink points it at the moved file; "
+			"freeze.unfreeze, undoable, gives the track its own clips back)").arg(m_frozen.path));
+	}
 	const Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
 	updateFrozenVoiceCapacity(timeline.loopEnabled(), timeline.loopBegin().getTicks(), timeline.loopEnd().getTicks());
+}
+
+
+void Track::adoptTempoMapForFrozenTake(const TempoMap& map)
+{
+	if (!m_frozen.isFrozen()) { return; }
+	// Always kept, inactive or not: the pass helper decides from this copy, so a stale in-force copy must not survive.
+	m_frozenLastMapInForce = map.active() && !map.empty();
+	m_frozenLastMap = map;
+	m_frozenLastMapKnown = true;
+}
+
+
+bool Track::frozenTakeFileMissing() const
+{
+	return m_frozen.isFrozen() && !QFileInfo(m_frozen.path).isFile();
+}
+
+
+bool Track::frozenTakeSilencesSource(tick_t position) const noexcept
+{
+	if (!m_frozen.isFrozen() || m_frozenBuffer == nullptr) { return false; }
+	if (!m_frozen.region) { return true; }
+	return position >= m_frozen.startTicks && (m_frozen.endTicks <= m_frozen.startTicks || position < m_frozen.endTicks);
+}
+
+
+qint64 Track::frozenTakeSourceFrame(const TempoMap& map, int globalTempo, tick_t takeStart, tick_t position,
+		int bufferRate, float constantFramesPerTick) noexcept
+{
+	return static_cast<qint64>(std::llround(BounceInPlace::framesBetweenTicks(takeStart, position,
+		constantFramesPerTick, map, globalTempo, bufferRate)));
 }
 
 
@@ -1274,9 +1563,30 @@ bool Track::playFrozenTake(const TimePos& start, f_cnt_t /*frames*/, f_cnt_t off
 	// the active-voice count are separate state.
 	if (m_frozenTakePlaying.exchange(true)) { return false; }
 
-	const float framesPerTick = Engine::framesPerTick(m_frozenBuffer->sampleRate());
-	const qint64 sourceIn = static_cast<qint64>(
-		std::llround((position - m_frozen.startTicks) * framesPerTick));
+	// The same tick-to-frame mapping the render used to cut the take (tempo map aware). The map is read
+	// pinned (bounded, race-free: TempoMapPublisher::withRealtimeMap) and whether it is in force comes from
+	// the pinned map itself; the last good read is kept, so a read that loses every attempt to a publication
+	// still maps frames on the tempo map (or on the one rate, if that is what it last saw) - never on a guess.
+	Song* const song = Engine::getSong();
+	const sample_rate_t bufferRate = m_frozenBuffer->sampleRate();
+	const float oneRate = Engine::framesPerTick(bufferRate);
+	const int globalTempo = static_cast<int>(song->getTempo());
+	const bool pinned = song->tempoMap().withRealtimeMap([&](const TempoMap& map) {
+		m_frozenLastMapInForce = map.active() && !map.empty();
+		m_frozenLastMap = map;
+	});
+	if (pinned) { m_frozenLastMapKnown = true; }
+	else if (!m_frozenLastMapKnown)
+	{
+		// Nothing was ever read: a pass cannot be placed on the take without guessing, so it is skipped and
+		// the next pass retries (the source stays suppressed only for that one pass).
+		m_frozenTakePlaying.store(false, std::memory_order_relaxed);
+		return false;
+	}
+	// Every pass maps through the one helper, in force or not: its no-tempo-map branch is the widened span, so a
+	// negative take start with a large seek cannot wrap here either.
+	const qint64 sourceIn = frozenTakeSourceFrame(m_frozenLastMap, globalTempo, m_frozen.startTicks, position,
+		static_cast<int>(bufferRate), oneRate);
 	const qint64 sourceOut = static_cast<qint64>(m_frozenBuffer->size());
 	if (sourceIn >= sourceOut)
 	{
@@ -1383,6 +1693,56 @@ void Track::setColor(const std::optional<QColor>& color)
 BoolModel *Track::getMutedModel()
 {
 	return &m_mutedModel;
+}
+
+MixerChannel* Track::linkedChannel()
+{
+	Mixer* mixer = Engine::mixer();
+	IntModel* model = m_linkedChannelId >= 0 ? mixerChannelModel() : nullptr;
+	if (model == nullptr || mixer == nullptr) { return nullptr; }
+	const int index = model->value();
+	if (index <= 0 || index >= static_cast<int>(mixer->numChannels())) { return nullptr; }
+	MixerChannel* channel = mixer->mixerChannel(index);
+	return channel->id() == m_linkedChannelId ? channel : nullptr;
+}
+
+void Track::syncLinkedChannelName()
+{
+	// A project being read carries both names already, and its mixer may not be there yet.
+	const Song* song = Engine::getSong();
+	if (song == nullptr || song->isLoadingProject()) { return; }
+	MixerChannel* channel = linkedChannel();
+	if (channel == nullptr || channel->m_name == m_name) { return; }
+	channel->m_name = m_name;
+	emit Engine::mixer()->dataChanged();
+}
+
+void Track::reconcileLinkedChannelName()
+{
+	if (m_linkedChannelId < 0 || QThread::currentThread() != thread()) { return; }
+	const Song* song = Engine::getSong();
+	ProjectJournal* journal = Engine::projectJournal();
+	if (song == nullptr || song->isLoadingProject() || journal == nullptr || !journal->isJournalling()) { return; }
+	MixerChannel* channel = linkedChannel();
+	if (channel == nullptr || channel->m_name == m_name) { return; }
+
+	const auto nameChannel = [id = m_linkedChannelId](const QString& name) {
+		Mixer* mixer = Engine::mixer();
+		for (int i = static_cast<int>(mixer->numChannels()) - 1; i > 0; --i)
+		{
+			if (mixer->mixerChannel(i)->id() != id) { continue; }
+			mixer->mixerChannel(i)->m_name = name;
+			emit mixer->dataChanged();
+			return;
+		}
+	};
+	const QString before = channel->m_name;
+	const QString after = m_name;
+	// The route's own checkpoint went on the stack just before this signal, unless the writer asked for none.
+	const bool routeStepOnTop = journal->topStepCaptures(mixerChannelModel()->id());
+	journal->addJournalAction([nameChannel, before] { nameChannel(before); }, [nameChannel, after] { nameChannel(after); });
+	if (routeStepOnTop) { journal->coalesceTopStepIntoPrevious(); }
+	nameChannel(after);
 }
 
 void Track::setName(const QString& newName)

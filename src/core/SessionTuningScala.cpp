@@ -128,6 +128,17 @@ bool readScaleLines(QTextStream& stream, QString* name, QStringList* lines, QStr
 		else { lines->append(line); }
 		++i;
 	}
+	// The two header lines are a PROMISE about the scale that follows: a
+	// stream that never reached the degree count never said how many degrees
+	// it has, and the count check below compares zero against zero - so an
+	// empty file (or one that only names a scale) passed it. The scale built
+	// from it would hold only the 1/1 interval loadScaleFile() starts with:
+	// every key at the same pitch. A file that describes no scale is refused.
+	if (i < 0)
+	{
+		failWith(error, QStringLiteral("the .scl file must contain a name and a positive degree count"));
+		return false;
+	}
 	// The count the file declared is a PROMISE about how many degrees follow:
 	// a file that ends early has not described the scale it carries, and
 	// building one from the lines that DID arrive silently substituted a
@@ -317,6 +328,33 @@ std::shared_ptr<Keymap> keymapOf(const QStringList& fields, const QString& descr
 }
 
 } // namespace
+
+bool SessionTuning::parseScaleFile(const QString& path, QString* name, QStringList* intervals,
+	QString* error)
+{
+	// The file is read here, not by the caller, so that the dialog and the
+	// command below it read the same bytes with the same rules. A file that
+	// does not describe a scale is refused BEFORE the caller has touched the
+	// Song or the session table with it.
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+	{
+		failWith(error, QStringLiteral("cannot read the scale file '%1'").arg(path));
+		return false;
+	}
+	QTextStream stream(&file);
+	QString scaleName;
+	QStringList scaleLines;
+	QString reason;
+	if (!readScaleLines(stream, &scaleName, &scaleLines, &reason))
+	{
+		failWith(error, reason);
+		return false;
+	}
+	if (name != nullptr) {*name = scaleName;}
+	if (intervals != nullptr) {*intervals = scaleLines;}
+	return true;
+}
 
 bool SessionTuning::loadScaleFile(const QString& path, QString* error)
 {

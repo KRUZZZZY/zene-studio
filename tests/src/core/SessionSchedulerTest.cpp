@@ -487,6 +487,37 @@ private slots:
 		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger, LaunchQuantisation::Bar ) );
 	}
 
+	//! The audio callback takes at most its per-period budget. The rest stay
+	//! queued, in order, for the next period. Without a budget a producer that
+	//! refills slots as they open keeps the drain loop running, and the audio
+	//! callback's time is then unbounded.
+	void aDrainStopsAtItsBudgetAndLeavesTheRestQueued()
+	{
+		SessionScheduler scheduler;
+		constexpr std::size_t kQueued = 10;
+		constexpr std::size_t kBudget = 3;
+		for( std::size_t i = 0; i < kQueued; ++i )
+		{
+			QVERIFY( scheduler.requestLaunch( int( i ), 0, LaunchMode::Trigger,
+				LaunchQuantisation::Bar ) );
+		}
+
+		scheduler.drainCommands( clock( 0 ), kBudget );
+		QVERIFY2( scheduler.processedCommands() == kBudget,
+			qPrintable( QStringLiteral( "one period consumed %1 commands, budget is %2" )
+				.arg( scheduler.processedCommands() ).arg( kBudget ) ) );
+		QVERIFY2( scheduler.activeSlotCount() == int( kBudget ),
+			"the commands past the budget were consumed early, not left queued");
+
+		// The next period takes the rest, so nothing is lost to the budget.
+		scheduler.drainCommands( clock( 0 ), SessionScheduler::CommandQueueCapacity );
+		QVERIFY2( scheduler.processedCommands() == kQueued,
+			qPrintable( QStringLiteral( "after a second period %1 of %2 commands were consumed" )
+				.arg( scheduler.processedCommands() ).arg( kQueued ) ) );
+		QVERIFY2( scheduler.activeSlotCount() == int( kQueued ),
+			"the commands left by the budget were not drained by the next period" );
+	}
+
 	/*! The producer/consumer contract with two real threads: the model thread
 	 *  keeps pushing while the audio thread drains, nothing accepted is lost,
 	 *  and the audio thread still allocates nothing while it runs.

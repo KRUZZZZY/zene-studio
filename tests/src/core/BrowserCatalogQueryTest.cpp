@@ -43,6 +43,7 @@
 #endif
 
 #include "BrowserCatalog.h"
+#include "BrowserIndex.h"
 #include "BrowserPeakCache.h"
 #include "BrowserTestSupport.h"
 
@@ -57,6 +58,16 @@ QString writeFixture(const QString& directory, const QString& name, const WaveSp
 	const QString path = QDir(directory).filePath(name);
 	writeWave(path, spec);
 	return path;
+}
+
+//! An LV2 preset: a directory bundle holding a manifest, as an installed plugin does.
+QString writeLv2Bundle(const QString& directory)
+{
+	const QString bundle = QDir(directory).filePath(QStringLiteral("MySynth.lv2"));
+	QDir().mkpath(bundle);
+	writeText(QDir(bundle).filePath(QStringLiteral("manifest.ttl")),
+		QStringLiteral("@prefix lv2: <http://lv2plug.in/ns/lv2core#> ."));
+	return bundle;
 }
 
 } // namespace
@@ -154,12 +165,116 @@ private slots:
 		QVERIFY(second.items.first().path != first.items.first().path);
 	}
 
+	//! The category facet (0.5.0 L11, WF-007): ONE category per file, a query's
+	//! `category` narrows to the files carrying it (case-insensitively, like a
+	//! tag), and an empty `category` is "any" - it matches every file the other
+	//! filters let through. The matched item reports the category it carries, so
+	//! a caller can tell which facet value a row came from.
+	void categoryNarrowsTheQueryAndEmptyMeansAny()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString kick = writeFixture(dir.path(), QStringLiteral("kick_48k.wav"), WaveSpec());
+		const QString snare = writeFixture(dir.path(), QStringLiteral("snare_48k.wav"), WaveSpec());
+		writeText(QDir(dir.path()).filePath(QStringLiteral("notes.txt")), QStringLiteral("x"));
+		BrowserTagStore& store = BrowserTagStore::instance();
+		QVERIFY(store.setCategory(kick, QStringLiteral("Drums")));
+		QVERIFY(store.setCategory(snare, QStringLiteral("Loops")));
+
+		BrowserQuery byCategory;
+		byCategory.path = dir.path();
+		byCategory.category = QStringLiteral("Drums");
+		const BrowserQueryResult drums = runBrowserQuery(byCategory);
+		QCOMPARE(drums.matched, 1);
+		QCOMPARE(drums.items.first().path, QFileInfo(kick).absoluteFilePath());
+		QCOMPARE(drums.items.first().category, QStringLiteral("Drums"));
+
+		// Case-insensitive, as the tag comparison is.
+		byCategory.category = QStringLiteral("drums");
+		QCOMPARE(runBrowserQuery(byCategory).matched, 1);
+		// A category no file carries matches nothing.
+		byCategory.category = QStringLiteral("Hats");
+		QCOMPARE(runBrowserQuery(byCategory).matched, 0);
+
+		// Empty is "any category": the other filters alone answer, and the
+		// files that carry none are in the result set too.
+		byCategory.category.clear();
+		const BrowserQueryResult any = runBrowserQuery(byCategory);
+		QCOMPARE(any.matched, 3);  // two waves + the text file
+		QVERIFY(store.clearCategory(snare));
+	 QCOMPARE(runBrowserQuery(byCategory).matched, 3);  // a file with no category is still in "any"
+		byCategory.category = QStringLiteral("Loops");
+		QCOMPARE(runBrowserQuery(byCategory).matched, 0);  // ... and out of a named one
+
+		// Category and tag filter together (AND), like every other pair. Kick
+		// still carries "Drums" from the first set above (only snare was
+		// cleared), so re-setting it is refused - an edit that changes nothing.
+		QString why;
+		QVERIFY2(!store.setCategory(kick, QStringLiteral("Drums"), &why), qPrintable(why));
+		QVERIFY2(why.contains(QStringLiteral("already carries")), qPrintable(why));
+		QCOMPARE(store.categoryOf(kick), QStringLiteral("Drums"));
+		QVERIFY(store.add(kick, QStringLiteral("favourite")));
+		byCategory.category = QStringLiteral("Drums");
+		byCategory.tags = QStringList{QStringLiteral("favourite")};
+		QCOMPARE(runBrowserQuery(byCategory).matched, 1);
+		byCategory.tags.append(QStringLiteral("missing"));
+		QCOMPARE(runBrowserQuery(byCategory).matched, 0);
+
+		// Leave the store without categories for the tests that follow.
+		QVERIFY(store.clearCategory(kick));
+	}
+
+	//! The store's category table round-trips through its file: what setCategory
+	//! wrote is what a load reads back, and a store this facet predates (a file
+	//! with no "categories" key) loads as one with no categories rather than as
+	//! an error - an old library reads exactly as it did.
+	void theCategoryTableRoundTripsAndAnOldStoreLoadsEmpty()
+	{
+		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("category-round-trip.json"));
+		{
+			QFile old(QDir(m_dir.path()).filePath(QStringLiteral("category-old.json")));
+			QVERIFY(old.open(QIODevice::WriteOnly));
+			old.write(R"({"version":1,"tags":{"/tmp/x.wav":["a"]}})");  // no categories key
+			old.close();
+		}
+		BrowserTagStore& store = BrowserTagStore::instance();
+		QVERIFY2(store.openAt(path), qPrintable(store.lastError()));
+		QCOMPARE(store.allCategories(), QStringList());
+
+		const QString wave = writeFixture(m_dir.path(), QStringLiteral("roundtrip_48k.wav"), WaveSpec());
+		QVERIFY2(store.setCategory(wave, QStringLiteral("Ambient")), qPrintable(store.lastError()));
+		QCOMPARE(store.categoryOf(wave), QStringLiteral("Ambient"));
+		QCOMPARE(store.allCategories(), QStringList{QStringLiteral("Ambient")});
+		QCOMPARE(store.filesWithCategory(QStringLiteral("Ambient")), 1);
+
+		// Re-read from the file: the write reached the disk.
+		store.clear();  // the in-memory half is gone; only the file remains
+		QVERIFY2(store.load(), qPrintable(store.lastError()));
+		QCOMPARE(store.categoryOf(wave), QStringLiteral("Ambient"));
+
+		// An older store file - tags only, no categories table - is not an error.
+		QVERIFY2(store.openAt(QDir(m_dir.path()).filePath(QStringLiteral("category-old.json"))),
+			qPrintable(store.lastError()));
+		QCOMPARE(store.allCategories(), QStringList());
+
+		// setCategory over the category a file already carries is not an edit.
+		QVERIFY2(store.openAt(path), qPrintable(store.lastError()));
+		QString why;
+		QVERIFY(!store.setCategory(wave, QStringLiteral("ambient"), &why));  // case-insensitive match
+		QVERIFY2(why.contains(QStringLiteral("already carries")), qPrintable(why));
+		// And clearing a file that carries none is refused, not a silent no-op.
+		QVERIFY(!store.clearCategory(QStringLiteral("/never/seen.wav"), &why));
+		QVERIFY(why.contains(QStringLiteral("carries no category")));
+	}
+
 	//! The paths the browser groups, from the browser's own extension lists.
 	void kindsAndRootsAreTheBrowsersOwn()
 	{
 		QCOMPARE(browserKindForPath(QStringLiteral("/tmp/a.wav")), BrowserKind::Audio);
 		QCOMPARE(browserKindForPath(QStringLiteral("/tmp/a.FLAC")), BrowserKind::Audio);
 		QCOMPARE(browserKindForPath(QStringLiteral("/tmp/a.xpf")), BrowserKind::Preset);
+		QCOMPARE(browserKindForPath(QStringLiteral("/tmp/standard.cs.xml")), BrowserKind::Preset);
+		QCOMPARE(browserKindForPath(QStringLiteral("/tmp/a.xml")), BrowserKind::Other);
 		QCOMPARE(browserKindForPath(QStringLiteral("/tmp/a.mmpz")), BrowserKind::Project);
 		QCOMPARE(browserKindForPath(QStringLiteral("/tmp/a.mid")), BrowserKind::Midi);
 		QCOMPARE(browserKindForPath(QStringLiteral("/tmp/a.txt")), BrowserKind::Other);
@@ -346,6 +461,130 @@ private slots:
 		const BrowserQueryResult result = runBrowserQuery(query);
 		QVERIFY2(result.truncated, "the walk visited more entries than the limit and did not say so");
 		QVERIFY(result.scanned <= BrowserMaxScanEntries);
+	}
+
+	//! An LV2 preset is the bundle directory itself: the walk returns it as one
+	//! preset and does not descend into it. Without a kind filter the bundle must
+	//! be the only item - a walk that entered it would return manifest.ttl instead.
+	void lv2BundleIsOnePresetAndItsContentsAreNotWalked()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString bundle = writeLv2Bundle(dir.path());
+		QVERIFY2(QFileInfo(bundle).isDir(), "the LV2 fixture bundle was not written");
+
+		BrowserQuery everything;
+		everything.path = dir.path();
+		const BrowserQueryResult all = runBrowserQuery(everything);
+		QCOMPARE(all.matched, 1);
+		QCOMPARE(all.items.first().path, QFileInfo(bundle).absoluteFilePath());
+		QCOMPARE(all.items.first().kind, BrowserKind::Preset);
+
+		BrowserQuery presets = everything;
+		presets.kind = QStringLiteral("preset");
+		const BrowserQueryResult preset = runBrowserQuery(presets);
+		QCOMPARE(preset.matched, 1);
+		QCOMPARE(preset.items.first().path, QFileInfo(bundle).absoluteFilePath());
+	}
+
+	//! The persistent index records a bundle as one preset and does not index the
+	//! files inside it. The store is a file of its own, outside the scanned tree.
+	void indexRecordsLv2BundleAsOnePreset()
+	{
+		QTemporaryDir dir;
+		QTemporaryDir store;
+		QVERIFY(dir.isValid());
+		QVERIFY(store.isValid());
+		const QString bundle = writeLv2Bundle(dir.path());
+		const QString manifest = QDir(bundle).filePath(QStringLiteral("manifest.ttl"));
+		QVERIFY(QFileInfo(manifest).isFile());
+		qputenv("ZENE_BROWSER_INDEX", QDir(store.path()).filePath(QStringLiteral("index.json")).toUtf8());
+
+		BrowserIndex& index = BrowserIndex::instance();
+		index.reload();
+		QVERIFY(index.scanNow(QStringList{dir.path()}, false, 0));
+		bool bundleIndexed = false;
+		bool manifestIndexed = false;
+		for (const BrowserIndexEntry& entry : index.entries())
+		{
+			bundleIndexed = bundleIndexed || entry.path == QFileInfo(bundle).canonicalFilePath();
+			manifestIndexed = manifestIndexed || entry.path == QFileInfo(manifest).canonicalFilePath();
+			if (entry.path == QFileInfo(bundle).canonicalFilePath())
+			{
+				QCOMPARE(entry.kind, BrowserKind::Preset);
+			}
+		}
+		qunsetenv("ZENE_BROWSER_INDEX");
+		QVERIFY2(bundleIndexed, "the LV2 bundle was not indexed");
+		QVERIFY2(!manifestIndexed, "the bundle contents were indexed separately");
+	}
+
+	//! A rescan whose index file cannot be written does not publish its entries:
+	//! queries keep the index the store still holds, and a restart reads that same index.
+	void failedIndexSaveKeepsThePreviousIndex()
+	{
+		QTemporaryDir dir;
+		QTemporaryDir store;
+		QVERIFY(dir.isValid());
+		QVERIFY(store.isValid());
+		writeFixture(dir.path(), QStringLiteral("first.wav"), WaveSpec());
+		const QString good = QDir(store.path()).filePath(QStringLiteral("index.json"));
+		// A regular file where the store's folder would be: the save cannot create the store, so it fails.
+		const QString blocker = QDir(store.path()).filePath(QStringLiteral("blocker"));
+		QVERIFY(writeText(blocker, QStringLiteral("not a folder")));
+		const QString unwritable = QDir(blocker).filePath(QStringLiteral("index.json"));
+
+		BrowserIndex& index = BrowserIndex::instance();
+		const auto names = [&index] {
+			QStringList out;
+			for (const BrowserIndexEntry& entry : index.entries()) { out << entry.name; }
+			out.sort();
+			return out;
+		};
+		qputenv("ZENE_BROWSER_INDEX", good.toUtf8());
+		index.reload();
+		QVERIFY(index.scanNow(QStringList{dir.path()}, false, 0));
+		const QStringList published = names();
+		QCOMPARE(published, QStringList{QStringLiteral("first.wav")});
+
+		writeFixture(dir.path(), QStringLiteral("second.wav"), WaveSpec());
+		qputenv("ZENE_BROWSER_INDEX", unwritable.toUtf8());
+		QVERIFY(index.scanNow(QStringList{dir.path()}, false, 0));
+		QVERIFY2(!index.status().error.isEmpty(), "the failed save was not reported");
+		QVERIFY(!index.status().running);
+		QCOMPARE(names(), published);
+
+		// After a restart the store is read again: it holds the index the failed scan did not publish.
+		qputenv("ZENE_BROWSER_INDEX", good.toUtf8());
+		index.reload();
+		QCOMPARE(names(), published);
+		qunsetenv("ZENE_BROWSER_INDEX");
+	}
+
+	//! Exhausting the metadata probe budget while another candidate needs a
+	//! probe marks the result partial, even when that candidate would match.
+	void probeLimitReportsTruncation()
+	{
+		const QString directory = QDir(m_dir.path()).filePath(QStringLiteral("probe-limit"));
+		QVERIFY(QDir().mkpath(directory));
+		for (int i = 0; i <= BrowserMaxProbes; ++i)
+		{
+			WaveSpec spec;
+			spec.title = QStringLiteral("needle");
+			const QString name = QStringLiteral("candidate_%1.wav").arg(i, 3, 10, QLatin1Char('0'));
+			QVERIFY(writeWave(QDir(directory).filePath(name), spec));
+		}
+
+		BrowserQuery query;
+		query.path = directory;
+		query.kind = QStringLiteral("audio");
+		query.text = QStringLiteral("needle");
+		query.probe = true;
+		const BrowserQueryResult result = runBrowserQuery(query);
+		QCOMPARE(result.scanned, BrowserMaxProbes + 1);
+		QCOMPARE(result.probed, BrowserMaxProbes);
+		QCOMPARE(result.matched, BrowserMaxProbes);
+		QVERIFY(result.truncated);
 	}
 
 private:

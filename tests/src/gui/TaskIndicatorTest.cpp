@@ -76,11 +76,11 @@ private slots:
 		QCOMPARE(indicator.focusPolicy(), Qt::TabFocus);
 		QVERIFY(indicator.sizeHint().height() >= tokens::targetSize());
 		QCOMPARE(indicator.accessibleName(), QStringLiteral("Tasks"));
-		TaskCenter::instance().begin(&m_owner, 1, {QStringLiteral("render"), QStringLiteral("Render a.wav"), {}, {}, false});
+		const TaskToken renderToken = TaskCenter::instance().begin(&m_owner, 1, {QStringLiteral("render"), QStringLiteral("Render a.wav"), {}, {}, false});
 		TaskCenter::instance().begin(&m_owner, 2, {QStringLiteral("index"), QStringLiteral("Index"), {}, {}, true});
 		QCOMPARE(indicator.label(), QStringLiteral("TASKS 2"));
 		QVERIFY(indicator.accessibleDescription().contains(QLatin1Char('2')));
-		TaskCenter::instance().finish(&m_owner, 1, TaskState::Done);
+		TaskCenter::instance().finish(renderToken, TaskState::Done);
 		QCOMPARE(indicator.label(), QStringLiteral("TASKS 1"));
 	}
 
@@ -111,8 +111,8 @@ private slots:
 	void onlyTheProgressMovesWhileNothingElseChanges()
 	{
 		double done = 0.2;
-		TaskCenter::instance().begin(&m_owner, 5, {QStringLiteral("video_audio"), QStringLiteral("Extract audio"), [] {},
-			[&done] { return done; }, false});
+		const TaskToken extractToken = TaskCenter::instance().begin(&m_owner, 5, {QStringLiteral("video_audio"),
+			QStringLiteral("Extract audio"), [] {}, [&done] { return done; }, false});
 		TaskList list;
 		list.show();
 		list.refresh();
@@ -125,7 +125,7 @@ private slots:
 		list.refresh();
 		QCOMPARE(list.cancelButton(0), cancel);  // the same row: not rebuilt
 		QCOMPARE(bar->value(), 600);
-		TaskCenter::instance().finish(&m_owner, 5, TaskState::Done);
+		TaskCenter::instance().finish(extractToken, TaskState::Done);
 		list.refresh();
 		QVERIFY(list.cancelButton(0) == nullptr);  // ended: rebuilt, without Cancel
 	}

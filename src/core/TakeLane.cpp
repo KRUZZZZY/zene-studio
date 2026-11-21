@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <unordered_map>
 
 #include <QDomDocument>
 #include <QDomElement>
@@ -84,6 +85,56 @@ bool continuesTake(const TakeLaneSegment& previous, const TakeLaneSegment& seg)
 	return seg.sourceOffset == previous.sourceOffset;
 }
 
+//! Merges each segment that continues the one before it (continuesTake) into that one span.
+void mergeAdjacentSegments(std::vector<TakeLaneSegment>* segments)
+{
+	std::vector<TakeLaneSegment> merged;
+	merged.reserve(segments->size());
+	for (const TakeLaneSegment& seg : *segments)
+	{
+		if (!merged.empty() && continuesTake(merged.back(), seg))
+		{
+			merged.back().endTick = seg.endTick;
+			continue;
+		}
+		merged.push_back(seg);
+	}
+	segments->swap(merged);
+}
+
+//! The composite once lane \p index is removed: its segments fall back to the lowest lane that remains, at
+//! offset 0 (the base lane's take has its own start). Empty when no lane remains.
+std::vector<TakeLaneSegment> segmentsAfterRemovingLane(const std::vector<TakeLane>& lanes,
+	const std::vector<TakeLaneSegment>& segments, int index)
+{
+	int base = -1;
+	for (const TakeLane& lane : lanes)
+	{
+		if (lane.index != index) { base = lane.index; break; }
+	}
+	if (base < 0) { return {}; }
+	std::vector<TakeLaneSegment> remapped = segments;
+	for (TakeLaneSegment& seg : remapped)
+	{
+		if (seg.laneIndex != index) { continue; }
+		seg.laneIndex = base;
+		seg.sourceOffset = 0;
+	}
+	mergeAdjacentSegments(&remapped);
+	return remapped;
+}
+
+//! True when no lane holds more spans than a play handle can snapshot (TakeLaneModel::MaxCompositeSpansPerLane).
+bool withinPlaybackSpanBudget(const std::vector<TakeLaneSegment>& segments)
+{
+	std::unordered_map<int, int> spanCounts;
+	for (const TakeLaneSegment& seg : segments)
+	{
+		if (++spanCounts[seg.laneIndex] > TakeLaneModel::MaxCompositeSpansPerLane) { return false; }
+	}
+	return true;
+}
+
 bool addSlipToTick(int tick, int slip, tick_t* sourceTick)
 {
 	const std::int64_t slipped = static_cast<std::int64_t>(tick) + slip;
@@ -97,7 +148,7 @@ bool containsTake(int groupId, int laneIndex, const std::vector<Clip*>& clips)
 {
 	for (const Clip* clip : clips)
 	{
-		if (clip != nullptr && clip->takeGroupId() == groupId && clip->laneIndex() == laneIndex) { return true; }
+		if (clip != nullptr && clip->belongsToTakeGroup(groupId) && clip->laneIndex() == laneIndex) { return true; }
 	}
 	return false;
 }
@@ -108,79 +159,13 @@ int newestTakeLane(int groupId, const std::vector<Clip*>& clips)
 	const Clip* newest = nullptr;
 	for (const Clip* clip : clips)
 	{
-		if (clip == nullptr || clip->takeGroupId() != groupId) { continue; }
+		if (clip == nullptr || !clip->belongsToTakeGroup(groupId)) { continue; }
 		if (newest == nullptr || clip->id() > newest->id()) { newest = clip; }
 	}
 	return newest == nullptr ? -1 : newest->laneIndex();
 }
 
 
-bool isTakeGroupElement(const QDomElement& element)
-{
-	return element.tagName() == QLatin1String("z:takegroup")
-		|| element.tagName() == QLatin1String("takegroup");
-}
-
-int nextLaneAfter(int laneIndex)
-{
-	return laneIndex == std::numeric_limits<int>::max() ? laneIndex : laneIndex + 1;
-}
-
-int nextLaneIndexOf(const QDomElement& element)
-{
-	bool ok = false;
-	const int nextLane = element.attribute(QStringLiteral("nextlane")).toInt(&ok);
-	return ok && nextLane >= 0 ? nextLane : 0;
-}
-
-TakeLane laneFromElement(const QDomElement& element)
-{
-	TakeLane lane;
-	lane.index = std::max(0, element.attribute(QStringLiteral("index"), QStringLiteral("0")).toInt());
-	lane.name = element.attribute(QStringLiteral("name"));
-	// The ENTITY id rides the clip-id rule (SPEC-ARCH-4 1.5 R4/R3): take the
-	// document's value and raise the counter above it, or allocate one and
-	// count it as assigned when the document carries no id (a pre-S7 payload).
-	bool ok = false;
-	const int id = element.attribute(QStringLiteral("id")).toInt(&ok);
-	if (ok && id >= 0)
-	{
-		lane.id = id;
-		ProjectIds::observe(id);
-	}
-	else
-	{
-		lane.id = ProjectIds::allocate();
-		ProjectIds::noteLoadAssignment(lane.id);
-	}
-	return lane;
-}
-
-bool readNonNegativeInt(const QDomElement& element, const QString& name, int* value,
-	bool optional = false)
-{
-	if (!element.hasAttribute(name))
-	{
-		if (!optional) { return false; }
-		*value = 0;
-		return true;
-	}
-	bool ok = false;
-	const int parsed = element.attribute(name).toInt(&ok);
-	if (!ok || parsed < 0) { return false; }
-	*value = parsed;
-	return true;
-}
-
-bool segmentFromElement(const QDomElement& element, TakeLaneSegment* segment)
-{
-	// 0.5.0 E2: the slip is `slip`. A pre-0.5.0 `srcpos` is ignored on purpose - it held the old, contradictory
-	// reading and no playback path ever applied it, so dropping it keeps an old project sounding as it did.
-	return readNonNegativeInt(element, QStringLiteral("begin"), &segment->beginTick)
-		&& readNonNegativeInt(element, QStringLiteral("end"), &segment->endTick)
-		&& readNonNegativeInt(element, QStringLiteral("lane"), &segment->laneIndex)
-		&& readNonNegativeInt(element, QStringLiteral("slip"), &segment->sourceOffset, true);
-}
 
 } // namespace
 
@@ -213,7 +198,7 @@ bool TakeLaneModel::canSelectTake(int groupId, int laneIndex, const std::vector<
 	if (activeTakeLane(groupId) < 0 || laneIndex < 0) { return false; }
 	for (const Clip* clip : clips)
 	{
-		if (clip != nullptr && clip->takeGroupId() == groupId && clip->laneIndex() == laneIndex) { return true; }
+		if (clip != nullptr && clip->belongsToTakeGroup(groupId) && clip->laneIndex() == laneIndex) { return true; }
 	}
 	return false;
 }
@@ -223,15 +208,15 @@ void TakeLaneModel::publishTakeGroup(int groupId, int activeLane, const std::vec
 {
 	for (Clip* clip : clips)
 	{
-		if (clip != nullptr && clip->takeGroupId() == groupId) { clip->publishActiveTakeLane(activeLane); }
+		if (clip != nullptr && clip->belongsToTakeGroup(groupId)) { clip->publishActiveTakeLane(activeLane); }
 	}
 }
 
 
-bool TakeLaneModel::recordTake(int groupId, int laneIndex, const std::vector<Clip*>& clips)
+bool TakeLaneModel::recordTake(int groupId, int laneIndex, const std::vector<Clip*>& clips, bool overrideChoice)
 {
 	const auto changeLock = changeLockForEdit();
-	if (groupId <= 0 || laneIndex < 0 || !containsTake(groupId, laneIndex, clips)) { return false; }
+	if (groupId < 0 || laneIndex < 0 || !containsTake(groupId, laneIndex, clips)) { return false; }
 
 	auto it = std::lower_bound(m_takeGroups.begin(), m_takeGroups.end(), groupId,
 		[](const TakeGroupSelection& group, int id) { return group.groupId < id; });
@@ -239,9 +224,10 @@ bool TakeLaneModel::recordTake(int groupId, int laneIndex, const std::vector<Cli
 	{
 		it = m_takeGroups.insert(it, TakeGroupSelection{groupId, laneIndex, false});
 	}
-	else if (!it->userChosen)
+	else if (!it->userChosen || overrideChoice)
 	{
 		it->activeLane = laneIndex;
+		it->userChosen = false;
 	}
 	publishTakeGroup(groupId, it->activeLane, clips);
 	return true;
@@ -287,7 +273,7 @@ void TakeLaneModel::synchronizeTakePlayback(const std::vector<Clip*>& clips) con
 	for (Clip* clip : clips)
 	{
 		if (clip == nullptr) { continue; }
-		clip->publishActiveTakeLane(activeTakeLane(clip->takeGroupId()));
+		clip->publishActiveTakeLane(clip->hasTakeGroup() ? activeTakeLane(clip->takeGroupId()) : -1);
 	}
 }
 
@@ -318,6 +304,14 @@ int TakeLaneModel::addLane(const QString& name)
 }
 
 
+bool TakeLaneModel::canAddLanes(int count) const
+{
+	// addLane() succeeds while the mark is below the limit, so 'count' more fit exactly when the
+	// mark is at most 'count' below it. The mark is never negative, so the subtraction cannot overflow.
+	return count >= 0 && count <= std::numeric_limits<int>::max() - m_nextLaneIndex;
+}
+
+
 int TakeLaneModel::baseLane() const
 {
 	return m_lanes.empty() ? -1 : m_lanes.front().index;
@@ -336,25 +330,20 @@ bool TakeLaneModel::removeLane(int index)
 	const auto changeLock = changeLockForEdit();
 	const auto pos = std::lower_bound(m_lanes.begin(), m_lanes.end(), index, laneLessThan);
 	if (pos == m_lanes.end() || pos->index != index) { return false; }
-	m_lanes.erase(pos);
-	if (m_lanes.empty())
-	{
-		// No lane can supply a tick any more, so there is no composite left.
-		m_segments.clear();
-		return true;
-	}
 	// A composite stays total over its span (I6): the range a removed lane
-	// supplied falls back to the base lane rather than becoming a hole. The
-	// offset resets because the base lane's take has its own start.
-	const int base = baseLane();
-	for (TakeLaneSegment& seg : m_segments)
-	{
-		if (seg.laneIndex != index) { continue; }
-		seg.laneIndex = base;
-		seg.sourceOffset = 0;
-	}
-	mergeSegments();
+	// supplied falls back to the base lane rather than becoming a hole (see
+	// segmentsAfterRemovingLane). A result over the playback span budget is refused.
+	std::vector<TakeLaneSegment> remapped = segmentsAfterRemovingLane(m_lanes, m_segments, index);
+	if (!withinPlaybackSpanBudget(remapped)) { return false; }
+	m_lanes.erase(pos);
+	m_segments.swap(remapped);
 	return true;
+}
+
+
+bool TakeLaneModel::canRemoveLane(int index) const
+{
+	return hasLane(index) && withinPlaybackSpanBudget(segmentsAfterRemovingLane(m_lanes, m_segments, index));
 }
 
 
@@ -386,7 +375,20 @@ bool TakeLaneModel::canSelect(int beginTick, int endTick, int laneIndex, int sou
 {
 	if (beginTick < 0 || endTick <= beginTick || sourceOffset < 0) { return false; }
 	if (!addSlipToTick(endTick - 1, sourceOffset, nullptr)) { return false; }
-	return hasLane(laneIndex);
+	if (!hasLane(laneIndex)) { return false; }
+	// Judged on the composite the selection would leave, normalised the way selectSegment() normalises it.
+	std::vector<TakeLaneSegment> painted;
+	painted.reserve(m_segments.size() + 1);
+	for (const TakeLaneSegment& seg : m_segments) { subtractRange(seg, beginTick, endTick, &painted); }
+	TakeLaneSegment chosen;
+	chosen.beginTick = beginTick;
+	chosen.endTick = endTick;
+	chosen.laneIndex = laneIndex;
+	chosen.sourceOffset = sourceOffset;
+	painted.push_back(chosen);
+	std::sort(painted.begin(), painted.end(), segmentBefore);
+	mergeAdjacentSegments(&painted);
+	return withinPlaybackSpanBudget(painted);
 }
 
 
@@ -422,18 +424,7 @@ void TakeLaneModel::sortSegments()
 
 void TakeLaneModel::mergeSegments()
 {
-	std::vector<TakeLaneSegment> merged;
-	merged.reserve(m_segments.size());
-	for (const TakeLaneSegment& seg : m_segments)
-	{
-		if (!merged.empty() && continuesTake(merged.back(), seg))
-		{
-			merged.back().endTick = seg.endTick;
-			continue;
-		}
-		merged.push_back(seg);
-	}
-	m_segments.swap(merged);
+	mergeAdjacentSegments(&m_segments);
 }
 
 
@@ -474,6 +465,7 @@ int TakeLaneModel::fillGaps(int spanBegin, int spanEnd)
 int TakeLaneModel::rebuild(int spanBegin, int spanEnd)
 {
 	const auto changeLock = changeLockForEdit();
+	const std::vector<TakeLaneSegment> original = m_segments;
 	sortSegments();
 	mergeSegments();
 	if (m_lanes.empty())
@@ -481,7 +473,12 @@ int TakeLaneModel::rebuild(int spanBegin, int spanEnd)
 		m_segments.clear();
 		return 0;
 	}
-	if (spanBegin < 0 || spanEnd <= spanBegin) { return static_cast<int>(m_segments.size()); }
+	if (spanBegin < 0 || spanEnd <= spanBegin)
+	{
+		if (withinPlaybackSpanBudget(m_segments)) { return static_cast<int>(m_segments.size()); }
+		m_segments = original;
+		return -1;
+	}
 
 	std::vector<TakeLaneSegment> clamped;
 	clamped.reserve(m_segments.size());
@@ -493,7 +490,19 @@ int TakeLaneModel::rebuild(int spanBegin, int spanEnd)
 		if (kept.endTick > kept.beginTick) { clamped.push_back(kept); }
 	}
 	m_segments.swap(clamped);
-	return fillGaps(spanBegin, spanEnd);
+	const int result = fillGaps(spanBegin, spanEnd);
+	if (withinPlaybackSpanBudget(m_segments)) { return result; }
+	m_segments = original;
+	return -1;
+}
+
+
+bool TakeLaneModel::canRebuild(int spanBegin, int spanEnd) const
+{
+	TakeLaneModel preview;
+	preview.m_lanes = m_lanes;
+	preview.m_segments = m_segments;
+	return preview.rebuild(spanBegin, spanEnd) >= 0;
 }
 
 
@@ -566,104 +575,5 @@ void TakeLaneModel::clear()
 }
 
 
-void TakeLaneModel::saveSettings(QDomDocument& doc, QDomElement& element) const
-{
-	if (m_nextLaneIndex > 0) { element.setAttribute(QStringLiteral("nextlane"), m_nextLaneIndex); }
-	if (playAllTakes()) { element.setAttribute(QStringLiteral("playall"), 1); }
-	for (const TakeLane& lane : m_lanes)
-	{
-		// The ARCH-4 S7 vocabulary: the ENTITY spelling, one for both contexts
-		// (top-level <z:lanes> section, or a checkpoint payload's <takelanes>).
-		QDomElement laneElement = doc.createElement(QStringLiteral("z:lane"));
-		laneElement.setAttribute(QStringLiteral("id"), lane.id);
-		laneElement.setAttribute(QStringLiteral("index"), lane.index);
-		if (!lane.name.isEmpty()) { laneElement.setAttribute(QStringLiteral("name"), lane.name); }
-		element.appendChild(laneElement);
-	}
-	for (const TakeGroupSelection& group : m_takeGroups)
-	{
-		QDomElement groupElement = doc.createElement(QStringLiteral("z:takegroup"));
-		groupElement.setAttribute(QStringLiteral("group"), group.groupId);
-		groupElement.setAttribute(QStringLiteral("active"), group.activeLane);
-		if (group.userChosen) { groupElement.setAttribute(QStringLiteral("user"), 1); }
-		element.appendChild(groupElement);
-	}
-	for (const TakeLaneSegment& seg : m_segments)
-	{
-		QDomElement segElement = doc.createElement(QStringLiteral("z:segment"));
-		segElement.setAttribute(QStringLiteral("begin"), seg.beginTick);
-		segElement.setAttribute(QStringLiteral("end"), seg.endTick);
-		segElement.setAttribute(QStringLiteral("lane"), seg.laneIndex);
-		// Additive (I9): a comp with no slip writes no slip attribute (0.5.0 E2: `slip`, not the old `srcpos`).
-		if (seg.sourceOffset != 0) { segElement.setAttribute(QStringLiteral("slip"), seg.sourceOffset); }
-		element.appendChild(segElement);
-	}
-}
-
-
-void TakeLaneModel::loadSettings(const QDomElement& element)
-{
-	const auto changeLock = changeLockForEdit();
-	// Reset FIRST. A track element that carries no <takelanes> child (or an old
-	// build's file) must leave an empty model, not the previous one: a journal
-	// checkpoint restores by re-loading, so a field that survives its own
-	// absence could never be undone.
-	clear();
-	m_nextLaneIndex = nextLaneIndexOf(element);
-	m_playAllTakes.store(element.attribute(QStringLiteral("playall"), QStringLiteral("0")).toInt() != 0,
-		std::memory_order_relaxed);
-	for (QDomNode node = element.firstChild(); !node.isNull(); node = node.nextSibling())
-	{
-		loadSettingsChild(node.toElement());
-	}
-	sortSegments();
-	mergeSegments();
-}
-
-
-void TakeLaneModel::loadSettingsChild(const QDomElement& child)
-{
-	if (child.isNull()) { return; }
-	// Read-both spellings (S1's rule, ARCH-4 S7): the `z:`-prefixed one this
-	// build writes in either context, and the bare pre-S7 one a payload or a
-	// hand-written file may still carry.
-	if (child.tagName() == QLatin1String("z:lane") || child.tagName() == QLatin1String("lane"))
-	{
-		const TakeLane lane = laneFromElement(child);
-		m_nextLaneIndex = std::max(m_nextLaneIndex, nextLaneAfter(lane.index));
-		const auto pos = std::lower_bound(m_lanes.begin(), m_lanes.end(), lane.index,
-			laneLessThan);
-		m_lanes.insert(pos, lane);
-		return;
-	}
-	if (isTakeGroupElement(child))
-	{
-		loadTakeGroup(child);
-		return;
-	}
-	if (child.tagName() == QLatin1String("z:segment")
-		|| child.tagName() == QLatin1String("segment"))
-	{
-		TakeLaneSegment seg;
-		if (segmentFromElement(child, &seg) && seg.endTick > seg.beginTick
-			&& hasLane(seg.laneIndex)) { m_segments.push_back(seg); }
-	}
-}
-
-
-void TakeLaneModel::loadTakeGroup(const QDomElement& element)
-{
-	bool groupOk = false;
-	bool activeOk = false;
-	const int groupId = element.attribute(QStringLiteral("group")).toInt(&groupOk);
-	const int activeLane = element.attribute(QStringLiteral("active")).toInt(&activeOk);
-	if (!groupOk || !activeOk || groupId <= 0 || activeLane < 0) { return; }
-	TakeGroupSelection group{groupId, activeLane,
-		element.attribute(QStringLiteral("user"), QStringLiteral("0")).toInt() != 0};
-	auto pos = std::lower_bound(m_takeGroups.begin(), m_takeGroups.end(), groupId,
-		[](const TakeGroupSelection& existing, int id) { return existing.groupId < id; });
-	if (pos != m_takeGroups.end() && pos->groupId == groupId) { *pos = group; }
-	else { m_takeGroups.insert(pos, group); }
-}
 
 } // namespace lmms

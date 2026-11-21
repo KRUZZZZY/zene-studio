@@ -203,9 +203,13 @@ in-tree test instrument).
 
 **Warp and stretch.** `warp.list`, `warp.add`, `warp.move`, `warp.remove`, `warp.set` pin frames of a
 clip's audio to timeline positions and choose the clip's warp tempo mode; `warp.stretch` selects
-`resample` (default, changes pitch) or **`preserve_pitch`** (`AudioStretcher`; the proof measures the
+`resample` (default, changes pitch), **`preserve_pitch`** (`AudioStretcher`; the proof measures the
 440 Hz + 660 Hz two-tone input and reports the alignment search's cost; `SampleClipStretchTest`,
-`WarpMarkersTest`, `ClipWarpPersistenceTest`).
+`WarpMarkersTest`, `ClipWarpPersistenceTest`) or **`rubberband`** *(added after this capture, owner
+decision 12 — 2026-10-19, Q050-148: the optional Rubber Band R3 stretcher for tonal and polyphonic
+material, refused by a build without the library and rendered through WSOLA on voice exhaustion;
+`SampleClipRubberBandTest`; `docs/PITCH-STRETCH.md` §7 is the record. Appendix A below is the
+catalogue of the capture its provenance block names and predates the third mode.)*.
 
 **Groove, tempo and feel.** `groove.list`, `groove.extract`, `groove.set`, `groove.apply`,
 `groove.quantize`, `groove.rename`, `groove.remove` (`GrooveTemplateTest`, `ControlGrooveCommands`);
@@ -272,7 +276,12 @@ plus mapping templates `controller.template_list`, `controller.template_save`, `
 `MidiLearnTest`, `MidiLearnThreadTest`, `MidiLearnGuiTest`).
 
 **Clock and sync.** `clock.get_state`, `clock.master_set`, `clock.slave_set`: MIDI clock master (24
-pulses per quarter note) and slave, with MTC, plus a bounded monitor (`MidiClockTest`). Session sync:
+pulses per quarter note) and slave, with MTC, plus a bounded monitor (`MidiClockTest`). **The slave follows
+the chosen input only** — `source_port`, spelled as `midi.device_list` spells it, and offered by Edit > MIDI
+Clock > Clock Source; a clock from any other port is dropped and counted in `clock.get_state`'s
+`slave.ignored`, and switching the source forgets the measurement (`MidiClockSourceTest`). A client with one
+unnamed input (ALSA Raw-MIDI, JACK, OSS, sndio, the dummy) can only follow "any input", which is the empty
+source; see docs/KNOWN-LIMITATIONS.md. Session sync:
 `link.get_state`, `link.set_enabled`, `link.set_quantum`, `link.set_session_tempo`,
 `link.set_start_stop_sync` — two instances on one machine (or one network segment) agree on tempo and
 beat; the shared beat is continuous across a tempo change (the timeline is re-anchored before the new
@@ -809,9 +818,9 @@ Re-run it with the command in Appendix B, §B.4, and replace this block wholesal
 
 | command | mutating | description |
 | --- | --- | --- |
-| `clock.get_state` | no | What this engine's MIDI clock is doing: the master's enabled flag, the port it sends on and whether that port is subscribed to a client destination, the message counters it has emitted and a bounded monitor of the last messages in order; and the slave's enabled flag, its source port, whether it follows the measured tempo, whether it is LOCKED, the measured tempo, the drift of the last interval from the window's mean, the drift bound, the tempo error the pulse jitter can produce, the window it measures over, the pulse count and the last song position and time-code values received. Read-only. `mtc` reports "absent": this release generates no MIDI time code (see docs/KNOWN-LIMITATIONS.md). |
+| `clock.get_state` | no | What this engine's MIDI clock is doing: the master's enabled flag, the port it sends on and whether that port is subscribed to a client destination, the message counters it has emitted and a bounded monitor of the last messages in order; and the slave's enabled flag, its source port, the number of clock messages IGNORED for arriving on another port, whether it follows the measured tempo, whether it is LOCKED, the measured tempo, the drift of the last interval from the window's mean, the drift bound, the tempo error the pulse jitter can produce, the window it measures over, the pulse count and the last song position and time-code values received. Read-only. `mtc` reports "absent": this release generates no MIDI time code (see docs/KNOWN-LIMITATIONS.md). |
 | `clock.master_set` | yes | Enable or disable the DAW as a MIDI clock MASTER: 24 clock pulses to the quarter note, START/STOP/CONTINUE and a Song Position Pointer on the transport's own edges, emitted from the audio thread through this engine's MIDI output. `port` names the writable client destination to subscribe to (see midi.device_list for the names); an empty one keeps the current subscription. Enabling when the engine has no MIDI client to send through is refused, typed, rather than reported as a success that emits nothing. Reversible: the enabled flag AND the port subscription are restored by control.undo. |
-| `clock.slave_set` | yes | Enable or disable the DAW as a MIDI clock SLAVE: follow an incoming clock, measure its tempo over one quarter note of pulses and, when follow_tempo is on, write that tempo to the Song once it has left the dead band. A slave that is enabled with NO clock arriving never locks, writes nothing and does not move the transport - clock.get_state reports locked:false. `source_port` names the readable client port to follow (informational: the engine's MIDI readers deliver a clock from wherever it arrives). `drift_bound_ms` is how far one pulse interval may stray from the window's mean and still count as locked. Reversible for the CONFIGURATION: the tempo a following slave wrote is a trajectory of writes, not one state, and control.undo does not restore it (the transaction names the value). Receiving START/STOP/CONTINUE/SONG POSITION is counted and reported; moving the transport FROM the incoming clock is not in this release (see docs/KNOWN-LIMITATIONS.md). |
+| `clock.slave_set` | yes | Enable or disable the DAW as a MIDI clock SLAVE: follow an incoming clock, measure its tempo over one quarter note of pulses and, when follow_tempo is on, write that tempo to the Song once it has left the dead band. A slave that is enabled with NO clock arriving never locks, writes nothing and does not move the transport - clock.get_state reports locked:false. `source_port` names the readable client port to follow, spelled as midi.device_list spells it (Edit > MIDI Clock > Clock Source offers the same list): clock messages from any OTHER port are ignored and counted in `ignored`, and choosing a different source forgets the measurement so the device moved off cannot keep writing its tempo. An empty source_port follows a clock from wherever it arrives - that is how the choice is CLEARED, while OMITTING the property keeps the current one - and it is the only value a client with one unnamed input (ALSA Raw-MIDI, JACK, OSS, sndio, the dummy) can follow, because those cannot say which of their ports a byte came from. A name longer than the follower can hold is refused (invalid_args), never truncated. `drift_bound_ms` is how far one pulse interval may stray from the window's mean and still count as locked. Reversible for the CONFIGURATION: the tempo a following slave wrote is a trajectory of writes, not one state, and control.undo does not restore it (the transaction names the value). Receiving START/STOP/CONTINUE/SONG POSITION is counted and reported; moving the transport FROM the incoming clock is not in this release (see docs/KNOWN-LIMITATIONS.md). |
 
 ### comp (7 ids)
 
@@ -1164,7 +1173,7 @@ Re-run it with the command in Appendix B, §B.4, and replace this block wholesal
 
 | command | mutating | description |
 | --- | --- | --- |
-| `safestart.acknowledge` | yes | Accept the offer of a normal start: write the acknowledgement the NEXT launch consumes, so it loads with third-party plugins enabled. Keeps the marker and does not change this session (instances already skipped were never created). Refuses when there is no marker. Not reversible - no function in this engine removes the acknowledgement except safestart.clear, which removes the marker with it. |
+| `safestart.acknowledge` | yes | Accept the offer of a normal start: write the acknowledgement the NEXT launch consumes, so it loads with third-party plugins enabled. Keeps the marker and does not change this session (instances already skipped were never created). Refuses unless this session started safe - the offer is made in a safe session and nowhere else. Not reversible - no function in this engine removes the acknowledgement except safestart.clear, which removes the marker with it. |
 | `safestart.clear` | yes | Clear the crash marker: delete the marker and the acknowledgement, so the next launch is a normal one, and leave safe-start mode in this session. The verb for 'the cause is known and fixed'. Refuses when there is neither file, so a call that would change nothing writes nothing. Not reversible - the marker's own record of the crashed session is gone; control.undo names the fallback. |
 | `safestart.get_state` | no | Safe-start mode's state: whether the module is installed, the crash marker and the acknowledgement as files (path, existence, size, time), whether a marker says the previous run did not exit cleanly, whether THIS session started safe, how many sessions in a row have, the session-scoped skip switch, every plugin instance the mode skipped and why, the directories the third-party classification treats as this build's own, the previous session's own record and the offer of a normal start. Read-only, and it answers in every configuration. |
 | `safestart.set_skip` | yes | Turn the load-time skip of third-party plugin INSTANCES on or off for THIS session - the session-scoped half of the predicate Plugin::instantiate consults. Does not touch the marker: with it off, a project loaded now loads its third-party plugins when it is opened (already-skipped instances are not created by this call). Re-armed by the next session. Not reversible - process-scoped mode state, no journal checkpoint, and nothing puts an already-skipped instance back. |

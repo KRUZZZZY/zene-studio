@@ -99,9 +99,19 @@ ControlResult options(const QJsonObject& args)
 	return ControlResult::success({{QStringLiteral("pan_law"), MixerOptions::panLawNames().value(static_cast<int>(options.panLaw()))}});
 }
 
-void setSendEnabled(mix_ch_t from, mix_ch_t to, bool on)
+//! Switch the send from the channel with persistent id @a fromId to the one with
+//! @a toId on or off. The endpoints are resolved to their LIVE positions here, so
+//! a reorder or removal between the recording and the undo/redo cannot make the
+//! step act on the routes that now occupy the recorded positions (BUG 6).
+void setSendEnabled(int fromId, int toId, bool on)
 {
-	if (MixerRoute* route = findMixerRoute(from, to)) { route->enabledModel()->setValue(on); }
+	MixerChannel* from = channelWithId(fromId);
+	MixerChannel* to = channelWithId(toId);
+	if (from == nullptr || to == nullptr) { return; }
+	if (MixerRoute* route = findMixerRoute(static_cast<mix_ch_t>(from->index()), static_cast<mix_ch_t>(to->index())))
+	{
+		route->enabledModel()->setValue(on);
+	}
 }
 
 ControlResult sendEnable(const QJsonObject& args)
@@ -121,7 +131,12 @@ ControlResult sendEnable(const QJsonObject& args)
 	if (on != before)
 	{
 		route->enabledModel()->setValue(on);
-		addUndoStep([from, to, before]() { setSendEnabled(from, to, before); }, [from, to, on]() { setSendEnabled(from, to, on); });
+		// The step keeps the endpoints' PERSISTENT ids, resolved to live positions when it
+		// runs: a reorder between this call and its undo would otherwise make it toggle the
+		// route that took the recorded positions' places (BUG 6).
+		const int fromId = ends.from->id();
+		const int toId = ends.to->id();
+		addUndoStep([fromId, toId, before]() { setSendEnabled(fromId, toId, before); }, [fromId, toId, on]() { setSendEnabled(fromId, toId, on); });
 		Engine::getSong()->setModified();
 	}
 	QJsonObject result{{QStringLiteral("from"), channelIdOf(ends.from)}, {QStringLiteral("to"), channelIdOf(ends.to)},
@@ -212,6 +227,19 @@ bool channelsOf(const QJsonArray& ids, std::vector<MixerChannel*>* out, ControlR
 	return !out->empty();
 }
 
+//! Whether the write would move any channel: a no-op adjust is reported as 0 and records no undo step.
+bool adjustWouldChange(const std::vector<MixerChannel*>& channels, float factor, float panDelta)
+{
+	for (MixerChannel* channel : channels)
+	{
+		const FloatModel& volume = channel->m_volumeModel;
+		const float adjustedVolume = std::clamp(volume.value() * factor, volume.minValue(), volume.maxValue());
+		const float adjustedPan = std::clamp(channel->m_panModel.value() + panDelta, -1.f, 1.f);
+		if (adjustedVolume != volume.value() || adjustedPan != channel->m_panModel.value()) { return true; }
+	}
+	return false;
+}
+
 ControlResult adjust(const QJsonObject& args)
 {
 	std::vector<MixerChannel*> channels;
@@ -226,15 +254,7 @@ ControlResult adjust(const QJsonObject& args)
 	if (db == 0.0 && pan == 0.0) { return ControlResult::success({{QStringLiteral("adjusted"), 0}}); }  // nothing to move (review W3-batchA #11)
 	const float factor = static_cast<float>(std::pow(10.0, db / 20.0));
 	const float panDelta = static_cast<float>(pan);
-	bool changesAnyChannel = false;
-	for (MixerChannel* channel : channels)
-	{
-		const FloatModel& volume = channel->m_volumeModel;
-		const float adjustedVolume = std::clamp(volume.value() * factor, volume.minValue(), volume.maxValue());
-		const float adjustedPan = std::clamp(channel->m_panModel.value() + panDelta, -1.f, 1.f);
-		if (adjustedVolume != volume.value() || adjustedPan != channel->m_panModel.value()) { changesAnyChannel = true; break; }
-	}
-	if (!changesAnyChannel) { return ControlResult::success({{QStringLiteral("adjusted"), 0}}); }
+	if (!adjustWouldChange(channels, factor, panDelta)) { return ControlResult::success({{QStringLiteral("adjusted"), 0}}); }
 	QVector<JournallingObject*> models;
 	for (MixerChannel* channel : channels) { models << &channel->m_volumeModel << &channel->m_panModel; }
 	addUndoStep(models);
@@ -274,7 +294,8 @@ ControlResult orderByTracks(const QJsonObject&)
 	for (const Track* track : Engine::getSong()->tracks())
 	{
 		auto* model = const_cast<Track*>(track)->mixerChannelModel();
-		MixerChannel* channel = model != nullptr && model->value() > 0 ? mixer()->mixerChannel(model->value()) : nullptr;
+		const bool onAChannel = model != nullptr && model->value() > 0 && model->value() < mixer()->numChannels();
+		MixerChannel* channel = onAChannel ? mixer()->mixerChannel(model->value()) : nullptr;
 		if (channel != nullptr && std::find(after.begin(), after.end(), channel->id()) == after.end()) { after.push_back(channel->id()); }
 	}
 	for (const int id : before) { if (std::find(after.begin(), after.end(), id) == after.end()) { after.push_back(id); } }
@@ -287,55 +308,12 @@ ControlResult orderByTracks(const QJsonObject&)
 	return ControlResult::success({{QStringLiteral("moved"), after != before}});
 }
 
-//! MX-085: the strip EQ's four values, read from and written to a channel found by its persistent id.
-struct EqValues
-{
-	float low = 0.f;
-	float mid = 0.f;
-	float midFreq = 1000.f;
-	float high = 0.f;
-};
-
-EqValues eqOf(const MixerChannel* channel)
-{
-	return {channel->m_eqLowModel.value(), channel->m_eqMidModel.value(), channel->m_eqMidFreqModel.value(), channel->m_eqHighModel.value()};
-}
-
-bool sameEq(const EqValues& a, const EqValues& b)
-{
-	return a.low == b.low && a.mid == b.mid && a.midFreq == b.midFreq && a.high == b.high;
-}
-
-void setEq(int id, const EqValues& eq)
-{
-	MixerChannel* channel = channelWithId(id);
-	if (channel == nullptr) { return; }
-	channel->m_eqLowModel.setValue(eq.low);
-	channel->m_eqMidModel.setValue(eq.mid);
-	channel->m_eqMidFreqModel.setValue(eq.midFreq);
-	channel->m_eqHighModel.setValue(eq.high);
-}
-
 ControlResult channelEq(const QJsonObject& args)
 {
 	ControlResult error;
 	MixerChannel* channel = resolveMixerChannel(args.value(QStringLiteral("channel")).toString(), &error);
 	if (channel == nullptr) { return error; }
-	const EqValues before = eqOf(channel);
-	const EqValues after{static_cast<float>(std::clamp(args.value(QStringLiteral("low")).toDouble(before.low), -18.0, 18.0)),
-		static_cast<float>(std::clamp(args.value(QStringLiteral("mid")).toDouble(before.mid), -18.0, 18.0)),
-		static_cast<float>(std::clamp(args.value(QStringLiteral("mid_freq")).toDouble(before.midFreq), 100.0, 10000.0)),
-		static_cast<float>(std::clamp(args.value(QStringLiteral("high")).toDouble(before.high), -18.0, 18.0))};
-	const int id = channel->id();
-	if (!sameEq(before, after))  // with only 'channel' it is a report: no write, no step, nothing modified
-	{
-		setEq(id, after);
-		addUndoStep([id, before]() { setEq(id, before); }, [id, after]() { setEq(id, after); });
-		Engine::getSong()->setModified();
-	}
-	return ControlResult::success({{QStringLiteral("channel"), channelIdOf(channel)}, {QStringLiteral("low"), static_cast<double>(after.low)},
-		{QStringLiteral("mid"), static_cast<double>(after.mid)}, {QStringLiteral("mid_freq"), static_cast<double>(after.midFreq)},
-		{QStringLiteral("high"), static_cast<double>(after.high)}});
+	return applyChannelEq(*channel, args);
 }
 
 //! MX-055: every channel with its sends - the routing matrix's rows.
@@ -348,8 +326,10 @@ ControlResult routingMatrix(const QJsonObject&)
 		QJsonArray sends;
 		for (MixerRoute* route : channel->m_sends)
 		{
-			sends.append(QJsonObject{{QStringLiteral("to"), channelIdOf(route->receiver())}, {QStringLiteral("amount"), static_cast<double>(route->amount()->value())},
-				{QStringLiteral("pre_fader"), route->preFader()}, {QStringLiteral("enabled"), route->enabled()}});
+			QJsonObject send{{QStringLiteral("to"), channelIdOf(route->receiver())}, {QStringLiteral("amount"), static_cast<double>(route->amount()->value())},
+				{QStringLiteral("pre_fader"), route->preFader()}, {QStringLiteral("enabled"), route->enabled()}};
+			addRouteChannels(&send, *route);  // Q050-155.2: only when a side is not stereo
+			sends.append(send);
 		}
 		channels.append(QJsonObject{{QStringLiteral("channel"), channelIdOf(channel)}, {QStringLiteral("name"), i == 0 ? QStringLiteral("Master") : channel->m_name},
 			{QStringLiteral("index"), i}, {QStringLiteral("sends"), sends}});
@@ -433,6 +413,8 @@ ControlResult colorMembers(const QJsonObject& args)
 	std::vector<std::pair<int, std::optional<QColor>>> before;
 	for (const mix_ch_t member : group->members())
 	{
+		// A stale member names no channel; mixerChannel() reads the list without a range check outside the tests.
+		if (member >= mixer()->numChannels()) { continue; }
 		if (MixerChannel* channel = mixer()->mixerChannel(member)) { before.emplace_back(channel->id(), channel->color()); }
 	}
 	const auto paint = [](const std::vector<std::pair<int, std::optional<QColor>>>& colors) {

@@ -1,0 +1,34 @@
+Private libsamplerate 0.2.2 backend for AudioResampler
+===================================================
+
+Origin: https://github.com/libsndfile/libsamplerate/tree/0.2.2
+Files retain upstream notices; COPYING is the upstream BSD-2-Clause licence.
+The install rules ship COPYING under the product data directory, in
+licenses/libsamplerate.
+The coefficient tables and DSP arithmetic are unmodified. The system library
+remains available to SampleBuffer, plug-ins and the independent reference tests.
+CMake builds a static library; prefix.h gives its public API a private namespace.
+
+Local change (cluster test-ControlExportSettings): src_sinc.c reserves its full
+input-buffer capacity with malloc rather than calloc. sinc_reset invalidates the
+buffer indices without clearing the unused capacity. prepare_data clears the
+initial left history when the first input arrives and its length is known from
+the ratio. All other readable samples are written by the existing input copy,
+compaction or end padding. Neither reset nor process allocates memory. Maximum
+ratio, buffer capacity, coefficient tables, selected quality and the engine's
+pool capacity are unchanged. Used voices retain their own separate history.
+
+Why: each SincBest stereo buffer reserves about 860 KiB for the worst supported
+ratio. Clearing every unused slot in a roughly 15,000-slot pool made a quality
+switch commit about 14 GiB of resident memory. A malloc reservation does not
+write those unused pages. RSS now follows the input space actually written,
+within the same fixed capacity. This does not promise that all voices running
+at the worst ratio simultaneously fit below 6 GiB, or that first-touch page
+faults have bounded latency. There are no malloc/free/VM calls on the processing
+path; this is not an mlock/prefault guarantee.
+
+AudioResamplerPoolMemoryTest checks all available pool slots in one burst,
+including their first samples, and compares reset/streaming against the
+unmodified system library across the three sinc qualities, five channel counts,
+ratio changes and the ratio endpoints. The train tests also run under an
+unchanged per-process resource cap.

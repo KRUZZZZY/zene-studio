@@ -25,6 +25,8 @@
 #ifndef LMMS_GUI_MIXER_VIEW_H
 #define LMMS_GUI_MIXER_VIEW_H
 
+#include <QHash>
+#include <QJsonObject>
 #include <QWidget>
 
 #include "MixerChannelView.h"
@@ -34,6 +36,7 @@
 class QDomDocument;  // IWYU pragma: keep
 class QDomElement;  // IWYU pragma: keep
 class QHBoxLayout;
+class QSplitter;
 class QStackedLayout;
 class QScrollArea;
 
@@ -41,6 +44,9 @@ namespace lmms
 {
 	class Mixer;
 }
+
+class QAction;
+class QMenu;
 
 namespace lmms::gui
 {
@@ -66,10 +72,20 @@ public:
 		return m_currentMixerChannel;
 	}
 
+	//! Q050-100: the strip holding keyboard focus (the focused control's strip), else the selected strip.
+	MixerChannelView* focusedChannelView() const;
+	//! Q050-100: the mixer's Speak Meter action (Ctrl+Shift+M). Public for tests and for a menu.
+	QAction* speakMeterAction() const { return m_speakMeterAction; }
+	//! Q050-100: fill @a menu with the peak-watch choices (off and -18..0 dBFS), the current one checked.
+	void populatePeakWatchMenu(QMenu* menu) const;
+
 	inline MixerChannelView* channelView(int index)
 	{
 		return m_mixerChannelViews[index];
 	}
+
+	//! The number of strips in the view (the mixer's channels at the last sync).
+	inline int channelCount() const { return m_mixerChannelViews.size(); }
 
 
 	void setCurrentMixerChannel(MixerChannelView* channel);
@@ -121,6 +137,29 @@ public:
 	//! 0.5.0 theme 16: the bar naming and setting the view, density, filter and modes (MixerModeBar.h).
 	MixerModeBar* modeBar() const { return m_modeBar; }
 
+	//! Q050-227.1: the horizontal splitter holding the mixer's docked regions, from left to right -
+	//! the regions docked left, the scrolling channels (plus the add buttons), the regions docked
+	//! right. Its handles are the separators a drag resizes. Public for the zones menu and the tests.
+	QSplitter* zonesSplitter() const { return m_zoneSplitter; }
+	//! The widget a region id names (mixerzones::regionIds()): the dock host the splitter holds, with
+	//! the region's content inside it. nullptr for anything else.
+	QWidget* zoneWidget(const QString& regionId) const;
+	//! Re-lay the splitter from mixerzones::MixerZoneState: the docked order, the widths and which
+	//! regions are shown at all. Runs on the GUI thread only; the zones menu and a restored layout
+	//! both end here.
+	void relayoutZones();
+
+	//! Q050-227.2: the pinned strips' area, beside the scrolling channels and never scrolled away. Hidden
+	//! while no strip is pinned.
+	QWidget* pinnedArea() const { return m_pinnedArea; }
+	//! Q050-227.2: the scroll area holding the unpinned channels.
+	QScrollArea* channelScrollArea() const { return channelArea; }
+	//! Q050-227.2: puts every non-master strip in the pinned area or the scrolling area, in mixer order,
+	//! from MixerZoneState's pinned ids. GUI thread only.
+	void relayoutPins();
+	//! Q050-227.2: adds the strip's Pin Strip / Unpin Strip action to @a menu; none for the master.
+	void populatePinAction(QMenu* menu, int channelIndex);
+
 public slots:
 	int addNewChannel();
 
@@ -151,6 +190,19 @@ private:
 	QScrollArea* channelArea;
 	QHBoxLayout* chLayout;
 	QWidget* m_channelAreaWidget;
+	//! Q050-227.2: the pinned strips' area (left of the scrolling channels, hidden while empty) and its layout.
+	QWidget* m_pinnedArea = nullptr;
+	QHBoxLayout* m_pinnedLayout = nullptr;
+	//! Q050-227.1: the channels' own dock (the scroll area plus the add buttons) and the splitter
+	//! that carries every region; a region parked here while it is hidden.
+	QWidget* m_middleHost = nullptr;
+	QSplitter* m_zoneSplitter = nullptr;
+	QWidget* m_zoneParking = nullptr;
+	//! region id -> the host widget the splitter holds (the region's content is inside it).
+	QHash<QString, QWidget*> m_zoneHosts;
+	//! True while relayoutZones() applies a layout: the splitter's own signals then describe the
+	//! stored widths, not a gesture, and must not be written back.
+	bool m_applyingZones = false;
 	QStackedLayout* m_racksLayout;
 	QWidget* m_racksWidget;
 	//! M3.7: the VCA groups' strips, to the right of the channels.
@@ -164,9 +216,12 @@ private:
 	int m_viewOptionsGeneration = -1;  // 0.5.0 L08: MixerViewOptions::generation() last applied
 	MixerSendsBanner* m_sendsBanner = nullptr;
 	MixerModeBar* m_modeBar = nullptr;
+	QAction* m_speakMeterAction = nullptr;  //!< Q050-100
 	Mixer* m_mixer;
 
 	void updateMaxChannelSelector();
+	//! Q050-227.1: the splitter's current widths as window.mixer_zones' 'sizes' object (a drag's report).
+	QJsonObject zoneSizesJson() const;
 
 	friend class MixerChannelView;
 } ;

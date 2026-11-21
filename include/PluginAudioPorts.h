@@ -26,6 +26,9 @@
 #ifndef LMMS_PLUGIN_AUDIO_PORTS_H
 #define LMMS_PLUGIN_AUDIO_PORTS_H
 
+#include <array>
+#include <limits>
+#include <vector>
 #include "AudioPorts.h"
 
 namespace lmms
@@ -86,8 +89,10 @@ public:
 		if (channelsIn == DynamicChannelCount || channelsOut == DynamicChannelCount) { return; }
 
 		const auto channels = static_cast<std::size_t>(channelsIn + channelsOut);
+		const auto totalSamples = detail::checkedSizeFromCounts(channels, frames);
+		if (totalSamples == std::numeric_limits<std::size_t>::max()) { return; }
 
-		m_sourceBuffer.resize(channels * frames);
+		m_sourceBuffer.resize(totalSamples);
 		if constexpr (!settings.staticChannelCount())
 		{
 			m_accessBuffer.resize(channels);
@@ -162,8 +167,10 @@ public:
 		if (channelsIn == DynamicChannelCount || channelsOut == DynamicChannelCount) { return; }
 
 		const auto channels = std::max(channelsIn, channelsOut);
+		const auto totalSamples = detail::checkedSizeFromCounts(channels, frames);
+		if (totalSamples == std::numeric_limits<std::size_t>::max()) { return; }
 
-		m_sourceBuffer.resize(channels * frames);
+		m_sourceBuffer.resize(totalSamples);
 		if constexpr (!settings.staticChannelCount())
 		{
 			m_accessBuffer.resize(channels);
@@ -240,7 +247,9 @@ public:
 		if (channelsIn == DynamicChannelCount || channelsOut == DynamicChannelCount) { return; }
 
 		m_channels = std::max(channelsIn, channelsOut);
-		m_buffer.resize(frames * m_channels);
+		const auto totalSamples = detail::checkedSizeFromCounts(m_channels, frames);
+		if (totalSamples == std::numeric_limits<std::size_t>::max()) { return; }
+		m_buffer.resize(totalSamples);
 
 		// `m_frames` is last to be set, so non-zero `m_frames` means the buffers are initialized
 		m_frames = frames;

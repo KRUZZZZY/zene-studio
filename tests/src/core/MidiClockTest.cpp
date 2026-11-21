@@ -94,14 +94,16 @@ quint64 feedPulses(MidiClockTracker& tracker, int bpm, int pulses, quint64 times
 
 //! Feed clock pulses through the ENGINE's own input entry point - the one the
 //! MIDI client's reader thread calls - rather than into a tracker directly, so
-//! the follower test measures the path a real incoming clock takes.
+//! the follower test measures the path a real incoming clock takes. The source
+//! is empty (Q050-026): this file proves the RATE arithmetic and which source may
+//! drive the follower is MidiClockSourceTest's subject.
 quint64 feedClockInput(MidiClock* clock, int bpm, int pulses, quint64 timestampNs)
 {
 	const quint64 interval = pulseIntervalNs(bpm);
 	for (int i = 0; i < pulses; ++i)
 	{
 		timestampNs += interval;
-		clock->handleInputMessage(MidiClockMessage::Clock, 0, timestampNs);
+		clock->handleInputMessage(MidiClockMessage::Clock, 0, timestampNs, QString());
 	}
 	return timestampNs;
 }
@@ -600,6 +602,29 @@ private slots:
 		QVERIFY(!clock->tracker().locked());
 		QCOMPARE(clock->tracker().pulseCount(), 0);
 		QVERIFY(last > 0);
+	}
+
+	//! THE FOLLOW PREFERENCE IS CONFIGURATION, THE MEASUREMENT IS NOT. Disabling
+	//! the slave forgets the measurement (the tracker is reset), but the saved
+	//! follow-tempo choice survives: a re-enable that names no flag must find the
+	//! mode it was left in, or a plain stop throws the user's choice away.
+	void slaveEnableTogglePreservesFollowTempoPreference()
+	{
+		MidiClock* clock = MidiClock::instance();
+		Engine::getSong()->setTempo(100);
+		clock->setSlaveEnabled(true);
+		clock->setSlaveFollowTempo(true);
+		clock->setSlaveEnabled(false);
+		QVERIFY2(clock->slaveFollowTempo(), "disabling the slave cleared its follow preference");
+		clock->setSlaveEnabled(true);
+		// The pulses carry INJECTED timestamps a minute ahead of the monotonic
+		// clock: the tracker drops its lock when no pulse arrived for half a
+		// second, and the age it measures is the distance from the last pulse to
+		// the audio period's own clock, so a pulse from the future is never aged
+		// out. The measured tempo is 120 whatever the wall clock does.
+		feedClockInput(clock, 120, 48, MidiClock::nowNs() + 60000000000ULL);
+		QCOMPARE(clock->applyMeasuredTempo(), 120);
+		QCOMPARE(Engine::getSong()->getTempo(), 120);
 	}
 
 	//! THE POINTER'S UNIT. A Song Position Pointer is expressed in MIDI BEATS -

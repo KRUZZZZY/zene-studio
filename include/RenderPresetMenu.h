@@ -51,8 +51,8 @@ struct RenderPresetRequest
  *  stored preset, the applied one checked (export.preset_apply; one control.undo restores the
  *  previous selection), Save Preset... (export.preset_add; an existing name asks before it is
  *  replaced), a Delete submenu (export.preset_remove, after a confirmation) and Render Song with
- *  Preset... (render.render to a picked file). The export dialog keeps its own settings: an applied
- *  preset governs render.render only. */
+ *  Preset... (render.render to a picked file). An applied preset governs render.render, render.sections
+ *  and render.stems; the export dialog carries its own preset picker (ExportProjectDialog). */
 LMMS_EXPORT QMenu* addRenderPresetMenu(QMenu* menu);
 
 //! Tests replace the Save Preset... form (default: a small dialog; nullopt cancels), the yes/no

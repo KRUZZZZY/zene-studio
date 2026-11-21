@@ -32,10 +32,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <charconv>
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <string_view>
 #include <thread>
 #include <vector>
 #include <cstring>
@@ -44,10 +46,20 @@
 #include "lmmsconfig.h"
 
 #if !(defined(LMMS_HAVE_SYS_IPC_H) && defined(LMMS_HAVE_SEMAPHORE_H))
+#ifndef SYNC_WITH_SHM_FIFO // a build may already select it (tests/CMakeLists.txt)
 #define SYNC_WITH_SHM_FIFO
+#endif // SYNC_WITH_SHM_FIFO
 
 #ifdef LMMS_HAVE_PROCESS_H
 #include <process.h>
+#endif
+#ifdef LMMS_HAVE_UNISTD_H
+// This branch calls getpid() and usleep() below (cluster ci-4e020460347493c3).
+// It is selected on any host without <sys/ipc.h> and, through the shadow
+// lmmsconfig.h of RemotePluginShmFifoNoSysIpcProbe, on every host. macOS
+// defines __APPLE__/__MACH__ but never __unix__, so a TU-side guard is not
+// enough: the header has to include what declares them.
+#include <unistd.h>
 #endif
 #else // !(LMMS_HAVE_SYS_IPC_H && LMMS_HAVE_SEMAPHORE_H)
 #ifdef LMMS_HAVE_UNISTD_H
@@ -86,6 +98,11 @@
 #include "SystemSemaphore.h"
 #endif
 
+#ifdef LMMS_TESTING
+class RemotePluginAudioPortsTest;
+class RemotePluginShmFifoTest;
+#endif
+
 namespace lmms
 {
 
@@ -101,6 +118,11 @@ const int SHM_FIFO_SIZE = 512*1024;
 // implements a FIFO inside a shared memory segment
 class shmFifo
 {
+#ifdef LMMS_TESTING
+	friend class ::RemotePluginShmFifoTest;
+#endif
+	friend class RemotePluginBase;
+
 	// need this union to handle different sizes of sem_t on 32 bit
 	// and 64 bit platforms
 	union sem32_t
@@ -148,12 +170,12 @@ public:
 
 	inline bool isInvalid() const
 	{
-		return m_invalid;
+		return m_invalid.load( std::memory_order_relaxed );
 	}
 
 	void invalidate()
 	{
-		m_invalid = true;
+		m_invalid.store( true, std::memory_order_relaxed );
 	}
 
 	// do we act as master (i.e. not as remote-process?)
@@ -164,10 +186,37 @@ public:
 
 	//! Identifies the calling thread. The data lock is owned by one thread at a time: only the owner may enter it
 	//! again without waiting, so a thread that does not hold the lock can never ride on another thread's hold.
-	static std::uint64_t callerKey() noexcept
+	static const void * callerKey() noexcept
 	{
-		return static_cast<std::uint64_t>( std::hash<std::thread::id>{}( std::this_thread::get_id() ) ) | 1u;
+		// Every live thread has a distinct instance of this thread-local object. Its address is a collision-free
+		// ownership token for as long as that thread can own this FIFO lock.
+		thread_local const char callerToken = 0;
+		return &callerToken;
 	}
+
+#ifdef LMMS_TESTING
+	//! Lets the regression force a collision in the legacy thread-id hash path.
+	using CallerIdHashForTest = std::uint64_t (*)( std::thread::id );
+	static void setCallerIdHashForTest( CallerIdHashForTest _hash ) noexcept
+	{
+		s_callerIdHashForTest.store( _hash, std::memory_order_relaxed );
+	}
+	static std::uint64_t callerIdHashForTest( std::thread::id _id ) noexcept
+	{
+		if( const auto hashForTest = s_callerIdHashForTest.load( std::memory_order_relaxed ) )
+		{
+			return hashForTest( _id );
+		}
+		return std::hash<std::thread::id>{}( _id );
+	}
+
+	//! Lets the regression stop a writer when the legacy send path waits for FIFO space.
+	using SpaceWaitHookForTest = void (*)( shmFifo * ) noexcept;
+	static void setSpaceWaitHookForTest( SpaceWaitHookForTest _hook ) noexcept
+	{
+		s_spaceWaitHookForTest.store( _hook, std::memory_order_relaxed );
+	}
+#endif
 
 	// recursive lock, owned per thread
 	inline void lock()
@@ -190,7 +239,7 @@ public:
 		if( m_owner.load( std::memory_order_acquire ) != callerKey() ) { return; }
 		if( --m_depth == 0 )
 		{
-			m_owner.store( 0, std::memory_order_release );
+			m_owner.store( nullptr, std::memory_order_release );
 			m_dataSem.release();
 		}
 	}
@@ -227,13 +276,34 @@ public:
 	{
 		std::string ret;
 		const int len = readInt();
+		if (len < 0)
+		{
+			invalidate();
+			return ret;
+		}
 		if (len > 0)
 		{
+			// Never trust the wire length before allocating: the FIFO can only hold what is left of the
+			// message it has already signalled.
+			lock();
+			const bool fits = !isInvalid() && len <= m_data->endPtr - m_data->startPtr;
+			unlock();
+			if (!fits)
+			{
+				invalidate();
+				return ret;
+			}
 			ret.resize(static_cast<std::size_t>(len));
 			read(ret.data(), len);
-			ret[len] = '\0';
 		}
 		return ret;
+	}
+
+
+	//! Reads raw bytes of the current message. Does not allocate; the caller holds the data lock.
+	inline void readRaw( void * _buf, int _len )
+	{
+		read( _buf, _len );
 	}
 
 
@@ -299,6 +369,39 @@ public:
 
 
 private:
+	//! Serializes writers separately from readers while a blocking message yields the data semaphore for space.
+	inline void lockWriter()
+	{
+		while( m_writerBusy.test_and_set( std::memory_order_acquire ) ) { std::this_thread::yield(); }
+	}
+
+	//! Audio-thread form: it never waits when a blocking message writer owns the write direction.
+	inline bool tryLockWriter()
+	{
+		return !m_writerBusy.test_and_set( std::memory_order_acquire );
+	}
+
+	inline void unlockWriter()
+	{
+		m_writerBusy.clear( std::memory_order_release );
+	}
+
+	//! Drops every recursive data-lock level so a reader can consume queued bytes during a space wait.
+	inline int releaseLockForSpaceWait()
+	{
+		const int depth = m_depth;
+		while( m_depth > 0 ) { unlock(); }
+		return depth;
+	}
+
+	//! Restores the caller's recursive-lock depth after the writer reacquires the data semaphore.
+	inline void reacquireLockAfterSpaceWait( int _depth )
+	{
+		if( _depth == 0 ) { return; }
+		lock();
+		for( int depth = 1; depth < _depth; ++depth ) { lock(); }
+	}
+
 	void read( void * _buf, int _len )
 	{
 		if( isInvalid() )
@@ -335,7 +438,7 @@ private:
 			return;
 		}
 		lock();
-		while( _len > SHM_FIFO_SIZE - m_data->endPtr )
+		while( !isInvalid() && _len > SHM_FIFO_SIZE - m_data->endPtr )
 		{
 			// if no space is left, try to move data to front
 			if( m_data->startPtr > 0 )
@@ -347,25 +450,40 @@ private:
 							m_data->startPtr;
 				m_data->startPtr = 0;
 			}
-			unlock();
+			const int lockDepth = releaseLockForSpaceWait();
+#ifdef LMMS_TESTING
+			if( const auto hook = s_spaceWaitHookForTest.load( std::memory_order_relaxed ) ) { hook( this ); }
+#endif
+			if( isInvalid() ) { return; }
 #ifndef LMMS_BUILD_WIN32
 			usleep( 5 );
 #endif
-			lock();
+			if( isInvalid() ) { return; }
+			reacquireLockAfterSpaceWait( lockDepth );
+		}
+		if( isInvalid() )
+		{
+			unlock();
+			return;
 		}
 		std::memcpy(m_data->data + m_data->endPtr, _buf, _len);
 		m_data->endPtr += _len;
 		unlock();
 	}
 
-	volatile bool m_invalid;
+	std::atomic<bool> m_invalid;
 	bool m_master;
 	SharedMemory<shmData> m_data;
 	SystemSemaphore m_dataSem;
 	SystemSemaphore m_messageSem;
 	//! Thread that holds the data lock (0: none) and its recursion depth; the depth is touched by the owner only.
-	std::atomic<std::uint64_t> m_owner{0};
+	std::atomic<const void *> m_owner{nullptr};
 	int m_depth = 0;
+	std::atomic_flag m_writerBusy = ATOMIC_FLAG_INIT;
+#ifdef LMMS_TESTING
+	inline static std::atomic<CallerIdHashForTest> s_callerIdHashForTest{nullptr};
+	inline static std::atomic<SpaceWaitHookForTest> s_spaceWaitHookForTest{nullptr};
+#endif
 };
 #endif // SYNC_WITH_SHM_FIFO
 
@@ -414,6 +532,10 @@ enum RemoteMessageIDs
 
 class LMMS_EXPORT RemotePluginBase
 {
+#ifdef LMMS_TESTING
+	friend class ::RemotePluginAudioPortsTest;
+#endif
+
 public:
 	struct message
 	{
@@ -454,15 +576,26 @@ public:
 			return *this;
 		}
 
-		inline std::string getString( int _p = 0 ) const
-		{
-			return data[_p];
-		}
-
 		//! Argument \a _p by reference. getString() returns a copy, which allocates on the audio thread.
 		inline const std::string & stringArgument( int _p = 0 ) const
 		{
 			return data[_p];
+		}
+
+		//! Argument \a _p as a view. getString() returns a copy, which allocates on the audio thread.
+		//! In bounded mode (a message received by the audio thread, see receiveFrameBefore()) the view
+		//! points into the receiver's frame buffer and is valid only until that receiver receives again.
+		inline std::string_view argumentView( int _p = 0 ) const
+		{
+			if( !m_bounded ) { return data[_p]; }
+			std::size_t length = 0;
+			const char * arg = boundedArgument( _p, length );
+			return arg ? std::string_view{ arg, length } : std::string_view{};
+		}
+
+		inline std::string getString( int _p = 0 ) const
+		{
+			return std::string{ argumentView( _p ) };
 		}
 
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
@@ -474,12 +607,33 @@ public:
 
 		inline int getInt( int _p = 0 ) const
 		{
-			return atoi( data[_p].c_str() );
+			if( !m_bounded ) { return atoi( data[_p].c_str() ); }
+			const auto arg = argumentView( _p );
+			if( arg.empty() ) { return 0; }
+			int value = 0;
+			std::from_chars( arg.data(), arg.data() + arg.size(), value );
+			return value;
 		}
 
 		inline float getFloat( int _p ) const
 		{
-			return (float) atof( data[_p].c_str() );
+			if( !m_bounded ) { return (float) atof( data[_p].c_str() ); }
+			const auto arg = argumentView( _p );
+			if( arg.empty() ) { return 0.0f; }
+			char buf[64];
+			const auto length = std::min<std::size_t>( arg.size(), sizeof( buf ) - 1 );
+			std::memcpy( buf, arg.data(), length );
+			buf[length] = '\0';
+			return (float) atof( buf );
+		}
+
+		//! Number of arguments this message carries. The wire format writes the count with
+		//! the message, so a structurally valid (complete) message may still carry fewer
+		//! arguments than a handler reads: dispatch must check this before indexing, since
+		//! getString()/getInt() do not bounds-check.
+		inline std::size_t size() const
+		{
+			return m_bounded ? m_boundedCount : data.size();
 		}
 
 		inline bool operator==( const message & _m ) const
@@ -491,6 +645,40 @@ public:
 
 	private:
 		std::vector<std::string> data;
+
+		//! Bounded receive (audio thread): the arguments are the wire bytes in the receiver's frame buffer,
+		//! length-prefixed exactly as they arrived. No string or vector is built for them.
+		bool m_bounded = false;
+		const char * m_boundedFrame = nullptr;
+		std::size_t m_boundedSize = 0;
+		std::size_t m_boundedCount = 0;
+
+		//! Start of argument \a _p in bounded mode, with its length; nullptr when the index or frame is bad.
+		const char * boundedArgument( int _p, std::size_t & _length ) const
+		{
+			_length = 0;
+			if( _p < 0 || static_cast<std::size_t>( _p ) >= m_boundedCount ) { return nullptr; }
+			const char * cursor = m_boundedFrame + 2 * sizeof( std::int32_t );
+			const char * const end = m_boundedFrame + m_boundedSize;
+			for( int i = 0; i <= _p; ++i )
+			{
+				std::int32_t length = 0;
+				if( static_cast<std::size_t>( end - cursor ) < sizeof length ) { return nullptr; }
+				std::memcpy( &length, cursor, sizeof length );
+				cursor += sizeof length;
+				if( length < 0 || static_cast<std::size_t>( length ) > static_cast<std::size_t>( end - cursor ) )
+				{
+					return nullptr;
+				}
+				if( i == _p )
+				{
+					_length = static_cast<std::size_t>( length );
+					return cursor;
+				}
+				cursor += length;
+			}
+			return nullptr;
+		}
 
 		friend class RemotePluginBase;
 
@@ -536,6 +724,11 @@ public:
 	//! so a short write only happens if that check was wrong, and then the stream is marked broken.
 	SendResult sendFrameNonBlocking( const char * _frame, std::size_t _size );
 
+	//! Tests only: a non-blocking send leaves at most \a bytes queued in the socket (as SIOCOUTQ counts them);
+	//! zero, the default, keeps the socket's own limit. Lets a test fill the send buffer on demand. Linux only:
+	//! elsewhere there is no queued-bytes count to compare against.
+	static void setSendRoomForTesting( std::size_t bytes );
+
 	//! Outcome of a receive on the audio thread.
 	enum class ReceiveResult
 	{
@@ -547,8 +740,11 @@ public:
 	//! Receives the next message, waiting no longer than \a _deadline. Reads only a complete message (socket:
 	//! the framing is checked first; shared memory: a token is taken, and each message is written whole), so a
 	//! client that stops mid-message cannot hold the caller. Used on the audio thread.
+	//! With \a _bounded the arguments are views into a preallocated frame buffer rather than owned strings,
+	//! so decoding a client message there allocates nothing; the views are valid until the next receive.
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
-	ReceiveResult receiveFrameBefore( std::chrono::steady_clock::time_point _deadline, message & _out );
+	ReceiveResult receiveFrameBefore( std::chrono::steady_clock::time_point _deadline, message & _out,
+		bool _bounded = false );
 
 	//! The main thread's bounded receive. Like receiveFrameBefore(), but a frame that has started on the socket is
 	//! finished rather than abandoned: a frame larger than the socket buffer cannot be complete until it is read.
@@ -561,8 +757,10 @@ public:
 	//! False if the bytes did not all arrive in time.
 	bool readExactlyWithin( void * _buf, int _len, std::chrono::milliseconds _progress,
 		std::chrono::steady_clock::time_point _total );
-	//! Finishes a frame whose first bytes are on the socket (see receiveWithin()), within StartedFrameTimeout.
-	ReceiveResult receiveStartedFrame( std::chrono::milliseconds _progress, message & _out );
+	//! Finishes a frame whose first bytes are on the socket (see receiveWithin()), within StartedFrameTimeout but
+	//! never past \a _deadline: a short query must not be stretched to the started-frame bound.
+	ReceiveResult receiveStartedFrame( std::chrono::steady_clock::time_point _deadline,
+		std::chrono::milliseconds _progress, message & _out );
 #endif
 
 	//! The whole of a started frame must arrive within this (on top of the per-piece bound of receiveWithin()).
@@ -601,7 +799,7 @@ public:
 #ifdef SYNC_WITH_SHM_FIFO
 		return m_in->isInvalid() || m_out->isInvalid();
 #else
-		return m_invalid;
+		return m_invalid.load( std::memory_order_relaxed );
 #endif
 	}
 
@@ -632,11 +830,17 @@ public:
 	{
 		std::string ret;
 		const int len = readInt();
+		if (len < 0)
+		{
+			invalidate();
+			return ret;
+		}
 		if (len > 0)
 		{
+			// This owning path is the main thread's wait for a whole message (settings, presets, chunks),
+			// which may legitimately be larger than the audio thread's peek window; it is not bounded here.
 			ret.resize(static_cast<std::size_t>(len));
 			read(ret.data(), len);
-			ret[len] = '\0';
 		}
 		return ret;
 	}
@@ -671,8 +875,9 @@ public:
 	//! Waits at most \a timeoutMs milliseconds (zero polls) for the next message to start arriving.
 	//! @return false when nothing arrived in time. Only the socket transport can time out: the
 	//! shared-memory FIFO has no timed wait, so it reports ready and the caller blocks in
-	//! receiveMessage() as it always did.
-	inline bool waitForMessageReadable(int timeoutMs)
+	//! receiveMessage() as it always did. Virtual so a test can observe the bound a receive asks for
+	//! without waiting for it.
+	virtual bool waitForMessageReadable(int timeoutMs)
 	{
 #ifdef SYNC_WITH_SHM_FIFO
 		(void)timeoutMs;
@@ -706,6 +911,7 @@ public:
 #ifdef SYNC_WITH_SHM_FIFO
 		return Framing::Complete;
 #else
+		m_peekedFrameBytes = 0;
 		const std::size_t windowBytes = m_peekWindow.size();
 		char * const window = m_peekWindow.data();
 		const ssize_t available = ::recv(m_socket, window, windowBytes, MSG_PEEK | MSG_DONTWAIT);
@@ -738,6 +944,7 @@ public:
 			if (offset > windowBytes) { return Framing::Unusable; }
 			if (offset > size) { return Framing::Incomplete; }
 		}
+		m_peekedFrameBytes = offset;
 		return Framing::Complete;
 #endif
 	}
@@ -786,7 +993,7 @@ protected:
 		m_out->invalidate();
 		m_in->messageSent();
 #else
-		m_invalid = true;
+		m_invalid.store( true, std::memory_order_relaxed );
 #endif
 	}
 
@@ -804,10 +1011,30 @@ protected:
 	std::size_t m_txTailOffset = 0;
 	std::size_t m_txTailSize = 0;
 
+	//! Size of the frame peekNextMessage() found complete, for the bounded receive that consumes it.
+	std::size_t m_peekedFrameBytes = 0;
+
 #endif
 
 
 private:
+#ifndef BUILD_REMOTE_PLUGIN_CLIENT
+	//! One whole wire frame read on the audio thread. A bounded receive points the message's arguments
+	//! into it, so decoding a client message there allocates nothing; it is overwritten by the next receive.
+	std::vector<char> m_frameScratch;
+
+	//! Validates a complete wire frame and makes \a _out view it. Never allocates.
+	bool parseBoundedFrame( const char * _frame, std::size_t _size, message & _out );
+
+#ifdef SYNC_WITH_SHM_FIFO
+	//! Reads the current whole FIFO message into m_frameScratch and makes \a _out view it. The caller holds the lock.
+	bool readFrameLockedBounded( message & _out );
+#else
+	//! Reads the complete socket frame peekNextMessage() sized into m_frameScratch; no argument decoding.
+	ReceiveResult receiveBoundedSocketFrame( message & _out );
+#endif // SYNC_WITH_SHM_FIFO
+#endif // BUILD_REMOTE_PLUGIN_CLIENT
+
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
 	static int & waitDepthCounter()
 	{
@@ -873,7 +1100,7 @@ private:
 	}
 
 
-	bool m_invalid;
+	std::atomic<bool> m_invalid;
 
 	pthread_mutex_t m_receiveMutex;
 	pthread_mutex_t m_sendMutex;

@@ -23,6 +23,8 @@
  */
 #include "FollowActionEditor.h"
 
+#include <algorithm>
+
 #include <QAbstractSpinBox>
 #include <QCheckBox>
 #include <QComboBox>
@@ -45,6 +47,8 @@ namespace lmms::gui
 
 namespace
 {
+
+constexpr int kMaxScenes = 512;  //!< the grid's scene cap (MaxScenes in SessionModelPrivate.h)
 
 struct ActionName
 {
@@ -121,6 +125,15 @@ double valueOf(QWidget* widget)
 	return box->value() == box->property("shown").toDouble() ? box->property("loaded").toDouble() : box->value();
 }
 
+//! The scene a Jump box gives back, 0-based: what the user typed or stepped, else the scene loaded. A loaded scene the box
+//! cannot show (one past the grid, say) is written back as it was loaded, not as the nearest scene the box shows.
+QJsonValue jumpOf(QWidget* widget)
+{
+	const auto* box = qobject_cast<QSpinBox*>(widget);
+	if (box->property("edited").toBool()) { return box->value() - 1; }
+	return box->property("loaded").toDouble();
+}
+
 } // namespace
 
 FollowActionEditor::FollowActionEditor(const QString& command, const QJsonObject& where, const QJsonArray& chain,
@@ -183,8 +196,22 @@ void FollowActionEditor::addRow(const QJsonObject& action)
 	QDoubleSpinBox* bars = numberBox(0.25, 256.0, action.value(QStringLiteral("time_bars")).toDouble(1.0), m_rows);
 	bars->setSingleStep(0.25);
 	auto* jump = new QSpinBox(m_rows);
-	jump->setRange(1, 512);
-	jump->setValue(action.value(QStringLiteral("jump_to")).toInt(0) + 1);
+	jump->setRange(1, kMaxScenes);
+	// The file's scene is any whole number, but the box shows scenes 1 to kMaxScenes. The value is converted in double so
+	// nothing overflows, and the scene loaded is kept for jumpOf to write back while the box is not edited.
+	// SessionClip uses -1 for a malformed saved target. It cannot be submitted back through set_slot,
+	// which rejects negative targets, so keep the editor's previous zero fallback for that sentinel.
+	const double scene = std::max(0.0, action.value(QStringLiteral("jump_to")).toDouble(0.0));
+	jump->setValue(static_cast<int>(std::clamp(scene, 0.0, kMaxScenes - 1.0)) + 1);
+	jump->setProperty("loaded", scene);
+	// Qt 5 keeps a deprecated valueChanged(const QString &) beside valueChanged(int), so the bare member
+	// pointer is an overload set there and connect() cannot deduce it. Name the int overload a step emits;
+	// typing stays covered by the editor's textEdited below, exactly as it is on Qt 6.
+	QObject::connect(jump, QOverload<int>::of(&QSpinBox::valueChanged), jump, [jump] { jump->setProperty("edited", true); });  // a step
+	if (auto* text = jump->findChild<QLineEdit*>()) // typing, even the number the box already shows
+	{
+		QObject::connect(text, &QLineEdit::textEdited, jump, [jump] { jump->setProperty("edited", true); });
+	}
 	m_rows->setCellWidget(row, Type, type);
 	m_rows->setCellWidget(row, Chance, chance);
 	m_rows->setCellWidget(row, Linked, linked);
@@ -225,7 +252,8 @@ int FollowActionEditor::rowOf(const QWidget* widget) const
 		for (int column = 0; column < ColumnCount; ++column)
 		{
 			const QWidget* cell = m_rows->cellWidget(row, column);
-			if (cell == widget || cell->isAncestorOf(widget)) { return row; }
+			// A row being removed has released its cells while it is still in the model, so a cell can be null here.
+			if (cell != nullptr && (cell == widget || cell->isAncestorOf(widget))) { return row; }
 		}
 	}
 	return -1;
@@ -240,7 +268,7 @@ QJsonArray FollowActionEditor::chain() const
 			{QStringLiteral("chance"), valueOf(m_rows->cellWidget(row, Chance))},
 			{QStringLiteral("linked"), qobject_cast<QCheckBox*>(m_rows->cellWidget(row, Linked))->isChecked()},
 			{QStringLiteral("time_bars"), valueOf(m_rows->cellWidget(row, Bars))},
-			{QStringLiteral("jump_to"), qobject_cast<QSpinBox*>(m_rows->cellWidget(row, Jump))->value() - 1}});
+			{QStringLiteral("jump_to"), jumpOf(m_rows->cellWidget(row, Jump))}});
 	}
 	return out;
 }

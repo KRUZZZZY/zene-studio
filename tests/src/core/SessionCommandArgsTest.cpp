@@ -260,6 +260,49 @@ private slots:
 		QCOMPARE(cell.result.value(QStringLiteral("scene")).toInt(), 0);
 	}
 
+	//! A scene's tempo override is a Song tempo, so session.set_scene takes only the engine's own
+	//! range (MinTempo..MaxTempo, Song.h). The handler used to write any number: `tempo: 0` or 1e30
+	//! was stored, saved and reported as an override that nothing could play. A refused value writes
+	//! nothing, whether or not the override is switched on in the same call; the bounds themselves
+	//! and a fractional tempo inside them are the control.
+	void aSceneTempoOutsideTheEngineRangeIsRefused()
+	{
+		using revtest::run;
+		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 1},
+			{QStringLiteral("scenes"), kScenes}}).ok);
+		const auto sceneOf = [](const ControlResult& reply) {
+			return reply.result.value(QStringLiteral("scene")).toObject();
+		};
+		const auto setTempo = [](double tempo) {
+			return run(QStringLiteral("session.set_scene"),
+				{{QStringLiteral("scene"), 0}, {QStringLiteral("tempo"), tempo}});
+		};
+
+		// Inside the range: both bounds, and a fractional tempo. Accepted and read back.
+		for (const double accepted : {static_cast<double>(MinTempo), static_cast<double>(MaxTempo), 128.5})
+		{
+			const ControlResult ok = setTempo(accepted);
+			QVERIFY2(ok.ok, qPrintable(ok.errorMessage));
+			QCOMPARE(sceneOf(ok).value(QStringLiteral("tempo")).toDouble(), accepted);
+		}
+
+		// Outside it: refused as InvalidArgs.
+		for (const double refused : {0.0, 9.5, 1000.0, 1e30, -120.0})
+		{
+			QCOMPARE(setTempo(refused).errorKind, ControlErrorKind::InvalidArgs);
+		}
+		// The same with the override switched off in the call: the value is still stored, so still refused.
+		QCOMPARE(run(QStringLiteral("session.set_scene"), {{QStringLiteral("scene"), 0},
+			{QStringLiteral("tempo"), 0}, {QStringLiteral("tempo_override"), false}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+
+		// No refusal wrote anything: the scene still holds the last accepted tempo, override on.
+		const ControlResult readback = run(QStringLiteral("session.set_scene"), {{QStringLiteral("scene"), 0}});
+		QVERIFY2(readback.ok, qPrintable(readback.errorMessage));
+		QCOMPARE(sceneOf(readback).value(QStringLiteral("tempo")).toDouble(), 128.5);
+		QVERIFY(sceneOf(readback).value(QStringLiteral("tempo_enabled")).toBool());
+	}
+
 };
 
 QTEST_GUILESS_MAIN(SessionCommandArgsTest)

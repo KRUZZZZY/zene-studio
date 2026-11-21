@@ -158,6 +158,43 @@ private slots:
 			{QStringLiteral("enabled"), false}}).errorKind, ControlErrorKind::NotFound);
 	}
 
+	//! BUG 6: mixer.send_enable's undo captured the endpoints' POSITIONS, so a
+	//! reorder outside that undo sequence made the step act on whatever route now
+	//! sits at those positions - toggling an unrelated send - instead of the send
+	//! it recorded. The step must follow its channels by persistent id, as the
+	//! routing verbs do.
+	void aSendEnableUndoFollowsItsChannelsThroughAReorder()
+	{
+		Engine::getSong()->clearProject();
+		while (Engine::mixer()->numChannels() <= 4) { Engine::mixer()->createChannel(); }
+		const QString fromId = ch(1);
+		const QString toId = ch(2);
+		const QString otherId = ch(3);
+		// The recorded send (1 -> 2) and an unrelated send (1 -> 3) that a stale
+		// position would hit instead. Both are switched off.
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), toId},
+			{QStringLiteral("amount"), 0.5}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), otherId},
+			{QStringLiteral("amount"), 0.5}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.send_enable"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), otherId},
+			{QStringLiteral("enabled"), false}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.send_enable"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), toId},
+			{QStringLiteral("enabled"), false}}).ok);
+		MixerRoute* other = control::findMixerRoute(1, 3);
+		QVERIFY(other != nullptr);
+		QVERIFY(!control::findMixerRoute(1, 2)->enabled());
+		QVERIFY(!other->enabled());
+		// A reorder outside the undo sequence: the two receivers trade positions,
+		// so the recorded positions (1, 2) now name the unrelated send (1 -> 3).
+		Engine::mixer()->moveChannelLeft(3);
+		QVERIFY(control::findMixerRoute(1, 2) == other);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		MixerRoute* restored = control::findMixerRoute(1, 3);
+		QVERIFY2(restored != nullptr, "the recorded route moved with its receiver");
+		QVERIFY2(restored->enabled(), "the send-enable undo must follow its channels through a reorder");
+		QVERIFY2(!other->enabled(), "the send-enable undo must never toggle the route now at the recorded positions");
+	}
+
 	void aReturnIsABusFedByASend()
 	{
 		const int before = Engine::mixer()->numChannels();
@@ -452,6 +489,27 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 	}
 
+	//! A group that holds a stale member (an index past the channel list) colours the members that exist, and the
+	//! stale index is refused before the channel list is read - observed through the LMMS_TESTING refusal seam.
+	void aStaleMemberIsSkippedNotRead()
+	{
+		Engine::mixer()->takeRefusedLookupsForTesting();  // start with no refusals counted
+		VcaGroup* group = Engine::mixer()->createVcaGroup(QStringLiteral("Stale"));
+		QVERIFY(group->addMember(4));  // channels 1 and 2 belong to the Drums group, 3 is taken later
+		const auto stale = static_cast<mix_ch_t>(Engine::mixer()->numChannels());
+		QVERIFY(group->addMember(stale));
+		QVERIFY(!channel(4)->color().has_value());
+		const ControlResult painted = run(QStringLiteral("vca.color_members"), {{QStringLiteral("group"), group->id()}, {QStringLiteral("color"), QStringLiteral("#445566")}});
+		QVERIFY2(painted.ok, qPrintable(painted.errorMessage));
+		QCOMPARE(painted.result.value(QStringLiteral("colored")).toInt(), 1);
+		QCOMPARE(channel(4)->color().value_or(QColor()).name(), QStringLiteral("#445566"));
+		QCOMPARE(Engine::mixer()->takeRefusedLookupsForTesting(), 0);  // the stale member was never looked up
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!channel(4)->color().has_value());
+		QVERIFY(group->removeMember(stale));
+		QVERIFY(group->removeMember(4));
+	}
+
 	void aClampOnlyAdjustmentDoesNothing()
 	{
 		Song* song = Engine::getSong();
@@ -512,6 +570,28 @@ private slots:
 		QVERIFY(run(QStringLiteral("vca.color_members"), {{QStringLiteral("group"), painted->id()}, {QStringLiteral("color"), QStringLiteral("#336699")}}).ok);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(!channel(3)->color().has_value());  // one undo reaches the first colouring
+	}
+
+	//! MX-172: setting the position and a channel's side in one command is one undoable edit.
+	void settingCrossfaderPositionAndSideUsesOneUndoStep()
+	{
+		MixerOptions& options = MixerOptions::instance();
+		MixerChannel* selected = channel(4);
+		options.setCrossfader(0.25f);
+		selected->m_crossfadeSideModel.setValue(2);
+
+		QVERIFY(run(QStringLiteral("mixer.crossfader"), {{QStringLiteral("position"), -0.5},
+			{QStringLiteral("channel"), ch(4)}, {QStringLiteral("side"), QStringLiteral("A")}}).ok);
+		QCOMPARE(options.crossfader(), -0.5f);
+		QCOMPARE(selected->m_crossfadeSideModel.value(), 1);
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(options.crossfader(), 0.25f);
+		QCOMPARE(selected->m_crossfadeSideModel.value(), 2);
+
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCOMPARE(options.crossfader(), -0.5f);
+		QCOMPARE(selected->m_crossfadeSideModel.value(), 1);
 	}
 };
 

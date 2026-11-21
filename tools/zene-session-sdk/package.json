@@ -1,0 +1,33 @@
+{
+  "name": "@zene-studio/session-sdk",
+  "version": "0.1.0",
+  "description": "Typed client for a running Zene Studio session: connect to the local control socket, read and edit the open project with its registered commands, and follow its ordered project-change events.",
+  "license": "GPL-2.0-or-later",
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "exports": {
+    ".": {
+      "zene-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning test/integration.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "5.9.3"
+  }
+}

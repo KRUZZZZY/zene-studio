@@ -23,6 +23,7 @@
  */
 
 #include "AutomatableModel.h"
+#include "ConnectionRestoreScope.h"
 
 #include <bit>
 #include <chrono>
@@ -51,12 +52,29 @@ static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
 static_assert(std::atomic<bool>::is_always_lock_free,
 	"AutomatableModel registration flag requires an always-lock-free bool atomic");
 
-AudioEngine::RequestChangesGuard modelChangeGuard()
+//! The depth of the deferred model registration on this thread: while it is
+//! above zero, a model created here is not registered with the audio engine.
+thread_local unsigned s_deferredRegistrations = 0;
+
+#ifdef LMMS_TESTING
+//! The ramp-read probe (see the header). Test builds only, and a plain pointer
+//! test - it allocates nothing, locks nothing and is never set in the product.
+void (*s_valueBufferRampReadProbeForTest)(AutomatableModel*) = nullptr;
+//! The cache-hit probe (Q050-161, see the header): same rules as the ramp probe.
+void (*s_valueBufferCacheHitProbeForTest)(AutomatableModel*) = nullptr;
+#endif
+
+AudioEngine::RequestChangesGuard modelChangeGuard(const AutomatableModel* model)
 {
 	AudioEngine* const engine = Engine::audioEngine();
-	return RealtimeScope::isActive() || engine == nullptr
-		? AudioEngine::RequestChangesGuard{}
-		: engine->requestChangesGuard();
+	if (RealtimeScope::isActive() || engine == nullptr) { return AudioEngine::RequestChangesGuard{}; }
+	// A model the render thread cannot see needs no change lock: it is not in
+	// the engine's registry, so the render prepass never reads it. That is the
+	// case for a model that is still being constructed (it is registered at the
+	// end of its own constructor) and for the models of a device that is built
+	// with the registration deferred.
+	if (model != nullptr && !model->isRegisteredWithAudioEngine()) { return AudioEngine::RequestChangesGuard{}; }
+	return engine->requestChangesGuard();
 }
 
 [[maybe_unused]] bool modelDestructionWouldBlockOnRender(AudioEngine* engine) noexcept
@@ -64,9 +82,56 @@ AudioEngine::RequestChangesGuard modelChangeGuard()
 	return engine != nullptr && RealtimeScope::isActive() && !engine->isRenderThread();
 }
 
+//! True while the project is being loaded: every value the loader writes into a
+//! model is a LOAD, not a person (or a command) changing the control.
+bool projectIsLoading() noexcept
+{
+	Song* const song = Engine::getSong();
+	return song != nullptr && song->isLoadingProject();
+}
+
+//! True while the value write that follows is an INITIALIZATION or a LOAD -
+//! setInitValue() or the loader - and not a person (or a command) changing the
+//! control. Such a write must not become the "last touched" model (ED-191): a
+//! project load writes every model it reads, so the store would otherwise name
+//! whichever model was loaded last. Atomic, because the automation last-touched
+//! store is a process-wide atomically read value and a load can overlap a render.
+std::atomic<bool> g_writingInitValue{false};
+
+//! Scoped "the write that follows is not a user touch" flag. Nested scopes (a
+//! controller's models load inside its own load) restore the previous value.
+class InitValueScope
+{
+public:
+	explicit InitValueScope(std::atomic<bool>& flag) :
+		m_flag(flag),
+		m_previous(flag.exchange(true, std::memory_order_acq_rel))
+	{
+	}
+	~InitValueScope() { m_flag.store(m_previous, std::memory_order_release); }
+	InitValueScope(const InitValueScope&) = delete;
+	InitValueScope& operator=(const InitValueScope&) = delete;
+
+private:
+	std::atomic<bool>& m_flag;
+	bool m_previous;
+};
+
 } // namespace
 
 long AutomatableModel::s_periodCounter = 0;
+
+DeferredModelRegistrationScope::DeferredModelRegistrationScope() noexcept
+{
+	m_outer = s_deferredRegistrations == 0;
+	++s_deferredRegistrations;
+}
+
+DeferredModelRegistrationScope::~DeferredModelRegistrationScope() noexcept
+{
+	if (m_outer) { s_deferredRegistrations = 0; }
+	else { --s_deferredRegistrations; }
+}
 
 
 
@@ -96,7 +161,14 @@ AutomatableModel::AutomatableModel(
 	m_renderValue = m_value;
 	m_publishedValuePair.store(packValuePair(m_value, m_value), std::memory_order_relaxed);
 	setInitValue( val );
-	if (!Engine::audioEngine()->registerAutomatableModel(this)) { throw std::bad_alloc{}; }
+	// The model is registered with the audio engine at the end of its own
+	// constructor - unless the registration is deferred, which is what a device
+	// that is built outside a chain does: the device is not rendered, so its
+	// models are registered when it is attached.
+	if (s_deferredRegistrations == 0 && !Engine::audioEngine()->registerAutomatableModel(this))
+	{
+		throw std::bad_alloc{};
+	}
 }
 
 
@@ -258,6 +330,14 @@ void AutomatableModel::saveSettings( QDomDocument& doc, QDomElement& element, co
 
 void AutomatableModel::loadSettings( const QDomElement& element, const QString& name )
 {
+	// A load is not a person (or a command) changing the control: the value
+	// comes from the project file. Every write below (the automation clip
+	// compat path, the element path, reset() and setInitValue()) must therefore
+	// not become the "last touched" model (ED-191) - otherwise loading a project
+	// names whichever model was loaded last as the one a person had changed.
+	// The rollback restores the flag on every path out, the early return
+	// included.
+	const InitValueScope initScope(g_writingInitValue);
 	// compat code
 	QDomNode node = element.namedItem( AutomationClip::classNodeName() );
 	if( node.isElement() )
@@ -282,6 +362,7 @@ void AutomatableModel::loadSettings( const QDomElement& element, const QString& 
 
 	QDomNode connectionNode = element.namedItem( "connection" );
 	// reads controller connection
+	bool connectionLoaded = false;
 	if( connectionNode.isElement() )
 	{
 		QDomNode thisConnection = connectionNode.toElement().namedItem( name );
@@ -301,7 +382,14 @@ void AutomatableModel::loadSettings( const QDomElement& element, const QString& 
 			setControllerConnection(new ControllerConnection(nullptr));
 			m_controllerConnection->loadSettings( thisConnection.toElement() );
 			//m_controllerConnection->setTargetName( displayName() );
+			connectionLoaded = true;
 		}
+	}
+	// Q050-331: a journal restore puts the model back exactly as saved, so a connection the saved element does
+	// not carry (one added after the checkpoint) goes. An ordinary load only adds (ConnectionRestoreScope.h).
+	if( !connectionLoaded && m_controllerConnection != nullptr && ConnectionRestoreScope::active() )
+	{
+		setControllerConnection( nullptr );
 	}
 
 	// models can be stored as elements (port00) or attributes (port10):
@@ -375,6 +463,28 @@ void AutomatableModel::loadSettings( const QDomElement& element, const QString& 
 
 
 
+namespace
+{
+//! ConnectionRestoreScope's state (Q050-331): one flag per thread, so no lock and no interference between threads.
+thread_local bool t_connectionRestore = false;
+} // namespace
+
+ConnectionRestoreScope::ConnectionRestoreScope() :
+	m_previous(t_connectionRestore)
+{
+	t_connectionRestore = true;
+}
+
+ConnectionRestoreScope::~ConnectionRestoreScope()
+{
+	t_connectionRestore = m_previous;
+}
+
+bool ConnectionRestoreScope::active()
+{
+	return t_connectionRestore;
+}
+
 std::atomic<jo_id_t> AutomatableModel::s_lastTouched{0};
 
 jo_id_t AutomatableModel::lastTouched()
@@ -384,7 +494,7 @@ jo_id_t AutomatableModel::lastTouched()
 
 void AutomatableModel::setValue(const float value, const bool isAutomated, const bool journal)
 {
-	auto changeGuard = modelChangeGuard();
+	auto changeGuard = modelChangeGuard(this);
 	if (fittedValue(value) == m_value)
 	{
 		// TODO check why we need this signal, is there a better solution?
@@ -395,7 +505,15 @@ void AutomatableModel::setValue(const float value, const bool isAutomated, const
 	if (!isAutomated)
 	{
 		if (journal) { addJournalCheckPoint(); }
-		s_lastTouched.store(id(), std::memory_order_relaxed);
+		// Only a change a person (or a command acting for one) made is
+		// remembered as the last touched model. An initialization or a value
+		// that came out of a project file is not one: loading a project must
+		// not make the model that happened to be loaded last the control
+		// automation.last_touched names.
+		if (!g_writingInitValue.load(std::memory_order_acquire) && !projectIsLoading())
+		{
+			s_lastTouched.store(id(), std::memory_order_relaxed);
+		}
 	}
 
 	// set value for this and the other linked models
@@ -419,8 +537,25 @@ void AutomatableModel::setValueInternal(const float value)
 	if (oldValue != m_value)
 	{
 		m_valueChanged = true;
-		emit dataChanged();
+		if (m_deferChangeSignal && Engine::audioEngine() != nullptr && Engine::audioEngine()->isRenderThread())
+		{
+			m_changePending.store(true, std::memory_order_release);
+		}
+		else
+		{
+			emit dataChanged();
+		}
 	}
+}
+
+
+
+
+bool AutomatableModel::flushDeferredChange()
+{
+	if (!m_changePending.exchange(false, std::memory_order_acq_rel)) { return false; }
+	emit dataChanged();
+	return true;
 }
 
 
@@ -554,7 +689,7 @@ size_t AutomatableModel::countLinks() const
 
 void AutomatableModel::linkToModel(AutomatableModel* other)
 {
-	auto changeGuard = modelChangeGuard();
+	auto changeGuard = modelChangeGuard(this);
 	if (isLinkedToModel(other)) { return; }
 
 	if (valueBuffer() && other->valueBuffer())
@@ -578,7 +713,7 @@ void AutomatableModel::linkToModel(AutomatableModel* other)
 
 void AutomatableModel::unlink()
 {
-	auto changeGuard = modelChangeGuard();
+	auto changeGuard = modelChangeGuard(this);
 	invalidateLinkedValueBufferCaches();
 	getLastLinkedModel()->m_nextLink = m_nextLink;
 	m_nextLink = this;
@@ -589,8 +724,20 @@ void AutomatableModel::unlink()
 
 void AutomatableModel::setControllerConnection( ControllerConnection* c )
 {
-	auto changeGuard = modelChangeGuard();
+	auto changeGuard = modelChangeGuard(this);
+	ControllerConnection* const previous = m_controllerConnection;
 	m_controllerConnection = c;
+	if( previous != nullptr && previous != c )
+	{
+		// The connection this model had is given up: it must not keep driving
+		// the model, and its death must not clear the connection that replaces
+		// it. Disconnecting it first removes its destroyed() callback, so the
+		// disposal below cannot reach this model at all. The model owns the
+		// connection it is given (the destructor disposes of it), so the one it
+		// replaces is disposed of here instead of being leaked.
+		previous->disconnect( this );
+		delete previous;
+	}
 	invalidateLinkedValueBufferCaches();
 	if( c )
 	{
@@ -632,6 +779,20 @@ float AutomatableModel::controllerValue( int frameOffset ) const
 	return v;
 }
 
+#ifdef LMMS_TESTING
+void AutomatableModel::setValueBufferRampReadProbeForTest(void (*probe)(AutomatableModel*))
+{
+	s_valueBufferRampReadProbeForTest = probe;
+}
+
+void AutomatableModel::setValueBufferCacheHitProbeForTest(void (*probe)(AutomatableModel*))
+{
+	s_valueBufferCacheHitProbeForTest = probe;
+}
+#endif
+
+
+
 ValueBuffer * AutomatableModel::valueBuffer()
 {
 	AudioEngine* const engine = Engine::audioEngine();
@@ -652,13 +813,21 @@ ValueBuffer * AutomatableModel::valueBuffer()
 			engine->recordUnpreparedAutomatableBufferRequest();
 			return nullptr;
 		}
+		// Q050-161: a hit on the period's prepared buffer is a plain read of
+		// render-owned state - no mutex, no change guard, no wait. Control
+		// writes are serialised against the render period by the engine's
+		// change lock (taken by the writer, never here), and the next period's
+		// serial prepass recomputes from what they published.
+#ifdef LMMS_TESTING
+		if (s_valueBufferCacheHitProbeForTest != nullptr) { s_valueBufferCacheHitProbeForTest(this); }
+#endif
 		return cachedValueBuffer();
 	}
 
 	// Keep the historic control-side query useful for editors and unit tests.
 	// During a render the caller above is strictly read-only; this guarded path
 	// can prepare a cache only after render has quiesced.
-	auto changeGuard = modelChangeGuard();
+	auto changeGuard = modelChangeGuard(this);
 	if (!m_registeredWithAudioEngine.load(std::memory_order_acquire))
 	{
 		engine->recordUnregisteredAutomatableBufferRequest();
@@ -786,6 +955,12 @@ void AutomatableModel::prepareValueBufferForRender(bool skipLinkedControllerLook
 		m_oldValue = m_renderValue;
 		m_lastUpdatedPeriod = s_periodCounter;
 		m_hasSampleExactData = true;
+#ifdef LMMS_TESTING
+		// Test seam: the ramp has just been read. A regression asks the legacy
+		// value-buffer mutex here; a read that holds it across the ramp is the
+		// render-thread wait cluster 2647 is about.
+		if (s_valueBufferRampReadProbeForTest != nullptr) { s_valueBufferRampReadProbeForTest(this); }
+#endif
 		return;
 	}
 
@@ -902,7 +1077,18 @@ const AutomationRamp* AutomatableModel::automationRamp() const noexcept
 
 void AutomatableModel::unlinkControllerConnection()
 {
-	auto changeGuard = modelChangeGuard();
+	auto changeGuard = modelChangeGuard(this);
+	// Only the connection this model holds may clear it. A connection that was
+	// replaced (setControllerConnection() disposes of it, so this is the
+	// belt-and-braces case of a sender that is already gone) must not take the
+	// connection that replaced it down when it dies. sender() is null for a
+	// direct call, which keeps the historic "drop the current connection"
+	// meaning of this slot.
+	QObject* const dying = sender();
+	if( dying != nullptr && dying != m_controllerConnection )
+	{
+		return;
+	}
 	if( m_controllerConnection )
 	{
 		m_controllerConnection->disconnect( this );
@@ -917,9 +1103,15 @@ void AutomatableModel::unlinkControllerConnection()
 
 void AutomatableModel::setInitValue( const float value )
 {
-	auto changeGuard = modelChangeGuard();
+	auto changeGuard = modelChangeGuard(this);
 	m_initValue = fittedValue( value );
 	bool journalling = testAndSetJournalling( false );
+	// An INIT value is not a person (or a command) changing the control: it is
+	// the value the model starts (or restarts) with. The write must not become
+	// the "last touched" model (ED-191) - a project load runs this for every
+	// model it reads, so the store would otherwise name whichever model was
+	// loaded last. The rollback restores the flag on every path out.
+	const InitValueScope initScope(g_writingInitValue);
 	setValue( value );
 	m_oldValue = m_value;
 	publishValuePair(m_value, m_value);
@@ -999,7 +1191,7 @@ float AutomatableModel::globalAutomationValueAt( const TimePos& time )
 
 void AutomatableModel::setUseControllerValue(bool b)
 {
-	auto changeGuard = modelChangeGuard();
+	auto changeGuard = modelChangeGuard(this);
 	if (b)
 	{
 		m_useControllerValue = true;

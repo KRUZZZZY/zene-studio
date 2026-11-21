@@ -36,6 +36,7 @@
 #include <QDomDocument>
 #include <QDomElement>
 #include <QFile>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTextStream>
 
@@ -543,6 +544,33 @@ private slots:
 			"a prevch pair that is not two numbers is discarded, not adopted as 0:<n>");
 	}
 
+	//! A loaded `mixch="0"` is malformed: releasing or deleting that folder must not delete the mixer master.
+	void aMalformedFolderChannelCannotDeleteTheMaster()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clear();
+		QCOMPARE(mixer->numChannels(), mix_ch_t{1});
+
+		QDomDocument settings;
+		QVERIFY(settings.setContent(QStringLiteral("<trackfolder mode=\"routing\" mixch=\"0\"/>")));
+		const QString name = QStringLiteral("a-master-index");
+		TrackFolder* released = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		released->loadTrackSpecificSettings(settings.documentElement());
+		QString error;
+		QVERIFY2(released->setMode(TrackFolder::Mode::Group, &error), qPrintable(error));
+		const bool masterSurvivedRelease = mixer->numChannels() == 1;
+		if (!masterSurvivedRelease) { mixer->createChannel(); }
+
+		TrackFolder* deleted = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		deleted->loadTrackSpecificSettings(settings.documentElement());
+		removeAll(name);
+		const bool masterSurvivedDelete = mixer->numChannels() == 1;
+		if (!masterSurvivedDelete) { mixer->createChannel(); }
+
+		QVERIFY2(masterSurvivedRelease, "leaving routing with a saved master index deleted mixer channel 0");
+		QVERIFY2(masterSurvivedDelete, "deleting a folder with a saved master index deleted mixer channel 0");
+	}
+
 	//! A child that LEAVES a routing folder keeps its binding, so it can be routed
 	//! again without inventing a channel for it. But the channel it is given while it
 	//! is OUTSIDE the folder is the one a later release has to restore: routeChild()
@@ -584,6 +612,32 @@ private slots:
 		QVERIFY2(model->value() == whileOut,
 			"a child that rejoined on a new channel goes back to THAT channel, "
 			"not to the one it held before it first left the folder");
+		removeAll(name);
+	}
+
+	//! A finding read -1 as a valid prior channel, the same value savedChannelFor()
+	//! returns for "no binding". A child's channel model has a minimum of 0 and fits
+	//! every value into its range, so no live child can sit on -1: a recorded binding
+	//! is never the sentinel. This pins that contract. A -1 can still arrive from a
+	//! hand-edited `prevch`, which this test does not cover.
+	void aChildsMixerChannelCannotHoldMinusOneSoTheSentinelIsNeverALiveBinding()
+	{
+		const QString name = QStringLiteral("l-minus-one");
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		IntModel* model = child->mixerChannelModel();
+		QVERIFY(model != nullptr);
+		QCOMPARE(model->minValue(), 0.0f);
+		model->setValue(-1.0f);
+		QCOMPARE(static_cast<int>(model->value()), 0);
+
+		child->setParentFolder(folder);
+		QString error;
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		QCOMPARE(folder->savedChannelFor(child->id()), 0);
+
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Group, &error), qPrintable(error));
+		QCOMPARE(static_cast<int>(model->value()), 0);
 		removeAll(name);
 	}
 
@@ -886,6 +940,51 @@ private slots:
 		removeAll(name);
 	}
 
+	//! (k) A move that changes a track's folder changes the project: the membership is
+	//! saved in the file, so the project is marked modified and closing it prompts to
+	//! save. A move onto the folder the track is already in changes nothing and must
+	//! leave a clean project clean. The undo that takes the move back also dirties it.
+	void reparentingMarksTheProjectModified()
+	{
+		const QString name = QStringLiteral("k-dirty");
+		const QString folderId = control::trackIdOf(addTrack(Track::Type::Folder, name));
+		const QString trackId = control::trackIdOf(addTrack(Track::Type::Instrument, name));
+		ControlRegistry* registry = ControlRegistry::instance();
+		Song* song = Engine::getSong();
+
+		// into a folder, from a clean project
+		song->noteProjectSaved(song->projectFileName());
+		const ControlResult into = registry->invoke(QStringLiteral("track.set_folder"),
+			QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("folder"), folderId}});
+		QVERIFY2(into.ok, qPrintable(into.errorMessage));
+		QVERIFY2(song->isModified(), "moving a track into a folder left the project clean");
+
+		// out of the folder, from a clean project
+		song->noteProjectSaved(song->projectFileName());
+		const ControlResult out = registry->invoke(QStringLiteral("track.set_folder"),
+			QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("folder"), QString()}});
+		QVERIFY2(out.ok, qPrintable(out.errorMessage));
+		QVERIFY2(song->isModified(), "moving a track out of a folder left the project clean");
+
+		// already at the root: nothing changed, so the project stays clean
+		song->noteProjectSaved(song->projectFileName());
+		const ControlResult noop = registry->invoke(QStringLiteral("track.set_folder"),
+			QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("folder"), QString()}});
+		QVERIFY2(noop.ok, qPrintable(noop.errorMessage));
+		QVERIFY2(!song->isModified(), "a no-op folder move dirtied a clean project");
+
+		// the undo of the move dirties the project too
+		song->noteProjectSaved(song->projectFileName());
+		const ControlResult moveBack = registry->invoke(QStringLiteral("track.set_folder"),
+			QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("folder"), folderId}});
+		QVERIFY2(moveBack.ok, qPrintable(moveBack.errorMessage));
+		song->noteProjectSaved(song->projectFileName());
+		const ControlResult undone = registry->invoke(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(QStringLiteral("control.undo failed: ") + undone.errorMessage));
+		QVERIFY2(song->isModified(), "undoing a folder move left the project clean");
+		removeAll(name);
+	}
+
 	//! A visibility set is a SET: naming the same track twice must still leave it a set of ONE
 	//! member. The stored definition and the `track_count` the save reply reports both count
 	//! MEMBERS, so the duplicate has to go before either is taken.
@@ -914,6 +1013,32 @@ private slots:
 		removeAll(name);
 	}
 
+	//! A visibility-set save needs an array of track-id strings. Missing or
+	//! wrongly typed input must be refused instead of silently creating an empty set.
+	void visibilitySetSaveRefusesMalformedTrackLists()
+	{
+		const QJsonArray malformedValues{
+			QJsonObject{{QStringLiteral("id"), QStringLiteral("track")}},
+			7,
+			QStringLiteral("trk-1"),
+			QJsonArray{7},
+		};
+		Song* song = Engine::getSong();
+		for (int index = 0; index <= malformedValues.size(); ++index)
+		{
+			const QString setName = QStringLiteral("Malformed-%1").arg(index);
+			QJsonObject args{{QStringLiteral("name"), setName}};
+			if (index < malformedValues.size())
+			{
+				args.insert(QStringLiteral("tracks"), malformedValues.at(index));
+			}
+			const ControlResult result = ControlRegistry::instance()->invoke(
+				QStringLiteral("track.visibility_set_save"), args);
+			QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+			QVERIFY(song->findVisibilitySet(setName) == nullptr);
+		}
+	}
+
 	//! The inverse control.transactions REPORTS is a promise a client may replay,
 	//! so it has to name a command that really puts the state back. Removing a set
 	//! cannot name itself: the set is already gone, so that replay restores nothing
@@ -937,6 +1062,67 @@ private slots:
 		replayInverse(lastInverse());
 		QCOMPARE(visibilityState(tracks), before);
 		removeAll(name);
+	}
+
+	//! A set can outlive one of its tracks. Its reported inverse must still be
+	//! replayable when a later save replaces the definition or removes the set.
+	void staleTrackIdsUseUndoForReplaceAndRemoveInverse()
+	{
+		const QString trackName = QStringLiteral("l-stale-inverse");
+		Track* deleted = addTrack(Track::Type::Instrument, trackName);
+		Track* remaining = addTrack(Track::Type::Instrument, trackName);
+		const int deletedId = deleted->id();
+		const QString deletedTrackId = control::trackIdOf(deleted);
+		const QString remainingTrackId = control::trackIdOf(remaining);
+		const QString setName = QStringLiteral("StaleMembers");
+		Song* song = Engine::getSong();
+
+		const ControlResult saved = ControlRegistry::instance()->invoke(
+			QStringLiteral("track.visibility_set_save"),
+			QJsonObject{{QStringLiteral("name"), setName},
+				{QStringLiteral("tracks"), QJsonArray{deletedTrackId, remainingTrackId}}});
+		QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
+		const ControlResult removedTrack = ControlRegistry::instance()->invoke(
+			QStringLiteral("track.remove"), QJsonObject{{QStringLiteral("track"), deletedTrackId}});
+		QVERIFY2(removedTrack.ok, qPrintable(removedTrack.errorMessage));
+		QVERIFY(song->findTrackById(deletedId) == nullptr);
+
+		const ControlResult replaced = ControlRegistry::instance()->invoke(
+			QStringLiteral("track.visibility_set_save"),
+			QJsonObject{{QStringLiteral("name"), setName},
+				{QStringLiteral("tracks"), QJsonArray{remainingTrackId}}});
+		QVERIFY2(replaced.ok, qPrintable(replaced.errorMessage));
+		QJsonObject inverse = lastInverse();
+		QString inverseOp = inverse.value(QStringLiteral("op")).toString();
+		ControlResult replayed = ControlRegistry::instance()->invoke(inverseOp,
+			inverse.value(QStringLiteral("args")).toObject());
+		QVERIFY2(replayed.ok, qPrintable(QStringLiteral("replacement inverse '%1' failed: %2")
+			.arg(inverseOp, replayed.errorMessage)));
+		QCOMPARE(inverseOp, QStringLiteral("control.undo"));
+		const TrackContainer::VisibilitySet* restored = song->findVisibilitySet(setName);
+		QVERIFY(restored != nullptr);
+		QCOMPARE(restored->trackIds.size(), std::size_t(2));
+		QCOMPARE(restored->trackIds[0], deletedId);
+		QCOMPARE(restored->trackIds[1], remaining->id());
+
+		const ControlResult removedSet = ControlRegistry::instance()->invoke(
+			QStringLiteral("track.visibility_set_remove"), QJsonObject{{QStringLiteral("name"), setName}});
+		QVERIFY2(removedSet.ok, qPrintable(removedSet.errorMessage));
+		inverse = lastInverse();
+		inverseOp = inverse.value(QStringLiteral("op")).toString();
+		replayed = ControlRegistry::instance()->invoke(inverseOp,
+			inverse.value(QStringLiteral("args")).toObject());
+		QVERIFY2(replayed.ok, qPrintable(QStringLiteral("removal inverse '%1' failed: %2")
+			.arg(inverseOp, replayed.errorMessage)));
+		QCOMPARE(inverseOp, QStringLiteral("control.undo"));
+		restored = song->findVisibilitySet(setName);
+		QVERIFY(restored != nullptr);
+		QCOMPARE(restored->trackIds.size(), std::size_t(2));
+		QCOMPARE(restored->trackIds[0], deletedId);
+		QCOMPARE(restored->trackIds[1], remaining->id());
+
+		song->removeVisibilitySet(setName);
+		removeAll(trackName);
 	}
 
 	//! The same promise for a save: the save that CREATED a set is undone by
@@ -1018,6 +1204,44 @@ private slots:
 			qPrintable(QStringLiteral("track.visibility_show_all failed")));
 		replayInverse(lastInverse());
 		QCOMPARE(visibilityState(tracks), before);
+		removeAll(name);
+	}
+
+	//! Redo runs TrackContainer::showAllTracks(), whose signal must refresh the
+	//! view just as the initial call and undo do.
+	void showAllRedoEmitsVisibilityChanged()
+	{
+		const QString name = QStringLiteral("m-showall-redo-signal");
+		Track* visible = addTrack(Track::Type::Instrument, name);
+		Track* hidden = addTrack(Track::Type::Instrument, name);
+		Song* song = Engine::getSong();
+		QSignalSpy visibilitySpy(song, &TrackContainer::visibilityChanged);
+		const QString setName = QStringLiteral("RedoSignal");
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_save"),
+			QJsonObject{{QStringLiteral("name"), setName},
+				{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(visible)}}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_save failed")));
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_apply"),
+			QJsonObject{{QStringLiteral("name"), setName}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_apply failed")));
+		QVERIFY(visible->isVisible());
+		QVERIFY(!hidden->isVisible());
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_show_all")).ok,
+			qPrintable(QStringLiteral("track.visibility_show_all failed")));
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok,
+			qPrintable(QStringLiteral("undo failed")));
+		QVERIFY(visible->isVisible());
+		QVERIFY(!hidden->isVisible());
+		QCOMPARE(song->activeVisibilitySet(), setName);
+
+		visibilitySpy.clear();
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("control.redo")).ok,
+			qPrintable(QStringLiteral("redo failed")));
+		QCOMPARE(visibilitySpy.count(), 1);
+		QVERIFY(visible->isVisible());
+		QVERIFY(hidden->isVisible());
+		QVERIFY(song->activeVisibilitySet().isEmpty());
+		song->removeVisibilitySet(setName);
 		removeAll(name);
 	}
 

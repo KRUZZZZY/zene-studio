@@ -69,7 +69,7 @@ LMMS_EXPORT std::int64_t fold(const ClipEdits& edits, std::int64_t position);
 LMMS_EXPORT SampleWindow window(const SampleClip& clip, TimePos at);
 /*! clip.set_loop on a sample clip: @a edits with a loop of @a lengthTicks starting @a startTicks after the in-point,
  *  measured at the clip's rate now and kept in source frames (0 clears the loop, and the offset with it). False,
- *  with @a error, for a loop that runs past the end of the clip's audio. */
+ *  with @a error, for a loop that starts before the clip's audio or runs past its end. */
 LMMS_EXPORT bool withLoop(const SampleClip& clip, int startTicks, int lengthTicks, ClipEdits* edits, QString* error);
 /*! ED-028, note.rotate on a sample clip: @a edits with the clip's content turned @a amountTicks later (negative:
  *  earlier), wrapping round inside its loop - or, for a clip with none, inside the clip, which becomes a loop over

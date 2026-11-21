@@ -25,13 +25,18 @@
 
 #include "ExprSynth.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 #include <cmath>
+#include <cstring>
+#include <exception>
 #include <limits>
 #include <random>
 #include <numbers>
 
+#include "AudioEngine.h"
+#include "Engine.h"
 #include "lmms_math.h"
 #include "NotePlayHandle.h"
 #include "SampleFrame.h"
@@ -125,7 +130,11 @@ struct IntegrateFunction : public exprtk::ifunction<T>
 			res = m_counters[m_cc];
 			m_counters[m_cc] += x;
 		}
-		m_cc = (m_cc + 1) % m_nCountersCalls;
+		// Without a frame counter no call is ever counted, so there is no cycle to advance.
+		if (m_nCountersCalls > 0)
+		{
+			m_cc = (m_cc + 1) % m_nCountersCalls;
+		}
 		return res / m_sampleRate;
 	}
 	f_cnt_t m_firstValue;
@@ -648,15 +657,22 @@ bool ExprFront::add_cyclic_vector(const char* name, const float* data, size_t le
 	{
 		if (interp)
 		{
-			auto wvf = new WaveValueFunctionInterpolate<float>(data, length);
-			m_data->m_cyclics_interp.push_back(wvf);
-			return m_data->m_symbol_table.add_function(name, *wvf);
+			// The cyclic vector owns the wave object. Its capacity is secured
+			// before the wave is created, so the insertion cannot fail: a wave that
+			// exists is always owned by the vector, and the failing path neither
+			// leaks a wave nor frees one on the calling thread (the plugin builds
+			// the expression front on the audio thread).
+			m_data->m_cyclics_interp.reserve(m_data->m_cyclics_interp.size() + 1);
+			auto* const wave = new WaveValueFunctionInterpolate<float>(data, length);
+			m_data->m_cyclics_interp.push_back(wave);
+			return m_data->m_symbol_table.add_function(name, *wave);
 		}
 		else
 		{
-			auto wvf = new WaveValueFunction<float>(data, length);
-			m_data->m_cyclics.push_back(wvf);
-			return m_data->m_symbol_table.add_function(name, *wvf);
+			m_data->m_cyclics.reserve(m_data->m_cyclics.size() + 1);
+			auto* const wave = new WaveValueFunction<float>(data, length);
+			m_data->m_cyclics.push_back(wave);
+			return m_data->m_symbol_table.add_function(name, *wave);
 		}
 	}
 	catch(...)
@@ -704,6 +720,20 @@ void ExprFront::setIntegrate(const f_cnt_t* const frameCounter, const unsigned i
 	}
 }
 
+void WaveSample::copyFrom(const graphModel* graph)
+{
+	// The render period holds the audio change lock for its whole length, so this copy
+	// runs either before a period starts or after it ends, never while notes read m_samples.
+	AudioEngine* const engine = Engine::audioEngine();
+	const auto changes = engine ? engine->requestChangesGuard() : AudioEngine::RequestChangesGuard{};
+	// Playing notes keep this table's pointer and length, so the table keeps its length. A graph
+	// of another length fills the start of the table and the rest stays silent. The copy never
+	// reads past the graph's own length, which its buffer may not hold.
+	const int copied = std::min(m_length, graph->length());
+	memcpy(m_samples, graph->samples(), copied * sizeof(float));
+	std::fill(m_samples + copied, m_samples + m_length, 0.0f);
+}
+
 ExprSynth::ExprSynth(const WaveSample *gW1, const WaveSample *gW2, const WaveSample *gW3,
 	ExprFront *exprO1, ExprFront *exprO2,
 	NotePlayHandle *nph, const sample_rate_t sample_rate,
@@ -721,6 +751,7 @@ ExprSynth::ExprSynth(const WaveSample *gW1, const WaveSample *gW2, const WaveSam
 {
 	m_note_sample = 0;
 	m_note_rel_sample = 0;
+	m_note_rel_sample_set = false;
 	m_note_rel_sec = 0;
 	m_note_sample_sec = 0;
 	m_released = 0;
@@ -755,6 +786,31 @@ ExprSynth::~ExprSynth()
 	}
 }
 
+void ExprSynth::recordRenderError(const char* message)
+{
+	// The first error wins: a broken expression throws in every period, and the
+	// error is reported once.
+	if (m_pendingErrorSet.load(std::memory_order_relaxed)
+		|| m_errorReported.load(std::memory_order_relaxed))
+	{
+		return;
+	}
+	std::strncpy(m_pendingError, message != nullptr ? message : "", sizeof(m_pendingError) - 1);
+	m_pendingError[sizeof(m_pendingError) - 1] = '\0';
+	m_pendingErrorSet.store(true, std::memory_order_release);
+}
+
+bool ExprSynth::takePendingError()
+{
+	if (!m_pendingErrorSet.exchange(false, std::memory_order_acquire))
+	{
+		return false;
+	}
+	// The expression keeps failing in every period, but the error is reported once.
+	m_errorReported.store(true, std::memory_order_release);
+	return true;
+}
+
 void ExprSynth::renderOutput(f_cnt_t frames, SampleFrame* buf)
 {
 	try
@@ -776,9 +832,12 @@ void ExprSynth::renderOutput(f_cnt_t frames, SampleFrame* buf)
 		expression_t *o2_rawExpr = &(m_exprO2->getData()->m_expression);
 		LastSampleFunction<float> * last_func1 = &m_exprO1->getData()->m_last_func;
 		LastSampleFunction<float> * last_func2 = &m_exprO2->getData()->m_last_func;
-		if (is_released && m_note_rel_sample == 0)
+		if (is_released && !m_note_rel_sample_set)
 		{
+			// The release position is remembered once. Sample zero is a valid
+			// position, so it cannot double as the "not set yet" marker.
 			m_note_rel_sample = m_note_sample;
+			m_note_rel_sample_set = true;
 		}
 		if (o1_valid && o2_valid)
 		{
@@ -833,9 +892,15 @@ void ExprSynth::renderOutput(f_cnt_t frames, SampleFrame* buf)
 		}
 		m_frequency = new_freq;
 	}
-	catch(...)
+	catch (const std::exception& error)
 	{
-		WARN_EXPRTK;
+		// The audio thread must not log: qWarning allocates and can lock. The error
+		// is recorded in a fixed size buffer and reported from the main thread.
+		recordRenderError(error.what());
+	}
+	catch (...)
+	{
+		recordRenderError("unknown expression error");
 	}
 }
 

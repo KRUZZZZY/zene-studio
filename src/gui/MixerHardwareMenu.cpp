@@ -24,12 +24,15 @@
 
 #include "MixerHardwareMenu.h"
 
+#include <algorithm>
+
 #include <QJsonArray>
 #include <QAction>
 #include <QMenu>
 
 #include "CommandForm.h"
 #include "ControlRegistry.h"
+#include "MixerSurround.h"
 #include "ShellMenuParts.h"
 #include "SurroundPanner.h"
 
@@ -92,6 +95,37 @@ void cueSendMenu(QMenu* menu, const QString& channelId, const QJsonArray& cues)
 	}
 }
 
+/*! Q050-155.1: the Format submenu - one entry per name mixer.channel_format's schema enum advertises
+ *  (surround::formatNames() is that enum). The named layouts, mono and discrete-2 .. discrete-8 stay on it;
+ *  the wide discrete layouts (9 .. 64 channels) are grouped into submenus of sixteen counts so the list
+ *  stays short. Every entry runs the registered command, exactly as the agent does. */
+void formatMenu(QMenu* menu, const QString& channelId)
+{
+	QMenu* formats = menu->addMenu(tr("Format"));
+	QMenu* group = nullptr;
+	int groupEnd = 0;
+	for (const QString& name : surround::formatNames())
+	{
+		surround::Format format = surround::Format::Stereo;
+		surround::formatFromName(name, &format);
+		const int count = surround::discreteChannels(format);
+		QMenu* target = formats;
+		if (count > surround::MaxSpeakers)
+		{
+			if (count > groupEnd)
+			{
+				groupEnd = std::min(surround::MaxDiscreteChannels, (count + 15) / 16 * 16);
+				group = formats->addMenu(tr("Discrete %1-%2").arg(count).arg(groupEnd));
+			}
+			target = group;
+		}
+		addCommandAction(target, name, QStringLiteral("mixer.channel_format"), [channelId, name] {
+			return CommandCall{QStringLiteral("mixer.channel_format"),
+				{{QStringLiteral("channel"), channelId}, {QStringLiteral("format"), name}}, {}, QString(), false};
+		});
+	}
+}
+
 } // namespace
 
 void addHardwareMenu(QMenu* menu, const QString& channelId)
@@ -107,6 +141,9 @@ void addHardwareMenu(QMenu* menu, const QString& channelId)
 	add(hardware, "Hardware Insert...", "mixer.hardware_insert", self, true);
 	QAction* ping = add(hardware, "Measure Insert Latency", "mixer.hardware_insert_ping", self, false, {}, true);
 	ping->setEnabled(state.value(QStringLiteral("insert")).toObject().value(QStringLiteral("enabled")).toBool());
+	// Q050-089.2: the project rendered through the device, so the inserts that are on are heard (render.realtime's form:
+	// the file and the tail; the reply, or the refusal when the device cannot carry them, is shown in it).
+	add(hardware, "Render Through Hardware (Real Time)...", "render.realtime", {}, true, {}, true);
 	hardware->addSeparator();
 	add(hardware, "Cue Mixes...", "mixer.cue_master", {}, true);
 	add(hardware, "Interface Channels...", "audio.io_setup", {}, true);
@@ -116,8 +153,7 @@ void addHardwareMenu(QMenu* menu, const QString& channelId)
 void addSurroundMenu(QMenu* menu, const QString& channelId)
 {
 	QMenu* surround = menu->addMenu(tr("Surround"));
-	const QJsonObject self{{QStringLiteral("channel"), channelId}};
-	choices(surround, "Format", "mixer.channel_format", "format", self);
+	formatMenu(surround, channelId);
 	QAction* panner = surround->addAction(tr("Surround Panner..."));
 	panner->setProperty("controlCommand", QStringLiteral("mixer.surround_pan"));
 	QObject::connect(panner, &QAction::triggered, panner, [channelId] { showSurroundPanner(channelId); });

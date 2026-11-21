@@ -29,6 +29,7 @@
 #include "EditLocks.h"
 #include "Engine.h"
 #include "MetronomeOptions.h"
+#include "MasteringSequence.h"
 #include "MidiPlayback.h"
 #include "MixerOptions.h"
 #include "MixerSnapshots.h"
@@ -67,6 +68,7 @@ void registerAll()
 	SessionSubScenes::instance();  // 0.5.0 L02 (WF-064): the launcher's sub-scenes, <z:subscenes>
 	registerAlternatives();
 	registerSubprojects();
+	MasteringSequence::instance();  // Q050-317.1: the mastering release sequence
 	metronomeoptions::options();  // reads the config file here, not on the audio thread at the first click
 }
 

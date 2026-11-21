@@ -32,12 +32,14 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QImage>
 #include <QItemSelectionModel>
 #include <QJsonArray>
 #include <QSpinBox>
 #include <QTableView>
 #include <QToolButton>
 
+#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -48,6 +50,7 @@
 #include "Engine.h"
 #include "ItemList.h"
 #include "MusicalTime.h"
+#include "RecordOptions.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
@@ -71,6 +74,70 @@ SampleClip* addTake(Track* track, float level)
 	std::vector<SampleFrame> data(static_cast<std::size_t>(rate / 2), SampleFrame(level, level));
 	clip->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), rate));
 	return clip;
+}
+
+//! 0.5.0 L03 (Q050-123): a take with visible peaks at a known place and length.
+SampleClip* addWaveTake(Track* track, tick_t start, tick_t length)
+{
+	auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(start)));
+	const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+	std::vector<SampleFrame> data(static_cast<std::size_t>(std::max(1, rate / 4)));
+	for (std::size_t i = 0; i < data.size(); ++i)
+	{
+		// A steady tone draws one horizontal line: the waveform is then a few pixels in a column
+		// that would otherwise be the take's fill, which is what the ink check reads.
+		data[i] = SampleFrame(0.6f, -0.6f);
+	}
+	clip->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), rate));
+	clip->changeLength(TimePos(length));
+	clip->movePosition(TimePos(start));
+	return clip;
+}
+
+//! True when the middle column of @a rect holds a pixel other than its most common one.
+bool hasWaveformInk(const QImage& image, const QRect& rect)
+{
+	const QRect visible = rect.intersected(image.rect()).adjusted(0, 3, 0, -3);
+	if (visible.isEmpty()) { return false; }
+	const int x = visible.center().x();
+	QHash<QRgb, int> counts;
+	int total = 0;
+	for (int y = visible.top(); y <= visible.bottom(); ++y)
+	{
+		++counts[image.pixel(x, y)];
+		++total;
+	}
+	int mostCommon = 0;
+	for (auto it = counts.cbegin(); it != counts.cend(); ++it) { mostCommon = std::max(mostCommon, it.value()); }
+	return total - mostCommon > 0;
+}
+
+//! Qt 5.15's touch sequence commit() returns void; Qt 6 returns whether delivery accepted it.
+bool commitTouchSequence(QTest::QTouchEventSequence& sequence)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	return sequence.commit();
+#else
+	sequence.commit();
+	return true;
+#endif
+}
+
+
+
+//! Three loop passes as the recording path delivers them: a loop wrap ends each of the first two
+//! (the clip stays armed), and the third ends the recording.
+void recordLoopPasses(SampleClip* clip)
+{
+	const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+	clip->setRecord(true);
+	for (int pass = 0; pass < 3; ++pass)
+	{
+		const float level = 0.2f * static_cast<float>(pass + 1);
+		std::vector<SampleFrame> frames(64, SampleFrame(level, level));
+		clip->acceptRecordedTake(std::make_shared<SampleBuffer>(frames.data(), frames.size(), rate), 0,
+			pass < 2, clip->armGeneration());
+	}
 }
 
 } // namespace
@@ -210,6 +277,272 @@ private slots:
 		QCOMPARE(segment.value(QStringLiteral("begin")).toInt(), 0);
 		QCOMPARE(segment.value(QStringLiteral("end")).toInt(), length);
 		QCOMPARE(segment.value(QStringLiteral("lane")).toInt(), 1);
+	}
+
+	//! 0.5.0 L03 (Q050-123): the strip draws every take's waveform at its own place on the strip's
+	//! span, the active comp segment is highlighted over it, and the panel's existing controls stay.
+	void theStripShowsTakeWaveformsAndTheCompHighlight()
+	{
+		const QString id = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}})
+			.result.value(QStringLiteral("track")).toString();
+		ControlResult error;
+		Track* track = control::resolveTrack(id, &error);
+		QVERIFY(track != nullptr);
+		SampleClip* first = addWaveTake(track, 0, TimePos::ticksPerBar());
+		SampleClip* second = addWaveTake(track, TimePos::ticksPerBar(), TimePos::ticksPerBar());
+		TakeLanesPanel panel(id);
+		QTest::mouseClick(panel.addLaneButton(), Qt::LeftButton);
+		QTest::mouseClick(panel.addLaneButton(), Qt::LeftButton);
+		QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(first)},
+			{QStringLiteral("lane"), 0}}).ok);
+		QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(second)},
+			{QStringLiteral("lane"), 1}}).ok);
+		QVERIFY(run(QStringLiteral("comp.select"), {{QStringLiteral("track"), id}, {QStringLiteral("begin"), 0},
+			{QStringLiteral("end"), TimePos::ticksPerBar() / 2}, {QStringLiteral("lane"), 0}}).ok);
+		panel.resize(640, 420);
+		panel.show();
+		QCoreApplication::processEvents();
+		panel.refresh();
+
+		CompSwipeStrip* strip = panel.strip();
+		QVERIFY(strip != nullptr);
+		QCOMPARE(strip->takeBands().size(), std::size_t{2});
+		for (const CompSwipeStrip::TakeBand& band : strip->takeBands())
+		{
+			QCOMPARE(band.rect.left(), strip->tickToX(band.begin));
+			QCOMPARE(band.rect.right() + 1, strip->tickToX(band.end));
+		}
+
+		const QImage drawn = strip->grab().toImage();
+		QVERIFY2(hasWaveformInk(drawn, strip->takeBands()[0].rect), "lane 0's take has no waveform");
+		QVERIFY2(hasWaveformInk(drawn, strip->takeBands()[1].rect), "lane 1's take has no waveform");
+
+		// The active segment tints its half of lane 0; the rest of the row is not tinted.
+		const QRect row = strip->takeBands()[0].rect;
+		const int highlighted = drawn.pixel(strip->tickToX(TimePos::ticksPerBar() / 4), row.top() + 2);
+		const int plain = drawn.pixel(strip->tickToX(3 * TimePos::ticksPerBar() / 2), row.top() + 2);
+		QVERIFY2(highlighted != plain, "the active comp segment is not highlighted on lane 0");
+
+		// The existing panel is still the way a take is auditioned and comped.
+		QVERIFY(panel.compButton() != nullptr);
+		QVERIFY(panel.auditionButton(0) != nullptr);
+		QVERIFY(panel.auditionButton(1) != nullptr);
+		QVERIFY(panel.laneBox()->count() >= 2);
+	}
+
+	//! 0.5.0 L03 (Q050-274): a one-finger horizontal swipe comps the lane it starts on, in either
+	//! direction, through comp.select - and a mouse drag over the same pixels selects the same
+	//! range, so touch is a second way to make the existing gesture, not a second model.
+	void aTouchSwipeCompsTheSameRangeAsAMouse()
+	{
+		const QString id = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}})
+			.result.value(QStringLiteral("track")).toString();
+		ControlResult error;
+		Track* track = control::resolveTrack(id, &error);
+		QVERIFY(track != nullptr);
+		SampleClip* first = addWaveTake(track, 0, TimePos::ticksPerBar());
+		SampleClip* second = addWaveTake(track, 0, TimePos::ticksPerBar());
+		TakeLanesPanel panel(id);
+		QTest::mouseClick(panel.addLaneButton(), Qt::LeftButton);
+		QTest::mouseClick(panel.addLaneButton(), Qt::LeftButton);
+		QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(first)},
+			{QStringLiteral("lane"), 0}}).ok);
+		QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(second)},
+			{QStringLiteral("lane"), 1}}).ok);
+		panel.resize(640, 420);
+		panel.show();
+		QCoreApplication::processEvents();
+		CompSwipeStrip* strip = panel.strip();
+		QVERIFY(strip != nullptr);
+		QVERIFY(strip->width() > 100);
+		panel.refresh();
+		const auto segmentsOf = [&id] {
+			return run(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), id}})
+				.result.value(QStringLiteral("composite")).toObject().value(QStringLiteral("segments")).toArray();
+		};
+		QCOMPARE(segmentsOf().size(), 0);
+
+		const int rowY = 22 + 10;  // CompSwipeStrip::RowHeight is 22: the second lane
+		const int fromX = strip->width() / 4;
+		const int toX = 3 * strip->width() / 4;
+		const int expectedBegin = strip->tickAt(std::min(fromX, toX));
+		const int expectedEnd = strip->tickAt(std::max(fromX, toX));
+
+		// A tap leaves the comp alone.
+		{
+			auto sequence = QTest::touchEvent(strip, QTest::createTouchDevice(), false);
+			sequence.press(0, QPoint(fromX, rowY));
+			QVERIFY(commitTouchSequence(sequence));
+			sequence.release(0, QPoint(fromX, rowY));
+			QVERIFY(commitTouchSequence(sequence));
+		}
+		QCOMPARE(segmentsOf().size(), 0);
+
+		auto swipe = [strip, rowY](int from, int to) {
+			auto sequence = QTest::touchEvent(strip, QTest::createTouchDevice(), false);
+			sequence.press(0, QPoint(from, rowY));
+			const bool pressed = commitTouchSequence(sequence);
+			sequence.move(0, QPoint((from + to) / 2, rowY));
+			const bool moved = commitTouchSequence(sequence);
+			sequence.move(0, QPoint(to, rowY));
+			const bool movedAgain = commitTouchSequence(sequence);
+			sequence.release(0, QPoint(to, rowY));
+			const bool released = commitTouchSequence(sequence);
+			return pressed && moved && movedAgain && released;
+		};
+		QVERIFY2(swipe(fromX, toX), "the touch swipe was not delivered");
+		QJsonArray segments = segmentsOf();
+		QCOMPARE(segments.size(), 1);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("lane")).toInt(), 1);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("begin")).toInt(), expectedBegin);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("end")).toInt(), expectedEnd);
+
+		// The same drag with a mouse selects the same lane and range.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(segmentsOf().size(), 0);
+		QTest::mousePress(strip, Qt::LeftButton, Qt::NoModifier, QPoint(fromX, rowY));
+		QTest::mouseMove(strip, QPoint(toX, rowY));
+		QTest::mouseRelease(strip, Qt::LeftButton, Qt::NoModifier, QPoint(toX, rowY));
+		segments = segmentsOf();
+		QCOMPARE(segments.size(), 1);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("lane")).toInt(), 1);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("begin")).toInt(), expectedBegin);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("end")).toInt(), expectedEnd);
+
+		// A swipe the other way is the same half-open range.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY2(swipe(toX, fromX), "the reverse touch swipe was not delivered");
+		segments = segmentsOf();
+		QCOMPARE(segments.size(), 1);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("lane")).toInt(), 1);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("begin")).toInt(), expectedBegin);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("end")).toInt(), expectedEnd);
+	}
+
+	//! Loop passes recorded in Overdub or Replace: each take's item says whether it is heard, and
+	//! Play all takes follows that state. In Replace the checkbox turns every take on, through
+	//! comp.play_all_takes, and the take list shows it.
+	void loopTakesSayWhichAreHeardAndPlayAllTakesFollowsThem()
+	{
+		for (const recordoptions::Mode mode : {recordoptions::Mode::Overdub, recordoptions::Mode::Replace})
+		{
+			recordoptions::setOptions({0, 0, mode});
+			const QString id = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}})
+				.result.value(QStringLiteral("track")).toString();
+			ControlResult error;
+			Track* track = control::resolveTrack(id, &error);
+			QVERIFY(track != nullptr);
+			auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+			QVERIFY(clip != nullptr);
+			clip->changeLength(TimePos(TimePos::ticksPerBar()));
+			clip->setAutoResize(false);
+			recordLoopPasses(clip);
+			QCOMPARE(track->takeLanes().laneCount(), 3);
+
+			TakeLanesPanel panel(id);
+			panel.refresh();
+			QComboBox* choices = panel.takeChoiceBox();
+			QCOMPARE(choices->count(), 3);
+			int heard = 0;
+			int heardLane = -1;
+			for (int i = 0; i < choices->count(); ++i)
+			{
+				const QString text = choices->itemText(i);
+				QVERIFY2(text.endsWith(QStringLiteral(" - audible")) || text.endsWith(QStringLiteral(" - muted")),
+					qPrintable(text));
+				if (text.endsWith(QStringLiteral(" - audible")))
+				{
+					++heard;
+					heardLane = choices->itemData(i, Qt::UserRole + 1).toInt();
+				}
+			}
+
+			if (mode == recordoptions::Mode::Overdub)
+			{
+				QCOMPARE(heard, 3);
+				QVERIFY(panel.playAllTakesBox()->isChecked());
+				continue;
+			}
+
+			// Replace: only the newest pass is heard, and Play all takes is off.
+			QCOMPARE(heard, 1);
+			QCOMPARE(heardLane, track->takeLanes().activeTakeLane(clip->id()));
+			QVERIFY(!panel.playAllTakesBox()->isChecked());
+
+			const ControlResult before = run(QStringLiteral("control.undo_depth"));
+			QVERIFY(before.ok);
+			QTest::mouseClick(panel.playAllTakesBox(), Qt::LeftButton);
+			QVERIFY(track->takeLanes().playAllTakes());
+			const ControlResult after = run(QStringLiteral("control.undo_depth"));
+			QVERIFY(after.ok);
+			QCOMPARE(after.result.value(QStringLiteral("depth")).toInt(),
+				before.result.value(QStringLiteral("depth")).toInt() + 1);
+			panel.refresh();
+			QVERIFY(panel.playAllTakesBox()->isChecked());
+			QCOMPARE(panel.takeChoiceBox()->count(), 3);
+			for (int i = 0; i < panel.takeChoiceBox()->count(); ++i)
+			{
+				QVERIFY2(panel.takeChoiceBox()->itemText(i).endsWith(QStringLiteral(" - audible")),
+					qPrintable(panel.takeChoiceBox()->itemText(i)));
+			}
+			const ControlResult undone = run(QStringLiteral("control.undo"));
+			QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+			QCOMPARE(undone.result.value(QStringLiteral("undone_command")).toString(),
+				QStringLiteral("comp.play_all_takes"));
+			QCOMPARE(undone.result.value(QStringLiteral("undone_commands")).toInt(), 1);
+			QVERIFY(!track->takeLanes().playAllTakes());
+			panel.refresh();
+			QCOMPARE(panel.takeChoiceBox()->count(), 3);
+			for (int i = 0; i < panel.takeChoiceBox()->count(); ++i)
+			{
+				const bool newest = panel.takeChoiceBox()->itemData(i, Qt::UserRole + 1).toInt() == heardLane;
+				const QString expected = newest ? QStringLiteral(" - audible") : QStringLiteral(" - muted");
+				QVERIFY(panel.takeChoiceBox()->itemText(i).endsWith(expected));
+			}
+		}
+		recordoptions::setOptions({});
+	}
+
+	//! A comp selects which take is heard even when it is not the active take; both the command state and panel say so.
+	void compedLoopTakesReportTheAudibleLane()
+	{
+		recordoptions::setOptions({0, 0, recordoptions::Mode::Replace});
+		const QString id = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}})
+			.result.value(QStringLiteral("track")).toString();
+		ControlResult error;
+		Track* track = control::resolveTrack(id, &error);
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->changeLength(TimePos(TimePos::ticksPerBar()));
+		clip->setAutoResize(false);
+		recordLoopPasses(clip);
+		QCOMPARE(track->takeLanes().activeTakeLane(clip->id()), 2);
+		QVERIFY(track->takeLanes().selectSegment(0, TimePos::ticksPerBar(), 0));
+
+		const ControlResult state = run(QStringLiteral("comp.get_state"),
+			{{QStringLiteral("track"), control::trackIdOf(track)}});
+		QVERIFY(state.ok);
+		const QJsonArray groups = state.result.value(QStringLiteral("take_groups")).toArray();
+		QCOMPARE(groups.size(), 1);
+		const QJsonArray takes = groups.first().toObject().value(QStringLiteral("takes")).toArray();
+		QCOMPARE(takes.size(), 3);
+		for (const QJsonValue& value : takes)
+		{
+			const QJsonObject take = value.toObject();
+			QCOMPARE(take.value(QStringLiteral("audible")).toBool(), take.value(QStringLiteral("lane")).toInt() == 0);
+		}
+
+		TakeLanesPanel panel(id);
+		panel.refresh();
+		QCOMPARE(panel.takeChoiceBox()->count(), 3);
+		for (int i = 0; i < panel.takeChoiceBox()->count(); ++i)
+		{
+			const bool compLane = panel.takeChoiceBox()->itemData(i, Qt::UserRole + 1).toInt() == 0;
+			const QString expected = compLane ? QStringLiteral(" - audible") : QStringLiteral(" - muted");
+			QVERIFY(panel.takeChoiceBox()->itemText(i).endsWith(expected));
+		}
+		recordoptions::setOptions({});
 	}
 };
 

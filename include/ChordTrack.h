@@ -246,8 +246,10 @@ public:
 	/*! The track as a standalone XML document, for the SPEC A16 before-state of
 	 *  a recorded action checkpoint and for the command group's read-back. */
 	QString toXml() const;
-	//! Restores the track from toXml()'s output. False - empty track - when the
-	//! text does not parse or is not a chord track.
+	//! Restores the track from toXml()'s output. False and the track UNCHANGED
+	//! when the text does not parse or is not a chord track: a restore that
+	//! cannot read its snapshot must not destroy the state it failed to read.
+	//! (loadSettings still clears first - absence means "no chord track".)
 	bool fromXml(const QString& xml);
 
 private:

@@ -356,8 +356,9 @@ struct DawProjectLossReport
 	int panNotWritten = 0;
 	//! Mixer routes other than "everything to master", not carried.
 	int routingLost = 0;
-	//! Tracks whose type has no mixer channel model, so no destination IDREF
-	//! can be written for them.
+	//! Not counted: a folder has no mixer channel by design, and tracks that
+	//! share a strip are written as shared IDREFs. No code path increments it
+	//! now; the key stays in the report so its shape does not change.
 	int mixerSharingLost = 0;
 	//! Notes or clips whose time was not on LMMS' grid and was rounded.
 	int roundedTimes = 0;
@@ -515,7 +516,8 @@ LMMS_EXPORT DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossRe
  *  declaration prefix beyond the format's own, no namespace: Project.xsd
  *  declares no targetNamespace). False - with \\a error set - when the model
  *  holds a value the format cannot express (a tempo outside 10..999, a metre
- *  whose denominator is not a power of two, a negative time). */
+ *  numerator outside 1..32, a denominator that is not a power of two, a
+ *  negative time). */
 LMMS_EXPORT bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml,
 	QString* error);
 
@@ -566,7 +568,7 @@ LMMS_EXPORT bool dawProjectZipWrite(const QString& path,
  *  truncated or hostile container is refused rather than read past its end.
  *  This is the `.mmpz` v2 container's reader. */
 LMMS_EXPORT bool dawProjectZipRead(const QString& path,
-	std::vector<DawProjectEntry>* entries, QString* error);
+	std::vector<DawProjectEntry>* entries, QString* error, bool* unreadable = nullptr);
 
 /*! Read the ZIP at \\a path TOLERANTLY: STORE and raw DEFLATE entries, each held
  *  to \\a limits, and an entry that is corrupt, fails its CRC, uses an unsupported
@@ -581,7 +583,7 @@ LMMS_EXPORT bool dawProjectZipRead(const QString& path,
 LMMS_EXPORT bool dawProjectZipReadTolerant(const QString& path,
 	std::vector<DawProjectEntry>* entries, DawProjectZipReport* report, QString* error,
 	const DawProjectZipLimits& limits = DawProjectZipLimits(),
-	const QStringList& retain = QStringList());
+	const QStringList& retain = QStringList(), bool* unreadable = nullptr);
 
 //! The SHA-256 of \\a bytes, lowercase hex - the writer's own file identity.
 LMMS_EXPORT QString dawProjectSha256(const QByteArray& bytes);

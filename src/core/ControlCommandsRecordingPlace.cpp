@@ -28,6 +28,7 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <atomic>
 #include <memory>
 
 #include <QFileInfo>
@@ -39,6 +40,7 @@
 #include "ControlRecordingSupport.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "ProjectJournal.h"
 #include "RecordingJournal.h"
 #include "SampleClip.h"
 #include "Song.h"
@@ -53,13 +55,24 @@ using namespace recordingjournal;
 namespace
 {
 
-//! A new sample track named after the take, holding \a audio in a clip at bar 1; its stable id, or empty.
+std::atomic<bool> g_recoveredTakeFailsForTest{false};  // the test seam: setRecoveredTakeFailsForTest()
+
+//! A new sample track named after the take, holding \a audio in a clip at bar 1; its stable id, or empty. The track is
+//! removed again unless its clip holds the file: a track reported as placed must carry the recovered audio.
 QString landRecoveredTake(Song* song, const QString& audio)
 {
+	if (g_recoveredTakeFailsForTest.load()) { return QString(); }
 	Track* track = Track::create(Track::Type::Sample, song);
 	if (track == nullptr) { return QString(); }
 	track->setName(QObject::tr("Recovered: %1").arg(QFileInfo(audio).completeBaseName()));
-	if (auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)))) { clip->setSampleFile(audio); }
+	auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+	if (clip != nullptr) { clip->setSampleFile(audio); }
+	// setSampleFile() returns nothing: a file no decoder reads leaves the clip on the empty buffer, with no file name.
+	if (clip == nullptr || clip->sampleFile().isEmpty())
+	{
+		removeTrack(track);
+		return QString();
+	}
 	return trackIdOf(track);
 }
 
@@ -98,6 +111,14 @@ ControlResult recoveryPlace(const QJsonObject& args)
 	Song* song = Engine::getSong();
 	const QString audio = journal.takePath;
 	auto placed = std::make_shared<QString>();
+	*placed = landRecoveredTake(song, audio);
+	if (placed->isEmpty())
+	{
+		write(journalPath, offered);
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("could not create a sample track"));
+	}
+	// The undo step is recorded only once the take has landed: addUndoStep() records at once, so a first placement that
+	// failed would leave an undo step that removes nothing.
 	addUndoStep(
 		[placed, offered, journalPath]() {
 			ControlResult ignored;
@@ -105,16 +126,20 @@ ControlResult recoveryPlace(const QJsonObject& args)
 			placed->clear();
 			write(journalPath, offered);
 		},
-		[placed, restored, journalPath, song, audio]() {
+		[placed, offered, restored, journalPath, song, audio]() {
 			*placed = landRecoveredTake(song, audio);
+			// A redo that places nothing leaves the take offered, as the first placement's failure does above, and
+			// declines the redo: the step goes back on the redo stack instead of being recorded as an applied undo step.
+			if (placed->isEmpty())
+			{
+				write(journalPath, offered);
+				if (ProjectJournal* journal = Engine::projectJournal()) {
+					journal->declineRedo(QStringLiteral("no sample track could be created for the recovered take"));
+				}
+				return;
+			}
 			write(journalPath, restored);
 		});
-	*placed = landRecoveredTake(song, audio);
-	if (placed->isEmpty())
-	{
-		write(journalPath, offered);
-		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("could not create a sample track"));
-	}
 
 	QJsonObject result = takeJson(restored);
 	result.insert(QStringLiteral("restored"), true);
@@ -131,6 +156,13 @@ ControlResult recoveryPlace(const QJsonObject& args)
 }
 
 } // namespace
+
+namespace control
+{
+
+void setRecoveredTakeFailsForTest(bool fails) { g_recoveredTakeFailsForTest.store(fails); }
+
+} // namespace control
 
 void registerRecordingPlaceCommand(ControlRegistry& registry)
 {

@@ -29,9 +29,12 @@
 #include <QtTest>
 
 #include <QFile>
+#include <QFileInfo>
 #include <QImage>
+#include <QLineEdit>
+#include <QMouseEvent>
 #include <QPainter>
-#include <QFile>
+#include <QPointer>
 #include <QApplication>
 #include <QFileDialog>
 #include <QDragEnterEvent>
@@ -46,6 +49,7 @@
 #include <limits>
 #include <vector>
 
+#include "AccessibleCanvas.h"
 #include "ControlRegistry.h"
 #include "Editor.h"
 #include "Clipboard.h"
@@ -127,7 +131,22 @@ public:
 
 	void deliverDrop(QDropEvent* event) { dropEvent(event); }
 	void deliverDragEnter(QDragEnterEvent* event) { dragEnterEvent(event); }
+	void deliverMove(QMouseEvent* event) { mouseMoveEvent(event); }
 };
+
+//! Sends one mouse event straight to the widget, so the button state is exactly
+//! what the test says and does not depend on QTest's internal button tracking.
+void sendMouse(Graph& graph, QEvent::Type type, QPoint pos,
+	Qt::MouseButton button, Qt::MouseButtons buttons)
+{
+	QMouseEvent event(type, QPointF(pos), QPointF(pos), button, buttons, Qt::NoModifier);
+	QCoreApplication::sendEvent(&graph, &event);
+}
+
+std::vector<float> samplesOf(Graph& graph)
+{
+	return std::vector<float>(graph.model()->samples(), graph.model()->samples() + graph.model()->length());
+}
 
 } // namespace
 
@@ -177,6 +196,27 @@ private slots:
 
 		delete editor;
 		QVERIFY(Editor::lastPlayedEditor() == nullptr);
+	}
+
+	void editorOwnsOnlyItsTransportToolbar()
+	{
+		TestEditor editor;
+		QCOMPARE(editor.findChildren<DropToolBar*>(QString(), Qt::FindDirectChildrenOnly).size(), 1);
+	}
+
+	void openForGivesEveryDialogAView()
+	{
+		// new-p21-61: window.sample_editor's applyZoom was reported to dereference a possibly null view. The view is a
+		// member built in the constructor's initialiser list, so a dialog from openFor - new or reopened - always has one.
+		SampleClip* clip = toneClip(m_track);
+		SampleEditorDialog* dialog = SampleEditorDialog::openFor(clip, nullptr);
+		QVERIFY(dialog != nullptr);
+		QVERIFY(dialog->view() != nullptr);
+		QCOMPARE(dialog->clip(), clip);
+		QCOMPARE(SampleEditorDialog::openFor(clip, nullptr), dialog);
+		QVERIFY(dialog->view() != nullptr);
+		delete dialog;
+		delete clip;
 	}
 
 	void graphClickAtFivePixelHeightKeepsSamplesFinite()
@@ -247,6 +287,13 @@ private slots:
 		QCOMPARE(frame, qint64{62500} * Rate / 1000);
 		QVERIFY(samplerange::frameFromText(QStringLiteral("0.25 s"), ctx, Unit::Samples, &frame));  // a suffix names its unit
 		QCOMPARE(frame, qint64{Rate / 4});
+		// The clock format does not skip the suffix: a colon and a "s" word name the same unit together.
+		QVERIFY(samplerange::frameFromText(QStringLiteral("1:02.500 s"), ctx, Unit::Time, &frame));
+		QCOMPARE(frame, qint64{62500} * Rate / 1000);
+		QVERIFY(samplerange::frameFromText(QStringLiteral("1:02 sec"), ctx, Unit::Time, &frame));
+		QCOMPARE(frame, qint64{62} * Rate);
+		QVERIFY(samplerange::frameFromText(QStringLiteral("0:30 s"), ctx, Unit::Time, &frame));
+		QCOMPARE(frame, qint64{30} * Rate);
 		QVERIFY(samplerange::frameFromText(QStringLiteral("2756 smp"), ctx, Unit::Time, &frame));
 		QCOMPARE(frame, qint64{2756});
 		QVERIFY(samplerange::frameFromText(QStringLiteral("300"), ctx, Unit::Samples, &frame));
@@ -273,6 +320,78 @@ private slots:
 		{
 			if (i != clickedSample) { QCOMPARE(graph.model()->samples()[i], 0.0f); }
 		}
+	}
+
+	//! Only a left-button stroke writes samples. A right-button drag over a graph
+	//! that has no last position used to edit at the cursor.
+	void rightButtonDragOnFreshGraphEditsNoSample()
+	{
+		Graph graph(nullptr, Graph::Style::Linear, 200, 100);
+		graph.show();
+		const auto before = samplesOf(graph);
+
+		sendMouse(graph, QEvent::MouseButtonPress, QPoint(60, 20), Qt::RightButton, Qt::RightButton);
+		sendMouse(graph, QEvent::MouseMove, QPoint(120, 80), Qt::NoButton, Qt::RightButton);
+		sendMouse(graph, QEvent::MouseMove, QPoint(150, 30), Qt::NoButton, Qt::RightButton);
+		sendMouse(graph, QEvent::MouseButtonRelease, QPoint(150, 30), Qt::RightButton, Qt::NoButton);
+
+		QVERIFY2(before == samplesOf(graph), "a right-button drag on a fresh graph wrote samples");
+	}
+
+	//! After a left stroke has set the last cursor position, a right-button drag
+	//! used to draw a line through the samples.
+	void rightButtonDragAfterLeftStrokeEditsNoSample()
+	{
+		Graph graph(nullptr, Graph::Style::Linear, 200, 100);
+		graph.show();
+		const auto before = samplesOf(graph);
+
+		sendMouse(graph, QEvent::MouseButtonPress, QPoint(60, 20), Qt::LeftButton, Qt::LeftButton);
+		sendMouse(graph, QEvent::MouseButtonRelease, QPoint(60, 20), Qt::LeftButton, Qt::NoButton);
+		const auto afterLeftStroke = samplesOf(graph);
+		QVERIFY2(before != afterLeftStroke, "the left stroke did not edit: the case is not set up");
+
+		sendMouse(graph, QEvent::MouseButtonPress, QPoint(60, 20), Qt::RightButton, Qt::RightButton);
+		sendMouse(graph, QEvent::MouseMove, QPoint(120, 80), Qt::NoButton, Qt::RightButton);
+		sendMouse(graph, QEvent::MouseButtonRelease, QPoint(120, 80), Qt::RightButton, Qt::NoButton);
+
+		QVERIFY2(afterLeftStroke == samplesOf(graph), "a right-button drag after a left stroke wrote samples");
+	}
+
+	//! The move handler itself writes nothing for a move with no button held, on a
+	//! fresh graph or after a left stroke. Qt drops such moves before they reach a
+	//! widget without mouse tracking, so the handler is called directly here.
+	void hoverEditsNoSample()
+	{
+		TestGraph fresh(nullptr, Graph::Style::Linear, 200, 100);
+		fresh.show();
+		const auto freshBefore = samplesOf(fresh);
+		QMouseEvent hover(QEvent::MouseMove, QPointF(120, 80), QPointF(120, 80),
+			Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+		fresh.deliverMove(&hover);
+		QVERIFY2(freshBefore == samplesOf(fresh), "a hover over a fresh graph wrote samples");
+
+		TestGraph stroked(nullptr, Graph::Style::Linear, 200, 100);
+		stroked.show();
+		sendMouse(stroked, QEvent::MouseButtonPress, QPoint(60, 20), Qt::LeftButton, Qt::LeftButton);
+		sendMouse(stroked, QEvent::MouseButtonRelease, QPoint(60, 20), Qt::LeftButton, Qt::NoButton);
+		const auto strokedBefore = samplesOf(stroked);
+		stroked.deliverMove(&hover);
+		QVERIFY2(strokedBefore == samplesOf(stroked), "a hover after a left stroke wrote samples");
+	}
+
+	//! Control: a left-button drag still draws through its press and moves.
+	void leftButtonDragStillEditsSamples()
+	{
+		Graph graph(nullptr, Graph::Style::Linear, 200, 100);
+		graph.show();
+		const auto before = samplesOf(graph);
+
+		sendMouse(graph, QEvent::MouseButtonPress, QPoint(60, 20), Qt::LeftButton, Qt::LeftButton);
+		sendMouse(graph, QEvent::MouseMove, QPoint(120, 80), Qt::NoButton, Qt::LeftButton);
+		sendMouse(graph, QEvent::MouseButtonRelease, QPoint(120, 80), Qt::LeftButton, Qt::NoButton);
+
+		QVERIFY2(before != samplesOf(graph), "a left-button drag no longer edits samples");
 	}
 
 	void graphModelRejectsLengthsBelowTwoSamples()
@@ -379,6 +498,47 @@ private slots:
 		QVERIFY(view->to() > Rate / 2);
 	}
 
+	//! Q050-099: the waveform is a focusable canvas with a cursor, range selection and
+	//! zoom from the keyboard, and an applied range edit is one undo step.
+	void theWaveformTakesKeysForCursorRangeZoomAndEdit()
+	{
+		SampleSelectionView* view = m_dialog->view();
+		QCOMPARE(a11y::canvasRole(view), QAccessible::Canvas);
+		QVERIFY((view->focusPolicy() & Qt::TabFocus) != 0);
+		QCOMPARE(view->accessibleName(), QStringLiteral("Waveform"));
+		view->setFocus();
+		QVERIFY(view->hasFocus());
+
+		QTest::keyClick(view, Qt::Key_Right);
+		const int step = std::max(1, view->viewFrames() / 100);
+		QCOMPARE(view->from(), step);
+		QCOMPARE(view->to(), step);
+		QTest::keyClick(view, Qt::Key_Right, Qt::ShiftModifier);
+		QCOMPARE(view->from(), step);
+		QCOMPARE(view->to(), 2 * step);
+		QTest::keyClick(view, Qt::Key_Home);
+		QCOMPARE(view->from(), 0);
+		QCOMPARE(view->to(), 0);
+		QVERIFY(a11y::canvasValue(view).contains(QStringLiteral("Frames 0 to 0")));
+
+		QTest::keyClick(view, Qt::Key_Plus, Qt::ControlModifier);
+		QVERIFY(view->viewFrames() < view->frames());
+		QTest::keyClick(view, Qt::Key_0, Qt::ControlModifier);
+		QCOMPARE(view->viewFrames(), view->frames());
+		QTest::keyClick(view, Qt::Key_A, Qt::ControlModifier);
+		QCOMPARE(view->from(), 0);
+		QCOMPARE(view->to(), view->frames());
+
+		QPushButton* silence = button(m_dialog, QStringLiteral("Silence"));
+		QVERIFY(silence != nullptr);
+		silence->setFocus();
+		QTest::keyClick(silence, Qt::Key_Space);
+		QCOMPARE(m_clip->sample().data()[0][0], 0.f);
+		QCOMPARE(m_clip->sample().data()[Rate / 2][0], 0.f);
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok);
+		QVERIFY(m_clip->sample().data()[Rate / 4][0] != 0.f || m_clip->sample().data()[Rate / 4 + 1][0] != 0.f);
+	}
+
 	void anOperationActsOnTheFieldsRange()
 	{
 		m_dialog->setRange(4410, 8820);
@@ -404,6 +564,94 @@ private slots:
 		QCOMPARE(m_dialog->view()->from(), 0);
 		QCOMPARE(m_dialog->view()->to(), Rate);
 		QCOMPARE(static_cast<int>(m_clip->sample().sampleSize()), Rate);
+	}
+
+	//! Q050-106 AC2 through the Sample Editor: the button drives sample.edit_range
+	//! op 'mono', the source reads mono, and one undo restores the exact stereo
+	//! samples and layout.
+	void theMonoButtonConvertsTheWholeSourceAndUndoRestoresIt()
+	{
+		std::vector<SampleFrame> stereo;
+		for (int i = 0; i < Rate; ++i)
+		{
+			stereo.emplace_back(0.20f * std::sin(2.0 * M_PI * 220.0 * i / Rate),
+				-0.10f * std::cos(2.0 * M_PI * 330.0 * i / Rate));
+		}
+		m_clip->setSampleBuffer(std::make_shared<SampleBuffer>(stereo.data(), stereo.size(), Rate));
+		m_dialog->view()->setClip(m_clip);
+
+		QPushButton* mono = button(m_dialog, QStringLiteral("To Mono"));
+		QVERIFY(mono != nullptr);
+		QVERIFY(mono->isEnabled());
+		mono->click();
+
+		QCOMPARE(m_dialog->describe().value(QStringLiteral("channels")).toInt(), 1);
+		QCOMPARE(m_dialog->describe().value(QStringLiteral("layout")).toString(), QStringLiteral("mono"));
+		QVERIFY2(m_dialog->status().contains(QStringLiteral("Mono")), qPrintable(m_dialog->status()));
+		QCOMPARE(static_cast<int>(m_clip->sample().sampleSize()), Rate);
+		for (int i = 0; i < Rate; ++i)
+		{
+			const float mean = (stereo[static_cast<std::size_t>(i)].left()
+				+ stereo[static_cast<std::size_t>(i)].right()) / 2.0f;
+			QCOMPARE(m_clip->sample().data()[i].left(), mean);
+			QCOMPARE(m_clip->sample().data()[i].right(), mean);
+		}
+
+		const ControlResult undo = ControlRegistry::instance()->invoke(QStringLiteral("control.undo"));
+		QVERIFY2(undo.ok, qPrintable(undo.errorMessage));
+		QCOMPARE(m_dialog->describe().value(QStringLiteral("layout")).toString(), QStringLiteral("stereo"));
+		for (int i = 0; i < Rate; ++i)
+		{
+			QCOMPARE(m_clip->sample().data()[i].left(), stereo[static_cast<std::size_t>(i)].left());
+			QCOMPARE(m_clip->sample().data()[i].right(), stereo[static_cast<std::size_t>(i)].right());
+		}
+	}
+
+	//! Q050-106 AC1/AC3 through the Sample Editor: the split button asks for two
+	//! destinations and runs sample.split_stereo; both files appear and the clip
+	//! is unchanged.
+	void theSplitButtonWritesTwoMonoFilesFromTheMenuPath()
+	{
+		const auto before = std::vector<SampleFrame>(m_clip->sample().data(),
+			m_clip->sample().data() + m_clip->sample().sampleSize());
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QString left = directory.filePath(QStringLiteral("left.wav"));
+		const QString right = directory.filePath(QStringLiteral("right.wav"));
+
+		QTimer probe;
+		probe.setInterval(10);
+		connect(&probe, &QTimer::timeout, this, [&]
+		{
+			auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+			if (dialog == nullptr || dialog->objectName() != QStringLiteral("stereoSplitDialog")) { return; }
+			auto* leftField = dialog->findChild<QLineEdit*>(QStringLiteral("leftPath"));
+			auto* rightField = dialog->findChild<QLineEdit*>(QStringLiteral("rightPath"));
+			if (leftField == nullptr || rightField == nullptr) { dialog->reject(); return; }
+			leftField->setText(left);
+			rightField->setText(right);
+			dialog->accept();
+			probe.stop();
+		});
+		probe.start();
+
+		QPushButton* split = button(m_dialog, QStringLiteral("Split Stereo..."));
+		QVERIFY(split != nullptr);
+		QVERIFY(split->isEnabled());
+		split->click();
+		probe.stop();
+
+		QVERIFY2(QFileInfo::exists(left), qPrintable(left + QStringLiteral(" status=") + m_dialog->status()));
+		QVERIFY2(QFileInfo::exists(right), qPrintable(right + QStringLiteral(" status=") + m_dialog->status()));
+		QVERIFY(QFileInfo(left).size() > 0);
+		QVERIFY(QFileInfo(right).size() > 0);
+		QVERIFY2(m_dialog->status().contains(QStringLiteral("Wrote")), qPrintable(m_dialog->status()));
+		QCOMPARE(m_clip->sample().sampleSize(), before.size());
+		for (std::size_t i = 0; i < before.size(); ++i)
+		{
+			QCOMPARE(m_clip->sample().data()[i].left(), before[i].left());
+			QCOMPARE(m_clip->sample().data()[i].right(), before[i].right());
+		}
 	}
 
 	void audioOpenDialogUsesSingleFileSelection()

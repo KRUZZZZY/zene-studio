@@ -342,6 +342,61 @@ private slots:
 		}
 	}
 
+	//! A cached clip resampled for the engine rate is rebuilt when the engine rate changes.
+	void cachedClipsRebuildWhenEngineRateChanges()
+	{
+		const auto originalRate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+		const std::vector<SampleFrame> clip = rampClip(1000);
+		const QString path = m_dir.filePath(QStringLiteral("rate_test.wav"));
+		QVERIFY(writeFloatWav(path, clip, originalRate));
+		QVERIFY(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0},
+			{QStringLiteral("type"), QStringLiteral("audio")}, {QStringLiteral("source"), path}}).ok);
+		Song& song = *Engine::getSong();
+		const ClipSlot& slot = song.sessionModel().slot(0, 0);
+		const sessionaudio::Prepared p1 = sessionaudio::prepare(song, 0, slot, 120.0);
+		QVERIFY(p1.clip != nullptr);
+		QCOMPARE(static_cast<int>(p1.clip->sampleRate()), originalRate);
+		const int newRate = originalRate == 44100 ? 48000 : 44100;
+		Engine::audioEngine()->audioDev()->setSampleRateForTesting(newRate);
+		const sessionaudio::Prepared p2 = sessionaudio::prepare(song, 0, slot, 120.0);
+		QVERIFY(p2.clip != nullptr);
+		QCOMPARE(static_cast<int>(p2.clip->sampleRate()), newRate);
+		Engine::audioEngine()->audioDev()->setSampleRateForTesting(originalRate);
+	}
+
+	//! The budget of settings-variants is the variants' alone: 256 loaded source clips do not use it up,
+	//! so a warped cell still gets its warped clip (and not the unwarped original).
+	void theVariantLimitCountsVariantsNotLoadedClips()
+	{
+		const auto rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+		Song& song = *Engine::getSong();
+		// 256 distinct source clips, all loaded and held (they are clips, not settings-variants)
+		for (int i = 0; i < 256; ++i)
+		{
+			const QString path = m_dir.filePath(QStringLiteral("src%1.wav").arg(i));
+			QVERIFY(writeFloatWav(path, rampClip(64), rate));
+			ClipSlot slot;
+			slot.setAudioReference(path);
+			const sessionaudio::Prepared p = sessionaudio::prepare(song, 0, slot, 120.0);
+			QVERIFY2(p.clip != nullptr, qPrintable(QStringLiteral("source %1 was not loaded").arg(i)));
+		}
+		// A warped cell of another file: its settings-variant is still made
+		const QString path = m_dir.filePath(QStringLiteral("warped.wav"));
+		QVERIFY(writeFloatWav(path, rampClip(600), rate));
+		ClipSlot plain;
+		plain.setAudioReference(path);
+		const sessionaudio::Prepared unwarped = sessionaudio::prepare(song, 0, plain, 120.0);
+		QVERIFY(unwarped.clip != nullptr);
+		QCOMPARE(unwarped.clip->size(), std::size_t{600});
+		ClipSlot warped;
+		warped.setAudioReference(path);
+		warped.setWarp(true);
+		warped.setWarpBpm(60.0);  // played at 120 bpm: twice as fast, half as long
+		const sessionaudio::Prepared baked = sessionaudio::prepare(song, 0, warped, 120.0);
+		QVERIFY(baked.clip != nullptr);
+		QCOMPARE(baked.clip->size(), std::size_t{300});
+	}
+
 private:
 	void useTrack(const QString& type)
 	{

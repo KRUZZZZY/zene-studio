@@ -55,8 +55,10 @@
 #include "ClipLinks.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "Engine.h"
 #include "MidiClip.h"
 #include "Note.h"
+#include "NoteConditions.h"
 #include "Song.h"
 
 namespace lmms
@@ -127,6 +129,8 @@ void registerNoteProbabilitySet(ControlRegistry& registry)
 		{QStringLiteral("pan"), numberProperty()},
 		{QStringLiteral("slide"), booleanProperty()},
 		{QStringLiteral("velocity"), numberProperty()},
+		{QStringLiteral("recur_length"), integerProperty(0, NoteConditions::MaxRecurLength)},
+		{QStringLiteral("recur_mask"), integerProperty(0, 65535)},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -142,10 +146,13 @@ void registerNoteProbabilitySet(ControlRegistry& registry)
 		if (!checkProbability(probability, &error)) { return error; }
 
 		const float previous = note->probability();
+		const float requested = static_cast<float>(probability);
+		const bool changed = requested != previous;
 		clip->addJournalCheckPoint();
-		note->setProbability(static_cast<float>(probability));
+		note->setProbability(requested);
 		clip->dataChanged();
 		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }  // a linked copy carries the same probability
+		if (changed) { Engine::getSong()->setModified(); }
 
 		QJsonObject result = noteState(note, index);
 		result.insert(QStringLiteral("clip"), clipId(ref.id));

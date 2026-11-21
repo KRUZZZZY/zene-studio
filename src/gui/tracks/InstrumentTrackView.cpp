@@ -52,6 +52,7 @@
 #include "Mixer.h"
 #include "MixerChannelLcdSpinBox.h"
 #include "MixerView.h"
+#include "DesignTokens.h"
 #include "TrackLabelButton.h"
 
 
@@ -65,7 +66,7 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 	m_lastPos( -1, -1 )
 {
 	setAcceptDrops( true );
-	setFixedHeight( 32 );
+	setFixedHeight(trackLaneHeight());
 
 	m_tlb = new TrackLabelButton( this, getTrackSettingsWidget() );
 	m_tlb->setCheckable( true );
@@ -137,8 +138,12 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 		this, SLOT(toggleMidiCCRack()));
 
 	m_activityIndicator = new FadeButton(getTrackSettingsWidget());
-	m_activityIndicator->setFixedSize(8, 28);
+	m_activityIndicator->setFixedSize(tokens::accessibleMode() ? tokens::targetSize() : 8,
+		tokens::accessibleMode() ? tokens::targetSize() : 28);
 	m_activityIndicator->show();
+	if (tokens::accessibleMode()) { m_mixerChannelNumber->setMinimumSize(tokens::targetSize(), tokens::targetSize()); }
+	const InstrumentTrack::NoteActivitySnapshot initialActivity = _it->noteActivitySnapshot();
+	m_activityIndicator->syncNoteActivity(initialActivity.activeNotes, initialActivity.noteOnGeneration);
 
 	auto masterLayout = new QVBoxLayout(getTrackSettingsWidget());
 	masterLayout->setContentsMargins(0, 1, 0, 0);
@@ -146,7 +151,7 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 	// 0.5.0 (docs/UI-SHELL.md §1): a gap between the header's controls, so the knobs' captions
 	// no longer run together ("VOLPAN") and the row reads as separate controls.
 	layout->setContentsMargins(0, 0, 4, 0);
-	layout->setSpacing(4);
+	layout->setSpacing(tokens::targetSpacing(4));
 	layout->addWidget(m_tlb);
 	layout->addWidget(m_mixerChannelNumber);
 	layout->addWidget(m_activityIndicator);
@@ -160,10 +165,6 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 				this, SLOT(activityIndicatorPressed()));
 	connect( m_activityIndicator, SIGNAL(released()),
 				this, SLOT(activityIndicatorReleased()));
-	connect( _it, SIGNAL(newNote()),
-			 m_activityIndicator, SLOT(activate()));
-	connect( _it, SIGNAL(endNote()),
-	 		m_activityIndicator, SLOT(noteEnd()));
 	connect(getGUI()->mainWindow(), &MainWindow::periodicUpdate, this, &InstrumentTrackView::corruptStateUpdate);
 
 	setModel( _it );
@@ -179,8 +180,16 @@ InstrumentTrackView::~InstrumentTrackView()
 	delete m_window;
 	m_window = nullptr;
 
-	delete model()->m_midiPort.m_readablePortsMenu;
-	delete model()->m_midiPort.m_writablePortsMenu;
+	// Q050-317.1: the view outlives its TRACK when the track dies first. The two MIDI port menus are
+	// owned by the track's MIDI port, so a closed view (WA_DeleteOnClose, scheduled by
+	// Track::destroyedTrack) reaches this destructor after a document replacement has already
+	// deleted the track - model() is then null because ModelView holds it in a QPointer. Dereferencing
+	// it here was a SIGSEGV measured right after project.new_document answered; when the track is gone
+	// its menus are gone with it, so there is nothing left to delete.
+	InstrumentTrack* track = model();
+	if (track == nullptr) { return; }
+	delete track->m_midiPort.m_readablePortsMenu;
+	delete track->m_midiPort.m_writablePortsMenu;
 }
 
 
@@ -437,6 +446,8 @@ void InstrumentTrackView::corruptStateUpdate()
 	// A closed view waits for its deferred deletion after its track has died, and the periodic tick can land
 	// in that window: the model is gone then, so there is no state to read (m0 blocker, trackview-uaf).
 	if (model() == nullptr) { return; }
+	const InstrumentTrack::NoteActivitySnapshot activity = model()->noteActivitySnapshot();
+	m_activityIndicator->syncNoteActivity(activity.activeNotes, activity.noteOnGeneration);
 	if (model()->audioBusHandle()->isCorrupted())
 	{
 		m_activityIndicator->setState(FadeButton::State::Corrupted);

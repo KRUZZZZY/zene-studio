@@ -86,6 +86,9 @@ std::vector<SampleFrame> silence(f_cnt_t frames)
 std::vector<SampleFrame> tone(double frequencyHz, float amplitude, f_cnt_t frames, int sampleRate)
 {
 	std::vector<SampleFrame> out;
+	// The phase step divides by the rate: with no positive rate there is no step,
+	// and the division would yield NaN frames, so nothing is generated instead.
+	if (sampleRate <= 0) { return out; }
 	out.reserve(static_cast<size_t>(frames));
 	const double step = frequencyHz * TwoPi / static_cast<double>(sampleRate);
 	for (f_cnt_t i = 0; i < frames; ++i)
@@ -191,6 +194,32 @@ float peakOf(const SampleFrame* in, f_cnt_t frames)
 		peak = std::max(peak, std::abs(in[i].right()));
 	}
 	return peak;
+}
+
+StereoChannels splitStereo(const SampleFrame* in, f_cnt_t frames)
+{
+	StereoChannels out;
+	out.left.reserve(static_cast<size_t>(frames));
+	out.right.reserve(static_cast<size_t>(frames));
+	for (f_cnt_t i = 0; i < frames; ++i)
+	{
+		out.left.push_back(in[i].left());
+		out.right.push_back(in[i].right());
+	}
+	return out;
+}
+
+std::vector<SampleFrame> toMono(const SampleFrame* in, f_cnt_t frames)
+{
+	std::vector<SampleFrame> out;
+	out.reserve(static_cast<size_t>(frames));
+	for (f_cnt_t i = 0; i < frames; ++i)
+	{
+		// The documented rule: the per-frame arithmetic mean on BOTH sides.
+		const sample_t mean = in[i].average();
+		out.emplace_back(mean, mean);
+	}
+	return out;
 }
 
 } // namespace sampleops

@@ -73,6 +73,20 @@ void registerClipSetRecord(ControlRegistry& registry)
 		const bool before = clip->isRecord();
 		const bool wanted = args.value(QStringLiteral("record")).toBool();
 		const QString id = clipId(ref.id);
+		// A request for the flag the clip ALREADY has changes nothing, so it must
+		// leave no undo step behind: a step that changes nothing is consumed by the
+		// next control.undo without touching the clip, and the real edit before it
+		// would stay. The reply is the unchanged state (the same keys the change
+		// path answers with), so a client cannot tell the two apart by the shape
+		// of the answer - only by the flag it reports.
+		if (wanted == before)
+		{
+			return ControlResult::success(QJsonObject{
+				{QStringLiteral("clip"), id},
+				{QStringLiteral("record"), before},
+				{QStringLiteral("record_before"), before},
+				{QStringLiteral("song_recording"), Engine::getSong()->isRecording()}});
+		}
 		const auto apply = [id](bool on) {
 			ClipRef again;
 			ControlResult ignored;

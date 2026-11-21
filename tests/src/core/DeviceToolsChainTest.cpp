@@ -1,5 +1,6 @@
 /*
- * DeviceToolsChainTest.cpp - post-fader inserts, the device delta, clip printing, plugin.replace and folding and options
+ * DeviceToolsChainTest.cpp - post-fader inserts, the device delta, clip printing, plugin.replace and folding and options,
+ *                              and the randomise and blend 'amount' (a non-finite one is refused)
  *                              (split out of DeviceToolsTest to keep both under the file-length ratchet)
  *
  * Copyright (c) 2026 Zene Studio contributors
@@ -31,9 +32,12 @@
 #include <QDomDocument>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QScopeGuard>
 #include <QSet>
+#include <QTemporaryDir>
 
 #include <cmath>
+#include <limits>
 #include <vector>
 
 #include "AudioBus.h"
@@ -270,6 +274,82 @@ private slots:
 		channel(3)->m_fxChain.clear();
 	}
 
+	//! A non-empty source without a positive rate is rejected before clip.process resolves or renders a chain.
+	void aClipWithNoSampleRateIsRefusedBeforeProcessing()
+	{
+		Track* track = Track::create(Track::Type::Sample, Engine::getSong());
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setSampleBuffer(std::make_shared<SampleBuffer>(std::vector<SampleFrame>(4, SampleFrame(0.25f, 0.25f)), 0));
+		const SampleFrame* const originalData = clip->sample().data();
+
+		const ControlResult printed = run(QStringLiteral("clip.process"),
+			{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("from"), ch(2)}});
+
+		QCOMPARE(printed.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(clip->sample().data() == originalData);
+		QCOMPARE(clip->sample().sampleRate(), 0);
+	}
+
+	//! An audio-less clip reports the condition it needs in order to be processed.
+	void anEmptyClipGetsAnActionableProcessError()
+	{
+		Track* track = Track::create(Track::Type::Sample, Engine::getSong());
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setSampleBuffer(SampleBuffer::emptyBuffer());
+
+		const ControlResult printed = run(QStringLiteral("clip.process"),
+			{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("from"), ch(3)}});
+
+		QCOMPARE(printed.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(printed.errorMessage.contains(QStringLiteral("must be an audio clip with audio")));
+	}
+
+	//! A rendered tail extends a manually trimmed source window and length, including after rate conversion.
+	void aRenderedTailExtendsThePlayableWindowAndClipLength()
+	{
+		const QString amp = loadByName(ch(3), QStringLiteral("amplifier"));
+		if (amp.isEmpty()) { QSKIP("this build has no amplifier module"); }
+		const auto clearChain = qScopeGuard([] { channel(3)->m_fxChain.clear(); });
+
+		Track* track = Track::create(Track::Type::Sample, Engine::getSong());
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		const double outputRate = Engine::audioEngine()->outputSampleRate();
+		const int sourceRate = static_cast<int>(outputRate / 2.0);
+		QVERIFY(sourceRate > 0);
+		const auto originalBuffer = std::make_shared<SampleBuffer>(
+			std::vector<SampleFrame>(2000, SampleFrame(0.25f, 0.25f)), sourceRate);
+		clip->setSampleBuffer(originalBuffer);
+		clip->setSampleWindow(SampleWindow(200, 1000));
+		const SampleWindow originalWindow = clip->sampleWindow();
+		const TimePos originalLength = clip->length();
+		constexpr double tailSeconds = 0.25;
+		const auto resampledFrames = static_cast<f_cnt_t>(static_cast<double>(originalWindow.sourceOut)
+			* outputRate / static_cast<double>(sourceRate));
+		const auto tailFrames = static_cast<f_cnt_t>(tailSeconds * outputRate);
+		const auto expectedFrames = resampledFrames + tailFrames;
+		const auto expectedSourceIn = static_cast<f_cnt_t>(200.0 * outputRate / static_cast<double>(sourceRate));
+
+		const ControlResult printed = run(QStringLiteral("clip.process"),
+			{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("from"), ch(3)},
+				{QStringLiteral("tail"), tailSeconds}});
+		QVERIFY2(printed.ok, qPrintable(printed.errorMessage));
+
+		QCOMPARE(static_cast<f_cnt_t>(clip->sample().sampleSize()), expectedFrames);
+		QCOMPARE(clip->sampleWindow().sourceIn, expectedSourceIn);
+		QCOMPARE(clip->sampleWindow().sourceOut, expectedFrames);
+		QVERIFY(clip->length().getTicks() > originalLength.getTicks());
+		QVERIFY(clip->length().getTicks() >= clip->sampleLength().getTicks());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(clip->sample().sampleSize(), originalBuffer->size());
+		QCOMPARE(clip->sample().sampleRate(), sourceRate);
+		QCOMPARE(clip->sample().data()[100][0], originalBuffer->data()[100][0]);
+		QCOMPARE(clip->sampleWindow(), originalWindow);
+		QCOMPARE(clip->length(), originalLength);
+	}
+
 	//! WF-016: plugin.replace puts a fresh device at the replaced one's slot of the same chain, and one
 	//! control.undo brings the old one back with its settings.
 	void aDeviceIsReplacedInItsSlot()
@@ -291,6 +371,34 @@ private slots:
 		QCOMPARE(parameterValue(ch(3), control::effectIdOf(effectOn(3)), QStringLiteral("Volume")), 150.0);  // the old settings
 		QCOMPARE(run(QStringLiteral("plugin.replace"), {{QStringLiteral("target"), ch(3)}, {QStringLiteral("plugin"), QStringLiteral("fx-999999")},
 			{QStringLiteral("device"), deviceNamed(QStringLiteral("amplifier"))}}).errorKind, ControlErrorKind::NotFound);
+		channel(3)->m_fxChain.clear();
+	}
+
+	void replacingADeviceMarksTheProjectModified()
+	{
+		channel(3)->m_fxChain.clear();
+		const QString device = deviceNamed(QStringLiteral("amplifier"));
+		if (device.isEmpty()) { QSKIP("this build has no amplifier module"); }
+		const QString old = loadByName(ch(3), QStringLiteral("amplifier"));
+		if (old.isEmpty()) { QSKIP("this build has no loadable amplifier module"); }
+
+		Song* song = Engine::getSong();
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString baseline = dir.filePath(QStringLiteral("before-replace.mmp"));
+		QVERIFY(song->saveProjectFile(baseline));
+		song->noteProjectSaved(baseline);
+		QVERIFY(!song->isModified());
+		const ControlResult missing = run(QStringLiteral("plugin.replace"), {{QStringLiteral("target"), ch(3)},
+			{QStringLiteral("plugin"), QStringLiteral("fx-999999")}, {QStringLiteral("device"), device}});
+		QCOMPARE(missing.errorKind, ControlErrorKind::NotFound);
+		QVERIFY(!song->isModified());  // a refused replacement changes nothing
+
+		const ControlResult replaced = run(QStringLiteral("plugin.replace"), {{QStringLiteral("target"), ch(3)},
+			{QStringLiteral("plugin"), old}, {QStringLiteral("device"), device}});
+		QVERIFY2(replaced.ok, qPrintable(replaced.errorMessage));
+		QVERIFY(song->isModified());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		channel(3)->m_fxChain.clear();
 	}
 
@@ -322,6 +430,50 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(!effect->deviceOptions().folded);
 		QVERIFY(effect->deviceOptions().isDefault());
+	}
+
+	//! A non-finite number is refused before anything is written: a NaN compares false against both bounds of a range,
+	//! so a NaN 'amount' of plugin.randomise / plugin.blend (std::clamp hands it back) or 'editor_scale' of plugin.options
+	//! used to be written. A finite amount past 1 still clamps.
+	void aNonFiniteNumberIsRefusedNotWritten()
+	{
+		Effect* effect = effectOn(1);
+		if (effect == nullptr) { QSKIP("this build has no amplifier module"); }
+		const QString amp = control::effectIdOf(effect);
+		const QJsonObject device{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), amp}};
+		QVERIFY(setParameter(ch(1), amp, QStringLiteral("Volume"), 100.0));
+		const double nan = std::numeric_limits<double>::quiet_NaN();
+		const double infinity = std::numeric_limits<double>::infinity();
+		QJsonObject zoom = device;
+		zoom.insert(QStringLiteral("editor_scale"), nan);
+		const float zoomBefore = effect->deviceOptions().editorScale;
+		QCOMPARE(run(QStringLiteral("plugin.options"), zoom).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(effect->deviceOptions().editorScale, zoomBefore);
+		for (const double amount : {nan, infinity, -infinity})
+		{
+			QJsonObject random = device;
+			random.insert(QStringLiteral("amount"), amount);
+			random.insert(QStringLiteral("seed"), 7);
+			QCOMPARE(run(QStringLiteral("plugin.randomise"), random).errorKind, ControlErrorKind::InvalidArgs);
+			QCOMPARE(parameterValue(ch(1), amp, QStringLiteral("Volume")), 100.0);
+		}
+		QJsonObject store = device;
+		store.insert(QStringLiteral("action"), QStringLiteral("store"));
+		store.insert(QStringLiteral("slot"), QStringLiteral("a"));
+		QVERIFY(run(QStringLiteral("plugin.ab"), store).ok);
+		QVERIFY(setParameter(ch(1), amp, QStringLiteral("Volume"), 50.0));
+		store.insert(QStringLiteral("slot"), QStringLiteral("b"));
+		QVERIFY(run(QStringLiteral("plugin.ab"), store).ok);
+		QJsonObject blended = device;
+		blended.insert(QStringLiteral("amount"), nan);
+		QCOMPARE(run(QStringLiteral("plugin.blend"), blended).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(parameterValue(ch(1), amp, QStringLiteral("Volume")), 50.0);
+		QVERIFY(setParameter(ch(1), amp, QStringLiteral("Volume"), 100.0));
+		QJsonObject past = device;
+		past.insert(QStringLiteral("amount"), 2.0);
+		// Clamped to 1: the value lands on B (50). Unclamped it would overshoot to 100 + 2 * (50 - 100) = 0.
+		QVERIFY2(run(QStringLiteral("plugin.blend"), past).ok, "a finite amount above 1 is clamped, not refused");
+		QCOMPARE(parameterValue(ch(1), amp, QStringLiteral("Volume")), 50.0);
 	}
 };
 

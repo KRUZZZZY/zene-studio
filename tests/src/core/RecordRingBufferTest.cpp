@@ -52,6 +52,25 @@ namespace
 
 qulonglong asNumber(std::size_t value) { return static_cast<qulonglong>(value); }
 
+class SampleRateRestore
+{
+public:
+	SampleRateRestore(lmms::AudioDevice* device, lmms::sample_rate_t sampleRate) :
+		m_device(device), m_sampleRate(sampleRate)
+	{
+	}
+
+	~SampleRateRestore()
+	{
+		m_device->setSampleRateForTesting(m_sampleRate);
+		lmms::Engine::audioEngine()->sampleRateChanged();
+	}
+
+private:
+	lmms::AudioDevice* m_device;
+	lmms::sample_rate_t m_sampleRate;
+};
+
 // Exact float values (multiples of 1/64) so comparisons are exact.
 sample_t testValue(std::uint64_t index)
 {
@@ -121,6 +140,75 @@ private slots:
 
 	void cleanupTestCase() { Engine::destroy(); }
 
+	//! Millisecond constructors reject invalid values before float-to-frame conversion.
+	void MillisecondConstructors_RejectInvalidValues()
+	{
+		QVERIFY_EXCEPTION_THROWN((void)lmms::RingBuffer{-1.0f}, std::invalid_argument);
+		QVERIFY_EXCEPTION_THROWN((void)lmms::RingBuffer{std::numeric_limits<float>::quiet_NaN()},
+			std::invalid_argument);
+		QVERIFY_EXCEPTION_THROWN((void)lmms::RingBuffer{std::numeric_limits<float>::infinity()},
+			std::invalid_argument);
+		QVERIFY_EXCEPTION_THROWN((void)lmms::RingBuffer{std::numeric_limits<float>::max()},
+			std::length_error);
+
+	}
+
+	//! Millisecond resizes reject invalid values before changing the allocation.
+	void MillisecondResize_RejectInvalidValues()
+	{
+		lmms::RingBuffer ring{1.0f};
+		QVERIFY_EXCEPTION_THROWN(ring.changeSize(-1.0f), std::invalid_argument);
+		QVERIFY_EXCEPTION_THROWN(ring.changeSize(std::numeric_limits<float>::quiet_NaN()),
+			std::invalid_argument);
+		QVERIFY_EXCEPTION_THROWN(ring.changeSize(std::numeric_limits<float>::infinity()),
+			std::invalid_argument);
+		QVERIFY_EXCEPTION_THROWN(ring.changeSize(std::numeric_limits<float>::max()),
+			std::length_error);
+	}
+
+	//! Period addition must be checked before creating the allocation.
+	void FrameConstructor_RejectPeriodAdditionOverflow()
+	{
+		const auto largest = std::numeric_limits<lmms::f_cnt_t>::max();
+		QVERIFY_EXCEPTION_THROWN((void)lmms::RingBuffer{largest}, std::length_error);
+	}
+
+	//! Period addition must be checked before replacing the existing allocation.
+	void FrameResize_RejectPeriodAdditionOverflow()
+	{
+		const auto largest = std::numeric_limits<lmms::f_cnt_t>::max();
+		lmms::RingBuffer ring{lmms::f_cnt_t{128}};
+		QVERIFY_EXCEPTION_THROWN(ring.changeSize(largest), std::length_error);
+	}
+
+	//! A samplerate-aware ring keeps the exact ceil-rounded frame count after a rate change.
+	void SamplerateUpdate_PreservesScaledFrameCount()
+	{
+		auto* audio = lmms::Engine::audioEngine();
+		auto* device = audio->audioDev();
+		QVERIFY(device != nullptr);
+		SampleRateRestore restore{device, audio->outputSampleRate()};
+
+		constexpr lmms::sample_rate_t oldRate = 44100;
+		constexpr lmms::sample_rate_t newRate = 48000;
+		device->setSampleRateForTesting(oldRate);
+		audio->sampleRateChanged();
+
+		lmms::RingBuffer ring{1023.3333f}; // 45,129 frames at 44.1 kHz
+		lmms::SampleFrame written{0.25f, -0.5f};
+
+		device->setSampleRateForTesting(newRate);
+		audio->sampleRateChanged();
+		ring.write(&written, lmms::f_cnt_t{0}, lmms::f_cnt_t{1});
+
+		const lmms::f_cnt_t expectedFrames = (lmms::f_cnt_t{45129} * newRate + oldRate - 1) / oldRate;
+		const lmms::f_cnt_t expectedSize = expectedFrames + audio->framesPerPeriod();
+		lmms::SampleFrame observed;
+		ring.read(&observed, static_cast<std::int64_t>(expectedSize), lmms::f_cnt_t{1});
+		QCOMPARE(observed.left(), written.left());
+		QCOMPARE(observed.right(), written.right());
+	}
+
 	//! Negative frame and millisecond offsets address frames before the position, wrapping at zero.
 	void RingBuffer_NegativeOffsetsMoveBackward()
 	{
@@ -162,6 +250,79 @@ private slots:
 		ring.movePosition(milliseconds);
 		ring.read(output.data());
 		QCOMPARE(output.front().left(), input[wrappedIndex(millisecondOffset, size)].left());
+	}
+
+	//! NaN and infinite millisecond offsets never reach an out-of-range float-to-integer conversion:
+	//! NaN means no offset, and infinities saturate to the largest offset of their integer type.
+	void RingBuffer_NonFiniteMillisecondOffsetsAreDefined()
+	{
+		const f_cnt_t period = Engine::audioEngine()->framesPerPeriod();
+		const f_cnt_t capacity = period + 8;
+		const auto size = static_cast<std::size_t>(capacity);
+		RingBuffer ring{f_cnt_t{8}};
+		std::vector<SampleFrame> input(size);
+		for (std::size_t i = 0; i < size; ++i)
+		{
+			input[i] = SampleFrame(static_cast<sample_t>(i), static_cast<sample_t>(-static_cast<float>(i)));
+		}
+		const auto refill = [&] {
+			ring.reset();
+			ring.write(input.data(), f_cnt_t{0}, capacity);
+		};
+		std::vector<SampleFrame> expected(static_cast<std::size_t>(period));
+		std::vector<SampleFrame> observed(static_cast<std::size_t>(period));
+		const float nan = std::numeric_limits<float>::quiet_NaN();
+		const float inf = std::numeric_limits<float>::infinity();
+
+		// A NaN read offset is the same as offset zero.
+		refill();
+		ring.read(expected.data(), std::int64_t{0});
+		refill();
+		ring.read(observed.data(), nan);
+		QCOMPARE(observed.front().left(), expected.front().left());
+
+		// Infinite and out-of-range read offsets saturate to the int64_t limits.
+		refill();
+		ring.read(expected.data(), std::numeric_limits<std::int64_t>::max());
+		for (const float ms : {inf, std::numeric_limits<float>::max()})
+		{
+			refill();
+			ring.read(observed.data(), ms);
+			QCOMPARE(observed.front().left(), expected.front().left());
+		}
+		refill();
+		ring.read(expected.data(), std::numeric_limits<std::int64_t>::min());
+		refill();
+		ring.read(observed.data(), -inf);
+		QCOMPARE(observed.front().left(), expected.front().left());
+
+		// movePosition() follows the same rules.
+		refill();
+		ring.movePosition(nan);
+		ring.read(observed.data());
+		QCOMPARE(observed.front().left(), input.front().left());
+
+		refill();
+		ring.movePosition(std::numeric_limits<std::int64_t>::max());
+		ring.read(expected.data());
+		refill();
+		ring.movePosition(inf);
+		ring.read(observed.data());
+		QCOMPARE(observed.front().left(), expected.front().left());
+
+		// write() offsets use the unsigned frame count: NaN writes at the current position and
+		// infinity saturates to the largest frame count, which wraps like any other offset.
+		ring.reset();
+		SampleFrame marker{0.5f, -0.5f};
+		ring.write(&marker, nan, f_cnt_t{1});
+		ring.read(observed.data());
+		QCOMPARE(observed.front().left(), marker.left());
+
+		ring.reset();
+		ring.write(&marker, inf, f_cnt_t{1});
+		const auto landing = static_cast<std::int64_t>(std::numeric_limits<f_cnt_t>::max() % size);
+		ring.read(observed.data(), landing);
+		QCOMPARE(observed.front().left(), marker.left());
 	}
 
 	//! Capacity is rounded up to a power of two and never below the request.

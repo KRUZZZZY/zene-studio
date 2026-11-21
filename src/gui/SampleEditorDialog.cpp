@@ -27,16 +27,23 @@
 #include <algorithm>
 #include <functional>
 
+#include <QAction>
 #include <QApplication>
 #include <QComboBox>
+#include <QDialogButtonBox>
+#include <QFileInfo>
+#include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
+#include <QMenu>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
 
 #include "AccessibleWidgets.h"
 #include "CommandForm.h"
+#include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "SampleClip.h"
 
@@ -53,6 +60,46 @@ QHBoxLayout* rowLayout(QWidget* row)
 	layout->setContentsMargins(0, 0, 0, 0);
 	return layout;
 }
+
+/*! Q050-106: the two destinations of a stereo split. A small, in-app dialog rather
+ *  than two stacked native file pickers: the pair belongs together (two channels,
+ *  two files), and its fields are ordinary line edits a GUI test can fill in. */
+class StereoDestinationDialog : public QDialog
+{
+public:
+	StereoDestinationDialog(const QString& left, const QString& right, QWidget* parent) :
+		QDialog(parent)
+	{
+		setObjectName(QStringLiteral("stereoSplitDialog"));
+		setWindowTitle(tr("Split Stereo to Two Mono Files"));
+		auto* layout = new QVBoxLayout(this);
+		auto* form = new QFormLayout;
+		m_left = new QLineEdit(left, this);
+		m_left->setObjectName(QStringLiteral("leftPath"));
+		m_left->setAccessibleName(tr("Left channel file"));
+		m_right = new QLineEdit(right, this);
+		m_right->setObjectName(QStringLiteral("rightPath"));
+		m_right->setAccessibleName(tr("Right channel file"));
+		form->addRow(tr("&Left channel file"), m_left);
+		form->addRow(tr("&Right channel file"), m_right);
+		layout->addLayout(form);
+		auto* note = new QLabel(tr("Both files are float32 WAV at the source rate and length. "
+			"The clip itself is not changed."), this);
+		note->setWordWrap(true);
+		layout->addWidget(note);
+		auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+		connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+		connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+		layout->addWidget(buttons);
+	}
+
+	QString leftPath() const { return m_left->text().trimmed(); }
+	QString rightPath() const { return m_right->text().trimmed(); }
+
+private:
+	QLineEdit* m_left = nullptr;
+	QLineEdit* m_right = nullptr;
+};
 
 } // namespace
 
@@ -79,6 +126,8 @@ SampleEditorDialog::SampleEditorDialog(SampleClip* clip, QWidget* parent) :
 	connect(musicaltime::formatSignal(), &musicaltime::FormatSignal::changed, this,
 		[this] { setUnit(samplerange::unitFor(musicaltime::currentFormat())); });
 	m_view->setClip(clip);
+	// The whole-source buttons follow the source layout, not the selection.
+	syncFields();
 	if (m_view->hasUnsupportedFrameCount())
 	{
 		report(tr("This sample is too long for the sample editor; its range cannot be selected or edited."), true);
@@ -196,6 +245,18 @@ QWidget* SampleEditorDialog::buildActions()
 		layout->addWidget(button);
 		m_actions.push_back(button);
 	}
+	// Q050-106: the whole-source operations. The range buttons above edit the selection;
+	// these two act on the full source, as their tooltips say.
+	m_mono = new QPushButton(tr("To Mono"), row);
+	m_mono->setToolTip(tr("Convert the whole source to mono: every frame becomes (L + R) / 2 on both sides (one undo step)"));
+	m_mono->setProperty("controlCommand", QStringLiteral("sample.edit_range"));
+	connect(m_mono, &QPushButton::clicked, this, &SampleEditorDialog::applyMono);
+	layout->addWidget(m_mono);
+	m_split = new QPushButton(tr("Split Stereo..."), row);
+	m_split->setToolTip(tr("Write the left and right channels as two mono WAV files at the source rate; the clip is unchanged"));
+	m_split->setProperty("controlCommand", QStringLiteral("sample.split_stereo"));
+	connect(m_split, &QPushButton::clicked, this, &SampleEditorDialog::applySplit);
+	layout->addWidget(m_split);
 	return row;
 }
 
@@ -234,6 +295,12 @@ void SampleEditorDialog::syncFields()
 	m_view->setAccessibleDescription(rangeText());
 	// A button with no selection to edit would do nothing: it is enabled only while there is one.
 	for (QPushButton* button : m_actions) { button->setEnabled(to > from); }
+	// Q050-106: the whole-source pair needs audio in stereo; a mono source has nothing to
+	// split and nothing to downmix.
+	const bool stereo = !m_clip.isNull() && m_view->frames() > 0
+		&& m_clip->sample().channels() == DEFAULT_CHANNELS;
+	if (m_mono != nullptr) { m_mono->setEnabled(stereo); }
+	if (m_split != nullptr) { m_split->setEnabled(stereo); }
 }
 
 QString SampleEditorDialog::rangeText() const
@@ -251,8 +318,12 @@ QJsonObject SampleEditorDialog::describe() const
 {
 	const int from = m_view->from();
 	const int to = m_view->to();
+	const int channels = m_clip.isNull() ? 0 : m_clip->sample().channels();
 	return {{QStringLiteral("clip"), m_clip.isNull() ? QString() : control::clipIdOf(m_clip.data())},
 		{QStringLiteral("frames"), m_view->frames()}, {QStringLiteral("sample_rate"), context().sampleRate},
+		{QStringLiteral("channels"), m_clip.isNull() ? QJsonValue(QJsonValue::Null) : QJsonValue(channels)},
+		{QStringLiteral("layout"), m_clip.isNull() ? QJsonValue(QJsonValue::Null)
+			: QJsonValue(channels == 1 ? QStringLiteral("mono") : QStringLiteral("stereo"))},
 		{QStringLiteral("from"), from}, {QStringLiteral("to"), to}, {QStringLiteral("length"), to - from},
 		{QStringLiteral("view_from"), m_view->viewFrom()}, {QStringLiteral("view_to"), m_view->viewFrom() + m_view->viewFrames()},
 		{QStringLiteral("unit"), samplerange::unitNames().at(static_cast<int>(m_unit))},
@@ -290,6 +361,71 @@ void SampleEditorDialog::apply(const QString& op, double gainDb, const QString& 
 	if (op == QLatin1String("crop")) { m_view->setRange(0, m_view->frames()); }
 	else if (op == QLatin1String("delete")) { m_view->setRange(from, from); }
 	report(tr("%1 applied to %2. Undo (Ctrl+Z) reverts it.").arg(label, range), false);
+}
+
+void SampleEditorDialog::applyMono()
+{
+	if (m_clip.isNull()) { return; }
+	const int frames = m_view->frames();
+	if (frames <= 0) { return; }
+	const ControlResult result = runCommand(this, CommandCall{QStringLiteral("sample.edit_range"),
+		{{QStringLiteral("clip"), control::clipIdOf(m_clip)}, {QStringLiteral("from"), 0},
+			{QStringLiteral("to"), frames}, {QStringLiteral("op"), QStringLiteral("mono")}}, {}, {}, false});
+	if (!result.ok)
+	{
+		report(tr("Mono was not applied: %1").arg(result.errorMessage), true);
+		return;
+	}
+	m_view->setClip(m_clip);
+	m_view->setRange(0, m_view->frames());
+	report(tr("Mono applied to the whole source with (L + R) / 2. Undo (Ctrl+Z) reverts it."), false);
+}
+
+void SampleEditorDialog::applySplit()
+{
+	if (m_clip.isNull()) { return; }
+	ControlResult result;
+	if (!splitStereoToFiles(m_clip, this, &result)) { return; }
+	if (!result.ok)
+	{
+		report(tr("The stereo split was not applied: %1").arg(result.errorMessage), true);
+		return;
+	}
+	report(tr("Wrote %1 and %2. The clip is unchanged.").arg(
+		result.result.value(QStringLiteral("left_path")).toString(),
+		result.result.value(QStringLiteral("right_path")).toString()), false);
+}
+
+bool SampleEditorDialog::splitStereoToFiles(SampleClip* clip, QWidget* parent, ControlResult* result)
+{
+	if (clip == nullptr || result == nullptr) { return false; }
+	const QString source = clip->sampleFile();
+	QString base = source.isEmpty() ? clip->name() : QFileInfo(source).completeBaseName();
+	if (base.isEmpty()) { base = QStringLiteral("sample"); }
+	const QString directory = source.isEmpty() ? QString() : QFileInfo(source).absolutePath();
+	const auto join = [](const QString& directory, const QString& name) {
+		return directory.isEmpty() ? name : directory + QLatin1Char('/') + name;
+	};
+	StereoDestinationDialog dialog(
+		join(directory, base + QStringLiteral(" - left.wav")),
+		join(directory, base + QStringLiteral(" - right.wav")), parent);
+	if (dialog.exec() != QDialog::Accepted) { return false; }
+	*result = runCommand(parent, CommandCall{QStringLiteral("sample.split_stereo"),
+		{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("left_path"), dialog.leftPath()},
+			{QStringLiteral("right_path"), dialog.rightPath()}}, {}, {}, false});
+	return true;
+}
+
+QAction* SampleEditorDialog::addSplitStereoAction(QMenu* menu, SampleClip* clip, bool enabled)
+{
+	QAction* split = menu->addAction(tr("Split Stereo to Two Mono Files..."));
+	split->setProperty("controlCommand", QStringLiteral("sample.split_stereo"));
+	split->setEnabled(enabled);
+	QPointer<SampleClip> target = clip;
+	QObject::connect(split, &QAction::triggered, menu, [target, menu] {
+		if (target) { ControlResult ignored; splitStereoToFiles(target, menu->parentWidget(), &ignored); }
+	});
+	return split;
 }
 
 } // namespace lmms::gui

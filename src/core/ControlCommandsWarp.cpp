@@ -45,9 +45,11 @@
 #include <QJsonObject>
 #include <QString>
 
+#include "AudioEngine.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlWarpSupport.h"
+#include "Engine.h"
 #include "RubberBandStretch.h"
 
 namespace lmms
@@ -75,17 +77,6 @@ qint64 wireInteger(T value)
 QString tempoModeName(WarpTempoMode mode)
 {
 	return mode == WarpTempoMode::SourceTempo ? QStringLiteral("source") : QStringLiteral("follow");
-}
-
-QString stretchModeName(WarpStretchMode mode)
-{
-	switch (mode)
-	{
-	case WarpStretchMode::PreservePitch: return QStringLiteral("preserve_pitch");
-	case WarpStretchMode::RubberBand: return QStringLiteral("rubberband");
-	case WarpStretchMode::Resample: break;
-	}
-	return QStringLiteral("resample");
 }
 
 QJsonObject markerJson(const WarpMarker& marker, int index)
@@ -119,14 +110,27 @@ QJsonObject warpState(const ClipRef& ref, const SampleClip& clip)
 	out.insert(QStringLiteral("tempo_mode"), tempoModeName(clip.warpTempoMode()));
 	out.insert(QStringLiteral("source_tempo"), static_cast<double>(clip.sourceTempo()));
 	// Row 30: how a rate change is rendered, and by which algorithm. Reported
-	// for EVERY clip, because "resample" is the answer that matters as much as
-	// "preserve_pitch" - it is the mode the pitch moves in.
-	out.insert(QStringLiteral("stretch"), stretchModeName(clip.warpStretchMode()));
-	// Owner decision 12: 'rubberband' names its algorithm only when this build
-	// links the library; without it the clip is rendered by WSOLA and says so.
+	// for EVERY clip, because "re_pitch" is the answer that matters as much as
+	// "beats" - it is the mode the pitch moves in.
+	out.insert(QStringLiteral("stretch"), warpStretchModeName(clip.warpStretchMode()));
+	// Which engine actually renders the rate change: the resampler itself for
+	// Re-Pitch; Rubber Band for the two modes backed by it when this build
+	// links the library (owner decision 12); WSOLA for everything else - the
+	// Tones and Texture parameters are the mode's own, not a fallback, and
+	// without the library the two Rubber Band modes fall back to WSOLA and
+	// say so.
+	const WarpStretchMode mode = clip.warpStretchMode();
 	out.insert(QStringLiteral("stretch_algorithm"),
-		clip.warpStretchMode() == WarpStretchMode::RubberBand && RubberBandPool::available()
+		mode == WarpStretchMode::Resample ? QStringLiteral("resampler")
+		: warpModeRepeatsTransients(mode) ? QStringLiteral("transients")
+		: warpModeUsesRubberBand(mode) && RubberBandPool::available()
 			? QStringLiteral("rubberband") : QStringLiteral("wsola"));
+	// Q050-162: the Repeat / Gate interval (reported in every mode - it is kept
+	// across mode switches) and the transients a Repeat / Gate render segments
+	// the clip at (0 in every other mode: they are only analysed for those two).
+	out.insert(QStringLiteral("repeat_rate"), repeatRateJson(clip.transientRepeatRate()));
+	out.insert(QStringLiteral("transient_count"),
+		warpModeRepeatsTransients(mode) ? clip.transientTable().size() : 0);
 	out.insert(QStringLiteral("renders_linearly"), clip.rendersLinearly());
 	out.insert(QStringLiteral("marker_count"), clip.warpMarkers().size());
 	out.insert(QStringLiteral("max_markers"), WarpMarkers::MaxMarkers);
@@ -141,7 +145,8 @@ QJsonObject warpBefore(const ClipRef& ref, const SampleClip& clip)
 	before.insert(QStringLiteral("markers"), markerListJson(clip));
 	before.insert(QStringLiteral("tempo_mode"), tempoModeName(clip.warpTempoMode()));
 	before.insert(QStringLiteral("source_tempo"), static_cast<double>(clip.sourceTempo()));
-	before.insert(QStringLiteral("stretch"), stretchModeName(clip.warpStretchMode()));
+	before.insert(QStringLiteral("stretch"), warpStretchModeName(clip.warpStretchMode()));
+	before.insert(QStringLiteral("repeat_rate"), clip.transientRepeatRate().name());
 	return before;
 }
 
@@ -257,6 +262,9 @@ QJsonObject warpStateSchema(QJsonObject extra)
 		{QStringLiteral("stretch"), stringProperty()},
 		{QStringLiteral("stretch_algorithm"), stringProperty()},
 		{QStringLiteral("renders_linearly"), booleanProperty()},
+		// Q050-162: the Repeat / Gate interval and the transients they segment at.
+		{QStringLiteral("repeat_rate"), objectProperty()},
+		{QStringLiteral("transient_count"), integerProperty(0, TransientTable::MaxTransients)},
 		{QStringLiteral("marker_count"), integerProperty(0, WarpMarkers::MaxMarkers)},
 		{QStringLiteral("max_markers"), integerProperty(0, WarpMarkers::MaxMarkers)},
 		{QStringLiteral("markers"), arrayProperty()},
@@ -274,10 +282,33 @@ QJsonObject tempoModeProperty()
 
 QJsonObject stretchModeProperty()
 {
+	// The canonical names first (the five spec modes and the WSOLA engine),
+	// then the two legacy aliases the command and the file reader still accept
+	// (Q050-036): listing them is the contract, not an invitation to use them.
 	return QJsonObject{
 		{QStringLiteral("type"), QStringLiteral("string")},
-		{QStringLiteral("enum"), QJsonArray{QStringLiteral("resample"),
-			QStringLiteral("preserve_pitch"), QStringLiteral("rubberband")}}};
+		{QStringLiteral("enum"), QJsonArray{QStringLiteral("re_pitch"),
+			QStringLiteral("beats"), QStringLiteral("tones"), QStringLiteral("texture"),
+			QStringLiteral("complex"), QStringLiteral("preserve_pitch"),
+			QStringLiteral("repeat"), QStringLiteral("gate"),
+			QStringLiteral("resample"), QStringLiteral("rubberband")}}};
+}
+
+QJsonObject repeatRateJson(const TransientRepeatRate& rate)
+{
+	const double outputRate = Engine::audioEngine()->outputSampleRate();
+	QJsonObject out{{QStringLiteral("name"), rate.name()}, {QStringLiteral("synced"), rate.synced()},
+		{QStringLiteral("interval_ms"),
+			rate.intervalFrames(Engine::framesPerTick(static_cast<sample_rate_t>(outputRate)), outputRate)
+				/ outputRate * 1000.0}};
+	if (rate.synced()) { out.insert(QStringLiteral("division"), rate.divisionName()); }
+	return out;
+}
+
+QJsonObject repeatDivisionProperty()
+{
+	return enumProperty({QStringLiteral("1/1"), QStringLiteral("1/2"), QStringLiteral("1/4"),
+		QStringLiteral("1/8"), QStringLiteral("1/16"), QStringLiteral("1/32")});
 }
 
 QJsonObject markerProperty()

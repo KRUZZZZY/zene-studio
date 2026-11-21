@@ -90,6 +90,11 @@ private:
 	void run() override;
 
 	bool m_connected;
+	//! Whether the first connection result has already been reported. The
+	//! first report releases the startup semaphore; a later one (a stream that
+	//! fails after the connection was established) only updates the state, so
+	//! the device leaves the PulseAudio path and falls back to rendering.
+	bool m_connectionReported;
 	QSemaphore m_connectedSemaphore;
 
 } ;

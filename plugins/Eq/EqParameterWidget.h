@@ -27,6 +27,8 @@
 #ifndef EQPARAMETERWIDGET_H
 #define EQPARAMETERWIDGET_H
 
+#include <atomic>
+
 #include <QWidget>
 
 
@@ -62,8 +64,11 @@ public :
 	int x;
 	int y;
 	QString name;
-	float *peakL;
-	float *peakR;
+	// The controls' atomic peak meters, handed to the band's EqFader
+	// (cluster new-p9-122: the EqFader reads and clears them on the GUI
+	// timer while the audio thread writes them).
+	std::atomic<float> *peakL;
+	std::atomic<float> *peakR;
 };
 
 

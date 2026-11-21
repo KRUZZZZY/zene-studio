@@ -39,11 +39,13 @@
 #include <json.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <fstream>
 #include <limits>
 #include <stdexcept>
 
+#include "NamModelValidation.h"
 #include "NamTanh.h"
 
 namespace lmms::nam
@@ -117,6 +119,22 @@ std::unique_ptr<NamModel> NamModel::loadFromFile(const std::string& path, std::s
 			throw ParseError("cannot open file: " + path);
 		}
 
+		// Refuse an oversized file before the parser reads it: json::parse
+		// allocates in proportion to the file, and the model-size checks
+		// below only run once it has finished.
+		in.seekg(0, std::ios::end);
+		const std::streamoff fileBytes = in.tellg();
+		in.seekg(0, std::ios::beg);
+		if (fileBytes < 0)
+		{
+			throw ParseError("cannot determine the size of file: " + path);
+		}
+		if (static_cast<std::uintmax_t>(fileBytes) > detail::kMaxModelFileBytes)
+		{
+			throw ParseError("model file exceeds the parse size limit (" +
+			                 std::to_string(detail::kMaxModelFileBytes) + " bytes)");
+		}
+
 		json root;
 		try
 		{
@@ -140,6 +158,10 @@ std::unique_ptr<NamModel> NamModel::loadFromFile(const std::string& path, std::s
 		if (root.contains("sample_rate") && !root["sample_rate"].is_null())
 		{
 			spec.sampleRate = root["sample_rate"].get<double>();
+			if (!std::isfinite(spec.sampleRate) || spec.sampleRate <= 0.0)
+			{
+				throw ParseError("sample_rate must be finite and positive");
+			}
 		}
 		if (root.contains("metadata") && root["metadata"].is_object())
 		{
@@ -166,6 +188,7 @@ std::unique_ptr<NamModel> NamModel::loadFromFile(const std::string& path, std::s
 			throw ParseError("config has no layers");
 		}
 
+		std::size_t totalLayerCount = 0;
 		std::int64_t parsedReceptiveField = 0;
 		for (const json& arrayConfig : config["layers"])
 		{
@@ -216,6 +239,11 @@ std::unique_ptr<NamModel> NamModel::loadFromFile(const std::string& path, std::s
 			{
 				throw ParseError("layer array has zero layers");
 			}
+			if (numLayers > detail::kMaxModelLayers - totalLayerCount)
+			{
+				throw ParseError("model has too many WaveNet layers");
+			}
+			totalLayerCount += numLayers;
 
 			std::vector<int> kernelSizes(numLayers, 3);
 			if (arrayConfig.contains("kernel_size"))
@@ -330,11 +358,19 @@ std::unique_ptr<NamModel> NamModel::loadFromFile(const std::string& path, std::s
 		{
 			throw ParseError("missing weights array");
 		}
+		const json& weightsJson = root["weights"];
+		detail::validateModelResources(spec, weightsJson.size(), totalLayerCount);
+
 		std::vector<float> weights;
-		weights.reserve(root["weights"].size());
-		for (const json& w : root["weights"])
+		weights.reserve(weightsJson.size());
+		for (const json& w : weightsJson)
 		{
-			weights.push_back(w.get<float>());
+			const float weight = w.get<float>();
+			if (!std::isfinite(weight))
+			{
+				throw ParseError("weights array contains a non-finite value after float conversion");
+			}
+			weights.push_back(weight);
 		}
 
 		// Build the engine (all allocation happens here, never in process()).

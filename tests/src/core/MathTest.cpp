@@ -24,14 +24,64 @@
 
 #include <QObject>
 #include <QProcess>
+#include <limits>
+#include <type_traits>
 #include <QtTest>
 
+#include <cmath>
+#include <limits>
+#include <numbers>
+
 #include "lmms_math.h"
+// Expose only Lfo's state in this translation unit so tests can seed it
+// deterministically against both the fixed and original implementations.
+#define private public
+#include "../../../plugins/Delay/Lfo.h"
+#undef private
+#include "../../../plugins/Delay/Lfo.cpp"
+
+static void initializeLfoStateForTest(lmms::Lfo& lfo)
+{
+	constexpr int sampleRate = 48000;
+	lfo.m_frequency = 1.0;
+	lfo.m_phase = 0.0;
+	lfo.m_twoPiOverSr = 2 * std::numbers::pi_v<float> / sampleRate;
+	lfo.m_increment = lfo.m_frequency * lfo.m_twoPiOverSr;
+	lfo.m_samplerate = sampleRate;
+}
 
 class MathTest : public QObject
 {
 	Q_OBJECT
 private slots:
+	void FastRandExtremeExclusiveRangeTest()
+	{
+		using namespace lmms;
+		const auto value = fastRand(std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
+		QVERIFY(value > std::numeric_limits<int>::min());
+	}
+
+	void FastRandExtremeInclusiveRangeTest()
+	{
+		using namespace lmms;
+		const auto value = fastRandInc(std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
+		QVERIFY(value > std::numeric_limits<int>::min());
+	}
+
+	void FastRandNarrowRangeReturnTypeTest()
+	{
+		using namespace lmms;
+		using ShortLimits = std::numeric_limits<short>;
+		static_assert(std::is_same_v<decltype(fastRand(ShortLimits::min(), ShortLimits::max())), int>);
+		static_assert(std::is_same_v<decltype(fastRandInc(ShortLimits::min(), ShortLimits::max())), int>);
+		const auto exclusive = fastRand(ShortLimits::min(), ShortLimits::max());
+		const auto inclusive = fastRandInc(ShortLimits::min(), ShortLimits::max());
+		QVERIFY(exclusive >= ShortLimits::min());
+		QVERIFY(exclusive < ShortLimits::max());
+		QVERIFY(inclusive >= ShortLimits::min());
+		QVERIFY(inclusive <= ShortLimits::max());
+	}
+
 	void NumDigitsTest()
 	{
 		using namespace lmms;
@@ -47,6 +97,73 @@ private slots:
 		QCOMPARE(numDigitsAsInt(-1000000000), 11);
 		QCOMPARE(numDigitsAsInt(900000000), 9);
 		QCOMPARE(numDigitsAsInt(-900000000), 10);
+	}
+
+	void NonFiniteLfoFrequencyIsIgnored()
+	{
+		lmms::Lfo lfo(48000);
+		initializeLfoStateForTest(lfo);
+		lfo.setFrequency(std::numeric_limits<double>::quiet_NaN());
+
+		for (int i = 0; i < 4; ++i)
+		{
+			QVERIFY(std::isfinite(lfo.tick()));
+		}
+	}
+
+	void ZeroLfoSampleRateIsIgnored()
+	{
+		lmms::Lfo lfo(48000);
+		initializeLfoStateForTest(lfo);
+		lfo.setSampleRate(0);
+		lfo.setFrequency(0.0);
+
+		for (int i = 0; i < 4; ++i)
+		{
+			QVERIFY(std::isfinite(lfo.tick()));
+		}
+	}
+
+	void LfoSampleRateChangeClampsFrequencyToNyquist()
+	{
+		// 20 kHz is valid at 48 kHz; at 8 kHz the Nyquist limit is 4 kHz.
+		lmms::Lfo lfo(48000);
+		initializeLfoStateForTest(lfo);
+		lfo.setFrequency(20000.0);
+		QCOMPARE(lfo.m_frequency, 20000.0);
+
+		lfo.setSampleRate(8000);
+
+		QCOMPARE(lfo.m_frequency, 4000.0);
+		QCOMPARE(lfo.m_increment, lfo.m_frequency * lfo.m_twoPiOverSr);
+		// A phase step above pi per sample is an alias of a lower frequency.
+		QVERIFY(lfo.m_increment <= std::numbers::pi + 1e-6);
+	}
+
+	void LfoSampleRateChangeKeepsValidFrequency()
+	{
+		lmms::Lfo lfo(48000);
+		initializeLfoStateForTest(lfo);
+		lfo.setFrequency(440.0);
+
+		// Downward, but 440 Hz stays below the new 4 kHz Nyquist limit.
+		lfo.setSampleRate(8000);
+		QCOMPARE(lfo.m_frequency, 440.0);
+		QCOMPARE(lfo.m_increment, 440.0 * lfo.m_twoPiOverSr);
+
+		// Upward: 440 Hz is still valid, so nothing changes.
+		lfo.setSampleRate(96000);
+		QCOMPARE(lfo.m_frequency, 440.0);
+
+		// 20 kHz is valid at 96 kHz, and still valid at 48 kHz (24 kHz limit).
+		lfo.setFrequency(20000.0);
+		lfo.setSampleRate(48000);
+		QCOMPARE(lfo.m_frequency, 20000.0);
+
+		// An ignored (non-positive) sample rate must not touch the frequency.
+		lfo.setSampleRate(0);
+		QCOMPARE(lfo.m_frequency, 20000.0);
+		QCOMPARE(lfo.m_samplerate, 48000);
 	}
 
 	void FastRandIncReversedUnsignedBoundsTest()

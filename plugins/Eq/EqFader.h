@@ -23,6 +23,8 @@
 
 #ifndef EQFADER_H
 #define EQFADER_H
+#include <atomic>
+
 #include <QList>
 #include <QWidget>
 
@@ -42,7 +44,11 @@ class EqFader : public Fader
 public:
 	Q_OBJECT
 public:
-	EqFader( FloatModel * model, const QString & name, QWidget * parent,  float* lPeak, float* rPeak ) :
+	// cluster new-p9-122: the peak fields are the plugin controls' atomics -
+	// the audio thread publishes maxima with relaxed stores while this widget
+	// runs on the GUI timer, so the raw-float handoff raced and the old
+	// read-then-clear could drop a peak written in between.
+	EqFader( FloatModel * model, const QString & name, QWidget * parent,  std::atomic<float>* lPeak, std::atomic<float>* rPeak ) :
 		Fader(model, name, parent, false)
 	{
 		setMinimumSize( 23, 116 );
@@ -68,20 +74,23 @@ private slots:
 		const float opl = getPeak_L();
 		const float opr = getPeak_R();
 		const float fallOff = 1.07f;
-		if( *m_lPeak > opl )
+		// Take the peak and clear the field in one atomic step: the old
+		// plain read followed by a plain clear raced with the audio thread
+		// and could republish or lose a peak written in between.
+		const float l = m_lPeak->exchange(0.0f, std::memory_order_relaxed);
+		if( l > opl )
 		{
-			setPeak_L( *m_lPeak );
-			*m_lPeak = 0;
+			setPeak_L( l );
 		}
 		else
 		{
 			setPeak_L( opl/fallOff );
 		}
 
-		if( *m_rPeak > opr )
+		const float r = m_rPeak->exchange(0.0f, std::memory_order_relaxed);
+		if( r > opr )
 		{
-			setPeak_R( *m_rPeak );
-			*m_rPeak = 0;
+			setPeak_R( r );
 		}
 		else
 		{
@@ -94,8 +103,8 @@ private slots:
 
 
 private:
-	float* m_lPeak;
-	float* m_rPeak;
+	std::atomic<float>* m_lPeak;
+	std::atomic<float>* m_rPeak;
 	FloatModel* m_model;
 
 };

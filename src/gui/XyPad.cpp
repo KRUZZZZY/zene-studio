@@ -41,10 +41,12 @@
 #include "AccessibleWidgets.h"
 #include "Accessibility.h"
 #include "ControlMixerSupport.h"
+#include "ControlRackSupport.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "ItemList.h"
 #include "Mixer.h"
+#include "Rack.h"
 #include "ShellChrome.h"
 
 namespace lmms::gui
@@ -58,6 +60,19 @@ QJsonArray rackMacros(const QString& channel)
 {
 	return ControlRegistry::instance()->invoke(QStringLiteral("rack.get_state"), {{QStringLiteral("channel"), channel}})
 		.result.value(QStringLiteral("macros")).toArray();
+}
+
+double valueForMacro(const QJsonArray& macros, const QString& id, double fallback)
+{
+	for (const QJsonValue& value : macros)
+	{
+		const QJsonObject macro = value.toObject();
+		if (macro.value(QStringLiteral("macro")).toString() == id)
+		{
+			return macro.value(QStringLiteral("value")).toDouble(fallback);
+		}
+	}
+	return fallback;
 }
 
 //! W1: the ONE call a pad position makes - both macros as one step (rack.macro_set_pair), or X's macro alone through
@@ -133,13 +148,45 @@ bool XyPadArea::event(QEvent* event)
 
 QPointF XyPadArea::keyed(const QKeyEvent* event) const
 {
-	const Qt::KeyboardModifiers mods = event->modifiers() & ~(Qt::KeypadModifier | Qt::ShiftModifier);
-	if (mods != Qt::NoModifier) { return m_point; }
+	if (keyAxis(event) == NoAxis) { return m_point; }
 	const double step = event->modifiers().testFlag(Qt::ShiftModifier) ? CoarseStep : FineStep;
 	const int key = event->key();
 	QPointF to = m_point + keyDelta(key, step);
 	if (key == Qt::Key_Home || key == Qt::Key_End) { to.setX(key == Qt::Key_Home ? 0.0 : 1.0); }
 	return QPointF(std::clamp(to.x(), 0.0, 1.0), std::clamp(to.y(), 0.0, 1.0));
+}
+
+unsigned XyPadArea::keyAxis(const QKeyEvent* event) const
+{
+	const Qt::KeyboardModifiers mods = event->modifiers() & ~(Qt::KeypadModifier | Qt::ShiftModifier);
+	if (mods != Qt::NoModifier) { return NoAxis; }
+	switch (event->key())
+	{
+		case Qt::Key_Left:
+		case Qt::Key_Right:
+		case Qt::Key_Home:
+		case Qt::Key_End:
+			return XAxis;
+		case Qt::Key_Up:
+		case Qt::Key_Down:
+		case Qt::Key_PageUp:
+		case Qt::Key_PageDown:
+			return YAxis;
+		default:
+			return NoAxis;
+	}
+}
+
+unsigned XyPadArea::changedAxes(QPointF next, QPointF from) const
+{
+	const int xScale = std::max(1, width() - 1);
+	const int yScale = std::max(1, height() - 1);
+	unsigned axes = NoAxis;
+	// Macro values can fall between pointer pixels. Compare the displayed pixels so clicking the dot does not
+	// turn its float rounding difference into a move of an otherwise stationary axis.
+	if (qRound(next.x() * xScale) != qRound(from.x() * xScale)) { axes |= XAxis; }
+	if (qRound((1.0 - next.y()) * yScale) != qRound((1.0 - from.y()) * yScale)) { axes |= YAxis; }
+	return axes;
 }
 
 void XyPadArea::keyPressEvent(QKeyEvent* event)
@@ -150,13 +197,14 @@ void XyPadArea::keyPressEvent(QKeyEvent* event)
 		return;
 	}
 	const QPointF to = keyed(event);
+	const unsigned axes = keyAxis(event);
 	if (to == m_point || !isEnabled())
 	{
 		QWidget::keyPressEvent(event);
 		return;
 	}
 	setPoint(to);
-	if (moved) { moved(m_point); }
+	if (moved) { moved(m_point, axes); }
 }
 
 void XyPadArea::setPoint(QPointF point)
@@ -187,19 +235,31 @@ void XyPadArea::paintEvent(QPaintEvent*)
 
 void XyPadArea::mousePressEvent(QMouseEvent* event)
 {
-	if (event->button() == Qt::LeftButton) { moveTo(event->pos()); }  // as a drag is: another button sets nothing (review L20 #7)
+	if (event->button() == Qt::LeftButton) { moveTo(event->pos(), true); }  // another button sets nothing
 }
 
 void XyPadArea::mouseMoveEvent(QMouseEvent* event)
 {
-	if (event->buttons() & Qt::LeftButton) { moveTo(event->pos()); }
+	if (event->buttons() & Qt::LeftButton) { moveTo(event->pos(), false); }
 }
 
-void XyPadArea::moveTo(const QPoint& at)
+void XyPadArea::mouseReleaseEvent(QMouseEvent* event)
+{
+	if (event->button() == Qt::LeftButton) { m_dragging = false; }
+	QWidget::mouseReleaseEvent(event);
+}
+
+void XyPadArea::moveTo(const QPoint& at, bool startOfDrag)
 {
 	// The last pixel is the end of the range: x runs 0 .. width() - 1 (review L20 #8).
-	setPoint(QPointF(static_cast<double>(at.x()) / std::max(1, width() - 1), 1.0 - static_cast<double>(at.y()) / std::max(1, height() - 1)));
-	if (moved) { moved(m_point); }
+	const QPointF next(static_cast<double>(at.x()) / std::max(1, width() - 1),
+		1.0 - static_cast<double>(at.y()) / std::max(1, height() - 1));
+	const QPointF from = (startOfDrag || !m_dragging) ? m_point : m_pointer;
+	m_pointer = next;
+	m_dragging = true;
+	const unsigned axes = changedAxes(next, from);
+	setPoint(next);
+	if (moved) { moved(m_point, axes); }
 }
 
 XyPadDialog::XyPadDialog(const QString& channel, QWidget* parent) :
@@ -234,9 +294,31 @@ XyPadDialog::XyPadDialog(const QString& channel, QWidget* parent) :
 	layout->addWidget(m_area, 1);
 	layout->addWidget(m_status);
 	fillMacros();
-	m_area->moved = [this](QPointF point) { send(point); };
+	m_area->moved = [this](QPointF point, unsigned axes) { send(point, axes); };
 	// A new choice of macro shows where that macro stands, not where the last one was.
 	for (QComboBox* axis : {m_x, m_y}) { connect(axis, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { syncPoint(); }); }
+	// Follow the rack's macro LIST while the pad is open, however it changes: Rack > Add macro...
+	// (RackMenu), an agent's rack.macro_add / rack.macro_remove, and control.undo all go through
+	// RackMacros' own mutators, so the axis lists and the enabled state rebuild in place - a pad
+	// opened before the rack had any macros becomes usable when one is added, without reopening.
+	// The listener is keyed by id (never a rack pointer), so a channel removed under an open pad
+	// cannot leave the destructor touching freed memory.
+	if (Rack* rack = resolveRack(m_channel, &ignored))
+	{
+		m_macroListener = rack->macros().addChangeListener([this](int index, int shift) {
+			for (QComboBox* axis : {m_x, m_y})
+			{
+				const int current = axis->currentIndex();
+				if (index >= 0 && current >= index) { axis->setItemData(current, QStringLiteral("macro-%1").arg(current + shift)); }
+			}
+			fillMacros();
+		});
+	}
+}
+
+XyPadDialog::~XyPadDialog()
+{
+	RackMacros::removeChangeListener(m_macroListener);
 }
 
 QString XyPadDialog::macroId(bool y) const
@@ -252,13 +334,35 @@ QString XyPadDialog::macroName(bool y) const
 void XyPadDialog::fillMacros()
 {
 	const QJsonArray macros = rackMacros(m_channel);
+	// Preserve macro-N IDs across insert/remove shifts; names are labels and may be duplicated.
+	const QString xId = m_x->currentData().toString();
+	const QString yId = m_y->currentData().toString();
+	m_x->blockSignals(true);
+	m_y->blockSignals(true);
+	m_x->clear();
+	m_y->clear();
 	for (int i = 0; i < macros.size(); ++i)
 	{
 		const QString name = macros.at(i).toObject().value(QStringLiteral("name")).toString();
 		m_x->addItem(name, QStringLiteral("macro-%1").arg(i));
 		m_y->addItem(name, QStringLiteral("macro-%1").arg(i));
 	}
-	if (macros.size() > 1) { m_y->setCurrentIndex(1); }
+	if (!macros.isEmpty())
+	{
+		int xi = xId.isEmpty() ? 0 : m_x->findData(xId);
+		if (xi < 0) { xi = 0; }
+		m_x->setCurrentIndex(xi);
+		int yi;
+		if (yId.isEmpty()) { yi = macros.size() > 1 ? 1 : 0; }
+		else
+		{
+			yi = m_y->findData(yId);
+			if (yi < 0) { yi = macros.size() > 1 ? 1 : 0; }
+		}
+		m_y->setCurrentIndex(yi);
+	}
+	m_x->blockSignals(false);
+	m_y->blockSignals(false);
 	m_area->setEnabled(!macros.isEmpty());
 	syncPoint();
 }
@@ -268,6 +372,7 @@ void XyPadDialog::syncPoint()
 	if (m_x->count() == 0)
 	{
 		m_area->setToolTip(QObject::tr("This channel's rack has no macros yet: add one with Rack > Add macro... in the channel's menu."));
+		emit changed();  // the axis list follows: its rows are gone with the macros, and must not stay on screen
 		return;
 	}
 	const QJsonArray macros = rackMacros(m_channel);
@@ -282,10 +387,13 @@ void XyPadDialog::syncPoint()
 		? QObject::tr("Both axes name the same macro: only left-right moves it.") : QString());
 }
 
-void XyPadDialog::send(QPointF point)
+void XyPadDialog::send(QPointF point, unsigned axes)
 {
 	const QString xMacro = m_x->currentData().toString();
 	const QString yMacro = m_y->currentData().toString();
+	const QJsonArray macros = rackMacros(m_channel);
+	if (!(axes & XyPadArea::XAxis)) { point.setX(valueForMacro(macros, xMacro, point.x())); }
+	if (!(axes & XyPadArea::YAxis)) { point.setY(valueForMacro(macros, yMacro, point.y())); }
 	const auto [id, args] = padCall(m_channel, xMacro, yMacro, point);
 	const ControlResult result = ControlRegistry::instance()->invoke(id, args);
 	// The result is read (W1): a refused move - a macro an agent removed while the pad was open, say - is named on the
@@ -297,7 +405,9 @@ void XyPadDialog::send(QPointF point)
 		syncPoint();
 		return;
 	}
-	if (xMacro == yMacro) { m_area->setPoint(QPointF(point.x(), point.x())); }
+	QPointF displayed = point;
+	if (xMacro == yMacro) { displayed = QPointF(point.x(), point.x()); }
+	m_area->setPoint(displayed);
 	emit changed();
 }
 

@@ -23,6 +23,7 @@
 #include "EqSpectrumView.h"
 
 #include <cmath>
+#include <cstring>
 #include <numbers>
 #include <QPainter>
 #include <QPen>
@@ -38,13 +39,17 @@ namespace lmms
 
 
 EqAnalyser::EqAnalyser() :
-	m_framesFilledUp ( 0 ),
-	m_energy ( 0 ),
+	m_pendingFrames ( 0 ),
+	m_energy ( 0.f ),
 	m_sampleRate ( 1 ),
-	m_active ( true )
+	m_active ( true ),
+	m_inProgress ( false ),
+	m_publishedEnergy ( 0.f ),
+	m_publishSequence ( 0 ),
+	m_publishHook ( nullptr ),
+	m_publishHookContext ( nullptr )
 {
 	using namespace std::numbers;
-	m_inProgress=false;
 	m_specBuf = ( fftwf_complex * ) fftwf_malloc( ( FFT_BUFFER_SIZE + 1 ) * sizeof( fftwf_complex ) );
 	m_fftPlan = fftwf_plan_dft_r2c_1d( FFT_BUFFER_SIZE*2, m_buffer, m_specBuf, FFTW_ESTIMATE );
 
@@ -79,32 +84,47 @@ EqAnalyser::~EqAnalyser()
 void EqAnalyser::analyze(InterleavedBufferView<const float, 2> buf)
 {
 	//only analyse if the view is visible
-	if ( m_active )
+	if ( m_active.load(std::memory_order_relaxed) )
 	{
-		m_inProgress=true;
+		m_inProgress.store(true, std::memory_order_relaxed);
 		const int FFT_BUFFER_SIZE = 2048;
 		f_cnt_t f = 0;
+		int staged = m_pendingFrames;
 		if (buf.frames() > FFT_BUFFER_SIZE)
 		{
-			m_framesFilledUp = 0;
+			// A block longer than the window: only its last window is analysed.
+			staged = 0;
+			m_pendingFrames = 0;
 			f = buf.frames() - FFT_BUFFER_SIZE;
 		}
-		// merge channels
-		for (; f < buf.frames(); ++f)
+		// merge channels into the window; the frames that do not fit into it are kept
+		// for the next window instead of being dropped
+		for (; f < buf.frames() && staged < FFT_BUFFER_SIZE; ++f)
 		{
-			m_buffer[m_framesFilledUp] = (buf[f][0] + buf[f][1]) * 0.5f;
-			++m_framesFilledUp;
+			m_pending[staged++] = (buf[f][0] + buf[f][1]) * 0.5f;
 		}
 
-		if( m_framesFilledUp < FFT_BUFFER_SIZE )
+		if( staged < FFT_BUFFER_SIZE )
 		{
-			m_inProgress = false;
+			m_pendingFrames = staged;
+			m_inProgress.store(false, std::memory_order_relaxed);
 			return;
 		}
 
-		m_sampleRate = Engine::audioEngine()->outputSampleRate();
+		// the window is full: it goes to the FFT, the rest of the block stays pending
+		for( int i = 0; i < FFT_BUFFER_SIZE; i++ )
+		{
+			m_buffer[i] = m_pending[i];
+		}
+		m_pendingFrames = 0;
+		for (; f < buf.frames(); ++f)
+		{
+			m_pending[m_pendingFrames++] = (buf[f][0] + buf[f][1]) * 0.5f;
+		}
+
+		m_sampleRate.store(Engine::audioEngine()->outputSampleRate(), std::memory_order_relaxed);
 		const int LOWEST_FREQ = 0;
-		const int HIGHEST_FREQ = m_sampleRate / 2;
+		const int HIGHEST_FREQ = m_sampleRate.load(std::memory_order_relaxed) / 2;
 
 		//apply FFT window
 		for( int i = 0; i < FFT_BUFFER_SIZE; i++ )
@@ -117,16 +137,73 @@ void EqAnalyser::analyze(InterleavedBufferView<const float, 2> buf)
 
 		compressbands( m_absSpecBuf, m_bands, FFT_BUFFER_SIZE+1,
 					   MAX_BANDS,
-					   ( int )( LOWEST_FREQ * ( FFT_BUFFER_SIZE + 1 ) / ( float )( m_sampleRate / 2 ) ),
-					   ( int )( HIGHEST_FREQ * ( FFT_BUFFER_SIZE +  1) / ( float )( m_sampleRate / 2 ) ) );
+					   ( int )( LOWEST_FREQ * ( FFT_BUFFER_SIZE + 1 ) / ( float )( m_sampleRate.load(std::memory_order_relaxed) / 2 ) ),
+					   ( int )( HIGHEST_FREQ * ( FFT_BUFFER_SIZE +  1) / ( float )( m_sampleRate.load(std::memory_order_relaxed) / 2 ) ) );
 		const float mergedBufferMaximum = maximum( m_buffer, FFT_BUFFER_SIZE );
-		m_energy = mergedBufferMaximum == 0.0f ? 0.0f
-			: maximum( m_bands, MAX_BANDS ) / mergedBufferMaximum;
+		m_energy.store(mergedBufferMaximum == 0.0f ? 0.0f
+			: maximum( m_bands, MAX_BANDS ) / mergedBufferMaximum, std::memory_order_relaxed);
+		publish();
 
-		m_framesFilledUp = 0;
-		m_inProgress = false;
-		m_active = false;
+		m_inProgress.store(false, std::memory_order_relaxed);
+		m_active.store(false, std::memory_order_relaxed);
 	}
+}
+
+
+
+void EqAnalyser::publish()
+{
+	// The GUI reads the published spectrum. The odd sequence number tells a reader that
+	// the copy it is taking is not a whole spectrum.
+	m_publishSequence.fetch_add(1, std::memory_order_acq_rel);
+	for (int i = 0; i < MAX_BANDS; ++i)
+	{
+		m_publishedBands[i].store(m_bands[i], std::memory_order_relaxed);
+		if (i == MAX_BANDS / 2 && m_publishHook != nullptr)
+		{
+			m_publishHook(m_publishHookContext, i + 1);
+		}
+	}
+	m_publishedEnergy.store(m_energy.load(std::memory_order_relaxed), std::memory_order_relaxed);
+	m_publishSequence.fetch_add(1, std::memory_order_release);
+}
+
+
+
+bool EqAnalyser::copySpectrum(float* bands, float& energy) const
+{
+	const unsigned int sequence = m_publishSequence.load(std::memory_order_acquire);
+	if ((sequence & 1u) == 0)
+	{
+		for (int i = 0; i < MAX_BANDS; ++i)
+		{
+			bands[i] = m_publishedBands[i].load(std::memory_order_relaxed);
+		}
+		const float publishedEnergy = m_publishedEnergy.load(std::memory_order_relaxed);
+		std::atomic_thread_fence(std::memory_order_acquire);
+		if (m_publishSequence.load(std::memory_order_relaxed) == sequence)
+		{
+			// remember the spectrum, so a reader that arrives during the next
+			// publication still gets a whole one
+			std::memcpy(m_lastSpectrum, bands, sizeof(m_lastSpectrum));
+			m_lastEnergy = publishedEnergy;
+			energy = publishedEnergy;
+			return true;
+		}
+	}
+	// A publication is in flight: hand out the last whole spectrum instead of a half
+	// written one.
+	std::memcpy(bands, m_lastSpectrum, sizeof(m_lastSpectrum));
+	energy = m_lastEnergy;
+	return false;
+}
+
+
+
+void EqAnalyser::setPublishHook(PublishHook hook, void* context)
+{
+	m_publishHook = hook;
+	m_publishHookContext = context;
 }
 
 
@@ -134,7 +211,7 @@ void EqAnalyser::analyze(InterleavedBufferView<const float, 2> buf)
 
 float EqAnalyser::getEnergy() const
 {
-	return m_energy;
+	return m_energy.load(std::memory_order_relaxed);
 }
 
 
@@ -142,7 +219,7 @@ float EqAnalyser::getEnergy() const
 
 int EqAnalyser::getSampleRate() const
 {
-	return m_sampleRate;
+	return m_sampleRate.load(std::memory_order_relaxed);
 }
 
 
@@ -150,7 +227,7 @@ int EqAnalyser::getSampleRate() const
 
 bool EqAnalyser::getActive() const
 {
-	return m_active;
+	return m_active.load(std::memory_order_relaxed);
 }
 
 
@@ -158,15 +235,15 @@ bool EqAnalyser::getActive() const
 
 void EqAnalyser::setActive(bool active)
 {
-	m_active = active;
+	m_active.store(active, std::memory_order_relaxed);
 }
 
 
 
 
-bool EqAnalyser::getInProgress()
+bool EqAnalyser::getInProgress() const
 {
-	return m_inProgress;
+	return m_inProgress.load(std::memory_order_relaxed);
 }
 
 
@@ -174,10 +251,12 @@ bool EqAnalyser::getInProgress()
 
 void EqAnalyser::clear()
 {
-	m_framesFilledUp = 0;
-	m_energy = 0;
+	m_pendingFrames = 0;
+	m_energy.store(0.f, std::memory_order_relaxed);
 	memset( m_buffer, 0, sizeof( m_buffer ) );
 	memset( m_bands, 0, sizeof( m_bands ) );
+	// the GUI must not keep painting a spectrum that was cleared
+	publish();
 }
 
 
@@ -189,7 +268,8 @@ EqSpectrumView::EqSpectrumView(EqAnalyser *b, QWidget *_parent) :
 	QWidget( _parent ),
 	m_analyser( b ),
 	m_peakSum(0.),
-	m_periodicalUpdate( false )
+	m_periodicalUpdate( false ),
+	m_spectrumBands( MAX_BANDS, 0.f )
 {
 	setFixedSize( 450, 200 );
 	connect( getGUI()->mainWindow(), SIGNAL( periodicUpdate() ), this, SLOT( periodicalUpdate() ) );
@@ -210,7 +290,10 @@ EqSpectrumView::EqSpectrumView(EqAnalyser *b, QWidget *_parent) :
 
 void EqSpectrumView::paintEvent(QPaintEvent *event)
 {
-	const float energy = m_analyser->getEnergy();
+	// The analyser publishes its spectrum from the audio thread: the GUI reads a whole
+	// snapshot of it, never the array the analyser is writing.
+	float energy = 0.f;
+	m_analyser->copySpectrum( m_spectrumBands.data(), energy );
 	if (energy <= 0. && m_peakSum <= 0) { return; }
 
 	const int fh = height();
@@ -229,7 +312,7 @@ void EqSpectrumView::paintEvent(QPaintEvent *event)
 	m_periodicalUpdate = false;
 	//Now we calculate the path
 	m_path = QPainterPath();
-	float *bands = m_analyser->m_bands;
+	const float *bands = m_spectrumBands.data();
 	m_path.moveTo( 0, height() );
 	m_peakSum = 0;
 	const float fallOff = 1.07f;

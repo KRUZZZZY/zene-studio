@@ -66,19 +66,23 @@ struct SampleRecordGap
 //! The gap table between the audio thread (note) and the drain thread (takeDue).
 //!
 //! Records are published in order. The newest record stays open: a loss that finds the table
-//! full is added to it, so no frame is ever uncounted, and the take keeps its length. The
-//! consumer never reads the newest record until a newer one exists or the take is finishing, so
-//! a merge can never race a read. A merged loss sits at the newest record's position: when the
-//! table is full and frames were staged after that record, the padding lands earlier than the
-//! loss by those frames (only after the drain has stalled for that many records).
+//! full is recorded in a preallocated overflow track, so intervening staged frames keep
+//! their positions; only once the overflow is full does a loss merge into the newest
+//! record. The consumer drains primary and overflow in position order, so silence is
+//! inserted where the loss actually occurred. A merged loss (beyond the bounded table)
+//! still adds its length to the newest record.
 class SampleRecordGaps
 {
 public:
 	static constexpr std::size_t DefaultSlots = 256;
 
-	explicit SampleRecordGaps(std::size_t capacity = DefaultSlots) :
-		m_slots(std::make_unique<Slot[]>(nonZero(capacity))),
-		m_size(nonZero(capacity))
+	explicit SampleRecordGaps(std::size_t capacity = DefaultSlots,
+			std::size_t overflowCapacity = static_cast<std::size_t>(-1)) :
+		m_slots(std::make_unique<Slot[]>(
+			nonZero(capacity) + (overflowCapacity == static_cast<std::size_t>(-1)
+				? nonZero(capacity) : nonZero(overflowCapacity)))),
+		m_size(nonZero(capacity) + (overflowCapacity == static_cast<std::size_t>(-1)
+			? nonZero(capacity) : nonZero(overflowCapacity)))
 	{
 	}
 
@@ -94,7 +98,7 @@ public:
 			m_published.store(published + 1, std::memory_order_release);
 			return;
 		}
-		// Full: the newest record is unread (see the class comment), so it is open to merge into.
+		// Bounded table full: keep the loss counted by merging into the newest record.
 		m_slots[(published - 1) % m_size].length.fetch_add(length, std::memory_order_relaxed);
 		m_merged.fetch_add(1, std::memory_order_relaxed);
 	}

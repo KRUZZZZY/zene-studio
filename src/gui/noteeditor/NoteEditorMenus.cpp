@@ -33,9 +33,11 @@
 #include <QMenu>
 
 #include "Accessibility.h"
+#include "ArticulationMapEditor.h"
 #include "CommandForm.h"
 #include "CommandLists.h"
 #include "ControlVocabulary.h"
+#include "DeprecationHelper.h"
 #include "DesignTokens.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
@@ -96,6 +98,9 @@ void fillToolsMenu(QMenu* menu, const QJsonObject& scoped, const QJsonObject& wh
 	addCommandAction(menu, tr("Follow the Chord Track"), QStringLiteral("note.follow_chords"), run("note.follow_chords", scoped, true));
 	menu->addSeparator();
 	addCommandAction(menu, tr("Generate a Rhythm..."), QStringLiteral("note.generate"), run("note.generate", where, true));
+	addCommandAction(menu, tr("Generate a Melody..."), QStringLiteral("note.generate_melody"), run("note.generate_melody", where, true));
+	// Q050-294.2: this clip in the melodic step grid - the same window.step_grid Edit > Step Grid... runs.
+	addCommandAction(menu, tr("Open in Step Grid"), QStringLiteral("window.step_grid"), run("window.step_grid", where, false));
 	addCommandAction(menu, tr("Move to Track..."), QStringLiteral("note.move_to_track"), run("note.move_to_track", scoped, true));
 	addCommandAction(menu, tr("Split by Key into Tracks"), QStringLiteral("note.split_by_pitch"), run("note.split_by_pitch", where, false));
 	menu->addSeparator();
@@ -122,7 +127,8 @@ QJsonObject editAll(const QString& clip, const std::vector<Note*>& notes, const 
 }
 
 //! 0.5.0 L07: which passes the notes play on (ED-133) and the articulation they ask for (ED-121).
-void fillPlayMenus(QMenu* passes, QMenu* articulations, const QString& clip, const std::vector<Note*>& notes, const InstrumentTrack* track)
+void fillPlayMenus(QMenu* passes, QMenu* articulations, const QString& clip, const std::vector<Note*>& notes, const InstrumentTrack* track,
+	QWidget* host)
 {
 	const auto entry = [clip, &notes](QMenu* menu, const QString& label, const QJsonObject& values) {
 		const QJsonObject args = editAll(clip, notes, values);
@@ -139,7 +145,14 @@ void fillPlayMenus(QMenu* passes, QMenu* articulations, const QString& clip, con
 	entry(articulations, tr("None"), {{QStringLiteral("articulation"), 0}});
 	const std::vector<Articulation>& map = track != nullptr ? track->articulations().entries() : std::vector<Articulation>{};
 	for (std::size_t i = 0; i < map.size(); ++i) { entry(articulations, map[i].name, {{QStringLiteral("articulation"), static_cast<int>(i) + 1}}); }
-	if (map.empty()) { articulations->addAction(tr("(Track > Articulations... defines them)"))->setEnabled(false); }
+	if (map.empty()) { articulations->addAction(tr("(Edit Articulations... defines them)"))->setEnabled(false); }
+	if (track == nullptr) { return; }
+	// Q050-015: the map's editor; its edits are track.articulations_set, which this entry declares.
+	articulations->addSeparator();
+	QAction* editor = articulations->addAction(tr("Edit Articulations..."));
+	editor->setProperty("controlCommand", QStringLiteral("track.articulations_set"));
+	const QString trackId = control::trackIdOf(track);
+	QObject::connect(editor, &QAction::triggered, host, [host, trackId] { ArticulationMapEditor::open(trackId, host->window()); });
 }
 
 //! 0.5.0 FL model: the clipboard verbs and Delete, each one command over the scope (the keys Ctrl+C, Ctrl+X,
@@ -156,7 +169,7 @@ void fillEditMenu(QMenu* menu, const QJsonObject& scoped, const QJsonArray& sele
 	addCommandAction(menu, label("Copy", QKeySequence::Copy), QStringLiteral("note.copy"), now("note.copy", scoped));
 	addCommandAction(menu, label("Cut", QKeySequence::Cut), QStringLiteral("note.cut"), now("note.cut", scoped));
 	addCommandAction(menu, label("Paste", QKeySequence::Paste), QStringLiteral("note.paste"), now("note.paste", where));
-	addCommandAction(menu, label("Duplicate", QKeySequence(Qt::CTRL | Qt::Key_B)), QStringLiteral("note.duplicate"),
+	addCommandAction(menu, label("Duplicate", keySequence(Qt::CTRL, Qt::Key_B)), QStringLiteral("note.duplicate"),
 		now("note.duplicate", merged(scoped, {{QStringLiteral("grid"), std::max(1, grid)}})));
 	addCommandAction(menu, label("Delete", QKeySequence(Qt::Key_Delete)), QStringLiteral("note.remove_many"),
 		now("note.remove_many", merged(where, {{QStringLiteral("notes"), selected}})))->setEnabled(!selected.isEmpty());
@@ -240,7 +253,7 @@ void NoteEditor::fillNotesMenu(QMenu* menu)
 	QMenu* passes = menu->addMenu(tr("Play On"));
 	QMenu* articulations = menu->addMenu(tr("Articulation"));
 	fillPlayMenus(passes, articulations, clip, notesInScope(m_state.clip, noteScope() == QStringLiteral("selection")),
-		dynamic_cast<const InstrumentTrack*>(m_state.clip->getTrack()));
+		dynamic_cast<const InstrumentTrack*>(m_state.clip->getTrack()), this);
 	fillNewLengthMenu(menu->addMenu(tr("New Note Length")));
 	fillAudioBehind(menu, m_state);
 	fillMuteMenu(menu->addMenu(tr("Mute")));

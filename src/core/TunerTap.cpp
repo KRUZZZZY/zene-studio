@@ -39,6 +39,9 @@ TunerTap g_tunerTap;
 
 constexpr std::uint64_t Mask = TunerTap::Capacity - 1;
 static_assert((TunerTap::Capacity & Mask) == 0, "the ring's capacity is a power of two");
+static_assert(static_cast<std::uint64_t>(TunerTap::Source::Master) <= 0x3, "a source fits the state word's bits");
+static_assert(std::atomic<float>::is_always_lock_free, "the ring's slots must be lock-free atomics");
+static_assert(std::atomic<std::uint64_t>::is_always_lock_free, "the ring's counters must be lock-free atomics");
 
 } // namespace
 
@@ -49,14 +52,10 @@ TunerTap& TunerTap::instance()
 
 void TunerTap::push(Source from, const SampleFrame* frames, f_cnt_t count) noexcept
 {
-	if (m_source.load(std::memory_order_relaxed) != static_cast<int>(from) || frames == nullptr || count == 0) { return; }
-	const bool fresh = m_resetPending.exchange(false, std::memory_order_acq_rel);
-	// A push of the old source still in flight when setSource() ran leaves the new source's reset for it.
-	if (fresh && m_source.load(std::memory_order_relaxed) != static_cast<int>(from))
-	{
-		m_resetPending.store(true, std::memory_order_release);
-		return;
-	}
+	// The source and its reset generation arrive together: a new source cannot write into the old ring.
+	const std::uint64_t state = m_state.load(std::memory_order_acquire);
+	if ((state & SourceMask) != static_cast<std::uint64_t>(from) || frames == nullptr || count == 0) { return; }
+	const bool fresh = m_applied.load(std::memory_order_relaxed) != state;
 	const std::uint64_t head = fresh ? 0 : m_head.load(std::memory_order_relaxed);
 	const f_cnt_t first = count > Capacity ? count - Capacity : 0;
 	// Announced before the slots change (the seqlock shape: store, release fence, then the writes).
@@ -67,11 +66,15 @@ void TunerTap::push(Source from, const SampleFrame* frames, f_cnt_t count) noexc
 		m_ring[(head + i - first) & Mask].store(0.5f * (frames[i][0] + frames[i][1]), std::memory_order_relaxed);
 	}
 	m_head.store(head + (count - first), std::memory_order_release);
+	// latest() only reads a generation whose reset and first write are both complete.
+	if (fresh) { m_applied.store(state, std::memory_order_release); }
 }
 
 bool TunerTap::latest(float* out, std::size_t count) const noexcept
 {
-	if (out == nullptr || count == 0 || count > Capacity || m_resetPending.load(std::memory_order_acquire)) { return false; }
+	const std::uint64_t state = m_state.load(std::memory_order_acquire);
+	if (out == nullptr || count == 0 || count > Capacity
+		|| m_applied.load(std::memory_order_acquire) != state) { return false; }
 	const std::uint64_t head = m_head.load(std::memory_order_acquire);
 	if (head < count) { return false; }
 	const std::uint64_t start = head - count;
@@ -80,7 +83,9 @@ bool TunerTap::latest(float* out, std::size_t count) const noexcept
 	// Read against the push in PROGRESS, not the last published one: a push that has written slots but
 	// not yet moved m_head can already have overwritten the oldest frames of a full window.
 	std::atomic_thread_fence(std::memory_order_acquire);
-	return m_reserved.load(std::memory_order_relaxed) - start <= Capacity;
+	// A source change during the copy makes this window stale even when the producer did not lap it.
+	return m_state.load(std::memory_order_acquire) == state
+		&& m_reserved.load(std::memory_order_relaxed) - start <= Capacity;
 }
 
 } // namespace lmms

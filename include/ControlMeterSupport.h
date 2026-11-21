@@ -92,6 +92,14 @@ LMMS_EXPORT QJsonObject meterTargetJson();
 LMMS_EXPORT double meterReferenceDbfs();
 LMMS_EXPORT void setMeterReferenceDbfs(double dbfs);
 
+/*! 0.5.0 Q050-100: the peak-watch preference. The threshold is dBFS (-60..0), compared with the
+ *  larger of a stereo pair's samples on the input bus and the master output. The latch is the
+ *  watcher's, not this preference's: the value only says when a crossing is worth a word. */
+LMMS_EXPORT double meterPeakWatchThresholdDbfs();
+LMMS_EXPORT bool meterPeakWatchEnabled();
+LMMS_EXPORT void setMeterPeakWatchThresholdDbfs(double dbfs);
+LMMS_EXPORT void setMeterPeakWatchEnabled(bool enabled);
+
 /*! The FILE half: measure the rendered file at \a path NOW, from its own bytes,
  *  with the same BS.1770-4 meter the render path feeds (`LoudnessReport`, which
  *  owns a `LufsMeter`).

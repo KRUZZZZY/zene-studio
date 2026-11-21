@@ -1,0 +1,58 @@
+name: Accessibility blocker
+description: Report a workflow that assistive technology cannot complete, or a control that is not spoken usefully
+title: "[accessibility] "
+labels: ["accessibility"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to describe the blocker. The three things below - the workflow,
+        the assistive technology and the steps - are what let us reproduce it. You do **not** need
+        to describe a diagnosis, medical history or any other personal medical information.
+
+        If you are not sure whether something is already known, the limitations page is
+        https://github.com/KRUZZZZY/zene-studio/blob/main/docs/KNOWN-LIMITATIONS.md
+
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Affected workflow
+      description: What were you trying to do in Zene, and where did it stop or become unclear?
+      value: "1.\n2.\n3."
+    validations:
+      required: true
+
+  - type: input
+    id: assistive_technology
+    attributes:
+      label: Assistive technology and version
+      description: The screen reader, magnifier, switch access or other technology, and its version.
+      placeholder: "e.g. Orca 46.2 on Linux, NVDA 2025.1 on Windows, VoiceOver on macOS 15"
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and Zene build
+      description: The OS and version, and what Help > About (or --version) reports.
+      placeholder: "e.g. Ubuntu 24.04, Zene 0.5.0-alpha"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence that shows the blocker, including the keys or controls you used.
+      value: "1.\n2.\n3."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: What you expected, and what happened instead
+      description: If the screen reader said nothing, say what it said or where the focus went.
+    validations:
+      required: false

@@ -24,6 +24,7 @@
 
 #include <QDomDocument>
 #include <QLibrary>
+#include <QTimer>
 
 #include <algorithm>
 #include <array>
@@ -41,6 +42,7 @@
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "Effect.h"
+#include "GranularPitchShifterEffect.h"
 #include "Plugin.h"
 #include "RealtimeScope.h"
 #include "SampleFrame.h"
@@ -82,6 +84,7 @@ struct RenderState
 	std::atomic<bool> stopAudio{false};
 	std::size_t capturedFrames = 0;
 	std::uint64_t callbackAllocations = 0;
+	std::uint64_t callbackFrees = 0;
 	std::uint64_t maxCallbackNanoseconds = 0;
 };
 
@@ -135,6 +138,15 @@ void renderAudioCallbacks(Effect* effect, RenderState& state)
 	}
 
 	state.callbackAllocations = test::tlAllocationCount;
+	state.callbackFrees = test::tlFreeCount;
+}
+
+void renderOneBlock(Effect* effect, std::array<SampleFrame, RenderFrames>& samples)
+{
+	SampleFrame* busData[1] = {samples.data()};
+	AudioBus bus{busData, 1, RenderFrames};
+	bus.quietChannels().reset();
+	effect->processAudioBuffer(bus);
 }
 
 } // namespace
@@ -147,6 +159,8 @@ private slots:
 	void initTestCase();
 	void cleanupTestCase();
 	void sampleRateHandoffDoesNotAllocateAndKeepsPitchShift();
+	void retiredBuffersAreReclaimedWithoutAnotherUpdate();
+	void savedOutOfRangeValueIsBoundedByTheControlModel();
 
 private:
 	QLibrary m_plugin;
@@ -219,6 +233,7 @@ void GranularPitchShifterRealtimeTest::sampleRateHandoffDoesNotAllocateAndKeepsP
 	QVERIFY2(warmed, "the effect did not render its initial-rate blocks");
 	QVERIFY2(state.captureComplete.load(std::memory_order_acquire), "the changed-rate render timed out");
 	QCOMPARE(state.callbackAllocations, std::uint64_t{0});
+	QCOMPARE(state.callbackFrees, std::uint64_t{0});
 	QVERIFY2(state.maxCallbackNanoseconds < 100000000,
 		qPrintable(QStringLiteral("callback took %1 ns").arg(state.maxCallbackNanoseconds)));
 
@@ -229,14 +244,91 @@ void GranularPitchShifterRealtimeTest::sampleRateHandoffDoesNotAllocateAndKeepsP
 	}
 	const double measuredFrequency = static_cast<double>(risingCrossings) * ChangedRate /
 		static_cast<double>(CaptureFrames - IgnoreFrames);
-	qInfo("Granular rate handoff: callback allocations=%llu, max callback=%llu ns, "
+	qInfo("Granular rate handoff: callback allocations=%llu, frees=%llu, max callback=%llu ns, "
 		"measured pitch=%g Hz (expected %g Hz)",
 		static_cast<unsigned long long>(state.callbackAllocations),
+		static_cast<unsigned long long>(state.callbackFrees),
 		static_cast<unsigned long long>(state.maxCallbackNanoseconds), measuredFrequency,
 		ExpectedShiftedFrequency);
 	QVERIFY2(std::fabs(measuredFrequency - ExpectedShiftedFrequency) < 18.0,
 		qPrintable(QStringLiteral("pitch render measured %1 Hz; expected near %2 Hz")
 			.arg(measuredFrequency).arg(ExpectedShiftedFrequency)));
+}
+
+void GranularPitchShifterRealtimeTest::retiredBuffersAreReclaimedWithoutAnotherUpdate()
+{
+	auto effect = std::unique_ptr<Effect>(
+		static_cast<Effect*>(m_pluginEntry(nullptr, nullptr)));
+	QVERIFY(effect != nullptr);
+
+	std::array<SampleFrame, RenderFrames> samples{};
+	renderOneBlock(effect.get(), samples); // applies the constructor's 5 s buffer
+
+	QDomDocument settings;
+	QVERIFY(settings.setContent(QStringLiteral(
+		"<effect><GranularPitchShifterControls><range value=\"4\"/></GranularPitchShifterControls></effect>")));
+	effect->loadSettings(settings.documentElement()); // prepares the 120 s buffer off the audio thread
+	renderOneBlock(effect.get(), samples); // applies it and retires the old 5 s ring buffer
+
+	QTimer* reclaimTimer = effect->findChild<QTimer*>(
+		QStringLiteral("granularRetiredBufferReclaimTimer"));
+	if (reclaimTimer == nullptr)
+	{
+		// Earlier code used an unnamed zero-interval timer.  Find it only to report
+		// the real defect (a spinning control timer), never to let the test pass.
+		for (QTimer* candidate : effect->findChildren<QTimer*>())
+		{
+			if (candidate->isActive() && candidate->interval() == 0)
+			{
+				reclaimTimer = candidate;
+				break;
+			}
+		}
+	}
+	QVERIFY2(reclaimTimer != nullptr,
+		"no control-thread timer is scheduled to reclaim a retired ring buffer");
+	QVERIFY2(reclaimTimer->isActive(), "the retired-buffer reclamation timer is not running");
+	QVERIFY2(reclaimTimer->interval() > 0, "the reclamation timer must not spin the event loop");
+	reclaimTimer->stop(); // fire the tick ourselves: no wall-clock waiting in this test
+
+	// The audio thread retired a buffer during the swap above.  No further
+	// sample-rate/range update follows, so only the control-thread tick can free it.
+	test::resetAllocationCount();
+	test::tlCountAllocations = true;
+	QMetaObject::invokeMethod(reclaimTimer, "timeout", Qt::DirectConnection);
+	test::tlCountAllocations = false;
+	const std::uint64_t reclaimed = test::tlFreeCount;
+	QVERIFY2(reclaimed > 0, "the retired ring buffer was not freed: nothing followed the swap");
+
+	// A second tick has nothing left to reclaim and must not free anything again.
+	test::resetAllocationCount();
+	test::tlCountAllocations = true;
+	QMetaObject::invokeMethod(reclaimTimer, "timeout", Qt::DirectConnection);
+	test::tlCountAllocations = false;
+	QCOMPARE(test::tlFreeCount, std::uint64_t{0});
+}
+
+
+void GranularPitchShifterRealtimeTest::savedOutOfRangeValueIsBoundedByTheControlModel()
+{
+	auto effect = std::unique_ptr<Effect>(
+		static_cast<Effect*>(m_pluginEntry(nullptr, nullptr)));
+	QVERIFY(effect != nullptr);
+
+	// A malformed project can store any number for the range.  The saved value
+	// must be bounded before it can become an index into RangeSeconds.
+	QDomDocument settings;
+	QVERIFY(settings.setContent(QStringLiteral(
+		"<effect><GranularPitchShifterControls><range value=\"99\"/></GranularPitchShifterControls></effect>")));
+	effect->loadSettings(settings.documentElement());
+
+	const auto comboModels = effect->controls()->findChildren<ComboBoxModel*>();
+	QCOMPARE(static_cast<int>(comboModels.size()), 1);
+	QCOMPARE(comboModels.front()->value(), 4);
+	QCOMPARE(comboModels.front()->maxValue(), 4);
+
+	std::array<SampleFrame, RenderFrames> samples{};
+	renderOneBlock(effect.get(), samples);
 }
 
 QTEST_GUILESS_MAIN(GranularPitchShifterRealtimeTest)

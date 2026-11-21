@@ -76,9 +76,19 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
+#include <cstdio>
 #include <memory>
 #include <thread>
 #include <vector>
+
+#include <QFile>
+#include <QTemporaryDir>
+
+#ifndef Q_OS_WIN
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 #include "AudioEngine.h"
 #include "Engine.h"
@@ -173,6 +183,45 @@ inline auto fakeClientExecutable() -> QString { return {}; }
 //! Name of the real client executable as RemotePlugin::init() resolves it.
 inline constexpr auto RealClientName = "RemoteZynAddSubFx";
 
+#ifndef Q_OS_WIN
+//! Captures what is written to stderr while it is alive, so a test can see WHEN the host printed a client's
+//! debug text: inside a period (the audio thread) or later, on the main thread. stderr is unbuffered, so what
+//! was written is in the file at once.
+class StderrCapture
+{
+public:
+	explicit StderrCapture(const QString& path) : m_path{path}
+	{
+		m_saved = ::dup(STDERR_FILENO);
+		m_file = ::open(path.toUtf8().constData(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+		if (m_file >= 0) { ::dup2(m_file, STDERR_FILENO); }
+	}
+
+	~StderrCapture()
+	{
+		std::fflush(stderr);
+		if (m_file >= 0) { ::dup2(m_saved, STDERR_FILENO); ::close(m_file); }
+		if (m_saved >= 0) { ::close(m_saved); }
+	}
+
+	StderrCapture(const StderrCapture&) = delete;
+	StderrCapture& operator=(const StderrCapture&) = delete;
+
+	//! Everything that was written to stderr so far.
+	auto text() const -> QString
+	{
+		QFile file{m_path};
+		if (!file.open(QIODevice::ReadOnly)) { return {}; }
+		return QString::fromUtf8(file.readAll());
+	}
+
+private:
+	QString m_path;
+	int m_saved = -1;
+	int m_file = -1;
+};
+#endif // Q_OS_WIN
+
 //! Points LMMS_PLUGIN_DIR at a directory for one test, and restores what was there before when the test ends.
 class ScopedPluginDir
 {
@@ -196,6 +245,73 @@ public:
 private:
 	bool m_wasSet;
 	QString m_previous;
+};
+
+/*!
+ * Widens the processing period's wait for its reply, for one test (RemotePlugin::setPeriodBudgetForTesting()).
+ *
+ * The real wait is one audio period (about 20 ms). The fake client is another process, so on a loaded machine
+ * it misses that window now and then, and a test about what the client says then fails for a reason it does not
+ * test (a late reply is skipped, the next request is never sent, the client's report never comes). Tests about
+ * the deadline itself - late, stalled or half-written replies - keep the real budget.
+ */
+class ScopedReplyBudget
+{
+public:
+	explicit ScopedReplyBudget(std::chrono::microseconds budget = std::chrono::seconds{5})
+	{
+		RemotePlugin::setPeriodBudgetForTesting(budget);
+	}
+	~ScopedReplyBudget() { RemotePlugin::setPeriodBudgetForTesting(std::chrono::microseconds{0}); }
+
+	ScopedReplyBudget(const ScopedReplyBudget&) = delete;
+	ScopedReplyBudget& operator=(const ScopedReplyBudget&) = delete;
+};
+
+class ScopedQueryReplyBudget
+{
+public:
+	explicit ScopedQueryReplyBudget(std::chrono::milliseconds timeout = std::chrono::seconds{5})
+	{
+		RemotePlugin::setQueryReplyTimeoutForTesting(timeout);
+	}
+	~ScopedQueryReplyBudget() { RemotePlugin::setQueryReplyTimeoutForTesting(std::chrono::milliseconds{0}); }
+
+	ScopedQueryReplyBudget(const ScopedQueryReplyBudget&) = delete;
+	ScopedQueryReplyBudget& operator=(const ScopedQueryReplyBudget&) = delete;
+};
+
+/*!
+ * Runs periods until the client's output-count report moves the count off \a from, or \a limit passes.
+ *
+ * These clients send a count report in every reply, so no period of theirs is a processed one (asserted for each).
+ * The report is applied on this (the main) thread before the next period, as the main thread's timer does - a
+ * period with one pending sends nothing. How many periods it takes is not fixed: a period whose MIDI finds no
+ * room in the socket (the client process reading slowly on a loaded machine) is skipped by design and its events
+ * stay queued, so a fixed count of periods could end before the queue had drained.
+ */
+template<typename Ports>
+void runPeriodsUntilTheCountMoves(RemotePlugin& plugin, Ports& ports, ch_cnt_t from,
+	std::chrono::milliseconds limit = std::chrono::seconds{10})
+{
+	const auto until = std::chrono::steady_clock::now() + limit;
+	while (ports.audioPortsModel().out().channelCount() == from && std::chrono::steady_clock::now() < until)
+	{
+		QVERIFY(!plugin.process());
+		plugin.applyDeferredClientRequests();
+		std::this_thread::sleep_for(std::chrono::milliseconds{1});   // the client reads between periods
+	}
+}
+
+//! Shrinks the room a non-blocking send may use, for one test (RemotePluginBase::setSendRoomForTesting()).
+class ScopedSendRoom
+{
+public:
+	explicit ScopedSendRoom(std::size_t bytes) { RemotePluginBase::setSendRoomForTesting(bytes); }
+	~ScopedSendRoom() { RemotePluginBase::setSendRoomForTesting(0); }
+
+	ScopedSendRoom(const ScopedSendRoom&) = delete;
+	ScopedSendRoom& operator=(const ScopedSendRoom&) = delete;
 };
 
 //! The allocations \a body makes on this thread, counted by the allocation probe.
@@ -327,6 +443,7 @@ private slots:
 
 		// A held note, so the synth has something to render.
 		plugin.processMidiEvent(MidiEvent{MidiNoteOn, 0, 60, 100}, 0);
+		const ScopedReplyBudget replyInTime;
 
 		float peak[2] = {0.0f, 0.0f};
 		for (int period = 1; period <= 2; ++period)
@@ -392,6 +509,7 @@ private slots:
 		QCOMPARE(out.frames(), frames);
 		QCOMPARE(out.bufferPtr(1) - out.bufferPtr(0), static_cast<std::ptrdiff_t>(frames));
 
+		const ScopedReplyBudget replyInTime;
 		for (int period = 1; period <= 2; ++period)
 		{
 			QVERIFY2(!plugin.failed(), "the fake client died between periods");
@@ -604,6 +722,7 @@ private slots:
 		std::fill(out.bufferPtr(0), out.bufferPtr(0) + frames, 1.0f);
 		std::fill(out.bufferPtr(1), out.bufferPtr(1) + frames, 1.0f);
 
+		const ScopedReplyBudget replyInTime;
 		QVERIFY(!plugin.process());
 		QCOMPARE(ports.audioPortsModel().out().channelCount(), ch_cnt_t{2});
 		QTRY_COMPARE_WITH_TIMEOUT(ports.audioPortsModel().out().channelCount(), ch_cnt_t{4}, 2000);
@@ -683,6 +802,7 @@ private slots:
 
 		// The client finishes its message and reply after its pause; the next period completes.
 		std::this_thread::sleep_for(std::chrono::milliseconds{1200});
+		const ScopedReplyBudget replyInTime;
 		QVERIFY2(plugin.process(), "the period after the client finished its message did not complete");
 	}
 
@@ -723,12 +843,9 @@ private slots:
 		QCOMPARE(plugin.midiEventsDropped(), std::uint64_t{1});
 
 		m_recorder->clear();
-		// Up to four periods: the drain is capped per period, so the cut comes after the note-ons in the later ones.
-		for (int period = 0; period < 4; ++period)
-		{
-			QVERIFY(!plugin.process());
-			QTest::qWait(30);
-		}
+		// At least four periods: the drain is capped per period, so the cut comes after the note-ons in the later ones.
+		const ScopedReplyBudget replyInTime;
+		runPeriodsUntilTheCountMoves(plugin, ports, ch_cnt_t{2});
 		QTRY_COMPARE_WITH_TIMEOUT(ports.audioPortsModel().out().channelCount(), ch_cnt_t{3}, 2000);
 
 		// The main-thread pump reports the refusal when it applies the deferred work.
@@ -765,6 +882,7 @@ private slots:
 		QCOMPARE(plugin.processingOverruns(), std::uint64_t{1});
 		std::this_thread::sleep_for(std::chrono::milliseconds{400});
 
+		const ScopedReplyBudget replyInTime;      // period 1 had the real budget, so its reply was late
 		QVERIFY2(plugin.process(), "the period after the late reply did not complete");
 		QCOMPARE(plugin.processingOverruns(), std::uint64_t{1});
 
@@ -800,6 +918,7 @@ private slots:
 		RemotePlugin plugin{ports.controller()};
 		QVERIFY2(startClient(plugin, client), "could not start/connect the fake client");
 		QVERIFY(!plugin.failed());
+		const ScopedReplyBudget replyInTime;
 
 		// Warm-up: let every first-use allocation happen before counting.
 		for (int i = 0; i < 3; ++i) { QVERIFY(plugin.process()); }
@@ -910,8 +1029,10 @@ private slots:
 		QVERIFY2(!plugin.failed(), "a complete message near the window size failed the plugin");
 
 		// The main thread reads the big message as part of its own wait.
+		const ScopedQueryReplyBudget queryInTime;
 		QCOMPARE(plugin.isUIVisible(), 1);
 		QVERIFY(!plugin.failed());
+		const ScopedReplyBudget replyInTime;
 		QVERIFY2(plugin.process(), "the period after the large message did not complete");
 	}
 
@@ -943,15 +1064,13 @@ private slots:
 		plugin.processMidiEvent(MidiEvent(MidiNoteOff, 3, 60, 0), 0);
 		QCOMPARE(plugin.midiEventsDropped(), std::uint64_t{1});
 
+		// Each period's count report is applied before the next, as in refusedNoteOffBecomesAllNotesOffInOrder().
+		const ScopedReplyBudget replyInTime;
 		QVERIFY(!plugin.process());
-		QTest::qWait(30);
+		plugin.applyDeferredClientRequests();
 		plugin.processMidiEvent(MidiEvent(MidiNoteOn, 3, 64, 100), 0);   // queued after the refusal
 
-		for (int period = 0; period < 4; ++period)
-		{
-			QVERIFY(!plugin.process());
-			QTest::qWait(30);
-		}
+		runPeriodsUntilTheCountMoves(plugin, ports, ch_cnt_t{2});
 		QTRY_COMPARE_WITH_TIMEOUT(ports.audioPortsModel().out().channelCount(), ch_cnt_t{3}, 2000);
 	}
 
@@ -978,10 +1097,45 @@ private slots:
 		QVERIFY(!plugin.failed());
 
 		for (int i = 0; i < 256; ++i) { plugin.processMidiEvent(MidiEvent(MidiNoteOn, 0, 60, 100), 0); }
-		QVERIFY(!plugin.process());
-		QTest::qWait(30);
-		QVERIFY(!plugin.process());
+		// The client's second request carries the first's note-on count: 3 with the cap, 4 without it.
+		const ScopedReplyBudget replyInTime;
+		runPeriodsUntilTheCountMoves(plugin, ports, ch_cnt_t{2});
 		QTRY_COMPARE_WITH_TIMEOUT(ports.audioPortsModel().out().channelCount(), ch_cnt_t{3}, 2000);
+	}
+
+	/*!
+	 * The per-period MIDI cap holds across periods skipped for want of room in the socket.
+	 *
+	 * The host's send room is shrunk to a few frames, so a period sends a little MIDI and then finds no room: it
+	 * is skipped before its request. The client is still in the same period until that request arrives, so the
+	 * periods after it may only send what is left of the cap. The "capper" client reports 3 when its period carried
+	 * at most 128 note-ons and 4 when it carried more. (Found under machine load on 2026-10-20: a request that found
+	 * no room after its period's MIDI let the next period send another 128, and the client got all 256 at once.)
+	 */
+	void midiCapHoldsAcrossPeriodsSkippedForRoom()
+	{
+#ifndef __linux__
+		QSKIP("the send-room seam needs Linux's queued-bytes count (SIOCOUTQ)");
+#endif
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the cap across skipped periods is "
+				"UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("capper")}), "could not start/connect the capper client");
+		QVERIFY(!plugin.failed());
+
+		for (int i = 0; i < 256; ++i) { plugin.processMidiEvent(MidiEvent(MidiNoteOn, 0, 60, 100), 0); }
+		const ScopedReplyBudget replyInTime;
+		{
+			const ScopedSendRoom tight{2048};      // a few frames: every period runs out of room part-way
+			runPeriodsUntilTheCountMoves(plugin, ports, ch_cnt_t{2});
+		}
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), ch_cnt_t{3});
 	}
 
 	/*!
@@ -1011,6 +1165,32 @@ private slots:
 		QCOMPARE(visible, -1);
 		QCOMPARE(plugin.cachedUIVisible(), -1);
 		QVERIFY2(elapsed < std::chrono::seconds{1}, "a query to a hung client froze the main thread");
+	}
+
+	/*!
+	 * A visibility answer with no argument in it is refused, not read.
+	 *
+	 * The "emptyquery" client answers the visibility query with a complete message that carries no argument. The
+	 * reply is the awaited one, so it never reaches processMessage(): the host must check it before reading it. The
+	 * query returns -1, the cached visibility stays unknown, and the plugin is failed.
+	 */
+	void emptyQueryAnswerIsRefusedNotRead()
+	{
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the empty answer is "
+				"UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("emptyquery")}), "could not start/connect the fake client");
+		QVERIFY(!plugin.failed());
+
+		QCOMPARE(plugin.isUIVisible(), -1);
+		QCOMPARE(plugin.cachedUIVisible(), -1);
+		QVERIFY(plugin.failed());
 	}
 
 	/*!
@@ -1163,6 +1343,7 @@ private slots:
 		QVERIFY(!plugin.failed());
 
 		m_recorder->clear();
+		const ScopedReplyBudget replyInTime;      // the garbage frame must arrive inside the period to be read
 		QVERIFY(!plugin.process());
 		plugin.applyDeferredClientRequests();
 
@@ -1193,15 +1374,18 @@ private slots:
 		QVERIFY(!plugin.failed());
 
 		std::atomic<bool> held{false};
+		std::atomic<bool> release{false};
 		std::thread renderStandIn{[&] {
 			Engine::audioEngine()->requestChangeInModel();
 			held = true;
+			while (!release) { std::this_thread::yield(); }
 			std::this_thread::sleep_for(std::chrono::milliseconds{300});
 			Engine::audioEngine()->doneChangeInModel();
 		}};
 		while (!held) { std::this_thread::yield(); }
 
 		const auto started = std::chrono::steady_clock::now();
+		release = true;
 		ports.audioPortsModel().setChannelCounts(0, 3);
 		const auto elapsed = std::chrono::steady_clock::now() - started;
 		renderStandIn.join();
@@ -1243,6 +1427,7 @@ private slots:
 		std::fill(out.bufferPtr(1), out.bufferPtr(1) + frames, 1.0f);
 
 		// The client asked for 4 outputs during this period and sent no planes for them.
+		const ScopedReplyBudget replyInTime;
 		QVERIFY(!plugin.process());
 		QCOMPARE(ports.audioPortsModel().out().channelCount(), ch_cnt_t{2});
 		for (f_cnt_t frame = 0; frame < frames; ++frame)
@@ -1253,6 +1438,230 @@ private slots:
 
 		// The main thread applies it: its timer runs every 10 ms, so a short event-loop wait is enough.
 		QTRY_COMPARE_WITH_TIMEOUT(ports.audioPortsModel().out().channelCount(), ch_cnt_t{4}, 2000);
+	}
+
+	/*!
+	 * A debug text a client sends while the host waits for a period's reply is printed on the main
+	 * thread, not while the audio thread is inside the period: a print is a log, and a log allocates and
+	 * locks. The text is copied into a fixed slot during the period and printed later.
+	 */
+	void debugTextDuringPeriodIsPrintedOnTheMainThread()
+	{
+#ifndef Q_OS_WIN
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the deferred debug-text "
+				"path is UNEXERCISED by this run");
+		}
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto logPath = dir.filePath(QStringLiteral("stderr.log"));
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		StderrCapture capture{logPath};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("debug")}),
+			"could not start/connect the debug fake client");
+		QVERIFY2(!plugin.failed(), "the debug fake client did not complete the handshake");
+
+		// The period: the client sends its debug text before it answers, so the host reads it while it
+		// waits for the reply - on the audio thread.
+		plugin.process();
+
+		// Nothing was printed: the text waits for the main thread.
+		QVERIFY2(!capture.text().contains(QStringLiteral("zene-remote-debug-marker")),
+			"the client's debug text was printed while the audio thread was inside the period");
+
+		// The main thread prints it, through the deferred work the period recorded.
+		QTRY_VERIFY_WITH_TIMEOUT(capture.text().contains(QStringLiteral("zene-remote-debug-marker")), 2000);
+#else
+		QSKIP("the stderr capture needs POSIX");
+#endif
+	}
+
+	/*!
+	 * A client message that arrives while the host waits for a period's reply is handled on the audio
+	 * thread, and handling it must not allocate: the frame is read into storage that was reserved once,
+	 * and the answer is written as plain values, not as a message. The audio thread may neither allocate
+	 * nor free.
+	 */
+	void clientMessageDuringPeriodIsParsedWithoutAllocating()
+	{
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the allocation-free parse "
+				"is UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		const ScopedReplyBudget replyInTime;
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("debug")}),
+			"could not start/connect the debug fake client");
+		QVERIFY2(!plugin.failed(), "the debug fake client did not complete the handshake");
+
+		// The client answers every period with a debug text and a sample-rate request before its reply,
+		// so every period parses a client message that carries an argument and has to answer it there.
+		std::uint64_t allocations = 0;
+		std::uint64_t frees = 0;
+		bool answered = false;
+		lmms::test::tlCountAllocations = true;
+		for (int period = 0; period < 3; ++period)
+		{
+			lmms::test::resetAllocationCount();
+			answered = plugin.process() || answered;
+			allocations += lmms::test::tlAllocationCount;
+			frees += lmms::test::tlFreeCount;
+		}
+		lmms::test::tlCountAllocations = false;
+
+		// The client answered at least one period, so a message was really read during a period.
+		QVERIFY2(answered, "the client never answered a period, so no message was parsed");
+		QCOMPARE(allocations, std::uint64_t{0});
+		QCOMPARE(frees, std::uint64_t{0});
+	}
+
+	/*!
+	 * A shared-memory array is aligned for the element type it holds.
+	 *
+	 * The remote plugin contract passes shared arrays between the host and the
+	 * client (the audio block, the VST-sync block). The array data starts
+	 * after the in-band size header, so the data offset has to be a multiple
+	 * of the element alignment: an element type that asks for more alignment
+	 * than the header provides would otherwise be indexed through a
+	 * misaligned pointer, which is undefined behaviour.
+	 *
+	 * The creator and the attacher have to agree on the offset, so both views
+	 * are checked here, together with the data that travels between them.
+	 */
+	void sharedMemoryArrayIsAlignedForItsElementType()
+	{
+		struct alignas(16) AlignedElement
+		{
+			float values[4];
+		};
+
+		using Array = SharedMemory<AlignedElement[]>;
+
+		Array owner;
+		owner.create(4);
+		QVERIFY(owner.get() != nullptr);
+		QVERIFY2(reinterpret_cast<std::uintptr_t>(owner.get()) % alignof(AlignedElement) == 0,
+			"the shared array data is not aligned for its element type");
+
+		Array attached;
+		attached.attach(owner.key());
+		QVERIFY(attached.get() != nullptr);
+		QVERIFY2(reinterpret_cast<std::uintptr_t>(attached.get()) % alignof(AlignedElement) == 0,
+			"the attached shared array data is not aligned for its element type");
+
+		QCOMPARE(owner.size(), std::size_t{4});
+		QCOMPARE(attached.size(), std::size_t{4});
+
+		owner[0].values[0] = 1.25f;
+		QCOMPARE(attached[0].values[0], 1.25f);
+	}
+
+	/*!
+	 * A protocol failure recorded while the host waits for the client's host info
+	 * must survive that wait.
+	 *
+	 * The client announces its channel counts with the retired id and only then
+	 * sends the IdHostInfoGotten the VST handshake waits for. The host refuses the
+	 * retired id and fails the plugin - and that verdict must not be erased by the
+	 * wait for the host info, which used to assign the wait's own result to the
+	 * failure flag. (waitForInitDone() has always preserved it; this is the same
+	 * contract on the sibling path.)
+	 */
+	void hostInfoWaitKeepsAnEarlierProtocolFailure()
+	{
+		const auto client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the host-info wait is "
+				"UNEXERCISED by this run");
+		}
+
+		const QFileInfo info{client};
+		ScopedPluginDir pluginDir{info.absolutePath()};
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		// The client connects and sends its handshake; the host's init() asks for
+		// the client's host info (IdSyncKey), which the stand-in answers with a
+		// retired message id first.
+		QVERIFY2(!plugin.init(info.fileName(), false, {QStringLiteral("badhostinfo")}),
+			"could not start the fake client");
+
+		m_recorder->clear();
+		plugin.waitForHostInfoGotten();
+
+		// The refusal was reported ...
+		QVERIFY2(m_recorder->text().contains(QStringLiteral("removed message id")),
+			qPrintable(m_recorder->text()));
+		// ... and the failure it recorded survived the wait for the host info.
+		QVERIFY2(plugin.failed(), "the protocol failure was erased by the host-info wait");
+	}
+
+	/*!
+	 * A sample-rate update the client does not acknowledge must not be treated as
+	 * successful.
+	 *
+	 * The host tells the client which rate to run at, and the client acknowledges it
+	 * with IdInformationUpdated. A client that does not acknowledge it is still
+	 * running at the old rate while this host renders at the new one, so the two
+	 * sides disagree about the rate - the silent wrong audio the acknowledgement
+	 * exists to prevent. The plugin must be failed instead of carrying on.
+	 */
+	void unansweredSampleRateUpdateFailsThePlugin()
+	{
+		const auto client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the sample-rate "
+				"acknowledgement is UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("deafsamplerate")}),
+			"could not start/connect the deaf fake client");
+		QVERIFY(!plugin.failed());
+
+		plugin.updateSampleRate(Engine::audioEngine()->outputSampleRate());
+
+		QVERIFY2(plugin.failed(), "an unacknowledged sample-rate update was treated as successful");
+	}
+
+	/*!
+	 * The positive control for the check above: a client that acknowledges the new
+	 * rate is not failed.
+	 *
+	 * The stand-in client answers IdSampleRateInformation with IdInformationUpdated,
+	 * exactly like the real client does, so the plugin keeps running at the rate the
+	 * host told it to use.
+	 */
+	void acknowledgedSampleRateUpdateKeepsThePlugin()
+	{
+		const auto client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the sample-rate "
+				"acknowledgement is UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client),
+			"could not start/connect the fake client");
+		QVERIFY(!plugin.failed());
+
+		plugin.updateSampleRate(Engine::audioEngine()->outputSampleRate());
+
+		QVERIFY2(!plugin.failed(), "an acknowledged sample-rate update failed the plugin");
 	}
 
 private:

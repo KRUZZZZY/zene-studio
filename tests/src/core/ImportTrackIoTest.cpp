@@ -29,14 +29,20 @@
 #include <QtTest>
 
 #include <QDir>
+#include <QFile>
 #include <QJsonArray>
 #include <QTemporaryDir>
 
+#include <QDomDocument>
+
 #include "AudioIoSetup.h"
+#include "ControlEdit.h"
+#include "ControlProjectTransplant.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "Model.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -113,6 +119,104 @@ QString channelOf(const QString& name)
 	Track* track = trackNamed(name);
 	if (track == nullptr || track->mixerChannelModel() == nullptr) { return QStringLiteral("<no track>"); }
 	return Engine::mixer()->mixerChannel(track->mixerChannelModel()->value())->m_name;
+}
+
+//! A track document that does not parse: its start tag is never closed.
+const QString UnparsableTrack = QStringLiteral("<track type=\"0\" name=\"Broken\"");
+//! A channel description that does not parse: its start tag is never closed.
+const QString UnparsableChannel = QStringLiteral("<mixerchannel name=\"Ghost\" volume=\"1\"");
+const QString Ghost = QStringLiteral("Ghost");
+const QString Lead = QStringLiteral("Lead");
+
+//! A plain <mixerchannel> description of the channel called @a name, as the transplant resolves a need from.
+QString channelDescription(const QString& name)
+{
+	return QStringLiteral("<mixerchannel name=\"%1\" volume=\"1\" pan=\"0\"/>").arg(name);
+}
+
+//! The instrument track called @a name, saved as the detached document the transplant builds from (the track itself is removed).
+QString trackDocument(const QString& name)
+{
+	Track* track = Track::create(Track::Type::Instrument, Engine::getSong());
+	track->setName(name);
+	QDomDocument holder;
+	QDomElement parent = holder.createElement(QStringLiteral("holder"));
+	holder.appendChild(parent);
+	track->saveState(holder, parent);
+	control::removeTrack(track);
+	QDomDocument one;
+	one.appendChild(one.importNode(parent.firstChildElement(QStringLiteral("track")), true));
+	return one.toString();
+}
+
+//! The mixerchannel element called @a name in @a doc (a null element when there is none).
+QDomElement mixerChannelNamed(const QDomDocument& doc, const QString& name)
+{
+	const QDomNodeList channels = doc.elementsByTagName(QStringLiteral("mixerchannel"));
+	for (int i = 0; i < channels.size(); ++i)
+	{
+		QDomElement channel = channels.at(i).toElement();
+		if (channel.attribute(QStringLiteral("name")) == name) { return channel; }
+	}
+	return {};
+}
+
+//! Sets @a key on @a channel to @a value: an attribute, or (when @a asChild) a child element with a value attribute and no attribute.
+void setChannelValue(QDomDocument doc, QDomElement channel, const QString& key, const QString& value, bool asChild)
+{
+	channel.removeAttribute(key);
+	if (!asChild)
+	{
+		channel.setAttribute(key, value);
+		return;
+	}
+	QDomElement child = doc.createElement(key);
+	child.setAttribute(QStringLiteral("value"), value);
+	QDomElement stale = channel.firstChildElement(key);
+	while (!stale.isNull())
+	{
+		channel.removeChild(stale);
+		stale = channel.firstChildElement(key);
+	}
+	channel.appendChild(child);
+}
+
+//! Rewrites the volume and pan of the Drums Bus channel in the plain .mmp at @a file (see setChannelValue).
+void rewriteDrumsChannel(const QString& file, const QString& volume, const QString& pan, bool asChildren)
+{
+	QFile in(file);
+	QVERIFY(in.open(QIODevice::ReadOnly));
+	QDomDocument doc;
+	QVERIFY2(doc.setContent(&in), qPrintable(file));
+	in.close();
+	QDomElement channel = mixerChannelNamed(doc, DrumsBus);
+	QVERIFY(!channel.isNull());
+	setChannelValue(doc, channel, QStringLiteral("volume"), volume, asChildren);
+	setChannelValue(doc, channel, QStringLiteral("pan"), pan, asChildren);
+	QFile out(file);
+	QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
+	out.write(doc.toByteArray());
+}
+
+//! @a actual, or @a expected itself when they are within 1e-4 (so a QCOMPARE on the result reports the actual value when it is off).
+double withinTolerance(double actual, double expected)
+{
+	return qAbs(actual - expected) < 1e-4 ? expected : actual;
+}
+
+//! Imports track 0 (the Drums track) of the project at @a file into an emptied song: the channel it makes has @a volume and @a pan.
+void expectImportedChannelState(const QString& file, double volume, double pan)
+{
+	Engine::getSong()->clearProject();
+	const ControlResult imported = run(QStringLiteral("project.import_tracks"), {{QStringLiteral("path"), file}, {QStringLiteral("tracks"), QJsonArray{0}}});
+	QVERIFY2(imported.ok, qPrintable(imported.errorMessage));
+	QCOMPARE(imported.result.value(QStringLiteral("created_channels")).toArray().size(), 1);
+	const QJsonObject drums = stateOf(DrumsBus);
+	QVERIFY(!drums.isEmpty());
+	const double actualVolume = drums.value(QStringLiteral("volume")).toDouble();
+	const double actualPan = drums.value(QStringLiteral("pan")).toDouble();
+	QTest::qCompare(withinTolerance(actualVolume, volume), volume, "volume", "volume", __FILE__, __LINE__);
+	QTest::qCompare(withinTolerance(actualPan, pan), pan, "pan", "pan", __FILE__, __LINE__);
 }
 
 } // namespace
@@ -269,6 +373,75 @@ private slots:
 		QCOMPARE(channelOf(QStringLiteral("Drums")), DrumsBus);
 	}
 
+	//! A track document that does not parse makes no track, and no channel is made or described for it.
+	void anUnparsableTrackDocumentMakesNoTrackAndNoChannel()
+	{
+		control::transplant::TrackPlan plan;
+		plan.documents.append(UnparsableTrack);
+		plan.need = {0};
+		plan.needs.push_back({Ghost, channelDescription(Ghost)});
+		const int channelsBefore = channelCount();
+		QSignalSpy described(Engine::mixer(), &Model::dataChanged);
+		const control::transplant::Built made = control::transplant::buildAsOneStep(plan);
+		QVERIFY(made.tracks.empty());
+		QVERIFY(made.channels.empty());
+		QCOMPARE(channelCount(), channelsBefore);
+		QVERIFY(stateOf(Ghost).isEmpty());
+		QCOMPARE(static_cast<int>(described.count()), 0);  // Mixer::applyDescription() is the only emitter of this on a build
+	}
+
+	//! A channel description that does not parse makes no channel: its track is built on the master.
+	void anUnparsableChannelDescriptionLeavesItsTrackOnTheMaster()
+	{
+		control::transplant::TrackPlan plan;
+		plan.documents.append(trackDocument(Lead));
+		plan.need = {0};
+		plan.needs.push_back({Ghost, UnparsableChannel});
+		const int channelsBefore = channelCount();
+		QSignalSpy described(Engine::mixer(), &Model::dataChanged);
+		const control::transplant::Built made = control::transplant::buildAsOneStep(plan);
+		QCOMPARE(static_cast<int>(made.tracks.size()), 1);
+		QVERIFY(made.channels.empty());
+		QCOMPARE(channelCount(), channelsBefore);
+		QVERIFY(stateOf(Ghost).isEmpty());
+		QCOMPARE(channelOf(Lead), QStringLiteral("Master"));
+		QCOMPARE(static_cast<int>(described.count()), 0);
+	}
+
+	//! A document that does not parse, between good ones, leaves the good ones on the channels they need.
+	void anUnparsableDocumentDoesNotShiftTheOthers()
+	{
+		control::transplant::TrackPlan plan;
+		plan.documents.clear();
+		plan.documents.append(UnparsableTrack);
+		plan.documents.append(trackDocument(Lead));
+		plan.need = {0, 1};
+		plan.needs.push_back({Ghost, channelDescription(Ghost)});
+		plan.needs.push_back({Keys, channelDescription(Keys)});
+		const control::transplant::Built made = control::transplant::buildAsOneStep(plan);
+		QCOMPARE(static_cast<int>(made.tracks.size()), 1);
+		QCOMPARE(static_cast<int>(made.channels.size()), 1);
+		QVERIFY(!stateOf(Keys).isEmpty());
+		QCOMPARE(channelOf(Lead), Keys);
+		QVERIFY(stateOf(Ghost).isEmpty());
+	}
+
+	//! A malformed volume or pan on an imported channel falls back to the defaults (1.0 and 0.0), whether an attribute or a child element.
+	void malformedImportedChannelValuesFallBackToTheDefaults()
+	{
+		const QString file = m_dir.filePath(QStringLiteral("source.mmp"));
+		buildSource(file);
+		expectImportedChannelState(file, 0.5, 0.25);
+		rewriteDrumsChannel(file, QStringLiteral("loud"), QStringLiteral("sideways"), false);
+		expectImportedChannelState(file, 1.0, 0.0);
+		rewriteDrumsChannel(file, QStringLiteral("inf"), QStringLiteral("-inf"), false);
+		expectImportedChannelState(file, 1.0, 0.0);
+		rewriteDrumsChannel(file, QStringLiteral("0.5"), QStringLiteral("0.25"), true);
+		expectImportedChannelState(file, 0.5, 0.25);
+		rewriteDrumsChannel(file, QStringLiteral("loud"), QStringLiteral("sideways"), true);
+		expectImportedChannelState(file, 1.0, 0.0);
+	}
+
 private:
 	//! A project of two routed channels and three tracks, saved as @a file; then the song is emptied.
 	void buildSource(const QString& file)
@@ -277,6 +450,7 @@ private:
 		const QString drums = control::channelIdOf(Engine::mixer()->mixerChannel(bus));
 		QVERIFY(ok(QStringLiteral("mixer.rename_channel"), {{QStringLiteral("channel"), drums}, {QStringLiteral("name"), DrumsBus}}));
 		QVERIFY(ok(QStringLiteral("mixer.set_volume"), {{QStringLiteral("channel"), drums}, {QStringLiteral("volume"), 0.5}}));
+		QVERIFY(ok(QStringLiteral("mixer.set_pan"), {{QStringLiteral("channel"), drums}, {QStringLiteral("pan"), 0.25}}));
 		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), drums}, {QStringLiteral("output"), QStringLiteral("Phones")}}));
 		QVERIFY(ok(QStringLiteral("mixer.hardware_insert"), {{QStringLiteral("channel"), drums}, {QStringLiteral("enabled"), true},
 			{QStringLiteral("send"), QStringLiteral("Phones")}, {QStringLiteral("return"), QStringLiteral("Line In")}}));

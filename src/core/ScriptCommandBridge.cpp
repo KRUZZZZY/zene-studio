@@ -81,7 +81,9 @@ const QStringList& refusedIds()
 {
 	static const QStringList ids{QStringLiteral("control.quit"), QStringLiteral("settings.set"),
 		QStringLiteral("audio.device_set"), QStringLiteral("stem.model_download"),
-		QStringLiteral("window.header_set"), QStringLiteral("window.layout_save"), QStringLiteral("window.layout_remove")};
+		QStringLiteral("window.header_set"), QStringLiteral("window.layout_save"), QStringLiteral("window.layout_remove"),
+		// Q050-081: a script does not start or stop controller scripts (one script starting another).
+		QStringLiteral("controller.script_start"), QStringLiteral("controller.script_stop")};
 	return ids;
 }
 
@@ -275,6 +277,11 @@ int luaCommand(lua_State* L)
 	size_t idLength = 0;
 	const char* idBytes = luaL_checklstring(L, 1, &idLength);
 	const QString id = QString::fromUtf8(idBytes, static_cast<qsizetype>(idLength));
+	if (lua_gettop(L) >= 2 && !lua_isnil(L, 2) && !lua_istable(L, 2))
+	{
+		return pushFailure(L, QStringLiteral("'%1' expects a table of arguments (or none), got %2")
+			.arg(id, luaL_typename(L, 2)), QStringLiteral("invalid_args"));
+	}
 	QJsonObject args = lua_istable(L, 2) ? luaToJson(L, 2, 0).toObject() : QJsonObject();
 	if (const QString why = refusalFor(id); !why.isEmpty()) { return pushFailure(L, why, QStringLiteral("refused")); }
 	emptyTablesAsArrays(id, args);
@@ -285,7 +292,16 @@ int luaCommand(lua_State* L)
 	command.type = ScriptCommand::Type::DawEdit;
 	command.i0 = static_cast<std::int32_t>(ScriptDawBindings::Op::RegistryCall);
 	command.object0 = &request;
-	ScriptEngine::instance()->enqueue(command);
+	if (!ScriptEngine::instance()->enqueue(command))
+	{
+		// The bounded queue was full, so the request was DROPPED and will
+		// never be applied: the reply below would be an empty failure that
+		// says nothing. Say what happened instead.
+		return pushFailure(L,
+			QStringLiteral("the script command queue is full (%1 commands); the command was dropped")
+				.arg(ScriptCommandQueueCapacity),
+			QStringLiteral("refused"));
+	}
 	// The read-back rule (ScriptDawEdit.cpp): the request is on this stack, so the script waits
 	// until the apply side has run it.
 	ScriptEngine::instance()->flushCommandsForRead();
@@ -312,6 +328,16 @@ int luaCommands(lua_State* L)
 }
 
 } // namespace
+
+QJsonObject tableToObject(lua_State* L, int index)
+{
+	return lua_istable(L, index) ? luaToJson(L, index, 0).toObject() : QJsonObject();
+}
+
+void pushJsonObject(lua_State* L, const QJsonObject& object)
+{
+	pushObject(L, object);
+}
 
 QString refusalFor(const QString& id)
 {

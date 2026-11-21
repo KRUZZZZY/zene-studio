@@ -118,6 +118,53 @@ private slots:
 		delete style;
 	}
 
+	void anUnreadableStylesheetKeepsTheThemeInPlace()
+	{
+		QVERIFY(m_theme.isValid());
+		const QString css = m_theme.filePath(QStringLiteral("style.css"));
+		// A failed run may leave the file unreadable: start from a readable file.
+		QFile::setPermissions(css, QFile::ReadOwner | QFile::WriteOwner);
+		writeTheme(css, QStringLiteral("redmarker"));
+
+		ConfigManager::inst()->setThemeDir(m_theme.path());
+		auto* style = new LmmsStyle();
+		QVERIFY(qApp->styleSheet().contains(QStringLiteral("redmarker")));
+
+		// The file is still there but cannot be read, as after a permissions change. The reload
+		// must not install what it failed to read: the theme in place stays.
+		QVERIFY(QFile::setPermissions(css, QFile::Permissions{}));
+		style->reloadCustomStyle();
+		QVERIFY2(qApp->styleSheet().contains(QStringLiteral("redmarker")),
+			"an unreadable stylesheet cleared the theme in place");
+
+		// Readable again: the next reload picks up what is on disk.
+		QVERIFY(QFile::setPermissions(css, QFile::ReadOwner | QFile::WriteOwner));
+		writeTheme(css, QStringLiteral("greenmarker"));
+		style->reloadCustomStyle();
+		QVERIFY(qApp->styleSheet().contains(QStringLiteral("greenmarker")));
+
+		delete style;
+	}
+
+	void anUnreadableStylesheetAtStartupInstallsNothing()
+	{
+		QVERIFY(m_theme.isValid());
+		const QString css = m_theme.filePath(QStringLiteral("style.css"));
+		QFile::setPermissions(css, QFile::ReadOwner | QFile::WriteOwner);
+		writeTheme(css, QStringLiteral("redmarker"));
+		QVERIFY(QFile::setPermissions(css, QFile::Permissions{}));
+
+		qApp->setStyleSheet(QStringLiteral("QWidget { color: sentinel; }"));
+		ConfigManager::inst()->setThemeDir(m_theme.path());
+		auto* style = new LmmsStyle();
+		QVERIFY2(qApp->styleSheet().contains(QStringLiteral("sentinel")),
+			"an unreadable stylesheet at startup replaced the stylesheet in place");
+		QVERIFY(!qApp->styleSheet().contains(QStringLiteral("redmarker")));
+
+		QVERIFY(QFile::setPermissions(css, QFile::ReadOwner | QFile::WriteOwner));
+		delete style;
+	}
+
 private:
 	QTemporaryDir m_home;
 	QTemporaryDir m_theme;

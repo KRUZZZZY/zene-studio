@@ -27,6 +27,7 @@
 #define LMMS_RETRO_MIDI_CLIP_WRITER_H
 
 #include <cstddef>
+#include <optional>
 #include <vector>
 
 #include "LmmsTypes.h"      // tick_t
@@ -92,7 +93,7 @@ struct RetroMidiClipWrite
  * returns zeroed counters.
  */
 LMMS_EXPORT RetroMidiClipWrite writeWindowToClip(MidiClip* clip, const RetroMidiEvent* events,
-	std::size_t count, tick_t windowStartTick, tick_t windowEndTick = -1);
+	std::size_t count, tick_t windowStartTick, std::optional<tick_t> windowEndTick = std::nullopt);
 
 /*! 0.5.0 L02 (WF-055): the capture window as midi.retro_capture_to_clip reads it - the live
  *  capture's events, oldest first, and the first and last tick (from 0 on). False with @a error

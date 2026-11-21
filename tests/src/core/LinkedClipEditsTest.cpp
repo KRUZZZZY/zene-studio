@@ -32,7 +32,9 @@
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "LinkedClipEdits.h"
 #include "MidiClip.h"
+#include "Note.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -260,6 +262,29 @@ private slots:
 		QVERIFY(!split.result.contains(QStringLiteral("members_split")));
 		QCOMPARE(clipCount(), 3);
 		QCOMPARE(objectOf(b)->length().getTicks(), 384);
+	}
+
+	//! The trimmed member is never its own peer: adoptTrimmedContent() keeps its notes and gives each other member a copy.
+	void aTrimmedMemberKeepsItsOwnNotesWhileThePeersTakeACopy()
+	{
+		const QString a = clipAt(0, 384);
+		const QString b = clipAt(768, 384);
+		const QString c = clipAt(1536, 384);
+		MidiClip* trimmed = objectOf(a);
+		QVERIFY(trimmed != nullptr);
+		trimmed->addNote(Note(TimePos(96), TimePos(0), 60), false);
+		trimmed->addNote(Note(TimePos(96), TimePos(192), 64), false);
+		QVERIFY(linkTogether({a, b, c}));
+
+		int written = 0;
+		{
+			ClipLinks::MirroringSuspension noMirroring;
+			written = ClipLinks::adoptTrimmedContent(trimmed);
+		}
+		QCOMPARE(written, 2);
+		QCOMPARE(trimmed->notes().size(), 2);
+		QCOMPARE(objectOf(b)->notes().size(), 2);
+		QCOMPARE(objectOf(c)->notes().size(), 2);
 	}
 };
 

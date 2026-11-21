@@ -28,9 +28,47 @@
 
 #include "AbletonLinkSession.h"
 
+#include <atomic>
 #include <chrono>
+#include <cstdlib>
 
-#include <ableton/Link.hpp>
+#ifndef _WIN32
+#include <net/if.h>
+#endif
+
+#include "LinkVendored.h"
+
+namespace lmms::linkseam
+{
+
+/*! Test/diagnostic seam (Q050-024): confine Link's interface scan to loopback, so its discovery
+ *  sockets exist only on 127.0.0.1 and no packet can leave the host (include/LinkVendored.h). */
+std::atomic<bool>& loopbackOnly()
+{
+	static std::atomic<bool> flag{[] {
+		const char* env = std::getenv("ZENE_LINK_LOOPBACK_ONLY");
+		return env != nullptr && env[0] == '1';
+	}()};
+	return flag;
+}
+
+#ifndef _WIN32
+int scan(struct ifaddrs** out)
+{
+	const int result = ::getifaddrs(out);
+	if (result == 0 && loopbackOnly().load(std::memory_order_relaxed))
+	{
+		for (struct ifaddrs* entry = *out; entry != nullptr; entry = entry->ifa_next)
+		{
+			if ((entry->ifa_flags & IFF_LOOPBACK) == 0) { entry->ifa_flags &= ~static_cast<unsigned>(IFF_RUNNING); }
+		}
+	}
+	return result;
+}
+#endif
+
+} // namespace lmms::linkseam
+
 #include <ableton/link/HostTimeFilter.hpp>
 
 namespace lmms
@@ -95,6 +133,8 @@ struct AbletonLinkSession::Impl
 };
 
 bool AbletonLinkSession::compiledIn() { return true; }
+void AbletonLinkSession::setLoopbackOnly(bool on) { linkseam::loopbackOnly().store(on, std::memory_order_relaxed); }
+bool AbletonLinkSession::loopbackOnly() { return linkseam::loopbackOnly().load(std::memory_order_relaxed); }
 const char* AbletonLinkSession::libraryVersion() { return PinnedVersion; }
 const char* AbletonLinkSession::libraryCommit() { return PinnedCommit; }
 

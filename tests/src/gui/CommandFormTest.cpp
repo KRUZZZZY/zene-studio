@@ -221,6 +221,40 @@ private slots:
 		QCOMPARE(args.value(QStringLiteral("items")).toArray(), (QJsonArray{1, 2}));
 	}
 
+	//! A number written with setField() comes back as the number given, not rounded to six digits.
+	void aNumberWrittenToAFieldIsReadBackUnrounded()
+	{
+		CommandForm form(echo({{QStringLiteral("track"), QStringLiteral("trk-1")}}));
+		QVERIFY(form.setField(QStringLiteral("name"), QStringLiteral("x")));  // required by the schema
+		QVERIFY(form.setField(QStringLiteral("ratio"), 0.123456789));
+		QJsonObject args;
+		QString error;
+		QVERIFY2(form.collect(&args, &error), qPrintable(error));
+		QCOMPARE(args.value(QStringLiteral("ratio")).toDouble(), 0.123456789);
+	}
+
+	//! A form default is written through the same formatter, so it is not rounded either.
+	void aNumberDefaultIsSentUnrounded()
+	{
+		CommandCall call = echo({{QStringLiteral("track"), QStringLiteral("trk-1")}});
+		call.defaults.insert(QStringLiteral("name"), QStringLiteral("x"));  // required by the schema
+		call.defaults.insert(QStringLiteral("ratio"), 0.123456789);
+		CommandForm form(call);
+		QJsonObject args;
+		QString error;
+		QVERIFY2(form.collect(&args, &error), qPrintable(error));
+		QCOMPARE(args.value(QStringLiteral("ratio")).toDouble(), 0.123456789);
+	}
+
+	//! The text a number reads as stays short: the fix keeps the digits a number needs and no more.
+	void aNumberReadsAsItsShortestExactText()
+	{
+		QCOMPARE(valueText(QJsonValue(0.5)), QStringLiteral("0.5"));
+		QCOMPARE(valueText(QJsonValue(1234567.0)), QStringLiteral("1234567"));
+		QCOMPARE(valueText(QJsonValue(0.1)), QStringLiteral("0.1"));
+		QCOMPARE(valueText(QJsonValue(0.123456789)), QStringLiteral("0.123456789"));
+	}
+
 	//! setField()'s contract: false when the value does not fit the field's type, so a caller never
 	//! takes "accepted" for "this field now holds your value" when it holds the wrong thing.
 	void aValueOfTheWrongTypeIsRefusedByTheFieldItDoesNotFit()
@@ -507,6 +541,64 @@ private slots:
 		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "comma list ignored its maximum item count");
 	}
 
+	//! A comma list with an empty item is malformed input, not a shorter list: it is refused, so the
+	//! user hears about it instead of the command running with values they never typed.
+	void commaListsRefuseEmptyItems()
+	{
+		const QJsonObject spec = boundedIntegerList();
+		QWidget parent;
+		const formfield::Editor editor = formfield::makeEditor(&parent, QStringLiteral("formtest.list"), QStringLiteral("values"), spec, true);
+		auto* input = qobject_cast<QLineEdit*>(editor.value);
+		QVERIFY(input != nullptr);
+		QJsonValue value;
+		QString error;
+
+		input->setText(QStringLiteral("1,,2"));
+		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "a comma list with an empty item was read as a shorter list");
+		QVERIFY2(error.contains(QStringLiteral("empty")), qPrintable(error));
+		input->setText(QStringLiteral("1, 2,"));
+		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "a comma list ending in a comma was read as a shorter list");
+		// A blank field is no list at all: it stays empty, and the command's own default is used.
+		input->setText(QString());
+		QVERIFY2(formfield::readValue(editor.value, spec, &value, &error), qPrintable(error));
+		QVERIFY(value.isUndefined());
+	}
+
+	//! A string list's items may hold a comma: the editor's text escapes it, and what it reads
+	//! back is the list that was set - the text is not a lossy rendering of the list.
+	void stringListItemsKeepTheirCommas()
+	{
+		QJsonObject spec = prop("array");
+		spec.insert(QStringLiteral("items"), prop("string"));
+		QWidget parent;
+		const formfield::Editor editor = formfield::makeEditor(&parent, QStringLiteral("formtest.units"), QStringLiteral("names"), spec, false);
+		auto* input = qobject_cast<QLineEdit*>(editor.value);
+		QVERIFY(input != nullptr);
+		QJsonValue value;
+		QString error;
+
+		// What the writer puts in the editor reads back as the same list.
+		QVERIFY(formfield::writeValue(editor.value, spec, QJsonArray{QStringLiteral("take, 1"), QStringLiteral("rest")}));
+		QVERIFY2(formfield::readValue(editor.value, spec, &value, &error), qPrintable(error));
+		QCOMPARE(value.toArray(), (QJsonArray{QStringLiteral("take, 1"), QStringLiteral("rest")}));
+
+		// Typed as text: an escaped comma is one item's comma.
+		input->setText(QStringLiteral("take\\, 1, rest"));
+		QVERIFY2(formfield::readValue(editor.value, spec, &value, &error), qPrintable(error));
+		QCOMPARE(value.toArray(), (QJsonArray{QStringLiteral("take, 1"), QStringLiteral("rest")}));
+
+		// A backslash that escapes nothing stands for itself: "folder\sample" is that path, not
+		// "foldersample".
+		input->setText(QStringLiteral("folder\\sample, rest"));
+		QVERIFY2(formfield::readValue(editor.value, spec, &value, &error), qPrintable(error));
+		QCOMPARE(value.toArray(), (QJsonArray{QStringLiteral("folder\\sample"), QStringLiteral("rest")}));
+
+		// And the writer escapes a backslash, so the list it writes reads back unchanged.
+		QVERIFY(formfield::writeValue(editor.value, spec, QJsonArray{QStringLiteral("folder\\sample"), QStringLiteral("rest")}));
+		QVERIFY2(formfield::readValue(editor.value, spec, &value, &error), qPrintable(error));
+		QCOMPARE(value.toArray(), (QJsonArray{QStringLiteral("folder\\sample"), QStringLiteral("rest")}));
+	}
+
 	//! 0.5.0 theme 5: an enum offers its values in words (the blank entry says "(Default)"), a list of plain
 	//! values is typed as "a, b", and raw JSON waits under Advanced.
 	void choicesListsAndRawJsonHaveTheirPlaces()
@@ -591,8 +683,8 @@ private slots:
 		spec.title = QStringLiteral("Rows");
 		spec.listId = QStringLiteral("formtest.list");
 		spec.arrayKey = QStringLiteral("rows");
-		spec.columns = {QStringLiteral("id"), QStringLiteral("n")};
-		spec.summaryKeys = {QStringLiteral("total")};
+		spec.columns = QStringList{QStringLiteral("id"), QStringLiteral("n")};
+		spec.summaryKeys = QStringList{QStringLiteral("total")};
 		RowAction take;
 		take.label = QStringLiteral("Take");
 		take.id = QStringLiteral("formtest.take");
@@ -607,8 +699,8 @@ private slots:
 		QCOMPARE(dialog.runAction(5, 0).errorKind, ControlErrorKind::InvalidArgs);
 
 		spec.arrayKey = QStringLiteral("groups");
-		spec.nestedKeys = {QStringLiteral("items")};
-		spec.parentFields = {QStringLiteral("id")};
+		spec.nestedKeys = QStringList{QStringLiteral("items")};
+		spec.parentFields = QStringList{QStringLiteral("id")};
 		const QJsonArray rows = listRows(spec, dialog.listResult());
 		QCOMPARE(rows.size(), 2);
 		QCOMPARE(rows.at(1).toObject().value(QStringLiteral("k")).toInt(), 2);
@@ -636,7 +728,7 @@ private slots:
 		spec.title = QStringLiteral("Rows");
 		spec.listId = QStringLiteral("formtest.list");
 		spec.arrayKey = QStringLiteral("rows");
-		spec.columns = {QStringLiteral("id"), QStringLiteral("n")};
+		spec.columns = QStringList{QStringLiteral("id"), QStringLiteral("n")};
 		RowAction take;
 		take.label = QStringLiteral("Take");
 		take.id = QStringLiteral("formtest.take");

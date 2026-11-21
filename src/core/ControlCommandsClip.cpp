@@ -107,11 +107,14 @@ void registerClipAdd(ControlRegistry& registry)
 		{QStringLiteral("fade_out"), control::numberProperty()},
 		{QStringLiteral("fade_out_shape"), control::stringProperty()},
 		{QStringLiteral("gain_db"), control::numberProperty()},
+		{QStringLiteral("inverted"), control::booleanProperty()},
 		{QStringLiteral("id"), control::stringProperty()},
 		{QStringLiteral("index_in_track"), control::numberProperty()},
 		{QStringLiteral("muted"), control::booleanProperty()},
 		{QStringLiteral("name"), control::stringProperty()},
 		{QStringLiteral("note_count"), control::nullable(control::numberProperty())},
+		{QStringLiteral("channels"), control::nullable(control::numberProperty())},
+		{QStringLiteral("layout"), control::nullable(control::stringProperty())},
 		{QStringLiteral("selected"), control::booleanProperty()},
 	});
 	cmd.mutating = true;
@@ -119,6 +122,14 @@ void registerClipAdd(ControlRegistry& registry)
 		ControlResult error;
 		Track* track = control::resolveTrack(args.value(QStringLiteral("track")).toString(), &error);
 		if (track == nullptr) { return error; }
+		// A folder or neutral track holds no clips: their createClip() returns null. Refuse
+		// before the checkpoint below, so a refused add leaves no no-op undo step and
+		// does not clear the redo history.
+		if (track->type() == Track::Type::Folder || track->type() == Track::Type::Neutral)
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("a folder or neutral track holds no clips; add the clip to a track that carries clips"));
+		}
 		const int clipCount = track->numOfClips();
 		QJsonObject before;
 		before.insert(QStringLiteral("track"), args.value(QStringLiteral("track")).toString());
@@ -129,6 +140,11 @@ void registerClipAdd(ControlRegistry& registry)
 		track->addJournalCheckPoint();
 		Clip* clip = track->createClip(TimePos(static_cast<tick_t>(
 			args.value(QStringLiteral("position")).toDouble())));
+		if (clip == nullptr)
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("the clip could not be created on this track"));
+		}
 		if (!args.value(QStringLiteral("name")).toString().isEmpty())
 		{
 			clip->setName(args.value(QStringLiteral("name")).toString());
@@ -369,12 +385,15 @@ void registerClipDelete(ControlRegistry& registry)
 		{QStringLiteral("fade_out"), control::numberProperty()},
 		{QStringLiteral("fade_out_shape"), control::stringProperty()},
 		{QStringLiteral("gain_db"), control::numberProperty()},
+		{QStringLiteral("inverted"), control::booleanProperty()},
 		{QStringLiteral("id"), control::stringProperty()},
 		{QStringLiteral("index_in_track"), control::numberProperty()},
 		{QStringLiteral("length"), control::numberProperty()},
 		{QStringLiteral("muted"), control::booleanProperty()},
 		{QStringLiteral("name"), control::stringProperty()},
 		{QStringLiteral("note_count"), control::numberProperty()},
+		{QStringLiteral("channels"), control::nullable(control::numberProperty())},
+		{QStringLiteral("layout"), control::nullable(control::stringProperty())},
 		{QStringLiteral("position"), control::numberProperty()},
 		{QStringLiteral("selected"), control::booleanProperty()},
 	});

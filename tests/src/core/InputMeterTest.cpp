@@ -30,6 +30,7 @@
 #include <QtTest>
 
 #include <array>
+#include <atomic>
 
 #include "AllocationProbe.h"
 #include "InputMeter.h"
@@ -51,6 +52,13 @@ std::array<SampleFrame, Frames> period(float left, float right)
 	return frames;
 }
 
+//! The reader the seam plays: it clears the cell the raiser has just observed - the one instant a
+//!  reader can land in, between the raise's observation and its commit.
+void clearTheObservedCell(std::atomic<float>& held, float)
+{
+	held.exchange(0.f, std::memory_order_relaxed);
+}
+
 } // namespace
 
 class InputMeterTest : public QObject
@@ -64,6 +72,7 @@ private slots:
 		float right = 0.f;
 		inputmeter::take(&left, &right);  // a clean start for both readers
 		inputmeter::live(&left, &right);
+		inputmeter::watch(&left, &right);
 	}
 
 	//! Every period counts: a transient between two polls is still read, once.
@@ -106,6 +115,27 @@ private slots:
 		QCOMPARE(left, 0.125f);
 	}
 
+	//! Q050-100: the peak watch has its own read; it neither steals meter.input nor the live meter's peaks.
+	void theWatcherHasItsOwnIndependentPeakRead()
+	{
+		const auto loud = period(0.5f, 0.25f);
+		inputmeter::measure(loud.data(), Frames);
+		float left = 0.f;
+		float right = 0.f;
+		inputmeter::watch(&left, &right);
+		QCOMPARE(left, 0.5f);
+		QCOMPARE(right, 0.25f);
+		inputmeter::watch(&left, &right);
+		QCOMPARE(left, 0.f);
+		QCOMPARE(right, 0.f);
+		inputmeter::take(&left, &right);
+		QCOMPARE(left, 0.5f);
+		QCOMPARE(right, 0.25f);
+		inputmeter::live(&left, &right);
+		QCOMPARE(left, 0.5f);
+		QCOMPARE(right, 0.25f);
+	}
+
 	void aPeriodWithNoInputReadsSilence()
 	{
 		inputmeter::measure(nullptr, 0);  // no capture device: the engine's input bus has no frames
@@ -114,6 +144,61 @@ private slots:
 		inputmeter::live(&left, &right);
 		QCOMPARE(left, 0.f);
 		QCOMPARE(right, 0.f);
+	}
+
+	//! A reader that clears the peak in the raise's observation window must not swallow the sample:
+	//!  the meter keeps it, so the next read still sees it (cluster new-p14-117).
+	void aClearInTheObservationWindowDoesNotSwallowTheSample()
+	{
+		const auto loud = period(0.8f, 0.8f);
+		const auto quiet = period(0.5f, 0.5f);
+		inputmeter::measure(loud.data(), Frames);  // the meter holds 0.8
+		inputmeter::detail::setPeakObservationHook(&clearTheObservedCell);  // a reader, in that window
+		inputmeter::measure(quiet.data(), Frames);  // 0.5 is raised into a cell the reader clears
+		inputmeter::detail::setPeakObservationHook(nullptr);
+		float left = 0.f;
+		float right = 0.f;
+		inputmeter::take(&left, &right);
+		QCOMPARE(left, 0.5f);
+		QCOMPARE(right, 0.5f);
+		float liveLeft = 0.f;
+		float liveRight = 0.f;
+		inputmeter::live(&liveLeft, &liveRight);
+		QCOMPARE(liveLeft, 0.5f);
+		QCOMPARE(liveRight, 0.5f);
+	}
+
+	//! A reader with a null output asks for the other side only: the null side is not read, so its peak is held
+	//!  for the next reader, and a call with both outputs null reads nothing (cluster new-p21-190).
+	void aNullOutputSkipsItsSideOfTheTake()
+	{
+		const auto loud = period(0.5f, 0.25f);
+		inputmeter::measure(loud.data(), Frames);
+		float right = -1.f;
+		inputmeter::take(nullptr, &right);
+		QCOMPARE(right, 0.25f);
+		inputmeter::take(nullptr, nullptr);
+		float left = -1.f;
+		float rightAgain = -1.f;
+		inputmeter::take(&left, &rightAgain);
+		QCOMPARE(left, 0.5f);  // the left peak was never taken, so it is still held
+		QCOMPARE(rightAgain, 0.f);
+	}
+
+	//! The same for the live read: a null side is skipped and its peak stays for the live reader's next read.
+	void aNullOutputSkipsItsSideOfTheLiveRead()
+	{
+		const auto loud = period(0.5f, 0.25f);
+		inputmeter::measure(loud.data(), Frames);
+		float right = -1.f;
+		inputmeter::live(nullptr, &right);
+		QCOMPARE(right, 0.25f);
+		inputmeter::live(nullptr, nullptr);
+		float left = -1.f;
+		float rightAgain = -1.f;
+		inputmeter::live(&left, &rightAgain);
+		QCOMPARE(left, 0.5f);
+		QCOMPARE(rightAgain, 0.f);
 	}
 
 	//! The audio thread's half allocates nothing (realtime rule).

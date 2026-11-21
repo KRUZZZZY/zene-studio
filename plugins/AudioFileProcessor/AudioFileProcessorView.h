@@ -27,6 +27,8 @@
 
 #include "InstrumentView.h"
 
+class QPushButton;
+
 
 namespace lmms
 {
@@ -38,6 +40,7 @@ class AutomatableButtonGroup;
 class Knob;
 class PixmapButton;
 class ComboBox;
+class LcdSpinBox;
 class AudioFileProcessorWaveView;
 
 
@@ -53,6 +56,8 @@ public:
 protected slots:
 	void sampleUpdated();
 	void openAudioFile();
+	//! Q050-156: record the input straight into this sampler (record.sampler_capture*).
+	void recordTake();
 
 protected:
 	virtual void dragEnterEvent(QDragEnterEvent* dee);
@@ -76,6 +81,10 @@ private:
 	AutomatableButtonGroup* m_loopGroup;
 	PixmapButton* m_stutterButton;
 	ComboBox* m_interpBox;
+	Knob* m_attackKnob;
+	Knob* m_releaseKnob;
+	LcdSpinBox* m_voiceLimitBox;
+	QPushButton* m_recordTakeButton;
 } ;
 
 } // namespace gui

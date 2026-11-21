@@ -36,6 +36,7 @@
 // in docs/KNOWN-LIMITATIONS.md.
 
 #include <algorithm>
+#include <cmath>
 
 #include <QJsonObject>
 
@@ -86,6 +87,9 @@ QJsonObject editsState(const ClipRef& ref, const ClipEdits& edits)
 	out.insert(QStringLiteral("fade_out"), edits.fadeOutTicks);
 	out.insert(QStringLiteral("fade_in_shape"), fadeShapeName(edits.fadeInShape));
 	out.insert(QStringLiteral("fade_out_shape"), fadeShapeName(edits.fadeOutShape));
+	// Q050-125: the clip's polarity travels with every edits read-back, so a caller sees it without a
+	// second call and a before-state carries it for the inverse.
+	out.insert(QStringLiteral("inverted"), edits.hasPolarity());
 	if (edits.fadeInOffsetTicks != 0) { out.insert(QStringLiteral("fade_in_offset"), edits.fadeInOffsetTicks); }
 	if (edits.fadeOutOffsetTicks != 0) { out.insert(QStringLiteral("fade_out_offset"), edits.fadeOutOffsetTicks); }
 	return out;
@@ -324,6 +328,7 @@ void registerClipSetGain(ControlRegistry& registry)
 	cmd.resultSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
 		{QStringLiteral("gain_db"), control::numberProperty()},
+		{QStringLiteral("inverted"), control::booleanProperty()},
 		{QStringLiteral("fade_in"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("fade_out"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("fade_in_shape"), control::stringProperty()},
@@ -340,7 +345,8 @@ void registerClipSetGain(ControlRegistry& registry)
 			return error;
 		}
 		const double db = args.value(QStringLiteral("gain_db")).toDouble();
-		if (db < kMinGainDb || db > kMaxGainDb)
+		// isfinite FIRST: a NaN compares false against both bounds and would pass.
+		if (!std::isfinite(db) || db < kMinGainDb || db > kMaxGainDb)
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs,
 				QStringLiteral("gain_db %1 is outside %2..%3 dB")
@@ -350,6 +356,7 @@ void registerClipSetGain(ControlRegistry& registry)
 		const ClipEdits before = ref.clip->clipEdits();
 		ClipEdits after = before;
 		after.gain = gainDbToLinear(static_cast<float>(db));
+		if (after == before) { return ControlResult::success(editsState(ref, after)); }
 
 		ref.clip->addJournalCheckPoint();
 		ref.clip->setClipEdits(after);
@@ -361,6 +368,62 @@ void registerClipSetGain(ControlRegistry& registry)
 		result.insert(QStringLiteral("__transaction"),
 			control::transactionPayload(editsState(ref, before),
 				QStringLiteral("clip.set_gain"), inverseArgs, true, ClauseClipJournalled));
+		return ControlResult::success(result);
+	};
+	registry.registerCommand(cmd);
+}
+
+void registerClipSetPolarity(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("clip.set_polarity");
+	cmd.group = QStringLiteral("clip");
+	cmd.verb = QStringLiteral("set_polarity");
+	cmd.description = QStringLiteral("Set whether a sample clip renders with its polarity inverted: every frame it "
+		"plays changes sign, and its drawn waveform mirrors around zero. The SOURCE sample is never modified - the "
+		"inversion is a non-destructive stage on top of the clip's gain, like its fades - and an old project loads "
+		"with polarity off. Reversible through the ProjectJournal (Clip checkpoint).");
+	cmd.argsSchema = control::objectSchema({
+		{QStringLiteral("clip"), control::stringProperty()},
+		{QStringLiteral("inverted"), control::booleanProperty()},
+	}, {QStringLiteral("clip"), QStringLiteral("inverted")});
+	cmd.resultSchema = control::objectSchema({
+		{QStringLiteral("clip"), control::stringProperty()},
+		{QStringLiteral("inverted"), control::booleanProperty()},
+		{QStringLiteral("gain_db"), control::numberProperty()},
+		{QStringLiteral("fade_in"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("fade_in_offset"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("fade_out"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("fade_out_offset"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("fade_in_shape"), control::stringProperty()},
+		{QStringLiteral("fade_out_shape"), control::stringProperty()},
+	});
+	cmd.mutating = true;
+	cmd.handler = [](const QJsonObject& args) {
+		ControlResult error;
+		ClipRef ref;
+		if (!resolveAudioClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
+		const bool inverted = args.value(QStringLiteral("inverted")).toBool();
+		const ClipEdits before = ref.clip->clipEdits();
+		ClipEdits after = before;
+		after.polarityInverted = inverted;
+		// An unchanged request records nothing: `setClipEdits` would not emit, and a step that changes
+		// nothing would shadow the edit before it (the registry's no-op rule, BUG-DRYRUN-UNDO's shape).
+		if (after != before)
+		{
+			ref.clip->addJournalCheckPoint();
+			ref.clip->setClipEdits(after);
+			Engine::getSong()->setModified();
+		}
+		QJsonObject result = editsState(ref, after);
+		if (after != before)
+		{
+			QJsonObject inverseArgs = clipArg(ref);
+			inverseArgs.insert(QStringLiteral("inverted"), before.hasPolarity());
+			result.insert(QStringLiteral("__transaction"),
+				control::transactionPayload(editsState(ref, before),
+					QStringLiteral("clip.set_polarity"), inverseArgs, true, ClauseClipJournalled));
+		}
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);
@@ -389,6 +452,7 @@ void registerClipSetFade(ControlRegistry& registry)
 	cmd.resultSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
 		{QStringLiteral("gain_db"), control::numberProperty()},
+		{QStringLiteral("inverted"), control::booleanProperty()},
 		{QStringLiteral("fade_in"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("fade_out"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("fade_in_shape"), control::stringProperty()},
@@ -549,6 +613,7 @@ void registerClipCrossfade(ControlRegistry& registry)
 void registerClipEditsCommands(ControlRegistry& registry)
 {
 	registerClipSetGain(registry);
+	registerClipSetPolarity(registry);
 	registerClipSetRecord(registry);
 	registerClipSetFade(registry);
 	registerClipCrossfade(registry);

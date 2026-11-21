@@ -35,22 +35,47 @@
 
 #include <QtTest>
 
+#include <QAbstractButton>
 #include <QAction>
+#include <QCoreApplication>
 #include <QMenu>
 #include <QMenuBar>
+#include <QMessageBox>
 #include <QSignalSpy>
+#include <QTemporaryDir>
+#include <QTreeWidget>
+#include <QTimer>
+#include <QTranslator>
 
 #include "DeprecationHelper.h"
 #include "CommandForm.h"
 #include "CommandMetadata.h"
 #include "CommandPalette.h"
 #include "ControlRegistry.h"
+#include "Engine.h"
+#include "GuiApplication.h"
+#include "GuiTestApplication.h"
 
 using namespace lmms;
 using namespace lmms::gui;
 
 namespace
 {
+
+class PaletteWarningTranslator : public QTranslator
+{
+public:
+	QString translate(const char* context, const char* sourceText, const char* disambiguation, int n) const override
+	{
+		Q_UNUSED(disambiguation)
+		Q_UNUSED(n)
+		if (qstrcmp(context, "CommandMetadata") == 0 && qstrcmp(sourceText, "This cannot be undone.") == 0)
+		{
+			return QStringLiteral("translated irreversible warning");
+		}
+		return {};
+	}
+};
 
 int g_noopRuns = 0;
 
@@ -113,8 +138,14 @@ class CommandPaletteTest : public QObject
 private slots:
 	void initTestCase()
 	{
+		QVERIFY(m_home.isValid());
+		guitest::startGui(m_home);
+		QVERIFY(getGUI() != nullptr && getGUI()->mainWindow() != nullptr);
+		ControlRegistry::setReady(true);
 		registerFakes();
 		QMenu* file = m_bar.addMenu(QStringLiteral("&File"));
+		m_newProject = file->addAction(QStringLiteral("New Project"));
+		m_newProject->setProperty("controlCommand", QStringLiteral("project.new"));
 		m_save = file->addAction(QStringLiteral("&Save"));
 		m_save->setShortcut(keySequence(Qt::CTRL, Qt::Key_S));
 		m_save->setProperty("controlCommand", QStringLiteral("project.save"));
@@ -132,6 +163,12 @@ private slots:
 		// Qt writes a literal ampersand as '&&': the palette must show one '&', not none.
 		QMenu* tools = m_bar.addMenu(QStringLiteral("&Tools"));
 		tools->addAction(QStringLiteral("Cut && Paste"));
+	}
+
+	void cleanupTestCase()
+	{
+		ControlRegistry::setReady(false);
+		Engine::destroy();
 	}
 
 	void menuEntriesCarryTheirPathShortcutAndCommand()
@@ -221,6 +258,57 @@ private slots:
 		QVERIFY2(outcome.contains(QStringLiteral("done")), qPrintable(outcome));
 	}
 
+	void anIrreversibleMenuActionRequiresConfirmation()
+	{
+		const PaletteEntry entry = entryFor(paletteMenuEntries(&m_bar), QStringLiteral("project.new"));
+		QVERIFY(!entry.action.isNull());
+		QVERIFY(entry.irreversible);
+		QSignalSpy triggered(entry.action, &QAction::triggered);
+
+		ControlRegistry* registry = ControlRegistry::instance();
+		const bool wasHeadless = registry->isHeadless();
+		registry->setHeadless(false);
+		QWidget host;
+		auto activateAfterAnswer = [&](QMessageBox::StandardButton answer, bool* asked) {
+			QTimer answerTimer;
+			answerTimer.setSingleShot(true);
+			connect(&answerTimer, &QTimer::timeout, this, [answer, asked] {
+				auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+				if (box != nullptr)
+				{
+					if (QAbstractButton* button = box->button(answer))
+					{
+						*asked = true;
+						button->click();
+					}
+				}
+			});
+			answerTimer.start(0);
+			const QString outcome = paletteActivate(entry, &host);
+			answerTimer.stop();
+			return outcome;
+		};
+
+		bool asked = false;
+		const QString cancelled = activateAfterAnswer(QMessageBox::No, &asked);
+		const bool askedBeforeAccept = asked;
+		const bool wasCancelled = cancelled.contains(QStringLiteral("cancelled"));
+		const int afterCancel = triggered.count();
+		asked = false;
+		const QString accepted = activateAfterAnswer(QMessageBox::Yes, &asked);
+		const bool askedBeforeAccepting = asked;
+		const bool acceptedWithNoOutcome = accepted.isEmpty();
+		const int afterAccept = triggered.count();
+		registry->setHeadless(wasHeadless);
+
+		QVERIFY(askedBeforeAccept);
+		QVERIFY(wasCancelled);
+		QCOMPARE(afterCancel, 0);
+		QVERIFY(askedBeforeAccepting);
+		QVERIFY2(acceptedWithNoOutcome, qPrintable(accepted));
+		QCOMPARE(afterAccept, 1);
+	}
+
 	//! 0.5.0 theme 4: a registry command reads by its name, filed under its group, with its id kept secondary.
 	void aRegistryCommandReadsByItsNameWithItsIdSecondary()
 	{
@@ -284,8 +372,69 @@ private slots:
 		QVERIFY2(!outcome.isEmpty() && !outcome.contains(QStringLiteral("cancelled")), qPrintable(outcome));
 	}
 
+	void manualFallbackLabelDoesNotClaimUndoIsImpossible()
+	{
+		QVERIFY(commandUndoWarning(QStringLiteral("plugin.load")).contains(QStringLiteral("Undo may not fully reverse this.")));
+		CommandPalette palette(&m_bar);
+		palette.setQuery(QStringLiteral("plugin.load"));
+		QTreeWidget* list = palette.findChild<QTreeWidget*>();
+		QVERIFY(list != nullptr);
+		int row = -1;
+		for (int i = 0; i < list->topLevelItemCount(); ++i)
+		{
+			if (list->topLevelItem(i)->text(3) == QStringLiteral("plugin.load")) { row = i; break; }
+		}
+		QVERIFY(row >= 0);
+		const QString label = list->topLevelItem(row)->text(0);
+		QVERIFY2(!label.contains(QStringLiteral("cannot be undone")), qPrintable(label));
+		QVERIFY2(label.contains(QStringLiteral("may not fully reverse")), qPrintable(label));
+	}
+
+	void irreversibleLabelUsesCommandMetadataTranslation()
+	{
+		PaletteWarningTranslator translator;
+		const bool installed = QCoreApplication::installTranslator(&translator);
+		CommandPalette palette(&m_bar);
+		palette.setQuery(QStringLiteral("project.new"));
+		QTreeWidget* list = palette.findChild<QTreeWidget*>();
+		QString label;
+		if (list != nullptr)
+		{
+			for (int i = 0; i < list->topLevelItemCount(); ++i)
+			{
+				if (list->topLevelItem(i)->text(3) == QStringLiteral("project.new"))
+				{
+					label = list->topLevelItem(i)->text(0);
+					break;
+				}
+			}
+		}
+		QCoreApplication::removeTranslator(&translator);
+		QVERIFY(installed);
+		QVERIFY(!label.isEmpty());
+		QVERIFY2(label.contains(QStringLiteral("cannot be undone")), qPrintable(label));
+		QVERIFY2(!label.contains(QStringLiteral("may not fully reverse")), qPrintable(label));
+	}
+
+	void shiftEnterWithListFocusRunsFormDefaults()
+	{
+		const int before = g_noopRuns;
+		CommandPalette palette(&m_bar);
+		palette.setQuery(QStringLiteral("palettetest.optional"));
+		QTreeWidget* list = palette.findChild<QTreeWidget*>();
+		QVERIFY(list != nullptr);
+		QCOMPARE(palette.shown().first().command, QStringLiteral("palettetest.optional"));
+		palette.show();
+		list->setFocus();
+
+		QTest::keyClick(list, Qt::Key_Return, Qt::ShiftModifier);
+		QCOMPARE(g_noopRuns, before + 1);
+	}
+
 private:
+	QTemporaryDir m_home;
 	QMenuBar m_bar;
+	QAction* m_newProject = nullptr;
 	QAction* m_save = nullptr;
 };
 

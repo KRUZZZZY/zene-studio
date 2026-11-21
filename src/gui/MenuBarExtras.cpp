@@ -32,6 +32,8 @@
 #include "AccessibleWidgets.h"
 #include "CommandForm.h"
 #include "CommandLists.h"
+#include "DeprecationHelper.h"
+#include "RenderRangeMenu.h"
 
 namespace lmms::gui
 {
@@ -71,6 +73,8 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	run(QObject::tr("Zoom In"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), 4}});
 	run(QObject::tr("Zoom Out"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), -4}});
 	run(QObject::tr("Zoom Back"), QStringLiteral("arrangement.zoom_back"), {});
+	run(QObject::tr("Zoom Forward"), QStringLiteral("arrangement.zoom_forward"), {});
+	run(QObject::tr("Zoom Toggle"), QStringLiteral("arrangement.zoom_toggle"), {});
 	menu->addSeparator();
 	run(QObject::tr("Fit Song"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("fit"), QStringLiteral("song")}});
 	run(QObject::tr("Fit Loop"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("fit"), QStringLiteral("loop")}});
@@ -79,13 +83,13 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	menu->addSeparator();
 	// ED-024: bound to keys by default (rebindable with shortcuts.set, like every menu action).
 	run(QObject::tr("Nudge Clip Left"), QStringLiteral("arrangement.nudge"), {{QStringLiteral("direction"), QStringLiteral("left")}})
-		->setShortcut(QKeySequence(Qt::ALT | Qt::Key_Left));
+		->setShortcut(keySequence(Qt::ALT, Qt::Key_Left));
 	run(QObject::tr("Nudge Clip Right"), QStringLiteral("arrangement.nudge"), {{QStringLiteral("direction"), QStringLiteral("right")}})
-		->setShortcut(QKeySequence(Qt::ALT | Qt::Key_Right));
+		->setShortcut(keySequence(Qt::ALT, Qt::Key_Right));
 	run(QObject::tr("Next Clip"), QStringLiteral("arrangement.select_clip"), {{QStringLiteral("direction"), QStringLiteral("next")}})
-		->setShortcut(QKeySequence(Qt::ALT | Qt::Key_Down));
+		->setShortcut(keySequence(Qt::ALT, Qt::Key_Down));
 	run(QObject::tr("Previous Clip"), QStringLiteral("arrangement.select_clip"), {{QStringLiteral("direction"), QStringLiteral("previous")}})
-		->setShortcut(QKeySequence(Qt::ALT | Qt::Key_Up));
+		->setShortcut(keySequence(Qt::ALT, Qt::Key_Up));
 	menu->addSeparator();
 	run(QObject::tr("Add Marker at Play Position"), QStringLiteral("marker.add"), {});
 	run(QObject::tr("Next Marker"), QStringLiteral("marker.jump"), {{QStringLiteral("direction"), QStringLiteral("next")}});
@@ -134,6 +138,9 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	onRange(QObject::tr("Duplicate"), QStringLiteral("range.duplicate"), {});
 	onRange(QObject::tr("Consolidate"), QStringLiteral("range.consolidate"), {});
 	onRange(QObject::tr("Bounce to a New Track"), QStringLiteral("range.bounce"), {});  // the manual's "bounce it from Navigate > Range"
+	// 0.5.0 L12 (Q050-009): render the selection to a file, and export the song's named sections.
+	range->addSeparator();
+	addRenderRangeActions(range);
 	// range.clear only drops the selection (interface state); "Clear Range" read as erasing its contents.
 	onRange(QObject::tr("Deselect Range"), QStringLiteral("range.clear"), {});
 	run(QObject::tr("Tool Menu at Pointer"), QStringLiteral("window.tool_menu"), {});

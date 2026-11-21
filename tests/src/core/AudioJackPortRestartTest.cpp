@@ -22,6 +22,9 @@
 
 #include <QtTest>
 
+#include <QLineEdit>
+#include <QWidget>
+
 #include <cstdint>
 #include <vector>
 
@@ -51,9 +54,25 @@ private slots:
 		QVERIFY(inputPorts.empty());
 		QVERIFY(outputBuffers.empty());
 	}
+
+	// Contract check, not a regression proof: the setup widget opens its own JACK
+	// client in its constructor and closes it before returning (AudioJack.cpp:508,
+	// :565-569), so repeated open and close must construct and destroy cleanly.
+	// JackNoStartServer never spawns a server, so the outcome is the same whether
+	// or not a JACK server is already running on the machine: no timing, no sleeps.
+	void setupWidgetOpensAndClosesItsClientEachTime()
+	{
+		QWidget parent;
+		for (int open = 0; open < 3; ++open)
+		{
+			auto* widget = new AudioJack::setupWidget(&parent);
+			QVERIFY(widget->findChild<QLineEdit*>() != nullptr);
+			delete widget;
+		}
+	}
 };
 
 } // namespace lmms
 
-QTEST_GUILESS_MAIN(lmms::AudioJackPortRestartTest)
+QTEST_MAIN(lmms::AudioJackPortRestartTest)
 #include "AudioJackPortRestartTest.moc"

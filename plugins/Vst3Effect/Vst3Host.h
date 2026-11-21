@@ -30,6 +30,7 @@
 #include <functional>
 #include <memory>
 #include <cstddef>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -37,11 +38,13 @@
 #include <QString>
 
 #include "PluginHostChunking.h"
+#include "PluginParamGesture.h"
 #include "Vst3BusMap.h"
 #include "Vst3MidiQueue.h"
 #include "Vst3ParamDescriptor.h"
 
 namespace Steinberg::Vst { class IEditController; }
+namespace lmms { enum class PluginWindowSystem; }  // PluginWindowSystem.h
 
 namespace lmms::vst3
 {
@@ -208,6 +211,8 @@ public:
 	void setParamNormalized(std::uint32_t id, float normalized);
 	//! Lock free, any thread
 	auto paramNormalized(std::uint32_t id) const -> float;
+	//! Lock free, GUI thread only: the editor's gesture reports since the last call, and the value (Q050-214)
+	void readParamEdits(std::uint32_t id, PluginParamGesture::Edits* edits);
 	//! -1 if the plug-in has no such parameter
 	auto paramIndex(std::uint32_t id) const -> int;
 	//! GUI thread: also informs the edit controller (GUI-side value mirror)
@@ -265,11 +270,12 @@ public:
 	 *    frame, bounded to [0, frames - 1], in the chunk that frame falls in and
 	 *    rebased to it (0.5.0 W4), so no point lands past numSamples;
 	 *    MIDI events are delivered in the chunk their sample offset falls in,
-	 *    with the offset rebased to that chunk, and an event whose offset is at
-	 *    or beyond the end of the request is delivered with the LAST chunk at
-	 *    that chunk's end offset - exactly the `std::clamp(offset, 0, frames)`
-	 *    the host applied before it chunked, so a note-off written at a block
-	 *    boundary still releases the note.
+	 *    with the offset rebased to that chunk, so every event offset lies in
+	 *    [0, chunk). An event whose offset is at or beyond the end of the
+	 *    request is carried into the NEXT request and delivered there at offset
+	 *    0, so it is still seen exactly once: a note-off written at a block
+	 *    boundary releases the note, and no event is ever handed to the plug-in
+	 *    at sampleOffset == numSamples.
 	 *
 	 * A request of 0 frames does nothing at all. If there are frames but the
 	 * host is not prepared (or has been released), every supplied output channel
@@ -278,12 +284,26 @@ public:
 	void process(const float* const* inputs, float* const* outputs,
 		int numInputs, int numOutputs, int frames);
 
+#ifdef LMMS_TESTING
+	//! Test-only: how many events the LAST chunk handed to the plug-in carried.
+	auto lastChunkEventCount() const -> int;
+	//! Test-only: sample offset of that chunk's event @a index, or -1 when there is none. A VST3
+	//! event offset is always in [0, chunk length).
+	auto lastChunkEventOffset(int index) const -> int;
+	//! Test-only: how many parameters the LAST process() call sent the plug-in a change for.
+	auto lastParameterChangeCount() const -> int;
+#endif
+
 	//! GUI thread: plug-in rendered string for a normalized value
 	auto paramDisplayValue(std::uint32_t id, float normalized) const -> QString;
 
 	// ---- R4.2: the plug-in's own editor (Vst3EditorSession.h) --------------------------
-	//! Main thread: attach the plug-in's editor to @a parentWindow (an X11 window id).
+	//! Main thread: attach the plug-in's editor to @a parentWindow - the platform's native window
+	//! (Q050-490: an X11 window id, an HWND or an NSView*, whatever QWidget::winId() gives there).
 	auto openEditor(void* parentWindow, QString* error) -> bool;
+	//! Q050-490: the window system the next openEditor() embeds in, instead of the running one, so a
+	//! test proves the Windows and macOS selection on any machine. Nothing in the product calls it.
+	void setEditorWindowSystem(PluginWindowSystem system);
 	void closeEditor();
 	auto editorOpen() const -> bool;
 	auto resizeEditor(int width, int height) -> bool;
@@ -305,6 +325,7 @@ private:
 	//! reset explicitly in the destructor before the controller is released.
 	std::unique_ptr<Vst3EditorSession> m_editor;
 	double m_editorScale = 1.0;
+	std::optional<PluginWindowSystem> m_editorWindowSystem;
 };
 
 } // namespace lmms::vst3

@@ -56,6 +56,8 @@ MonoDelay::~MonoDelay()
 
 void MonoDelay::tick( sample_t* sample )
 {
+	if (m_length == 0.0f) { return; }
+
 	m_writeIndex = ( m_writeIndex + 1 ) % ( int )m_maxLength;
 	int readIndex = m_writeIndex - static_cast<int>(m_length);
 	if (readIndex < 0 ) { readIndex += m_maxLength; }

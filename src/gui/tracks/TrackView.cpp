@@ -41,7 +41,9 @@
 #include "ArrangerFileDrop.h"
 #include "AudioEngine.h"
 #include "AutomatableButton.h"
+#include "AutomationTrack.h"
 #include "ConfigManager.h"
+#include "DesignTokens.h"
 #include "DataFile.h"
 #include "DeprecationHelper.h"
 #include "DpiHelper.h"
@@ -50,13 +52,44 @@
 #include "StringPairDrag.h"
 #include "Track.h"
 #include "TrackGrip.h"
+#include "TrackContainer.h"
 #include "TrackContainerView.h"
 #include "TrackSpacers.h"
+#include "TakeLaneRows.h"
 #include "ClipView.h"
 
 
 namespace lmms::gui
 {
+
+int trackLaneHeight()
+{
+	// The clip is the 44 px target and the rest of the lane is the touch gap to the next track's
+	// clip. Standard mode keeps its 32 px lane.
+	return tokens::accessibleMode()
+		? std::max(DEFAULT_TRACK_HEIGHT, tokens::targetSize() + tokens::targetSpacing(0))
+		: DEFAULT_TRACK_HEIGHT;
+}
+
+int trackOperationsWidth(bool compact)
+{
+	const int standard = compact ? TRACK_OP_WIDTH_COMPACT : TRACK_OP_WIDTH;
+	if (!tokens::accessibleMode()) { return standard; }
+	// The grip, then the Actions/Mute/Solo/Arm and automation-lane buttons - the most any track shows - a touch gap apart.
+	const int grip = tokens::targetSize();
+	const int buttons = 5 * tokens::targetSize() + 4 * tokens::targetSpacing(2);
+	// QToolButton styles can render a 50 px square after control cues; leave a final 8 px touch
+	// inset so the last control stays within this column on every platform style.
+	return std::max(standard, grip + buttons + 2 * tokens::space::xs + tokens::targetSpacing(2));
+}
+
+int trackSettingsWidth(bool compact)
+{
+	const int standard = compact ? DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT : DEFAULT_SETTINGS_WIDGET_WIDTH;
+	if (!tokens::accessibleMode()) { return standard; }
+	// Wide enough for the name, channel, monitor and the two knobs at target size with touch gaps.
+	return std::max(standard, 520);
+}
 
 namespace
 {
@@ -111,7 +144,7 @@ TrackView::TrackView( Track * track, TrackContainerView * tcv ) :
 	layout->addWidget( &m_trackOperationsWidget );
 	layout->addWidget( &m_trackSettingsWidget );
 	layout->addWidget( &m_trackContentWidget, 1 );
-	setFixedHeight(scaledPixels(m_track->getHeight()));
+	setFixedHeight(std::max(scaledPixels(m_track->getHeight()), trackLaneHeight()));
 
 	resizeEvent( nullptr );
 
@@ -157,9 +190,32 @@ TrackView::TrackView( Track * track, TrackContainerView * tcv ) :
 		createClipView(clip);
 	}
 
+	// 0.5.0 L03 (Q050-123): a sample track's take lanes get rows of their own over the content
+	// area. The rows are hidden while the track has no lanes and take no mouse input, so an
+	// ordinary track's arrangement is untouched. Later lanes, clip edits and undos are read
+	// back by the rows' own watch.
+	if (m_track->type() == Track::Type::Sample)
+	{
+		new TakeLaneRows{m_track, this};
+	}
+
 	m_trackContainerView->addTrackView( this );
 	// WF-107: the subclasses set their own height after this constructor; the spacer goes on after them.
-	QTimer::singleShot(0, this, &TrackView::applySpacer);
+	// Q050-317.1: the runner is bound to this view, but the TRACK it reads is not owned by the view. A
+	// document replacement (project.new / project.new_document, an opened project) deletes the track while
+	// this zero-delay callback is still queued, and updateFolderIndent()/applySpacer() then dereference a
+	// freed Track - measured as a SIGSEGV in updateFolderIndent right after project.new_document answered.
+	// So the callback asks the view whether it still owns a live track before reading it: the view is
+	// destroyed with its Qt parent, which cancels the callback, and a view whose track went early is silent.
+	QTimer::singleShot(0, this, [this]
+	{
+		// The POINTER is compared, never dereferenced: by now it may name a freed Track, and only
+		// the container's live list can say whether the model this view was built for is still there.
+		const auto& live = m_trackContainerView->model()->tracks();
+		if (m_track == nullptr || std::find(live.begin(), live.end(), m_track) == live.end()) { return; }
+		updateFolderIndent();
+		applySpacer();
+	});
 }
 
 
@@ -174,13 +230,56 @@ void TrackView::updateFolderIndent()
 	constexpr int IndentPerLevel = 10;
 	int depth = 0;
 	QString path;
-	for (const TrackFolder* folder = getTrack()->parentFolder(); folder != nullptr; folder = folder->parentFolder())
+	// 0.5.0 Q050-022: an automation lane is drawn one step in from its OWNER, the
+	// same way a folder's child is drawn one step in from the folder. The owner's
+	// own folder depth is inherited, so a lane under a track inside a folder keeps
+	// both indents.
+	const Track* indentFrom = getTrack();
+	QString laneOwnerName;
+	if (const auto* lane = dynamic_cast<const AutomationTrack*>(getTrack()))
+	{
+		if (lane->followsTrack() >= 0)
+		{
+			const TrackContainer* container = getTrack()->trackContainer();
+			const Track* owner = container != nullptr ? container->findTrackById(lane->followsTrack()) : nullptr;
+			if (owner != nullptr)
+			{
+				indentFrom = owner;
+				++depth;
+				laneOwnerName = owner->name();
+			}
+		}
+	}
+	for (const TrackFolder* folder = indentFrom->parentFolder(); folder != nullptr; folder = folder->parentFolder())
 	{
 		++depth;
 		path = path.isEmpty() ? folder->name() : folder->name() + QStringLiteral(" / ") + path;
 	}
-	m_trackSettingsWidget.setContentsMargins(depth * IndentPerLevel, 0, 0, 0);
-	m_trackSettingsWidget.setAccessibleDescription(depth == 0 ? QString() : tr("In folder %1").arg(path));
+	const int indent = depth * IndentPerLevel;
+	m_trackSettingsWidget.setContentsMargins(indent, 0, 0, 0);
+	if (m_trackSettingsWidget.layout() == nullptr)
+	{
+		constexpr auto BaseXProperty = "_zeneFolderIndentBaseX";
+		for (QWidget* child : m_trackSettingsWidget.findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
+		{
+			QVariant baseX = child->property(BaseXProperty);
+			if (!baseX.isValid())
+			{
+				baseX = child->x();
+				child->setProperty(BaseXProperty, baseX);
+			}
+			child->move(baseX.toInt() + indent, child->y());
+		}
+	}
+	if (!laneOwnerName.isEmpty())
+	{
+		path = path.isEmpty() ? laneOwnerName : laneOwnerName + QStringLiteral(" / ") + path;
+		m_trackSettingsWidget.setAccessibleDescription(tr("Automation lane under %1").arg(path));
+	}
+	else
+	{
+		m_trackSettingsWidget.setAccessibleDescription(depth == 0 ? QString() : tr("In folder %1").arg(path));
+	}
 }
 
 
@@ -193,13 +292,13 @@ void TrackView::resizeEvent( QResizeEvent * re )
 	if( ConfigManager::inst()->value( "ui",
 					  "compacttrackbuttons" ).toInt() )
 	{
-		m_trackOperationsWidget.setFixedSize( TRACK_OP_WIDTH_COMPACT, laneHeight() - 1 );
-		m_trackSettingsWidget.setFixedSize( DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT, laneHeight() - 1 );
+		m_trackOperationsWidget.setFixedSize(trackOperationsWidth(true), laneHeight() - 1);
+		m_trackSettingsWidget.setFixedSize(trackSettingsWidth(true), laneHeight() - 1);
 	}
 	else
 	{
-		m_trackOperationsWidget.setFixedSize( TRACK_OP_WIDTH, laneHeight() - 1 );
-		m_trackSettingsWidget.setFixedSize( DEFAULT_SETTINGS_WIDGET_WIDTH, laneHeight() - 1 );
+		m_trackOperationsWidget.setFixedSize(trackOperationsWidth(false), laneHeight() - 1);
+		m_trackSettingsWidget.setFixedSize(trackSettingsWidth(false), laneHeight() - 1);
 	}
 
 	m_trackContentWidget.setFixedHeight( laneHeight() );
@@ -222,7 +321,7 @@ void TrackView::applySpacer()
 	// No spacer now and none before: the row is left exactly as it always was.
 	if (layout() == nullptr || (spacer == 0 && layout()->contentsMargins().bottom() == 0)) { return; }
 	layout()->setContentsMargins(0, 0, 0, spacer);
-	setFixedHeight(scaledPixels(m_track->getHeight()) + spacer);
+	setFixedHeight(std::max(scaledPixels(m_track->getHeight()), trackLaneHeight()) + spacer);
 }
 
 
@@ -280,7 +379,7 @@ void TrackView::modelChanged()
 	m_trackOperationsWidget.m_muteBtn->setModel( &m_track->m_mutedModel );
 	m_trackOperationsWidget.m_soloBtn->setModel( &m_track->m_soloModel );
 	ModelView::modelChanged();
-	setFixedHeight(scaledPixels(m_track->getHeight()));
+	setFixedHeight(std::max(scaledPixels(m_track->getHeight()), trackLaneHeight()));
 	applySpacer();  // WF-107: a no-op for a row without a spacer
 }
 
@@ -319,7 +418,7 @@ void TrackView::dropEvent( QDropEvent * de )
 	if (arrangerdrop::carriesFile(de->mimeData()))
 	{
 		const TimePos tick = arrangerdrop::tickAtContainerX(trackContainerView(), position(de).x());
-		if (arrangerdrop::dropFileAndReport(de->mimeData(), m_track, tick)) { de->acceptProposedAction(); }
+		if (arrangerdrop::dropFileAndReport(de->mimeData(), m_track, tick, arrangerdrop::dropModifiers(de))) { de->acceptProposedAction(); }
 		else { de->ignore(); }
 		return;
 	}
@@ -367,10 +466,8 @@ void TrackView::mousePressEvent( QMouseEvent * me )
 	}
 
 
-	int widgetTotal = ConfigManager::inst()->value( "ui",
-							"compacttrackbuttons" ).toInt()==1 ?
-		DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT + TRACK_OP_WIDTH_COMPACT :
-		DEFAULT_SETTINGS_WIDGET_WIDTH + TRACK_OP_WIDTH;
+	const bool compactTrackButtons = ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt() == 1;
+	const int widgetTotal = trackSettingsWidth(compactTrackButtons) + trackOperationsWidth(compactTrackButtons);
 	if (m_trackContainerView->allowRubberband() == true  && pos.x() > widgetTotal)
 	{
 		QWidget::mousePressEvent( me );
@@ -415,10 +512,8 @@ void TrackView::mouseMoveEvent( QMouseEvent * me )
 {
 	const auto pos = position(me);
 
-	int widgetTotal = ConfigManager::inst()->value( "ui",
-							"compacttrackbuttons" ).toInt()==1 ?
-		DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT + TRACK_OP_WIDTH_COMPACT :
-		DEFAULT_SETTINGS_WIDGET_WIDTH + TRACK_OP_WIDTH;
+	const bool compactTrackButtons = ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt() == 1;
+	const int widgetTotal = trackSettingsWidth(compactTrackButtons) + trackOperationsWidth(compactTrackButtons);
 	if (m_trackContainerView->allowRubberband() == true && pos.x() > widgetTotal)
 	{
 		QWidget::mouseMoveEvent( me );
@@ -563,7 +658,8 @@ void TrackView::resizeToHeight(int h)
 	// @a h is the whole row; the track keeps the part above its spacer (WF-107), set before the realign
 	// that lays the row out from it.
 	const int spacer = spacerPixels();
-	setFixedHeight(qMax<int>(h - spacer, scaledPixels(MINIMAL_TRACK_HEIGHT)) + spacer);
+	const int minimum = std::max(scaledPixels(MINIMAL_TRACK_HEIGHT), trackLaneHeight());
+	setFixedHeight(std::max(h - spacer, minimum) + spacer);
 	m_track->setHeight(unscaledPixels(height() - spacer));
 	m_trackContainerView->realignTracks();
 }

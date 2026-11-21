@@ -36,6 +36,11 @@ namespace lmms
 LMMS_EXPORT bool isAgentInstance();
 LMMS_EXPORT void setAgentInstance(bool agent);
 
+//! True when Qt runs on a platform with no display (offscreen/minimal/vnc).  Unlike
+//! isUnattendedRun() this is false for a visible GUI started with --control-socket: a
+//! command that "requires a display" (app.help, window.*) can open its window there.
+LMMS_EXPORT bool hasNoDisplay();
+
 //! True when nobody can answer a dialog in this process: it was started with
 //! --control-socket, or Qt runs on a platform with no display
 //! (offscreen/minimal/vnc, i.e. a CI run).  A QMessageBox::exec() /
@@ -44,6 +49,12 @@ LMMS_EXPORT void setAgentInstance(bool agent);
 //! alive, answers `control.ping` with `engine_ready:false`, and never becomes
 //! usable (task #625, measured on the base commit 6b01b98eb).
 LMMS_EXPORT bool isUnattendedRun();
+
+//! True when Qt runs on a platform a window can be shown on (not offscreen/minimal/vnc), whether or not an
+//! agent drives the instance. A command that declares `requires: display` needs this, not a person: an
+//! agent instance on a real display can open a non-modal window (the Help Center); `human` is what keeps a
+//! modal screen away from an agent.
+LMMS_EXPORT bool hasDisplay();
 
 } // namespace lmms
 

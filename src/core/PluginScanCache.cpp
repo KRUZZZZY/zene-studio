@@ -49,6 +49,11 @@ constexpr auto s_hasDescriptor = "has-descriptor";
 constexpr auto s_notAPlugin = "not-a-plugin";
 constexpr auto s_loadFailed = "load-failed";
 
+/*! The largest cache file load() reads and save() writes. A cache is a few kilobytes
+    per plugin, so this is tens of thousands of plugins; a bigger file is corrupt or
+    not ours, and reading it whole could exhaust memory. */
+constexpr qint64 s_maxCacheFileBytes = 64LL * 1024 * 1024;
+
 QString statusToString(PluginScanRecord::Status status)
 {
 	switch (status)
@@ -141,6 +146,14 @@ bool readCacheFile(const QString& path, QJsonDocument& out)
 	{
 		qWarning() << "plugin-scan-cache: cannot read" << path << "-" << file.errorString()
 			<< "- scanning all plugins";
+		return false;
+	}
+	// Checked before the read: a file of any size must not be loaded whole just to be
+	// rejected by the parser.
+	if (file.size() > s_maxCacheFileBytes)
+	{
+		qWarning() << "plugin-scan-cache: ignoring" << path << "- larger than" << s_maxCacheFileBytes
+			<< "bytes - scanning all plugins";
 		return false;
 	}
 
@@ -254,6 +267,15 @@ bool PluginScanCache::save() const
 	root.insert("files", files);
 	root.insert("quarantine", quarantine);
 
+	const QByteArray bytes = QJsonDocument(root).toJson(QJsonDocument::Indented);
+	// The same limit as load(): a cache that could not be read back is not written.
+	if (bytes.size() > s_maxCacheFileBytes)
+	{
+		qWarning() << "plugin-scan-cache: not writing" << m_filePath << "- larger than" << s_maxCacheFileBytes
+			<< "bytes";
+		return false;
+	}
+
 	// QSaveFile: the previous cache stays intact unless the new one lands whole.
 	QSaveFile out(m_filePath);
 	if (!out.open(QIODevice::WriteOnly))
@@ -261,7 +283,7 @@ bool PluginScanCache::save() const
 		qWarning() << "plugin-scan-cache: cannot write" << m_filePath << "-" << out.errorString();
 		return false;
 	}
-	if (out.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) < 0 || !out.commit())
+	if (out.write(bytes) < 0 || !out.commit())
 	{
 		qWarning() << "plugin-scan-cache: cannot write" << m_filePath << "-" << out.errorString();
 		return false;

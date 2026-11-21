@@ -268,6 +268,28 @@ private slots:
 		QVERIFY(masterFormat("5.1"));
 	}
 
+	void aDiscreteMasterWritesItsChannelCountWithoutSpeakerMask()
+	{
+		// 3, 4, 6 and 8 overlap LCR, quad, 5.1 and 7.1: the selected layout, not the count, must decide
+		// the mask. Every discrete layout writes WAVEX's zero mask and its own channel count.
+		for (int channels = 3; channels <= 8; ++channels)
+		{
+			const QString name = QStringLiteral("discrete-%1").arg(channels);
+			QVERIFY2(masterFormat(qPrintable(name)), qPrintable(name));
+			const QString out = path(QStringLiteral("discrete-%1.wav").arg(channels));
+			render(surroundSettings(Depth::Depth16Bit), Format::Wave, out);
+			const Header h = readHeader(out);
+			QCOMPARE(h.tag, 0xFFFE);
+			QCOMPARE(h.channels, channels);
+			QCOMPARE(h.mask, quint32(0));  // no speaker positions
+			int readChannels = 0;
+			const std::vector<float> samples = readSamples(out, &readChannels);
+			QCOMPARE(readChannels, channels);
+			QVERIFY(!samples.empty());
+		}
+		QVERIFY(masterFormat("5.1"));
+	}
+
 	void invalidCombinationsAreRefused()
 	{
 		const bool wave = true;

@@ -47,6 +47,7 @@
 #include "ShellOverflow.h"
 #include "ShellToolsMenu.h"
 #include "TaskIndicator.h"
+#include "TouchInput.h"
 #include "TransportReadouts.h"
 #include "Song.h"
 
@@ -109,6 +110,8 @@ ShellButton::ShellButton(QWidget* parent)
 	setToolButtonStyle(Qt::ToolButtonIconOnly);
 	setIconSize(QSize(tokens::size::icon, tokens::size::icon));
 	setCursor(Qt::PointingHandCursor);
+	// 0.5.0 Q050-141: the transport and every shell button take a finger tap as their click.
+	touch::installSingleTouch(this);
 }
 
 QSize ShellButton::sizeHint() const
@@ -218,7 +221,8 @@ ShellHeader::ShellHeader(QWidget* parent)
 		tr("Project actions, the transport, the metronome, tempo, time and meter."));
 	m_stripLayout = new QHBoxLayout(m_strip);
 	m_stripLayout->setContentsMargins(0, 0, 0, 0);
-	m_stripLayout->setSpacing(tokens::space::xs);
+	// 0.5.0 Q050-141: adjacent targets keep the touch minimum apart in accessible mode.
+	m_stripLayout->setSpacing(tokens::targetSpacing(tokens::space::xs));
 	row->addWidget(m_strip, 1);
 
 	m_play = addCommandButton(QStringLiteral("play"), tr("Play"), QStringLiteral("transport.play"));
@@ -453,7 +457,7 @@ ShellFooter::ShellFooter(const QList<QAction*>& viewActions, const QList<QAction
 
 	auto* row = new QHBoxLayout(this);
 	row->setContentsMargins(tokens::space::sm, 0, tokens::space::sm, 0);
-	row->setSpacing(tokens::space::xxs);
+	row->setSpacing(tokens::targetSpacing(tokens::space::xxs));
 
 	// Grouped by region, in screen order: the Inspector's cluster on the left, the bottom
 	// region's in the middle-left, the launcher beside them, the Browser's on the far right.

@@ -206,7 +206,7 @@ private slots:
 		applyTwoTimesWarp(*clip, m_rate);
 		clip->setWarpStretchMode(WarpStretchMode::PreservePitch);
 		const std::vector<SampleFrame> wsola = renderClip(clip);
-		clip->setWarpStretchMode(WarpStretchMode::RubberBand);
+		clip->setWarpStretchMode(WarpStretchMode::Complex);
 		QVERIFY(clip->rubberBandPool() != nullptr);
 		const std::vector<SampleFrame> rubberBand = renderClip(clip);
 
@@ -238,7 +238,7 @@ private slots:
 		const int sourceRate = m_rate / 2;
 		auto* clip = makeClip(track, sourceRate);
 		applyTwoTimesWarp(*clip, sourceRate);
-		clip->setWarpStretchMode(WarpStretchMode::RubberBand);
+		clip->setWarpStretchMode(WarpStretchMode::Complex);
 		const std::vector<SampleFrame> rendered = renderClip(clip);
 		const double low = amplitudeAt(rendered, kLowTone, m_rate);
 		const double octaveDown = amplitudeAt(rendered, kLowTone / 2.0, m_rate);
@@ -272,7 +272,7 @@ private slots:
 		SampleTrack track(Engine::getSong());
 		auto* clip = makeClip(track, m_rate);
 		applyTwoTimesWarp(*clip, m_rate);
-		clip->setWarpStretchMode(WarpStretchMode::RubberBand);
+		clip->setWarpStretchMode(WarpStretchMode::Complex);
 		RubberBandPool::recycleNow();
 
 		// The claim and the begin, directly: the handle constructor does other
@@ -315,7 +315,7 @@ private slots:
 		SampleTrack track(Engine::getSong());
 		auto* clip = makeClip(track, m_rate);
 		applyTwoTimesWarp(*clip, m_rate);
-		clip->setWarpStretchMode(WarpStretchMode::RubberBand);
+		clip->setWarpStretchMode(WarpStretchMode::Complex);
 		RubberBandPool* pool = clip->rubberBandPool();
 		RubberBandPool::recycleNow();
 		QCOMPARE(pool->readyVoices(), RubberBandPool::VoiceCount);
@@ -344,7 +344,7 @@ private slots:
 		SampleTrack track(Engine::getSong());
 		auto* clip = makeClip(track, m_rate);
 		applyTwoTimesWarp(*clip, m_rate);
-		clip->setWarpStretchMode(WarpStretchMode::RubberBand);
+		clip->setWarpStretchMode(WarpStretchMode::Complex);
 		QDomDocument document;
 		QDomElement parent = document.createElement("track");
 		const QDomElement saved = clip->saveState(document, parent);
@@ -353,7 +353,7 @@ private slots:
 		SampleTrack reloadedTrack(Engine::getSong());
 		auto* reloaded = makeClip(reloadedTrack, m_rate);
 		reloaded->restoreState(saved);
-		QCOMPARE(static_cast<int>(reloaded->warpStretchMode()), static_cast<int>(WarpStretchMode::RubberBand));
+		QCOMPARE(static_cast<int>(reloaded->warpStretchMode()), static_cast<int>(WarpStretchMode::Complex));
 		// The restore built the voices, off the audio thread, before any handle.
 		QCOMPARE(reloaded->rubberBandPool() != nullptr, RubberBandPool::available());
 
@@ -374,7 +374,7 @@ private slots:
 				{QStringLiteral("position"), 0}});
 		QVERIFY(clipAdded.ok);
 		const QString clip = clipAdded.result.value(QStringLiteral("clip")).toString();
-		const QJsonObject args{{QStringLiteral("clip"), clip}, {QStringLiteral("mode"), QStringLiteral("rubberband")}};
+		const QJsonObject args{{QStringLiteral("clip"), clip}, {QStringLiteral("mode"), QStringLiteral("complex")}};
 
 		QVERIFY2(!run(QStringLiteral("warp.stretch"), args).ok, "a linear clip was accepted");
 		QVERIFY(run(QStringLiteral("warp.set"),
@@ -384,13 +384,19 @@ private slots:
 					QJsonObject{{QStringLiteral("source_frame"), 44100}, {QStringLiteral("offset_ticks"), 48}}}}}).ok);
 		const ControlResult stretched = run(QStringLiteral("warp.stretch"), args);
 		QVERIFY2(stretched.ok, qPrintable(stretched.errorMessage));
-		QCOMPARE(stretched.result.value(QStringLiteral("stretch")).toString(), QStringLiteral("rubberband"));
+		QCOMPARE(stretched.result.value(QStringLiteral("stretch")).toString(), QStringLiteral("complex"));
 		QCOMPARE(stretched.result.value(QStringLiteral("stretch_algorithm")).toString(), QStringLiteral("rubberband"));
-		QCOMPARE(stretched.result.value(QStringLiteral("previous_mode")).toString(), QStringLiteral("resample"));
+		QCOMPARE(stretched.result.value(QStringLiteral("previous_mode")).toString(), QStringLiteral("re_pitch"));
 
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(run(QStringLiteral("warp.list"), {{QStringLiteral("clip"), clip}})
-			.result.value(QStringLiteral("stretch")).toString(), QStringLiteral("resample"));
+			.result.value(QStringLiteral("stretch")).toString(), QStringLiteral("re_pitch"));
+
+		// The legacy name still selects the mode; the state reports it canonically.
+		const ControlResult alias = run(QStringLiteral("warp.stretch"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("mode"), QStringLiteral("rubberband")}});
+		QVERIFY2(alias.ok, qPrintable(alias.errorMessage));
+		QCOMPARE(alias.result.value(QStringLiteral("stretch")).toString(), QStringLiteral("complex"));
 	}
 
 private:

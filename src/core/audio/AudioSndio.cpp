@@ -24,6 +24,7 @@
  */
 
 #include "AudioSndio.h"
+#include "CrashReporter.h"
 
 #ifdef LMMS_HAVE_SNDIO
 
@@ -130,6 +131,7 @@ void AudioSndio::stopProcessingImpl()
 
 void AudioSndio::run()
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	const auto framesPerAudioBuffer = audioEngine()->framesPerAudioBuffer();
 	const auto samplesPerAudioBuffer = framesPerAudioBuffer * channels();
 	auto fbuf = std::vector<sample_t>(samplesPerAudioBuffer);

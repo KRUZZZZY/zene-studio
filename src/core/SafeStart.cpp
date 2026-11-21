@@ -288,9 +288,17 @@ bool install(const std::string& workingDirectory)
 	{
 		s.installed = false;
 		s.directory.clear();
-		// A fresh install is a fresh session context, even when it fails.
+		// A fresh install is a fresh session context, even when it fails: the
+		// safe-start decision of the session that no longer exists must not
+		// outlive it. The previous-run record (lastSession) is history and stays.
 		s.sessionBegun = false;
 		s.preserveSessionOnNextBegin = false;
+		s.markerWasPresent = false;
+		s.safeStart = false;
+		s.safeStartRuns = 0;
+		s.skipEnabled = true;
+		s.projectPath.clear();
+		s.skipped.clear();
 	};
 	if (workingDirectory.empty())
 	{
@@ -505,7 +513,15 @@ ActivePlugin crashSuspect()
 
 void acknowledge()
 {
-	if (!state().installed) { return; }
+	State& s = state();
+	// The offer of a normal start is made in a SAFE session and nowhere else
+	// (the stderr line main() prints and the `offer` block safestart.get_state
+	// reports are both gated on safeStartActive()), so the acknowledgement is
+	// only ever written there. In an ordinary session it would be consumed by
+	// the NEXT launch, and it would hide the crash marker that launch finds:
+	// that launch would start NORMAL, with the third-party plug-in that killed
+	// this one.
+	if (!s.installed || !s.safeStart) { return; }
 	// The marker STAYS: the crash is still there to look at, and the record of
 	// which session died is still on disk for the next launch's report. Only the
 	// decision is recorded here.
@@ -595,7 +611,7 @@ bool shouldSkipPluginInstance(const std::string& pluginName, const std::string& 
 {
 	(void) pluginName;
 	const State& s = state();
-	if (!s.safeStart || !s.skipEnabled) { return false; }
+	if (!s.installed || !s.safeStart || !s.skipEnabled) { return false; }
 	return isThirdPartyPluginFile(filePath);
 }
 

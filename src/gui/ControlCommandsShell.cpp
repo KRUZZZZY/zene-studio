@@ -40,10 +40,12 @@
 #include <QUrl>
 
 #include "AboutDialog.h"
+#include "ChordProgressionPanel.h"
 #include "CommandPalette.h"
 #include "ConfigManager.h"
 #include "ShortcutsPage.h"
 #include "StartHub.h"
+#include "LivecodePanel.h"
 #include "ModulatorPanel.h"
 #include "TempoMapPanel.h"
 #include "UndoHistoryPanel.h"
@@ -286,6 +288,33 @@ void registerTempoMapPanel(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+void registerLivecodePanel(ControlRegistry& registry)
+{
+	ControlCommand cmd = command("window", "livecode");
+	cmd.description = QStringLiteral("Open Edit > Live Code (non-modally): the source editor and the "
+		"id/hook/budget a scheduled Lua script is made with, Schedule and Cancel Schedule running "
+		"livecode.schedule / livecode.unschedule, Load Source reading livecode.get_source, and the "
+		"schedule table from livecode.get_state (id, hook, budget, bytes, fire and error counts, "
+		"last failure). A compile refusal is shown in the panel and leaves the schedule that was "
+		"active in place; Undo runs control.undo, which restores a replaced script or rearms a "
+		"cancelled one. The panel's help text states the Lua-state, source, count, poll and memory "
+		"bounds. `schedules` is how many schedules it lists.");
+	cmd.argsSchema = objectSchema({});
+	cmd.resultSchema = objectSchema({{QStringLiteral("shown"), booleanProperty()},
+		{QStringLiteral("schedules"), integerProperty()}});
+	cmd.handler = [](const QJsonObject&) {
+		gui::MainWindow* window = mainWindow();
+		if (window == nullptr) { return noInterface(QStringLiteral("window.livecode")); }
+		auto* panel = new gui::LivecodePanel(window);
+		panel->setAttribute(Qt::WA_DeleteOnClose);
+		panel->setModal(false);
+		panel->show();
+		return ControlResult::success(QJsonObject{{QStringLiteral("shown"), true},
+			{QStringLiteral("schedules"), panel->scheduleCount()}});
+	};
+	registry.registerCommand(cmd);
+}
+
 void registerModulatorPanel(ControlRegistry& registry)
 {
 	ControlCommand cmd = command("window", "modulators");
@@ -305,6 +334,31 @@ void registerModulatorPanel(ControlRegistry& registry)
 		panel->show();
 		return ControlResult::success(QJsonObject{{QStringLiteral("shown"), true},
 			{QStringLiteral("rows"), panel->modulatorCount()}});
+	};
+	registry.registerCommand(cmd);
+}
+
+void registerProgressionPanel(ControlRegistry& registry)
+{
+	ControlCommand cmd = command("window", "progression");
+	cmd.description = QStringLiteral("Open Edit > Progression (non-modally): the named progressions "
+		"the catalogue holds, each SPELLED OUT in the selected scale (chord.progression_list with "
+		"`scale`/`root`/`octave`), what the selected one writes, and a Write button that runs "
+		"chord.progression_generate on the clip the shell's selection names. The scale, key and "
+		"octave are the panel's own choice; they are not written back to the scale context. `rows` "
+		"is how many progressions it lists.");
+	cmd.argsSchema = objectSchema({});
+	cmd.resultSchema = objectSchema({{QStringLiteral("shown"), booleanProperty()},
+		{QStringLiteral("rows"), integerProperty()}});
+	cmd.handler = [](const QJsonObject&) {
+		gui::MainWindow* window = mainWindow();
+		if (window == nullptr) { return noInterface(QStringLiteral("window.progression")); }
+		auto* panel = new gui::ChordProgressionPanel(window);
+		panel->setAttribute(Qt::WA_DeleteOnClose);
+		panel->setModal(false);
+		panel->show();
+		return ControlResult::success(QJsonObject{{QStringLiteral("shown"), true},
+			{QStringLiteral("rows"), panel->rowCount()}});
 	};
 	registry.registerCommand(cmd);
 }
@@ -380,7 +434,9 @@ void registerSaveVersion(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Save the session as the NEXT VERSION of its file - "
 		"<name>-01.mmp, -02, ... the first free one - and make that the project's file; the "
 		"previous version stays on disk untouched. File > Save as New Version dispatches this. "
-		"Refused while the session has no file yet (save it once with project.save first). "
+		"Refused while the session has no file yet (save it once with project.save first), and "
+		"refused when the version number in the file's name cannot be advanced (the widest "
+		"version number, or a suffix that is not a number). "
 		"Needs no interface.");
 	cmd.argsSchema = objectSchema({});
 	cmd.resultSchema = objectSchema({{QStringLiteral("file"), stringProperty()},
@@ -396,8 +452,21 @@ void registerSaveVersion(ControlRegistry& registry)
 					"save it once with project.save {path}"));
 		}
 		QString next = previous;
-		do { gui::VersionedSaveDialog::changeFileNameVersion(next, true); }
-		while (QFile::exists(next));
+		// The next version is the first free name after the current one. A name whose
+		// version cannot be advanced - the widest version number, or a suffix that is
+		// not a number at all - is REFUSED here: the name would not change, so the
+		// "while that one exists" loop below would look at the same file for ever.
+		for (;;)
+		{
+			if (!gui::VersionedSaveDialog::changeFileNameVersion(next, true))
+			{
+				return ControlResult::failure(ControlErrorKind::Refused,
+					QStringLiteral("the version number in '%1' cannot be advanced, so there is "
+						"no next version to write: save the project under another name "
+						"(project.save {path}) and try again").arg(previous));
+			}
+			if (!QFile::exists(next)) { break; }
+		}
 		if (!song->guiSaveProjectAs(next))
 		{
 			return ControlResult::failure(ControlErrorKind::Refused,
@@ -424,7 +493,9 @@ void registerShellCommands(ControlRegistry& registry)
 	registerShortcuts(registry);
 	registerUndoHistory(registry);
 	registerTempoMapPanel(registry);
+	registerLivecodePanel(registry);
 	registerModulatorPanel(registry);
+	registerProgressionPanel(registry);
 	registerStartHub(registry);
 	registerScreenshot(registry);
 	registerSaveVersion(registry);
@@ -432,7 +503,17 @@ void registerShellCommands(ControlRegistry& registry)
 
 void dispatchShellCommand(const QString& id, const QJsonObject& args)
 {
-	ControlRegistry::instance()->invoke(id, args);
+	const ControlResult result = ControlRegistry::instance()->invoke(id, args);
+	if (result.ok) { return; }
+	// A menu action has no reply channel, so a refused command (Edit > Collaborate... in an
+	// unattended instance: `requires: display`) closed the menu and left nothing - no window and
+	// no reason. The status bar says it where it can be read. Never a modal box: this code also
+	// runs in an unattended instance, where an exec() waits on a click that never comes.
+	gui::MainWindow* window = controlMainWindow();
+	if (window == nullptr) { return; }
+	window->statusBar()->showMessage(
+		QCoreApplication::translate("ControlCommandsShell", "Could not run %1: %2")
+			.arg(id, result.errorMessage), 8000);
 }
 
 bool openOnlineHelp(gui::MainWindow* window)

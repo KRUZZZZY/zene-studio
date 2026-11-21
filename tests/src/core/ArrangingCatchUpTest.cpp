@@ -63,6 +63,7 @@
 #include "Song.h"
 #include "TrackSpacers.h"
 #include "TakeLaneTestSupport.h"
+#include "DeprecationHelper.h"
 
 using namespace lmms;
 
@@ -92,6 +93,16 @@ QStringList trackNames()
 	QStringList out;
 	for (const Track* track : Engine::getSong()->tracks()) { out << track->name(); }
 	return out;
+}
+
+int indexOfReferenceTrack(const QString& name)
+{
+	const QJsonArray tracks = run(QStringLiteral("reference.get_state")).result.value(QStringLiteral("tracks")).toArray();
+	for (const QJsonValue& value : tracks)
+	{
+		if (value.toObject().value(QStringLiteral("name")).toString() == name) { return value.toObject().value(QStringLiteral("index")).toInt(); }
+	}
+	return -1;
 }
 
 class CountedInstrumentHandle : public InstrumentPlayHandle
@@ -139,7 +150,7 @@ private slots:
 		const ControlResult split = run(QStringLiteral("clip.split"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
 			{QStringLiteral("position"), 20}, {QStringLiteral("frames"), 100}, {QStringLiteral("zero_crossing"), false}});
 		QVERIFY2(split.ok, qPrintable(split.errorMessage));
-		const auto frame = static_cast<f_cnt_t>(split.result.value(QStringLiteral("frame")).toInteger());
+		const auto frame = static_cast<f_cnt_t>(jsonInteger(split.result.value(QStringLiteral("frame"))));
 		const double expected = (20.0 + 100.0 / outputPerTick) * framesPerTick;
 		QVERIFY(std::abs(static_cast<double>(frame) - expected) <= 1.0);
 		SampleClip* right = sampleClip(split.result.value(QStringLiteral("right")).toString());
@@ -168,7 +179,7 @@ private slots:
 			{QStringLiteral("position"), 30}, {QStringLiteral("frames"), 37}, {QStringLiteral("zero_crossing"), true}});
 		QVERIFY2(split.ok, qPrintable(split.errorMessage));
 		QVERIFY(split.result.value(QStringLiteral("zero_crossing")).toBool());
-		const auto frame = static_cast<f_cnt_t>(split.result.value(QStringLiteral("frame")).toInteger());
+		const auto frame = static_cast<f_cnt_t>(jsonInteger(split.result.value(QStringLiteral("frame"))));
 		SampleClip* right = sampleClip(split.result.value(QStringLiteral("right")).toString());
 		QVERIFY(right != nullptr);
 		const bool crossesBefore = (summed(right, frame - 1) < 0.0f) != (summed(right, frame) < 0.0f);
@@ -200,7 +211,7 @@ private slots:
 		const ControlResult trimmed = run(QStringLiteral("clip.trim"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
 			{QStringLiteral("start"), 10}, {QStringLiteral("start_frames"), 50}, {QStringLiteral("zero_crossing"), false}});
 		QVERIFY2(trimmed.ok, qPrintable(trimmed.errorMessage));
-		QVERIFY(trimmed.result.value(QStringLiteral("source_in")).toInteger() > 0);
+		QVERIFY(jsonInteger(trimmed.result.value(QStringLiteral("source_in"))) > 0);
 		QCOMPARE(trimmed.result.value(QStringLiteral("position")).toInt(), 10);
 		QVERIFY(clip->leadFrames() > 0);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
@@ -220,6 +231,22 @@ private slots:
 		QCOMPARE(trimmed.errorKind, ControlErrorKind::InvalidArgs);
 		QVERIFY(!trimmed.ok);
 		QCOMPARE(clip->length().getTicks(), length);
+	}
+
+	void aTailTrimPastTheSourceEndsWhereTheSourceEnds()
+	{
+		SampleClip* clip = freshClip();
+		const auto size = static_cast<f_cnt_t>(clip->sample().sampleSize());
+		QString why;
+		QVERIFY2(arrangement::trimTailToFrame(clip, size, &why), qPrintable(why));  // the reference: trimmed to the last frame
+		const auto endAtSource = clip->endPosition().getTicks();
+		QCOMPARE(clip->sampleWindow().sourceOut, size);
+
+		SampleClip* beyond = freshClip();
+		const f_cnt_t past = size + static_cast<f_cnt_t>(beyond->clipFramesPerTick() * 100);
+		QVERIFY2(arrangement::trimTailToFrame(beyond, past, &why), qPrintable(why));
+		QCOMPARE(beyond->sampleWindow().sourceOut, size);  // the window stops at the source...
+		QCOMPARE(beyond->endPosition().getTicks(), endAtSource);  // ...and the timeline stops with it
 	}
 
 	void theLeadSavesLoadsAndIsResetWhenAbsent()
@@ -316,6 +343,51 @@ private slots:
 		// active list before checking, while its track still exists.
 		engine->removePlayHandlesOfTypes(track.get(), PlayHandle::Type::InputMonitorHandle);
 		QVERIFY2(!survived, "monitoring Off left a staged monitor in the render list");
+	}
+
+	/*! The reference's devices come from ONE named source - the command's own words: "the reference's
+	 *  track 'track' or mixer channel 'channel'". Naming both used to copy the channel and ignore the
+	 *  track without a word, and naming neither used to fail as a missing reference track -1: exactly
+	 *  one names the source, and a call with zero or two is refused before any device moves. */
+	void copyDevicesNamesExactlyOneSource()
+	{
+		EffectChain& master = Engine::mixer()->mixerChannel(0)->m_fxChain;
+		Effect* probe = Effect::instantiate(QStringLiteral("amplifier"), &master, nullptr);
+		if (probe == nullptr || !probe->isOkay())
+		{
+			delete probe;
+			QSKIP("this test binary finds no built-in effect plug-ins");
+		}
+		delete probe;
+		master.clear();
+		master.appendEffect(Effect::instantiate(QStringLiteral("amplifier"), &master, nullptr));
+		Track* deviceless = Track::create(Track::Type::Sample, Engine::getSong());
+		deviceless->setName(QStringLiteral("Deviceless"));
+		const QString source = QDir(m_dir.path()).filePath(QStringLiteral("one-source.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(source));
+		QVERIFY(run(QStringLiteral("project.new")).ok);
+		QVERIFY(run(QStringLiteral("reference.open"), {{QStringLiteral("path"), source}}).ok);
+		const QString masterId = QStringLiteral("ch-%1").arg(Engine::mixer()->mixerChannel(0)->id());
+		const int devicelessIndex = indexOfReferenceTrack(QStringLiteral("Deviceless"));
+		QVERIFY(devicelessIndex >= 0);
+		const std::size_t before = Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size();
+		const ControlResult both = run(QStringLiteral("reference.copy_devices"), {{QStringLiteral("track"), devicelessIndex},
+			{QStringLiteral("channel"), 0}, {QStringLiteral("to"), masterId}});
+		QVERIFY2(!both.ok, "two source fields used to copy the channel and ignore the track");
+		QCOMPARE(both.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size(), before);  // nothing was copied
+		const ControlResult neither = run(QStringLiteral("reference.copy_devices"), {{QStringLiteral("to"), masterId}});
+		QVERIFY(!neither.ok);
+		QCOMPARE(neither.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size(), before);
+		// One source still names it: a deviceless track copies nothing, the channel's device copies.
+		QCOMPARE(run(QStringLiteral("reference.copy_devices"), {{QStringLiteral("track"), devicelessIndex},
+			{QStringLiteral("to"), masterId}}).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size(), before);
+		const ControlResult channel = run(QStringLiteral("reference.copy_devices"), {{QStringLiteral("channel"), 0},
+			{QStringLiteral("to"), masterId}});
+		QVERIFY2(channel.ok, qPrintable(channel.errorMessage));
+		QCOMPARE(Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size(), before + 1);
 	}
 
 private:

@@ -45,12 +45,15 @@
 #include "ControlVocabulary.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "AutomationClip.h"
+#include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "MixerPostInserts.h"
 #include "MixerStrip.h"
 #include "PhaseDMixerTestSupport.h"
 #include "SampleFrame.h"
+#include "TimePos.h"
 
 using namespace lmms;
 
@@ -318,6 +321,65 @@ private slots:
 		run(QStringLiteral("mixer.set_many"), {{QStringLiteral("all"), true}, {QStringLiteral("soloed"), false}, {QStringLiteral("muted"), false}});
 	}
 
+	//! Deleting the soloed channel gives every other channel back its pre-solo mute (activateSolo saved it), so
+	//! nothing stays muted with no solo left to restore it (Mixer::deleteChannel).
+	void deletingTheSoloedChannelRestoresTheMutes()
+	{
+		QVERIFY(!mixerstrip::additiveSolo());
+		for (int i = 1; i < Engine::mixer()->numChannels(); ++i) { QVERIFY(!channel(i)->m_soloModel.value()); }
+		channel(1)->m_muteModel.setValue(true);   // muted before the solo: stays muted
+		channel(2)->m_muteModel.setValue(false);  // audible before the solo: must be audible again
+		const int doomed = Engine::mixer()->createChannel();
+		channel(doomed)->m_soloModel.setValue(true);
+		QVERIFY(channel(1)->m_muteModel.value() && channel(2)->m_muteModel.value());  // the solo mutes the others
+		Engine::mixer()->deleteChannel(doomed);
+		QVERIFY(channel(1)->m_muteModel.value());
+		QVERIFY2(!channel(2)->m_muteModel.value(), "deleting the soloed channel must restore the pre-solo mutes");
+		channel(1)->m_muteModel.setValue(false);
+		channel(2)->m_muteModel.setValue(false);
+	}
+
+	//! The owner's path with two audible channels (exclusive solo): solo the first, the second is silenced and the
+	//! first stays audible; unsolo restores both pre-solo states. Each channel starts clean, so order does not matter.
+	void soloIsolatesTwoAudibleChannels()
+	{
+		QVERIFY(!mixerstrip::additiveSolo());
+		for (int i = 1; i < Engine::mixer()->numChannels(); ++i) { channel(i)->m_soloModel.setValue(false); channel(i)->m_muteModel.setValue(false); }
+		channel(1)->m_soloModel.setValue(true);
+		QVERIFY2(!channel(1)->m_muteModel.value() && channel(2)->m_muteModel.value(), "solo: the soloed channel is heard, the other is silenced");
+		channel(1)->m_soloModel.setValue(false);
+		QVERIFY2(!channel(1)->m_muteModel.value() && !channel(2)->m_muteModel.value(), "unsolo restores both pre-solo states");
+	}
+
+	//! Additive solo: deleting the channel the engine names as its last solo keeps the other soloed channel heard
+	//! and the unsoloed ones muted (applyAdditiveSolo runs again on the new layout).
+	void deletingAnAdditiveSoloKeepsTheOthers()
+	{
+		QVERIFY(run(QStringLiteral("mixer.solo_mode"), {{QStringLiteral("mode"), QStringLiteral("additive")}}).ok);
+		channel(1)->m_muteModel.setValue(false);
+		channel(2)->m_muteModel.setValue(true);
+		const int first = Engine::mixer()->createChannel();
+		const int second = Engine::mixer()->createChannel();
+		channel(first)->m_soloModel.setValue(true);   // the lower index is the last solo the engine names
+		channel(second)->m_soloModel.setValue(true);
+		QVERIFY(!channel(first)->m_muteModel.value() && !channel(second)->m_muteModel.value());
+		QVERIFY(channel(1)->m_muteModel.value());
+		Engine::mixer()->deleteChannel(first);
+		// the survivor moved down into first's slot
+		QVERIFY2(channel(first)->m_soloModel.value(), "the other soloed channel must stay soloed");
+		QVERIFY2(!channel(first)->m_muteModel.value(), "the other soloed channel must still be heard");
+		QVERIFY(channel(1)->m_muteModel.value());  // nobody soloed channel 1
+		QVERIFY(channel(2)->m_muteModel.value());
+		channel(first)->m_soloModel.setValue(false);
+		// clearing the last solo gives every channel back its pre-solo mute (channel 1 audible, channel 2 still muted)
+		QVERIFY2(!channel(1)->m_muteModel.value(), "clearing the last additive solo must restore channel 1's pre-solo unmuted state");
+		QVERIFY2(channel(2)->m_muteModel.value(), "clearing the last additive solo must keep channel 2's pre-solo mute");
+		QVERIFY(run(QStringLiteral("mixer.solo_mode"), {{QStringLiteral("mode"), QStringLiteral("exclusive")}}).ok);
+		Engine::mixer()->deleteChannel(first);
+		channel(1)->m_muteModel.setValue(false);
+		channel(2)->m_muteModel.setValue(false);
+	}
+
 	void thePreFaderMeterIsReadOnce()
 	{
 		channel(3)->m_preMeterLeft.set(0.f);
@@ -378,6 +440,130 @@ private slots:
 		QCOMPARE(master->m_crossfadeSideModel.value(), 0);
 	}
 
+	//! A non-finite persisted strip float must load as the same default a missing attribute gets.
+	void nonFiniteStripSettingsAreReplaced()
+	{
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("mixerchannel"));
+		element.setAttribute(QStringLiteral("trim"), QStringLiteral("nan"));
+		element.setAttribute(QStringLiteral("eqlow"), QStringLiteral("nan"));
+		element.setAttribute(QStringLiteral("eqmid"), QStringLiteral("nan"));
+		element.setAttribute(QStringLiteral("eqmidf"), QStringLiteral("nan"));
+		element.setAttribute(QStringLiteral("eqhigh"), QStringLiteral("nan"));
+		element.setAttribute(QStringLiteral("panright"), QStringLiteral("nan"));
+		element.setAttribute(QStringLiteral("width"), QStringLiteral("nan"));
+		mixerstrip::load(*channel(1), element);
+
+		QCOMPARE(channel(1)->m_trimModel.value(), 0.f);
+		QCOMPARE(channel(1)->m_eqLowModel.value(), 0.f);
+		QCOMPARE(channel(1)->m_eqMidModel.value(), 0.f);
+		QCOMPARE(channel(1)->m_eqMidFreqModel.value(), 1000.f);
+		QCOMPARE(channel(1)->m_eqHighModel.value(), 0.f);
+		QCOMPARE(channel(1)->m_panRightModel.value(), 0.f);
+		QCOMPARE(channel(1)->m_widthModel.value(), 1.f);
+	}
+
+	//! A non-finite persisted channel/send float must not become a model value.
+	void nonFiniteMixerSettingsAreIgnored()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("mixer"));
+		doc.appendChild(root);
+
+		QDomElement master = doc.createElement(QStringLiteral("mixerchannel"));
+		master.setAttribute(QStringLiteral("num"), 0);
+		root.appendChild(master);
+
+		QDomElement element = doc.createElement(QStringLiteral("mixerchannel"));
+		element.setAttribute(QStringLiteral("num"), 1);
+		element.setAttribute(QStringLiteral("volume"), QStringLiteral("1e999"));
+		element.setAttribute(QStringLiteral("pan"), QStringLiteral("nan"));
+		QDomElement sendElement = doc.createElement(QStringLiteral("send"));
+		sendElement.setAttribute(QStringLiteral("channel"), 0);
+		sendElement.setAttribute(QStringLiteral("amount"), QStringLiteral("nan"));
+		sendElement.setAttribute(QStringLiteral("pan"), QStringLiteral("nan"));
+		element.appendChild(sendElement);
+		root.appendChild(element);
+
+		Engine::mixer()->loadSettings(root);
+
+		QVERIFY(std::isfinite(channel(1)->m_volumeModel.value()));
+		QCOMPARE(channel(1)->m_volumeModel.value(), 1.f);
+		QVERIFY(std::isfinite(channel(1)->m_panModel.value()));
+		QCOMPARE(channel(1)->m_panModel.value(), 0.f);
+
+		MixerRoute* masterSend = nullptr;
+		for (MixerRoute* route : channel(1)->m_sends)
+		{
+			if (route->receiverIndex() == 0) { masterSend = route; }
+		}
+		QVERIFY(masterSend != nullptr);
+		QVERIFY(std::isfinite(masterSend->amount()->value()));
+		QCOMPARE(masterSend->amount()->value(), 1.f);
+		QVERIFY(std::isfinite(masterSend->pan()->value()));
+		QCOMPARE(masterSend->pan()->value(), 0.f);
+	}
+
+	//! A mismatched nodename child is still loaded by AutomatableModel when no matching sibling exists.
+	void nonFiniteMixerSettingsWithMismatchedNodeNameAreIgnored()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("mixer"));
+		doc.appendChild(root);
+		QDomElement master = doc.createElement(QStringLiteral("mixerchannel"));
+		master.setAttribute(QStringLiteral("num"), 0);
+		root.appendChild(master);
+		QDomElement mixerChannel = doc.createElement(QStringLiteral("mixerchannel"));
+		mixerChannel.setAttribute(QStringLiteral("num"), 1);
+		QDomElement volume = doc.createElement(QStringLiteral("volume"));
+		volume.setAttribute(QStringLiteral("nodename"), QStringLiteral("another-model"));
+		volume.setAttribute(QStringLiteral("value"), QStringLiteral("nan"));
+		mixerChannel.appendChild(volume);
+		root.appendChild(mixerChannel);
+
+		Engine::mixer()->loadSettings(root);
+
+		QVERIFY(std::isfinite(channel(1)->m_volumeModel.value()));
+		QCOMPARE(channel(1)->m_volumeModel.value(), 1.f);
+	}
+
+	//! A non-finite automation bend on a persisted model must not reach the value curve.
+	void nonFiniteMixerAutomationBendIsIgnored()
+	{
+		Mixer* mixer = Engine::mixer();
+		AutomationClip* clip = AutomationClip::globalAutomationClip(&channel(1)->m_volumeModel);
+		clip->clear();
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("mixer"));
+		doc.appendChild(root);
+		QDomElement mixerChannel = doc.createElement(QStringLiteral("mixerchannel"));
+		mixerChannel.setAttribute(QStringLiteral("num"), 1);
+		QDomElement automation = doc.createElement(AutomationClip::classNodeName());
+		QDomElement volume = doc.createElement(QStringLiteral("volume"));
+		for (int pos : {0, 100})
+		{
+			QDomElement point = doc.createElement(QStringLiteral("time"));
+			point.setAttribute(QStringLiteral("pos"), pos);
+			point.setAttribute(QStringLiteral("value"), QStringLiteral("0.5"));
+			point.setAttribute(QStringLiteral("outValue"), QStringLiteral("0.5"));
+			point.setAttribute(QStringLiteral("inTan"), QStringLiteral("0"));
+			point.setAttribute(QStringLiteral("outTan"), QStringLiteral("0"));
+			point.setAttribute(QStringLiteral("curve"), 4);  // AutomationNode::Curve::Bend
+			point.setAttribute(QStringLiteral("bend"), QStringLiteral("nan"));
+			volume.appendChild(point);
+		}
+		automation.appendChild(volume);
+		mixerChannel.appendChild(automation);
+		root.appendChild(mixerChannel);
+
+		mixer->loadSettings(root);
+
+		AutomationClip* loadedClip = AutomationClip::globalAutomationClip(&channel(1)->m_volumeModel);
+		QVERIFY(std::isfinite(loadedClip->valueAt(TimePos(50))));
+		QVERIFY(std::isfinite(channel(1)->m_volumeModel.value()));
+	}
+
 	//! MX-027: 'all' names every channel but the master, so a mixer left with only its master
 	//! names none - Unmute All / Clear Solo is then a successful no-op, not an error, and it
 	//! records no undo step.
@@ -390,6 +576,36 @@ private slots:
 		QVERIFY2(unmuted.ok, qPrintable(unmuted.errorMessage));
 		QCOMPARE(unmuted.result.value(QStringLiteral("count")).toInt(), 0);
 		QCOMPARE(run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt(), depthBefore);
+	}
+
+	//! cluster new-p21-143: removing an effect takes it off its chain (effectChain() is nullptr and the chain no
+	//! longer lists it); appending it to another chain then attaches it to that chain only.
+	void removedEffectIsDetachedFromItsChain()
+	{
+		EffectChain chain{nullptr};
+		EffectChain next{nullptr};
+		auto* effect = new partd::FixedGainEffect(&chain, 1.f, 1.f);
+		chain.appendEffect(effect);
+		chain.removeEffect(effect);
+		QVERIFY2(effect->effectChain() == nullptr, "a removed effect still names the chain it was taken off");
+		QVERIFY(chain.effects().empty());
+		next.appendEffect(effect);
+		QCOMPARE(effect->effectChain(), &next);
+		next.removeEffect(effect);
+		delete effect;
+	}
+
+	//! cluster new-p21-143: removing an effect from a chain that does not hold it changes nothing; the owner keeps it.
+	void removeFromWrongChainLeavesOwnerIntact()
+	{
+		EffectChain owner{nullptr};
+		EffectChain other{nullptr};
+		auto* effect = new partd::FixedGainEffect(&owner, 1.f, 1.f);
+		owner.appendEffect(effect);
+		other.removeEffect(effect);
+		QCOMPARE(effect->effectChain(), &owner);
+		owner.removeEffect(effect);
+		delete effect;
 	}
 };
 

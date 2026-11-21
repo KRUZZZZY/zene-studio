@@ -75,6 +75,7 @@ Instrument::Instrument(InstrumentTrack * _instrument_track,
 
 Instrument::~Instrument()
 {
+	emit aboutToBeDestroyed();
 	// MX-157: the latency was this instrument's; the next one on the track reports its own. The output
 	// buses (a member of the hosting class) have already taken themselves off the mixer's list.
 	if (m_instrumentTrack != nullptr) { m_instrumentTrack->audioBusHandle()->setSourceLatencyFrames(0); }

@@ -29,12 +29,31 @@
 #include <QDomElement>
 #include <QString>
 
+#include "Engine.h"
+#include "Song.h"
+
 namespace lmms
 {
 
 namespace
 {
 using namespace sessionSerialization;
+
+//! A malformed, present clip integer must be visible in the project-load
+//! report even when its documented fallback is also zero.
+int clipIntegerAttribute( const QDomElement& element, const QString& name, int defaultValue )
+{
+	int value = defaultValue;
+	if( intAttribute( element, name, value ) ) { return value; }
+	if( element.hasAttribute( name ) )
+	{
+		if( Song* song = Engine::getSong() )
+		{
+			song->collectError( Song::tr( "Malformed session clip attribute '%1'; using its default." ).arg( name ) );
+		}
+	}
+	return defaultValue;
+}
 
 //! A Follow Action chain as a <followactions> child - the one vocabulary a cell and (R5.2) a
 //! scene share. An empty chain writes nothing, so neither element gains a byte.
@@ -64,12 +83,32 @@ std::vector<FollowAction> restoreFollowChain( const QDomElement& element )
 		actionElement = actionElement.nextSiblingElement( QStringLiteral( "followaction" ) ) )
 	{
 		FollowAction action;
-		action.type = followActionTypeFromInt( actionElement.attribute( QStringLiteral( "type" ),
-			QStringLiteral( "0" ) ).toInt() );
-		action.chance = doubleAttribute( actionElement, QStringLiteral( "chance" ), 1.0 );
-		action.linked = actionElement.attribute( QStringLiteral( "linked" ), QStringLiteral( "1" ) ).toInt() != 0;
-		action.timeBars = doubleAttribute( actionElement, QStringLiteral( "time" ), 1.0 );
-		action.jumpTo = actionElement.attribute( QStringLiteral( "jump" ), QStringLiteral( "0" ) ).toInt();
+		// The chain's numbers are read through the STRICT helpers:
+		// QString::toInt() answers 0 for a value it cannot convert, and 0 is
+		// both a valid action type (NoAction) and a valid scene row - so an
+		// unchecked read of a damaged chain would quietly aim it at the FIRST
+		// scene.
+		int type = 0;
+		intAttribute( actionElement, QStringLiteral( "type" ), type );
+		action.type = followActionTypeFromInt( type );
+		action.chance = clampedChanceAttribute( actionElement, QStringLiteral( "chance" ), 1.0 );
+		action.linked = boolAttribute( actionElement, QStringLiteral( "linked" ), true );
+		// The session command refuses negative times; clamp malformed saved
+		// values to zero so the restored action remains non-firing.
+		action.timeBars = std::max( 0.0, doubleAttribute( actionElement, QStringLiteral( "time" ), 1.0 ) );
+		// A jump target that is not a number is NOT scene zero: -1 is this
+		// codebase's "no addressable target" (include/SessionFollow.h's
+		// followTargetScene refuses it), so the action keeps its place in the
+		// chain and its fire is REFUSED - the same answer an out-of-grid row
+		// gets, never a silent jump to the first scene. An attribute that is
+		// not there at all keeps the legacy default of 0.
+		int jump = 0;
+		if( !intAttribute( actionElement, QStringLiteral( "jump" ), jump )
+			&& actionElement.hasAttribute( QStringLiteral( "jump" ) ) )
+		{
+			jump = -1;
+		}
+		action.jumpTo = jump;
 		actions.push_back( action );
 	}
 	return actions;
@@ -146,21 +185,24 @@ void ClipSlot::restoreState( const QDomElement& element )
 {
 	*this = ClipSlot();
 
-	const int type = element.attribute( QStringLiteral( "type" ), QStringLiteral( "0" ) ).toInt();
+	// The reader takes its numbers through the STRICT helpers
+	// (sessionSerialization::intAttribute): QString::toInt() answers 0 for a
+	// value it cannot convert, and 0 is a VALID type, a VALID pattern id and
+	// a VALID quantisation - so an unreadable attribute used to aim the cell
+	// at the first pattern instead of failing. A value that cannot be
+	// converted now falls back to the attribute's own documented default.
+	int type = 0;
+	intAttribute( element, QStringLiteral( "type" ), type );
 	switch( type )
 	{
 		case static_cast<int>( Type::Midi ):
 		{
 			m_type = Type::Midi;
-			// toInt() returns 0 when the text is not an int at all (and for an
-			// overflow, which is a failure too), and 0 is a VALID pattern id - so
-			// an unreadable reference silently pointed the cell at the first
-			// pattern in the store. A failed conversion restores as "no reference",
-			// which is what a missing attribute already did.
-			bool ok = false;
-			const int patternId = element.attribute( QStringLiteral( "pattern" ),
-				QStringLiteral( "-1" ) ).toInt( &ok );
-			m_patternId = ok ? patternId : -1;
+			// A failed conversion restores as "no reference", which is what a
+			// missing attribute already did.
+			int patternId = -1;
+			intAttribute( element, QStringLiteral( "pattern" ), patternId );
+			m_patternId = patternId;
 			break;
 		}
 		case static_cast<int>( Type::Audio ):
@@ -173,19 +215,22 @@ void ClipSlot::restoreState( const QDomElement& element )
 	}
 
 	m_name = element.attribute( QStringLiteral( "name" ) );
-	m_launchMode = launchModeFromInt( element.attribute( QStringLiteral( "launchmode" ),
-		QStringLiteral( "0" ) ).toInt() );
-	m_launchQuantisation = launchQuantisationFromInt( element.attribute( QStringLiteral( "quantisation" ),
-		QStringLiteral( "-1" ) ).toInt(), true );
-	m_legato = element.attribute( QStringLiteral( "legato" ), QStringLiteral( "0" ) ).toInt() != 0;
-	m_loopStart = element.attribute( QStringLiteral( "loopstart" ), QStringLiteral( "0" ) ).toInt();
-	m_loopLength = element.attribute( QStringLiteral( "looplength" ), QStringLiteral( "0" ) ).toInt();
-	m_gainDb = static_cast<float>( doubleAttribute( element, QStringLiteral( "gain" ), 0.0 ) );
-	m_transpose = element.attribute( QStringLiteral( "transpose" ), QStringLiteral( "0" ) ).toInt();
-	m_detune = element.attribute( QStringLiteral( "detune" ), QStringLiteral( "0" ) ).toInt();
-	m_ramMode = element.attribute( QStringLiteral( "ram" ), QStringLiteral( "0" ) ).toInt() != 0;
-	m_warp = element.attribute( QStringLiteral( "warp" ), QStringLiteral( "0" ) ).toInt() != 0;
-	m_warpBpm = doubleAttribute( element, QStringLiteral( "warpbpm" ), 120.0 );
+	m_launchMode = launchModeFromInt( clipIntegerAttribute( element,
+		QStringLiteral( "launchmode" ), 0 ) );
+	// The documented default of an absent quantisation is Global (-1); an
+	// unreadable one now falls back to it instead of to "None" (0).
+	int quantisation = -1;
+	intAttribute( element, QStringLiteral( "quantisation" ), quantisation );
+	m_launchQuantisation = launchQuantisationFromInt( quantisation, true );
+	m_legato = clipIntegerAttribute( element, QStringLiteral( "legato" ), 0 ) != 0;
+	m_loopStart = clipIntegerAttribute( element, QStringLiteral( "loopstart" ), 0 );
+	m_loopLength = clipIntegerAttribute( element, QStringLiteral( "looplength" ), 0 );
+	m_gainDb = static_cast<float>( gainDbAttribute( element, QStringLiteral( "gain" ), 0.0 ) );
+	m_transpose = clipIntegerAttribute( element, QStringLiteral( "transpose" ), 0 );
+	m_detune = clipIntegerAttribute( element, QStringLiteral( "detune" ), 0 );
+	m_ramMode = clipIntegerAttribute( element, QStringLiteral( "ram" ), 0 ) != 0;
+	m_warp = clipIntegerAttribute( element, QStringLiteral( "warp" ), 0 ) != 0;
+	m_warpBpm = bpmAttribute( element, QStringLiteral( "warpbpm" ), 120.0 );
 
 	m_followActions = restoreFollowChain( element );
 }
@@ -228,16 +273,20 @@ void Scene::restoreState( const QDomElement& element )
 	if( element.hasAttribute( QStringLiteral( "tempo" ) ) )
 	{
 		m_tempoEnabled = true;
-		m_tempo = doubleAttribute( element, QStringLiteral( "tempo" ), 120.0 );
+		m_tempo = bpmAttribute( element, QStringLiteral( "tempo" ), 120.0 );
 	}
 	if( element.hasAttribute( QStringLiteral( "timesig_numerator" ) )
 		|| element.hasAttribute( QStringLiteral( "timesig_denominator" ) ) )
 	{
 		m_timeSigEnabled = true;
-		m_timeSigNumerator = element.attribute( QStringLiteral( "timesig_numerator" ),
-			QStringLiteral( "4" ) ).toInt();
-		m_timeSigDenominator = element.attribute( QStringLiteral( "timesig_denominator" ),
-			QStringLiteral( "4" ) ).toInt();
+		// The documented default of an absent half is 4; an unreadable one now
+		// falls back to it instead of to 0 (a time signature of 0/4).
+		int numerator = 4;
+		intAttribute( element, QStringLiteral( "timesig_numerator" ), numerator );
+		m_timeSigNumerator = numerator;
+		int denominator = 4;
+		intAttribute( element, QStringLiteral( "timesig_denominator" ), denominator );
+		m_timeSigDenominator = denominator;
 	}
 	m_followActions = restoreFollowChain( element );
 	m_color = element.attribute( QStringLiteral( "color" ) );

@@ -122,6 +122,7 @@ private slots:
 	void zoomingChanged();
 
 private:
+	bool event( QEvent * e ) override;
 	void keyPressEvent( QKeyEvent * ke ) override;
 	void wheelEvent( QWheelEvent * we ) override;
 
@@ -207,6 +208,9 @@ protected slots:
 	void adjustUiAfterProjectLoad();
 
 	void updateSnapLabel();
+	//! 0.5.0 L03 (Q050-147): the punch action reflects the timeline after an agent edit, undo
+	//! or project load; the clear action only offers itself while there is a range.
+	void syncPunchUi();
 
 signals:
 	void playTriggered();
@@ -215,7 +219,8 @@ signals:
 private:
 	QAction* m_addPatternTrackAction;
 	QAction* m_addSampleTrackAction;
-	QAction* m_punchAction = nullptr;  //!< M3 item 9: punch in/out over the loop range
+	QAction* m_punchAction = nullptr;  //!< 0.5.0 L03 (Q050-147): arm the independent punch range
+	QAction* m_punchClearAction = nullptr;  //!< ... and forget it
 	QAction* m_addAutomationTrackAction;
 	QAction* m_setProportionalSnapAction;
 

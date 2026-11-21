@@ -63,6 +63,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <type_traits>
 #include <vector>
 
 #include "AllocationProbe.h"
@@ -71,6 +72,7 @@ using lmms::LufsMeter;
 using lmms::MasterLoudnessTap;
 using lmms::SampleFrame;
 using lmms::sample_t;
+using lmms::setMasterLoudnessTapNextQuietWaitResultForTesting;
 
 namespace
 {
@@ -121,6 +123,34 @@ std::uint64_t hashFrames(const std::vector<SampleFrame>& frames)
 	return hash;
 }
 
+template <typename Tap>
+constexpr bool HasSignedFrameCountFeed = requires
+{
+	static_cast<void (Tap::*)(const SampleFrame*, int) noexcept>(&Tap::template feed<int>);
+};
+
+template <typename Tap>
+bool rearmReportsQuietTimeout(Tap& tap)
+{
+	if constexpr (std::is_same_v<decltype(tap.setEnabled(true)), bool>)
+	{
+		return !tap.setEnabled(true);
+	}
+	tap.setEnabled(true);
+	return false;
+}
+
+template <typename Tap>
+bool disableReportsQuietTimeout(Tap& tap)
+{
+	if constexpr (std::is_same_v<decltype(tap.setEnabled(false)), bool>)
+	{
+		return !tap.setEnabled(false);
+	}
+	tap.setEnabled(false);
+	return false;
+}
+
 //! Feeds \a buffer in one-block-per-call slices of \a blockFrames, the shape the
 //! engine's renderStageMix() calls in.
 void feedInBlocks(MasterLoudnessTap& tap, const std::vector<SampleFrame>& buffer, int blockFrames)
@@ -157,6 +187,110 @@ private slots:
 		QCOMPARE(after.framesFed, 0ull);
 		QCOMPARE(after.integratedLufs, LufsMeter::MinusInfinity);
 		QCOMPARE(after.truePeakDbtp, LufsMeter::MinusInfinity);
+	}
+
+	//! Q050-100: the sample peak is published even while the loudness meter is
+	//! disarmed - a peak watch must hear the master before anyone arms the LUFS tap -
+	//! while the loudness counters still do not move.
+	void aDisarmedTapStillPublishesTheSamplePeak()
+	{
+		MasterLoudnessTap tap(SampleRate, lmms::DEFAULT_CHANNELS);
+		QVERIFY(!tap.enabled());
+		const std::vector<SampleFrame> signal = makeSine(-6.0, 0.1);
+		tap.feed(signal.data(), static_cast<lmms::f_cnt_t>(signal.size()));
+		const MasterLoudnessTap::Snapshot reading = tap.snapshot();
+		QVERIFY2(reading.samplePeak > 0.4f && reading.samplePeak < 0.6f, qPrintable(QString::number(reading.samplePeak)));
+		QCOMPARE(reading.blocksFed, 0ull);
+		QCOMPARE(reading.integratedLufs, LufsMeter::MinusInfinity);
+	}
+
+	//! Q050-100: the peak watch CONSUMES the sample peak, so a quiet period lets its latch
+	//! fall and the next loud one can cross again. A held maximum would stay high forever.
+	void takingTheSamplePeakLetsTheWatchReArm()
+	{
+		MasterLoudnessTap tap(SampleRate, lmms::DEFAULT_CHANNELS);
+		const std::vector<SampleFrame> loud = makeSine(-6.0, 0.1);
+		tap.feed(loud.data(), static_cast<lmms::f_cnt_t>(loud.size()));
+		QVERIFY(tap.takeSamplePeak() > 0.4f);
+		QCOMPARE(tap.takeSamplePeak(), 0.f);  // a second read has nothing new
+		const std::vector<SampleFrame> quiet = makeSine(-60.0, 0.1);
+		tap.feed(quiet.data(), static_cast<lmms::f_cnt_t>(quiet.size()));
+		QVERIFY(tap.takeSamplePeak() < 0.01f);  // below the threshold: the latch can fall
+		tap.feed(loud.data(), static_cast<lmms::f_cnt_t>(loud.size()));
+		QVERIFY(tap.takeSamplePeak() > 0.4f);  // and a later loud period crosses again
+	}
+
+	//! Signed frame counts must be checked before conversion to f_cnt_t, which
+	//! is unsigned. A negative value must not enter LufsMeter or wrap into a huge
+	//! feed; ordinary signed positive counts must still feed one frame.
+	void negativeFrameCountsAreIgnoredBeforeUnsignedConversion()
+	{
+		QVERIFY(HasSignedFrameCountFeed<MasterLoudnessTap>);
+
+		MasterLoudnessTap tap(SampleRate, lmms::DEFAULT_CHANNELS);
+		tap.setEnabled(true);
+		const SampleFrame frame{};
+		tap.feed(&frame, 1);
+		QCOMPARE(tap.snapshot().blocksFed, 1ull);
+		QCOMPARE(tap.snapshot().framesFed, 1ull);
+
+		const auto before = tap.snapshot();
+		tap.feed(&frame, -1);
+		tap.feed(&frame, 0);
+		tap.feed(nullptr, 1);
+		const auto after = tap.snapshot();
+		QCOMPARE(after.blocksFed, before.blocksFed);
+		QCOMPARE(after.framesFed, before.framesFed);
+	}
+
+	//! A timed-out re-arm reports failure and preserves both the prior enabled
+	//! state and the measurement, whether the tap was armed or disarmed before it.
+	void timedOutRearmRestoresPriorStateAndMeasurement()
+	{
+		MasterLoudnessTap tap(SampleRate, lmms::DEFAULT_CHANNELS);
+		const SampleFrame frame(sample_t{0.25}, sample_t{0.25});
+		tap.setEnabled(true);
+		tap.feed(&frame, 1);
+		tap.setEnabled(false);
+		const auto beforeDisabledRearm = tap.snapshot();
+		QVERIFY(!beforeDisabledRearm.enabled);
+
+		setMasterLoudnessTapNextQuietWaitResultForTesting(false);
+		const bool disabledRearmFailed = rearmReportsQuietTimeout(tap);
+		const auto afterDisabledRearm = tap.snapshot();
+		QVERIFY(!afterDisabledRearm.enabled);
+		QVERIFY(disabledRearmFailed);
+		QCOMPARE(afterDisabledRearm.blocksFed, beforeDisabledRearm.blocksFed);
+		QCOMPARE(afterDisabledRearm.framesFed, beforeDisabledRearm.framesFed);
+
+		tap.setEnabled(true);
+		tap.feed(&frame, 1);
+		const auto beforeEnabledRearm = tap.snapshot();
+		setMasterLoudnessTapNextQuietWaitResultForTesting(false);
+		const bool enabledRearmFailed = rearmReportsQuietTimeout(tap);
+		QVERIFY(tap.enabled());
+		QVERIFY(enabledRearmFailed);
+		const auto afterEnabledRearm = tap.snapshot();
+		QCOMPARE(afterEnabledRearm.blocksFed, beforeEnabledRearm.blocksFed);
+		QCOMPARE(afterEnabledRearm.framesFed, beforeEnabledRearm.framesFed);
+	}
+
+	//! A failed disarm wait is visible to the caller, so it cannot treat the
+	//! returned snapshot as final while an earlier feed may still publish.
+	void timedOutDisableReportsThatTheSnapshotMayChange()
+	{
+		MasterLoudnessTap tap(SampleRate, lmms::DEFAULT_CHANNELS);
+		const SampleFrame frame(sample_t{0.25}, sample_t{0.25});
+		tap.setEnabled(true);
+		tap.feed(&frame, 1);
+		const auto before = tap.snapshot();
+
+		setMasterLoudnessTapNextQuietWaitResultForTesting(false);
+		QVERIFY(disableReportsQuietTimeout(tap));
+		QVERIFY(tap.enabled());
+		const auto after = tap.snapshot();
+		QCOMPARE(after.blocksFed, before.blocksFed);
+		QCOMPARE(after.framesFed, before.framesFed);
 	}
 
 	//! NEGATIVE CONTROL 1: digital silence is not a plausible number. The meter

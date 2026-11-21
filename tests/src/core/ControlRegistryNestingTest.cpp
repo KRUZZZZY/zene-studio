@@ -24,12 +24,18 @@
 
 #include <QtTest>
 
+#include <QJsonDocument>
+
+#include <stdexcept>
+
 #include "ControlRegistry.h"
+#include "ControlServer.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "ProjectJournal.h"
 #include "ProvenanceSection.h"
+#include "UnattendedRun.h"
 
 using namespace lmms;
 
@@ -75,6 +81,172 @@ private slots:
 			return ControlResult::success(QJsonObject{{QStringLiteral("__transaction"), transaction}});
 		};
 		return command;
+	}
+
+	//! A throwing handler must not leave the registry's running-handler counts raised.
+	//! The observer only hears a top-level edit while no other handler is running, and a
+	//! leaked wrapper count would hold the next mutating command's record forever. The
+	//! exception itself becomes a TYPED control error: it never escapes the control
+	//! surface, so the agent gets an error instead of a crash.
+	void throwingHandlerRestoresDispatchDepth()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		ControlCommand throwing;
+		throwing.id = QStringLiteral("test.throw_depth");
+		throwing.group = QStringLiteral("test");
+		throwing.verb = QStringLiteral("throw_depth");
+		throwing.handler = [](const QJsonObject&) -> ControlResult {
+			throw std::runtime_error("expected handler failure");
+		};
+		registry->registerCommand(throwing);
+		const ControlCommand later = describedCommand(
+			QStringLiteral("test.throw_depth_after"), true, QStringLiteral("test.throw_depth_after"));
+		registry->registerCommand(later);
+
+		QStringList observed;
+		registry->setCommandObserver([&observed](const QString& command, const QJsonObject&) {
+			observed.append(command);
+		});
+		registry->clearTransactions();
+		ControlResult thrown;
+		bool escaped = false;
+		try
+		{
+			thrown = registry->invoke(throwing.id);
+		}
+		catch (const std::exception&)
+		{
+			escaped = true;
+		}
+		const ControlResult afterThrow = registry->invoke(later.id);
+		registry->setCommandObserver({});
+
+		QVERIFY2(!escaped, "a handler's exception must not escape the control surface");
+		QVERIFY(!thrown.ok);
+		QCOMPARE(controlErrorKindName(thrown.errorKind), QStringLiteral("refused"));
+		QVERIFY(afterThrow.ok);
+		QCOMPARE(observed, QStringList{later.id});
+		const QJsonArray transactions = registry->transactions();
+		QCOMPARE(transactions.size(), 1);
+		QCOMPARE(transactions.last().toObject().value(QStringLiteral("command")).toString(), later.id);
+	}
+
+	//! A throwing MUTATING handler must restore the mutating count too: a leak makes the
+	//! next top-level mutating command look nested, so its own step is never recorded.
+	void throwingMutatingHandlerRestoresMutatingDepth()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		ControlCommand throwing;
+		throwing.id = QStringLiteral("test.throw_mutating_depth");
+		throwing.group = QStringLiteral("test");
+		throwing.verb = QStringLiteral("throw_mutating_depth");
+		throwing.mutating = true;
+		throwing.handler = [](const QJsonObject&) -> ControlResult {
+			throw std::runtime_error("expected mutating handler failure");
+		};
+		registry->registerCommand(throwing);
+		const ControlCommand later = describedCommand(
+			QStringLiteral("test.throw_mutating_depth_after"), true,
+			QStringLiteral("test.throw_mutating_depth_after"));
+		registry->registerCommand(later);
+
+		registry->clearTransactions();
+		ControlResult thrown;
+		bool escaped = false;
+		try
+		{
+			thrown = registry->invoke(throwing.id);
+		}
+		catch (const std::exception&)
+		{
+			escaped = true;
+		}
+		const ControlResult afterThrow = registry->invoke(later.id);
+
+		QVERIFY2(!escaped, "a handler's exception must not escape the control surface");
+		QVERIFY(!thrown.ok);
+		QCOMPARE(controlErrorKindName(thrown.errorKind), QStringLiteral("refused"));
+		QVERIFY(afterThrow.ok);
+		const QJsonArray transactions = registry->transactions();
+		QCOMPARE(transactions.size(), 1);
+		QCOMPARE(transactions.last().toObject().value(QStringLiteral("command")).toString(), later.id);
+	}
+
+	//! A wrapper whose handler throws AFTER a mutating child changed the project: the
+	//! child's record is written by the call that ran it - the throwing wrapper - and
+	//! not left pending for a later command to flush under its own name. The later
+	//! command must not claim it.
+	void aThrowingWrapperDoesNotLeaveItsChildRecordForALaterCommand()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		registry->clearTransactions();
+		const ControlCommand child = describedCommand(QStringLiteral("test.throw_wrap_child"), true,
+			QStringLiteral("test.throw_wrap_child"));
+		registry->registerCommand(child);
+		ControlCommand wrapper = describedCommand(QStringLiteral("test.throw_wrap"), false, QString());
+		wrapper.handler = [child](const QJsonObject& args) -> ControlResult {
+			ControlRegistry::instance()->invoke(child.id, args);
+			throw std::runtime_error("expected wrapper failure");
+		};
+		registry->registerCommand(wrapper);
+		// A later non-mutating command, with a child of its own: if the throwing
+		// wrapper's child record were still pending, this command would sweep it
+		// into its own aggregate.
+		const ControlCommand laterChild = describedCommand(QStringLiteral("test.throw_wrap_later_child"), true,
+			QStringLiteral("test.throw_wrap_later_child"));
+		registry->registerCommand(laterChild);
+		ControlCommand later = describedCommand(QStringLiteral("test.throw_wrap_later"), false, QString());
+		later.handler = [laterChild](const QJsonObject& args) {
+			return ControlRegistry::instance()->invoke(laterChild.id, args);
+		};
+		registry->registerCommand(later);
+
+		ControlResult thrown;
+		bool escaped = false;
+		try
+		{
+			thrown = registry->invoke(wrapper.id);
+		}
+		catch (const std::exception&)
+		{
+			escaped = true;
+		}
+		QVERIFY2(!escaped, "a handler's exception must not escape the control surface");
+		QVERIFY(!thrown.ok);
+		QCOMPARE(controlErrorKindName(thrown.errorKind), QStringLiteral("refused"));
+		// The child's record is written by the call that ran it, right there.
+		QCOMPARE(registry->transactions().size(), 1);
+		QCOMPARE(registry->transactions().last().toObject().value(QStringLiteral("command")).toString(), child.id);
+
+		QVERIFY(registry->invoke(later.id).ok);
+		const QJsonArray transactions = registry->transactions();
+		QCOMPARE(transactions.size(), 2);
+		QCOMPARE(transactions.at(0).toObject().value(QStringLiteral("command")).toString(), child.id);
+		QCOMPARE(transactions.at(1).toObject().value(QStringLiteral("command")).toString(), laterChild.id);
+	}
+
+	//! The control-socket boundary: a handler that throws answers the agent with a TYPED
+	//! control error - the reply the socket writes - not a crash and not a silent success.
+	void aThrowingHandlerAnswersATypedControlError()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		ControlCommand throwing;
+		throwing.id = QStringLiteral("test.throw_reply");
+		throwing.group = QStringLiteral("test");
+		throwing.verb = QStringLiteral("throw_reply");
+		throwing.handler = [](const QJsonObject&) -> ControlResult {
+			throw std::runtime_error("expected handler failure");
+		};
+		registry->registerCommand(throwing);
+		ControlServer server(registry);
+		const QByteArray reply = server.dispatchLine(QByteArray("{\"id\":7,\"cmd\":\"test.throw_reply\"}"));
+		const QJsonObject answer = QJsonDocument::fromJson(reply).object();
+		QVERIFY(!answer.value(QStringLiteral("ok")).toBool());
+		const QJsonObject error = answer.value(QStringLiteral("error")).toObject();
+		QCOMPARE(error.value(QStringLiteral("kind")).toString(), QStringLiteral("refused"));
+		const QString message = error.value(QStringLiteral("message")).toString();
+		QVERIFY2(message.contains(throwing.id), qPrintable(message));
+		QVERIFY2(message.contains(QStringLiteral("expected handler failure")), qPrintable(message));
 	}
 
 	//! A non-mutating wrapper running two mutating children that share ONE journal step: one undo
@@ -400,6 +572,50 @@ private slots:
 		QCOMPARE(registry->transactions().last().toObject().value(QStringLiteral("command")).toString(),
 			QStringLiteral("mixer.set_volume"));
 	}
+
+	//! destroy() ends the instance the application had told "the model is up". The
+	//! instance that instance() builds next has not been told, so it must not report
+	//! startup as complete, and its readiness report still says "still starting".
+	void recreatedRegistryDoesNotInheritReadiness()
+	{
+		ControlRegistry::setReady(true);
+		ControlRegistry::destroy();
+		ControlRegistry::instance();
+
+		QVERIFY2(!ControlRegistry::startupComplete(),
+			"destroy() left the readiness flag set for the registry that instance() builds next");
+		QVERIFY(!ControlRegistry::isEngineReady());
+		const ControlRegistry::ReadinessReport state = ControlRegistry::readinessReport();
+		QVERIFY(!state.ready);
+		QCOMPARE(state.code, QStringLiteral("engine_starting"));
+	}
+
+	//! The recreated registry becomes ready only when the application says so again.
+	void applicationReadinessReachesTheRecreatedRegistry()
+	{
+		ControlRegistry::setReady(true);
+		ControlRegistry::destroy();
+		ControlRegistry::instance();
+		QVERIFY(!ControlRegistry::startupComplete());
+
+		ControlRegistry::setReady(true);
+		QVERIFY(ControlRegistry::startupComplete());
+	}
+
+	//! gui-1105: a visible GUI under --control-socket is unattended (no dialog may open) yet HAS a display, so a
+	//! command that requires one (app.help, from Help > Help for This) must run there. The guiless test app has no
+	//! platform of its own, so QT_QPA_PLATFORM stands in for the display, as main() sees it.
+	void displayRequirementIgnoresAgentInstance()
+	{
+		qputenv("QT_QPA_PLATFORM", "xcb"); setAgentInstance(true); ControlRegistry::destroy();
+		ControlCommand command = describedCommand(QStringLiteral("test.agent_display"), false, QStringLiteral("none")); command.requiresDecl = QStringList{QStringLiteral("display")};
+		ControlRegistry::instance()->registerCommand(command); ControlRegistry::setReady(true);
+		const bool unattended = ControlRegistry::instance()->isHeadless(); const ControlResult result = ControlRegistry::instance()->invoke(command.id);
+		setAgentInstance(false); qunsetenv("QT_QPA_PLATFORM"); ControlRegistry::destroy(); ControlRegistry::setReady(true);
+		QVERIFY(unattended); QVERIFY2(result.ok, qPrintable(result.errorMessage));
+	}
+
+
 };
 
 QTEST_GUILESS_MAIN(ControlRegistryNestingTest)

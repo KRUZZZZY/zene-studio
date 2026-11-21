@@ -47,11 +47,21 @@
 #include "../../../plugins/Vibed/NineButtonSelector.cpp"
 #pragma pop_macro("Q_OBJECT")
 
+namespace
+{
+
+// Every value the selector emits, in order. The stubbed signal below records
+// into it so the test can see what an out-of-range click would have announced.
+QList<int> emittedSelections;
+
+} // namespace
+
 namespace lmms::gui
 {
 
-void NineButtonSelector::NineButtonSelection(int)
+void NineButtonSelector::NineButtonSelection(int button)
 {
+	emittedSelections.append(button);
 }
 
 } // namespace lmms::gui
@@ -133,6 +143,52 @@ private slots:
 			const auto buttons = selector.findChildren<gui::PixmapButton*>();
 			QCOMPARE(buttons.size(), 9);
 
+			int selectedCount = 0;
+			bool expectedButtonSelected = false;
+			for (const auto* button : buttons)
+			{
+				if (!static_cast<const BoolModel*>(button->model())->value())
+				{
+					continue;
+				}
+
+				++selectedCount;
+				expectedButtonSelected = button->pos() == QPoint{
+					1 + (expectedButton % 3) * 17,
+					1 + (expectedButton / 3) * 17};
+			}
+
+			QCOMPARE(selectedCount, 1);
+			QVERIFY(expectedButtonSelected);
+		}
+	}
+
+	// A click (or a direct buttonClicked call) with an ID outside the 0-8 button
+	// range must select the nearest button, not index m_buttons out of bounds.
+	void outOfRangeClickSelectsNearestButton()
+	{
+		EngineScope engine;
+		const std::array<QPixmap, 18> icons{};
+		for (const auto& [clickedButton, expectedButton] : {std::pair{-1, 0}, std::pair{9, 8}})
+		{
+			gui::NineButtonSelector selector{icons, 4, 0, 0, nullptr};
+			emittedSelections.clear();
+
+			selector.buttonClicked(clickedButton);
+
+			QCOMPARE(selector.model()->value(), expectedButton);
+			QVERIFY2(!emittedSelections.isEmpty(),
+				"the selector must announce the selection it made");
+			for (const int announced : emittedSelections)
+			{
+				QVERIFY2(announced >= 0 && announced <= 8,
+					qPrintable(QString("the selector announced %1, outside its 0-8 button range")
+						.arg(announced)));
+			}
+			QCOMPARE(emittedSelections.last(), expectedButton);
+
+			const auto buttons = selector.findChildren<gui::PixmapButton*>();
+			QCOMPARE(buttons.size(), 9);
 			int selectedCount = 0;
 			bool expectedButtonSelected = false;
 			for (const auto* button : buttons)

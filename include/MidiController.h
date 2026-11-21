@@ -25,6 +25,10 @@
 #ifndef LMMS_MIDI_CONTROLLER_H
 #define LMMS_MIDI_CONTROLLER_H
 
+#include <atomic>
+#include <bit>
+#include <cstdint>
+
 #include <QWidget>
 
 #include "AutomatableModel.h"
@@ -123,7 +127,7 @@ private:
 	 *  hardware is seen to CROSS the target since the last sample.
 	 *
 	 *  Only an OBSERVED crossing counts: the comparison is against the previous
-	 *  RAW hardware sample, not against m_lastValue, which is the last value the
+	 *  RAW hardware sample, not against the last accepted value, which is the one the
 	 *  model accepted and so is stale until capture. Before the first sample
 	 *  there is nothing to have crossed, so the first value after the gate is
 	 *  armed can only capture by being at the target.
@@ -143,8 +147,25 @@ private:
 
 	MidiPort m_midiPort;
 
-	float m_lastValue;
-	float m_previousValue;
+	//! The last two controller values. The MIDI input thread writes them (processInEvent) while the
+	//! render thread reads and advances them (updateValueBuffer), so the pair is ONE lock-free 64-bit
+	//! atomic (previous in the high word, last in the low word): a block never sees half an update.
+	struct ValuePair
+	{
+		float previous;
+		float last;
+	};
+	static std::uint64_t pack(ValuePair pair) noexcept
+	{
+		return (static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(pair.previous)) << 32)
+			| std::bit_cast<std::uint32_t>(pair.last);
+	}
+	static ValuePair unpack(std::uint64_t bits) noexcept
+	{
+		return ValuePair{std::bit_cast<float>(static_cast<std::uint32_t>(bits >> 32)),
+			std::bit_cast<float>(static_cast<std::uint32_t>(bits))};
+	}
+	std::atomic<std::uint64_t> m_values;
 
 	bool m_softTakeoverEnabled = false;
 	bool m_softTakeoverCaptured = false;
@@ -152,7 +173,7 @@ private:
 
 	/*! The previous RAW hardware value, and whether one has been seen yet.
 	 *  The crossing test compares the incoming value against these, NOT
-	 *  against m_lastValue: that is the last value the MODEL accepted, which
+	 *  against the accepted value: the last one the MODEL accepted, which
 	 *  is stale (or still its initial 0.0) until this control takes over, so
 	 *  comparing against it let the first event after arming capture whenever
 	 *  it happened to sit on the far side of the target. The hardware moving

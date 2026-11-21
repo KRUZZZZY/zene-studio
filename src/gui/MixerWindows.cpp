@@ -43,9 +43,11 @@
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "GuiApplication.h"
+#include "InputChannelMeters.h"
 #include "InputLevelMeter.h"
 #include "MainWindow.h"
 #include "Mixer.h"
+#include "MixerMaskingReport.h"
 #include "MixerRoutingMatrix.h"
 
 namespace lmms::gui
@@ -213,8 +215,8 @@ public:
 		layout->addLayout(row);
 		layout->addWidget(m_curves, 1);
 		layout->addWidget(m_summary);
-		connect(m_a, &QComboBox::currentIndexChanged, this, [this] { compare(); });
-		connect(m_b, &QComboBox::currentIndexChanged, this, [this] { compare(); });
+		connect(m_a, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { compare(); });
+		connect(m_b, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { compare(); });
 		resize(520, 320);
 		compare();
 	}
@@ -265,6 +267,9 @@ void addMixerWindows(QMenu* menu)
 	QAction* meters = menu->addAction(QObject::tr("Large Meters..."));
 	meters->setProperty("controlCommand", QStringLiteral("meter.get_state"));
 	QObject::connect(meters, &QAction::triggered, menu, [] { showOne<LargeMeters>(&s_meters); });
+	QAction* inputs = menu->addAction(QObject::tr("Input Meters..."));  // Q050-340: each capture channel, each armed track
+	inputs->setProperty("controlCommand", QStringLiteral("window.input_meters"));
+	QObject::connect(inputs, &QAction::triggered, menu, [] { ControlRegistry::instance()->invoke(QStringLiteral("window.input_meters")); });
 	QAction* scope = menu->addAction(QObject::tr("Phase Scope..."));  // MX-137
 	scope->setProperty("controlCommand", QStringLiteral("window.phase_scope"));
 	QObject::connect(scope, &QAction::triggered, menu, [] { ControlRegistry::instance()->invoke(QStringLiteral("window.phase_scope")); });
@@ -274,6 +279,9 @@ void addMixerWindows(QMenu* menu)
 	QAction* eq = menu->addAction(QObject::tr("Compare Channel EQ..."));
 	eq->setProperty("controlCommand", QStringLiteral("mixer.eq_compare"));
 	QObject::connect(eq, &QAction::triggered, menu, [] { showOne<EqCompare>(&s_eq); });
+	QAction* masking = menu->addAction(QObject::tr("Masking Report..."));  // Q050-231.1: which channels clash where
+	masking->setProperty("controlCommand", QStringLiteral("mixer.masking_report"));
+	QObject::connect(masking, &QAction::triggered, menu, [] { showMaskingReport(); });
 }
 
 } // namespace lmms::gui

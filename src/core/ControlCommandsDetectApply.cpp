@@ -51,6 +51,15 @@ using namespace control;
 namespace
 {
 
+//! Which halves a call asks for: an absent `tempo` or `key` means yes.
+void requestedHalves(const QJsonObject& args, bool* writeTempo, bool* writeKey)
+{
+	*writeTempo = !args.contains(QStringLiteral("tempo"))
+		|| args.value(QStringLiteral("tempo")).toBool();
+	*writeKey = !args.contains(QStringLiteral("key"))
+		|| args.value(QStringLiteral("key")).toBool();
+}
+
 /*! `detect.apply` - the acceptance. ONE command writes both halves and records
  *  ONE inverse; a call that names a half the file gave nothing for is REFUSED
  *  and writes neither (no half-applied detection). */
@@ -85,15 +94,15 @@ void registerApplyCommand(ControlRegistry& registry)
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
-		Song* song = Engine::getSong();
 		double bound = 0.0;
 		ControlResult error;
+		Song* song = detectProjectSong(&error);
+		if (song == nullptr) { return error; }
 		if (!readDetectBound(args, &bound, &error)) { return error; }
 
-		const bool writeTempo = !args.contains(QStringLiteral("tempo"))
-			|| args.value(QStringLiteral("tempo")).toBool();
-		const bool writeKey = !args.contains(QStringLiteral("key"))
-			|| args.value(QStringLiteral("key")).toBool();
+		bool writeTempo = false;
+		bool writeKey = false;
+		requestedHalves(args, &writeTempo, &writeKey);
 		if (!writeTempo && !writeKey)
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs,

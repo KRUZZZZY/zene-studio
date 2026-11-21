@@ -22,12 +22,17 @@
  *
  */
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <memory>
+#include <QDebug>
 #include <QDomElement>
 
 #include "BitInvader.h"
 #include "AudioEngine.h"
 #include "base64.h"
+#include "WaveformData.h"
 #include "Engine.h"
 #include "Graph.h"
 #include "InstrumentTrack.h"
@@ -45,7 +50,6 @@ namespace lmms
 {
 
 
-static const int wavetableSize = 200;
 static const float defaultNormalizationFactor = 1.0f;
 
 extern "C"
@@ -76,7 +80,6 @@ BSynth::BSynth( float * _shape, NotePlayHandle * _nph, bool _interpolation,
 	sample_rate( _sample_rate ),
 	interpolation( _interpolation)
 {
-	sample_shape = new float[wavetableSize];
 	for (int i=0; i < wavetableSize; ++i)
 	{
 		float buf = _shape[i] * _factor;
@@ -91,12 +94,6 @@ BSynth::BSynth( float * _shape, NotePlayHandle * _nph, bool _interpolation,
 		}
 		sample_shape[i] = buf;
 	}
-}
-
-
-BSynth::~BSynth()
-{
-	delete[] sample_shape;
 }
 
 
@@ -183,23 +180,41 @@ void BitInvader::saveSettings( QDomDocument & _doc, QDomElement & _this )
 
 void BitInvader::loadSettings( const QDomElement & _this )
 {
-	// Clear wavetable before loading a new
-	m_graph.clear();
+	// The wavetable is cleared at the length it had before this load, as it always was (Q050-486).
+	const int previousLength = m_graph.length();
 
 	// Load sample length
 	m_sampleLength.loadSettings( _this, "sampleLength" );
 
 	int sampleLength = (int)m_sampleLength.value();
 
-	// Load sample shape
-	int size = 0;
-	char * dst = 0;
-	base64::decode( _this.attribute( "sampleShape"), &dst, &size );
-
-	m_graph.setLength(size / sizeof(float));
-	m_graph.setSamples(reinterpret_cast<float*>(dst));
-	m_graph.setLength(sampleLength);
-	delete[] dst;
+	// Load sample shape: older writers saved sampleLength values, this one saves wavetableSize.
+	// Any other payload keeps the current wavetable and is reported (Q050-486).
+	const QString shapeAttribute = QStringLiteral("sampleShape");
+	auto shape = waveform::decode(_this.attribute(shapeAttribute), 1, wavetableSize);
+	if (shape.ok() && shape.count != sampleLength && shape.count != wavetableSize)
+	{
+		shape.status = waveform::DecodeStatus::WrongLength;
+	}
+	if (shape.ok())
+	{
+		// Decode guarantees finite values; clamp them to the wavetable's range before they reach the graph.
+		for (int i = 0; i < shape.count; ++i)
+		{
+			shape.samples[i] = std::clamp(shape.samples[i], -1.0f, 1.0f);
+		}
+		// Clear wavetable before loading a new
+		m_graph.setLength(previousLength);
+		m_graph.clear();
+		m_graph.setLength(shape.count);
+		m_graph.setSamples(shape.samples.get(), shape.count);
+		m_graph.setLength(sampleLength);
+	}
+	else
+	{
+		waveform::reportRefused(QStringLiteral("BitInvader"), shapeAttribute, shape, sampleLength, wavetableSize);
+		qWarning() << "BitInvader: refused saved wavetable in" << shapeAttribute << "; the current wavetable is kept";
+	}
 
 	// Load LED normalize 
 	m_interpolation.loadSettings( _this, "interpolation" );
@@ -258,8 +273,11 @@ void BitInvader::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out)
 {
 	if (!nph->m_pluginData)
 	{
+		static_assert(sizeof(BSynth) <= NotePlayHandle::PluginDataStorageSize);
+		static_assert(alignof(BSynth) <= alignof(std::max_align_t));
 		float factor = !m_normalize.value() ? defaultNormalizationFactor : m_normalizeFactor;
-		nph->m_pluginData = new BSynth(
+		nph->m_pluginData = std::construct_at(
+					static_cast<BSynth*>( nph->pluginDataStorage() ),
 					const_cast<float*>( m_graph.samples() ),
 					nph,
 					m_interpolation.value(), factor,
@@ -283,7 +301,7 @@ void BitInvader::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out)
 
 void BitInvader::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<BSynth *>( _n->m_pluginData );
+	std::destroy_at( static_cast<BSynth *>( _n->m_pluginData ) );
 }
 
 

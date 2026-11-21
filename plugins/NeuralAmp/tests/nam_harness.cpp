@@ -14,24 +14,26 @@
  *   g++ -O3 -march=native -std=c++20 -I plugins/NeuralAmp \
  *       -I plugins/NeuralAmp/rtneural/modules/Eigen \
  *       plugins/NeuralAmp/tests/nam_harness.cpp \
+ *       plugins/NeuralAmp/tests/HarnessClockPosix.cpp \
  *       plugins/NeuralAmp/nam/NamModel.cpp \
  *       plugins/NeuralAmp/nam/NamModelLoader.cpp -o build/nam_harness
+ * Windows builds select HarnessClockWindows.cpp instead through CMake.
  *
  * Copyright (c) 2026 AI-KOS Team. GPL-2.0-or-later (see plugin sources).
  */
 
 #include "nam/NamModel.h"
+#include "NamHarnessCpuClock.h"
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <ctime>
-#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <string>
@@ -41,6 +43,7 @@ namespace
 {
 
 constexpr double kTwoPi = 6.283185307179586476925286766559;
+constexpr int64_t kMaxGeneratedSamples = 4'194'304;
 
 struct Options
 {
@@ -51,10 +54,55 @@ struct Options
 	std::string wavOut;          // write the wav-run output as float32 WAV
 	std::string compareRef;      // compare output against this reference WAV
 	int blockSize = 512;
-	int blocks = 2000;
-	int warmupBlocks = 20;
+	int64_t blocks = 2000;
+	int64_t warmupBlocks = 20;
 	double sampleRate = 48000.0;
 };
+
+/// Parse a decimal integer option into a 64-bit count. Returns false for an
+/// empty, malformed or out-of-range value: std::stoi throws on those, and an
+/// exception escaping main aborts the harness instead of reporting the usage
+/// error the exit code contract (2 = usage/load error) promises.
+bool parseInt64Option(const std::string& text, int64_t& value)
+{
+	if (text.empty()) { return false; }
+	char* end = nullptr;
+	errno = 0;
+	const long long parsed = std::strtoll(text.c_str(), &end, 10);
+	if (end == text.c_str() || *end != '\0' || errno == ERANGE) { return false; }
+	value = static_cast<int64_t>(parsed);
+	return true;
+}
+
+/// Parse a decimal integer option into a frame count. Returns false for an
+/// empty, malformed or out-of-range value (same contract as above).
+bool parseIntOption(const std::string& text, int& value)
+{
+	int64_t parsed = 0;
+	if (!parseInt64Option(text, parsed)) { return false; }
+	if (parsed < std::numeric_limits<int>::min() ||
+	    parsed > std::numeric_limits<int>::max())
+	{
+		return false;
+	}
+	value = static_cast<int>(parsed);
+	return true;
+}
+
+/// Plan the generated run. The block counts are wide and are bounded before
+/// they are added, so neither the sum nor the product can overflow, and a run
+/// that would need more than kMaxGeneratedSamples samples is rejected before
+/// a single buffer is allocated.
+bool planGeneratedSamples(int64_t blocks, int64_t warmupBlocks, int64_t blockSize,
+	int64_t& totalSamples)
+{
+	if (blocks < 0 || warmupBlocks < 0 || blockSize < 1) { return false; }
+	if (blocks > kMaxGeneratedSamples || warmupBlocks > kMaxGeneratedSamples) { return false; }
+	const int64_t totalBlocks = blocks + warmupBlocks;
+	if (totalBlocks > kMaxGeneratedSamples / blockSize) { return false; }
+	totalSamples = totalBlocks * blockSize;
+	return true;
+}
 
 void usage(const char* argv0)
 {
@@ -348,7 +396,23 @@ std::size_t loaderTestWeightCount(const LoaderTestConfig& config)
 	return c + layers * layerWeights + h * b + 1;
 }
 
-bool writeLoaderTestModel(const std::filesystem::path& path, const LoaderTestConfig& config)
+// Not std::filesystem: its path/temp_directory_path need the macOS 10.15 deployment target, and
+// the hosted macos-x86_64 job builds for older ones.
+std::string temporaryDirectory()
+{
+	for (const char* name : {"TMPDIR", "TEMP", "TMP"})
+	{
+		const char* value = std::getenv(name);
+		if (value != nullptr && value[0] != '\0') { return value; }
+	}
+#if defined(_WIN32)
+	return ".";
+#else
+	return "/tmp";
+#endif
+}
+
+bool writeLoaderTestModel(const std::string& path, const LoaderTestConfig& config)
 {
 	std::ofstream file(path);
 	if (!file) { return false; }
@@ -382,8 +446,9 @@ int testLoaderConfig(const std::string& testCase)
 	}
 	const std::string suffix = std::to_string(
 		std::chrono::steady_clock::now().time_since_epoch().count());
-	const std::filesystem::path path = std::filesystem::temp_directory_path() /
-		("zene-nam-loader-" + suffix + ".nam");
+	std::string path = temporaryDirectory();
+	if (path.back() != '/' && path.back() != '\\') { path += '/'; }
+	path += "zene-nam-loader-" + suffix + ".nam";
 	if (!writeLoaderTestModel(path, *config))
 	{
 		std::fprintf(stderr, "FAIL: could not write loader test model\n");
@@ -391,9 +456,8 @@ int testLoaderConfig(const std::string& testCase)
 	}
 
 	std::string error;
-	auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
-	std::error_code removeError;
-	std::filesystem::remove(path, removeError);
+	auto model = lmms::nam::NamModel::loadFromFile(path, &error);
+	std::remove(path.c_str());
 	const bool unexpected = config->expectRejection ? (model || error.empty()) :
 		(!model || !error.empty());
 	if (unexpected)
@@ -430,9 +494,30 @@ int main(int argc, char** argv)
 			}
 			return argv[++i];
 		};
-		if (a == "--block") { opt.blockSize = std::stoi(next("--block")); }
-		else if (a == "--blocks") { opt.blocks = std::stoi(next("--blocks")); }
-		else if (a == "--warmup") { opt.warmupBlocks = std::stoi(next("--warmup")); }
+		if (a == "--block")
+		{
+			if (!parseIntOption(next("--block"), opt.blockSize))
+			{
+				std::fprintf(stderr, "error: --block must be an integer\n");
+				return 2;
+			}
+		}
+		else if (a == "--blocks")
+		{
+			if (!parseInt64Option(next("--blocks"), opt.blocks))
+			{
+				std::fprintf(stderr, "error: --blocks must be an integer\n");
+				return 2;
+			}
+		}
+		else if (a == "--warmup")
+		{
+			if (!parseInt64Option(next("--warmup"), opt.warmupBlocks))
+			{
+				std::fprintf(stderr, "error: --warmup must be an integer\n");
+				return 2;
+			}
+		}
 		else if (a == "--sample-rate") { opt.sampleRate = std::stod(next("--sample-rate")); }
 		else if (a == "--wav") { opt.wavPath = next("--wav"); }
 		else if (a == "--write-input-wav") { opt.writeInputWav = next("--write-input-wav"); }
@@ -456,6 +541,11 @@ int main(int argc, char** argv)
 	}
 	opt.modelPath = positional.front();
 
+	if (!std::isfinite(opt.sampleRate) || opt.sampleRate <= 0.0)
+	{
+		std::fprintf(stderr, "error: --sample-rate must be finite and positive\n");
+		return 2;
+	}
 	if (opt.blockSize < 1 || opt.blockSize > lmms::nam::NamModel::kMaxBlock)
 	{
 		std::fprintf(stderr, "error: --block must be in [1, %d]\n",
@@ -467,10 +557,21 @@ int main(int argc, char** argv)
 		std::fprintf(stderr, "error: --blocks must be >= 1\n");
 		return 2;
 	}
+	int64_t totalSamples = 0;
 	if (opt.warmupBlocks < 0)
 	{
 		std::fprintf(stderr, "error: --warmup must be >= 0\n");
 		return 2;
+	}
+	if (opt.wavRun.empty())
+	{
+		if (!planGeneratedSamples(opt.blocks, opt.warmupBlocks, opt.blockSize, totalSamples))
+		{
+			std::fprintf(stderr,
+				"error: generated run exceeds %lld samples; reduce --blocks, --warmup, or --block\n",
+				static_cast<long long>(kMaxGeneratedSamples));
+			return 2;
+		}
 	}
 
 	std::printf("== NeuralAmp harness ==\n");
@@ -526,16 +627,15 @@ int main(int argc, char** argv)
 		std::vector<float> wavOut(wavIn.size(), 0.0f);
 		std::vector<float> inB(opt.blockSize), outB(opt.blockSize);
 		size_t pos = 0;
-		timespec t0{}, t1{};
 		double cpuUs = 0.0;
 		while (pos < wavIn.size())
 		{
 			const size_t n = std::min(static_cast<size_t>(opt.blockSize), wavIn.size() - pos);
 			std::memcpy(inB.data(), wavIn.data() + pos, n * sizeof(float));
-			clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t0);
+			const double t0 = namThreadCpuMicroseconds();
 			model->process(inB.data(), outB.data(), static_cast<int>(n));
-			clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t1);
-			cpuUs += (t1.tv_sec - t0.tv_sec) * 1e6 + (t1.tv_nsec - t0.tv_nsec) / 1e3;
+			const double t1 = namThreadCpuMicroseconds();
+			cpuUs += t1 - t0;
 			std::memcpy(wavOut.data() + pos, outB.data(), n * sizeof(float));
 			pos += n;
 		}
@@ -602,12 +702,11 @@ int main(int argc, char** argv)
 	}
 
 	// --------------------------------------------------- generated-signal mode
-	std::printf("block size: %d  blocks: %d  warmup: %d  sample rate: %.0f Hz\n",
-		opt.blockSize, opt.blocks, opt.warmupBlocks, opt.sampleRate);
+	std::printf("block size: %d  blocks: %lld  warmup: %lld  sample rate: %.0f Hz\n",
+		opt.blockSize, static_cast<long long>(opt.blocks),
+		static_cast<long long>(opt.warmupBlocks), opt.sampleRate);
 
 	// Deterministic input for the whole run.
-	const int64_t totalSamples =
-		static_cast<int64_t>(opt.blockSize) * (opt.blocks + opt.warmupBlocks);
 	std::vector<float> input(totalSamples);
 	for (int64_t i = 0; i < totalSamples; ++i)
 	{
@@ -630,9 +729,9 @@ int main(int argc, char** argv)
 	std::vector<float> outBlock(opt.blockSize);
 
 	// Warmup (state settling + cache warm).
-	for (int b = 0; b < opt.warmupBlocks; ++b)
+	for (int64_t b = 0; b < opt.warmupBlocks; ++b)
 	{
-		const int64_t off = static_cast<int64_t>(b) * opt.blockSize;
+		const int64_t off = b * opt.blockSize;
 		std::memcpy(inBlock.data(), input.data() + off,
 			static_cast<size_t>(opt.blockSize) * sizeof(float));
 		model->process(inBlock.data(), outBlock.data(), opt.blockSize);
@@ -640,26 +739,22 @@ int main(int argc, char** argv)
 
 	// Timed run.
 	std::vector<double> blockUs;
-	blockUs.reserve(opt.blocks);
+	blockUs.reserve(static_cast<size_t>(opt.blocks));
 	double cpuTotalUs = 0.0;
 	double wallTotalUs = 0.0;
 
 	const auto wallStart = std::chrono::steady_clock::now();
-	for (int b = 0; b < opt.blocks; ++b)
+	for (int64_t b = 0; b < opt.blocks; ++b)
 	{
-		const int64_t off =
-			static_cast<int64_t>(opt.warmupBlocks + b) * opt.blockSize;
+		const int64_t off = (opt.warmupBlocks + b) * opt.blockSize;
 		std::memcpy(inBlock.data(), input.data() + off,
 			static_cast<size_t>(opt.blockSize) * sizeof(float));
 
-		timespec t0{};
-		timespec t1{};
-		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t0);
+		const double t0 = namThreadCpuMicroseconds();
 		model->process(inBlock.data(), outBlock.data(), opt.blockSize);
-		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t1);
+		const double t1 = namThreadCpuMicroseconds();
 
-		const double cpuUs = (t1.tv_sec - t0.tv_sec) * 1e6 +
-			(t1.tv_nsec - t0.tv_nsec) / 1e3;
+		const double cpuUs = t1 - t0;
 		cpuTotalUs += cpuUs;
 		blockUs.push_back(cpuUs);
 
@@ -736,8 +831,8 @@ int main(int argc, char** argv)
 	const double cpuPercent = (cpuTotalUs / 1e6) / audioSeconds * 100.0;
 
 	std::printf("\n(b) cpu\n");
-	std::printf("  blocks: %d x %d frames (%.3f s of audio @ %.0f Hz)\n",
-		opt.blocks, opt.blockSize, audioSeconds, opt.sampleRate);
+	std::printf("  blocks: %lld x %d frames (%.3f s of audio @ %.0f Hz)\n",
+		static_cast<long long>(opt.blocks), opt.blockSize, audioSeconds, opt.sampleRate);
 	std::printf("  cpu total: %.3f ms   wall: %.3f ms\n", cpuTotalUs / 1e3,
 		wallTotalUs / 1e3);
 	std::printf("  cpu per block: %.2f us (median %.2f, p95 %.2f)\n", meanUs,

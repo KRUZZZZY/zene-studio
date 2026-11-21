@@ -29,6 +29,7 @@
 #include "WaveShaperControls.h"
 #include "WaveShaper.h"
 #include "base64.h"
+#include "WaveformData.h"
 #include "Graph.h"
 #include "Engine.h"
 #include "Song.h"
@@ -72,13 +73,8 @@ void WaveShaperControls::loadSettings( const QDomElement & _this )
 
 	m_clipModel.loadSettings( _this, "clipInput" );
 
-//load waveshape
-	int size = 0;
-	char * dst = 0;
-	base64::decode( _this.attribute( "waveShape"), &dst, &size );
-
-	m_wavegraphModel.setSamples( (float*) dst );
-	delete[] dst;
+//load waveshape: exactly 200 finite values, else the current shape is kept (Q050-486)
+	waveform::loadGraph(_this, QStringLiteral("waveShape"), m_wavegraphModel, QStringLiteral("Wave Shaper"));
 
 }
 

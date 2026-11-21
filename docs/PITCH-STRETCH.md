@@ -54,7 +54,7 @@ Two details that matter for the render path:
 
 | Where | What |
 |---|---|
-| `include/SampleClip.h` | `enum class WarpStretchMode { Resample = 0, PreservePitch = 1 }`, the `m_stretchMode` member (**default `Resample`**) and `warpStretchMode()` / `setWarpStretchMode()` |
+| `include/WarpMarkers.h` *(moved from `include/SampleClip.h` by SPEC-ARCH-4)* | `enum class WarpStretchMode { Resample = 0, PreservePitch = 1, RubberBand = 2 }` (owner decision 12 added `RubberBand` after this table was first written), the `m_stretchMode` member (**default `Resample`**) and `warpStretchMode()` / `setWarpStretchMode()` |
 | `src/core/SampleClip.cpp` | the mode is the `stretch="wsola"` attribute of the **same `<warp>` element** #597 already owns; written only when it is not the default, so a clip that never asks serialises byte for byte as before |
 | `include/SamplePlayHandle.h`, `src/core/SamplePlayHandle.cpp` | the handle snapshots the mode (`m_preservePitch`) with the window and the warp, and renders through `renderPreservingPitch()` when the mode is `PreservePitch` **and** the clip is not `rendersLinearly()` |
 
@@ -79,7 +79,7 @@ Three consequences, all deliberate:
 
 | id | mutating | args | result | A16 |
 |---|---|---|---|---|
-| `warp.stretch` | **yes** | `clip` (string, required), `mode` (`"resample"` \| `"preserve_pitch"`, required) | the whole warp state (below) + `previous_mode`, `changed` | `true_inverse` — `ControlReversibilityTable.cpp`; the mechanism is the clip's own journal checkpoint, because the mode is the `stretch` attribute of the clip's `<warp>` element, and the recorded inverse is `warp.stretch` re-issued with the before-state's own mode |
+| `warp.stretch` | **yes** | `clip` (string, required), `mode` (`"resample"` \| `"preserve_pitch"` \| `"rubberband"` — §7, required) | the whole warp state (below) + `previous_mode`, `changed` | `true_inverse` — `ControlReversibilityTable.cpp`; the mechanism is the clip's own journal checkpoint, because the mode is the `stretch` attribute of the clip's `<warp>` element, and the recorded inverse is `warp.stretch` re-issued with the before-state's own mode |
 | `warp.list` | no | `clip` | + `stretch`, `stretch_algorithm` (`"wsola"`), `renders_linearly` | `not_mutating` (unchanged row) |
 
 `warp.stretch` is registered in the `warp` group beside `add` / `move` / `remove` / `set`
@@ -87,7 +87,9 @@ Three consequences, all deliberate:
 
 * a `mode` the engine does not know — `invalid_args`;
 * `preserve_pitch` on a clip that renders linearly — `refused`, with the reason and the next step
-  ("author the warp first, or declare the clip's own source tempo").
+  ("author the warp first, or declare the clip's own source tempo");
+* `rubberband` in a build configured without the library — `refused`, naming `preserve_pitch` as the
+  stretch to use instead (§7; a *file* asking for it is not refused, it loads and renders through WSOLA).
 
 Over the socket:
 
@@ -98,6 +100,21 @@ Over the socket:
 ```
 
 and one `control.undo` takes it back (measured in the clip-path test below).
+
+**Run it yourself (Q050-148).** The whole exchange above is the registered transcript script
+`tests/control-pitch-stretch-transcript.py`, which drives the real binary headless and prints every
+request and reply; exit 0 only when every check held. A reviewer runs:
+
+```bash
+cmake --build build --target zene -- -j4
+QT_QPA_PLATFORM=offscreen python3 tests/control-pitch-stretch-transcript.py build/zene
+```
+
+The prerequisite the script demonstrates on the way: a clip must have a **rate change** before a
+pitch-preserving mode is accepted — the script authors the 2× warp with `warp.set` first, and the
+bare `warp.stretch preserve_pitch` is refused, typed, until it does. The same exchange works with
+`mode:"rubberband"` on a build that links Rubber Band (a build without the library gets the typed
+refusal described above, and the render falls back to WSOLA as §7 says).
 
 **Not done on this surface, on purpose:** the stretcher's parameters (`grainFrames`, `searchRadius`)
 are **not** exposed as command arguments. They are the quality/complexity dial, they default to the
@@ -324,6 +341,46 @@ on a ratio change instead, which is why R3 is the engine). So:
 The test also checks that the Rubber Band render has the WSOLA render's length and differs from it:
 the voice really rendered, not the fallback.
 
-**Not done:** a GUI selector (no stretch mode has one yet: the modes live on the agent surface and in the
-file), per-clip formant or transient options, and a CPU figure for R3
-against WSOLA on the bench projects.
+**Not done:** per-clip formant or transient options, and a CPU figure for R3
+against WSOLA on the bench projects. (A GUI selector exists since Q050-036 §8.)
+
+## 8. The specified warp mode set (Q050-036, 0.5.0 L05)
+
+The spec §4.2 promises five warp modes — Beats, Tones, Texture, Re-Pitch, Complex — while the enum
+held only Resample / PreservePitch / RubberBand. The set is now complete, on three engines:
+
+| Mode | Wire / file | Engine |
+| --- | --- | --- |
+| Re-Pitch (the spec's Re-Pitch = varispeed) | `re_pitch` (legacy `resample` accepted) | `AudioResampler` — the pitch moves with the rate, as before |
+| Pitch-preserving (WSOLA) | `preserve_pitch` (`stretch="wsola"` in the file, unchanged) | `AudioStretcher` at its default parameters (1024 / 128) |
+| Tones | `tones` | the same WSOLA stretch with the alignment reach doubled (±256 frames ≈ 5.8 ms, periods down to ~172 Hz), for monophonic and tonal material |
+| Texture | `texture` | the same stretch with half the grain (512 frames ≈ 11.6 ms), which blurs inter-grain phase sooner — the diffuse render for polyphonic and ambient material |
+| Beats | `beats` | Rubber Band R3 restricted to its single short window (`OptionWindowShort`) — the crispest timing at some spectral cost |
+| Complex | `complex` (legacy `rubberband` accepted; the file still says `stretch="rubberband"`) | R3 at its full multi-resolution settings — exactly the render owner decision 12 introduced |
+
+Why Tones / Texture are WSOLA-backed: R3's remaining options (transients, phase, long window) are
+R2-only and render identically under the R3 engine this build uses (measured, not assumed), so
+parameterising the allocation-free WSOLA engine is the honest distinct behavior — five different
+waveforms for five modes, not five names for two renders. `Tones` and `Texture` therefore survive a
+build without librubberband; only `beats` / `complex` are refused there (the file still loads and
+renders through WSOLA, owner decision 12 unchanged).
+
+Selection lives in both surfaces through the same registered command: `warp.stretch` takes all six
+canonical names plus the two legacy aliases, reports `stretch` (canonical) and `stretch_algorithm`
+(`resampler` / `wsola` / `rubberband`), and stays one `control.undo` step (Clip checkpoint). The
+clip context menu has a "Warp mode" submenu (`addClipWarpModeMenu`, after the clip edits) driving
+that same command, with the current mode checked and nothing for a MIDI clip. Format: only the
+three genuinely new modes introduce new file tokens (`beats` / `tones` / `texture`); `wsola` and
+`rubberband` keep their bytes, absent still means varispeed, and an unknown name still means the
+default.
+
+**Proofs** (`tests/src/tracks/SampleClipWarpModesTest.cpp`, the §4 two-tone fixture at 2×, plus a
+burst-transient fixture; `tests/src/gui/SampleClipWarpModeMenuTest.cpp` for the menu):
+
+| Row | Measured |
+| --- | --- |
+| Duration | all six modes render exactly the mapping's frame count (2 s source → 1 s output) |
+| Pitch, 440 / 660 / 880 / 1320 Hz bins | Re-Pitch 0.0000 / 0.0000 / 0.5000 / 0.3000 (the octave); every pitch-keeping mode ≈0.50 / ≈0.30 / <0.001 / <0.001 |
+| Distinct renders | every pair of the five pitch-keeping waveforms differs (mean abs diff 0.026 – 0.42, smallest Texture vs PreservePitch) |
+| Transient onset (2× map puts it at 0.25 s out) | Re-Pitch +0.02 ms (sample-exact); Beats −9.6 ms with spectral pre-echo 0.06; Complex −1.7 ms with pre-echo 0.06; Tones / Texture / PreservePitch +3…+8 ms with no pre-onset leakage (WSOLA grains read forward only); all within ±20 ms |
+| Round trip | a project with Beats + Texture + Complex on separate clips saves and reloads with all three selections intact |

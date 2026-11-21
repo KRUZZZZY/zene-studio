@@ -53,7 +53,9 @@ AudioEngine::RequestChangesGuard controllerChangeGuard()
 } // namespace
 
 
-std::atomic<long> Controller::s_periods{0};
+static_assert(std::atomic<f_cnt_t>::is_always_lock_free,
+	"the render thread must never take a lock for the period counter");
+std::atomic<f_cnt_t> Controller::s_periods{0};
 std::vector<Controller*> Controller::s_controllers;
 
 
@@ -63,7 +65,7 @@ Controller::Controller( ControllerType _type, Model * _parent,
 	Model( _parent, _display_name ),
 	JournallingObject(),
 	m_valueBuffer( Engine::audioEngine()->framesPerPeriod() ),
-	m_bufferLastUpdated( -1 ),
+	m_bufferLastUpdated( static_cast<f_cnt_t>(-1) ),
 	m_connectionCount( 0 ),
 	m_type( _type )
 {
@@ -183,7 +185,7 @@ void Controller::updateValueBuffer()
 
 
 // Get position in frames
-unsigned int Controller::runningFrames()
+f_cnt_t Controller::runningFrames()
 {
 	return s_periods * Engine::audioEngine()->framesPerPeriod();
 }
@@ -221,7 +223,7 @@ void Controller::resetFrameCounter()
 	auto changeGuard = controllerChangeGuard();
 	for (Controller * controller : s_controllers)
 	{
-		controller->m_bufferLastUpdated = -1;
+		controller->m_bufferLastUpdated = static_cast<f_cnt_t>(-1);
 	}
 	s_periods = 0;
 }

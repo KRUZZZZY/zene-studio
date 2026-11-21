@@ -23,6 +23,8 @@
  */
 
 #include "AudioEngine.h"
+#include <stdexcept>
+
 #include "AutomatableModel.h"
 #include "ControlRoom.h"
 #include "RenderPeriodClock.h"
@@ -34,6 +36,7 @@
 #include "lmmsconfig.h"
 
 #include "AudioEngineWorkerThread.h"
+#include "CrashReporter.h"
 #include "AudioBusHandle.h"
 #include "MpscQueue.h"
 #include "AudioInputPath.h"
@@ -41,11 +44,17 @@
 #include "Mixer.h"
 #include "Song.h"
 #include "TunerTap.h"
+#include "LinkAudioStream.h"
 #include "EnvelopeAndLfoParameters.h"
+#include "Engine.h"
+#include "ExportRenderSettings.h"
+#include "Instrument.h"
+#include "InstrumentTrack.h"
 #include "NotePlayHandle.h"
 #include "RealtimeScope.h"
 #include "ConfigManager.h"
 #include "SamplePlayHandle.h"
+#include "CompSlip.h"
 #include "Track.h"
 
 // platform-specific audio-interface-classes
@@ -68,11 +77,14 @@
 #include "MidiWinMM.h"
 #include "MidiApple.h"
 #include "MidiDummy.h"
+#include "MidiClock.h"
 
 #include "BufferManager.h"
 
+#include <cmath>
 #include <limits>
 #include <memory>
+#include <utility>
 
 namespace lmms
 {
@@ -127,6 +139,14 @@ namespace
 {
 
 constexpr qsizetype PlayHandleListLowWater = static_cast<qsizetype>(PlayHandle::MaxNumber / 4);
+constexpr std::size_t PendingPlaybackStateCapacity = 2 * PlayHandle::MaxNumber + 1;
+constexpr std::size_t RealtimePlaybackStatesPerPlayHandle = 1 + CompSlipReaders::MaxReaders;
+
+auto realtimeVoiceConverterCapacity(qsizetype playHandleCapacity) noexcept -> std::size_t
+{
+	const std::size_t playHandleStates = static_cast<std::size_t>(playHandleCapacity) + PendingPlaybackStateCapacity;
+	return playHandleStates * RealtimePlaybackStatesPerPlayHandle;
+}
 
 constexpr std::size_t MetronomeVoicePoolCapacity = AudioEngine::MetronomeSampleVoicePoolCapacity;
 constexpr std::size_t SampleVoicePoolCapacity = MetronomeVoicePoolCapacity
@@ -206,6 +226,31 @@ struct AudioEngine::SampleVoicePool
 
 	bool ownsBus(const AudioBusHandle* candidate) const noexcept { return &bus == candidate; }
 
+	auto prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool
+	{
+		std::size_t prepared = 0;
+		for (; prepared < m_voiceSlots.size(); ++prepared)
+		{
+			if (m_voiceSlots[prepared].handle.prepareConverterMode(mode)) { continue; }
+			for (std::size_t i = 0; i < prepared; ++i)
+			{
+				m_voiceSlots[i].handle.discardPreparedConverterMode();
+			}
+			return false;
+		}
+		return true;
+	}
+
+	void adoptPreparedConverterMode() noexcept
+	{
+		for (Slot& slot : m_voiceSlots) { slot.handle.adoptPreparedConverterMode(); }
+	}
+
+	void discardPreparedConverterMode() noexcept
+	{
+		for (Slot& slot : m_voiceSlots) { slot.handle.discardPreparedConverterMode(); }
+	}
+
 	void service() noexcept
 	{
 		std::uint16_t index = 0;
@@ -231,6 +276,140 @@ SamplePlayHandle* AudioEngine::acquirePooledSampleVoice(const std::shared_ptr<co
 }
 
 
+auto AudioEngine::applyConverterModeToRetainedStates(AudioResampler::Mode mode,
+	SrcQuality quality) noexcept -> bool
+{
+	const auto changeGuard = requestChangesGuard();
+	if (!prepareConverterModeForRetainedStates(mode))
+	{
+		discardPreparedConverterModeForRetainedStates();
+		m_converterModePropagationFailures.fetch_add(1, std::memory_order_relaxed);
+		return false;
+	}
+
+	// The publication and all pointer swaps happen while renderNextPeriod is
+	// excluded by the same guard. No failure remains after this store.
+	ExportRenderSettings::commitProposedSrcQuality(quality);
+	adoptPreparedConverterModeForRetainedStates();
+	return true;
+}
+
+
+bool AudioEngine::prepareConverterModeForRetainedStates(AudioResampler::Mode mode) noexcept
+{
+	if (!AudioResampler::prepareRealtimeVoiceConverterPool(mode)) { return false; }
+	if (m_sampleVoicePool != nullptr && !m_sampleVoicePool->prepareConverterMode(mode)) { return false; }
+
+	Song* const song = Engine::getSong();
+	if (song != nullptr && !song->prepareConverterModeForInstruments(mode)) { return false; }
+
+	for (PlayHandle* const handle : m_playHandles)
+	{
+		if (!applyConverterModeToPlayHandle(handle, mode, ConverterModePhase::Prepare)) { return false; }
+	}
+	for (LocklessListElement* element = m_newPlayHandles.first(); element; element = element->next)
+	{
+		if (!applyConverterModeToPlayHandle(element->value, mode, ConverterModePhase::Prepare)) { return false; }
+	}
+	for (std::size_t i = 0; i < m_capacityDeferredPlayHandleCount; ++i)
+	{
+		if (!applyConverterModeToPlayHandle(m_capacityDeferredPlayHandles[i], mode,
+			ConverterModePhase::Prepare)) { return false; }
+	}
+	return true;
+}
+
+
+void AudioEngine::adoptPreparedConverterModeForRetainedStates() noexcept
+{
+	if (m_sampleVoicePool != nullptr) { m_sampleVoicePool->adoptPreparedConverterMode(); }
+	if (Song* const song = Engine::getSong()) { song->adoptPreparedConverterModeForInstruments(); }
+	for (PlayHandle* const handle : m_playHandles)
+	{
+		applyConverterModeToPlayHandle(handle, AudioResampler::Mode::Linear, ConverterModePhase::Adopt);
+	}
+	for (LocklessListElement* element = m_newPlayHandles.first(); element; element = element->next)
+	{
+		applyConverterModeToPlayHandle(element->value, AudioResampler::Mode::Linear, ConverterModePhase::Adopt);
+	}
+	for (std::size_t i = 0; i < m_capacityDeferredPlayHandleCount; ++i)
+	{
+		applyConverterModeToPlayHandle(m_capacityDeferredPlayHandles[i], AudioResampler::Mode::Linear,
+			ConverterModePhase::Adopt);
+	}
+	AudioResampler::adoptRealtimeVoiceConverterPool();
+}
+
+
+void AudioEngine::discardPreparedConverterModeForRetainedStates() noexcept
+{
+	if (m_sampleVoicePool != nullptr) { m_sampleVoicePool->discardPreparedConverterMode(); }
+	if (Song* const song = Engine::getSong()) { song->discardPreparedConverterModeForInstruments(); }
+	for (PlayHandle* const handle : m_playHandles)
+	{
+		applyConverterModeToPlayHandle(handle, AudioResampler::Mode::Linear, ConverterModePhase::Discard);
+	}
+	for (LocklessListElement* element = m_newPlayHandles.first(); element; element = element->next)
+	{
+		applyConverterModeToPlayHandle(element->value, AudioResampler::Mode::Linear, ConverterModePhase::Discard);
+	}
+	for (std::size_t i = 0; i < m_capacityDeferredPlayHandleCount; ++i)
+	{
+		applyConverterModeToPlayHandle(m_capacityDeferredPlayHandles[i], AudioResampler::Mode::Linear,
+			ConverterModePhase::Discard);
+	}
+	AudioResampler::discardRealtimeVoiceConverterPool();
+}
+
+
+auto AudioEngine::applyConverterModeToPlayHandle(PlayHandle* handle, AudioResampler::Mode mode,
+	ConverterModePhase phase) noexcept -> bool
+{
+	if (handle == nullptr) { return true; }
+	if (auto* const sampleHandle = dynamic_cast<SamplePlayHandle*>(handle))
+	{
+		if (sampleHandle->isPooledVoice()) { return true; }
+		switch (phase)
+		{
+		case ConverterModePhase::Prepare: return sampleHandle->prepareConverterMode(mode);
+		case ConverterModePhase::Adopt: sampleHandle->adoptPreparedConverterMode(); return true;
+		case ConverterModePhase::Discard: sampleHandle->discardPreparedConverterMode(); return true;
+		}
+		return true;
+	}
+	if (auto* const note = dynamic_cast<NotePlayHandle*>(handle))
+	{
+		InstrumentTrack* const track = note->instrumentTrack();
+		Instrument* const instrument = track != nullptr ? track->instrument() : nullptr;
+		if (instrument == nullptr) { return true; }
+		switch (phase)
+		{
+		case ConverterModePhase::Prepare:
+			return instrument->prepareConverterModeForNote(note, mode);
+		case ConverterModePhase::Adopt:
+			instrument->adoptPreparedConverterModeForNote(note);
+			return true;
+		case ConverterModePhase::Discard:
+			instrument->discardPreparedConverterModeForNote(note);
+			return true;
+		}
+	}
+	return true;
+}
+
+
+auto AudioEngine::onSrcQualityChanged(SrcQuality quality) noexcept -> bool
+{
+	AudioEngine* const engine = Engine::audioEngine();
+	if (engine == nullptr)
+	{
+		ExportRenderSettings::commitProposedSrcQuality(quality);
+		return true;
+	}
+	return engine->applyConverterModeToRetainedStates(AudioResampler::modeForSrcQuality(quality), quality);
+}
+
+
 
 void AudioEngine::recyclePooledSampleVoice(SamplePlayHandle* handle, bool realtime) noexcept
 {
@@ -250,6 +429,7 @@ void AudioEngine::serviceSampleVoicePoolOnControlThread() noexcept
 {
 	if (!RealtimeScope::isActive() && QThread::currentThread() == thread() && m_sampleVoicePool != nullptr)
 	{
+		const auto changeGuard = requestChangesGuard();
 		m_sampleVoicePool->service();
 	}
 }
@@ -280,6 +460,7 @@ void AudioEngine::disposePlayHandle(PlayHandle* handle, bool realtime) noexcept
 			return;
 		}
 	}
+	if (handle->handOverToOwner()) { return; }
 	if (handle->type() == PlayHandle::Type::NotePlayHandle)
 	{
 		NotePlayHandleManager::release(static_cast<NotePlayHandle*>(handle));
@@ -288,6 +469,18 @@ void AudioEngine::disposePlayHandle(PlayHandle* handle, bool realtime) noexcept
 }
 
 static thread_local bool s_renderingThread = false;
+
+#ifdef LMMS_TESTING
+//! Nesting depth of requestChangeInModel() on the calling thread (the guard is
+//! recursive). File-local, not a static member: MSVC rejects thread_local data
+//! with a DLL interface (C2492) in the exported AudioEngine class.
+static thread_local int s_changeInModelDepth = 0;
+
+bool AudioEngine::isChangeInModelHeld() const noexcept
+{
+	return s_changeInModelDepth > 0;
+}
+#endif
 
 AudioEngine::AudioEngine(bool renderOnly)
 	: m_renderOnly(renderOnly)
@@ -359,15 +552,21 @@ AudioEngine::AudioEngine(bool renderOnly)
 	for( int i = 0; i < m_numWorkers+1; ++i )
 	{
 		auto wt = new AudioEngineWorkerThread(this);
+		wt->setRenderSlot(i);
 		if( i < m_numWorkers )
 		{
 			wt->start( QThread::TimeCriticalPriority );
 		}
 		m_workers.push_back( wt );
 	}
+	AudioEngineWorkerThread::setInlineRenderSlot(m_numWorkers);
 	connect(&m_playHandleCapacityTimer, &QTimer::timeout, this, [this] {
+		m_recorder.reconcileInputChannelCapacity();
 		serviceSampleVoicePoolOnControlThread();
 		topUpPlayHandleCapacityOnControlThread();
+		// Q050-016 round 3: free the expression-stream snapshots the render path
+		// retired (a playing handle held the last reference) - here, off it.
+		MpeStreamSnapshot::reclaimRetired();
 	});
 	m_playHandleCapacityTimer.start(100);
 }
@@ -383,6 +582,7 @@ int AudioEngine::renderThreadCount() const noexcept
 
 AudioEngine::~AudioEngine()
 {
+	ExportRenderSettings::setSrcQualityListener(nullptr);
 	m_playHandleCapacityTimer.stop();
 	for( int w = 0; w < m_numWorkers; ++w )
 	{
@@ -413,6 +613,9 @@ AudioEngine::~AudioEngine()
 
 	// The pooled bus unregisters its device port in its destructor, so it must go before the device.
 	m_sampleVoicePool.reset();
+	// Q050-277: the MIDI clock's capture sender must be done with the client (an in-flight send finished, nothing
+	// undelivered left to retry) before the client - and its backend's threads and queues - is destroyed.
+	MidiClock::instance()->detachClient(m_midiClient);
 	delete m_midiClient;
 	delete m_audioDev;
 
@@ -422,6 +625,8 @@ AudioEngine::~AudioEngine()
 		delete[] input;
 	}
 	delete m_automatableModelRegistry.exchange(nullptr, std::memory_order_acq_rel);
+	// Q050-016 round 3: the workers are joined, so nothing can copy a stream now.
+	MpeStreamSnapshot::reclaimRetired();
 }
 
 
@@ -433,13 +638,41 @@ bool AudioEngine::isRenderThread() const noexcept
 
 
 
+void AudioEngine::setAutomatableModelRegistrationFailureForTest(bool fail) noexcept
+{
+	m_failAutomatableModelRegistrationForTest.store(fail, std::memory_order_relaxed);
+}
+
+
+void AudioEngine::setAutomatableModelRegistrationAttemptStateForTest(std::atomic<int>* state) noexcept
+{
+	m_automatableModelRegistrationAttemptStateForTest.store(state, std::memory_order_release);
+}
+
+
 bool AudioEngine::registerAutomatableModel(AutomatableModel* model) noexcept
 {
 	if (model == nullptr) { return false; }
+	if (m_failAutomatableModelRegistrationForTest.load(std::memory_order_relaxed))
+	{
+		m_automatableModelRegistrationFailures.fetch_add(1, std::memory_order_relaxed);
+		return false;
+	}
 	if (RealtimeScope::isActive())
 	{
 		m_automatableModelRegistrationFailures.fetch_add(1, std::memory_order_relaxed);
 		return false;
+	}
+
+	if (std::atomic<int>* const attemptState =
+		m_automatableModelRegistrationAttemptStateForTest.load(std::memory_order_acquire))
+	{
+		int expected = 0;
+		// The test polls this flag: std::atomic::notify_all needs macOS 11 and the product
+		// floor is 10.13 (cluster ci-61ad26e4f8b135f9). The store above is the signal; the
+		// waiter re-reads it, so nothing can be lost.
+		attemptState->compare_exchange_strong(expected, 1, std::memory_order_release,
+			std::memory_order_relaxed);
 	}
 
 	const auto lock = std::lock_guard{m_changeMutex};
@@ -554,6 +787,11 @@ void AudioEngine::prepareAutomatableModelBuffers() noexcept
 
 void AudioEngine::initDevices()
 {
+	if (!AudioResampler::initializeRealtimeVoiceConverterPool(AudioResampler::modeForCurrentSrcQuality(),
+		realtimeVoiceConverterCapacity(m_playHandles.capacity())))
+	{
+		throw std::runtime_error{"Unable to prepare realtime sample converters"};
+	}
 	bool success_ful = false;
 	if( m_renderOnly ) {
 		m_audioDev = new AudioDummy( success_ful, this );
@@ -566,6 +804,7 @@ void AudioEngine::initDevices()
 	}
 	// Loading audio device may have changed the sample rate
 	m_sampleVoicePool = std::make_unique<SampleVoicePool>(this);
+	ExportRenderSettings::setSrcQualityListener(&AudioEngine::onSrcQualityChanged);
 	emit sampleRateChanged();
 }
 
@@ -615,21 +854,47 @@ void AudioEngine::refreshRecordingLatency()
 
 
 
-void AudioEngine::drainInputStage() noexcept
+void AudioEngine::drainCaptureStages() noexcept
 {
 	if( m_inputStage == nullptr )
 	{
 		return;
 	}
 
+	// The N-CHANNEL path and the stereo path are TWO REPRESENTATIONS OF THE SAME
+	// CAPTURE BLOCK (cluster 3705). The publisher pushes the wide block first and
+	// the stereo pair second, so a render that landed between the two pushes used
+	// to consume one representation now and the other in the next period: the
+	// recorder took the wide block in one period and fell back to the same stereo
+	// block in the next - the same audio twice, and the stereo bus a whole block
+	// behind the recorders.
+	//
+	// So the two stages are drained AS ONE BLOCK: as many frames as BOTH of them
+	// hold. A block whose stereo pair has not been published yet waits for it
+	// instead of being consumed on its own. A capture path that does not use the
+	// wide path at all (a device that only fills the stereo ring) drains the
+	// stereo ring on its own, exactly as it always did.
+	const auto stereoStaged = m_inputStage->available();
+	const auto wideStaged = m_wideInputStage != nullptr
+		? m_wideInputStage->stagedFrames() : std::size_t{0};
+	const bool wideInUse = m_captureWideInUse.load(std::memory_order_relaxed);
+	const auto paired = wideInUse ? std::min( wideStaged, stereoStaged ) : stereoStaged;
+
 	// Render thread only, and bounded by both the ring and the destination
 	// buffer, so this can neither allocate nor overrun m_inputBuffer.
-	const auto staged = m_inputStage->available();
-	const auto frames = std::min( staged,
+	const auto frames = std::min( paired,
 		static_cast<std::size_t>( m_inputBufferSize[ m_inputBufferRead ] ) );
 	m_inputStage->read( m_inputBuffer[ m_inputBufferRead ], frames );
 	m_inputBufferFrames[ m_inputBufferRead ] = static_cast<f_cnt_t>( frames );
 	if( frames > 0 ) { m_inputStreamStarted.store( true, std::memory_order_relaxed ); }
+
+	// The wide path takes the SAME number of frames, so the two stay one block.
+	// Without the wide path the stage drains on its own, as it always did.
+	if( m_wideInputStage != nullptr )
+	{
+		m_wideInputStage->drain( wideInUse ? static_cast<f_cnt_t>( frames )
+			: static_cast<f_cnt_t>( wideStaged ) );
+	}
 }
 
 
@@ -655,7 +920,7 @@ void AudioEngine::setPunchWindow(bool armed, tick_t begin, tick_t end) noexcept
 
 
 
-void AudioEngine::pushInputFramesWide( const float* _interleaved, int _channels,
+std::size_t AudioEngine::pushInputFramesWide( const float* _interleaved, int _channels,
 	const f_cnt_t _frames ) noexcept
 {
 	// The N-CHANNEL sibling of pushInputFrames() (0.3.0, feature row 64). It
@@ -665,22 +930,13 @@ void AudioEngine::pushInputFramesWide( const float* _interleaved, int _channels,
 	// full ring drops the newest frames and counts them.
 	if( m_wideInputStage == nullptr )
 	{
-		return;
+		return 0;
 	}
-	m_wideInputStage->push( _interleaved, _channels, _frames );
-}
-
-
-
-
-void AudioEngine::drainWideInputStage() noexcept
-{
-	// Render thread only: it double-buffers, so a drain never writes the period
-	// a consumer is reading, and it is bounded on both sides.
-	if( m_wideInputStage != nullptr )
-	{
-		m_wideInputStage->drain();
-	}
+	// From here on the capture path publishes BOTH representations of every
+	// block - this one and the stereo pair - so the engine drains the two
+	// stages as one block (cluster 3705).
+	m_captureWideInUse.store( true, std::memory_order_relaxed );
+	return m_wideInputStage->push( _interleaved, _channels, _frames );
 }
 
 
@@ -786,6 +1042,11 @@ void AudioEngine::renderStageNoteSetup()
 		const Song* song = Engine::getSong();
 		m_periodSongPlaying = song->isPlaying() && song->playMode() == Song::PlayMode::Song;
 		m_periodStartFrame = static_cast<double>(song->getFrames());
+		m_periodStartTick = song->getPlayPos(Song::PlayMode::Song).getTicks();  // Q050-074.1
+		// Q050-124: where a frozen bus's take plays from. An export plays the song too (isPlaying() is false while
+		// exporting), so a frozen bus is heard in render.render and in a bus-freeze render of a bus downstream of it.
+		busfreeze::setPeriod((song->isPlaying() || song->isExporting()) && song->playMode() == Song::PlayMode::Song,
+			song->getFrames());
 	}
 
 	// Retry engine-list additions deferred by capacity in the previous period.
@@ -843,6 +1104,34 @@ void AudioEngine::renderStageInstruments()
 
 
 
+void AudioEngine::foldSynthesisLoads(std::uint64_t period) noexcept
+{
+	// Q050-074.1: the workers are done, so every handle's time is in its track's accumulator. A track's
+	// handles fold it once (SynthesisLoad::fold returns at the second); a track without a handle this
+	// period is not visited and decays on its next fold or read. No allocation, no lock.
+	const sample_rate_t rate = outputSampleRate();
+	const double periodSeconds = rate > 0 ? static_cast<double>(m_framesPerPeriod) / rate : 0.0;
+	for (PlayHandle* const handle : std::as_const(m_playHandles))  // const: a QList never detaches here
+	{
+		if (SynthesisLoad* const load = handle->synthesisLoad()) { load->fold(period, periodSeconds); }
+	}
+}
+
+
+
+void AudioEngine::noteLatePeriod() noexcept
+{
+	// Q050-074.1: an offline render (an export) has no deadline to miss.
+	const Song* song = Engine::getSong();
+	const sample_rate_t rate = outputSampleRate();
+	if (song == nullptr || song->isExporting() || rate == 0) { return; }
+	const auto periodMicros = static_cast<std::uint32_t>(std::uint64_t{1000000} * m_framesPerPeriod / rate);
+	const std::uint32_t tookMicros = m_profiler.lastPeriodMicros();
+	if (tookMicros > periodMicros) { m_latePeriods.record(m_periodStartTick, m_periodSongPlaying, tookMicros, periodMicros); }
+}
+
+
+
 void AudioEngine::renderStageEffects()
 {
 	AudioEngineProfiler::Probe profilerProbe(m_profiler, AudioEngineProfiler::DetailType::Effects);
@@ -886,6 +1175,10 @@ void AudioEngine::renderStageMix()
 
 	MixHelpers::multiply(m_outputBufferWrite.get(), m_masterGain, m_framesPerPeriod);
 
+	// Q050-024: the Link audio stream taps the master (send), then adds the peer's stream (receive).
+	// One acquire load while it is off; otherwise only preallocated rings and atomics (LinkAudioStream.h).
+	link::LinkAudioStream::tap(m_outputBufferWrite.get(), m_framesPerPeriod, outputSampleRate());
+
 	// STAGE 3b (feature row 24 of docs/FEATURE-LIST-0.3.0.md): the PASSIVE
 	// loudness tap. The period that was just mixed is handed to the meter -
 	// read only, in place, with no copy. A disarmed tap (the default, and the
@@ -913,6 +1206,7 @@ void AudioEngine::renderStageMix()
 
 std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	const auto lock = std::lock_guard{m_changeMutex};
 	// R7.2: under WANT_DEBUG_RTSAN everything from here to the return is checked as realtime code.
 	const RealtimeScope realtime;
@@ -925,9 +1219,13 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	} periodEnd;
 	m_profiler.startPeriod();
 	s_renderingThread = true;
+	// Q050-074.1: this thread is the only writer, so a load and a store number the period.
+	const std::uint64_t period = m_renderedPeriods.load(std::memory_order_relaxed) + 1;
+	m_renderedPeriods.store(period, std::memory_order_relaxed);
 
 	renderStageNoteSetup();     // STAGE 0: clear old play handles and buffers, setup new play handles
 	renderStageInstruments();   // STAGE 1: run and render all play handles
+	foldSynthesisLoads(period); // Q050-074.1: each instrument track's share of STAGE 1
 	renderStageEffects();       // STAGE 2: process effects of all instrument- and sampletracks
 	renderStageMix();           // STAGE 3: do master mix in mixer
 
@@ -975,8 +1273,19 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	// counterpart of the MIDI capture in include/RetroMidiCapture.h). It records
 	// the ENGINE'S STEREO INPUT BUS - the same frames STAGE 1's play handles
 	// read - and while it is disarmed this is one relaxed atomic load. Realtime-safe.
-	m_retroCapture.push(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);
+	m_retroCapture.push(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead],
+		static_cast<int>(inputSampleRate()));
+	// 0.5.0 L10 (Q050-156): the input a sampler (AudioFileProcessor / SlicerT) is recording
+	// straight into. While idle this is one relaxed atomic load; the accumulator's ring is
+	// pre-allocated by the control-thread arm(), never here. Realtime-safe.
+	m_samplerTakeRecorder.push(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);
 	inputmeter::measure(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);  // 0.5.0 L08 (MX-134)
+	// Q050-340: each capture channel's own peak - the wide capture when the backend fills it, else the stereo bus.
+	if (m_wideInputStage != nullptr && m_wideInputStage->frames() > 0 && m_wideInputStage->channels() > 0)
+	{
+		inputmeter::measureChannels(m_wideInputStage->data(), m_wideInputStage->channels(), m_wideInputStage->frames());
+	}
+	else { inputmeter::measureStereoChannels(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]); }
 	// 0.5.0 L09 (MX-038): the control room on what is heard - skipped while exporting and while neutral.
 	controlroom::apply(m_outputBufferRead.get(), m_framesPerPeriod);
 	// 0.5.0 W3 (WF-147): the tuner's tap on the input bus - one relaxed load unless it listens here.
@@ -984,6 +1293,7 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 
 	s_renderingThread = false;
 	m_profiler.finishPeriod(outputSampleRate(), m_framesPerPeriod);
+	noteLatePeriod();
 	m_outputBufferReadIndex = 0;
 
 	return {m_outputBufferRead.get(), m_framesPerPeriod};
@@ -999,11 +1309,11 @@ void AudioEngine::swapBuffers()
 	// Done here - once per rendered period, before any play handle reads
 	// inputBuffer() (STAGE 1) or the recorder demuxes it (STAGE 4) - so the
 	// capture thread never touches m_inputBuffer and needs no lock for it.
-	drainInputStage();
-
-	// And the same for the N-CHANNEL path (0.3.0, feature row 64): one drain
-	// per rendered period, on this thread, beside the stereo one above.
-	drainWideInputStage();
+	//
+	// And the N-CHANNEL path (0.3.0, feature row 64) with it: the wide block
+	// and the stereo pair are ONE capture block, so the two stages are drained
+	// together, as one block (cluster 3705).
+	drainCaptureStages();
 
 	std::swap(m_outputBufferRead, m_outputBufferWrite);
 	zeroSampleFrames(m_outputBufferWrite.get(), m_framesPerPeriod);
@@ -1148,8 +1458,13 @@ void AudioEngine::addAudioBusHandle(AudioBusHandle* busHandle)
 			* PlayHandle::MaxNumber);
 		if (capacity < required || capacity - m_playHandles.size() <= PlayHandleListLowWater)
 		{
-			m_playHandles.reserve(std::max(required,
-				capacity + static_cast<qsizetype>(PlayHandle::MaxNumber)));
+			const qsizetype requested = std::max(required,
+				capacity + static_cast<qsizetype>(PlayHandle::MaxNumber));
+			if (AudioResampler::ensureRealtimeVoiceConverterPoolCapacity(
+				realtimeVoiceConverterCapacity(requested)))
+			{
+				m_playHandles.reserve(requested);
+			}
 		}
 	}
 	doneChangeInModel();
@@ -1179,9 +1494,16 @@ bool AudioEngine::addPlayHandle( PlayHandle* handle )
 		|| handle->type() == PlayHandle::Type::InputMonitorHandle
 		|| handle->type() == PlayHandle::Type::SessionCellHandle || !criticalXRuns())
 	{
-		m_newPlayHandles.push( handle );
-		handle->audioBusHandle()->addPlayHandle(handle);
-		return true;
+		if (m_newPlayHandles.push(handle))
+		{
+			handle->audioBusHandle()->addPlayHandle(handle);
+			return true;
+		}
+
+		if (handle->type() == PlayHandle::Type::InputMonitorHandle)
+		{
+			return false;
+		}
 	}
 
 	disposePlayHandle(handle, RealtimeScope::isActive());
@@ -1235,7 +1557,12 @@ void AudioEngine::topUpPlayHandleCapacityOnControlThread()
 		const qsizetype capacity = m_playHandles.capacity();
 		if (capacity - m_playHandles.size() <= PlayHandleListLowWater)
 		{
-			m_playHandles.reserve(capacity + static_cast<qsizetype>(PlayHandle::MaxNumber));
+			const qsizetype requested = capacity + static_cast<qsizetype>(PlayHandle::MaxNumber);
+			if (AudioResampler::ensureRealtimeVoiceConverterPoolCapacity(
+				realtimeVoiceConverterCapacity(requested)))
+			{
+				m_playHandles.reserve(requested);
+			}
 		}
 	}
 	for (AudioBusHandle* bus : m_audioBusHandles) { bus->topUpPlayHandleCapacityUnderEngineChangeLock(); }
@@ -1381,14 +1708,43 @@ void AudioEngine::removePlayHandlesOfTypes(Track * track, PlayHandle::Types type
 void AudioEngine::requestChangeInModel()
 {
 	if (s_renderingThread) { return; }
+	// Counted around the acquisition so that modelChangeWaiters() reports the
+	// control threads that are waiting for (or just got) the render period's
+	// model ownership; the rendering thread short-circuits above and never
+	// touches the counter.
+	m_modelChangeWaiters.fetch_add(1, std::memory_order_relaxed);
 	m_changeMutex.lock();
+	m_modelChangeWaiters.fetch_sub(1, std::memory_order_relaxed);
+#ifdef LMMS_TESTING
+	++s_changeInModelDepth;
+#endif
 }
 
 void AudioEngine::doneChangeInModel()
 {
 	if (s_renderingThread) { return; }
+#ifdef LMMS_TESTING
+	--s_changeInModelDepth;
+#endif
 	m_changeMutex.unlock();
 }
+
+#ifdef LMMS_TESTING
+void AudioEngine::requestChangeInModelForTest(void (*contendedProbe)(void*), void* context)
+{
+	if (s_renderingThread) { return; }
+	if (!m_changeMutex.try_lock())
+	{
+		// The acquisition was ATTEMPTED and the lock was held by another thread
+		// (the render thread): this is the observation a test needs, and it is
+		// made at the attempt - a report sent before the attempt could not tell
+		// a blocked thread from one that has not run yet.
+		if (contendedProbe != nullptr) { contendedProbe(context); }
+		m_changeMutex.lock();
+	}
+	++s_changeInModelDepth;
+}
+#endif
 
 bool AudioEngine::isAudioDevNameValid(QString name)
 {
@@ -1829,6 +2185,12 @@ void AudioDummy::configureLoopback()
 	if (!m_loopback) { return; }
 	m_loopInLatency = latencyFromEnv("LMMS_DUMMY_INPUT_LATENCY");
 	m_loopOutLatency = latencyFromEnv("LMMS_DUMMY_OUTPUT_LATENCY");
+	// Q050-089.2: LMMS_DUMMY_LOOPBACK_GAIN makes the cable a piece of outboard gear that changes the level
+	// (-4 .. 4; a negative figure flips the polarity), so a render can tell the processed return from the dry
+	// signal. Unset or unparsable: 1, the plain cable it has always been.
+	bool gainOk = false;
+	const float gain = qEnvironmentVariable("LMMS_DUMMY_LOOPBACK_GAIN").toFloat(&gainOk);
+	m_loopGain = gainOk && std::isfinite(gain) ? std::clamp(gain, -4.f, 4.f) : 1.f;
 	// The line holds the whole delay plus the largest period a render can hand back.
 	m_loopLine.assign(static_cast<std::size_t>(m_loopInLatency + m_loopOutLatency) + MAXIMUM_BUFFER_SIZE + 1,
 		SampleFrame(0.0f, 0.0f));
@@ -1858,7 +2220,11 @@ void AudioDummy::feedBack(std::span<const SampleFrame> period)
 		m_loopLine[(m_loopWrite + f) % size] = !bus.active() ? (pair == 0 ? period[f] : SampleFrame(0.f, 0.f))
 			: SampleFrame(bus.sample(pair, at, period[f]), bus.sample(pair + 1, at, period[f]));
 	}
-	for (std::size_t f = 0; f < frames; ++f) { m_loopBlock[f] = m_loopLine[(m_loopWrite + f + size - delay) % size]; }
+	for (std::size_t f = 0; f < frames; ++f)
+	{
+		const SampleFrame& back = m_loopLine[(m_loopWrite + f + size - delay) % size];
+		m_loopBlock[f] = SampleFrame(back[0] * m_loopGain, back[1] * m_loopGain);
+	}
 	m_loopWrite = (m_loopWrite + frames) % size;
 	audioEngine()->pushInputFrames(m_loopBlock.data(), static_cast<f_cnt_t>(frames));
 }

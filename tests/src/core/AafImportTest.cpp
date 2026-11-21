@@ -50,6 +50,7 @@
 #include "BrowserTestSupport.h"
 #include "ControlRegistry.h"
 #include "ControlTrackCreation.h"
+#include "DeprecationHelper.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
 #include "ProjectMarkers.h"
@@ -111,6 +112,20 @@ template<typename Report>
 int reportedTrackGainClamps(const Report& report)
 {
 	if constexpr (requires { report.trackGainClamps; }) { return report.trackGainClamps; }
+	else { return -1; }
+}
+
+template<typename Report>
+int reportedMarkersBeyondSongLength(const Report& report)
+{
+	if constexpr (requires { report.markersBeyondSongLength; }) { return report.markersBeyondSongLength; }
+	else { return -1; }
+}
+
+template<typename Report>
+int reportedMarkersRefused(const Report& report)
+{
+	if constexpr (requires { report.markersRefused; }) { return report.markersRefused; }
 	else { return -1; }
 }
 
@@ -224,7 +239,7 @@ private slots:
 		QCOMPARE(aafDefaultMediaDir(QStringLiteral("/in/Reel 1.aaf"), QString()),
 			QStringLiteral("/in/Reel 1-aaf-media"));
 		QCOMPARE(aafDefaultMediaDir(QStringLiteral("/in/Reel 1.aaf"), QStringLiteral("/songs/Film.mmpz")),
-			QStringLiteral("/songs/Film-aaf-media/Reel 1"));
+			QStringLiteral("/songs/Film-aaf-media/Reel 1-4cb0fd651a1a"));
 		AafModel model = authoredModel(m_wave);
 		QCOMPARE(model.clipCount(), 3);
 		QCOMPARE(model.firstClipFrame(), qint64{0});
@@ -232,6 +247,23 @@ private slots:
 			AafMedia{QStringLiteral("b"), QStringLiteral("file:///x.wav"), QString(), false, true, 1, 48000},
 			AafMedia{QStringLiteral("c"), QString(), QString(), true, false, 1, 48000}};
 		QCOMPARE(model.missingMedia(), QStringList{QStringLiteral("file:///x.wav")});  // once, and not the embedded one
+	}
+
+	//! Two AAFs named alike, imported into one saved project, must not share an extraction folder: the first
+	//! import's clips still play the media that the second would overwrite.
+	void twoAafsNamedAlikeGetSeparateMediaFolders()
+	{
+		const QString project = QStringLiteral("/songs/Film.mmpz");
+		const QString first = aafDefaultMediaDir(QStringLiteral("/one/Reel.aaf"), project);
+		const QString second = aafDefaultMediaDir(QStringLiteral("/two/Reel.aaf"), project);
+		QVERIFY2(first != second, qPrintable(first));
+		QVERIFY(first.startsWith(QStringLiteral("/songs/Film-aaf-media/Reel")));
+		QVERIFY(second.startsWith(QStringLiteral("/songs/Film-aaf-media/Reel")));
+		// The same AAF always maps to the same folder, so importing it again reuses that folder.
+		QCOMPARE(aafDefaultMediaDir(QStringLiteral("/one/Reel.aaf"), project), first);
+		// Never saved: the folder sits beside each AAF, so alike names in different folders already differ.
+		QVERIFY(aafDefaultMediaDir(QStringLiteral("/one/Reel.aaf"), QString())
+			!= aafDefaultMediaDir(QStringLiteral("/two/Reel.aaf"), QString()));
 	}
 
 	//! The builder, on a hand-made model: everything the model carries lands where it says.
@@ -325,6 +357,42 @@ private slots:
 		QVERIFY(ProjectMarkers::instance().markers().isEmpty());
 	}
 
+	//! A marker the song cannot hold is counted in the report, not dropped without a word: one that the shift
+	//! moves before tick 0, one past MaxSongLength, and one that lands. A full marker list is counted too.
+	void theBuilderCountsMarkersTheSongCannotHold()
+	{
+		AafModel model;
+		model.sampleRate = 48000;
+		model.markers = {AafMarker{0, QStringLiteral("Before"), QString()},
+			AafMarker{96000, QStringLiteral("Verse"), QStringLiteral("#ff0000")},
+			AafMarker{qint64{48000} * 60 * 60 * 24, QStringLiteral("Late"), QString()}};
+		AafBuildOptions options;
+		options.shiftFrames = 48000;  // one second: "Before" lands at tick -96, "Verse" at tick 96
+		std::vector<int> made;
+		const AafBuildReport report = buildAafSession(Engine::getSong(), model, options, &made);
+		QCOMPARE(report.markers, 1);
+		QCOMPARE(reportedMarkersBeyondSongLength(report), 2);
+		QCOMPARE(reportedMarkersRefused(report), 0);
+		const QVector<Marker>& markers = ProjectMarkers::instance().markers();
+		QCOMPARE(markers.size(), 1);
+		QCOMPARE(markers[0].name, QStringLiteral("Verse"));
+		QCOMPARE(markers[0].tick, tick_t{96});
+
+		// The list holds MaxMarkers: the one more is refused, and counted as such.
+		AafModel full;
+		full.sampleRate = 48000;
+		for (int index = 0; index <= ProjectMarkers::MaxMarkers; ++index)
+		{
+			full.markers.append(AafMarker{qint64{index} * 48000, QStringLiteral("M%1").arg(index), QString()});
+		}
+		ProjectMarkers::instance().clear();
+		std::vector<int> fullIds;
+		const AafBuildReport fullReport = buildAafSession(Engine::getSong(), full, AafBuildOptions{}, &fullIds);
+		QCOMPARE(fullReport.markers, ProjectMarkers::MaxMarkers);
+		QCOMPARE(reportedMarkersRefused(fullReport), 1);
+		QCOMPARE(reportedMarkersBeyondSongLength(fullReport), 0);
+	}
+
 	//! What the builder made is ordinary project state: it survives a save and a load.
 	void whatItBuildsSurvivesASaveAndALoad()
 	{
@@ -361,6 +429,33 @@ private slots:
 #if __has_include(<libaaf.h>)
 		if (!aafImportAvailable()) { QSKIP("this build has no LibAAF (ZENE_HAVE_LIBAAF not defined)"); }
 		QCOMPARE(unsupportedMediaWarningsForTest(AafMaxWarnings + 5).size(), AafMaxWarnings);
+#else
+		QSKIP("this build has no LibAAF headers");
+#endif
+	}
+
+	//! A video-only composition: LibAAF leaves the audio aggregate empty, so the reader must not touch it.
+	//! The implementation is the one copy of AafImportRead.cpp this file already includes - a second
+	//! inclusion would define the same helpers twice in this translation unit.
+	void theVideoOnlyCompositionUsesTheDefaultSampleRate()
+	{
+#if __has_include(<libaaf.h>)
+		AAF_Data data{};
+		aafiVideo video{};
+		aafiVideoTrack videoTrack{};
+		video.Tracks = &videoTrack;
+		AAF_Iface aafi{};
+		aafi.aafd = &data;
+		aafi.Video = &video;
+		AafModel model;
+		AafLossReport loss;
+		Walk walk{&aafi, &model, &loss, {}};
+		readComposition(walk, AafReadOptions{});
+		QCOMPARE(model.sampleRate, AafDefaultSampleRate);
+		QVERIFY(model.tracks.isEmpty());
+		QVERIFY(model.media.isEmpty());
+		QCOMPARE(loss.videoTracks, 1);
+		QCOMPARE(loss.videoClips, 0);
 #else
 		QSKIP("this build has no LibAAF headers");
 #endif
@@ -429,8 +524,8 @@ private slots:
 		QCOMPARE(reply.value(QStringLiteral("loss")).toObject().value(QStringLiteral("track_gain_clamps")).toInt(), 0);
 		const QJsonObject clip = reply.value(QStringLiteral("model")).toObject().value(QStringLiteral("tracks"))
 			.toArray().at(0).toObject().value(QStringLiteral("clips")).toArray().at(0).toObject();
-		QCOMPARE(clip.value(QStringLiteral("length_frames")).toInteger(), qint64{48048});
-		QCOMPARE(clip.value(QStringLiteral("source_offset_frames")).toInteger(), qint64{1602});
+		QCOMPARE(jsonInteger(clip.value(QStringLiteral("length_frames"))), qint64{48048});
+		QCOMPARE(jsonInteger(clip.value(QStringLiteral("source_offset_frames"))), qint64{1602});
 		QVERIFY(!QFileInfo::exists(reply.value(QStringLiteral("media_dir")).toString()));  // nothing extracted
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracksBefore);
 	}

@@ -27,6 +27,9 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
+#include <chrono>
+#include <thread>
 #include <QThread>
 
 #include "AudioBus.h"
@@ -48,6 +51,10 @@ namespace
 {
 
 constexpr qsizetype PlayHandleListLowWater = static_cast<qsizetype>(PlayHandle::MaxNumber / 4);
+
+//! A producer that finds the edit queue full waits this long for the consumer to make progress before it
+//! concludes there is none. A render drains the queue every period (a few ms), so a live one is never judged dead.
+constexpr std::chrono::milliseconds PlayHandleConsumerProgressTimeout{50};
 
 } // namespace
 
@@ -107,6 +114,13 @@ int AudioBusHandle::latencyFrames() const
 void AudioBusHandle::setSourceLatencyFrames(int frames)
 {
 	m_sourceLatencyFrames.store(std::max(0, frames), std::memory_order_relaxed);
+}
+
+
+void AudioBusHandle::setOffsetFrames(int frames)
+{
+	const int bound = LatencyCompensation::MaxManualOffsetFrames;
+	m_offsetFrames.store(std::clamp(frames, -bound, bound), std::memory_order_relaxed);
 }
 
 
@@ -249,12 +263,18 @@ void AudioBusHandle::doProcessing()
 	// PDC (#605): delay this track's output to the alignment point of the
 	// mixer channel it feeds. A zero delay is an exact no-op, so a track whose
 	// chain reports no latency is bit-identical to the uncompensated path.
-	m_compensation.setDelayFrames(
-		Engine::mixer()->channelInputLatency(m_nextMixerChannel) - latencyFrames());
+	// Q050-339: a manual offset is part of the path's latency as the graph sees it (alignedLatencyFrames), so a
+	// positive one delays this track by that much more and a negative one raises the channel's alignment point.
+	// Q050-174: a latent instrument monitored in low-latency mode skips its alignment delay (0 is the no-op).
+	m_compensation.setDelayFrames(monitorUnaligned()
+		? 0 : Engine::mixer()->channelInputLatency(m_nextMixerChannel) - alignedLatencyFrames());
 	m_compensation.processInPlace(m_buffer.data(), fpp);
 
 	if (anyOutputAfterEffects || m_bufferUsage || m_compensation.delayFrames() > 0)
 	{
+		float peak = 0.f;
+		for (const SampleFrame& frame : m_buffer) { peak = std::max({peak, std::abs(frame.left()), std::abs(frame.right())}); }
+		recordPeak(peak);
 		// TODO: improve the flow here - convert to pull model
 		Engine::mixer()->mixToChannel(m_bus, m_nextMixerChannel); // send output to mixer
 		m_bufferUsage = false;
@@ -294,6 +314,7 @@ void AudioBusHandle::postPlayHandleEdit(PlayHandleEdit edit)
 		return;
 	}
 	if (m_playHandleEdits.push(edit)) { return; }
+	if (!RealtimeScope::isActive() && pushPlayHandleEditWhileConsumerDrains(edit)) { return; }
 	if (RealtimeScope::isActive())
 	{
 		// An unexpected realtime producer has no safe list-ownership handoff here.
@@ -304,10 +325,12 @@ void AudioBusHandle::postPlayHandleEdit(PlayHandleEdit edit)
 		return;
 	}
 
-	// A control producer can wait for the existing engine change lock and apply the
-	// edit with rendering stopped. It never spins waiting for the audio consumer.
+	// Nothing has drained the queue for a while (no render is running, or it is blocked behind a change lock
+	// this thread holds). A control producer can wait for the existing engine change lock and apply the edit
+	// with rendering stopped: the lock makes it the queue's only consumer.
 	AudioEngine* engine = Engine::audioEngine();
 	engine->requestChangeInModel();
+	m_producerDrainedPlayHandleEdits.fetch_add(1, std::memory_order_relaxed);
 	applyPlayHandleEdits();
 	applyPlayHandleEdit(edit);
 	engine->doneChangeInModel();
@@ -327,7 +350,30 @@ void AudioBusHandle::applyPlayHandleEdits()
 	m_capacityDeferredPlayHandleEditCount = remaining;
 
 	PlayHandleEdit edit{};
-	while (m_playHandleEdits.pop(&edit)) { applyPlayHandleEdit(edit); }
+	while (m_playHandleEdits.pop(&edit))
+	{
+		applyPlayHandleEdit(edit);
+		m_playHandleEditsConsumed.fetch_add(1, std::memory_order_release);
+	}
+}
+
+bool AudioBusHandle::pushPlayHandleEditWhileConsumerDrains(const PlayHandleEdit& edit)
+{
+	using Clock = std::chrono::steady_clock;
+	auto seen = m_playHandleEditsConsumed.load(std::memory_order_acquire);
+	auto deadline = Clock::now() + PlayHandleConsumerProgressTimeout;
+	while (Clock::now() < deadline)
+	{
+		if (m_playHandleEdits.push(edit)) { return true; }
+		std::this_thread::yield();
+		const auto now = m_playHandleEditsConsumed.load(std::memory_order_acquire);
+		if (now != seen)
+		{
+			seen = now;
+			deadline = Clock::now() + PlayHandleConsumerProgressTimeout;
+		}
+	}
+	return false;
 }
 
 void AudioBusHandle::applyPlayHandleEdit(const PlayHandleEdit& edit)

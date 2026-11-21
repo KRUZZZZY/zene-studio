@@ -68,6 +68,18 @@ QJsonObject historyState()
 	};
 }
 
+//! How many undo steps still carry a snapshot a save could write.
+int savedSnapshotCount(const ProjectJournal* journal)
+{
+	if (journal == nullptr) { return 0; }
+	int count = 0;
+	for (const ProjectJournal::StepSnapshot& step : journal->stepSnapshots())
+	{
+		if (step.snapshot) { ++count; }
+	}
+	return count;
+}
+
 QJsonObject stateSchema()
 {
 	return objectSchema({
@@ -112,9 +124,13 @@ ControlResult handleSet(const QJsonObject& args)
 	}
 	UndoHistory& history = UndoHistory::instance();
 	const QString previous = UndoHistory::settingName(history.projectSetting());
+	const int before = savedSnapshotCount(Engine::projectJournal());
 	history.setProjectSetting(setting);
 	if (Engine::projectJournal() != nullptr) { Engine::projectJournal()->applySnapshotPolicy(); }
 	Engine::getSong()->setModified();
+	// The inverse turns the setting back but cannot recapture a snapshot the policy dropped: not reversible then.
+	const int dropped = before - savedSnapshotCount(Engine::projectJournal());
+	const bool reversible = dropped == 0;
 
 	QJsonObject result = historyState();
 	result.insert(QStringLiteral("previous_setting"), previous);
@@ -124,11 +140,14 @@ ControlResult handleSet(const QJsonObject& args)
 				QJsonObject{{QStringLiteral("op"), QStringLiteral("project.set_undo_history")},
 					{QStringLiteral("applies"), QStringLiteral("command")},
 					{QStringLiteral("args"), QJsonObject{{QStringLiteral("setting"), previous}}}}},
-			{QStringLiteral("reversible"), true},
-			{QStringLiteral("mechanism"),
-				QStringLiteral("snapshot: the previous setting is in before and the recorded inverse is the "
+			{QStringLiteral("reversible"), reversible},
+			{QStringLiteral("mechanism"), reversible
+				? QStringLiteral("snapshot: the previous setting is in before and the recorded inverse is the "
 					"command itself. Turning persistence OFF drops the snapshots the session's steps carried; "
-					"turning it back on does not recapture them (docs/UNDO-HISTORY-PERSISTENCE.md)")}});
+					"turning it back on does not recapture them (docs/UNDO-HISTORY-PERSISTENCE.md)")
+				: QStringLiteral("irreversible: this call dropped %1 undo step snapshot(s) from the saved "
+					"history; turning it back on does not recapture them, so control.undo refuses it "
+					"(docs/UNDO-HISTORY-PERSISTENCE.md)").arg(dropped)}});
 	return ControlResult::success(result);
 }
 

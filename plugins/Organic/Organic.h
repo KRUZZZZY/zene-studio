@@ -25,6 +25,8 @@
 #ifndef LMMS_ORGANIC_H
 #define LMMS_ORGANIC_H
 
+#include <atomic>
+
 #include <QString>
 
 #include "Instrument.h"
@@ -80,6 +82,11 @@ const QString WAVEFORM_NAMES[6] = {
 	
 const float CENT = 1.0f / 1200.0f;
 
+//! The oscillator parameters travel from the control thread to the audio
+//! thread through atomics, so the publish side never blocks the render side.
+static_assert(std::atomic<float>::is_always_lock_free,
+	"the Organic plugin publishes its parameters lock-free");
+
 class OscillatorObject : public Model
 {
 	Q_OBJECT
@@ -92,17 +99,35 @@ private:
 	FloatModel m_panModel;
 	FloatModel m_detuneModel;
 
-	float m_volumeLeft;
-	float m_volumeRight;
+	//! Values the audio thread renders from - the Oscillator instances hold
+	//! references to them. Only the audio thread writes them (see
+	//! refreshAudioParams()); the control thread publishes its values into
+	//! m_published instead.
+	float m_volumeLeft = 0.0f;
+	float m_volumeRight = 0.0f;
 	// normalized detuning -> x/sampleRate
-	float m_detuningLeft;
-	float m_detuningRight;
+	float m_detuningLeft = 0.0f;
+	float m_detuningRight = 0.0f;
 	// normalized offset -> x/360
-	float m_phaseOffsetLeft;
-	float m_phaseOffsetRight;
+	float m_phaseOffsetLeft = 0.0f;
+	float m_phaseOffsetRight = 0.0f;
+
+	//! The parameters the control thread published. The audio thread adopts
+	//! them at the start of a period.
+	struct PublishedParams
+	{
+		std::atomic<float> volumeLeft { 0.0f };
+		std::atomic<float> volumeRight { 0.0f };
+		std::atomic<float> detuningLeft { 0.0f };
+		std::atomic<float> detuningRight { 0.0f };
+	};
+	PublishedParams m_published;
 
 	OscillatorObject( Model * _parent, int _index );
 	~OscillatorObject() override = default;
+
+	//! Adopt the published parameters - runs on the audio thread.
+	void refreshAudioParams();
 
 	friend class OrganicInstrument;
 	friend class gui::OrganicInstrumentView;

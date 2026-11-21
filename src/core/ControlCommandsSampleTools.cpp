@@ -71,8 +71,9 @@ void swapIn(SampleClip* clip, f_cnt_t from, f_cnt_t to, const SampleWindow& wind
 	const SampleFrame* data = clip->sample().data();
 	std::vector<SampleFrame> frames(data + from, data + to);
 	const int rate = static_cast<int>(clip->sample().sampleRate());
+	const int channels = clip->sample().channels();
 	clip->addJournalCheckPoint();
-	clip->replaceSample(std::make_shared<SampleBuffer>(std::move(frames), rate), window);  // the window written by its owner
+	clip->replaceSample(std::make_shared<SampleBuffer>(std::move(frames), rate, QString(), channels), window);  // the window written by its owner
 	Engine::getSong()->setModified();
 }
 

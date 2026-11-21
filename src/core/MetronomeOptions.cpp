@@ -89,7 +89,9 @@ void load()
 {
 	State& s = state();
 	if (s.loaded.load(std::memory_order_acquire)) { return; }
-	s.level.store(boundedLevel(read("level", "1").toFloat()));
+	bool validLevel = false;
+	const float configuredLevel = read("level", "1").toFloat(&validLevel);
+	s.level.store(boundedLevel(validLevel ? configuredLevel : 1.f));
 	s.accent.store(read("accent", "1").toInt() != 0);
 	s.recordOnly.store(read("recordonly", "0").toInt() != 0);
 	s.sound.store(std::clamp(static_cast<int>(soundNames().indexOf(read("sound", "classic"))), 0, kSoundCount - 1));

@@ -44,11 +44,13 @@
 #include <QMenu>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QSpinBox>
 #include <QStyleHints>
 #include <QTimer>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
+#include "BrowserCatalog.h"
 #include "BrowserResults.h"
 #include "BrowserTagMenu.h"
 #include "ControlRegistry.h"
@@ -107,30 +109,51 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 	m_search->setProperty("browserSearchHint", true);  // ... keeping this placeholder: it teaches the syntax
 	m_kind = new QComboBox(contentParent());
 	m_kind->setAccessibleName(tr("Kind"));
+	m_kind->setObjectName(QStringLiteral("browserSearchKind"));
 	for (const QString& kind : {tr("Any kind"), QStringLiteral("audio"), QStringLiteral("preset"), QStringLiteral("project"), QStringLiteral("midi")})
 	{
 		m_kind->addItem(kind);
 	}
 	m_root = new QComboBox(contentParent());
 	m_root->setAccessibleName(tr("Where to look"));
+	m_root->setObjectName(QStringLiteral("browserSearchRoot"));
 	m_root->addItem(tr("Everywhere"), QString());
 	for (const QJsonValue& root : run(QStringLiteral("browser.roots")).result.value(QStringLiteral("roots")).toArray())
 	{
 		m_root->addItem(root.toObject().value(QStringLiteral("label")).toString(root.toObject().value(QStringLiteral("id")).toString()),
 			root.toObject().value(QStringLiteral("id")).toString());
 	}
+	// The category facet (0.5.0 L11, WF-007): the catalog's own categories beside kind and
+	// source. "Any category" is the empty selection and restores the whole result set.
+	m_category = new QComboBox(contentParent());
+	m_category->setAccessibleName(tr("Category"));
 	m_indexed = new QCheckBox(tr("Whole library"), contentParent());  // WF-012
+	m_indexed->setObjectName(QStringLiteral("browserSearchIndexed"));
 	m_indexed->setToolTip(tr("Search the library index instead of walking the folders"));
 	m_indexed->setProperty("controlCommand", QStringLiteral("browser.index_query"));
+	m_probe = new QCheckBox(tr("Search file metadata"), contentParent());  // R-workflow-4
+	m_probe->setAccessibleName(tr("Search file metadata"));
+	m_probe->setObjectName(QStringLiteral("browserSearchMetadata"));
+	m_probe->setToolTip(tr("Also match what the audio files say they are: the embedded "
+		"title, artist and the sample rate, channels and length (at most %1 files are "
+		"opened per search)").arg(BrowserMaxProbes));
+	m_probe->setProperty("controlCommand", QStringLiteral("browser.query"));
 	top->addWidget(m_search, 1);
 	top->addWidget(m_kind);
 	top->addWidget(m_root);
+	top->addWidget(m_category);
 	top->addWidget(m_indexed);
+	top->addWidget(m_probe);
 	addContentLayout(top);
 
+	buildTempoKeyRow();
 	buildActionRow();
 	m_status = new QLabel(contentParent());
 	addContentWidget(m_status);
+
+	m_scanStatus = new QLabel(contentParent());
+	m_scanStatus->setAccessibleName(tr("Library scan"));
+	addContentWidget(m_scanStatus);
 
 	m_collections = new QListWidget(contentParent());
 	m_collections->setAccessibleName(tr("Collections"));
@@ -143,11 +166,13 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 
 	m_results = new QTreeWidget(contentParent());
 	m_results->setAccessibleName(tr("Results"));
-	m_results->setHeaderLabels({tr("Name"), tr("Kind"), tr("Size (KB)"), tr("Modified"), tr("Tags")});
+	m_results->setHeaderLabels({tr("Name"), tr("Kind"), tr("Size (KB)"), tr("Modified"), tr("Tags"), tr("Uses"), tr("State")});
 	m_results->setSortingEnabled(true);
 	m_results->setRootIsDecorated(false);
+	m_results->setSelectionMode(QAbstractItemView::ExtendedSelection);
 	m_results->setContextMenuPolicy(Qt::CustomContextMenu);
 	m_results->header()->setSectionResizeMode(Name, QHeaderView::Stretch);
+	for (int column = Usage; column < ColumnCount; ++column) { m_results->setColumnHidden(column, true); }
 	m_results->setProperty("browserResults", true);  // what the panel's search field steps through and loads from
 	addContentWidget(m_results);
 
@@ -173,13 +198,66 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 	});
 	connect(m_live, &QTimer::timeout, this, &BrowserSearchView::runLiveSearch);
 	connect(m_search, &QLineEdit::returnPressed, this, [this] { search(m_liveEntry); });  // typed: refreshed in place
-	connect(m_kind, &QComboBox::currentIndexChanged, this, &BrowserSearchView::runSearch);
-	connect(m_root, &QComboBox::currentIndexChanged, this, &BrowserSearchView::runSearch);
+	connect(m_kind, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &BrowserSearchView::runSearch);
+	connect(m_root, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &BrowserSearchView::runSearch);
+	connect(m_category, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &BrowserSearchView::runSearch);
+	connect(m_tempoMin, QOverload<int>::of(&QSpinBox::valueChanged), this, &BrowserSearchView::runSearch);
+	connect(m_tempoMax, QOverload<int>::of(&QSpinBox::valueChanged), this, &BrowserSearchView::runSearch);
+	connect(m_key, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &BrowserSearchView::runSearch);
 	connect(m_indexed, &QCheckBox::toggled, this, &BrowserSearchView::runSearch);
 	connect(m_indexed, &QCheckBox::toggled, m_root, &QWidget::setDisabled);  // the index has no roots to filter by
+	connect(m_indexed, &QCheckBox::toggled, m_probe, &QWidget::setDisabled);  // the index holds no embedded metadata
+	connect(m_probe, &QCheckBox::toggled, this, &BrowserSearchView::runSearch);
 	connectLists();
+	refreshCategories();
 	refreshCollections();
 	refreshIndexStatus();
+}
+
+void BrowserSearchView::buildTempoKeyRow()
+{
+	// 0.5.0 L11 (Q050-316.1): the tempo range and key, beside the category facet
+	// and on the same measurement the command filters on (the library index's
+	// import detection). 0 is "any" on each tempo side, so both at 0 is no filter
+	// at all - an untouched row restores the broader results, as Any category does.
+	auto* row = new QHBoxLayout;
+	auto* label = new QLabel(tr("Tempo"), contentParent());
+	label->setAccessibleName(tr("Tempo"));
+	row->addWidget(label);
+	m_tempoMin = new QSpinBox(contentParent());
+	m_tempoMin->setAccessibleName(tr("Tempo from"));
+	m_tempoMin->setObjectName(QStringLiteral("browserSearchTempoMin"));
+	m_tempoMin->setRange(0, 400);
+	m_tempoMin->setSpecialValueText(tr("Any"));
+	m_tempoMin->setSuffix(tr(" BPM"));
+	m_tempoMin->setToolTip(tr("Only the audio files whose measured tempo is at least this"));
+	m_tempoMin->setProperty("controlCommand", QStringLiteral("browser.query"));
+	m_tempoMax = new QSpinBox(contentParent());
+	m_tempoMax->setAccessibleName(tr("Tempo to"));
+	m_tempoMax->setObjectName(QStringLiteral("browserSearchTempoMax"));
+	m_tempoMax->setRange(0, 400);
+	m_tempoMax->setSpecialValueText(tr("Any"));
+	m_tempoMax->setSuffix(tr(" BPM"));
+	m_tempoMax->setToolTip(tr("Only the audio files whose measured tempo is at most this"));
+	m_tempoMax->setProperty("controlCommand", QStringLiteral("browser.query"));
+	auto* to = new QLabel(tr("to"), contentParent());
+	row->addWidget(m_tempoMin);
+	row->addWidget(to);
+	row->addWidget(m_tempoMax);
+	m_key = new QComboBox(contentParent());
+	m_key->setAccessibleName(tr("Key"));
+	m_key->setObjectName(QStringLiteral("browserSearchKey"));
+	m_key->setToolTip(tr("Only the audio files measured in this key (the detected root, any octave)"));
+	m_key->setProperty("controlCommand", QStringLiteral("browser.query"));
+	m_key->addItem(tr("Any key"), QString());
+	for (int pitchClass = 0; pitchClass < 12; ++pitchClass)
+	{
+		const QString name = browserKeyName(pitchClass);
+		m_key->addItem(name, name);
+	}
+	row->addWidget(m_key);
+	row->addStretch(1);
+	addContentLayout(row);
 }
 
 void BrowserSearchView::buildActionRow()
@@ -188,21 +266,30 @@ void BrowserSearchView::buildActionRow()
 	auto* back = button(contentParent(), tr("Back"), "browser.history_go");  // WF-014
 	auto* forward = button(contentParent(), tr("Forward"), "browser.history_go");
 	auto* save = button(contentParent(), tr("Save as Collection..."), "browser.collection_save");
-	auto* media = button(contentParent(), tr("Project Media"), "project.missing_assets");
+	auto* media = button(contentParent(), tr("Project Media"), "project.media_usage");
+	m_unused = button(contentParent(), tr("Unused Only"), "project.media_usage");
+	m_unused->setObjectName(QStringLiteral("browserMediaUnused"));
+	m_unused->setCheckable(true);
+	m_unused->setEnabled(false);
+	m_cleanup = button(contentParent(), tr("Clean Up Selected..."), "project.media_cleanup");
+	m_cleanup->setObjectName(QStringLiteral("browserMediaCleanup"));
+	m_cleanup->setEnabled(false);
 	auto* rescan = button(contentParent(), tr("Rescan Library"), "browser.reindex");
 	auto* gallery = button(contentParent(), tr("Gallery"), "browser.thumbnail");  // WF-018
 	gallery->setCheckable(true);
-	for (QPushButton* each : {back, forward, save, media, rescan, gallery}) { actions->addWidget(each); }
+	for (QPushButton* each : {back, forward, save, media, m_unused, m_cleanup, rescan, gallery}) { actions->addWidget(each); }
 	actions->addStretch(1);
 	addContentLayout(actions);
 	connect(back, &QPushButton::clicked, this, [this] { goHistory(-1); });
 	connect(forward, &QPushButton::clicked, this, [this] { goHistory(1); });
 	connect(save, &QPushButton::clicked, this, &BrowserSearchView::saveCollection);
 	connect(media, &QPushButton::clicked, this, &BrowserSearchView::showProjectMedia);
+	connect(m_unused, &QPushButton::toggled, this, &BrowserSearchView::setShowUnused);
+	connect(m_cleanup, &QPushButton::clicked, this, &BrowserSearchView::cleanupSelectedMedia);
 	connect(rescan, &QPushButton::clicked, this, [this] {
 		const ControlResult started = run(QStringLiteral("browser.reindex"), {{QStringLiteral("features"), true}});
 		if (started.ok) { refreshIndexStatus(); }
-		else { m_status->setText(started.errorMessage); }
+		else { m_scanStatus->setText(started.errorMessage); }  // the scan's own line: the search's count stays
 	});
 	connect(gallery, &QPushButton::toggled, this, &BrowserSearchView::setGallery);
 }
@@ -217,11 +304,7 @@ void BrowserSearchView::connectLists()
 		QMenu menu(this);
 		QAction* remove = menu.addAction(tr("Remove Collection"));
 		remove->setProperty("controlCommand", QStringLiteral("browser.collection_remove"));
-		if (menu.exec(m_collections->viewport()->mapToGlobal(at)) == remove)
-		{
-			run(QStringLiteral("browser.collection_remove"), {{QStringLiteral("name"), item->text()}});
-			refreshCollections();
-		}
+		if (menu.exec(m_collections->viewport()->mapToGlobal(at)) == remove) { removeCollection(item->text()); }
 	});
 	connect(m_results, &QWidget::customContextMenuRequested, this, [this](const QPoint& at) {
 		if (QTreeWidgetItem* item = m_results->itemAt(at))
@@ -269,10 +352,22 @@ QJsonObject BrowserSearchView::queryArgs() const
 {
 	QJsonObject args{{QStringLiteral("text"), m_search->text()}, {QStringLiteral("limit"), 500}};
 	if (m_kind->currentIndex() > 0) { args.insert(QStringLiteral("kind"), m_kind->currentText()); }
+	// The category facet (0.5.0 L11, WF-007): index 0 is "Any category" and sends nothing,
+	// so an unselected facet restores the full result set in both query modes.
+	if (m_category->currentIndex() > 0) { args.insert(QStringLiteral("category"), m_category->currentData().toString()); }
+	// The tempo/key facets (0.5.0 L11, Q050-316.1): 0 on a tempo side is open, so an
+	// untouched row sends nothing; both query modes filter on the same measurement, so
+	// a filtered Whole library search answers the files the walking one does.
+	if (m_tempoMin->value() > 0) { args.insert(QStringLiteral("tempo_min"), m_tempoMin->value()); }
+	if (m_tempoMax->value() > 0) { args.insert(QStringLiteral("tempo_max"), m_tempoMax->value()); }
+	if (m_key->currentIndex() > 0) { args.insert(QStringLiteral("key"), m_key->currentData().toString()); }
 	if (!m_indexed->isChecked() && !m_root->currentData().toString().isEmpty())
 	{
 		args.insert(QStringLiteral("root"), m_root->currentData().toString());
 	}
+	// The index holds no embedded metadata, and browser.index_query takes no 'probe':
+	// the flag rides the walking query only (R-workflow-4).
+	if (m_probe->isChecked() && !m_indexed->isChecked()) { args.insert(QStringLiteral("probe"), true); }
 	return args;
 }
 
@@ -296,6 +391,9 @@ void BrowserSearchView::showBrowsed(const ControlResult& shown)
 	}
 	m_showingMedia = false;
 	m_liveEntry = false;  // a list shown from the history is no longer the one being typed
+	if (m_unused != nullptr) { m_unused->setEnabled(false); }
+	if (m_cleanup != nullptr) { m_cleanup->setEnabled(false); }
+	showMediaColumns(false);
 	showItems(shown.result.value(QStringLiteral("items")).toArray());
 	m_status->setText(countText(shown.result));
 	restoreQuery(shown.result.value(QStringLiteral("entry")).toObject());
@@ -307,13 +405,28 @@ void BrowserSearchView::restoreQuery(const QJsonObject& entry)
 	const bool indexed = command == QLatin1String("browser.index_query");
 	if (!indexed && command != QLatin1String("browser.query")) { return; }  // a collection or similar sounds: no search of its own
 	const QJsonObject args = entry.value(QStringLiteral("args")).toObject();
-	const QSignalBlocker kind(m_kind), root(m_root), index(m_indexed);  // shown already: no search again
+	// shown already: no search again. The tempo/key facets are blocked too, so a
+	// history step back on a filtered search puts the row where it was without
+	// running the query a second time.
+	const QSignalBlocker kind(m_kind), root(m_root), category(m_category), index(m_indexed), probe(m_probe);
+	const QSignalBlocker tempoMin(m_tempoMin), tempoMax(m_tempoMax), key(m_key);
 	// The same text is left alone, so a live search never moves the cursor of the field being typed in.
 	if (m_search->text() != args.value(QStringLiteral("text")).toString()) { m_search->setText(args.value(QStringLiteral("text")).toString()); }
 	m_kind->setCurrentIndex(std::max(0, m_kind->findText(args.value(QStringLiteral("kind")).toString())));
 	m_root->setCurrentIndex(std::max(0, m_root->findData(args.value(QStringLiteral("root")).toString())));
+	// A history entry can name a category the vocabulary gained (or lost) since it ran: the
+	// entry's own value is re-selected by data, absent from the list becoming "Any category".
+	m_category->setCurrentIndex(std::max(0, m_category->findData(args.value(QStringLiteral("category")).toString())));
+	// The same for the key: an entry's key is re-selected by name, absent becoming "Any key".
+	m_key->setCurrentIndex(std::max(0, m_key->findData(args.value(QStringLiteral("key")).toString())));
+	// A tempo side the entry did not carry is 0 = open, which is what an entry saved by
+	// an older build (no facet) restores to.
+	m_tempoMin->setValue(args.value(QStringLiteral("tempo_min")).toInt(0));
+	m_tempoMax->setValue(args.value(QStringLiteral("tempo_max")).toInt(0));
 	m_indexed->setChecked(indexed);
+	m_probe->setChecked(!indexed && args.value(QStringLiteral("probe")).toBool());
 	m_root->setDisabled(indexed);
+	m_probe->setDisabled(indexed);
 }
 
 void BrowserSearchView::search(bool live)
@@ -344,35 +457,6 @@ void BrowserSearchView::findSimilar(const QString& path)
 void BrowserSearchView::goHistory(int step)
 {
 	showBrowsed(run(QStringLiteral("browser.history_go"), {{QStringLiteral("step"), step}}));
-}
-
-void BrowserSearchView::showProjectMedia()
-{
-	const ControlResult listed = run(QStringLiteral("project.missing_assets"), {{QStringLiteral("project"), Engine::getSong()->projectFileName()}});
-	if (!listed.ok)
-	{
-		m_status->setText(listed.errorMessage);
-		return;
-	}
-	QJsonArray items;
-	int missing = 0;
-	for (const QJsonValue& value : listed.result.value(QStringLiteral("references")).toArray())
-	{
-		const QJsonObject ref = value.toObject();
-		const bool gone = ref.value(QStringLiteral("missing")).toBool();
-		missing += gone ? 1 : 0;
-		// 'path' is where the reference resolves (against the project file's folder); 'resolved' is only a flag.
-		const QString resolved = ref.value(QStringLiteral("path")).toString();
-		const QString path = resolved.isEmpty() ? ref.value(QStringLiteral("raw")).toString() : resolved;
-		items.append(QJsonObject{{QStringLiteral("name"), QFileInfo(path).fileName()}, {QStringLiteral("path"), path},
-			{QStringLiteral("kind"), gone ? tr("missing") : QStringLiteral("audio")},
-			{QStringLiteral("size_bytes"), gone ? qint64(-1) : QFileInfo(path).size()},
-			{QStringLiteral("modified_ms"), gone ? qint64(-1) : QFileInfo(path).lastModified().toMSecsSinceEpoch()},
-			{QStringLiteral("tags"), QJsonArray{ref.value(QStringLiteral("tag")).toString()}}});
-	}
-	m_showingMedia = true;
-	showItems(items);
-	m_status->setText(tr("Project Media: %1 files, %2 missing").arg(items.size()).arg(missing));
 }
 
 void BrowserSearchView::showItems(const QJsonArray& items)
@@ -407,6 +491,10 @@ void BrowserSearchView::setGallery(bool on)
 
 int BrowserSearchView::resultCount() const { return m_results->topLevelItemCount(); }
 
+QString BrowserSearchView::statusText() const { return m_status->text(); }
+
+QString BrowserSearchView::scanStatusText() const { return m_scanStatus == nullptr ? QString() : m_scanStatus->text(); }
+
 void BrowserSearchView::refreshCollections()
 {
 	m_collections->clear();
@@ -417,19 +505,38 @@ void BrowserSearchView::refreshCollections()
 	m_collections->setVisible(m_collections->count() > 0);
 }
 
+void BrowserSearchView::refreshCategories()
+{
+	// The vocabulary is what the catalog carries now (browser.categories reads the store):
+	// a category a file was given since the last look appears here, and one no file carries
+	// any more disappears. The selection follows by value, so a surviving choice is kept.
+	const QString selected = m_category->currentData().toString();
+	const QSignalBlocker block(m_category);  // repopulating must not re-run the search it feeds
+	m_category->clear();
+	m_category->addItem(tr("Any category"), QString());
+	for (const QJsonValue& value : run(QStringLiteral("browser.categories")).result.value(QStringLiteral("categories")).toArray())
+	{
+		const QString category = value.toObject().value(QStringLiteral("category")).toString();
+		m_category->addItem(category, category);
+	}
+	m_category->setCurrentIndex(std::max(0, m_category->findData(selected)));
+}
+
 void BrowserSearchView::refreshIndexStatus()
 {
+	// The scan's progress has its own line: the status line belongs to the search (its count, or why it
+	// failed), and a poll must never hide that behind the scan's message.
 	const QJsonObject status = run(QStringLiteral("browser.index_status")).result;
 	const int entries = status.value(QStringLiteral("entries")).toInt();
 	if (status.value(QStringLiteral("running")).toBool())
 	{
-		m_status->setText(tr("Scanning the library: %1 files, %2 measured").arg(status.value(QStringLiteral("scanned")).toInt())
+		m_scanStatus->setText(tr("Scanning the library: %1 files, %2 measured").arg(status.value(QStringLiteral("scanned")).toInt())
 			.arg(status.value(QStringLiteral("analysed")).toInt()));
 		QTimer::singleShot(1000, this, &BrowserSearchView::refreshIndexStatus);
 		return;
 	}
 	const QDateTime built = QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(status.value(QStringLiteral("built_ms")).toDouble()));
-	m_status->setText(entries > 0 ? tr("Library index: %1 files, built %2").arg(entries).arg(built.toString(Qt::ISODate))
+	m_scanStatus->setText(entries > 0 ? tr("Library index: %1 files, built %2").arg(entries).arg(built.toString(Qt::ISODate))
 		: tr("No library index yet - Rescan Library builds it"));
 }
 
@@ -440,49 +547,18 @@ void BrowserSearchView::saveCollection()
 	if (!ok || name.trimmed().isEmpty()) { return; }
 	QJsonObject args = queryArgs();
 	args.remove(QStringLiteral("limit"));
+	args.remove(QStringLiteral("probe"));  // collection_save stores the query text, not the probe switch
 	args.insert(QStringLiteral("name"), name.trimmed());
 	const ControlResult saved = run(QStringLiteral("browser.collection_save"), args);
 	if (!saved.ok) { m_status->setText(saved.errorMessage); }
 	refreshCollections();
 }
 
-void BrowserSearchView::addPreviewEntries(QMenu* menu, const QString& path)
+void BrowserSearchView::removeCollection(const QString& name)
 {
-	QMenu* preview = menu->addMenu(tr("Preview"));  // WF-009
-	const std::pair<QString, const char*> modes[] = {{tr("As It Is"), "none"}, {tr("At the Song's Tempo"), "tempo"},
-		{tr("In the Song's Key"), "key"}, {tr("Matched to Tempo and Key"), "both"}};
-	for (const auto& [label, match] : modes)
-	{
-		QAction* action = preview->addAction(label);
-		action->setProperty("controlCommand", QStringLiteral("browser.preview"));
-		connect(action, &QAction::triggered, this, [this, path, match = QLatin1String(match)] {
-			m_actions->preview(path, QStringLiteral("audio"), match);  // an error shows on the status line
-		});
-	}
-	QAction* stop = preview->addAction(tr("Stop"));
-	stop->setProperty("controlCommand", QStringLiteral("browser.preview_stop"));
-	connect(stop, &QAction::triggered, this, [this] {
-		m_actions->stopPreview();
-		run(QStringLiteral("browser.preview_stop"));  // whoever started it
-	});
-}
-
-void BrowserSearchView::showRowMenu(QWidget* view, const QPoint& at, const QString& path, const QString& kind)
-{
-	QMenu menu(this);
-	m_actions->addLoadEntry(&menu, path, kind);  // theme 3: what Enter does, named where the other actions are
-	if (kind == QLatin1String("audio"))
-	{
-		addPreviewEntries(&menu, path);
-		QAction* similar = menu.addAction(tr("Find Similar Sounds"));  // WF-020
-		similar->setProperty("controlCommand", QStringLiteral("browser.similar"));
-		connect(similar, &QAction::triggered, this, [this, path] { findSimilar(path); });
-		menu.addSeparator();
-	}
-	addBrowserTagMenu(&menu, path);
-	const QAction* chosen = menu.exec(static_cast<QAbstractScrollArea*>(view)->viewport()->mapToGlobal(at));
-	// A tag edit: the list is shown again as it stands (the current history entry, not a new one).
-	if (chosen != nullptr && chosen->data().toString().startsWith(QLatin1String("browser.tag"))) { m_showingMedia ? showProjectMedia() : goHistory(0); }
+	const ControlResult removed = run(QStringLiteral("browser.collection_remove"), {{QStringLiteral("name"), name}});
+	if (!removed.ok) { m_status->setText(removed.errorMessage); }
+	refreshCollections();  // the list shows what the store holds: a refused removal leaves its collection listed
 }
 
 } // namespace lmms::gui

@@ -443,6 +443,27 @@ private slots:
 				.arg(actual).arg(expected)));
 	}
 
+	//! The public Scale constructor takes an empty interval list and Song::setScale
+	//! stores it. A mapped key must then read 0 Hz from keyToFreq, not index the
+	//! empty list (the octave degree would be -1).
+	void emptyStoredScaleReadsSilenceForAMappedKey()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		song->setScale(0, std::make_shared<Scale>(QStringLiteral("empty scale"), std::vector<Interval>{}));
+		song->setKeymap(0, std::make_shared<Keymap>(QStringLiteral("empty scale fixture"), std::vector<int>{0, 2},
+			0, 127, 69, 69, 440.0f));
+		QVERIFY2(song->getKeymap(0)->getDegree(70) != -1, "key 70 must be mapped so keyToFreq reaches the scale");
+		float actual = -1.0f;
+		{
+			Microtuner microtuner;
+			actual = microtuner.keyToFreq(70, 69);
+		}
+		song->clearProject();
+
+		QCOMPARE(actual, 0.0f);
+	}
+
 	//! THE PROOF: transport playing, two sounding notes, one .scl, both tracks
 	//! on the ONE table, undo brings the old sound back - transport never stops.
 	void loadScaleWhileTransportPlaysRetunesSoundingNotes()
@@ -939,6 +960,57 @@ QString writeKbm(QTemporaryDir& dir, const QString& name, const QString& baseFre
 				.arg(mismatch)));
 	}
 
+	//! An .scl has to NAME the scale and DECLARE how many degrees it has before
+	//! it can describe one. readScaleLines() left its degree count at zero when
+	//! the stream carried neither header line, and its "the file carries as many
+	//! interval lines as it declared" check compared zero against zero - so an
+	//! empty .scl was accepted, and the scale built from it held the single 1/1
+	//! interval that loadScaleFile() always starts with: a table in which every
+	//! key has the same pitch. Such a file is refused, typed, and the standing
+	//! table is left alone.
+	void aScaleFileWithoutNameOrDegreeCountIsRefused()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString good = writeJiScl(dir);
+		QVERIFY(!good.isEmpty());
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), good}}).ok, "the JI fixture did not load");
+		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
+
+		// A zero-byte file: no name and no degree count at all.
+		const QString empty = dir.filePath(QStringLiteral("empty.scl"));
+		QFile emptyFile(empty);
+		QVERIFY(emptyFile.open(QIODevice::WriteOnly | QIODevice::Text));
+		emptyFile.close();
+		// A file that names the scale but never declares how many degrees it has.
+		const QString nameOnly = writeScl(dir, QStringLiteral("name-only.scl"),
+			{QStringLiteral("missing degree count")});
+		QVERIFY(!nameOnly.isEmpty());
+
+		const QStringList incompletePaths{empty, nameOnly};
+		for (const QString& path : incompletePaths)
+		{
+			const ControlResult loaded = run(QStringLiteral("mts.load_scale"),
+				QJsonObject{{QStringLiteral("path"), path}});
+			QVERIFY2(!loaded.ok, qPrintable(QStringLiteral("incomplete .scl '%1' was accepted: "
+				"it built a one-interval scale whose every key has the same pitch")
+				.arg(path)));
+			QCOMPARE(loaded.errorKind, ControlErrorKind::Refused);
+
+			int mismatch = 0;
+			const QJsonObject after = snapshotState(run(QStringLiteral("mts.get_state")).result);
+			QVERIFY2(sameTable(before, after, &mismatch),
+				qPrintable(QStringLiteral("the refused scale changed the table at key %1")
+					.arg(mismatch)));
+		}
+	}
+
 	//! A .kbm with the standard 12-TET shape but \a declaredSize in field 0 and
 //! exactly \a mappingLines after the header, for the keymaps this test writes
 //! itself.
@@ -1255,6 +1327,21 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), name);
 	}
 
+	void localMtsFrequencyToNoteMapsNanToFallback()
+	{
+		MtsClientPtr client(MTS_RegisterClient(), &MTS_DeregisterClient);
+		QVERIFY(client != nullptr);
+		const double nan = std::numeric_limits<double>::quiet_NaN();
+		const char expected = MTS_FrequencyToNote(nullptr, nan, -1);
+		QCOMPARE(expected, static_cast<char>(60));
+
+		QCOMPARE(MTS_FrequencyToNote(client.get(), nan, -1), expected);
+
+		signed char channel = -1;
+		QCOMPARE(MTS_FrequencyToNoteAndChannel(client.get(), nan, &channel), expected);
+		QCOMPARE(channel, static_cast<signed char>(0));
+	}
+
 	void localMtsTuningDumpRequestPreservesMapMetadata()
 	{
 		MtsClientPtr client(MTS_RegisterClient(), &MTS_DeregisterClient);
@@ -1294,6 +1381,14 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 			QVERIFY(disarmed.ok);
 			QVERIFY(!run(QStringLiteral("mts.get_state")).result
 				.value(QStringLiteral("mts_master")).toBool());
+			// A repeated disarm changes nothing and takes no undo step, so ONE undo
+			// must reach the real disarm above and bring the master back.
+			const ControlResult repeated = run(QStringLiteral("mts.master_set"),
+				QJsonObject{{QStringLiteral("enabled"), false}});
+			QVERIFY2(repeated.ok, qPrintable(repeated.errorMessage));
+			REV_UNDO_OR_FAIL();
+			QVERIFY(run(QStringLiteral("mts.get_state")).result
+				.value(QStringLiteral("mts_master")).toBool());
 			return;
 		}
 
@@ -1313,15 +1408,88 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 		std::fprintf(stdout, "MTS712_EVIDENCE mts master arm refused: %s\n",
 			qPrintable(armed.errorMessage));
 
-		// Disarming what was never armed is idempotent - and as a SUCCESSFUL
-		// mutator it records exactly ONE undo step (A16), while the refused
-		// arm above recorded none.
+		// Disarming what was never armed is idempotent, and a value the flag already
+		// has changes nothing, so it takes NO undo step - the refused arm above
+		// recorded none either.
 		const ControlResult disarmed = run(QStringLiteral("mts.master_set"),
 			QJsonObject{{QStringLiteral("enabled"), false}});
 		QVERIFY2(disarmed.ok, qPrintable(disarmed.errorMessage));
-		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore + 1);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore);
 	}
 
+	//! A repeated mts.master_set changes nothing and must not sit on the undo
+	//! stack: the real table edit before it is the step control.undo unwinds.
+	void repeatedMasterSetLeavesTheRealEditForUndo()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		const ControlResult firstDisarm = run(QStringLiteral("mts.master_set"),
+			QJsonObject{{QStringLiteral("enabled"), false}});
+		QVERIFY2(firstDisarm.ok, qPrintable(firstDisarm.errorMessage));
+		const int depthBefore = Engine::projectJournal()->undoDepth();
+		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
+
+		const ControlResult noted = run(QStringLiteral("mts.set_note"),
+			QJsonObject{{QStringLiteral("note"), 60}, {QStringLiteral("frequency"), 432.0},
+				{QStringLiteral("source"), QStringLiteral("repeated-master-set")}});
+		QVERIFY2(noted.ok, qPrintable(noted.errorMessage));
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore + 1);
+
+		const ControlResult repeated = run(QStringLiteral("mts.master_set"),
+			QJsonObject{{QStringLiteral("enabled"), false}});
+		QVERIFY2(repeated.ok, qPrintable(repeated.errorMessage));
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore + 1);
+
+		REV_UNDO_OR_FAIL();
+		int mismatchKey = 0;
+		const QJsonObject undone = snapshotState(run(QStringLiteral("mts.get_state")).result);
+		QVERIFY2(sameTable(before, undone, &mismatchKey),
+			qPrintable(QStringLiteral("control.undo unwound the repeated mts.master_set "
+				"instead of the set_note before it (first difference: %1)").arg(mismatchKey)));
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore);
+	}
+
+	//! A null buffer with len 0, -5 or 1 must be ignored: the local client keeps its scale.
+	void localMtsParseIgnoresNullUnsignedBuffer()
+	{
+		MtsClientPtr client(MTS_RegisterClient(), &MTS_DeregisterClient);
+		QVERIFY(client != nullptr);
+		seedLocalMtsScale(client.get());
+		const QByteArray name(MTS_GetScaleName(client.get()));
+		QCOMPARE(name, QByteArrayLiteral("Test scale"));
+		const signed char mapSize = MTS_GetMapSize(client.get());
+		const signed char mapStartKey = MTS_GetMapStartKey(client.get());
+		const double frequency = MTS_NoteToFrequency(client.get(), 60, 0);
+
+		MTS_ParseMIDIDataU(client.get(), nullptr, 0);
+		MTS_ParseMIDIDataU(client.get(), nullptr, -5);
+		MTS_ParseMIDIDataU(client.get(), nullptr, 1);
+		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), name);
+		QCOMPARE(MTS_GetMapSize(client.get()), mapSize);
+		QCOMPARE(MTS_GetMapStartKey(client.get()), mapStartKey);
+		QCOMPARE(MTS_NoteToFrequency(client.get(), 60, 0), frequency);
+
+		seedLocalMtsScale(client.get());
+		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), name);
+		QCOMPARE(MTS_NoteToFrequency(client.get(), 60, 0), frequency);
+	}
+
+	//! A null signed buffer with len 3 must be ignored: no MTS sysex is recorded.
+	void localMtsParseIgnoresNullSignedBuffer()
+	{
+		MtsClientPtr client(MTS_RegisterClient(), &MTS_DeregisterClient);
+		QVERIFY(client != nullptr);
+		QCOMPARE(MTS_HasReceivedMTSSysEx(client.get()), false);
+		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), QByteArrayLiteral("12-TET"));
+
+		MTS_ParseMIDIData(client.get(), nullptr, 3);
+		QCOMPARE(MTS_HasReceivedMTSSysEx(client.get()), false);
+		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), QByteArrayLiteral("12-TET"));
+
+		seedLocalMtsScale(client.get());
+		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), QByteArrayLiteral("Test scale"));
+		QCOMPARE(MTS_HasReceivedMTSSysEx(client.get()), true);
+	}
 };
 
 QTEST_GUILESS_MAIN(SessionTuningTest)

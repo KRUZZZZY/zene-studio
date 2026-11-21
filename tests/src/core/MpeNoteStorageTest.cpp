@@ -40,6 +40,11 @@
 #include "DataFile.h"
 #include "MpeExpression.h"
 #include "Note.h"
+#include "NotePlayHandle.h"
+
+#include "AllocationProbe.h"
+
+#include <cstdint>
 
 namespace
 {
@@ -119,6 +124,24 @@ QStringList mpeNoteAttributes()
 QStringList savedMpeNoteAttributes()
 {
 	QStringList names = mpeNoteAttributes();
+	names << QStringLiteral("id");
+	names.sort();
+	return names;
+}
+
+
+//! Q050-016: the same set plus the expression-stream point-list attributes.
+QStringList streamNoteAttributes()
+{
+	QStringList names = upstreamNoteAttributes();
+	names << "mpepitchpts" << "mpepressurepts" << "mpetimbrepts";
+	names.sort();
+	return names;
+}
+
+QStringList savedStreamNoteAttributes()
+{
+	QStringList names = streamNoteAttributes();
 	names << QStringLiteral("id");
 	names.sort();
 	return names;
@@ -355,6 +378,165 @@ private slots:
 		QCOMPARE( fileToString( rewrite ), written );
 	}
 
+	//! Q050-016 (a): a note's expression event streams survive save -> load ->
+	//! save with their point ORDER and VALUES intact, and a note with no stream
+	//! keeps exactly its prior serialized form.
+	void expressionStreamsRoundTripAndStayOptional()
+	{
+		using namespace lmms;
+
+		Note note( TimePos( 384 ), TimePos( 0 ), 60 );
+		QVERIFY( !note.hasMpeStream() );
+
+		MpeExpressionStream stream;
+		stream.setPitch( { { 0, 0 }, { 96, 1200 }, { 192, -2400 } } );
+		stream.setPressure( { { 0, 0 }, { 48, 64 }, { 192, 127 } } );
+		stream.setTimbre( { { 96, 32 } } );
+		note.setMpeStream( stream );
+		QVERIFY( note.hasMpeStream() );
+
+		QDomDocument doc;
+		QDomElement parent = doc.createElement( "notes" );
+		QDomElement element = note.saveState( doc, parent );
+		// The order the points were written in is the order they are spelled.
+		QCOMPARE( element.attribute( "mpepitchpts" ), QStringLiteral( "0:0,96:1200,192:-2400" ) );
+		QCOMPARE( element.attribute( "mpepressurepts" ), QStringLiteral( "0:0,48:64,192:127" ) );
+		QCOMPARE( element.attribute( "mpetimbrepts" ), QStringLiteral( "96:32" ) );
+		QCOMPARE( attributeNames( element ), savedStreamNoteAttributes() );
+
+		const QString first = nodeToString( element );
+
+		Note loaded;
+		loaded.restoreState( element );
+		QVERIFY( loaded.hasMpeStream() );
+		QCOMPARE( static_cast<int>( loaded.mpeStream().pitch().size() ), 3 );
+		QCOMPARE( loaded.mpeStream().pitch()[0].tick, tick_t( 0 ) );
+		QCOMPARE( loaded.mpeStream().pitch()[0].value, 0 );
+		QCOMPARE( loaded.mpeStream().pitch()[1].tick, tick_t( 96 ) );
+		QCOMPARE( loaded.mpeStream().pitch()[1].value, 1200 );
+		QCOMPARE( loaded.mpeStream().pitch()[2].tick, tick_t( 192 ) );
+		QCOMPARE( loaded.mpeStream().pitch()[2].value, -2400 );
+		QCOMPARE( static_cast<int>( loaded.mpeStream().pressure().size() ), 3 );
+		QCOMPARE( loaded.mpeStream().pressure()[2].value, 127 );
+		QCOMPARE( static_cast<int>( loaded.mpeStream().timbre().size() ), 1 );
+		QCOMPARE( loaded.mpeStream().timbre()[0].tick, tick_t( 96 ) );
+		QCOMPARE( loaded.mpeStream().timbre()[0].value, 32 );
+
+		// The loaded note holds its own snapshot (built by the loader), equal
+		// to the original's.
+		QVERIFY( &loaded.mpeStream() != &note.mpeStream() );
+		QVERIFY( loaded.mpeStream().pitch() == note.mpeStream().pitch() );
+		QVERIFY( loaded.mpeStream().pressure() == note.mpeStream().pressure() );
+
+		QDomDocument doc2;
+		QDomElement parent2 = doc2.createElement( "notes" );
+		QDomElement element2 = loaded.saveState( doc2, parent2 );
+		QCOMPARE( nodeToString( element2 ), first );
+
+		// The copy constructor (MidiClip::addNote, NotePlayHandle) carries it
+		// by sharing the note's immutable snapshot (round 3: no deep copy); an
+		// edit of the copy publishes a new snapshot and leaves the original's
+		// alone.
+		Note copy( note );
+		QVERIFY( copy.hasMpeStream() );
+		QVERIFY( &copy.mpeStream() == &note.mpeStream() );
+		QCOMPARE( copy.mpeStream().pressure()[2].value, 127 );
+		MpeExpressionStream edited = copy.mpeStream();
+		edited.setPressure( { { 0, 11 } } );
+		copy.setMpeStream( edited );
+		QCOMPARE( copy.mpeStream().pressure()[0].value, 11 );
+		QCOMPARE( note.mpeStream().pressure()[2].value, 127 );
+
+		// Clearing removes the stream and the attributes with it.
+		note.clearMpeStream();
+		QVERIFY( !note.hasMpeStream() );
+		QDomDocument doc3;
+		QDomElement parent3 = doc3.createElement( "notes" );
+		QDomElement element3 = note.saveState( doc3, parent3 );
+		QCOMPARE( attributeNames( element3 ), savedNoteAttributes() );
+
+		// Clamping and ordering are the setter's own job: a hostile value is
+		// bounded and out-of-order points are sorted by tick.
+		Note hostile;
+		MpeExpressionStream hostileStream;
+		hostileStream.setPitch( { { 192, 99999 }, { 0, -99999 } } );
+		hostile.setMpeStream( hostileStream );
+		QCOMPARE( hostile.mpeStream().pitch()[0].tick, tick_t( 0 ) );
+		QCOMPARE( hostile.mpeStream().pitch()[0].value, -MpeNoteExpression::MaxPitchCents );
+		QCOMPARE( hostile.mpeStream().pitch()[1].tick, tick_t( 192 ) );
+		QCOMPARE( hostile.mpeStream().pitch()[1].value, MpeNoteExpression::MaxPitchCents );
+		Note hostileLoad;
+		QDomDocument doc4;
+		QDomElement hostileElement = doc4.createElement( "note" );
+		hostileElement.setAttribute( "key", 60 );
+		hostileElement.setAttribute( "mpepressurepts", "oops,0:notanumber,48:300" );
+		hostileLoad.restoreState( hostileElement );
+		QVERIFY( hostileLoad.hasMpeStream() );
+		QCOMPARE( static_cast<int>( hostileLoad.mpeStream().pressure().size() ), 1 );
+		QCOMPARE( hostileLoad.mpeStream().pressure()[0].tick, tick_t( 48 ) );
+		QCOMPARE( hostileLoad.mpeStream().pressure()[0].value, 127 );
+	}
+
+	//! Q050-016 (b): a whole project carries the stream attributes and round
+	//! trips, while a project whose notes have no stream is byte-identical.
+	void expressionStreamsPersistInAProject()
+	{
+		using namespace lmms;
+
+		const QString version = DataFile( DataFile::Type::SongProject )
+			.documentElement().attribute( "version" );
+
+		// An old project (no stream) loads with no stream and re-saves exactly.
+		DataFile old( projectWithNotes( version, oldProjectNotes ).toUtf8() );
+		const QString oldText = fileToString( old );
+		QVERIFY( !oldText.contains( QStringLiteral( "pts" ) ) );
+		QDomDocument oldParsed;
+		QVERIFY( oldParsed.setContent( oldText.toUtf8() ) );
+		QDomElement oldNote = oldParsed.elementsByTagName( QStringLiteral( "note" ) )
+			.item( 0 ).toElement();
+		Note loadedFromOld;
+		loadedFromOld.restoreState( oldNote );
+		QVERIFY( !loadedFromOld.hasMpeStream() );
+
+		// This build writes the stream as three optional attributes and nothing
+		// else moves.
+		const QString streamNotes =
+			"            <note key=\"60\" vol=\"100\" pan=\"0\" len=\"384\" pos=\"0\" type=\"0\""
+			" mpepitchpts=\"0:0,96:1200,192:-2400\" mpepressurepts=\"0:0,48:64\""
+			" mpetimbrepts=\"48:32\"/>\n"
+			"            <note key=\"67\" vol=\"100\" pan=\"0\" len=\"384\" pos=\"384\" type=\"0\"/>\n";
+		DataFile streamed( projectWithNotes( version, streamNotes ).toUtf8() );
+		const QString written = fileToString( streamed );
+		QDomDocument parsed;
+		QVERIFY( parsed.setContent( written.toUtf8() ) );
+		const QDomNodeList notes = parsed.elementsByTagName( QStringLiteral( "note" ) );
+		QCOMPARE( notes.length(), 2 );
+
+		Note loaded;
+		loaded.restoreState( notes.item( 0 ).toElement() );
+		QVERIFY( loaded.hasMpeStream() );
+		QCOMPARE( static_cast<int>( loaded.mpeStream().pitch().size() ), 3 );
+		QCOMPARE( loaded.mpeStream().pitch()[1].tick, tick_t( 96 ) );
+		QCOMPARE( loaded.mpeStream().pitch()[1].value, 1200 );
+		QCOMPARE( static_cast<int>( loaded.mpeStream().pressure().size() ), 2 );
+		QCOMPARE( loaded.mpeStream().pressure()[1].value, 64 );
+		QCOMPARE( static_cast<int>( loaded.mpeStream().timbre().size() ), 1 );
+		QCOMPARE( loaded.mpeStream().timbre()[0].value, 32 );
+		// Upstream fields are untouched.
+		QCOMPARE( loaded.key(), loadedFromOld.key() );
+		QCOMPARE( loaded.getVolume(), loadedFromOld.getVolume() );
+		QVERIFY( loaded.pos() == loadedFromOld.pos() );
+		QVERIFY( loaded.length() == loadedFromOld.length() );
+		// Every note but the first carries no stream, and no stream attributes.
+		Note plain;
+		plain.restoreState( notes.item( 1 ).toElement() );
+		QVERIFY( !plain.hasMpeStream() );
+		QCOMPARE( attributeNames( notes.item( 1 ).toElement() ), upstreamNoteAttributes() );
+		// A save -> load -> save of the streamed project is stable.
+		DataFile rewrite( written.toUtf8() );
+		QCOMPARE( fileToString( rewrite ), written );
+	}
+
 	//! (i) The render fixtures in tests/data/mpe are real, loadable projects,
 	//! and the expression each one carries is the expression it claims to carry
 	//! (docs/MPE.md renders exactly these files).
@@ -414,6 +596,81 @@ private slots:
 				QVERIFY( !serialized.contains( QStringLiteral( "mpetimbre" ) ) );
 			}
 		}
+	}
+	//! Q050-016 realtime: copying a note that carries a stream allocates
+	//! nothing and frees nothing, absolutely (the probe counts both, in
+	//! library code too) - the copy takes a counted reference to the note's
+	//! immutable snapshot (round 3, include/MpeStreamSnapshot.h), so the
+	//! NotePlayHandle the audio thread builds by copying the note costs the
+	//! stream no allocation. A plain note copies allocation-free too. The
+	//! concurrent half (edits racing copies, the realtime final release) is
+	//! MpeStreamSnapshotTest.
+	void streamedNoteCopiesAllocateNothing()
+	{
+		using namespace lmms;
+
+		Note streamed( TimePos( 384 ), TimePos( 0 ), 60 );
+		MpeExpressionStream stream;
+		stream.setPitch( { { 0, 0 }, { 96, 1200 } } );
+		stream.setPressure( { { 0, 64 } } );
+		stream.setTimbre( { { 48, 32 } } );
+		streamed.setMpeStream( stream );
+		QVERIFY( streamed.hasMpeStream() );
+		Note plain( TimePos( 384 ), TimePos( 0 ), 60 );
+
+		std::uint64_t allocations = 0;
+		std::uint64_t frees = 0;
+		{
+			lmms::test::resetAllocationCount();
+			lmms::test::tlCountAllocations = true;
+			Note copy( streamed );
+			Note assigned;
+			assigned = streamed;
+			Note plainCopy( plain );
+			allocations = lmms::test::tlAllocationCount;
+			frees = lmms::test::tlFreeCount;
+			lmms::test::tlCountAllocations = false;
+
+			QVERIFY( copy.hasMpeStream() );
+			QVERIFY( copy.mpeStream().pitch() == streamed.mpeStream().pitch() );
+			QVERIFY( assigned.mpeStream().pressure() == streamed.mpeStream().pressure() );
+			// ... and an edit of one publishes a new snapshot for it alone.
+			MpeExpressionStream edited = copy.mpeStream();
+			edited.setPressure( { { 0, 11 } } );
+			copy.setMpeStream( edited );
+			QCOMPARE( streamed.mpeStream().pressure()[0].value, 64 );
+			QCOMPARE( copy.mpeStream().pressure()[0].value, 11 );
+		}
+
+		QCOMPARE( allocations, 0ull );
+		QCOMPARE( frees, 0ull );
+	}
+
+	//! Q050-016 round 2 (LLP64): stream-point frame offsets stay exact past
+	//! 2^31 frames, where a 32-bit `long` (Windows) truncates them.
+	void streamPointOffsetsStay64BitPast2ToThe31Frames()
+	{
+		using namespace lmms;
+
+		// tick * framesPerTick overflows 32 bits: 100000 * 24000 = 2.4e9.
+		const f_cnt_t at = NotePlayHandle::mpeStreamPointOffset(
+			100000, 0, static_cast<f_cnt_t>( 3000000000ULL ), 0, 24000.0 );
+		QCOMPARE( at, static_cast<f_cnt_t>( 2400000000ULL ) );
+		QVERIFY( at > static_cast<f_cnt_t>( 2147483647ULL ) );
+
+		// ... and so does a period that STARTS past 2^31: the point at tick
+		// 208334 names frame 208334 * 24000 = 5000016000, 100 into the period.
+		const f_cnt_t late = NotePlayHandle::mpeStreamPointOffset(
+			208334, static_cast<f_cnt_t>( 5000015900ULL ), 4096, 7, 24000.0 );
+		QCOMPARE( late, static_cast<f_cnt_t>( 107 ) );
+
+		// A point before the period clamps to its start; one past its end is
+		// not in it.
+		QCOMPARE( NotePlayHandle::mpeStreamPointOffset( 0,
+				static_cast<f_cnt_t>( 5000015900ULL ), 4096, 7, 24000.0 ),
+			static_cast<f_cnt_t>( 7 ) );
+		QCOMPARE( NotePlayHandle::mpeStreamPointOffset( 10, 0, 100, 0, 24000.0 ),
+			NotePlayHandle::kNoMpeStreamOffset );
 	}
 };
 

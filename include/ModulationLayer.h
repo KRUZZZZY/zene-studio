@@ -202,6 +202,10 @@ public:
 	//! Appends (or inserts at @a index) and returns the modulator's index, or
 	//! -1 when the layer is full. @a source must be valid.
 	int addModulator(const QString& name, const ModulatorSource& source);
+	/*! Inserts @a modulator at @a index, or false when the layer is full, when
+	 *  @a modulator carries more routes than MaxRoutesPerModulator, or when its
+	 *  source is not a valid one - the same bound and the same source rule
+	 *  addModulator() is held to. */
 	bool insertModulator(int index, const Modulator& modulator);
 	bool removeModulator(int index);
 	bool setSource(int index, const ModulatorSource& source);
@@ -212,6 +216,14 @@ public:
 	bool insertRoute(int modulator, int route, const ModulationRoute& incoming);
 	bool removeRoute(int modulator, int route);
 	bool setDepth(int modulator, int route, float depth);
+	//! R1.3's flag on an existing route: evaluate it inside each block, or once per block.
+	bool setPerSample(int modulator, int route, bool perSample)
+	{
+		Modulator* const entry = this->modulator(modulator);
+		if (entry == nullptr || route < 0 || route >= entry->routeCount()) { return false; }
+		entry->routes[static_cast<std::size_t>(route)].perSample = perSample;
+		return true;
+	}
 
 	//! Replaces every route's depth with 0. Used by the deactivate paths.
 	void zeroDepths();
@@ -330,6 +342,12 @@ inline float modulatedValue(const ModulatorSource& source, float base, float dep
  *  forgotten publish is impossible, and a reader that copies a fixed-size value
  *  and re-checks the version, retrying while a write is in progress but never
  *  blocking.
+ *
+ *  The write window holds the view swap and the trigger state that belongs to
+ *  that view, and nothing else. The publication work - including the wait for
+ *  the audio writes that pinned a target an edit rebinds - happens before it,
+ *  so a reader never retries for as long as an edit takes: the retry would be
+ *  bounded by the writer, not by the audio thread.
  */
 class LMMS_EXPORT ModulationLayerPublisher
 {
@@ -344,13 +362,34 @@ public:
 	/*! One mutation of the layer, published the moment it lands. @a fn receives
 	 *  the authored layer and the runtime to rebuild; it returns true when it
 	 *  changed the layer. Callers that only clear stale write targets pass
-	 *  false. */
+	 *  false.
+	 *
+	 *  The mutation and the publication work happen OUTSIDE the reader-visible
+	 *  write window: only the view swap and its paired trigger state are inside
+	 *  it. An edit can wait for the audio writes that pinned a target it
+	 *  rebinds, and that wait belongs to the writer and the edit - a reader
+	 *  that retried for the whole edit would spin for as long as the edit
+	 *  takes, which the audio thread cannot bound. The hand-off is bounded:
+	 *  fixed-size copies inside the window. The trigger timing an edit resets
+	 *  (a modulator that starts following another track waits for its first
+	 *  note again) commits HERE, with the view it belongs to: published before
+	 *  the writer wait it would reset the phase of the still-published OLD
+	 *  view, which can keep writing a still-open slot throughout that wait. */
 	template <typename Fn>
 	bool edit(Fn&& fn)
 	{
-		m_version.fetch_add(1, std::memory_order_acq_rel);
 		const bool changed = fn(m_layer, m_runtime);
-		publishView();
+		ModulationAudioView staged;
+		publishView(staged);
+		// The write window: the odd version says "a write is in progress", the
+		// even one says "the view below is the published one". The view swap
+		// and the trigger state it carries land together, both fixed-size - a
+		// reader that retries does so for the length of these copies, never
+		// for the length of an edit.
+		m_version.fetch_add(1, std::memory_order_acq_rel);
+		m_view = staged;
+		m_hasLayer.store(m_layer.shouldPersist(), std::memory_order_release);
+		publishTriggers();
 		m_version.fetch_add(1, std::memory_order_acq_rel);
 		return changed;
 	}
@@ -458,10 +497,15 @@ private:
 	}
 	static void retireTarget(std::atomic<std::uint32_t>& alive, std::atomic<std::uint64_t>& writers,
 		std::uint32_t token);
-	//! Rebuilds m_view and the liveness watches from m_runtime (control thread,
-	//! inside edit()'s write window).
-	void publishView();
-	//! MX-121: each modulator's trigger track from m_runtime (control thread, from publishView()).
+	//! Rebuilds the staged view and the liveness watches from m_runtime (control
+	//! thread, OUTSIDE the reader-visible write window: the writer quiescence
+	//! this waits for belongs to the edit, not to the audio thread). Touches no
+	//! reader-visible state - the view and its trigger state commit together in
+	//! edit().
+	void publishView(ModulationAudioView& staged);
+	//! MX-121: each modulator's trigger track from m_runtime (control thread,
+	//! from edit(), INSIDE the reader-visible write window so the timing an
+	//! edit resets stays paired with the view it belongs to).
 	void publishTriggers();
 
 	ModulationLayer m_layer{};
@@ -470,6 +514,7 @@ private:
 	std::array<std::atomic<std::uint32_t>, ModulationRuntime::MaxEntries> m_alive{};
 	mutable std::array<std::atomic<std::uint64_t>, ModulationRuntime::MaxEntries> m_targetWriters{};
 	std::array<QMetaObject::Connection, ModulationRuntime::MaxEntries> m_watch{};
+	std::array<QMetaObject::Connection, ModulationRuntime::MaxEntries> m_instrumentWatch{};
 	std::uint32_t m_nextToken = 0;
 	std::atomic<bool> m_hasLayer{false};
 	//! MX-121: each modulator's trigger track (-1: none) as of the last edit, the song time of its

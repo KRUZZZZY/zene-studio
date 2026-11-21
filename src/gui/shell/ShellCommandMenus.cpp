@@ -25,10 +25,12 @@
 #include "ShellCommandMenus.h"
 
 #include <algorithm>
+#include <utility>
 
 #include <QJsonArray>
 #include <QMenu>
 
+#include "ArticulationMapEditor.h"
 #include "ChannelPickDialog.h"
 #include "CommandForm.h"
 #include "AutomationClip.h"
@@ -46,6 +48,7 @@
 #include "InstrumentTrack.h"
 #include "LayoutMenu.h"
 #include "LibraryCommandMenus.h"
+#include "PatcherCanvas.h"
 #include "XyPad.h"
 #include "MidiClip.h"
 #include "Mixer.h"
@@ -57,6 +60,7 @@
 #include "TrackFolder.h"
 #include "ShellLayout.h"
 #include "ShellMenuParts.h"
+#include "ShellRecordMenu.h"
 #include "Song.h"
 #include "WorkspaceMenus.h"
 
@@ -129,20 +133,6 @@ void automationClipMenus(QMenu* menu, Clip* clip)
 	add(menu, "Point Curve...", "automation.set_curve", self, true, {{QStringLiteral("curve"), QStringLiteral("bend")}});
 }
 
-void recordMenu(QMenu* menu, const QJsonObject& self, bool instrument)
-{
-	QMenu* record = menu->addMenu(tr("Record"));
-	add(record, "Arm", "track.set_arm", with(self, "armed", true), false);
-	add(record, "Arm With Input Channel...", "track.set_arm", with(self, "armed", true), true);
-	add(record, "Disarm", "track.set_arm", with(self, "armed", false), false);
-	record->addSeparator();
-	add(record, "Audio Input...", "record.input_set", {}, true);
-	QMenu* retro = menu->addMenu(tr("Retrospective Capture"));
-	choices(retro, "Keep Listening", "record.retro_capture_arm", "armed", {});
-	if (instrument) { add(retro, "Last MIDI to a New Clip", "midi.retro_capture_to_clip", self, false, {}, true); }
-	add(retro, "Save Last Audio as a Take...", "record.retro_capture_to_take", {}, true, {}, true);
-}
-
 //! The MIDI clips selected in the arranger, by id.
 QJsonArray selectedMidiClips()
 {
@@ -197,7 +187,7 @@ void inputTransformMenu(QMenu* menu, const QJsonObject& self)
 
 void sampleClipMenus(QMenu* menu, Clip* clip, const QJsonObject& self)
 {
-	const auto* sample = static_cast<SampleClip*>(clip);
+	auto* sample = static_cast<SampleClip*>(clip);
 	const QString id = control::clipIdOf(clip);
 	QMenu* warp = menu->addMenu(tr("Tempo and Warp"));
 	choices(warp, "Tempo", "warp.set", "mode", self);
@@ -218,6 +208,14 @@ void sampleClipMenus(QMenu* menu, Clip* clip, const QJsonObject& self)
 	add(process, "Amplify...", "sample.amplify", self, true);
 	add(process, "Reverse", "sample.reverse", self, false);
 	choices(process, "Fade", "sample.fade", "direction", self);
+	// Q050-106: the whole source as mono, or as two mono files. `mono` is an op of
+	// sample.edit_range, so this entry and the Sample Editor's button are one command.
+	const auto frames = static_cast<int>(sample->sample().sampleSize());
+	const bool stereo = frames > 0 && sample->sample().channels() == DEFAULT_CHANNELS;
+	QAction* toMono = add(process, "Convert to Mono", "sample.edit_range",
+		with(with(with(self, "from", 0), "to", frames), "op", QStringLiteral("mono")), false);
+	toMono->setEnabled(toMono->isEnabled() && stereo);
+	SampleEditorDialog::addSplitStereoAction(process, sample, stereo);
 	add(process, "Gain Envelope...", "clip.gain_envelope_set", self, true);
 	add(process, "Clear Gain Envelope", "clip.gain_envelope_set", with(self, "points", QJsonArray()), false);
 	// MX-083 (L10 W3): the clip printed through a chain's devices - its own track's by default.
@@ -261,11 +259,16 @@ void populateTrack(QMenu* menu, Track* track)
 		inputTransformMenu(menu, self);
 		acrossMenu(menu->addMenu(tr("Edit All Clips")), {{QStringLiteral("tracks"), QJsonArray{id}}});
 		// L07 (ED-121): the expression map, its current entries filled in.
-		add(menu, "Articulations...", "track.articulations_set", self, true,
-			{{QStringLiteral("articulations"), dynamic_cast<InstrumentTrack*>(track)->articulations().toJson()}});
+		// Q050-015: the map's editor (create, rename, reorder, remove); each edit in it is track.articulations_set.
+		QAction* articulations = menu->addAction(tr("Articulations..."));
+		articulations->setProperty("controlCommand", QStringLiteral("track.articulations_set"));
+		QObject::connect(articulations, &QAction::triggered, menu, [id] {
+			ArticulationMapEditor::open(id, getGUI() != nullptr ? static_cast<QWidget*>(getGUI()->mainWindow()) : nullptr);
+		});
 		InstrumentCommandMenus::populate(menu, id);  // 0.5.0 F2: output buses, MIDI parts, layers, per-voice modulation
 	}
 	automationMenu(menu, id);
+	trackDelayEntries(menu, track, id);  // Q050-339
 	trackMidiOutEntries(menu, track, self);  // MX-062
 	trackVersionEntries(menu, track, self);  // ED-049
 	QMenu* takes = menu->addMenu(tr("Takes and Comping"));
@@ -280,7 +283,7 @@ void populateTrack(QMenu* menu, Track* track)
 	add(render, "Freeze", "freeze.track", self, false);
 	QMenu* presets = menu->addMenu(tr("Track Preset"));  // L11 (WF-024)
 	add(presets, "Save Preset...", "track.preset_save", self, true);
-	add(presets, "Load Preset...", "track.preset_load", self, true);
+	add(presets, "Load Preset...", "track.preset_load", self, true, {}, true);  // Q050-331: the form shows the bindings it restored
 	LibraryCommandMenus::populateTrack(menu, track);  // L12 (WF-044)
 	if (dynamic_cast<SampleTrack*>(track) != nullptr)
 	{
@@ -375,14 +378,14 @@ void viewOptionsMenu(QMenu* menu)
 {
 	QMenu* view = menu->addMenu(tr("Mixer View"));
 	addMixerWindows(view);  // L08/L09 (MX-131, MX-055)
-	choices(view, "Show Sends", "window.mixer_view", "show_sends", {});
-	choices(view, "Show Pan", "window.mixer_view", "show_pan", {});
-	choices(view, "Show Channel Numbers", "window.mixer_view", "show_number", {});
-	choices(view, "Show Meter Line", "window.mixer_view", "show_meter_info", {});
-	choices(view, "Show Inserts", "window.mixer_view", "show_inserts", {});
-	choices(view, "Show Macro Knobs", "window.mixer_view", "show_macros", {});
+	static const std::pair<const char*, const char*> sections[] = {{"Show Sends", "show_sends"}, {"Show Pan", "show_pan"},
+		{"Show Channel Numbers", "show_number"}, {"Show Meter Line", "show_meter_info"}, {"Show Inserts", "show_inserts"},
+		{"Show Macro Knobs", "show_macros"}};
+	for (const auto& section : sections) { choices(view, section.first, "window.mixer_view", section.second, {}); }
+	choices(view, "Show Console Section", "window.mixer_view", "show_console", {});  // Q050-088
 	choices(view, "Strip Width", "window.mixer_view", "strip_width", {});
 	choices(view, "Show Channels", "window.mixer_view", "filter", {});
+	choices(view, "Follow Arranger Selection", "window.mixer_view", "follow_selection", {});  // MX-021
 	choices(view, "Meter", "window.mixer_view", "meter_mode", {});
 	choices(view, "Meter Scale", "window.mixer_view", "meter_scale", {});
 	choices(view, "Meter Fall-Off", "window.mixer_view", "meter_falloff", {});  // MX-128
@@ -441,6 +444,9 @@ void populateChannel(QMenu* menu, const QString& channel)
 	add(rack, "Wire the Chain...", "patcher.set_wiring", {{QStringLiteral("target"), channel}}, true);
 	add(rack, "Wrap the Chain into a Rack Chain", "rack.wrap", self, false);  // L10 (MX-103)
 	add(rack, "Chain Wiring", "patcher.get_state", {{QStringLiteral("target"), channel}}, false, {}, true);
+	QAction* canvas = rack->addAction(tr("Chain Canvas..."));  // Q050-087: the chain as nodes and cables
+	canvas->setProperty("controlCommand", QStringLiteral("patcher.set_wiring"));
+	QObject::connect(canvas, &QAction::triggered, menu, [channel, menu] { showPatcherCanvas(channel, dialogOwner(menu->window())); });
 	QAction* pad = rack->addAction(tr("XY Pad..."));  // MX-110
 	pad->setProperty("controlCommand", QStringLiteral("rack.macro_set"));
 	QObject::connect(pad, &QAction::triggered, menu, [channel, menu] { (new XyPadDialog(channel, dialogOwner(menu->window())))->show(); });
@@ -456,19 +462,7 @@ void populateChannel(QMenu* menu, const QString& channel)
 	}
 	mixerViewMenu(menu, channel);
 	viewOptionsMenu(menu);
-	// L08: the strip's own settings (mixer.set_strip).
-	QMenu* strip = menu->addMenu(tr("Strip"));
-	choices(strip, "Polarity Left", "mixer.set_strip", "polarity_left", self);
-	choices(strip, "Polarity Right", "mixer.set_strip", "polarity_right", self);
-	choices(strip, "Mono", "mixer.set_strip", "mono", self);
-	choices(strip, "Swap Left and Right", "mixer.set_strip", "swap", self);  // MX-033
-	choices(strip, "Mono Input", "mixer.set_strip", "input_mono", self);  // MX-059
-	add(strip, "EQ...", "mixer.channel_eq", self, true);  // MX-085
-	choices(strip, "Pan Mode", "mixer.set_strip", "pan_mode", self);
-	choices(strip, "Solo Safe", "mixer.set_strip", "solo_safe", self);
-	add(strip, "Trim, Width and Note...", "mixer.set_strip", self, true);
-	add(strip, "Meters", "mixer.strip_get", self, false, {}, true);
-	add(strip, "Clear All Clip Lights", "mixer.clear_clips", {}, false);
+	stripEntries(menu->addMenu(tr("Strip")), channel);  // L08: the strip's own settings (ShellMenuEntries.cpp)
 	// MX-027: every channel at once.
 	add(menu, "Unmute All Channels", "mixer.set_many", {{QStringLiteral("all"), true}, {QStringLiteral("muted"), false}}, false);
 	add(menu, "Clear All Solos", "mixer.set_many", {{QStringLiteral("all"), true}, {QStringLiteral("soloed"), false}}, false);
@@ -521,6 +515,8 @@ void populateProject(QMenu* menu)
 	list(menu, "Groups...", [] { return CommandLists::vcaGroups(); });
 	list(menu, "Grooves...", [] { return CommandLists::grooves(); });
 	menu->addSeparator();
+	list(menu, "Mastering Release...", [] { return CommandLists::masteringSequence(); });  // Q050-317.1
+	list(menu, "Mastering Report...", [] { return CommandLists::masteringReport(); });
 	add(menu, "Auto-Master...", "mastering.run", {}, true);
 	add(menu, "Mastering Status", "mastering.get_state", {}, false, {}, true);
 	choices(menu, "Loudness Meter", "meter.arm", "enabled", {});
@@ -530,28 +526,6 @@ void populateProject(QMenu* menu)
 	list(menu, "Safe Start...", [] { return CommandLists::safeStart(); });
 	LibraryCommandMenus::populateProject(menu);  // L11 / L12 (W3)
 	populateCustomise(menu->addMenu(tr("Customise")));
-}
-
-void populateCustomise(QMenu* menu)
-{
-	list(menu, "Keyboard Shortcuts...", [] { return CommandLists::shortcuts(); });
-	list(menu, "Workflows...", [] { return CommandLists::macros(); });
-	list(menu, "MIDI Mappings...", [] { return CommandLists::controllerMappings(); });
-	list(menu, "Mapping Templates...", [] { return CommandLists::mappingTemplates(); });
-	LayoutMenu::populate(menu->addMenu(tr("Window Layouts")));
-	QMenu* surface = menu->addMenu(tr("Control Surface (Mackie Control)"));
-	add(surface, "Connect...", "surface.mcu_connect", {}, true);
-	add(surface, "Ports", "surface.mcu_ports", {}, false, {}, true);
-	add(surface, "State", "surface.mcu_state", {}, false, {}, true);
-	add(surface, "Disconnect", "surface.mcu_disconnect", {}, false);
-	QMenu* pop = menu->addMenu(tr("Pop Out Panel"));
-	for (const ShellPanelSpec& spec : ShellLayout::panels())
-	{
-		const QJsonObject panel{{QStringLiteral("panel"), spec.id}};
-		addCommandAction(pop, spec.title, QStringLiteral("window.detach"),
-			[panel] { return CommandCall{QStringLiteral("window.detach"), panel, {}, QString(), false}; });
-	}
-	populateCustomiseExtras(menu);  // 0.5.0 W3: theme, density, settings (WorkspaceMenus.cpp)
 }
 
 } // namespace lmms::gui::ShellCommandMenus

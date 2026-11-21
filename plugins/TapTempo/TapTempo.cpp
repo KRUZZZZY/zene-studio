@@ -96,8 +96,9 @@ void TapTempo::updateTempo(clock::time_point now)
 	if (m_taps >= MaxIntervals)
 	{
 		// calculate the median of the stored intervals to reject outliers
-		std::nth_element(m_intervals.begin(), m_intervals.begin() + m_intervals.size() / 2, m_intervals.end());
-		const auto newBpm = millisecondsPerMinute / m_intervals[m_intervals.size() / 2].count();
+		auto sortedIntervals = m_intervals;
+		std::nth_element(sortedIntervals.begin(), sortedIntervals.begin() + sortedIntervals.size() / 2, sortedIntervals.end());
+		const auto newBpm = millisecondsPerMinute / sortedIntervals[sortedIntervals.size() / 2].count();
 
 		// use an adaptive EMA to smooth out jitter when in the ballpark and update quickly when moving to a new BPM
 		const auto error = std::abs(newBpm - m_bpm);

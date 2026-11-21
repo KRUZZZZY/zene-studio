@@ -94,16 +94,18 @@ bool build(Captured* c)
 	clip->changeLength(TimePos(c->length));
 	clip->setAutoResize(false);
 	clip->dataChanged();
+	const SessionModel before = song->sessionModel();
 	ClipSlot& slot = song->sessionModel().slot(c->track, c->scene);
 	slot.setPatternReference(pattern);
 	slot.setName(QObject::tr("Recorded %1").arg(pattern + 1));
 	c->pattern = patternTrack->id();
+	syncLauncherFrom(before);  // Q050-489: a playing cell sounds its new pattern
 	return true;
 }
 
 void unbuild(Captured* c)
 {
-	if (Song* song = Engine::getSong()) { restoreSessionBlock(song->sessionModel(), c->session); }
+	if (Song* song = Engine::getSong()) { restoreSessionBlockAndSync(*song, c->session); }
 	if (Track* track = trackWithId(c->pattern)) { removeTrack(track); }
 	c->pattern = -1;
 }

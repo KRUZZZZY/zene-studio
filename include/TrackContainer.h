@@ -28,8 +28,11 @@
 
 #include <QReadWriteLock>
 #include <QVector>
+#include <cstdint>
+#include <vector>
 
 #include "Track.h"
+#include "AutomationLatency.h"
 #include "JournallingObject.h"
 #include "UnclaimedElements.h"
 
@@ -37,6 +40,7 @@ namespace lmms
 {
 
 class AutomationClip;
+class AutomationRenderScratch;
 class InstrumentTrack;
 
 namespace gui
@@ -83,6 +87,20 @@ public:
 	{
 		return m_tracks;
 	}
+
+	/*! The track's position in this container, or -1 when it is not one of its
+	 *  tracks. The position is maintained as tracks are added, removed and
+	 *  reordered, so the audio thread's per-period route lookup never scans the
+	 *  song (the input monitor asks for it once per monitored track per period). */
+	int trackIndex( const Track * _track ) const;
+
+#ifdef LMMS_TESTING
+	//! Candidate tracks trackIndex() examined since the last reset - the seam
+	//! that proves the audio-thread lookup does not scan the song. 0 when the
+	//! position is maintained rather than searched for.
+	static std::uint64_t trackIndexScanCount() noexcept;
+	static void resetTrackIndexScanCount() noexcept;
+#endif
 
 	/*! The track whose stable id (the number in trk-<n>) is \a id, or nullptr.
 	 *  Addressing by id and never by position - the same rule every trk-<n>
@@ -195,7 +213,21 @@ public:
 		return m_TrackContainerType;
 	}
 
-	virtual AutomatedValueMap automatedValuesAt(TimePos time, int clipNum = -1) const;
+	AutomatedValueMap automatedValuesAt(TimePos time, int clipNum = -1) const;
+	//! The same read against one pinned AutomationLatency snapshot (the control thread pins one itself).
+	AutomatedValueMap automatedValuesAt(TimePos time, int clipNum,
+		const AutomationLatency::ReadSnapshot& snapshot) const;
+
+	/*! The automation read itself, into \a level (cleared first): the value every automated model has at
+	 *  \a time, ordered by model. \a inner is the scratch a pattern clip's own read nests in; null for a
+	 *  container that holds no pattern clips. With bounded scratches this allocates nothing, which is
+	 *  what Song::processAutomations needs on the audio thread. A Song adds its global automation track and
+	 *  a PatternStore clamps the time to its pattern, so each overrides this and not automatedValuesAt.
+	 *  The 4-argument form pins the current latency snapshot once; an audio period passes its own. */
+	void fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
+		TimePos time, int clipNum = -1) const;
+	virtual void fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
+		TimePos time, int clipNum, const AutomationLatency::ReadSnapshot& snapshot) const;
 
 signals:
 	void trackAdded( lmms::Track * _track );
@@ -239,7 +271,11 @@ protected:
 		return name;
 	}
 
-	static AutomatedValueMap automatedValuesFromTracks(const TrackList &tracks, TimePos timeStart, int clipNum = -1);
+	//! Adds \a track's clips for a read at \a time (the pattern editor's \a clipNum, or every clip up to it).
+	static void gatherAutomationClips(AutomationRenderScratch& level, Track* track, TimePos time, int clipNum);
+	//! Turns the clips gathered in \a level into its values: absolute clips, then pattern clips, then relative ones.
+	static void collectAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner, TimePos time,
+		const AutomationLatency::ReadSnapshot& snapshot);
 
 	mutable QReadWriteLock m_tracksMutex;
 

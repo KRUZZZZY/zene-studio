@@ -166,31 +166,43 @@ private:
 		m_editor->run(QStringLiteral("note.select"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("notes"), ids}});
 	}
 
-	//! The selected notes' values @a delta up: one note.edit for a note.edit lane, the cursor note's
-	//! note.expression_set for an MPE lane - one undo step either way.
+	//! Every selected note's value @a delta up, in ONE note.edit - the MPE axes included, which
+	//! note.edit carries as timbre/pressure/pitch. One key press is one undo step, and a selected
+	//! note the cursor is not on changes with the rest (Q050-099).
 	void change(int delta)
 	{
 		const NoteLane lane = state().lane;
+		const QString field = noteEditField(lane);
 		QJsonArray edits;
 		for (const Note* note : m_editor->clip()->notes())
 		{
 			if (!note->selected()) { continue; }
-			const notelanes::Write write = notelanes::writeFor(lane, m_editor->clipId(), control::noteIdOf(note),
-				notelanes::valueOf(*note, lane) + delta);
-			if (write.command != QLatin1String("note.edit")) { break; }  // an MPE lane: the cursor alone, below
-			edits.append(write.args.value(QStringLiteral("edits")).toArray().at(0));
+			const int value = notelanes::clamp(lane, notelanes::valueOf(*note, lane) + delta);
+			const double stored = lane == NoteLane::Chance || lane == NoteLane::Spread ? value / 100.0 : value;
+			edits.append(QJsonObject{{QStringLiteral("note"), control::noteIdOf(note)}, {field, stored}});
 		}
 		if (!edits.isEmpty())
 		{
 			m_editor->run(QStringLiteral("note.edit"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("edits"), edits}});
-			return;
 		}
-		if (const Note* note = cursor())
+	}
+
+	//! The note.edit field a lane writes: the MPE lanes became batch-editable with note.edit in Q050-099.
+	static QString noteEditField(NoteLane lane)
+	{
+		switch (lane)
 		{
-			const notelanes::Write write = notelanes::writeFor(lane, m_editor->clipId(), control::noteIdOf(note),
-				notelanes::valueOf(*note, lane) + delta);
-			m_editor->run(write.command, write.args);
+			case NoteLane::Velocity: return QStringLiteral("velocity");
+			case NoteLane::Pan: return QStringLiteral("pan");
+			case NoteLane::Chance: return QStringLiteral("probability");
+			case NoteLane::Release: return QStringLiteral("release_velocity");
+			case NoteLane::Spread: return QStringLiteral("velocity_spread");
+			case NoteLane::Repeats: return QStringLiteral("repeats");
+			case NoteLane::Timbre: return QStringLiteral("timbre");
+			case NoteLane::Pressure: return QStringLiteral("pressure");
+			case NoteLane::Pitch: return QStringLiteral("pitch");
 		}
+		return QStringLiteral("velocity");
 	}
 
 	QString value() const
@@ -199,7 +211,10 @@ private:
 		const NoteLaneSpec spec = notelanes::spec(state().lane);
 		const Note* note = cursor();
 		if (note == nullptr) { return tr("%1: no note selected").arg(spec.title); }
-		return tr("%1 %2%3 - %4").arg(spec.title).arg(notelanes::valueOf(*note, state().lane)).arg(spec.unit, notekeys::describe(*note));
+		int selected = 0;
+		for (const Note* candidate : m_editor->clip()->notes()) { selected += candidate->selected() ? 1 : 0; }
+		return tr("%1 %2%3, %4 selected - %5").arg(spec.title).arg(notelanes::valueOf(*note, state().lane))
+			.arg(spec.unit).arg(selected).arg(notekeys::describe(*note));
 	}
 
 	QRect mark() const

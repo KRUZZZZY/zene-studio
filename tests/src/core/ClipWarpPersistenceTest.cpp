@@ -124,6 +124,22 @@ QString withoutJournallingIds(const QString& text)
 	return out;
 }
 
+//! A `<warp>` child holding \a count strictly increasing markers, in the shape
+//! saveWarp writes them.
+QDomElement warpWithMarkers(QDomDocument& doc, int count)
+{
+	QDomElement warp = doc.createElement("warp");
+	warp.setAttribute("mode", "follow");
+	for (int i = 0; i < count; ++i)
+	{
+		QDomElement node = doc.createElement("marker");
+		node.setAttribute("src", QString::number(1000 * (i + 1)));
+		node.setAttribute("pos", QString::number(i + 1));
+		warp.appendChild(node);
+	}
+	return warp;
+}
+
 QStringList attributeNames(const QDomElement& element)
 {
 	QStringList names;
@@ -286,6 +302,55 @@ private slots:
 		QCOMPARE(warped->sourceTempo(), 0.0f);
 		QVERIFY(warped->rendersLinearly());
 	}
+
+		//! BUG 10 (new-p16-325). A `<warp>` with more markers than
+		//! WarpMarkers::MaxMarkers used to load its first MaxMarkers entries and
+		//! drop the rest without a word, so the next save wrote a smaller map.
+		//! The prefix still loads (the audio is what it was) but the load must
+		//! now report the loss through Song::collectError, the channel the
+		//! non-increasing warp rejection already uses. Without the report this
+		//! fails on hasErrors().
+		void anOversizedWarpMapLoadsItsPrefixAndReportsTheLoss()
+		{
+			Engine::getSong()->clearErrors();
+			const int oversized = WarpMarkers::MaxMarkers + 1;
+
+			SampleTrack track(Engine::getSong());
+			auto* clip = makeClip(track, m_rate);
+			QDomDocument doc;
+			QDomElement parent = doc.createElement("track");
+			QDomElement element = clip->saveState(doc, parent);
+			element.insertBefore(warpWithMarkers(doc, oversized), element.firstChild());
+
+			SampleTrack reloadedTrack(Engine::getSong());
+			auto* reloaded = makeClip(reloadedTrack, m_rate);
+			reloaded->restoreState(element);
+
+			QCOMPARE(reloaded->warpMarkers().size(), WarpMarkers::MaxMarkers);
+			QVERIFY(Engine::getSong()->hasErrors());
+			QVERIFY(Engine::getSong()->errorSummary().contains(QString::number(oversized)));
+		}
+
+		//! The boundary: a map of exactly MaxMarkers is whole. It loads in full
+		//! and reports nothing.
+		void aWarpMapAtTheLimitLoadsWholeWithoutAReport()
+		{
+			Engine::getSong()->clearErrors();
+
+			SampleTrack track(Engine::getSong());
+			auto* clip = makeClip(track, m_rate);
+			QDomDocument doc;
+			QDomElement parent = doc.createElement("track");
+			QDomElement element = clip->saveState(doc, parent);
+			element.insertBefore(warpWithMarkers(doc, WarpMarkers::MaxMarkers), element.firstChild());
+
+			SampleTrack reloadedTrack(Engine::getSong());
+			auto* reloaded = makeClip(reloadedTrack, m_rate);
+			reloaded->restoreState(element);
+
+			QCOMPARE(reloaded->warpMarkers().size(), WarpMarkers::MaxMarkers);
+			QVERIFY(!Engine::getSong()->hasErrors());
+		}
 
 private:
 	int m_rate = 44100;

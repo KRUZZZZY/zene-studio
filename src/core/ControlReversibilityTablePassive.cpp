@@ -98,6 +98,11 @@ const ReversibilityRow kPassiveRows[] = {
 		"nothing to inverse. export.set_dither and export.set_src_quality are "
 		"the writers, and both carry an action checkpoint",
 		""),
+	R("link.audio_get_state", RC::NotMutating, false,
+		"a read of the PCM audio stream's configuration and counters (Q050-024): it writes nothing, "
+		"so there is no transaction",
+		"nothing to inverse. link.audio_set_enabled is the writer and carries an action checkpoint",
+		""),
 	R("link.get_state", RC::NotMutating, false,
 		"a read of the session-sync state (whether sync is on, the peers, the "
 		"session tempo and revision owner, the shared beat and its phase, this "
@@ -192,6 +197,14 @@ const ReversibilityRow kPassiveRows[] = {
 		"consent record at all",
 		""),
 #endif // ZENE_TELEMETRY_ENABLED
+	R("sample.split_stereo", RC::NotMutating, false,
+		"it writes two OUTPUT FILES - the clip's left and right channels as mono WAVs - and "
+		"changes nothing in the session: the source buffer, the clip's window, its timing and "
+		"its playback settings are all untouched, so there is no checkpoint to take and one "
+		"control.undo would (correctly) undo an older edit",
+		"the project is unchanged; the two files are outputs, not project state, and "
+		"overwriting them is the caller's decision",
+		""),
 	R("render.render", RC::NotMutating, false,
 		"it writes an OUTPUT ARTEFACT; the session it renders is not modified "
 		"(it serialises to a temp file and removes it). A render RANGE "
@@ -206,6 +219,16 @@ const ReversibilityRow kPassiveRows[] = {
 		"fallback for a render made with the wrong span or settings is to render "
 		"again",
 		""),
+	R("render.realtime", RC::NotMutating, false,
+		"it writes an OUTPUT ARTEFACT and changes nothing in the project: it plays the song once "
+		"through the running device and keeps the master mix. The loop switch and the metronome "
+		"are turned off for the pass and put back as they were, and the transport is stopped "
+		"after it, as a Stop would; no clip, model or setting is written, so there is no "
+		"checkpoint to take (Q050-089.2)",
+		"the project is unchanged; the rendered file is an output, not project state, and "
+		"overwriting it is the caller's decision. A pass already played is not undone by "
+		"anything here: to change it, render again",
+		""),
 	R("render.stems", RC::NotMutating, false,
 		"it writes OUTPUT ARTEFACTS - one file per unmuted track - and nothing "
 		"else: the export runs in a child process against a serialised copy of "
@@ -216,6 +239,20 @@ const ReversibilityRow kPassiveRows[] = {
 		"one every render-running command carries: the child blocks the dispatch "
 		"thread for up to waitForFinished(600000), so the control surface does "
 		"not answer until the export finishes (docs/RENDER-CHILD-WAIT.md:120-126, "
+		"docs/KNOWN-LIMITATIONS.md)",
+		""),
+	R("render.sections", RC::NotMutating, false,
+		"it writes OUTPUT ARTEFACTS - one bounded file per named section - and "
+		"nothing else: each section is rendered through render.render in a child "
+		"process against a serialised copy of the session, so no project state, "
+		"clip, section list or model in this instance is touched and there is "
+		"nothing for a checkpoint to capture",
+		"the project and its sections are unchanged; the files are outputs, not "
+		"project state, and overwriting them is the caller's decision. Its "
+		"DECLARED BOUND is the one every render-running command carries, repeated "
+		"once per section: each child blocks the dispatch thread for up to "
+		"waitForFinished(600000), so the control surface does not answer until "
+		"the export finishes (docs/RENDER-CHILD-WAIT.md:120-126, "
 		"docs/KNOWN-LIMITATIONS.md)",
 		""),
 	R("bounce.in_place", RC::NotMutating, false,
@@ -231,6 +268,8 @@ const ReversibilityRow kPassiveRows[] = {
 	R("app.version", RC::NotMutating, false, "reads the build identity", "no write", ""),
 	R("arrangement.get_state", RC::NotMutating, false, "reads the model", "no write", ""),
 	R("audio.device_list", RC::NotMutating, false, "reads the device table", "no write", ""),
+	R("audio.test_tone", RC::NotMutating, false, "it plays a short tone through the running output: session audio, not the project", "no write (audio.test_tone_stop)", ""),
+	R("audio.test_tone_stop", RC::NotMutating, false, "it stops the test tone: session audio", "no write", ""),
 	R("automation.get_state", RC::NotMutating, false, "reads the model", "no write", ""),
 	R("project.undo_history", RC::NotMutating, false,
 		"reads whether the project saves its undo history, the caps, what a save would keep now and what the last save and load did - and writes nothing",
@@ -347,6 +386,16 @@ const ReversibilityRow kPassiveRows[] = {
 		"calls", ""),
 	R("browser.tags", RC::NotMutating, false,
 		"reads the tag store and the vocabulary derived from it", "no write", ""),
+	// 0.5.0 L11 (WF-007): the category facet's vocabulary read, beside the tags.
+	R("browser.categories", RC::NotMutating, false,
+		"reads the tag store's categories table and the vocabulary derived "
+		"from it", "no write", ""),
+	R("browser.peaks_start", RC::NotMutating, false,
+		"reads the audio file on a worker and fills the same peak cache browser.peaks "
+		"fills: a memory-resident derived view of the file, neither project state nor "
+		"written to disk; a cancelled job fills nothing",
+		"no write: an entry is dropped when the file changes, and the whole "
+		"cache is bounded", ""),
 	R("browser.peaks", RC::NotMutating, false,
 		"opens the audio file and fills the peak cache: the cache is a "
 		"memory-resident derived view of the file, keyed on its path and last "
@@ -403,6 +452,12 @@ const ReversibilityRow kPassiveRows[] = {
 		"the notes of a clip that carry one",
 		"no write: note.expression_set and note.expression_clear are the "
 		"writers, and both carry a MidiClip checkpoint", ""),
+
+	R("note.expression_stream_get", RC::NotMutating, false,
+		"reads a note's time-varying MPE expression stream (Q050-016's point "
+		"lists) and nothing else",
+		"no write: note.expression_stream_set is the writer, and it carries a "
+		"MidiClip checkpoint", ""),
 
 	// Punch in/out and the take journal's inspectors (0.3.0).
 	R("transport.punch_get_state", RC::NotMutating, false,

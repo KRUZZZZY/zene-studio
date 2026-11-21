@@ -1,4 +1,4 @@
-# Offline stem separation GUI (opt-in, see doc/STEM-SPLIT.md).
+# Offline stem separation GUI (on by default, owner decision 14; see doc/STEM-SPLIT.md).
 IF(LMMS_HAVE_STEM_SPLIT)
 	SET(LMMS_STEM_GUI_SRCS
 		gui/StemSplitController.cpp
@@ -18,6 +18,11 @@ IF(ZENE_TELEMETRY_ENABLED)
 	SET(LMMS_TELEMETRY_GUI_SRCS
 		gui/TelemetryConsentDialog.cpp
 	)
+ENDIF()
+# Q050-501: the update question and notice travel with the checker.
+SET(LMMS_UPDATE_CHECK_GUI_SRCS)
+IF(ZENE_UPDATE_CHECK_ENABLED)
+	SET(LMMS_UPDATE_CHECK_GUI_SRCS gui/UpdateCheckWindows.cpp)
 ENDIF()
 # The collaboration panel (0.5.0 F6) needs the session, which needs Qt Network.
 SET(LMMS_COLLAB_GUI_SRCS)
@@ -56,7 +61,12 @@ SET(LMMS_SRCS
 	gui/ControlCommandsSelection.cpp
 	# M3.2: the main window's own verbs (fullscreen, dialogs, save as new version).
 	gui/ControlCommandsShell.cpp
+	gui/ControlCommandsPluginActions.cpp
 	gui/ControlCommandsShortcuts.cpp
+	# Q050-055.1 x Q050-202: the shortcuts.* registration table, split from the handlers above.
+	gui/ControlCommandsShortcutsRegister.cpp
+	# 0.5.0 L13 stage 1: automation.editor_mode, the automation editor's edit modes.
+	gui/ControlCommandsAutomationMode.cpp
 	gui/ControlCommandsArrangerView.cpp
 	gui/ControlCommandsLayouts.cpp
 	gui/ControlCommandsMixerView.cpp
@@ -71,6 +81,10 @@ SET(LMMS_SRCS
 	gui/WorkspaceWindows.cpp
 	gui/ControlCommandsViewMemory.cpp
 	gui/ArrangerAids.cpp
+	# 0.5.0 Q050-141: a finger's tap and drag as the mouse gesture the widgets already handle.
+	gui/TouchInput.cpp
+	# 0.5.0 L14 (Q050-321.1): the fingers of a multi-touch performance surface, each an independent note.
+	gui/TouchContacts.cpp
 	gui/AccessibilityAudit.cpp
 	gui/AccessibleMode.cpp
 	gui/AccessibleWidgets.cpp
@@ -107,6 +121,7 @@ SET(LMMS_SRCS
 	gui/CommandLists.cpp
 	gui/InstrumentCommandMenus.cpp
 	gui/LayerRackPanel.cpp
+	gui/DrumRackPanel.cpp
 	gui/LibraryCommandMenus.cpp
 	gui/ReferenceProjectPanel.cpp
 	gui/CompSwipeStrip.cpp
@@ -114,13 +129,20 @@ SET(LMMS_SRCS
 	gui/CommandPalette.cpp
 	gui/MacroMenu.cpp
 	gui/MacroKnobs.cpp
+	gui/ConsoleStripSection.cpp
+	gui/InputChannelMeters.cpp
 	gui/MenuBarExtras.cpp
 	gui/RecordLaunchMenus.cpp
+	# Q050-156: the sampler views' "Record take" button, over the same registered record.sampler_capture* commands.
+	gui/SamplerTakeButton.cpp
+	gui/PanelShortcuts.cpp
 	gui/ShortcutMap.cpp
+	gui/ShortcutPresets.cpp
 	gui/UiConfigStore.cpp
 	gui/PluginNativeEditor.cpp
 	gui/SessionGridMenus.cpp
 	gui/SessionGridView.cpp
+	gui/SessionAnnouncements.cpp
 	gui/SessionGridCells.cpp
 	gui/SessionGridDrop.cpp
 	gui/SessionGridSelect.cpp
@@ -130,9 +152,14 @@ SET(LMMS_SRCS
 	gui/ShortcutsPage.cpp
 	gui/StartHub.cpp
 	gui/TakeLanesPanel.cpp
+	gui/TakeWaveform.cpp
 	gui/ModulatorPanel.cpp
 	gui/TempoMapPanel.cpp
+	# Q050-154: Edit > Live Code - the livecode.* schedule group from the interface.
+	gui/LivecodePanel.cpp
+	gui/ChordProgressionPanel.cpp
 	gui/TrackFolderMenu.cpp
+	gui/TrackRoleMenu.cpp
 	gui/TrackPinStrip.cpp
 	gui/TrackRenderMenu.cpp
 	gui/AafImportMenu.cpp
@@ -160,6 +187,7 @@ SET(LMMS_SRCS
 	gui/SampleRangeFields.cpp
 	gui/SampleSelectionView.cpp
 	gui/ControlCommandsSampleEditor.cpp
+	gui/MixerMaskingReport.cpp
 	gui/MixerWindows.cpp
 	gui/InputLevelMeter.cpp
 	gui/PhaseScopeView.cpp
@@ -175,10 +203,16 @@ SET(LMMS_SRCS
 	gui/noteeditor/ItemListNoteSources.cpp
 	gui/noteeditor/NoteCanvasAccess.cpp
 	gui/noteeditor/NoteKeyNav.cpp
+	gui/noteeditor/ArticulationMapEditor.cpp
+	gui/instrument/ExternalDeviceCard.cpp
 	gui/noteeditor/NoteLaneKeys.cpp
 	gui/noteeditor/NoteEditor.cpp
 	gui/noteeditor/NoteEditorParts.cpp
 	gui/noteeditor/NoteEditorMenus.cpp
+	# Q050-294.2: the melodic step grid (window.step_grid) over note.step_get_state / note.step_set.
+	gui/noteeditor/StepGridPanel.cpp
+	gui/noteeditor/StepGridCanvas.cpp
+	gui/ControlCommandsStepGrid.cpp
 	gui/noteeditor/NoteEditorToolbar.cpp
 	gui/noteeditor/NoteGrid.cpp
 	gui/noteeditor/NoteProperties.cpp
@@ -189,6 +223,8 @@ SET(LMMS_SRCS
 	gui/shell/DeviceActionMenu.cpp
 	gui/shell/DeviceCardState.cpp
 	gui/shell/DevicePicker.cpp
+	gui/PatcherCanvas.cpp
+	gui/PatcherGraph.cpp
 	gui/MissingDevicesNotice.cpp
 	gui/shell/DevicePanel.cpp
 	gui/shell/InspectorClipFields.cpp
@@ -199,7 +235,9 @@ SET(LMMS_SRCS
 	gui/shell/Shell.cpp
 	gui/shell/ShellChrome.cpp
 	gui/shell/ShellCommandMenus.cpp
+	gui/shell/ShellCommandMenusCustomise.cpp
 	gui/shell/ShellMenuParts.cpp
+	gui/shell/ShellRecordMenu.cpp
 	gui/shell/ShellMenuEntries.cpp
 	gui/shell/ShellFloating.cpp
 	gui/shell/ShellTearOff.cpp
@@ -212,6 +250,7 @@ SET(LMMS_SRCS
 	gui/shell/ShellPanel.cpp
 	gui/shell/ShellSelection.cpp
 	gui/shell/TransportReadouts.cpp
+	gui/shell/CpuDiagnosticsDialog.cpp
 	gui/shell/WaveformPreview.cpp
 	gui/GuiApplication.cpp
 	gui/LadspaControlView.cpp
@@ -229,8 +268,10 @@ SET(LMMS_SRCS
 	gui/ChainPresetMenu.cpp
 	gui/ChannelPickDialog.cpp
 	gui/BrowserSearchView.cpp
+	gui/BrowserSearchViewMedia.cpp
 	gui/BrowserResults.cpp
 	gui/ClipEditsMenu.cpp
+	gui/ClipEffectsDialog.cpp
 	gui/CrashReportMenu.cpp
 	gui/EffectDeviceMenu.cpp
 	gui/EffectHostingMenu.cpp
@@ -242,6 +283,7 @@ SET(LMMS_SRCS
 	gui/RackMenu.cpp
 	gui/RecordingRecoveryMenu.cpp
 	gui/RenderPresetMenu.cpp
+	gui/RenderRangeMenu.cpp
 	gui/ScriptBudgetAction.cpp
 	gui/SessionTuningMenu.cpp
 	gui/MidiSetupWidget.cpp
@@ -249,6 +291,7 @@ SET(LMMS_SRCS
 	gui/NoteTransformActions.cpp
 	gui/MixerChannelView.cpp
 	gui/MixerHardwareMenu.cpp
+	gui/MixerBusFreezeMenu.cpp  # Q050-124
 	gui/TaskIndicator.cpp
 	gui/widgets/ControlCues.cpp
 	gui/SurroundPanner.cpp
@@ -256,9 +299,12 @@ SET(LMMS_SRCS
 	gui/MixerSendsBanner.cpp
 	gui/MixerStripInfo.cpp
 	gui/MixerStripTags.cpp
+	gui/MeterSpeech.cpp
 	gui/MixerModeBar.cpp
+	gui/MixerModeBarLayout.cpp
 	gui/MixerRoutingMatrix.cpp
 	gui/MixerViewOptions.cpp
+	gui/MixerZones.cpp
 	gui/MixerView.cpp
 	gui/ModelView.cpp
 	gui/PeakControllerDialog.cpp
@@ -284,6 +330,7 @@ SET(LMMS_SRCS
 	gui/clips/MidiClipView.cpp
 	gui/clips/PatternClipView.cpp
 	gui/clips/SampleClipOverlays.cpp
+	gui/clips/SampleClipWarpEdit.cpp
 	gui/clips/SampleClipView.cpp
 
 	gui/editors/AutomationEditor.cpp
@@ -295,6 +342,7 @@ SET(LMMS_SRCS
 	gui/editors/PianoRoll.cpp
 	gui/editors/PositionLine.cpp
 	gui/editors/Rubberband.cpp
+	gui/editors/AddTrackMenu.cpp
 	gui/editors/SongEditor.cpp
 	gui/editors/StepRecorderWidget.cpp
 	gui/editors/TimeLineWidget.cpp
@@ -310,12 +358,16 @@ SET(LMMS_SRCS
 	gui/instrument/InstrumentView.cpp
 	gui/instrument/LfoGraph.cpp
 	gui/instrument/PianoView.cpp
+	# 0.5.0 L14 (Q050-321.1): PianoView's multi-touch half (kept out of the inherited handler file,
+	# which the whole-tree file-length ratchet measures).
+	gui/instrument/PianoViewTouch.cpp
 
 	gui/menus/MidiPortMenu.cpp
 	gui/menus/RecentProjectsMenu.cpp
 	gui/menus/TemplatesMenu.cpp
 
 	gui/modals/AboutDialog.cpp
+	gui/modals/AudioOutputStatusBox.cpp
 	gui/modals/ColorChooser.cpp
 	gui/modals/ControllerConnectionDialog.cpp
 	gui/modals/EffectPickerOrganiser.cpp
@@ -329,6 +381,8 @@ SET(LMMS_SRCS
 	gui/tracks/AutomationTrackView.cpp
 	gui/tracks/FadeButton.cpp
 	gui/tracks/FolderSummaryLane.cpp
+	gui/tracks/NeutralTrackView.cpp
+	gui/tracks/TakeLaneRows.cpp
 	gui/tracks/InstrumentTrackView.cpp
 	gui/tracks/PatternTrackView.cpp
 	gui/tracks/SampleTrackView.cpp
@@ -374,6 +428,7 @@ SET(LMMS_SRCS
 	${LMMS_STEM_GUI_SRCS}
 
 	${LMMS_TELEMETRY_GUI_SRCS}
+	${LMMS_UPDATE_CHECK_GUI_SRCS}
 	${LMMS_COLLAB_GUI_SRCS}
 
 	PARENT_SCOPE

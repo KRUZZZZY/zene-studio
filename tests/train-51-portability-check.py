@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""Red/green compiler regressions for hosted test-source failures.
+
+Covers the four case51 failures plus the Qt 5.15 portability of the
+MixerSendsOnFadersTest faders answer (cluster ci-ec26fd9bddef0dd4).
+"""
+
+# Copyright (c) 2026 Zene Studio contributors
+#
+# This file is part of LMMS - https://lmms.io
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation; either version 2 of the License, or (at your option)
+# any later version.
+
+import argparse
+from pathlib import Path
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+
+
+def fail(message):
+    raise RuntimeError(message)
+
+
+def invoke(command, cwd=None):
+    return subprocess.run(command, cwd=cwd, text=True, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, check=False)
+
+
+def compile_source(compiler, source, directory, label, *, success, flags=(),
+                  expected_diagnostic=()):
+    path = directory / f"{label}.cpp"
+    path.write_text(source, encoding="utf-8")
+    result = invoke([compiler, "-std=c++20", "-Werror=unused-function", *flags,
+                     "-c", str(path), "-o", str(directory / f"{label}.o")])
+    if (result.returncode == 0) != success:
+        fail(f"{label}: expected {'compile success' if success else 'compile failure'}; "
+             f"exit {result.returncode}: {result.stderr.strip()}")
+    missing = [diagnostic for diagnostic in expected_diagnostic
+               if diagnostic not in result.stderr]
+    if missing:
+        fail(f"{label}: expected diagnostic(s) {', '.join(missing)}; "
+             f"stderr: {result.stderr.strip()}")
+    print(f"PASS {label}: {'compiled' if success else 'failed as expected'}")
+
+
+def pkg_flags(pkg, modules):
+    tool = shutil.which("pkg-config")
+    if tool is None:
+        fail("required tool is missing: pkg-config")
+    result = invoke([tool, "--cflags", *modules])
+    if result.returncode:
+        fail(f"pkg-config {' '.join(modules)} failed: {result.stderr.strip()}")
+    return shlex.split(result.stdout)
+
+
+def pkg_exists(pkg, modules):
+    tool = shutil.which(pkg)
+    return tool is not None and invoke([tool, "--exists", *modules]).returncode == 0
+
+
+def row_probe(root, compiler, temporary):
+    source = (root / "tests/src/gui/RowTableViewTest.cpp").read_text(encoding="utf-8")
+    begin = source.index("\t\tconst QAbstractItemDelegate* existingRowDelegate =")
+    end = source.index("\n\t}", begin)
+    assertions = source[begin:end]
+    if assertions.count("itemDelegate(") != 2:
+        fail("RowTableViewTest no longer has both effective index-delegate assertions")
+    fixture = """#include <QtTest>
+#include <QStandardItemModel>
+#include <QTableView>
+void probe() {
+    QStandardItemModel model(1, 1);
+    QTableView view;
+    view.setModel(&model);
+%s
+}
+""" % assertions
+    qt5 = pkg_flags("pkg-config", ["Qt5Test", "Qt5Widgets"])
+    compile_source(compiler, fixture, temporary, "row-qt5-fixed", success=True,
+                   flags=[*qt5, "-fPIC"])
+    if pkg_exists("pkg-config", ["Qt6Test", "Qt6Widgets"]):
+        qt6 = pkg_flags("pkg-config", ["Qt6Test", "Qt6Widgets"])
+        compile_source(compiler, fixture, temporary, "row-qt6-fixed", success=True,
+                       flags=[*qt6, "-fPIC"])
+    else:
+        print("OMITTED row-qt6-fixed: Qt6Test/Qt6Widgets unavailable")
+    original = fixture.replace("itemDelegate(", "itemDelegateForIndex(")
+    compile_source(compiler, original, temporary, "row-qt5-original", success=False,
+                   flags=[*qt5, "-fPIC"])
+
+
+def midi_probe(root, compiler, temporary):
+    source = (root / "tests/src/core/MidiOutTimingTest.cpp").read_text(encoding="utf-8")
+    start = source.index("#ifdef LMMS_HAVE_ALSA\nconstexpr int Notes")
+    finish = source.index("struct Receiver", start)
+    helpers = source[start:finish]
+    guarded = "namespace {\n" + helpers + "#endif\n}\n"
+    if "measureAgainstRequested" not in guarded or "#ifdef LMMS_HAVE_ALSA" not in guarded:
+        fail("MidiOutTimingTest helper guard or helper definition is missing")
+    prelude = """#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <vector>
+using f_cnt_t = unsigned long;
+"""
+    compile_source(compiler, prelude + guarded, temporary, "midi-windows-fixed", success=True)
+    unguarded = helpers.replace("#ifdef LMMS_HAVE_ALSA\n", "", 1)
+    unguarded = unguarded.rstrip() + "\n"
+    original = "namespace {\n" + unguarded + "}\n"
+    compile_source(compiler, prelude + original, temporary, "midi-windows-original",
+                   success=False,
+                   expected_diagnostic=("measure(", "measureAgainstRequested(",
+                                        "unused-function"))
+
+
+def sfz_probe(root, compiler, temporary):
+    source = (root / "tests/src/plugins/SfzDistoBuffersTest.cpp").read_text(encoding="utf-8")
+    start = source.index("void *operator new(std::size_t s, std::align_val_t a)")
+    finish = source.index("void operator delete(void *p) noexcept", start)
+    allocation = source[start:finish]
+    delete_start = source.index("void operator delete(void *p, std::align_val_t)", finish)
+    delete_finish = source.index("\n}", delete_start) + 2
+    deallocation = source[delete_start:delete_finish]
+    if "_aligned_malloc" not in allocation or "_aligned_free" not in deallocation:
+        fail("SfzDistoBuffersTest Windows aligned allocation/free pair is missing")
+    prelude = """#include <cstddef>
+#include <new>
+namespace std { void free(void*); }
+#define _WIN32 1
+inline void noteA() noexcept {}
+inline void noteF(void const*) noexcept {}
+inline void* _aligned_malloc(std::size_t, std::size_t) { return nullptr; }
+inline void _aligned_free(void*) {}
+"""
+    compile_source(compiler, prelude + allocation + deallocation, temporary,
+                   "sfz-windows-fixed", success=True)
+    original = allocation.replace("#if defined(_WIN32)", "#if defined(_MSC_VER)")
+    compile_source(compiler, prelude + original + deallocation, temporary,
+                   "sfz-windows-original", success=False,
+                   expected_diagnostic=("posix_memalign",))
+
+
+def touch_probe(root, compiler, temporary):
+    source = (root / "tests/src/gui/TouchLayoutTest.cpp").read_text(encoding="utf-8")
+    declaration = "\t\tlmms::gui::ClipView* view = viewOf(clip);"
+    if declaration not in source:
+        fail("TouchLayoutTest qualified ClipView declaration is missing")
+    fixture = """namespace lmms { struct ClipView {}; namespace gui { struct ClipView {}; } }
+using namespace lmms;
+using namespace lmms::gui;
+struct Clip {};
+lmms::gui::ClipView* viewOf(Clip*) { return nullptr; }
+void probe(Clip* clip) {
+%s
+    (void)view;
+}
+""" % declaration
+    compile_source(compiler, fixture, temporary, "touch-qualified-fixed", success=True)
+    original = fixture.replace("lmms::gui::ClipView* view", "ClipView* view")
+    compile_source(compiler, original, temporary, "touch-unqualified-original", success=False)
+
+
+def mixer_faders_probe(root, compiler, temporary):
+    """The faders answer's expected list must compile against Qt 5.15.
+
+    Qt 6 makes QStringList an alias of QList, so QStringList(count, value)
+    resolves to QList's count/value constructor.  Qt 5's QStringList is a
+    distinct class without it, and the linux-arm64 job builds with Qt 5.
+    Compile the assertion block the test actually ships, on both Qt majors.
+    """
+    source = (root / "tests/src/gui/MixerSendsOnFadersTest.cpp").read_text(encoding="utf-8")
+    marker = "// Back on the channel faders"
+    start = source.index(marker)
+    assertion = "QVERIFY(faders == "
+    finish = source.index(");", source.index(assertion, start)) + 2
+    block = source[start:finish]
+    lines = [line for line in block.splitlines()
+             if line.strip() and not line.strip().startswith("//")
+             and "drivesOf(" not in line]
+    if not any(assertion in line for line in lines):
+        fail("MixerSendsOnFadersTest faders assertion block changed")
+    fixture = """#include <QStringList>
+#include <QString>
+#define QVERIFY(...) do { (void)(__VA_ARGS__); } while (0)
+void probe() {
+    QStringList faders;
+    const int channels = 3;
+%s
+}
+""" % "\n".join(lines)
+    qt5 = pkg_flags("pkg-config", ["Qt5Core"])
+    compile_source(compiler, fixture, temporary, "mixer-faders-qt5", success=True,
+                   flags=[*qt5, "-fPIC"])
+    if pkg_exists("pkg-config", ["Qt6Core"]):
+        qt6 = pkg_flags("pkg-config", ["Qt6Core"])
+        compile_source(compiler, fixture, temporary, "mixer-faders-qt6", success=True,
+                       flags=[*qt6, "-fPIC"])
+    else:
+        print("OMITTED mixer-faders-qt6: Qt6Core unavailable")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source-root", required=True, type=Path)
+    args = parser.parse_args()
+    root = args.source_root.resolve()
+    compiler = shutil.which("c++")
+    if compiler is None:
+        fail("required tool is missing: c++")
+    with tempfile.TemporaryDirectory(prefix="train51-portability-") as directory:
+        temporary = Path(directory)
+        row_probe(root, compiler, temporary)
+        midi_probe(root, compiler, temporary)
+        sfz_probe(root, compiler, temporary)
+        touch_probe(root, compiler, temporary)
+        mixer_faders_probe(root, compiler, temporary)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, RuntimeError, ValueError) as error:
+        print(f"train51 portability check: {error}", file=sys.stderr)
+        sys.exit(1)

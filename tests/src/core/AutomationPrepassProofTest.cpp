@@ -133,7 +133,6 @@ private slots:
 			controllerHash = hash(harness.render());
 		}
 		controllerGain->setControllerConnection(nullptr);
-		delete controllerConnection;
 		delete controller;
 
 		resetMixer(mixer);
@@ -149,7 +148,6 @@ private slots:
 			lfoHash = hash(harness.render());
 		}
 		lfoGain->setControllerConnection(nullptr);
-		delete lfoConnection;
 		delete lfo;
 
 		resetMixer(mixer);

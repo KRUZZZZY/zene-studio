@@ -62,6 +62,7 @@
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
+#include "SurroundExport.h"
 
 namespace lmms
 {
@@ -228,8 +229,10 @@ void registerExportPresetAdd(ControlRegistry& registry)
 		"(renderpresets/<name>.zrp), outside the project, so the preset can be applied to another "
 		"project and project.save/project.open cannot lose it. sample_rate must be inside the "
 		"window the render path accepts (44100 to 192000 Hz - the shipped CLI's own check), "
-		"bit_depth is one of 16, 24 or 32 and stereo_mode one of mono, stereo or jointstereo; a "
-		"value nothing could honour is refused here rather than discovered by a failed render. An "
+		"bit_depth is one of 16, 24 or 32 and stereo_mode one of mono, stereo or jointstereo; "
+		"the optional format (wav, flac, ogg, mp3 - the formats this build renders) and channels "
+		"(stereo or surround) are stored with the preset and put back by the export dialog when "
+		"the preset is applied; a value nothing could honour is refused here rather than discovered by a failed render. An "
 		"existing preset of that name is refused unless \"overwrite\":true. Reversible through a "
 		"recorded action checkpoint that removes the document - or writes back the revision it "
 		"replaced.");
@@ -240,6 +243,8 @@ void registerExportPresetAdd(ControlRegistry& registry)
 			QStringLiteral("32")})},
 		{QStringLiteral("stereo_mode"), enumProperty({QStringLiteral("mono"),
 			QStringLiteral("stereo"), QStringLiteral("jointstereo")})},
+		{QStringLiteral("format"), enumProperty(controlRenderableFormats())},
+		{QStringLiteral("channels"), enumProperty(surroundexport::channelModeNames())},
 		{QStringLiteral("overwrite"), booleanProperty()},
 	}, {QStringLiteral("name"), QStringLiteral("sample_rate"), QStringLiteral("bit_depth"),
 		QStringLiteral("stereo_mode")});
@@ -251,6 +256,8 @@ void registerExportPresetAdd(ControlRegistry& registry)
 		{QStringLiteral("sample_rate"), integerProperty()},
 		{QStringLiteral("bit_depth"), stringProperty()},
 		{QStringLiteral("stereo_mode"), stringProperty()},
+		{QStringLiteral("format"), stringProperty()},
+		{QStringLiteral("channels"), stringProperty()},
 		{QStringLiteral("replaced"), booleanProperty()},
 		{QStringLiteral("dir"), stringProperty()},
 	});
@@ -272,6 +279,9 @@ void registerExportPresetAdd(ControlRegistry& registry)
 				QStringLiteral("unknown stereo_mode '%1'; expected mono, stereo or jointstereo")
 					.arg(modeName));
 		}
+
+		preset.format = args.value(QStringLiteral("format")).toString();
+		preset.channels = args.value(QStringLiteral("channels")).toString();
 
 		const QString invalid = controlExportPresetValidate(preset);
 		if (!invalid.isEmpty())
@@ -341,6 +351,8 @@ void registerExportPresetApply(ControlRegistry& registry)
 		{QStringLiteral("sample_rate"), integerProperty()},
 		{QStringLiteral("bit_depth"), stringProperty()},
 		{QStringLiteral("stereo_mode"), stringProperty()},
+		{QStringLiteral("format"), stringProperty()},
+		{QStringLiteral("channels"), stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -424,6 +436,8 @@ void registerExportPresetRemove(ControlRegistry& registry)
 		{QStringLiteral("bit_depth"), stringProperty()},
 		{QStringLiteral("sample_rate"), numberProperty()},
 		{QStringLiteral("stereo_mode"), stringProperty()},
+		{QStringLiteral("format"), stringProperty()},
+		{QStringLiteral("channels"), stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -475,6 +489,8 @@ void registerExportPresetRemove(ControlRegistry& registry)
 						QString::fromLatin1(controlExportPresetBitDepthName(preset.bitDepth))},
 					{QStringLiteral("stereo_mode"),
 						QString::fromLatin1(controlExportPresetStereoModeName(preset.stereoMode))},
+					{QStringLiteral("format"), preset.format},
+					{QStringLiteral("channels"), preset.channels},
 					{QStringLiteral("note"), QStringLiteral("re-issuing export.preset_add with "
 						"these values rebuilds this document; the recorded step is the exact "
 						"bytes")}},

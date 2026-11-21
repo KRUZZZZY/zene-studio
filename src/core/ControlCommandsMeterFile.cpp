@@ -137,6 +137,26 @@ void setMeterReferenceDbfs(double dbfs)
 	ConfigManager::inst()->setValue(QStringLiteral("meter"), QStringLiteral("referencedbfs"), QString::number(dbfs));
 }
 
+double meterPeakWatchThresholdDbfs()
+{
+	return ConfigManager::inst()->value(QStringLiteral("meter"), QStringLiteral("peakwatchdbfs"), QStringLiteral("-6")).toDouble();
+}
+
+bool meterPeakWatchEnabled()
+{
+	return ConfigManager::inst()->value(QStringLiteral("meter"), QStringLiteral("peakwatchenabled"), QStringLiteral("0")).toInt() != 0;
+}
+
+void setMeterPeakWatchThresholdDbfs(double dbfs)
+{
+	ConfigManager::inst()->setValue(QStringLiteral("meter"), QStringLiteral("peakwatchdbfs"), QString::number(dbfs));
+}
+
+void setMeterPeakWatchEnabled(bool enabled)
+{
+	ConfigManager::inst()->setValue(QStringLiteral("meter"), QStringLiteral("peakwatchenabled"), enabled ? QStringLiteral("1") : QStringLiteral("0"));
+}
+
 namespace
 {
 

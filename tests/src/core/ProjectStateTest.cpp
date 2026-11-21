@@ -31,6 +31,8 @@
 #include <QDomDocument>
 #include <QJsonArray>
 
+#include <cmath>
+
 #include "Clip.h"
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
@@ -40,6 +42,7 @@
 #include "InstrumentTrack.h"
 #include "Mixer.h"
 #include "MixerSnapshots.h"
+#include "MixerSurround.h"
 #include "ProjectInfo.h"
 #include "ProjectJournal.h"
 #include "Song.h"
@@ -171,6 +174,158 @@ private slots:
 		QVERIFY(!MixerSnapshots::instance().shouldPersist());
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(MixerSnapshots::instance().find(QStringLiteral("Verse")) != nullptr);
+	}
+
+	//! A non-finite snapshot float must load as the same default a missing attribute gets.
+	void nonFiniteSnapshotFloatsAreReplaced()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("mixer-snapshots"));
+		doc.appendChild(root);
+		QDomElement snapshot = doc.createElement(QStringLiteral("snapshot"));
+		snapshot.setAttribute(QStringLiteral("name"), QStringLiteral("Invalid floats"));
+		root.appendChild(snapshot);
+		QDomElement savedChannel = doc.createElement(QStringLiteral("channel"));
+		savedChannel.setAttribute(QStringLiteral("id"), QStringLiteral("123"));
+		savedChannel.setAttribute(QStringLiteral("volume"), QStringLiteral("nan"));
+		savedChannel.setAttribute(QStringLiteral("pan"), QStringLiteral("inf"));
+		snapshot.appendChild(savedChannel);
+		QDomElement send = doc.createElement(QStringLiteral("send"));
+		send.setAttribute(QStringLiteral("to"), QStringLiteral("456"));
+		send.setAttribute(QStringLiteral("amount"), QStringLiteral("nan"));
+		send.setAttribute(QStringLiteral("pan"), QStringLiteral("-inf"));
+		savedChannel.appendChild(send);
+
+		MixerSnapshots::instance().load(root);
+
+		const MixerSnapshot* loaded = MixerSnapshots::instance().find(QStringLiteral("Invalid floats"));
+		QVERIFY(loaded != nullptr);
+		QCOMPARE(loaded->channels.size(), std::size_t{1});
+		QCOMPARE(loaded->channels.front().volume, 1.f);
+		QCOMPARE(loaded->channels.front().pan, 0.f);
+		QCOMPARE(loaded->channels.front().sends.size(), std::size_t{1});
+		QCOMPARE(loaded->channels.front().sends.front().amount, 1.f);
+		QCOMPARE(loaded->channels.front().sends.front().pan, 0.f);
+		MixerSnapshots::instance().clear();
+	}
+
+	//! A malformed finite-looking value must take the persisted field's default, not QString's 0.
+	void malformedSnapshotFloatsUseFallbacks()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("mixer-snapshots"));
+		doc.appendChild(root);
+		QDomElement snapshot = doc.createElement(QStringLiteral("snapshot"));
+		snapshot.setAttribute(QStringLiteral("name"), QStringLiteral("Malformed floats"));
+		root.appendChild(snapshot);
+		QDomElement savedChannel = doc.createElement(QStringLiteral("channel"));
+		savedChannel.setAttribute(QStringLiteral("id"), QStringLiteral("123"));
+		savedChannel.setAttribute(QStringLiteral("volume"), QStringLiteral("not-a-float"));
+		savedChannel.setAttribute(QStringLiteral("pan"), QStringLiteral("not-a-float"));
+		snapshot.appendChild(savedChannel);
+		QDomElement send = doc.createElement(QStringLiteral("send"));
+		send.setAttribute(QStringLiteral("to"), QStringLiteral("456"));
+		send.setAttribute(QStringLiteral("amount"), QStringLiteral("not-a-float"));
+		send.setAttribute(QStringLiteral("pan"), QStringLiteral("not-a-float"));
+		savedChannel.appendChild(send);
+
+		MixerSnapshots::instance().load(root);
+
+		const MixerSnapshot* loaded = MixerSnapshots::instance().find(QStringLiteral("Malformed floats"));
+		QVERIFY(loaded != nullptr);
+		QCOMPARE(loaded->channels.front().volume, 1.f);
+		QCOMPARE(loaded->channels.front().pan, 0.f);
+		QCOMPARE(loaded->channels.front().sends.front().amount, 1.f);
+		QCOMPARE(loaded->channels.front().sends.front().pan, 0.f);
+		MixerSnapshots::instance().clear();
+	}
+
+	//! Duplicate persisted names collapse to the first definition and remain unique on replacement.
+	void duplicateSnapshotNamesKeepTheFirstDefinition()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("mixer-snapshots"));
+		doc.appendChild(root);
+		for (float volume : {0.25f, 0.75f})
+		{
+			QDomElement snapshot = doc.createElement(QStringLiteral("snapshot"));
+			snapshot.setAttribute(QStringLiteral("name"), QStringLiteral("Mix"));
+			QDomElement savedChannel = doc.createElement(QStringLiteral("channel"));
+			savedChannel.setAttribute(QStringLiteral("id"), QStringLiteral("123"));
+			savedChannel.setAttribute(QStringLiteral("volume"), volume);
+			snapshot.appendChild(savedChannel);
+			root.appendChild(snapshot);
+		}
+
+		MixerSnapshots::instance().load(root);
+
+		QCOMPARE(MixerSnapshots::instance().snapshots().size(), std::size_t{1});
+		const MixerSnapshot* loaded = MixerSnapshots::instance().find(QStringLiteral("Mix"));
+		QVERIFY(loaded != nullptr);
+		QCOMPARE(loaded->channels.front().volume, 0.25f);
+
+		MixerSnapshot replacement;
+		replacement.name = QStringLiteral("Mix");
+		MixerChannelState channelState;
+		channelState.volume = 0.5f;
+		replacement.channels.push_back(channelState);
+		QVERIFY(MixerSnapshots::instance().store(replacement));
+		QCOMPARE(MixerSnapshots::instance().snapshots().size(), std::size_t{1});
+		QCOMPARE(MixerSnapshots::instance().find(QStringLiteral("Mix"))->channels.front().volume, 0.5f);
+		MixerSnapshots::instance().clear();
+	}
+
+	//! A non-finite downmix coefficient in the project XML must not reach a matrix.
+	void nonFiniteDownmixSettingsAreIgnored()
+	{
+		surround::resetMixer();
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("mixer"));
+		doc.appendChild(element);
+		QDomElement downmix = doc.createElement(QStringLiteral("surrounddownmix"));
+		downmix.setAttribute(QStringLiteral("centre"), QStringLiteral("nan"));
+		downmix.setAttribute(QStringLiteral("surround"), QStringLiteral("1e999"));
+		element.appendChild(downmix);
+
+		surround::loadMixer(element);  // the reader Mixer::loadSettings() calls for this element
+
+		QCOMPARE(surround::downmixOptions().centre, surround::DownmixOptions{}.centre);
+		QCOMPARE(surround::downmixOptions().surround, surround::DownmixOptions{}.surround);
+		QVERIFY(std::isfinite(surround::matrix(surround::Format::Surround51, surround::Format::Stereo)[0][2]));
+		QVERIFY(std::isfinite(surround::matrix(surround::Format::Surround51, surround::Format::Stereo)[0][4]));
+		surround::resetMixer();
+	}
+
+	//! A panner value that parses as NaN or infinity in the project XML loads the panner's default, and the
+	//! gains of every format stay finite (NaN in the position or spread would make every gain NaN).
+	void nonFinitePannerAttributesFallBackToTheDefaults()
+	{
+		QDomDocument doc;
+		QDomElement channelElement = doc.createElement(QStringLiteral("channel"));
+		doc.appendChild(channelElement);
+		QDomElement panElement = doc.createElement(QStringLiteral("surround"));
+		panElement.setAttribute(QStringLiteral("format"), QStringLiteral("5.1"));
+		panElement.setAttribute(QStringLiteral("pan"), QStringLiteral("1"));
+		panElement.setAttribute(QStringLiteral("x"), QStringLiteral("nan"));
+		panElement.setAttribute(QStringLiteral("y"), QStringLiteral("inf"));
+		panElement.setAttribute(QStringLiteral("lfe"), QStringLiteral("-inf"));
+		panElement.setAttribute(QStringLiteral("spread"), QStringLiteral("nan"));
+		channelElement.appendChild(panElement);
+
+		ChannelSurround side;
+		side.init(64);
+		side.load(channelElement);  // the reader Mixer::loadSettings() calls for each channel
+
+		const surround::PanPosition defaults{};
+		QVERIFY(side.pan().enabled);
+		QCOMPARE(side.pan().x, defaults.x);
+		QCOMPARE(side.pan().y, defaults.y);
+		QCOMPARE(side.pan().lfe, defaults.lfe);
+		QCOMPARE(side.pan().spread, defaults.spread);
+		for (int k = 0; k < surround::FormatCount; ++k)
+		{
+			for (const float gain : side.gains(static_cast<surround::Format>(k))) { QVERIFY(std::isfinite(gain)); }
+		}
 	}
 
 	void projectSettingsWriteAndUndo()

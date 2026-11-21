@@ -40,6 +40,7 @@
 
 #include "ConfigManager.h"
 #include "ControlDeviceSupport.h"
+#include "SurroundExport.h"
 
 namespace lmms
 {
@@ -62,6 +63,8 @@ QString nameKey() { return QStringLiteral("name"); }
 QString sampleRateKey() { return QStringLiteral("sample_rate"); }
 QString bitDepthKey() { return QStringLiteral("bit_depth"); }
 QString stereoModeKey() { return QStringLiteral("stereo_mode"); }
+QString formatKey() { return QStringLiteral("format"); }
+QString channelsKey() { return QStringLiteral("channels"); }
 
 ControlResult invalidArgs(const QString& message)
 {
@@ -83,6 +86,31 @@ bool requiredField(const QJsonObject& document, const QString& key, QJsonValue* 
 		return false;
 	}
 	*out = document.value(key);
+	return true;
+}
+
+//! The two optional fields (file format, channel mode): documents written before they joined
+//! the preset carry neither and read back as "not stated"; one that is present must be text.
+//! Then the whole record is validated.
+bool readOptionalFieldsAndValidate(const QJsonObject& document, const QString& path,
+	ControlExportPreset* preset, ControlResult* error)
+{
+	for (const QString& key : {formatKey(), channelsKey()})
+	{
+		if (!document.contains(key) || document.value(key).isNull()) { continue; }
+		if (!document.value(key).isString())
+		{
+			*error = invalidArgs(QStringLiteral("%1: \"%2\" is not a string").arg(path, key));
+			return false;
+		}
+		(key == formatKey() ? preset->format : preset->channels) = document.value(key).toString();
+	}
+	const QString invalid = controlExportPresetValidate(*preset);
+	if (!invalid.isEmpty())
+	{
+		*error = invalidArgs(QStringLiteral("%1: %2").arg(path, invalid));
+		return false;
+	}
 	return true;
 }
 
@@ -204,6 +232,16 @@ QString controlExportPresetValidate(const ControlExportPreset& preset)
 	{
 		return QStringLiteral("stereo_mode is not one of mono, stereo or jointstereo");
 	}
+	if (!preset.format.isEmpty() && !controlRenderableFormats().contains(preset.format))
+	{
+		return QStringLiteral("format '%1' is not one of %2").arg(preset.format,
+			controlRenderableFormats().join(QStringLiteral(", ")));
+	}
+	if (!preset.channels.isEmpty() && !surroundexport::channelModeNames().contains(preset.channels))
+	{
+		return QStringLiteral("channels '%1' is not one of %2").arg(preset.channels,
+			surroundexport::channelModeNames().join(QStringLiteral(", ")));
+	}
 	return QString();
 }
 
@@ -218,6 +256,9 @@ QByteArray controlExportPresetDocument(const ControlExportPreset& preset)
 		QString::fromLatin1(controlExportPresetBitDepthName(preset.bitDepth)));
 	document.insert(stereoModeKey(),
 		QString::fromLatin1(controlExportPresetStereoModeName(preset.stereoMode)));
+	// The two Q050-009 round 4 fields are written only when the preset states them.
+	if (!preset.format.isEmpty()) { document.insert(formatKey(), preset.format); }
+	if (!preset.channels.isEmpty()) { document.insert(channelsKey(), preset.channels); }
 	return QJsonDocument(document).toJson(QJsonDocument::Indented);
 }
 
@@ -282,15 +323,10 @@ bool controlExportPresetFromBytes(const QByteArray& bytes, const QString& path,
 		return false;
 	}
 
-	// The stored record is checked against the SAME rule a fresh one is, so a
-	// document that was edited by hand cannot reach a render the store's own
-	// writer would have refused.
-	const QString invalid = controlExportPresetValidate(preset);
-	if (!invalid.isEmpty())
-	{
-		*error = invalidArgs(QStringLiteral("%1: %2").arg(path, invalid));
-		return false;
-	}
+	// The optional fields, then the stored record checked against the SAME rule a fresh one is,
+	// so a document that was edited by hand cannot reach a render the store's own writer
+	// would have refused.
+	if (!readOptionalFieldsAndValidate(document, path, &preset, error)) { return false; }
 
 	*out = preset;
 	return true;
@@ -306,6 +342,9 @@ QJsonObject controlExportPresetJson(const ControlExportPreset& preset, bool deta
 		QString::fromLatin1(controlExportPresetBitDepthName(preset.bitDepth)));
 	out.insert(QStringLiteral("stereo_mode"),
 		QString::fromLatin1(controlExportPresetStereoModeName(preset.stereoMode)));
+	// "" when the preset does not state a file format / channel mode.
+	out.insert(QStringLiteral("format"), preset.format);
+	out.insert(QStringLiteral("channels"), preset.channels);
 	if (detailed)
 	{
 		const QFileInfo info(preset.path);

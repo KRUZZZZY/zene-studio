@@ -105,19 +105,20 @@ bool MediaStream::feed(AVPacket* packet)
 	return true;
 }
 
-void MediaStream::seek(double seconds)
+bool MediaStream::seek(double seconds)
 {
 	const double base = timeBase();
-	if (!std::isfinite(seconds) || !std::isfinite(base) || base <= 0.0) { return; }
+	if (!std::isfinite(seconds) || !std::isfinite(base) || base <= 0.0) { return false; }
 	const double offsetPts = std::max(0.0, seconds) / base;
-	if (!std::isfinite(offsetPts) || offsetPts >= 0x1p63) { return; }
+	if (!std::isfinite(offsetPts) || offsetPts >= 0x1p63) { return false; }
 	const int64_t offset = static_cast<int64_t>(offsetPts);
 	const int64_t start = startPts();
-	if (start > 0 && offset > std::numeric_limits<int64_t>::max() - start) { return; }
+	if (start > 0 && offset > std::numeric_limits<int64_t>::max() - start) { return false; }
 	const int64_t target = start + offset;
-	av_seek_frame(format, index, target, AVSEEK_FLAG_BACKWARD);
+	if (av_seek_frame(format, index, target, AVSEEK_FLAG_BACKWARD) < 0) { return false; }  // the demuxer stayed where it was
 	avcodec_flush_buffers(codec);
 	draining = false;
+	return true;
 }
 
 } // namespace lmms::video

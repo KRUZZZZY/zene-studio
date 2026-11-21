@@ -22,7 +22,9 @@
  */
 
 #include <QtTest>
+#include <QThreadPool>
 
+#include <algorithm>
 #include <array>
 
 #include <cmath>
@@ -32,6 +34,9 @@
 #include <QElapsedTimer>
 #include <QApplication>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QJsonValue>
 #include <QPointer>
 #include <QProgressDialog>
 #include <QMessageBox>
@@ -39,7 +44,9 @@
 #include <QTimer>
 #include <QTemporaryDir>
 
+#include "ControlStemSupport.h"
 #include "Engine.h"
+#include "ControlRegistry.h"
 #include "SampleBuffer.h"
 #include "SampleFrame.h"
 #include "SampleClip.h"
@@ -95,6 +102,23 @@ std::shared_ptr<const SampleBuffer> makeSineMix(int seconds)
 	return std::make_shared<const SampleBuffer>(std::move(data), sampleRate);
 }
 
+//! How many `stem.tracks_create` transactions the registry has recorded.
+int stemTracksCreateRecords()
+{
+	const QJsonObject records = ControlRegistry::instance()
+		->invoke(QStringLiteral("control.transactions")).result;
+	int count = 0;
+	for (const QJsonValue& value : records.value(QStringLiteral("transactions")).toArray())
+	{
+		if (value.toObject().value(QStringLiteral("command")).toString()
+			== QLatin1String("stem.tracks_create"))
+		{
+			++count;
+		}
+	}
+	return count;
+}
+
 } // namespace
 
 class StemSplitPipelineTest : public QObject
@@ -104,6 +128,13 @@ private slots:
 	void initTestCase()
 	{
 		Engine::init(true);
+
+		// The GUI controller drives the SAME registered `stem.*` commands the
+		// agent surface does, and the registry refuses engine commands until it
+		// is told startup finished (main.cpp's control-server path does this in
+		// a real instance). Without it every invoke would return the typed
+		// engine_starting refusal.
+		ControlRegistry::setReady(true);
 
 		qputenv("LMMS_STEM_MODEL", QFile::encodeName(stubModelPath()));
 		qputenv("LMMS_STEM_CLI", QFile::encodeName(cliPath()));
@@ -122,6 +153,7 @@ private slots:
 
 	void cleanupTestCase()
 	{
+		ControlRegistry::setReady(false);
 		Engine::destroy();
 	}
 
@@ -168,7 +200,7 @@ private slots:
 
 		QElapsedTimer timer;
 		timer.start();
-		const auto status = separator.separate(*mix, StemModelSampleRate, 16384,
+		const auto status = separator.separate(*mix, StemModelSampleRate, 16384, StemQuality::Standard,
 			[&](float fraction) {
 				if (fraction < lastProgress)
 				{
@@ -192,6 +224,40 @@ private slots:
 		{
 			QVERIFY2(stems[static_cast<std::size_t>(s)] != nullptr, stemName(static_cast<Stem>(s)));
 			QCOMPARE(stems[static_cast<std::size_t>(s)]->size(), mix->size());
+		}
+	}
+
+	/*! Q050-062.1: the quality travels to tools/stem_split_cli.py (--quality) and sets how many
+	 *  segments it runs. The CLI reports chunks_done / chunks after each one, so its smallest
+	 *  positive fraction is 1 / runs: a one-second mix at a 16384-frame segment takes 6 / 9 / 17
+	 *  runs at 25% / 50% / 75% overlap (the same counts as OnnxRuntimeStemSeparatorTest). */
+	void testQualitySetsTheSegmentCountThroughTheCli()
+	{
+		const struct { StemQuality quality; int runs; } cases[] = {
+			{StemQuality::Fast, 6}, {StemQuality::Standard, 9}, {StemQuality::High, 17},
+		};
+		const auto mix = makeSineMix(1);
+		for (const auto& c : cases)
+		{
+			ExternalProcessStemSeparator separator;
+			StemSet stems;
+			QString error;
+			float smallest = 2.0f;
+			const auto status = separator.separate(*mix, StemModelSampleRate, 16384, c.quality,
+				[&](float fraction) {
+					if (fraction > 0.0f) { smallest = std::min(smallest, fraction); }
+					return true;
+				},
+				stems, error);
+			QVERIFY2(status == StemSeparator::Status::Success, qPrintable(error));
+			const int runs = static_cast<int>(std::lround(1.0 / smallest));
+			QVERIFY2(runs == c.runs, qPrintable(QStringLiteral("%1: %2 runs, expected %3")
+				.arg(QString::fromLatin1(stemQualityName(c.quality))).arg(runs).arg(c.runs)));
+			for (int s = 0; s < NumStems; ++s)
+			{
+				QVERIFY(stems[static_cast<std::size_t>(s)] != nullptr);
+				QCOMPARE(stems[static_cast<std::size_t>(s)]->size(), mix->size());
+			}
 		}
 	}
 
@@ -239,7 +305,7 @@ subprocess.Popen(
 		SampleBuffer mix(std::vector<SampleFrame>{ SampleFrame(0.25f, -0.25f) }, StemModelSampleRate);
 		StemSet stems;
 		QString error;
-		const auto status = separator.separate(mix, StemModelSampleRate, 1,
+		const auto status = separator.separate(mix, StemModelSampleRate, 1, StemQuality::Standard,
 			[](float) { return true; }, stems, error);
 
 		QCOMPARE(static_cast<int>(status), static_cast<int>(StemSeparator::Status::Failed));
@@ -262,7 +328,7 @@ subprocess.Popen(
 		{
 			ExternalProcessStemSeparator separator(QString(), QString(), models[m]);
 			QString error;
-			const auto status = separator.separate(*mix, StemModelSampleRate, 16384,
+			const auto status = separator.separate(*mix, StemModelSampleRate, 16384, StemQuality::Standard,
 				[](float) { return true; }, results[m], error);
 			QVERIFY2(status == StemSeparator::Status::Success, qPrintable(models[m] + ": " + error));
 		}
@@ -293,7 +359,7 @@ subprocess.Popen(
 		StemSet stems;
 		QString error;
 		int progressCalls = 0;
-		const auto status = separator.separate(*mix, StemModelSampleRate, 16384,
+		const auto status = separator.separate(*mix, StemModelSampleRate, 16384, StemQuality::Standard,
 			[&](float) {
 				// cancel after the first chunk
 				return ++progressCalls < 2;
@@ -361,7 +427,7 @@ subprocess.Popen(
 		QString error;
 		const auto mix = makeSineMix(1);
 		ExternalProcessStemSeparator separator;
-		const auto status = separator.separate(*mix, StemModelSampleRate, 16384,
+		const auto status = separator.separate(*mix, StemModelSampleRate, 16384, StemQuality::Standard,
 			[](float) { return true; }, stems, error);
 		QVERIFY2(status == StemSeparator::Status::Success, qPrintable(error));
 
@@ -387,6 +453,146 @@ subprocess.Popen(
 			QVERIFY(song->tracks().end() !=
 				std::find(song->tracks().begin(), song->tracks().end(), track));
 		}
+	}
+
+	/* Portability (Q050-035 rework): the GUI's "Split to stems" calls
+	 * `stem.job_start` with `PathUtil::toAbsolute()`'s result, which on Windows
+	 * is a drive path (`C:/…`) or a UNC share (`//server/share/…`). The validator
+	 * used to accept only a leading '/', so the GUI route could never start a job
+	 * on Windows. This proves the validator accepts those forms and still refuses
+	 * relative ones - and, through the registered command the GUI calls, that a
+	 * Windows path gets PAST the validator to the engine's own refusal (a missing
+	 * file), not the argument refusal. */
+	void testValidatorAcceptsWindowsAbsolutePathsThroughJobStart()
+	{
+		const QString source = QStringLiteral("source");
+		QVERIFY2(control::stemRequireAbsolutePath(QStringLiteral("/tmp/mix.wav"), source).isEmpty(),
+			"a Unix absolute path is accepted");
+		QVERIFY2(!control::stemRequireAbsolutePath(QStringLiteral("mix.wav"), source).isEmpty(),
+			"a relative path is refused");
+		QVERIFY2(!control::stemRequireAbsolutePath(QStringLiteral("C:relative.wav"), source).isEmpty(),
+			"a drive-relative path is refused");
+		QVERIFY2(!control::stemRequireAbsolutePath(QStringLiteral("C:"), source).isEmpty(),
+			"a bare drive letter is refused");
+
+		const QString windows[] = {
+			QStringLiteral("C:\\music\\mix.wav"),
+			QStringLiteral("C:/music/mix.wav"),
+			QStringLiteral("\\\\server\\share\\mix.wav"),
+			QStringLiteral("//server/share/mix.wav") };
+		for (const QString& path : windows)
+		{
+			QVERIFY2(control::stemRequireAbsolutePath(path, source).isEmpty(),
+				qPrintable(QStringLiteral("Windows absolute path accepted: ") + path));
+		}
+
+		const QString missing[] = {
+			QStringLiteral("C:/definitely-not-here/mix.wav"),
+			QStringLiteral("\\\\server\\share\\definitely-not-here\\mix.wav") };
+		for (const QString& path : missing)
+		{
+			const ControlResult reply = ControlRegistry::instance()->invoke(
+				QStringLiteral("stem.job_start"), QJsonObject{{QStringLiteral("source"), path}});
+			QVERIFY2(!reply.ok && reply.errorKind == ControlErrorKind::Refused
+					&& reply.errorMessage.contains(QStringLiteral("no source file")),
+				qPrintable(QStringLiteral("Windows path reaches the engine's refusal: %1 -> %2")
+					.arg(path, reply.errorMessage)));
+		}
+		const ControlResult relative = ControlRegistry::instance()->invoke(
+			QStringLiteral("stem.job_start"),
+			QJsonObject{{QStringLiteral("source"), QStringLiteral("mix.wav")}});
+		QVERIFY2(!relative.ok && relative.errorKind == ControlErrorKind::InvalidArgs,
+			qPrintable(QStringLiteral("a relative path is still refused typed: ") + relative.errorMessage));
+	}
+
+	/* A UNC form is absolute only when it names a server AND a share. `\\server`
+	 * has no share, and on a Unix host QDir reads it as a relative file name, so
+	 * a client could make the writer create files under the working directory.
+	 * The backslash forms are refused on every host. Windows also refuses
+	 * incomplete forward-slash UNC forms; Unix keeps `//...` as absolute. */
+	void testValidatorRefusesIncompleteUncPaths()
+	{
+		const QString name = QStringLiteral("out");
+		const QString incomplete[] = {
+			QStringLiteral("\\\\server"),
+			QStringLiteral("\\\\server\\"),
+			QStringLiteral("\\\\\\share\\mix"),
+			QStringLiteral("\\\\s") };
+		for (const QString& path : incomplete)
+		{
+			QVERIFY2(!control::stemRequireAbsolutePath(path, name).isEmpty(),
+				qPrintable(QStringLiteral("incomplete UNC path refused: ") + path));
+		}
+	#if defined(Q_OS_WIN)
+		const QString incompleteSlashUnc[] = {
+			QStringLiteral("//server"), QStringLiteral("//server/"),
+			QStringLiteral("/\\\\server"), QStringLiteral("/\\\\server/") };
+		for (const QString& path : incompleteSlashUnc)
+		{
+			QVERIFY2(!control::stemRequireAbsolutePath(path, name).isEmpty(),
+				qPrintable(QStringLiteral("incomplete slash UNC path refused: ") + path));
+		}
+	#else
+		QVERIFY2(control::stemRequireAbsolutePath(QStringLiteral("//server"), name).isEmpty(),
+			"a POSIX double-slash absolute path stays accepted");
+	#endif
+
+		const QString complete[] = {
+			QStringLiteral("\\\\server\\share"),
+			QStringLiteral("\\\\server\\share\\"),
+			QStringLiteral("\\\\server\\share\\stems"),
+			QStringLiteral("//server/share") };
+		for (const QString& path : complete)
+		{
+			QVERIFY2(control::stemRequireAbsolutePath(path, name).isEmpty(),
+				qPrintable(QStringLiteral("complete UNC path accepted: ") + path));
+		}
+	}
+
+	/* The GUI action and the agent surface take the SAME registered command,
+	 * materialise the four stems as ONE undo step, and one control.undo removes
+	 * all four together. This is the "shared command + one undo step" contract
+	 * of SPEC A11/A16 for the user-facing half of stem separation. */
+	void testGuiSplitSharesTheRegisteredCommandAndIsOneUndoStep()
+	{
+		auto* song = Engine::getSong();
+		const auto before = song->tracks().size();
+		auto* sourceTrack = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		QVERIFY(sourceTrack != nullptr);
+		auto* source = dynamic_cast<SampleClip*>(sourceTrack->createClip(TimePos(0)));
+		QVERIFY(source != nullptr);
+		source->setName(QStringLiteral("Mix"));
+		source->setSampleBuffer(makeSineMix(1));
+
+		// The command the GUI action calls is a registered agent command.
+		QVERIFY(ControlRegistry::instance()->hasCommand(QStringLiteral("stem.job_start")));
+		QVERIFY(ControlRegistry::instance()->hasCommand(QStringLiteral("stem.tracks_create")));
+		const int recordsBefore = stemTracksCreateRecords();
+
+		gui::StemSplitController controller;
+		controller.splitClipToStems(source);
+
+		QPointer<QProgressDialog> progress;
+		for (QWidget* widget : QApplication::topLevelWidgets())
+		{
+			if (auto* dialog = qobject_cast<QProgressDialog*>(widget)) { progress = dialog; }
+		}
+		QVERIFY(!progress.isNull());
+		QTimer closeMessageBox;
+		closeMessageBox.setInterval(10);
+		connect(&closeMessageBox, &QTimer::timeout, &closeMessageBoxes);
+		closeMessageBox.start();
+		QTRY_VERIFY_WITH_TIMEOUT(progress.isNull(), 180000);
+		closeMessageBox.stop();
+
+		QCOMPARE(song->tracks().size(), before + 5);   // the source + four stems
+		// The controller did NOT build the tracks itself: it went through the
+		// registered command, which is what recorded the transaction.
+		QCOMPARE(stemTracksCreateRecords(), recordsBefore + 1);
+
+		const ControlResult undone = ControlRegistry::instance()->invoke(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(song->tracks().size(), before + 1);   // ONE undo removed all four
 	}
 
 	void controllerUsesClipSnapshotAfterSourceClipIsDeleted()
@@ -469,6 +675,99 @@ subprocess.Popen(
 		QTRY_VERIFY_WITH_TIMEOUT(progress.isNull(), 180000);
 		closeMessageBox.stop();
 		QCOMPARE(song->tracks().size(), trackCount);
+	}
+
+	/* Bug (cluster new-p17-176): pollJob set the model-download label while
+	 *  fetching_model was true and never restored it, so the separation ran
+	 *  under the download text. This drives the REAL pollJob through three
+	 *  scripted statuses (fetching, separating, cancelled) using the status
+	 *  reader seam, and checks the dialog after each poll. */
+	void pollRestoresPhaseLabelWhenFetchingEnds()
+	{
+		auto* song = Engine::getSong();
+		auto* sourceTrack = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		QVERIFY(sourceTrack != nullptr);
+		auto* source = dynamic_cast<SampleClip*>(sourceTrack->createClip(TimePos(0)));
+		QVERIFY(source != nullptr);
+		source->setName(QStringLiteral("Poll label source"));
+		source->setSampleBuffer(makeSineMix(1));
+
+		struct Step
+		{
+			const char* state;
+			double progress;
+			bool fetching;
+		};
+		const std::array<Step, 3> steps{{
+			{"running", 0.25, true},       // first poll: the model is being fetched
+			{"running", 0.50, false},      // second poll: fetching has ended, separation runs
+			{"cancelled", 0.50, false}}};  // third poll: the job ends and the dialog closes
+		int jobId = -1;
+		std::size_t polls = 0;
+
+		// Restores the real status reader and cancels the job the test submitted,
+		// on every exit path (QVERIFY returns early).
+		struct Cleanup
+		{
+			int* jobId;
+			~Cleanup()
+			{
+				gui::StemSplitController::setStatusReaderForTest(gui::StemSplitController::StatusReader{});
+				if (*jobId >= 0)
+				{
+					ControlRegistry::instance()->invoke(QStringLiteral("stem.job_cancel"),
+						QJsonObject{{QStringLiteral("job_id"), *jobId}});
+				}
+			}
+		} cleanup{&jobId};
+
+		gui::StemSplitController::setStatusReaderForTest(
+			[&jobId, &polls, &steps](int submitted) {
+				jobId = submitted;
+				const std::size_t index = polls < steps.size() ? polls : steps.size() - 1;
+				++polls;
+				const Step& step = steps[index];
+				const QJsonObject job{
+					{QStringLiteral("job_id"), submitted},
+					{QStringLiteral("state"), QString::fromLatin1(step.state)},
+					{QStringLiteral("progress"), step.progress},
+					{QStringLiteral("fetching_model"), step.fetching}};
+				return ControlResult::success(QJsonObject{{QStringLiteral("jobs"), QJsonArray{job}}});
+			});
+
+		gui::StemSplitController controller;
+		controller.splitClipToStems(source);
+		// Q050-010: an in-memory clip's WAV is written on a worker and its job starts on that report. Deliver only
+		// the report (a posted call to the application object), never a timer, so the poll timer still cannot run.
+		QVERIFY(QThreadPool::globalInstance()->waitForDone(60000));
+		QCoreApplication::sendPostedEvents(QCoreApplication::instance(), QEvent::MetaCall);
+
+		QProgressDialog* dialog = nullptr;
+		for (QWidget* widget : QApplication::topLevelWidgets())
+		{
+			auto* candidate = qobject_cast<QProgressDialog*>(widget);
+			if (candidate != nullptr && candidate->isVisible()) { dialog = candidate; }
+		}
+		QVERIFY(dialog != nullptr);
+		QPointer<QProgressDialog> progress(dialog);
+
+		// Each poll is the controller's own pollJob, which reads its status from
+		// the script. No event loop runs, so the poll timer cannot interleave.
+		QVERIFY(QMetaObject::invokeMethod(&controller, "pollJob", Qt::DirectConnection));
+		QCOMPARE(progress->value(), 25);
+		QVERIFY(progress->labelText().contains(QStringLiteral("Downloading the stem model")));
+
+		QVERIFY(QMetaObject::invokeMethod(&controller, "pollJob", Qt::DirectConnection));
+		QCOMPARE(progress->value(), 50);
+		QVERIFY2(!progress->labelText().contains(QStringLiteral("Downloading")),
+			qPrintable(progress->labelText()));
+		QVERIFY(progress->labelText().contains(QStringLiteral("Separating stems")));
+
+		QVERIFY(QMetaObject::invokeMethod(&controller, "pollJob", Qt::DirectConnection));
+		QCOMPARE(polls, std::size_t{3});
+		QVERIFY(progress.isNull() || !progress->isVisible());
+
+		delete sourceTrack;
 	}
 
 	void testStemTrackBuilderRejectsAnIncompleteSet()

@@ -34,6 +34,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <concepts>
+#include <limits>
 #include <memory>
 #include <numbers>
 
@@ -73,14 +75,21 @@ public:
 	inline void setCoeffs( float freq )
 	{
 		using namespace std::numbers;
+		const double nyquist = static_cast<double>(m_sampleRate) * 0.5;
+		const double maxFreq = std::nextafter(nyquist, 0.0);
+		const double minFreq = std::min(
+			static_cast<double>(std::numeric_limits<float>::min()), maxFreq * 0.5);
+		const double requestedFreq = std::isnan(freq) ? minFreq : static_cast<double>(freq);
+		const double safeFreq = std::clamp(requestedFreq, minFreq, maxFreq);
+
 		// wc
-		const double wc = 2 * pi * freq;
+		const double wc = 2 * pi * safeFreq;
 		const double wc2 = wc * wc;
 		const double wc3 = wc2 * wc;
 		m_wc4 = wc2 * wc2;
 
 		// k
-		const double k = wc / std::tan(pi * freq / m_sampleRate);
+		const double k = wc / std::tan(pi * safeFreq / m_sampleRate);
 		const double k2 = k * k;
 		const double k3 = k2 * k;
 		m_k4 = k2 * k2;
@@ -284,12 +293,28 @@ public:
 	}
 
 	inline BasicFilters( const sample_rate_t _sample_rate ) :
+		m_type( FilterType::LowPass ),
 		m_doubleFilter( false ),
 		m_sampleRate( (float)( _sample_rate > 0 ? _sample_rate : 1 ) ),
 		m_sampleRatio( 1.0f / m_sampleRate ),
 		m_subFilter( nullptr )
 	{
 		clearHistory();
+	}
+
+	// Signed rates are checked before the conversion to sample_rate_t: a
+	// negative value would otherwise wrap to a large positive rate. A
+	// nonpositive value maps to 0 and takes the zero paths above.
+	template<std::signed_integral SampleRate>
+	static constexpr sample_rate_t toSampleRate( const SampleRate _sample_rate )
+	{
+		return _sample_rate > 0 ? static_cast<sample_rate_t>( _sample_rate ) : 0;
+	}
+
+	template<std::signed_integral SampleRate>
+	inline BasicFilters( const SampleRate _sample_rate ) :
+		BasicFilters( toSampleRate( _sample_rate ) )
+	{
 	}
 
 	inline ~BasicFilters() = default;
@@ -328,6 +353,13 @@ public:
 		{
 			m_subFilter->clearHistory();
 		}
+	}
+
+	template<std::signed_integral SampleRate>
+	inline void setSampleRate( const SampleRate _sample_rate )
+	{
+		// a nonpositive value maps to 0 and is rejected below
+		setSampleRate( toSampleRate( _sample_rate ) );
 	}
 
 	inline void setSampleRate(const sample_rate_t sampleRate)
@@ -912,6 +944,7 @@ private:
 	// in/out history for Lowpass_SV (state-variant lowpass)
 	frame m_delay1, m_delay2, m_delay3, m_delay4;
 
+	// LowPass until setFilterType() is called
 	FilterType m_type;
 	bool m_doubleFilter;
 

@@ -43,6 +43,10 @@
 #include "SharedMemory.h"
 #include "LmmsTypes.h"
 
+#ifdef LMMS_TESTING
+class RemotePluginAudioPortsTest;
+#endif
+
 namespace lmms
 {
 
@@ -88,8 +92,12 @@ public:
 private:
 	void run() override;
 
+#ifdef LMMS_TESTING
+	friend class ::RemotePluginAudioPortsTest;
+#endif
+
 	RemotePlugin * m_plugin;
-	volatile bool m_quit;
+	std::atomic<bool> m_quit;
 
 } ;
 
@@ -107,21 +115,31 @@ public:
 
 	~RemotePlugin() override;
 
+	//! Whether the client process is running. The QProcess itself lives in the watcher
+	//! thread (init() moves it there), and the audio thread reads this (process()), so
+	//! the state is cached in an atomic the process lifecycle updates - reading
+	//! QProcess::state() from the audio thread would be an unsynchronized read of
+	//! another thread's QObject.
 	inline bool isRunning()
 	{
 #ifdef DEBUG_REMOTE_PLUGIN
 		return true;
 #else
-		return m_process.state() != QProcess::NotRunning;
+		return m_clientRunning.load(std::memory_order_acquire);
 #endif // DEBUG_REMOTE_PLUGIN
 	}
 
 	bool init( const QString &pluginExecutable, bool waitForInitDoneMsg, QStringList extraArgs = {} );
 
+	//! Waits for the client's IdHostInfoGotten. A failure recorded while the wait is
+	//! running - a retired message id, a message with too few arguments - stays: the
+	//! wait's own result must not erase it, exactly as waitForInitDone() does. The
+	//! verdict of a protocol mismatch is what keeps the host from rendering the wrong
+	//! audio, so it has to be sticky.
 	inline void waitForHostInfoGotten()
 	{
-		m_failed = waitForMessage( IdHostInfoGotten ).id
-							!= IdHostInfoGotten;
+		const bool gotHostInfo = waitForMessage( IdHostInfoGotten ).id == IdHostInfoGotten;
+		m_failed = m_failed || !gotHostInfo;
 	}
 
 	//! Waits for the remote client's IdInitDone. On success the audio ports are
@@ -179,13 +197,12 @@ public:
 	//! MIDI events refused because the hand-off queue was full, since construction.
 	std::uint64_t midiEventsDropped() const { return m_midiOverflow.recorded(); }
 
-	void updateSampleRate( sample_rate_t _sr )
-	{
-		lock();
-		sendMessage( message( IdSampleRateInformation ).addInt( _sr ) );
-		waitForReplyWithin( message( IdInformationUpdated ) );
-		unlock();
-	}
+	//! Tells the client which sample rate to run at. The client acknowledges the new
+	//! rate with IdInformationUpdated; a client that does not acknowledge it is still
+	//! running at the old one, and the two sides would render at different rates -
+	//! so the plugin is failed instead of carrying on with a rate the client never
+	//! took. Main thread: a rate change is a main-thread event.
+	void updateSampleRate( sample_rate_t _sr );
 
 
 	virtual void toggleUI()
@@ -204,6 +221,14 @@ public:
 	//! later than this is taken as the answer to the next query of its id (a client that hung for that long).
 	static constexpr std::chrono::seconds StaleQueryExpiry{2};
 
+	//! Tests only: a processing period waits up to \a budget for its client's reply instead of one audio period;
+	//! zero (the default) restores the real budget. For end-to-end tests about what the client says rather than
+	//! about the deadline: a client in another process cannot always answer within one period on a loaded machine.
+	static void setPeriodBudgetForTesting(std::chrono::microseconds budget);
+
+	//! Tests only: override a main-thread query's bounded wait; zero (the default) keeps QueryReplyTimeout.
+	static void setQueryReplyTimeoutForTesting(std::chrono::milliseconds timeout);
+
 	//! Waits up to \a _timeout for the reply to \a _wm, other messages read meanwhile going through processMessage().
 	//! The caller holds the communication lock. @return the reply, or an undefined message on timeout or loss.
 	message waitForReplyWithin( const message & _wm, std::chrono::milliseconds _timeout = QueryReplyTimeout );
@@ -214,8 +239,13 @@ public:
 		lock();
 		sendMessage( IdIsUIVisible );
 		const message m = waitForReplyWithin( message( IdIsUIVisible ) );
+		// The awaited reply is read here, not in processMessage(), so it is checked here too. Refused under the
+		// lock, as processMessage() refuses its messages.
+		const bool incomplete = m.id == IdIsUIVisible
+			&& static_cast<int>( m.size() ) < requiredArgumentCount( IdIsUIVisible );
+		if( incomplete ) { refuseIncompleteMessage( m ); }
 		unlock();
-		if( m.id != IdIsUIVisible ) { return -1; }
+		if( m.id != IdIsUIVisible || incomplete ) { return -1; }
 		m_uiVisible = m.getInt() ? 1 : 0;
 		return m_uiVisible;
 	}
@@ -279,6 +309,13 @@ private:
 	QProcess m_process;
 	ProcessWatcher m_watcher;
 
+	//! Whether the client process is running. The QProcess lives in the watcher thread
+	//! (init() moves it there) and the audio thread reads isRunning(), so the state is
+	//! cached here instead of being read from the QProcess across those threads. It is
+	//! set where the process is started (ProcessWatcher::run()) and cleared by the
+	//! process lifecycle (processFinished(), processErrored()).
+	std::atomic<bool> m_clientRunning{false};
+
 	//! The last channel-count request processMessage refused, and whether one is waiting to be reported.
 	//! Atomics, so the audio thread records them without allocating or locking.
 	std::atomic<bool> m_refusalPending{false};
@@ -296,6 +333,10 @@ private:
 	int m_pendingOutCount = 0;
 	//! Retired message id a client sent during a period (0 = none); reported and failed on the main thread.
 	int m_pendingRetiredId = 0;
+	//! Id and argument count of an incomplete message a client sent during a period (id 0 = none); the arity
+	//! refusal is reported and failed on the main thread.
+	int m_pendingArityId = 0;
+	int m_pendingArityCount = 0;
 	//! Debug text a client sent during a period, copied at its first 255 bytes; empty when none is pending.
 	bool m_pendingDebug = false;
 	std::array<char, 256> m_pendingDebugText{};
@@ -328,6 +369,10 @@ private:
 	//! Frame of a MIDI event that could not be sent yet (see sendQueuedMidiEvents()).
 	std::array<char, 128> m_pendingMidi{};
 	std::size_t m_pendingMidiSize = 0;
+	//! MIDI frames (events and all-notes-off cuts) sent since the last IdStartProcessing; audio thread only. The cap
+	//! is per client period: a period that sent its MIDI but found no room for its request is skipped, and the next
+	//! one must not send another MidiDrainPerPeriod before that same request.
+	std::size_t m_midiSentSinceRequest = 0;
 	//! Channels whose events the full queue refused; each is sent all-notes-off once the queue has drained.
 	MidiChannelOverflow m_midiOverflow;
 	//! Refusals already reported on the main thread (main thread only).
@@ -366,6 +411,26 @@ private:
 	//! Consumes client messages until every owed IdProcessingDone has arrived, or \a deadline passes.
 	//! Non-reply messages go through processMessage(), which defers their main-thread work.
 	ReplyWait collectProcessingReplies(std::chrono::steady_clock::time_point deadline);
+
+	//! The number of arguments a message with \a _id must carry before its handler may read them. The handlers
+	//! index the message without a bounds check, and the wire format carries the count with the message, so a
+	//! complete message can still be short. An id that reads no argument needs none.
+	static constexpr int requiredArgumentCount( int _id )
+	{
+		switch( _id )
+		{
+			case IdChangeInputOutputCount: return 2;
+			case IdDebugMessage:
+			case IdIsUIVisible: return 1;
+			default: return 0;
+		}
+	}
+
+	//! Refuses a message that arrived with fewer arguments than its id requires: nothing is applied (reading them
+	//! would index past the end of the message - undefined behaviour), the plugin is failed like any other protocol
+	//! mismatch, and the diagnostic is logged on the main thread or recorded for reportDeferredClientRequests() when
+	//! this runs on the audio thread (a log allocates and locks).
+	void refuseIncompleteMessage( const message & _m );
 
 	//! Logs the deferred retired-message and debug-text requests. Main thread only, under m_commMutex.
 	void reportDeferredClientRequests();
@@ -415,6 +480,13 @@ private:
 #endif // not SYNC_WITH_SHM_FIFO
 
 	friend class ProcessWatcher;
+
+#ifdef LMMS_TESTING
+	//! Test seam for the regression that pins the cached running state (cluster
+	//! new-p15-172): the test reads and steers m_clientRunning to prove that
+	//! isRunning() answers from the cache and not from the QProcess.
+	friend class ::RemotePluginAudioPortsTest;
+#endif
 
 
 private slots:

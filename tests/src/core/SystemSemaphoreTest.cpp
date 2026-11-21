@@ -27,6 +27,7 @@
 
 #include <chrono>
 #include <string>
+#include <utility>
 
 #include "SystemSemaphore.h"
 
@@ -57,6 +58,39 @@ private slots:
 		QVERIFY(semaphore.tryAcquire(0));
 		QVERIFY(std::chrono::steady_clock::now() - started < std::chrono::seconds{1});
 		QVERIFY(!semaphore.tryAcquire(0));
+	}
+
+	void defaultConstructedOperationsReturnFalse()
+	{
+		lmms::SystemSemaphore semaphore;
+		QVERIFY(!semaphore.acquire());
+		QVERIFY(!semaphore.release());
+		QVERIFY(!semaphore.tryAcquire(0));
+	}
+
+	void movedFromConstructorOperationsReturnFalse()
+	{
+		const auto key = std::string{"zene-sem-test-moved-"} + std::to_string(QCoreApplication::applicationPid());
+		lmms::SystemSemaphore source{key, 0u};
+		lmms::SystemSemaphore destination{std::move(source)};
+		QVERIFY(!source.acquire());
+		QVERIFY(!source.release());
+		QVERIFY(!source.tryAcquire(0));
+		QVERIFY(destination.release());
+		QVERIFY(destination.acquire());
+	}
+
+	void movedFromAssignmentOperationsReturnFalse()
+	{
+		const auto key = std::string{"zene-sem-test-assigned-"} + std::to_string(QCoreApplication::applicationPid());
+		lmms::SystemSemaphore source{key, 0u};
+		lmms::SystemSemaphore destination;
+		destination = std::move(source);
+		QVERIFY(!source.acquire());
+		QVERIFY(!source.release());
+		QVERIFY(!source.tryAcquire(0));
+		QVERIFY(destination.release());
+		QVERIFY(destination.acquire());
 	}
 };
 

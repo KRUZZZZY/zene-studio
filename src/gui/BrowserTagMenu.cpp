@@ -47,12 +47,27 @@ BrowserTagPrompt& prompt()
 	return s_prompt;
 }
 
+BrowserCategoryPrompt& categoryPrompt()
+{
+	static BrowserCategoryPrompt s_prompt;
+	return s_prompt;
+}
+
 std::optional<QString> askForTag()
 {
 	if (prompt()) { return prompt()(); }
 	bool ok = false;
 	const QString text = QInputDialog::getText(QApplication::activeWindow(), QMenu::tr("New tag"),
 		QMenu::tr("Tag:"), QLineEdit::Normal, QString(), &ok).trimmed();
+	return ok && !text.isEmpty() ? std::optional<QString>(text) : std::nullopt;
+}
+
+std::optional<QString> askForCategory()
+{
+	if (categoryPrompt()) { return categoryPrompt()(); }
+	bool ok = false;
+	const QString text = QInputDialog::getText(QApplication::activeWindow(), QMenu::tr("New category"),
+		QMenu::tr("Category:"), QLineEdit::Normal, QString(), &ok).trimmed();
 	return ok && !text.isEmpty() ? std::optional<QString>(text) : std::nullopt;
 }
 
@@ -64,11 +79,34 @@ ControlResult setTag(const QString& path, const QString& tag, bool on)
 		{{QStringLiteral("path"), path}, {QStringLiteral("tag"), tag}});
 }
 
+//! Puts every checkable entry of the Category submenu back the way the STORE holds it (not the
+//! way the click left it): the submenu's checks are a read-back of the one-category-per-file
+//! state, and a failed write changes none of it.
+void syncCategoryChecks(QMenu* categories, const QString& path)
+{
+	const QString current = BrowserTagStore::instance().categoryOf(path);
+	for (QAction* action : categories->actions())
+	{
+		if (!action->isCheckable()) { continue; }
+		const QString entry = action->data().toString();
+		const bool checked = entry == QLatin1String("browser.category.clear")
+			? current.isEmpty()
+			: QString::compare(current, action->text(), Qt::CaseInsensitive) == 0;
+		const QSignalBlocker block(action);
+		action->setChecked(checked);
+	}
+}
+
 } // namespace
 
 void setBrowserTagPrompt(BrowserTagPrompt replacement)
 {
 	prompt() = std::move(replacement);
+}
+
+void setBrowserCategoryPrompt(BrowserCategoryPrompt replacement)
+{
+	categoryPrompt() = std::move(replacement);
 }
 
 void addBrowserTagMenu(QMenu* menu, const QString& path)
@@ -103,6 +141,58 @@ void addBrowserTagMenu(QMenu* menu, const QString& path)
 		if (!tag) { return; }
 		const ControlResult result = setTag(path, *tag, true);
 		fresh->setStatusTip(result.ok ? QString() : result.errorMessage);
+	});
+}
+
+void addBrowserCategoryMenu(QMenu* menu, const QString& path)
+{
+	QMenu* categories = menu->addMenu(QMenu::tr("Category"));
+	// The vocabulary is the library's own (browser.categories reads the store): a category is
+	// listed because a file carries it. Reading only: every change goes through a command.
+	const QJsonArray known = ControlRegistry::instance()->invoke(QStringLiteral("browser.categories"), QJsonObject{})
+		.result.value(QStringLiteral("categories")).toArray();
+	// One category per file, so the entries are exclusive: "No category" is the empty state.
+	QAction* none = categories->addAction(QMenu::tr("No category"));
+	none->setCheckable(true);
+	none->setData(QStringLiteral("browser.category.clear"));
+	QList<QAction*> choices;
+	for (const QJsonValue& value : known)
+	{
+		QAction* action = categories->addAction(value.toObject().value(QStringLiteral("category")).toString());
+		action->setCheckable(true);
+		action->setData(QStringLiteral("browser.category.set"));
+		choices.append(action);
+	}
+	// The checks are the store's read-back; the connections below put them back there after
+	// every click, so what is ticked is always what the file carries.
+	syncCategoryChecks(categories, path);
+	for (QAction* action : choices)
+	{
+		QObject::connect(action, &QAction::triggered, categories, [path, categories, action] {
+			const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("browser.category.set"),
+				{{QStringLiteral("path"), path}, {QStringLiteral("category"), action->text()}});
+			// One category per file: the entry that was ticked before is unticked now, and a
+			// failed write ticks nothing new - the store decides, both ways.
+			syncCategoryChecks(categories, path);
+			if (!result.ok) { action->setStatusTip(result.errorMessage); }
+		});
+	}
+	QObject::connect(none, &QAction::triggered, categories, [path, categories, none] {
+		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("browser.category.clear"),
+			{{QStringLiteral("path"), path}});
+		syncCategoryChecks(categories, path);
+		if (!result.ok) { none->setStatusTip(result.errorMessage); }
+	});
+	categories->addSeparator();
+	QAction* fresh = categories->addAction(QMenu::tr("New category..."));
+	fresh->setData(QStringLiteral("browser.category.set"));
+	QObject::connect(fresh, &QAction::triggered, categories, [path, categories, fresh] {
+		const std::optional<QString> category = askForCategory();
+		if (!category) { return; }
+		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("browser.category.set"),
+			{{QStringLiteral("path"), path}, {QStringLiteral("category"), *category}});
+		fresh->setStatusTip(result.ok ? QString() : result.errorMessage);
+		if (result.ok) { syncCategoryChecks(categories, path); }
 	});
 }
 

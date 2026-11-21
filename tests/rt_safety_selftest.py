@@ -19,6 +19,7 @@ Positive (each MUST fail, and must name the offending path:symbol:rule):
   * a deliberate LOCK on a declared audio-thread path         (QMutexLocker)
   * a deliberate GROWTH on a declared audio-thread path       (push_back)
   * synchronous stdio output on a declared audio-thread path  (printf)
+  * Qt logging on a declared audio-thread path                 (qDebug)
   * the same growth growing PAST an allowlist line's count
   * the CLI's own exit code, which is the number a gate records
 Negative (each MUST pass):
@@ -125,6 +126,17 @@ void renderStageMix(float* out, std::uint32_t frames) noexcept
 }
 """
 
+WITH_QT_LOG = """\
+void renderStageMix(float* out, std::uint32_t frames) noexcept
+{
+    qDebug() << \"audio callback diagnostic\";  // the Qt logging control
+    for (std::uint32_t i = 0; i < frames; ++i)
+    {
+        out[i] = out[i] * 0.5f;
+    }
+}
+"""
+
 #: A clean declared path beside a function nobody declared: the second one is
 #: deliberately dirty, and the sweep must stay silent about it - the scope is
 #: DECLARED, not discovered, and that is this programme's stated bound.
@@ -211,6 +223,7 @@ def positive_controls(tmp, check):
     check_lock_control(tmp, check)
     check_growth_control(tmp, check)
     check_stdio_control(tmp, check)
+    check_qt_log_control(tmp, check)
 
 
 def _first_named(verdict, fragment):
@@ -254,6 +267,16 @@ def check_stdio_control(tmp, check):
     check("POSITIVE CONTROL: synchronous printf on an audio-thread path FAILS",
           verdict.exit_code == 1 and bool(named) and len(verdict.hits) == 1
           and verdict.hits[0].rule == "stdio-output",
+          "exit %d, %s" % (verdict.exit_code, (named or "-")[:96]))
+
+
+def check_qt_log_control(tmp, check):
+    """Qt logging on an audio-thread path is a blocking I/O hit."""
+    verdict = Fixture(os.path.join(tmp, "qtlog"), WITH_QT_LOG, [SCOPE_MIX]).verdict()
+    named = _first_named(verdict, ":qt-log")
+    check("POSITIVE CONTROL: a deliberate qDebug on an audio-thread path FAILS",
+          verdict.exit_code == 1 and bool(named) and len(verdict.hits) == 1
+          and verdict.hits[0].rule == "qt-log",
           "exit %d, %s" % (verdict.exit_code, (named or "-")[:96]))
 
 

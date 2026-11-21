@@ -70,11 +70,17 @@ public:
 
 	//! Recompute what painting caches from the clip: the longest note.
 	void clipChanged();
+	//! Re-apply the active tool's cursor without a mouse move (a toolbar or keyboard tool change).
+	void refreshCursor();
 	NoteRange visibleRange() const;
 	//! The note under @a pos (topmost when notes overlap), or nullptr.
 	Note* noteAt(const QPoint& pos) const;
 	//! The note's rectangle on screen; empty when its key is folded away.
 	QRect noteRect(const Note& note) const;
+	//! 0.5.0 Q050-141: the note's touch target - @a noteRect widened (never moved) to the design system's
+	//! minimum width, so a short note is a finger-sized target. Targets of adjacent short notes overlap;
+	//! noteAt() resolves a tap on an overlap to the note whose drawn rectangle holds it, else the nearest.
+	QRect touchRect(const Note& note) const;
 	//! The rectangle a note of @a key over [start, end) ticks would occupy.
 	QRect rectFor(int key, int start, int end) const;
 	//! Whether @a pos is on the resize handle at the right end of @a note.
@@ -102,6 +108,7 @@ protected:
 	void mouseMoveEvent(QMouseEvent* event) override;
 	void mouseReleaseEvent(QMouseEvent* event) override;
 	void mouseDoubleClickEvent(QMouseEvent* event) override;
+	void leaveEvent(QEvent* event) override;
 	void wheelEvent(QWheelEvent* event) override;
 	void keyPressEvent(QKeyEvent* event) override;
 	void resizeEvent(QResizeEvent* event) override;
@@ -134,6 +141,7 @@ private:
 	void paintNote(QPainter& p, const Note& note, const QRect& r) const;
 	void paintDragPreview(QPainter& p) const;
 	void paintDrawPreview(QPainter& p) const;
+	void paintHoverPreview(QPainter& p) const;  //!< the Draw tool's note under the idle pointer
 	void paintStrokePreview(QPainter& p) const;  //!< the notes a delete or mute stroke has crossed
 	bool stroked(const Note& note) const;        //!< whether the stroke in flight has crossed @a note
 	void paintMovePreview(QPainter& p) const;
@@ -149,7 +157,12 @@ private:
 	void pressDrawOrSelect(Note* note, QMouseEvent* event);
 	void commitDrag(Drag drag);  //!< the one command a released gesture sends
 	void commitStroke(Drag drag);  //!< ... when it was a delete, slice, mute or paint stroke
-	void updateCursor(const QPoint& pos);  //!< the resize cursor over a note's handles, with no button held
+	//! The cursor the active tool shows: its own shape, or a resize/move over a note with Draw/Select.
+	void updateCursor(const QPoint& pos);
+	//! The key a draw gesture or the idle preview is on now (the pointer's row, scaled; the press row when off it).
+	int drawKey() const;
+	//! While a draw drags to another row: release the old auditioned key and sound the new one.
+	void followDrawPitch();
 	void pressAudition(const Note* note);
 	void pressStroke(Drag drag, const Note* note);  //!< a delete or mute stroke, starting on @a note (or none)
 	void markStroke(const Note* note);  //!< adds @a note (if any) to m_strokeIds, kept sorted
@@ -178,7 +191,7 @@ private:
 	void extendPaint(const QPoint& pos);
 	//! The stroke's path from @a from to @a to: every note on it is marked, not only the one at its end.
 	void strokeAlong(const QPoint& from, const QPoint& to);
-	//! The paint stroke's path, walked like strokeAlong's: a cell between two mouse events is painted too.
+	//! The paint stroke from @a from to @a to: every grid cell it crosses is painted, not just those an event lands on.
 	void paintAlong(const QPoint& from, const QPoint& to);
 	void commitPaint();
 	void commitMute();
@@ -229,6 +242,8 @@ private:
 	Qt::KeyboardModifiers m_pressMods; //!< the modifiers at the press (Ctrl selects, Ctrl+Shift adds)
 	QPoint m_pressPos;
 	QPoint m_currentPos;
+	QPoint m_hoverPos;                   //!< the pointer's last idle position, for the Draw preview
+	bool m_hovering = false;             //!< the pointer is over the note area (and a Draw preview may show)
 	int m_pressTick = 0;
 	int m_pressKey = -1;
 	// Notes are held by Note::id(), never by pointer, across a gesture: a command arriving on

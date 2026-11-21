@@ -28,6 +28,7 @@
  *        typed refusal naming the budget, and neither project nor script ran.
  *   8-9. partial loads produced by project.open and script.run retain their section
  *        list and filename across one undo and redo.
+ *   10. script.run refuses before Lua when project journalling is disabled.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -286,6 +287,35 @@ private slots:
 		SAME_PROJECT(wholeProject(), before);
 		Engine::projectJournal()->redo();
 		SAME_PROJECT(wholeProject(), after);
+	}
+
+	void aScriptRefusesWhenProjectJournallingIsDisabled()
+	{
+		freshProject(QStringLiteral("base"), QString());
+		Engine::projectJournal()->clearJournal();
+		ProjectJournal* journal = Engine::projectJournal();
+		const bool wasJournalling = journal->isJournalling();
+		const QString before = wholeProject();
+		const int channelsBefore = Engine::mixer()->numChannels();
+		const int depthBefore = journalDepth();
+		journal->setJournalling(false);
+
+		const ControlResult ran = run(QStringLiteral("script.run"), {{QStringLiteral("source"),
+			QStringLiteral("local channel = zene.mixer():addChannel()\nchannel:setName('without-undo')\n")}});
+		journal->setJournalling(wasJournalling);
+		const QString after = wholeProject();
+		const int depthAfter = journalDepth();
+
+		QVERIFY2(!ran.ok && after == before && depthAfter == depthBefore,
+			qPrintable(QStringLiteral("script.run ok=%1, project_changed=%2, undo_depth_delta=%3")
+				.arg(ran.ok ? QStringLiteral("true") : QStringLiteral("false"))
+				.arg(after != before ? QStringLiteral("true") : QStringLiteral("false"))
+				.arg(depthAfter - depthBefore)));
+		QCOMPARE(ran.errorKind, ControlErrorKind::Refused);
+		SAME_PROJECT(after, before);
+		QCOMPARE(int(Engine::mixer()->numChannels()), channelsBefore);
+		QVERIFY(!trackNames().contains(QStringLiteral("without-undo")));
+		QCOMPARE(depthAfter, depthBefore);
 	}
 
 	void aScriptThatFailsHalfWayStillLeavesOneUndoStep()

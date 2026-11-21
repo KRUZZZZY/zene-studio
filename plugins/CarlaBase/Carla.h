@@ -56,7 +56,7 @@
 // lmms/include/
 #include "AutomatableModel.h"
 #include "Instrument.h"
-#include "MidiHandoffQueue.h"
+#include "CarlaMidiHandoff.h"
 #include "InstrumentView.h"
 #include "SubWindow.h"
 
@@ -173,8 +173,18 @@ class CARLABASE_EXPORT CarlaInstrument : public Instrument
 public:
     static const uint32_t kMaxMidiEvents = 512;
 
-    CarlaInstrument(InstrumentTrack* const instrumentTrack, const Descriptor* const descriptor, const bool isPatchbay);
+    //! Q050-481.1: @a key is the sub-plugin key a single-plug-in host (plugins/CarlaVst2) was created
+    //! with; it becomes Plugin::key(), which the project stores. The Rack and Patchbay pass none.
+    //! With @a playNow false the subclass registers the play handle itself (startPlaying()) once it is fully
+    //! constructed, so the audio thread never reaches a half-built instrument.
+    CarlaInstrument(InstrumentTrack* const instrumentTrack, const Descriptor* const descriptor, const bool isPatchbay,
+        const Descriptor::SubPluginFeatures::Key* key = nullptr, bool playNow = true);
     ~CarlaInstrument() override;
+
+    //! Q050-481.1: true for a subclass that hosts exactly one plug-in and opens that plug-in's own
+    //! editor (Plugin::openNativeEditor); the instrument view then offers that editor instead of
+    //! Carla's own window.
+    virtual bool hostsSinglePlugin() const { return false; }
 
     // Carla NativeHostDescriptor functions
     uint32_t handleGetBufferSize() const;
@@ -197,6 +207,20 @@ signals:
     void uiClosed();
     void paramsUpdated();
 
+protected:
+    //! Q050-481.1: the Carla Rack instance underneath, for a single-plug-in host.
+    NativePluginHandle nativeHandle() const { return fHandle; }
+    const NativePluginDescriptor* nativeDescriptor() const { return fDescriptor; }
+    //! Re-reads Carla's parameter list after the hosted plug-in changed.
+    void reloadParameters() { refreshParams(false); }
+    //! When on, the Rack's unused parameter slots (and disabled ones) carry no display name, so
+    //! Instrument::parameterCount() and plugin.param_* see only the hosted plug-in's parameters.
+    void setHideUnusedParameters(bool hide) { m_hideUnusedParams = hide; }
+    //! Q050-481.1: registers the InstrumentPlayHandle that calls play() every period (see the constructor).
+    void startPlaying();
+    //! Q050-481.1: every parameter model of the Rack, in Carla's index order.
+    const std::vector<CarlaParamFloatModel*>& paramModels() const { return m_paramModels; }
+
 private slots:
     void sampleRateChanged();
     void refreshParams(bool init = false);
@@ -211,15 +235,10 @@ private:
     NativeHostDescriptor fHost;
     const NativePluginDescriptor* fDescriptor;
 
-    uint32_t        fMidiEventCount;
-    NativeMidiEvent fMidiEvents[kMaxMidiEvents];
     NativeTimeInfo  fTimeInfo;
 
-    //! MIDI from any thread, waiting for the next processed period. handleMidiEvent() only pushes here, and
-    //! playImpl() stages the events into fMidiEvents, so no lock is shared between the two paths.
-    MidiHandoffQueue<kMaxMidiEvents> fMidiHandoff;
-    //! Channels whose events the full queue refused; cut with all-notes-off once the queue has drained.
-    MidiChannelOverflow fMidiOverflow;
+    //! MIDI hand-off shared by handleMidiEvent() and playImpl(); the latter stages it at Carla's process boundary.
+    CarlaMidiHandoff<kMaxMidiEvents> fMidiHandoff;
 
     uint8_t m_paramGroupCount;
     std::vector<CarlaParamFloatModel*> m_paramModels;
@@ -227,6 +246,8 @@ private:
 
     QCompleter* m_paramsCompleter;
     QStringListModel* m_completerModel;
+
+    bool m_hideUnusedParams = false;
 
     friend class gui::CarlaInstrumentView;
     friend class gui::CarlaParamsView;

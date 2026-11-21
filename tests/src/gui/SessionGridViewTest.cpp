@@ -44,9 +44,13 @@
 #include <QToolButton>
 #include <QUrl>
 
+#include <tuple>
+
+#include "AccessibleWidgets.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "MenuTestSupport.h"
+#include "SessionAnnouncements.h"
 #include "SessionGridCells.h"
 #include "SessionGridView.h"
 #include "Song.h"
@@ -228,6 +232,9 @@ private slots:
 
 		QMenu cell;
 		view.populateMenu(&cell, view.cellButton(0, 0));
+		QAction* chain = menuAction(&cell, {QStringLiteral("Follow Action Chain...")});
+		QVERIFY2(chain, "the cell menu should offer the per-cell Follow Action Chain... editor (WF-061)");
+		QCOMPARE(chain->property("controlCommand").toString(), QStringLiteral("session.set_slot"));
 		menuAction(&cell, {QStringLiteral("Launch Mode"), QStringLiteral("gate")})->trigger();
 		QCOMPARE(slotState(0, 0).value(QStringLiteral("mode")).toString(), QStringLiteral("gate"));
 		menuAction(&cell, {QStringLiteral("Launch Mode"), QStringLiteral("trigger")})->trigger();
@@ -239,6 +246,9 @@ private slots:
 
 		QMenu scene;
 		view.populateMenu(&scene, view.sceneButton(1));
+		QAction* sceneChain = menuAction(&scene, {QStringLiteral("Follow Action Chain...")});
+		QVERIFY2(sceneChain, "the scene menu should offer the scene Follow Action Chain... editor (WF-061)");
+		QCOMPARE(sceneChain->property("controlCommand").toString(), QStringLiteral("session.set_scene"));
 		QVERIFY(!menuAction(&scene, {QStringLiteral("Tempo Override Off")})->isEnabled());
 		QVERIFY(run(QStringLiteral("session.set_scene"), {{QStringLiteral("scene"), 1}, {QStringLiteral("tempo"), 150}}).ok);
 		view.refresh();
@@ -286,6 +296,78 @@ private slots:
 		QCOMPARE(slotState(1, 1).value(QStringLiteral("type")).toString(), QStringLiteral("midi"));
 		QCOMPARE(slotState(1, 1).value(QStringLiteral("pattern")).toInt(), patterns.first().toObject().value(QStringLiteral("pattern")).toInt());
 		QVERIFY(run(QStringLiteral("session.clear_slot"), {{QStringLiteral("track"), 1}, {QStringLiteral("scene"), 1}}).ok);
+	}
+
+	//! Q050-320: a queued launch is silent, a completed state change is said once, a
+	//! whole scene start/stop is one scene message, and view.announcements gates it.
+	void theAnnouncerSpeaksCompletedLaunchesOnceAndHonoursTheLevel()
+	{
+		QVERIFY(run(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("all")}}).ok);
+		const auto makeState = [](bool launching, bool track0, bool track1) {
+			QJsonArray slotList;
+			for (const auto& [track, scene, name] : {std::tuple{0, 0, QStringLiteral("kick")}, std::tuple{1, 0, QStringLiteral("bass")}})
+			{
+				slotList.append(QJsonObject{{QStringLiteral("track"), track}, {QStringLiteral("scene"), scene},
+					{QStringLiteral("type"), QStringLiteral("audio")}, {QStringLiteral("name"), name}});
+			}
+			QJsonArray columns;
+			if (track0) { columns.append(QJsonObject{{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0},
+				{QStringLiteral("phase"), launching ? QStringLiteral("launching") : QStringLiteral("playing")}}); }
+			if (track1) { columns.append(QJsonObject{{QStringLiteral("track"), 1}, {QStringLiteral("scene"), 0},
+				{QStringLiteral("phase"), launching ? QStringLiteral("launching") : QStringLiteral("playing")}}); }
+			return QJsonObject{{QStringLiteral("grid"), QJsonObject{{QStringLiteral("tracks"), 2}, {QStringLiteral("scenes"), 2}}},
+				{QStringLiteral("slots"), slotList}, {QStringLiteral("columns"), columns},
+				{QStringLiteral("scenes"), QJsonArray{QJsonObject{{QStringLiteral("name"), QStringLiteral("Intro")}},
+					QJsonObject{{QStringLiteral("name"), QString()}}}}};
+		};
+		QWidget source;
+		SessionAnnouncer announcer;
+		announcer.observe(makeState(false, false, false));  // seeds silently
+		announcer.observe(makeState(true, true, true));  // queued, not playing
+		// A refused launch changes no published state, so it says nothing. Stop All with nothing
+		// playing is likewise silent. Both routes (UI, bound controller, agent) end in this state.
+		QVERIFY(!run(QStringLiteral("session.launch_slot"), {{QStringLiteral("track"), 99}, {QStringLiteral("scene"), 0}}).ok);
+		QVERIFY(run(QStringLiteral("session.stop_all")).ok);
+		announcer.observe(makeState(false, false, false));
+		QVERIFY(announcer.lastMessage().isEmpty());
+		QVERIFY(announcer.lastMessage().isEmpty());
+		a11y::announceStatus(&source, QStringLiteral("session watch marker one"));
+		const QString marker = a11y::lastAnnouncement();
+		announcer.observe(makeState(false, true, true));
+		QCOMPARE(announcer.lastMessage(), QStringLiteral("Intro playing"));
+		QCOMPARE(a11y::lastAnnouncement(), QStringLiteral("Intro playing"));
+		announcer.observe(makeState(false, true, true));  // unchanged: no second word
+		QCOMPARE(a11y::lastAnnouncement(), QStringLiteral("Intro playing"));
+		QVERIFY(marker != a11y::lastAnnouncement());
+
+		// One cell stopping is that cell; every cell of the row stopping is the scene once.
+		announcer.observe(makeState(false, true, false));
+		QVERIFY2(announcer.lastMessage().endsWith(QStringLiteral("bass stopped")), qPrintable(announcer.lastMessage()));
+		announcer.reset();
+		announcer.observe(makeState(false, false, false));
+		announcer.observe(makeState(false, true, true));
+		const QString playing = announcer.lastMessage();
+		QVERIFY(playing.endsWith(QStringLiteral("playing")));
+		announcer.observe(makeState(false, false, false));
+		QCOMPARE(announcer.lastMessage(), QStringLiteral("Intro stopped"));
+		announcer.observe(makeState(false, false, false));
+		QCOMPARE(announcer.lastMessage(), QStringLiteral("Intro stopped"));
+
+		// errors and off suppress the ordinary launch message.
+		QVERIFY(run(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("errors")}}).ok);
+		announcer.reset();
+		announcer.observe(makeState(false, false, false));
+		a11y::announceStatus(&source, QStringLiteral("session watch marker two"));
+		const QString errorsMarker = a11y::lastAnnouncement();
+		announcer.observe(makeState(false, true, true));
+		QVERIFY(announcer.lastMessage().endsWith(QStringLiteral("playing")));
+		QCOMPARE(a11y::lastAnnouncement(), errorsMarker);
+		QVERIFY(run(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("off")}}).ok);
+		announcer.reset();
+		announcer.observe(makeState(false, false, false));
+		announcer.observe(makeState(false, true, true));
+		QCOMPARE(a11y::lastAnnouncement(), errorsMarker);
+		QVERIFY(run(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("all")}}).ok);
 	}
 
 	//! 0.5.0 theme 14: a scene's state is its row's - queued over playing over stopped over empty - and a cell's
@@ -388,6 +470,26 @@ private slots:
 		QCOMPARE(slotState(0, 0).value(QStringLiteral("name")).toString(), QStringLiteral("kick"));
 		QCOMPARE(slotState(0, 0).value(QStringLiteral("source")).toString(), QStringLiteral("kick.wav"));
 		QVERIFY(view.undoReplaceButton()->isHidden());
+	}
+
+	//! Q050-489: Clear Cell on a PLAYING cell stops it - the launcher follows the grid - and the undo puts the clip
+	//! back without launching it.
+	void clearingAPlayingCellFromItsMenuStopsIt()
+	{
+		SessionGridView view;
+		view.refresh();
+		QTest::mouseClick(view.cellButton(1, 0), Qt::LeftButton);
+		QTRY_COMPARE_WITH_TIMEOUT(playingScene(1), 0, 3000);
+		QMenu menu;
+		view.populateMenu(&menu, view.cellButton(1, 0));
+		menuAction(&menu, {QStringLiteral("Clear Cell")})->trigger();
+		QVERIFY(slotState(1, 0).isEmpty());
+		QTRY_COMPARE_WITH_TIMEOUT(playingScene(1), -1, 3000);
+		QTRY_VERIFY_WITH_TIMEOUT(!view.cellButton(1, 0)->isChecked(), 3000);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(slotState(1, 0).value(QStringLiteral("name")).toString(), QStringLiteral("bass"));
+		QTest::qWait(100);
+		QCOMPARE(playingScene(1), -1);
 	}
 
 };

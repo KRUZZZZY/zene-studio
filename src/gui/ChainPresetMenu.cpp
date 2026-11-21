@@ -44,6 +44,7 @@ namespace
 
 std::function<QString()> s_prompt;
 std::function<bool(const QString&)> s_ask;
+std::function<void(const QString&)> s_notice;
 
 QString promptName()
 {
@@ -57,6 +58,17 @@ bool ask(const QString& question)
 	if (s_ask) { return s_ask(question); }
 	return QMessageBox::question(QApplication::activeWindow(), QMenu::tr("Effect Chain Presets"), question,
 		QMessageBox::Yes | QMessageBox::No, QMessageBox::No) == QMessageBox::Yes;
+}
+
+//! Q050-331: what chain.apply did with the preset's controller bindings - shown only when it carried some.
+void announceBindings(const QString& name, const ControlResult& applied)
+{
+	const QJsonObject bindings = applied.result.value(QStringLiteral("bindings")).toObject();
+	if (!applied.ok || bindings.value(QStringLiteral("saved")).toInt() == 0) { return; }
+	const QString notice = QMenu::tr("Applied \"%1\": %2").arg(name, bindings.value(QStringLiteral("summary")).toString());
+	if (s_notice) { s_notice(notice); }
+	else if (isUnattendedRun()) { qInfo("%s", qPrintable(notice)); }
+	else { QMessageBox::information(QApplication::activeWindow(), QMenu::tr("Effect Chain Presets"), notice); }
 }
 
 //! Runs @a command; a refusal is shown (or logged when nobody is there).
@@ -110,7 +122,8 @@ void rebuild(QMenu* menu, const QString& target)
 		QAction* apply = menu->addAction(QMenu::tr("Apply %1").arg(name));
 		apply->setData(QStringLiteral("chain.apply"));
 		QObject::connect(apply, &QAction::triggered, menu, [target, name] {
-			run(QStringLiteral("chain.apply"), {{QStringLiteral("name"), name}, {QStringLiteral("target"), target}});
+			announceBindings(name,
+				run(QStringLiteral("chain.apply"), {{QStringLiteral("name"), name}, {QStringLiteral("target"), target}}));
 		});
 	}
 	QMenu* remove = new QMenu(QMenu::tr("Delete"), menu);
@@ -130,6 +143,7 @@ void rebuild(QMenu* menu, const QString& target)
 
 void setChainPresetNamePrompt(std::function<QString()> prompt) { s_prompt = std::move(prompt); }
 void setChainPresetQuestion(std::function<bool(const QString&)> askFn) { s_ask = std::move(askFn); }
+void setChainPresetNotice(std::function<void(const QString&)> notice) { s_notice = std::move(notice); }
 
 void addChainPresetMenu(QMenu* menu, Track* track)
 {

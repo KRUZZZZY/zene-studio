@@ -27,6 +27,7 @@
 
 #include <QtTest>
 
+#include <QDir>
 #include <QFile>
 #include <QJsonArray>
 #include <QStringList>
@@ -35,6 +36,7 @@
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "ConfigManager.h"
+#include "ControlDeviceMoves.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -279,6 +281,203 @@ private slots:
 		QVERIFY(TrackKeyNames::instance().name(track->id(), 24).isEmpty());
 	}
 
+	//! new-p14-19 BUG 13: a key-name call whose map is already in the requested state is
+	//! not an edit. storeNames recorded a journal step (and marked the project modified)
+	//! unconditionally, so reapplying the current name, removing a key that had none, or
+	//! applying the empty 'none' preset to an empty track put a no-op on the undo stack:
+	//! the next undo consumed it and left the real edit in place.
+	void aKeyNameEditThatChangesNothingRecordsNoStep()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		QVERIFY(registry != nullptr);
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int coalesceWindow = registry->coalesceWindowMs();
+		QVERIFY(run(QStringLiteral("control.set_undo_coalescing"), {{QStringLiteral("window_ms"), 0}}).ok);
+
+		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		QVERIFY(track != nullptr);
+		const QString id = control::trackIdOf(track);
+
+		// A no-op leaves the journal and the transaction log exactly as it found them.
+		const auto expectNoStep = [&](const QString& command, const QJsonObject& args) {
+			const quint64 stepBefore = journal->topStepSerial();
+			const int countBefore = registry->transactions().size();
+			const ControlResult result = run(command, args);
+			QVERIFY2(result.ok, qPrintable(result.errorMessage));
+			QCOMPARE(journal->topStepSerial(), stepBefore);
+			QCOMPARE(registry->transactions().size(), countBefore);
+		};
+
+		// The empty preset on a track that has no names removes nothing.
+		expectNoStep(QStringLiteral("key_names.preset"), {{QStringLiteral("track"), id},
+			{QStringLiteral("preset"), QStringLiteral("none")}});
+		// Removing a key that has no name removes nothing.
+		expectNoStep(QStringLiteral("key_names.set"), {{QStringLiteral("track"), id}, {QStringLiteral("key"), 24},
+			{QStringLiteral("name"), QString()}});
+
+		// Reapplying the current name: the map already holds exactly that.
+		QVERIFY(run(QStringLiteral("key_names.set"), {{QStringLiteral("track"), id}, {QStringLiteral("key"), 24},
+			{QStringLiteral("name"), QStringLiteral("Kick")}}).ok);
+		QCOMPARE(TrackKeyNames::instance().name(track->id(), 24), QStringLiteral("Kick"));
+		expectNoStep(QStringLiteral("key_names.set"), {{QStringLiteral("track"), id}, {QStringLiteral("key"), 24},
+			{QStringLiteral("name"), QStringLiteral("Kick")}});
+
+		// The one real edit is still the step the next undo takes: the no-op did not sit
+		// on top of it and get consumed in its place.
+		QVERIFY(undone());
+		QVERIFY(TrackKeyNames::instance().name(track->id(), 24).isEmpty());
+
+		QVERIFY(run(QStringLiteral("control.set_undo_coalescing"), {{QStringLiteral("window_ms"), coalesceWindow}}).ok);
+	}
+
+	//! Luna cluster new-p14-81: a removal whose inverse was NOT recorded must not
+	//! be reported as reversible.
+	//!
+	//! journalTrackRemoval() answered "true" as soon as it had CAPTURED the
+	//! track's XML - whether or not the structural step was actually pushed. A
+	//! journal that is not journalling (or no journal at all) records nothing:
+	//! ProjectJournal::addJournalStructure() refuses the step. The helper then
+	//! claimed success, and track.remove - which takes that claim for its
+	//! transaction's `reversible` - answered "reversible: true" over a deletion
+	//! no undo could reverse. The next undo would then take back an OLDER edit.
+	//!
+	//! The seam is the engine's own journalling flag: the same switch the
+	//! product's JournalPause uses to keep an undo from recording a checkpoint
+	//! of its own. No clock, no sleep, no race.
+	void aRemovalThatRecordedNoStepIsNotReportedAsReversible()
+	{
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		QVERIFY(journal->isJournalling());
+
+		// (0) The helper's OWN answer, before any command is involved: a refused
+		// step is not an inverse, and the helper must say so.
+		const QString direct = revtest::addTrack();
+		QVERIFY(!direct.isEmpty());
+		Track* directTrack = Engine::getSong()->tracks().back();
+		QVERIFY(directTrack != nullptr);
+		journal->setJournalling(false);
+		const bool directRecorded = control::journalTrackRemoval(directTrack);
+		journal->setJournalling(true);
+		QVERIFY2(!directRecorded,
+			"journalTrackRemoval claimed an inverse although no structural step was recorded (new-p14-81)");
+
+		// (1) The journal records nothing: the removal is real, but it has no inverse.
+		journal->setJournalling(false);
+		const ControlResult removed = run(QStringLiteral("track.remove"), {{QStringLiteral("track"), direct}});
+		journal->setJournalling(true);
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QVERIFY(!revtest::hasTrack(direct));
+		const QJsonObject record = revtest::stateOf(QStringLiteral("track.remove"));
+		QVERIFY2(!record.isEmpty(), "the removal recorded no transaction at all");
+		QVERIFY2(!record.value(QStringLiteral("reversible")).toBool(),
+			"the removal was reported as reversible although no undo step was recorded "
+			"(new-p14-81): the next undo would take back an OLDER edit");
+
+		// (2) The very same removal, with the journal recording again, is reversible.
+		const QString other = revtest::addTrack();
+		QVERIFY(!other.isEmpty());
+		QVERIFY(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), other}}).ok);
+		const QJsonObject recorded = revtest::stateOf(QStringLiteral("track.remove"));
+		QCOMPARE(recorded.value(QStringLiteral("reversible")).toBool(), true);
+	}
+
+	/*! A SIBLING structural helper must pass a refused step on instead of claiming it
+	 *  was recorded: journalChainRemoval() (rack.remove_chain) is the same writer as
+	 *  journalTrackRemoval(), and a chain removal the journal refused to record has
+	 *  no inverse either (new-p14-81).
+	 *
+	 *  Two things are proved here, and both must fail without the helper's fix:
+	 *  the helper's own answer (it returns false when the step was refused), and
+	 *  the RECORD the command leaves behind (it must not claim a recorded undo
+	 *  step - a record that says otherwise is the lie the finding is about).
+	 */
+	void aRackRemovalThatRecordedNoStepIsNotReportedAsReversible()
+	{
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		QVERIFY(journal->isJournalling());
+		journal->clearJournal();
+
+		MixerChannel* channel = Engine::mixer()->mixerChannel(4);
+		const QString channelId = control::channelIdOf(channel);
+		const ControlResult added = run(QStringLiteral("rack.add_chain"),
+			{{QStringLiteral("channel"), channelId}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		const int chain = added.result.value(QStringLiteral("chain")).toInt();
+		QVERIFY(chain >= 1);
+		const int selectedBefore = channel->m_rack.selectedChain();
+
+		// (1) The helper's own answer: the paused journal refuses its structural
+		// step, so there is no inverse to report.
+		journal->setJournalling(false);
+		const bool recorded = control::journalChainRemoval(channelId, chain, {}, selectedBefore);
+		journal->setJournalling(true);
+		QVERIFY2(!recorded,
+			"journalChainRemoval claimed an inverse although no structural step was "
+			"recorded (new-p14-81)");
+
+		// (2) The record the command leaves: the removal is real, but nothing was
+		// recorded for it, so the record must not claim a recorded undo step.
+		journal->setJournalling(false);
+		const ControlResult removed = run(QStringLiteral("rack.remove_chain"),
+			{{QStringLiteral("channel"), channelId}, {QStringLiteral("chain"), chain}});
+		journal->setJournalling(true);
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QCOMPARE(channel->m_rack.chainCount(), chain);
+		const QJsonObject record = revtest::stateOf(QStringLiteral("rack.remove_chain"));
+		QVERIFY2(!record.isEmpty(), "rack.remove_chain recorded no transaction at all");
+		QVERIFY2(!record.value(QStringLiteral("reversible")).toBool(),
+			"rack.remove_chain claimed an inverse although no structural step was recorded "
+			"(new-p14-81)");
+		const QString mechanism = record.value(QStringLiteral("mechanism")).toString();
+		QVERIFY2(!mechanism.contains(QStringLiteral("the recorded undo step")),
+			qPrintable(QStringLiteral("rack.remove_chain's record claimed a recorded undo step "
+				"although the journal recorded none (new-p14-81): ") + mechanism));
+
+		// Drop the add-chain step: its chain was deliberately removed without an inverse.
+		journal->clearJournal();
+	}
+
+	/*! An explicit JOURNAL inverse is not reversible when its command left no step.
+	 *
+	 *  The registry used to take the handler's claim at its word: a command that
+	 *  declared a journal inverse and recorded nothing was still reported as
+	 *  reversible, so the record said "this can be undone" over an edit no undo
+	 *  could reach (new-p14-81). A PAIRED COMMAND inverse and a DEFERRED journal
+	 *  step need no step of their own and keep their claim.
+	 */
+	void aJournalInverseWithoutARecordedStepIsNotReportedAsReversible()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		QVERIFY(registry != nullptr);
+		ControlCommand cmd;
+		cmd.id = QStringLiteral("test.claims_unrecorded_journal_inverse");
+		cmd.group = QStringLiteral("test");
+		cmd.verb = QStringLiteral("claims_unrecorded_journal_inverse");
+		cmd.mutating = true;
+		cmd.handler = [](const QJsonObject&) {
+			return ControlResult::success({{QStringLiteral("__transaction"), control::transactionPayload({},
+				QStringLiteral("control.undo"), {}, true, QStringLiteral("test journal inverse"))}});
+		};
+		registry->registerCommand(cmd);
+
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		journal->setJournalling(false);
+		const ControlResult invoked = registry->invoke(cmd.id, {});
+		journal->setJournalling(true);
+		QVERIFY2(invoked.ok, qPrintable(invoked.errorMessage));
+		const ControlRegistry::Transaction* record = registry->lastTransaction();
+		QVERIFY(record != nullptr);
+		QCOMPARE(record->command, cmd.id);
+		QCOMPARE(record->step, quint64(0));
+		QVERIFY2(!record->reversible,
+			"the registry reported a journal inverse as reversible although this call "
+			"recorded no journal step (new-p14-81)");
+	}
+
 	//! An unrecorded journal step above a command is undone without borrowing that command's name.
 	void anUnrecordedTopStepIsReportedWithoutRenamingTheCommandRecord()
 	{
@@ -325,6 +524,53 @@ private slots:
 			const QString op = record.toObject().value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString();
 			QVERIFY2(!op.contains(QStringLiteral("UNIMPLEMENTED")), qPrintable(op));
 		}
+	}
+
+	//! Luna new-p22-52: plugin.state_load accepted any path. plugin.state_save refuses a
+	//! relative path (src/core/ControlCommandsPluginState.cpp:96-100) and the instrument's
+	//! file load requires an absolute existing file (:257-261), but the load handed a relative
+	//! path straight to QFile, which resolved it against the DAW's working directory, and a
+	//! missing or directory path surfaced as a generic read error. The load must refuse all
+	//! three as InvalidArgs and change nothing: the device state and the undo depth.
+	void theStateLoadRequiresAnAbsoluteExistingFile()
+	{
+		const QString track = revtest::addInstrumentTrack();
+		if (track.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
+		const QString pluginId = QStringLiteral("inst");
+		const auto load = [track, pluginId](const QString& path) {
+			return run(QStringLiteral("plugin.state_load"),
+				{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
+					{QStringLiteral("path"), path}});
+		};
+		const auto depth = [] {
+			return run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt();
+		};
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString state = dir.filePath(QStringLiteral("state.xml"));
+		QVERIFY2(run(QStringLiteral("plugin.state_save"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
+				{QStringLiteral("path"), state}}).ok, "the device state could not be saved");
+		const int before = depth();
+
+		// A relative name of a file that exists in the working directory.
+		const QString previousDir = QDir::currentPath();
+		QVERIFY(QDir::setCurrent(dir.path()));
+		const ControlResult relative = load(QStringLiteral("state.xml"));
+		QVERIFY(QDir::setCurrent(previousDir));
+		QVERIFY(!relative.ok);
+		QCOMPARE(relative.errorKind, ControlErrorKind::InvalidArgs);
+
+		const ControlResult directory = load(dir.path());
+		QVERIFY(!directory.ok);
+		QCOMPARE(directory.errorKind, ControlErrorKind::InvalidArgs);
+
+		const ControlResult missing = load(dir.filePath(QStringLiteral("absent.xml")));
+		QVERIFY(!missing.ok);
+		QCOMPARE(missing.errorKind, ControlErrorKind::InvalidArgs);
+
+		QCOMPARE(depth(), before);
 	}
 };
 

@@ -35,9 +35,11 @@
 #include <QJsonArray>
 #include <QRegularExpression>
 
+#include <algorithm>
 #include <cmath>
 
 #include "ArticulationMap.h"
+#include "ArticulationRemap.h"
 #include "ControlCommandsNoteShared.h"
 #include "ControlCommandDef.h"
 #include "ControlEdit.h"
@@ -109,14 +111,19 @@ ControlResult lyrics(const QJsonObject& args)
 {
 	ClipRef ref;
 	ControlResult error;
-	if (args.contains(QStringLiteral("lyrics")))
+	// 'text' and 'lyrics' are two spellings of the same request: one of them, never both (and never
+	// neither), so neither is silently dropped. Refuse before resolving the clip or checkpointing.
+	const bool byNote = args.contains(QStringLiteral("lyrics"));
+	if (byNote == args.contains(QStringLiteral("text")))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, byNote
+			? QStringLiteral("give either 'text' or 'lyrics', not both")
+			: QStringLiteral("give the lyrics: 'text', or 'lyrics' per note"));
+	}
+	if (byNote)
 	{
 		MidiClip* clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
 		return clip == nullptr ? error : lyricsByNote(clip, ref, args.value(QStringLiteral("lyrics")).toArray());
-	}
-	if (!args.contains(QStringLiteral("text")))
-	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("give the lyrics: 'text', or 'lyrics' per note"));
 	}
 	QVector<Note*> notes;
 	MidiClip* clip = clipAndNotes(args, false, &ref, &notes, &error);
@@ -130,8 +137,9 @@ ControlResult lyrics(const QJsonObject& args)
 	}
 	clip->addJournalCheckPoint();
 	for (int i = 0; i < notes.size(); ++i) { setLyric(notes[i], syllables.value(i)); }
+	// Every note in scope was written: the covered ones got a syllable, the rest were cleared.
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.lyrics"),
-		{{QStringLiteral("set"), static_cast<int>(std::min(notes.size(), syllables.size()))}, {QStringLiteral("syllables"), syllables.size()}}));
+		{{QStringLiteral("set"), static_cast<int>(notes.size())}, {QStringLiteral("syllables"), syllables.size()}}));
 }
 
 ControlResult group(const QJsonObject& args, bool join)
@@ -165,16 +173,21 @@ InstrumentTrack* instrumentTrack(const QString& id, ControlResult* error)
 	return track;
 }
 
-//! Replace the map of the track @a id names (under its lock, as the audio thread reads it).
-void writeArticulations(const QString& id, const std::vector<Articulation>& entries)
+//! The clips @a clipIds of the track @a id announce their change. Called after applyArticulationEdit
+//! returns: the track is unlocked by then, so a listener that reads the track is handed the committed
+//! map and note indices, never a half-applied edit. The ids are re-resolved so a clip the edit removed
+//! is not touched.
+void announceArticulationEdits(const QString& id, const std::vector<int>& clipIds)
 {
+	if (clipIds.empty()) { return; }
 	ControlResult ignored;
 	InstrumentTrack* track = instrumentTrack(id, &ignored);
 	if (track == nullptr) { return; }
-	track->lock();
-	track->articulations().set(entries);
-	track->unlock();
-	Engine::getSong()->setModified();
+	for (Clip* clip : track->getClips())
+	{
+		if (std::find(clipIds.begin(), clipIds.end(), clip->id()) == clipIds.end()) { continue; }
+		if (auto* midi = dynamic_cast<MidiClip*>(clip)) { emit midi->dataChanged(); }
+	}
 }
 
 ControlResult articulationsSet(const QJsonObject& args)
@@ -189,11 +202,34 @@ ControlResult articulationsSet(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, why.isEmpty() ? QStringLiteral("at most 64 articulations") : why);
 	}
-	const QString id = trackIdOf(track);
+	// 'from' (optional): where each new entry stood in the old map, so the notes follow their articulation.
+	std::vector<ArticulationNoteChange> moved;
 	const std::vector<Articulation> before = track->articulations().entries();
-	writeArticulations(id, entries);
-	addUndoStep([id, before]() { writeArticulations(id, before); }, [id, entries]() { writeArticulations(id, entries); });
-	return ControlResult::success({{QStringLiteral("track"), id}, {QStringLiteral("articulations"), track->articulations().toJson()}});
+	// The map as it stands BEFORE the edit: the before-state the reversibility record names.
+	const QJsonArray beforeMap = track->articulations().toJson();
+	if (args.contains(QStringLiteral("from")))
+	{
+		std::vector<int> from;
+		for (const QJsonValue& origin : args.value(QStringLiteral("from")).toArray()) { from.push_back(origin.toInt(-1)); }
+		if (from.size() != entries.size() || !validateArticulationOrigins(from, static_cast<int>(before.size()), &why))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs, why.isEmpty()
+				? QStringLiteral("'from' has one old position (0 for a new entry) per articulation") : why);
+		}
+		moved = planArticulationRemap(*track, from, static_cast<int>(before.size()));
+	}
+	const QString id = trackIdOf(track);
+	// The map and the notes it indexes change in one lock (applyArticulationEdit); the clips announce the
+	// committed edit only after that lock is released.
+	announceArticulationEdits(id, applyArticulationEdit(id, entries, moved, true));
+	addUndoStep([id, before, moved]() { announceArticulationEdits(id, applyArticulationEdit(id, before, moved, false)); },
+		[id, entries, moved]() { announceArticulationEdits(id, applyArticulationEdit(id, entries, moved, true)); });
+	QJsonObject result{{QStringLiteral("track"), id}, {QStringLiteral("articulations"), track->articulations().toJson()},
+		{QStringLiteral("notes_remapped"), static_cast<int>(moved.size())}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("track"), id},
+		{QStringLiteral("articulations"), beforeMap}}, QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("Action checkpoint: control.undo restores this track's previous articulation map")));
+	return ControlResult::success(result);
 }
 
 ControlResult articulations(const QJsonObject& args)
@@ -216,6 +252,8 @@ ControlResult groove(const QJsonObject& args)
 	MidiPlayback& playback = MidiPlayback::instance();
 	const float before = playback.swing();
 	const int beforeGrid = playback.swingGrid();
+	const QJsonObject beforeState{{QStringLiteral("swing"), static_cast<double>(before)},
+		{QStringLiteral("grid"), beforeGrid == MidiPlayback::DefaultSwingGrid ? QStringLiteral("16th") : QStringLiteral("8th")}};
 	const double swingValue = args.value(QStringLiteral("swing")).toDouble(before);
 	if (!std::isfinite(swingValue) || swingValue < 0.0 || swingValue > MidiPlayback::MaxSwing)
 	{
@@ -229,7 +267,10 @@ ControlResult groove(const QJsonObject& args)
 	addUndoStep([before, beforeGrid]() { MidiPlayback::instance().setSwing(before, beforeGrid); },
 		[swing, grid]() { MidiPlayback::instance().setSwing(swing, grid); });
 	Engine::getSong()->setModified();
-	return ControlResult::success(grooveState());
+	QJsonObject result = grooveState();
+	result.insert(QStringLiteral("__transaction"), transactionPayload(beforeState, QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("Action checkpoint: control.undo restores the previous swing and grid")));
+	return ControlResult::success(result);
 }
 
 ControlResult midiOptions(const QJsonObject& args)
@@ -239,13 +280,20 @@ ControlResult midiOptions(const QJsonObject& args)
 	const int offset = args.value(QStringLiteral("offset_ms")).toInt(playback.offsetMs());
 	const bool beforeChase = playback.chase();
 	const int beforeOffset = playback.offsetMs();
+	const QJsonObject before{{QStringLiteral("chase"), beforeChase}, {QStringLiteral("offset_ms"), beforeOffset}};
 	if (chase != beforeChase || offset != beforeOffset)
 	{
 		playback.setPreferences(chase, offset);
 		addUndoStep([beforeChase, beforeOffset]() { MidiPlayback::instance().setPreferences(beforeChase, beforeOffset); },
 			[chase, offset]() { MidiPlayback::instance().setPreferences(chase, offset); });
 	}
-	return ControlResult::success({{QStringLiteral("chase"), playback.chase()}, {QStringLiteral("offset_ms"), playback.offsetMs()}});
+	QJsonObject result{{QStringLiteral("chase"), playback.chase()}, {QStringLiteral("offset_ms"), playback.offsetMs()}};
+	if (chase != beforeChase || offset != beforeOffset)
+	{
+		result.insert(QStringLiteral("__transaction"), transactionPayload(before, QStringLiteral("control.undo"), {}, true,
+			QStringLiteral("Action checkpoint: control.undo restores the previous chase and MIDI offset preferences")));
+	}
+	return ControlResult::success(result);
 }
 
 void add(ControlRegistry& registry, const char* id, const QString& description, const QJsonObject& args, const QStringList& required,
@@ -260,9 +308,10 @@ void registerNotePlaybackCommands(ControlRegistry& registry)
 {
 	MidiPlayback::instance();  // registers its project section before a project loads
 	const QJsonObject scope = enumProperty({QStringLiteral("clip"), QStringLiteral("selection")});
-	add(registry, "note.lyrics", QStringLiteral("Put lyrics on notes: 'text' is split into syllables at spaces and hyphens and laid "
-		"on the notes in 'scope' (the whole clip when left out) in time order - notes past the last syllable lose theirs - or "
-		"'lyrics' gives each note its own: a list of {note, text}. The note editor draws them on the notes. One undo step."),
+	add(registry, "note.lyrics", QStringLiteral("Put lyrics on notes: give exactly one of 'text' - split into syllables at "
+		"spaces and hyphens and laid on the notes in 'scope' (the whole clip when left out) in time order, and notes past "
+		"the last syllable lose theirs - or 'lyrics', which gives each note its own: a list of {note, text}. Giving both "
+		"is an error. The note editor draws them on the notes. One undo step."),
 		{{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("text"), stringProperty()}, {QStringLiteral("lyrics"), arrayProperty()},
 			{QStringLiteral("scope"), scope}}, {QStringLiteral("clip")}, true, lyrics);
 	add(registry, "note.group", QStringLiteral("Make the notes in 'scope' (the selection when left out) one group: selecting one "
@@ -275,8 +324,11 @@ void registerNotePlaybackCommands(ControlRegistry& registry)
 	add(registry, "track.articulations_set", QStringLiteral("Set an instrument track's articulations (its expression map): a list "
 		"of {name, keyswitch?, program?, controller?, value?} - what is sent, just before a note that asks for the articulation "
 		"(note.edit 'articulation', 1-based), to switch the instrument: a keyswitch key, a program change, a control change. An "
-		"empty list clears the map. One undo step."),
-		{{QStringLiteral("track"), stringProperty()}, {QStringLiteral("articulations"), arrayProperty()}},
+		"empty list clears the map. A note asks for an articulation by its position, so 'from' (optional) gives, per new entry, "
+		"its position in the old map (0 for a new one): the notes then follow their articulation when entries are moved, and "
+		"ask for none when theirs is removed (without it they keep their numbers). The reply's 'notes_remapped' counts the "
+		"notes changed. One undo step - the notes included."),
+		{{QStringLiteral("track"), stringProperty()}, {QStringLiteral("articulations"), arrayProperty()}, {QStringLiteral("from"), arrayProperty()}},
 		{QStringLiteral("track"), QStringLiteral("articulations")}, true, articulationsSet);
 	add(registry, "track.articulations", QStringLiteral("An instrument track's articulations, in order (a note's 'articulation' is "
 		"the 1-based index into this list)."), {{QStringLiteral("track"), stringProperty()}}, {QStringLiteral("track")}, false, articulations);
@@ -286,8 +338,9 @@ void registerNotePlaybackCommands(ControlRegistry& registry)
 		{{QStringLiteral("swing"), numberProperty()}, {QStringLiteral("grid"), enumProperty({QStringLiteral("16th"), QStringLiteral("8th")})}},
 		{}, true, groove);
 	add(registry, "transport.midi_options", QStringLiteral("How notes are played back: 'chase' sounds a note playback starts, "
-		"jumps or loops into the middle of (off by default), and 'offset_ms' (0..500) starts every note that much later, to line "
-		"up a slow instrument. Preferences, kept in the config file. With no arguments it reports them. One undo step."),
+		"jumps or loops into the middle of - or that is already under the playhead when its track or clip is unmuted (off by "
+		"default) - and 'offset_ms' (0..500) starts every note that much later, to line up a slow instrument. Preferences, kept "
+		"in the config file. With no arguments it reports them. One undo step."),
 		{{QStringLiteral("chase"), booleanProperty()}, {QStringLiteral("offset_ms"), integerProperty(0, MidiPlayback::MaxOffsetMs)}},
 		{}, true, midiOptions);
 }

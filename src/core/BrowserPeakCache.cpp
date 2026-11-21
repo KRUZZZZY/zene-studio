@@ -36,6 +36,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <utility>
 
 #include <QDateTime>
 #include <QFile>
@@ -97,13 +98,14 @@ int bucketOf(qint64 frame, qint64 frames, int buckets)
 //! the buckets the missing frames would have filled are still at their initial
 //! +/-infinity, which peaksFromBounds would report as silence.
 qint64 accumulatePeaks(SNDFILE* file, qint64 frames, int channels, QVector<float>* lowest,
-	QVector<float>* highest)
+	QVector<float>* highest, const std::atomic<bool>* cancel, std::atomic<double>* progress)
 {
 	const int buckets = static_cast<int>(lowest->size());
 	QVector<float> block(kReadBlockFrames * channels);
 	qint64 frame = 0;
 	while (frame < frames)
 	{
+		if (cancel != nullptr && cancel->load()) { break; }
 		const sf_count_t read = sf_readf_float(file, block.data(), kReadBlockFrames);
 		if (read <= 0) { break; }
 		for (sf_count_t i = 0; i < read; ++i)
@@ -120,6 +122,7 @@ qint64 accumulatePeaks(SNDFILE* file, qint64 frames, int channels, QVector<float
 			}
 		}
 		frame += read;
+		if (progress != nullptr) { progress->store(static_cast<double>(frame) / static_cast<double>(frames)); }
 	}
 	return frame;
 }
@@ -153,7 +156,8 @@ BrowserPeakCache& BrowserPeakCache::instance()
 	return cache;
 }
 
-bool BrowserPeakCache::compute(const QString& path, Entry* entry, QString* error)
+bool BrowserPeakCache::computeFor(const QString& path, const std::atomic<bool>* cancel,
+	std::atomic<double>* progress, Entry* entry, QString* error)
 {
 	SF_INFO info{};
 	const QByteArray encoded = QFile::encodeName(path);
@@ -180,8 +184,13 @@ bool BrowserPeakCache::compute(const QString& path, Entry* entry, QString* error
 
 	QVector<float> lowest(buckets, std::numeric_limits<float>::infinity());
 	QVector<float> highest(buckets, -std::numeric_limits<float>::infinity());
-	const qint64 read = accumulatePeaks(file, frames, channels, &lowest, &highest);
+	const qint64 read = accumulatePeaks(file, frames, channels, &lowest, &highest, cancel, progress);
 	sf_close(file);
+	if (cancel != nullptr && cancel->load())
+	{
+		setError(error, QStringLiteral("the analysis of %1 was cancelled").arg(path));
+		return false;
+	}
 	if (read < frames)
 	{
 		// The header promised more frames than the file could give. The buckets
@@ -224,14 +233,29 @@ bool BrowserPeakCache::entryFor(const QString& path, Entry* entry, bool* cached,
 	Entry fresh;
 	fresh.modifiedMs = modified;
 	fresh.sizeBytes = size;
-	if (!compute(key, &fresh, error)) { return false; }
-	++m_misses;
-	m_entries.insert(key, fresh);
-	touch(key);
-	evictIfFull();
+	if (!computeFor(key, nullptr, nullptr, &fresh, error)) { return false; }
+	adopt(fresh);
 	*entry = fresh;
 	*cached = false;
 	return true;
+}
+
+void BrowserPeakCache::adopt(Entry entry)
+{
+	const QString key = entry.path;
+	++m_misses;
+	m_entries.insert(key, std::move(entry));
+	touch(key);
+	evictIfFull();
+}
+
+bool BrowserPeakCache::isCurrent(const QString& path) const
+{
+	const QString key = browserCanonicalKey(path);
+	const QFileInfo info(key);
+	const auto found = m_entries.constFind(key);
+	return found != m_entries.constEnd() && info.isFile() && found->modifiedMs == info.lastModified().toMSecsSinceEpoch()
+		&& found->sizeBytes == info.size();
 }
 
 bool BrowserPeakCache::peaksFor(const QString& path, int buckets, Answer* answer, QString* error)

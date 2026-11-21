@@ -80,6 +80,21 @@ class LMMS_EXPORT AbletonLinkSession
 public:
 	//! True when this build carries the vendored library (WANT_ABLETON_LINK).
 	static bool compiledIn();
+	/*! Confine Link's discovery to the loopback interface (POSIX only; also on at start when
+	 *  ZENE_LINK_LOOPBACK_ONLY=1): nothing is then sent to or read from a real network. Set it
+	 *  BEFORE enable(): sockets already open on other interfaces are only closed by Link's next
+	 *  rescan. For tests; on Windows it has no effect (see loopbackOnlySupported). */
+	static void setLoopbackOnly(bool on);
+	static bool loopbackOnly();
+	//! False where the seam cannot be installed (Windows' scanner is a different API).
+	static constexpr bool loopbackOnlySupported()
+	{
+#ifdef _WIN32
+		return false;
+#else
+		return true;
+#endif
+	}
 	//! The pinned release ("4.1"), or "" without the library.
 	static const char* libraryVersion();
 	//! The pinned upstream commit, or "" without the library.

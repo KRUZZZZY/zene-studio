@@ -200,8 +200,8 @@ SystemSemaphore::~SystemSemaphore() = default;
 SystemSemaphore::SystemSemaphore(SystemSemaphore&& other) noexcept = default;
 auto SystemSemaphore::operator=(SystemSemaphore&& other) noexcept -> SystemSemaphore& = default;
 
-auto SystemSemaphore::acquire() noexcept -> bool { return m_impl->acquire(); }
-auto SystemSemaphore::release() noexcept -> bool { return m_impl->release(); }
-auto SystemSemaphore::tryAcquire(int timeoutMs) noexcept -> bool { return m_impl->tryAcquire(timeoutMs); }
+auto SystemSemaphore::acquire() noexcept -> bool { return m_impl && m_impl->acquire(); }
+auto SystemSemaphore::release() noexcept -> bool { return m_impl && m_impl->release(); }
+auto SystemSemaphore::tryAcquire(int timeoutMs) noexcept -> bool { return m_impl && m_impl->tryAcquire(timeoutMs); }
 
 } // namespace lmms

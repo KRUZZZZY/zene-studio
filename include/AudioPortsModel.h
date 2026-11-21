@@ -104,11 +104,12 @@ public:
 		 * Meant for setting multiple pins in one batch efficiently.
 		 *
 		 * Remember to update the cache and emit the dataChanged signal afterwards!
+		 *
+		 * Cluster 23: the batch takes the same engine model-change guard a single
+		 * `setPin()` takes, so a batch cannot land on the render thread's routing
+		 * read half way through either.
 		 */
-		void setPinBatch(ch_cnt_t trackChannel, ch_cnt_t processorChannel, bool value)
-		{
-			m_pins[trackChannel][processorChannel] = value;
-		}
+		void setPinBatch(ch_cnt_t trackChannel, ch_cnt_t processorChannel, bool value);
 
 		auto isOutput() const -> bool { return m_isOutput; }
 
@@ -217,9 +218,32 @@ public:
 	 */
 	void setAllChannelCounts(ch_cnt_t trackChannels, ch_cnt_t inCount, ch_cnt_t outCount);
 	void setTrackChannelCount(ch_cnt_t count);
+	/**
+	 * Q050-155.2: grows the track channels to at least @a count (rounded up to a whole pair, at most
+	 * MaxTrackChannels) so the pins can address a wider host bus - a discrete-N mixer channel. Never shrinks:
+	 * a pin on a channel the bus no longer has stays set (and saved) and simply reaches nothing. The new
+	 * rows are all off, so nothing is heard differently until a pin on them is set.
+	 */
+	void growTrackChannels(int count);
 	void setChannelCounts(ch_cnt_t inCount, ch_cnt_t outCount);
 	void setChannelCountIn(ch_cnt_t inCount);
 	void setChannelCountOut(ch_cnt_t outCount);
+
+	//! Q050-155.2: one pin of a batch edit (setPins()); @a output selects the output matrix.
+	struct PinEdit
+	{
+		bool output = false;
+		ch_cnt_t trackChannel = 0;
+		ch_cnt_t processorChannel = 0;
+		bool enabled = false;
+	};
+
+	/**
+	 * Q050-155.2: sets every pin of @a edits as ONE routing edit: the engine's change guard is taken once, so
+	 * the render thread sees all of them or none, the caches are rebuilt once and dataChanged is emitted once
+	 * (only when a pin changed). Every index must be inside its matrix - the caller validates first.
+	 */
+	void setPins(const std::vector<PinEdit>& edits);
 
 	/**
 	 * SerializingObject implementation
@@ -255,6 +279,66 @@ public:
 	 * pair currently routed to/from the processor.
 	 */
 	auto directRouting() const -> std::optional<ch_cnt_t> { return m_directRouting; }
+
+	/**
+	 * Cluster 23: the scope in which a device is built outside every chain.
+	 *
+	 * The render thread only runs the devices a chain holds, so the routing state of
+	 * a device that is still being built cannot be read while it is written: the
+	 * engine's model-change guard is not needed for such a build. Taking it anyway
+	 * would break a product contract: the recorded-device build (the undo of a device
+	 * removal) must complete even while another thread owns the audio change lock,
+	 * because the device it builds is in no chain and the render thread never runs it.
+	 *
+	 * Only the audio-ports models that are CREATED inside the scope are exempt from
+	 * the guard, and only while the scope is alive: every other routing edit, on this
+	 * thread or on another, still takes the guard, and so does every edit of a model
+	 * that was created before the scope - such a model can already be in a chain.
+	 */
+	class DetachedBuildScope
+	{
+	public:
+		DetachedBuildScope() noexcept;
+		~DetachedBuildScope() noexcept;
+		DetachedBuildScope(const DetachedBuildScope&) = delete;
+		DetachedBuildScope& operator=(const DetachedBuildScope&) = delete;
+
+		//! Whether the given model's routing edits may skip the engine's change guard.
+		static auto exempts(const AudioPortsModel* model) noexcept -> bool;
+
+		/**
+		 * Cluster 23: registers a model that is created while a detached build runs.
+		 * Called by the AudioPortsModel constructor, before the model edits its own
+		 * routing state.
+		 */
+		static void registerCreated(AudioPortsModel* model) noexcept;
+
+	private:
+		void add(AudioPortsModel* model) { m_models.push_back(model); }
+
+		std::vector<AudioPortsModel*> m_models;
+	};
+
+	/**
+	 * Q050-155.2: the host bus of the devices loaded while the scope is alive. A mixer channel set to discrete-N
+	 * loads its device chain inside one, so a device's matrix grows to the bus's N channels (growTrackChannels)
+	 * BEFORE its saved pins are read, and pins past the stereo pair survive a save and load. Outside every
+	 * scope a load grows nothing: a file on its own never sizes the matrix (BUG-PINBOUNDS). Control thread.
+	 */
+	class HostBusScope
+	{
+	public:
+		explicit HostBusScope(int channels) noexcept;
+		~HostBusScope() noexcept;
+		HostBusScope(const HostBusScope&) = delete;
+		HostBusScope& operator=(const HostBusScope&) = delete;
+
+		//! The innermost scope's channel count on this thread, or 0 outside every scope.
+		static auto channels() noexcept -> int;
+
+	private:
+		int m_previous;
+	};
 
 #ifdef LMMS_TESTING
 	friend class ::AudioPortsTest;

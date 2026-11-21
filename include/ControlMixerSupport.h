@@ -54,6 +54,13 @@ namespace control
  */
 LMMS_EXPORT MixerChannel* resolveMixerChannel(const QString& id, ControlResult* error);
 
+/*! Apply mixer.channel_eq's arguments to @a channel: clamp each value to its
+ *  range, record ONE undo step only when the EQ actually changes, and reply
+ *  with the channel's four EQ values. With only 'channel' it is a report: no
+ *  write, no step, nothing modified. Shared with mixer.apply_masking_proposal.
+ */
+LMMS_EXPORT ControlResult applyChannelEq(MixerChannel& channel, const QJsonObject& args);
+
 //! Wire name of a tap point: "post_fader" | "pre_fx" | "pre_fader" |
 //! "post_fader_no_gain". The four names are the engine's own enum values
 //! (include/Mixer.h, SidechainTapPoint), lowercased.
@@ -67,6 +74,13 @@ LMMS_EXPORT QStringList sidechainTapPointNames();
 
 //! One regular send/path, as pdc.report reports it.
 LMMS_EXPORT QJsonObject routeJson(MixerRoute& route);
+
+/*! Q050-155.2: what @a route carries past the stereo pair, added to its send entry in mixer.get_state and
+ *  routing.matrix only when a side is not stereo (a stereo route keeps the shape it always had):
+ *  "channels" - how many of the sender's channels reach the receiver - and "channel_routing" - "index" (a
+ *  discrete side: channel i into channel i, the rest dropped), "speakers" (named layouts, folded by the
+ *  downmix matrix) or "pair" (the stereo pair only). */
+LMMS_EXPORT void addRouteChannels(QJsonObject* send, const MixerRoute& route);
 
 //! One sidechain send, as pdc.report reports it.
 LMMS_EXPORT QJsonObject sidechainRouteJson(MixerSidechainRoute& route);

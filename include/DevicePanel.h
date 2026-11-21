@@ -95,6 +95,9 @@ public:
 	void closeEditor();
 	//! The device's own editor: a hosted plug-in's window (plugin.editor_open), else the built-in dialog.
 	void openEditor();
+	//! Q050-055.2: the host's own view of the device: the instrument's window or the effect's control dialog (no
+	//! plugin.editor_open first). False when there is none to show.
+	bool openGenericEditor();
 	//! 0.5.0 L10 (MX-095): light the header's dot while the device processes audio, and bring the
 	//! header's power, fold and delta switches back to the device's state (an undo, a socket command
 	//! or the card's own menu changes it without the card). Theme 12: the state line and the A/B button too.
@@ -113,7 +116,17 @@ private:
 	//! Theme 12: the A/B button (shown once a slot is stored) and the Actions button, at the header's end.
 	void addStateButtons(QHBoxLayout* row, QWidget* header);
 	QWidget* buildParameters(const QList<AutomatableModel*>& parameters);
-	void openEffectDialog();
+	//! Fold or open the card's body: the command decides, and a card the dispatch retired is not touched.
+	void foldCard(bool folded);
+	//! The built-in control dialog of the device: false when it has no view of its own to show.
+	bool openEffectDialog();
+	//! What the card says about the last "Open Editor" that opened nothing (empty: it opened).
+	void setEditorError(const QString& error)
+	{
+		if (m_editorError == error) { return; }
+		m_editorError = error;
+		refreshStateLine();
+	}
 	//! Engine audit E18: the device's pin connector - which track channels feed which plug-in
 	//! ports - in its own window (the view existed, nothing opened it).
 	void openPins();
@@ -134,6 +147,7 @@ private:
 	QLabel* m_state = nullptr;  //!< theme 12: the state line - bypass, A/B, latency, hosting, preset - in words
 	QToolButton* m_ab = nullptr;  //!< theme 12: which A/B slot is heard, as a letter; a click toggles
 	QString m_hosting;          //!< "", "crashed" or "quarantined" (the panel's last oop.get_state read)
+	QString m_editorError;      //!< why the last "Open Editor" opened nothing (the card's state line says it)
 };
 
 //! A modulator, placed right after the device it modulates: its shape, rate (drag or type -
@@ -171,6 +185,9 @@ public:
 	//! (DeviceCardState.h: bypassed, ab, latency_frames, hosting, preset, text).
 	QJsonObject describe() const;
 	void rebuild();
+	//! Q050-055.2: draw the selection now and open the host's view of its device @a plugin on @a target. False when
+	//! the panel shows no such device, or it has no view to show.
+	bool openGenericEditor(const QString& target, const QString& plugin);
 
 protected:
 	void showEvent(QShowEvent* event) override;
@@ -200,6 +217,11 @@ private:
 	//! The channel's heading, level, macros, inserts and parallel chains, with the modulators driving them.
 	void addChannel(MixerChannel* channel);
 	QWidget* buildAddButton();
+	//! The parallel chain Add device fills: the channel's selected rack chain (rack.set_selected) when it is one of
+	//! the parallel ones, else 0 (the channel's own chain, and a track's). Only a channel has a rack.
+	int addTargetChain() const;
+	//! Pick a device, then plugin.load it onto @a target (onto parallel chain @a chain of a channel when it is >= 1).
+	void addDevice(const QString& target, int chain);
 	QString signature() const;
 	void poll();
 

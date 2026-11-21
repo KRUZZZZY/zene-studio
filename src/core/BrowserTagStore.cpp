@@ -114,6 +114,31 @@ QJsonObject tagsTableOf(const QJsonDocument& document, bool* ok, QString* error)
 	return tags.toObject();
 }
 
+//! The OPTIONAL category table (0.5.0 L11, WF-007): a store this facet predates
+//! has no key and loads as one with no categories. A key that is there but is
+//! not an object is damage, and damage is refused (never overwritten): the same
+//! rule the tags table answers to. Kept beside load() so the read stays flat.
+bool readCategoryTable(const QJsonDocument& document, QHash<QString, QString>* out, QString* error)
+{
+	const QJsonValue categories = document.object().value(QStringLiteral("categories"));
+	if (categories.isUndefined()) { return true; }
+	if (!categories.isObject())
+	{
+		*error = QStringLiteral("the tag store's \"categories\" table is not a JSON object");
+		return false;
+	}
+	// Named object, as the tags above: begin() and end() must come from ONE
+	// QJsonObject - iterators into two separate toObject() temporaries point
+	// into storage that dies with the temporary they were made from.
+	const QJsonObject categoryTable = categories.toObject();
+	for (auto it = categoryTable.begin(); it != categoryTable.end(); ++it)
+	{
+		const QString category = it.value().toString().trimmed();
+		if (!category.isEmpty()) { out->insert(it.key(), category); }
+	}
+	return true;
+}
+
 } // namespace
 
 BrowserTagStore& BrowserTagStore::instance()
@@ -141,6 +166,7 @@ bool BrowserTagStore::openAt(const QString& path)
 bool BrowserTagStore::load()
 {
 	m_tags.clear();
+	m_categories.clear();
 	m_error.clear();
 	if (m_path.isEmpty()) { m_path = browserTagStorePath(); }
 
@@ -153,7 +179,8 @@ bool BrowserTagStore::load()
 	}
 
 	bool ok = false;
-	const QJsonObject tags = tagsTableOf(QJsonDocument::fromJson(file.readAll()), &ok, &m_error);
+	const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
+	const QJsonObject tags = tagsTableOf(document, &ok, &m_error);
 	file.close();
 	if (!ok) { return false; }
 
@@ -167,7 +194,7 @@ bool BrowserTagStore::load()
 		}
 		storeEntry(&m_tags, it.key(), list);
 	}
-	return true;
+	return readCategoryTable(document, &m_categories, &m_error);
 }
 
 bool BrowserTagStore::save() const
@@ -181,6 +208,16 @@ bool BrowserTagStore::save() const
 	QJsonObject root;
 	root.insert(QStringLiteral("version"), kFormatVersion);
 	root.insert(QStringLiteral("tags"), tags);
+	// The category facet's table, beside the tags. Written when it is empty too:
+	// a reader this store predates reads "tags" alone, and a missing key here is
+	// one less branch the loader has to tell an old document from an empty one.
+	QJsonObject categories;
+	for (auto it = m_categories.begin(); it != m_categories.end(); ++it)
+	{
+		if (it.value().isEmpty()) { continue; }
+		categories.insert(it.key(), it.value());
+	}
+	root.insert(QStringLiteral("categories"), categories);
 
 	const QByteArray bytes = QJsonDocument(root).toJson(QJsonDocument::Indented);
 	// storePath(), not m_path: the store has a default location, and a save that
@@ -299,9 +336,85 @@ bool BrowserTagStore::remove(const QString& file, const QString& tag, QString* e
 	return false;
 }
 
+QString BrowserTagStore::categoryOf(const QString& file) const
+{
+	return m_categories.value(browserCanonicalKey(file));
+}
+
+QStringList BrowserTagStore::allCategories() const
+{
+	QStringList out;
+	for (auto it = m_categories.begin(); it != m_categories.end(); ++it)
+	{
+		insertTag(&out, it.value());
+	}
+	return out;
+}
+
+int BrowserTagStore::filesWithCategory(const QString& category) const
+{
+	int count = 0;
+	for (auto it = m_categories.begin(); it != m_categories.end(); ++it)
+	{
+		if (sameTag(it.value(), category)) { ++count; }
+	}
+	return count;
+}
+
+bool BrowserTagStore::setCategory(const QString& file, const QString& category, QString* error)
+{
+	const QString normalized = category.trimmed();
+	if (normalized.isEmpty())
+	{
+		if (error != nullptr) { *error = QStringLiteral("a category cannot be empty"); }
+		return false;
+	}
+
+	const QString key = browserCanonicalKey(file);
+	const QString before = m_categories.value(key);
+	if (sameTag(before, normalized))
+	{
+		if (error != nullptr)
+		{
+			*error = QStringLiteral("%1 already carries the category '%2'").arg(key, normalized);
+		}
+		return false;
+	}
+	m_categories.insert(key, normalized);
+	if (save()) { return true; }
+
+	// The write did not reach the disk, so the in-memory store is put back the
+	// way the file still is: a failed call leaves nothing behind anywhere.
+	if (before.isEmpty()) { m_categories.remove(key); }
+	else { m_categories.insert(key, before); }
+	if (error != nullptr) { *error = m_error; }
+	return false;
+}
+
+bool BrowserTagStore::clearCategory(const QString& file, QString* error)
+{
+	const QString key = browserCanonicalKey(file);
+	const QString before = m_categories.value(key);
+	if (before.isEmpty())
+	{
+		if (error != nullptr)
+		{
+			*error = QStringLiteral("%1 carries no category").arg(key);
+		}
+		return false;
+	}
+	m_categories.remove(key);
+	if (save()) { return true; }
+
+	m_categories.insert(key, before);
+	if (error != nullptr) { *error = m_error; }
+	return false;
+}
+
 void BrowserTagStore::clear()
 {
 	m_tags.clear();
+	m_categories.clear();
 }
 
 } // namespace lmms

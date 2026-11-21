@@ -136,6 +136,27 @@ void drawPath( QPainter *p, const QPainterPath &path,
 
 
 
+/*! Reads the custom stylesheet and installs it, but only if the whole file was read: a file that
+ *  cannot be opened or read installs nothing, so the stylesheet already in place stays. On failure
+ *  the reason is returned in `error`. */
+static bool installCustomStyle(const QString& path, QString& error)
+{
+	QFile file{path};
+	if (!file.open(QIODevice::ReadOnly))
+	{
+		error = file.errorString();
+		return false;
+	}
+	const QByteArray css = file.readAll();
+	if (file.error() != QFile::NoError)
+	{
+		error = file.errorString();
+		return false;
+	}
+	qApp->setStyleSheet(QString::fromUtf8(css));
+	return true;
+}
+
 LmmsStyle::LmmsStyle() :
 	QProxyStyle()
 {
@@ -154,11 +175,14 @@ LmmsStyle::LmmsStyle() :
 		setBaseStyle( QStyleFactory::create( "Fusion" ) );
 		return;
 	}
-	QFile file( customCss );
-	file.open( QIODevice::ReadOnly );
-	qApp->setStyleSheet( QString::fromUtf8( file.readAll() ) );
+	QString error;
+	if( !installCustomStyle( customCss, error ) )
+	{
+		// No window exists yet to show a message in, so the reason goes to the log.
+		qWarning() << "Zene Studio theme file" << customCss << "could not be read:" << error;
+	}
 
-	m_customCssPath = QFileInfo{file}.absoluteFilePath();
+	m_customCssPath = QFileInfo{customCss}.absoluteFilePath();
 	m_styleReloader.addPath(m_customCssPath);
 	// A file watch dies with the file it watches: Qt drops the path as soon as the file is
 	// deleted, and nothing ever put it back, so a stylesheet the user deleted and recreated
@@ -197,17 +221,28 @@ LmmsStyle::LmmsStyle() :
  *  whether it is edited, deleted, or recreated. */
 void LmmsStyle::reloadCustomStyle()
 {
-	auto file = QFile{m_customCssPath};
-	if (file.exists())
+	if (QFile::exists(m_customCssPath))
 	{
-		file.open(QIODevice::ReadOnly);
-		qApp->setStyleSheet(QString::fromUtf8(file.readAll()));
-		TextFloat::displayMessage(
-			tr("Theme updated"),
-			tr("Zene Studio theme file %1 has been reloaded.").arg(file.fileName()),
-			embed::getIconPixmap("colorize"),
-			3000
-		);
+		QString error;
+		if (installCustomStyle(m_customCssPath, error))
+		{
+			TextFloat::displayMessage(
+				tr("Theme updated"),
+				tr("Zene Studio theme file %1 has been reloaded.").arg(m_customCssPath),
+				embed::getIconPixmap("colorize"),
+				3000
+			);
+		}
+		else
+		{
+			TextFloat::displayMessage(
+				tr("Theme not updated"),
+				tr("Zene Studio theme file %1 could not be read (%2). The current theme is still in use.")
+					.arg(m_customCssPath, error),
+				embed::getIconPixmap("error", 24, 24),
+				6000
+			);
+		}
 	}
 	if (!m_styleReloader.files().contains(m_customCssPath))
 	{

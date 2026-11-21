@@ -33,6 +33,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <limits>
 #include <thread>
 #include <vector>
 
@@ -55,6 +56,50 @@ std::vector<SampleFrame> ramp(float base, std::size_t count)
 	return frames;
 }
 
+//! @a count frames of one constant value in both channels: a channel's fingerprints, so a window holding
+//! frames of two channels is visible without knowing which push each frame came from.
+std::vector<SampleFrame> constant(float value, std::size_t count)
+{
+	std::vector<SampleFrame> frames(count);
+	for (auto& frame : frames) { frame = SampleFrame(value, value); }
+	return frames;
+}
+
+//! Whether the window holds frames that disagree with its first: a window copied across a rebase.
+bool mixesValues(const std::vector<float>& left, const std::vector<float>& right)
+{
+	for (std::size_t i = 1; i < left.size(); ++i)
+	{
+		if (left[i] != left[0] || right[i] != right[0]) { return true; }
+	}
+	return false;
+}
+
+//! What a push made at the instant the new channel is published sees.
+struct ChannelChangeProbe
+{
+	bool read = false;
+	bool mixed = false;
+	std::vector<float> left;
+	std::vector<float> right;
+};
+
+//! The audio thread's push landing in the change: the old channel's frames are still in the ring.
+void pushWhileTheChannelIsPublished(void* data)
+{
+	auto& probe = *static_cast<ChannelChangeProbe*>(data);
+	const auto fresh = ramp(1000.f, 64);
+	tap().push(2, fresh.data(), static_cast<f_cnt_t>(fresh.size()));
+	probe.left.assign(128, 0.f);
+	probe.right.assign(128, 0.f);
+	probe.read = tap().latest(probe.left.data(), probe.right.data(), probe.left.size());
+	for (std::size_t i = 0; probe.read && i < probe.left.size(); ++i)
+	{
+		if (probe.left[i] != 1000.f + static_cast<float>(i)
+			|| probe.right[i] != -(1000.f + static_cast<float>(i))) { probe.mixed = true; }
+	}
+}
+
 } // namespace
 
 class PhaseScopeTapTest : public QObject
@@ -63,6 +108,12 @@ class PhaseScopeTapTest : public QObject
 
 private slots:
 	void init() { tap().setChannel(PhaseScopeTap::Off); }
+
+	void channelRoundTripsTheLargestIndex()
+	{
+		tap().setChannel(std::numeric_limits<int>::max());
+		QCOMPARE(tap().channel(), std::numeric_limits<int>::max());
+	}
 
 	void itListensToNothingByDefault()
 	{
@@ -131,6 +182,30 @@ private slots:
 		QCOMPARE(tap().written(), std::uint64_t{16});
 	}
 
+	//! A push at the channel publication cannot leave frames from both channels in a readable window.
+	void aChannelChangeCannotMixTheOldChannelsFrames()
+	{
+		tap().setChannel(1);
+		const auto oldFrames = ramp(1.f, 64);
+		tap().push(1, oldFrames.data(), 64);
+
+		ChannelChangeProbe probe;
+		tap().setChannelWithTestHook(2, &pushWhileTheChannelIsPublished, &probe);
+		QVERIFY2(!probe.read || !probe.mixed,
+			"a window read at the channel change mixed the old channel's frames with the new one's");
+
+		const auto fresh = ramp(1000.f, 128);
+		tap().push(2, fresh.data(), 128);
+		std::vector<float> left(128);
+		std::vector<float> right(128);
+		QVERIFY(tap().latest(left.data(), right.data(), 128));
+		for (std::size_t i = 0; i < left.size(); ++i)
+		{
+			QCOMPARE(left[i], 1000.f + static_cast<float>(i));
+			QCOMPARE(right[i], -(1000.f + static_cast<float>(i)));
+		}
+	}
+
 	//! The audio thread's half allocates nothing, chosen or not (realtime rule).
 	void pushingAllocatesNothing()
 	{
@@ -153,6 +228,52 @@ private slots:
 		}
 		test::tlCountAllocations = false;
 		QCOMPARE(test::tlAllocationCount, std::uint64_t{0});
+	}
+
+	//! A channel change racing a reader is refused, never returned as a window that mixes the two
+	//! channels. The tap is documented for the GUI/control thread, so setChannel() (control) and
+	//! latest() (GUI) may race the audio producer on the same ring; a window copied across the reset
+	//! that rebases the ring must be refused, not handed back half from each channel.
+	void aChannelChangeDuringACopyIsRefusedNotMixed()
+	{
+		// One full ring per channel, a constant value each, so a window that mixes the two shows up
+		// as frames that do not all carry the same value.
+		const auto count = static_cast<f_cnt_t>(PhaseScopeTap::Capacity);
+		const auto a = constant(1.f, PhaseScopeTap::Capacity);
+		const auto b = constant(-1.f, PhaseScopeTap::Capacity);
+		tap().setChannel(8);
+		tap().push(8, a.data(), count);
+
+		std::vector<float> left(PhaseScopeTap::Capacity);
+		std::vector<float> right(PhaseScopeTap::Capacity);
+		// The harness itself reads a window before the writer starts, so "no window" below cannot be
+		// mistaken for "the reader never worked".
+		QVERIFY(tap().latest(left.data(), right.data(), left.size()));
+
+		std::atomic<bool> stop{false};
+		std::atomic<int> switches{0};
+		std::thread writer([&] {
+			for (int n = 0; !stop.load(std::memory_order_relaxed); ++n)
+			{
+				const bool other = (n & 1) != 0;
+				tap().setChannel(other ? 9 : 8);
+				tap().push(other ? 9 : 8, other ? b.data() : a.data(), count);
+				switches.fetch_add(1, std::memory_order_relaxed);
+			}
+		});
+
+		bool mixed = false;
+		QElapsedTimer clock;
+		clock.start();
+		while (!mixed && clock.elapsed() < 2000)
+		{
+			if (!tap().latest(left.data(), right.data(), left.size())) { continue; }
+			mixed = mixesValues(left, right);
+		}
+		stop.store(true);
+		writer.join();
+		QVERIFY2(switches.load() > 0, "the writer never ran");
+		QVERIFY2(!mixed, "latest() returned a window that mixed two channels");
 	}
 
 	//! A reader racing the producer gets a window or a refusal, never a frame mixed from two pushes.

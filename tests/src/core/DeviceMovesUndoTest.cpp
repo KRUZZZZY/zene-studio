@@ -101,6 +101,14 @@ private slots:
 		Engine::destroy();
 	}
 
+	void recreationWithoutAChainReturnsNoIds()
+	{
+		const auto missingChain = []() -> EffectChain* { return nullptr; };
+		ControlResult error;
+		const QJsonArray ids = control::recreateDevices(missingChain, {QStringLiteral("<missing-chain/>")}, -1, &error);
+		QVERIFY(ids.isEmpty());
+	}
+
 	void copiedDevicesAreUndoneOnARebuiltTrack_data()
 	{
 		QTest::addColumn<QString>("command");
@@ -149,6 +157,23 @@ private slots:
 		QVERIFY(chain(target) == nullptr);
 		QVERIFY(run(QStringLiteral("control.redo")).ok);
 		QVERIFY(chain(target) == nullptr);
+	}
+
+	//! A chain that cannot be found (the finder answers nullptr, as for a deleted chain) removes nothing and
+	//! dereferences nothing: the devices stay where they are.
+	void removeDevicesRecordedToleratesAMissingChain()
+	{
+		const QString target = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("instrument")}})
+			.result.value(QStringLiteral("track")).toString();
+		QVERIFY(!load(target, QStringLiteral("amplifier")).isEmpty());
+		const EffectChain* original = chain(target);
+		QVERIFY(original != nullptr);
+		const std::vector<Effect*> devices = original->effects();
+		QVERIFY(!devices.empty());
+		control::removeDevicesRecorded([]() -> EffectChain* { return nullptr; }, devices);
+		QCOMPARE(names(target), QStringList{QStringLiteral("amplifier")});
+		control::removeDevicesRecorded(static_cast<EffectChain*>(nullptr), devices);
+		QCOMPARE(names(target), QStringList{QStringLiteral("amplifier")});
 	}
 
 	void thePointerOverloadFindsARebuiltChain()

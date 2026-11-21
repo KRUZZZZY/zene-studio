@@ -27,6 +27,7 @@
 #include "ControlVocabulary.h"
 
 #include <algorithm>
+#include <cstddef>
 
 #include <QDomDocument>
 #include <QDomElement>
@@ -38,6 +39,8 @@
 #include "GuiApplication.h"
 #include "MidiClip.h"
 #include "Note.h"
+#include "NoteConditions.h"
+#include "SampleClip.h"
 #include "Song.h"
 #include "SongEditor.h"
 #include "TrackContainer.h"
@@ -62,21 +65,15 @@ namespace control
 
 QString trackTypeNameOf(Track::Type type)
 {
-	switch (type)
-	{
-		case Track::Type::Instrument: return QStringLiteral("instrument");
-		case Track::Type::Pattern: return QStringLiteral("pattern");
-		case Track::Type::Sample: return QStringLiteral("sample");
-		case Track::Type::Event: return QStringLiteral("event");
-		case Track::Type::Video: return QStringLiteral("video");
-		case Track::Type::Automation: return QStringLiteral("automation");
-		case Track::Type::HiddenAutomation: return QStringLiteral("hidden_automation");
-		// A folder track (owner items 3+20+21): the type track.add takes as
-		// "folder" and every read reports.
-		case Track::Type::Folder: return QStringLiteral("folder");
-		case Track::Type::Count: break;
-	}
-	return QStringLiteral("unknown");
+	// A TABLE indexed by the enum, not a switch: the complexity ratchet counts every `case`, and a name
+	// per type is data. The static_assert makes a new Track::Type fail the build until it has a name.
+	static const char* const names[] = {"instrument", "pattern", "sample", "event", "video", "automation",
+		"hidden_automation", "folder", "neutral"};
+	static_assert(sizeof(names) / sizeof(names[0]) == static_cast<std::size_t>(Track::Type::Count),
+		"every Track::Type needs a name");
+	const int index = static_cast<int>(type);
+	if (index < 0 || index >= static_cast<int>(Track::Type::Count)) { return QStringLiteral("unknown"); }
+	return QString::fromLatin1(names[index]);
 }
 
 namespace
@@ -149,7 +146,14 @@ Track* resolveTrack(const QString& id, ControlResult* error)
 	// carries an id from construction, so a fallback could only ever resolve a
 	// stale position - exactly the silent mis-resolution this change removes.
 	// A well-formed id naming no live track is the typed not_found below.
-	const TrackContainer::TrackList& tracks = Engine::getSong()->tracks();
+	Song* song = Engine::getSong();
+	if (song == nullptr)
+	{
+		*error = ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("no track %1 (there is no song)").arg(id));
+		return nullptr;
+	}
+	const TrackContainer::TrackList& tracks = song->tracks();
 	for (Track* track : tracks)
 	{
 		if (track->id() == wanted) { return track; }
@@ -247,7 +251,9 @@ namespace
 
 QString s_selectedClip;
 QString s_noteSelectionClip;
-QVector<int> s_selectedNotes;
+//! Note::id() values, not note-list positions: an id travels with its note
+//! through a removal or a re-sort, a position names whichever note slides into it.
+QVector<int> s_selectedNoteIds;
 
 } // namespace
 
@@ -261,27 +267,38 @@ QString selectedClipId()
 	return s_selectedClip;
 }
 
-void selectNotes(const QString& clip, int noteCount, const QVector<int>& indices)
+void selectNotes(const QString& clip, const MidiClip& midiClip, const QVector<int>& indices)
 {
 	QVector<int> kept;
 	for (int index : indices)
 	{
-		if (index >= 0 && index < noteCount) { kept.append(index); }
+		if (index >= 0 && index < static_cast<int>(midiClip.notes().size()))
+		{
+			kept.append(midiClip.notes()[index]->id());
+		}
 	}
 	std::sort(kept.begin(), kept.end());
 	kept.erase(std::unique(kept.begin(), kept.end()), kept.end());
 	s_noteSelectionClip = clip;
-	s_selectedNotes = kept;
+	s_selectedNoteIds = kept;
 }
 
-bool noteSelected(const QString& clip, int index)
+bool noteSelected(const QString& clip, const MidiClip& midiClip, int index)
 {
-	return s_noteSelectionClip == clip && s_selectedNotes.contains(index);
+	return s_noteSelectionClip == clip && index >= 0
+		&& index < static_cast<int>(midiClip.notes().size())
+		&& s_selectedNoteIds.contains(midiClip.notes()[index]->id());
 }
 
-QVector<int> selectedNoteIndices(const QString& clip)
+QVector<int> selectedNoteIndices(const QString& clip, const MidiClip& midiClip)
 {
-	return s_noteSelectionClip == clip ? s_selectedNotes : QVector<int>();
+	QVector<int> indices;
+	if (s_noteSelectionClip != clip) { return indices; }
+	for (int index = 0; index < static_cast<int>(midiClip.notes().size()); ++index)
+	{
+		if (s_selectedNoteIds.contains(midiClip.notes()[index]->id())) { indices.append(index); }
+	}
+	return indices;
 }
 
 // ---------------------------------------------------------------------------
@@ -305,6 +322,17 @@ QJsonObject clipState(const ClipRef& ref)
 	entry.insert(QStringLiteral("note_count"),
 		midiClip == nullptr ? QJsonValue(QJsonValue::Null)
 			: QJsonValue(static_cast<int>(midiClip->notes().size())));
+	// Q050-106: an audio clip's source layout. null rather than 2 for a clip with no
+	// audio, the note_count convention: "not a sample clip" and "a stereo sample clip"
+	// are different facts. After sample.edit_range op 'mono' this reads 1 / "mono", and
+	// one control.undo restores 2 / "stereo" with the original samples.
+	auto* sampleClip = dynamic_cast<SampleClip*>(ref.clip);
+	const int channels = sampleClip == nullptr ? 0 : sampleClip->sample().channels();
+	entry.insert(QStringLiteral("channels"),
+		sampleClip == nullptr ? QJsonValue(QJsonValue::Null) : QJsonValue(channels));
+	entry.insert(QStringLiteral("layout"),
+		sampleClip == nullptr ? QJsonValue(QJsonValue::Null)
+			: QJsonValue(channels == 1 ? QStringLiteral("mono") : QStringLiteral("stereo")));
 	entry.insert(QStringLiteral("selected"), selectedClipId() == clipId(ref.id));
 	// The clip's fades and gain (the fade/crossfade/clip-gain wave). Reported
 	// for EVERY clip, neutral or not, so an agent reading arrangement.get_state
@@ -318,6 +346,9 @@ QJsonObject clipState(const ClipRef& ref)
 	entry.insert(QStringLiteral("fade_out"), edits.fadeOutTicks);
 	entry.insert(QStringLiteral("fade_in_shape"), fadeShapeName(edits.fadeInShape));
 	entry.insert(QStringLiteral("fade_out_shape"), fadeShapeName(edits.fadeOutShape));
+	// Q050-125: the clip's polarity, reported for every clip the way the gain is, so an agent reading
+	// arrangement.get_state sees it without a second call.
+	entry.insert(QStringLiteral("inverted"), edits.hasPolarity());
 	return entry;
 }
 
@@ -339,6 +370,14 @@ QJsonObject noteState(const Note* note, int index)
 	entry.insert(QStringLiteral("midi_velocity"), note->midiVelocity(127));
 	entry.insert(QStringLiteral("pan"), static_cast<double>(note->getPanning()));
 	entry.insert(QStringLiteral("slide"), note->slide());
+	// Q050-242: the note's recurrence (ED-133), reported for EVERY note so the note editor's
+	// properties box and an agent read back the pair note.edit's recur_length / recur_mask wrote,
+	// and can compare it with the same pair after one control.undo. 0 / 0 is neutral (every pass);
+	// a positive length with mask 0 plays on no pass; bit n of the mask selects pass n of the
+	// pattern (pass % length, NoteConditions::recursOnPass).
+	const NoteConditions& conditions = note->conditions();
+	entry.insert(QStringLiteral("recur_length"), conditions.recurLength);
+	entry.insert(QStringLiteral("recur_mask"), conditions.recurMask);
 	return entry;
 }
 
@@ -358,17 +397,16 @@ QJsonObject rollState(const ClipRef& ref)
 			// The clip the note belongs to travels with the note, so a caller that
 			// only kept a note id can still address it.
 			entry.insert(QStringLiteral("clip"), clipId(ref.id));
-			entry.insert(QStringLiteral("selected"), noteSelected(clipId(ref.id), index));
+			entry.insert(QStringLiteral("selected"), noteSelected(clipId(ref.id), *midiClip, index));
 			notes.append(entry);
 			++index;
 		}
-		// The selection itself is positions inside the clip - it is view state
-		// the project file does not carry, so it has no id of its own - and it
-		// is REPORTED as the ids of the notes at those positions, because an id
-		// is what a client can address. An index the list no longer has (the
-		// note was deleted) is dropped rather than reported as a dangling id.
+		// The selection is view state and is not serialized, so it has no id of
+		// its own to store; it keeps the SELECTED NOTES' ids and maps them to the
+		// clip's current positions here, for this response. A note that was
+		// removed since no longer names anything and is simply not reported.
 		const NoteVector& noteList = midiClip->notes();
-		for (int selectedIndex : selectedNoteIndices(clipId(ref.id)))
+		for (int selectedIndex : selectedNoteIndices(clipId(ref.id), *midiClip))
 		{
 			if (selectedIndex >= 0 && selectedIndex < static_cast<int>(noteList.size()))
 			{

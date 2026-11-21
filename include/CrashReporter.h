@@ -144,6 +144,14 @@ struct CrashInfo
 // No-op on Windows.
 bool install(const std::string& workingDirectory);
 
+// Register the reporter's alternate signal stack for the calling thread.
+// Signal dispositions are process-wide, but sigaltstack() is per-thread, so
+// each thread that may need crash handling must register its own stack.
+// Repeated calls on one thread are harmless. Returns false if registration
+// fails; this does not prevent the reporter from handling other signals.
+// No-op on Windows (returns false).
+bool installAlternateStackForCurrentThread();
+
 // --- arming and disarming (crash.enable / crash.disable, board task #643) ---
 // install() is the ARM half and this is its inverse.  It restores the default
 // disposition for exactly the signals install() claimed (one shared list in the

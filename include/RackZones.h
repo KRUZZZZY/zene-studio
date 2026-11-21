@@ -124,12 +124,15 @@ public:
 	auto zone(int index) const -> const RackZone*;
 
 	//! Appends a zone and returns its index (the zone-<n> id).
-	auto addZone(const RackZone& zone) -> int;
+	//! @a alongside runs inside the same edit, after the list changes and before the changed hook: a caller
+	//! whose own state must publish with the list (a layer slot) passes it here rather than as a second edit.
+	auto addZone(const RackZone& zone, const std::function<void()>& alongside = {}) -> int;
 	//! Inserts a zone at @a index, for the inverse of a removal.
 	auto insertZone(int index, const RackZone& zone) -> bool;
 	auto removeZone(int index) -> bool;
 	//! 0.5.0 MX-112: replaces the whole list in one edit (a layer removed renumbers the zones it leaves).
-	void assign(std::vector<RackZone> zones);
+	//! @a alongside runs in that edit, as addZone's does.
+	void assign(std::vector<RackZone> zones, const std::function<void()>& alongside = {});
 
 	/**
 	 * The index of the first zone - in the order the zones were added - whose
@@ -167,7 +170,12 @@ public:
 	//! Writes one <zone> element per zone, or nothing when there are none.
 	void saveSettings(QDomDocument& doc, QDomElement& rackElement) const;
 	//! Reads the <zone> children of @a rackElement; missing ones leave none.
-	void loadSettings(const QDomElement& rackElement);
+	//! @a chainCount is the owning rack's (or layer rack's, or MIDI-part
+	//! player's) chain count: a zone naming a chain the owner does not have
+	//! is discarded rather than stored, through isValidRackZone(). The
+	//! default keeps zones below 64, the most chains the feed can route;
+	//! owners with fewer chains must pass their own count.
+	void loadSettings(const QDomElement& rackElement, int chainCount = 64);
 
 private:
 	//! Runs @a change on the list under the model-change guard, then the hook.

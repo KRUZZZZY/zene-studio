@@ -87,6 +87,8 @@ bool GroovePool::remove(const QString& name)
 
 bool GroovePool::rename(const QString& from, const QString& to)
 {
+	// An overlong target is refused, not cut down to a name that may already exist.
+	if (!GrooveTemplate::nameFits(to)) { return false; }
 	const QString wanted = GrooveTemplate::normalisedName(to);
 	if (wanted.isEmpty()) { return false; }
 

@@ -22,6 +22,7 @@
  *
  */
 #include "ControlReversibility.h"
+#include "lmmsconfig.h"  // ZENE_UPDATE_CHECK_ENABLED
 
 namespace lmms
 {
@@ -62,6 +63,23 @@ const ReversibilityRow kW3CustomRows[] = {
 		"no write", ""),
 	R("app.whats_new", RC::NotMutating, false, "it reads the release notes the program ships. Nothing is written or fetched",
 		"no write", ""),
+#ifdef ZENE_UPDATE_CHECK_ENABLED
+	// Q050-501: rows only where the commands exist (ReversibilityContractTest holds both directions).
+	R("app.update_check_get", RC::NotMutating, false, "it reads the preference and the last answer. Nothing is written or sent",
+		"no write", ""),
+	R("app.update_check_set", RC::TrueInverse, true, "ConfigManager is not a JournallingObject, so there is no object "
+		"checkpoint - but the preference is three bounded flags, captured before the write",
+		"action checkpoint: the recorded undo step writes the previous flags back and saves the config file, exactly as "
+		"the command does", ""),
+	R("app.update_check_run", RC::NotMutating, false, "it asks the feed and remembers when it asked (a marker in the config "
+		"file, not a choice of the user's); it edits no project and nothing it does needs undoing",
+		"no project write", ""),
+	R("window.update_check", RC::NotMutating, false, "it opens the notice or the question and starts a check, as "
+		"app.update_check_run; answering the question runs app.update_check_set, which records itself",
+		"no project write", ""),
+	R("window.update_download_page", RC::NotMutating, false, "it hands an address to the system's browser. Nothing is written",
+		"no write", ""),
+#endif // ZENE_UPDATE_CHECK_ENABLED
 	// WF-101 / WF-105 / WF-132 and the windows of WF-141 / WF-142: interface state.
 	R("window.stay_on_top", RC::NotMutating, false, "it keeps the main window above others or not: interface state", "no write", ""),
 	R("window.tidy", RC::NotMutating, false, "it moves the floating windows: interface state", "no write", ""),

@@ -226,6 +226,8 @@ QVector<Track*> rippledOthers(const QVector<Track*>& covered)
 {
 	QVector<Track*> others;
 	if (arrangement::modes().ripple != arrangement::Ripple::All) { return others; }
+	// No covered track (its track was removed since range.set): nothing is cut, so no gap to close.
+	if (covered.isEmpty()) { return others; }
 	for (Track* track : Engine::getSong()->tracks())
 	{
 		if (!covered.contains(track)) { others.append(track); }
@@ -326,7 +328,7 @@ int pasteAt(const QVector<Track*>& tracks, tick_t position)
 		clip->restoreState(doc.documentElement().firstChildElement());
 		// A range-pasted clip is an independent ordinary clip, not another
 		// member of the source take group.
-		clip->setTakeGroupId(0);
+		clip->clearTakeGroupId();
 		control::assignTakeLane(clip, 0);  // the lane tag's one writer (ControlCommandsComp.cpp)
 		clip->movePosition(TimePos(position + copied.offset));
 		++pasted;

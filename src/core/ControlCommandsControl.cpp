@@ -314,6 +314,25 @@ std::optional<ControlResult> restoreFailureOf(const QString& verb, const QString
 			"hand").arg(verb, what, failed->errorMessage));
 }
 
+/*! The typed failure for the journal step that just ran when its recorded action
+ *  did not complete, or nullopt.
+ *
+ *  Journal action callbacks are `void`, so an action whose inverse failed has no
+ *  return path to the command that asked for undo or redo. `Refused` reports that
+ *  the recorded action ran but its prior state was not restored.
+ */
+std::optional<ControlResult> actionRestoreFailureOf(const QString& verb, const QString& command)
+{
+	const QString reason = takeActionRestoreFailure();
+	if (reason.isEmpty()) { return std::nullopt; }
+	const QString what = command.isEmpty()
+		? QStringLiteral("the last journal step")
+		: QStringLiteral("'%1'").arg(command);
+	return ControlResult::failure(ControlErrorKind::Refused,
+		QStringLiteral("cannot %1 %2: the recorded action was NOT restored - %3")
+			.arg(verb, what, reason));
+}
+
 //! Unwinds one step of the engine's own undo stack.
 //!
 //! \a commands is how many COMMANDS that one step covered: 1 for an ordinary
@@ -327,6 +346,7 @@ ControlResult undoThroughJournal(const QString& command, int commands = 1,
 {
 	ProjectJournal* journal = Engine::projectJournal();
 	clearStructuralRestoreFailure();  // see restoreFailureOf
+	clearActionRestoreFailure();      // as above: only THIS step's failure is reported
 	bool undone = false;
 	if (journal != nullptr && journal->canUndo())
 	{
@@ -334,6 +354,7 @@ ControlResult undoThroughJournal(const QString& command, int commands = 1,
 		undone = true;
 	}
 	if (std::optional<ControlResult> failed = restoreFailureOf(QStringLiteral("undo"), command)) { return *failed; }
+	if (std::optional<ControlResult> failed = actionRestoreFailureOf(QStringLiteral("undo"), command)) { return *failed; }
 	QJsonObject result;
 	result.insert(QStringLiteral("undone"), undone);
 	result.insert(QStringLiteral("undone_command"), command);
@@ -448,9 +469,11 @@ ControlResult undoLastCommand(ControlRegistry& registry)
 	// than the one asked about - the exact pretending SPEC A16 exists to remove -
 	// so this REFUSES, typed, and names the bound that did it. `step == 0` is a
 	// record whose inverse is a command rather than a step (a file revision):
-	// it has no step to have lost.
+	// it has no step to have lost. A step that was only undone (Ctrl+Z took it, then
+	// an editor gesture became the newest edit: Q050-214) is not evicted, and the
+	// journal's own top is what the caller gets back.
 	ProjectJournal* journal = Engine::projectJournal();
-	if (top->step != 0 && journal != nullptr && top->step < journal->oldestStepSerial())
+	if (top->step != 0 && journal != nullptr && top->step <= journal->newestEvictedSerial())
 	{
 		return ControlResult::failure(ControlErrorKind::Irreversible,
 			QStringLiteral("cannot undo '%1': the undo step this record describes was EVICTED by the "
@@ -501,7 +524,8 @@ void registerUndoCommand(ControlRegistry& registry)
 		"window - reads in between do not break it - is one step, so the reply's "
 		"'undone_commands' is 1 normally and more for a merged span. Set the window to 0 "
 		"(control.set_undo_coalescing) for strict one-command-per-call granularity. If the journal's "
-		"top step has no matching transaction record, the reply identifies it as 'unrecorded edit' "
+		"top step has no matching transaction record - an editor edit, or a plug-in editor gesture, made after "
+		"the record's own step was undone - the reply identifies it as 'unrecorded edit' "
 		"and includes its step_serial; transaction history is left intact.");
 	cmd.argsSchema = objectSchema();
 	cmd.resultSchema = objectSchema({
@@ -542,13 +566,24 @@ void registerRedoCommand(ControlRegistry& registry)
 	cmd.handler = [](const QJsonObject&) {
 		auto* journal = Engine::projectJournal();
 		bool redone = false;
+		QString declined;
 		clearStructuralRestoreFailure();  // as control.undo: only THIS step's failure is reported
+		clearActionRestoreFailure();
 		if (journal != nullptr && journal->canRedo())
 		{
 			journal->redo();
-			redone = true;
+			// A redo that changed nothing is declined by its step: it is not redone, and the step stays on the redo stack.
+			declined = journal->takeRedoDecline();
+			redone = declined.isEmpty();
 		}
 		if (std::optional<ControlResult> failed = restoreFailureOf(QStringLiteral("redo"), QString())) { return *failed; }
+		if (std::optional<ControlResult> failed = actionRestoreFailureOf(QStringLiteral("redo"), QString())) { return *failed; }
+		if (!declined.isEmpty())
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("cannot redo: %1. Nothing was changed, so no undo step was recorded and the step "
+					"stays on the redo stack").arg(declined));
+		}
 		QJsonObject result;
 		result.insert(QStringLiteral("redone"), redone);
 		result.insert(QStringLiteral("can_undo"), journal != nullptr && journal->canUndo());

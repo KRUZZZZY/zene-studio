@@ -53,6 +53,8 @@
 #include "ContextHelp.h"
 #include "HelpCenter.h"
 #include "LayoutMenu.h"
+#include "MixerZones.h"
+#include "PanelShortcuts.h"
 #include "ShellPanel.h"
 #include "ShellRegionTabs.h"
 #include "ShortcutMap.h"
@@ -157,6 +159,7 @@ void Shell::showEvent(QShowEvent* event)
 			MacroMenu::install(main->menuBar());
 			LayoutMenu::followNewProjects(this);  // theme 22: a new project brings the personal layout back
 			ShortcutMap::apply(main->menuBar());
+			panelshortcuts::install();  // 0.5.0 L13 stage 1: the four panels' own scoped keys
 		}
 		m_header->customise(uistore::read(QStringLiteral("header")));
 	});
@@ -465,6 +468,9 @@ QJsonObject Shell::snapshot() const
 	doc.insert(QStringLiteral("rows"), sizesOf(m_rows));
 	doc.insert(QStringLiteral("centre"), sizesOf(m_centre));
 	doc.insert(QStringLiteral("floating"), floatingSnapshot());
+	// Q050-227.1: the mixer's own docked regions and separator widths are part of the layout the
+	// project keeps, so a save/reopen brings them back through the same one undo step.
+	doc.insert(QStringLiteral("mixer_zones"), mixerzones::toJson(mixerzones::MixerZoneState::instance()->layout()));
 	return doc;
 }
 
@@ -477,6 +483,17 @@ void Shell::restoreSnapshot(const QJsonObject& doc)
 	applySizes(m_centre, doc.value(QStringLiteral("centre")).toArray());
 	// A layout saved before 0.5.0 G has no `floating`: the panels floating now stay as they are.
 	if (doc.contains(QStringLiteral("floating"))) { restoreFloating(doc.value(QStringLiteral("floating")).toArray()); }
+	// A layout saved before Q050-227.1 has no `mixer_zones`: it is a document from before the feature,
+	// so the mixer opens in the arrangement it always had (the default) rather than whatever was on
+	// screen a moment ago.
+	if (doc.contains(QStringLiteral("mixer_zones")))
+	{
+		mixerzones::MixerZoneState::instance()->set(mixerzones::fromJson(doc.value(QStringLiteral("mixer_zones")).toObject()));
+	}
+	else
+	{
+		mixerzones::MixerZoneState::instance()->reset();
+	}
 	m_restoring = false;
 	apply();
 }

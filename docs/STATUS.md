@@ -90,7 +90,8 @@ not rounded up.
   (§ PARTIAL).
 - **Warp engine** — markers pinned to source frames; a clip follows or leads the project tempo.
   `include/WarpMarkers.h`, `<warp>` read in `src/core/SampleClip.cpp`; `WarpMarkersTest`, `ClipWarpPersistenceTest`,
-  `SampleClipWarpTest`. Resampling stretch, so it changes pitch.
+  `SampleClipWarpTest`. The default stretch is resampling, so a warp changes pitch; `warp.stretch` selects
+  `preserve_pitch` (WSOLA) or `rubberband` (optional Rubber Band R3) to keep it (`docs/PITCH-STRETCH.md`).
 - **Racks, VCAs, and `RoutingGraph` in the live audio path** — racks are parallel chains plus a chain selector,
   persisted as `<rack>` (`include/Rack.h`, `src/core/Rack.cpp`, `RackNodes.cpp`; `RackTest`); VCAs are relative
   volume/mute/solo with bit-exact reversibility, persisted as `<vcagroup>` (`src/core/VcaGroup.cpp`,
@@ -178,13 +179,18 @@ not rounded up.
   (2026-09-19, task 691):** `automation.mode_set` answers — measured on the built binary it takes a parameter
   from `read` to `touch` and `automation.get_state` reports the mode back per parameter — and
   `automation.record_mode_set` sets the clip record flag. What is still true is the persisting half: the mode
-  is runtime state, serialised nowhere (`docs/KNOWN-LIMITATIONS.md` §"Automation is not sample-accurate").
+  is runtime state, serialised nowhere (`docs/KNOWN-LIMITATIONS.md` §"Sample-accurate automation
+  (`automation.ramp_set`, `automation.ramp_get`) — feature row 9").
 - **LUFS / stem export** — *Exists:* the offline meter and render/export report; the `exportstems` CLI. *Missing:* a
   live GUI meter (deliberately out of scope, `docs/LUFS-METER.md`) and any stem-export dialog control (`grep
   StemExport src/gui` returns nothing).
 - **Racks / VCAs** — *Exists:* engine, persistence, tests (above). *Missing:* a UI and a scripting path — a rack or
   a group can only arrive by loading a project that already contains one. Macros and key/velocity zones are outside
-  the rack slice, and chain switching is not crossfaded, so it can click.
+  the rack slice, and chain switching is not crossfaded, so it can click. *(2026-10-18 (Q050-171): superseded for
+  both families. A mixer channel's Rack submenu adds and removes chains and sets macros, and the VCA strip, its
+  Links/Put Inside menus, the channel's VCA group submenu and Project tools ▸ Groups... (create, rename, remove,
+  edit set, phase lock) all exist; "no scripting path" is no longer the right phrase either, since `zene.command()`
+  reaches every `rack.*` and `vca.*` id. The remaining limits are in `docs/KNOWN-LIMITATIONS.md`.)*
 - **Out-of-process plugin hosting** — *Exists:* VST2/Vestige is always separate-process; ZynAddSubFx has an opt-in
   per-plugin `separateprocess` toggle; `RemoteZynAddSubFx` builds unconditionally; `ZynSeparateProcessTest`,
   `RemotePluginClientE2ETest`. *Missing:* isolation for the new families — `docs/KNOWN-LIMITATIONS.md` records "no
@@ -247,8 +253,12 @@ not rounded up.
   `SessionScheduler.cpp`, wired into `Song::processNextBuffer` under `#ifdef LMMS_HAVE_SESSION_VIEW`; its tests
   register only inside `IF(LMMS_HAVE_SESSION_VIEW)` (`tests/CMakeLists.txt`). Even a flag-ON build has **no clip
   launcher and no grid**.
-- **Offline HTDemucs stem separation** — `WANT_STEM_SPLIT` defaults **OFF** (`CMakeLists.txt:120`), absent from
-  every release build. This is **not** the `HAVE` stem *export* above.
+- **Offline HTDemucs stem separation** — at `5565b4b1b` the option defaulted **OFF** (`CMakeLists.txt:120`) and
+  was absent from every release build. **Superseded at this tip (owner decision 14, 2026-09-29; corrected
+  2026-10-15, Q050-035):** `WANT_STEM_SPLIT` now **defaults ON** (`CMakeLists.txt:130`) and the
+  `stem-separation` row of `tests/advertised-features.tsv` requires it, so the engine and the eight `stem.*`
+  ids are in the default build. It is **local and offline** (nothing is uploaded; the pinned model is fetched
+  on first use unless `LMMS_STEM_OFFLINE` is set). This is still **not** the `HAVE` stem *export* above.
 - **WASM DSP sandbox** — `WANT_WASM` defaults ON but **degrades to OFF** when the wasmtime C API is absent
   (`CMakeLists.txt`), and CI provisions none, so it is compiled out in practice. The `advertised-features.tsv`
   "required OFF" row holds by dependency absence, not by choice; `docs/INDEPENDENT-NOTES-READ.md` B5 raises this and
@@ -289,8 +299,11 @@ not rounded up.
 ## Absent
 
 Genuinely no code, each verified by grep plus a named doc: fades, crossfades and clip gain; take lanes, comping
-and punch in/out; arbitrary input count; input monitoring; CLAP instrument hosting; sample-accurate automation
-(it resolves once per tick, `src/core/Song.cpp:404`); freeze; bounce-in-place; controller surfaces; groove pool;
+and punch in/out; arbitrary input count; input monitoring; CLAP instrument hosting; ~~sample-accurate automation
+(it resolves once per tick, `src/core/Song.cpp:404`)~~ **corrected 2026-10-30 (Q050-362): a Linear or
+CubicHermite clip is sample-accurate by default, a Discrete clip keeps its per-tick step, each per-block ramp
+holds 32 knots and counts refused surplus knots, and a clip in a pattern is refused; the current limits are in
+`docs/KNOWN-LIMITATIONS.md` §Sample-accurate automation**; freeze; bounce-in-place; controller surfaces; groove pool;
 Ableton Link; modern stock devices (`34`); factory content (`35`); design system (`36`); auto-mastering waves
 2–3; and the patcher GUI (`grep Patcher src/gui` finds only unrelated files). Deliberately excluded rather than
 merely unbuilt, per the roadmap-gap register (carried in the planned-work master list): notation/score,
@@ -323,7 +336,9 @@ record the fix, so it contradicted itself from the start. Line numbers are that 
    banked in `coverage-baseline.tsv`. **Already false when written** — :245-247 and :269-270 restate the
    registration as done.
 9. **"automation modes and sample-accurate automation" absent** (:95-96, :198). The modes half is contradicted
-   (model implemented and tested, § PARTIAL); the sample-accurate half is **not**.
+   (model implemented and tested, § PARTIAL); the sample-accurate half was **not** contradicted when this audit
+   was written — **corrected 2026-10-30 (Q050-362): the sample-accurate half is contradicted too, because a
+   clip carrying a Linear or CubicHermite curve now ramps at sample precision by default.**
 10. **"LUFS metering, freeze, bounce-in-place; stem export" have no code** (:96-97, :199). LUFS and stem export are
    real and wired; freeze and bounce remain absent — `PARTIAL`.
 11. **"MIDI learn" a documented gap** (:100, :200). It landed, with three registered tests.

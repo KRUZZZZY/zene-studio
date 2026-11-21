@@ -50,6 +50,44 @@ int paintLength(const NoteEditorState& state)
 	return std::max(1, std::min(wanted, std::max(1, state.gridTicks)));
 }
 
+//! Marks the cell of @a key at @a start for a note, once: a stroke never paints the same cell twice.
+void appendPaintCell(std::vector<std::pair<int, int>>& painted, int key, int start)
+{
+	if (key < 0) { return; }
+	const bool taken = std::any_of(painted.begin(), painted.end(),
+		[key, start](const std::pair<int, int>& cell) { return cell.first == key && cell.second == start; });
+	if (!taken) { painted.emplace_back(key, start); }
+}
+
+//! The cell index (in multiples of @a step) the path is in just after it leaves @a from moving by
+//! @a delta: the floor cell, except at an exact boundary moving backwards, where the path is already
+//! in the cell below it (the floor cell is the one it started on and immediately left).
+int cellAtStart(double from, double delta, int step)
+{
+	const double ratio = from / step;
+	const double whole = std::floor(ratio);
+	if (delta < 0.0 && ratio - whole < 1e-9) { return static_cast<int>(whole) - 1; }
+	return static_cast<int>(whole);
+}
+
+//! The parameter (0 < t < 1) at which the path from @a from, moving by @a delta, leaves @a cell
+//! through its next boundary, or 2 when it moves nowhere or reaches no boundary before the end
+//! (the end point is painted with its own cell).
+double nextBoundaryParam(int cell, double from, double delta, int step)
+{
+	if (delta == 0.0) { return 2.0; }
+	const double boundary = (delta > 0.0 ? cell + 1.0 : static_cast<double>(cell)) * step;
+	const double t = (boundary - from) / delta;
+	return t > 0.0 && t < 1.0 ? t : 2.0;
+}
+
+//! The key on the grid's row @a row, or -1 when there is no such row: NoteGrid finds a row by
+//! dividing the scrolled y, and a row index maps back the same way.
+int keyOfRow(const NoteGrid& grid, int row)
+{
+	return grid.keyAtY(row * grid.rowHeight() - grid.scrollY());
+}
+
 } // namespace
 
 int NoteCanvas::scaleKey(int key) const
@@ -71,19 +109,38 @@ void NoteCanvas::extendPaint(const QPoint& pos)
 	// One note per grid cell the pointer crosses, on the row under it (a cell is painted once).
 	const int key = scaleKey(m_state.grid.keyAtY(pos.y()));
 	const int start = std::max(0, NoteGrid::snapDown(static_cast<int>(m_state.grid.tickAtX(pos.x())), m_state.gridTicks));
-	if (key < 0) { return; }
-	const bool taken = std::any_of(m_painted.begin(), m_painted.end(),
-		[key, start](const std::pair<int, int>& cell) { return cell.first == key && cell.second == start; });
-	if (!taken) { m_painted.emplace_back(key, start); }
+	appendPaintCell(m_painted, key, start);
 }
 
 void NoteCanvas::paintAlong(const QPoint& from, const QPoint& to)
 {
-	// As strokeAlong: Qt delivers a fast drag sparsely, so the cells the path crossed between two events
-	// are painted as well - only the press and the delivered positions would otherwise get notes.
-	const QPoint path = to - from;
-	const int steps = std::max(1, std::max(std::abs(path.x()), std::abs(path.y())) / 2);
-	for (int i = 1; i <= steps; ++i) { extendPaint(from + path * i / steps); }
+	// Qt delivers a fast drag sparsely, and a grid cell can be narrower than a pixel, so the stroke is walked
+	// over the grid's own boundaries - cells start every gridTicks ticks, key rows every rowHeight pixels - and
+	// every cell the path enters is painted, on the row it is on where it enters that cell. The two end points
+	// are painted too, so the release closes the last segment.
+	const NoteGrid& grid = m_state.grid;
+	const int cellTicks = std::max(1, m_state.gridTicks);
+	const int rowHeight = grid.rowHeight();
+	const double fromTick = grid.tickAtX(from.x());
+	const double fromRow = static_cast<double>(from.y() + grid.scrollY());
+	const double tickDelta = grid.tickAtX(to.x()) - fromTick;
+	const double rowDelta = static_cast<double>(to.y() + grid.scrollY()) - fromRow;
+	int cell = cellAtStart(fromTick, tickDelta, cellTicks);
+	int row = cellAtStart(fromRow, rowDelta, rowHeight);
+	appendPaintCell(m_painted, scaleKey(keyOfRow(grid, row)), std::max(0, cell * cellTicks));
+	// The path's parameter at the next boundary on each axis: whichever comes first is stepped, both of them
+	// on a corner, and the walk ends before the end point, which extendPaint paints with its own cell.
+	double cellParam = nextBoundaryParam(cell, fromTick, tickDelta, cellTicks);
+	double rowParam = nextBoundaryParam(row, fromRow, rowDelta, rowHeight);
+	while (cellParam < 1.0 || rowParam < 1.0)
+	{
+		const bool cellFirst = cellParam <= rowParam;
+		const bool rowFirst = rowParam <= cellParam;
+		if (cellFirst) { cell += tickDelta > 0.0 ? 1 : -1; cellParam = nextBoundaryParam(cell, fromTick, tickDelta, cellTicks); }
+		if (rowFirst) { row += rowDelta > 0.0 ? 1 : -1; rowParam = nextBoundaryParam(row, fromRow, rowDelta, rowHeight); }
+		appendPaintCell(m_painted, scaleKey(keyOfRow(grid, row)), std::max(0, cell * cellTicks));
+	}
+	extendPaint(to);
 }
 
 void NoteCanvas::strokeAlong(const QPoint& from, const QPoint& to)

@@ -12,6 +12,8 @@
  */
 
 #include <QtTest>
+#include <QDomDocument>
+#include <QFile>
 #include <QJsonObject>
 #include <QTemporaryDir>
 
@@ -27,6 +29,7 @@
 #include "AudioEngine.h"
 #include "AudioEngineWorkerThread.h"
 #include "AudioDevice.h"
+#include "Clip.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -183,6 +186,102 @@ private slots:
 		QCOMPARE(frozenPassLengths(audio, track).size(), std::size_t{8});
 		audio->removePlayHandlesOfTypes(track, PlayHandle::Type::SamplePlayHandle);
 		QTest::qWait(130);
+	}
+
+	//! Corrupt tick attributes cannot move a frozen take or target a different muted clip.
+	void malformedFrozenTickAttributesAreNotAccepted()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		SampleTrack* track = nullptr;
+		const QString error = prepareFrozenTake(scratch, 440.0, &track);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+
+		Song* const song = Engine::getSong();
+		const QString projectPath = scratch.filePath(QStringLiteral("frozen-project.mmp"));
+		QVERIFY(song->saveProjectFile(projectPath));
+		QFile savedProject(projectPath);
+		QVERIFY(savedProject.open(QIODevice::ReadOnly));
+		const QByteArray validProject = savedProject.readAll();
+		savedProject.close();
+
+		auto loadWithAttribute = [&](const QString& name, const QString& value) {
+			QDomDocument document;
+			if (!document.setContent(validProject)) { return false; }
+			QDomElement projectTrack = document.documentElement()
+				.firstChildElement(QStringLiteral("song"))
+				.firstChildElement(QStringLiteral("trackcontainer"))
+				.firstChildElement(QStringLiteral("track"));
+			if (projectTrack.isNull()) { return false; }
+			projectTrack.setAttribute(name, value);
+			QFile changedProject(projectPath);
+			if (!changedProject.open(QIODevice::WriteOnly | QIODevice::Truncate)) { return false; }
+			const qint64 written = changedProject.write(document.toByteArray());
+			changedProject.close();
+			if (written < 0) { return false; }
+			song->loadProject(projectPath);
+			return true;
+		};
+
+		QVERIFY(loadWithAttribute(QStringLiteral("frozenStart"), QStringLiteral("not-a-tick")));
+		QVERIFY(!song->tracks().back()->isFrozen());
+		QVERIFY(loadWithAttribute(QStringLiteral("frozenEnd"), QStringLiteral("2147483648")));
+		QVERIFY(!song->tracks().back()->isFrozen());
+
+		QVERIFY(loadWithAttribute(QStringLiteral("frozenMuted"),
+			QStringLiteral("24:96,2147483648:96,72:not-a-tick")));
+		const Track::FrozenTake& loadedTake = song->tracks().back()->frozenTake();
+		QVERIFY(loadedTake.isFrozen());
+		QCOMPARE(loadedTake.mutedClips.size(), std::size_t{1});
+		QCOMPARE(loadedTake.mutedClips.front().startTicks, tick_t{24});
+		QCOMPARE(loadedTake.mutedClips.front().lengthTicks, tick_t{96});
+	}
+
+	//! new-p12-286: malformed start ticks must not make unfreeze target a muted clip at tick zero.
+	void malformedMutedClipStartDoesNotUnmuteTickZeroClip()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		SampleTrack* track = nullptr;
+		const QString error = prepareFrozenTake(scratch, 440.0, &track);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		const QString trackId = QStringLiteral("trk-%1").arg(track->id());
+		const ControlResult added = run(QStringLiteral("clip.add"),
+			{{QStringLiteral("track"), trackId}, {QStringLiteral("position"), 0}, {QStringLiteral("length"), 192}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		QCOMPARE(added.result.value(QStringLiteral("length")).toInt(), 192);
+		QVERIFY(!track->getClips().empty());
+		track->getClips().front()->setMuted(true);
+
+		Song* const song = Engine::getSong();
+		const QString projectPath = scratch.filePath(QStringLiteral("malformed-frozen-muted.mmp"));
+		QVERIFY(song->saveProjectFile(projectPath));
+		QFile savedProject(projectPath);
+		QVERIFY(savedProject.open(QIODevice::ReadOnly));
+		QDomDocument document;
+		QVERIFY(document.setContent(savedProject.readAll()));
+		savedProject.close();
+		QDomElement projectTrack = document.documentElement()
+			.firstChildElement(QStringLiteral("song"))
+			.firstChildElement(QStringLiteral("trackcontainer"))
+			.firstChildElement(QStringLiteral("track"));
+		QVERIFY(!projectTrack.isNull());
+		projectTrack.setAttribute(QStringLiteral("frozenMuted"), QStringLiteral("bad:192"));
+		QFile malformedProject(projectPath);
+		QVERIFY(malformedProject.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		QVERIFY(malformedProject.write(document.toByteArray()) >= 0);
+		malformedProject.close();
+
+		song->loadProject(projectPath);
+		auto* const loaded = dynamic_cast<SampleTrack*>(song->tracks().back());
+		QVERIFY(loaded != nullptr);
+		QCOMPARE(loaded->getClips().size(), std::size_t{1});
+		Clip* const loadedClip = loaded->getClips().front();
+		QVERIFY(loadedClip->isMuted());
+		QVERIFY(loaded->isFrozen());
+
+		loaded->unfreeze();
+		QVERIFY2(loadedClip->isMuted(), "an invalid frozenMuted entry must not unmute the tick-zero clip");
 	}
 
 	//! Cluster 5414 round 2: a 2-second take looping every 4 ticks can hold more than eight live passes.
@@ -345,6 +444,50 @@ private slots:
 		QCOMPARE(audio->sampleVoiceOverflows(), overflowBefore);
 		QTest::qWait(130);
 		QCOMPARE(audio->sampleVoiceQueueInvariantFailures(), std::uint64_t{0});
+	}
+
+	//! A take a load rejects (a start tick that does not parse) is discarded, and the clips its freeze muted come back.
+	void rejectedFrozenTakeReleasesItsMutedClips()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		const QString wav = taketest::writeToneWav(scratch.filePath(QStringLiteral("take.wav")), 440.0);
+		QVERIFY(!wav.isEmpty());
+		Song* const song = Engine::getSong();
+		song->clearProject();
+		QVERIFY(run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}}).ok);
+		auto* const track = dynamic_cast<SampleTrack*>(song->tracks().back());
+		QVERIFY(track != nullptr);
+		Clip* const clip = track->createClip(TimePos(0));
+		QVERIFY(clip != nullptr);
+		const Track::FrozenTake::MutedClip muted{clip->startPosition().getTicks(), clip->length().getTicks()};
+		QString reason;
+		QVERIFY2(track->freezeTo(wav, 0, 192, {muted}, &reason), qPrintable(reason));
+		QVERIFY(clip->isMuted());
+
+		const QString projectPath = scratch.filePath(QStringLiteral("rejected-take.mmp"));
+		QVERIFY(song->saveProjectFile(projectPath));
+		QFile savedProject(projectPath);
+		QVERIFY(savedProject.open(QIODevice::ReadOnly));
+		QDomDocument document;
+		QVERIFY(document.setContent(savedProject.readAll()));
+		savedProject.close();
+		QDomElement projectTrack = document.documentElement()
+			.firstChildElement(QStringLiteral("song"))
+			.firstChildElement(QStringLiteral("trackcontainer"))
+			.firstChildElement(QStringLiteral("track"));
+		QVERIFY(!projectTrack.isNull());
+		projectTrack.setAttribute(QStringLiteral("frozenStart"), QStringLiteral("not-a-tick"));
+		QFile changedProject(projectPath);
+		QVERIFY(changedProject.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		QVERIFY(changedProject.write(document.toByteArray()) >= 0);
+		changedProject.close();
+		song->loadProject(projectPath);
+
+		QVERIFY(!song->tracks().back()->isFrozen());
+		const Track::clipVector& loadedClips = song->tracks().back()->getClips();
+		QCOMPARE(loadedClips.size(), std::size_t{1});
+		QVERIFY2(!loadedClips.front()->isMuted(), "a rejected take left the clip its freeze muted silent");
 	}
 };
 

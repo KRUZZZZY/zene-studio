@@ -61,6 +61,7 @@
 #include <chrono>
 #include <memory>
 #include <new>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
@@ -147,19 +148,24 @@ constexpr qsizetype PatchSampleHeaderSize = 96;
 
 void writeLittleEndian16(QByteArray& data, qsizetype offset, std::uint16_t value)
 {
-	data[offset] = static_cast<char>(value & 0xff);
-	data[offset + 1] = static_cast<char>(value >> 8);
+	const int at = static_cast<int>(offset);  // Qt 5 QByteArray::operator[] takes int/uint; qsizetype is ambiguous
+	data[at] = static_cast<char>(value & 0xff);
+	data[at + 1] = static_cast<char>(value >> 8);
 }
 
 void writeLittleEndian32(QByteArray& data, qsizetype offset, std::uint32_t value)
 {
+	const int at = static_cast<int>(offset);
 	for (int byte = 0; byte < 4; ++byte)
 	{
-		data[offset + byte] = static_cast<char>((value >> (byte * 8)) & 0xff);
+		data[at + byte] = static_cast<char>((value >> (byte * 8)) & 0xff);
 	}
 }
 
-auto makeSingleSamplePatch() -> QByteArray
+//! A valid one-sample GF1 patch whose single sample is tuned to
+//! `rootFrequency` (in milli-hertz), so two patches can be told apart by the
+//! frequency of the sample they publish.
+auto makeSingleSamplePatch(std::uint32_t rootFrequency = 440000) -> QByteArray
 {
 	constexpr qsizetype SampleFrames = 4;
 	auto patch = QByteArray(PatchHeaderSize + PatchSampleHeaderSize + SampleFrames, '\0');
@@ -170,11 +176,12 @@ auto makeSingleSamplePatch() -> QByteArray
 	writeLittleEndian32(patch, sample + 8, SampleFrames);
 	writeLittleEndian32(patch, sample + 16, SampleFrames);
 	writeLittleEndian16(patch, sample + 20, 22050);
-	writeLittleEndian32(patch, sample + 30, 440000);
-	patch[PatchHeaderSize + PatchSampleHeaderSize] = 32;
-	patch[PatchHeaderSize + PatchSampleHeaderSize + 1] = -32;
-	patch[PatchHeaderSize + PatchSampleHeaderSize + 2] = 64;
-	patch[PatchHeaderSize + PatchSampleHeaderSize + 3] = -64;
+	writeLittleEndian32(patch, sample + 30, rootFrequency);
+	const int sampleAt = static_cast<int>(PatchHeaderSize + PatchSampleHeaderSize);  // Qt 5 QByteArray::operator[] takes int/uint
+	patch[sampleAt] = 32;
+	patch[sampleAt + 1] = -32;
+	patch[sampleAt + 2] = 64;
+	patch[sampleAt + 3] = -64;
 	return patch;
 }
 
@@ -188,6 +195,173 @@ auto analyzerDebugTimerReportsAfter(std::chrono::seconds elapsed) -> bool
 		return AnalyzerType::isStatsIntervalElapsed(last + elapsed, last);
 	}
 	return false;
+}
+
+/*!
+ * Probes the SA_DEBUG timing collector of the Spectrum Analyzer.
+ *
+ * The collector is looked up through the Analyzer type, so this helper also
+ * compiles on a tree whose Analyzer has no collector at all: the pre-fix code
+ * kept the count, the sum and the peak in three separate atomics that the GUI
+ * thread reset one after another, so a callback between two of those resets
+ * put its count into the next report and its duration into the current one.
+ *
+ * The measurements are injected, so the probe is deterministic: no clock, no
+ * sleep, no thread and no race.
+ *
+ * Returns an empty string when every snapshot describes exactly one interval,
+ * and the reason for the failure otherwise.
+ */
+template<typename AnalyzerType>
+auto analyzerTimingSnapshotProbe() -> QString
+{
+	if constexpr (!requires { typename AnalyzerType::TimingCollector; })
+	{
+		return QStringLiteral("Analyzer has no coherent timing snapshot collector");
+	}
+	else
+	{
+		using Collector = typename AnalyzerType::TimingCollector;
+		using Snapshot = typename Collector::Snapshot;
+
+		Collector collector;
+		Snapshot snapshot;
+
+		// The first interval holds two callbacks.
+		collector.record(100);
+		collector.record(300);
+		// The GUI thread asks for the interval that ends now. The callback
+		// that lands after the request belongs to the next interval.
+		collector.request();
+		collector.record(50);
+
+		if (!collector.take(snapshot))
+		{
+			return QStringLiteral("no snapshot was published for the requested interval");
+		}
+		if (snapshot.count != 2 || snapshot.sumNs != 400 || snapshot.maxNs != 300)
+		{
+			return QStringLiteral("the first snapshot mixes intervals: count=%1 sum=%2 peak=%3")
+				.arg(static_cast<qulonglong>(snapshot.count))
+				.arg(static_cast<qulonglong>(snapshot.sumNs))
+				.arg(static_cast<qulonglong>(snapshot.maxNs));
+		}
+
+		// The next request closes the interval the late callback started.
+		collector.request();
+		collector.record(70);
+		if (!collector.take(snapshot))
+		{
+			return QStringLiteral("no snapshot was published for the second interval");
+		}
+		if (snapshot.count != 1 || snapshot.sumNs != 50 || snapshot.maxNs != 50)
+		{
+			return QStringLiteral("the second snapshot mixes intervals: count=%1 sum=%2 peak=%3")
+				.arg(static_cast<qulonglong>(snapshot.count))
+				.arg(static_cast<qulonglong>(snapshot.sumNs))
+				.arg(static_cast<qulonglong>(snapshot.maxNs));
+		}
+
+		// The third interval holds the callback of 70 ns and two more; the
+		// callback that lands after the request starts the fourth interval.
+		collector.record(90);
+		collector.record(110);
+		collector.request();
+		collector.record(10);
+		if (!collector.take(snapshot))
+		{
+			return QStringLiteral("no snapshot was published for the third interval");
+		}
+		if (snapshot.count != 3 || snapshot.sumNs != 270 || snapshot.maxNs != 110)
+		{
+			return QStringLiteral("the third snapshot mixes intervals: count=%1 sum=%2 peak=%3")
+				.arg(static_cast<qulonglong>(snapshot.count))
+				.arg(static_cast<qulonglong>(snapshot.sumNs))
+				.arg(static_cast<qulonglong>(snapshot.maxNs));
+		}
+
+		// The fourth interval holds the callback of 10 ns alone.
+		collector.request();
+		collector.record(20);
+		if (!collector.take(snapshot))
+		{
+			return QStringLiteral("no snapshot was published for the fourth interval");
+		}
+		if (snapshot.count != 1 || snapshot.sumNs != 10 || snapshot.maxNs != 10)
+		{
+			return QStringLiteral("the fourth snapshot mixes intervals: count=%1 sum=%2 peak=%3")
+				.arg(static_cast<qulonglong>(snapshot.count))
+				.arg(static_cast<qulonglong>(snapshot.sumNs))
+				.arg(static_cast<qulonglong>(snapshot.maxNs));
+		}
+
+		// Without a request there is nothing to take.
+		if (collector.take(snapshot))
+		{
+			return QStringLiteral("the collector published a snapshot nobody asked for");
+		}
+		return QString();
+	}
+}
+
+/*!
+ * Probes the SA_DEBUG timing collector of the Spectrum Analyzer for the case
+ * that no callback follows the GUI request.
+ *
+ * The GUI thread asks for the interval that ends now. The baseline reported
+ * the accumulated count, sum and peak of that interval even when the audio
+ * thread did not run again, so the measurements of an interval must stay
+ * reportable until they are taken: a collector that only publishes from the
+ * audio callback loses them as soon as the callbacks stop.
+ *
+ * The measurements are injected, so the probe is deterministic: no clock, no
+ * sleep, no thread and no race.
+ *
+ * Returns an empty string when the measurements stay reportable, and the
+ * reason for the failure otherwise.
+ */
+template<typename AnalyzerType>
+auto analyzerTimingNoCallbackAfterRequestProbe() -> QString
+{
+	if constexpr (!requires { typename AnalyzerType::TimingCollector; })
+	{
+		return QStringLiteral("Analyzer has no coherent timing snapshot collector");
+	}
+	else
+	{
+		using Collector = typename AnalyzerType::TimingCollector;
+		using Snapshot = typename Collector::Snapshot;
+
+		Collector collector;
+		Snapshot snapshot;
+
+		// Two callbacks are measured, then the GUI thread asks for the
+		// interval that ends now.
+		collector.record(100);
+		collector.record(300);
+		collector.request();
+
+		// No callback follows the request: the measurements of the interval
+		// must still be reportable.
+		if (!collector.take(snapshot))
+		{
+			return QStringLiteral("the accumulated measurements were lost because no callback followed the request");
+		}
+		if (snapshot.count != 2 || snapshot.sumNs != 400 || snapshot.maxNs != 300)
+		{
+			return QStringLiteral("the report of an interval without a following callback is wrong: count=%1 sum=%2 peak=%3")
+				.arg(static_cast<qulonglong>(snapshot.count))
+				.arg(static_cast<qulonglong>(snapshot.sumNs))
+				.arg(static_cast<qulonglong>(snapshot.maxNs));
+		}
+
+		// The interval was taken, so the next report has nothing to show.
+		if (collector.take(snapshot))
+		{
+			return QStringLiteral("the collector reported the same interval twice");
+		}
+		return QString();
+	}
 }
 
 //! 0 = Continue, 1 = ContinueIfNotQuiet, 2 = Sleep
@@ -243,12 +417,19 @@ private slots:
 	void legacyAudioBufferPathRoutesInPlacePorts();
 	void neuralAmpRejectsModelsTrainedAtAnotherSampleRate();
 	void clearingPatmanPatchReleasesItsSampleBank();
+	void patmanPatchLoadWaitsForTheRenderPeriod();
 	void subMillisecondTapIntervalDoesNotProduceInfiniteTempo();
 	void namHarnessRejectsNegativeWarmup();
 	void emptyNonInterpolatedCyclicVectorIsRejected();
 	void emptyInterpolatedCyclicVectorIsRejected();
 	void gateRecoversAfterNanInput();
 	void analyzerDebugTimerUsesMonotonicTimePoint();
+	void analyzerDebugTimerKeepsStdoutOffAudioThread();
+	void analyzerConstructorInitializesTheDebugMembers();
+	void analyzerTimingSnapshotStaysCoherent();
+	void analyzerTimingSurvivesNoCallbackAfterRequest();
+	void analyzerTimingReportUsesOneCoherentSnapshot();
+	void analyzerTimingCollectorCoversMaximumSixSecondReportInterval();
 
 private:
 	auto createEffect() const -> std::unique_ptr<Effect>;
@@ -656,6 +837,86 @@ void AudioPluginTest::clearingPatmanPatchReleasesItsSampleBank()
 	QVERIFY(loadedSample.expired());
 }
 
+//! The audio thread picks its sample out of the patch bank while it renders
+//! (playNoteImpl -> selectSample) and the render thread owns the engine's
+//! model state for a whole render period: replacing the patch must not land
+//! in the middle of a render period, or the audio thread selects out of a
+//! bank that is being mutated underneath it.
+void AudioPluginTest::patmanPatchLoadWaitsForTheRenderPeriod()
+{
+	QTemporaryDir directory;
+	QVERIFY(directory.isValid());
+
+	const QString firstPatch = directory.filePath(QStringLiteral("first.pat"));
+	const QString secondPatch = directory.filePath(QStringLiteral("second.pat"));
+	const auto writePatch = [&directory](const QString& name, std::uint32_t rootFrequency)
+	{
+		const QString path = directory.filePath(name);
+		QFile file(path);
+		if (!file.open(QIODevice::WriteOnly)) { return QString{}; }
+		const QByteArray patch = makeSingleSamplePatch(rootFrequency);
+		if (file.write(patch) != static_cast<qint64>(patch.size())) { return QString{}; }
+		file.close();
+		return path;
+	};
+	QVERIFY(!writePatch(QStringLiteral("first.pat"), 440000).isEmpty());
+	QVERIFY(!writePatch(QStringLiteral("second.pat"), 220000).isEmpty());
+
+	const QString pluginPath = QDir(QFileInfo(QStringLiteral(SYNTHETIC_PLUGIN_PATH)).absolutePath())
+		.absoluteFilePath(QStringLiteral("../plugins/patman"));
+	QLibrary patmanLibrary(pluginPath);
+	patmanLibrary.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(patmanLibrary.load(), qPrintable(patmanLibrary.errorString()));
+	const auto patmanMain = reinterpret_cast<MainFn>(patmanLibrary.resolve("lmms_plugin_main"));
+	QVERIFY2(patmanMain != nullptr, qPrintable(patmanLibrary.errorString()));
+	auto plugin = std::unique_ptr<Plugin>{patmanMain(nullptr, nullptr)};
+	QVERIFY(plugin != nullptr);
+	auto* instrument = static_cast<PatmanInstrument*>(plugin.get());
+
+	QVERIFY(QMetaObject::invokeMethod(instrument, "setFile", Qt::DirectConnection,
+		Q_ARG(QString, firstPatch), Q_ARG(bool, false)));
+	QCOMPARE(instrument->m_patchSamples.size(), 1);
+	QCOMPARE(instrument->m_patchSamples.constFirst()->frequency(), 440.0f);
+
+	AudioEngine* const engine = Engine::audioEngine();
+	QVERIFY(engine != nullptr);
+
+	// The render thread holds the engine's model-change mutex for a whole
+	// render period (AudioEngine::renderNextPeriod): the patch state the
+	// audio thread reads must not change while it owns it.
+	engine->requestChangeInModel();
+
+	std::atomic<bool> finished{false};
+	std::thread loader([&instrument, &secondPatch, &finished] {
+		QMetaObject::invokeMethod(instrument, "setFile", Qt::DirectConnection,
+			Q_ARG(QString, secondPatch), Q_ARG(bool, false));
+		finished.store(true, std::memory_order_release);
+	});
+
+	// The outcome is an ordering of events, not a duration. While the render
+	// period owns the model state, the load either reaches the model-change
+	// guard and waits there (a control thread parked inside
+	// AudioEngine::requestChangeInModel, counted by modelChangeWaiters()), or
+	// it completes without ever waiting. Whichever happens first decides; a
+	// load that reaches neither state leaves the loop - and the test - hung,
+	// which a timeout reports as a failure, never as a pass.
+	while (!finished.load(std::memory_order_acquire) &&
+			engine->modelChangeWaiters() == 0)
+	{
+		std::this_thread::yield();
+	}
+	const bool completedWhileRenderPeriodOwned = finished.load(std::memory_order_acquire);
+
+	engine->doneChangeInModel();
+	loader.join();
+
+	QVERIFY2(!completedWhileRenderPeriodOwned,
+		"the patch was replaced while the render period owned the model state");
+	// The deferred load still lands once the render period is over.
+	QCOMPARE(instrument->m_patchSamples.size(), 1);
+	QCOMPARE(instrument->m_patchSamples.constFirst()->frequency(), 220.0f);
+}
+
 //! TapTempo must reject intervals that truncate to zero milliseconds.
 void AudioPluginTest::subMillisecondTapIntervalDoesNotProduceInfiniteTempo()
 {
@@ -766,6 +1027,133 @@ void AudioPluginTest::analyzerDebugTimerUsesMonotonicTimePoint()
 	QVERIFY(!analyzerDebugTimerReportsAfter<Analyzer>(std::chrono::seconds{4}));
 	QVERIFY(analyzerDebugTimerReportsAfter<Analyzer>(std::chrono::seconds{6}));
 	QVERIFY((std::is_same_v<decltype(Analyzer::m_last_dump_time), std::chrono::steady_clock::time_point>));
+}
+
+void AudioPluginTest::analyzerDebugTimerKeepsStdoutOffAudioThread()
+{
+	// processImpl() runs on the audio thread, where std::cout can block, so a debug
+	// build must not print from it. The source is read through __FILE__ because this
+	// target does not link the Spectrum Analyzer controls that Analyzer needs to construct.
+	const QString analyzerPath = QFileInfo(QString::fromUtf8(__FILE__)).dir()
+		.filePath(QStringLiteral("../../../plugins/SpectrumAnalyzer/Analyzer.cpp"));
+	QFile source(analyzerPath);
+	QVERIFY2(source.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(source.errorString()));
+	const QString text = QString::fromUtf8(source.readAll());
+
+	const qsizetype begin = text.indexOf(QStringLiteral("ProcessStatus Analyzer::processImpl("));
+	QVERIFY(begin >= 0);
+	const qsizetype end = text.indexOf(QStringLiteral("\n}"), begin);
+	QVERIFY(end > begin);
+	const QString callback = text.mid(begin, end - begin);
+	QVERIFY2(!callback.contains(QStringLiteral("std::cout")),
+		"Analyzer::processImpl() writes to std::cout on the audio thread");
+	QVERIFY2(text.contains(QStringLiteral("Analyzer audio thread:")),
+		"the SA_DEBUG timing report must still be printed, from the GUI-side reporter");
+}
+
+void AudioPluginTest::analyzerConstructorInitializesTheDebugMembers()
+{
+	// The reported defect: the SA_DEBUG debug members have to be initialized by
+	// the constructor, otherwise the first processImpl() audio callback reads an
+	// indeterminate dump counter and the GUI-side reporter reads an indeterminate
+	// debug timer. The plugin's implementation is not linked into this generic
+	// AudioPlugin test host (see the comment above the Analyzer include), so the
+	// constructor's initializer list is read from the product source.
+	const QString analyzerDir = QFileInfo(QString::fromUtf8(__FILE__)).dir()
+		.filePath(QStringLiteral("../../../plugins/SpectrumAnalyzer"));
+	QFile source(analyzerDir + QStringLiteral("/Analyzer.cpp"));
+	QVERIFY2(source.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(source.errorString()));
+	const QByteArray text = source.readAll();
+	QFile header(analyzerDir + QStringLiteral("/Analyzer.h"));
+	QVERIFY2(header.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(header.errorString()));
+	const QByteArray declarations = header.readAll();
+
+	const int ctor = text.indexOf("Analyzer::Analyzer(");
+	QVERIFY2(ctor > 0, "the Analyzer constructor was not found in the product source");
+	const int body = text.indexOf("m_processorThread.start()", ctor);
+	QVERIFY2(body > ctor, "the end of the Analyzer constructor was not found in the product source");
+	const QByteArray initializers = text.mid(ctor, body - ctor);
+	// Every scalar SA_DEBUG member that still exists must be initialized by the
+	// constructor. A member that no longer exists needs no initializer (the
+	// timing counters are gone once the coherent collector owns them, and the
+	// collector initializes its own storage).
+	const bool lastDumpTimeDeclared = declarations.contains("m_last_dump_time");
+	QVERIFY2(lastDumpTimeDeclared, "the Analyzer no longer stores the SA_DEBUG report time");
+	for (const char* member : {"m_last_dump_time", "m_dump_count", "m_sum_execution_ns", "m_max_execution_ns"})
+	{
+		if (!declarations.contains(QByteArray{member}))
+		{
+			continue;
+		}
+		QVERIFY2(initializers.contains(QByteArray{member} + '('),
+			qPrintable(QStringLiteral("the Analyzer constructor does not initialize %1")
+				.arg(QString::fromUtf8(member))));
+	}
+}
+
+void AudioPluginTest::analyzerTimingSnapshotStaysCoherent()
+{
+	// One report must never mix samples from two intervals: the count, the
+	// sum and the peak always describe the same set of callbacks. The
+	// measurements are injected, so the probe is deterministic.
+	const QString failure = analyzerTimingSnapshotProbe<Analyzer>();
+	QVERIFY2(failure.isEmpty(), qPrintable(failure));
+}
+
+void AudioPluginTest::analyzerTimingSurvivesNoCallbackAfterRequest()
+{
+	// The baseline reported the accumulated count, sum and peak of an interval
+	// even when the audio thread did not run again, so the measurements of an
+	// interval must stay reportable until they are taken. The measurements
+	// are injected, so the probe is deterministic.
+	const QString failure = analyzerTimingNoCallbackAfterRequestProbe<Analyzer>();
+	QVERIFY2(failure.isEmpty(), qPrintable(failure));
+}
+
+void AudioPluginTest::analyzerTimingReportUsesOneCoherentSnapshot()
+{
+	// The reporter must not read (and reset) the count, the sum and the peak
+	// one after another: a callback between two of those reads lands in the
+	// next report with its duration in the current one. The source is read
+	// through __FILE__ because this target does not link the Spectrum
+	// Analyzer plugin.
+	const QString analyzerPath = QFileInfo(QString::fromUtf8(__FILE__)).dir()
+		.filePath(QStringLiteral("../../../plugins/SpectrumAnalyzer/Analyzer.cpp"));
+	QFile source(analyzerPath);
+	QVERIFY2(source.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(source.errorString()));
+	const QString text = QString::fromUtf8(source.readAll());
+
+	QVERIFY2(!text.contains(QStringLiteral(".exchange(0")),
+		"Analyzer resets the count, the sum and the peak with separate exchanges, "
+		"so one report can mix samples from two intervals");
+	QVERIFY2(text.contains(QStringLiteral("m_timing.record(")),
+		"the audio callback must record into the coherent timing collector");
+	QVERIFY2(text.contains(QStringLiteral("m_timing.request("))
+		&& text.contains(QStringLiteral("m_timing.take(")),
+		"the GUI reporter must close one interval and take that interval's measurements");
+}
+
+void AudioPluginTest::analyzerTimingCollectorCoversMaximumSixSecondReportInterval()
+{
+	// The engine supports 192 kHz and 32-frame periods: 6000 callbacks/second.
+	// The GUI timer checks once a second and reports after five seconds, so a
+	// six-second interval at that supported rate contains 36000 measurements.
+	using Collector = Analyzer::TimingCollector;
+	Collector collector;
+	Collector::Snapshot snapshot;
+	constexpr std::uint64_t callbacks = 36000;
+	std::uint64_t expectedSum = 0;
+	for (std::uint64_t i = 1; i <= callbacks; ++i)
+	{
+		expectedSum += i;
+		collector.record(i);
+	}
+	collector.request();
+	QVERIFY(collector.take(snapshot));
+	QCOMPARE(snapshot.count, callbacks);
+	QCOMPARE(snapshot.sumNs, expectedSum);
+	QCOMPARE(snapshot.maxNs, callbacks);
+	QVERIFY(snapshot.dropped == 0);
 }
 
 QTEST_MAIN(AudioPluginTest)

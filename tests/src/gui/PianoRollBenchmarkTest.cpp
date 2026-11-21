@@ -41,8 +41,12 @@
 
 #include <QElapsedTimer>
 #include <QMap>
+#include <QTimer>
 
 #include <algorithm>
+#include <cstdlib>
+#include <limits>
+#include <new>
 #include <vector>
 
 #include "../core/BenchmarkBaseline.h"
@@ -55,8 +59,63 @@
 #include "Note.h"
 #include "NoteEditor.h"
 #include "Piano.h"
-#include "PianoRoll.h"
 #include "Song.h"
+#include "StepRecorderWidget.h"
+
+// StepRecorder's pending notes are private; the lifetime regression below reads them directly.
+#define private public
+#include "StepRecorder.h"
+#include "PianoRoll.h"
+#undef private
+
+// ---- pending-step-note lifetime probe -------------------------------------
+// The regression needs to know whether one specific heap block (a pending StepNote) is freed,
+// so the global operator delete records when the tracked pointer is returned to the heap.
+namespace
+{
+
+void* s_trackedPendingStepNote = nullptr;
+bool s_trackedPendingStepNoteDeleted = false;
+
+void trackedDelete(void* ptr) noexcept
+{
+	if (ptr != nullptr && ptr == s_trackedPendingStepNote)
+	{
+		s_trackedPendingStepNoteDeleted = true;
+	}
+	std::free(ptr);
+}
+
+} // namespace
+
+void* operator new(std::size_t size)
+{
+	if (void* ptr = std::malloc(size != 0 ? size : 1)) { return ptr; }
+	throw std::bad_alloc();
+}
+
+void* operator new[](std::size_t size)
+{
+	return ::operator new(size);
+}
+
+void* operator new(std::size_t size, const std::nothrow_t&) noexcept
+{
+	try { return ::operator new(size); }
+	catch (...) { return nullptr; }
+}
+
+void* operator new[](std::size_t size, const std::nothrow_t& tag) noexcept
+{
+	return ::operator new(size, tag);
+}
+
+void operator delete(void* ptr) noexcept { trackedDelete(ptr); }
+void operator delete[](void* ptr) noexcept { trackedDelete(ptr); }
+void operator delete(void* ptr, std::size_t) noexcept { trackedDelete(ptr); }
+void operator delete[](void* ptr, std::size_t) noexcept { trackedDelete(ptr); }
+void operator delete(void* ptr, const std::nothrow_t&) noexcept { trackedDelete(ptr); }
+void operator delete[](void* ptr, const std::nothrow_t&) noexcept { trackedDelete(ptr); }
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -115,11 +174,64 @@ private slots:
 	}
 	void cleanupTestCase() { Engine::destroy(); }
 
+	// Closing the piano roll while a step note is still pending must free that note.
+	void destructionReleasesPendingStepNotes()
+	{
+		s_trackedPendingStepNote = nullptr;
+		s_trackedPendingStepNoteDeleted = false;
+		auto* pianoRoll = new PianoRoll();
+		pianoRoll->m_stepRecorder.notePressed(Note(TimePos(0), TimePos(0), 60));
+		QCOMPARE(pianoRoll->m_stepRecorder.m_curStepNotes.size(), std::size_t{1});
+		s_trackedPendingStepNote = pianoRoll->m_stepRecorder.m_curStepNotes.front();
+
+		delete pianoRoll;
+
+		QVERIFY(s_trackedPendingStepNoteDeleted);
+		s_trackedPendingStepNote = nullptr;
+	}
+
+	// A zero step length gives an in-progress step zero length; changing the length then has no
+	// steps to scale from and must not divide by the old zero length.
+	// start() is not used: it shows the step hint through TextFloat, which needs the GUI main window
+	// and crashes headless. Its first action is setStepsLength(stepLength), which is set directly here.
+	void changingLengthOfZeroLengthStepIsSafe()
+	{
+		auto* pianoRoll = new PianoRoll();
+		StepRecorder& recorder = pianoRoll->m_stepRecorder;
+		recorder.setStepsLength(TimePos(0));
+		recorder.notePressed(Note(TimePos(0), TimePos(0), 60));
+		QVERIFY(recorder.m_isStepInProgress);
+
+		recorder.setStepsLength(TimePos(192));
+		QCOMPARE(recorder.m_stepsLength.getTicks(), 192);
+		QCOMPARE(recorder.m_curStepLength.getTicks(), 0);
+
+		recorder.setStepsLength(TimePos(0));
+		QCOMPARE(recorder.m_curStepLength.getTicks(), 0);
+		delete pianoRoll;
+	}
+
+	// Rescaling an in-progress step keeps its number of steps: two 192-tick steps become two 96-tick steps.
+	void rescalingInProgressStepKeepsStepCount()
+	{
+		auto* pianoRoll = new PianoRoll();
+		StepRecorder& recorder = pianoRoll->m_stepRecorder;
+		recorder.setStepsLength(TimePos(192));  // the length start() would set; see the test above
+		recorder.notePressed(Note(TimePos(0), TimePos(0), 60));
+		recorder.stepForwards();
+		QCOMPARE(recorder.m_curStepLength.getTicks(), 384);
+
+		recorder.setStepsLength(TimePos(96));
+		QCOMPARE(recorder.m_curStepLength.getTicks(), 192);
+		delete pianoRoll;
+	}
+
 	void invalidKeysAreSafe()
 	{
 		Piano piano(nullptr);
 		QVERIFY(!Piano::isBlackKey(NumKeys));
-		for (const int key : {-1, NumKeys})
+		// Negative keys, including ones whose remainder would be negative, must not index KEY_ORDER.
+		for (const int key : {-1, -KeysPerOctave - 1, std::numeric_limits<int>::min(), NumKeys})
 		{
 			QVERIFY(!piano.isKeyPressed(key));
 			QVERIFY(!Piano::isBlackKey(key));

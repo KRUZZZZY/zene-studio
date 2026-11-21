@@ -39,6 +39,32 @@
 namespace lmms
 {
 
+#ifdef LMMS_TESTING
+namespace
+{
+
+std::atomic<int> s_mixerIndexCacheHitsForTesting{0};
+std::atomic<int> s_mixerIndexFallbacksForTesting{0};
+
+} // namespace
+
+LMMS_EXPORT void resetMixerIndexLookupCountsForTesting()
+{
+	s_mixerIndexCacheHitsForTesting.store(0, std::memory_order_relaxed);
+	s_mixerIndexFallbacksForTesting.store(0, std::memory_order_relaxed);
+}
+
+LMMS_EXPORT auto mixerIndexCacheHitsForTesting() -> int
+{
+	return s_mixerIndexCacheHitsForTesting.load(std::memory_order_relaxed);
+}
+
+LMMS_EXPORT auto mixerIndexFallbacksForTesting() -> int
+{
+	return s_mixerIndexFallbacksForTesting.load(std::memory_order_relaxed);
+}
+#endif
+
 //! One bus's route and the storage its audio passes through.
 struct InstrumentOutputBuses::Slot
 {
@@ -110,6 +136,11 @@ void InstrumentOutputBuses::setLayout(const std::vector<InstrumentOutputBus>& bu
 {
 	const auto count = std::min<std::size_t>(buses.size(), MaxBuses);
 	ChangeGuard guard;
+	for (int bus = static_cast<int>(count); bus < busCount(); ++bus)
+	{
+		// A route loaded for a bus absent from the previous layout is retained for a future layout.
+		if (routeOf(bus) >= 0) { storeRoute(bus, -1); }
+	}
 	m_layout.assign(buses.begin(), buses.begin() + static_cast<std::ptrdiff_t>(count));
 }
 
@@ -214,8 +245,17 @@ auto InstrumentOutputBuses::mixerIndexOf(Slot& slot, int channelId) const -> int
 	if (mixer == nullptr) { return -1; }
 	const int channels = static_cast<int>(mixer->numChannels());
 	const int cached = slot.cachedIndex.load(std::memory_order_relaxed);
-	if (cached > 0 && cached < channels && mixer->mixerChannel(cached)->id() == channelId) { return cached; }
+	if (cached >= 0 && cached < channels && mixer->mixerChannel(cached)->id() == channelId)
+	{
+#ifdef LMMS_TESTING
+		s_mixerIndexCacheHitsForTesting.fetch_add(1, std::memory_order_relaxed);
+#endif
+		return cached;
+	}
 	// The master (index 0) is a valid target too; a linear scan of pointers, no allocation.
+#ifdef LMMS_TESTING
+	s_mixerIndexFallbacksForTesting.fetch_add(1, std::memory_order_relaxed);
+#endif
 	for (int i = 0; i < channels; ++i)
 	{
 		if (mixer->mixerChannel(i)->id() != channelId) { continue; }
@@ -236,7 +276,7 @@ auto InstrumentOutputBuses::routedIndex(int bus) -> int
 
 auto InstrumentOutputBuses::routedBuffer(int bus, f_cnt_t frames) -> SampleFrame*
 {
-	if (bus < 1 || bus >= MaxBuses || m_slots[static_cast<std::size_t>(bus)] == nullptr) { return nullptr; }
+	if (bus < 1 || bus >= busCount() || m_slots[static_cast<std::size_t>(bus)] == nullptr) { return nullptr; }
 	Slot& slot = *m_slots[static_cast<std::size_t>(bus)];
 	if (slot.channelId.load(std::memory_order_acquire) < 0) { return nullptr; }
 	return slot.block.size() == static_cast<std::size_t>(frames) ? slot.block.data() : nullptr;

@@ -25,12 +25,16 @@
 #include "PatternEditor.h"
 
 #include <QAction>
+#include <QStatusBar>
+#include <new>
 #include <QVBoxLayout>
 
 #include "ClipView.h"
 #include "ComboBox.h"
+#include "ControlTrackCreation.h"
 #include "DataFile.h"
 #include "embed.h"
+#include "GuiApplication.h"
 #include "MainWindow.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
@@ -50,8 +54,8 @@ PatternEditor::PatternEditor(PatternStore* ps) :
 	TrackContainerView(ps),
 	m_ps(ps),
 	m_trackHeadWidth(ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt() == 1
-		? DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT + TRACK_OP_WIDTH_COMPACT
-		: DEFAULT_SETTINGS_WIDGET_WIDTH + TRACK_OP_WIDTH),
+		? trackSettingsWidth(true) + trackOperationsWidth(true)
+		: trackSettingsWidth(false) + trackOperationsWidth(false)),
 	m_maxClipLength(TimePos::ticksPerBar())
 {
 	// R8.5: what a screen reader announces when Tab reaches it.
@@ -106,9 +110,33 @@ void PatternEditor::removeSteps()
 
 
 
+namespace
+{
+
+//! One of the toolbar's "add track" buttons. Track::create gives the model-change lock back and removes a half-made
+//! row when it fails (cluster gui-1105), so a failed allocation reaches here with the project as it was: the button
+//! says so in the status bar instead of letting the exception leave the Qt slot and end the application.
+void addTrackFromButton(Track::Type type, TrackContainer* container)
+{
+	try
+	{
+		(void) Track::create(type, container);
+	}
+	catch (const std::bad_alloc&)
+	{
+		MainWindow* window = getGUI() != nullptr ? getGUI()->mainWindow() : nullptr;
+		if (window != nullptr)
+		{
+			window->statusBar()->showMessage(PatternEditor::tr("Could not add the track: the application is out of memory."), 8000);
+		}
+	}
+}
+
+} // namespace
+
 void PatternEditor::addSampleTrack()
 {
-	(void) Track::create( Track::Type::Sample, model() );
+	addTrackFromButton(Track::Type::Sample, model());
 }
 
 
@@ -116,7 +144,7 @@ void PatternEditor::addSampleTrack()
 
 void PatternEditor::addAutomationTrack()
 {
-	(void) Track::create( Track::Type::Automation, model() );
+	addTrackFromButton(Track::Type::Automation, model());
 }
 
 
@@ -146,6 +174,24 @@ void PatternEditor::loadSettings(const QDomElement& element)
 
 
 
+namespace
+{
+
+//! The pattern track a copy needs when the Song has none. PatternStore::updateAfterTrackAdd would make it once the copy
+//! joins the store, after the copy is made; it is made here first, and captured while the store is still empty, because
+//! a pattern track's saved state includes the store (see control::CreatedTrack). Empty when the Song already has one.
+QVector<control::CreatedTrack> firstPatternTrack(PatternStore* store)
+{
+	QVector<control::CreatedTrack> created;
+	if (store->numOfPatterns() != 0) { return created; }
+	Song* song = Engine::getSong();
+	song->addPatternTrack();
+	created.append(control::captureCreatedTrack(song->tracks().back(), song));
+	return created;
+}
+
+} // namespace
+
 void PatternEditor::dropEvent(QDropEvent* de)
 {
 	QString type = StringPairDrag::decodeKey( de );
@@ -154,7 +200,17 @@ void PatternEditor::dropEvent(QDropEvent* de)
 	if( type.left( 6 ) == "track_" )
 	{
 		DataFile dataFile( value.toUtf8() );
-		Track * t = Track::create( dataFile.content().firstChild().toElement(), model() );
+		const QDomElement element = dataFile.content().firstChild().toElement();
+		// Track::create refuses elements that are not <track>. Check before
+		// making the Song's first pattern track, which is a side effect of this
+		// drop, and before dereferencing the factory result below.
+		if( element.nodeName() != QStringLiteral( "track" ) )
+		{
+			de->ignore();
+			return;
+		}
+		QVector<control::CreatedTrack> created = firstPatternTrack(m_ps);
+		Track * t = Track::create( element, model() );
 
 		// Ensure pattern clips exist
 		bool hasValidPatternClips = false;
@@ -175,6 +231,10 @@ void PatternEditor::dropEvent(QDropEvent* de)
 			t->deleteClips();
 			t->createClipsForPattern(m_ps->numOfPatterns() - 1);
 		}
+		// The copy and the Song's pattern track, if this drop had to make one, are one undo step: undo removes both,
+		// and redo builds the Song track first, so the copy is not added twice.
+		created.append(control::captureCreatedTrack(t, model()));
+		control::recordCreatedTracks( created );
 		m_ps->updateAfterTrackAdd();
 
 		de->accept();
@@ -293,11 +353,11 @@ PatternEditorWindow::PatternEditorWindow(PatternStore* ps) :
 	// TODO: Use style sheet
 	if (ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt())
 	{
-		setMinimumWidth(TRACK_OP_WIDTH_COMPACT + DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT + 2 * ClipView::BORDER_WIDTH + 384);
+		setMinimumWidth(trackOperationsWidth(true) + trackSettingsWidth(true) + 2 * ClipView::BORDER_WIDTH + 384);
 	}
 	else
 	{
-		setMinimumWidth(TRACK_OP_WIDTH + DEFAULT_SETTINGS_WIDGET_WIDTH + 2 * ClipView::BORDER_WIDTH + 384);
+		setMinimumWidth(trackOperationsWidth(false) + trackSettingsWidth(false) + 2 * ClipView::BORDER_WIDTH + 384);
 	}
 
 	m_playAction->setToolTip(tr("Play/pause current pattern (Space)"));

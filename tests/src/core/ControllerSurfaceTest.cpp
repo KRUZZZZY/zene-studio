@@ -26,6 +26,10 @@
 #include <QSignalSpy>
 #include <QtTest>
 
+#include <limits>
+
+#include "LmmsTypes.h"
+
 #include "AutomatableModel.h"
 #include "AudioEngine.h"
 #include "Controller.h"
@@ -104,6 +108,19 @@ private:
 	int m_updateCount = 0;
 };
 
+class RunningFrameCountProbeController final : public Controller
+{
+public:
+	explicit RunningFrameCountProbeController() :
+		Controller(ControllerType::Lfo, Engine::getSong(), QStringLiteral("Running Frame Count Probe"))
+	{}
+
+	static void setPeriods(f_cnt_t periods)
+	{
+		s_periods.store(periods, std::memory_order_relaxed);
+	}
+};
+
 //! The template name this file uses. Deliberately not a name a user would
 //! pick: saveTemplate() writes a REAL file under the user config dir, and the
 //! tests remove it again.
@@ -147,6 +164,25 @@ private slots:
 		PeakController controller(Engine::getSong());
 		Controller::triggerFrameCounter();
 		QCOMPARE(controller.currentValue(0), 0.0f);
+	}
+
+	void runningFrameCountDoesNotWrapAtUnsignedIntLimit()
+	{
+		RunningFrameCountProbeController controller;
+		const f_cnt_t framesPerPeriod = Engine::audioEngine()->framesPerPeriod();
+		const f_cnt_t periods = std::numeric_limits<unsigned int>::max() / framesPerPeriod + 1;
+		const f_cnt_t expectedFrames = periods * framesPerPeriod;
+		RunningFrameCountProbeController::setPeriods(periods);
+
+		const f_cnt_t actualFrames = Controller::runningFrames();
+		const float actualTime = Controller::runningTime();
+		const float expectedTime = static_cast<float>(expectedFrames /
+			Engine::audioEngine()->outputSampleRate());
+		Controller::resetFrameCounter();
+
+		QCOMPARE(actualTime, expectedTime);
+		QCOMPARE(actualFrames, expectedFrames);
+		QCOMPARE(sizeof(Controller::runningFrames()), sizeof(f_cnt_t));
 	}
 
 	void resettingFrameCounterRefreshesControllerBuffer()

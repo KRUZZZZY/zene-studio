@@ -1,5 +1,6 @@
 /*
- * MidiClockMenu.cpp - Edit > MIDI Clock: send, follow and see the lock
+ * MidiClockMenu.cpp - Edit > MIDI Clock: send, follow, choose the source and
+ *                      see the lock
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -25,9 +26,12 @@
 #include "MidiClockMenu.h"
 
 #include <QAction>
+#include <QActionGroup>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QMenu>
 #include <QSignalBlocker>
+#include <QStringList>
 
 #include "ControlRegistry.h"
 
@@ -42,12 +46,56 @@ struct ClockItems
 	QAction* send;
 	QAction* follow;
 	QAction* followTempo;
+	QMenu* source;
+	QActionGroup* sources;
 	QAction* status;
 };
 
 ControlResult clockState()
 {
 	return ControlRegistry::instance()->invoke(QStringLiteral("clock.get_state"), QJsonObject{});
+}
+
+//! The readable ports the running client has right now (midi.device_list), which
+//! is exactly the vocabulary clock.slave_set's source_port is spelled in - so the
+//! submenu cannot offer a source the engine would refuse.
+QStringList readableClockPorts()
+{
+	QStringList ports;
+	const QJsonArray readable = ControlRegistry::instance()
+		->invoke(QStringLiteral("midi.device_list"), QJsonObject{})
+		.result.value(QStringLiteral("readable")).toArray();
+	for (const QJsonValue& value : readable)
+	{
+		const QString port = value.toString();
+		if (!port.isEmpty()) { ports.append(port); }
+	}
+	return ports;
+}
+
+//! One entry of the source submenu: the engine port whose name is @a port (empty
+//! is "any input"), checkable, and choosing it changes the source WITHOUT
+//! touching the mode. The mode is READ BACK when the entry is chosen rather than
+//! captured when the entry is built, so a stale submenu cannot stop a follower
+//! the user has since switched on: picking a port is one recorded undo step and
+//! nothing else.
+void addSourceItem(const ClockItems& items, const QString& port, const QString& label,
+	const QString& chosen)
+{
+	QAction* item = items.source->addAction(label);
+	item->setData(QStringLiteral("clock.slave_set"));
+	item->setCheckable(true);
+	// ONE choice: the sources are alternatives, not switches.
+	items.sources->addAction(item);
+	item->setChecked(port == chosen);
+	QObject::connect(item, &QAction::triggered, items.source, [port] {
+		const ControlResult state = clockState();
+		if (!state.ok) { return; }
+		const bool following =
+			state.result.value(QStringLiteral("slave")).toObject().value(QStringLiteral("enabled")).toBool();
+		ControlRegistry::instance()->invoke(QStringLiteral("clock.slave_set"),
+			{{QStringLiteral("enabled"), following}, {QStringLiteral("source_port"), port}});
+	});
 }
 
 //! Sets every item from clock.get_state; @a refusal, when non-empty, replaces the indicator.
@@ -84,6 +132,29 @@ QString refusalOf(const ControlResult& result)
 	return result.ok ? QString() : QMenu::tr("Refused: %1").arg(result.errorMessage);
 }
 
+/*! (Re)build the source submenu: "any input" plus one entry per readable client
+ *  port, with the configured one ticked. Rebuilt whenever the submenu opens, so
+ *  a device plugged in after the menu was built is offered and one unplugged is
+ *  dropped - and with no MIDI backend the list is empty, which is why "any
+ *  input" is offered alone: a client with one unnamed input (ALSA Raw-MIDI,
+ *  JACK) names no port to choose. */
+void rebuildSourceItems(const ClockItems& items)
+{
+	const QJsonObject slave =
+		clockState().result.value(QStringLiteral("slave")).toObject();
+	const QString chosen = slave.value(QStringLiteral("source_port")).toString();
+	for (QAction* item : items.source->actions())
+	{
+		items.source->removeAction(item);
+		item->deleteLater();
+	}
+	addSourceItem(items, QString(), QMenu::tr("Any Input"), chosen);
+	for (const QString& port : readableClockPorts())
+	{
+		addSourceItem(items, port, port, chosen);
+	}
+}
+
 } // namespace
 
 QString midiClockStatusText(const QJsonObject& state)
@@ -115,8 +186,11 @@ QMenu* addMidiClockMenu(QMenu* menu)
 	QAction* send = clock->addAction(QMenu::tr("Send Clock"));
 	QAction* follow = clock->addAction(QMenu::tr("Follow External Clock"));
 	QAction* followTempo = clock->addAction(QMenu::tr("Follow Its Tempo"));
+	QMenu* source = clock->addMenu(QMenu::tr("Clock Source"));
 	clock->addSeparator();
-	const ClockItems items{send, follow, followTempo, clock->addAction(QString())};
+	const ClockItems items{send, follow, followTempo, source, new QActionGroup(source),
+		clock->addAction(QString())};
+	items.sources->setExclusive(true);
 	items.status->setEnabled(false);
 	// The line shows clock.get_state; declaring it keeps the item a registry action (A15).
 	items.status->setData(QStringLiteral("clock.get_state"));
@@ -144,6 +218,8 @@ QMenu* addMidiClockMenu(QMenu* menu)
 			{{QStringLiteral("enabled"), true}, {QStringLiteral("follow_tempo"), on}})));
 	});
 	QObject::connect(clock, &QMenu::aboutToShow, clock, [items] { showState(items); });
+	QObject::connect(source, &QMenu::aboutToShow, source, [items] { rebuildSourceItems(items); });
+	rebuildSourceItems(items);
 	showState(items);
 	return clock;
 }

@@ -49,11 +49,16 @@
 #include <QDomDocument>
 
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <chrono>
+#include <condition_variable>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <thread>
+
+#include "PortableSync.h"
 
 #include "AudioEngine.h"
 #include "Engine.h"
@@ -62,6 +67,11 @@
 #include "TimePos.h"
 
 using namespace lmms;
+
+namespace lmms
+{
+void setTempoMapMemoBoundaryHookForTest(void (*hook)(Song*)) noexcept;
+}
 
 namespace
 {
@@ -80,6 +90,14 @@ float legacyFramesPerTick(sample_rate_t sampleRate, int bpm)
 sample_rate_t engineSampleRate()
 {
 	return Engine::audioEngine()->outputSampleRate();
+}
+
+float s_tempoMapBoundaryFramesPerTick = 0.0f;
+
+void processAtTempoMapBoundary(Song* song)
+{
+	song->processNextBuffer();
+	s_tempoMapBoundaryFramesPerTick = Engine::framesPerTick();
 }
 
 //! The global tempo model's value, READ from the live song rather than assumed:
@@ -137,6 +155,28 @@ tick_t advancePlayhead(Song* song, int blocks)
 }
 
 
+//! What the publisher's reader-side test seam reports back: how many copy
+//!  attempts a reader made, and whether it is out of snapshot() yet. The seam
+//!  is a plain function pointer (the publisher's realtime rule), so the state
+//!  it reports into has to live here.
+struct SnapshotProbeState
+{
+	std::mutex mutex;
+	std::condition_variable changed;
+	int attempts = 0;
+	bool returned = false;
+};
+SnapshotProbeState* s_snapshotProbeState = nullptr;
+
+//! The reader-side probe: one call per copy attempt of snapshot().
+void countSnapshotAttempt()
+{
+	const std::lock_guard<std::mutex> lock(s_snapshotProbeState->mutex);
+	++s_snapshotProbeState->attempts;
+	s_snapshotProbeState->changed.notify_all();
+}
+
+
 } // namespace
 
 
@@ -156,6 +196,50 @@ private slots:
 	{
 		Engine::getSong()->stop();
 		Engine::destroy();
+	}
+
+	//! A render period can start as soon as setTempo() releases the model guard.
+	//! Force that exact boundary: the global scalar has been updated, so the map
+	//! memo must already be invalidated before the follower runs.
+	void globalTempoChangeInvalidatesMemoBeforeRenderResumes()
+	{
+		Song* song = Engine::getSong();
+		struct RestoreSongState
+		{
+			Song* song;
+			int tempo;
+			~RestoreSongState()
+			{
+				setTempoMapMemoBoundaryHookForTest(nullptr);
+				song->stop();
+				song->tempoMap().edit([](TempoMap& map) { map.clear(); return true; });
+				song->setTempo(tempo);
+			}
+		} restore{song, song->getTempo()};
+		song->stop();
+		const int originalTempo = restore.tempo;
+		const int mappedTempo = originalTempo == MaxTempo ? originalTempo - 1 : originalTempo + 1;
+		const int changedGlobalTempo = originalTempo == MinTempo ? MaxTempo : MinTempo;
+		const sample_rate_t rate = engineSampleRate();
+
+		QVERIFY(song->tempoMap().edit([](TempoMap& map) { map.clear(); return true; }));
+		TempoMapEvent event;
+		event.tick = 0;
+		event.hasTempo = true;
+		event.tempo = mappedTempo;
+		QVERIFY(song->tempoMap().edit([&event](TempoMap& map) { return map.addEvent(event); }));
+		QVERIFY(song->tempoMap().edit([](TempoMap& map) { map.setActive(true); return true; }));
+
+		song->playSong();
+		song->processNextBuffer();
+		QCOMPARE(Engine::framesPerTick(), legacyFramesPerTick(rate, mappedTempo));
+
+		s_tempoMapBoundaryFramesPerTick = 0.0f;
+		setTempoMapMemoBoundaryHookForTest(&processAtTempoMapBoundary);
+		song->setTempo(changedGlobalTempo);
+		setTempoMapMemoBoundaryHookForTest(nullptr);
+		QCOMPARE(s_tempoMapBoundaryFramesPerTick, legacyFramesPerTick(rate, mappedTempo));
+
 	}
 
 	//! (1) The tempo at a tick is the last event at or before it, and the GLOBAL
@@ -455,6 +539,79 @@ private slots:
 
 		QVERIFY(!publisher.edit([](TempoMap& map) { return map.removeEvent(999); }));
 		QCOMPARE(publisher.snapshot().size(), 3);
+	}
+
+	/*! A writer paused inside edit() must not hold the audio reader in snapshot().
+	 *
+	 *  The reader's copy attempts are counted through the publisher's test seam
+	 *  (setSnapshotProbeForTest), so the verdict needs no clock: the reader
+	 *  either ANSWERS while the writer is still paused - one attempt, the map
+	 *  as of the last completed edit - or it RETRIES until the writer finishes,
+	 *  which is the endless seqlock this publisher no longer has. The wait
+	 *  below is woken by either outcome; its timeout is a deadlock guard, not
+	 *  part of the verdict.
+	 */
+	void thePublisherSnapshotIsBoundedWhileAnEditIsInFlight()
+	{
+		TempoMapPublisher publisher;
+		const TempoMap published = threeEventMap();
+		QVERIFY(publisher.edit([&published](TempoMap& map) { map = published; return true; }));
+
+		SnapshotProbeState state;
+		s_snapshotProbeState = &state;
+		publisher.setSnapshotProbeForTest(&countSnapshotAttempt);
+		std::atomic<bool> editInFlight{false};  //!< the writer is inside edit()
+		testsupport::Latch editEntered(1);
+		testsupport::Latch resumeEdit(1);
+
+		std::thread writer([&]()
+		{
+			publisher.edit([&](TempoMap& map)
+			{
+				editInFlight.store(true, std::memory_order_release);
+				editEntered.count_down();
+				resumeEdit.wait();
+				TempoMapEvent event;
+				event.tick = 1152;
+				event.hasTempo = true;
+				event.tempo = 120;
+				return map.addEvent(event);
+			});
+			editInFlight.store(false, std::memory_order_release);
+		});
+		editEntered.wait();  // the writer is inside edit(): the map is mid-edit
+
+		TempoMap observed;
+		bool answeredWhileEditInFlight = false;
+		std::thread reader([&]()
+		{
+			observed = publisher.snapshot();
+			answeredWhileEditInFlight = editInFlight.load(std::memory_order_acquire);
+			const std::lock_guard<std::mutex> lock(state.mutex);
+			state.returned = true;
+			state.changed.notify_all();
+		});
+
+		bool settled = false;
+		{
+			std::unique_lock<std::mutex> lock(state.mutex);
+			settled = state.changed.wait_for(lock, std::chrono::seconds(30),
+				[&]() { return state.returned || state.attempts > 1; });
+		}
+
+		resumeEdit.count_down();
+		reader.join();
+		writer.join();
+		publisher.setSnapshotProbeForTest(nullptr);
+		s_snapshotProbeState = nullptr;
+
+		QVERIFY2(settled, "the reader neither answered nor retried");
+		QCOMPARE(state.attempts, 1);  // one copy attempt: no retry, no spin
+		QVERIFY(state.returned);
+		QVERIFY(answeredWhileEditInFlight);  // it answered while the edit was still in flight
+		QCOMPARE(observed.size(), published.size());
+		QCOMPARE(observed.tempoAtTick(0, kGlobalTempo()), kMappedTempo);
+		QVERIFY(observed.active());
 	}
 
 	//! A throwing edit must leave the publisher readable and discard its partial mutation.

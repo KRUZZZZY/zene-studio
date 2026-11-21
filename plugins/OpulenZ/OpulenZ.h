@@ -141,7 +141,7 @@ private:
 	int pushVoice(int v);
 
 	int Hz2fnum(float Hz);
-	static QMutex emulatorMutex;
+	static QRecursiveMutex emulatorMutex;
 	void loadPatchLocked(const unsigned char inst[14]);
 	void setVoiceVelocity(int voice, int vel);
 

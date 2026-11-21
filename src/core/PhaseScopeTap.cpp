@@ -49,19 +49,18 @@ PhaseScopeTap& PhaseScopeTap::instance()
 
 void PhaseScopeTap::push(int index, const SampleFrame* frames, f_cnt_t count) noexcept
 {
-	if (m_channel.load(std::memory_order_relaxed) != index || frames == nullptr || count == 0) { return; }
+	// The channel and its reset generation arrive together, so a new channel cannot append to the old ring.
+	const std::uint64_t state = m_state.load(std::memory_order_acquire);
+	if ((state & ChannelMask) != ((static_cast<std::uint64_t>(index) + 1) & ChannelMask)
+		|| frames == nullptr || count == 0) { return; }
 	// One writer: another worker's push still in flight (only in the period the channel changed) keeps the ring.
 	if (m_writing.exchange(true, std::memory_order_acquire)) { return; }
-	const bool fresh = m_resetPending.exchange(false, std::memory_order_acq_rel);
-	// A push of the old channel still in flight when setChannel() ran leaves the new channel's reset for it.
-	if (fresh && m_channel.load(std::memory_order_relaxed) != index)
-	{
-		m_resetPending.store(true, std::memory_order_release);
-		m_writing.store(false, std::memory_order_release);
-		return;
-	}
+	const bool fresh = m_applied.load(std::memory_order_relaxed) != state;
 	const std::uint64_t head = fresh ? 0 : m_head.load(std::memory_order_relaxed);
 	const f_cnt_t first = count > Capacity ? count - Capacity : 0;
+	// Bracket every write with an odd generation and back to even (a seqlock), so a reader refuses a copy
+	// if any push changes the slots it sampled.
+	m_generation.fetch_add(1, std::memory_order_relaxed);
 	// Announced before the slots change (the seqlock shape: store, release fence, then the writes).
 	m_reserved.store(head + (count - first), std::memory_order_relaxed);
 	std::atomic_thread_fence(std::memory_order_release);
@@ -72,13 +71,27 @@ void PhaseScopeTap::push(int index, const SampleFrame* frames, f_cnt_t count) no
 		m_right[slot].store(frames[i][1], std::memory_order_relaxed);
 	}
 	m_head.store(head + (count - first), std::memory_order_release);
+	// latest() and written() only read a generation whose reset and first write are both complete.
+	if (fresh) { m_applied.store(state, std::memory_order_release); }
+	m_generation.fetch_add(1, std::memory_order_release);
 	m_writing.store(false, std::memory_order_release);
+}
+
+bool PhaseScopeTap::isSnapshotCurrent(std::uint64_t state, std::uint64_t generation) const noexcept
+{
+	return m_state.load(std::memory_order_acquire) == state
+		&& m_generation.load(std::memory_order_relaxed) == generation;
 }
 
 bool PhaseScopeTap::latest(float* left, float* right, std::size_t count) const noexcept
 {
-	if (left == nullptr || right == nullptr || count == 0 || count > Capacity
-		|| m_resetPending.load(std::memory_order_acquire)) { return false; }
+	const std::uint64_t state = m_state.load(std::memory_order_acquire);
+	if (left == nullptr || right == nullptr || count == 0 || count > Capacity) { return false; }
+	if (m_applied.load(std::memory_order_acquire) != state) { return false; }
+	// The generation brackets the copy: an odd value means a fresh push is rebasing the ring right now,
+	// and an unchanged value across the copy means no push invalidated the slots read below.
+	const std::uint64_t generation = m_generation.load(std::memory_order_acquire);
+	if ((generation & 1) != 0) { return false; }
 	const std::uint64_t head = m_head.load(std::memory_order_acquire);
 	if (head < count) { return false; }
 	const std::uint64_t start = head - count;
@@ -90,6 +103,7 @@ bool PhaseScopeTap::latest(float* left, float* right, std::size_t count) const n
 	// The producer may have lapped the window while it was copied: then part of it is newer than the rest.
 	// Read against the push in PROGRESS, not the last published one (TunerTap::latest's rule).
 	std::atomic_thread_fence(std::memory_order_acquire);
+	if (!isSnapshotCurrent(state, generation)) { return false; }
 	return m_reserved.load(std::memory_order_relaxed) - start <= Capacity;
 }
 

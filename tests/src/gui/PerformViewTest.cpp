@@ -30,12 +30,17 @@
 
 #include <QtTest>
 
+#include <QCoreApplication>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMenu>
 #include <QMenuBar>
 #include <QTemporaryDir>
 #include <QToolButton>
+
+#include <functional>
+#include <limits>
+#include <utility>
 
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
@@ -45,6 +50,8 @@
 #include "LaunchBindings.h"
 #include "MainWindow.h"
 #include "PerformView.h"
+#include "SessionGridMenus.h"
+#include "Song.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -87,6 +94,23 @@ bool transportPlaying()
 	return run(QStringLiteral("transport.get_state")).result.value(QStringLiteral("playing")).toBool();
 }
 
+//! Open the setlist's song @a to (an index) at @a path, edit it (unsaved) and play it; false when that did not happen.
+bool openUnsavedAndPlaying(int to, const QString& path)
+{
+	if (!run(QStringLiteral("session.setlist_go"), {{QStringLiteral("to"), QString::number(to)}}).ok) { return false; }
+	if (Engine::getSong()->projectFileName() != path) { return false; }
+	QCoreApplication::sendPostedEvents();  // deliver the track views the load queued, before the next load removes them
+	Engine::getSong()->setModified();
+	return run(QStringLiteral("transport.play")).ok;
+}
+
+//! Whether a song step at the end of the set did nothing: still playing, the same song open and unsaved, the same place.
+bool nothingHappened(const QString& path, int index)
+{
+	return transportPlaying() && Engine::getSong()->projectFileName() == path && Engine::getSong()->isModified()
+		&& run(QStringLiteral("session.setlist")).result.value(QStringLiteral("index")).toInt(-1) == index;
+}
+
 //! The action under @a menu (and its submenus) whose text is @a text, or nullptr.
 QAction* findAction(QMenu* menu, const QString& text)
 {
@@ -106,6 +130,24 @@ QJsonObject cell(int track, int scene, const QString& name)
 	return {{QStringLiteral("track"), track}, {QStringLiteral("scene"), scene}, {QStringLiteral("type"), QStringLiteral("audio")},
 		{QStringLiteral("source"), name + QStringLiteral(".wav")}, {QStringLiteral("name"), name}};
 }
+
+//! Replaces one registered command handler while leaving the rest of the registry ready.
+class CommandHandlerOverride
+{
+public:
+	CommandHandlerOverride(const QString& id, std::function<ControlResult(const QJsonObject&)> handler) :
+		m_command(const_cast<ControlCommand*>(ControlRegistry::instance()->command(id))),
+		m_handler(m_command->handler)
+	{
+		m_command->handler = std::move(handler);
+	}
+
+	~CommandHandlerOverride() { m_command->handler = m_handler; }
+
+private:
+	ControlCommand* m_command;
+	std::function<ControlResult(const QJsonObject&)> m_handler;
+};
 
 } // namespace
 
@@ -263,6 +305,110 @@ private slots:
 		QTest::qWait(50);
 	}
 
+	//! A failed transport read leaves the last valid transport display and reports the read refusal.
+	void failedTransportStateReadKeepsLastKnownState()
+	{
+		PerformView* view = PerformView::instance(true);
+		QVERIFY(run(QStringLiteral("transport.set_tempo"), {{QStringLiteral("bpm"), 120}}).ok);
+		QVERIFY(run(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), 48}}).ok);
+		view->refresh();
+		const QString tempo = view->tempoText();
+		const QString position = view->positionText();
+		const bool playing = view->playButton()->isChecked();
+
+		const QString failureMessage = QStringLiteral("injected transport.get_state failure");
+		{
+			CommandHandlerOverride failure(QStringLiteral("transport.get_state"), [failureMessage](const QJsonObject&) {
+				return ControlResult::failure(ControlErrorKind::Refused, failureMessage);
+			});
+			view->refresh();
+		}
+
+		QCOMPARE(view->tempoText(), tempo);
+		QCOMPARE(view->positionText(), position);
+		QCOMPARE(view->playButton()->isChecked(), playing);
+		QVERIFY2(view->statusLine().contains(failureMessage), qPrintable(view->statusLine()));
+	}
+
+	//! A failed session state read keeps the grid and reports that read's error even while siblings succeed.
+	void failedSessionStateReadKeepsGridAndShowsError()
+	{
+		PerformView* view = PerformView::instance(true);
+		view->refresh();
+		const int scenes = view->sceneButtonCount();
+		const QString intro = view->sceneButton(0)->text();
+		const QString column = view->columnText(0);
+		const QString failureMessage = QStringLiteral("injected session.get_state failure");
+		{
+			CommandHandlerOverride failure(QStringLiteral("session.get_state"), [failureMessage](const QJsonObject&) {
+				return ControlResult::failure(ControlErrorKind::Refused, failureMessage);
+			});
+			view->refresh();
+		}
+
+		QCOMPARE(view->sceneButtonCount(), scenes);
+		QCOMPARE(view->sceneButton(0)->text(), intro);
+		QCOMPARE(view->columnText(0), column);
+		QVERIFY2(view->statusLine().contains(failureMessage), qPrintable(view->statusLine()));
+	}
+
+	//! A failed direct setlist read keeps its last valid labels and navigation availability.
+	void failedSetlistReadKeepsLastKnownSetlist()
+	{
+		PerformView* view = PerformView::instance(true);
+		struct RestoreSetlist
+		{
+			~RestoreSetlist() { run(QStringLiteral("session.setlist"), {{QStringLiteral("items"), QJsonArray{}}}); }
+		} restore;
+		QVERIFY(run(QStringLiteral("session.setlist"), {{QStringLiteral("items"),
+			QJsonArray{m_dir.filePath(QStringLiteral("first.mmpz")), m_dir.filePath(QStringLiteral("second.mmpz"))}}}).ok);
+		view->refreshSetlist();
+		const QString song = view->songText();
+		const QString nextSong = view->nextSongText();
+		const bool nextEnabled = view->nextSongButton()->isEnabled();
+		const bool previousEnabled = view->previousSongButton()->isEnabled();
+		QVERIFY(nextEnabled);
+		const QString failureMessage = QStringLiteral("injected session.setlist failure");
+		{
+			CommandHandlerOverride failure(QStringLiteral("session.setlist"), [failureMessage](const QJsonObject&) {
+				return ControlResult::failure(ControlErrorKind::Refused, failureMessage);
+			});
+			view->nextSongButton()->click();
+			QVERIFY2(view->statusLine().contains(failureMessage), qPrintable(view->statusLine()));
+			view->refreshSetlist();
+		}
+
+		QCOMPARE(view->songText(), song);
+		QCOMPARE(view->nextSongText(), nextSong);
+		QCOMPARE(view->nextSongButton()->isEnabled(), nextEnabled);
+		QCOMPARE(view->previousSongButton()->isEnabled(), previousEnabled);
+		QVERIFY2(view->statusLine().contains(failureMessage), qPrintable(view->statusLine()));
+	}
+
+	//! The largest transport tick and the one-tick boundary render a 64-bit bar number.
+	void displayedBarDoesNotOverflowAtMaxTicks()
+	{
+		PerformView* view = PerformView::instance(true);
+		QVERIFY(run(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), std::numeric_limits<int>::max()}}).ok);
+		struct RestoreTransport
+		{
+			~RestoreTransport() { run(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), 0}}); }
+		} restore;
+		const auto original = ControlRegistry::instance()->command(QStringLiteral("session.get_state"))->handler;
+		CommandHandlerOverride ticksPerBarOverride(QStringLiteral("session.get_state"), [original](const QJsonObject& args) {
+			ControlResult state = original(args);
+			if (state.ok)
+			{
+				QJsonObject launch = state.result.value(QStringLiteral("launch")).toObject();
+				launch.insert(QStringLiteral("ticks_per_bar"), 1);
+				state.result.insert(QStringLiteral("launch"), launch);
+			}
+			return state;
+		});
+		view->refresh();
+		QCOMPARE(view->positionText(), QStringLiteral("Bar 2147483648 · Beat 1"));
+	}
+
 	//! The setlist's song and the next one, from session.setlist; the song buttons follow where the set stands.
 	void theSetlistShowsTheSongAndTheNext()
 	{
@@ -278,6 +424,53 @@ private slots:
 		QVERIFY(view->nextSongButton()->isEnabled());
 		QVERIFY(!view->previousSongButton()->isEnabled());
 		QVERIFY(run(QStringLiteral("session.setlist"), {{QStringLiteral("items"), QJsonArray{}}}).ok);
+	}
+
+	//! At either end of the setlist a song step is nothing: Page Up at the first song, Page Down at the last, and the
+	//! grid's Previous and Next Song. No question about unsaved work, no transport stop (mayChangeProject stops
+	//! playback before it asks), and no reopening of the song that is open.
+	void songStepsAtTheEndsAreNothing()
+	{
+		PerformView* view = PerformView::instance(true);
+		const QString first = m_dir.filePath(QStringLiteral("set-first.mmp"));
+		const QString second = m_dir.filePath(QStringLiteral("set-second.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(first));
+		QVERIFY(Engine::getSong()->saveProjectFile(second));
+		QVERIFY(run(QStringLiteral("session.setlist"), {{QStringLiteral("items"), QJsonArray{first, second}}}).ok);
+		// The question a step asks would block this test; answered here at once, a step that asks shows as a transport stop.
+		ControlRegistry::setQuitPromptAnswer(ControlRegistry::QuitPromptAnswer::Discard);
+		// Restored however the test ends, so a failed check leaves no prompt answer, set or playing transport behind.
+		struct Restore
+		{
+			~Restore()
+			{
+				run(QStringLiteral("transport.stop"));
+				run(QStringLiteral("session.setlist"), {{QStringLiteral("items"), QJsonArray{}}});
+				ControlRegistry::setQuitPromptAnswer(ControlRegistry::QuitPromptAnswer::Ask);
+			}
+		} restore;
+		QMenu grid;
+		SessionGridMenus::populateGrid(&grid, 2, 3);
+		QAction* nextSong = findAction(&grid, QStringLiteral("Next Song"));
+		QAction* previousSong = findAction(&grid, QStringLiteral("Previous Song"));
+		QVERIFY(nextSong != nullptr && previousSong != nullptr);
+
+		QVERIFY2(openUnsavedAndPlaying(1, second), "the last song did not open, unsaved, playing");
+		QTRY_VERIFY_WITH_TIMEOUT(transportPlaying(), 3000);
+		view->performKey(Qt::Key_PageDown);
+		QVERIFY2(nothingHappened(second, 1), "Page Down at the last song stopped, asked about, or reopened the song");
+		QVERIFY2(openUnsavedAndPlaying(1, second), "the last song did not open, unsaved, playing");
+		QTRY_VERIFY_WITH_TIMEOUT(transportPlaying(), 3000);
+		nextSong->trigger();
+		QVERIFY2(nothingHappened(second, 1), "Next Song at the last song stopped, asked about, or reopened the song");
+		QVERIFY2(openUnsavedAndPlaying(0, first), "the first song did not open, unsaved, playing");
+		QTRY_VERIFY_WITH_TIMEOUT(transportPlaying(), 3000);
+		view->performKey(Qt::Key_PageUp);
+		QVERIFY2(nothingHappened(first, 0), "Page Up at the first song stopped, asked about, or reopened the song");
+		QVERIFY2(openUnsavedAndPlaying(0, first), "the first song did not open, unsaved, playing");
+		QTRY_VERIFY_WITH_TIMEOUT(transportPlaying(), 3000);
+		previousSong->trigger();
+		QVERIFY2(nothingHappened(first, 0), "Previous Song at the first song stopped, asked about, or reopened the song");
 	}
 
 	//! Learn MIDI: refused (and said) with no controller; with one, the next note binds to the pressed scene.

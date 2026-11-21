@@ -85,6 +85,7 @@ NotePlayHandle::NotePlayHandle( InstrumentTrack* instrumentTrack,
 	m_frequencyNeedsUpdate( false ),
 	m_slideSourceKey( -1 )
 {
+	m_generation = ++s_generationCounter;  // a new note instance (or pool reuse): its own generation
 	lock();
 	if( hasParent() == false )
 	{
@@ -101,6 +102,16 @@ NotePlayHandle::NotePlayHandle( InstrumentTrack* instrumentTrack,
 		m_patternTrack = parent->m_patternTrack;
 
 		parent->setUsesBuffer( false );
+
+		// Q050-015: an arpeggio step is a sounding note the arpeggio's base note never sounds itself (play() sends
+		// no note-on for an arpeggio base), so the step carries the base's articulation and sends it just before its
+		// own note-on - a copy of four integers, no allocation. A chord-stacking sub-note does not need it: its
+		// parent (the played note, or an arpeggio step) creates it inside its own play(), after that parent sent the
+		// articulation ahead of its own note-on at the same offset, so every voice of the chord already follows it.
+		if( origin == Origin::Arpeggio )
+		{
+			m_articulation = parent->m_articulation;
+		}
 	}
 
 	updateFrequency();
@@ -163,6 +174,12 @@ NotePlayHandle::~NotePlayHandle()
 		releaseBuffer();
 	}
 
+	// Q050-016 round 3: this is the realtime teardown path. If the handle holds
+	// the last reference to its note's expression stream (the note was edited
+	// or deleted while it played), the snapshot is retired, not freed - the
+	// control thread's MpeStreamSnapshot::reclaimRetired() frees it later.
+	retireMpeStreamDeferred();
+
 	unlock();
 }
 
@@ -187,20 +204,34 @@ void NotePlayHandle::sendMpeExpressionMidi( const TimePos& time, f_cnt_t offset 
 	{
 		// Nothing was captured on this note: the instrument is left exactly as
 		// it was before this feature existed (no event, and no reset of
-		// whatever the instrument's own channel state already is).
+		// whatever the instrument's own channel state already is). A stream is
+		// sent by scheduleMpeExpressionStream(), not here.
 		return;
 	}
 
 	// The note's own channel is the channel its note-on took: for a note
 	// captured from an MPE controller that is the note's member channel, so
 	// the instrument can tell this note's expression from any other note's.
-	m_instrumentTrack->processOutEvent(
-		MidiEvent( MidiChannelPressure, midiChannel(), mpePressure() ), time, offset );
+	//
+	// Q050-016: an axis the note carries a stream for is scheduled by
+	// scheduleMpeExpressionStream() at each point's own offset, so this
+	// scalar send skips it to avoid sending the snapshot first.
+	const bool streamPressure = hasMpeStream() && mpeStream().hasPressure();
+	const bool streamTimbre = hasMpeStream() && mpeStream().hasTimbre();
+
+	if( !streamPressure )
+	{
+		m_instrumentTrack->processOutEvent(
+			MidiEvent( MidiChannelPressure, midiChannel(), mpePressure() ), time, offset );
+	}
 
 	// CC74 is MPE's timbre ("Y") axis, the same controller number the capture
 	// path consumes (MpeTimbreController, include/MpeExpression.h).
-	m_instrumentTrack->processOutEvent(
-		MidiEvent( MidiControlChange, midiChannel(), MpeTimbreController, mpeTimbre() ), time, offset );
+	if( !streamTimbre )
+	{
+		m_instrumentTrack->processOutEvent(
+			MidiEvent( MidiControlChange, midiChannel(), MpeTimbreController, mpeTimbre() ), time, offset );
+	}
 }
 
 
@@ -222,12 +253,22 @@ int NotePlayHandle::midiKey() const
 
 
 
+SynthesisLoad* NotePlayHandle::synthesisLoad() noexcept
+{
+	return m_instrumentTrack != nullptr ? &m_instrumentTrack->synthesisLoad() : nullptr;
+}
+
+
+
+
 void NotePlayHandle::play( std::span<SampleFrame> buffer )
 {
 	if (m_muted)
 	{
 		return;
 	}
+	// Q050-074.1: the note's synthesis time, for its track's share of the period (two clock reads).
+	const SynthesisLoad::Probe synthesis(synthesisLoad());
 
 	// if the note offset falls over to next period, then don't start playback yet
 	if( offset() >= Engine::audioEngine()->framesPerPeriod() )
@@ -254,6 +295,13 @@ void NotePlayHandle::play( std::span<SampleFrame> buffer )
 		}
 	}
 
+	// Q050-015: the keyswitch was pressed a period ago (or earlier): let it go at the start of this one.
+	if( m_keyswitchDown && m_totalFramesPlayed > 0 )
+	{
+		m_keyswitchDown = false;
+		m_instrumentTrack->releaseKeyswitch( m_articulation.keyswitch, midiChannel(), TimePos(), 0 );
+	}
+
 	/* It is possible for NotePlayHandle::noteOff to be called before NotePlayHandle::play,
 	 * which results in a note-on message being sent without a subsequent note-off message.
 	 * Therefore, we check here whether the note has already been released before sending
@@ -265,6 +313,14 @@ void NotePlayHandle::play( std::span<SampleFrame> buffer )
 		m_hasMidiNote = true;
 
 		const int baseVelocity = m_instrumentTrack->midiPort()->baseVelocity();
+
+		// Q050-015: the note's articulation - program, controller, keyswitch - at the note's own offset, ahead of
+		// its note-on: this is the period the (possibly delayed) note starts in, so they cannot get ahead of it.
+		if( m_articulation.any() )
+		{
+			m_keyswitchDown = m_instrumentTrack->sendArticulationEvents( m_articulation, midiChannel(), key(), getVolume(),
+				TimePos::fromFrames( offset(), Engine::framesPerTick() ), offset() );
+		}
 
 		// send MidiNoteOn event
 		m_instrumentTrack->processOutEventForNote(
@@ -287,6 +343,11 @@ void NotePlayHandle::play( std::span<SampleFrame> buffer )
 	f_cnt_t framesThisPeriod = m_totalFramesPlayed == 0
 		? Engine::audioEngine()->framesPerPeriod() - offset()
 		: Engine::audioEngine()->framesPerPeriod();
+
+	// Q050-016: the note's MPE expression event stream, if it carries one, at
+	// each point's own offset inside this period. A note with no stream does
+	// nothing here (the scalar path above is unchanged).
+	scheduleMpeExpressionStream( framesThisPeriod );
 
 	// check if we start release during this period
 	if( m_released == false &&
@@ -429,6 +490,14 @@ void NotePlayHandle::noteOff( const f_cnt_t _s )
 	// then set some variables indicating release-state
 	m_framesBeforeRelease = _s;
 	m_releaseFramesToDo = std::max<f_cnt_t>(0, actualReleaseFramesToDo());
+
+	if( m_keyswitchDown )
+	{
+		// The note ends inside the period it started in: the keyswitch goes with it.
+		m_keyswitchDown = false;
+		m_instrumentTrack->releaseKeyswitch( m_articulation.keyswitch, midiChannel(),
+			TimePos::fromFrames( _s, Engine::framesPerTick() ), _s );
+	}
 
 	if( m_hasMidiNote )
 	{
@@ -585,7 +654,11 @@ float NotePlayHandle::slidePitchOffset( int fromKey, int toKey, float progress )
 
 void NotePlayHandle::updateFrequency()
 {
-	int masterPitch = m_instrumentTrack->m_useMasterPitchModel.value() ? Engine::getSong()->masterPitch() : 0;
+	// The mark is spent before the inputs are read, so a mark that lands while this update runs is kept
+	// for the next period instead of being cleared together with an update that did not see it.
+	m_frequencyNeedsUpdate = false;
+
+	int masterPitch =m_instrumentTrack->m_useMasterPitchModel.value() ? Engine::getSong()->masterPitch() : 0;
 	int baseNote = m_instrumentTrack->baseNoteModel()->value();
 	float detune = m_baseDetuning->value();
 	float instrumentPitch = m_instrumentTrack->pitchModel()->value();
@@ -646,14 +719,16 @@ void NotePlayHandle::updateFrequency()
 		m_unpitchedFrequency = DefaultBaseFreq * std::exp2(pitch);
 	}
 
-	// MPE per-note pitch (task #601). The note's own bend offset, applied as a
+	// MPE per-note pitch (task #601) and its event stream (Q050-016). The
+	// note's own bend offset at the current play position, applied as a
 	// frequency ratio like the per-note detuning above, but *not* folded into
 	// m_unpitchedFrequency - that one is documented as pitch-wheel-free.
 	// Nothing runs when the note carries no expression (every note of every
 	// project saved before this feature), so such a render stays bit-identical.
-	if (mpePitchCents() != 0)
+	const int bendCents = effectiveMpePitchCents();
+	if (bendCents != 0)
 	{
-		m_frequency *= mpePitchRatio(mpePitchCents());
+		m_frequency *= mpePitchRatio(bendCents);
 	}
 
 	for (auto it : m_subNotes)
@@ -713,6 +788,7 @@ NotePlayHandle ** NotePlayHandleManager::s_available;
 QReadWriteLock NotePlayHandleManager::s_mutex;
 std::atomic_int NotePlayHandleManager::s_availableIndex;
 int NotePlayHandleManager::s_size;
+std::atomic<std::uint64_t> NotePlayHandle::s_generationCounter{0};
 
 
 void NotePlayHandleManager::init()

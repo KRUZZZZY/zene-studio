@@ -154,7 +154,7 @@ ENDIF()
 IF(NOT ZENE_HAVE_COLLAB)
 	# Same reason as above: the collaboration transport's Q_OBJECT headers are globbed for AUTOMOC,
 	# and their .cpp files are not built without Qt Network.
-	FOREACH(_collab_header CollabLink CollabHost CollabClient CollabSession CollabPanel PortMapping)
+	FOREACH(_collab_header CollabLink CollabHost CollabClient CollabSession CollabPanel PortMapping OscServer)
 		SET_SOURCE_FILES_PROPERTIES("${CMAKE_SOURCE_DIR}/include/${_collab_header}.h"
 			PROPERTIES SKIP_AUTOMOC ON)
 	ENDFOREACH()
@@ -414,6 +414,7 @@ SET(LMMS_REQUIRED_LIBS ${LMMS_REQUIRED_LIBS}
 	${SUIL_LIBRARIES}
 	${FFTW3F_LIBRARIES}
 	SampleRate::samplerate
+	zene_samplerate
 	SndFile::sndfile
 	${EXTRA_LIBRARIES}
 )
@@ -435,6 +436,10 @@ ENDIF()
 find_package(ZLIB REQUIRED)
 TARGET_COMPILE_DEFINITIONS(lmmsobjs PRIVATE ZENE_HAVE_ZLIB)
 TARGET_LINK_LIBRARIES(lmmsobjs ZLIB::ZLIB)
+# Q050-024: the Link audio stream's datagram socket is winsock2 on Windows (src/core/LinkAudioStream.cpp).
+IF(WIN32)
+	TARGET_LINK_LIBRARIES(lmmsobjs ws2_32)
+ENDIF()
 IF(ZENE_HAVE_LIBAAF)
 	TARGET_COMPILE_DEFINITIONS(lmmsobjs PRIVATE ZENE_HAVE_LIBAAF)
 	TARGET_LINK_LIBRARIES(lmmsobjs PkgConfig::LIBAAF)

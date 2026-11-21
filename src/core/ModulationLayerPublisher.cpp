@@ -71,6 +71,7 @@ ModulationLayerPublisher::ModulationLayerPublisher()
 ModulationLayerPublisher::~ModulationLayerPublisher()
 {
 	for (QMetaObject::Connection& watch : m_watch) { QObject::disconnect(watch); }
+	for (QMetaObject::Connection& watch : m_instrumentWatch) { QObject::disconnect(watch); }
 }
 
 void ModulationLayerPublisher::publishTriggers()
@@ -164,11 +165,8 @@ double ModulationLayerPublisher::sinceTrigger(int modulator, int triggerTrack, d
 	return at < 0.0 || seconds < at ? 0.0 : seconds - at;
 }
 
-void ModulationLayerPublisher::publishView()
+void ModulationLayerPublisher::publishView(ModulationAudioView& staged)
 {
-	m_hasLayer.store(m_layer.shouldPersist(), std::memory_order_release);
-	publishTriggers();  // MX-121
-
 	ModulationAudioView view;
 	view.sources = m_runtime.sources;
 	view.sourceCount = m_runtime.sourceCount;
@@ -197,6 +195,8 @@ void ModulationLayerPublisher::publishView()
 		}
 		QObject::disconnect(m_watch[slot]);
 		m_watch[slot] = QMetaObject::Connection{};
+		QObject::disconnect(m_instrumentWatch[slot]);
+		m_instrumentWatch[slot] = QMetaObject::Connection{};
 		m_alive[slot].store(0, std::memory_order_release);
 		if (slot >= static_cast<std::size_t>(m_runtime.entryCount)) { continue; }
 
@@ -228,9 +228,22 @@ void ModulationLayerPublisher::publishView()
 			[alive, writersPtr, token] {
 				ModulationLayerPublisher::retireTarget(*alive, *writersPtr, token);
 			});
+		if (from.instrument != nullptr)
+		{
+			m_instrumentWatch[slot] = QObject::connect(from.instrument, &Instrument::aboutToBeDestroyed,
+				[alive, writersPtr, token] {
+					ModulationLayerPublisher::retireTarget(*alive, *writersPtr, token);
+				});
+		}
 		writers.store(targetGateState(token, 0), std::memory_order_release);
 	}
-	m_view = view;
+	// The staged view is handed to the caller, which swaps it into m_view
+	// inside the reader-visible write window, together with the trigger state
+	// (publishTriggers()). Nothing here is reader-visible yet, so the audio
+	// thread keeps reading the last published view - and running on the last
+	// published trigger timing - while this waits for the writers of the
+	// targets it rebinds.
+	staged = view;
 }
 
 namespace

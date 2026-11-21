@@ -56,9 +56,9 @@
 #include <functional>
 #include <memory>
 
-#include <ableton/Link.hpp>
 
 #include "AudioDevice.h"
+#include "LinkVendored.h"
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
 #include "Engine.h"

@@ -307,6 +307,16 @@ ControlResult handleRescan()
 		return ControlResult::failure(ControlErrorKind::NotFound,
 			QStringLiteral("%1: this instance has no plugin factory").arg(RescanName));
 	}
+	// A background run owns the catalogue commit until it ends: a synchronous
+	// scan now would be overwritten by the run's commit (or overwrite the
+	// staging it is still filling). Q050-090.
+	if (factory->backgroundScanActive())
+	{
+		return ControlResult::failure(ControlErrorKind::Busy,
+			QStringLiteral("%1: a background scan is running - follow it with plugin.scan_status, "
+				"wait for it to commit, or stop it with plugin.scan_cancel; nothing was scanned")
+				.arg(RescanName));
+	}
 
 	const QJsonObject before = rescanReport(*factory);
 	// The scan itself. discoverPlugins() resets its own stats, re-reads the

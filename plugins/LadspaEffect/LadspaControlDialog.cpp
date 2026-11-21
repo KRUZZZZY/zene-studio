@@ -75,6 +75,20 @@ void LadspaControlDialog::updateEffectView( LadspaControls * _ctl )
 		delete groupBox;
 	}
 
+	if( _ctl == nullptr )
+	{
+		// A failed sample-rate re-instantiation emits effectModelChanged(nullptr);
+		// detach from the controls model instead of dereferencing it.
+		setModel( nullptr );
+		m_effectControls = nullptr;
+		if( m_stereoLink != nullptr )
+		{
+			m_stereoLink->unsetModel();
+			m_stereoLink->hide();
+		}
+		return;
+	}
+
 	m_effectControls = _ctl;
 
 

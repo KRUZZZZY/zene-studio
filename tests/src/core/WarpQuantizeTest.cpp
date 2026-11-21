@@ -153,6 +153,70 @@ private slots:
 		}
 	}
 
+	/*! A reversed clip's transients reach the grid in the opposite order: the
+	 *  burst that is heard LAST is the first one in the source, so the ticks
+	 *  descend with the source frames. The marker set is written in PLAY frames
+	 *  - the coordinate the warp map itself is written in - and the transients
+	 *  are walked in play-frame order, so all four of them survive the "strictly
+	 *  increasing" rule. Before, the ascending-only rule kept the first
+	 *  transient and dropped the other three. */
+	void aReversedClipKeepsEveryTransientInOrder()
+	{
+		SampleClip* clip = test::sampleClipOf(clicks(true));
+		clip->sample().setReversed(true);
+		const QString id = control::clipIdOf(clip);
+		const ControlResult done = run(QStringLiteral("warp.quantize"),
+			{{QStringLiteral("clip"), id}, {QStringLiteral("grid"), 48}});
+		QVERIFY2(done.ok, qPrintable(done.errorMessage));
+		QCOMPARE(done.result.value(QStringLiteral("transients")).toInt(), 4);
+		const WarpMarkers& warp = clip->warpMarkers();
+		QCOMPARE(warp.size(), 4);
+		const auto size = static_cast<f_cnt_t>(clip->sample().sampleSize());
+		for (int i = 0; i < warp.size(); ++i)
+		{
+			// on the grid, and strictly increasing in both coordinates
+			QCOMPARE(static_cast<int>(warp[i].offsetTicks % 48), 0);
+			if (i > 0)
+			{
+				QVERIFY(warp[i - 1].offsetTicks < warp[i].offsetTicks);
+				QVERIFY(warp[i - 1].sourceFrame < warp[i].sourceFrame);
+			}
+		}
+		// the markers are PLAY frames: the burst heard first is the one the
+		// source carries last, so it is played early - a source frame near the
+		// start of the window, not near its end.
+		QVERIFY(warp[0].sourceFrame < size / 2);
+		QVERIFY(warp[3].sourceFrame > size / 2);
+	}
+
+	/*! A trimmed reversed clip sounds the MIRROR of its window, so its
+	 *  transients are the ones of the audio it plays - not the ones of the
+	 *  region the window names, which it never plays. The fixture's bursts sit
+	 *  in BOTH halves and the window covers the first one, so a detector that
+	 *  looked at the window found the two bursts of the half the clip does not
+	 *  play - and their ticks collapse onto the play window's edge, so the
+	 *  quantise kept one of them instead of the two the clip actually plays. */
+	void aTrimmedReversedClipQuantisesTheAudioItPlays()
+	{
+		SampleClip* clip = test::sampleClipOf(clicks(true));
+		const auto framesPerTick = static_cast<f_cnt_t>(Engine::framesPerTick());
+		clip->setSamplePlayLength(100 * framesPerTick);
+		clip->sample().setReversed(true);
+		const QString id = control::clipIdOf(clip);
+		const ControlResult done = run(QStringLiteral("warp.quantize"),
+			{{QStringLiteral("clip"), id}, {QStringLiteral("grid"), 48}});
+		QVERIFY2(done.ok, qPrintable(done.errorMessage));
+		// the two bursts of the second half are the ones the clip plays
+		QCOMPARE(done.result.value(QStringLiteral("transients")).toInt(), 2);
+		const WarpMarkers& warp = clip->warpMarkers();
+		QCOMPARE(warp.size(), 2);
+		for (int i = 0; i < warp.size(); ++i)
+		{
+			QCOMPARE(static_cast<int>(warp[i].offsetTicks % 48), 0);
+			if (i > 0) { QVERIFY(warp[i - 1].offsetTicks < warp[i].offsetTicks); }
+		}
+	}
+
 	void silenceIsRefused()
 	{
 		SampleClip* clip = test::sampleClipOf(clicks(false));

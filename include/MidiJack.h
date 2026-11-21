@@ -42,6 +42,7 @@
 #include <cstdint>
 
 #include "MidiClient.h"
+#include "MidiInputGate.h"
 #include "MidiJackOutSchedule.h"
 #include "MpscQueue.h"
 
@@ -70,6 +71,16 @@ public:
 			"Jack-MIDI" ) );
 	}
 
+	//! Refuses later input and waits out a JackMidiRead() in flight; output keeps flowing (Q050-488).
+	void stopInput() override
+	{
+		m_inputGate.close();
+	}
+
+#ifdef LMMS_TESTING
+	int inputReadsForTesting() const noexcept { return m_inputReadsForTesting.load(); }
+#endif
+
 	void JackMidiWrite(jack_nframes_t nframes);
 	void JackMidiRead(jack_nframes_t nframes);
 
@@ -97,6 +108,10 @@ protected:
 
 
 private:
+	MidiInputGate m_inputGate;
+#ifdef LMMS_TESTING
+	std::atomic<int> m_inputReadsForTesting{0};
+#endif
 	AudioJack *m_jackAudio;
 	jack_client_t *m_jackClient;
 	jack_port_t *m_input_port;
@@ -104,10 +119,12 @@ private:
 	uint8_t m_jack_buffer[JACK_MIDI_BUFFER_MAX * 4];
 
 	//! Senders (the audio thread, the GUI) -> the JACK process callback. Bounded, lock-free
-	//! (0.5.0 engine audit E25); each message carries its frame (W4, MidiJackOutSchedule.h).
+	//! (0.5.0 engine audit E25); each message carries its source cycle and frame (W4).
 	MpscQueue<midijack::OutMessage, 1024> m_outQueue;
 	std::atomic<std::uint64_t> m_outDropped{0};
-	//! The JACK process callback's own list of this cycle's messages, ordered by frame.
+	//! Current engine/JACK callback period, stamped on producer messages for deferred ordering.
+	std::atomic<std::uint64_t> m_outCycleId{0};
+	//! The JACK process callback's bounded list, ordered by source cycle then frame.
 	std::array<midijack::OutMessage, midijack::MaxOutPerCycle> m_outCycle{};
 
 	void JackMidiOutEvent(uint8_t *buf, uint8_t len);
@@ -116,7 +133,7 @@ private:
 
 	void getPortInfo( const QString& sPortName, int& nClient, int& nPort );
 
-	volatile bool m_quit;
+	std::atomic<bool> m_quit;
 
 };
 

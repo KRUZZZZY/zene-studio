@@ -307,6 +307,30 @@ private slots:
 		QCOMPARE(notes[1].length, 1);  // closed at the end, clamped to one tick
 	}
 
+	//! An omitted edge uses the latest note tick even when that tick is negative;
+	//! -1 is a valid tick and cannot double as the default-edge sentinel.
+	void omittedWindowEndAtNegativeTickUsesLatestEvent()
+	{
+		QString trackId;
+		QString clipId;
+		makeInstrumentClip(&trackId, &clipId);
+		MidiClip* clip = resolvedClip(clipId);
+		QVERIFY(clip != nullptr);
+
+		RetroMidiEvent event = element(MidiNoteOn, 0, 60, 100);
+		event.tick = -10;
+		const RetroMidiClipWrite written = writeWindowToClip(clip, &event, 1, -10);
+
+		QCOMPARE(written.notes, 1);
+		QCOMPARE(written.unmatchedOns, 1);
+		QCOMPARE(written.windowStart, -10);
+		QCOMPARE(written.windowEnd, -10);
+		const std::vector<WrittenNote> notes = notesOf(clip);
+		QCOMPARE(static_cast<int>(notes.size()), 1);
+		QCOMPARE(notes[0].position, 0);
+		QCOMPARE(notes[0].length, 1);
+	}
+
 	//! A release with no note-on before it (the capture started mid-note) is
 	//! counted, never invented into a note.
 	void releaseWithoutNoteOnIsCounted()

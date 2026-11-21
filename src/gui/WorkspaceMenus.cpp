@@ -35,6 +35,7 @@
 #include "CommandForm.h"
 #include "CommandLists.h"
 #include "ControlRegistry.h"
+#include "DeprecationHelper.h"
 #include "GuiApplication.h"
 #include "LayoutMenu.h"
 #include "MenuBarExtras.h"
@@ -44,6 +45,8 @@
 #include "TrackLooks.h"
 #include "UiConfigStore.h"
 #include "UnattendedRun.h"
+#include "UpdateCheckWindows.h"
+#include "lmmsconfig.h"
 
 namespace lmms::gui
 {
@@ -143,7 +146,7 @@ void fillWindowMenu(QMenu* menu)
 	run(menu, QObject::tr("Focus Next Panel"), QStringLiteral("window.focus_panel"), {{QStringLiteral("panel"), QStringLiteral("next")}})
 		->setShortcut(QKeySequence(Qt::Key_F6));
 	run(menu, QObject::tr("Focus Previous Panel"), QStringLiteral("window.focus_panel"), {{QStringLiteral("panel"), QStringLiteral("previous")}})
-		->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F6));
+		->setShortcut(keySequence(Qt::SHIFT, Qt::Key_F6));
 	menu->addSeparator();
 	choices(menu, QObject::tr("Cross-Hair Cursor"), QStringLiteral("view.crosshair"), QStringLiteral("enabled"));
 	choices(menu, QObject::tr("Keep on Top"), QStringLiteral("window.stay_on_top"), QStringLiteral("enabled"));
@@ -156,6 +159,9 @@ void fillHelpMenu(QMenu* help)
 	help->addSeparator();
 	run(help, QObject::tr("Ask..."), QStringLiteral("window.ask"));
 	run(help, QObject::tr("What's New"), QStringLiteral("window.whats_new"));
+#ifdef ZENE_UPDATE_CHECK_ENABLED
+	addUpdateCheckMenuEntry(help);
+#endif
 	run(help, QObject::tr("Accessibility Check"), QStringLiteral("window.accessibility_report"), {}, false, true);
 }
 
@@ -177,6 +183,8 @@ void populateCustomiseExtras(QMenu* menu)
 	// Theme 20: a section heading, not an entry - it runs nothing, so it declares no command.
 	theme->addSection(QObject::tr("Changes apply at the next start"));
 	choices(theme, QObject::tr("Palette"), QStringLiteral("window.appearance"), QStringLiteral("palette"));
+	// 0.5.0 L14 (Q050-235): the touch workspace - larger launcher targets - chosen beside the palette; one command.
+	choices(theme, QObject::tr("Workspace"), QStringLiteral("window.appearance"), QStringLiteral("workspace"));
 	// 0.5.0 UX decision (theme 23): one global zoom sizes everything; accessible mode replaces the density presets.
 	QMenu* zoom = theme->addMenu(QObject::tr("Interface Zoom"));
 	for (const int percent : {75, 100, 125, 150, 175, 200})
@@ -213,6 +221,13 @@ void installWorkspaceMenus(QMenuBar* bar)
 		ControlRegistry::instance()->invoke(QStringLiteral("window.accessibility_report"), {{QStringLiteral("fill"), true}});
 	});
 	showWhatsNewOnce(bar->window());
+#ifdef ZENE_UPDATE_CHECK_ENABLED
+	// Q050-501: well after the window is up (What's New comes at 1.5 s), for a person only, and in the background.
+	if (!isUnattendedRun())
+	{
+		QTimer::singleShot(4000, bar->window(), [window = bar->window()] { runUpdateCheckStartup(window); });
+	}
+#endif
 }
 
 } // namespace lmms::gui

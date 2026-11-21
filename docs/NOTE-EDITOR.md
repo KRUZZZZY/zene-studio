@@ -37,6 +37,7 @@ therefore make the same call, leave the same transaction record and share one un
 | Select (click a note, Ctrl-click, Ctrl-drag, Ctrl+Shift to add, Ctrl+A, Escape) | `note.select` |
 | Velocity, pan or chance lane | `note.edit` (one batch per stroke) |
 | Timbre, pressure or micro-pitch lane | `note.expression_set` per note |
+| Note-tools menu: MPE pitch ramp... (asks the bend at the note's end, writes a `{0:0, len:value}` pitch stream, keeps the other axes), Clear MPE expression streams | `note.expression_stream_set` per note (one undo step each; the clear skips notes with no stream) |
 | Quantise | `groove.quantize` |
 | Scale and root | `scale.set`, `scale.root_set` (read back with `scale.get_state`) |
 | Drag the end of the loop region | `clip.resize` |
@@ -82,8 +83,17 @@ With the Draw (and Select) tool:
 - **Right click or drag** deletes every note the pointer crosses, whatever the tool; a right
   drag that starts on an empty row is the slice tool for that stroke.
 - **Double-click** a note to open its properties: key, start, length, velocity, pan, release
-  velocity, Mod X and Mod Y (the note's MPE timbre and pressure), chance, slide and mute. OK
-  writes the changes as one `note.edit`. A double-click that draws a note does not open it.
+  velocity, Mod X and Mod Y (the note's MPE timbre and pressure), chance, slide, mute and the
+  note's **recurrence** - the pass pattern's length and which passes play. OK writes the changes
+  as one `note.edit`. A double-click that draws a note does not open it.
+- **Recurrence** (ED-133, `recur_length` / `recur_mask`) makes a note repeat predictably across
+  the passes of a loop. *Recurrence (passes)* is the pattern's length; 0 means every pass, and
+  a positive length with a mask of no ticked passes plays none. One box per pass ("1" is the
+  first pass of the pattern) ticks the passes it plays: length 2 with pass 1 ticked plays passes
+  0, 2, 4... and skips 1, 3, 5.... A pass is a **song transport loop wrap**, so seeking does not
+  advance the pattern; a MIDI clip's own loop repeats the notes within a pass but does not
+  advance the mask either. The boxes read the pair back from the note, and the length and mask
+  travel together in one undo step (a new length cuts the mask to its pattern).
 - **Ctrl**-click selects one note, Ctrl-drag a rectangle; **Ctrl+Shift** adds to the selection.
 - While dragging, **Shift** locks the pitch and **Ctrl** the timing; **Alt** turns the snap off.
 - **Alt+wheel** over a note changes its velocity by 5 (Ctrl+Alt by 1); **Shift+Alt+wheel**
@@ -141,6 +151,42 @@ same place (2026-10-07; `NoteEditor::showPlayhead`, `lanescale::paintPlayhead`;
 The brief also names a **gain** lane, but this engine has no per-note gain separate from
 velocity, which is the note's volume. Adding one would mean a new note attribute, a new
 project-format field and a change to the render path. That was not done; it is listed in §8.
+
+## 5a. Articulations
+
+An instrument track has an **articulation map**: named entries, each saying what to send just before a
+note that asks for it - a **keyswitch** key (a sample library's key, held briefly and then let go), a
+**program change**, and/or a **control change** (controller and value). A note names its articulation by the entry's
+1-based number (`note.edit` `articulation`; the note editor's right-click Articulation menu).
+
+- **Editor:** Track menu ▸ Articulations..., or the note editor's Articulation ▸ Edit Articulations....
+  One row per entry: name, keyswitch, program, controller, value (0-127, blank for "not that"). New,
+  Duplicate, Move Up/Down and Remove edit the list; typing in a cell edits it. Names are unique
+  (not case-sensitive), at most 64 entries.
+- **Same command as the agent:** every edit is one `track.articulations_set` (undo is one step), so the
+  map the editor leaves is the map the command leaves (`ArticulationMapEditorTest`). Moving or removing an
+  entry passes `from` - the old position of each new entry, 0 for a new one - and the notes follow their
+  articulation: a note whose entry moved takes the new number, one whose entry was removed asks for none
+  (the reply's `notes_remapped` counts them; undo restores map and notes together). Without `from` the
+  notes keep their numbers.
+- **Saved with the project** as the `articulations` attribute of the track element, only when the map is
+  not empty; projects without a map are byte for byte as before.
+- **Playback:** the note carries what its articulation sends (copied out of the map when the note is
+  triggered, so the audio thread never reads the map), and its play handle sends it in the period the note
+  actually starts in, at the note's own frame offset and just before its note-on: program change, control
+  change, then the keyswitch key. A note that swing, the MIDI offset or the track's delay holds back brings
+  its articulation with it. The keyswitch is a plain MIDI key to the instrument and the MIDI output (no note
+  of its own, no play handle); it is let go a period later, or with the note if that ends first. Every layer
+  that plays the note gets the same events on its own instrument; an instrument a layer zone leaves out of
+  the note gets none. With the track's **arpeggiator** on, each arpeggio step is its own sounding note and
+  sends the articulation just before its note-on, at the step's offset (the base note sends no note-on of
+  its own); with **chord stacking** the note - or the arpeggio step - sends it once, before the chord's
+  first key, and every stacked voice follows it. The path reuses the note's own handle: it adds no allocation, lock or Qt signal on the
+  audio thread (`ArticulationPlaybackTest` counts allocations and reads the events, frame offsets and held
+  keys an instrument is handed). Allocation the note's handle itself makes is outside this feature.
+- **Not done:** per-articulation timing (a lead time before the note), and an articulation's own colour or
+  note-head. A map is per track, not shared between tracks; copy it with `track.articulations` and
+  `track.articulations_set`.
 
 ## 6. Performance
 

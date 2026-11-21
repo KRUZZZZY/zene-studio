@@ -29,9 +29,12 @@
 #include <atomic>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 
+#include "ArticulationEvents.h"
 #include "BasicFilters.h"
+#include "MpeSynthExpression.h"
 #include "Note.h"
 #include "PlayHandle.h"
 #include "Track.h"
@@ -42,6 +45,7 @@ namespace lmms
 {
 
 class InstrumentTrack;
+class MidiClip;
 class NotePlayHandle;
 
 using NotePlayHandleList = QList<NotePlayHandle*>;
@@ -74,7 +78,9 @@ public:
 					Origin origin = Origin::MidiClip );
 	~NotePlayHandle() override;
 
-	static constexpr std::size_t PluginDataStorageSize = 512;
+	// Sized for the largest in-handle plugin note state, BitInvader's per-note wavetable copy;
+	// each user static_asserts its own fit (Monstro.cpp, TripleOscillator.cpp, BitInvader.cpp).
+	static constexpr std::size_t PluginDataStorageSize = 1024;
 
 	//! In-handle storage for plugin note state that must be created on the audio path.
 	void* pluginDataStorage() noexcept { return m_pluginDataStorage; }
@@ -105,6 +111,11 @@ public:
 	 *  lock, exactly like the note-on it is sent with.
 	 */
 	void sendMpeExpressionMidi( const TimePos& time = TimePos(), f_cnt_t offset = 0 );
+
+	//! Q050-015: what the note's articulation sends with its start - set by the track that triggers the note
+	//! (and copied to each layer that plays it); sent in play() just before the note-on, at its offset.
+	void setArticulation( const ArticulationEvents& events ) { m_articulation = events; }
+	const ArticulationEvents& articulation() const { return m_articulation; }
 
 	int midiKey() const;
 	int midiChannel() const
@@ -154,6 +165,9 @@ public:
 	/*! Returns whether the play handle plays on a certain track */
 	bool isFromTrack( const Track* _track ) const override;
 
+	//! Q050-074.1: the note's rendering counts toward its instrument track's synthesis load.
+	SynthesisLoad* synthesisLoad() noexcept override;
+
 	/*! Releases the note (and plays release frames) */
 	void noteOff( const f_cnt_t offset = 0 );
 
@@ -199,6 +213,14 @@ public:
 		return m_totalFramesPlayed;
 	}
 
+	/*! A per-note instance identifier: bumped every time a NotePlayHandle is constructed or pooled-reused,
+	 *  so a handle reused for a new note carries a different generation than the note it last voiced. A voice
+	 *  follows a note by its handle pointer; the generation tells a continuing note from a reused handle. */
+	std::uint64_t generation() const
+	{
+		return m_generation;
+	}
+
 	/*! Returns volume level at given frame (envelope/LFO) */
 	float volumeLevel( const f_cnt_t frame );
 
@@ -224,6 +246,33 @@ public:
 	Origin origin() const
 	{
 		return m_origin;
+	}
+
+	/*! 0.5.0 Q050-040 (L07): the clip this note was triggered from, so the chase check can tell a
+	 *  same-key note at the same clip-relative position in another overlapping clip apart from this
+	 *  one. Null for live-input, keyswitch and arpeggio/stacking handles, which come from no clip. */
+	const MidiClip* clip() const
+	{
+		return m_clip;
+	}
+
+	void setClip(const MidiClip* clip)
+	{
+		m_clip = clip;
+	}
+
+	/*! Q050-040 r4: the Note::id() of the clip note this handle was triggered from (-1 for a handle that
+	 *  comes from no clip note). The handle IS a copy of the note, so its own id() is a fresh one; this
+	 *  keeps the source identity, which tells two same-key, same-position notes of one clip apart.
+	 *  Set once where the handle is created (triggerNote, audio thread): a plain int, no allocation. */
+	int sourceNoteId() const
+	{
+		return m_sourceNoteId;
+	}
+
+	void setSourceNoteId(int id)
+	{
+		m_sourceNoteId = id;
 	}
 
 	/*! Returns whether note has children */
@@ -326,7 +375,66 @@ public:
 		return std::exp2( pitchCents / ( 100.f * 12.f ) );
 	}
 
+	/*! Q050-016: the note's MPE pitch bend at the current play position - the
+	 *  stream's value at this tick when the note carries a pitch stream, else
+	 *  the scalar snapshot (#601). updateFrequency() reads this, so streamed
+	 *  pitch curves retune a built-in synthesiser from period to period while
+	 *  the pitch bend events the stream schedules reach a MIDI consumer
+	 *  sample-accurately. */
+	int effectiveMpePitchCents() const;
+
+	/*! Q050-311: the note's MPE pressure / CC74 timbre at the current play
+	 *  position - the stream's value at this tick when the note carries a
+	 *  stream for that axis, else the scalar snapshot. MpeSynthExpression reads
+	 *  these once per period to shape a built-in synthesiser's note. */
+	int effectiveMpePressure() const;
+	int effectiveMpeTimbre() const;
+
+	//! Q050-311: the per-note running state of MpeSynthExpression (audio thread only).
+	MpeSynthExpression::State& mpeSynthState() { return m_mpeSynthState; }
+
+	/*! Q050-016: send the expression events whose point falls in this period,
+	 *  each at its own frame offset inside the period, so the stream's pitch,
+	 *  pressure and timbre reach the instrument where the points name them.
+	 *  A note with no stream does nothing at all (the scalar path is
+	 *  unchanged). Realtime contract: reads only the note's own vectors, no
+	 *  allocation and no lock, the same path the note-on events use. */
+	void scheduleMpeExpressionStream( f_cnt_t framesThisPeriod );
+
+	/*! Q050-016: the period offset of a stream point's frame, or
+	 *  kNoMpeStreamOffset when it falls outside the period. Pure math, so
+	 *  static (unit-tested in MpeNoteStorageTest, like slidePitchOffset in
+	 *  SlideNotesTest): the scheduler passes everything it needs.
+	 *
+	 *  64-bit throughout: frame positions past 2^31 are real (f_cnt_t is
+	 *  64-bit), and on LLP64 (Windows) `long` is 32 bits, so std::lround and
+	 *  `long` deltas truncate them. std::llround and std::int64_t keep them. */
+	static f_cnt_t mpeStreamPointOffset( tick_t tick, f_cnt_t startFrame,
+		f_cnt_t framesThisPeriod, f_cnt_t periodStart, double framesPerTick );
+
+	//! The "this point is not in the period" answer of mpeStreamPointOffset().
+	static constexpr f_cnt_t kNoMpeStreamOffset = static_cast<f_cnt_t>( -1 );
+
+#ifdef LMMS_TESTING
+	/*! Test seam: while \a counter is non-null, every stream point the scheduler
+	 *  examines increments it. Null in product use, so the audio path is
+	 *  unchanged there; MpePlaybackTest uses it to prove that a period does not
+	 *  walk the stream's history again. */
+	static void setMpeStreamPointScanCounterForTest( std::size_t* counter );
+#endif
+
 private:
+	//! Q050-016: send one streamed axis value to the instrument (pitch bend,
+	//! channel pressure or CC74) at \a offset frames into the period.
+	void sendMpeExpressionAxisEvent( int axis, int value, f_cnt_t offset );
+
+	//! Q050-016: the tick, from the note's own start, a frame within it sits at.
+	tick_t mpeStreamTick( f_cnt_t frameWithinNote ) const;
+
+	//! Q050-016: schedule the points of one axis that fall in this period.
+	void scheduleMpeStreamAxis( const std::vector<MpeExpressionPoint>* points, int axis, int base,
+		bool firstPeriod, f_cnt_t startFrame, tick_t startTick, tick_t endTick,
+		f_cnt_t framesThisPeriod, f_cnt_t periodStart, float framesPerTick );
 	class BaseDetuning
 	{
 	public:
@@ -356,6 +464,8 @@ private:
 	f_cnt_t m_totalFramesPlayed;			// total frame-counter - used for
 											// figuring out whether a whole note
 											// has been played
+	std::uint64_t m_generation = 0;			// bumped per construction/reuse (see generation())
+	MpeSynthExpression::State m_mpeSynthState;	// Q050-311: pressure/timbre shaping state
 	f_cnt_t m_framesBeforeRelease;			// number of frames after which note
 											// is released
 	f_cnt_t m_releaseFramesToDo;			// total numbers of frames to be
@@ -388,9 +498,18 @@ private:
 	int m_midiChannel;
 	Origin m_origin;
 
+	//! 0.5.0 Q050-040: the originating clip instance (see clip()); null outside clip playback.
+	const MidiClip* m_clip = nullptr;
+	//! 0.5.0 Q050-040 r4: the originating clip note's Note::id(), -1 outside clip playback (see sourceNoteId()).
+	int m_sourceNoteId = -1;
+
 	bool m_frequencyNeedsUpdate;				// used to update pitch
 	int m_slideSourceKey;					// key a slide note glides from, -1 = none
+	ArticulationEvents m_articulation;		// Q050-015: sent ahead of the note-on
+	bool m_keyswitchDown = false;			// the articulation's keyswitch is pressed and not yet let go
 	alignas(std::max_align_t) std::byte m_pluginDataStorage[PluginDataStorageSize];
+
+	static std::atomic<std::uint64_t> s_generationCounter;  // source of generation()
 } ;
 
 

@@ -31,11 +31,17 @@
 
 #include <QApplication>
 #include <QComboBox>
+#include <QColor>
+#include <QImage>
+#include <QLabel>
 #include <QMenu>
+#include <QPointer>
 #include <QPushButton>
+#include <QScopeGuard>
 #include <QSpinBox>
 
 #include <algorithm>
+#include <limits>
 #include <vector>
 
 #include "ControlRegistry.h"
@@ -158,6 +164,151 @@ private slots:
 		QCOMPARE(open->outClip(), m_first);
 		QCOMPARE(open->inClip(), m_second);
 		open->close();
+	}
+
+	void reopeningAnExistingEditorPreservesPendingControls()
+	{
+		CrossfadeEditorDialog* open = CrossfadeEditorDialog::openFor(m_first, m_second, nullptr);
+		QVERIFY(open != nullptr);
+		const QPointer<CrossfadeEditorDialog> guard(open);
+		const auto close = qScopeGuard([&] { if (guard) { guard->close(); } });
+		const CrossfadeSide pending{12, FadeShape::Exponential};
+		open->setOutSide(pending);
+
+		CrossfadeEditorDialog* reopened = CrossfadeEditorDialog::openFor(m_second, m_first, nullptr);
+
+		QCOMPARE(reopened, open);
+		QCOMPARE(reopened->outSide().ticks, pending.ticks);
+		QVERIFY(reopened->outSide().shape == pending.shape);
+	}
+
+	void reopeningBeforeDeferredDeleteCreatesNewEditor()
+	{
+		CrossfadeEditorDialog* closing = CrossfadeEditorDialog::openFor(m_first, m_second, nullptr);
+		QVERIFY(closing != nullptr);
+		const QPointer<CrossfadeEditorDialog> closingGuard(closing);
+		QVERIFY(closing->isVisible());
+
+		closing->close();
+		QVERIFY(!closing->isVisible());
+		QVERIFY(!closingGuard.isNull());  // close() has queued deletion, but it has not run yet.
+
+		CrossfadeEditorDialog* reopened = CrossfadeEditorDialog::openFor(m_second, m_first, nullptr);
+		QVERIFY(reopened != nullptr);
+		QVERIFY(reopened != closingGuard.data());
+		QVERIFY(reopened->isVisible());
+		const QPointer<CrossfadeEditorDialog> reopenedGuard(reopened);
+		const auto closeReopened = qScopeGuard([&] { if (reopenedGuard) { reopenedGuard->close(); } });
+	}
+
+	void paintingUsesWideBoundsAtBothIntLimits()
+	{
+		CrossfadeCurveView view;
+		view.resize(420, 140);
+		view.show();
+		const auto hasColorNear = [&](const QImage& image, const QRect& area, const QColor& color) {
+			for (int y = area.top(); y <= area.bottom(); ++y)
+			{
+				for (int x = area.left(); x <= area.right(); ++x)
+				{
+					if (image.pixelColor(x, y) == color) { return true; }
+				}
+			}
+			return false;
+		};
+
+		view.setRamps(500, {10, FadeShape::EqualPower}, 480, {30, FadeShape::EqualPower});
+		QImage normal(view.size(), QImage::Format_ARGB32_Premultiplied);
+		normal.fill(Qt::transparent);
+		view.render(&normal);
+		QVERIFY(hasColorNear(normal, QRect(180, 20, 60, 50), view.palette().highlight().color()));
+
+		const int limit = std::numeric_limits<int>::max();
+		view.setRamps(limit - 100, {10, FadeShape::EqualPower}, limit - 50, {100, FadeShape::EqualPower});
+		QImage nearLimit(view.size(), QImage::Format_ARGB32_Premultiplied);
+		nearLimit.fill(Qt::transparent);
+		view.render(&nearLimit);
+		const bool upperCurveVisible = hasColorNear(nearLimit, QRect(260, 20, 60, 50), view.palette().highlight().color());
+
+		const int lowerLimit = std::numeric_limits<int>::min();
+		view.setRamps(lowerLimit + 50, {100, FadeShape::EqualPower}, lowerLimit + 70,
+			{20, FadeShape::EqualPower});
+		QImage belowLimit(view.size(), QImage::Format_ARGB32_Premultiplied);
+		belowLimit.fill(Qt::transparent);
+		view.render(&belowLimit);
+		const bool lowerCurveVisible = hasColorNear(belowLimit, QRect(125, 20, 55, 50), view.palette().text().color());
+		QVERIFY2(upperCurveVisible && lowerCurveVisible,
+			qPrintable(QStringLiteral("upper curve visible: %1; lower curve visible: %2")
+				.arg(upperCurveVisible).arg(lowerCurveVisible)));
+	}
+
+	void theEditorTracksClipMovesAndResizes()
+	{
+		CrossfadeEditorDialog dialog(m_first, m_second);
+		dialog.setAttribute(Qt::WA_DeleteOnClose, false);
+		const TimePos originalStart = m_second->startPosition();
+		const TimePos originalLength = m_first->length();
+		const auto restoreClips = qScopeGuard([&] {
+			m_second->movePosition(originalStart);
+			m_first->changeLength(originalLength);
+		});
+		dialog.show();
+		QVERIFY(QTest::qWaitForWindowExposed(&dialog));
+		QLabel* summary = nullptr;
+		for (QLabel* candidate : dialog.findChildren<QLabel*>())
+		{
+			if (candidate->text().contains(QStringLiteral("overlap by"))) { summary = candidate; }
+		}
+		QVERIFY(summary != nullptr);
+		QWidget* curves = named<QWidget>(&dialog, QStringLiteral("Crossfade curves"));
+		QVERIFY(curves != nullptr);
+
+		m_second->movePosition(TimePos(168));
+		QCOMPARE(dialog.overlap(), 24);
+		QVERIFY(summary->text().contains(QStringLiteral("24 ticks")));
+		QVERIFY(curves->accessibleDescription().contains(QStringLiteral("over 24 ticks")));
+		QCOMPARE(dialog.outSide().ticks, 24);
+		QCOMPARE(dialog.inSide().ticks, 24);
+
+		m_first->changeLength(TimePos(160));
+		QCOMPARE(dialog.overlap(), 0);
+		QVERIFY(summary->text().contains(QStringLiteral("0 ticks")));
+		QVERIFY(curves->accessibleDescription().contains(QStringLiteral("over 1 ticks")));
+	}
+
+	void unrelatedClipChangesPreservePendingControls()
+	{
+		CrossfadeEditorDialog dialog(m_first, m_second);
+		const QString originalName = m_first->name();
+		const auto restoreName = qScopeGuard([&] { m_first->setName(originalName); });
+		const CrossfadeSide pending{12, FadeShape::Exponential};
+		dialog.setOutSide(pending);
+
+		m_first->setName(QStringLiteral("Crossfade editor test rename"));
+
+		QCOMPARE(dialog.outSide().ticks, pending.ticks);
+		QVERIFY(dialog.outSide().shape == pending.shape);
+	}
+
+	void applyingAfterAnExternalFadeEditKeepsThatEdit()
+	{
+		CrossfadeEditorDialog dialog(m_first, m_second);
+		const ClipEdits originalOut = m_first->clipEdits();
+		const ClipEdits originalIn = m_second->clipEdits();
+		const auto restoreFades = qScopeGuard([&] {
+			m_first->setClipEdits(originalOut);
+			m_second->setClipEdits(originalIn);
+		});
+		ClipEdits external = m_first->clipEdits();
+		external.fadeOutTicks = 18;
+		external.fadeOutShape = FadeShape::Exponential;
+		m_first->setClipEdits(external);
+		QCOMPARE(dialog.outSide().ticks, 18);
+		QVERIFY(dialog.outSide().shape == FadeShape::Exponential);
+
+		QVERIFY(dialog.apply());
+		QCOMPARE(m_first->clipEdits().fadeOutTicks, 18);
+		QVERIFY(m_first->clipEdits().fadeOutShape == FadeShape::Exponential);
 	}
 
 	void theEditorShowsAndSetsBothSides()

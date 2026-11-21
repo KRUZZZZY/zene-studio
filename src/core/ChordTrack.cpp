@@ -470,10 +470,15 @@ QString ChordTrack::toXml() const
 
 bool ChordTrack::fromXml(const QString& xml)
 {
-	clear();
+	// Parse and validate BEFORE replacing anything: fromXml() restores a
+	// snapshot over the live track, so a corrupt snapshot must leave it alone.
+	// loadSettings() is the project loader's path and still clears first -
+	// there an absent element legitimately means "no chord track at all".
 	QDomDocument doc;
 	if (!doc.setContent(xml)) { return false; }
-	return loadSettings(doc.documentElement());
+	const QDomElement element = doc.documentElement();
+	if (element.isNull() || element.tagName() != kTrackElement) { return false; }
+	return loadSettings(element);
 }
 
 } // namespace lmms

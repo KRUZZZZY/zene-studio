@@ -66,7 +66,7 @@ LMMS_EXPORT void removeDevicesRecorded(const std::function<EffectChain*()>& chai
  *  devices' settings documents, in order, and @a selectedBefore the rack's selection. The undo appends a chain (back at
  *  @a index), re-creates the devices on it and restores the selection; the redo removes it again. False, recording
  *  nothing, when @a index is not the rack's last chain: Rack::addChain appends, so an inner chain cannot come back at its
- *  own index. */
+ *  own index - and false when the journal cannot record the step, because a step that was refused is no inverse. */
 LMMS_EXPORT bool journalChainRemoval(const QString& channelId, int index, const QStringList& states, int selectedBefore);
 
 } // namespace control

@@ -165,7 +165,9 @@ void registerChainApply(ControlRegistry& registry)
 		"target's existing devices are removed (the plugin.unload lifetime). A preset naming a "
 		"device this build cannot load is refused and the target's chain is left untouched. "
 		"Reversible: one control.undo puts the previous chain back, devices and settings. "
-		"'chain' (default 0) applies it to parallel chain n of a channel's rack instead.");
+		"'chain' (default 0) applies it to parallel chain n of a channel's rack instead. The devices' MIDI "
+		"controller bindings come back on the new devices' own parameters; 'bindings' lists the restored ones and "
+		"the skipped ones (a parameter the device no longer has), with a one-line 'summary'.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("name"), stringProperty()},
 		{QStringLiteral("target"), stringProperty()},
@@ -178,6 +180,7 @@ void registerChainApply(ControlRegistry& registry)
 		{QStringLiteral("device_count"), integerProperty()},
 		{QStringLiteral("devices"), arrayProperty()},
 		{QStringLiteral("replaced"), integerProperty()},
+		{QStringLiteral("bindings"), objectProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -231,7 +234,17 @@ void registerChainRename(ControlRegistry& registry)
 		if (toPath != preset.path && QFileInfo::exists(toPath)) { return occupiedRefusal(to); }
 
 		const QString from = preset.path;
-		if (toPath != from && !QFile::rename(from, toPath))
+		if (toPath == from)
+		{
+			QJsonObject result;
+			result.insert(QStringLiteral("name"), preset.name);
+			result.insert(QStringLiteral("renamed_to"), to);
+			result.insert(QStringLiteral("path"), from);
+			result.insert(QStringLiteral("device_count"), preset.devices.size());
+			result.insert(QStringLiteral("dir"), controlChainPresetDir());
+			return ControlResult::success(result);
+		}
+		if (!QFile::rename(from, toPath))
 		{
 			return ControlResult::failure(ControlErrorKind::Refused,
 				QStringLiteral("could not rename %1 to %2; the store is unchanged")

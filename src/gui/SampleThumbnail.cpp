@@ -136,13 +136,25 @@ void SampleThumbnail::visualize(VisualizeParameters parameters, QPainter& painte
 	const auto finerThumbnailScaleFactor = static_cast<double>(finerThumbnailWidth) / targetThumbnailWidth;
 	const auto yScale = renderRect.height() / 2 * parameters.amplification;
 
+	/*! Q050-125: the clip's effective gain at a drawn column, as a SIGNED multiplier. No gainAt is
+	 *  the raw waveform (the browser preview, the sample editor and every caller before this one), so
+	 *  their draws are bit for bit what they were. The curve is sampled at the column's own position
+	 *  across the sample rect - the axis the clip draws its gain envelope on - so the drawn amplitude
+	 *  follows the envelope, the clip gain, the fades and the polarity together. */
+	const auto gainAtX = [&parameters, &sampleRect](int x) {
+		if (!parameters.gainAt) { return 1.0f; }
+		const auto width = static_cast<float>(std::max(1, sampleRect.width()));
+		return parameters.gainAt(std::clamp(static_cast<float>(x - sampleRect.x()) / width, 0.0f, 1.0f));
+	};
+
 	for (auto x = renderRect.x(), i = thumbnailBegin; x < renderRect.x() + renderRect.width() && i != thumbnailEnd;
 		++x, i += advanceThumbnailBy)
 	{
+		const float columnGain = gainAtX(x);
 		if (useOriginalBuffer && drawOriginalBuffer)
 		{
 			const auto value = m_buffer->data()->data()[i];
-			painter.drawPoint(x, renderRect.center().y() - value * yScale);
+			painter.drawPoint(x, renderRect.center().y() - value * yScale * columnGain);
 			continue;
 		}
 		else
@@ -169,8 +181,8 @@ void SampleThumbnail::visualize(VisualizeParameters parameters, QPainter& painte
 				maxPeak = peak.max;
 			}
 
-			const auto yMin = renderRect.center().y() - minPeak * yScale;
-			const auto yMax = renderRect.center().y() - maxPeak * yScale;
+			const auto yMin = renderRect.center().y() - minPeak * yScale * columnGain;
+			const auto yMax = renderRect.center().y() - maxPeak * yScale * columnGain;
 			painter.drawLine(x, yMin, x, yMax);
 		}
 	}

@@ -140,12 +140,22 @@ private:
 
 	float m_prevOut[2] = {0};
 
+	//! The audio thread's own working state. Only the audio thread reads or writes it.
 	float m_yL[2];
 	float m_gainResult[2];
 	//! gainReductionDb(): the lowest gain of the last block, not of its last frame (as Gate and DeEsser).
 	std::atomic<float> m_deepestGain{1.f};
-	float m_displayPeak[2];
-	float m_displayGain[2];
+	//! The visualizer's holds. The audio thread raises them to the block's peak and gain; the
+	//! control dialog samples them and resets them to the published envelope and gain. Both
+	//! threads write them, so they are atomic: the dialog's reset is a store, not a race.
+	std::atomic<float> m_displayPeak[2];
+	std::atomic<float> m_displayGain[2];
+	//! What the control dialog resets the holds to, published by the audio thread after every
+	//! block: the detector's envelope and the gain the block applied. The dialog reads these
+	//! and never the audio thread's working state (m_yL, m_gainResult), which the next block
+	//! overwrites while the dialog reads it.
+	std::atomic<float> m_publishedEnvelope[2];
+	std::atomic<float> m_publishedGain[2];
 
 	float m_kneeVal;
 	float m_thresholdVal;

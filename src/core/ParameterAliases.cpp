@@ -152,8 +152,11 @@ bool adoptLegacyAliases(Effect* effect, DeviceOptions* options)
 		const QString name = all.at(i)->displayName();
 		const QString alias = legacyAlias(*options, name);
 		if (alias.isEmpty()) { continue; }
-		if (adopted.alias(keys.at(i)).isEmpty()) { adopted.setAlias(keys.at(i), alias); }
-		moved.insert(name);
+		if (adopted.alias(keys.at(i)).isEmpty())
+		{
+			adopted.setAlias(keys.at(i), alias);
+			if (!adopted.alias(keys.at(i)).isEmpty()) { moved.insert(name); }
+		}
 	}
 	for (const QString& name : moved) { adopted.setAlias(name, QString()); }
 	if (!moved.isEmpty()) { *options = adopted; }

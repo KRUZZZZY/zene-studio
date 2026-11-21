@@ -25,6 +25,8 @@
 #ifndef LMMS_GUI_FADE_BUTTON_H
 #define LMMS_GUI_FADE_BUTTON_H
 
+#include <cstdint>
+
 #include <QAbstractButton>
 #include <QColor>
 #include <QElapsedTimer>
@@ -78,6 +80,8 @@ public:
 
 	//! Mute or unmute the fade button.
 	void setMuted(bool mute);
+	//! Apply note activity collected by a GUI-side poll of its track.
+	void syncNoteActivity(int activeNoteCount, std::uint32_t noteOnGeneration);
 
 public slots:
 	void activate();
@@ -99,6 +103,8 @@ private:
 	QColor m_holdColor;
 
 	int activeNotes;
+	std::uint32_t m_lastNoteOnGeneration = 0;
+	bool m_noteActivityInitialized = false;
 	bool m_muted = false;
 
 	QColor fadeToColor(QColor, QColor, QElapsedTimer, float);

@@ -83,8 +83,10 @@ public:
 	SessionAudioRecorder& operator=(const SessionAudioRecorder&) = delete;
 
 	/*! Arms cell (@a track, @a scene) to record at @a sampleRate, @a lengthTicks long (0: until the cell
-	 *  stops), dropping @a latencyFrames from the head. False while another take is in hand (not Idle). */
-	bool arm(int track, int scene, tick_t lengthTicks, sample_rate_t sampleRate, f_cnt_t latencyFrames);
+	 *  stops), dropping @a latencyFrames from the head. False while another take is in hand (not Idle).
+	 *  @a syncClock (Q050-277): the MIDI clock master sends START when the take starts and STOP when it ends
+	 *  (MidiClock::captureStarted/Stopped), so an external synth plays exactly the span the take records. */
+	bool arm(int track, int scene, tick_t lengthTicks, sample_rate_t sampleRate, f_cnt_t latencyFrames, bool syncClock = false);
 	//! Drops whatever is armed or recorded. Call with no period rendering (see the class comment).
 	void cancel();
 	//! The finished take (nullptr when it holds no frames) once the state is Done; back to Idle.
@@ -101,6 +103,8 @@ public:
 	//! Frames the accumulator's ring had to drop (a starved drain thread).
 	std::uint64_t framesDropped() const noexcept;
 	f_cnt_t latencyFrames() const noexcept { return m_latency; }
+	//! Whether this take drives the MIDI clock master's START and STOP (Q050-277).
+	bool syncsClock() const noexcept { return m_syncClock; }
 	sample_rate_t sampleRate() const noexcept { return m_sampleRate; }
 
 	// ---- audio thread -------------------------------------------------------------------------
@@ -127,6 +131,7 @@ private:
 	tick_t m_lengthTicks = 0;
 	sample_rate_t m_sampleRate = 0;
 	f_cnt_t m_latency = 0;
+	bool m_syncClock = false;
 
 	// audio thread's own bookkeeping, published through the atomics below for the readings
 	float m_framesPerTick = 0.0f;

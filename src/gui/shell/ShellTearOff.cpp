@@ -39,6 +39,7 @@
 #include <QTimer>
 #include <QWindow>
 
+#include "DeprecationHelper.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "Shell.h"
@@ -201,7 +202,7 @@ bool ShellTearOff::onPress(QEvent* event)
 {
 	auto* mouse = static_cast<QMouseEvent*>(event);
 	if (mouse->button() != Qt::LeftButton) { return false; }
-	press(mouse->globalPosition().toPoint(), mouse->position().toPoint());
+	press(globalPosition(mouse), positionF(mouse).toPoint());
 	return true;
 }
 
@@ -214,7 +215,7 @@ bool ShellTearOff::onMouseMove(QEvent* event)
 		cancel();
 		return false;
 	}
-	move(mouse->globalPosition().toPoint());
+	move(globalPosition(mouse));
 	return true;
 }
 
@@ -223,7 +224,7 @@ bool ShellTearOff::onRelease(QEvent* event)
 	auto* mouse = static_cast<QMouseEvent*>(event);
 	if (mouse->button() != Qt::LeftButton || m_drag == Drag::None) { return false; }
 	const bool dragged = m_drag != Drag::Pending;
-	release(mouse->globalPosition().toPoint());
+	release(globalPosition(mouse));
 	return dragged;
 }
 

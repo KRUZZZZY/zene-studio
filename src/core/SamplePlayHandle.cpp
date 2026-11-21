@@ -33,6 +33,7 @@
 #include "CompSlip.h"
 #include "AudioEngine.h"
 #include "AudioBusHandle.h"
+#include "AudioStretcher.h"
 #include "Engine.h"
 #include "PatternTrack.h"
 #include "SampleClip.h"
@@ -41,10 +42,50 @@
 namespace lmms
 {
 
+//! The WSOLA grain and search reach a pitch-keeping mode renders with
+//! (Q050-036). `PreservePitch` is the default pair the row-30 lane measured
+//! (1024 / 128); `Tones` doubles the alignment reach, so periods down to
+//! ~172 Hz are aligned instead of dropped to plain overlap-add - the tonal
+//! material the mode is named for; `Texture` halves the grain, which blurs
+//! the phase relationships between grains sooner - the phasier render that
+//! suits polyphonic and ambient material. Both are fixed parameters of the
+//! same allocation-free engine; the mode name is what the user selects, the
+//! parameters are what it means.
+AudioStretcher::Parameters wsolaParametersFor(WarpStretchMode mode)
+{
+	switch (mode)
+	{
+	case WarpStretchMode::Tones: return { 1024, 256 };
+	case WarpStretchMode::Texture: return { 512, 128 };
+	default: return {};
+	}
+}
+
 SamplePlayHandle::SamplePlayHandle(Sample* sample, bool ownAudioBusHandle)
 	: PlayHandle(Type::SamplePlayHandle)
 	, m_sample(sample)
 	, m_ownAudioBusHandle(ownAudioBusHandle)
+{
+	initializeSampleState();
+}
+
+
+
+
+SamplePlayHandle::SamplePlayHandle(Sample* sample, bool ownAudioBusHandle,
+	AudioResampler::RealtimeVoiceTag realtimeVoice)
+	: PlayHandle(Type::SamplePlayHandle)
+	, m_state(realtimeVoice)
+	, m_sample(sample)
+	, m_ownAudioBusHandle(ownAudioBusHandle)
+{
+	initializeSampleState();
+}
+
+
+
+
+void SamplePlayHandle::initializeSampleState()
 {
 	// The window this handle renders, taken once here. For the preview and
 	// metronome paths (SamplePlayHandle.cpp:106-108) that is the sample's own
@@ -53,7 +94,7 @@ SamplePlayHandle::SamplePlayHandle(Sample* sample, bool ownAudioBusHandle)
 	m_window = { static_cast<f_cnt_t>(m_sample->startFrame()),
 		static_cast<f_cnt_t>(m_sample->endFrame()) };
 	m_state.setFrameIndex(m_sample->startFrame());
-	if (ownAudioBusHandle)
+	if (m_ownAudioBusHandle)
 	{
 		setAudioBusHandle(new AudioBusHandle("SamplePlayHandle", false));
 	}
@@ -81,23 +122,25 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip ) :
 namespace
 {
 
-//! Whether a clip's audio goes through the pitch-keeping stretcher: a preserve-pitch or Rubber Band
-//! clip whose rate varies, or (ED-038) a transposed Rubber Band clip even at a linear rate - the
-//! pitch scale is the change it renders.
+//! Whether a clip's audio goes through the pitch-keeping stretcher: any
+//! pitch-preserving-mode clip whose rate varies, or (ED-038) a transposed
+//! Rubber Band-backed clip even at a linear rate - the pitch scale is the
+//! change it renders.
 bool rendersThroughStretcher(WarpStretchMode mode, bool rendersLinearly, int transpose)
 {
-	const bool keepsPitch = mode == WarpStretchMode::PreservePitch || mode == WarpStretchMode::RubberBand;
-	return (keepsPitch && !rendersLinearly) || (transpose != 0 && mode == WarpStretchMode::RubberBand);
+	// Q050-162: Repeat and Gate keep the pitch without a stretcher (snapshotTransientRepeat).
+	return (warpModeKeepsPitch(mode) && !warpModeRepeatsTransients(mode) && !rendersLinearly)
+		|| (transpose != 0 && warpModeUsesRubberBand(mode));
 }
 
 } // namespace
 
 SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window ) :
-	SamplePlayHandle(&clip->sample(), false)
+	SamplePlayHandle(&clip->sample(), false, AudioResampler::RealtimeVoiceTag{})
 {
 	m_track = clip->getTrack();
 	setAudioBusHandle(((SampleTrack *)clip->getTrack())->audioBusHandle());
-	if (clip->takeGroupId() > 0 && m_track != nullptr)
+	if (clip->hasTakeGroup() && m_track != nullptr)
 	{
 		m_takeGroupId = clip->takeGroupId();
 		m_takeLaneIndex = clip->laneIndex();
@@ -139,16 +182,19 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 	const WarpStretchMode stretchMode = clip->warpStretchMode();
 	m_preservePitch = rendersThroughStretcher(stretchMode, m_rendersLinearly, clip->clipEdits().transpose);
 
-	/*! Owner decision 12: a RubberBand clip claims one of its pool's voices -
-	 *  a lock-free compare-and-swap, the voice already built and reset off this
+	/*! Owner decision 12: a Rubber Band-backed clip (Beats or Complex,
+	 *  Q050-036) claims one of its pool's voices - a
+	 *  lock-free compare-and-swap, the voice already built and reset off this
 	 *  thread. The pitch scale corrects the source rate to the output rate (the
 	 *  stretcher keeps a period in SAMPLES, so without it a 44.1 kHz source on a
 	 *  48 kHz engine would come out sharp). No voice - a build without the
 	 *  library, or both voices still in use or dirty - is the WSOLA render,
 	 *  which is the documented fallback and the pool counts it. */
-	if (m_preservePitch && stretchMode == WarpStretchMode::RubberBand && clip->rubberBandPool() != nullptr)
+	// One read of the mode, then that mode's pool: a live switch between the two reads cannot mix them.
+	RubberBandPool* const pool = warpModeUsesRubberBand(stretchMode) ? clip->rubberBandPool(stretchMode) : nullptr;
+	if (m_preservePitch && pool != nullptr)
 	{
-		m_rubberBand = clip->rubberBandPool()->claim();
+		m_rubberBand = pool->claim();
 		if (m_rubberBand != nullptr)
 		{
 			// ED-038: the clip's transpose is a pitch scale on top of the rate correction; Rubber
@@ -161,9 +207,16 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 	}
 	if (m_preservePitch && m_rubberBand == nullptr)
 	{
-		m_stretcher.prepare();
+		// Q050-036: the mode's own WSOLA parameters - which for Tones and
+		// Texture is not a fallback but the render itself. Prepared once here
+		// (a table fill, no allocation) and the analysis cursor starts at the
+		// head of the window, in window-relative frames.
+		m_stretcher.prepare(wsolaParametersFor(stretchMode));
 		m_stretcher.seek(0.0);
 	}
+
+	// Q050-162: a warped Repeat / Gate clip fills its slots from its transients.
+	if (warpModeRepeatsTransients(stretchMode) && !m_rendersLinearly) { snapshotTransientRepeat(clip, stretchMode); }
 
 	// The clip's fades and its gain (the fade/crossfade/clip-gain wave), taken
 	// here for exactly the reason the window and the warp are: a live handle
@@ -238,7 +291,11 @@ void SamplePlayHandle::snapshotClipEdits(const SampleClip* clip, const SampleWin
 	m_autoFaded = autoFade > 0;
 	m_speedInFrames = std::min(framesFor(m_edits.speedInTicks), m_clipFrames);  // ED-152 / ED-179
 	m_speedOutFrames = std::min(framesFor(m_edits.speedOutTicks), m_clipFrames);
-	m_speeds = m_edits.hasSpeed() && !m_preservePitch;
+	// ED-152 / ED-179 apply in BOTH render modes: the speed curve is part of the
+	// rate the source is consumed at, and `renderPreservingPitch` divides it into
+	// the stretcher's rate exactly as `play()` divides it into the resampler's
+	// ratio (new-p12-224: it used to be dropped here for a preserving clip).
+	m_speeds = m_edits.hasSpeed();
 
 	// Where this pass starts inside the clip's span. For a linear clip the source
 	// frame offset scales by the output/source rate, which is exactly
@@ -351,7 +408,7 @@ void SamplePlayHandle::applyComp(SampleFrame* buffer, f_cnt_t frames) const
 
 void SamplePlayHandle::applyActiveTakeGate(SampleFrame* buffer, f_cnt_t frames) const
 {
-	if (m_takeGroupId == 0 || m_comped || m_activeTakeLane == nullptr || m_playAllTakes == nullptr
+	if (m_takeGroupId < 0 || m_comped || m_activeTakeLane == nullptr || m_playAllTakes == nullptr
 		|| m_playAllTakes->load(std::memory_order_relaxed))
 	{
 		return;
@@ -379,6 +436,10 @@ void SamplePlayHandle::applyClipEdits(SampleFrame* buffer, f_cnt_t frames) const
 	const float from = envelopeGainAt(m_edits, base / perTick);
 	const float to = envelopeGainAt(m_edits, (base + frames) / perTick);
 	const float step = frames > 0 ? (to - from) / static_cast<float>(frames) : 0.f;
+	// Q050-125: the clip's polarity is one signed multiplier on the same stage as its gain - never a
+	// change to the source buffer (which the browser preview and the metronome share), and a constant
+	// read off the snapshot, so nothing is fetched per frame.
+	const float sign = m_edits.polaritySign();
 	for (f_cnt_t f = 0; f < frames; ++f)
 	{
 		float envelope = clipFadeGainAt(base + f, m_clipFrames, m_fadeInFrames, m_fadeOutFrames,
@@ -389,7 +450,7 @@ void SamplePlayHandle::applyClipEdits(SampleFrame* buffer, f_cnt_t frames) const
 			envelope *= clipFadeGainAt(base + f, m_clipFrames, m_edgeFadeFrames, m_edgeFadeFrames,
 				m_edits.fadeInShape, m_edits.fadeOutShape);
 		}
-		const float gain = m_edits.gain * envelope * (from + step * static_cast<float>(f));
+		const float gain = sign * m_edits.gain * envelope * (from + step * static_cast<float>(f));
 		buffer[f][0] *= gain;
 		buffer[f][1] *= gain;
 	}
@@ -453,6 +514,31 @@ void SamplePlayHandle::resetPooledVoice() noexcept
 }
 
 
+auto SamplePlayHandle::prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool
+{
+	if (!m_state.prepareConverterMode(mode)) { return false; }
+	if (m_compSlip != nullptr && !m_compSlip->prepareConverterMode(mode))
+	{
+		m_state.discardPreparedConverterMode();
+		m_compSlip->discardPreparedConverterMode();
+		return false;
+	}
+	return true;
+}
+
+void SamplePlayHandle::adoptPreparedConverterMode() noexcept
+{
+	m_state.adoptPreparedConverterMode();
+	if (m_compSlip) { m_compSlip->adoptPreparedConverterMode(); }
+}
+
+void SamplePlayHandle::discardPreparedConverterMode() noexcept
+{
+	m_state.discardPreparedConverterMode();
+	if (m_compSlip) { m_compSlip->discardPreparedConverterMode(); }
+}
+
+
 
 
 void SamplePlayHandle::play( std::span<SampleFrame> buffer )
@@ -501,7 +587,11 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 		// Row 30: a clip whose stretch mode is PreservePitch does NOT come
 		// through here - its rate change is rendered by the stretcher, which
 		// is the only difference between the two modes.
-		if (m_preservePitch)
+		if (m_repeatsTransients)
+		{
+			renderTransientRepeat(workingBuffer, frames);
+		}
+		else if (m_preservePitch)
 		{
 			renderPreservingPitch(workingBuffer, frames);
 		}
@@ -540,6 +630,8 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 		{
 			applyComp(workingBuffer, frames);
 		}
+		// Q050-111: the clip's own effects, on this clip's audio alone - the track sums its clips after this.
+		if (m_effectsClip != nullptr) { m_effectsClip->processClipEffects(buffer); }
 	}
 
 	m_frame += frames;
@@ -623,15 +715,18 @@ void SamplePlayHandle::renderPreservingPitch(SampleFrame* dst, f_cnt_t frames)
 	/*! source frames consumed per output frame.
 	 *
 	 *  `warpRatio()` is `natural / rate` (the converter ratio, output frames
-	 *  per input frame), so its reciprocal is the speed the mapping asks for
-	 *  in source frames per output frame. The sample's own rate ratio and its
-	 *  tuning divide into it exactly as they multiply into the resampler's
-	 *  ratio - the two modes therefore consume the source identically and the
-	 *  difference between them is only the waveform. */
+	 *  per input frame), and the clip's own speed curve (ED-152 / ED-179)
+	 *  divides into it exactly as `play()` divides it into the resample path's
+	 *  ratio (`warpRatio() / speedHere()`), so its reciprocal is the speed the
+	 *  mapping AND the clip's speed edits ask for in source frames per output
+	 *  frame. The sample's own rate ratio and its tuning divide into it exactly
+	 *  as they multiply into the resampler's ratio - the two modes therefore
+	 *  consume the source identically and the difference between them is only
+	 *  the waveform. */
 	const double sampleRateRatio = static_cast<double>(Engine::audioEngine()->outputSampleRate())
 		/ static_cast<double>(m_sample->sampleRate());
 	const double freqRatio = static_cast<double>(m_sample->frequency()) / DefaultBaseFreq;
-	const double converterRatio = static_cast<double>(warpRatio());
+	const double converterRatio = static_cast<double>(warpRatio()) / static_cast<double>(speedHere());
 	const double speed = converterRatio > 0.0
 		? 1.0 / (converterRatio * sampleRateRatio * freqRatio)
 		: 1.0;
@@ -640,6 +735,14 @@ void SamplePlayHandle::renderPreservingPitch(SampleFrame* dst, f_cnt_t frames)
 	const f_cnt_t written = m_rubberBand != nullptr
 		? m_rubberBand->render(window, windowFrames, dst, frames, speed)
 		: m_stretcher.process(window, windowFrames, dst, frames, speed);
+	// The clip's own gain, as Sample::render applies it on the resample path. The
+	// stretcher input stays raw, so this one multiply serves WSOLA and Rubber Band
+	// alike; only the rendered frames are scaled, the zero-filled tail is untouched.
+	const float gain = m_sample->amplification();
+	if (gain != 1.0f)
+	{
+		for (f_cnt_t i = 0; i < written; ++i) { dst[i] *= gain; }
+	}
 	if (written < frames) { zeroSampleFrames(dst + written, frames - written); }
 
 	// The analysis cursor IS the source position this period reached; the next

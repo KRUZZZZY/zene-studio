@@ -91,62 +91,80 @@ QString noteFieldRangeError(const DawProjectNote& note)
 	return {};
 }
 
+//! Refuse clip and note endpoints past tick_t; never wrap them or silently alter the document.
+qint64 durationWithinTickRange(ReadState& state, qint64 startTicks, qint64 durationTicks,
+	const QString& kind)
+{
+	const qint64 room = static_cast<qint64>(std::numeric_limits<tick_t>::max()) - startTicks;
+	if (durationTicks <= room) { return durationTicks; }
+	if (state.error.isEmpty())
+	{
+		state.error = QStringLiteral("the %1 start plus duration exceeds the engine's tick range").arg(kind);
+	}
+	return 0;
+}
+
+//! A <Notes> timeline whose timeUnit this module cannot place: say why once, then skip the element.
+void refuseNotesTimeUnit(QXmlStreamReader& reader, ReadState& state)
+{
+	if (state.error.isEmpty())
+	{
+		if (state.timeUnit == QLatin1String("seconds"))
+		{
+			state.error = QStringLiteral("a <Notes> timeline declares timeUnit=\"seconds\"; this "
+				"module places notes on a beat grid and will not guess the tempo curve that would "
+				"convert them");
+		}
+		else
+		{
+			state.error = QStringLiteral("a <Notes> timeline declares unsupported timeUnit=\"%1\"; "
+				"this module supports only timeUnit=\"beats\"").arg(state.timeUnit);
+		}
+	}
+	skipElement(reader);
+}
+
+//! Read one <Note> element into @a clip; a field out of range is counted, not written.
+void parseNoteElement(QXmlStreamReader& reader, ReadState& state, DawProjectClip* clip)
+{
+	const QXmlStreamAttributes attributes = reader.attributes();
+	const double duration = doubleAttribute(attributes, state, QStringLiteral("duration"), 0.0);
+	if (duration < 0.0)
+	{
+		if (state.error.isEmpty()) { state.error = QStringLiteral("a <Note> has a negative duration"); }
+		return;
+	}
+	const qint64 startTicks = ticksFromBeats(state,
+		doubleAttribute(attributes, state, QStringLiteral("time"), 0.0));
+	const qint64 durationTicks = durationWithinTickRange(state, startTicks,
+		ticksFromBeats(state, duration), QStringLiteral("note"));
+	DawProjectNote note;
+	note.time = static_cast<double>(startTicks) / DawProjectTicksPerQuarterNote;
+	note.duration = static_cast<double>(durationTicks) / DawProjectTicksPerQuarterNote;
+	note.channel = intAttribute(attributes, state, QStringLiteral("channel"), 0);
+	note.key = intAttribute(attributes, state, QStringLiteral("key"), 60);
+	note.vel = doubleAttribute(attributes, state, QStringLiteral("vel"), 0.5);
+	note.rel = doubleAttribute(attributes, state, QStringLiteral("rel"), note.vel);
+	const QString rangeError = noteFieldRangeError(note);
+	if (!rangeError.isEmpty())
+	{
+		if (state.error.isEmpty()) { state.error = rangeError; }
+	}
+	else { clip->notes.append(note); }
+}
+
 void parseNotes(QXmlStreamReader& reader, ReadState& state, DawProjectClip* clip)
 {
 	// The unit that matters is the one in force where the NOTES are, which the
 	// format's own example leaves to the enclosing lanes.
-	if (state.timeUnit != QLatin1String(DawProjectTimeUnit))
-	{
-		if (state.error.isEmpty())
-		{
-			if (state.timeUnit == QLatin1String("seconds"))
-			{
-				state.error = QStringLiteral("a <Notes> timeline declares timeUnit=\"seconds\"; this "
-					"module places notes on a beat grid and will not guess the tempo curve that would "
-					"convert them");
-			}
-			else
-			{
-				state.error = QStringLiteral("a <Notes> timeline declares unsupported timeUnit=\"%1\"; "
-					"this module supports only timeUnit=\"beats\"").arg(state.timeUnit);
-			}
-		}
-		skipElement(reader);
-		return;
-	}
+	if (state.timeUnit != QLatin1String(DawProjectTimeUnit)) { refuseNotesTimeUnit(reader, state); return; }
 	while (!reader.atEnd())
 	{
 		reader.readNext();
 		if (reader.isEndElement() && reader.name() == QLatin1String("Notes")) { break; }
 		if (!reader.isStartElement()) { continue; }
 		if (reader.name() != QLatin1String("Note")) { skipElement(reader); continue; }
-		const QXmlStreamAttributes attributes = reader.attributes();
-		const double duration = doubleAttribute(attributes, state, QStringLiteral("duration"), 0.0);
-		if (duration < 0.0)
-		{
-			if (state.error.isEmpty())
-			{
-				state.error = QStringLiteral("a <Note> has a negative duration");
-			}
-			continue;
-		}
-		DawProjectNote note;
-		note.time = static_cast<double>(ticksFromBeats(state,
-			doubleAttribute(attributes, state, QStringLiteral("time"), 0.0)))
-			/ DawProjectTicksPerQuarterNote;
-		note.duration = static_cast<double>(ticksFromBeats(state,
-			duration))
-			/ DawProjectTicksPerQuarterNote;
-		note.channel = intAttribute(attributes, state, QStringLiteral("channel"), 0);
-		note.key = intAttribute(attributes, state, QStringLiteral("key"), 60);
-		note.vel = doubleAttribute(attributes, state, QStringLiteral("vel"), 0.5);
-		note.rel = doubleAttribute(attributes, state, QStringLiteral("rel"), note.vel);
-		const QString rangeError = noteFieldRangeError(note);
-		if (!rangeError.isEmpty())
-		{
-			if (state.error.isEmpty()) { state.error = rangeError; }
-		}
-		else { clip->notes.append(note); }
+		parseNoteElement(reader, state, clip);
 	}
 }
 
@@ -171,13 +189,13 @@ void parseClips(QXmlStreamReader& reader, ReadState& state)
 			continue;
 		}
 		const QXmlStreamAttributes attributes = reader.attributes();
+		const qint64 startTicks = ticksFromBeats(state,
+			doubleAttribute(attributes, state, QStringLiteral("time"), 0.0));
+		const qint64 durationTicks = ticksFromBeats(state,
+			doubleAttribute(attributes, state, QStringLiteral("duration"), 0.0));
 		DawProjectClip clip;
-		clip.time = static_cast<double>(ticksFromBeats(state,
-			doubleAttribute(attributes, state, QStringLiteral("time"), 0.0)))
-			/ DawProjectTicksPerQuarterNote;
-		clip.duration = static_cast<double>(ticksFromBeats(state,
-			doubleAttribute(attributes, state, QStringLiteral("duration"), 0.0)))
-			/ DawProjectTicksPerQuarterNote;
+		clip.time = static_cast<double>(startTicks) / DawProjectTicksPerQuarterNote;
+		clip.duration = static_cast<double>(durationTicks) / DawProjectTicksPerQuarterNote;
 		clip.playStart = static_cast<double>(ticksFromBeats(state,
 			doubleAttribute(attributes, state, QStringLiteral("playStart"), 0.0)))
 			/ DawProjectTicksPerQuarterNote;
@@ -211,6 +229,8 @@ void parseClips(QXmlStreamReader& reader, ReadState& state)
 		}
 		if (hasNotes)
 		{
+			clip.duration = static_cast<double>(durationWithinTickRange(state, startTicks,
+				durationTicks, QStringLiteral("clip"))) / DawProjectTicksPerQuarterNote;
 			state.model->tracks[state.currentTrack].clips.append(clip);
 		}
 		else if (clip.duration > 0.0)

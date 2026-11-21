@@ -24,7 +24,9 @@
 
 
 #include <QDomElement>
+#include <QStringList>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -85,7 +87,10 @@ float loadMidiDepthValue( const QDomElement& element, const char* attribute, flo
 //! timing, which is what -1 says. Both are required together, and both must
 //! parse - QString::toInt() reports a failed conversion by yielding 0, which
 //! would otherwise read as "the author had this note at tick 0, one tick long"
-//! and let note.restore_timing move the note there.
+//! and let note.restore_timing move the note there. The pair must also be a
+//! note the song can hold, as loadSettings clamps the note's own pos and len:
+//! a position inside the song and pos + len no longer than MaxSongLength. The
+//! sum is taken in 64 bits, so checking it cannot itself overflow.
 void loadUnquantisedTiming( const QDomElement& element, tick_t& pos, tick_t& length )
 {
 	pos = -1;
@@ -94,11 +99,54 @@ void loadUnquantisedTiming( const QDomElement& element, tick_t& pos, tick_t& len
 	bool posOk = false;
 	bool lengthOk = false;
 	const int storedPos = element.attribute( "qpos" ).toInt( &posOk );
-	const int storedLength = element.attribute( "qlen", "1" ).toInt( &lengthOk );
+	const int storedLength = element.attribute( "qlen" ).toInt( &lengthOk );
 	if( !posOk || !lengthOk || storedPos < 0 || storedLength < 1 ) { return; }
+	if( storedPos >= MaxSongLength || static_cast<qint64>( storedPos ) + storedLength > MaxSongLength ) { return; }
 
 	pos = storedPos;
 	length = storedLength;
+}
+
+
+//! Q050-016: one stream axis as the optional attribute text
+//! "tick:value,tick:value,..." in the order the points are stored (sorted by
+//! tick). Empty when the axis carries no points, so the attribute is not
+//! written at all.
+QString streamAttributeText( const std::vector<MpeExpressionPoint>& points )
+{
+	QStringList parts;
+	parts.reserve( static_cast<int>( points.size() ) );
+	for( const MpeExpressionPoint& point : points )
+	{
+		parts << QStringLiteral( "%1:%2" ).arg( point.tick ).arg( point.value );
+	}
+	return parts.join( QLatin1Char( ',' ) );
+}
+
+
+//! The points an optional stream attribute spells. A token the file cannot
+//! spell - no colon, text that is not a number, a point past the count cap -
+//! is skipped rather than read as a point at zero: QString::toInt() reports
+//! failure by yielding 0, so a malformed token would otherwise become a real
+//! point at tick 0. Clamping and ordering are the setter's own job, so this
+//! stays a pure parser.
+std::vector<MpeExpressionPoint> parseStreamAttribute( const QString& text )
+{
+	std::vector<MpeExpressionPoint> points;
+	const QStringList tokens = text.split( QLatin1Char( ',' ), Qt::SkipEmptyParts );
+	for( const QString& token : tokens )
+	{
+		if( points.size() >= static_cast<std::size_t>( MpeExpressionStream::MaxPoints ) ) { break; }
+		const int colon = token.indexOf( QLatin1Char( ':' ) );
+		if( colon <= 0 ) { continue; }
+		bool tickOk = false;
+		bool valueOk = false;
+		const int tick = token.left( colon ).toInt( &tickOk );
+		const int value = token.mid( colon + 1 ).toInt( &valueOk );
+		if( !tickOk || !valueOk ) { continue; }
+		points.push_back( { static_cast<tick_t>( tick ), value } );
+	}
+	return points;
 }
 
 } // namespace
@@ -160,6 +208,9 @@ Note::Note( const Note & note ) :
 	m_mpePitchCents(note.m_mpePitchCents),
 	m_mpePressure(note.m_mpePressure),
 	m_mpeTimbre(note.m_mpeTimbre),
+	// Round 3: a counted reference to the source's snapshot (lock-free, no
+	// allocation) - the audio thread copies notes into handles through here.
+	m_mpeStream(MpeStreamSnapshot::acquire(note.m_mpeStream)),
 	m_muted(note.m_muted),
 	m_releaseVelocity(note.m_releaseVelocity),
 	m_unquantisedPos(note.m_unquantisedPos),
@@ -194,6 +245,10 @@ Note& Note::operator=(const Note& note)
 	m_unquantisedPos = note.m_unquantisedPos;
 	m_unquantisedLength = note.m_unquantisedLength;
 	m_conditions = note.m_conditions;
+	if( this != &note )
+	{
+		publishMpeStream( MpeStreamSnapshot::acquire( note.m_mpeStream ) );
+	}
 
 	return *this;
 }
@@ -203,9 +258,25 @@ void Note::setReleaseVelocity( int velocity )
 	m_releaseVelocity = velocity < 0 ? -1 : std::min( velocity, static_cast<int>( MaxVolume ) );
 }
 
+int Note::releaseVelocityFromMidi( int midiVelocity, int midiBaseVelocity )
+{
+	if( midiBaseVelocity <= 0 ) { return 0; }
+	// Q050-039: round-half-up. With truncation the round trip through the
+	// volume scale lost a unit (an incoming 96 landed on 152 and came back as
+	// 95 at the default base velocity 63); rounding makes this the exact
+	// inverse of midiReleaseVelocity() below.
+	const int scaled =
+		( 2 * midiVelocity * DefaultVolume + midiBaseVelocity ) / ( 2 * midiBaseVelocity );
+	return std::max( 0, std::min( scaled, static_cast<int>( MaxVolume ) ) );
+}
+
 int Note::midiReleaseVelocity( int midiBaseVelocity ) const
 {
-	return m_releaseVelocity < 0 ? 0 : std::min( MidiMaxVelocity, m_releaseVelocity * midiBaseVelocity / DefaultVolume );
+	if( m_releaseVelocity < 0 ) { return 0; }
+	// Q050-039: round-half-up, the exact inverse of releaseVelocityFromMidi()
+	// - the velocity the note-off carried is the velocity playback sends.
+	return std::min( MidiMaxVelocity,
+		( 2 * m_releaseVelocity * midiBaseVelocity + DefaultVolume ) / ( 2 * DefaultVolume ) );
 }
 
 void Note::rememberTiming()
@@ -257,6 +328,10 @@ void Note::setId(int id)
 
 Note::~Note()
 {
+	// Off the realtime path this frees the last reference at once; inside a
+	// RealtimeScope it retires it (MpeStreamSnapshot::release). A handle has
+	// already retired its reference (retireMpeStreamDeferred), so this is null.
+	MpeStreamSnapshot::release( m_mpeStream.load( std::memory_order_acquire ), false );
 }
 
 
@@ -371,18 +446,71 @@ void Note::clearMpeExpression()
 
 
 
+void Note::setMpeStream( const MpeExpressionStream& stream )
+{
+	// The new snapshot is built here, on the editing thread (the allocation),
+	// complete before it is published; the old one is never changed.
+	publishMpeStream( stream.empty() ? nullptr : MpeStreamSnapshot::create( stream ) );
+}
+
+
+
+
+void Note::clearMpeStream()
+{
+	publishMpeStream( nullptr );
+}
+
+
+
+
+void Note::publishMpeStream( const MpeStreamSnapshot* next ) noexcept
+{
+	// One atomic exchange is the publication (seq_cst: its release half makes
+	// the snapshot's contents visible with the pointer, and it is the swap the
+	// reclamation argument in MpeStreamSnapshot.h orders against). The old
+	// snapshot is released after it can no longer be loaded from this note.
+	const MpeStreamSnapshot* previous = m_mpeStream.exchange( next, std::memory_order_seq_cst );
+	MpeStreamSnapshot::release( previous, false );
+}
+
+
+
+
+void Note::retireMpeStreamDeferred() noexcept
+{
+	MpeStreamSnapshot::release( m_mpeStream.exchange( nullptr, std::memory_order_seq_cst ), true );
+}
+
+
+
+
 TimePos Note::quantized( const TimePos & m, const int qGrid )
 {
 	if( qGrid <= 0 )
 	{
 		return m;
 	}
-	float p = ( (float) m / qGrid );
-	if( p - floorf( p ) < 0.5f )
-	{
-		return static_cast<int>( p ) * qGrid;
-	}
-	return static_cast<int>( p + 1 ) * qGrid;
+	// new-p16-141: tick positions are integers, and a float cannot represent
+	// every one above 2^24 (16,777,217 became 16,777,216 with a grid of 1).
+	// Snap with quotient/remainder arithmetic in 64 bits instead, and keep the
+	// old rounding: the floor remainder decides the direction, the low side
+	// truncates toward zero (as static_cast<int>(p) did for negative p), and
+	// the high side is trunc((ticks + grid) / grid).
+	const qint64 grid = qGrid;
+	const qint64 ticks = m.getTicks();
+	const qint64 truncQuotient = ticks / grid;
+	qint64 remainder = ticks % grid;
+	if( remainder < 0 ) { remainder += grid; }
+	qint64 snapped = 2 * remainder < grid
+		? truncQuotient * grid
+		: ( ( ticks + grid ) / grid ) * grid;
+	// Rounding up can pass tick_t's maximum even though every input fit;
+	// saturate instead of converting an out-of-range value back to tick_t.
+	snapped = std::clamp( snapped,
+		static_cast<qint64>( std::numeric_limits<tick_t>::min() ),
+		static_cast<qint64>( std::numeric_limits<tick_t>::max() ) );
+	return TimePos( static_cast<tick_t>( snapped ) );
 }
 
 
@@ -480,6 +608,30 @@ void Note::saveSettings( QDomDocument & doc, QDomElement & parent )
 		parent.setAttribute( "mpetimbre", m_mpeTimbre );
 	}
 
+	// Q050-016: the per-note expression event streams, three optional
+	// attributes written only when their axis carries points. A note with no
+	// stream - and a whole project without one - serializes exactly as before
+	// this feature existed, and an older build ignores the attributes it does
+	// not know. Attributes, not child elements: Note::loadSettings treats ANY
+	// child of a note element as detuning, so a stream child would make every
+	// expressive note grow a detuning curve on load.
+	if( hasMpeStream() )
+	{
+		const MpeExpressionStream& stream = mpeStream();
+		if( !stream.pitch().empty() )
+		{
+			parent.setAttribute( "mpepitchpts", streamAttributeText( stream.pitch() ) );
+		}
+		if( !stream.pressure().empty() )
+		{
+			parent.setAttribute( "mpepressurepts", streamAttributeText( stream.pressure() ) );
+		}
+		if( !stream.timbre().empty() )
+		{
+			parent.setAttribute( "mpetimbrepts", streamAttributeText( stream.timbre() ) );
+		}
+	}
+
 	if( m_detuning && m_length )
 	{
 		m_detuning->saveSettings( doc, parent );
@@ -572,6 +724,31 @@ void Note::loadSettings( const QDomElement & _this )
 		m_mpePressure = MpeNoteExpression::clamp7Bit( _this.attribute( "mpepressure" ).toInt() );
 		m_mpeTimbre = MpeNoteExpression::clamp7Bit( _this.attribute( "mpetimbre" ).toInt() );
 	}
+
+	// Q050-016: the per-note expression streams, optional like the scalar
+	// attributes above. A file with none leaves the note with no stream (the
+	// default), and each axis's points are clamped and re-sorted by the setter
+	// so a hostile file cannot carry an out-of-range value or unsorted points
+	// into playback.
+	// Round 3: the axes are parsed into a local value and published once, so
+	// the note never exposes a half-built stream.
+	MpeExpressionStream stream;
+	if( _this.hasAttribute( "mpepitchpts" ) )
+	{
+		stream.setPitch( parseStreamAttribute( _this.attribute( "mpepitchpts" ) ) );
+	}
+	if( _this.hasAttribute( "mpepressurepts" ) )
+	{
+		stream.setPressure( parseStreamAttribute( _this.attribute( "mpepressurepts" ) ) );
+	}
+	if( _this.hasAttribute( "mpetimbrepts" ) )
+	{
+		stream.setTimbre( parseStreamAttribute( _this.attribute( "mpetimbrepts" ) ) );
+	}
+	// An attribute that parsed to no points (empty text, or all tokens
+	// malformed) leaves the stream empty: setMpeStream() then clears, so
+	// hasMpeStream() is false and a re-save writes no attribute.
+	setMpeStream( stream );
 
 	if( _this.hasChildNodes() )
 	{

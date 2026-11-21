@@ -40,6 +40,7 @@
  *  lengths (and shapes) on every locked audio clip.
  */
 
+#include <limits>
 #include <vector>
 
 #include <QJsonArray>
@@ -226,6 +227,14 @@ ControlResult editTrim(const QJsonObject& args)
 					"start - so the locked trim is refused and nothing moved")
 					.arg(trackIdOf(entry.track)).arg(s).arg(e));
 		}
+		const qint64 offset = static_cast<qint64>(entry.clip->startTimeOffset().getTicks()) - dStart;
+		if (offset < std::numeric_limits<tick_t>::min() || offset > std::numeric_limits<tick_t>::max())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("the trim would put %1's source offset at %2, outside the tick range, "
+					"so the locked trim is refused and nothing moved")
+					.arg(trackIdOf(entry.track)).arg(offset));
+		}
 	}
 	QJsonArray edits;
 	for (const Locked& entry : locked)
@@ -234,7 +243,8 @@ ControlResult editTrim(const QJsonObject& args)
 		const tick_t e = entry.clip->endPosition().getTicks() + dEnd;
 		// clip.trim's head-trim rule: the source offset moves against the start,
 		// so the audio holds its song position.
-		const tick_t offset = entry.clip->startTimeOffset().getTicks() - dStart;
+		const tick_t offset = static_cast<tick_t>(
+			static_cast<qint64>(entry.clip->startTimeOffset().getTicks()) - dStart);
 		entry.clip->addJournalCheckPoint();
 		entry.clip->movePosition(TimePos(s));
 		entry.clip->changeLength(TimePos(e - s));

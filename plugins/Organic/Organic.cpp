@@ -225,6 +225,14 @@ void OrganicInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 	const f_cnt_t frames = _n->framesLeftForCurrentPeriod();
 	const f_cnt_t offset = _n->noteOffset();
 
+	// The control thread publishes the oscillator parameters; the audio
+	// thread adopts them here, at the start of the period. The values the
+	// oscillators render from are written by this thread only.
+	for (int i = 0; i < m_numOscillators; ++i)
+	{
+		m_osc[i]->refreshAudioParams();
+	}
+
 	if (!_n->m_pluginData)
 	{
 		auto oscs_l = std::array<Oscillator*, NUM_OSCILLATORS>{};
@@ -285,8 +293,17 @@ void OrganicInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 	}
 
 	auto osc = static_cast<oscPtr*>(_n->m_pluginData);
-	osc->oscLeft->update(out.data() + offset, frames, 0);
-	osc->oscRight->update(out.data() + offset, frames, 1);
+	if (osc->oscLeft != nullptr && osc->oscRight != nullptr)
+	{
+		osc->oscLeft->update(out.data() + offset, frames, 0);
+		osc->oscRight->update(out.data() + offset, frames, 1);
+	}
+	else if (frames > 0)
+	{
+		// No oscillator was built - the oscillator count is zero. The note is
+		// silent, it does not dereference the null chain head.
+		zeroSampleFrames(out.data() + offset, frames);
+	}
 
 	// -- fx section --
 
@@ -571,10 +588,16 @@ void OscillatorObject::oscButtonChanged()
 
 void OscillatorObject::updateVolume()
 {
-	m_volumeLeft = ( 1.0f - m_panModel.value() / (float)PanningRight )
-			* m_volModel.value() / m_numOscillators / 100.0f;
-	m_volumeRight = ( 1.0f + m_panModel.value() / (float)PanningRight )
-			* m_volModel.value() / m_numOscillators / 100.0f;
+	const auto volume = m_volModel.value();
+	const auto pan = m_panModel.value();
+	const auto count = m_numOscillators > 0 ? m_numOscillators : 1;
+
+	m_published.volumeLeft.store(
+		( 1.0f - pan / (float)PanningRight ) * volume / count / 100.0f,
+		std::memory_order_relaxed);
+	m_published.volumeRight.store(
+		( 1.0f + pan / (float)PanningRight ) * volume / count / 100.0f,
+		std::memory_order_relaxed);
 }
 
 
@@ -585,8 +608,22 @@ void OscillatorObject::updateDetuning()
 	const auto harmonic = OrganicInstrument::s_harmonics[static_cast<int>(m_harmModel.value())];
 	const auto sr = Engine::audioEngine()->outputSampleRate();
 
-	m_detuningLeft = std::exp2(harmonic + m_detuneModel.value() * CENT) / sr;
-	m_detuningRight = std::exp2(harmonic - m_detuneModel.value() * CENT) / sr;
+	m_published.detuningLeft.store(
+		std::exp2(harmonic + m_detuneModel.value() * CENT) / sr,
+		std::memory_order_relaxed);
+	m_published.detuningRight.store(
+		std::exp2(harmonic - m_detuneModel.value() * CENT) / sr,
+		std::memory_order_relaxed);
+}
+
+
+
+void OscillatorObject::refreshAudioParams()
+{
+	m_volumeLeft = m_published.volumeLeft.load(std::memory_order_relaxed);
+	m_volumeRight = m_published.volumeRight.load(std::memory_order_relaxed);
+	m_detuningLeft = m_published.detuningLeft.load(std::memory_order_relaxed);
+	m_detuningRight = m_published.detuningRight.load(std::memory_order_relaxed);
 }
 
 
