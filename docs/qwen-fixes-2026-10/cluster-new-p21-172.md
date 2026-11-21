@@ -52,25 +52,39 @@ green runs (`test-green-1.log`, `test-reapplied-green.log`) are ctest-level only
 Note on (c): it fails in the reverted runs of test-red-2.log and test-reversed-red.log
 but passes in test-red.log. The first red run therefore shows only (a) failing.
 
+## Registration
+
+`tests/upstream-modifications.txt:4660` (Gate.cpp entry) keeps its original text and
+appends the reason that Gate.cpp is now changed by this cluster: the one-index fix at
+Gate.cpp:130 and the regression test `tests/src/plugins/SfzGateStereoLinkTest.cpp`.
+feature_check passes after that edit (`feature-check-2.log`, EXIT=0).
+
 ## Commands and exit codes
 
-Exit codes are copied only where the log file records them. Otherwise the cell says
+Exit codes are copied from a log only where the log has an EXIT line. Where it has
+none, the cell says so: either "EXIT=n as printed by the command in the session", or
 "not recorded in log".
 
 | Step | Log | What the log shows | EXIT |
 |---|---|---|---|
-| build (target generation and build) | build-1.log | last line `Built target SfzEQPoolExhaustionTest` | not recorded in log |
-| build | build-2.log | target generation and build | not recorded in log |
-| red run 1 (fix absent) | test-red.log | `Totals: 5 passed, 1 failed`; (a) FAIL | not recorded in log |
-| red run 2 (fix absent) | test-red-2.log | `Totals: 4 passed, 2 failed`; (a) and (c) FAIL | not recorded in log |
+| build (target generation and build) | build-1.log | last line `Built target SfzEQPoolExhaustionTest` | EXIT=0 as printed by the command in the session; the log file itself has no EXIT line |
+| build | build-2.log | target generation and build | EXIT=0 as printed by the command in the session; the log file itself has no EXIT line |
+| red run 1 (fix absent) | test-red.log | `Totals: 5 passed, 1 failed`; (a) FAIL | EXIT=8 as printed by the command in the session; the log file itself has no EXIT line |
+| red run 2 (fix absent) | test-red-2.log | `Totals: 4 passed, 2 failed`; (a) and (c) FAIL | EXIT=8 as printed by the command in the session; the log file itself has no EXIT line |
 | build + green run 1 | build-4.log, test-green-1.log | build ends `Built target zene`; `1/1 ... SfzGateStereoLinkTest ... Passed` | not recorded in log |
 | build + family run 2 | build-5.log, test-family-2.log | `100% tests passed out of 15` | not recorded in log |
 | family run 1 (before build-5) | test-family-1.log | `20% tests passed, 12 tests failed out of 15`; the 12 failures are `Not Run` executables | not recorded in log |
-| revert fix.patch + build | build-6.log, test-reversed-red.log | `Totals: 4 passed, 2 failed`; (a) and (c) FAIL | EXIT=8 (in log) |
-| reapply fix.patch + build | build-7.log | build of the fixed tree | EXIT=0 (in log) |
+| revert: `git diff ... > fix.patch && git apply -R fix.patch` | none (no log file) | reverts the fix | EXIT=0 as printed by the command in the session |
+| build after the revert | build-6.log | no EXIT line in the log | not recorded in log |
+| reversed red run | test-reversed-red.log | `Totals: 4 passed, 2 failed`; (a) and (c) FAIL | EXIT=8 (in log) |
+| reapply: `git apply fix.patch` | none (no log file) | reapplies the fix | EXIT=0 as printed by the command in the session |
+| reapply build | build-7.log | build of the fixed tree | EXIT=0 (in log) |
 | reapplied green run | test-reapplied-green.log | `1/1 ... SfzGateStereoLinkTest ... Passed` | EXIT=0 (in log) |
-| all-sources reproduce | quiet-run log `duet/12-worker/tmp/001-reproduce-p4.log` | `REPRODUCES: the entry list in all-sources.txt is the recipe's own output.` | 0 (quiet-run) |
-| feature_check | feature-check-1.log | `RESULT: PASS`; fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length all PASS | 0 (run in this session, not in log) |
+| all-sources reproduce | quiet-run log `001-reproduce-p4.log` | `REPRODUCES: the entry list in all-sources.txt is the recipe's own output.` | 0 (printed by quiet-run in the session) |
+| feature_check (rerun after the upstream-modifications.txt edit) | feature-check-2.log | `RESULT: PASS`; 8 PASS lines, 0 FAIL lines. feature-check-1.log (earlier run) has no EXIT line | EXIT=0 (in log) |
+| build (stereo-link target) | build-8.log | `[100%] Built target SfzGateStereoLinkTest` | EXIT=0 (in log) |
+| stereo-link test | test-green-2.log | `1/1 Test #725: SfzGateStereoLinkTest ... Passed`; `100% tests passed out of 1` | EXIT=0 (in log) |
+| family run 3 | test-family-3.log | `100% tests passed out of 15` | EXIT=0 (in log) |
 
 The first family run failed only because 12 test executables were not built. build-5
 fixed that, and the second family run passes 15 of 15.
@@ -83,7 +97,4 @@ run in this session.
 
 ## Other findings
 
-- `tests/upstream-modifications.txt:4660` (Gate.cpp entry) still says the vendored
-  sfizz tree is unmodified. The feature_check registration gate passed without an
-  update, so the entry was not changed. The entry is now inaccurate for Gate.cpp and
-  the lead decides whether to update it.
+- none
