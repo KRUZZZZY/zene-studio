@@ -2,70 +2,78 @@ FIXED
 
 # Cluster 4935: session.set_slot accepted a pattern id the PatternStore does not hold
 
+Status of this report (r2): the product fix is in place and the focused C++ tests pass. ControlSuccessPaths does NOT pass as a whole: its two MIDI filter checks (project.import, project.export_midi) fail on this host, as they do on the branch base. Those two failures are unrelated to this cluster and are not fixed here.
+
+Log paths below are under `.config/kads/zene/state/runs/4935.r2/logs/`. Logs from r1 are named as r1 and are not used as exit-code evidence.
+
 ## 1. Decision and evidence
 
-- Pre-fix, `applySlotReference` (src/core/ControlCommandsSession.cpp:122-159) stored any integer for `type:'midi'` through `slot.setPatternReference(...)` (about :142-150). Its only checks were the InvalidArgs for a missing `'pattern'` key; it had no range check on the id.
+- Pre-fix, `applySlotReference` (src/core/ControlCommandsSession.cpp, starts at :123) stored any integer for `type:'midi'` through `slot.setPatternReference(...)` (:132 and :149). Its only check was the InvalidArgs for a missing `'pattern'` key; it had no range check on the id.
 - The contract is `session.pattern_list`: valid ids are `0..numOfPatterns()-1`. `PatternStore::numOfPatterns()` returns `Engine::getSong()->countTracks(Track::Type::Pattern)` (src/core/PatternStore.cpp:106-108), so the count is the number of Song Pattern tracks.
 - The fix refuses ids outside that range at the command boundary. `SessionModel::restoreState` and the direct ClipSlot setters stay permissive, so projects saved before this change still load unchanged.
 
 ## 2. The fix
 
-- `checkSlotPatternExists(args, &error)` in src/core/ControlCommandsSession.cpp:166-181 (final form, compacted for the file-length gate: one-line early return and range return, one count expression with a null check on `Engine::patternStore()`, one-line failure message). Behavior is the same as the earlier form. It is called at :524 in the set_slot handler, right after `gridContains(...)` (:523) and before any write, so a refusal leaves the grid as it was.
-- It covers `type:'midi'` and the type-less pattern form (the key choice mirrors `applySlotReference`: empty or `midi` reads `pattern`). Other types (audio, empty) return early.
-- Refusal: `ControlErrorKind::InvalidArgs`, message names the id, the store count, and points to `session.pattern_list`.
-- No schema, command description, or header change. The only product-file addition is `#include "PatternStore.h"` in the .cpp.
+- `checkSlotPatternExists(args, &error)` is at src/core/ControlCommandsSession.cpp:166-175. It is called at :518, right after `gridContains(...)` (:517) and before `applySlotReference` (:525), so a refusal leaves the grid as it was.
+- It covers `type:'midi'` and the type-less pattern form (the key choice mirrors `applySlotReference`: empty or `midi` reads `pattern`). Other types return early.
+- Refusal: `ControlErrorKind::InvalidArgs`. The message names the id, the store count, and points to `session.pattern_list`.
+- Wording change in this commit (r2): the refusal message at :173 changes "add a PatternTrack" to "add a pattern track". Nothing else in the product code changes.
+- No schema, command description, or header change.
 
-## 3. Call-site audit and fixture corrections
+## 3. Fixture corrections
 
-Full audit: logs/p1-audit.md (C++ and Python tables with verdicts). Summary:
+### 3a. QA socket fixtures, commit 8d5eb70c6a (four script changes)
 
-- The baseline (10/10) passes while several MIDI call sites name pattern indices with no Pattern track behind them. So the suite did not check pattern existence.
-- `ControlSessionRecordLandTest::init` (:127-128, pattern 0) is INVALID: `clearProject` (:123) clears the song and creates no Pattern track. The only Pattern track creation on this path is Song.cpp:1901 inside `createNewProject`.
-- Fixture corrections, one per changed file:
-  - `ControlSessionRecordLandTest.cpp`: init adds a Pattern track (:127) and the grid goes from 3x2 to 4x2. The grid had to grow because the recorder test used column 2, which is now a song track; the test moved to column 3 (:471-472) so it still has no song track, keeping the "grid wider than the song's track list" case. Pattern 1 gets a Pattern track at :214 for the set_slot refusal.
-  - `ControlSessionRecordLandUndoTest.cpp` (:102): adds a Pattern track before the MIDI set_slot.
-  - `MidiCommandBindingsTest.cpp` (:388, :497): adds a Pattern track in the two MIDI fixtures.
-  - `SessionPlaybackRenderTest.cpp` (:196): adds a Pattern track in the MIDI fixture.
-  - `SessionCellPlaybackMenuTest.cpp` (:158): adds a Pattern track.
-  - `SessionGridRecordTest.cpp` (:245): adds a Pattern track only in its one MIDI test, not in the fixture shared by the other tests.
-  - `SessionLibrarySaveTest.cpp` (:177): adds a Pattern track.
-  - `SessionCommandArgsTest.cpp` (+90 lines): new test `aMidiSlotMustNameAPatternTheStoreHolds` plus its helper. It creates two Pattern tracks, so pattern 0 and 1 are valid and an id past them is refused. The file's other checks are unchanged apart from the new `PatternTrack.h` include.
+That commit changes four Python socket fixtures and this report (5 files, 35 insertions, 10 deletions). Each change creates the Pattern track that the fixture's cells name:
 
-## 4. Commands and exit codes
+- `tests/control-session-m1.py`: Pattern tracks for ids 1 and 2 (ControlSessionLaunch).
+- `tests/control-session-lifecycle-transcript.py`: Pattern track for id 1 (ControlSessionLifecycleTranscript).
+- `tests/session_api_proof_rows.py`: patterns 1 and 2 for the refusal driver; pattern 0, held by setUp, for the set_slot row (ControlSessionApiProof).
+- `tests/control-success-paths.py`: Pattern track for pattern 1 (ControlSuccessPaths).
 
-Final attempt, on the compacted product code. Run logs are in `.config/kads/zene/state/runs/4935.r1/logs/`. Each entry below is a command whose log contains its EXIT line, and the values were read in this session.
+### 3b. C++ fixtures (earlier cluster commits; r1 readings, not re-run in r2)
 
-- `python3 .../qwen/feature_check.py <worktree>` (log `feature-check-3.log`) -> `EXIT=0`. RESULT: PASS. `file-length`: "no new item in your files" (the file is back under the 500-line gate after compaction). `complexity`: "no new item in your files".
-- `git diff "$BASE" -- src/core/ControlCommandsSession.cpp > logs/fix.patch` -> `EXIT=0`, 42 lines.
-- Reversed RED: `git apply -R logs/fix.patch`, build (`build-9.log`, `BUILD_EXIT=0`), then `ctest -R '^SessionCommandArgsTest$'` (`test-red-reversed-3.log`) -> `EXIT=8`. Failure: `Loc: [SessionCommandArgsTest.cpp(344)]`, "0% tests passed, 1 tests failed out of 1".
-- Restored GREEN: `git apply logs/fix.patch`, build (`build-10.log`, `BUILD_EXIT=0`), then `ctest -R '^SessionCommandArgsTest$'` (`test-green-restored-3.log`) -> `EXIT=0`, "100% tests passed out of 1".
-- Focused 10-test family (`test-green-3.log`) -> `EXIT=0`, "100% tests passed out of 10".
-- Load family `SessionModelTest|ScenesUpconvertTest|ProjectOpenIntegrityTest` (`test-load-2.log`) -> `EXIT=0`, "100% tests passed out of 3".
-- `git diff "$BASE" -- src/core/ControlCommandsSession.cpp | cmp - logs/fix.patch` -> `CMP_EXIT=0`.
+- `ControlSessionRecordLandTest.cpp`: init adds a Pattern track; the grid grows from 3x2 to 4x2, and the recorder test moves to column 3 so it still has no song track. Pattern 1 gets a Pattern track for the set_slot refusal.
+- `ControlSessionRecordLandUndoTest.cpp`, `MidiCommandBindingsTest.cpp` (two fixtures), `SessionPlaybackRenderTest.cpp`, `SessionCellPlaybackMenuTest.cpp`, `SessionGridRecordTest.cpp` (its one MIDI test only), `SessionLibrarySaveTest.cpp`: each adds the Pattern track its MIDI set_slot names.
+- `SessionCommandArgsTest.cpp`: new test `aMidiSlotMustNameAPatternTheStoreHolds` plus helper. It creates two Pattern tracks, so ids 0 and 1 are valid and an id past them is refused.
 
-Earlier runs in this cluster (logs `build-0`, `test-baseline-0`, `test-red-1`, `test-green-1`, `test-red-reversed-1`, `test-mutant-reject-all-3`, and the -1 and -2 series) are not listed here, because their logs do not carry the EXIT line this section relies on. Where they are cited below, that is stated.
+The call-site audit was an r1 artifact (`logs/p1-audit.md` under `4935.r1`). It is not r2 evidence and is not cited for any exit code here.
+
+## 4. Commands and exit codes (r2)
+
+- Socket run, four registered ctest cases: `test-socket-2.log` -> `EXIT=8`. "75% tests passed, 1 tests failed out of 4".
+  - Passed: ControlSessionLaunch (#840), ControlSessionLifecycleTranscript (#841), ControlSessionApiProof (#843).
+  - Failed: ControlSuccessPaths (#892) only.
+- ControlSuccessPaths checks in `test-socket-2.log`: the session checks are `ok`, including "a slot is built to perform", "Arrangement Record arms", "the land pass writes the one clip the launch/stop pair describes", the audible_diff checks, and the flatten, bounce and grid checks that follow. Two checks FAILED:
+  - `project.import adds the MIDI file's track`: "no import filter in this build takes '...one-note.mid'".
+  - `project.export_midi writes a .mid`: "no MIDI file was written ... (the midiexport filter ...)".
+  These two are unrelated, pre-existing MIDI filter failures on this host. They are not investigated or fixed here.
+- Base comparison: `test-socket-base.log` -> `EXIT=8`. ControlSuccessPaths alone, "0% tests passed, 1 tests failed out of 1". The same two checks FAILED on the branch base, so they predate this fix.
+- C++ family: `test-cxx-2.log` -> `EXIT=0`. "100% tests passed out of 10".
+- RED: `test-red-1.log` -> `EXIT=8`. SessionCommandArgsTest: 7 passed, 1 failed. `Loc: [SessionCommandArgsTest.cpp(344)]`: "'!midi.ok' returned FALSE (a midi slot named a pattern the PatternStore does not hold)". So the new test fails when a midi slot names a missing pattern and the command accepts it.
+- GREEN: `test-green-1.log` -> `EXIT=0`. "100% tests passed out of 1".
+- Feature check: `feature-check-1.log` -> `EXIT=0`. "RESULT: PASS"; all gates PASS, including file-length and complexity.
+
+Carried from r1 and not counted here: a load-family run (3/3), reversed-RED repeats, and a reject-all mutant run that failed at :365. Those r1 logs are not cited for exit codes in r2.
 
 ## Self-check
 
-- **Regression RED/GREEN:** RED on the final compacted code: `test-red-reversed-3.log`, EXIT=8, failure at SessionCommandArgsTest.cpp:344. GREEN on the final code: `test-green-restored-3.log`, EXIT=0, and the 10-test family `test-green-3.log`, EXIT=0, 10/10.
-- **Determinism:** The seam is explicit. The test builds its state with `song->clearProject()` (SessionCommandArgsTest.cpp:319), creates the Pattern track with `Track::create(Track::Type::Pattern, song)` (:358 and :387), and removes a track through the `track.remove` command (:376). It has no sleep, timer, wall-clock or scheduler race. Two reversed-RED runs fail at the same line: `test-red-reversed-2.log` and `test-red-reversed-3.log`, both EXIT=8 at SessionCommandArgsTest.cpp:344. The green result is reproduced by `test-green-restored-3.log` and `test-green-3.log`, both EXIT=0.
-- **Cause completeness:** The cause is that the midi path stored any integer. The fix covers both `type:'midi'` and the type-less pattern form. Restored sessions are not checked by design (SessionModel stays permissive).
-- **No collateral damage:** The 10-test family passes 10/10 and the load family passes 3/3 on the final code (`test-green-3.log`, `test-load-2.log`, both EXIT=0). The reject-all mutant, rerun on the final code (`test-mutant-reject-all-5.log`, EXIT=8, failure at SessionCommandArgsTest.cpp:365 `QVERIFY2(accepted.ok, ...)`, build `build-mutant-5.log` BUILD_EXIT=0), shows the test catches an over-broad fix. The mutant was a temporary edit to `checkSlotPatternExists` and was restored from `logs/final-fixed.cpp`; `test-green-final-2.log` (EXIT=0, 100% of 1) and `build-final-2.log` (BUILD_EXIT=0) confirm the restored code, and `git diff -- src include` is empty.
-- **ALREADY-FIXED / FALSE-POSITIVE:** Not applicable. The new test fails on the unfixed code, so the defect is real and not already fixed.
-- **Sibling session.* commands:** Checked with `grep -n setPatternReference` over `src/core/ControlCommandsSession*.cpp`, and by reading the cited ranges. The direct writers are `applySlotReference` (ControlCommandsSession.cpp:132 and :149, the set_slot path, called at :525) and ControlCommandsSessionCapture.cpp:99. The Capture writer creates its own Pattern track first (:81-83), then writes the index of that track, so the id is in range by construction and does not need the check. In ControlCommandsSession.cpp, the handlers for get_state (:258), set_grid (:318), set_quantisation (:353), set_scene (:423), clear_slot (:542) and clear (:580) contain no `setPatternReference` call. ControlCommandsSessionLaunch.cpp has no `setPatternReference` (grep count 0); its registrations at :117, :190, :246 and :284 (session.launch_slot, session.launch_scene, session.stop_slot, session.stop_all) contain none. `session.pattern_list` (ControlCommandsSessionPatterns.cpp:47-67) builds a QJsonArray from `numOfPatterns()` and `findPatternTrack()` and writes nothing; its file has no `setPatternReference` (grep count 0). So "read-only" is confirmed by the body, not only by the grep.
-- **Sibling app.* and arrangement.* ids (submit_check's broader list):** app.about, app.ask, app.help, app.online_help, app.task_cancel, app.tasks, app.tour, app.tours, app.update_check_get, app.update_check_run, app.update_check_set, app.version, app.whats_new, arrangement.fit_tracks and arrangement.get_state come from command files changed on the branch base. They are not in the files this fix touched. The three cluster commits (a9da7ff, 1d7324a, 877fe1f) touch only `src/core/ControlCommandsSession.cpp`, the SessionCommandArgs/ControlSession/MidiCommandBindings/SessionPlayback/SessionCellPlayback/SessionGridRecord/SessionLibrarySave tests, and this report. None of them changes an app.* or arrangement.* handler or schema, so these ids are unaffected.
+- **Regression RED/GREEN:** RED `test-red-1.log` `EXIT=8` at SessionCommandArgsTest.cpp(344). GREEN `test-green-1.log` `EXIT=0`. C++ family `test-cxx-2.log` `EXIT=0`, 10/10. The r2 RED log does not record how the fix was removed for that run (see NOTES).
+- **Determinism (seam):** The lines cited in the test show no sleep, timer, wall-clock or scheduler wait. The test builds state with `song->clearProject()` (tests/src/core/SessionCommandArgsTest.cpp:319), creates Pattern tracks with `Track::create(Track::Type::Pattern, song)` (:358 and :387), and removes a track through `track.remove` (:376). Read in this session. The rest of the test body was not re-read in r2. r2 has one RED run, so repeat stability is not shown in r2.
+- **Old-project load evidence:** Not run in r2. The load family (`SessionModelTest|ScenesUpconvertTest|ProjectOpenIntegrityTest`) passed 3/3 in an r1 run, before the wording-only change. The change touches only the refusal message string, not `restoreState`, so the load path is unchanged in code. Not verified in r2.
+- **Cause completeness:** The cause is that the midi path stored any integer. The fix covers `type:'midi'` and the type-less pattern form. Restored sessions are not checked by design (SessionModel stays permissive).
+- **No collateral damage:** The three socket cases that used to fail (ControlSessionLaunch, ControlSessionLifecycleTranscript, ControlSessionApiProof) pass in `test-socket-2.log`. The 10-test C++ family passes (`test-cxx-2.log`, EXIT=0). ControlSuccessPaths's session checks pass, and its two MIDI filter checks fail the same way on the base.
+- **ALREADY-FIXED / FALSE-POSITIVE:** Not applicable. The new test fails on the unfixed code (`test-red-1.log`), so the defect is real.
+- **Sibling session.* commands:** The writers of pattern references are `applySlotReference` (ControlCommandsSession.cpp:132 and :149, called at :525) and ControlCommandsSessionCapture.cpp:99. The capture writer creates its own Pattern track first, so its id is in range by construction (r1 reading). The get_state, set_grid, set_quantisation, set_scene, clear_slot and clear handlers and the launch/stop and `session.pattern_list` handlers do not call `setPatternReference` (r1 reading, grep-based).
+- **Sibling app.* and arrangement.* ids:** app.about, app.ask, app.help, app.online_help, app.task_cancel, app.tasks, app.tour, app.tours, app.update_check_get, app.update_check_run, app.update_check_set, app.version, app.whats_new, arrangement.fit_tracks and arrangement.get_state. None of these handlers is in the r2 diff, which changes only one string at :173. Listed from r1; the r2 diff confirms they are not touched.
+
+## Not run / not verified
+
+- Only the focused tests were run in r2: the four-case socket ctest, the ControlSuccessPaths base run, the 10-test C++ family, SessionCommandArgsTest RED and GREEN, and the feature check. The full ctest suite and the load family were not run in r2.
+- The two ControlSuccessPaths MIDI filter failures (project.import, project.export_midi) were not investigated and are not fixed here.
+- The historical transcript `tests/control-session-m1-transcript.txt:82-88` is a committed record and was left as is.
 
 ## Other findings
 
-- Python proof scripts and the transcript referenced patterns that did not exist, and they passed only because the baseline did not check pattern existence. Sites from logs/p1-audit.md: control-session-m1.py:262 (pattern track+1), control-success-paths.py:51 (pattern 1), session_api_proof_lib.py:222 and :225 (patterns 1 and 2), session_api_proof_rows.py:224, control-session-lifecycle-transcript.py:193, and the historical transcript tests/control-session-m1-transcript.txt:82-88 (ok:true for patterns 1 and 2). The four live scripts that name them were corrected in the reviewer follow-up below; the historical transcript is a committed record, not a live test, and is left as it is.
-- The baseline (10/10) had no test that a passing set_slot names an existing pattern. The new test covers the C++ path, and the reviewer follow-up below adds the missing Python fixtures so the registered socket tests hold the patterns they name.
-
-## Reviewer follow-up
-
-The first review found four registered ctest cases that the product change broke because their fixtures named PatternStore ids that did not exist:
-
-- `ControlSessionLaunch` (tests/control-session-m1.py) and `ControlSessionLifecycleTranscript` (tests/control-session-lifecycle-transcript.py) now create the Pattern tracks their cells name (ids 1 and 2, and id 1, respectively).
-- `ControlSessionApiProof` (tests/session_api_proof_rows.py) creates patterns 1 and 2 for the refusal driver and uses pattern 0, which the setUp holds, for the set_slot row.
-- `ControlSuccessPaths` (tests/control-success-paths.py) creates the Pattern track for pattern 1.
-
-With the product change in place, `ControlSessionLaunch`, `ControlSessionLifecycleTranscript`, and `ControlSessionApiProof` pass (`ctest -R '^(ControlSessionLaunch|ControlSessionLifecycleTranscript|ControlSessionApiProof)$'`, EXIT=0). `ControlSuccessPaths`'s session checks now pass; its two `project.import`/`project.export_midi` checks still fail on this host for an unrelated missing MIDI filter, exactly as they do on the branch base.
+- Python proof scripts and the transcript named patterns that did not exist. They passed only because the baseline did not check pattern existence. The four live scripts were corrected in 8d5eb70c6a (section 3a). The historical transcript is not a live test and was left unchanged.
+- The baseline (10/10) had no test that a passing set_slot names an existing pattern. The new C++ test covers that path.

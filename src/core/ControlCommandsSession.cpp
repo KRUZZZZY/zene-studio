@@ -170,7 +170,7 @@ bool checkSlotPatternExists(const QJsonObject& args, ControlResult* error)
 	const int id = args.value(QStringLiteral("pattern")).toInt();
 	const int count = Engine::patternStore() != nullptr ? Engine::patternStore()->numOfPatterns() : 0;
 	if (id >= 0 && id < count) { return true; }
-	*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("pattern %1 is not in the PatternStore (it holds %2): add a PatternTrack; session.pattern_list lists the stored patterns").arg(id).arg(count));
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("pattern %1 is not in the PatternStore (it holds %2): add a pattern track; session.pattern_list lists the stored patterns").arg(id).arg(count));
 	return false;
 }
 
