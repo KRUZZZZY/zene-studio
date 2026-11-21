@@ -33,8 +33,8 @@ change in this file (98 insertions, 30 deletions):
 That change replaced every `std::filesystem` use with plain `std::string` paths plus the POSIX/Windows pair
 `mkdtemp`/`_mkdir` and `stat`/`_stat64`. The file on this branch has no `std::filesystem` left:
 
-    $ rg -n 'filesystem' tests/src/core/NamModelLoaderTest.cpp
-    EXIT=1        (logs/01-filesystem-grep.log — no match)
+    $ rg -n 'filesystem' tests/src/core/NamModelLoaderTest.cpp plugins/NeuralAmp/nam/NamModel.cpp plugins/NeuralAmp/nam/NamModelLoader.cpp
+    EXIT=1        (logs/01-filesystem-grep.log — no match in the test or either product file)
 
 ## Code references (ALREADY-FIXED)
 
@@ -57,16 +57,17 @@ That change replaced every `std::filesystem` use with plain `std::string` paths 
 
 ## Gate evidence (commands as issued in packets p1-p3; exits from logs 01-10)
 
-Logs are under `/home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/`. The logs hold each command's
-output and exit code, not the command text: the command lines below are copied verbatim from the `commands`
-arrays of packets p1, p2 and p3, and the exits are the recorded values, not predictions.
+Logs are under `/home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/`. The operative commands are
+listed; log redirection is omitted for readability; the logs hold the output and exit. The command lines below
+are the issued commands from the `commands` arrays of packets p1, p2 and p3, and the exits are the recorded
+values, not predictions.
 
 ### p1 — ancestor, floor, portable idioms, registration
 
 ```
 git merge-base --is-ancestor 03e5a509b7 HEAD; echo ANCESTOR_EXIT=$?; git log --oneline -3 -- tests/src/core/NamModelLoaderTest.cpp
 rg -n 'CMAKE_OSX_DEPLOYMENT_TARGET|10[.]13|10[.]15' CMakeLists.txt .github/workflows
-rg -n 'mkdtemp|_mkdir|std::ofstream|stat\(|sys/stat\.h' tests/src/core/NamModelLoaderTest.cpp
+rg -n 'mkdtemp|_mkdir|sys/stat.h|std::ofstream|stat\(' tests/src/core/NamModelLoaderTest.cpp
 rg -n 'filesystem' tests/src/core/NamModelLoaderTest.cpp plugins/NeuralAmp/nam/NamModel.cpp plugins/NeuralAmp/nam/NamModelLoader.cpp
 rg -n 'NamModelLoaderPortabilityCheck|NamPortabilityRegistrationCheck' tests/CMakeLists.txt build/tests/CTestTestfile.cmake
 ```
@@ -81,34 +82,38 @@ rg -n 'NamModelLoaderPortabilityCheck|NamPortabilityRegistrationCheck' tests/CMa
 
 ```
 cmake --build /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build --target NamModelLoaderTest NamModelPrewarmTest NamModelMonoOutputTest
-cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build/tests && ctest -N -R '^NamModelLoader|^NamPortability|^NamModelMono|^NamModelPrewarm'
-cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build/tests && ctest -R '^NamModelMonoOutputTest$|^NamModelPrewarmTest$|^NamModelLoaderTest$|^NamModelLoaderPortabilityCheck$|^NamPortabilityRegistrationCheck$' --output-on-failure
+cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build/tests && ctest -N -R 'NamModel|NamPortability'
+cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build/tests && ctest -R 'NamModel|NamPortability' --output-on-failure
+cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build/tests && ctest -R '^NamModelLoaderPortabilityCheck$' --output-on-failure
 ```
 
 - `02-build-nam.log` — EXIT=0
 - `02-test-list.log` — EXIT=0 (5 tests: `NamModelMonoOutputTest` #750, `NamModelPrewarmTest` #800, `NamModelLoaderTest` #801, `NamModelLoaderPortabilityCheck` #802, `NamPortabilityRegistrationCheck` #803)
 - `03-test-family-green.log` — EXIT=0 (5/5 passed in 0.93 s)
+- `04-test-portability-green.log` — EXIT=0 (1/1 passed in 0.73 s)
 
 ### p3 — portability red/green, restore, recheck
 
 ```
-cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build/tests && ctest -R '^NamModelLoaderPortabilityCheck$' --output-on-failure
-# red mutation: `#include <filesystem>` added at tests/src/core/NamModelLoaderTest.cpp:34 (diff saved as 05-mutation.patch)
+cp tests/src/core/NamModelLoaderTest.cpp /home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/05-NamModelLoaderTest.cpp.bak
+sha256sum tests/src/core/NamModelLoaderTest.cpp > /home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/05-sha-before.txt
+sed -i '34i #include <filesystem>' tests/src/core/NamModelLoaderTest.cpp
 rg -n 'filesystem' tests/src/core/NamModelLoaderTest.cpp
+git diff -- tests/src/core/NamModelLoaderTest.cpp > /home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/05-mutation.patch
 cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build/tests && ctest -R '^NamModelLoaderPortabilityCheck$' --output-on-failure
 cp /home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/05-NamModelLoaderTest.cpp.bak /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/tests/src/core/NamModelLoaderTest.cpp
 sha256sum -c /home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/05-sha-before.txt
 git diff --exit-code -- tests/src/core/NamModelLoaderTest.cpp
 cmake --build /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build --target NamModelLoaderTest
 cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build/tests && ctest -R '^NamModelLoaderPortabilityCheck$' --output-on-failure
-cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build/tests && ctest -R '^NamModelMonoOutputTest$|^NamModelPrewarmTest$|^NamModelLoaderTest$|^NamModelLoaderPortabilityCheck$|^NamPortabilityRegistrationCheck$' --output-on-failure
+cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build/tests && ctest -R 'NamModel|NamPortability' --output-on-failure
 git status --porcelain
 ```
 
-- `04-test-portability-green.log` — EXIT=0 (1/1 passed in 0.73 s)
 - `05-mutation-grep.log` — EXIT=0 (`34:#include <filesystem>`)
+- `05-mutation.patch` — the saved one-line diff (`git diff`, EXIT=0; no separate log)
 - `06-portability-red.log` — **EXIT=8** (`0% tests passed`, 1 failed out of 1)
-- `cp` restore command — EXIT=0 from the console; no log
+- `cp` backup and restore commands — EXIT=0 from the console; no log
 - `07-restore-sha.log` — EXIT=0 (`.../tests/src/core/NamModelLoaderTest.cpp: OK`)
 - `07-restore-diff.log` — EXIT=0
 - `08-rebuild-restored.log` — EXIT=0
@@ -138,7 +143,7 @@ log 03 all 5 tests passed).
 
 **4. No collateral.** This packet changes no product file and no test assertion. The only diff is this docs
 file; `tests/src/core/NamModelLoaderTest.cpp` and `tests/CMakeLists.txt` are untouched, and the final
-`git status --porcelain` is empty (`logs/18-status-final.log`, EXIT=0).
+`git status --porcelain` is empty (`logs/26-status-final3.log`, EXIT=0).
 
 **5. ALREADY-FIXED code references.** See the list above: `tests/src/core/NamModelLoaderTest.cpp:33-54`,
 `:93-152`, `:204-227`, `:311-334`, current `:120`, current `:323`, and `tests/CMakeLists.txt:6295`, `:6312`.
@@ -162,15 +167,15 @@ Ancestor `03e5a509b7` carries the 128-line change.
 
     $ head -1 docs/qwen-fixes-2026-10/cluster-ci-v041-3.md
     ALREADY-FIXED
-    EXIT=0                    (logs/15-report-first-line-final.log)
+    EXIT=0                    (logs/23-report-first-line-final3.log)
 
     $ rg -n '^## Self-check|^## Other findings' docs/qwen-fixes-2026-10/cluster-ci-v041-3.md
-    EXIT=0                    (logs/15-report-sections-final.log)
+    EXIT=0                    (logs/23-report-sections-final3.log)
 
-    $ FEATURE_CHECK_LOG_DIR=/home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/feature-check-final \
+    $ FEATURE_CHECK_LOG_DIR=/home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/feature-check-final3 \
         python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py \
         /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3
-    EXIT=0                    (logs/16-feature-check-final.log)
+    EXIT=0                    (logs/24-feature-check-final3.log)
 
 The commit is docs-only: `docs/qwen-fixes-2026-10/cluster-ci-v041-3.md`
-(`logs/17-commit-stat-final.log`, `logs/18-status-final.log`).
+(`logs/25-commit-stat-final3.log`; the tree is clean in `logs/26-status-final3.log`).
