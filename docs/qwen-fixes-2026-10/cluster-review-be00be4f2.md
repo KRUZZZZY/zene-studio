@@ -10,8 +10,9 @@ code, test or gate was changed by this closure; this report is the only change.
 
 ## Why the reported defect was real
 
-In the parent of `7f1af20295`, `replaceProjectWithStaged` had a delete-first
-body (`git show 7f1af20295^:src/core/ProjectRevisions.cpp`, lines 282-304):
+Background: in the parent of `7f1af20295`, `replaceProjectWithStaged` had a
+delete-first body (`git show 7f1af20295^:src/core/ProjectRevisions.cpp`, lines
+282-304):
 
 ```cpp
 QFile::remove(pending);
@@ -77,8 +78,8 @@ same helper and registers the tests.
   `aFailedReplacementAfterStagingKeepsTheLiveProject` - staging holds bytes and
   revision 0 is made unwritable; `setRevisionReplacementFailureForTest(true)`
   injects the failed rename; asserts false, live file exists, bytes unchanged,
-  and staging preserved. This is the test that fails with the delete-first
-  body (RED) and passes with the current body (GREEN).
+  and staging preserved. This is the test that fails when the live-removal
+  fault is injected (RED) and passes with the current body (GREEN).
 
 ## Evidence commands and exit codes (from the run logs)
 
@@ -88,14 +89,14 @@ same helper and registers the tests.
 | p1 | `git show 7f1af20295^:src/core/ProjectRevisions.cpp \| sed -n '280,320p'` | 0 | logs/evidence-1.log |
 | p1 | `sed -n '326,366p' tests/src/core/RevisionTimelineTestParts1.h` | 0 | logs/evidence-1.log |
 | p1 | `rg -n 'restoreProjectRevision\|replaceProjectWithStaged' src include tests` | 0 | logs/evidence-1.log |
-| p2 RED | `cmake --build build --target zene RevisionTimelineTest` (delete-first re-injected from logs/fault.patch) | 0 | logs/build-red-1.log |
+| p2 RED | `cmake --build build --target zene RevisionTimelineTest` (live-removal fault injected from logs/fault.patch) | 0 | logs/build-red-1.log |
 | p2 RED | `ctest -R ^RevisionTimelineTest$ --output-on-failure` | 8 | logs/test-red-1.log |
-| p2 restore | `git apply -R logs/fault.patch` (undo the re-injection) | 0 | p2 run |
-| p2 restore | `git diff --quiet` / clean porcelain (no fault hunks left) | 0 | p2 run |
+| p2 restore | `git apply logs/fault.patch` then `git apply -R logs/fault.patch` (inject, then undo) | 0 (APPLY_EXIT=0, REVERSE_EXIT=0) | logs/fault-reverse-1.log |
+| p2 restore | `git status --porcelain` / `git diff --exit-code -- src/core/ProjectRevisions.cpp` (no fault hunks left) | 0 (empty porcelain, DIFF_EXIT=0) | logs/fault-reverse-1.log |
 | p2 GREEN | `cmake --build build --target zene RevisionTimelineTest` | 0 | logs/build-green-1.log |
 | p2 GREEN | `ctest -R ^RevisionTimelineTest$ --output-on-failure` | 0 | logs/test-green-1.log |
 | p3 | `cmake --build build ...` (revision test family) | 0 | logs/build-green-2b.log |
-| p3 | `ctest -R 'RevisionTimelineTest\|ProjectRevIdsTest\|RevisionsDocsTest'` - 8/8 passed | 0 | logs/test-green-2b.log |
+| p3 | `ctest -R '<8-test revision family>'` (8 tests incl. `RevisionTimelineTest`, `ProjectRevIdsTest`, `RevisionsDocsTest`) - 8/8 passed | 0 | logs/test-green-2b.log |
 | p4 | `python3 .../feature_check.py <worktree>` - RESULT: PASS | 0 | logs/feature-check-1.log |
 
 The p2 RED run failed exactly the reported shape:
@@ -108,24 +109,27 @@ FAIL!  : RevisionTimelineTest::aFailedReplacementAfterStagingKeepsTheLiveProject
 EXIT=8
 ```
 
-The p3 run reports `100% tests passed out of 8` (including
-`ProjectRevIdsTest` and `RevisionsDocsTest`), EXIT=0.
-
-The apply-reverse and clean-diff step of p2 was recorded in the p2 run but its
-own log file was not retained under `logs/`; the tree is clean this session
-(`git status --porcelain` empty, EXIT=0), which confirms no fault hunk survived.
+The fault injected for the RED run is a live-removal shape, not the historical
+delete-first body: `logs/fault.patch` replaces the whole helper body with
+`QFile::remove(projectPath); return false;`. The live project is deleted and the
+replace reports failure, which is exactly the reported outcome. The delete-first
+parent body above is background only; it was not the mutation used.
 
 ## Self-check
 
 **ASK: the regression test FAILS with the product change reverted and PASSES
 with it (exit codes).**
-With the delete-first body re-injected (`logs/fault.patch`), the build was
+With the live-removal fault injected (`logs/fault.patch` replaces the body with
+`QFile::remove(projectPath); return false;`), the build was
 green (EXIT=0) and `RevisionTimelineTest` failed with
 `aFailedReplacementAfterStagingKeepsTheLiveProject ... "the failed replacement
-emptied the live project"`, RED **EXIT=8** (`logs/test-red-1.log`). After
-`git apply -R logs/fault.patch` (EXIT=0, clean diff EXIT=0) and rebuild
-(EXIT=0), the same test passed, GREEN **EXIT=0** (`logs/test-green-1.log`); the
-8-test family also passed, EXIT=0 (`logs/test-green-2b.log`).
+emptied the live project"`, RED **EXIT=8** (`logs/test-red-1.log`). The reverse
+and restore were retained in `logs/fault-reverse-1.log`: `APPLY_EXIT=0`,
+`REVERSE_EXIT=0`, empty `git status --porcelain`, and
+`git diff --exit-code -- src/core/ProjectRevisions.cpp` `DIFF_EXIT=0`. After the
+rebuild (EXIT=0), the same test passed, GREEN **EXIT=0**
+(`logs/test-green-1.log`); the 8-test family also passed, EXIT=0
+(`logs/test-green-2b.log`).
 
 **ASK: the test is deterministic - no wall-clock timing, sleeps or races.**
 `aFailedReplacementAfterStagingKeepsTheLiveProject` uses no sleeps, no timers
@@ -156,10 +160,11 @@ needed because the live file is never removed; the fix therefore cannot be
 half-applied at one call site.
 
 **ASK: no collateral damage - old projects and saved data still load.**
-This closure changes no product code (`git diff base..HEAD` adds only this
-report), so loading, rendering and save/load behaviour are byte-for-byte what
-the branch already shipped. The fix itself only reorders file operations on
-restore/replace and does not change the file format. The 8-test revision family
+This closure changes no product code - this job's only diff is this report;
+the product code is inherited unchanged - so loading, rendering and save/load
+behaviour are byte-for-byte what the branch already shipped. The fix itself only
+reorders file operations on restore/replace and does not change the file format.
+The 8-test revision family
 (`RevisionTimelineTest`, `ProjectRevIdsTest`, `RevisionsDocsTest`, ...) passes
 8/8, EXIT=0 (`logs/test-green-2b.log`); `feature_check.py` RESULT PASS, EXIT=0.
 
@@ -187,8 +192,5 @@ consistent.
 
 ## Other findings
 
-- The p2 reverse-patch and clean-diff step has no retained log file under
-  `logs/`; only the resulting clean tree can be re-verified now. Future runs
-  should tee that step to its own log.
 - `aFailedReplaceKeepsTheLiveProject` also covers the no-revision-0 case, so a
   failure cannot be masked by a fallback copy even when no fallback exists.
