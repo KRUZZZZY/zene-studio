@@ -23,6 +23,8 @@
  *
  */
 
+#include <algorithm>
+
 #include <QPainter>
 
 #include "Graph.h"
@@ -516,10 +518,17 @@ void graphModel::setLength( int _length )
 	if (_length < MinGraphLength) { return; }
 	if( _length != m_length )
 	{
+		const int previousLength = m_length;
 		m_length = _length;
 		if( m_samples.size() < m_length )
 		{
 			m_samples.resize( m_length );
+		}
+		if( m_length > previousLength )
+		{
+			// Zero re-exposed slots so a regrow does not resurface stale values
+			// left in storage by an earlier shrink.
+			std::fill( m_samples.begin() + previousLength, m_samples.begin() + m_length, 0.0f );
 		}
 		emit lengthChanged();
 	}

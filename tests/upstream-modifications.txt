@@ -6015,3 +6015,4 @@ src/gui/widgets/Fader.cpp	cluster new-p16-164: non-finite peaks are ignored befo
 src/gui/widgets/PeakIndicator.cpp	cluster new-p16-164: updatePeak ignores non-finite input before storing the peak; held by tests/src/gui/MixerMeteringTest.cpp.
 include/LocaleHelper.h	cluster new-p16-100: toFloat rejects NaN, ±infinity and float overflow with ok=false and 0.0f
 src/core/Mixer.cpp	cluster new-p16-100: the mixer non-finite guard reads through toDouble so a rejected parse still keeps the model default
+src/gui/widgets/Graph.cpp	cluster new-p23-104: setLength zeroes re-exposed samples when it grows, so a shrink-then-regrow no longer resurfaces stale values

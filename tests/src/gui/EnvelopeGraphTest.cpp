@@ -174,6 +174,27 @@ private slots:
 		QCOMPARE(graph.samples()[2], 0.5f);
 		QCOMPARE(graph.samples()[3], 0.5f);
 	}
+
+	// graphModel::setLength: a shrink keeps the old tail in storage, so a regrow must zero the
+	// re-exposed slots instead of resurfacing stale values (BUG new-p23-104).
+	void regrowAfterShrinkZeroesStaleSamples()
+	{
+		constexpr std::array<float, 4> input{0.25f, -0.5f, 0.75f, -1.0f};
+		graphModel graph(-1.0f, 1.0f, 4, nullptr);
+		graph.setSamples(input.data());
+		graph.setLength(2);
+		QCOMPARE(graph.length(), 2);
+		QCOMPARE(graph.samples()[0], 0.25f);
+		QCOMPARE(graph.samples()[1], -0.5f);
+		// Regrow within the old capacity: the slots must not show the stale 0.75f and -1.0f.
+		graph.setLength(4);
+		QCOMPARE(graph.samples()[2], 0.0f);
+		QCOMPARE(graph.samples()[3], 0.0f);
+		// Grow beyond the old capacity: the new slots must also be zero.
+		graph.setLength(6);
+		QCOMPARE(graph.samples()[4], 0.0f);
+		QCOMPARE(graph.samples()[5], 0.0f);
+	}
 };
 
 QTEST_MAIN(EnvelopeGraphTest)
