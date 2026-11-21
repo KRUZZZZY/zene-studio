@@ -56,3 +56,15 @@ The commit, the post-commit feature check and the git status check are recorded 
 - The `MinGraphLength` early return (Graph.cpp:518) has no test.
 - The `std::fill` change has only been built on Linux.
 - `logs/fix.patch` ends with a stray `EXIT=0` line (line 33). It is a log artifact in the patch file and is not part of the `Graph.cpp` diff.
+
+## Self-check
+
+1. **Red/green reverse run.** With the fix removed, `logs/test-reverse-1.log` shows `regrowAfterShrinkZeroesStaleSamples` FAILED and `EXIT=8` (line 91). With the fix reapplied, `logs/test-reapply-1.log` shows `100% tests passed, 1 of 1` and `EXIT=0` (line 8). Reverse exit 8 is the red exit and reapply exit 0 is the green exit.
+2. **Deterministic model-only slot.** The slot (`tests/src/gui/EnvelopeGraphTest.cpp:178-197`) uses a fixed `constexpr std::array<float,4>` input and calls only `graphModel` methods (`setSamples`, `setLength`, `samples`, `length`). It has no timers, `QTest::qWait`, sleeps, threads, or GUI widgets, so the result does not depend on timing or event ordering.
+3. **Callers and constructor sibling.** Both shrink-and-regrow callers are checked by reading (report lines 10-13): `BitInvader.cpp:229-234` and `MultitapEchoControls.cpp:157-164`. The `graphModel` constructor (`src/gui/widgets/Graph.cpp:488-496`) sizes `m_samples` and `m_length` to the same `max(length, MinGraphLength)`, so the invariant `m_samples.size() >= m_length` already holds at construction, and the fix only touches the growth path. Why not truncate: `BitInvader.cpp:164-168` encodes `wavetableSize * sizeof(float)` bytes, i.e. 200 floats (`BitInvader.h:51`), from `m_graph.samples()` on every save regardless of length. Truncating `m_samples` on shrink would let the vector fall below 200 entries, so the save path would over-read. The fix keeps storage unchanged. (Evidence: the 200-float read at `BitInvader.cpp:166-167` and the `wavetableSize = 200` constant. No runtime over-read was reproduced here.)
+4. **No new limit; related tests green.** The diff in `0772c88785` adds no clamp, minimum, or maximum on length. The only logic change is the `std::fill` over `[previousLength, m_length)` on growth (`Graph.cpp:527-532`). `logs/test-family-1.log` shows `GraphWaveformLoadTest` (#143) Passed, `WaveformDataTest` and `EnvelopeGraphTest` (#515) Passed, `100% tests passed out of 3`, `EXIT=0`.
+5. **Verdict.** N/A for ALREADY-FIXED or FALSE-POSITIVE. The defect was reproduced red (`test-red-1.log`, Actual 0.75, Expected 0) and the fix is in the code, so the verdict is FIXED.
+
+**Post-commit gate table** (`logs/feature-check-1.log`, `RESULT: PASS`, `EXIT=0`): fork-sources PASS, all-sources-reproduce PASS, no-upstream-regression PASS, check-namespace PASS, no-tautology PASS, doc-figures PASS, complexity PASS, file-length PASS. That is 8/8.
+
+**Screenshot digest.** `logs/screenshot/shell-arrange.png` has sha256 `d081016751862a3850fb00043e1c76e81d8c1979f3fd7f77abe147ad20bd7045`. This matches `logs/screenshot-1.sha256` and was checked with `sha256sum` in this session.
