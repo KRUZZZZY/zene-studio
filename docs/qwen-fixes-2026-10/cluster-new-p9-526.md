@@ -15,9 +15,9 @@ thread only reads the published copy.
 - Old reader, now replaced: `plugins/WaveShaper/WaveShaper.cpp:77` reads
   `m_wsControls.m_curveSnapshot.samples()` instead of
   `m_wsControls.m_wavegraphModel.samples()`. The read happens once per
-  `processImpl()` block (`WaveShaper.cpp:74`).
+  `processImpl()` block (`WaveShaper.cpp:68`); the snapshot read is line 77.
 - GUI writers of the mutable table: `src/gui/widgets/Graph.cpp:217`
-  (`Graph::drawLineAt()`), which writes through `drawSampleAt()` at line 271
+  (`Graph::drawLineAt()`), which writes through `drawSampleAt()` at line 274
   and only then emits `samplesChanged()` at line 279; the mouse handler writes
   through `setSampleAt()` at line 307; `graphModel::setSampleAt()` at line 539
   writes at 541 and emits `samplesChanged()` at 542. This is the half-finished
@@ -28,7 +28,7 @@ thread only reads the published copy.
   state at 152/154/156, GUI-thread-only retired/free lists at 158/160.
 - Publication hook: `plugins/WaveShaper/WaveShaperControls.cpp:60`
   (`samplesChanged()` calls `publishCurve()` at 62); `publishCurve()` itself at
-  69, with the 200-sample length guard at 73 and the copy hand-off at 78.
+  69, with the 200-sample length guard at 73 and the copy hand-off at 77.
   Declaration at `WaveShaperControls.h:175`, member at 182.
 - Regression slot:
   `tests/src/gui/GraphWaveformEditorGuiTest.cpp:138`
@@ -36,7 +36,8 @@ thread only reads the published copy.
 
 ## Test matrix
 
-All cases are in the new slot and ran green in the full executable
+The six new cases are in the new slot; the save/load case below is the
+existing slot. The durable family log proves the full executable passed
 (4 passed, 0 failed, exit 0).
 
 | Case | Assertion | Line |
@@ -58,26 +59,27 @@ quoted, and where it does not the recorded result is given instead.
 | Phase | Command | Recorded result |
 | --- | --- | --- |
 | RED build | `cmake --build build --target GraphWaveformEditorGuiTest` | build succeeded, log ends `[100%] Built target GraphWaveformEditorGuiTest` (`logs/build-1-red.log`) |
-| RED test | `./build/tests/GraphWaveformEditorGuiTest` | exit 1 — `Totals: 2 passed, 1 failed`; `FAIL! ... Compared floats are not the same (fuzzy compare)` (`logs/test-1-red.log`) |
+| RED test | `cd build/tests && ./GraphWaveformEditorGuiTest waveShaperCurveEditsReachTheAudioAsAPublishedSnapshot` | exit 1 — `Totals: 2 passed, 1 failed`; `FAIL! ... Compared floats are not the same (fuzzy compare)` (`logs/test-1-red.log`) |
 | GREEN build | `cmake --build build --target GraphWaveformEditorGuiTest` | build succeeded, `[100%] Built target waveshaper` and `GraphWaveformEditorGuiTest` (`logs/build-2-fix.log`) |
-| GREEN test | `./build/tests/GraphWaveformEditorGuiTest` | exit 0 (log `Totals: 3 passed, 0 failed`) (`logs/test-2-green.log`); re-run in this packet: exit 0, `Totals: 4 passed, 0 failed` (`duet/12-worker/tmp/001-p5-green.log`) |
-| 4b reverse build | `cmake --build build --target GraphWaveformEditorGuiTest` | exit 0 (`logs/build-3-reverse.log`) |
-| 4b reverse test | `./build/tests/GraphWaveformEditorGuiTest` | exit 1 — `Totals: 2 passed, 1 failed`, same fuzzy-compare failure (`logs/test-4-red.log`) |
-| 4b reapply build | `cmake --build build --target GraphWaveformEditorGuiTest` | exit 0 (`logs/build-4-reapply.log`) |
-| 4b reapply test | `./build/tests/GraphWaveformEditorGuiTest` | exit 0 — `Totals: 3 passed, 0 failed` (`logs/test-5-green.log`) |
-| family gate | `ctest --test-dir build/tests -R GraphWaveformEditorGuiTest --output-on-failure` | 1/1 passed, `100% tests passed out of 1` (`logs/test-3-family.log`) |
-| build gate | `cmake --build build` | build succeeded, final targets including `waveshaper` and `GraphWaveformEditorGuiTest` (`logs/build-5-gates.log`) |
-| feature gate | `feature-check kads-new-p9-526` | `RESULT: PASS`; fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length all pass (`logs/feature-check-1.log`) |
+| GREEN test | `cd build/tests && ./GraphWaveformEditorGuiTest waveShaperCurveEditsReachTheAudioAsAPublishedSnapshot` | exit 0 (log `Totals: 3 passed, 0 failed`) (`logs/test-2-green.log`) |
+| 4b reverse build | `cmake --build build --target waveshaper` | exit 0 (`logs/build-3-reverse.log`) |
+| 4b reverse test | `cd build/tests && ./GraphWaveformEditorGuiTest waveShaperCurveEditsReachTheAudioAsAPublishedSnapshot` | exit 1 — `Totals: 2 passed, 1 failed`, same fuzzy-compare failure (`logs/test-4-red.log`) |
+| 4b reapply build | `cmake --build build --target waveshaper` | exit 0 (`logs/build-4-reapply.log`) |
+| 4b reapply test | `cd build/tests && ./GraphWaveformEditorGuiTest waveShaperCurveEditsReachTheAudioAsAPublishedSnapshot` | exit 0 — `Totals: 3 passed, 0 failed` (`logs/test-5-green.log`) |
+| family gate | `cd build/tests && ctest -R GraphWaveformEditorGuiTest --output-on-failure` | 1/1 passed, `100% tests passed out of 1` (`logs/test-3-family.log`) |
+| build gate | `cmake --build build --target waveshaper GraphWaveformEditorGuiTest` | build succeeded, both targets built (`logs/build-5-gates.log`) |
+| feature gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p9-526` | `RESULT: PASS`; fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length all pass (`logs/feature-check-1.log`) |
 
 The 4b pair is the fix-dependence check: with the fix reversed the new slot
 fails, and after reapplying it the same slot passes.
 
 ## Self-check
 
-`submit_check` is not installed in this environment (`command -v submit_check`
-returned nothing; the duet directory contains only the runner tooling), so it
-was not run. The pre-commit self-check is: `git diff --check` on the five
-changed files exited 0; the full test executable exited 0 with 4 passed; the
+The final completion step runs
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py`, and its
+result is recorded then. The pre-commit self-check is: `git diff --check` on
+the six changed files exited 0; the full test executable exited 0 with 4
+passed; the
 commit contains the three product files, the test, the ledger and this report;
 `git status --porcelain` is empty afterwards.
 
