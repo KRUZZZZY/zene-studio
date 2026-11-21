@@ -382,4 +382,4 @@ private:
 };
 
 QTEST_GUILESS_MAIN(MasteringSourceMixTest)
-#include "MasteringSourceMixTest.moc"
+#include "MasteringTestSourceMix.moc"

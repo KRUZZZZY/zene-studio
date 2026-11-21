@@ -2853,8 +2853,8 @@ tests/src/core/LinkedModelGroupsTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/Lv2StateTest.cpp
 tests/src/core/McuSurfaceFeedbackTest.cpp
-tests/src/core/MasteringSourceMixTest.cpp
 tests/src/core/MasteringTest.cpp
+tests/src/core/MasteringTestSourceMix.cpp
 tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiClockCaptureOutputTest.cpp
