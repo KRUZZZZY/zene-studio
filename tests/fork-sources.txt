@@ -4008,3 +4008,6 @@ tests/src/plugins/BitInvaderLoadSettingsTest.cpp
 tests/src/core/AudioOssDeviceConfigTest.cpp
 # cluster new-p16-100: LocaleHelper::toFloat parse contract and the project-load non-finite leg (fork-NEW).
 tests/src/core/LocaleHelperTest.cpp
+# cluster ci-4ff107c9ee4dc69c: the header-only MS friend-lookup probe and its clang driver.
+tests/scripts/ms_friend_lookup_check.py
+tests/src/compile/MsFriendLookupProbe.cpp
