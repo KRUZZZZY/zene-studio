@@ -1620,6 +1620,7 @@ plugins/WasmEffect/WasmEffectControlDialog.h
 plugins/WasmEffect/WasmEffectControls.cpp
 plugins/WasmEffect/WasmEffectControls.h
 plugins/Watsyn/WatsynParamHandoff.h
+plugins/ZeneRack/ZeneRack.cpp
 scripts/capabilities-dump.py
 src/core/AafImportBuild.cpp
 src/core/AafImportModel.cpp
@@ -3991,3 +3992,6 @@ tests/control-audio-test-tone.py
 docs/050-features/Q050-183.1.md
 # Q050-183.1 (stage 1/2): verification report with acceptance evidence and self-check.
 docs/qwen-fixes-2026-10/cluster-Q050-183.1.md
+# Q050-267.1: the external-host regression for the Zene Rack VST3 bundle - it opens the
+# built bundle through the VST3 SDK's hosting loader (fork-NEW test, measured by the fork ratchets).
+tests/src/plugins/ZeneRackTest.cpp

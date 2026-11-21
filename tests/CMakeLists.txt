@@ -5902,6 +5902,31 @@ if(TARGET lmms_vst3_sdk)
 	add_dependencies(Vst3EffectIntegrationTest vst3-test-effect)
 endif()
 
+# Q050-267.1: the Zene Rack product VST3 bundle, opened by the SDK's own
+# external hosting loader (Module::create) rather than Zene's host wrapper.
+# The target only exists when plugins/ZeneRack configured (pinned SDK present).
+if(TARGET zenerack)
+	add_executable(ZeneRackTest
+		src/plugins/ZeneRackTest.cpp
+	)
+	add_test(NAME ZeneRackTest COMMAND ZeneRackTest)
+	target_include_directories(ZeneRackTest PRIVATE
+		${CMAKE_BINARY_DIR}
+		${CMAKE_SOURCE_DIR}/include
+	)
+	target_compile_features(ZeneRackTest PRIVATE cxx_std_20)
+	target_link_libraries(ZeneRackTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY}
+		lmms_vst3_sdk
+		${CMAKE_DL_LIBS}
+	)
+	target_compile_definitions(ZeneRackTest PRIVATE
+		ZENERACK_BUNDLE_PATH="${ZENERACK_BUNDLE_DIR}"
+	)
+	add_dependencies(ZeneRackTest zenerack)
+endif()
+
 # Instrument the plugin/gate test executables as well - they compile fork
 # sources directly, so their objects carry the coverage the ratchet tracks.
 # PluginPortsMigrationReference is deliberately left un-instrumented: the
