@@ -1,4 +1,4 @@
-ALREADY-FIXED — cluster ci-v041-3 (CI regression: build / macos-x86_64, NAM loader test)
+ALREADY-FIXED
 
 ## Verdict and cause
 
@@ -7,15 +7,18 @@ no longer uses `std::filesystem`, so the macOS deployment target below 10.15 no 
 or test assertion change is made by this packet; it records the prior fix with gate evidence and adds this
 report.
 
-**The original historical error.** The hosted macos-x86_64 job builds below macOS 10.15
-(`CMakeLists.txt:263-277` sets this project's floor to 10.13, and CI derives a lower-than-10.15 target from a
-dependency binary). libc++ marks `std::filesystem` unavailable there, and the NAM loader regression then failed
-to compile:
+**The original historical error.** At the time of the finding the hosted macos-x86_64 job built below macOS
+10.15 (its deployment target is derived from a dependency binary). libc++ marks `std::filesystem` unavailable
+there, and the NAM loader regression then failed to compile:
 
     tests/src/core/NamModelLoaderTest.cpp:137:46: error: 'path' is unavailable: introduced in macOS 10.15
     tests/src/core/NamModelLoaderTest.cpp:141:17: error: 'basic_ofstream' is unavailable: introduced in macOS 10.15
     tests/src/core/NamModelLoaderTest.cpp:250:23: error: 'file_size' is unavailable: introduced in macOS 10.15
     tests/src/core/NamModelLoaderTest.cpp:329:57: error: 'temp_directory_path' is unavailable ...
+
+The current floor is recorded at `CMakeLists.txt:271` as `SET(ZENE_MACOS_MINIMUM "10.13")`, and the current
+CMake comment immediately above it (`CMakeLists.txt:263-270`) states that CI today yields 11.0+, which is above
+that floor and is supported.
 
 **The ancestor carrying the fix.** `03e5a509b7` is the ancestor that carries the 128-line source portability
 change in this file (98 insertions, 30 deletions):
@@ -52,28 +55,31 @@ That change replaced every `std::filesystem` use with plain `std::string` paths 
   that fails if a configured tree lacks the guarded CTest. Both are registered in the configured tree
   (`build/tests/CTestTestfile.cmake:1609` and `:1611`, `logs/01-registration.log` EXIT=0).
 
-## Gate evidence (commands and exits copied from logs 01-10)
+## Gate evidence (commands as issued in packets p1-p3; exits from logs 01-10)
 
-Logs are under `/home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/`. Exits below are the recorded
-values, not predictions.
+Logs are under `/home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/`. The logs hold each command's
+output and exit code but not the command text, so the command lines below are the ones issued in the packets,
+quoted as issued; the exits are the recorded values, not predictions. A regex or option that contains a pipe is
+written `\|` in this table only so the Markdown cell does not split — the issued command used a literal `|`.
 
-| # | Command (as recorded in that round) | Log | Exit |
+| # | Command (as issued in the packet) | Log | Exit |
 |---|---|---|---|
-| 01 | `git log --oneline -3 -- tests/src/core/NamModelLoaderTest.cpp` | 01-history.log | 0 |
+| 01 | `git merge-base --is-ancestor 03e5a509b7 HEAD; echo ANCESTOR_EXIT=$?; git log --oneline -3 -- tests/src/core/NamModelLoaderTest.cpp` | 01-history.log | 0 (`ANCESTOR_EXIT=0`) |
 | 01 | `rg -n 'ZENE_MACOS_MINIMUM' CMakeLists.txt` | 01-floor.log | 0 |
 | 01 | `rg -n 'mkdtemp\|_mkdir\|std::ofstream\|stat\(' tests/src/core/NamModelLoaderTest.cpp` | 01-portable-idiom.log | 0 |
 | 01 | `rg -n 'filesystem' tests/src/core/NamModelLoaderTest.cpp` | 01-filesystem-grep.log | 1 (no match) |
 | 01 | `rg -n 'NamModelLoaderPortabilityCheck\|NamPortabilityRegistrationCheck' tests/CMakeLists.txt build/tests/CTestTestfile.cmake` | 01-registration.log | 0 |
-| 02 | build `NamModelLoaderTest` and the NAM sibling targets | 02-build-nam.log | 0 |
-| 02 | `ctest -N -R '^NamModelLoader\|^NamPortability\|^NamModelMono\|^NamModelPrewarm'` | 02-test-list.log | 0 |
-| 03 | `ctest -R '^NamModelMonoOutputTest$\|^NamModelPrewarmTest$\|^NamModelLoaderTest$\|^NamModelLoaderPortabilityCheck$\|^NamPortabilityRegistrationCheck$' --output-on-failure` | 03-test-family-green.log | 0 |
-| 04 | `ctest -R '^NamModelLoaderPortabilityCheck$'` | 04-test-portability-green.log | 0 |
+| 02 | `cmake --build build --target NamModelLoaderTest NamModelMonoOutputTest NamModelPrewarmTest` | 02-build-nam.log | 0 |
+| 02 | `ctest -N -R 'NamModel\|NamPortability'` | 02-test-list.log | 0 |
+| 03 | `ctest -R 'NamModel\|NamPortability' --output-on-failure` | 03-test-family-green.log | 0 |
+| 04 | `ctest -R '^NamModelLoaderPortabilityCheck$' --output-on-failure` | 04-test-portability-green.log | 0 |
 | 05 | `rg -n 'filesystem' tests/src/core/NamModelLoaderTest.cpp` after applying the red mutation | 05-mutation-grep.log | 0 |
-| 06 | `ctest -R '^NamModelLoaderPortabilityCheck$'` with the mutation applied | 06-portability-red.log | **8** |
-| 07 | reverse-apply the mutation and verify the restored file | 07-restore-diff.log / 07-restore-sha.log | 0 / 0 |
-| 08 | rebuild `NamModelLoaderTest` after restore | 08-rebuild-restored.log | 0 |
-| 09 | `ctest -R '^NamModelLoaderPortabilityCheck$'` after restore | 09-portability-green-restored.log | **0** |
-| 10 | family `ctest` after restore | 10-family-green-restored.log | 0 |
+| 06 | `ctest -R '^NamModelLoaderPortabilityCheck$' --output-on-failure` with the mutation applied | 06-portability-red.log | **8** |
+| 07 | `cp /home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/05-NamModelLoaderTest.cpp.bak tests/src/core/NamModelLoaderTest.cpp; git diff --exit-code -- tests/src/core/NamModelLoaderTest.cpp` | 07-restore-diff.log | 0 |
+| 07 | `sha256sum -c /home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/05-sha-before.txt` | 07-restore-sha.log | 0 |
+| 08 | `cmake --build build --target NamModelLoaderTest` after restore | 08-rebuild-restored.log | 0 |
+| 09 | `ctest -R '^NamModelLoaderPortabilityCheck$' --output-on-failure` after restore | 09-portability-green-restored.log | **0** |
+| 10 | `ctest -R 'NamModel\|NamPortability' --output-on-failure` after restore | 10-family-green-restored.log | 0 |
 | 10 | `git status --porcelain` after restore | 10-status-after-restore.log | 0 (empty) |
 
 Key numbers: log 02 lists 5 tests (`NamModelMonoOutputTest` #750, `NamModelPrewarmTest` #800,
@@ -101,8 +107,8 @@ source produces the same verdict on every run.
 log 03 all 5 tests passed).
 
 **4. No collateral.** This packet changes no product file and no test assertion. The only diff is this docs
-file; `tests/src/core/NamModelLoaderTest.cpp` and `tests/CMakeLists.txt` are untouched (final
-`git status --porcelain` after the docs commit is empty apart from that commit).
+file; `tests/src/core/NamModelLoaderTest.cpp` and `tests/CMakeLists.txt` are untouched, and the final
+`git status --porcelain` is empty (`logs/18-status-final.log`, EXIT=0).
 
 **5. ALREADY-FIXED code references.** See the list above: `tests/src/core/NamModelLoaderTest.cpp:33-54`,
 `:93-152`, `:204-227`, `:311-334`, current `:120`, current `:323`, and `tests/CMakeLists.txt:6295`, `:6312`.
@@ -125,14 +131,16 @@ Ancestor `03e5a509b7` carries the 128-line change.
 ## Commands for this packet
 
     $ head -1 docs/qwen-fixes-2026-10/cluster-ci-v041-3.md
-    ALREADY-FIXED — cluster ci-v041-3 (CI regression: build / macos-x86_64, NAM loader test)
-    EXIT=0                    (logs/11-report-first-line.log)
+    ALREADY-FIXED
+    EXIT=0                    (logs/15-report-first-line-final.log)
 
     $ rg -n '^## Self-check|^## Other findings' docs/qwen-fixes-2026-10/cluster-ci-v041-3.md
-    EXIT=0                    (logs/11-report-sections.log)
+    EXIT=0                    (logs/15-report-sections-final.log)
 
-    $ FEATURE_CHECK_LOG_DIR=.../logs/feature-check-01 python3 .../feature_check.py <repo>
-    EXIT=0                    (logs/12-feature-check.log)
+    $ FEATURE_CHECK_LOG_DIR=/home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/feature-check-final \
+        python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py \
+        /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3
+    EXIT=0                    (logs/16-feature-check-final.log)
 
 The commit is docs-only: `docs/qwen-fixes-2026-10/cluster-ci-v041-3.md`
-(`logs/13-commit-stat.log`, `logs/14-status-clean.log`).
+(`logs/17-commit-stat-final.log`, `logs/18-status-final.log`).
