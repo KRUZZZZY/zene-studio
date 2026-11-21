@@ -165,3 +165,10 @@ Not fixed here, and outside this packet's scope:
 - Verdict is FIXED, not ALREADY-FIXED/FALSE-POSITIVE, so no counter-evidence
   section is needed; the pre-fix `tryLockShm` at line 1104 and the `std::mutex`
   at line 482 are the real defect.
+- Sibling commands: this change touches no control-command file, so the
+  `app.*` and `arrangement.*` commands listed by the checker (`app.about`,
+  `app.ask`, `app.help`, `app.online_help`, `app.task_cancel`, `app.tasks`,
+  `app.tour`, `app.tours`, `app.update_check_get`, `app.update_check_run`,
+  `app.update_check_set`, `app.version`, `app.whats_new`,
+  `arrangement.fit_tracks`, `arrangement.get_state`) are unmodified and
+  unaffected; no command registration or reversibility class changed.
