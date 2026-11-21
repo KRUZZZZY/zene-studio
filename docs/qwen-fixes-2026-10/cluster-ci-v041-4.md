@@ -208,7 +208,11 @@ must confirm them. The local compiler used for the compile half is
   `logs/test-red-528-r2.log`) and the scanner `EXIT=1`
   (`logs/test-red-394-clang-r2.log` and the other three `-clang-r2.log` files).
   With the committed source, ctest is `EXIT=0` (`logs/test-green-r2.log`) and
-  the scanner is `EXIT=0` (`logs/test-green-clang-r2.log`).
+  the scanner is `EXIT=0` (`logs/test-green-clang-r2.log`). The regression test
+  is the pre-existing ctest ClangTemplateKeywordCheck
+  (`tests/clang-template-keyword-check.py`), and the product change being
+  reversed is the 3cc4c0a075 header fix, re-applied in reverse via
+  `mut-N.patch`.
 
 - **Deterministic.** The guard is a static source scan plus a compile of the
   real header; it uses no wall-clock timing, sleeps or races. The only seam is
@@ -223,11 +227,12 @@ must confirm them. The local compiler used for the compile half is
   (ripgrep no-match, `logs/evidence-4-scan-r2.log`), so no caller or sibling
   uses the rejected form.
 
-- **No collateral damage.** Only the redundant keyword was dropped; each call
+- **No collateral damage.** Only the ill-formed keyword was dropped; each call
   stays `Base::`-qualified and resolves to the same function, so the queue
   semantics and the on-disk/on-wire data are unchanged. The scanner reports no
-  other occurrence repo-wide, so the added check does not flag other callers
-  (`logs/evidence-4-scan-r2.log`, EXIT=1).
+  other occurrence repo-wide, so the pre-existing guard
+  ClangTemplateKeywordCheck (added with commit 3cc4c0a075; this cluster adds no
+  check) flags no other caller (`logs/evidence-4-scan-r2.log`, EXIT=1).
 
 - **ALREADY-FIXED evidence.** `plugins/SfzPlayer/sfizz/external/atomic_queue/include/atomic_queue/atomic_queue.h:394,400,522,528`
   read `Base::do_pop_any(` / `Base::do_push_any(` (`logs/evidence-1-lines.log`),
