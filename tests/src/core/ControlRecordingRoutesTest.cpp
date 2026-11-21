@@ -471,6 +471,15 @@ private slots:
 		QVERIFY(channel != nullptr);
 		ControlRegistry* registry = ControlRegistry::instance();
 
+		// Drive the periods ourselves: a background render period must not publish
+		// the pending tap or push an extra block while this test runs. Stopping the
+		// device waits for in-flight callbacks, and the guard restarts it so the
+		// shared engine stays usable for the tests after this one.
+		AudioDevice* device = Engine::audioEngine()->audioDev();
+		QVERIFY(device != nullptr);
+		device->stopProcessing();
+		const auto restartAudio = qScopeGuard([device] { device->startProcessing(); });
+
 		QTemporaryDir dir;
 		QVERIFY(dir.isValid());
 		StopRecorderOnExit stopRecorder{recorder};

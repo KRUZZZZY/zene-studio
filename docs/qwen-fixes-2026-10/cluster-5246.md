@@ -33,7 +33,12 @@ immediately); audio code uses `audioTapped()`, and `MultiTrackRecorder.cpp:125` 
 `masterMix` to activate the Channel tap, performs a mid-period Channel-to-Master edit that must
 not push, then runs the next period's `masterMix`, which must push exactly once. There are no
 sleeps, threads or timing dependencies: the two producer calls are forced in one period by
-construction. The truly concurrent production case is two Channel taps on different mixer
+construction. To keep that construction deterministic, the test stops the engine audio device
+(`ControlRecordingRoutesTest.cpp:474-481`) and restarts it via a scope guard, so no background
+render period can publish the pending tap or add a block while the test runs; `stopProcessing()`
+waits for in-flight callbacks. The restart guard is declared before `StopRecorderOnExit` and the
+`resetRoute` guard, so teardown order is `resetRoute`, `StopRecorderOnExit`, restart, and the
+shared engine stays usable for the tests after this one. The truly concurrent production case is two Channel taps on different mixer
 workers; this deterministic Channel-to-Master probe exercises the same period-boundary defect,
 because the workers run `channelAt` and then the render thread takes `master` after the join. The
 one active snapshot prevents both variants.
@@ -44,16 +49,16 @@ one active snapshot prevents both variants.
 ordered tap states, where one period is `frames` frames (256 here):
 
 1. Route 0 `channel`/`post_fader`/`left` is requested through `record.route_source` and stays
-   pending, because no period has published it yet (`ControlRecordingRoutesTest.cpp:498-503`).
+   pending, because no period has published it yet (`ControlRecordingRoutesTest.cpp:507-512`).
 2. After the first `masterMix` the channel tap is active and `framesPushed` is 256
-   (`:507-510`).
+   (`:516-519`).
 3. The direct `recordertaps::channelAt` probe feeds the active channel tap and `framesPushed` is
-   512 (`:513-514`).
+   512 (`:522-523`).
 4. `record.route_source` re-points the same route to `master`/`right` mid-period while the channel
    tap remains active; `recordertaps::master()` pushes nothing and `framesPushed` stays 512
-   (`:519-525`).
+   (`:528-534`).
 5. After the next `masterMix` the master/right tap is active and `framesPushed` is 768
-   (`:528-529`).
+   (`:537-538`).
 
 The initial default Input tap and the scope-guard reset to Input are cleanup: the test neither sets
 nor asserts them before cleanup, so they are not part of the asserted sequence.
@@ -99,7 +104,8 @@ Round 2 re-ran the red/green proof; logs are under
 `/home/kruzzzzy/.config/kads/zene/state/runs/5246.r2/logs`. Reverting the product change with
 `git apply -R` exited 0, `build-1-red` exited 0, and `test-1-red` exited 8 with
 `Actual (recorder.track(0).framesPushed()): 768` against
-`Expected (base + expected): 512` at `ControlRecordingRoutesTest.cpp:525` (the `QCOMPARE` after
+`Expected (base + expected): 512` at `ControlRecordingRoutesTest.cpp:525`, which is line 534
+after the round-3 insertion (the `QCOMPARE` after
 the `recordertaps::master` call at `:524`). Restoring the change with `git apply` exited 0, and
 `build-1-green` exited 0, `test-1-green` exited 0, and `test-1-green-detail` exited 0 with
 12/12 passed.
@@ -107,7 +113,7 @@ the `recordertaps::master` call at `:524`). Restoring the change with `git apply
 | Step | Log | Exit |
 |---|---|---|
 | build-1-red | `build-1-red.log` | 0 |
-| test-1-red (768 vs 512 at line 525) | `test-1-red.log` | 8 |
+| test-1-red (768 vs 512 at line 525, now 534) | `test-1-red.log` | 8 |
 | build-1-green | `build-1-green.log` | 0 |
 | test-1-green | `test-1-green.log` | 0 |
 | test-1-green-detail (12/12) | `test-1-green-detail.log` | 0 |
@@ -115,6 +121,27 @@ the `recordertaps::master` call at `:524`). Restoring the change with `git apply
 | test-3-family (6/6) | `test-3-family.log` | 0 |
 | feature_check | `gates-3.log` | 0 PASS |
 | submit_check | `submit-3.log` | 0 PASS |
+
+Round 3 made the test deterministic by stopping the engine audio device for the whole test and
+restarting it with a scope guard (`ControlRecordingRoutesTest.cpp:474-481`). Green was run ten
+times with `--repeat until-fail:10` and exited 0; with the product change reverted, the test
+exited 8 with `Actual (recorder.track(0).framesPushed()): 768` against
+`Expected (base + expected): 512` at `ControlRecordingRoutesTest.cpp:534` (the `QCOMPARE` after
+the `recordertaps::master` call at `:533`); after restoring, the repeat-10 green run exited 0
+again. The device stop removes the background render period that could publish the pending tap
+or add a block, and the restart guard keeps the shared engine usable afterwards.
+
+| Step | Log | Exit |
+|---|---|---|
+| build-4b | `build-4b.log` | 0 |
+| test-4b-green-10x (10/10) | `test-4b-green-10x.log` | 0 |
+| fix.patch (ebf644847a..HEAD product diff) | `fix.patch` | 0 |
+| git apply -R | `apply-reverse` step, `fix.patch` | 0 |
+| build-4b-red | `build-4b-red.log` | 0 |
+| test-4b-red (768 vs 512 at line 534) | `test-4b-red.log` | 8 |
+| git apply restore | `apply-forward` step, `fix.patch` | 0 |
+| build-4b-restored | `build-4b-restored.log` | 0 |
+| test-4b-green-10x-restored (10/10) | `test-4b-green-10x-restored.log` | 0 |
 
 The 6-test family run excludes `RecordToolsTest` because of the already-baselined
 environmental `theRemainingRecordTime` failure (see ## Other findings).
