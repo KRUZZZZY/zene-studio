@@ -67,6 +67,14 @@ void setError( QString* error, const QString& message )
 	if( error ) { *error = message; }
 }
 
+/*! True for the four bytes XML 1.0 counts as whitespace: space, tab, CR, LF.
+ *  Byte-level on purpose - no locale, no QChar classification - so any other
+ *  byte is never read as whitespace. */
+bool isXmlWhitespaceByte( char byte )
+{
+	return byte == ' ' || byte == '\t' || byte == '\r' || byte == '\n';
+}
+
 /*! Parse \a bytes as a project document and locate \a contentElementName as a
  *  child of the ROOT - `<song>` under `<lmms-project>` - which is what
  *  documentIndex() and reduceDocumentSections() both assume the sections live
@@ -362,7 +370,12 @@ bool locateContentInterior( const QByteArray& bytes, const QString& contentEleme
  *  each section's LEADING whitespace. The reassembler then concatenates the
  *  entries in index order before the close tag, and `section + trailing
  *  whitespace` in sequence is exactly the interior the document had: no
- *  separator is invented, and none can be doubled. */
+ *  separator is invented, and none can be doubled.
+ *
+ *  The extension is only valid over whitespace: every byte between a section's
+ *  end and the next '<' must be XML whitespace, and any other text there is
+ *  refused. Otherwise that text would be filed inside a section's entry, where
+ *  the post-cut skeleton proof (locateContentInterior) cannot see it. */
 bool cutEntries( const QByteArray& document, const SectionRanges& found,
 	const QVector<QString>& entryNames,
 	std::vector<std::pair<QString, QByteArray>>* derived, QString* error )
@@ -384,6 +397,18 @@ bool cutEntries( const QByteArray& document, const SectionRanges& found,
 				"no '<' follows it, so its bytes cannot be cut without guessing" )
 				.arg( i + 1 ) );
 			return false;
+		}
+		// The gap is cut into section i's entry, so it may hold only whitespace.
+		// Any other byte here is text the post-cut interior check cannot see.
+		for( qint64 at = range.first + range.second; at < nextTag; ++at )
+		{
+			if( !isXmlWhitespaceByte( document.at( at ) ) )
+			{
+				setError( error, QStringLiteral( "section %1 of the index is followed by "
+					"text that is not whitespace, so cutting it would file that text inside "
+					"the section" ).arg( i + 1 ) );
+				return false;
+			}
 		}
 		cut.append( qMakePair( range.first, nextTag - range.first ) );
 	}
