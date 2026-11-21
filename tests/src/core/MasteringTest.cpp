@@ -926,28 +926,34 @@ private slots:
 	void sourceMixSampleCountIsBounded_data()
 	{
 		QTest::addColumn<quint64>("frames");
+		QTest::addColumn<quint64>("channels");
 		QTest::addColumn<bool>("accepted");
 		QTest::addColumn<quint64>("expectedCount");
 
 		const std::size_t cap = MasteringJob::maxSourceFrames;
 		QTest::newRow("overflow")
 			<< static_cast<quint64>(std::numeric_limits<std::size_t>::max() / 2 + 1)
+			<< quint64{2} << false << quint64{0};
+		QTest::newRow("multiplication overflow") << static_cast<quint64>(cap)
+			<< static_cast<quint64>(std::numeric_limits<std::size_t>::max() / 2 + 1)
 			<< false << quint64{0};
-		QTest::newRow("cap+1") << static_cast<quint64>(cap + 1) << false << quint64{0};
-		QTest::newRow("cap") << static_cast<quint64>(cap) << true
+		QTest::newRow("cap+1") << static_cast<quint64>(cap + 1) << quint64{2} << false
+			<< quint64{0};
+		QTest::newRow("cap") << static_cast<quint64>(cap) << quint64{2} << true
 			<< static_cast<quint64>(cap * 2);
-		QTest::newRow("1000") << quint64{1000} << true << quint64{2000};
+		QTest::newRow("1000") << quint64{1000} << quint64{2} << true << quint64{2000};
 	}
 
 	void sourceMixSampleCountIsBounded()
 	{
 		QFETCH(quint64, frames);
+		QFETCH(quint64, channels);
 		QFETCH(bool, accepted);
 		QFETCH(quint64, expectedCount);
 
 		std::size_t count = 0;
 		const bool result = MasteringJob::checkedSampleCount(
-			static_cast<std::size_t>(frames), 2, &count);
+			static_cast<std::size_t>(frames), static_cast<std::size_t>(channels), &count);
 		if (accepted)
 		{
 			QVERIFY2(result,
