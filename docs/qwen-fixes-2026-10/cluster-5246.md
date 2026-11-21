@@ -100,38 +100,44 @@ Logs are under `/home/kruzzzzy/.config/kads/zene/state/runs/5246.r1/logs`.
 
 p4 changed only comments after the p3 behavioural proof; it introduced no behavioural change.
 
-Round 2 re-ran the red/green proof; logs are under
-`/home/kruzzzzy/.config/kads/zene/state/runs/5246.r2/logs`. Reverting the product change with
-`git apply -R` exited 0, `build-1-red` exited 0, and `test-1-red` exited 8 with
+Round 2 logs are under `/home/kruzzzzy/.config/kads/zene/state/runs/5246.r2/logs`.
+These earlier round-2 runs were made before the device stop and are superseded
+pre-device-stop evidence: reverting the product change with `git apply -R`
+exited 0, `build-1-red` exited 0, and `test-1-red` exited 8 with
 `Actual (recorder.track(0).framesPushed()): 768` against
-`Expected (base + expected): 512` at `ControlRecordingRoutesTest.cpp:525`, which is line 534
-after the round-3 insertion (the `QCOMPARE` after
-the `recordertaps::master` call at `:524`). Restoring the change with `git apply` exited 0, and
-`build-1-green` exited 0, `test-1-green` exited 0, and `test-1-green-detail` exited 0 with
-12/12 passed.
+`Expected (base + expected): 512`; restoring exited 0 with `build-1-green`,
+`test-1-green` and `test-1-green-detail` (12/12). They are kept for history only
+and are not the current proof.
 
-| Step | Log | Exit |
+| Superseded step (pre-device-stop) | Log | Exit |
 |---|---|---|
 | build-1-red | `build-1-red.log` | 0 |
-| test-1-red (768 vs 512 at line 525, now 534) | `test-1-red.log` | 8 |
+| test-1-red (768 vs 512, superseded) | `test-1-red.log` | 8 |
 | build-1-green | `build-1-green.log` | 0 |
-| test-1-green | `test-1-green.log` | 0 |
-| test-1-green-detail (12/12) | `test-1-green-detail.log` | 0 |
+| test-1-green (superseded) | `test-1-green.log` | 0 |
+| test-1-green-detail (12/12, superseded) | `test-1-green-detail.log` | 0 |
 | build-3 | `build-3.log` | 0 |
 | test-3-family (6/6) | `test-3-family.log` | 0 |
 | feature_check | `gates-3.log` | 0 PASS |
 | submit_check | `submit-3.log` | 0 PASS |
 
-Round 3 made the test deterministic by stopping the engine audio device for the whole test and
-restarting it with a scope guard (`ControlRecordingRoutesTest.cpp:474-481`). Green was run ten
-times with `--repeat until-fail:10` and exited 0; with the product change reverted, the test
-exited 8 with `Actual (recorder.track(0).framesPushed()): 768` against
-`Expected (base + expected): 512` at `ControlRecordingRoutesTest.cpp:534` (the `QCOMPARE` after
-the `recordertaps::master` call at `:533`); after restoring, the repeat-10 green run exited 0
-again. The device stop removes the background render period that could publish the pending tap
-or add a block, and the restart guard keeps the shared engine usable afterwards.
+The round-2 determinism follow-up made the test deterministic by stopping the
+engine audio device for the whole test and restarting it with a scope guard
+(`ControlRecordingRoutesTest.cpp:474-481`). The earlier post-build run without
+the device stop failed with `Actual (base): 512` against
+`Expected (expected): 256` (`test-4-final.log`): a background render period had
+already applied the pending tap and added a block. The device stop removed that
+background render period; `stopProcessing()` waits for in-flight callbacks, and
+the restart guard keeps the shared engine usable afterwards. Green was then run
+ten times with `--repeat until-fail:10` and exited 0; with the product change
+reverted, the test exited 8 with
+`Actual (recorder.track(0).framesPushed()): 768` against
+`Expected (base + expected): 512` at `ControlRecordingRoutesTest.cpp:534` (the
+`QCOMPARE` after the `recordertaps::master` call at `:533`); after restoring,
+the repeat-10 green run exited 0 again. These are the current RED/GREEN
+evidence.
 
-| Step | Log | Exit |
+| Current step | Log | Exit |
 |---|---|---|
 | build-4b | `build-4b.log` | 0 |
 | test-4b-green-10x (10/10) | `test-4b-green-10x.log` | 0 |
@@ -142,6 +148,10 @@ or add a block, and the restart guard keeps the shared engine usable afterwards.
 | git apply restore | `apply-forward` step, `fix.patch` | 0 |
 | build-4b-restored | `build-4b-restored.log` | 0 |
 | test-4b-green-10x-restored (10/10) | `test-4b-green-10x-restored.log` | 0 |
+| build-5 | `build-5.log` | 0 |
+| test-5-family (6/6) | `test-5-family.log` | 0 |
+| feature_check | `gates-5.log` | 0 PASS |
+| submit_check | `submit-5.log` | 0 PASS |
 
 The 6-test family run excludes `RecordToolsTest` because of the already-baselined
 environmental `theRemainingRecordTime` failure (see ## Other findings).
@@ -149,9 +159,10 @@ environmental `theRemainingRecordTime` failure (see ## Other findings).
 
 ## Self-check
 
-- The test fails with the product change reverted and passes with it restored: red runs exit 8
-  with `framesPushed` 768 vs the expected 512 (`test-1-red.log`, `test-1b-red.log`,
-  `test-3-red.log`); the restored green run exits 0 (`test-3-green.log`).
+- The test fails with the product change reverted and passes with it restored. Current evidence:
+  `test-4b-red.log` exits 8 with `framesPushed` 768 vs the expected 512 at line 534, and
+  `test-4b-green-10x-restored.log` exits 0 for 10/10 runs. The pre-device-stop `test-1-red`,
+  `test-1-green` and `test-1-green-detail` runs are superseded and not the current proof.
 - The test is deterministic and forces both producers into one period: it calls the real
   `channelAt` and `master` in the same simulated period, with no sleeps, threads or timing.
 - All callers and siblings were checked: `get()`/`tapped()` remain the pending UI view,
