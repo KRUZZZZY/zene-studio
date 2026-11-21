@@ -285,6 +285,63 @@ private slots:
 	{
 		QVERIFY(control::findMixerRoute(std::numeric_limits<mix_ch_t>::max(), 0) == nullptr);
 	}
+
+	//! A NaN send pan is a typed InvalidArgs refusal, not a successful edit.
+	void aNonFiniteSendPanIsRefused()
+	{
+		Engine::getSong()->clearProject();
+		Mixer* mixer = Engine::mixer();
+		while (mixer->numChannels() <= 2) { mixer->createChannel(); }
+		const QString fromId = control::channelIdOf(mixer->mixerChannel(1));
+		const QString toId = control::channelIdOf(mixer->mixerChannel(2));
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), toId}}).ok);
+		const ControlResult refused = run(QStringLiteral("mixer.send_pan"), {{QStringLiteral("channel"), fromId},
+			{QStringLiteral("to"), toId}, {QStringLiteral("pan"), std::numeric_limits<double>::quiet_NaN()}});
+		QVERIFY2(!refused.ok, "a NaN send pan was accepted as a successful edit");
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! A refused NaN send pan must leave the send's pan untouched.
+	void aNonFiniteSendPanChangesNothing()
+	{
+		Engine::getSong()->clearProject();
+		Mixer* mixer = Engine::mixer();
+		while (mixer->numChannels() <= 2) { mixer->createChannel(); }
+		const QString fromId = control::channelIdOf(mixer->mixerChannel(1));
+		const QString toId = control::channelIdOf(mixer->mixerChannel(2));
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), toId}}).ok);
+		MixerRoute* route = control::findMixerRoute(1, 2);
+		QVERIFY(route != nullptr);
+		const ControlResult refused = run(QStringLiteral("mixer.send_pan"), {{QStringLiteral("channel"), fromId},
+			{QStringLiteral("to"), toId}, {QStringLiteral("pan"), std::numeric_limits<double>::quiet_NaN()}});
+		QCOMPARE(route->pan()->value(), 0.f);
+		QVERIFY2(!refused.ok, "a NaN send pan was accepted as a successful edit");
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! A refused NaN send pan must record no undo step: undo takes back only the valid 0.5 edit.
+	void aRefusedSendPanRecordsNoUndoStep()
+	{
+		Engine::getSong()->clearProject();
+		Mixer* mixer = Engine::mixer();
+		while (mixer->numChannels() <= 2) { mixer->createChannel(); }
+		const QString fromId = control::channelIdOf(mixer->mixerChannel(1));
+		const QString toId = control::channelIdOf(mixer->mixerChannel(2));
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), toId}}).ok);
+		MixerRoute* route = control::findMixerRoute(1, 2);
+		QVERIFY(route != nullptr);
+		QVERIFY(run(QStringLiteral("mixer.send_pan"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), toId},
+			{QStringLiteral("pan"), 0.5}}).ok);
+		QCOMPARE(route->pan()->value(), 0.5f);
+		const ControlResult refused = run(QStringLiteral("mixer.send_pan"), {{QStringLiteral("channel"), fromId},
+			{QStringLiteral("to"), toId}, {QStringLiteral("pan"), std::numeric_limits<double>::quiet_NaN()}});
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		route = control::findMixerRoute(1, 2);
+		QVERIFY(route != nullptr);
+		QCOMPARE(route->pan()->value(), 0.f);
+		QVERIFY2(!refused.ok, "a NaN send pan was accepted as a successful edit");
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+	}
 };
 
 QTEST_MAIN(MixerListenTest)

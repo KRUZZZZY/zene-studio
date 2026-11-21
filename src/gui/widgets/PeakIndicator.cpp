@@ -26,6 +26,8 @@
 
 #include "lmms_math.h"
 
+#include <cmath>
+
 #include <QMouseEvent>
 
 
@@ -49,6 +51,11 @@ void PeakIndicator::resetPeakToMinusInf()
 
 void PeakIndicator::updatePeak(float peak)
 {
+	if (!std::isfinite(peak))
+	{
+		return;
+	}
+
 	if (peak > m_peak)
 	{
 		m_peak = peak;
