@@ -57,7 +57,7 @@ The screenshot shows the mixer panel at 1600x1000. It does not show a readable p
 ## Self-check
 
 - **Reverted-product exit codes:** with the fix reversed (`logs/fix-red-apply.log` line 2, EXIT=0), `logs/test-red.log` ends `EXIT=8` and shows the `inf` readout in both places. With the fix reapplied (`logs/fix-red-apply.log` line 3, EXIT=0), `logs/test-green.log` ends `EXIT=0` with 36 passed.
-- **Determinism:** the tests inject `+inf` and NaN directly, use direct fader values, and advance with `tick()`. There are no sleeps.
+- **Determinism:** the tests inject `+inf` and NaN directly, use direct fader values, and advance with `tick()`. There are no sleeps. The one wall-clock read on this path is the peak-hold timer, `Fader::setPeak` at `Fader.cpp:514` (`lastPeakTimer.elapsed()`), and it is only consulted when `m_peakHoldMs > 0`. The strip test sets the hold to 0 at `MixerMeteringTest.cpp:959`, so the timer is never read there. The indicator test uses no fader.
 - **Completeness:** both guards are in place (`PeakIndicator.cpp:54`, `Fader.cpp:497`). The callers listed in §2 all reach one of them.
 - **No collateral damage:** the test asserts `2.0` still reads `"6.0"`. The commit changes the two widget files, the test file, the upstream-modifications list and this report. No saved format, undo path or control command is changed.
 - **ALREADY-FIXED / FALSE-POSITIVE do not apply:** the RED runs show the readout latching `inf` in this tree. The bug is not already fixed. The RED output is real behaviour, not a test artefact: the same `inf` appears in the widget and in the strip.
