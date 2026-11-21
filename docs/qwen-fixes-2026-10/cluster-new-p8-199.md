@@ -125,3 +125,87 @@ removed - 5 failures, (ii) `isfinite` guard removed - 8 failures, (iii)
   `gain` (`include/RoutingNodes.h:92,99`,
   `src/core/RoutingNodes.cpp:160,165`). Both accept non-finite and arbitrarily
   large finite values; that is a separate finding and was not changed here.
+
+## Self-check
+
+Logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p8-199.r1/logs/`.
+An exit code is cited only where the named log contains it.
+
+1. **Regression test fails with the change reverted and passes with it.**
+   Earlier session, with `fix.patch` reverse-applied: `test-4b-red.log:72`
+   `Totals: 16 passed, 13 failed` and `test-4b-red.log:83` `EXIT=8`. After
+   re-applying: `test-4b-green.log:5` `100% tests passed out of 1` and
+   `test-4b-green.log:8` `EXIT=0`. The mutation run of this session
+   (`test-6-red.log:77`, `test-8-green.log:10`) is in the note below.
+
+2. **Deterministic.** The new tests use literal inputs only. The XML comes from
+   `filteredDocument(QStringLiteral("3"))`, and
+   `UnstableAlphaCannotDivergeInProcess` feeds a fixed DC buffer for 8 periods
+   of 256 frames (`tests/src/core/RoutingGraphTest.cpp:775-795`). A search of
+   that file for `sleep|chrono|this_thread|std::thread|rand\(|time\(` printed no
+   lines. The seams are the XML document passed to `RoutingGraph::load` and the
+   direct constructor and `setAlpha` calls. No wall-clock time or race is
+   involved.
+
+3. **Fix at the cause, with callers and siblings checked.** Every write to the
+   one-pole `m_alpha` now goes through `sanitizeAlpha`
+   (`src/core/RoutingNodes.cpp:58-62`): the constructor (`:92`), `setAlpha`
+   (`:98`) and `loadSettings` (`:139`). The recurrence at `:124` is unchanged.
+   Outside the tests, the only place that creates the node is the factory
+   `src/core/RoutingGraph.cpp:386` (default constructor, then `loadSettings`).
+   No non-test caller calls `OnePoleLowPassNode::setAlpha`; the `setAlpha(`
+   hits in `src/` are on colour objects. The sibling nodes do not follow the
+   new rule: `ConstantSourceNode` (`include/RoutingNodes.h:46,54`,
+   `src/core/RoutingNodes.cpp:83,88`) and `GainNode` (`include/RoutingNodes.h:92,99`,
+   `src/core/RoutingNodes.cpp:160,165`) still store unclamped values. They are
+   recorded under Other findings and are out of scope for this fix.
+
+4. **No collateral damage.** `sanitizeAlpha` is the identity on finite values
+   in [0, 1], so a saved project with an in-range alpha loads unchanged. Only
+   values outside [0, 1] or non-finite values change: they fall back to the
+   last good value (`setAlpha`, `loadSettings`) or to 0.5 (constructor,
+   `src/core/RoutingNodes.cpp:92`). No in-repo caller passes an alpha outside
+   [0, 1]. The [0, 1] bound is derived from the recurrence at `:124`
+   (`state += m_alpha * (dst[f] - state)`), not from a documented range:
+   `docs/ROUTING-GRAPH-LIVE.md` states none. `rg -l onepole_lowpass . -g '!build/**'`
+   lists no uncompressed project file in the repo; compressed project files
+   were not searched.
+
+5. **ALREADY-FIXED / FALSE-POSITIVE.** Not applicable: the verdict is REAL.
+   The pre-fix code is in the Verdict section; the fix is at
+   `src/core/RoutingNodes.cpp:58-62,92,98,139`.
+
+6. **Sibling commands.** `git show --stat bd71b7293c` lists four files: this
+   report, `include/RoutingNodes.h`, `src/core/RoutingNodes.cpp` and
+   `tests/src/core/RoutingGraphTest.cpp`. None is a command file, so this fix
+   changes none of the 15 listed commands (`app.about` through
+   `arrangement.get_state`). The branch diff against `fa4a5f2e7` does include
+   `ControlCommands*` files from merged work, but none reaches the one-pole
+   filter: a search of `src/core/ControlCommands*.cpp` and
+   `include/ControlRegistry*.h` finds no `OnePoleLowPassNode` and no filter
+   `alpha`. Their only `alpha` hits are "0.3.0-alpha" release-note references
+   (`include/ControlRegistry.h:584`,
+   `src/core/ControlCommandsExportPresets.cpp:19`,
+   `src/core/ControlCommandsVcaEdit.cpp:40`,
+   `src/core/ControlCommandsOutOfProcess.cpp:20`,
+   `src/core/ControlCommandsMastering.cpp:41`). I did not open the handler
+   bodies of the 15 listed commands.
+
+## Extra mutation check (this session)
+
+Mutation: the `sanitizeAlpha` body replaced by `return candidate;`
+(`logs/mutation.patch`). `test-6-red.log:77` shows `Totals: 16 passed, 13 failed`.
+The 13 `FAIL!` lines span five test functions: `LoadRejectsUnstableAlpha` (5
+rows), `UnstableAlphaCannotDivergeInProcess` (`test-6-red.log:46`),
+`SetAlphaClampsAndIgnoresNonFinite`, `ConstructorSanitisesAlpha` and
+`LoadSettingsOnExistingNodeKeepsLastGoodAlpha` (5 rows). The ctest summary is
+at `test-6-red.log:81-87`. This log has no `EXIT=` line, so the exit code of
+this run is not recorded and is not claimed here.
+
+Revert with `git apply -R` of the patch: `test-8-green.log:10` shows
+`100% tests passed out of 3`. That log also has no `EXIT=` line, so the exit
+code of the revert run is not recorded either.
+
+The mutation and revert builds were not logged in the log folder; they went to
+a tmp path. `build-5.log` is the earlier 3-target build, and `build-7.log` does
+not exist, so neither is claimed to cover this run.
