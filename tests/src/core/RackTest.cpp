@@ -671,6 +671,46 @@ private slots:
 		QCOMPARE(rackUnderTest().chainCount(), 1);
 	}
 
+	//! A <rack selected="..."> that is not an integer names no chain, and must
+	//! not be read as chain 0: QString::toInt() returns 0 for it, and 0 is the
+	//! channel's own chain. Such a rack loads un-wired and stays un-wired through
+	//! a save and a reload, and setSelectedChain() still wires it.
+	void aMalformedSelectorDoesNotBecomeChainZero()
+	{
+		for (const char* value : {"not-a-number", "", "1.0"})
+		{
+			checkCorruptSelectorLoadsUnwired(QString::fromLatin1(value));
+		}
+	}
+
+	//! A selector too large for int32 names no chain either: toInt() reads it as
+	//! 0. The first value fits int64 but not int32; the second overflows int64.
+	void anOverflowingSelectorDoesNotBecomeChainZero()
+	{
+		for (const char* value : {"4294967296", "99999999999999999999999999"})
+		{
+			checkCorruptSelectorLoadsUnwired(QString::fromLatin1(value));
+		}
+	}
+
+	//! Selectors that are valid integers keep today's behaviour: 9 and -2 name
+	//! no chain and load un-wired; 1 routes chain 1; -1 and an absent attribute
+	//! route every chain.
+	void aSelectorThatNamesNoChainLoadsAsBefore()
+	{
+		loadRackProject(selectedAttribute(QStringLiteral("9")));
+		QCOMPARE(rackUnderTest().selectedChain(), 9);
+		assertUnwired("selected=\"9\"");
+
+		loadRackProject(selectedAttribute(QStringLiteral("-2")));
+		QCOMPARE(rackUnderTest().selectedChain(), -2);
+		assertUnwired("selected=\"-2\"");
+
+		QVERIFY(loadedRoutes(selectedAttribute(QStringLiteral("1"))) == std::vector<int>({1}));
+		QVERIFY(loadedRoutes(selectedAttribute(QStringLiteral("-1"))) == std::vector<int>({0, 1}));
+		QVERIFY(loadedRoutes(QString()) == std::vector<int>({0, 1}));
+	}
+
 private:
 	auto rackUnderTest() -> Rack&
 	{
@@ -741,6 +781,101 @@ private:
 			}
 		}
 		return out;
+	}
+
+	//! The ` selected="..."` attribute text for a value.
+	static auto selectedAttribute(const QString& value) -> QString
+	{
+		return QStringLiteral(" selected=\"%1\"").arg(value);
+	}
+
+	//! A two-chain rack with one macro on channel 1. @a selectorAttribute is the
+	//! whole attribute text, or empty for no attribute.
+	static auto rackProjectXml(const QString& selectorAttribute) -> QString
+	{
+		return QStringLiteral(
+			"<mixer>\n"
+			"  <mixerchannel num=\"0\" muted=\"0\" volume=\"1\" name=\"Master\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"  </mixerchannel>\n"
+			"  <mixerchannel num=\"1\" muted=\"0\" volume=\"1\" name=\"Rack\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"    <rack version=\"2\"%1>\n"
+			"      <chain index=\"1\"><fxchain numofeffects=\"0\" enabled=\"0\"/></chain>\n"
+			"      <macro name=\"M\" value=\"0.5\"/>\n"
+			"    </rack>\n"
+			"    <send channel=\"0\" amount=\"1\"/>\n"
+			"  </mixerchannel>\n"
+			"</mixer>\n").arg(selectorAttribute);
+	}
+
+	void loadRackProject(const QString& selectorAttribute)
+	{
+		QDomDocument doc;
+		doc.setContent(rackProjectXml(selectorAttribute));
+		Engine::mixer()->loadSettings(doc.documentElement());
+	}
+
+	//! Saves the whole mixer, as a project would be written.
+	static auto saveMixer() -> QDomDocument
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("mixer"));
+		doc.appendChild(root);
+		Engine::mixer()->saveSettings(doc, root);
+		return doc;
+	}
+
+	//! The chains routed after loading a rack with @a selectorAttribute.
+	auto loadedRoutes(const QString& selectorAttribute) -> std::vector<int>
+	{
+		loadRackProject(selectorAttribute);
+		return rackUnderTest().routedChains();
+	}
+
+	//! The rack is not wired: no chain routed, no graph node, not on the path.
+	void assertUnwired(const char* label)
+	{
+		QVERIFY2(rackUnderTest().routedChains().empty(), label);
+		QVERIFY2(rackUnderTest().routingGraph().nodeCount() == 0, label);
+		QVERIFY2(!rackUnderTest().canProcessThroughRack(currentBus()), label);
+	}
+
+	//! A selector that names no chain loads the rack un-wired and it stays so
+	//! through a save and a reload; a later setSelectedChain() wires it.
+	void checkCorruptSelectorLoadsUnwired(const QString& value)
+	{
+		const QByteArray label = QStringLiteral("selected=\"%1\"").arg(value).toUtf8();
+		loadRackProject(selectedAttribute(value));
+		QVERIFY2(rackUnderTest().chainCount() == 2, label.constData());
+		QVERIFY2(rackUnderTest().macros().macroCount() == 1, label.constData());
+		QVERIFY2(rackUnderTest().selectedChain() != 0, label.constData());
+		QVERIFY2(rackUnderTest().selectedChain() != Rack::Parallel, label.constData());
+		QVERIFY2(rackUnderTest().chain(rackUnderTest().selectedChain()) == nullptr, label.constData());
+		assertUnwired(label.constData());
+
+		const Delta passthrough = compare(render(), expectedChain(1.0f, 1.0f));
+		QVERIFY2(passthrough.differing == 0 && passthrough.maxLsb == 0, label.constData());
+
+		const QDomDocument saved = saveMixer();
+		const QDomElement savedRack =
+			mixerChannelElement(saved.documentElement()).firstChildElement(QStringLiteral("rack"));
+		QVERIFY2(!savedRack.isNull(), label.constData());
+		const QString savedSelected = savedRack.attribute(QStringLiteral("selected"));
+		QVERIFY2(savedSelected != QStringLiteral("0") && savedSelected != QStringLiteral("-1"),
+			label.constData());
+		Engine::mixer()->loadSettings(saved.documentElement());
+		assertUnwired(label.constData());
+
+		rackUnderTest().setSelectedChain(1);
+		QVERIFY2(rackUnderTest().routedChains() == std::vector<int>({1}), label.constData());
+		QVERIFY2(rackUnderTest().routingGraph().nodeCount() == 3, label.constData());
+		QVERIFY2(rackUnderTest().canProcessThroughRack(currentBus()), label.constData());
+		const QDomDocument resaved = saveMixer();
+		const QDomElement resavedRack =
+			mixerChannelElement(resaved.documentElement()).firstChildElement(QStringLiteral("rack"));
+		QVERIFY2(resavedRack.attribute(QStringLiteral("selected")) == QStringLiteral("1"),
+			label.constData());
 	}
 
 	std::uint64_t m_chainACalls = 0;
