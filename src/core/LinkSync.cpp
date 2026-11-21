@@ -196,14 +196,16 @@ void LinkSyncEngine::setEnabled(bool enabled)
 	// Joining is itself a declaration: this instance brings the tempo its own
 	// engine is playing, and the session converges from there (file header,
 	// point 4). A peer that declared first is adopted on the first announcement
-	// this instance reads.
+	// this instance reads. A re-enable preserves the current beat: the anchor
+	// is left alone and declareTempo() rebases it to now, so the beat carries
+	// across the rejoin. Only a first join (m_tempo == 0, m_anchorUs == 0)
+	// begins at beat 0.
 	Song* song = Engine::getSong();
 	const double base = song != nullptr ? static_cast<double>(song->getTempo())
 		: (m_tempo > 0.0 ? m_tempo : 120.0);
-	m_anchorUs = monotonicMicros();
-	m_anchorBeat = 0.0;
+	const quint64 now = monotonicMicros();
 	m_appliedTempo = -1.0;   // force the declaration to write through
-	declareTempo(base, m_anchorUs);
+	declareTempo(base, now);
 	m_timer->start();
 }
 
