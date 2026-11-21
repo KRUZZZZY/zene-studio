@@ -166,17 +166,11 @@ bool applySlotReference(ClipSlot& slot, const QJsonObject& args, ControlResult* 
 bool checkSlotPatternExists(const QJsonObject& args, ControlResult* error)
 {
 	const QString type = args.value(QStringLiteral("type")).toString();
-	if (!(type.isEmpty() || type == QLatin1String("midi")) || !args.contains(QStringLiteral("pattern")))
-	{
-		return true;
-	}
+	if (!(type.isEmpty() || type == QLatin1String("midi")) || !args.contains(QStringLiteral("pattern"))) { return true; }
 	const int id = args.value(QStringLiteral("pattern")).toInt();
-	const PatternStore* store = Engine::patternStore();
-	const int count = store != nullptr ? store->numOfPatterns() : 0;
+	const int count = Engine::patternStore() != nullptr ? Engine::patternStore()->numOfPatterns() : 0;
 	if (id >= 0 && id < count) { return true; }
-	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-		QStringLiteral("pattern %1 is not in the PatternStore (it holds %2): add a PatternTrack; "
-			"session.pattern_list lists the stored patterns").arg(id).arg(count));
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("pattern %1 is not in the PatternStore (it holds %2): add a PatternTrack; session.pattern_list lists the stored patterns").arg(id).arg(count));
 	return false;
 }
 
