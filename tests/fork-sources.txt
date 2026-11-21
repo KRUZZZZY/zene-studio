@@ -4003,3 +4003,5 @@ docs/qwen-fixes-2026-10/cluster-Q050-183.1.md
 tests/src/plugins/ZeneRackTest.cpp
 # Q050-224.1: the LV2 worker's alternate-stack proof (a live worker's first work() and a forked overflow).
 tests/src/core/WorkerAltStackTest.cpp
+# cluster new-p10-541: BitInvader's loadSettings clamp and refusal regression.
+tests/src/plugins/BitInvaderLoadSettingsTest.cpp
