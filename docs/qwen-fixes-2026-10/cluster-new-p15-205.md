@@ -70,6 +70,7 @@ The full `Song::clearProject` path masks the harm. `Song.cpp:1756` runs `m_sessi
 3. **Cause, callers and siblings audit.** Cause: `SessionSubScenes::clear()` cleared only `m_preserved`. Callers: `ProjectSection::clearAll` via `Song::clearProject` (`Song.cpp:1798`); the model is cleared earlier at `Song.cpp:1756`, which masks the bug on that path. Siblings: `SessionModel::clear()` (`SessionModel.cpp:340`) and `session.clear` (`ControlCommandsSession.cpp:580`) already clear the model rows and were not changed.
 4. **No collateral.** Full family green (`test-5-precommit.log`, 3/3). The existing project round-trip tests are inside `SessionSubSceneTest` and `SessionSubSceneGridTest`, and both pass in that run.
 5. **ALREADY-FIXED / FALSE-POSITIVE.** N/A. The verdict is FIXED. The masking path (`Song.cpp:1756` before `Song.cpp:1798`) is recorded in the verdict section.
+6. **Sibling commands in changed command files.** N/A. The commit changes no command file: `ControlCommandsSession.cpp` (`session.clear` at line 580) is only read, not edited. The sibling commands listed by the check (`app.about` through `arrangement.get_state`) are therefore not affected by this change.
 
 ## Other findings
 
