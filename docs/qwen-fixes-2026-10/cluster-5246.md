@@ -38,6 +38,26 @@ workers; this deterministic Channel-to-Master probe exercises the same period-bo
 because the workers run `channelAt` and then the render thread takes `master` after the join. The
 one active snapshot prevents both variants.
 
+## State sequence
+
+`aTapChangeDoesNotFeedOneRouteFromTwoSourcesInAPeriod` drives and asserts exactly these five
+ordered tap states, where one period is `frames` frames (256 here):
+
+1. Route 0 `channel`/`post_fader`/`left` is requested through `record.route_source` and stays
+   pending, because no period has published it yet (`ControlRecordingRoutesTest.cpp:498-503`).
+2. After the first `masterMix` the channel tap is active and `framesPushed` is 256
+   (`:507-510`).
+3. The direct `recordertaps::channelAt` probe feeds the active channel tap and `framesPushed` is
+   512 (`:513-514`).
+4. `record.route_source` re-points the same route to `master`/`right` mid-period while the channel
+   tap remains active; `recordertaps::master()` pushes nothing and `framesPushed` stays 512
+   (`:519-525`).
+5. After the next `masterMix` the master/right tap is active and `framesPushed` is 768
+   (`:528-529`).
+
+The initial default Input tap and the scope-guard reset to Input are cleanup: the test neither sets
+nor asserts them before cleanup, so they are not part of the asserted sequence.
+
 ## Test matrix
 
 | Case | Coverage |
@@ -75,6 +95,24 @@ Logs are under `/home/kruzzzzy/.config/kads/zene/state/runs/5246.r1/logs`.
 
 p4 changed only comments after the p3 behavioural proof; it introduced no behavioural change.
 
+Round 2 re-ran the red/green proof; logs are under
+`/home/kruzzzzy/.config/kads/zene/state/runs/5246.r2/logs`. Reverting the product change with
+`git apply -R` exited 0, `build-1-red` exited 0, and `test-1-red` exited 8 with
+`Actual (recorder.track(0).framesPushed()): 768` against
+`Expected (base + expected): 512` at `ControlRecordingRoutesTest.cpp:525` (the `QCOMPARE` after
+the `recordertaps::master` call at `:524`). Restoring the change with `git apply` exited 0, and
+`build-1-green` exited 0, `test-1-green` exited 0, and `test-1-green-detail` exited 0 with
+12/12 passed.
+
+| Step | Log | Exit |
+|---|---|---|
+| build-1-red | `build-1-red.log` | 0 |
+| test-1-red (768 vs 512 at line 525) | `test-1-red.log` | 8 |
+| build-1-green | `build-1-green.log` | 0 |
+| test-1-green | `test-1-green.log` | 0 |
+| test-1-green-detail (12/12) | `test-1-green-detail.log` | 0 |
+
+
 ## Self-check
 
 - The test fails with the product change reverted and passes with it restored: red runs exit 8
@@ -103,7 +141,8 @@ p4 changed only comments after the p3 behavioural proof; it introduced no behavi
   this report. The listed `app.*` and `arrangement.*` siblings live in files this fix does not
   touch; `record.route_source` keeps its existing reply semantics (`get()`/`tapped()` are the
   pending view).
-- No state-sequence artifact: no persisted state changed.
+- The state-sequence artifact is provided above in ## State sequence: five ordered tap states with
+  the 256/512/768 frame counts that the test asserts.
 
 ## Other findings
 
