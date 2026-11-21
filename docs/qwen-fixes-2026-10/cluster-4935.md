@@ -31,7 +31,9 @@ That commit changes four Python socket fixtures and this report (5 files, 35 ins
 - `tests/session_api_proof_rows.py`: patterns 1 and 2 for the refusal driver; pattern 0, held by setUp, for the set_slot row (ControlSessionApiProof).
 - `tests/control-success-paths.py`: Pattern track for pattern 1 (ControlSuccessPaths).
 
-### 3b. C++ fixtures (earlier cluster commits; r1 readings, not re-run in r2)
+### 3b. C++ fixtures (earlier cluster commits; the family was re-run in r2)
+
+r2 evidence for this family: p1 ran the 10-test C++ family (`test-cxx-1.log`: "100% tests passed out of 10"; that log has no EXIT line). p2 re-ran it (`test-cxx-2.log`: `EXIT=0`, "100% tests passed out of 10"). The per-file descriptions below are the earlier cluster changes; the r2 evidence is the run result above, not a re-read of each file.
 
 - `ControlSessionRecordLandTest.cpp`: init adds a Pattern track; the grid grows from 3x2 to 4x2, and the recorder test moves to column 3 so it still has no song track. Pattern 1 gets a Pattern track for the set_slot refusal.
 - `ControlSessionRecordLandUndoTest.cpp`, `MidiCommandBindingsTest.cpp` (two fixtures), `SessionPlaybackRenderTest.cpp`, `SessionCellPlaybackMenuTest.cpp`, `SessionGridRecordTest.cpp` (its one MIDI test only), `SessionLibrarySaveTest.cpp`: each adds the Pattern track its MIDI set_slot names.
@@ -54,20 +56,20 @@ The call-site audit was an r1 artifact (`logs/p1-audit.md` under `4935.r1`). It 
 - GREEN: `test-green-1.log` -> `EXIT=0`. "100% tests passed out of 1".
 - Feature check: `feature-check-1.log` -> `EXIT=0`. "RESULT: PASS"; all gates PASS, including file-length and complexity.
 - Load family (old-project load, r2): `build-load-r2.log` -> `BUILD_EXIT=0`; `test-load-r2.log` -> `EXIT=0`. "100% tests passed out of 3": SessionModelTest, ScenesUpconvertTest, ProjectOpenIntegrityTest.
-- RED/GREEN reverse sequence. `logs/fix.patch` is the one-file diff of `src/core/ControlCommandsSession.cpp` against the pre-fix blob `2b00b7f1e3`, which `git rev-parse 1587cea2a8:src/core/ControlCommandsSession.cpp` returns. Commands, in order:
+- RED/GREEN reverse sequence. `logs/fix.patch` is the one-file diff of `src/core/ControlCommandsSession.cpp` against the pre-fix blob `2b00b7f1e3`. `git rev-parse fa4a5f2e7:src/core/ControlCommandsSession.cpp` returns `2b00b7f1e3`, and the `index 2b00b7f1e3..742ccfece6` line in `logs/fix.patch` matches. p2 ran this sequence in the r2 session. The logs record outputs and exit codes, not the command lines; the block below is the p2 sequence with the merge-base resolved. Commands, in order:
 
 ```
-BASE=1587cea2a8    # commit whose ControlCommandsSession.cpp blob is 2b00b7f1e3
-git diff $BASE -- src/core/ControlCommandsSession.cpp > logs/fix.patch
+BASE=$(git merge-base HEAD "$(cat /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/FIX-BASE)")   # resolves to fa4a5f2e7
+git diff "$BASE" -- src/core/ControlCommandsSession.cpp > logs/fix.patch
 git apply -R logs/fix.patch        # reverse the fix
-# build-2.log          : build of the reversed tree
-# test-red-1.log       : SessionCommandArgsTest -> EXIT=8
+# build-2.log          : build target zene SessionCommandArgsTest -> BUILD_EXIT=0
+# test-red-1.log       : ctest -R '^SessionCommandArgsTest$' -> EXIT=8 at SessionCommandArgsTest.cpp(344)
 git apply logs/fix.patch           # re-apply the fix
-# build-3.log          : build of the fixed tree
-# test-green-1.log     : SessionCommandArgsTest -> EXIT=0
+# build-3.log          : build -> BUILD_EXIT=0
+# test-green-1.log     : ctest -R '^SessionCommandArgsTest$' -> EXIT=0
 ```
 
-  The packet's `BASE=merge-base` was not used. The merge-base of HEAD and master (`4e677cb6c6`) has no `ControlCommandsSession.cpp`, so a diff against it is a whole-file new-file patch and cannot reverse the fix. The exact build and ctest flags for the four steps are not recorded in their logs; the block above is the sequence, not a transcript. It was not re-run in this session.
+  An earlier draft of this section cited `BASE=1587cea2a8`. That commit has the same blob, but it was not the base p2 used. The `FIX-BASE` file holds the branch name `050/m0-train-35`; its merge-base with HEAD is `fa4a5f2e7`.
 
 Carried from r1 and not counted here: reversed-RED repeats and a reject-all mutant run that failed at :365. Those r1 logs are not cited for exit codes in r2.
 
@@ -79,7 +81,7 @@ Carried from r1 and not counted here: reversed-RED repeats and a reject-all muta
 - **Cause completeness:** The cause is that the midi path stored any integer. The fix covers `type:'midi'` and the type-less pattern form. Restored sessions are not checked by design (SessionModel stays permissive).
 - **No collateral damage:** The three socket cases that used to fail (ControlSessionLaunch, ControlSessionLifecycleTranscript, ControlSessionApiProof) pass in `test-socket-2.log`. The 10-test C++ family passes (`test-cxx-2.log`, EXIT=0). ControlSuccessPaths's session checks pass, and its two MIDI filter checks fail the same way on the base.
 - **ALREADY-FIXED / FALSE-POSITIVE:** Not applicable. The new test fails on the unfixed code (`test-red-1.log`), so the defect is real.
-- **Sibling session.* commands:** Current grep of `src/` for `setPatternReference`, run in r2. Control-argument writers: `applySlotReference` at ControlCommandsSession.cpp:132 and :149, called at :525. The capture writer is ControlCommandsSessionCapture.cpp:99. It runs after it creates its own Pattern track at :81-83, so its id is `patternTrack->patternIndex()`. No other `src/` file in the grep output is a control handler. The get_state, set_grid, set_quantisation, set_scene, clear_slot and clear handlers and the launch/stop and `session.pattern_list` handlers do not call `setPatternReference`. Other callers exist only in SessionTransitions.cpp:160, :174, :187 and :188 (internal transitions; not read in r2). The definition is SessionClip.cpp:123.
+- **Sibling session.* commands:** Current grep of `src/` for `setPatternReference`, run in r2. Control-argument writers: `applySlotReference` at ControlCommandsSession.cpp:132 and :149, called at :525. The capture writer is ControlCommandsSessionCapture.cpp:99. It runs after it creates its own Pattern track at :81-83, so its id is `patternTrack->patternIndex()`. No other `src/` file in the grep output is a control handler. The get_state, set_grid, set_quantisation, set_scene, clear_slot and clear handlers and the launch/stop and `session.pattern_list` handlers do not call `setPatternReference`. Other callers exist only in SessionTransitions.cpp:160, :174, :187 and :188. Read in r2: these are internal slot transitions (`cell.setPatternReference(pattern)`, a `slot.setPatternReference(...)` decrement, and a swap of two slots' pattern ids), not control handlers. They are outside the command boundary that this fix covers, and `fix.patch` does not change them. The definition is SessionClip.cpp:123.
 - **Sibling app.* and arrangement.* ids:** app.about, app.ask, app.help, app.online_help, app.task_cancel, app.tasks, app.tour, app.tours, app.update_check_get, app.update_check_run, app.update_check_set, app.version, app.whats_new, arrangement.fit_tracks and arrangement.get_state. None of these handlers is in the r2 diff, which changes only one string at :173. Listed from r1; the r2 diff confirms they are not touched.
 
 ## Not run / not verified
