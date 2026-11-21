@@ -165,6 +165,8 @@ parameter= depth=/>` per route.
   three shapes. A boolean (`unipolar`, `active`, `pervoice`, or `persample` on a named route) that is
   present and is not `0` or `1` refuses its modulator, as a malformed phase does; `active="bad"` must
   not load as an inactive modulator. `ModulationLayerTest::aMalformedBooleanIsRefused` measures it.
+  A route's `channel`, `chain`, `effect` or `track` that is present and is not a number refuses its
+  modulator, as a malformed boolean does; `ModulationLayerTest::aMalformedRouteAddressIsRefused` measures it.
   Nothing is guessed, so a truncated block degrades to "no modulation" rather than to something
   nobody authored.
 - `ModulationLayerTest::theLayerPersistsAndReloads` requires saved = loaded = re-saved.

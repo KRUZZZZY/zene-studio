@@ -518,6 +518,73 @@ private slots:
 		QCOMPARE(loaded.modulator(1)->source.perVoice, false);
 	}
 
+	//! Cluster 5184: a route's channel, chain, effect or track that is not a number
+	//! is a corrupt block. toInt() returned 0 and quietly routed the modulator to
+	//! channel, chain or effect zero, an address nobody authored.
+	void aMalformedRouteAddressIsRefused_data()
+	{
+		QTest::addColumn<QString>("field");
+		QTest::newRow("channel") << QStringLiteral("channel");
+		QTest::newRow("chain") << QStringLiteral("chain");
+		QTest::newRow("effect") << QStringLiteral("effect");
+		QTest::newRow("track") << QStringLiteral("track");
+	}
+
+	void aMalformedRouteAddressIsRefused()
+	{
+		QFETCH(QString, field);
+		ModulationLayer layer;
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("modulation-layer"));
+		doc.appendChild(root);
+		QDomElement bad = doc.createElement(QStringLiteral("modulator"));
+		bad.setAttribute(QStringLiteral("name"), QStringLiteral("Broken"));
+		bad.setAttribute(QStringLiteral("shape"), QStringLiteral("sine"));
+		bad.setAttribute(QStringLiteral("rate"), QStringLiteral("1"));
+		QDomElement route = doc.createElement(QStringLiteral("route"));
+		route.setAttribute(QStringLiteral("channel"), kChannel);
+		route.setAttribute(QStringLiteral("chain"), kDrivenChain);
+		route.setAttribute(QStringLiteral("effect"), 0);
+		route.setAttribute(QStringLiteral("parameter"), QStringLiteral("Gain"));
+		route.setAttribute(QStringLiteral("depth"), QStringLiteral("0.5"));
+		route.setAttribute(field, QStringLiteral("bad"));
+		bad.appendChild(route);
+		root.appendChild(bad);
+		QCOMPARE(layer.loadSettings(root), false);
+		QCOMPARE(layer.modulatorCount(), 0);
+	}
+
+	//! An absent route address keeps its documented default (channel, chain and
+	//! effect 0, track -1). A nameless route is ignored whatever its address says,
+	//! so the otherwise valid modulator still loads.
+	void aRouteAddressAbsentKeepsItsDefault()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("modulation-layer"));
+		doc.appendChild(root);
+		QDomElement block = doc.createElement(QStringLiteral("modulator"));
+		block.setAttribute(QStringLiteral("name"), QStringLiteral("Bare"));
+		block.setAttribute(QStringLiteral("shape"), QStringLiteral("sine"));
+		block.setAttribute(QStringLiteral("rate"), QStringLiteral("1"));
+		QDomElement route = doc.createElement(QStringLiteral("route"));
+		route.setAttribute(QStringLiteral("parameter"), QStringLiteral("Gain"));
+		route.setAttribute(QStringLiteral("depth"), QStringLiteral("0.5"));
+		block.appendChild(route);
+		QDomElement nameless = doc.createElement(QStringLiteral("route"));
+		nameless.setAttribute(QStringLiteral("channel"), QStringLiteral("bad"));
+		block.appendChild(nameless);
+		root.appendChild(block);
+
+		ModulationLayer layer;
+		QVERIFY(layer.loadSettings(root));
+		QCOMPARE(layer.modulatorCount(), 1);
+		QCOMPARE(layer.modulator(0)->routeCount(), 1);
+		QCOMPARE(layer.modulator(0)->routes.front().channel, 0);
+		QCOMPARE(layer.modulator(0)->routes.front().chain, 0);
+		QCOMPARE(layer.modulator(0)->routes.front().effect, 0);
+		QCOMPARE(layer.modulator(0)->routes.front().track, -1);
+	}
+
 
 	//! Cluster 1530: every step value survives save and reload EXACTLY. Six
 	//! significant digits is not enough to round-trip a float, so a step like
