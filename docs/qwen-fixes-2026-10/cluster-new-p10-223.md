@@ -57,8 +57,8 @@ independent of what the library reports.
 | p4 mutation | drop the clause, with the new row (`logs/test-mut-drop-overflow-new-row.log`) | 8 - red row multiplication overflow |
 | p4 unfixed | fix reverted (`logs/test-unfixed.log`) | 8 - 30 passed, 7 failed |
 | p4 refixed | fix restored (`logs/test-refixed.log`) | 0 - 100% passed |
-| final unfixed | `git apply logs/unfix.patch` then build (`logs/test-unfixed-final.log`) | apply 0, ctest 8 - 14 passed, 8 failed |
-| final fixed | `git apply -R logs/unfix.patch`, `git diff HEAD` empty, rebuild, `ctest -R Mastering` (`logs/test-fixed-final.log`) | apply 0, diff 0, ctest 0 - 10/10 |
+| final unfixed | `git apply logs/unfix.patch` then build (`logs/test-unfixed-final-2.log`) | apply 0, ctest 8 - 14 passed, 8 failed (1 of 2 binaries) |
+| final fixed | `git apply -R logs/unfix.patch`, `git diff HEAD` empty, rebuild, `ctest -R Mastering` (`logs/test-fixed-final-2.log`) | apply 0, diff 0, ctest 0 - 10/10 |
 
 ## Notes on method
 
@@ -99,8 +99,8 @@ independent of what the library reports.
 
 - **Regression test red/green.** With the product change reversed, the final run
   exits 8 (14 passed, 8 failed: the five out-of-window rates and the three
-  huge/overflow counts, `logs/test-unfixed-final.log`); restored, `ctest -R
-  Mastering` exits 0 (10/10, `logs/test-fixed-final.log`).
+  huge/overflow counts, `logs/test-unfixed-final-2.log`); restored, `ctest -R
+  Mastering` exits 0 (10/10, `logs/test-fixed-final-2.log`).
 - **Deterministic.** No wall-clock timing or sleeps: fixtures are written to a
   temporary directory, out-of-window rates are injected by patching the WAV
   header, and huge counts are passed straight to `checkedSampleCount`. The same

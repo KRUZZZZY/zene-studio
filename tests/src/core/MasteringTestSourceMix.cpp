@@ -1,5 +1,5 @@
 /*
- * MasteringSourceMixTest.cpp - source WAV metadata validation and chunked reads
+ * MasteringTestSourceMix.cpp - source WAV metadata validation and chunked reads
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -32,10 +32,7 @@
 
 #include "MasteringJob.h"
 
-#include "MasteringTestSupport.h"
-
 using namespace lmms;
-using namespace lmms::masteringtest;
 
 namespace
 {
@@ -131,6 +128,7 @@ bool patchWavSampleRate(const QString& path, quint32 sampleRate)
 	qToLittleEndian(sampleRate * blockAlign, buffer);
 	return file.seek(28) && file.write(buffer, 4) == 4;
 }
+
 } // namespace
 
 class MasteringSourceMixTest : public QObject

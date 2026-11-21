@@ -41,12 +41,10 @@
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QTemporaryDir>
-#include <QtEndian>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <limits>
 #include <memory>
 #include <vector>
 
@@ -632,7 +630,6 @@ private slots:
 
 		QVERIFY(QFile::setPermissions(sealed, QFileDevice::ReadOwner | QFileDevice::WriteOwner));
 	}
-
 
 private:
 	//! Renders the project the ordinary way - RenderManager, no candidates - and
