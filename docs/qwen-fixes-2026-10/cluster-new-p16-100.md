@@ -24,7 +24,7 @@ automatable model.
   `src/core/Mixer.cpp` must change: it used `toFloat`'s non-finite return as its detector.
 - `tests/src/plugins/DispersionNonFiniteTest.cpp` (header comment at lines 46-47 and the test
   bodies): the old test wrote `nan` into an XML fixture and relied on the float parse to inject it.
-  That path no longer produces NaN, so the test now injects NaN and inf directly into the model.
+  That path no longer produces NaN, so the test now injects NaN directly into the model.
   The guard it checks (the Nyquist clamp) is unchanged.
 
 ## Contract
@@ -37,33 +37,43 @@ automatable model.
 
 ## Regression test
 
-`tests/src/core/LocaleHelperTest.cpp`, `LocaleHelperTest::nonFiniteTextIsRejected()` (line 99):
-parses `nan`, `inf`, `-inf`, `1e999` and `-1e999` with `toFloat`, and checks that each returns
-`0.0f` with `ok == false`. It also checks that finite values, including `FLT_MAX`, still parse
-with `ok == true`. The test is registered in `tests/CMakeLists.txt` and listed in
-`tests/fork-sources.txt`, `tests/all-sources.txt` and `tests/upstream-modifications.txt`.
+`tests/src/core/LocaleHelperTest.cpp` has these slots (line numbers are the slot's function start):
+- `nonFiniteTextIsRejected()` (line 99): `nan`, `NaN`, `inf`, `-inf`, `+inf`. Each must return
+  `0.0f` with `ok == false`.
+- `overflowLiteralsAreRejected()` (line 113): `1e999`, `-1e999`, `3.5e38`. Each must return
+  `0.0f` with `ok == false`.
+- `nullOkStillRejects()` (line 126): `toFloat("nan")` with a null `ok` must return a finite `0.0f`.
+- `floatMaxBoundaryStillLoads()` (line 134): `1e38` and `FLT_MAX` load with `ok == true`; a value
+  just above FLT_MAX is rejected.
+- `projectLoadKeepsNonFiniteOutOfTheModel()` (line 152) and
+  `projectLoadKeepsNonFiniteOutOfTheAttribute()` (line 160): a child `<volume value="nan"/>` and an
+  attribute `volume="nan"` must not load a non-finite model value.
+
+In the p7 RED run, five slots fail: `nonFiniteTextIsRejected`, `overflowLiteralsAreRejected`,
+`nullOkStillRejects`, `projectLoadKeepsNonFiniteOutOfTheModel` and
+`projectLoadKeepsNonFiniteOutOfTheAttribute`. `floatMaxBoundaryStillLoads` passes in RED.
+
+The test is registered in `tests/CMakeLists.txt` (line 117), `tests/fork-sources.txt` (line 3979)
+and `tests/all-sources.txt` (line 3040). It is not listed in `tests/upstream-modifications.txt`.
 
 ## Commands and exit codes
 
-Exit codes are the quiet runner's values as recorded in the packet. The on-disk logs in
-`logs/` hold the ctest summaries but not the runner's exit line, so the codes are not re-derived
-from the logs here; the summaries are cited where they agree.
+Measured post-commit in p7. The exit codes are written into each log by the command itself
+(`APPLY_EXIT`, `BUILD_EXIT`, `TEST_EXIT`, `EXIT`):
 
-| Step | Command (build tree `build/`) | EXIT | Log summary |
+| Step | Command (worktree root) | Measured exit | Log |
 |---|---|---|---|
-| build-1 / test-1 | baseline build, ctest on the relevant family | 0 | test-1: 5/5 passed |
-| build-2b / test-2b | new test added, before fix | 8 | test-2b: LocaleHelperTest failed |
-| build-3 / test-3 | fix applied | 0 | test-3: 6/6 passed |
-| build-3b / test-4 | Mixer mutation (guard reverted to toFloat) | 1 | test-4: MixerStripTest failed |
-| build-3c / test-4b | Mixer restored | 0 | test-4b: MixerStripTest passed |
-| build-3e / test-3e | green re-run | 0 | test-3e: 1/1 passed |
-| build-3f / test-3f | green re-run | 0 | test-3f: 1/1 passed |
-| fix.patch | `git diff` of the fix | 0 | patch saved |
-| git apply (forward) | apply fix.patch | 0 | |
-| git apply (reverse) | reverse fix.patch | 0 | |
-| build-4 / test-5 | fix reversed (RED) | 8 | test-5: LocaleHelperTest failed |
-| build-5 / test-6 | fix restored (GREEN) | 0 | test-6: 3/3 passed |
-| feature-check-1 | feature check | 0 | all PASS |
+| RED | `git apply -R logs/fix.patch`; `cmake --build build --target LocaleHelperTest`; `ctest -R '^LocaleHelperTest$'` in `build/tests` | TEST_EXIT=8 (APPLY_EXIT=0, BUILD_EXIT=0) | `logs/p7-red.log` |
+| GREEN | `git apply logs/fix.patch`; `cmake --build build --target LocaleHelperTest DispersionNonFiniteTest MixerStripTest MixerToolsTest ProjectStateTest AutomatableModelTest`; `ctest -R '^(LocaleHelperTest\|DispersionNonFiniteTest\|MixerStripTest\|MixerToolsTest\|ProjectStateTest\|AutomatableModelTest)$'` | TEST_EXIT=0, 6/6 passed (APPLY_EXIT=0, BUILD_EXIT=0) | `logs/p7-green.log` |
+| Feature check | `python3 feature_check.py <worktree>` | EXIT=0, `RESULT: PASS` | `logs/p7-feature-check.log` |
+
+Before the RED run, `git apply --check -R logs/fix.patch` exited 0. `grep '^diff --git'` on the patch
+names only `include/LocaleHelper.h` and `src/core/Mixer.cpp`.
+
+Earlier history, kept as log-summary facts and not re-run here (the earlier logs carry no exit lines):
+baseline `logs/test-1.log` 5/5 passed; the Mixer mutation (guard reverted to `toFloat`) in
+`logs/test-4.log` shows three `FAIL!` assertions in MixerStripTest; `logs/test-4b.log` shows
+MixerStripTest passing after the restore.
 
 ## Scope and collateral
 
@@ -82,19 +92,32 @@ from the logs here; the summaries are cited where they agree.
 
 ## Self-check
 
-1. RED/GREEN exits: RED is 8 (test-2b before the fix, test-5 with the fix reversed). GREEN is 0
-   (test-3, test-6 restored, test-3e/test-3f). The Mixer mutation is RED at 1 (test-4), restored
-   GREEN at 0 (test-4b).
+1. RED/GREEN exits, measured in p7: RED is `TEST_EXIT=8` (`logs/p7-red.log`, fix reversed); GREEN is
+   `TEST_EXIT=0`, 6/6 (`logs/p7-green.log`, fix restored); feature check `EXIT=0` with
+   `RESULT: PASS` (`logs/p7-feature-check.log`). Earlier history, log summaries only: baseline 5/5
+   (`test-1.log`); the Mixer mutation shows three MixerStripTest `FAIL!` assertions (`test-4.log`);
+   MixerStripTest passes after the restore (`test-4b.log`).
 2. Determinism: direct parse and direct model injection. No timing, sleeps or threads.
-3. Cause and completeness (PARTIAL, one item open): the cause is the `toFloat` guard. Checked and
-   consistent: the sibling that used `toFloat` as a detector (`src/core/Mixer.cpp:155-163`, now
-   reads `toDouble`), the Dispersion test injection, and the load-time caller `DataFile.cpp:1240`.
-   Still open: `toFloat` has 207 call sites across 87 files. The only change for them is the
-   non-finite input contract, which now follows the existing `0.0f`/`ok=false` overflow path. A
-   per-call-site audit of all 207 sites was NOT done in this run. `toDouble` is unchanged on
-   purpose (see Contract).
-4. No collateral and no limit rejection: finite values including `FLT_MAX` still parse (test
-   `nonFiniteTextIsRejected`). The Mixer defaults are preserved (MixerStripTest passes). The
+3. Cause and completeness (caller audit done): the cause is the `toFloat` guard. Checked: the sibling
+   that used `toFloat` as a detector (`src/core/Mixer.cpp:155-163`, now reads `toDouble`), the
+   Dispersion test injection, and `DataFile.cpp:1240`. Caller audit:
+   `rg -n 'LocaleHelper::toFloat' src include plugins --glob '!build/**'` finds 14 lines. 13 are
+   tracked call sites in six files, classified as:
+   - Loaders: `AutomatableModel.cpp:430,451` (value and initValue on load); `DataFile.cpp:1367`
+     (`vol`) and `DataFile.cpp:2283` (`value`); `AutomationClip.cpp:1306-1307,1315-1316`
+     (time-map values and tangents on load).
+   - Upgrade writer: `DataFile.cpp:1240` (legacy `vol` upgrade on load, written back).
+   - Control setter: `AutomationClip.cpp:275` (`setTension`, `_new_tension`).
+   - GUI editor: `FloatModelEditorBase.cpp:205` (text entry into a model).
+   - Preset parsers: `VstPlugin.h:72`, `CarlaVst2Legacy.cpp:57` (parameter text in presets).
+
+   None is a render or audio-thread path. The 14th line, `plugins/ZynAddSubFx/zynaddsubfx/src/Misc/QtXmlWrapper.cpp:512`,
+   is in the pinned submodule. The packet records that it uses the submodule's own copy; I did not
+   re-verify that. It is not changed here (see Other findings). No tracked caller relies on a
+   non-finite return any more: the one that did (Mixer) now reads `toDouble`. `toDouble` is unchanged
+   on purpose (see Contract).
+4. No collateral and no limit rejection: finite values still parse, including the FLT_MAX boundary
+   (`floatMaxBoundaryStillLoads`, line 134). The Mixer defaults are preserved (MixerStripTest passes). The
    `DataFile.cpp:1240` change is the intended rejection of a malformed `vol`: it writes `0`, not
    `nan`. No new limit was added, so no caller is rejected for exceeding one.
 5. Not applicable: the verdict is REAL, not ALREADY-FIXED or FALSE-POSITIVE. The REAL evidence is
