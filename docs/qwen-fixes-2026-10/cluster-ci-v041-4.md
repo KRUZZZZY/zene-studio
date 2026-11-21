@@ -44,61 +44,145 @@ enforces the rule, also compiles the real atomic_queue header with
 can fail.
 
 A repo-wide scan for `::template name(` over `*.{h,hpp,c,cc,cpp,hh}` returned
-0 matches, EXIT=1 (ripgrep's "no match" code) — `logs/evidence-4-scan.log`.
+0 matches, EXIT=1 (ripgrep's "no match" code) — `logs/evidence-4-scan-r2.log`.
 
 ## 2. Why the finding's CMake `-Wno` flag is not needed
 
 The ill-formed construct is gone from the source, so no warning suppression is
-needed. Clang treats it as an error (`-Wmissing-template-arg-list-after-template-kw`),
-so a `-Wno-...` (or `-Wno-error`) flag could not waive the CI line in any case.
-The vendored code was fixed at the cause instead, the way the earlier cluster's
-upstream check describes: upstream atomic_queue removed the construct when it
-restructured these functions (the v1.9.0 tag has no `do_pop_any`/`do_push_any`;
-the vendored copy is the sfizz 1.2.3 pin), and `Base` is the current
-instantiation's base, so the unqualified-through-base call resolves to the same
-function — no semantics, code generation, realtime or save/load behaviour change.
+needed. Clang diagnoses it as a default-error warning
+(`-Wmissing-template-arg-list-after-template-kw`), so `-Wno-error` alone would
+not clear it, while `-Wno-missing-template-arg-list-after-template-kw` would;
+suppression is unnecessary because the source is fixed. The vendored code was
+fixed at the cause instead, the way the earlier cluster's upstream check
+describes: upstream atomic_queue removed the construct when it restructured
+these functions (the v1.9.0 tag has no `do_pop_any`/`do_push_any`; the vendored
+copy is the sfizz 1.2.3 pin). `Base` is the current instantiation's base, and
+the call is still `Base::`-qualified; only the `template` keyword was dropped,
+so it resolves to the same function and the queue semantics are unchanged.
 
 ## 3. Commands and EXIT codes
 
-- `ctest -R ClangTemplateKeywordCheck` on the fixed tree: `100% tests passed out
-  of 1`, EXIT=0 (`logs/test-1-green.log`).
-- `tests/clang-template-keyword-check.py` run directly: `PASS: no 'template'
-  keyword ...` and `PASS: /usr/bin/clang++ compiles the real atomic_queue
-  header`, EXIT=0 (`logs/test-1b-clang-green.log`).
-- Re-inserting the keyword at :394, :400, :522, :528 each turns the ctest red —
-  `0% tests passed, 1 tests failed out of 1`, EXIT=8
-  (`logs/test-red-394.log`, `logs/test-red-400.log`, `logs/test-red-522.log`,
-  `logs/test-red-528.log`).
-- The same four mutations run through the script's scanner half: `FAIL: 1
-  'template' keyword use(s) ...`, EXIT=1 each
-  (`logs/test-red-394-clang.log`, `logs/test-red-400-clang.log`,
-  `logs/test-red-522-clang.log`, `logs/test-red-528-clang.log`).
-- After restoring, the script's compile half passes: both PASS lines, EXIT=0
-  (`logs/test-7-compile-green.log`).
-- Each mutation on the compile-only scratch copy: scanner PASS, then the real
-  `/usr/bin/clang++` rejects the header — `atomic_queue.h:N:col: error: a
-  template argument list is expected after a name prefixed by the template
-  keyword [-Wmissing-template-arg-list-after-template-kw]` — EXIT=1 for
-  :394 (col 31), :400 (col 24), :522 (col 31), :528 (col 24)
-  (`logs/test-compile-red-394.log`, `logs/test-compile-red-400.log`,
-  `logs/test-compile-red-522.log`, `logs/test-compile-red-528.log`).
-- Restore checks on the working tree: `git apply --check` of each of the four
-  mutation patches EXIT=0 and `git diff --quiet` on atomic_queue.h EXIT=0, i.e.
-  the header is back to the committed, fixed state (`logs/restore-check.log`).
-- Second green run of the guard test: `100% tests passed out of 1`, EXIT=0
-  (`logs/test-6-green.log`); script directly, both PASS lines, EXIT=0
-  (`logs/test-6b-clang-green.log`).
-- `feature-check kads-ci-v041-4`: all eight gates PASS
-  (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace,
-  no-tautology, doc-figures, complexity, file-length), `RESULT: PASS`, EXIT=0
-  (`logs/gates-1.log`).
+Each EXIT below is copied from the `EXIT=` line at the end of the cited `-r2`
+log; the earlier round's logs are superseded. `L` is the log directory
+`/home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-4.r1/logs` and
+`H=plugins/SfzPlayer/sfizz/external/atomic_queue/include/atomic_queue/atomic_queue.h`.
+
+- Green ctest, from the build tree:
+
+  ```
+  cd build/tests && ctest -R ClangTemplateKeywordCheck --output-on-failure > $L/test-green-r2.log 2>&1; echo EXIT=$? >> $L/test-green-r2.log
+  ```
+
+  `100% tests passed, 0 tests failed out of 1`, EXIT=0
+  (`logs/test-green-r2.log`).
+
+- Green script run directly, from the worktree root:
+
+  ```
+  python3 tests/clang-template-keyword-check.py --root . --compiler /usr/bin/clang++ > $L/test-green-clang-r2.log 2>&1; echo EXIT=$? >> $L/test-green-clang-r2.log
+  ```
+
+  Both `PASS` lines, EXIT=0 (`logs/test-green-clang-r2.log`).
+
+- Red ctest for each re-inserted keyword, one mutation at a time (`N` is 394,
+  400, 522 or 528; each patch is one line, `git diff --stat` reporting 1 file
+  changed, 1 insertion(+), 1 deletion(-)):
+
+  ```
+  git apply $L/mut-$N.patch
+  cd build/tests && ctest -R ClangTemplateKeywordCheck --output-on-failure > $L/test-red-$N-r2.log 2>&1; echo EXIT=$? >> $L/test-red-$N-r2.log
+  cd - && git apply -R $L/mut-$N.patch
+  ```
+
+  `0% tests passed, 1 tests failed out of 1`, EXIT=8 for all four
+  (`logs/test-red-394-r2.log`, `logs/test-red-400-r2.log`,
+  `logs/test-red-522-r2.log`, `logs/test-red-528-r2.log`).
+
+- The same four mutations through the script's scanner half:
+
+  ```
+  python3 tests/clang-template-keyword-check.py --root . --compiler /usr/bin/clang++ > $L/test-red-$N-clang-r2.log 2>&1; echo EXIT=$? >> $L/test-red-$N-clang-r2.log
+  ```
+
+  `FAIL: 1 'template' keyword use(s) ...`, EXIT=1 each
+  (`logs/test-red-394-clang-r2.log`, `logs/test-red-400-clang-r2.log`,
+  `logs/test-red-522-clang-r2.log`, `logs/test-red-528-clang-r2.log`).
+
+- Restore after each mutation (reversal plus a clean-tree check):
+
+  ```
+  git apply -R $L/mut-$N.patch; echo "rev-$N EXIT=$?" >> $L/restore-r2.log
+  git diff --quiet -- $H; echo "diff-$N EXIT=$?" >> $L/restore-r2.log
+  ```
+
+  All eight lines in `logs/restore-r2.log` are EXIT=0, i.e. the header is back
+  to the committed, fixed state after every mutation.
+
+- Compile-half unmutated scratch control, run before the mutations:
+
+  ```
+  mkdir -p $L/aq-scratch && cp -r plugins/SfzPlayer/sfizz/external/atomic_queue/include $L/aq-scratch/include
+  python3 tests/clang-template-keyword-check.py --root . --compiler /usr/bin/clang++ --atomic-queue-include $L/aq-scratch/include > $L/test-compile-green-r2.log 2>&1; echo EXIT=$? >> $L/test-compile-green-r2.log
+  ```
+
+  Both `PASS` lines, EXIT=0 (`logs/test-compile-green-r2.log`).
+
+- Compile-half red runs on the scratch copy, after resetting it from `$H` and
+  applying the same one-line change as in the mutation patches:
+
+  ```
+  cp $H $L/aq-scratch/include/atomic_queue/atomic_queue.h
+  sed -i "${N}s/Base::\(do_p\)/Base::template \1/" $L/aq-scratch/include/atomic_queue/atomic_queue.h
+  python3 tests/clang-template-keyword-check.py --root . --compiler /usr/bin/clang++ --atomic-queue-include $L/aq-scratch/include > $L/test-compile-red-$N-r2.log 2>&1; echo EXIT=$? >> $L/test-compile-red-$N-r2.log
+  ```
+
+  EXIT=1 for each, with the real `/usr/bin/clang++` rejecting the header:
+  `atomic_queue.h:N:col: error: a template argument list is expected after a
+  name prefixed by the template keyword
+  [-Wmissing-template-arg-list-after-template-kw]` — :394 (col 31), :400
+  (col 24), :522 (col 31), :528 (col 24)
+  (`logs/test-compile-red-394-r2.log`, `logs/test-compile-red-400-r2.log`,
+  `logs/test-compile-red-522-r2.log`, `logs/test-compile-red-528-r2.log`).
+  The scratch copy was then removed with `rm -rf $L/aq-scratch`.
+
+- Final green ctest, from the build tree:
+
+  ```
+  cd build/tests && ctest -R ClangTemplateKeywordCheck --output-on-failure > $L/test-green-final-r2.log 2>&1; echo EXIT=$? >> $L/test-green-final-r2.log
+  ```
+
+  `100% tests passed, 0 tests failed out of 1`, EXIT=0
+  (`logs/test-green-final-r2.log`).
+
+- Clean-tree check:
+
+  ```
+  git status --porcelain > $L/status-p4b.log 2>&1; echo EXIT=$? >> $L/status-p4b.log
+  ```
+
+  Empty output, EXIT=0 (`logs/status-p4b.log`).
+
+- Repo-wide scan and compiler version, re-run with the EXIT line inside the log:
+
+  ```
+  rg -n '::template [A-Za-z_]+\(' -g '*.{h,hpp,c,cc,cpp,hh}' . > $L/evidence-4-scan-r2.log 2>&1; echo EXIT=$? >> $L/evidence-4-scan-r2.log
+  /usr/bin/clang++ --version > $L/clang-version-r2.log 2>&1; echo EXIT=$? >> $L/clang-version-r2.log
+  ```
+
+  The scan found 0 matches, EXIT=1 (`logs/evidence-4-scan-r2.log`); the compiler
+  version log ends EXIT=0 (`logs/clang-version-r2.log`).
+
+The earlier `feature-check` gates run (`logs/gates-1.log`) belongs to an earlier
+round and is not re-run here; it is not the basis of any EXIT claim in this
+report.
 
 ## 4. Unverified
 
 The hosted `macos-arm64` and `windows-arm64` builds were not run here; hosted CI
 must confirm them. The local compiler used for the compile half is
 `/usr/bin/clang++`, `clang version 23.1.5`, target
-`x86_64-pc-linux-gnu` (`logs/clang-version.log`, `logs/evidence-5-clang.log`).
+`x86_64-pc-linux-gnu` (`logs/clang-version-r2.log`, EXIT=0;
+`logs/evidence-5-clang.log`).
 
 ## Other findings
 
