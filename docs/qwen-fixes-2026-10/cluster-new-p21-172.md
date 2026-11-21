@@ -74,10 +74,10 @@ none, the cell says so: either "EXIT=n as printed by the command in the session"
 | build + green run 1 | build-4.log, test-green-1.log | build ends `Built target zene`; `1/1 ... SfzGateStereoLinkTest ... Passed` | not recorded in log |
 | build + family run 2 | build-5.log, test-family-2.log | `100% tests passed out of 15` | not recorded in log |
 | family run 1 (before build-5) | test-family-1.log | `20% tests passed, 12 tests failed out of 15`; the 12 failures are `Not Run` executables | not recorded in log |
-| revert: `git diff ... > fix.patch && git apply -R fix.patch` | none (no log file) | reverts the fix | EXIT=0 as printed by the command in the session |
+| revert: `git diff -- plugins/SfzPlayer/sfizz/src/sfizz/effects/Gate.cpp > /home/kruzzzzy/.config/kads/zene/state/runs/new-p21-172.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.config/kads/zene/state/runs/new-p21-172.r1/logs/fix.patch` | none (no log file) | reverts the fix | EXIT=0 as printed by the command in the session |
 | build after the revert | build-6.log | no EXIT line in the log | not recorded in log |
 | reversed red run | test-reversed-red.log | `Totals: 4 passed, 2 failed`; (a) and (c) FAIL | EXIT=8 (in log) |
-| reapply: `git apply fix.patch` | none (no log file) | reapplies the fix | EXIT=0 as printed by the command in the session |
+| reapply: `git apply /home/kruzzzzy/.config/kads/zene/state/runs/new-p21-172.r1/logs/fix.patch` | none (no log file) | reapplies the fix | EXIT=0 as printed by the command in the session |
 | reapply build | build-7.log | build of the fixed tree | EXIT=0 (in log) |
 | reapplied green run | test-reapplied-green.log | `1/1 ... SfzGateStereoLinkTest ... Passed` | EXIT=0 (in log) |
 | all-sources reproduce | quiet-run log `001-reproduce-p4.log` | `REPRODUCES: the entry list in all-sources.txt is the recipe's own output.` | 0 (printed by quiet-run in the session) |
@@ -89,6 +89,18 @@ none, the cell says so: either "EXIT=n as printed by the command in the session"
 The first family run failed only because 12 test executables were not built. build-5
 fixed that, and the second family run passes 15 of 15.
 
+### ctest and build commands
+
+No log in the run's logs directory contains the text `ctest`, so the verbatim
+invocations are not recorded. The commands below reproduce the rows; they are not a
+record of what ran.
+
+- Stereo-link rows: `cd build/tests && ctest -R SfzGateStereoLinkTest --output-on-failure`
+- Family rows (`test-family-*.log`): a ctest run over the 15-test family; the selector
+  is not recorded.
+- Build rows: build the target named in the row's log (for example
+  `SfzGateStereoLinkTest`); the build command is not recorded.
+
 ## Realtime
 
 The change is one index in an existing per-sample loop (`Gate.cpp:129-130`). It adds
@@ -98,3 +110,43 @@ run in this session.
 ## Other findings
 
 - none
+
+## Self-check
+
+Answers to the six ASK items of the pre-submit check. Each cites the log or file:line
+that shows it.
+
+1. **Regression test fails with the change reverted and passes with it.** Yes at test
+   level: each red run exits 8 (`test-reversed-red.log:25` EXIT=8 in the log;
+   `test-red.log` and `test-red-2.log` EXIT=8 as printed by the command in the session,
+   no EXIT line in the file). Slot (a) `stlinkRightOnlyOpensGate` FAILs in all three red
+   logs (`test-red.log:7`, `test-red-2.log:7`, `test-reversed-red.log:7`). Slot (c)
+   `reconfiguredInstanceCarriesGateStateAcrossBlocks` FAILs in `test-red-2.log:10` and
+   `test-reversed-red.log:10`, but PASSes in `test-red.log:10`. Passes with the change:
+   `test-green-2.log:8` EXIT=0 and `test-reapplied-green.log:8` EXIT=0.
+   **Open:** the first red run's slot (c) PASS is not explained. The same reverted code
+   gave FAIL in the other two red runs, so either the first run did not build the
+   reverted `Gate.cpp` or the outcome varies between runs. Not re-run in this session.
+2. **Deterministic.** The test has no wall-clock, sleep, random or thread code; it
+   includes only QtTest and std headers (`tests/src/plugins/SfzGateStereoLinkTest.cpp`).
+   The seams are: `makeGate()` (lines 30-45) fixes sample rate 44100 and block size 512
+   before the first `process()`; `fillTone()` (lines 47-55) computes the sine from the
+   absolute frame index; `runBlock()` (lines 65-75) primes the outputs with a sentinel;
+   each slot builds a fresh gate. **Caveat:** the red logs disagree on slot (c) for the
+   reverted code (item 1), so the logs do not yet show repeatability.
+3. **Fix at the cause and complete.** The change is one token at `Gate.cpp:130`. The
+   other per-sample reads of `right2x` in `Gate::process` (`Gate.cpp:87`) use `[i]`:
+   `Gate.cpp:101`, `:124`, `:143`. `git show ac80b7022d -- Gate.cpp` shows 1 insertion
+   and 1 deletion. `Gate::process` keeps its signature. The only other source file that
+   names `Gate` is `plugins/SfzPlayer/sfizz/src/sfizz/Effects.cpp` (factory; not read in
+   detail). External callers beyond that were not enumerated.
+4. **No collateral damage.** The diff adds no limit or check and touches no opcode
+   parsing or saved state. The changed branch runs only when `gate_stlink=1`. Related
+   evidence: `test-family-3.log:33` `100% tests passed out of 15` and `:36` EXIT=0;
+   `feature-check-2.log:11` EXIT=0.
+5. **ALREADY-FIXED or FALSE-POSITIVE.** Not applicable. The verdict is FIXED (line 1),
+   and `Gate.cpp:130` now reads `right2x[i]`.
+6. **Sibling commands.** Not affected. Commit `ac80b7022d` changed no command file
+   (`git show --stat ac80b7022d`: the report, `Gate.cpp`, `tests/CMakeLists.txt`,
+   `tests/all-sources.txt`, `tests/fork-sources.txt`, the new test). Commit `4c9d7a4235`
+   changed the report and `tests/upstream-modifications.txt`.
