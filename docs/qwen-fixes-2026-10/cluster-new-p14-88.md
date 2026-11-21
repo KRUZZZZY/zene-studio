@@ -118,3 +118,12 @@ Packet questions:
 - Does it pass after? Yes: `test-2-green` and `test-5-green-proof` show `3 passed, 0 failed`.
 - Did the neighbouring tests stay green? Yes: `test-3-family` shows 2/2 passed.
 - Is the diff whitespace-clean? Yes: `git diff --check` exit 0.
+
+Pre-submit questions (from `submit-1.log`):
+
+- The regression test FAILS with the change reverted and PASSES with it: Yes. `test-1-red` and `test-4-red-proof` exit 1 with `FAIL!` and five accepted fixtures; `test-2-green` and `test-5-green-proof` exit 0 with `3 passed, 0 failed`.
+- The test is deterministic: Yes. A grep of `tests/src/core/DawProjectInterchangeRoundTripTest.cpp` for `sleep|chrono|QTime|QElapsed|rand|thread|QDateTime|time(` returns 0 matches, so it has no wall-clock, sleep, random or thread dependency. This check is by grep only; the fixture values were not separately reviewed.
+- The fix is at the cause and complete: Yes for the reader. The cause is `ticksFromBeats` (`src/core/DawProjectReadShared.h:238-262`) turning a non-finite 48-tick product into a silent 0. The change only touches the non-finite branch (252-260), which now sets `state.error` and returns 0; the finite path (`held`, rounding, `roundedTimes`) is unchanged. Callers: `DawProjectRead.cpp:122-123` (checks the error and returns false), `DawProjectReadTracks.cpp:137-140` (note), `DawProjectReadTracks.cpp:192-199` (clip; the error is sticky and makes the read fail at `DawProjectRead.cpp:324`). Not checked in this step: the beat-to-tick conversions at `DawProjectModel.cpp:80` and `:90`, which are outside the reader and were not changed.
+- No collateral damage: Yes, as far as the tests cover. A finite beat value whose product stays finite takes the unchanged path, so existing projects load as before. Only a finite beat value whose 48-tick product overflows to infinity is now refused, which no real project should contain. `DawProjectDeflateImportTest` and `DawProjectInterchangeRoundTripTest` pass (`test-3-family`, `test-7-final-family`). No load of a saved project outside those tests was run.
+- If the verdict is ALREADY-FIXED or FALSE-POSITIVE: Not applicable. The verdict is REAL (see the Status line at the top).
+- Sibling commands in changed command files: Not applicable. The change touches no command files; `git show --stat c7e7daa63` lists only the report, the header and the test.
