@@ -6,7 +6,7 @@ Status: REAL. Fixed by refusing (not clamping) finite beat values whose 48-ticks
 
 ## Defect (pre-fix evidence)
 
-File: `src/core/DawProjectReadShared.h` at the pre-fix commit (`git show HEAD:src/core/DawProjectReadShared.h`), lines 249-254:
+File: `src/core/DawProjectReadShared.h` at the pre-fix commit (`git show HEAD^:src/core/DawProjectReadShared.h`), lines 249-254:
 
 - `const double exact = beats * DawProjectTicksPerQuarterNote;` (line 250)
 - `const double held = std::isfinite(exact) ? std::min(exact, TickLimit) : 0.0;` (line 251). When `exact` is non-finite, `held` becomes 0.
@@ -27,7 +27,7 @@ Already-guarded path: the automation point path, `src/core/DawProjectRead.cpp:11
 
 ## Fix
 
-`src/core/DawProjectReadShared.h:249-261` (diff vs HEAD):
+`src/core/DawProjectReadShared.h:249-261` (the change in commit c7e7daa63):
 
 - When `exact` is not finite, `ticksFromBeats` now sets `state.error` to a message containing `48-tick-per-beat` (`"a timeline value %1 does not have a finite 48-tick-per-beat count"`) and returns 0. The error is set only if none is already present.
 - The finite path is unchanged: `held = std::min(exact, TickLimit)`, the rounding and `roundedTimes` counting are as before.
@@ -73,7 +73,8 @@ Exit codes are as recorded for this run. The build logs contain no literal `EXIT
 | build-2-green | build-2-green.log | 0 | `Built target DawProjectInterchangeRoundTripTest` |
 | test-2-green | test-2-green.log | 0 | `Totals: 3 passed, 0 failed` |
 | test-3-family | test-3-family.log | 0 | `100% tests passed out of 2` (DawProjectInterchangeRoundTripTest, DawProjectDeflateImportTest) |
-| diff/patch | diff-1b.log, fix.patch | 0 | `diff-1b.log` is a diff stat (`1 file changed, 78 insertions(+), 1 deletion(-)`); `fix.patch` lists only `src/core/DawProjectReadShared.h` |
+| final-stat | final-stat.log | 0 | `git show --stat HEAD` on c7e7daa63: `3 files changed, 207 insertions(+), 1 deletion(-)` (docs, header, test) |
+| patch-check | patch-check.log | see log | `git apply -R --check fix.patch` run after the commit; the exit is recorded in `patch-check.log`. The p4 revert/apply exits were observed in the earlier run; this post-commit check is the logged one |
 | build-4-red-proof | build-4-red-proof.log | 0 | `Built target DawProjectInterchangeRoundTripTest` |
 | test-4-red-proof | test-4-red-proof.log | 1 | `Totals: 2 passed, 1 failed`; five accepted |
 | build-5-green-proof | build-5-green-proof.log | 0 | `Built target DawProjectInterchangeRoundTripTest` |
