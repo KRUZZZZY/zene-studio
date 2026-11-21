@@ -22,6 +22,7 @@
 
 #include "WasmWorkerPool.h"
 
+#include "CrashReporter.h"
 #include "WasmWorker.h"
 
 #include <algorithm>
@@ -65,7 +66,13 @@ WasmWorkerPool::WasmWorkerPool()
 	m_lanes.store(lanes, std::memory_order_relaxed);
 	for (std::size_t i = 0; i < lanes; ++i)
 	{
-		m_threads[i] = std::thread([this, i] { laneMain(i); });
+		m_threads[i] = std::thread([this, i]
+		{
+			// Each lane runs guest code that can overflow its stack; sigaltstack()
+			// is per-thread, so every lane registers before laneMain() runs.
+			crashreporter::installAlternateStackForCurrentThread();
+			laneMain(i);
+		});
 	}
 }
 
