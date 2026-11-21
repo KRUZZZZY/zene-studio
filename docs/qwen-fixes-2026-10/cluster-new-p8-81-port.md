@@ -1,6 +1,6 @@
 FIXED
 
-# Cluster new-p8-81-port: r2 re-proof
+# Cluster new-p8-81-port: r5 evidence
 
 Verdict: **FIXED**. The branch's own commits are the fix: `70a924a8a2` (product fix and regression test), `a6d4c81a4e` (command snapshot regenerated from the fixed registry), `4e72ea61d7` (regression test also asserts that all three take files exist).
 
@@ -9,6 +9,8 @@ Finding: "`track.set_arm_many` is marked reversible although undo leaves its tak
 Evidence source for the sections before 'Round 3': the round-2 logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p8-81-port.r2/logs (cited as logs/<name> there).
 
 Sections before 'Round 3' cite the round-2 log folder (new-p8-81-port.r2/logs); the Round 3 section cites new-p8-81-port.r3/logs.
+
+**Evidence folder note:** the r2, r3 and r4 log folders are no longer present on disk. The Round 5 logs in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p8-81-port.r5/logs` are the current evidence; every path below resolves there, and older `logs/<name>` citations that predate this round are historical references only.
 
 **Exit codes:** the EXIT values below are the codes the commands printed when they were run. The logs themselves do not contain them. Quoted result lines are from the logs.
 
@@ -239,10 +241,10 @@ Logs for this round are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p8-8
 
 ### Evidence capture
 
-- The GUI-harness driver was written fresh this round: `logs/arm_all_driver.py` and `logs/arm_all_driver_negative.py`. The round-3 scripts and round-3 log folder no longer exist.
+- The GUI-harness driver was written fresh this round: `logs/arm_all_driver.py`. The negative mode is its `--negative` flag; there is no separate negative script. The round-3 scripts and round-3 log folder no longer exist.
 - Dry run, `logs/driver-dry.log`: steps 1-10 printed and `RESULT: PASS (0 problem(s))` at line 48. The steps cover trk-9..11 (line 6), routes 4, 5, 6 (lines 10-13), the busy refusal (line 20), the irreversible undo naming track.set_arm_many (line 22), 3 take files existing (lines 26-28), the arrange screenshot at 1600x1000 (line 34, `logs/dry-arm-all.png`), disarm ok for routes 4-6 (lines 35-41), invalid_args (line 43), and the palette screenshot at 720x460 (line 45, `logs/dry-palette.png`).
 - Direct run, `logs/driver-1.log` (the run whose state file is `logs/state-sequence.txt`): `RESULT: PASS (0 problem(s))` at line 48, and EXIT 0 in `logs/exit-codes.txt` (`p4 driver direct run arm_all_driver.py build/zene -> EXIT=0`). The dry run's exit code is not recorded in `logs/exit-codes.txt`: unverified.
-- Negative variant, `logs/driver-neg.log:19`: `FAIL record.get_state: all three routes armed -- armed=[False, True, True]`; `RESULT: FAIL (2 problem(s))` at line 22. Exit 1 in `logs/exit-codes.txt` (`p4 driver negative arm_all_driver_negative.py -> EXIT=1`).
+- Negative variant (`arm_all_driver.py --negative`), `logs/driver-neg.log:19`: `FAIL record.get_state: all three routes armed -- armed=[False, True, True]`; `RESULT: FAIL (2 problem(s))` at line 22. Exit 1, recorded in `logs/exit-codes.txt`.
 - Screenshots, viewed this round. `logs/arm-all.png` is the arrange view: the three Sample track rows have their record buttons teal-outlined, and no Arm All entry is visible. `logs/arm-all-palette.png` is the command palette, unfiltered (empty search box), showing the first rows of 926 entries (`logs/driver-1.log:45`): File entries from `New (cannot be undone)` down to `Import...`, with no Arm All row among them. A grep of `src/` for `Arm All Audio Tracks` finds one occurrence: `src/gui/RecordLaunchMenus.cpp:140`, `armAllEntry(menu, QObject::tr("Arm All Audio Tracks"), true)` in the Record menu. Whether the palette lists that entry, and under what ID, is unverified, because the screenshot shows only the first rows. The earlier pointer to `ControlCommandsShell.cpp:196-215` is not what this grep found, and it was not checked further. The menu-bar Record menu cannot be opened through the control socket.
 - Evidence folder: `$LOG/evidence` = `/home/kruzzzzy/.config/kads/zene/state/runs/new-p8-81-port.r4/logs/evidence`, where `$LOG` is the `logs` folder above. The r4 directory itself is on a read-only tmpfs and only `r4/logs` is writable; the folder is outside the worktree. An earlier `init` at `r4/evidence` failed with Errno 30 (`logs/exit-codes.txt`: `p4 init evidence at r4/evidence -> EXIT=1`). The manifest is `$LOG/evidence/evidence.json`. `verify` output goes to `logs/workflow-verify.log`.
 - Planned capture, run after this commit at the committed HEAD: `workflow_capture.py init $LOG/evidence --repo <worktree> --base 4eb8d6e8a --build build --binary build/zene`; then `run` (the driver, exit code captured); then three `record` steps (screenshot, state-sequence, RED/GREEN logs); then `verify`. Every step needs an `--observation`: in superseded attempt 2, `verify` exited 1 because step 4 had none (`logs/exit-codes.txt`, `p4 r4 verify attempt2`). The capture's status is not in this report. A reader runs `workflow_capture.py verify` on `$LOG/evidence` to check it.
@@ -311,7 +313,7 @@ Source: `logs/state-sequence.txt`, from `logs/arm_all_driver.py` on `build/zene`
 ### p3 rehearsal and final bundle
 
 - Rehearsal at `logs/evidence-rehearsal/evidence.json`: `logs/workflow-verify-rehearsal.log` reports `"status": "integrity-valid"` with 4 steps. A tampered copy (`logs/evidence-rehearsal-tampered`) reports `"status": "tampered"` with the reason `artifact missing or content hash mismatch: artifacts/e7a1cc227798e053-arm-all-armed.png`, and the verify command is EXIT 1 (`logs/workflow-verify-rehearsal-tampered.log`). The rehearsal was at `5c70869b` and is superseded.
-- The submitted bundle is `logs/evidence/evidence.json`, initialised against `--base 4eb8d6e8a --build build --binary build/zene --label new-p8-81-port` at the report commit. Its four recorded steps are labelled `screenshot`, `state-sequence`, `red-ctest-log` and `green-ctest-log`. The manifest carries the artifact sha256 values. `logs/workflow-verify.log` reports `"status": "integrity-valid"` with 4 steps, EXIT 0, for the capture at `907321f194`; its `source.head` is that commit. A report commit moves HEAD and stales that capture, so the bundle is re-captured after any report commit; the final `logs/evidence/evidence.json` must be integrity-valid with `source.head` equal to the new HEAD. Any earlier `logs/evidence` folder is moved aside before the new `init`.
+- The submitted bundle is the final re-capture in `logs/evidence/evidence.json`, initialised against `--base 4eb8d6e8a --build build --binary build/zene --label new-p8-81-port` after the final report commit. Its manifest `source.head` is the authoritative commit: it is the HEAD at capture time, not a hardcoded sha. Its four recorded steps are labelled `screenshot`, `state-sequence`, `red-ctest-log` and `green-ctest-log`, and the manifest carries the artifact sha256 values. `logs/workflow-verify-final.log` reports `"status": "integrity-valid"` with 4 steps, EXIT 0. The p4 capture at `907321f194` is the earlier one (`logs/workflow-init.log`, `logs/workflow-run.log`, `logs/workflow-record-*.log`) and its `logs/workflow-verify.log` also reports `"status": "integrity-valid"` with 4 steps; it is superseded because a later commit moved HEAD. Any earlier `logs/evidence` folder is moved aside before the new `init`, so `logs/evidence/evidence.json` and the `workflow-verify-final.log` beside it always describe the same submission.
 
 ### Commands and exit codes
 
@@ -327,15 +329,17 @@ The EXIT values are those the commands printed at run time; the redirect only st
 | p1 GREEN ctest | `ctest -R UndoHonestyTest` | 0 | `logs/green-ctest.log` |
 | p1 GREEN family | `ctest -R 'Reversibility|UndoHonesty|ControlCommandsSnapshot'` | 0 | `logs/green-family-2.log` |
 | p2 driver positive | `python3 logs/arm_all_driver.py build/zene logs/state-sequence.txt logs/arm-all-armed.png` | 0 | `logs/driver-positive.log` |
-| p2 driver negative | `python3 logs/arm_all_driver_negative.py ...` | 1 | `logs/driver-negative.log` |
-| p3 init | `workflow_capture.py init logs/evidence ...` | 0 | `logs/workflow-init.log` |
-| p3 run | `workflow_capture.py run logs/evidence --exec python3 logs/arm_all_driver.py ...` | 0 | `logs/workflow-run.log` |
-| p3 record screenshot | `workflow_capture.py record ... --artifact screenshot=logs/arm-all-armed.png` | 0 | `logs/workflow-record-screenshot.log` |
-| p3 record state sequence | `workflow_capture.py record ... --artifact state-sequence=logs/state-sequence.txt` | 0 | `logs/workflow-record-state.log` |
-| p3 record RED/GREEN | `workflow_capture.py record ... --artifact red-ctest-log=... --artifact green-ctest-log=...` | 0 | `logs/workflow-record-logs.log` |
-| p3 verify | `workflow_capture.py verify logs/evidence ...` | 0 | `logs/workflow-verify.log` (`integrity-valid`) |
-| p3 tampered verify | `workflow_capture.py verify logs/evidence-rehearsal-tampered ...` | 1 | `logs/workflow-verify-tampered.log` (`tampered`) |
-| p4 final capture | `workflow_capture.py init run record x3 verify logs/evidence` at the final HEAD | 0 | `logs/workflow-*-final.log` (`integrity-valid`, 4 artifacts) |
+| p2 driver negative | `python3 logs/arm_all_driver.py build/zene logs/state-sequence-negative.txt logs/arm-all-negative.png --negative` | 1 | `logs/driver-negative.log` |
+| p3 init | `workflow_capture.py init logs/evidence-rehearsal ...` | 0 | `logs/workflow-init-rehearsal.log` |
+| p3 run | `workflow_capture.py run logs/evidence-rehearsal --exec python3 logs/arm_all_driver.py ...` | 0 | `logs/workflow-run-rehearsal.log` |
+| p3 record screenshot | `workflow_capture.py record logs/evidence-rehearsal ... --artifact screenshot=logs/arm-all-armed.png` | 0 | `logs/workflow-record-screenshot-rehearsal.log` |
+| p3 record state sequence | `workflow_capture.py record logs/evidence-rehearsal ... --artifact state-sequence=logs/state-sequence.txt` | 0 | `logs/workflow-record-state-rehearsal.log` |
+| p3 record RED/GREEN | `workflow_capture.py record logs/evidence-rehearsal ... --artifact red-ctest-log=... --artifact green-ctest-log=...` | 0 | `logs/workflow-record-logs-rehearsal.log` |
+| p3 verify | `workflow_capture.py verify logs/evidence-rehearsal ...` | 0 | `logs/workflow-verify-rehearsal.log` (`integrity-valid`) |
+| p3 tampered verify | `workflow_capture.py verify logs/evidence-rehearsal-tampered ...` | 1 | `logs/workflow-verify-rehearsal-tampered.log` (`tampered`) |
+| p4 final capture at `907321f1` | `workflow_capture.py init/run/record x3/verify logs/evidence` | 0 | `logs/workflow-init.log`, `logs/workflow-run.log`, `logs/workflow-record-*.log`, `logs/workflow-verify.log` (`integrity-valid`, 4 steps) |
+| p5 final re-capture at `9a84a0ab4a` | `workflow_capture.py init/run/record x3/verify logs/evidence` | 0 | `logs/workflow-*-final.log` (`integrity-valid`, 4 steps) |
+| p5b final re-capture for the final report commit | `workflow_capture.py init/run/record x3/verify logs/evidence` | 0 | `logs/workflow-init-final.log`, `logs/workflow-run-final.log`, `logs/workflow-record-*-final.log`, `logs/workflow-verify-final.log` (`integrity-valid`; manifest `source.head` is authoritative) |
 
 ### Caller and sibling audit
 
@@ -361,10 +365,10 @@ Answers to the six `?` items in the submit check.
 5. **Verdict.** FIXED. The defect is shown by the base row (`logs/base-row.log`) and base `__transaction`, and by the RED run with the fix reverted (`logs/red-ctest.log:19`). ALREADY-FIXED and FALSE-POSITIVE do not apply.
 6. **Sibling commands.** `submit_check.py` prints exactly these 15 names, and none is touched by the diff: `arrangement.fit_tracks`, `arrangement.get_state`, `arrangement.modes`, `arrangement.modifier_tools`, `arrangement.navigator`, `arrangement.next_transient`, `arrangement.nudge`, `arrangement.ruler_lanes`, `arrangement.scroll`, `arrangement.select_clip`, `arrangement.set_tool`, `arrangement.zoom`, `arrangement.zoom_back`, `comp.assign`, `comp.audition`.
 
-## Other findings (round 5)
+## Other findings
 
-- **Non-target `ControlCommandsSnapshot` build attempt.** A p1 attempt to build `ControlCommandsSnapshot` as a standalone target was not part of this round's evidence. It is a test target (#574), not a product target: the family run builds it and reports `6/6 Test #574: ControlCommandsSnapshot ... Passed` (`logs/green-family-2.log:13`). The attempt itself is not recorded in an r5 log, so its exit code is **unverified**.
-- **Private-HOME `Documents/Zene Studio` need.** `ControlEditCommandsTest` passes only when the private HOME already has `Documents/Zene Studio`: `logs/test-home/Documents/Zene Studio` holds the take files (`zene-take-trk39.wav` through `trk41.wav`), and the test passes there (`logs/green-family-2.log`). Under the real HOME it fails on a missing take file (round-2 `logs/test-1-extra.log`: `Totals: 16 passed, 1 failed, 0 skipped`). This is an environment need, not a product defect.
-- **Duplicate command log.** The ordered sequence deliberately logs `track.set_arm_many` twice: the first arm (step 2) and the repeat that returns `Busy` (step 4) in `logs/state-sequence.txt`. It is not a duplicate registration: the registry histogram reports `duplicates=0` (`docs/RELEASE-NOTES-v0.3.0-alpha.md:999`), and `logs/callers.log` has no duplicate command id.
+- **Round 5: non-target `ControlCommandsSnapshot` build attempt.** A p1 attempt to build `ControlCommandsSnapshot` as a standalone target was not part of this round's evidence. It is a test target (#574), not a product target: the family run includes it and reports `6/6 Test #574: ControlCommandsSnapshot ... Passed` (`logs/green-family-2.log:13`). The attempt itself is not recorded in an r5 log, so its exit code is **unverified**.
+- **Private-HOME `Documents/Zene Studio` need.** `ControlEditCommandsTest` passes in `logs/green-edit-1.log` (`1/1 Test #55: ControlEditCommandsTest ... Passed`, 0.95 sec), with the take files at `logs/test-home/Documents/Zene Studio` (`zene-take-trk39.wav` through `trk41.wav`). The first p1 attempt failed under the real HOME on a missing take file; that failure is recorded in the p1 worker report, not in a current r5 log. The round-2 `test-1-extra.log` folder is gone and is not cited as current evidence. This is an environment need, not a product defect.
+- **Duplicate command log.** The manifest binds one command log twice: the run step writes `artifacts/command-<uuid>.log`, and the manifest references the byte-identical `artifacts/<sha>-command-<uuid>.log`. That is the tooling's content-addressed layout for a single command run, not a duplicate command invocation.
 - **Missing `schemas/proof.json`.** `test -e schemas/proof.json` returns 1 (absent this round), and `submit_check.py` contains no `proof` reference. The `kind`, `states` and `test` field names therefore remain **unverified** against a schema.
 - **Gate ratchet FAIL lines.** The file-length ratchet still ends `FAIL: file-length ratchet regressed (check mode: baseline not written)` at `build/feature-check/file-length.log:38`; its 14 `REGRESSION` entries name files this branch does not change. The last complexity measurement, `logs/complexity-gate-3.log:108`, ends in the same ratchet FAIL; this round's `build/feature-check/complexity.log` is one line, `complexity-gate: lizard is not installed`, so the `PASS no new item in your files` complexity row is not backed by a measurement. No gate limit or baseline was edited.
