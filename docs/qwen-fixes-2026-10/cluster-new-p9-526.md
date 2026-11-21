@@ -94,9 +94,10 @@ result is recorded then.
   (`WaveShaperControls.h:98-108`); `WaveShaper.cpp:77` reads that published
   array. Every Wave Shaper edit path emits `samplesChanged` — Graph click/drag
   through `setSampleAt` or `drawLineAt`'s final emit, reset, smooth, add/sub,
-  and `loadGraph` — so no Wave Shaper caller keeps a stale read; `setLength` and
-  `setRange` emit `lengthChanged`/`rangeChanged` instead, are not used by this
-  plugin, and its model stays fixed at 200.
+  and `loadGraph` — so no Wave Shaper caller keeps a stale read; `setRange` is
+  not used by this plugin; `setDefaultShape` calls `setLength(200)` once on the
+  already-200 model, where it changes nothing and emits no signal, so the model
+  stays fixed at 200.
 - No collateral damage: the existing save/load slot
   (`GraphWaveformEditorGuiTest.cpp:82`) still round-trips `saveState`/
   `restoreState` and rejects a short curve; the ctest family run passed 1/1
