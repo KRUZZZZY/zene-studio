@@ -1,8 +1,10 @@
-FIXED
+ALREADY-FIXED
 
-# Cluster new-p8-81-port: r5 evidence
+# Cluster new-p8-81-port: r6 self-heal of train 37 (r5 and earlier sections are historical)
 
-Verdict: **FIXED**. The branch's own commits are the fix: `70a924a8a2` (product fix and regression test), `a6d4c81a4e` (command snapshot regenerated from the fixed registry), `4e72ea61d7` (regression test also asserts that all three take files exist).
+Verdict: **ALREADY-FIXED** at round 6. The accepted fix is train 37's (`50b48f5451`, `a109eb75d3`), merged as `c89acade35`; the r5 branch hunk is superseded. The Round 6 section below is the current evidence; the r5 verdict that follows is historical.
+
+Verdict (r5, historical): **FIXED**. The branch's own commits are the fix: `70a924a8a2` (product fix and regression test), `a6d4c81a4e` (command snapshot regenerated from the fixed registry), `4e72ea61d7` (regression test also asserts that all three take files exist).
 
 Finding: "`track.set_arm_many` is marked reversible although undo leaves its takes behind."
 
@@ -364,7 +366,79 @@ Answers to the six `?` items in the submit check.
 5. **Verdict.** FIXED. The defect is shown by the base row (`logs/base-row.log`) and base `__transaction`, and by the RED run with the fix reverted (`logs/red-ctest.log:19`). ALREADY-FIXED and FALSE-POSITIVE do not apply.
 6. **Sibling commands.** `submit_check.py` prints exactly these 15 names, and none is touched by the diff: `arrangement.fit_tracks`, `arrangement.get_state`, `arrangement.modes`, `arrangement.modifier_tools`, `arrangement.navigator`, `arrangement.next_transient`, `arrangement.nudge`, `arrangement.ruler_lanes`, `arrangement.scroll`, `arrangement.select_clip`, `arrangement.set_tool`, `arrangement.zoom`, `arrangement.zoom_back`, `comp.assign`, `comp.audition`.
 
+## Round 6: self-heal merge of train 37
+
+All paths in this section are relative to the round-6 log folder `/home/kruzzzzy/.config/kads/zene/state/runs/new-p8-81-port.r6/logs` unless they name a repository file. The EXIT values are the codes printed by the commands when run (recorded in `exit-codes.txt`).
+
+### The finding is real at base `4eb8d6e8a`
+
+- `git show 4eb8d6e8a:src/core/ControlReversibilityTableRecording.cpp` has the row as `R("track.set_arm_many", RC::Snapshot, true, ...)`.
+- `git show 4eb8d6e8a:src/core/ControlCommandsArrangementState.cpp` line 385 inserts a per-track `__transaction` into the arm result, which is what made the command look reversible.
+
+So `track.set_arm_many` was genuinely misclassified at that base; this is not a false positive.
+
+### The fix already exists in train 37
+
+- The two train commits are `50b48f5451f9e7ae6353b4418e851a0a006b60b9` ("Fix cluster new-p8-81-port-port: track.set_arm_many is irreversible") and `a109eb75d342a749c76791bd86ce70c865298d50` ("Fix cluster new-p8-81-port-port: track.set_arm is irreversible too") — `train-commits.log`, EXIT 0.
+- The merged track row is `R("track.set_arm_many", RC::Irreversible, false,` at `src/core/ControlReversibilityTableRecording.cpp:113`; the sibling `R("track.set_arm", RC::Irreversible, false,` is at `:95`.
+- `src/core/ControlCommandsArrangementState.cpp:386` now removes the per-track payload: `one.result.remove(QStringLiteral("__transaction"));`, so neither arm verb records an inverse.
+
+### The merge record
+
+- The merge commit is `c89acade35c4a12673aa9035a4adf91b5ae03f7b`, message "Merge 050/m0-train-37 into bugs/qwen-new-p8-81-port (cluster new-p8-81-port self-heal)".
+- Its parents are `a7c6532c5141e645f1a3f7895ae551326845cb0c` (the branch) and `a74b2c4da9f8169ff4d358e9b223d84f9c5d6b99` (the train) — `merge-parents.log`, EXIT 0.
+- The six files touched by the fix match train 37 exactly; `train-match.log` records one `EXIT=0` per file: `docs/RELEASE-NOTES-v0.3.0-alpha.md`, `src/core/ControlCommandsArrangementState.cpp`, `src/core/ControlReversibilityTableRecording.cpp`, `src/gui/RecordLaunchMenus.cpp`, `tests/src/core/UndoHonestyTest.cpp`, `tools/mcp-zene-control/zene_control/commands_snapshot.json`.
+- The merge brings the train's whole tree, not just the six files: `merge-stat.log` lists the full change set against the first parent, and the post-merge merge base is `a74b2c4d`, i.e. the train is now an ancestor (`merge-base-post.log`). The pre-merge base was `4eb8d6e8a` (`merge-base-pre.log`).
+
+### Build and test evidence (focused arm-reversibility set)
+
+| Step | Command | Exit | Log |
+| --- | --- | --- | --- |
+| cmake configure guard | `cmake -S . -B build/tests` | 97 (`bunny-guard`, configure is the parent's job; the lane tree was already configured and auto-reconfigured on the next build) | `cmake-merge.log` |
+| GREEN build 1 | `cmake --build build --target ...` | 0 | `build-green-1.log` |
+| GREEN ctest 1 | focused 4 tests | 0, 4/4 passed (`ControlArmReversibilityTest`, `ReversibilityContractTest`, `UndoHonestyTest`, `ControlCommandsSnapshot`) | `green-ctest-1.log` |
+| patch generation | `git diff` into `fix.patch` (309 lines) | 0 | `fix.patch` |
+| reverse apply | `git apply -R fix.patch` | 0 | (restores the base rows) |
+| RED build | `cmake --build build --target ...` | 0 | `build-red.log` |
+| RED ctest | focused 2 tests | 8, 0/2 passed with both `!undo.ok` failures: `ControlArmReversibilityTest` ("control.undo claimed it could remove the take from track.set_arm", `red-ctest.log:8`) and `UndoHonestyTest` ("control.undo claimed it could remove the takes from track.set_arm_many", `red-ctest.log:31`) | `red-ctest.log` |
+| restore | `git apply fix.patch` | 0 | — |
+| GREEN build 2 | `cmake --build build --target ...` | 0 | `build-green-2.log` |
+| GREEN ctest 2 | focused 4 tests | 0, 4/4 passed | `green-ctest-2.log` |
+
+### Wider-family exception (outside the finding's two files)
+
+The family run `green-family-2.log` passed 6 of 7 and exited 8: `ReversibilityUndoDeviceTest` SEGFAULTed. It reproduced twice after the LADSPA plugin was built (`build-ladspa.log:45`, `../libladspaeffect.so`; `LMMS_TEST_PLUGIN_DIR=build/plugins`, `device-source-init.log:72-73`) — `device-test-alone-1.log` and `device-test-alone-2.log`, both EXIT 8.
+
+- Frames: `theRestoreReadsTheWrappersHostKeyAndNotThePluginsNestedOne` -> `control::instantiateRecordedDevice` -> `controlRestoreEffectState` -> `JournallingObject::restoreState` -> `SerializingObject::restoreState` -> `lmms::Effect::loadSettings+563` with `rax=0` (`device-test-alone-1.log:237-242`; `device-diagnosis.log:5`).
+- Test source: `tests/src/core/ReversibilityUndoDeviceTest.cpp:557-559` calls `instantiateRecordedDevice(target.chain, document.toString())`; `src/core/Effect.cpp:227` dereferences `controls()->nodeName()`; `plugins/LadspaEffect/LadspaEffect.cpp:303-315,608` leaves `m_controls` null when the saved LADSPA key is a source descriptor (`setOkay(false); return;`) while the restore still reaches `Effect::loadSettings`.
+- This is train-37 LADSPA/Effect restore code, not the arm-reversibility path: the finding's two product files are `ControlReversibilityTableRecording.cpp` and `ControlCommandsArrangementState.cpp`, and the failing test never arms a track. It is recorded as an exception, not as a pass.
+
+### The old r5 screenshot/state-sequence loop
+
+Per the diagnostic checkpoint, the r5 `arm_all_driver.py` screenshot and ordered state-sequence capture were **not re-run** this round: the fix is train 37's accepted code and the r5 evidence is superseded. Those screenshots and sequences remain historical r5 artifacts only.
+
+### Code reference (ALREADY-FIXED proof)
+
+- Base defect: `4eb8d6e8a:src/core/ControlReversibilityTableRecording.cpp` (`track.set_arm_many`, `RC::Snapshot, true`) and `4eb8d6e8a:src/core/ControlCommandsArrangementState.cpp:385` (per-track `__transaction`).
+- Fixed at HEAD (via the merge): `src/core/ControlReversibilityTableRecording.cpp:113` (`track.set_arm_many`, `RC::Irreversible, false`), `:95` (sibling `track.set_arm`, `RC::Irreversible, false`), `src/core/ControlCommandsArrangementState.cpp:386` (`__transaction` removed).
+- Train provenance: `50b48f5451`, `a109eb75d3`; merge `c89acade35` with parents `a7c6532c51` and `a74b2c4d`.
+
+### Round 6 self-check
+
+1. **RED and GREEN with exit codes.** Yes. RED is EXIT 8 with both focused tests failing on `!undo.ok` (`red-ctest.log:8,31`); GREEN is EXIT 0, 4/4 (`green-ctest-1.log`, `green-ctest-2.log`). No RED is inferred.
+2. **Deterministic.** The two focused tests are the same ones the r5 determinism grep cleared (`QTemporaryDir`, no sleep/thread/timer/wait); RED reproduced both arm verbs in one run and GREEN passed twice (green-ctest-1 and -2).
+3. **Fix at the cause and complete.** The cause is the two base rows/transaction; HEAD has both rows `RC::Irreversible, false` and no `__transaction` insert, so undo is refused for both `track.set_arm` and `track.set_arm_many`.
+4. **No collateral damage.** The focused family is 4/4 GREEN twice. The wider family is 6/7, not clean: `ReversibilityUndoDeviceTest` SEGFAULTs in the LADSPA/Effect restore path described above. That failure is in train-37 device-restore code, outside the finding's two files, and is an open exception rather than collateral from this fix.
+5. **Verdict.** **ALREADY-FIXED**: the defect is real at base `4eb8d6e8a`, and train 37 already carries the accepted fix that the merge brought in. The r5 branch hunk is superseded, not extra.
+6. **Sibling commands.** The six-file match shows only the two arm rows and their snapshot/docs/test companions changed; the other 15 submit-check sibling names (listed in the r5 self-check) are untouched by the merge's fix files.
+
 ## Other findings
+
+- **Merge made with `/usr/bin/git`, bypassing the lane shim.** The lane resolves git to `/home/kruzzzzy/.local/share/zene-bunny-fix/bunny/shims/git` (`git-shim.log`, EXIT 0; `shim-evidence.log`). This session used that shim for its git evidence, but the p1 worker performed the merge itself with `/usr/bin/git`, so the `/usr/bin/git` attribution is not reproducible from this session. That bypasses the read-first note, which expects the shim. The separate bunny-guard cmake attempt exited 97 (see below).
+- **cmake configure guard (exit 97).** `cmake -S ...` in the lane is refused by `bunny-guard: configuring is the parent's job; the lane build tree is already configured` (`cmake-merge.log`, EXIT 97). The next build auto-reconfigured and succeeded; no build tree was edited by hand.
+- **Train-37 device-test crash.** `ReversibilityUndoDeviceTest` SEGFAULTs twice in the LADSPA/Effect restore path (frames and source lines in the Round 6 wider-family exception). It is not fixed here; it is train-37 code outside this finding.
+- **Missing r2/r3/r4 logs.** Those round folders are absent from disk; only the r5 and r6 folders remain. Citations to them are historical and unverifiable from the current tree.
+- **Gate ratchet and lizard state unchanged.** The file-length ratchet still ends in `FAIL: file-length ratchet regressed (check mode: baseline not written)` and the complexity gate still reports `complexity-gate: lizard is not installed`, so the `PASS no new item in your files` complexity row remains unbacked. No limit or baseline was edited this round.
 
 - **Round 5: non-target `ControlCommandsSnapshot` build attempt.** A p1 attempt to build `ControlCommandsSnapshot` as a standalone target was not part of this round's evidence. It is a test target (#574), not a product target: the family run includes it and reports `6/6 Test #574: ControlCommandsSnapshot ... Passed` (`logs/green-family-2.log:13`). The attempt itself is not recorded in an r5 log, so its exit code is **unverified**.
 - **Private-HOME `Documents/Zene Studio` need.** `ControlEditCommandsTest` passes in `logs/green-edit-1.log` (`1/1 Test #55: ControlEditCommandsTest ... Passed`, 0.95 sec), with the take files at `logs/test-home/Documents/Zene Studio` (`zene-take-trk39.wav` through `trk41.wav`). The first p1 attempt failed under the real HOME on a missing take file; that failure is recorded in the p1 worker report, not in a current r5 log. The round-2 `test-1-extra.log` folder is gone and is not cited as current evidence. This is an environment need, not a product defect.
