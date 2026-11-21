@@ -506,6 +506,7 @@ set(LMMS_TESTS
 	src/core/LoudnessReportTest.cpp
 	src/core/LufsMeterTest.cpp
 	src/core/MasteringTest.cpp
+	src/core/MasteringSourceMixTest.cpp
 	# Startup and CLI regressions: the selected UI scale, dump/compress refusals,
 	# and session-marker cleanup on failed command startup.
 	src/core/MainCliStartupTest.cpp
