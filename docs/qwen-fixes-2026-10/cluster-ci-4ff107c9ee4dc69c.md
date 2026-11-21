@@ -9,10 +9,10 @@ headers, not in the test and not in infrastructure. Three declarations wrote
 `friend class ClipView;` / `friend class AutomationTrackView;` /
 `friend class PatternClipView;` inside `namespace lmms`. Each one declared or
 elaborated a *nonexistent* `lmms::` class instead of the intended `lmms::gui::`
-view class. GCC and Clang happened to accept the test through its using
-directives, while MSVC exposes the elaborated `lmms::` name to later lookup, so
-the unqualified `ClipView` uses in the test bind to the phantom class and the
-build fails.
+view class. GCC and Clang follow the standard, which makes a name first
+introduced by a friend declaration invisible to ordinary lookup, while MSVC
+makes it visible, so the unqualified `ClipView` uses in the test bind to the
+phantom class and the build fails.
 
 The defective declarations were at `include/Clip.h:437`,
 `include/AutomationTrack.h:63` and `include/PatternClip.h:61` (the latter two
@@ -41,19 +41,19 @@ All compile/test commands below are the p1-p4 record; logs are in
 | # | Command (summary) | EXIT | Log |
 |---|---|---|---|
 | 01 | repro, `clang++ -fsyntax-only -fms-compatibility` on `TouchLayoutTest.cpp` | 1 | `01-repro-mscompat.log` (`CLANG_EXIT=1`) |
-| 02 | repro, standard `clang++ -fsyntax-only` | 1 | `02-repro-standard.log` (`CLANG_EXIT=1`) |
+| 02 | repro, standard `clang++ -fsyntax-only` | 1 | `02-repro-standard.log` (`CLANG_EXIT=1`; only the ungenerated `TouchLayoutTest.moc` include at line 551, no `ClipView` ambiguity) |
 | 03 | phantom-friend probe under MS compatibility | 1 | `03-probe-mscompat.log` (`CLANG_EXIT=1`) |
-| 05 | RED: `ctest -R MsFriendLookupTest` with the product fix reverted | 8 | `05-test-red.log` |
+| 05 | RED: `ctest -R MsFriendLookupTest` before the fix (original RED) | 8 | `05-test-red.log` |
 | 07 | GREEN: `ctest -R MsFriendLookupTest` with the fix | 0 | `07-test-green.log` (1/1 passed) |
 | 08 | MS-compat check on `TouchLayoutTest.cpp` after the fix | 0 | `08-repro-mscompat-fixed.log` (`CLANG_EXIT=0`) |
 | 09 | Clip/Automation/Pattern/TouchLayout family | 0 | `09-test-family.log` (47/47 passed) |
-| 4b | `git apply -R fix.patch` (reverse the product fix) | 0 | recorded in p2 |
+| 4b | `git apply -R fix.patch` (reverse the product fix) | 0 | p4 step 4b; wrapper log `10-build-reverted.log` |
 | 11 | `ctest -R MsFriendLookupTest` after 4b | 8 | `11-test-reverted.log` |
-| 4b | `git apply fix.patch` (restore the fix) | 0 | recorded in p2 |
+| 4b | `git apply fix.patch` (restore the fix) | 0 | p4 step 4b; wrapper log `12-build-reapplied.log` |
 | 13 | `ctest -R MsFriendLookupTest` after reapply | 0 | `13-test-reapplied.log` (1/1 passed) |
-| 14 | mutant: remove the `Clip.h` friend | 8 | `14-mutant-Clip.log` |
-| 15 | mutant: remove the `AutomationTrack.h` friend | 8 | `15-mutant-AutomationTrack.log` |
-| 16 | mutant: remove the `PatternClip.h` friend | 8 | `16-mutant-PatternClip.log` |
+| 14 | mutant: revert the `Clip.h` friend to its unqualified form | 8 | `14-mutant-Clip.log` |
+| 15 | mutant: revert the `AutomationTrack.h` friend to its unqualified form | 8 | `15-mutant-AutomationTrack.log` |
+| 16 | mutant: revert the `PatternClip.h` friend to its unqualified form | 8 | `16-mutant-PatternClip.log` |
 
 Note on 4b: the reverse-apply step used `git diff HEAD~1` because the product
 fix was already committed at that point, so `fix.patch` was the fix commit's
@@ -69,7 +69,7 @@ p5 commands:
   for the new list; re-ran feature_check: EXIT=0, all rows PASS. Log:
   `logs/17-feature-check.log`.
 - `python3 submit_check.py <worktree> ci-4ff107c9ee4dc69c`: log
-  `logs/18-submit-check.log` (final run recorded below).
+  `logs/18-submit-check.log` (EXIT=0, `RESULT: PASS - submit`).
 
 ## Disclosures
 
@@ -94,16 +94,17 @@ None.
   `MsFriendLookupTest` fail: `logs/11-test-reverted.log`, EXIT=8 (also the
   original red at `05-test-red.log`, EXIT=8). Restoring the fix
   (`git apply`, EXIT=0) made it pass: `logs/13-test-reapplied.log`, EXIT=0
-  (also `07-test-green.log`, EXIT=0). Each mutant that removes one friend also
-  fails (logs 14/15/16, EXIT=8 each).
+  (also `07-test-green.log`, EXIT=0). Each mutant that reverted one friend to
+  its unqualified form also fails (logs 14/15/16, EXIT=8 each).
 - **The test is deterministic.** It runs a `clang++ -fsyntax-only` compile
   probe with fixed flags and a fixed `-fms-compatibility-version=19.40`; there
   is no wall-clock timing, sleep, thread or race, and no seam is needed.
 - **The fix is at the cause and complete.** The cause is the three unqualified
-  friends. All three were qualified, and all other `friend class ...View`
-  declarations in `include/` either are already `gui::`-qualified or name
-  non-GUI classes; the grep shows no remaining unqualified GUI view friend.
-  The compile probe and the 47-target family exercise all three headers.
+  friends. All three were qualified. The other unqualified `friend class ...View`
+  declarations (`InstrumentTrackWindow.h:171-172`, `MixerChannelView.h:190`,
+  `MixerView.h:226`, `TrackOperationsWidget.h:83`) sit inside
+  `namespace lmms::gui`, so they already name the real class; the grep confirms
+  it. The compile probe and the 47-target family exercise all three headers.
 - **No collateral damage.** The diff is declarations only: qualified friends
   plus forward declarations. Save/load formats, project loading and existing
   data are untouched, and the family run passed 47/47 (log 09, EXIT=0).
