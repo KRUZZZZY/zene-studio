@@ -101,21 +101,19 @@ RED and GREEN for the address check (the packet p2/p3 run; ctest runs from `buil
 | GREEN test | `ctest -R '^ModulationLayerTest$'` → `test-13-green.log` | 0 | `100% tests passed out of 1` |
 | Family | `ctest -R '^Modulation'` → `test-14-modulation-family.log` | 0 | `100% tests passed out of 5` |
 
-Exact RED/GREEN command sequence (run from the worktree root unless noted; `logs/` is the run logs directory above; ctest runs from `build/tests`). Each line's exit
-code is the value printed by the p2/p3 shell run. Build invocations are shown as placeholders because the exact build
-command is not recorded in the run logs read for this report:
+Exact RED/GREEN command sequence, as run in the p2/p3 shell runs. Paths are absolute. Run from the worktree root; the ctest lines `cd` into `build/tests`, so return to the root before the next build line. Each line's exit code is the value printed by the p2/p3 shell run:
 
 ```sh
-git diff b85f94a76e^..HEAD -- src/core/ModulationLayer.cpp > logs/fix-5184-red.patch; echo EXIT=$?   # patch generation: 0
-test -s logs/fix-5184-red.patch; echo EXIT=$?                                                       # test -s: 0
-git apply --check -R logs/fix-5184-red.patch; echo EXIT=$?                                          # 0
-git apply -R logs/fix-5184-red.patch; echo EXIT=$?                                                  # 0
-<build ModulationLayerTest target> > logs/build-10-red.log 2>&1; echo EXIT=$?                       # red build: 0
-(cd build/tests && sh -c "ctest -R '^ModulationLayerTest$' --output-on-failure" > logs/test-11-red.log 2>&1); echo EXIT=$?   # red ctest: 8
-git apply logs/fix-5184-red.patch; echo EXIT=$?                                                     # 0
-<build ModulationLayerTest target> > logs/build-12-green.log 2>&1; echo EXIT=$?                     # green build: 0
-(cd build/tests && sh -c "ctest -R '^ModulationLayerTest$' --output-on-failure" > logs/test-13-green.log 2>&1); echo EXIT=$?   # focused green ctest: 0
-(cd build/tests && sh -c "ctest -R '^Modulation' --output-on-failure" > logs/test-14-modulation-family.log 2>&1); echo EXIT=$?    # family ctest: 0
+git diff b85f94a76e^ HEAD -- src/core/ModulationLayer.cpp > /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/fix-5184-red.patch; echo EXIT=$?   # patch generation: 0
+test -s /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/fix-5184-red.patch; echo EXIT=$?   # test -s: 0
+git apply --check -R /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/fix-5184-red.patch; echo EXIT=$?   # 0
+git apply -R /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/fix-5184-red.patch; echo EXIT=$?   # 0
+cmake --build build --target zene ModulationLayerTest > /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/build-10-red.log 2>&1; echo EXIT=$?   # red build: 0
+cd build/tests && ctest -R '^ModulationLayerTest$' --output-on-failure > /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/test-11-red.log 2>&1; echo EXIT=$?   # red ctest: 8
+git apply /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/fix-5184-red.patch; echo EXIT=$?   # 0
+cmake --build build --target zene ModulationLayerTest > /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/build-12-green.log 2>&1; echo EXIT=$?   # green build: 0
+cd build/tests && ctest -R '^ModulationLayerTest$' --output-on-failure > /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/test-13-green.log 2>&1; echo EXIT=$?   # focused green ctest: 0
+cd build/tests && ctest -R '^Modulation' --output-on-failure > /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/test-14-modulation-family.log 2>&1; echo EXIT=$?   # family ctest: 0
 ```
 
 The four RED failures are the four address rows, all at `tests/src/core/ModulationLayerTest.cpp:553`:
@@ -135,7 +133,7 @@ Other gates:
 |---|---|---|---|
 | File length | `bash tests/file-length-gate.sh --check` → `file-length-check.log` | 0 | `ModulationLayer.cpp` not in the exceed list; PASS |
 | Feature check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5184 > /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/feature-check-3.log 2>&1; echo EXIT=$?` → `feature-check-3.log` | 0 | all eight gates PASS; `RESULT: PASS` |
-| Submit check | p4 run → `submit-check-3.log` | 0 | `RESULT: PASS - submit`; no FAIL line |
+| Submit check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5184 5184 > /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/submit-check-3.log 2>&1; echo EXIT=$?` → `submit-check-3.log` | 0 | `RESULT: PASS - submit`; no FAIL line |
 
 Exit codes for the RED, GREEN and gate rows come from the p2/p3/p4 shell run records. The `.log` files hold the test output,
 and the exit codes are not written into them.
