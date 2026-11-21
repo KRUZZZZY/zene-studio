@@ -1086,6 +1086,8 @@ set(LMMS_TESTS
 	src/core/MasteringSequenceTest.cpp
 	# 0.5.0 L11 (W3): a clip into the library, the index and similar sounds, thumbnails, the matched preview, history.
 	src/core/LibraryBrowserTest.cpp
+	# Q050-183.1: audio.device_list's running-backend fields; audio.test_tone reaches the master output, stops, and leaves the project alone.
+	src/core/AudioTestToneTest.cpp
 	# 0.5.0 Q050-048: browser feature analysis decodes only its window (WAV/FLAC/OGG), duration from the header.
 	src/core/BrowserFeaturesWindowTest.cpp
 	src/core/LadspaManagerTest.cpp
@@ -1809,6 +1811,8 @@ ENDIF()
 IF(ZENE_UPDATE_CHECK_ENABLED)
 	LIST(APPEND LMMS_TESTS src/gui/UpdateCheckWindowsTest.cpp src/gui/UpdateCheckHiddenTest.cpp)
 ENDIF()
+# Q050-183.1: Settings > Audio's running output box and its test tone, over the real Settings dialog.
+LIST(APPEND LMMS_TESTS src/gui/AudioOutputStatusBoxTest.cpp)
 
 # Peer-to-peer collaboration (0.5.0 F6): the invite, the TLS-PSK transport and the port-mapping
 # codecs exist only with Qt Network.
@@ -4098,6 +4102,7 @@ if(ZENE_UPDATE_CHECK_ENABLED)
 	set_tests_properties(UpdateCheckWindowsTest UpdateCheckHiddenTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 set_tests_properties(ReferenceProjectPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(AudioOutputStatusBoxTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TelemetryConsentDialogTest AafImportMenuTest TrackIconsLevelBarTest TrackGripContrastTest ArrangerKeysNavigatorTest ToolMenuAtPointerTest ArrangerClipboardKeysTest NoteBackgroundAudioTest ArrangerOverlaysVideoLaneTest VideoClipsGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteTransformActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -8235,6 +8240,11 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-no-audio-device.py
 			$<TARGET_FILE:zene>
 	)
+	add_test(NAME ControlAudioTestTone
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-audio-test-tone.py
+			$<TARGET_FILE:zene>
+	)
 	add_test(NAME ControlNegativeControl
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-negative-control.py
@@ -8301,7 +8311,7 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-hybrid-track-role-transcript.py
 			$<TARGET_FILE:zene>
 	)
-	set_tests_properties(ControlShutdown ControlReadiness ControlNoAudioDevice
+	set_tests_properties(ControlShutdown ControlReadiness ControlNoAudioDevice ControlAudioTestTone
 		ControlNegativeControl ControlStableIdsSlice2 ControlStableIds
 		ControlReversibilityTranscript ControlMediaAgentTranscript ControlTransientRepeatTranscript
 		ControlHybridTrackTranscript ControlHybridTrackRoleTranscript PROPERTIES
