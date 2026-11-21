@@ -305,7 +305,7 @@ Source: `logs/state-sequence.txt`, from `logs/arm_all_driver.py` on `build/zene`
 ### Screenshot
 
 - File `logs/arm-all-armed.png`, 1600x1000 (PNG check in `logs/png-check.log`), written by `window.screenshot` (state-sequence step 9).
-- sha256 `be2edd60e044cb50456c930ad46356526ec800699bb5b98e85a70f861874ab0a`, the value in `logs/artifacts.sha256`.
+- sha256 `e7a1cc227798e053c97bd3f8c9049e9a2f3fa41096a1dd4d04988e1f59315650`, recomputed from the captured PNG; the final manifest records the same value for the `screenshot` artifact.
 - `control.surface_report` proves the menu action `Arm All Audio Tracks` declares `track.set_arm_many` (state-sequence step 10). No control command opens the Record menu, so the screenshot shows the three armed Sample tracks (record buttons outlined) but not the menu entry; the round-4 palette screenshot remains the GUI-side check that the menu item is not exposed as a command.
 
 ### p3 rehearsal and final bundle
