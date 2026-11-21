@@ -45,8 +45,8 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <cstdio>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -173,6 +173,36 @@ bool writeFloatWavWithChannels(const QString& path, const std::vector<SampleFram
 	if (!frames.empty())
 	{
 		written = sf_writef_float(file, interleaved.data(),
+			static_cast<sf_count_t>(frames.size()));
+	}
+	sf_close(file);
+	return written == static_cast<sf_count_t>(frames.size());
+}
+
+//! A 16-bit stereo FLAC: the short-read fixture. A FLAC cut in half keeps a
+//! readable header but no bytes for the tail frames the header promises.
+bool writeInt16Flac(const QString& path, const std::vector<SampleFrame>& frames,
+	sample_rate_t sampleRate)
+{
+	SF_INFO info{};
+	info.samplerate = static_cast<int>(sampleRate);
+	info.channels = 2;
+	info.format = SF_FORMAT_FLAC | SF_FORMAT_PCM_16;
+	SNDFILE* file = sf_open(QFile::encodeName(path).constData(), SFM_WRITE, &info);
+	if (file == nullptr)
+	{
+		return false;
+	}
+	std::vector<short> interleaved(frames.size() * 2, 0);
+	for (std::size_t i = 0; i < frames.size(); ++i)
+	{
+		interleaved[i * 2] = static_cast<short>(qRound(frames[i].left() * 32767.0f));
+		interleaved[i * 2 + 1] = static_cast<short>(qRound(frames[i].right() * 32767.0f));
+	}
+	sf_count_t written = 0;
+	if (!frames.empty())
+	{
+		written = sf_writef_short(file, interleaved.data(),
 			static_cast<sf_count_t>(frames.size()));
 	}
 	sf_close(file);
@@ -821,6 +851,75 @@ private slots:
 		QVERIFY2(MasteringJob::readSourceMix(path, loaded, rate, &error), qPrintable(error));
 		QVERIFY(loaded.empty());
 		QCOMPARE(rate, sample_rate_t{44100});
+	}
+
+	//! The loader reads in fixed 65536-frame chunks. An append offset mistake
+	//! shows up as a repeated or shifted sample after the first chunk, so the
+	//! values are exactly representable and distinct per frame.
+	void sourceMixSpansChunkBoundaries_data()
+	{
+		QTest::addColumn<quint64>("frames");
+		QTest::newRow("exact-chunk") << quint64{65536};
+		QTest::newRow("chunk-plus-tail") << quint64{65536 * 2 + 123};
+	}
+
+	void sourceMixSpansChunkBoundaries()
+	{
+		QFETCH(quint64, frames);
+		std::vector<SampleFrame> signal(static_cast<std::size_t>(frames));
+		for (std::size_t i = 0; i < signal.size(); ++i)
+		{
+			// i / 2^20 is an exact float for these counts, and unique per frame.
+			signal[i].setLeft(static_cast<sample_t>(static_cast<float>(i) / 1048576.0f));
+			signal[i].setRight(static_cast<sample_t>(-static_cast<float>(i) / 2097152.0f));
+		}
+		const QString path = m_dir.filePath(
+			QStringLiteral("source-chunks-%1.wav").arg(frames));
+		QVERIFY2(writeFloatWavWithChannels(path, signal, 2, 44100),
+			"could not write the chunk fixture");
+
+		std::vector<SampleFrame> loaded;
+		sample_rate_t rate = 0;
+		QString error;
+		QVERIFY2(MasteringJob::readSourceMix(path, loaded, rate, &error), qPrintable(error));
+		QCOMPARE(loaded.size(), signal.size());
+		QCOMPARE(rate, sample_rate_t{44100});
+		for (std::size_t i = 0; i < signal.size(); ++i)
+		{
+			QCOMPARE(loaded[i].left(), signal[i].left());
+			QCOMPARE(loaded[i].right(), signal[i].right());
+		}
+	}
+
+	//! A truncated FLAC keeps its header but not all its frames. Mastering a
+	//! prefix is not mastering the mix, so the load is refused with no output
+	//! and the caller's rate untouched.
+	void sourceMixShortReadIsRefused()
+	{
+		std::vector<SampleFrame> signal(4000);
+		for (std::size_t i = 0; i < signal.size(); ++i)
+		{
+			signal[i].setLeft(static_cast<sample_t>(i) / 8192.0f);
+			signal[i].setRight(static_cast<sample_t>(-static_cast<int>(i)) / 16384.0f);
+		}
+		const QString path = m_dir.filePath(QStringLiteral("source-short.flac"));
+		QVERIFY2(writeInt16Flac(path, signal, 44100), "could not write the flac fixture");
+
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::ReadWrite));
+		const qint64 size = file.size();
+		QVERIFY(size > 64);
+		QVERIFY(file.resize(size / 2));
+		file.close();
+
+		std::vector<SampleFrame> loaded;
+		sample_rate_t rate = 12345;
+		QString error;
+		const bool accepted = MasteringJob::readSourceMix(path, loaded, rate, &error);
+		QVERIFY2(!accepted, "a truncated flac was mastered as a prefix");
+		QVERIFY2(!error.isEmpty(), "the refusal carries no message");
+		QVERIFY(loaded.empty());
+		QCOMPARE(rate, sample_rate_t{12345});
 	}
 
 	//! The pure count helper carries the bound the loader's allocation uses.

@@ -130,15 +130,10 @@ constexpr sf_count_t SourceChunkFrames = 65536;
 constexpr int MinSourceRate = 44100;
 constexpr int MaxSourceRate = 192000;
 
-//! Rejects a header before the loader allocates anything: no channels, a
-//! negative frame count, or a rate the render path cannot produce.
+//! Rejects a header before the loader allocates anything: anything but stereo,
+//! a negative frame count, or a rate the render path cannot produce.
 bool validateSourceInfo(const SF_INFO& info, const QString& path, QString* error)
 {
-	if (info.channels == 0)
-	{
-		*error = QStringLiteral("%1 reports no channels; mastering is stereo only").arg(path);
-		return false;
-	}
 	if (info.channels != DEFAULT_CHANNELS)
 	{
 		*error = QStringLiteral("%1 has %2 channels; mastering is stereo only")
