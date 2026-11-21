@@ -134,6 +134,7 @@ public:
 	}
 	bool isPooledVoice() const noexcept { return m_poolSlot != NotPooled; }
 	std::uint16_t poolSlot() const noexcept { return m_poolSlot; }
+	void setFrozenTakeGeneration(std::uint64_t generation) noexcept { m_frozenTakeGeneration = generation; }
 	bool isFrozenTakePoolVoice() const noexcept { return isPooledVoice() && m_frozenTakePoolVoice; }
 	Track* pooledTrack() const noexcept { return isFrozenTakePoolVoice() ? m_track : nullptr; }
 	void armPooledVoice(std::shared_ptr<const SampleBuffer> buffer, int sourceIn, int sourceOut,
@@ -230,6 +231,8 @@ private:
 	SampleClip* m_effectsClip = nullptr;  //!< Q050-111: see setClipEffects(); borrowed, like m_sample
 	std::uint16_t m_poolSlot = NotPooled;
 	bool m_frozenTakePoolVoice = false;
+	//! The take generation this frozen voice was armed for; the render gate retires it when it moves.
+	std::uint64_t m_frozenTakeGeneration = 0;
 
 	//! The resampler ratio for the period about to be rendered: the local
 	//! warp rate at the source frame this period starts on, over the natural

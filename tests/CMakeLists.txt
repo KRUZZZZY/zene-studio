@@ -582,6 +582,7 @@ set(LMMS_TESTS
 	# Q050-246: repeated 1/32-note output timing through an ALSA sequencer loopback (skips without ALSA).
 	src/core/MidiOutTimingTest.cpp
 	src/core/FrozenTakeHandoffTest.cpp
+	src/core/FrozenTakeVoiceLifecycleTest.cpp
 	src/core/FrozenTakeRoundTwoTest.cpp
 	src/core/FreezeRegionRepairTest.cpp
 	# Q050-124: a frozen mixer bus - capture, substitution, commands, undo, save/load, failures, allocation probe.

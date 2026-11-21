@@ -2817,6 +2817,7 @@ tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/ExportWavWriteErrorTest.cpp
 tests/src/core/FreezeRegionRepairTest.cpp
 tests/src/core/FrozenTakeHandoffTest.cpp
+tests/src/core/FrozenTakeVoiceLifecycleTest.cpp
 tests/src/core/FrozenTakeRoundTwoTest.cpp
 tests/src/core/HardwareIoTest.cpp
 tests/src/core/HardwareOutputBusTest.cpp
