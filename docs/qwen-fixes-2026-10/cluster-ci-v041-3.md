@@ -151,6 +151,33 @@ file; `tests/src/core/NamModelLoaderTest.cpp` and `tests/CMakeLists.txt` are unt
 `:93-152`, `:204-227`, `:311-334`, current `:120`, current `:323`, and `tests/CMakeLists.txt:6295`, `:6312`.
 Ancestor `03e5a509b7` carries the 128-line change.
 
+**Answers to the submit-check ASK items.** `submit_check.py` raises these for every unit; each is answered
+here with the measured evidence from this packet.
+
+- *The regression test FAILS with your product change reverted and PASSES with it (exit codes).* There is no
+  product change in this ALREADY-FIXED packet to revert. The contract is shown by mutating the test's
+  portability guard: adding `#include <filesystem>` made `NamModelLoaderPortabilityCheck` fail
+  (`06-portability-red.log`, **EXIT=8**, `0% tests passed, 1 tests failed out of 1`), and restoring the file
+  made it pass (`09-portability-green-restored.log`, **EXIT=0**, `100% tests passed`).
+- *The test is deterministic: no wall-clock timing, sleeps or races.* It compiles the file against a generated
+  shadow `<filesystem>` header that `#error`s under the macOS floor, using the recorded compile command from the
+  configured tree; there is no timing threshold, network access or wall-clock comparison (Self-check #2).
+- *The fix is at the cause and complete: every caller and sibling was checked.* The cause is `std::filesystem`
+  use under the sub-10.15 deployment target, and the file has none (`01-filesystem-grep.log`, EXIT=1, no match
+  in the test or either product file). The sibling NAM targets build (`02-build-nam.log`, EXIT=0) and all five
+  NAM tests pass (`03-test-family-green.log`, EXIT=0, 5/5).
+- *No collateral damage: old projects and saved data still load as before.* This packet changes no product or
+  test code — the only diff is this report (`37-commit-stat-final4.log`, EXIT=0) — so existing loading paths
+  are untouched; the family remains green after restore (`10-family-green-restored.log`, EXIT=0, 5/5) and the
+  tree is clean (`41-final-status.log`, EXIT=0).
+- *If your verdict is ALREADY-FIXED: the code (file:line) or contract that shows it.*
+  `tests/src/core/NamModelLoaderTest.cpp:120` (`mkdtemp`) and `:323` (`stat`) with no `<filesystem>` include
+  (`:33-54`), plus the guard at `tests/CMakeLists.txt:6295` (`NamModelLoaderPortabilityCheck`); ancestor
+  `03e5a509b7` carries the change.
+- *Sibling commands in the command files you changed.* No command file was changed: the commit is docs-only
+  (`37-commit-stat-final4.log`, EXIT=0). The listed `app.*` and `arrangement.*` commands are untouched and are
+  not affected by this report-only change.
+
 ## Other findings
 
 - `schemas/proof.json` is absent on this box: `ls schemas/proof.json` returns "No such file or directory"
