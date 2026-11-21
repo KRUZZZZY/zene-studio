@@ -436,6 +436,8 @@ private slots:
 		expectImportedChannelState(file, 1.0, 0.0);
 		rewriteDrumsChannel(file, QStringLiteral("inf"), QStringLiteral("-inf"), false);
 		expectImportedChannelState(file, 1.0, 0.0);
+		rewriteDrumsChannel(file, QStringLiteral("nan"), QStringLiteral("1e999"), false);
+		expectImportedChannelState(file, 1.0, 0.0);
 		rewriteDrumsChannel(file, QStringLiteral("0.5"), QStringLiteral("0.25"), true);
 		expectImportedChannelState(file, 0.5, 0.25);
 		rewriteDrumsChannel(file, QStringLiteral("loud"), QStringLiteral("sideways"), true);

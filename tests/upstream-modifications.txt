@@ -6015,3 +6015,4 @@ src/gui/widgets/Fader.cpp	cluster new-p16-164: non-finite peaks are ignored befo
 src/gui/widgets/PeakIndicator.cpp	cluster new-p16-164: updatePeak ignores non-finite input before storing the peak; held by tests/src/gui/MixerMeteringTest.cpp.
 include/LocaleHelper.h	cluster new-p16-100: toFloat rejects NaN, ±infinity and float overflow with ok=false and 0.0f
 src/core/Mixer.cpp	cluster new-p16-100: the mixer non-finite guard reads through toDouble so a rejected parse still keeps the model default
+src/3rdparty/ableton-link/link/include/ableton/link/ClientSessionTimelines.hpp	cluster new-p16-329: local Zene patch to clampTempo(): a non-finite tempo (NaN, +inf, -inf) now clamps to 120 BPM instead of propagating NaN/inf; finite tempos keep the prior [20, 999] clamp exactly. Covered by AbletonLinkAllocatorTest::clampTempoStaysWithinTheLinkRange.
