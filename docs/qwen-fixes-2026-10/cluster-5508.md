@@ -82,7 +82,8 @@ EXIT=0
 
 ## The exact commands and the p1-p4 exit codes
 
-The run's packet exit codes, taken from the logs under `$L`:
+The cited log for each packet shows the corresponding pass/fail line; only `ANCESTOR_EXIT=0` is
+literally in a log, and the other `EXIT` values were printed by the packet run on its stdout:
 
 | Packet | Command / log | Exit |
 |---|---|---|
@@ -92,7 +93,7 @@ The run's packet exit codes, taken from the logs under `$L`:
 | p3 | `ctest -R '^RtSafetySweep$'` with the playImpl lock injected, `$L/sweep-red-playimpl.log` | 8 |
 | p3 | `ctest -R '^RtSafetySweep$'` with the handleMidiEvent lock injected, `$L/sweep-red-midi.log` | 8 |
 | p3 | `ctest -R '^RtSafetySweep$'` on the restored tree, `$L/sweep-green.log` and `$L/sweep-green2.log` | 0 / 0 |
-| p4 | `FEATURE_CHECK_LOG_DIR=$L/feature-check python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>`, `$L/feature-check/*.log`; `RESULT: PASS` | 0 |
+| p4 | `FEATURE_CHECK_LOG_DIR=$L/feature-check python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5508`, `$L/feature-check/*.log`; `RESULT: PASS` | 0 |
 
 ```
 p1: $ git merge-base --is-ancestor f3953cc8e8 HEAD    # $L/evidence-1.log
@@ -108,7 +109,7 @@ p2: $ cmake --build build --target CarlaMidiHandoffTest MidiHandoffQueueTest
 
 p3: RED/GREEN controls above: EXIT=8, EXIT=8, EXIT=0, EXIT=0.
 
-p4: $ FEATURE_CHECK_LOG_DIR=$L/feature-check python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>
+p4: $ FEATURE_CHECK_LOG_DIR=$L/feature-check python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5508
     PASS  fork-sources / all-sources-reproduce / no-upstream-regression /
           check-namespace / no-tautology / doc-figures / complexity / file-length
     RESULT: PASS
@@ -118,12 +119,13 @@ p4: $ FEATURE_CHECK_LOG_DIR=$L/feature-check python3 /home/kruzzzzy/.local/share
 ## Self-check
 
 **1. Does the regression test FAIL with the product change reverted and PASS with it?**
-Yes. The permanent regression control is `RtSafetySweep` over the real `playImpl` /
-`handleMidiEvent` bodies, together with `CarlaMidiHandoffTest` in the same ctest set. Injecting a
-lock into either body makes `RtSafetySweep` fail (`EXIT=8`, `$L/sweep-red-playimpl.log` and
-`$L/sweep-red-midi.log`); restoring the tree makes it pass (`EXIT=0`, `$L/sweep-green.log`,
-`$L/sweep-green2.log`). No product change is reverted in this job because the product fix is
-already in the branch; the injected lock is the negative control for that fix.
+Yes. The permanent deterministic regression control is `RtSafetySweep` over the real `playImpl` /
+`handleMidiEvent` bodies. Injecting a lock into either body makes it fail (`EXIT=8`,
+`$L/sweep-red-playimpl.log` and `$L/sweep-red-midi.log`); restoring the tree makes it pass
+(`EXIT=0`, `$L/sweep-green.log`, `$L/sweep-green2.log`). `CarlaMidiHandoffTest` is a companion
+behavioural check run in the same ctest set, but it is not part of the deterministic proof. No
+product change is reverted in this job because the product fix is already in the branch; the
+injected lock is the negative control for that fix.
 
 **2. Is the test deterministic - no wall-clock timing, sleeps or races?**
 Yes for the proof used here. `RtSafetySweep` is a static source measurement: it reads the text of
