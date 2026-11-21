@@ -11,7 +11,7 @@ Evidence in the base code (before the fix):
 - `src/core/ControlCommandsW3Engine.cpp:218`: `const double level = args.value("level").toDouble(1.0);` (the level read; an omitted level defaults to 1.0).
 - `src/core/ControlCommandsW3Engine.cpp:219-223`: a non-finite level (NaN, +inf, -inf) is refused with `InvalidArgs`. The comment at :219 explains that `std::clamp` passes NaN through.
 - `src/core/ControlCommandsW3Engine.cpp:224`: `receive.level = std::clamp(level, 0.0, 2.0);`. This is the silent clamp. It runs before any refusal for a finite out-of-range value.
-- Contract: `src/core/ControlCommandsW3Engine.cpp:295` says `'level' (0..2, 1 when left out)`. The command definition is at :291-299.
+- Contract: `src/core/ControlCommandsW3Engine.cpp:295` says `'level' (0..2, 1 when left out)`. The command definition is at :292-300.
 - Schema: `src/core/ControlVocabulary.cpp:80-83` (`numberProperty()`) returns `{"type": "number"}` with no bounds, so the schema accepts any number and the range check has to be in the handler.
 - Sibling refusal: `src/core/ControlCommandsMixerRoutes.cpp:86-88` (`validSendAmount`: 0..2) and its use at :139-142, which refuses with `InvalidArgs` and the message "a send is 0..2". Sends refuse out-of-range values; the receive did not.
 
@@ -19,7 +19,7 @@ Evidence in the base code (before the fix):
 
 `src/core/ControlCommandsW3Engine.cpp:224-228` now refuses a finite level outside 0..2 with `ControlErrorKind::InvalidArgs` and the message "level N is out of range: a receive level is 0..2", before any mutation. Then `receive.level = level;` (:228) stores the validated value without a clamp.
 
-The full diff is in `fix.patch` (log dir of run 4919.r1). It is 6 lines of product code (`+5 -1`, net `+4`).
+The full diff is in `fix.patch` (log dir of run 4919.r1). It is 6 lines of product code (`+5 -1`, net `+4`). The commit that carries the fix is `08159e0b72`; `fix-final.patch` in the same log dir is the diff of that commit.
 
 ## Why the fix is complete
 
@@ -46,22 +46,50 @@ The refusal test contains an undo branch (:537) that runs only if a call wrongly
 
 Run directory: `/home/kruzzzzy/.config/kads/zene/state/runs/4919.r1/logs/`.
 
-The run logs do not record the full command line, so the commands below are the build target and ctest filter the logs show (`Test #398: W3EngineTest`, `Test #196: PhaseFChannelScaleTest`). The quiet-run wrapper prints the exit code; logs that show no `EXIT=` line did not record one.
+### Authoritative evidence (final product commit `08159e0b72`)
+
+Variables used in the commands below:
+
+```
+RUN=/home/kruzzzzy/.config/kads/zene/state/runs/4919.r1/logs
+WT=/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-4919
+```
+
+Commands, in run order. Each log's last line is the `EXIT=` value the shell recorded for that command:
+
+```
+cd $WT && git diff 08159e0b72^ 08159e0b72 -- src/core/ControlCommandsW3Engine.cpp > $RUN/fix-final.patch; echo EXIT=$?
+cd $WT && git apply -R $RUN/fix-final.patch; echo EXIT=$?
+cd $WT && cmake --build build --target zene W3EngineTest -j4 > $RUN/build-6-final-red.log 2>&1; rc=$?; echo EXIT=$rc >> $RUN/build-6-final-red.log; echo EXIT=$rc
+cd $WT/build/tests && ctest -R W3EngineTest --output-on-failure > $RUN/test-7-final-red.log 2>&1; rc=$?; echo EXIT=$rc >> $RUN/test-7-final-red.log; echo EXIT=$rc
+cd $WT && git apply $RUN/fix-final.patch; echo EXIT=$?
+cd $WT && cmake --build build --target zene W3EngineTest -j4 > $RUN/build-7-final-green.log 2>&1; rc=$?; echo EXIT=$rc >> $RUN/build-7-final-green.log; echo EXIT=$rc
+cd $WT/build/tests && ctest -R W3EngineTest --output-on-failure > $RUN/test-8-final-green.log 2>&1; rc=$?; echo EXIT=$rc >> $RUN/test-8-final-green.log; echo EXIT=$rc
+cd $WT/build/tests && ctest -R 'W3EngineTest|ReceiverEffectTest|PhaseFChannelScaleTest' --output-on-failure > $RUN/test-9-final-family.log 2>&1; rc=$?; echo EXIT=$rc >> $RUN/test-9-final-family.log; echo EXIT=$rc
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py $WT
+```
+
+The feature check line is reconstructed from how `submit_check.py` (line 168) invokes it. The exact command used to write `gates-1.log` was not recorded in that log, so the line above is the form the tool uses, not a verbatim record of that run.
 
 | Step | Log | What it shows | Exit |
 |---|---|---|---|
-| Build, test change against old code (RED) | `build-2-red.log` | Builds target `W3EngineTest` | not recorded in log (build completed) |
-| Run RED | `test-2-red.log` | `W3EngineTest` Failed; FAIL at `W3EngineTest.cpp(538)`: `refused.errorKind` is 0, expected `InvalidArgs` (3) | not recorded in log (ctest reports failure) |
-| Apply fix | `fix.patch` | 6-line product diff to `ControlCommandsW3Engine.cpp` | `fix.patch.exit`: EXIT=0 |
-| Build with fix (GREEN) | `build-3-green.log` | Builds target `W3EngineTest` | not recorded in log |
-| Run GREEN | `test-3-green.log` | `W3EngineTest` Passed (100% of 1) | not recorded in log |
-| Family run | `test-4-family.log` | `PhaseFChannelScaleTest` and two others: 100% of 3 passed | not recorded in log |
-| Build with fix reversed (reversal check) | `build-4-reversed.log` | Builds target `W3EngineTest` with the product hunks reversed | EXIT=0 |
-| Run reversed (must fail) | `test-5-reversed-red.log` | `W3EngineTest` Failed; FAIL: `aReceiveRefusesALevelOutsideItsRange()` at `W3EngineTest.cpp(538)` | EXIT=8 |
-| Rebuild with fix restored | `build-5-regreen.log` | Builds target `W3EngineTest` | EXIT=0 |
-| Run restored (GREEN) | `test-6-regreen.log` | `W3EngineTest` Passed (100% of 1) | EXIT=0 |
+| Generate fix patch from `08159e0b72` | `fix-final.patch` (17 lines) | Diff of the product commit | EXIT=0 (printed by the shell; patch file is not a log) |
+| Reverse-apply the fix (RED setup) | none | Product hunks reversed in the worktree | EXIT=0 (printed) |
+| Build with fix reversed | `build-6-final-red.log` | Builds `zene` and `W3EngineTest` | EXIT=0 |
+| Run with fix reversed (must fail) | `test-7-final-red.log` | `W3EngineTest (Failed)`; `FAIL!  : W3EngineTest::aReceiveRefusesALevelOutsideItsRange()` | EXIT=8 |
+| Re-apply the fix; tree check | none | `git status --porcelain` empty after re-apply | EXIT=0 (printed) |
+| Build with fix (GREEN) | `build-7-final-green.log` | Builds `zene` and `W3EngineTest` | EXIT=0 |
+| Run with fix (GREEN) | `test-8-final-green.log` | `W3EngineTest Passed`; 100% tests passed out of 1 | EXIT=0 |
+| Family run | `test-9-final-family.log` | `W3EngineTest`, `ReceiverEffectTest`, `PhaseFChannelScaleTest`: 100% tests passed out of 3 | EXIT=0 |
+| Feature check gates | `gates-1.log` | fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length: all PASS; `RESULT: PASS` | EXIT=0 |
 
 The RED run failed at the new test, not at build. The reversal run failed at the same assertion, so the test follows the product change.
+
+### Earlier runs (superseded)
+
+The logs `build-2-red.log`, `test-2-red.log`, `build-3-green.log`, `test-3-green.log` and `test-4-family.log` are exploratory and are superseded by the final runs above. Their exit codes were not recorded, so they are not evidence for this report. They are kept in the log dir only for history.
+
+The earlier reversal and regreen runs also have recorded exits and agree with the final runs: `build-4-reversed.log` EXIT=0, `test-5-reversed-red.log` EXIT=8 (FAIL at `aReceiveRefusesALevelOutsideItsRange()`), `build-5-regreen.log` EXIT=0, `test-6-regreen.log` EXIT=0.
 
 ## Gates
 
@@ -82,10 +110,10 @@ From `gates-1.log` (feature-check kads-4919, base fa4a5f2e7):
 
 ## Self-check
 
-**Regression test fails with the product change reverted (exit codes).** Yes. With the product hunks reversed, `build-4-reversed.log` gives EXIT=0 and `test-5-reversed-red.log` gives EXIT=8 with FAIL at `W3EngineTest.cpp(538)` in `aReceiveRefusesALevelOutsideItsRange()`. With the fix restored, `build-5-regreen.log` gives EXIT=0 and `test-6-regreen.log` gives EXIT=0. The RED log `test-2-red.log` also fails at the same line, but its exit code was not recorded.
+**Regression test fails with the product change reverted (exit codes).** Yes. Final run: `test-7-final-red.log` gives EXIT=8 with `FAIL!  : W3EngineTest::aReceiveRefusesALevelOutsideItsRange()`, after `build-6-final-red.log` gives EXIT=0. With the fix restored, `build-7-final-green.log` gives EXIT=0, `test-8-final-green.log` gives EXIT=0, and the family run `test-9-final-family.log` gives EXIT=0.
 
 **Every acceptance criterion is proven by a test run.**
-- Out-of-range refused (4.0, 2.5, -0.5, NaN, +inf, -inf): `aReceiveRefusesALevelOutsideItsRange`, passes with the fix (`test-6-regreen.log`, EXIT=0; the run covers the whole W3EngineTest binary).
+- Out-of-range refused (4.0, 2.5, -0.5, NaN, +inf, -inf): `aReceiveRefusesALevelOutsideItsRange`, passes with the fix (`test-8-final-green.log`, EXIT=0; the run covers the whole W3EngineTest binary).
 - Normal level 2.0 accepted and undone: `aChannelReceivesAnotherInsideItsChain`, same binary run.
 - Note: the logs show the whole `W3EngineTest` executable, not each test case separately. Per-case exit codes were not recorded.
 
@@ -93,12 +121,13 @@ From `gates-1.log` (feature-check kads-4919, base fa4a5f2e7):
 
 **Deterministic.** The test uses fixed literal values (4.0, 2.5, -0.5, `std::nan("")`, `HUGE_VAL`, `-HUGE_VAL`). It has no sleeps and no threads. (The `std::thread` at `W3EngineTest.cpp:282` belongs to a different test and is not used here.)
 
-**Cause and siblings.** The cause is the `std::clamp` at the old :224, which replaced an out-of-range level instead of refusing it. Sibling checks:
-- Only `chain.receive` reads a level in the chain command group. Other `chain.*` commands take no level.
-- `automation.*` and `mixer.post_inserts` take booleans and strings, not a level number.
-- `clip.pre_fade` takes schema-bounded integers.
-- `mixer.send_to` and `mixer.send_pan` already refuse out-of-range amounts (packet statement). The shared helper is `validSendAmount` (`ControlCommandsMixerRoutes.cpp:86-88`), called at :139 and :198; I did not re-read which command id maps to each call site.
-- The `automation.*` and `clip.pre_fade` siblings are stated from the packet and were not each re-read in this session.
+**Cause and siblings.** The cause is the `std::clamp` at the old :224, which replaced an out-of-range level instead of refusing it. Sibling audit (checked against `ControlCommandsMixerRoutes.cpp` and `ControlCommandsW3Engine.cpp`):
+- Only `chain.receive` reads a level in `ControlCommandsW3Engine.cpp`; the read is `chainReceive` at :218.
+- `mixer.send_to` uses `handleRouteWrite` and `validSendAmount`, called at `ControlCommandsMixerRoutes.cpp:139`; it refuses out-of-range amounts.
+- `mixer.sidechain_to` uses `handleSidechainWrite`, with `validSendAmount` called at :198.
+- `mixer.send_many` shares `handleRouteWrite`, so it takes the same refusal path as `mixer.send_to`.
+- `mixer.route_to` ignores amount.
+- The earlier sibling statements about `automation.*`, `clip.pre_fade`, `mixer.post_inserts` and `mixer.send_pan` were not re-read in this session and are removed from this audit rather than stated as verified.
 
 **Collateral.** This command is not a project-load path, so saved projects are not read through it. Receiver levels 0..2 load as before because they are unchanged. An omitted level still defaults to 1.0.
 
