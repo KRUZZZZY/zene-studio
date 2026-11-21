@@ -12,8 +12,10 @@ test fix is needed.
 HEAD is `e0632552809fd91773c48e94f419c6e2f7845476` (a report commit); the test file is
 unchanged since `b3f18c7c4e5d64b7f9c169d232c8d6e96e5a62f8`. `4ca909f` is not an ancestor
 of HEAD: `git merge-base --is-ancestor 4ca909f HEAD` exits 1. The shorter file is
-already on this branch; the 12-line difference is the opposite direction (HEAD has 12
-fewer lines).
+already on this branch: log 24 shows the only difference between `4ca909f` and HEAD
+across the test file, the baseline and the exempt list is 12 deletions in
+`tests/src/core/InstrumentLayersCommandsTest.cpp` (1 file changed, 0 insertions), and
+log 18 counts 497 code lines at HEAD against 507 code lines on the `4ca909f` blob.
 
 `$LOGS` below is
 `/home/kruzzzzy/.config/kads/zene/state/runs/ci-13072e577adaac48.r2/logs`. The round-1
@@ -22,12 +24,14 @@ and the commands in the table are the ones that produced the r2 logs.
 
 | # | Command | EXIT / result | Log |
 | --- | --- | --- | --- |
-| 16 | `git merge-base --is-ancestor 4ca909f HEAD > $LOGS/16-ancestry.log 2>&1; echo EXIT=$?` | EXIT=1 — `4ca909f` is not an ancestor of HEAD | `$LOGS/16-ancestry.log` |
+| 16 | `git merge-base --is-ancestor 4ca909f58a1cf7e78fc1e66430ba21e190241067 HEAD > $LOGS/16-ancestry.log 2>&1; echo EXIT=$?` | EXIT=1 — `4ca909f` is not an ancestor of HEAD | `$LOGS/16-ancestry.log` |
 | 17 | `bash tests/file-length-gate.sh --check > $LOGS/17-gate-head.log 2>&1; echo EXIT=$?` | EXIT=0 — `PASS (check mode: no regressions; baseline not written)`; 2746 sources measured, 4 over 500; this test file is not listed | `$LOGS/17-gate-head.log` |
 | 18 | `sed -n '110,129p' tests/file-length-gate.sh > $LOGS/code_lines.awk; echo 'END { print n + 0 }' >> $LOGS/code_lines.awk; { printf 'HEAD=%s\n' "$(git rev-parse HEAD)"; printf 'HEAD file code lines: '; awk -f $LOGS/code_lines.awk tests/src/core/InstrumentLayersCommandsTest.cpp; printf '4ca909f blob code lines: '; git show 4ca909f58a1cf7e78fc1e66430ba21e190241067:tests/src/core/InstrumentLayersCommandsTest.cpp \| awk -f $LOGS/code_lines.awk; } > $LOGS/18-code-lines.log 2>&1; echo EXIT=$?` | EXIT=0 — HEAD `e0632552809fd91773c48e94f419c6e2f7845476` at 497 code lines; `4ca909f` blob at 507 code lines | `$LOGS/18-code-lines.log` |
 | 19 | `git show 4ca909f58a1cf7e78fc1e66430ba21e190241067:tests/src/core/InstrumentLayersCommandsTest.cpp > tests/src/core/InstrumentLayersCommandsTest.cpp; bash tests/file-length-gate.sh --check > $LOGS/19-gate-4ca909f-blob.log 2>&1; echo EXIT=$?` | EXIT=1 — 507 listed; `REGRESSION: new file over 500 lines: tests/src/core/InstrumentLayersCommandsTest.cpp (507)`; `FAIL: file-length ratchet regressed` | `$LOGS/19-gate-4ca909f-blob.log` |
 | 20 | `git show HEAD:tests/src/core/InstrumentLayersCommandsTest.cpp > tests/src/core/InstrumentLayersCommandsTest.cpp; bash tests/file-length-gate.sh --check > $LOGS/20-gate-head-restored.log 2>&1; echo EXIT=$?` | EXIT=0 — `PASS (check mode: no regressions; baseline not written)` | `$LOGS/20-gate-head-restored.log` |
 | 21 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-13072e577adaac48 > $LOGS/21-feature-check.log 2>&1; echo EXIT=$?` | EXIT=0 — `RESULT: PASS`; all eight rows PASS, including `file-length  no new item in your files` | `$LOGS/21-feature-check.log` |
+| 22 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-13072e577adaac48 ci-13072e577adaac48 > $LOGS/22-submit-check.log 2>&1; echo EXIT=$?` | EXIT=0 — `RESULT: PASS - submit` | `$LOGS/22-submit-check.log` |
+| 24 | `git diff --stat 4ca909f58a1cf7e78fc1e66430ba21e190241067 HEAD -- tests/src/core/InstrumentLayersCommandsTest.cpp tests/file-length-baseline.tsv tests/file-length-exempt.txt > $LOGS/24-diff-stat-vs-4ca909f.log 2>&1; echo EXIT=$?` | EXIT=0 — `tests/src/core/InstrumentLayersCommandsTest.cpp \| 12 ------------`; `1 file changed, 12 deletions(-)`; baseline and exempt list show no diff | `$LOGS/24-diff-stat-vs-4ca909f.log` |
 
 The gate's limit is 500; the new-file rule is `tests/file-length-gate.sh:227-228`. The
 same input (`4ca909f`) is RED (EXIT=1, 507), while HEAD is GREEN (EXIT=0, 497). No
@@ -40,9 +44,13 @@ on HEAD (logs 17 and 20).
 
 ## Round 2
 
-The round-1 review asked for evidence that resolves to reachable artifacts — a code
-reference (path and line) and a regression-test artifact — rather than prose pointing at
-a round-1 manifest that can no longer be opened. Round 2 regenerates the evidence under
+The round-1 review's verdict reads exactly:
+
+> proof fits the claim: no artifact shows `code-reference-or-test` (kind code-reference (path and line that show the behaviour) or a regression-test)
+
+The round-1 manifest is not reachable from this sandbox, so its rejection could not be
+inspected. The r2 manifest carries both artifact kinds: a code-reference (path and line
+that show the behaviour) and a regression-test. Round 2 regenerates the evidence under
 the r2 `$LOGS` folder, and this report cites only r2 logs.
 
 - **Code-reference artifact (path:line):** the count rule is the `code_lines` function
@@ -96,7 +104,9 @@ the r2 `$LOGS` folder, and this report cites only r2 logs.
 
 ## Other findings
 
-- Log 18 shows 12 extra lines on the `4ca909f` lineage (507 versus 497 at HEAD). If
+- Log 18 shows 507 code lines on the `4ca909f` copy against 497 at HEAD (10 code lines
+  more). Log 24 shows the physical-line diff: 12 deletions in
+  `tests/src/core/InstrumentLayersCommandsTest.cpp`, 1 file changed, 0 insertions. If
   that lineage is merged here, the file becomes 507 code lines, over the 500 limit, so
   the merge would need a split to keep Gate 7 green.
 - `src/core/ScriptEngine.cpp` measures 657 code lines here versus 650 in CI. It is
