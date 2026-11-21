@@ -264,3 +264,75 @@ Answers to the six `?` items in `logs/submit-1.log` (lines 8-13). The submit che
 ### Not checked this round
 
 Project and saved-data loading (item 4), caller audit beyond the tests (item 3), helper sharing (item 6), the driver exit codes, the screenshot contents, and the palette source line.
+
+## Round 5
+
+This round writes the report and then captures the submitted evidence bundle at the report commit. Logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p8-81-port.r5/logs`, cited as `logs/<name>`. The product code is unchanged since the fix; the report commit is docs-only.
+
+### Finding and fix
+
+- **Real at base `4eb8d6e8a`.** `git show 4eb8d6e8a:src/core/ControlReversibilityTableRecording.cpp` line 69 is `R("track.set_arm_many", RC::Snapshot, true,` (`logs/base-row.log` records the same row). `git show 4eb8d6e8a:src/core/ControlCommandsArrangementState.cpp` line 385 inserts the `__transaction`: `result.insert(QStringLiteral("__transaction"), control::commandTransaction(inverse, QStringLiteral("track.set_arm_many"), inverse));`.
+- **Fix at HEAD.** `src/core/ControlReversibilityTableRecording.cpp:69` is now `R("track.set_arm_many", RC::Irreversible, false,`. In `src/core/ControlCommandsArrangementState.cpp:363-397` the doc comment is rewritten, the `if (armed)` block that inserted the `__transaction` is gone, and the description says `control.undo` refuses the command and names `record.disarm_track`. No command was added or removed.
+
+### p1 RED and GREEN
+
+The regression test is `UndoHonestyTest::armAllRefusesUndoThatWouldLeaveItsTakesBehind`. Both runs are `ctest -R UndoHonestyTest` in `build/tests` after `cmake --build build --target zene UndoHonestyTest`.
+
+- **RED**, with the fix patch reverted (`git apply -R`): `logs/red-ctest.log:19` is `FAIL!  : UndoHonestyTest::armAllRefusesUndoThatWouldLeaveItsTakesBehind() '!undo.ok' returned FALSE. (control.undo claimed it could remove the takes from track.set_arm_many)`. Line 91 is `0% tests passed, 1 tests failed out of 1`; the run is EXIT 8.
+- **GREEN**, with the patch restored: `logs/green-ctest.log` shows `1/1 Test #274: UndoHonestyTest ... Passed` and `100% tests passed out of 1`; EXIT 0.
+- **GREEN family**: `logs/green-family-2.log` shows `100% tests passed out of 6` (ReversibilityContractTest, ReversibilityUndoTest, ReversibilityUndoDeviceTest, UndoHonestyTest, UndoHonestyStateTest, ControlCommandsSnapshot); EXIT 0.
+
+### p2 ordered state sequence
+
+Source: `logs/state-sequence.txt`, from `logs/arm_all_driver.py` on `build/zene`. The order mirrors the test `UndoHonestyTest::armAllRefusesUndoThatWouldLeaveItsTakesBehind`.
+
+1. `track.add` (type `sample`) three times: `trk-9`, `trk-10`, `trk-11`.
+2. `track.set_arm_many` with `armed=true`: changed the three tracks, routes `[4, 5, 6]`.
+3. `record.get_state`: all three `armed=true`, routes `[4, 5, 6]`.
+4. Repeat `track.set_arm_many`: `ok=False`, `kind='busy'`.
+5. `control.undo`: `ok=False`, `kind='irreversible'`, and the message names `track.set_arm_many`, explains that the take files remain, and points at `record.disarm_track` with the reply's route ids.
+6. `record.get_state` after the refused undo: all three still `armed=true`.
+7. Take files from the arm reply: `exist=True missing=[]`.
+8. `window.set_view arrange`: `ok=True`.
+9. `window.screenshot`: `ok=True`, path `logs/arm-all-armed.png`, `width=1600 height=1000`.
+10. `control.surface_report` for `Arm All Audio Tracks`: `command='track.set_arm_many'`.
+11-13. `record.disarm_track` for routes 4, 5 and 6: each `ok=True armed=False`.
+14. Empty `track.set_arm_many`: `ok=False kind='invalid_args'`.
+15-17. Collateral check: `project.save` wrote `logs/state-sequence-project.mmpz` (`ok=True`); a second instance opened it with `project.open` (`ok=True`, `track_count=7`) and `project.get_state` listed `trk-2, trk-3, trk-4, trk-8, trk-9, trk-10, trk-11`.
+
+`RESULT: PASS (0 problems)`.
+
+### Screenshot
+
+- File `logs/arm-all-armed.png`, 1600x1000 (PNG check in `logs/png-check.log`), written by `window.screenshot` (state-sequence step 9).
+- sha256 `be2edd60e044cb50456c930ad46356526ec800699bb5b98e85a70f861874ab0a`, the value in `logs/artifacts.sha256`.
+- `control.surface_report` proves the menu action `Arm All Audio Tracks` declares `track.set_arm_many` (state-sequence step 10). No control command opens the Record menu, so the screenshot shows the three armed Sample tracks (record buttons outlined) but not the menu entry; the round-4 palette screenshot remains the GUI-side check that the menu item is not exposed as a command.
+
+### p3 rehearsal and final bundle
+
+- Rehearsal at `logs/evidence-rehearsal/evidence.json`: `logs/workflow-verify-rehearsal.log` reports `"status": "integrity-valid"` with 4 steps. A tampered copy (`logs/evidence-rehearsal-tampered`) reports `"status": "tampered"` with the reason `artifact missing or content hash mismatch: artifacts/e7a1cc227798e053-arm-all-armed.png`, and the verify command is EXIT 1 (`logs/workflow-verify-rehearsal-tampered.log`). The rehearsal was at `5c70869b` and is superseded.
+- The submitted bundle is `logs/evidence/evidence.json`, initialised against `--base 4eb8d6e8a --build build --binary build/zene --label new-p8-81-port` at the report commit. Its four recorded steps are labelled `screenshot`, `state-sequence`, `red-ctest-log` and `green-ctest-log`. The manifest carries the artifact sha256 values, and `verify` must report `integrity-valid` with `source.head` equal to the report commit. Any earlier `logs/evidence` folder is moved aside before the new `init`; this commit makes the old capture stale.
+
+### Caller and sibling audit
+
+`logs/callers.log` records the audit.
+
+- The GUI caller is `src/gui/RecordLaunchMenus.cpp:65,71-72,80-82`; it sets `controlCommand` to `track.set_arm_many` and invokes the command. The test caller is `tests/src/core/ControlEditCommandsTest.cpp:619,632,637,644,653,655`.
+- `src/core/CollabPolicy.cpp:112` still lists `track.set_arm_many` among the refusal-policy ids. This round changes no product code, so that file and the command snapshot (`tools/mcp-zene-control/zene_control/commands_snapshot.json:29577`) are unchanged from the fix.
+- The sibling `track.set_arm` remains `R("track.set_arm", RC::Snapshot, true,` at `src/core/ControlReversibilityTableRecording.cpp:55`. Its documented take-retention contract is explicit: the recorded undo step stops the capture and retires the journal, and the take is deleted where the reply says it is. It was not changed in this branch.
+- The batch row is `Irreversible` at line 69. The audit found no other caller that would break: the menu reaches the command through the registry and the tests invoke it directly, and neither depends on an undo inverse.
+
+### Determinism seam
+
+The regression test uses `QTemporaryDir takes;` at `tests/src/core/UndoHonestyTest.cpp:409`. A grep of the whole test file for `sleep`, `QThread`, `QTimer`, `chrono`, `wait(` and `thread` finds nothing; the only match for the temporary-directory pattern is the include at line 49 and the use at line 409. The test therefore has no sleep, thread, timer or wait seam, and its working directory is private to each run.
+
+### Round 5 self-check
+
+Answers to the six `?` items in the submit check.
+
+1. **RED and GREEN with exit codes.** Yes. RED (`logs/red-ctest.log:19`, `0% tests passed, 1 tests failed out of 1`) is EXIT 8; GREEN (`logs/green-ctest.log`, `100% tests passed out of 1`) is EXIT 0. The family is `logs/green-family-2.log`, 6 of 6, EXIT 0.
+2. **Deterministic.** The test uses a `QTemporaryDir` (line 409). The grep described above finds no sleep, thread, timer or wait call in the file. The seams are three `track.add` sample tracks and the routes and take paths read from the arm reply.
+3. **Fix at the cause and complete.** The cause is the base row `ControlReversibilityTableRecording.cpp:69` (`RC::Snapshot, true`) and the base `__transaction` at `ControlCommandsArrangementState.cpp:385`. HEAD has the row `RC::Irreversible, false` and no transaction insert in `ControlCommandsArrangementState.cpp:363-397`.
+4. **No collateral damage.** The family passes 6 of 6. The `project.save`/`project.open` check reopened the project with all seven tracks, including the three armed ones (state-sequence steps 15-17). The fix adds no limit or check; it changes the row class and removes the transaction insert.
+5. **Verdict.** FIXED. The defect is shown by the base row and base `__transaction`, and by the RED run with the fix reverted. ALREADY-FIXED and FALSE-POSITIVE do not apply.
+6. **Sibling commands.** None of these 15 is touched by the diff: `arrangement.fit_tracks`, `arrangement.get_state`, `arrangement.modes`, `arrangement.modifier_tools`, `arrangement.navigator`, `arrangement.next_transient`, `arrangement.nudge`, `arrangement.ruler_lanes`, `arrangement.scroll`, `arrangement.select_clip`, `arrangement.set_tool`, `arrangement.zoom`, `arrangement.zoom_back`, `comp.assign`, `comp.audition`.
