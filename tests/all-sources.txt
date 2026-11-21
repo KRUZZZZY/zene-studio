@@ -3235,6 +3235,7 @@ tests/src/core/SampleBufferResampleTest.cpp
 tests/src/core/SampleDecoderLimitTest.cpp
 tests/src/core/SampleDecoderOggChannelTest.cpp
 tests/src/core/SampleDecoderOggStateTest.cpp
+tests/src/core/SampleDecoderShortReadTest.cpp
 tests/src/core/SamplerEnvelopeTest.cpp
 tests/src/core/SamplerTakeTest.cpp
 tests/src/core/SamplerTestSupport.h

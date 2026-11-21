@@ -1757,6 +1757,8 @@ endif()
 # decoder state on every exit (the read-error path included).
 # cluster new-p14-276: the bounded decoder refuses a limit it cannot turn into a frame count.
 list(APPEND LMMS_TESTS src/core/SampleDecoderLimitTest.cpp)
+# cluster new-p14-272: a file whose header promises more frames than it holds is refused, not padded with silence.
+list(APPEND LMMS_TESTS src/core/SampleDecoderShortReadTest.cpp)
 
 # Offline stem separation tests (on by default, owner decision 14; see doc/STEM-SPLIT.md).
 IF(LMMS_HAVE_STEM_SPLIT)
