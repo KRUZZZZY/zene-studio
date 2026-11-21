@@ -9,55 +9,83 @@ test fix is needed.
 
 ## Evidence
 
-HEAD is `b3f18c7c4e5d64b7f9c169d232c8d6e96e5a62f8`, the base before the report commits; the test file is unchanged since then. `4ca909f` is not an ancestor of HEAD:
-`git merge-base --is-ancestor 4ca909f HEAD` exits 1. The shorter file is already on this
-branch; the 12-line difference is the opposite direction (HEAD has 12 fewer lines).
+HEAD is `e0632552809fd91773c48e94f419c6e2f7845476` (a report commit); the test file is
+unchanged since `b3f18c7c4e5d64b7f9c169d232c8d6e96e5a62f8`. `4ca909f` is not an ancestor
+of HEAD: `git merge-base --is-ancestor 4ca909f HEAD` exits 1. The shorter file is
+already on this branch; the 12-line difference is the opposite direction (HEAD has 12
+fewer lines).
 
-`$LOGS` below is `/home/kruzzzzy/.config/kads/zene/state/runs/ci-13072e577adaac48.r1/logs`.
+`$LOGS` below is
+`/home/kruzzzzy/.config/kads/zene/state/runs/ci-13072e577adaac48.r2/logs`. The round-1
+logs and their manifest are no longer reachable; every row below was regenerated in r2
+and the commands in the table are the ones that produced the r2 logs.
 
 | # | Command | EXIT / result | Log |
 | --- | --- | --- | --- |
-| ancestry | `git merge-base --is-ancestor 4ca909f HEAD` | EXIT=1 — `4ca909f` is not an ancestor of HEAD | this run |
-| 01 | `git diff --stat 4ca909f58a1cf7e78fc1e66430ba21e190241067 HEAD -- tests/src/core/InstrumentLayersCommandsTest.cpp tests/file-length-baseline.tsv tests/file-length-exempt.txt > $LOGS/01-diff-vs-4ca909f.log 2>&1; echo EXIT=$?` | EXIT=0 — 1 file changed, 12 deletions; baseline and exempt list unchanged | `$LOGS/01-diff-vs-4ca909f.log` |
-| 02 | `bash tests/file-length-gate.sh --check > $LOGS/02-gate-head.log 2>&1; echo EXIT=$?` | EXIT=0 — `PASS (check mode: no regressions; baseline not written)`; 2746 sources measured, 4 over 500; this test file is not listed | `$LOGS/02-gate-head.log` |
-| 03 | `sed -n '110,129p' tests/file-length-gate.sh > $LOGS/code_lines.awk; echo 'END { print n + 0 }' >> $LOGS/code_lines.awk; { printf 'HEAD=%s\n' "$(git rev-parse HEAD)"; printf 'HEAD file code lines: '; awk -f $LOGS/code_lines.awk tests/src/core/InstrumentLayersCommandsTest.cpp; printf '4ca909f blob code lines: '; git show 4ca909f58a1cf7e78fc1e66430ba21e190241067:tests/src/core/InstrumentLayersCommandsTest.cpp \| awk -f $LOGS/code_lines.awk; } > $LOGS/12-code-lines-exact.log 2>&1; echo EXIT=$?` | EXIT=0 — HEAD `da7704cab73f48940aed4f7250b1c90b981cff4d` (report commit; test file identical to `b3f18c7`) 497 code lines; `4ca909f` blob 507 code lines, which would fail as a new file | `$LOGS/12-code-lines-exact.log` |
-| 04 | `git show 4ca909f58a1cf7e78fc1e66430ba21e190241067:tests/src/core/InstrumentLayersCommandsTest.cpp > tests/src/core/InstrumentLayersCommandsTest.cpp; bash tests/file-length-gate.sh --check > $LOGS/04-gate-4ca909f-blob.log 2>&1; echo EXIT=$?` | EXIT=1 — 507 listed; `REGRESSION: new file over 500 lines: tests/src/core/InstrumentLayersCommandsTest.cpp (507)`; `FAIL: file-length ratchet regressed` | `$LOGS/04-gate-4ca909f-blob.log` |
-| 05 | `git show HEAD:tests/src/core/InstrumentLayersCommandsTest.cpp > tests/src/core/InstrumentLayersCommandsTest.cpp; bash tests/file-length-gate.sh --check > $LOGS/05-gate-head-restored.log 2>&1; echo EXIT=$?` | EXIT=0 — `PASS (check mode: no regressions; baseline not written)` | `$LOGS/05-gate-head-restored.log` |
-| 06 | `git diff HEAD 4ca909f58a1cf7e78fc1e66430ba21e190241067 -- tests/src/core/InstrumentLayersCommandsTest.cpp > $LOGS/06-blob-diff.log 2>&1; echo EXIT=$?` | EXIT=0 — 12 added lines (used for Other findings) | `$LOGS/06-blob-diff.log` |
-| 07 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-13072e577adaac48 > $LOGS/07-feature-check.log 2>&1; echo EXIT=$?` | EXIT=0 — `RESULT: PASS`; all eight rows PASS, including `file-length  no new item in your files` | `$LOGS/07-feature-check.log` |
-| 08 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-13072e577adaac48 ci-13072e577adaac48 > $LOGS/08-submit-check.log 2>&1; echo EXIT=$?` | EXIT=0 — `RESULT: PASS - submit` | `$LOGS/08-submit-check.log` |
+| 16 | `git merge-base --is-ancestor 4ca909f HEAD > $LOGS/16-ancestry.log 2>&1; echo EXIT=$?` | EXIT=1 — `4ca909f` is not an ancestor of HEAD | `$LOGS/16-ancestry.log` |
+| 17 | `bash tests/file-length-gate.sh --check > $LOGS/17-gate-head.log 2>&1; echo EXIT=$?` | EXIT=0 — `PASS (check mode: no regressions; baseline not written)`; 2746 sources measured, 4 over 500; this test file is not listed | `$LOGS/17-gate-head.log` |
+| 18 | `sed -n '110,129p' tests/file-length-gate.sh > $LOGS/code_lines.awk; echo 'END { print n + 0 }' >> $LOGS/code_lines.awk; { printf 'HEAD=%s\n' "$(git rev-parse HEAD)"; printf 'HEAD file code lines: '; awk -f $LOGS/code_lines.awk tests/src/core/InstrumentLayersCommandsTest.cpp; printf '4ca909f blob code lines: '; git show 4ca909f58a1cf7e78fc1e66430ba21e190241067:tests/src/core/InstrumentLayersCommandsTest.cpp \| awk -f $LOGS/code_lines.awk; } > $LOGS/18-code-lines.log 2>&1; echo EXIT=$?` | EXIT=0 — HEAD `e0632552809fd91773c48e94f419c6e2f7845476` at 497 code lines; `4ca909f` blob at 507 code lines | `$LOGS/18-code-lines.log` |
+| 19 | `git show 4ca909f58a1cf7e78fc1e66430ba21e190241067:tests/src/core/InstrumentLayersCommandsTest.cpp > tests/src/core/InstrumentLayersCommandsTest.cpp; bash tests/file-length-gate.sh --check > $LOGS/19-gate-4ca909f-blob.log 2>&1; echo EXIT=$?` | EXIT=1 — 507 listed; `REGRESSION: new file over 500 lines: tests/src/core/InstrumentLayersCommandsTest.cpp (507)`; `FAIL: file-length ratchet regressed` | `$LOGS/19-gate-4ca909f-blob.log` |
+| 20 | `git show HEAD:tests/src/core/InstrumentLayersCommandsTest.cpp > tests/src/core/InstrumentLayersCommandsTest.cpp; bash tests/file-length-gate.sh --check > $LOGS/20-gate-head-restored.log 2>&1; echo EXIT=$?` | EXIT=0 — `PASS (check mode: no regressions; baseline not written)` | `$LOGS/20-gate-head-restored.log` |
+| 21 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-13072e577adaac48 > $LOGS/21-feature-check.log 2>&1; echo EXIT=$?` | EXIT=0 — `RESULT: PASS`; all eight rows PASS, including `file-length  no new item in your files` | `$LOGS/21-feature-check.log` |
 
 The gate's limit is 500; the new-file rule is `tests/file-length-gate.sh:227-228`. The
 same input (`4ca909f`) is RED (EXIT=1, 507), while HEAD is GREEN (EXIT=0, 497). No
-product or test code changed, nothing was re-anchored, and no exemption was added.
+product or test code changed, nothing was re-anchored, and no exemption was added. The
+baseline and exempt lists do not name this file.
 
-No regression test was added because there is no fix: the gate itself is the check, and
-it is shown RED on the `4ca909f` input (log 04) and GREEN on HEAD (logs 02 and 05).
+No regression test was added because there is no fix: the gate itself is the
+regression-test artifact, and it is shown RED on the `4ca909f` input (log 19) and GREEN
+on HEAD (logs 17 and 20).
+
+## Round 2
+
+The round-1 review asked for evidence that resolves to reachable artifacts — a code
+reference (path and line) and a regression-test artifact — rather than prose pointing at
+a round-1 manifest that can no longer be opened. Round 2 regenerates the evidence under
+the r2 `$LOGS` folder, and this report cites only r2 logs.
+
+- **Code-reference artifact (path:line):** the count rule is the `code_lines` function
+  at `tests/file-length-gate.sh:106-136`; the new-file rule is at
+  `tests/file-length-gate.sh:227-228`. At HEAD the artifact under review is
+  `tests/src/core/InstrumentLayersCommandsTest.cpp` at 497 code lines (log 18), under
+  the 500 limit.
+- **Regression-test artifact:** the file-length gate itself. RED on the `4ca909f` copy
+  is EXIT=1 (log 19, 507 lines, new-file regression); GREEN at HEAD is EXIT=0 (log 20,
+  restored HEAD, 497 lines; also log 17). No product code changed, so there is no
+  revert step beyond restoring the `4ca909f` copy.
+- **Manifest and schema:** the r2 manifest carries the code-reference artifacts as
+  path+line pairs and the regression-test artifact described above. Its field names
+  follow the brief and are not checked against the schema: `schemas/proof.json` and the
+  checker source are not reachable from this sandbox (logs 01-04 and 14).
 
 ## Self-check
 
-- **Regression test FAILS reverted / PASSES with the change (exit codes):** not
-  applicable and not needed. There is no product change to revert and no test was added.
-  The check is the file-length gate itself: EXIT=1 over the `4ca909f` blob at 507
-  (log 04), EXIT=0 over HEAD at 497 (logs 02 and 05).
+- **Regression test FAILS reverted / PASSES with the change (exit codes):** the gate is
+  the regression-test artifact. Over the `4ca909f` copy it is RED, EXIT=1 at 507 lines
+  (log 19); over HEAD it is GREEN, EXIT=0 at 497 lines (logs 17 and 20). There is no
+  product change to revert, and no test file was added or edited.
 - **Test determinism (no wall clock, sleeps or races):** the check is the gate's
   `code_lines` awk at `tests/file-length-gate.sh:106-136`, a pure count of committed
   text. It uses no clock, sleep, network, filesystem ordering or random input; the
-  497/507 counts are reproducible.
+  497/507 counts are reproducible (log 18).
 - **Fix at the cause and complete (callers and siblings):** no product or test code
   changed, so no caller or command sibling can drift. The cause is the branch state:
-  `4ca909f` is not an ancestor of HEAD (EXIT=1) and HEAD already carries the 12-line
-  smaller file, which the gate accepts.
+  `4ca909f` is not an ancestor of HEAD (log 16, EXIT=1) and HEAD already carries the
+  12-line smaller file, which the gate accepts (logs 17 and 20).
 - **No collateral damage:** this packet adds only this report. The gate, baseline,
-  exempt list and test file are untouched. Old projects and saved data are unaffected
-  (no code delta from this packet). The `4ca909f` lineage at 507 would exceed the limit
-  if merged here (see Other findings), but this branch's 497-line file passes.
+  exempt list and test file are untouched. The gate still measures 2746 sources with 4
+  over 500 and passes with its baseline (logs 17 and 20), so no other legitimate caller
+  is newly limited. Old projects and saved data are unaffected because there is no code
+  delta from this packet. The `4ca909f` lineage at 507 would exceed the limit if merged
+  here (see Other findings), but this branch's 497-line file passes.
 - **ALREADY-FIXED evidence (code/file:line and contract):** HEAD's
   `tests/src/core/InstrumentLayersCommandsTest.cpp` is 497 code lines by the gate's
   `code_lines` (`tests/file-length-gate.sh:106-136`), under the 500 limit; the new-file
-  rule at `tests/file-length-gate.sh:227-228` fails only above 500; the audit at log 03
-  shows 0 baseline and 0 exempt entries; and the gate cannot flag the file at HEAD
-  (log 02). The identical input at `4ca909f` is 507 and fails (log 04).
+  rule at `tests/file-length-gate.sh:227-228` fails only above 500; neither
+  `tests/file-length-baseline.tsv` nor `tests/file-length-exempt.txt` names the file;
+  and the gate cannot flag the file at HEAD (logs 17 and 20). The identical input at
+  `4ca909f` is 507 and fails (log 19).
 - **Sibling commands in the changed command files (`app.about`, `app.ask`, `app.help`,
   `app.online_help`, `app.task_cancel`, `app.tasks`, `app.tour`, `app.tours`,
   `app.update_check_get`, `app.update_check_run`, `app.update_check_set`, `app.version`,
@@ -68,10 +96,10 @@ it is shown RED on the `4ca909f` input (log 04) and GREEN on HEAD (logs 02 and 0
 
 ## Other findings
 
-- `06-blob-diff.log` shows 12 extra lines on the `4ca909f` lineage. If that lineage is
-  merged here, the file becomes 507 code lines, over the 500 limit, so the merge would
-  need a split to keep Gate 7 green.
+- Log 18 shows 12 extra lines on the `4ca909f` lineage (507 versus 497 at HEAD). If
+  that lineage is merged here, the file becomes 507 code lines, over the 500 limit, so
+  the merge would need a split to keep Gate 7 green.
 - `src/core/ScriptEngine.cpp` measures 657 code lines here versus 650 in CI. It is
   grandfathered in the baseline (listed among the 4 files over 500 without a
-  regression), and the gate still passes (log 02). Its baseline entry is 662
+  regression), and the gate still passes (logs 17 and 20). Its baseline entry is 662
   (`tests/file-length-baseline.tsv:4`).
