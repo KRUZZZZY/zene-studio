@@ -199,6 +199,45 @@ must confirm them. The local compiler used for the compile half is
 `x86_64-pc-linux-gnu` (`logs/clang-version-r2.log`, EXIT=0;
 `logs/evidence-5-clang.log`).
 
+## Self-check
+
+- **Regression test fails with the change reverted, passes with it.**
+  Re-inserting the `template` keyword (the reverse of the fix) makes both halves
+  fail: ctest `EXIT=8` (`logs/test-red-394-r2.log`,
+  `logs/test-red-400-r2.log`, `logs/test-red-522-r2.log`,
+  `logs/test-red-528-r2.log`) and the scanner `EXIT=1`
+  (`logs/test-red-394-clang-r2.log` and the other three `-clang-r2.log` files).
+  With the committed source, ctest is `EXIT=0` (`logs/test-green-r2.log`) and
+  the scanner is `EXIT=0` (`logs/test-green-clang-r2.log`).
+
+- **Deterministic.** The guard is a static source scan plus a compile of the
+  real header; it uses no wall-clock timing, sleeps or races. The only seam is
+  the injected scratch include (`--atomic-queue-include $L/aq-scratch/include`);
+  the unmutated control is `EXIT=0` (`logs/test-compile-green-r2.log`) and the
+  mutated runs are `EXIT=1` (`logs/test-compile-red-$N-r2.log`).
+
+- **Fix at the cause and complete.** The four ill-formed calls at
+  `atomic_queue.h:394,400,522,528` no longer carry the keyword, and the
+  well-formed explicit-argument calls at :353, :358, :438, :443 are unchanged.
+  A repo-wide scan for `::template name(` returned 0 matches, `EXIT=1`
+  (ripgrep no-match, `logs/evidence-4-scan-r2.log`), so no caller or sibling
+  uses the rejected form.
+
+- **No collateral damage.** Only the redundant keyword was dropped; each call
+  stays `Base::`-qualified and resolves to the same function, so the queue
+  semantics and the on-disk/on-wire data are unchanged. The scanner reports no
+  other occurrence repo-wide, so the added check does not flag other callers
+  (`logs/evidence-4-scan-r2.log`, EXIT=1).
+
+- **ALREADY-FIXED evidence.** `plugins/SfzPlayer/sfizz/external/atomic_queue/include/atomic_queue/atomic_queue.h:394,400,522,528`
+  read `Base::do_pop_any(` / `Base::do_push_any(` (`logs/evidence-1-lines.log`),
+  changed by commit `3cc4c0a075` (`logs/evidence-3-show.log`) and recorded in
+  `plugins/SfzPlayer/LICENSE-NOTICE.md:11-13`.
+
+- **Sibling commands.** No `app.*` or `arrangement.*` command file is touched
+  by this cluster; the fix is confined to the vendored atomic_queue header, so
+  the listed sibling commands are not affected.
+
 ## Other findings
 
 None.
