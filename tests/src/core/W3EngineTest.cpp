@@ -515,7 +515,7 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 		const std::size_t devices = channel(3)->m_fxChain.effects().size();
 		const ControlResult made = run(QStringLiteral("chain.receive"), {{QStringLiteral("target"), ch(3)}, {QStringLiteral("from"), ch(1)},
-			{QStringLiteral("level"), 0.5}});
+			{QStringLiteral("level"), 2.0}});
 		if (!made.ok && made.errorKind == ControlErrorKind::NotFound) { QSKIP("this build has no Receiver module"); }
 		QVERIFY2(made.ok, qPrintable(made.errorMessage));
 		QVERIFY(made.result.value(QStringLiteral("send_created")).toBool());
@@ -526,11 +526,11 @@ private slots:
 		QCOMPARE(channel(3)->m_fxChain.effects().size(), devices);
 	}
 
-	void aReceiveRefusesANonFiniteLevel()
+	void aReceiveRefusesALevelOutsideItsRange()
 	{
-		// std::clamp passes a NaN through; the JSON wire cannot carry one, an in-process caller's QJsonValue can.
+		// The schema accepts any number; the old clamp turned 4 into 2 and -0.5 into 0 and passed NaN through.
 		const std::size_t devices = channel(3)->m_fxChain.effects().size();
-		for (const double level : {std::nan(""), HUGE_VAL, -HUGE_VAL})
+		for (const double level : {4.0, 2.5, -0.5, std::nan(""), HUGE_VAL, -HUGE_VAL})
 		{
 			const ControlResult refused = run(QStringLiteral("chain.receive"), {{QStringLiteral("target"), ch(3)},
 				{QStringLiteral("from"), ch(1)}, {QStringLiteral("level"), level}});
