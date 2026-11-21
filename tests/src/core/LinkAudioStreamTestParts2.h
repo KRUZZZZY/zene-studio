@@ -55,6 +55,72 @@ void LinkAudioStreamTest::omittedEnabledIsRefusedAndTheRunningStreamKeepsRunning
 	QVERIFY(run(QStringLiteral("link.audio_set_enabled"), {{QStringLiteral("enabled"), false}}).ok);
 	QVERIFY(!run(QStringLiteral("link.audio_get_state")).result.value(QStringLiteral("running")).toBool());
 }
+
+void LinkAudioStreamTest::omittedSendKeepsSendingOffWhileThePeerStays() {
+	// Deterministic: loopback only, listen_port 0, no sleeps, no threads.
+	// The regression: mergeArgs (in src/core/ControlCommandsLinkAudio.cpp) re-derives 'send' from the peer whenever
+	// 'send' is absent, so a peer that is already set turns sending on when a later call omits 'send'.
+	QVERIFY(run(QStringLiteral("link.audio_set_enabled"), {{QStringLiteral("enabled"), false}}).ok);
+
+	// (b) start with send off and a peer set, the case the bug needs.
+	const ControlResult on = run(QStringLiteral("link.audio_set_enabled"),
+		{{QStringLiteral("enabled"), true}, {QStringLiteral("peer"), QStringLiteral("127.0.0.1")},
+		 {QStringLiteral("send"), false}, {QStringLiteral("listen_port"), 0}});
+	QVERIFY2(on.ok, qPrintable(on.errorMessage));
+	QVERIFY(on.result.value(QStringLiteral("running")).toBool());
+	QVERIFY(!on.result.value(QStringLiteral("send")).toBool());
+	// RAII: an early QVERIFY below must not leave the socket running.
+	const auto stopStream = qScopeGuard([] {
+		AudioStreamConfig off = LinkAudioStream::instance()->config();
+		off.enabled = false;
+		std::string e;
+		LinkAudioStream::instance()->configure(off, &e);
+	});
+
+	// (c) the regression: only 'enabled' is given. The peer is still set; send must keep its value (false).
+	const ControlResult kept = run(QStringLiteral("link.audio_set_enabled"), {{QStringLiteral("enabled"), true}});
+	QVERIFY2(kept.ok, qPrintable(kept.errorMessage));
+	QVERIFY2(!kept.result.value(QStringLiteral("send")).toBool(),
+		"omitted 'send' was re-derived from the peer and turned sending on");
+	QCOMPARE(kept.result.value(QStringLiteral("peer")).toString(), QStringLiteral("127.0.0.1"));
+	QVERIFY(!run(QStringLiteral("link.audio_get_state")).result.value(QStringLiteral("send")).toBool());
+	const QJsonObject before = kept.result.value(QStringLiteral("__transaction")).toObject()
+		.value(QStringLiteral("before")).toObject();
+	QVERIFY(!before.value(QStringLiteral("send")).toBool());
+
+	// (d) the intended implication: a peer that is supplied, with 'send' omitted, turns sending on.
+	const ControlResult inferred = run(QStringLiteral("link.audio_set_enabled"),
+		{{QStringLiteral("enabled"), true}, {QStringLiteral("peer"), QStringLiteral("127.0.0.1")},
+		 {QStringLiteral("listen_port"), 0}});
+	QVERIFY2(inferred.ok, qPrintable(inferred.errorMessage));
+	QVERIFY(inferred.result.value(QStringLiteral("send")).toBool());
+
+	// (e) failure path: a bad peer is refused and nothing changes.
+	const QJsonObject beforeBad = run(QStringLiteral("link.audio_get_state")).result;
+	const ControlResult bad = run(QStringLiteral("link.audio_set_enabled"),
+		{{QStringLiteral("enabled"), true}, {QStringLiteral("peer"), QStringLiteral("not-an-ip")}});
+	QVERIFY(!bad.ok);
+	const QJsonObject afterBad = run(QStringLiteral("link.audio_get_state")).result;
+	QVERIFY(afterBad.value(QStringLiteral("running")).toBool());
+	QCOMPARE(afterBad.value(QStringLiteral("send")).toBool(), beforeBad.value(QStringLiteral("send")).toBool());
+	QCOMPARE(afterBad.value(QStringLiteral("peer")).toString(), beforeBad.value(QStringLiteral("peer")).toString());
+
+	// (f) explicit override while the peer stays; one undo step each way.
+	const ControlResult explicitOff = run(QStringLiteral("link.audio_set_enabled"),
+		{{QStringLiteral("enabled"), true}, {QStringLiteral("send"), false}});
+	QVERIFY2(explicitOff.ok, qPrintable(explicitOff.errorMessage));
+	QVERIFY(!explicitOff.result.value(QStringLiteral("send")).toBool());
+	QCOMPARE(explicitOff.result.value(QStringLiteral("peer")).toString(), QStringLiteral("127.0.0.1"));
+	const ControlResult undo = run(QStringLiteral("control.undo"));
+	QVERIFY2(undo.ok, qPrintable(undo.errorMessage));
+	QVERIFY(run(QStringLiteral("link.audio_get_state")).result.value(QStringLiteral("send")).toBool());
+	const ControlResult redo = run(QStringLiteral("control.redo"));
+	QVERIFY2(redo.ok, qPrintable(redo.errorMessage));
+	QVERIFY(!run(QStringLiteral("link.audio_get_state")).result.value(QStringLiteral("send")).toBool());
+
+	QVERIFY(run(QStringLiteral("link.audio_set_enabled"), {{QStringLiteral("enabled"), false}}).ok);
+	QVERIFY(!run(QStringLiteral("link.audio_get_state")).result.value(QStringLiteral("running")).toBool());
+}
 void LinkAudioStreamTest::theStreamLeavesLinkSyncAlone() {
 	// Link stays OFF here (it would multicast); the claim is that the two surfaces share no
 	// state: link.* answers identically with the stream running, and link's own setters work.

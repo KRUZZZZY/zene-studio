@@ -199,6 +199,8 @@ private slots:
 
 	void commandsAreRegisteredAndUndoable();
 
+	void omittedSendKeepsSendingOffWhileThePeerStays();
+
 	void omittedEnabledIsRefusedAndTheRunningStreamKeepsRunning();
 
 	void theStreamLeavesLinkSyncAlone();
