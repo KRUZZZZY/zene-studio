@@ -99,4 +99,28 @@ none
   (07-build-red.log:253); with it, the build and all 13 NAM tests pass (08/09).
 - **Vendored code untouched.** `GeneralBlockPanelKernel.h:157/216` unchanged; `git status` shows no change
   under `plugins/NeuralAmp/rtneural`.
-- **Gates after commit.** See below (filled from the post-commit gate and submit-check logs).
+- **Gates after commit.** `feature_check.py` on the committed tree: `RESULT: PASS`, EXIT=0, 8/8 PASS
+  (11-feature-check-post-commit.log). `submit_check.py`: all 6 checks PASS, RESULT: PASS, EXIT=0
+  (12-submit-check.log).
+- **Regression test fails reverted, passes fixed.** Reverting the pre-existing fix with
+  `git apply -R reverse-fix.patch` (`APPLY_EXIT=0`) makes the build of `NamModelLoaderTest` fail with
+  `RED_BUILD_EXIT=2` at `07-build-red.log:253`
+  (`NamModelEigenWarningProbe.cpp:58:34: error: ... [-Werror=deprecated-enum-enum-conversion]`). Re-applying
+  it (`REVERSE_EXIT=0`) gives `GREEN_BUILD_EXIT=0` and `GREEN_TEST_EXIT=0` (10-redgreen-exits.log).
+- **Deterministic.** The check is a compile-time probe: `NamModelEigenWarningProbe.cpp:49-62` performs the
+  same enum-times-enum arithmetic Eigen's NEON kernel contains, and the build's `-Werror` plus the presence
+  or absence of `ZENE_NAM_EIGEN_OPTIONS` decides the outcome. There is no clock, sleep, thread or race;
+  `ctest` runs 13/13 with no timing assertion.
+- **At the cause, complete.** The single suppression `ZENE_NAM_EIGEN_OPTIONS`
+  (`tests/CMakeLists.txt:2012`) covers every test target that compiles `plugins/NeuralAmp/nam/*.cpp`
+  (`:3069`, `:3373`, `:3632`, `:6259`, `:6286`), and the plugin/harness targets use the same flag
+  (`plugins/NeuralAmp/CMakeLists.txt:45-46`, `plugins/NeuralAmp/tests/CMakeLists.txt:54`).
+- **No collateral damage.** No product code, data format, limit, command or audio path is touched in this
+  packet; only the warning's error status for vendored headers is suppressed, and only for those targets.
+  Old projects and saved data are unaffected.
+- **ALREADY-FIXED evidence.** `ac17b5ddd` is an ancestor of HEAD (`git merge-base --is-ancestor` EXIT=0) and
+  not of tag `v0.4.1-alpha` (`EXIT=1`); the code showing the intended contract is the existing suppression at
+  `tests/CMakeLists.txt:2009-2012` plus its application at `:6286`.
+- **Sibling commands.** No command file was changed in this packet, so `app.about`, `app.ask`, `app.help`,
+  `app.online_help`, `app.task_cancel`, `app.tasks`, `app.tour`, `app.tours`, `app.update_check_*`,
+  `app.version`, `app.whats_new`, `arrangement.fit_tracks` and `arrangement.get_state` are unaffected.
