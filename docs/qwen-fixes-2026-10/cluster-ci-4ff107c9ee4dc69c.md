@@ -109,3 +109,9 @@ None.
   data are untouched, and the family run passed 47/47 (log 09, EXIT=0).
 - **ALREADY-FIXED / FALSE-POSITIVE:** not claimed; the verdict is FIXED, so
   this item does not apply.
+- **Sibling commands in changed command files:** this fix changes no command
+  file. The `app.*` and `arrangement.*` ids submit_check lists come from the
+  branch's pre-existing commits between the base and this cluster; the only
+  files this cluster touches are the three friend declarations, the forward
+  declarations, the compile probe/test and the scope manifest. They are not
+  affected by a compile-time friendship qualification.
