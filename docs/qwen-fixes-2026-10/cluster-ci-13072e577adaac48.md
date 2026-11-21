@@ -9,9 +9,9 @@ test fix is needed.
 
 ## Evidence
 
-HEAD is `e0632552809fd91773c48e94f419c6e2f7845476` (a report commit); the test file is
+Logs 16-20 ran at `e0632552809fd91773c48e94f419c6e2f7845476` (a report-only commit); the test file is
 unchanged since `b3f18c7c4e5d64b7f9c169d232c8d6e96e5a62f8`. `4ca909f` is not an ancestor
-of HEAD: `git merge-base --is-ancestor 4ca909f HEAD` exits 1. The shorter file is
+of HEAD: the ancestry check exits 1 (log 16). The shorter file is
 already on this branch: log 24 shows the only difference between `4ca909f` and HEAD
 across the test file, the baseline and the exempt list is 12 deletions in
 `tests/src/core/InstrumentLayersCommandsTest.cpp` (1 file changed, 0 insertions), and
