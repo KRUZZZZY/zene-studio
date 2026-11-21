@@ -570,6 +570,7 @@ set(LMMS_TESTS
 	# name the follower cannot hold is refused invalid_args.
 	src/core/MidiClockSourceTest.cpp
 	src/core/MidiInputGateTest.cpp
+	src/core/MidiWinMMShortMessageTest.cpp
 	src/core/MidiLearnThreadTest.cpp
 	src/core/MidiSurfaceInputTest.cpp
 	src/core/MidiRetroCaptureTest.cpp
@@ -2146,6 +2147,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		if(NOT MSVC)
 			target_link_libraries(${LMMS_TEST_NAME} PRIVATE m)
 		endif()
+	endif()
+	# WinMM short-message packing: the regression reads the output path's source by its compiled-in root.
+	if(LMMS_TEST_NAME STREQUAL "MidiWinMMShortMessageTest")
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			ZENE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 	endif()
 	# Q050-317.1: the release-sequence tests open a real mastering document through
 	# project.new_document, so the build's own template devices must exist (the same reason
