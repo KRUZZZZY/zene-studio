@@ -57,8 +57,10 @@ That change replaced every `std::filesystem` use with plain `std::string` paths 
 
 ## Gate evidence (commands as issued in packets p1-p3; exits from logs 01-10)
 
+All commands run from the worktree root unless a cd is shown; log redirection is omitted for readability.
+
 Logs are under `/home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/`. The operative commands are
-listed; log redirection is omitted for readability; the logs hold the output and exit. The command lines below
+listed; the logs hold the output and exit. The command lines below
 are the issued commands from the `commands` arrays of packets p1, p2 and p3, and the exits are the recorded
 values, not predictions.
 
@@ -143,7 +145,7 @@ log 03 all 5 tests passed).
 
 **4. No collateral.** This packet changes no product file and no test assertion. The only diff is this docs
 file; `tests/src/core/NamModelLoaderTest.cpp` and `tests/CMakeLists.txt` are untouched, and the final
-`git status --porcelain` is empty (`logs/26-status-final3.log`, EXIT=0).
+`git status --porcelain` is empty (`logs/41-final-status.log`, EXIT=0).
 
 **5. ALREADY-FIXED code references.** See the list above: `tests/src/core/NamModelLoaderTest.cpp:33-54`,
 `:93-152`, `:204-227`, `:311-334`, current `:120`, current `:323`, and `tests/CMakeLists.txt:6295`, `:6312`.
@@ -167,15 +169,15 @@ Ancestor `03e5a509b7` carries the 128-line change.
 
     $ head -1 docs/qwen-fixes-2026-10/cluster-ci-v041-3.md
     ALREADY-FIXED
-    EXIT=0                    (logs/23-report-first-line-final3.log)
+    EXIT=0                    (logs/35-report-first-line-final4.log)
 
     $ rg -n '^## Self-check|^## Other findings' docs/qwen-fixes-2026-10/cluster-ci-v041-3.md
-    EXIT=0                    (logs/23-report-sections-final3.log)
+    EXIT=0                    (logs/35-report-sections-final4.log)
 
-    $ FEATURE_CHECK_LOG_DIR=/home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/feature-check-final3 \
+    $ FEATURE_CHECK_LOG_DIR=/home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/feature-check-final4 \
         python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py \
         /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3
-    EXIT=0                    (logs/24-feature-check-final3.log)
+    EXIT=0                    (logs/36-feature-check-final4.log)
 
 The commit is docs-only: `docs/qwen-fixes-2026-10/cluster-ci-v041-3.md`
-(`logs/25-commit-stat-final3.log`; the tree is clean in `logs/26-status-final3.log`).
+(`logs/37-commit-stat-final4.log`; the tree is clean in `logs/41-final-status.log`).
