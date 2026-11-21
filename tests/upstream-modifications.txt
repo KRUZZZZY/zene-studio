@@ -5682,6 +5682,7 @@ include/SampleClip.h	Q050-162: Repeat / Gate rate accessors and the reader-pinne
 src/core/SampleClip.cpp	Q050-162: analyse transients when a clip enters Repeat / Gate (and when its audio or window changes) before the mode is published; rate setter.
 include/SamplePlayHandle.h	Q050-162: fixed-size transient-repeat render state snapshotted at handle construction.
 src/core/SamplePlayHandle.cpp	Q050-162: route warped Repeat / Gate clips through the transient renderer instead of a stretcher.
+src/core/SamplePlayHandle.cpp	new-p14-273 (pitch-preserving amplification): renderPreservingPitch scales the frames the stretcher wrote by the clip's sample amplification, the gain Sample::render already applies on the resample path; the stretcher input stays raw, so WSOLA and Rubber Band get the same gain, and the zero-filled tail is untouched. The window-overrun and mute-cursor code is unchanged.
 src/core/CMakeLists.txt	Q050-162: build core/TransientRepeat.cpp.
 tests/CMakeLists.txt	Q050-162: register SampleClipTransientRepeatTest and ControlTransientRepeatTranscript.
 data/manual/index.html	Q050-162: document the Repeat / Gate warp modes and their repeat rate.
