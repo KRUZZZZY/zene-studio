@@ -83,8 +83,7 @@ result is recorded then.
   `cd build/tests && ./GraphWaveformEditorGuiTest waveShaperCurveEditsReachTheAudioAsAPublishedSnapshot`
   exited 1 (`Totals: 2 passed, 1 failed`, fuzzy compare; `logs/test-4-red.log`);
   after reapplying it the same command exited 0 (`Totals: 3 passed, 0 failed`;
-  `logs/test-5-green.log`), and this session's re-run again exited 0
-  (`Totals: 3 passed, 0 failed`, p6 green run log).
+  `logs/test-5-green.log`).
 - Deterministic: no wall-clock timing, sleeps or races; the test injects fixed
   values through `setSampleAt`, one direct write with no `samplesChanged`, and a
   synthetic click, then compares exact expected floats. The 50-edit burst also
@@ -93,14 +92,19 @@ result is recorded then.
   `publishCurve()` (`plugins/WaveShaper/WaveShaperControls.cpp:60-77`); the
   audio reader takes the pointer with a single atomic load and returns `data`
   (`WaveShaperControls.h:98-108`); `WaveShaper.cpp:77` reads that published
-  array. Every graph-model edit emits `samplesChanged`, so no caller keeps a
-  stale read.
+  array. Every Wave Shaper edit path emits `samplesChanged` — Graph click/drag
+  through `setSampleAt` or `drawLineAt`'s final emit, reset, smooth, add/sub,
+  and `loadGraph` — so no Wave Shaper caller keeps a stale read; `setLength` and
+  `setRange` emit `lengthChanged`/`rangeChanged` instead, are not used by this
+  plugin, and its model stays fixed at 200.
 - No collateral damage: the existing save/load slot
   (`GraphWaveformEditorGuiTest.cpp:82`) still round-trips `saveState`/
   `restoreState` and rejects a short curve; the ctest family run passed 1/1
-  (`logs/test-3-family.log`). The fix adds no limit or check that could hit
-  other callers; `loadSettings` keeps loading old projects through the same
-  `waveform::loadGraph` path.
+  (`logs/test-3-family.log`). The only added check is `publishCurve`'s
+  `length() == 200` guard, which matches the plugin's fixed 200-sample model and
+  `loadGraph`'s exact-count requirement, so it cannot reject a legitimate Wave
+  Shaper edit; no other caller uses `publishCurve`. `loadSettings` keeps loading
+  old projects through the same `waveform::loadGraph` path.
 - ALREADY-FIXED / FALSE-POSITIVE: not applicable; the verdict is FIXED, as the
   red/green pair above shows.
 - Sibling commands: no command file was changed. Commit `b6c9e36` touches only
