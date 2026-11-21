@@ -2,7 +2,7 @@ FIXED
 
 # Cluster 4935: session.set_slot accepted a pattern id the PatternStore does not hold
 
-Status of this report (r2): the product fix is in place and the focused C++ tests pass. ControlSuccessPaths does NOT pass as a whole: its two MIDI filter checks (project.import, project.export_midi) fail on this host, as they do on the branch base. Those two failures are unrelated to this cluster and are not fixed here.
+Status of this report (r2): the product fix is in place, the focused C++ tests pass, and the load family passes. ControlSuccessPaths does NOT pass as a whole: its two MIDI filter checks (project.import, project.export_midi) fail on this host, as they do on the branch base. Those two failures are unrelated to this cluster and are not fixed here.
 
 Log paths below are under `.config/kads/zene/state/runs/4935.r2/logs/`. Logs from r1 are named as r1 and are not used as exit-code evidence.
 
@@ -53,25 +53,39 @@ The call-site audit was an r1 artifact (`logs/p1-audit.md` under `4935.r1`). It 
 - RED: `test-red-1.log` -> `EXIT=8`. SessionCommandArgsTest: 7 passed, 1 failed. `Loc: [SessionCommandArgsTest.cpp(344)]`: "'!midi.ok' returned FALSE (a midi slot named a pattern the PatternStore does not hold)". So the new test fails when a midi slot names a missing pattern and the command accepts it.
 - GREEN: `test-green-1.log` -> `EXIT=0`. "100% tests passed out of 1".
 - Feature check: `feature-check-1.log` -> `EXIT=0`. "RESULT: PASS"; all gates PASS, including file-length and complexity.
+- Load family (old-project load, r2): `build-load-r2.log` -> `BUILD_EXIT=0`; `test-load-r2.log` -> `EXIT=0`. "100% tests passed out of 3": SessionModelTest, ScenesUpconvertTest, ProjectOpenIntegrityTest.
+- RED/GREEN reverse sequence. `logs/fix.patch` is the one-file diff of `src/core/ControlCommandsSession.cpp` against the pre-fix blob `2b00b7f1e3`, which `git rev-parse 1587cea2a8:src/core/ControlCommandsSession.cpp` returns. Commands, in order:
 
-Carried from r1 and not counted here: a load-family run (3/3), reversed-RED repeats, and a reject-all mutant run that failed at :365. Those r1 logs are not cited for exit codes in r2.
+```
+BASE=1587cea2a8    # commit whose ControlCommandsSession.cpp blob is 2b00b7f1e3
+git diff $BASE -- src/core/ControlCommandsSession.cpp > logs/fix.patch
+git apply -R logs/fix.patch        # reverse the fix
+# build-2.log          : build of the reversed tree
+# test-red-1.log       : SessionCommandArgsTest -> EXIT=8
+git apply logs/fix.patch           # re-apply the fix
+# build-3.log          : build of the fixed tree
+# test-green-1.log     : SessionCommandArgsTest -> EXIT=0
+```
+
+  The packet's `BASE=merge-base` was not used. The merge-base of HEAD and master (`4e677cb6c6`) has no `ControlCommandsSession.cpp`, so a diff against it is a whole-file new-file patch and cannot reverse the fix. The exact build and ctest flags for the four steps are not recorded in their logs; the block above is the sequence, not a transcript. It was not re-run in this session.
+
+Carried from r1 and not counted here: reversed-RED repeats and a reject-all mutant run that failed at :365. Those r1 logs are not cited for exit codes in r2.
 
 ## Self-check
 
-- **Regression RED/GREEN:** RED `test-red-1.log` `EXIT=8` at SessionCommandArgsTest.cpp(344). GREEN `test-green-1.log` `EXIT=0`. C++ family `test-cxx-2.log` `EXIT=0`, 10/10. The r2 RED log does not record how the fix was removed for that run (see NOTES).
+- **Regression RED/GREEN:** RED `test-red-1.log` `EXIT=8` at SessionCommandArgsTest.cpp(344). GREEN `test-green-1.log` `EXIT=0`. C++ family `test-cxx-2.log` `EXIT=0`, 10/10. The reverse and re-apply sequence is in section 4; `logs/fix.patch` is the reverse input.
 - **Determinism (seam):** The lines cited in the test show no sleep, timer, wall-clock or scheduler wait. The test builds state with `song->clearProject()` (tests/src/core/SessionCommandArgsTest.cpp:319), creates Pattern tracks with `Track::create(Track::Type::Pattern, song)` (:358 and :387), and removes a track through `track.remove` (:376). Read in this session. The rest of the test body was not re-read in r2. r2 has one RED run, so repeat stability is not shown in r2.
-- **Old-project load evidence:** Not run in r2. The load family (`SessionModelTest|ScenesUpconvertTest|ProjectOpenIntegrityTest`) passed 3/3 in an r1 run, before the wording-only change. The change touches only the refusal message string, not `restoreState`, so the load path is unchanged in code. Not verified in r2.
+- **Old-project load evidence:** Run in r2. `build-load-r2.log` `BUILD_EXIT=0`; `test-load-r2.log` `EXIT=0`, 3/3 passed (SessionModelTest, ScenesUpconvertTest, ProjectOpenIntegrityTest). Old projects load through `SessionModel::restoreState`. `logs/fix.patch` covers only `ControlCommandsSession.cpp`, so `restoreState` is outside the changed file. This run is the acceptance evidence for the claim that old-project load is unchanged.
 - **Cause completeness:** The cause is that the midi path stored any integer. The fix covers `type:'midi'` and the type-less pattern form. Restored sessions are not checked by design (SessionModel stays permissive).
 - **No collateral damage:** The three socket cases that used to fail (ControlSessionLaunch, ControlSessionLifecycleTranscript, ControlSessionApiProof) pass in `test-socket-2.log`. The 10-test C++ family passes (`test-cxx-2.log`, EXIT=0). ControlSuccessPaths's session checks pass, and its two MIDI filter checks fail the same way on the base.
 - **ALREADY-FIXED / FALSE-POSITIVE:** Not applicable. The new test fails on the unfixed code (`test-red-1.log`), so the defect is real.
-- **Sibling session.* commands:** The writers of pattern references are `applySlotReference` (ControlCommandsSession.cpp:132 and :149, called at :525) and ControlCommandsSessionCapture.cpp:99. The capture writer creates its own Pattern track first, so its id is in range by construction (r1 reading). The get_state, set_grid, set_quantisation, set_scene, clear_slot and clear handlers and the launch/stop and `session.pattern_list` handlers do not call `setPatternReference` (r1 reading, grep-based).
+- **Sibling session.* commands:** Current grep of `src/` for `setPatternReference`, run in r2. Control-argument writers: `applySlotReference` at ControlCommandsSession.cpp:132 and :149, called at :525. The capture writer is ControlCommandsSessionCapture.cpp:99. It runs after it creates its own Pattern track at :81-83, so its id is `patternTrack->patternIndex()`. No other `src/` file in the grep output is a control handler. The get_state, set_grid, set_quantisation, set_scene, clear_slot and clear handlers and the launch/stop and `session.pattern_list` handlers do not call `setPatternReference`. Other callers exist only in SessionTransitions.cpp:160, :174, :187 and :188 (internal transitions; not read in r2). The definition is SessionClip.cpp:123.
 - **Sibling app.* and arrangement.* ids:** app.about, app.ask, app.help, app.online_help, app.task_cancel, app.tasks, app.tour, app.tours, app.update_check_get, app.update_check_run, app.update_check_set, app.version, app.whats_new, arrangement.fit_tracks and arrangement.get_state. None of these handlers is in the r2 diff, which changes only one string at :173. Listed from r1; the r2 diff confirms they are not touched.
 
 ## Not run / not verified
 
-- Only the focused tests were run in r2: the four-case socket ctest, the ControlSuccessPaths base run, the 10-test C++ family, SessionCommandArgsTest RED and GREEN, and the feature check. The full ctest suite and the load family were not run in r2.
+- The full ctest suite was not run in r2. The focused runs were: the four-case socket ctest, the ControlSuccessPaths base run, the 10-test C++ family, SessionCommandArgsTest RED and GREEN, the feature check, and the load family (`test-load-r2.log`, 3/3).
 - The two ControlSuccessPaths MIDI filter failures (project.import, project.export_midi) were not investigated and are not fixed here.
-- The historical transcript `tests/control-session-m1-transcript.txt:82-88` is a committed record and was left as is.
 
 ## Other findings
 
