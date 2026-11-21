@@ -187,7 +187,7 @@ exit $?
 
 ## Commands and exits
 
-Copied from logs 00-12 and 14 under
+Copied from logs 00-16 under
 `/home/kruzzzzy/.config/kads/zene/state/runs/ci-bbdf307254017268.r1/logs`:
 
 | Step | Command (abbreviated) | EXIT | Source |
@@ -200,7 +200,7 @@ Copied from logs 00-12 and 14 under
 | 04 | `cmake --build build --target zene TakeLanesPanelTest` | 0 | `04-build-qt6.log` |
 | 05 | `cd build/tests && ctest -R TakeLanesPanelTest --output-on-failure` | 0 | `05-ctest-takelanes.log`, 1/1 passed |
 | 06 | `cmake --build build --target TouchInstrumentSurfaceTest TouchLayoutTest TouchWorkspaceTest` | 0 | `06-build-family.log` |
-| 07 | `ctest -R 'TakeLanes\|Touch' --output-on-failure` | 0 | `07-ctest-family.log`, 5/5 passed |
+| 07 | `cd build/tests && ctest -R 'TakeLanes\|Touch' --output-on-failure` | 0 | `07-ctest-family.log`, 5/5 passed |
 | - | `git diff -- tests/src/gui/TakeLanesPanelTest.cpp > /home/kruzzzzy/.config/kads/zene/state/runs/ci-bbdf307254017268.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.config/kads/zene/state/runs/ci-bbdf307254017268.r1/logs/fix.patch` (revert the test fix) | 0 | run log |
 | 08 | Qt5 red again on reverted tree | 1 | `08-qt5-reverted-red.log` |
 | - | `git apply /home/kruzzzzy/.config/kads/zene/state/runs/ci-bbdf307254017268.r1/logs/fix.patch` (restore) | 0 | run log |
@@ -210,6 +210,7 @@ Copied from logs 00-12 and 14 under
 | 12 | `feature_check.py <worktree>` | 0 | `12-feature-check.log`, RESULT: PASS |
 | 14 | `feature_check.py <worktree>` | 0 | `14-feature-check.log`, RESULT: PASS |
 | 15 | `submit_check.py <worktree> ci-bbdf307254017268` | 0 | `15-submit-check.log` |
+| 16 | submit_check.py <worktree> ci-bbdf307254017268 (after report fix) | 0 | 16-submit-check.log, RESULT: PASS |
 
 In log 08 exactly six `error: call to member function ... is ambiguous` are
 reported, at `TakeLanesPanelTest.cpp:374,376,383,385,387,389` (press, release,
