@@ -106,8 +106,7 @@ Logs from earlier runs (`*-2`, `*-3` before this packet) are not cited: their ex
 | gate | command | exit | result |
 |---|---|---|---|
 | feature_check | `feature_check.py <worktree>` wrapped as `bash -c '...; rc=$?; echo EXIT=$rc; exit $rc' > logs/feature-check-3.log 2>&1` | 0 | `feature-check-3.log` ends `EXIT=0`; `RESULT: PASS` |
-| commit | `git add` (4 paths) and `git commit` | see commit | see COMMITS |
-| submit_check (earlier) | `submit_check.py <worktree> new-p16-329 > logs/submit-check-3.log 2>&1` | 0 | `RESULT: PASS - submit`; no FAIL; six `?` asks answered under "submit_check asks" |
+| commit | product commit `f461196b76` (`git show --stat`) | see commit | see COMMITS |
 | submit_check (final) | `submit_check.py <worktree> new-p16-329` wrapped as above > `logs/submit-check-6.log` | 0 | `submit-check-6.log` ends `EXIT=0`; run after the report commit, so the log is the evidence for this row |
 
 ## Commit chain
@@ -117,7 +116,8 @@ On `bugs/qwen-new-p16-329`, oldest first:
 - `f461196b76` cluster new-p16-329: clamp Link tempo to a finite range (the fix and test)
 - `269ec0ae57` cluster new-p16-329: answer submit_check asks in report
 - `4788fbc25c` cluster new-p16-329: record RED/GREEN exits in the report
-- this report commit: cluster new-p16-329: correct report evidence citations: cluster new-p16-329: record RED/GREEN exits in the report (its sha is the HEAD in `git log`)
+- `99ad5b4c86` cluster new-p16-329: correct report evidence citations
+- this report commit: cluster new-p16-329: fix report commit chain
 
 ## Self-check
 
