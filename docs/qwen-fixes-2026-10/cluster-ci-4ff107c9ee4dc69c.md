@@ -47,9 +47,9 @@ All compile/test commands below are the p1-p4 record; logs are in
 | 07 | GREEN: `ctest -R MsFriendLookupTest` with the fix | 0 | `07-test-green.log` (1/1 passed) |
 | 08 | MS-compat check on `TouchLayoutTest.cpp` after the fix | 0 | `08-repro-mscompat-fixed.log` (`CLANG_EXIT=0`) |
 | 09 | Clip/Automation/Pattern/TouchLayout family | 0 | `09-test-family.log` (47/47 passed) |
-| 4b | `git apply -R fix.patch` (reverse the product fix) | 0 | p4 step 4b; wrapper log `10-build-reverted.log` |
+| 4b | `git apply -R fix.patch` (reverse the product fix) | 0 | EXIT seen from `; echo EXIT=$?` on the console in p4, not saved to a log; the tree state is corroborated by 11 (RED) and 13 (GREEN) |
 | 11 | `ctest -R MsFriendLookupTest` after 4b | 8 | `11-test-reverted.log` |
-| 4b | `git apply fix.patch` (restore the fix) | 0 | p4 step 4b; wrapper log `12-build-reapplied.log` |
+| 4b | `git apply fix.patch` (restore the fix) | 0 | EXIT seen from `; echo EXIT=$?` on the console in p4, not saved to a log; the tree state is corroborated by 11 (RED) and 13 (GREEN) |
 | 13 | `ctest -R MsFriendLookupTest` after reapply | 0 | `13-test-reapplied.log` (1/1 passed) |
 | 14 | mutant: revert the `Clip.h` friend to its unqualified form | 8 | `14-mutant-Clip.log` |
 | 15 | mutant: revert the `AutomationTrack.h` friend to its unqualified form | 8 | `15-mutant-AutomationTrack.log` |
@@ -69,7 +69,8 @@ p5 commands:
   for the new list; re-ran feature_check: EXIT=0, all rows PASS. Log:
   `logs/17-feature-check.log`.
 - `python3 submit_check.py <worktree> ci-4ff107c9ee4dc69c`: log
-  `logs/18-submit-check.log` (EXIT=0, `RESULT: PASS - submit`).
+  `logs/18-submit-check.log` (the log holds only `RESULT: PASS - submit`; the
+  EXIT=0 came from `; echo EXIT=$?` on the console, corroborated by log 19).
 
 ## Disclosures
 
@@ -90,10 +91,12 @@ None.
 ## Self-check
 
 - **Regression test fails with the product change reverted and passes with it.**
-  Reverting the three header hunks (`git apply -R`, EXIT=0) made
+  Reverting the three header hunks (`git apply -R`, EXIT seen from
+  `; echo EXIT=$?` on the console in p4, not saved to a log) made
   `MsFriendLookupTest` fail: `logs/11-test-reverted.log`, EXIT=8 (also the
   original red at `05-test-red.log`, EXIT=8). Restoring the fix
-  (`git apply`, EXIT=0) made it pass: `logs/13-test-reapplied.log`, EXIT=0
+  (`git apply`, EXIT seen from `; echo EXIT=$?` on the console in p4, not
+  saved to a log) made it pass: `logs/13-test-reapplied.log`, EXIT=0
   (also `07-test-green.log`, EXIT=0). Each mutant that reverted one friend to
   its unqualified form also fails (logs 14/15/16, EXIT=8 each).
 - **The test is deterministic.** It runs a `clang++ -fsyntax-only` compile
