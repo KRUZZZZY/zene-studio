@@ -9,7 +9,7 @@ FIXED. `AudioRing` accepted a capacity whose power-of-two rounding or frames-tim
 ## Evidence
 
 - **Old rounding loop.** `fa4a5f2e78:src/core/LinkAudioCodec.cpp:61-66` (`roundUpPowerOfTwo`). `while (p < v) { p <<= 1; }` has no bound. For `v > 2^63` it shifts `p` to 0 and then loops forever. The fixed version is at `src/core/LinkAudioCodec.cpp:63-72`.
-- **Old storage size.** `fa4a5f2e78:src/core/LinkAudioCodec.cpp:157`, `m_data(m_capacity * AudioChannels, 0.0f)`. With `m_capacity = 2^63` the product wraps to 0, so the ring had zero-length storage. The fixed version is `ringStorageSize()` at `src/core/LinkAudioCodec.cpp:75-84`, called from the constructor at `:171-173`.
+- **Old storage size.** `fa4a5f2e78:src/core/LinkAudioCodec.cpp:157`, `m_data(m_capacity * AudioChannels, 0.0f)`. With `m_capacity = 2^63` the product wraps to 0, so the ring had zero-length storage. The fixed version is `ringStorageSize()` at `src/core/LinkAudioCodec.cpp:75-82`, called from the constructor at `:171-173`.
 - **Sibling guards, same two checks.** `include/SampleFrameRingBuffer.h:155-158` (rounding guard) and `include/InputChannelRing.h:196-199` (rounding guard) and `:207-214` (`storageSize`, `throw std::length_error("ring storage size overflows size_t")`). The fix follows the InputChannelRing pattern. Note: the brief cited `SampleFrameRingBuffer.h:139-149`, but those lines are `reset()`, not a guard. The rounding guard is at 155-158.
 - **Only product caller.** `src/core/LinkAudioStream.cpp:107-108` constructs `m_tx(AudioRingFrames)` and `m_rx(AudioRingFrames)`. `include/LinkAudioStream.h:77` sets `AudioRingFrames = 65536`. A grep for `\bAudioRing\b` in `src/` found no other construction site.
 
@@ -41,7 +41,7 @@ The logs in `~/.config/kads/zene/state/runs/new-p14-148.r1/logs/` hold the tool 
 | test-7-mut-restored-green | test-7-mut-restored-green.log | 0 | Passed (0.22 s) |
 | feature-check | feature-check.log | 0 | `RESULT: PASS` |
 | test-8-final-committed (p5b) | test-8-final-committed.log | 0 | `ctest -R '^LinkAudioCodecTest$'` on the committed tree: `100% tests passed out of 1` |
-| cmp-final (p5b) | cmp-final.log | 1 | `cmp: EOF on '-' which is empty`. The command diffs the working tree, which is clean after commit `4f738a8756`, so the diff is empty and cmp fails. Not a product mismatch |
+| cmp-final-committed | cmp-final-committed.log | 0 | `git diff fa4a5f2e78 HEAD -- src/core/LinkAudioCodec.cpp \| cmp - fix.patch`: the committed product diff matches the saved patch byte for byte |
 
 ### The SIZE_MAX RED is a timeout
 
@@ -70,7 +70,7 @@ Each guard is therefore caught by its own test.
 
 ## Self-check
 
-Answers to the ASK items. Each one is backed by the diff (`git diff fa4a5f2e78..HEAD --stat` is the two code files plus this report; the second commit, `8bb90cfafb`, is docs-only) or a logged run.
+Answers to the ASK items. Each one is backed by the diff (`git diff fa4a5f2e78..HEAD --stat` is the two code files plus this report; the later commits `8bb90cfafb` and `7b0e53e129` are docs-only) or a logged run.
 
 ASK items printed by `submit_check.py` (commit `4f738a8756`, log `submit-check-1.log`):
 
@@ -78,7 +78,7 @@ ASK items printed by `submit_check.py` (commit `4f738a8756`, log `submit-check-1
 - **Deterministic.** The new tests use fixed constants only: `2^63` and `SIZE_MAX`, and `AudioRing(2/3/AudioRingFrames/AudioRingFrames+1)`. No wall-clock timing, sleeps, threads, or races. The one timing-looking result, the SIZE_MAX hang, is a non-terminating call under a 60 s ctest limit (see above). It is deterministic, not a race.
 - **At the cause and complete.** The cause is the unbounded rounding loop (`fa4a5f2e78:src/core/LinkAudioCodec.cpp:64`) and the unchecked product (`fa4a5f2e78:src/core/LinkAudioCodec.cpp:157`). Both are guarded. The sibling `InputChannelRing.h` has the same two guards (`:196-199`, `:207-214`). `SampleFrameRingBuffer.h` has the rounding guard (`:155-158`) and no product, since its storage is one element per frame. The only product `AudioRing` construction is `LinkAudioStream.cpp:107-108`.
 - **No collateral.** `AudioRing` is a runtime buffer. The diff touches no serialization or project-load code, so saved projects are unchanged. The new throws fire only above 2^63 frames or a storage product above `SIZE_MAX`. The only real caller uses 65536, so no legitimate caller reaches a limit.
-- **Verdict is FIXED, not ALREADY-FIXED.** The bug is present at base `fa4a5f2e78` (`src/core/LinkAudioCodec.cpp:61-66` and `:157`, cited above), fixed at HEAD (`:63-72` guard at `:65-68`, `ringStorageSize` at `:75-84`, constructor at `:171-173`), and the fix is in commit `4f738a8756`.
+- **Verdict is FIXED, not ALREADY-FIXED.** The bug is present at base `fa4a5f2e78` (`src/core/LinkAudioCodec.cpp:61-66` and `:157`, cited above), fixed at HEAD (`:63-72` guard at `:65-68`, `ringStorageSize` at `:75-82`, constructor at `:171-173`), and the fix is in commit `4f738a8756`.
 
 - **Regression RED/GREEN.** RED: test-1 (exit 8, storage-wrap FAIL then SIZE_MAX timeout), test-1b (exit 1), test-1c (exit 124), test-3-reverted-red (exit 8). GREEN: test-2b-green (0), test-2b-family (0), test-2b-direct (0, 7 passed), test-4-restored-green (0), test-7-mut-restored-green (0). Mutation runs in test-5, test-6 and test-6b show each guard is individually covered.
 - **Realtime.** The new `throw` sites are in `roundUpPowerOfTwo` and `ringStorageSize`. Both run only from the `AudioRing` constructor initializer (`src/core/LinkAudioCodec.cpp:171-173`). `write`, `read` and `skip` are not in the diff. The change adds no allocation, lock, or log on the audio path.
@@ -89,5 +89,6 @@ ASK items printed by `submit_check.py` (commit `4f738a8756`, log `submit-check-1
 
 ## Other findings
 
+- The earlier `cmp-final.log` (exit 1, `cmp: EOF on '-' which is empty`) ran `git diff` on the working tree. After commit `4f738a8756` that tree is clean, so the diff is empty. That command form cannot check committed work and is superseded by `cmp-final-committed.log` (exit 0) in the table above.
 - The run folder `new-p14-148.r1/` has `duet/` and `logs/` only. There is no `schemas/` directory.
 - `logs/` has a `build-2-green.log` that the step table does not list, and no log file for the `cmp` step. The `cmp` row above was re-run in this session.
