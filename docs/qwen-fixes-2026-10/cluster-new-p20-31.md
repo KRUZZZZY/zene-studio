@@ -2,7 +2,7 @@ FIXED
 
 # Cluster new-p20-31: a throwing command observer cannot change a committed reply
 
-Docs-only follow-up to commit 94390b7c11 (the fix). This correction changes only this file. It corrects the commands, the registration history and the evidence lines. No product code or test was changed.
+Docs-only follow-up to commit 94390b7c11 (the fix). This is a further docs-only correction after 84e01086e. It corrects the file-length claims and the exact gate commands in this file only. No product or test change.
 
 ## Verdict evidence
 
@@ -19,12 +19,12 @@ Docs-only follow-up to commit 94390b7c11 (the fix). This correction changes only
 
 ## File-length history
 
-- The two observer tests (`observerExceptionDoesNotChangeACommittedReply`, `observerExceptionDoesNotChangeACompletedAsyncEdit`) were first added to `tests/src/core/ControlRegistryNestingTest.cpp`, which is 498 code lines at HEAD.
+- The two observer tests (`observerExceptionDoesNotChangeACommittedReply`, `observerExceptionDoesNotChangeACompletedAsyncEdit`) were first added to `tests/src/core/ControlRegistryNestingTest.cpp`.
 - `gates-1.log` failed with `FAIL file-length NEW: new file over 500 lines: tests/src/core/ControlRegistryNestingTest.cpp (583)`, base fa4a5f2e7, 3 changed files, `RESULT: FAIL`.
 - The split moved the two tests, unchanged, to `tests/src/core/ControlRegistryObserverTest.cpp` (181 lines).
 - `tests/src/core/ControlRegistryNestingTest.cpp` was then restored byte-identical to HEAD: `git diff HEAD` on it is empty.
 - `gates-2.log` (pre-commit) and `gates-3.log` (post-commit) pass. No assertion was removed.
-- Counting: the line totals are measured (nesting file 622 lines, observer file 181 lines). The code-line figures in the earlier count (498 and 130) could not be reproduced here. A count that skips blank and `//` lines gives 521 and 154; a stricter count that also skips braces and block-comment lines gives 404 and 95. The 498 and 130 figures are not claimed in this correction.
+- Line counts: the new observer test file `tests/src/core/ControlRegistryObserverTest.cpp` is 181 physical lines. The file-length gate passes in `gates-2.log` and `gates-3.log`.
 
 ## Registration
 
@@ -55,9 +55,9 @@ The logs record only program output and an `EXIT=` line; they do not record comm
 | 4 | `git apply /home/kruzzzzy/.config/kads/zene/state/runs/new-p20-31.r1/logs/fix.patch` (GREEN: restore the fix) | 0 | apply-6.log | log contains only the EXIT line |
 | 5 | `cmake --build build --target zene ControlRegistryObserverTest -j12` | 0 | build-10-green.log | builds |
 | 6 | `cd build/tests && ./ControlRegistryObserverTest observerExceptionDoesNotChangeACommittedReply observerExceptionDoesNotChangeACompletedAsyncEdit` | 0 | test-16-green.log | Totals: 4 passed, 0 failed (initTestCase, cleanupTestCase and the two tests) |
-| 7 | `ctest -R "ControlRegistryNestingTest\|ControlRegistryObserverTest\|ControlEventHubTest\|ControlCommandsMacrosTest" --output-on-failure` | 0 | test-13.log | 100% tests passed, out of 4 |
-| 8 | feature_check (pre-commit) | 0 | gates-2.log | RESULT: PASS (base fa4a5f2e7, 6 changed files) |
-| 9 | feature_check (post-commit) | 0 | gates-3.log | RESULT: PASS (base fa4a5f2e7, 7 changed files) |
+| 7 | (cwd build/tests) `ctest -R "ControlRegistryNestingTest\|ControlRegistryObserverTest\|ControlEventHubTest\|ControlCommandsMacrosTest" --output-on-failure` | 0 | test-13.log | 100% tests passed, out of 4 |
+| 8 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p20-31 > /home/kruzzzzy/.config/kads/zene/state/runs/new-p20-31.r1/logs/gates-2.log 2>&1` (pre-commit) | 0 | gates-2.log | RESULT: PASS (base fa4a5f2e7, 6 changed files) |
+| 9 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p20-31 > /home/kruzzzzy/.config/kads/zene/state/runs/new-p20-31.r1/logs/gates-3.log 2>&1` (post-commit) | 0 | gates-3.log | RESULT: PASS (base fa4a5f2e7, 7 changed files) |
 
 History only: the earlier nesting-file cycle logs (`build-1` to `build-8`, `test-1` to `test-11`) and `test-12.log` are in the same folder. This table does not use them, and I did not audit them for this report.
 
