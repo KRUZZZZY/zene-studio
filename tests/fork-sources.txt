@@ -3667,7 +3667,7 @@ tests/moc-qt5-trailing-return-check.py
 tests/qt5-overloaded-signal-check.py
 tests/src/core/RemotePluginShmFifoNoSysIpcProbe.cpp
 docs/qwen-fixes-2026-10/cluster-ci-v041-5.md
-# cluster ci-c487f7d0c9f0a1ac (2026-10): linux-arm64 vendored-Eigen warning in NamModelLoaderTest (report, ALREADY-FIXED).
+# cluster ci-v041-2 (2026-11): report - linux-arm64 vendored-Eigen warning in NamModelLoaderTest, ALREADY-FIXED by ac17b5ddd (cluster ci-c487f7d0c9f0a1ac).
 docs/qwen-fixes-2026-10/cluster-ci-v041-2.md
 include/HostedTrackChannels.h
 include/PluginInstantiationFailure.h
