@@ -111,6 +111,9 @@ new item).
 - ALREADY-FIXED evidence: current source at
   `tests/src/gui/MixerSendsOnFadersTest.cpp:278-282` is the portable loop, and
   `421f6f13ae` is an ancestor of HEAD.
+- Sibling commands: this report changes no command file and no product code, so
+  none of the branch's command siblings (app.*, arrangement.*, …) is touched or
+  affected by a test-only Qt 5.15 compile fix.
 
 ## Other findings
 
