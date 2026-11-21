@@ -24,7 +24,7 @@ Target: `MixerListenTest` (ctest #263). Logs are under `/home/kruzzzzy/.config/k
 
 ## Commands and exit codes
 
-Source: `logs/reversal-transcript-1.log` (run dir `new-p22-33.r1/logs/`). Line numbers below are in that file. Each command line is followed by its `EXIT=` line.
+Sources: `logs/reversal-transcript-1.log` (run dir `new-p22-33.r1/logs/`) and `logs/reapply-transcript-1.log` (clean-tree reverse, reapply, rebuild, focused test, and tree checks, each with its `EXIT=` line). Line numbers below are in `reversal-transcript-1.log` unless a row names `reapply-transcript-1.log`. Each command line is followed by its `EXIT=` line.
 
 | Step | Command (as in transcript) | Transcript lines | Exit |
 |---|---|---|---|
@@ -32,16 +32,16 @@ Source: `logs/reversal-transcript-1.log` (run dir `new-p22-33.r1/logs/`). Line n
 | Reverse-apply fix (RED state) | `git apply -R logs/fix.patch` | 3-4 | 0 |
 | Rebuild, reversed | `cmake --build <worktree>/build --target zene MixerListenTest` | 5, 44 | 0 |
 | Focused ctest, reversed (RED) | `ctest -R '^MixerListenTest$' --output-on-failure` (in `build/tests`) | 45, 137 | 8 |
-| Reapply fix | `git apply logs/fix.patch` | 138-139 | empty (see note) |
+| Reapply fix | `git apply logs/fix.patch` (after `git apply -R logs/fix.patch` on the clean tree) | reapply-transcript-1.log 1-4; reversal-transcript-1.log 138-139 | EXIT=0 (`reapply-transcript-1.log` line 4) |
 | Check fix is back in tree | `git diff --quiet HEAD -- src/core/ControlCommandsMixerListen.cpp` | 141-142 | 0 |
-| Rebuild, reapplied | same build command as above (not echoed) | 181 | 0 |
+| Rebuild, reapplied | `cmake --build /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p22-33/build --target zene MixerListenTest` | reapply-transcript-1.log 5-44; reversal-transcript-1.log 181 | EXIT=0 (`reapply-transcript-1.log` line 44) |
 | Focused ctest, reapplied (GREEN) | `ctest -R '^MixerListenTest$' --output-on-failure` (in `build/tests`) | 183, 191 | 0 |
 | Mixer family | `ctest -R 'Mixer' --output-on-failure` (in `build/tests`) | 192, 244 | 0 |
 | Feature gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 245, 256 | 0 |
 
 **Reversed RED and initial RED are the same pre-fix state.** Both run with the fix absent. The transcript holds the exit for that state (line 137, EXIT=8, the three failures at lines 45-137). The initial RED log (`build-red-1.log` / `test-red-1.log`) has no exit line, so its exit is the same pre-fix state recorded in the transcript, not its own log.
 
-**Note on the reapply exit (line 139).** The `EXIT=` line is empty because the shell is zsh, which does not set `PIPESTATUS`. Lines 141-142 record the state after apply instead: `git diff --quiet HEAD` exits 0 and `git status --short` is empty. The apply's own exit code is therefore inferred from that state, not recorded.
+**Reapply exit, recorded.** The `EXIT=` line at `reversal-transcript-1.log` line 139 is empty because the shell is zsh, which does not set `PIPESTATUS`. The reapply was rerun from the clean committed tree in `reapply-transcript-1.log`: `git apply -R` is at lines 1-2 (`EXIT=0`), `git apply` is at lines 3-4 (`EXIT=0`), the reapplied build is at lines 5-44 (`EXIT=0`), the focused ctest is at lines 45-53 (`EXIT=0`), and the HEAD diff check and `git status --short` are at lines 54-57 (both `EXIT=0`, status empty).
 
 The logs show the outcomes (3 failures in both RED runs, 100% passed in both GREEN runs). The exit codes and command lines above come from the transcript only.
 
