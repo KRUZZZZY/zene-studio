@@ -133,27 +133,36 @@ Some logs hold only a command's output and no exit code; that is stated below.
   EXIT=0 (log 15). Log 01 empty as above.
 - `git show fa4a5f2e785c:tests/src/gui/MixerSendsOnFadersTest.cpp` — log 02 is
   only the 296-line file (git show exited 0; no exit line is written in it).
-- `git log -S` for `QStringList(channels` over the test file — log 03 holds only
-  the output: the two `-S` hits and the fix commit with its stat; git exited 0,
-  no exit line in the log.
-- `rg` for `QStringList(` over the tree — log 04 holds only the two hits; rg
-  exited 0, no exit line in the log.
-- cmake configure — exit 1, from the worker report of that run; the command line
-  is not recorded in log 05-qt5-configure.log, which ends with `-- Configuring
+- `git log --oneline -S'QStringList(channels, QStringLiteral("volume"))' -- tests/src/gui/MixerSendsOnFadersTest.cpp`
+  — log 03 holds only the output: the two `-S` hits and the fix commit with its
+  stat; git exited 0, no exit line in the log.
+- `rg -n 'QStringList\(\s*[A-Za-z_0-9][\w\.\(\)>-]*\s*,|QList<QString>\(\s*\w+\s*,' src tests plugins include`
+  — log 04 holds only the two hits; rg exited 0, no exit line in the log.
+- `cmake -S . -B $TMPDIR/zene-qt5-ci4020 -DWANT_QT6=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo`
+  — exit 1, from the worker report of that run; the command line is not
+  recorded in log 05-qt5-configure.log, which ends with `-- Configuring
   incomplete, errors occurred!` and holds no `EXIT=` line.
-- `clang++` RED probe (08a) — EXIT=1, line 28 `1 error generated.` (log 08b).
-- `clang++` GREEN probe (09a) — EXIT=0 (log 09b).
-- `qt6-build` — exit 0 after 13 s, 38 lines (log 10, first line
+- `clang++ -fPIC -std=c++20 -I/usr/include/qt -I/usr/include/qt/QtCore -I/usr/include/qt/QtTest -fsyntax-only $L/08a-probe-old.cpp`
+  — EXIT=1, line 28 `1 error generated.` (log 08b).
+- `clang++ -fPIC -std=c++20 -I/usr/include/qt -I/usr/include/qt/QtCore -I/usr/include/qt/QtTest -fsyntax-only $L/09a-probe-new.cpp`
+  — EXIT=0 (log 09b).
+- `cmake --build build --target zene MixerSendsOnFadersTest -j8` — exit 0 after
+  13 s, 38 lines (log 10, first line
   `qt6-build: exit 0 after 13 s, 38 lines of output`).
-- `qt6-build-mixer-family` — exit 0 after 180 s, 555 lines (log 10b, first line
-  `qt6-build-mixer-family: exit 0 after 180 s, 555 lines of output`).
-- `ctest-sendsonfaders` — exit 0, `100% tests passed out of 1`, 2.66 s (log 11).
-- `ctest-mixer-family` — exit 0, `100% tests passed out of 23`, 40.28 s (log 12);
-  the first family run, before the family build of log 10b, exited 8 (22 targets
-  not built yet).
-- `feature_check` — EXIT=0, `RESULT: PASS` (log 13).
-- `submit_check` — EXIT=0, `RESULT: PASS - submit` (log 14; the log ends with
-  that RESULT line and records no `EXIT=` line).
+- The family build command for log 10b cannot be recovered: neither log 10b nor
+  the shell history records it (log 10b's first line is the wrapper summary
+  `qt6-build-mixer-family: exit 0 after 180 s, 555 lines of output`). That run
+  exited 0 after 180 s, 555 lines (log 10b).
+- `cd build/tests && ctest -R MixerSendsOnFaders --output-on-failure` — exit 0,
+  `100% tests passed out of 1`, 2.66 s (log 11).
+- `cd build/tests && ctest -R Mixer --output-on-failure` — exit 0,
+  `100% tests passed out of 23`, 40.28 s (log 12); the first family run, before
+  the family build of log 10b, exited 8 (22 targets not built yet).
+- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-402030c03b8cf08c`
+  — EXIT=0, `RESULT: PASS` (log 13).
+- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-402030c03b8cf08c ci-402030c03b8cf08c`
+  — EXIT=0, `RESULT: PASS - submit` (log 14; the log ends with that RESULT line
+  and records no `EXIT=` line).
 
 ## Other findings
 
