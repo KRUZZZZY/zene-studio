@@ -75,7 +75,7 @@ AudioBusHandle::AudioBusHandle(const QString& name, bool hasEffectChain,
 	FloatModel* volumeModel, FloatModel* panningModel,
 	BoolModel* mutedModel) :
 	m_bufferUsage(false),
-	m_buffer(BufferManager::acquire()),
+	m_buffer(BufferManager::acquireBlocking()),
 	m_trackChannels(m_buffer.data()),
 	m_bus(&m_trackChannels, 1, m_buffer.size()),
 	m_extOutputEnabled(false),
