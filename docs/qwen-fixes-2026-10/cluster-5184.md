@@ -83,8 +83,10 @@ randomness in lines 520-586 (re-checked with grep for sleep, wait, timer, thread
 
 ## Evidence
 
-Logs are outside the repository, in `/home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/`. The fix patch is
-`logs/fix.patch`. The reversal patch for the RED run is `logs/fix-5184-red.patch`.
+Logs are outside the repository, in `/home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/`. The RED run reverses the full product change with
+`logs/fix-5184-red.patch`, a diff of `src/core/ModulationLayer.cpp` over `b85f94a76e^..HEAD`, which includes the address
+check. `logs/fix.patch` is the older compression-only patch; it is not the address-check reversal and is not used as the
+RED evidence.
 
 RED and GREEN for the address check (the packet p2/p3 run; ctest runs from `build/tests`):
 
@@ -98,6 +100,23 @@ RED and GREEN for the address check (the packet p2/p3 run; ctest runs from `buil
 | GREEN build | build of the `ModulationLayerTest` target → `build-12-green.log` | 0 | `Built target ModulationLayerTest` |
 | GREEN test | `ctest -R '^ModulationLayerTest$'` → `test-13-green.log` | 0 | `100% tests passed out of 1` |
 | Family | `ctest -R '^Modulation'` → `test-14-modulation-family.log` | 0 | `100% tests passed out of 5` |
+
+Exact RED/GREEN command sequence (run from the worktree root unless noted; `logs/` is the run logs directory above; ctest runs from `build/tests`). Each line's exit
+code is the value printed by the p2/p3 shell run. Build invocations are shown as placeholders because the exact build
+command is not recorded in the run logs read for this report:
+
+```sh
+git diff b85f94a76e^..HEAD -- src/core/ModulationLayer.cpp > logs/fix-5184-red.patch; echo EXIT=$?   # patch generation: 0
+test -s logs/fix-5184-red.patch; echo EXIT=$?                                                       # test -s: 0
+git apply --check -R logs/fix-5184-red.patch; echo EXIT=$?                                          # 0
+git apply -R logs/fix-5184-red.patch; echo EXIT=$?                                                  # 0
+<build ModulationLayerTest target> > logs/build-10-red.log 2>&1; echo EXIT=$?                       # red build: 0
+(cd build/tests && sh -c "ctest -R '^ModulationLayerTest$' --output-on-failure" > logs/test-11-red.log 2>&1); echo EXIT=$?   # red ctest: 8
+git apply logs/fix-5184-red.patch; echo EXIT=$?                                                     # 0
+<build ModulationLayerTest target> > logs/build-12-green.log 2>&1; echo EXIT=$?                     # green build: 0
+(cd build/tests && sh -c "ctest -R '^ModulationLayerTest$' --output-on-failure" > logs/test-13-green.log 2>&1); echo EXIT=$?   # focused green ctest: 0
+(cd build/tests && sh -c "ctest -R '^Modulation' --output-on-failure" > logs/test-14-modulation-family.log 2>&1); echo EXIT=$?    # family ctest: 0
+```
 
 The four RED failures are the four address rows, all at `tests/src/core/ModulationLayerTest.cpp:553`:
 
@@ -115,9 +134,10 @@ Other gates:
 | Step | Command | Exit | Result |
 |---|---|---|---|
 | File length | `bash tests/file-length-gate.sh --check` → `file-length-check.log` | 0 | `ModulationLayer.cpp` not in the exceed list; PASS |
-| Feature check | `FEATURE_CHECK_LOG_DIR=logs/feature-check-2 python3 feature_check.py <worktree>` → `feature-check-2.log` | 0 | `RESULT: PASS` |
+| Feature check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5184 > /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/feature-check-3.log 2>&1; echo EXIT=$?` → `feature-check-3.log` | 0 | all eight gates PASS; `RESULT: PASS` |
+| Submit check | p4 run → `submit-check-3.log` | 0 | `RESULT: PASS - submit`; no FAIL line |
 
-Exit codes for the RED and GREEN rows come from the packet p2/p3 run record. The `.log` files hold the test output,
+Exit codes for the RED, GREEN and gate rows come from the p2/p3/p4 shell run records. The `.log` files hold the test output,
 and the exit codes are not written into them.
 
 ## Realtime and undo
@@ -127,7 +147,7 @@ audio-thread work, no commands and no undo change.
 
 ## Registration
 
-`tests/fork-sources.txt:2130` lists `src/core/ModulationLayer.cpp`. The change is to an existing source file and the
+`tests/fork-sources.txt:2131` lists `src/core/ModulationLayer.cpp`. The change is to an existing source file and the
 existing test file. No new source and no CMake change.
 
 ## Other findings
