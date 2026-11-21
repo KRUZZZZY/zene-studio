@@ -54,6 +54,73 @@ private slots:
 		QVERIFY(outputs.monoSample(-1, master) == 0.f);
 		QVERIFY(outputs.sample(0, -1, master) == 0.f);
 	}
+
+	void stereoRouteAtChannelLimitAddsNothing()
+	{
+		// A width-2 route at the last channel has no second channel to go to: the whole route is dropped,
+		// not its left half alone. The bus holds MaxChannels channels, so MaxChannels - 1 is the last one.
+		HardwareOutputBus outputs;
+		outputs.init(4);
+		const std::vector<SampleFrame> src(4, SampleFrame(0.5f, 0.75f));
+		outputs.add(HardwareOutputBus::MaxChannels - 1, 2, src.data(), 4, 1.f);
+		outputs.swap();
+		const SampleFrame zero(0.f, 0.f);
+		for (f_cnt_t f = 0; f < 4; ++f)
+		{
+			QVERIFY2(outputs.sample(HardwareOutputBus::MaxChannels - 1, f, zero) == 0.f,
+				"a stereo route past the last channel left its left half on the bus");
+		}
+	}
+
+	void stereoRouteAtLastFullPairStillPlays()
+	{
+		HardwareOutputBus outputs;
+		outputs.init(4);
+		const std::vector<SampleFrame> src(4, SampleFrame(0.25f, 0.75f));
+		outputs.add(HardwareOutputBus::MaxChannels - 2, 2, src.data(), 4, 1.f);
+		outputs.swap();
+		const SampleFrame zero(0.f, 0.f);
+		for (f_cnt_t f = 0; f < 4; ++f)
+		{
+			QVERIFY2(outputs.sample(HardwareOutputBus::MaxChannels - 2, f, zero) == 0.25f, "left half of the last full pair is missing");
+			QVERIFY2(outputs.sample(HardwareOutputBus::MaxChannels - 1, f, zero) == 0.75f, "right half of the last full pair is missing");
+		}
+	}
+
+	void monoRouteAtLastChannelStillPlays()
+	{
+		HardwareOutputBus outputs;
+		outputs.init(4);
+		const std::vector<SampleFrame> src(4, SampleFrame(0.5f, 0.7f));
+		outputs.add(HardwareOutputBus::MaxChannels - 1, 1, src.data(), 4, 1.f);
+		outputs.swap();
+		const SampleFrame zero(0.f, 0.f);
+		for (f_cnt_t f = 0; f < 4; ++f)
+		{
+			// Width 1 writes the average of the two sides: 0.5 * (0.5 + 0.7) = 0.6.
+			QVERIFY2(qAbs(outputs.sample(HardwareOutputBus::MaxChannels - 1, f, zero) - 0.6f) < 1e-5f,
+				"a mono route on the last channel is not written");
+		}
+	}
+
+	void droppedRouteLeavesNoResidue()
+	{
+		// The first route is dropped at the limit; its left half must not stay on channel 127 to be added
+		// into the second route's right half.
+		HardwareOutputBus outputs;
+		outputs.init(4);
+		const std::vector<SampleFrame> dropped(4, SampleFrame(0.5f, 0.5f));
+		const std::vector<SampleFrame> kept(4, SampleFrame(0.25f, 0.75f));
+		outputs.add(HardwareOutputBus::MaxChannels - 1, 2, dropped.data(), 4, 1.f);
+		outputs.add(HardwareOutputBus::MaxChannels - 2, 2, kept.data(), 4, 1.f);
+		outputs.swap();
+		const SampleFrame zero(0.f, 0.f);
+		for (f_cnt_t f = 0; f < 4; ++f)
+		{
+			QVERIFY2(outputs.sample(HardwareOutputBus::MaxChannels - 2, f, zero) == 0.25f, "the kept route's left half is wrong");
+			QVERIFY2(outputs.sample(HardwareOutputBus::MaxChannels - 1, f, zero) == 0.75f, "residue of the dropped route is added into the kept route");
+		}
+	}
 };
 
 QTEST_MAIN(HardwareOutputBusTest)
