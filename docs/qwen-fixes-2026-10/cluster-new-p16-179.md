@@ -8,7 +8,7 @@ Branch `bugs/qwen-new-p16-179`. Product change in `src/core/Rack.cpp`, regressio
 
 - Pre-fix `src/core/Rack.cpp:419` read the selector with `toInt()` and no success flag:
   `m_selectedChain = rack.attribute("selected", QString::number(Parallel)).toInt();`
-  Now the same read is at `src/core/Rack.cpp:427-428`.
+  Now the same read is at `src/core/Rack.cpp:426-428`.
 - `QString::toInt()` returns 0 for a non-numeric string, an empty string, `"1.0"`, and any integer that does not fit an `int` (e.g. `4294967296`). 0 is the channel's own base chain.
 - `Rack::chain(0)` is the base chain, and `chainsToRoute` accepts it (`src/core/Rack.cpp:76-93`). So a corrupt selector silently routed the signal to chain 0.
 - The documented contract is that a selection which is not a chain wires nothing: `docs/RACKS.md:142-144` and `include/Rack.h:137-142`.
@@ -33,7 +33,7 @@ Branch `bugs/qwen-new-p16-179`. Product change in `src/core/Rack.cpp`, regressio
 - `src/core/MixerStrip.cpp:275-285` (`reductionDb`) matches no chain for a negative non-Parallel value.
 - `src/core/ControlRackSupport.cpp:240` reports the raw value.
 - `src/core/ControlCommandsRack.cpp:344-371` refuses writes to an index that is not Parallel and not a chain.
-- `Rack::removeChain` (`src/core/Rack.cpp:188-209`) leaves a negative selection alone.
+- `Rack::removeChain` (`src/core/Rack.cpp:192-213`) leaves a negative selection alone.
 - `src/core/RackZones.cpp:54-59` (`readIntAttribute`) already used a checked `toInt(&converted)`.
 
 ## Test matrix (`tests/src/core/RackTest.cpp:671-880`)
@@ -44,7 +44,7 @@ Branch `bugs/qwen-new-p16-179`. Product change in `src/core/Rack.cpp`, regressio
 | `4294967296`, `99999999999999999999999999` | `anOverflowingSelectorDoesNotBecomeChainZero` (688) | selectedChain != 0, un-wired |
 | `9` and `-2` (existing invalid ints) | `aSelectorThatNamesNoChainLoadsAsBefore` (699-707) | unchanged: 9 and -2, un-wired |
 | `1` and `-1` (normal) | same test (709-710) | routes {1} and {0,1} |
-| absent | not in lines 671-880 | default Parallel; covered by pre-existing tests, not re-run in this session's new tests |
+| absent | `aSelectorThatNamesNoChainLoadsAsBefore` (711) | default Parallel, routes {0,1}; the helper builds `<rack version="2">` with no attribute when given an empty QString |
 | reconfiguration: corrupt load, then `setSelectedChain(1)`, then save | 845-877 | save writes `1` (877) |
 | exhaustion | N/A | one int attribute, no bounded resource |
 | audio thread | helper renders via `mixToChannel` (767) and `masterMix` (775) | load and rebuild are control-thread; no audio-path code changed |
@@ -52,7 +52,7 @@ Branch `bugs/qwen-new-p16-179`. Product change in `src/core/Rack.cpp`, regressio
 
 ## Commands and exit codes
 
-Run from the worktree through the quiet runner, with logs under `~/.config/kads/zene/state/runs/new-p16-179.r1/logs/`.
+Commands ran from the worktree (ctest from build/tests); logs are named per step. Logs are under `~/.config/kads/zene/state/runs/new-p16-179.r1/logs/`.
 
 - Patch match: `git apply -R --check logs/fix.patch` EXIT=0, which confirms the patch still matches the product hunk.
 - The output text below is quoted from the raw logs. The step labels and exit codes (build-3 through build-6, test-4, test-5, test-8, APPLY_REVERSE, APPLY_RESTORE, and the RED/GREEN exits) come from the run record. The raw logs carry no EXIT line, so those codes were not re-verified in this session.
@@ -93,9 +93,9 @@ Not touched: `tests/fork-sources.txt` (`src/core/Rack.cpp` is already registered
 ## Self-check
 
 1. **RED/GREEN exit codes with the 4b commands.** Pre-fix RED: test-6 ctest exit 8, test-7 direct exit 2. Post-fix GREEN: test-8 ctest exit 0, test-9 direct exit 0 (13 passed). The 4b step (`APPLY_REVERSE` EXIT 0, build-5 EXIT 0) reproduces the defect before the re-apply.
-2. **Deterministic.** Fixed XML strings with injected selector values; synchronous `Mixer::loadSettings` (`RackTest.cpp:816`, `:867`), then `mixToChannel` and `masterMix` (`:767`, `:775`). No sleeps, threads or timers were found in lines 671-880. The claim that the dummy audio device is stopped in `initTestCase` was not checked in this session.
+2. **Deterministic.** Fixed XML strings with injected selector values; synchronous `Mixer::loadSettings` (`RackTest.cpp:816`, `:867`), then `mixToChannel` and `masterMix` (`:767`, `:775`). No sleeps, threads or timers were found in lines 671-880. The dummy audio device is stopped in `initTestCase` (`RackTest.cpp:273`, `Engine::audioEngine()->audioDev()->stopProcessing();`, read in this session).
 3. **Cause and complete.** The defect is the single unchecked `toInt()` at the selector read. The caller (`Mixer.cpp:3009`) and every reader of `selectedChain()` were checked and tolerate -2. `RackZones` already uses a checked read. `RackMacros` still has the same class of unchecked read; it is listed under Other findings and is out of scope.
-4. **No collateral.** Absent, -1, 1, 9 and -2 load as before (test lines 699-710). Only unreadable values change. No new limit is introduced. Valid data round-trips. A -2 selection reloads un-wired in this build and in older builds.
+4. **No collateral.** Absent, -1, 1, 9 and -2 load as before (test lines 699-711). Only unreadable values change. No new limit is introduced. Valid data round-trips. A -2 selection reloads un-wired in this build and in older builds.
 5. **Verdict: FIXED.** Evidence is the pre-fix code (`Rack.cpp:419`) and the RED logs (test-6, test-7), with the GREEN logs (test-8, test-9) after the fix.
 
 ## Other findings (not fixed, out of scope)
