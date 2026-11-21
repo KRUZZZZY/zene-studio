@@ -209,3 +209,55 @@ void DataFileSaveIntegrityTest::unnamedDataFileLeavesTheWorkingDirectoryTempAlon
 		qPrintable( QStringLiteral( "an unnamed DataFile reported a discard; captured: [%1]" )
 			.arg( report ) ) );
 }
+void DataFileSaveIntegrityTest::failedBackupCopyKeepsThePreviousBackup() {
+	QTemporaryDir dir;
+	QVERIFY( dir.isValid() );
+	ConfigManager::inst()->setValue( QStringLiteral( "app" ),
+		QStringLiteral( "disablebackup" ), QStringLiteral( "0" ) );
+
+	const QString target = dir.filePath( QStringLiteral( "saved.mmp" ) );
+	const QString bak = target + QStringLiteral( ".bak" );
+	const QString bakTemp = bak + QStringLiteral( ".new" );
+	const QString temp = target + QStringLiteral( ".new" );
+	QVERIFY( writeText( target, QStringLiteral( "current" ) ) );
+	QVERIFY( writeText( bak, QStringLiteral( "older generation" ) ) );
+	// Occupy the staging name so the new backup cannot be produced there.
+	QVERIFY( occupy( bakTemp ) );
+
+	DataFile dataFile( DataFile::Type::SongProject );
+
+	QTest::ignoreMessage( QtWarningMsg,
+		QRegularExpression( QStringLiteral( "will not be kept as a backup" ) ) );
+	QTest::ignoreMessage( QtWarningMsg,
+		QRegularExpression( QStringLiteral( "Nothing has been discarded" ) ) );
+
+	const bool saved = dataFile.writeFile( target );
+
+	// Checked before the result, so a failure names the destroyed backup
+	// rather than only reporting that writeFile() returned the wrong value.
+	QCOMPARE( readText( bak ), QStringLiteral( "older generation" ) );
+	QVERIFY2( !saved, "a save whose backup could not be staged was reported as a success" );
+	QCOMPARE( readText( target ), QStringLiteral( "current" ) );
+	QVERIFY2( QFile::exists( temp ),
+		"the refused save did not keep the written project for recovery" );
+}
+void DataFileSaveIntegrityTest::successfulBackupReplacesTheOlderBackupAtomically() {
+	QTemporaryDir dir;
+	QVERIFY( dir.isValid() );
+	ConfigManager::inst()->setValue( QStringLiteral( "app" ),
+		QStringLiteral( "disablebackup" ), QStringLiteral( "0" ) );
+
+	const QString target = dir.filePath( QStringLiteral( "saved.mmp" ) );
+	const QString bak = target + QStringLiteral( ".bak" );
+	const QString bakTemp = bak + QStringLiteral( ".new" );
+	QVERIFY( writeText( target, QStringLiteral( "current" ) ) );
+	QVERIFY( writeText( bak, QStringLiteral( "older generation" ) ) );
+
+	DataFile dataFile( DataFile::Type::SongProject );
+	QVERIFY2( dataFile.writeFile( target ),
+		"an ordinary save with a replaceable backup failed" );
+
+	QCOMPARE( readText( bak ), QStringLiteral( "current" ) );
+	QVERIFY2( !QFileInfo::exists( bakTemp ),
+		"the staged backup was left behind after a successful save" );
+}

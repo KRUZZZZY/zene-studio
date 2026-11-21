@@ -265,16 +265,23 @@ private:
 	{
 		ScriptWorker* worker = workerFromState(L);
 		const int count = lua_gettop(L);
+		const qsizetype limit = ScriptConsole::CaptureBuffer::characterLimit();
 		QString message;
 		for (int i = 1; i <= count; ++i)
 		{
+			if (message.size() >= limit)
+			{
+				break;
+			}
 			std::size_t length = 0;
 			const char* text = luaL_tolstring(L, i, &length);
-			if (i > 1)
+			if (i > 1 && message.size() < limit)
 			{
 				message += QLatin1Char('\t');
 			}
-			message += QString::fromUtf8(text, static_cast<int>(length));
+			const auto room = static_cast<std::size_t>(limit - message.size());
+			message += QString::fromUtf8(text,
+				static_cast<int>(qMin<std::size_t>(length, room)));
 			lua_pop(L, 1);
 		}
 		if (worker != nullptr)

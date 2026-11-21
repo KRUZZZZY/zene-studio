@@ -1245,6 +1245,8 @@ set(LMMS_SRCS
 	# written atomically through QSaveFile (the decoded-memory hole the 512 MiB input check left).
 	core/LibraryCellAudio.cpp
 	core/ControlCommandsBrowserIndex.cpp
+	# Q050-183.1: audio.test_tone / audio.test_tone_stop
+	core/ControlCommandsAudioTestTone.cpp
 	core/ControlCommandsBrowserMedia.cpp
 	core/ControlCommandsBrowserNavigation.cpp
 	core/BrowserIndex.cpp

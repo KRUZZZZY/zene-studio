@@ -29,6 +29,7 @@
  *  hardware insert send and return). The tracks and the channels made for them are ONE undo step. */
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 
 #include <QDomDocument>
@@ -57,12 +58,18 @@ namespace
 
 constexpr const char* MixchAttribute = "mixch";
 
-//! A model's plain value as a project file holds it: an attribute, or an element's 'value'.
+//! A model's plain value as a project file holds it: an attribute, or an element's 'value'. Text that is not a
+//! finite number gives @a fallback, as the engine's own mixer loader does.
 double plainValue(const QDomElement& channel, const char* name, double fallback)
 {
-	if (channel.hasAttribute(QLatin1String(name))) { return channel.attribute(QLatin1String(name)).toDouble(); }
+	const auto parsed = [fallback](const QString& text) {
+		bool ok = false;
+		const double value = text.toDouble(&ok);
+		return ok && std::isfinite(value) ? value : fallback;
+	};
+	if (channel.hasAttribute(QLatin1String(name))) { return parsed(channel.attribute(QLatin1String(name))); }
 	const QDomElement child = channel.firstChildElement(QLatin1String(name));
-	return child.hasAttribute(QStringLiteral("value")) ? child.attribute(QStringLiteral("value")).toDouble() : fallback;
+	return child.hasAttribute(QStringLiteral("value")) ? parsed(child.attribute(QStringLiteral("value"))) : fallback;
 }
 
 //! The description of the source channel @a channel: only what a copied track brings along.

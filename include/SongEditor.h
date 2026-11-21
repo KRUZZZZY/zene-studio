@@ -122,6 +122,7 @@ private slots:
 	void zoomingChanged();
 
 private:
+	bool event( QEvent * e ) override;
 	void keyPressEvent( QKeyEvent * ke ) override;
 	void wheelEvent( QWheelEvent * we ) override;
 

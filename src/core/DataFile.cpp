@@ -168,6 +168,29 @@ inline bool renameOverwrite( const QString & from, const QString & to )
 #endif
 }
 
+//! Replace \a bak with a copy of \a current without ever removing the old
+//! backup first: the copy lands in \a bak + ".new" and is then renamed over
+//! \a bak in one atomic step, so a stale or unremovable .bak can no longer
+//! make the copy write into it (or destroy it before the new copy exists).
+//! On any failure the old \a bak is left untouched and the temp is removed
+//! best-effort; the caller refuses the save.
+inline bool replaceBackup( const QString & current, const QString & bak )
+{
+	const QString tmp = bak + QStringLiteral( ".new" );
+	QFile::remove( tmp );	// clear a stale temp; best effort
+	if( ! QFile::copy( current, tmp ) )
+	{
+		QFile::remove( tmp );	// best effort
+		return false;
+	}
+	if( ! renameOverwrite( tmp, bak ) )
+	{
+		QFile::remove( tmp );	// best effort
+		return false;
+	}
+	return true;
+}
+
 #ifndef Q_OS_WIN
 //! Flush \a path's data to stable storage (SPEC-ARCH-4 1.8 part 2: fsync the
 //! file before the rename publishes it). Qt offers no fsync, so this reaches
@@ -896,8 +919,9 @@ bool DataFile::writeFile(const QString& filename, bool withResources)
 	// <name>.bak and then renamed <name>.new into place, so between those two
 	// calls the canonical path did not exist at all - and QFile::rename never
 	// overwrites, which is why the move was needed in the first place. The
-	// sequence is now: fsync <name>.new, COPY the current file to <name>.bak
-	// (it never leaves the canonical path), then ONE atomic overwrite-rename of
+	// sequence is now: fsync <name>.new, COPY the current file to
+	// <name>.bak.new (it never leaves the canonical path), atomically rename
+	// that temp onto <name>.bak, then ONE atomic overwrite-rename of
 	// <name>.new onto the canonical path. At every instant the canonical name
 	// resolves to a complete file: the old one until the rename, the new one
 	// after it, because the rename swaps the two in a single step.
@@ -926,16 +950,18 @@ bool DataFile::writeFile(const QString& filename, bool withResources)
 	const bool backupDisabled =
 		ConfigManager::inst()->value("app", "disablebackup").toInt() != 0;
 
-	// Back the current file up by COPYING it, so the canonical path keeps
-	// holding it right up to the atomic rename. A current file that cannot be
-	// backed up is not overwritten - the save is refused, exactly as the old
+	// Back the current file up by COPYING it to <name>.bak.new, so the
+	// canonical path keeps holding it right up to the atomic rename, and then
+	// by atomically renaming that temp onto <name>.bak. The old .bak is only
+	// replaced once the new copy is complete, so a failed save never destroys
+	// the previous backup. A current file that cannot be backed up is not
+	// overwritten - the save is refused, exactly as the old
 	// move-then-failed-rename sequence refused it (there the still-present
 	// target blocked QFile::rename), because destroying the only copy of the
 	// previous version with no backup is the one outcome worth stopping for.
 	if( ! backupDisabled && QFile::exists( fullName ) )
 	{
-		QFile::remove( fullNameBak );	// clear a stale backup; best effort
-		if( ! QFile::copy( fullName, fullNameBak ) )
+		if( ! replaceBackup( fullName, fullNameBak ) )
 		{
 			showError(SongEditor::tr("Could not create a backup"),
 				SongEditor::tr("The previous version of %1 could not be copied to %2, "
@@ -2830,9 +2856,20 @@ void DataFile::loadData( const QByteArray & _data, const QString & _sourceFile,
 	}
 	else
 	{
-		bool success;
-		m_fileVersion = root.attribute( "version" ).toUInt( &success );
-		if( !success ) qWarning("File Version conversion failure.");
+		bool success = false;
+		const unsigned int parsed = root.attribute( "version" ).toUInt( &success );
+		if( success )
+		{
+			m_fileVersion = parsed;
+		}
+		else
+		{
+			qWarning("File Version conversion failure.");
+			// A version that does not parse as a number cannot name a file
+			// version, so derive it from creatorversion like the legacy path
+			// does instead of falling back to 0 (every upgrade).
+			m_fileVersion = legacyFileVersion();
+		}
 	}
 
 	// The root's format attributes AS THE FILE HAD THEM, taken before any

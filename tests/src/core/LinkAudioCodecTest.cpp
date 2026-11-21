@@ -28,6 +28,8 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
+#include <stdexcept>
 #include <vector>
 
 #include "LinkAudioStream.h"
@@ -64,6 +66,28 @@ private slots:
 		// The same packet with the rate field (bytes 8..11, little endian) zeroed: magic, length and frames are intact.
 		std::fill(wire.begin() + 8, wire.begin() + 12, std::uint8_t{0});
 		QVERIFY(!decodeAudioPacket(wire.data(), bytes, out, samples.data(), samples.size()));
+	}
+
+	// The ring rounds its capacity up to a power of two. Normal capacities round as before.
+	void normalCapacityRoundsUp()
+	{
+		QCOMPARE(AudioRing(2).capacity(), std::size_t{2});
+		QCOMPARE(AudioRing(3).capacity(), std::size_t{4});
+		QCOMPARE(AudioRing(AudioRingFrames).capacity(), AudioRingFrames);
+		QCOMPARE(AudioRing(AudioRingFrames + 1).capacity(), AudioRingFrames * 2);
+	}
+
+	// A capacity whose rounded value times the channel count would wrap size_t must be refused, not built
+	// as a ring with zero-length storage.
+	void rejectsCapacityWhoseStorageWouldWrap()
+	{
+		QVERIFY_EXCEPTION_THROWN(AudioRing(std::size_t{1} << (sizeof(std::size_t) * 8 - 1)), std::length_error);
+	}
+
+	// A capacity that no power of two can hold must be refused. Without that check the rounding loop never ends.
+	void rejectsCapacityThatCannotBeRounded()
+	{
+		QVERIFY_EXCEPTION_THROWN(AudioRing(std::numeric_limits<std::size_t>::max()), std::length_error);
 	}
 };
 

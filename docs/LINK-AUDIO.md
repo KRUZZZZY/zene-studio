@@ -84,7 +84,7 @@ link.audio_set_enabled {enabled, peer?, peer_port?, send?, receive?, bind_addres
 link.audio_get_state {}
 ```
 
-Arguments not given keep their value. `send` defaults to "a peer is set"; `receive` to true.
+Arguments not given keep their value. When `peer` is given in the call and `send` is not, `send` follows the peer (true for a non-empty peer, false for an empty one); when neither `peer` nor `send` is given, `send` keeps its current value. `receive` defaults to true.
 `listen_port: 0` lets the OS choose (reported as `bound_port`). `set_enabled` is one undo
 step (the previous configuration is restored; reversibility class true_inverse);
 `get_state` is read-only.

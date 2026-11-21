@@ -105,7 +105,7 @@ link::AudioStreamConfig mergeArgs(link::AudioStreamConfig c, const QJsonObject& 
 	c.enabled = a.value(QStringLiteral("enabled")).toBool();
 	if (hadPeer) { c.peerAddress = a.value(QStringLiteral("peer")).toString().toStdString(); }
 	if (a.contains(QStringLiteral("send"))) { c.send = a.value(QStringLiteral("send")).toBool(); }
-	else { c.send = !c.peerAddress.empty(); }  // a peer to send to implies sending
+	else if (hadPeer) { c.send = !c.peerAddress.empty(); }  // a peer named by this call implies sending
 	if (a.contains(QStringLiteral("receive"))) { c.receive = a.value(QStringLiteral("receive")).toBool(); }
 	if (a.contains(QStringLiteral("bind_address"))) { c.bindAddress = a.value(QStringLiteral("bind_address")).toString().toStdString(); }
 	if (a.contains(QStringLiteral("listen_port"))) { c.listenPort = a.value(QStringLiteral("listen_port")).toInt(); }
