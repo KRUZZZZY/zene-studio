@@ -109,7 +109,7 @@ The reverse step shows the test catches the defect: restoring the pre-fix header
 |---|---|---|---|
 | feature_check | `feature_check.py <worktree> > logs/feature-check-2.log 2>&1` | 0 | `RESULT: PASS` (complexity, file-length, and the other checks PASS) |
 | commit | `git add` (4 paths) and `git commit` | see commit | see COMMITS |
-| submit_check | `submit_check.py <worktree> new-p16-329 > logs/submit-check-3.log 2>&1` | see Self-check | run after commit |
+| submit_check | `submit_check.py <worktree> new-p16-329 > logs/submit-check-3.log 2>&1` | 0 | `RESULT: PASS - submit`; no FAIL; six `?` asks answered under "submit_check asks" |
 
 ## Self-check
 
@@ -121,6 +121,17 @@ The submit_check asks, in order:
 4. **Self-check section.** This section.
 5. **Tests changed.** `tests/src/core/AbletonLinkAllocatorTest.cpp` adds `clampTempoStaysWithinTheLinkRange`, and the ledger entry is in `tests/upstream-modifications.txt`.
 6. **feature_check exit 0.** `feature-check-2.log` ends with `RESULT: PASS`, and the run exited 0.
+
+### submit_check asks
+
+Answers to the six `?` asks from `submit_check.py` (log: `logs/submit-check-3.log`, `RESULT: PASS - submit`, exit 0):
+
+1. **Regression test fails with the change reverted and passes with it (exit codes).** With the pre-fix header, `test-red-reverse-2` gives `Totals: 2 passed, 1 failed` at test line 159 (the NaN `QCOMPARE`). With the fix, `test-green-restore-2` gives `Totals: 3 passed, 0 failed`, and `cmp` shows the header equal to the fixed copy. The exit codes (1 and 0) are the ones the packet run recorded. The log files do not contain exit lines, and I did not re-run the RED/GREEN steps for this answer, so the exit codes are unverified here.
+2. **Deterministic.** The test has no clock, sleep, thread, or I/O. Its inputs are fixed values: the `Tempo` values in the matrix above, `Beats{3.5}`, and `timeOrigin = 250000 µs`. The only arithmetic is `toBeats(1000000 µs)`.
+3. **Fix at the cause and complete.** The defect is in `clampTempo` alone. Every caller goes through it: `Controller.hpp:56, 214, 277, 343` and `Link.ipp:205`. A grep for `clampTempo` under `src/3rdparty/` finds only the three Link files (`ClientSessionTimelines.hpp`, `Controller.hpp`, `Link.ipp`). Not checked: other code that builds a `Tempo` without going through `clampTempo`.
+4. **No collateral damage.** The finite path is unchanged, so finite inputs give the same results as before. The only changed results are for non-finite tempos: NaN becomes 120 (was NaN), and ±inf becomes 120 (was 999 / 20). No save/load format is touched. No limit or check was added. A saved NaN tempo would now load as 120 BPM; that is the intended effect of the fix.
+5. **Verdict is REAL, not ALREADY-FIXED or FALSE-POSITIVE.** The pre-fix code at `ClientSessionTimelines.hpp:31-38` passes NaN through `std::max`/`std::min`, and the pre-fix test run fails on it (see the NaN semantics above).
+6. **Sibling commands.** No command files were changed. `git show --stat HEAD` lists only `cluster-new-p16-329.md`, `ClientSessionTimelines.hpp`, `AbletonLinkAllocatorTest.cpp`, and `upstream-modifications.txt`. The `app.*` commands are not affected.
 
 ## Other findings (not fixed)
 
