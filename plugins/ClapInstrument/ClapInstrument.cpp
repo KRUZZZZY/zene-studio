@@ -106,6 +106,18 @@ ChannelCounts channelCountsOf(const clap::PortLayout& layout)
 	return {hostedTrackChannels(inputs, outputs), inputs, outputs};
 }
 
+//! Zeroes every frame of every channel of @a out. An instrument has no dry signal to fall back to,
+//! so the block after a failed or unprepared process() is silence. Audio thread: no allocation,
+//! lock or log.
+void silenceOutput(PlanarBufferView<float, DynamicChannelCount> out)
+{
+	for (ch_cnt_t c = 0; c < out.channels(); ++c)
+	{
+		auto* channel = out.bufferPtr(c);
+		std::fill(channel, channel + out.frames(), 0.0f);
+	}
+}
+
 } // namespace
 
 ClapInstrument::ClapInstrument(InstrumentTrack* parent,
@@ -314,6 +326,7 @@ auto ClapInstrument::processImpl(PlanarBufferView<const float, DynamicChannelCou
 		// actual re-configuration happens on the GUI thread; this path only
 		// records the request.
 		m_needsReprepare.store(true, std::memory_order_relaxed);
+		silenceOutput(out);
 		return lmms::ProcessStatus::Continue;
 	}
 
@@ -328,8 +341,15 @@ auto ClapInstrument::processImpl(PlanarBufferView<const float, DynamicChannelCou
 	// no wet/dry blend here. The host writes every frame of every channel the
 	// caller supplies (ClapHost::process's over-run and tail rule).
 	const auto frames = static_cast<int>(out.frames());
-	m_plugin.process(in.data(), out.data(),
+	const bool rendered = m_plugin.process(in.data(), out.data(),
 		static_cast<int>(in.channels()), static_cast<int>(out.channels()), frames);
+	if (!rendered)
+	{
+		// CLAP_PROCESS_ERROR stops the request: the chunks after the failing one are untouched, and
+		// the ones before it hold the plug-in's partial write. Without a dry signal the whole block
+		// is silence, so the extra buses below deliver silence too (ClapHost.h's fallback rule).
+		silenceOutput(out);
+	}
 	// MX-114: the output ports past the main one, into the mixer channels they are routed to.
 	m_outputBuses.deliver(out.data(), static_cast<int>(out.channels()), out.frames(),
 		instrumentTrack() != nullptr && instrumentTrack()->isMuted());
