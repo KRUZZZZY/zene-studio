@@ -10,11 +10,12 @@ THE CLAIM UNDER TEST (NEXT-0.3.0-AGENT-PROMPT.md 3.2, restated for 0.3.0):
 WHAT THIS SCRIPT ACTUALLY PROVES, and where it stops short, because a milestone
 proof that overstates itself is worse than none:
 
-  1. Two song tracks are added and a 2x2 Session View grid is built through
-     `session.set_grid` / `session.set_scene` / `session.set_slot` - four clip
-     slots, two in scene 0 and two in scene 1. The slots reference patterns by
-     id (the model's own semantics: a slot stores a reference, SPEC A1); the
-     test does NOT claim the referenced pattern exists.
+  1. Two song tracks and the two Pattern tracks the slots name are added, and a
+     2x2 Session View grid is built through `session.set_grid` /
+     `session.set_scene` / `session.set_slot` - four clip slots, two in scene 0
+     and two in scene 1. The slots reference patterns by id (the model's own
+     semantics: a slot stores a reference, SPEC A1), and set_slot refuses an id
+     the PatternStore does not hold, so the store is given ids 1 and 2 first.
   2. The project is SAVED (`project.save`) and the saved file is read back on
      the client side and asserted to contain a <z:scenes> section with four
      <z:cell> children - external evidence, not the engine's word for it.
@@ -222,6 +223,11 @@ class Milestone:
         for request_id in (10, 11):
             self.finding("track.add", json.dumps(self.ok(request_id, "track.add",
                                                          {"type": "instrument"})))
+        # set_slot refuses a pattern id the PatternStore does not hold; the cells
+        # below name ids 1 and 2, so the store must hold them first.
+        for request_id in (13, 14):
+            self.finding("track.add", json.dumps(self.ok(request_id, "track.add",
+                                                         {"type": "pattern"})))
         song_tracks = int(self.ok(12, "track.list").get("count", 0))
         self.finding("track.list", "count=%d" % song_tracks)
         self.require(song_tracks >= 2, "fewer than 2 song tracks exist, so the grid columns "

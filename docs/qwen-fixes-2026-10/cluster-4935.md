@@ -57,5 +57,15 @@ Earlier runs in this cluster (logs `build-0`, `test-baseline-0`, `test-red-1`, `
 
 ## Other findings
 
-- Python proof scripts and the transcript reference patterns that do not exist, and they pass only because the baseline does not check pattern existence. Sites from logs/p1-audit.md: control-session-m1.py:262 (pattern track+1), control-success-paths.py:51 (pattern 1), session_api_proof_lib.py:222 and :225 (patterns 1 and 2), session_api_proof_rows.py:224, control-session-lifecycle-transcript.py:193, and the historical transcript tests/control-session-m1-transcript.txt:82-88 (ok:true for patterns 1 and 2). These are left as they are; they are out of scope for this change.
-- The baseline (10/10) has no test that a passing set_slot names an existing pattern. The new test covers the C++ path only.
+- Python proof scripts and the transcript referenced patterns that did not exist, and they passed only because the baseline did not check pattern existence. Sites from logs/p1-audit.md: control-session-m1.py:262 (pattern track+1), control-success-paths.py:51 (pattern 1), session_api_proof_lib.py:222 and :225 (patterns 1 and 2), session_api_proof_rows.py:224, control-session-lifecycle-transcript.py:193, and the historical transcript tests/control-session-m1-transcript.txt:82-88 (ok:true for patterns 1 and 2). The four live scripts that name them were corrected in the reviewer follow-up below; the historical transcript is a committed record, not a live test, and is left as it is.
+- The baseline (10/10) had no test that a passing set_slot names an existing pattern. The new test covers the C++ path, and the reviewer follow-up below adds the missing Python fixtures so the registered socket tests hold the patterns they name.
+
+## Reviewer follow-up
+
+The first review found four registered ctest cases that the product change broke because their fixtures named PatternStore ids that did not exist:
+
+- `ControlSessionLaunch` (tests/control-session-m1.py) and `ControlSessionLifecycleTranscript` (tests/control-session-lifecycle-transcript.py) now create the Pattern tracks their cells name (ids 1 and 2, and id 1, respectively).
+- `ControlSessionApiProof` (tests/session_api_proof_rows.py) creates patterns 1 and 2 for the refusal driver and uses pattern 0, which the setUp holds, for the set_slot row.
+- `ControlSuccessPaths` (tests/control-success-paths.py) creates the Pattern track for pattern 1.
+
+With the product change in place, `ControlSessionLaunch`, `ControlSessionLifecycleTranscript`, and `ControlSessionApiProof` pass (`ctest -R '^(ControlSessionLaunch|ControlSessionLifecycleTranscript|ControlSessionApiProof)$'`, EXIT=0). `ControlSuccessPaths`'s session checks now pass; its two `project.import`/`project.export_midi` checks still fail on this host for an unrelated missing MIDI filter, exactly as they do on the branch base.

@@ -167,6 +167,9 @@ def build_grid(session, recorder):
     (measured: this run starts with 6 song tracks). The last column is populated
     so the refusal has a clip to find, since the EMPTY check runs first.
     """
+    # The cells below name pattern 1; set_slot refuses an id the store does not
+    # hold, so the store needs that pattern before they are built.
+    session.result("track.add", {"type": "pattern", "name": "Pattern 1"})
     song_tracks = int(session.result("track.list").get("count", 0))
     recorder.check("the instance has song tracks to size the grid from",
                    song_tracks >= 1, "song_tracks=%d" % song_tracks)
@@ -190,7 +193,7 @@ def build_grid(session, recorder):
     expected = list(POPULATED) + [(last, 0)]
     for track, scene in expected:
         session.result("session.set_slot", {
-            "track": track, "scene": scene, "type": "midi", "pattern": 1 + track,
+            "track": track, "scene": scene, "type": "midi", "pattern": 1,
             "name": "slot-%d-%d" % (track, scene), "mode": "trigger",
             "quantisation": "global"})
     slots = state_of(session).get("slots", [])
