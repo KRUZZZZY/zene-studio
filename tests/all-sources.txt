@@ -210,6 +210,7 @@ include/AudioIoSetup.h
 include/AudioJack.h
 include/AudioOss.h
 include/AudioOssWrite.h
+include/AudioOutputStatusBox.h
 include/AudioPlugin.h
 include/AudioPortAudio.h
 include/AudioPorts.h
@@ -222,6 +223,7 @@ include/AudioSdl.h
 include/AudioSndio.h
 include/AudioSoundIo.h
 include/AudioStretcher.h
+include/AudioTestTone.h
 include/AudioWideInputStage.h
 include/AudioWorkerWake.h
 include/AutomatableButton.h
@@ -1650,6 +1652,7 @@ src/core/ControlCommandsArrangementState.cpp
 src/core/ControlCommandsAssistant.cpp
 src/core/ControlCommandsAudioAnalysis.cpp
 src/core/ControlCommandsAudioSlice.cpp
+src/core/ControlCommandsAudioTestTone.cpp
 src/core/ControlCommandsAutomation.cpp
 src/core/ControlCommandsAutomationEdit.cpp
 src/core/ControlCommandsAutomationLanes.cpp
@@ -2643,6 +2646,7 @@ src/gui/menus/MidiPortMenu.cpp
 src/gui/menus/RecentProjectsMenu.cpp
 src/gui/menus/TemplatesMenu.cpp
 src/gui/modals/AboutDialog.cpp
+src/gui/modals/AudioOutputStatusBox.cpp
 src/gui/modals/ColorChooser.cpp
 src/gui/modals/ControllerConnectionDialog.cpp
 src/gui/modals/EffectPickerOrganiser.cpp
@@ -2836,6 +2840,7 @@ tests/src/core/AudioPortsTest.cpp
 tests/src/core/AudioResamplerPoolMemoryTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AudioStretcherTest.cpp
+tests/src/core/AudioTestToneTest.cpp
 tests/src/core/AudioWorkerWakeTest.cpp
 tests/src/core/AutomatableModelTest.cpp
 tests/src/core/AutomationClipTransformTangentTestSupport.h
@@ -3363,6 +3368,7 @@ tests/src/gui/ArrangerTimelineTestParts4.h
 tests/src/gui/ArrangerZoomBoundTest.cpp
 tests/src/gui/ArticulationMapEditorTest.cpp
 tests/src/gui/AuHostingTest.cpp
+tests/src/gui/AudioOutputStatusBoxTest.cpp
 tests/src/gui/AutomationClipDisconnectTest.cpp
 tests/src/gui/AutomationEditorEditingTest.cpp
 tests/src/gui/AutomationLaneChildGuiTest.cpp

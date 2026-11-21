@@ -238,6 +238,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerPluginCommands(registry);
 	registerDspCommands(registry);
 	registerSettingsCommands(registry);
+	registerAudioTestToneCommands(registry);
 	registerMidiRetroCaptureCommands(registry);
 	// The MIDI controller auto-reconnection surface (0.3.0 feature-list row 18,
 	// OWNER-31 item 7): the re-connection memory the MIDI clients keep, and the
