@@ -192,21 +192,24 @@ Copied from logs 00-12 and 14 under
 
 | Step | Command (abbreviated) | EXIT | Source |
 | --- | --- | --- | --- |
-| 00 | ancestry `4b29f8a94716` -> HEAD; diff test file vs `4b29f8a94716` | 0 | `00-diff-vs-ci-commit.log` (empty) |
+| 00a | `git merge-base --is-ancestor 4b29f8a94716d10a05426be5a9e97b466357d7d7 HEAD` | 0 | run log |
+| 00b | `git diff 4b29f8a94716d10a05426be5a9e97b466357d7d7 HEAD -- tests/src/gui/TakeLanesPanelTest.cpp` | 0 | `00-diff-vs-ci-commit.log` (empty) |
 | 01 | Qt5 control: `clang++ -fsyntax-only TouchInstrumentSurfaceTest.cpp` | 0 | `01-qt5-control.log` |
 | 02 | Qt5 red: `clang++ -fsyntax-only TakeLanesPanelTest.cpp` before fix | 1 | `02-qt5-red.log` |
 | 03 | Qt5 green: same, after fix | 0 | `03-qt5-green.log` |
-| 04 | Qt6 build `TakeLanesPanelTest` | 0 | `04-build-qt6.log` |
-| 05 | `ctest -R '^TakeLanesPanelTest$'` | 0 | `05-ctest-takelanes.log`, 1/1 passed |
-| 06 | Qt6 build touch family (+ tripleoscillator) | 0 | `06-build-family.log` |
-| 07 | `ctest -R` touch family | 0 | `07-ctest-family.log`, 5/5 passed |
-| - | `git apply -R fix.patch` (revert the test fix) | 0 | run log |
+| 04 | `cmake --build build --target zene TakeLanesPanelTest` | 0 | `04-build-qt6.log` |
+| 05 | `cd build/tests && ctest -R TakeLanesPanelTest --output-on-failure` | 0 | `05-ctest-takelanes.log`, 1/1 passed |
+| 06 | `cmake --build build --target TouchInstrumentSurfaceTest TouchLayoutTest TouchWorkspaceTest` | 0 | `06-build-family.log` |
+| 07 | `ctest -R 'TakeLanes\|Touch' --output-on-failure` | 0 | `07-ctest-family.log`, 5/5 passed |
+| - | `git diff -- tests/src/gui/TakeLanesPanelTest.cpp > /home/kruzzzzy/.config/kads/zene/state/runs/ci-bbdf307254017268.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.config/kads/zene/state/runs/ci-bbdf307254017268.r1/logs/fix.patch` (revert the test fix) | 0 | run log |
 | 08 | Qt5 red again on reverted tree | 1 | `08-qt5-reverted-red.log` |
-| - | `git apply fix.patch` (restore) | 0 | run log |
+| - | `git apply /home/kruzzzzy/.config/kads/zene/state/runs/ci-bbdf307254017268.r1/logs/fix.patch` (restore) | 0 | run log |
 | 09 | Qt5 green after restore | 0 | `09-qt5-reapplied-green.log` |
 | 10 | Qt6 build after restore | 0 | `10-build-qt6-reapplied.log` |
-| 11 | `ctest -R '^TakeLanesPanelTest$'` after restore | 0 | `11-ctest-reapplied.log`, 1/1 passed |
+| 11 | `cd build/tests && ctest -R TakeLanesPanelTest --output-on-failure` after restore | 0 | `11-ctest-reapplied.log`, 1/1 passed |
+| 12 | `feature_check.py <worktree>` | 0 | `12-feature-check.log`, RESULT: PASS |
 | 14 | `feature_check.py <worktree>` | 0 | `14-feature-check.log`, RESULT: PASS |
+| 15 | `submit_check.py <worktree> ci-bbdf307254017268` | 0 | `15-submit-check.log` |
 
 In log 08 exactly six `error: call to member function ... is ambiguous` are
 reported, at `TakeLanesPanelTest.cpp:374,376,383,385,387,389` (press, release,
@@ -221,11 +224,11 @@ an actual Qt5 link or test run.
 
 ## Other findings
 
-- clang reports `-Wunused-lambda-capture` at `TakeLanesPanelTest.cpp:381` (not
-  introduced by this fix; the build does not fail on it).
-- clang reports `-Wunused-result` for `QTest::qWaitForWindowExposed` at
-  `ShortcutsPageTest.cpp:58` and `ShortcutsCommandsTest.cpp:130`; the Qt6
-  declaration is `[[nodiscard]]`
+- The `-Wunused-lambda-capture` warning at `TakeLanesPanelTest.cpp:381` and the
+  `-Wunused-result` warnings for `QTest::qWaitForWindowExposed` at
+  `ShortcutsPageTest.cpp:58` and `ShortcutsCommandsTest.cpp:130` come from the CI
+  excerpt in the brief, not from a local run.
+- The Qt6 `QTest::qWaitForWindowExposed` declaration is `[[nodiscard]]`
   (`/usr/include/qt6/QtWidgets/qtestsupport_widgets.h:25-27`).
 
 ## Self-check
