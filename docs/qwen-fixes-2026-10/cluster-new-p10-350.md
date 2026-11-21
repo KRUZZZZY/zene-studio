@@ -45,7 +45,26 @@ The dialog's UI range check masks the garbage frame, so the dialog-level asserti
 
 ## Commands and exit codes
 
-Exit codes are cited only where a log or a run in this session shows them.
+Exit codes are cited only where a log shows them. The rerun below (run r1 logs, 2026-11-21) appends `EXIT=$?` to each log, so the code shown is the last line of that log. Log paths are under the run's `logs/` folder, outside the worktree.
+
+| Step | Command | Log | Evidence | EXIT (last line of log) |
+|---|---|---|---|---|
+| apply-check | `git apply --check -R fix.patch` | apply-reverse.log (line 1) | patch applies in reverse | EXIT=0 |
+| apply-reverse | `git apply -R fix.patch` | apply-reverse.log (line 2) | `src/gui/SampleRangeFields.cpp` 1 file, 5 insertions, 26 deletions | EXIT=0 |
+| build-5-reversed | `cmake --build build --target zene SampleEditorDialogTest` (reversed) | build-5-reversed.log | Built target SampleEditorDialogTest | EXIT=0 |
+| test-5-reversed | `ctest -R SampleEditorDialogTest` (reversed) | test-5-reversed.log | FAIL at line 80 (`hugeTypedTimesAreRejected`); "The following tests FAILED" at line 130 | EXIT=8 |
+| apply-restore | `git apply fix.patch` | apply-restore.log | patch reapplied | EXIT=0 |
+| build-6-restored | build (restored) | build-6-restored.log | Built target SampleEditorDialogTest | EXIT=0 |
+| test-6-restored | `ctest -R SampleEditorDialogTest` (restored) | test-6-restored.log | 100% tests passed, 1/1 | EXIT=0 |
+| test-6-detail | `./SampleEditorDialogTest` (restored) | test-6-detail.log | Totals: 28 passed, 0 failed | EXIT=0 |
+| test-6-family | `ctest -R 'SampleEditor\|LaneReadout'` | test-6-family.log | 100% tests passed out of 3 | EXIT=0 |
+| gates-2 | `feature_check.py` | gates-2.log | RESULT: PASS | EXIT=0 |
+| gui-2 | `control-shell.py` (offscreen) | gui-2.log | PASS: shell control-surface driver | EXIT=0 |
+| status | `git status --porcelain` after restore | terminal only, not logged | empty (clean tree; HEAD holds the fix) | exit 0 in the terminal, not logged |
+
+### Historical rows (before the rerun; exit codes never logged)
+
+These rows describe the earlier pass. Their exit codes were not written to any log, so they are not cited as evidence. The rerun above supersedes them.
 
 | Step | Command | Log | Evidence | EXIT |
 |---|---|---|---|---|
@@ -66,11 +85,11 @@ Exit codes are cited only where a log or a run in this session shows them.
 | build-5-verify | `cmake --build build --target SampleEditorDialogTest` (this session) | duet/10-worker/tmp/001-build-5-verify.log | 16 lines | EXIT=0 |
 | test-5-verify | `ctest -R SampleEditorDialogTest` run from build/tests (this session) | duet/10-worker/tmp/003-test-5-verify.log | 100% passed, 1/1 | EXIT=0 |
 
-Screenshot: gui-shots/shell-arrange.png (kept in the log folder, outside the worktree). sha256 0f76075ee2dfe8ac8c0e0e1a7075634ea84eb778221baadf701f2d5a989bba97 (gui-1.sha256). The PNG header is 1600x1000 (checked this session).
+Screenshot: gui-shots/shell-arrange.png (kept in the log folder, outside the worktree). sha256 a67d15648608d49a683c771215ca96e472cbb36838a2b20b39012bdd10b3657b (gui-2.sha256, from the rerun). The earlier gui-1 hash 0f76075e… is superseded. The PNG header was 1600x1000 in an earlier session and was not rechecked in the rerun.
 
 ## Self-check
 
-- **Reversal:** RED on the reverted product: test-3-reversed.log:80, 27 passed and 1 failed. GREEN after restore: test-4-restored (100%, 1/1) and test-4-restored-detail (28 passed, 0 failed). The EXIT codes for the RED and reversal steps are not recorded in any log file.
+- **Reversal:** RED on the reverted product: test-5-reversed.log:80 (FAIL line), EXIT=8. GREEN after restore: test-6-restored.log (100%, 1/1, EXIT=0) and test-6-detail.log (28 passed, 0 failed, EXIT=0).
 - **Deterministic:** inputs are fixed digit strings. The test uses no clock, sleep, timers, or threads.
 - **Cause and completeness:** the cause is the unchecked llround and unchecked toDouble in `timeFrom`. Callers and siblings are covered in "Completeness" above.
 - **No collateral damage:** in-range clock text runs the same arithmetic (h*3600 + m*60 + s, times max(1, rate), then llround). The only change is the finiteness and bound check. `999999999:00:00` is about 1.6e17 frames at 44.1 kHz, below qint64 max, so it stays accepted (test line 319).
