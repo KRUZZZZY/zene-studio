@@ -68,12 +68,12 @@ so the failure guarantee covers them uniformly.
 
 `tests/src/core/ControlBounceRenderTest.cpp` gains two slots:
 
-- `failedBounceKeepsAnExistingDestination()` at `:233-256` - the fake child writes
+- `failedBounceKeepsAnExistingDestination()` at `:239-256` - the fake child writes
   `"partial render"` to its output and exits 3 (`ZENE_FAKE_RENDER_PARTIAL`). The
   destination is pre-seeded with `"previous output"`; the test asserts `Refused`,
   a `"render failed"` message, an unchanged track count, **the destination still
-  reads `"previous output"` at `:253`**, and no `existing.wav.part.*` debris at `:255`.
-- `successfulBounceReplacesAnExistingDestination()` at `:259-276` - the positive
+  reads `"previous output"` at `:254`**, and no `existing.wav.part.*` debris at `:255`.
+- `successfulBounceReplacesAnExistingDestination()` at `:259-271` - the positive
   control: a real successful bounce replaces the pre-seeded destination, produces the
   expected frame count, and leaves no `replace.wav.part.*` debris.
 
@@ -115,18 +115,18 @@ product file remains changed**.
 
 | Case | Coverage |
 | --- | --- |
-| Normal positive control | `successfulBounceReplacesAnExistingDestination` (`:259-276`): real child writes a full WAV; destination is replaced, frame count matches, no staging debris. PASS in 03/07. |
-| Child exits nonzero after a partial write | `failedBounceKeepsAnExistingDestination` (`:233-256`): child returns 3 with `"partial render"` written; destination bytes unchanged at `:253`, no `.part.*` file. PASS in 03/07, FAILs at `:253` in RED 05. |
+| Normal positive control | `successfulBounceReplacesAnExistingDestination` (`:259-271`): real child writes a full WAV; destination is replaced, frame count matches, no staging debris. PASS in 03/07. |
+| Child exits nonzero after a partial write | `failedBounceKeepsAnExistingDestination` (`:239-256`): child returns 3 with `"partial render"` written; destination bytes unchanged at `:254`, no `.part.*` file. PASS in 03/07, FAILs at `:254` in RED 05. |
 | Timeout / kill | Same branch: `renderFailed(finished, exitCode, renderTarget)` (`src/core/BounceInPlace.cpp:273`, called at `:499`) is the single classifier for "did not finish" and "nonzero exit"; the discard path at `:501` is shared. Not separately timed (no sleeps, no wall-clock assertion). |
 | Existing-destination reconfiguration | Both slots pre-seed the destination at the same path and then run `bounce.land` to that path, proving the staging rename is reconfiguration-safe rather than append-only. |
 | Audio thread | n/a: the render runs out of process through `runCliRender` (QProcess); no audio callback is entered, so no realtime-safety claim is needed. |
 | Portability | No POSIX calls. The test uses `QFile`, `QDir`, `QTemporaryDir`, `QFileInfo`, `QProcess` (via the product's `runCliRender`) and `QUuid` (staging/backup names); behaviour is identical on Linux/macOS/Windows. |
 
 Registration is unchanged because `ControlBounceRenderTest` is already a fork source:
-`tests/fork-sources.txt:2756` and `tests/CMakeLists.txt:148`. No CMake or fork-source
+`tests/fork-sources.txt:2756` and `tests/CMakeLists.txt:158`. No CMake or fork-source
 edit was needed.
 
-## Self-check (the five non-feature ASKs)
+## Self-check (the non-feature ASKs)
 
 1. **The regression test FAILS with your product change reverted and PASSES with it
    (exit codes).** RED: `05-test-red.log` **RED_EXIT=8**, `12 passed, 4 failed`; the
@@ -160,11 +160,32 @@ edit was needed.
    line `f6498a18f3^:354` wrote to `outPath`; the ancestor check returned
    `ANCESTOR_EXIT=0` (`logs/01-evidence.log:2`), and `f6498a18f3` introduced staging.
 
+6. **Sibling commands in the command files the diff touched.** This cluster changes no
+   command file: its commits (`47a6ee64f3`, the test de-duplication commit and
+   `069a0428f6`) touch only `tests/src/core/ControlBounceRenderTest.cpp` and this report.
+   The `app.*` and `arrangement.*` siblings in the ASK belong to
+   `src/core/ControlCommands*.cpp` changes already on the train side of the merge-base
+   (`fa4a5f2e785`), not to cluster 5493; the test-only diff leaves all of them
+   unchanged and consistent.
+
+## p5 gate and completion evidence
+
+- The two new slots shifted after the test de-duplication below; their current lines are
+  `:239-256` and `:259-271`, and `ctest -R ControlBounceRenderTest` still reports
+  **100% tests passed out of 1** (exit 0, `003-5493-p5-test.log`).
+- The file-length gate flagged this new test file at 515 code lines (p5). The fix is a
+  behaviour-preserving de-duplication: two shared file helpers (`writeFile`,
+  `readFile`) replace seven open/write/read/close blocks in the same file; no slot,
+  assertion or fixture was removed. The file is now at or below 500 code lines and
+  `tests/file-length-gate.sh --check` passes.
+- `feature_check.py` and `submit_check.py 5493` both end `RESULT: PASS` with `EXIT=0`
+  (`logs/14-feature-check.log`, `logs/15-submit-check.log`).
+
 ## Other findings
 
 - Under the RED mutation, three additional existing slots also failed
-  (`successfulBounceReplacesAnExistingDestination` `:270`, `bounceLand...` `:288`,
-  `flatten...` `:412`, all `"the render produced no audio"`). This is expected blast
+  (`successfulBounceReplacesAnExistingDestination` `:267`, `bounceLand...` `:282`,
+  `flatten...` `:401`, all `"the render produced no audio"`). This is expected blast
   radius: pointing the child at the destination bypasses staging entirely, so the
   harness never sees a staged file. Only the `:253` byte comparison is the targeted
   assertion; the others are collateral and disappeared on revert (07: 16/16 PASS).
