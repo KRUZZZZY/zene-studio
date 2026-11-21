@@ -221,8 +221,10 @@ LMMS_EXPORT bool isSectionEntryName( const QString& entryName );
  *  neither QDomDocument::save() nor QTextStream is called on this path.
  *
  *  HOW THE SPLICE WORKS (why raw identity is possible at all): each section's
- *  entry carries the section element AND every byte up to the next `<` - the
- *  whitespace that FOLLOWS it in the document - while the skeleton keeps each
+ *  entry carries the section element AND every byte from its end up to the next
+ *  `<`. Those bytes must be XML whitespace (space, tab, CR, LF); any other text
+ *  in that gap is refused (see REFUSALS below), because it would be filed inside
+ *  the entry where the skeleton proof cannot see it. The skeleton keeps each
  *  section's LEADING whitespace. The reassembler inserts the entries, in index
  *  order, immediately before the content element's close tag; the concatenation
  *  of `section + trailing whitespace`, in order, is then exactly the original
@@ -243,10 +245,12 @@ LMMS_EXPORT bool isSectionEntryName( const QString& entryName );
  *  correspondence IS the split's cross-check, and a dropped row silently shifts
  *  every later position); an index that names no section; a section name
  *  sectionEntryName() cannot file; a document scanSectionRanges() cannot follow
- *  to its end; an index and a document that disagree about which section sits
- *  where (count or order); an interior that still carries a child the index
- *  does not name; and a section whose end cannot be bounded (defensive - a
- *  well-formed document cannot reach it).
+ *  to its end; a section followed by non-whitespace text before the next `<`
+ *  (that text would be filed inside the section's entry); an index and a
+ *  document that disagree about which section sits where (count or order); an
+ *  interior that still carries a child the index does not name; and a section
+ *  whose end cannot be bounded (defensive - a well-formed document cannot reach
+ *  it).
  *
  *  HONEST LIMITS, stated because they are easy to assume away: the document is
  *  parsed twice (QDomDocument to navigate, QXmlStreamReader to slice) - two
