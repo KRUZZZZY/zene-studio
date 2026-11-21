@@ -142,7 +142,13 @@ auto decodeSampleSF(const QString& audioFile) -> std::optional<SampleDecoder::Re
 	if (sf_error(sndFile) != 0) { return std::nullopt; }
 
 	auto buf = std::vector<sample_t>(sfInfo.channels * sfInfo.frames);
-	sf_read_float(sndFile, buf.data(), buf.size());
+	const sf_count_t framesRead = sf_readf_float(sndFile, buf.data(), sfInfo.frames);
+	if (framesRead != sfInfo.frames)
+	{
+		sf_close(sndFile);
+		file.close();
+		return std::nullopt;
+	}
 
 	sf_close(sndFile);
 	file.close();
