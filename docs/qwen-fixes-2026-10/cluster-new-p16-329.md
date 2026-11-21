@@ -85,6 +85,7 @@ Every case also checks that `beatOrigin` stays at 3.5 and `timeOrigin` is preser
 ## Gate evidence (logs in `state/runs/new-p16-329.r1/logs/`)
 
 Each step below ran as `bash -c '<cmd>; rc=$?; echo EXIT=$rc; exit $rc'`, so the exit code is the last `EXIT=` line inside the named log.
+
 | step | log | EXIT in log | result |
 |---|---|---|---|
 | reverse fix patch | `patch-reverse-3.log` | 0 | `git apply -R logs/fix.patch` |
@@ -106,8 +107,8 @@ Logs from earlier runs (`*-2`, `*-3` before this packet) are not cited: their ex
 | gate | command | exit | result |
 |---|---|---|---|
 | feature_check | `feature_check.py <worktree>` wrapped as `bash -c '...; rc=$?; echo EXIT=$rc; exit $rc' > logs/feature-check-3.log 2>&1` | 0 | `feature-check-3.log` ends `EXIT=0`; `RESULT: PASS` |
-| commit | product commit `f461196b76` (`git show --stat`) | see commit | see COMMITS |
-| submit_check (final) | `submit_check.py <worktree> new-p16-329` wrapped as above > `logs/submit-check-6.log` | 0 | `submit-check-6.log` ends `EXIT=0`; run after the report commit, so the log is the evidence for this row |
+| commit | product fix/test commit `f461196b76` (`git show --stat`); report-only commits follow it | n/a | `f461196b76` is the product fix and test; the report-only commits after it are listed under Commit chain |
+| submit_check (final) | `submit_check.py <worktree> new-p16-329` wrapped as above > `logs/submit-check-7.log` | 0 | `submit-check-7.log` ends `EXIT=0` and `RESULT: PASS - submit`; this is the final check cited in this report |
 
 ## Commit chain
 
@@ -117,14 +118,15 @@ On `bugs/qwen-new-p16-329`, oldest first:
 - `269ec0ae57` cluster new-p16-329: answer submit_check asks in report
 - `4788fbc25c` cluster new-p16-329: record RED/GREEN exits in the report
 - `99ad5b4c86` cluster new-p16-329: correct report evidence citations
-- this report commit: cluster new-p16-329: fix report commit chain
+- `9247374d22` cluster new-p16-329: fix report commit chain
+- this report commit: cluster new-p16-329: finalize report citations
 
 ## Self-check
 
 The submit_check asks, in order:
 
-1. **Clean tree.** Before the final commit, the worktree held only the 4 files this cluster changes. After the report commit, `git status --porcelain` is empty; the final check is `logs/submit-check-6.log` (`EXIT=0`) and the final message.
-2. **Commits on the branch.** The chain on `bugs/qwen-new-p16-329` is `f461196b76` (`clamp Link tempo to a finite range`) -> `269ec0ae57` (`answer submit_check asks in report`) -> `4788fbc25c` (`record RED/GREEN exits in the report`) -> this report commit (`correct report evidence citations`). The submit check for this chain is `logs/submit-check-6.log`.
+1. **Clean tree.** Before the final commit, the worktree held only the 4 files this cluster changes. After the report commit, `git status --porcelain` is empty; the final check is `logs/submit-check-7.log` (`EXIT=0`) and the final message.
+2. **Commits on the branch.** The chain on `bugs/qwen-new-p16-329` is `f461196b76` (`clamp Link tempo to a finite range`) -> `269ec0ae57` (`answer submit_check asks in report`) -> `4788fbc25c` (`record RED/GREEN exits in the report`) -> `99ad5b4c86` (`correct report evidence citations`) -> `9247374d22` (`fix report commit chain`) -> this report commit (`finalize report citations`). The submit check for this chain is `logs/submit-check-7.log`.
 3. **Report verdict in the first lines.** Line 1 is `FIXED`. Line 3 is `Verdict: REAL`.
 4. **Self-check section.** This section.
 5. **Tests changed.** `tests/src/core/AbletonLinkAllocatorTest.cpp` adds `clampTempoStaysWithinTheLinkRange`, and the ledger entry is in `tests/upstream-modifications.txt`.
@@ -132,14 +134,14 @@ The submit_check asks, in order:
 
 ### submit_check asks
 
-Answers to the six `?` asks from `submit_check.py` (log: `logs/submit-check-3.log`, `RESULT: PASS - submit`, exit 0):
+Answers to the six `?` asks from `submit_check.py` (final check: `logs/submit-check-7.log`, `RESULT: PASS - submit`, `EXIT=0`):
 
 1. **Regression test fails with the change reverted and passes with it (exit codes).** With the pre-fix header (`patch-reverse-3.log`, `build-red-reverse-3.log`), `test-red-reverse-3.log` ends `EXIT=1` with `Totals: 2 passed, 1 failed`; the failure is the NaN `QCOMPARE` at `AbletonLinkAllocatorTest.cpp(159)` (`Actual (clamped.tempo.bpm()): nan`). With the fix restored (`patch-restore-3.log`, `build-green-restore-3.log`), `test-green-restore-3.log` ends `EXIT=0` with `Totals: 3 passed, 0 failed`, `test-family-green-3.log` ends `EXIT=0` with `Totals: 7 passed, 0 failed`, and `ctest-green-3.log` ends `EXIT=0`. A `cmp` of the header against `logs/ClientSessionTimelines.fixed.hpp` is identical (`CMP_EXIT=0`).
 2. **Deterministic.** The test has no clock, sleep, thread, or I/O. Its inputs are fixed values: the `Tempo` values in the matrix above, `Beats{3.5}`, and `timeOrigin = 250000 µs`. The only arithmetic is `toBeats(1000000 µs)`.
 3. **Fix at the cause and complete.** The defect is in `clampTempo` alone. Every caller goes through it: `Controller.hpp:56, 214, 277, 343` and `Link.ipp:205`. A grep for `clampTempo` under `src/3rdparty/` finds only the three Link files (`ClientSessionTimelines.hpp`, `Controller.hpp`, `Link.ipp`). Not checked: other code that builds a `Tempo` without going through `clampTempo`.
 4. **No collateral damage.** The finite path is unchanged, so finite inputs give the same results as before. The only changed results are for non-finite tempos: NaN becomes 120 (was NaN), and ±inf becomes 120 (was 999 / 20). No save/load format is touched. No limit or check was added. A saved NaN tempo would now load as 120 BPM; that is the intended effect of the fix.
 5. **Verdict is REAL, not ALREADY-FIXED or FALSE-POSITIVE.** The pre-fix code at `ClientSessionTimelines.hpp:31-38` passes NaN through `std::max`/`std::min`, and the pre-fix test run fails on it (see the NaN semantics above).
-6. **Sibling commands.** No command files were changed. `git show --stat f461196b76` (the product commit; `logs/product-commit-stat-3.log`, `EXIT=0`) lists four files: `ClientSessionTimelines.hpp`, `AbletonLinkAllocatorTest.cpp`, `upstream-modifications.txt`, and this report `cluster-new-p16-329.md`. The product change is the first three; the report was added in the same commit. HEAD after the report commits shows the report only. The `app.*` commands are not affected.
+6. **Sibling commands.** No command files were changed. `git show --stat f461196b76` (the product commit; `logs/product-commit-stat-3.log`, `EXIT=0`) lists four files: `ClientSessionTimelines.hpp`, `AbletonLinkAllocatorTest.cpp`, `upstream-modifications.txt`, and this report `cluster-new-p16-329.md`. The product change is the first three; the report was added in the same commit. HEAD after the report commits shows the report only. No command files were changed, so no `app.*` and no `arrangement.*` command is affected.
 
 ## Other findings (not fixed)
 
