@@ -142,9 +142,11 @@ one acquire atomic load plus an existing buffer zero and an early return inside
 1. **Regression test fails with the product change reverted, passes with it.** Reverting
    the product patch (four files) and rebuilding, the three slots fail with exit 3 combined
    (`test-3-red-all.log` ends `EXIT=3`, `Totals: 2 passed, 3 failed`; each measured
-   0.356029) and exit 1 individually (`test-3-red-*.log`, each ends `EXIT=1`). Restored,
+   0.356029) and exit 1 individually (`test-3-red-mute.log`,
+   `test-3-red-unfreeze.log` and `test-3-red-replace.log` each end `EXIT=1`). Restored,
    they pass with exit 0 combined (`test-3-green-all.log` ends `EXIT=0`) and 0
-   individually (`test-3-green-*.log`, each ends `EXIT=0`).
+   individually (`test-3-green-mute.log`, `test-3-green-unfreeze.log` and
+   `test-3-green-replace.log` each end `EXIT=0`).
 2. **Deterministic, no wall-clock timing, sleeps or races.** `setDeterministicProcessing(true)`,
    the device stopped, explicit `renderNextPeriod()` calls, fixed 440/660 Hz fixtures, a
    fixed one-period lag discard, and numeric RMS thresholds; only `qWait(130)` in
