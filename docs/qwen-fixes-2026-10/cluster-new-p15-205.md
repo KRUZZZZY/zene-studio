@@ -28,7 +28,7 @@ The full `Song::clearProject` path masks the harm. `Song.cpp:1756` runs `m_sessi
 
 ### RED / GREEN evidence
 
-- RED (`test-1-red.log`): ctest reports `SessionSubSceneTest (Failed)` and "Errors while running CTest". Three `FAIL!` lines, each `SessionSubSceneTest.cpp(379)`: `'song->sessionModel().subScenes().empty()' returned FALSE (clearAll left the sub-scene rows in the model)`. The `QVERIFY2` in the lambda returns from the lambda only, so the 1-row, `SubScene::MaxCount` and repeat cases all ran and all failed. The packet records the exit as EXIT=8; that line is not in the log file itself.
+- RED (`test-1-red.log`): ctest reports `SessionSubSceneTest (Failed)` and "Errors while running CTest". Three `FAIL!` lines, each `SessionSubSceneTest.cpp(379)`: `'song->sessionModel().subScenes().empty()' returned FALSE (clearAll left the sub-scene rows in the model)`. The `QVERIFY2` in the lambda returns from the lambda only, so the 1-row, `SubScene::MaxCount` and repeat cases all ran and all failed. The authoritative RED exit is logged by the reversed-fix run, `test-3-unfixed.log` EXIT=8; `test-1-red.log` shows the three `FAIL!` lines and the ctest 0% passed / 1 failed summary.
 - Unfixed re-check (`apply-reverse.log` EXIT=0, `build-3-unfixed.log` EXIT=0, `test-3-unfixed.log` EXIT=8): the fix reverted, the test still fails.
 - Re-fix (`apply-refix.log` EXIT=0, `build-4-refixed.log` EXIT=0, `test-4-refixed.log` EXIT=0): the fix reapplied, the test passes.
 - GREEN family (`test-2-green.log`): "100% tests passed, 0 tests failed out of 3". The exit line is not in the log file.
@@ -63,7 +63,6 @@ The full `Song::clearProject` path masks the harm. `Song.cpp:1756` runs `m_sessi
 | feature check (p4) | RESULT PASS, EXIT=0 | `logs/feature-check-1.log` |
 | `python3 .../feature_check.py <worktree>` (committed tree) | RESULT PASS, EXIT=0 | `logs/feature-check-2.log` |
 | `python3 .../submit_check.py <worktree> new-p15-205` (completion check) | RESULT PASS - submit, EXIT=0 | `logs/submit-check-1.log` |
-| Direct runs 10/10, 4/4, 4/4 | not found in any log in the run directory; unverified | - |
 
 ## Self-check
 
