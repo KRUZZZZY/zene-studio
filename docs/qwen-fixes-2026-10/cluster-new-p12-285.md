@@ -157,3 +157,8 @@ one relaxed/acquire atomic load plus an existing buffer zero and an early return
 5. **ALREADY-FIXED / FALSE-POSITIVE not applicable.** The verdict is FIXED: the defect
    reproduced in three deterministic RED slots against HEAD and was removed by the
    product diff above, so neither a pre-existing-fix nor a false-positive claim is made.
+6. **Sibling commands in changed command files.** This cluster changed no command or
+   command-registry file; its change set is the frozen-take sources, the new test and
+   the registration lines listed above. The command ids the checker names (`app.*`,
+   `arrangement.*`) come from the wider base..HEAD diff, not from this fix, so no
+   sibling command is affected.
