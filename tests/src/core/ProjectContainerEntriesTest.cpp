@@ -346,6 +346,58 @@ private slots:
 		QCOMPARE( int( entries.size() ), 1 );
 	}
 
+	/*! Whitespace-only gaps between indexed sections (space, tab, CRLF) derive. */
+	void derivingAcceptsWhitespaceGapsBetweenIndexedSections()
+	{
+		const QString content = QString::fromLatin1( kContent );
+		const QStringList names{ QStringLiteral( "trackcontainer" ),
+			QStringLiteral( "tempo-map" ) };
+		std::vector<std::pair<QString, QByteArray>> derived;
+		QString error;
+		QVERIFY2( projectcontainer::deriveContainerEntries(
+			documentWith( names, QStringLiteral(
+				"    <trackcontainer/> \t\r\n    <tempo-map v=\"1\"/>\r\n" ) ),
+			content, &derived, &error ), qPrintable( error ) );
+		QCOMPARE( int( derived.size() ), 3 );
+	}
+
+	/*! Text between a section's close and the next '<' is refused by name, and the
+	 *  destination is untouched: the cut would take those bytes into the section's
+	 *  entry, where the post-cut interior check cannot see them. */
+	void derivingRefusesTextBetweenIndexedSections()
+	{
+		const QString content = QString::fromLatin1( kContent );
+		const QStringList names{ QStringLiteral( "trackcontainer" ),
+			QStringLiteral( "tempo-map" ) };
+		auto entries = sentinelEntries();
+		QString error;
+		QVERIFY( !projectcontainer::deriveContainerEntries(
+			documentWith( names, QStringLiteral(
+				"    <trackcontainer/>extra<tempo-map v=\"1\"/>" ) ),
+			content, &entries, &error ) );
+		QVERIFY( error.contains( QStringLiteral( "whitespace" ) ) );
+		QCOMPARE( int( entries.size() ), 1 );
+		QCOMPARE( entries.at( 0 ).second, QByteArray( "untouched" ) );
+	}
+
+	/*! Text after the last indexed section, before the content's close, is refused by
+	 *  name, and the destination is untouched for the same reason as above. */
+	void derivingRefusesTextAfterLastIndexedSection()
+	{
+		const QString content = QString::fromLatin1( kContent );
+		const QStringList names{ QStringLiteral( "trackcontainer" ),
+			QStringLiteral( "tempo-map" ) };
+		auto entries = sentinelEntries();
+		QString error;
+		QVERIFY( !projectcontainer::deriveContainerEntries(
+			documentWith( names, QStringLiteral(
+				"    <trackcontainer/>\n    <tempo-map v=\"1\"/>tail\n" ) ),
+			content, &entries, &error ) );
+		QVERIFY( error.contains( QStringLiteral( "whitespace" ) ) );
+		QCOMPARE( int( entries.size() ), 1 );
+		QCOMPARE( entries.at( 0 ).second, QByteArray( "untouched" ) );
+	}
+
 	/*! Reassembly applies the same interior proof to the skeleton it is handed:
 	 *  a skeleton whose <song> holds whitespace CDATA is refused by name, and
 	 *  the destination keeps its bytes, instead of splicing the section in

@@ -371,22 +371,22 @@ private slots:
 		// A tap leaves the comp alone.
 		{
 			auto sequence = QTest::touchEvent(strip, QTest::createTouchDevice(), false);
-			sequence.press(0, QPoint(fromX, rowY));
+			sequence.press(0, QPoint(fromX, rowY), strip);
 			QVERIFY(commitTouchSequence(sequence));
-			sequence.release(0, QPoint(fromX, rowY));
+			sequence.release(0, QPoint(fromX, rowY), strip);
 			QVERIFY(commitTouchSequence(sequence));
 		}
 		QCOMPARE(segmentsOf().size(), 0);
 
 		auto swipe = [strip, rowY](int from, int to) {
 			auto sequence = QTest::touchEvent(strip, QTest::createTouchDevice(), false);
-			sequence.press(0, QPoint(from, rowY));
+			sequence.press(0, QPoint(from, rowY), strip);
 			const bool pressed = commitTouchSequence(sequence);
-			sequence.move(0, QPoint((from + to) / 2, rowY));
+			sequence.move(0, QPoint((from + to) / 2, rowY), strip);
 			const bool moved = commitTouchSequence(sequence);
-			sequence.move(0, QPoint(to, rowY));
+			sequence.move(0, QPoint(to, rowY), strip);
 			const bool movedAgain = commitTouchSequence(sequence);
-			sequence.release(0, QPoint(to, rowY));
+			sequence.release(0, QPoint(to, rowY), strip);
 			const bool released = commitTouchSequence(sequence);
 			return pressed && moved && movedAgain && released;
 		};

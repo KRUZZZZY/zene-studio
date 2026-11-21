@@ -34,6 +34,7 @@
 #include <QScrollArea>
 
 #include "AudioEngine.h"
+#include "AudioOutputStatusBox.h"
 #include "ControlRegistry.h"
 #include "embed.h"
 #include "Engine.h"
@@ -598,6 +599,9 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open) :
 		m_audioInterfaces->addItem(it.key());
 	}
 
+	// Read before the substitution below, so the box can say when the saved device was not available.
+	const QString configuredDev = ConfigManager::inst()->value("audioengine", "audiodev");
+
 	// If no preferred audio device is saved, save the current one.
 	QString audioDevName = ConfigManager::inst()->value("audioengine", "audiodev");
 	if (m_audioInterfaces->findText(audioDevName) < 0)
@@ -608,6 +612,8 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open) :
 	m_audioInterfaces->
 		setCurrentIndex(m_audioInterfaces->findText(audioDevName));
 	m_audioIfaceSetupWidgets[audioDevName]->show();
+	audioInterfaceLayout->addWidget(new AudioOutputStatusBox(audioInterfaceBox,
+		m_audioInterfaces->findText(configuredDev) < 0 ? configuredDev : QString()));
 
 	connect(m_audioInterfaces, &QComboBox::textActivated, this, &SetupDialog::audioInterfaceChanged);
 
@@ -991,7 +997,10 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open) :
 	// Ensure that we cannot make the dialog smaller than it wants to be
 	setMinimumWidth(width());
 
-	show();
+	// Deliberately no show() here: a caller that wants this dialog non-modal (window.settings)
+	// must be able to set that before the first show. Showing it in the constructor made it
+	// application-modal first, and the later setModal(false) did not remove it from Qt's modal
+	// stack, so the main window ignored menus and keys. Exec()/show() by the caller displays it.
 }
 
 

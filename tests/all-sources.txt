@@ -210,6 +210,7 @@ include/AudioIoSetup.h
 include/AudioJack.h
 include/AudioOss.h
 include/AudioOssWrite.h
+include/AudioOutputStatusBox.h
 include/AudioPlugin.h
 include/AudioPortAudio.h
 include/AudioPorts.h
@@ -222,6 +223,7 @@ include/AudioSdl.h
 include/AudioSndio.h
 include/AudioSoundIo.h
 include/AudioStretcher.h
+include/AudioTestTone.h
 include/AudioWideInputStage.h
 include/AudioWorkerWake.h
 include/AutomatableButton.h
@@ -606,6 +608,7 @@ include/MidiSurfaceInput.h
 include/MidiTakeCapture.h
 include/MidiTakeRecorder.h
 include/MidiWinMM.h
+include/MidiWinMMShortMessage.h
 include/MissingDevices.h
 include/MissingDevicesNotice.h
 include/MixHelpers.h
@@ -1555,6 +1558,7 @@ plugins/Xpressive/ExprSynth.cpp
 plugins/Xpressive/ExprSynth.h
 plugins/Xpressive/Xpressive.cpp
 plugins/Xpressive/Xpressive.h
+plugins/ZeneRack/ZeneRack.cpp
 plugins/ZynAddSubFx/LocalZynAddSubFx.cpp
 plugins/ZynAddSubFx/LocalZynAddSubFx.h
 plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp
@@ -1650,6 +1654,7 @@ src/core/ControlCommandsArrangementState.cpp
 src/core/ControlCommandsAssistant.cpp
 src/core/ControlCommandsAudioAnalysis.cpp
 src/core/ControlCommandsAudioSlice.cpp
+src/core/ControlCommandsAudioTestTone.cpp
 src/core/ControlCommandsAutomation.cpp
 src/core/ControlCommandsAutomationEdit.cpp
 src/core/ControlCommandsAutomationLanes.cpp
@@ -2643,6 +2648,7 @@ src/gui/menus/MidiPortMenu.cpp
 src/gui/menus/RecentProjectsMenu.cpp
 src/gui/menus/TemplatesMenu.cpp
 src/gui/modals/AboutDialog.cpp
+src/gui/modals/AudioOutputStatusBox.cpp
 src/gui/modals/ColorChooser.cpp
 src/gui/modals/ControllerConnectionDialog.cpp
 src/gui/modals/EffectPickerOrganiser.cpp
@@ -2830,12 +2836,14 @@ tests/src/core/AudioFileOggInitTest.cpp
 tests/src/core/AudioFileProcessorPlayheadTest.cpp
 tests/src/core/AudioFileProcessorWaveViewTest.cpp
 tests/src/core/AudioJackPortRestartTest.cpp
+tests/src/core/AudioOssDeviceConfigTest.cpp
 tests/src/core/AudioOssWriteTest.cpp
 tests/src/core/AudioPortsModelTest.cpp
 tests/src/core/AudioPortsTest.cpp
 tests/src/core/AudioResamplerPoolMemoryTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AudioStretcherTest.cpp
+tests/src/core/AudioTestToneTest.cpp
 tests/src/core/AudioWorkerWakeTest.cpp
 tests/src/core/AutomatableModelTest.cpp
 tests/src/core/AutomationClipTransformTangentTestSupport.h
@@ -2923,6 +2931,7 @@ tests/src/core/ControlProjectTemplateTest.cpp
 tests/src/core/ControlRecordingRoutesTest.cpp
 tests/src/core/ControlRegistryDisplayTest.cpp
 tests/src/core/ControlRegistryNestingTest.cpp
+tests/src/core/ControlRegistryObserverTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlRenderJobTest.cpp
 tests/src/core/ControlRenderOutputPathTest.cpp
@@ -3037,6 +3046,7 @@ tests/src/core/LinkRealtimeProbe.h
 tests/src/core/LinkedClipEditsTest.cpp
 tests/src/core/LinkedClipGroupEditsTest.cpp
 tests/src/core/LinkedModelGroupsTest.cpp
+tests/src/core/LocaleHelperTest.cpp
 tests/src/core/LoopFixture.h
 tests/src/core/LoopImportWarpTest.cpp
 tests/src/core/LoudnessReportTest.cpp
@@ -3074,6 +3084,7 @@ tests/src/core/MidiRetroCaptureTest.cpp
 tests/src/core/MidiSndioTest.cpp
 tests/src/core/MidiSurfaceInputTest.cpp
 tests/src/core/MidiTakeRecordTest.cpp
+tests/src/core/MidiWinMMShortMessageTest.cpp
 tests/src/core/MidiWorkflowBindingsTest.cpp
 tests/src/core/MissingDevicesPreserveTest.cpp
 tests/src/core/MissingDevicesRound2Test.cpp
@@ -3224,6 +3235,7 @@ tests/src/core/SampleBufferResampleTest.cpp
 tests/src/core/SampleDecoderLimitTest.cpp
 tests/src/core/SampleDecoderOggChannelTest.cpp
 tests/src/core/SampleDecoderOggStateTest.cpp
+tests/src/core/SampleDecoderShortReadTest.cpp
 tests/src/core/SamplerEnvelopeTest.cpp
 tests/src/core/SamplerTakeTest.cpp
 tests/src/core/SamplerTestSupport.h
@@ -3343,6 +3355,7 @@ tests/src/core/WarpQuantizeTest.cpp
 tests/src/core/WaveformDataTest.cpp
 tests/src/core/WideDiscreteBusTest.cpp
 tests/src/core/WidePinRoutingTest.cpp
+tests/src/core/WorkerAltStackTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp
 tests/src/core/esp32-freertos-host/freertos/FreeRTOS.h
 tests/src/core/esp32-freertos-host/freertos/task.h
@@ -3363,11 +3376,13 @@ tests/src/gui/ArrangerTimelineTestParts4.h
 tests/src/gui/ArrangerZoomBoundTest.cpp
 tests/src/gui/ArticulationMapEditorTest.cpp
 tests/src/gui/AuHostingTest.cpp
+tests/src/gui/AudioOutputStatusBoxTest.cpp
 tests/src/gui/AutomationClipDisconnectTest.cpp
 tests/src/gui/AutomationEditorEditingTest.cpp
 tests/src/gui/AutomationLaneChildGuiTest.cpp
 tests/src/gui/AutomationModeMenuTest.cpp
 tests/src/gui/BackgroundTasksGuiTest.cpp
+tests/src/gui/BitInvaderViewLengthTest.cpp
 tests/src/gui/BrowserDragUrlTest.cpp
 tests/src/gui/BrowserProjectMediaTest.cpp
 tests/src/gui/BrowserTagMenuTest.cpp
@@ -3567,6 +3582,7 @@ tests/src/gui/XyPadPairTest.cpp
 tests/src/plugins/AuParameterHandoffTest.cpp
 tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/BitInvaderAllocationTest.cpp
+tests/src/plugins/BitInvaderLoadSettingsTest.cpp
 tests/src/plugins/BusesTestInstrument.cpp
 tests/src/plugins/CarlaMidiHandoffTest.cpp
 tests/src/plugins/CarlaParamFloatModelTest.cpp
@@ -3664,6 +3680,7 @@ tests/src/plugins/VstEffectControlsTest.cpp
 tests/src/plugins/WatsynParamHandoffTest.cpp
 tests/src/plugins/WatsynSelectedGraphTest.cpp
 tests/src/plugins/WatsynWaveSnapshotTest.cpp
+tests/src/plugins/ZeneRackTest.cpp
 tests/src/plugins/ZynAddSubFxInstrumentTest.cpp
 tests/src/plugins/ZynNoteOffTest.cpp
 tests/src/plugins/ZynSeparateProcessTest.cpp

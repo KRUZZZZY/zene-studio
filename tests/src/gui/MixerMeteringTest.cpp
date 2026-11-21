@@ -32,6 +32,7 @@
 
 #include <QtTest>
 
+#include <limits>
 #include <vector>
 
 #include <QAction>
@@ -67,6 +68,7 @@
 #include "MixerView.h"
 #include "MixerViewOptions.h"
 #include "MixerWindows.h"
+#include "PeakIndicator.h"
 #include "PhaseScopeTap.h"
 #include "PhaseScopeView.h"
 #include "ShellSelection.h"
@@ -925,6 +927,47 @@ private slots:
 	{
 		getGUI()->mixerView()->clear();
 		QVERIFY(selection().isEmpty());
+	}
+
+	//! A non-finite peak (+inf, NaN) must not latch the readout: it reads "-inf", and finite peaks still show.
+	void anInfinitePeakDoesNotLatchTheIndicator()
+	{
+		PeakIndicator indicator(nullptr);
+		indicator.updatePeak(std::numeric_limits<float>::infinity());
+		QCOMPARE(indicator.text(), QStringLiteral("-inf"));
+		indicator.updatePeak(0.5f);
+		QCOMPARE(indicator.text(), QStringLiteral("-6.0"));
+		indicator.updatePeak(std::numeric_limits<float>::quiet_NaN());
+		indicator.updatePeak(2.0f);
+		QCOMPARE(indicator.text(), QStringLiteral("6.0"));
+	}
+
+	//! A non-finite channel peak must not latch the strip's meter either: the strip reads on from the next finite peak.
+	void anInfiniteChannelPeakDoesNotLatchTheStripMeter()
+	{
+		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("peak_hold"), QStringLiteral("off")},
+			{QStringLiteral("meter_mode"), QStringLiteral("peak")}, {QStringLiteral("meter_falloff"), QStringLiteral("fast")}}).ok);
+		const int index = Engine::mixer()->createChannel();
+		syncMixer();
+		MixerView* view = getGUI()->mixerView();
+		MixerChannelView* strip = view->channelView(index);
+		QVERIFY(strip != nullptr);
+		Fader* stripFader = strip->fader();
+		auto* indicator = strip->findChild<PeakIndicator*>();
+		QVERIFY(stripFader != nullptr);
+		QVERIFY(indicator != nullptr);
+		QCOMPARE(stripFader->peakHoldMs(), 0);
+		stripFader->setPeak_L(0.f);
+		stripFader->setPeak_R(0.f);
+		indicator->resetPeakToMinusInf();
+		feed(Engine::mixer()->mixerChannel(index), QStringLiteral("peak"), 0.5f);
+		tick();
+		QCOMPARE(indicator->text(), QStringLiteral("-6.0"));
+		feed(Engine::mixer()->mixerChannel(index), QStringLiteral("peak"), std::numeric_limits<float>::infinity());
+		tick();
+		feed(Engine::mixer()->mixerChannel(index), QStringLiteral("peak"), 0.8f);
+		tick();
+		QCOMPARE(indicator->text(), QStringLiteral("-1.9"));
 	}
 
 private:

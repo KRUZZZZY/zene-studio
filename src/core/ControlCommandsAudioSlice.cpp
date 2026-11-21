@@ -193,11 +193,22 @@ QDomElement slicerState(QDomDocument& doc, SampleClip& clip, const std::vector<f
 	return state;
 }
 
-//! The source frames a slice starts at: the clip's transients, or every beat of its window - the
-//! first at the clip's in-point, so the opening beat is a slice that plays too (gridInside starts after it).
+//! The transient frames with the clip's in-point in front, so the audio before the first burst is a slice that plays too.
+//! The in-point is added only when it comes before the first transient: a transient on the in-point already starts a slice there.
+//! No transients stays empty (NotFound upstream).
+std::vector<f_cnt_t> withLeadIn(SampleClip& clip, std::vector<f_cnt_t> transients)
+{
+	if (transients.empty()) { return transients; }
+	const f_cnt_t inPoint = clip.sourceFrameAt(clip.startPosition());
+	if (inPoint < transients.front()) { transients.insert(transients.begin(), inPoint); }
+	return transients;
+}
+
+//! The source frames a slice starts at: the clip's transients with the lead-in in front (withLeadIn), or every beat of its
+//! window - the first at the clip's in-point, so the opening beat is a slice that plays too (gridInside starts after it).
 std::vector<f_cnt_t> sliceFrames(SampleClip& clip, const QString& at)
 {
-	if (at != QStringLiteral("beats")) { return clipTransientFrames(clip); }
+	if (at != QStringLiteral("beats")) { return withLeadIn(clip, clipTransientFrames(clip)); }
 	// A clip with no audio has nothing to slice, as on the transients path (an empty result is NotFound).
 	const SampleWindow window = clip.sampleWindow();
 	if (clip.sample().sampleSize() == 0 || window.sourceOut <= window.sourceIn) { return {}; }

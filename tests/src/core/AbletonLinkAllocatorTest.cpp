@@ -1,8 +1,11 @@
 /*
  * AbletonLinkAllocatorTest.cpp - the vendored asio allocators refuse a count whose
- *                                byte size wraps.
+ *                                byte size wraps, and the vendored Link header
+ *                                clamps a client tempo into Link's range.
  *
- * THE CLAIM: allocate(n) on the three asio allocators that Link's asio build
+ * This file covers both vendored-Link header contracts.
+ *
+ * THE CLAIM (allocators): allocate(n) on the three asio allocators that Link's asio build
  * compiles - detail::recycling_allocator, execution_context::allocator and
  * any_completion_handler_allocator - throws std::bad_array_new_length for the
  * count SIZE_MAX / sizeof(T) + 1. There sizeof(T) * n wraps to a small number,
@@ -12,10 +15,19 @@
  * Seams: none needed. Each test computes its overflowing count from the element
  * type and calls the allocator directly. There are no threads, timers, clocks or
  * sleeps, so the result does not depend on the machine's load.
+ *
+ * THE CLAIM (clampTempo): clampTempo(timeline) returns a timeline whose tempo lies in
+ * [20, 999] BPM for every finite input, and whose tempo is a finite 120 BPM for NaN
+ * and both infinities. The beat origin and the time origin are left unchanged. A
+ * non-finite tempo must never reach the session, because a NaN tempo turns every
+ * toBeats() result into NaN. The test calls clampTempo directly on a Timeline built
+ * from plain values, with no clocks, threads, sockets or sleeps.
  */
 
 #include <QtTest>
 
+#include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -25,6 +37,13 @@
 #include "asio/detail/recycling_allocator.hpp"
 #include "asio/execution_context.hpp"
 #include "asio/io_context.hpp"
+
+#include <ableton/link/ClientSessionTimelines.hpp>
+
+using ableton::link::Beats;
+using ableton::link::Tempo;
+using ableton::link::Timeline;
+using ableton::link::clampTempo;
 
 namespace {
 
@@ -60,6 +79,7 @@ private slots:
 	void recyclingAllocatorStillAllocatesAndFrees();
 	void executionContextAllocatorRejectsWrappingCount();
 	void anyCompletionHandlerAllocatorRejectsWrappingCount();
+	void clampTempoStaysWithinTheLinkRange();
 };
 
 void AbletonLinkAllocatorTest::recyclingAllocatorRejectsWrappingCount()
@@ -99,6 +119,50 @@ void AbletonLinkAllocatorTest::anyCompletionHandlerAllocatorRejectsWrappingCount
 	const std::size_t n = overflowingCount<std::uint64_t>();
 	QVERIFY2(throwsArrayLength([&] { (void)alloc.allocate(n); }),
 	         "any_completion_handler_allocator must refuse a wrapping count");
+}
+
+void AbletonLinkAllocatorTest::clampTempoStaysWithinTheLinkRange()
+{
+	const auto timeOrigin = std::chrono::microseconds{250000};
+	const auto makeTimeline = [timeOrigin](double bpm) {
+		return Timeline{Tempo{bpm}, Beats{3.5}, timeOrigin};
+	};
+
+	struct Case
+	{
+		double input;
+		double expected;
+	};
+
+	const Case finiteCases[] = {
+		{20.0, 20.0},
+		{120.0, 120.0},
+		{999.0, 999.0},
+		{19.999, 20.0},
+		{999.001, 999.0},
+	};
+	for (const Case &c : finiteCases) {
+		const Timeline clamped = clampTempo(makeTimeline(c.input));
+		QVERIFY(std::isfinite(clamped.tempo.bpm()));
+		QCOMPARE(clamped.tempo.bpm(), c.expected);
+		QCOMPARE(clamped.beatOrigin.floating(), 3.5);
+		QVERIFY(clamped.timeOrigin == timeOrigin);
+	}
+
+	const double nonFiniteInputs[] = {
+		std::numeric_limits<double>::quiet_NaN(),
+		std::numeric_limits<double>::infinity(),
+		-std::numeric_limits<double>::infinity(),
+	};
+	for (const double input : nonFiniteInputs) {
+		const Timeline clamped = clampTempo(makeTimeline(input));
+		QCOMPARE(clamped.tempo.bpm(), 120.0);
+		const double oneSecondInBeats =
+			clamped.toBeats(std::chrono::microseconds{1000000}).floating();
+		QVERIFY(std::isfinite(oneSecondInBeats));
+		QCOMPARE(clamped.beatOrigin.floating(), 3.5);
+		QVERIFY(clamped.timeOrigin == timeOrigin);
+	}
 }
 
 QTEST_GUILESS_MAIN(AbletonLinkAllocatorTest)

@@ -174,6 +174,7 @@ private slots:
 		QVERIFY2(!m_tone.isEmpty(), "the audio-cell fixture was not written");
 
 		QVERIFY(run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}}).ok);
+		QVERIFY(Track::create(Track::Type::Pattern, Engine::getSong()) != nullptr);
 		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 2}, {QStringLiteral("scenes"), 2}}).ok);
 		QVERIFY(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0},
 			{QStringLiteral("type"), QStringLiteral("audio")}, {QStringLiteral("source"), m_tone},

@@ -29,6 +29,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
+#include <stdexcept>
 
 namespace lmms::link
 {
@@ -60,9 +62,23 @@ bool isValidPacketShape(std::size_t frames, std::uint32_t sampleRate)
 
 std::size_t roundUpPowerOfTwo(std::size_t v)
 {
+	if (v > (std::numeric_limits<std::size_t>::max() >> 1) + 1)
+	{
+		throw std::length_error("ring capacity cannot be rounded up to a power of two");
+	}
 	std::size_t p = 1;
 	while (p < v) { p <<= 1; }
 	return p;
+}
+
+//! Frames x channels; a product that wraps would size the storage too small, so it is refused instead.
+std::size_t ringStorageSize(std::size_t frames)
+{
+	if (frames > std::numeric_limits<std::size_t>::max() / static_cast<std::size_t>(AudioChannels))
+	{
+		throw std::length_error("ring storage size overflows size_t");
+	}
+	return frames * static_cast<std::size_t>(AudioChannels);
 }
 
 } // namespace
@@ -154,7 +170,7 @@ bool parseIpv4(const std::string& text, std::uint32_t& address)
 
 AudioRing::AudioRing(std::size_t capacityFrames)
 	: m_capacity(roundUpPowerOfTwo(std::max<std::size_t>(capacityFrames, 2)))
-	, m_data(m_capacity * AudioChannels, 0.0f)
+	, m_data(ringStorageSize(m_capacity), 0.0f)
 {
 }
 

@@ -112,6 +112,9 @@ set(LMMS_TESTS
 	# duplicate key is refused at registration and never overwrites another model's saved value.
 	src/core/ParameterControlsTest.cpp
 	src/core/AutomationModesTest.cpp
+	# cluster new-p16-100: LocaleHelper::toFloat must reject every non-finite parse with ok=false and
+	# 0.0f, and a project load must keep a saved nan/inf out of the model.
+	src/core/LocaleHelperTest.cpp
 	# Q050-037: the pre-first-point contract of an automation clip - times
 	# before the first node read the authored parameter's initial value (or an
 	# explicit point at the clip's start) rather than zero, on the map read AND
@@ -310,6 +313,7 @@ set(LMMS_TESTS
 	src/core/ControlSampleArrayTest.cpp
 	# The undo-record bookkeeping for nested and wrapped commands (one record per journal step).
 	src/core/ControlRegistryNestingTest.cpp
+	src/core/ControlRegistryObserverTest.cpp
 	src/core/ControlEventHubTest.cpp
 	# Replies held to their declared resultSchema (ZENE_CONTROL_CHECK_RESULTS), and
 	# every command's id is its group.verb.
@@ -570,6 +574,7 @@ set(LMMS_TESTS
 	# name the follower cannot hold is refused invalid_args.
 	src/core/MidiClockSourceTest.cpp
 	src/core/MidiInputGateTest.cpp
+	src/core/MidiWinMMShortMessageTest.cpp
 	src/core/MidiLearnThreadTest.cpp
 	src/core/MidiSurfaceInputTest.cpp
 	src/core/MidiRetroCaptureTest.cpp
@@ -1086,6 +1091,8 @@ set(LMMS_TESTS
 	src/core/MasteringSequenceTest.cpp
 	# 0.5.0 L11 (W3): a clip into the library, the index and similar sounds, thumbnails, the matched preview, history.
 	src/core/LibraryBrowserTest.cpp
+	# Q050-183.1: audio.device_list's running-backend fields; audio.test_tone reaches the master output, stops, and leaves the project alone.
+	src/core/AudioTestToneTest.cpp
 	# 0.5.0 Q050-048: browser feature analysis decodes only its window (WAV/FLAC/OGG), duration from the header.
 	src/core/BrowserFeaturesWindowTest.cpp
 	src/core/LadspaManagerTest.cpp
@@ -1434,6 +1441,8 @@ set(LMMS_TESTS
 	src/gui/PluginGestureUndoTest.cpp
 	# Q050-486: the Wave Shaper editor's Graph shows a loaded curve, keeps it on a damaged one, and saves a drawn edit.
 	src/gui/GraphWaveformEditorGuiTest.cpp
+	# cluster new-p23-104: the BitInvader view's Sample length knob resizes its graph; a shrink and regrow keeps the kept samples and zeroes the tail.
+	src/gui/BitInvaderViewLengthTest.cpp
 	# M0 coverage: the mixer's windows (routing matrix, large meters, EQ compare), hardware / surround menus, the surround panner.
 	src/gui/MixerWindowsTest.cpp
 	# Q050-124: the bus strip's Freeze bus / Unfreeze bus entry, driven through the strip's own context menu.
@@ -1689,6 +1698,8 @@ set(LMMS_TESTS
 	src/plugins/SlicerTWaveformTest.cpp
 	# BitInvader's note state lives in the note handle: no heap allocation on the render path.
 	src/plugins/BitInvaderAllocationTest.cpp
+	# BitInvader's loadSettings clamps out-of-range wavetable values and refuses malformed payloads.
+	src/plugins/BitInvaderLoadSettingsTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
 	src/tracks/HeadlessGuiGuardTest.cpp
@@ -1748,6 +1759,8 @@ endif()
 # decoder state on every exit (the read-error path included).
 # cluster new-p14-276: the bounded decoder refuses a limit it cannot turn into a frame count.
 list(APPEND LMMS_TESTS src/core/SampleDecoderLimitTest.cpp)
+# cluster new-p14-272: a file whose header promises more frames than it holds is refused, not padded with silence.
+list(APPEND LMMS_TESTS src/core/SampleDecoderShortReadTest.cpp)
 
 # Offline stem separation tests (on by default, owner decision 14; see doc/STEM-SPLIT.md).
 IF(LMMS_HAVE_STEM_SPLIT)
@@ -1809,6 +1822,8 @@ ENDIF()
 IF(ZENE_UPDATE_CHECK_ENABLED)
 	LIST(APPEND LMMS_TESTS src/gui/UpdateCheckWindowsTest.cpp src/gui/UpdateCheckHiddenTest.cpp)
 ENDIF()
+# Q050-183.1: Settings > Audio's running output box and its test tone, over the real Settings dialog.
+LIST(APPEND LMMS_TESTS src/gui/AudioOutputStatusBoxTest.cpp)
 
 # Peer-to-peer collaboration (0.5.0 F6): the invite, the TLS-PSK transport and the port-mapping
 # codecs exist only with Qt Network.
@@ -2081,6 +2096,13 @@ list(APPEND LMMS_TESTS src/core/WideDiscreteBusTest.cpp)
 list(APPEND LMMS_TESTS src/core/WidePinRoutingTest.cpp src/gui/WidePinRoutingGuiTest.cpp)
 # Q050-296.1: 5.1/7.1 speakers processed by pinned channel devices and delivered on their matching outputs.
 list(APPEND LMMS_TESTS src/core/SurroundDevicePathTest.cpp)
+# Q050-224.1: the crash reporter installs its handlers with SA_ONSTACK, but
+# sigaltstack() is per-thread. A live Lv2Worker's fake work() callback proves
+# the registration happens before its first work, and a forked child makes
+# that callback overflow on the worker thread: bounded report, thread != pid,
+# death by SIGSEGV. The other three launch sites are covered by the source gate
+# tests/worker-altstack-registration-check.py.
+list(APPEND LMMS_TESTS src/core/WorkerAltStackTest.cpp)
 
 # Q050-054.1: MIDI takes recorded on armed instrument tracks by transport.record - the capture queue,
 # plain and loop passes, undo/redo, the active-take model and save/load (core); the Record menu entry
@@ -2096,6 +2118,10 @@ list(APPEND LMMS_TESTS src/gui/MidiCompLaneGuiTest.cpp)
 # hosted mingw64 job died on exactly that in RnnoiseDenoiserEffectTest. The population is read out
 # of the targets' own sources at configure time by the audit at the bottom of this file.
 list(APPEND LMMS_TESTS src/plugins/PluginExportBranchTest.cpp)
+
+IF(LMMS_HAVE_OSS)
+	LIST(APPEND LMMS_TESTS src/core/AudioOssDeviceConfigTest.cpp)
+ENDIF()
 
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
@@ -2129,6 +2155,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		if(NOT MSVC)
 			target_link_libraries(${LMMS_TEST_NAME} PRIVATE m)
 		endif()
+	endif()
+	# WinMM short-message packing: the regression reads the output path's source by its compiled-in root.
+	if(LMMS_TEST_NAME STREQUAL "MidiWinMMShortMessageTest")
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			ZENE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 	endif()
 	# Q050-317.1: the release-sequence tests open a real mastering document through
 	# project.new_document, so the build's own template devices must exist (the same reason
@@ -2262,6 +2293,15 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/external/simde)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz)
 	endif()
+	if(LMMS_TEST_NAME STREQUAL "SfzPlayerTest")
+		# Cluster ci-d2bfae2f2ab57bfb: this test compiles the vendored Abseil internal header that backs its
+		# state-saver regression, so its nested `absl/...` includes must resolve inside the same vendored tree.
+		# Without this root a host Abseil masked the hole on Linux and windows-arm64 (which has none) stopped
+		# at "absl/meta/type_traits.h file not found". The test's static_assert then fails the build whenever
+		# a host Abseil is selected. Same include root as the sfizz white-box tests above.
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/external/abseil-cpp)
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "ReverbSCBaseTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/plugins/ReverbSC/base.c)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/plugins/ReverbSC)
@@ -2316,6 +2356,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz)
 	endif()
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
+	if(LMMS_TEST_NAME STREQUAL "AudioOssDeviceConfigTest")
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "SfizzLeakDetectorTest")
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -2584,7 +2627,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	# BitInvader is a plug-in module, so the test compiles the product's own note code in.
 	# Its generated plugin_export.h (PLUGIN_EXPORT) sits beside the plug-in's build output.
-	if(LMMS_TEST_NAME STREQUAL "BitInvaderAllocationTest")
+	if(LMMS_TEST_NAME STREQUAL "BitInvaderAllocationTest" OR LMMS_TEST_NAME STREQUAL "BitInvaderLoadSettingsTest" OR LMMS_TEST_NAME STREQUAL "BitInvaderViewLengthTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/BitInvader/BitInvader.cpp
 			${CMAKE_SOURCE_DIR}/plugins/BitInvader/BitInvader.h)
@@ -3211,6 +3254,23 @@ target_compile_features(RemotePluginShmFifoCompileCheck PRIVATE cxx_std_20)
 # lmms_export.h makes those __declspec(dllimport) on Windows (cluster ci-v041-5).
 target_compile_definitions(RemotePluginShmFifoCompileCheck PRIVATE LMMS_STATIC_DEFINE LMMS_TESTING SYNC_WITH_SHM_FIFO)
 add_dependencies(RemotePluginShmFifoTest RemotePluginShmFifoCompileCheck)
+
+# RemotePluginAudioPortsTest has socket-transport-only helpers. A host without
+# <sys/ipc.h> (mingw64) selects SYNC_WITH_SHM_FIFO in RemotePluginBase.h, which
+# compiles those tests out; an unguarded helper is then -Werror=unused-function
+# and the whole hosted build stops (cluster ci-21b94bcfc72522e8). Compile the
+# real translation unit in that configuration on every host, so the Linux build
+# sees the branch the Windows job takes. Built with the tests: no link, no test
+# registration, and nothing the product links changes.
+add_library(RemotePluginAudioPortsShmCompileCheck OBJECT src/core/RemotePluginAudioPortsTest.cpp)
+target_include_directories(RemotePluginAudioPortsShmCompileCheck PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
+target_link_libraries(RemotePluginAudioPortsShmCompileCheck PRIVATE
+	${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
+target_compile_features(RemotePluginAudioPortsShmCompileCheck PRIVATE cxx_std_20)
+target_compile_definitions(RemotePluginAudioPortsShmCompileCheck PRIVATE
+	LMMS_STATIC_DEFINE LMMS_TESTING SYNC_WITH_SHM_FIFO)
+
 # RemotePluginBase.h on a host without <sys/ipc.h> (Windows): a shadow
 # lmmsconfig.h, first on this target's include path, takes the header's own
 # SYNC_WITH_SHM_FIFO branch on every host (cluster ci-v041-5).
@@ -4009,6 +4069,7 @@ set_tests_properties(SessionSyncActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFO
 set_tests_properties(FollowActionEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PluginControlDialogsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(GraphWaveformEditorGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(BitInvaderViewLengthTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerWindowsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerBusFreezeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerMaskingReportWindowTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -4072,6 +4133,7 @@ if(ZENE_UPDATE_CHECK_ENABLED)
 	set_tests_properties(UpdateCheckWindowsTest UpdateCheckHiddenTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 set_tests_properties(ReferenceProjectPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(AudioOutputStatusBoxTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TelemetryConsentDialogTest AafImportMenuTest TrackIconsLevelBarTest TrackGripContrastTest ArrangerKeysNavigatorTest ToolMenuAtPointerTest ArrangerClipboardKeysTest NoteBackgroundAudioTest ArrangerOverlaysVideoLaneTest VideoClipsGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteTransformActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -5269,6 +5331,14 @@ if(WANT_WASM)
 		${CMAKE_SOURCE_DIR}/src/wasm/WasmWorkerPool.cpp
 		${CMAKE_SOURCE_DIR}/src/wasm/WasmOfflineRender.cpp
 		${CMAKE_SOURCE_DIR}/src/core/AudioWorkerWake.cpp
+		# Q050-224.1: WasmWorkerPool.cpp now registers the reporter's alternate
+		# stack on each lane, so the test must carry the reporter's three units
+		# (the POSIX half + its formatters, and the Windows no-op half). They
+		# are compiled INTO this binary for the same reason the pool is: this
+		# test deliberately does not link lmmsobjs.
+		${CMAKE_SOURCE_DIR}/src/core/CrashReporter.cpp
+		${CMAKE_SOURCE_DIR}/src/core/CrashReporterFormat.cpp
+		${CMAKE_SOURCE_DIR}/src/core/CrashReporterWindows.cpp
 	)
 	add_test(NAME WasmWorkerPoolTest COMMAND WasmWorkerPoolTest)
 	target_include_directories(WasmWorkerPoolTest PRIVATE
@@ -5869,6 +5939,31 @@ if(TARGET lmms_vst3_sdk)
 		VST3_TEST_PLUGIN_PATH="${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}"
 	)
 	add_dependencies(Vst3EffectIntegrationTest vst3-test-effect)
+endif()
+
+# Q050-267.1: the Zene Rack product VST3 bundle, opened by the SDK's own
+# external hosting loader (Module::create) rather than Zene's host wrapper.
+# The target only exists when plugins/ZeneRack configured (pinned SDK present).
+if(TARGET zenerack)
+	add_executable(ZeneRackTest
+		src/plugins/ZeneRackTest.cpp
+	)
+	add_test(NAME ZeneRackTest COMMAND ZeneRackTest)
+	target_include_directories(ZeneRackTest PRIVATE
+		${CMAKE_BINARY_DIR}
+		${CMAKE_SOURCE_DIR}/include
+	)
+	target_compile_features(ZeneRackTest PRIVATE cxx_std_20)
+	target_link_libraries(ZeneRackTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY}
+		lmms_vst3_sdk
+		${CMAKE_DL_LIBS}
+	)
+	target_compile_definitions(ZeneRackTest PRIVATE
+		ZENERACK_BUNDLE_PATH="${ZENERACK_BUNDLE_DIR}"
+	)
+	add_dependencies(ZeneRackTest zenerack)
 endif()
 
 # Instrument the plugin/gate test executables as well - they compile fork
@@ -6816,6 +6911,21 @@ if(PYTHON3_EXECUTABLE AND NOT WIN32 AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|A
 			${CMAKE_C_COMPILER}
 			${CMAKE_CURRENT_SOURCE_DIR}/data/vst2-test-instrument/vst2-test-instrument.c)
 	set_tests_properties(Vst2FixtureDarwinHeaders PROPERTIES TIMEOUT 60)
+endif()
+
+# Q050-224.1: the crash reporter's handlers are installed with SA_ONSTACK, but
+# sigaltstack() is per-thread. Four engine workers start their own threads and
+# three of them have no callback a test can inject into, so this source gate is
+# their coverage proof: the registration must be the first statement of each
+# thread-launch lambda, before workerFunc()/run()/workerLoop()/laneMain() is
+# called. Negative probes prove the predicate rejects a missing registration, a
+# registration after the work, and one placed on the caller's thread instead.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME WorkerAltStackRegistration
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/worker-altstack-registration-check.py
+			--root ${CMAKE_SOURCE_DIR})
+	set_tests_properties(WorkerAltStackRegistration PROPERTIES TIMEOUT 60)
 endif()
 
 # The crash reporter's ARM/DISARM proof redeclares sigaction() to inject a failed
@@ -8209,6 +8319,11 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-no-audio-device.py
 			$<TARGET_FILE:zene>
 	)
+	add_test(NAME ControlAudioTestTone
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-audio-test-tone.py
+			$<TARGET_FILE:zene>
+	)
 	add_test(NAME ControlNegativeControl
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-negative-control.py
@@ -8275,7 +8390,7 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-hybrid-track-role-transcript.py
 			$<TARGET_FILE:zene>
 	)
-	set_tests_properties(ControlShutdown ControlReadiness ControlNoAudioDevice
+	set_tests_properties(ControlShutdown ControlReadiness ControlNoAudioDevice ControlAudioTestTone
 		ControlNegativeControl ControlStableIdsSlice2 ControlStableIds
 		ControlReversibilityTranscript ControlMediaAgentTranscript ControlTransientRepeatTranscript
 		ControlHybridTrackTranscript ControlHybridTrackRoleTranscript PROPERTIES
@@ -9001,6 +9116,14 @@ endif()
 if(PYTHON3_EXECUTABLE)
 	add_test(NAME DocFiguresGate
 		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/doc-figures-gate.py)
+endif()
+
+# Q050-356: docs/MIDI-INPUT-SUPPORT.md must keep the UMP position (not yet supported, scope not defined)
+# and every path:line citation in it must still resolve.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME MidiInputSupportDoc
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/midi-input-support-doc-check.py
+		WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endif()
 
 # Q050-308 (R-workflow-117): the MIDI Clock docs must describe BOTH routes to source_port and

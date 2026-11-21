@@ -1620,6 +1620,7 @@ plugins/WasmEffect/WasmEffectControlDialog.h
 plugins/WasmEffect/WasmEffectControls.cpp
 plugins/WasmEffect/WasmEffectControls.h
 plugins/Watsyn/WatsynParamHandoff.h
+plugins/ZeneRack/ZeneRack.cpp
 scripts/capabilities-dump.py
 src/core/AafImportBuild.cpp
 src/core/AafImportModel.cpp
@@ -2411,6 +2412,9 @@ include/MidiInputGate.h
 tests/src/core/MidiInputGateTest.cpp
 tests/src/core/MidiAlsaSeqShutdownTest.cpp
 tests/src/core/MidiAlsaRawShutdownTest.cpp
+# WinMM short-message packing: the pitch-bend regression for the WinMM output path (new-p14-179).
+include/MidiWinMMShortMessage.h
+tests/src/core/MidiWinMMShortMessageTest.cpp
 # Train 27 tools-complexity refactor: cause, unchanged enforcement, negative controls and validation.
 docs/qwen-fixes-2026-10/sol-train-27-tools-complexity.md
 docs/050-features/Q050-488.md
@@ -2620,6 +2624,7 @@ tests/mcp_stdio_session.py
 # menu's Clock Source picker and the Project tools > Sync > Follow MIDI Clock... form carrying
 # source_port and drift_bound_ms - and fails on an unmarked socket-only claim about either field.
 tests/midi-clock-docs-gate.py
+tests/midi-input-support-doc-check.py
 tests/midi_reconnect_flows.py
 tests/midi_reconnect_probe.py
 tests/mmpz-v2-container-refusal.py
@@ -2708,6 +2713,7 @@ tests/src/core/AudioBurstSupport.h
 tests/src/core/AudioBusPlayHandleQueueTest.cpp
 tests/src/core/AudioClipLoopTest.cpp
 tests/src/core/AudioEditingTest.cpp
+tests/src/core/AudioTestToneTest.cpp
 tests/src/core/AudioOssWriteTest.cpp
 tests/src/core/AudioJackPortRestartTest.cpp
 tests/src/core/AudioFileProcessorPlayheadTest.cpp
@@ -2779,6 +2785,7 @@ tests/src/core/ControlShutdownHookTest.cpp
 tests/src/core/ControlSampleBakeGuardTest.cpp
 tests/src/core/ControlSampleOperatorTest.cpp
 tests/src/core/ControlRegistryNestingTest.cpp
+tests/src/core/ControlRegistryObserverTest.cpp
 tests/src/core/ControlSampleArrayTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
 tests/src/core/ControlSurfaceReferenceTest.cpp
@@ -3400,6 +3407,8 @@ docs/qwen-fixes-2026-10/cluster-new-p9-326-port.md
 tests/src/gui/CPULoadWidgetTest.cpp
 # cluster new-p11-43-port (2026-10): ALREADY-FIXED port report for note.slide_clear's inverse.
 docs/qwen-fixes-2026-10/cluster-new-p11-43-port.md
+# cluster new-p23-104 (2026-11): the BitInvader view's Sample length knob drives the wavetable graph; the shrink-and-regrow regression through the real view is fork-NEW.
+tests/src/gui/BitInvaderViewLengthTest.cpp
 # cluster new-p12-278 (2026-10): Vibed waveform handoff regression test (fork-NEW).
 tests/src/plugins/VibedWaveformHandoffTest.cpp
 # cluster new-p15-238 (2026-10): Vibed note render below the base sample rate (fork-NEW).
@@ -3516,6 +3525,8 @@ docs/qwen-fixes-2026-10/cluster-new-p14-271.md
 tests/src/core/SampleDecoderOggStateTest.cpp
 # cluster new-p14-276 (2026-10): the bounded decoder's decode-limit regression test (fork-NEW).
 tests/src/core/SampleDecoderLimitTest.cpp
+# cluster new-p14-272: a header-only FLAC (declared frames, no audio) is refused by the decoder instead of being padded with silence.
+tests/src/core/SampleDecoderShortReadTest.cpp
 # cluster new-p12-238-port (2026-10): a malformed session attribute must not become a
 # valid target - the Follow Action jump target, the legacy scene index and the
 # legacy clip coordinate (fork-NEW regression source).
@@ -3658,6 +3669,8 @@ tests/moc-qt5-trailing-return-check.py
 tests/qt5-overloaded-signal-check.py
 tests/src/core/RemotePluginShmFifoNoSysIpcProbe.cpp
 docs/qwen-fixes-2026-10/cluster-ci-v041-5.md
+# cluster ci-v041-2 (2026-11): report - linux-arm64 vendored-Eigen warning in NamModelLoaderTest, ALREADY-FIXED by ac17b5ddd (cluster ci-c487f7d0c9f0a1ac).
+docs/qwen-fixes-2026-10/cluster-ci-v041-2.md
 include/HostedTrackChannels.h
 include/PluginInstantiationFailure.h
 src/core/PluginInstantiationFailure.cpp
@@ -3974,3 +3987,28 @@ tests/src/plugins/CarlaVst2LegacyStateTest.cpp
 tests/src/gui/LegacyVst2ProjectTest.cpp
 tests/data/legacy-projects/vst2-vestige-vsteffect.mmp
 tests/data/legacy-projects/vst2-vestige-vsteffect.reference.json
+
+# cluster ci-d2bfae2f2ab57bfb (2026-11): the windows-arm64 SfzPlayerTest include-root fix and its evidence.
+docs/qwen-fixes-2026-10/cluster-ci-d2bfae2f2ab57bfb.md
+# Cluster ci-21b94bcfc72522e8: the mingw64 test TU compiles its socket-only helpers out; this report records the guard and the SHM-configuration compile check.
+docs/qwen-fixes-2026-10/cluster-ci-21b94bcfc72522e8.md
+# Q050-183.1: audio test tone command
+include/AudioTestTone.h
+src/core/ControlCommandsAudioTestTone.cpp
+include/AudioOutputStatusBox.h
+src/gui/modals/AudioOutputStatusBox.cpp
+tests/src/gui/AudioOutputStatusBoxTest.cpp
+tests/control-audio-test-tone.py
+docs/050-features/Q050-183.1.md
+# Q050-183.1 (stage 1/2): verification report with acceptance evidence and self-check.
+docs/qwen-fixes-2026-10/cluster-Q050-183.1.md
+# Q050-267.1: the external-host regression for the Zene Rack VST3 bundle - it opens the
+# built bundle through the VST3 SDK's hosting loader (fork-NEW test, measured by the fork ratchets).
+tests/src/plugins/ZeneRackTest.cpp
+# Q050-224.1: the LV2 worker's alternate-stack proof (a live worker's first work() and a forked overflow).
+tests/src/core/WorkerAltStackTest.cpp
+# cluster new-p10-541: BitInvader's loadSettings clamp and refusal regression.
+tests/src/plugins/BitInvaderLoadSettingsTest.cpp
+tests/src/core/AudioOssDeviceConfigTest.cpp
+# cluster new-p16-100: LocaleHelper::toFloat parse contract and the project-load non-finite leg (fork-NEW).
+tests/src/core/LocaleHelperTest.cpp

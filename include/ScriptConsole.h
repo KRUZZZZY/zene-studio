@@ -58,6 +58,8 @@ public:
 	//! Append a line or the truncation notice; true only for the first dropped line.
 	bool append(QStringList& messages, const QString& line);
 	static const QString& truncationNotice();
+	//! The per-run character limit; the single source for the capture cap.
+	static constexpr qsizetype characterLimit() { return 1024 * 1024; }
 
 private:
 	qsizetype m_characters{0};

@@ -119,6 +119,12 @@ void SessionSubScenes::save(QDomDocument& doc, QDomElement& parent) const
 	parent.appendChild(section);
 }
 
+void SessionSubScenes::clear()
+{
+	m_preserved.clear();
+	if (SessionModel* session = model()) { session->setSubScenes({}); }
+}
+
 void SessionSubScenes::load(const QDomElement& element)
 {
 	m_preserved.clear();

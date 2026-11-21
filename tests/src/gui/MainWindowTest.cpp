@@ -32,6 +32,8 @@
 #include <QApplication>
 #include <QDialog>
 #include <QMenu>
+#include <QPointer>
+#include <QScopeGuard>
 #include <QTabBar>
 #include <QTabBar>
 #include <QWidget>
@@ -44,6 +46,7 @@
 #include "GuiTestApplication.h"
 #include "MainWindow.h"
 #include "ProjectJournal.h"
+#include "SetupDialog.h"
 #include "Shell.h"
 #include "ShellRegionTabs.h"
 #include "Song.h"
@@ -155,6 +158,64 @@ private slots:
 		// isUnattendedRun() reports as having no display), so nothing was configured by the
 		// user: the next interactive launch must still be offered the dialog.
 		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("app"), QStringLiteral("configured")).toInt(), 0);
+	}
+
+	//! Edit > Settings dispatches window.settings, whose contract is a NON-modal dialog. The
+	//! constructor used to call show() itself while still application-modal, so the command's
+	//! later setModal(false) left the dialog as QApplication's active modal widget: the main
+	//! window stopped answering menus and Space while Settings was open, and the first input
+	//! after closing it was swallowed. Opening the command must not enter modal state at all.
+	void settingsOpensWithoutBecomingTheActiveModalWidget()
+	{
+		MainWindow* window = getGUI()->mainWindow();
+		QPointer<SetupDialog> settings;
+		// Close and delete the dialog even if an assertion below fails: it holds project
+		// journalling off until it is destroyed, and the undo tests that follow need it back.
+		const auto closeSettings = qScopeGuard([&] {
+			if (settings)
+			{
+				settings->close();
+				QCoreApplication::processEvents();
+				QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+			}
+			window->activateWindow();
+			window->setFocus();
+			QCoreApplication::processEvents();
+		});
+		Q_UNUSED(closeSettings);
+
+		const ControlResult opened = run(QStringLiteral("window.settings"));
+		QVERIFY2(opened.ok, qPrintable(opened.errorMessage));
+
+		for (QWidget* top : QApplication::topLevelWidgets())
+		{
+			if (auto* dialog = qobject_cast<SetupDialog*>(top); dialog != nullptr && dialog->isVisible())
+			{
+				settings = dialog;
+			}
+		}
+		QVERIFY2(settings != nullptr, "window.settings opened no visible Settings dialog");
+		QVERIFY(!settings->isModal());
+		QVERIFY2(QApplication::activeModalWidget() != settings,
+			"Settings is the active modal widget, so the main window cannot answer input");
+
+		// Asking again raises the one dialog instead of opening a second one, and it stays non-modal.
+		const ControlResult again = run(QStringLiteral("window.settings"));
+		QVERIFY2(again.ok, qPrintable(again.errorMessage));
+		int visibleSettings = 0;
+		for (QWidget* top : QApplication::topLevelWidgets())
+		{
+			if (qobject_cast<SetupDialog*>(top) != nullptr && top->isVisible()) { ++visibleSettings; }
+		}
+		QCOMPARE(visibleSettings, 1);
+		QVERIFY(QApplication::activeModalWidget() != settings);
+
+		settings->close();
+		QCoreApplication::processEvents();
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+		QVERIFY2(settings == nullptr, "the closed Settings dialog was not delete-on-close");
+		QVERIFY(QApplication::activeModalWidget() == nullptr);
+		QVERIFY(Engine::projectJournal()->isJournalling());
 	}
 
 	void redoShortcutWorksAfterUndoWhileTheEditMenuIsClosed()

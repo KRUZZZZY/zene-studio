@@ -47,6 +47,67 @@ void DeviceDspTest::aHighRateImpulseIsResampledWithoutAliasing() {
 		qPrintable(QStringLiteral("a quarter of the rate %1, 1 kHz %2").arg(folded).arg(low)));
 	chainOf(1).clear();
 }
+//! The 'impulse' attribute the convolution reverb on @a chain would save; empty when there is none.
+QString savedReverbImpulse(EffectChain& chain)
+{
+	for (Effect* effect : chain.effects())
+	{
+		if (QString::fromUtf8(effect->descriptor()->name) != QLatin1String("convolutionreverb")) { continue; }
+		QDomDocument doc;
+		if (!doc.setContent(controlEffectStateXml(effect))) { return QString(); }
+		return doc.elementsByTagName(QStringLiteral("ConvolutionReverbControls")).item(0).toElement()
+			.attribute(QStringLiteral("impulse"));
+	}
+	return QString();
+}
+
+void DeviceDspTest::anUnresamplableImpulseIsRefusedThroughTheCommand() {
+	const QString reverb = loadByName(ch(1), QStringLiteral("convolutionreverb"));
+	if (reverb.isEmpty()) { QSKIP("this build has no convolution reverb module"); }
+	QTemporaryDir dir;
+	const QString click = dir.filePath(QStringLiteral("click.wav"));
+	std::vector<qint16> samples(64, 0);
+	samples[0] = 16384;
+	QVERIFY(writeWav(click, samples));
+	const QJsonObject device{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), reverb}};
+	QJsonObject load = device;
+	load.insert(QStringLiteral("path"), click);
+	const ControlResult loaded = run(QStringLiteral("plugin.impulse_load"), load);
+	QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
+	const QString clickPath = savedReverbImpulse(chainOf(1));
+	QVERIFY2(clickPath == QFileInfo(click).absoluteFilePath(), qPrintable(clickPath));
+	long at = 0;
+	const float before = runBlocks(chainOf(1), sine(1000.0, 0.5f), 80, &at)[0];
+	QVERIFY2(before > 0.1f, qPrintable(QString::number(before)));
+	// A successful save is the public way to a clean modified flag (setModified(bool) is private).
+	const ControlResult saved = run(QStringLiteral("project.save"),
+		{{QStringLiteral("path"), dir.filePath(QStringLiteral("session.mmp"))}});
+	QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
+	QVERIFY2(!Engine::getSong()->isModified(), "a successful save left the project modified");
+	const int undoDepthBefore = Engine::projectJournal()->undoDepth();
+
+	const QString oneHertz = dir.filePath(QStringLiteral("one-hertz.wav"));
+	std::vector<qint16> badSamples(8, 0);
+	badSamples[0] = 16384;
+	QVERIFY(writeWav(oneHertz, badSamples, 1));
+	QJsonObject bad = device;
+	bad.insert(QStringLiteral("path"), oneHertz);
+	const ControlResult refused = run(QStringLiteral("plugin.impulse_load"), bad);
+	QVERIFY2(!refused.ok, "an impulse the resampler cannot convert was accepted");
+	QVERIFY2(refused.errorKind == ControlErrorKind::Refused, qPrintable(refused.errorMessage));
+	QVERIFY2(!refused.errorMessage.isEmpty(), "the refusal has no message");
+	QVERIFY2(savedReverbImpulse(chainOf(1)) == clickPath, "the refused impulse replaced the saved one");
+	const float after = runBlocks(chainOf(1), sine(1000.0, 0.5f), 80, &at)[0];
+	QVERIFY2(std::abs(after - before) < 0.03f, qPrintable(QStringLiteral("before %1, after %2").arg(before).arg(after)));
+	QVERIFY2(Engine::projectJournal()->undoDepth() == undoDepthBefore,
+		qPrintable(QStringLiteral("the refused load added undo steps: depth %1 -> %2")
+			.arg(undoDepthBefore).arg(Engine::projectJournal()->undoDepth())));
+	QVERIFY2(!Engine::getSong()->isModified(), "the refused load marked the project modified");
+
+	const ControlResult again = run(QStringLiteral("plugin.impulse_load"), load);
+	QVERIFY2(again.ok, qPrintable(again.errorMessage));
+	chainOf(1).clear();
+}
 void DeviceDspTest::recorderLandRefusesWithoutSong() {
 	const QString recorder = loadByName(ch(1), QStringLiteral("insertrecorder"));
 	if (recorder.isEmpty()) { QSKIP("this build has no recorder module"); }

@@ -117,13 +117,14 @@ private slots:
 		Engine::destroy();
 	}
 
-	//! Two song tracks, a 3x2 session grid (so column 2 has no song track) and an armed, empty ring.
+	//! Three song tracks (two instrument, one pattern), a 4x2 session grid (so column 3 has no song track) and an armed, empty ring.
 	void init()
 	{
 		m_song->clearProject();
 		m_first = Track::create(Track::Type::Instrument, m_song);
 		m_second = Track::create(Track::Type::Instrument, m_song);
-		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 3}, {QStringLiteral("scenes"), 2}}).ok);
+		QVERIFY(Track::create(Track::Type::Pattern, m_song) != nullptr);
+		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 4}, {QStringLiteral("scenes"), 2}}).ok);
 		QVERIFY(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0},
 			{QStringLiteral("type"), QStringLiteral("midi")}, {QStringLiteral("pattern"), 0}, {QStringLiteral("name"), QStringLiteral("Verse")}}).ok);
 		SessionArrangementRecorder::Event ignored;
@@ -210,6 +211,7 @@ private slots:
 
 	void aLandedMidiClipUsesThePatternThatWasLaunched()
 	{
+		QVERIFY(Track::create(Track::Type::Pattern, m_song) != nullptr);  // pattern 1: set_slot refuses an id the store lacks
 		auto* sourceTrack = dynamic_cast<InstrumentTrack*>(
 			Track::create(Track::Type::Instrument, Engine::patternStore()));
 		QVERIFY(sourceTrack != nullptr);
@@ -466,8 +468,8 @@ private slots:
 
 	void aColumnWithoutASongTrackAndAnEmptySpanAreReportedNotLanded()
 	{
-		QVERIFY(recorder().recordStart(2, 0, 0));    // column 2: the grid is wider than the song's track list
-		QVERIFY(recorder().recordStop(2, 0, 96));
+		QVERIFY(recorder().recordStart(3, 0, 0));    // column 3: the grid is wider than the song's track list
+		QVERIFY(recorder().recordStop(3, 0, 96));
 		QVERIFY(recorder().recordStart(1, 0, 48));   // stopped on the tick it started: nothing to make
 		QVERIFY(recorder().recordStop(1, 0, 48));
 		QVERIFY(recorder().recordStop(0, 1, 10));    // a stop whose start was never recorded

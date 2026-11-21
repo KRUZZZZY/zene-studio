@@ -242,6 +242,7 @@ private slots:
 
 	void landingAMidiSlotIsRefusedWithoutConsumingItsPerformance()
 	{
+		QVERIFY(Track::create(Track::Type::Pattern, Engine::getSong()) != nullptr);
 		QVERIFY(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0},
 			{QStringLiteral("scene"), 0}, {QStringLiteral("type"), QStringLiteral("midi")},
 			{QStringLiteral("pattern"), 0}}).ok);
