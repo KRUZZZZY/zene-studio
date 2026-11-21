@@ -39,6 +39,7 @@
 
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "ProjectSection.h"
 #include "SessionModel.h"
 #include "SessionScheduler.h"
 #include "Song.h"
@@ -354,6 +355,39 @@ private slots:
 			&rows, &resaved);
 		QCOMPARE(rows, std::size_t(1));
 		QVERIFY2(resaved.contains(QStringLiteral("name=\"Outer\"")), qPrintable(resaved));
+	}
+
+	//! The section-level reset (ProjectSection::clearAll, the hook Song::clearProject calls) empties the sub-scene rows the model
+	//! and the agent read, not only the preserved XML: a project saved after it holds no sub-scene.
+	void clearingTheProjectSectionsEmptiesTheModelRows()
+	{
+		Song* song = Engine::getSong();
+
+		const auto seedThenClear = [this, song](std::size_t count, const QString& label) {
+			std::vector<SubScene> rows;
+			for (std::size_t i = 0; i < count; ++i) {
+				SubScene row;
+				row.name = QStringLiteral("Seed %1").arg(i);
+				row.scene = 0;
+				row.tracks = {0};
+				rows.push_back(row);
+			}
+			song->sessionModel().setSubScenes(std::move(rows));
+			QCOMPARE(subScenes().size(), int(count));
+
+			ProjectSection::clearAll();
+			QVERIFY2(song->sessionModel().subScenes().empty(), "clearAll left the sub-scene rows in the model");
+			QVERIFY2(subScenes().isEmpty(), "session.get_state still reports sub-scenes after clearAll");
+
+			const QString path = m_dir.filePath(label + QStringLiteral(".mmp"));
+			QVERIFY(song->saveProjectFile(path, false));
+			QVERIFY(!readFileBytes(path).contains("<z:subscenes"));
+			QVERIFY(!readFileBytes(path).contains("<z:subscene "));
+		};
+
+		seedThenClear(1, QStringLiteral("cleared-one"));
+		seedThenClear(SubScene::MaxCount, QStringLiteral("cleared-full"));
+		seedThenClear(1, QStringLiteral("cleared-again"));
 	}
 
 private:
