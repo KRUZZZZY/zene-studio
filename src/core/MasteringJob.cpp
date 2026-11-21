@@ -32,6 +32,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <utility>
 
 #include <sndfile.h>
 
@@ -117,6 +119,73 @@ QString sanitiseName(const QString& name)
 	}
 	cleaned = cleaned.trimmed();
 	return cleaned.isEmpty() ? QStringLiteral("candidate") : cleaned;
+}
+
+//! Frames read per sf_readf_float call. The header's frame count is not trusted
+//! as an allocation size, so the loader grows its output chunk by chunk.
+constexpr sf_count_t SourceChunkFrames = 65536;
+
+//! The render path's own export window (main.cpp:1099, the export-preset
+//! schema). A source outside it could never have come from this render path.
+constexpr int MinSourceRate = 44100;
+constexpr int MaxSourceRate = 192000;
+
+//! Rejects a header before the loader allocates anything: no channels, a
+//! negative frame count, or a rate the render path cannot produce.
+bool validateSourceInfo(const SF_INFO& info, const QString& path, QString* error)
+{
+	if (info.channels == 0)
+	{
+		*error = QStringLiteral("%1 reports no channels; mastering is stereo only").arg(path);
+		return false;
+	}
+	if (info.channels != DEFAULT_CHANNELS)
+	{
+		*error = QStringLiteral("%1 has %2 channels; mastering is stereo only")
+			.arg(path).arg(info.channels);
+		return false;
+	}
+	if (info.frames < 0)
+	{
+		*error = QStringLiteral("%1 reports %2 frames").arg(path).arg(info.frames);
+		return false;
+	}
+	if (info.samplerate < MinSourceRate || info.samplerate > MaxSourceRate)
+	{
+		*error = QStringLiteral("%1 has a sample rate of %2 Hz; the render path accepts %3..%4 Hz")
+			.arg(path).arg(info.samplerate).arg(MinSourceRate).arg(MaxSourceRate);
+		return false;
+	}
+	return true;
+}
+
+//! Reads exactly \p frames frames through a fixed-size chunk buffer, appending
+//! to \p source. A short read or a negative count fails: mastering a prefix is
+//! not mastering the mix.
+bool readChunks(SNDFILE* file, sf_count_t frames, const QString& path,
+	std::vector<SampleFrame>& source, QString* error)
+{
+	std::vector<float> chunk(static_cast<std::size_t>(SourceChunkFrames) * DEFAULT_CHANNELS);
+	sf_count_t remaining = frames;
+	while (remaining > 0)
+	{
+		const sf_count_t want = std::min(remaining, SourceChunkFrames);
+		const sf_count_t read = sf_readf_float(file, chunk.data(), want);
+		if (read != want)
+		{
+			*error = QStringLiteral("reading %1 failed").arg(path);
+			return false;
+		}
+		const std::size_t base = source.size();
+		source.resize(base + static_cast<std::size_t>(read));
+		for (std::size_t i = 0; i < static_cast<std::size_t>(read); ++i)
+		{
+			source[base + i].setLeft(chunk[i * DEFAULT_CHANNELS]);
+			source[base + i].setRight(chunk[i * DEFAULT_CHANNELS + 1]);
+		}
+		remaining -= read;
+	}
+	return true;
 }
 
 /*! Test hook: hold this render child before it renders, so a client-side bound on
@@ -278,41 +347,62 @@ bool MasteringJob::renderSourceMix(QString* error)
 	return true;
 }
 
-bool MasteringJob::loadSourceMix(QString* error)
+bool MasteringJob::checkedSampleCount(std::size_t frames, std::size_t channels,
+	std::size_t* out)
 {
+	if (channels == 0 || frames > maxSourceFrames
+		|| frames > std::numeric_limits<std::size_t>::max() / channels)
+	{
+		return false;
+	}
+	if (out != nullptr)
+	{
+		*out = frames * channels;
+	}
+	return true;
+}
+
+bool MasteringJob::readSourceMix(const QString& path, std::vector<SampleFrame>& out,
+	sample_rate_t& rate, QString* error)
+{
+	QString sink;
+	if (error == nullptr)
+	{
+		error = &sink;
+	}
+
 	SF_INFO info{};
-	SndFileHandle file(m_sourceRenderFile, info, SFM_READ);
+	SndFileHandle file(path, info, SFM_READ);
 	if (!file.isOpen())
 	{
-		*error = QStringLiteral("cannot read %1: %2").arg(m_sourceRenderFile)
+		*error = QStringLiteral("cannot read %1: %2").arg(path)
 			.arg(QString::fromUtf8(sf_strerror(nullptr)));
 		return false;
 	}
-	if (info.channels != DEFAULT_CHANNELS)
+	if (!validateSourceInfo(info, path, error))
 	{
-		*error = QStringLiteral("%1 has %2 channels; mastering is stereo only")
-			.arg(m_sourceRenderFile).arg(info.channels);
 		return false;
 	}
 
-	const auto frames = static_cast<std::size_t>(std::max<sf_count_t>(0, info.frames));
-	std::vector<float> interleaved(frames * DEFAULT_CHANNELS);
-	const sf_count_t read = sf_readf_float(file.get(), interleaved.data(), info.frames);
-	if (read != info.frames)  // an error (negative) or a short read: mastering a prefix is not mastering the mix
+	const auto frames = static_cast<std::size_t>(info.frames);
+	if (!checkedSampleCount(frames, DEFAULT_CHANNELS, nullptr))
 	{
-		*error = QStringLiteral("reading %1 failed").arg(m_sourceRenderFile);
+		*error = QStringLiteral("%1 has an unsupported sample count").arg(path);
 		return false;
 	}
-
-	m_sampleRate = static_cast<sample_rate_t>(info.samplerate);
-	const auto loaded = static_cast<std::size_t>(read);
-	m_source.resize(loaded);
-	for (std::size_t i = 0; i < loaded; ++i)
+	std::vector<SampleFrame> source;
+	if (!readChunks(file.get(), info.frames, path, source, error))
 	{
-		m_source[i].setLeft(interleaved[i * DEFAULT_CHANNELS]);
-		m_source[i].setRight(interleaved[i * DEFAULT_CHANNELS + 1]);
+		return false;
 	}
+	rate = static_cast<sample_rate_t>(info.samplerate);
+	out = std::move(source);
 	return true;
+}
+
+bool MasteringJob::loadSourceMix(QString* error)
+{
+	return readSourceMix(m_sourceRenderFile, m_source, m_sampleRate, error);
 }
 
 bool MasteringJob::writeCandidate(const MasteringCandidate&, const std::vector<SampleFrame>& frames,
