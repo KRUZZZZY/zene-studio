@@ -544,6 +544,7 @@ AudioEngine::AudioEngine(bool renderOnly)
 		InputStageCapacityFrames);
 
 	BufferManager::init( m_framesPerPeriod );
+	CompSlipReaders::reserve(16); // the comp-slip pool's start size; the play-handle capacity top-up grows it
 	m_outputBufferRead = std::make_unique<SampleFrame[]>(m_framesPerPeriod);
 	m_outputBufferWrite = std::make_unique<SampleFrame[]>(m_framesPerPeriod);
 	m_hardwareOut.init(m_framesPerPeriod);  // 0.5.0 F1 (MX-040): allocated once, here, never on the render path
@@ -1565,6 +1566,9 @@ void AudioEngine::topUpPlayHandleCapacityOnControlThread()
 			}
 		}
 	}
+	BufferManager::reserve(static_cast<std::size_t>(m_playHandles.capacity()));
+	CompSlipReaders::reserve(static_cast<std::size_t>(m_playHandles.capacity()) / 8);
+	SamplePlayHandle::reserveForClips();
 	for (AudioBusHandle* bus : m_audioBusHandles) { bus->topUpPlayHandleCapacityUnderEngineChangeLock(); }
 }
 
