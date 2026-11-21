@@ -91,9 +91,9 @@ log; the earlier round's logs are superseded. `L` is the log directory
   ```
   git apply $L/mut-$N.patch
   cd build/tests && ctest -R ClangTemplateKeywordCheck --output-on-failure > $L/test-red-$N-r2.log 2>&1; echo EXIT=$? >> $L/test-red-$N-r2.log
-  cd - && git apply -R $L/mut-$N.patch
   ```
 
+  The reversal after each red run is the one shown in the Restore item below.
   `0% tests passed, 1 tests failed out of 1`, EXIT=8 for all four
   (`logs/test-red-394-r2.log`, `logs/test-red-400-r2.log`,
   `logs/test-red-522-r2.log`, `logs/test-red-528-r2.log`).
@@ -172,9 +172,24 @@ log; the earlier round's logs are superseded. `L` is the log directory
   The scan found 0 matches, EXIT=1 (`logs/evidence-4-scan-r2.log`); the compiler
   version log ends EXIT=0 (`logs/clang-version-r2.log`).
 
-The earlier `feature-check` gates run (`logs/gates-1.log`) belongs to an earlier
-round and is not re-run here; it is not the basis of any EXIT claim in this
-report.
+- Repository feature gates, re-run on the committed report:
+
+  ```
+  python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-4 > $L/gates-r2.log 2>&1; echo EXIT=$? >> $L/gates-r2.log
+  ```
+
+  | gate | result |
+  | --- | --- |
+  | fork-sources | PASS (exit 0) |
+  | all-sources-reproduce | PASS (exit 0) |
+  | no-upstream-regression | PASS (exit 0) |
+  | check-namespace | PASS (exit 0) |
+  | no-tautology | PASS (exit 0) |
+  | doc-figures | PASS (exit 0) |
+  | complexity | PASS (no new item in your files) |
+  | file-length | PASS (no new item in your files) |
+
+  RESULT: PASS, EXIT=0 (`logs/gates-r2.log`).
 
 ## 4. Unverified
 
