@@ -3413,6 +3413,8 @@ docs/qwen-fixes-2026-10/cluster-new-p9-326-port.md
 tests/src/gui/CPULoadWidgetTest.cpp
 # cluster new-p11-43-port (2026-10): ALREADY-FIXED port report for note.slide_clear's inverse.
 docs/qwen-fixes-2026-10/cluster-new-p11-43-port.md
+# cluster new-p23-104 (2026-11): the BitInvader view's Sample length knob drives the wavetable graph; the shrink-and-regrow regression through the real view is fork-NEW.
+tests/src/gui/BitInvaderViewLengthTest.cpp
 # cluster new-p12-278 (2026-10): Vibed waveform handoff regression test (fork-NEW).
 tests/src/plugins/VibedWaveformHandoffTest.cpp
 # cluster new-p15-238 (2026-10): Vibed note render below the base sample rate (fork-NEW).

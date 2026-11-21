@@ -3384,6 +3384,7 @@ tests/src/gui/AutomationEditorEditingTest.cpp
 tests/src/gui/AutomationLaneChildGuiTest.cpp
 tests/src/gui/AutomationModeMenuTest.cpp
 tests/src/gui/BackgroundTasksGuiTest.cpp
+tests/src/gui/BitInvaderViewLengthTest.cpp
 tests/src/gui/BrowserDragUrlTest.cpp
 tests/src/gui/BrowserProjectMediaTest.cpp
 tests/src/gui/BrowserTagMenuTest.cpp

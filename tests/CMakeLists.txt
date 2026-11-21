@@ -1441,6 +1441,8 @@ set(LMMS_TESTS
 	src/gui/PluginGestureUndoTest.cpp
 	# Q050-486: the Wave Shaper editor's Graph shows a loaded curve, keeps it on a damaged one, and saves a drawn edit.
 	src/gui/GraphWaveformEditorGuiTest.cpp
+	# cluster new-p23-104: the BitInvader view's Sample length knob resizes its graph; a shrink and regrow keeps the kept samples and zeroes the tail.
+	src/gui/BitInvaderViewLengthTest.cpp
 	# M0 coverage: the mixer's windows (routing matrix, large meters, EQ compare), hardware / surround menus, the surround panner.
 	src/gui/MixerWindowsTest.cpp
 	# Q050-124: the bus strip's Freeze bus / Unfreeze bus entry, driven through the strip's own context menu.
@@ -2629,7 +2631,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	# BitInvader is a plug-in module, so the test compiles the product's own note code in.
 	# Its generated plugin_export.h (PLUGIN_EXPORT) sits beside the plug-in's build output.
-	if(LMMS_TEST_NAME STREQUAL "BitInvaderAllocationTest" OR LMMS_TEST_NAME STREQUAL "BitInvaderLoadSettingsTest")
+	if(LMMS_TEST_NAME STREQUAL "BitInvaderAllocationTest" OR LMMS_TEST_NAME STREQUAL "BitInvaderLoadSettingsTest" OR LMMS_TEST_NAME STREQUAL "BitInvaderViewLengthTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/BitInvader/BitInvader.cpp
 			${CMAKE_SOURCE_DIR}/plugins/BitInvader/BitInvader.h)
@@ -4071,6 +4073,7 @@ set_tests_properties(SessionSyncActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFO
 set_tests_properties(FollowActionEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PluginControlDialogsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(GraphWaveformEditorGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(BitInvaderViewLengthTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerWindowsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerBusFreezeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerMaskingReportWindowTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
