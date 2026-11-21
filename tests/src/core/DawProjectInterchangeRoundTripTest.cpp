@@ -1947,6 +1947,83 @@ private slots:
 			"a clamped position was not counted in rounded_times");
 	}
 
+	//! A finite beat whose 48-tick product overflows the double range is not a
+	//! position the reader can place: it must be refused with the 48-tick-per-beat
+	//! cause, not kept at tick zero or clamped to the tick maximum. Each fixture
+	//! reaches the converter through a different field (note time, note duration,
+	//! clip time, clip duration, clip playStart). The two controls keep the clamp
+	//! for a finite value past the 32-bit grid and the exact path for a small value.
+	void finiteBeatValuesThatOverflowTheTickProductAreRefusedByReader()
+	{
+		const QByteArray prefix =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+			"<Channel id=\"c1\"/></Track></Structure>"
+			"<Arrangement><Lanes><Lanes track=\"t1\"><Clips>";
+		const QByteArray suffix = "</Clips></Lanes></Lanes></Arrangement></Project>";
+		const QByteArray normalNote =
+			"<Note time=\"0\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/>";
+		const auto documentWithClip = [&](const QByteArray& clipAttributes, const QByteArray& notes) {
+			return prefix + "<Clip " + clipAttributes + "><Notes>" + notes + "</Notes></Clip>" + suffix;
+		};
+
+		struct Fixture { QByteArray name; QByteArray xml; };
+		const QList<Fixture> overflowing = {
+			{"F1 note time=1e308", documentWithClip("time=\"0\" duration=\"4\"",
+				"<Note time=\"1e308\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/>")},
+			{"F2 note duration=1e308", documentWithClip("time=\"0\" duration=\"4\"",
+				"<Note time=\"0\" duration=\"1e308\" channel=\"0\" key=\"60\" vel=\"0.8\"/>")},
+			{"F3 clip time=1e308", documentWithClip("time=\"1e308\" duration=\"1\"", normalNote)},
+			{"F4 clip duration=1e308", documentWithClip("time=\"0\" duration=\"1e308\"", normalNote)},
+			{"F5 clip playStart=1e308", documentWithClip(
+				"time=\"0\" duration=\"1\" playStart=\"1e308\"", normalNote)},
+		};
+
+		QStringList accepted;
+		QStringList refusedWithOtherError;
+		for (const Fixture& fixture : overflowing)
+		{
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			if (dawProjectModelFromXml(fixture.xml, &model, &report, &error))
+			{
+				accepted << QString::fromLatin1(fixture.name);
+			}
+			else if (!error.contains(QStringLiteral("48-tick-per-beat")))
+			{
+				refusedWithOtherError << QStringLiteral("%1 refused with \"%2\"")
+					.arg(QString::fromLatin1(fixture.name), error);
+			}
+		}
+
+		DawProjectModel clampModel;
+		DawProjectReadReport clampReport;
+		QString clampError;
+		QVERIFY2(dawProjectModelFromXml(documentWithClip("time=\"50000000\" duration=\"0\"",
+			"<Note time=\"50000000\" duration=\"0\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"),
+			&clampModel, &clampReport, &clampError), qPrintable(clampError));
+		QVERIFY2(clampReport.loss.roundedTimes >= 1,
+			"a finite position past the 32-bit tick grid was not counted in rounded_times");
+
+		DawProjectModel plainModel;
+		DawProjectReadReport plainReport;
+		QString plainError;
+		QVERIFY2(dawProjectModelFromXml(documentWithClip("time=\"1\" duration=\"4\"", normalNote),
+			&plainModel, &plainReport, &plainError), qPrintable(plainError));
+		QVERIFY2(plainError.isEmpty(), qPrintable(plainError));
+		QCOMPARE(plainModel.tracks.size(), 1);
+		QCOMPARE(plainModel.tracks[0].clips.size(), 1);
+		QCOMPARE(plainModel.tracks[0].clips[0].time, 1.0);
+
+		QVERIFY2(accepted.isEmpty() && refusedWithOtherError.isEmpty(),
+			qPrintable(QStringLiteral("overflowing finite beats were not refused with the 48-tick-per-beat cause; "
+				"accepted: [%1]; other errors: [%2]")
+				.arg(accepted.join(QStringLiteral(", ")), refusedWithOtherError.join(QStringLiteral("; ")))));
+	}
+
 //! Luna cluster new-p8-114: note fields beyond the format's MIDI and velocity
 //! ranges must be refused before they reach engine notes.
 void outOfRangeNoteFieldsAreRefused()
