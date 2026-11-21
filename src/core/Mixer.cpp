@@ -1189,8 +1189,10 @@ void Mixer::toggledSolo()
 		// unmute the soloed chan and every channel it sends to/receives from
 		// #622: soloing a member soloes its whole VCA group, so the group is
 		// audible as a unit (the member -> group half of the solo link).
+		// Link contract (as applyGroupSolo): a group with its solo link off, or
+		// suspended, does not solo its members, so only a linked, live group expands.
 		VcaGroup* group = vcaGroupForChannel( static_cast<mix_ch_t>(soloedChan) );
-		if (group != nullptr)
+		if (group != nullptr && group->linksSolo() && !group->isSuspended())
 		{
 			for (mix_ch_t member : group->members())
 			{

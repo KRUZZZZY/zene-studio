@@ -699,6 +699,84 @@ private slots:
 		evidence(QStringLiteral("solo_member soloed=4 group_audible=2,4,6 non_member_silent=1"));
 	}
 
+	//! A member's solo follows the group's solo link and suspension: with the link
+	//! off, or the group suspended, soloing one member mutes its siblings.
+	void soloingAMemberRespectsTheGroupsSoloLinkAndSuspension()
+	{
+		Mixer* mixer = Engine::mixer();
+		buildGraph(mixer);
+		VcaGroup* group = makeGroup(mixer, kMembers);
+		QVERIFY(group != nullptr);
+		mixer->toggledSolo(); // normalise the mixer's single-solo latch
+
+		// Start unmuted, with an audible reference render, so a later "muted"
+		// assertion cannot pass vacuously.
+		for (int ch = 1; ch < kChannels; ++ch)
+		{
+			QVERIFY2(mixer->mixerChannel(ch)->m_muteModel.value() == false,
+				qPrintable(QStringLiteral("channel %1 starts muted").arg(ch)));
+		}
+		QVERIFY2(peakOf(renderFeed(mixer, kMembers, kPeriods)) > 1.0e-6f,
+			"the reference render is silent");
+
+		// Phase A: the solo link is off, so soloing member 4 must not solo its siblings.
+		group->setLinks(true, true, false);
+		QVERIFY(!group->linksSolo());
+		mixer->mixerChannel(4)->m_soloModel.setValue(true);
+		QVERIFY2(mixer->mixerChannel(4)->m_muteModel.value() == false,
+			"the soloed member is muted");
+		QVERIFY2(mixer->mixerChannel(2)->m_muteModel.value() == true,
+			"member 2 is audible although the group's solo link is off");
+		QVERIFY2(mixer->mixerChannel(6)->m_muteModel.value() == true,
+			"member 6 is audible although the group's solo link is off");
+		QVERIFY2(mixer->mixerChannel(1)->m_muteModel.value() == true,
+			"a non-member is audible");
+		QCOMPARE(renderFeed(mixer, kMembers, kPeriods), renderFeed(mixer, {4}, kPeriods));
+		mixer->mixerChannel(4)->m_soloModel.setValue(false);
+		for (int ch = 1; ch < kChannels; ++ch)
+		{
+			QVERIFY2(mixer->mixerChannel(ch)->m_muteModel.value() == false,
+				qPrintable(QStringLiteral("channel %1 stayed muted after the solo cleared").arg(ch)));
+		}
+
+		// Phase B: the link is on but the group is suspended, which also turns its solo link off.
+		group->setLinks(true, true, true);
+		group->setSuspended(true);
+		QVERIFY(group->isSuspended());
+		mixer->mixerChannel(4)->m_soloModel.setValue(true);
+		QVERIFY2(mixer->mixerChannel(4)->m_muteModel.value() == false,
+			"the soloed member is muted while the group is suspended");
+		QVERIFY2(mixer->mixerChannel(2)->m_muteModel.value() == true,
+			"member 2 is audible while the group is suspended");
+		QVERIFY2(mixer->mixerChannel(6)->m_muteModel.value() == true,
+			"member 6 is audible while the group is suspended");
+		QVERIFY2(mixer->mixerChannel(1)->m_muteModel.value() == true,
+			"a non-member is audible while the group is suspended");
+		QCOMPARE(renderFeed(mixer, kMembers, kPeriods), renderFeed(mixer, {4}, kPeriods));
+		mixer->mixerChannel(4)->m_soloModel.setValue(false);
+		for (int ch = 1; ch < kChannels; ++ch)
+		{
+			QVERIFY2(mixer->mixerChannel(ch)->m_muteModel.value() == false,
+				qPrintable(QStringLiteral("channel %1 stayed muted after the suspended solo cleared").arg(ch)));
+		}
+
+		// Control: unsuspended with the link on, soloing member 4 must solo the whole group.
+		group->setSuspended(false);
+		QVERIFY(!group->isSuspended());
+		mixer->mixerChannel(4)->m_soloModel.setValue(true);
+		for (int member : kMembers)
+		{
+			QVERIFY2(mixer->mixerChannel(member)->m_muteModel.value() == false,
+				qPrintable(QStringLiteral("member %1 is not audible once the group is unsuspended").arg(member)));
+		}
+		mixer->mixerChannel(4)->m_soloModel.setValue(false);
+		for (int ch = 1; ch < kChannels; ++ch)
+		{
+			QVERIFY2(mixer->mixerChannel(ch)->m_muteModel.value() == false,
+				qPrintable(QStringLiteral("channel %1 stayed muted after the control solo cleared").arg(ch)));
+		}
+	}
+
 	//! S2/S3: soloing the group makes exactly its members audible.
 	void soloingTheGroupMakesExactlyItsMembersAudible()
 	{
