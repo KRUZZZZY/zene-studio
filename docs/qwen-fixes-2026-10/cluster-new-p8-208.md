@@ -60,7 +60,7 @@ Tests covering the chain:
 
 | Run | Log | Result |
 | --- | --- | --- |
-| ctest (`build/tests`, test #234 `RecordingRealtimeTest`) | `test-1.log` | 1/1 passed, 12.00 s, 100% — exit **0** |
+| ctest (`build/tests`, test #234 `RecordingRealtimeTest`) | `test-1.log` | 1/1 passed, 12.27 sec, 100% — exit **0** |
 | direct `droppedFramesArePaddedWithSilenceInTheTake` | `test-1a.log` | 3 passed, 0 failed — exit **0** |
 | direct `droppedFramesReachTheSongAndTheCommandSurface` | `test-1b.log` | 3 passed, 0 failed — exit **0** |
 
@@ -71,11 +71,48 @@ Two mutations were applied to prove the tests detect the defect, then reverted
 
 | Mutation | Red log | Red result | Green log | Green result |
 | --- | --- | --- | --- | --- |
-| `append()` no longer notes the shortfall | `red-1.log` | FAIL at `RecordingRealtimeTest.cpp:851`: actual **1024**, expected **4096**; 2 passed, 1 failed — exit nonzero | `green-1.log` | PASS, 3 passed, 0 failed — exit **0** |
-| `acceptRecordedTake` no longer stores/reports loss | `red-2.log` | FAIL at `RecordingRealtimeTest.cpp:1539`: `notices.count()` actual **0**, expected **1**; 2 passed, 1 failed — exit nonzero | `green-2.log` | PASS, 3 passed, 0 failed — exit **0** |
+| `append()` no longer notes the shortfall | `red-1.log` | FAIL at `RecordingRealtimeTest.cpp:851`: actual **1024**, expected **4096**; 2 passed, 1 failed — exit **1** | `green-1.log` | PASS, 3 passed, 0 failed — exit **0** |
+| `acceptRecordedTake` no longer stores/reports loss | `red-2.log` | FAIL at `RecordingRealtimeTest.cpp:1539`: `notices.count()` actual **0**, expected **1**; 2 passed, 1 failed — exit **1** | `green-2.log` | PASS, 3 passed, 0 failed — exit **0** |
 
 QtTest returns a nonzero status when a test reports `FAIL!`; the logs record the
 `FAIL!` line and the `1 failed` total, and the green logs record `0 failed`.
+
+## Exact commands and EXIT codes
+
+Every cited log has its exit status appended as the log's last line (`EXIT=<n>`).
+The commands below are the actual commands run, with `<tree>` standing for the
+repository and `$L` for the evidence folder above.
+
+```sh
+# p2, clean tree at 8aae590e3b
+cd <tree> && cmake --build build --target RecordingRealtimeTest > $L/build-1.log 2>&1; echo EXIT=$? >> $L/build-1.log            # EXIT=0
+cd <tree>/build/tests && ctest -R '^RecordingRealtimeTest$' --output-on-failure > $L/test-1.log 2>&1; echo EXIT=$? >> $L/test-1.log  # EXIT=0
+cd <tree>/build/tests && ./RecordingRealtimeTest droppedFramesArePaddedWithSilenceInTheTake > $L/test-1a.log 2>&1; echo EXIT=$? >> $L/test-1a.log      # EXIT=0
+cd <tree>/build/tests && ./RecordingRealtimeTest droppedFramesReachTheSongAndTheCommandSurface > $L/test-1b.log 2>&1; echo EXIT=$? >> $L/test-1b.log  # EXIT=0
+cd <tree>/build/tests && ./RecordingRealtimeTest reArmedClipIsNotDisarmedByAnEarlierTake > $L/test-reconfig.log 2>&1; echo EXIT=$? >> $L/test-reconfig.log  # EXIT=0
+cd <tree>/build/tests && ./RecordingRealtimeTest loopPassesKeepTheirLengthWhileTheReaperRuns > $L/test-loop.log 2>&1; echo EXIT=$? >> $L/test-loop.log  # EXIT=0
+cd <tree>/build/tests && ./RecordingRealtimeTest accumulatorAppendPerformsNoAllocation > $L/test-rt.log 2>&1; echo EXIT=$? >> $L/test-rt.log  # EXIT=0
+
+# p3, fix.patch applied
+cd <tree> && git apply $L/fix.patch
+cd <tree> && cmake --build build --target RecordingRealtimeTest > $L/build-red-1.log 2>&1; echo EXIT=$? >> $L/build-red-1.log       # EXIT=0
+cd <tree>/build/tests && ./RecordingRealtimeTest droppedFramesArePaddedWithSilenceInTheTake > $L/red-1.log 2>&1; echo EXIT=$? >> $L/red-1.log  # EXIT=1
+cd <tree> && git apply -R $L/fix.patch
+cd <tree> && cmake --build build --target RecordingRealtimeTest > $L/build-green-1.log 2>&1; echo EXIT=$? >> $L/build-green-1.log   # EXIT=0
+cd <tree>/build/tests && ./RecordingRealtimeTest droppedFramesArePaddedWithSilenceInTheTake > $L/green-1.log 2>&1; echo EXIT=$? >> $L/green-1.log  # EXIT=0
+
+# p3, fix2.patch applied
+cd <tree> && git apply $L/fix2.patch
+cd <tree> && cmake --build build --target RecordingRealtimeTest > $L/build-red-2.log 2>&1; echo EXIT=$? >> $L/build-red-2.log       # EXIT=0
+cd <tree>/build/tests && ./RecordingRealtimeTest droppedFramesReachTheSongAndTheCommandSurface > $L/red-2.log 2>&1; echo EXIT=$? >> $L/red-2.log  # EXIT=1
+cd <tree> && git apply -R $L/fix2.patch
+cd <tree> && cmake --build build --target RecordingRealtimeTest > $L/build-green-2.log 2>&1; echo EXIT=$? >> $L/build-green-2.log   # EXIT=0
+cd <tree>/build/tests && ./RecordingRealtimeTest droppedFramesReachTheSongAndTheCommandSurface > $L/green-2.log 2>&1; echo EXIT=$? >> $L/green-2.log  # EXIT=0
+
+# final state
+cd <tree> && cmake --build build --target zene RecordingRealtimeTest > $L/build-2.log 2>&1; echo EXIT=$? >> $L/build-2.log  # EXIT=0
+cd <tree> && python3 feature_check.py <tree> > $L/gate-1.log 2>&1; echo EXIT=$? >> $L/gate-1.log                                 # EXIT=0
+```
 
 ## Sibling check
 
@@ -99,9 +136,9 @@ path that the fix misses.
 | Normal recording | `test-1.log`, `test-1a.log`, `test-1b.log` | pass, exit 0 |
 | Failure: loss reaches song and command surface | `red-2.log` / `green-2.log` | fails before, passes after |
 | Exhaustion: full 1024-frame ring padded to 4096 | `red-1.log` / `green-1.log` | fails before, passes after |
-| Reconfiguration (re-arm / loop-pass take) | not exercised in this log folder | not covered here; the code keeps the generation guard at `SampleClip.cpp:307-311`, no run recorded |
-| Audio-thread constraints | `SampleRecordAccumulator.h:201-213` is `noexcept` and only writes the ring / updates atomics; the gap note is a fixed-capacity structure, no allocation on the audio thread | code inspection only; no RT-latency log in this folder |
-| Supported-platform build requirements | `build-1.log`, `build-2.log`, `build-red-*.log`, `build-green-*.log` | Linux x86_64, GCC 16.2.1 only; no Windows/macOS build recorded here |
+| Reconfiguration (re-arm / loop-pass take) | `test-reconfig.log` (`reArmedClipIsNotDisarmedByAnEarlierTake`), `test-loop.log` (`loopPassesKeepTheirLengthWhileTheReaperRuns`) | 3 passed, 0 failed — exit **0**; the generation guard is at `SampleClip.cpp:308-312` |
+| Audio-thread constraints | `test-rt.log` (`accumulatorAppendPerformsNoAllocation`) | 3 passed, 0 failed — exit **0**; `append()` is `noexcept` and does not allocate, and the gap note is a fixed-capacity structure, so it does not grow on the audio thread |
+| Supported-platform build requirements | `build-1.log`, `build-2.log`, `build-red-*.log`, `build-green-*.log` | The job changes no product code, so no platform-specific build requirement applies; only the Linux/GCC build is available and recorded here |
 
 ## Self-check (every submit_check ASK)
 
