@@ -602,6 +602,7 @@ struct MTSClient
     
     inline void parseMIDIData(const unsigned char *buffer, int len)
     {
+        if (buffer == nullptr || len <= 0) return;
         int sysex_ctr = 0;
         int sysex_value = 0;
         int note = 0;
