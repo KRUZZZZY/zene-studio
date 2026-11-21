@@ -82,6 +82,8 @@ Earlier notes that the >int64 value passes or is unverified are false: test-6 an
 
 RESULT: PASS. `lizard` was missing; the first install attempt failed on a read-only `~/.local/lib` (log `logs/lizard-install-1.log`). It was installed to `logs/pylib` (log `logs/lizard-install-2.log`, EXIT=0). The gate was run with `PYTHONPATH` pointing at that directory. The gate was not edited.
 
+Completion check, run as `PYTHONPATH=/home/kruzzzzy/.config/kads/zene/state/runs/new-p16-179.r1/logs/pylib python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p16-179 new-p16-179`, log `/home/kruzzzzy/.config/kads/zene/state/runs/new-p16-179.r1/logs/submit-1.log`: `RESULT: PASS - submit`, `EXIT=0`.
+
 ## Files committed
 
 - `src/core/Rack.cpp`
@@ -97,6 +99,7 @@ Not touched: `tests/fork-sources.txt` (`src/core/Rack.cpp` is already registered
 3. **Cause and complete.** The defect is the single unchecked `toInt()` at the selector read. The caller (`Mixer.cpp:3009`) and every reader of `selectedChain()` were checked and tolerate -2. `RackZones` already uses a checked read. `RackMacros` still has the same class of unchecked read; it is listed under Other findings and is out of scope.
 4. **No collateral.** Absent, -1, 1, 9 and -2 load as before (test lines 699-711). Only unreadable values change. No new limit is introduced. Valid data round-trips. A -2 selection reloads un-wired in this build and in older builds.
 5. **Verdict: FIXED.** Evidence is the pre-fix code (`Rack.cpp:419`) and the RED logs (test-6, test-7), with the GREEN logs (test-8, test-9) after the fix.
+6. **Sibling commands.** Not affected: the product commit changes no command files (`git show --stat c9a7beb048` lists only `src/core/Rack.cpp`, `tests/src/core/RackTest.cpp` and this report). The listed `app.*` and `arrangement.*` commands are not in the diff.
 
 ## Other findings (not fixed, out of scope)
 
