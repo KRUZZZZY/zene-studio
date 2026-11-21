@@ -35,9 +35,9 @@ const QString renderTarget = trimmed ? tempPath(QStringLiteral("wav")) : outPath
 ```
 
 i.e. a whole-track render wrote **directly to the caller's output path**, so a child
-that died part-way left its partial bytes at the destination. The command was run on
-the merge ancestor and returned cleanly: `ANCESTOR_EXIT=0` (logs/01-evidence.log:2).
-Commit `f6498a18f3` introduced the staged path above.
+that died part-way left its partial bytes at the destination. The ancestor check
+returned 0: `ANCESTOR_EXIT=0` (logs/01-evidence.log:2). Commit `f6498a18f3`
+introduced the staged path above.
 
 ### Callers and siblings (from p1, re-checked by grep in the worktree)
 
@@ -90,7 +90,9 @@ from the worktree root, except ctest which ran against `build/tests`.
 | `05-test-red.log` | `ctest -R ControlBounceRenderTest --output-on-failure` | **EXIT=8**, `12 passed, 4 failed`; key failure: `failedBounceKeepsAnExistingDestination` actual `"partial render"` vs expected `"previous output"`, `Loc: [ControlBounceRenderTest.cpp(253)]` |
 | `06-build-green-final.log` | `cmake --build build --target ControlBounceRenderTest` | **EXIT=0** |
 | `07-test-green-final.log` | `ctest -R ControlBounceRenderTest -V` | **EXIT=0**, `16 passed, 0 failed` (1/1 CTest target) |
-| `08-product-diff.log` | product-diff check | **EXIT=0**, log is **empty (0 bytes)**: no product change |
+| `red-mutation.patch` | `git diff -- src/core/BounceInPlace.cpp > $LOGS/red-mutation.patch; echo EXIT=$?` | **EXIT=0**; patch records the one-line `:379` mutation |
+| - | `git apply -R $LOGS/red-mutation.patch; echo REVERSE_EXIT=$?` | **REVERSE_EXIT=0**; mutation reverted |
+| `08-product-diff.log` | `git diff -- src/core/BounceInPlace.cpp > $LOGS/08-product-diff.log 2>&1; echo EXIT=$?` | **EXIT=0**, log is **empty (0 bytes)**: no product change |
 
 RED provenance: the failure was produced by a temporary one-line reintroduction of
 the old direct write at `src/core/BounceInPlace.cpp:379`
@@ -126,22 +128,37 @@ edit was needed.
 
 ## Self-check (the five non-feature ASKs)
 
-1. **Build/registration** - the test target already exists; `tests/fork-sources.txt:2756`
-   lists `tests/src/core/ControlBounceRenderTest.cpp` and `tests/CMakeLists.txt:148`
-   builds it. 02/06 built it and 03/07 ran it, so no registration change is required.
-2. **Portability** - only QtCore/QtXml/QtTest and libsndfile; `QFile`/`QDir`/
-   `QTemporaryDir` for the destination, `QUuid` for staging names, `QProcess` for the
-   child. No platform-specific path or process API.
-3. **Realtime/audio thread** - n/a by construction: `runCliRender` starts a separate
-   process, and `installPreparedOutput` runs on the control thread. The test asserts
-   file bytes, never timing.
-4. **Timeout/kill** - both map to `renderFailed`'s "not finished or nonzero exit"
-   branch (`BounceInPlace.cpp:273`, used at `:499`), which discards the staged file
-   at `:501`. The test drives the nonzero-exit arm; the timeout arm needs no separate
-   timing test.
-5. **No collateral product change** - `08-product-diff.log` is empty and `git diff
-   --stat` lists only `tests/src/core/ControlBounceRenderTest.cpp`; the RED mutation
-   exists only in `logs/red-mutation.patch` and was reverted.
+1. **The regression test FAILS with your product change reverted and PASSES with it
+   (exit codes).** RED: `05-test-red.log` **RED_EXIT=8**, `12 passed, 4 failed`; the
+   targeted failure is `failedBounceKeepsAnExistingDestination` at
+   `ControlBounceRenderTest.cpp(253)`, actual `"partial render"` vs expected
+   `"previous output"`. GREEN: `07-test-green-final.log` **GREEN_EXIT=0**,
+   `16 passed, 0 failed`, `100% tests passed out of 1`. The real fix
+   `f6498a18f3` predates this job, so the reversed product change is the one-line
+   `:379` mutation recorded in `logs/red-mutation.patch`
+   (`next.renderPath = ... : outPath;`), reverted with `git apply -R`
+   (**REVERSE_EXIT=0**); `08-product-diff.log` is empty (0 bytes).
+2. **The test is deterministic; no flakiness or timing dependence.** The seam is
+   `ZENE_FAKE_RENDER_PARTIAL` in the stand-in child: it writes the fixed bytes
+   `"partial render"` and exits 3. The assertion is an exact byte comparison of the
+   destination; there are no sleeps, timing windows, or races.
+3. **The fix is at the cause and complete; siblings and callers are covered.** No
+   product change is made in this round. Every caller and sibling listed in
+   "Callers and siblings" above flows through `renderTracks`/`prepareRenderTracks`
+   and the shared install/discard helpers: staged path at `BounceInPlace.cpp:377-379`,
+   `installPreparedOutput` backup/restore at `:421-449`, `discardPreparedRender` at
+   `:471-477`, and the single failure classifier/discard in `renderTracks` at
+   `:490-519`.
+4. **No collateral damage.** The change is test-only: no project or data-format
+   change, no product-behaviour change, no new limit, and existing projects load as
+   before. The positive control `successfulBounceReplacesAnExistingDestination`
+   (`:259-276`) shows a normal bounce still replaces an existing destination and
+   leaves no staging debris (PASS in 03/07).
+5. **If ALREADY-FIXED, the evidence.** `prepareRenderTracks` stages the child output
+   at `BounceInPlace.cpp:377-379`, and `renderTracks` discards on failure at
+   `:490-519`, leaving the caller's destination intact. Historically the direct-write
+   line `f6498a18f3^:354` wrote to `outPath`; the ancestor check returned
+   `ANCESTOR_EXIT=0` (`logs/01-evidence.log:2`), and `f6498a18f3` introduced staging.
 
 ## Other findings
 
@@ -153,3 +170,7 @@ edit was needed.
   assertion; the others are collateral and disappeared on revert (07: 16/16 PASS).
 - `logs/12-build-family.log` exists from the p3 family build but was not needed for
   this report; the family result is taken from 10 and 11.
+- The first p3 family run failed only because seven test executables had not been
+  built. The targets were built (`12-build-family.log`) and the rerun passed 8/8
+  (`11-family-test.log`); the initial failing log was overwritten by that passing
+  rerun, so it is no longer on disk.
