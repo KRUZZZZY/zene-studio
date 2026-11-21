@@ -84,24 +84,23 @@ Every case also checks that `beatOrigin` stays at 3.5 and `timeOrigin` is preser
 
 ## Gate evidence (logs in `state/runs/new-p16-329.r1/logs/`)
 
-Exit codes below are as recorded by the packet run. The log files do not contain exit lines, so they are not independently verified here.
+Each step below ran as `bash -c '<cmd>; rc=$?; echo EXIT=$rc; exit $rc'`, so the exit code is the last `EXIT=` line inside the named log. The `SHELL_EXIT` from the outer shell matched in every step.
 
-| step | command | result |
-|---|---|---|
-| build-red-3 | build the allocator test (pre-fix header) | built |
-| test-red-3 | run allocator test (pre-fix) | exit 1; `Totals: 2 passed, 1 failed`; failure at test line 159, `Compared doubles are not the same` |
-| test-family-red-3 | run the allocator test family | exit 1 recorded; 4 allocator slots pass (`recyclingAllocatorRejectsWrappingCount`, `recyclingAllocatorStillAllocatesAndFrees`, `executionContextAllocatorRejectsWrappingCount`, `anyCompletionHandlerAllocatorRejectsWrappingCount`); only `clampTempoStaysWithinTheLinkRange` fails; `Totals: 6 passed, 1 failed` |
-| build-green-2 | build with the fix | built |
-| test-green-2 | run allocator test (fixed) | exit 0 recorded; `Totals: 3 passed, 0 failed` |
-| test-family-green-2 | run the allocator test family | exit 0 recorded; `Totals: 7 passed, 0 failed` |
-| ctest-green-2 | ctest | exit 0 recorded; `100% tests passed, 0 tests failed out of 1` |
-| build-red-reverse-2 | rebuild with the pre-fix header | built |
-| test-red-reverse-2 | run allocator test (pre-fix) | exit 1 recorded; `Totals: 2 passed, 1 failed` at line 159 |
-| build-green-restore-2 | rebuild with the fix restored | built |
-| test-green-restore-2 | run allocator test (fixed) | exit 0 recorded; `Totals: 3 passed, 0 failed` |
-| cmp check | `cmp` header vs `logs/ClientSessionTimelines.fixed.hpp` | identical (`CMP_SAME`, run again for this report) |
+| step | log | EXIT in log | result |
+|---|---|---|---|
+| reverse fix patch | `patch-reverse-3.log` | 0 | `git apply -R logs/fix.patch` |
+| build RED | `build-red-reverse-3.log` | 0 | built with the pre-fix header |
+| test RED (slot) | `test-red-reverse-3.log` | 1 | `Totals: 2 passed, 1 failed`; `FAIL! ... clampTempoStaysWithinTheLinkRange()`; `Actual (clamped.tempo.bpm()): nan`, `Expected (120.0)`, at `AbletonLinkAllocatorTest.cpp(159)` |
+| restore fix patch | `patch-restore-3.log` | 0 | `git apply logs/fix.patch` |
+| build GREEN | `build-green-restore-3.log` | 0 | built with the fixed header |
+| test GREEN (slot) | `test-green-restore-3.log` | 0 | `Totals: 3 passed, 0 failed` |
+| test family GREEN | `test-family-green-3.log` | 0 | `Totals: 7 passed, 0 failed` |
+| ctest | `ctest-green-3.log` | 0 | `100% tests passed out of 1` |
+| header check | `cmp` of the header vs `logs/ClientSessionTimelines.fixed.hpp` | 0 | identical (run after the last test, before the report commit) |
 
-The reverse step shows the test catches the defect: restoring the pre-fix header fails it again.
+The RED step (`test-red-reverse-3.log`, EXIT=1) shows the test catches the defect: restoring the pre-fix header fails it. The GREEN steps show the fixed header passes.
+
+Logs from earlier runs (`*-2`, `*-3` before this packet) are not cited: their exit codes were never recorded inside the logs, so they are not evidence here.
 
 ## Gate table
 
@@ -109,13 +108,22 @@ The reverse step shows the test catches the defect: restoring the pre-fix header
 |---|---|---|---|
 | feature_check | `feature_check.py <worktree> > logs/feature-check-2.log 2>&1` | 0 | `RESULT: PASS` (complexity, file-length, and the other checks PASS) |
 | commit | `git add` (4 paths) and `git commit` | see commit | see COMMITS |
-| submit_check | `submit_check.py <worktree> new-p16-329 > logs/submit-check-3.log 2>&1` | 0 | `RESULT: PASS - submit`; no FAIL; six `?` asks answered under "submit_check asks" |
+| submit_check (earlier) | `submit_check.py <worktree> new-p16-329 > logs/submit-check-3.log 2>&1` | 0 | `RESULT: PASS - submit`; no FAIL; six `?` asks answered under "submit_check asks" |
+| submit_check (final) | `submit_check.py <worktree> new-p16-329 > logs/submit-check-5.log 2>&1` | see final message | run after the report commit; the exit and clean-tree check are in the final message, not in this file |
+
+## Commit chain
+
+On `bugs/qwen-new-p16-329`, oldest first:
+
+- `f461196b76` cluster new-p16-329: clamp Link tempo to a finite range (the fix and test)
+- `269ec0ae57` cluster new-p16-329: answer submit_check asks in report
+- this report commit: cluster new-p16-329: record RED/GREEN exits in the report (its sha is the HEAD in `git log`)
 
 ## Self-check
 
 The submit_check asks, in order:
 
-1. **Clean tree.** Before the final commit, the worktree held only the 4 files this cluster changes. After the commit, `git status --short` is run again in the final check (see submit-check-3.log and the final message).
+1. **Clean tree.** Before the final commit, the worktree held only the 4 files this cluster changes. After the report commit, `git status --short` is empty; the final check is `logs/submit-check-5.log` and the final message.
 2. **Commits on the branch.** The commit is `cluster new-p16-329: clamp Link tempo to a finite range` on `bugs/qwen-new-p16-329`.
 3. **Report verdict in the first lines.** Line 1 is `FIXED`. Line 3 is `Verdict: REAL`.
 4. **Self-check section.** This section.
@@ -126,7 +134,7 @@ The submit_check asks, in order:
 
 Answers to the six `?` asks from `submit_check.py` (log: `logs/submit-check-3.log`, `RESULT: PASS - submit`, exit 0):
 
-1. **Regression test fails with the change reverted and passes with it (exit codes).** With the pre-fix header, `test-red-reverse-2` gives `Totals: 2 passed, 1 failed` at test line 159 (the NaN `QCOMPARE`). With the fix, `test-green-restore-2` gives `Totals: 3 passed, 0 failed`, and `cmp` shows the header equal to the fixed copy. The exit codes (1 and 0) are the ones the packet run recorded. The log files do not contain exit lines, and I did not re-run the RED/GREEN steps for this answer, so the exit codes are unverified here.
+1. **Regression test fails with the change reverted and passes with it (exit codes).** With the pre-fix header (`patch-reverse-3.log`, `build-red-reverse-3.log`), `test-red-reverse-3.log` ends `EXIT=1` with `Totals: 2 passed, 1 failed`; the failure is the NaN `QCOMPARE` at `AbletonLinkAllocatorTest.cpp(159)` (`Actual (clamped.tempo.bpm()): nan`). With the fix restored (`patch-restore-3.log`, `build-green-restore-3.log`), `test-green-restore-3.log` ends `EXIT=0` with `Totals: 3 passed, 0 failed`, `test-family-green-3.log` ends `EXIT=0` with `Totals: 7 passed, 0 failed`, and `ctest-green-3.log` ends `EXIT=0`. A `cmp` of the header against `logs/ClientSessionTimelines.fixed.hpp` is identical (`CMP_EXIT=0`).
 2. **Deterministic.** The test has no clock, sleep, thread, or I/O. Its inputs are fixed values: the `Tempo` values in the matrix above, `Beats{3.5}`, and `timeOrigin = 250000 µs`. The only arithmetic is `toBeats(1000000 µs)`.
 3. **Fix at the cause and complete.** The defect is in `clampTempo` alone. Every caller goes through it: `Controller.hpp:56, 214, 277, 343` and `Link.ipp:205`. A grep for `clampTempo` under `src/3rdparty/` finds only the three Link files (`ClientSessionTimelines.hpp`, `Controller.hpp`, `Link.ipp`). Not checked: other code that builds a `Tempo` without going through `clampTempo`.
 4. **No collateral damage.** The finite path is unchanged, so finite inputs give the same results as before. The only changed results are for non-finite tempos: NaN becomes 120 (was NaN), and ±inf becomes 120 (was 999 / 20). No save/load format is touched. No limit or check was added. A saved NaN tempo would now load as 120 BPM; that is the intended effect of the fix.
@@ -136,5 +144,5 @@ Answers to the six `?` asks from `submit_check.py` (log: `logs/submit-check-3.lo
 ## Other findings (not fixed)
 
 - `AbletonLinkSessionTest`: its pre-existing `joinBoth` QSKIP-in-helper segfaults on a host without multicast. Not fixed, out of scope. Not verified here; taken from the packet.
-- Carla submodule: the packet reports a separate vendored copy of this header. Not built and not fixed. My grep under `src/3rdparty/` found `clampTempo` only in the Ableton Link files, so the Carla location was not confirmed here.
-- `src/3rdparty/ableton-link/README.lmms:66` says "Local modifications: two, deliberate, both in the ESP32 port". That list is stale: `ClientSessionTimelines.hpp` is now a third local modification, and it is not in the ESP32 port. Not edited; the lead should decide whether to update it.
+- Carla copy: `plugins/CarlaBase/carla/source/modules/hylia/link/ableton/link/ClientSessionTimelines.hpp` is a second copy of this header. `git ls-tree HEAD plugins/CarlaBase/carla` shows `160000 commit 66afe24a08`, so `plugins/CarlaBase/carla` is a submodule gitlink, and the header sits inside that submodule. The Carla copy was not built and not fixed by this cluster. Its contents were not inspected here.
+- `src/3rdparty/ableton-link/README.lmms:66` says "Local modifications: two, deliberate, both in the ESP32 port". That count is stale for both the existing asio allocator patch and the new `ClientSessionTimelines.hpp` patch from this cluster. Not edited; the lead should decide whether to update it.
