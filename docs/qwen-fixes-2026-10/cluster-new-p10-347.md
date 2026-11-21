@@ -79,3 +79,12 @@ Note on steps 10 and 11: the exit codes 0 and 1 are the packet's recorded values
 ## Other findings
 
 - Branch base: `git log master..HEAD` (master at 4e677cb6c6) shows commits on this branch that are not on master, including fa4a5f2e78 (train-35 snapshot) and f3b5426267 (train-sol test fixes). This was observed and not acted on.
+
+## Final verification
+
+This repeats the 06-09 reversal at commit 191854fd2c, with exit codes written into the logs this time. The earlier logs 06-09 carried no in-log exit codes.
+
+- Red, fix reversed (`logs/13-red-proof.log`): `zeroTargetRateIsRejected` FAILS with `'output == nullptr' returned FALSE`, and the last line is `EXIT=8`.
+- Green, fix restored (`logs/14-green-proof.log`): all tests pass, and the last line is `EXIT=0`.
+
+The product files at 191854fd2c match 8194a42cf2 for `src` and `include`.
