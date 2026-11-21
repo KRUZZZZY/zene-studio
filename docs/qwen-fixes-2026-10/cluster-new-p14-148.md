@@ -41,7 +41,7 @@ The logs in `~/.config/kads/zene/state/runs/new-p14-148.r1/logs/` hold the tool 
 | test-7-mut-restored-green | test-7-mut-restored-green.log | 0 | Passed (0.22 s) |
 | feature-check | feature-check.log | 0 | `RESULT: PASS` |
 | test-8-final-committed (p5b) | test-8-final-committed.log | 0 | `ctest -R '^LinkAudioCodecTest$'` on the committed tree: `100% tests passed out of 1` |
-| cmp-final-committed | cmp-final-committed.log | 0 | `git diff fa4a5f2e78 HEAD -- src/core/LinkAudioCodec.cpp \| cmp - fix.patch`: the committed product diff matches the saved patch byte for byte |
+| cmp-final-committed-2 | cmp-final-committed-2.log | 0 | `git diff fa4a5f2e78 HEAD -- src/core/LinkAudioCodec.cpp \| cmp - fix.patch`: the committed product diff matches the saved patch byte for byte |
 
 ### The SIZE_MAX RED is a timeout
 
@@ -70,7 +70,7 @@ Each guard is therefore caught by its own test.
 
 ## Self-check
 
-Answers to the ASK items. Each one is backed by the diff (`git diff fa4a5f2e78..HEAD --stat` is the two code files plus this report; the later commits `8bb90cfafb` and `7b0e53e129` are docs-only) or a logged run.
+Answers to the ASK items. Each one is backed by the diff (`git diff fa4a5f2e78..HEAD --stat` is the two code files plus this report; the commits after `4f738a8756` are docs-only) or a logged run.
 
 ASK items printed by `submit_check.py` (commit `4f738a8756`, log `submit-check-1.log`):
 
@@ -89,6 +89,6 @@ ASK items printed by `submit_check.py` (commit `4f738a8756`, log `submit-check-1
 
 ## Other findings
 
-- The earlier `cmp-final.log` (exit 1, `cmp: EOF on '-' which is empty`) ran `git diff` on the working tree. After commit `4f738a8756` that tree is clean, so the diff is empty. That command form cannot check committed work and is superseded by `cmp-final-committed.log` (exit 0) in the table above.
+- The earlier `cmp-final.log` (exit 1, `cmp: EOF on '-' which is empty`) ran `git diff` on the working tree. After commit `4f738a8756` that tree is clean, so the diff is empty. That command form cannot check committed work and is superseded by `cmp-final-committed-2.log` (exit 0, `EXIT=0` inside the log) in the table above.
 - The run folder `new-p14-148.r1/` has `duet/` and `logs/` only. There is no `schemas/` directory.
-- `logs/` has a `build-2-green.log` that the step table does not list, and no log file for the `cmp` step. The `cmp` row above was re-run in this session.
+- `logs/` has a `build-2-green.log` that the step table does not list. `cmp-final.log` is superseded by the committed-range compare, which is now logged as `cmp-final-committed-2.log` with its exit line (`EXIT=0`) and is the row in the table above.
