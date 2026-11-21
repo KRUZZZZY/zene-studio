@@ -987,6 +987,29 @@ def plugin_and_settings_flow(client, process, log_path, tmp, last_id):
     print("audio.device_set %r: applied=%r restart_required=%r (config now %r)"
           % (other, chosen.get("applied"), chosen.get("restart_required"), stored.get("value")))
 
+    # --- audio status and the test tone (Q050-183.1) ---------------------
+    for key in ("requested", "failure_reason", "fallback"):
+        if key not in audio:
+            fail("audio.device_list lacks %r: %r" % (key, audio), process, log_path)
+    transport_before = flow.ok("transport.get_state").get("playing")
+    tone = flow.ok("audio.test_tone", {"seconds": 0.3})
+    if tone.get("playing") is not True or tone.get("output") != audio["current"]:
+        fail("audio.test_tone returned %r (running device %r)" % (tone, audio["current"]),
+             process, log_path)
+    transport_after = flow.ok("transport.get_state").get("playing")
+    if transport_after != transport_before:
+        fail("audio.test_tone changed the transport: playing %r -> %r"
+             % (transport_before, transport_after), process, log_path)
+    stopped = flow.ok("audio.test_tone_stop")
+    if stopped.get("stopped") is not True or stopped.get("was_playing") not in (True, False):
+        fail("audio.test_tone_stop returned %r" % stopped, process, log_path)
+    flow.err("audio.test_tone", "invalid_args", {"frequency": 5})
+    print("audio.test_tone: playing=%r output=%r transport playing %r -> %r; "
+          "test_tone_stop was_playing=%r; device_list requested=%r fallback=%r failure_reason=%r"
+          % (tone.get("playing"), tone.get("output"), transport_before, transport_after,
+             stopped.get("was_playing"), audio.get("requested"), audio.get("fallback"),
+             audio.get("failure_reason")))
+
     # --- midi.device_list / app.version ----------------------------------
     midi = flow.ok("midi.device_list")
     if not midi.get("client"):
@@ -1874,7 +1897,8 @@ def main():
                          "plugin.param_get", "plugin.param_set", "plugin.state_save",
                          "plugin.state_load", "plugin.preset_list", "plugin.preset_load",
                          "plugin.preset_save", "dsp.get_state", "settings.get", "settings.set",
-                         "audio.device_list", "audio.device_set", "midi.device_list",
+                         "audio.device_list", "audio.device_set", "audio.test_tone",
+                         "audio.test_tone_stop", "midi.device_list",
                          "app.version", "automation.get_state", "automation.add_point",
                          "automation.remove_point", "automation.clear", "automation.mode_set",
                          "script.run", "script.list"):

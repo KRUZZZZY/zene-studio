@@ -460,6 +460,7 @@ void AudioEngine::disposePlayHandle(PlayHandle* handle, bool realtime) noexcept
 			return;
 		}
 	}
+	if (handle->handOverToOwner()) { return; }
 	if (handle->type() == PlayHandle::Type::NotePlayHandle)
 	{
 		NotePlayHandleManager::release(static_cast<NotePlayHandle*>(handle));
