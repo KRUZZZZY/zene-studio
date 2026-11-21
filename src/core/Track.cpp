@@ -363,7 +363,12 @@ void Track::subscribeFrozenTakeSignals()
 	auto endPass = [this] { m_frozenTakePlaying.store(false, std::memory_order_relaxed); };
 	connect(Engine::getSong(), &Song::playbackStateChanged, this, endPass, Qt::DirectConnection);
 	connect(Engine::getSong(), &Song::playbackPositionJumped, this, endPass, Qt::DirectConnection);
-	connect(getMutedModel(), &BoolModel::dataChanged, this, endPass, Qt::DirectConnection);
+	// A mute also ends the voice a pass already armed; a seek does not, because a loop wrap must keep
+	// the older overlapping passes alive (docs/m0-design/voice-pool.md).
+	connect(getMutedModel(), &BoolModel::dataChanged, this, [this] {
+		m_frozenTakePlaying.store(false, std::memory_order_relaxed);
+		m_frozenTakeGeneration.fetch_add(1, std::memory_order_release);
+	}, Qt::DirectConnection);
 }
 
 
@@ -1404,6 +1409,7 @@ bool Track::freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
 	m_frozen.region = region;
 	m_frozenBuffer = buffer;
 	m_frozenTakePlaying.store(false, std::memory_order_relaxed);
+	m_frozenTakeGeneration.fetch_add(1, std::memory_order_release);
 	adoptTempoMapForFrozenTake(Engine::getSong()->tempoMap().map());
 	const Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
 	updateFrozenVoiceCapacity(timeline.loopEnabled(), timeline.loopBegin().getTicks(), timeline.loopEnd().getTicks());
@@ -1439,6 +1445,7 @@ void Track::clearFrozenTake()
 	m_frozen = FrozenTake{};
 	m_frozenBuffer.reset();
 	m_frozenTakePlaying.store(false, std::memory_order_relaxed);
+	m_frozenTakeGeneration.fetch_add(1, std::memory_order_release);
 	m_frozenVoiceCapacity.store(8, std::memory_order_relaxed);
 	m_frozenLastMapInForce = false;
 	m_frozenLastMapKnown = false;
@@ -1535,6 +1542,9 @@ qint64 Track::frozenTakeSourceFrame(const TempoMap& map, int globalTempo, tick_t
 bool Track::playFrozenTake(const TimePos& start, f_cnt_t /*frames*/, f_cnt_t offset)
 {
 	if (!m_frozen.isFrozen()) { return false; }
+	// Captured before the mute check so the handle carries the take it was armed
+	// for: a mute between this read and the arm is then seen by the render gate.
+	const std::uint64_t takeGeneration = frozenTakeGeneration();
 	// A muted track is silent and a frozen one is no exception - and solo, which
 	// is expressed as the other tracks' mute flags in this engine, is covered by
 	// the same line. A muted pass is not a pass: the flag is cleared so that
@@ -1617,6 +1627,7 @@ bool Track::playFrozenTake(const TimePos& start, f_cnt_t /*frames*/, f_cnt_t off
 		frozenVoiceFinished();
 		return false;
 	}
+	handle->setFrozenTakeGeneration(takeGeneration);
 	return audio->addPlayHandle(handle);
 }
 

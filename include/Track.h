@@ -290,6 +290,14 @@ public:
 	//! take the file does not carry.
 	void clearFrozenTake();
 
+	/*! The take generation a frozen voice is armed against. Mute, freeze
+	 *  replacement and clear bump it, so a voice from an older take can see
+	 *  that it no longer belongs to the take and retire itself. */
+	std::uint64_t frozenTakeGeneration() const noexcept
+	{
+		return m_frozenTakeGeneration.load(std::memory_order_acquire);
+	}
+
 	void createClipsForPattern(int pattern);
 
 
@@ -600,6 +608,8 @@ private:
 	FrozenTake m_frozen;
 	std::shared_ptr<const SampleBuffer> m_frozenBuffer;
 	std::atomic<bool> m_frozenTakePlaying{false};
+	//! Written only on the control thread (mute signal, freezeTo, clearFrozenTake); read by the render thread.
+	std::atomic<std::uint64_t> m_frozenTakeGeneration{0};
 	//! The last tempo map the audio thread read pinned while it started a take pass, and whether it was in
 	//! force (active and non-empty). Written only by the audio thread (and reset under the render lock), it
 	//! is what a pass uses when every pin attempt loses to a publication, so the take's frame stays on the

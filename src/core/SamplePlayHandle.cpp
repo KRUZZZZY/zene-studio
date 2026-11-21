@@ -489,9 +489,10 @@ void SamplePlayHandle::armPooledVoice(std::shared_ptr<const SampleBuffer> buffer
 	m_track = track;
 	m_patternTrack = nullptr;
 	m_doneMayReturnTrue = true;
-	// Frozen voices were historically unassociated with their track, so muting after a pass starts does
-	// not silence that already-running sample; the owner pointer is carried for teardown only.
+	// A frozen voice carries its track's take generation: mute, unfreeze and take replacement move that
+	// generation, and play() retires this voice instead of rendering a take it no longer belongs to.
 	m_ignoresTrackMute = isFrozenTakePoolVoice();
+	m_frozenTakeGeneration = track != nullptr ? track->frozenTakeGeneration() : 0;
 	setOffset(offset);
 }
 
@@ -510,6 +511,7 @@ void SamplePlayHandle::resetPooledVoice() noexcept
 	m_patternTrack = nullptr;
 	m_doneMayReturnTrue = true;
 	m_ignoresTrackMute = false;
+	m_frozenTakeGeneration = 0;
 	setOffset(0);
 }
 
@@ -547,6 +549,17 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 	if( framesDone() >= totalFrames() )
 	{
 		zeroSampleFrames(buffer.data(), buffer.size());
+		return;
+	}
+
+	// A frozen take voice belongs to the take it was armed for. Mute, unfreeze and take replacement bump
+	// the track's generation on the control thread; this one acquire load retires the stale voice here,
+	// with no allocation, lock, wait, log or Qt call.
+	if (isFrozenTakePoolVoice() && m_track != nullptr
+		&& m_frozenTakeGeneration != m_track->frozenTakeGeneration())
+	{
+		zeroSampleFrames(buffer.data(), buffer.size());
+		m_frame = totalFrames();
 		return;
 	}
 
