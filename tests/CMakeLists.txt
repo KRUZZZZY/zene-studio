@@ -112,6 +112,9 @@ set(LMMS_TESTS
 	# duplicate key is refused at registration and never overwrites another model's saved value.
 	src/core/ParameterControlsTest.cpp
 	src/core/AutomationModesTest.cpp
+	# cluster new-p16-100: LocaleHelper::toFloat must reject every non-finite parse with ok=false and
+	# 0.0f, and a project load must keep a saved nan/inf out of the model.
+	src/core/LocaleHelperTest.cpp
 	# Q050-037: the pre-first-point contract of an automation clip - times
 	# before the first node read the authored parameter's initial value (or an
 	# explicit point at the clip's start) rather than zero, on the map read AND

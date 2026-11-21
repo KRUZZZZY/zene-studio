@@ -58,7 +58,7 @@ inline double toDouble(const QString& str, bool* ok = nullptr)
 inline float toFloat(const QString& str, bool* ok = nullptr)
 {
 	double d = toDouble(str, ok);
-	if (!std::isinf(d) && std::fabs(d) > std::numeric_limits<float>::max())
+	if (!std::isfinite(d) || std::fabs(d) > std::numeric_limits<float>::max())
 	{
 		if (ok != nullptr) { *ok = false; }
 		return 0.0f;
