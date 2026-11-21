@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include <QCoreApplication>
 #include <QLineEdit>
@@ -59,6 +60,20 @@ double secondsOfFrame(qint64 frame, const Context& context)
 qint64 frameOfSeconds(double seconds, const Context& context)
 {
 	return std::llround(seconds * std::max(1, context.sampleRate));
+}
+
+//! Frames for @a seconds, or false when they are not a finite frame count that fits qint64.
+bool checkedFrameOfSeconds(double seconds, const Context& context, qint64* frame)
+{
+	const double rate = std::max(1, context.sampleRate);
+	const double frames = seconds * rate;
+	// double(LLONG_MAX) rounds up to 2^63, so the strict bound keeps llround's result in range.
+	if (!(std::isfinite(frames) && frames >= 0.0 && frames < static_cast<double>(std::numeric_limits<qint64>::max())))
+	{
+		return false;
+	}
+	*frame = std::llround(frames);
+	return true;
 }
 
 //! The seconds the song takes from the clip's start to @a tick ticks after it.
@@ -119,12 +134,18 @@ bool timeFrom(const QString& text, const Context& context, qint64* frame)
 	const QRegularExpressionMatch match = clock.match(text);
 	if (!match.hasMatch()) { return false; }
 	const bool hours = (match.capturedStart(2) >= 0);
-	const double h = hours ? match.captured(1).toDouble() : 0.0;
-	const double m = hours ? match.captured(2).toDouble() : match.captured(1).toDouble();
-	const double s = match.captured(3).toDouble();
+	bool okH = true;
+	bool okM = true;
+	bool okS = false;
+	const double h = hours ? match.captured(1).toDouble(&okH) : 0.0;
+	// An absent minutes group is 0, not a parse failure.
+	const int minutesGroup = hours ? 2 : 1;
+	const double m = (match.capturedStart(minutesGroup) >= 0) ? match.captured(minutesGroup).toDouble(&okM) : 0.0;
+	const double s = match.captured(3).toDouble(&okS);
+	if (!okH || !okM || !okS) { return false; }
 	if (((match.capturedStart(1) >= 0) && s >= 60.0) || (hours && m >= 60.0)) { return false; }
-	*frame = frameOfSeconds(h * 3600.0 + m * 60.0 + s, context);
-	return true;
+	const double total = h * 3600.0 + m * 60.0 + s;
+	return checkedFrameOfSeconds(total, context, frame);
 }
 
 //! Bars|beats (MusicalTime's reading) at the song's tempo from the clip's start into frames.
