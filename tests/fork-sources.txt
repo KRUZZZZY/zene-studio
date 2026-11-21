@@ -4014,3 +4014,5 @@ tests/src/core/AudioOssDeviceConfigTest.cpp
 tests/src/core/LocaleHelperTest.cpp
 # cluster new-p21-172: sfizz stereo-linked gate builds its detector input from the right channel.
 tests/src/plugins/SfzGateStereoLinkTest.cpp
+# cluster new-p21-172: sfizz stereo-linked compressor builds its detector input from the right channel.
+tests/src/plugins/SfzCompressorStereoLinkTest.cpp

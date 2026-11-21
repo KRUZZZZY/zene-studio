@@ -2076,6 +2076,8 @@ if(TARGET sfzplayer_sfizz)
 	list(APPEND LMMS_TESTS src/plugins/SfzFlexEnvelopeZeroStageTest.cpp)
 	# Cluster new-p21-172: sfizz's stereo-linked gate builds its detector input from the right channel.
 	list(APPEND LMMS_TESTS src/plugins/SfzGateStereoLinkTest.cpp)
+	# Cluster new-p21-172: sfizz's stereo-linked compressor builds its detector input from the right channel.
+	list(APPEND LMMS_TESTS src/plugins/SfzCompressorStereoLinkTest.cpp)
 endif()
 
 # Qwen cluster new-p21-158: a reset filter holder must bypass until its next setup.
@@ -2288,6 +2290,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "HistoricalBufferEmptyTest"
 		OR LMMS_TEST_NAME STREQUAL "SfzEQPoolExhaustionTest"
 		OR LMMS_TEST_NAME STREQUAL "SfzFlexEnvelopeZeroStageTest"
+		OR LMMS_TEST_NAME STREQUAL "SfzCompressorStereoLinkTest"
 		OR LMMS_TEST_NAME STREQUAL "SfzGateStereoLinkTest")
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src/sfizz
