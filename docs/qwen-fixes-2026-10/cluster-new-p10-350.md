@@ -4,8 +4,8 @@ Typed times whose frame count overflows qint64 were converted with an unchecked 
 
 ## Evidence for REAL
 
-- Before the fix, `frameOfSeconds` (src/gui/SampleRangeFields.cpp:59-62 at HEAD) returned `std::llround(seconds * rate)` with no finiteness or range check. llround of an out-of-range double is undefined.
-- Before the fix, `timeFrom` (src/gui/SampleRangeFields.cpp:116-128 at HEAD) called `toDouble()` without ok-flags and passed the total straight to `frameOfSeconds`.
+- Before the fix, `frameOfSeconds` (src/gui/SampleRangeFields.cpp pre-fix :59-62, now :60-63 unchanged) returned `std::llround(seconds * rate)` with no finiteness or range check. llround of an out-of-range double is undefined.
+- Before the fix, `timeFrom` (src/gui/SampleRangeFields.cpp pre-fix :116-128, now :131-149) called `toDouble()` without ok-flags and passed the total straight to `frameOfSeconds`.
 - Contract: include/SampleRangeFields.h:69-70 says `frameFromText` returns false for text that is none of the accepted forms. A 40-digit clock is not a representable frame, so it must be refused.
 - Red run on the unfixed product: test-1-red.log:80 reads `FAIL! hugeTypedTimesAreRejected() '!samplerange::frameFromText(QString(40, '9'), ...)' returned FALSE`, which means the parser accepted it. The failing assertion is tests/src/gui/SampleEditorDialogTest.cpp:315. Totals: 27 passed, 1 failed (test-1-red.log:122).
 
@@ -70,7 +70,7 @@ Screenshot: gui-shots/shell-arrange.png (kept in the log folder, outside the wor
 - **Deterministic:** inputs are fixed digit strings. The test uses no clock, sleep, timers, or threads.
 - **Cause and completeness:** the cause is the unchecked llround and unchecked toDouble in `timeFrom`. Callers and siblings are covered in "Completeness" above.
 - **No collateral damage:** in-range clock text runs the same arithmetic (h*3600 + m*60 + s, times max(1, rate), then llround). The only change is the finiteness and bound check. `999999999:00:00` is about 1.6e17 frames at 44.1 kHz, below qint64 max, so it stays accepted (test line 319).
-- **Not ALREADY-FIXED or FALSE-POSITIVE:** the unfixed product fails the new test at test-5-reversed.log:80, EXIT=8. The fix is in this commit.
+- **Not ALREADY-FIXED or FALSE-POSITIVE:** the unfixed product fails the new test at test-5-reversed.log:80, EXIT=8. The fix is in product commit 83113eda16 on this branch.
 
 ## Other findings
 
