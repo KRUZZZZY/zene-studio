@@ -86,13 +86,17 @@ from the logs here; the summaries are cited where they agree.
    (test-3, test-6 restored, test-3e/test-3f). The Mixer mutation is RED at 1 (test-4), restored
    GREEN at 0 (test-4b).
 2. Determinism: direct parse and direct model injection. No timing, sleeps or threads.
-3. Cause and completeness: the cause is the `toFloat` guard. The fix changes the guard, the one
-   sibling that used `toFloat` as a detector (`src/core/Mixer.cpp`), and the Dispersion test
-   injection. `toFloat` has 207 call sites across 87 files. Only the contract for non-finite input
-   changed: those call sites already handled the `0.0f`/`ok=false` path for finite overflow. A
-   per-call-site audit of all 207 sites was not done in this run. This is not verified per caller.
-   `toDouble` is unchanged on purpose (see Contract).
-4. No collateral and no limit rejection: finite values including `FLT_MAX` still parse. The
-   `DataFile.cpp:1240` change is the intended rejection of a malformed `vol`.
-5. REAL evidence: `include/LocaleHelper.h:58-67` (old condition and fix at line 61),
-   `src/core/Mixer.cpp:155-163`, and the Dispersion test change, as cited above.
+3. Cause and completeness (PARTIAL, one item open): the cause is the `toFloat` guard. Checked and
+   consistent: the sibling that used `toFloat` as a detector (`src/core/Mixer.cpp:155-163`, now
+   reads `toDouble`), the Dispersion test injection, and the load-time caller `DataFile.cpp:1240`.
+   Still open: `toFloat` has 207 call sites across 87 files. The only change for them is the
+   non-finite input contract, which now follows the existing `0.0f`/`ok=false` overflow path. A
+   per-call-site audit of all 207 sites was NOT done in this run. `toDouble` is unchanged on
+   purpose (see Contract).
+4. No collateral and no limit rejection: finite values including `FLT_MAX` still parse (test
+   `nonFiniteTextIsRejected`). The Mixer defaults are preserved (MixerStripTest passes). The
+   `DataFile.cpp:1240` change is the intended rejection of a malformed `vol`: it writes `0`, not
+   `nan`. No new limit was added, so no caller is rejected for exceeding one.
+5. Not applicable: the verdict is REAL, not ALREADY-FIXED or FALSE-POSITIVE. The REAL evidence is
+   `include/LocaleHelper.h:58-67` (old condition; fix at line 61), `src/core/Mixer.cpp:155-163`,
+   and the Dispersion test change, as cited above.
