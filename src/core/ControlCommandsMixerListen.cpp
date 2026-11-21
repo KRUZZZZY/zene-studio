@@ -27,6 +27,8 @@
  *  or before (pfl) instead of the mix (MixerListen.h). Interface state, like a monitor switch: not in
  *  the project, no undo step. mixer.send_pan (MX-048) pans one send, saved, one undo step. */
 
+#include <cmath>
+
 #include <QJsonArray>
 
 #include "ControlCommandDef.h"
@@ -106,7 +108,7 @@ ControlResult sendPan(const QJsonObject& args)
 	if (route == nullptr) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no send from %1 to %2").arg(
 		channelIdOf(ends.from), channelIdOf(ends.to))); }
 	const double pan = args.value(QStringLiteral("pan")).toDouble();
-	if (pan < -1.0 || pan > 1.0) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'pan' is -1..1")); }
+	if (!std::isfinite(pan) || pan < -1.0 || pan > 1.0) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'pan' is -1..1")); }
 	const float before = route->pan()->value();
 	const QString fromId = channelIdOf(ends.from);
 	const QString toId = channelIdOf(ends.to);
