@@ -2110,6 +2110,10 @@ list(APPEND LMMS_TESTS src/gui/MidiCompLaneGuiTest.cpp)
 # of the targets' own sources at configure time by the audit at the bottom of this file.
 list(APPEND LMMS_TESTS src/plugins/PluginExportBranchTest.cpp)
 
+IF(LMMS_HAVE_OSS)
+	LIST(APPEND LMMS_TESTS src/core/AudioOssDeviceConfigTest.cpp)
+ENDIF()
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
@@ -2338,6 +2342,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz)
 	endif()
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
+	if(LMMS_TEST_NAME STREQUAL "AudioOssDeviceConfigTest")
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "SfizzLeakDetectorTest")
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
