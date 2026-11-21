@@ -247,3 +247,10 @@ an actual Qt5 link or test run.
   load and render as before.
 - **ALREADY-FIXED / FALSE-POSITIVE:** not applicable; verdict is FIXED, with the
   evidence above (red 02/08 vs green 03/09).
+- **Sibling commands (`app.about`, `app.ask`, `app.help`, `app.online_help`,
+  `app.task_cancel`, `app.tasks`, `app.tour`, `app.tours`,
+  `app.update_check_get`, `app.update_check_run`, `app.update_check_set`,
+  `app.version`, `app.whats_new`, `arrangement.fit_tracks`,
+  `arrangement.get_state`):** not affected. This cluster changes only a test
+  file, its upstream-modifications registration and this report; no command or
+  control code is in this commit, so none of these commands changes behaviour.
