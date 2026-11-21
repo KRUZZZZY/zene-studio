@@ -306,6 +306,25 @@ private slots:
 		QCOMPARE(samplerange::unitFor(musicaltime::Format::Ticks), Unit::Samples);
 	}
 
+	void hugeTypedTimesAreRejected()
+	{
+		const samplerange::Context ctx{Rate, 0};
+		using samplerange::Unit;
+		qint64 frame = 0;
+		// A typed time whose frames overflow qint64 is not a frame value: refused, never llround'ed.
+		QVERIFY(!samplerange::frameFromText(QString(40, QLatin1Char('9')), ctx, Unit::Time, &frame));
+		QVERIFY(!samplerange::frameFromText(QStringLiteral("999999999999999999999:00"), ctx, Unit::Time, &frame));
+		QVERIFY(!samplerange::frameFromText(QStringLiteral("999999999999999999999:00:00"), ctx, Unit::Time, &frame));
+		// A large but representable time is still accepted.
+		QVERIFY(samplerange::frameFromText(QStringLiteral("999999999:00:00"), ctx, Unit::Time, &frame) && frame > 0);
+		// Through the real dialog, a refused text leaves the range where it was.
+		m_dialog->setRange(4410, 22050);
+		type(field(m_dialog, QStringLiteral("Range start")), QString(40, QLatin1Char('9')));
+		QCOMPARE(m_dialog->view()->from(), qint64{4410});
+		type(field(m_dialog, QStringLiteral("Range start")), QStringLiteral("0:00.250"));
+		QCOMPARE(m_dialog->view()->from(), Rate / 4);
+	}
+
 	void firstShiftClickEditsOnlyTheClickedSample()
 	{
 		Graph graph(nullptr, Graph::Style::Bar, 104, 100);
