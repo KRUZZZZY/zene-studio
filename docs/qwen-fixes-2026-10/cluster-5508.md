@@ -25,8 +25,9 @@ render callback nor the MIDI producer takes any mutex:
   shared by `handleMidiEvent()` and `playImpl()`, staged at Carla's process boundary).
 - `tests/rt-safety-scope.txt:135-136` declares both bodies as audio-thread paths, so the
   whole-tree sweep measures them rather than ignoring them.
-- The sweep is green with **0** fresh hits: `rt-safety whole-tree sweep ... 100% tests passed out
-  of 1` (`$L/sweep-green.log`, `$L/sweep-green2.log`, EXIT=0).
+- The sweep is green with **0** fresh hits: `ctest` reports `100% tests passed out of 1`
+  (`$L/sweep-green.log`, `$L/sweep-green2.log`, EXIT=0). The direct sweep prints
+  `PASS: every hit on a declared audio-thread path is allowlisted with a reason and at its allowed count.` (`$L/sweep-direct-green.log`, EXIT=0).
 
 The fix is commit `f3953cc8e8` ("fix(instruments): Vestige, Carla and ZynAddSubFx queue MIDI
 instead of locking for it (cluster 5451, 5508, 908)"). The ancestry check
@@ -85,28 +86,29 @@ The run's packet exit codes, taken from the logs under `$L`:
 
 | Packet | Command / log | Exit |
 |---|---|---|
-| p1 | ancestry + evidence capture, `$L/evidence-1.log` (`ANCESTOR_EXIT=0`) | 0 |
+| p1 | ancestry + evidence capture, `$L/evidence-1.log` (`ANCESTOR_EXIT=0` in the log; `LOG_EXIT=0` came from the packet) | 0 |
 | p2 | build of the hand-off tests, `$L/build-1.log` (all targets "Built") | 0 |
-| p2 | ctest `-R 'MidiHandoffQueueTest|CarlaMidiHandoffTest|RtSafetySweep|RtSafetySelfTest'`, `$L/test-1.log`, "100% tests passed out of 4" | 0 |
+| p2 | ctest `-R '^(CarlaMidiHandoffTest|MidiHandoffQueueTest|RtSafetySweep|RtSafetySelfTest)$' --output-on-failure`, `$L/test-1.log`, "100% tests passed out of 4" | 0 |
 | p3 | `ctest -R '^RtSafetySweep$'` with the playImpl lock injected, `$L/sweep-red-playimpl.log` | 8 |
 | p3 | `ctest -R '^RtSafetySweep$'` with the handleMidiEvent lock injected, `$L/sweep-red-midi.log` | 8 |
 | p3 | `ctest -R '^RtSafetySweep$'` on the restored tree, `$L/sweep-green.log` and `$L/sweep-green2.log` | 0 / 0 |
-| p4 | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>`, `$L/feature-check.log`; `RESULT: PASS` | 0 |
+| p4 | `FEATURE_CHECK_LOG_DIR=$L/feature-check python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>`, `$L/feature-check/*.log`; `RESULT: PASS` | 0 |
 
 ```
 p1: $ git merge-base --is-ancestor f3953cc8e8 HEAD    # $L/evidence-1.log
     ANCESTOR_EXIT=0
+    # LOG_EXIT=0 came from the packet; only ANCESTOR_EXIT=0 is in the log.
 
-p2: $ $L/build-1.log
+p2: $ cmake --build build --target CarlaMidiHandoffTest MidiHandoffQueueTest
     ... [100%] Built target CarlaMidiHandoffTest
     ... [100%] Built target MidiHandoffQueueTest
     EXIT=0
-    $ cd build/tests && ctest -R 'MidiHandoffQueueTest|CarlaMidiHandoffTest|RtSafetySweep|RtSafetySelfTest'
+    $ cd build/tests && ctest -R '^(CarlaMidiHandoffTest|MidiHandoffQueueTest|RtSafetySweep|RtSafetySelfTest)$' --output-on-failure
     EXIT=0        # 100% tests passed out of 4 ($L/test-1.log)
 
 p3: RED/GREEN controls above: EXIT=8, EXIT=8, EXIT=0, EXIT=0.
 
-p4: $ python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>   # $L/feature-check.log
+p4: $ FEATURE_CHECK_LOG_DIR=$L/feature-check python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>
     PASS  fork-sources / all-sources-reproduce / no-upstream-regression /
           check-namespace / no-tautology / doc-figures / complexity / file-length
     RESULT: PASS
