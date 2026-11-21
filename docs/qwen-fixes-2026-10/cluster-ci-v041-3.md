@@ -17,7 +17,7 @@ there, and the NAM loader regression then failed to compile:
     tests/src/core/NamModelLoaderTest.cpp:329:57: error: 'temp_directory_path' is unavailable ...
 
 The current floor is recorded at `CMakeLists.txt:271` as `SET(ZENE_MACOS_MINIMUM "10.13")`, and the current
-CMake comment immediately above it (`CMakeLists.txt:263-270`) states that CI today yields 11.0+, which is above
+CMake comment immediately above it (`CMakeLists.txt:264-270`) states that CI today yields 11.0+, which is above
 that floor and is supported.
 
 **The ancestor carrying the fix.** `03e5a509b7` is the ancestor that carries the 128-line source portability
@@ -58,33 +58,63 @@ That change replaced every `std::filesystem` use with plain `std::string` paths 
 ## Gate evidence (commands as issued in packets p1-p3; exits from logs 01-10)
 
 Logs are under `/home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/`. The logs hold each command's
-output and exit code but not the command text, so the command lines below are the ones issued in the packets,
-quoted as issued; the exits are the recorded values, not predictions. A regex or option that contains a pipe is
-written `\|` in this table only so the Markdown cell does not split — the issued command used a literal `|`.
+output and exit code, not the command text: the command lines below are copied verbatim from the `commands`
+arrays of packets p1, p2 and p3, and the exits are the recorded values, not predictions.
 
-| # | Command (as issued in the packet) | Log | Exit |
-|---|---|---|---|
-| 01 | `git merge-base --is-ancestor 03e5a509b7 HEAD; echo ANCESTOR_EXIT=$?; git log --oneline -3 -- tests/src/core/NamModelLoaderTest.cpp` | 01-history.log | 0 (`ANCESTOR_EXIT=0`) |
-| 01 | `rg -n 'ZENE_MACOS_MINIMUM' CMakeLists.txt` | 01-floor.log | 0 |
-| 01 | `rg -n 'mkdtemp\|_mkdir\|std::ofstream\|stat\(' tests/src/core/NamModelLoaderTest.cpp` | 01-portable-idiom.log | 0 |
-| 01 | `rg -n 'filesystem' tests/src/core/NamModelLoaderTest.cpp` | 01-filesystem-grep.log | 1 (no match) |
-| 01 | `rg -n 'NamModelLoaderPortabilityCheck\|NamPortabilityRegistrationCheck' tests/CMakeLists.txt build/tests/CTestTestfile.cmake` | 01-registration.log | 0 |
-| 02 | `cmake --build build --target NamModelLoaderTest NamModelMonoOutputTest NamModelPrewarmTest` | 02-build-nam.log | 0 |
-| 02 | `ctest -N -R 'NamModel\|NamPortability'` | 02-test-list.log | 0 |
-| 03 | `ctest -R 'NamModel\|NamPortability' --output-on-failure` | 03-test-family-green.log | 0 |
-| 04 | `ctest -R '^NamModelLoaderPortabilityCheck$' --output-on-failure` | 04-test-portability-green.log | 0 |
-| 05 | `rg -n 'filesystem' tests/src/core/NamModelLoaderTest.cpp` after applying the red mutation | 05-mutation-grep.log | 0 |
-| 06 | `ctest -R '^NamModelLoaderPortabilityCheck$' --output-on-failure` with the mutation applied | 06-portability-red.log | **8** |
-| 07 | `cp /home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/05-NamModelLoaderTest.cpp.bak tests/src/core/NamModelLoaderTest.cpp; git diff --exit-code -- tests/src/core/NamModelLoaderTest.cpp` | 07-restore-diff.log | 0 |
-| 07 | `sha256sum -c /home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/05-sha-before.txt` | 07-restore-sha.log | 0 |
-| 08 | `cmake --build build --target NamModelLoaderTest` after restore | 08-rebuild-restored.log | 0 |
-| 09 | `ctest -R '^NamModelLoaderPortabilityCheck$' --output-on-failure` after restore | 09-portability-green-restored.log | **0** |
-| 10 | `ctest -R 'NamModel\|NamPortability' --output-on-failure` after restore | 10-family-green-restored.log | 0 |
-| 10 | `git status --porcelain` after restore | 10-status-after-restore.log | 0 (empty) |
+### p1 — ancestor, floor, portable idioms, registration
 
-Key numbers: log 02 lists 5 tests (`NamModelMonoOutputTest` #750, `NamModelPrewarmTest` #800,
-`NamModelLoaderTest` #801, `NamModelLoaderPortabilityCheck` #802, `NamPortabilityRegistrationCheck` #803).
-Log 03: 5/5 passed in 0.93 s. Log 09: 1/1 passed in 0.94 s. Log 10: 5/5 passed in 1.06 s.
+```
+git merge-base --is-ancestor 03e5a509b7 HEAD; echo ANCESTOR_EXIT=$?; git log --oneline -3 -- tests/src/core/NamModelLoaderTest.cpp
+rg -n 'CMAKE_OSX_DEPLOYMENT_TARGET|10[.]13|10[.]15' CMakeLists.txt .github/workflows
+rg -n 'mkdtemp|_mkdir|std::ofstream|stat\(|sys/stat\.h' tests/src/core/NamModelLoaderTest.cpp
+rg -n 'filesystem' tests/src/core/NamModelLoaderTest.cpp plugins/NeuralAmp/nam/NamModel.cpp plugins/NeuralAmp/nam/NamModelLoader.cpp
+rg -n 'NamModelLoaderPortabilityCheck|NamPortabilityRegistrationCheck' tests/CMakeLists.txt build/tests/CTestTestfile.cmake
+```
+
+- `01-history.log` — EXIT=0 (`ANCESTOR_EXIT=0`)
+- `01-floor.log` — EXIT=0 (one match, `CMakeLists.txt:271`)
+- `01-portable-idiom.log` — EXIT=0 (`sys/stat.h` :46, `_mkdir` :105, `mkdtemp` :120, `std::ofstream` :208/:244/:286/:314, `stat` :323)
+- `01-filesystem-grep.log` — EXIT=1 (no match in the test or either product file)
+- `01-registration.log` — EXIT=0
+
+### p2 — build and NAM test family
+
+```
+cmake --build /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build --target NamModelLoaderTest NamModelPrewarmTest NamModelMonoOutputTest
+cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build/tests && ctest -N -R '^NamModelLoader|^NamPortability|^NamModelMono|^NamModelPrewarm'
+cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build/tests && ctest -R '^NamModelMonoOutputTest$|^NamModelPrewarmTest$|^NamModelLoaderTest$|^NamModelLoaderPortabilityCheck$|^NamPortabilityRegistrationCheck$' --output-on-failure
+```
+
+- `02-build-nam.log` — EXIT=0
+- `02-test-list.log` — EXIT=0 (5 tests: `NamModelMonoOutputTest` #750, `NamModelPrewarmTest` #800, `NamModelLoaderTest` #801, `NamModelLoaderPortabilityCheck` #802, `NamPortabilityRegistrationCheck` #803)
+- `03-test-family-green.log` — EXIT=0 (5/5 passed in 0.93 s)
+
+### p3 — portability red/green, restore, recheck
+
+```
+cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build/tests && ctest -R '^NamModelLoaderPortabilityCheck$' --output-on-failure
+# red mutation: `#include <filesystem>` added at tests/src/core/NamModelLoaderTest.cpp:34 (diff saved as 05-mutation.patch)
+rg -n 'filesystem' tests/src/core/NamModelLoaderTest.cpp
+cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build/tests && ctest -R '^NamModelLoaderPortabilityCheck$' --output-on-failure
+cp /home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/05-NamModelLoaderTest.cpp.bak /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/tests/src/core/NamModelLoaderTest.cpp
+sha256sum -c /home/kruzzzzy/.config/kads/zene/state/runs/ci-v041-3.r1/logs/05-sha-before.txt
+git diff --exit-code -- tests/src/core/NamModelLoaderTest.cpp
+cmake --build /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build --target NamModelLoaderTest
+cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build/tests && ctest -R '^NamModelLoaderPortabilityCheck$' --output-on-failure
+cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-v041-3/build/tests && ctest -R '^NamModelMonoOutputTest$|^NamModelPrewarmTest$|^NamModelLoaderTest$|^NamModelLoaderPortabilityCheck$|^NamPortabilityRegistrationCheck$' --output-on-failure
+git status --porcelain
+```
+
+- `04-test-portability-green.log` — EXIT=0 (1/1 passed in 0.73 s)
+- `05-mutation-grep.log` — EXIT=0 (`34:#include <filesystem>`)
+- `06-portability-red.log` — **EXIT=8** (`0% tests passed`, 1 failed out of 1)
+- `cp` restore command — EXIT=0 from the console; no log
+- `07-restore-sha.log` — EXIT=0 (`.../tests/src/core/NamModelLoaderTest.cpp: OK`)
+- `07-restore-diff.log` — EXIT=0
+- `08-rebuild-restored.log` — EXIT=0
+- `09-portability-green-restored.log` — **EXIT=0** (1/1 passed in 0.94 s)
+- `10-family-green-restored.log` — EXIT=0 (5/5 passed in 1.06 s)
+- `10-status-after-restore.log` — EXIT=0 (empty)
 
 ## Self-check
 
