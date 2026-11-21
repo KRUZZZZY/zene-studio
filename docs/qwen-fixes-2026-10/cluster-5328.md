@@ -42,7 +42,7 @@ were re-run while writing this report, so each command and exit code has a saved
 | build, fix restored | `cmake --build build --target ScriptBindingsTest -j$(nproc)` (worktree) | 0 | `004-13-build-restored.log` |
 | test, fix restored | `ctest -R '^ScriptBindingsTest$' --output-on-failure` (`build/tests`) | 0 | `005-14-test-restored.log` |
 | slot detail | `./ScriptBindingsTest projectFileWriteKeepsTheOriginalWhenTheKernelCutsItShort projectFileWrapper` (`build/tests`) | 0 | `007-16-slot.log` |
-| gate | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 5328` | see below | `005-15-feature-check.log` |
+| gate | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 5328` | 1 before commit, 0 after (`008-18-submit-check-final.log`) | `005-15-feature-check.log` |
 
 Earlier session logs, same results:
 
@@ -59,7 +59,7 @@ Earlier session logs, same results:
 The gate run recorded in `005-15-feature-check.log` exited 1 only because the report did not
 exist yet and the working tree still held the fix (`FAIL report ... missing`, `FAIL working
 tree clean`); its own gate item passed: `PASS gates (feature_check.py)`. The same check is
-re-run after the commit and recorded in `018-submit-check-final.log` (exit noted there).
+re-run after the commit: exit 0, `RESULT: PASS - submit` (`008-18-submit-check-final.log`).
 
 ## Test matrix
 
