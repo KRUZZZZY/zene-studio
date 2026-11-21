@@ -5,7 +5,7 @@ FIXED
 Verdict: **FIXED** on `bugs/qwen-5184`. A route whose `channel`, `chain`, `effect` or `track` is present and is not a
 number now refuses its modulator. Before the fix the same block loaded, and the modulator was routed to channel,
 chain or effect 0, an address nobody authored. The file-length compression in the follow-up commit changes no
-validation order; its RED status is stated under Evidence.
+validation order. The RED and GREEN runs for the address check are under Evidence.
 
 ## The real decision
 
@@ -79,34 +79,46 @@ checked in the same function.
   channel is dropped while the valid modulator still loads.
 
 Determinism: all data are in-memory `QDomDocument` rows. There are no sleeps, no `qWait`, no threads and no
-randomness in lines 520-586 (checked with grep; no matches).
+randomness in lines 520-586 (re-checked with grep for sleep, wait, timer, thread and rand: no matches).
 
 ## Evidence
 
-Logs are outside the repository, in `/home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/`. The quiet-run wrapper
-output for these steps is in `/home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/duet/12-worker/tmp/`. The fix patch is
-`logs/fix.patch`.
+Logs are outside the repository, in `/home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/`. The fix patch is
+`logs/fix.patch`. The reversal patch for the RED run is `logs/fix-5184-red.patch`.
 
-| Step | Command (run from `build/tests` for ctest) | Exit | Result |
+RED and GREEN for the address check (the packet p2/p3 run; ctest runs from `build/tests`):
+
+| Step | Command | Exit | Result |
+|---|---|---|---|
+| Patch for RED | diff of `src/core/ModulationLayer.cpp` over `b85f94a76e^..HEAD` → `logs/fix-5184-red.patch`; non-empty check | 0; 0 | non-empty |
+| Reverse | `git apply -R logs/fix-5184-red.patch` | 0 | address check removed from the worktree |
+| RED build | build of the `ModulationLayerTest` target → `build-10-red.log` | 0 | `Built target ModulationLayerTest` |
+| RED test | `ctest -R '^ModulationLayerTest$'` → `test-11-red.log` | **8** | `Totals: 16 passed, 4 failed`; `0% tests passed, 1 tests failed out of 1` |
+| Reapply | `git apply logs/fix-5184-red.patch` | 0 | fix restored |
+| GREEN build | build of the `ModulationLayerTest` target → `build-12-green.log` | 0 | `Built target ModulationLayerTest` |
+| GREEN test | `ctest -R '^ModulationLayerTest$'` → `test-13-green.log` | 0 | `100% tests passed out of 1` |
+| Family | `ctest -R '^Modulation'` → `test-14-modulation-family.log` | 0 | `100% tests passed out of 5` |
+
+The four RED failures are the four address rows, all at `tests/src/core/ModulationLayerTest.cpp:553`:
+
+- `ModulationLayerTest::aMalformedRouteAddressIsRefused(channel)` — `Compared values are not the same`
+- `ModulationLayerTest::aMalformedRouteAddressIsRefused(chain)` — same message
+- `ModulationLayerTest::aMalformedRouteAddressIsRefused(effect)` — same message
+- `ModulationLayerTest::aMalformedRouteAddressIsRefused(track)` — same message
+
+Earlier compression-only checks (`build-5-green.log`, `test-5-green.log`, `build-6-reversed.log`, `test-6-reversed.log`,
+`build-7-reapplied.log`, `test-7-reapplied.log`) reversed only the uncommitted compression. They leave the `b85f94a`
+address check in place, so they show no failure for the address check. They are not the RED evidence above.
+
+Other gates:
+
+| Step | Command | Exit | Result |
 |---|---|---|---|
 | File length | `bash tests/file-length-gate.sh --check` → `file-length-check.log` | 0 | `ModulationLayer.cpp` not in the exceed list; PASS |
-| GREEN (compressed fix) | `cmake --build build --target zene ModulationLayerTest`; `ctest -R '^ModulationLayerTest$'` → `build-5-green.log`, `test-5-green.log` | 0; 0 | 100% of 1 passed |
-| Patch | `git diff -- src/core/ModulationLayer.cpp > logs/fix.patch`; `test -s logs/fix.patch` | 0; 0 | non-empty, 11 insertions, 19 deletions |
-| Reversed (compression only) | `git apply -R logs/fix.patch`; build → `build-6-reversed.log`; ctest → `test-6-reversed.log` | 0; 0; 0 | 100% of 1 passed. **Not a RED for the address check** (see note) |
-| Reapply | `git apply logs/fix.patch`; build → `build-7-reapplied.log`; ctest → `test-7-reapplied.log` | 0; 0; 0 | 100% of 1 passed |
 | Feature check | `FEATURE_CHECK_LOG_DIR=logs/feature-check-2 python3 feature_check.py <worktree>` → `feature-check-2.log` | 0 | `RESULT: PASS` |
-| Family | `ctest -R '^Modulation'` → `test-8-modulation-family.log` | 0 | 100% passed, 5 of 5 |
 
-Note on RED: the reversal in this run undoes only the uncommitted compression. It leaves the committed `b85f94a` address
-check in place, so the four address rows are still checked and pass. These logs therefore do not show the address check
-failing. The earlier address-reversal RED is not cited here, because it is not in this run's logs.
-
-Gates:
-
-- `python3 feature_check.py <worktree>` → `RESULT: PASS`, exit 0 (`feature-check-2.log`).
-- `ctest -R Modulation` from `build/tests` → 100% passed, 5 of 5, exit 0 (`test-8-modulation-family.log`). The five are
-  ModulationLayerValueTest, ModulationLayerTest, ModulationAudioViewTest, ModulationLayerProjectRoundTripTest and
-  ModulationRateTest.
+Exit codes for the RED and GREEN rows come from the packet p2/p3 run record. The `.log` files hold the test output,
+and the exit codes are not written into them.
 
 ## Realtime and undo
 
@@ -126,21 +138,27 @@ existing test file. No new source and no CMake change.
 
 ## Self-check
 
-- **RED evidence:** not shown by the logs in this commit's run. The packet's reversal removes only the compression,
-  so the address check is still present and the reversed ctest exits 0. A RED for the address check needs a reversal
-  of the `b85f94a` change itself; the lead should decide whether to run that.
-- **GREEN evidence:** ctest exit 0 with the compressed fix (`test-5-green.log`) and again after reapply
-  (`test-7-reapplied.log`).
-- **Patch / apply -R / reapply:** `git diff` patch created exit 0, `test -s` exit 0, `git apply -R` exit 0, reversed
-  build and ctest exit 0 (not a RED, see above), `git apply` exit 0, reapplied build and ctest exit 0.
-- **Determinism:** in-memory `QDomDocument` data rows. No sleeps, waits, threads or random data in the new tests
-  (grep of test lines 520-586, no match).
-- **Cause:** `toInt()` returns 0 for a non-number, and the four address fields used it unchecked (HEAD `:177-182`).
-- **Siblings:** `readRoute` is called only from `readRoutes`, which is called only from `loadModulator`, called only from
-  `loadSettings`. The `trigger` field has the same pattern and is listed under Other findings.
-- **Collateral, absent defaults:** an absent address keeps 0/0/0/-1. Test `aRouteAddressAbsentKeepsItsDefault` (`:560`)
-  asserts this; it passes in the GREEN runs.
-- **Collateral, nameless route:** a nameless route with `channel="bad"` is dropped without inspection and the valid
-  modulator still loads. Same test, `:560`.
-- **Collateral, round-trip family:** the five-test modulation family passes 5/5 (`test-8-modulation-family.log`),
+- **RED/GREEN exit codes:** RED: the `ModulationLayer.cpp` reversal of `b85f94a76e^..HEAD` applied with exit 0, the
+  RED build exit 0 (`build-10-red.log`), and the RED ctest exit 8 (`test-11-red.log`). Four address rows failed at
+  `ModulationLayerTest.cpp:553`. The reapply exit 0. GREEN: build exit 0 (`build-12-green.log`), focused ctest exit 0
+  (`test-13-green.log`), and family ctest exit 0 (`test-14-modulation-family.log`). The exit codes are from the p2/p3
+  record, not from the logs.
+- **Determinism:** the new tests use in-memory `QDomDocument` rows (`aMalformedRouteAddressIsRefused_data` `:524`,
+  `aRouteAddressAbsentKeepsItsDefault` `:560`). The tests use no sleeps, timers, threads or randomness (grep of
+  lines 520-586: no match).
+- **Caller chain:** `readRoute` (`:182`) ← `readRoutes` (`:199`, call at `:207`) ← `loadModulator` (`:228`, call at
+  `:241`) ← `loadSettings` (`:582`, call at `:593`). `intAttribute` (`:139`) is used only by `readRoute` (`:186-189`).
+  The `trigger` sibling (`readSource` `:173`) has the same unchecked pattern and is listed under Other findings.
+- **Collateral, absent defaults and nameless routes:** an absent address keeps 0/0/0/-1, and a nameless route with a
+  bad channel is dropped without inspection while the valid modulator still loads. Both are asserted by
+  `aRouteAddressAbsentKeepsItsDefault` (`:560`).
+- **Collateral, round-trip family:** the five-test modulation family passes 5/5 (`test-14-modulation-family.log`),
   including `ModulationLayerProjectRoundTripTest`.
+- **Verdict evidence:** commit `b85f94a76e` adds the refusal in `readRoute` and the tests. Commit `038fe08e23` makes the
+  file-length compression with no validation change. The contract is `docs/MODULATION.md:162-168`, which says a corrupt
+  block loads as EMPTY and nothing is guessed. The comment above `readSourcePhase` (`:147-148`) states the same rule for
+  the phase, and the address check follows it.
+- **Command files:** no command files changed. The cluster commits `b85f94a76e`, `038fe08e23` and `23adf82e06` touch
+  only `docs/MODULATION.md`, the cluster report, `src/core/ModulationLayer.cpp` and
+  `tests/src/core/ModulationLayerTest.cpp`. A path filter over `b85f94a76e^..23adf82e06` for command, arrangement and
+  app files returns 0 matches. So `app.*` and `arrangement.*` are unaffected.
