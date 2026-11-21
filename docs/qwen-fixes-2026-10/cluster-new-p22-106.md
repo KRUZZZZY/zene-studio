@@ -21,7 +21,7 @@ The product fix is already on this branch. Commit `d02589fdd5` (`fix(new-p14-70)
 ## Test
 
 - Slot `malformedImportedChannelValuesFallBackToTheDefaults()` starts at `tests/src/core/ImportTrackIoTest.cpp:430`.
-- Existing rows: `:434-442` (`loud`/`sideways`, `inf`/`-inf`, `0.5`/`0.25`).
+- Existing rows: `:434-438` and `:441-444` (`loud`/`sideways`, `inf`/`-inf`, `0.5`/`0.25`, and the child-element rows).
 - New row: `:439-440`, `rewriteDrumsChannel(file, "nan", "1e999", false)` followed by `expectImportedChannelState(file, 1.0, 0.0)`.
 - The diff adds 2 lines to `tests/src/core/ImportTrackIoTest.cpp` and changes nothing else.
 
@@ -55,5 +55,5 @@ With the fix reverted, `test-2.log` shows six `FAIL!` lines for `malformedImport
 1. **Reverted fail and pass exit codes.** With the fix reverted, `test-2` exits 8 (`apply-reverse` and `build-2` both exit 0). With the fix restored, `test-3` exits 0 (`apply-restore` and `build-3` both exit 0), and `test-4` exits 0 with 3 of 3 tests passing.
 2. **Deterministic fixtures, no sleeps.** A grep of the test file for `sleep`, `qWait`, `QThread`, `usleep` and `msleep` found no matches. The fixtures are `QDomDocument` and `QFile` (`ImportTrackIoTest.cpp:142-147` and `:185-187`).
 3. **Cause complete across both branches and both callers.** Both the attribute branch (`:70`) and the child branch (`:72`) go through the same `parsed` guard (`:68`). Both callers (`:84-85` and `:114-115`) read through `plainValue`, so a single guard covers all four paths.
-4. **No collateral damage.** The product guard is unchanged on this branch: `git status` shows only the test file modified, and the product file is not in the diff. The test change is 2 lines, one `rewriteDrumsChannel` call and one `expectImportedChannelState` call at `:439-440`.
+4. **No collateral damage.** The product guard is unchanged on this branch: the working tree is clean at HEAD, and the product file is not in this commit's diff. The test change is 2 lines, one `rewriteDrumsChannel` call and one `expectImportedChannelState` call at `:439-440`.
 5. **ALREADY-FIXED file:line evidence.** `d02589fdd5` is an ancestor of `HEAD` and the last commit touching `src/core/ControlProjectTransplantChannels.cpp`. The guard is at `src/core/ControlProjectTransplantChannels.cpp:68`.
