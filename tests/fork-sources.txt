@@ -4012,3 +4012,5 @@ tests/src/plugins/BitInvaderLoadSettingsTest.cpp
 tests/src/core/AudioOssDeviceConfigTest.cpp
 # cluster new-p16-100: LocaleHelper::toFloat parse contract and the project-load non-finite leg (fork-NEW).
 tests/src/core/LocaleHelperTest.cpp
+# cluster new-p21-172: sfizz stereo-linked gate builds its detector input from the right channel.
+tests/src/plugins/SfzGateStereoLinkTest.cpp
