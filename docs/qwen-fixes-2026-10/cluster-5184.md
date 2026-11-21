@@ -101,19 +101,36 @@ RED and GREEN for the address check (the packet p2/p3 run; ctest runs from `buil
 | GREEN test | `ctest -R '^ModulationLayerTest$'` → `test-13-green.log` | 0 | `100% tests passed out of 1` |
 | Family | `ctest -R '^Modulation'` → `test-14-modulation-family.log` | 0 | `100% tests passed out of 5` |
 
-Exact RED/GREEN command sequence, as run in the p2/p3 shell runs. Paths are absolute. Run from the worktree root; the ctest lines `cd` into `build/tests`, so return to the root before the next build line. Each line's exit code is the value printed by the p2/p3 shell run:
+Exact RED/GREEN command sequence, as run in the p2/p3 shell runs. Paths are absolute. Each command has a `# cwd:` comment giving the directory it starts in. The ctest lines start in the worktree root and `cd` into `build/tests` for their own command; a standalone `cd <root>` line follows each of them, so the next command starts in the root.
+
+The p3 green build (`cmake --build build --target zene ModulationLayerTest`, the line marked "green build") was run through the quiet-run helper (`/home/kruzzzzy/.local/share/zene-bunny-fix/duet/quiet-run`), which wrapped that cmake command. The line shows the underlying command with its redirect. `build-12-green.log` holds the full build output, and the `0` on that line is the wrapper's exit code. The red build was a direct redirect, not wrapped.
+
+Each line's exit code is the value printed by the p2/p3 shell run; exit codes were printed by the shell runs and are not embedded in the logs:
 
 ```sh
+# cwd: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5184
 git diff b85f94a76e^ HEAD -- src/core/ModulationLayer.cpp > /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/fix-5184-red.patch; echo EXIT=$?   # patch generation: 0
+# cwd: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5184
 test -s /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/fix-5184-red.patch; echo EXIT=$?   # test -s: 0
+# cwd: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5184
 git apply --check -R /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/fix-5184-red.patch; echo EXIT=$?   # 0
+# cwd: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5184
 git apply -R /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/fix-5184-red.patch; echo EXIT=$?   # 0
-cmake --build build --target zene ModulationLayerTest > /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/build-10-red.log 2>&1; echo EXIT=$?   # red build: 0
+# cwd: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5184
+cmake --build build --target zene ModulationLayerTest > /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/build-10-red.log 2>&1; echo EXIT=$?   # red build (direct redirect): 0
+# cwd: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5184 (the line enters build/tests itself)
 cd build/tests && ctest -R '^ModulationLayerTest$' --output-on-failure > /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/test-11-red.log 2>&1; echo EXIT=$?   # red ctest: 8
+cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5184   # reset: cwd is the root again
+# cwd: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5184
 git apply /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/fix-5184-red.patch; echo EXIT=$?   # 0
-cmake --build build --target zene ModulationLayerTest > /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/build-12-green.log 2>&1; echo EXIT=$?   # green build: 0
+# cwd: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5184
+cmake --build build --target zene ModulationLayerTest > /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/build-12-green.log 2>&1; echo EXIT=$?   # green build: run via quiet-run wrapper of this command; 0 = wrapper's exit code; full output in build-12-green.log
+# cwd: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5184 (the line enters build/tests itself)
 cd build/tests && ctest -R '^ModulationLayerTest$' --output-on-failure > /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/test-13-green.log 2>&1; echo EXIT=$?   # focused green ctest: 0
+cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5184   # reset: cwd is the root again
+# cwd: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5184 (the line enters build/tests itself)
 cd build/tests && ctest -R '^Modulation' --output-on-failure > /home/kruzzzzy/.config/kads/zene/state/runs/5184.r1/logs/test-14-modulation-family.log 2>&1; echo EXIT=$?   # family ctest: 0
+cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5184   # reset: cwd is the root again
 ```
 
 The four RED failures are the four address rows, all at `tests/src/core/ModulationLayerTest.cpp:553`:
