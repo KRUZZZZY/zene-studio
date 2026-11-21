@@ -64,4 +64,27 @@ None.
 
 ## Self-check
 
-<!-- stub -->
+- **Red/green with exit codes.** `tests/train-51-portability-check.py` compiles the
+  pair both ways; `logs/guard-1.log` shows `PASS sfz-windows-fixed: compiled`
+  (the `_WIN32` form, exit 0) and `PASS sfz-windows-original: failed as expected`
+  (the `_MSC_VER` revert, expected failure with the `posix_memalign`
+  diagnostic). The script itself exits 0.
+- **Deterministic.** The check is compile-only: no wall-clock, sleeps, or
+  threads. The seam is the preprocessor macro injected in the prelude
+  (`tests/train-51-portability-check.py:132-140`) and the only variant is the
+  textual `_WIN32` to `_MSC_VER` replacement at line 143.
+- **Cause and completeness.** The guard is at the cause (`#if defined(_WIN32)`
+  around the Windows allocation/free pair). The sibling probe
+  `tests/src/core/AllocationProbe.cpp:124,190` already uses `#ifdef _WIN32` for
+  the same pair, so both sites agree; the report confirms no `_MSC_VER` remains
+  in `SfzDistoBuffersTest.cpp`.
+- **No collateral damage.** This is an ALREADY-FIXED test-only compile guard; the
+  branch changes no product code, project format, saved data, or limit in this
+  cluster, so old projects and callers are unaffected.
+- **ALREADY-FIXED evidence.** `tests/src/plugins/SfzDistoBuffersTest.cpp:56` is
+  `#if defined(_WIN32)` with `posix_memalign` on the `#else` at line 60. The
+  equivalent product commit is ancestral: `git merge-base --is-ancestor
+  f3b5426267 HEAD` exits 0 (report `## Proof commands and EXITs`).
+- **Sibling commands.** No command files were changed in this cluster (only this
+  report), so `app.*` and `arrangement.*` handlers are unaffected and no handler
+  reads this document.
