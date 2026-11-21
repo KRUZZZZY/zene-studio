@@ -310,6 +310,7 @@ set(LMMS_TESTS
 	src/core/ControlSampleArrayTest.cpp
 	# The undo-record bookkeeping for nested and wrapped commands (one record per journal step).
 	src/core/ControlRegistryNestingTest.cpp
+	src/core/ControlRegistryObserverTest.cpp
 	src/core/ControlEventHubTest.cpp
 	# Replies held to their declared resultSchema (ZENE_CONTROL_CHECK_RESULTS), and
 	# every command's id is its group.verb.
