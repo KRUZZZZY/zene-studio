@@ -71,6 +71,7 @@ Screenshot: gui-shots/shell-arrange.png (kept in the log folder, outside the wor
 - **Cause and completeness:** the cause is the unchecked llround and unchecked toDouble in `timeFrom`. Callers and siblings are covered in "Completeness" above.
 - **No collateral damage:** in-range clock text runs the same arithmetic (h*3600 + m*60 + s, times max(1, rate), then llround). The only change is the finiteness and bound check. `999999999:00:00` is about 1.6e17 frames at 44.1 kHz, below qint64 max, so it stays accepted (test line 319).
 - **Not ALREADY-FIXED or FALSE-POSITIVE:** the unfixed product fails the new test at test-5-reversed.log:80, EXIT=8. The fix is in product commit 83113eda16 on this branch.
+- **Sibling commands:** this fix changes no command file and adds no command id; the app.* and arrangement.* ids named by the submit check come from the branch base history, not from cluster new-p10-350. The product diff touches only src/gui/SampleRangeFields.cpp, so none of those commands is affected.
 
 ## Other findings
 
