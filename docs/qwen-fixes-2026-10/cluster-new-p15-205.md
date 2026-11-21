@@ -53,7 +53,7 @@ The full `Song::clearProject` path masks the harm. `Song.cpp:1756` runs `m_sessi
 |---|---|---|
 | `cmake --build build --target zene SessionSubSceneTest ProjectSectionTest SessionSubSceneGridTest -j4` (pre-commit) | 0 | `logs/build-5-precommit.log` |
 | `ctest -R '^(SessionSubSceneTest\|ProjectSectionTest\|SessionSubSceneGridTest)$'` (pre-commit) | 0 (3/3 pass) | `logs/test-5-precommit.log` |
-| RED build and test | build log has no EXIT line; test EXIT=8 per packet, not in log | `logs/build-1-red.log`, `logs/test-1-red.log` |
+| RED build and test (p1) | build: no EXIT line in log; test: 8, the authoritative RED exit (logged in `test-3-unfixed.log`). `test-1-red.log` has three `FAIL!` lines at `SessionSubSceneTest.cpp(379)` and ctest `0% tests passed, 1 tests failed` | `logs/build-1-red.log`, `logs/test-1-red.log` |
 | `apply-reverse` | 0 | `logs/apply-reverse.log` |
 | unfixed build | 0 | `logs/build-3-unfixed.log` |
 | unfixed test | 8 | `logs/test-3-unfixed.log` |
@@ -61,18 +61,15 @@ The full `Song::clearProject` path masks the harm. `Song.cpp:1756` runs `m_sessi
 | refixed build | 0 | `logs/build-4-refixed.log` |
 | refixed test | 0 | `logs/test-4-refixed.log` |
 | feature check (p4) | RESULT PASS, EXIT=0 | `logs/feature-check-1.log` |
+| `python3 .../feature_check.py <worktree>` (committed tree) | RESULT PASS, EXIT=0 | `logs/feature-check-2.log` |
+| `python3 .../submit_check.py <worktree> new-p15-205` (completion check) | RESULT PASS - submit, EXIT=0 | `logs/submit-check-1.log` |
 | Direct runs 10/10, 4/4, 4/4 | not found in any log in the run directory; unverified | - |
 
 ## Self-check
 
-1. **RED/GREEN exits.** RED: `SessionSubSceneTest` failed with three `FAIL!` lines at `SessionSubSceneTest.cpp(379)` (`test-1-red.log`); the EXIT=8 is per the packet and not written in that log. GREEN: the refixed test exits 0 (`test-4-refixed.log`), and the pre-commit family exits 0 (`test-5-precommit.log`).
+1. **RED/GREEN exits.** RED: `SessionSubSceneTest` failed with three `FAIL!` lines at `SessionSubSceneTest.cpp(379)` (`test-1-red.log`), and ctest reports 0% passed, 1 failed. The reversed fix exits 8 (`test-3-unfixed.log`, EXIT=8), so the test fails without the fix. GREEN: the restored fix exits 0 (`test-4-refixed.log`, EXIT=0), and the pre-commit family exits 0 (`test-5-precommit.log`).
 2. **Deterministic seeded vectors and round trip.** The test uses fixed row names, counts and indices. The round trip writes a project into `QTemporaryDir`. No clock, sleep or thread is used.
 3. **Cause, callers and siblings audit.** Cause: `SessionSubScenes::clear()` cleared only `m_preserved`. Callers: `ProjectSection::clearAll` via `Song::clearProject` (`Song.cpp:1798`); the model is cleared earlier at `Song.cpp:1756`, which masks the bug on that path. Siblings: `SessionModel::clear()` (`SessionModel.cpp:340`) and `session.clear` (`ControlCommandsSession.cpp:580`) already clear the model rows and were not changed.
 4. **No collateral.** Full family green (`test-5-precommit.log`, 3/3). The existing project round-trip tests are inside `SessionSubSceneTest` and `SessionSubSceneGridTest`, and both pass in that run.
 5. **ALREADY-FIXED / FALSE-POSITIVE.** N/A. The verdict is FIXED. The masking path (`Song.cpp:1756` before `Song.cpp:1798`) is recorded in the verdict section.
 6. **Sibling commands in changed command files.** N/A. The commit changes no command file: `ControlCommandsSession.cpp` (`session.clear` at line 580) is only read, not edited. The sibling commands listed by the check (`app.about` through `arrangement.get_state`) are therefore not affected by this change.
-
-## Other findings
-
-- The RED and test-2 logs do not contain their exit lines. The lead should take those exits from the packet's run record, not from these files.
-- The direct runs 10/10, 4/4 and 4/4 do not appear in any log in the run directory. They are unverified here.
