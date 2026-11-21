@@ -2,20 +2,20 @@ FIXED
 
 # Cluster 5010: bounded drain of an oversized request
 
-Fix commits on `bugs/qwen-5010`: `876b219d5a` (fix) and `70f70f34f0` (style). This report adds the gate registration fix and this document.
+The product fix on `bugs/qwen-5010` is branch commit `876b219d5a` (with style follow-up `70f70f34f0`). This run re-verified it against the current code. Every log cited below is in the r2 log folder (`/home/kruzzzzy/.config/kads/zene/state/runs/5010.r2/logs`); older logs named by earlier drafts are not evidence for this report.
 
 ## a) The unbounded loop, its contradicting comment, and the new loop
 
-- Old code, `git show fa4a5f2e78:src/core/ControlServer.cpp`: `drainPeer(int fd)` is lines 257-267. The loop at lines 260-266 is `while (true)` with no budget. `if (got > 0) { continue; }` (line 263) discards bytes until EOF, so one activation can read without limit.
-- The comment that contradicts it is `include/ControlServer.h:159`: "peer sends is read and DISCARDED (bounded, per chunk) until EOF". `bool draining` is at `:163`. The header said "bounded"; the loop was not.
-- New code, `src/core/ControlServer.cpp:259-273`: `drainPeer(int fd, int budgetBytes)`. The loop is `while (consumed < budgetBytes)` (line 263). Each read is capped to the remaining room (lines 265-267). When the budget is spent it returns `false` (line 272). The socket is still readable, so the level-triggered notifier fires again on the next loop pass (comment at lines 257-258).
-- Constant: `include/ControlServer.h:95`, `DrainBytesPerActivation = 64 * 1024`. Call site: `src/core/ControlServer.cpp:359`.
+- Old code: `drainPeer(int fd)` looped `while (true)` and discarded every readable byte until EOF, so one activation could read without limit.
+- The old header comment said the drain was "bounded, per chunk" while the loop was not.
+- New code, `src/core/ControlServer.cpp:259-273`: `drainPeer(int fd, int budgetBytes)`. The loop is `while (consumed < budgetBytes)` (line 263). Each read is capped to the remaining room (lines 265-267). When the budget is spent it returns `false` (line 272). The socket stays readable, so the level-triggered notifier fires again on the next loop pass.
+- Constant: `include/ControlServer.h:95`, `DrainBytesPerActivation = 64 * 1024` (65536). The single call site is `src/core/ControlServer.cpp:359`: `drainPeer(fd, ControlServer::DrainBytesPerActivation)`.
 
 ## b) Sibling paths
 
-- `readChunk` (`src/core/ControlServer.cpp:281`; its bound is the return at `:288`) returns `false` once `buffer.size() > MaxRequestLineBytes` (1 MiB, `include/ControlServer.h:83`). It was already bounded and is not changed.
-- Windows: the drain runs in a per-pipe thread in `src/core/ControlServerWin32.cpp` (the plan's range :472-531; the `draining` flag is at :513 and the drain branch at :524-534). It is a separate code path, so this fix does not change it.
-- Idle deadline: unchanged. `git diff fa4a5f2e78 HEAD -- src/core/ControlServer.cpp | rg -c deadline` has no match (saved as `logs/fix2.patch`, grep in `logs/deadline-count.log` EXIT=1).
+- `readChunk` was already bounded by the 1 MiB `MaxRequestLineBytes` cap and is not changed by this fix.
+- Windows: `src/core/ControlServerWin32.cpp:513-534` drains the over-cap line in its per-client pipe thread, not in the Qt event loop. It is a separate code path; this fix does not change it.
+- Idle deadline: unchanged.
 
 ## c) Test matrix
 
@@ -23,57 +23,55 @@ The test file `tests/src/core/ControlServerDrainTest.cpp` has one test function,
 
 | Path | Covered |
 |---|---|
-| normal path | yes: bounded rounds of 65536 bytes (`logs/003-test-3-green.log:22-25`) |
+| normal path | yes: four bounded rounds of 65536 bytes (`logs/114-test-green2-verbose.log:21-24`) |
 | failure path (read error) | not a separate test; the branch is `ControlServer.cpp:270` |
-| exhaustion path | yes: 1019584-byte fill drained over several rounds (`logs/003-test-3-green.log:21`) |
+| exhaustion path | yes: 1019584-byte fill drained over several rounds (`logs/112-test-red.log:8`, `logs/114-test-green2-verbose.log:21-24`) |
 | reconfiguration | not a separate test |
 | audio thread | none (no audio code involved) |
 | platform | POSIX |
 
-## d) RED and GREEN numbers
+## d) RED and GREEN numbers (this run)
 
-- RED, old unbounded code: fill 1019584 bytes (`logs/test-2-red.log:7`). One activation consumed 8228544 bytes (`logs/test-2-red.log:8-9`). The limit is `DrainBytesPerActivation` (65536) + 8192 slack. `logs/test-4-red.log:8-10` shows the same numbers.
-- GREEN, bounded code: fill 1019584 bytes (`logs/003-test-3-green.log:21`). Rounds 0-3 each consumed 65536 bytes (`logs/003-test-3-green.log:22-25`).
-- `logs/test-4-green.log` is 8 lines and has no count lines, so the GREEN count in that log is not verified here.
+- Baseline before touching the fix: build `logs/101-build-green.log`; test `logs/102-test-green.log`, `100% tests passed out of 1`.
+- RED, fix reverted with `logs/110-fix-cpp.patch`: build `logs/111-build-red.log`, test `logs/112-test-red.log` EXIT=8. Fill 1019584 bytes; round 0 consumed 8228544 bytes in one activation against a limit of `DrainBytesPerActivation` (65536) + 8192 slack = 73728 (`logs/112-test-red.log:8-10`); `0% tests passed, 1 tests failed out of 1`.
+- GREEN, fix reapplied: build `logs/113-build-green2.log`, test `logs/114-test-green2.log` EXIT=0, `100% tests passed out of 1`. The verbose run `logs/114-test-green2-verbose.log` shows rounds 0, 1, 2 and 3 each consuming exactly 65536 bytes (`:21-24`).
+- Wrong-fix mutant that stays safe: `logs/115b-mutant.patch` (clamps in a way that still respects the activation bound), build `logs/116b-build-mutant.log`, test `logs/117b-test-mutant-red.log` EXIT=8: round 0 consumed 1048576 bytes and the test fails at `tests/src/core/ControlServerDrainTest.cpp:212`. Restored: build `logs/118b-build-restored.log`, test `logs/119b-test-restored-green.log` EXIT=0, `100% tests passed out of 1`.
+- The first mutant (`logs/115-mutant.patch`, `logs/116-build-mutant.log`, `logs/117-test-mutant-red.log`) was unsafe and is discarded: it pushed `consumed` past the budget, made `room` negative, and failed at the write helper (`tests/src/core/ControlServerDrainTest.cpp:209`), not at the bound assertion. It is not used as proof.
+- Family: `logs/120-family.log` EXIT=0, `100% tests passed out of 2` (`ControlShutdownHookTest`, `ControlServerDrainTest`).
+- Canary: `logs/121-canary.log` EXIT=0, `100% tests passed out of 1` (`ControlCommandsSnapshot`, ctest #934).
+- Gates: `logs/130-gates.log` EXIT=0, `RESULT: PASS`.
 
-## e) Commands and EXIT codes (copied from the logs)
+## e) Commands and EXIT codes (copied from the saved logs)
 
-- build-1: `logs/build-1.log`. No EXIT line in the log; not re-run.
-- test-1: `logs/test-1.log`. No EXIT line in the log; not re-run.
-- build-2: `logs/build-2.log` EXIT=0. An earlier attempt, `logs/build-2-attempt1.log`, has EXIT=2.
-- test-2-red: `logs/test-2-red.log` EXIT=8 (expected failure on the unfixed code).
-- build-3: `logs/001-build-3.log`, `logs/002-build-3.log`. No EXIT line in either log; not re-run.
-- test-3 green: `logs/003-test-3-green.log`. No EXIT line in the log; not re-run. `logs/004-test-3-green-short.log` EXIT=0.
-- test-3 family: `logs/005-test-3-family.log` EXIT=0.
-- test-3 control-all: `logs/006-test-3-control-all.log` EXIT=8 (see Other findings).
-- build-3b: `logs/build-3b.log`. No EXIT line in the log; not re-run.
-- Final HEAD (`9e7f7181c0`), re-run for this report:
-  - build: `logs/build-5.log` EXIT=0 (`cmake --build build --target zene ControlServerDrainTest ControlShutdownHookTest`).
-  - GREEN: `logs/test-5-green.log` EXIT=0, `100% tests passed out of 1` (`ctest -R ControlServerDrain`).
-  - family: `logs/test-5-family.log` EXIT=0, `100% tests passed out of 6` (run with `TMPDIR=/tmp/z5010`).
-  - p4 redo, with the .cpp-only patch `logs/fix2.patch` (`git diff fa4a5f2e78 HEAD -- src/core/ControlServer.cpp`):
-    - reverse: `logs/fix2-reverse.log` EXIT=0; build `logs/build-5a.log` EXIT=0.
-    - RED: `logs/test-5-red.log` EXIT=8. Line 8 is round 0 with 8228544 consumed; line 9 is the FAIL on `consumed`.
-    - reapply: `logs/fix2-reapply.log` EXIT=0; build `logs/build-5b.log` EXIT=0.
-    - GREEN: `logs/test-5-green2.log` EXIT=0, `100% tests passed out of 1`. The consumed lines are 21-24 (65536 each) and PASS is line 25.
-    - Tree after the redo: `logs/status-5.log` and `logs/diff-head-5.log` each have EXIT=0 and no output.
-  - The old p4 logs `logs/test-4-baseline.log`, `logs/test-4-red.log`, `logs/test-4-withfix.log`, `logs/test-4-green.log` have no EXIT line. They are superseded by the `test-5-*` logs above. `logs/test-4-red.log:8-10` shows the same RED numbers. `logs/fix.patch` is present.
-- gates: `logs/gates-first-run-FAIL.log` and `logs/gates.log` have `RESULT: FAIL` and `RESULT: PASS` lines but no EXIT line. The EXIT=1 and EXIT=0 values were echoed in the session and are not in either log. They were not re-run here. The re-run for this report is `logs/gates-6.log` EXIT=0, `RESULT: PASS`, with no FAIL row.
+- `logs/101-build-green.log`: `cmake --build build --target zene ControlServerDrainTest`; no EXIT line in the log, build output clean.
+- `logs/102-test-green.log`: `ctest -R ^ControlServerDrainTest$ --output-on-failure`; `100% tests passed out of 1`.
+- `logs/111-build-red.log`: same build target; build output clean, no EXIT line in the log.
+- `logs/112-test-red.log`: same ctest command; EXIT=8, expected failure on unfixed code.
+- `logs/113-build-green2.log`: same build target; build output clean, no EXIT line in the log.
+- `logs/114-test-green2.log`: same ctest command; EXIT=0.
+- `logs/114-test-green2-verbose.log`: verbose form of the same ctest command; rounds 0-3 at 65536 bytes, PASS.
+- `logs/116b-build-mutant.log`: mutant build; build output clean, no EXIT line in the log.
+- `logs/117b-test-mutant-red.log`: same ctest command; EXIT=8, FAIL at test line 212.
+- `logs/118b-build-restored.log`: restored build; build output clean, no EXIT line in the log.
+- `logs/119b-test-restored-green.log`: same ctest command; EXIT=0.
+- `logs/120-family.log`: `ControlShutdownHookTest` and `ControlServerDrainTest`; EXIT=0, 2/2 passed.
+- `logs/121-canary.log`: `ControlCommandsSnapshot`; EXIT=0, 1/1 passed.
+- `logs/130-gates.log`: feature-check gates; EXIT=0, `RESULT: PASS` with no FAIL row.
 
 ## f) Control command canary
 
-No control command was added. The files changed since the base `fa4a5f2e78` (`git diff --stat fa4a5f2e78 HEAD`) are `include/ControlServer.h`, `src/core/ControlServer.cpp`, `tests/CMakeLists.txt`, `tests/all-sources.txt`, `tests/fork-sources.txt`, `tests/src/core/ControlServerDrainTest.cpp`, and this report. No command registration file is in that list. The canary is the test `ControlCommandsSnapshot` (ctest #934, listed by `ctest -N` in `logs/canary-list.log`). It passed: `logs/test-5-canary.log` EXIT=0, `100% tests passed out of 1`; its output says the committed snapshot and this binary register the same 933 command ids. It is not a row in the gate table, so no gate run shows it.
+No control command was added. `ControlCommandsSnapshot` (ctest #934) passed in `logs/121-canary.log` (1/1), so the command table is unchanged by this fix.
 
 ## g) Limits
 
-- The full `cmake --build build` is guard-blocked (per the plan), so only the named targets were built. A grep of `logs/build-*.log` for "guard" found no matches, so the block is not recorded in those logs.
+- The full `cmake --build build` remains guard-blocked per the plan; only the named targets were built. This was not re-checked in r2.
 - No local TSan run. The race reasoning is by design: the Qt loop is single-threaded and the notifier is level-triggered.
-- The test's counts depend on kernel AF_UNIX accounting. The 8192 slack is calibrated to exactly 65536 (the RED message in `logs/test-2-red.log:9`).
-- Gate registration: `tests/all-sources.txt` gained `tests/src/core/ControlServerDrainTest.cpp`, which is what the whole-tree recipe derives. `tests/fork-sources.txt` already listed the path.
+- The test's counts depend on kernel AF_UNIX accounting. The 8192 slack is calibrated to exactly one 65536-byte budget (`logs/112-test-red.log:10`).
+- Gate registration is verified by `all-sources-reproduce` and `fork-sources` both passing in `logs/130-gates.log`.
 
 ## Gate table
 
-From `logs/gates.log` (after the fix; the first run failed on two rows):
+From `logs/130-gates.log` (this run):
 
 | Gate | Result |
 |---|---|
@@ -86,20 +84,20 @@ From `logs/gates.log` (after the fix; the first run failed on two rows):
 | complexity | PASS (no new item) |
 | file-length | PASS (no new item) |
 
-The first run (`logs/gates-first-run-FAIL.log`) failed `fork-sources` and `all-sources-reproduce`. The cause was the missing `tests/src/core/ControlServerDrainTest.cpp` line in `tests/all-sources.txt`. `fork-sources` failed only because `tests/fork-sources-gate.sh` (lines 198-203) runs the all-sources reproduce check.
-
 ## Other findings
 
-- `drainPeer`'s read-error branch returns `false` (`src/core/ControlServer.cpp:270`) without dropping the client. On Linux, ECONNRESET reports once and then EOF, so this costs at most one extra pass. Not changed.
-- 31 Control tests fail identically with and without the fix. The list is `logs/fail-without-fix.txt` (31 lines). The environment has no ALSA seq, no JACK, and no audible instrument, per the plan; I did not re-check this.
-- `ControlShutdownHookTest` has 3 cases that fail under the harness TMPDIR, because the socket path is longer than 107 bytes: `logs/test-1-longtmp.log:14`, `:19`, `:22` (`server.listen` returned FALSE).
-- `tests/src/core/ControlShutdownHookTest.cpp` is 522 lines, over 500. This predates the fix.
-- The Regenerate-with block in `tests/fork-sources.txt` (starting at line 49) puts `; \` before each `| awk` line. That is a syntax error in bash. No gate runs that recipe; `all-sources-reproduce.sh` checks only `tests/all-sources.txt`. This is not changed here.
+These were reported by earlier drafts and were **not re-checked in r2**; they are not evidence for this run.
+
+- `drainPeer`'s read-error branch returns `false` (`src/core/ControlServer.cpp:270`) without dropping the client. Not changed. Not re-checked in r2.
+- A set of Control tests unrelated to this drain fail in this environment (no ALSA seq, no JACK, no audible instrument). Not re-checked in r2.
+- `ControlShutdownHookTest` cases can fail under a long harness `TMPDIR` because the AF_UNIX path exceeds 107 bytes. Not re-checked in r2.
+- `tests/src/core/ControlShutdownHookTest.cpp` is over 500 lines; this predates the fix. Not re-checked in r2.
+- The Regenerate-with block in `tests/fork-sources.txt` has a shell syntax problem. No gate runs that recipe, and it is not changed here. Not re-checked in r2.
 
 ## Self-check
 
-1. **Fails with the change reverted, passes with it (exit codes).** Reverted with `git apply -R logs/fix2.patch` (`logs/fix2-reverse.log` EXIT=0). `logs/test-5-red.log` EXIT=8, `0% tests passed, 1 tests failed out of 1`. Line 9 is the FAIL: `consumed = 8228544 bytes in ONE activation; limit = DrainBytesPerActivation (65536) + 8192`. Reapplied (`logs/fix2-reapply.log` EXIT=0). `logs/test-5-green2.log` EXIT=0, `100% tests passed out of 1`.
-2. **Deterministic: no wall-clock timing, sleeps or races.** The test header says so (`tests/src/core/ControlServerDrainTest.cpp:31`). A grep for sleep, usleep, wait, chrono, time, Timer and QTest finds no call in the code. The seams are: the socket send buffer, set with `SO_SNDBUF` (`:164`); a fill of at least `2 * DrainBytesPerActivation` (`:195-197`); the per-round count taken by `writeUntilWouldBlock` (`:208`); and the tolerance `ConsumedSlackBytes = 8192` (`:75`). The exact counts depend on kernel AF_UNIX buffer accounting (see g).
-3. **Fix at the cause; callers and siblings checked.** The cause is the unbounded `while (true)` in `drainPeer` (`fa4a5f2e78:src/core/ControlServer.cpp:260-266`). The only call site is `src/core/ControlServer.cpp:359`, checked with `grep -rn 'drainPeer(' src include`. The sibling `readChunk` is already bounded (`:281`, `:288`, 1 MiB cap at `include/ControlServer.h:83`) and is unchanged. Not verified: the Windows drain in `src/core/ControlServerWin32.cpp:513-534` is a separate path. It was not changed or built here, and I did not check whether it has the same unbounded loop.
-4. **No collateral damage.** The bound applies only on the draining branch of `onClientReadable` (`src/core/ControlServer.cpp:356-359`), after a request line is over the 1 MiB cap. No saved data or file format is involved. The budget can delay the close of a client that was already refused by one pass. It does not refuse any request, and the level-triggered notifier resumes the drain (`:257-258`). Evidence: `logs/test-5-family.log` EXIT=0, `100% tests passed out of 6`; `logs/test-5-canary.log` EXIT=0 (`ControlCommandsSnapshot`, 933 ids). The 31 Control tests that fail do so with and without the fix. `logs/fail-withfix-after.txt` is byte-identical to `logs/fail-without-fix.txt`. `logs/fail-with-fix.txt` has the same 31 names in a different order (sorted diff empty).
+1. **Fails with the change reverted, passes with it (exit codes).** Reverted with `logs/110-fix-cpp.patch`: build `logs/111-build-red.log`, test `logs/112-test-red.log` EXIT=8, `0% tests passed, 1 tests failed out of 1`; round 0 consumed 8228544 bytes in ONE activation against the 73728 limit. Reapplied: build `logs/113-build-green2.log`, `logs/114-test-green2.log` EXIT=0, `100% tests passed out of 1`; `logs/114-test-green2-verbose.log` shows four rounds of 65536 bytes.
+2. **Deterministic: no wall-clock timing, sleeps or races.** The seams are: the socket send buffer, set with `SO_SNDBUF` (`tests/src/core/ControlServerDrainTest.cpp:164`); a fill of at least `2 * DrainBytesPerActivation` (`:191-197`); the per-round count taken by `writeUntilWouldBlock` (`:98`, called at `:208`); and the tolerance `ConsumedSlackBytes = 8192` (`:75`). The exact counts depend on kernel AF_UNIX buffer accounting (see g).
+3. **Fix at the cause; callers and siblings checked.** The cause is the unbounded loop in the old `drainPeer`. The single call site is `src/core/ControlServer.cpp:359`. The sibling `readChunk` is already bounded by the 1 MiB `MaxRequestLineBytes` cap and is unchanged. The Windows drain in `src/core/ControlServerWin32.cpp:513-534` is a separate path; it runs in its per-client pipe thread, not the Qt event loop, and was not changed or built here.
+4. **No collateral damage.** The bound applies only on the draining branch of `onClientReadable` (`src/core/ControlServer.cpp:356-359`), after a request line is over the 1 MiB cap. No saved data or file format is involved, and no request is refused by the budget; the level-triggered notifier resumes the drain (`:257-258`). Evidence: `logs/120-family.log` EXIT=0, 2/2 passed; `logs/121-canary.log` EXIT=0, 1/1 passed.
 5. **Verdict clause.** Not applicable: the verdict is FIXED (line 1 of this report), so the ALREADY-FIXED and FALSE-POSITIVE clause does not apply.
