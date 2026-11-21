@@ -36,9 +36,9 @@ thread only reads the published copy.
 
 ## Test matrix
 
-The six new cases are in the new slot; the save/load case below is the
-existing slot. The durable family log proves the full executable passed
-(4 passed, 0 failed, exit 0).
+The five new cases are in the new slot; the save/load case below is the
+existing slot. The durable ctest family log proves the full executable passed
+(1/1, 100%).
 
 | Case | Assertion | Line |
 | --- | --- | --- |
@@ -78,8 +78,8 @@ fails, and after reapplying it the same slot passes.
 The final completion step runs
 `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py`, and its
 result is recorded then. The pre-commit self-check is: `git diff --check` on
-the six changed files exited 0; the full test executable exited 0 with 4
-passed; the
+the six changed files exited 0; the full test executable passed under the
+ctest family run (1/1 passed, 100%, `logs/test-3-family.log`); the
 commit contains the three product files, the test, the ledger and this report;
 `git status --porcelain` is empty afterwards.
 
