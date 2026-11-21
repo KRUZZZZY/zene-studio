@@ -68,8 +68,7 @@ using namespace lmms;
 namespace
 {
 
-constexpr int FakeRate = 44100;
-constexpr int FakeSeconds = 4;
+constexpr int FakeRate = 44100; constexpr int FakeSeconds = 4;
 
 struct RenderRequest
 {
@@ -94,8 +93,7 @@ RenderRequest parseRenderArguments(int argc, char** argv)
 //! How many audio tracks (instrument, pattern, sample) of the serialised project are left unmuted; -1 when unreadable.
 int audibleTracks(const QString& project)
 {
-	QFile file(project);
-	QDomDocument document;
+	QFile file(project); QDomDocument document;
 	if (!file.open(QIODevice::ReadOnly) || !document.setContent(&file)) { return -1; }
 	int audible = 0;
 	const QDomNodeList tracks = document.elementsByTagName(QStringLiteral("track"));
@@ -111,8 +109,7 @@ int audibleTracks(const QString& project)
 bool writeTone(const QString& path, int rate, double level)
 {
 	SF_INFO info{};
-	info.channels = 2;
-	info.samplerate = rate;
+	info.channels = 2; info.samplerate = rate;
 	info.format = SF_FORMAT_WAV | SF_FORMAT_PCM_16;
 	SNDFILE* wav = sf_open(path.toLocal8Bit().constData(), SFM_WRITE, &info);
 	if (wav == nullptr) { return false; }
@@ -162,15 +159,25 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 Track* trackWithClip(const QString& name)
 {
 	Track* track = Track::create(Track::Type::Instrument, Engine::getSong());
-	track->setName(name);
-	track->createClip(TimePos(0));
+	track->setName(name); track->createClip(TimePos(0));
 	return track;
+}
+
+bool writeFile(const QString& path, const QByteArray& bytes)
+{
+	QFile file(path);
+	return file.open(QIODevice::WriteOnly | QIODevice::Truncate) && file.write(bytes) == bytes.size();
+}
+
+QByteArray readFile(const QString& path)
+{
+	QFile file(path);
+	return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
 }
 
 Track* resolved(const QString& id)
 {
-	ControlResult ignored;
-	return control::resolveTrack(id, &ignored);
+	ControlResult ignored; return control::resolveTrack(id, &ignored);
 }
 
 //! The peak of a WAV, and its frame count (-1 when it cannot be read).
@@ -187,8 +194,7 @@ WavFacts wavFacts(const QString& path)
 	SF_INFO info{};
 	SNDFILE* wav = sf_open(path.toLocal8Bit().constData(), SFM_READ, &info);
 	if (wav == nullptr) { return facts; }
-	facts.frames = info.frames;
-	facts.rate = info.samplerate;
+	facts.frames = info.frames; facts.rate = info.samplerate;
 	std::vector<float> data(static_cast<size_t>(info.frames) * info.channels);
 	sf_readf_float(wav, data.data(), info.frames);
 	for (const float v : data) { facts.peak = std::max(facts.peak, std::fabs(v)); }
@@ -235,10 +241,7 @@ private slots:
 		Track* source = trackWithClip(QStringLiteral("Lead"));
 		const QString id = control::trackIdOf(source);
 		const QString wav = out(QStringLiteral("existing.wav"));
-		QFile destination(wav);
-		QVERIFY(destination.open(QIODevice::WriteOnly | QIODevice::Truncate));
-		QCOMPARE(destination.write("previous output"), qint64(15));
-		destination.close();
+		QVERIFY(writeFile(wav, "previous output"));
 		const int before = trackCount();
 
 		qputenv("ZENE_FAKE_RENDER_PARTIAL", "1");
@@ -248,10 +251,7 @@ private slots:
 		QCOMPARE(landed.errorKind, ControlErrorKind::Refused);
 		QVERIFY2(landed.errorMessage.contains(QStringLiteral("render failed")), qPrintable(landed.errorMessage));
 		QCOMPARE(trackCount(), before);
-		QFile existing(wav);
-		QVERIFY(existing.open(QIODevice::ReadOnly));
-		QCOMPARE(existing.readAll(), QByteArray("previous output"));
-		existing.close();
+		QCOMPARE(readFile(wav), QByteArray("previous output"));
 		QCOMPARE(QDir(QFileInfo(wav).absolutePath()).entryList({QStringLiteral("existing.wav.part.*")}, QDir::Files), QStringList());
 	}
 
@@ -261,18 +261,12 @@ private slots:
 		Track* source = trackWithClip(QStringLiteral("Lead"));
 		const QString id = control::trackIdOf(source);
 		const QString wav = out(QStringLiteral("replace.wav"));
-		QFile destination(wav);
-		QVERIFY(destination.open(QIODevice::WriteOnly | QIODevice::Truncate));
-		QCOMPARE(destination.write("previous output"), qint64(15));
-		destination.close();
+		QVERIFY(writeFile(wav, "previous output"));
 
 		const ControlResult landed = run(QStringLiteral("bounce.land"), {{QStringLiteral("track"), id}, {QStringLiteral("out"), wav}});
 		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
 		QCOMPARE(wavFacts(wav).frames, static_cast<qint64>(FakeRate) * FakeSeconds);
-		QFile replaced(wav);
-		QVERIFY(replaced.open(QIODevice::ReadOnly));
-		QVERIFY(replaced.readAll() != QByteArray("previous output"));
-		replaced.close();
+		QVERIFY(readFile(wav) != QByteArray("previous output"));
 		QCOMPARE(QDir(QFileInfo(wav).absolutePath()).entryList({QStringLiteral("replace.wav.part.*")}, QDir::Files), QStringList());
 	}
 
@@ -381,10 +375,7 @@ private slots:
 		QVERIFY(Engine::getSong()->saveProjectFile(project));
 		Engine::getSong()->noteProjectSaved(project);  // what save-as does once the file is written
 		QCOMPARE(Engine::getSong()->projectFileName(), project);
-		QFile saved(project);
-		QVERIFY(saved.open(QIODevice::ReadOnly));
-		const QByteArray session = saved.readAll();
-		saved.close();
+		const QByteArray session = readFile(project);
 		QVERIFY(!session.isEmpty());
 		const int tracks = trackCount();
 
@@ -394,9 +385,7 @@ private slots:
 		QCOMPARE(trackCount(), tracks);
 		QVERIFY(!source->isMuted());
 
-		QFile after(project);
-		QVERIFY(after.open(QIODevice::ReadOnly));
-		QCOMPARE(after.readAll(), session);
+		QCOMPARE(readFile(project), session);
 	}
 
 	void flattenReplacesTheTrackWithItsRenderAndUndoRestoresIt()
@@ -571,9 +560,7 @@ private slots:
 		// The link is saved with the project and read back with it.
 		const QString saved = out(QStringLiteral("main-saved.mmp"));
 		QVERIFY(song->saveProjectFile(saved));
-		QFile file(saved);
-		QVERIFY(file.open(QIODevice::ReadOnly));
-		QVERIFY(file.readAll().contains("<subprojects>"));
+		QVERIFY(readFile(saved).contains("<subprojects>"));
 
 		// The linked file changed after its render: it is reported stale, and a refresh renders it again.
 		// Stale means "modified after the render": set the file's time one millisecond past the recorded render time
@@ -655,7 +642,6 @@ int main(int argc, char** argv)
 	if (argc > 1 && std::strcmp(argv[1], "render") == 0) { return fakeRender(argc, argv); }
 	QCoreApplication app(argc, argv);
 	QTEST_SET_MAIN_SOURCE_PATH
-	ControlBounceRenderTest test;
-	return QTest::qExec(&test, argc, argv);
+	ControlBounceRenderTest test; return QTest::qExec(&test, argc, argv);
 }
 #include "ControlBounceRenderTest.moc"
