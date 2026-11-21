@@ -135,6 +135,15 @@ bool boolAttribute(const QDomElement& element, const QString& name, bool fallbac
 	return true;
 }
 
+//! @a name as an integer, or false when it is present and is not a number.
+bool intAttribute(const QDomElement& element, const QString& name, int fallback, int* out)
+{
+	if (!hasAttribute(element, name)) { *out = fallback; return true; }
+	bool ok = false;
+	*out = element.attribute(name).toInt(&ok);
+	return ok;
+}
+
 //! The source's phase, checked. False when it is present and is not a number: a
 //! phase that read as 0 is a legal phase nobody authored.
 bool readSourcePhase(const QDomElement& element, ModulatorSource* source)
@@ -151,12 +160,6 @@ bool readSourceFlags(const QDomElement& element, ModulatorSource* source)
 		&& boolAttribute(element, QStringLiteral("pervoice"), false, &source->perVoice);
 }
 
-//! The route's per-sample flag, checked. False when it is present and is not "0" or "1".
-bool readRouteFlags(const QDomElement& element, ModulationRoute* route)
-{
-	return boolAttribute(element, QStringLiteral("persample"), false, &route->perSample);
-}
-
 ModulatorSource readSource(const QDomElement& element)
 {
 	ModulatorSource source;
@@ -171,20 +174,28 @@ ModulatorSource readSource(const QDomElement& element)
 	return source;
 }
 
-ModulationRoute readRoute(const QDomElement& element)
+//! The route's parameter, address, track and per-sample flag, checked. A route with no
+//! parameter is left with only that empty parameter set and returns true: readRoutes
+//! drops it without looking at its other fields. For a named route, false when the
+//! channel, chain, effect or track is present and is not a number (toInt() read "bad"
+//! as 0, a route nobody authored), or the flag is present and is not "0" or "1".
+bool readRoute(const QDomElement& element, ModulationRoute* route)
 {
-	ModulationRoute route;
-	route.channel = element.attribute(QStringLiteral("channel")).toInt();
-	route.chain = element.attribute(QStringLiteral("chain")).toInt();
-	route.effect = element.attribute(QStringLiteral("effect")).toInt();
-	route.parameter = element.attribute(QStringLiteral("parameter"));
-	route.depth = boundedValue(element.attribute(QStringLiteral("depth")), -1.f, 0.f);
-	route.track = std::max(-1, element.attribute(QStringLiteral("track"), QStringLiteral("-1")).toInt());
-	return route;
+	route->parameter = element.attribute(QStringLiteral("parameter"));
+	if (route->parameter.isEmpty()) { return true; }
+	if (!intAttribute(element, QStringLiteral("channel"), 0, &route->channel)
+		|| !intAttribute(element, QStringLiteral("chain"), 0, &route->chain)
+		|| !intAttribute(element, QStringLiteral("effect"), 0, &route->effect)
+		|| !intAttribute(element, QStringLiteral("track"), -1, &route->track)) { return false; }
+	if (!boolAttribute(element, QStringLiteral("persample"), false, &route->perSample)) { return false; }
+	route->track = std::max(-1, route->track);
+	route->depth = boundedValue(element.attribute(QStringLiteral("depth")), -1.f, 0.f);
+	return true;
 }
 
-//! The named routes of one <modulator>, each checked. False when a named route's
-//! flag is present and is not "0" or "1"; \a routes then holds nothing useful.
+//! The named routes of one <modulator>, each checked for its address, track and flag.
+//! False when a named route's address, track or flag is malformed; \a routes then holds
+//! nothing useful.
 bool readRoutes(const QDomElement& node, QList<ModulationRoute>* routes)
 {
 	const QDomNodeList routeNodes = node.elementsByTagName(QStringLiteral("route"));
@@ -192,9 +203,9 @@ bool readRoutes(const QDomElement& node, QList<ModulationRoute>* routes)
 	{
 		const QDomElement routeElement = routeNodes.at(r).toElement();
 		if (routeElement.isNull()) { continue; }
-		ModulationRoute route = readRoute(routeElement);
+		ModulationRoute route;
+		if (!readRoute(routeElement, &route)) { return false; }
 		if (route.parameter.isEmpty()) { continue; }
-		if (!readRouteFlags(routeElement, &route)) { return false; }
 		routes->append(route);
 	}
 	return true;
@@ -209,7 +220,8 @@ bool readRoutes(const QDomElement& node, QList<ModulationRoute>* routes)
  *  that can never resolve.
  *
  *  A boolean that is present and is not "0" or "1" refuses the block the same
- *  way, including flags on named routes: each named route is checked before the
+ *  way, and so does a route address or track that is present and is not a number.
+ *  Both checks apply to named routes: each named route is checked before the
  *  modulator is added, so a corrupt route leaves nothing half-loaded. A route
  *  without a parameter is still ignored.
  */
