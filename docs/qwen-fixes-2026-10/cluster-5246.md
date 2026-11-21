@@ -94,6 +94,15 @@ p4 changed only comments after the p3 behavioural proof; it introduced no behavi
 - Registration and gates pass: the test is registered as test #103 and `feature_check` reports
   PASS.
 - Old projects load unchanged: no persisted state or project schema changed.
+- Not ALREADY-FIXED or FALSE-POSITIVE: the verdict is REAL, so that item does not apply; the
+  defect and its location are shown above (`src/core/RecorderTaps.cpp` publication before the
+  period boundary, refuting the earlier SKIPPED-SCOPE claim).
+- No command file changed, so no sibling command is affected: the whole diff is
+  `include/RecorderTaps.h`, `src/core/RecorderTaps.cpp`, `src/core/Mixer.cpp`,
+  `src/core/audio/MultiTrackRecorder.cpp`, `tests/src/core/ControlRecordingRoutesTest.cpp` and
+  this report. The listed `app.*` and `arrangement.*` siblings live in files this fix does not
+  touch; `record.route_source` keeps its existing reply semantics (`get()`/`tapped()` are the
+  pending view).
 - No state-sequence artifact: no persisted state changed.
 
 ## Other findings
