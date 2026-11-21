@@ -6,10 +6,11 @@ Status: **ALREADY-FIXED** in this tree. No product or test change is made by thi
 the report records the evidence gathered in p1–p3 and re-runs the feature gate.
 
 Evidence folder: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p8-208.r1/logs/`
+Worktree: `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p8-208`
 
 ## Feature gate
 
-`python3 feature_check.py <tree>` → exit **0**, `RESULT: PASS`
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p8-208` → exit **0**, `RESULT: PASS`
 (`gate-1.log`):
 
 ```
@@ -94,24 +95,24 @@ cd <tree>/build/tests && ./RecordingRealtimeTest loopPassesKeepTheirLengthWhileT
 cd <tree>/build/tests && ./RecordingRealtimeTest accumulatorAppendPerformsNoAllocation > $L/test-rt.log 2>&1; echo EXIT=$? >> $L/test-rt.log  # EXIT=0
 
 # p3, fix.patch applied
-cd <tree> && git apply $L/fix.patch
+cd <tree> && git apply $L/fix.patch  # EXIT=0
 cd <tree> && cmake --build build --target RecordingRealtimeTest > $L/build-red-1.log 2>&1; echo EXIT=$? >> $L/build-red-1.log       # EXIT=0
 cd <tree>/build/tests && ./RecordingRealtimeTest droppedFramesArePaddedWithSilenceInTheTake > $L/red-1.log 2>&1; echo EXIT=$? >> $L/red-1.log  # EXIT=1
-cd <tree> && git apply -R $L/fix.patch
+cd <tree> && git apply -R $L/fix.patch  # EXIT=0
 cd <tree> && cmake --build build --target RecordingRealtimeTest > $L/build-green-1.log 2>&1; echo EXIT=$? >> $L/build-green-1.log   # EXIT=0
 cd <tree>/build/tests && ./RecordingRealtimeTest droppedFramesArePaddedWithSilenceInTheTake > $L/green-1.log 2>&1; echo EXIT=$? >> $L/green-1.log  # EXIT=0
 
 # p3, fix2.patch applied
-cd <tree> && git apply $L/fix2.patch
+cd <tree> && git apply $L/fix2.patch  # EXIT=0
 cd <tree> && cmake --build build --target RecordingRealtimeTest > $L/build-red-2.log 2>&1; echo EXIT=$? >> $L/build-red-2.log       # EXIT=0
 cd <tree>/build/tests && ./RecordingRealtimeTest droppedFramesReachTheSongAndTheCommandSurface > $L/red-2.log 2>&1; echo EXIT=$? >> $L/red-2.log  # EXIT=1
-cd <tree> && git apply -R $L/fix2.patch
+cd <tree> && git apply -R $L/fix2.patch  # EXIT=0
 cd <tree> && cmake --build build --target RecordingRealtimeTest > $L/build-green-2.log 2>&1; echo EXIT=$? >> $L/build-green-2.log   # EXIT=0
 cd <tree>/build/tests && ./RecordingRealtimeTest droppedFramesReachTheSongAndTheCommandSurface > $L/green-2.log 2>&1; echo EXIT=$? >> $L/green-2.log  # EXIT=0
 
 # final state
 cd <tree> && cmake --build build --target zene RecordingRealtimeTest > $L/build-2.log 2>&1; echo EXIT=$? >> $L/build-2.log  # EXIT=0
-cd <tree> && python3 feature_check.py <tree> > $L/gate-1.log 2>&1; echo EXIT=$? >> $L/gate-1.log                                 # EXIT=0
+cd <tree> && python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p8-208 > $L/gate-1.log 2>&1; echo EXIT=$? >> $L/gate-1.log  # EXIT=0
 ```
 
 ## Sibling check
