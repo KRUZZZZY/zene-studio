@@ -134,8 +134,16 @@ bool writeTone(const QString& path, int rate, double level)
 //! The stand-in for `zene render <project> -o <out> ...`: a tone at 0.1 per unmuted audio track of the project.
 int fakeRender(int argc, char** argv)
 {
-	if (std::getenv("ZENE_FAKE_RENDER_FAIL") != nullptr) { return 3; }
 	const RenderRequest request = parseRenderArguments(argc, argv);
+	if (std::getenv("ZENE_FAKE_RENDER_FAIL") != nullptr) { return 3; }
+	// A renderer that opens the output and dies after writing part of it: a failing
+	// render must never leave those bytes behind at the caller's destination.
+	if (std::getenv("ZENE_FAKE_RENDER_PARTIAL") != nullptr)
+	{
+		QFile partial(request.out);
+		if (partial.open(QIODevice::WriteOnly | QIODevice::Truncate)) { partial.write("partial render"); }
+		return 3;
+	}
 	const int audible = audibleTracks(request.project);
 	if (request.out.isEmpty() || audible < 0) { return 4; }
 	// main.cpp replaces the requested suffix with the selected render format;
@@ -217,7 +225,55 @@ private slots:
 	void init()
 	{
 		qunsetenv("ZENE_FAKE_RENDER_FAIL");
+		qunsetenv("ZENE_FAKE_RENDER_PARTIAL");
 		Engine::getSong()->clearProject();
+	}
+
+	//! A render that dies after writing part of its output leaves an existing destination untouched.
+	void failedBounceKeepsAnExistingDestination()
+	{
+		Track* source = trackWithClip(QStringLiteral("Lead"));
+		const QString id = control::trackIdOf(source);
+		const QString wav = out(QStringLiteral("existing.wav"));
+		QFile destination(wav);
+		QVERIFY(destination.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		QCOMPARE(destination.write("previous output"), qint64(15));
+		destination.close();
+		const int before = trackCount();
+
+		qputenv("ZENE_FAKE_RENDER_PARTIAL", "1");
+		const ControlResult landed = run(QStringLiteral("bounce.land"), {{QStringLiteral("track"), id}, {QStringLiteral("out"), wav}});
+		qunsetenv("ZENE_FAKE_RENDER_PARTIAL");
+
+		QCOMPARE(landed.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(landed.errorMessage.contains(QStringLiteral("render failed")), qPrintable(landed.errorMessage));
+		QCOMPARE(trackCount(), before);
+		QFile existing(wav);
+		QVERIFY(existing.open(QIODevice::ReadOnly));
+		QCOMPARE(existing.readAll(), QByteArray("previous output"));
+		existing.close();
+		QCOMPARE(QDir(QFileInfo(wav).absolutePath()).entryList({QStringLiteral("existing.wav.part.*")}, QDir::Files), QStringList());
+	}
+
+	//! The positive control: a successful bounce replaces the existing destination and leaves no staging debris.
+	void successfulBounceReplacesAnExistingDestination()
+	{
+		Track* source = trackWithClip(QStringLiteral("Lead"));
+		const QString id = control::trackIdOf(source);
+		const QString wav = out(QStringLiteral("replace.wav"));
+		QFile destination(wav);
+		QVERIFY(destination.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		QCOMPARE(destination.write("previous output"), qint64(15));
+		destination.close();
+
+		const ControlResult landed = run(QStringLiteral("bounce.land"), {{QStringLiteral("track"), id}, {QStringLiteral("out"), wav}});
+		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
+		QCOMPARE(wavFacts(wav).frames, static_cast<qint64>(FakeRate) * FakeSeconds);
+		QFile replaced(wav);
+		QVERIFY(replaced.open(QIODevice::ReadOnly));
+		QVERIFY(replaced.readAll() != QByteArray("previous output"));
+		replaced.close();
+		QCOMPARE(QDir(QFileInfo(wav).absolutePath()).entryList({QStringLiteral("replace.wav.part.*")}, QDir::Files), QStringList());
 	}
 
 	void bounceLandPutsTheRenderOnANewTrackAndMutesTheSource()
