@@ -37,6 +37,7 @@
 
 #include <QDataStream>
 #include <QDir>
+#include <QDomDocument>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -137,6 +138,7 @@ extern "C"
 #include "AudioEngine.h"
 #include "BasicFilters.h"
 #include "ConfigManager.h"
+#include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Delay.h"
@@ -454,6 +456,10 @@ private slots:
 	//! click plus a tone above the engine's Nyquist frequency must play as the click alone - flat - and not with
 	//! the tone folded down to a quarter of the rate (the old linear resampler: about 7 times louder there).
 	void aHighRateImpulseIsResampledWithoutAliasing();
+
+	//! An impulse the resampler cannot convert (a 1 Hz file) is refused by the command: the reply fails, and the
+	//! saved impulse, the response and the undo state stay as they were; a valid impulse still loads afterwards.
+	void anUnresamplableImpulseIsRefusedThroughTheCommand();
 
 	//! MX-156: the Recorder passes the sound unchanged and writes what passed to its take; the take lands
 	//! on a new audio track as one undo step; a device that is not a Recorder is refused.
