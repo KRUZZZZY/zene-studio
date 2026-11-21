@@ -306,12 +306,36 @@ Source: `logs/state-sequence.txt`, from `logs/arm_all_driver.py` on `build/zene`
 
 - File `logs/arm-all-armed.png`, 1600x1000 (PNG check in `logs/png-check.log`), written by `window.screenshot` (state-sequence step 9).
 - The PNG is not byte-deterministic: two captures this round produced sha256 `e7a1cc227798e053c97bd3f8c9049e9a2f3fa41096a1dd4d04988e1f59315650` and `be2edd60e044cb50456c930ad46356526ec800699bb5b98e85a70f861874ab0a`. Both are 1600x1000 and show the same armed-tracks view. The authoritative sha256 for the submitted artifact is the `screenshot` entry in `logs/evidence/evidence.json`, written at capture time; no byte-determinism claim is made.
-- `control.surface_report` proves the menu action `Arm All Audio Tracks` declares `track.set_arm_many` (state-sequence step 10). No control command opens the Record menu, so the screenshot shows the three armed Sample tracks (record buttons outlined) but not the menu entry; the round-4 palette screenshot remains the GUI-side check that the menu item is not exposed as a command.
+- `control.surface_report` proves the menu action `Arm All Audio Tracks` declares `track.set_arm_many` (state-sequence step 10). No control command opens the Record menu, so the screenshot shows the three armed Sample tracks (record buttons outlined) but not the menu entry.
 
 ### p3 rehearsal and final bundle
 
 - Rehearsal at `logs/evidence-rehearsal/evidence.json`: `logs/workflow-verify-rehearsal.log` reports `"status": "integrity-valid"` with 4 steps. A tampered copy (`logs/evidence-rehearsal-tampered`) reports `"status": "tampered"` with the reason `artifact missing or content hash mismatch: artifacts/e7a1cc227798e053-arm-all-armed.png`, and the verify command is EXIT 1 (`logs/workflow-verify-rehearsal-tampered.log`). The rehearsal was at `5c70869b` and is superseded.
-- The submitted bundle is `logs/evidence/evidence.json`, initialised against `--base 4eb8d6e8a --build build --binary build/zene --label new-p8-81-port` at the report commit. Its four recorded steps are labelled `screenshot`, `state-sequence`, `red-ctest-log` and `green-ctest-log`. The manifest carries the artifact sha256 values, and `verify` must report `integrity-valid` with `source.head` equal to the report commit. Any earlier `logs/evidence` folder is moved aside before the new `init`; this commit makes the old capture stale.
+- The submitted bundle is `logs/evidence/evidence.json`, initialised against `--base 4eb8d6e8a --build build --binary build/zene --label new-p8-81-port` at the report commit. Its four recorded steps are labelled `screenshot`, `state-sequence`, `red-ctest-log` and `green-ctest-log`. The manifest carries the artifact sha256 values. `logs/workflow-verify.log` reports `"status": "integrity-valid"` with 4 steps, EXIT 0, for the capture at `907321f194`; its `source.head` is that commit. A report commit moves HEAD and stales that capture, so the bundle is re-captured after any report commit; the final `logs/evidence/evidence.json` must be integrity-valid with `source.head` equal to the new HEAD. Any earlier `logs/evidence` folder is moved aside before the new `init`.
+
+### Commands and exit codes
+
+The EXIT values are those the commands printed at run time; the redirect only stores the commands' own output, so the codes are recorded here and in `logs/exit-codes.txt`.
+
+| Phase | Command (abridged) | EXIT | Log |
+| --- | --- | --- | --- |
+| p1 RED apply | `git apply -R logs/fix.patch` | 0 | no log |
+| p1 RED build | `cmake --build build --target zene UndoHonestyTest` | 0 | `logs/build-red.log` |
+| p1 RED ctest | `ctest -R UndoHonestyTest` | 8 | `logs/red-ctest.log` |
+| p1 GREEN apply | `git apply logs/fix.patch` | 0 | no log |
+| p1 GREEN build | `cmake --build build --target zene UndoHonestyTest` | 0 | `logs/build-green-2.log` |
+| p1 GREEN ctest | `ctest -R UndoHonestyTest` | 0 | `logs/green-ctest.log` |
+| p1 GREEN family | `ctest -R 'Reversibility|UndoHonesty|ControlCommandsSnapshot'` | 0 | `logs/green-family-2.log` |
+| p2 driver positive | `python3 logs/arm_all_driver.py build/zene logs/state-sequence.txt logs/arm-all-armed.png` | 0 | `logs/driver-positive.log` |
+| p2 driver negative | `python3 logs/arm_all_driver_negative.py ...` | 1 | `logs/driver-negative.log` |
+| p3 init | `workflow_capture.py init logs/evidence ...` | 0 | `logs/workflow-init.log` |
+| p3 run | `workflow_capture.py run logs/evidence --exec python3 logs/arm_all_driver.py ...` | 0 | `logs/workflow-run.log` |
+| p3 record screenshot | `workflow_capture.py record ... --artifact screenshot=logs/arm-all-armed.png` | 0 | `logs/workflow-record-screenshot.log` |
+| p3 record state sequence | `workflow_capture.py record ... --artifact state-sequence=logs/state-sequence.txt` | 0 | `logs/workflow-record-state.log` |
+| p3 record RED/GREEN | `workflow_capture.py record ... --artifact red-ctest-log=... --artifact green-ctest-log=...` | 0 | `logs/workflow-record-logs.log` |
+| p3 verify | `workflow_capture.py verify logs/evidence ...` | 0 | `logs/workflow-verify.log` (`integrity-valid`) |
+| p3 tampered verify | `workflow_capture.py verify logs/evidence-rehearsal-tampered ...` | 1 | `logs/workflow-verify-tampered.log` (`tampered`) |
+| p4 final capture | `workflow_capture.py init run record x3 verify logs/evidence` at the final HEAD | 0 | `logs/workflow-*-final.log` (`integrity-valid`, 4 artifacts) |
 
 ### Caller and sibling audit
 
@@ -331,8 +355,16 @@ The regression test uses `QTemporaryDir takes;` at `tests/src/core/UndoHonestyTe
 Answers to the six `?` items in the submit check.
 
 1. **RED and GREEN with exit codes.** Yes. RED (`logs/red-ctest.log:19`, `0% tests passed, 1 tests failed out of 1`) is EXIT 8; GREEN (`logs/green-ctest.log`, `100% tests passed out of 1`) is EXIT 0. The family is `logs/green-family-2.log`, 6 of 6, EXIT 0.
-2. **Deterministic.** The test uses a `QTemporaryDir` (line 409). The grep described above finds no sleep, thread, timer or wait call in the file. The seams are three `track.add` sample tracks and the routes and take paths read from the arm reply.
+2. **Deterministic.** The test uses a `QTemporaryDir` (line 409). `logs/determinism-grep.log` is empty (0 lines, EXIT 1) for the pattern `sleep|QThread|QTimer|chrono|wait\(|thread`, so no sleep, thread, timer or wait call is in the file. The seams are three `track.add` sample tracks and the routes and take paths read from the arm reply.
 3. **Fix at the cause and complete.** The cause is the base row `ControlReversibilityTableRecording.cpp:69` (`RC::Snapshot, true`) and the base `__transaction` at `ControlCommandsArrangementState.cpp:385`. HEAD has the row `RC::Irreversible, false` and no transaction insert in `ControlCommandsArrangementState.cpp:363-397`.
 4. **No collateral damage.** The family passes 6 of 6. The `project.save`/`project.open` check reopened the project with all seven tracks, including the three armed ones (state-sequence steps 15-17). The fix adds no limit or check; it changes the row class and removes the transaction insert.
-5. **Verdict.** FIXED. The defect is shown by the base row and base `__transaction`, and by the RED run with the fix reverted. ALREADY-FIXED and FALSE-POSITIVE do not apply.
-6. **Sibling commands.** None of these 15 is touched by the diff: `arrangement.fit_tracks`, `arrangement.get_state`, `arrangement.modes`, `arrangement.modifier_tools`, `arrangement.navigator`, `arrangement.next_transient`, `arrangement.nudge`, `arrangement.ruler_lanes`, `arrangement.scroll`, `arrangement.select_clip`, `arrangement.set_tool`, `arrangement.zoom`, `arrangement.zoom_back`, `comp.assign`, `comp.audition`.
+5. **Verdict.** FIXED. The defect is shown by the base row (`logs/base-row.log`) and base `__transaction`, and by the RED run with the fix reverted (`logs/red-ctest.log:19`). ALREADY-FIXED and FALSE-POSITIVE do not apply.
+6. **Sibling commands.** `submit_check.py` prints exactly these 15 names, and none is touched by the diff: `arrangement.fit_tracks`, `arrangement.get_state`, `arrangement.modes`, `arrangement.modifier_tools`, `arrangement.navigator`, `arrangement.next_transient`, `arrangement.nudge`, `arrangement.ruler_lanes`, `arrangement.scroll`, `arrangement.select_clip`, `arrangement.set_tool`, `arrangement.zoom`, `arrangement.zoom_back`, `comp.assign`, `comp.audition`.
+
+## Other findings (round 5)
+
+- **Non-target `ControlCommandsSnapshot` build attempt.** A p1 attempt to build `ControlCommandsSnapshot` as a standalone target was not part of this round's evidence. It is a test target (#574), not a product target: the family run builds it and reports `6/6 Test #574: ControlCommandsSnapshot ... Passed` (`logs/green-family-2.log:13`). The attempt itself is not recorded in an r5 log, so its exit code is **unverified**.
+- **Private-HOME `Documents/Zene Studio` need.** `ControlEditCommandsTest` passes only when the private HOME already has `Documents/Zene Studio`: `logs/test-home/Documents/Zene Studio` holds the take files (`zene-take-trk39.wav` through `trk41.wav`), and the test passes there (`logs/green-family-2.log`). Under the real HOME it fails on a missing take file (round-2 `logs/test-1-extra.log`: `Totals: 16 passed, 1 failed, 0 skipped`). This is an environment need, not a product defect.
+- **Duplicate command log.** The ordered sequence deliberately logs `track.set_arm_many` twice: the first arm (step 2) and the repeat that returns `Busy` (step 4) in `logs/state-sequence.txt`. It is not a duplicate registration: the registry histogram reports `duplicates=0` (`docs/RELEASE-NOTES-v0.3.0-alpha.md:999`), and `logs/callers.log` has no duplicate command id.
+- **Missing `schemas/proof.json`.** `test -e schemas/proof.json` returns 1 (absent this round), and `submit_check.py` contains no `proof` reference. The `kind`, `states` and `test` field names therefore remain **unverified** against a schema.
+- **Gate ratchet FAIL lines.** The file-length ratchet still ends `FAIL: file-length ratchet regressed (check mode: baseline not written)` at `build/feature-check/file-length.log:38`; its 14 `REGRESSION` entries name files this branch does not change. The last complexity measurement, `logs/complexity-gate-3.log:108`, ends in the same ratchet FAIL; this round's `build/feature-check/complexity.log` is one line, `complexity-gate: lizard is not installed`, so the `PASS no new item in your files` complexity row is not backed by a measurement. No gate limit or baseline was edited.
