@@ -82,25 +82,29 @@ letting the control-thread recycler return slots).
 ## Commands and exit codes
 
 Recorded by the quiet runner; full logs are under
-`/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-285.r1/logs/`. The per-slot and
-ctest invocations are reconstructed from their labels and log contents (only
-`test-1-red.log` echoes its argv).
+`/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-285.r1/logs/`. Every per-slot and
+combined RED/GREEN log ends with its own `EXIT=` line, appended with
+`; echo EXIT=$? >> <log>`, so the exit column below is read from the log rather than
+reconstructed. `build-4-red` and `build-4-green` are the rebuilds after reverse-applying
+and re-applying the product patch (four files).
 
 | Step | Command | Exit | Evidence |
 |---|---|---|---|
 | build-1 | build of `lmmsobjs` + `FrozenTakeVoiceLifecycleTest` | 0 | `build-1.log` ends `Built target FrozenTakeVoiceLifecycleTest` |
 | build-2 | rebuild of `FrozenTakeVoiceLifecycleTest` | 0 | `build-2.log` ends `Built target FrozenTakeVoiceLifecycleTest` |
-| test-1-red | `./FrozenTakeVoiceLifecycleTest muteStopsAnActiveFrozenVoice unfreezeStopsAnActiveFrozenVoice replacingTheTakeStopsAnActiveFrozenVoice` (fix reverted) | 3 | `test-1-red.log`: `Totals: 2 passed, 3 failed` |
-| test-2-green | same three slots, fix restored | 0 | `test-2-green.log`: `Totals: 5 passed, 0 failed` |
-| per-slot RED | `./FrozenTakeVoiceLifecycleTest <slot>` (reverted), each of the 3 slots | 1 each | `test-3-red-mute.log`, `test-3-red-unfreeze.log`, `test-3-red-replace.log` |
-| per-slot GREEN | `./FrozenTakeVoiceLifecycleTest <slot>` (restored), each of the 3 slots | 0 each | `test-3-green-mute.log`, `test-3-green-unfreeze.log`, `test-3-green-replace.log` |
+| build-4-red | rebuild after reverse-applying `fix.patch` | 0 | `build-4-red.log` ends `Built target FrozenTakeVoiceLifecycleTest` |
+| per-slot RED | `./FrozenTakeVoiceLifecycleTest <slot>` (reverted), each of the 3 slots | 1 each | `test-3-red-mute.log`, `test-3-red-unfreeze.log`, `test-3-red-replace.log` each end `EXIT=1` (`Totals: 2 passed, 1 failed`) |
+| combined RED | `./FrozenTakeVoiceLifecycleTest muteStopsAnActiveFrozenVoice unfreezeStopsAnActiveFrozenVoice replacingTheTakeStopsAnActiveFrozenVoice` (reverted) | 3 | `test-3-red-all.log` ends `EXIT=3`; `Totals: 2 passed, 3 failed` |
+| build-4-green | rebuild after re-applying `fix.patch` | 0 | `build-4-green.log` ends `Built target FrozenTakeVoiceLifecycleTest` |
+| per-slot GREEN | `./FrozenTakeVoiceLifecycleTest <slot>` (restored), each of the 3 slots | 0 each | `test-3-green-mute.log`, `test-3-green-unfreeze.log`, `test-3-green-replace.log` each end `EXIT=0` (`Totals: 3 passed, 0 failed`) |
+| combined GREEN | same three slots, restored | 0 | `test-3-green-all.log` ends `EXIT=0`; `Totals: 5 passed, 0 failed` |
 | ctest-2 | `ctest` over the 7 freeze/render/control tests | 0 | `ctest-2.log`: `100% tests passed out of 7`, `#161 FrozenTakeVoiceLifecycleTest ... Passed` |
 | feature-check | `feature_check.py` | 0 | `feature-check-1.log`: `RESULT: PASS` (fork-sources, all-sources-reproduce, no-upstream-regression, gates all exit 0) |
 
 ## Realtime safety
 
 No render-path allocation, lock, wait, logging or Qt call was added. The render gate is
-one relaxed/acquire atomic load plus an existing buffer zero and an early return inside
+one acquire atomic load plus an existing buffer zero and an early return inside
 `SamplePlayHandle::play()`; the generation is bumped only from control-thread paths
 (the mute model signal, `freezeTo`, `clearFrozenTake`). The handle stamp is a plain
 `std::uint64_t` written at arm time before the handle is published.
@@ -121,9 +125,10 @@ one relaxed/acquire atomic load plus an existing buffer zero and an early return
 
 `ControlFreezeCommandsTranscript` is pre-existing and unrelated; it is not changed here.
 
-- HEAD registration `tests/CMakeLists.txt:7105-7113` sets `ENVIRONMENT` and `TIMEOUT 900`
-  but lacks `SKIP_RETURN_CODE 77`, while the sibling `ControlFreezeTracksTranscript`
-  (`tests/CMakeLists.txt:7115-7123`) sets `SKIP_RETURN_CODE 77`.
+- The pre-existing `ControlFreezeCommandsTranscript` `add_test`/`set_tests_properties`
+  block in `tests/CMakeLists.txt` sets `ENVIRONMENT` and `TIMEOUT 900` but lacks
+  `SKIP_RETURN_CODE 77`, while the sibling `ControlFreezeTracksTranscript` block sets
+  `SKIP_RETURN_CODE 77`.
 - The fixture prints `PASS: no audible instrument in this build: Skipped, never Passed`
   and exits 77 (`control-freeze-direct.log`), but without the property ctest records it
   as a failure: `ctest-preexisting-freeze.log` — test #849 `***Failed`, `0% tests passed,
@@ -135,10 +140,11 @@ one relaxed/acquire atomic load plus an existing buffer zero and an early return
 ## Self-check
 
 1. **Regression test fails with the product change reverted, passes with it.** Reverting
-   the two product source hunks and rebuilding, the three slots fail with exit 3 combined
-   (`test-1-red.log`, `Totals: 2 passed, 3 failed`; each measured 0.356029) and exit 1
-   individually (`test-3-red-*.log`). Restored, they pass with exit 0 combined
-   (`test-2-green.log`) and 0 individually (`test-3-green-*.log`).
+   the product patch (four files) and rebuilding, the three slots fail with exit 3 combined
+   (`test-3-red-all.log` ends `EXIT=3`, `Totals: 2 passed, 3 failed`; each measured
+   0.356029) and exit 1 individually (`test-3-red-*.log`, each ends `EXIT=1`). Restored,
+   they pass with exit 0 combined (`test-3-green-all.log` ends `EXIT=0`) and 0
+   individually (`test-3-green-*.log`, each ends `EXIT=0`).
 2. **Deterministic, no wall-clock timing, sleeps or races.** `setDeterministicProcessing(true)`,
    the device stopped, explicit `renderNextPeriod()` calls, fixed 440/660 Hz fixtures, a
    fixed one-period lag discard, and numeric RMS thresholds; only `qWait(130)` in
