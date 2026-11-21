@@ -315,7 +315,14 @@ private:
 	//! ED-056: the observer hears a command that changed something, when no other command is running it.
 	void notifyObserver(const QString& commandId, const QJsonObject& args, bool mutating, bool ok) const
 	{
-		if (m_observer && mutating && ok && m_depth == 0) { m_observer(commandId, args); }
+		if (m_observer && mutating && ok && m_depth == 0)
+		{
+			// Cluster new-p20-31: the edit is already recorded before this call, and the observer is a
+			// best-effort recorder. Its failure must not rewrite the committed reply or skip the
+			// collab/event notifications that follow, so an exception from it is swallowed here.
+			try { m_observer(commandId, args); }
+			catch (...) { }
+		}
 	}
 	CommandObserver m_observer;
 	int m_depth = 0;  //!< how many handlers are running (UI thread)
