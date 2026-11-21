@@ -115,3 +115,10 @@ independent of what the library reports.
   rate window noted under Other findings.
 - **Verdict.** FIXED, not ALREADY-FIXED or FALSE-POSITIVE, so the code/contract
   item does not apply.
+- **Sibling commands.** This packet changes no command file and no command
+  signature: the loader is internal to `MasteringJob`, reached by
+  `mastering.run`. The command surface that passes a source rate keeps its
+  contract (`ControlCommandsExportPresets` already bounds the same
+  44100..192000 window at `src/core/ControlCommandsExportPresets.cpp:231-241`),
+  and no `app.*`, `arrangement.*` or other sibling command reads the loader, so
+  none is affected.
