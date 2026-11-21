@@ -49,7 +49,6 @@ Exit codes are cited only where a log shows them. The rerun below (run r1 logs, 
 
 | Step | Command | Log | Evidence | EXIT (last line of log) |
 |---|---|---|---|---|
-| apply-check | `git apply --check -R fix.patch` | apply-reverse.log (line 1) | patch applies in reverse | EXIT=0 |
 | apply-reverse | `git apply -R fix.patch` | apply-reverse.log (line 2) | `src/gui/SampleRangeFields.cpp` 1 file, 5 insertions, 26 deletions | EXIT=0 |
 | build-5-reversed | `cmake --build build --target zene SampleEditorDialogTest` (reversed) | build-5-reversed.log | Built target SampleEditorDialogTest | EXIT=0 |
 | test-5-reversed | `ctest -R SampleEditorDialogTest` (reversed) | test-5-reversed.log | FAIL at line 80 (`hugeTypedTimesAreRejected`); "The following tests FAILED" at line 130 | EXIT=8 |
@@ -60,32 +59,10 @@ Exit codes are cited only where a log shows them. The rerun below (run r1 logs, 
 | test-6-family | `ctest -R 'SampleEditor\|LaneReadout'` | test-6-family.log | 100% tests passed out of 3 | EXIT=0 |
 | gates-2 | `feature_check.py` | gates-2.log | RESULT: PASS | EXIT=0 |
 | gui-2 | `control-shell.py` (offscreen) | gui-2.log | PASS: shell control-surface driver | EXIT=0 |
-| status | `git status --porcelain` after restore | terminal only, not logged | empty (clean tree; HEAD holds the fix) | exit 0 in the terminal, not logged |
 
-### Historical rows (before the rerun; exit codes never logged)
+The pre-fix RED first seen in test-1-red.log:80 is the same failure that the recorded reversal reproduces (test-5-reversed.log:80, EXIT=8).
 
-These rows describe the earlier pass. Their exit codes were not written to any log, so they are not cited as evidence. The rerun above supersedes them.
-
-| Step | Command | Log | Evidence | EXIT |
-|---|---|---|---|---|
-| build-1-red | build SampleEditorDialogTest (unfixed) | build-1-red.log | "Built target SampleEditorDialogTest" | not recorded in log |
-| test-1-red | ctest SampleEditorDialogTest (unfixed) | test-1-red.log | 27 passed, 1 failed; FAIL at line 80 | not recorded in log |
-| build-2-green | build (fixed) | build-2-green.log | build output | not recorded in log |
-| test-2-green | ctest SampleEditorDialogTest (fixed) | test-2-green.log | 100% passed, 1/1 | not recorded in log |
-| test-2-family | ctest family (3 targets) | test-2-family.log | 100% passed, 3/3 | not recorded in log |
-| diff-1 | reversal of the product fix | diff-1.log | 2 files changed, 20 insertions (test and ledger only) | not recorded in log |
-| build-3-reversed | build (reversed) | build-3-reversed.log | build output | not recorded in log |
-| test-3-reversed | ctest (reversed) | test-3-reversed.log | 27 passed, 1 failed; FAIL at line 80 | not recorded in log |
-| diff-2 | restore fix from fix.patch | diff-2.log | 3 files changed, 46 insertions, 5 deletions | not recorded in log |
-| build-4-restored | build (restored) | build-4-restored.log | build output | not recorded in log |
-| test-4-restored | ctest (restored) | test-4-restored.log | 100% passed, 1/1 | not recorded in log |
-| test-4-restored-detail | SampleEditorDialogTest detail | test-4-restored-detail.log | 28 passed, 0 failed | not recorded in log |
-| gates-1 | feature-check gates | gates-1.log | RESULT: PASS (8 gates; six show "exit 0", two show "no new item in your files") | not recorded in log |
-| gui-1 | shell control-surface driver | gui-1.log | "PASS: shell control-surface driver" | not recorded in log |
-| build-5-verify | `cmake --build build --target SampleEditorDialogTest` (this session) | duet/10-worker/tmp/001-build-5-verify.log | 16 lines | EXIT=0 |
-| test-5-verify | `ctest -R SampleEditorDialogTest` run from build/tests (this session) | duet/10-worker/tmp/003-test-5-verify.log | 100% passed, 1/1 | EXIT=0 |
-
-Screenshot: gui-shots/shell-arrange.png (kept in the log folder, outside the worktree). sha256 a67d15648608d49a683c771215ca96e472cbb36838a2b20b39012bdd10b3657b (gui-2.sha256, from the rerun). The earlier gui-1 hash 0f76075e… is superseded. The PNG header was 1600x1000 in an earlier session and was not rechecked in the rerun.
+Screenshot: gui-shots/shell-arrange.png (kept in the log folder, outside the worktree). It is PNG 1600x1000 (gui-2-file.log, EXIT=0), sha256 a67d15648608d49a683c771215ca96e472cbb36838a2b20b39012bdd10b3657b (gui-2.sha256). The earlier gui-1 hash 0f76075e… is superseded.
 
 ## Self-check
 
@@ -93,7 +70,7 @@ Screenshot: gui-shots/shell-arrange.png (kept in the log folder, outside the wor
 - **Deterministic:** inputs are fixed digit strings. The test uses no clock, sleep, timers, or threads.
 - **Cause and completeness:** the cause is the unchecked llround and unchecked toDouble in `timeFrom`. Callers and siblings are covered in "Completeness" above.
 - **No collateral damage:** in-range clock text runs the same arithmetic (h*3600 + m*60 + s, times max(1, rate), then llround). The only change is the finiteness and bound check. `999999999:00:00` is about 1.6e17 frames at 44.1 kHz, below qint64 max, so it stays accepted (test line 319).
-- **Not ALREADY-FIXED or FALSE-POSITIVE:** the unfixed product fails the new test at test-1-red.log:80. The fix is in this commit.
+- **Not ALREADY-FIXED or FALSE-POSITIVE:** the unfixed product fails the new test at test-5-reversed.log:80, EXIT=8. The fix is in this commit.
 
 ## Other findings
 
