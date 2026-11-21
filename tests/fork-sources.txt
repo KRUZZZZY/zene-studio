@@ -4012,3 +4012,5 @@ tests/src/core/WorkerAltStackTest.cpp
 # cluster new-p10-541: BitInvader's loadSettings clamp and refusal regression.
 tests/src/plugins/BitInvaderLoadSettingsTest.cpp
 tests/src/core/AudioOssDeviceConfigTest.cpp
+# cluster new-p16-100: LocaleHelper::toFloat parse contract and the project-load non-finite leg (fork-NEW).
+tests/src/core/LocaleHelperTest.cpp

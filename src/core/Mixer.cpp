@@ -155,9 +155,9 @@ ProjectIndex parseProjectChannelIndex(const QString& text, int describedChannels
 bool hasNonFiniteFloatAttribute(const QDomElement& element, const QString& name)
 {
 	if (!element.hasAttribute(name)) { return false; }
-	// The converted value is checked regardless of the conversion flag: an overflowing
-	// literal ("1e999") converts to infinity with the flag cleared.
-	const float value = LocaleHelper::toFloat(element.attribute(name));
+	// toFloat rejects non-finite values with 0.0f, so this guard reads the double parse; a saved
+	// nan, inf or overflowing literal (1e999) is still detected and the mixer keeps its default.
+	const double value = LocaleHelper::toDouble(element.attribute(name));
 	return !std::isfinite(value);
 }
 
