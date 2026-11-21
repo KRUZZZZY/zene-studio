@@ -42,7 +42,7 @@ def a16_record(session, rows, command):
 
 def slot_matches(slot, track, scene):
     """The reply's slot carries what session.set_slot was asked for."""
-    return (slot.get("type") == "midi" and slot.get("pattern") == 1 + track
+    return (slot.get("type") == "midi" and slot.get("pattern") == 0
             and slot.get("name") == "slot-%d-%d" % (track, scene)
             and slot.get("quantisation") == "global")
 
@@ -140,6 +140,10 @@ def drive_get_state(session, rows):
 
 def drive_set_grid(session, rows):
     """session.set_grid - the dimensions change, and the A16 class is read back."""
+    # set_slot refuses a pattern id the PatternStore does not hold; the row below
+    # names pattern 0 and the refusal driver names 1 and 2, so hold all three.
+    for _ in range(2):
+        session.result("track.add", {"type": "pattern"})
     song_tracks = int(session.result("track.list").get("count", 0))
     ok = rows.check("session.set_grid", song_tracks >= 1,
                     "no song tracks to size the grid from (song_tracks=%d)" % song_tracks)
@@ -221,7 +225,7 @@ def drive_set_slot(session, rows, columns, song_tracks):
     reply = {}
     for index, (track, scene) in enumerate(expected):
         reply = send(session, rows, "session.set_slot", {
-            "track": track, "scene": scene, "type": "midi", "pattern": 1 + track,
+            "track": track, "scene": scene, "type": "midi", "pattern": 0,
             "name": "slot-%d-%d" % (track, scene),
             "mode": "trigger", "quantisation": "global"})
         slot = reply.get("slot") or {}

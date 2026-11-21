@@ -385,6 +385,7 @@ private slots:
 		Song* song = Engine::getSong();
 		song->clearProject();
 		QVERIFY(Track::create(Track::Type::Instrument, song) != nullptr);
+		QVERIFY(Track::create(Track::Type::Pattern, song) != nullptr);
 		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 1}, {QStringLiteral("scenes"), 2}}).ok);
 		for (int scene = 0; scene < 2; ++scene)
 		{
@@ -493,6 +494,7 @@ private slots:
 		Song* song = Engine::getSong();
 		song->clearProject();
 		QVERIFY(Track::create(Track::Type::Instrument, song) != nullptr);
+		QVERIFY(Track::create(Track::Type::Pattern, song) != nullptr);
 		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 1}, {QStringLiteral("scenes"), 1}}).ok);
 		QVERIFY(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0},
 			{QStringLiteral("type"), QStringLiteral("midi")}, {QStringLiteral("pattern"), 0},
