@@ -8,7 +8,9 @@ FIXED
 period with `tryLockShm()` / `unlockShm()`, while the non-realtime
 `updateInOutCount()` took the same `std::mutex` to invalidate the block before
 reallocating it. A host that misses the try-lock therefore emits a silent
-period; a host that blocks in `updateInOutCount()` can stall the audio thread.
+period. The old non-realtime writer could block the GUI thread on that mutex,
+and the audio path still performed a mutex try_lock; the audio thread never
+took the blocking lock.
 
 Pre-fix REAL evidence:
 
@@ -81,29 +83,33 @@ reversed.
 - p2 RED: `ctest -R '^VstMidiEventBatchTest$' --output-on-failure` →
   `Totals: 11 passed, 2 failed`; `FAIL! ... processEarlyReturnsSilenceOutputs()
   'beginRead >= 0' returned FALSE` and `FAIL! ... processPeriodPathTakesNoMutex()
-  '!body.contains("lockShm")' returned FALSE` (log `test-red.log`; also
-  `test-2-red.log`).
+  '!body.contains("lockShm")' returned FALSE` (log `test-2-red.log`).
 - p3 GREEN: `VstMidiEventBatchTest` 1/1 Passed (log `test-3-green.log`).
 - p4 GREEN: `VstMidiEventBatchTest` and `VstShmHandoffTest` 2/2 Passed (log
   `test-4-green.log`).
-- p4b GREEN: same 2/2 Passed after the reverse/restore cycle (log
+- p4b GREEN: 2/2 Passed before the p5 reverse/restore cycle (log
   `test-4b-green.log`).
-- VST family: 4/4 Passed — `VstMidiEventBatchTest`, `VstShmHandoffTest`,
-  `VstChannelCountTest`, `VstPeMachineTypeTest` (log `test-family.log`).
+- p5 4b RED: 11 passed / 2 failed with the product hunks reversed (log
+  `test-red.log`).
+- p5 post-restore GREEN: 4/4 Passed — `VstMidiEventBatchTest`,
+  `VstShmHandoffTest`, `VstChannelCountTest`, `VstPeMachineTypeTest` (log
+  `test-green.log`).
+- VST family: 4/4 Passed in the separate family run (log `test-family.log`).
 
 ## p4b reversal proof
 
-Product-only reverse/restore cycle, exact commands and EXIT codes:
+Product-only reverse/restore cycle, exact commands and EXIT codes
+(`LOGS=/home/kruzzzzy/.config/kads/zene/state/runs/new-p14-241.r1/logs`):
 
 | Step | Command | EXIT |
 | --- | --- | --- |
-| capture product diff | `git diff HEAD -- plugins/VstBase/RemoteVstPlugin.cpp plugins/VstBase/VstShmHandoff.h > LOGS/fix.patch` | 0 |
-| reverse it | `git apply -R LOGS/fix.patch > LOGS/reverse-1.log 2>&1` | 0 |
-| rebuild reversed | `cmake --build build/tests --target VstMidiEventBatchTest > LOGS/build-red.log 2>&1` | 0 |
-| RED test | `ctest -R '^VstMidiEventBatchTest$' --output-on-failure > LOGS/test-red.log 2>&1` | 8 |
-| restore | `git apply LOGS/fix.patch > LOGS/restore-1.log 2>&1` | 0 |
-| rebuild restored | `cmake --build build/tests --target VstMidiEventBatchTest VstShmHandoffTest > LOGS/build-4b.log 2>&1` | 0 |
-| green test | `ctest -R '^(VstMidiEventBatchTest|VstShmHandoffTest)$' --output-on-failure > LOGS/test-4b-green.log 2>&1` | 0 |
+| capture product diff | `git diff HEAD -- plugins/VstBase/RemoteVstPlugin.cpp plugins/VstBase/VstShmHandoff.h > $LOGS/fix.patch` | 0 |
+| reverse it | `git apply -R $LOGS/fix.patch > $LOGS/reverse-1.log 2>&1` | 0 |
+| rebuild reversed | `cmake --build build --target VstMidiEventBatchTest > $LOGS/build-red.log 2>&1` | 0 |
+| RED test | `cd build/tests && ctest -R '^VstMidiEventBatchTest$' --output-on-failure > $LOGS/test-red.log 2>&1` | 8 |
+| restore | `git apply $LOGS/fix.patch > $LOGS/restore-1.log 2>&1` | 0 |
+| rebuild restored | `cmake --build build --target NativeLinuxRemoteVstPlugin64 VstMidiEventBatchTest VstShmHandoffTest VstChannelCountTest VstPeMachineTypeTest > $LOGS/build-green.log 2>&1` | 0 |
+| green test | `cd build/tests && ctest -R '^(VstMidiEventBatchTest\|VstShmHandoffTest\|VstChannelCountTest\|VstPeMachineTypeTest)$' --output-on-failure > $LOGS/test-green.log 2>&1` | 0 |
 
 The RED run failed 2 of 13 with the `beginRead >= 0` and `lockShm` assertions
 above. After restore, `sha256sum LOGS/fix.patch` was
@@ -147,8 +153,9 @@ Not fixed here, and outside this packet's scope:
 
 - Regression proof: `VstMidiEventBatchTest` FAILS with the product hunks
   reversed (`ctest` EXIT=8, 11 passed / 2 failed, log `test-red.log`) and
-  PASSES restored (`ctest` EXIT=0, log `test-4b-green.log`). The reversed
-  product diff still built, so the failure is at runtime, not a compile error.
+  PASSES restored (`ctest` EXIT=0, 4/4 passed, log `test-green.log`). The
+  reversed product diff still built, so the failure is at runtime, not a
+  compile error.
 - Deterministic: the tests use injected reader counts, explicit
   `beginRead()`/`invalidate()`/`endRead()` sequencing and source scans; there
   are no sleeps, wall-clock checks or timing assumptions. `invalidate()` yields
