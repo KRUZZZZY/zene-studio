@@ -111,6 +111,13 @@ the `recordertaps::master` call at `:524`). Restoring the change with `git apply
 | build-1-green | `build-1-green.log` | 0 |
 | test-1-green | `test-1-green.log` | 0 |
 | test-1-green-detail (12/12) | `test-1-green-detail.log` | 0 |
+| build-3 | `build-3.log` | 0 |
+| test-3-family (6/6) | `test-3-family.log` | 0 |
+| feature_check | `gates-3.log` | 0 PASS |
+| submit_check | `submit-3.log` | 0 PASS |
+
+The 6-test family run excludes `RecordToolsTest` because of the already-baselined
+environmental `theRemainingRecordTime` failure (see ## Other findings).
 
 
 ## Self-check
