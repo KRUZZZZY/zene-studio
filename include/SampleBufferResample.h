@@ -36,8 +36,11 @@ namespace lmms
 /*! @a input at @a rate, through the engine's own sinc resampler at its best quality - an offline
  *  step (it allocates the whole result), for work that needs a fixed rate: stem separation at
  *  the model's 44.1 kHz (engine audit E27; it used to refuse any other rate). The result keeps
- *  the input's length in time (frames scaled by the rate ratio). @a input itself is returned
- *  when it is already at @a rate. */
+ *  the input's length in time (frames scaled by the rate ratio).
+ *
+ *  Contract: returns nullptr on a null @a input or a zero @a rate (failure; callers fall back to
+ *  the source). Returns @a input itself, unchanged, when it is empty, has a zero source rate, or
+ *  is already at @a rate. */
 LMMS_EXPORT auto resampleBuffer(const std::shared_ptr<const SampleBuffer>& input, sample_rate_t rate)
 	-> std::shared_ptr<const SampleBuffer>;
 

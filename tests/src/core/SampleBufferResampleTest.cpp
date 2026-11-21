@@ -116,6 +116,16 @@ private slots:
 		QCOMPARE(resampleBuffer(input, 44100).get(), input.get());
 	}
 
+	//! A zero TARGET rate is an invalid request, not a request to keep the input as it is. The
+	//! resampler must report failure with nullptr, which callers already treat as "use the source".
+	void zeroTargetRateIsRejected()
+	{
+		const auto input = std::make_shared<const SampleBuffer>(std::vector<SampleFrame>(4096), 44100);
+		const auto output = resampleBuffer(input, 0);
+		QVERIFY(output == nullptr);
+		QVERIFY(output.get() != input.get());
+	}
+
 	void aResampledBufferDoesNotPointBackToTheUntransformedSourceFile()
 	{
 		const auto input = std::make_shared<const SampleBuffer>(
