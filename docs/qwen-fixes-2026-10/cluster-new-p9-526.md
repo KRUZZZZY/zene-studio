@@ -77,11 +77,44 @@ fails, and after reapplying it the same slot passes.
 
 The final completion step runs
 `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py`, and its
-result is recorded then. The pre-commit self-check is: `git diff --check` on
-the six changed files exited 0; the full test executable passed under the
-ctest family run (1/1 passed, 100%, `logs/test-3-family.log`); the
-commit contains the three product files, the test, the ledger and this report;
-`git status --porcelain` is empty afterwards.
+result is recorded then.
+
+- Regression is fix-dependent: with the product change reversed,
+  `cd build/tests && ./GraphWaveformEditorGuiTest waveShaperCurveEditsReachTheAudioAsAPublishedSnapshot`
+  exited 1 (`Totals: 2 passed, 1 failed`, fuzzy compare; `logs/test-4-red.log`);
+  after reapplying it the same command exited 0 (`Totals: 3 passed, 0 failed`;
+  `logs/test-5-green.log`), and this session's re-run again exited 0
+  (`Totals: 3 passed, 0 failed`, p6 green run log).
+- Deterministic: no wall-clock timing, sleeps or races; the test injects fixed
+  values through `setSampleAt`, one direct write with no `samplesChanged`, and a
+  synthetic click, then compares exact expected floats. The 50-edit burst also
+  uses injected values only.
+- Cause and completeness: the GUI `samplesChanged` slot publishes once through
+  `publishCurve()` (`plugins/WaveShaper/WaveShaperControls.cpp:60-77`); the
+  audio reader takes the pointer with a single atomic load and returns `data`
+  (`WaveShaperControls.h:98-108`); `WaveShaper.cpp:77` reads that published
+  array. Every graph-model edit emits `samplesChanged`, so no caller keeps a
+  stale read.
+- No collateral damage: the existing save/load slot
+  (`GraphWaveformEditorGuiTest.cpp:82`) still round-trips `saveState`/
+  `restoreState` and rejects a short curve; the ctest family run passed 1/1
+  (`logs/test-3-family.log`). The fix adds no limit or check that could hit
+  other callers; `loadSettings` keeps loading old projects through the same
+  `waveform::loadGraph` path.
+- ALREADY-FIXED / FALSE-POSITIVE: not applicable; the verdict is FIXED, as the
+  red/green pair above shows.
+- Sibling commands: no command file was changed. Commit `b6c9e36` touches only
+  `plugins/WaveShaper/WaveShaper.cpp`, `plugins/WaveShaper/WaveShaperControls.cpp`,
+  `plugins/WaveShaper/WaveShaperControls.h`, the GUI test,
+  `tests/upstream-modifications.txt` and this report. `app.about`, `app.ask`,
+  `app.help`, `app.online_help`, `app.task_cancel`, `app.tasks`, `app.tour`,
+  `app.tours`, `app.update_check_get`, `app.update_check_run`,
+  `app.update_check_set`, `app.version`, `app.whats_new`,
+  `arrangement.fit_tracks` and `arrangement.get_state` do not call the Wave
+  Shaper publish path and are unaffected.
+
+Pre-commit checks also showed `git diff --check` exited 0 and
+`git status --porcelain` was empty after the commit.
 
 ## Other findings
 
