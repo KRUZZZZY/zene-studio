@@ -6027,3 +6027,5 @@ src/core/SampleClip.cpp	p3 (new-p12-221-port): the two constructors that build a
 src/core/AudioEngine.cpp	p3 (new-p12-221-port): topUpPlayHandleCapacityOnControlThread also calls SamplePlayHandle::reserveForClips() beside the BufferManager and CompSlipReaders reserves, so the handle pool grows on the control thread.
 src/tracks/SampleTrack.cpp	p3 (new-p12-221-port): SampleTrack::play claims its per-pass handle with SamplePlayHandle::tryCreate instead of plain new; on a refusal the clip is not started, the deferral counter is bumped and a capacity refresh is requested. Nothing else in the play path changes.
 include/SamplePlayHandle.h	p3 (new-p12-221-port): declares the control-thread-only SamplePlayHandle::reserveForClips(); no other declaration changes.
+src/gui/widgets/Fader.cpp	cluster new-p16-164: non-finite peaks are ignored before target/persistent peak assignment so an infinite sample cannot latch the meter; held by tests/src/gui/MixerMeteringTest.cpp.
+src/gui/widgets/PeakIndicator.cpp	cluster new-p16-164: updatePeak ignores non-finite input before storing the peak; held by tests/src/gui/MixerMeteringTest.cpp.

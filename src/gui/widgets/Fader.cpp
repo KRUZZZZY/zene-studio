@@ -49,6 +49,8 @@
 
 #include "DesignTokens.h"
 
+#include <cmath>
+
 #include <QInputDialog>
 #include <QMouseEvent>
 #include <QPainter>
@@ -492,6 +494,11 @@ float Fader::computeScaledRatio(float dBValue) const
 ///
 void Fader::setPeak(float fPeak, float& targetPeak, float& persistentPeak, QElapsedTimer& lastPeakTimer)
 {
+	if (!std::isfinite(fPeak))
+	{
+		return;
+	}
+
 	if (targetPeak != fPeak)
 	{
 		targetPeak = fPeak;
