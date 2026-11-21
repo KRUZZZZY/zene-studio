@@ -49,8 +49,11 @@ Per-slot results from the QTest logs (`PASS :` / `FAIL! :` lines):
 green runs (`test-green-1.log`, `test-reapplied-green.log`) are ctest-level only
 (`1/1 Test #725: SfzGateStereoLinkTest ... Passed`); they carry no per-slot lines.
 
-Note on (c): it fails in the reverted runs of test-red-2.log and test-reversed-red.log
-but passes in test-red.log. The first red run therefore shows only (a) failing.
+Note on (c): `test-red.log` was produced before slot (c) was rewritten. The first version of
+(c) only checked a second tone block, which also passes under the bug, so that run showed
+`5 passed, 1 failed`. The rewrite made (c) discriminating. The `test-red-2.log` and
+`test-reversed-red.log` columns come from the final test source, and there (c) FAILs under
+the bug.
 
 ## Registration
 
@@ -116,30 +119,42 @@ run in this session.
 Answers to the six ASK items of the pre-submit check. Each cites the log or file:line
 that shows it.
 
-1. **Regression test fails with the change reverted and passes with it.** Yes at test
-   level: each red run exits 8 (`test-reversed-red.log:25` EXIT=8 in the log;
-   `test-red.log` and `test-red-2.log` EXIT=8 as printed by the command in the session,
-   no EXIT line in the file). Slot (a) `stlinkRightOnlyOpensGate` FAILs in all three red
-   logs (`test-red.log:7`, `test-red-2.log:7`, `test-reversed-red.log:7`). Slot (c)
-   `reconfiguredInstanceCarriesGateStateAcrossBlocks` FAILs in `test-red-2.log:10` and
-   `test-reversed-red.log:10`, but PASSes in `test-red.log:10`. Passes with the change:
-   `test-green-2.log:8` EXIT=0 and `test-reapplied-green.log:8` EXIT=0.
-   **Open:** the first red run's slot (c) PASS is not explained. The same reverted code
-   gave FAIL in the other two red runs, so either the first run did not build the
-   reverted `Gate.cpp` or the outcome varies between runs. Not re-run in this session.
-2. **Deterministic.** The test has no wall-clock, sleep, random or thread code; it
-   includes only QtTest and std headers (`tests/src/plugins/SfzGateStereoLinkTest.cpp`).
-   The seams are: `makeGate()` (lines 30-45) fixes sample rate 44100 and block size 512
-   before the first `process()`; `fillTone()` (lines 47-55) computes the sine from the
-   absolute frame index; `runBlock()` (lines 65-75) primes the outputs with a sentinel;
-   each slot builds a fresh gate. **Caveat:** the red logs disagree on slot (c) for the
-   reverted code (item 1), so the logs do not yet show repeatability.
+1. **Regression test fails with the change reverted and passes with it.** Yes, on the
+   final test source. Both reverted runs, `test-red-2.log` and `test-reversed-red.log`,
+   show `Totals: 4 passed, 2 failed`, with slot (a) `stlinkRightOnlyOpensGate` FAIL at
+   `:7` and slot (c) `reconfiguredInstanceCarriesGateStateAcrossBlocks` FAIL at `:10` in
+   both files. Both exit 8: `test-reversed-red.log:25` EXIT=8 is in the log, and the
+   `test-red-2.log` EXIT=8 is as printed by the command in the session (the file has no
+   EXIT line). With the fix applied, the test passes: `test-green-2.log:8` EXIT=0 and
+   `test-reapplied-green.log:8` EXIT=0. These are ctest-level results; the logs carry no
+   per-slot lines, and a passing run means every slot passed.
+   The first red run, `test-red.log`, predates the rewrite of slot (c) (see the note under
+   the table). It shows `Totals: 5 passed, 1 failed`, with only (a) FAIL at `:7`.
+2. **Deterministic.** Repeatability evidence: the two red runs on the final test source,
+   `test-red-2.log` and `test-reversed-red.log`, agree slot for slot (the same FAILs at `:7`
+   and `:10`, and the same `4 passed, 2 failed`). The test source has no timing, RNG or
+   thread code: `rg -n 'chrono|rand|thread|sleep|time'` on
+   `tests/src/plugins/SfzGateStereoLinkTest.cpp` finds none. Its includes are QtTest, std
+   headers, and the sfizz headers it tests. The input is fixed: the constants at `:23-24`
+   (44100 Hz, 512 frames) are used by the gate-building helper (comment at `:30`, with the
+   `Gate::makeInstance` call at `:41`); `fillTone()` (`:49`) computes the sine from the
+   absolute frame index; each slot builds a fresh gate.
 3. **Fix at the cause and complete.** The change is one token at `Gate.cpp:130`. The
    other per-sample reads of `right2x` in `Gate::process` (`Gate.cpp:87`) use `[i]`:
    `Gate.cpp:101`, `:124`, `:143`. `git show ac80b7022d -- Gate.cpp` shows 1 insertion
-   and 1 deletion. `Gate::process` keeps its signature. The only other source file that
-   names `Gate` is `plugins/SfzPlayer/sfizz/src/sfizz/Effects.cpp` (factory; not read in
-   detail). External callers beyond that were not enumerated.
+   and 1 deletion. `Gate::process` keeps its signature. `Gate.h` is not changed:
+   `ac80b7022d` does not list it, and `git diff --stat ac80b7022d HEAD -- .../Gate.h` is
+   empty. The search `rg -n 'fx::Gate|effects/Gate\.h|Gate::makeInstance|"Gate"'` over
+   `plugins/SfzPlayer/sfizz/src` and `tests/src` finds: the factory registration at
+   `plugins/SfzPlayer/sfizz/src/sfizz/Effects.cpp:39` (`registerEffectType("gate",
+   fx::Gate::makeInstance)`); the `Gate::makeInstance` definition at
+   `plugins/SfzPlayer/sfizz/src/sfizz/effects/Gate.cpp:151`; the test's include and call at
+   `tests/src/plugins/SfzGateStereoLinkTest.cpp:16` and `:41`; and
+   `tests/src/gui/PluginControlDialogsTest.cpp:123`, which matches only the string "Gate" in
+   a GUI combo test. No other caller of the Gate class was found. The fix is in the body of
+   `Gate::process` (defined at `Gate.cpp:87`) only.
+   A second stereo-link detector exists in `plugins/SfzPlayer/sfizz/src/sfizz/effects/Compressor.cpp:127`
+   (`std::abs(right2x[1])`, the same index pattern). This cluster does not change it.
 4. **No collateral damage.** The diff adds no limit or check and touches no opcode
    parsing or saved state. The changed branch runs only when `gate_stlink=1`. Related
    evidence: `test-family-3.log:33` `100% tests passed out of 15` and `:36` EXIT=0;
