@@ -41,6 +41,12 @@
 //! The plugin is built as a module, so its sources are compiled into this
 //! test binary (the MultitapEchoBoundsTest / Lb302NotePathTest pattern). The
 //! test is deterministic: no timing, no threads, no loader and no audio device.
+//!
+//! The project parser now rejects non-finite project values: LocaleHelper::toFloat
+//! returns 0.0f with ok=false for nan, inf and overflow, so an XML fixture can no
+//! longer inject a NaN control. The tests therefore inject NaN through the model,
+//! the surface the plugin reads: setValue for the child form and setInitValue for
+//! the attribute form (which also sets the value). The assertions are unchanged.
 
 #include <algorithm>
 #include <cmath>
@@ -78,7 +84,8 @@ constexpr float FilterEffectThreshold = 1e-3f;
 
 //! Loads an effect's controls from a project element, the way a saved project
 //! does. The amount is always set, otherwise the filter runs for no stages and
-//! no control can reach the output.
+//! no control can reach the output. The parser rejects non-finite values, so a NaN
+//! control is set on the model by the caller after loading, not through controlsXml.
 std::unique_ptr<lmms::DispersionEffect> loadedEffect(const QString& controlsXml)
 {
 	auto effect = std::make_unique<lmms::DispersionEffect>(nullptr, nullptr);
@@ -89,8 +96,8 @@ std::unique_ptr<lmms::DispersionEffect> loadedEffect(const QString& controlsXml)
 }
 
 //! Loads an effect's controls from attributes on the element itself, the other
-//! form a saved project uses. The amount is set the same way. A NaN attribute
-//! sets the control's init value as well as its value.
+//! form a saved project uses. The amount is set the same way. The helper loads
+//! finite attributes only; NaN is injected by the caller with setInitValue.
 std::unique_ptr<lmms::DispersionEffect> loadedEffectFromAttributes(const QString& attributes)
 {
 	auto effect = std::make_unique<lmms::DispersionEffect>(nullptr, nullptr);
@@ -163,9 +170,10 @@ void DispersionNonFiniteTest::cleanupTestCase()
 
 void DispersionNonFiniteTest::nonFiniteFrequencyRendersLikeTheDefault()
 {
-	const auto poisoned = loadedEffect(QStringLiteral("<freq value=\"nan\"/>"));
+	const auto poisoned = loadedEffect(QString{});
+	poisoned->m_dispersionControls.m_freqModel.setValue(std::numeric_limits<float>::quiet_NaN());
 	QVERIFY2(std::isnan(poisoned->m_dispersionControls.m_freqModel.value()),
-		"the project's freq=nan did not load as NaN; the test would not exercise the bug");
+		"the injected NaN frequency did not reach the model; the test would not exercise the bug");
 
 	const auto reference = loadedEffect(QString{});
 	const auto poisonedRender = renderImpulse(*poisoned);
@@ -178,9 +186,10 @@ void DispersionNonFiniteTest::nonFiniteFrequencyRendersLikeTheDefault()
 
 void DispersionNonFiniteTest::nonFiniteResonanceRendersLikeTheDefault()
 {
-	const auto poisoned = loadedEffect(QStringLiteral("<reso value=\"nan\"/>"));
+	const auto poisoned = loadedEffect(QString{});
+	poisoned->m_dispersionControls.m_resoModel.setValue(std::numeric_limits<float>::quiet_NaN());
 	QVERIFY2(std::isnan(poisoned->m_dispersionControls.m_resoModel.value()),
-		"the project's reso=nan did not load as NaN; the test would not exercise the bug");
+		"the injected NaN resonance did not reach the model; the test would not exercise the bug");
 
 	const auto reference = loadedEffect(QString{});
 	const auto poisonedRender = renderImpulse(*poisoned);
@@ -193,9 +202,10 @@ void DispersionNonFiniteTest::nonFiniteResonanceRendersLikeTheDefault()
 
 void DispersionNonFiniteTest::nonFiniteFeedbackRendersLikeTheDefault()
 {
-	const auto poisoned = loadedEffect(QStringLiteral("<feedback value=\"nan\"/>"));
+	const auto poisoned = loadedEffect(QString{});
+	poisoned->m_dispersionControls.m_feedbackModel.setValue(std::numeric_limits<float>::quiet_NaN());
 	QVERIFY2(std::isnan(poisoned->m_dispersionControls.m_feedbackModel.value()),
-		"the project's feedback=nan did not load as NaN; the test would not exercise the bug");
+		"the injected NaN feedback did not reach the model; the test would not exercise the bug");
 
 	const auto reference = loadedEffect(QString{});
 	const auto poisonedRender = renderImpulse(*poisoned);
@@ -208,11 +218,12 @@ void DispersionNonFiniteTest::nonFiniteFeedbackRendersLikeTheDefault()
 
 void DispersionNonFiniteTest::attributeFormNonFiniteFrequencyRendersLikeTheDefault()
 {
-	const auto poisoned = loadedEffectFromAttributes(QStringLiteral("freq=\"nan\""));
+	const auto poisoned = loadedEffectFromAttributes(QString{});
+	poisoned->m_dispersionControls.m_freqModel.setInitValue(std::numeric_limits<float>::quiet_NaN());
 	QVERIFY2(std::isnan(poisoned->m_dispersionControls.m_freqModel.value()),
-		"the attribute freq=nan did not load as NaN; the test would not exercise the bug");
+		"the injected NaN frequency did not reach the model value; the test would not exercise the bug");
 	QVERIFY2(std::isnan(poisoned->m_dispersionControls.m_freqModel.initValue()),
-		"the attribute freq=nan did not set the init value; the init-value path is not exercised");
+		"the injected NaN frequency did not reach the model init value; the init-value path is not exercised");
 
 	const auto reference = loadedEffectFromAttributes(QString{});
 	const auto poisonedRender = renderImpulse(*poisoned);
@@ -220,16 +231,17 @@ void DispersionNonFiniteTest::attributeFormNonFiniteFrequencyRendersLikeTheDefau
 
 	QCOMPARE(nonFiniteSampleCount(poisonedRender), 0);
 	QVERIFY2(largestDifference(poisonedRender, referenceRender) <= RenderTolerance,
-		"a NaN frequency loaded from attributes did not render as the default");
+		"a NaN frequency in the attribute-form model did not render as the default");
 }
 
 void DispersionNonFiniteTest::attributeFormNonFiniteResonanceRendersLikeTheDefault()
 {
-	const auto poisoned = loadedEffectFromAttributes(QStringLiteral("reso=\"nan\""));
+	const auto poisoned = loadedEffectFromAttributes(QString{});
+	poisoned->m_dispersionControls.m_resoModel.setInitValue(std::numeric_limits<float>::quiet_NaN());
 	QVERIFY2(std::isnan(poisoned->m_dispersionControls.m_resoModel.value()),
-		"the attribute reso=nan did not load as NaN; the test would not exercise the bug");
+		"the injected NaN resonance did not reach the model value; the test would not exercise the bug");
 	QVERIFY2(std::isnan(poisoned->m_dispersionControls.m_resoModel.initValue()),
-		"the attribute reso=nan did not set the init value; the init-value path is not exercised");
+		"the injected NaN resonance did not reach the model init value; the init-value path is not exercised");
 
 	const auto reference = loadedEffectFromAttributes(QString{});
 	const auto poisonedRender = renderImpulse(*poisoned);
@@ -237,16 +249,17 @@ void DispersionNonFiniteTest::attributeFormNonFiniteResonanceRendersLikeTheDefau
 
 	QCOMPARE(nonFiniteSampleCount(poisonedRender), 0);
 	QVERIFY2(largestDifference(poisonedRender, referenceRender) <= RenderTolerance,
-		"a NaN resonance loaded from attributes did not render as the default");
+		"a NaN resonance in the attribute-form model did not render as the default");
 }
 
 void DispersionNonFiniteTest::attributeFormNonFiniteFeedbackRendersLikeTheDefault()
 {
-	const auto poisoned = loadedEffectFromAttributes(QStringLiteral("feedback=\"nan\""));
+	const auto poisoned = loadedEffectFromAttributes(QString{});
+	poisoned->m_dispersionControls.m_feedbackModel.setInitValue(std::numeric_limits<float>::quiet_NaN());
 	QVERIFY2(std::isnan(poisoned->m_dispersionControls.m_feedbackModel.value()),
-		"the attribute feedback=nan did not load as NaN; the test would not exercise the bug");
+		"the injected NaN feedback did not reach the model value; the test would not exercise the bug");
 	QVERIFY2(std::isnan(poisoned->m_dispersionControls.m_feedbackModel.initValue()),
-		"the attribute feedback=nan did not set the init value; the init-value path is not exercised");
+		"the injected NaN feedback did not reach the model init value; the init-value path is not exercised");
 
 	const auto reference = loadedEffectFromAttributes(QString{});
 	const auto poisonedRender = renderImpulse(*poisoned);
@@ -254,7 +267,7 @@ void DispersionNonFiniteTest::attributeFormNonFiniteFeedbackRendersLikeTheDefaul
 
 	QCOMPARE(nonFiniteSampleCount(poisonedRender), 0);
 	QVERIFY2(largestDifference(poisonedRender, referenceRender) <= RenderTolerance,
-		"a NaN feedback loaded from attributes did not render as the default");
+		"a NaN feedback in the attribute-form model did not render as the default");
 }
 
 void DispersionNonFiniteTest::finiteFrequencyStillDrivesTheFilter()

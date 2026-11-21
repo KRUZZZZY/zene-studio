@@ -3037,6 +3037,7 @@ tests/src/core/LinkRealtimeProbe.h
 tests/src/core/LinkedClipEditsTest.cpp
 tests/src/core/LinkedClipGroupEditsTest.cpp
 tests/src/core/LinkedModelGroupsTest.cpp
+tests/src/core/LocaleHelperTest.cpp
 tests/src/core/LoopFixture.h
 tests/src/core/LoopImportWarpTest.cpp
 tests/src/core/LoudnessReportTest.cpp
