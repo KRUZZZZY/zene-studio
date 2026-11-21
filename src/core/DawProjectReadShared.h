@@ -234,6 +234,7 @@ inline int intAttribute(const QXmlStreamAttributes& attributes, ReadState& state
 //! Negative values set state.error because the writer cannot carry them back.
 //! A time past the engine's signed 32-bit tick is clamped into it and counted
 //! the same way: an in-range qint64 past the tick domain overflows later.
+//! A time whose 48-tick count is not finite is refused: state.error is set and 0 returned.
 inline qint64 ticksFromBeats(ReadState& state, double beats)
 {
 	if (beats < 0.0)
@@ -248,7 +249,16 @@ inline qint64 ticksFromBeats(ReadState& state, double beats)
 
 	constexpr double TickLimit = std::numeric_limits<std::int32_t>::max();
 	const double exact = beats * DawProjectTicksPerQuarterNote;
-	const double held = std::isfinite(exact) ? std::min(exact, TickLimit) : 0.0;
+	if (!std::isfinite(exact))
+	{
+		if (state.error.isEmpty())
+		{
+			state.error = QStringLiteral("a timeline value %1 does not have a finite 48-tick-per-beat count")
+				.arg(beats, 0, 'g', 17);
+		}
+		return 0;
+	}
+	const double held = std::min(exact, TickLimit);
 	const double rounded = std::floor(held + 0.5);
 	if (!(std::fabs(exact - rounded) <= 1e-6)) { state.report->loss.roundedTimes++; }
 	return static_cast<qint64>(std::min(rounded, TickLimit));
