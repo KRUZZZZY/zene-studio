@@ -232,7 +232,10 @@ ControlResult flam(const QJsonObject& args)
 		Note grace = *note;
 		grace.setPos(TimePos(note->pos().getTicks() - offset));
 		grace.setLength(TimePos(offset));
-		grace.setVolume(static_cast<volume_t>(std::lround(note->getVolume() * ratio)));
+		const volume_t sourceVolume = note->getVolume();
+		const long scaled = std::lround(sourceVolume * ratio);
+		// An audible source keeps an audible grace note; a silent source stays silent.
+		grace.setVolume(static_cast<volume_t>(sourceVolume > 0 ? std::max<long>(1, scaled) : scaled));
 		clip->addNote(grace, false);
 		++made;
 	}
