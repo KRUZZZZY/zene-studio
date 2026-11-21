@@ -397,12 +397,15 @@ private slots:
 					const auto waitMs = std::max<std::int64_t>(0,
 						std::chrono::ceil<std::chrono::milliseconds>(deadline - now).count());
 					const auto periodMs = std::chrono::duration<double, std::milli>{budget}.count();
-					if (now + std::chrono::milliseconds{waitMs} > start + budget)
+					const auto end = now + std::chrono::milliseconds{waitMs};
+					if (end > start + budget)
 					{
-						failures << QStringLiteral("rate/frames %1/%2, now offset %3 us, wait %4 ms > %5 ms")
+						const auto endMs = std::chrono::duration<double, std::milli>{end - start}.count();
+						failures << QStringLiteral("rate/frames %1/%2, now offset %3 us, wait %4 ms, end %5 ms > period %6 ms")
 							.arg(rate).arg(frames)
 							.arg(std::chrono::duration_cast<std::chrono::microseconds>(offset).count())
 							.arg(waitMs)
+							.arg(QString::number(endMs, 'f', 3))
 							.arg(QString::number(periodMs, 'f', 3));
 					}
 				}
