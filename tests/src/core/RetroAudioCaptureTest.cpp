@@ -85,8 +85,17 @@ std::vector<SampleFrame> makeFrames(std::size_t count, std::size_t offset = 0)
 	return frames;
 }
 
-bool failFlush(lmms::RetroTakeFinishStep step) { return step == lmms::RetroTakeFinishStep::Sync; }
-bool failClose(lmms::RetroTakeFinishStep step) { return step == lmms::RetroTakeFinishStep::Close; }
+//! Stand-ins for the real steps (see setRetroTakeFinishTestHook): the flush row
+//! makes the durable flush of the descriptor fail, the commit row makes the
+//! flush succeed and the commit fail.
+int failFlush(lmms::RetroTakeFinishStep step, int)
+{
+	return step == lmms::RetroTakeFinishStep::Flush ? -1 : 0;
+}
+int failCommit(lmms::RetroTakeFinishStep step, int)
+{
+	return step == lmms::RetroTakeFinishStep::Commit ? -1 : 0;
+}
 
 //! Clears the finish hook however the test leaves.
 struct FinishHookGuard
@@ -277,13 +286,14 @@ private slots:
 	}
 
 	//! libsndfile can accept every frame and still fail to flush or close the
-	//! file (full or failing disk). The take must then report failure, and the
+	//! file (full or failing disk); its own sync/close cannot report that (see
+	//! flushDescriptor in RetroAudioCapture.cpp), so the writer fsyncs itself. The take must then report failure, and the
 	//! destination must not be replaced by the unverified file.
 	void aFailedFlushOrCloseIsReportedAndNothingIsCommitted_data()
 	{
 		QTest::addColumn<bool>("failFlushStep");
 		QTest::newRow("flush") << true;
-		QTest::newRow("close") << false;
+		QTest::newRow("commit") << false;
 	}
 
 	void aFailedFlushOrCloseIsReportedAndNothingIsCommitted()
@@ -298,10 +308,10 @@ private slots:
 		QString error;
 		bool ok = true;
 		{
-			FinishHookGuard guard(failFlushStep ? &failFlush : &failClose);
+			FinishHookGuard guard(failFlushStep ? &failFlush : &failCommit);
 			ok = lmms::writeRetroAudioTake(path, frames, SampleRate, &written, &error);
 		}
-		QVERIFY2(!ok, "a failed flush/close must not report success");
+		QVERIFY2(!ok, "a failed flush/commit must not report success");
 		QVERIFY(!error.isEmpty());
 		QCOMPARE(written, std::uint64_t{0});
 		QVERIFY(!QFileInfo::exists(path));

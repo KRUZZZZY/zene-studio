@@ -30,8 +30,15 @@
 
 #include <QElapsedTimer>
 #include <QSaveFile>
+#include <QtGlobal>
 
 #include <sndfile.h>
+
+#ifdef Q_OS_WIN
+#	include <io.h>
+#else
+#	include <unistd.h>
+#endif
 
 namespace lmms
 {
@@ -267,25 +274,56 @@ QString takeRequestProblem(const QString& filePath, std::size_t frames, int samp
 	return QString();
 }
 
+#ifdef LMMS_TESTING
 std::atomic<RetroTakeFinishTestHook> s_finishTestHook{nullptr};
 
-bool finishStepFailed(RetroTakeFinishStep step, bool realFailure) noexcept
+int finishHookResult(RetroTakeFinishStep step, int fd, bool* hooked) noexcept
 {
 	const auto hook = s_finishTestHook.load(std::memory_order_acquire);
-	return realFailure || (hook != nullptr && hook(step));
+	*hooked = hook != nullptr;
+	return hook != nullptr ? hook(step, fd) : 0;
+}
+#endif
+
+//! Durable flush of the take's descriptor: 0 on success. libsndfile's own
+//! sf_write_sync() returns void and discards the fsync result, and sf_close() on
+//! a descriptor opened with sf_open_fd(..., SF_FALSE) always returns 0, so
+//! neither can report a failing disk; this is the check that can.
+int flushDescriptor(int fd) noexcept
+{
+#ifdef LMMS_TESTING
+	bool hooked = false;
+	const int injected = finishHookResult(RetroTakeFinishStep::Flush, fd, &hooked);
+	if (hooked) { return injected; }
+#endif
+#ifdef Q_OS_WIN
+	return _commit(fd);
+#else
+	return ::fsync(fd);
+#endif
 }
 
-//! Flush and close \a sf (always closed, even when the flush failed). sf_write_sync()
-//! returns void, so a flush failure is read from the file's sticky error code.
-//! Returns an empty string on success, else the step that failed.
-QString finishSoundFile(SNDFILE* sf)
+//! Finish the sound file (header rewrite, close; the descriptor stays open
+//! because it belongs to the QSaveFile) and flush it to the device.
+void finishSoundFile(SNDFILE* sf, int fd) noexcept
 {
 	sf_write_sync(sf);
-	const bool syncFailed = finishStepFailed(RetroTakeFinishStep::Sync, sf_error(sf) != SF_ERR_NO_ERROR);
-	const bool closeFailed = finishStepFailed(RetroTakeFinishStep::Close, sf_close(sf) != 0);
-	if (syncFailed) { return QStringLiteral("flush"); }
-	if (closeFailed) { return QStringLiteral("close"); }
-	return QString();
+	sf_close(sf);
+	static_cast<void>(flushDescriptor(fd));
+}
+
+//! Commit the take over its destination; false (nothing replaced) on failure.
+bool commitTake(QSaveFile& output)
+{
+#ifdef LMMS_TESTING
+	bool hooked = false;
+	if (finishHookResult(RetroTakeFinishStep::Commit, -1, &hooked) != 0)
+	{
+		output.cancelWriting();
+		return false;
+	}
+#endif
+	return output.commit();
 }
 
 //! The write itself: clamp, encode, flush, close, and report what libsndfile
@@ -334,7 +372,7 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 	const auto written = sf_writef_float(sf, interleaved.data(),
 		static_cast<sf_count_t>(window.size()));
 	const bool acceptedAll = written >= 0 && static_cast<std::size_t>(written) == window.size();
-	const QString finishProblem = finishSoundFile(sf);
+	finishSoundFile(sf, output.handle());
 
 	if (!acceptedAll)
 	{
@@ -342,12 +380,7 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 			.arg(written).arg(window.size()).arg(filePath);
 		return false;
 	}
-	if (!finishProblem.isEmpty())
-	{
-		*error = QStringLiteral("could not %1 %2").arg(finishProblem, filePath);
-		return false;
-	}
-	if (!output.commit())
+	if (!commitTake(output))
 	{
 		*error = QStringLiteral("could not commit the written take to %1: %2")
 			.arg(filePath, output.errorString());
@@ -360,10 +393,12 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 } // namespace
 
 
+#ifdef LMMS_TESTING
 void setRetroTakeFinishTestHook(RetroTakeFinishTestHook hook) noexcept
 {
 	s_finishTestHook.store(hook, std::memory_order_release);
 }
+#endif
 
 
 bool writeRetroAudioTake(const QString& filePath, const std::vector<SampleFrame>& window,
