@@ -4027,3 +4027,6 @@ tests/src/core/AudioOssDeviceConfigTest.cpp
 tests/src/core/LocaleHelperTest.cpp
 # cluster ci-6cf85fbc066bfe48: Qt 5 QSslSocket::sslErrors overload report (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-ci-6cf85fbc066bfe48.md
+# cluster ci-4ff107c9ee4dc69c: the header-only MS friend-lookup probe and its clang driver.
+tests/scripts/ms_friend_lookup_check.py
+tests/src/compile/MsFriendLookupProbe.cpp

@@ -3969,6 +3969,20 @@ set_tests_properties(ShellTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen
 set_tests_properties(ShellFloatButtonTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TouchLayoutTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# RED regression probe for the ClipView/AutomationTrackView/PatternClipView
+# friend-lookup ambiguity: clang in MS compatibility mode compiles a header-only
+# probe with the TouchLayoutTest flags and must report the three ambiguity errors
+# until the headers are fixed. Registered only where clang is installed; MSVC CI is covered by compiling TouchLayoutTest.cpp itself.
+find_program(CLANG_COMPAT_EXECUTABLE NAMES clang++ clang)
+if(CLANG_COMPAT_EXECUTABLE AND PYTHON3_EXECUTABLE)
+	add_test(NAME MsFriendLookupTest
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/ms_friend_lookup_check.py
+			${CMAKE_BINARY_DIR}/compile_commands.json
+			${CMAKE_CURRENT_SOURCE_DIR}/src/compile/MsFriendLookupProbe.cpp
+			${CLANG_COMPAT_EXECUTABLE})
+endif()
+
 set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteMelodyTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(StepGridPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
