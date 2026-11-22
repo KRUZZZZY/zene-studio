@@ -1,70 +1,93 @@
-NEEDS-CONTEXT
+FIXED
 
 # cluster new-p16-231: Automation scratch overflow can allocate on the render thread
 
-## What the code does (seen this session)
-- `src/core/Song.cpp:737-751`: `processAutomations` reads into the reserved `m_automationLevel` / `m_automationInner`
-  scratch. If either one overflows, it redoes the read into the local, unbounded `spillValues` / `spillInner`, which
-  allocates on the audio thread.
-- `src/core/Song.cpp:763-772`: the clips for the recording pass use the same fallback (`spillClips`).
-- `src/core/Song.cpp:849-854` and `892-898`: `m_oldAutomatedValues` and `m_recordedModels` grow past their capacity,
-  which allocates and increments `m_automationScratchOverflows`.
-- `include/Song.h:406-433` and `include/AutomationRenderScratch.h` (class comment) document this as the contract:
-  "The caller MUST treat a non-zero overflows() as 'this read is incomplete' and redo it on an unbounded scratch".
-- The finding is accurate: if a block ever runs past the reserve, the audio thread allocates.
+Round 2. It addresses Luna's round-1 review ("tests: no test added or changed"). Round 1 had reported
+NEEDS-CONTEXT. This round fixes the bug without changing the existing contract test.
 
-## Why I did not fix it
-1. The allocating redo is a deliberate, reviewed last resort. Commit fb89c74f47 ("Luna rework r2") made every
-   edit path that adds clips or targets reserve the scratch beforehand: `Track::addClip`, `AutomationClip::addObject`
-   and the copy constructor all call `noteAutomationGrowth`, which leads to `ensureAutomationScratchCapacity`
-   (`src/core/Song.cpp:920-954`). It then states "The overflow redo stays as a counted last resort." The fallback
-   is only reached when an edit happens on the render thread or inside a RealtimeScope (`Song.cpp:926`), or when
-   the reserve fails with out-of-memory (`Song.cpp:928`).
-2. An existing test pins the current behaviour:
-   `tests/src/core/AutomationRenderAllocationTest.cpp` `anOverflowingReadIsRedoneAndStillAppliesEveryClip` forces a
-   capacity of 8 with 200 clips. It requires the overflow counter to rise AND every clip to be applied within 4
-   periods, with no control-thread step in between.
-3. A realtime-safe overflow path cannot also stay complete. With no allocation, the audio thread cannot hold more
-   entries than were reserved, so it must either (a) drop the extra clips or values (wrong automation, and models
-   left stuck on automation control), or (b) skip or hold the tick and have a control-thread hook grow the scratch.
-   Option (b) means automation goes stale until that hook runs. The only control-thread drains today are
-   `applyPendingAutomationWrites`, called from `stop()` (`Song.cpp:1293`) and save (`Song.cpp:2470`), not
-   periodically. Either option breaks the existing test in point 2. The rules forbid weakening or editing that
-   test, and choosing between correctness and realtime safety for the out-of-memory or in-RealtimeScope-edit case
-   is a product and design decision.
+## Verdict: REAL
+In `src/core/Song.cpp`, `Song::processAutomations` (before this fix, lines 737-772) handled a read that overflowed
+the reserved `m_automationLevel`, `m_automationInner` or `m_automationRecordClips` scratch by redoing it into the
+local unbounded `spillValues`, `spillInner` and `spillClips`. That redo allocates, and it ran on the audio thread too.
+The RED run below measured 86 heap allocations inside a `RealtimeScope` over 4 periods.
 
-## What is needed to proceed
-A decision from the owner of the automation render path (Luna rework r2 / fb89c74f47):
-- either accept "hold the previous automation values for the overflowing tick, count it, and grow the scratch from
-  a periodic control-thread hook (new)", and approve changing `anOverflowingReadIsRedoneAndStillAppliesEveryClip`
-  to match that contract;
-- or confirm that the counted allocating redo stays as the documented last resort. In that case this finding is
-  FALSE-POSITIVE by design and should be recorded as a verified fact.
+## Fix
+- `src/core/Song.cpp` `Song::holdOverflowingAutomationTick()` (new). After the bounded read and the bounded
+  recording-clip read, it checks for overflow. The check covers all three scratches, plus whether
+  `m_oldAutomatedValues` or `m_recordedModels` is too small for this tick, since those two used to grow during the
+  apply pass. If the tick is on the render path (`RealtimeScope::isActive()` or `AudioEngine::isRenderThread()`), it
+  counts the overflow in `m_automationScratchOverflows`, sets `m_automationScratchShort`, and the caller returns.
+  The tick is held: no value is applied and no cached model is handed back to its controller, so nothing is
+  dropped. It does nothing but atomics and integer comparisons: no allocation, lock or logging.
+- `Song::growAutomationScratchIfShort()` (new, control thread) runs from the existing 10 ms
+  `automationWriteDrainTimer`, which is connected in the `Song` constructor. When the flag is set it calls
+  `ensureAutomationScratchCapacity()`. That function recounts exactly and reserves 2x under the engine change
+  lock, so it never races the render thread. If it runs out of memory, the flag is set again and the next drain
+  retries.
+- Off the render path (offline or test-thread calls), the old allocating redo is unchanged. Allocation is allowed
+  there, and the existing contract test `anOverflowingReadIsRedoneAndStillAppliesEveryClip` still passes untouched.
+- `include/Song.h`: the declarations, the new flag, and updated comments on `noteAutomationGrowth` and
+  `automationScratchOverflows`.
+- The finding's other ask, "ensure sufficient capacity before playback", was already met by every edit path through
+  `noteAutomationGrowth` / `ensureAutomationScratchCapacity` (commit fb89c74f47, tests
+  `targetsAddedToAnExistingClipPastTheCapacityAreAllApplied` and siblings). This fix covers the remaining last-resort
+  path.
 
-## Commands run
-Read-only investigation (rg / sed / git log / git show on the files above). Nothing was built or tested, because no
-product or test change was made.
+Trade-off: when an overflow does happen on the render path, automation holds its previous values for the ticks
+until the next drain, at most about 10 ms plus the time the lock takes. It used to be applied on time at the cost
+of an allocation. An overflow should only happen after an edit made on the render thread or a failed reserve, so
+this path is a last resort.
+
+## Regression test
+`tests/src/core/AutomationRenderAllocationTest.cpp`
+`anOverflowOnTheRenderPathAllocatesNothingAndTheControlThreadGrowsTheScratch`:
+- forces capacity 8 for 200 clips with the `resizeAutomationScratchForTest` seam;
+- plays 4 periods inside a `RealtimeScope` and requires an overflow to be counted with 0 allocations;
+- fires the song's `automationWriteDrainTimer` once by hand (`QMetaObject::invokeMethod(..., "timeout")`, no
+  wall-clock wait);
+- then requires 6 more realtime periods with 0 allocations, every model to get its value, and no further overflow.
+
+## Commands and EXIT codes (logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p16-231.r2/logs)
+- RED, test only: `cmake --build build --target AutomationRenderAllocationTest -j4` EXIT=0 (01-build-red.log).
+  `ctest -R '^AutomationRenderAllocationTest$' --output-on-failure` EXIT=8 (02-test-red.log):
+  `FAIL! ... anOverflowOnTheRenderPathAllocatesNothingAndTheControlThreadGrowsTheScratch() ... Actual (overflowAllocations): 86`.
+- GREEN: `cmake --build build --target zene AutomationRenderAllocationTest -j4` EXIT=0 (03-build-green.log).
+  ctest EXIT=0, "100% tests passed out of 1" (04-test-green.log).
+- Full build `cmake --build build -j4`: refused by the guard ("full builds are the parent's job",
+  05-build-all.log). Instead I built zene and the 19 test targets of the family:
+  `cmake --build build -j4 --target zene AutomationRenderAllocationTest AudioAutomationToolsTest ... SampleAccurateAutomationTest`
+  BUILD_EXIT=0 (06-build-family.log). `ctest -R 'Automation|^Song|MixerConcurrency' --output-on-failure` TEST_EXIT=0,
+  "100% tests passed out of 21" (07-test-family.log).
+- Step 4b:
+  `git diff -- include/Song.h src/core/Song.cpp > .../logs/fix.patch && git apply -R .../logs/fix.patch` REVERT_EXIT=0.
+  Rebuild EXIT=0. ctest EXIT=8 (09-test-reverted.log, "Actual (overflowAllocations): 86").
+  `git apply .../logs/fix.patch` APPLY_EXIT=0. Rebuild EXIT=0. ctest EXIT=0 (11-test-reapplied.log, "100% tests passed out of 1").
+- Gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` EXIT=0, all PASS
+  (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures,
+  complexity "no new item in your files", file-length "no new item in your files"), in 12-feature-check.log.
 
 ## Self-check
-- Verdict backed by evidence: the file:line citations above, read this session.
-- Regression test: none. No fix was made (NEEDS-CONTEXT).
-- Product code changed: none. Only this report was added.
-- Proof manifest: not required for NEEDS-CONTEXT.
+- Fails without the fix, passes with it: step 4b above, red EXIT=8 and green EXIT=0.
+- Deterministic: no sleeps or timing. It uses the `resizeAutomationScratchForTest` seam, the allocation probe
+  (`test::tlCountAllocations`), and fires the drain timer's `timeout` synchronously with `Qt::DirectConnection`.
+- Fix at the cause, siblings checked: all four former overflow sites are covered by the single check. Values and
+  inner were redone; recording clips were redone; `m_oldAutomatedValues` and `m_recordedModels` grew. The last two
+  can no longer grow on the render path, because the hold check makes sure their capacity covers this tick's values
+  and clips (recorded models are at most the clips). The control-path redo is kept as before. The only caller of
+  `processAutomations` is `processNextBuffer` (`Song.cpp:650`).
+- No collateral damage: no file format, save or load change. The off-render path behaves exactly as before. No
+  limit was added. No control command was added.
+- Realtime: the new render-path code does relaxed atomic stores and integer comparisons only. Growth happens on the
+  control thread under `requestChangesGuard`. Local TSan does not run here. The design argument is that the flag is
+  an atomic, and the scratch is resized only with the render thread locked out, as `ensureAutomationScratchCapacity`
+  already did.
+- ALREADY-FIXED / FALSE-POSITIVE reference: not applicable (FIXED).
+- Sibling commands (app.*, arrangement.*), as listed by submit_check: those test files come from earlier commits on
+  this branch. This fix changes no command file and adds no command.
+- GUI: no src/gui change. Transport, recording and undo state are not changed by this fix: a held tick only skips
+  that tick's automation work.
 
 ## Other findings
-- The `m_oldAutomatedValues` / `m_recordedModels` growth branches (`Song.cpp:849-854`, `892-898`) can only be
-  reached once the read has already spilled. With the reserve sized by `ensureAutomationScratchCapacity`, they share
-  the same design question as above.
-
-### Answers to submit_check's "?" items
-- Fails without the fix, passes with it: not applicable. No product change, so no regression test (NEEDS-CONTEXT).
-- Deterministic: not applicable, no test added. The existing `anOverflowingReadIsRedoneAndStillAppliesEveryClip`
-  uses the `resizeAutomationScratchForTest` seam, not timing.
-- Fix at the cause, siblings checked: no fix. I read all four overflow sites (`Song.cpp:744`, `763`, `852`, `896`)
-  and the reserve path (`Song.cpp:920-967`). Their shared design question is described above.
-- No collateral damage: no product file changed. The commit adds only this report.
-- ALREADY-FIXED / FALSE-POSITIVE code reference: not my verdict. The contract that may make this by design is
-  `include/AutomationRenderScratch.h` (class comment) and `include/Song.h:406-433`.
-- Sibling commands (app.*, arrangement.*): not affected. Those test files come from earlier commits on this
-  branch, and this session changed no command file.
-- submit_check run this session: "RESULT: PASS - submit", EXIT=0. Its gates row (feature_check.py) was PASS.
+- If a realtime overflow happened with no Qt event loop running on the song's thread (for example a headless
+  export with no loop), the scratch would not be grown and automation would stay held until an edit or stop.
+  I found no such configuration in this session, and did not verify that one exists.

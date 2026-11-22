@@ -32,6 +32,7 @@
 #include <QtTest>
 #include <QDomDocument>
 #include <QTemporaryDir>
+#include <QTimer>
 
 #include <algorithm>
 #include <chrono>
@@ -327,6 +328,42 @@ private slots:
 		for (int i = 0; i < 4; ++i) { song->processNextBuffer(); }
 		QVERIFY2(song->automationScratchOverflows() > overflowsBefore, "the test never overflowed the scratch");
 		project.verifyApplied();
+		song->stop();
+		song->resizeAutomationScratchForTest(AutomationRenderScratch::RenderCapacity);
+	}
+
+	//! new-p16-231: on the render path (inside a RealtimeScope) an overflowing read must not take the allocating
+	//! redo. The tick is held and counted, and the song's control-thread drain timer grows the scratch, after which
+	//! every clip is applied with no allocation and no further overflow.
+	void anOverflowOnTheRenderPathAllocatesNothingAndTheControlThreadGrowsTheScratch()
+	{
+		Song* song = Engine::getSong();
+		Fixture project(song, 200);
+		song->playSong();
+		song->processNextBuffer();  // warm the lazily created state with the full scratch
+		song->resizeAutomationScratchForTest(8);
+		const auto overflowsBefore = song->automationScratchOverflows();
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		{
+			const RealtimeScope realtime;
+			for (int i = 0; i < 4; ++i) { song->processNextBuffer(); }
+		}
+		test::tlCountAllocations = false;
+		const auto overflowAllocations = test::tlAllocationCount;
+		QVERIFY2(song->automationScratchOverflows() > overflowsBefore, "the test never overflowed the scratch");
+		QCOMPARE(overflowAllocations, 0ull);
+
+		// The control thread's periodic drain (Song's automationWriteDrainTimer), fired once by hand.
+		auto* drain = song->findChild<QTimer*>(QStringLiteral("automationWriteDrainTimer"));
+		QVERIFY(drain != nullptr);
+		QVERIFY(QMetaObject::invokeMethod(drain, "timeout", Qt::DirectConnection));
+
+		const auto overflowsAfterGrowth = song->automationScratchOverflows();
+		QCOMPARE(allocationsOverPeriods(song, 6), 0ull);
+		project.verifyApplied();
+		QCOMPARE(static_cast<qulonglong>(song->automationScratchOverflows()),
+			static_cast<qulonglong>(overflowsAfterGrowth));
 		song->stop();
 		song->resizeAutomationScratchForTest(AutomationRenderScratch::RenderCapacity);
 	}
