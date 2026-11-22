@@ -59,7 +59,7 @@ All builds ran from the worktree root; CTest ran from `build/tests`. Logs are in
 | `cmake --build build --target PluginPortsMigrationTest -- -j4` | 0 | `build-1.log` |
 | `ctest -R '^OpulenZ' --output-on-failure` | 0 | `test-1.log`: 4/4 tests passed (`OpulenZ`, `OpulenZSpanSize`, `OpulenZZeroFrameCount`, `OpulenZHz2fnumRange`) |
 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p23-185` | 0 | `gate-1.log`: all eight gates PASS |
-| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p23-185 new-p23-185` | 0 | `submit-1.log`: `RESULT: PASS - submit` (before the final report-only commit; all mechanical rows PASS) |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p23-185 new-p23-185` | 0 | `submit-1.log` and `submit-2.log`: `RESULT: PASS - submit`; `submit-2.log` is the post-commit run on this final tree |
 
 The feature-gate table was:
 
@@ -110,7 +110,8 @@ reverted product change, and no RED or GREEN result is claimed.
   from train merges already present between the gate base `fa4a5f2e7` and this
   branch, not from this cluster, so none is affected.
 - **Completion check:** `submit_check.py ... new-p23-185` exited 0 with
-  `RESULT: PASS - submit` (`submit-1.log`). Its `tests added or changed` row is
+  `RESULT: PASS - submit` (`submit-1.log`, and the final post-commit run in
+  `submit-2.log`). Its `tests added or changed` row is
   satisfied by pre-existing merge content in `base..HEAD`; this cluster itself
   adds no product code and no test, as required for a false-positive verdict.
 
