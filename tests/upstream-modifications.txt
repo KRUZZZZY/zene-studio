@@ -6026,3 +6026,19 @@ plugins/WaveShaper/WaveShaperControls.cpp	cluster new-p9-526: publish the edited
 plugins/WaveShaper/WaveShaperControls.h	cluster new-p9-526: declare WaveCurveSnapshot, the lock-free immutable curve handoff the audio thread reads; regression in GraphWaveformEditorGuiTest.
 include/RemotePlugin.h	cluster new-p12-267: declares the tests-only periodDeadlineForTesting(now, renderStart, budget) seam so the period-wait deadline arithmetic can be checked with injected time points; covered by RemotePluginAudioPortsTest::periodWaitNeverEndsAfterThePeriod.
 src/core/RemotePlugin.cpp	cluster new-p12-267: periodDeadline() delegates its deadline arithmetic to RemotePlugin::periodDeadlineForTesting() (behaviour-preserving), the seam the regression test injects time points into; covered by RemotePluginAudioPortsTest::periodWaitNeverEndsAfterThePeriod.
+include/AudioEngine.h	RED p2 test seam: topUpPlayHandleCapacityForTest() (guarded by LMMS_TESTING) runs the control-thread play-handle capacity top-up on demand, so the new-p12-221-port pool-exhaustion test gets the next pass deterministically instead of waiting on the 100 ms timer.
+include/BufferManager.h	p3a (new-p12-221-port): frame blocks come from a preallocated pool; acquire() gives an empty lease when exhausted; acquireBlocking() and leaseBlocking() allocate; reserve() grows the pool on the control thread
+src/core/BufferManager.cpp	p3a (new-p12-221-port): the block pool (RealtimeFreeList), Lease, reserve(); blocks sized to max(DEFAULT_BUFFER_SIZE, period)
+include/PlayHandle.h	p3a (new-p12-221-port): the frame buffer is a BufferManager::Lease; bufferExhausted() reports an empty pool
+src/core/PlayHandle.cpp	p3a (new-p12-221-port): pool lease under RealtimeScope, leaseBlocking() otherwise; an exhausted handle renders nothing
+src/core/AudioBusHandle.cpp	p3a (new-p12-221-port): the bus buffer keeps its vector and takes acquireBlocking()
+src/core/AudioEngine.cpp	p3a (new-p12-221-port): reserves the frame and comp-slip pools at init and in the play-handle capacity top-up
+include/SamplePlayHandle.h	p3a (new-p12-221-port): comp-slip readers are a CompSlipOwner; m_compSlipExhausted records a pool miss
+src/core/SamplePlayHandle.cpp	p3a (new-p12-221-port): snapshotComp passes the exhaustion flag to CompSlipReaders::create()
+include/SamplePlayHandle.h	p2 (new-p12-221-port): declares the pooled storage (operator new/delete routing plain heap handles and pooled blocks), tryCreate() and reserveBlocks(), plus <cstddef> for std::size_t; constructors and the rest of the class are unchanged.
+src/core/CMakeLists.txt	p2 (new-p12-221-port): builds core/SamplePlayHandlePool.cpp next to core/SamplePlayHandle.cpp.
+include/SampleClip.h	p3 (new-p12-221-port): adds the process-wide static counter s_liveClipCount with liveClipCount(); no change to the existing members or methods.
+src/core/SampleClip.cpp	p3 (new-p12-221-port): the two constructors that build a clip count it up and call SamplePlayHandle::reserveForClips(); the destructor counts it down; includes SamplePlayHandle.h. Nothing else in the file changes.
+src/core/AudioEngine.cpp	p3 (new-p12-221-port): topUpPlayHandleCapacityOnControlThread also calls SamplePlayHandle::reserveForClips() beside the BufferManager and CompSlipReaders reserves, so the handle pool grows on the control thread.
+src/tracks/SampleTrack.cpp	p3 (new-p12-221-port): SampleTrack::play claims its per-pass handle with SamplePlayHandle::tryCreate instead of plain new; on a refusal the clip is not started, the deferral counter is bumped and a capacity refresh is requested. Nothing else in the play path changes.
+include/SamplePlayHandle.h	p3 (new-p12-221-port): declares the control-thread-only SamplePlayHandle::reserveForClips(); no other declaration changes.
