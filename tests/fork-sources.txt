@@ -831,6 +831,7 @@ docs/qwen-fixes-2026-10/sol-train-30-hosted-followup.md
 # registering, every function is CCN <= 10 and the file is under 500 lines, so gates 4 and 7
 # measure it at their existing thresholds rather than moving a baseline.
 tests/unused-result-fortify-check.py
+tests/qwaitfor-result-check.py
 docs/qwen-fixes-2026-10/cluster-ci-aa184f959f204bcd.md
 # Cluster ci-151e338efff6843e: the Qt 5 QList API portability regression for the Eq
 # spectrum view. Hosted windows-arm64 builds against Qt 5.15, where QList has neither the
