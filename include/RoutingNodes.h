@@ -65,7 +65,7 @@ class LMMS_EXPORT OnePoleLowPassNode : public RoutingNode
 {
 public:
 	OnePoleLowPassNode() = default;
-	explicit OnePoleLowPassNode(float alpha) : m_alpha(alpha) {}
+	explicit OnePoleLowPassNode(float alpha);
 
 	auto typeName() const -> QString override { return QStringLiteral("onepole_lowpass"); }
 
@@ -73,7 +73,7 @@ public:
 	void process(f_cnt_t frames) override;
 
 	auto alpha() const -> float { return m_alpha; }
-	void setAlpha(float alpha) { m_alpha = alpha; }
+	void setAlpha(float alpha);
 	void reset();
 
 	void saveSettings(QDomElement& element) const override;

@@ -226,6 +226,14 @@ public:
 	//! about the deadline: a client in another process cannot always answer within one period on a loaded machine.
 	static void setPeriodBudgetForTesting(std::chrono::microseconds budget);
 
+	//! Tests only: the deadline periodDeadline() computes for a render period that started at \a renderStart,
+	//! seen at \a now with \a budget to spend. The product calls this with the running period's start; a test
+	//! calls it with injected time points, so the arithmetic is the one the audio thread uses.
+	static std::chrono::steady_clock::time_point periodDeadlineForTesting(
+		std::chrono::steady_clock::time_point now,
+		std::chrono::steady_clock::time_point renderStart,
+		std::chrono::steady_clock::duration budget );
+
 	//! Tests only: override a main-thread query's bounded wait; zero (the default) keeps QueryReplyTimeout.
 	static void setQueryReplyTimeoutForTesting(std::chrono::milliseconds timeout);
 

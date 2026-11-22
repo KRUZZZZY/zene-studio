@@ -35,6 +35,7 @@
 #include <vector>
 
 #include <QFile>
+#include <QStringList>
 
 #include "../../../plugins/VstBase/VstMidiEventBatch.h"
 
@@ -72,6 +73,31 @@ auto makeEvents(std::size_t count) -> std::vector<Event>
 		events.push_back(Event{static_cast<int>((state >> 16) % 64u), static_cast<int>(i)});
 	}
 	return events;
+}
+
+//! True when \a body still binds the period path to the shared-memory mutex.
+//! The scanner is a plain text probe: its synthetic inputs below show it fires
+//! on each mutated form and stays quiet on a clean handoff body.
+bool periodPathTakesMutex(const QString& body)
+{
+	const QStringList forbidden{
+		QStringLiteral("tryLockShm"),
+		QStringLiteral("unlockShm"),
+		QStringLiteral("lockShm"),
+		QStringLiteral("m_shmLock"),
+		QStringLiteral("std::mutex"),
+		QStringLiteral("std::lock_guard"),
+		QStringLiteral("std::unique_lock"),
+		QStringLiteral(".lock()"),
+	};
+	for (const auto& token : forbidden)
+	{
+		if (body.contains(token))
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 } // namespace
@@ -181,10 +207,12 @@ private slots:
 		QCOMPARE(withTail[2 * frames], 9.0f);
 	}
 
-	//! The integration check for new-p17-148: the early returns in
+	//! The integration check for new-p17-148: the early return in
 	//! RemoteVstPlugin::process() must call the silence helper. The client
-	//! cannot run in-process, so this pins that both paths clear the output
-	//! block (the helper above is what they call).
+	//! cannot run in-process, so this pins that the path clears the output
+	//! block with the cached count (the helper above is what it calls).
+	//! new-p14-241 merged the two old returns (tryLockShm/isShmValid) into the
+	//! single failed beginRead() check; the same silence contract is pinned.
 	void processEarlyReturnsSilenceOutputs()
 	{
 		QFile f(QStringLiteral("plugins/VstBase/RemoteVstPlugin.cpp"));
@@ -205,11 +233,98 @@ private slots:
 		const auto end = text.indexOf(QStringLiteral("void RemoteVstPlugin::processMidiEvent"), begin);
 		QVERIFY(end > begin);
 		const auto body = text.mid(begin, end - begin);
-		// Both early returns (tryLockShm, isShmValid) must silence with the cached count.
-		QVERIFY2(body.count(QStringLiteral("silenceOutputPlanes")) >= 2,
-			"process() must silence outputs on both early returns");
-		QVERIFY2(body.count(QStringLiteral("RemotePluginClient::outputCount")) >= 2,
+		// The post-fix path has one early return: a failed beginRead() must
+		// silence with the cached count.
+		const auto beginRead = body.indexOf(QStringLiteral("m_shmHandoff.beginRead"));
+		QVERIFY2(beginRead >= 0, "process() must open a handoff read window");
+		const auto earlyReturn = body.indexOf(QStringLiteral("return"), beginRead);
+		QVERIFY2(earlyReturn > beginRead, "beginRead() must be followed by the early return");
+		const auto earlyPath = body.mid(beginRead, earlyReturn - beginRead);
+		QVERIFY2(earlyPath.contains(QStringLiteral("silenceOutputPlanes")),
+			"the beginRead() early return must silence outputs");
+		QVERIFY2(earlyPath.contains(QStringLiteral("RemotePluginClient::outputCount()")),
 			"silencing must use the cached output count, not the live plugin count");
+	}
+
+	//! new-p14-241: the audio period must not take the shared-memory mutex; it
+	//! opens a read window on the handoff and updateInOutCount() invalidates it.
+	void processPeriodPathTakesNoMutex()
+	{
+		QFile f(QStringLiteral("plugins/VstBase/RemoteVstPlugin.cpp"));
+		if (!f.exists())
+		{
+			f.setFileName(QStringLiteral("../../plugins/VstBase/RemoteVstPlugin.cpp"));
+		}
+		if (!f.exists())
+		{
+			f.setFileName(QStringLiteral("../../../plugins/VstBase/RemoteVstPlugin.cpp"));
+		}
+		QVERIFY2(f.exists(), "RemoteVstPlugin.cpp not found from the test working directory");
+		QVERIFY(f.open(QIODevice::ReadOnly | QIODevice::Text));
+		const auto text = QString::fromUtf8(f.readAll());
+
+		const auto begin = text.indexOf(QStringLiteral("void RemoteVstPlugin::process"));
+		QVERIFY(begin >= 0);
+		const auto end = text.indexOf(QStringLiteral("void RemoteVstPlugin::processMidiEvent"), begin);
+		QVERIFY(end > begin);
+		const auto body = text.mid(begin, end - begin);
+		QVERIFY2(!body.contains(QStringLiteral("lockShm")),
+			"process() must not lock/unlock the shared block per period");
+		QVERIFY2(!body.contains(QStringLiteral("tryLockShm")),
+			"process() must not tryLockShm() per period");
+		QVERIFY2(!body.contains(QStringLiteral("unlockShm")),
+			"process() must not unlockShm() per period");
+		QVERIFY2(!body.contains(QStringLiteral("m_shmLock")),
+			"process() must not touch the shared-block mutex");
+		QVERIFY2(!body.contains(QStringLiteral("std::mutex")),
+			"process() must not declare a mutex");
+		QVERIFY2(!body.contains(QStringLiteral("std::lock_guard")),
+			"process() must not take a lock guard");
+		QVERIFY2(!body.contains(QStringLiteral("std::unique_lock")),
+			"process() must not take a unique lock");
+		QVERIFY2(!body.contains(QStringLiteral(".lock()")),
+			"process() must not call .lock()");
+		QVERIFY2(body.contains(QStringLiteral("m_shmHandoff.beginRead()")),
+			"process() must open a read window on the handoff");
+		QVERIFY2(body.contains(QStringLiteral("m_shmHandoff.endRead()")),
+			"process() must close the handoff read window");
+
+		const auto countBegin = text.indexOf(QStringLiteral("int RemoteVstPlugin::updateInOutCount()"));
+		QVERIFY(countBegin >= 0);
+		const auto countEnd = text.indexOf(QStringLiteral("//#define DEBUG_CALLBACKS"), countBegin);
+		QVERIFY(countEnd > countBegin);
+		const auto countBody = text.mid(countBegin, countEnd - countBegin);
+		QVERIFY2(countBody.contains(QStringLiteral("m_shmHandoff.invalidate()")),
+			"updateInOutCount() must invalidate the handoff instead of locking");
+		QVERIFY2(!countBody.contains(QStringLiteral("lockShm")),
+			"updateInOutCount() must not lock the shared block");
+
+		QVERIFY2(!text.contains(QStringLiteral("std::mutex")),
+			"the client must not keep a shared-memory mutex");
+	}
+
+	//! The scanner above is the gate for process(); these mutations show it
+	//! fires on each old form and accepts the beginRead/endRead body.
+	void mutexScannerRejectsMutatedBody()
+	{
+		const QString clean = QStringLiteral(
+			"void RemoteVstPlugin::process() { m_shmHandoff.beginRead(); "
+			"if (!m_shmHandoff.isValid()) { m_shmHandoff.endRead(); return; } "
+			"m_shmHandoff.endRead(); }");
+		QVERIFY2(!periodPathTakesMutex(clean), "scanner rejected a clean handoff body");
+
+		QVERIFY2(periodPathTakesMutex(QStringLiteral(
+			"void RemoteVstPlugin::process() { m_shmHandoff.beginRead(); "
+			"if (!tryLockShm()) { return; } m_shmHandoff.endRead(); }")),
+			"scanner did not reject tryLockShm()");
+		QVERIFY2(periodPathTakesMutex(QStringLiteral(
+			"void RemoteVstPlugin::process() { m_shmHandoff.beginRead(); "
+			"std::lock_guard<std::mutex> guard(m_shmLock); m_shmHandoff.endRead(); }")),
+			"scanner did not reject std::lock_guard<std::mutex>");
+		QVERIFY2(periodPathTakesMutex(QStringLiteral(
+			"void RemoteVstPlugin::process() { m_shmHandoff.beginRead(); "
+			"m_shmLock.lock(); m_shmHandoff.endRead(); }")),
+			"scanner did not reject m_shmLock.lock()");
 	}
 
 	//! cluster 3434: bind the tested allocation-free sort to the client's period path.

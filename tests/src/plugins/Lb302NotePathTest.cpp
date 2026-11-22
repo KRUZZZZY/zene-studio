@@ -46,24 +46,40 @@
 
 #include <QtTest>
 
+#include <algorithm>
+#include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdlib>
 #include <memory>
 #include <new>
+#include <span>
 #include <vector>
 
 #include <QCoreApplication>
+#include <QDomDocument>
+#include <QDomElement>
 #include <QString>
 
 #include "Engine.h"
+#include "Hardware.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
-#include "Lb302.h"
+#include "InstrumentView.h"
 #include "Note.h"
 #include "NotePlayHandle.h"
 #include "SampleFrame.h"
 #include "Song.h"
 #include "TimePos.h"
+
+// The filter models and the audio-owned knob state are private. Every Qt and
+// std header is included above so that only the plugin header is parsed under
+// the access-control macro (the PluginPortsMigrationTest.cpp:127-129 pattern).
+#define private public
+#define protected public
+#include "Lb302.h"
+#undef protected
+#undef private
 
 namespace lmms
 {
@@ -138,6 +154,40 @@ constexpr int EnqueueAttempts = 512;
 
 } // namespace lmms
 
+namespace
+{
+
+//! The coefficients the active IIR2 filter processes with. They are the
+//! audio-owned state: recalc() writes them from m_fs and process() reads them,
+//! so they prove what the audio thread actually adopted.
+struct Lb302FilterCoefficients
+{
+	float cutoff;
+	float resCoeff;
+	float a;
+};
+
+Lb302FilterCoefficients filterCoefficients(const lmms::Lb302Synth& synth)
+{
+	return {synth.m_vcfs[0]->m_vcf.e[0], synth.m_vcfs[0]->m_vcf.resCoeff,
+		static_cast<const lmms::Lb302FilterIIR2*>(synth.m_vcfs[0].get())->m_iir2.a};
+}
+
+void renderPeriod(lmms::Lb302Synth& synth, std::span<lmms::SampleFrame> buffer)
+{
+	std::fill(buffer.begin(), buffer.end(), lmms::SampleFrame{});
+	synth.play(buffer);
+}
+
+void renderPeriod(lmms::Lb302Synth& synth)
+{
+	std::vector<lmms::SampleFrame> buffer(
+		static_cast<std::size_t>(lmms::Engine::audioEngine()->framesPerPeriod()));
+	renderPeriod(synth, std::span<lmms::SampleFrame>(buffer));
+}
+
+} // namespace
+
 // The watch has to see every allocation this binary makes, so the global
 // operators are replaced. The plugin under test is linked into this binary,
 // so its allocations are counted as well.
@@ -187,6 +237,19 @@ private slots:
 
 	//! The drop the failsafe takes is counted, and reported off the audio thread.
 	void lb302RetryExhaustionIsCountedAndReportedOffTheAudioThread();
+
+	//! A control change must not reach the audio-owned filter state until a
+	//! period boundary adopts it.
+	void lb302FilterControlsReachTheAudioThreadOnlyAtTheBlockBoundary();
+
+	//! Several control writes between periods: the last one is adopted.
+	void lb302LatestFilterChangeWinsBeforeTheNextBlock();
+
+	//! Adopting a new filter snapshot on the audio thread allocates nothing.
+	void lb302FilterAdoptionAllocatesNothing();
+
+	//! Loaded project settings are likewise adopted at the next period.
+	void lb302LoadedFilterSettingsApplyAtTheNextBlock();
 
 private:
 	//! Enqueues enough notes to take the enqueue failsafe, and reports what the
@@ -312,6 +375,203 @@ void Lb302NotePathTest::lb302RetryExhaustionIsCountedAndReportedOffTheAudioThrea
 	QVERIFY(QMetaObject::invokeMethod(&synth, "droppedNoteCount", Qt::DirectConnection,
 		Q_RETURN_ARG(quint64, afterReport)));
 	QVERIFY2(afterReport == 0, "the dropped-note report did not drain the counter");
+}
+
+void Lb302NotePathTest::lb302FilterControlsReachTheAudioThreadOnlyAtTheBlockBoundary()
+{
+	using namespace lmms;
+
+	InstrumentTrack track{Engine::getSong()};
+	Lb302Synth synth{&track};
+
+	// One period settles the state the constructor adopted.
+	renderPeriod(synth);
+	const Lb302FilterKnobState before = synth.m_fs;
+	const Lb302FilterCoefficients coefficientsBefore = filterCoefficients(synth);
+
+	// A control write may not reach the coefficients the audio thread
+	// processes with until the next period boundary adopts it.
+	synth.m_vcfCutKnob.setValue(0.4f);
+	QCOMPARE(filterCoefficients(synth).cutoff, coefficientsBefore.cutoff);
+	QCOMPARE(filterCoefficients(synth).resCoeff, coefficientsBefore.resCoeff);
+	QCOMPARE(filterCoefficients(synth).a, coefficientsBefore.a);
+	QCOMPARE(synth.m_fs.cutoff, before.cutoff);
+
+	synth.m_vcfResKnob.setValue(0.9f);
+	QCOMPARE(filterCoefficients(synth).cutoff, coefficientsBefore.cutoff);
+	QCOMPARE(filterCoefficients(synth).resCoeff, coefficientsBefore.resCoeff);
+	QCOMPARE(filterCoefficients(synth).a, coefficientsBefore.a);
+	QCOMPARE(synth.m_fs.reso, before.reso);
+
+	synth.m_vcfModKnob.setValue(0.6f);
+	QCOMPARE(filterCoefficients(synth).cutoff, coefficientsBefore.cutoff);
+	QCOMPARE(filterCoefficients(synth).resCoeff, coefficientsBefore.resCoeff);
+	QCOMPARE(filterCoefficients(synth).a, coefficientsBefore.a);
+	QCOMPARE(synth.m_fs.envmod, before.envmod);
+
+	synth.m_distKnob.setValue(0.25f);
+	QCOMPARE(filterCoefficients(synth).cutoff, coefficientsBefore.cutoff);
+	QCOMPARE(filterCoefficients(synth).resCoeff, coefficientsBefore.resCoeff);
+	QCOMPARE(filterCoefficients(synth).a, coefficientsBefore.a);
+	QCOMPARE(synth.m_fs.dist, before.dist);
+
+	synth.m_vcfDecKnob.setValue(0.7f);
+	QCOMPARE(filterCoefficients(synth).cutoff, coefficientsBefore.cutoff);
+	QCOMPARE(filterCoefficients(synth).resCoeff, coefficientsBefore.resCoeff);
+	QCOMPARE(filterCoefficients(synth).a, coefficientsBefore.a);
+	QCOMPARE(synth.m_fs.envdecay, before.envdecay);
+
+	// Phase one: the next period adopts the whole snapshot while the 24 dB
+	// switch is still off, so the IIR2 filter is the active one and must be
+	// recalced with the new knobs.
+	renderPeriod(synth);
+	QCOMPARE(synth.m_fs.cutoff, 0.4f);
+	QCOMPARE(synth.m_fs.reso, 0.9f);
+	QCOMPARE(synth.m_fs.envmod, 0.6f);
+	QCOMPARE(synth.m_fs.dist, 0.25f * Lb302Synth::s_distRatio);
+	QVERIFY(synth.m_fs.envdecay != before.envdecay);
+	QVERIFY(filterCoefficients(synth).cutoff != coefficientsBefore.cutoff);
+	QVERIFY(filterCoefficients(synth).resCoeff != coefficientsBefore.resCoeff);
+	QVERIFY(filterCoefficients(synth).a != coefficientsBefore.a);
+	const Lb302FilterCoefficients coefficientsAfter = filterCoefficients(synth);
+
+	// Phase two: the 24 dB switch changes which filter is active. The 3-pole
+	// filter has never been recalced, so its cutoff coefficient is still the
+	// initial zero - the same evidence as the knob coefficients above.
+	QCOMPARE(synth.m_vcfs[1]->m_vcf.e[0], 0.f);
+	synth.m_db24Toggle.setValue(true);
+	QCOMPARE(synth.m_vcfs[1]->m_vcf.e[0], 0.f);
+	QCOMPARE(filterCoefficients(synth).cutoff, coefficientsAfter.cutoff);
+	QCOMPARE(filterCoefficients(synth).resCoeff, coefficientsAfter.resCoeff);
+	QCOMPARE(filterCoefficients(synth).a, coefficientsAfter.a);
+
+	// The next period adopts the switch and recalcs only the now-active
+	// 3-pole filter; the idle IIR2 coefficients stay where they were.
+	renderPeriod(synth);
+	QCOMPARE(synth.m_vcfs[1]->m_vcf.e[0], 1e-6f);
+}
+
+void Lb302NotePathTest::lb302LatestFilterChangeWinsBeforeTheNextBlock()
+{
+	using namespace lmms;
+
+	InstrumentTrack track{Engine::getSong()};
+	Lb302Synth synth{&track};
+
+	renderPeriod(synth);
+	const Lb302FilterKnobState before = synth.m_fs;
+
+	synth.m_vcfCutKnob.setValue(0.2f);
+	synth.m_vcfCutKnob.setValue(0.55f);
+	synth.m_vcfResKnob.setValue(0.3f);
+	synth.m_vcfResKnob.setValue(0.88f);
+	synth.m_vcfModKnob.setValue(0.2f);
+	synth.m_vcfModKnob.setValue(0.65f);
+	synth.m_distKnob.setValue(0.1f);
+	synth.m_distKnob.setValue(0.4f);
+	synth.m_vcfDecKnob.setValue(0.2f);
+	synth.m_vcfDecKnob.setValue(0.8f);
+
+	// None of the writes reached the audio-owned state yet.
+	QCOMPARE(synth.m_fs.cutoff, before.cutoff);
+
+	renderPeriod(synth);
+
+	QCOMPARE(synth.m_fs.cutoff, 0.55f);
+	QCOMPARE(synth.m_fs.reso, 0.88f);
+	QCOMPARE(synth.m_fs.envmod, 0.65f);
+	QCOMPARE(synth.m_fs.dist, 0.4f * Lb302Synth::s_distRatio);
+	QVERIFY(synth.m_fs.envdecay != before.envdecay);
+}
+
+void Lb302NotePathTest::lb302FilterAdoptionAllocatesNothing()
+{
+	using namespace lmms;
+
+	InstrumentTrack track{Engine::getSong()};
+	Lb302Synth synth{&track};
+
+	const auto frames = Engine::audioEngine()->framesPerPeriod();
+	std::vector<SampleFrame> data(static_cast<std::size_t>(frames));
+	const std::span<SampleFrame> buffer{data};
+
+	// Warm up: the first period may settle lazily.
+	renderPeriod(synth, buffer);
+	const Lb302FilterKnobState before = synth.m_fs;
+	const Lb302FilterCoefficients coefficientsBefore = filterCoefficients(synth);
+
+	synth.m_vcfCutKnob.setValue(0.33f);
+	synth.m_vcfResKnob.setValue(0.44f);
+	synth.m_vcfModKnob.setValue(0.55f);
+	synth.m_distKnob.setValue(0.22f);
+	synth.m_vcfDecKnob.setValue(0.66f);
+
+	// Without the deferred adoption the writes would already have reached the
+	// audio-owned state here, so the watch would pass vacuously.
+	QCOMPARE(synth.m_fs.cutoff, before.cutoff);
+	QCOMPARE(filterCoefficients(synth).cutoff, coefficientsBefore.cutoff);
+	QCOMPARE(filterCoefficients(synth).resCoeff, coefficientsBefore.resCoeff);
+	QCOMPARE(filterCoefficients(synth).a, coefficientsBefore.a);
+
+	AllocationWatch::begin();
+	renderPeriod(synth, buffer);
+	AllocationWatch::end();
+
+	QCOMPARE(synth.m_fs.cutoff, 0.33f);
+	QVERIFY(filterCoefficients(synth).cutoff != coefficientsBefore.cutoff);
+	QVERIFY(filterCoefficients(synth).resCoeff != coefficientsBefore.resCoeff);
+	QVERIFY(filterCoefficients(synth).a != coefficientsBefore.a);
+
+	QVERIFY2(AllocationWatch::allocations == 0 && AllocationWatch::deallocations == 0,
+		qPrintable(QString{"adopting a filter snapshot allocated %1 time(s) and freed %2 time(s)"}
+			.arg(static_cast<qulonglong>(AllocationWatch::allocations))
+			.arg(static_cast<qulonglong>(AllocationWatch::deallocations))));
+}
+
+void Lb302NotePathTest::lb302LoadedFilterSettingsApplyAtTheNextBlock()
+{
+	using namespace lmms;
+
+	InstrumentTrack track{Engine::getSong()};
+	Lb302Synth synth{&track};
+
+	renderPeriod(synth);
+	const Lb302FilterKnobState before = synth.m_fs;
+
+	QDomDocument doc;
+	QDomElement element = doc.createElement("lb302");
+	element.setAttribute("vcf_cut", 0.4f);
+	element.setAttribute("vcf_res", 0.6f);
+	element.setAttribute("vcf_mod", 0.35f);
+	element.setAttribute("vcf_dec", 0.75f);
+	element.setAttribute("dist", 0.2f);
+	element.setAttribute("db24", 1);
+
+	synth.loadSettings(element);
+
+	// Loading a project is a control-thread write like any other: it must not
+	// reach the audio-owned state until a period adopts it.
+	QCOMPARE(synth.m_fs.cutoff, before.cutoff);
+	QCOMPARE(synth.m_fs.reso, before.reso);
+
+	renderPeriod(synth);
+	QCOMPARE(synth.m_fs.cutoff, 0.4f);
+	QCOMPARE(synth.m_fs.reso, 0.6f);
+	QCOMPARE(synth.m_fs.envmod, 0.35f);
+	QCOMPARE(synth.m_fs.dist, 0.2f * Lb302Synth::s_distRatio);
+	QVERIFY(synth.m_fs.envdecay != before.envdecay);
+	QVERIFY(synth.m_db24Toggle.value());
+
+	// The save/load round-trip is unchanged: what was loaded is what is saved.
+	QDomDocument saved;
+	QDomElement savedElement = saved.createElement("lb302");
+	synth.saveSettings(saved, savedElement);
+	QVERIFY(qFuzzyCompare(savedElement.attribute("vcf_cut").toFloat(), 0.4f));
+	QVERIFY(qFuzzyCompare(savedElement.attribute("vcf_res").toFloat(), 0.6f));
+	QVERIFY(qFuzzyCompare(savedElement.attribute("vcf_mod").toFloat(), 0.35f));
+	QVERIFY(qFuzzyCompare(savedElement.attribute("vcf_dec").toFloat(), 0.75f));
+	QVERIFY(qFuzzyCompare(savedElement.attribute("dist").toFloat(), 0.2f));
+	QVERIFY(savedElement.attribute("db24").toFloat() != 0.f);
 }
 
 QTEST_MAIN(Lb302NotePathTest)

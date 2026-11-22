@@ -59,7 +59,22 @@ WaveShaperControls::WaveShaperControls( WaveShaperEffect * _eff ) :
 
 void WaveShaperControls::samplesChanged( int _begin, int _end)
 {
+	publishCurve();
 	Engine::getSong()->setModified();
+}
+
+
+
+
+void WaveShaperControls::publishCurve()
+{
+	// The model is constructed with 200 samples and loadGraph requires exactly
+	// 200, so a shorter model cannot make the copy read past the QVector.
+	if( m_wavegraphModel.length() != WaveCurveSnapshot::s_curveLength )
+	{
+		return;
+	}
+	m_curveSnapshot.publish( m_wavegraphModel.samples() );
 }
 
 

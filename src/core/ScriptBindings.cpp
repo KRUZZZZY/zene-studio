@@ -49,6 +49,7 @@ extern "C"
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QSaveFile>
 
 #include <algorithm>
 #include <cstring>
@@ -1074,13 +1075,26 @@ bool LuaProjectFile::write(const QString& path, const QString& contents) const
 	{
 		throw std::runtime_error(QStringLiteral("ProjectFile.write: %1").arg(error).toStdString());
 	}
-	QFile file(resolved);
-	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+	// A directory cannot be replaced atomically: QSaveFile would write a sibling
+	// temp and only fail at commit. Refuse at open time, as QFile did.
+	if (QFileInfo(resolved).isDir())
 	{
 		throw std::runtime_error(QStringLiteral("ProjectFile.write: cannot open %1").arg(path).toStdString());
 	}
-	const QByteArray bytes = contents.toUtf8();  // a short write (full disk) or failed flush is false
-	return file.write(bytes) == bytes.size() && file.flush();
+	const QByteArray bytes = contents.toUtf8();
+	// Written whole or not at all: a write the kernel cuts short is cancelled, never
+	// committed, so the previous contents survive.
+	QSaveFile file(resolved);
+	if (!file.open(QIODevice::WriteOnly))
+	{
+		throw std::runtime_error(QStringLiteral("ProjectFile.write: cannot open %1").arg(path).toStdString());
+	}
+	if (file.write(bytes) != bytes.size())
+	{
+		file.cancelWriting();
+		return false;
+	}
+	return file.commit();
 }
 
 QStringList LuaProjectFile::list(const QString& path) const
