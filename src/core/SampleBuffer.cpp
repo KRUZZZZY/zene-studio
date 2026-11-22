@@ -27,6 +27,7 @@
 #include <QDebug>
 #include <QMessageBox>
 #include <cstring>
+#include <limits>
 
 #include "UnattendedRun.h"
 #include "GuiApplication.h"
@@ -62,7 +63,12 @@ void swap(SampleBuffer& first, SampleBuffer& second) noexcept
 
 auto SampleBuffer::base64SourceBytes(size_t numFrames) -> std::optional<qsizetype>
 {
-	return static_cast<qsizetype>(static_cast<int>(numFrames * sizeof(SampleFrame)));
+	// The Base64 text is 4/3 of the bytes and goes into a QString at 2 bytes a character, so the
+	// source bytes may use at most 3/16 of what qsizetype can count. On 64-bit that is far beyond
+	// any buffer; on a 32-bit build it refuses the sample instead of wrapping the count.
+	constexpr auto maxBytes = static_cast<size_t>(std::numeric_limits<qsizetype>::max() / 16 * 3);
+	if (numFrames > maxBytes / sizeof(SampleFrame)) { return std::nullopt; }
+	return static_cast<qsizetype>(numFrames * sizeof(SampleFrame));
 }
 
 QString SampleBuffer::toBase64() const
