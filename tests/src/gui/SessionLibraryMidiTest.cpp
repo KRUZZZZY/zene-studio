@@ -400,11 +400,18 @@ private slots:
 		auto* clip = dynamic_cast<MidiClip*>(Engine::patternStore()->tracks()[0]->getClip(static_cast<std::size_t>(pattern)));
 		QVERIFY(clip != nullptr);
 		clip->addNote(Note(TimePos(1), TimePos(0), 60, 100), false);
-		clip->addNote(Note(TimePos(1), TimePos(0x10000001), 62, 100), false);
 		QVERIFY(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 1}, {QStringLiteral("scene"), 0},
 			{QStringLiteral("type"), QStringLiteral("midi")}, {QStringLiteral("pattern"), pattern},
 			{QStringLiteral("name"), QStringLiteral("too-sparse")}}).ok);
 		const QString target = QDir(ConfigManager::inst()->userSamplesDir()).filePath(QStringLiteral("Clips/too-sparse.mid"));
+		// The control: with one note the same cell saves, so the refusal below is the notes' spacing and
+		// nothing else about the cell.
+		QVERIFY2(run(QStringLiteral("browser.save_clip"), {{QStringLiteral("track"), 1}, {QStringLiteral("scene"), 0}}).ok,
+			"the one-note control pattern was not saved");
+		QVERIFY(QFileInfo::exists(target));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY2(!QFileInfo::exists(target), "undo left the control file behind");
+		clip->addNote(Note(TimePos(1), TimePos(0x10000001), 62, 100), false);
 		const QJsonArray tagsBefore = run(QStringLiteral("browser.tags")).result.value(QStringLiteral("tags")).toArray();
 		const ControlResult refused = run(QStringLiteral("browser.save_clip"), {{QStringLiteral("track"), 1}, {QStringLiteral("scene"), 0}});
 		QVERIFY2(!refused.ok, "a pattern whose notes cannot fit an SMF was saved");
