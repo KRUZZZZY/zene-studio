@@ -1255,15 +1255,17 @@ f_cnt_t PLUGIN_EXPORT gigplayerReadForwardLoop(const GigLoopSource* source, std:
 		unsigned long frameSize, f_cnt_t samples, f_cnt_t loopStart, f_cnt_t loopEnd)
 {
 	long samplesToRead = samples;
-	long samplesToLoopEnd = 0;
-	long readSamples = 0;
 	long totalRead = 0;
 
-	do
+	while (samplesToRead > 0)
 	{
-		samplesToLoopEnd = static_cast<long>(loopEnd) - source->position(source->context);
-		readSamples = source->read(source->context,
+		const long samplesToLoopEnd = static_cast<long>(loopEnd) - source->position(source->context);
+		if (samplesToLoopEnd <= 0) { break; }
+
+		const long readSamples = source->read(source->context,
 			&buffer[totalRead * frameSize], std::min(samplesToRead, samplesToLoopEnd));
+		if (readSamples <= 0) { break; }
+
 		samplesToRead -= readSamples;
 		totalRead += readSamples;
 
@@ -1272,8 +1274,11 @@ f_cnt_t PLUGIN_EXPORT gigplayerReadForwardLoop(const GigLoopSource* source, std:
 			source->seek(source->context, loopStart);
 		}
 	}
-	while (samplesToRead > 0 && readSamples > 0);
 
+	if (samplesToRead > 0)
+	{
+		std::memset(&buffer[totalRead * frameSize], 0, samplesToRead * frameSize);
+	}
 	return static_cast<f_cnt_t>(totalRead);
 }
 
