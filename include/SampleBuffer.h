@@ -27,6 +27,7 @@
 
 #include <QString>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "AudioEngine.h"
@@ -56,6 +57,10 @@ public:
 
 	friend void swap(SampleBuffer& first, SampleBuffer& second) noexcept;
 	auto toBase64() const -> QString;
+	//! The byte count toBase64() serialises for numFrames frames, or nullopt when that count (or its
+	//! Base64 text) cannot be held by a QByteArray / QString. Kept apart from toBase64() so the
+	//! size arithmetic can be tested without allocating gigabytes.
+	static auto base64SourceBytes(size_t numFrames) -> std::optional<qsizetype>;
 
 	auto audioFile() const -> const QString& { return m_audioFile; }
 	auto sampleRate() const -> sample_rate_t { return m_sampleRate; }
