@@ -32,4 +32,9 @@ Regression test: `MalletsInstrumentViewTest::missingRawwavesAreReportedWhenAProj
 - Unverified: I did not run a full `lmms render` on a real project without rawwaves; the evidence is the unit test plus the load path in Song.cpp:2319-2333.
 
 ## Self-check
-(filled in after the completion check)
+- Red/green: with Mallets.cpp reverted the new test fails (RED_EXIT=8, logs/test-3-nofix.log); with the fix it passes (GREEN_EXIT=0, logs/test-4-fix.log).
+- Deterministic: the test sets ConfigManager's STK dir to a path inside a QTemporaryDir that does not exist (the seam), constructs and loads the instrument, and reads Song::errorSummary(); no timing, sleeps or threads.
+- Complete: the only reader of `m_filesMissing` besides the view is `playNoteImpl` (silent by design, audio thread, untouched); the view's dialog is unchanged. `loadSettings` is the single path a project load takes into the instrument (siblings: Sf2Player uses the same collectErrorForUI pattern). `collectError` dedups by message and counts repeats, so many Mallets instruments give one line "(repeated N times)".
+- No collateral: saved data and settings loading are untouched (the check precedes the unchanged model loads and adds no limit); projects with rawwaves present produce no new error (asserted in the test).
+- Not ALREADY-FIXED/FALSE-POSITIVE: verdict is FIXED.
+- Sibling commands (app.*, arrangement.*): no command file was changed by this fix, so they are not affected.
