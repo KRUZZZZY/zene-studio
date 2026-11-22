@@ -27,8 +27,12 @@
 #include <QDomElement>
 
 #include "AudioEngine.h"
+#include "AutomationClip.h"
 #include "Clip.h"
 #include "Engine.h"
+#include "MidiClip.h"
+#include "PatternClip.h"
+#include "SampleClip.h"
 #include "Song.h"
 #include "TimePos.h"
 #include "Track.h"
@@ -42,6 +46,12 @@ namespace
 bool songHasTrack(int id)
 {
 	return Engine::getSong() != nullptr && Engine::getSong()->findTrackById(id) != nullptr;
+}
+
+bool isClipElementName(const QString& name)
+{
+	return name == MidiClip::classNodeName() || name == SampleClip::classNodeName()
+		|| name == PatternClip::classNodeName() || name == AutomationClip::classNodeName();
 }
 
 } // namespace
@@ -76,11 +86,24 @@ QString TrackVersions::clipsOf(Track* track)
 	return doc.toString(-1);
 }
 
+bool TrackVersions::isValidClipsXml(const QString& xml)
+{
+	QDomDocument doc;
+	if (!doc.setContent(xml)) { return false; }
+	if (doc.documentElement().nodeName() != QLatin1String("clips")) { return false; }
+	for (QDomElement element = doc.documentElement().firstChildElement(); !element.isNull(); element = element.nextSiblingElement())
+	{
+		if (!isClipElementName(element.nodeName())) { return false; }
+	}
+	return true;
+}
+
 bool TrackVersions::replaceClips(Track* track, const QString& xml)
 {
 	QDomDocument doc;
-	// Parsed before anything goes: a stored version that is not XML leaves the track as it is (review L19 #15).
-	if (!doc.setContent(xml)) { return false; }
+	// Validated before anything goes: a stored version that is not XML, or is XML of another shape, leaves the
+	// track as it is (review L19 #15, cluster 5431).
+	if (!isValidClipsXml(xml) || !doc.setContent(xml)) { return false; }
 	// The audio thread walks the track's clips: keep the same guard used by
 	// Track::loadSettings across deletion and the complete replacement walk.
 	auto guard = Engine::audioEngine()->requestChangesGuard();
