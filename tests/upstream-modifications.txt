@@ -28,6 +28,7 @@
 
 # Train 51: repair hosted test compilation while preserving the existing behavioral assertions.
 tests/CMakeLists.txt	Train 51: register source-derived red/green compiler regressions for all four hosted test-source fixes.
+tests/CMakeLists.txt	cluster ci-d1d791015ce10efd: register QWaitForResultCheck, the -Werror=unused-result recompile of UpdateCheckTest.cpp for the hosted linux-arm64 qWaitFor nodiscard failure.
 tests/src/core/MidiOutTimingTest.cpp	Train 51: compile timing helpers only for the ALSA-backed test path that uses them; keep every runtime case and assertion.
 tests/src/gui/RowTableViewTest.cpp	Train 51: use QAbstractItemView's effective delegate-for-index API on Qt 5 and 6; retain both inserted-row delegate comparisons.
 tests/src/gui/TouchLayoutTest.cpp	Train 51: qualify the arranger's lmms::gui::ClipView where lmms::ClipView and lmms::gui::ClipView are both visible.
