@@ -273,3 +273,7 @@ that shows it.
    commit changes `Compressor.cpp`, `tests/src/plugins/SfzCompressorStereoLinkTest.cpp`,
    `tests/CMakeLists.txt`, `tests/fork-sources.txt`, `tests/all-sources.txt`,
    `tests/upstream-modifications.txt` and this report.
+
+## Re-verification (later session)
+
+Product fixes were already on the branch (`rg -n 'right2x\[1\]'` over `plugins/SfzPlayer/sfizz/src/sfizz/effects/` finds nothing). Both fixes were reverted with `git apply -R fix-both.patch` (EXIT=0), rebuilt (`build-20.log`, EXIT=0), and `cd build/tests && ctest -R 'Sfz(Gate|Compressor)StereoLinkTest' --output-on-failure` gave EXIT=8 with 4 `FAIL!` lines (`test-red-s3.log`). After `git apply fix-both.patch` (EXIT=0) and rebuild (`build-21.log`, EXIT=0), the same ctest gave EXIT=0, `100% tests passed out of 2` (`test-green-s3.log`).
