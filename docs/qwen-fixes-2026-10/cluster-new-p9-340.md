@@ -112,6 +112,12 @@ every later build is green.
    the guards and the zero fill; `fdeea3bbdd` is an ancestor and its product diff
    is unchanged in HEAD; the new regression is at
    `tests/src/core/PeakControllerNullEffectTest.cpp` and is registered.
+6. **Sibling commands.** This lane changes no command file: its only source edit
+   is the new test `tests/src/core/PeakControllerNullEffectTest.cpp`. The
+   command files that appear in the base diff come from the freshen merge
+   `ed94ce9448` (`050/m0-train-43`), not from this lane; no `app.*`,
+   `arrangement.*` or other command handler was touched, so none is affected by
+   this test-only change.
 
 ## Not verified here
 
