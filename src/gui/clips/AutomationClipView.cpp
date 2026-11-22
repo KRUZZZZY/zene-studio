@@ -112,6 +112,15 @@ void AutomationClipView::disconnectObject( QAction * _a )
 		float oldMin = m_clip->getMin();
 		float oldMax = m_clip->getMax();
 
+		// Only a live target may produce an undo step; a stale action must not add a dishonest one.
+		bool isTarget = false;
+		for (const auto& target : m_clip->objectsSnapshot())
+		{
+			if (target.data() == model) { isTarget = true; break; }
+		}
+		if (!isTarget) { return; }
+		m_clip->addJournalCheckPoint();
+
 		if (!m_clip->removeObject(model)) { return; }
 		update();
 

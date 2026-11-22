@@ -44,6 +44,7 @@
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
 #include "MainWindow.h"
+#include "ProjectJournal.h"
 #include "Song.h"
 #include "SongEditor.h"
 #include "Track.h"
@@ -293,6 +294,36 @@ private slots:
 		disconnect.setData(target.id());
 		QVERIFY(QMetaObject::invokeMethod(viewOf(clip), "disconnectObject", Qt::DirectConnection,
 			Q_ARG(QAction*, &disconnect)));
+		QVERIFY(clip->objects().empty());
+	}
+
+	void disconnectActionIsOneUndoStep()
+	{
+		auto* track = dynamic_cast<AutomationTrack*>(Track::create(Track::Type::Automation, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<AutomationClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		FloatModel target{25.0f, 0.0f, 100.0f, 0.01f};
+		clip->addObject(&target, false);
+		clip->putValue(TimePos(0), 25.0f, false);
+
+		QTRY_VERIFY_WITH_TIMEOUT(viewOf(clip) != nullptr, 5000);
+		auto* journal = Engine::projectJournal();
+		journal->clearJournal();
+
+		QAction disconnect;
+		disconnect.setData(target.id());
+		QVERIFY(QMetaObject::invokeMethod(viewOf(clip), "disconnectObject", Qt::DirectConnection,
+			Q_ARG(QAction*, &disconnect)));
+		QVERIFY(clip->objects().empty());
+		QCOMPARE(journal->undoDepth(), 1);
+
+		journal->undo();
+		QCOMPARE(clip->objects().size(), std::size_t{1});
+		QVERIFY(clip->objects().front().data() == &target);
+		QCOMPARE(clip->valueAt(TimePos(0)), 25.0f);
+
+		journal->redo();
 		QVERIFY(clip->objects().empty());
 	}
 
