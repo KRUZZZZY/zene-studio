@@ -32,3 +32,10 @@ FIXED
 
 ## Other findings
 - Mallets and SWH LADSPA tests in PluginPortsMigrationTest fail on this machine (see above).
+
+## Self-check
+- Test fails reverted, passes with the fix: reverted RED_EXIT=1 (test-red.log, `byte 40 is 85, expected 0`); fixed GREEN_EXIT=0 (test-green.log). The revert was of the zero-fill and guard only; the seam was in the earlier commit so the test reached the real logic.
+- Deterministic: no clocks, sleeps or threads. It injects a fake source through the `GigLoopSource` callback struct (position/read/seek) with fixed lengths and a buffer poisoned with 0x55.
+- Complete: callers of the forward-loop read are only `GigInstrument::loadSample` (GigPlayer.cpp:1398). The non-loop branch and `loadBidirectionalSample`/`readSampleSegment` already zero-fill (GigPlayer.cpp, `std::memset` after the `Read` calls). The 16-bit and 24-bit conversions both consume the whole buffer, so one zero-fill covers both.
+- No collateral damage: the full-read and wrapping cases give byte-identical output (second case of the test); nothing in saved-project loading changed; no limit was added, and the only new early exit is for a non-positive distance to the loop end, which previously passed a negative count to the unsigned `Read()`.
+- Sibling commands: no command files were changed by this fix (the control-test files the check lists come from the wider train diff, not from this branch's change), so none is affected.
