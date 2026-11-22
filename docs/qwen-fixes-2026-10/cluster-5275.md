@@ -46,3 +46,12 @@ The `ctest -R RetroAudio` family matched only RetroAudioCaptureTest. Sibling wri
 
 ## Other findings
 - `src/core/ClipConsolidate.cpp` and other `sf_write_sync`-less writers were not audited for sticky-error handling.
+
+## Self-check
+- Fails without / passes with: RED run EXIT=8 (test-1-red.log) and reverted-fix run EXIT=8 (test-3-revert.log); with the fix EXIT=0 (test-2-green.log, test-4-reapplied.log). Both rows (flush, close) fail without the fix.
+- Deterministic: no timing, sleeps or threads. It uses the `setRetroTakeFinishTestHook()` seam, which forces the flush or close step to report failure after the real step ran, plus a QTemporaryDir.
+- Complete: the only product function changed is `writeWindow()` (anonymous namespace), reached only via `writeRetroAudioTake()`. Its three callers (`src/core/ControlCommandsRecordingRetro.cpp:182`, `ControlCommandsSessionAudioRecord.cpp:293`, `ControlCommandsSamplerTake.cpp:331`) already test the bool and read `error`, so they now surface the failure with no edit. The short-write check keeps priority and its message.
+- No collateral damage: nothing is read or loaded; healthy writes behave as before (existing 14 tests in RetroAudioCaptureTest pass). A failed flush/close now skips `QSaveFile::commit()`, so a prior file at the destination is left intact rather than replaced by an unverified take. No new limits.
+- Verdict is FIXED, not ALREADY-FIXED/FALSE-POSITIVE: n/a.
+- Sibling commands: I changed no command files (the three listed above are callers only and unedited), so the app.*/arrangement.* commands the check names are not affected. No control command was added.
+- Realtime: `writeWindow()` runs off the audio thread (command handler); nothing on the audio path changed.
