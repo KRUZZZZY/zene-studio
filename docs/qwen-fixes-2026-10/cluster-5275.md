@@ -111,6 +111,10 @@ in `finalizeHeader()` (`src/core/RetroAudioCapture.cpp:321`): `const bool ok = s
   per take.
 
 ## Self-check
+- Round 4: the new `finalize-portable` row is also deterministic. It uses the LMMS_TESTING seam
+  `setRetroTakeFinishTestHook` and a pre-written stand-in file in a `QTemporaryDir`, with no timing. Red/green against the
+  reversed `sf_error` check: test-5-red EXIT=8, test-4/6/7 green EXIT=0. No row is skipped on any platform (0 skipped).
+  submit_check: submit-1.log EXIT=0.
 - Fails without the fix and passes with it: steps 10/12/7 are RED with ctest EXIT=8; steps 11/13/14 are GREEN with EXIT=0.
 - Deterministic: no timing, sleeps or threads in the test. Fault injection is through the LMMS_TESTING seam plus
   `dup2`, in a `QTemporaryDir`.
