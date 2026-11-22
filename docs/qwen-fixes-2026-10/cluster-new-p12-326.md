@@ -76,26 +76,35 @@ The only wait is the existing view-creation readiness guard, `QTRY_VERIFY_WITH_T
 
 ## Run evidence
 
-Logs are under `/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-326.r4/logs/`. Each EXIT value is the `EXIT=` line the run appended to its log, read in this session. The exact text of the earlier build and test commands was not kept in the packet or the logs, so those rows say "not recorded" and give no invented command line. Commands run from the worktree root `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-326`.
+Logs are under `/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-326.r4/logs/`. Each EXIT value is the `EXIT=` line the run appended to its log, read in this session, except the rows whose log is `none` (their EXIT comes from the p4b run record) and the `build-1-red` row (its log has no `EXIT=` line). `<logs>` below means the logs folder above. The commands are the exact invocations run for p2, p3, p4b, feature check, control shell, sha256 and registry. Commands run from the worktree root `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-326`.
 
 | Step | Command | Log | EXIT |
 |---|---|---|---|
-| p2 RED (pre-fix) | `ctest` for test #485 `AutomationClipDisconnectTest` (flags not recorded) | `test-2-red.log` | 8 |
-| p3 build | build of `AutomationClipDisconnectTest` (command not recorded) | `build-2-green.log` | 0 |
-| p3 GREEN | `ctest` for test #485 (command not recorded) | `test-3-green.log` | 0 |
-| p3 family build | build of the 7-test family (command not recorded) | `build-3-family.log` | 0 |
-| p3 family | `ctest` for the 7-test family (command not recorded) | `test-4-family.log` | 0 |
-| p4b state changes | `git diff` / `git apply` / `cmp` to set each state (exact text not recorded) | n/a | n/a |
-| p4b reversed build | build-8 (command not recorded) | `build-8-red-reversed.log` | 0 |
-| p4b reversed | test-9 (command not recorded) | `test-9-red-reversed-full.log` | 8 |
-| p4b restored build | build-9 (command not recorded) | `build-9-green-restored.log` | 0 |
-| p4b restored | test-10 (command not recorded) | `test-10-green-restored-full.log` | 0 |
-| p4b core-only build | build-10 (command not recorded) | `build-10-red-core-only.log` | 0 |
-| p4b core-only | test-11 (command not recorded) | `test-11-red-core-only-full.log` | 8 |
-| p4b final build | build-11 (command not recorded) | `build-11-green-final.log` | 0 |
-| p4b final | test-12 (command not recorded) | `test-12-green-final-full.log` | 0 |
-| p4b final verbose | test-12b, verbose `ctest` for #485 (command not recorded) | `test-12b-green-final-verbose.log` | 0 |
-| feature check | feature_check on the worktree (command not recorded) | `gate-1.log` | 0 |
+| p2 build (pre-fix) | `CCACHE_TEMPDIR=$TMPDIR cmake --build build --target zene AutomationClipDisconnectTest -j4` | `build-1-red.log` | 0 (from the p2 run record) |
+| p2 RED (pre-fix) | from `build/tests`: `ctest -R '^AutomationClipDisconnectTest$' --output-on-failure` | `test-2-red.log` | 8 |
+| p3 build | `CCACHE_TEMPDIR=$TMPDIR cmake --build build --target zene AutomationClipDisconnectTest -j4` | `build-2-green.log` | 0 |
+| p3 GREEN | from `build/tests`: `ctest -R '^AutomationClipDisconnectTest$' --output-on-failure` | `test-3-green.log` | 0 |
+| p3 family build | `CCACHE_TEMPDIR=$TMPDIR cmake --build build --target AutomationModesTest AutomationEditorEditingTest AutomationPreFirstValueTest AutomationTrackTest UndoBoundsTest UndoHistoryPersistenceTest -j4` | `build-3-family.log` | 0 |
+| p3 family | from `build/tests`: `ctest -R '^(AutomationClipDisconnectTest\|AutomationModesTest\|AutomationEditorEditingTest\|AutomationPreFirstValueTest\|AutomationTrackTest\|UndoBoundsTest\|UndoHistoryPersistenceTest)$' -j2 --output-on-failure` | `test-4-family.log` | 0 |
+| p4b save fix patch | `git diff -- src/gui/clips/AutomationClipView.cpp src/core/AutomationClip.cpp > <logs>/fix.patch` | none | 0 |
+| p4b check fix patch | `git diff -- src/gui/clips/AutomationClipView.cpp src/core/AutomationClip.cpp \| cmp - <logs>/fix.patch` | none | 0 |
+| p4b reverse fix | `git apply -R <logs>/fix.patch` | none | 0 |
+| p4b reversed build | `CCACHE_TEMPDIR=$TMPDIR cmake --build build --target zene AutomationClipDisconnectTest -j4` | `build-8-red-reversed.log` | 0 |
+| p4b reversed | from `build/tests`: `ctest -R '^AutomationClipDisconnectTest$' --output-on-failure` | `test-9-red-reversed-full.log` | 8 |
+| p4b reapply fix | `git apply <logs>/fix.patch` | none | 0 |
+| p4b check restored | `git diff -- src/gui/clips/AutomationClipView.cpp src/core/AutomationClip.cpp \| cmp - <logs>/fix.patch` | none | 0 |
+| p4b restored build | `CCACHE_TEMPDIR=$TMPDIR cmake --build build --target zene AutomationClipDisconnectTest -j4` | `build-9-green-restored.log` | 0 |
+| p4b restored | from `build/tests`: `ctest -R '^AutomationClipDisconnectTest$' --output-on-failure` | `test-10-green-restored-full.log` | 0 |
+| p4b save core patch | `git diff -- src/core/AutomationClip.cpp > <logs>/core.patch` | none | 0 |
+| p4b reverse core | `git apply -R <logs>/core.patch` | none | 0 |
+| p4b core-only build | `CCACHE_TEMPDIR=$TMPDIR cmake --build build --target zene AutomationClipDisconnectTest -j4` | `build-10-red-core-only.log` | 0 |
+| p4b core-only | from `build/tests`: `ctest -R '^AutomationClipDisconnectTest$' --output-on-failure` | `test-11-red-core-only-full.log` | 8 |
+| p4b reapply core | `git apply <logs>/core.patch` | none | 0 |
+| p4b check final | `git diff -- src/gui/clips/AutomationClipView.cpp src/core/AutomationClip.cpp \| cmp - <logs>/fix.patch` | none | 0 |
+| p4b final build | `CCACHE_TEMPDIR=$TMPDIR cmake --build build --target zene AutomationClipDisconnectTest -j4` | `build-11-green-final.log` | 0 |
+| p4b final | from `build/tests`: `ctest -R '^AutomationClipDisconnectTest$' --output-on-failure` | `test-12-green-final-full.log` | 0 |
+| p4b final verbose | from `build/tests`: `ctest -V -R '^AutomationClipDisconnectTest$'` | `test-12b-green-final-verbose.log` | 0 |
+| feature check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-326` | `gate-1.log` | 0 |
 | control shell | `QT_QPA_PLATFORM=offscreen python3 tests/control-shell.py build/zene /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-326.r4/logs/shots` (from the worktree root; as recorded in the earlier report text, not re-run) | `screenshot-1.log` | 0 |
 | sha256 | `sha256sum /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-326.r4/logs/shots/shell-arrange.png` → `3f9233ec8840a80207d4511e6186cf43315252ba967c5aa8d2489e75d730e618` (re-run this session: same hash) | `screenshot-sha.log` | 0 |
 | registry newline | `tail -c1 tests/upstream-modifications.txt \| od -An -tx1` → `0a` (re-run this session) | `registry-newline.log` | 0 |
@@ -148,7 +157,7 @@ Registry (`tests/upstream-modifications.txt:6027-6028`): two new rows, for `src/
 4. **Collateral damage.** The diff touches four files: `AutomationClip.cpp`, `AutomationClipView.cpp`, the test, and the registry. Test 485 passes. The 7-test family passes. feature_check passes. The offscreen GUI driver passes. The full test suite was not run, so other `loadSettings` callers are unverified.
    - Old projects and saved data: for a clip with no live targets, `clearObjects()` and `m_idsToResolve.clear()` do nothing, so a saved `<object>` list loads as before. The existing evidence is `UndoHistoryPersistenceTest`. Its baseline builds an automation clip linked to a parameter (`tests/src/core/UndoHistoryPersistenceTest.cpp:107-140`). The test saves the project (`:239`), reopens it (`:271`), restores it, and checks `automationLinked` (`:295`). `test-4-family` shows it passed (Test #248). This closes the save-and-reload question for this linked clip. It does not load a project file written by an older build, so older project files remain unverified.
    - Limits: this diff adds no limit or check, so none can reject a legitimate caller.
-5. **FALSE-POSITIVE code citations.** Re-checked against the post-edit files: `AutomationClipView.cpp:280-281`, `:283-284`, `:336`; `AutomationClip.cpp:286-298` (unchanged); `AutomationClip.h:239`, `:244` (unchanged). The `cluster-new-p9-439.md` lines come from the earlier evidence logs and were not re-read in this session.
+5. **FALSE-POSITIVE code citations.** Re-checked against the post-edit files: `AutomationClipView.cpp:280-281`, `:283-284`, `:336`; `AutomationClip.cpp:286-298` (unchanged); `AutomationClip.h:239`, `:244` (unchanged). The `cluster-new-p9-439.md` lines come from the earlier evidence logs and were re-read in this session.
 6. **Sibling commands in the command files changed.** This batch changed no command file. The five committed files are `AutomationClipView.cpp`, `AutomationClip.cpp`, the disconnect test, the registry, and this report. `ControlCommandsTrackRole.cpp` was read for the detach path but not changed. The `app.*` and `arrangement.*` command list does not apply to this diff.
 
 ## Other findings
