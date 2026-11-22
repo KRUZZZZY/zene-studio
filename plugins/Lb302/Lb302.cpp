@@ -238,9 +238,8 @@ Lb302Synth::Lb302Synth(InstrumentTrack* instrumentTrack)
 	connect(&m_db24Toggle, &BoolModel::dataChanged, this, &Lb302Synth::db24Toggled);
 	connect(&m_distKnob, &FloatModel::dataChanged, this, &Lb302Synth::filterChanged);
 
-	// db24Toggled() would be called here, but all it does is call
-	// recalcFilter(), which is already done in filterChanged(), so there's no
-	// need to explicitly call recalcFilter() again.
+	// filterChanged() publishes the whole snapshot, including the 24 dB
+	// switch, so there is no need to call db24Toggled() here as well.
 	filterChanged();
 	decayChanged();
 
@@ -287,35 +286,55 @@ void Lb302Synth::loadSettings(const QDomElement& el)
 	m_deadToggle.loadSettings(el, "dead");
 	m_db24Toggle.loadSettings(el, "db24");
 
-	// db24Toggled() would be called here, but all it does is call
-	// recalcFilter(), which is already done in filterChanged(), so there's no
-	// need to explicitly call recalcFilter() again.
+	// filterChanged() publishes the whole snapshot, including the 24 dB
+	// switch, so there is no need to call db24Toggled() here as well.
 	filterChanged();
 	decayChanged();
 }
 
 
-void Lb302Synth::filterChanged()
-{
-	m_fs.cutoff = m_vcfCutKnob.value();
-	m_fs.reso   = m_vcfResKnob.value();
-	m_fs.envmod = m_vcfModKnob.value();
-	m_fs.dist   = m_distKnob.value() * s_distRatio;
-	recalcFilter();
-}
+void Lb302Synth::filterChanged() { publishFilterSettings(); }
 
 
-void Lb302Synth::decayChanged()
-{
-	float d = (2.3f * m_vcfDecKnob.value() + 0.2f) * Engine::audioEngine()->outputSampleRate();
-	m_fs.envdecay = std::pow(0.1f, 1.0f / d * s_envInc);
-}
+void Lb302Synth::decayChanged() { publishFilterSettings(); }
 
 
-void Lb302Synth::db24Toggled() { recalcFilter(); }
+void Lb302Synth::db24Toggled() { publishFilterSettings(); }
 
 
 QString Lb302Synth::nodeName() const { return lb302_plugin_descriptor.name; }
+
+
+void Lb302Synth::publishFilterSettings()
+{
+	m_filterMailbox.publish([this]
+	{
+		const float d = (2.3f * m_vcfDecKnob.value() + 0.2f) * Engine::audioEngine()->outputSampleRate();
+		return Lb302FilterSettings{
+			m_vcfCutKnob.value(),
+			m_vcfResKnob.value(),
+			m_vcfModKnob.value(),
+			std::pow(0.1f, 1.0f / d * s_envInc),
+			m_distKnob.value() * s_distRatio,
+			m_db24Toggle.value(),
+		};
+	});
+}
+
+
+void Lb302Synth::applyPublishedFilterSettings()
+{
+	Lb302FilterSettings settings;
+	if (!m_filterMailbox.take(settings)) { return; }
+
+	m_fs.cutoff = settings.cutoff;
+	m_fs.reso   = settings.reso;
+	m_fs.envmod = settings.envmod;
+	m_fs.envdecay = settings.envdecay;
+	m_fs.dist   = settings.dist;
+	m_db24Active = settings.db24;
+	recalcFilter();
+}
 
 
 void Lb302Synth::recalcFilter()
@@ -327,6 +346,8 @@ void Lb302Synth::recalcFilter()
 
 void Lb302Synth::process(SampleFrame* outbuf, const f_cnt_t size)
 {
+	applyPublishedFilterSettings();
+
 	if (m_releaseFrame == 0 || !m_playingNote) { m_vcaMode = VcaMode::Decay; }
 
 	if (m_playingNote)

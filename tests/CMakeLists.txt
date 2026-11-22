@@ -726,6 +726,9 @@ set(LMMS_TESTS
 	# The VST remote client's per-period MIDI helpers (plugins/VstBase/VstMidiEventBatch.h): an
 	# allocation-free sort and a bounded queue. The client itself is an out-of-process executable.
 	src/core/VstMidiEventBatchTest.cpp
+	# The VST remote client's lock-free shared-block handoff (plugins/VstBase/VstShmHandoff.h):
+	# the writer drains held readers before resizing, and the read window does not allocate.
+	src/core/VstShmHandoffTest.cpp
 	# The channel counts the VST remote client converts from the plugin's signed numInputs/numOutputs
 	# (plugins/VstBase/VstChannelCount.h): an out-of-range count is refused, never wrapped into range.
 	src/core/VstChannelCountTest.cpp
@@ -4789,6 +4792,33 @@ target_compile_definitions(Lb302NotePathTest PRIVATE
 	# this binary links the plug-in's code in, it does not import it: the
 	# static branch of the generated export header is the correct one here
 	# (the same reason Vst3EffectIntegrationTest sets it).
+	PLUGIN_STATIC_DEFINE
+	PLUGIN_NAME=lb302
+)
+
+# Cluster new-p9-255: the LB302 filter settings must cross from the control
+# thread to the audio thread through a published snapshot rather than writing
+# the audio-owned state synchronously. The test guards on the header, so it
+# builds (and fails with a clear message) until the mailbox exists.
+add_executable(Lb302FilterMailboxTest
+	src/plugins/Lb302FilterMailboxTest.cpp
+)
+add_test(NAME Lb302FilterMailboxTest COMMAND Lb302FilterMailboxTest)
+set_tests_properties(Lb302FilterMailboxTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(Lb302FilterMailboxTest PRIVATE
+	# the generated plugin_export.h (PLUGIN_EXPORT) of the lb302 plug-in
+	${CMAKE_BINARY_DIR}/plugins/Lb302
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/Lb302
+)
+add_dependencies(Lb302FilterMailboxTest lb302)
+target_compile_features(Lb302FilterMailboxTest PRIVATE cxx_std_20)
+target_link_libraries(Lb302FilterMailboxTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_definitions(Lb302FilterMailboxTest PRIVATE
+	LMMS_TESTING
 	PLUGIN_STATIC_DEFINE
 	PLUGIN_NAME=lb302
 )

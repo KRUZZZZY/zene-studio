@@ -74,7 +74,7 @@ ProcessStatus WaveShaperEffect::processImpl(InterleavedBufferView<float, 2> inOu
 	const float w = wetLevel();
 	float input = m_wsControls.m_inputModel.value();
 	float output = m_wsControls.m_outputModel.value();
-	const float * samples = m_wsControls.m_wavegraphModel.samples();
+	const float * samples = m_wsControls.m_curveSnapshot.samples();
 	const bool clip = m_wsControls.m_clipModel.value();
 
 	ValueBuffer *inputBuffer = m_wsControls.m_inputModel.valueBuffer();

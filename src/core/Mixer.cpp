@@ -2444,6 +2444,10 @@ void Mixer::masterMix( SampleFrame* _buf )
 {
 	const int fpp = Engine::audioEngine()->framesPerPeriod();
 
+	// 0.5.0 WF-072/086: publish pending record-tap changes once per period, before any worker (channel
+	// taps) or this thread's master tap reads them, so a route has one source for the whole period.
+	recordertaps::beginPeriod();
+
 	// cluster new-p10-249: fold render-thread input partials into the channel
 	// buses at the period barrier, before any channel is processed.
 	reduceInputPartials();
