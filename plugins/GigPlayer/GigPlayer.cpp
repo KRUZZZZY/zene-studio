@@ -72,6 +72,15 @@
 namespace lmms
 {
 
+//! Where a forward loop reads its frames from; the test injects its own.
+struct GigLoopSource
+{
+	void* context;
+	long (*read)(void* context, void* destination, long frames);
+	long (*position)(void* context);
+	void (*seek)(void* context, long frame);
+};
+
 namespace
 {
 
@@ -1210,7 +1219,70 @@ bool repeatSampleFrame(gig::Sample& sample, std::int8_t* destination,
 	return true;
 }
 
+long readGigSample(void* context, void* destination, long frames)
+{
+	return static_cast<long>(static_cast<gig::Sample*>(context)->Read(destination, static_cast<unsigned long>(frames)));
 }
+
+long gigSamplePosition(void* context)
+{
+	return static_cast<long>(static_cast<gig::Sample*>(context)->GetPos());
+}
+
+void seekGigSample(void* context, long frame)
+{
+	static_cast<gig::Sample*>(context)->SetPos(static_cast<unsigned long>(frame));
+}
+
+}
+
+extern "C"
+{
+
+/*! \brief Fill \p buffer with \p samples frames of a forward loop that ends (exclusive) at \p loopEnd.
+ *
+ * Reading wraps to \p loopStart at the loop end. If the source runs out first (a
+ * loop that lies past the end of the sample data, or a short Read()), the
+ * frames that were not read are zeroed: the caller converts the whole buffer,
+ * and the buffer is uninitialised stack memory.
+ *
+ * \returns the number of frames that were actually read.
+ *
+ * Exported so that PluginPortsMigrationTest can drive a short read with an
+ * injected source. GigInstrument::loadSample() calls exactly this function.
+ */
+f_cnt_t PLUGIN_EXPORT gigplayerReadForwardLoop(const GigLoopSource* source, std::int8_t* buffer,
+		unsigned long frameSize, f_cnt_t samples, f_cnt_t loopStart, f_cnt_t loopEnd)
+{
+	long samplesToRead = samples;
+	long totalRead = 0;
+
+	while (samplesToRead > 0)
+	{
+		const long samplesToLoopEnd = static_cast<long>(loopEnd) - source->position(source->context);
+		if (samplesToLoopEnd <= 0) { break; }
+
+		const long readSamples = source->read(source->context,
+			&buffer[totalRead * frameSize], std::min(samplesToRead, samplesToLoopEnd));
+		if (readSamples <= 0) { break; }
+
+		samplesToRead -= readSamples;
+		totalRead += readSamples;
+
+		if (readSamples >= samplesToLoopEnd)
+		{
+			source->seek(source->context, loopStart);
+		}
+	}
+
+	if (samplesToRead > 0)
+	{
+		std::memset(&buffer[totalRead * frameSize], 0, samplesToRead * frameSize);
+	}
+	return static_cast<f_cnt_t>(totalRead);
+}
+
+} // extern "C"
 
 
 
@@ -1323,26 +1395,9 @@ void GigInstrument::loadSample( GigSample& sample, SampleFrame* sampleData, f_cn
 			sample.sample->SetPos( sample.pos );
 
 			// Load samples around the exclusive end, wrapping to the loop start.
-			long samplestoread = samples;
-			long samplestoloopend = 0;
-			long readsamples = 0;
-			long totalreadsamples = 0;
-			long loopEnd = loopStart + loopLength;
-
-			do
-			{
-				samplestoloopend = loopEnd - sample.sample->GetPos();
-				readsamples = sample.sample->Read( &buffer[totalreadsamples * sample.sample->FrameSize],
-						std::min( samplestoread, samplestoloopend ) );
-				samplestoread -= readsamples;
-				totalreadsamples += readsamples;
-
-				if( readsamples >= samplestoloopend )
-				{
-					sample.sample->SetPos( loopStart );
-				}
-			}
-			while( samplestoread > 0 && readsamples > 0 );
+			GigLoopSource source { sample.sample, readGigSample, gigSamplePosition, seekGigSample };
+			gigplayerReadForwardLoop( &source, buffer, sample.sample->FrameSize, samples,
+					loopStart, loopStart + loopLength );
 		}
 	}
 	else
