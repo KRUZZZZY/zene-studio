@@ -53,7 +53,9 @@ namespace sampleops
 enum class Kind { Tone, White, Pink, Silence };
 
 //! \p amplitude is the peak scale in linear 0..1 applied to tone and noise
-//! (silence ignores it); \p frequencyHz only reaches the tone generator.
+//! (silence ignores it); \p frequencyHz only reaches the tone generator. A tone
+//! needs a positive \p sampleRate: at zero or below it returns no frames at all
+//! (never NaN frames). \p sampleRate does not affect the other kinds.
 std::vector<SampleFrame> generate(Kind kind, double frequencyHz, float amplitude,
 	f_cnt_t frames, int sampleRate);
 

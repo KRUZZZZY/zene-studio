@@ -22,12 +22,14 @@
  *
  */
 
-/*! The Microtuner dialog's .scl file path: a file that does not describe a scale - an empty
- *  one, or one that names a scale and never declares how many degrees it has - is REFUSED
- *  before the Song's scale is replaced or the session table is fed. The refused file used
- *  to clear the form and hand applyScale() an empty interval list, which built the 1/1
- *  interval the apply code always starts with: a scale in which every key has the same
- *  pitch. A file that does describe a scale still loads. */
+/*! The Microtuner dialog: its .scl file path and the geometry of its keymap range. A file
+ *  that does not describe a scale - an empty one, or one that names a scale and never
+ *  declares how many degrees it has - is REFUSED before the Song's scale is replaced or
+ *  the session table is fed. The refused file used to clear the form and hand applyScale()
+ *  an empty interval list, which built the 1/1 interval the apply code always starts with:
+ *  a scale in which every key has the same pitch. A file that does describe a scale still
+ *  loads. The lower-right keymap range must also fit the size hint the window is opened
+ *  at, and each caption must fit the font it is painted in. */
 
 #include <QtTest>
 
@@ -37,6 +39,8 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QFile>
+#include <QGridLayout>
+#include <QLayout>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPlainTextEdit>
@@ -44,9 +48,12 @@
 #include <QTemporaryDir>
 #include <QTimer>
 
+#include "DesignTokens.h"
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
+#include "LcdFloatSpinBox.h"
+#include "LcdSpinBox.h"
 #include "MainWindow.h"
 #include "MicrotunerConfig.h"
 #include "Scale.h"
@@ -235,6 +242,87 @@ private slots:
 		QCOMPARE(scale->getIntervals().size(), std::size_t{4});
 		QVERIFY(SessionTuning::instance()->scale() != nullptr);
 		QCOMPARE(SessionTuning::instance()->scale()->getDescription(), QStringLiteral("JI three"));
+	}
+
+	void keymapRangeControlsFitTheSizeHint()
+	{
+		// MainWindow sizes the window this dialog is created in from sizeHint(). The
+		// hint used to be a fixed 300x400, smaller than the layout's own minimum, so
+		// the lower-right keymap range was laid out past the right edge and clipped.
+		const QSize hint = m_config->sizeHint();
+		QVERIFY2(hint.isValid(), "the Microtuner has no initial size");
+
+		auto* grid = qobject_cast<QGridLayout*>(m_config->layout());
+		QVERIFY(grid != nullptr);
+		const QSize minimum = grid->minimumSize();
+		QVERIFY2(hint.width() >= minimum.width() && hint.height() >= minimum.height(),
+			qPrintable(QStringLiteral("the Microtuner's size hint %1x%2 is below its layout minimum %3x%4")
+				.arg(hint.width()).arg(hint.height())
+				.arg(minimum.width()).arg(minimum.height())));
+
+		m_config->resize(hint);
+		m_config->layout()->activate();
+		QLayoutItem* rangeItem = grid->itemAtPosition(5, 2);
+		QVERIFY2(rangeItem != nullptr && rangeItem->layout() != nullptr,
+			"the keymap range controls are not in the expected lower-right cell");
+		QLayout* range = rangeItem->layout();
+		QCOMPARE(range->count(), 5);
+
+		const QRect contents = m_config->contentsRect();
+		QStringList outside;
+		for (int i = 0; i < range->count(); ++i)
+		{
+			QWidget* control = range->itemAt(i)->widget();
+			QVERIFY(control != nullptr);
+			const QRect rect(control->mapTo(m_config, QPoint(0, 0)), control->size());
+			if (!contents.contains(rect))
+			{
+				outside << QStringLiteral("%1 at %2,%3 %4x%5")
+					.arg(i).arg(rect.x()).arg(rect.y()).arg(rect.width()).arg(rect.height());
+			}
+		}
+		QVERIFY2(outside.isEmpty(),
+			qPrintable(QStringLiteral("keymap range controls lie outside the %1x%2 dialog "
+				"(contents %3x%4): %5")
+				.arg(hint.width()).arg(hint.height())
+				.arg(contents.width()).arg(contents.height())
+				.arg(outside.join(QStringLiteral(", ")))));
+	}
+
+	void keymapLabelsReserveTheirFontMetrics()
+	{
+		// The range's captions are painted in the interface font below each field. The
+		// controls must reserve that caption's width and line height: "BASE NOTE FREQ"
+		// used to be drawn wider than its control and clipped at both edges.
+		auto* grid = qobject_cast<QGridLayout*>(m_config->layout());
+		QVERIFY(grid != nullptr);
+		QLayoutItem* rangeItem = grid->itemAtPosition(5, 2);
+		QVERIFY(rangeItem != nullptr && rangeItem->layout() != nullptr);
+		QLayout* range = rangeItem->layout();
+		const QStringList labels{QStringLiteral("FIRST"), QStringLiteral("LAST"),
+			QStringLiteral("MIDDLE"), QStringLiteral("BASE N."), QStringLiteral("BASE NOTE FREQ")};
+		QCOMPARE(range->count(), labels.size());
+
+		const QFontMetrics caption(tokens::font(tokens::TextRole::Caption));
+		QStringList clipped;
+		for (int i = 0; i < range->count(); ++i)
+		{
+			QWidget* control = range->itemAt(i)->widget();
+			QVERIFY(control != nullptr);
+			int fieldHeight = 0;
+			if (auto* lcd = qobject_cast<LcdSpinBox*>(control)) { fieldHeight = lcd->cellHeight(); }
+			else if (qobject_cast<LcdFloatSpinBox*>(control) != nullptr) { fieldHeight = tokens::size::target; }
+			else { QFAIL("unexpected control in the keymap range"); }
+
+			const QSize needed(caption.horizontalAdvance(labels[i]), fieldHeight + caption.height());
+			if (control->width() < needed.width() || control->height() < needed.height())
+			{
+				clipped << QStringLiteral("%1 needs %2x%3, control is %4x%5")
+					.arg(labels[i]).arg(needed.width()).arg(needed.height())
+					.arg(control->width()).arg(control->height());
+			}
+		}
+		QVERIFY2(clipped.isEmpty(), qPrintable(clipped.join(QStringLiteral("; "))));
 	}
 
 	void zLoadingScaleWithoutSongReportsFailureAndPreservesForm()

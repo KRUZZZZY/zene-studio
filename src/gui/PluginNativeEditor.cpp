@@ -36,6 +36,7 @@
 #include "InstrumentTrack.h"
 #include "AudioBusHandle.h"
 #include "Mixer.h"
+#include "PluginWindowPlatform.h"
 #include "SampleTrack.h"
 #include "Song.h"
 
@@ -221,6 +222,13 @@ bool PluginNativeEditor::open(Hooks hooks, const QString& title, QString* error,
 		m_window->raise();
 		m_window->activateWindow();
 		return true;
+	}
+	// Q050-502: on Qt's wayland platform a native widget's id is not an X11 window, and every format's view
+	// embeds in one: say why, before the plug-in is handed an id it would draw into nothing with (or die on).
+	if (const QString why = pluginwindow::editorRefusal(); !why.isEmpty())
+	{
+		*error = why;
+		return false;
 	}
 	auto* window = new EditorWindow([this] {
 		if (m_hooks.detach) { m_hooks.detach(); }

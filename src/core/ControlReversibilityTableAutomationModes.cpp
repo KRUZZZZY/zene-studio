@@ -107,6 +107,15 @@ const ReversibilityRow kAutomationModesRows[] = {
 		"ProjectJournal that automation.add_point uses",
 		"none needed. The flag takes effect on the next rendered block, which is the same "
 		"one-block granularity a curve edit has always had"),
+	R("automation.editor_mode", RC::NotMutating, false,
+		"it sets the AUTOMATION EDITOR's edit mode - draw, erase, draw out-values or edit "
+		"tangents - which is which gesture the next press makes. It writes no point, no clip "
+		"and no config value; the curve is untouched until the user draws with the mode it "
+		"chose, and those edits have their own rows (automation.add_point and friends)",
+		"no write to undo: setting the previous mode again with a second "
+		"automation.editor_mode call restores what the editor shows, and the reply's 'previous' "
+		"names it",
+		"none needed: interface state, like a zoom level"),
 };
 
 constexpr int kAutomationModesRowCount =

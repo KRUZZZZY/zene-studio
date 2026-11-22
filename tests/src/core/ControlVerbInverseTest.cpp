@@ -415,6 +415,24 @@ private slots:
 				{QStringLiteral("tail_bars"), -1}});
 		QCOMPARE(badTail.errorKind, ControlErrorKind::InvalidArgs);
 
+		// The values the handler's own int cast could never take: a fraction, a value
+		// past INT_MAX and one past the declared maximum of 64. The schema refuses them
+		// before the handler runs (ControlSchema.cpp integer and range checks), so the
+		// cast in parseStemArgs only ever sees 0..64 integers.
+		const double fractionalTail = 1.9;
+		const double pastIntMaxTail = 3.0e9;
+		const int pastDeclaredMaxTail = 65;
+		for (const QJsonValue& tail : {QJsonValue(fractionalTail), QJsonValue(pastIntMaxTail),
+			QJsonValue(pastDeclaredMaxTail)})
+		{
+			const ControlResult refused = run(QStringLiteral("render.stems"),
+				QJsonObject{{QStringLiteral("out"), wanted},
+					{QStringLiteral("tail_bars"), tail}});
+			QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+			QVERIFY2(refused.errorMessage.contains(QStringLiteral("tail_bars")),
+				qPrintable(refused.errorMessage));
+		}
+
 		QVERIFY2(!QDir(wanted).exists(),
 			"no render may have been attempted: the refused calls must not create the output "
 			"directory or spawn the export child");

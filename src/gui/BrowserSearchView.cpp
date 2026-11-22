@@ -44,6 +44,7 @@
 #include <QMenu>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QSpinBox>
 #include <QStyleHints>
 #include <QTimer>
 #include <QTreeWidget>
@@ -145,6 +146,7 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 	top->addWidget(m_probe);
 	addContentLayout(top);
 
+	buildTempoKeyRow();
 	buildActionRow();
 	m_status = new QLabel(contentParent());
 	addContentWidget(m_status);
@@ -199,6 +201,9 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 	connect(m_kind, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &BrowserSearchView::runSearch);
 	connect(m_root, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &BrowserSearchView::runSearch);
 	connect(m_category, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &BrowserSearchView::runSearch);
+	connect(m_tempoMin, QOverload<int>::of(&QSpinBox::valueChanged), this, &BrowserSearchView::runSearch);
+	connect(m_tempoMax, QOverload<int>::of(&QSpinBox::valueChanged), this, &BrowserSearchView::runSearch);
+	connect(m_key, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &BrowserSearchView::runSearch);
 	connect(m_indexed, &QCheckBox::toggled, this, &BrowserSearchView::runSearch);
 	connect(m_indexed, &QCheckBox::toggled, m_root, &QWidget::setDisabled);  // the index has no roots to filter by
 	connect(m_indexed, &QCheckBox::toggled, m_probe, &QWidget::setDisabled);  // the index holds no embedded metadata
@@ -207,6 +212,52 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 	refreshCategories();
 	refreshCollections();
 	refreshIndexStatus();
+}
+
+void BrowserSearchView::buildTempoKeyRow()
+{
+	// 0.5.0 L11 (Q050-316.1): the tempo range and key, beside the category facet
+	// and on the same measurement the command filters on (the library index's
+	// import detection). 0 is "any" on each tempo side, so both at 0 is no filter
+	// at all - an untouched row restores the broader results, as Any category does.
+	auto* row = new QHBoxLayout;
+	auto* label = new QLabel(tr("Tempo"), contentParent());
+	label->setAccessibleName(tr("Tempo"));
+	row->addWidget(label);
+	m_tempoMin = new QSpinBox(contentParent());
+	m_tempoMin->setAccessibleName(tr("Tempo from"));
+	m_tempoMin->setObjectName(QStringLiteral("browserSearchTempoMin"));
+	m_tempoMin->setRange(0, 400);
+	m_tempoMin->setSpecialValueText(tr("Any"));
+	m_tempoMin->setSuffix(tr(" BPM"));
+	m_tempoMin->setToolTip(tr("Only the audio files whose measured tempo is at least this"));
+	m_tempoMin->setProperty("controlCommand", QStringLiteral("browser.query"));
+	m_tempoMax = new QSpinBox(contentParent());
+	m_tempoMax->setAccessibleName(tr("Tempo to"));
+	m_tempoMax->setObjectName(QStringLiteral("browserSearchTempoMax"));
+	m_tempoMax->setRange(0, 400);
+	m_tempoMax->setSpecialValueText(tr("Any"));
+	m_tempoMax->setSuffix(tr(" BPM"));
+	m_tempoMax->setToolTip(tr("Only the audio files whose measured tempo is at most this"));
+	m_tempoMax->setProperty("controlCommand", QStringLiteral("browser.query"));
+	auto* to = new QLabel(tr("to"), contentParent());
+	row->addWidget(m_tempoMin);
+	row->addWidget(to);
+	row->addWidget(m_tempoMax);
+	m_key = new QComboBox(contentParent());
+	m_key->setAccessibleName(tr("Key"));
+	m_key->setObjectName(QStringLiteral("browserSearchKey"));
+	m_key->setToolTip(tr("Only the audio files measured in this key (the detected root, any octave)"));
+	m_key->setProperty("controlCommand", QStringLiteral("browser.query"));
+	m_key->addItem(tr("Any key"), QString());
+	for (int pitchClass = 0; pitchClass < 12; ++pitchClass)
+	{
+		const QString name = browserKeyName(pitchClass);
+		m_key->addItem(name, name);
+	}
+	row->addWidget(m_key);
+	row->addStretch(1);
+	addContentLayout(row);
 }
 
 void BrowserSearchView::buildActionRow()
@@ -304,6 +355,12 @@ QJsonObject BrowserSearchView::queryArgs() const
 	// The category facet (0.5.0 L11, WF-007): index 0 is "Any category" and sends nothing,
 	// so an unselected facet restores the full result set in both query modes.
 	if (m_category->currentIndex() > 0) { args.insert(QStringLiteral("category"), m_category->currentData().toString()); }
+	// The tempo/key facets (0.5.0 L11, Q050-316.1): 0 on a tempo side is open, so an
+	// untouched row sends nothing; both query modes filter on the same measurement, so
+	// a filtered Whole library search answers the files the walking one does.
+	if (m_tempoMin->value() > 0) { args.insert(QStringLiteral("tempo_min"), m_tempoMin->value()); }
+	if (m_tempoMax->value() > 0) { args.insert(QStringLiteral("tempo_max"), m_tempoMax->value()); }
+	if (m_key->currentIndex() > 0) { args.insert(QStringLiteral("key"), m_key->currentData().toString()); }
 	if (!m_indexed->isChecked() && !m_root->currentData().toString().isEmpty())
 	{
 		args.insert(QStringLiteral("root"), m_root->currentData().toString());
@@ -348,7 +405,11 @@ void BrowserSearchView::restoreQuery(const QJsonObject& entry)
 	const bool indexed = command == QLatin1String("browser.index_query");
 	if (!indexed && command != QLatin1String("browser.query")) { return; }  // a collection or similar sounds: no search of its own
 	const QJsonObject args = entry.value(QStringLiteral("args")).toObject();
-	const QSignalBlocker kind(m_kind), root(m_root), category(m_category), index(m_indexed), probe(m_probe);  // shown already: no search again
+	// shown already: no search again. The tempo/key facets are blocked too, so a
+	// history step back on a filtered search puts the row where it was without
+	// running the query a second time.
+	const QSignalBlocker kind(m_kind), root(m_root), category(m_category), index(m_indexed), probe(m_probe);
+	const QSignalBlocker tempoMin(m_tempoMin), tempoMax(m_tempoMax), key(m_key);
 	// The same text is left alone, so a live search never moves the cursor of the field being typed in.
 	if (m_search->text() != args.value(QStringLiteral("text")).toString()) { m_search->setText(args.value(QStringLiteral("text")).toString()); }
 	m_kind->setCurrentIndex(std::max(0, m_kind->findText(args.value(QStringLiteral("kind")).toString())));
@@ -356,6 +417,12 @@ void BrowserSearchView::restoreQuery(const QJsonObject& entry)
 	// A history entry can name a category the vocabulary gained (or lost) since it ran: the
 	// entry's own value is re-selected by data, absent from the list becoming "Any category".
 	m_category->setCurrentIndex(std::max(0, m_category->findData(args.value(QStringLiteral("category")).toString())));
+	// The same for the key: an entry's key is re-selected by name, absent becoming "Any key".
+	m_key->setCurrentIndex(std::max(0, m_key->findData(args.value(QStringLiteral("key")).toString())));
+	// A tempo side the entry did not carry is 0 = open, which is what an entry saved by
+	// an older build (no facet) restores to.
+	m_tempoMin->setValue(args.value(QStringLiteral("tempo_min")).toInt(0));
+	m_tempoMax->setValue(args.value(QStringLiteral("tempo_max")).toInt(0));
 	m_indexed->setChecked(indexed);
 	m_probe->setChecked(!indexed && args.value(QStringLiteral("probe")).toBool());
 	m_root->setDisabled(indexed);

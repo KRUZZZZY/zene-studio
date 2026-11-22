@@ -61,12 +61,14 @@ namespace
 constexpr float Root = 0.70710678f;
 //! Channel 1's mono sum (0.25) through its 0.5 fader.
 constexpr float Panned = 0.125f;
+//! The outputs EightOutputs has: the widest discrete layout this test can play on its device.
+constexpr int DeviceOutputs = 8;
 
 //! A device with eight outputs that never runs: the periods are the test's.
 class EightOutputs : public AudioDevice
 {
 public:
-	explicit EightOutputs(AudioEngine* engine) : AudioDevice(8, engine) {}
+	explicit EightOutputs(AudioEngine* engine) : AudioDevice(DeviceOutputs, engine) {}
 
 private:
 	void startProcessingImpl() override {}
@@ -274,8 +276,9 @@ private slots:
 		QCOMPARE(mixer->mixerChannel(1)->m_surround.format(), surround::Format::Stereo);
 		QVERIFY(!mixerState(ch(1)).contains(QStringLiteral("format")));  // a stereo channel reads as it always did
 
-		// Every discrete count: N channels, no speaker roles, indexed 1..N, and one undo step each.
-		for (int channels = surround::MinDiscreteChannels; channels <= surround::MaxDiscreteChannels; ++channels)
+		// Every discrete count: N channels, no speaker roles, indexed 1..N, and one undo step each (up to the
+		// eight this device plays; WideDiscreteBusTest covers 9..64 on a 128-output device).
+		for (int channels = surround::MinDiscreteChannels; channels <= DeviceOutputs; ++channels)
 		{
 			const QString name = QStringLiteral("discrete-%1").arg(channels);
 			const ControlResult reply = run(QStringLiteral("mixer.channel_format"),
@@ -302,8 +305,8 @@ private slots:
 		QVERIFY(surround::formatFromName(QStringLiteral("discrete5"), &parsed) && parsed == surround::Format::Discrete5);
 		QVERIFY(surround::formatFromName(QStringLiteral("discrete 7"), &parsed) && parsed == surround::Format::Discrete7);
 		QVERIFY(!surround::formatFromName(QStringLiteral("discrete-1"), &parsed));
-		QVERIFY(!surround::formatFromName(QStringLiteral("discrete-9"), &parsed));
-		QCOMPARE(run(QStringLiteral("mixer.channel_format"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("format"), QStringLiteral("discrete-9")}}).errorKind,
+		QVERIFY(!surround::formatFromName(QStringLiteral("discrete-65"), &parsed));
+		QCOMPARE(run(QStringLiteral("mixer.channel_format"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("format"), QStringLiteral("discrete-65")}}).errorKind,
 			ControlErrorKind::InvalidArgs);
 		QCOMPARE(mixer->mixerChannel(1)->m_surround.format(), surround::Format::Stereo);
 	}
@@ -317,7 +320,7 @@ private slots:
 		MixerChannel* channel = mixer->mixerChannel(3);
 		channel->m_volumeModel.setValue(1.f);
 		channel->m_panModel.setValue(0.f);
-		for (int channels = surround::MinDiscreteChannels; channels <= surround::MaxDiscreteChannels; ++channels)
+		for (int channels = surround::MinDiscreteChannels; channels <= DeviceOutputs; ++channels)
 		{
 			const QString name = QStringLiteral("discrete-%1").arg(channels);
 			QVERIFY2(ok(QStringLiteral("mixer.channel_format"), {{QStringLiteral("channel"), ch(3)}, {QStringLiteral("format"), name}}), qPrintable(name));
@@ -335,7 +338,7 @@ private slots:
 			outputs.add(0, 2, pair.data(), frames);
 			outputs.swap();
 			// Output i carries channel i and nothing else: no speaker reordering, folding or leakage.
-			for (int c = 0; c < surround::MaxChannels; ++c)
+			for (int c = 0; c < DeviceOutputs; ++c)
 			{
 				const float expected = c < channels ? 0.1f * static_cast<float>(c + 1) : 0.f;
 				for (f_cnt_t f = 0; f < frames; ++f)

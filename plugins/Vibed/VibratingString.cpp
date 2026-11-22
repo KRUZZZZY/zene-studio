@@ -33,10 +33,25 @@
 namespace lmms
 {
 
+namespace
+{
+
+//! String steps per output sample for an output rate and a length setting. The integer
+//! division is 0 once the output rate exceeds twice the setting's base (4x at setting 1),
+//! and nextSample() still reads the buffer, so the count is clamped to at least one. An
+//! output rate below the base rate is taken as the base rate, so nothing divides by zero.
+int stepsPerSample(int setting, sample_rate_t sampleRate)
+{
+	const auto ratio = std::max(sampleRate / Engine::audioEngine()->baseSampleRate(), sample_rate_t{1});
+	return std::max(2 * setting / static_cast<int>(ratio), 1);
+}
+
+} // namespace
+
 
 VibratingString::VibratingString(float pitch, float pick, float pickup, const float* impulse, int len,
 	sample_rate_t sampleRate, int oversample, float randomize, float stringLoss, float detune, bool state) :
-	m_oversample{2 * oversample / static_cast<int>(sampleRate / Engine::audioEngine()->baseSampleRate())},
+	m_oversample{stepsPerSample(oversample, sampleRate)},
 	m_randomize{randomize},
 	m_stringLoss{1.0f - stringLoss},
 	m_choice(fastRand(m_oversample)),

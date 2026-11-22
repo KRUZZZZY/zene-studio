@@ -37,6 +37,7 @@
 #include "ControlCommandDef.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "PresetBindings.h"
 #include "ControlRegistryGroups.h"
 #include "ControlStructuralSupport.h"
 #include "ControlVocabulary.h"
@@ -66,8 +67,12 @@ ControlResult presetSave(const QJsonObject& args)
 	QDomElement& content = file.content();
 	track->savePreset(file, content);
 	for (const char* attribute : {"muted", "solo", "mutedBeforeSolo"}) { content.setAttribute(QLatin1String(attribute), 0); }
+	// Q050-331: the bindings already travel with each parameter; the manifest names them so a load can report them.
+	const QList<presetbindings::Binding> bindings = presetbindings::collectTrack(track);
+	presetbindings::write(file, content, bindings);
 	if (!file.writeFile(path)) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("'%1' could not be written").arg(path)); }
-	return ControlResult::success({{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("path"), path}});
+	return ControlResult::success({{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("path"), path},
+		{QStringLiteral("bindings"), static_cast<int>(bindings.size())}});
 }
 
 ControlResult presetLoad(const QJsonObject& args)
@@ -95,6 +100,14 @@ ControlResult presetLoad(const QJsonObject& args)
 	track->loadPreset(content);
 	track->setName(name);  // a preset brings the sound, the track keeps its name
 	QJsonObject result{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("path"), path}};
+	// Q050-331: which of the preset's controller bindings the loaded devices carry now, and which were skipped.
+	const QList<presetbindings::Binding> saved = presetbindings::read(content);
+	QJsonArray restored;
+	QJsonArray skipped;
+	presetbindings::reconcile(saved, presetbindings::collectTrack(track), QJsonValue(), &restored, &skipped);
+	const QJsonObject bindings = presetbindings::report(static_cast<int>(saved.size()), restored, skipped);
+	result.insert(QStringLiteral("bindings"), bindings);
+	result.insert(QStringLiteral("bindings_summary"), bindings.value(QStringLiteral("summary")));
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("track"), trackIdOf(track)}},
 		QStringLiteral("control.undo"), {}, true,
 		QStringLiteral("ProjectJournal (Track checkpoint: control.undo restores the track's previous state)")));
@@ -146,10 +159,13 @@ void registerTrackPresetCommands(ControlRegistry& registry)
 	const QJsonObject trackPath{{QStringLiteral("track"), stringProperty()}, {QStringLiteral("path"), stringProperty()}};
 	// Not mutating: it writes a file and changes nothing in the session (its contract row is not_mutating).
 	control::defineCommand(registry, QStringLiteral("track.preset_save"), QStringLiteral("Save a track as a preset ('path', an absolute "
-		"file - .xpf by custom): its device, effects and settings, without its mute and solo. Writes the file only."), trackPath,
+		"file - .xpf by custom): its device, effects and settings - with their MIDI controller bindings - without its mute "
+		"and solo. Writes the file only; 'bindings' is how many controller bindings it holds."), trackPath,
 		{QStringLiteral("track"), QStringLiteral("path")}, false, presetSave);
 	add(registry, "track.preset_load", QStringLiteral("Put a track preset ('path') on a track of the same kind: its device, effects "
-		"and settings; the track keeps its name. One undo step."), trackPath, {QStringLiteral("track"), QStringLiteral("path")}, presetLoad);
+		"and settings; the track keeps its name. One undo step. The preset's MIDI controller bindings come back on the "
+		"loaded devices' own parameters; 'bindings' lists the restored ones and the skipped ones (a parameter the "
+		"device no longer has), and 'bindings_summary' says it in one line."), trackPath, {QStringLiteral("track"), QStringLiteral("path")}, presetLoad);
 	add(registry, "plugin.replace", QStringLiteral("Put another device ('device', plugin.list's dev-<n>) in the place of a device "
 		"('plugin', fx-<n> on 'target' - 'chain' for a rack chain): the same slot of the same chain. One undo step brings the "
 		"old one back with its settings."), {{QStringLiteral("target"), stringProperty()}, {QStringLiteral("chain"), integerProperty(0, 64)},

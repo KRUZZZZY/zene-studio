@@ -150,6 +150,11 @@ public:
 	const QString& sourceRenderFile() const { return m_sourceRenderFile; }
 	//! Sample rate of the render, which is the rate every candidate is processed at.
 	sample_rate_t sampleRate() const { return m_sampleRate; }
+	//! The run's genre and delivery-target labels, recorded verbatim in the report.
+	//! Labels only: they never pick, grade or reorder a candidate.
+	void setRunChoices(const QString& genre, const QString& deliveryTarget);
+	const QString& genre() const { return m_genre; }
+	const QString& deliveryTarget() const { return m_deliveryTarget; }
 
 private:
 	bool renderSourceMix(QString* error);
@@ -171,6 +176,9 @@ private:
 	MasteringMetrics m_sourceMetrics;
 	QVector<MasteringCandidateReport> m_reports;
 	int m_renderCount = 0;
+	// Labels only: carried into the report verbatim, never used to pick, grade or reorder a candidate.
+	QString m_genre;
+	QString m_deliveryTarget;
 };
 
 } // namespace lmms

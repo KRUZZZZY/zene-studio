@@ -299,6 +299,7 @@ ItemListPanel* ItemListPanel::find(QWidget* surface, const QString& kind)
 
 ItemListPanel* ItemListPanel::open(QWidget* surface, const QString& kind, const std::function<ItemListSource*(QObject*)>& make)
 {
+	if (surface == nullptr) { return nullptr; }  // no canvas to list or to be placed beside: nothing is made
 	if (ItemListPanel* shown = find(surface, kind)) { return shown; }
 	auto* panel = new ItemListPanel(make(nullptr), surface, kind);
 	// Beside the canvas's window, on the right, where a docked list would be.

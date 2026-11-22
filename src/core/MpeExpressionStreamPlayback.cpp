@@ -139,6 +139,30 @@ int NotePlayHandle::effectiveMpePitchCents() const
 
 
 
+int NotePlayHandle::effectiveMpePressure() const
+{
+	if( !hasMpeStream() || !mpeStream().hasPressure() )
+	{
+		return mpePressure();
+	}
+	return mpeStream().pressureAt( mpeStreamTick( m_totalFramesPlayed ), mpePressure() );
+}
+
+
+
+
+int NotePlayHandle::effectiveMpeTimbre() const
+{
+	if( !hasMpeStream() || !mpeStream().hasTimbre() )
+	{
+		return mpeTimbre();
+	}
+	return mpeStream().timbreAt( mpeStreamTick( m_totalFramesPlayed ), mpeTimbre() );
+}
+
+
+
+
 void NotePlayHandle::sendMpeExpressionAxisEvent( int axis, int value, f_cnt_t offset )
 {
 	const auto time = TimePos::fromFrames( offset, Engine::framesPerTick() );

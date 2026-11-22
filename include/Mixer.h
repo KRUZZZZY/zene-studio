@@ -31,6 +31,7 @@
 #include "HardwareIo.h"
 #include "JournallingObject.h"
 #include "LatencyCompensation.h"
+#include "MixerBusFreeze.h"
 #include "MixerPostInserts.h"
 #include "MixerStrip.h"
 #include "MixerSurround.h"
@@ -43,6 +44,7 @@
 #include <bitset>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <set>
 #include <vector>
@@ -60,6 +62,9 @@ using MixerSidechainRouteVector = std::vector<MixerSidechainRoute*>;
 
 //! VCA / mix-and-edit group (task #622); defined in VcaGroup.h.
 class VcaGroup;
+
+//! Q050-108: a strip's live loudness meter; defined in StripMeters.h.
+class StripLoudness;
 
 //! Tap point for a sidechain send (Phase D, spec 4.3; Reaper I_SENDMODE 0-3).
 enum class SidechainTapPoint : int
@@ -96,6 +101,9 @@ public:
 	//! 0.5.0 F7 (MX-060): the channel's surround format, its side buffer and its panner (MixerSurround.h);
 	//! stereo, panner off - and nothing saved - unless a project sets them.
 	ChannelSurround m_surround;
+
+	//! Q050-124: the bus's frozen take (MixerBusFreeze.h); empty - and nothing saved - unless the bus is frozen.
+	BusFreeze m_freeze;
 
 	// set to true if any effect in the channel is enabled and running
 	bool m_stillRunning;
@@ -160,6 +168,15 @@ public:
 	MeterValue m_liveBakedPeakLeft;  //!< The baked post-fader output peak, for post-fader send meters.
 	MeterValue m_liveBakedPeakRight;
 	std::atomic<bool> m_livePostInsertsBaked{false};  //!< Whether this period's live baked peaks are valid.
+	// Q050-108 (StripMeters.h): the strip's own meter mode (0 follows the mixer view), its VU needle (written by the
+	// mixer worker, read by the interface) and its loudness meter, built on the control thread when first asked for.
+	std::atomic<int> m_meterMode{0};
+	MeterValue m_vuLeft;
+	MeterValue m_vuRight;
+	std::array<float, 4> m_vuState{};  //!< the needle's two stages a side (mixer worker only)
+	bool m_vuRunning = false;  //!< mixer worker only
+	std::unique_ptr<StripLoudness> m_loudnessOwner;  //!< control thread
+	std::atomic<StripLoudness*> m_loudness{nullptr};
 	QString m_name;
 	/*! One render thread's private slice of this channel's input (cluster new-p10-249).
 	 *  Mixer::mixToChannel runs on every AudioEngine render thread, so adding straight
@@ -278,6 +295,14 @@ public:
 		m_inputLatencyFrames.store(frames, std::memory_order_relaxed);
 	}
 
+	/*! Q050-339: the channel's manual delay in frames at the engine's rate - positive plays its output later,
+	 *  negative earlier (every other path into the same receivers is then delayed instead). It enters the PDC
+	 *  graph as a negative latency on the channel's output (Mixer::resolveLatency), so the sends out of the
+	 *  channel are compensated by it; the master has no later summing point and takes none. 0 by default
+	 *  (nothing saved). Control thread writes, the audio thread reads. */
+	int offsetFrames() const { return m_offsetFrames.load(std::memory_order_relaxed); }
+	void setOffsetFrames(int frames) { m_offsetFrames.store(frames, std::memory_order_relaxed); }
+
 	//! VCA / mix group (#622): the gain the channel's group publishes, applied
 	//! as one extra multiply to the post-FX buffer. 1.0f when the channel is in
 	//! no group (and when its group is at unity). Written on the control thread
@@ -299,6 +324,9 @@ public:
 
 private:
 	void doProcessing() override;
+	//! The trim-to-pan stages after the inputs are summed: the devices (chain or rack), the hardware insert, the
+	//! VCA gain, the strip's output stages and the pan. A frozen bus skips them: its take already carries them.
+	void processInserts(const f_cnt_t fpp);
 	//! The two sets carry the channels already expanded by the ongoing solo
 	//!  propagation, one set per walk direction: a channel reached sender-only
 	//!  must still be expanded by a receiver walk, and the reverse. Feedback
@@ -319,6 +347,7 @@ private:
 	std::optional<QColor> m_color;
 	//! PDC alignment point; see inputLatencyFrames().
 	std::atomic<int> m_inputLatencyFrames{0};
+	std::atomic<int> m_offsetFrames{0};  //!< Q050-339: see offsetFrames()
 };
 
 class MixerRoute : public QObject
@@ -633,8 +662,19 @@ public:
 
 	MixerChannel * mixerChannel( int _ch )
 	{
+#ifdef LMMS_TESTING
+		if( _ch < 0 || _ch >= static_cast<int>( m_mixerChannels.size() ) ) { return refusedLookupForTesting(); }
+#endif
 		return m_mixerChannels[_ch];
 	}
+
+#ifdef LMMS_TESTING
+	//! Test seam (cluster new-p14-29): a mixerChannel() call that names no channel is refused and counted here,
+	//! before the channel vector is read. Compiled out of the shipping product; no member is added.
+	static MixerChannel * refusedLookupForTesting();
+	//! The refused lookups since the last call; the count starts again at zero.
+	static int takeRefusedLookupsForTesting();
+#endif
 
 	// make the output of channel fromChannel go to the input of channel toChannel
 	// it is safe to call even if the send already exists

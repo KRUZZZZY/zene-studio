@@ -60,6 +60,7 @@
 #include "ControlReversibility.h"
 #include "Engine.h"
 #include "SessionModel.h"
+#include "SessionPlayback.h"
 #include "SessionScheduler.h"
 #include "Song.h"
 
@@ -434,15 +435,39 @@ inline void restoreSessionBlock(SessionModel& model, const QString& xml)
 	if (!block.isNull()) { model.restoreState(block); }
 }
 
+//! The model a block captured by sessionBlockXml() describes (a scratch copy; the song's is not touched).
+inline SessionModel sessionModelOf(const QString& xml)
+{
+	SessionModel model;
+	restoreSessionBlock(model, xml);
+	return model;
+}
+
+/*! Q050-489: tell the launcher what a change of the song's grid from @a before changed (syncSessionLauncher,
+ *  include/SessionPlayback.h): the do-half of every <session> block edit. */
+inline void syncLauncherFrom(const SessionModel& before)
+{
+	if (Song* song = Engine::getSong()) { syncSessionLauncher(song->sessionScheduler(), before, song->sessionModel()); }
+}
+
+//! Q050-489: put a captured block back AND tell the launcher what that changed - every undo and redo of a block edit.
+inline void restoreSessionBlockAndSync(Song& song, const QString& xml)
+{
+	const SessionModel leaving = song.sessionModel();
+	restoreSessionBlock(song.sessionModel(), xml);
+	syncSessionLauncher(song.sessionScheduler(), leaving, song.sessionModel());
+}
+
 /*! Record an edit of the <session> block as one undo step: the block before (@a before, from sessionBlockXml) and
  *  after. @a rearm runs after the block is put back either way (what the scheduler must be told again). Shared by
- *  the perform verbs and the sub-scene verbs (0.5.0 L02). */
+ *  the perform verbs and the sub-scene verbs (0.5.0 L02). The launcher is synced each way (Q050-489). */
 inline void recordSessionEdit(const QString& before, const SessionModel& model, const std::function<void()>& rearm = {})
 {
 	const QString after = sessionBlockXml(model);
 	control::addUndoStep(
-		[before, rearm]() { if (Song* song = Engine::getSong()) { restoreSessionBlock(song->sessionModel(), before); if (rearm) { rearm(); } } },
-		[after, rearm]() { if (Song* song = Engine::getSong()) { restoreSessionBlock(song->sessionModel(), after); if (rearm) { rearm(); } } });
+		[before, rearm]() { if (Song* song = Engine::getSong()) { restoreSessionBlockAndSync(*song, before); if (rearm) { rearm(); } } },
+		[after, rearm]() { if (Song* song = Engine::getSong()) { restoreSessionBlockAndSync(*song, after); if (rearm) { rearm(); } } });
+	syncLauncherFrom(sessionModelOf(before));
 	Engine::getSong()->setModified();
 }
 

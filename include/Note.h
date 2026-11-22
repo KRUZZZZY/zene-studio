@@ -195,7 +195,8 @@ public:
 	 *  with rounding, because at the default base velocity (63) one velocity
 	 *  step is 1.587 volume units and truncation handed back 95 for an
 	 *  incoming 96. The scale names velocities up to twice the base velocity,
-	 *  so MIDI velocity 127 saturates to it at base velocities below 64. */
+	 *  so MIDI velocity 127 saturates to it at base velocities below 64.
+	 *  A non-positive base velocity has no usable scale and converts to zero. */
 	static int releaseVelocityFromMidi( int midiVelocity, int midiBaseVelocity );
 
 	/*! The timing the note had before its first quantise, kept until it is

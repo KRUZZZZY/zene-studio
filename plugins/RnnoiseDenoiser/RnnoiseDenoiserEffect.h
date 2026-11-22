@@ -31,6 +31,10 @@
 // Forward declaration of RNNoise's opaque state type (global C typedef)
 struct DenoiseState;
 
+#ifdef LMMS_TESTING
+class RnnoiseDenoiserEffectTest;
+#endif
+
 namespace lmms
 {
 
@@ -54,14 +58,17 @@ public:
 private:
 	RnnoiseDenoiserControls m_controls;
 
-	// Opaque RNNoise denoise state pointer
+	// Opaque RNNoise denoise state pointer for the left channel
 	struct DenoiseState* m_rnnoiseState;
+
+	// Opaque RNNoise denoise state pointer for the right channel
+	struct DenoiseState* m_rnnoiseStateRight;
 
 	// RNNoise expects exactly 480 samples for each 10 ms frame at 48 kHz.
 	static constexpr int RNNOISE_SAMPLE_RATE = 48000;
 	static constexpr int RNNOISE_FRAME_SIZE = 480;
 
-	// Input accumulation buffer (mono)
+	// Left input accumulation buffer
 	float m_inputBuf[RNNOISE_FRAME_SIZE] = {};
 	int m_inputCount;
 
@@ -69,13 +76,21 @@ private:
 	// the denoised sample of the same position, so wet and dry stay aligned
 	SampleFrame m_dryBuf[RNNOISE_FRAME_SIZE] = {};
 
-	// Output buffer for the last processed frame
+	// Left output buffer for the last processed frame
 	float m_outputBuf[RNNOISE_FRAME_SIZE] = {};
 	int m_outputPos;
 	bool m_hasOutput;
 
+	// Right input and output buffers
+	float m_inputBufRight[RNNOISE_FRAME_SIZE] = {};
+	float m_outputBufRight[RNNOISE_FRAME_SIZE] = {};
+
 	friend class RnnoiseDenoiserControls;
 	friend class gui::RnnoiseDenoiserControlDialog;
+#ifdef LMMS_TESTING
+	// The missing-state regression discards the RNNoise state to reach the path where rnnoise_create() failed.
+	friend class ::RnnoiseDenoiserEffectTest;
+#endif
 };
 
 } // namespace lmms

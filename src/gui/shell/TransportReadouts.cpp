@@ -39,6 +39,7 @@
 #include "Accessibility.h"
 #include "AudioEngine.h"
 #include "CommandForm.h"
+#include "CpuDiagnosticsDialog.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "Engine.h"
@@ -436,6 +437,7 @@ void TransportReadouts::bindToSong(Song* song)
 	m_volume->bind(&song->masterVolumeModel(), [](int v) { return QStringLiteral("%1%").arg(v); }, 2);
 	m_pitch->bind(&song->masterPitchModel(), [](int v) { return signedValue(v); }, 8);
 	m_load->bindText([]() { return QStringLiteral("%1%").arg(Engine::audioEngine()->cpuLoad()); });
+	addCpuDiagnosticsAction(m_load);  // Q050-074.1: each instrument's synthesis load and the late periods
 	// MX-132: the master's loudness (meter.get_state) - short-term LUFS and true peak while the
 	// meter is armed; typing "on" or "off" arms or disarms it (meter.arm).
 	m_loudness->bindText(loudnessText, [](const QString& typed) {

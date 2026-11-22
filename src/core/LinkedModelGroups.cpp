@@ -22,6 +22,7 @@
  *
  */
 
+#include <QDebug>
 #include <QDomDocument>
 #include <QDomElement>
 
@@ -78,15 +79,21 @@ void LinkedModelGroup::loadValues(const QDomElement &that)
 
 void LinkedModelGroup::addModel(AutomatableModel *model, const QString &name)
 {
+	// Models are keyed by name. A second model under a taken name cannot be stored, so it is
+	// refused before anything is connected or announced; otherwise its destruction would erase
+	// the first model from the group.
+	if(containsModel(name))
+	{
+		qWarning() << "LinkedModelGroup: refusing a second model named" << name;
+		return;
+	}
 	model->setObjectName(name);
-	m_models.emplace(std::string(name.toUtf8().data()), ModelInfo(name, model));
+	// the name the model is registered under; a later rename must not change it
+	const std::string key(name.toUtf8().data());
+	m_models.emplace(key, ModelInfo(name, model));
 	connect(model, &AutomatableModel::destroyed,
-				this, [this, model](jo_id_t){
-					if(containsModel(model->objectName()))
-					{
-						emit modelRemoved(model);
-						eraseModel(model->objectName());
-					}
+				this, [this, model, key](jo_id_t){
+					eraseRegisteredModel(key, model);
 				},
 				Qt::DirectConnection);
 
@@ -100,11 +107,19 @@ void LinkedModelGroup::addModel(AutomatableModel *model, const QString &name)
 
 void LinkedModelGroup::removeControl(AutomatableModel* mdl)
 {
-	if(containsModel(mdl->objectName()))
-	{
-		emit modelRemoved(mdl);
-		eraseModel(mdl->objectName());
-	}
+	eraseRegisteredModel(mdl->objectName().toStdString(), mdl);
+}
+
+
+
+
+void LinkedModelGroup::eraseRegisteredModel(const std::string& key, AutomatableModel* model)
+{
+	const auto itr = m_models.find(key);
+	if (itr == m_models.end() || itr->second.m_model != model) { return; }
+
+	emit modelRemoved(model);
+	m_models.erase(key);
 }
 
 

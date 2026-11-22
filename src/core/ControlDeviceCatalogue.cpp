@@ -24,6 +24,8 @@
 
 #include "ControlDeviceSupport.h"
 
+#include "AuComponent.h"
+
 #include <algorithm>
 
 #include <QHash>
@@ -170,9 +172,14 @@ QString controlDeviceVendor(const ControlDeviceEntry& entry)
 	{
 		maker = pluginvendors::vendorOf(entry.file, entry.className);
 	}
-	else if (entry.format == QLatin1String("clap"))
+	else if (entry.format == QLatin1String("clap") || entry.format == QLatin1String("vst2"))
 	{
 		maker = pluginvendors::vendorOf(entry.file, entry.name);
+	}
+	// Q050-491: the maker the registry's "Vendor: Name" carried when the AU host listed the component.
+	else if (entry.format == QLatin1String("au"))
+	{
+		maker = pluginvendors::vendorOf(QStringLiteral("au"), entry.component);
 	}
 	return maker.trimmed();
 }
@@ -189,6 +196,8 @@ QList<ControlDeviceEntry> controlDeviceCatalogue()
 	controlLv2DeviceEntries(&out);
 	controlVst3DeviceEntries(&out);
 	controlClapDeviceEntries(&out);
+	controlAuDeviceEntries(&out);  // Q050-491: macOS builds only, after every format already there
+	controlVst2DeviceEntries(&out);  // Q050-481.1: VST2 through Carla, after every format already there
 	return out;
 }
 
@@ -256,6 +265,24 @@ QJsonObject controlDeviceJson(const ControlDeviceEntry& entry, int index)
 		// way.
 		out.insert(QStringLiteral("file"), entry.file);
 		out.insert(QStringLiteral("clap_id"), entry.name);
+	}
+	if (entry.format == QLatin1String("vst2"))
+	{
+		// Q050-481.1: the binary, the plug-in's VST2 unique id, and how Carla reaches it: in process
+		// ("native") or through its Wine bridge ("win64"/"win32", then 'bridged' is true).
+		out.insert(QStringLiteral("file"), entry.file);
+		out.insert(QStringLiteral("unique_id"), entry.vst2Id);
+		out.insert(QStringLiteral("binary"), entry.vst2Binary);
+		out.insert(QStringLiteral("bridged"), entry.vst2Binary != QLatin1String("native"));
+	}
+	if (entry.format == QLatin1String("au"))
+	{
+		// Q050-491: the component's type:subtype:manufacturer - what the host instantiates and a saved
+		// project stores - and its scan-cache path, the one plugin.scan_cache_quarantine_add takes.
+		au::ComponentId id;
+		au::parseComponentKey(entry.component, &id);
+		out.insert(QStringLiteral("component"), entry.component);
+		out.insert(QStringLiteral("scan_cache_path"), au::scanCachePath(id));
 	}
 	return out;
 }

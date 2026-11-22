@@ -25,6 +25,7 @@
 
 #include <QPainterPath>
 #include <QWidget>
+#include <QVector>
 
 #include <atomic>
 
@@ -132,7 +133,7 @@ private:
 	bool m_periodicalUpdate;
 	QList<float> m_bandHeight;
 	//! The spectrum of the analyser, copied as a whole snapshot before it is painted.
-	QList<float> m_spectrumBands;
+	QVector<float> m_spectrumBands;
 
 	float bandToFreq ( int index );
 };

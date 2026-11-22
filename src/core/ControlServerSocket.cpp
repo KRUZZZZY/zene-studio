@@ -38,6 +38,7 @@
 #include <QJsonObject>
 #include <QSocketNotifier>
 
+#include "ControlEventHub.h"
 #include "ControlRegistry.h"
 
 #if defined(Q_OS_UNIX)
@@ -467,6 +468,7 @@ void ControlServer::close()
 	// m_registry, which may point at a destroyed instance. Id 0 is a safe no-op.
 	ControlRegistry::removeShutdownHook(m_shutdownHookId);
 	m_shutdownHookId = 0;
+	control::ControlEventHub::instance().ownerClosed(this);  // Q050-334.1: its wake functions hold this server
 #if !defined(Q_OS_UNIX)
 	// Windows: stop the transport - acceptor, then every client thread.
 	closeWin32();

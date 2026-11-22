@@ -43,9 +43,13 @@
 #include <QTemporaryDir>
 
 #include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "Engine.h"
+#include "PatternStore.h"
+#include "PatternTrack.h"
 #include "ReversibilityTestSupport.h"
 #include "Song.h"
+#include "Track.h"
 
 using namespace lmms;
 
@@ -258,6 +262,135 @@ private slots:
 		QVERIFY2(cell.ok, qPrintable(cell.errorMessage));
 		QCOMPARE(cell.result.value(QStringLiteral("track")).toInt(), 1);
 		QCOMPARE(cell.result.value(QStringLiteral("scene")).toInt(), 0);
+	}
+
+	//! A scene's tempo override is a Song tempo, so session.set_scene takes only the engine's own
+	//! range (MinTempo..MaxTempo, Song.h). The handler used to write any number: `tempo: 0` or 1e30
+	//! was stored, saved and reported as an override that nothing could play. A refused value writes
+	//! nothing, whether or not the override is switched on in the same call; the bounds themselves
+	//! and a fractional tempo inside them are the control.
+	void aSceneTempoOutsideTheEngineRangeIsRefused()
+	{
+		using revtest::run;
+		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 1},
+			{QStringLiteral("scenes"), kScenes}}).ok);
+		const auto sceneOf = [](const ControlResult& reply) {
+			return reply.result.value(QStringLiteral("scene")).toObject();
+		};
+		const auto setTempo = [](double tempo) {
+			return run(QStringLiteral("session.set_scene"),
+				{{QStringLiteral("scene"), 0}, {QStringLiteral("tempo"), tempo}});
+		};
+
+		// Inside the range: both bounds, and a fractional tempo. Accepted and read back.
+		for (const double accepted : {static_cast<double>(MinTempo), static_cast<double>(MaxTempo), 128.5})
+		{
+			const ControlResult ok = setTempo(accepted);
+			QVERIFY2(ok.ok, qPrintable(ok.errorMessage));
+			QCOMPARE(sceneOf(ok).value(QStringLiteral("tempo")).toDouble(), accepted);
+		}
+
+		// Outside it: refused as InvalidArgs.
+		for (const double refused : {0.0, 9.5, 1000.0, 1e30, -120.0})
+		{
+			QCOMPARE(setTempo(refused).errorKind, ControlErrorKind::InvalidArgs);
+		}
+		// The same with the override switched off in the call: the value is still stored, so still refused.
+		QCOMPARE(run(QStringLiteral("session.set_scene"), {{QStringLiteral("scene"), 0},
+			{QStringLiteral("tempo"), 0}, {QStringLiteral("tempo_override"), false}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+
+		// No refusal wrote anything: the scene still holds the last accepted tempo, override on.
+		const ControlResult readback = run(QStringLiteral("session.set_scene"), {{QStringLiteral("scene"), 0}});
+		QVERIFY2(readback.ok, qPrintable(readback.errorMessage));
+		QCOMPARE(sceneOf(readback).value(QStringLiteral("tempo")).toDouble(), 128.5);
+		QVERIFY(sceneOf(readback).value(QStringLiteral("tempo_enabled")).toBool());
+	}
+
+	//! A midi slot names a PatternStore id, and that id must exist. set_slot took
+	//! any integer: with no pattern in the store, pattern 0 was stored into a
+	//! midi slot and a type-less {pattern} was accepted with nothing to check it
+	//! against. A PatternTrack is what makes pattern 0 exist, so the checks run
+	//! through session.set_slot before and after the track that holds it.
+	void aMidiSlotMustNameAPatternTheStoreHolds()
+	{
+		using revtest::run;
+		Song* song = Engine::getSong();
+		song->clearProject();
+		QCOMPARE(Engine::patternStore()->numOfPatterns(), 0);
+		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 1},
+			{QStringLiteral("scenes"), 2}}).ok);
+
+		// The slot at (track, scene) as session.get_state reports it; empty when the cell is not a slot.
+		const auto slotAt = [](int track, int scene) {
+			const QJsonArray cells = run(QStringLiteral("session.get_state")).result
+				.value(QStringLiteral("slots")).toArray();
+			for (const QJsonValue& value : cells)
+			{
+				const QJsonObject slot = value.toObject();
+				if (slot.value(QStringLiteral("track")).toInt() == track
+					&& slot.value(QStringLiteral("scene")).toInt() == scene)
+				{
+					return slot;
+				}
+			}
+			return QJsonObject();
+		};
+
+		// Refused: a midi slot naming pattern 0 while the store holds none, and the type-less form of it.
+		const ControlResult midi = run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("type"), QStringLiteral("midi")},
+			{QStringLiteral("pattern"), 0}});
+		QVERIFY2(!midi.ok, "a midi slot named a pattern the PatternStore does not hold");
+		QCOMPARE(midi.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(midi.errorMessage.contains(QLatin1String("pattern"), Qt::CaseInsensitive),
+			qPrintable(midi.errorMessage));
+
+		const ControlResult typeless = run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0},
+			{QStringLiteral("scene"), 1}, {QStringLiteral("pattern"), 0}});
+		QVERIFY2(!typeless.ok, "a type-less set_slot named a pattern the PatternStore does not hold");
+
+		// Neither refusal left a slot behind.
+		QVERIFY2(slotAt(0, 0).isEmpty() && slotAt(0, 1).isEmpty(),
+			"a refused set_slot still left a slot behind");
+
+		// Normal and exhaustion: one pattern track makes pattern 0 exist; pattern 1 is still refused.
+		PatternTrack* patternTrack = dynamic_cast<PatternTrack*>(Track::create(Track::Type::Pattern, song));
+		QVERIFY(patternTrack != nullptr);
+		QCOMPARE(Engine::patternStore()->numOfPatterns(), 1);
+
+		const ControlResult accepted = run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("type"), QStringLiteral("midi")},
+			{QStringLiteral("pattern"), 0}});
+		QVERIFY2(accepted.ok, qPrintable(accepted.errorMessage));
+		QVERIFY2(!slotAt(0, 0).isEmpty(), "an accepted midi slot is missing from session.get_state");
+		QCOMPARE(slotAt(0, 0).value(QStringLiteral("pattern")).toInt(), 0);
+
+		const ControlResult beyondStore = run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0},
+			{QStringLiteral("scene"), 1}, {QStringLiteral("type"), QStringLiteral("midi")},
+			{QStringLiteral("pattern"), 1}});
+		QVERIFY2(!beyondStore.ok, "a midi slot named pattern 1 when the store holds only pattern 0");
+		QCOMPARE(beyondStore.errorKind, ControlErrorKind::InvalidArgs);
+
+		// Reconfiguration: removing the track removes its pattern, so the old reference is refused again.
+		const ControlResult removed = run(QStringLiteral("track.remove"),
+			{{QStringLiteral("track"), control::trackIdOf(patternTrack)}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QCOMPARE(Engine::patternStore()->numOfPatterns(), 0);
+		QVERIFY2(slotAt(0, 0).isEmpty(), "the slot that named the removed pattern survived the track's removal");
+
+		const ControlResult stale = run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("type"), QStringLiteral("midi")},
+			{QStringLiteral("pattern"), 0}});
+		QVERIFY2(!stale.ok, "a midi slot named pattern 0 after its track was removed");
+
+		PatternTrack* replacement = dynamic_cast<PatternTrack*>(Track::create(Track::Type::Pattern, song));
+		QVERIFY(replacement != nullptr);
+		QCOMPARE(Engine::patternStore()->numOfPatterns(), 1);
+		const ControlResult again = run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("type"), QStringLiteral("midi")},
+			{QStringLiteral("pattern"), 0}});
+		QVERIFY2(again.ok, qPrintable(again.errorMessage));
 	}
 
 };

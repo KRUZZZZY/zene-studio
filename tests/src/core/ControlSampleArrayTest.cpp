@@ -167,6 +167,55 @@ private slots:
 		QCOMPARE(samples.size(), static_cast<std::size_t>(2));
 		QCOMPARE(samples[0], 0.25f);
 	}
+
+	//! An ABSENT 'sample_rate' is the caller's default, and it is what is set.
+	void anAbsentSampleRateIsTheFallback()
+	{
+		float rate = -1.0f;
+		const lmms::ControlResult result =
+			lmms::control::readSampleRateArgument(QJsonObject{}, 48000.0f, &rate);
+		QVERIFY2(result.ok, qPrintable(result.errorMessage));
+		QCOMPARE(rate, 48000.0f);
+	}
+
+	//! A finite, positive rate is read, up to the largest float.
+	void aFinitePositiveSampleRateIsRead()
+	{
+		const QList<double> rates{44100.0, static_cast<double>(std::numeric_limits<float>::max())};
+		for (const double value : rates)
+		{
+			float rate = 0.0f;
+			const QJsonObject args{{QStringLiteral("sample_rate"), value}};
+			const lmms::ControlResult result =
+				lmms::control::readSampleRateArgument(args, 48000.0f, &rate);
+			QVERIFY2(result.ok, qPrintable(result.errorMessage));
+			QCOMPARE(static_cast<double>(rate), value);
+		}
+	}
+
+	//! A rate that is not a finite, positive float is refused and changes nothing:
+	//! 1e300 and an over-range double become an infinity, a negative or zero rate
+	//! is no rate, 1e-60 rounds to a float zero, and a string is not a number.
+	void anInvalidSampleRateIsRefusedAndChangesNothing()
+	{
+		const QList<QJsonValue> rates{
+			QJsonValue(1e300),
+			QJsonValue(-1.0),
+			QJsonValue(0.0),
+			QJsonValue(1e-60),
+			QJsonValue(static_cast<double>(std::numeric_limits<float>::max()) * 2.0),
+			QJsonValue(QStringLiteral("48000"))};
+		for (const QJsonValue& value : rates)
+		{
+			float rate = 12345.0f;
+			const QJsonObject args{{QStringLiteral("sample_rate"), value}};
+			const lmms::ControlResult result =
+				lmms::control::readSampleRateArgument(args, 48000.0f, &rate);
+			QVERIFY(!result.ok);
+			QVERIFY(result.errorKind == lmms::ControlErrorKind::InvalidArgs);
+			QCOMPARE(rate, 12345.0f);
+		}
+	}
 };
 
 QTEST_GUILESS_MAIN(ControlSampleArrayTest)

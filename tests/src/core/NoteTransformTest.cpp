@@ -386,6 +386,23 @@ private slots:
 		QCOMPARE( empty.length().getTicks(), 0 );
 	}
 
+	//! BUG new-p9-487: TimePos::quantize() divided by the snap interval without
+	//! a check, so a zero bar count (or one that truncates to zero ticks)
+	//! divided by zero. A grid below one tick snaps nothing, so the input comes
+	//! back unchanged, the same no-op Note::quantized() gives a non-positive grid.
+	void subTickTimePosGridIsANoop()
+	{
+		QCOMPARE( TimePos( 123 ).quantize( 0.f ).getTicks(), 123 );
+		QCOMPARE( TimePos( 123 ).quantize( 0.f, true ).getTicks(), 123 );
+		QCOMPARE( TimePos( 123 ).quantize( -1.f ).getTicks(), 123 );
+		// 192 ticks per bar * 0.001 bar is 0.192 ticks, which truncates to zero.
+		QCOMPARE( TimePos( 123 ).quantize( 0.001f ).getTicks(), 123 );
+		// A one-tick grid snaps every whole tick to itself.
+		QCOMPARE( TimePos( 123 ).quantize( 1.f / DefaultTicksPerBar ).getTicks(), 123 );
+		// A real grid still snaps: 123 on a 12-tick grid rounds down to 120.
+		QCOMPARE( TimePos( 123 ).quantize( 1.f / 16 ).getTicks(), 120 );
+	}
+
 	//! BUG new-p16-141: a float cannot represent every tick above 2^24, so a
 	//! grid of 1 used to move 16,777,217 down to 16,777,216, and near the
 	//! tick_t limit the float-to-int conversion left the type's range.

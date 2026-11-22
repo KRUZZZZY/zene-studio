@@ -39,6 +39,7 @@
 
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
+#include "PluginFactory.h"
 #include "Engine.h"
 #include "PluginQuarantineMenu.h"
 #include "SafeStart.h"
@@ -138,6 +139,7 @@ private slots:
 		rescan->trigger();
 		QVERIFY2(!menu->actions().first()->text().startsWith(QStringLiteral("Refused:")),
 			"the release menu's rescan command must work before registry startup readiness");
+		QTRY_VERIFY_WITH_TIMEOUT(!PluginFactory::instance()->backgroundScanActive(), 30000);  // it runs in the background now
 		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 	}
 

@@ -31,6 +31,11 @@
 
 #include <stdexcept>
 
+#if defined(Q_OS_UNIX)
+#include <csignal>
+#include <sys/resource.h>
+#endif
+
 #include "AutomatableModel.h"
 #include "AutomationTrack.h"
 #include "ControlRegistry.h"
@@ -42,12 +47,27 @@
 #include "SampleTrack.h"
 #include "ScriptBindings.h"
 #include "ScriptApiVersion.h"
+#include "ScriptCommandBridge.h"
+#include "ScriptDawBindings.h"
 #include "ScriptEngine.h"
 #include "Song.h"
 #include "Track.h"
 
 namespace
 {
+
+//! Queue a project.new the way zene.command() does (a RegistryCall the apply side runs), but
+//! without zene.command()'s own flush, so the next read's flush is what applies it.
+bool queueProjectNew(lmms::ScriptCommandBridge::Request& request)
+{
+	using namespace lmms;
+	request.id = QStringLiteral("project.new");
+	ScriptCommand command;
+	command.type = ScriptCommand::Type::DawEdit;
+	command.i0 = static_cast<std::int32_t>(ScriptDawBindings::Op::RegistryCall);
+	command.object0 = &request;
+	return ScriptEngine::instance()->enqueue(command);
+}
 
 //! Run \a fn and report whether it threw a std::exception; its what() lands in
 //! \a message when non-null.
@@ -69,6 +89,40 @@ bool throws(Fn&& fn, QString* message = nullptr)
 	}
 	return false;
 }
+
+#if defined(Q_OS_UNIX)
+//! Caps the size any file may grow to for the scope, so a write past it is cut short by the kernel
+//! (write returns fewer bytes than asked). The old limit and SIGXFSZ come back when it leaves scope.
+class ScopedFileSizeLimit
+{
+	struct rlimit m_original{};
+	void (*m_originalHandler)(int) = SIG_DFL;
+	bool m_active = false;
+
+public:
+	explicit ScopedFileSizeLimit(rlim_t bytes)
+	{
+		if (getrlimit(RLIMIT_FSIZE, &m_original) != 0) { return; }
+		m_originalHandler = std::signal(SIGXFSZ, SIG_IGN);
+		if (m_originalHandler == SIG_ERR) { return; }
+		rlimit limited = m_original;
+		limited.rlim_cur = bytes;
+		m_active = setrlimit(RLIMIT_FSIZE, &limited) == 0;
+		if (!m_active) { std::signal(SIGXFSZ, m_originalHandler); }
+	}
+
+	~ScopedFileSizeLimit()
+	{
+		if (m_active)
+		{
+			setrlimit(RLIMIT_FSIZE, &m_original);
+			std::signal(SIGXFSZ, m_originalHandler);
+		}
+	}
+
+	bool active() const { return m_active; }
+};
+#endif
 
 } // namespace
 
@@ -487,6 +541,92 @@ print('opened views are inert')
 		engine->setProjectDir(QDir::currentPath());
 	}
 
+	/*! A read flushes the command queue before it dereferences the object it
+	 *  names. A queued project replacement that the flush applies deletes that
+	 *  object during the read: the check made before the flush passed, so the
+	 *  check made after it must decide. Each read below must answer with the
+	 *  dead-view sentinel and never touch the freed Track / MidiClip / model. */
+	void readAcrossAQueuedProjectReplacementIsSafe()
+	{
+		using namespace lmms;
+
+		{
+			LuaPatternStore store;
+			store.addInstrumentTrack();
+			LuaTrack& track = store.track(0);
+			QVERIFY(track.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(track.name(), QString());
+			QVERIFY(!track.isValid());
+		}
+		{
+			LuaPatternStore store;
+			LuaInstrumentTrack& row = store.addInstrumentTrack();
+			QVERIFY(row.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(row.name(), QString());
+			QVERIFY(!row.isValid());
+		}
+		{
+			LuaPatternStore store;
+			LuaInstrumentTrack& row = store.addInstrumentTrack();
+			QVERIFY(row.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(row.volume(), 0);
+			QVERIFY(!row.isValid());
+		}
+		{
+			LuaPatternStore store;
+			LuaInstrumentTrack& row = store.addInstrumentTrack();
+			QVERIFY(row.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(row.panning(), 0);
+			QVERIFY(!row.isValid());
+		}
+		{
+			LuaPatternStore store;
+			store.addInstrumentTrack();
+			LuaBoolModel& mute = store.track(0).muteModel();
+			QVERIFY(mute.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(mute.value(), false);
+			QVERIFY(!mute.isValid());
+		}
+		{
+			LuaPatternStore store;
+			LuaPatternClip& clip = store.addPattern();
+			QVERIFY(clip.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(clip.name(), QString());
+			QVERIFY(!clip.isValid());
+		}
+		{
+			LuaPatternStore store;
+			LuaPatternClip& clip = store.addPattern();
+			QVERIFY(clip.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(clip.noteCount(), 0);
+			QVERIFY(!clip.isValid());
+		}
+		{
+			LuaPatternStore store;
+			LuaInstrumentTrack& row = store.addInstrumentTrack();
+			LuaFloatModel& volume = row.volumeModel();
+			QVERIFY(volume.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(volume.value(), 0.0f);
+			QVERIFY(!volume.isValid());
+		}
+	}
+
 	/*! A Lua view of an instrument must not outlive the instrument it names:
 	 *  replacing the track's instrument deletes the old one, and the saved
 	 *  view must report itself invalid and answer with the null sentinels. */
@@ -841,6 +981,75 @@ print('opened views are inert')
 		message.clear();
 		QVERIFY(throws([&] { files.exists(QStringLiteral("x")); }, &message));
 		QVERIFY2(message.contains(QStringLiteral("sandbox root does not exist")), qPrintable(message));
+	}
+
+	/*! A write the kernel cuts short must not destroy what the file held. QFile::open(
+	 *  WriteOnly | Truncate) empties the target before write() can fail, so the old bytes
+	 *  are gone unless the write refuses to touch a file it cannot replace wholly. */
+	void projectFileWriteKeepsTheOriginalWhenTheKernelCutsItShort()
+	{
+#if !defined(Q_OS_UNIX)
+		QSKIP("RLIMIT_FSIZE is a POSIX facility");
+#else
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		QTemporaryDir projectDir;
+		QVERIFY(projectDir.isValid());
+		engine->setProjectDir(projectDir.path());
+
+		const QString target = QDir(projectDir.path()).absoluteFilePath(QStringLiteral("large.txt"));
+		const QByteArray original(18000, 'o');
+		const auto writeFile = [&target](const QByteArray& bytes) {
+			QFile file(target);
+			if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) { return false; }
+			return file.write(bytes) == bytes.size() && file.flush();
+		};
+		const auto readFile = [&target]() {
+			QFile file(target);
+			return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+		};
+		QVERIFY(writeFile(original));
+		QCOMPARE(readFile(), original);
+
+		QString error;
+		// (a) A normal write of more than 16 KiB succeeds and reads back through the Lua surface.
+		QCOMPARE(engine->runString(QStringLiteral(R"(
+local files = lmms.projectFile()
+local payload = string.rep('A', 20000)
+assert(files:write('large.txt', payload), 'a normal write must succeed')
+assert(files:read('large.txt') == payload, 'a normal write must read back')
+)"), &error, QStringLiteral("=(normal write)")), ScriptEngine::RunResult::Ok);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+
+		QVERIFY(writeFile(original));
+		QCOMPARE(readFile(), original);
+
+		{
+			ScopedFileSizeLimit limit(8);
+			QVERIFY2(limit.active(), "RLIMIT_FSIZE must be enforceable for this test to mean anything");
+			// (b) The kernel cuts the 20000-byte write after 8 bytes: write reports false,
+			// the script still completes, and the file must still hold the original bytes.
+			QCOMPARE(engine->runString(QStringLiteral(R"(
+local files = lmms.projectFile()
+local ok = files:write('large.txt', string.rep('n', 20000))
+assert(ok == false, 'a short write must report false')
+lmms.log():info('short write refused')
+)"), &error, QStringLiteral("=(short write)")), ScriptEngine::RunResult::Ok);
+			QVERIFY2(error.isEmpty(), qPrintable(error));
+			QVERIFY2(engine->takeLogMessages().contains(QStringLiteral("[info] short write refused")),
+				"the script must run past the refused write");
+			QCOMPARE(readFile(), original);
+		}
+
+		// (c) Once the limit is gone a normal write replaces the whole file again.
+		QCOMPARE(engine->runString(QStringLiteral(R"(
+local files = lmms.projectFile()
+assert(files:write('large.txt', 'small'), 'a normal write after the limit must succeed')
+assert(files:read('large.txt') == 'small', 'the shorter write must replace the file wholly')
+)"), &error, QStringLiteral("=(write after limit)")), ScriptEngine::RunResult::Ok);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QCOMPARE(readFile(), QByteArray("small"));
+#endif
 	}
 
 	/*! saveProject() must capture the state the SCRIPT has already written, not

@@ -27,6 +27,8 @@
 
 #include <optional>
 #include <utility>
+#include <QJsonArray>
+#include <QString>
 #include <QWidget>
 
 #include "embed.h"
@@ -34,7 +36,9 @@
 #include "AudioPortsModel.h"
 #include "ModelView.h"
 
+class QMenu;
 class QScrollArea;
+class QToolButton;
 
 namespace lmms
 {
@@ -63,6 +67,19 @@ public:
 	void toggleVisibility();
 	void closeWindow();
 
+	/*! Q050-155.2: the device's control address (its chain's owner "ch-<n>"/"trk-<n>" and its "fx-<n>"). Once
+	 *  set, a pin click and the Channels menu both run port.set_pins through ControlRegistry - the agent's
+	 *  command, one undo step each on the engine's history - and the matrix grows to the host bus's channels (a
+	 *  discrete-N mixer channel: N). Without one (a view opened outside a device card) a click writes the
+	 *  model directly, as it always did. */
+	void setControlAddress(const QString& target, const QString& device);
+	//! The Channels menu: one entry per pair of the host bus, each pinning the device onto that pair.
+	auto channelsMenu() const -> QMenu* { return m_channelsMenu; }
+	//! port.set_pins' list that moves every pin of the device onto the bus's channels from @a firstChannel.
+	auto pinsFrom(int firstChannel) const -> QJsonArray;
+	//! Runs port.set_pins for one pin (the matrix views call it); false when there is no control address.
+	auto dispatchPin(bool output, ch_cnt_t trackChannel, ch_cnt_t processorChannel, bool enabled) -> bool;
+
 protected:
 	void paintEvent(QPaintEvent* pe) override;
 
@@ -80,6 +97,14 @@ private:
 
 	MatrixView* m_inView = nullptr;
 	MatrixView* m_outView = nullptr;
+
+	void rebuildChannelsMenu();
+
+	QString m_target;
+	QString m_device;
+	int m_busChannels = 2;
+	QToolButton* m_channelsButton = nullptr;
+	QMenu* m_channelsMenu = nullptr;
 
 	QColor m_backgroundColor;
 	QColor m_passthroughLineColor;
@@ -120,6 +145,7 @@ private:
 	auto getColor(ch_cnt_t trackChannel, ch_cnt_t processorChannel) -> QColor;
 
 	AudioPortsModel::Matrix* m_matrix = nullptr;
+	PinConnector* m_owner = nullptr;
 
 	QColor m_lineColor;
 	QColor m_enabledColor;

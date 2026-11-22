@@ -14,13 +14,16 @@
  *   g++ -O3 -march=native -std=c++20 -I plugins/NeuralAmp \
  *       -I plugins/NeuralAmp/rtneural/modules/Eigen \
  *       plugins/NeuralAmp/tests/nam_harness.cpp \
+ *       plugins/NeuralAmp/tests/HarnessClockPosix.cpp \
  *       plugins/NeuralAmp/nam/NamModel.cpp \
  *       plugins/NeuralAmp/nam/NamModelLoader.cpp -o build/nam_harness
+ * Windows builds select HarnessClockWindows.cpp instead through CMake.
  *
  * Copyright (c) 2026 AI-KOS Team. GPL-2.0-or-later (see plugin sources).
  */
 
 #include "nam/NamModel.h"
+#include "NamHarnessCpuClock.h"
 
 #include <algorithm>
 #include <array>
@@ -31,7 +34,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <ctime>
 #include <fstream>
 #include <limits>
 #include <string>
@@ -625,16 +627,15 @@ int main(int argc, char** argv)
 		std::vector<float> wavOut(wavIn.size(), 0.0f);
 		std::vector<float> inB(opt.blockSize), outB(opt.blockSize);
 		size_t pos = 0;
-		timespec t0{}, t1{};
 		double cpuUs = 0.0;
 		while (pos < wavIn.size())
 		{
 			const size_t n = std::min(static_cast<size_t>(opt.blockSize), wavIn.size() - pos);
 			std::memcpy(inB.data(), wavIn.data() + pos, n * sizeof(float));
-			clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t0);
+			const double t0 = namThreadCpuMicroseconds();
 			model->process(inB.data(), outB.data(), static_cast<int>(n));
-			clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t1);
-			cpuUs += (t1.tv_sec - t0.tv_sec) * 1e6 + (t1.tv_nsec - t0.tv_nsec) / 1e3;
+			const double t1 = namThreadCpuMicroseconds();
+			cpuUs += t1 - t0;
 			std::memcpy(wavOut.data() + pos, outB.data(), n * sizeof(float));
 			pos += n;
 		}
@@ -749,14 +750,11 @@ int main(int argc, char** argv)
 		std::memcpy(inBlock.data(), input.data() + off,
 			static_cast<size_t>(opt.blockSize) * sizeof(float));
 
-		timespec t0{};
-		timespec t1{};
-		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t0);
+		const double t0 = namThreadCpuMicroseconds();
 		model->process(inBlock.data(), outBlock.data(), opt.blockSize);
-		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t1);
+		const double t1 = namThreadCpuMicroseconds();
 
-		const double cpuUs = (t1.tv_sec - t0.tv_sec) * 1e6 +
-			(t1.tv_nsec - t0.tv_nsec) / 1e3;
+		const double cpuUs = t1 - t0;
 		cpuTotalUs += cpuUs;
 		blockUs.push_back(cpuUs);
 

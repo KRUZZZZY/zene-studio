@@ -381,14 +381,7 @@ void DeviceCard::contextMenuEvent(QContextMenuEvent* event)
 
 void DeviceCard::openEditor()
 {
-	if (m_spec.effect == nullptr)
-	{
-		if (InstrumentTrackView* view = instrumentTrackView(m_spec.instrumentTrack))
-		{
-			view->getInstrumentTrackWindow()->toggleVisibility(true);
-		}
-		return;
-	}
+	if (m_spec.effect == nullptr) { openGenericEditor(); return; }
 	// A hosted plug-in's own window first (VST3 / CLAP); a built-in effect's control dialog when
 	// the device has no native editor.
 	const QJsonObject args{{QStringLiteral("target"), m_spec.target}, {QStringLiteral("plugin"), m_spec.plugin}};
@@ -400,6 +393,15 @@ void DeviceCard::openEditor()
 	// (the reason is the command's own, not a word of ours).
 	setEditorError(result.errorMessage);
 	announce(this, CommandCall{QStringLiteral("plugin.editor_open"), args, {}, QString(), false}, result);
+}
+
+bool DeviceCard::openGenericEditor()
+{
+	if (m_spec.effect != nullptr) { return openEffectDialog(); }
+	InstrumentTrackView* view = instrumentTrackView(m_spec.instrumentTrack);
+	if (view == nullptr) { return false; }
+	view->getInstrumentTrackWindow()->toggleVisibility(true);
+	return true;
 }
 
 bool DeviceCard::openEffectDialog()
@@ -424,6 +426,8 @@ void DeviceCard::openPins()
 		if (model == nullptr) { return; }
 		auto* view = model->instantiateView();
 		view->setWindowTitle(tr("%1 - pins").arg(m_spec.title));
+		// Q050-155.2: its edits run port.set_pin / port.set_pins, and a discrete bus's channels are its rows.
+		view->setControlAddress(m_spec.target, m_spec.plugin);
 		m_pins = getGUI()->mainWindow()->addWindowedWidget(view);
 	}
 	m_pins->show();

@@ -30,7 +30,10 @@ built instance and checks exactly that over the wire:
      POSIX comes from listen() and here from listenWin32() through the same
      reporter;
   8. `control.quit` answers, the instance exits inside a bound, and the control
-     path is gone afterwards.
+     path is gone afterwards;
+  9. project-change events (Q050-334.1) arrive on a subscribed connection while it
+     is parked in its read, in order, and stop after events.unsubscribe - the
+     Windows transport pushes through its own outbox, so it needs its own proof.
 
 A hang is a failure: every wait below is bounded, and the bound expiring is a
 failure (exit 1), never a skip.
@@ -385,6 +388,29 @@ def check_startup_refusal(binary):
         bad.close()
 
 
+def check_project_events(socket_path, editor):
+    """Check 9: one edit reaches a subscriber's connection unasked; unsubscribe ends that."""
+    deadline = time.time() + START_BOUND
+    while editor.ok_call("control.ping").get("engine_ready") is not True:
+        if time.time() > deadline:
+            raise Failure("the engine never became ready for the event check")
+        time.sleep(0.2)
+    subscriber = Client(make_client(socket_path, CONNECT_BOUND))
+    subscribed = subscriber.ok_call("events.subscribe")
+    editor.ok_call("track.add", {"type": "instrument", "name": "event"})
+    event = json.loads(subscriber.transport.read_line(REPLY_BOUND))
+    if event.get("event") != "project_changed" or event.get("seq") != subscribed["seq"] + 1 \
+            or event.get("command") != "track.add":
+        raise Failure("the event for track.add is not the expected one: %s" % json.dumps(event)[:300])
+    ok("an edit reaches the subscribed connection as an ordered event line")
+    subscriber.ok_call("events.unsubscribe", {"subscription": subscribed["subscription"]})
+    editor.ok_call("track.add", {"type": "instrument", "name": "after unsubscribe"})
+    if subscriber.ok_call("control.ping").get("pong") is not True:
+        raise Failure("after events.unsubscribe the next line was not the ping's reply")
+    ok("after events.unsubscribe no event line arrives")
+    subscriber.transport.close()
+
+
 def run(binary, socket_path, problems):
     instance = Instance(binary, socket_path)
     client = None
@@ -419,6 +445,8 @@ def run(binary, socket_path, problems):
         if result.get("pong") is not True:
             raise Failure("a connection after an over-cap refusal could not ping")
         ok("the listener survives an over-cap connection: a fresh one pings")
+
+        check_project_events(socket_path, survivor)
 
         check_startup_refusal(binary)
 

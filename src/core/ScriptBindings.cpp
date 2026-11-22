@@ -49,6 +49,7 @@ extern "C"
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QSaveFile>
 
 #include <algorithm>
 #include <cstring>
@@ -555,8 +556,10 @@ bool LuaBoolModel::value() const
 {
 	if (!m_model) { return false; }
 	ScriptEngine::instance()->flushCommandsForRead();
-	// BoolModel::value() hides the base template, so call the typed overload.
-	return m_model->value();
+	// The flush can apply a project replacement that deletes the model, so the
+	// QPointer is checked again here. BoolModel::value() hides the base template,
+	// so call the typed overload.
+	return m_model ? m_model->value() : false;
 }
 
 void LuaBoolModel::setValue(bool value)
@@ -591,7 +594,8 @@ QString LuaInstrumentTrack::name() const
 	if (!m_track) { return QString(); }
 	// Reads see prior writes from the same script (the apply side drains).
 	ScriptEngine::instance()->flushCommandsForRead();
-	return m_track->name();
+	// The flush can apply a project replacement that deletes the track.
+	return m_track ? m_track->name() : QString();
 }
 
 void LuaInstrumentTrack::setName(const QString& name)
@@ -614,7 +618,8 @@ int LuaInstrumentTrack::volume() const
 {
 	if (!m_track) { return 0; }
 	ScriptEngine::instance()->flushCommandsForRead();
-	return m_track->getVolume();
+	// Checked again: the flush can apply a project replacement that deletes the track.
+	return m_track ? m_track->getVolume() : 0;
 }
 
 void LuaInstrumentTrack::setVolume(int volume)
@@ -631,7 +636,8 @@ int LuaInstrumentTrack::panning() const
 {
 	if (!m_track) { return 0; }
 	ScriptEngine::instance()->flushCommandsForRead();
-	return static_cast<int>(m_track->panningModel()->value());
+	// Checked again: the flush can apply a project replacement that deletes the track.
+	return m_track ? static_cast<int>(m_track->panningModel()->value()) : 0;
 }
 
 void LuaInstrumentTrack::setPanning(int panning)
@@ -694,7 +700,8 @@ QString LuaTrack::name() const
 	if (!m_track) { return QString(); }
 	// Reads see prior writes from the same script (the apply side drains).
 	ScriptEngine::instance()->flushCommandsForRead();
-	return m_track->name();
+	// The flush can apply a project replacement that deletes the track.
+	return m_track ? m_track->name() : QString();
 }
 
 void LuaTrack::setName(const QString& name)
@@ -712,7 +719,7 @@ QString LuaTrack::type() const
 		QStringLiteral("instrument"), QStringLiteral("pattern"),
 		QStringLiteral("sample"), QStringLiteral("event"), QStringLiteral("video"),
 		QStringLiteral("automation"), QStringLiteral("hidden_automation"),
-		QStringLiteral("folder"),
+		QStringLiteral("folder"), QStringLiteral("neutral"),
 	};
 	const int index = static_cast<int>(m_track->type());
 	if (index >= 0 && index < static_cast<int>(Track::Type::Count)) { return names[index]; }
@@ -770,7 +777,8 @@ QString LuaPatternClip::name() const
 	if (!m_clip) { return QString(); }
 	// Reads see prior writes from the same script (the apply side drains).
 	ScriptEngine::instance()->flushCommandsForRead();
-	return m_clip->name();
+	// The flush can apply a project replacement that deletes the clip.
+	return m_clip ? m_clip->name() : QString();
 }
 
 void LuaPatternClip::setName(const QString& name)
@@ -802,7 +810,8 @@ int LuaPatternClip::noteCount() const
 {
 	if (!m_clip) { return 0; }
 	ScriptEngine::instance()->flushCommandsForRead();
-	return static_cast<int>(m_clip->notes().size());
+	// Checked again: the flush can apply a project replacement that deletes the clip.
+	return m_clip ? static_cast<int>(m_clip->notes().size()) : 0;
 }
 
 LuaNote& LuaPatternClip::note(int index) const
@@ -1066,13 +1075,26 @@ bool LuaProjectFile::write(const QString& path, const QString& contents) const
 	{
 		throw std::runtime_error(QStringLiteral("ProjectFile.write: %1").arg(error).toStdString());
 	}
-	QFile file(resolved);
-	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+	// A directory cannot be replaced atomically: QSaveFile would write a sibling
+	// temp and only fail at commit. Refuse at open time, as QFile did.
+	if (QFileInfo(resolved).isDir())
 	{
 		throw std::runtime_error(QStringLiteral("ProjectFile.write: cannot open %1").arg(path).toStdString());
 	}
-	const QByteArray bytes = contents.toUtf8();  // a short write (full disk) or failed flush is false
-	return file.write(bytes) == bytes.size() && file.flush();
+	const QByteArray bytes = contents.toUtf8();
+	// Written whole or not at all: a write the kernel cuts short is cancelled, never
+	// committed, so the previous contents survive.
+	QSaveFile file(resolved);
+	if (!file.open(QIODevice::WriteOnly))
+	{
+		throw std::runtime_error(QStringLiteral("ProjectFile.write: cannot open %1").arg(path).toStdString());
+	}
+	if (file.write(bytes) != bytes.size())
+	{
+		file.cancelWriting();
+		return false;
+	}
+	return file.commit();
 }
 
 QStringList LuaProjectFile::list(const QString& path) const

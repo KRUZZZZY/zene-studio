@@ -26,6 +26,7 @@
 #include "AutomationPointEdit.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <QCoreApplication>
 
@@ -97,6 +98,12 @@ bool movePoint(AutomationClip* clip, int tick, int toTick, float toValue, QStrin
 	if (model == nullptr || !clip->getTimeMap().contains(TimePos(tick)))
 	{
 		*error = tr("there is no point there");
+		return false;
+	}
+	// std::clamp hands NaN back unchanged, and a NaN stored as a point's value poisons the curve: refuse it first.
+	if (!std::isfinite(toValue))
+	{
+		*error = tr("the value is not a finite number");
 		return false;
 	}
 	toTick = std::max(0, toTick);

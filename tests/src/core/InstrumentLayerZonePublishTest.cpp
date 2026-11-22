@@ -1,6 +1,7 @@
 /*
  * InstrumentLayerZonePublishTest.cpp - a layer insert, add or removal publishes
- * its zone renumbering and its layer slot as one edit (cluster new-p8-131-port).
+ * its zone renumbering and its layer slot as one edit (cluster new-p8-131-port),
+ * and a track's MIDI parts stop at the 128-part limit (cluster new-p10-46).
  *
  * The zone list and the layer slots are read by the audio workers. Published as
  * two edits, a worker could see the zones already renumbered while the layer
@@ -29,7 +30,21 @@
 
 #include <QtTest>
 
+#include <QDomDocument>
+#include <QDomElement>
+#include <QDomNodeList>
+
+#include <cmath>
+#include <limits>
+
+#include <vector>
+
+#include <QDomDocument>
+#include <QDomElement>
+
 #include "ControlInstrumentCommands.h"
+#include "InstrumentLayers.h"
+#include "InstrumentMidiParts.h"
 #include "InstrumentTrack.h"
 #include "NotePlayHandle.h"
 #include "RackTestSupport.h"
@@ -54,6 +69,41 @@ bool layerZoneMappingIs(InstrumentTrack* track, int count, int chain, Instrument
 	const RackZone* zone = zones.zone(0);
 	return track->layers().layerCount() == count && zones.zoneCount() == 1 && zone != nullptr &&
 		zone->chain == chain && track->layers().layer(chain) == expected;
+}
+
+int partCount(const QString& track)
+{
+	return revtest::run(QStringLiteral("plugin.midi_parts"), {{QStringLiteral("target"), track}}).result.value(QStringLiteral("part_count")).toInt(-1);
+}
+
+//! @a count parts, each over the whole keyboard and velocity range, on the MIDI channels in turn. Written
+//! through the model, so a test that uses it checks the command's own limit and nothing else.
+std::vector<RackZone> manyParts(int count)
+{
+	std::vector<RackZone> parts;
+	for (int i = 0; i < count; ++i)
+	{
+		RackZone zone;
+		zone.chain = i % InstrumentMidiParts::Channels;
+		parts.push_back(zone);
+	}
+	return parts;
+}
+
+//! How many undo steps the registry holds a transaction for. A refused command must not grow this.
+int transactionCount()
+{
+	return revtest::run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray().size();
+}
+
+//! The track's state saved and read back into the same track - the project round trip of one track.
+void saveAndReload(InstrumentTrack* track)
+{
+	QDomDocument doc;
+	QDomElement root = doc.createElement(QStringLiteral("trackcontainer"));
+	doc.appendChild(root);
+	const QDomElement saved = track->saveState(doc, root);
+	track->restoreState(saved);
 }
 
 } // namespace
@@ -137,6 +187,120 @@ private slots:
 		track->layers().zones().setChangedHook({});
 		QVERIFY(removedLayer);
 		QVERIFY(removePublishedTogether);
+	}
+
+	//! A layer's level is a finite gain (cluster new-p22-60). NaN passes every < and > range check, so a NaN
+	//! level used to reach the layer's gain: rack.layer_set refuses it typed, and InstrumentLayers::setMix
+	//! refuses it for any other caller. The layer's mix stays what it was; a finite level still lands.
+	void layerLevelRefusesNonFinite()
+	{
+		if (m_device.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
+		const QString fresh = revtest::addInstrumentTrack();
+		InstrumentTrack* track = trackOf(fresh);
+		QVERIFY(track != nullptr);
+		const ControlResult added = revtest::run(QStringLiteral("rack.layer_add"),
+			{{QStringLiteral("target"), fresh}, {QStringLiteral("device"), m_device}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		const int index = track->layers().layerCount();  // the layer added last
+		const QString layer = added.result.value(QStringLiteral("layer")).toString();
+		const float before = track->layers().mix(index).level;
+		const double nan = std::numeric_limits<double>::quiet_NaN();
+
+		const ControlResult refused = revtest::run(QStringLiteral("rack.layer_set"),
+			{{QStringLiteral("target"), fresh}, {QStringLiteral("layer"), layer}, {QStringLiteral("level"), nan}});
+		QVERIFY(!refused.ok);
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(track->layers().mix(index).level, before);
+
+		InstrumentLayers::Mix nanMix = track->layers().mix(index);
+		nanMix.level = static_cast<float>(nan);
+		QVERIFY(!track->layers().setMix(index, nanMix));
+		QCOMPARE(track->layers().mix(index).level, before);
+
+		QVERIFY(revtest::run(QStringLiteral("rack.layer_set"),
+			{{QStringLiteral("target"), fresh}, {QStringLiteral("layer"), layer}, {QStringLiteral("level"), 0.5}}).ok);
+		QCOMPARE(track->layers().mix(index).level, 0.5f);
+	}
+
+	//! A saved layer level that is not a number loads as unity, not as a NaN gain (readMix clamped it, and
+	//! std::clamp passes NaN through). A finite saved level still loads as saved. The track goes through its
+	//! own save and restore, the path a project load takes.
+	void savedLayerLevelNotANumberLoadsAsUnity()
+	{
+		if (m_device.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
+		const QString fresh = revtest::addInstrumentTrack();
+		InstrumentTrack* track = trackOf(fresh);
+		QVERIFY(track != nullptr);
+		const ControlResult added = revtest::run(QStringLiteral("rack.layer_add"),
+			{{QStringLiteral("target"), fresh}, {QStringLiteral("device"), m_device}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		const int index = track->layers().layerCount();  // the layer added last
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("trackcontainer"));
+		doc.appendChild(root);
+		const QDomElement saved = track->saveState(doc, root);
+		const QDomNodeList entries = saved.elementsByTagName(QStringLiteral("layer"));
+		QVERIFY(!entries.isEmpty());
+		QDomElement entry = entries.at(entries.size() - 1).toElement();  // the layer added last
+
+		entry.setAttribute(QStringLiteral("layerlevel"), QStringLiteral("0.5"));
+		track->restoreState(saved);
+		QCOMPARE(track->layers().mix(index).level, 0.5f);
+
+		entry.setAttribute(QStringLiteral("layerlevel"), QStringLiteral("nan"));
+		track->restoreState(saved);
+		QVERIFY(std::isfinite(track->layers().mix(index).level));
+		QCOMPARE(track->layers().mix(index).level, 1.0f);
+	}
+
+	//! MX-114: a track holds at most 128 MIDI parts (one per MIDI key; the audio thread scans them on every
+	//! note-on). At that count plugin.midi_part_add is refused, typed, records no undo step and leaves the list
+	//! alone; removing one part frees its slot for the next add.
+	void midiPartsAddRefusedAtTheLimit()
+	{
+		QVERIFY2(!m_device.isEmpty(), "no loadable instrument: build the instrument plugins (e.g. the audiofileprocessor target)");
+		constexpr int kLimit = 128;  // ControlCommandsPluginParts.cpp kMaxParts
+		const QString fresh = revtest::addInstrumentTrack();
+		InstrumentTrack* track = trackOf(fresh);
+		QVERIFY(track != nullptr);
+		track->midiParts().zones().assign(manyParts(kLimit));
+		QCOMPARE(partCount(fresh), kLimit);
+
+		const int transactionsBefore = transactionCount();
+		const ControlResult refused = revtest::run(QStringLiteral("plugin.midi_part_add"), {{QStringLiteral("target"), fresh},
+			{QStringLiteral("midi_channel"), 3}, {QStringLiteral("low_key"), 60}});
+		QVERIFY2(!refused.ok, "a 129th part was accepted");
+		QVERIFY(refused.errorKind == ControlErrorKind::Refused);
+		QCOMPARE(partCount(fresh), kLimit);
+		QCOMPARE(transactionCount(), transactionsBefore);  // a refused add records no undo step
+
+		QVERIFY(revtest::run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), fresh},
+			{QStringLiteral("part"), QStringLiteral("part-127")}}).ok);
+		QCOMPARE(partCount(fresh), kLimit - 1);
+		QVERIFY2(revtest::run(QStringLiteral("plugin.midi_part_add"), {{QStringLiteral("target"), fresh},
+			{QStringLiteral("midi_channel"), 3}, {QStringLiteral("low_key"), 60}}).ok, "a freed slot took no part");
+		QCOMPARE(partCount(fresh), kLimit);
+	}
+
+	//! A saved list longer than the limit (an older project, written before the command had one) loads whole:
+	//! the load drops nothing, and one more part is refused.
+	void midiPartsOverLimitSavedListLoadsWhole()
+	{
+		QVERIFY2(!m_device.isEmpty(), "no loadable instrument: build the instrument plugins (e.g. the audiofileprocessor target)");
+		constexpr int kSaved = 130;
+		const QString fresh = revtest::addInstrumentTrack();
+		InstrumentTrack* track = trackOf(fresh);
+		QVERIFY(track != nullptr);
+		track->midiParts().zones().assign(manyParts(kSaved));
+		saveAndReload(track);
+		QCOMPARE(partCount(fresh), kSaved);
+
+		const ControlResult refused = revtest::run(QStringLiteral("plugin.midi_part_add"), {{QStringLiteral("target"), fresh},
+			{QStringLiteral("midi_channel"), 3}, {QStringLiteral("low_key"), 60}});
+		QVERIFY(!refused.ok);
+		QVERIFY(refused.errorKind == ControlErrorKind::Refused);
+		QCOMPARE(partCount(fresh), kSaved);
 	}
 };
 

@@ -304,6 +304,55 @@ private slots:
 		QCOMPARE(binding(two.first.id).keys, two.first.defaults);
 		QCOMPARE(binding(two.second.id).keys, two.second.defaults);
 	}
+
+	//! Menu rows pass an explicit empty scope; the command schema must still accept the menu map.
+	void anExplicitEmptyScopeCanRebindAMenuAction()
+	{
+		const QPair<Row, Row> two = twoBoundActions();
+		QVERIFY(!two.first.id.isEmpty());
+		const QString chosen = QStringLiteral("Ctrl+Alt+F8");
+		const ControlResult set = run(QStringLiteral("shortcuts.set"), {{QStringLiteral("id"), two.first.id},
+			{QStringLiteral("scope"), QString()}, {QStringLiteral("keys"), chosen}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QCOMPARE(binding(two.first.id).keys, chosen);
+		const ControlResult reset = run(QStringLiteral("shortcuts.reset"), {{QStringLiteral("id"), two.first.id},
+			{QStringLiteral("scope"), QString()}});
+		QVERIFY2(reset.ok, qPrintable(reset.errorMessage));
+		QCOMPARE(binding(two.first.id).keys, two.first.defaults);
+	}
+
+	//! Q050-055.1 x Q050-202: a shipped preset maps menu actions only, so a panel binding survives
+	//! it and its undo, and the preset's safety copy carries the panel map so it restores that too.
+	void aPresetKeepsPanelBindingsAndItsBackupCarriesThem()
+	{
+		const QJsonArray arranger = run(QStringLiteral("shortcuts.list"), {{QStringLiteral("scope"), QStringLiteral("arranger")}})
+			.result.value(QStringLiteral("bindings")).toArray();
+		QVERIFY(!arranger.isEmpty());
+		const QString id = arranger.first().toObject().value(QStringLiteral("id")).toString();
+		const QString chosen = QStringLiteral("Ctrl+Alt+F7");
+		const auto panelKeys = [&id] {
+			for (const QJsonValue& value : run(QStringLiteral("shortcuts.list"), {{QStringLiteral("scope"), QStringLiteral("arranger")}})
+				.result.value(QStringLiteral("bindings")).toArray())
+			{
+				if (value.toObject().value(QStringLiteral("id")).toString() == id) { return value.toObject().value(QStringLiteral("keys")).toString(); }
+			}
+			return QString();
+		};
+		QVERIFY(run(QStringLiteral("shortcuts.set"), {{QStringLiteral("id"), id}, {QStringLiteral("scope"), QStringLiteral("arranger")},
+			{QStringLiteral("keys"), chosen}}).ok);
+
+		const ControlResult applied = run(QStringLiteral("shortcuts.preset_apply"), {{QStringLiteral("preset"), QStringLiteral("ableton-live")}});
+		QVERIFY2(applied.ok, qPrintable(applied.errorMessage));
+		QVERIFY2(panelKeys() == chosen, qPrintable(QStringLiteral("the preset left the arranger binding on '%1'").arg(panelKeys())));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(panelKeys(), chosen);
+
+		QVERIFY(run(QStringLiteral("shortcuts.reset")).ok);
+		QVERIFY(panelKeys() != chosen);
+		QVERIFY(run(QStringLiteral("shortcuts.import"), {{QStringLiteral("file"), applied.result.value(QStringLiteral("backup")).toString()},
+			{QStringLiteral("replace"), true}}).ok);
+		QVERIFY2(panelKeys() == chosen, "the preset's safety copy did not restore the panel binding");
+	}
 };
 
 QTEST_MAIN(ShortcutsCommandsTest)

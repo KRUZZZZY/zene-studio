@@ -48,6 +48,7 @@
 #include "fft_helpers.h"
 #include "fft_helpers.h"
 #include "PitchTrack.h"
+#include "PitchTrackCmndBoundary.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
@@ -142,7 +143,8 @@ bool installPublishHook(Analyser& analyser, PublishRead* read)
 void* operator new(std::size_t size)
 {
 	if (g_trackLargestAllocation && size > g_largestAllocation) { g_largestAllocation = size; }
-	if (void* ptr = std::malloc(size != 0 ? size : 1)) { return ptr; }
+	const std::size_t tail = g_fillAllocationTail ? AllocationTail : 0;
+	if (void* ptr = std::malloc(size + tail != 0 ? size + tail : 1)) { std::fill_n(static_cast<unsigned char*>(ptr) + size, tail, g_tailByte); return ptr; }
 	throw std::bad_alloc();
 }
 
@@ -227,6 +229,8 @@ private slots:
 			QVERIFY(std::abs(window[4] - 1.0f) < 0.0001f);
 		}
 	}
+
+	void pitchNeverReadsPastItsCmndVector() { checkPitchNeverReadsPastCmnd(); }
 
 	void aHeldToneIsOneNote()
 	{

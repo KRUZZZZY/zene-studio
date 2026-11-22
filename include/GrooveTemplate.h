@@ -140,10 +140,16 @@ public:
 	/*! Whether a name/length/step triple can be a template at all:
 	 *  a non-empty name of at most MaxNameLength characters, a slot width in
 	 *  [MinStepTicks, MaxStepTicks], and a positive length that is a whole
-	 *  number of slots, at most MaxSteps of them. */
+	 *  number of slots, at most MaxSteps of them. The name is judged BEFORE
+	 *  normalisation: pass the name as given, never normalisedName(name). */
 	static bool isWritable(const QString& name, tick_t lengthTicks, tick_t stepTicks);
 
-	//! The stored form of \a name: trimmed, and bounded to MaxNameLength.
+	//! Whether \a name, trimmed, fits MaxNameLength. An overlong name is refused
+	//! by every path that admits a name; it is never cut down to a shorter one.
+	static bool nameFits(const QString& name);
+
+	//! The stored form of \a name: trimmed, and bounded to MaxNameLength. This is
+	//! the form a template keeps, NOT an admission test - use nameFits() for that.
 	static QString normalisedName(const QString& name);
 
 	const QString& name() const { return m_name; }

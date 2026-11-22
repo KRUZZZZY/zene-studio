@@ -28,8 +28,6 @@
 #include <QWidget>
 
 
-class QPixmap;
-
 namespace lmms
 {
 
@@ -57,8 +55,6 @@ protected:
 private:
 	TrackView* m_trackView = nullptr;
 	bool m_isGrabbed = false;
-	static QPixmap* s_grabbedPixmap;
-	static QPixmap* s_releasedPixmap;
 };
 
 } // namespace gui

@@ -130,6 +130,11 @@ public:
 	void clearModels();
 
 private:
+	//! Emit modelRemoved and erase the entry @p key, but only if that entry
+	//! still registers @p model. A model removed earlier may be destroyed after
+	//! a replacement took its name; then the entry belongs to the replacement.
+	void eraseRegisteredModel(const std::string& key, AutomatableModel* model);
+
 	//! models for the controls
 	//! @note The AutomatableModels behind the ModelInfo are not owned,
 	//!   but referenced after `addModel` is being called.

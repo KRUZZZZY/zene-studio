@@ -297,7 +297,7 @@ private slots:
 		clip->changeLength(TimePos(4 * Bar));
 		clip->setAutoResize(false);
 		QTRY_VERIFY(viewOf(clip) != nullptr);
-		ClipView* view = viewOf(clip);
+		lmms::gui::ClipView* view = viewOf(clip);
 		view->show();
 		QTest::qWait(30);
 

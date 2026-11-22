@@ -90,13 +90,16 @@ ExportOutcome MidiExport::tryExport(const TrackContainer::TrackList &tracks,
 
 
 	int nTracks = 1; // the conductor track
-	// One growable chunk buffer for every MTrk and the header; each is written whole, never capped.
+	// One growable chunk buffer for every MTrk and the header; each is written whole, or refused whole when its length cannot be recorded.
 	std::vector<uint8_t> chunk;
+	bool chunkOk = true;
 	const auto writeChunk = [&](const auto &writable)
 	{
+		// Once a chunk has been refused the file is incomplete: nothing more is written into it.
+		if (!chunkOk) { return; }
 		chunk.clear();
-		writable.writeToBuffer(chunk);
-		midiout.writeRawData(reinterpret_cast<const char *>(chunk.data()), int(chunk.size()));
+		chunkOk = writable.writeToBuffer(chunk);
+		if (chunkOk) { midiout.writeRawData(reinterpret_cast<const char *>(chunk.data()), int(chunk.size())); }
 	};
 
 	for (const Track* track : tracks) if (track->type() == Track::Type::Instrument) nTracks++;
@@ -275,7 +278,7 @@ ExportOutcome MidiExport::tryExport(const TrackContainer::TrackList &tracks,
 	// Qt resets the device status), and AFTER it is the flush error (the bytes the
 	// device still held) or an error the close itself reports, which only shows up then.
 	// Reading the error before the close alone missed both.
-	const bool writeOk = midiout.status() == QDataStream::Ok && f.error() == QFileDevice::NoError;
+	const bool writeOk = chunkOk && midiout.status() == QDataStream::Ok && f.error() == QFileDevice::NoError;
 	f.close();
 	// A half-written file - or one that did not close cleanly - is the caller's to remove
 	// (Incomplete); a complete one is the caller's to replace (Written). Neither is guessed

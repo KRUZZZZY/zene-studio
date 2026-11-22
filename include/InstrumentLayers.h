@@ -133,7 +133,7 @@ public:
 	//! Layer @a index's mix (0..layerCount()); the default for any other index.
 	auto mix(int index) const -> Mix;
 	//! Sets layer @a index's mix (0..layerCount(), level clamped to 0..MaxLevel) and publishes every layer's gain;
-	//! false for no such layer.
+	//! false for no such layer, or a non-finite level (NaN is never a gain).
 	auto setMix(int index, const Mix& mix) -> bool;
 
 	//! The track's mixer channel changed: the layers follow it (InstrumentTrack::updateMixerChannel).

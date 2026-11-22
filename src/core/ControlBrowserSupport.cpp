@@ -31,6 +31,7 @@
 #include "ControlBrowserSupport.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <QFileInfo>
 #include <QJsonArray>
@@ -223,6 +224,18 @@ QJsonObject browserItemJson(const BrowserItem& item, bool withMetadata)
 	// Empty when the file carries none: the category is a wire fact about the
 	// item either way, and a reader filters on it without a special case.
 	out.insert(QStringLiteral("category"), item.category);
+	/*! 0.5.0 L11 (Q050-316.1): the sound's measured tempo and key when this
+	 *  search read them. `tempo_known`/`key_known` say whether a measurement
+	 *  exists, so 0 BPM and -1 (the detector found none) are never mistaken for
+	 *  values - the same distinction the filter makes. Omitted entirely by a
+	 *  search that never consulted the index, which is honest: nobody looked. */
+	if (item.hasMeasuredTempoKey)
+	{
+		out.insert(QStringLiteral("tempo_bpm"), item.measuredBpm);
+		out.insert(QStringLiteral("tempo_known"), item.measuredBpm > 0.0);
+		out.insert(QStringLiteral("key_pitch_class"), item.measuredKeyPitchClass);
+		out.insert(QStringLiteral("key"), browserKeyName(item.measuredKeyPitchClass));
+	}
 	if (withMetadata && item.hasMetadata)
 	{
 		out.insert(QStringLiteral("metadata"), browserMetadataJson(item.metadata));
@@ -283,6 +296,13 @@ QJsonObject browserItemSchema(bool withMetadata)
 		{QStringLiteral("modified_ms"), numberProperty()},
 		{QStringLiteral("tags"), arrayProperty()},
 		{QStringLiteral("category"), stringProperty()},
+		// 0.5.0 L11 (Q050-316.1): present only when this search read a
+		// measurement, so an absent key means "nobody looked", tempo_known false
+		// means "measured, none found", and 0 / "" are never read as facts.
+		{QStringLiteral("tempo_bpm"), numberProperty()},
+		{QStringLiteral("tempo_known"), booleanProperty()},
+		{QStringLiteral("key_pitch_class"), integerProperty(-1, 11)},
+		{QStringLiteral("key"), stringProperty()},
 	};
 	if (withMetadata) { properties.insert(QStringLiteral("metadata"), browserMetadataSchema()); }
 	return objectSchema(properties);
@@ -344,6 +364,56 @@ bool readBrowserTagArguments(const QJsonObject& args, QString* key, QString* tag
 		QStringLiteral("'tag'"), error);
 }
 
+//! The tempo range of a query (0.5.0 L11, Q050-316.1): 0 (or absent) is open on
+//! that side, so both absent is "any tempo". A negative or non-finite bound, or a
+//! range whose minimum is above its maximum, is REFUSED rather than reinterpreted -
+//! a caller that asks for 130-90 BPM made a mistake, and silently matching nothing
+//! would look like "the library has no such loop".
+bool readTempoRange(const QJsonObject& args, BrowserQuery* query, ControlResult* error)
+{
+	const QJsonValue rawMin = args.value(QStringLiteral("tempo_min"));
+	const QJsonValue rawMax = args.value(QStringLiteral("tempo_max"));
+	const double minBpm = rawMin.isDouble() ? rawMin.toDouble() : 0.0;
+	const double maxBpm = rawMax.isDouble() ? rawMax.toDouble() : 0.0;
+	if (!std::isfinite(minBpm) || !std::isfinite(maxBpm) || minBpm < 0.0 || maxBpm < 0.0)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'tempo_min' and 'tempo_max' are a tempo range in BPM, 0 or absent "
+				"for an open side; a negative or non-finite bound names no tempo"));
+		return false;
+	}
+	if (minBpm > 0.0 && maxBpm > 0.0 && minBpm > maxBpm)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'tempo_min' (%1) is above 'tempo_max' (%2): name the range the other "
+				"way round").arg(minBpm).arg(maxBpm));
+		return false;
+	}
+	query->minBpm = minBpm;
+	query->maxBpm = maxBpm;
+	return true;
+}
+
+//! The key facet (0.5.0 L11, Q050-316.1): a pitch class name (C..B, sharps and
+//! flats), a bare 0..11, "any" or absent; anything else is refused by name. The
+//! measurement stores no octave or mode, so a name carrying one ("C#3") is not
+//! accepted as another spelling of the class - it is a different question.
+bool readKeyFacet(const QJsonObject& args, BrowserQuery* query, ControlResult* error)
+{
+	const QString rawKey = args.value(QStringLiteral("key")).toString();
+	if (rawKey.trimmed().isEmpty() || browserKeyFromName(rawKey, &query->keyPitchClass)) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("'key' is '%1'; it is a pitch class - C, C#, Db, ... B - a number 0..11, "
+			"or 'any'").arg(rawKey));
+	return false;
+}
+
+//! Both tempo/key facets of a query, read together by the reader both searches use.
+bool readTempoKeyFacets(const QJsonObject& args, BrowserQuery* query, ControlResult* error)
+{
+	return readTempoRange(args, query, error) && readKeyFacet(args, query, error);
+}
+
 bool readBrowserQueryArguments(const QJsonObject& args, BrowserQuery* query, ControlResult* error)
 {
 	query->text = args.value(QStringLiteral("text")).toString();
@@ -364,6 +434,7 @@ bool readBrowserQueryArguments(const QJsonObject& args, BrowserQuery* query, Con
 	{
 		return false;
 	}
+	if (!readTempoKeyFacets(args, query, error)) { return false; }
 	if (!query->kind.isEmpty())
 	{
 		BrowserKind kind = BrowserKind::Other;

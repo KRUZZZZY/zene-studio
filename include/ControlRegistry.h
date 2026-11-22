@@ -150,11 +150,21 @@ public:
 	//! Validate, check \c requires and the engine state, then run the handler on
 	//! the UI thread.
 	ControlResult invoke(const QString& id, const QJsonObject& args = QJsonObject());
+	/*! The application's own window running a command in this process (Q050-059.1): the same validation,
+	 *  handler, collaboration tap, journal step, coalescing and transaction record as invoke(), but an
+	 *  engine command needs only the engine to exist. The readiness flag (setReady) belongs to the opt-in
+	 *  agent socket and is never set when the program runs without one, so an edit made in a window must
+	 *  not depend on it. A refusal leaves the project as it was, exactly as it does for invoke(). */
+	ControlResult invokeInProcess(const QString& id, const QJsonObject& args = QJsonObject()) { return dispatch(id, args, true); }
 	//! The class an aggregate record of several mutating children carries: the weakest of their classes
 	//! ("irreversible" < "snapshot" < "true_inverse"), or "" when a child has no row or is not mutating.
 	static QString aggregateClassOf(const QStringList& childClasses);
 
 	//! Queue \p fn onto the UI thread and wait for its result.
+	//! How many handlers are running right now (0 with no registry): tells an edit a command makes from one the
+	//! interface makes directly (Q050-334.1).
+	static int runningHandlers() { return s_instance != nullptr ? s_instance->m_depth : 0; }
+
 	static ControlResult runOnUiThread(const std::function<ControlResult()>& fn);
 
 	//! Empty string when \p args satisfies \p schema, else a human-readable reason.
@@ -163,9 +173,14 @@ public:
 	//! Payload of control.commands_list.
 	QJsonObject describeAll() const;
 
-	//! True when no display is available (offscreen/minimal/vnc platform).
+	//! True when nobody can answer a dialog: an agent instance, or no display (offscreen/minimal/vnc platform).
 	bool isHeadless() const { return m_headless; }
-	void setHeadless(bool headless) { m_headless = headless; }
+	//! Sets both flags: headless means no display here (a test's way to be on, or off, a display).
+	void setHeadless(bool headless) { m_headless = headless; m_displayAvailable = !headless; }
+	//! True when a window can be shown: what `requires: display` checks. Unlike isHeadless() it stays true in an
+	//! agent instance on a real display, so a non-modal window command (app.help) runs there.
+	bool isDisplayAvailable() const { return m_displayAvailable; }
+	void setDisplayAvailable(bool available) { m_displayAvailable = available; }
 
 	//! True once the GUI is fully constructed and the initial project exists.
 	//! Commands return the typed 'busy' refusal until then, so a client cannot
@@ -289,6 +304,8 @@ public:
 private:
 	explicit ControlRegistry(QObject* parent = nullptr);
 	QString checkRequires(const ControlCommand& command) const;
+	//! invoke() and invokeInProcess(): they differ only in what makes an engine command addressable.
+	ControlResult dispatch(const QString& id, const QJsonObject& args, bool inProcess);
 	/*! Runs one handler with everything that has to happen around it: the
 	 *  one-command-one-step merge, the coalescing rule and the transaction
 	 *  record. Split out of invoke() so neither function carries the dispatch
@@ -298,7 +315,14 @@ private:
 	//! ED-056: the observer hears a command that changed something, when no other command is running it.
 	void notifyObserver(const QString& commandId, const QJsonObject& args, bool mutating, bool ok) const
 	{
-		if (m_observer && mutating && ok && m_depth == 0) { m_observer(commandId, args); }
+		if (m_observer && mutating && ok && m_depth == 0)
+		{
+			// Cluster new-p20-31: the edit is already recorded before this call, and the observer is a
+			// best-effort recorder. Its failure must not rewrite the committed reply or skip the
+			// collab/event notifications that follow, so an exception from it is swallowed here.
+			try { m_observer(commandId, args); }
+			catch (...) { }
+		}
 	}
 	CommandObserver m_observer;
 	int m_depth = 0;  //!< how many handlers are running (UI thread)
@@ -374,6 +398,7 @@ private:
 	int m_recordedBytes = 0;
 	int m_evicted = 0;
 	bool m_headless;
+	bool m_displayAvailable = true;
 };
 
 //! Register every command of the first control-surface slice (SPEC A12/A16).
@@ -462,11 +487,14 @@ LMMS_EXPORT void registerPluginEditorCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerClipTrimCommands(ControlRegistry& registry);
 //! note.probability_set - the MIDI-depth probability verb (docs/MIDI-DEPTH.md).
 LMMS_EXPORT void registerNoteProbabilityCommands(ControlRegistry& registry);
+//! note.step_get_state / note.step_set - the melodic step grid view of a MIDI clip (Q050-294.1).
+LMMS_EXPORT void registerNoteStepCommands(ControlRegistry& registry);
 //! note.edit - several notes' position/key/length/velocity/pan/probability as one edit and
 //! one undo step (the 0.5.0 note editor's gestures; docs/NOTE-EDITOR.md).
 LMMS_EXPORT void registerNoteEditCommands(ControlRegistry& registry);
 //! track.set_mixer_channel - which mixer channel a track plays into (0.5.0 L01).
 LMMS_EXPORT void registerTrackChannelCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerTrackRoutingCommands(ControlRegistry& registry);
 //! project.collect_media - a project's media copied beside it, references made relative (L01 E28).
 LMMS_EXPORT void registerCollectMediaCommand(ControlRegistry& registry);
 //! bounce.land - a track rendered onto a new audio track, the source muted (L01).

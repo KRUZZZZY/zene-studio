@@ -190,6 +190,8 @@ public:
 	{
 		wtSampleControl control;
 		control.frame = absFraction(sample) * OscillatorConstants::WAVETABLE_LENGTH;
+		// A NaN sample (from a NaN frequency) has no frame; the first one is used.
+		if (!(control.frame >= 0.0f)) { control.frame = 0.0f; }
 		control.f1 = static_cast<f_cnt_t>(control.frame);
 		control.f2 = control.f1 < OscillatorConstants::WAVETABLE_LENGTH - 1 ?
 					control.f1 + 1 :
@@ -228,11 +230,16 @@ public:
 
 	static inline int waveTableBandFromFreq(float freq)
 	{
+		// log2() of zero, a negative number or NaN is -inf or NaN, and converting that to int is undefined.
+		// Such frequencies get the lowest band. +inf gets the highest band, as any frequency above the table range.
+		const float ratio = freq / 440.0f;
+		if (!(ratio > 0.0f)) { return 1; }
+		if (std::isinf(ratio)) { return OscillatorConstants::WAVE_TABLES_PER_WAVEFORM_COUNT-1; }
 		// Frequency bands are indexed relative to default MIDI key frequencies.
 		// I.e., 440 Hz (A4, key 69): 69 + 12 * log2(1) = 69
 		// To always avoid aliasing, ceil() is used instead of round(). It ensures that the nearest wavetable with
 		// lower than optimal number of harmonics is used when exactly matching wavetable is not available.
-		int band = (69 + static_cast<int>(std::ceil(12.0f * std::log2(freq / 440.0f)))) / OscillatorConstants::SEMITONES_PER_TABLE;
+		int band = (69 + static_cast<int>(std::ceil(12.0f * std::log2(ratio)))) / OscillatorConstants::SEMITONES_PER_TABLE;
 		// Limit the returned value to a valid wavetable index range.
 		// (qBound would bring Qt into the audio code, which not a preferable option due to realtime safety.
 		// C++17 std::clamp() could be used in the future.)

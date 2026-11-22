@@ -53,7 +53,7 @@ int sp_revsc_create(sp_revsc **p){
     if (p == NULL) {
         return SP_NOT_OK;
     }
-    *p = malloc(sizeof(sp_revsc));
+    *p = calloc(1, sizeof(sp_revsc));
     if (*p == NULL) {
         return SP_NOT_OK;
     }
@@ -99,8 +99,11 @@ int sp_revsc_destroy(sp_revsc **p)
     if (pp == NULL) {
         return SP_NOT_OK;
     }
-    sp_auxdata_free(&pp->aux);
+    if (pp->initDone != 0) {
+        sp_auxdata_free(&pp->aux);
+    }
     free(*p);
+    *p = NULL;
     return SP_OK;
 }
 

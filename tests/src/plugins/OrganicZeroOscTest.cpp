@@ -100,6 +100,33 @@ private slots:
 				"a note without oscillators is not silent");
 		}
 	}
+
+	//! The note data of a note rendered with no oscillator is released by
+	//! deleteNotePluginData(), which deletes the two null chain heads and the
+	//! state, and never dereferences them. Contract pin for the finding's
+	//! example: it passes on the unmodified branch, so it is not RED proof.
+	void zeroOscillatorNoteDataIsDeleted()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(
+			Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+
+		auto* instrument = new OrganicInstrument(track);
+		instrument->m_numOscillators = 0;
+
+		Note note(TimePos(1), TimePos(0));
+		NotePlayHandle handle(track, 0, 64, note);
+
+		SampleFrame buffer[64] {};
+		std::span<SampleFrame> out(buffer, 64);
+		instrument->playNoteImpl(&handle, out);
+		QVERIFY(handle.m_pluginData != nullptr);
+
+		instrument->deleteNotePluginData(&handle);
+
+		// Cleared so the handle's destructor does not release the data again.
+		handle.m_pluginData = nullptr;
+	}
 };
 
 } // namespace lmms

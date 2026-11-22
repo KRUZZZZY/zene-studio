@@ -35,6 +35,7 @@
 
 #include "ConfigManager.h"
 #include "MainWindow.h"
+#include "NoteEditor.h"
 #include "Shell.h"
 #include "ShellChrome.h"
 #include "ShellPanel.h"
@@ -138,6 +139,35 @@ private slots:
 		QVERIFY(!world.shell.findChild<QWidget*>(QStringLiteral("shellBottom"))->isVisible());
 	}
 
+	//! gui-1030-menu-view-note-editor: View > Note Editor is a toggle. With another bottom panel open it
+	//! OPENS the Note Editor (the sweep's "before" frame showed the Mixer there, so there was nothing to
+	//! close); with the Note Editor already open it CLOSES it. Only the Edit view's centre cannot hide.
+	void theNoteEditorSwitchOpensWhenAnotherPanelHoldsTheLowerRegionAndClosesWhenItDoesNot()
+	{
+		World world;
+		const QString detail = QStringLiteral("detail");
+		QAction* action = world.shell.panelAction(detail);
+		QVERIFY(action != nullptr);
+		QCOMPARE(world.shell.model().openIn(ShellRegion::Bottom), detail);  // first-run layout
+		world.shell.togglePanel(QStringLiteral("mixer"));                   // the Mixer takes the region
+		QVERIFY(!world.shell.model().isVisible(detail));
+		QVERIFY(!action->isChecked());
+		QVERIFY(world.shell.togglePanel(detail));                           // View > Note Editor: it opens
+		QVERIFY(world.shell.model().isVisible(detail));
+		QVERIFY(action->isChecked());
+		QVERIFY(world.content.value(detail)->isVisible());
+		QVERIFY(!world.content.value(QStringLiteral("mixer"))->isVisible());
+		QVERIFY(!world.shell.togglePanel(detail));                          // a second click: it closes
+		QVERIFY(!world.shell.model().isVisible(detail));
+		QVERIFY(!action->isChecked());
+		QVERIFY(world.shell.model().openIn(ShellRegion::Bottom).isEmpty());
+		QVERIFY(!world.shell.findChild<QWidget*>(QStringLiteral("shellBottom"))->isVisible());
+		// In the Edit view the Note Editor is the centre: that one stays, by design (ShellLayout::close).
+		world.shell.setView(ShellView::Edit);
+		QVERIFY(world.shell.togglePanel(detail));
+		QVERIFY(world.shell.model().isVisible(detail));
+	}
+
 	void aPanelTheViewLacksIsRevealedBySwitchingView()
 	{
 		World world;
@@ -170,6 +200,20 @@ private slots:
 		QVERIFY(world.shell.viewActions().at(1)->isChecked());
 	}
 
+	void everyRegisteredPanelHasAFrame()
+	{
+		// window.focus_panel (ControlCommandsWorkspace.cpp, focusPanel) passes Shell::panel() a frame only after
+		// ShellLayout::isPanel() accepted the id; this pins that both answer from the same register.
+		World world;
+		for (const ShellPanelSpec& spec : ShellLayout::panels())
+		{
+			QVERIFY(ShellLayout::isPanel(spec.id));
+			QVERIFY2(world.shell.panel(spec.id) != nullptr, qPrintable(spec.id));
+		}
+		QVERIFY(!ShellLayout::isPanel(QStringLiteral("no-such-panel")));
+		QVERIFY(world.shell.panel(QStringLiteral("no-such-panel")) == nullptr);
+	}
+
 	void everyTargetMeetsTheMinimumSize()
 	{
 		World world;
@@ -178,6 +222,19 @@ private slots:
 			if (!b->isVisible()) { continue; }
 			QVERIFY2(b->width() >= 24 && b->height() >= 24,
 				qPrintable(QStringLiteral("%1 is %2x%3").arg(b->accessibleName()).arg(b->width()).arg(b->height())));
+		}
+	}
+
+	void everyPanelIdHasAFrameBeforeAndAfterItIsRevealed()
+	{
+		// window.focus_panel dereferences shell.panel(id) for every id ShellLayout::isPanel accepts: the frame is
+		// built for each spec in the Shell constructor and never removed, so the lookup must not be null.
+		World world;
+		for (const ShellPanelSpec& spec : ShellLayout::panels())
+		{
+			QVERIFY2(world.shell.panel(spec.id) != nullptr, qPrintable(spec.id));
+			world.shell.revealPanel(spec.id);
+			QVERIFY2(world.shell.panel(spec.id) != nullptr, qPrintable(spec.id));
 		}
 	}
 
@@ -258,6 +315,18 @@ private slots:
 		QVERIFY(world.shell.floatingWindow(QStringLiteral("browser"))->isVisible());
 	}
 
+	//! gui-1106: the header's pop-out click floats the Arranger in a window that opens exactly over its old place.
+	void thePopOutClickFloatsTheArrangerOverItsOwnPlace()
+	{
+		World world;
+		ShellPanel* frame = world.shell.panel(QStringLiteral("arranger"));
+		const QRect was(frame->mapToGlobal(QPoint(0, 0)), Shell::floatSize(frame));
+		frame->findChild<QToolButton*>(QStringLiteral("panelFloat"))->click();
+		QWidget* own = world.shell.floatingWindow(QStringLiteral("arranger"));
+		QVERIFY(own != nullptr && own->isVisible() && frame->window() == own);
+		QCOMPARE(own->geometry(), was);
+	}
+
 	void theCentreSaysWhereItsPanelWentAndTheButtonSaysDock()
 	{
 		World world;
@@ -275,6 +344,43 @@ private slots:
 		QVERIFY(!placeholder->isVisible());
 		QCOMPARE(hostOf(world.shell.panel(QStringLiteral("arranger"))), QStringLiteral("shellCenter"));
 		QCOMPARE(button->property("controlCommand").toString(), QStringLiteral("window.detach"));
+	}
+
+	//! Cluster gui-1106: the sweep reported that clicking "Pop out the Note Editor panel" left it docked. Its own
+	//! button, clicked, floats it in a window of its own; clicked again ("Dock") it comes back to the bottom region.
+	void theNoteEditorsPopOutButtonFloatsItAndDocksItBack()
+	{
+		World world;
+		const QString id = QStringLiteral("detail");
+		auto* button = world.shell.panel(id)->findChild<QToolButton*>(QStringLiteral("panelFloat"));
+		QVERIFY(button != nullptr);
+		QCOMPARE(button->accessibleName(), QStringLiteral("Pop out the Note Editor panel"));
+		QVERIFY(world.shell.model().isVisible(id));
+		button->click();
+		QVERIFY(world.shell.isDetached(id));
+		QVERIFY(world.shell.floatingWindow(id) != nullptr && world.shell.floatingWindow(id)->isVisible());
+		QCOMPARE(world.shell.panel(id)->window(), world.shell.floatingWindow(id));
+		QCOMPARE(button->property("controlCommand").toString(), QStringLiteral("window.attach"));
+		button->click();
+		QVERIFY(!world.shell.isDetached(id));
+		QCOMPARE(hostOf(world.shell.panel(id)), QStringLiteral("shellBottom"));
+		QCOMPARE(button->accessibleName(), QStringLiteral("Pop out the Note Editor panel"));
+	}
+
+	//! GUI sweep gui-1106: Automation's pop-out button, clicked once, floats it in "Automation - Zene Studio".
+	void theAutomationPopOutButtonFloatsItAndDocksItBack()
+	{
+		World world;
+		const QString id = QStringLiteral("automation");
+		auto* button = world.shell.panel(id)->findChild<QToolButton*>(QStringLiteral("panelFloat"));
+		QVERIFY(button != nullptr);
+		QCOMPARE(button->accessibleName(), QStringLiteral("Pop out the Automation panel"));
+		button->click();
+		QVERIFY(world.shell.isDetached(id));
+		QVERIFY(world.shell.floatingWindow(id)->isVisible());
+		QCOMPARE(world.shell.floatingWindow(id)->windowTitle(), QStringLiteral("Automation - Zene Studio"));
+		button->click();  // now "Dock"
+		QVERIFY(!world.shell.isDetached(id));
 	}
 
 	void draggingAHeaderOutFloatsThePanelWhereItIsDropped()
@@ -370,6 +476,43 @@ private slots:
 		QVERIFY(!world.shell.isDetached(id));
 	}
 
+	// gui-1105: View > Note Editor is a toggle. With another lower panel showing (the sweep had just clicked
+	// Mixer) the click opens the Note Editor in its place; only a second click closes it.
+	void theViewMenuNoteEditorEntryTogglesTheLowerRegion()
+	{
+		World world;
+		const QString detail = QStringLiteral("detail");
+		const QString mixer = QStringLiteral("mixer");
+		QVERIFY(world.shell.model().view() == ShellView::Arrange);
+		world.shell.togglePanel(mixer);
+		QVERIFY(world.shell.model().isVisible(mixer));
+		QVERIFY(!world.shell.model().isVisible(detail));
+		QVERIFY(world.shell.togglePanel(detail));  // opens, replacing the Mixer
+		QVERIFY(world.shell.model().isVisible(detail));
+		QVERIFY(!world.shell.model().isVisible(mixer));
+		QVERIFY(!world.shell.togglePanel(detail));  // a second click closes it
+		QVERIFY(!world.shell.model().isVisible(detail));
+	}
+
+	// gui-1106: the Devices header's "Pop out the Devices panel" button floats Devices in a window titled
+	// "Devices - Zene Studio" (the GUI sweep's click had missed it, off-screen) and the same button docks it.
+	void theDevicesPopOutButtonFloatsAndDocksDevices()
+	{
+		World world;
+		const QString id = QStringLiteral("devices");
+		auto* button = world.shell.panel(id)->findChild<QToolButton*>(QStringLiteral("panelFloat"));
+		QVERIFY(button != nullptr);
+		QCOMPARE(button->accessibleName(), Shell::tr("Pop out the %1 panel").arg(QStringLiteral("Devices")));
+		QVERIFY(!world.shell.isDetached(id));
+		button->click();
+		QVERIFY(world.shell.isDetached(id));
+		QVERIFY(world.shell.floatingWindow(id) != nullptr);
+		QCOMPARE(world.shell.floatingWindow(id)->windowTitle(), QStringLiteral("Devices - Zene Studio"));
+		QCOMPARE(button->accessibleName(), Shell::tr("Dock the %1 panel").arg(QStringLiteral("Devices")));
+		button->click();
+		QVERIFY(!world.shell.isDetached(id));
+	}
+
 	void aSavedLayoutRemembersItsFloatingPanels()
 	{
 		World world;
@@ -425,6 +568,39 @@ private slots:
 	//! BUGS_FOUND 11.30, carried over from FocusDeskPaneTest when the Focus Desk was retired: a
 	//! restored window is never clamped into an area too small to hold the grab sliver - the
 	//! never-shown workspace is exactly such an area now.
+
+	//! gui-1106-main-mute: a Note Editor tool button in the docked shell, clicked where it is, checks and paints
+	//! as selected (the ShellButton follows its QAction's group, so the painter and the group cannot diverge).
+	void aClickedNoteEditorToolButtonShowsItIsSelected()
+	{
+		World world;
+		auto* editor = new NoteEditor;
+		world.shell.mount(QStringLiteral("detail"), editor);
+		QVERIFY(QTest::qWaitForWindowExposed(&world.shell));
+		ShellButton* mute = nullptr;
+		for (ShellButton* b : editor->findChildren<ShellButton*>())
+		{
+			if (b->toolTip().startsWith(NoteEditor::tr("Mute tool"))) { mute = b; }
+		}
+		QVERIFY(mute != nullptr);
+		QVERIFY(mute->isVisible());
+		QVERIFY(!mute->isChecked());
+		// It lies inside its own panel, nothing of the docked shell covers it.
+		const QRect inShell(mute->mapTo(&world.shell, QPoint()), mute->size());
+		ShellPanel* frame = world.shell.panel(QStringLiteral("detail"));
+		QVERIFY(QRect(frame->mapTo(&world.shell, QPoint()), frame->size()).contains(inShell));
+		QCOMPARE(world.shell.childAt(inShell.center()), static_cast<QWidget*>(mute));
+		const QImage before = mute->grab().toImage();
+		QTest::mouseMove(mute);  // the hover fill is in both images, so only the checked state can differ
+		const QImage hovered = mute->grab().toImage();
+		QTest::mouseClick(mute, Qt::LeftButton);
+		QVERIFY(mute->isChecked());
+		QVERIFY(mute->defaultAction()->isChecked());
+		const QImage after = mute->grab().toImage();
+		QVERIFY(after != before);
+		QVERIFY(after != hovered);
+	}
+
 	void aRestoredWindowIsNotClampedIntoAHiddenWorkspace()
 	{
 		const QRect saved(300, 200, 400, 300);

@@ -226,6 +226,8 @@ QVector<Track*> rippledOthers(const QVector<Track*>& covered)
 {
 	QVector<Track*> others;
 	if (arrangement::modes().ripple != arrangement::Ripple::All) { return others; }
+	// No covered track (its track was removed since range.set): nothing is cut, so no gap to close.
+	if (covered.isEmpty()) { return others; }
 	for (Track* track : Engine::getSong()->tracks())
 	{
 		if (!covered.contains(track)) { others.append(track); }

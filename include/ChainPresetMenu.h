@@ -44,7 +44,8 @@ namespace lmms::gui
 /*! KNOWN-LIMITATIONS "Plugin-chain presets have no interface": on an instrument or sample track's
  *  menu, an "Effect chain presets" submenu rebuilt from chain.list each time it opens - Save
  *  chain as preset... (a name, then chain.save; an existing name asks before it is replaced), one
- *  Apply item per stored preset (chain.apply - one control.undo puts the previous chain back) and
+ *  Apply item per stored preset (chain.apply - one control.undo puts the previous chain back; the controller
+ *  bindings it restored or skipped are then shown) and
  *  a Delete submenu (chain.remove, after a confirmation). Other tracks get nothing. */
 LMMS_EXPORT void addChainPresetMenu(QMenu* menu, Track* track);
 
@@ -52,6 +53,9 @@ LMMS_EXPORT void addChainPresetMenu(QMenu* menu, Track* track);
 //! question (default: a question box). Passing an empty function restores the default.
 LMMS_EXPORT void setChainPresetNamePrompt(std::function<QString()> prompt);
 LMMS_EXPORT void setChainPresetQuestion(std::function<bool(const QString& question)> ask);
+//! Q050-331: after an Apply, the preset's controller-binding outcome (chain.apply's bindings summary) is shown
+//! (default: an information box; logged when nobody is there). Tests replace it; an empty function restores it.
+LMMS_EXPORT void setChainPresetNotice(std::function<void(const QString& notice)> notice);
 
 } // namespace lmms::gui
 

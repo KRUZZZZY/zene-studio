@@ -143,14 +143,18 @@ private:
 		if (surround::isDiscrete(m_format))
 		{
 			// A discrete layout has no speaker positions: draw its channels as an index strip, not as a room.
+			// Q050-155.1: up to 64 of them, so the strip wraps into rows of sixteen, the first row at the top.
 			const int count = surround::channelCount(m_format);
+			const int columns = std::clamp(count, 1, 16);
+			const int rows = (count + columns - 1) / columns;
 			const QRectF area = room();
-			const double step = area.width() / std::max(1, count);
+			const double step = area.width() / columns;
 			for (int c = 0; c < count; ++c)
 			{
 				p.setPen(pal.textMuted);
 				p.setBrush(pal.panel);
-				const QRectF cell(area.left() + c * step, area.bottom() - 20.0, step - 4.0, 16.0);
+				const double top = area.bottom() - 20.0 * (rows - c / columns);
+				const QRectF cell(area.left() + (c % columns) * step, top, std::max(1.0, step - 4.0), 16.0);
 				p.drawRect(cell);
 				p.setPen(pal.text);
 				p.drawText(cell, Qt::AlignCenter, names.value(c));

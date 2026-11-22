@@ -25,6 +25,7 @@
 #ifndef LMMS_PLUGIN_FACTORY_H
 #define LMMS_PLUGIN_FACTORY_H
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -129,15 +130,16 @@ public:
 	// run active, shows it in the task area and returns BEFORE touching a
 	// directory or a library, and the planning (candidate files, quarantine,
 	// the per-file plan) plus the dependency pre-load then run as scheduled
-	// cancellable chunks - one event-loop turn each, one library load per
-	// pre-load turn, ONE file per scan turn. The interface - and plugin.list,
-	// which keeps serving the PREVIOUS catalogue until the run commits - stays
-	// usable throughout, including while the libraries load. plugin.scan_status
-	// reads the progress, plugin.scan_cancel stops the run and keeps the
-	// previous catalogue and cache. Everything here is main-thread confined:
-	// control handlers run on the UI thread (ControlRegistry::runOnUiThread)
-	// and the chunks are QTimer turns on the same thread, so no member here
-	// needs a lock. Nothing here touches the audio thread.
+	// cancellable chunks - one event-loop turn each, ONE file per scan turn, and
+	// (Q050-010) each library's load, the part that can take seconds, on a pool
+	// worker. The interface - and plugin.list, which keeps serving the PREVIOUS
+	// catalogue until the run commits - stays usable throughout, including while
+	// the libraries load. plugin.scan_status reads the progress,
+	// plugin.scan_cancel stops the run and keeps the previous catalogue and
+	// cache. Every member here is main-thread confined: control handlers run on
+	// the UI thread (ControlRegistry::runOnUiThread), the chunks are QTimer turns
+	// on the same thread, and the worker is handed one path and reports back with
+	// a queued call, so no member needs a lock. Nothing here touches the audio thread.
 
 	//! One file a background run has finished, as plugin.scan_status reports it.
 	struct BackgroundScanFile
@@ -181,9 +183,13 @@ public:
 	//! run's first turn and read through plugin.scan_status. False and *error
 	//! set when a run is already active.
 	bool startBackgroundScan(int paceMs, QString* error);
-	//! Ask the active run to stop at its next file boundary; the previous
+	//! Ask the active run to stop at its next file boundary, or at once while a
+	//! worker is loading a library (the load's report is then ignored); the previous
 	//! catalogue and cache are kept. False and *error set when no run is active.
 	bool requestBackgroundScanCancel(QString* error);
+	//! Test seam: runs on the worker before each background library load, so a
+	//! test can see the thread and hold the load there.
+	void setBackgroundLoadHookForTesting(std::function<void()> hook);
 
 #ifdef LMMS_TESTING
 	/// Test hook: has the singleton been constructed at all? Used to prove that
@@ -230,6 +236,11 @@ private:
 	QHash<QString, QString> m_backgroundErrors;
 	ScanStats m_backgroundStats;
 	int m_backgroundPaceMs = 0;
+	//! True while a worker loads a library for the active run: no turn is scheduled until it reports.
+	bool m_backgroundLoadPending = false;
+	//! Which run a worker's report belongs to: a report from a run that already ended is ignored.
+	quint64 m_backgroundRun = 0;
+	std::function<void()> m_backgroundLoadHook;
 	int m_backgroundTaskLocal = 0;
 	//! The token of the open background-scan task (TaskCenter reports from one generation need it).
 	TaskToken m_backgroundTaskToken;
@@ -245,8 +256,10 @@ private:
 	//! a cancel requested before it still stops the run with nothing done.
 	void prepareBackgroundScan();
 	//! One library of the active run's dependency pre-load (see
-	//! preloadPluginLibraries): exactly one dlopen, then the next turn.
+	//! preloadPluginLibraries): exactly one dlopen, on a worker; the next turn
+	//! follows when it reports (backgroundLibraryLoaded).
 	void preloadBackgroundLibrary();
+	void backgroundLibraryLoaded(quint64 run);
 	//! One file of the active run, decided and scanned exactly as the
 	//! synchronous loop does (see discoverPlugins), into the staging above -
 	//! then the next turn, or the commit when the queue is empty.

@@ -39,6 +39,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <span>
 #include <vector>
@@ -46,6 +47,7 @@
 #include "AllocationProbe.h"
 
 #include "AudioEngine.h"
+#include "ClipAudioLoop.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -280,6 +282,36 @@ private slots:
 		QCOMPARE(run(QStringLiteral("note.rotate"), {{QStringLiteral("clip"), id}, {QStringLiteral("amount"), 8}}).errorKind,
 			ControlErrorKind::InvalidArgs);
 		QCOMPARE(subject->clipEdits().audioLoopOffset, std::int64_t{0});
+	}
+
+	//! A loop starting INT_MIN ticks from the in-point has no frame before the audio. std::abs(INT_MIN) used to be
+	//! taken in int (undefined), which read the start as the in-point itself and accepted the loop there.
+	void aLoopStartingAtIntMinIsRefusedNotTakenAtTheInPoint()
+	{
+		SampleClip* subject = buildSong(64);
+		ClipEdits edits = subject->clipEdits();
+		QString message;
+		QVERIFY(!audioloop::withLoop(*subject, std::numeric_limits<int>::min(), 16, &edits, &message));
+		QVERIFY(!message.isEmpty());
+		QVERIFY(!subject->clipEdits().hasAudioLoop());
+	}
+
+	//! A rotation by INT_MIN ticks turns the content by its magnitude in frames (-INT_MIN is 2^31 ticks, widened before
+	//! the sign is taken), wrapped into the clip's loop. It used to read as a rotation by nothing. The loop is 48 ticks:
+	//! 2^31 is not a whole number of its turns (2^31 mod 48 = 32), so the turn is visible.
+	void aRotationByIntMinTurnsByItsWidenedMagnitude()
+	{
+		SampleClip* subject = buildSong(48);  // a 48-tick clip over 64 ticks of audio: the loop is the whole clip
+		ClipEdits after = subject->clipEdits();
+		bool turned = false;
+		QString message;
+		QVERIFY2(audioloop::rotated(*subject, std::numeric_limits<int>::min(), &after, &turned, &message),
+			qPrintable(message));
+		QVERIFY(turned);
+		const std::int64_t span = after.audioLoopFrames;
+		const auto magnitude = static_cast<std::int64_t>(2147483648.0f * subject->clipFramesPerTick());  // -INT_MIN ticks
+		// A rotation by A plays (t - A) mod loop, so A = -2^31 ticks leaves the offset at +magnitude, wrapped.
+		QCOMPARE(after.audioLoopOffset, magnitude % span);
 	}
 
 private:

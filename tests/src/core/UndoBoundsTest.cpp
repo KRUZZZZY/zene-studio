@@ -62,14 +62,19 @@
 #include <QJsonObject>
 #include <QThread>
 
+#include "ArrangementEdits.h"
 #include "AudioEngine.h"
+#include "Clip.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlUndoCoalescing.h"
+#include "ControlVocabulary.h"
 #include "Engine.h"
 #include "MidiPort.h"
 #include "ProjectJournal.h"
 #include "Song.h"
+#include "TimePos.h"
+#include "Track.h"
 #include "ReversibilityTestSupport.h"
 
 using namespace lmms;
@@ -352,6 +357,66 @@ private slots:
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(clipPosition(clip), 0);
 		QCOMPARE(depth(), depthBefore);
+	}
+
+
+	//! The GUI's clip drag is TWO checkpoints merged into one step: the clip at
+	//! the press and the track at the release (arrangement::afterUserMove). The
+	//! track's XML contains the clip, so undo must capture BOTH post-states
+	//! before it restores either of them; capturing the track after the clip has
+	//! already been put back gives redo a track snapshot that already holds the
+	//! undone position, and Ctrl+Shift+Z then replays the move away again.
+	void aMovedClipRedoesThroughItsMergedTrackCheckpoint()
+	{
+		shipCaps();
+		const QString trackId = addTrack();
+		QVERIFY2(!trackId.isEmpty(), "track.add failed, so the drag cannot be measured");
+		const int bar3 = 3 * TimePos::ticksPerBar();
+		const int bar4 = 4 * TimePos::ticksPerBar();
+		const ControlResult added = run(QStringLiteral("clip.add"),
+			QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("position"), bar3},
+				{QStringLiteral("length"), TimePos::ticksPerBar()}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		const QString clipId = added.result.value(QStringLiteral("clip")).toString();
+		QCOMPARE(clipPosition(clipId), bar3);
+
+		Clip* clip = nullptr;
+		for (Track* track : Engine::getSong()->tracks())
+		{
+			if (control::trackIdOf(track) != trackId) { continue; }
+			for (Clip* each : track->getClips())
+			{
+				if (control::clipIdOf(each) == clipId) { clip = each; }
+			}
+		}
+		QVERIFY2(clip != nullptr, "the clip.add result does not name a live clip");
+		journal()->clearJournal();
+
+		// ClipView::mousePressEvent (the unselected-clip branch): the clip's
+		// pre-state is checkpointed and the clip stops journalling for the drag.
+		clip->addJournalCheckPoint();
+		clip->setJournalling(false);
+		clip->movePosition(TimePos(bar4));
+		// ClipView::mouseReleaseEvent: journalling back on, then the drop asks the
+		// arrangement for its overlap/automation work. The default trim mode makes
+		// it checkpoint the TRACK at the pre-drag position and merge that with the
+		// clip's step, so the whole gesture is one Ctrl+Z.
+		clip->setJournalling(true);
+		QVERIFY2(arrangement::afterUserMove(clip, bar3), "the drop was refused");
+		QCOMPARE(journal()->undoDepth(), 1);
+		QCOMPARE(clipPosition(clipId), bar4);
+
+		journal()->undo();
+		QCOMPARE(clipPosition(clipId), bar3);
+		QVERIFY2(journal()->canRedo(), "undo left no redo step for the moved clip");
+		journal()->redo();
+		QCOMPARE(clipPosition(clipId), bar4);
+		// The redo records its own reverse state the same way, so the cycle is
+		// honest more than once: the step redo produced undoes to bar 3 again.
+		journal()->undo();
+		QCOMPARE(clipPosition(clipId), bar3);
+		journal()->redo();
+		QCOMPARE(clipPosition(clipId), bar4);
 	}
 
 

@@ -97,6 +97,7 @@ QString devicelabels::formatLabel(const QString& format)
 	if (format == QLatin1String("builtin")) { return DevicePicker::tr("Built-in"); }
 	if (format == QLatin1String("ladspa")) { return QStringLiteral("LADSPA"); }
 	if (format == QLatin1String("lv2")) { return QStringLiteral("LV2"); }
+	if (format == QLatin1String("au")) { return QStringLiteral("Audio Unit"); }  // Q050-491, macOS builds
 	return format.toUpper();  // vst3, clap
 }
 

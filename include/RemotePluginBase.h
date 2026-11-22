@@ -46,10 +46,20 @@
 #include "lmmsconfig.h"
 
 #if !(defined(LMMS_HAVE_SYS_IPC_H) && defined(LMMS_HAVE_SEMAPHORE_H))
+#ifndef SYNC_WITH_SHM_FIFO // a build may already select it (tests/CMakeLists.txt)
 #define SYNC_WITH_SHM_FIFO
+#endif // SYNC_WITH_SHM_FIFO
 
 #ifdef LMMS_HAVE_PROCESS_H
 #include <process.h>
+#endif
+#ifdef LMMS_HAVE_UNISTD_H
+// This branch calls getpid() and usleep() below (cluster ci-4e020460347493c3).
+// It is selected on any host without <sys/ipc.h> and, through the shadow
+// lmmsconfig.h of RemotePluginShmFifoNoSysIpcProbe, on every host. macOS
+// defines __APPLE__/__MACH__ but never __unix__, so a TU-side guard is not
+// enough: the header has to include what declares them.
+#include <unistd.h>
 #endif
 #else // !(LMMS_HAVE_SYS_IPC_H && LMMS_HAVE_SEMAPHORE_H)
 #ifdef LMMS_HAVE_UNISTD_H

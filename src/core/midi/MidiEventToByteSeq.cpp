@@ -24,7 +24,7 @@
 
 #include "MidiEventToByteSeq.h"
 
-#include <QtGlobal>
+#include <cstring>
 
 #include "MidiEvent.h"
 
@@ -69,10 +69,11 @@ bool isValidNoteMessage( const MidiEvent& ev )
 std::size_t writeToByteSeq(
 	const MidiEvent& ev, uint8_t *data, std::size_t bufsize)
 {
-	Q_ASSERT(bufsize >= 3);
-
+	// The message is built here and copied out only once its length is known to
+	// fit into bufsize: nothing may be written to data before that.
+	uint8_t msg[3] = {};
 	std::size_t size = 0;
-	data[0] = ev.type() | (ev.channel() & 0x0F);
+	msg[0] = ev.type() | (ev.channel() & 0x0F);
 
 	switch (ev.type())
 	{
@@ -82,8 +83,8 @@ std::size_t writeToByteSeq(
 				if (!isValidNoteMessage(ev))
 					break;
 
-				data[1] = ev.key();
-				data[2] = ev.velocity();
+				msg[1] = ev.key();
+				msg[2] = ev.velocity();
 				size    = 3;
 				break;
 			}
@@ -94,23 +95,23 @@ std::size_t writeToByteSeq(
 				// These messages are equivalent to Note Off in standard
 				// MIDI streams, but here only proper Note Off messages
 				// are allowed."
-				data[0] = MidiNoteOff | (ev.channel() & 0x0F);
+				msg[0] = MidiNoteOff | (ev.channel() & 0x0F);
 				// nobreak
 			}
 
 		case MidiNoteOff:
 			if (!isValidNoteMessage(ev))
 				break;
-			data[1] = ev.key();
-			data[2] = ev.velocity(); // release time
+			msg[1] = ev.key();
+			msg[2] = ev.velocity(); // release time
 			size    = 3;
 			break;
 
 		case MidiKeyPressure:
 			if (!isValidNoteMessage(ev))
 				break;
-			data[1] = ev.key();
-			data[2] = ev.velocity();
+			msg[1] = ev.key();
+			msg[2] = ev.velocity();
 			size    = 3;
 			break;
 
@@ -118,30 +119,30 @@ std::size_t writeToByteSeq(
 			// the controller number and the controller value are 7-bit data bytes
 			if (!isDataByte(ev.param(0)) || !isDataByte(ev.param(1)))
 				break;
-			data[1] = ev.controllerNumber();
-			data[2] = ev.controllerValue();
+			msg[1] = ev.controllerNumber();
+			msg[2] = ev.controllerValue();
 			size    = 3;
 			break;
 
 		case MidiProgramChange:
 			if (!isDataByte(ev.param(0)))
 				break;
-			data[1] = ev.program();
+			msg[1] = ev.program();
 			size    = 2;
 			break;
 
 		case MidiChannelPressure:
 			if (!isDataByte(ev.param(0)))
 				break;
-			data[1] = ev.channelPressure();
+			msg[1] = ev.channelPressure();
 			size    = 2;
 			break;
 
 		case MidiPitchBend:
 			if (!isPitchBendValue(ev.param(0)))
 				break;
-			data[1] = ev.pitchBend() & 0x7f;
-			data[2] = ev.pitchBend() >> 7;
+			msg[1] = ev.pitchBend() & 0x7f;
+			msg[2] = ev.pitchBend() >> 7;
 			size    = 3;
 			break;
 
@@ -150,6 +151,11 @@ std::size_t writeToByteSeq(
 			break;
 	}
 
+	if (size == 0 || bufsize < size)
+	{
+		return 0;
+	}
+	std::memcpy(data, msg, size);
 	return size;
 }
 

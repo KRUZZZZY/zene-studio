@@ -76,6 +76,10 @@ namespace
 //! The URI of the LV2 fixture instrument this build puts on LV2_PATH (the same bundle
 //! the latency test uses): a real LV2 plug-in, so a state restore can be attempted.
 constexpr const char* FixtureUri = "urn:zene:test:lv2-instrument";
+//! The fixture's state keys: it accepts AcceptedKey only as the string it saved, and REFUSES RefusedKey.
+constexpr const char* AcceptedKey = "urn:zene:test:accepted";
+constexpr const char* RefusedKey = "urn:zene:test:refuse";
+constexpr const char* PathKey = "urn:zene:test:path";
 
 //! The first loadable LV2 effect whose State interface saves something, its controls and that state.
 Effect* firstStatefulLv2(EffectChain& chain, Lv2ControlBase** controls, QString* state)
@@ -334,6 +338,8 @@ private slots:
 		QVERIFY(lv2Controls->control(0) != nullptr);
 		// The precondition: the payload the project holds is refused by the processor.
 		QVERIFY(!lv2Controls->control(0)->restoreState(QStringLiteral("this is not a state document")));
+		// An empty document is refused by restoreState's own guard, and reported as false too.
+		QVERIFY(!lv2Controls->control(0)->restoreState(QString()));
 
 		// The state the project holds cannot be parsed.
 		QDomDocument doc;
@@ -371,6 +377,92 @@ private slots:
 		instrument->restoreState(emptyRoot);
 		QVERIFY2(Engine::getSong()->errors().isEmpty(),
 			"an empty state element is not a failed restore");
+#endif
+	}
+
+	/*! BUG (cluster new-p23-144): a state the plug-in itself REFUSES must not load as success. The document
+	 *  is syntactically valid and names this plug-in, but the plug-in's LV2_State_Interface::restore returns an
+	 *  error status for it. lilv discards that status, so the host drives the restore and keeps it:
+	 *  restoreState() reports false, and the project load names the plug-in. The accepted document and the
+	 *  plug-in's own save/restore round trip must still succeed, which exercises the decoded values. */
+	void aPluginRefusingAStateIsReported()
+	{
+#ifndef LMMS_HAVE_LV2
+		QSKIP("this build has no LV2 host");
+#else
+		const PluginFactory::PluginInfo& info = getPluginFactory()->pluginInfo("lv2instrument");
+		if (info.isNull()) { QSKIP("this build has no lv2instrument module"); }
+		Lv2Manager* manager = Engine::getLv2Manager();
+		if (manager == nullptr || manager->getPlugin(QString::fromUtf8(FixtureUri)) == nullptr)
+		{
+			QSKIP("the LV2 fixture instrument is not in this build's LV2 world");
+		}
+
+		auto* track = dynamic_cast<InstrumentTrack*>(
+			Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		Plugin::Descriptor::SubPluginFeatures::Key::AttributeMap attributes;
+		attributes.insert(QStringLiteral("uri"), QString::fromUtf8(FixtureUri));
+		Plugin::Descriptor::SubPluginFeatures::Key key(info.descriptor,
+			QStringLiteral("Zene LV2 Test Instrument"), attributes);
+		Instrument* instrument = track->loadInstrument(QStringLiteral("lv2instrument"), &key);
+		QVERIFY(instrument != nullptr);
+		auto* lv2Controls = dynamic_cast<Lv2ControlBase*>(instrument);
+		QVERIFY(lv2Controls != nullptr);
+		Lv2Proc* proc = lv2Controls->control(0);
+		QVERIFY(proc != nullptr);
+
+		// A syntactically valid Turtle state for THIS plug-in (appliesTo names it) holding one property.
+		const auto documentWith = [](const char* stateKey) {
+			return QStringLiteral("@prefix lv2: <http://lv2plug.in/ns/lv2core#> .\n"
+				"@prefix pset: <http://lv2plug.in/ns/ext/presets#> .\n"
+				"@prefix state: <http://lv2plug.in/ns/ext/state#> .\n"
+				"<urn:zene:test:state> a pset:Preset ; lv2:appliesTo <%1> ;\n"
+				"\tstate:state [ <%2> \"1\" ] .\n")
+				.arg(QString::fromUtf8(FixtureUri), QString::fromUtf8(stateKey));
+		};
+		QVERIFY2(proc->restoreState(documentWith(AcceptedKey)), "a state the plug-in accepts is restored");
+		const QString saved = proc->saveState();
+		QVERIFY2(!saved.isEmpty(), "the fixture saves its state");
+		QVERIFY2(proc->restoreState(saved), "the plug-in's own saved state restores");
+		QVERIFY2(!proc->restoreState(documentWith(RefusedKey)),
+			"a state the plug-in refuses is reported as not restored");
+
+		// The project's load path: the refused state is reported and the report names the plug-in.
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("lv2controls"));
+		doc.appendChild(root);
+		QDomElement state = doc.createElement(QStringLiteral("lv2state"));
+		state.setAttribute(QStringLiteral("instance"), 0);
+		state.appendChild(doc.createCDATASection(documentWith(RefusedKey)));
+		root.appendChild(state);
+
+		Engine::getSong()->clearErrors();
+		instrument->restoreState(root);
+		const QHash<QString, int>& errors = Engine::getSong()->errors();
+		QVERIFY2(!errors.isEmpty(), "a state the plug-in refused is reported");
+		bool namesThePlugin = false;
+		for (auto it = errors.constBegin(); it != errors.constEnd(); ++it)
+		{
+			namesThePlugin = namesThePlugin || it.key().contains(QString::fromUtf8(FixtureUri));
+		}
+		QVERIFY2(namesThePlugin, qPrintable(errors.keys().join(QStringLiteral(" | "))));
+
+		// An unrelated state:state triple is ignored by Lilv; it must not override the selected preset.
+		const QString withUnrelatedState = documentWith(AcceptedKey) +
+			QStringLiteral("<urn:aaa:unrelated> state:state [ <%1> \"1\" ] .\n")
+				.arg(QString::fromUtf8(RefusedKey));
+		QVERIFY2(proc->restoreState(withUnrelatedState),
+			"state properties are decoded from the selected preset subject");
+
+		const QString pathState = QStringLiteral("@prefix atom: <http://lv2plug.in/ns/ext/atom#> .\n"
+			"@prefix lv2: <http://lv2plug.in/ns/lv2core#> .\n"
+			"@prefix pset: <http://lv2plug.in/ns/ext/presets#> .\n"
+			"@prefix state: <http://lv2plug.in/ns/ext/state#> .\n"
+			"<urn:zene:test:path-state> a pset:Preset ; lv2:appliesTo <%1> ;\n"
+			"\tstate:state [ <%2> \"1\" ; <%3> \"relative/state\"^^atom:Path ] .\n")
+			.arg(QString::fromUtf8(FixtureUri), QString::fromUtf8(AcceptedKey), QString::fromUtf8(PathKey));
+		QVERIFY2(proc->restoreState(pathState), "path values can be restored with mapPath and freePath");
 #endif
 	}
 

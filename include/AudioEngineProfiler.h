@@ -57,6 +57,9 @@ public:
 		return m_cpuLoad;
 	}
 
+	//! Q050-074.1: how long the last finished period took, in microseconds (the render thread's own figure).
+	std::uint32_t lastPeriodMicros() const { return m_lastPeriodMicros; }
+
 	void setOutputFile( const QString& outputFile );
 
 	enum class DetailType {
@@ -104,6 +107,7 @@ private:
 	void stopWriter();
 
 	MicroTimer m_periodTimer;
+	std::uint32_t m_lastPeriodMicros = 0;
 	std::atomic<float> m_cpuLoad;
 	QString m_outputFileName;
 

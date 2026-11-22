@@ -95,6 +95,9 @@ public:
 	void closeEditor();
 	//! The device's own editor: a hosted plug-in's window (plugin.editor_open), else the built-in dialog.
 	void openEditor();
+	//! Q050-055.2: the host's own view of the device: the instrument's window or the effect's control dialog (no
+	//! plugin.editor_open first). False when there is none to show.
+	bool openGenericEditor();
 	//! 0.5.0 L10 (MX-095): light the header's dot while the device processes audio, and bring the
 	//! header's power, fold and delta switches back to the device's state (an undo, a socket command
 	//! or the card's own menu changes it without the card). Theme 12: the state line and the A/B button too.
@@ -182,6 +185,9 @@ public:
 	//! (DeviceCardState.h: bypassed, ab, latency_frames, hosting, preset, text).
 	QJsonObject describe() const;
 	void rebuild();
+	//! Q050-055.2: draw the selection now and open the host's view of its device @a plugin on @a target. False when
+	//! the panel shows no such device, or it has no view to show.
+	bool openGenericEditor(const QString& target, const QString& plugin);
 
 protected:
 	void showEvent(QShowEvent* event) override;

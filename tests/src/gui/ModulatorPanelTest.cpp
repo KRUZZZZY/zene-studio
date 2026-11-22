@@ -30,11 +30,13 @@
 
 #include <QtTest>
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
 #include <QPushButton>
+#include <QTableWidget>
 
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -246,6 +248,126 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		panel.refresh();
 		QCOMPARE(panel.modulatorCount(), 1);
+	}
+
+	// Q050-164: the switch shows the route's value, a click runs modulator.per_sample_set as one undo
+	// step, and a panel opened afterwards (Edit > Modulators builds a new one) shows what is stored.
+	void thePerSampleSwitchDrivesTheRouteAndShowsItsValue()
+	{
+		const int index = Engine::mixer()->createChannel();
+		MixerChannel* channel = Engine::mixer()->mixerChannel(index);
+		channel->m_fxChain.appendEffect(new PickerTestEffect(&channel->m_fxChain));
+		const QString channelId = control::channelIdOf(channel);
+
+		const auto stored = [] {
+			return modulators().last().toObject().value(QStringLiteral("targets")).toArray()
+				.first().toObject().value(QStringLiteral("per_sample")).toBool();
+		};
+		const auto switchIn = [](ModulatorPanel& shown) {
+			shown.selectModulator(shown.modulatorCount() - 1);
+			auto* table = shown.findChild<QTableWidget*>();
+			return table != nullptr ? qobject_cast<QCheckBox*>(table->cellWidget(0, 4)) : nullptr;
+		};
+
+		ModulatorPanel panel;
+		QCOMPARE(panel.addModulator(QStringLiteral("sine"), 20.0), QString());
+		QCOMPARE(panel.bind(channelId, 0, QStringLiteral("Gain"), 0.25), QString());
+		QCheckBox* box = switchIn(panel);
+		QVERIFY(box != nullptr);
+		QCOMPARE(box->property("controlCommand").toString(), QStringLiteral("modulator.per_sample_set"));
+		QVERIFY(!box->isChecked());
+		QVERIFY(!stored());
+
+		box->click();
+		QVERIFY(stored());
+		QVERIFY(box->isChecked());
+		{
+			ModulatorPanel reopened;
+			QCheckBox* shown = switchIn(reopened);
+			QVERIFY(shown != nullptr);
+			QVERIFY(shown->isChecked());
+		}
+
+		// One click, one undo step, and the panel follows on refresh.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!stored());
+		QCOMPARE(modulators().last().toObject().value(QStringLiteral("target_count")).toInt(), 1);
+		panel.refresh();
+		box = switchIn(panel);
+		QVERIFY(box != nullptr);
+		QVERIFY(!box->isChecked());
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QVERIFY(stored());
+		panel.refresh();
+		box = switchIn(panel);
+		QVERIFY(box != nullptr);
+		QVERIFY(box->isChecked());
+
+		// The click back is honest too, and a refused click leaves the box as the route is.
+		box->click();
+		QVERIFY(!stored());
+		QVERIFY(!box->isChecked());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // on again in the layer; the box is now stale
+		QCOMPARE(panel.unbindRow(0), QString());
+		QCOMPARE(panel.targetCount(), 0);
+		QCOMPARE(panel.removeSelected(), QString());
+	}
+
+	void aRefusedPerSampleClickPutsTheBoxBack()
+	{
+		const int index = Engine::mixer()->createChannel();
+		MixerChannel* channel = Engine::mixer()->mixerChannel(index);
+		channel->m_fxChain.appendEffect(new PickerTestEffect(&channel->m_fxChain));
+
+		ModulatorPanel panel;
+		QCOMPARE(panel.addModulator(QStringLiteral("sine"), 2.0), QString());
+		QCOMPARE(panel.bind(control::channelIdOf(channel), 0, QStringLiteral("Gain"), 0.25), QString());
+		panel.selectModulator(panel.modulatorCount() - 1);
+		auto* box = qobject_cast<QCheckBox*>(panel.findChild<QTableWidget*>()->cellWidget(0, 4));
+		QVERIFY(box != nullptr);
+		// The route goes away behind the open panel (an agent, an undo): the row is stale.
+		QVERIFY(run(QStringLiteral("modulator.target_remove"),
+			{{QStringLiteral("modulator"), modulators().last().toObject().value(QStringLiteral("id")).toString()},
+				{QStringLiteral("target"), 0}}).ok);
+		box->click();
+		QVERIFY(!box->isChecked());
+		QCOMPARE(panel.removeSelected(), QString());
+	}
+
+	void aStalePerSampleSwitchCannotHitTheNextRoute()
+	{
+		QStringList channels;
+		for (int i = 0; i < 3; ++i)
+		{
+			const int index = Engine::mixer()->createChannel();
+			MixerChannel* channel = Engine::mixer()->mixerChannel(index);
+			channel->m_fxChain.appendEffect(new PickerTestEffect(&channel->m_fxChain));
+			channels.append(control::channelIdOf(channel));
+		}
+
+		ModulatorPanel panel;
+		QCOMPARE(panel.addModulator(QStringLiteral("sine"), 2.0), QString());
+		for (const QString& channel : channels)
+		{
+			QCOMPARE(panel.bind(channel, 0, QStringLiteral("Gain"), 0.25), QString());
+		}
+		panel.selectModulator(panel.modulatorCount() - 1);
+		auto* table = panel.findChild<QTableWidget*>();
+		QVERIFY(table != nullptr);
+		auto* stale = qobject_cast<QCheckBox*>(table->cellWidget(1, 4));
+		QVERIFY(stale != nullptr);
+		const QString id = modulators().last().toObject().value(QStringLiteral("id")).toString();
+		QVERIFY(run(QStringLiteral("modulator.target_remove"),
+			{{QStringLiteral("modulator"), id}, {QStringLiteral("target"), 0}}).ok);
+
+		// Row 1 now belongs to the former third route; the displayed second route must not edit it.
+		stale->click();
+		QVERIFY(!stale->isChecked());
+		const QJsonArray targets = modulators().last().toObject().value(QStringLiteral("targets")).toArray();
+		QCOMPARE(targets.size(), 2);
+		QVERIFY(!targets.at(0).toObject().value(QStringLiteral("per_sample")).toBool());
+		QVERIFY(!targets.at(1).toObject().value(QStringLiteral("per_sample")).toBool());
+		QCOMPARE(panel.removeSelected(), QString());
 	}
 
 	void theWindowCommandOpensIt()

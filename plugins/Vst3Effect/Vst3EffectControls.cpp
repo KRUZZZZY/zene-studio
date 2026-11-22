@@ -34,30 +34,6 @@
 namespace lmms
 {
 
-namespace
-{
-
-void applyParameterFallback(vst3::HostedPlugin& plugin, const QDomElement& element)
-{
-	const auto parameters = element.firstChildElement(QStringLiteral("parameters"));
-	for (auto parameter = parameters.firstChildElement(QStringLiteral("parameter"));
-		!parameter.isNull(); parameter = parameter.nextSiblingElement(QStringLiteral("parameter")))
-	{
-		bool idOk = false;
-		bool valueOk = false;
-		const auto id = parameter.attribute(QStringLiteral("id")).toUInt(&idOk);
-		const float value = parameter.attribute(QStringLiteral("value")).toFloat(&valueOk);
-		const int index = idOk ? plugin.paramIndex(id) : -1;
-		if (valueOk && std::isfinite(value) && index >= 0
-			&& !plugin.parameters()[static_cast<std::size_t>(index)].readOnly)
-		{
-			plugin.notifyController(id, value);
-		}
-	}
-}
-
-} // namespace
-
 Vst3EffectControls::Vst3EffectControls(Vst3Effect* effect) :
 	EffectControls(effect),
 	m_effect(effect)
@@ -106,14 +82,12 @@ void Vst3EffectControls::poll()
 
 	if (m_syncing) { return; }
 	m_syncing = true;
+	PluginParamGesture::Edits edits;
 	for (auto* model : m_paramModels)
 	{
 		const auto id = model->paramId();
-		const auto value = plugin->paramNormalized(id);
-		if (std::abs(model->value() - value) > 1e-4f)
-		{
-			model->setValue(value);
-		}
+		plugin->readParamEdits(id, &edits);
+		model->pullFromPlugin(edits, 1e-4f);
 		// keep the edit controller's GUI-side mirror in sync (GUI thread only)
 		plugin->notifyController(id, model->value());
 	}
@@ -171,10 +145,9 @@ void Vst3EffectControls::loadSettings(const QDomElement& element)
 		qWarning() << "VST3: plug-in state chunks could not be restored; applying parameter fallback";
 	}
 
-	if (!stateRestored || (componentState.isEmpty() && controllerState.isEmpty()))
-	{
-		applyParameterFallback(*plugin, element);
-	}
+	// The host's saved values of the writable parameters: all of them when the chunks could not be applied
+	// (or there were none), and after a successful load each one the plug-in did not bring back (stress-4).
+	restoreSavedParameters(*plugin, element);
 
 	// reflect the restored state in the models
 	m_syncing = true;

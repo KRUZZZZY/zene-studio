@@ -43,6 +43,8 @@
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QMenu>
+#include <QMenuBar>
 
 #include "CompSwipeStrip.h"
 #include "ControlRegistry.h"
@@ -113,6 +115,27 @@ bool hasWaveformInk(const QImage& image, const QRect& rect)
 	return total - mostCommon > 0;
 }
 
+//! The Record menu's entry named @a label, found the way a click finds it.
+QAction* recordMenuItem(const QString& label)
+{
+	for (QAction* top : getGUI()->mainWindow()->menuBar()->actions())
+	{
+		if (top->menu() == nullptr) { continue; }
+		for (QAction* action : top->menu()->actions())
+		{
+			if (action->text() == label && action->property("controlCommand").toString() == QLatin1String("transport.punch_here")) { return action; }
+		}
+	}
+	return nullptr;
+}
+
+//! True when @a image holds the punch band's red at @a at: red clearly above green and blue.
+bool isPunchRed(const QImage& image, const QPoint& at)
+{
+	const QColor c = image.pixelColor(at);
+	return c.red() > c.green() + 40 && c.red() > c.blue() + 40;
+}
+
 } // namespace
 
 class ArrangerTakePunchTest : public QObject
@@ -145,6 +168,60 @@ private slots:
 			{QStringLiteral("anchor"), QStringLiteral("start")}}).ok);
 		QVERIFY(run(QStringLiteral("arrangement.scroll"), {{QStringLiteral("position"), 0}}).ok);
 		QCoreApplication::processEvents();
+	}
+
+	//! gui-1030 (menu-record Punch In Here): the Record menu's item sets a range that starts at the play
+	//! position, arms it, and the ruler shows it - a band in its own row with the in handle on the play
+	//! position - without anything but the menu click. The sweep's screenshot was taken with the previous
+	//! control's command dialog open over the ruler; this is the click with nothing in the way.
+	void punchInHereFromTheRecordMenuShowsTheBand()
+	{
+		Song* song = Engine::getSong();
+		Timeline& timeline = song->getTimeline(Song::PlayMode::Song);
+		timeline.clearPunch();
+		const tick_t here = 3 * Bar + 48;
+		// The play head as a user or agent moves it: a stopped seek moves the transport readout's head and the arranger's.
+		QVERIFY(run(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), static_cast<int>(here)}}).ok);
+		QCOMPARE(song->getPlayPos().getTicks(), here);
+
+		QAction* item = recordMenuItem(QStringLiteral("Punch In Here"));
+		QVERIFY2(item != nullptr, "the Record menu has no Punch In Here item");
+		QVERIFY(item->isEnabled());
+		item->trigger();
+		QCoreApplication::processEvents();
+
+		QCOMPARE(timeline.punchBegin(), here);
+		QVERIFY2(timeline.punchEnd() > here, "Punch In Here left an empty range");
+		QVERIFY(timeline.punchArmed());
+
+		TimeLineWidget* ruler = m_editor->timeLine();
+		ruler->resize(std::max(1200, ruler->width()), 32);
+		QVERIFY(ruler->hasPunchRange());
+		const QRect band = ruler->punchBandRect();
+		QVERIFY2(!band.isEmpty(), "the ruler did not reserve a band for the punch range");
+		QCOMPARE(ruler->punchBeginHandleRect().center().x(), ruler->markerX(TimePos(here)));
+		const QImage painted = ruler->grab().toImage();
+		// The band is the armed range itself (gui-1030 geometry); "Punch In Here" opens a range from
+		// the play position to the song's end, which at this zoom is narrower than one pixel, so
+		// sample the band's own centre rather than a fixed 6 px inside its right edge.
+		QVERIFY2(isPunchRed(painted, band.center()), "the painted ruler shows no punch band");
+		auto* arm = getGUI()->songEditor()->findChild<QAction*>(QStringLiteral("punchAction"));
+		QVERIFY(arm != nullptr && arm->isChecked());
+	}
+
+	void aSubpixelPunchRangeKeepsAVisibleBandAndHandle()
+	{
+		TimeLineWidget* ruler = m_editor->timeLine();
+		ruler->resize(std::max(1200, ruler->width()), 32);
+		QVERIFY(run(QStringLiteral("transport.punch_set"), {{QStringLiteral("start"), 1},
+			{QStringLiteral("end"), 2}, {QStringLiteral("enabled"), true}}).ok);
+
+		const int beginX = ruler->markerX(TimePos(1));
+		QCOMPARE(beginX, ruler->markerX(TimePos(2)));
+		const QRect band = ruler->punchBandRect();
+		QCOMPARE(band.width(), 1);
+		QCOMPARE(band.left(), beginX);
+		QCOMPARE(ruler->punchBeginHandleRect().center().x(), beginX);
 	}
 
 	//! 0.5.0 L03 (Q050-147): the punch range has its own band and handles under the loop brace,
@@ -186,6 +263,10 @@ private slots:
 		QVERIFY(band.height() >= 2);
 		QVERIFY(band.height() < ruler->height());
 		QCOMPARE(band.bottom(), ruler->height() - 1);
+		// The band bounds the punch range itself, from the in marker to the out marker, rather
+		// than the whole visible ruler.
+		QCOMPARE(band.left(), ruler->markerX(TimePos(3 * Bar)));
+		QCOMPARE(band.right() + 1, ruler->markerX(TimePos(4 * Bar)));
 		QCOMPARE(ruler->punchBeginHandleRect().center().x(), ruler->markerX(TimePos(3 * Bar)));
 		QCOMPARE(ruler->punchEndHandleRect().center().x(), ruler->markerX(TimePos(4 * Bar)));
 
@@ -197,6 +278,8 @@ private slots:
 		QTest::mouseRelease(ruler, Qt::LeftButton, Qt::NoModifier, to);
 		QCOMPARE(timeline.punchBegin(), tick_t{3 * Bar});
 		QCOMPARE(timeline.punchEnd(), tick_t{5 * Bar});
+		QCOMPARE(ruler->punchBandRect().left(), ruler->markerX(TimePos(3 * Bar)));
+		QCOMPARE(ruler->punchBandRect().right() + 1, ruler->markerX(TimePos(5 * Bar)));
 		QCOMPARE(timeline.loopBegin().getTicks(), loopBegin);
 		QCOMPARE(timeline.loopEnd().getTicks(), loopEnd);
 		QCOMPARE(timeline.loopEnabled(), loopEnabled);
@@ -211,6 +294,8 @@ private slots:
 		QTest::mouseRelease(ruler, Qt::LeftButton, Qt::NoModifier, to);
 		QCOMPARE(timeline.punchBegin(), tick_t{2 * Bar});
 		QCOMPARE(timeline.punchEnd(), tick_t{4 * Bar});
+		QCOMPARE(ruler->punchBandRect().left(), ruler->markerX(TimePos(2 * Bar)));
+		QCOMPARE(ruler->punchBandRect().right() + 1, ruler->markerX(TimePos(4 * Bar)));
 		QCOMPARE(timeline.loopBegin().getTicks(), loopBegin);
 		QCOMPARE(timeline.loopEnd().getTicks(), loopEnd);
 
@@ -227,8 +312,15 @@ private slots:
 		QCOMPARE(arm->isChecked(), true);
 		QCOMPARE(timeline.punchBegin(), tick_t{1 * Bar});
 		QCOMPARE(timeline.punchEnd(), tick_t{2 * Bar});
+		QCOMPARE(ruler->punchBandRect().left(), ruler->markerX(TimePos(1 * Bar)));
+		QCOMPARE(ruler->punchBandRect().right() + 1, ruler->markerX(TimePos(2 * Bar)));
 		QCOMPARE(timeline.loopBegin().getTicks(), loopBegin);
 		QCOMPARE(timeline.loopEnd().getTicks(), loopEnd);
+
+		// A range entirely beyond the visible ruler has no band extent to draw.
+		QVERIFY(run(QStringLiteral("transport.punch_set"), {{QStringLiteral("start"), 100 * Bar},
+			{QStringLiteral("end"), 101 * Bar}, {QStringLiteral("enabled"), true}}).ok);
+		QVERIFY(ruler->punchBandRect().isEmpty());
 
 		QVERIFY(clear->isEnabled());
 		clear->trigger();
@@ -238,6 +330,69 @@ private slots:
 		QCOMPARE(arm->isChecked(), false);
 		QCOMPARE(timeline.loopBegin().getTicks(), loopBegin);
 		QCOMPARE(timeline.loopEnd().getTicks(), loopEnd);
+	}
+
+	//! gui-1106: arming the punch range in a fresh project (play position at tick zero) paints a
+	//! one-bar interval on the ruler. The band's row is reserved across the ruler, but only the
+	//! interval between the punch bounds is filled, and the in handle is not clipped away at the
+	//! content edge.
+	void theArmedPunchRangeIsPaintedOnlyBetweenItsBounds()
+	{
+		Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
+		auto* arm = getGUI()->songEditor()->findChild<QAction*>(QStringLiteral("punchAction"));
+		QVERIFY2(arm != nullptr, "the song editor has no punch arm action");
+		// Neighbouring tests leave their own range armed; start from the fresh-project state the
+		// finding describes. clearPunch() emits punchChanged, so the arm action follows it.
+		timeline.clearPunch();
+		// Keep the loop brace out of the sampled columns, so only the punch band can paint there.
+		timeline.setLoopEnabled(false);
+		timeline.setLoopPoints(TimePos(20 * Bar), TimePos(24 * Bar));
+
+		TimeLineWidget* ruler = m_editor->timeLine();
+		ruler->resize(std::max(1200, ruler->width()), 32);
+		const int xOutside = ruler->markerX(TimePos(5 * Bar)) + 20;
+		const int xInside = ruler->markerX(TimePos(Bar / 2));
+		QVERIFY(xOutside < ruler->width());
+		const int y = ruler->height() - 3;
+		const QImage before = ruler->grab().toImage();
+
+		Engine::getSong()->setPlayPos(TimePos(0), Song::PlayMode::Song);
+		arm->trigger();
+		QVERIFY(timeline.punchArmed());
+		QCOMPARE(timeline.punchBegin(), tick_t{0});
+		QCOMPARE(timeline.punchEnd(), tick_t{Bar});
+		const QRect band = ruler->punchBandRect();
+		QVERIFY(!band.isEmpty());
+		QVERIFY(band.contains(QPoint(xInside, y)));
+		const QImage after = ruler->grab().toImage();
+
+		// The interval itself is painted ...
+		QVERIFY2(after.pixel(xInside, y) != before.pixel(xInside, y),
+			"the armed punch range is not painted between its bounds");
+		// ... and the ruler past its end is not, so the one-bar range is discernible.
+		QVERIFY2(after.pixel(xOutside, y) == before.pixel(xOutside, y),
+			"the punch band is painted past the punch range's end, across the whole ruler");
+		// The in handle sits wholly inside the content area, not half under the track headers.
+		QVERIFY(ruler->punchBeginHandleRect().left() >= ruler->markerX(TimePos(0)));
+		QCOMPARE(ruler->punchEndHandleRect().center().x(), ruler->markerX(TimePos(Bar)));
+
+		// A bound outside the content area has no handle: a 5 px handle centred 1-2 px past the
+		// edge would otherwise leave a sliver of itself on the last column, a handle where the
+		// bound is not. A range that starts on screen and ends past a narrowed ruler keeps its
+		// band and its in handle, and must not show the out handle at the edge.
+		const int fullWidth = ruler->width();
+		QVERIFY(run(QStringLiteral("transport.punch_set"), {{QStringLiteral("start"), 3 * Bar},
+			{QStringLiteral("end"), 600 * Bar}, {QStringLiteral("enabled"), true}}).ok);
+		QCoreApplication::processEvents();
+		ruler->resize(ruler->markerX(TimePos(600 * Bar)) - 1, 32);
+		QVERIFY2(!ruler->punchBandRect().isEmpty(), "the visible part of the punch range has no band");
+		QVERIFY2(!ruler->punchBeginHandleRect().isEmpty(),
+			"the in handle of a range that starts inside the ruler is missing");
+		QVERIFY2(ruler->punchEndHandleRect().isEmpty(),
+			"the out handle of a bound past the content edge leaks an edge sliver");
+		ruler->resize(fullWidth, 32);
+		arm->trigger();
+		timeline.clearPunch();
 	}
 
 

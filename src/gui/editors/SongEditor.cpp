@@ -22,11 +22,15 @@
  *
  */
 
+#include "AddTrackMenu.h"
 #include "SongEditor.h"
 #include "ArrangerClipKeys.h"
 
 #include <QSignalBlocker>
+#include <QStatusBar>
+#include <new>
 #include "Timeline.h"
+#include "AddTrackMenu.h"
 #include "ControlRegistry.h"
 #include "SessionSyncAction.h"
 #include "VisibilitySetMenu.h"
@@ -63,6 +67,7 @@
 #include "LcdSpinBox.h"
 #include "MainWindow.h"
 #include "MeterDialog.h"
+#include "NeutralTrackView.h"
 #include "Oscilloscope.h"
 #include "PianoRoll.h"
 #include "PositionLine.h"
@@ -81,6 +86,9 @@ namespace
 constexpr int MIN_PIXELS_PER_BAR = 4;
 constexpr int MAX_PIXELS_PER_BAR = 400;
 constexpr int ZOOM_STEPS = 200;
+//! The bar ruler's least height: a bar number, the loop brace and the punch band fit in it. Its layout gives it
+//! no size of its own, so without this it collapses to nothing and there is no ruler to click.
+constexpr int BAR_RULER_MIN_HEIGHT = 24;
 
 constexpr std::array SNAP_SIZES{8.f, 4.f, 2.f, 1.f, 1/2.f, 1/4.f, 1/8.f, 1/16.f};
 constexpr std::array PROPORTIONAL_SNAP_SIZES{64.f, 32.f, 16.f, 8.f, 4.f, 2.f, 1.f, 1/2.f, 1/4.f, 1/8.f, 1/16.f, 1/32.f, 1/64.f};
@@ -158,6 +166,9 @@ SongEditor::SongEditor( Song * song ) :
 	m_mpsStatus = nullptr;
 
 
+	// The theme fixes timeline heights in em. Keep this arranger ruler at its
+	// accessible scaled height through later stylesheet polishing as well.
+	m_timeLine->setStyleSheet(QStringLiteral("min-height: %1px; max-height: %1px;").arg(scaledPixels(32)));
 	static_cast<QVBoxLayout *>( layout() )->insertWidget( 0, m_timeLine );
 
 	m_leftRightScroll = new QScrollBar( Qt::Horizontal, this );
@@ -394,6 +405,18 @@ void SongEditor::toggleProportionalSnap()
 
 
 
+
+bool SongEditor::event( QEvent * e )
+{
+	// QWidget::event runs focusNextPrevChild for Tab/Backtab before keyPressEvent, so intercept them here
+	// (ArrangerClipKeys.h): only the focused arranger itself claims them.
+	if( e->type() == QEvent::KeyPress && arrangerkeys::handleTransientKey(this, static_cast<QKeyEvent*>(e)) )
+	{
+		e->accept();
+		return true;
+	}
+	return TrackContainerView::event( e );
+}
 
 void SongEditor::keyPressEvent( QKeyEvent * ke )
 {
@@ -956,8 +979,19 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 											 tr("Add automation-track"), this);
 
 	connect(m_addPatternTrackAction, SIGNAL(triggered()), m_editor->m_song, SLOT(addPatternTrack()));
-	connect(m_addSampleTrackAction, SIGNAL(triggered()), m_editor->m_song, SLOT(addSampleTrack()));
-	connect(m_addAutomationTrackAction, SIGNAL(triggered()), m_editor->m_song, SLOT(addAutomationTrack()));
+	// Q050-212: through track.add like an agent's, so the auto-channel preference and one undo step apply here too.
+	m_addSampleTrackAction->setData(QStringLiteral("track.add"));
+	connect(m_addSampleTrackAction, &QAction::triggered, this, [] {
+		ControlRegistry::instance()->invoke(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}});
+	});
+	// cluster gui-1105: like the Pattern Editor's button, a failed allocation is reported, not thrown out of the slot.
+	connect(m_addAutomationTrackAction, &QAction::triggered, this, [this] {
+		try { (void) Track::create(Track::Type::Automation, m_editor->m_song); }
+		catch (const std::bad_alloc&)
+		{
+			getGUI()->mainWindow()->statusBar()->showMessage(tr("Could not add the track: the application is out of memory."), 8000);
+		}
+	});
 
 	trackActionsToolBar->addAction( m_addPatternTrackAction );
 	trackActionsToolBar->addAction( m_addSampleTrackAction );
@@ -971,6 +1005,20 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 			{{QStringLiteral("type"), QStringLiteral("folder")}, {QStringLiteral("name"), tr("New folder")}});
 	});
 	trackActionsToolBar->addAction(addFolderTrackAction);
+	// Q050-212: an instrument or sample track with its destination chosen, or several on a new bus.
+	trackActionsToolBar->addWidget(makeAddTrackButton(trackActionsToolBar));
+
+	// Q050-283.1: a neutral row - the row to add before choosing an audio input or an instrument - through
+	// track.add like an agent's.
+	auto* addNeutralTrackAction = new QAction(NeutralTrackView::icon(), tr("Add neutral track"), this);
+	addNeutralTrackAction->setObjectName(QStringLiteral("addNeutralTrackAction"));
+	addNeutralTrackAction->setToolTip(tr("Add a neutral track: a row you give an audio input or an instrument later"));
+	addNeutralTrackAction->setData(QStringLiteral("track.add"));
+	connect(addNeutralTrackAction, &QAction::triggered, this, [] {
+		ControlRegistry::instance()->invoke(QStringLiteral("track.add"),
+			{{QStringLiteral("type"), QStringLiteral("neutral")}, {QStringLiteral("name"), tr("Neutral track")}});
+	});
+	trackActionsToolBar->addAction(addNeutralTrackAction);
 
 
 	// Edit actions

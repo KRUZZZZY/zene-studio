@@ -56,6 +56,42 @@ namespace
 	constexpr int PUNCH_MIN_BAND_HEIGHT = 4;
 	constexpr int PUNCH_MAX_BAND_HEIGHT = 14;
 	constexpr int PUNCH_BAND_GAP = 2;
+
+	//! gui-1106: the part of the punch band between the punch bounds, cut to the band itself (the
+	//! ruler already clips the band to its visible content area). Empty when the range is scrolled
+	//! out of view. A positive range that maps to less than a pixel keeps a one-pixel sliver, so a
+	//! subpixel range stays visible.
+	QRect punchIntervalRect(const QRect& band, int beginX, int endX)
+	{
+		const int left = std::max(band.left(), beginX);
+		const int right = std::min(band.left() + band.width(), endX);
+		if (right > left) { return QRect(left, band.top(), right - left, band.height()); }
+		if (band.width() > 0 && beginX <= band.left() + band.width() - 1 && endX >= band.left())
+		{
+			return QRect(std::min(left, band.left() + band.width() - 1), band.top(), 1, band.height());
+		}
+		return {};
+	}
+
+	//! gui-1106: a handle centred on x, kept wholly inside the content area (the ruler's visible
+	//! columns) so the in handle of a range starting at the content edge is not half clipped away.
+	//! A bound scrolled out of view keeps its handle out of view too. A range narrower than one
+	//! handle keeps its handles on its markers: pulling them to the edge would detach them from
+	//! the sliver they mark. The band supplies only the handle's row and height.
+	QRect punchHandleRect(const QRect& band, int x, int rangeWidth, int contentLeft, int contentRight)
+	{
+		// A bound outside the content area has no handle: a slim handle centred just past the
+		// edge would otherwise leak a sliver onto the last column. Both accessors clamp within
+		// the content area, so an empty rect here also means the bound is scrolled out of view.
+		if (x < contentLeft || x > contentRight) { return {}; }
+		int left = x - PUNCH_HANDLE_WIDTH / 2;
+		if (rangeWidth >= PUNCH_HANDLE_WIDTH)
+		{
+			left = std::clamp(left, contentLeft,
+				std::max(contentLeft, contentRight - PUNCH_HANDLE_WIDTH + 1));
+		}
+		return QRect(left, band.top(), PUNCH_HANDLE_WIDTH, band.height());
+	}
 }
 
 TimeLineWidget::TimeLineWidget(const int xoff, const int yoff, const float ppb, Timeline& timeline,
@@ -224,15 +260,19 @@ void TimeLineWidget::paintEvent( QPaintEvent * )
 	// 0.5.0 L03 (Q050-147): the punch band. It is drawn apart from the loop brace, filled when
 	// armed and only outlined when disarmed (the bounds stay for another pass), with a handle
 	// at each end. A short range keeps the handles inside the band.
+	// gui-1106: the punch band is the range's interval, so the fill, outline and label mark exactly
+	// the bars that capture; the band and these stay clipped to the visible ruler.
 	if (!punchBand.isEmpty())
 	{
 		const bool armed = m_timeline->punchArmed();
 		QColor fill = armed ? QColor(198, 84, 62, 190) : QColor(198, 84, 62, 60);
 		QColor edge = armed ? QColor(236, 132, 104) : QColor(198, 84, 62, 180);
-		p.fillRect(punchBand, fill);
+		const QRect interval = punchIntervalRect(punchBand, markerX(TimePos(m_timeline->punchBegin())),
+			markerX(TimePos(m_timeline->punchEnd())));
+		p.fillRect(interval, fill);
 		p.setPen(edge);
 		p.setBrush(Qt::NoBrush);
-		p.drawRect(punchBand.adjusted(0, 0, -1, -1));
+		if (!interval.isEmpty()) { p.drawRect(interval.adjusted(0, 0, -1, -1)); }
 
 		const QRect beginHandle = punchBeginHandleRect();
 		const QRect endHandle = punchEndHandleRect();
@@ -244,8 +284,8 @@ void TimeLineWidget::paintEvent( QPaintEvent * )
 		bandFont.setPointSizeF(std::max(6.0, bandFont.pointSizeF() - 2.0));
 		bandFont.setBold(armed);
 		p.setFont(bandFont);
-		const QRect textRect(punchBand.left() + 4, punchBand.top(), std::max(0, punchBand.width() - 8),
-			punchBand.height());
+		const QRect textRect(interval.left() + 4, interval.top(), std::max(0, interval.width() - 8),
+			interval.height());
 		p.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, armed ? tr("PUNCH") : tr("punch"));
 		p.setFont(font);
 	}
@@ -288,23 +328,42 @@ QRect TimeLineWidget::punchBandRect() const
 	// whole height, even when the widget has not been laid out to its usual size yet.
 	const int roomForLoop = std::max(2, height() - 2 - 4);
 	const int bandHeight = std::min(std::clamp(height() / 3, PUNCH_MIN_BAND_HEIGHT, PUNCH_MAX_BAND_HEIGHT), roomForLoop);
-	return QRect(m_xOffset, height() - bandHeight, std::max(0, width() - m_xOffset), bandHeight);
+	// The band spans the punch range itself, between its in and out markers, clipped to the
+	// visible ruler, so its extent shows exactly which bars capture.
+	const int rangeBeginX = markerX(TimePos(m_timeline->punchBegin()));
+	const int rangeEndX = markerX(TimePos(m_timeline->punchEnd()));
+	const double pixelsPerTick = static_cast<double>(m_ppb) / TimePos::ticksPerBar();
+	const double rangeEndPosition = m_xOffset + (m_timeline->punchEnd() - m_begin.getTicks()) * pixelsPerTick;
+	const int visibleRight = std::max(m_xOffset, width());
+	const int beginX = std::clamp(rangeBeginX, m_xOffset, visibleRight);
+	const int endX = std::clamp(rangeEndX, m_xOffset, visibleRight);
+	int bandWidth = std::max(0, endX - beginX);
+	// A positive tick range can be narrower than one pixel at the current zoom. Keep it visible
+	// when it intersects the ruler; a range wholly beyond either edge still has no band.
+	if (bandWidth == 0 && m_xOffset < width()
+		&& beginX < width() && rangeEndPosition > m_xOffset)
+	{
+		bandWidth = 1;
+	}
+	return QRect(beginX, height() - bandHeight, bandWidth, bandHeight);
 }
 
 QRect TimeLineWidget::punchBeginHandleRect() const
 {
 	const QRect band = punchBandRect();
 	if (band.isEmpty()) { return {}; }
-	return QRect(markerX(TimePos(m_timeline->punchBegin())) - PUNCH_HANDLE_WIDTH / 2, band.top(),
-		PUNCH_HANDLE_WIDTH, band.height());
+	const int beginX = markerX(TimePos(m_timeline->punchBegin()));
+	const int rangeWidth = std::abs(markerX(TimePos(m_timeline->punchEnd())) - beginX);
+	return punchHandleRect(band, beginX, rangeWidth, m_xOffset, width() - 1);
 }
 
 QRect TimeLineWidget::punchEndHandleRect() const
 {
 	const QRect band = punchBandRect();
 	if (band.isEmpty()) { return {}; }
-	return QRect(markerX(TimePos(m_timeline->punchEnd())) - PUNCH_HANDLE_WIDTH / 2, band.top(),
-		PUNCH_HANDLE_WIDTH, band.height());
+	const int endX = markerX(TimePos(m_timeline->punchEnd()));
+	const int rangeWidth = std::abs(endX - markerX(TimePos(m_timeline->punchBegin())));
+	return punchHandleRect(band, endX, rangeWidth, m_xOffset, width() - 1);
 }
 
 auto TimeLineWidget::getClickedTime(const int xPosition) const -> TimePos
@@ -352,12 +411,17 @@ auto TimeLineWidget::getLoopAction(QMouseEvent* event) const -> TimeLineWidget::
 auto TimeLineWidget::getPunchAction(QMouseEvent* event) const -> TimeLineWidget::Action
 {
 	const QRect band = punchBandRect();
-	if (band.isEmpty() || !band.contains(position(event))) { return Action::NoAction; }
+	if (band.isEmpty()) { return Action::NoAction; }
 	if (event->button() != Qt::LeftButton) { return Action::NoAction; }
 
-	const int x = position(event).x();
+	const QPoint pos = position(event);
+	const int x = pos.x();
 	const int beginX = markerX(TimePos(m_timeline->punchBegin()));
 	const int endX = markerX(TimePos(m_timeline->punchEnd()));
+	// The handles sit on the band's end markers, which are its edges, so a press on either one
+	// belongs to the punch range even though the band's rectangle stops at the out marker. Only
+	// the band's row is required here.
+	if (pos.y() < band.top() || pos.y() > band.bottom()) { return Action::NoAction; }
 	// The handles are always visible, so the nearest one wins even when the range is short.
 	if (std::abs(x - beginX) <= PUNCH_HANDLE_WIDTH) { return Action::MovePunchBegin; }
 	if (std::abs(x - endX) <= PUNCH_HANDLE_WIDTH) { return Action::MovePunchEnd; }
@@ -407,7 +471,17 @@ void TimeLineWidget::mousePressEvent(QMouseEvent* event)
 	else if (event->button() == Qt::LeftButton) // 0.5.0 L03: the punch band's own handles first
 	{
 		m_action = getPunchAction(event);
-		if (m_action == Action::MovePunchBegin || m_action == Action::MovePunchEnd || m_action == Action::MovePunch)
+		// Owner 2026-10-29 (a Windows tester could not set a loop): the loop's drawn handles take a plain drag, as in
+		// other DAWs; Shift was the only way. A press on either edge of the loop (within its handle) moves that edge.
+		const int grab = std::max(m_loopHandleWidth, 6);
+		if (m_action == Action::NoAction || m_action == Action::MovePositionMarker)
+		{
+			if (std::abs(pos.x() - markerX(m_timeline->loopBegin())) <= grab) { m_action = Action::MoveLoopBegin; }
+			else if (std::abs(pos.x() - markerX(m_timeline->loopEnd())) <= grab) { m_action = Action::MoveLoopEnd; }
+		}
+		if (m_action == Action::MoveLoopBegin || m_action == Action::MoveLoopEnd) { setCursor(actionCursor(m_action)); }
+		if (m_action == Action::MoveLoopBegin || m_action == Action::MoveLoopEnd) {}
+		else if (m_action == Action::MovePunchBegin || m_action == Action::MovePunchEnd || m_action == Action::MovePunch)
 		{
 			setCursor(actionCursor(m_action));
 			m_punchDragStart = getClickedTime(pos.x()).getTicks();
@@ -424,6 +498,7 @@ void TimeLineWidget::mousePressEvent(QMouseEvent* event)
 	if (m_action == Action::MoveLoopBegin || m_action == Action::MoveLoopEnd)
 	{
 		delete m_hint;
+		m_hint = nullptr;  // a release delivered while the float shows deletes m_hint too (ClipView has the same)
 		m_hint = TextFloat::displayMessage(tr("Hint"),
 			tr("Press <%1> to disable magnetic loop points.").arg(UI_CTRL_KEY),
 			embed::getIconPixmap("hint"), 0);

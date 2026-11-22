@@ -132,7 +132,8 @@ bool shapeBoundsFit(const QJsonObject& args, const AutomatableModel* model, Cont
 	for (const char* key : {"min", "max"})
 	{
 		const double value = args.value(QLatin1String(key)).toDouble(model->minValue<float>());  // left out: the range's own end
-		if (value < model->minValue<float>() || value > model->maxValue<float>()) { *error = automatableRangeRefusal(model, value); return false; }
+		// Written as "inside the range", not "outside it": NaN fails both comparisons, so it is refused with the rest.
+		if (!(value >= model->minValue<float>() && value <= model->maxValue<float>())) { *error = automatableRangeRefusal(model, value); return false; }
 	}
 	return true;
 }

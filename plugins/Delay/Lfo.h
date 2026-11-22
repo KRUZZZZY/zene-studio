@@ -65,6 +65,11 @@ public:
 		}
 		m_samplerate = samplerate;
 		m_twoPiOverSr = 2 * std::numbers::pi_v<float> / samplerate;
+		// Keep the frequency under the new Nyquist limit, as setFrequency() does.
+		if( m_frequency > m_samplerate / 2.0 )
+		{
+			m_frequency = m_samplerate / 2.0;
+		}
 		m_increment = m_frequency * m_twoPiOverSr;
 	}
 

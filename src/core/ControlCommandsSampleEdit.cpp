@@ -31,8 +31,10 @@
 // already runs on). A sample clip's Process menu reaches all four (Normalize,
 // Amplify, Reverse, Fade), each through its command form, and the same ids stay
 // on the control socket and through MCP; placing them anywhere else stays an
-// open owner decision for the UI phase (docs/KNOWN-LIMITATIONS.md).
+// open owner decision for the UI phase. The Sample Editor's SELECTED-RANGE
+// operations are a separate id, sample.edit_range (docs/KNOWN-LIMITATIONS.md).
 
+#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -164,7 +166,8 @@ void registerSampleAmplify(ControlRegistry& registry)
 		"as a transformed COPY - the previous buffer is never modified, so a second clip "
 		"sharing it keeps its audio, and one control.undo re-loads the previous source. No "
 		"limiter is applied (the float pipeline keeps values past 0 dBFS); sample.normalize "
-		"is the peak-targeted bake and clip.set_gain the non-baking alternative. A sample "
+		"is the peak-targeted bake, clip.set_gain the non-baking alternative and "
+		"sample.edit_range the selected-range gain. A sample "
 		"clip's Process menu offers it as Amplify..., and agents reach the same command on "
 		"the control socket and through MCP (docs/KNOWN-LIMITATIONS.md).");
 	cmd.argsSchema = objectSchema(
@@ -185,7 +188,8 @@ void registerSampleAmplify(ControlRegistry& registry)
 		ControlResult error;
 		if (!resolveBakeTarget(args, &target, &error)) { return error; }
 		const double db = args.value(QStringLiteral("gain_db")).toDouble(0.0);
-		if (db < -60.0 || db > 24.0)
+		// isfinite FIRST: a NaN compares false against both bounds and would pass.
+		if (!std::isfinite(db) || db < -60.0 || db > 24.0)
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs,
 				QStringLiteral("gain_db %1 is outside -60..24 dB, the range both this bake and "
@@ -236,7 +240,8 @@ void registerSampleNormalize(ControlRegistry& registry)
 		ControlResult error;
 		if (!resolveBakeTarget(args, &target, &error)) { return error; }
 		const double targetDb = args.value(QStringLiteral("target_db")).toDouble(0.0);
-		if (targetDb < -60.0 || targetDb > 0.0)
+		// isfinite FIRST: a NaN compares false against both bounds and would pass.
+		if (!std::isfinite(targetDb) || targetDb < -60.0 || targetDb > 0.0)
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs,
 				QStringLiteral("target_db %1 is outside -60..0 dBFS: a peak target cannot sit "
@@ -253,6 +258,16 @@ void registerSampleNormalize(ControlRegistry& registry)
 					.arg(clipId(target.ref.id)));
 		}
 		const float scale = gainDbToLinear(static_cast<float>(targetDb)) / peak;
+		// A non-finite peak (an infinite source sample) or scale (1/peak past float
+		// max for a subnormal peak) would bake NaN: 0 * inf. Refuse before checkpointing.
+		if (!std::isfinite(peak) || !std::isfinite(scale))
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("%1 cannot be scaled to target_db: its measured peak %2 or the "
+					"scale that reaches the target is not finite (an infinite sample, or a peak "
+					"too quiet to scale in float)").arg(clipId(target.ref.id))
+					.arg(static_cast<double>(peak)));
+		}
 		std::vector<SampleFrame> baked = sampleops::amplify(source.data(), frames, scale);
 		QJsonObject result;
 		result.insert(QStringLiteral("clip"), clipId(target.ref.id));
@@ -311,9 +326,10 @@ void registerSampleFade(ControlRegistry& registry)
 		"direction=in ramps 0 -> unity across the whole source, direction=out ramps unity -> "
 		"0, both channels together. The result replaces the source through "
 		"SampleClip::setSampleBuffer as a transformed COPY and one control.undo re-loads the "
-		"previous source. This release has no range/selection model, so a fade always spans "
-		"the whole clip source and has only the linear curve; clip.set_fade remains the "
-		"non-baking window fade. A sample clip's Process menu offers it as Fade, in or out "
+		"previous source. This whole-source bake has no range parameter, so it always spans "
+		"the whole clip source and has only the linear curve; the Sample Editor's selected-"
+		"range fades are sample.edit_range's fade_in / fade_out, and clip.set_fade remains "
+		"the non-baking window fade. A sample clip's Process menu offers it as Fade, in or out "
 		"(docs/KNOWN-LIMITATIONS.md).");
 	cmd.argsSchema = objectSchema(
 		{

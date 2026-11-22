@@ -99,6 +99,7 @@ private slots:
 	{
 		m_song->clearProject();
 		m_first = Track::create(Track::Type::Instrument, m_song);
+		QVERIFY(Track::create(Track::Type::Pattern, m_song) != nullptr);
 		QVERIFY(run(QStringLiteral("session.set_grid"),
 			{{QStringLiteral("tracks"), 2}, {QStringLiteral("scenes"), 2}}).ok);
 		QVERIFY(run(QStringLiteral("session.set_slot"),

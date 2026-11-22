@@ -113,29 +113,54 @@ bool commandMatch(const QJsonObject& binding, const LaunchTrigger& trigger, int*
 	return false;
 }
 
-//! The built-in command @a trigger activates: the closest command binding (an exact channel first), or empty.
-QString commandFor(const LaunchTrigger& trigger, int* rank)
+//! The binding @a trigger activates: the closest command binding (an exact channel first), or empty.
+QJsonObject bindingForTrigger(const LaunchTrigger& trigger, int* rank)
 {
-	QString best;
+	QJsonObject best;
 	int bestRank = 2;
 	for (const QJsonValue& value : LaunchBindings::commandBindings())
 	{
 		const QJsonObject binding = value.toObject();
 		int found = 2;
 		if (!commandMatch(binding, trigger, &found) || found >= bestRank) { continue; }
-		const QString command = binding.value(QStringLiteral("command")).toString();
-		// Not checked against the registry here: a binding naming a command this build lacks matches nothing to run,
-		// and the activation is a no-op rather than a failed dispatch nobody asked for. The command is validated
-		// when the binding is made (session.bind_command).
-		if (command.isEmpty()) { continue; }
-		best = command;
+		// A target that is not there is no target: an empty object is the answer, so the activation is
+		// a no-op rather than a failed dispatch nobody asked for. A target is validated when the
+		// binding is made (session.bind_command); a stale one must simply not fire.
+		if (binding.value(LaunchBindings::targetKey(binding)).toString().isEmpty()) { continue; }
+		best = binding;
 		bestRank = found;
 	}
 	*rank = bestRank;
 	return best;
 }
 
-//! Commands win ties, but a note's exact-channel launcher takes precedence over an any-channel command.
+/*! Q050-217.2: run the workflow @a binding names, through workflow.run - the command the Workflows
+ *  menu and the socket use, so the run is acknowledged and its steps run on the event loop with the
+ *  workflow's own behaviour (each step records and undoes as itself, a stopped run reports where).
+ *  The name is resolved against the library in use by workflow.run ITSELF, when this fires: the
+ *  binding stores the name, never a copy of the steps, so a workflow edited, renamed or kept with
+ *  the project answers as the library does now. A name the library no longer holds is a no-op, as a
+ *  command binding to a command this build no longer has is (workflow.run would only report
+ *  NotFound into the MIDI drain, where nobody is listening). */
+void runWorkflow(const QString& name)
+{
+	ControlRegistry* registry = ControlRegistry::instance();
+	if (!registry->hasCommand(QStringLiteral("workflow.run"))) { return; }  // a core-only build has no workflows
+	(void)registry->invoke(QStringLiteral("workflow.run"), {{QStringLiteral("name"), name}});
+}
+
+//! Run what @a binding names, through the registry. UI thread (applyTrigger).
+void dispatchTarget(const QJsonObject& binding)
+{
+	const QString key = LaunchBindings::targetKey(binding);
+	const QString target = binding.value(key).toString();
+	if (target.isEmpty()) { return; }
+	if (key == QLatin1String("workflow")) { runWorkflow(target); return; }
+	ControlRegistry::instance()->invoke(target, QJsonObject{});
+}
+
+//! Command bindings win ties, but a note's exact-channel launcher takes precedence over an any-channel one.
+//! (A workflow binding is one of these: both target kinds share the store and its specificity rule.)
 bool noteCommandWins(const LaunchTrigger& trigger, int commandRank)
 {
 	int launcherRank = 2;
@@ -246,6 +271,15 @@ void LaunchBindings::setCommandBindings(const QJsonArray& list)
 	ConfigManager::inst()->setValue(kCommandSection, kCommandKey, QString::fromUtf8(QJsonDocument(list).toJson(QJsonDocument::Compact)));
 }
 
+QString LaunchBindings::targetKey(const QJsonObject& binding)
+{
+	// `workflow` only when the binding actually carries a name; anything else is the Q050-217.1
+	// `command` shape, so an old config keeps its meaning and a binding with neither is simply empty.
+	const QJsonValue workflow = binding.value(QStringLiteral("workflow"));
+	if (workflow.isString() && !workflow.toString().isEmpty()) { return QStringLiteral("workflow"); }
+	return QStringLiteral("command");
+}
+
 bool LaunchBindings::decode(const MidiEvent& event, LaunchTrigger* out)
 {
 	// MIDI client thread: nothing allocated or locked. A note-on at velocity 0 is a release, as every
@@ -286,8 +320,8 @@ void LaunchBindings::applyTrigger(const LaunchTrigger& trigger)
 		if (m_controlsHigh.contains(latch)) { return; }  // 1..127 of one sweep is one activation
 		m_controlsHigh.insert(latch);
 		int rank = 2;
-		const QString command = commandFor(trigger, &rank);
-		if (!command.isEmpty()) { ControlRegistry::instance()->invoke(command, QJsonObject{}); }
+		const QJsonObject binding = bindingForTrigger(trigger, &rank);
+		if (!binding.isEmpty()) { dispatchTarget(binding); }
 		return;
 	}
 	if (trigger.on)
@@ -303,11 +337,11 @@ bool LaunchBindings::dispatchNoteCommand(const LaunchTrigger& trigger, int latch
 {
 	if (!m_learning.isEmpty()) { return false; }
 	int rank = 2;
-	const QString command = commandFor(trigger, &rank);
-	if (command.isEmpty() || !noteCommandWins(trigger, rank)) { return false; }
+	const QJsonObject binding = bindingForTrigger(trigger, &rank);
+	if (binding.isEmpty() || !noteCommandWins(trigger, rank)) { return false; }
 	// The command binding takes the note: its release must not release a launcher cell.
 	m_commandNotesHeld.insert(latch);
-	ControlRegistry::instance()->invoke(command, QJsonObject{});
+	dispatchTarget(binding);
 	return true;
 }
 

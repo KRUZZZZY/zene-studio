@@ -88,6 +88,9 @@ LMMS_EXPORT QStringList windowEditorNames();
 //! window.note_editor_set - the note editor's view over the socket
 //! (src/gui/ControlCommandsNoteEditor.cpp); registered by registerWindowCommands.
 LMMS_EXPORT void registerNoteEditorWindowCommands(ControlRegistry& registry);
+//! window.step_grid - open a MIDI clip in the melodic step grid (src/gui/ControlCommandsStepGrid.cpp,
+//! Q050-294.2); registered by registerWindowCommands.
+LMMS_EXPORT void registerStepGridWindowCommand(ControlRegistry& registry);
 //! The note editor's state (NoteEditor::describe), or {} with no interface.
 LMMS_EXPORT QJsonObject noteEditorState();
 
@@ -101,6 +104,12 @@ LMMS_EXPORT QJsonObject shellSelectionState();
 //! keys, src/gui/ControlCommandsShortcuts.cpp), window.layout_* / detach / attach / header_*
 //! (src/gui/ControlCommandsLayouts.cpp) and macro.* (src/gui/ControlCommandsMacros.cpp).
 LMMS_EXPORT void registerShortcutCommands(ControlRegistry& registry);
+//! Q050-055.2: the keyboard's plug-in actions - plugin.selected_editor_open, plugin.selected_load, shortcuts.bind_plugin
+LMMS_EXPORT void registerPluginActionCommands(ControlRegistry& registry);
+//! 0.5.0 L13, the context-aware keyboard map's stage 1: automation.editor_mode, the automation
+//! editor's four edit modes (src/gui/ControlCommandsAutomationMode.cpp); registered by
+//! registerWindowCommands.
+LMMS_EXPORT void registerAutomationEditorCommands(ControlRegistry& registry);
 //! 0.5.0 L09 (MX-049/066): window.mixer_view (src/gui/ControlCommandsMixerView.cpp).
 LMMS_EXPORT void registerMixerViewCommands(ControlRegistry& registry);
 //! 0.5.0 L14: app.help / app.tours / app.tour / window.appearance (ControlCommandsHelp.cpp).

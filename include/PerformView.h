@@ -59,8 +59,10 @@ namespace lmms::gui
  *
  *  KEYS, while the window is active: 1-9 launch scenes 1-9; Up and Down select a scene; Enter launches the selected
  *  scene and selects the one after it; Space starts or stops the transport; Escape stops every clip; Page Down and
- *  Page Up step to the next or previous song. They are this window's own keys: the shortcut map (shortcuts.set)
- *  binds main-window menu actions only. MIDI: with Learn MIDI on, the next scene button (or Stop All) pressed binds
+ *  Page Up step to the next or previous song. They are this window's built-in keys. Since Q050-055.1 stage 1 the
+ *  shortcut map also has a `perform` context (PanelShortcuts.h): a key bound there to Stop All, Start/Stop Transport
+ *  or Launch Scene 1-2 runs that command instead of the built-in table's meaning, because the router claims it
+ *  through ShortcutOverride while Perform holds the focus. MIDI: with Learn MIDI on, the next scene button (or Stop All) pressed binds
  *  the next note the connected controller plays to it, through session.bind_learn - the launcher's existing
  *  controller bindings, which launch a scene or stop everything.
  *

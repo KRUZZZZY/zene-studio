@@ -19,6 +19,14 @@
   {
    "test": "ControlSocketIntegration",
    "what": "the control-socket transcripts that save and load a hosted device state against the fixture modules"
+  },
+  {
+   "test": "ClapHostTest, ClapEffectIntegrationTest",
+   "what": "the in-tree CLAP gain fixture's editor on X11, Windows (win32) and macOS (cocoa): open, host and plug-in resize, close, reopen, the refusal naming platform and window API, and the editor button's refusal line (Q050-490)"
+  },
+  {
+   "test": "Vst3EditorTest",
+   "what": "the MIT VST3 fixture's editor (built on Linux, Windows and macOS) as X11EmbedWindowID, HWND and NSView: open, host and plug-in resize, close, reopen, the refusal naming platform and platform type, editor_scale per platform (Q050-490)"
   }
  ],
  "note": "Pinned third-party subjects of the compatibility matrix (Q050-071). Packages are the distribution files named here, unpacked outside the repository; no plug-in binary is stored in the repo.",

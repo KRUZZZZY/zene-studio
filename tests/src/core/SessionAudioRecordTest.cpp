@@ -21,7 +21,13 @@
  * Boston, MA 02110-1301 USA.
  */
 
-/*! THE PROOF for WF-055's audio half, driven through the agent surface on the Dummy device. The test drives
+/*! Q050-277 adds the external-synth capture: 'steps' beside 'bars' (a step is MIDI Clock's beat, a sixteenth note), and
+ *  'clock_sync', which makes the MIDI clock master send START when the take starts and STOP at its end with exactly the
+ *  span's pulses between. The fixture is the master's own emission monitor on the Dummy MIDI client (what the engine
+ *  handed its MIDI client - the bound docs/KNOWN-LIMITATIONS.md states, not bytes a device received), read against the
+ *  take's own start tick; the take's WAV is then saved, the project reloaded and the WAV re-read.
+ *
+ *  THE PROOF for WF-055's audio half, driven through the agent surface on the Dummy device. The test drives
  *  the periods itself (the device is stopped) and feeds the engine's input a KNOWN signal - frame n of the
  *  input stream is a value only n has - so a take can be checked frame by frame against what was fed:
  *   - session.record_slot arms an empty cell of a sample track's column and the take starts on the launch
@@ -50,6 +56,7 @@
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "MidiClock.h"
 #include "ProjectJournal.h"
 #include "SampleFrame.h"
 #include "SessionModel.h"
@@ -90,6 +97,33 @@ std::vector<SampleFrame> readWav(const QString& path, int* rate)
 	std::vector<SampleFrame> frames(static_cast<std::size_t>(read));
 	for (std::size_t i = 0; i < frames.size(); ++i) { frames[i] = SampleFrame(interleaved[2 * i], interleaved[2 * i + 1]); }
 	return frames;
+}
+
+//! The MIDI clock master on for one scope (the Dummy client takes the messages), off again after.
+struct MasterOn
+{
+	MasterOn()
+	{
+		QString error;
+		on = MidiClock::instance()->setMasterEnabled(true, QString(), &error);
+	}
+	~MasterOn() { MidiClock::instance()->setMasterEnabled(false, QString(), nullptr); }
+	bool on = false;
+};
+
+//! True once the sender thread has delivered everything the audio thread queued for the MIDI client (Q050-277).
+bool delivered()
+{
+	for (int i = 0; i < 3000 && MidiClock::instance()->captureOutputPending(); ++i) { QTest::qWait(1); }
+	return !MidiClock::instance()->captureOutputPending();
+}
+
+//! The monitor's last @a count emissions' names, oldest first.
+QStringList lastEmitted(const MidiClock& clock, quint32 count)
+{
+	QStringList out;
+	for (quint32 i = count; i-- > 0;) { out.append(midiClockMessageName(clock.emittedAt(static_cast<int>(i)))); }
+	return out;
 }
 
 } // namespace
@@ -237,6 +271,271 @@ private slots:
 		const auto frames = static_cast<std::uint64_t>(status.value(QStringLiteral("target_frames")).toDouble());
 		checkQuantisedStart(status);
 		landAndCompare(status, frames, QStringLiteral("cleared.wav"));
+	}
+
+	//! Q050-277: one bar, clock-synced. START carries the take's own start tick, STOP exactly one bar later, the span's
+	//! 96 pulses (a bar is 192 ticks, a pulse 2) are sent between, and nothing goes out after the STOP.
+	void aClockSyncedBarTakeSendsStartAndStopAtItsBoundaries()
+	{
+		MasterOn master;
+		QVERIFY(master.on);
+		MidiClock* clock = MidiClock::instance();
+		const quint32 total = clock->emittedTotal();
+		const quint32 starts = clock->emittedCount(MidiClockMessage::Start);
+		const quint32 stops = clock->emittedCount(MidiClockMessage::Stop);
+		const quint32 pulses = clock->emittedCount(MidiClockMessage::Clock);
+		const ControlResult armed = run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("bars"), 1}, {QStringLiteral("clock_sync"), true}});
+		QVERIFY2(armed.ok, qPrintable(armed.errorMessage));
+		QVERIFY(armed.result.value(QStringLiteral("clock_sync")).toBool());
+		QCOMPARE(armed.result.value(QStringLiteral("length_unit")).toString(), QStringLiteral("bars"));
+		QCOMPARE(clock->emittedTotal(), total);  // armed: the device is not started before the take is
+		QVERIFY(recordUntilDone());
+		QVERIFY(delivered());
+
+		const QJsonObject status = run(QStringLiteral("session.record_slot_status")).result;
+		const tick_t bar = Engine::getSong()->ticksPerBar();
+		const auto startTick = static_cast<tick_t>(status.value(QStringLiteral("start_tick")).toDouble());
+		const QJsonObject span = status.value(QStringLiteral("clock")).toObject();
+		QVERIFY(!span.value(QStringLiteral("active")).toBool());
+		QCOMPARE(static_cast<tick_t>(span.value(QStringLiteral("start_tick")).toDouble()), startTick);  // START: where the take began
+		QCOMPARE(static_cast<tick_t>(span.value(QStringLiteral("stop_tick")).toDouble()), startTick + bar);  // STOP: one bar on
+		const auto expectedPulses = static_cast<quint32>(bar / TicksPerMidiClockPulse);
+		QCOMPARE(static_cast<quint32>(span.value(QStringLiteral("pulses")).toDouble()), expectedPulses);
+		QCOMPARE(clock->emittedCount(MidiClockMessage::Start) - starts, 1u);
+		QCOMPARE(clock->emittedCount(MidiClockMessage::Stop) - stops, 1u);
+		QCOMPARE(clock->emittedCount(MidiClockMessage::Clock) - pulses, expectedPulses);
+		QCOMPARE(clock->emittedTotal() - total, expectedPulses + 2);  // and no SPP, no CONTINUE
+		QCOMPARE(clock->emittedAt(0), MidiClockMessage::Stop);
+		QCOMPARE(static_cast<tick_t>(clock->emittedTickAt(0)), startTick + bar);
+		QCOMPARE(clock->emittedAt(1), MidiClockMessage::Clock);
+
+		const quint32 after = clock->emittedTotal();
+		for (int i = 0; i < 40; ++i) { period(); }
+		QCOMPARE(clock->emittedTotal(), after);  // the span is closed: the clock is silent again
+		landAndCompare(status, static_cast<std::uint64_t>(status.value(QStringLiteral("target_frames")).toDouble()), QStringLiteral("clocked-bar.wav"));
+	}
+
+	//! Q050-277: four steps (a sixteenth each, 12 ticks) - the take is 48 ticks of frames, and the whole sequence the
+	//! device saw is START, 24 pulses, STOP, in that order.
+	void aClockSyncedStepTakeIsExactlyThatManyStepsAndTheDeviceSeesTheOrder()
+	{
+		MasterOn master;
+		QVERIFY(master.on);
+		MidiClock* clock = MidiClock::instance();
+		const quint32 total = clock->emittedTotal();
+		const ControlResult armed = run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("steps"), 4}, {QStringLiteral("clock_sync"), true}});
+		QVERIFY2(armed.ok, qPrintable(armed.errorMessage));
+		QCOMPARE(armed.result.value(QStringLiteral("length_unit")).toString(), QStringLiteral("steps"));
+		QCOMPARE(armed.result.value(QStringLiteral("length_ticks")).toInt(), 4 * TicksPerMidiBeat);
+		QVERIFY(recordUntilDone());
+		QVERIFY(delivered());
+		const QJsonObject status = run(QStringLiteral("session.record_slot_status")).result;
+		const auto frames = static_cast<std::uint64_t>(std::llround(4 * TicksPerMidiBeat * static_cast<double>(Engine::framesPerTick())));
+		QCOMPARE(static_cast<std::uint64_t>(status.value(QStringLiteral("target_frames")).toDouble()), frames);
+		QCOMPARE(static_cast<std::uint64_t>(status.value(QStringLiteral("frames")).toDouble()), frames);
+
+		QStringList expected{QStringLiteral("start")};
+		for (int i = 0; i < 4 * TicksPerMidiBeat / TicksPerMidiClockPulse; ++i) { expected.append(QStringLiteral("clock")); }
+		expected.append(QStringLiteral("stop"));
+		QCOMPARE(clock->emittedTotal() - total, static_cast<quint32>(expected.size()));
+		QCOMPARE(lastEmitted(*clock, static_cast<quint32>(expected.size())), expected);
+		const auto startTick = static_cast<tick_t>(status.value(QStringLiteral("start_tick")).toDouble());
+		QCOMPARE(static_cast<tick_t>(clock->emittedTickAt(0)), startTick + 4 * TicksPerMidiBeat);
+		QCOMPARE(static_cast<tick_t>(clock->emittedTickAt(static_cast<int>(expected.size()) - 1)), startTick);
+		landAndCompare(status, frames, QStringLiteral("clocked-steps.wav"));
+	}
+
+	//! Q050-277: a take that does not ask for the clock sends nothing, even with the master on; and a cancelled synced
+	//! take stops the device it started.
+	void anUnsyncedTakeSendsNothingAndACancelledSyncedTakeSendsStop()
+	{
+		MasterOn master;
+		QVERIFY(master.on);
+		MidiClock* clock = MidiClock::instance();
+		quint32 total = clock->emittedTotal();
+		QVERIFY(run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column}, {QStringLiteral("scene"), 0},
+			{QStringLiteral("steps"), 2}}).ok);
+		QVERIFY(recordUntilDone());
+		QVERIFY(delivered());
+		QCOMPARE(clock->emittedTotal(), total);
+		QVERIFY(run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column}, {QStringLiteral("scene"), 0},
+			{QStringLiteral("cancel"), true}}).ok);
+
+		total = clock->emittedTotal();
+		const quint32 stops = clock->emittedCount(MidiClockMessage::Stop);
+		QVERIFY(run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column}, {QStringLiteral("scene"), 0},
+			{QStringLiteral("bars"), 2}, {QStringLiteral("clock_sync"), true}}).ok);
+		for (int i = 0; i < 6000 && state() != QStringLiteral("recording"); ++i) { period(); }
+		QCOMPARE(state(), QStringLiteral("recording"));
+		for (int i = 0; i < 20; ++i) { period(); }
+		QVERIFY(clock->captureReport().active);
+		QVERIFY(run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column}, {QStringLiteral("scene"), 0},
+			{QStringLiteral("cancel"), true}}).ok);
+		QVERIFY(!clock->captureReport().active);
+		QVERIFY(delivered());
+		QCOMPARE(clock->emittedCount(MidiClockMessage::Stop) - stops, 1u);
+		QCOMPARE(clock->emittedAt(0), MidiClockMessage::Stop);
+		QVERIFY(clock->emittedTotal() > total);
+	}
+
+	//! Q050-277: what the surface refuses - both units, or the clock while its master is off - leaves nothing armed.
+	void theSurfaceRefusesBothUnitsAndAClockThatIsOff()
+	{
+		QCOMPARE(run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column}, {QStringLiteral("scene"), 0},
+			{QStringLiteral("bars"), 1}, {QStringLiteral("steps"), 4}}).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(state(), QStringLiteral("idle"));
+		QVERIFY(!MidiClock::instance()->masterEnabled());
+		const ControlResult off = run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("steps"), 4}, {QStringLiteral("clock_sync"), true}});
+		QCOMPARE(off.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(off.errorMessage.contains(QStringLiteral("clock.master_set")), qPrintable(off.errorMessage));
+		QCOMPARE(state(), QStringLiteral("idle"));
+	}
+
+	//! Q050-277 (review round 1): the audio thread - this test's own thread, driving the periods - never hands a message to
+	//! the MIDI client. With the sender held, a whole synced capture runs and NOTHING is delivered; it is all queued, and
+	//! the sender delivers it, in order, once released.
+	void theCallbacksOnlyQueueAndTheSenderThreadDelivers()
+	{
+		MasterOn master;
+		QVERIFY(master.on);
+		MidiClock* clock = MidiClock::instance();
+		const quint32 total = clock->emittedTotal();
+		clock->holdCaptureOutput(true);
+		QVERIFY(run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column}, {QStringLiteral("scene"), 0},
+			{QStringLiteral("steps"), 4}, {QStringLiteral("clock_sync"), true}}).ok);
+		QVERIFY(recordUntilDone());
+		const bool queued = clock->captureOutputPending();
+		const quint32 deliveredByAudioThread = clock->emittedTotal() - total;
+		clock->holdCaptureOutput(false);
+		QVERIFY(queued);
+		QCOMPARE(deliveredByAudioThread, 0u);  // START, the pulses and STOP were all still waiting for the sender
+		QVERIFY(delivered());
+		QCOMPARE(clock->emittedTotal() - total, static_cast<quint32>(4 * TicksPerMidiBeat / TicksPerMidiClockPulse + 2));
+		QCOMPARE(clock->emittedAt(0), MidiClockMessage::Stop);
+		const QJsonObject status = run(QStringLiteral("session.record_slot_status")).result;
+		landAndCompare(status, static_cast<std::uint64_t>(status.value(QStringLiteral("target_frames")).toDouble()), QStringLiteral("held.wav"));
+	}
+
+	//! Q050-277 (review round 1): the work one callback does does not scale with the capture. A capture longer than the
+	//! ring, with the sender held, queues what fits and counts what it refused - no backlog, no hang - and START and STOP
+	//! (which have the whole ring) are still delivered once the sender runs.
+	void aFullRingRefusesPulsesButStillDeliversStartAndStop()
+	{
+		MasterOn master;
+		QVERIFY(master.on);
+		MidiClock* clock = MidiClock::instance();
+		const quint32 starts = clock->emittedCount(MidiClockMessage::Start);
+		const quint32 stops = clock->emittedCount(MidiClockMessage::Stop);
+		const quint32 pulses = clock->emittedCount(MidiClockMessage::Clock);
+		const quint32 dropped = clock->captureOutputDropped();
+		clock->holdCaptureOutput(true);
+		const int bars = 6;  // 6 bars = 576 pulses, more than the ring holds
+		QVERIFY(run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column}, {QStringLiteral("scene"), 0},
+			{QStringLiteral("bars"), bars}, {QStringLiteral("clock_sync"), true}}).ok);
+		QVERIFY(recordUntilDone());
+		clock->holdCaptureOutput(false);
+		QVERIFY(clock->captureOutputDropped() > dropped);
+		QVERIFY(delivered());
+		const quint32 sent = clock->emittedCount(MidiClockMessage::Clock) - pulses;
+		QVERIFY2(sent <= MidiClock::RingCapacity - MidiClock::ReservedSlots, qPrintable(QString::number(sent)));
+		QCOMPARE(clock->emittedCount(MidiClockMessage::Start) - starts, 1u);
+		QCOMPARE(clock->emittedCount(MidiClockMessage::Stop) - stops, 1u);
+		QCOMPARE(clock->emittedAt(0), MidiClockMessage::Stop);
+		QVERIFY(run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column}, {QStringLiteral("scene"), 0},
+			{QStringLiteral("cancel"), true}}).ok);
+	}
+
+	//! Q050-277 (review round 1): the master turned off mid-capture ends the clock span THERE - STOP once, at the last pulse's
+	//! tick, no pulses after it and no catch-up when the cell's own stop comes - and the take goes on to its length.
+	void theMasterTurnedOffMidCaptureEndsTheSpanWithoutCatchUp()
+	{
+		MasterOn master;
+		QVERIFY(master.on);
+		MidiClock* clock = MidiClock::instance();
+		const quint32 stops = clock->emittedCount(MidiClockMessage::Stop);
+		const quint32 pulses = clock->emittedCount(MidiClockMessage::Clock);
+		QVERIFY(run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column}, {QStringLiteral("scene"), 0},
+			{QStringLiteral("bars"), 2}, {QStringLiteral("clock_sync"), true}}).ok);
+		for (int i = 0; i < 6000 && state() != QStringLiteral("recording"); ++i) { period(); }
+		QCOMPARE(state(), QStringLiteral("recording"));
+		for (int i = 0; i < 60; ++i) { period(); }
+		QVERIFY(clock->captureReport().active);
+		QVERIFY(clock->setMasterEnabled(false, QString(), nullptr));
+		period();  // the next period sees the master off and ends the span
+		const MidiClock::CaptureReport ended = clock->captureReport();
+		QVERIFY(!ended.active);
+		QVERIFY(delivered());
+		const quint32 pulsesAtOff = clock->emittedCount(MidiClockMessage::Clock) - pulses;
+		QCOMPARE(pulsesAtOff, ended.pulses);
+		QVERIFY(pulsesAtOff > 0 && pulsesAtOff < static_cast<quint32>(2 * Engine::getSong()->ticksPerBar() / TicksPerMidiClockPulse));
+		QCOMPARE(clock->emittedCount(MidiClockMessage::Stop) - stops, 1u);
+		QCOMPARE(static_cast<tick_t>(ended.stopTick), static_cast<tick_t>(ended.startTick) + static_cast<tick_t>(ended.pulses) * TicksPerMidiClockPulse);
+
+		QVERIFY(recordUntilDone());  // the take goes on to its two bars; the cell's stop finds the span closed
+		QVERIFY(delivered());
+		QCOMPARE(clock->emittedCount(MidiClockMessage::Clock) - pulses, pulsesAtOff);  // no catch-up
+		QCOMPARE(clock->emittedCount(MidiClockMessage::Stop) - stops, 1u);
+		const QJsonObject status = run(QStringLiteral("session.record_slot_status")).result;
+		const auto frames = static_cast<std::uint64_t>(std::llround(2 * Engine::getSong()->ticksPerBar() * static_cast<double>(Engine::framesPerTick())));
+		QCOMPARE(static_cast<std::uint64_t>(status.value(QStringLiteral("target_frames")).toDouble()), frames);
+		QVERIFY(run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column}, {QStringLiteral("scene"), 0},
+			{QStringLiteral("cancel"), true}}).ok);
+	}
+
+	//! Q050-277: the synced take saved with the project and reloaded keeps its length and its place - the cell still names
+	//! the WAV, the WAV is still exactly the requested steps of frames, and every frame is still the input one round trip
+	//! after the start.
+	void aSyncedTakeKeepsItsLengthAndAlignmentAfterSaveAndReload()
+	{
+		MasterOn master;
+		QVERIFY(master.on);
+		QVERIFY(run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column}, {QStringLiteral("scene"), 0},
+			{QStringLiteral("steps"), 8}, {QStringLiteral("clock_sync"), true}}).ok);
+		QVERIFY(recordUntilDone());
+		QVERIFY(delivered());
+		const QJsonObject status = run(QStringLiteral("session.record_slot_status")).result;
+		const auto frames = static_cast<std::uint64_t>(std::llround(8 * TicksPerMidiBeat * static_cast<double>(Engine::framesPerTick())));
+		const auto latency = static_cast<std::uint64_t>(status.value(QStringLiteral("latency_frames")).toInt());
+		const std::uint64_t first = m_startPeriodFirstFrame + latency;
+		const QString wav = m_dir.filePath(QStringLiteral("reloaded.wav"));
+		QVERIFY(run(QStringLiteral("session.record_slot_land"), {{QStringLiteral("file"), wav}}).ok);
+
+		const QString project = m_dir.filePath(QStringLiteral("clocked.mmp"));
+		QVERIFY2(run(QStringLiteral("project.save"), {{QStringLiteral("path"), project}}).ok, "the save failed");
+		QVERIFY2(run(QStringLiteral("project.open"), {{QStringLiteral("path"), project}}).ok, "the reload failed");
+		const ClipSlot& slot = Engine::getSong()->sessionModel().slot(m_column, 0);
+		QVERIFY(slot.type() == ClipSlot::Type::Audio);
+		QCOMPARE(slot.audioSource(), wav);
+
+		int rate = 0;
+		const std::vector<SampleFrame> take = readWav(wav, &rate);
+		QCOMPARE(static_cast<std::uint64_t>(take.size()), frames);  // still exactly 8 steps
+		for (std::size_t i = 0; i < take.size(); ++i)
+		{
+			const SampleFrame expected = inputFrame(first + i);
+			if (std::fabs(take[i].left() - expected.left()) > Pcm24Tolerance
+				|| std::fabs(take[i].right() - expected.right()) > Pcm24Tolerance)
+			{
+				QFAIL(qPrintable(QStringLiteral("reloaded take frame %1 is (%2, %3), the input fed was (%4, %5)").arg(i)
+					.arg(take[i].left()).arg(take[i].right()).arg(expected.left()).arg(expected.right())));
+			}
+		}
+	}
+
+	//! The engine half of the audio-record null-engine finding: armAndLaunch() reads Engine::audioEngine() and is reached
+	//! only through ControlRegistry's requiresEngine gate, so with the engine not addressable the command is refused
+	//! before anything is armed. Pins that gate; the test passes on the unmodified tree (no product change to revert).
+	void aRecordingIsRefusedBeforeTheEngineIsAddressable()
+	{
+		ControlRegistry::setReady(false);
+		const ControlResult refused = run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column},
+			{QStringLiteral("scene"), 0}});
+		ControlRegistry::setReady(true);  // restored before any assertion, so a failure cannot leave the registry not ready
+		QCOMPARE(refused.errorKind, ControlErrorKind::Busy);
+		QCOMPARE(state(), QStringLiteral("idle"));  // nothing was armed
 	}
 
 private:

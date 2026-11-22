@@ -50,9 +50,28 @@ std::int16_t ExportNoiseShaper::quantise16(float sample, int channel) noexcept
 	// the write-back below, corrupted the heap). Such a channel is silence.
 	if (channel < 0 || static_cast<std::size_t>(channel) >= m_error.size()) { return 0; }
 	auto& e = m_error[static_cast<std::size_t>(channel)];
+	// AudioEngine::clip passes NaN through (both `s > 1` and `s < -1` are
+	// false for it), so lround would receive NaN - and the resulting NaN
+	// error would live in e and poison every later sample of this channel
+	// (lround prints -32768, the shown output, and NaN sticks). A
+	// non-finite clipped sample is dropped as silence and this channel's
+	// history reset; Infinities are not affected, because clip already
+	// maps them to +-1 before the check.
+	const float clipped = AudioEngine::clip(sample);
+	if (!std::isfinite(clipped))
+	{
+		e = {0.f, 0.f, 0.f};
+		return 0;
+	}
+	// Belt-and-braces: a channel history must never feed NaN back in, even
+	// if one was corrupted by an earlier bad sample before this guard.
+	if (!std::isfinite(e[0]) || !std::isfinite(e[1]) || !std::isfinite(e[2]))
+	{
+		e = {0.f, 0.f, 0.f};
+	}
 	// The same scale and clip the plain 16-bit path uses (AudioDevice::convertToS16), so
 	// a shaped render and an unshaped one differ only in the requantisation.
-	const float target = AudioEngine::clip(sample) * OUTPUT_SAMPLE_MULTIPLIER;
+	const float target = clipped * OUTPUT_SAMPLE_MULTIPLIER;
 	const float shaped = target
 		- (Coefficients[0] * e[0] + Coefficients[1] * e[1] + Coefficients[2] * e[2]);
 	const float dithered = shaped + m_dither.nextOffset(1.0f);

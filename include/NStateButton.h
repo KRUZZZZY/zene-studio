@@ -62,12 +62,17 @@ signals:
 
 protected:
 	void mousePressEvent(QMouseEvent* me) override;
+	void mouseReleaseEvent(QMouseEvent* me) override;
 
 private:
+	void advanceState();
+	void onClicked();
+
 	QVector<QPair<QPixmap, QString>> m_states;
 	QString m_generalToolTip;
 
 	int m_curState;
+	bool m_suppressReleaseClick = false; //!< the base mouse-release handler emits the already-counted click
 };
 
 } // namespace lmms::gui

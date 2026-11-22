@@ -49,6 +49,9 @@ LMMS_EXPORT QString parseRange(const QJsonObject& args, bool required, BounceInP
 //! `out`, or the default `<project>-bounces/<trk>-<verb>[-<start>-<end>].wav`.
 LMMS_EXPORT QString resolveOutPath(const QJsonObject& args, Track* track, const QString& verb,
 	const BounceInPlace::Range& range);
+//! Why a flatten (track.flatten, or render.queue_bounce's flatten) cannot commit \a track: the refusal text, or
+//! empty when it can. Only a track that makes audio has a render to replace it with.
+LMMS_EXPORT QString flattenRefusal(const Track* track);
 //! A render's reply fields (path, rate, frames, bytes, sha256, the ticks it covers).
 LMMS_EXPORT QJsonObject renderJson(const BounceInPlace::Result& rendered);
 //! Region freeze preparation: cuts the track's clips that cross the region's edges at those edges and returns

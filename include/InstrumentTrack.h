@@ -41,10 +41,12 @@
 #include "MidiEventProcessor.h"
 #include "MidiInputTransform.h"
 #include "MidiPort.h"
+#include "MidiTakeCapture.h"
 #include "MpeExpression.h"
 #include "NotePlayHandle.h"
 #include "Piano.h"
 #include "Plugin.h"
+#include "RenderDiagnostics.h"
 #include "Track.h"
 
 //! cluster 5186: the modulation-lifetime regression installs a watchable instrument in a track.
@@ -98,6 +100,10 @@ public:
 	const MpeExpression& mpeExpression() const { return m_mpeExpression; }
 	//! 0.5.0 L07 (ED-145): what this track does to live MIDI input (MidiInputTransform.h).
 	MidiInputTransform& inputTransform() { return m_inputTransform; }
+	//! Q050-054.1: the arrangement MIDI take capture this track's live input feeds while armed
+	//! (track.set_midi_arm) and transport.record runs (MidiTakeRecorder).
+	MidiTakeCapture& midiTakeCapture() { return m_midiTakeCapture; }
+	const MidiTakeCapture& midiTakeCapture() const { return m_midiTakeCapture; }
 	//! 0.5.0 L09 (MX-035): every note of the track started this many milliseconds later (0..500) - a
 	//! manual offset for a slow instrument or to sit a part behind the beat. Saved only when set.
 	int delayMs() const { return m_delayMs.load(std::memory_order_relaxed); }
@@ -158,6 +164,12 @@ public:
 	void playNote( NotePlayHandle * _n, std::span<SampleFrame> workingBuffer );
 
 	QString instrumentName() const;
+#ifdef LMMS_TESTING
+	/*! Q050-311 test seam: install an instrument the test constructed itself (a built-in compiled into
+	 *  the test executable, because a Windows test host cannot load plug-in modules) the same way
+	 *  loadInstrument() installs one. The track takes ownership. */
+	void setInstrumentForTest( Instrument* instrument );
+#endif
 	//! 0.5.0 Q050-018: the original `<instrument>` XML the file carried, kept while the instrument is a placeholder
 	//! (its module or hosted plug-in binary is missing) and written back unchanged on save; null otherwise.
 	const QDomElement& preservedInstrument() const { return m_preservedInstrument; }
@@ -198,6 +210,10 @@ public:
 	//! R3.3: whether a note of @a clip at @a songTick plays under the track's
 	//! composite (and audition). True for every note of a track with neither.
 	bool compPlays(const MidiClip* clip, int songTick) const;
+	//! Q050-054.1: whether a loop-recorded take @a clip plays under the active-take model - an ordinary
+	//! clip always does; a take only when it is its group's active take, or a composite, an audition or
+	//! "play all takes" decides instead (the SampleTrack rule). Lock-free: the render thread calls it.
+	bool takePlays(const MidiClip* clip) const;
 	//! What play() applies to a fresh note play handle beyond the note itself: velocity jitter,
 	//! the slide source, the song-global offset (@a songOffset: the song position of the clip's own
 	//! time 0 for the pass playing) and the clip's transpose (InstrumentTrackNotes.cpp).
@@ -290,6 +306,10 @@ public:
 	{
 		return &m_lastKeyModel;
 	}
+
+	//! Q050-074.1: this track's share of the engine's synthesis stage (its play handles feed it).
+	SynthesisLoad& synthesisLoad() { return m_synthesisLoad; }
+	const SynthesisLoad& synthesisLoad() const { return m_synthesisLoad; }
 
 	bool keyRangeImport() const;
 	bool isKeyMapped(int key) const;
@@ -407,6 +427,8 @@ protected slots:
 
 
 private:
+	bool loadConvertedInstrument(const QDomElement& instrumentNode);
+
 	struct NoteActivitySnapshot
 	{
 		int activeNotes;
@@ -460,6 +482,8 @@ private:
 	//! Whether @a name is one of those elements (the loader must not take it for an instrument plug-in).
 	static bool isZeneInstrumentNode( const QString& name );
 
+	//! Before the port: destroyed after it, so no event the port delivers reaches a freed capture.
+	MidiTakeCapture m_midiTakeCapture;
 	MidiPort m_midiPort;
 
 	MpeExpression m_mpeExpression;
@@ -488,6 +512,7 @@ private:
 	IntModel m_baseNoteModel;	//!< The "A4" or "440 Hz" key (default 69)
 	IntModel m_firstKeyModel;	//!< First key the instrument reacts to
 	IntModel m_lastKeyModel;	//!< Last key the instrument reacts to
+	SynthesisLoad m_synthesisLoad;	//!< Q050-074.1: written by the render workers, read by mixer.cpu_load
 
 	bool m_hasAutoMidiDev;
 	static InstrumentTrack *s_autoAssignedTrack;

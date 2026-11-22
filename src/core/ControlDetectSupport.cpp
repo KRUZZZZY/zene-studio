@@ -169,6 +169,17 @@ bool readDetectBound(const QJsonObject& args, double* out, ControlResult* error)
 	return true;
 }
 
+Song* detectProjectSong(ControlResult* error)
+{
+	Song* song = Engine::getSong();
+	if (song == nullptr)
+	{
+		*error = ControlResult::failure(ControlErrorKind::Busy,
+			QStringLiteral("the engine is not addressable yet: no project song is loaded"));
+	}
+	return song;
+}
+
 //! The detected tempo as the map can hold it. -1 when it is outside the map's
 //! own bounds (which the caller must refuse rather than clamp: a map event of
 //! 999 BPM for a detected 1200 is a different tempo, not a rounding).

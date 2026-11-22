@@ -35,6 +35,13 @@ class MonoDelay
 {
 public:
 	MonoDelay( int maxTime , int sampleRate );
+	// m_buffer is owned: both the destructor and setSampleRate() release it with
+	// delete[]. The implicit copy operations would copy the pointer and free the
+	// same array twice, so ownership is unique - no copying or moving.
+	MonoDelay( const MonoDelay& ) = delete;
+	MonoDelay& operator=( const MonoDelay& ) = delete;
+	MonoDelay( MonoDelay&& ) = delete;
+	MonoDelay& operator=( MonoDelay&& ) = delete;
 	~MonoDelay();
 	inline void setLength( float length )
 	{

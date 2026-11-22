@@ -102,7 +102,7 @@ void EffectBus::addEffect(std::unique_ptr<Effect> fx)
 
 const Effect* EffectBus::effectView(unsigned index) const
 {
-    if (index > _effects.size())
+    if (index >= _effects.size())
         return {};
 
     return _effects[index].get();

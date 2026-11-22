@@ -122,7 +122,8 @@ private slots:
 		const QStringList mutating = {
 			QStringLiteral("modulator.create"), QStringLiteral("modulator.remove"),
 			QStringLiteral("modulator.rate_set"), QStringLiteral("modulator.target_set"),
-			QStringLiteral("modulator.depth_set"), QStringLiteral("modulator.target_remove"),
+			QStringLiteral("modulator.depth_set"), QStringLiteral("modulator.per_sample_set"),
+			QStringLiteral("modulator.target_remove"),
 			QStringLiteral("note.expression_set"), QStringLiteral("note.expression_clear")};
 		const QStringList all = mutating
 			+ QStringList{QStringLiteral("modulator.get_state"),
@@ -244,6 +245,62 @@ private slots:
 			QStringLiteral("one depth 0.2 moved 0..100 by 20 and -100..100 by 40"));
 	}
 
+	//! Q050-164: per_sample_set changes how the route is evaluated, right away, keeps its depth and
+	//! base, is one undo step each way, and a repeated value records nothing.
+	void perSampleSetSwitchesEvaluationAndIsOneUndoStep()
+	{
+		FloatModel* const gain = gainModel();
+		QVERIFY(gain != nullptr);
+		gain->setValue(30.0f, false);
+		QVERIFY(run(QStringLiteral("modulator.create"),
+			{{QStringLiteral("name"), QStringLiteral("Fast")}, {QStringLiteral("rate"), 20.0}}).ok);
+		QVERIFY(run(QStringLiteral("modulator.target_set"),
+			targetArgs(QStringLiteral("modulator-0"), "Gain", 0.1)).ok);
+		const float base = runtime().entries[0].base;
+		const auto setSwitch = [](const QJsonValue& value) {
+			return run(QStringLiteral("modulator.per_sample_set"),
+				{{QStringLiteral("modulator"), QStringLiteral("modulator-0")},
+					{QStringLiteral("target"), 0}, {QStringLiteral("per_sample"), value}});
+		};
+		const auto reported = [] {
+			return run(QStringLiteral("modulator.get_state")).result.value(QStringLiteral("modulators")).toArray()
+				.at(0).toObject().value(QStringLiteral("targets")).toArray()
+				.at(0).toObject().value(QStringLiteral("per_sample")).toBool();
+		};
+		const auto rendersARamp = [gain] {
+			AutomatableModel::incrementPeriodCounter();
+			applyModulationBlock(runtime(), 0.013, ModulationBlock{256, 44100});
+			return gain->automationRamp() != nullptr;
+		};
+		QVERIFY(!reported());
+		QVERIFY(!rendersARamp());
+
+		const ControlResult on = setSwitch(true);
+		QVERIFY2(on.ok, qPrintable(on.errorMessage));
+		QVERIFY(reported());
+		QVERIFY(rendersARamp());
+		QCOMPARE(runtime().entries[0].depth, 0.1f);
+		QCOMPARE(runtime().entries[0].base, base);
+
+		// Asking for what it already is changes nothing and adds no undo step.
+		QVERIFY(setSwitch(true).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!reported());
+		QVERIFY(!rendersARamp());
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QVERIFY(reported());
+		QVERIFY(rendersARamp());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(layer().modulator(0)->routeCount(), 1);  // the undo took the switch, not the bind
+
+		QVERIFY(!setSwitch(QStringLiteral("yes")).ok);
+		QCOMPARE(run(QStringLiteral("modulator.per_sample_set"),
+			{{QStringLiteral("modulator"), QStringLiteral("modulator-0")},
+				{QStringLiteral("target"), 7}, {QStringLiteral("per_sample"), true}}).errorKind,
+			ControlErrorKind::NotFound);
+		QVERIFY(!reported());
+	}
+
 	//! depth_set changes the amount and KEEPS the base; rate_set switching the
 	//! modulator off hands every target back.
 	void depthAndRateKeepTheirPromises()
@@ -335,6 +392,82 @@ private slots:
 		QVERIFY(run(QStringLiteral("modulator.voice_set"), args).ok);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(layer().modulator(0)->source.triggerTrack, -1);
+	}
+
+	//! Cluster new-p21-33: the parameter write inside the restore emits
+	//! dataChanged(); a slot connected to it may edit the layer itself, and the
+	//! layer's storage MOVES. The commands must report target_count from the
+	//! layer as it is after the edit, not from a pointer they captured before it.
+	//! One test for the depth_set and target_remove siblings. The two reentrant
+	//! inserts are placed so each one grows the layer vector exactly when it
+	//! runs (the suite leaves the layer's capacity at one, and the vector
+	//! doubles): the indices keep, the storage moves.
+	void routeCountIsReadFromAfterTheEditMovesTheLayer()
+	{
+		FloatModel* const gain = gainModel();
+		FloatModel* const pan = panModel();
+		QVERIFY(gain != nullptr && pan != nullptr);
+		gain->setValue(30.0f, false);
+		pan->setValue(0.0f, false);
+		QVERIFY(run(QStringLiteral("modulator.create"),
+			{{QStringLiteral("name"), QStringLiteral("Depth")}}).ok);
+		QVERIFY(run(QStringLiteral("modulator.create"),
+			{{QStringLiteral("name"), QStringLiteral("Filler")}}).ok);
+		QVERIFY(run(QStringLiteral("modulator.target_set"),
+			targetArgs(QStringLiteral("modulator-0"), "Gain", 0.1)).ok);
+		QVERIFY(run(QStringLiteral("modulator.target_set"),
+			targetArgs(QStringLiteral("modulator-0"), "Panning", 0.1)).ok);
+		// The parameters now differ from the bases the layer captured, so the
+		// restore inside the edit writes them back and emits dataChanged().
+		applyModulationBlock(runtime(), 0.25);
+		QVERIFY(valueOf(gain) != 30.0f);
+
+		// The first reentrant edit: one more modulator at the end.
+		bool reentered = false;
+		const QMetaObject::Connection first = QObject::connect(gain, &Model::dataChanged,
+			gain, [&reentered]() {
+				if (reentered) { return; }
+				reentered = true;
+				Engine::getSong()->modulationLayer().edit(
+					[](ModulationLayer& target, ModulationRuntime&) {
+						Modulator extra;
+						extra.name = QStringLiteral("Reentrant");
+						return target.insertModulator(target.modulatorCount(), extra);
+					});
+			});
+		const ControlResult depthSet = run(QStringLiteral("modulator.depth_set"),
+			{{QStringLiteral("modulator"), QStringLiteral("modulator-0")},
+				{QStringLiteral("target"), 0}, {QStringLiteral("depth"), 0.4}});
+		QObject::disconnect(first);
+		QVERIFY2(depthSet.ok, qPrintable(depthSet.errorMessage));
+		// 0 if it read through the moved-from modulator, 2 for the two bound routes.
+		QCOMPARE(depthSet.result.value(QStringLiteral("target_count")).toInt(), 2);
+
+		// One more modulator, so the second reentrant insert grows the vector again.
+		QVERIFY(run(QStringLiteral("modulator.create"),
+			{{QStringLiteral("name"), QStringLiteral("Extra")}}).ok);
+		applyModulationBlock(runtime(), 0.25);
+		QVERIFY(valueOf(gain) != 30.0f);
+
+		bool reenteredAgain = false;
+		const QMetaObject::Connection second = QObject::connect(gain, &Model::dataChanged,
+			gain, [&reenteredAgain]() {
+				if (reenteredAgain) { return; }
+				reenteredAgain = true;
+				Engine::getSong()->modulationLayer().edit(
+					[](ModulationLayer& target, ModulationRuntime&) {
+						Modulator extra;
+						extra.name = QStringLiteral("ReentrantAgain");
+						return target.insertModulator(target.modulatorCount(), extra);
+					});
+			});
+		const ControlResult removed = run(QStringLiteral("modulator.target_remove"),
+			{{QStringLiteral("modulator"), QStringLiteral("modulator-0")},
+				{QStringLiteral("target"), 0}});
+		QObject::disconnect(second);
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		// One of the two bound routes remains: 1, or 0 through the stale pointer.
+		QCOMPARE(removed.result.value(QStringLiteral("target_count")).toInt(), 1);
 	}
 
 	//! Cluster 201: the route creation contract rejects invalid depth values but
@@ -504,7 +637,8 @@ private slots:
 		const QStringList action = {
 			QStringLiteral("modulator.create"), QStringLiteral("modulator.remove"),
 			QStringLiteral("modulator.rate_set"), QStringLiteral("modulator.target_set"),
-			QStringLiteral("modulator.depth_set"), QStringLiteral("modulator.target_remove")};
+			QStringLiteral("modulator.depth_set"), QStringLiteral("modulator.per_sample_set"),
+			QStringLiteral("modulator.target_remove")};
 		for (const QString& id : action)
 		{
 			const control::ReversibilityEntry* row = contractRow(id);

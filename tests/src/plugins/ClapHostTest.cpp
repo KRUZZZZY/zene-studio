@@ -41,6 +41,7 @@
 #include <algorithm>
 
 #include "ClapHost.h"
+#include "PluginWindowSystem.h"
 
 #ifndef CLAP_TEST_PLUGIN_PATH
 #define CLAP_TEST_PLUGIN_PATH ""
@@ -181,11 +182,13 @@ class ClapHostTest : public QObject
 
 private slots:
 	void initTestCase();
+	void cleanup();
 	void testModuleListing();
 	void testIdentity();
 	void testParameters();
 	void testParameterSetGet();
 	void testStateRoundTrip();
+	void testAnUnrepresentableStateWriteIsAFailedSave();
 	void testFrameCountValidation();
 	void testAudioGain();
 	void testAudioSilenceWhenGainIsZero();
@@ -201,7 +204,9 @@ private slots:
 	void testEditorScaleRejectsInfinity();
 	void testMainThreadRequestsAreServiced();
 	void testParameterRescansRereadTheList();
+	void testARescanKeepsAHostValueNotYetDelivered();
 	void testAnInvalidParamRangeIsNormalized();
+	void testAFiniteRangeWithAnInfiniteSpanIsRejected();
 	void testAnActiveFlushRequestIsAnsweredWithoutAHostFlush();
 	void testAZeroChannelOutputKeepsTheIndexOfLaterPorts();
 	void testAnUnreadableInputPortKeepsItsNeighboursIndex();
@@ -211,6 +216,11 @@ private slots:
 	void testAPluginClosedEditorIsReopened();
 	void testANonFiniteParamValueNeverReachesThePlugin();
 	void testReloadingAPluginWithoutNotePortsClearsTheCounters();
+	void testTheWindowSystemFollowsThePlatform();
+	void testTheEditorEmbedsOnEveryWindowSystem();
+	void testThePluginResizesItsOwnEditorOnEveryWindowSystem();
+	void testAnEditorThatCannotEmbedIsRefusedByName();
+	void testCocoaIsNeverAskedToScale();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -232,6 +242,23 @@ void ClapHostTest::initTestCase()
 	QVERIFY(m_plugin.isLoaded());
 	QString prepareError;
 	QVERIFY2(m_plugin.prepare(TestSampleRate, TestBlockSize, &prepareError), qPrintable(prepareError));
+}
+
+//! Q050-490: a failed editor case must not leave its fixture switches or window system to the next one.
+void ClapHostTest::cleanup()
+{
+	m_plugin.closeEditor();
+	qunsetenv("CLAP_TEST_GAIN_GUI_API");
+	qunsetenv("CLAP_TEST_GAIN_REQUEST_RESIZE");
+	qunsetenv("CLAP_TEST_GAIN_EXPECT_SCALE");
+	// A failed QVERIFY2 skips the rest of a case, so every fixture switch is cleared here as well.
+	qunsetenv("CLAP_TEST_GAIN_BAD_RANGE");
+	qunsetenv("CLAP_TEST_GAIN_WIDE_RANGE");
+	qunsetenv("CLAP_TEST_GAIN_HUGE_RANGE");
+	qunsetenv("CLAP_TEST_GAIN_HUGE_STATE");
+	qunsetenv("CLAP_TEST_GAIN_NAN_VALUE");
+	m_plugin.setEditorScale(1.0);
+	m_plugin.setEditorWindowSystem(currentPluginWindowSystem());
 }
 
 void ClapHostTest::testModuleListing()
@@ -313,6 +340,38 @@ void ClapHostTest::testParameterSetGet()
 	QCOMPARE(m_plugin.paramPlain(0xdeadbeefu), 0.0);
 
 	m_plugin.setParamPlain(GainParamId, 1.0);
+}
+
+/*! A plug-in asks clap.state save() for more bytes than a QByteArray can ever hold (SIZE_MAX - 8), and then
+ *  ignores the stream's answer. The host narrowed the uint64 size to qsizetype - which is NEGATIVE for such a
+ *  count - and QByteArray::append() then copied strlen(buffer) bytes, after which the callback reported the
+ *  original size. save() returned true over a blob that was 4 bytes long: a project saved from that state
+ *  silently loses the parameter/state data. The host now refuses a write it cannot represent, and remembers
+ *  the refusal so saveState() fails even though the plug-in lies about success. */
+void lmms::clap::ClapHostTest::testAnUnrepresentableStateWriteIsAFailedSave()
+{
+	qputenv("CLAP_TEST_GAIN_HUGE_STATE", "1");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+
+	QByteArray state("previous project data");
+	// A save that cannot represent the write reports failure; the blob is observed FIRST, because a
+	// half-written one is the part a caller would otherwise store (saveSettings() keeps any non-empty
+	// QByteArray) - the old host left 4 bytes of truncated state and reported success.
+	const bool saved = plugin.saveState(&state);
+	QVERIFY2(state.isEmpty(),
+		qPrintable(QStringLiteral("a failed save left a %1-byte blob behind").arg(state.size())));
+	QVERIFY2(!saved, "a write too large to represent was reported as a complete save");
+
+	// the same plug-in still saves for real when it asks for a size it can have: the guard is not over-broad
+	qunsetenv("CLAP_TEST_GAIN_HUGE_STATE");
+	QByteArray good;
+	QVERIFY2(plugin.saveState(&good), "a representable write was refused");
+	// Qt 5's qCompare needs one type: compare the length through int, which it and Qt 6 both have.
+	QCOMPARE(static_cast<int>(good.size()), static_cast<int>(sizeof(PluginState)));
 }
 
 void ClapHostTest::testStateRoundTrip()
@@ -801,6 +860,34 @@ void ClapHostTest::testNoteOnRefusesNaNVelocity()
 	QCOMPARE(rms(outputs[0]), 0.0);
 }
 
+/*! stress-4 (b): a rescan's read-back must not replace a host value the plug-in has not been handed yet. Surge XT
+ *  asks for a value rescan after it loads its state; on an effect that had not processed since, the read-back put
+ *  the plug-in's old value over the one the host had just restored, and the edit was lost. Here Gain is set to 0.3
+ *  with no process() after it, the fixture asks for an info rescan (CLAP_TEST_GAIN_RESCAN=info, serviced on the
+ *  main thread), and Gain must still be 0.3 - then the next block delivers it and the audio carries it. */
+void ClapHostTest::testARescanKeepsAHostValueNotYetDelivered()
+{
+	qputenv("CLAP_TEST_GAIN_RESCAN", "info");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	QCOMPARE(plugin.paramPlain(GainParamId), 1.0);
+
+	plugin.setParamPlain(GainParamId, 0.3);
+	plugin.serviceMainThread();  // the plug-in renames Gain and asks for an info rescan: its values are read back
+	qunsetenv("CLAP_TEST_GAIN_RESCAN");
+	QCOMPARE(plugin.parameters()[0].title, QStringLiteral("Level"));
+	QCOMPARE(plugin.paramPlain(GainParamId), 0.3);
+
+	const auto& layout = plugin.busLayout();
+	std::vector<std::vector<float>> inputs(layout.inputs, std::vector<float>(TestFrames, 0.5f));
+	std::vector<std::vector<float>> outputs(layout.outputs, std::vector<float>(TestFrames, 0.0f));
+	process(plugin, inputs, outputs, TestFrames);
+	QVERIFY2(std::abs(outputs[0][0] - 0.15f) < 1e-6f, qPrintable(QString::number(outputs[0][0])));
+}
+
 void ClapHostTest::process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
 	std::vector<std::vector<float>>& outputs, int frames)
 {
@@ -978,6 +1065,64 @@ void lmms::clap::ClapHostTest::testAnInvalidParamRangeIsNormalized()
 	plugin.setParamPlain(GainParamId, -5.0);
 	QVERIFY(plugin.paramPlain(GainParamId) >= gain.minValue);
 	qunsetenv("CLAP_TEST_GAIN_BAD_RANGE");
+}
+
+/*! Two FINITE endpoints whose difference overflows: min = -DBL_MAX, max = DBL_MAX. Each bound passes an
+ *  isfinite() check, so the descriptor was accepted with an infinite SPAN, and normalize() then divided by
+ *  it. Half-way was set as +inf, clamped to DBL_MAX, and normalized to inf/inf = NaN: the parameter read as
+ *  0 for every ordinary value. The host now rejects a range whose span is not finite, as it already does for
+ *  a non-finite endpoint; a genuinely finite span (0 .. DBL_MAX) is left exactly as the plug-in reported it. */
+void lmms::clap::ClapHostTest::testAFiniteRangeWithAnInfiniteSpanIsRejected()
+{
+	qputenv("CLAP_TEST_GAIN_WIDE_RANGE", "1");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+
+	const auto& gain = plugin.parameters()[0];
+	QCOMPARE(gain.id, GainParamId);
+	QVERIFY2(std::isfinite(gain.minValue) && std::isfinite(gain.maxValue),
+		qPrintable(QStringLiteral("the finite endpoints were not kept finite: %1 .. %2")
+			.arg(gain.minValue).arg(gain.maxValue)));
+	QVERIFY2(std::isfinite(gain.maxValue - gain.minValue),
+		qPrintable(QStringLiteral("the stored range still has an infinite span: %1 .. %2")
+			.arg(gain.minValue).arg(gain.maxValue)));
+	QVERIFY2(gain.defaultValue >= gain.minValue && gain.defaultValue <= gain.maxValue,
+		"the default value lies outside the sanitized range");
+
+	// the normalized round trip is what used to break: it divided by the infinite span
+	for (const float normalized : {0.0f, 0.25f, 0.5f, 1.0f})
+	{
+		plugin.setParamNormalized(GainParamId, normalized);
+		const auto plain = plugin.paramPlain(GainParamId);
+		QVERIFY2(std::isfinite(plain),
+			qPrintable(QStringLiteral("normalized %1 produced the non-finite plain value %2")
+				.arg(normalized).arg(plain)));
+		QVERIFY2(std::isfinite(plugin.paramNormalized(GainParamId)),
+			qPrintable(QStringLiteral("normalized %1 read back non-finite").arg(normalized)));
+		QVERIFY2(std::abs(plugin.paramNormalized(GainParamId) - normalized) < 1e-6f,
+			qPrintable(QStringLiteral("normalized %1 read back as %2 (range %3 .. %4)")
+				.arg(normalized).arg(plugin.paramNormalized(GainParamId))
+				.arg(gain.minValue).arg(gain.maxValue)));
+	}
+	qunsetenv("CLAP_TEST_GAIN_WIDE_RANGE");
+
+	// not over-broad: a finite 0 .. DBL_MAX span is a valid CLAP range and keeps the plug-in's endpoints
+	qputenv("CLAP_TEST_GAIN_HUGE_RANGE", "1");
+	HostedPlugin huge;
+	QVERIFY2(huge.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(huge.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	const auto& hugeGain = huge.parameters()[0];
+	QCOMPARE(hugeGain.minValue, 0.0);
+	QCOMPARE(hugeGain.maxValue, std::numeric_limits<double>::max());
+	huge.setParamPlain(GainParamId, std::numeric_limits<double>::max());
+	QCOMPARE(huge.paramNormalized(GainParamId), 1.0f);
+	huge.setParamPlain(GainParamId, 0.0);
+	QCOMPARE(huge.paramNormalized(GainParamId), 0.0f);
+	qunsetenv("CLAP_TEST_GAIN_HUGE_RANGE");
 }
 
 /*! A plug-in that changes a value while it is ACTIVE (its own UI) and asks for a flush gets that value back
@@ -1333,6 +1478,158 @@ void lmms::clap::ClapHostTest::testASideChainFirstPluginReadsItsOwnMainInput()
 	QCOMPARE(layout.pluginInputPorts, 2);
 	QCOMPARE(layout.inputPortIndices, (std::vector<int>{1, 0}));
 	qunsetenv("CLAP_TEST_GAIN_LAYOUT");
+}
+
+namespace
+{
+//! Q050-490: the three window systems, with the name and clap.gui api a refusal must carry.
+struct WindowCase
+{
+	lmms::PluginWindowSystem system;
+	const char* name;
+	const char* api;
+};
+constexpr WindowCase WindowCases[] = {
+	{lmms::PluginWindowSystem::X11, "X11", "x11"},
+	{lmms::PluginWindowSystem::Win32, "Windows", "win32"},
+	{lmms::PluginWindowSystem::Cocoa, "macOS", "cocoa"},
+};
+} // namespace
+
+/*! Q050-490: the window system is read from the build's platform and the running Qt platform -
+ *  Windows embeds in an HWND, macOS in an NSView, elsewhere X11 (xcb, and the offscreen platform
+ *  the tests run on) unless the session is native Wayland, which has no X11 window to give. */
+void lmms::clap::ClapHostTest::testTheWindowSystemFollowsThePlatform()
+{
+#if defined(_WIN32)
+	QVERIFY(pluginWindowSystemFor(QStringLiteral("windows")) == PluginWindowSystem::Win32);
+	QVERIFY(pluginWindowSystemFor(QStringLiteral("offscreen")) == PluginWindowSystem::Win32);
+#elif defined(__APPLE__)
+	QVERIFY(pluginWindowSystemFor(QStringLiteral("cocoa")) == PluginWindowSystem::Cocoa);
+	QVERIFY(pluginWindowSystemFor(QStringLiteral("offscreen")) == PluginWindowSystem::Cocoa);
+#else
+	QVERIFY(pluginWindowSystemFor(QStringLiteral("xcb")) == PluginWindowSystem::X11);
+	QVERIFY(pluginWindowSystemFor(QStringLiteral("offscreen")) == PluginWindowSystem::X11);
+	QVERIFY(pluginWindowSystemFor(QStringLiteral("wayland")) == PluginWindowSystem::None);
+	QVERIFY(pluginWindowSystemFor(QStringLiteral("wayland-egl")) == PluginWindowSystem::None);
+#endif
+}
+
+/*! Q050-490: the clap.gui life cycle on each window system - created for x11, win32 or cocoa, the
+ *  parent handed in that api's union member (the fixture reads only that one, so a handle in the
+ *  wrong member is no parent), sized, resized by the host and to its minimum, closed and reopened.
+ *  The window system is chosen explicitly so all three run on every machine; the default (the
+ *  running platform's) is what testTheEditorEmbedsResizesAndCloses runs on each hosted job. */
+void lmms::clap::ClapHostTest::testTheEditorEmbedsOnEveryWindowSystem()
+{
+	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+	for (const WindowCase& each : WindowCases)
+	{
+		// The fixture takes ONLY this api: an editor that opens was created and parented with it.
+		qputenv("CLAP_TEST_GAIN_GUI_API", each.api);
+		m_plugin.setEditorWindowSystem(each.system);
+		QString error;
+		QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(QStringLiteral("%1: %2").arg(QLatin1String(each.name), error)));
+		QVERIFY(m_plugin.editorOpen());
+		int width = 0;
+		int height = 0;
+		m_plugin.editorSize(&width, &height);
+		QCOMPARE(width, 400);
+		QCOMPARE(height, 300);
+		QVERIFY(m_plugin.resizeEditor(640, 480));
+		m_plugin.editorSize(&width, &height);
+		QCOMPARE(width, 640);
+		QCOMPARE(height, 480);
+		QVERIFY(m_plugin.resizeEditor(10, 10));
+		m_plugin.editorSize(&width, &height);
+		QCOMPARE(width, 100);
+		QCOMPARE(height, 80);
+		m_plugin.closeEditor();
+		QVERIFY(!m_plugin.editorOpen());
+		QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(QStringLiteral("%1 reopen: %2").arg(QLatin1String(each.name), error)));
+		QVERIFY(m_plugin.editorOpen());
+		m_plugin.closeEditor();
+		std::printf("CLAP_EDITOR_PLATFORM_EVIDENCE %s (%s): open 400x300, resize 640x480, min 100x80, close, reopen\n",
+			each.name, each.api);
+	}
+	qunsetenv("CLAP_TEST_GAIN_GUI_API");
+	m_plugin.setEditorWindowSystem(currentPluginWindowSystem());
+}
+
+/*! Q050-490: a resize the plug-in makes from its own editor (clap.gui request_resize) is granted on
+ *  each window system - the host answers it with set_size, and the editor reports the new size. */
+void lmms::clap::ClapHostTest::testThePluginResizesItsOwnEditorOnEveryWindowSystem()
+{
+	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+	qputenv("CLAP_TEST_GAIN_REQUEST_RESIZE", "520x390");
+	for (const WindowCase& each : WindowCases)
+	{
+		qputenv("CLAP_TEST_GAIN_GUI_API", each.api);
+		HostedPlugin plugin;
+		QString error;
+		QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+			qPrintable(error));
+		QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+		plugin.setEditorWindowSystem(each.system);
+		QVERIFY2(plugin.openEditor(standInWindow, &error), qPrintable(QStringLiteral("%1: %2").arg(QLatin1String(each.name), error)));
+		plugin.serviceMainThread();  // the plug-in asks for 520x390 from its main-thread callback
+		int width = 0;
+		int height = 0;
+		plugin.editorSize(&width, &height);
+		QCOMPARE(width, 520);
+		QCOMPARE(height, 390);
+		plugin.closeEditor();
+	}
+	qunsetenv("CLAP_TEST_GAIN_GUI_API");
+	qunsetenv("CLAP_TEST_GAIN_REQUEST_RESIZE");
+}
+
+/*! Q050-490: a plug-in whose editor cannot embed in this platform's window is refused with the
+ *  platform and the window API named - nothing is created, so no empty window is left behind. A
+ *  session with no window to embed in (native Wayland) is refused before the plug-in is asked. */
+void lmms::clap::ClapHostTest::testAnEditorThatCannotEmbedIsRefusedByName()
+{
+	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+	for (const WindowCase& each : WindowCases)
+	{
+		// A plug-in that embeds only in some OTHER api.
+		qputenv("CLAP_TEST_GAIN_GUI_API", each.system == PluginWindowSystem::X11 ? "win32" : "x11");
+		m_plugin.setEditorWindowSystem(each.system);
+		QString error;
+		QVERIFY2(!m_plugin.openEditor(standInWindow, &error), each.name);
+		QVERIFY(!m_plugin.editorOpen());
+		const QString expected = QStringLiteral("cannot embed on %1 (CLAP window API %2)").arg(QLatin1String(each.name),
+			QLatin1String(each.api));
+		QVERIFY2(error.contains(expected), qPrintable(error));
+		std::printf("CLAP_EDITOR_REFUSAL_EVIDENCE %s\n", qPrintable(error));
+	}
+	qunsetenv("CLAP_TEST_GAIN_GUI_API");
+	m_plugin.setEditorWindowSystem(PluginWindowSystem::None);
+	QString error;
+	QVERIFY(!m_plugin.openEditor(standInWindow, &error));
+	QVERIFY(!m_plugin.editorOpen());
+	QVERIFY2(error.contains(QLatin1String("no native window a plug-in editor can embed in")), qPrintable(error));
+	m_plugin.setEditorWindowSystem(currentPluginWindowSystem());
+}
+
+/*! Q050-490: cocoa forbids set_scale, and win32/x11 must receive the device's zoom. The fixture
+ *  refuses a cocoa set_scale and requires an exact 1.5 set_scale before parenting on win32/x11. */
+void lmms::clap::ClapHostTest::testCocoaIsNeverAskedToScale()
+{
+	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+	m_plugin.setEditorScale(1.5);
+	for (const WindowCase& each : WindowCases)
+	{
+		m_plugin.setEditorWindowSystem(each.system);
+		if (each.system == PluginWindowSystem::Cocoa) { qunsetenv("CLAP_TEST_GAIN_EXPECT_SCALE"); }
+		else { qputenv("CLAP_TEST_GAIN_EXPECT_SCALE", "1.5"); }
+		QString error;
+		QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(QStringLiteral("%1: %2").arg(QLatin1String(each.name), error)));
+		m_plugin.closeEditor();
+	}
+	qunsetenv("CLAP_TEST_GAIN_EXPECT_SCALE");
+	m_plugin.setEditorScale(1.0);
+	m_plugin.setEditorWindowSystem(currentPluginWindowSystem());
 }
 
 QTEST_GUILESS_MAIN(lmms::clap::ClapHostTest)

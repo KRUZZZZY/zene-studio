@@ -330,7 +330,11 @@ bool BounceInPlace::namesTheSameFile(const QString& source, const QString& targe
 double BounceInPlace::framesBetweenTicks(tick_t from, tick_t to, float framesPerTick, const TempoMap& map,
 		int globalTempo, int sampleRate)
 {
-	if (!tempoMapInForce(map)) { return (to - from) * framesPerTick; }
+	if (!tempoMapInForce(map))
+	{
+		// The span is taken wide: INT32_MIN to INT32_MAX is 2^32 - 1 ticks, which a tick_t subtraction overflows.
+		return static_cast<float>(static_cast<qint64>(to) - static_cast<qint64>(from)) * framesPerTick;
+	}
 	return (map.secondsAtTick(to, globalTempo) - map.secondsAtTick(from, globalTempo)) * sampleRate;
 }
 

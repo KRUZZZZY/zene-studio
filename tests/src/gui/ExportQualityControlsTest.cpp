@@ -29,6 +29,8 @@
 
 #include <QtTest>
 
+#include <limits>
+
 #include <QComboBox>
 #include <QFormLayout>
 #include <QLabel>
@@ -106,6 +108,28 @@ private slots:
 		QCOMPARE(comboNamed(again, QStringLiteral("Resampling"))->currentData().toString(), QStringLiteral("sinc_best"));
 	}
 
+	void compressionLevelStaysInItsLegalRange()
+	{
+		// The default (5/8, the dialog's default) and every level inside [0.0, 1.0] are kept exactly.
+		OutputSettings settings(44100, 160, OutputSettings::BitDepth::Depth16Bit);
+		QCOMPARE(settings.getCompressionLevel(), 0.625);
+		settings.setCompressionLevel(0.0);
+		QCOMPARE(settings.getCompressionLevel(), 0.0);
+		settings.setCompressionLevel(1.0);
+		QCOMPARE(settings.getCompressionLevel(), 1.0);
+
+		// Outside the range it is clamped to the nearer bound before the encoder sees it.
+		settings.setCompressionLevel(7.0);
+		QCOMPARE(settings.getCompressionLevel(), 1.0);
+		settings.setCompressionLevel(-0.5);
+		QCOMPARE(settings.getCompressionLevel(), 0.0);
+
+		// NaN is not a level at all: the current one stays.
+		settings.setCompressionLevel(0.25);
+		settings.setCompressionLevel(std::numeric_limits<double>::quiet_NaN());
+		QCOMPARE(settings.getCompressionLevel(), 0.25);
+	}
+
 	void changingFormatKeepsDetachedWidgetsOwnedByDialog()
 	{
 		QPointer<QComboBox> compressionLevel;
@@ -168,6 +192,27 @@ private slots:
 		QCOMPARE(changes.size(), 1);
 		QCOMPARE(changes.constFirst().at(0).toInt(), 0);
 		QCOMPARE(changes.constFirst().at(1).toInt(), graph.model()->length() - 1);
+	}
+
+	void plainClicksStayWithinGraphSamples()
+	{
+		Graph graph(nullptr, Graph::Style::LinearNonCyclic, 20, 40);
+		graph.show();
+		QSignalSpy changes(graph.model(), &graphModel::samplesChanged);
+		QVERIFY(changes.isValid());
+		const auto last = graph.model()->length() - 1;
+
+		// a plain press on the left border computes a negative index, on the right border one past the end
+		QTest::mouseClick(&graph, Qt::LeftButton, Qt::NoModifier, QPoint(0, 20));
+		QCOMPARE(changes.size(), 1);
+		QCOMPARE(changes.constFirst().at(0).toInt(), 0);
+		QCOMPARE(changes.constFirst().at(1).toInt(), 0);
+
+		changes.clear();
+		QTest::mouseClick(&graph, Qt::LeftButton, Qt::NoModifier, QPoint(19, 20));
+		QCOMPARE(changes.size(), 1);
+		QCOMPARE(changes.constFirst().at(0).toInt(), last);
+		QCOMPARE(changes.constFirst().at(1).toInt(), last);
 	}
 };
 

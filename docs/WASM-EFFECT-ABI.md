@@ -181,12 +181,18 @@ offset 2*channels*planeBytes              : free — the module's own scratch (l
 - The host does **not** zero the output planes. A module that does not write a sample leaves whatever
   was in memory there. (The host's own dry-passthrough fallback is a separate `Slot::out` buffer, not
   this memory — `WasmWorker.cpp:186-188`, `:236-240`.)
-- Memory may grow as usual, but the ABI does **not** settle what happens if it grows *during* a call. The
-  `memory` handle is captured once at load (`WasmSandbox.cpp:377-384`) and the data pointer and size are
-  re-resolved from that handle on each use (`WasmSandbox.cpp:505-516`, called per block at
-  `WasmWorker.cpp:168`/`:171`). Whether `wasmtime_memory_data` returns a fresh pointer after a
-  `memory.grow` is a wasmtime-C-API question, not answerable from this tree — so it is **UNKNOWN** (§12), and
-  a module must not rely on the host noticing a growth for the next block.
+- Memory may grow as usual, including during `process()`. The host never keeps a data pointer across a
+  call: after every `process()` call it re-resolves both the pointer and the size from the `memory` handle
+  (`detail::callProcessAndRefreshMemory`, `WasmSandbox.h`; used by the live worker, `WasmWorker.cpp`, and
+  by the inline offline render, `WasmOfflineRender.cpp`) and reads the output plane only through that
+  fresh view. If the refreshed view no longer holds the block (missing, or smaller than the planes), a call
+  that returned normally is reported as a failure (`CallResult::Status::Error`, "the module's linear memory
+  no longer holds the requested block after process()"); `wasm.render_offline` then answers `refused`. A
+  `memory.grow` that fails (it answers `-1`) leaves the memory as it was; a module that goes on to
+  access past its end traps, and a trap is likewise a failed render, never a result.
+  Tests: `WasmWorkerPoolTest::testOfflineRenderReadsTheRefreshedViewNotTheOneTakenBeforeProcess`,
+  `testOfflineRenderFailsWhenTheViewIsInvalidAfterProcess`,
+  `testOfflineRenderReportsAFailedGrowthTrapAsAFailedRender`.
 
 There is no shared memory, no WASI, no host pointer, no `fd`, no filesystem and no network surface: the
 linker defines exactly the three functions in §1 (`WasmSandbox.cpp:146-170`) and nothing else.
@@ -339,10 +345,11 @@ Stated rather than guessed. Each is a thing a module author might reasonably exp
 
 1. **Whether `abi` is meant to be enforced.** The constant exists and nothing reads it (§4.3). There is
    no issue, comment or test in this tree stating the intent.
-2. **Whether `wasmtime_memory_data` returns a valid fresh pointer after a module calls `memory.grow`
-   inside `process()`.** The host captures the `memory` handle at load and re-queries the pointer per
-   call; whether wasmtime keeps that handle valid across growth is a wasmtime-C-API question, not
-   answerable from this tree.
+2. ~~Whether `wasmtime_memory_data` returns a valid fresh pointer after a module calls `memory.grow`
+   inside `process()`.~~ Settled on the host side (§5, Q050-314): the host does not depend on the answer.
+   It re-queries pointer and size after every call and refuses to read through a view that no longer holds
+   the block. This is verified by a fixture that moves the host's view while the module runs, not by
+   asserting what wasmtime does with its mapping.
 3. **What a module should do when it cannot process a block** (e.g. an unsupported sample rate). There
    is no bypass return code and no error channel (§8); the only tool is a trap, which quarantines the
    module permanently. No source states a recommended practice.

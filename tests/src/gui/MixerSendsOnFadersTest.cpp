@@ -74,6 +74,17 @@ int createReturn(const QString& name)
 	return index;
 }
 
+//! The "drives" of each entry of window.mixer_view's "faders", in channel order.
+QStringList drivesOf(const ControlResult& state)
+{
+	QStringList drives;
+	for (const QJsonValue& entry : state.result.value(QStringLiteral("faders")).toArray())
+	{
+		drives.append(entry.toObject().value(QStringLiteral("drives")).toString());
+	}
+	return drives;
+}
+
 } // namespace
 
 class MixerSendsOnFadersTest : public QObject
@@ -243,6 +254,32 @@ private slots:
 			QVERIFY(view->fader()->graphicsEffect() == nullptr);
 			QVERIFY(!view->faderTarget()->isVisibleTo(mixer));
 		}
+	}
+
+	// Guard, not a regression: faderRoles() (ControlCommandsMixerView.cpp) indexes its role names by faderRole(i). The
+	// enum has three values and roleOf() returns only those, so every entry must name one of the three roles.
+	void theFaderAnswerNamesWhatEveryFaderDrives()
+	{
+		const QStringList roles{QStringLiteral("volume"), QStringLiteral("send"), QStringLiteral("no_send")};
+		const int channels = static_cast<int>(Engine::mixer()->numChannels());
+
+		const ControlResult sends = run(QStringLiteral("window.mixer_view"), {{QStringLiteral("sends_on_faders"), ch(m_return)}});
+		QVERIFY(sends.ok);
+		const QStringList drives = drivesOf(sends);
+		QCOMPARE(drives.size(), static_cast<qsizetype>(channels));
+		for (const QString& drive : drives) { QVERIFY(roles.contains(drive)); }
+		QCOMPARE(drives.at(m_sender), QStringLiteral("send"));
+		QCOMPARE(drives.at(m_silent), QStringLiteral("no_send"));
+		QCOMPARE(drives.at(m_return), QStringLiteral("volume"));
+		QCOMPARE(drives.at(0), QStringLiteral("volume"));
+
+		// Back on the channel faders (an empty sends_on_faders) every entry is the level.
+		const QStringList faders = drivesOf(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("sends_on_faders"), QString()}}));
+		// QStringList(count, value) is a Qt 6 alias for QList's count/value constructor; Qt 5.15's QStringList has no
+		// such constructor (the linux-arm64 job builds with Qt 5), so fill the expected list portably.
+		QStringList expected;
+		for (int i = 0; i < channels; ++i) { expected.append(QStringLiteral("volume")); }
+		QVERIFY(faders == expected);
 	}
 
 private:

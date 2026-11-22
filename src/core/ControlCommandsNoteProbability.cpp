@@ -58,6 +58,7 @@
 #include "Engine.h"
 #include "MidiClip.h"
 #include "Note.h"
+#include "NoteConditions.h"
 #include "Song.h"
 
 namespace lmms
@@ -128,6 +129,8 @@ void registerNoteProbabilitySet(ControlRegistry& registry)
 		{QStringLiteral("pan"), numberProperty()},
 		{QStringLiteral("slide"), booleanProperty()},
 		{QStringLiteral("velocity"), numberProperty()},
+		{QStringLiteral("recur_length"), integerProperty(0, NoteConditions::MaxRecurLength)},
+		{QStringLiteral("recur_mask"), integerProperty(0, 65535)},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {

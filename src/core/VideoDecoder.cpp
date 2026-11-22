@@ -157,6 +157,12 @@ bool VideoDecoder::open(const QString& path, QString* error)
 {
 	close();
 	auto made = std::make_unique<Impl>();
+	// Out of memory: the decode never starts.
+	if (made->shown == nullptr || made->pending == nullptr || made->packet == nullptr)
+	{
+		if (error) { *error = QObject::tr("the video cannot be decoded: out of memory"); }
+		return false;
+	}
 	if (!made->media.open(path, AVMEDIA_TYPE_VIDEO, error)) { return false; }
 	m_info = probeOf(made->media);
 	made->frameLength = m_info.fps > 0.0 ? 1.0 / m_info.fps : made->frameLength;

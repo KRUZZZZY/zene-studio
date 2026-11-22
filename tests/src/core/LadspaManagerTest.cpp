@@ -171,6 +171,31 @@ private slots:
 		QVERIFY2(hasPluginForFile(manager.getSortedPlugins(), probe),
 			"the LADSPA module in the plugins search path was not scanned");
 	}
+
+	void scannedLibraryStaysLoadedForManagerLifetime()
+	{
+		QTemporaryDir workingDirectory;
+		QVERIFY(workingDirectory.isValid());
+
+		const QString bundledDirectory = QDir(workingDirectory.path()).filePath("plugins/ladspa");
+		QVERIFY(QDir().mkpath(bundledDirectory));
+
+		const QString probe = copyFixtureModule(bundledDirectory,
+			QStringLiteral("zene_loaded_lifetime_probe"));
+		QVERIFY2(!probe.isEmpty(), "no LADSPA fixture module to copy");
+
+		ScopedCurrentDirectory currentDirectory;
+		ScopedLadspaPath ladspaPath;
+		QVERIFY(QDir::setCurrent(workingDirectory.path()));
+		qputenv("LADSPA_PATH", QByteArray{});
+
+		LadspaManager manager;
+		QVERIFY2(hasPluginForFile(manager.getSortedPlugins(), probe),
+			"the LADSPA module in the working directory's plugins/ladspa was not scanned");
+		QVERIFY2(manager.isLibraryLoaded(probe),
+			"scanned LADSPA library is not kept loaded while its manager is alive; "
+			"descriptor pointers would dangle into unloaded code");
+	}
 };
 
 } // namespace lmms

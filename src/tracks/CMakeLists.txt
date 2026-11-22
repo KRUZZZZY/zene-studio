@@ -4,6 +4,7 @@ set(LMMS_SRCS
 	tracks/InstrumentTrack.cpp
 	tracks/InstrumentTrackNotes.cpp
 	tracks/MidiClip.cpp
+	tracks/NeutralTrack.cpp
 	tracks/PatternTrack.cpp
 	tracks/SampleTrack.cpp
 	tracks/TrackFolder.cpp

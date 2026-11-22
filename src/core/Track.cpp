@@ -31,6 +31,7 @@
 
 #include <QDomElement>
 #include <QFileInfo>
+#include <QThread>
 #include <QVariant>
 
 #include <limits>
@@ -42,11 +43,14 @@
 #include "ConfigManager.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
+#include "NeutralTrack.h"
 #include "MidiClip.h"
+#include "Mixer.h"
 #include "PatternClip.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
 #include "ProjectIds.h"
+#include "ProjectJournal.h"
 #include "Sample.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
@@ -92,11 +96,14 @@ constexpr TrackRestoreRule TRACK_RESTORE_SCHEMA[] = {
 	{ "folder", "-1" }, // absent => the track is in no folder (-1 = no id)
 	{ "visible", "1" },  // absent => visible
 	{ "autolanes", "0" }, // absent => this track's automation lanes are shown
+	{ "mixlink", "-1" }, // absent => no mixer channel was made for this track (Q050-212)
 };
 
 //! Test seam for FrozenTakeHandoffTest; null in product use.
 #ifdef LMMS_TESTING
 void (*s_frozenTakeLockProbeForTest)() = nullptr;
+//! Test seam for Track::create: called once the new track exists, before it is finished; null in product use.
+void (*s_createFaultProbeForTest)() = nullptr;
 #endif
 
 //! The schema's default for \a attribute (SPEC-ARCH-4 1.7 R6).
@@ -254,6 +261,11 @@ void unmuteFrozenClips(const std::vector<Track::FrozenTake::MutedClip>& muted, T
 } // namespace
 
 #ifdef LMMS_TESTING
+void Track::setCreateFaultProbeForTest(void (*probe)())
+{
+	s_createFaultProbeForTest = probe;
+}
+
 void Track::setFrozenTakeLockProbeForTest(void (*probe)())
 {
 	s_frozenTakeLockProbeForTest = probe;
@@ -299,11 +311,27 @@ Track::Track( Type type, TrackContainer * tc ) :
 	                                 * rejects; C++ initialises in declaration order
 	                                 * either way, so the order here is a no-op). */
 	m_clips()        /*!< The clips (segments) */
-{	
-m_trackContainer->addTrack( this );
-m_height = -1;
-// R2.1: the behaviour this track type had before monitoring existed (Track.h).
-m_monitorMode.store( static_cast<int>( defaultMonitorMode() ), std::memory_order_relaxed );
+{
+	try
+	{
+		m_trackContainer->addTrack( this );
+#ifdef LMMS_TESTING
+		if (s_createFaultProbeForTest != nullptr) { s_createFaultProbeForTest(); }
+#endif
+		m_height = -1;
+		// R2.1: the behaviour this track type had before monitoring existed (Track.h).
+		m_monitorMode.store( static_cast<int>( defaultMonitorMode() ), std::memory_order_relaxed );
+		// Q050-212: through the signal, not a call in setName: InstrumentLoaderThread names a track off the UI thread, and
+		// this connection brings that rename back to the thread the channel's name lives on.
+		connect( this, &Track::nameChanged, this, [this] { syncLinkedChannelName(); } );
+	}
+	catch (...)
+	{
+		// Track's destructor does not run if its constructor throws. Undo the raw-pointer registration here so an
+		// allocation failure in connect() cannot leave a dangling entry in the container.
+		m_trackContainer->removeTrack( this );
+		throw;
+}
 }
 
 
@@ -475,6 +503,26 @@ bool Track::hasAutomationLaneChildren() const
 
 
 
+namespace
+{
+
+//! The steps after a new track exists: its clips for the existing patterns, and the container's own follow-up (the
+//! Pattern Editor's first pattern track).
+void finishCreatedTrack(Track* t, TrackContainer* tc)
+{
+#ifdef LMMS_TESTING
+	if (s_createFaultProbeForTest != nullptr) { s_createFaultProbeForTest(); }
+#endif
+	if (tc == Engine::patternStore() && t)
+	{
+		t->createClipsForPattern(Engine::patternStore()->numOfPatterns() - 1);
+	}
+
+	tc->updateAfterTrackAdd();
+}
+
+} // namespace
+
 /*! \brief Create a track based on the given track type and container.
  *
  *  \param tt The type of track to create
@@ -482,7 +530,9 @@ bool Track::hasAutomationLaneChildren() const
  */
 Track * Track::create( Type tt, TrackContainer * tc )
 {
-	Engine::audioEngine()->requestChangeInModel();
+	// cluster gui-1105: the change lock is held by a guard, so an exception out of the construction below (a
+	// std::bad_alloc) releases it on the way out instead of leaving the audio engine's model lock taken for good.
+	const auto changeGuard = Engine::audioEngine()->requestChangesGuard();
 
 	Track * t = nullptr;
 
@@ -501,17 +551,22 @@ Track * Track::create( Type tt, TrackContainer * tc )
 		// `default: break` below and drops the row - the forward-compatibility
 		// cost TRACK-FOLDER-DESIGN.md section 4.4 states rather than hides.
 		case Type::Folder: t = new class TrackFolder( tc ); break;
+		// A neutral row (Q050-283.1): type=8, one more row of the same flat list.
+		case Type::Neutral: t = new class NeutralTrack( tc ); break;
 		default: break;
 	}
 
-	if (tc == Engine::patternStore() && t)
+	// The track is already in the container's list here. A failure while it is being finished takes it back out
+	// (its destructor unlinks it) so no half-made row is left behind, then reaches the caller.
+	try
 	{
-		t->createClipsForPattern(Engine::patternStore()->numOfPatterns() - 1);
+		finishCreatedTrack(t, tc);
 	}
-
-	tc->updateAfterTrackAdd();
-
-	Engine::audioEngine()->doneChangeInModel();
+	catch (...)
+	{
+		delete t;
+		throw;
+	}
 
 	return t;
 }
@@ -566,15 +621,14 @@ Track * Track::create( const QDomElement & element, TrackContainer * tc )
 		return nullptr;
 	}
 
-	Engine::audioEngine()->requestChangeInModel();
+	// Held by a guard, like Track::create(Type, ...): a throw out of create() or restoreState() releases the lock.
+	const auto changeGuard = Engine::audioEngine()->requestChangesGuard();
 
 	Track* t = create( static_cast<Type>( typeValue ), tc );
 	if( t != nullptr )
 	{
 		t->restoreState( element );
 	}
-
-	Engine::audioEngine()->doneChangeInModel();
 
 	return t;
 }
@@ -667,6 +721,11 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 	if (!presetMode && m_automationLanesCollapsed)
 	{
 		element.setAttribute("autolanes", 1);
+	}
+	// Q050-212: written only for a track that has a channel of its own.
+	if (!presetMode && m_linkedChannelId >= 0)
+	{
+		element.setAttribute("mixlink", m_linkedChannelId);
 	}
 	
 	QDomElement tsDe = doc.createElement( nodeName() );
@@ -973,6 +1032,12 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 	if( lanesCollapsedBefore != m_automationLanesCollapsed )
 	{
 		emit automationLanesCollapsedChanged();
+	}
+	// Q050-212: a preset leaves the track's link alone; a copy (ProjectIds::isDocumentElement) has none of its own.
+	if( !presetMode )
+	{
+		m_linkedChannelId = ProjectIds::isDocumentElement( element )
+			? element.attribute( "mixlink", trackRestoreDefault( "mixlink" ) ).toInt() : -1;
 	}
 	{
 		TrackFolder* resolved = m_pendingFolderId >= 0
@@ -1297,6 +1362,11 @@ bar_t Track::length() const
 bool Track::freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
 		const std::vector<FrozenTake::MutedClip>& mutedClips, QString* error, bool region)
 {
+	if (region && !isValidRegionWindow(startTicks, endTicks))
+	{
+		if (error != nullptr) { *error = QStringLiteral("a region must end past its start"); }
+		return false;
+	}
 	if (path.isEmpty())
 	{
 		if (error != nullptr) { *error = QStringLiteral("the take names no audio file"); }
@@ -1400,6 +1470,13 @@ void Track::loadFrozenTake(const QDomElement& element)
 	m_frozen.region = element.hasAttribute(QStringLiteral("frozenRegion"))
 		? element.attribute(QStringLiteral("frozenRegion")).toInt() != 0
 		: (m_frozen.startTicks > 0 || !m_frozen.mutedClips.empty());
+	if (m_frozen.region && !isValidRegionWindow(m_frozen.startTicks, m_frozen.endTicks))
+	{
+		// A region that ends before it starts is refused like an unparseable tick: the track keeps its own
+		// clips, and loadTrack() releases the clips this rejected take muted.
+		m_frozen = FrozenTake{};
+		return;
+	}
 
 	// The clips the file carries are already muted (the freeze saved them that
 	// way), so the record is NOT replayed here: a load must not write to the
@@ -1426,8 +1503,9 @@ void Track::loadFrozenTake(const QDomElement& element)
 void Track::adoptTempoMapForFrozenTake(const TempoMap& map)
 {
 	if (!m_frozen.isFrozen()) { return; }
+	// Always kept, inactive or not: the pass helper decides from this copy, so a stale in-force copy must not survive.
 	m_frozenLastMapInForce = map.active() && !map.empty();
-	if (m_frozenLastMapInForce) { m_frozenLastMap = map; }
+	m_frozenLastMap = map;
 	m_frozenLastMapKnown = true;
 }
 
@@ -1495,7 +1573,7 @@ bool Track::playFrozenTake(const TimePos& start, f_cnt_t /*frames*/, f_cnt_t off
 	const int globalTempo = static_cast<int>(song->getTempo());
 	const bool pinned = song->tempoMap().withRealtimeMap([&](const TempoMap& map) {
 		m_frozenLastMapInForce = map.active() && !map.empty();
-		if (m_frozenLastMapInForce) { m_frozenLastMap = map; }
+		m_frozenLastMap = map;
 	});
 	if (pinned) { m_frozenLastMapKnown = true; }
 	else if (!m_frozenLastMapKnown)
@@ -1505,10 +1583,10 @@ bool Track::playFrozenTake(const TimePos& start, f_cnt_t /*frames*/, f_cnt_t off
 		m_frozenTakePlaying.store(false, std::memory_order_relaxed);
 		return false;
 	}
-	const qint64 sourceIn = m_frozenLastMapInForce
-		? frozenTakeSourceFrame(m_frozenLastMap, globalTempo, m_frozen.startTicks, position,
-			static_cast<int>(bufferRate), oneRate)
-		: static_cast<qint64>(std::llround((position - m_frozen.startTicks) * oneRate));
+	// Every pass maps through the one helper, in force or not: its no-tempo-map branch is the widened span, so a
+	// negative take start with a large seek cannot wrap here either.
+	const qint64 sourceIn = frozenTakeSourceFrame(m_frozenLastMap, globalTempo, m_frozen.startTicks, position,
+		static_cast<int>(bufferRate), oneRate);
 	const qint64 sourceOut = static_cast<qint64>(m_frozenBuffer->size());
 	if (sourceIn >= sourceOut)
 	{
@@ -1615,6 +1693,56 @@ void Track::setColor(const std::optional<QColor>& color)
 BoolModel *Track::getMutedModel()
 {
 	return &m_mutedModel;
+}
+
+MixerChannel* Track::linkedChannel()
+{
+	Mixer* mixer = Engine::mixer();
+	IntModel* model = m_linkedChannelId >= 0 ? mixerChannelModel() : nullptr;
+	if (model == nullptr || mixer == nullptr) { return nullptr; }
+	const int index = model->value();
+	if (index <= 0 || index >= static_cast<int>(mixer->numChannels())) { return nullptr; }
+	MixerChannel* channel = mixer->mixerChannel(index);
+	return channel->id() == m_linkedChannelId ? channel : nullptr;
+}
+
+void Track::syncLinkedChannelName()
+{
+	// A project being read carries both names already, and its mixer may not be there yet.
+	const Song* song = Engine::getSong();
+	if (song == nullptr || song->isLoadingProject()) { return; }
+	MixerChannel* channel = linkedChannel();
+	if (channel == nullptr || channel->m_name == m_name) { return; }
+	channel->m_name = m_name;
+	emit Engine::mixer()->dataChanged();
+}
+
+void Track::reconcileLinkedChannelName()
+{
+	if (m_linkedChannelId < 0 || QThread::currentThread() != thread()) { return; }
+	const Song* song = Engine::getSong();
+	ProjectJournal* journal = Engine::projectJournal();
+	if (song == nullptr || song->isLoadingProject() || journal == nullptr || !journal->isJournalling()) { return; }
+	MixerChannel* channel = linkedChannel();
+	if (channel == nullptr || channel->m_name == m_name) { return; }
+
+	const auto nameChannel = [id = m_linkedChannelId](const QString& name) {
+		Mixer* mixer = Engine::mixer();
+		for (int i = static_cast<int>(mixer->numChannels()) - 1; i > 0; --i)
+		{
+			if (mixer->mixerChannel(i)->id() != id) { continue; }
+			mixer->mixerChannel(i)->m_name = name;
+			emit mixer->dataChanged();
+			return;
+		}
+	};
+	const QString before = channel->m_name;
+	const QString after = m_name;
+	// The route's own checkpoint went on the stack just before this signal, unless the writer asked for none.
+	const bool routeStepOnTop = journal->topStepCaptures(mixerChannelModel()->id());
+	journal->addJournalAction([nameChannel, before] { nameChannel(before); }, [nameChannel, after] { nameChannel(after); });
+	if (routeStepOnTop) { journal->coalesceTopStepIntoPrevious(); }
+	nameChannel(after);
 }
 
 void Track::setName(const QString& newName)

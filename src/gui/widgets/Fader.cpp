@@ -49,6 +49,8 @@
 
 #include "DesignTokens.h"
 
+#include <cmath>
+
 #include <QInputDialog>
 #include <QMouseEvent>
 #include <QPainter>
@@ -124,6 +126,9 @@ void Fader::adjust(const Qt::KeyboardModifiers & modifiers, AdjustmentDirection 
 
 void Fader::adjustByDecibelDelta(float value)
 {
+	// The model is gone after a project replacement: there is nothing to adjust or to show.
+	if (model() == nullptr) { return; }
+
 	adjustModelByDBDelta(value);
 
 	updateTextFloat();
@@ -132,6 +137,9 @@ void Fader::adjustByDecibelDelta(float value)
 
 void Fader::adjustByDialog()
 {
+	// No model, no value to edit: the dialog would read the destroyed model.
+	if (model() == nullptr) { return; }
+
 	bool ok;
 
 	if (modelIsLinear())
@@ -167,6 +175,9 @@ void Fader::adjustByDialog()
 
 void Fader::contextMenuEvent(QContextMenuEvent* ev)
 {
+	// No model (destroyed by a project replacement): the default actions read it for Reset and Copy.
+	if (model() == nullptr) { ev->accept(); return; }
+
 	CaptionMenu contextMenu(windowTitle());
 	addDefaultActions(&contextMenu);
 	contextMenu.exec(QCursor::pos());
@@ -182,6 +193,9 @@ void Fader::mouseMoveEvent(QMouseEvent* mouseEvent)
 	// gesture, so a control being ridden keeps its write authority for as long as
 	// the engineer keeps moving it.
 	if (auto* thisModel = model()) { thisModel->noteAutomationTouchStart(); }
+
+	// No model (destroyed by a project replacement): there is no value to move.
+	if (model() == nullptr) { mouseEvent->accept(); return; }
 
 	const int localY = position(mouseEvent).y();
 
@@ -199,6 +213,10 @@ void Fader::mouseMoveEvent(QMouseEvent* mouseEvent)
 void Fader::mousePressEvent(QMouseEvent* mouseEvent)
 {
 	const auto pos = position(mouseEvent);
+
+	// No model (destroyed by a project replacement): the press has no value to grab, and the
+	// base class would reach the model for middle-click and copy-drag, so consume it here.
+	if (model() == nullptr) { mouseEvent->accept(); return; }
 
 	if (mouseEvent->button() == Qt::LeftButton &&
 			!(mouseEvent->modifiers() & KBD_COPY_MODIFIER))
@@ -476,6 +494,11 @@ float Fader::computeScaledRatio(float dBValue) const
 ///
 void Fader::setPeak(float fPeak, float& targetPeak, float& persistentPeak, QElapsedTimer& lastPeakTimer)
 {
+	if (!std::isfinite(fPeak))
+	{
+		return;
+	}
+
 	if (targetPeak != fPeak)
 	{
 		targetPeak = fPeak;

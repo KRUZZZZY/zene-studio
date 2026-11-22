@@ -168,6 +168,29 @@ inline bool renameOverwrite( const QString & from, const QString & to )
 #endif
 }
 
+//! Replace \a bak with a copy of \a current without ever removing the old
+//! backup first: the copy lands in \a bak + ".new" and is then renamed over
+//! \a bak in one atomic step, so a stale or unremovable .bak can no longer
+//! make the copy write into it (or destroy it before the new copy exists).
+//! On any failure the old \a bak is left untouched and the temp is removed
+//! best-effort; the caller refuses the save.
+inline bool replaceBackup( const QString & current, const QString & bak )
+{
+	const QString tmp = bak + QStringLiteral( ".new" );
+	QFile::remove( tmp );	// clear a stale temp; best effort
+	if( ! QFile::copy( current, tmp ) )
+	{
+		QFile::remove( tmp );	// best effort
+		return false;
+	}
+	if( ! renameOverwrite( tmp, bak ) )
+	{
+		QFile::remove( tmp );	// best effort
+		return false;
+	}
+	return true;
+}
+
 #ifndef Q_OS_WIN
 //! Flush \a path's data to stable storage (SPEC-ARCH-4 1.8 part 2: fsync the
 //! file before the rename publishes it). Qt offers no fsync, so this reaches
@@ -220,6 +243,14 @@ qint64 maxRecoveredDocumentBytes()
 	return ok && limit > 0 ? limit : DefaultMaxRecoveredDocumentBytes;
 }
 
+//! Test seam, ZENE_TEST_PENDING_READ_FAULT: closes the pending file after its open
+//! and before the read, so the read gives back nothing - the first-read fault a
+//! recovery must keep a file through. Portable, like the container seam.
+void armPendingReadFault( QFile & f )
+{
+	if( ! qgetenv( "ZENE_TEST_PENDING_READ_FAULT" ).isEmpty() ) { f.close(); }
+}
+
 //! The uncompressed size a qCompress stream declares in its leading 4 bytes
 //! (big endian), or 0 when the bytes are too short to carry one.
 quint32 declaredUncompressedSize( const QByteArray & bytes )
@@ -250,7 +281,9 @@ bool parsesAsRecoverableDocument( const QByteArray & bytes )
 //! can leave a .new truncated at any byte, and adopting truncated bytes would
 //! trade one corrupt file for another. A payload that begins with '<' but does
 //! not parse is truncated plain XML and is never handed to qUncompress, which
-//! would only warn on XML bytes; anything else is tried as compressed.
+//! would only warn on XML bytes; anything else is tried as compressed. \a reason
+//! is set to "oversized" or "unreadable" when the file was refused rather than
+//! found incomplete, so the caller keeps it instead of discarding it.
 //! ARCH-4 S5. The compressed-temp half of isCompleteDocument(): \a bytes are
 //! not plain XML, so they are a compressed temp (a .mmpz/.xptz save). Its
 //! declared uncompressed size is checked against the recovery limit BEFORE
@@ -282,6 +315,8 @@ inline bool isCompleteDocument( const QString & path, QString * reason )
 	QFile f( path );
 	if( ! f.open( QIODevice::ReadOnly ) )
 	{
+		// Refused, not truncated: nothing in the file was checked, so it is kept.
+		*reason = QStringLiteral( "unreadable" );
 		return false;
 	}
 	// A container's file is measured with its framing allowance (see above); its
@@ -292,7 +327,16 @@ inline bool isCompleteDocument( const QString & path, QString * reason )
 		*reason = QStringLiteral( "oversized" );
 		return false;
 	}
+	// The size the file reports is what its read must give back. A read that
+	// gives back less failed, and the file was never checked.
+	const qint64 expected = f.size();
+	armPendingReadFault( f );
 	const QByteArray bytes = f.readAll();
+	if( f.error() != QFileDevice::NoError || bytes.size() != expected )
+	{
+		*reason = QStringLiteral( "unreadable" );
+		return false;
+	}
 	if( bytes.isEmpty() )
 	{
 		return false;
@@ -308,9 +352,16 @@ inline bool isCompleteDocument( const QString & path, QString * reason )
 	{
 		QByteArray document;
 		QString ignored;
+		bool unreadable = false;
 		if( !lmms::projectcontainer::readDocumentContainer( path,
-			QStringLiteral( "song" ), &document, &ignored ) )
+			QStringLiteral( "song" ), &document, &ignored, &unreadable ) )
 		{
+			// A read that failed never checked the container, so it is kept. Content
+			// the reader refused (malformed or truncated) is not unreadable.
+			if( unreadable )
+			{
+				*reason = QStringLiteral( "unreadable" );
+			}
 			return false;
 		}
 		if( document.size() > maxRecoveredDocumentBytes() )
@@ -338,6 +389,13 @@ inline bool isCompleteDocument( const QString & path, QString * reason )
 //! Called only from the file constructor, never from audio or realtime paths.
 void recoverPendingWrite( const QString & fileName )
 {
+	// An unnamed DataFile has no file, so it has no temp either. Without this
+	// guard "" + ".new" is "./.new": a temp of some other save in the working
+	// directory was adopted or discarded by a load that opened nothing.
+	if( fileName.isEmpty() )
+	{
+		return;
+	}
 	const QString pending = fileName + QStringLiteral( ".new" );
 	if( ! QFile::exists( pending ) )
 	{
@@ -363,6 +421,13 @@ void recoverPendingWrite( const QString & fileName )
 		// never validated, so it stays where it is - the bytes are the user's.
 		qWarning() << "Refused an oversized" << pending << "left by an interrupted save of"
 			<< fileName << "- it declares more content than the recovery holds; leaving it in place";
+	}
+	else if( reason == QLatin1String( "unreadable" ) )
+	{
+		// It could not be opened or read, so it was never checked - it may be the
+		// only copy of the save. It stays where it is for the next open to check.
+		qWarning() << "Could not read" << pending << "left by an interrupted save of"
+			<< fileName << "- it was not checked, so it is left in place";
 	}
 	else if( QFile::remove( pending ) )
 	{
@@ -392,7 +457,13 @@ bool DataFile::isRecoverableDocument( const QDomDocument & doc )
 	{
 		return false;
 	}
-	return ! root.elementsByTagName( DataFile::typeName( type ) ).item( 0 ).toElement().isNull();
+	// The content element is the root's own child (DataFile::DataFile(Type) and
+	// every save write it there). Loading takes the FIRST element of that name in
+	// document order (loadData's elementsByTagName(...).item(0)), so that is the
+	// one checked: a direct child that a nested same-named element precedes would
+	// be adopted and then loaded as the nested element.
+	const QDomElement content = root.elementsByTagName( DataFile::typeName( type ) ).item( 0 ).toElement();
+	return ! content.isNull() && content.parentNode() == root;
 }
 
 
@@ -848,8 +919,9 @@ bool DataFile::writeFile(const QString& filename, bool withResources)
 	// <name>.bak and then renamed <name>.new into place, so between those two
 	// calls the canonical path did not exist at all - and QFile::rename never
 	// overwrites, which is why the move was needed in the first place. The
-	// sequence is now: fsync <name>.new, COPY the current file to <name>.bak
-	// (it never leaves the canonical path), then ONE atomic overwrite-rename of
+	// sequence is now: fsync <name>.new, COPY the current file to
+	// <name>.bak.new (it never leaves the canonical path), atomically rename
+	// that temp onto <name>.bak, then ONE atomic overwrite-rename of
 	// <name>.new onto the canonical path. At every instant the canonical name
 	// resolves to a complete file: the old one until the rename, the new one
 	// after it, because the rename swaps the two in a single step.
@@ -878,16 +950,18 @@ bool DataFile::writeFile(const QString& filename, bool withResources)
 	const bool backupDisabled =
 		ConfigManager::inst()->value("app", "disablebackup").toInt() != 0;
 
-	// Back the current file up by COPYING it, so the canonical path keeps
-	// holding it right up to the atomic rename. A current file that cannot be
-	// backed up is not overwritten - the save is refused, exactly as the old
+	// Back the current file up by COPYING it to <name>.bak.new, so the
+	// canonical path keeps holding it right up to the atomic rename, and then
+	// by atomically renaming that temp onto <name>.bak. The old .bak is only
+	// replaced once the new copy is complete, so a failed save never destroys
+	// the previous backup. A current file that cannot be backed up is not
+	// overwritten - the save is refused, exactly as the old
 	// move-then-failed-rename sequence refused it (there the still-present
 	// target blocked QFile::rename), because destroying the only copy of the
 	// previous version with no backup is the one outcome worth stopping for.
 	if( ! backupDisabled && QFile::exists( fullName ) )
 	{
-		QFile::remove( fullNameBak );	// clear a stale backup; best effort
-		if( ! QFile::copy( fullName, fullNameBak ) )
+		if( ! replaceBackup( fullName, fullNameBak ) )
 		{
 			showError(SongEditor::tr("Could not create a backup"),
 				SongEditor::tr("The previous version of %1 could not be copied to %2, "
@@ -1116,7 +1190,12 @@ void DataFile::cleanMetaNodes( QDomElement _de )
 		{
 			if( node.isElement() )
 			{
-				if( node.toElement().attribute( "metadata" ).toInt() )
+				// Q050-291.1: a MIDI clip's <controllers metadata="1"> carries its CC / pitch-bend / aftertouch /
+				// program lanes (MidiClipControllers::save). The metadata flag keeps older builds from reading it as a
+				// note; the lanes are project data, so the prune that drops the journal's bookkeeping spares them.
+				const bool clipLanes = node.nodeName() == QLatin1String( "controllers" )
+					&& current.nodeName() == QLatin1String( "midiclip" );
+				if( node.toElement().attribute( "metadata" ).toInt() && !clipLanes )
 				{
 					QDomNode ns = node.nextSibling();
 					current.removeChild( node );
@@ -2777,9 +2856,20 @@ void DataFile::loadData( const QByteArray & _data, const QString & _sourceFile,
 	}
 	else
 	{
-		bool success;
-		m_fileVersion = root.attribute( "version" ).toUInt( &success );
-		if( !success ) qWarning("File Version conversion failure.");
+		bool success = false;
+		const unsigned int parsed = root.attribute( "version" ).toUInt( &success );
+		if( success )
+		{
+			m_fileVersion = parsed;
+		}
+		else
+		{
+			qWarning("File Version conversion failure.");
+			// A version that does not parse as a number cannot name a file
+			// version, so derive it from creatorversion like the legacy path
+			// does instead of falling back to 0 (every upgrade).
+			m_fileVersion = legacyFileVersion();
+		}
 	}
 
 	// The root's format attributes AS THE FILE HAD THEM, taken before any

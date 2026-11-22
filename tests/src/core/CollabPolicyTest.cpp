@@ -99,6 +99,12 @@ private slots:
 			{{QStringLiteral("trigger"), QStringLiteral("note")}, {QStringLiteral("key"), 60}}, CollabRole::Editor).route, PeerRoute::Local);
 		QCOMPARE(peerRoute(QStringLiteral("session.unbind_command"), true,
 			{{QStringLiteral("trigger"), QStringLiteral("cc")}}, CollabRole::Editor).route, PeerRoute::Local);
+		// Q050-217.2: the same call with a WORKFLOW target is the same edit to the same local store - a peer's
+		// workflow binding must not be streamed either, whichever target it names.
+		QCOMPARE(peerRoute(QStringLiteral("session.bind_command"), true,
+			{{QStringLiteral("trigger"), QStringLiteral("note")}, {QStringLiteral("workflow"), QStringLiteral("bounce")}},
+			CollabRole::Editor).route, PeerRoute::Local);
+		QCOMPARE(peerRoute(QStringLiteral("session.command_bindings"), false, NoArgs, CollabRole::Editor).route, PeerRoute::Local);
 		QCOMPARE(peerRoute(QStringLiteral("session.bind"), true, NoArgs, CollabRole::Editor).route, PeerRoute::Local);
 		const QJsonObject withPath{{QStringLiteral("path"), QStringLiteral("/home/me/kick.wav")}};
 		const RouteDecision file = peerRoute(QStringLiteral("clip.add"), true, withPath, CollabRole::Editor);

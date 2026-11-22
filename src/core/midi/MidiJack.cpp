@@ -182,6 +182,12 @@ QString MidiJack::probeDevice()
 // we read data from jack
 void MidiJack::JackMidiRead(jack_nframes_t nframes)
 {
+	const MidiInputGate::Scope dispatch(m_inputGate);
+	if (!dispatch) { return; }
+#ifdef LMMS_TESTING
+	m_inputReadsForTesting.fetch_add(1);
+#endif
+
 	void* port_buf = jack_port_get_buffer(m_input_port, nframes);
 	jack_midi_event_t in_event;
 	jack_nframes_t event_index = 0;

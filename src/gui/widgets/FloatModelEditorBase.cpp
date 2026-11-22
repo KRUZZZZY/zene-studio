@@ -346,6 +346,8 @@ void FloatModelEditorBase::paintEvent(QPaintEvent *)
 
 void FloatModelEditorBase::wheelEvent(QWheelEvent * we)
 {
+	if (model() == nullptr) { QWidget::wheelEvent(we); return; }
+
 	const auto oldInteraction = m_interaction;
 	updateInteractionState(we);
 

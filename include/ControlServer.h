@@ -35,7 +35,6 @@
 // POSIX half gets from QSocketNotifier and the kernel.  Guarded: on POSIX this
 // header is what it always was.
 #if defined(Q_OS_WIN)
-#include <QMutex>
 #include <atomic>
 #include <memory>
 #include <thread>
@@ -56,6 +55,9 @@ namespace lmms
 //!   -> {"id":1,"cmd":"mixer.get_state","args":{},"proto":1}
 //!   <- {"id":1,"ok":true,"result":{...}}
 //!   <- {"id":1,"ok":false,"error":{"kind":"invalid_args","message":"..."}}
+//!
+//! A connection that called events.subscribe also receives unsolicited lines carrying "event" and no "id"
+//! (ControlEventHub.h, Q050-334.1); one that did not never sees one.
 //!
 //! Off unless the instance is started with --control-socket <path>. The POSIX
 //! socket file is mode 0600, is unlinked on exit, and the listener is AF_UNIX
@@ -143,6 +145,8 @@ private:
 		QByteArray pending;
 		QByteArray buffer;
 		qint64 deadlineMs = 0;
+		//! This connection's key on the project-change event hub (Q050-334.1); never reused, unlike fd.
+		quint64 eventConnection = 0;
 
 		//! Retire this connection's notifiers (either may never have been armed).
 		//! Defined in ControlServer.cpp, where QSocketNotifier is complete.
@@ -170,6 +174,9 @@ private:
 	//! says EOF is already in hand, so the client can be dropped at once.
 	void refuseOverCapLine(int fd, bool closed);
 	void dropClient(int fd);
+	//! Q050-334.1 (ControlServerEvents.cpp): write this subscriber's queued events while its socket takes them.
+	void flushClientEvents(int fd, quint64 connection);
+	void postEventFlush(int fd, quint64 connection);
 	//! BUGS 11.31: at the client cap, drop the peers whose sockets report they have hung up.
 	void reapHungUpClients();
 	//! Hand one whole reply line to \p fd: write what the socket takes now and
@@ -187,6 +194,8 @@ private:
 
 	ControlRegistry* m_registry;
 #if defined(Q_OS_WIN)
+	//! One connection's event path: the outbox between the server's thread and its worker (Q050-334.1).
+	struct Win32EventLink;
 	//! The Windows transport: a named pipe behind the SAME JSON-RPC contract -
 	//! the same framing, the same command ids, the same refusal shapes
 	//! (CODE-9).  Defined in ControlServerWin32.cpp.
@@ -217,7 +226,13 @@ private:
 	//! Run dispatchLine() for one request line on the SERVER's thread and wait
 	//! for the answer, bounded.  Empty when the instance started closing before
 	//! the request could be answered.
-	QByteArray win32Dispatch(const QByteArray& line);
+	QByteArray win32Dispatch(const QByteArray& line, const std::shared_ptr<Win32EventLink>& link);
+	//! Q050-334.1: on the server's thread, move this subscriber's queued events to its worker while the worker's
+	//! outbox is empty, so a client that stops reading overflows the hub's bounded queue and nothing else.
+	void win32PumpEvents(const std::shared_ptr<Win32EventLink>& link);
+	//! The worker's half of the same: write what the pump left in the outbox and ask for more.
+	bool win32WriteEvents(void* hPipe, void* hIoEvent, void* hQuitEvent, const std::shared_ptr<Win32EventLink>& link,
+		quint64* idleDeadlineMs);
 	//! Serve every COMPLETE line already in \p buffer, in wire order: dispatch it
 	//! on the server's thread and write its reply back.  Returns false when the
 	//! connection is over (the peer is gone, or the instance is closing).  The
@@ -225,7 +240,7 @@ private:
 	//! what is left once every complete one is gone: \p overCap is set once that
 	//! refusal has been sent, and the caller then reads and discards the rest.
 	bool win32ServeBuffer(void* hPipe, void* hIoEvent, void* hQuitEvent, QByteArray& buffer,
-		bool* overCap, quint64* idleDeadlineMs);
+		bool* overCap, quint64* idleDeadlineMs, const std::shared_ptr<Win32EventLink>& link);
 
 	//! The full \\.\pipe\<name> this instance listens on; empty when it is not.
 	QString m_pipeName;

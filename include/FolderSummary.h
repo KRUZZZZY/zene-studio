@@ -33,6 +33,7 @@
 namespace lmms
 {
 
+class Clip;
 class Track;
 class TrackFolder;
 
@@ -52,6 +53,9 @@ LMMS_EXPORT std::vector<FolderSpan> folderSummary(const TrackFolder& folder);
 //! Every track inside @a folder at any depth (not the sub-folders themselves) that holds a clip
 //! starting inside [@a from, @a to), in track-list order.
 LMMS_EXPORT std::vector<Track*> folderTracksWithin(const TrackFolder& folder, tick_t from, tick_t to);
+
+//! Q050-255: the clips summary clip @a span stands for: those inside @a folder at any depth starting inside it.
+LMMS_EXPORT std::vector<Clip*> folderSpanClips(const TrackFolder& folder, const FolderSpan& span);
 
 } // namespace lmms
 

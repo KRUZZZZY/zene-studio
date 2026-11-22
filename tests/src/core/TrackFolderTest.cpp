@@ -544,6 +544,33 @@ private slots:
 			"a prevch pair that is not two numbers is discarded, not adopted as 0:<n>");
 	}
 
+	//! A loaded `mixch="0"` is malformed: releasing or deleting that folder must not delete the mixer master.
+	void aMalformedFolderChannelCannotDeleteTheMaster()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clear();
+		QCOMPARE(mixer->numChannels(), mix_ch_t{1});
+
+		QDomDocument settings;
+		QVERIFY(settings.setContent(QStringLiteral("<trackfolder mode=\"routing\" mixch=\"0\"/>")));
+		const QString name = QStringLiteral("a-master-index");
+		TrackFolder* released = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		released->loadTrackSpecificSettings(settings.documentElement());
+		QString error;
+		QVERIFY2(released->setMode(TrackFolder::Mode::Group, &error), qPrintable(error));
+		const bool masterSurvivedRelease = mixer->numChannels() == 1;
+		if (!masterSurvivedRelease) { mixer->createChannel(); }
+
+		TrackFolder* deleted = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		deleted->loadTrackSpecificSettings(settings.documentElement());
+		removeAll(name);
+		const bool masterSurvivedDelete = mixer->numChannels() == 1;
+		if (!masterSurvivedDelete) { mixer->createChannel(); }
+
+		QVERIFY2(masterSurvivedRelease, "leaving routing with a saved master index deleted mixer channel 0");
+		QVERIFY2(masterSurvivedDelete, "deleting a folder with a saved master index deleted mixer channel 0");
+	}
+
 	//! A child that LEAVES a routing folder keeps its binding, so it can be routed
 	//! again without inventing a channel for it. But the channel it is given while it
 	//! is OUTSIDE the folder is the one a later release has to restore: routeChild()
@@ -910,6 +937,51 @@ private slots:
 			QJsonObject{{QStringLiteral("track"), id}});
 		QVERIFY2(state.ok, qPrintable(state.errorMessage));
 		QVERIFY(state.result.value(QStringLiteral("folder")).toString().isEmpty());
+		removeAll(name);
+	}
+
+	//! (k) A move that changes a track's folder changes the project: the membership is
+	//! saved in the file, so the project is marked modified and closing it prompts to
+	//! save. A move onto the folder the track is already in changes nothing and must
+	//! leave a clean project clean. The undo that takes the move back also dirties it.
+	void reparentingMarksTheProjectModified()
+	{
+		const QString name = QStringLiteral("k-dirty");
+		const QString folderId = control::trackIdOf(addTrack(Track::Type::Folder, name));
+		const QString trackId = control::trackIdOf(addTrack(Track::Type::Instrument, name));
+		ControlRegistry* registry = ControlRegistry::instance();
+		Song* song = Engine::getSong();
+
+		// into a folder, from a clean project
+		song->noteProjectSaved(song->projectFileName());
+		const ControlResult into = registry->invoke(QStringLiteral("track.set_folder"),
+			QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("folder"), folderId}});
+		QVERIFY2(into.ok, qPrintable(into.errorMessage));
+		QVERIFY2(song->isModified(), "moving a track into a folder left the project clean");
+
+		// out of the folder, from a clean project
+		song->noteProjectSaved(song->projectFileName());
+		const ControlResult out = registry->invoke(QStringLiteral("track.set_folder"),
+			QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("folder"), QString()}});
+		QVERIFY2(out.ok, qPrintable(out.errorMessage));
+		QVERIFY2(song->isModified(), "moving a track out of a folder left the project clean");
+
+		// already at the root: nothing changed, so the project stays clean
+		song->noteProjectSaved(song->projectFileName());
+		const ControlResult noop = registry->invoke(QStringLiteral("track.set_folder"),
+			QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("folder"), QString()}});
+		QVERIFY2(noop.ok, qPrintable(noop.errorMessage));
+		QVERIFY2(!song->isModified(), "a no-op folder move dirtied a clean project");
+
+		// the undo of the move dirties the project too
+		song->noteProjectSaved(song->projectFileName());
+		const ControlResult moveBack = registry->invoke(QStringLiteral("track.set_folder"),
+			QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("folder"), folderId}});
+		QVERIFY2(moveBack.ok, qPrintable(moveBack.errorMessage));
+		song->noteProjectSaved(song->projectFileName());
+		const ControlResult undone = registry->invoke(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(QStringLiteral("control.undo failed: ") + undone.errorMessage));
+		QVERIFY2(song->isModified(), "undoing a folder move left the project clean");
 		removeAll(name);
 	}
 

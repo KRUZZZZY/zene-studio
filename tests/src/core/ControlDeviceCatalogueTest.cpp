@@ -171,310 +171,44 @@ class ControlDeviceCatalogueTest : public QObject
 private slots:
 
 	//! A truncated later sample must not replace the active patch with samples parsed before the error.
-	void aTruncatedPatchKeepsThePreviouslyLoadedSound()
-	{
-		QTemporaryDir directory;
-		QVERIFY(directory.isValid());
-		QFile validFile(directory.filePath(QStringLiteral("valid.pat")));
-		QVERIFY(validFile.open(QIODevice::WriteOnly));
-		const QByteArray validPatch = makePatmanPatch(false, 64);
-		QCOMPARE(validFile.write(validPatch), static_cast<qint64>(validPatch.size()));
-		validFile.close();
-		QFile truncatedFile(directory.filePath(QStringLiteral("truncated.pat")));
-		QVERIFY(truncatedFile.open(QIODevice::WriteOnly));
-		const QByteArray truncatedPatch = makePatmanPatch(true, -64);
-		QCOMPARE(truncatedFile.write(truncatedPatch), static_cast<qint64>(truncatedPatch.size()));
-		truncatedFile.close();
+	void aTruncatedPatchKeepsThePreviouslyLoadedSound();
 
-		QVERIFY2(!getPluginFactory()->pluginInfo("patman").isNull(), "Patman plugin is unavailable");
-		auto* track = new InstrumentTrack(Engine::getSong());
-		Instrument* baseInstrument = track->loadInstrument(QStringLiteral("patman"));
-		QVERIFY(baseInstrument != nullptr);
-		QVERIFY(QMetaObject::invokeMethod(baseInstrument, "setFile", Qt::DirectConnection,
-			Q_ARG(QString, validFile.fileName()), Q_ARG(bool, false)));
-		NotePlayHandleManager::init();
-		const std::vector<SampleFrame> previousSound = renderPatmanNote(*track);
-		QVERIFY(previousSound[4][0] > 0.1f);
-		QVERIFY(QMetaObject::invokeMethod(baseInstrument, "setFile", Qt::DirectConnection,
-			Q_ARG(QString, truncatedFile.fileName()), Q_ARG(bool, false)));
-		const std::vector<SampleFrame> currentSound = renderPatmanNote(*track);
-		QVERIFY2(std::abs(currentSound[4][0] - previousSound[4][0]) < 1e-6f,
-			"the truncated patch replaced the previously loaded sample");
-	}
+	void initTestCase();
 
-	void initTestCase()
-	{
-		// Tell PluginFactory where the build-tree plugins live *before* it is
-		// first instantiated (it reads LMMS_PLUGIN_DIR in its constructor).
-		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
-		Engine::init(true);
-		ControlRegistry::setReady(true);
-	}
-
-	void cleanupTestCase()
-	{
-		ControlRegistry::setReady(false);
-		Engine::destroy();
-	}
+	void cleanupTestCase();
 
 	//! The hosted formats are appended after the built-in modules, so gaining a
 	//! host does not renumber the dev-<n> ids a client already holds.
-	void builtinBlockIsNotRenumberedByHostedFormats()
-	{
-		const QList<ControlDeviceEntry> catalogue = controlDeviceCatalogue();
-		QVERIFY(!catalogue.isEmpty());
-
-		bool leftBuiltins = false;
-		for (int i = 0; i < catalogue.size(); ++i)
-		{
-			const bool builtin = catalogue.at(i).format == QLatin1String("builtin");
-			if (!builtin) { leftBuiltins = true; continue; }
-			QVERIFY2(!leftBuiltins,
-				qPrintable(QStringLiteral("built-in device %1 sits after a hosted device")
-					.arg(catalogue.at(i).name)));
-		}
-		// The dev-<n> id is the catalogue index, straight through.
-		for (int i = 0; i < catalogue.size(); ++i)
-		{
-			QCOMPARE(control::deviceId(i), QStringLiteral("dev-%1").arg(i));
-		}
-	}
+	void builtinBlockIsNotRenumberedByHostedFormats();
 
 	//! Every hosted format is one of the formats plugin.list documents.
-	void formatsAreFromTheClosedSet()
-	{
-		const QList<ControlDeviceEntry> catalogue = controlDeviceCatalogue();
-		const QStringList known = {QStringLiteral("builtin"), QStringLiteral("ladspa"),
-			QStringLiteral("lv2"), QStringLiteral("vst3"), QStringLiteral("clap")};
-		for (const ControlDeviceEntry& entry : catalogue)
-		{
-			QVERIFY2(known.contains(entry.format),
-				qPrintable(QStringLiteral("unknown format '%1' on '%2'")
-					.arg(entry.format, entry.name)));
-			// The name is what plugin.list reports and what a dev-<n> stands
-			// for; an empty one would be unaddressable.
-			QVERIFY(!entry.name.isEmpty());
-			// The display name is what the select dialogs show, so the LV2 half
-			// must carry the plugin's own name - not fall back to the URI.
-			if (entry.format == QLatin1String("lv2"))
-			{
-				QVERIFY2(!entry.displayName.isEmpty(),
-					qPrintable(QStringLiteral("lv2 device %1 has no display name")
-						.arg(entry.name)));
-			}
-		}
-	}
+	void formatsAreFromTheClosedSet();
 
 	//! A host descriptor is not itself a device: its real entries need a sub-plugin key.
-	void builtinCatalogueDoesNotListSubPluginHosts()
-	{
-		const QList<ControlDeviceEntry> catalogue = controlDeviceCatalogue();
-		for (const Plugin::Type type : {Plugin::Type::Effect, Plugin::Type::Instrument})
-		{
-			for (const Plugin::Descriptor* descriptor : getPluginFactory()->descriptors(type))
-			{
-				if (descriptor == nullptr || descriptor->subPluginFeatures == nullptr) { continue; }
-				for (const ControlDeviceEntry& entry : catalogue)
-				{
-					if (entry.format == QLatin1String("builtin"))
-					{
-						QVERIFY2(entry.name != QLatin1String(descriptor->name),
-							qPrintable(QStringLiteral("host container '%1' was listed as a plain device")
-								.arg(QString::fromUtf8(descriptor->name))));
-					}
-				}
-			}
-		}
-	}
+	void builtinCatalogueDoesNotListSubPluginHosts();
 
 	//! The LV2 host must report a clean refusal for missing or malformed keys, never dereference them.
-	void lv2InstrumentRefusesMissingOrInvalidKeys()
-	{
-#ifdef LMMS_HAVE_LV2
-		const PluginFactory::PluginInfo& info = getPluginFactory()->pluginInfo("lv2instrument");
-		if (info.isNull()) { QSKIP("this build has no lv2instrument module"); }
-
-		QTest::ignoreMessage(QtCriticalMsg,
-			"Cannot instantiate LV2 instrument: missing sub-plugin key");
-		std::unique_ptr<Plugin> missingKey(Plugin::instantiateWithKey(
-			QStringLiteral("lv2instrument"), nullptr, nullptr));
-		QVERIFY(dynamic_cast<DummyPlugin*>(missingKey.get()) != nullptr);
-
-		using Key = Plugin::Descriptor::SubPluginFeatures::Key;
-		const Key invalidKey(info.descriptor, QStringLiteral("missing URI"), {});
-		QTest::ignoreMessage(QtCriticalMsg,
-			"Cannot instantiate LV2 instrument: sub-plugin key has no URI");
-		std::unique_ptr<Plugin> missingUri(Plugin::instantiateWithKey(
-			QStringLiteral("lv2instrument"), nullptr, &invalidKey));
-		QVERIFY(dynamic_cast<DummyPlugin*>(missingUri.get()) != nullptr);
-#else
-		QSKIP("this build has no LV2 host");
-#endif
-	}
+	void lv2InstrumentRefusesMissingOrInvalidKeys();
 
 	//! Every LV2 entry names the URI the host resolves and plugin.load keys on,
 	//! and the URI is also the device's own id.
-	void lv2EntriesCarryTheirUri()
-	{
-#ifdef LMMS_HAVE_LV2
-		if (getPluginFactory()->pluginInfo("lv2effect").isNull())
-		{
-			QSKIP("this build has no lv2effect module, so it has no LV2 catalogue half");
-		}
-		if (Engine::getLv2Manager() == nullptr)
-		{
-			QSKIP("no Lv2Manager in this process, so there is no LV2 world to enumerate");
-		}
-		const QList<ControlDeviceEntry> catalogue = controlDeviceCatalogue();
-
-		int lv2 = 0;
-		for (const ControlDeviceEntry& entry : catalogue)
-		{
-			if (entry.format != QLatin1String("lv2")) { continue; }
-			++lv2;
-			QVERIFY2(!entry.uri.isEmpty(),
-				qPrintable(QStringLiteral("lv2 device %1 carries no URI").arg(entry.name)));
-			// The URI is the id: it is what plugin.load resolves and what a
-			// project file stores, so dev-<n> -> plugin.load -> the host all
-			// agree on one string.
-			QCOMPARE(entry.name, entry.uri);
-			QVERIFY(entry.kind == QLatin1String("effect")
-				|| entry.kind == QLatin1String("instrument"));
-			QVERIFY(entry.loadable);
-			// The URI must be one this process's own LV2 world accepted, i.e.
-			// one Lv2ControlBase::check() passed - not merely a bundle on disk.
-			QVERIFY2(Engine::getLv2Manager()->getPlugin(entry.uri) != nullptr,
-				qPrintable(QStringLiteral("lv2 device %1 is not in the LV2 world")
-					.arg(entry.uri)));
-		}
-		// If the box has LV2 bundles the host can use, they must show up; a
-		// silently empty LV2 half is the bug this test exists to catch.
-		if (!getPluginFactory()->pluginInfo("lv2instrument").isNull())
-		{
-			const bool worldHasPlugins = std::any_of(
-				Engine::getLv2Manager()->begin(), Engine::getLv2Manager()->end(),
-				[](const auto& pair) { return pair.second.isValid(); });
-			if (worldHasPlugins)
-			{
-				QVERIFY2(lv2 > 0, "the LV2 world has valid plugins but the catalogue lists none");
-			}
-		}
-		qInfo("catalogue: %d devices, %d of them LV2", int(catalogue.size()), lv2);
-#else
-		QSKIP("this build has no LV2 host (LMMS_HAVE_LV2 is off)");
-#endif
-	}
+	void lv2EntriesCarryTheirUri();
 
 	//! Two calls must agree: a dev-<n> a client holds has to keep meaning the
 	//! same device for the life of the binary.
-	void catalogueOrderIsDeterministic()
-	{
-		const QList<ControlDeviceEntry> first = controlDeviceCatalogue();
-		const QList<ControlDeviceEntry> second = controlDeviceCatalogue();
-		QCOMPARE(first.size(), second.size());
-		for (int i = 0; i < first.size(); ++i)
-		{
-			QCOMPARE(first.at(i).name, second.at(i).name);
-			QCOMPARE(first.at(i).format, second.at(i).format);
-			QCOMPARE(first.at(i).kind, second.at(i).kind);
-		}
-	}
+	void catalogueOrderIsDeterministic();
 
 	//! plugin.list names every built-in device with the fields a client keys on, and the entry found by
 	//! its name is the one the catalogue holds at that dev-<n>: the listing and the catalogue cannot differ.
-	void builtinDevicesAreListedWithTheirCatalogueFields()
-	{
-		const ControlResult listed = ControlRegistry::instance()->invoke(QStringLiteral("plugin.list"),
-			QJsonObject{{QStringLiteral("format"), QStringLiteral("builtin")}});
-		QVERIFY2(listed.ok, qPrintable(listed.errorMessage));
-		const QJsonArray devices = listed.result.value(QStringLiteral("devices")).toArray();
-		QVERIFY2(!devices.isEmpty(), "the build lists no built-in device at all");
-		const QList<ControlDeviceEntry> catalogue = controlDeviceCatalogue();
-		for (const QJsonValue& value : devices)
-		{
-			const QJsonObject device = value.toObject();
-			QCOMPARE(device.value(QStringLiteral("format")).toString(), QStringLiteral("builtin"));
-			const QString name = device.value(QStringLiteral("name")).toString();
-			QVERIFY(!name.isEmpty());
-			const QJsonObject again = listedDevice(QStringLiteral("builtin"), name);
-			QVERIFY2(!again.isEmpty(), qPrintable(QStringLiteral("'%1' listed but not found by its name").arg(name)));
-			QCOMPARE(again.value(QStringLiteral("id")).toString(), device.value(QStringLiteral("id")).toString());
-			bool inCatalogue = false;
-			for (int i = 0; i < catalogue.size(); ++i)
-			{
-				if (control::deviceId(i) != device.value(QStringLiteral("id")).toString()) { continue; }
-				inCatalogue = true;
-				QCOMPARE(catalogue.at(i).name, name);
-				QCOMPARE(catalogue.at(i).loadable, device.value(QStringLiteral("loadable")).toBool());
-			}
-			QVERIFY2(inCatalogue, "a listed device id names no catalogue entry");
-		}
-		// A name nothing carries finds nothing.
-		QVERIFY(listedDevice(QStringLiteral("builtin"), QStringLiteral("no-such-device")).isEmpty());
-		// A format outside the closed set is refused by the schema, not answered with an empty list.
-		const ControlResult none = ControlRegistry::instance()->invoke(QStringLiteral("plugin.list"),
-			QJsonObject{{QStringLiteral("format"), QStringLiteral("no-such-format")}});
-		QVERIFY(!none.ok);
-		QCOMPARE(none.errorKind, ControlErrorKind::InvalidArgs);
-	}
+	void builtinDevicesAreListedWithTheirCatalogueFields();
 
 	//! An unknown dev-<n> is a typed not_found naming how many devices exist,
 	//! and a malformed id is invalid_args - never an empty success.
-	void deviceLookupIsTyped()
-	{
-		ControlDeviceEntry entry;
-		int index = -1;
-		ControlResult error;
-
-		QVERIFY(!controlDeviceById(QStringLiteral("dev-999999"), &entry, &index, &error));
-		QCOMPARE(error.errorKind, ControlErrorKind::NotFound);
-		QVERIFY(!error.errorMessage.isEmpty());
-
-		QVERIFY(!controlDeviceById(QStringLiteral("amplifier"), &entry, &index, &error));
-		QCOMPARE(error.errorKind, ControlErrorKind::InvalidArgs);
-
-		const QList<ControlDeviceEntry> catalogue = controlDeviceCatalogue();
-		QVERIFY(!catalogue.isEmpty());
-		QVERIFY(controlDeviceById(control::deviceId(0), &entry, &index, &error));
-		QCOMPARE(index, 0);
-	}
+	void deviceLookupIsTyped();
 
 	//! plugin.list's schema admits the lv2 filter (a format the catalogue now
 	//! has) and still refuses a format outside the closed set.
-	void pluginListAcceptsTheLv2FormatFilter()
-	{
-		ControlRegistry* registry = ControlRegistry::instance();
-
-		QJsonObject filter;
-		filter.insert(QStringLiteral("format"), QStringLiteral("lv2"));
-		const ControlResult lv2 = registry->invoke(QStringLiteral("plugin.list"), filter);
-		QVERIFY2(lv2.ok, qPrintable(lv2.errorMessage));
-		// The filter can only ever return LV2 entries, and the id it reports is
-		// the entry's index in the whole catalogue.
-		for (const QJsonValue& value : lv2.result.value(QStringLiteral("devices")).toArray())
-		{
-			const QJsonObject device = value.toObject();
-			QCOMPARE(device.value(QStringLiteral("format")).toString(), QStringLiteral("lv2"));
-			QVERIFY(!device.value(QStringLiteral("uri")).toString().isEmpty());
-			QVERIFY(device.value(QStringLiteral("id")).toString().startsWith(QStringLiteral("dev-")));
-		}
-
-		QJsonObject bogus;
-		bogus.insert(QStringLiteral("format"), QStringLiteral("not_a_format"));
-		const ControlResult refused = registry->invoke(QStringLiteral("plugin.list"), bogus);
-		QVERIFY(!refused.ok);
-		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
-
-		// The unfiltered listing's total is the whole catalogue, and the parts
-		// add up: this is the invariant the integration test's breakdown
-		// assertion rides on.
-		const ControlResult all = registry->invoke(QStringLiteral("plugin.list"));
-		QVERIFY(all.ok);
-		const QJsonObject byFormat = all.result.value(QStringLiteral("counts_by_format")).toObject();
-		int sum = 0;
-		for (auto it = byFormat.begin(); it != byFormat.end(); ++it) { sum += it.value().toInt(); }
-		QCOMPARE(sum, all.result.value(QStringLiteral("total")).toInt());
-	}
+	void pluginListAcceptsTheLv2FormatFilter();
 
 	//! The VST3 half (feature row 78, board task #668): with the in-tree MIT
 	//! fixture in the product's VST3 search directory, plugin.list must carry
@@ -485,90 +219,7 @@ private slots:
 	//! Skipped when this build has no VST3 host or no fixture: the option that
 	//! builds the fixture is off by default, and no third-party VST3 class can
 	//! be assumed on a build machine.
-	void vst3ClassesListAndLoadThroughTheSurface()
-	{
-		if (getPluginFactory()->pluginInfo("vst3instrument").isNull())
-		{
-			QSKIP("this build has no vst3instrument module, so it has no VST3 catalogue half");
-		}
-		const QString fixtureDir = QStringLiteral(VST3_TEST_INSTRUMENT_DIR);
-		if (fixtureDir.isEmpty() || !QFileInfo::exists(fixtureDir))
-		{
-			QSKIP("this build has no VST3 test fixture, so there is no VST3 class to list "
-				"(configure with -DWANT_VST3_TEST_INSTRUMENT=ON)");
-		}
-
-		// The fixture is what this box offers; point the product's VST3 search
-		// directory at it, exactly as an installed plug-in would be found.
-		ConfigManager::inst()->setVSTDir(fixtureDir);
-
-		ControlRegistry* registry = ControlRegistry::instance();
-		QJsonObject filter;
-		filter.insert(QStringLiteral("format"), QStringLiteral("vst3"));
-		const ControlResult vst3 = registry->invoke(QStringLiteral("plugin.list"), filter);
-		QVERIFY2(vst3.ok, qPrintable(vst3.errorMessage));
-
-		QString deviceId;
-		QString bundle;
-		for (const QJsonValue& value : vst3.result.value(QStringLiteral("devices")).toArray())
-		{
-			const QJsonObject device = value.toObject();
-			if (device.value(QStringLiteral("name")).toString()
-				!= QStringLiteral("Zene VST3 Test Instrument"))
-			{
-				continue;
-			}
-			deviceId = device.value(QStringLiteral("id")).toString();
-			bundle = device.value(QStringLiteral("file")).toString();
-			QCOMPARE(device.value(QStringLiteral("kind")).toString(),
-				QStringLiteral("instrument"));
-			QCOMPARE(device.value(QStringLiteral("class")).toString(),
-				device.value(QStringLiteral("name")).toString());
-			QVERIFY2(device.value(QStringLiteral("loadable")).toBool(),
-				"the fixture class is not offered as loadable");
-		}
-		QVERIFY2(!deviceId.isEmpty(),
-			"plugin.list format=vst3 does not carry the fixture's class");
-		QVERIFY2(!bundle.isEmpty(), "the vst3 entry carries no bundle path");
-
-		// The id is the catalogue index, so the same device is addressable from
-		// the unfiltered listing a client may already hold.
-		const ControlResult all = registry->invoke(QStringLiteral("plugin.list"));
-		QVERIFY(all.ok);
-		QJsonObject listed;
-		for (const QJsonValue& value : all.result.value(QStringLiteral("devices")).toArray())
-		{
-			const QJsonObject device = value.toObject();
-			if (device.value(QStringLiteral("id")).toString() == deviceId) { listed = device; }
-		}
-		QVERIFY2(!listed.isEmpty(),
-			qPrintable(QStringLiteral("device %1 is not in the unfiltered listing")
-				.arg(deviceId)));
-		QCOMPARE(listed.value(QStringLiteral("format")).toString(), QStringLiteral("vst3"));
-
-		// plugin.load, onto an instrument track: the whole point of the block.
-		auto* track = new InstrumentTrack(Engine::getSong());
-		QJsonObject args;
-		args.insert(QStringLiteral("target"), control::trackIdOf(track));
-		args.insert(QStringLiteral("device"), deviceId);
-		const ControlResult loaded = registry->invoke(QStringLiteral("plugin.load"), args);
-		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
-		QCOMPARE(loaded.result.value(QStringLiteral("kind")).toString(),
-			QStringLiteral("instrument"));
-		QCOMPARE(loaded.result.value(QStringLiteral("plugin")).toString(),
-			QStringLiteral("vst3instrument"));
-
-		Instrument* instrument = track->instrument();
-		QVERIFY2(instrument != nullptr, "plugin.load reported success but the track has no "
-			"instrument");
-		QCOMPARE(QString::fromUtf8(instrument->descriptor()->name),
-			QStringLiteral("vst3instrument"));
-		QVERIFY2(instrument->isMidiBased(),
-			"the loaded VST3 instrument is not MIDI based, so no clip could drive it");
-		qInfo("plugin.list format=vst3: %s -> plugin.load on %s -> %s, %d parameter(s)",
-			qPrintable(deviceId), qPrintable(control::trackIdOf(track)),
-			qPrintable(bundle), instrument->parameterCount());
-	}
+	void vst3ClassesListAndLoadThroughTheSurface();
 
 	//! The CLAP half (feature row 79, board task #669): with the in-tree MIT
 	//! instrument fixture in the product's plug-in search directory,
@@ -579,175 +230,23 @@ private slots:
 	//! through the socket (CHARTER 3.1).
 	//!
 	//! Skipped when this build has no CLAP instrument host or no fixture.
-	void clapInstrumentListsAndLoadsThroughTheSurface()
-	{
-		if (getPluginFactory()->pluginInfo("clapinstrument").isNull())
-		{
-			QSKIP("this build has no clapinstrument module, so it has no CLAP instrument "
-				"catalogue half");
-		}
-		const QString fixtureDir = QStringLiteral(CLAP_TEST_INSTRUMENT_DIR);
-		if (fixtureDir.isEmpty() || !QFileInfo::exists(fixtureDir))
-		{
-			QSKIP("this build has no CLAP instrument fixture, so there is no CLAP class to list "
-				"(the fixture is built from the pinned CLAP headers; see "
-				"tests/data/clap-test-plugin)");
-		}
-
-		// The fixture is what this box offers; point the product's plug-in
-		// search directory at it, exactly as an installed .clap module would
-		// be found. The CLAP scan walks the same directory the VST3 one does.
-		ConfigManager::inst()->setVSTDir(fixtureDir);
-
-		ControlRegistry* registry = ControlRegistry::instance();
-		QJsonObject filter;
-		filter.insert(QStringLiteral("format"), QStringLiteral("clap"));
-		const ControlResult clap = registry->invoke(QStringLiteral("plugin.list"), filter);
-		QVERIFY2(clap.ok, qPrintable(clap.errorMessage));
-
-		QString deviceId;
-		QString clapId;
-		QString module;
-		for (const QJsonValue& value : clap.result.value(QStringLiteral("devices")).toArray())
-		{
-			const QJsonObject device = value.toObject();
-			if (device.value(QStringLiteral("name")).toString()
-				!= QStringLiteral("org.lmms.test.clap-instrument"))
-			{
-				continue;
-			}
-			deviceId = device.value(QStringLiteral("id")).toString();
-			clapId = device.value(QStringLiteral("clap_id")).toString();
-			module = device.value(QStringLiteral("file")).toString();
-			QCOMPARE(device.value(QStringLiteral("kind")).toString(),
-				QStringLiteral("instrument"));
-			// The id is the CATALOGUE id (dev-<n>), the one id every format's
-			// entry carries and the only one plugin.load takes - not the
-			// plug-in's own CLAP id, which this case used to hand to
-			// plugin.load and which no client can load (the VST3 case above
-			// asserts the same shape).
-			QVERIFY2(deviceId.startsWith(QStringLiteral("dev-")),
-				qPrintable(QStringLiteral("the clap entry's id '%1' is not a dev-<n> "
-					"catalogue id, so plugin.load cannot take it")
-					.arg(deviceId)));
-			// The (file, clap_id) pair the host's load() keys on: the module
-			// path plus the plug-in's own CLAP id, under its own key.
-			QCOMPARE(clapId, device.value(QStringLiteral("name")).toString());
-			QVERIFY2(device.value(QStringLiteral("loadable")).toBool(),
-				"the fixture class is not offered as loadable");
-		}
-		QVERIFY2(!deviceId.isEmpty(),
-			"plugin.list format=clap does not carry the fixture's instrument class");
-		QVERIFY2(!module.isEmpty(), "the clap entry carries no module path");
-		QVERIFY2(!clapId.isEmpty(), "the clap entry carries no plug-in id");
-
-		// plugin.load, onto an instrument track: the whole point of the block.
-		auto* track = new InstrumentTrack(Engine::getSong());
-		QJsonObject args;
-		args.insert(QStringLiteral("target"), control::trackIdOf(track));
-		args.insert(QStringLiteral("device"), deviceId);
-		const ControlResult loaded = registry->invoke(QStringLiteral("plugin.load"), args);
-		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
-		QCOMPARE(loaded.result.value(QStringLiteral("kind")).toString(),
-			QStringLiteral("instrument"));
-		QCOMPARE(loaded.result.value(QStringLiteral("plugin")).toString(),
-			QStringLiteral("clapinstrument"));
-
-		Instrument* instrument = track->instrument();
-		QVERIFY2(instrument != nullptr, "plugin.load reported success but the track has no "
-			"instrument");
-		QCOMPARE(QString::fromUtf8(instrument->descriptor()->name),
-			QStringLiteral("clapinstrument"));
-		QVERIFY2(instrument->isMidiBased(),
-			"the loaded CLAP instrument is not MIDI based, so no clip could drive it");
-
-		// The note path and the audio-output configuration, as the surface
-		// reports them: the fixture is a generator with one note input port
-		// and a stereo output and NO audio input.
-		const ControlResult notes = registry->invoke(QStringLiteral("plugin.host_notes"));
-		QVERIFY2(notes.ok, qPrintable(notes.errorMessage));
-		QCOMPARE(notes.result.value(QStringLiteral("host")).toString(), QStringLiteral("clap"));
-		const QJsonObject ports = notes.result.value(QStringLiteral("ports")).toObject();
-		QCOMPARE(ports.value(QStringLiteral("count")).toInt(), 1);
-		QCOMPARE(ports.value(QStringLiteral("preferred")).toInt(), 0);
-		QVERIFY2(ports.value(QStringLiteral("dialects")).toObject()
-				.value(QStringLiteral("clap")).toBool(),
-			"the note port the surface reports does not declare the CLAP dialect");
-		const QJsonObject audio = notes.result.value(QStringLiteral("audio")).toObject();
-		QCOMPARE(audio.value(QStringLiteral("inputs")).toInt(), 0);
-		QCOMPARE(audio.value(QStringLiteral("outputs")).toInt(), 2);
-		QVERIFY(notes.result.value(QStringLiteral("counters")).toObject()
-			.value(QStringLiteral("loads")).toInt() >= 1);
-
-		qInfo("plugin.list format=clap: %s -> plugin.load on %s -> %s; plugin.host_notes ports=%d "
-			  "audio=%d/%d",
-			qPrintable(deviceId), qPrintable(control::trackIdOf(track)), qPrintable(module),
-			ports.value(QStringLiteral("count")).toInt(),
-			audio.value(QStringLiteral("inputs")).toInt(),
-			audio.value(QStringLiteral("outputs")).toInt());
-	}
+	void clapInstrumentListsAndLoadsThroughTheSurface();
 
 	//! The VST3 and CLAP EFFECT hosts, through the surface: with each in-tree effect fixture in the
 	//! product's plug-in search directory, plugin.list carries the effect class and plugin.load puts
 	//! it in a track's effect chain, hosted by vst3effect / clapeffect. Before the two modules
 	//! exported lmms_plugin_main, PluginFactory recorded them as "not a plug-in": no VST3 or CLAP
 	//! effect was ever offered, and a project's saved one loaded as a placeholder.
-	void hostedEffectsListAndLoadThroughTheSurface()
-	{
-		const QList<QStringList> cases{
-			{QStringLiteral(VST3_TEST_EFFECT_DIR), QStringLiteral("vst3"), QStringLiteral("AGain Sample Accurate"),
-				QStringLiteral("vst3effect")},
-			{QStringLiteral(CLAP_TEST_EFFECT_DIR), QStringLiteral("clap"), QStringLiteral("LMMS CLAP Test Gain"),
-				QStringLiteral("clapeffect")}};
-		int checked = 0;
-		for (const QStringList& c : cases)
-		{
-			if (c[0].isEmpty() || !QFileInfo::exists(c[0])) { continue; }
-			ConfigManager::inst()->setVSTDir(c[0]);
-			const QJsonObject device = listedDevice(c[1], c[2]);
-			QVERIFY2(!device.isEmpty(), qPrintable(QStringLiteral("plugin.list format=%1 does not carry '%2'")
-				.arg(c[1], c[2])));
-			QCOMPARE(device.value(QStringLiteral("kind")).toString(), QStringLiteral("effect"));
-			auto* track = new InstrumentTrack(Engine::getSong());
-			const ControlResult loaded = ControlRegistry::instance()->invoke(QStringLiteral("plugin.load"),
-				QJsonObject{{QStringLiteral("target"), control::trackIdOf(track)},
-					{QStringLiteral("device"), device.value(QStringLiteral("id")).toString()}});
-			QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
-			QCOMPARE(loaded.result.value(QStringLiteral("kind")).toString(), QStringLiteral("effect"));
-			QCOMPARE(loaded.result.value(QStringLiteral("plugin")).toString(), c[3]);
-			++checked;
-		}
-		if (checked == 0) { QSKIP("this build has neither in-tree effect fixture"); }
-	}
+	void hostedEffectsListAndLoadThroughTheSurface();
 
 	//! The vendor a VST3 or CLAP device's row shows (the device picker, the device card's Replace and Insert)
 	//! is the one the plug-in's own factory reports - the VST3 class's vendor, which the SDK fills from
 	//! PFactoryInfo when the class names none, and the CLAP descriptor's vendor - not "Not reported".
-	void hostedVendorsAreTheFactoriesOwn()
-	{
-		const QList<QStringList> cases{
-			{QStringLiteral(VST3_TEST_INSTRUMENT_DIR), QStringLiteral("vst3"), QStringLiteral("Zene VST3 Test Instrument"),
-				QStringLiteral("Zene Studio test fixture")},
-			{QStringLiteral(CLAP_TEST_INSTRUMENT_DIR), QStringLiteral("clap"), QStringLiteral("org.lmms.test.clap-instrument"),
-				QStringLiteral("LMMS contributors")},
-			{QStringLiteral(CLAP_TEST_EFFECT_DIR), QStringLiteral("clap"), QStringLiteral("LMMS CLAP Test Gain"),
-				QStringLiteral("LMMS contributors")}};
-		int checked = 0;
-		for (const QStringList& c : cases)
-		{
-			if (c[0].isEmpty() || !QFileInfo::exists(c[0])) { continue; }
-			ConfigManager::inst()->setVSTDir(c[0]);
-			const QString id = listedDevice(c[1], c[2]).value(QStringLiteral("id")).toString();
-			ControlDeviceEntry entry;
-			int index = -1;
-			ControlResult error;
-			QVERIFY2(controlDeviceById(id, &entry, &index, &error), qPrintable(c[2] + QStringLiteral(" is not listed")));
-			QCOMPARE(gui::devicelabels::vendorOf(entry), c[3]);
-			++checked;
-		}
-		if (checked == 0) { QSKIP("this build has no in-tree VST3 or CLAP fixture"); }
-	}
+	void hostedVendorsAreTheFactoriesOwn();
 };
+
+#include "ControlDeviceCatalogueTestParts1.h"
+#include "ControlDeviceCatalogueTestParts2.h"
 
 QTEST_GUILESS_MAIN(ControlDeviceCatalogueTest)
 #include "ControlDeviceCatalogueTest.moc"

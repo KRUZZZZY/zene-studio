@@ -27,6 +27,7 @@
 
 #include <QtTest>
 
+#include <QDir>
 #include <QFile>
 #include <QJsonArray>
 #include <QStringList>
@@ -523,6 +524,53 @@ private slots:
 			const QString op = record.toObject().value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString();
 			QVERIFY2(!op.contains(QStringLiteral("UNIMPLEMENTED")), qPrintable(op));
 		}
+	}
+
+	//! Luna new-p22-52: plugin.state_load accepted any path. plugin.state_save refuses a
+	//! relative path (src/core/ControlCommandsPluginState.cpp:96-100) and the instrument's
+	//! file load requires an absolute existing file (:257-261), but the load handed a relative
+	//! path straight to QFile, which resolved it against the DAW's working directory, and a
+	//! missing or directory path surfaced as a generic read error. The load must refuse all
+	//! three as InvalidArgs and change nothing: the device state and the undo depth.
+	void theStateLoadRequiresAnAbsoluteExistingFile()
+	{
+		const QString track = revtest::addInstrumentTrack();
+		if (track.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
+		const QString pluginId = QStringLiteral("inst");
+		const auto load = [track, pluginId](const QString& path) {
+			return run(QStringLiteral("plugin.state_load"),
+				{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
+					{QStringLiteral("path"), path}});
+		};
+		const auto depth = [] {
+			return run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt();
+		};
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString state = dir.filePath(QStringLiteral("state.xml"));
+		QVERIFY2(run(QStringLiteral("plugin.state_save"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
+				{QStringLiteral("path"), state}}).ok, "the device state could not be saved");
+		const int before = depth();
+
+		// A relative name of a file that exists in the working directory.
+		const QString previousDir = QDir::currentPath();
+		QVERIFY(QDir::setCurrent(dir.path()));
+		const ControlResult relative = load(QStringLiteral("state.xml"));
+		QVERIFY(QDir::setCurrent(previousDir));
+		QVERIFY(!relative.ok);
+		QCOMPARE(relative.errorKind, ControlErrorKind::InvalidArgs);
+
+		const ControlResult directory = load(dir.path());
+		QVERIFY(!directory.ok);
+		QCOMPARE(directory.errorKind, ControlErrorKind::InvalidArgs);
+
+		const ControlResult missing = load(dir.filePath(QStringLiteral("absent.xml")));
+		QVERIFY(!missing.ok);
+		QCOMPARE(missing.errorKind, ControlErrorKind::InvalidArgs);
+
+		QCOMPARE(depth(), before);
 	}
 };
 

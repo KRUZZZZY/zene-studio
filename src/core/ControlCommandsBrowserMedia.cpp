@@ -49,6 +49,7 @@
 
 #include "AudioEngine.h"
 #include "AudioStretcher.h"
+#include "BounceInPlace.h"
 #include "BrowserCatalog.h"
 #include "BrowserPeakCache.h"
 #include "ConfigManager.h"
@@ -59,6 +60,7 @@
 #include "ControlRegistryGroups.h"
 #include "ControlScaleShared.h"
 #include "ControlTrackCreation.h"
+#include "ControlTrackRouting.h"
 #include "ControlVocabulary.h"
 #include "DataFile.h"
 #include "Engine.h"
@@ -125,6 +127,12 @@ ControlResult thumbnail(const QJsonObject& args)
 	const int height = args.value(QStringLiteral("height")).toInt(48);
 	const QString out = args.value(QStringLiteral("out")).toString(thumbnailPath(key, width, height));
 	if (!QFileInfo(out).isAbsolute()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'out' must be absolute")); }
+	// The PNG replaces whatever the name resolves to: an output that is the audio file itself would destroy it.
+	if (BounceInPlace::namesTheSameFile(key, out))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'out' is the audio file itself: a thumbnail cannot be written over its own source"));
+	}
 	// A cached file counts only if it decodes: an interrupted save must not stand in for the thumbnail for good.
 	const bool cached = !args.contains(QStringLiteral("out")) && !QImage(out).isNull();
 	if (!cached)
@@ -320,7 +328,7 @@ ControlResult load(const QJsonObject& args)
 	error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("no track could be made"));  // loadAsInstrument may say why
 	Track* track = sampleTrack ? loadAsSampleTrack(path) : loadAsInstrument(path, &error);
 	if (track == nullptr) { return error; }
-	recordCreatedTrack(track);  // one undo step removes the track; redo builds it again (ControlTrackCreation.h)
+	recordCreatedRoutedTrack(track);  // one undo step removes the track and any channel made for it; redo builds them
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("path"), path}, {QStringLiteral("kind"), browserKindName(kind)}, {QStringLiteral("track"), trackIdOf(track)},
 		{QStringLiteral("as"), sampleTrack ? QStringLiteral("sample_track") : QStringLiteral("instrument")}};

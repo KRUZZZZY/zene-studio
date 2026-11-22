@@ -62,6 +62,7 @@
 #include "NoteRandom.h"
 #include "MidiClip.h"
 #include "MidiPlayback.h"
+#include "MidiTakeRecorder.h"
 #include "MidiClock.h"
 #include "LinkAudioFollower.h"
 #include "PatternEditor.h"
@@ -253,6 +254,8 @@ Song::Song() :
 
 	// Inform VST plugins if the user moved the play head
 	connect(this, &Song::playbackPositionJumped, this, [this](){ m_vstSyncController.setPlaybackJumped(true); }, Qt::DirectConnection);
+	// Q050-054.1: armed instrument tracks record MIDI takes while transport.record runs.
+	new MidiTakeRecorder(this);  // a child of the song: MidiTakeRecorder::instance()
 }
 
 void queueAutomationClipWrite(AutomationClip* clip, const TimePos& time, float value) noexcept
@@ -514,6 +517,8 @@ void Song::processNextBuffer()
 	// a capture that is armed but not rolling stamps nothing new. Placed after
 	// followTempoMap() so the tick published is the one this block's tempo map sets.
 	RetroMidiCapture::publishTick( getPlayPos().getTicks() );
+	// Q050-054.1: the same position, with the loop pass, for the arrangement MIDI take capture. One relaxed store.
+	MidiTakeCapture::publishPosition( getPlayPos().getTicks(), m_loopWraps.load( std::memory_order_relaxed ) );
 
 	// At the beginning of the song, we have to reset the LFOs
 	if (m_playMode == PlayMode::Song && getPlayPos() == 0)
@@ -787,7 +792,10 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 		if (relTime >= 0 && relTime < p->length())
 		{
 			const AutomatableModel* recordedModel = p->firstObject();
-			bool writes = p->isRecording();
+			// A clip with no live target has nothing to record from: firstObject() hands back a
+			// fallback model for it, which must not be written (new-p9-439). hasLiveTarget() is a
+			// lock-free read of the flag the clip publishes on every change to its targets.
+			bool writes = p->isRecording() && p->hasLiveTarget();
 			if( !writes && recordedModel
 				&& recordedModel->automationMode() != AutomatableModel::AutomationMode::Read )
 			{
@@ -1085,6 +1093,8 @@ void Song::playAndRecord()
 	startSongPlayback( true );
 	// Stop goes back to where Record was pressed, not to the start of the count-in (review #4).
 	if (start >= 0) { getTimeline(PlayMode::Song).setPlayStartPosition(TimePos(start)); }
+	// Q050-054.1: a MIDI take keeps what was played from there on, too.
+	if (start >= 0) { MidiTakeRecorder::instance()->setRecordFrom(start); }
 }
 
 
@@ -1345,7 +1355,7 @@ void Song::startExport()
 }
 
 
-auto Song::prepareConverterModeForInstruments(AudioResampler::Mode mode) noexcept -> bool
+bool Song::prepareConverterModeForInstruments(AudioResampler::Mode mode) noexcept
 {
 	for (Track* const track : tracks())
 	{
@@ -1579,7 +1589,7 @@ void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & bl
 	const double framesPerTick = Engine::framesPerTick();
 	// The song-wide read switch (ED-200) gates the ramp exactly as it gates the per-tick apply in
 	// processAutomations(): with reads off, every control keeps its manual value, so nothing is published.
-	if( frames == 0 || framesPerTick <= 0.0 || !AutomationSwitches::instance().reads() )
+	if( frames == 0 || !std::isfinite( framesPerTick ) || framesPerTick <= 0.0 || !AutomationSwitches::instance().reads() )
 	{
 		return;
 	}
@@ -1693,6 +1703,13 @@ void Song::clearProject()
 	m_containerV2Project = false;
 
 	m_documentIdentity = nextDocumentIdentity();
+	// The CALLER owns the journalling state across a project replacement: loadProject() turns it off
+	// for the whole load and on again when the load is done. Re-enabling it here unconditionally
+	// ended that window in the middle of the load, so every journalled write the rest of the load
+	// (or a GUI refresh it triggers) made became an undo step of the freshly loaded project - a
+	// fresh document then opened Edit > Undo History on one step to undo. clearProject() only has
+	// to keep journalling off while it clears; it restores what it found on the way out.
+	const bool wasJournalling = Engine::projectJournal()->isJournalling();
 	Engine::projectJournal()->setJournalling( false );
 	// The Song object survives project replacement, so issue a fresh path identity here.
 	setProperty("_zeneUnsavedProjectId", QUuid::createUuid().toString(QUuid::WithoutBraces));
@@ -1733,6 +1750,10 @@ void Song::clearProject()
 		getGUI()->mixerView()->clear();
 	}
 	QCoreApplication::sendPostedEvents();
+	// Q050-489: the grid goes BEFORE the tracks. A deleted pattern track renumbers the patterns and the session
+	// cells follow it (PatternTrack.cpp); the cells of a project being closed must not be rewritten one track at a
+	// time on the way out.
+	m_sessionModel.clear();
 	Engine::patternStore()->clearAllTracks();
 	clearAllTracks();
 
@@ -1774,7 +1795,6 @@ void Song::clearProject()
 
 	removeAllControllers();
 
-	m_sessionModel.clear();
 	ProjectSection::clearAll();
 	m_sessionScheduler.reset();
 
@@ -1828,7 +1848,8 @@ void Song::clearProject()
 
 	Engine::projectJournal()->clearJournal();
 
-	Engine::projectJournal()->setJournalling( true );
+	// Restore the caller's state, not "on": see the top of this function.
+	Engine::projectJournal()->setJournalling( wasJournalling );
 }
 
 
@@ -1898,6 +1919,7 @@ void Song::createNewProject()
 
 	setModified(false);
 	m_loadOnLaunch = false;
+	ProjectJournal::notifyChange( ProjectJournal::Change::ProjectReplaced );
 }
 
 
@@ -2283,6 +2305,7 @@ void Song::loadProject( const QString & fileName, const QStringList & skipSectio
 	if( !m_restoringSnapshot ) { ConfigManager::inst()->addRecentlyOpenedProject( fileName ); }
 
 	Engine::projectJournal()->setJournalling( true );
+	ProjectJournal::notifyChange( ProjectJournal::Change::ProjectReplaced );
 
 	emit projectLoaded();
 

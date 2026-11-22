@@ -22,6 +22,24 @@ SET(NEURALAMP_ENGINE_SOURCES
 	"${CMAKE_CURRENT_SOURCE_DIR}/../nam/NamModelLoader.cpp"
 )
 
+# The harness's CPU measurement must not name a platform clock in its own translation unit:
+# on Windows, <time.h> includes winpthreads' <pthread_time.h>, whose inline clock_gettime()
+# calls clock_gettime64() - a symbol the MSYS2 clangarm64 link line does not resolve
+# (cluster ci-443a2931bcb5dacc: "undefined symbol: clock_gettime64" at link).
+# One implementation per platform, selected here; HarnessClock.h is the only interface.
+IF(WIN32)
+	SET(NEURALAMP_HARNESS_CLOCK_SOURCE
+		"${CMAKE_CURRENT_SOURCE_DIR}/HarnessClockWindows.cpp")
+ELSE()
+	SET(NEURALAMP_HARNESS_CLOCK_SOURCE
+		"${CMAKE_CURRENT_SOURCE_DIR}/HarnessClockPosix.cpp")
+ENDIF()
+
+# NeuralAmpWavInputTest #includes nam_harness.cpp, so tests/CMakeLists.txt compiles the
+# harness's clock interface too; it reads the same choice from here.
+SET_PROPERTY(GLOBAL PROPERTY ZENE_NAM_HARNESS_CLOCK_SOURCE
+	"${NEURALAMP_HARNESS_CLOCK_SOURCE}")
+
 SET(NEURALAMP_TEST_INCLUDES
 	"${CMAKE_CURRENT_SOURCE_DIR}/.."
 	"${CMAKE_CURRENT_SOURCE_DIR}/../rtneural/modules/Eigen"
@@ -37,6 +55,8 @@ SET(NEURALAMP_ENGINE_OPTIONS $<$<CONFIG:Debug>:-O2>
 
 ADD_EXECUTABLE(nam_harness EXCLUDE_FROM_ALL
 	nam_harness.cpp
+	HarnessClock.h
+	${NEURALAMP_HARNESS_CLOCK_SOURCE}
 	${NEURALAMP_ENGINE_SOURCES}
 )
 # libm is a Unix convention — MSVC keeps the math routines in the CRT, so asking for m.lib

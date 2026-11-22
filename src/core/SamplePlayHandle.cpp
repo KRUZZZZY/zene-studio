@@ -128,7 +128,8 @@ namespace
 //! change it renders.
 bool rendersThroughStretcher(WarpStretchMode mode, bool rendersLinearly, int transpose)
 {
-	return (warpModeKeepsPitch(mode) && !rendersLinearly)
+	// Q050-162: Repeat and Gate keep the pitch without a stretcher (snapshotTransientRepeat).
+	return (warpModeKeepsPitch(mode) && !warpModeRepeatsTransients(mode) && !rendersLinearly)
 		|| (transpose != 0 && warpModeUsesRubberBand(mode));
 }
 
@@ -213,6 +214,9 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 		m_stretcher.prepare(wsolaParametersFor(stretchMode));
 		m_stretcher.seek(0.0);
 	}
+
+	// Q050-162: a warped Repeat / Gate clip fills its slots from its transients.
+	if (warpModeRepeatsTransients(stretchMode) && !m_rendersLinearly) { snapshotTransientRepeat(clip, stretchMode); }
 
 	// The clip's fades and its gain (the fade/crossfade/clip-gain wave), taken
 	// here for exactly the reason the window and the warp are: a live handle
@@ -583,7 +587,11 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 		// Row 30: a clip whose stretch mode is PreservePitch does NOT come
 		// through here - its rate change is rendered by the stretcher, which
 		// is the only difference between the two modes.
-		if (m_preservePitch)
+		if (m_repeatsTransients)
+		{
+			renderTransientRepeat(workingBuffer, frames);
+		}
+		else if (m_preservePitch)
 		{
 			renderPreservingPitch(workingBuffer, frames);
 		}
@@ -622,6 +630,8 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 		{
 			applyComp(workingBuffer, frames);
 		}
+		// Q050-111: the clip's own effects, on this clip's audio alone - the track sums its clips after this.
+		if (m_effectsClip != nullptr) { m_effectsClip->processClipEffects(buffer); }
 	}
 
 	m_frame += frames;
@@ -725,6 +735,14 @@ void SamplePlayHandle::renderPreservingPitch(SampleFrame* dst, f_cnt_t frames)
 	const f_cnt_t written = m_rubberBand != nullptr
 		? m_rubberBand->render(window, windowFrames, dst, frames, speed)
 		: m_stretcher.process(window, windowFrames, dst, frames, speed);
+	// The clip's own gain, as Sample::render applies it on the resample path. The
+	// stretcher input stays raw, so this one multiply serves WSOLA and Rubber Band
+	// alike; only the rendered frames are scaled, the zero-filled tail is untouched.
+	const float gain = m_sample->amplification();
+	if (gain != 1.0f)
+	{
+		for (f_cnt_t i = 0; i < written; ++i) { dst[i] *= gain; }
+	}
 	if (written < frames) { zeroSampleFrames(dst + written, frames - written); }
 
 	// The analysis cursor IS the source position this period reached; the next

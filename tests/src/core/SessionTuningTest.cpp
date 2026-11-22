@@ -443,6 +443,27 @@ private slots:
 				.arg(actual).arg(expected)));
 	}
 
+	//! The public Scale constructor takes an empty interval list and Song::setScale
+	//! stores it. A mapped key must then read 0 Hz from keyToFreq, not index the
+	//! empty list (the octave degree would be -1).
+	void emptyStoredScaleReadsSilenceForAMappedKey()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		song->setScale(0, std::make_shared<Scale>(QStringLiteral("empty scale"), std::vector<Interval>{}));
+		song->setKeymap(0, std::make_shared<Keymap>(QStringLiteral("empty scale fixture"), std::vector<int>{0, 2},
+			0, 127, 69, 69, 440.0f));
+		QVERIFY2(song->getKeymap(0)->getDegree(70) != -1, "key 70 must be mapped so keyToFreq reaches the scale");
+		float actual = -1.0f;
+		{
+			Microtuner microtuner;
+			actual = microtuner.keyToFreq(70, 69);
+		}
+		song->clearProject();
+
+		QCOMPARE(actual, 0.0f);
+	}
+
 	//! THE PROOF: transport playing, two sounding notes, one .scl, both tracks
 	//! on the ONE table, undo brings the old sound back - transport never stops.
 	void loadScaleWhileTransportPlaysRetunesSoundingNotes()
@@ -1428,6 +1449,47 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore);
 	}
 
+	//! A null buffer with len 0, -5 or 1 must be ignored: the local client keeps its scale.
+	void localMtsParseIgnoresNullUnsignedBuffer()
+	{
+		MtsClientPtr client(MTS_RegisterClient(), &MTS_DeregisterClient);
+		QVERIFY(client != nullptr);
+		seedLocalMtsScale(client.get());
+		const QByteArray name(MTS_GetScaleName(client.get()));
+		QCOMPARE(name, QByteArrayLiteral("Test scale"));
+		const signed char mapSize = MTS_GetMapSize(client.get());
+		const signed char mapStartKey = MTS_GetMapStartKey(client.get());
+		const double frequency = MTS_NoteToFrequency(client.get(), 60, 0);
+
+		MTS_ParseMIDIDataU(client.get(), nullptr, 0);
+		MTS_ParseMIDIDataU(client.get(), nullptr, -5);
+		MTS_ParseMIDIDataU(client.get(), nullptr, 1);
+		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), name);
+		QCOMPARE(MTS_GetMapSize(client.get()), mapSize);
+		QCOMPARE(MTS_GetMapStartKey(client.get()), mapStartKey);
+		QCOMPARE(MTS_NoteToFrequency(client.get(), 60, 0), frequency);
+
+		seedLocalMtsScale(client.get());
+		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), name);
+		QCOMPARE(MTS_NoteToFrequency(client.get(), 60, 0), frequency);
+	}
+
+	//! A null signed buffer with len 3 must be ignored: no MTS sysex is recorded.
+	void localMtsParseIgnoresNullSignedBuffer()
+	{
+		MtsClientPtr client(MTS_RegisterClient(), &MTS_DeregisterClient);
+		QVERIFY(client != nullptr);
+		QCOMPARE(MTS_HasReceivedMTSSysEx(client.get()), false);
+		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), QByteArrayLiteral("12-TET"));
+
+		MTS_ParseMIDIData(client.get(), nullptr, 3);
+		QCOMPARE(MTS_HasReceivedMTSSysEx(client.get()), false);
+		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), QByteArrayLiteral("12-TET"));
+
+		seedLocalMtsScale(client.get());
+		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), QByteArrayLiteral("Test scale"));
+		QCOMPARE(MTS_HasReceivedMTSSysEx(client.get()), true);
+	}
 };
 
 QTEST_GUILESS_MAIN(SessionTuningTest)

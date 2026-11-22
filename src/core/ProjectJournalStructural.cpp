@@ -62,6 +62,7 @@ namespace lmms
 void ProjectJournal::addJournalStructure( std::function<void()> undoAction,
 	std::function<void()> redoAction, qint64 payloadBytes )
 {
+	const StackChangeNotice stackNotice( this );
 	if( !isJournalling() || !undoAction ) { return; }
 
 	m_redoCheckPoints.clear();
@@ -80,10 +81,12 @@ void ProjectJournal::addJournalStructure( std::function<void()> undoAction,
 	m_undoCheckPoints.push( step );
 	m_retainedBytes += step.bytes;
 	trimUndoStack();
+	notifyChange( Change::Step );
 }
 
 int ProjectJournal::discardTopSteps( int count )
 {
+	const StackChangeNotice stackNotice( this );
 	int dropped = 0;
 	while( dropped < count && !m_undoCheckPoints.isEmpty() )
 	{
@@ -96,6 +99,7 @@ int ProjectJournal::discardTopSteps( int count )
 
 int ProjectJournal::discardLoadedSteps()
 {
+	const StackChangeNotice stackNotice( this );
 	int dropped = 0;
 	for( int i = m_undoCheckPoints.size() - 1; i >= 0; --i )
 	{

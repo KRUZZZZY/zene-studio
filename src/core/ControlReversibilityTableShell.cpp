@@ -121,6 +121,11 @@ const ReversibilityRow kShellRows[] = {
 		"chord.progression_generate, which has its own row",
 		"nothing to reverse: the panel is closed like any window",
 		""),
+	R("window.step_grid", RC::NotMutating, false,
+		"opens the melodic step grid on a MIDI clip: interface state; its cell clicks and fields run "
+		"note.step_set, which has its own row",
+		"nothing to reverse: the grid is closed like any window",
+		""),
 	R("window.undo_history", RC::NotMutating, false,
 		"opens the undo history panel: interface state; its Undo/Redo buttons run control.undo and "
 		"control.redo, each with its own row",

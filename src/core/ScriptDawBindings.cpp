@@ -622,8 +622,14 @@ float LuaFloatModel::value() const
 {
 	AutomatableModel* model = resolve();
 	if (!model) { return 0.0f; }
-	if (m_mixerChannelId.isEmpty()) { ScriptEngine::instance()->flushCommandsForRead(); }
-	return model->value<float>();
+	if (m_mixerChannelId.isEmpty())
+	{
+		ScriptEngine::instance()->flushCommandsForRead();
+		// The flush can replace the project and clear the model's QPointer, so
+		// the pointer resolved above is only trusted again after this re-read.
+		model = m_model.data();
+	}
+	return model ? model->value<float>() : 0.0f;
 }
 
 void LuaFloatModel::setValue(float value)

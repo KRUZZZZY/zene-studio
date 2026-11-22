@@ -241,9 +241,14 @@ void FlexEnvelope::Impl::process(absl::Span<float> out)
         size_t framesDone = 0;
         while ((time < stageEndTime || sustained) && frameIndex < maxFrameIndex) {
             time += samplePeriod;
-            float x = time * (1.0f / stageEndTime);
-            float c = curve.evalNormalized(x);
-            level = sourceLevel + c * (targetLevel - sourceLevel);
+            if (stageEndTime == 0.0f) {
+                // a sustained stage of zero duration jumps to its target, as the timed stages do above
+                level = targetLevel;
+            } else {
+                float x = time * (1.0f / stageEndTime);
+                float c = curve.evalNormalized(x);
+                level = sourceLevel + c * (targetLevel - sourceLevel);
+            }
             out[frameIndex++] = level;
             ++framesDone;
         }

@@ -70,6 +70,26 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 	return ControlRegistry::instance()->invoke(id, args);
 }
 
+//! Counts the paint events a widget is sent: a repaint loop shows as a count that keeps growing.
+class PaintCounter : public QObject
+{
+protected:
+	bool eventFilter(QObject*, QEvent* event) override
+	{
+		if (event->type() == QEvent::Paint) { ++paints; }
+		return false;
+	}
+
+public:
+	int paints = 0;
+};
+
+//! Runs @a passes rounds of the event loop, with no timers waited on: each round delivers what is queued.
+void pumpEvents(int passes)
+{
+	for (int i = 0; i < passes; ++i) { QCoreApplication::processEvents(); }
+}
+
 } // namespace
 
 class ArrangerOverlaysVideoLaneTest : public QObject
@@ -173,6 +193,40 @@ private slots:
 		ArrangerRange::instance().clear();
 		QTest::mouseClick(m_overlay, Qt::RightButton, Qt::NoModifier, first);
 		QVERIFY(!range.active());
+	}
+
+	void anIdleRangeOverlayStopsRepaintingItself()
+	{
+		// The overlay is a transparent child of the viewport it watches, and repainting a transparent child
+		// paints that viewport again. A viewport Paint must schedule the overlay only when the rows it draws moved;
+		// an unconditional update() there feeds itself, and the main thread never sleeps (BUGS stress-5).
+		QVERIFY(!ArrangerRange::instance().active());
+		PaintCounter counter;
+		m_overlay->installEventFilter(&counter);
+		m_overlay->update();
+		pumpEvents(30);
+		m_overlay->removeEventFilter(&counter);
+		QVERIFY2(counter.paints <= 2, qPrintable(QStringLiteral("an idle overlay was painted %1 times in 30 event passes")
+			.arg(counter.paints)));
+	}
+
+	void theRangeOverlayRepaintsWhenItsRowsMove()
+	{
+		// The guard for the fix: with a range shown, scrolling moves the rows under the overlay, and it must repaint.
+		// An empty project has no horizontal scroll range, so the rows are moved by zooming (the rows are placed by
+		// pixels per bar); the overlay must repaint once they have moved.
+		ArrangerRange::instance().set(2 * Bar, 5 * Bar, {}, true);
+		pumpEvents(3);
+		const QRect before = m_overlay->rangeRect();
+		QVERIFY(!before.isEmpty());
+		PaintCounter counter;
+		m_overlay->installEventFilter(&counter);
+		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), 200}, {QStringLiteral("anchor"), QStringLiteral("start")}}).ok);
+		pumpEvents(10);
+		m_overlay->removeEventFilter(&counter);
+		QVERIFY(m_overlay->rangeRect() != before);
+		QVERIFY2(counter.paints >= 1, "the range overlay did not repaint after its rows moved");
+		ArrangerRange::instance().clear();
 	}
 
 	void theAuditionToolSilencesTheOtherTracksWhileTheButtonIsHeld()

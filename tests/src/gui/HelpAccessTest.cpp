@@ -37,10 +37,14 @@
 #include <QFile>
 #include <QFrame>
 #include <QJsonArray>
+#include <QMenu>
+#include <QMenuBar>
 #include <QRegularExpression>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QTabWidget>
 #include <QTemporaryDir>
+#include <QTabWidget>
 #include <QToolButton>
 #include <QTreeWidget>
 
@@ -56,6 +60,7 @@
 #include "HelpCenter.h"
 #include "HelpTasks.h"
 #include "MainWindow.h"
+#include "MenuTestSupport.h"
 #include "Shell.h"
 
 using namespace lmms;
@@ -89,6 +94,25 @@ private slots:
 		help->filterReference(QStringLiteral("collection_save"));
 		QVERIFY(help->referenceText().contains(QStringLiteral("browser.collection_save")));
 		QVERIFY(!help->referenceText().contains(QStringLiteral("transport.play")));
+		help->close();
+	}
+
+	//! Help > Command Reference with the Help Center already open behind other top-level dialogs (About, Keyboard
+	//! Shortcuts): the second request takes the active window, it does not stay hidden behind them. (A first show
+	//! activates on every platform; the already-visible window is the case show() alone leaves where it was.)
+	void theHelpCenterIsActivatedOverOpenDialogs()
+	{
+		HelpCenter* help = HelpCenter::showHelp(QString(), false);
+		QVERIFY(help->isVisible());
+		QDialog about(getGUI()->mainWindow());
+		QDialog shortcuts(getGUI()->mainWindow());
+		about.show();
+		shortcuts.show();
+		shortcuts.activateWindow();
+		QTRY_COMPARE(QApplication::activeWindow(), &shortcuts);
+		QCOMPARE(HelpCenter::showHelp(QString(), true), help);
+		QVERIFY(help->isVisible());
+		QTRY_COMPARE(QApplication::activeWindow(), static_cast<QWidget*>(help));
 		help->close();
 	}
 
@@ -426,6 +450,84 @@ private slots:
 		QCOMPARE(missing.errorKind, ControlErrorKind::NotFound);
 	}
 
+	//! gui-1030-menu-help-command-reference: `requires: display` is about a display, not about who drives the
+	//! instance. An agent instance on a real display opens the (non-modal) Help Center from the menu, on the
+	//! Command Reference tab; before, the menu closed and nothing happened.
+	void theCommandReferenceItemOpensInAnAgentInstanceOnADisplay()
+	{
+		MainWindow* shellWindow = getGUI()->mainWindow();
+		ControlRegistry* registry = ControlRegistry::instance();
+		const bool headless = registry->isHeadless();
+		registry->setHeadless(true);  // an agent instance ...
+		registry->setDisplayAvailable(true);  // ... on a platform with a display
+		QMenuBar bar;  // the main window installs these entries from a timer once it is shown; install them here directly
+		bar.addMenu(QStringLiteral("Help"));
+		installHelpEntries(&bar);
+		QAction* reference = lmms::test::menuAction(bar.actions().last()->menu(), {QStringLiteral("Command Reference")});
+		QVERIFY(reference != nullptr && reference->isEnabled());
+		delete shellWindow->findChild<HelpCenter*>();
+		reference->trigger();
+		registry->setHeadless(headless);
+		HelpCenter* centre = shellWindow->findChild<HelpCenter*>();
+		QVERIFY2(centre != nullptr && centre->isVisible(), "Help > Command Reference opened no Help window");
+		auto* tabs = centre->findChild<QTabWidget*>();
+		QVERIFY(tabs != nullptr);
+		QCOMPARE(tabs->tabText(tabs->currentIndex()), QStringLiteral("Command Reference"));
+		centre->close();
+	}
+
+	//! The rule under it: `requires: display` asks for a display, not for a person. An agent instance (headless) on a
+	//! real display runs a display command, one with no display is refused (typed), and `human` is refused either way.
+	void theDisplayRequirementFollowsTheDisplayNotTheAgent()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		for (const char* id : {"split_display_only", "split_display_and_human"})
+		{
+			ControlCommand cmd;
+			cmd.id = QStringLiteral("test.") + QLatin1String(id);
+			cmd.group = QStringLiteral("test");
+			cmd.verb = QLatin1String(id);
+			cmd.requiresDecl = QStringList{QStringLiteral("display")};
+			if (cmd.verb == QStringLiteral("split_display_and_human")) { cmd.requiresDecl.append(QStringLiteral("human")); }
+			cmd.handler = [](const QJsonObject&) { return ControlResult::success(); };
+			if (!registry->hasCommand(cmd.id)) { registry->registerCommand(cmd); }
+		}
+		const bool headless = registry->isHeadless();
+		const bool display = registry->isDisplayAvailable();
+
+		registry->setHeadless(true);
+		registry->setDisplayAvailable(true);  // an agent instance on a real display
+		QVERIFY(registry->invoke(QStringLiteral("test.split_display_only")).ok);
+		QCOMPARE(registry->invoke(QStringLiteral("test.split_display_and_human")).errorKind, ControlErrorKind::Requires);
+		registry->setDisplayAvailable(false);  // no display at all
+		QCOMPARE(registry->invoke(QStringLiteral("test.split_display_only")).errorKind, ControlErrorKind::Requires);
+
+		registry->setHeadless(headless);
+		registry->setDisplayAvailable(display);
+	}
+
+	//! ... and with no display at all (offscreen) the command is still refused, typed, and the menu says so in the
+	//! log as the other menus' refusals do; no Help window opens.
+	void aRefusedHelpMenuItemSaysSoInTheLog()
+	{
+		MainWindow* shellWindow = getGUI()->mainWindow();
+		ControlRegistry* registry = ControlRegistry::instance();
+		const bool headless = registry->isHeadless();
+		registry->setHeadless(true);  // no display: setHeadless also withdraws the display
+		QMenuBar bar;
+		bar.addMenu(QStringLiteral("Help"));
+		installHelpEntries(&bar);
+		QAction* reference = lmms::test::menuAction(bar.actions().last()->menu(), {QStringLiteral("Command Reference")});
+		QVERIFY(reference != nullptr && reference->isEnabled());
+		delete shellWindow->findChild<HelpCenter*>();
+		QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("app\\.help refused: .*requires a display")));
+		reference->trigger();
+		const ControlResult refused = registry->invoke(QStringLiteral("app.help"), {{QStringLiteral("reference"), true}});
+		registry->setHeadless(headless);
+		QCOMPARE(refused.errorKind, ControlErrorKind::Requires);
+		QVERIFY2(shellWindow->findChild<HelpCenter*>() == nullptr, "the refused command opened a Help window anyway");
+	}
+
 	void appearanceIsStoredWhereMainReadsIt()
 	{
 		const ControlResult set = ControlRegistry::instance()->invoke(QStringLiteral("window.appearance"),
@@ -469,6 +571,37 @@ private slots:
 		QVERIFY(view.results()->isColumnHidden(5));
 		QVERIFY(view.results()->isColumnHidden(6));
 		QVERIFY(view.results()->isSortingEnabled());
+	}
+
+	//! gui-1106: Help > Manual / Command Reference with other windows (About, Keyboard Shortcuts) already
+	//! open in front of an open Help Center brings the Help Center forward AND activates it - raising
+	//! alone left it behind the active dialogs, so the menu item appeared to do nothing.
+	void helpComesForwardOverOtherOpenWindows()
+	{
+		HelpCenter* centre = HelpCenter::showHelp(QString(), false);
+		QVERIFY(centre != nullptr);
+		QCoreApplication::processEvents();
+		QDialog about;    // stand-ins for the About and Keyboard Shortcuts windows opened after the centre
+		QDialog shortcuts;
+		for (QDialog* other : {&about, &shortcuts})
+		{
+			other->show();
+			other->activateWindow();
+			QCoreApplication::processEvents();
+		}
+		QCOMPARE(QApplication::activeWindow(), &shortcuts);  // the precondition: the centre is behind them
+		for (const bool reference : {false, true})            // Help > Manual, then Help > Command Reference
+		{
+			shortcuts.activateWindow();
+			QCoreApplication::processEvents();
+			QCOMPARE(QApplication::activeWindow(), &shortcuts);
+			QCOMPARE(HelpCenter::showHelp(QString(), reference), centre);
+			QCoreApplication::processEvents();
+			QCOMPARE(QApplication::activeWindow(), centre);
+			QVERIFY(centre->findChild<QTabWidget*>() != nullptr);
+			QCOMPARE(centre->findChild<QTabWidget*>()->currentIndex(), reference ? 1 : 0);
+		}
+		centre->close();
 	}
 
 private:

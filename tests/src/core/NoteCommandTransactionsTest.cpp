@@ -37,6 +37,8 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include <limits>
+
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "ConfigManager.h"
@@ -149,6 +151,42 @@ private slots:
 		restore(QStringLiteral("midi"), QStringLiteral("chase"), m_midiChaseSetting);
 		restore(QStringLiteral("midi"), QStringLiteral("playbackoffset"), m_midiOffsetSetting);
 		Engine::destroy();
+	}
+
+	//! clip.quantize snapped a clip's start in tick_t, so a clip near the song limit rounded past
+	//! MaxSongLength (1919807 + 500 is 1920000 on a 1000 grid). The batch is refused before any clip
+	//! moves, as note.repeat refuses a copy past the limit.
+	void quantizingPastTheSongLimitIsRefusedAndMovesNothing()
+	{
+		auto* clip = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
+		clip->movePosition(TimePos(MaxSongLength - 1));
+		const ControlResult refused = run(QStringLiteral("clip.quantize"),
+			{{QStringLiteral("clips"), QJsonArray{control::clipIdOf(clip)}}, {QStringLiteral("grid"), 1000}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(refused.errorMessage.contains(QStringLiteral("song limit")));
+		QCOMPARE(clip->startPosition().getTicks(), MaxSongLength - 1);
+	}
+
+	//! The half-grid addition was done in tick_t: a start within grid / 2 of tick_t's maximum wrapped
+	//! negative and the clip was moved to the front of the song. It is refused instead.
+	void quantizingNearTickMaxIsRefusedNotWrapped()
+	{
+		auto* clip = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
+		clip->movePosition(TimePos(std::numeric_limits<tick_t>::max() - 300));  // + 500 wraps tick_t
+		const ControlResult refused = run(QStringLiteral("clip.quantize"),
+			{{QStringLiteral("clips"), QJsonArray{control::clipIdOf(clip)}}, {QStringLiteral("grid"), 1000}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(clip->startPosition().getTicks(), std::numeric_limits<tick_t>::max() - 300);
+	}
+
+	//! A snap that lands exactly on MaxSongLength is inside the song, so it still happens.
+	void quantizingOntoTheSongLimitIsAllowed()
+	{
+		auto* clip = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
+		clip->movePosition(TimePos(MaxSongLength - 3));  // + 3 rounds to MaxSongLength on a 6 grid
+		QVERIFY2(run(QStringLiteral("clip.quantize"), {{QStringLiteral("clips"), QJsonArray{control::clipIdOf(clip)}},
+			{QStringLiteral("grid"), 6}}).ok, "a snap onto MaxSongLength is inside the song");
+		QCOMPARE(clip->startPosition().getTicks(), MaxSongLength);
 	}
 
 	void undoableHarmonyCommandsRecordTheirBeforeState()

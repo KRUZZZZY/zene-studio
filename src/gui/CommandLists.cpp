@@ -128,8 +128,7 @@ ListSpec pluginManager()
 		act("Hide", "plugin.organise", device, {{QStringLiteral("hidden"), true}}),
 		act("Show", "plugin.organise", device, {{QStringLiteral("hidden"), false}}),
 		act("Move to Folder...", "plugin.organise", device, {}, true)};
-	out.extras = {extra("Rescan", "plugin.rescan", {}, false),
-		extra("Rescan in Background", "plugin.scan_start", {}, false),
+	out.extras = {extra("Rescan", "plugin.scan_start", {}, false),
 		extra("Scan Progress", "plugin.scan_status", {}, false),
 		extra("Cancel Scan", "plugin.scan_cancel", {}, false),
 		readExtra("Plug-in Folders", "plugin.paths_get"),
@@ -145,8 +144,7 @@ ListSpec pluginModules()
 	out.actions = {act("Quarantine...", "plugin.scan_cache_quarantine_add", path, {}, true),
 		act("Release", "plugin.scan_cache_quarantine_remove", path)};
 	out.summaryKeys = QStringList{QStringLiteral("count"), QStringLiteral("load_failed_count")};
-	out.extras = {extra("Rescan", "plugin.rescan", {}, false),
-		extra("Rescan in Background", "plugin.scan_start", {}, false),
+	out.extras = {extra("Rescan", "plugin.scan_start", {}, false),
 		extra("Scan Progress", "plugin.scan_status", {}, false),
 		extra("Cancel Scan", "plugin.scan_cancel", {}, false)};
 	return out;
@@ -194,15 +192,24 @@ ListSpec safeStart()
 
 ListSpec shortcuts()
 {
-	ListSpec out = spec("Keyboard Shortcuts", "shortcuts.list", "bindings", {QStringLiteral("id"), QStringLiteral("keys"),
-		QStringLiteral("default"), QStringLiteral("overridden"), QStringLiteral("command")});
-	out.summaryKeys = QStringList{QStringLiteral("count"), QStringLiteral("overridden_count")};
-	const QHash<QString, QString> id{{QStringLiteral("id"), QStringLiteral("id")}};
+	// 0.5.0 L13 stage 1: a row carries its context (`scope`), because the same key may mean four
+	// different things - a clash is only two actions of ONE context on one key. The row actions
+	// pass the scope back, so "Set Keys..." on the note editor's Draw Tool edits THAT binding and
+	// never the menu action or another panel's.
+	ListSpec out = spec("Keyboard Shortcuts", "shortcuts.list", "bindings", {QStringLiteral("scope"), QStringLiteral("id"),
+		QStringLiteral("keys"), QStringLiteral("default"), QStringLiteral("overridden"), QStringLiteral("command"),
+		QStringLiteral("conflict")});
+	out.summaryKeys = QStringList{QStringLiteral("count"), QStringLiteral("overridden_count"),
+		QStringLiteral("conflict_count")};
+	const QHash<QString, QString> id{{QStringLiteral("id"), QStringLiteral("id")},
+		{QStringLiteral("scope"), QStringLiteral("scope")}};
 	out.actions = {act("Set Keys...", "shortcuts.set", id, {}, true), act("Unbind", "shortcuts.set", id,
 		{{QStringLiteral("keys"), QString()}}), act("Reset", "shortcuts.reset", id)};
 	ListExtra resetAll = extra("Reset All", "shortcuts.reset", {}, false);
 	resetAll.confirm = true;
-	out.extras = {extra("Export...", "shortcuts.export"), extra("Import...", "shortcuts.import"), resetAll};
+	// Q050-055.2: a chosen plug-in gets a row of its own once it has a key.
+	out.extras = {extra("Bind a Plug-in...", "shortcuts.bind_plugin"), extra("Export...", "shortcuts.export"),
+		extra("Import...", "shortcuts.import"), resetAll};
 	return out;
 }
 
@@ -375,6 +382,39 @@ ListSpec subprojects()
 	out.actions = {act("Render Again", "project.subproject_refresh", {{QStringLiteral("track"), QStringLiteral("track")}}), open};
 	out.extras = {extra("Add Subproject...", "project.subproject_add")};
 	return out;
+}
+
+ListSpec masteringSequence()
+{
+	// Q050-317.1: the mastering release sequence. The rows are the songs in release order, and
+	// every entry is one of the mastering.song_* commands - so the page and an agent edit the
+	// same list, and every edit is one undo step. "Move to Top"/"Move to Bottom" (rather than
+	// up/down) keep the row actions to arguments the row itself carries; the form of "Move to
+	// Position..." reaches any other place in the release.
+	ListSpec out = spec("Mastering Release", "mastering.sequence_list", "songs",
+		{QStringLiteral("index"), QStringLiteral("title"), QStringLiteral("processing"), QStringLiteral("fade_in_ms"),
+			QStringLiteral("fade_out_ms"), QStringLiteral("gap_ms"), QStringLiteral("source")});
+	out.summaryKeys = QStringList{QStringLiteral("count"), QStringLiteral("document_type")};
+	const QHash<QString, QString> song{{QStringLiteral("song"), QStringLiteral("song")}};
+	RowAction remove = act("Remove", "mastering.song_remove", song);
+	remove.confirm = true;
+	out.actions = {act("Edit...", "mastering.song_set", song, {}, true),
+		act("Move to Top", "mastering.song_move", song, {{QStringLiteral("to"), 0}}),
+		act("Move to Bottom", "mastering.song_move", song, {{QStringLiteral("to"), 511}}),
+		act("Move to Position...", "mastering.song_move", song, {}, true), remove};
+	out.extras = {extra("Add Song...", "mastering.song_add")};
+	return out;
+}
+
+ListSpec masteringReport()
+{
+	// The rows are the last completed run's own candidate rows, and this surface reads the SAME command
+	// an agent reads (mastering.get_state). So the genre and delivery target a person chose are visible per
+	// candidate. `metrics` renders as a value count by design. Read-only: no row actions.
+	return spec("Mastering Report", "mastering.get_state", "candidates",
+		{QStringLiteral("name"), QStringLiteral("genre"), QStringLiteral("delivery_target"),
+			QStringLiteral("loudness_pass"), QStringLiteral("true_peak_pass"), QStringLiteral("file"),
+			QStringLiteral("metrics")});
 }
 
 ListSpec alternatives()

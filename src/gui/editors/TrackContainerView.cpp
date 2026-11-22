@@ -38,6 +38,7 @@
 #include "AudioEngine.h"
 #include "AutomationTrack.h"
 #include "ControlTrackCreation.h"
+#include "ControlTrackRouting.h"
 #include "DataFile.h"
 #include "DpiHelper.h"
 #include "MainWindow.h"
@@ -566,7 +567,8 @@ void TrackContainerView::dropEvent( QDropEvent * _de )
 	{
 		// The empty space below the tracks: the file gets a new track of its kind at the drop's time.
 		const bool made = m_tc == Engine::getSong()
-			&& arrangerdrop::dropFileAndReport(_de->mimeData(), nullptr, arrangerdrop::tickAtContainerX(this, position(_de).x()));
+			&& arrangerdrop::dropFileAndReport(_de->mimeData(), nullptr, arrangerdrop::tickAtContainerX(this, position(_de).x()),
+				arrangerdrop::dropModifiers(_de));
 		if (made) { _de->acceptProposedAction(); }
 		else { _de->ignore(); }
 		return;
@@ -576,6 +578,7 @@ void TrackContainerView::dropEvent( QDropEvent * _de )
 	if( type == "instrument" )
 	{
 		auto it = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, m_tc));
+		control::assignNewTrackChannel(it);
 		auto ilt = new InstrumentLoaderThread(this, it, value);
 		ilt->start();
 		//it->toggledInstrumentTrackButton( true );
@@ -590,6 +593,7 @@ void TrackContainerView::dropEvent( QDropEvent * _de )
 			getPluginFactory()->pluginSupportingExtension(FileItem::extension(value));
 		Instrument * i = it->loadInstrument(piakn.info.name(), &piakn.key);
 		i->loadFile( value );
+		control::assignNewTrackChannel(it);  // after the load: the channel takes the name the file gave the track
 		//it->toggledInstrumentTrackButton( true );
 		_de->accept();
 	}
@@ -598,6 +602,7 @@ void TrackContainerView::dropEvent( QDropEvent * _de )
 		DataFile dataFile( value );
 		auto it = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, m_tc));
 		it->loadPreset(dataFile.content().toElement());
+		control::assignNewTrackChannel(it);  // after the load: a preset resets the route and names the track
 
 		//it->toggledInstrumentTrackButton( true );
 		_de->accept();

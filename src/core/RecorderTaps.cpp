@@ -57,16 +57,28 @@ Tap unpack(std::uint64_t word)
 	return {static_cast<Source>(word & 0xff), channel, static_cast<int>((word >> 16) & 0xff), static_cast<int>((word >> 8) & 0xff)};
 }
 
-std::array<Entry, MultiTrackRecorder::MaxRoutes>& table()
+std::array<Entry, MultiTrackRecorder::MaxRoutes>& activeTable()
 {
 	static std::array<Entry, MultiTrackRecorder::MaxRoutes> entries{};  // every route on the input
 	return entries;
 }
 
-//! Route @a route's tap as the audio thread reads it.
-Tap tapOf(std::size_t route) noexcept
+std::array<Entry, MultiTrackRecorder::MaxRoutes>& pendingTable()
 {
-	return unpack(table()[route].load(std::memory_order_acquire));
+	static std::array<Entry, MultiTrackRecorder::MaxRoutes> entries{};  // set() writes here until a period boundary
+	return entries;
+}
+
+//! Route @a route's pending tap: what get() and tapped() report, and beginPeriod() publishes.
+Tap pendingTapOf(std::size_t route) noexcept
+{
+	return unpack(pendingTable()[route].load(std::memory_order_acquire));
+}
+
+//! Route @a route's active tap as the audio thread reads it.
+Tap activeTapOf(std::size_t route) noexcept
+{
+	return unpack(activeTable()[route].load(std::memory_order_acquire));
 }
 
 //! How many routes take something other than the input: 0 keeps every tap a single load.
@@ -88,34 +100,52 @@ void push(int route, const float* samples, int stride, f_cnt_t frames) noexcept
 void set(int route, const Tap& tap)
 {
 	if (route < 0 || route >= MultiTrackRecorder::MaxRoutes) { return; }
-	Entry& entry = table()[static_cast<std::size_t>(route)];
-	const bool wasTapped = unpack(entry.load()).source != Source::Input;
-	const bool isTapped = tap.source != Source::Input;
-	// The count rises before a tap is published and falls after one is withdrawn: no block finds the
-	// route skipped by the input path while the taps still read a count of 0.
-	if (isTapped && !wasTapped) { tappedCount().fetch_add(1); }
-	entry.store(pack(tap));
-	if (!isTapped && wasTapped) { tappedCount().fetch_sub(1); }
+	// Only the pending table: beginPeriod() publishes it at the next period boundary.
+	pendingTable()[static_cast<std::size_t>(route)].store(pack(tap), std::memory_order_release);
 }
 
 Tap get(int route)
 {
 	if (route < 0 || route >= MultiTrackRecorder::MaxRoutes) { return {}; }
-	return unpack(table()[static_cast<std::size_t>(route)].load());
+	return pendingTapOf(static_cast<std::size_t>(route));
 }
 
 bool tapped(int route) noexcept
 {
-	return route >= 0 && route < MultiTrackRecorder::MaxRoutes && tapOf(static_cast<std::size_t>(route)).source != Source::Input;
+	return route >= 0 && route < MultiTrackRecorder::MaxRoutes && pendingTapOf(static_cast<std::size_t>(route)).source != Source::Input;
+}
+
+void beginPeriod() noexcept
+{
+	auto& pending = pendingTable();
+	auto& active = activeTable();
+	for (std::size_t route = 0; route < pending.size(); ++route)
+	{
+		const std::uint64_t next = pending[route].load(std::memory_order_acquire);
+		const std::uint64_t current = active[route].load(std::memory_order_relaxed);
+		if (next == current) { continue; }
+		const bool wasTapped = unpack(current).source != Source::Input;
+		const bool isTapped = unpack(next).source != Source::Input;
+		// The count rises before a tap is published and falls after one is withdrawn: no block finds the
+		// route skipped by the input path while the taps still read a count of 0.
+		if (isTapped && !wasTapped) { tappedCount().fetch_add(1, std::memory_order_relaxed); }
+		active[route].store(next, std::memory_order_release);
+		if (!isTapped && wasTapped) { tappedCount().fetch_sub(1, std::memory_order_relaxed); }
+	}
+}
+
+bool audioTapped(int route) noexcept
+{
+	return route >= 0 && route < MultiTrackRecorder::MaxRoutes && activeTapOf(static_cast<std::size_t>(route)).source != Source::Input;
 }
 
 void channelAt(const MixerChannel& channel, SidechainTapPoint point, f_cnt_t frames) noexcept
 {
 	if (tappedCount().load(std::memory_order_relaxed) == 0) { return; }
 	const bool postFader = point == SidechainTapPoint::PostFader || point == SidechainTapPoint::PostFaderNoGain;
-	for (std::size_t route = 0; route < table().size(); ++route)
+	for (std::size_t route = 0; route < activeTable().size(); ++route)
 	{
-		const Tap tap = tapOf(route);
+		const Tap tap = activeTapOf(route);
 		if (tap.source != Source::Channel || tap.channelId != channel.id() || tap.point != static_cast<int>(point)) { continue; }
 		const int side = tap.side;
 		// After the fader the channel's signal is planar (one array a side); before it, interleaved frames.
@@ -127,9 +157,9 @@ void channelAt(const MixerChannel& channel, SidechainTapPoint point, f_cnt_t fra
 void master(const SampleFrame* buffer, f_cnt_t frames) noexcept
 {
 	if (tappedCount().load(std::memory_order_relaxed) == 0 || buffer == nullptr) { return; }
-	for (std::size_t route = 0; route < table().size(); ++route)
+	for (std::size_t route = 0; route < activeTable().size(); ++route)
 	{
-		const Tap tap = tapOf(route);
+		const Tap tap = activeTapOf(route);
 		if (tap.source != Source::Master) { continue; }
 		push(static_cast<int>(route), buffer[0].data() + tap.side, 2, frames);
 	}

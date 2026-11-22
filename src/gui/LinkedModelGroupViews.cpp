@@ -71,7 +71,7 @@ void LinkedModelGroupView::modelChanged(LinkedModelGroup *group)
 		}
 		else
 		{
-			itr->second->setModel(minf.m_model);
+			itr->second.control->setModel(minf.m_model);
 		}
 	});
 
@@ -112,7 +112,7 @@ void LinkedModelGroupView::addControl(Control* ctrl, const std::string& id,
 		m_layout->addWidget(box);
 
 		// take ownership of control and add it
-		m_widgets.emplace(id, std::unique_ptr<Control>(ctrl));
+		m_widgets.emplace(id, ControlEntry{std::unique_ptr<Control>(ctrl), display});
 	}
 
 	if (isHidden()) { setHidden(false); }
@@ -126,7 +126,9 @@ void LinkedModelGroupView::removeControl(const QString& key)
 	auto itr = m_widgets.find(key.toStdString());
 	if (itr != m_widgets.end())
 	{
-		QLayoutItem* item = m_layout->itemByString(key);
+		// the layout names its items by display name, which need not equal the control id
+		const QString layoutName = QString::fromStdString(itr->second.layoutName);
+		QLayoutItem* item = m_layout->itemByString(layoutName);
 		Q_ASSERT(!!item);
 		QWidget* wdg = item->widget();
 		Q_ASSERT(!!wdg);

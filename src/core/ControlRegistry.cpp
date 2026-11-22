@@ -28,6 +28,7 @@
 #include "CollabCommandTap.h"
 #include "ControlReversibility.h"
 #include "EditLocks.h"
+#include "ControlEventHub.h"
 #include "ProjectJournal.h"
 #include "ProvenanceSection.h"
 
@@ -57,42 +58,6 @@ constexpr int ControlProtocolVersion = 1;
 namespace
 {
 
-/*! \brief The process's shutdown hooks, and the serial that identifies one
- *  (CODE-8).
- *
- * NOT a member of the registry instance, and that is the whole point. The
- * registry is a singleton that can be destroyed and re-created - main() takes
- * `ControlRegistry::instance()` and ControlSession.cpp's last-resort guard calls
- * `ControlRegistry::instance()->runShutdownHooks()` on the way out - so if the
- * instance that existed at registration time is gone, instance() builds a NEW,
- * EMPTY one and a hook held in a member would die with the first instance. The
- * guard would then run nothing at all and leave the control socket behind on
- * exactly the route the hook exists for.
- *
- * A function-local static gives the right lifetime: one store per process,
- * constructed on first use and destroyed at exit - after every path that can
- * call runShutdownHooks(), and never before a hook that is still registered.
- */
-struct ShutdownHookEntry
-{
-	ControlRegistry::ShutdownHookId id = 0;
-	std::function<void()> hook;
-};
-
-QVector<ShutdownHookEntry>& shutdownHooks()
-{
-	static QVector<ShutdownHookEntry> hooks;
-	return hooks;
-}
-
-//! Serial source for ShutdownHookId. 0 is reserved for "no hook", so the first
-//! registered hook is 1 and a default-initialised id can never match one.
-ControlRegistry::ShutdownHookId nextShutdownHookId()
-{
-	static ControlRegistry::ShutdownHookId next = 0;
-	return ++next;
-}
-
 //! The text of a thrown exception, safely (what() may be null).
 QString exceptionText(const std::exception& error)
 {
@@ -116,6 +81,7 @@ ControlResult controlErrorFromException(const QString& commandId, bool mutating,
 	if (mutating) { message += QStringLiteral(" (the project may be partly changed)"); }
 	return ControlResult::failure(ControlErrorKind::Refused, message);
 }
+
 
 } // namespace
 
@@ -156,6 +122,7 @@ ControlRegistry::ControlRegistry(QObject* parent) :
 	// (UnattendedRun.h), because MainWindow asks the same question before the
 	// registry exists.
 	m_headless = isUnattendedRun();  // one predicate for one concept: agent instance or no display
+	m_displayAvailable = hasDisplay();  // `requires: display` is about the display alone, not who drives the instance
 }
 
 ControlRegistry* ControlRegistry::instance()
@@ -172,6 +139,9 @@ void ControlRegistry::destroy()
 {
 	delete s_instance;
 	s_instance = nullptr;
+	// Readiness is what the application told the instance that just went away.
+	// The next instance() has not been told, so it starts not ready.
+	s_ready = false;
 }
 
 void ControlRegistry::registerCommand(const ControlCommand& command)
@@ -226,7 +196,7 @@ QString ControlRegistry::checkRequires(const ControlCommand& command) const
 		{
 			return QStringLiteral("command '%1' requires a human").arg(command.id);
 		}
-		if (requirement == QLatin1String("display") && m_headless)
+		if (requirement == QLatin1String("display") && !m_displayAvailable)
 		{
 			return QStringLiteral("command '%1' requires a display (headless instance)").arg(command.id);
 		}
@@ -259,7 +229,15 @@ ControlResult ControlRegistry::runOnUiThread(const std::function<ControlResult()
 	return out;
 }
 
-ControlResult ControlRegistry::invoke(const QString& id, const QJsonObject& args)
+//! The agent surface waits for startup to finish (setReady); the process's own window needs only the engine it edits.
+static bool engineAddressable(bool inProcess)
+{
+	return inProcess ? Engine::getSong() != nullptr && Engine::mixer() != nullptr : ControlRegistry::isEngineReady();
+}
+
+ControlResult ControlRegistry::invoke(const QString& id, const QJsonObject& args) { return dispatch(id, args, false); }
+
+ControlResult ControlRegistry::dispatch(const QString& id, const QJsonObject& args, bool inProcess)
 {
 	const ControlCommand* cmd = command(id);
 	if (cmd == nullptr)
@@ -280,7 +258,7 @@ ControlResult ControlRegistry::invoke(const QString& id, const QJsonObject& args
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, invalid);
 	}
 
-	if (cmd->requiresEngine && !isEngineReady())
+	if (cmd->requiresEngine && !engineAddressable(inProcess))
 	{
 		// Carry the reason (task #626): a bare 'busy' left a client with no way
 		// to tell "still starting" from "your audio device failed" - the agent
@@ -551,6 +529,7 @@ ControlResult ControlRegistry::runHandler(
 	control::finishResult(commandId, m_commands.value(commandId).resultSchema, &result);
 	notifyObserver(commandId, args, mutating, changed);
 	collab::CommandTap::observed(commandId, args, mutating, changed, m_depth);  // F6: what a host streams to its peers
+	control::ControlEventHub::commandFinished(commandId, args, mutating, changed, enclosedByMutating, m_depth);  // Q050-334.1
 	return result;
 }
 
@@ -711,53 +690,6 @@ QJsonObject ControlRegistry::describeAll() const
 
 
 
-
-ControlRegistry::ShutdownHookId ControlRegistry::addShutdownHook(std::function<void()> hook)
-{
-	const ShutdownHookId id = nextShutdownHookId();
-	shutdownHooks().append(ShutdownHookEntry{id, std::move(hook)});
-	return id;
-}
-
-
-bool ControlRegistry::removeShutdownHook(ShutdownHookId id)
-{
-	if (id == 0)
-	{
-		return false;
-	}
-	QVector<ShutdownHookEntry>& hooks = shutdownHooks();
-	for (int i = 0; i < hooks.size(); ++i)
-	{
-		if (hooks.at(i).id == id)
-		{
-			hooks.remove(i);
-			return true;
-		}
-	}
-	return false;
-}
-
-
-int ControlRegistry::shutdownHookCount() const
-{
-	return shutdownHooks().size();
-}
-
-
-void ControlRegistry::runShutdownHooks()
-{
-	// Take the list and clear it BEFORE running anything: a hook that
-	// re-registers (a re-listen) must not extend the run it is inside, and a
-	// hook that quits or aborts must not leave the store half-consumed for the
-	// next caller on the way out.
-	const QVector<ShutdownHookEntry> hooks = shutdownHooks();
-	shutdownHooks().clear();
-	for (const ShutdownHookEntry& entry : hooks)
-	{
-		if (entry.hook) { entry.hook(); }
-	}
-}
 
 // ---------------------------------------------------------------------------
 // shared helpers

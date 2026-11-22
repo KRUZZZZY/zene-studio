@@ -82,7 +82,8 @@ private slots:
 	void cleanupTestCase()
 	{
 		ControlRegistry::setReady(false);
-		Engine::destroy();
+		// The last slot tears the engine down itself; it must not be torn down twice.
+		if (Engine::getSong() != nullptr) { Engine::destroy(); }
 	}
 
 	void listedVendorIsThePickerVendor()
@@ -116,6 +117,20 @@ private slots:
 		const QJsonObject amplifier = listedDevice(QStringLiteral("builtin"), QStringLiteral("amplifier"));
 		QVERIFY(!amplifier.isEmpty());
 		QCOMPARE(amplifier.value(QStringLiteral("vendor")).toString(), QStringLiteral("Zene Studio"));
+	}
+
+	//! A trk-<n> asked of a session with no song is a typed not_found, not a
+	//! crash: the engine-free remote.target command reaches this resolver before
+	//! any song is open. Runs last - it tears the engine down itself, and
+	//! cleanupTestCase() leaves an already-destroyed engine alone.
+	void trackTargetWithNoSongIsNotFound()
+	{
+		Engine::destroy();
+		QVERIFY(Engine::getSong() == nullptr);
+		ControlTarget target;
+		ControlResult error;
+		QVERIFY(!resolveControlTarget(QStringLiteral("trk-1"), &target, &error));
+		QVERIFY2(error.errorKind == ControlErrorKind::NotFound, qPrintable(error.errorMessage));
 	}
 };
 

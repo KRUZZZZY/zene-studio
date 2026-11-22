@@ -182,11 +182,70 @@ private slots:
 		QVERIFY(menu != nullptr);
 		for (const QString& text : {QStringLiteral("Beats"), QStringLiteral("Tones"),
 			QStringLiteral("Texture"), QStringLiteral("Complex"),
-			QStringLiteral("Pitch-preserving (WSOLA)")})
+			QStringLiteral("Pitch-preserving (WSOLA)"), QStringLiteral("Repeat transients"),
+			QStringLiteral("Gate transients")})
 		{
 			item(menu, text)->trigger();
 			QCOMPARE(clip->warpStretchMode(), WarpStretchMode::Resample);
 		}
+	}
+
+	//! Q050-162: the two transient modes and their rate, each one menu gesture
+	//! away and each going through warp.stretch - the rate items keep the
+	//! clip's mode, the checked rate is the clip's, and undo takes back one
+	//! gesture at a time.
+	void theTransientModesAndTheirRateDriveWarpStretch()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		const std::array<WarpMarker, 2> markers{ WarpMarker{0, 0}, WarpMarker{88200, 384} };
+		QVERIFY(clip->setWarpMarkers(std::span<const WarpMarker>(markers.data(), markers.size())));
+
+		QMenu parent;
+		QMenu* menu = warpMenu(parent, clip);
+		QVERIFY(menu != nullptr);
+		QAction* rateEntry = item(menu, QStringLiteral("Repeat rate"));
+		QVERIFY(rateEntry != nullptr && rateEntry->menu() != nullptr);
+		// The default rate, a synced 1/16, is the checked one.
+		QVERIFY(item(rateEntry->menu(), QStringLiteral("Synced 1/16"))->isChecked());
+		for (const QString& text : {QStringLiteral("Synced 1/4"), QStringLiteral("Synced 1/8"),
+			QStringLiteral("Synced 1/32"), QStringLiteral("Free 50 ms"), QStringLiteral("Free 100 ms"),
+			QStringLiteral("Free 250 ms"), QStringLiteral("Free 500 ms")})
+		{
+			QAction* action = item(rateEntry->menu(), text);
+			QVERIFY2(action != nullptr, qPrintable(text));
+			QCOMPARE(action->data().toString(), QStringLiteral("warp.stretch"));
+		}
+
+		item(menu, QStringLiteral("Repeat transients"))->trigger();
+		QCOMPARE(clip->warpStretchMode(), WarpStretchMode::Repeat);
+		QMenu again;
+		menu = warpMenu(again, clip);
+		item(item(menu, QStringLiteral("Repeat rate"))->menu(), QStringLiteral("Synced 1/8"))->trigger();
+		QCOMPARE(clip->warpStretchMode(), WarpStretchMode::Repeat);
+		QCOMPARE(clip->transientRepeatRate(), TransientRepeatRate::syncedTo(8));
+		QMenu third;
+		menu = warpMenu(third, clip);
+		QVERIFY(item(item(menu, QStringLiteral("Repeat rate"))->menu(), QStringLiteral("Synced 1/8"))->isChecked());
+		item(item(menu, QStringLiteral("Repeat rate"))->menu(), QStringLiteral("Free 250 ms"))->trigger();
+		QCOMPARE(clip->transientRepeatRate(), TransientRepeatRate::freeInterval(250.0));
+		QMenu fourth;
+		menu = warpMenu(fourth, clip);
+		item(menu, QStringLiteral("Gate transients"))->trigger();
+		QCOMPARE(clip->warpStretchMode(), WarpStretchMode::Gate);
+		QCOMPARE(clip->transientRepeatRate(), TransientRepeatRate::freeInterval(250.0));
+
+		// One undo per gesture: Gate, then the free rate, then the 1/8.
+		const auto undo = [] { return ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), QJsonObject{}).ok; };
+		QVERIFY(undo());
+		QCOMPARE(clip->warpStretchMode(), WarpStretchMode::Repeat);
+		QVERIFY(undo());
+		QCOMPARE(clip->transientRepeatRate(), TransientRepeatRate::syncedTo(8));
+		QVERIFY(undo());
+		QCOMPARE(clip->transientRepeatRate(), TransientRepeatRate{});
+		QCOMPARE(clip->warpStretchMode(), WarpStretchMode::Repeat);
 	}
 
 	void aMidiClipGetsNoWarpModeMenu()

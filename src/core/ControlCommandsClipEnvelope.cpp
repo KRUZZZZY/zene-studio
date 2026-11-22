@@ -115,7 +115,7 @@ bool readPoint(const QJsonValue& value, int clipTicks, GainPoint* point, Control
 		return false;
 	}
 	const double db = dbValue.toDouble();
-	if (tick < 0 || tick > clipTicks || db < MinDb || db > MaxDb)
+	if (tick < 0 || tick > clipTicks || !std::isfinite(db) || db < MinDb || db > MaxDb)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("a point needs 0 <= tick <= %1 and %2 <= gain_db <= %3").arg(clipTicks).arg(MinDb).arg(MaxDb));

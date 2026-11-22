@@ -41,6 +41,7 @@
 #include "ItemList.h"
 #include "Engine.h"
 #include "MusicalTime.h"
+#include "SampleTrack.h"
 #include "ShellChrome.h"
 #include "Song.h"
 #include "Track.h"
@@ -198,6 +199,8 @@ TakeLanesPanel::TakeLanesPanel(const QString& trackId, QWidget* parent) :
 	outer->addLayout(comp);
 
 	m_consolidate = makeButton(QStringLiteral("clip.consolidate"), tr("Consolidate the comp"));
+	// clip.consolidate renders sample-track audio; MIDI comps are not supported by that command.
+	m_consolidate->setVisible(dynamic_cast<const SampleTrack*>(track) != nullptr);
 	connect(m_consolidate, &QToolButton::clicked, this, [this] {
 		QJsonObject args{{QStringLiteral("track"), m_trackId}};
 		if (m_spanEnd > m_spanBegin)
@@ -372,7 +375,11 @@ void TakeLanesPanel::showTakeChoices(const QJsonObject& group)
 		const QJsonObject take = value.toObject();
 		const QString clip = take.value(QStringLiteral("clip")).toString();
 		const int lane = take.value(QStringLiteral("lane")).toInt();
-		m_takeChoice->addItem(tr("Lane %1 (%2)").arg(lane).arg(clip), clip);
+		// The engine says whether the take is heard (the newest loop pass, or every take under
+		// Play all takes); a take with no such key is heard.
+		const bool audible = take.value(QStringLiteral("audible")).toBool(true);
+		const QString state = audible ? tr("audible") : tr("muted");
+		m_takeChoice->addItem(tr("Lane %1 (%2) - %3").arg(lane).arg(clip).arg(state), clip);
 		m_takeChoice->setItemData(m_takeChoice->count() - 1, lane, Qt::UserRole + 1);
 		if (lane == activeLane && selected < 0) { selected = m_takeChoice->count() - 1; }
 	}

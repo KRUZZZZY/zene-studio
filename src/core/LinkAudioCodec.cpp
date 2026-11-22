@@ -27,7 +27,10 @@
 #include "LinkAudioStream.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <limits>
+#include <stdexcept>
 
 namespace lmms::link
 {
@@ -51,11 +54,31 @@ std::uint32_t get32(const std::uint8_t* p)
 		| (static_cast<std::uint32_t>(p[2]) << 16) | (static_cast<std::uint32_t>(p[3]) << 24);
 }
 
+//! A packet carries 1 to AudioMaxPacketFrames frames at a known rate: a zero rate is "not known yet", never a packet.
+bool isValidPacketShape(std::size_t frames, std::uint32_t sampleRate)
+{
+	return frames != 0 && frames <= AudioMaxPacketFrames && sampleRate != 0;
+}
+
 std::size_t roundUpPowerOfTwo(std::size_t v)
 {
+	if (v > (std::numeric_limits<std::size_t>::max() >> 1) + 1)
+	{
+		throw std::length_error("ring capacity cannot be rounded up to a power of two");
+	}
 	std::size_t p = 1;
 	while (p < v) { p <<= 1; }
 	return p;
+}
+
+//! Frames x channels; a product that wraps would size the storage too small, so it is refused instead.
+std::size_t ringStorageSize(std::size_t frames)
+{
+	if (frames > std::numeric_limits<std::size_t>::max() / static_cast<std::size_t>(AudioChannels))
+	{
+		throw std::length_error("ring storage size overflows size_t");
+	}
+	return frames * static_cast<std::size_t>(AudioChannels);
 }
 
 } // namespace
@@ -65,7 +88,7 @@ std::size_t encodeAudioPacket(const AudioPacketHeader& header, const float* inte
 {
 	const std::size_t floats = static_cast<std::size_t>(header.frames) * AudioChannels;
 	const std::size_t bytes = AudioHeaderBytes + floats * 4;
-	if (header.frames == 0 || header.frames > AudioMaxPacketFrames || bytes > capacity) { return 0; }
+	if (!isValidPacketShape(header.frames, header.sampleRate) || bytes > capacity) { return 0; }
 	std::memcpy(out, Magic, 4);
 	put32(out + 4, header.sequence);
 	put32(out + 8, header.sampleRate);
@@ -88,18 +111,23 @@ bool decodeAudioPacket(const std::uint8_t* data, std::size_t size, AudioPacketHe
 	if (size < AudioHeaderBytes || std::memcmp(data, Magic, 4) != 0 || data[14] != AudioChannels) { return false; }
 	const std::size_t frames = static_cast<std::size_t>(data[12]) | (static_cast<std::size_t>(data[13]) << 8);
 	const std::size_t floats = frames * AudioChannels;
-	if (frames == 0 || frames > AudioMaxPacketFrames || size != AudioHeaderBytes + floats * 4
+	const std::uint32_t sampleRate = get32(data + 8);
+	if (!isValidPacketShape(frames, sampleRate) || size != AudioHeaderBytes + floats * 4
 		|| floats > outCapacityFloats)
 	{
 		return false;
 	}
 	header.sequence = get32(data + 4);
-	header.sampleRate = get32(data + 8);
+	header.sampleRate = sampleRate;
 	header.frames = static_cast<std::uint16_t>(frames);
 	for (std::size_t i = 0; i < floats; ++i)
 	{
 		const std::uint32_t bits = get32(data + AudioHeaderBytes + i * 4);
-		std::memcpy(&interleavedOut[i], &bits, 4);
+		float sample;
+		std::memcpy(&sample, &bits, 4);
+		// The peer is untrusted and the samples are summed into the master mix: NaN or an infinity
+		// would poison it, so a non-finite sample becomes silence and its neighbours are kept.
+		interleavedOut[i] = std::isfinite(sample) ? sample : 0.f;
 	}
 	return true;
 }
@@ -142,7 +170,7 @@ bool parseIpv4(const std::string& text, std::uint32_t& address)
 
 AudioRing::AudioRing(std::size_t capacityFrames)
 	: m_capacity(roundUpPowerOfTwo(std::max<std::size_t>(capacityFrames, 2)))
-	, m_data(m_capacity * AudioChannels, 0.0f)
+	, m_data(ringStorageSize(m_capacity), 0.0f)
 {
 }
 

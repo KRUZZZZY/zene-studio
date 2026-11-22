@@ -351,7 +351,9 @@ bool parseStretchMode(const QString& mode, WarpStretchMode* wanted, ControlResul
 				"(the same stretch with half the grain, for polyphonic and ambient material), or "
 				"one of the two Rubber Band-backed modes: 'beats' (R3 restricted to its short "
 				"window - the crispest timing) or 'complex' (R3's full multi-resolution settings; "
-				"'rubberband' is accepted as the old name)")
+				"'rubberband' is accepted as the old name), or one of the two transient modes: "
+				"'repeat' (each transient segment restarts at every repeat interval) or 'gate' (each "
+				"segment is cut at the first interval)")
 				.arg(mode));
 		return false;
 	}
@@ -361,6 +363,48 @@ bool parseStretchMode(const QString& mode, WarpStretchMode* wanted, ControlResul
 			QStringLiteral("this build has no Rubber Band (it was configured without "
 				"librubberband); use 'preserve_pitch', 'tones' or 'texture' for the WSOLA stretch"));
 		return false;
+	}
+	return true;
+}
+
+/*! Q050-162: the optional repeat interval of warp.stretch - `rate_division`
+ *  (a tempo division) or `rate_ms` (a free interval), never both. Absent keeps
+ *  @a current. False with a typed invalid_args for anything else. */
+bool parseRepeatRate(const QJsonObject& args, const TransientRepeatRate& current, TransientRepeatRate* rate,
+	ControlResult* error)
+{
+	const bool hasDivision = args.contains(QStringLiteral("rate_division"));
+	const bool hasMs = args.contains(QStringLiteral("rate_ms"));
+	*rate = current;
+	if (hasDivision && hasMs)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("give 'rate_division' (a tempo-synced interval) or 'rate_ms' (a free one), not both"));
+		return false;
+	}
+	if (hasDivision)
+	{
+		const int division = TransientRepeatRate::divisionFromName(
+			args.value(QStringLiteral("rate_division")).toString());
+		if (division == 0)
+		{
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'rate_division' is one of 1/1, 1/2, 1/4, 1/8, 1/16, 1/32"));
+			return false;
+		}
+		*rate = TransientRepeatRate::syncedTo(division);
+	}
+	if (hasMs)
+	{
+		const double ms = args.value(QStringLiteral("rate_ms")).toDouble(-1.0);
+		if (!(ms >= TransientRepeatRate::MinIntervalMs && ms <= TransientRepeatRate::MaxIntervalMs))
+		{
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'rate_ms' is a free repeat interval from %1 to %2 milliseconds")
+					.arg(TransientRepeatRate::MinIntervalMs).arg(TransientRepeatRate::MaxIntervalMs));
+			return false;
+		}
+		*rate = TransientRepeatRate::freeInterval(ms);
 	}
 	return true;
 }
@@ -388,20 +432,26 @@ ControlResult warpStretch(const QJsonObject& args)
 	}
 
 	const WarpStretchMode previous = clip->warpStretchMode();
-	const bool changed = previous != wanted;
+	const TransientRepeatRate previousRate = clip->transientRepeatRate();
+	TransientRepeatRate rate;
+	if (!parseRepeatRate(args, previousRate, &rate, &error)) { return error; }
+	const bool changed = previous != wanted || previousRate != rate;
 	QJsonObject before;
 
 	if (changed)
 	{
 		before = warpBefore(ref, *clip);
-		// The same one-checkpoint shape warp.set uses: the mode lives in the clip's
-		// own <warp> element, so the clip's checkpoint is the exact inverse.
+		// The same one-checkpoint shape warp.set uses: the mode and (Q050-162) the
+		// repeat interval live in the clip's own <warp> element, so the clip's
+		// checkpoint is the exact inverse of both, set in one step.
 		clip->addJournalCheckPoint();
+		clip->setTransientRepeatRate(rate);
 		clip->setWarpStretchMode(wanted);
 	}
 
 	QJsonObject result = warpState(ref, *clip);
 	result.insert(QStringLiteral("previous_mode"), warpStretchModeName(previous));
+	result.insert(QStringLiteral("previous_repeat_rate"), previousRate.name());
 	result.insert(QStringLiteral("changed"), changed);
 
 	if (changed)
@@ -411,11 +461,14 @@ ControlResult warpStretch(const QJsonObject& args)
 		QJsonObject inverseArgs;
 		inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
 		inverseArgs.insert(QStringLiteral("mode"), warpStretchModeName(previous));
+		if (previousRate.synced()) { inverseArgs.insert(QStringLiteral("rate_division"), previousRate.divisionName()); }
+		else { inverseArgs.insert(QStringLiteral("rate_ms"), previousRate.intervalMs()); }
 		result.insert(QStringLiteral("__transaction"), transactionPayload(before,
 			QStringLiteral("warp.stretch"), inverseArgs, true,
-			QStringLiteral("ProjectJournal (Clip checkpoint: the stretch mode is the 'stretch' "
-				"attribute of the clip's own <warp> element, which SampleClip::saveSettings writes "
-				"and SampleClip::loadSettings re-reads, so one undo restores the previous mode)")));
+			QStringLiteral("ProjectJournal (Clip checkpoint: the stretch mode and the repeat rate are the "
+				"'stretch' and 'repeat_rate' attributes of the clip's own <warp> element, which "
+				"SampleClip::saveSettings writes and SampleClip::loadSettings re-reads, so one undo "
+				"restores the previous mode and rate)")));
 	}
 	return ControlResult::success(result);
 }
@@ -527,7 +580,14 @@ void registerWarpStretch(ControlRegistry& registry)
 		"the two Rubber Band-backed modes (Q050-036): 'beats' (R3 restricted to its single short "
 		"window - the crispest timing at some spectral cost) and 'complex' (R3's full "
 		"multi-resolution settings, the quality the old name 'rubberband' - also accepted - has "
-		"always rendered). A build without librubberband refuses those two, and a file that asks "
+		"always rendered), or one of the two transient modes (Q050-162): 'repeat' (each transient "
+		"segment plays at its own pitch and speed from its transient and restarts at every repeat "
+		"interval until the next transient's slot) and 'gate' (each segment plays once and is cut at "
+		"the first interval) - both fill the warped span exactly. The interval is 'rate_division' "
+		"(1/1 .. 1/32 of a whole note, following the project tempo; 1/16 by default) or 'rate_ms' "
+		"(a free interval, 5 to 2000 ms, that does not follow it); it is kept across mode switches "
+		"and may be changed with the mode or on its own. A build without librubberband refuses "
+		"'beats' and 'complex', and a file that asks "
 		"for one still loads and renders through WSOLA for the pass in which both of the clip's "
 		"voices are busy. Refused for a clip that renders linearly - with no marker and no "
 		"source tempo there is no rate change to render. Reversible through the ProjectJournal "
@@ -535,9 +595,12 @@ void registerWarpStretch(ControlRegistry& registry)
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("clip"), stringProperty()},
 		{QStringLiteral("mode"), stretchModeProperty()},
+		{QStringLiteral("rate_division"), repeatDivisionProperty()},
+		{QStringLiteral("rate_ms"), numberProperty()},
 	}, {QStringLiteral("clip"), QStringLiteral("mode")});
 	cmd.resultSchema = warpStateSchema({
 		{QStringLiteral("previous_mode"), stringProperty()},
+		{QStringLiteral("previous_repeat_rate"), stringProperty()},
 		{QStringLiteral("changed"), booleanProperty()},
 	});
 	cmd.mutating = true;

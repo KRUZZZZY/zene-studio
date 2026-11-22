@@ -67,6 +67,7 @@ void TempoSyncBarModelEditor::modelChanged()
 	if(tempoSyncModel == nullptr)
 	{
 		qWarning("no TempoSyncKnobModel has been set!");
+		return;
 	}
 
 	if(m_custom != nullptr)
@@ -86,6 +87,11 @@ void TempoSyncBarModelEditor::contextMenuEvent(QContextMenuEvent *)
 	mouseReleaseEvent(nullptr);
 
 	TempoSyncKnobModel * tempoSyncModel = model();
+
+	if(tempoSyncModel == nullptr)
+	{
+		return;
+	}
 
 	CaptionMenu contextMenu(tempoSyncModel->displayName(), this);
 	addDefaultActions(&contextMenu);
@@ -160,6 +166,12 @@ void TempoSyncBarModelEditor::contextMenuEvent(QContextMenuEvent *)
 
 void TempoSyncBarModelEditor::updateDescAndIcon()
 {
+	// A detached editor keeps no model; a late syncModeChanged from the old one has nothing to show.
+	if(model() == nullptr)
+	{
+		return;
+	}
+
 	updateTextDescription();
 
 	if(m_custom != nullptr && model()->syncMode() != TempoSyncKnobModel::SyncMode::Custom)
@@ -202,6 +214,11 @@ void TempoSyncBarModelEditor::setSyncIcon(const QPixmap & new_icon)
 
 void TempoSyncBarModelEditor::showCustom()
 {
+	if(model() == nullptr)
+	{
+		return;
+	}
+
 	if(m_custom == nullptr)
 	{
 		m_custom = new MeterDialog(getGUI()->mainWindow()->workspace());
@@ -222,6 +239,11 @@ void TempoSyncBarModelEditor::showCustom()
 void TempoSyncBarModelEditor::updateTextDescription()
 {
 	TempoSyncKnobModel * tempoSyncModel = model();
+
+	if(tempoSyncModel == nullptr)
+	{
+		return;
+	}
 
 	auto const syncMode = tempoSyncModel->syncMode();
 
@@ -265,6 +287,11 @@ void TempoSyncBarModelEditor::updateTextDescription()
 
 void TempoSyncBarModelEditor::updateIcon()
 {
+	if(model() == nullptr)
+	{
+		return;
+	}
+
 	switch(model()->syncMode())
 	{
 		case TempoSyncKnobModel::SyncMode::None:

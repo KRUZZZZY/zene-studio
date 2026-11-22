@@ -45,6 +45,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <limits>
 #include <new>
 #include <vector>
 
@@ -189,11 +190,48 @@ private slots:
 		s_trackedPendingStepNote = nullptr;
 	}
 
+	// A zero step length gives an in-progress step zero length; changing the length then has no
+	// steps to scale from and must not divide by the old zero length.
+	// start() is not used: it shows the step hint through TextFloat, which needs the GUI main window
+	// and crashes headless. Its first action is setStepsLength(stepLength), which is set directly here.
+	void changingLengthOfZeroLengthStepIsSafe()
+	{
+		auto* pianoRoll = new PianoRoll();
+		StepRecorder& recorder = pianoRoll->m_stepRecorder;
+		recorder.setStepsLength(TimePos(0));
+		recorder.notePressed(Note(TimePos(0), TimePos(0), 60));
+		QVERIFY(recorder.m_isStepInProgress);
+
+		recorder.setStepsLength(TimePos(192));
+		QCOMPARE(recorder.m_stepsLength.getTicks(), 192);
+		QCOMPARE(recorder.m_curStepLength.getTicks(), 0);
+
+		recorder.setStepsLength(TimePos(0));
+		QCOMPARE(recorder.m_curStepLength.getTicks(), 0);
+		delete pianoRoll;
+	}
+
+	// Rescaling an in-progress step keeps its number of steps: two 192-tick steps become two 96-tick steps.
+	void rescalingInProgressStepKeepsStepCount()
+	{
+		auto* pianoRoll = new PianoRoll();
+		StepRecorder& recorder = pianoRoll->m_stepRecorder;
+		recorder.setStepsLength(TimePos(192));  // the length start() would set; see the test above
+		recorder.notePressed(Note(TimePos(0), TimePos(0), 60));
+		recorder.stepForwards();
+		QCOMPARE(recorder.m_curStepLength.getTicks(), 384);
+
+		recorder.setStepsLength(TimePos(96));
+		QCOMPARE(recorder.m_curStepLength.getTicks(), 192);
+		delete pianoRoll;
+	}
+
 	void invalidKeysAreSafe()
 	{
 		Piano piano(nullptr);
 		QVERIFY(!Piano::isBlackKey(NumKeys));
-		for (const int key : {-1, NumKeys})
+		// Negative keys, including ones whose remainder would be negative, must not index KEY_ORDER.
+		for (const int key : {-1, -KeysPerOctave - 1, std::numeric_limits<int>::min(), NumKeys})
 		{
 			QVERIFY(!piano.isKeyPressed(key));
 			QVERIFY(!Piano::isBlackKey(key));

@@ -26,6 +26,8 @@
 
 #ifdef LMMS_HAVE_WINMM
 
+#include "MidiWinMMShortMessage.h"
+
 
 namespace lmms
 {
@@ -54,9 +56,7 @@ MidiWinMM::~MidiWinMM()
 
 void MidiWinMM::processOutEvent( const MidiEvent& event, const TimePos& time, const MidiPort* port )
 {
-	const DWORD shortMsg = ( event.type() + event.channel() ) +
-				( ( event.param( 0 ) & 0xff ) << 8 ) +
-				( ( event.param( 1 ) & 0xff ) << 16 );
+	const DWORD shortMsg = static_cast<DWORD>( winmmShortMessage( event ) );
 
 	QStringList outDevs;
 	for( SubMap::ConstIterator it = m_outputSubs.begin(); it != m_outputSubs.end(); ++it )
@@ -178,7 +178,9 @@ void WINAPI CALLBACK MidiWinMM::inputCallback( HMIDIIN hm, UINT msg, DWORD_PTR i
 {
 	if( msg == MIM_DATA )
 	{
-		( (MidiWinMM *) inst )->handleInputEvent( hm, param1 );
+		auto client = (MidiWinMM *) inst;
+		const MidiInputGate::Scope dispatch( client->m_inputGate );
+		if( dispatch ) { client->handleInputEvent( hm, param1 ); }
 	}
 }
 

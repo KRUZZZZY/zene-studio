@@ -124,6 +124,48 @@ private slots:
 		}
 	}
 
+	void LfoSampleRateChangeClampsFrequencyToNyquist()
+	{
+		// 20 kHz is valid at 48 kHz; at 8 kHz the Nyquist limit is 4 kHz.
+		lmms::Lfo lfo(48000);
+		initializeLfoStateForTest(lfo);
+		lfo.setFrequency(20000.0);
+		QCOMPARE(lfo.m_frequency, 20000.0);
+
+		lfo.setSampleRate(8000);
+
+		QCOMPARE(lfo.m_frequency, 4000.0);
+		QCOMPARE(lfo.m_increment, lfo.m_frequency * lfo.m_twoPiOverSr);
+		// A phase step above pi per sample is an alias of a lower frequency.
+		QVERIFY(lfo.m_increment <= std::numbers::pi + 1e-6);
+	}
+
+	void LfoSampleRateChangeKeepsValidFrequency()
+	{
+		lmms::Lfo lfo(48000);
+		initializeLfoStateForTest(lfo);
+		lfo.setFrequency(440.0);
+
+		// Downward, but 440 Hz stays below the new 4 kHz Nyquist limit.
+		lfo.setSampleRate(8000);
+		QCOMPARE(lfo.m_frequency, 440.0);
+		QCOMPARE(lfo.m_increment, 440.0 * lfo.m_twoPiOverSr);
+
+		// Upward: 440 Hz is still valid, so nothing changes.
+		lfo.setSampleRate(96000);
+		QCOMPARE(lfo.m_frequency, 440.0);
+
+		// 20 kHz is valid at 96 kHz, and still valid at 48 kHz (24 kHz limit).
+		lfo.setFrequency(20000.0);
+		lfo.setSampleRate(48000);
+		QCOMPARE(lfo.m_frequency, 20000.0);
+
+		// An ignored (non-positive) sample rate must not touch the frequency.
+		lfo.setSampleRate(0);
+		QCOMPARE(lfo.m_frequency, 20000.0);
+		QCOMPARE(lfo.m_samplerate, 48000);
+	}
+
 	void FastRandIncReversedUnsignedBoundsTest()
 	{
 		using namespace lmms;

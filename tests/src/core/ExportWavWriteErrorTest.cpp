@@ -187,6 +187,7 @@ bool finalisationReportedFailure(T& device)
 	}
 }
 
+#ifdef Q_OS_UNIX
 //! The WAV header fields libsndfile rewrites at close: the RIFF size and the data
 //! chunk's own size. Read straight from the file so the test asserts on what a
 //! reader sees, not on the code's own notion of the layout.
@@ -221,6 +222,7 @@ RiffSizes riffSizes(const QString& path)
 	}
 	return sizes;
 }
+#endif // Q_OS_UNIX
 
 #ifdef Q_OS_UNIX
 //! Caps the size of the files this process writes: a write that would grow a

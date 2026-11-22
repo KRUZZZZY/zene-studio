@@ -68,6 +68,10 @@ public:
 	f_cnt_t outputLatencyFrames() const override;
 	//! 0.5.0 F1 (MX-040): JACK opens as many output ports as the interface's I/O setup asks for.
 	bool supportsMultichannelOutput() const override { return true; }
+	//! Q050-074.2: the server's rate and period (jack_get_buffer_size) and the first ports' latency
+	//! ranges; JACK does not report how many periods it queues, so the buffer is unavailable. Xruns are
+	//! the server's xrun notifications (xrunCallback).
+	DeviceTiming deviceTiming() const override;
 
 	// this is to allow the jack midi connection to use the same jack client connection
 	// the jack callback is handled here, we call the midi client so that it can read
@@ -107,6 +111,7 @@ private slots:
 
 private:
 	friend class AudioJackPortRestartTest;
+	friend class AudioDeviceDiagnosticsTest;
 
 	static void clearPortState(std::vector<jack_port_t*>& outputPorts,
 		std::vector<jack_port_t*>& inputPorts,
@@ -129,6 +134,8 @@ private:
 
 	static int staticProcessCallback(jack_nframes_t nframes, void* udata);
 	static void shutdownCallback(void* _udata);
+	//! Q050-074.2: JACK's xrun notification - one relaxed add, on whichever thread JACK calls it.
+	static int xrunCallback(void* udata);
 
 	jack_client_t* m_client;
 

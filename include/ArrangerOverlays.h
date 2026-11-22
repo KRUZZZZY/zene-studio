@@ -93,6 +93,8 @@ private:
 	Tool m_tool = Tool::None;
 	bool m_dragging = false;
 	QPoint m_from;
+	//! The rows the last paint drew: a viewport Paint repaints the overlay only when they have moved.
+	QVector<QRect> m_paintedRows;
 };
 
 //! The arranger's tools by name: the song editor's modes in EditMode order (draw, knife, select), then the overlay's in

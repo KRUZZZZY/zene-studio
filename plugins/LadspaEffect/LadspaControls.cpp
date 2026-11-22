@@ -210,16 +210,20 @@ void LadspaControls::linkPort( int _port, bool _state )
 
 void LadspaControls::updateLinkStatesFromGlobal()
 {
+	// without processors (a plugin whose channel count does not divide the host's)
+	// there are no ports to walk, and the port count divides by the processor count
+	const int portCount = m_processors > 0 ? m_controlCount / m_processors : 0;
+
 	if( m_stereoLinkModel.value() )
 	{
-		for( int port = 0; port < m_controlCount / m_processors; port++ )
+		for( int port = 0; port < portCount; port++ )
 		{
 			applyLinkToPort( port, true );
 		}
 	}
 	else if( !m_noLink )
 	{
-		for( int port = 0; port < m_controlCount / m_processors; port++ )
+		for( int port = 0; port < portCount; port++ )
 		{
 			applyLinkToPort( port, false );
 		}

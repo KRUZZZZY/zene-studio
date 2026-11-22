@@ -24,6 +24,7 @@
 
 #include "VstPlugin.h"
 
+#include "PeMachineType.h"
 #include "communication.h"
 
 #include <QtEndian>
@@ -64,22 +65,8 @@
 #	include <X11/Xlib.h>
 #endif
 
-namespace PE
+namespace lmms::vst::PE
 {
-// Utilities for reading PE file machine type
-// See specification at https://msdn.microsoft.com/library/windows/desktop/ms680547(v=vs.85).aspx
-
-// Work around name conflict
-#ifdef i386
-#	undef i386
-#endif
-
-enum class MachineType : uint16_t
-{
-	unknown = 0x0,
-	amd64 = 0x8664,
-	i386 = 0x14c,
-};
 
 class FileInfo
 {
@@ -100,14 +87,7 @@ public:
 
 	MachineType machineType()
 	{
-		int32_t peOffset = qFromLittleEndian(* reinterpret_cast<int32_t*>(m_map + 0x3C));
-		uchar* peSignature = m_map + peOffset;
-		if (memcmp(peSignature, "PE\0\0", 4)) {
-			throw std::runtime_error("Invalid PE file");
-		}
-		uchar * coffHeader = peSignature + 4;
-		uint16_t machineType = qFromLittleEndian(* reinterpret_cast<uint16_t*>(coffHeader));
-		return static_cast<MachineType>(machineType);
+		return machineTypeOf(m_map, m_file.size());
 	}
 
 private:
@@ -115,7 +95,7 @@ private:
 	uchar* m_map;
 };
 
-} // namespace PE
+} // namespace lmms::vst::PE
 
 namespace lmms
 {
@@ -149,13 +129,13 @@ VstPlugin::VstPlugin( const QString & _plugin, RemotePluginAudioPortsController 
 #endif
 	{
 		try {
-			PE::FileInfo peInfo(m_plugin);
+			vst::PE::FileInfo peInfo(m_plugin);
 			switch (peInfo.machineType())
 			{
-			case PE::MachineType::amd64:
+			case vst::PE::MachineType::amd64:
 				pluginType = ExecutableType::Win64;
 				break;
-			case PE::MachineType::i386:
+			case vst::PE::MachineType::i386:
 				pluginType = ExecutableType::Win32;
 				break;
 			default:
@@ -261,14 +241,7 @@ void VstPlugin::loadSettings( const QDomElement & _this )
 	else if( num_params > 0 )
 	{
 		// no chunk, restore individual parameters
-		QMap<QString, QString> dump;
-		for( int i = 0; i < num_params; ++i )
-		{
-			const QString key = "param" +
-						QString::number( i );
-			dump[key] = _this.attribute( key );
-		}
-		setParameterDump( dump );
+		setParameterDump( savedParameterValues( _this ) );
 	}
 
 	// The audio ports (channel counts, pin connections) round-trip with the
@@ -383,15 +356,30 @@ const QMap<QString, QString> & VstPlugin::parameterDump()
 
 
 
-void VstPlugin::setParameterDump( const QMap<QString, QString> & _pdump )
+std::vector<VstParameterDumpValue> savedParameterValues( const QDomElement & _this )
+{
+	std::vector<VstParameterDumpValue> values;
+	const int num_params = _this.attribute( "numparams" ).toInt();
+	for( int i = 0; i < num_params; ++i )
+	{
+		const QString key = "param" + QString::number( i );
+		if( const auto value = parseParameterDumpEntry( _this.attribute( key ) ) )
+		{
+			values.push_back( *value );
+		}
+	}
+	return values;
+}
+
+void VstPlugin::setParameterDump( const std::vector<VstParameterDumpValue> & _values )
 {
 	message m( IdVstSetParameterDump );
-	m.addInt( _pdump.size() );
-	for (const auto& str : _pdump)
+	m.addInt( static_cast<int>( _values.size() ) );
+	for (const auto& value : _values)
 	{
 		const VstParameterDumpItem item =
 		{
-			str.section(':', 0, 0).toInt(), "", LocaleHelper::toFloat(str.section(':', 2, -1))
+			value.index, "", value.value
 		};
 		m.addInt( item.index );
 		m.addString( item.shortLabel );

@@ -253,12 +253,22 @@ int NotePlayHandle::midiKey() const
 
 
 
+SynthesisLoad* NotePlayHandle::synthesisLoad() noexcept
+{
+	return m_instrumentTrack != nullptr ? &m_instrumentTrack->synthesisLoad() : nullptr;
+}
+
+
+
+
 void NotePlayHandle::play( std::span<SampleFrame> buffer )
 {
 	if (m_muted)
 	{
 		return;
 	}
+	// Q050-074.1: the note's synthesis time, for its track's share of the period (two clock reads).
+	const SynthesisLoad::Probe synthesis(synthesisLoad());
 
 	// if the note offset falls over to next period, then don't start playback yet
 	if( offset() >= Engine::audioEngine()->framesPerPeriod() )

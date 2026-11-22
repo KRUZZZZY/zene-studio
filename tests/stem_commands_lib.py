@@ -123,6 +123,23 @@ def sha256_of(path):
     return digest.hexdigest()
 
 
+def wav_chunks(handle):
+    """(fmt payload, data chunk size) read off a WAV's chunk stream, either None."""
+    fmt = None
+    data_bytes = None
+    while True:
+        chunk_header = handle.read(8)
+        if len(chunk_header) < 8:
+            break
+        chunk_id, chunk_size = struct.unpack("<4sI", chunk_header)
+        payload = handle.read(chunk_size + (chunk_size & 1))
+        if chunk_id == b"fmt ":
+            fmt = payload
+        elif chunk_id == b"data":
+            data_bytes = chunk_size
+    return fmt, data_bytes
+
+
 def wav_facts(path):
     """(bytes, frames, audio_format, channels, rate, bits) of one WAV, or None."""
     if not os.path.isfile(path):
@@ -131,21 +148,10 @@ def wav_facts(path):
         header = handle.read(12)
         if len(header) != 12 or header[0:4] != b"RIFF" or header[8:12] != b"WAVE":
             return None
-        fmt = None
-        data_bytes = None
-        while True:
-            chunk_header = handle.read(8)
-            if len(chunk_header) < 8:
-                break
-            chunk_id, chunk_size = struct.unpack("<4sI", chunk_header)
-            payload = handle.read(chunk_size + (chunk_size & 1))
-            if chunk_id == b"fmt ":
-                fmt = payload
-            elif chunk_id == b"data":
-                data_bytes = chunk_size
-        if fmt is None or data_bytes is None:
-            return None
-        audio_format, channels, rate, _, _, bits = struct.unpack("<HHIIHH", fmt[:16])
+        fmt, data_bytes = wav_chunks(handle)
+    if fmt is None or data_bytes is None:
+        return None
+    audio_format, channels, rate, _, _, bits = struct.unpack("<HHIIHH", fmt[:16])
     return (os.path.getsize(path), data_bytes // (channels * (bits // 8)) if bits else 0,
             audio_format, channels, rate, bits)
 
@@ -325,7 +331,7 @@ def start_job(session, recorder, source, label):
     return started["job_id"]
 
 
-def poll_until(session, job_id, wanted, timeout=JOB_TIMEOUT):
+def poll_until(session, job_id, wanted, timeout=JOB_TIMEOUT, interval=POLL_INTERVAL):
     """Poll stem.job_status until the state is in `wanted`; returns (state, seen, seconds)."""
     deadline = time.time() + timeout
     seen = []
@@ -337,7 +343,7 @@ def poll_until(session, job_id, wanted, timeout=JOB_TIMEOUT):
             seen.append(state)
         if state in wanted:
             return state, seen, time.time() - started
-        time.sleep(POLL_INTERVAL)
+        time.sleep(interval)
     return (seen[-1] if seen else None), seen, time.time() - started
 
 
@@ -409,7 +415,8 @@ def check_cancel(session, recorder, source, outdir):
     job_id = start_job(session, recorder, source, "the cancel job")
     if job_id is None:
         return
-    state, seen, _ = poll_until(session, job_id, ("running",), timeout=60.0)
+    # Polled fast: the in-process backend can finish this source inside one POLL_INTERVAL.
+    state, seen, _ = poll_until(session, job_id, ("running",), timeout=60.0, interval=0.01)
     recorder.check("the slowed job reaches `running` (the cancel has a subject)",
                    state == "running", "state=%r seen=%r" % (state, seen))
     accepted, cancelled = session.ok_and_result("stem.job_cancel", {"job_id": job_id})

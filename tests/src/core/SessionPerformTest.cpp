@@ -156,6 +156,21 @@ private slots:
 		QCOMPARE(run(QStringLiteral("session.setlist_go")).errorKind, ControlErrorKind::NotFound);
 	}
 
+	//! A non-array 'items' (or a non-string entry) is refused before the handler runs, and the stored setlist is kept.
+	void aNonArraySetlistIsRefusedAndKeepsTheList()
+	{
+		QVERIFY(run(QStringLiteral("session.setlist"), {{QStringLiteral("items"), QJsonArray{QStringLiteral("/tmp/a.mmpz")}}}).ok);
+		const ControlResult notArray = run(QStringLiteral("session.setlist"), {{QStringLiteral("items"), QStringLiteral("project.mmp")}});
+		QCOMPARE(notArray.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(notArray.errorMessage.contains(QStringLiteral("items")));
+		const ControlResult notString = run(QStringLiteral("session.setlist"), {{QStringLiteral("items"), QJsonArray{1}}});
+		QCOMPARE(notString.errorKind, ControlErrorKind::InvalidArgs);
+		const QJsonArray kept = run(QStringLiteral("session.setlist")).result.value(QStringLiteral("items")).toArray();
+		QCOMPARE(kept.size(), 1);
+		QCOMPARE(kept.at(0).toString(), QStringLiteral("/tmp/a.mmpz"));
+		QVERIFY(run(QStringLiteral("session.setlist"), {{QStringLiteral("items"), QJsonArray{}}}).ok);  // leave the preference empty
+	}
+
 	void aMarkerRunsItsActionWhenCrossed()
 	{
 		const ControlResult added = run(QStringLiteral("marker.add"), {{QStringLiteral("tick"), 192}, {QStringLiteral("name"), QStringLiteral("Drop")}});

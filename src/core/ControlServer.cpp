@@ -41,6 +41,7 @@
 #include <QSocketNotifier>
 #include <QTimer>
 
+#include "ControlEventHub.h"
 #include "ControlRegistry.h"
 #include "ProvenanceSection.h"
 
@@ -163,6 +164,7 @@ ControlServer::ControlServer(ControlRegistry* registry, QObject* parent) :
 	m_clientSweep->setInterval(1000);
 	connect(m_clientSweep, &QTimer::timeout, this, &ControlServer::retireIdleClients);
 	m_clientSweep->start();
+	control::ControlEventHub::instance();  // Q050-334.1: the event sequence counts from here, subscribers or not
 }
 
 ControlServer::~ControlServer()
@@ -227,6 +229,7 @@ void ControlServer::onNewConnection()
 		::fcntl(fd, F_SETFL, O_NONBLOCK);
 		Client client;
 		client.fd = fd;
+		client.eventConnection = control::ControlEventHub::nextConnectionKey();
 		client.deadlineMs = monotonicNowMs() + ClientIdleTimeoutMs;
 		client.notifier = new QSocketNotifier(fd, QSocketNotifier::Read, this);
 		connect(client.notifier, &QSocketNotifier::activated, this, [this, fd]() { onClientReadable(fd); });
@@ -323,8 +326,12 @@ void ControlServer::retireIdleClients()
 #if defined(Q_OS_UNIX)
 	const qint64 now = monotonicNowMs();
 	QVector<int> expired;
-	for (auto it = m_clients.constBegin(); it != m_clients.constEnd(); ++it)
+	const control::ControlEventHub& hub = control::ControlEventHub::instance();
+	for (auto it = m_clients.begin(); it != m_clients.end(); ++it)
 	{
+		// Q050-334.1: a subscriber waits quietly for events by design. One stalled on a reply or event tail still
+		// times out, a full period after the sweep last saw its write path idle.
+		if (it->pending.isEmpty() && hub.isSubscribed(it->eventConnection)) { it->deadlineMs = now + ClientIdleTimeoutMs; }
 		if (it->deadlineMs <= now) { expired.append(it.key()); }
 	}
 	for (const int fd : expired) { dropClient(fd); }
@@ -391,6 +398,13 @@ bool ControlServer::dispatchPendingLines(int fd, QByteArray& buffer)
 			refuseOverCapLine(fd, false);
 			return false;
 		}
+		// Q050-334.1: events.* commands act for this connection while it is dispatched.
+		const quint64 eventConnection = m_clients.constFind(fd)->eventConnection;
+		control::ControlEventHub::Connection connection;
+		connection.key = eventConnection;
+		connection.owner = this;
+		connection.wake = [this, fd, eventConnection]() { postEventFlush(fd, eventConnection); };
+		const control::ControlEventHub::ConnectionScope eventScope(connection);
 		const QByteArray reply = dispatchLine(line);
 		if (!reply.isEmpty() && !sendBytes(fd, reply + '\n'))
 		{
@@ -415,6 +429,7 @@ void ControlServer::refuseOverCapLine(int fd, bool closed)
 	// The refusal goes out BEFORE the drain, and the drain is why it arrives:
 	// see Client::draining.
 	sendBytes(fd, refusal + '\n');
+	control::ControlEventHub::instance().connectionClosed(it->eventConnection);
 	it->draining = true;
 	it->buffer.clear();
 	it->buffer.squeeze();
@@ -433,6 +448,7 @@ void ControlServer::dropClient(int fd)
 #else
 	const auto it = m_clients.find(fd);
 	if (it == m_clients.end()) { return; }
+	control::ControlEventHub::instance().connectionClosed(it->eventConnection);
 	it->retire();
 	::close(it->fd);
 	m_clients.erase(it);
@@ -497,6 +513,7 @@ void ControlServer::onClientWritable(int fd)
 	}
 	if (it->pending.isEmpty()) { it->writeNotifier->setEnabled(false); }
 	it->deadlineMs = monotonicNowMs() + ClientIdleTimeoutMs;
+	if (it->pending.isEmpty()) { flushClientEvents(fd, it->eventConnection); }  // Q050-334.1: events waited behind it
 #endif
 }
 

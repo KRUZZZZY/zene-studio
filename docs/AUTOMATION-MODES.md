@@ -7,9 +7,16 @@ exact commands, exit codes and hashes).
 This closes the first of the roadmap-gap register's undocumented automation items
 ("Automation modes + sample-accurate automation", *Bar 2 documented gap with no task*, smallest
 honest version: Read/Touch/Latch/Write on volume/pan/sends/plugin params, with touch-timeout, trim
-offset, and sample-accurate volume/pan playback). Four of the five parts are implemented and
-proved; **sample-accurate playback is not, and is named as such below with the line that blocks
-it** — that half is the sibling engine gap the register already flags separately.
+offset, and sample-accurate volume/pan playback). The mode half is implemented and proved, as this
+page records.
+
+**Superseded 2026-10-30 (Q050-362):** the sample-accurate half was implemented after this page's
+2026-09-11 verification. Automation clips carrying a Linear or CubicHermite curve now ramp at sample
+precision by default; Discrete clips remain stepped and a CubicHermite curve is approximated as one
+straight segment per tick. Each per-block ramp holds 32 knots, surplus knots are refused and counted,
+and `automation.ramp_set` refuses a clip in a pattern. §4 item 1 below is the record of the tree as
+it was verified then; the current account is `docs/KNOWN-LIMITATIONS.md` §Sample-accurate automation
+and `docs/SAMPLE-ACCURATE-AUTOMATION.md`.
 
 ---
 
@@ -195,8 +202,9 @@ overwrites where the playhead reaches and cannot erase a node it never passed ov
 
 ## 4. What is NOT done
 
-1. **Sample-accurate playback of volume/pan — not implemented.** The evaluation path does not make
-   it reachable by a small change, and this is the precise blocker:
+1. **Sample-accurate playback of volume/pan — not implemented.** *(This is the 2026-09-11 record,
+   superseded 2026-10-30 (Q050-362) by the note at the top of this page.)* The evaluation path does not
+   make it reachable by a small change, and this is the precise blocker:
    - Automation is evaluated **once per tick**, not per frame: `src/core/Song.cpp:339`
      (`if (static_cast<f_cnt_t>(frameOffsetInTick) == 0)`) guards the call at `:342`, and the value
      reaches the control as a single `setValue` at `:474`. At 48 kHz / 140 bpm

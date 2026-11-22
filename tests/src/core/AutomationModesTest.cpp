@@ -902,6 +902,72 @@ private slots:
 		QCOMPARE(timeMapBits(rig.clip), before);
 	}
 
+	//! A recording automation clip whose target was removed has nothing to record
+	//! from. `AutomationClip::firstObject()` hands back a fallback model for such a
+	//! clip, and the render pass must not queue a write taken from it: the drain
+	//! would plant that fallback's value as nodes in a clip with no control.
+	//! Attaching a target again resumes recording, so the same harness is its own
+	//! inversion: it must queue writes once the target is back.
+	void testRecordingClipWithoutTargetWritesNothing()
+	{
+		auto* song = Engine::getSong();
+		Rig rig(song);
+		rig.writeCurve();
+		rig.clip.setRecording(true);
+		rig.clip.removeObject(&rig.volume);
+		QVERIFY(!rig.clip.hasObjects());
+
+		const auto before = timeMapBits(rig.clip);
+		const auto pendingBefore = rig.clip.pendingWriteCount();
+		playFromZero(song, 8);
+		QCOMPARE(rig.clip.pendingWriteCount(), pendingBefore);
+		QVERIFY(drainAutomationWrites(song));
+		QCOMPARE(timeMapBits(rig.clip), before);
+
+		// --- inversion: the same harness with a target must queue writes -------
+		rig.clip.addObject(&rig.volume);
+		playFromZero(song, 8);
+		QVERIFY2(rig.clip.pendingWriteCount() > pendingBefore,
+			"a recording clip with a target queued no write - the no-target assertion proves nothing");
+	}
+
+	//! The same contract when the target is destroyed rather than removed: a
+	//! deleted control leaves the clip through `objectDestroyed`, and the render
+	//! pass must not write for it. Its inversion attaches a live control again.
+	void testRecordingClipWhoseTargetIsDestroyedWritesNothing()
+	{
+		auto* song = Engine::getSong();
+		AutomationTrack track(song);
+		AutomationClip clip(&track);
+		clip.setProgressionType(AutomationClip::ProgressionType::Linear);
+		clip.putValue(0, 0.5f, false);
+		clip.putValue(96, 0.25f, false);
+		clip.putValue(192, 1.0f, false);
+		clip.changeLength(192);
+		clip.setRecording(true);
+
+		auto* doomed = new FloatModel(1.0f, 0.0f, 2.0f, 0.001f);
+		clip.addObject(doomed);
+		delete doomed;
+		QVERIFY(!clip.hasObjects());
+
+		const auto before = timeMapBits(clip);
+		const auto pendingBefore = clip.pendingWriteCount();
+		playFromZero(song, 8);
+		QCOMPARE(clip.pendingWriteCount(), pendingBefore);
+		QVERIFY(drainAutomationWrites(song));
+		QCOMPARE(timeMapBits(clip), before);
+
+		// --- inversion: a live target attached afterwards is recorded from ------
+		FloatModel replacement(1.0f, 0.0f, 2.0f, 0.001f);
+		clip.addObject(&replacement);
+		playFromZero(song, 8);
+		QVERIFY2(clip.pendingWriteCount() > pendingBefore,
+			"a recording clip with a live target queued no write - the no-target assertion proves nothing");
+		QVERIFY(drainAutomationWrites(song));
+		clip.removeObject(&replacement);
+	}
+
 	//! The realtime contract, stated as a test: the mode state the audio thread
 	//! reads must be lock-free, so `automationWantsWrite()` can never block on a
 	//! mutex. (The stored values are read with relaxed atomics on the render

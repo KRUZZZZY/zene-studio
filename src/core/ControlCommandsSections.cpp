@@ -1,5 +1,5 @@
 /*
- * ControlCommandsSections.cpp - section.add / set / remove / list / select
+ * ControlCommandsSections.cpp - section.add / set / remove / list / select / move
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -28,10 +28,13 @@
 #include <QColor>
 #include <QJsonArray>
 
+#include "ArrangementEdits.h"
 #include "ArrangementSections.h"
+#include "ClipGroupEdits.h"
 #include "ControlCommandDef.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
+#include "ControlEdit.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -140,6 +143,61 @@ ControlResult selectSection(const QJsonObject& args)
 	return ControlRegistry::instance()->invoke(QStringLiteral("range.set"), range);
 }
 
+//! With ripple, the other sections wholly inside the stretch the moved section passes go with their material.
+void shiftPassedSections(const arrangement::SectionMove& move, int movedId)
+{
+	for (const ArrangementSection& each : QVector<ArrangementSection>(ArrangementSections::instance().sections()))
+	{
+		const tick_t shift = move.shiftOf(each.start);
+		if (each.id == movedId || shift == 0 || move.shiftOf(each.end - 1) != shift) { continue; }
+		ArrangementSection passed = each;
+		passed.start += shift;
+		passed.end += shift;
+		ArrangementSections::instance().replace(each.id, passed);
+	}
+}
+
+//! Q050-219: gap unless 'mode' says otherwise or the arranger's ripple mode is on.
+bool rippleOf(const QJsonObject& args)
+{
+	if (args.contains(QStringLiteral("mode"))) { return args.value(QStringLiteral("mode")).toString() == QStringLiteral("ripple"); }
+	return arrangement::modes().ripple != arrangement::Ripple::Off;
+}
+
+ControlResult moveSection(const QJsonObject& args)
+{
+	const ArrangementSection* found = ArrangementSections::instance().find(sectionIndex(args));
+	if (found == nullptr) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no such section")); }
+	ArrangementSection moved = *found;
+	const QJsonObject before = sectionJson(moved);
+	const arrangement::SectionMove move{moved.start, moved.end, args.value(QStringLiteral("start")).toInt(), rippleOf(args)};
+	if (move.delta() == 0 || move.target < 0 || move.target + move.length() > MaxSongLength)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'start' is a new place for the section, inside the song"));
+	}
+	if (const Clip* locked = arrangement::firstLocked(arrangement::clipsTouchedBy(move)))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1 is locked against editing (track.set_locked / clip.set_locked unlocks it)").arg(clipIdOf(locked)));
+	}
+	QVector<Track*> tracks;
+	for (Track* track : Engine::getSong()->tracks()) { tracks.append(track); }
+	arrangement::checkpointTracks(tracks);
+	// The registry merges this checkpoint and the list's action below into the command's ONE step.
+	ControlResult result = recorded([&] {
+		if (move.ripple) { shiftPassedSections(move, moved.id); }
+		moved.start = move.target;
+		moved.end = move.target + move.length();
+		ArrangementSections::instance().replace(moved.id, moved);
+		QJsonObject reply = sectionJson(moved);
+		reply.insert(QStringLiteral("moved_clips"), arrangement::applySectionMove(move));
+		reply.insert(QStringLiteral("mode"), move.ripple ? QStringLiteral("ripple") : QStringLiteral("gap"));
+		return ControlResult::success(reply);
+	});
+	result.result.insert(QStringLiteral("__transaction"), transactionPayload(before, QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("Track checkpoints of every track and the section list, merged into one step")));
+	return result;
+}
+
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args, const QStringList& required,
 	bool mutating, ControlResult (*handler)(const QJsonObject&))
 {
@@ -162,6 +220,14 @@ void registerSectionCommands(ControlRegistry& registry)
 	change.insert(QStringLiteral("section"), stringProperty());
 	add(registry, "set", QStringLiteral("Move, resize, rename or recolour section 'section' (only the fields given change). One undo step."),
 		change, {QStringLiteral("section")}, true, setSection);
+	add(registry, "move", QStringLiteral("Move section 'section' to a new 'start' tick with the material inside it, on every track: clips crossing "
+		"its edges are cut there, the section keeps its length and name. 'mode' gap leaves everything else where it is (a gap at the "
+		"source; what lies at the destination stays and may overlap); ripple reorders the song - what the section passes moves the other "
+		"way by its length, closing the gap, and other sections wholly inside that stretch go with it. Without 'mode', arrangement.modes' "
+		"ripple decides. Markers, tempo and loop bounds stay. Refused while a clip it would touch is locked. One undo step."),
+		{{QStringLiteral("section"), stringProperty()}, {QStringLiteral("start"), tickProperty()},
+			{QStringLiteral("mode"), enumProperty({QStringLiteral("gap"), QStringLiteral("ripple")})}},
+		{QStringLiteral("section"), QStringLiteral("start")}, true, moveSection);
 	add(registry, "remove", QStringLiteral("Remove section 'section'. One undo step."), {{QStringLiteral("section"), stringProperty()}},
 		{QStringLiteral("section")}, true, removeSection);
 	add(registry, "select", QStringLiteral("Select section 'section' as the arranger's range (over 'tracks', or every track), so it can "

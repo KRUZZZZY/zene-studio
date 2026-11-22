@@ -49,6 +49,10 @@ constexpr auto RACK_ELEMENT = "rack";
 //! Version 2 adds macros and key/velocity zones as children of this element
 //! (0.3.0). Version 1 remains readable; unknown versions are retained opaque.
 constexpr auto RACK_VERSION = 2;
+//! The selection of a rack whose "selected" attribute names no chain (absent is not this case:
+//! it keeps the Parallel default). Such a selection wires nothing (docs/RACKS.md:143, Rack.h:137-142).
+//! Parallel cannot stand in, because it routes every chain.
+constexpr int kSelectionNamingNoChain = Rack::Parallel - 1;
 
 //! Whether a rack of @a chains chains and @a zones zones is on the signal path: two chains, or any zone.
 bool isOnPath(int chains, int zones)
@@ -416,13 +420,18 @@ void Rack::loadSettings(const QDomElement& element)
 		m_parallelChains.push_back(std::move(chain));
 	}
 
-	m_selectedChain = rack.attribute(QStringLiteral("selected"), QString::number(Parallel)).toInt();
+	// A "selected" that is not an int (or overflows one) names no chain and wires nothing. Readers that
+	// already tolerate a negative non-Parallel value: DevicePanel.cpp:171-179, MixerStrip.cpp:275-285,
+	// ControlRackSupport.cpp:240, ControlCommandsRack.cpp:344-371, Rack.cpp:188-209.
+	bool selectedOk = false;
+	const int selected = rack.attribute(QStringLiteral("selected"), QString::number(Parallel)).toInt(&selectedOk);
+	m_selectedChain = selectedOk ? selected : kSelectionNamingNoChain;
 	m_split.load(rack);
 	// Additive since 0.3.0: a version-1 element has no <macro> or <zone>
 	// children and both load empty, which is what a rack with neither already
 	// is. Both clear themselves first, so a reload never accumulates.
 	m_macros.loadSettings(rack);
-	m_zones.loadSettings(rack);
+	m_zones.loadSettings(rack, chainCount());
 	rebuildRoutingGraph();
 }
 

@@ -27,6 +27,7 @@
 #define LMMS_VST_MIDI_EVENT_BATCH_H
 
 #include <cstddef>
+#include <cstring>
 #include <vector>
 
 namespace lmms::vst
@@ -76,6 +77,31 @@ bool appendBounded(std::vector<Event>& queue, const Event& event, std::size_t ca
 	}
 	queue.push_back(event);
 	return true;
+}
+
+//! Zeroes \a outputCount channel-major planar output planes of \a frames floats each.
+/*!
+ * RemoteVstPlugin::process() hands the caller a shared block of output planes
+ * the caller may have filled in a previous period. When a period cannot run
+ * (the shared-memory lock is contended or the block is invalid) the process
+ * must still hand back silence instead of that stale sample, so every early
+ * return silences with this. \a outputCount is the base class's cached count,
+ * not the live plugin count: the live count can be larger than the host's block
+ * after a refused audioMasterIOChanged, and zeroing the live planes would
+ * write past the end. A null pointer, a non-positive count or zero frames is
+ * left untouched.
+ */
+inline void silenceOutputPlanes(float* outputs, int outputCount, std::size_t frames)
+{
+	if (outputs == nullptr || outputCount <= 0 || frames == 0)
+	{
+		return;
+	}
+	for (int ch = 0; ch < outputCount; ++ch)
+	{
+		std::memset(outputs + static_cast<std::size_t>(ch) * frames, 0,
+			frames * sizeof(float));
+	}
 }
 
 } // namespace lmms::vst

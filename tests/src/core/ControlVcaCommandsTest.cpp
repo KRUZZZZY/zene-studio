@@ -194,6 +194,32 @@ private slots:
 		evidence(QStringLiteral("junk_cases=%1 all_typed=1 groups_created=0").arg(junk.size()));
 	}
 
+	//! A stale channel position cannot crash either read that serializes group state.
+	void staleMembersAreSkippedFromStateReads()
+	{
+		clearGroups();
+		Mixer* mixer = Engine::mixer();
+		VcaGroup* group = mixer->createVcaGroup(QStringLiteral("Stale"));
+		QVERIFY(group != nullptr);
+		QVERIFY(group->addMember(1));
+		QVERIFY(group->addMember(static_cast<mix_ch_t>(mixer->numChannels())));
+		const QString groupId = QStringLiteral("vca-%1").arg(group->id());
+
+		const ControlResult state = run(QStringLiteral("vca.get_state"), {{QStringLiteral("group"), groupId}});
+		QVERIFY2(state.ok, qPrintable(state.errorMessage));
+		QCOMPARE(state.result.value(QStringLiteral("member_count")).toInt(), 1);
+		QCOMPARE(state.result.value(QStringLiteral("members")).toArray().size(), 1);
+		QCOMPARE(state.result.value(QStringLiteral("members")).toArray().first().toObject()
+			.value(QStringLiteral("channel")).toString(), channelId(1));
+
+		const ControlResult listed = run(QStringLiteral("vca.list"));
+		QVERIFY2(listed.ok, qPrintable(listed.errorMessage));
+		const QJsonArray groups = listed.result.value(QStringLiteral("groups")).toArray();
+		QCOMPARE(groups.size(), 1);
+		QCOMPARE(groups.first().toObject().value(QStringLiteral("member_count")).toInt(), 1);
+		QVERIFY(mixer->deleteVcaGroup(group->id()));
+	}
+
 	// -- 3. the measured effect --------------------------------------------
 
 	//! The fader SCALES: the members' published gain follows the group, and not

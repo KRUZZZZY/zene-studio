@@ -314,6 +314,13 @@ private slots:
 		}
 	}
 
+	//! A zero base velocity is invalid but must not reach an integer divide by zero.
+	void releaseVelocityFromMidiHandlesZeroBaseVelocity()
+	{
+		using namespace lmms;
+		QCOMPARE( Note::releaseVelocityFromMidi( 96, 0 ), 0 );
+	}
+
 };
 
 QTEST_GUILESS_MAIN(MpeInputPathTest)

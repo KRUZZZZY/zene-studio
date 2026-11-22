@@ -48,8 +48,8 @@ public:
 		update();
 	}
 
-	void setLabel(const QString &label) { m_label = label; }
-	
+	void setLabel(const QString &label);
+
 	void setSeamless(bool left, bool right)
 	{
 		m_wholeDisplay.setSeamless(left, true);
@@ -71,11 +71,13 @@ protected:
 
 private:
 	void layoutSetup(const QString &style = QString("19green"));
+	void updateSize();
 	void enterValue();
 	float getStep() const;
 
 	LcdWidget m_wholeDisplay;
 	LcdWidget m_fractionDisplay;
+	int m_fieldWidth = 0;
 	bool m_mouseMoving;
 	bool m_intStep;
 	QPoint m_origMousePos;

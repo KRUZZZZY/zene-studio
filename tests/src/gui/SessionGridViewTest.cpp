@@ -472,6 +472,26 @@ private slots:
 		QVERIFY(view.undoReplaceButton()->isHidden());
 	}
 
+	//! Q050-489: Clear Cell on a PLAYING cell stops it - the launcher follows the grid - and the undo puts the clip
+	//! back without launching it.
+	void clearingAPlayingCellFromItsMenuStopsIt()
+	{
+		SessionGridView view;
+		view.refresh();
+		QTest::mouseClick(view.cellButton(1, 0), Qt::LeftButton);
+		QTRY_COMPARE_WITH_TIMEOUT(playingScene(1), 0, 3000);
+		QMenu menu;
+		view.populateMenu(&menu, view.cellButton(1, 0));
+		menuAction(&menu, {QStringLiteral("Clear Cell")})->trigger();
+		QVERIFY(slotState(1, 0).isEmpty());
+		QTRY_COMPARE_WITH_TIMEOUT(playingScene(1), -1, 3000);
+		QTRY_VERIFY_WITH_TIMEOUT(!view.cellButton(1, 0)->isChecked(), 3000);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(slotState(1, 0).value(QStringLiteral("name")).toString(), QStringLiteral("bass"));
+		QTest::qWait(100);
+		QCOMPARE(playingScene(1), -1);
+	}
+
 };
 
 QTEST_MAIN(SessionGridViewTest)

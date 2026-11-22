@@ -47,6 +47,7 @@
 #include "ProjectJournal.h"
 #include "RecordingRecoveryMenu.h"
 #include "SampleClip.h"
+#include "SampleDecoder.h"
 #include "SampleTrack.h"
 #include "Song.h"
 
@@ -59,8 +60,8 @@ namespace
 constexpr int kRate = 44100;
 constexpr int kFrames = 22050;
 
-//! A 16-bit mono WAV of @a frames frames of a quiet square wave.
-bool writeWav(const QString& path, int frames)
+//! A mono WAV of @a frames frames of a quiet square wave, 16 bits unless \a bitsPerSample says otherwise.
+bool writeWav(const QString& path, int frames, quint16 bitsPerSample = 16)
 {
 	QFile file(path);
 	if (!file.open(QIODevice::WriteOnly)) { return false; }
@@ -69,7 +70,7 @@ bool writeWav(const QString& path, int frames)
 	const quint32 data = static_cast<quint32>(frames) * 2;
 	out.writeRawData("RIFF", 4); out << quint32(36 + data);
 	out.writeRawData("WAVEfmt ", 8); out << quint32(16) << quint16(1) << quint16(1) << quint32(kRate)
-		<< quint32(kRate * 2) << quint16(2) << quint16(16);
+		<< quint32(kRate * 2) << quint16(2) << quint16(bitsPerSample);
 	out.writeRawData("data", 4); out << data;
 	for (int i = 0; i < frames; ++i) { out << qint16((i / 50) % 2 ? 3000 : -3000); }
 	return true;
@@ -454,6 +455,67 @@ private slots:
 		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore);
 		QCOMPARE(journalState(journal), QStringLiteral("in_progress"));
 		QCOMPARE(history->undoDepth(), undoDepthBefore);
+		QVERIFY(run(QStringLiteral("record.recovery_discard"), {{QStringLiteral("take"), take}}).ok);
+		QFile::remove(take);
+	}
+
+	//! A take the header measures but no decoder loads is refused, typed, and leaves nothing behind: no track, no undo
+	//! step, the journal still offered. The clip took a file that did not load, so the track used to be reported as
+	//! placed with no audio in it.
+	void aTakeThatDoesNotDecodeIsNotPlaced()
+	{
+		const QString dir = run(QStringLiteral("record.recovery_get_state")).result.value(QStringLiteral("dir")).toString();
+		const QString take = QDir(dir).filePath(QStringLiteral("zene-test-take-undecodable.wav"));
+		// The fmt chunk declares no bits per sample: the header still measures kFrames frames, so the placement is
+		// reached, and every decoder refuses the file.
+		QVERIFY(writeWav(take, kFrames, 0));
+		QVERIFY(run(QStringLiteral("record.journal_begin"), {{QStringLiteral("take"), take},
+			{QStringLiteral("sample_rate"), kRate}, {QStringLiteral("channels"), 1}}).ok);
+		QVERIFY(run(QStringLiteral("record.journal_update"), {{QStringLiteral("take"), take},
+			{QStringLiteral("frames_on_disk"), kFrames}}).ok);
+		QVERIFY(!SampleDecoder::decode(take).has_value());
+		const QString journal = take + QStringLiteral(".rec-journal");
+		const auto tracksBefore = Engine::getSong()->tracks().size();
+		ProjectJournal* history = Engine::projectJournal();
+		QVERIFY(history != nullptr);
+		const int undoDepthBefore = history->undoDepth();
+
+		const ControlResult placed = run(QStringLiteral("record.recovery_place"), {{QStringLiteral("take"), take}});
+		QVERIFY(!placed.ok);
+		QCOMPARE(placed.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore);
+		QCOMPARE(history->undoDepth(), undoDepthBefore);
+		QCOMPARE(journalState(journal), QStringLiteral("in_progress"));
+		QVERIFY(run(QStringLiteral("record.recovery_discard"), {{QStringLiteral("take"), take}}).ok);
+		QFile::remove(take);
+	}
+
+	//! A first placement that cannot land the take is refused and records no undo step. The undo step is recorded as it
+	//! is made, so a placement that fails after recording one left control.undo a step that removes nothing.
+	void aPlaceThatCannotLandRecordsNoUndoStep()
+	{
+		const QString dir = run(QStringLiteral("record.recovery_get_state")).result.value(QStringLiteral("dir")).toString();
+		const QString take = QDir(dir).filePath(QStringLiteral("zene-test-take-no-land.wav"));
+		QVERIFY(writeWav(take, kFrames));
+		QVERIFY(run(QStringLiteral("record.journal_begin"), {{QStringLiteral("take"), take},
+			{QStringLiteral("sample_rate"), kRate}, {QStringLiteral("channels"), 1}}).ok);
+		QVERIFY(run(QStringLiteral("record.journal_update"), {{QStringLiteral("take"), take},
+			{QStringLiteral("frames_on_disk"), kFrames}}).ok);
+		const QString journal = take + QStringLiteral(".rec-journal");
+		const auto tracksBefore = Engine::getSong()->tracks().size();
+		ProjectJournal* history = Engine::projectJournal();
+		QVERIFY(history != nullptr);
+		const int undoDepthBefore = history->undoDepth();
+
+		// The seam is set only around the placement, and reset before any assertion can return early.
+		control::setRecoveredTakeFailsForTest(true);
+		const ControlResult placed = run(QStringLiteral("record.recovery_place"), {{QStringLiteral("take"), take}});
+		control::setRecoveredTakeFailsForTest(false);
+		QVERIFY(!placed.ok);
+		QCOMPARE(placed.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore);
+		QCOMPARE(history->undoDepth(), undoDepthBefore);
+		QCOMPARE(journalState(journal), QStringLiteral("in_progress"));
 		QVERIFY(run(QStringLiteral("record.recovery_discard"), {{QStringLiteral("take"), take}}).ok);
 		QFile::remove(take);
 	}

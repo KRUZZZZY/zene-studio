@@ -215,9 +215,15 @@ ControlResult handleRenderOffline(const QJsonObject& args)
 	const std::uint32_t repeats = args.contains(QStringLiteral("repeats"))
 		? static_cast<std::uint32_t>(args.value(QStringLiteral("repeats")).toInt())
 		: 2u;
-	const float sampleRate = args.contains(QStringLiteral("sample_rate"))
-		? static_cast<float>(args.value(QStringLiteral("sample_rate")).toDouble())
-		: 48000.0f;
+	// The rate is checked before it is converted to the module's float: a rate
+	// outside the float range or not positive is refused, not rendered.
+	float sampleRate = 48000.0f;
+	const ControlResult rate = readSampleRateArgument(args, 48000.0f, &sampleRate);
+	if (!rate.ok)
+	{
+		return ControlResult::failure(rate.errorKind,
+			wasmNotFound(QStringLiteral("wasm.render_offline"), rate.errorMessage));
+	}
 	const bool callerInput = args.contains(QStringLiteral("input"));
 	std::vector<float> input = rampInput(frames);
 	// The caller's samples are read through the ONE reader both sample-taking

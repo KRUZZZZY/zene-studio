@@ -73,6 +73,11 @@ using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
 namespace
 {
 
+void releaseDefaultTakeIfOmitted(const QJsonObject& args, const QString& path)
+{
+	if (args.value(QStringLiteral("file")).toString().isEmpty()) { releaseDefaultTake(path); }
+}
+
 //! The live recorder, or nullptr when this instance has no audio engine at all
 //! (a headless render, or an instance that came up without a device).
 MultiTrackRecorder* liveRecorder()
@@ -211,6 +216,7 @@ ControlResult armTrack(const QJsonObject& args)
 	const int channel = channelArg(args, route, target);
 	if (!target.inputChannelSelectable(channel))
 	{
+		releaseDefaultTakeIfOmitted(args, file);
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("input_channel %1 is outside [0, %2): this instance's capture path "
 				"delivers %2 channel(s) (record.input_get_state reports whether a capture device "
@@ -223,6 +229,13 @@ ControlResult armTrack(const QJsonObject& args)
 	const QJsonObject before = routeJson(target, route);
 	if (!recorder->armTrack(route, file.toStdString(), sampleRate, channel))
 	{
+		// Explicit file (new-p17-24): a failed arm truncates nothing new and
+		// leaves nothing to release. Default file: the allocator reserved
+		// this path exclusively above - release only that reservation.
+		if (args.value(QStringLiteral("file")).toString().isEmpty())
+		{
+			releaseDefaultTake(file);
+		}
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("route %1 could not be armed: the take file %2 could not be opened "
 				"for writing, or the route is already armed").arg(route).arg(file));
@@ -254,11 +267,11 @@ ControlResult disarmTrack(const QJsonObject& args)
 
 	TrackRecorder& target = recorder->track(route);
 	const bool wasArmed = target.isArmed();
-	target.disarm();
+	const bool retired = target.disarm();
 
 	QJsonObject result = armedReply(target, route);
 	result.insert(QStringLiteral("armed_before"), wasArmed);
-	result.insert(QStringLiteral("journal_retired"), wasArmed);
+	result.insert(QStringLiteral("journal_retired"), retired);
 	return ControlResult::success(result);
 }
 

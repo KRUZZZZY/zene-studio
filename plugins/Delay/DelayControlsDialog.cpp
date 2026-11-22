@@ -87,8 +87,8 @@ XyPad::XyPad(QWidget *parent, FloatModel *xModel, FloatModel *yModel) :
 	m_yModel( yModel ),
 	m_acceptInput( false )
 {
-	connect( m_xModel, SIGNAL( dataChanged() ) , this, SLOT( update() ) );
-	connect( m_yModel, SIGNAL( dataChanged() ) , this, SLOT( update() ) );
+	if (m_xModel) { connect( m_xModel, SIGNAL( dataChanged() ) , this, SLOT( update() ) ); }
+	if (m_yModel) { connect( m_yModel, SIGNAL( dataChanged() ) , this, SLOT( update() ) ); }
 }
 
 
@@ -96,7 +96,7 @@ XyPad::XyPad(QWidget *parent, FloatModel *xModel, FloatModel *yModel) :
 
 void XyPad::paintEvent(QPaintEvent *event)
 {
-	if (width() <= 0 || height() <= 0) { return; }
+	if (width() <= 0 || height() <= 0 || !m_xModel || !m_yModel) { return; }
 
 	QPainter painter( this );
 		//Draw Frequecy maker lines
@@ -138,7 +138,7 @@ void XyPad::mouseReleaseEvent(QMouseEvent *event)
 
 void XyPad::mouseMoveEvent(QMouseEvent *event)
 {
-	if (width() <= 0 || height() <= 0) { return; }
+	if (width() <= 0 || height() <= 0 || !m_xModel || !m_yModel) { return; }
 
 	const auto pos = position(event);
 

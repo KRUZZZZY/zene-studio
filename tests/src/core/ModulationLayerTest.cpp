@@ -518,6 +518,73 @@ private slots:
 		QCOMPARE(loaded.modulator(1)->source.perVoice, false);
 	}
 
+	//! Cluster 5184: a route's channel, chain, effect or track that is not a number
+	//! is a corrupt block. toInt() returned 0 and quietly routed the modulator to
+	//! channel, chain or effect zero, an address nobody authored.
+	void aMalformedRouteAddressIsRefused_data()
+	{
+		QTest::addColumn<QString>("field");
+		QTest::newRow("channel") << QStringLiteral("channel");
+		QTest::newRow("chain") << QStringLiteral("chain");
+		QTest::newRow("effect") << QStringLiteral("effect");
+		QTest::newRow("track") << QStringLiteral("track");
+	}
+
+	void aMalformedRouteAddressIsRefused()
+	{
+		QFETCH(QString, field);
+		ModulationLayer layer;
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("modulation-layer"));
+		doc.appendChild(root);
+		QDomElement bad = doc.createElement(QStringLiteral("modulator"));
+		bad.setAttribute(QStringLiteral("name"), QStringLiteral("Broken"));
+		bad.setAttribute(QStringLiteral("shape"), QStringLiteral("sine"));
+		bad.setAttribute(QStringLiteral("rate"), QStringLiteral("1"));
+		QDomElement route = doc.createElement(QStringLiteral("route"));
+		route.setAttribute(QStringLiteral("channel"), kChannel);
+		route.setAttribute(QStringLiteral("chain"), kDrivenChain);
+		route.setAttribute(QStringLiteral("effect"), 0);
+		route.setAttribute(QStringLiteral("parameter"), QStringLiteral("Gain"));
+		route.setAttribute(QStringLiteral("depth"), QStringLiteral("0.5"));
+		route.setAttribute(field, QStringLiteral("bad"));
+		bad.appendChild(route);
+		root.appendChild(bad);
+		QCOMPARE(layer.loadSettings(root), false);
+		QCOMPARE(layer.modulatorCount(), 0);
+	}
+
+	//! An absent route address keeps its documented default (channel, chain and
+	//! effect 0, track -1). A nameless route is ignored whatever its address says,
+	//! so the otherwise valid modulator still loads.
+	void aRouteAddressAbsentKeepsItsDefault()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("modulation-layer"));
+		doc.appendChild(root);
+		QDomElement block = doc.createElement(QStringLiteral("modulator"));
+		block.setAttribute(QStringLiteral("name"), QStringLiteral("Bare"));
+		block.setAttribute(QStringLiteral("shape"), QStringLiteral("sine"));
+		block.setAttribute(QStringLiteral("rate"), QStringLiteral("1"));
+		QDomElement route = doc.createElement(QStringLiteral("route"));
+		route.setAttribute(QStringLiteral("parameter"), QStringLiteral("Gain"));
+		route.setAttribute(QStringLiteral("depth"), QStringLiteral("0.5"));
+		block.appendChild(route);
+		QDomElement nameless = doc.createElement(QStringLiteral("route"));
+		nameless.setAttribute(QStringLiteral("channel"), QStringLiteral("bad"));
+		block.appendChild(nameless);
+		root.appendChild(block);
+
+		ModulationLayer layer;
+		QVERIFY(layer.loadSettings(root));
+		QCOMPARE(layer.modulatorCount(), 1);
+		QCOMPARE(layer.modulator(0)->routeCount(), 1);
+		QCOMPARE(layer.modulator(0)->routes.front().channel, 0);
+		QCOMPARE(layer.modulator(0)->routes.front().chain, 0);
+		QCOMPARE(layer.modulator(0)->routes.front().effect, 0);
+		QCOMPARE(layer.modulator(0)->routes.front().track, -1);
+	}
+
 
 	//! Cluster 1530: every step value survives save and reload EXACTLY. Six
 	//! significant digits is not enough to round-trip a float, so a step like
@@ -596,6 +663,47 @@ private slots:
 		float output = 0.0f;
 		lfo->fillLevel(&output, 1, std::numeric_limits<f_cnt_t>::max(), 1);
 		QVERIFY2(std::isfinite(output), "random LFO rendered an uninitialized sample");
+	}
+
+	//! Cluster new-p16-139: a track route (track >= 0) names an instrument parameter
+	//! by its track and display name alone - channel, chain and effect are unused for
+	//! it. findRoute compared those unused fields too, so two track routes on the same
+	//! parameter that differed only there both passed duplicate detection and resolved
+	//! to the same model. Rack routes keep the full address.
+	void aTrackRouteIsFoundByItsTrackAndParameterAlone()
+	{
+		ModulationLayer layer;
+		const int sine = layer.addModulator(QStringLiteral("Wobble"), sineAt(1.0f, 0.0f, false));
+		ModulationRoute bound = routeOf("Cutoff", 0.5f);
+		bound.channel = -1;
+		bound.chain = 0;
+		bound.effect = 0;
+		bound.track = 7;
+		QCOMPARE(layer.addRoute(sine, bound), 0);
+
+		// The same track and parameter with other unused fields is the same binding.
+		ModulationRoute again = bound;
+		again.channel = 3;
+		again.chain = 2;
+		again.effect = 5;
+		again.depth = -0.25f;
+		QVERIFY(layer.findRoute(again) != nullptr);
+
+		// The same parameter name on another track is a different binding.
+		ModulationRoute otherTrack = bound;
+		otherTrack.track = 8;
+		QVERIFY(layer.findRoute(otherTrack) == nullptr);
+
+		// A rack route with that display name is not the track's parameter.
+		QVERIFY(layer.findRoute(routeOf("Cutoff", 0.5f)) == nullptr);
+
+		// Rack routes still bind by the full rack address: another channel is another binding.
+		ModulationRoute rack = routeOf("Gain", 0.5f);
+		QCOMPARE(layer.addRoute(sine, rack), 1);
+		ModulationRoute otherChannel = rack;
+		otherChannel.channel = rack.channel + 1;
+		QVERIFY(layer.findRoute(otherChannel) == nullptr);
+		QVERIFY(layer.findRoute(rack) != nullptr);
 	}
 };
 

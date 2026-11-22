@@ -49,7 +49,11 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QResizeEvent>
 #include <QScrollArea>
+#include <QScrollBar>
+#include <QResizeEvent>
+#include <QSplitter>
 #include <QStyle>
 #include <QKeyEvent>
 #include <QStackedLayout>
@@ -72,11 +76,13 @@
 #include "MixerStripInfo.h"
 #include "MixerStripTags.h"
 #include "MixerViewOptions.h"
+#include "MixerZones.h"
 #include "Mixer.h"
 #include "MixerChannelView.h"
 #include "PatternStore.h"
 #include "SampleTrack.h"
 #include "SendButtonIndicator.h"
+#include "ShellSelection.h"
 #include "Song.h"
 #include "SubWindow.h"
 #include "TrackContainer.h" // For TrackContainer::TrackList typedef
@@ -84,7 +90,6 @@
 
 namespace lmms::gui
 {
-
 
 MixerView::MixerView(Mixer* mixer) :
 	QWidget(),
@@ -110,14 +115,41 @@ MixerView::MixerView(Mixer* mixer) :
 	outer->setSpacing(0);
 	m_modeBar = new MixerModeBar(this);
 	connect(m_modeBar, &MixerModeBar::changed, this, &MixerView::syncWithMixer, Qt::QueuedConnection);
+	// MX-021: with following on, a new arranger selection re-lays the Selected filter's strips.
+	connect(ShellSelection::instance(), &ShellSelection::changed, this, &MixerView::syncWithMixer, Qt::QueuedConnection);
+	// The grouped mode layout supplies heightForWidth, so every control stays visible.
 	outer->addWidget(m_modeBar);
 	m_sendsBanner = new MixerSendsBanner(this);
 	outer->addWidget(m_sendsBanner);
-	auto ml = new QHBoxLayout;
-	outer->addLayout(ml, 1);
 
-	// Set margins
+	// Q050-227.1: the body is one horizontal splitter of dockable regions, so every boundary is a
+	// separator the user can drag. The channels' own dock keeps the scrolling area and the add
+	// buttons together, which is why a separator never falls between them.
+	m_zoneSplitter = new QSplitter(Qt::Horizontal, this);
+	m_zoneSplitter->setObjectName(QStringLiteral("mixerZones"));
+	m_zoneSplitter->setChildrenCollapsible(false);
+	m_zoneSplitter->setHandleWidth(3);
+	outer->addWidget(m_zoneSplitter, 1);
+	m_zoneParking = new QWidget(this);
+	m_zoneParking->setObjectName(QStringLiteral("mixerZoneParking"));
+	m_zoneParking->hide();
+	m_middleHost = new QWidget(this);
+	m_middleHost->setObjectName(QStringLiteral("mixerChannelsDock"));
+	auto ml = new QHBoxLayout(m_middleHost);
 	ml->setContentsMargins(0, 4, 0, 0);
+	ml->setSpacing(0);
+
+	// A docked region's host gives it the top margin the body always had, whatever side it is on.
+	const auto dockHost = [this](const QString& id, QWidget* content) {
+		auto* host = new QWidget(this);
+		host->setObjectName(QStringLiteral("mixerZone_") + id);
+		auto* box = new QVBoxLayout(host);
+		box->setContentsMargins(0, 4, 0, 0);
+		box->setSpacing(0);
+		box->addWidget(content);
+		m_zoneHosts.insert(id, host);
+		return host;
+	};
 
 	// Channel area
 	m_channelAreaWidget = new QWidget;
@@ -142,8 +174,6 @@ MixerView::MixerView(Mixer* mixer) :
 
 	m_racksLayout->addWidget(m_mixerChannelViews[0]->m_effectRackView);
 
-	ml->addWidget(masterView, 0);
-
 	auto mixerChannelSize = masterView->sizeHint();
 
 	// add mixer channels
@@ -159,27 +189,30 @@ MixerView::MixerView(Mixer* mixer) :
 	class ChannelArea : public QScrollArea
 	{
 		public:
-			ChannelArea(QWidget* parent, MixerView* mv) :
-				QScrollArea(parent), m_mv(mv) { setAccessibleName(MixerView::tr("Mixer channels")); } // R8.5
+			ChannelArea(QWidget* parent, MixerView* mv, int preferredWidth) :
+				QScrollArea(parent), m_mv(mv), m_preferredWidth(preferredWidth) { setAccessibleName(MixerView::tr("Mixer channels")); } // R8.5
 			~ChannelArea() override = default;
 			void keyPressEvent(QKeyEvent* e) override
 			{
 				m_mv->keyPressEvent(e);
 			}
+			//! Six strips is the width it asks for, not a minimum (gui-1030).
+			QSize sizeHint() const override { return QScrollArea::sizeHint().expandedTo({m_preferredWidth, 0}); }
 		private:
 			MixerView* m_mv;
+			int m_preferredWidth;
 	};
-	channelArea = new ChannelArea(this, this);
+	channelArea = new ChannelArea(this, this, mixerChannelSize.width() * 6);
 	channelArea->setWidget(m_channelAreaWidget);
 	channelArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 	channelArea->setFrameStyle(QFrame::NoFrame);
-	channelArea->setMinimumWidth(mixerChannelSize.width() * 6);
+	// gui-1030: the strips scroll, so one strip is all a narrow panel must keep; six were reserved before
+	// and pushed the add buttons and the rack beside them off a 1024-pixel screen.
+	channelArea->setMinimumWidth(mixerChannelSize.width());
 	channelArea->setWidgetResizable(true);
 
 	int const scrollBarExtent = style()->pixelMetric(QStyle::PM_ScrollBarExtent);
 	channelArea->setMinimumHeight(mixerChannelSize.height() + scrollBarExtent);
-
-	ml->addWidget(channelArea, 1);
 
 	// M3.7: the VCA groups' strips (hidden while the mix has none).
 	m_vcaArea = new QWidget(this);
@@ -188,7 +221,6 @@ MixerView::MixerView(Mixer* mixer) :
 	m_vcaLayout = new QHBoxLayout(m_vcaArea);
 	m_vcaLayout->setContentsMargins(0, 0, 0, 0);
 	m_vcaLayout->setSpacing(0);
-	ml->addWidget(m_vcaArea, 0);
 
 	// show the add new mixer channel button
 	auto newChannelBtn = new QPushButton(embed::getIconPixmap("new_channel"), QString(), this);
@@ -218,11 +250,50 @@ MixerView::MixerView(Mixer* mixer) :
 		if (created.ok) { setCurrentMixerChannel(created.result.value(QStringLiteral("index")).toInt()); }
 	});
 	addLayout->addWidget(newReturnBtn, 0);
-	ml->addWidget(addColumn, 0);
 
+	// Q050-227.1: the four regions, each in its own dock host. The channels' dock keeps the scroll
+	// area and the add buttons; a separator therefore never falls inside it. Docking, the order and
+	// the widths all come from the one layout state, so a restore and a menu choice end in the same
+	// relayoutZones() call.
+	m_zoneHosts.insert(QStringLiteral("master"), dockHost(QStringLiteral("master"), masterView));
+	m_zoneHosts.insert(QStringLiteral("channels"), m_middleHost);
+	// Q050-227.2: the pinned strips, left of the scrolling channels and never scrolled away; hidden until a strip is pinned.
+	m_pinnedArea = new QWidget(this);
+	m_pinnedArea->setObjectName(QStringLiteral("mixerPinnedStrips"));
+	m_pinnedArea->setAccessibleName(tr("Pinned mixer channels"));
+	m_pinnedLayout = new QHBoxLayout(m_pinnedArea);
+	m_pinnedLayout->setContentsMargins(0, 0, 0, 0);
+	m_pinnedLayout->setSpacing(0);
+	m_pinnedLayout->setAlignment(Qt::AlignLeft);
+	m_pinnedArea->hide();
+	ml->addWidget(m_pinnedArea, 0);
+	ml->addWidget(channelArea, 1);
+	ml->addWidget(addColumn, 0);
+	m_zoneHosts.insert(QStringLiteral("vca"), dockHost(QStringLiteral("vca"), m_vcaArea));
 
 	// add the stacked layout for the effect racks of mixer channels
-	ml->addWidget(m_racksWidget);
+	m_zoneHosts.insert(QStringLiteral("rack"), dockHost(QStringLiteral("rack"), m_racksWidget));
+
+	for (QWidget* host : m_zoneHosts) { host->setParent(m_zoneParking); }
+	m_zoneSplitter->addWidget(m_middleHost);
+	relayoutZones();
+	connect(mixerzones::MixerZoneState::instance(), &mixerzones::MixerZoneState::changed,
+		this, &MixerView::relayoutZones);
+	// Q050-227.2: a pin or unpin re-lays the strips between the pinned area and the scrolling channels.
+	connect(mixerzones::MixerZoneState::instance(), &mixerzones::MixerZoneState::pinsChanged,
+		this, &MixerView::relayoutPins);
+	relayoutPins();
+	// A drag writes its widths back THROUGH THE REGISTERED COMMAND - the same window.mixer_zones an agent
+	// calls - with 'live': true so the command records them without re-laying the splitter under the
+	// mouse. The state then lives with the layout and is saved with the project. A relayout's own
+	// setSizes() is not a gesture and is skipped.
+	connect(m_zoneSplitter, &QSplitter::splitterMoved, this, [this] {
+		if (m_applyingZones) { return; }
+		// A refused report (typed, never silent) leaves the state as it was; the next sync pass refreshes the
+		// mode bar's Zones chip from whatever the state holds.
+		runCommand(this, CommandCall{QStringLiteral("window.mixer_zones"),
+			{{QStringLiteral("live"), true}, {QStringLiteral("sizes"), zoneSizesJson()}}, {}, QString(), false});
+	});
 
 	setCurrentMixerChannel(m_mixerChannelViews[0]);
 
@@ -266,6 +337,96 @@ MixerView::MixerView(Mixer* mixer) :
 }
 
 
+QWidget* MixerView::zoneWidget(const QString& regionId) const
+{
+	return m_zoneHosts.value(regionId);
+}
+
+
+void MixerView::relayoutZones()
+{
+	if (m_zoneSplitter == nullptr) { return; }
+	const mixerzones::Layout& layout = mixerzones::MixerZoneState::instance()->layout();
+	m_applyingZones = true;
+
+	// The docked order: side regions in canonical order on the left, the channels in the middle, the
+	// rest on the right. A region hidden on purpose keeps its host in the splitter (so its stored
+	// width is preserved), and the splitter collapses it; a hidden VCA area or an empty rack is such
+	// a region.
+	const auto sideHosts = [this, &layout](const QString& dock) {
+		QList<QWidget*> out;
+		for (const QString& id : mixerzones::sideRegionIds())
+		{
+			if (layout.docks.value(id) != dock) { continue; }
+			if (QWidget* host = m_zoneHosts.value(id)) { out.append(host); }
+		}
+		return out;
+	};
+	QList<QWidget*> hosts;
+	hosts += sideHosts(QStringLiteral("left"));
+	hosts += m_middleHost;
+	hosts += sideHosts(QStringLiteral("right"));
+
+	// Park every host first, then add them in the wanted order: QSplitter::addWidget() on a widget
+	// that is already a child leaves it where it was, which would keep a re-docked region on the old
+	// side of the channels.
+	for (QWidget* host : hosts)
+	{
+		if (host != nullptr) { host->setParent(m_zoneParking); }
+	}
+	for (QWidget* host : hosts)
+	{
+		if (host != nullptr) { m_zoneSplitter->addWidget(host); }
+	}
+
+	// The widths, side regions only: the channels take what is left. A region whose stored width is
+	// missing gets its default, so a layout written by an older build still lays out usable.
+	QList<int> widths;
+	for (int i = 0; i < m_zoneSplitter->count(); ++i)
+	{
+		QWidget* host = m_zoneSplitter->widget(i);
+		if (host == m_middleHost) { widths << 0; continue; }  // 0 = let the stretch factor decide
+		int width = 0;
+		for (auto it = m_zoneHosts.cbegin(); it != m_zoneHosts.cend(); ++it)
+		{
+			if (it.value() == host) { width = layout.sizes.value(it.key(), mixerzones::defaultSize(it.key())); }
+		}
+		widths << std::max(mixerzones::MinZoneSize, width);
+	}
+	// The channels' own stretch keeps them the largest part of the body; the explicit widths of the
+	// side regions are what a separator drag changes.
+	if (m_zoneSplitter->count() > 0) { m_zoneSplitter->setStretchFactor(m_zoneSplitter->indexOf(m_middleHost), 1); }
+	m_zoneSplitter->setSizes(widths);
+
+	// A host follows its content: with no VCA group the region is collapsed, not left as an empty band.
+	if (QWidget* vca = m_zoneHosts.value(QStringLiteral("vca"))) { vca->setVisible(!getMixer()->vcaGroups().empty()); }
+	m_applyingZones = false;
+}
+
+
+QJsonObject MixerView::zoneSizesJson() const
+{
+	QJsonObject sizes;
+	if (m_zoneSplitter == nullptr) { return sizes; }
+	const QList<int> current = m_zoneSplitter->sizes();
+	for (int i = 0; i < m_zoneSplitter->count() && i < current.size(); ++i)
+	{
+		QWidget* host = m_zoneSplitter->widget(i);
+		if (host == m_middleHost || !host->isVisible()) { continue; }  // a collapsed region keeps its width
+		for (auto it = m_zoneHosts.cbegin(); it != m_zoneHosts.cend(); ++it)
+		{
+			// Clamped to what the command accepts, so a splitter that a style shrank below the minimum
+			// still reports a usable width rather than a refused one.
+			if (it.value() == host)
+			{
+				sizes.insert(it.key(), qBound(mixerzones::MinZoneSize, current.at(i), mixerzones::MaxZoneSize));
+			}
+		}
+	}
+	return sizes;
+}
+
+
 namespace
 {
 //! Defined with the other helpers below; the call sites that keep the strips in step use it.
@@ -289,6 +450,7 @@ int MixerView::addNewChannel()
 	// the new strip is already in place: the next sync pass has nothing to rebuild
 	m_channelOrderSignature = channelOrderSignatureOf(mix);
 	updateMaxChannelSelector();
+	relayoutPins();
 
 	return newChannelIndex;
 }
@@ -342,6 +504,7 @@ void MixerView::refreshDisplay()
 	m_channelOrderSignature = channelOrderSignatureOf(getMixer());
 	updateMaxChannelSelector();
 	refreshVcaStrips();
+	relayoutPins();
 }
 
 
@@ -394,9 +557,10 @@ void MixerView::syncWithMixer()
 		|| m_channelOrderSignature != channelOrderSignatureOf(getMixer()))
 	{
 		// A reorder keeps the count but moves the channels, and each strip binds its solo, mute,
-		// pan and volume models to the channel at its own number: rebuild them.
+		// pan and volume models to the channel at its own number: rebuild them. The pass goes on to
+		// the overlays, strip info and type badges, so a strip made now (a new Return) is labelled
+		// at once rather than at the next timer pass.
 		refreshDisplay();
-		return;
 	}
 	if (vcaSignatureOf(getMixer()) != m_vcaSignature) { refreshVcaStrips(); }
 	// 0.5.0 L09 (MX-066, MX-049): folded folders' strips hidden, faders on one send (MixerOverlays.cpp).
@@ -435,6 +599,9 @@ void MixerView::refreshVcaStrips()
 		m_vcaLayout->addWidget(new VcaStripView(group, m_vcaArea));
 	}
 	m_vcaArea->setVisible(!getMixer()->vcaGroups().empty());
+	// Q050-227.1: the VCA region is a dock like any other; with no group it has nothing to show and
+	// its host collapses, and it comes back at its stored width when a group is made.
+	relayoutZones();
 }
 
 
@@ -619,6 +786,7 @@ void MixerView::deleteChannel(int index)
 	m_deletingOwnChannel = false;
 
 	chLayout->removeWidget(m_mixerChannelViews[index]);
+	m_pinnedLayout->removeWidget(m_mixerChannelViews[index]);
 	m_racksLayout->removeWidget(m_mixerChannelViews[index]);
 	// delete MixerChannelView later to prevent a crash when deleting from context menu
 	m_mixerChannelViews[index]->hide();
@@ -631,6 +799,7 @@ void MixerView::deleteChannel(int index)
 		m_mixerChannelViews[i]->setChannelIndex(i - 1);
 	}
 	m_mixerChannelViews.remove(index);
+	relayoutPins();
 
 	// the selection follows its channel: a channel deleted in front of it moved it down one
 	if (selLine > index) { --selLine; }
@@ -668,17 +837,13 @@ void MixerView::moveChannelLeft(int index)
 
 	m_mixer->moveChannelLeft(index);
 
-	const auto layoutIndex = chLayout->indexOf(m_mixerChannelViews[index]);
-	assert(layoutIndex >= 1);
-
-	chLayout->removeWidget(m_mixerChannelViews[index]);
-	chLayout->insertWidget(layoutIndex - 1, m_mixerChannelViews[index]);
-
 	m_mixerChannelViews[index]->setChannelIndex(index - 1);
 	m_mixerChannelViews[index - 1]->setChannelIndex(index);
 	std::swap(m_mixerChannelViews[index - 1], m_mixerChannelViews[index]);
 	// the strips moved with the channels, so the next sync pass has nothing to rebuild
 	m_channelOrderSignature = channelOrderSignatureOf(getMixer());
+	// Q050-227.2: the pinned and scrolling layouts follow the mixer order, pinned strips included.
+	relayoutPins();
 }
 
 
@@ -693,6 +858,53 @@ void MixerView::renameChannel(int index)
 	m_mixerChannelViews[index]->renameChannel();
 }
 
+
+// Q050-227.2: the stable id ("ch-<n>") of the mixer channel at @a index; empty when there is none.
+static QString channelIdAt(Mixer* mix, int index)
+{
+	if (mix == nullptr || index < 0 || index >= static_cast<int>(mix->numChannels())) { return QString(); }
+	MixerChannel* channel = mix->mixerChannel(index);
+	return channel != nullptr ? control::channelIdOf(channel) : QString();
+}
+
+void MixerView::relayoutPins()
+{
+	if (m_pinnedArea == nullptr || m_pinnedLayout == nullptr || chLayout == nullptr || m_channelAreaWidget == nullptr) { return; }
+	const QStringList pins = mixerzones::MixerZoneState::instance()->layout().pinned;
+	Mixer* mix = getMixer();
+	// take every strip out of both layouts first, then add each one to its own layout in mixer order
+	for (int i = 1; i < m_mixerChannelViews.size(); ++i)
+	{
+		if (m_mixerChannelViews[i] == nullptr) { continue; }
+		chLayout->removeWidget(m_mixerChannelViews[i]);
+		m_pinnedLayout->removeWidget(m_mixerChannelViews[i]);
+	}
+	for (int i = 1; i < m_mixerChannelViews.size(); ++i)
+	{
+		MixerChannelView* view = m_mixerChannelViews[i];
+		if (view == nullptr) { continue; }
+		const bool pinned = pins.contains(channelIdAt(mix, i));
+		(pinned ? m_pinnedLayout : chLayout)->addWidget(view);
+	}
+	m_pinnedArea->setVisible(m_pinnedLayout->count() > 0);
+	m_channelAreaWidget->adjustSize();
+}
+
+void MixerView::populatePinAction(QMenu* menu, int channelIndex)
+{
+	if (menu == nullptr || channelIndex <= 0) { return; }
+	const QString id = channelIdAt(getMixer(), channelIndex);
+	if (id.isEmpty()) { return; }
+	const bool pinned = mixerzones::MixerZoneState::instance()->layout().pinned.contains(id);
+	QAction* action = menu->addAction(pinned ? tr("Unpin Strip") : tr("Pin Strip"));
+	action->setObjectName(QStringLiteral("pinStripAction"));
+	action->setProperty("controlCommand", QStringLiteral("window.mixer_view"));
+	// the id and the direction are captured by value: a sync can rebuild the strip this menu belongs to
+	const QString key = pinned ? QStringLiteral("unpin") : QStringLiteral("pin");
+	connect(action, &QAction::triggered, this, [this, key, id] {
+		runCommand(this, CommandCall{QStringLiteral("window.mixer_view"), {{key, id}}, {}, QString(), false});
+	});
+}
 
 void MixerView::populatePeakWatchMenu(QMenu* menu) const
 {

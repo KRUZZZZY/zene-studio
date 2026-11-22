@@ -45,6 +45,7 @@
 #include "Mixer.h"
 #include "MixerChannelLcdSpinBox.h"
 #include "MixerView.h"
+#include "PathUtil.h"
 #include "GuiApplication.h"
 #include "Knob.h"
 #include "SampleClip.h"
@@ -235,24 +236,10 @@ void SampleTrackView::dropEvent(QDropEvent *de)
 
 	if (type == "samplefile")
 	{
-		int trackHeadWidth = ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt()==1
-				? trackSettingsWidth(true) + trackOperationsWidth(true)
-				: trackSettingsWidth(false) + trackOperationsWidth(false);
-
-		const int deX = position(de).x();
-		int xPos = deX < trackHeadWidth
-				? trackHeadWidth
-				: deX;
-
-		const float snapSize = getGUI()->songEditor()->m_editor->getSnapSize();
-		TimePos clipPos = trackContainerView()->fixedClips()
-				? TimePos(0)
-				: TimePos(((xPos - trackHeadWidth) / trackContainerView()->pixelsPerBar()
-							* TimePos::ticksPerBar()) + trackContainerView()->currentPosition()
-						).quantize(snapSize, true);
-
-		auto sClip = static_cast<SampleClip*>(getTrack()->createClip(clipPos));
-		if (sClip) { sClip->setSampleFile(value); }
+		// 0.5.0 L05 (Q050-093): the browser's sample drag imports through clip.import_file like a file drag does -
+		// one undo step, the loop's tempo and key detected and the loop mode taken (Alt: the other one).
+		const TimePos clipPos = arrangerdrop::tickAtContainerX(trackContainerView(), position(de).x());
+		arrangerdrop::importFileAndReport(PathUtil::toAbsolute(value), getTrack(), clipPos, arrangerdrop::dropModifiers(de));
 	}
 }
 

@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <limits>
 
 #ifdef LMMS_BUILD_WIN32
 #include <windows.h>
@@ -467,13 +468,12 @@ auto periodBudget() -> std::chrono::steady_clock::duration
 auto periodDeadline(std::chrono::steady_clock::time_point now) -> std::chrono::steady_clock::time_point
 {
 	const auto budget = periodBudget();
-	// The wait ends an eighth of a period early: the rest of the graph still has time after a late client.
-	const auto usable = budget - budget / 8;
 	// Only the thread that renders a period is inside one; anywhere else the budget is one period from now.
-	if (!RenderPeriodClock::renderingOnThisThread()) { return now + usable; }
-	const auto renderStart = RenderPeriodClock::periodStart();
-	if (now < renderStart || now - renderStart > 2 * budget) { return now + usable; }
-	return renderStart + usable;
+	if (!RenderPeriodClock::renderingOnThisThread())
+	{
+		return RemotePlugin::periodDeadlineForTesting(now, now, budget);
+	}
+	return RemotePlugin::periodDeadlineForTesting(now, RenderPeriodClock::periodStart(), budget);
 }
 
 } // namespace
@@ -487,6 +487,21 @@ void RemotePlugin::setPeriodBudgetForTesting(std::chrono::microseconds budget)
 void RemotePlugin::setQueryReplyTimeoutForTesting(std::chrono::milliseconds timeout)
 {
 	s_queryReplyTimeoutForTestingMs.store(timeout.count(), std::memory_order_relaxed);
+}
+
+std::chrono::steady_clock::time_point RemotePlugin::periodDeadlineForTesting(
+	std::chrono::steady_clock::time_point now,
+	std::chrono::steady_clock::time_point renderStart,
+	std::chrono::steady_clock::duration budget )
+{
+	// The wait ends at least an eighth of a period early: the rest of the graph still has time after a late client.
+	// The margin is also at least 1 ms because receiveFrameBefore rounds the remaining span up with ceil.
+	const auto minimum = std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::milliseconds{1});
+	const auto usable = budget - std::max(budget / 8, minimum);
+	// A start in the future or more than two periods old is no running period, so the budget is one period
+	// from now; otherwise the wait gets only what is left of the period that started at renderStart.
+	if (now < renderStart || now - renderStart > 2 * budget) { return now + usable; }
+	return renderStart + usable;
 }
 
 
@@ -951,8 +966,18 @@ auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, 
 		m_hostOutputs = {};
 		m_sharedInputs = {};
 		m_audioOutputs = {};
-		m_audioBuffer.create((channelsIn + channelsOut) * frames);
-		m_hostBlock.assign((channelsIn + channelsOut) * frames, 0.f);
+		const auto totalChannels = static_cast<std::size_t>(channelsIn) + channelsOut;
+		const auto totalSamples = detail::checkedSizeFromCounts(totalChannels, frames);
+		if (totalSamples == std::numeric_limits<std::size_t>::max())
+		{
+			std::cerr << "Audio buffer size overflows size_t\n";
+			m_audioBuffer.detach();
+			m_hostBlock.clear();
+			m_hostBlock.shrink_to_fit();
+			return nullptr;
+		}
+		m_audioBuffer.create(totalSamples);
+		m_hostBlock.assign(totalSamples, 0.f);
 	}
 	catch (const std::exception& error)
 	{
@@ -967,8 +992,8 @@ auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, 
 	m_channelsOut = channelsOut;
 	m_frames = frames;
 
-	const auto inputs = static_cast<std::size_t>(channelsIn * frames);
-	const auto outputs = static_cast<std::size_t>(channelsOut * frames);
+	const auto inputs = detail::checkedSizeFromCounts(channelsIn, frames);
+	const auto outputs = detail::checkedSizeFromCounts(channelsOut, frames);
 	m_sharedInputs = std::span{m_audioBuffer.get(), inputs};
 	m_audioOutputs = std::span{m_audioBuffer.get() + inputs, outputs};
 	m_hostInputs = std::span{m_hostBlock.data(), inputs};

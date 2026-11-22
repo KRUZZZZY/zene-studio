@@ -39,6 +39,7 @@ namespace lmms
 {
 
 class ControlRegistry;
+struct ArrangementSection;
 class TempoMap;
 
 //! arrangement.ruler_lanes: which lanes show (registered with the arranger's view commands).
@@ -67,7 +68,12 @@ class SongEditor;
  *  0.5.0 theme 9 (wave 3): no label collides. A label too long for its room is elided, one with no room is left out,
  *  and the tooltip names what the lane could not: every marker of a crowded cluster together, and in the tempo lane
  *  the tempo change under the pointer, else the tempo there. A double-click on a section or a marker zooms the arranger
- *  to it (arrangement.zoom start/end: the section, or the marker up to the next one) - Bitwig's Alt-click on a cue. */
+ *  to it (arrangement.zoom start/end: the section, or the marker up to the next one) - Bitwig's Alt-click on a cue.
+ *
+ *  Q050-219: a section block can be dragged. The hand cursor says so, a dashed block shows where it lands (on the song
+ *  editor's snap, Alt for free), and the release is one section.move, which carries the section's material on every
+ *  track: rippled under the arranger's ripple mode, else leaving a gap, and the other way round with Shift held. A
+ *  press alone still selects at the release and a double-click still zooms. The lanes' menu sets which of the two it is. */
 class LMMS_EXPORT ArrangerRulerLanes : public QWidget
 {
 	Q_OBJECT
@@ -102,6 +108,8 @@ protected:
 	bool event(QEvent* event) override;
 	void paintEvent(QPaintEvent* event) override;
 	void mousePressEvent(QMouseEvent* event) override;
+	void mouseMoveEvent(QMouseEvent* event) override;
+	void mouseReleaseEvent(QMouseEvent* event) override;
 	//! 0.5.0 theme 9 (wave 3): a double-click on a section or a marker zooms the arranger to it.
 	void mouseDoubleClickEvent(QMouseEvent* event) override;
 	void contextMenuEvent(QContextMenuEvent* event) override;
@@ -121,6 +129,13 @@ private:
 	void paintChords(QPainter& p, const QRect& lane) const;
 	//! The chord under @a pos, as itemAt reports it.
 	bool chordAt(const QPoint& pos, QString* command, QJsonObject* args, QString* name) const;
+	//! The section block under @a pos, or nullptr.
+	const ArrangementSection* sectionAt(const QPoint& pos) const;
+	//! The start a held section block has with the pointer at @a pos.
+	tick_t sectionDropTick(const QPoint& pos, bool free) const;
+	//! Release of a press on a section: a click selects it, a drag moves it.
+	void finishSectionPress(const QMouseEvent* event);
+	void paintSectionDrop(QPainter& p, const QRect& lane) const;
 	//! Polled: a changed chord track repaints the lane, and re-lays it out when it gains or loses its room.
 	void followChordTrack();
 
@@ -128,6 +143,12 @@ private:
 	QList<int> m_drawn;
 	unsigned m_chordRevision = 0;
 	bool m_chordsDrawn = false;
+	int m_heldSection = -1;     //!< the section a press took hold of (its id), or -1
+	tick_t m_heldStart = 0;     //!< where that section started at the press
+	tick_t m_heldLength = 0;
+	int m_heldX = 0;            //!< the press's x
+	bool m_heldMoved = false;   //!< the pointer left the press's dead zone: this is a drag
+	tick_t m_dropTick = 0;      //!< where the block would land
 };
 
 } // namespace gui

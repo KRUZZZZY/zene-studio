@@ -49,6 +49,8 @@
 
 #include <clap/clap.h>
 
+#include "clap-test-gesture.h"
+
 #define TEST_INSTRUMENT_ID "org.lmms.test.clap-instrument"
 #define TEST_INSTRUMENT_NAME "LMMS CLAP Test Instrument"
 #define TEST_INSTRUMENT_MAGIC 0x4C4D494Eu /* "LMIN" */
@@ -72,6 +74,12 @@
  * for a latent instance, so the extra 64 KB is per latent fixture, not per module. */
 #define TEST_INSTRUMENT_MAX_LATENCY 32768u
 #define TEST_INSTRUMENT_LATENCY_ENV "CLAP_TEST_INSTRUMENT_LATENCY"
+/* CLAP_TEST_INSTRUMENT_PROCESS_ERROR=n: the nth process() call (1-based) returns
+   CLAP_PROCESS_ERROR without writing; the calls before it write a marker level
+   instead of the voice level. Read once at instantiate time like the latency
+   switch, so the audio path only compares a counter. */
+#define TEST_INSTRUMENT_PROCESS_ERROR_ENV "CLAP_TEST_INSTRUMENT_PROCESS_ERROR"
+#define TEST_INSTRUMENT_ERROR_LEVEL 0.75
 /* CLAP_TEST_INSTRUMENT_LAYOUT: set (to any value) and the single-output class reports a
    SECOND stereo output port, i.e. its audio-port layout changes while the host runs. During
    activate() (the !active_state callback), the instance checks that the host supports a list
@@ -128,6 +136,7 @@ typedef struct instrument_plugin
 	clap_plugin_t plugin;
 	const clap_host_t* host;
 	const clap_plugin_params_t* params;
+	long gesture_seen;     /* clap-test-gesture.h: the last sequence this instance reported */
 	double gain;
 	double frames_processed;
 	uint32_t declared_max_frames;
@@ -161,6 +170,7 @@ typedef struct instrument_plugin
 	uint32_t layout_ports;
 	/* the latency (see LATENCY above); all 0 for an instance that is not latent */
 	int latent;               /* created while TEST_INSTRUMENT_LATENCY_ENV was set */
+	int32_t error_at;         /* process() call that returns CLAP_PROCESS_ERROR, 0 for none */
 	uint32_t latency;         /* frames, read at activate() */
 	int restart_requested;    /* a new count was seen; the restart has not come yet */
 	float* delay_ring;        /* TEST_INSTRUMENT_MAX_LATENCY levels, allocated at activate() */
@@ -617,6 +627,19 @@ static clap_process_status instrument_process(const clap_plugin_t* plugin,
 	}
 	self->active_voices = (self->sounding || self->release_left > 0) ? 1u : 0u;
 
+	clap_test_report_gesture(process->out_events, PARAM_GAIN, &self->gain, &self->gesture_seen);
+
+	/* --- the process-error mode: marker levels, then one failed call ------ */
+	if (self->error_at > 0)
+	{
+		if (self->blocks < (uint32_t)self->error_at)
+		{
+			instrument_write_level(self, process, TEST_INSTRUMENT_ERROR_LEVEL, frames);
+			return CLAP_PROCESS_CONTINUE;
+		}
+		if (self->blocks == (uint32_t)self->error_at) { return CLAP_PROCESS_ERROR; }
+	}
+
 	/* --- a latent instance asks for a restart when its count changes ----- */
 	instrument_follow_latency(self);
 
@@ -738,6 +761,10 @@ static const clap_plugin_t* instrument_create(const clap_host_t* host, int multi
 	self->multiout = multiout;
 	self->layout_ports = multiout ? 2u : instrument_output_ports();
 	self->latent = getenv(TEST_INSTRUMENT_LATENCY_ENV) != NULL;
+	{
+		const char* errorAt = getenv(TEST_INSTRUMENT_PROCESS_ERROR_ENV);
+		self->error_at = errorAt ? atoi(errorAt) : 0;
+	}
 	self->gain = 1.0;
 	self->first_note_time = -1;
 	self->last_note_time = -1;

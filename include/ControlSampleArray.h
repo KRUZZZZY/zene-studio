@@ -80,6 +80,16 @@ LMMS_EXPORT ControlResult readSampleArray(const QJsonArray& values, std::uint32_
 LMMS_EXPORT ControlResult readInputArgument(const QJsonObject& args, std::uint32_t frames,
 	std::vector<float>* out);
 
+/*! Read the 'sample_rate' argument of \p args into \p out.
+ *
+ *  When the argument is ABSENT, \p out is set to \p fallback and the call
+ *  succeeds. When it is present it must be a number that is finite, positive
+ *  and within the float range, and it must still be positive once it is a
+ *  float; anything else is an InvalidArgs refusal and \p out is untouched.
+ */
+LMMS_EXPORT ControlResult readSampleRateArgument(const QJsonObject& args, float fallback,
+	float* out);
+
 } // namespace control
 
 } // namespace lmms

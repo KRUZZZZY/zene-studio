@@ -428,6 +428,37 @@ private slots:
 		QVERIFY(menuAction(&menu, {QStringLiteral("Surround"), QStringLiteral("Surround Routing")}) != nullptr);
 	}
 
+	void theSurroundMenuOffersTheWideDiscreteBuses()
+	{
+		// Q050-155.1: discrete-9 .. discrete-64 sit in groups of sixteen under Format; each entry runs the
+		// registered mixer.channel_format, the readback has every indexed channel, and undo is one step.
+		QMenu menu;
+		addSurroundMenu(&menu, m_ch[2]);
+		const QString format = QStringLiteral("Format");
+		QVERIFY(menuAction(&menu, {QStringLiteral("Surround"), format, QStringLiteral("discrete-64")}) == nullptr);
+		QAction* wide = menuAction(&menu, {QStringLiteral("Surround"), format, QStringLiteral("Discrete 49-64"), QStringLiteral("discrete-64")});
+		QVERIFY(wide != nullptr);
+		QCOMPARE(wide->property("controlCommand").toString(), QStringLiteral("mixer.channel_format"));
+		wide->trigger();
+		QJsonObject read = getState(m_ch[2]);
+		QCOMPARE(read.value(QStringLiteral("format")).toString(), QStringLiteral("discrete-64"));
+		QCOMPARE(read.value(QStringLiteral("channels")).toInt(), 64);
+		QCOMPARE(read.value(QStringLiteral("channel_roles")).toArray().size(), 64);
+		QCOMPARE(read.value(QStringLiteral("channel_roles")).toArray().at(63).toString(), QStringLiteral("64"));
+		showSurroundPanner(m_ch[2]);  // the index strip of 64 channels draws
+		QWidget* window = windowTitled(QStringLiteral("Surround Panner"));
+		QVERIFY(window != nullptr);
+		QVERIFY(!window->grab().isNull());
+		window->close();
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(getState(m_ch[2]).value(QStringLiteral("format")).toString(), QString());
+		QAction* nine = menuAction(&menu, {QStringLiteral("Surround"), format, QStringLiteral("Discrete 9-16"), QStringLiteral("discrete-9")});
+		QVERIFY(nine != nullptr);
+		nine->trigger();
+		QCOMPARE(getState(m_ch[2]).value(QStringLiteral("channels")).toInt(), 9);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+	}
+
 	void theSurroundPannerPlacesTheChannelByMouseKeysAndSliders()
 	{
 		// Channel 1 sends into channel 3, a 5.1 channel: the panner names it and draws its speakers.

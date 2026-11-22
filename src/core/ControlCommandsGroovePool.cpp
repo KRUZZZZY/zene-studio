@@ -116,8 +116,10 @@ ControlResult geometryRefusal(const QString& name, tick_t length, tick_t stepTic
 //! Reads the whole body of a groove.set: the geometry and the steps.
 bool readGrooveBody(const QJsonObject& args, GrooveTemplate* out, ControlResult* error)
 {
-	const QString name =
-		GrooveTemplate::normalisedName(args.value(QStringLiteral("name")).toString());
+	// Judged on the name as given: normalising first would cut an overlong name
+	// down to one that may already exist (see GrooveTemplate::isWritable).
+	const QString rawName = args.value(QStringLiteral("name")).toString();
+	const QString name = GrooveTemplate::normalisedName(rawName);
 	tick_t stepTicks = 0;
 	tick_t length = 0;
 	const tick_t maxLength = static_cast<tick_t>(GrooveTemplate::MaxSteps)
@@ -132,9 +134,9 @@ bool readGrooveBody(const QJsonObject& args, GrooveTemplate* out, ControlResult*
 	{
 		return false;
 	}
-	if (!GrooveTemplate::isWritable(name, length, stepTicks))
+	if (!GrooveTemplate::isWritable(rawName, length, stepTicks))
 	{
-		*error = geometryRefusal(name, length, stepTicks);
+		*error = geometryRefusal(rawName.trimmed(), length, stepTicks);
 		return false;
 	}
 
@@ -254,9 +256,9 @@ ControlResult grooveRename(const QJsonObject& args)
 	}
 	const QString name =
 		GrooveTemplate::normalisedName(args.value(QStringLiteral("name")).toString());
-	const QString to = GrooveTemplate::normalisedName(
-		args.value(QStringLiteral("to")).toString());
-	if (name.isEmpty() || to.isEmpty())
+	const QString rawTo = args.value(QStringLiteral("to")).toString();
+	const QString to = GrooveTemplate::normalisedName(rawTo);
+	if (name.isEmpty() || to.isEmpty() || !GrooveTemplate::nameFits(rawTo))
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("groove.rename needs 'name' and the 'to' name it becomes (1..%1 "

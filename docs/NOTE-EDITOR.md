@@ -83,8 +83,17 @@ With the Draw (and Select) tool:
 - **Right click or drag** deletes every note the pointer crosses, whatever the tool; a right
   drag that starts on an empty row is the slice tool for that stroke.
 - **Double-click** a note to open its properties: key, start, length, velocity, pan, release
-  velocity, Mod X and Mod Y (the note's MPE timbre and pressure), chance, slide and mute. OK
-  writes the changes as one `note.edit`. A double-click that draws a note does not open it.
+  velocity, Mod X and Mod Y (the note's MPE timbre and pressure), chance, slide, mute and the
+  note's **recurrence** - the pass pattern's length and which passes play. OK writes the changes
+  as one `note.edit`. A double-click that draws a note does not open it.
+- **Recurrence** (ED-133, `recur_length` / `recur_mask`) makes a note repeat predictably across
+  the passes of a loop. *Recurrence (passes)* is the pattern's length; 0 means every pass, and
+  a positive length with a mask of no ticked passes plays none. One box per pass ("1" is the
+  first pass of the pattern) ticks the passes it plays: length 2 with pass 1 ticked plays passes
+  0, 2, 4... and skips 1, 3, 5.... A pass is a **song transport loop wrap**, so seeking does not
+  advance the pattern; a MIDI clip's own loop repeats the notes within a pass but does not
+  advance the mask either. The boxes read the pair back from the note, and the length and mask
+  travel together in one undo step (a new length cuts the mask to its pattern).
 - **Ctrl**-click selects one note, Ctrl-drag a rectangle; **Ctrl+Shift** adds to the selection.
 - While dragging, **Shift** locks the pitch and **Ctrl** the timing; **Alt** turns the snap off.
 - **Alt+wheel** over a note changes its velocity by 5 (Ctrl+Alt by 1); **Shift+Alt+wheel**

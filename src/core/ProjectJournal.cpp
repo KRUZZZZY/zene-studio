@@ -94,6 +94,14 @@ void ProjectJournal::restoreState( SavedObject & saved )
 //! is one undoable step, however many objects it wrote).
 bool ProjectJournal::restoreStep( CheckPoint & step, CheckPoint * redo )
 {
+	// Capture EVERY live object's current state before restoring ANY of them.
+	// The step's objects can contain one another (a dragged clip and the track
+	// that serialises it), and a restore reloads the container - Track::restoreState()
+	// deletes and re-creates its clips. Capturing the track after the clip has
+	// already been put back records the UNDONE position as the redo state, so
+	// redo replays the move away again (or undoes it a second time). The states
+	// are the post-state of the same step on both sides, so they are all taken
+	// while that state is still the live one.
 	bool restoredAny = false;
 	for( SavedObject & saved : step.objects )
 	{
@@ -103,14 +111,31 @@ bool ProjectJournal::restoreStep( CheckPoint & step, CheckPoint * redo )
 		captureState( jo, &current );
 		redo->bytes += current.bytes;
 		redo->objects.append( current );
-		restoreState( saved );
 		restoredAny = true;
 	}
-	return restoredAny;
+	if( !restoredAny ) { return false; }
+	for( SavedObject & saved : step.objects ) { restoreState( saved ); }
+	return true;
+}
+
+namespace
+{
+ProjectJournal::ChangeListener s_changeListener;
+}
+
+void ProjectJournal::setChangeListener( ChangeListener listener )
+{
+	s_changeListener = std::move( listener );
+}
+
+void ProjectJournal::notifyChange( Change change )
+{
+	if( s_changeListener ) { s_changeListener( change ); }
 }
 
 void ProjectJournal::undo()
 {
+	const StackChangeNotice stackNotice( this );
 	while( !m_undoCheckPoints.isEmpty() )
 	{
 		CheckPoint c = m_undoCheckPoints.pop();
@@ -146,6 +171,7 @@ void ProjectJournal::undo()
 		if( redoable ) { m_redoCheckPoints.push( redo ); }
 		else { m_redoCheckPoints.clear(); }
 		Engine::getSong()->setModified();
+		notifyChange( Change::Undo );
 		break;
 	}
 }
@@ -154,6 +180,7 @@ void ProjectJournal::undo()
 
 void ProjectJournal::redo()
 {
+	const StackChangeNotice stackNotice( this );
 	m_redoDecline.clear();
 	while( !m_redoCheckPoints.isEmpty() )
 	{
@@ -196,6 +223,7 @@ void ProjectJournal::redo()
 		m_retainedBytes += undoState.bytes;
 		trimUndoStack();
 		Engine::getSong()->setModified();
+		notifyChange( Change::Redo );
 		break;
 	}
 }
@@ -222,10 +250,16 @@ bool ProjectJournal::canRedo() const
 	return !m_redoCheckPoints.isEmpty();
 }
 
+void ProjectJournal::setStackObserver( std::function<void()> observer )
+{
+	m_stackObserver = std::move( observer );
+}
+
 
 
 void ProjectJournal::addJournalCheckPoint( JournallingObject *jo )
 {
+	const StackChangeNotice stackNotice( this );
 	if( !isJournalling() ) { return; }
 
 	// WF-033: taken before the object's own capture - both are pre-change.
@@ -241,12 +275,14 @@ void ProjectJournal::addJournalCheckPoint( JournallingObject *jo )
 	m_undoCheckPoints.push( step );
 	m_retainedBytes += bytes;
 	trimUndoStack();
+	notifyChange( Change::Step );
 }
 
 
 
 void ProjectJournal::addJournalCheckPoint( const QVector<JournallingObject *> &objects )
 {
+	const StackChangeNotice stackNotice( this );
 	if( !isJournalling() ) { return; }
 
 	// One checkpoint, N objects: undo() pops it once and restores all of them,
@@ -270,12 +306,14 @@ void ProjectJournal::addJournalCheckPoint( const QVector<JournallingObject *> &o
 	m_undoCheckPoints.push( step );
 	m_retainedBytes += bytes;
 	trimUndoStack();
+	notifyChange( Change::Step );
 }
 
 
 
 void ProjectJournal::addJournalAction( std::function<void()> undoAction, std::function<void()> redoAction )
 {
+	const StackChangeNotice stackNotice( this );
 	if( !isJournalling() || !undoAction ) { return; }
 
 	m_redoCheckPoints.clear();
@@ -287,6 +325,7 @@ void ProjectJournal::addJournalAction( std::function<void()> undoAction, std::fu
 	step.serial = ++m_stepSerial;
 	m_undoCheckPoints.push( step );
 	trimUndoStack();
+	notifyChange( Change::Step );
 }
 
 
@@ -327,6 +366,7 @@ jo_id_t ProjectJournal::idFromSave( jo_id_t id )
 
 void ProjectJournal::mergeCheckpointsFrom( int depth )
 {
+	const StackChangeNotice stackNotice( this );
 	if( depth < 0 || depth > m_undoCheckPoints.size() ) { return; }
 	const int excess = m_undoCheckPoints.size() - depth;
 	if( excess <= 1 ) { return; }
@@ -398,6 +438,7 @@ void ProjectJournal::mergeCheckpointsSince( quint64 serial )
 
 void ProjectJournal::clearJournal()
 {
+	const StackChangeNotice stackNotice( this );
 	m_undoCheckPoints.clear();
 	m_redoCheckPoints.clear();
 	// A fresh document starts with a fresh accounting. m_stepSerial is NOT
@@ -405,7 +446,9 @@ void ProjectJournal::clearJournal()
 	// left over from the previous document can never match a new step.
 	m_retainedBytes = 0;
 	m_evicted = 0;
+	m_newestEvictedSerial = m_stepSerial;  // every step of the previous document is gone for good
 	m_coalesced = 0;
+	notifyChange( Change::ProjectReplaced );
 
 	for( JoIdMap::Iterator it = m_joIDs.begin(); it != m_joIDs.end(); )
 	{

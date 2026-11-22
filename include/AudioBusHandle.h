@@ -117,8 +117,35 @@ public:
 	void setSourceLatencyFrames(int frames);
 	int sourceLatencyFrames() const { return m_sourceLatencyFrames.load(std::memory_order_relaxed); }
 
+	/*! Q050-339: the track's manual delay, in frames at the engine's rate: positive plays it later, negative
+	 *  earlier (the other paths are then delayed instead - the offset is added to the PDC graph, never a
+	 *  replacement for it). 0 (the default, and every older project) leaves the handle exactly as it was.
+	 *  Control thread; a lock-free value the audio thread reads. Clamped to +-MaxManualOffsetFrames. */
+	void setOffsetFrames(int frames);
+	int offsetFrames() const { return m_offsetFrames.load(std::memory_order_relaxed); }
+	//! What the PDC graph aligns this path by: its latency less its manual offset (may be negative).
+	int alignedLatencyFrames() const { return latencyFrames() - offsetFrames(); }
+
+	/*! Q050-174 (MX-159): low-latency monitoring of a latent instrument. While set, this handle applies NO
+	 *  alignment delay of its own (the delay PDC adds so the path lands on a later path's alignment point),
+	 *  so what is played through it is heard after the source's own latency only. Its latency still counts
+	 *  in the graph, so every other path is aligned exactly as before. Session state set by
+	 *  transport.low_latency on the control thread; a lock-free value the audio thread reads. Never saved. */
+	void setMonitorUnaligned(bool on) { m_monitorUnaligned.store(on, std::memory_order_relaxed); }
+	bool monitorUnaligned() const { return m_monitorUnaligned.load(std::memory_order_relaxed); }
+
 	//! @returns true if the processing outputted corrupted audio (infs/nans).
 	bool isCorrupted() const { return m_corrupted.load(std::memory_order_relaxed); }
+
+	//! The track's own output level, for its header meter: the loudest sample this bus has sent to its mixer
+	//! channel since the last takePeak(). The channel's level is no use there - every new track feeds Master, so
+	//! one playing track lit every track's meter. recordPeak() is the audio thread's side (lock-free).
+	void recordPeak(float peak)
+	{
+		float held = m_peak.load(std::memory_order_relaxed);
+		while (peak > held && !m_peak.compare_exchange_weak(held, peak, std::memory_order_relaxed)) {}
+	}
+	float takePeak() { return m_peak.exchange(0.f, std::memory_order_relaxed); }
 
 	//! 0.5.0 F2 (an instrument layer's mute, solo and level, InstrumentLayers::setMix): a gain applied with the
 	//! volume and panning, 1 = unchanged (bit-identical). Any thread; the audio thread reads it once a period.
@@ -209,10 +236,15 @@ private:
 	LatencyCompensation m_compensation;
 
 	std::atomic<bool> m_corrupted = false;
+	std::atomic<float> m_peak = 0.f;
 	std::atomic<float> m_gain = 1.0f;
 
 	//! MX-157: see setSourceLatencyFrames().
 	std::atomic<int> m_sourceLatencyFrames{0};
+	//! Q050-339: see setOffsetFrames().
+	std::atomic<int> m_offsetFrames{0};
+	//! Q050-174: see setMonitorUnaligned().
+	std::atomic<bool> m_monitorUnaligned{false};
 
 	friend class AudioEngine;
 	friend class AudioEngineWorkerThread;

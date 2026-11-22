@@ -1048,7 +1048,7 @@ one-entry swap, adding two `not_mutating` rows - `arrangement.zoom_forward` and 
 which move the figure to `rows=839 true_inverse=417 snapshot=42 irreversible=22 not_mutating=358`
 (`DECLARED rows=839`).
 
-**M0 merge train 12** (`050/m0-train-12`, 2026-10-22, automatic): `ReversibilityContractTest` on the merged tree measures `rows=854 true_inverse=423 snapshot=42 irreversible=24 not_mutating=365`.
+**M0 merge train 12** (`050/m0-train-12`, 2026-10-22, automatic): `ReversibilityContractTest` on the merged tree measures `rows=854 true_inverse=423 snapshot=42 irreversible=24 not_mutating=365`. **Q050-055.1 stage 1** (2026-10-22): `automation.editor_mode` adds one `not_mutating` row - the automation editor's edit mode is interface state, like a zoom level - so the figure is `rows=855 true_inverse=423 snapshot=42 irreversible=24 not_mutating=366`.
 
 (Q050-125, 2026-10-22, after the train snapshot: `clip.set_polarity` adds one `true_inverse` row, so the
 same tree measures `rows=855 true_inverse=424 snapshot=42 irreversible=24 not_mutating=365`.)
@@ -1078,13 +1078,80 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **M0 merge train 17** (`050/m0-train-17`, 2026-10-26, automatic): `ReversibilityContractTest` on the merged tree measures `rows=872 true_inverse=430 snapshot=42 irreversible=25 not_mutating=375`.
 
+**The strip-features batch** (`feat/050-Q050-088-oc`, Q050-088 / Q050-108 / Q050-339 / Q050-340; integrated onto
+`050/m0-train-17` 2026-10-27) adds four rows: `mixer.console_strip` and `pdc.set_offset` (`true_inverse`), `meter.inputs` and
+`window.input_meters` (`not_mutating`); `ReversibilityContractTest` on the integrated tree measures
+`rows=876 true_inverse=432 snapshot=42 irreversible=25 not_mutating=377`.
+
+**Q050-055.1** (panel-scoped shortcuts, integrated onto `050/m0-train-17`, 2026-10-27): `automation.editor_mode` adds one `not_mutating` row - `rows=873 true_inverse=430 snapshot=42 irreversible=25 not_mutating=376`.
+
+**M0 merge train 19** (`050/m0-train-19`, 2026-10-27, automatic): `ReversibilityContractTest` on the merged tree measures `rows=877 true_inverse=432 snapshot=42 irreversible=25 not_mutating=378`.
+
+**Q050-066.1** (drum-rack pads, stage 1, 2026-10-27): `track.drum_rack_pad_add` and `track.drum_rack_pad_set` add two `true_inverse` rows and `track.drum_rack_get_state` one `not_mutating` row - `rows=880 true_inverse=434 snapshot=42 irreversible=25 not_mutating=379`.
+
+**Q050-089.2** (real-time hardware insert export, 2026-10-27): `render.realtime` adds one `not_mutating` row - `rows=881 true_inverse=434 snapshot=42 irreversible=25 not_mutating=380`.
+
+**The L15 control-surface batch** (`feat/050-Q050-161-oc`: Q050-205 OSC server, Q050-081 controller scripts, 2026-10-28) adds six `not_mutating` rows - `osc.start`, `osc.stop`, `osc.get_state` and `controller.script_start`, `controller.script_stop`, `controller.script_state` (device state, the `surface.mcu_connect` precedent; what they run records as itself) - `rows=886 true_inverse=434 snapshot=42 irreversible=25 not_mutating=385`.
+
+**The update check** (`feat/050-Q050-501-oc`, 2026-10-30) adds five rows, one `true_inverse` (`app.update_check_set`) and four `not_mutating` (`app.update_check_get`, `app.update_check_run`, `window.update_check`, `window.update_download_page`), and they leave with `-DZENE_UPDATE_CHECK=OFF`: `rows=892 true_inverse=435 snapshot=42 irreversible=25 not_mutating=390`.
+
+**M0 merge train 22** (`050/m0-train-22`, 2026-10-28, automatic): `ReversibilityContractTest` on the merged tree measures `rows=887 true_inverse=434 snapshot=42 irreversible=25 not_mutating=386`.
+
+**Q050-093** (loop import tempo and key, integrated onto `050/m0-train-22`, 2026-10-30): `clip.source_get_state` adds one `not_mutating` row - `rows=888 true_inverse=434 snapshot=42 irreversible=25 not_mutating=387`.
+
+**Q050-180.1** (multiple positioned video clips, integrated onto `050/m0-train-22`, 2026-10-30): `video.clip_add` and `video.clip_remove` add two `true_inverse` rows and `video.render_frames` one `not_mutating` row - `rows=890 true_inverse=436 snapshot=42 irreversible=25 not_mutating=387`.
+
+**Q050-055.2** (keyboard plug-in actions, 2026-10-30): `plugin.selected_editor_open`, `plugin.selected_load` and `shortcuts.bind_plugin` add three `not_mutating` rows - `rows=890 true_inverse=434 snapshot=42 irreversible=25 not_mutating=389`. The last two run `plugin.load` and `shortcuts.set` inside themselves, and those record themselves with their own classes.
+
+**Q050-164** (per-sample switch in the Modulators panel, 2026-10-31): `modulator.per_sample_set` adds one `true_inverse` row - `rows=888 true_inverse=435 snapshot=42 irreversible=25 not_mutating=386`.
+
+**Q050-212** (a new track's destination, 2026-10-31): `track.add_to_new_bus` adds one `true_inverse` row - `rows=888 true_inverse=435 snapshot=42 irreversible=25 not_mutating=386`.
+
+**Q050-255 and Q050-219** (`feat/050-Q050-255-oc`, 2026-11-01): `track.folder_span_resize`, `track.folder_span_split`, `track.folder_span_move`, `track.folder_span_delete` and `section.move` add five `true_inverse` rows; `track.folder_spans` and `track.folder_span_select` add two `not_mutating` rows - `rows=894 true_inverse=439 snapshot=42 irreversible=25 not_mutating=388`.
+
+**Q050-263** (per-slice SlicerT controls, 2026-11-02): `plugin.slice_get` adds one `not_mutating` row and `plugin.slice_set` one `true_inverse` row - `rows=889 true_inverse=435 snapshot=42 irreversible=25 not_mutating=387`.
+
+**Q050-294.1** (melodic step state, stage 1, 2026-11-03): `note.step_set` adds one `true_inverse` row (a MidiClip checkpoint) and `note.step_get_state` one `not_mutating` row - `rows=889 true_inverse=435 snapshot=42 irreversible=25 not_mutating=387`.
+
+**Q050-124** (bus freeze, 2026-11-03): `freeze.bus` and `freeze.unfreeze_bus` add two `true_inverse` rows (action checkpoints on the bus's stable channel id) - `rows=889 true_inverse=436 snapshot=42 irreversible=25 not_mutating=386`.
+
+**Q050-291.1** (CC lane <-> device automation, stage 1, 2026-11-03): `clip.controllers_to_automation` and `clip.controllers_from_automation` add two `true_inverse` rows - `rows=889 true_inverse=436 snapshot=42 irreversible=25 not_mutating=386`. Project files now keep a MIDI clip's `<controllers metadata="1">` lanes (`DataFile::cleanMetaNodes` used to delete them on save).
+
+**Q050-231.1** (cross-track masking report, stage 1, 2026-11-05): `mixer.masking_report` adds one `not_mutating` row - `rows=888 true_inverse=434 snapshot=42 irreversible=25 not_mutating=387`.
+
+**M0 merge train 25** (`050/m0-train-25`, 2026-11-05, automatic): `ReversibilityContractTest` on the merged tree measures `rows=926 true_inverse=457 snapshot=42 irreversible=25 not_mutating=402`.
+
+**Q050-221.1** (seeded melodic contours, 2026-11-05): `note.generate_melody` adds one `true_inverse` row (a MidiClip journal checkpoint, as `note.generate`) - `rows=888 true_inverse=435 snapshot=42 irreversible=25 not_mutating=386`.
+
+**M0 merge train 26** (`050/m0-train-26`, 2026-11-06, automatic): `ReversibilityContractTest` on the merged tree measures `rows=933 true_inverse=459 snapshot=42 irreversible=25 not_mutating=407`.
+
+**Q050-155.2** (64 channels through device pins and mixer routes, 2026-11-10): `port.set_pins` adds one `true_inverse` row (one journal step for a whole pin routing) - `rows=934 true_inverse=460 snapshot=42 irreversible=25 not_mutating=407`.
+
+**Q050-294.2** (melodic step grid, stage 2, 2026-11-10): `window.step_grid` adds one `not_mutating` row (it opens the grid; the grid's edits are `note.step_set`, which already has its row) - `rows=934 true_inverse=459 snapshot=42 irreversible=25 not_mutating=408`.
+
+**Q050-327** (batch freeze, 2026-11-10): `freeze.tracks` adds one `true_inverse` row (the completed batch's single ProjectJournal step) - `rows=934 true_inverse=460 snapshot=42 irreversible=25 not_mutating=407`.
+
+**Q050-283.2** (2026-11-10): `track.set_role` adds one `true_inverse` row: `rows=934 true_inverse=460 snapshot=42 irreversible=25 not_mutating=407`.
+
+**Q050-054.1** (MIDI takes on armed instrument tracks, first measured on `050/m0-train-19`, 2026-10-27; re-measured
+after merging `050/m0-train-26`, 2026-11-12): `record.midi_capture_commit` adds one `true_inverse` row,
+`track.set_midi_arm` and `record.midi_capture_status` two `not_mutating` rows -
+`rows=936 true_inverse=460 snapshot=42 irreversible=25 not_mutating=409`.
+
+**M0 merge train 28** (`050/m0-train-28`, 2026-11-13, automatic): `ReversibilityContractTest` on the merged tree measures `rows=940 true_inverse=463 snapshot=42 irreversible=25 not_mutating=410`.
+
+**Q050-294.3** (melodic step fills, 2026-11-13): `note.step_fill` adds one `true_inverse` row (one MidiClip journal checkpoint per fill, none for a fill that changes nothing) - `rows=941 true_inverse=464 snapshot=42 irreversible=25 not_mutating=410`.
+
+**Q050-183.1** (running audio output and test tone, 2026-11-16): `audio.test_tone` and `audio.test_tone_stop` add two `not_mutating` rows (session audio, not the project) - `rows=944 true_inverse=465 snapshot=42 irreversible=25 not_mutating=412`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=872 true_inverse=430 snapshot=42 irreversible=25 not_mutating=375
-     configuration: telemetry.status wasm.load session.get_state stem.get_state
+     measured: rows=944 true_inverse=465 snapshot=42 irreversible=25 not_mutating=412
+     configuration: telemetry.status wasm.load session.get_state stem.get_state app.update_check_get
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
      option session.get_state rows=18 true_inverse=7 not_mutating=11
      option stem.get_state rows=8 true_inverse=1 not_mutating=7
+     option app.update_check_get rows=5 true_inverse=1 not_mutating=4
      A16-HISTOGRAM-END -->
 
 **The figure checks itself (board card #677).** It used to be a constant in

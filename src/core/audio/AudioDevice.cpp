@@ -29,6 +29,7 @@
 #include "AudioInputPath.h"
 
 #include <algorithm>
+#include <thread>
 
 namespace lmms
 {
@@ -135,6 +136,21 @@ void AudioDevice::stopProcessing()
 {
 	m_running.clear(std::memory_order_release);
 	stopProcessingImpl();
+	waitForOpenCallbacks();
+}
+
+void AudioDevice::waitForOpenCallbacks()
+{
+	// Dekker pair with CallbackScope. The clear of m_running above is ordered before the read of
+	// m_openCallbacks below. A callback whose scope opened before that read is waited for here; a
+	// callback that opens after it reads m_running as false in its body, because its isRunning()
+	// read is ordered after its scope opened.
+	std::atomic_thread_fence(std::memory_order_seq_cst);
+	while (m_openCallbacks.load(std::memory_order_seq_cst) != 0)
+	{
+		onStopWait();
+		std::this_thread::yield();
+	}
 }
 
 void AudioDevice::stopProcessingThread( QThread * thread )

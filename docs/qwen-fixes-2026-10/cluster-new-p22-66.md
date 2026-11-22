@@ -1,0 +1,248 @@
+FIXED
+
+# Cluster new-p22-66 — sample.normalize accepts NaN target_db
+
+## Decision
+
+REAL. Fixed on `bugs/qwen-new-p22-66`. Commit `6d0a1a220` carries the sample bakers, the test and the CMake
+registration. The commit after it carries the `clip.set_gain` sibling, the manifests and this report.
+
+### The defect
+
+- `src/core/ControlCommandsSampleEdit.cpp:189-190` (`sample.amplify`) and `:241-242` (`sample.normalize`), as
+  they were before the fix, checked the level with `x < lo || x > hi`. For NaN both comparisons are false, so
+  NaN passed and the handler baked a NaN buffer. The finding's line 234 is the same check, now at `:241`.
+- The value is reachable. Wire JSON cannot carry NaN, because Qt's parser rejects it. The Lua script bridge
+  converts numbers with `lua_tonumber` (`src/core/ScriptCommandBridge.cpp:161`), so a script's `0/0` becomes a
+  NaN `QJsonValue`. `ControlRegistry::invoke` validates it with `validateArgs`, whose `number` check is
+  `value.isDouble()` (`src/core/ControlSchema.cpp:49`), which accepts NaN. The handler then runs.
+- The same function had a second route to a non-finite bake that the finding does not name. The scale is
+  `gainDbToLinear(target) / peak` (`src/core/ControlCommandsSampleEdit.cpp:255` before the fix). A subnormal
+  peak such as 1e-39 makes the scale about 1e39, past float max, so it becomes inf and frames bake to inf or
+  NaN. An infinite source sample makes the peak inf and the scale 0, and `inf * 0` is NaN. Both are the same
+  "baked buffer is non-finite" defect, so both are fixed here.
+- The non-baking sibling `clip.set_gain` has the same NaN-blind range test at
+  `src/core/ControlCommandsClipEdits.cpp:347` before the fix. Its range is the one the `sample.amplify`
+  description names ("the range both this bake and clip.set_gain declare"). A NaN there is stored in the
+  clip's edits (`after.gain = gainDbToLinear(...)`, `ControlCommandsClipEdits.cpp:358`). It is fixed too, so the two commands agree.
+- The nested-array sibling `clip.gain_envelope_set` also stores dB gain points in a sample clip. Its `points`
+  schema checks only the array shape; `ControlCommandsClipEnvelope.cpp:117-124` reads each value and the old
+  range comparison let NaN through. Independent QA added `!std::isfinite(db)` before those comparisons, with a
+  regression in `ClipGainEnvelopeTest` that checks refusal, unchanged edits, and unchanged undo depth.
+
+### The fix
+
+- `src/core/ControlCommandsSampleEdit.cpp:189-190`: `!std::isfinite(db) || db < -60.0 || db > 24.0`
+  (`sample.amplify`, `gain_db`).
+- `src/core/ControlCommandsSampleEdit.cpp:241-242`: `!std::isfinite(targetDb) || targetDb < -60.0 || targetDb > 0.0`
+  (`sample.normalize`, `target_db`).
+- `src/core/ControlCommandsSampleEdit.cpp:261-268`: after the existing silence refusal and before
+  `sampleops::amplify`, refuse when `!std::isfinite(peak) || !std::isfinite(scale)`, with
+  `ControlErrorKind::Refused`. This runs before `commitBake`, so no checkpoint is taken and no undo step is
+  pushed. `<cmath>` is included at `:36`.
+- `src/core/ControlCommandsClipEdits.cpp:348-349`: `!std::isfinite(db) || db < kMinGainDb || db > kMaxGainDb`
+  (`clip.set_gain`). `<cmath>` is included at `:39`. The refusal returns before any edit or transaction.
+- `src/core/ControlCommandsSampleRange.cpp:160`: `return !std::isfinite(db) || db < -60.0 || db > 24.0;` in
+  `gainRefused` (`sample.edit_range`, op `gain`). The refusal is `InvalidArgs` and returns before any frame is
+  written. The function is called only with `gain_db`, and returns false for every other op.
+- The idiom matches sibling handlers that already put `!std::isfinite(x) || ...` first, for example
+  `src/core/ControlCommandsMixerTools.cpp:237` and `src/core/ControlCommandsNoteProbability.cpp:91`.
+
+### Checked and not changed
+
+- `sample.fade` takes no numeric argument, so it has nothing to guard.
+- `sampleops::peakOf` (`src/core/SampleOperators.cpp:185`) uses `std::max`, which ignores NaN samples. A
+  source that already holds NaN frames passes them through unchanged. A bake does not introduce them, so
+  this is not part of the fix.
+- No schema, command, or result shape changed. No new control command was added.
+
+## Regression test
+
+`tests/src/core/ControlSampleBakeGuardTest.cpp` (new), method `nonFiniteLevelsAreRefusedAndWriteNothing`.
+It covers six refusals:
+
+1. NaN `gain_db` on `sample.amplify`: `InvalidArgs`.
+2. NaN `target_db` on `sample.normalize`: `InvalidArgs`.
+3. A subnormal-peak source (only frame = 1e-39f) with `target_db` 0: `Refused`, message contains "finite".
+4. An infinite-sample source with `target_db` 0: `Refused`, message contains "finite".
+5. NaN `gain_db` on `clip.set_gain`: `InvalidArgs` (`:158-160`).
+6. NaN `gain_db` with `op` `gain` on `sample.edit_range` over the whole source: `InvalidArgs`, and the source
+   frames are unchanged (`:163-172`). The RED run failed at `:170`.
+
+After each refusal the source frames are compared bit-for-bit with the frames before the call. A final
+`control.undo` must remove the generated clip, which proves no refusal pushed an undo step.
+
+It is a new file, not an addition to `tests/src/core/ControlSampleOperatorTest.cpp`. My first version added the
+method there, which took that file to 541 code lines, and `file-length-gate.sh` then reported "new file over
+500 lines". The helpers are copied, not shared, so the sibling test is unchanged.
+
+Registration:
+- `tests/CMakeLists.txt`: source entry, and `set_tests_properties(... QT_QPA_PLATFORM=offscreen)`.
+- `tests/fork-sources.txt` and `tests/all-sources.txt`: one line each, placed before
+  `ControlSampleOperatorTest.cpp`. `tests/all-sources-reproduce.sh` runs the header recipe of
+  `all-sources.txt` and prints REPRODUCES, so that position is verified. `fork-sources.txt` has a multi-block
+  recipe in its header that no script runs as a whole. The gate checks only registration for that file.
+
+## Commands and results
+
+Paths are relative to the worktree. EXIT codes are copied from the logs in
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p22-66.r1/logs`.
+
+Environment note: ccache could not write its temp files under `zene-bunny-fix/dsh/home` (the sandbox denied it).
+Every build below sets `CCACHE_TEMPDIR=/home/kruzzzzy/.cache/ccache-bunny/tmp-p22-66`. The first build attempt,
+before that setting, exited 2 with "ccache: error: failed to create temporary file" (`build-1-red.log`).
+`cmake .` by hand was refused by the build tree's configure guard (exit 97, `cmake-regen-final.log`). Make's own
+regeneration worked, so I did not configure the tree.
+
+### Regression proof (final changes: both fixes)
+
+`logs/fix.patch` is the `ControlCommandsSampleEdit.cpp` diff, and `logs/clip-fix.patch` is the
+`ControlCommandsClipEdits.cpp` diff. Both are relative to the pre-fix code.
+
+| Step | Command (from the worktree or `build/`) | EXIT | Result |
+|---|---|---|---|
+| Save patch | `git diff -- src/core/ControlCommandsClipEdits.cpp > logs/clip-fix.patch` | 0 | 22 lines (`cmds-final3.log`) |
+| RED | `git apply -R logs/fix.patch`; `git apply -R logs/clip-fix.patch`; `cmake --build . --target ControlSampleBakeGuardTest zene -j4`; `cd tests && ctest -R ControlSampleBakeGuardTest --output-on-failure` | 0; 0; 0; **8** | FAIL at `ControlSampleBakeGuardTest.cpp:122`, `nanGain.ok` Actual 1 Expected 0. 2 passed, 1 failed (`test-14-red-both.log`) |
+| GREEN | `git apply logs/fix.patch`; `git apply logs/clip-fix.patch`; build; ctest | 0; 0; 0; **0** | 1/1 passed (`test-15-green-both.log`) |
+| Sibling sub-case | `git apply -R logs/clip-fix.patch` (sample fix still applied); build; ctest | 0; 0; **8** | FAIL at `:160`, `nanClipGain.ok` Actual 1 Expected 0. The sample assertions before it passed (`test-16-clip-off.log`) |
+| Restore | `git apply logs/clip-fix.patch`; build zene and test; ctest | 0; 0; 0; **0** | 1/1 passed (`test-17-final.log`) |
+
+The sample-sub-case runs, from the earlier version of the same test, have the same assertions and line numbers:
+
+| Step | Command | EXIT | Result |
+|---|---|---|---|
+| Subnormal scale | Replace `if (!std::isfinite(peak) || !std::isfinite(scale))` with `if (false)`; build; ctest | 0; **8** | FAIL at `:140`, `overflow.ok` Actual 1 (`test-9-scale-guard-off.log`) |
+| Infinite sample | Replace it with `if (!std::isfinite(scale))`; build; ctest | 0; **8** | FAIL at `:152`, `infiniteSource.ok` Actual 1 (`test-10-peak-guard-off.log`) |
+
+Both were restored. `git diff -- src/core/ControlCommandsSampleEdit.cpp` was byte-equal to `logs/fix.patch`
+(`cmp` EXIT 0, `SAME_AS_FIX_PATCH`).
+
+### Round 2: sample.edit_range gain (review rework)
+
+The reviewer's report showed `nanRangeGain.ok` 1 at `ControlSampleBakeGuardTest.cpp:183` on an earlier
+branch state. On this branch the regression is at `:166-172`. Its own first run, before the guard, is below.
+`logs/range-fix.patch` is the `ControlCommandsSampleRange.cpp` diff (14 lines), relative to the pre-guard code.
+
+| Step | Command (from `build/`, then `build/tests`) | EXIT | Result |
+|---|---|---|---|
+| RED, guard absent | `cmake --build . --target ControlSampleBakeGuardTest zene -j4`; `ctest -R ControlSampleBakeGuardTest --output-on-failure` | 0; **8** | FAIL at `ControlSampleBakeGuardTest.cpp:170`, `nanRangeGain.ok` Actual 1 Expected 0 (`test-1-red-range.log`) |
+| GREEN | `git diff -- src/core/ControlCommandsSampleRange.cpp > logs/range-fix.patch` (EXIT 0); build; ctest | 0; 0; **0** | 1/1 passed (`test-2-green-range.log`) |
+| RED, guard hunk reversed | `git apply -R logs/range-fix.patch`; build; ctest | 0; 0; **8** | FAIL at `:170`, `nanRangeGain.ok` Actual 1 (`test-3-red-range-reversed.log`) |
+| Restored | `git apply logs/range-fix.patch`; build; ctest | 0; 0; **0** | 1/1 passed (`test-4-green-restored.log`) |
+
+The final undo in the test (`REV_UNDO_OR_FAIL`) runs after the range refusal, so a refusal that pushed an undo
+step would remove the wrong step and fail the test. The sample-level frames are compared bit-for-bit before
+and after the refusal (`beforeRange`).
+
+### Affected family
+
+| Command | EXIT | Result |
+|---|---|---|
+| `cmake --build . --target ClipEditsTest ClipPolarityTest ClipEditsMenuTest ClipWaveformEditTest -j4` | 0 | built (`build-18-clip-family.log`) |
+| `cmake --build . --target LinkedClipEditsTest -j4` | 0 | built (`build-19-linked.log`) |
+| `cd tests && ctest -R "ClipEdits|ClipPolarity|ClipWaveformEdit|ControlSample|LinkedClipEdits" --output-on-failure` | 0 | 10/10 passed: ClipEditsTest, ClipPolarityTest, LinkedClipEditsTest, ControlSampleArrayTest, ControlSampleOperatorTest, ControlSampleBakeGuardTest, ControlSampleStereoTest, ClipEditsMenuTest, ClipWaveformEditTest, ControlClipPolarity (`test-20-family-final.log`) |
+| Round 2 family: `cmake --build . --target ClipEditsTest ClipPolarityTest LinkedClipEditsTest ControlSampleArrayTest ControlSampleOperatorTest ControlSampleStereoTest ControlSampleBakeGuardTest ClipEditsMenuTest ClipWaveformEditTest AudioAnalysisTest SampleEditorDialogTest SampleEditorDocsTest DevicePanelTest -j4`; `ctest -R "ClipEdits|ClipPolarity|ClipWaveformEdit|ControlSample|LinkedClipEdits|AudioAnalysis|SampleEditor|DevicePanel"` | 0; 0 | 14/14 passed. Adds AudioAnalysisTest, SampleEditorDialogTest, SampleEditorDocsTest and DevicePanelTest, which call `sample.edit_range` (`test-5-family.log`). `ControlClipPolarity` is a Python driver that runs the rebuilt `zene` binary. |
+
+The first run of this family (`test-18-clip-family.log`) exited 8 with `LinkedClipEditsTest` "Not Run". I had
+matched it by name but not built it. The build and the run above are the fix for that. The other 9 passed.
+
+Test counts: ctest executed 1 test for `ControlSampleBakeGuardTest` and 10 for the family. Nothing ran zero tests.
+
+### Gates
+
+The fixer recorded that `feature_check.py` could not create its log directory in its sandbox and ran the simple
+gates manually. Independent QA ran the required feature check on the final reviewed tree; it exited 0 with all
+six simple gates and both base-comparison ratchets passing.
+
+| Gate | Command | EXIT |
+|---|---|---|
+| fork-sources (registration, plus rerun of the all-sources recipe) | `bash tests/fork-sources-gate.sh` | 0 |
+| all-sources-reproduce | `bash tests/all-sources-reproduce.sh` | 0 (REPRODUCES) |
+| no-upstream-regression | `bash tests/no-upstream-regression-gate.sh` | 0 |
+| check-namespace | `tests/scripted/check-namespace` | 0 |
+| no-tautology | `bash tests/no-tautology-gate.sh` | 0 |
+| doc-figures | `python3 tests/doc-figures-gate.py` | 0 |
+| complexity (ratchet) | `bash tests/complexity-gate.sh --check` | 1 |
+| file-length (ratchet) | `bash tests/file-length-gate.sh --check` | 1 |
+
+The independent feature check compared against base `7641e9493` and reported no new complexity or file-length
+items in changed files. The manual gate table above records the fixer's earlier run; its feature-check and
+submit-check results were environment-limited at that time.
+
+### Independent QA verification (2026-10-27)
+
+| Check | Command | EXIT | Result |
+|---|---|---:|---|
+| Whole change reversed | `cmake --build build --target zene ControlSampleBakeGuardTest -j12`; `ctest -R ControlSampleBakeGuardTest --output-on-failure` from `build/tests` | 0; **8** | Regression failed at `ControlSampleBakeGuardTest.cpp:122`; `nanGain.ok` was 1. Product files `ControlCommandsSampleEdit.cpp`, `ControlCommandsClipEdits.cpp`, and `ControlCommandsSampleRange.cpp` were restored from base `7641e9493`. |
+| Round-2 range guard isolated and reversed | same build; same ctest | 0; **8** | With only `ControlCommandsSampleRange.cpp` reverted, failure was `nanRangeGain.ok` 1 at `ControlSampleBakeGuardTest.cpp:170`. |
+| Whole change restored | same build; same ctest | 0; 0 | 1/1 passed. Product files restored with `git checkout -- <paths>`. |
+| Envelope regression before QA guard | `cmake --build build --target zene ClipGainEnvelopeTest -j12`; `ctest -R ClipGainEnvelopeTest --output-on-failure` from `build/tests` | 0; **8** | `nonFinite.ok` was 1 at `ClipGainEnvelopeTest.cpp:167`. |
+| Envelope guard reversed | same build; same ctest | 0; **8** | `nonFinite.ok` was 1 again at line 167. The test's direct `QJsonValue` assertion confirms NaN remains a numeric array element. |
+| Final focused targets | `cmake --build build --target zene ClipGainEnvelopeTest ControlSampleBakeGuardTest -j12`; `ctest -R ClipGainEnvelopeTest --output-on-failure`; `ctest -R ControlSampleBakeGuardTest --output-on-failure` | 0; 0; 0 | Both focused tests passed 1/1 after restoring all product guards. |
+| Feature check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p22-66` | 0 | All six simple gates and both ratchet comparisons passed. |
+| Whitespace | `git diff --check` | 0 | No whitespace errors. |
+
+## Self-check
+
+- **The regression test fails with the change reverted and passes with it.** Yes. RED `test-14-red-both.log`
+  exit 8 at `:122`. GREEN `test-17-final.log` exit 0. The clip-only sub-case `test-16-clip-off.log` exit 8 at
+  `:160`. The sample sub-cases exit 8 at `:140` and `:152`. The table above has every command and EXIT.
+- **The test is deterministic.** It has no wall-clock timing, sleep, thread or randomness. The inputs are fixed
+  values: `std::numeric_limits<double>::quiet_NaN()`, the float literal `1.0e-39f`, and
+  `std::numeric_limits<float>::infinity()`. The source is set by a fixture call, `replaceSample`, with no
+  checkpoint, so the test controls the state and the command under test starts from it.
+- **The fix is at the cause, and the siblings are consistent.** The cause is a range comparison that is false
+  for NaN, so the finite check comes first, in each handler that uses that range. The scale guard covers the
+  other non-finite route into the same bake. Siblings checked by reading the code:
+  - `sample.amplify`, `sample.normalize`: fixed.
+  - `sample.reverse`, `sample.fade` (`ControlCommandsSampleEdit.cpp`): use the same `commitBake`, which this
+    change does not touch. `sample.reverse` takes no numeric argument, and `sample.fade` takes only `direction`.
+    Neither is affected.
+  - `sample.edit_range`: fixed, and an earlier version of this report wrongly listed it as not affected. Its
+    `gain` op takes `gain_db` and had the same NaN-blind range test, so a NaN gain scaled the clip's source
+    frames and wrote NaN samples. The
+    finite check is now in `gainRefused`, `src/core/ControlCommandsSampleRange.cpp:155-160`. The function
+    returns false for every op other than `gain`, so the other ops are unchanged.
+  - `sample.crop`, `sample.make_unique` (`src/core/ControlCommandsSampleTools.cpp`),
+    `sample.spectrogram` (`src/core/ControlCommandsAudioAnalysis.cpp`), `sample.split_stereo`
+    (`src/core/ControlCommandsSampleStereo.cpp`): registered in other files. The helpers `resolveBakeTarget`,
+    `commitBake` and `sourceState` are in an anonymous namespace in `ControlCommandsSampleEdit.cpp`, so none of
+    these share the changed code path. Not affected.
+  - `clip.set_gain` (`src/core/ControlCommandsClipEdits.cpp:348-349`): fixed. It declares the same range.
+  - `clip.gain_envelope_set` (`src/core/ControlCommandsClipEnvelope.cpp:117-124`): the nested point parser had the
+    same NaN-blind range check. QA added the finite guard and regression described above.
+- **No collateral damage.**
+  - Every value that was accepted before is still accepted. The ranges -60..24 (gain) and -60..0 (target) are
+    unchanged. The new checks fire only for NaN or infinity.
+  - The scale check fires only when the scale or the peak is non-finite. At 0 dB, a finite scale needs a peak
+    above about 2.9e-39 (1/FLT_MAX), and at -60 dB about 2.9e-42. Those are subnormal levels. An infinite
+    sample is non-finite audio. No legitimate audio is refused.
+  - Save and load code is unchanged. A project already saved with a NaN clip gain still loads as it did
+    before. This change does not repair it. That would be a separate data migration.
+  - Old projects and rendering are unaffected, because no format, schema or result shape changed.
+- **The verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE.** The code evidence is the `:189-190` and `:241-242`
+  before-state above. The verdict question does not apply.
+- **Sibling items from `submit_check` (the `sample.*` list).** Answered in the "fix is at the cause" item above.
+
+## Files committed
+
+- Commit `6d0a1a220`: `src/core/ControlCommandsSampleEdit.cpp`, `tests/src/core/ControlSampleBakeGuardTest.cpp`,
+  `tests/CMakeLists.txt`.
+- The following commit: `src/core/ControlCommandsClipEdits.cpp`, `tests/src/core/ControlSampleBakeGuardTest.cpp`
+  (the `clip.set_gain` assertion), `tests/fork-sources.txt`, `tests/all-sources.txt`,
+  `docs/qwen-fixes-2026-10/cluster-new-p22-66.md`.
+- The round-2 commit (review rework): `src/core/ControlCommandsSampleRange.cpp` (the `gainRefused` finite check),
+  `tests/src/core/ControlSampleBakeGuardTest.cpp` (the `sample.edit_range` regression), and this report.
+- Independent QA also changed `src/core/ControlCommandsClipEnvelope.cpp` and
+  `tests/src/core/ClipGainEnvelopeTest.cpp` for the nested gain-envelope point path.
+
+## Not done
+
+- The full `ctest` suite was not run. I ran the affected families: the sample family, the clip family that calls
+  `clip.set_gain`, and the four tests that call `sample.edit_range` (14/14 in round 2).
+- The non-finite gain paths audited for this review are the sample bakers, `sample.edit_range`,
+  `clip.set_gain`, and `clip.gain_envelope_set`; this review did not audit unrelated clip edits.
+- The fixer could not run `feature_check.py` in its sandbox; independent QA reran it successfully on the final
+  reviewed tree and verified the base comparison for both ratchets.
+- `sampleops::peakOf` ignores NaN samples, so a source that already contains NaN keeps it through a bake (see
+  "Checked and not changed"). Out of scope for this finding.

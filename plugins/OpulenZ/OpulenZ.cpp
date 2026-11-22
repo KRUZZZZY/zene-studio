@@ -532,8 +532,10 @@ void OpulenzInstrument::tuneEqual(int center, float Hz) {
 // Find suitable F number in lowest possible block
 int OpulenzInstrument::Hz2fnum(float Hz) {
 	for(int block=0; block<8; ++block) {
-		auto fnum = static_cast<unsigned>(Hz * std::exp2(20.0f - static_cast<float>(block)) / 49716.0f);
-		if(fnum<1023) {
+		// Check the float before converting: negative, NaN or >= 2^32 has no unsigned value
+		const float scaled = Hz * std::exp2(20.0f - static_cast<float>(block)) / 49716.0f;
+		if(scaled >= 0.0f && scaled < 1023.0f) {
+			auto fnum = static_cast<unsigned>(scaled);
 			return fnum + (block << 10);
 		}
 	}

@@ -63,6 +63,7 @@
 #include "TakeLanesPanel.h"
 #include "Track.h"
 #include "TrackFolderMenu.h"
+#include "TrackRoleMenu.h"
 #include "TrackRenderMenu.h"
 #include "ChainPresetMenu.h"
 #include "TrackContainerView.h"
@@ -465,15 +466,16 @@ void TrackOperationsWidget::updateMenu()
 		toMenu->addSeparator();
 		toMenu->addMenu(trackView->midiMenu());
 	}
-	// M3 item 6: a sample track's take lanes, audition and consolidate - a registry-first
-	// panel (TakeLanesPanel) in a sub-window of its own.
-	if (dynamic_cast<SampleTrackView*>(m_trackView) != nullptr)
+	// M3 item 6: sample and instrument tracks get the take lanes panel (MIDI takes, Q050-054.2),
+	// a registry-first panel (TakeLanesPanel) in a sub-window of its own.
+	if (dynamic_cast<SampleTrackView*>(m_trackView) != nullptr || dynamic_cast<InstrumentTrackView*>(m_trackView) != nullptr)
 	{
 		QAction* lanes = toMenu->addAction(tr("Take lanes..."), this, [this] {
 			auto* panel = new TakeLanesPanel(control::trackIdOf(m_trackView->getTrack()));
 			panel->setAttribute(Qt::WA_DeleteOnClose);
 			getGUI()->mainWindow()->addWindowedWidget(panel)->show();
 		});
+		lanes->setObjectName(QStringLiteral("takeLanes"));
 		lanes->setProperty("controlCommand", QStringLiteral("comp.get_state"));
 	}
 	if( dynamic_cast<AutomationTrackView *>( m_trackView ) )
@@ -484,6 +486,8 @@ void TrackOperationsWidget::updateMenu()
 	// 0.5.0 W1: recording, takes and rendering - the same menu as the Inspector's (registry commands).
 	ShellCommandMenus::populateTrack(toMenu->addMenu(tr("More")), m_trackView->getTrack());
 
+	// Q050-283.2: a neutral row's "Assign instrument", an instrument track's "Make neutral" (track.set_role).
+	addTrackRoleMenu(toMenu, m_trackView->getTrack());
 	// Folder membership, and on a folder its collapse/pin/routing, through the track.* commands.
 	addTrackFolderMenu(toMenu, m_trackView->getTrack());
 	// Freeze / Unfreeze and Bounce in place (freeze.* / bounce.in_place).

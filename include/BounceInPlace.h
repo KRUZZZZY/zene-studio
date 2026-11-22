@@ -40,6 +40,7 @@ class QTemporaryDir;
 namespace lmms
 {
 
+class MixerChannel;
 class Track;
 
 /*! The offline render behind bounce-in-place and freeze.
@@ -129,6 +130,13 @@ public:
 	 */
 	static Result renderTrack(Track* track, const QString& outPath, const Range& range,
 			int sampleRate = 44100);
+
+	/*! Q050-124: renders mixer bus @a bus's own output - its routed inputs through its trim, inserts, VCA and pan,
+	 *  i.e. the signal just before its fader - to @a outPath (32-bit float WAV at the engine's rate). The child
+	 *  render captures that channel instead of the master (`render ... --capture-channel <id>`), so the session is
+	 *  not modified. Refuses a channel that is not a bus, a frozen bus, a bus nothing is routed to and a project
+	 *  whose tempo map is in force. Defined in MixerBusFreeze.cpp. */
+	static Result renderBus(MixerChannel* bus, const QString& outPath);
 
 	/*! 0.5.0 L12 (ED-205): the same render with every track of @a tracks unmuted - their summed
 	 *  contribution to the mix (a selection bounced to one file). The tracks' own state decides

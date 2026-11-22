@@ -41,6 +41,8 @@
 //   * theWakePathNamesNoLockOrAllocationInItsSource: a source scan of the two functions, so
 //     the property is checked on every platform, including a macOS job whose libSystem calls
 //     an executable cannot interpose.
+//   * theWasmPoolWakesOneLaneForWorkAndAllOnShutdown: the WASM pool's ordinary post keeps the
+//     single-waiter shape std::atomic::notify_one had, while shutdown still wakes every lane.
 //   * repeatedWakeupsDeliverEveryPeriodWithoutDeadlock: many periods, real workers, every job
 //     exactly once, bounded join.
 //   * quitRacingAWakeupAlwaysJoinsTheWorker: shutdown raced against a wake, repeatedly.
@@ -439,6 +441,31 @@ private slots:
 			QVERIFY2(notify.find(forbidden) == std::string::npos,
 				qPrintable(QStringLiteral("notify() names '%1'").arg(forbidden)));
 		}
+	}
+
+	//! The macOS-availability fix moved the WASM pool's posts onto workerwake, and in doing
+	//! so one queued block must not wake every parked lane: std::atomic::notify_one used to
+	//! wake exactly one. WasmWorkerPoolTest exists only with WANT_WASM, so this read of the
+	//! shipping functions runs in the default configure, from the tree the binary was built
+	//! from. shutdown() is the sibling that still has to release every parked lane.
+	void theWasmPoolWakesOneLaneForWorkAndAllOnShutdown()
+	{
+		bool found = false;
+		const std::string notifyWork = functionBody(
+			sourcePath("src/wasm/WasmWorkerPool.cpp"),
+			"bool WasmWorkerPool::notifyWork()", found);
+		QVERIFY2(found, "could not read notifyWork() in src/wasm/WasmWorkerPool.cpp");
+		const std::string shutdown = functionBody(
+			sourcePath("src/wasm/WasmWorkerPool.cpp"),
+			"void WasmWorkerPool::shutdown()", found);
+		QVERIFY2(found, "could not read shutdown() in src/wasm/WasmWorkerPool.cpp");
+
+		QVERIFY2(notifyWork.find("workerwake::notifyOne(") != std::string::npos,
+			"notifyWork() does not wake exactly one parked lane");
+		QVERIFY2(notifyWork.find("workerwake::notify(") == std::string::npos,
+			"notifyWork() wakes every parked lane; one queued block must not scan them all");
+		QVERIFY2(shutdown.find("workerwake::notify(") != std::string::npos,
+			"shutdown() must still wake every parked lane");
 	}
 
 	//! AC2, the pool half, deterministic: a job queued before the wake is taken by a worker,

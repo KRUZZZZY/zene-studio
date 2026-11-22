@@ -239,7 +239,7 @@ private:
 
 	FloatModel * m_tensionModel;
 
-	AutomationClip * m_clip;
+	QPointer<AutomationClip> m_clip;
 	float m_minLevel;
 	float m_maxLevel;
 	float m_step;
@@ -338,6 +338,14 @@ public:
 	void setGhostSample(SampleClip* newSample) { m_editor->setGhostSample(newSample); };
 
 	const AutomationClip* currentClip();
+
+	//! 0.5.0 L13 (automation.editor_mode, ControlCommandsAutomationMode.cpp): the edit mode, its
+	//! portable name (draw, erase, draw_out_values, edit_tangents), and setting it THE WAY THE
+	//! TOOLBAR DOES - by triggering the matching action, so the checked button follows. False when
+	//! that action is disabled here (Edit Tangents on a non-cubic curve).
+	AutomationEditor::EditMode editorMode() const { return m_editor->m_editMode; }
+	QString editorModeName() const;
+	bool setEditorMode(AutomationEditor::EditMode mode);
 
 	void dropEvent( QDropEvent * _de ) override;
 	void dragEnterEvent( QDragEnterEvent * _dee ) override;

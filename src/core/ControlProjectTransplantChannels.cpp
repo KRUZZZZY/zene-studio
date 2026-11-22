@@ -29,6 +29,7 @@
  *  hardware insert send and return). The tracks and the channels made for them are ONE undo step. */
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 
 #include <QDomDocument>
@@ -57,12 +58,18 @@ namespace
 
 constexpr const char* MixchAttribute = "mixch";
 
-//! A model's plain value as a project file holds it: an attribute, or an element's 'value'.
+//! A model's plain value as a project file holds it: an attribute, or an element's 'value'. Text that is not a
+//! finite number gives @a fallback, as the engine's own mixer loader does.
 double plainValue(const QDomElement& channel, const char* name, double fallback)
 {
-	if (channel.hasAttribute(QLatin1String(name))) { return channel.attribute(QLatin1String(name)).toDouble(); }
+	const auto parsed = [fallback](const QString& text) {
+		bool ok = false;
+		const double value = text.toDouble(&ok);
+		return ok && std::isfinite(value) ? value : fallback;
+	};
+	if (channel.hasAttribute(QLatin1String(name))) { return parsed(channel.attribute(QLatin1String(name))); }
 	const QDomElement child = channel.firstChildElement(QLatin1String(name));
-	return child.hasAttribute(QStringLiteral("value")) ? child.attribute(QStringLiteral("value")).toDouble() : fallback;
+	return child.hasAttribute(QStringLiteral("value")) ? parsed(child.attribute(QStringLiteral("value"))) : fallback;
 }
 
 //! The description of the source channel @a channel: only what a copied track brings along.
@@ -121,7 +128,7 @@ int resolveNeed(const ChannelNeed& need, std::vector<int>* created)
 		if (mixer->mixerChannel(i)->m_name == need.name) { return i; }
 	}
 	QDomDocument doc;
-	doc.setContent(need.xml);
+	if (!doc.setContent(need.xml)) { return -1; }  // a description that does not parse makes no channel
 	const int index = mixer->createChannel();
 	applyDescription(*mixer->mixerChannel(index), doc.documentElement());
 	created->push_back(mixer->mixerChannel(index)->id());
@@ -175,6 +182,7 @@ void settleChannel(QDomElement element, const TrackPlan& plan, int need, std::ve
 	if (need < 0 || need >= static_cast<int>(plan.needs.size())) { return; }
 	int& index = (*resolved)[static_cast<std::size_t>(need)];
 	if (index < 0) { index = resolveNeed(plan.needs[static_cast<std::size_t>(need)], created); }
+	if (index < 0) { return; }  // no channel for it: the track keeps the master detach() gave it
 	channelSettingsOf(element).setAttribute(QLatin1String(MixchAttribute), index);
 }
 
@@ -187,7 +195,7 @@ void build(const TrackPlan& plan, Built* made)
 	for (int i = 0; i < plan.documents.size(); ++i)
 	{
 		QDomDocument doc;
-		doc.setContent(plan.documents[i]);
+		if (!doc.setContent(plan.documents[i])) { continue; }  // a document that does not parse makes no track and no channel
 		QDomElement element = doc.documentElement();
 		settleChannel(element, plan, static_cast<std::size_t>(i) < plan.need.size() ? plan.need[static_cast<std::size_t>(i)] : -1,
 			&resolved, &made->channels);

@@ -42,6 +42,7 @@
 #include "WarpMarkers.h"
 #include "PlayHandle.h"
 #include "TakeLane.h"
+#include "TransientRepeat.h"
 
 namespace lmms
 {
@@ -87,6 +88,12 @@ public:
 	 *  track's mute says: consolidating a muted track must not bake silence. Set on a
 	 *  handle that never reaches the engine; the live path never sets it. */
 	void setIgnoresTrackMute(bool ignores) { m_ignoresTrackMute = ignores; }
+
+	/*! Q050-111: run @a clip's own effects (SampleClip::processClipEffects) on every period this handle renders,
+	 *  after the clip's fades, gain and take gating and before the track sums it with its other clips. Only the
+	 *  live schedule (SampleTrack::play) sets it; an offline render of the clip's source (clip.consolidate, the
+	 *  previews) leaves it null and renders the source as it always did. */
+	void setClipEffects(SampleClip* clip) { m_effectsClip = clip; }
 
 	inline f_cnt_t framesDone() const
 	{
@@ -159,6 +166,17 @@ private:
 	 *  clip's pool, or nullptr (WSOLA renders). Borrowed, never owned: released
 	 *  dirty in the destructor, reset by the pool's recycler off this thread. */
 	RubberBandVoice* m_rubberBand = nullptr;
+	/*! Q050-162: a warped clip in the Repeat or Gate mode renders its transient
+	 *  segments through `m_transientRepeat` (include/TransientRepeat.h) instead
+	 *  of the resampler or a stretcher. Snapshotted at construction - the
+	 *  segments, the clip window they are read from and the interval at the
+	 *  tempo of that moment - in fixed arrays; false for every other clip.
+	 *  Defined in src/core/TransientRepeat.cpp. */
+	bool m_repeatsTransients = false;
+	SampleWindow m_repeatWindow;
+	TransientRepeatRenderer m_transientRepeat;
+	void snapshotTransientRepeat(const SampleClip* clip, WarpStretchMode mode);
+	void renderTransientRepeat(SampleFrame* dst, f_cnt_t frames);
 	/*! The clip's fades and its gain, snapshotted at construction exactly as the
 	 *  window and the warp are (invariant I1): a live handle renders the envelope
 	 *  it was created with, and nothing the control thread does to the clip
@@ -192,6 +210,7 @@ private:
 	bool m_doneMayReturnTrue = true;
 	bool m_ownAudioBusHandle = false;
 	bool m_ignoresTrackMute = false;
+	SampleClip* m_effectsClip = nullptr;  //!< Q050-111: see setClipEffects(); borrowed, like m_sample
 	std::uint16_t m_poolSlot = NotPooled;
 	bool m_frozenTakePoolVoice = false;
 

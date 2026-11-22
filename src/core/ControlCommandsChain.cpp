@@ -111,6 +111,7 @@ bool captureDevices(const ControlTarget& target, QList<ControlChainPresetDevice>
 		ControlChainPresetDevice device;
 		device.state = controlDeviceStateBytes(handle);
 		if (!controlChainPresetIdentity(&device, error)) { return false; }
+		device.bindings = presetbindings::collect(handle.effect);  // Q050-331: the manifest of what the state carries
 		out->append(device);
 	}
 	return true;
@@ -285,7 +286,8 @@ void registerChainSave(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("save");
 	cmd.description = QStringLiteral("Capture a target's effect chain as a named preset: every "
 		"device in the chain's own order, each with the state document plugin.state_save writes "
-		"for it (enabled, wet, autoquit and every parameter). Writes ONE file in the store "
+		"for it (enabled, wet, autoquit and every parameter, with its MIDI controller binding, listed in a per-device "
+		"binding manifest chain.apply reports against). Writes ONE file in the store "
 		"(chainpresets/<name>.zcp), outside the project, so the preset can be applied to a "
 		"track in another project, and so project.save/project.open cannot lose it. An existing "
 		"preset of that name is refused unless \"overwrite\":true. 'target' is a trk-<n> or "

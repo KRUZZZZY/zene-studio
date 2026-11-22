@@ -216,6 +216,14 @@ public:
 	bool insertRoute(int modulator, int route, const ModulationRoute& incoming);
 	bool removeRoute(int modulator, int route);
 	bool setDepth(int modulator, int route, float depth);
+	//! R1.3's flag on an existing route: evaluate it inside each block, or once per block.
+	bool setPerSample(int modulator, int route, bool perSample)
+	{
+		Modulator* const entry = this->modulator(modulator);
+		if (entry == nullptr || route < 0 || route >= entry->routeCount()) { return false; }
+		entry->routes[static_cast<std::size_t>(route)].perSample = perSample;
+		return true;
+	}
 
 	//! Replaces every route's depth with 0. Used by the deactivate paths.
 	void zeroDepths();

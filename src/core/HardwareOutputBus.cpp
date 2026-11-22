@@ -56,10 +56,12 @@ void HardwareOutputBus::add(int start, int width, const SampleFrame* src, f_cnt_
 	if (src == nullptr || start < 0 || side.data.empty()) { return; }
 	const f_cnt_t count = std::min(frames, m_frames);
 	const int sides = width == 1 ? 1 : 2;
+	// A route that does not fit entirely inside the bus is dropped whole, before any channel is written.
+	// Overflow-safe: start + sides could overflow for a start near INT_MAX.
+	if (start > MaxChannels - sides) { return; }
 	for (int s = 0; s < sides; ++s)
 	{
 		const int channel = start + s;
-		if (channel >= MaxChannels) { return; }
 		float* plane = side.data.data() + static_cast<std::size_t>(channel) * m_frames;
 		for (f_cnt_t f = 0; f < count; ++f)
 		{
@@ -87,6 +89,8 @@ bool HardwareOutputBus::active() const noexcept
 
 float HardwareOutputBus::sample(int channel, f_cnt_t frame, const SampleFrame& master) const noexcept
 {
+	// A frame outside the period is no audio: silence, not the next channel's plane or past the storage.
+	if (frame < 0 || frame >= m_frames) { return 0.f; }
 	const Side& side = readSide();
 	float value = channel >= 0 && channel < side.used ? side.data[static_cast<std::size_t>(channel) * m_frames + frame] : 0.f;
 	const Placement& at = side.master;
@@ -96,6 +100,7 @@ float HardwareOutputBus::sample(int channel, f_cnt_t frame, const SampleFrame& m
 
 float HardwareOutputBus::monoSample(f_cnt_t frame, const SampleFrame& master) const noexcept
 {
+	if (frame < 0 || frame >= m_frames) { return 0.f; }
 	const Side& side = readSide();
 	const float value = side.used > 0 ? side.data[static_cast<std::size_t>(frame)] : 0.f;
 	return value + (side.master.start == 0 ? master.average() : 0.f);

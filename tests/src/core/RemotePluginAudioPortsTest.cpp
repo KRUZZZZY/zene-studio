@@ -31,9 +31,11 @@
 #include <QtTest>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <type_traits>
 
 #include <QDir>
@@ -42,6 +44,7 @@
 #include <QList>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <QStringList>
 #include <QTemporaryDir>
 
 #ifndef SYNC_WITH_SHM_FIFO
@@ -69,12 +72,16 @@ void countWarnings(QtMsgType type, const QMessageLogContext&, const QString&)
 	if (type == QtWarningMsg) { ++g_warningsSeen; }
 }
 
+#ifndef SYNC_WITH_SHM_FIFO
 //! Criticals seen while a malformed message is refused, for the same reason as above.
+//! The malformed-message tests that use this are socket-transport-only, so on a build
+//! that selects SYNC_WITH_SHM_FIFO the helper is not used (and -Werror rejects it).
 int g_criticalsSeen = 0;
 void countCriticals(QtMsgType type, const QMessageLogContext&, const QString&)
 {
 	if (type == QtCriticalMsg) { ++g_criticalsSeen; }
 }
+#endif // SYNC_WITH_SHM_FIFO
 
 //! AudioPortsModel is abstract (bufferPropertiesChanging)
 class TestAudioPortsModel : public AudioPortsModel
@@ -358,6 +365,56 @@ private slots:
 		Engine::destroy();
 	}
 
+	//! The wait for a period's reply must never end after the period itself.
+	//!
+	//! The audio thread waits for the client until a deadline inside the render
+	//! period, converted to whole milliseconds with ceil (the conversion at
+	//! src/common/RemotePluginBase.cpp:630-634). Rounding that conversion up must
+	//! not push the end of the wait past the end of the period: the rest of the
+	//! graph needs the time after it. Injected time points only - no clock,
+	//! sleeps or threads.
+	void periodWaitNeverEndsAfterThePeriod()
+	{
+		const std::array<int, 3> rates{44100, 48000, 96000};
+		const std::array<int, 6> frameCounts{32, 64, 128, 256, 512, 1024};
+		QStringList failures;
+		for (const int rate : rates)
+		{
+			for (const int frames : frameCounts)
+			{
+				const auto budget = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+					std::chrono::duration<double>{static_cast<double>(frames) / static_cast<double>(rate)});
+				const auto start = std::chrono::steady_clock::time_point{};
+				const std::array<std::chrono::steady_clock::duration, 4> offsets{
+					std::chrono::steady_clock::duration::zero(),
+					std::chrono::microseconds{1},
+					budget / 2,
+					budget - std::chrono::microseconds{1}};
+				for (const auto offset : offsets)
+				{
+					const auto now = start + offset;
+					const auto deadline = RemotePlugin::periodDeadlineForTesting(now, start, budget);
+					const auto waitMs = std::max<std::int64_t>(0,
+						std::chrono::ceil<std::chrono::milliseconds>(deadline - now).count());
+					const auto periodMs = std::chrono::duration<double, std::milli>{budget}.count();
+					const auto end = now + std::chrono::milliseconds{waitMs};
+					if (end > start + budget)
+					{
+						const auto endMs = std::chrono::duration<double, std::milli>{end - start}.count();
+						failures << QStringLiteral("rate/frames %1/%2, now offset %3 us, wait %4 ms, end %5 ms > period %6 ms")
+							.arg(rate).arg(frames)
+							.arg(std::chrono::duration_cast<std::chrono::microseconds>(offset).count())
+							.arg(waitMs)
+							.arg(QString::number(endMs, 'f', 3))
+							.arg(QString::number(periodMs, 'f', 3));
+					}
+				}
+			}
+		}
+		QVERIFY2(failures.isEmpty(),
+			qPrintable(QStringLiteral("period wait ends after the period:\n") + failures.join(QLatin1Char('\n'))));
+	}
+
 	//! `ProcessWatcher::m_quit` is stored by stop()/reset() on the calling
 	//! thread while the watcher's run() loop reads it on its own thread.
 	//! `volatile` does not synchronize those accesses (a C++ data race, so
@@ -572,6 +629,43 @@ private slots:
 		// ... and the new block is really writable
 		newOut.bufferPtr(0)[frames - 1] = 1.5f;
 		QCOMPARE(newOut.sample(0, frames - 1), 1.5f);
+	}
+
+	//! A direct oversized updateAudioBuffer request whose wrapped product is
+	//! small must be rejected BEFORE allocation: returns nullptr and the ports
+	//! go inactive (the failedReallocationLeavesBuffersInactive contract).
+	void oversizedUpdateAudioBufferIsRejected()
+	{
+		constexpr f_cnt_t hugeFrames = static_cast<f_cnt_t>(std::numeric_limits<std::size_t>::max() / 2) + 1;
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		// First a small valid allocation so there is state to preserve/invalidate
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+		QVERIFY(plugin.updateAudioBuffer(2, 2, frames) != nullptr);
+		QCOMPARE(ports.buffers()->initialized(), false); // updateAudioBuffer alone doesn't set ports' m_frames
+
+		// Direct oversized request: (4 * hugeFrames) wraps to a small size_t.
+		// Pre-fix it would create() a tiny block and return non-null.
+		QCOMPARE(plugin.updateAudioBuffer(2, 2, hugeFrames), static_cast<float*>(nullptr));
+
+		// Through the ports, the failed reallocation leaves them inactive
+		ports.buffers()->updateBuffers(2, 2, hugeFrames);
+		QCOMPARE(ports.buffers()->initialized(), false);
+		QCOMPARE(ports.buffers()->frames(), f_cnt_t{0});
+	}
+
+	void combinedChannelCountsRetainWideTotal()
+	{
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		// The two 16-bit channel counts can sum to more than ch_cnt_t. The
+		// shared block must retain that total instead of narrowing it to zero.
+		QVERIFY(plugin.updateAudioBuffer(std::numeric_limits<ch_cnt_t>::max(), ch_cnt_t{1}, 1) != nullptr);
+		QCOMPARE(plugin.m_hostBlock.size(), std::size_t{65536});
 	}
 
 	//! A plugin that never initialized has no remote client, so process() must

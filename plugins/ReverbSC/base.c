@@ -25,7 +25,7 @@ int sp_createn(sp_data **spp, int nchan)
 	{
 		return SP_NOT_OK;
 	}
-	SPFLOAT* out = calloc((size_t)nchan, sizeof(float));
+	SPFLOAT* out = calloc((size_t)nchan, sizeof(*out));
 	if (out == NULL)
 	{
 		free(sp);
@@ -176,7 +176,11 @@ int sp_auxdata_alloc(sp_auxdata *aux, size_t size)
 
 int sp_auxdata_free(sp_auxdata *aux)
 {
-    free(aux->ptr);
+    if (aux != NULL) {
+        free(aux->ptr);
+        aux->ptr = NULL;
+        aux->size = 0;
+    }
     return SP_OK;
 }
 

@@ -251,6 +251,18 @@ int insertLatency(const MixerChannel& channel)
 	return exporting() ? 0 : std::max(0, channel.m_hardwareIo.insert.latencyFrames());
 }
 
+QString insertLatencySource(const MixerChannel& channel)
+{
+	const HardwareInsert& insert = channel.m_hardwareIo.insert;
+	if (!insert.enabled()) { return QStringLiteral("off"); }
+	if (exporting()) { return QStringLiteral("bypassed"); }
+	const HardwareInsert::Settings settings = insert.settings();
+	if (settings.latencyOverride >= 0) { return QStringLiteral("override"); }
+	// latencyFrames() drops a figure measured at another rate or on another route: unmeasured then.
+	return settings.measured >= 0 && insert.latencyFrames() == settings.measured
+		? QStringLiteral("measured") : QStringLiteral("unmeasured");
+}
+
 void mixOutputs(Mixer& mixer, const SampleFrame* master, f_cnt_t frames)
 {
 	HardwareOutputBus& bus = Engine::audioEngine()->hardwareOutputs();

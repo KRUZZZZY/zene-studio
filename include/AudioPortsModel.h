@@ -218,9 +218,32 @@ public:
 	 */
 	void setAllChannelCounts(ch_cnt_t trackChannels, ch_cnt_t inCount, ch_cnt_t outCount);
 	void setTrackChannelCount(ch_cnt_t count);
+	/**
+	 * Q050-155.2: grows the track channels to at least @a count (rounded up to a whole pair, at most
+	 * MaxTrackChannels) so the pins can address a wider host bus - a discrete-N mixer channel. Never shrinks:
+	 * a pin on a channel the bus no longer has stays set (and saved) and simply reaches nothing. The new
+	 * rows are all off, so nothing is heard differently until a pin on them is set.
+	 */
+	void growTrackChannels(int count);
 	void setChannelCounts(ch_cnt_t inCount, ch_cnt_t outCount);
 	void setChannelCountIn(ch_cnt_t inCount);
 	void setChannelCountOut(ch_cnt_t outCount);
+
+	//! Q050-155.2: one pin of a batch edit (setPins()); @a output selects the output matrix.
+	struct PinEdit
+	{
+		bool output = false;
+		ch_cnt_t trackChannel = 0;
+		ch_cnt_t processorChannel = 0;
+		bool enabled = false;
+	};
+
+	/**
+	 * Q050-155.2: sets every pin of @a edits as ONE routing edit: the engine's change guard is taken once, so
+	 * the render thread sees all of them or none, the caches are rebuilt once and dataChanged is emitted once
+	 * (only when a pin changed). Every index must be inside its matrix - the caller validates first.
+	 */
+	void setPins(const std::vector<PinEdit>& edits);
 
 	/**
 	 * SerializingObject implementation
@@ -294,6 +317,27 @@ public:
 		void add(AudioPortsModel* model) { m_models.push_back(model); }
 
 		std::vector<AudioPortsModel*> m_models;
+	};
+
+	/**
+	 * Q050-155.2: the host bus of the devices loaded while the scope is alive. A mixer channel set to discrete-N
+	 * loads its device chain inside one, so a device's matrix grows to the bus's N channels (growTrackChannels)
+	 * BEFORE its saved pins are read, and pins past the stereo pair survive a save and load. Outside every
+	 * scope a load grows nothing: a file on its own never sizes the matrix (BUG-PINBOUNDS). Control thread.
+	 */
+	class HostBusScope
+	{
+	public:
+		explicit HostBusScope(int channels) noexcept;
+		~HostBusScope() noexcept;
+		HostBusScope(const HostBusScope&) = delete;
+		HostBusScope& operator=(const HostBusScope&) = delete;
+
+		//! The innermost scope's channel count on this thread, or 0 outside every scope.
+		static auto channels() noexcept -> int;
+
+	private:
+		int m_previous;
 	};
 
 #ifdef LMMS_TESTING

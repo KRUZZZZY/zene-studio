@@ -154,6 +154,7 @@ ControlResult handleScanStart(const QJsonObject& args)
 
 	const PluginFactory::BackgroundScanStatus status = factory->backgroundScanStatus();
 	QJsonObject result;
+	result.insert(QStringLiteral("task"), QStringLiteral("plugin-scan-%1").arg(status.taskId));
 	result.insert(QStringLiteral("task_id"), status.taskId);
 	result.insert(QStringLiteral("total_files"), status.totalFiles);
 	result.insert(QStringLiteral("pace_ms"), paceMs);
@@ -164,7 +165,7 @@ ControlResult handleScanStart(const QJsonObject& args)
 			"scans one file, so plugin.list keeps serving the previous catalogue (catalogue_count files it "
 			"holds) until the run commits, plugin.scan_status follows the progress and the per-file outcomes, "
 			"plugin.scan_cancel stops the run and keeps the previous catalogue, and the task list (task.list) "
-			"shows the run with its progress and Cancel"));
+			"shows the run with its progress and Cancel; app.tasks lists it as 'task' and app.task_cancel stops it"));
 	QJsonObject before;
 	before.insert(QStringLiteral("outcome"), QStringLiteral("never"));
 	result.insert(QStringLiteral("__transaction"),
@@ -245,7 +246,7 @@ void registerPluginScanBackgroundCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("plugin");
 		cmd.verb = QStringLiteral("scan_start");
 		cmd.description = QStringLiteral("Start a background plug-in rescan: the same scan "
-			"plugin.rescan runs, one file per event-loop turn, so the window stays usable - "
+			"plugin.rescan runs, its libraries loaded on a worker thread and one file per event-loop turn, so the window stays usable - "
 			"plugin.list keeps serving the previous catalogue until the run commits. Follow it with "
 			"plugin.scan_status, stop it with plugin.scan_cancel; the task list (task.list) shows it "
 			"with its progress and Cancel. 'pace_ms' (0..1000, default 0) is the delay between two "
@@ -259,6 +260,7 @@ void registerPluginScanBackgroundCommands(ControlRegistry& registry)
 			{QStringLiteral("pace_ms"), integerProperty()},
 		});
 		cmd.resultSchema = objectSchema({
+			{QStringLiteral("task"), stringProperty()},
 			{QStringLiteral("task_id"), integerProperty()},
 			{QStringLiteral("total_files"), integerProperty()},
 			{QStringLiteral("pace_ms"), integerProperty()},

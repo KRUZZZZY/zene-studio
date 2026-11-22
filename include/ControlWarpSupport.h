@@ -129,6 +129,12 @@ QJsonObject warpStateSchema(QJsonObject extra = QJsonObject());
 QJsonObject tempoModeProperty();
 //! The closed set of stretch mode names (row 30).
 QJsonObject stretchModeProperty();
+//! Q050-162: the Repeat / Gate interval as the wire reports it - its name
+//! (`1/8`, `125ms`), whether it is synced, the division, and the interval in
+//! milliseconds at the project tempo of the moment.
+QJsonObject repeatRateJson(const TransientRepeatRate& rate);
+//! Q050-162: the closed set of synced divisions warp.stretch takes.
+QJsonObject repeatDivisionProperty();
 QJsonObject markerProperty();
 QJsonObject markersProperty();
 QJsonObject offsetTicksProperty();

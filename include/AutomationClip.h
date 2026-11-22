@@ -113,6 +113,10 @@ public:
 	const objectVector& objects() const;
 	objectVector objectsSnapshot() const;
 	bool hasObjects() const;
+	//! Whether the clip holds a target, read without m_clipMutex: the render
+	//! thread asks this every tick and may not block. Every change to m_objects
+	//! republishes the answer under the mutex (publishLiveTarget()).
+	bool hasLiveTarget() const noexcept { return m_hasLiveTarget.load(std::memory_order_acquire); }
 #ifdef LMMS_TESTING
 	using ObjectsReadProbe = void (*)(const AutomationClip*);
 	static void setObjectsReadProbeForTest(ObjectsReadProbe probe) { s_objectsReadProbe = probe; }
@@ -370,7 +374,7 @@ public:
 		return new AutomationClip(*this);
 	}
 
-	void clearObjects() { m_objects.clear(); }
+	void clearObjects() { m_objects.clear(); publishLiveTarget(); }
 
 public slots:
 	void clear();
@@ -441,6 +445,9 @@ private:
 	AutomationTrack * m_autoTrack;
 	std::vector<jo_id_t> m_idsToResolve;
 	objectVector m_objects;
+	//! Mirrors !m_objects.empty() for hasLiveTarget(). Written under m_clipMutex by publishLiveTarget().
+	std::atomic<bool> m_hasLiveTarget{ false };
+	void publishLiveTarget() noexcept { m_hasLiveTarget.store(!m_objects.empty(), std::memory_order_release); }
 	timeMap m_timeMap;	// actual values
 	timeMap m_oldTimeMap;	// old values for storing the values before setDragValue() is called.
 	float m_tension;

@@ -22,7 +22,8 @@
  *     oversized one: each is a DawProjectDeviation in the report, and the
  *     entries around it are still read. Nothing is dropped without a line in
  *     the report saying so. Only a container with no usable directory at all
- *     (not a ZIP, spanned, a directory past the file's end) is refused outright.
+ *     (not a ZIP, spanned, a directory past the file's end, or a ZIP64 directory
+ *     with entries past the 65,535 its count can state) is refused outright.
  *   - The central directory is authoritative: sizes and the CRC come from it,
  *     so an entry written with a data descriptor (the streaming writers' habit,
  *     where the local header's sizes are zero) reads the same as any other.
@@ -111,6 +112,8 @@ constexpr quint16 MethodDeflate = 8;
 constexpr quint16 EncryptedFlag = 0x0001;
 //! A 32-bit field holding this value is a ZIP64 "see the extra field" marker.
 constexpr quint32 Zip64Marker = 0xFFFFFFFFu;
+//! The end record's 16-bit entry-count fields hold this value when the real count is in a ZIP64 record.
+constexpr quint16 Zip64CountMarker = 0xFFFFu;
 
 //! One central-directory record, decoded.
 struct CentralEntry
@@ -140,22 +143,51 @@ void note(Scan& scan, const QString& entry, const char* kind, const QString& det
 	scan.report->deviations.push_back({entry, QString::fromLatin1(kind), detail});
 }
 
-//! Reads the whole of \a path. Every offset is an int, so a file past INT_MAX
-//! bytes is refused before it is read.
-bool readWhole(const QString& path, QByteArray* bytes, QString* error)
+//! Test seam, ZENE_TEST_CONTAINER_READ_FAULT: closes the file after its open and
+//! before the read, so the read gives back nothing while the open succeeded -
+//! the second-read fault a recovery must keep a file through. Closing needs no
+//! platform call, so every platform runs the same fault.
+void armTestReadFault(QFile& source)
 {
+	if (!qgetenv("ZENE_TEST_CONTAINER_READ_FAULT").isEmpty()) { source.close(); }
+}
+
+//! Reads the whole of \a path. Every offset is an int, so a file past INT_MAX
+//! bytes is refused before it is read. \a unreadable is set true when the file
+//! could not be opened or read: its bytes were never checked, which is not the
+//! same as the file being malformed or truncated, and a caller must not treat
+//! the two alike.
+//! Refuses a file that could not be opened or read, or that gave back less than
+//! it holds. Such a file was never checked: it is unreadable, not malformed, and
+//! \a unreadable says so for the caller. Always returns false.
+bool refuseUnreadable(const QString& path, const QFile& source, qint64 gotBytes, qint64 expected,
+	QString* error, bool* unreadable)
+{
+	if (unreadable) { *unreadable = true; }
+	const QString why = source.error() != QFileDevice::NoError
+		? source.errorString()
+		: QStringLiteral("it gave back %1 of %2 bytes").arg(gotBytes).arg(expected);
+	if (error) { *error = QStringLiteral("cannot read %1: %2").arg(path, why); }
+	return false;
+}
+
+bool readWhole(const QString& path, QByteArray* bytes, QString* error, bool* unreadable)
+{
+	if (unreadable) { *unreadable = false; }
 	QFile source(path);
-	if (!source.open(QIODevice::ReadOnly))
-	{
-		if (error) { *error = QStringLiteral("cannot read %1: %2").arg(path, source.errorString()); }
-		return false;
-	}
+	if (!source.open(QIODevice::ReadOnly)) { return refuseUnreadable(path, source, 0, 0, error, unreadable); }
 	if (source.size() > std::numeric_limits<int>::max())
 	{
 		if (error) { *error = QStringLiteral("%1 is too large for this reader (over 2 GiB)").arg(path); }
 		return false;
 	}
+	const qint64 expected = source.size();
+	armTestReadFault(source);
 	*bytes = source.readAll();
+	if (source.error() != QFileDevice::NoError || bytes->size() != expected)
+	{
+		return refuseUnreadable(path, source, bytes->size(), expected, error, unreadable);
+	}
 	return true;
 }
 
@@ -234,6 +266,23 @@ bool decodeCentral(const QByteArray& bytes, int cursor, CentralEntry* entry, int
 	entry->name = QString::fromUtf8(bytes.mid(nameAt, nameLength));
 	*next = nameAt + nameLength + readU16(bytes, cursor + 30) + readU16(bytes, cursor + 32);
 	return true;
+}
+
+//! True when a central-directory record follows the \a count records the directory declares. Asked only when the
+//! count is the ZIP64 sentinel: 0xFFFF is then a real count when nothing follows it (a classic archive of exactly
+//! 65,535 entries), and the sentinel of an archive this reader cannot count when a record does. The directory ends
+//! where the end record starts (findEndOfCentralDirectory), so a record signature found there is a further entry.
+bool holdsRecordPastCount(const QByteArray& bytes, int centralOffset, int count)
+{
+	int cursor = centralOffset;
+	for (int index = 0; index < count; index++)
+	{
+		CentralEntry entry;
+		int next = 0;
+		if (!decodeCentral(bytes, cursor, &entry, &next)) { return false; }  // a truncated directory is reported later
+		cursor = next;
+	}
+	return cursor + CentralHeaderSize <= bytes.size() && readU32(bytes, cursor) == CentralHeaderSignature;
 }
 
 //! Feature flags this reader does not decode. True (after a note) when \a entry has one.
@@ -522,13 +571,24 @@ void scanDirectory(Scan& scan, int cursor, int count)
 
 bool dawProjectZipReadTolerant(const QString& path, std::vector<DawProjectEntry>* entries,
 	DawProjectZipReport* report, QString* error, const DawProjectZipLimits& limits,
-	const QStringList& retain)
+	const QStringList& retain, bool* unreadable)
 {
 	QByteArray bytes;
-	if (!readWhole(path, &bytes, error)) { return false; }
+	if (!readWhole(path, &bytes, error, unreadable)) { return false; }
 	int centralOffset = 0;
 	int count = 0;
 	if (!locateDirectory(path, bytes, &centralOffset, &count, error)) { return false; }
+	if (count == Zip64CountMarker && holdsRecordPastCount(bytes, centralOffset, count))
+	{
+		// The real count is in a ZIP64 record this reader does not decode; read as a count, the first
+		// 65,535 entries would be listed and the rest dropped with no line in the report.
+		if (error)
+		{
+			*error = QStringLiteral("%1 is a ZIP64 container: its end record carries the ZIP64 entry-count "
+				"sentinel (0xFFFF) and more entries follow it, which this reader does not support").arg(path);
+		}
+		return false;
+	}
 
 	DawProjectZipReport local;
 	std::vector<DawProjectEntry> found;
@@ -539,7 +599,8 @@ bool dawProjectZipReadTolerant(const QString& path, std::vector<DawProjectEntry>
 	return true;
 }
 
-bool dawProjectZipRead(const QString& path, std::vector<DawProjectEntry>* entries, QString* error)
+bool dawProjectZipRead(const QString& path, std::vector<DawProjectEntry>* entries, QString* error,
+	bool* unreadable)
 {
 	DawProjectZipLimits limits;
 	limits.maxEntryBytes = std::numeric_limits<int>::max();
@@ -547,7 +608,7 @@ bool dawProjectZipRead(const QString& path, std::vector<DawProjectEntry>* entrie
 	limits.allowDeflate = false;  // the .mmpz v2 container is STORE; a deflated one stays refused
 	DawProjectZipReport report;
 	std::vector<DawProjectEntry> found;
-	if (!dawProjectZipReadTolerant(path, &found, &report, error, limits)) { return false; }
+	if (!dawProjectZipReadTolerant(path, &found, &report, error, limits, QStringList(), unreadable)) { return false; }
 	if (!report.deviations.empty())
 	{
 		if (error) { *error = QStringLiteral("%1: %2").arg(path, report.deviations.front().detail); }

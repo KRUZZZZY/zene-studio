@@ -117,6 +117,15 @@ QString resolveOutPath(const QJsonObject& args, Track* track, const QString& ver
 	return requested.isEmpty() ? defaultBouncePath(track, verb, range) : requested;
 }
 
+QString flattenRefusal(const Track* track)
+{
+	// The same test BounceInPlace's carriesAudio applies: an automation track or a folder has no audio of its own, so
+	// its render is silence and flattening it would replace its data with that silence.
+	if (static_cast<int>(track->type()) < static_cast<int>(Track::Type::Automation)) { return QString(); }
+	return QStringLiteral("%1 carries no audio: a flatten needs an instrument, pattern, sample, event or video track")
+		.arg(trackIdOf(track));
+}
+
 //! The render facts every verb of this file reports.
 QJsonObject renderJson(const BounceInPlace::Result& rendered)
 {

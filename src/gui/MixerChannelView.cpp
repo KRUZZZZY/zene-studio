@@ -50,6 +50,7 @@
 #include "CaptionMenu.h"
 #include "ColorChooser.h"
 #include "CommandForm.h"
+#include "ConsoleStripSection.h"
 #include "ConfigManager.h"
 #include "ControlVocabulary.h"
 #include "EffectRackView.h"
@@ -67,6 +68,7 @@
 #include "PeakIndicator.h"
 #include "RackMenu.h"
 #include "SendButtonIndicator.h"
+#include "MixerBusFreezeMenu.h"
 #include "MixerHardwareMenu.h"
 #include "MixerStripTags.h"
 #include "MixerViewOptions.h"
@@ -199,6 +201,10 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	mainLayout->addWidget(m_stateLine, 0, Qt::AlignHCenter);
 	mainLayout->addLayout(soloMuteLayout);
 	mainLayout->addWidget(m_panKnob, 0, Qt::AlignHCenter);
+	// Q050-088: the Console section, hidden unless the view shows it (MixerViewOptions::applyToStrip).
+	m_consoleSection = new ConsoleStripSection(control::channelIdOf(mixerChannel), this);
+	m_consoleSection->hide();
+	mainLayout->addWidget(m_consoleSection, 0, Qt::AlignHCenter);
 	// 0.5.0 L10: the rack's first four macros (MX-090) and the inserts by name (MX-073); MixerViewOptions shows them.
 	m_macroKnobs = new MacroKnobs(control::channelIdOf(mixerChannel), 4, true, this);
 	mainLayout->addWidget(m_macroKnobs, 0, Qt::AlignHCenter);
@@ -460,6 +466,7 @@ void MixerChannelView::contextMenuEvent(QContextMenuEvent*)
 	}
 
 	contextMenu->addAction(tr("Rename &channel"), this, &MixerChannelView::renameChannel);
+	m_mixerView->populatePinAction(contextMenu, m_channelIndex);
 	contextMenu->addSeparator();
 	contextMenu->addAction(m_mixerView->speakMeterAction());
 	auto* peakWatch = contextMenu->addMenu(tr("Peak Watch"));
@@ -498,6 +505,7 @@ void MixerChannelView::contextMenuEvent(QContextMenuEvent*)
 
 	// 0.5.0 F1: the channel's hardware output, cue sends and hardware insert (MixerHardwareMenu.h).
 	addHardwareMenu(contextMenu, control::channelIdOf(mixerChannel()));
+	addBusFreezeAction(contextMenu, mixerChannel());  // Q050-124: buses only
 	// 0.5.0 F7 (MX-060): the channel's speaker format, its surround panner and the downmix (MixerHardwareMenu.h).
 	addSurroundMenu(contextMenu, control::channelIdOf(mixerChannel()));
 	// 0.5.0 W1: sends (pre/post), sidechain, rack zones and wiring - the Inspector's channel menu.

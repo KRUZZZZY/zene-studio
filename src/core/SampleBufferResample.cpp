@@ -61,8 +61,12 @@ auto resampleBuffer(const std::shared_ptr<const SampleBuffer>& input, sample_rat
 	// Luna cluster 5285: the target rate was checked but a zero SOURCE rate was not, and the
 	// ratio below is target/source. A buffer that cannot state its own rate is passed through
 	// untouched, the same way the other unusable cases are.
-	if (!input || input->empty() || input->sampleRate() == 0 || input->sampleRate() == rate
-		|| rate == 0)
+	// A zero target rate is an invalid request: nullptr is the failure signal, not the input.
+	if (!input || rate == 0)
+	{
+		return nullptr;
+	}
+	if (input->empty() || input->sampleRate() == 0 || input->sampleRate() == rate)
 	{
 		return input;
 	}

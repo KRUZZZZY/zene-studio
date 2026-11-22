@@ -109,6 +109,45 @@ private slots:
 
 		QCOMPARE(lmms::writeToByteSeq(event, bytes, sizeof(bytes)), std::size_t{0});
 	}
+
+	//! A note on is three bytes and does not fit into two. The buffer is sized by
+	//! the caller and is not checked in release builds, so it must be left alone.
+	void noteOnIntoTwoByteBufferIsRejectedAndNotWritten()
+	{
+		const lmms::MidiEvent event(lmms::MidiNoteOn, 0, 60, 100);
+		std::uint8_t bytes[4]{0xAA, 0xAA, 0xAA, 0xAA};
+
+		QCOMPARE(lmms::writeToByteSeq(event, bytes, 2), std::size_t{0});
+		for (const std::uint8_t byte : bytes)
+		{
+			QCOMPARE(byte, std::uint8_t{0xAA});
+		}
+	}
+
+	//! A zero-sized buffer takes nothing: not even the status byte is written.
+	void messageIntoEmptyBufferIsRejectedAndNotWritten()
+	{
+		const lmms::MidiEvent event(lmms::MidiProgramChange, 0, 5, 0);
+		std::uint8_t bytes[4]{0xAA, 0xAA, 0xAA, 0xAA};
+
+		QCOMPARE(lmms::writeToByteSeq(event, bytes, 0), std::size_t{0});
+		for (const std::uint8_t byte : bytes)
+		{
+			QCOMPARE(byte, std::uint8_t{0xAA});
+		}
+	}
+
+	//! A two-byte program change fits into a two-byte buffer and is still encoded.
+	void programChangeFitsTwoByteBuffer()
+	{
+		const lmms::MidiEvent event(lmms::MidiProgramChange, 4, 5, 0);
+		std::uint8_t bytes[3]{0xAA, 0xAA, 0xAA};
+
+		QCOMPARE(lmms::writeToByteSeq(event, bytes, 2), std::size_t{2});
+		QCOMPARE(bytes[0], static_cast<std::uint8_t>(lmms::MidiProgramChange | 4));
+		QCOMPARE(bytes[1], std::uint8_t{5});
+		QCOMPARE(bytes[2], std::uint8_t{0xAA});
+	}
 };
 
 QTEST_APPLESS_MAIN(MidiEventToByteSeqTest)

@@ -61,6 +61,7 @@ public:
 
 protected:
 	void mousePressEvent(QMouseEvent * me) override;
+	bool event(QEvent * event) override;
 
 
 private:
@@ -69,6 +70,9 @@ private:
 	QLabel * m_pixmapLabel;
 	QLabel * m_titleLabel;
 	QLabel * m_textLabel;
+
+	//! gui-1115: guards the notice's window-activation hand-back against re-entry.
+	bool m_returningActivation = false;
 
 };
 

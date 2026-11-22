@@ -13,9 +13,34 @@
 
 #include "SampleFrame.h"
 
+#include <memory>
+#include <new>
+
 class StereoDelayTest : public QObject
 {
 	Q_OBJECT
+
+private:
+	// A ring clamped to one frame must still act as a one-frame delay line:
+	// the first input comes back out on the next tick, and the write cursor
+	// never leaves the ring. tick() divides by the ring length, so reaching
+	// it with a zero-length ring is the crash this guards against.
+	static void checkOneFrameDelay(lmms::StereoDelay& delay)
+	{
+		QCOMPARE(delay.m_maxLength, 1);
+
+		lmms::SampleFrame first{0.5f, 0.25f};
+		delay.tick(first);
+		QCOMPARE(first[0], 0.0f);
+		QCOMPARE(first[1], 0.0f);
+		QCOMPARE(delay.m_writeIndex, 0);
+
+		lmms::SampleFrame second{};
+		delay.tick(second);
+		QCOMPARE(second[0], 0.5f);
+		QCOMPARE(second[1], 0.25f);
+		QCOMPARE(delay.m_writeIndex, 0);
+	}
 
 private slots:
 	void sampleRateChangeRebuildsRingState()
@@ -40,6 +65,91 @@ private slots:
 			delay.tick(frame);
 		}
 		QCOMPARE(delay.m_writeIndex, 1);
+	}
+
+	void zeroMaxTimeClampsToOneFrameRing()
+	{
+		lmms::StereoDelay delay{0, 48000};
+		checkOneFrameDelay(delay);
+	}
+
+	void nonpositiveSampleRateStartsEmptyAndRecovers()
+	{
+		lmms::StereoDelay delay{20, 0};
+		QCOMPARE(delay.m_maxLength, 0);
+		QVERIFY(delay.m_buffer == nullptr);
+
+		lmms::SampleFrame frame{0.25f, -0.5f};
+		delay.tick(frame);
+		QCOMPARE(frame[0], 0.25f);
+		QCOMPARE(frame[1], -0.5f);
+
+		// A later valid rate initializes a full-duration ring after the empty start.
+		delay.setSampleRate(48000);
+		QCOMPARE(delay.m_maxLength, 960000);
+		QCOMPARE(delay.m_length, 960000.0f);
+		QVERIFY(delay.m_buffer != nullptr);
+	}
+
+	void negativeArgumentsClampToOneFrameRing()
+	{
+		// new SampleFrame[negative] throws bad_array_new_length (a bad_alloc);
+		// a fixed constructor must not throw here at all.
+		std::unique_ptr<lmms::StereoDelay> delay;
+		try
+		{
+			delay = std::make_unique<lmms::StereoDelay>(-1, 48000);
+		}
+		catch (const std::bad_alloc&)
+		{
+		}
+		QVERIFY(delay != nullptr);
+		checkOneFrameDelay(*delay);
+	}
+
+	void nonpositiveSampleRateReconfigurationKeepsCurrentRing()
+	{
+		lmms::StereoDelay delay{1, 48000};
+		delay.setLength(24000.0f);
+		lmms::SampleFrame input{0.5f, -0.25f};
+		delay.tick(input);
+		QCOMPARE(delay.m_buffer[1][0], 0.5f);
+		QCOMPARE(delay.m_buffer[1][1], -0.25f);
+
+		delay.setSampleRate(0);
+		QCOMPARE(delay.m_maxLength, 48000);
+		QCOMPARE(delay.m_length, 24000.0f);
+		QCOMPARE(delay.m_buffer[1][0], 0.5f);
+		QCOMPARE(delay.m_buffer[1][1], -0.25f);
+
+		delay.setSampleRate(-48000);
+		QCOMPARE(delay.m_maxLength, 48000);
+		QCOMPARE(delay.m_length, 24000.0f);
+		QCOMPARE(delay.m_buffer[1][0], 0.5f);
+		QCOMPARE(delay.m_buffer[1][1], -0.25f);
+	}
+
+	void overflowingConstructorRateIsRefusedBeforeIntNarrowing()
+	{
+		// 20 * 200000000 does not fit an int, and the ring is above the int index range:
+		// the delay must start empty instead of holding a wrapped or clamped size.
+		lmms::StereoDelay delay{20, 200000000};
+		QCOMPARE(delay.m_maxLength, 0);
+		QVERIFY(delay.m_buffer == nullptr);
+
+		lmms::SampleFrame frame{0.25f, -0.5f};
+		delay.tick(frame);
+		QCOMPARE(frame[0], 0.25f);
+		QCOMPARE(frame[1], -0.5f);
+	}
+
+	void outOfRangeSampleRateKeepsTheCurrentRing()
+	{
+		// 20 * 200000000 is above the int index range: the live ring must not be replaced.
+		lmms::StereoDelay delay{20, 48000};
+		delay.setSampleRate(200000000);
+		QVERIFY(delay.m_buffer != nullptr);
+		QCOMPARE(delay.m_maxLength, 960000);
 	}
 };
 

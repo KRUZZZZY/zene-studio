@@ -131,9 +131,9 @@ public:
 	AudioBuffer() = delete;
 
 	AudioBuffer(const AudioBuffer&) = delete;
-	AudioBuffer(AudioBuffer&&) noexcept = default;
+	AudioBuffer(AudioBuffer&&) noexcept;
 	auto operator=(const AudioBuffer&) -> AudioBuffer& = delete;
-	auto operator=(AudioBuffer&&) noexcept -> AudioBuffer& = default;
+	auto operator=(AudioBuffer&&) noexcept -> AudioBuffer&;
 
 	/**
 	 * Creates AudioBuffer with a 1st (main) channel group.
@@ -391,6 +391,11 @@ public:
 	auto absPeakValue(ch_cnt_t channel) const -> float;
 
 private:
+	//! Rebuilds the access table and rebinds every group after a move.
+	//! The PMR vectors may copy to new storage (different memory resources)
+	//! instead of stealing it, which would leave the tables dangling.
+	void rebindAfterMove() noexcept;
+
 	/**
 	 * Large buffer that all channel buffers are sourced from.
 	 *

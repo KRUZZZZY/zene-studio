@@ -41,7 +41,9 @@
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "Engine.h"
+#include "MidiClip.h"
 #include "MusicalTime.h"
+#include "Note.h"
 #include "SampleClip.h"
 #include "Song.h"
 #include "TimePos.h"
@@ -190,9 +192,8 @@ void CompSwipeStrip::paintEvent(QPaintEvent*)
 	QPainter p(this);
 	p.fillRect(rect(), palette().base());
 
-	// 0.5.0 L03 (Q050-123): each take's own waveform in its lane, at its own place on the strip's
-	// span. The active comp segments are drawn OVER the waveforms, translucent, so a musician sees
-	// both which take supplies a segment and the audio it was chosen for.
+	// 0.5.0 L03 (Q050-123, Q050-054.2): draw each audio waveform or MIDI take's notes
+	// in its lane at its own place on the strip. Translucent comp segments are drawn over them.
 	for (const TakeBand& band : m_takeBands)
 	{
 		const QRect visible = band.rect.intersected(rect());
@@ -202,35 +203,67 @@ void CompSwipeStrip::paintEvent(QPaintEvent*)
 		{
 			m_waves.paint(p, *sample, band.rect, visible, palette().text().color());
 		}
+		else if (const auto* midi = dynamic_cast<const MidiClip*>(band.clip.data()); midi != nullptr && !midi->notes().empty())
+		{
+			paintMidiNotes(p, *midi, band.rect, visible);
+		}
 	}
 
 	for (std::size_t row = 0; row < m_lanes.size(); ++row)
 	{
-		const int y = static_cast<int>(row) * RowHeight;
-		p.setPen(palette().mid().color());
-		p.drawLine(0, y + RowHeight - 1, width(), y + RowHeight - 1);
-		for (const Segment& segment : m_segments)
-		{
-			if (segment.lane != m_lanes[row]) { continue; }
-			const QRect segmentRect(xOf(segment.begin), y + 2, xOf(segment.end) - xOf(segment.begin), RowHeight - 4);
-			QColor highlight = palette().highlight().color();
-			highlight.setAlpha(90);
-			p.fillRect(segmentRect, highlight);
-			p.setPen(palette().highlight().color());
-			p.setBrush(Qt::NoBrush);
-			p.drawRect(segmentRect.adjusted(0, 0, -1, -1));
-		}
-		if (m_dragLane == m_lanes[row])
-		{
-			QColor drag = palette().highlight().color();
-			drag.setAlpha(110);
-			p.fillRect(QRect(xOf(std::min(m_dragFrom, m_dragTo)), y, std::abs(xOf(m_dragTo) - xOf(m_dragFrom)), RowHeight), drag);
-		}
-		p.setPen(palette().text().color());
-		p.drawText(QRect(4, y, width() - 8, RowHeight), Qt::AlignVCenter | Qt::AlignLeft, tr("Lane %1").arg(m_lanes[row]));
+		paintLaneRow(p, row);
 	}
 	paintKeyCursor(p);
 	a11y::paintCanvasCues(p, this);
+}
+
+void CompSwipeStrip::paintMidiNotes(QPainter& p, const MidiClip& midi, const QRect& band, const QRect& visible) const
+{
+	int lowestKey = midi.notes().front()->key();
+	int highestKey = lowestKey;
+	for (const auto* note : midi.notes())
+	{
+		lowestKey = std::min(lowestKey, note->key());
+		highestKey = std::max(highestKey, note->key());
+	}
+	p.save();
+	p.setClipRect(visible);
+	for (const auto* note : midi.notes())
+	{
+		const int songTick = midi.startPosition().getTicks() + midi.startTimeOffset().getTicks() + note->pos().getTicks();
+		const int left = xOf(songTick);
+		const int right = std::max(left + 1, xOf(songTick + note->length().getTicks()));
+		const int y = highestKey == lowestKey ? band.center().y() - 1
+			: band.top() + (highestKey - note->key()) * (band.height() - 2) / (highestKey - lowestKey);
+		p.fillRect(QRect(left, y, right - left, 2), palette().text().color());
+	}
+	p.restore();
+}
+
+void CompSwipeStrip::paintLaneRow(QPainter& p, std::size_t row) const
+{
+	const int y = static_cast<int>(row) * RowHeight;
+	p.setPen(palette().mid().color());
+	p.drawLine(0, y + RowHeight - 1, width(), y + RowHeight - 1);
+	for (const Segment& segment : m_segments)
+	{
+		if (segment.lane != m_lanes[row]) { continue; }
+		const QRect segmentRect(xOf(segment.begin), y + 2, xOf(segment.end) - xOf(segment.begin), RowHeight - 4);
+		QColor highlight = palette().highlight().color();
+		highlight.setAlpha(90);
+		p.fillRect(segmentRect, highlight);
+		p.setPen(palette().highlight().color());
+		p.setBrush(Qt::NoBrush);
+		p.drawRect(segmentRect.adjusted(0, 0, -1, -1));
+	}
+	if (m_dragLane == m_lanes[row])
+	{
+		QColor drag = palette().highlight().color();
+		drag.setAlpha(110);
+		p.fillRect(QRect(xOf(std::min(m_dragFrom, m_dragTo)), y, std::abs(xOf(m_dragTo) - xOf(m_dragFrom)), RowHeight), drag);
+	}
+	p.setPen(palette().text().color());
+	p.drawText(QRect(4, y, width() - 8, RowHeight), Qt::AlignVCenter | Qt::AlignLeft, tr("Lane %1").arg(m_lanes[row]));
 }
 
 int CompSwipeStrip::xOf(int tick) const

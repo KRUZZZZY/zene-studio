@@ -312,6 +312,29 @@ private slots:
 		QVERIFY(!ReferenceProjectPanel::openWithDialog(panel));
 	}
 
+	void openWithoutAnErrorSinkRefusesInsteadOfCrashing()
+	{
+		// The why out-parameter is optional: a caller that does not want the reason passes nullptr (BUG 9, cluster
+		// new-p9-383). Both refusals - a missing file and a file with no song tracks - must return false, not write through it.
+		ReferenceProject& reference = ReferenceProject::instance();
+		const QString missing = QDir(m_home.path()).filePath(QStringLiteral("missing.mmp"));
+		QVERIFY(!reference.open(missing, nullptr));
+		QVERIFY(!reference.isOpen());
+
+		const QString notAProject = QDir(m_home.path()).filePath(QStringLiteral("trackless.mmp"));
+		QFile bad(notAProject);
+		QVERIFY(bad.open(QIODevice::WriteOnly));
+		bad.write("not xml");
+		bad.close();
+		QVERIFY(!reference.open(notAProject, nullptr));
+		QVERIFY(!reference.isOpen());
+
+		// With a sink the reason is still written.
+		QString why;
+		QVERIFY(!reference.open(missing, &why));
+		QVERIFY2(why.contains(QStringLiteral("no project file")), qPrintable(why));
+	}
+
 	void aReferenceChangedOnDiskIsMarkedStale()
 	{
 		ReferenceProjectPanel* panel = openReference();

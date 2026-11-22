@@ -39,6 +39,7 @@
 #include "ControlRegistryGroups.h"
 #include "ControlScaleShared.h"
 #include "ControlVocabulary.h"
+#include "Song.h"
 
 namespace lmms
 {
@@ -127,20 +128,29 @@ ControlResult quantizeClips(const QJsonObject& args)
 		refs.append(ref);
 	}
 	if (refs.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("name the 'clips'")); }
-	const auto snapped = [grid](const ClipRef& ref) { return (ref.clip->startPosition().getTicks() + grid / 2) / grid * grid; };
+	// Rounded in qint64: a start near tick_t's maximum would overflow the half-grid addition in tick_t.
+	const auto snapped = [grid](const ClipRef& ref) { return (static_cast<qint64>(ref.clip->startPosition().getTicks()) + grid / 2) / grid * grid; };
 	QVector<JournallingObject*> tracks;
 	QVector<Clip*> captured;
 	QJsonArray beforeClips;
 	for (const ClipRef& ref : refs)
 	{
-		if (snapped(ref) != ref.clip->startPosition().getTicks()) { captureQuantizeBefore(ref, &tracks, &captured, &beforeClips); }
+		const qint64 target = snapped(ref);
+		if (target == ref.clip->startPosition().getTicks()) { continue; }
+		// Checked before any clip is captured or moved, so a refused batch changes nothing (as note.repeat refuses a copy past the limit).
+		if (target > MaxSongLength)
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("%1 would move to %2, past the song limit of %3").arg(clipId(ref.id)).arg(target).arg(static_cast<qint64>(MaxSongLength)));
+		}
+		captureQuantizeBefore(ref, &tracks, &captured, &beforeClips);
 	}
 	if (tracks.isEmpty()) { return ControlResult::success({{QStringLiteral("moved"), 0}, {QStringLiteral("grid"), static_cast<int>(grid)}}); }
 	addUndoStep(tracks);
 	int moved = 0;
 	for (const ClipRef& ref : refs)
 	{
-		if (snapped(ref) != ref.clip->startPosition().getTicks()) { ref.clip->movePosition(TimePos(snapped(ref))); ++moved; }
+		if (snapped(ref) != ref.clip->startPosition().getTicks()) { ref.clip->movePosition(TimePos(static_cast<tick_t>(snapped(ref)))); ++moved; }
 	}
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("moved"), moved}, {QStringLiteral("grid"), static_cast<int>(grid)}};

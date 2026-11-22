@@ -24,12 +24,18 @@
 
 #include "SlicerTView.h"
 
+#include <QDoubleSpinBox>
 #include <QDropEvent>
+#include <QHBoxLayout>
+#include <QJsonObject>
 #include <QPainter>
 #include <QPushButton>
+#include <QSpinBox>
+#include <algorithm>
 
 #include "Clipboard.h"
 #include "ComboBox.h"
+#include "ControlRegistry.h"
 #include "DataFile.h"
 #include "FileDialog.h"
 #include "InstrumentTrack.h"
@@ -67,7 +73,7 @@ SlicerTView::SlicerTView(SlicerT* instrument, QWidget* parent)
 	setAutoFillBackground(true);
 
 	setMaximumSize(QSize(10000, 10000));
-	setMinimumSize(QSize(516, 400));
+	setMinimumSize(QSize(516, 400 + s_sliceBarHeight));
 
 	m_wf = new SlicerTWaveform(248, 128, instrument, this);
 	m_wf->move(0, s_topBarHeight);
@@ -126,7 +132,87 @@ SlicerTView::SlicerTView(SlicerT* instrument, QWidget* parent)
 	m_recordTakeButton->setToolTip(tr("Record the input into this slicer; click again to stop"));
 	connect(m_recordTakeButton, &QPushButton::clicked, this, &SlicerTView::recordTake);
 
+	// Q050-263: the per-slice panel. Its edits are the registered plugin.slice_set command - the one an agent
+	// runs - never a write to the instrument's storage.
+	m_sliceBar = new QWidget(this);
+	m_sliceBar->setObjectName(QStringLiteral("slicerTSliceBar"));
+	auto* sliceLayout = new QHBoxLayout(m_sliceBar);
+	sliceLayout->setContentsMargins(6, 2, 6, 2);
+	sliceLayout->setSpacing(4);
+	m_sliceSelect = new QSpinBox(m_sliceBar);
+	m_sliceSelect->setObjectName(QStringLiteral("slicerTSliceSelect"));
+	m_sliceSelect->setPrefix(tr("Slice "));
+	m_sliceSelect->setToolTip(tr("The slice the controls to the right edit (slice 0 plays on the key above the base note)"));
+	sliceLayout->addWidget(m_sliceSelect);
+	struct PanelControl { const char* objectName; QString prefix; QString suffix; int decimals; double step; QString tip; };
+	const std::array<PanelControl, slicer::SliceControlCount> panel{{
+		{"slicerTSliceGain", tr("Gain "), tr(" dB"), 1, 0.5, tr("Gain of this slice in dB")},
+		{"slicerTSlicePan", tr("Pan "), QString(), 2, 0.05, tr("Pan of this slice: -1 left, +1 right")},
+		{"slicerTSliceFilter", tr("Filter "), QString(), 2, 0.05,
+			tr("Filter of this slice: negative values low-pass, positive values high-pass, 0 is off")},
+		{"slicerTSliceRandom", tr("Random "), QString(), 2, 0.05,
+			tr("How much each trigger of this slice varies in gain and pan (0 is none)")},
+	}};
+	for (std::size_t i = 0; i < slicer::SliceControlCount; ++i)
+	{
+		const auto& spec = slicer::SliceControlSpecs[i];
+		auto* box = new QDoubleSpinBox(m_sliceBar);
+		box->setObjectName(QString::fromLatin1(panel[i].objectName));
+		box->setRange(spec.lowest, spec.highest);
+		box->setDecimals(panel[i].decimals);
+		box->setSingleStep(panel[i].step);
+		box->setPrefix(panel[i].prefix);
+		box->setSuffix(panel[i].suffix);
+		box->setToolTip(panel[i].tip);
+		// One edit is one command (one undo step): typing commits on Enter or leaving the box, not per key.
+		box->setKeyboardTracking(false);
+		connect(box, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+			[this, i](double value) { editSliceValue(i, value); });
+		sliceLayout->addWidget(box);
+		m_sliceValues[i] = box;
+	}
+	connect(m_sliceSelect, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int) { refreshSlicePanel(); });
+	connect(m_slicerTParent, &SlicerT::dataChanged, this, &SlicerTView::refreshSlicePanel);
+	refreshSlicePanel();
+
 	update();
+}
+
+QString SlicerTView::trackId() const
+{
+	return QStringLiteral("trk-%1").arg(m_slicerTParent->instrumentTrack()->id());
+}
+
+void SlicerTView::refreshSlicePanel()
+{
+	if (m_refreshingSlicePanel) { return; }
+	m_refreshingSlicePanel = true;
+	const int count = m_slicerTParent->sliceCount();
+	m_sliceSelect->setRange(0, std::max(0, count - 1));
+	m_sliceBar->setEnabled(count > 0);
+	const int slice = m_sliceSelect->value();
+	if (count > 0)
+	{
+		// A read, so it goes straight to the instrument: this also runs while a command (control.undo)
+		// is still on the stack, where a nested plugin.slice_get would be refused.
+		for (std::size_t i = 0; i < slicer::SliceControlSpecs.size(); ++i)
+		{
+			m_sliceValues[i]->setValue(m_slicerTParent->sliceControl(
+				slice, QString::fromLatin1(slicer::SliceControlSpecs[i].name)));
+		}
+	}
+	m_wf->setSelectedSlice(count > 0 ? slice : -1);
+	m_refreshingSlicePanel = false;
+}
+
+void SlicerTView::editSliceValue(std::size_t control, double value)
+{
+	if (m_refreshingSlicePanel) { return; }
+	const ControlResult reply = ControlRegistry::instance()->invoke(QStringLiteral("plugin.slice_set"),
+		{{QStringLiteral("target"), trackId()}, {QStringLiteral("slice"), m_sliceSelect->value()},
+			{QString::fromLatin1(slicer::SliceControlSpecs[control].name), value}});
+	if (!reply.ok) { m_sliceValues[control]->setToolTip(reply.errorMessage); }
+	refreshSlicePanel(); // shows what the command left, which is the old value when it refused
 }
 
 Knob* SlicerTView::createStyledKnob()
@@ -147,6 +233,7 @@ void SlicerTView::clearSlices()
 	// so the whole sample can still be copied using MIDI.
 	m_slicerTParent->m_slicePoints.emplace_back(0);
 	m_slicerTParent->m_slicePoints.emplace_back(1);
+	m_slicerTParent->resetSliceControls();
 
 	emit m_slicerTParent->dataChanged();
 }
@@ -325,7 +412,8 @@ void SlicerTView::resizeEvent(QResizeEvent* re)
 
 	m_folderButton->move(width() - 20, height() - s_bottomBoxHeight - s_sampleBoxHeight + 1);
 
-	int waveFormHeight = height() - s_bottomBoxHeight - s_topBarHeight - s_sampleBoxHeight;
+	int waveFormHeight = height() - s_bottomBoxHeight - s_topBarHeight - s_sampleBoxHeight - s_sliceBarHeight;
+	m_sliceBar->setGeometry(0, s_topBarHeight + waveFormHeight, width(), s_sliceBarHeight);
 
 	m_wf->resize(width(), waveFormHeight);
 }

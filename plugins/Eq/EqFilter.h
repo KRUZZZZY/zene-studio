@@ -152,6 +152,9 @@ public:
 protected:
 	static inline float clampFrequency(float freq, float sampleRate)
 	{
+		// std::clamp returns NaN unchanged, and a NaN frequency would make
+		// the non-peak filters compute NaN coefficients; use 0 Hz instead
+		if (std::isnan(freq)) { return 0.0f; }
 		return std::clamp(freq, 0.0f, std::max(sampleRate, 0.0f) * 0.5f);
 	}
 

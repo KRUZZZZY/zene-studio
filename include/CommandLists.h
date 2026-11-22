@@ -92,6 +92,11 @@ LMMS_EXPORT ListSpec renderQueue();
 LMMS_EXPORT ListSpec backgroundTasks();
 //! L12 (WF-045): the project's subprojects - render one again, open its file; add one.
 LMMS_EXPORT ListSpec subprojects();
+//! 0.5.0 L12 (Q050-317.1): a mastering document's release sequence - the songs in release order, each
+//! with its processing, fades and gap; add one, edit one, move one, remove one (mastering.song_*).
+LMMS_EXPORT ListSpec masteringSequence();
+//! The last completed mastering run's candidates (mastering.get_state's `candidates`): read-only, no actions.
+LMMS_EXPORT ListSpec masteringReport();
 //! L12 (WF-032): the project's alternatives - switch to one, remove one; keep the session as a new one.
 LMMS_EXPORT ListSpec alternatives();
 

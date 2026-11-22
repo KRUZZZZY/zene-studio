@@ -50,9 +50,9 @@
 //   makes the shipping wake path - not a stand-in for it - the thing the tests on the
 //   development box exercise, with only the two-syscall shim differing from Apple.
 //
-// * Windows (and any POSIX without those calls): std::atomic::wait / notify_all, which is
-//   what the tree used before. Both MSVC and mingw provide it; nothing in the CI matrix
-//   changes there.
+// * Windows (and any POSIX without those calls): std::atomic::wait / notify_all / notify_one,
+//   which is what the tree used before. Both MSVC and mingw provide them; nothing in the CI
+//   matrix changes there.
 //
 // The selection lives here, in the header, so the implementation, the test and any future
 // caller compile against the same answer.
@@ -72,8 +72,8 @@ namespace lmms::workerwake
 //! The primitive this build's wake uses.
 enum class Primitive
 {
-	//! std::atomic::wait / notify_all. Correct wherever C++20 is complete; unavailable below
-	//! macOS 11, which is why no Apple build selects it.
+	//! std::atomic::wait / notify_one / notify_all. Correct wherever C++20 is complete;
+	//! unavailable below macOS 11, which is why no Apple build selects it.
 	AtomicWait,
 	//! Compare-and-wait on the generation word itself: no mutex, no allocation, and no wait
 	//! on the notifying side (__ulock_wake on Apple, FUTEX_WAKE on Linux).
@@ -96,6 +96,12 @@ constexpr Primitive compiledPrimitive() noexcept
 //! value, not this call, is the signal): this is a pure post. It runs on the render thread
 //! every period, so it must not take a mutex, allocate, free or wait.
 void notify(std::atomic<std::uint32_t>& generation) noexcept;
+
+//! Wake at most one thread waiting on \a generation, the shape std::atomic::notify_one had.
+//! A caller that queues one unit of work uses this so the other parked workers stay asleep
+//! instead of scanning for work that is not theirs. Same contract and cost as notify(): the
+//! caller advances the word first, the post never blocks.
+void notifyOne(std::atomic<std::uint32_t>& generation) noexcept;
 
 //! Block until \a generation no longer equals \a seen. A spurious return is allowed - the
 //! caller re-reads the word and re-checks its own quit flag - and a value that already moved

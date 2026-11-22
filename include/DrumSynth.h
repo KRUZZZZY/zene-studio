@@ -41,6 +41,7 @@ public:
 	DrumSynth() = default;
 	int GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sample_rate_t Fs);
 	int LongestEnv();
+	static long noiseBandStepCount(double quotient);
 
 private:
 	float LoudestEnv();

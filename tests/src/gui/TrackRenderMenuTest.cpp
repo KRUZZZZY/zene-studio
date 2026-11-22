@@ -23,7 +23,7 @@
  */
 
 /*! What the menus offer, and that each item names its command: an instrument or sample track gets
- *  Freeze track and Bounce in place (freeze.track / bounce.in_place), an automation track gets
+ *  Freeze track, Freeze several tracks... and Bounce in place (freeze.track / freeze.tracks / bounce.in_place), an automation track gets
  *  neither, and File gets Import / Export DAWproject... Triggering Bounce in place on a track with
  *  nothing to render comes back refused, typed, without a dialog or a crash in an unattended run -
  *  the renders themselves are proved by the freeze and bounce command suites. */
@@ -78,7 +78,9 @@ private slots:
 		Track* sample = Track::create(Track::Type::Sample, Engine::getSong());
 		QMenu forSample;
 		addTrackRenderActions(&forSample, sample);
-		QCOMPARE(commandsIn(forSample), (QStringList{QStringLiteral("freeze.track"), QStringLiteral("bounce.in_place")}));
+		// Q050-327: an unfrozen track also offers the batch freeze (freeze.tracks, BatchFreezeTest drives it).
+		QCOMPARE(commandsIn(forSample), (QStringList{QStringLiteral("freeze.track"), QStringLiteral("freeze.tracks"),
+			QStringLiteral("bounce.in_place")}));
 
 		Track* automation = Track::create(Track::Type::Automation, Engine::getSong());
 		QMenu forAutomation;
@@ -103,7 +105,7 @@ private slots:
 		QVERIFY(notice.contains(QStringLiteral("b.wav")));
 		QCOMPARE(notice.count(QLatin1Char('\n')), 2);
 
-		forSample.actions().at(1)->trigger();  // an empty track: refused, logged, no dialog
+		forSample.actions().at(2)->trigger();  // an empty track: refused, logged, no dialog
 	}
 };
 

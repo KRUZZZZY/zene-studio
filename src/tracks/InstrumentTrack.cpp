@@ -33,10 +33,12 @@
 #include "InstrumentTrackView.h"
 #include "Instrument.h"
 #include "Keymap.h"
+#include "LegacyVst2Conversion.h"
 #include "MidiClient.h"
 #include "MidiClip.h"
 #include "MidiPlayback.h"
 #include "MixHelpers.h"
+#include "MpeSynthExpression.h"
 #include "NoteRandom.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
@@ -300,6 +302,12 @@ void InstrumentTrack::processAudioBuffer( SampleFrame* buf, const f_cnt_t frames
 	{
 		const f_cnt_t offset = n->noteOffset();
 		m_soundShaping.processAudioBuffer( buf + offset, frames - offset, n );
+		// Q050-311: the note's MPE pressure and timbre, heard on the built-in
+		// synthesisers (which never see MIDI). A note without expression is not touched.
+		if( !m_instrument->appliesMpeExpressionItself() )
+		{
+			MpeSynthExpression::applyToNote( *n, buf + offset, frames - offset );
+		}
 		const float vol = ( (float) n->getVolume() * DefaultVolumeRatio );
 		const panning_t pan = std::clamp(n->getPanning(), PanningLeft, PanningRight);
 		StereoVolumeVector vv = panningToVolumeVector( pan, vol );
@@ -487,6 +495,9 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 	}
 	// 0.5.0 L07 (ED-145): live input through the track's MIDI input transform.
 	if (handleInputTransform(event, time, offset)) { return; }
+	// Q050-054.1: an armed track records what is played while transport.record runs - before the
+	// monitoring gate, so a track that is not heard still records. Lock- and allocation-free.
+	if (event.source() == MidiEvent::Source::External) { m_midiTakeCapture.capture(event); }
 	// R2.1: monitoring Off keeps live notes out of the instrument. Only the NOTE-ON is
 	// dropped - a note-off still reaches a note that sounded before the mode changed.
 	if (event.type() == MidiNoteOn && event.source() == MidiEvent::Source::External
@@ -862,6 +873,7 @@ void InstrumentTrack::updateMixerChannel()
 {
 	m_audioBusHandle.setNextMixerChannel(m_mixerChannelModel.value());
 	m_layers.followMixerChannel(m_mixerChannelModel.value());  // 0.5.0 MX-112: the layers play where the track does
+	reconcileLinkedChannelName();  // Q050-212
 }
 
 
@@ -894,6 +906,17 @@ bool InstrumentTrack::compPlays(const MidiClip* clip, int songTick) const
 	int lane = -1;
 	int offset = 0;
 	return comp.resolve(songTick, &lane, &offset) && lane == clip->laneIndex();
+}
+
+
+
+
+bool InstrumentTrack::takePlays(const MidiClip* clip) const
+{
+	if (!clip->hasTakeGroup()) { return true; }
+	const TakeLaneModel& comp = takeLanes();
+	return !comp.segments().empty() || comp.auditionLane() >= 0 || comp.playAllTakes()
+		|| clip->activeTakeLane() == clip->laneIndex();
 }
 
 
@@ -997,6 +1020,8 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		{
 			continue;
 		}
+		// Q050-054.1: a loop-recorded take that is not its group's active take is silent in the arrangement.
+		if (_clip_num < 0 && !takePlays(c)) { continue; }
 		TimePos cur_start = _start;
 		tick_t passBase = 0;  // where the pass of a looped clip playing now starts, in the clip's own time
 		if( _clip_num < 0 )
@@ -1115,6 +1140,7 @@ void InstrumentTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& 
 	if (!presetMode) { m_inputTransform.save(thisElement); }  // 0.5.0 L07: an attribute, only when set
 	m_articulations.save(thisElement);  // 0.5.0 L07 (ED-121): an attribute, only when there is one
 	if (delayMs() > 0) { thisElement.setAttribute("delayms", delayMs()); }  // 0.5.0 L09 (MX-035)
+	if (m_audioBusHandle.offsetFrames() != 0) { thisElement.setAttribute("offsetframes", m_audioBusHandle.offsetFrames()); }  // Q050-339
 
 	m_mixerChannelModel.saveSettings( doc, thisElement, "mixch" );
 	m_baseNoteModel.saveSettings( doc, thisElement, "basenote" );
@@ -1225,6 +1251,7 @@ void InstrumentTrack::loadTrackSpecificSettings(const QDomElement& thisElement, 
 	m_inputTransform.load(thisElement);  // 0.5.0 L07 (absent: left as it is)
 	m_articulations.load(thisElement);  // 0.5.0 L07 (ED-121; absent: none)
 	setDelayMs(thisElement.attribute("delayms", "0").toInt());  // 0.5.0 L09 (MX-035; absent: none)
+	m_audioBusHandle.setOffsetFrames(thisElement.attribute("offsetframes", "0").toInt());  // Q050-339 (absent: none)
 
 	QDomNode node = thisElement.firstChild();
 	while( !node.isNull() )
@@ -1260,7 +1287,7 @@ void InstrumentTrack::loadTrackSpecificSettings(const QDomElement& thisElement, 
 				{
 					m_instrument->restoreState(node.firstChildElement());
 				}
-				else
+				else if (!loadConvertedInstrument(node.toElement()))
 				{
 					destroyInstrument();
 					m_instrument = Instrument::instantiate(
@@ -1285,6 +1312,18 @@ void InstrumentTrack::loadTrackSpecificSettings(const QDomElement& thisElement, 
 					ControllerConnection::classNodeName() != node.nodeName() &&
 					!node.toElement().hasAttribute( "id" ))
 			{
+				if (node.nodeName() == "vestige")
+				{
+					QDomDocument doc = node.ownerDocument();
+					QDomElement wrapped = doc.createElement("instrument");
+					wrapped.setAttribute("name", "vestige");
+					wrapped.appendChild(node.cloneNode(true));
+					if (loadConvertedInstrument(wrapped))
+					{
+						node = node.nextSibling();
+						continue;
+					}
+				}
 				destroyInstrument();
 				m_instrument = Instrument::instantiate(
 					node.nodeName(), this, nullptr, true);
@@ -1309,6 +1348,27 @@ void InstrumentTrack::loadTrackSpecificSettings(const QDomElement& thisElement, 
 }
 
 
+
+
+bool InstrumentTrack::loadConvertedInstrument(const QDomElement& instrumentNode)
+{
+	const QDomElement converted = legacyvst2::convertInstrument(instrumentNode);
+	if (converted.isNull()) { return false; }
+	destroyInstrument();
+	using PluginKey = Plugin::Descriptor::SubPluginFeatures::Key;
+	PluginKey key(converted.elementsByTagName("key").item(0).toElement());
+	m_instrument = Instrument::instantiate(converted.attribute("name"), this, &key);
+	m_instrument->restoreState(converted.firstChildElement());
+	if (m_instrument->nodeName() != "carlavst2" || !m_instrument->unavailableReason().isEmpty())
+	{
+		destroyInstrument();
+		return false;
+	}
+	capturePlaceholder(converted);
+	emit instrumentChanged();
+	qInfo("Converted legacy VeSTige instrument '%s' to Carla", qPrintable(key.attributes.value("file")));
+	return true;
+}
 
 
 void InstrumentTrack::capturePlaceholder(const QDomElement& instrumentNode)
@@ -1394,6 +1454,23 @@ Instrument * InstrumentTrack::loadInstrument(const QString & _plugin_name,
 
 	return m_instrument;
 }
+
+
+
+#ifdef LMMS_TESTING
+void InstrumentTrack::setInstrumentForTest( Instrument* instrument )
+{
+	silenceAllNotes( true );
+	lock();
+	Engine::audioEngine()->requestChangeInModel();
+	destroyInstrument();
+	m_preservedInstrument = QDomElement();
+	Engine::audioEngine()->doneChangeInModel();
+	m_instrument = instrument;
+	unlock();
+	emit instrumentChanged();
+}
+#endif
 
 
 

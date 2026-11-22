@@ -24,6 +24,7 @@
 
 #include "VideoWindow.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include <QPainter>
@@ -53,12 +54,27 @@ namespace
 constexpr int FollowMs = 15;  //!< how often the window reads the play position: under a frame at 60 fps
 constexpr int TimecodeBand = 22;
 
-//! What the window says instead of a picture at @a seconds of @a video; empty inside the video.
-QString statusAt(double seconds, const VideoAttachment& video)
+//! What a frame was decoded from: the clip AND its file. Ids are per project and video.attach can give a new file
+//! the id of the clip it replaced, so the id alone does not say a frame is still the active clip's picture.
+QString sourceKey(const VideoAttachment& clip)
 {
-	if (seconds < 0.0) { return VideoWindow::tr("Before the video starts"); }
-	const bool pastEnd = video.duration > 0.0 && seconds >= video.duration;
-	return pastEnd ? VideoWindow::tr("After the video ends") : QString();
+	return clip.id + QLatin1Char('\n') + clip.path;
+}
+
+//! What the window says instead of a picture when @a tick is not inside @a clips.
+QString statusAt(tick_t tick, const QVector<VideoAttachment>& clips)
+{
+	if (clips.isEmpty()) { return VideoWindow::tr("No video is attached to the project"); }
+	tick_t first = clips.first().offset;
+	tick_t last = first;
+	for (const VideoAttachment& clip : clips)
+	{
+		first = std::min(first, clip.offset);
+		last = std::max(last, VideoReference::instance().endTick(clip));
+	}
+	if (tick < first) { return VideoWindow::tr("Before the video starts"); }
+	if (tick >= last) { return VideoWindow::tr("After the video ends"); }
+	return VideoWindow::tr("No video at this position");
 }
 
 } // namespace
@@ -86,25 +102,41 @@ VideoWindow* VideoWindow::find(QWidget* main)
 
 void VideoWindow::follow()
 {
-	const VideoAttachment& video = VideoReference::instance().attachment();
-	if (!video.attached())
+	const QVector<VideoAttachment>& clips = VideoReference::instance().clips();
+	if (clips.isEmpty())
 	{
 		showNoVideo();
 		return;
 	}
-	// The arrangement's position: the video is placed on the song's timeline, whichever editor is playing.
-	const double seconds = VideoReference::instance().secondsAt(Engine::getSong()->getPlayPos(Song::PlayMode::Song).getTicks());
-	const QString timecode = VideoReference::timecode(seconds, video.fps);
-	const QString status = statusAt(seconds, video);
+	// The arrangement's position: a clip is placed on the song's timeline, whichever editor is playing.
+	const tick_t tick = Engine::getSong()->getPlayPos(Song::PlayMode::Song).getTicks();
+	const VideoAttachment* active = VideoReference::instance().clipAt(tick);
+	const VideoAttachment& timing = active != nullptr ? *active : clips.first();
+	noteActiveSource(active != nullptr ? sourceKey(*active) : QString());
+	const double seconds = VideoReference::instance().secondsAt(tick, timing);
+	const QString timecode = VideoReference::timecode(seconds, timing.fps);
+	const QString status = active != nullptr ? QString() : statusAt(tick, clips);
 	if (timecode != m_timecode || status != m_status) { update(); }  // a still transport repaints nothing
 	m_timecode = timecode;
 	m_status = status;
 	// One frame in flight at most: a tick that comes while one decodes is dropped, never queued behind it.
-	if (!m_status.isEmpty() || m_waiting || !stale(seconds, video)) { return; }
+	if (!m_status.isEmpty() || m_waiting || !stale(seconds, timing)) { return; }
 	m_waiting = true;
-	m_framePath = video.path;
+	m_framePath = timing.path;
+	m_requestSource = sourceKey(timing);
 	m_frameBox = picture().size();
-	m_pump->request(video.path, seconds, m_frameBox);
+	m_pump->request(timing.path, seconds, m_frameBox);
+}
+
+void VideoWindow::noteActiveSource(const QString& activeSource)
+{
+	m_activeSource = activeSource;
+	if (m_frame.isNull() || m_frameSource == m_activeSource) { return; }
+	// Another clip or file (or none) is at the play position now: its picture goes at once, never left up meanwhile.
+	m_frame = QImage();
+	m_frameSource.clear();
+	m_frameAt = -1.0;  // stale from here: coming back to the clip asks for its frame again
+	update();
 }
 
 void VideoWindow::showNoVideo()
@@ -113,6 +145,9 @@ void VideoWindow::showNoVideo()
 	if (m_framePath.isEmpty() && m_status == status) { return; }  // already says so: no repaint per tick
 	m_frame = QImage();
 	m_framePath.clear();
+	m_frameSource.clear();
+	m_requestSource.clear();
+	m_activeSource.clear();
 	m_timecode.clear();
 	m_status = status;
 	update();
@@ -126,14 +161,24 @@ QRect VideoWindow::picture() const
 bool VideoWindow::stale(double seconds, const VideoAttachment& video) const
 {
 	const double halfFrame = 0.5 / (video.fps > 0.0 ? video.fps : 25.0);
-	return m_framePath != video.path || m_frameBox != picture().size() || std::abs(seconds - m_frameAt) >= halfFrame;
+	return m_requestSource != sourceKey(video) || m_frameBox != picture().size()
+		|| std::abs(seconds - m_frameAt) >= halfFrame;
 }
 
 void VideoWindow::take(const QImage& image, double seconds)
 {
 	m_waiting = false;
+	// A late answer for a clip - or a file under a reused clip id - no longer at the play position is dropped: the
+	// next follow() asks again.
+	if (m_requestSource != m_activeSource)
+	{
+		m_frameAt = -1.0;
+		follow();
+		return;
+	}
 	m_frame = image;
 	m_frameAt = seconds;
+	m_frameSource = m_requestSource;
 	update();
 }
 

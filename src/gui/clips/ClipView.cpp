@@ -48,6 +48,7 @@
 #include "DataFile.h"
 #include "DesignTokens.h"
 #include "DeprecationHelper.h"
+#include "ClipGroupEdits.h"
 #include "EditLocks.h"
 #include "Engine.h"
 #include "embed.h"
@@ -466,7 +467,7 @@ void ClipView::dropEvent( QDropEvent * de )
 	if (arrangerdrop::carriesFile(de->mimeData()))
 	{
 		TrackContentWidget * lane = getTrackView()->getTrackContentWidget();
-		if (lane->dropFile(de->mimeData(), mapTo(lane, position(de)).x())) { de->acceptProposedAction(); }
+		if (lane->dropFile(de->mimeData(), mapTo(lane, position(de)).x(), arrangerdrop::dropModifiers(de))) { de->acceptProposedAction(); }
 		else { de->ignore(); }
 		return;
 	}
@@ -646,6 +647,8 @@ void ClipView::paintTextLabel(QString const & text, QPainter & painter)
  */
 void ClipView::mousePressEvent( QMouseEvent * me )
 {
+	// Q050-255: a plain click on a clip is a new selection; Ctrl+click keeps the summary clips beside it.
+	if (me->button() == Qt::LeftButton && !(me->modifiers() & KBD_COPY_MODIFIER)) { FolderSpanSelection::instance().clear(); }
 	// 0.5.0 ED-010: with the arranger's smart tool, a press in a clip's upper half draws a range.
 	auto* overlay = m_trackView->trackContainerView()->findChild<ArrangerRangeOverlay*>();
 	if (overlay != nullptr && overlay->tool() == ArrangerRangeOverlay::Tool::Smart && me->button() == Qt::LeftButton
@@ -764,7 +767,11 @@ void ClipView::mousePressEvent( QMouseEvent * me )
 				if ( m_action != Action::Split) { s_textFloat->show(); }
 			}
 
+			// Null it at once: showing a top-level float can deliver the matching release before this press
+			// returns (a platform flushes its window events when a window appears), and that release deletes
+			// m_hint again - a double free that corrupted the heap on a click in the Terra harness.
 			delete m_hint;
+			m_hint = nullptr;
 			QString hint;
 			if (m_action == Action::Move || m_action == Action::MoveSelection)
 			{

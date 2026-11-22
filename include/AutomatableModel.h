@@ -190,6 +190,13 @@ public:
 	 *  across the ramp (the historical shape) is seen, and tryLock(0) never
 	 *  blocks. The seam exists in test builds only and is null in the product. */
 	static void setValueBufferRampReadProbeForTest(void (*probe)(AutomatableModel*));
+	/*! Test seam (Q050-161): \a probe runs on the render-time valueBuffer()
+	 *  path each time a request is answered from the period's prepared buffer
+	 *  (a cache hit) - after the hit was decided and before it returns. It lets
+	 *  a test count hits on the reading thread and look at the locks there; it
+	 *  is null in the product, and a test build without a probe pays one
+	 *  pointer test. */
+	static void setValueBufferCacheHitProbeForTest(void (*probe)(AutomatableModel*));
 #endif
 
 

@@ -19,6 +19,9 @@
 
 #pragma once
 
+#include <algorithm>
+#include <cmath>
+
 #include <ableton/link/GhostXForm.hpp>
 #include <ableton/link/Timeline.hpp>
 
@@ -27,14 +30,19 @@ namespace ableton
 namespace link
 {
 
-// Clamp the tempo of the given timeline to the valid Link range
+// Clamp the tempo of the given timeline to the valid Link range.
+// Zene local patch (cluster new-p16-329): a non-finite tempo (NaN, +inf, -inf)
+// falls back to kDefaultBpm; finite tempos are clamped exactly as before.
 inline Timeline clampTempo(const Timeline timeline)
 {
   const double kMinBpm = 20.0;
   const double kMaxBpm = 999.0;
-  return {Tempo{(std::min)((std::max)(timeline.tempo.bpm(), kMinBpm), kMaxBpm)},
-          timeline.beatOrigin,
-          timeline.timeOrigin};
+  const double kDefaultBpm = 120.0;
+  const double bpm = timeline.tempo.bpm();
+  const double clampedBpm = std::isfinite(bpm)
+                                ? (std::min)((std::max)(bpm, kMinBpm), kMaxBpm)
+                                : kDefaultBpm;
+  return {Tempo{clampedBpm}, timeline.beatOrigin, timeline.timeOrigin};
 }
 
 // Given an existing client timeline, a session timeline, and the

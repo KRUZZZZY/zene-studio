@@ -34,10 +34,15 @@
 #include <QAbstractSlider>
 #include <QJsonObject>
 #include <QKeyEvent>
+#include <QLineEdit>
 #include <QTemporaryDir>
 #include <QToolBar>
 #include <QToolTip>
 #include <QWheelEvent>
+
+#include <cmath>
+
+#include "../core/AudioBurstSupport.h"
 
 #include "AccessibleWidgets.h"
 #include "ArrangementSections.h"
@@ -211,6 +216,20 @@ private slots:
 		clip->changeLength(TimePos(1));
 		QVERIFY(press(Qt::Key_Left, resize));
 		QCOMPARE(clip->length().getTicks(), 1);
+	}
+
+	void nearestClipStaysRightWhenTheDistanceExceedsTickRange()
+	{
+		// The play head is 2e9 ticks before the origin, so the clip at 5e8 is 2.5e9 away: more than a tick_t holds.
+		// Subtracted in tick_t it wraps to about -1.79e9, which reads as nearer than the origin's 2e9 and wins.
+		Track* t = track();
+		Clip* origin = clipAt(t, 0, Bar);
+		clipAt(t, 500'000'000, Bar);
+		QCoreApplication::processEvents();
+		Engine::getSong()->setPlayPos(-2'000'000'000, Song::PlayMode::Song);
+		QVERIFY(press(Qt::Key_Down, Qt::ShiftModifier | Qt::AltModifier));
+		QCOMPARE(ShellSelection::instance()->clip(), origin);
+		Engine::getSong()->setPlayPos(0, Song::PlayMode::Song);
 	}
 
 	void ctrlShiftLOpensTheClipList()
@@ -427,6 +446,71 @@ private slots:
 		installArrangerNavigator(nullptr);
 	}
 
+	void tabMovesToNextTransientAndShiftTabToPrevious()
+	{
+		test::sampleClipOf(test::burstAudio(200, {10, 58, 106, 154}));
+		restorePlayPos(30);
+		QVERIFY2(focusArranger(), "the arranger could not take the focus");
+		QTest::keyClick(m_editor, Qt::Key_Tab);
+		const int next = playPos();
+		QVERIFY2(next > 30, qPrintable(QStringLiteral("Tab went to %1, not forward").arg(next)));
+		QVERIFY2(std::abs(next - 58) <= 6, qPrintable(QStringLiteral("next transient at %1, burst at 58").arg(next)));
+		// The key is a second path to the command, not a second implementation: same result from the same start.
+		restorePlayPos(30);
+		const ControlResult direct = run(QStringLiteral("arrangement.next_transient"));
+		QVERIFY2(direct.ok, qPrintable(direct.errorMessage));
+		QCOMPARE(next, direct.result.value(QStringLiteral("position_ticks")).toInt());
+
+		restorePlayPos(next);
+		QTest::keyClick(m_editor, Qt::Key_Backtab, Qt::ShiftModifier);
+		const int previous = playPos();
+		QVERIFY2(previous < next, qPrintable(QStringLiteral("Shift+Tab went to %1, not backward").arg(previous)));
+		QVERIFY2(std::abs(previous - 10) <= 6, qPrintable(QStringLiteral("previous transient at %1, burst at 10").arg(previous)));
+		restorePlayPos(next);
+		QTest::keyClick(m_editor, Qt::Key_Tab, Qt::ShiftModifier);
+		QCOMPARE(playPos(), previous);  // Tab with Shift is the same backward move
+	}
+
+	void tabWithNoTransientLeavesPositionAndSays()
+	{
+		restorePlayPos(500);  // an empty song: nothing to find either way
+		QVERIFY2(focusArranger(), "the arranger could not take the focus");
+		QTest::keyClick(m_editor, Qt::Key_Tab);
+		QCOMPARE(playPos(), 500);
+		QVERIFY(!a11y::lastAnnouncement().isEmpty());
+	}
+
+	void tabDoesNotTouchTextEntry()
+	{
+		test::sampleClipOf(test::burstAudio(200, {10, 58, 106, 154}));
+		restorePlayPos(30);
+		auto* edit = new QLineEdit(getGUI()->mainWindow());
+		edit->show();
+		edit->setFocus();
+		QVERIFY(QTest::qWaitFor([&] { return QApplication::focusWidget() == edit; }, 5000));
+		QTest::keyClick(edit, Qt::Key_Tab);
+		QCOMPARE(playPos(), 30);
+		edit->setFocus();
+		QVERIFY(QTest::qWaitFor([&] { return QApplication::focusWidget() == edit; }, 5000));
+		QVERIFY(QApplication::focusWidget() != m_editor);
+		QKeyEvent tab(QEvent::KeyPress, Qt::Key_Tab, Qt::NoModifier);
+		QVERIFY(!arrangerkeys::handleTransientKey(m_editor, &tab));
+		QTest::keyClick(m_editor, Qt::Key_Tab);
+		QCOMPARE(playPos(), 30);
+		delete edit;
+	}
+
+	void otherChordsAreNotClaimed()
+	{
+		test::sampleClipOf(test::burstAudio(200, {10, 58, 106, 154}));
+		restorePlayPos(30);
+		QVERIFY2(focusArranger(), "the arranger could not take the focus");
+		QTest::keyClick(m_editor, Qt::Key_Tab, Qt::ControlModifier);
+		QCOMPARE(playPos(), 30);
+		QTest::keyClick(m_editor, Qt::Key_Tab, Qt::AltModifier);
+		QCOMPARE(playPos(), 30);
+	}
+
 private:
 	Track* track()
 	{
@@ -459,6 +543,16 @@ private:
 		scrollTo(0);
 		QCoreApplication::processEvents();
 		if (navigator() != nullptr) { navigator()->resize(600, navigator()->height()); }
+	}
+
+	int playPos() const { return static_cast<int>(Engine::getSong()->getPlayPos().getTicks()); }
+	void restorePlayPos(int ticks) { Engine::getSong()->setPlayPos(ticks); }
+
+	bool focusArranger()
+	{
+		getGUI()->mainWindow()->activateWindow();
+		m_editor->setFocus();
+		return QTest::qWaitFor([this] { return QApplication::focusWidget() == m_editor; }, 5000);
 	}
 
 	bool press(int key, Qt::KeyboardModifiers mods)

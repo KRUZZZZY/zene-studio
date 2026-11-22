@@ -66,13 +66,19 @@ QJsonObject detectProjectKeyJson(const lmms::ProjectKey& key);
 //! The optional `max_seconds` bound: absent means the default, out of range is
 //! REFUSED rather than clamped.
 bool readDetectBound(const QJsonObject& args, double* out, ControlResult* error);
+//! The project song a detect handler reads, read on the UI thread when the handler
+//! runs. The registry's engine gate ran earlier, on the caller's thread, so the song
+//! can be gone by now: null comes back as a typed Busy failure in @a error, never as
+//! a dereference. Every detect handler that touches the song goes through this.
+lmms::Song* detectProjectSong(ControlResult* error);
 //! The detected tempo as the map can hold it, or -1 when it is outside the
 //! map's own bounds (a clamp would be a different tempo, so the caller refuses).
 int roundedTempoForMap(double bpm);
 //! The recorded inverse of one detect.apply: BOTH halves captured before the
 //! write and put back by the step, so one Ctrl+Z is one detection undone.
 void recordDetectApplyRestore(const lmms::TempoMap& before, const QString& keyBefore);
-//! detect.get_state's payload: what the project holds now.
+//! detect.get_state's payload: what the project holds now. @a song must not be
+//! null: take it from detectProjectSong(), which refuses a missing one.
 QJsonObject detectStateJson(lmms::Song* song);
 
 } // namespace control

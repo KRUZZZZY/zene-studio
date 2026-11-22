@@ -40,12 +40,14 @@
 #include <QShortcut>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QThread>
 
 #include "Accessibility.h"
 #include "MenuBarExtras.h"
 #include "MeterSpeech.h"
 #include "SessionAnnouncements.h"
 #include "AboutDialog.h"
+#include "ArrangerFileDrop.h"
 #include "AudioEngine.h"
 #include "AutomationEditor.h"
 #include "BrowserPanel.h"
@@ -115,6 +117,7 @@
 #include "ToolPlugin.h"
 #include "VersionedSaveDialog.h"
 #include "VideoDecoder.h"
+#include "VideoLane.h"
 
 #include "lmmsversion.h"
 
@@ -282,6 +285,8 @@ MainWindow::~MainWindow()
 	delete getGUI()->noteEditor();
 	delete getGUI()->pianoRoll();
 	delete getGUI()->songEditor();
+	// the journal may outlive this window until Engine::destroy(), so it must not call back into it
+	if( ProjectJournal* journal = Engine::projectJournal() ) { journal->setStackObserver( {} ); }
 	// destroy engine which will do further cleanups etc.
 	Engine::destroy();
 }
@@ -407,6 +412,9 @@ void MainWindow::finalize()
 		this, [](){ dispatchShellCommand(QStringLiteral("window.modulators")); }), "window.modulators");
 	declares(edit_menu->addAction(embed::getIconPixmap("automation"), tr("Progression..."),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.progression")); }), "window.progression");
+	// Q050-294.2: the melodic step grid on the selected MIDI clip (window.step_grid; its edits are note.step_set).
+	declares(edit_menu->addAction(embed::getIconPixmap("piano"), tr("Step Grid..."),
+		this, [](){ dispatchShellCommand(QStringLiteral("window.step_grid")); }), "window.step_grid");
 	// Q050-154: the live-code panel - the socket-only livecode.* group from the interface.
 	declares(edit_menu->addAction(embed::getIconPixmap("tool"), tr("Live Code..."),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.livecode")); }), "window.livecode");
@@ -427,6 +435,8 @@ void MainWindow::finalize()
 	addMidiClockMenu(edit_menu);
 	addSessionTuningMenu(edit_menu);
 	addPluginQuarantineMenu(edit_menu);
+	// Q050-093: the remembered loop mode of a dropped audio loop (settings.set on import/loopwarp).
+	arrangerdrop::addLoopWarpAction(edit_menu);
 
 	// Saved MIDI mapping sets (controller.template_*), re-read each time the submenu opens.
 	QMenu* templatesMenu = edit_menu->addMenu(tr("Controller Templates"));
@@ -480,6 +490,19 @@ void MainWindow::finalize()
 	applyPersistedRetroCaptureArm();
 
 	connect(edit_menu, SIGNAL(aboutToShow()), this, SLOT(updateUndoRedoButtons()));
+
+	// The stacks also move while the menu is closed: an edit pushes a step, and control.undo or
+	// control.redo unwinds one. A disabled QAction does not fire its shortcut, so Undo and Redo follow
+	// the journal rather than waiting for the menu to open. The journal is GUI-thread only; a change made
+	// on another thread is queued to this one, so the actions are only ever touched here.
+	if( ProjectJournal* journal = Engine::projectJournal() )
+	{
+		journal->setStackObserver( [this]()
+		{
+			if( QThread::currentThread() == thread() ) { updateUndoRedoButtons(); }
+			else { QMetaObject::invokeMethod( this, &MainWindow::updateUndoRedoButtons, Qt::QueuedConnection ); }
+		} );
+	}
 
 	m_viewMenu = new QMenu( this );
 	a11y::announce(m_viewMenu, tr("View"),
@@ -1394,6 +1417,10 @@ void MainWindow::updateViewMenu()
 	// 0.5.0 ED-054: the project's video in its floating window (greyed out in a build without FFmpeg).
 	declares(m_viewMenu->addAction(tr("Video Window"), this, []() { dispatchShellCommand(QStringLiteral("video.window_show")); }),
 		"video.window_show")->setEnabled(VideoDecoder::available());
+	// Q050-180.1: a clip at the play position - the way to the first clip, while the arranger's video lane is hidden.
+	declares(m_viewMenu->addAction(tr("Add Video Clip..."), this, [this]() {
+		VideoLane::addClipFromDialog(this, Engine::getSong()->getPlayPos(Song::PlayMode::Song).getTicks());
+	}), "video.clip_add")->setEnabled(VideoDecoder::available());
 	m_viewMenu->addSeparator();
 
 	declares(m_viewMenu->addAction(embed::getIconPixmap( "fullscreen" ),
@@ -1518,8 +1545,8 @@ void MainWindow::updatePlayPauseIcons()
 
 void MainWindow::updateUndoRedoButtons()
 {
-	// when the edit menu is shown, grey out the undo/redo buttons if there's nothing to undo/redo
-	// else, un-grey them
+	// when the edit menu is shown, and whenever the journal's stacks move (see finalize()), grey out the
+	// undo/redo buttons if there's nothing to undo/redo; else, un-grey them
 	m_undoAction->setEnabled(Engine::projectJournal()->canUndo());
 	m_redoAction->setEnabled(Engine::projectJournal()->canRedo());
 }

@@ -46,6 +46,7 @@
  * one clip per completed launch and a transaction carries one inverse.
  */
 
+#include <cstddef>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -87,19 +88,14 @@ namespace
 
 QString trackTypeName(Track::Type type)
 {
-	switch (type)
-	{
-	case Track::Type::Instrument: return QStringLiteral("instrument");
-	case Track::Type::Pattern: return QStringLiteral("pattern");
-	case Track::Type::Sample: return QStringLiteral("sample");
-	case Track::Type::Event: return QStringLiteral("event");
-	case Track::Type::Video: return QStringLiteral("video");
-	case Track::Type::Automation: return QStringLiteral("automation");
-	case Track::Type::HiddenAutomation: return QStringLiteral("hidden automation");
-	case Track::Type::Folder: return QStringLiteral("folder");
-	case Track::Type::Count: break;
-	}
-	return QStringLiteral("unknown");
+	// A table (see control::trackTypeNameOf); this reader's own wording for the hidden lane has a space.
+	static const char* const names[] = {"instrument", "pattern", "sample", "event", "video", "automation",
+		"hidden automation", "folder", "neutral"};
+	static_assert(sizeof(names) / sizeof(names[0]) == static_cast<std::size_t>(Track::Type::Count),
+		"every Track::Type needs a name");
+	const int index = static_cast<int>(type);
+	if (index < 0 || index >= static_cast<int>(Track::Type::Count)) { return QStringLiteral("unknown"); }
+	return QString::fromLatin1(names[index]);
 }
 
 ControlResult validateOpenStarts(const OpenStart* open, int openCount)
@@ -121,6 +117,22 @@ bool pairHasSlot(const Song& song, const SessionModel& model, const LandPair& pa
 {
 	return pair.track >= 0 && pair.track < static_cast<int>(song.tracks().size())
 		&& pair.track < model.trackCount() && pair.scene >= 0 && pair.scene < model.sceneCount();
+}
+
+//! Why a pair's song track or session-grid cell cannot take it, or empty when both are there.
+QString pairSlotBlocker(const Song& song, const SessionModel& model, const LandPair& pair)
+{
+	if (pair.track < 0 || pair.track >= static_cast<int>(song.tracks().size()))
+	{
+		return QStringLiteral("column_has_no_song_track");
+	}
+	// The song track is there; only the session-grid cell is gone (session.set_grid
+	// shrank the scene or the grid track away) - a different fact, with its own count.
+	if (pair.track >= model.trackCount() || pair.scene < 0 || pair.scene >= model.sceneCount())
+	{
+		return QStringLiteral("session_grid_cell_removed");
+	}
+	return QString();
 }
 
 bool canLandMidiOn(Track* track, int pattern)
@@ -346,16 +358,8 @@ QJsonObject sessionrecord::landPairState(Song& song, const SessionModel& model, 
 	const std::shared_ptr<const SampleBuffer>& audioSample)
 {
 	QJsonObject landed = pairState(pair);
-	if (pair.track < 0 || pair.track >= static_cast<int>(song.tracks().size()))
-	{
-		return pairNotLanded(pair, QStringLiteral("column_has_no_song_track"));
-	}
-	// The song track is there; only the session-grid cell is gone (session.set_grid
-	// shrank the scene or the grid track away) - a different fact, with its own count.
-	if (pair.track >= model.trackCount() || pair.scene < 0 || pair.scene >= model.sceneCount())
-	{
-		return pairNotLanded(pair, QStringLiteral("session_grid_cell_removed"));
-	}
+	const QString blocker = pairSlotBlocker(song, model, pair);
+	if (!blocker.isEmpty()) { return pairNotLanded(pair, blocker); }
 	const tick_t length = pair.stopTick - pair.startTick;
 	if (length <= 0)
 	{

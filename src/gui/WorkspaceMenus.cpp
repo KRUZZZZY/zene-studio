@@ -45,6 +45,8 @@
 #include "TrackLooks.h"
 #include "UiConfigStore.h"
 #include "UnattendedRun.h"
+#include "UpdateCheckWindows.h"
+#include "lmmsconfig.h"
 
 namespace lmms::gui
 {
@@ -157,6 +159,9 @@ void fillHelpMenu(QMenu* help)
 	help->addSeparator();
 	run(help, QObject::tr("Ask..."), QStringLiteral("window.ask"));
 	run(help, QObject::tr("What's New"), QStringLiteral("window.whats_new"));
+#ifdef ZENE_UPDATE_CHECK_ENABLED
+	addUpdateCheckMenuEntry(help);
+#endif
 	run(help, QObject::tr("Accessibility Check"), QStringLiteral("window.accessibility_report"), {}, false, true);
 }
 
@@ -216,6 +221,13 @@ void installWorkspaceMenus(QMenuBar* bar)
 		ControlRegistry::instance()->invoke(QStringLiteral("window.accessibility_report"), {{QStringLiteral("fill"), true}});
 	});
 	showWhatsNewOnce(bar->window());
+#ifdef ZENE_UPDATE_CHECK_ENABLED
+	// Q050-501: well after the window is up (What's New comes at 1.5 s), for a person only, and in the background.
+	if (!isUnattendedRun())
+	{
+		QTimer::singleShot(4000, bar->window(), [window = bar->window()] { runUpdateCheckStartup(window); });
+	}
+#endif
 }
 
 } // namespace lmms::gui

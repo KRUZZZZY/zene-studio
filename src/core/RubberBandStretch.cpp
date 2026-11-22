@@ -31,6 +31,7 @@
 #include <thread>
 #include <vector>
 
+#include "CrashReporter.h"
 #include "lmmsconfig.h"
 
 #ifdef LMMS_HAVE_RUBBERBAND
@@ -73,7 +74,16 @@ public:
 	{
 		std::lock_guard lock(m_mutex);
 		m_pools.push_back(pool);
-		if (!m_thread.joinable()) { m_thread = std::thread([this] { run(); }); }
+		if (!m_thread.joinable())
+		{
+			// sigaltstack() is per-thread: resetting a voice can overflow the
+			// recycler's ordinary stack, so register before run() can do it.
+			m_thread = std::thread([this]
+			{
+				crashreporter::installAlternateStackForCurrentThread();
+				run();
+			});
+		}
 	}
 
 	void remove(RubberBandPool* pool)

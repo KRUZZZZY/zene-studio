@@ -120,6 +120,52 @@ private slots:
 				"a note the client never selected")
 				.arg(selectedNotes.first().toString(), ids.at(1))));
 	}
+
+	//! Luna cluster new-p15-14: the deterministic position roll reverses the two
+	//! notes' list order, but roll.get_state must keep reporting the selected note id.
+	void randomizeReorderingNotesKeepsTheSelectionOnItsIdentity()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult addedTrack = registry->invoke(QStringLiteral("track.add"),
+			QJsonObject{{QStringLiteral("type"), QStringLiteral("instrument")}});
+		QVERIFY2(addedTrack.ok, qPrintable(addedTrack.errorMessage));
+		const ControlResult addedClip = registry->invoke(QStringLiteral("clip.add"),
+			{{QStringLiteral("track"), addedTrack.result.value(QStringLiteral("track")).toString()},
+				{QStringLiteral("position"), 0}, {QStringLiteral("length"), 192}});
+		QVERIFY2(addedClip.ok, qPrintable(addedClip.errorMessage));
+		const QString clip = addedClip.result.value(QStringLiteral("clip")).toString();
+
+		const ControlResult first = registry->invoke(QStringLiteral("note.add"),
+			QJsonObject{{QStringLiteral("clip"), clip}, {QStringLiteral("key"), 60},
+				{QStringLiteral("position"), 24}, {QStringLiteral("length"), 24}});
+		QVERIFY2(first.ok, qPrintable(first.errorMessage));
+		const ControlResult second = registry->invoke(QStringLiteral("note.add"),
+			QJsonObject{{QStringLiteral("clip"), clip}, {QStringLiteral("key"), 62},
+				{QStringLiteral("position"), 48}, {QStringLiteral("length"), 24}});
+		QVERIFY2(second.ok, qPrintable(second.errorMessage));
+		const QString firstId = first.result.value(QStringLiteral("note")).toString();
+		const QString secondId = second.result.value(QStringLiteral("note")).toString();
+		QVERIFY2(registry->invoke(QStringLiteral("note.select"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("notes"), QJsonArray{firstId}}}).ok,
+			"could not select the first note");
+
+		const ControlResult rolled = registry->invoke(QStringLiteral("note.randomize"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("velocity_jitter"), 0.0},
+				{QStringLiteral("position_jitter"), 48}, {QStringLiteral("seed"), 2}});
+		QVERIFY2(rolled.ok, qPrintable(rolled.errorMessage));
+		const ControlResult state = registry->invoke(QStringLiteral("roll.get_state"),
+			{{QStringLiteral("clip"), clip}});
+		QVERIFY2(state.ok, qPrintable(state.errorMessage));
+		const QJsonArray notes = state.result.value(QStringLiteral("notes")).toArray();
+		QCOMPARE(notes.size(), 2);
+		QCOMPARE(notes.at(0).toObject().value(QStringLiteral("id")).toString(), secondId);
+		QCOMPARE(notes.at(1).toObject().value(QStringLiteral("id")).toString(), firstId);
+		QVERIFY(!notes.at(0).toObject().value(QStringLiteral("selected")).toBool());
+		QVERIFY(notes.at(1).toObject().value(QStringLiteral("selected")).toBool());
+		const QJsonArray selected = state.result.value(QStringLiteral("selected_notes")).toArray();
+		QCOMPARE(selected.size(), 1);
+		QCOMPARE(selected.first().toString(), firstId);
+	}
 };
 
 QTEST_MAIN(NoteSelectionIdentityTest)

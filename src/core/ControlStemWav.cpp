@@ -74,8 +74,21 @@ bool stemWriteWavFile(const QString& path, const SampleBuffer& buffer, int sampl
 	static_assert(sizeof(SampleFrame) == 2 * sizeof(float),
 		"a stem is written as the buffer's raw interleaved stereo float32 stream");
 
+	const quint64 bytesPerFrame = kWavChannels * (kWavBits / 8);
+	// The byte rate is a 32-bit header field computed from the sample rate, so the rate is
+	// checked before any arithmetic on it: zero or below is no rate, and a rate whose byte
+	// rate does not fit 32 bits would be written as a header that lies. Both are refused
+	// before anything is written, so an existing stem at the path is kept.
+	if (sampleRate <= 0 || static_cast<quint64>(sampleRate) * bytesPerFrame > std::numeric_limits<quint32>::max())
+	{
+		*error = QStringLiteral("cannot write %1: sample rate %2 is not one a WAV header can describe")
+			.arg(path).arg(sampleRate);
+		return false;
+	}
+	const quint64 byteRate = static_cast<quint64>(sampleRate) * bytesPerFrame;
+
 	const quint64 frames = static_cast<quint64>(buffer.size());
-	const quint64 dataBytes = frames * kWavChannels * (kWavBits / 8);
+	const quint64 dataBytes = frames * bytesPerFrame;
 	// Classic RIFF sizes are 32-bit: past that the header would wrap and lie about
 	// the payload, so the stem is refused before anything is written.
 	if (36 + dataBytes > std::numeric_limits<quint32>::max())
@@ -101,7 +114,7 @@ bool stemWriteWavFile(const QString& path, const SampleBuffer& buffer, int sampl
 	out.writeRawData("WAVEfmt ", 8);
 	out << static_cast<quint32>(16) << static_cast<quint16>(3) << static_cast<quint16>(kWavChannels)
 		<< static_cast<quint32>(sampleRate)
-		<< static_cast<quint32>(sampleRate * kWavChannels * (kWavBits / 8))
+		<< static_cast<quint32>(byteRate)
 		<< static_cast<quint16>(kWavChannels * (kWavBits / 8)) << static_cast<quint16>(kWavBits);
 	out.writeRawData("data", 4);
 	out << static_cast<quint32>(dataBytes);

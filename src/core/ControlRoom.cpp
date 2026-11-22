@@ -71,8 +71,10 @@ void setState(const State& state)
 	// the interface thread hands us a plain struct: keep the speaker inside the trim array and refuse
 	// gains no mixer position could have produced, so publish never indexes out of bounds
 	g_state.speaker = std::clamp(g_state.speaker, 0, 2);
-	for (float& db : g_state.trimsDb) { db = std::isfinite(db) ? db : 0.f; }
-	g_state.dimDb = std::isfinite(g_state.dimDb) ? g_state.dimDb : 0.f;
+	// keep each trim and the dim to the ranges monitor.control_room takes (-24..12 dB, -60..0 dB): a finite
+	// value can still overflow linear() to an infinite gain, and apply() would turn samples into infinities
+	for (float& db : g_state.trimsDb) { db = std::isfinite(db) ? std::clamp(db, -24.f, 12.f) : 0.f; }
+	g_state.dimDb = std::isfinite(g_state.dimDb) ? std::clamp(g_state.dimDb, -60.f, 0.f) : 0.f;
 	publish(g_state);
 	QStringList trims;
 	for (const float db : g_state.trimsDb) { trims << QString::number(db); }

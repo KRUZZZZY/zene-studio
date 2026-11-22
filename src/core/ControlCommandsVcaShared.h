@@ -144,6 +144,8 @@ inline QJsonObject groupState(VcaGroup* group)
 	QJsonArray members;
 	for (mix_ch_t member : group->members())
 	{
+		// A stale position has no live channel to report.
+		if (member >= Engine::mixer()->numChannels()) { continue; }
 		QJsonObject entry;
 		MixerChannel* channel = Engine::mixer()->mixerChannel(member);
 		// The channel's PERSISTENT id (SPEC-stable-ids.md slice 2), read off

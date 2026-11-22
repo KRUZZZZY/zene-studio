@@ -52,6 +52,8 @@
 #include "SampleWindow.h"
 #include "Song.h"
 
+#include "../../../src/core/SampleOperators.h"
+
 using namespace lmms;
 using namespace revtest;
 
@@ -607,6 +609,20 @@ private slots:
 		// The success journaled a real clip: one undo removes it (and frees the
 		// buffer) before the remaining slots run.
 		REV_UNDO_OR_FAIL();
+	}
+
+	//! A tone's phase step is frequency / sampleRate: with no positive rate the
+	//! division yields NaN frames. The helper has no error channel, so a
+	//! non-positive rate generates NOTHING; the rate-independent kinds are unchanged.
+	void toneWithoutAPositiveSampleRateGeneratesNoFrames()
+	{
+		QVERIFY(sampleops::generate(sampleops::Kind::Tone, 440.0, 1.0f, 16, 0).empty());
+		QVERIFY(sampleops::generate(sampleops::Kind::Tone, 440.0, 1.0f, 16, -44100).empty());
+		const auto tone = sampleops::generate(sampleops::Kind::Tone, 440.0, 1.0f, 16, 44100);
+		QCOMPARE(static_cast<int>(tone.size()), 16);
+		for (const SampleFrame& frame : tone) { QVERIFY(std::isfinite(frame.left()) && std::isfinite(frame.right())); }
+		for (sampleops::Kind kind : {sampleops::Kind::Silence, sampleops::Kind::White, sampleops::Kind::Pink})
+			QCOMPARE(static_cast<int>(sampleops::generate(kind, 440.0, 1.0f, 16, 0).size()), 16);
 	}
 
 	//! The start and length are individually in range, but their end must be too.

@@ -168,6 +168,8 @@ public:
 	//! Count converter states created while RealtimeScope is active.
 	static auto realtimeConverterAllocationsForTest() noexcept -> std::uint64_t;
 	static void resetRealtimeConverterAllocationsForTest() noexcept;
+	static auto realtimeVoiceConverterCapacityForTest() noexcept -> std::size_t;
+	static auto freeRealtimeVoiceConvertersForTest() noexcept -> std::size_t;
 #endif
 
 	//! The converter \p quality selects. `Linear` is `Mode::Linear`, the

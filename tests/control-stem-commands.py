@@ -113,6 +113,7 @@ from stem_commands_lib import (CHUNK_DELAY_MS, CLI_PATH, SAMPLE_RATE, SOURCE_SEC
                              job_state, onnxruntime_site_dir, poll_until, python_with_onnxruntime,
                              start_job, write_source_wav)
 from stem_quality_lib import check_quality
+from stem_task_checks import check_resample_is_not_on_the_caller
 
 def check_quit(session, instance, recorder):
     reply = session.call("control.quit")
@@ -137,6 +138,7 @@ def report_results(recorder):
 def run_checks(session, instance, recorder, outdir):
     check_get_state(session, recorder)
     check_refusals(session, recorder, outdir)
+    check_resample_is_not_on_the_caller(session, recorder, outdir)
     # The GUI's "Split to stems" route hands this command a platform-native
     # absolute path; on Windows that is a drive path or a UNC share, which the
     # validator must accept rather than refuse as a relative path.

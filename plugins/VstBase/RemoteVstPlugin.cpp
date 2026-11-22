@@ -35,7 +35,9 @@
 #include "lmmsconfig.h"
 
 #include "RemotePluginClient.h"
+#include "VstChannelCount.h"
 #include "VstMidiEventBatch.h"
+#include "VstShmHandoff.h"
 
 //! MIDI events the client accepts per processing period; the excess is dropped and counted.
 #define MIDI_EVENT_BUFFER_COUNT		1024
@@ -87,8 +89,6 @@
 #undef Status
 #undef Unsorted
 #endif
-
-#include <mutex>
 
 #include <algorithm>
 #include <cstdint>
@@ -295,7 +295,9 @@ public:
 	{
 		if( m_plugin )
 		{
-			return static_cast<ch_cnt_t>(m_plugin->numInputs);
+			// A count the host cannot hold is not adopted: updateInOutCount() refuses it
+			// and the count the host last acknowledged stays in effect.
+			return vst::toChannelCount(m_plugin->numInputs).value_or(RemotePluginClient::inputCount());
 		}
 		return 0;
 	}
@@ -305,38 +307,13 @@ public:
 	{
 		if( m_plugin )
 		{
-			return static_cast<ch_cnt_t>(m_plugin->numOutputs);
+			return vst::toChannelCount(m_plugin->numOutputs).value_or(RemotePluginClient::outputCount());
 		}
 		return 0;
 	}
 
 	// has to be called as soon as input- or output-count changes
 	int updateInOutCount();
-
-	inline void lockShm()
-	{
-		m_shmLock.lock();
-	}
-
-	inline bool tryLockShm()
-	{
-		return m_shmLock.try_lock();
-	}
-
-	inline void unlockShm()
-	{
-		m_shmLock.unlock();
-	}
-
-	inline bool isShmValid()
-	{
-		return m_shmValid;
-	}
-
-	inline void setShmIsValid( bool valid )
-	{
-		m_shmValid = valid;
-	}
 
 	inline bool isProcessing() const
 	{
@@ -476,13 +453,18 @@ private:
 	float * * m_inputs;
 	float * * m_outputs;
 
-	std::mutex m_shmLock;
-	bool m_shmValid;
+	vst::ShmHandoff m_shmHandoff;
 
 	using VstMidiEventList = std::vector<VstMidiEvent>;
 	VstMidiEventList m_midiEvents;
 	//! MIDI events dropped because a period already held MIDI_EVENT_BUFFER_COUNT of them.
 	std::size_t m_droppedMidiEvents = 0;
+
+	//! Per-instance dispatch scratch for one period's MIDI events. It must
+	//! outlive the pluginDispatch call that reads it, so it is a member, not
+	//! a function-local static shared by every RemoteVstPlugin instance.
+	char m_eventsBuffer[sizeof( VstEvents ) + sizeof( VstMidiEvent * ) * MIDI_EVENT_BUFFER_COUNT];
+	VstMidiEvent m_midiScratch[MIDI_EVENT_BUFFER_COUNT];
 
 	bpm_t m_bpm;
 	double m_currentSamplePos;
@@ -521,7 +503,6 @@ RemoteVstPlugin::RemoteVstPlugin( const char * socketPath ) :
 	m_shouldGiveIdle( false ),
 	m_inputs( nullptr ),
 	m_outputs( nullptr ),
-	m_shmValid( false ),
 	m_midiEvents(),
 	m_bpm( 0 ),
 	m_currentSamplePos( 0 ),
@@ -745,7 +726,12 @@ void RemoteVstPlugin::init( const std::string & _plugin_file )
 		return;
 	}
 
-	updateInOutCount();
+	if( !updateInOutCount() )
+	{
+		debugMessage( "Plugin reported an input/output count the host cannot hold; not loading it.\n" );
+		sendMessage( IdVstFailedLoadingPlugin );
+		return;
+	}
 	updateBufferSize();
 	updateSampleRate();
 
@@ -1058,10 +1044,8 @@ void RemoteVstPlugin::process( const float* _in, float* _out )
 	{
 		// since MIDI-events are not received immediately, we
 		// have to have them stored somewhere even after
-		// dispatcher-call, so we create static copies of the
-		// data and post them
-		static char eventsBuffer[sizeof( VstEvents ) + sizeof( VstMidiEvent * ) * MIDI_EVENT_BUFFER_COUNT];
-		static VstMidiEvent vme[MIDI_EVENT_BUFFER_COUNT];
+		// dispatcher-call, so we keep per-instance copies of the
+		// data and post them (m_eventsBuffer/m_midiScratch)
 
 		// first sort events chronologically, since some plugins
 		// (e.g. Sinnah) can hang if they're out of order
@@ -1073,14 +1057,14 @@ void RemoteVstPlugin::process( const float* _in, float* _out )
 		// the count is capped again here rather than trusted.
 		const auto count = std::min<std::size_t>( m_midiEvents.size(), MIDI_EVENT_BUFFER_COUNT );
 
-		auto events = (VstEvents*)eventsBuffer;
+		auto events = (VstEvents*)m_eventsBuffer;
 		events->reserved = 0;
 		events->numEvents = count;
 
 		for( std::size_t idx = 0; idx < count; ++idx )
 		{
-			memcpy( &vme[idx], &m_midiEvents[idx], sizeof( VstMidiEvent ) );
-			events->events[idx] = (VstEvent *) &vme[idx];
+			memcpy( &m_midiScratch[idx], &m_midiEvents[idx], sizeof( VstMidiEvent ) );
+			events->events[idx] = (VstEvent *) &m_midiScratch[idx];
 		}
 
 		m_midiEvents.clear();
@@ -1089,14 +1073,10 @@ void RemoteVstPlugin::process( const float* _in, float* _out )
 
 	// now we're ready to fetch sound from VST-plugin
 
-	if( !tryLockShm() )
+	if( !m_shmHandoff.beginRead() )
 	{
-		return;
-	}
-
-	if( !isShmValid() )
-	{
-		unlockShm();
+		vst::silenceOutputPlanes( _out, RemotePluginClient::outputCount(),
+								static_cast<std::size_t>( bufferSize() ) );
 		return;
 	}
 
@@ -1142,7 +1122,7 @@ void RemoteVstPlugin::process( const float* _in, float* _out )
 	m_plugin->processReplacing(m_plugin, m_inputs, m_outputs, bufferSize());
 #endif
 
-	unlockShm();
+	m_shmHandoff.endRead();
 
 	m_currentSamplePos += bufferSize();
 }
@@ -1775,6 +1755,14 @@ void RemoteVstPlugin::loadChunkFromFile(const std::string& _file, std::size_t _l
 
 int RemoteVstPlugin::updateInOutCount()
 {
+	// A count the host cannot hold is refused before anything is resized. This can run on the
+	// processing thread (audioMasterIOChanged), so it does not log: init() reports the refusal.
+	if( m_plugin && ( !vst::toChannelCount( m_plugin->numInputs ) ||
+		!vst::toChannelCount( m_plugin->numOutputs ) ) )
+	{
+		return 0;
+	}
+
 	if( inputCount() == RemotePluginClient::inputCount() &&
 		outputCount() == RemotePluginClient::outputCount() )
 	{
@@ -1792,11 +1780,7 @@ int RemoteVstPlugin::updateInOutCount()
 		return 0;
 	}
 
-	lockShm();
-
-	setShmIsValid( false );
-
-	unlockShm();
+	m_shmHandoff.invalidate();
 
 	delete[] m_inputs;
 	delete[] m_outputs;
@@ -2336,7 +2320,7 @@ void * RemoteVstPlugin::processingThread(void * _param)
 		else if( m.id == IdChangeSharedMemoryKey )
 		{
 			_this->processMessage( m );
-			_this->setShmIsValid( true );
+			_this->m_shmHandoff.validate();
 		}
 		else
 		{

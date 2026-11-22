@@ -66,6 +66,7 @@
 
 #include <sndfile.h>
 
+#include "AudioBusHandle.h"
 #include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -76,6 +77,7 @@
 #include "EffectControls.h"
 #include "Engine.h"
 #include "InspectorPanel.h"
+#include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "MusicalTime.h"
@@ -88,6 +90,7 @@
 #include "SampleTrack.h"
 #include "ChannelLevelMeter.h"
 #include "CommandLists.h"
+#include "DeviceCardState.h"
 #include "ShellCommandMenus.h"
 #include "ShellSelection.h"
 #include "TransportReadouts.h"
@@ -1097,6 +1100,48 @@ private slots:
 		ShellSelection::instance()->setTrack(nullptr);
 	}
 
+	//! gui-1030: a device whose family ships no client executable (TripleOscillator: refused-no-client) runs in this
+	//! process by design - its card must not say "Quarantined after repeated crashes". Only a crash-loop refusal does.
+	void aDeviceWithoutAHostIsNotCalledQuarantined()
+	{
+		using devicestate::hostingProblemOf;
+		const auto hosting = [](const QString& state, bool refused) {
+			return QJsonObject{{QStringLiteral("state"), state}, {QStringLiteral("refused"), refused}};
+		};
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("refused-no-client"), true)), QString());
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("in-process"), false)), QString());
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("separate-process"), false)), QString());
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("refused-crash-loop"), true)), QStringLiteral("quarantined"));
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("refused-crash-loop"), false)), QStringLiteral("quarantined"));
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("separate-process"), true)), QStringLiteral("quarantined"));
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("client-exited"), false)), QStringLiteral("crashed"));
+
+		// The real path: a TripleOscillator track, oop.get_state, the card.
+		const QString track = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("instrument")}})
+			.result.value(QStringLiteral("track")).toString();
+		Track* resolved = nullptr;
+		for (Track* t : Engine::getSong()->tracks()) { if (control::trackIdOf(t) == track) { resolved = t; } }
+		QVERIFY(resolved != nullptr);
+		dynamic_cast<InstrumentTrack*>(resolved)->loadInstrument(QStringLiteral("tripleoscillator"));
+		QJsonObject device;
+		for (const QJsonValue& chain : run(QStringLiteral("oop.get_state")).result.value(QStringLiteral("chains")).toArray())
+		{
+			if (chain.toObject().value(QStringLiteral("id")).toString() == track) { device = chain.toObject().value(QStringLiteral("instrument")).toObject(); }
+		}
+		QCOMPARE(device.value(QStringLiteral("hosting")).toObject().value(QStringLiteral("state")).toString(), QStringLiteral("refused-no-client"));
+		QVERIFY(!devicestate::hostingProblems().contains(devicestate::hostingKey(track, QStringLiteral("inst"))));
+		DevicePanel panel;
+		panel.show();
+		ShellSelection::instance()->setTrack(resolved);
+		panel.rebuild();
+		const QJsonArray drawn = cards(panel);
+		QVERIFY(!drawn.isEmpty());
+		const QJsonObject state = drawn.first().toObject().value(QStringLiteral("state")).toObject();
+		QCOMPARE(state.value(QStringLiteral("hosting")).toString(), QString());
+		QVERIFY2(!state.value(QStringLiteral("text")).toString().contains(QStringLiteral("Quarantined")), "TripleOscillator card says quarantined");
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
 	//! Theme 12: the card's Actions button and its right-click offer one menu; its first part - bypass, editor,
 	//! presets, A/B, replace, move, remove - names registered commands, and Move Right is plugin.move, one undo step.
 	void theCardsActionMenuOffersEachAction()
@@ -1478,6 +1523,43 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(mixerChannel->m_name, before);
 		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	/*! Q050-174: Project -> Low-Latency Monitoring is the GUI half of transport.low_latency for a latent
+	 *  instrument: clicking On takes the armed track whose instrument reports more than 3 ms off its
+	 *  alignment (the same session flag the command sets), Off puts it back; an unarmed one is untouched. */
+	void theProjectMenuMonitorsAnArmedLatentInstrument()
+	{
+		QTemporaryDir takes;
+		QVERIFY(takes.isValid());
+		auto* armed = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* unarmed = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(armed != nullptr && unarmed != nullptr);
+		for (InstrumentTrack* track : {armed, unarmed})
+		{
+			track->loadInstrument(QStringLiteral("tripleoscillator"));
+			QVERIFY(track->instrument() != nullptr);
+			track->instrument()->reportLatency(1000);  // ~23 ms, what a latent hosted instrument reports
+		}
+		QVERIFY(run(QStringLiteral("track.set_arm"), {{QStringLiteral("track"), control::trackIdOf(armed)},
+			{QStringLiteral("armed"), true}, {QStringLiteral("file"), takes.filePath(QStringLiteral("take.wav"))}}).ok);
+		QMenu project;
+		ShellCommandMenus::populateProject(&project);
+		QAction* on = menuAction(&project, {QStringLiteral("Low-Latency Monitoring"), QStringLiteral("On")});
+		QAction* off = menuAction(&project, {QStringLiteral("Low-Latency Monitoring"), QStringLiteral("Off")});
+		QVERIFY(on != nullptr && off != nullptr);
+		on->trigger();
+		QVERIFY2(armed->audioBusHandle()->monitorUnaligned(), "the menu's On left the armed latent instrument aligned");
+		QVERIFY(!unarmed->audioBusHandle()->monitorUnaligned());
+		const QJsonArray paths = run(QStringLiteral("transport.low_latency")).result.value(QStringLiteral("instruments")).toArray();
+		QCOMPARE(paths.size(), 1);
+		QCOMPARE(paths.at(0).toObject().value(QStringLiteral("track")).toString(), control::trackIdOf(armed));
+		off->trigger();
+		QVERIFY(!armed->audioBusHandle()->monitorUnaligned());
+		QVERIFY(run(QStringLiteral("track.set_arm"), {{QStringLiteral("track"), control::trackIdOf(armed)},
+			{QStringLiteral("armed"), false}}).ok);
+		delete armed;
+		delete unarmed;
 	}
 };
 

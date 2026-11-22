@@ -18,8 +18,10 @@
  * Licensed under the GNU General Public License version 2 or later.
  */
 
+#include "../core/PortableSync.h"
 #include "PluginPortsHarness.h"
 #include "plugins/Sid/SidPlaybackScheduler.h"
+#include <sid.h>
 
 #include "AudioPlugin.h"
 #include "BasicFilters.h"
@@ -29,6 +31,9 @@
 #include "../../../plugins/MultitapEcho/MultitapEchoControlDialog.h"
 #define private public
 #include "../../../plugins/MultitapEcho/MultitapEcho.h"
+#undef private
+#define private public
+#include "../../../plugins/DynamicsProcessor/DynamicsProcessor.h"
 #undef private
 
 #include <cstddef>
@@ -41,7 +46,6 @@
 #include <cmath>
 #include <cmath>
 #include <array>
-#include <barrier>
 #include <thread>
 #include <cmath>
 #include "BasicFilters.h"
@@ -383,6 +387,8 @@ extern "C" void free(void* pointer)
 #define private public
 #include "../../../plugins/LadspaEffect/LadspaEffect.h"
 #undef private
+#include "../../../plugins/LadspaEffect/LadspaControlDialog.h"
+#include "../../../plugins/LadspaEffect/LadspaControls.h"
 #include "LmmsTypes.h"
 // Check ring bounds directly before the stale-bound path can reach undefined behavior.
 #define private public
@@ -961,6 +967,19 @@ namespace lmms
 		}
 	};
 
+	class DynProcEffectTestAccess
+	{
+	public:
+		// Raw byte of m_needsUpdate, so the poisoned value is inspected without
+		// reading an indeterminate bool.
+		static auto needsUpdateByte(const DynProcEffect& effect) -> unsigned char
+		{
+			unsigned char byte = 0;
+			std::memcpy(&byte, &effect.m_needsUpdate, sizeof(byte));
+			return byte;
+		}
+	};
+
 	class FrequencyShifterEffectTestAccess
 	{
 		static auto concrete(const Effect& effect) -> const FrequencyShifterEffect&
@@ -1021,6 +1040,9 @@ public:
 private slots:
 	void initTestCase();
 	void freeBoyShapeBufferIsReleased();
+	void freeBoyExhaustedNoteRetriesWhenVoiceFrees();
+	void freeBoyOldSampleRatePoolsAreReclaimed();
+	void freeBoySampleRatePoolHandoffIsRealtimeSafe();
 	void invalidSbiSignatureIsRejected_data();
 	void invalidSbiSignatureIsRejected();
 	void waveSampleDefaultsInterpolationToDisabled();
@@ -1034,7 +1056,9 @@ private slots:
 	void positiveFractionHandlesVeryLargePositiveValues();
 	void positiveFractionHandlesVeryLargeNegativeValues();
 	void positiveFractionPreservesOrdinaryValues();
+	void waveshaperLookupHandlesSamplesPastTheTableEnd();
 	void ladspaEffectSurvivesFailedInstantiationsDuringSampleRateChange();
+	void ladspaControlDialogSurvivesFailedInstantiationsDuringSampleRateChange();
 	void ladspaEffectProcessLockTakesNoExclusiveMutex();
 	void ladspaEffectRejectsZeroInputPlugin();
 	void typedDecodeRejectsIncompleteElement();
@@ -1059,8 +1083,11 @@ private slots:
 	void gigplayerSurvivesGlobalVoicePoolExhaustion();
 	void dispersionRemainsStableAboveNyquist();
 	void dynamicsProcessorRejectsShortWaveShape();
+	void dynamicsProcessorNeedsUpdateStartsCleared();
+	void dynamicsProcessorHugeLevelReadsLastCurvePoint();
 	void comparisonIsSensitive();
 	void sidShortSegmentsKeepRegisterWritesOrdered();
+	void sidSchedulerAdvancesThroughEveryRegisterWithReSid();
 	void watsynOverlappingNotesAreIndependentAndAllocationFree();
 	void watsynServesEveryAdmittedNoteWithoutAllocating();
 	void watsynKeepsTheWaveANoteStartedWith();
@@ -1069,6 +1096,8 @@ private slots:
 	void nonRealtimeLadspaEffectsAreInvalid();
 	void monoDelayUpdatesItsDelayAcrossSampleRateChanges();
 	void zeroLengthDelayPassesInputThrough();
+	void zeroCapacityDelayPassesInputThrough();
+	void monoDelayCannotBeCopied();
 	void nesNoiseFrequencyControlsRetuneHeldNotes();
 	void slice5InstrumentsAreLiveAndDistinct();
 	void organicDistortionLeavesPreOffsetFramesUnchanged();
@@ -1093,6 +1122,7 @@ private slots:
 	void opulenzRendersTheProvidedSpanSize();
 	void opulenzZeroFrameCountStopsLoop();
 	void opulenzReappliesVelocityScalingToHeldVoice();
+	void opulenzHz2fnumChecksRangeBeforeUnsignedCast();
 	void realtimeWatchCoversSingleStreamedPlay();
 	void sf2DialogRejectsAFilteredOutProgram();
 	void gigPatchDialogPreviewsSelectedProgram();
@@ -1236,6 +1266,219 @@ void PluginPortsMigrationTest::freeBoyShapeBufferIsReleased()
 	QDomElement savedParent = savedDocument.createElement("instrument");
 	const QDomElement saved = instrument->saveState(savedDocument, savedParent);
 	QCOMPARE(saved.attribute("sampleShape"), encodedShape);
+}
+
+void PluginPortsMigrationTest::freeBoyExhaustedNoteRetriesWhenVoiceFrees()
+{
+	if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_freeboy)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	struct NoteHandleReleaser
+	{
+		lmms::Instrument* instrument;
+		void operator()(lmms::NotePlayHandle* handle) const
+		{
+			if (handle->m_pluginData != nullptr)
+			{
+				instrument->deleteNotePluginData(handle);
+				handle->m_pluginData = nullptr;
+			}
+			lmms::NotePlayHandleManager::release(handle);
+		}
+	};
+	using NoteHandle = std::unique_ptr<lmms::NotePlayHandle, NoteHandleReleaser>;
+
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto instrument = std::unique_ptr<lmms::Instrument>{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(instrument != nullptr);
+	partc::prepareInstrumentEnvironment("freeboy");
+	partc::applyInstrumentTestSettings(*instrument, "freeboy");
+
+	constexpr int voiceCapacity = 1024;
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * 8)},
+		lmms::TimePos{0}, lmms::DefaultKey};
+	std::vector<NoteHandle> notes;
+	notes.reserve(voiceCapacity + 1);
+	std::vector<lmms::SampleFrame> data(static_cast<std::size_t>(frames));
+	const std::span<lmms::SampleFrame> span{data};
+	auto render = [&](lmms::NotePlayHandle* handle) {
+		std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
+		instrument->playNote(handle, span);
+		return std::any_of(data.begin(), data.end(), [](const lmms::SampleFrame& frame) {
+			return frame.left() != 0.0f || frame.right() != 0.0f;
+		});
+	};
+	auto acquireNote = [&]() {
+		auto* handle = lmms::NotePlayHandleManager::acquire(instrument->instrumentTrack(), 0,
+			frames * 8, note, nullptr, -1, lmms::NotePlayHandle::Origin::MidiClip);
+		notes.emplace_back(handle, NoteHandleReleaser{instrument.get()});
+		return handle;
+	};
+
+	auto* first = acquireNote();
+	QVERIFY(render(first));
+	for (int i = 1; i < voiceCapacity; ++i) { render(acquireNote()); }
+	auto* waiting = acquireNote();
+	QVERIFY(!render(waiting));
+
+	instrument->deleteNotePluginData(first);
+	first->m_pluginData = nullptr;
+	partc::RealtimeAllocationWatch::begin();
+	const bool waitingNoteBecameAudible = render(waiting);
+	const auto retryCounts = partc::RealtimeAllocationWatch::end();
+	QVERIFY2(waitingNoteBecameAudible,
+		"a note that found the voice pool full did not retry after a voice became free");
+	QCOMPARE(retryCounts.allocations, std::size_t{0});
+	QCOMPARE(retryCounts.deallocations, std::size_t{0});
+}
+
+void PluginPortsMigrationTest::freeBoyOldSampleRatePoolsAreReclaimed()
+{
+	if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_freeboy)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	using PoolCountFn = std::size_t (*)();
+	auto poolCount = reinterpret_cast<PoolCountFn>(
+		library.resolve("lmms_freeboy_test_voice_pool_count"));
+	QVERIFY(poolCount != nullptr);
+	using PoolCollectorFn = void (*)();
+	auto collectPools = reinterpret_cast<PoolCollectorFn>(
+		library.resolve("lmms_freeboy_test_collect_voice_pools"));
+	QVERIFY(collectPools != nullptr);
+	using ReaperPauseFn = void (*)(bool);
+	auto pauseReaper = reinterpret_cast<ReaperPauseFn>(
+		library.resolve("lmms_freeboy_test_pause_pool_reaper"));
+	QVERIFY(pauseReaper != nullptr);
+	pauseReaper(true);
+	struct ReaperResume
+	{
+		ReaperPauseFn pause;
+		~ReaperResume() { pause(false); }
+	} reaperResume{pauseReaper};
+
+	auto* engine = lmms::Engine::audioEngine();
+	auto* device = engine->audioDev();
+	const auto originalRate = device->sampleRate();
+	struct RestoreRate
+	{
+		lmms::AudioEngine* engine;
+		lmms::AudioDevice* device;
+		lmms::sample_rate_t rate;
+		~RestoreRate()
+		{
+			device->setSampleRateForTesting(rate);
+			emit engine->sampleRateChanged();
+		}
+	} restoreRate{engine, device, originalRate};
+
+	const auto poolsBefore = poolCount();
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto instrument = std::unique_ptr<lmms::Instrument>{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(instrument != nullptr);
+	partc::prepareInstrumentEnvironment("freeboy");
+	partc::applyInstrumentTestSettings(*instrument, "freeboy");
+	const auto frames = engine->framesPerPeriod();
+	const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * 8)},
+		lmms::TimePos{0}, lmms::DefaultKey};
+	lmms::NotePlayHandle handle{track.get(), 0, frames * 8, note, nullptr, -1,
+		lmms::NotePlayHandle::Origin::MidiClip};
+	std::vector<lmms::SampleFrame> data(static_cast<std::size_t>(frames));
+	const std::span<lmms::SampleFrame> span{data};
+	instrument->playNote(&handle, span);
+	QVERIFY(handle.m_pluginData != nullptr);
+	void* const oldVoice = handle.m_pluginData;
+	device->setSampleRateForTesting(originalRate + lmms::sample_rate_t{101});
+	emit engine->sampleRateChanged();
+	QCOMPARE(poolCount(), poolsBefore + 2);
+	instrument->playNote(&handle, span);
+	QCOMPARE(handle.m_pluginData, oldVoice);
+	instrument->deleteNotePluginData(&handle);
+	handle.m_pluginData = nullptr;
+	QCOMPARE(poolCount(), poolsBefore + 2);
+	collectPools();
+	QCOMPARE(poolCount(), poolsBefore + 1);
+	for (const auto offset : {lmms::sample_rate_t{202}, lmms::sample_rate_t{303}})
+	{
+		device->setSampleRateForTesting(originalRate + offset);
+		emit engine->sampleRateChanged();
+	}
+	QCOMPARE(poolCount(), poolsBefore + 1);
+}
+
+void PluginPortsMigrationTest::freeBoySampleRatePoolHandoffIsRealtimeSafe()
+{
+	if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_freeboy)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	using HandoffFn = bool (*)();
+	auto handoffIsRealtimeSafe = reinterpret_cast<HandoffFn>(
+		library.resolve("lmms_freeboy_test_pool_pointer_is_realtime_safe"));
+	QVERIFY(handoffIsRealtimeSafe != nullptr);
+	QVERIFY2(handoffIsRealtimeSafe(),
+		"the render path must read a lock-free atomic pool pointer");
+
+	auto* engine = lmms::Engine::audioEngine();
+	auto* device = engine->audioDev();
+	const auto originalRate = device->sampleRate();
+	struct RestoreRate
+	{
+		lmms::AudioEngine* engine;
+		lmms::AudioDevice* device;
+		lmms::sample_rate_t rate;
+		~RestoreRate()
+		{
+			device->setSampleRateForTesting(rate);
+			emit engine->sampleRateChanged();
+		}
+	} restoreRate{engine, device, originalRate};
+
+	partc::prepareInstrumentEnvironment("freeboy");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto instrument = std::unique_ptr<lmms::Instrument>{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(instrument != nullptr);
+	partc::applyInstrumentTestSettings(*instrument, "freeboy");
+	const auto frames = engine->framesPerPeriod();
+	const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * 8)},
+		lmms::TimePos{0}, lmms::DefaultKey};
+	lmms::NotePlayHandle handle{track.get(), 0, frames * 8, note, nullptr, -1,
+		lmms::NotePlayHandle::Origin::MidiClip};
+	std::vector<lmms::SampleFrame> data(static_cast<std::size_t>(frames));
+	const std::span<lmms::SampleFrame> span{data};
+	std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
+	instrument->playNote(&handle, span);
+	device->setSampleRateForTesting(originalRate + lmms::sample_rate_t{404});
+	emit engine->sampleRateChanged();
+	std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
+	partc::RealtimeAllocationWatch::begin();
+	instrument->playNote(&handle, span);
+	const auto renderCounts = partc::RealtimeAllocationWatch::end();
+	QVERIFY(std::any_of(data.begin(), data.end(), [](const lmms::SampleFrame& frame) {
+		return frame.left() != 0.0f || frame.right() != 0.0f;
+	}));
+	QCOMPARE(renderCounts.allocations, std::size_t{0});
+	QCOMPARE(renderCounts.deallocations, std::size_t{0});
+	if (handle.m_pluginData != nullptr)
+	{
+		instrument->deleteNotePluginData(&handle);
+		handle.m_pluginData = nullptr;
+	}
 }
 
 void PluginPortsMigrationTest::invalidSbiSignatureIsRejected_data()
@@ -1683,6 +1926,63 @@ void PluginPortsMigrationTest::positiveFractionPreservesOrdinaryValues()
 	QCOMPARE(lmms::positiveFraction(-2.0f), 0.0f);
 }
 
+void PluginPortsMigrationTest::waveshaperLookupHandlesSamplesPastTheTableEnd()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_waveshaper)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	std::unique_ptr<lmms::Effect> effect{static_cast<lmms::Effect*>(entry(nullptr, nullptr))};
+	QVERIFY(effect != nullptr);
+
+	// Clip off, unity gains, fully wet. The last table entry is scaled down to
+	// 2^-20 so that a waveshaped out-of-table sample stays inside the +/-1000
+	// range that AudioBus::sanitize() applies to track output. Without that,
+	// the bus clamp would hide what the waveshaper itself produced.
+	constexpr auto tailGain = 0x1p-20f;
+	QDomDocument doc;
+	QDomElement root = doc.createElement("effect");
+	root.setAttribute("on", 1);
+	root.setAttribute("wet", 1);
+	root.setAttribute("autoquit", 0);
+	QDomElement controls = effect->controls()->saveState(doc, root);
+	controls.setAttribute("inputGain", 1);
+	controls.setAttribute("outputGain", 1);
+	controls.setAttribute("clipInput", 0);
+	effect->loadSettings(root);
+	const auto graphs = effect->controls()->findChildren<lmms::graphModel*>();
+	QCOMPARE(static_cast<int>(graphs.size()), 1);
+	graphs[0]->setSampleAt(199, tailGain);
+
+	// Frame 0: |x| * 200 is far beyond the int range (lookup must saturate, not wrap).
+	// Frame 1: |x| * 200 is about 4e9, also beyond the int range, with a finite result.
+	// Frame 2: |x| * 200 overflows float to +inf; the result must not turn into NaN.
+	// Frame 3: an in-table sample (|x| * 200 == 100) keeps the ordinary lookup covered.
+	std::vector<lmms::SampleFrame> data{{1e9f, -1e9f}, {2e7f, -2e7f}, {3e38f, -3e38f}, {0.5f, -0.5f}};
+	const lmms::f_cnt_t frames = static_cast<lmms::f_cnt_t>(data.size());
+	lmms::SampleFrame* busPointers[partc::ChannelPairs] = {data.data()};
+	lmms::AudioBus bus{busPointers, partc::ChannelPairs, frames};
+	effect->processAudioBuffer(bus);
+
+	QCOMPARE(data[0].left(), 1e9f * tailGain);
+	QCOMPARE(data[0].right(), -1e9f * tailGain);
+	QCOMPARE(data[1].left(), 2e7f * tailGain);
+	QCOMPARE(data[1].right(), -2e7f * tailGain);
+	// The bus clamps track output to +/-1000, and the waveshaped value is far above that.
+	QCOMPARE(data[2].left(), 1000.0f);
+	QCOMPARE(data[2].right(), -1000.0f);
+	QCOMPARE(data[3].left(), 0.5f);
+	QCOMPARE(data[3].right(), -0.5f);
+}
+
 void PluginPortsMigrationTest::ladspaEffectSurvivesFailedInstantiationsDuringSampleRateChange()
 {
 	if (!testHostCanLoadPluginModules())
@@ -1729,6 +2029,50 @@ void PluginPortsMigrationTest::ladspaEffectSurvivesFailedInstantiationsDuringSam
 	auto editor = std::unique_ptr<lmms::gui::EffectControlDialog>{
 		(effect->controls()->*createView)()};
 	QVERIFY(editor != nullptr);
+	{
+		lmms::LadspaInstantiationFailure failure{managerKey};
+		QVERIFY(failure.isValid());
+		emit lmms::Engine::audioEngine()->sampleRateChanged();
+		QVERIFY(effect->controls() == nullptr);
+	}
+	QVERIFY(!effect->isOkay());
+}
+
+void PluginPortsMigrationTest::ladspaControlDialogSurvivesFailedInstantiationsDuringSampleRateChange()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_ladspaeffect)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	auto* descriptor = reinterpret_cast<const lmms::Plugin::Descriptor*>(
+		lib->resolve("ladspaeffect_plugin_descriptor"));
+	QVERIFY(descriptor != nullptr);
+
+	const auto& spec = partc::ladspaSpecs().front();
+	auto key = partc::ladspaKeyFor(descriptor, spec);
+	const lmms::ladspa_key_t managerKey{
+		key.attributes.value(QStringLiteral("file")),
+		key.attributes.value(QStringLiteral("plugin"))};
+	auto effect = std::unique_ptr<lmms::LadspaEffect>{
+		static_cast<lmms::LadspaEffect*>(entry(nullptr, &key))};
+	QVERIFY(effect != nullptr);
+	QVERIFY(effect->isOkay());
+	auto* controls = effect->controls();
+	QVERIFY(controls != nullptr);
+
+	// The plain control dialog is not the view createView() hands out, but it
+	// is compiled into the shipping module and stays connected to the controls
+	// model; a failed sample-rate re-instantiation emits
+	// effectModelChanged(nullptr) on that model.
+	lmms::gui::LadspaControlDialog dialog{static_cast<lmms::LadspaControls*>(controls)};
 	{
 		lmms::LadspaInstantiationFailure failure{managerKey};
 		QVERIFY(failure.isValid());
@@ -3724,6 +4068,106 @@ void PluginPortsMigrationTest::dynamicsProcessorRejectsShortWaveShape()
 	QCOMPARE(savedControls.attribute(QStringLiteral("waveShape")), expectedWaveShape);
 }
 
+// The envelope level is scaled by 200 to index the 200-point wave shape. A level
+// above the table (including one whose x200 is beyond the int range, about
+// 10.7 million) must read the last point. The curve here has samples[0] = 0.005
+// and samples[199] = 1.0, so a wrong index changes the output, not just the path.
+void PluginPortsMigrationTest::dynamicsProcessorHugeLevelReadsLastCurvePoint()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	std::array<float, 200> shape{};
+	for (int i = 0; i < static_cast<int>(shape.size()); ++i)
+	{
+		shape[i] = (static_cast<float>(i) + 1.0f) / 200.0f;
+	}
+	QString encodedShape;
+	lmms::base64::encode(reinterpret_cast<const char*>(shape.data()),
+		static_cast<int>(sizeof(shape)), encodedShape);
+
+	// Settles a fresh instance on a constant input level and returns the last output sample.
+	const auto settledOutput = [&](float level, float& last) {
+		QLibrary library{QString::fromUtf8(PART_C_MIGRATED_dynamicsprocessor)};
+		library.setLoadHints(QLibrary::PreventUnloadHint);
+		QVERIFY2(library.load(), qPrintable(library.errorString()));
+		auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+		QVERIFY(entry != nullptr);
+		auto effect = std::unique_ptr<lmms::Effect>{static_cast<lmms::Effect*>(entry(nullptr, nullptr))};
+		QVERIFY(effect != nullptr);
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement("effect");
+		root.setAttribute("on", 1);
+		root.setAttribute("wet", 1);
+		root.setAttribute("autoquit", 0);
+		QDomElement controls = effect->controls()->saveState(doc, root);
+		controls.setAttribute("inputGain", "1");
+		controls.setAttribute("outputGain", "1");
+		controls.setAttribute("attack", "1");
+		controls.setAttribute("release", "1");
+		controls.setAttribute("stereoMode", "0");
+		controls.setAttribute("waveShape", encodedShape);
+		effect->loadSettings(root);
+
+		// 64 blocks of 128 frames: far longer than the 1 ms attack/release, so the envelope settles.
+		constexpr lmms::f_cnt_t frames = 128;
+		std::array<lmms::SampleFrame, frames> buffer{};
+		lmms::SampleFrame* busPointers[] = {buffer.data()};
+		for (int block = 0; block < 64; ++block)
+		{
+			buffer.fill(lmms::SampleFrame{level, level});
+			lmms::AudioBus bus{busPointers, 1, frames};
+			effect->processAudioBuffer(bus);
+			for (const auto& sample : buffer)
+			{
+				QVERIFY(std::isfinite(sample.left()) && std::isfinite(sample.right()));
+			}
+			last = buffer.back().left();
+		}
+	};
+
+	// Output = input * gain / envelope, so for a settled constant input the
+	// output is the table's last point, 1.0. Both levels are above the table range.
+	// 2.0 never overflowed the int conversion; 1.0e8 does (x200 is 2.0e10).
+	float overTable = 0.0f;
+	settledOutput(2.0f, overTable);
+	QVERIFY(std::abs(overTable - 1.0f) < 0.01f);
+	float overflowing = 0.0f;
+	settledOutput(1.0e8f, overflowing);
+	QVERIFY(std::abs(overflowing - 1.0f) < 0.01f);
+}
+
+/*!
+ * The constructor computes the RMS sizes and attack/release coefficients for the
+ * current sample rate, so m_needsUpdate must start cleared. The allocation is
+ * poisoned so that an unset member keeps a non-zero byte, which is what the
+ * first processImpl() would read.
+ */
+void PluginPortsMigrationTest::dynamicsProcessorNeedsUpdateStartsCleared()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_dynamicsprocessor)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	const auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	allocationSizeToPoison.store(sizeof(lmms::DynProcEffect), std::memory_order_relaxed);
+	auto* rawEffect = static_cast<lmms::DynProcEffect*>(entry(nullptr, nullptr));
+	std::unique_ptr<lmms::DynProcEffect> effect{rawEffect};
+	QVERIFY(effect != nullptr);
+	QCOMPARE(allocationSizeToPoison.load(std::memory_order_relaxed), std::size_t{0});
+
+	QCOMPARE(lmms::DynProcEffectTestAccess::needsUpdateByte(*effect), static_cast<unsigned char>(0));
+}
+
 /*!
  * Negative control: the comparison above must be able to fail. Comparing two
  * *different* plugins' renders has to produce different checksums; otherwise
@@ -3819,6 +4263,84 @@ void PluginPortsMigrationTest::sidShortSegmentsKeepRegisterWritesOrdered()
 }
 
 /*!
+ * Cluster new-p17-172: the scheduler must advance through every SID register
+ * with the real reSID chip, not only with the probe above. reSID::SID::clock()
+ * takes its cycle count by reference and leaves the cycles it did not run in
+ * that count, so `consumed = requested - delta` is the work the chip did. The
+ * recorder forwards every call to a real chip and records the register writes.
+ */
+struct ReSidWriteRecorder
+{
+	reSID::SID sid;
+	std::vector<unsigned char> writes;
+	int clockedCycles = 0;
+
+	void write(unsigned char address, unsigned char value)
+	{
+		writes.push_back(address);
+		sid.write(address, value);
+	}
+
+	int clock(int& cycles, short* buffer, int samples)
+	{
+		const int before = cycles;
+		const int produced = sid.clock(cycles, buffer, samples);
+		clockedCycles += before - cycles;
+		return produced;
+	}
+};
+
+void PluginPortsMigrationTest::sidSchedulerAdvancesThroughEveryRegisterWithReSid()
+{
+	// C64 PAL clock and 44.1 kHz output, the same chip setup SidInstrument uses.
+	ReSidWriteRecorder chip;
+	chip.sid.set_sampling_parameters(985248.0, reSID::SAMPLE_FAST, 44100);
+	chip.sid.set_chip_model(reSID::MOS8580);
+	chip.sid.reset();
+
+	std::array<unsigned char, lmms::sidplayback::NumSidRegisters> registers{};
+	registers[0x18] = 0x0f;
+	lmms::sidplayback::RegisterWriteProgress progress;
+	std::array<short, 1> output{};
+	constexpr int CycleBudget = 26;
+	constexpr int MaxCalls = 1000;
+
+	// Short segments with one sample each: a sweep spans many calls, and every
+	// call must spend no more cycles than it was given.
+	int calls = 0;
+	while (chip.writes.size() < lmms::sidplayback::NumSidRegisters && calls < MaxCalls)
+	{
+		const int cyclesBefore = chip.clockedCycles;
+		const int samples = lmms::sidplayback::fillBuffer(registers.data(), &chip,
+			lmms::sidplayback::RegisterWriteOrder, CycleBudget, output.data(), 1, progress);
+		QVERIFY(samples <= 1);
+		QVERIFY(chip.clockedCycles - cyclesBefore <= CycleBudget);
+		++calls;
+	}
+
+	QVERIFY2(chip.writes.size() == lmms::sidplayback::NumSidRegisters,
+		"the scheduler stopped before writing every register");
+	for (std::size_t i = 0; i < lmms::sidplayback::NumSidRegisters; ++i)
+	{
+		QCOMPARE(static_cast<int>(chip.writes[i]),
+			static_cast<int>(lmms::sidplayback::RegisterWriteOrder[i]));
+	}
+	QVERIFY(chip.clockedCycles > 0);
+
+	// No budget means no progress: nothing is written and the position holds.
+	ReSidWriteRecorder idle;
+	idle.sid.set_sampling_parameters(985248.0, reSID::SAMPLE_FAST, 44100);
+	idle.sid.reset();
+	lmms::sidplayback::RegisterWriteProgress idleProgress;
+	const int idleSamples = lmms::sidplayback::fillBuffer(registers.data(), &idle,
+		lmms::sidplayback::RegisterWriteOrder, 0, output.data(), 1, idleProgress);
+	QCOMPARE(idleSamples, 0);
+	QVERIFY(idle.writes.empty());
+	QCOMPARE(idleProgress.registerIndex, std::size_t{0});
+	QVERIFY(idleProgress.stage == lmms::sidplayback::RegisterWriteStage::BeforeRegister);
+}
+
+/*!
  * Cluster new-p9-521 (port): Watsyn must not allocate on the note path, and
  * two notes that sound at the same time must not share render buffers.
  *
@@ -3901,7 +4423,7 @@ void PluginPortsMigrationTest::watsynOverlappingNotesAreIndependentAndAllocation
 		handles[i] = acquireNote(keys[i]);
 	}
 
-	std::barrier start{static_cast<std::ptrdiff_t>(concurrentNotes + 1)};
+	lmms::testsupport::Barrier start{static_cast<std::ptrdiff_t>(concurrentNotes + 1)};
 	std::array<std::thread, concurrentNotes> workers;
 	for (std::size_t i = 0; i < concurrentNotes; ++i)
 	{
@@ -4445,6 +4967,55 @@ void PluginPortsMigrationTest::zeroLengthDelayPassesInputThrough()
 	sample = 17.0f;
 	delay.tick(&sample);
 	QCOMPARE(sample, 17.0f);
+}
+
+void PluginPortsMigrationTest::zeroCapacityDelayPassesInputThrough()
+{
+	// A zero-second delay or a zero sample rate leaves no ring: m_maxLength is 0.
+	// tick() must return the input untouched rather than take the write index
+	// modulo that zero capacity.
+	lmms::MonoDelay zeroTime{0, 48000};
+	QCOMPARE(zeroTime.m_maxLength, 0);
+	zeroTime.setLength(5.0f);
+	QCOMPARE(zeroTime.m_length, 0.0f);
+
+	lmms::MonoDelay zeroRate{1, 0};
+	QCOMPARE(zeroRate.m_maxLength, 0);
+
+	lmms::MonoDelay reconfigured{1, 4};
+	reconfigured.setLength(2.0f);
+	reconfigured.setSampleRate(0);
+	QCOMPARE(reconfigured.m_maxLength, 0);
+
+	for (lmms::MonoDelay* delay : {&zeroTime, &zeroRate, &reconfigured})
+	{
+		for (int frame = 1; frame <= 8; ++frame)
+		{
+			lmms::sample_t sample = static_cast<lmms::sample_t>(frame);
+			delay->tick(&sample);
+			QCOMPARE(sample, static_cast<lmms::sample_t>(frame));
+		}
+	}
+}
+
+void PluginPortsMigrationTest::monoDelayCannotBeCopied()
+{
+	// MonoDelay owns the sample_t ring it allocates in setSampleRate() and
+	// releases in both its destructor and setSampleRate(). The implicit copy
+	// operations would copy the pointer, so two objects would delete the same
+	// array - a double free. Unique ownership must be enforced by the type.
+	QVERIFY2(!std::is_copy_constructible_v<lmms::MonoDelay>,
+		"MonoDelay must not shallow-copy its owned delay buffer");
+	QVERIFY2(!std::is_copy_assignable_v<lmms::MonoDelay>,
+		"MonoDelay must not copy-assign its owned delay buffer");
+
+	// Moving is equally unsafe while the class keeps a raw owning pointer and
+	// no move operations (the implicit move would also copy the pointer), so
+	// the type must stay immovable as well as non-copyable.
+	QVERIFY2(!std::is_move_constructible_v<lmms::MonoDelay>,
+		"MonoDelay has no move constructor, so it must not be move-constructible");
+	QVERIFY2(!std::is_move_assignable_v<lmms::MonoDelay>,
+		"MonoDelay has no move assignment, so it must not be move-assignable");
 }
 
 /*!
@@ -5444,6 +6015,33 @@ void PluginPortsMigrationTest::opulenzZeroFrameCountStopsLoop()
 	QVERIFY2(chunkPosition >= 0 && zeroGuardPosition > chunkPosition
 		&& breakPosition > zeroGuardPosition && emulatorUpdatePosition > breakPosition,
 		"playImpl must break on a zero chunk before updating the emulator, so offset cannot stall");
+}
+
+/*!
+ * Regression for cluster new-p16-157: Hz2fnum() converted the scaled
+ * frequency to unsigned before checking it. A value that is negative, NaN or
+ * at least 2^32 has no unsigned representation, so that conversion is
+ * undefined behaviour. The pitch-bend sensitivity RPN can produce such a value
+ * (its data entry is not limited to 7 bits, so the bend reaches 25500 cents),
+ * and the conversion's result is not defined across compilers, so the test
+ * checks the source: the float range guard must come before the only unsigned
+ * conversion in Hz2fnum().
+ */
+void PluginPortsMigrationTest::opulenzHz2fnumChecksRangeBeforeUnsignedCast()
+{
+	const auto sourcePath = QDir{QCoreApplication::applicationDirPath()}
+		.filePath(QStringLiteral("../../plugins/OpulenZ/OpulenZ.cpp"));
+	QFile source{sourcePath};
+	QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(sourcePath));
+	const auto contents = source.readAll();
+	const auto hz2fnumBody = functionBody(contents, "int OpulenzInstrument::Hz2fnum(float Hz)");
+	QVERIFY2(!hz2fnumBody.isEmpty(), "OpulenzInstrument::Hz2fnum() source was not found");
+
+	const auto castPosition = hz2fnumBody.indexOf("static_cast<unsigned>");
+	QVERIFY2(castPosition >= 0, "Hz2fnum() must still convert the scaled value to an F-number");
+	const auto beforeCast = hz2fnumBody.left(castPosition);
+	QVERIFY2(beforeCast.contains(">= 0.0f") && beforeCast.contains("< 1023.0f"),
+		"Hz2fnum() must check the scaled float is in [0, 1023) before converting it to unsigned");
 }
 
 /*!

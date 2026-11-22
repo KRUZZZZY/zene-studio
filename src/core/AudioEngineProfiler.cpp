@@ -47,6 +47,7 @@ void AudioEngineProfiler::finishPeriod( sample_rate_t sampleRate, f_cnt_t frames
 {
 	// Time taken to process all data and fill the audio buffer.
 	const unsigned int periodElapsed = m_periodTimer.elapsed();
+	m_lastPeriodMicros = periodElapsed;
 	// Maximum time the processing can take before causing buffer underflow. Convert to us.
 	const uint64_t timeLimit = static_cast<uint64_t>(1000000) * framesPerPeriod / sampleRate;
 

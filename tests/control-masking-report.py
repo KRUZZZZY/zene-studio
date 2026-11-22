@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""Q050-231 over the control socket: masking reports and their proposal on the REAL `zene` binary, headless.
+
+Two new mixer channels each get a sample track with generated tones (sample.generate): channel A
+200 Hz and 3 kHz, channel B 200 Hz and 800 Hz. With A at front and B at back the driver proves:
+
+  1. the report names the pair (A, B), a range holding 200 Hz, and B as the cut's target, with the
+     mixer.channel_eq arguments for it - and no clash at 800 Hz or 3 kHz (only one channel holds those);
+  2. three repeated reports are byte-identical;
+  3. swapping the priorities moves the target to A;
+  4. reporting leaves every channel's strip EQ and control.undo_depth exactly as they were;
+  5. applying the report's strip_eq to B changes exactly the proposed keys to the proposed values,
+     touches no other channel's EQ, and records one undo step; one control.undo restores the whole
+     EQ and the depth;
+  6. an out-of-range proposal is refused as invalid_args and leaves the EQ and the depth unchanged.
+  7. with the transport playing, a report still names the 200 Hz clash with B as target, a proposal
+     applies and undoes in one step each, and the process keeps answering; playback is stopped at the end.
+
+Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-masking-report.py <zene>
+Exit 0 only when every check held.
+"""
+
+import json
+import sys
+import time
+
+import control_socket_harness as H
+from freeze_bounce_evidence import Recorder, Session, report_results
+
+
+def tone_channel(session, name, tones):
+    channel = session.result("mixer.add_channel", {}).get("channel")
+    track = session.result("track.add", {"type": "sample", "name": name}).get("track")
+    session.result("track.set_mixer_channel", {"track": track, "channel": channel})
+    for i, hz in enumerate(tones):
+        session.result("sample.generate", {"track": track, "position": 192 * i, "length": 192, "kind": "tone",
+                                           "frequency": hz, "amplitude": 0.5})
+    return channel
+
+
+def clash_at(report, a, b, hz):
+    for c in report.get("clashes") or []:
+        if c.get("a") == a and c.get("b") == b and c.get("low_hz", 1e9) <= hz < c.get("high_hz", 0):
+            return c
+    return None
+
+
+def eq_state(session):
+    channels = [c.get("channel") for c in session.result("routing.matrix").get("channels") or []]
+    return {ch: session.result("mixer.channel_eq", {"channel": ch}) for ch in channels}
+
+
+def check_report(session, recorder, a, b, args):
+    first = session.result("mixer.masking_report", args)
+    low = clash_at(first, a, b, 200.0)
+    recorder.check("a clash names the pair and a range holding 200 Hz, cut on the back channel",
+                   low is not None and low.get("target") == b and low.get("protect") == a
+                   and -6.0 <= low.get("cut_db", 0.0) <= -1.0
+                   and (low.get("strip_eq") or {}).get("channel") == b, "report=%r" % first)
+    recorder.check("no clash where only one channel holds the tone (800 Hz, 3 kHz)",
+                   clash_at(first, a, b, 800.0) is None and clash_at(first, a, b, 3000.0) is None,
+                   "report=%r" % first)
+    repeats = [session.result("mixer.masking_report", args) for _ in range(3)]
+    same = [json.dumps(r, sort_keys=True) == json.dumps(first, sort_keys=True) for r in repeats]
+    recorder.check("three repeated reports are identical", all(same), "first=%r repeats=%r" % (first, repeats))
+    swapped = session.result("mixer.masking_report", {"channels": [a, b], "priorities": {a: "back", b: "front"}})
+    recorder.check("swapping the priorities moves the cut to the other channel",
+                   (clash_at(swapped, a, b, 200.0) or {}).get("target") == a, "swapped=%r" % swapped)
+
+
+def check_nothing_changed(session, recorder, eq_before, depth_before):
+    recorder.check("reporting leaves every strip EQ as it was", eq_state(session) == eq_before,
+                   "before=%r" % eq_before)
+    recorder.check("reporting records no undo step",
+                   session.result("control.undo_depth").get("depth") == depth_before,
+                   "before=%r" % depth_before)
+
+
+def close(got, want):
+    return isinstance(got, (int, float)) and isinstance(want, (int, float)) \
+        and abs(float(got) - float(want)) <= 0.05
+
+
+def proposal_from_report(session, recorder, a, b):
+    report = session.result("mixer.masking_report",
+                            {"channels": [b, a], "priorities": {a: "front", b: "back"}})
+    clash = clash_at(report, a, b, 200.0)
+    strip = (clash or {}).get("strip_eq") or {}
+    recorder.check("the 200 Hz clash carries a strip_eq proposal for the back channel",
+                   strip.get("channel") == b and bool(strip), "clash=%r" % (clash,))
+    return strip
+
+
+def exact_proposed_keys(eq_before, eq_after, b, proposed):
+    before_b = eq_before.get(b) or {}
+    after_b = eq_after.get(b) or {}
+    return (all(close(after_b.get(k), v) for k, v in proposed.items())
+            and all(after_b.get(k) == v for k, v in before_b.items() if k not in proposed)
+            and all(eq_after.get(ch) == eq_before.get(ch) for ch in eq_before if ch != b))
+
+
+def check_proposal_effect(session, recorder, b, strip, eq_before, depth_before):
+    proposed = {k: v for k, v in strip.items() if k != "channel"}
+    reply = session.result("mixer.apply_masking_proposal", {"strip_eq": strip})
+    recorder.check("applying the proposal reports applied true", reply.get("applied") is True,
+                   "reply=%r" % (reply,))
+    eq_after = eq_state(session)
+    recorder.check("applying the proposal sets exactly the proposed keys to the proposed values",
+                   exact_proposed_keys(eq_before, eq_after, b, proposed),
+                   "before=%r strip=%r after=%r" % (eq_before, strip, eq_after))
+    recorder.check("applying the proposal records one undo step",
+                   session.result("control.undo_depth").get("depth") == depth_before + 1,
+                   "depth_before=%r" % (depth_before,))
+
+
+def check_undo_and_refusal(session, recorder, b, eq_before, depth_before):
+    session.result("control.undo", {})
+    recorder.check("one control.undo restores the whole EQ and the depth",
+                   eq_state(session) == eq_before
+                   and session.result("control.undo_depth").get("depth") == depth_before,
+                   "before=%r" % (eq_before,))
+    refused_eq = eq_state(session)
+    refused_depth = session.result("control.undo_depth").get("depth")
+    refused = session.typed_error("mixer.apply_masking_proposal",
+                                  {"strip_eq": {"channel": b, "low": 99}})
+    recorder.check("an out-of-range proposal is refused as invalid_args",
+                   refused.get("kind") == "invalid_args", "error=%r" % (refused,))
+    recorder.check("a refused proposal leaves every EQ and the depth unchanged",
+                   eq_state(session) == refused_eq
+                   and session.result("control.undo_depth").get("depth") == refused_depth,
+                   "before=%r" % (refused_eq,))
+
+
+def check_apply(session, recorder, a, b):
+    strip = proposal_from_report(session, recorder, a, b)
+    eq_before = eq_state(session)
+    depth_before = session.result("control.undo_depth").get("depth")
+    check_proposal_effect(session, recorder, b, strip, eq_before, depth_before)
+    check_undo_and_refusal(session, recorder, b, eq_before, depth_before)
+
+
+def check_playback_active(session, recorder, a, b):
+    played = session.result("transport.play", {})
+    recorder.check("transport.play reports the transport playing", played.get("playing") is True,
+                   "reply=%r" % (played,))
+    time.sleep(0.2)
+    state = session.result("transport.get_state")
+    recorder.check("the transport is still playing 0.2 s later", state.get("playing") is True,
+                   "state=%r" % (state,))
+    report = session.result("mixer.masking_report", {"channels": [b, a], "priorities": {a: "front", b: "back"}})
+    clash = clash_at(report, a, b, 200.0)
+    recorder.check("a report while playing still names the 200 Hz clash with the back channel as target",
+                   clash is not None and clash.get("target") == b, "report=%r" % (report,))
+    eq_before = eq_state(session)
+    depth_before = session.result("control.undo_depth").get("depth")
+    strip = proposal_from_report(session, recorder, a, b)
+    check_proposal_effect(session, recorder, b, strip, eq_before, depth_before)
+    check_undo_and_refusal(session, recorder, b, eq_before, depth_before)
+    session.result("transport.stop", {})
+    stopped = session.result("transport.get_state")
+    recorder.check("transport.stop leaves the transport stopped after the apply and undo",
+                   stopped.get("playing") is False, "state=%r" % (stopped,))
+
+
+def drive(session, recorder):
+    a = tone_channel(session, "Lead", [200.0, 3000.0])
+    b = tone_channel(session, "Pad", [200.0, 800.0])
+    eq_before = eq_state(session)
+    depth_before = session.result("control.undo_depth").get("depth")
+    check_report(session, recorder, a, b, {"channels": [b, a], "priorities": {a: "front", b: "back"}})
+    check_nothing_changed(session, recorder, eq_before, depth_before)
+    check_apply(session, recorder, a, b)
+    check_playback_active(session, recorder, a, b)
+
+
+def main(argv):
+    if len(argv) < 2:
+        print(__doc__)
+        return 2
+    recorder = Recorder()
+    transcript = H.Transcript()
+    with H.start_instance(argv[1], workingdir=None) as instance:
+        H.wait_for_socket(instance)
+        client = H.connect(instance)
+        H.wait_ready(instance, client, transcript)
+        drive(Session(client, transcript), recorder)
+    report_results(recorder)
+    if recorder.problems:
+        transcript.dump()
+        recorder.problems.report("mixer masking report control-surface driver")
+        return 1
+    H.ok("mixer masking report control-surface driver (every check held)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

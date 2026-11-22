@@ -27,7 +27,10 @@ so it only connects Zene instances, never Live or Bitwig.
 * Format: float32, stereo, little endian, at most 128 frames per UDP datagram
   (1040 bytes, one LAN frame). A 16-byte header carries a sequence number and the
   sample rate; a packet at another rate than the receiving engine's is dropped and
-  counted (`rate_mismatches`) - there is no resampling.
+  counted (`rate_mismatches`) - there is no resampling. A packet with a zero rate is
+  malformed (counted as `malformed`): zero means "not known yet", and the sender never sends one.
+* A non-finite sample (NaN or an infinity) in a received packet is decoded as silence,
+  so a peer cannot poison the master mix.
 
 ## Threads and the realtime rule
 
@@ -81,7 +84,7 @@ link.audio_set_enabled {enabled, peer?, peer_port?, send?, receive?, bind_addres
 link.audio_get_state {}
 ```
 
-Arguments not given keep their value. `send` defaults to "a peer is set"; `receive` to true.
+Arguments not given keep their value. When `peer` is given in the call and `send` is not, `send` follows the peer (true for a non-empty peer, false for an empty one); when neither `peer` nor `send` is given, `send` keeps its current value. `receive` defaults to true.
 `listen_port: 0` lets the OS choose (reported as `bound_port`). `set_enabled` is one undo
 step (the previous configuration is restored; reversibility class true_inverse);
 `get_state` is read-only.

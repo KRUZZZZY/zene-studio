@@ -1,0 +1,3 @@
+{
+  "content": "diff --git a/CMakeLists.txt b/CMakeLists.txt\nindex 701233a1..210cf039 100644\n--- a/CMakeLists.txt\n+++ b/CMakeLists.txt\n@@ -901,6 +901,7 @@ endif()\n \n if(MSVC)\n   add_compile_definitions(_CRT_SECURE_NO_DEPRECATE _CRT_SECURE_NO_WARNINGS)\n+  add_compile_options(/wd4146)\n endif()\n \n # Make sure to not link debug libs against release libs and vice versa.\n"
+}
