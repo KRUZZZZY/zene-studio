@@ -305,13 +305,57 @@ int flushDescriptor(int fd) noexcept
 #endif
 }
 
-//! Finish the sound file (header rewrite, close; the descriptor stays open
-//! because it belongs to the QSaveFile) and flush it to the device.
-bool finishSoundFile(SNDFILE* sf, int fd) noexcept
+//! Rewrite the header with the final sizes while the handle is open, so a
+//! failing write is still visible in sf_error(): libsndfile records the system
+//! error there, while sf_close() on a descriptor opened with SF_FALSE returns 0
+//! whatever happened.
+bool finalizeHeader(SNDFILE* sf, int fd) noexcept
 {
-	sf_write_sync(sf);
+#ifdef LMMS_TESTING
+	bool hooked = false;
+	finishHookResult(RetroTakeFinishStep::BeforeFinalize, fd, &hooked);
+#else
+	(void)fd;
+#endif
+	sf_command(sf, SFC_UPDATE_HEADER_NOW, nullptr, 0);
+	const bool ok = sf_error(sf) == SF_ERR_NO_ERROR;
 	sf_close(sf);
-	return flushDescriptor(fd) == 0;
+	return ok;
+}
+
+//! Independent check of what reached the file: reopen the descriptor and
+//! require the header to describe exactly the take that was written.
+bool readBackMatches(int fd, std::size_t frames, int sampleRate) noexcept
+{
+#ifdef Q_OS_WIN
+	if (_lseek(fd, 0, SEEK_SET) != 0) { return false; }
+#else
+	if (::lseek(fd, 0, SEEK_SET) != 0) { return false; }
+#endif
+	SF_INFO info{};
+	SNDFILE* reader = sf_open_fd(fd, SFM_READ, &info, SF_FALSE);
+	if (reader == nullptr) { return false; }
+	sf_close(reader);
+	return info.frames == static_cast<sf_count_t>(frames) && info.channels == 2
+		&& info.samplerate == sampleRate;
+}
+
+//! Finish the sound file (header rewrite, close; the descriptor stays open
+//! because it belongs to the QSaveFile), verify it and flush it to the device.
+//! Returns an empty string on success, else what failed.
+QString finishSoundFile(SNDFILE* sf, int fd, std::size_t frames, int sampleRate)
+{
+	const bool finalized = finalizeHeader(sf, fd);
+	if (!finalized || !readBackMatches(fd, frames, sampleRate))
+	{
+		return QStringLiteral("could not finalize the take header");
+	}
+	if (flushDescriptor(fd) != 0)
+	{
+		return QStringLiteral("could not flush the written take: %1")
+			.arg(QString::fromLocal8Bit(std::strerror(errno)));
+	}
+	return QString();
 }
 
 //! Commit the take over its destination; false (nothing replaced) on failure.
@@ -374,22 +418,20 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 	const auto written = sf_writef_float(sf, interleaved.data(),
 		static_cast<sf_count_t>(window.size()));
 	const bool acceptedAll = written >= 0 && static_cast<std::size_t>(written) == window.size();
-	const bool flushed = finishSoundFile(sf, output.handle());
-
 	if (!acceptedAll)
 	{
+		sf_close(sf);
 		*error = QStringLiteral("wrote %1 of %2 frames to %3")
 			.arg(written).arg(window.size()).arg(filePath);
 		return false;
 	}
-	if (!flushed)
+	const QString finishError = finishSoundFile(sf, output.handle(), window.size(), sampleRate);
+	if (!finishError.isEmpty())
 	{
-		// Nothing is committed: the QSaveFile destructor discards the temporary,
-		// so a take that may not be on the device never replaces the destination.
-		const int flushErrno = errno;
+		// Nothing is committed: the temporary is discarded, so a take whose
+		// header or data may not be on the device never replaces the destination.
 		output.cancelWriting();
-		*error = QStringLiteral("could not flush the written take to %1: %2")
-			.arg(filePath, QString::fromLocal8Bit(std::strerror(flushErrno)));
+		*error = QStringLiteral("%1 (%2)").arg(finishError, filePath);
 		return false;
 	}
 	if (!commitTake(output))

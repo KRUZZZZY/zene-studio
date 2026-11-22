@@ -209,10 +209,12 @@ bool writeRetroAudioTake(const QString& filePath, const std::vector<SampleFrame>
 
 #ifdef LMMS_TESTING
 //! The steps that make a finished take durable and visible.
-enum class RetroTakeFinishStep { Flush, Commit };
+enum class RetroTakeFinishStep { BeforeFinalize, Flush, Commit };
 
 //! Test hook that stands in for the real step, because a healthy disk cannot be
-//! made to fail deterministically. Flush: the hook's return value REPLACES the
+//! made to fail deterministically. BeforeFinalize: called with the take's
+//! descriptor just before the header is rewritten; its return value is ignored
+//! (a test can make the descriptor itself fail there). Flush: the hook's return value REPLACES the
 //! result of the durable flush of the take's descriptor (0 = success, else
 //! failure; the real flush is skipped). Commit: a non-zero return makes the
 //! commit fail (the temporary file is discarded); zero runs the real commit.

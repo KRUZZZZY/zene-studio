@@ -54,6 +54,11 @@
 
 #include <sndfile.h>
 
+#ifdef Q_OS_LINUX
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 #include "AllocationProbe.h"
 
 using lmms::RetroAudioCapture;
@@ -85,9 +90,30 @@ std::vector<SampleFrame> makeFrames(std::size_t count, std::size_t offset = 0)
 	return frames;
 }
 
-//! Stand-ins for the real steps (see setRetroTakeFinishTestHook): the flush row
-//! makes the durable flush of the descriptor fail, the commit row makes the
-//! flush succeed and the commit fail.
+//! Stand-ins for the real steps (see setRetroTakeFinishTestHook): the finalize
+//! row makes the take descriptor genuinely read-only just before libsndfile
+//! rewrites the header (every write then fails with EBADF, like a failing disk;
+//! the flush step then reports success and the commit is real), the flush row makes the durable flush
+//! of the descriptor fail, the commit row makes the flush succeed and the
+//! commit fail.
+int makeDescriptorReadOnly(lmms::RetroTakeFinishStep step, int fd)
+{
+#ifdef Q_OS_LINUX
+	if (step == lmms::RetroTakeFinishStep::BeforeFinalize)
+	{
+		const int ro = ::open(QByteArray("/proc/self/fd/" + QByteArray::number(fd)).constData(), O_RDONLY);
+		if (ro >= 0)
+		{
+			::dup2(ro, fd);
+			::close(ro);
+		}
+	}
+#else
+	Q_UNUSED(step);
+	Q_UNUSED(fd);
+#endif
+	return 0;
+}
 int failFlush(lmms::RetroTakeFinishStep step, int)
 {
 	return step == lmms::RetroTakeFinishStep::Flush ? -1 : 0;
@@ -288,17 +314,27 @@ private slots:
 	//! libsndfile can accept every frame and still fail to flush or close the
 	//! file (full or failing disk); its own sync/close cannot report that (see
 	//! flushDescriptor in RetroAudioCapture.cpp), so the writer fsyncs itself. The take must then report failure, and the
-	//! destination must not be replaced by the unverified file.
+	//! destination must not be replaced by the unverified file. The finalize row
+	//! makes the descriptor genuinely read-only so every header write fails with
+	//! EBADF like a failing disk; the flush row fails the durable flush; the
+	//! commit row is kept as a guard (it was already green before this fix).
 	void aFailedFlushOrCloseIsReportedAndNothingIsCommitted_data()
 	{
-		QTest::addColumn<bool>("failFlushStep");
-		QTest::newRow("flush") << true;
-		QTest::newRow("commit") << false;
+		QTest::addColumn<QString>("step");
+		QTest::newRow("finalize") << QStringLiteral("finalize");
+		QTest::newRow("flush") << QStringLiteral("flush");
+		QTest::newRow("commit") << QStringLiteral("commit");
 	}
 
 	void aFailedFlushOrCloseIsReportedAndNothingIsCommitted()
 	{
-		QFETCH(bool, failFlushStep);
+		QFETCH(QString, step);
+#ifndef Q_OS_LINUX
+		if (step == QLatin1String("finalize")) { QSKIP("needs /proc/self/fd"); }
+#endif
+		lmms::RetroTakeFinishTestHook hook = &failCommit;
+		if (step == QLatin1String("finalize")) { hook = &makeDescriptorReadOnly; }
+		else if (step == QLatin1String("flush")) { hook = &failFlush; }
 		const auto frames = makeFrames(64);
 		QTemporaryDir dir;
 		QVERIFY(dir.isValid());
@@ -308,7 +344,7 @@ private slots:
 		QString error;
 		bool ok = true;
 		{
-			FinishHookGuard guard(failFlushStep ? &failFlush : &failCommit);
+			FinishHookGuard guard(hook);
 			ok = lmms::writeRetroAudioTake(path, frames, SampleRate, &written, &error);
 		}
 		QVERIFY2(!ok, "a failed flush/commit must not report success");
