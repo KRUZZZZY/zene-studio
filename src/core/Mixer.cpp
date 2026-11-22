@@ -1189,8 +1189,10 @@ void Mixer::toggledSolo()
 		// unmute the soloed chan and every channel it sends to/receives from
 		// #622: soloing a member soloes its whole VCA group, so the group is
 		// audible as a unit (the member -> group half of the solo link).
+		// Link contract (as applyGroupSolo): a group with its solo link off, or
+		// suspended, does not solo its members, so only a linked, live group expands.
 		VcaGroup* group = vcaGroupForChannel( static_cast<mix_ch_t>(soloedChan) );
-		if (group != nullptr)
+		if (group != nullptr && group->linksSolo() && !group->isSuspended())
 		{
 			for (mix_ch_t member : group->members())
 			{
@@ -2441,6 +2443,10 @@ void Mixer::updateLatencyCompensation()
 void Mixer::masterMix( SampleFrame* _buf )
 {
 	const int fpp = Engine::audioEngine()->framesPerPeriod();
+
+	// 0.5.0 WF-072/086: publish pending record-tap changes once per period, before any worker (channel
+	// taps) or this thread's master tap reads them, so a route has one source for the whole period.
+	recordertaps::beginPeriod();
 
 	// cluster new-p10-249: fold render-thread input partials into the channel
 	// buses at the period barrier, before any channel is processed.

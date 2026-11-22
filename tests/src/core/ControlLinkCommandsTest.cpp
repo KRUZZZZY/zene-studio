@@ -378,6 +378,42 @@ private slots:
 		QVERIFY(error > -2.0 && error <= 2.0);
 	}
 
+	/*! Re-enabling must not restart the beat. A peer announces beat 8.0 one
+	 *  millisecond ago, so the shared beat reads ~8 once adopted; a disable and
+	 *  re-enable through the registry must leave it there, not fall back to 0.
+	 *  No sleeps: the stamp is taken from the same monotonic clock as the read.
+	 */
+	void reEnablingKeepsTheSharedBeat()
+	{
+		setEnabledForTest(false);
+		setEnabledForTest(true);
+		const quint32 mine = revisionOf(state());
+
+		link::LinkPeerPacket packet = packetFrom(QStringLiteral("peer-beat"), mine + 1, 120.0);
+		packet.beat = 8.0;
+		packet.sentUs = LinkSyncEngine::monotonicMicros() - 1000;  // one millisecond ago
+		observe(packet);
+
+		const QJsonObject before = state();
+		const double beforeBeat = before.value(QStringLiteral("beat")).toDouble();
+		QVERIFY2(beforeBeat > 7.0,
+			qPrintable(QStringLiteral("beat before re-enable is %1, expected ~8").arg(beforeBeat)));
+
+		const ControlResult off = run(QStringLiteral("link.set_enabled"),
+			{{QStringLiteral("enabled"), false}});
+		QVERIFY2(off.ok, qPrintable(off.errorMessage));
+		const ControlResult on = run(QStringLiteral("link.set_enabled"),
+			{{QStringLiteral("enabled"), true}});
+		QVERIFY2(on.ok, qPrintable(on.errorMessage));
+
+		const QJsonObject after = state();
+		const double afterBeat = after.value(QStringLiteral("beat")).toDouble();
+		QVERIFY2(afterBeat > beforeBeat - 0.5,
+			qPrintable(QStringLiteral("beat before re-enable was %1, after re-enable is %2")
+				.arg(beforeBeat).arg(afterBeat)));
+		QVERIFY(revisionOf(after) > revisionOf(before));
+	}
+
 	void exactHalfQuantumErrorsUseThePositiveBoundary()
 	{
 		QCOMPARE(LinkSyncEngineTestAccess::signedPhaseDifference(2.0, 0.0, 4.0), 2.0);

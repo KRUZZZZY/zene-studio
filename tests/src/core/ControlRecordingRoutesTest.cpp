@@ -24,6 +24,7 @@
 
 #include <QtTest>
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -36,8 +37,11 @@
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "ControlVocabulary.h"
 #include "Engine.h"
+#include "Mixer.h"
 #include "MultiTrackRecorder.h"
+#include "RecorderTaps.h"
 #include "RecordingJournal.h"
 #include "SampleFrame.h"
 #include "TrackRecorder.h"
@@ -450,6 +454,88 @@ private slots:
 			QJsonObject{{QStringLiteral("track"), track}, {QStringLiteral("armed"), false}}).ok);
 		QCOMPARE(contents(firstPath), firstBytes);
 		QVERIFY(QFileInfo::exists(secondPath));
+	}
+
+	//! A tap change during a period must not let two sources write one route's
+	//! ring: Mixer workers run the channel taps, then the render thread takes
+	//! the master after they join, both in the same period, so one route would
+	//! get both a channel and the master.
+	void aTapChangeDoesNotFeedOneRouteFromTwoSourcesInAPeriod()
+	{
+		AudioEngine* audio = Engine::audioEngine();
+		QVERIFY(audio != nullptr);
+		MultiTrackRecorder& recorder = audio->recorder();
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		MixerChannel* channel = mixer->mixerChannel(0);
+		QVERIFY(channel != nullptr);
+		ControlRegistry* registry = ControlRegistry::instance();
+
+		// Drive the periods ourselves: a background render period must not publish
+		// the pending tap or push an extra block while this test runs. Stopping the
+		// device waits for in-flight callbacks, and the guard restarts it so the
+		// shared engine stays usable for the tests after this one.
+		AudioDevice* device = Engine::audioEngine()->audioDev();
+		QVERIFY(device != nullptr);
+		device->stopProcessing();
+		const auto restartAudio = qScopeGuard([device] { device->startProcessing(); });
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		StopRecorderOnExit stopRecorder{recorder};
+		// A failed assertion must not leave the shared tap table changed for the
+		// tests after this one.
+		const auto resetRoute = qScopeGuard([registry] {
+			registry->invoke(QStringLiteral("record.route_source"),
+				QJsonObject{{QStringLiteral("route"), 0}, {QStringLiteral("source"), QStringLiteral("input")}});
+		});
+		const QString takePath = dir.filePath(QStringLiteral("tap-route.wav"));
+		const ControlResult armed = registry->invoke(QStringLiteral("record.arm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}, {QStringLiteral("file"), takePath}});
+		QVERIFY2(armed.ok, qPrintable(armed.errorMessage));
+		QVERIFY(recorder.track(0).isArmed());
+
+		const f_cnt_t frames = audio->framesPerPeriod();
+		QVERIFY(frames > 0);
+		const auto expected = static_cast<std::uint64_t>(frames);
+
+		// The channel's post-fader left side carries a known signal for this period.
+		auto postFaderLeft = channel->m_postFaderBuffer.buffer(0);
+		QVERIFY(postFaderLeft.size() >= static_cast<std::size_t>(frames));
+		std::fill_n(postFaderLeft.data(), static_cast<std::size_t>(frames), 0.25f);
+
+		const ControlResult toChannel = registry->invoke(QStringLiteral("record.route_source"),
+			QJsonObject{{QStringLiteral("route"), 0}, {QStringLiteral("source"), QStringLiteral("channel")},
+				{QStringLiteral("channel"), control::channelIdOf(channel)},
+				{QStringLiteral("tap"), QStringLiteral("post_fader")},
+				{QStringLiteral("side"), QStringLiteral("left")}});
+		QVERIFY2(toChannel.ok, qPrintable(toChannel.errorMessage));
+
+		// The new tap is only pending: run a real period so it becomes the active
+		// tap, and record the frames pushed by that one period as the base.
+		std::vector<SampleFrame> out(static_cast<std::size_t>(frames));
+		mixer->masterMix(out.data());
+		const std::uint64_t base = recorder.track(0).framesPushed();
+		QCOMPARE(base, expected);
+
+		// With the channel tap now active, the channel tap feeds one more period.
+		recordertaps::channelAt(*channel, SidechainTapPoint::PostFader, frames);
+		QCOMPARE(recorder.track(0).framesPushed(), base + expected);
+
+		// Re-pointing the same route mid-period must not let the old source keep
+		// writing: after the fix the old channel source feeds this period, and the
+		// new master source must wait for the period boundary.
+		const ControlResult toMaster = registry->invoke(QStringLiteral("record.route_source"),
+			QJsonObject{{QStringLiteral("route"), 0}, {QStringLiteral("source"), QStringLiteral("master")},
+				{QStringLiteral("side"), QStringLiteral("right")}});
+		QVERIFY2(toMaster.ok, qPrintable(toMaster.errorMessage));
+		std::vector<SampleFrame> masterOut(static_cast<std::size_t>(frames));
+		recordertaps::master(masterOut.data(), frames);
+		QCOMPARE(recorder.track(0).framesPushed(), base + expected);
+
+		// The pending tap applies at the next period boundary, exactly once.
+		mixer->masterMix(out.data());
+		QCOMPARE(recorder.track(0).framesPushed(), base + 2 * expected);
 	}
 };
 

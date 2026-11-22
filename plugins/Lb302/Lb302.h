@@ -39,6 +39,7 @@
 #include "Hardware.h"
 #include "Instrument.h"
 #include "InstrumentView.h"
+#include "Lb302FilterMailbox.h"
 #include "NotePlayHandle.h"
 
 namespace lmms
@@ -177,6 +178,8 @@ private:
 	void processNote(NotePlayHandle* nph);
 	void process(SampleFrame* outbuf, const f_cnt_t size);
 	void recalcFilter();
+	void publishFilterSettings();
+	void applyPublishedFilterSettings();
 
 	enum class VcoShape { Sawtooth, Triangle, Square, RoundSquare, Moog, Sine, Exponential, WhiteNoise,
 		BLSawtooth, BLSquare, BLTriangle, BLMoog };
@@ -218,12 +221,18 @@ private:
 	// User settings
 	Lb302FilterKnobState m_fs = {};
 
+	//! @brief The latest control-side filter settings, handed to the audio thread.
+	Lb302FilterMailbox m_filterMailbox;
+
+	//! @brief The 24 dB/oct switch the audio thread last adopted (audio thread only).
+	bool m_db24Active = false;
+
 	std::array<std::unique_ptr<Lb302Filter>, 2> m_vcfs; //!< Filters (just keep both loaded and switch)
 
 	//! @brief Helper to get current vcf
 	//! @see m_vcfs
-	//! @see db24Toggle
-	Lb302Filter& vcf() { return *m_vcfs[m_db24Toggle.value()]; }
+	//! @see m_db24Active
+	Lb302Filter& vcf() { return *m_vcfs[m_db24Active ? 1 : 0]; }
 
 	f_cnt_t m_vcfEnvPos = s_envInc; //!< Update counter. Updates when >= @ref s_envInc
 	f_cnt_t m_releaseFrame = 0;
