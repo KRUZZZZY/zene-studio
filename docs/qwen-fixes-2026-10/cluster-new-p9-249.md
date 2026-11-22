@@ -85,3 +85,37 @@ Registration: `tests/upstream-modifications.txt` has new entries for `include/Lf
   render consumes). It was not changed here.
 - RackDeferredLifetimeTest's two effect cases fail with or without this change because the
   "amplifier" plugin cannot be found in this build tree (`logs/09-test-rack-revert.log`).
+
+## Self-check
+
+- **The test fails without the fix and passes with it:** yes. With `fix.patch` reverted
+  (`git apply -R`, EXIT=0), the rebuild exited 0 and `ctest -R '^LfoControllerUserWaveTest$'`
+  exited 8: `parameterStateSharedWithRenderIsAtomic` failed and the null-function test segfaulted
+  (`logs/08-test-revert.log`). With it reapplied (`git apply`, EXIT=0), the rebuild exited 0 and the
+  test exited 0 (`logs/11-test-reapply.log`).
+- **Deterministic:** yes. No threads, sleeps or clocks are involved. The structural test checks
+  types with a requires-expression. The interleave test uses `QSignalBlocker` on `m_waveModel` as the
+  seam that models render running between the model publish and `updateSampleFunction()`. It then
+  calls `Controller::triggerFrameCounter()` and `valueBuffer()` on the test thread. The injected
+  values are speed 0.01 and multiplier 1 (/100), so the noise phase wraps inside one buffer.
+- **At the cause and complete:** every read and write of `m_duration`, `m_sampleFunction` and
+  `m_heldSample` is in `src/core/LfoController.cpp`. `rg` finds no other user in src, include or
+  plugins, and every access is now atomic: render snapshot at lines 104-105 and 136-153,
+  `updatePhase` at 221, `updateDuration` at 244, `updateSampleFunction` at 253-276, and the
+  constructor at 57-61. I rebuilt every target that includes `LfoController.h`: zene, the
+  ControllerRackView and LfoControllerDialog GUI sources inside zene, and the 7 tests in
+  `logs/04-build-green.log`, all with EXIT=0. The tests passed except for the pre-existing amplifier
+  cases (`logs/06-test-family.log`, `logs/09-test-rack-revert.log`). The sibling `updatePhase()`
+  race on `m_currentPhase` is listed under Other findings.
+- **No collateral damage:** the save and load paths (`saveSettings`/`loadSettings`) serialize the
+  models only and are unchanged. Values are unchanged too: duration is still rate * speed with the
+  /100 or *100 multiplier (asserted in the test), and the noise held sample is still seeded when the
+  waveform switches. I added no limit or check, apart from a null guard on a branch that previously
+  crashed. UndoHonestyTest, including `whiteNoiseStartsWithAValidHeldSample`, passes
+  (`logs/06-test-family.log`).
+- **ALREADY-FIXED / FALSE-POSITIVE evidence:** not applicable. The verdict is FIXED.
+- **Sibling commands (app.*, arrangement.*):** not affected. The checker lists them from the
+  branch's whole diff against its base. My commits (`git diff HEAD~2 --stat`) touch only
+  `include/LfoController.h`, `src/core/LfoController.cpp`,
+  `tests/src/core/LfoControllerUserWaveTest.cpp`, `tests/upstream-modifications.txt` and this
+  report. No command file or control command was changed.
