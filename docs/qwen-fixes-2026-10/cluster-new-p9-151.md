@@ -60,3 +60,11 @@ These failures were seen in the same PluginPortsMigrationTest run. They are not 
   and `slice8PluginsAreLiveAndExact` (:5665, "malletsstk rendered silence"): Mallets renders silence on this box. This may be
   because the STK rawwaves are missing; that cause is not verified.
 - `nonRealtimeLadspaEffectsAreInvalid` (:1623): "SWH Decimator test fixture was not loaded".
+
+## Self-check
+- **Regression test fails without the fix and passes with it:** Not applicable. The verdict is ALREADY-FIXED and this job changed no product code, so there is no patch to revert. The fix is enforced when the code compiles: `GigPlayer.h:195-196` deletes copying, and that also suppresses moving. Code that copies or relocates a `GigSample` cannot be built. The existing GIG tests pass on this branch (`logs/test-1.log`, lines 5609-5617 and 12591-12592).
+- **Deterministic test:** No new test was added. The existing GIG tests in PluginPortsMigrationTest render offline from fixed fixtures.
+- **Fix at the cause and complete:** The cause was relocating active `GigSample`s inside a `std::vector`. That vector is gone. Every voice lives in a `GigVoiceSegment` array that is never relocated (`GigPlayer.h:504-505`, `GigPlayer.cpp:564-574`), and is reached through `GigInstrument::voice()` (`GigPlayer.cpp:630-636`). The two uses of a `GigSample` (`GigPlayer.cpp:1039` and `:1086`) take a reference, `GigSample & sample = voice( v ).sample;`, so neither copies one.
+- **No collateral damage:** This job changed no product code or saved-data code, and added no limits or checks.
+- **ALREADY-FIXED evidence:** See `plugins/GigPlayer/GigPlayer.h:195-196`, `:345-355` and `:504-505`, `plugins/GigPlayer/GigPlayer.cpp:564-574` and `:1951-1966`, and fixing commit `ffe21f4714` (cluster new-p9-149-port). The old defect can still be seen in `tests/reference/GigPlayer/GigPlayer.h:157-158,216`.
+- **Sibling commands (app.*, arrangement.*):** Not affected. This job changed no command files. The listed test files and commands come from earlier commits on this branch's train history, not from this job. This job's only commit adds this report.
