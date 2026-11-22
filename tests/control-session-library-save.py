@@ -24,8 +24,8 @@ WHAT IT PROVES, on the real binary, through --control-socket:
           here the agent drives it with no window at all.
 
 WHAT IT DOES NOT PROVE: rendering the reused cell's audio through the engine (SessionAudioCellPlaybackTest
-and the live launcher tests own that); a MIDI cell (stage 2 of Q050-273: the command refuses one by name,
-which this test checks).
+and the live launcher tests own that); a MIDI cell's notes (stage 2 of Q050-273, which this test checks only
+where it must refuse one with no notes - control-session-library-midi.py owns the MIDI round trip).
 
 Usage: QT_QPA_PLATFORM=offscreen python3 control-session-library-save.py <zene>
 Exit 0 only when every check held.
@@ -238,6 +238,10 @@ def populate(session, source, recorder):
     """A sample track, a 2x2 grid, the audio cell under test and a MIDI control cell."""
     added = session.result("track.add", {"type": "sample", "name": "Drums"})
     recorder.check("a sample track is added", "error" not in added, "%r" % added)
+    # The MIDI control cell references pattern 0, so the pattern exists in this fixture - it has no
+    # notes yet, which is the refusal this test keeps (the MIDI round trip is the stage-2 test's).
+    recorder.check("a pattern track exists for the MIDI control cell",
+                   "error" not in session.result("track.add", {"type": "pattern"}), "")
     recorder.check("the grid is built", "error" not in session.result("session.set_grid", {"tracks": 2, "scenes": 2}), "")
     recorder.check("the audio cell is populated",
                    "error" not in session.result("session.set_slot", {"track": 0, "scene": 0, "type": "audio",
@@ -326,7 +330,7 @@ def drive_refusals(session, recorder, workdir, source):
         recorder.check(name + " wrote nothing", files_in(clips) == before, "%r" % (files_in(clips),))
 
     refused("an empty cell is refused", {"track": 1, "scene": 1})
-    refused("a MIDI cell is refused by name (stage 2)", {"track": 1, "scene": 0}, message="MIDI")
+    refused("a MIDI pattern with no notes is refused", {"track": 1, "scene": 0}, message="no notes")
     refused("an address outside the grid is invalid args", {"track": 9, "scene": 0}, kind="invalid_args")
     refused("both addresses at once are invalid args", {"clip": "clip-0", "track": 0, "scene": 0}, kind="invalid_args")
     refused("one coordinate alone is invalid args", {"track": 0}, kind="invalid_args")
