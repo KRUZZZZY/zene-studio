@@ -57,8 +57,10 @@ public:
 	Set of(int trackId) const;
 	void set(int trackId, const Set& versions);
 	//! The track's clips as XML, and the track's clips replaced by @a xml's (false, the track untouched,
-	//! when @a xml does not parse).
+	//! when @a xml does not parse or is not a <clips> document of clip elements).
 	static QString clipsOf(Track* track);
+	//! True when @a xml parses, its root is <clips> and every child element is a clip element.
+	static bool isValidClipsXml(const QString& xml);
 	static bool replaceClips(Track* track, const QString& xml);
 
 	QString elementName() const override { return QStringLiteral("track-versions"); }
