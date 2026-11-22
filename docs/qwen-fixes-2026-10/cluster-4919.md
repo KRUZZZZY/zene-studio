@@ -27,6 +27,7 @@ The full diff is in `fix.patch` (log dir of run 4919.r1). It is 6 lines of produ
 - An omitted level still defaults to 1.0 (`toDouble(1.0)` at :218), so the no-level call is unchanged.
 - A refusal returns at :224-227, before `makeReceive` (:229) and before `addUndoStep` (:231). So a refused call creates no send, no device, and no undo step.
 - No header, API, or schema changed.
+- The success reply is `target`, `from`, `plugin`, `tap_point` and `send_created` (`ControlCommandsW3Engine.cpp:233-235`). It still does not include the applied level, and this fix does not add one (outside this cluster's scope). For an accepted value the applied level is the requested one: `receive.level = level` (`:228`) stores it unchanged. The silent clamping came from the old `std::clamp` (`:224`), which changed out-of-range values. The mandated range refusal (`:224-227`) removes that symptom: an in-range value is never coerced, and an out-of-range value is refused, not replaced with 0 or 2.
 
 ## Test matrix
 
@@ -34,7 +35,7 @@ Test file: `tests/src/core/W3EngineTest.cpp`.
 
 | Case | Test and line | Expected |
 |---|---|---|
-| Normal level 2.0 (boundary) accepted, send created, device added, then undone | `aChannelReceivesAnotherInsideItsChain`, :510-527 | ok, send exists, undo removes both |
+| Valid levels 0.0, 0.5, 1.0, 2.0 accepted. Each: `send_created`, sidechain send exists, one Receiver added, one undo, send gone, device count restored | `aChannelReceivesAnotherInsideItsChain`, :510-527 (loop over the four levels, same assertions) | ok for each level; r2 table below |
 | Refused: 4.0, 2.5, -0.5, NaN, +inf, -inf | `aReceiveRefusesALevelOutsideItsRange`, :529-541 | `InvalidArgs`; no sidechain send; device count unchanged |
 | Omitted level | Unchanged path, default 1.0 at :218 | Not separately tested in this cluster |
 | Existing send is kept as it is | Code comment at `ControlCommandsW3Engine.cpp:216-217`; not separately tested in this cluster | Unchanged by this fix |
@@ -45,6 +46,38 @@ The refusal test contains an undo branch (:537) that runs only if a call wrongly
 ## RED / GREEN evidence
 
 Run directory: `/home/kruzzzzy/.config/kads/zene/state/runs/4919.r1/logs/`.
+
+### Round 2 (r2): valid levels 0.0, 0.5, 1.0, 2.0 and RED/GREEN
+
+What changed in r2:
+
+- `tests/src/core/W3EngineTest.cpp`, `aChannelReceivesAnotherInsideItsChain` (:510-527): the successful receive now loops over 0.0, 0.5, 1.0 and 2.0. Each pass keeps the original assertions: `run` ok, `send_created` true, sidechain send present, device count +1, `control.undo` ok, send gone, device count restored. The two wrong-target checks (`ch(1)`, `trk-1`) are a loop with the same `InvalidArgs` assertion.
+- `tests/src/core/W3EngineTest.cpp`, comment in `aReceiveRefusesALevelOutsideItsRange` (:531): corrected. The old comment said the clamp "passed NaN through". The new comment says a non-finite level is refused before the clamp, which matches `ControlCommandsW3Engine.cpp:220-223` (before the clamp at `:224`).
+- This report.
+- No other file changed in r2. Product code is unchanged since `08159e0b72` for the fixed file: `git log 08159e0b72..HEAD -- src/core/ControlCommandsW3Engine.cpp` lists no commit. The branch HEAD also contains merges of other clusters that change six other `src/` files (for example `src/core/Mixer.cpp`). Those changes are not from this cluster and were not made in r2.
+
+Commands and exit codes. Log folder: `/home/kruzzzzy/.config/kads/zene/state/runs/4919.r2/logs/`. The r2 logs do not record their command lines, so the commands below are the form used in r1. The EXIT value is the last line of each log.
+
+```
+RUN=/home/kruzzzzy/.config/kads/zene/state/runs/4919.r2/logs
+WT=/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-4919
+cd $WT && cmake --build build --target W3EngineTest -j4 > $RUN/build-3-red.log 2>&1; rc=$?; echo EXIT=$rc >> $RUN/build-3-red.log; echo EXIT=$rc
+cd $WT/build/tests && ctest -R W3EngineTest --output-on-failure > $RUN/test-3-red.log 2>&1; rc=$?; echo EXIT=$rc >> $RUN/test-3-red.log; echo EXIT=$rc
+cd $WT && cmake --build build --target W3EngineTest -j4 > $RUN/build-4-green.log 2>&1; rc=$?; echo EXIT=$rc >> $RUN/build-4-green.log; echo EXIT=$rc
+cd $WT/build/tests && ctest -R W3EngineTest --output-on-failure > $RUN/test-4-green.log 2>&1; rc=$?; echo EXIT=$rc >> $RUN/test-4-green.log; echo EXIT=$rc
+cd $WT/build/tests && ctest -R 'W3EngineTest|ReceiverEffectTest|PhaseFChannelScaleTest' --output-on-failure > $RUN/test-5-family.log 2>&1; rc=$?; echo EXIT=$rc >> $RUN/test-5-family.log; echo EXIT=$rc
+```
+
+| Step | Log | Result | EXIT |
+|---|---|---|---|
+| RED build, fix reverted in the worktree | `build-3-red.log` | `Built target W3EngineTest`; `ControlCommandsW3Engine.cpp.o` recompiled | 0 |
+| RED run | `test-3-red.log` | `FAIL!  : W3EngineTest::aReceiveRefusesALevelOutsideItsRange()`; `refused.errorKind` actual 0, expected 3 (`InvalidArgs`); 0% passed, 1 failed | 8 |
+| GREEN build, fix restored | `build-4-green.log` | `Built target W3EngineTest`; `ControlCommandsW3Engine.cpp.o` recompiled | 0 |
+| GREEN run | `test-4-green.log` | `W3EngineTest Passed`; 100% tests passed out of 1 | 0 |
+| Family run | `test-5-family.log` | `PhaseFChannelScaleTest`, `ReceiverEffectTest`, `W3EngineTest` all Passed; 100% out of 3 | 0 |
+| Gates | `gates-1.log` | `RESULT: PASS` | 0 |
+
+The revert before `build-3-red` and the re-apply before `build-4-green` are not in any log. The RED output (actual 0 where 3 is expected) shows the pre-fix behaviour, and both builds recompiled `ControlCommandsW3Engine.cpp.o`. The valid-level results come from the loop assertions in `test-4-green.log` and `test-5-family.log`, which are binary-level exits. Per-level exit codes are not recorded.
 
 ### Authoritative evidence (final product commit `08159e0b72`)
 
@@ -110,16 +143,16 @@ From `gates-1.log` (feature-check kads-4919, base fa4a5f2e7):
 
 ## Self-check
 
-**Regression test fails with the product change reverted (exit codes).** Yes. Final run: `test-7-final-red.log` gives EXIT=8 with `FAIL!  : W3EngineTest::aReceiveRefusesALevelOutsideItsRange()`, after `build-6-final-red.log` gives EXIT=0. With the fix restored, `build-7-final-green.log` gives EXIT=0, `test-8-final-green.log` gives EXIT=0, and the family run `test-9-final-family.log` gives EXIT=0.
+**Regression test fails with the product change reverted (exit codes).** Yes. Final run: `test-7-final-red.log` gives EXIT=8 with `FAIL!  : W3EngineTest::aReceiveRefusesALevelOutsideItsRange()`, after `build-6-final-red.log` gives EXIT=0. With the fix restored, `build-7-final-green.log` gives EXIT=0, `test-8-final-green.log` gives EXIT=0, and the family run `test-9-final-family.log` gives EXIT=0. Round 2 repeats the check with the same test: `test-3-red.log` gives EXIT=8 with the fix reverted (`FAIL!  : W3EngineTest::aReceiveRefusesALevelOutsideItsRange()`, `refused.errorKind` actual 0, expected 3), and `test-4-green.log` gives EXIT=0 with the fix restored.
 
 **Every acceptance criterion is proven by a test run.**
 - Out-of-range refused (4.0, 2.5, -0.5, NaN, +inf, -inf): `aReceiveRefusesALevelOutsideItsRange`, passes with the fix (`test-8-final-green.log`, EXIT=0; the run covers the whole W3EngineTest binary).
-- Normal level 2.0 accepted and undone: `aChannelReceivesAnotherInsideItsChain`, same binary run.
+- Valid levels accepted and undone: `aChannelReceivesAnotherInsideItsChain`, same binary run. Round 2 (r2) extends it to 0.0, 0.5, 1.0 and 2.0 with the original assertions; the r2 binary-level runs are `test-4-green.log` (EXIT=0) and `test-5-family.log` (EXIT=0). Per-level exit codes are not recorded.
 - Note: the logs show the whole `W3EngineTest` executable, not each test case separately. Per-case exit codes were not recorded.
 
 **Undo and realtime.** `chainReceive` is a control-thread command handler. The change adds a range check and a store. Nothing is added to the audio path. The undo step is still `addUndoStep` at `ControlCommandsW3Engine.cpp:231`, and a refusal returns at :224-227, before that call, so a refusal creates no undo step.
 
-**Deterministic.** The test uses fixed literal values (4.0, 2.5, -0.5, `std::nan("")`, `HUGE_VAL`, `-HUGE_VAL`). It has no sleeps and no threads. (The `std::thread` at `W3EngineTest.cpp:282` belongs to a different test and is not used here.)
+**Deterministic.** The test uses fixed literal values (4.0, 2.5, -0.5, `std::nan("")`, `HUGE_VAL`, `-HUGE_VAL`) for refusals, and 0.0, 0.5, 1.0, 2.0 for the normal-path loop. It has no sleeps and no threads. (The `std::thread` at `W3EngineTest.cpp:282` belongs to a different test and is not used here.)
 
 **Cause and siblings.** The cause is the `std::clamp` at the old :224, which replaced an out-of-range level instead of refusing it. Sibling audit (checked against `ControlCommandsMixerRoutes.cpp` and `ControlCommandsW3Engine.cpp`):
 - Only `chain.receive` reads a level in `ControlCommandsW3Engine.cpp`; the read is `chainReceive` at :218.
@@ -133,4 +166,4 @@ From `gates-1.log` (feature-check kads-4919, base fa4a5f2e7):
 
 **Sibling commands listed by submit_check (`submit-check-1.log`).** The check lists 15 ids, sorted and capped: app.about, app.ask, app.help, app.online_help, app.task_cancel, app.tasks, app.tour, app.tours, app.update_check_get, app.update_check_run, app.update_check_set, app.version, app.whats_new, arrangement.fit_tracks, arrangement.get_state. The check builds this list from every command file changed on the branch (210 files against base fa4a5f2e7), not from this commit alone, so it is capped and includes ids this cluster does not touch. Within this commit's file, `ControlCommandsW3Engine.cpp`, the groups it names are automation (23 ids), chain (10 ids) and clip and mixer (larger groups). None of the listed ids is `chain.receive`, and none of the listed ids is in `ControlCommandsW3Engine.cpp`. Only `chainReceive` reads a level there (`:218`). I did not open the handlers of the 15 listed ids, so their consistency with this fix is not verified beyond that: this fix does not change them.
 
-**Verdict.** The defect is real (see Decision), so the ALREADY-FIXED / FALSE-POSITIVE item does not apply. The fix is at the cause: the clamp that replaced the value is gone, and the refusal happens before any mutation.
+**Verdict.** The defect is real (see Decision), so the ALREADY-FIXED / FALSE-POSITIVE item does not apply. The fix is at the cause: the clamp that replaced the value is gone, and the refusal happens before any mutation. Round 2 keeps this verdict: REAL.

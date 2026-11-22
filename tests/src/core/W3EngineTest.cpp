@@ -509,26 +509,26 @@ private slots:
 
 	void aChannelReceivesAnotherInsideItsChain()
 	{
-		QCOMPARE(run(QStringLiteral("chain.receive"), {{QStringLiteral("target"), ch(1)}, {QStringLiteral("from"), ch(1)}}).errorKind,
-			ControlErrorKind::InvalidArgs);
-		QCOMPARE(run(QStringLiteral("chain.receive"), {{QStringLiteral("target"), QStringLiteral("trk-1")}, {QStringLiteral("from"), ch(1)}}).errorKind,
-			ControlErrorKind::InvalidArgs);
+		for (const QString& target : {ch(1), QStringLiteral("trk-1")}) { QCOMPARE(run(QStringLiteral("chain.receive"), {{QStringLiteral("target"), target}, {QStringLiteral("from"), ch(1)}}).errorKind, ControlErrorKind::InvalidArgs); }
 		const std::size_t devices = channel(3)->m_fxChain.effects().size();
-		const ControlResult made = run(QStringLiteral("chain.receive"), {{QStringLiteral("target"), ch(3)}, {QStringLiteral("from"), ch(1)},
-			{QStringLiteral("level"), 2.0}});
-		if (!made.ok && made.errorKind == ControlErrorKind::NotFound) { QSKIP("this build has no Receiver module"); }
-		QVERIFY2(made.ok, qPrintable(made.errorMessage));
-		QVERIFY(made.result.value(QStringLiteral("send_created")).toBool());
-		QVERIFY(Engine::mixer()->channelSidechainSend(1, 3) != nullptr);
-		QCOMPARE(channel(3)->m_fxChain.effects().size(), devices + 1);
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QVERIFY(Engine::mixer()->channelSidechainSend(1, 3) == nullptr);
-		QCOMPARE(channel(3)->m_fxChain.effects().size(), devices);
+		for (const double level : {0.0, 0.5, 1.0, 2.0})
+		{
+			const ControlResult made = run(QStringLiteral("chain.receive"), {{QStringLiteral("target"), ch(3)}, {QStringLiteral("from"), ch(1)},
+				{QStringLiteral("level"), level}});
+			if (!made.ok && made.errorKind == ControlErrorKind::NotFound) { QSKIP("this build has no Receiver module"); }
+			QVERIFY2(made.ok, qPrintable(made.errorMessage));
+			QVERIFY(made.result.value(QStringLiteral("send_created")).toBool());
+			QVERIFY(Engine::mixer()->channelSidechainSend(1, 3) != nullptr);
+			QCOMPARE(channel(3)->m_fxChain.effects().size(), devices + 1);
+			QVERIFY(run(QStringLiteral("control.undo")).ok);
+			QVERIFY(Engine::mixer()->channelSidechainSend(1, 3) == nullptr);
+			QCOMPARE(channel(3)->m_fxChain.effects().size(), devices);
+		}
 	}
 
 	void aReceiveRefusesALevelOutsideItsRange()
 	{
-		// The schema accepts any number; the old clamp turned 4 into 2 and -0.5 into 0 and passed NaN through.
+		// The schema accepts any number; the old clamp turned 4 into 2 and -0.5 into 0; a non-finite level is refused before the clamp.
 		const std::size_t devices = channel(3)->m_fxChain.effects().size();
 		for (const double level : {4.0, 2.5, -0.5, std::nan(""), HUGE_VAL, -HUGE_VAL})
 		{
