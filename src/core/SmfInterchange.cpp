@@ -51,6 +51,7 @@
 #include "SmfInterchange.h"
 
 #include <QCryptographicHash>
+#include <QFile>
 #include <QSaveFile>
 #include <QFileInfo>
 
@@ -532,6 +533,27 @@ bool mapFromEvents(const std::vector<SmfInterchangeEvent>& events, TempoMap* map
 	// switched off would import tempo changes the timeline does not obey.
 	candidate.setActive(true);
 	*map = candidate;
+	return true;
+}
+
+bool readBoundedFile(const QString& path, QByteArray* bytes, QString* error)
+{
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly))
+	{
+		*error = QStringLiteral("cannot read %1: %2").arg(path, file.errorString());
+		return false;
+	}
+	// Bounded before AND while reading: size() can lie for a growing or special
+	// file, so the read itself is capped one byte past the limit.
+	if (file.size() <= SmfMaxReadBytes) { *bytes = file.read(SmfMaxReadBytes + 1); }
+	if (file.size() > SmfMaxReadBytes || bytes->size() > SmfMaxReadBytes)
+	{
+		bytes->clear();
+		*error = QStringLiteral("%1 is larger than the %2 MiB a MIDI file may be here")
+			.arg(path).arg(SmfMaxReadBytes / (1024 * 1024));
+		return false;
+	}
 	return true;
 }
 

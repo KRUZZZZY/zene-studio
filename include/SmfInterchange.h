@@ -131,6 +131,12 @@ constexpr int SmfMaxTimeSignatureExponent = 5;
 //! SmfTicksPerLmmsTick is not representable), so a track that accumulates
 //! deltas past this is refused rather than read at a wrapped tick.
 constexpr quint64 SmfMaxFileTicks = 0xFFFFFFFFull;
+//! The largest file readConductorTrack() reads at all: 16 MiB, the same bound
+//! the note reader keeps (SmfNoteMaxBytes). The reader holds the whole file and
+//! one candidate per tempo / time-signature event, so the limit bounds its
+//! memory on a hostile or runaway file; a larger file is refused with a reason
+//! before any of it is read.
+constexpr qint64 SmfMaxReadBytes = 16 * 1024 * 1024;
 
 /*! One conductor event, in LMMS' own tick domain (48 ticks per quarter note).
  *  Either half may be absent, exactly as in TempoMapEvent: the two halves are
@@ -234,8 +240,14 @@ LMMS_EXPORT bool writeConductorTrack(const QString& path, const TempoMap& map,
 /*! Read the conductor events of the Standard MIDI File at \a path: every
  *  track's tempo and time-signature meta events, merged by tick (first wins),
  *  in LMMS' tick domain. A file that is not a Standard MIDI File, or whose
- *  division is an SMPTE rate (a negative division), is refused with \c error. */
+ *  division is an SMPTE rate (a negative division), is refused with \c error,
+ *  as is a file larger than SmfMaxReadBytes (refused before it is read). */
 LMMS_EXPORT SmfReadReport readConductorTrack(const QString& path);
+
+//! Read all of \a path into \a bytes, or false with \a error set: the file
+//! cannot be opened, or it is larger than SmfMaxReadBytes (then nothing beyond
+//! the cap is read). The reader's one entry to the file.
+LMMS_EXPORT bool readBoundedFile(const QString& path, QByteArray* bytes, QString* error);
 
 /*! The map \a events describe, or false when an event is one the engine will
  *  not accept (an unsupported denominator, a tempo out of range, a negative
