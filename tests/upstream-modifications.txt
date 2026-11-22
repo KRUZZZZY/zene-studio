@@ -6035,3 +6035,4 @@ src/core/SampleClip.cpp	p3 (new-p12-221-port): the two constructors that build a
 src/core/AudioEngine.cpp	p3 (new-p12-221-port): topUpPlayHandleCapacityOnControlThread also calls SamplePlayHandle::reserveForClips() beside the BufferManager and CompSlipReaders reserves, so the handle pool grows on the control thread.
 src/tracks/SampleTrack.cpp	p3 (new-p12-221-port): SampleTrack::play claims its per-pass handle with SamplePlayHandle::tryCreate instead of plain new; on a refusal the clip is not started, the deferral counter is bumped and a capacity refresh is requested. Nothing else in the play path changes.
 include/SamplePlayHandle.h	p3 (new-p12-221-port): declares the control-thread-only SamplePlayHandle::reserveForClips(); no other declaration changes.
+tests/src/gui/SampleEditorDialogTest.cpp	cluster new-p10-350: reject typed times whose frames overflow qint64
