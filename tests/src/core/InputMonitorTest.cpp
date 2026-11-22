@@ -234,6 +234,39 @@ private slots:
 		}
 	}
 
+	/*! Cluster 5104: while the wide capture is active, a channel it does not carry is
+	 *  silence. It used to fall through to the stereo bus and monitor its left side. The
+	 *  seam is pure, so no device thread or timing is involved. */
+	void anUnavailableWideChannelIsSilenceNotTheStereoLeft()
+	{
+		const float wide[] = {0.1f, 0.2f, 0.3f, 0.4f}; // 2 frames x 2 channels
+		const SampleFrame stereo[] = {SampleFrame(0.9f, 0.8f), SampleFrame(0.9f, 0.8f)};
+		const MonitorInputSource active{wide, 2, 2, stereo, 2};
+		std::vector<SampleFrame> out(2, SampleFrame(0.0f, 0.0f));
+
+		// Normal path: channels the wide capture carries are read from it.
+		QCOMPARE(copyMonitorInput(active, 1, out), f_cnt_t(2));
+		QCOMPARE(out[0][0], 0.2f);
+		QCOMPARE(out[1][1], 0.4f);
+
+		// Failure path: channel 2 of a 2-channel capture is not the stereo left (0.9).
+		out.assign(2, SampleFrame(0.0f, 0.0f));
+		const f_cnt_t passed = copyMonitorInput(active, 2, out);
+		QCOMPARE(passed, f_cnt_t(0));
+		QCOMPARE(out[0][0], 0.0f);
+		QCOMPARE(out[1][1], 0.0f);
+
+		// Wide capture inactive: the stereo bus is the input, as before.
+		const MonitorInputSource inactive{nullptr, 0, 0, stereo, 2};
+		out.assign(2, SampleFrame(0.0f, 0.0f));
+		QCOMPARE(copyMonitorInput(inactive, 0, out), f_cnt_t(2));
+		QCOMPARE(out[0][0], 0.9f);
+		QCOMPARE(copyMonitorInput(inactive, 1, out), f_cnt_t(2));
+		QCOMPARE(out[0][0], 0.8f);
+		QCOMPARE(copyMonitorInput(inactive, 2, out), f_cnt_t(2)); // unchanged: left side
+		QCOMPARE(out[0][0], 0.9f);
+	}
+
 	/*! The regression's own guard: the maintained position follows a reorder and a
 	 *  removal, so replacing the scan with a stale cache cannot pass the slot above. */
 	void theRouteIndexFollowsMovesAndRemovals()
