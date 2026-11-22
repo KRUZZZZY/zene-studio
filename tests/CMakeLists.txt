@@ -335,6 +335,10 @@ set(LMMS_TESTS
 	# in-process claim with no hardware - and the mapping templates
 	# (save/list/read/apply, and what they report they cannot resolve).
 	src/core/ControllerSurfaceTest.cpp
+	# cluster new-p9-340: PeakController's default null effect is a supported
+	# state. Construction must not dereference it, and the null branch fills
+	# each period with silence (default and explicit nullptr arguments).
+	src/core/PeakControllerNullEffectTest.cpp
 	# cluster new-p15-90: a replaced user LFO waveform stays owned through a
 	# render lease and is reclaimed only on the control thread after release.
 	src/core/LfoControllerUserWaveTest.cpp
