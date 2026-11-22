@@ -37,3 +37,11 @@ Registration: `tests/fork-sources.txt` (new script), `tests/upstream-modificatio
 
 ## Other findings
 - None.
+
+## Self-check
+- Red/green: with the fix reverted (`git apply -R logs/fix.patch`, EXIT=0, rebuild EXIT=0) `ctest -R '^QWaitForResultCheck$'` EXIT=8 (10-test-reverted.log, shows `UpdateCheckTest.cpp:394:108 ... [-Werror=unused-result]`); reapplied (`git apply logs/fix.patch`, EXIT=0, rebuild EXIT=0) `ctest -R '^(QWaitForResultCheck|UpdateCheckTest)$'` EXIT=0 (12-test-reapplied.log).
+- Deterministic: the regression is a compile of the real translation unit with fixed flags from compile_commands.json plus `-Werror=unused-result`; no timing, sleeps or threads. Its bad/good fixtures prove the flags can fail and are not over-strict.
+- At the cause and complete: the cause is the one discarded `QTest::qWaitFor` call (`checkAndWait()`, UpdateCheckTest.cpp:394). All six callers of `checkAndWait()` (UpdateCheckTest.cpp:163, 188, 221, 228, 287, 315) get the same Outcome as before when the check reports; a 30 s timeout now records an explicit failure instead of a silent default Outcome. A repo-wide search (`rg -n "(^\s*|[{;]\s*)(QTest::)?qWaitFor\(" tests src plugins`) found no other discarded qWaitFor. UpdateCheckTest, UpdateCheckWindowsTest, UpdateCheckHiddenTest all pass (08-test-family.log, 4/4).
+- No collateral damage: only a test source, a new test script and test registration changed; no product code, file format, saved data or limits touched. Gates PASS (13-feature-check.log).
+- ALREADY-FIXED / FALSE-POSITIVE: not applicable (verdict FIXED; the defect reproduced on this branch, 04-test-red.log).
+- Sibling commands (app.about, app.ask, app.help, app.online_help, app.task_cancel, app.tasks, app.tour, app.tours, app.update_check_get, app.update_check_run, app.update_check_set, app.version, app.whats_new, arrangement.fit_tracks, arrangement.get_state): not affected. No command file and no command handler changed; the edit is inside the test's private `checkAndWait()` helper, and the test's command-presence assertions (`CommandIds`, UpdateCheckTest.cpp:37-38) are untouched and still pass.
