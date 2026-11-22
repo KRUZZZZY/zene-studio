@@ -28,11 +28,14 @@ product seam. The margin is scoped to the processing-period deadline.
 
 - `feature_check.py` on this worktree: `RESULT: PASS`, exit 0, 8 PASS / 0 FAIL.
   Full table: `logs/gate-feature.log`.
+- Re-run after this report edit: `RESULT: PASS`, exit 0, 8 PASS / 0 FAIL.
+  Log: `logs/gate-feature-2.log`.
 - `./RemotePluginAudioPortsTest periodWaitNeverEndsAfterThePeriod` run directly:
   `PASS`, `Totals: 3 passed, 0 failed, 0 skipped`.
   Log: `logs/test-green-slot.log`.
-- `git diff --stat`: only `src/core/RemotePlugin.cpp`, 4 insertions / 2 deletions.
-- `git diff --check`: exit 0. No test file and no `SystemSemaphore.cpp` changed.
+- Before the commit, `git diff --stat` showed only `src/core/RemotePlugin.cpp`
+  (4 insertions / 2 deletions); the committed tree is checked with `git show --stat HEAD`.
+  No test file and no `SystemSemaphore.cpp` changed.
 
 ## Caller audit
 
@@ -102,18 +105,27 @@ Log folder: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-267.r1/logs/`.
 
 | Step | Command | Exit | Evidence from the log |
 |---|---|---|---|
-| p1 baseline build | `cmake --build build --target RemotePluginAudioPortsTest` | 0 | `[100%] Built target RemotePluginAudioPortsTest`, `build-red-head.log` |
-| p1 RED test | `ctest` for test #255 `RemotePluginAudioPortsTest` in `build/tests` | 8 | `0% tests passed, 1 tests failed out of 1`; 33 `rate/frames ... end ... > period ...` lines out of 72 combos; first: `rate/frames 44100/32, now offset 0 us, wait 1 ms, end 1.000 ms > period 0.726 ms`; `test-red-head.log` |
-| p2 GREEN test | `ctest` for test #255 in `build/tests` | 0 | `1/1 Test #255: RemotePluginAudioPortsTest ....... Passed 240.92 sec`, `100% tests passed out of 1`; `test-green-fix.log` |
-| reverse-apply fix | `git apply -R` of the p2 fix (`logs/fix.patch`) | 0 | no separate log; immediately followed by the reversed build (`build-red-reversed.log`) |
-| reversed build | `cmake --build build --target RemotePluginAudioPortsTest` | 0 | `[100%] Built target RemotePluginAudioPortsTest`; `build-red-reversed.log` |
-| reversed RED test | `ctest` for test #255 in `build/tests` | 8 | `0% tests passed, 1 tests failed out of 1`; 33 `rate/frames` lines, same first line `44100/32, now offset 0 us, wait 1 ms, end 1.000 ms > period 0.726 ms`; `test-red-reversed.log` |
-| reapply fix | `git apply` of `logs/fix.patch` | 0 | no separate log; immediately followed by the restored build (`build-restored.log`) |
-| restored build | `cmake --build build --target RemotePluginAudioPortsTest` | 0 | `[100%] Built target RemotePluginAudioPortsTest`; `build-restored.log` |
-| restored GREEN test | `ctest` for test #255 in `build/tests` | 0 | `1/1 Test #255: RemotePluginAudioPortsTest ....... Passed 240.76 sec`, `100% tests passed out of 1`; `test-restored.log` |
-| test family | `ctest` for tests #233, #255, #256 in `build/tests` | 0 | all three `Passed`; `100% tests passed out of 3`; `test-family.log` |
-| feature check | `feature_check.py` on this worktree | 0 | `RESULT: PASS`, 8 PASS / 0 FAIL (fork-sources, all-sources-reproduce x2, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length); `gate-feature.log` |
-| direct slot | `./RemotePluginAudioPortsTest periodWaitNeverEndsAfterThePeriod` | 0 | `PASS : RemotePluginAudioPortsTest::periodWaitNeverEndsAfterThePeriod()`, `Totals: 3 passed, 0 failed, 0 skipped`; `test-green-slot.log` |
+| p1 baseline build | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p12-267 && cmake --build build --target zene RemotePluginAudioPortsTest > /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-267.r1/logs/build-red-head.log 2>&1; echo EXIT=$?` | 0 | `[100%] Built target RemotePluginAudioPortsTest`, `build-red-head.log` |
+| p1 RED test | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p12-267/build/tests && ctest -R '^RemotePluginAudioPortsTest$' --output-on-failure > /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-267.r1/logs/test-red-head.log 2>&1; echo EXIT=$?` | 8 | `0% tests passed, 1 tests failed out of 1`; 33 `rate/frames ... end ... > period ...` lines out of 72 combos; first: `rate/frames 44100/32, now offset 0 us, wait 1 ms, end 1.000 ms > period 0.726 ms`; `test-red-head.log` |
+| p2 GREEN test | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p12-267/build/tests && ctest -R '^RemotePluginAudioPortsTest$' --output-on-failure > /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-267.r1/logs/test-green-fix.log 2>&1; echo EXIT=$?` | 0 | `1/1 Test #255: RemotePluginAudioPortsTest ....... Passed 240.92 sec`, `100% tests passed out of 1`; `test-green-fix.log` |
+| reverse-apply fix | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p12-267 && git diff -- src/core/RemotePlugin.cpp > /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-267.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-267.r1/logs/fix.patch; echo EXIT=$?` | 0 | no separate log; immediately followed by the reversed build (`build-red-reversed.log`) |
+| reverse check | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p12-267 && git apply --check -R /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-267.r1/logs/fix.patch > /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-267.r1/logs/patch-reverse-check.log 2>&1; echo EXIT=$?` | 0 | empty log; the reverse step is applicable; `patch-reverse-check.log` |
+| reversed build | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p12-267 && cmake --build build --target zene RemotePluginAudioPortsTest > /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-267.r1/logs/build-red-reversed.log 2>&1; echo EXIT=$?` | 0 | `[100%] Built target RemotePluginAudioPortsTest`; `build-red-reversed.log` |
+| reversed RED test | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p12-267/build/tests && ctest -R '^RemotePluginAudioPortsTest$' --output-on-failure > /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-267.r1/logs/test-red-reversed.log 2>&1; echo EXIT=$?` | 8 | `0% tests passed, 1 tests failed out of 1`; 33 `rate/frames` lines, same first line `44100/32, now offset 0 us, wait 1 ms, end 1.000 ms > period 0.726 ms`; `test-red-reversed.log` |
+| reapply fix | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p12-267 && git apply /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-267.r1/logs/fix.patch; echo EXIT=$?` | 0 | no separate log; immediately followed by the restored build (`build-restored.log`) |
+| restored build | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p12-267 && cmake --build build --target zene RemotePluginAudioPortsTest > /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-267.r1/logs/build-restored.log 2>&1; echo EXIT=$?` | 0 | `[100%] Built target RemotePluginAudioPortsTest`; `build-restored.log` |
+| restored GREEN test | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p12-267/build/tests && ctest -R '^RemotePluginAudioPortsTest$' --output-on-failure > /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-267.r1/logs/test-restored.log 2>&1; echo EXIT=$?` | 0 | `1/1 Test #255: RemotePluginAudioPortsTest ....... Passed 240.76 sec`, `100% tests passed out of 1`; `test-restored.log` |
+| test family | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p12-267/build/tests && ctest -R '^(SystemSemaphoreTest|RemotePluginAudioPortsTest|RemotePluginClientE2ETest)$' --output-on-failure > /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-267.r1/logs/test-family.log 2>&1; echo EXIT=$?` | 0 | all three `Passed`; `100% tests passed out of 3`; `test-family.log` |
+| feature check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p12-267 > /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-267.r1/logs/gate-feature.log 2>&1; echo EXIT=$?` | 0 | `RESULT: PASS`, 8 PASS / 0 FAIL (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length); `gate-feature.log` |
+| direct slot | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p12-267/build/tests && ./RemotePluginAudioPortsTest periodWaitNeverEndsAfterThePeriod > /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-267.r1/logs/test-green-slot.log 2>&1; echo EXIT=$?` | 0 | `PASS : RemotePluginAudioPortsTest::periodWaitNeverEndsAfterThePeriod()`, `Totals: 3 passed, 0 failed, 0 skipped`; `test-green-slot.log` |
+
+## Files committed
+
+- `7711cacb8` contains `src/core/RemotePlugin.cpp` and this report.
+- `tests/src/core/RemotePluginAudioPortsTest.cpp`, the seam `include/RemotePlugin.h` and
+  `tests/upstream-modifications.txt` were committed earlier in `858a910e07`; the test
+  rounding was committed in `f880667386`.
+
 
 ## Self-check
 
