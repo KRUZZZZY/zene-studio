@@ -56,14 +56,17 @@ What changed in r2:
 - This report.
 - No other file changed in r2. Product code is unchanged since `08159e0b72` for the fixed file: `git log 08159e0b72..HEAD -- src/core/ControlCommandsW3Engine.cpp` lists no commit. The branch HEAD also contains merges of other clusters that change six other `src/` files (for example `src/core/Mixer.cpp`). Those changes are not from this cluster and were not made in r2.
 
-Commands and exit codes. Log folder: `/home/kruzzzzy/.config/kads/zene/state/runs/4919.r2/logs/`. The r2 logs do not record their command lines, so the commands below are the form used in r1. The EXIT value is the last line of each log.
+Commands and exit codes. Log folder: `/home/kruzzzzy/.config/kads/zene/state/runs/4919.r2/logs/`. The commands below are the exact eight commands of the p3 run, in order. Recorded exits: patch 0, reverse/apply 0, red build 0, red ctest 8, re-apply 0, green build 0, green ctest 0, family 0. The build and test commands append `EXIT=` to their logs, so the EXIT value is the last line of each of those logs. The patch, reverse-apply and re-apply commands (steps 1, 2 and 5) are not appended to any log: their `EXIT=0` was printed by the shell during the p3 run. Both builds recompiled `ControlCommandsW3Engine.cpp.o` (`build-3-red.log`, `build-4-green.log`).
 
 ```
 RUN=/home/kruzzzzy/.config/kads/zene/state/runs/4919.r2/logs
 WT=/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-4919
-cd $WT && cmake --build build --target W3EngineTest -j4 > $RUN/build-3-red.log 2>&1; rc=$?; echo EXIT=$rc >> $RUN/build-3-red.log; echo EXIT=$rc
+cd $WT && git diff 08159e0b72^ 08159e0b72 -- src/core/ControlCommandsW3Engine.cpp > $RUN/fix.patch
+cd $WT && git apply --check -R $RUN/fix.patch && git apply -R $RUN/fix.patch
+cd $WT && cmake --build build --target zene W3EngineTest -j4 > $RUN/build-3-red.log 2>&1; rc=$?; echo EXIT=$rc >> $RUN/build-3-red.log; echo EXIT=$rc
 cd $WT/build/tests && ctest -R W3EngineTest --output-on-failure > $RUN/test-3-red.log 2>&1; rc=$?; echo EXIT=$rc >> $RUN/test-3-red.log; echo EXIT=$rc
-cd $WT && cmake --build build --target W3EngineTest -j4 > $RUN/build-4-green.log 2>&1; rc=$?; echo EXIT=$rc >> $RUN/build-4-green.log; echo EXIT=$rc
+cd $WT && git apply $RUN/fix.patch
+cd $WT && cmake --build build --target zene W3EngineTest -j4 > $RUN/build-4-green.log 2>&1; rc=$?; echo EXIT=$rc >> $RUN/build-4-green.log; echo EXIT=$rc
 cd $WT/build/tests && ctest -R W3EngineTest --output-on-failure > $RUN/test-4-green.log 2>&1; rc=$?; echo EXIT=$rc >> $RUN/test-4-green.log; echo EXIT=$rc
 cd $WT/build/tests && ctest -R 'W3EngineTest|ReceiverEffectTest|PhaseFChannelScaleTest' --output-on-failure > $RUN/test-5-family.log 2>&1; rc=$?; echo EXIT=$rc >> $RUN/test-5-family.log; echo EXIT=$rc
 ```
