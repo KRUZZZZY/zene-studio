@@ -33,3 +33,11 @@ Exactly 16 MiB reads (1 event); 16 MiB + 1 byte is refused with an error contain
 ## Not verified
 - No local TSan; the change is file I/O on the control/UI thread only. A file that grows during the read is capped by the limit+1 read.
 - Other tests including SmfInterchange.h (e.g. ClipImportFileTest, DawProjectInterchangeRoundTripTest) were not built or run.
+
+## Self-check
+- Test fails with the product change reverted and passes with it: RED_EXIT=8 (test-7-revert.log), GREEN_EXIT=0 (test-8-reapply.log); first RED also in test-1-red.log.
+- Deterministic: the test builds its two files in memory at exactly 16 MiB and 16 MiB + 1 byte and writes them to a QTemporaryDir; no clocks, sleeps, threads or races.
+- Fix at the cause and complete: the only whole-file read of an SMF in the conductor reader was the `readAll()` in `readConductorTrack()` (rg for `readAll()` in src/core/SmfInterchange*.cpp and SmfNoteRead.cpp finds none left). Both callers (ControlCommandsInterchange.cpp:329 and :405) go through it. The sibling note reader already had the same 16 MiB cap (SmfNoteRead.cpp:343), and the new limit equals it, so the two stay consistent. The writer and `mapFromEvents` do not read files.
+- No collateral damage: a file of exactly 16 MiB still reads (asserted in the test); smaller files take the same path as before (same open error text, same parser). Saved projects are not touched, since this reader only handles external .mid files. A conductor-import of a MIDI file over 16 MiB is now refused, which matches what the note reader already does for the same file.
+- ALREADY-FIXED / FALSE-POSITIVE: not applicable, the verdict is FIXED.
+- Sibling commands: I changed no command file (no src/core/ControlCommands*.cpp edit) and added no control command, so the app.* commands listed by the check are unaffected. interchange.smf_read and the SMF import in ControlCommandsInterchange.cpp inherit the refusal through `readConductorTrack()`, which returns it as `invalid_args` with the limit in the message.
