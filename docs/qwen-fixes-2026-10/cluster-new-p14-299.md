@@ -15,3 +15,11 @@ ALREADY-FIXED
 
 ## Other findings
 - Sibling path NOT covered by the finding's trigger: `src/core/ControlCommandsSession.cpp:209` (`applySlotShape`) calls `slot.setGainDb(float(gain_db))` with only `numberProperty()` schema (line 499), no range check. A huge `gain_db` (e.g. 1e40 becomes float inf) reaches `SessionAudioCells.cpp:252` and gives an infinite multiplier. Unfixed here; it is a live-command input, not a project-file one. Suggest clamping to `MinGainPointDb..MaxGainPointDb` in the command handler or in `prepare()`.
+
+## Self-check
+- Regression test fails without / passes with the change: not applicable, I made no product change (ALREADY-FIXED). The existing test `SessionMalformedAttributeTest` passes (logs/test-1.log, EXIT=0) and asserts the clamp at `tests/src/core/SessionMalformedAttributeTest.cpp:427`. I did not revert the earlier fix commit 0d5aed2769 to see it fail; that is unverified.
+- Deterministic: that test parses fixed XML strings via `parseElement()` and restores a `ClipSlot`; no timing, sleeps or threads.
+- Fix complete / siblings: the project-file restore path is the only loader of `gain` (`SessionClip.cpp:228`); `restoreState` is the single entry. The live-command sibling `ControlCommandsSession.cpp:209` is not range-checked; it is listed under Other findings and left unchanged because the finding's trigger is a project file.
+- Collateral damage: none, nothing changed in product code or tests. Only this report file was added.
+- ALREADY-FIXED proof: `src/core/SessionModelPrivate.h:83-88` (`gainDbAttribute` clamps to [-60,24], non-finite gives default) used at `src/core/SessionClip.cpp:228`; test at `SessionMalformedAttributeTest.cpp:416-427` (`gain="1000"` gives 24.0f).
+- Sibling commands in command files: I changed no command files; the app.* / arrangement.* commands listed by the check are unaffected.
