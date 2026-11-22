@@ -48,3 +48,23 @@ The seam was committed first with the old int cast (commit "Add SampleBuffer::ba
   PASS  file-length             no new item in your files
 RESULT: PASS
 ```
+
+## Self-check
+- Test fails reverted, passes fixed: test-4b-red.log RED_EXIT=8 (3 cases fail, e.g. actual 0 vs expected 4294967296),
+  test-4b-green.log GREEN_EXIT=0. The fix patch contains only the `base64SourceBytes` body in src/core/SampleBuffer.cpp.
+- Deterministic: pure arithmetic on injected frame counts (300,000,000; 2^29; SIZE_MAX/8; 0; 1000) plus a 16-frame
+  round trip. No clock, sleeps, threads or large allocations. The seam is `SampleBuffer::base64SourceBytes`.
+- Cause and siblings: the only int cast was in `toBase64()`; its callers (AudioFileProcessor.cpp:314,
+  SlicerT.cpp:611, Sample.h:115) all go through it. The inverse `fromBase64` (SampleBuffer.cpp, `bytes.size()` /
+  `std::memcpy`) already uses qsizetype/size_t, so it is consistent. include/base64.h and the Base64 users for VST/CLAP
+  state take a QByteArray directly and never cast through int in this path (not changed, not part of this finding).
+- Collateral: output for any sample that fit before is byte-identical (round-trip test; SlicerTWaveformTest and
+  SampleBuffer* tests pass). The new limit is 3/16 of qsizetype max (about 1.7e18 bytes on 64-bit), so no
+  legitimate 64-bit caller reaches it; it only refuses a sample whose Base64 text a QString could not hold, which the old code
+  silently truncated. Loading is untouched, so old projects load as before. Not audio-thread code.
+- Not applicable: ALREADY-FIXED/FALSE-POSITIVE (verdict is FIXED).
+- Sibling commands item: I changed no command files and added no control command. The tests/control-*.py files the
+  check lists came in through the train merges on this branch, not from me.
+
+## Other findings
+- None noticed.
