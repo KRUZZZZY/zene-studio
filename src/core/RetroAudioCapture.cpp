@@ -342,6 +342,11 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 			.arg(written).arg(window.size()).arg(filePath);
 		return false;
 	}
+	if (!finishProblem.isEmpty())
+	{
+		*error = QStringLiteral("could not %1 %2").arg(finishProblem, filePath);
+		return false;
+	}
 	if (!output.commit())
 	{
 		*error = QStringLiteral("could not commit the written take to %1: %2")
