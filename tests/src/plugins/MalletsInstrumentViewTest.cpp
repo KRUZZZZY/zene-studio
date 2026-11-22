@@ -15,6 +15,7 @@
 #include <QDomElement>
 #include <QFile>
 #include <QRegularExpression>
+#include <QTemporaryDir>
 #include <QtTest>
 #include <algorithm>
 #include <memory>
@@ -272,6 +273,46 @@ private slots:
 			qPrintable(QString{"the voice budget is declared without an initialiser (%1); a build "
 				"where std::atomic is not value-initialised would start it indeterminate"}
 				.arg(declared.trimmed())));
+	}
+
+	//! BUG 11 (new-p17-91): with the STK rawwaves missing the instrument renders silence, and its only
+	//! warning is the view's message box. A render with no view (headless, an agent instance) must still
+	//! learn of it: loading the instrument into a project reports it through Song::collectError, which
+	//! the project load prints to stderr and hands to project.open.
+	void missingRawwavesAreReportedWhenAProjectLoadsTheInstrument()
+	{
+		const QString goodDir = ConfigManager::inst()->stkDir();
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		const QString absent = scratch.path() + QStringLiteral("/no-such-rawwaves");
+
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("instrument"));
+
+		// Reconfiguration: the same instrument class, constructed with the rawwaves present.
+		Engine::getSong()->clearErrors();
+		{
+			const std::unique_ptr<MalletsInstrument> present{new MalletsInstrument(track)};
+			present->loadSettings(element);
+		}
+		QVERIFY2(!Engine::getSong()->hasErrors(), "an instrument with its rawwaves reported an error");
+
+		// Failure path: the rawwaves are missing when the instrument is built and loaded.
+		ConfigManager::inst()->setSTKDir(absent);
+		{
+			const std::unique_ptr<MalletsInstrument> missing{new MalletsInstrument(track)};
+			missing->loadSettings(element);
+		}
+		ConfigManager::inst()->setSTKDir(goodDir);
+
+		QVERIFY2(Engine::getSong()->hasErrors(),
+			"a Mallets instrument with no STK rawwaves rendered silence and reported nothing");
+		const QString summary = Engine::getSong()->errorSummary();
+		QVERIFY2(summary.contains(QStringLiteral("Mallets")), qPrintable(summary));
+		QVERIFY2(summary.contains(QStringLiteral("no-such-rawwaves")), qPrintable(summary));
+		Engine::getSong()->clearErrors();
 	}
 };
 
