@@ -188,11 +188,17 @@ no behaviour.
   (also `07-test-green.log`, EXIT=0). Round 2 re-ran this with the apply
   exits logged: `r2/logs/01-patch.log` APPLY_R_EXIT=0, `02-test-red.log`
   CTEST_EXIT=8, `03-reapply.log` APPLY_EXIT=0, `04-test-green.log`
-  CTEST_EXIT=0. Each mutant that reverted one friend to
+  CTEST_EXIT=0. Round 3, for the PeakController change: `r3/logs/12-4b.log`
+  APPLY_R_EXIT=0, `13-4b-red.log` CTEST_EXIT=8 (`PeakControllerDialog` is
+  ambiguous), `12-4b.log` APPLY_EXIT=0, `14-4b-green.log` CTEST_EXIT=0. Each mutant that reverted one friend to
   its unqualified form also fails (logs 14/15/16, EXIT=8 each).
 - **The test is deterministic.** It runs a `clang++ -fsyntax-only` compile
   probe with fixed flags and a fixed `-fms-compatibility-version=19.40`; there
   is no wall-clock timing, sleep, thread or race, and no seam is needed.
+  The round-3 state sequence comes from `TouchLayoutTest::aTouchTapSelectsAnArrangerClip`,
+  which is evidence, not the regression test; that slot already contained a
+  `QTest::qWait(30)` and `QTRY_VERIFY` polls before this cluster, and round 3
+  added only read-only `qInfo` lines and an env-gated `grab()` save to it.
 - **The fix is at the cause and complete.** Correction (round 3): rounds 1-2
   said a search found no other defective unqualified friend. That was wrong:
   the round-1 grep only looked at `friend class ...View` names and missed
