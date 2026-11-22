@@ -3261,6 +3261,8 @@ tests/src/plugins/NeuralAmpModelLoadTest.cpp
 plugins/VstBase/PeMachineType.h
 plugins/VstBase/VstMidiEventBatch.h
 tests/src/core/VstMidiEventBatchTest.cpp
+plugins/VstBase/VstShmHandoff.h
+tests/src/core/VstShmHandoffTest.cpp
 # cluster new-p15-169: the channel counts a VST plugin reports are refused when the host cannot hold them, not wrapped.
 plugins/VstBase/VstChannelCount.h
 tests/src/core/VstChannelCountTest.cpp

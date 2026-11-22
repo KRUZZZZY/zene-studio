@@ -37,6 +37,7 @@
 #include "RemotePluginClient.h"
 #include "VstChannelCount.h"
 #include "VstMidiEventBatch.h"
+#include "VstShmHandoff.h"
 
 //! MIDI events the client accepts per processing period; the excess is dropped and counted.
 #define MIDI_EVENT_BUFFER_COUNT		1024
@@ -88,8 +89,6 @@
 #undef Status
 #undef Unsorted
 #endif
-
-#include <mutex>
 
 #include <algorithm>
 #include <cstdint>
@@ -316,31 +315,6 @@ public:
 	// has to be called as soon as input- or output-count changes
 	int updateInOutCount();
 
-	inline void lockShm()
-	{
-		m_shmLock.lock();
-	}
-
-	inline bool tryLockShm()
-	{
-		return m_shmLock.try_lock();
-	}
-
-	inline void unlockShm()
-	{
-		m_shmLock.unlock();
-	}
-
-	inline bool isShmValid()
-	{
-		return m_shmValid;
-	}
-
-	inline void setShmIsValid( bool valid )
-	{
-		m_shmValid = valid;
-	}
-
 	inline bool isProcessing() const
 	{
 		return m_processing;
@@ -479,8 +453,7 @@ private:
 	float * * m_inputs;
 	float * * m_outputs;
 
-	std::mutex m_shmLock;
-	bool m_shmValid;
+	vst::ShmHandoff m_shmHandoff;
 
 	using VstMidiEventList = std::vector<VstMidiEvent>;
 	VstMidiEventList m_midiEvents;
@@ -530,7 +503,6 @@ RemoteVstPlugin::RemoteVstPlugin( const char * socketPath ) :
 	m_shouldGiveIdle( false ),
 	m_inputs( nullptr ),
 	m_outputs( nullptr ),
-	m_shmValid( false ),
 	m_midiEvents(),
 	m_bpm( 0 ),
 	m_currentSamplePos( 0 ),
@@ -1101,16 +1073,8 @@ void RemoteVstPlugin::process( const float* _in, float* _out )
 
 	// now we're ready to fetch sound from VST-plugin
 
-	if( !tryLockShm() )
+	if( !m_shmHandoff.beginRead() )
 	{
-		vst::silenceOutputPlanes( _out, RemotePluginClient::outputCount(),
-								static_cast<std::size_t>( bufferSize() ) );
-		return;
-	}
-
-	if( !isShmValid() )
-	{
-		unlockShm();
 		vst::silenceOutputPlanes( _out, RemotePluginClient::outputCount(),
 								static_cast<std::size_t>( bufferSize() ) );
 		return;
@@ -1158,7 +1122,7 @@ void RemoteVstPlugin::process( const float* _in, float* _out )
 	m_plugin->processReplacing(m_plugin, m_inputs, m_outputs, bufferSize());
 #endif
 
-	unlockShm();
+	m_shmHandoff.endRead();
 
 	m_currentSamplePos += bufferSize();
 }
@@ -1816,11 +1780,7 @@ int RemoteVstPlugin::updateInOutCount()
 		return 0;
 	}
 
-	lockShm();
-
-	setShmIsValid( false );
-
-	unlockShm();
+	m_shmHandoff.invalidate();
 
 	delete[] m_inputs;
 	delete[] m_outputs;
@@ -2360,7 +2320,7 @@ void * RemoteVstPlugin::processingThread(void * _param)
 		else if( m.id == IdChangeSharedMemoryKey )
 		{
 			_this->processMessage( m );
-			_this->setShmIsValid( true );
+			_this->m_shmHandoff.validate();
 		}
 		else
 		{
