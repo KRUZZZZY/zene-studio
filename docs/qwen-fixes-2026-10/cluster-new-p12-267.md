@@ -125,6 +125,7 @@ Log folder: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-267.r1/logs/`.
 - `tests/src/core/RemotePluginAudioPortsTest.cpp`, the seam `include/RemotePlugin.h` and
   `tests/upstream-modifications.txt` were committed earlier in `858a910e07`; the test
   rounding was committed in `f880667386`.
+- The follow-up docs commits change only this report.
 
 
 ## Self-check
@@ -150,6 +151,11 @@ Log folder: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-267.r1/logs/`.
   the mutation reproduced it after reverse-apply, and the fix removes it. It is not
   ALREADY-FIXED (the old deadline still overshot) and not FALSE-POSITIVE (33/72 injected
   cases failed with a concrete overshoot).
+- **Command siblings.** The sibling list (`app.about` through `arrangement.get_state`)
+  comes from the pre-existing base..HEAD train changes, not from this cluster: commits
+  `7711cacb8` and `2cd1c91ff9` touch only `src/core/RemotePlugin.cpp` and this report,
+  not any ControlCommands or ControlReversibilityTable file. The deadline margin change
+  therefore affects no command sibling.
 
 ## Other findings
 
