@@ -27,6 +27,7 @@
 #include <QDebug>
 #include <QMessageBox>
 #include <cstring>
+#include <limits>
 
 #include "UnattendedRun.h"
 #include "GuiApplication.h"
@@ -60,12 +61,34 @@ void swap(SampleBuffer& first, SampleBuffer& second) noexcept
 	swap(first.m_channels, second.m_channels);
 }
 
+auto SampleBuffer::base64SourceBytes(size_t numFrames) -> std::optional<qsizetype>
+{
+	// The Base64 text is 4/3 of the bytes and has to fit the container that holds it, and the byte
+	// count has to fit what QByteArray::fromRawData() takes. Qt 5 counts a QByteArray in int, on
+	// 64-bit too, so there the source is capped at INT_MAX / 4 * 3 bytes (the text then still fits an
+	// int); a larger count would be narrowed to a wrong, possibly zero, length and the saved project
+	// would lose the audio. Qt 6 counts in qsizetype and the text goes into a QString at 2 bytes a
+	// character, so the source may use at most 3/16 of what qsizetype can count.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	constexpr auto maxBytes = static_cast<size_t>(std::numeric_limits<qsizetype>::max() / 16 * 3);
+#else
+	constexpr auto maxBytes = static_cast<size_t>(std::numeric_limits<int>::max() / 4) * 3;
+#endif
+	if (numFrames > maxBytes / sizeof(SampleFrame)) { return std::nullopt; }
+	return static_cast<qsizetype>(numFrames * sizeof(SampleFrame));
+}
+
 QString SampleBuffer::toBase64() const
 {
 	// TODO: Replace with non-Qt equivalent
-	const auto data = reinterpret_cast<const char*>(m_data.data());
-	const auto size = static_cast<int>(m_data.size() * sizeof(SampleFrame));
-	const auto byteArray = QByteArray{data, size};
+	const auto size = base64SourceBytes(m_data.size());
+	if (!size)
+	{
+		qWarning() << QObject::tr("Sample is too large to embed as Base64, it was not saved");
+		return QString();
+	}
+	// fromRawData: no copy of the (possibly gigabytes of) frames, the array only views them.
+	const auto byteArray = QByteArray::fromRawData(reinterpret_cast<const char*>(m_data.data()), *size);
 	return byteArray.toBase64();
 }
 
