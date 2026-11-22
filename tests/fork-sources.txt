@@ -4018,3 +4018,5 @@ tests/src/plugins/BitInvaderLoadSettingsTest.cpp
 tests/src/core/AudioOssDeviceConfigTest.cpp
 # cluster new-p16-100: LocaleHelper::toFloat parse contract and the project-load non-finite leg (fork-NEW).
 tests/src/core/LocaleHelperTest.cpp
+# cluster new-p12-248 (2026-11): the audio thread never waits on an automation clip's lock (fork-NEW regression).
+tests/src/core/AutomationRenderLockTest.cpp

@@ -117,6 +117,28 @@ public:
 	//! thread asks this every tick and may not block. Every change to m_objects
 	//! republishes the answer under the mutex (publishLiveTarget()).
 	bool hasLiveTarget() const noexcept { return m_hasLiveTarget.load(std::memory_order_acquire); }
+
+	/*! The render thread's hold on one clip for one block or tick (cluster
+	 *  new-p12-248). It ASKS for m_clipMutex and never waits: an edit on a
+	 *  control thread holding the lock makes owns() false, and the render
+	 *  leaves the clip out of that block or tick (no ramp is published, so the
+	 *  control keeps its per-tick value). While it owns the lock, the clip's own
+	 *  accessors (objects(), firstObject(), valueAt(), writeBlockRamp()) re-enter
+	 *  the recursive mutex as its owner and do not wait either. */
+	class RenderLock
+	{
+	public:
+		explicit RenderLock(const AutomationClip* clip) noexcept
+			: m_clip(clip), m_owns(clip->m_clipMutex.tryLock()) {}
+		~RenderLock() { if (m_owns) { m_clip->m_clipMutex.unlock(); } }
+		RenderLock(const RenderLock&) = delete;
+		RenderLock& operator=(const RenderLock&) = delete;
+		bool owns() const noexcept { return m_owns; }
+
+	private:
+		const AutomationClip* m_clip;
+		bool m_owns;
+	};
 #ifdef LMMS_TESTING
 	using ObjectsReadProbe = void (*)(const AutomationClip*);
 	static void setObjectsReadProbeForTest(ObjectsReadProbe probe) { s_objectsReadProbe = probe; }

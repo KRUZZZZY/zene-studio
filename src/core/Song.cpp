@@ -789,7 +789,9 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 	{
 		auto p = dynamic_cast<AutomationClip *>(clip);
 		TimePos relTime = timeStart - p->startPosition();
-		if (relTime >= 0 && relTime < p->length())
+		// new-p12-248: a clip a control thread is editing is left out of this tick, never waited for.
+		const AutomationClip::RenderLock clipLock(p);
+		if (relTime >= 0 && relTime < p->length() && clipLock.owns())
 		{
 			const AutomatableModel* recordedModel = p->firstObject();
 			// A clip with no live target has nothing to record from: firstObject() hands back a
@@ -1628,6 +1630,9 @@ void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & bl
 			{
 				continue;
 			}
+			// new-p12-248: a clip a control thread is editing is left out of this block, never waited for.
+			const AutomationClip::RenderLock clipLock( automationClip );
+			if( !clipLock.owns() ) { continue; }
 
 			// The clip's targets, read once through the existing accessor. The
 			// ramp is then built under ONE clip lock, as before: a target whose
