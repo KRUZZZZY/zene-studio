@@ -391,7 +391,12 @@ private:
 		bool heard = false;
 		Outcome outcome;
 		UpdateChecker::instance()->setListener([&](const Outcome& o) { heard = true; outcome = o; });
-		if (UpdateChecker::instance()->check(false) != UpdateChecker::Start::Off) { QTest::qWaitFor([&] { return heard; }, 30000); }
+		// qWaitFor is [[nodiscard]]; a check that never reports is a failure, not a default Outcome.
+		if (UpdateChecker::instance()->check(false) != UpdateChecker::Start::Off
+			&& !QTest::qWaitFor([&] { return heard; }, 30000))
+		{
+			QTest::qFail("the update check never reported an outcome", __FILE__, __LINE__);
+		}
 		UpdateChecker::instance()->setListener({});
 		return outcome;
 	}
