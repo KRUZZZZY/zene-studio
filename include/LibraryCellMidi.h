@@ -31,10 +31,10 @@
 
 namespace lmms
 {
-
 class PatternStore;
+}
 
-namespace librarymidi
+namespace lmms::librarymidi
 {
 
 /*! One PatternStore pattern's notes, written to the shared library as a Standard MIDI File.
@@ -68,7 +68,5 @@ public:
 };
 
 } // namespace lmms::librarymidi
-
-} // namespace lmms
 
 #endif // LMMS_LIBRARY_CELL_MIDI_H
