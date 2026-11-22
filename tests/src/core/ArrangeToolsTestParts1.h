@@ -110,6 +110,41 @@ void ArrangeToolsTest::replacingTrackVersionKeepsModelGuardThroughClipRestore() 
 	QCOMPARE(track->numOfClips(), 1);
 	QVERIFY2(!changeMutexIsHeld(), "the audio change mutex remained held after track-version replacement");
 }
+void ArrangeToolsTest::invalidStoredVersionXmlLeavesTheTrackUntouched() {
+	auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+	const QString id = control::trackIdOf(track);
+	track->createClip(TimePos(0))->setName(QStringLiteral("current"));
+	const QString clipsBefore = TrackVersions::clipsOf(track);
+	QCOMPARE(track->numOfClips(), 1);
+
+	// Well-formed XML that is not a version: a wrong root, a non-clip child, and an empty document element.
+	const QStringList invalid{QStringLiteral("<other/>"), QStringLiteral("<other><midiclip/></other>"),
+		QStringLiteral("<clips><other/></clips>"), QStringLiteral("<clips><midiclip/><note/></clips>")};
+	for (const QString& xml : invalid)
+	{
+		QVERIFY2(!TrackVersions::replaceClips(track, xml), qPrintable(xml));
+		QCOMPARE(track->numOfClips(), 1);
+		QCOMPARE(TrackVersions::clipsOf(track), clipsBefore);
+	}
+
+	// The same through the command: refused, nothing recorded, the stored map and the clips unchanged.
+	TrackVersions::Set stored;
+	stored.active = QStringLiteral("A");
+	stored.clips.insert(QStringLiteral("A"), clipsBefore);
+	stored.clips.insert(QStringLiteral("bad"), QStringLiteral("<other/>"));
+	TrackVersions::instance().set(track->id(), stored);
+	const ControlResult switched = run(QStringLiteral("track.version_switch"),
+		{{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("bad")}});
+	QVERIFY(!switched.ok);
+	QCOMPARE(switched.errorKind, ControlErrorKind::Refused);
+	QCOMPARE(track->numOfClips(), 1);
+	QCOMPARE(TrackVersions::clipsOf(track), clipsBefore);
+	QCOMPARE(TrackVersions::instance().of(track->id()).active, QStringLiteral("A"));
+
+	// A version of zero clips is still a valid version: it empties the track.
+	QVERIFY(TrackVersions::replaceClips(track, QStringLiteral("<clips/>")));
+	QCOMPARE(track->numOfClips(), 0);
+}
 void ArrangeToolsTest::undoAndRedoOfTrackVersionSwitchKeepModelGuardThroughClipRestore() {
 	Engine::audioEngine()->audioDev()->stopProcessing();
 	const auto restartDevice = qScopeGuard([] { Engine::audioEngine()->audioDev()->startProcessing(); });

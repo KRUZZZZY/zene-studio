@@ -170,6 +170,8 @@ private slots:
 
 	void replacingTrackVersionKeepsModelGuardThroughClipRestore();
 
+	void invalidStoredVersionXmlLeavesTheTrackUntouched();
+
 	void undoAndRedoOfTrackVersionSwitchKeepModelGuardThroughClipRestore();
 
 	void savingAnotherVersionPreservesEditsToTheActiveVersion();
