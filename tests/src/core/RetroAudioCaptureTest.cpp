@@ -85,6 +85,16 @@ std::vector<SampleFrame> makeFrames(std::size_t count, std::size_t offset = 0)
 	return frames;
 }
 
+bool failFlush(lmms::RetroTakeFinishStep step) { return step == lmms::RetroTakeFinishStep::Sync; }
+bool failClose(lmms::RetroTakeFinishStep step) { return step == lmms::RetroTakeFinishStep::Close; }
+
+//! Clears the finish hook however the test leaves.
+struct FinishHookGuard
+{
+	explicit FinishHookGuard(lmms::RetroTakeFinishTestHook hook) { lmms::setRetroTakeFinishTestHook(hook); }
+	~FinishHookGuard() { lmms::setRetroTakeFinishTestHook(nullptr); }
+};
+
 } // namespace
 
 
@@ -264,6 +274,42 @@ private slots:
 			QVERIFY(std::fabs(static_cast<double>(interleaved[i * 2 + 1])
 				- static_cast<double>(window.frames[i].right())) <= OneLsb24);
 		}
+	}
+
+	//! libsndfile can accept every frame and still fail to flush or close the
+	//! file (full or failing disk). The take must then report failure, and the
+	//! destination must not be replaced by the unverified file.
+	void aFailedFlushOrCloseIsReportedAndNothingIsCommitted_data()
+	{
+		QTest::addColumn<bool>("failFlushStep");
+		QTest::newRow("flush") << true;
+		QTest::newRow("close") << false;
+	}
+
+	void aFailedFlushOrCloseIsReportedAndNothingIsCommitted()
+	{
+		QFETCH(bool, failFlushStep);
+		const auto frames = makeFrames(64);
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("retro.wav"));
+
+		std::uint64_t written = 123;
+		QString error;
+		bool ok = true;
+		{
+			FinishHookGuard guard(failFlushStep ? &failFlush : &failClose);
+			ok = lmms::writeRetroAudioTake(path, frames, SampleRate, &written, &error);
+		}
+		QVERIFY2(!ok, "a failed flush/close must not report success");
+		QVERIFY(!error.isEmpty());
+		QCOMPARE(written, std::uint64_t{0});
+		QVERIFY(!QFileInfo::exists(path));
+
+		// With the hook cleared the same call succeeds: the failure was the hook's.
+		QVERIFY2(lmms::writeRetroAudioTake(path, frames, SampleRate, &written, &error),
+			qPrintable(error));
+		QCOMPARE(written, std::uint64_t{64});
 	}
 
 	//! Concurrent writes to one destination each commit a complete take. Their

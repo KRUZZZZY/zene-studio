@@ -26,6 +26,7 @@
 #include "RetroAudioCapture.h"
 
 #include <algorithm>
+#include <atomic>
 
 #include <QElapsedTimer>
 #include <QSaveFile>
@@ -266,6 +267,27 @@ QString takeRequestProblem(const QString& filePath, std::size_t frames, int samp
 	return QString();
 }
 
+std::atomic<RetroTakeFinishTestHook> s_finishTestHook{nullptr};
+
+bool finishStepFailed(RetroTakeFinishStep step, bool realFailure) noexcept
+{
+	const auto hook = s_finishTestHook.load(std::memory_order_acquire);
+	return realFailure || (hook != nullptr && hook(step));
+}
+
+//! Flush and close \a sf (always closed, even when the flush failed). sf_write_sync()
+//! returns void, so a flush failure is read from the file's sticky error code.
+//! Returns an empty string on success, else the step that failed.
+QString finishSoundFile(SNDFILE* sf)
+{
+	sf_write_sync(sf);
+	const bool syncFailed = finishStepFailed(RetroTakeFinishStep::Sync, sf_error(sf) != SF_ERR_NO_ERROR);
+	const bool closeFailed = finishStepFailed(RetroTakeFinishStep::Close, sf_close(sf) != 0);
+	if (syncFailed) { return QStringLiteral("flush"); }
+	if (closeFailed) { return QStringLiteral("close"); }
+	return QString();
+}
+
 //! The write itself: clamp, encode, flush, close, and report what libsndfile
 //! accepted (measured, never assumed).
 bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window,
@@ -311,10 +333,10 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 
 	const auto written = sf_writef_float(sf, interleaved.data(),
 		static_cast<sf_count_t>(window.size()));
-	sf_write_sync(sf);
-	sf_close(sf);
+	const bool acceptedAll = written >= 0 && static_cast<std::size_t>(written) == window.size();
+	const QString finishProblem = finishSoundFile(sf);
 
-	if (written < 0 || static_cast<std::size_t>(written) != window.size())
+	if (!acceptedAll)
 	{
 		*error = QStringLiteral("wrote %1 of %2 frames to %3")
 			.arg(written).arg(window.size()).arg(filePath);
@@ -331,6 +353,12 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 }
 
 } // namespace
+
+
+void setRetroTakeFinishTestHook(RetroTakeFinishTestHook hook) noexcept
+{
+	s_finishTestHook.store(hook, std::memory_order_release);
+}
 
 
 bool writeRetroAudioTake(const QString& filePath, const std::vector<SampleFrame>& window,

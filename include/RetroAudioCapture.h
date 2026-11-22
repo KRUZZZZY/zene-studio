@@ -207,6 +207,16 @@ bool writeRetroAudioTake(const QString& filePath, const std::vector<SampleFrame>
 	int sampleRate, std::uint64_t* framesWritten, QString* error);
 
 
+//! The two steps that finish a take after every frame was accepted.
+enum class RetroTakeFinishStep { Sync, Close };
+
+//! Test hook: called after the real flush or close ran; returning true makes
+//! that step count as failed, which a healthy disk cannot be made to do
+//! deterministically. Null (the default) leaves the real result alone.
+using RetroTakeFinishTestHook = bool (*)(RetroTakeFinishStep step);
+void setRetroTakeFinishTestHook(RetroTakeFinishTestHook hook) noexcept;
+
+
 } // namespace lmms
 
 #endif // LMMS_RETRO_AUDIO_CAPTURE_H
