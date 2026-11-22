@@ -265,6 +265,9 @@ private slots:
 	//! it is stored, and saving such a split reads nothing past the end of crossovers.
 	void anOverlongCrossoverCountIsClampedAndSavedSafely();
 
+	//! new-p12-194: crossovers above the output Nyquist frequency still sum flat at a 32 kHz output rate.
+	void crossoversAboveNyquistStillSumFlatAtLowOutputRate();
+
 	//! A 64-character alias keeps a supplementary Unicode character intact at the length limit.
 	void aliasTruncationPreservesUnicodeCodePoints();
 
