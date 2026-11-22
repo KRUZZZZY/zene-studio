@@ -25,6 +25,7 @@
 #include "RoutingNodes.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace lmms
 {
@@ -53,6 +54,13 @@ auto loadParam(const QDomElement& element, const QString& name, float fallback) 
 	return fallback;
 }
 
+//! Clamp a filter coefficient into [0, 1], falling back when it is not finite.
+auto sanitizeAlpha(float candidate, float fallback) -> float
+{
+	if (!std::isfinite(candidate)) { return fallback; }
+	return std::clamp(candidate, 0.0f, 1.0f);
+}
+
 } // namespace
 
 void ConstantSourceNode::process(f_cnt_t frames)
@@ -78,6 +86,16 @@ void ConstantSourceNode::saveSettings(QDomElement& element) const
 void ConstantSourceNode::loadSettings(const QDomElement& element)
 {
 	m_value = loadParam(element, QStringLiteral("value"), m_value);
+}
+
+OnePoleLowPassNode::OnePoleLowPassNode(float alpha)
+	: m_alpha(sanitizeAlpha(alpha, 0.5f))
+{
+}
+
+void OnePoleLowPassNode::setAlpha(float alpha)
+{
+	m_alpha = sanitizeAlpha(alpha, m_alpha);
 }
 
 void OnePoleLowPassNode::prepare(f_cnt_t frames, ch_cnt_t channels)
@@ -118,7 +136,7 @@ void OnePoleLowPassNode::saveSettings(QDomElement& element) const
 
 void OnePoleLowPassNode::loadSettings(const QDomElement& element)
 {
-	m_alpha = loadParam(element, QStringLiteral("alpha"), m_alpha);
+	m_alpha = sanitizeAlpha(loadParam(element, QStringLiteral("alpha"), m_alpha), m_alpha);
 }
 
 void GainNode::process(f_cnt_t frames)

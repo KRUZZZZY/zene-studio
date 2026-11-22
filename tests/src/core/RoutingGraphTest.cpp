@@ -31,6 +31,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <new>
 
 #include <QDomDocument>
@@ -120,6 +121,13 @@ private slots:
 	void BaseNodeSettingsDefaults();
 	void ClearAndMoveSemantics();
 	void ProcessClampsToPreparedSize();
+	void LoadRejectsUnstableAlpha_data();
+	void LoadRejectsUnstableAlpha();
+	void UnstableAlphaCannotDivergeInProcess();
+	void SetAlphaClampsAndIgnoresNonFinite();
+	void ConstructorSanitisesAlpha();
+	void LoadSettingsOnExistingNodeKeepsLastGoodAlpha_data();
+	void LoadSettingsOnExistingNodeKeepsLastGoodAlpha();
 };
 
 void RoutingGraphTest::ProcessesKnownBlock_data()
@@ -696,6 +704,168 @@ void RoutingGraphTest::ProcessClampsToPreparedSize()
 	{
 		QCOMPARE(channel.buffer(1)[f], Untouched);
 	}
+}
+
+namespace
+{
+
+//! A <test> document holding one onepole_lowpass node as the output, with
+//! alpha loaded from the serialized value @a value.
+auto alphaDocument(const QString& value) -> QDomDocument
+{
+	QDomDocument document;
+	document.setContent(QStringLiteral(
+		"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"0\">"
+		"<node id=\"0\" type=\"onepole_lowpass\">"
+		"<param name=\"alpha\" value=\"%1\"/>"
+		"</node></routinggraph></test>").arg(value));
+	return document;
+}
+
+//! source(1.0) -> onepole low-pass, with alpha loaded from @a value.
+auto filteredDocument(const QString& value) -> QDomDocument
+{
+	QDomDocument document;
+	document.setContent(QStringLiteral(
+		"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"1\">"
+		"<node id=\"0\" type=\"constant\">"
+		"<param name=\"value\" value=\"1\"/>"
+		"</node>"
+		"<node id=\"1\" type=\"onepole_lowpass\">"
+		"<param name=\"alpha\" value=\"%1\"/>"
+		"</node>"
+		"<connection from=\"0\" fromport=\"0\" to=\"1\" toport=\"0\"/>"
+		"</routinggraph></test>").arg(value));
+	return document;
+}
+
+} // namespace
+
+//! A hostile alpha in a project file must never survive the load: the filter
+//! recurrence y += alpha * (x - y) diverges for |1 - alpha| > 1.
+void RoutingGraphTest::LoadRejectsUnstableAlpha_data()
+{
+	QTest::addColumn<QString>("value");
+	QTest::addColumn<float>("expected");
+
+	QTest::newRow("above-one") << QStringLiteral("3") << 1.0f;
+	QTest::newRow("below-zero") << QStringLiteral("-1") << 0.0f;
+	QTest::newRow("nan") << QStringLiteral("nan") << 0.5f;
+	QTest::newRow("inf") << QStringLiteral("inf") << 0.5f;
+	QTest::newRow("-inf") << QStringLiteral("-inf") << 0.5f;
+}
+
+void RoutingGraphTest::LoadRejectsUnstableAlpha()
+{
+	QFETCH(QString, value);
+	QFETCH(float, expected);
+
+	const QDomDocument document = alphaDocument(value);
+	RoutingGraph graph;
+	QVERIFY(graph.load(document.documentElement()));
+	QCOMPARE(graph.nodeCount(), std::size_t(1));
+
+	auto* filter = dynamic_cast<OnePoleLowPassNode*>(graph.node(0));
+	QVERIFY(filter != nullptr);
+	QCOMPARE(filter->alpha(), expected);
+}
+
+//! The loaded filter must stay bounded: with alpha = 3 the unguarded recurrence
+//! grows by a factor of two every frame and reaches inf/NaN in a few periods.
+void RoutingGraphTest::UnstableAlphaCannotDivergeInProcess()
+{
+	constexpr f_cnt_t Frames = 256;
+	constexpr int Periods = 8;
+
+	const QDomDocument document = filteredDocument(QStringLiteral("3"));
+	RoutingGraph graph;
+	QVERIFY(graph.load(document.documentElement()));
+	graph.prepare(Frames, 1);
+
+	AudioBuffer channel(Frames, 1);
+	for (int period = 0; period < Periods; ++period)
+	{
+		graph.process(channel);
+		for (f_cnt_t f = 0; f < Frames; ++f)
+		{
+			const float value = channel.buffer(0)[f];
+			QVERIFY(std::isfinite(value));
+			QVERIFY(std::abs(value) <= 1.0001f);
+		}
+	}
+}
+
+//! setAlpha must reject values outside [0, 1] and leave alpha untouched for
+//! non-finite values.
+void RoutingGraphTest::SetAlphaClampsAndIgnoresNonFinite()
+{
+	OnePoleLowPassNode node;
+
+	node.setAlpha(3.0f);
+	QCOMPARE(node.alpha(), 1.0f);
+
+	node.setAlpha(-1.0f);
+	QCOMPARE(node.alpha(), 0.0f);
+
+	node.setAlpha(0.25f);
+	QCOMPARE(node.alpha(), 0.25f);
+	node.setAlpha(std::numeric_limits<float>::quiet_NaN());
+	QCOMPARE(node.alpha(), 0.25f);
+	node.setAlpha(std::numeric_limits<float>::infinity());
+	QCOMPARE(node.alpha(), 0.25f);
+
+	// boundaries are preserved exactly
+	node.setAlpha(1.0f);
+	QCOMPARE(node.alpha(), 1.0f);
+	node.setAlpha(0.0f);
+	QCOMPARE(node.alpha(), 0.0f);
+}
+
+//! The explicit constructor must clamp out-of-range values and fall back to
+//! the default for non-finite values.
+void RoutingGraphTest::ConstructorSanitisesAlpha()
+{
+	OnePoleLowPassNode clampedConstructor(3.0f);
+	QCOMPARE(clampedConstructor.alpha(), 1.0f);
+
+	OnePoleLowPassNode belowZeroConstructor(-1.0f);
+	QCOMPARE(belowZeroConstructor.alpha(), 0.0f);
+
+	OnePoleLowPassNode nanConstructor(std::numeric_limits<float>::quiet_NaN());
+	QCOMPARE(nanConstructor.alpha(), 0.5f);
+
+	OnePoleLowPassNode validConstructor(0.25f);
+	QCOMPARE(validConstructor.alpha(), 0.25f);
+}
+
+//! Reconfiguring an existing node must clamp a hostile value and keep its last
+//! good alpha for non-finite ones.
+void RoutingGraphTest::LoadSettingsOnExistingNodeKeepsLastGoodAlpha_data()
+{
+	QTest::addColumn<QString>("value");
+	QTest::addColumn<float>("expected");
+
+	QTest::newRow("above-one") << QStringLiteral("3") << 1.0f;
+	QTest::newRow("below-zero") << QStringLiteral("-1") << 0.0f;
+	QTest::newRow("nan") << QStringLiteral("nan") << 0.25f;
+	QTest::newRow("inf") << QStringLiteral("inf") << 0.25f;
+	QTest::newRow("-inf") << QStringLiteral("-inf") << 0.25f;
+}
+
+void RoutingGraphTest::LoadSettingsOnExistingNodeKeepsLastGoodAlpha()
+{
+	QFETCH(QString, value);
+	QFETCH(float, expected);
+
+	OnePoleLowPassNode node(0.25f);
+	const QDomDocument document = alphaDocument(value);
+	const QDomElement nodeElement =
+		document.documentElement()
+			.firstChildElement(QStringLiteral("routinggraph"))
+			.firstChildElement(QStringLiteral("node"));
+	QVERIFY(!nodeElement.isNull());
+	node.loadSettings(nodeElement);
+	QCOMPARE(node.alpha(), expected);
 }
 
 QTEST_GUILESS_MAIN(RoutingGraphTest)
