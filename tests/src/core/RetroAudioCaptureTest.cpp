@@ -54,8 +54,10 @@
 
 #include <sndfile.h>
 
-#ifdef Q_OS_LINUX
 #include <fcntl.h>
+#ifdef Q_OS_WIN
+#include <io.h>
+#else
 #include <unistd.h>
 #endif
 
@@ -90,6 +92,31 @@ std::vector<SampleFrame> makeFrames(std::size_t count, std::size_t offset = 0)
 	return frames;
 }
 
+//! A complete, valid take of the row's frames, written before the failing call
+//! (test-only state; see swapInReadOnlyStandIn).
+QString s_standInTake;
+
+//! Portable stand-in for the failing disk, on every supported platform: open
+//! s_standInTake read-only and put that descriptor in place of the take's, so
+//! the header rewrite fails with EBADF through the real libsndfile path and
+//! sf_error(). The stand-in is a valid take of the same frames, so the header
+//! check is the only thing that can catch the failure: ignoring sf_error()
+//! lets the read-back match and the take commit, and the row fails.
+int swapInReadOnlyStandIn(lmms::RetroTakeFinishStep step, int fd)
+{
+	if (step != lmms::RetroTakeFinishStep::BeforeFinalize) { return 0; }
+#ifdef Q_OS_WIN
+	const int ro = ::_wopen(
+		reinterpret_cast<const wchar_t*>(QDir::toNativeSeparators(s_standInTake).utf16()),
+		_O_RDONLY | _O_BINARY);
+	if (ro >= 0) { ::_dup2(ro, fd); ::_close(ro); }
+#else
+	const int ro = ::open(QFile::encodeName(s_standInTake).constData(), O_RDONLY);
+	if (ro >= 0) { ::dup2(ro, fd); ::close(ro); }
+#endif
+	return 0;
+}
+
 //! Stand-ins for the real steps (see setRetroTakeFinishTestHook): the finalize
 //! row makes the take descriptor genuinely read-only just before libsndfile
 //! rewrites the header (every write then fails with EBADF, like a failing disk;
@@ -108,11 +135,11 @@ int makeDescriptorReadOnly(lmms::RetroTakeFinishStep step, int fd)
 			::close(ro);
 		}
 	}
-#else
-	Q_UNUSED(step);
-	Q_UNUSED(fd);
-#endif
 	return 0;
+#else
+	// No /proc/self/fd: the same EBADF failure, through the portable stand-in.
+	return swapInReadOnlyStandIn(step, fd);
+#endif
 }
 int failFlush(lmms::RetroTakeFinishStep step, int)
 {
@@ -322,6 +349,7 @@ private slots:
 	{
 		QTest::addColumn<QString>("step");
 		QTest::newRow("finalize") << QStringLiteral("finalize");
+		QTest::newRow("finalize-portable") << QStringLiteral("finalize-portable");
 		QTest::newRow("flush") << QStringLiteral("flush");
 		QTest::newRow("commit") << QStringLiteral("commit");
 	}
@@ -329,11 +357,9 @@ private slots:
 	void aFailedFlushOrCloseIsReportedAndNothingIsCommitted()
 	{
 		QFETCH(QString, step);
-#ifndef Q_OS_LINUX
-		if (step == QLatin1String("finalize")) { QSKIP("needs /proc/self/fd"); }
-#endif
 		lmms::RetroTakeFinishTestHook hook = &failCommit;
 		if (step == QLatin1String("finalize")) { hook = &makeDescriptorReadOnly; }
+		else if (step == QLatin1String("finalize-portable")) { hook = &swapInReadOnlyStandIn; }
 		else if (step == QLatin1String("flush")) { hook = &failFlush; }
 		const auto frames = makeFrames(64);
 		QTemporaryDir dir;
@@ -342,6 +368,10 @@ private slots:
 
 		std::uint64_t written = 123;
 		QString error;
+		s_standInTake = dir.filePath(QStringLiteral("stand-in.wav"));
+		QVERIFY2(lmms::writeRetroAudioTake(s_standInTake, frames, SampleRate, &written, &error),
+			qPrintable(error));
+		written = 123;
 		bool ok = true;
 		{
 			FinishHookGuard guard(hook);

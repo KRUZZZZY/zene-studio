@@ -41,7 +41,14 @@ EBADF still gives `ok == true` (test-10-rows.log).
 succeeds with `written == 64`.
 - `finalize` (new): at `BeforeFinalize` the hook does `open("/proc/self/fd/<fd>", O_RDONLY)`, `dup2` over the take fd
   and `close`. From then on every header write really fails with EBADF, as on a failing disk. The hook returns 0 for the
-  Flush step, so only the finalize detection can catch the failure. The row calls `QSKIP` off Linux.
+  Flush step, so only the finalize detection can catch the failure. Off Linux this row uses the portable stand-in
+  below instead (round 4: the `QSKIP` is gone).
+- `finalize-portable` (round 4, every platform): the test first writes a valid 64-frame take `stand-in.wav`. At
+  `BeforeFinalize` the hook `swapInReadOnlyStandIn` opens it read-only (`open`, or `_wopen` on Windows) and `dup2`s/`_dup2`s it
+  over the take fd. The real `SFC_UPDATE_HEADER_NOW` write then fails with EBADF and `sf_error()` records it. Because the stand-in
+  is a valid take of the same frames, the read-back matches. If the `sf_error()` check is ignored, the take commits, so the
+  row fails. Reopening the QSaveFile temporary by path does not work on Linux, where Qt uses an unnamed `O_TMPFILE`
+  (log test-1-green.log: the first attempt did not inject).
 - `flush`: the hook replaces the fsync result with -1 (round 2).
 - `commit`: kept as a guard only. It was already green before this cluster (round-2 report), and it stays green in
   every variant below.
@@ -78,7 +85,26 @@ plus `./RetroAudioCaptureTest aFailedFlushOrCloseIsReportedAndNothingIsCommitted
   because the whole test binary passes (test-15-full.log: `Totals: 17 passed, 0 failed`, EXIT=0).
 - The fsync check comes from round 2 and is covered by the `flush` row.
 
+## Round 4 (review: finalize row skipped off Linux) - logs in /home/kruzzzzy/.config/kads/zene/state/runs/5275.r4/logs
+Test-only change. The product code is unchanged from round 3. The mutant `mutant-sferror.patch` reverses the product check
+in `finalizeHeader()` (`src/core/RetroAudioCapture.cpp:321`): `const bool ok = sf_error(sf) == SF_ERR_NO_ERROR;` becomes
+`const bool ok = true; (void)sf_error(sf);`.
+- First attempt (reopen the temporary by path): build-1 EXIT=0. test-1-green EXIT=8, `finalize-reopened '!ok' returned FALSE`
+  because there is no named temporary on Linux. I replaced it with the stand-in design.
+- `cmake --build build --target zene RetroAudioCaptureTest -j4 > build-4.log` EXIT=0
+- `ctest -R RetroAudioCaptureTest --output-on-failure > test-4-green.log` EXIT=0 (100% passed)
+- `git apply mutant-sferror.patch` EXIT=0. The rebuild (build-5-mutant) EXIT=0.
+- `ctest -R RetroAudioCaptureTest --output-on-failure > test-5-red.log` EXIT=8. FAIL! rows: `(finalize)` and
+  `(finalize-portable)`, `'!ok' returned FALSE`. Totals: 16 passed, 2 failed.
+- `git apply -R mutant-sferror.patch` EXIT=0. The rebuild (build-6) EXIT=0. test-6-green EXIT=0.
+- `ctest -R RetroAudioCaptureTest -V > test-7-green-verbose.log` EXIT=0. PASS on all four rows: finalize, finalize-portable,
+  flush and commit. Totals: 18 passed, 0 failed, 0 skipped.
+- `python3 .../feature_check.py <worktree> > gates-1.log` EXIT=0, no FAIL rows.
+
 ## Honest limits
+- Round 4: the Windows `_wopen`/`_dup2` branch of `swapInReadOnlyStandIn` is not compiled on this box. On Windows, `_commit`
+  on the read-only stand-in may also fail, so there the flush check could catch a mutant that the header check missed. On
+  Linux (proved above) only the header check catches it.
 - The failure is injected by swapping the descriptor for a read-only one: real EBADF from the kernel, but no full disk.
 - The Windows `_commit` and `_lseek` paths are not compiled here.
 - `writeWindow()` runs on the command handler thread, not the audio thread. It adds one header rewrite and one short reopen
@@ -103,6 +129,8 @@ plus `./RetroAudioCaptureTest aFailedFlushOrCloseIsReportedAndNothingIsCommitted
   `writeRetroAudioTake()`, so none of them is affected.
 
 Delegation:
+- Round 4: Haiku ran the build and the green/mutant-red/green ctest sequence twice. The first run exposed the O_TMPFILE
+  problem. I designed and wrote the portable test hook, created the mutant patch, checked the logs and wrote this section.
 - Sonnet wrote the `finalize` test row and hook, and ran the first build and the green test.
 - Haiku ran the red/green and variant proof matrix twice. The second run was needed after the variants were corrected to
   keep compiling.
