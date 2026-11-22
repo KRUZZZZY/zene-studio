@@ -21,6 +21,8 @@
 #include <QDomDocument>
 #include <QTemporaryDir>
 
+#include "AudioBus.h"
+#include "AudioDevice.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "EffectControlDialog.h"
@@ -129,6 +131,59 @@ private slots:
 		QCOMPARE(reopenedGraphs.size(), 1);
 		QCOMPARE(shown(reopenedGraphs.front()), edited);
 		QVERIFY(Engine::getSong()->errors().isEmpty());
+	}
+
+	//! Edits the user makes to the curve must reach processImpl() as one published snapshot:
+	//! the audio thread may never observe a half-finished drag.
+	void waveShaperCurveEditsReachTheAudioAsAPublishedSnapshot()
+	{
+		EffectChain* chain = &Engine::mixer()->mixerChannel(0)->m_fxChain;
+		std::unique_ptr<Effect> shaper{Effect::instantiate(QStringLiteral("waveshaper"), chain, nullptr)};
+		if (shaper == nullptr || !shaper->isOkay()) { QSKIP("this host loads no waveshaper module"); }
+		std::unique_ptr<EffectControlDialog> dialog{shaper->controls()->createView()};
+		QVERIFY(dialog != nullptr);
+		dialog->show();
+		QVERIFY(QTest::qWaitForWindowExposed(dialog.get()));
+		auto graphs = dialog->findChildren<Graph*>();
+		QCOMPARE(graphs.size(), 1);
+		Graph* graph = graphs.front();
+		QCOMPARE(graph->width(), 204);
+		QCOMPARE(graph->height(), 205);
+
+		Engine::audioEngine()->audioDev()->stopProcessing();
+
+		// 0.5 into the shaper: |x| * 200 = 100, so the lookup is samples[99] exactly.
+		SampleFrame* channel = nullptr;
+		auto render = [&] {
+			std::vector<SampleFrame> block(4, SampleFrame{0.5f, 0.5f});
+			channel = block.data();
+			AudioBus bus{&channel, 1, static_cast<f_cnt_t>(block.size())};
+			bus.updateAll();
+			shaper->processAudioBuffer(bus);
+			return block[0].left();
+		};
+
+		// The default straight line is published: sample 99 of 200 is 0.5.
+		QCOMPARE(render(), 0.5f);
+
+		// A finished edit is published before the next block.
+		graph->model()->setSampleAt(99, 0.25f);
+		QCOMPARE(render(), 0.25f);
+
+		// Inject the half-finished drag state of drawLineAt(): the array is written, but
+		// samplesChanged has not fired yet, so the audio must keep the published 0.25.
+		const_cast<float*>(graph->model()->samples())[99] = 0.75f;
+		QCOMPARE(render(), 0.25f);
+
+		// A real click on the graph (sample 99, value 0.6) publishes a new snapshot.
+		QTest::mouseClick(graph, Qt::LeftButton, Qt::NoModifier, QPoint(101, 82));
+		QVERIFY2(graph->model()->samples()[99] != 0.25f, "the click did not move sample 99");
+		QCOMPARE(render(), graph->model()->samples()[99]);
+
+		// A burst of edits ends with the last curve published.
+		for (int i = 0; i < 50; ++i) { graph->model()->setSampleAt(99, (i % 2) ? 0.3f : 0.7f); }
+		graph->model()->setSampleAt(99, 0.4f);
+		QCOMPARE(render(), 0.4f);
 	}
 
 private:

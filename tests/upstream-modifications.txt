@@ -6021,3 +6021,6 @@ src/core/Mixer.cpp	cluster new-p16-133: toggledSolo expands a VCA group's member
 tests/src/core/VcaGroupTest.cpp	cluster new-p16-133: new test slot for the member-solo link guard (Phase B restore loops and unsuspended control path)
 plugins/Lb302/Lb302.cpp	cluster new-p9-255: filter settings are published lock-free to the audio thread and adopted/recalculated at a block boundary; the boundary, last-wins, allocation, load and mailbox tests are the regressions.
 plugins/Lb302/Lb302.h	cluster new-p9-255: declares the lock-free filter-settings snapshot published by the control thread and adopted at a block boundary by the audio thread; the boundary, last-wins, allocation, load and mailbox tests are the regressions.
+plugins/WaveShaper/WaveShaper.cpp	cluster new-p9-526: audio thread reads the immutable curve handoff (WaveCurveSnapshot) instead of the mutable table; regression in GraphWaveformEditorGuiTest.
+plugins/WaveShaper/WaveShaperControls.cpp	cluster new-p9-526: publish the edited curve through the immutable curve handoff on samplesChanged; regression in GraphWaveformEditorGuiTest.
+plugins/WaveShaper/WaveShaperControls.h	cluster new-p9-526: declare WaveCurveSnapshot, the lock-free immutable curve handoff the audio thread reads; regression in GraphWaveformEditorGuiTest.
