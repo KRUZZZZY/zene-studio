@@ -265,9 +265,14 @@ void PatternEditor::updatePosition()
 
 void PatternEditor::updatePixelsPerBar()
 {
-	setPixelsPerBar(m_maxClipLength != 0
-		? (width() - m_trackHeadWidth) * TimePos::ticksPerBar() / m_maxClipLength
-		: (width() - m_trackHeadWidth));
+	// A view narrower than its track head has no content width, and the old
+	// division truncated the scale to 0 pixels per bar. Drop code divides by
+	// that scale, so keep it at least one pixel per bar.
+	const int contentWidth = width() - m_trackHeadWidth;
+	const int ppb = m_maxClipLength != 0
+		? static_cast<int>(contentWidth * TimePos::ticksPerBar() / m_maxClipLength)
+		: contentWidth;
+	setPixelsPerBar(std::max(1, ppb));
 	m_timeLine->setPixelsPerBar(pixelsPerBar());
 }
 

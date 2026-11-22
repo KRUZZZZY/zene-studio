@@ -54,6 +54,7 @@
 #include "AutomationEditor.h"
 #include "AutomationTrack.h"
 #include "ClipView.h"
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -62,6 +63,8 @@
 #include "InstrumentTrack.h"
 #include "KeyboardShortcuts.h"
 #include "MainWindow.h"
+#include "PatternEditor.h"
+#include "PatternStore.h"
 #include "Song.h"
 #include "SongEditor.h"
 #include "Track.h"
@@ -486,6 +489,33 @@ private slots:
 		}
 		QVERIFY(loadedLaneView != nullptr);
 		QVERIFY2(!loadedLaneView->isVisible(), "a project saved folded loaded with its lane drawn");
+	}
+
+	//! new-p15-270: dropping an automatable model onto a lane in the Pattern Editor
+	//! divided by the view's pixels-per-bar. A Pattern Editor narrower than its track
+	//! head (no content width) truncated that scale to exactly 0, so the drop crashed.
+	//! Force the zero-content-width layout the product computes, record the scale it
+	//! reports there, and check it never falls below one pixel per bar.
+	void aZeroWidthPatternEditorKeepsOnePixelPerBar()
+	{
+		PatternEditor* editor = getGUI()->patternEditor()->m_editor;
+		editor->clearAllTracks();
+		Engine::patternStore()->clearAllTracks();
+		QCoreApplication::processEvents();
+		QVERIFY2(editor->trackViews().isEmpty(),
+			"the pattern editor still has rows after the store was cleared");
+
+		const bool compact = ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt() == 1;
+		const int headWidth = trackSettingsWidth(compact) + trackOperationsWidth(compact);
+		const int restoredWidth = editor->width();
+		editor->setFixedWidth(headWidth);  // width() - trackHeadWidth == 0: the old math gives exactly 0
+		QVERIFY(QMetaObject::invokeMethod(editor, "updatePixelsPerBar", Qt::DirectConnection));
+		const float narrowPixelsPerBar = editor->pixelsPerBar();
+		editor->setFixedWidth(restoredWidth);
+		QVERIFY(QMetaObject::invokeMethod(editor, "updatePixelsPerBar", Qt::DirectConnection));
+		QVERIFY2(narrowPixelsPerBar >= 1.0f,
+			qPrintable(QStringLiteral("a pattern editor with no content width reports %1 px per bar")
+				.arg(narrowPixelsPerBar)));
 	}
 
 private:
