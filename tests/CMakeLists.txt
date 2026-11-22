@@ -4723,6 +4723,10 @@ set_tests_properties(PluginPortsMigrationTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FreeBoy FreeBoyPoolReclamation FreeBoySampleRateHandoff PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# Cluster new-p15-71: a full-scale 24-bit GIG sample has to render at the same
+# level as the full-scale 16-bit path, not at half of it.
+add_test(NAME GigPlayer24BitFullScale COMMAND PluginPortsMigrationTest gigplayer24BitSamplePlaysAtFullScale)
+set_tests_properties(GigPlayer24BitFullScale PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # Cluster new-p9-326: the focused OpulenZ held-note regression. It runs in the
 # PluginPortsMigrationTest executable (the plugin-module host it needs lives
 # there), so the registration is a second ctest entry over the same binary.

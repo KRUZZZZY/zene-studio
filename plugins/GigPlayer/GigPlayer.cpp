@@ -1369,7 +1369,9 @@ void GigInstrument::loadSample( GigSample& sample, SampleFrame* sampleData, f_cn
 
 			// Store the notes to this buffer before saving to output
 			// so we can fade them out as needed
-			sampleData[i][0] = 1.0 / 0x100000000 * sample.attenuation * valueLeft;
+			// The bytes are packed into the top 24 bits of a 32-bit value, so
+			// normalise by 0x80000000 (not 0x100000000) to reach full scale.
+			sampleData[i][0] = 1.0 / 0x80000000 * sample.attenuation * valueLeft;
 
 			if( sample.sample->Channels == 1 )
 			{
@@ -1382,7 +1384,7 @@ void GigInstrument::loadSample( GigSample& sample, SampleFrame* sampleData, f_cn
 							( pInt[ 3 * sample.sample->Channels * i + 4 ] << 16 ) |
 							( pInt[ 3 * sample.sample->Channels * i + 5 ] << 24 ) );
 
-				sampleData[i][1] = 1.0 / 0x100000000 * sample.attenuation * valueRight;
+				sampleData[i][1] = 1.0 / 0x80000000 * sample.attenuation * valueRight;
 			}
 		}
 	}
