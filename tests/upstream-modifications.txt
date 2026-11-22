@@ -6024,3 +6024,4 @@ plugins/Lb302/Lb302.h	cluster new-p9-255: declares the lock-free filter-settings
 plugins/WaveShaper/WaveShaper.cpp	cluster new-p9-526: audio thread reads the immutable curve handoff (WaveCurveSnapshot) instead of the mutable table; regression in GraphWaveformEditorGuiTest.
 plugins/WaveShaper/WaveShaperControls.cpp	cluster new-p9-526: publish the edited curve through the immutable curve handoff on samplesChanged; regression in GraphWaveformEditorGuiTest.
 plugins/WaveShaper/WaveShaperControls.h	cluster new-p9-526: declare WaveCurveSnapshot, the lock-free immutable curve handoff the audio thread reads; regression in GraphWaveformEditorGuiTest.
+plugins/GigPlayer/GigPlayer.cpp	cluster new-p15-71: normalize a signed 24-bit GIG sample by 0x80000000 instead of 0x100000000, so a full-scale 24-bit sample reaches full scale instead of half the level and matches the 16-bit path; regression PluginPortsMigrationTest::gigplayer24BitSamplePlaysAtFullScale.
