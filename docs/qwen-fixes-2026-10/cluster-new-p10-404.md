@@ -28,6 +28,12 @@ No header, command or audio-thread code changed.
 - The 256 MiB cap could in principle reject a legitimate snapshot whose XML expands past that. The same cap already limits DataFile recovery and the asset verbs, and capture is unchanged. This is unverified for projects with very large embedded audio.
 - Local TSan does not run here. The restore path is unchanged apart from the earlier return, and it runs on the main thread, not the audio thread.
 
+- Red/green: the test fails with the product change reverted (RED_EXIT=8) and passes with it (GREEN_EXIT=0), see the 4b line above.
+- Determinism: the inputs are a captured snapshot padded with newlines to an exact byte count, and a fixed header value. There is no clock, sleep, thread or injected timestamp.
+- Callers: every restore goes through the one function I changed: `UndoHistory.cpp:136,139`, `SessionCheckpoint.cpp:56`, `ControlCommandsDocuments.cpp:177` (found with `rg restoreUndoSnapshot`). Both overloads share the body, so there is no other path into it. The command files touched in this branch (app.* etc.) are not changed by this fix; the only command-side caller is the checkpoint restore above, which gets the same bound.
+- Collateral: capture is unchanged and old history sections load as before. A snapshot that inflates to 256 MiB or less restores exactly as before, which the existing restore tests (undo, redo, checkpoints) show passing. The only newly refused input is one that expands past the cap or is not a decodable qCompress frame, which already returned false.
+- Sibling `src/core/SessionCheckpoint.cpp:93` also calls `qUncompress` on a snapshot, but only to compute a diff of in-memory snapshots the session captured itself, not from a saved file. I left it out of this fix.
+
 ## Other findings
 - `ControlUndoStructuralTranscript` fails in this worktree with "plugin.load returned no instance id". It fails identically with my change reverted (test-5b-transcript-baseline.log, EXIT=8), so it is not caused by this fix. Not investigated.
 - `UndoHistoryPanelTest` was not built or run.
