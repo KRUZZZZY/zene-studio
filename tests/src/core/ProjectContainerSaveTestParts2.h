@@ -118,3 +118,38 @@ void ProjectContainerSaveTest::aTruncatedSavedContainerIsRefusedAsMalformed() {
 		&document, &error ) );
 	QVERIFY2( !error.contains( QStringLiteral( "cannot read" ) ), qPrintable( error ) );
 }
+void ProjectContainerSaveTest::anUndoSnapshotExpandingPastTheCapIsRefused() {
+	buildSession();
+	Song* song = Engine::getSong();
+	const std::shared_ptr<const QByteArray> before = song->captureUndoSnapshot();
+	QVERIFY( before && !before->isEmpty() );
+	const QStringList state = stateOf();
+	QVERIFY( run( QStringLiteral( "transport.set_tempo" ), {{ QStringLiteral( "bpm" ), 90 }} ).ok );
+	const QStringList changed = stateOf();
+	QVERIFY( changed != state );
+
+	// Valid XML, one byte over the cap: trailing whitespace after the root is a legal document, so
+	// only the size separates this from a snapshot that restores.
+	QByteArray document = qUncompress( *before );
+	QVERIFY( !document.isEmpty() );
+	document.append( QByteArray( static_cast<int>( lmms::control::MaxProjectAssetDocumentBytes ) + 1 - document.size(), '\n' ) );
+	QCOMPARE( static_cast<qint64>( document.size() ), lmms::control::MaxProjectAssetDocumentBytes + 1 );
+	const QByteArray oversized = qCompress( document, 1 );
+	document.clear();
+	document.squeeze();
+
+	QVERIFY( !song->restoreUndoSnapshot( oversized ) );
+	QCOMPARE( stateOf(), changed );
+	// The same document at the cap exactly is what a restore accepts: the limit is not lower than that.
+	QVERIFY( song->restoreUndoSnapshot( *before ) );
+	QCOMPARE( stateOf(), state );
+}
+void ProjectContainerSaveTest::anUndoSnapshotAdvertisingAHugeSizeIsRefused() {
+	buildSession();
+	Song* song = Engine::getSong();
+	const QStringList state = stateOf();
+	QByteArray crafted = qCompress( QByteArrayLiteral( "<<not a project" ) );
+	qToBigEndian<quint32>( 0xFFFFFFF0u, reinterpret_cast<uchar*>( crafted.data() ) );
+	QVERIFY( !song->restoreUndoSnapshot( crafted ) );
+	QCOMPARE( stateOf(), state );
+}
