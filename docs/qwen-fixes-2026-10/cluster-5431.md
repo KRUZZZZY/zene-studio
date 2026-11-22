@@ -37,3 +37,11 @@ It covers a wrong root, a wrong root with a clip child, a non-clip child, and a 
 
 ## Other findings
 - `replaceClips` dereferences the result of `track->createClip` without a null check. A track class that owns no clips (TrackFolder) returns null. Not touched here.
+
+## Self-check
+- Test fails reverted, passes with the fix: the RED run (test-1-red.log, test only) and the 4b revert run (test-3-red-reverted.log) both exited 8 with `returned FALSE. (<other/>)`. The GREEN runs (test-2-green.log, test-4-green-reapplied.log) exited 0.
+- Deterministic: the test uses fixed XML strings and a track created in-process. It has no timing, sleeps or threads, and it adds no audio-device seam. It only reads `numOfClips` and the `clipsOf` XML.
+- Cause and completeness: the cause was `replaceClips` validating nothing but parseability before `deleteClips`. Its callers are `switchVersion` (src/core/ControlCommandsTrackVersions.cpp) and the guard test. `switchVersion` now uses the same validator, so the command and the function cannot disagree. The undo/redo lambdas only call `TrackVersions::set`, never `replaceClips`, so they are unaffected. The other `track.version_*` commands do not parse stored XML: `version_save` stores `clipsOf` output, which always has a `<clips>` root and clip children; `version_remove` and `version_list` only touch names; `TrackVersions::load` stores the text verbatim, so a hand-edited project is validated lazily at switch time, as before.
+- No collateral damage: a valid version (`<clips>` with midiclip, sampleclip, patternclip or automationclip children, or empty) is accepted exactly as before. Saved data format and load are unchanged. The only newly refused input is XML `clipsOf` can never produce. No limit was added.
+- ALREADY-FIXED / FALSE-POSITIVE: not applicable, the verdict is FIXED.
+- Sibling commands: no other command in the changed command file parses stored version XML. Only `track.version_switch` changed behaviour (it refuses invalid XML), and no command was added or removed.
