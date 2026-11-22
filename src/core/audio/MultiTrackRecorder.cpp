@@ -122,7 +122,7 @@ void MultiTrackRecorder::processInputInterleaved(const sample_t* interleaved, in
 	for (std::size_t route = 0; route < m_tracks.size(); ++route)
 	{
 		// 0.5.0 WF-072/086: a route taking the master or a channel is fed there, not from the input.
-		if (!recordertaps::tapped(static_cast<int>(route))) { m_tracks[route]->processInputInterleaved(interleaved, channels, frames); }
+		if (!recordertaps::audioTapped(static_cast<int>(route))) { m_tracks[route]->processInputInterleaved(interleaved, channels, frames); }
 	}
 }
 

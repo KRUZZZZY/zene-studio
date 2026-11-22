@@ -39,8 +39,9 @@ enum class SidechainTapPoint : int;
  *  mixer channel's signal at a tap point - before its inserts, before its fader, or after it - one side
  *  of it each route (routes are mono files). The mixer's workers and the render thread push into the
  *  route's own ring at those points (each route has one source, so one producer); the table is atomics,
- *  set on the UI thread; nothing is allocated or locked on the audio path. A tapped route is skipped by
- *  the input path. */
+ *  changed on the UI thread; nothing is allocated or locked on the audio path. A change is pending until
+ *  beginPeriod() publishes it at the next period boundary, so one route has one source per period. A
+ *  tapped route is skipped by the input path. */
 namespace recordertaps
 {
 
@@ -54,11 +55,21 @@ struct Tap
 	int side = 0;        //!< 0 left, 1 right
 };
 
-//! Point route @a route at @a tap (Source::Input puts it back on the engine's input). UI thread.
+//! Point route @a route at @a tap (Source::Input puts it back on the engine's input). UI thread. The
+//! change is pending: it takes effect at the next period boundary, so one route has one source per period.
 LMMS_EXPORT void set(int route, const Tap& tap);
+//! The tap set for route @a route (pending included: the UI and command replies see it immediately).
 LMMS_EXPORT Tap get(int route);
-//! Whether route @a route takes something other than the input (the input path skips it).
+//! The requested/pending UI view of route @a route: whether it takes something other than the input.
+//! Includes get/command replies, so a tap is visible here before the next period. Audio code must use
+//! audioTapped() for the published per-period value; this is not the audio decision.
 LMMS_EXPORT bool tapped(int route) noexcept;
+
+//! Render thread, at the very top of a period: publish every pending tap as the active one for this period.
+LMMS_EXPORT void beginPeriod() noexcept;
+//! Audio thread: whether route @a route's active tap takes something other than the input (skips the input
+//! path). Reads only the value beginPeriod() published, so it matches the tap producers' snapshot.
+LMMS_EXPORT bool audioTapped(int route) noexcept;
 
 //! Mixer worker: channel @a channel reached tap point @a point this period.
 LMMS_EXPORT void channelAt(const MixerChannel& channel, SidechainTapPoint point, f_cnt_t frames) noexcept;
