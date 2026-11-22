@@ -63,10 +63,17 @@ void swap(SampleBuffer& first, SampleBuffer& second) noexcept
 
 auto SampleBuffer::base64SourceBytes(size_t numFrames) -> std::optional<qsizetype>
 {
-	// The Base64 text is 4/3 of the bytes and goes into a QString at 2 bytes a character, so the
-	// source bytes may use at most 3/16 of what qsizetype can count. On 64-bit that is far beyond
-	// any buffer; on a 32-bit build it refuses the sample instead of wrapping the count.
+	// The Base64 text is 4/3 of the bytes and has to fit the container that holds it, and the byte
+	// count has to fit what QByteArray::fromRawData() takes. Qt 5 counts a QByteArray in int, on
+	// 64-bit too, so there the source is capped at INT_MAX / 4 * 3 bytes (the text then still fits an
+	// int); a larger count would be narrowed to a wrong, possibly zero, length and the saved project
+	// would lose the audio. Qt 6 counts in qsizetype and the text goes into a QString at 2 bytes a
+	// character, so the source may use at most 3/16 of what qsizetype can count.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	constexpr auto maxBytes = static_cast<size_t>(std::numeric_limits<qsizetype>::max() / 16 * 3);
+#else
+	constexpr auto maxBytes = static_cast<size_t>(std::numeric_limits<int>::max() / 4) * 3;
+#endif
 	if (numFrames > maxBytes / sizeof(SampleFrame)) { return std::nullopt; }
 	return static_cast<qsizetype>(numFrames * sizeof(SampleFrame));
 }

@@ -34,6 +34,24 @@
 
 using namespace lmms;
 
+namespace
+{
+//! Qt 6 counts a QByteArray in qsizetype, so the exact wide count is returned; Qt 5 counts it in int,
+//! so a count past INT_MAX is refused rather than handed to an int parameter.
+void expectWideOrRefused(const std::optional<qsizetype>& bytes, size_t frames)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	QVERIFY(bytes.has_value());
+	QCOMPARE(static_cast<size_t>(*bytes), frames * sizeof(SampleFrame));
+	QVERIFY(*bytes > std::numeric_limits<int>::max());
+#else
+	Q_UNUSED(frames);
+	QVERIFY(!bytes.has_value());
+#endif
+}
+} // namespace
+
+
 class SampleBufferBase64Test : public QObject
 {
 	Q_OBJECT
@@ -47,12 +65,10 @@ private slots:
 
 	void countAboveIntMaxIsNotWrapped()
 	{
-		// 300 million frames: 2.4e9 bytes, past INT_MAX, and 2^32 + 4 frames wraps to a tiny int.
+		// 300 million frames: 2.4e9 bytes, past INT_MAX.
 		const size_t frames = 300'000'000;
 		const auto bytes = SampleBuffer::base64SourceBytes(frames);
-		QVERIFY(bytes.has_value());
-		QCOMPARE(static_cast<size_t>(*bytes), frames * sizeof(SampleFrame));
-		QVERIFY(*bytes > std::numeric_limits<int>::max());
+		expectWideOrRefused(bytes, frames);
 	}
 
 	void countThatWrapsToSmallIsNotTruncated()
@@ -60,8 +76,39 @@ private slots:
 		// 2^29 frames * 8 bytes = 2^32 bytes: the int cast gives exactly 0, an empty saved sample.
 		const size_t frames = size_t{1} << 29;
 		const auto bytes = SampleBuffer::base64SourceBytes(frames);
-		QVERIFY(bytes.has_value());
-		QCOMPARE(static_cast<size_t>(*bytes), frames * sizeof(SampleFrame));
+		expectWideOrRefused(bytes, frames);
+	}
+
+	void qt5CapRefusesWhatAnIntCountedByteArrayCannotHold()
+	{
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+		// Qt 5's QByteArray::fromRawData takes an int: a count above INT_MAX / 4 * 3 would be narrowed.
+		const size_t capFrames = (static_cast<size_t>(std::numeric_limits<int>::max() / 4) * 3) / sizeof(SampleFrame);
+		QVERIFY(SampleBuffer::base64SourceBytes(capFrames).has_value());
+		QVERIFY(!SampleBuffer::base64SourceBytes(capFrames + 1));
+#else
+		QSKIP("Qt 5 only: Qt 6 counts a QByteArray in qsizetype");
+#endif
+	}
+
+	void anyAcceptedCountLeavesRoomForTheBase64Text()
+	{
+		// Probe around the limit of this Qt: every accepted count must keep its 4/3 text inside the
+		// type the QByteArray counts in (int on Qt 5, qsizetype on Qt 6).
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+		using Counter = int;
+		const size_t edge = (static_cast<size_t>(std::numeric_limits<int>::max() / 4) * 3) / sizeof(SampleFrame);
+#else
+		using Counter = qsizetype;
+		const size_t edge = (static_cast<size_t>(std::numeric_limits<qsizetype>::max() / 16) * 3) / sizeof(SampleFrame);
+#endif
+		for (const size_t frames : {edge - 1, edge, edge + 1, edge * 2})
+		{
+			const auto bytes = SampleBuffer::base64SourceBytes(frames);
+			if (!bytes) { continue; }
+			const auto text = (static_cast<quint64>(*bytes) + 2) / 3 * 4;
+			QVERIFY(text <= static_cast<quint64>(std::numeric_limits<Counter>::max()));
+		}
 	}
 
 	void countThatCannotBeHeldIsRefused()
