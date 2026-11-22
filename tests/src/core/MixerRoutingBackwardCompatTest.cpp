@@ -598,6 +598,78 @@ private slots:
 		evidence("LEGACY_UNKNOWN_EFFECT preserved=1 resaved=1");
 	}
 
+	//! A `<fxchain>` whose `numofeffects` is zero, negative, not a number,
+	//! missing, or smaller than the `<effect>` children it actually holds must
+	//! not discard those children. The count is a writer's claim, not a load
+	//! limit: every effect element present is loaded, a mismatch is reported,
+	//! and the next save writes the real count so a later open cannot lose the
+	//! devices either.
+	void malformedEffectCountDoesNotDiscardPresentEffects()
+	{
+		Song* song = Engine::getSong();
+		QVERIFY(song != nullptr);
+
+		struct CountCase
+		{
+			const char* xml;
+			int expectedEffects;
+			bool reportsMismatch;
+		};
+		static const CountCase cases[] = {
+			{"<fxchain numofeffects=\"1\" enabled=\"1\">"
+			 "<effect name=\"count-normal\"><key/></effect></fxchain>", 1, false},
+			{"<fxchain numofeffects=\"0\" enabled=\"1\">"
+			 "<effect name=\"count-zero\"><key/></effect></fxchain>", 1, true},
+			{"<fxchain numofeffects=\"-3\" enabled=\"1\">"
+			 "<effect name=\"count-negative\"><key/></effect></fxchain>", 1, true},
+			{"<fxchain numofeffects=\"abc\" enabled=\"1\">"
+			 "<effect name=\"count-word\"><key/></effect></fxchain>", 1, true},
+			{"<fxchain enabled=\"1\">"
+			 "<effect name=\"count-missing\"><key/></effect></fxchain>", 1, true},
+			{"<fxchain numofeffects=\"1\" enabled=\"1\">"
+			 "<effect name=\"count-small-a\"><key/></effect>"
+			 "<effect name=\"count-small-b\"><key/></effect></fxchain>", 2, true},
+			{"<fxchain numofeffects=\"5\" enabled=\"1\">"
+			 "<effect name=\"count-large-a\"><key/></effect>"
+			 "<effect name=\"count-large-b\"><key/></effect></fxchain>", 2, true},
+		};
+
+		for (const CountCase& testCase : cases)
+		{
+			song->clearErrors();
+			QDomDocument doc;
+			QVERIFY2(doc.setContent(QString::fromUtf8(testCase.xml)), testCase.xml);
+
+			EffectChain chain{nullptr};
+			chain.loadSettings(doc.documentElement());
+
+			QVERIFY2(static_cast<int>(chain.effects().size()) == testCase.expectedEffects,
+				qPrintable(QString("loaded %1 effects, expected %2 for %3")
+					.arg(chain.effects().size()).arg(testCase.expectedEffects).arg(testCase.xml)));
+
+			// The writer's count is corrected on save, so opening the saved
+			// file again cannot lose the effects that were just recovered.
+			QDomDocument savedDoc;
+			QDomElement saved = savedDoc.createElement(QStringLiteral("fxchain"));
+			savedDoc.appendChild(saved);
+			chain.saveSettings(savedDoc, saved);
+			QCOMPARE(saved.attribute(QStringLiteral("numofeffects")).toInt(), testCase.expectedEffects);
+			QCOMPARE(static_cast<int>(saved.elementsByTagName(QStringLiteral("effect")).size()),
+				testCase.expectedEffects);
+
+			if (testCase.reportsMismatch)
+			{
+				QVERIFY2(song->hasErrors(), qPrintable(QString("no load error for %1").arg(testCase.xml)));
+				QVERIFY2(song->errorSummary().contains(QStringLiteral("numofeffects")),
+					qPrintable(song->errorSummary()));
+			}
+			else
+			{
+				QVERIFY2(!song->hasErrors(), qPrintable(song->errorSummary()));
+			}
+		}
+	}
+
 	//! A cycle the feedback submode permits (A->B->A, the closing edge flagged)
 	//! must not make a later, unrelated check recurse forever. The traversal
 	//! has no visited set, so asking whether C->A closes a cycle walks
