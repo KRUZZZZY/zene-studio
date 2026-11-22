@@ -71,12 +71,14 @@ RnnoiseDenoiserEffect::RnnoiseDenoiserEffect(Model* parent,
 	Effect(&rnnoisedenoiser_plugin_descriptor, parent, key),
 	m_controls(this),
 	m_rnnoiseState(nullptr),
+	m_rnnoiseStateRight(nullptr),
 	m_inputCount(0),
 	m_outputPos(0),
 	m_hasOutput(false)
 {
 	// Initialise RNNoise with the default model (trained weights embedded in rnnoise_data.c)
 	m_rnnoiseState = rnnoise_create(nullptr);
+	m_rnnoiseStateRight = rnnoise_create(nullptr);
 }
 
 
@@ -87,6 +89,11 @@ RnnoiseDenoiserEffect::~RnnoiseDenoiserEffect()
 		rnnoise_destroy(m_rnnoiseState);
 		m_rnnoiseState = nullptr;
 	}
+	if (m_rnnoiseStateRight)
+	{
+		rnnoise_destroy(m_rnnoiseStateRight);
+		m_rnnoiseStateRight = nullptr;
+	}
 }
 
 
@@ -94,7 +101,8 @@ int RnnoiseDenoiserEffect::latencyFrames() const
 {
 	// processImpl() passes audio through undelayed when there is no state or the engine is not at 48 kHz.
 	const auto* engine = Engine::audioEngine();
-	return m_rnnoiseState != nullptr && engine != nullptr && engine->baseSampleRate() == RNNOISE_SAMPLE_RATE
+	return m_rnnoiseState != nullptr && m_rnnoiseStateRight != nullptr && engine != nullptr
+			&& engine->baseSampleRate() == RNNOISE_SAMPLE_RATE
 		? RNNOISE_FRAME_SIZE - 1
 		: 0;
 }
@@ -111,7 +119,7 @@ Effect::ProcessStatus RnnoiseDenoiserEffect::processImpl(
 	}
 
 	// rnnoise_create() only fails on OOM; if it did, pass audio through untouched.
-	if (!m_rnnoiseState)
+	if (!m_rnnoiseState || !m_rnnoiseStateRight)
 	{
 		return ProcessStatus::ContinueIfNotQuiet;
 	}
@@ -121,16 +129,18 @@ Effect::ProcessStatus RnnoiseDenoiserEffect::processImpl(
 
 	for (f_cnt_t i = 0; i < frames; ++i)
 	{
-		// Downmix to mono for RNNoise input and scale it into RNNoise's int16
-		// range; the accumulator therefore holds native-scale samples.
-		const float monoIn = (buf[i][0] + buf[i][1]) * 0.5f;
+		// Scale each channel into RNNoise's int16 range; the accumulators therefore
+		// hold native-scale samples of their own channel.
 		m_dryBuf[m_inputCount] = buf[i];
-		m_inputBuf[m_inputCount++] = monoIn * RNNOISE_SCALE_IN;
+		m_inputBuf[m_inputCount] = buf[i][0] * RNNOISE_SCALE_IN;
+		m_inputBufRight[m_inputCount] = buf[i][1] * RNNOISE_SCALE_IN;
+		++m_inputCount;
 
 		// When we have a full 480-sample frame, process through RNNoise
 		if (m_inputCount >= RNNOISE_FRAME_SIZE)
 		{
 			rnnoise_process_frame(m_rnnoiseState, m_outputBuf, m_inputBuf);
+			rnnoise_process_frame(m_rnnoiseStateRight, m_outputBufRight, m_inputBufRight);
 			m_inputCount = 0;
 			m_outputPos = 0;
 			m_hasOutput = true;
@@ -140,11 +150,11 @@ Effect::ProcessStatus RnnoiseDenoiserEffect::processImpl(
 		// position, delayed as much as the denoised one: its slot is rewritten only on the next sample.
 		if (m_hasOutput)
 		{
-			// Scale the denoised frame back to LMMS's normalised range
-			const float denoised = m_outputBuf[m_outputPos] * RNNOISE_SCALE_OUT;
-			const SampleFrame& dry = m_dryBuf[m_outputPos++];
-			buf[i][0] = dry[0] * d + denoised * w;
-			buf[i][1] = dry[1] * d + denoised * w;
+			// Scale each denoised frame back to LMMS's normalised range
+			const SampleFrame& dry = m_dryBuf[m_outputPos];
+			buf[i][0] = dry[0] * d + m_outputBuf[m_outputPos] * RNNOISE_SCALE_OUT * w;
+			buf[i][1] = dry[1] * d + m_outputBufRight[m_outputPos] * RNNOISE_SCALE_OUT * w;
+			++m_outputPos;
 
 			if (m_outputPos >= RNNOISE_FRAME_SIZE)
 			{
