@@ -92,6 +92,18 @@ ClipView* viewOf(const Clip* clip)
 	return nullptr;
 }
 
+//! Evidence for the tap slot: one STATE line per step, and the clip view's grab() as
+//! <ZENE_EVIDENCE_DIR>/<step>.png when that variable is set. Reads state only.
+void recordTapState(const char* step, ClipView* view, const Clip* clip)
+{
+	QCoreApplication::processEvents();
+	const QRect g = view->geometry();
+	qInfo("STATE %s selected=%d geometry=%d,%d %dx%d", step,
+		ShellSelection::instance()->clip() == clip ? 1 : 0, g.x(), g.y(), g.width(), g.height());
+	const QString dir = qEnvironmentVariable("ZENE_EVIDENCE_DIR");
+	if (!dir.isEmpty()) { view->grab().save(dir + QLatin1Char('/') + QLatin1String(step) + QStringLiteral(".png")); }
+}
+
 TrackView* trackViewOf(const Track* track)
 {
 	for (TrackView* view : getGUI()->songEditor()->m_editor->trackViews())
@@ -328,12 +340,14 @@ private slots:
 			qPrintable(QStringLiteral("track operation gaps are %1 px").arg(leastGapWithin(operationsParent, operations))));
 
 		QVERIFY(ShellSelection::instance()->clip() != clip);
+		recordTapState("before-tap", view, clip);
 		// A point 22 px into the clip: its centre can be under a side panel on a wide touch header.
 		QWidget* window = getGUI()->mainWindow();
 		const QPoint at = view->mapTo(window, QPoint(22, view->height() / 2));
 		tap(window, at);
 		QVERIFY2(ShellSelection::instance()->clip() == clip, "the touch tap did not select the clip");
 		QCOMPARE(ShellSelection::instance()->track(), clip->getTrack());
+		recordTapState("after-tap", view, clip);
 
 		// Two tracks: the clips keep the touch gap between their rows.
 		auto* below = Track::create(Track::Type::Instrument, Engine::getSong());
@@ -344,6 +358,7 @@ private slots:
 		ClipView* lowerView = viewOf(lower);
 		const int upperBottom = view->mapTo(m_editor, QPoint(0, view->height())).y();
 		const int lowerTop = lowerView->mapTo(m_editor, QPoint()).y();
+		qInfo("STATE rows upperBottom=%d lowerTop=%d gap=%d", upperBottom, lowerTop, lowerTop - upperBottom);
 		QVERIFY2(lowerTop - upperBottom >= 8,
 			qPrintable(QStringLiteral("the clips' rows are %1 px apart").arg(lowerTop - upperBottom)));
 	}

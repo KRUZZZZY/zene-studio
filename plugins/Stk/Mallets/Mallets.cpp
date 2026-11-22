@@ -329,6 +329,15 @@ void MalletsInstrument::saveSettings( QDomDocument & _doc, QDomElement & _this )
 
 void MalletsInstrument::loadSettings( const QDomElement & _this )
 {
+	// Playing with no STK rawwaves renders silence, and the view's message box never shows in a
+	// headless render. Report it through the project load's error list (stderr, project.open).
+	if( m_filesMissing )
+	{
+		collectErrorForUI( tr( "Mallets: the STK rawwave files were not found in %1, "
+					"so this instrument renders silence. Install the full Stk-package." )
+					.arg( ConfigManager::inst()->stkDir() ) );
+	}
+
 	m_versionModel.loadSettings( _this, "version" );
 
 	// ModalBar

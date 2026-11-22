@@ -831,6 +831,7 @@ docs/qwen-fixes-2026-10/sol-train-30-hosted-followup.md
 # registering, every function is CCN <= 10 and the file is under 500 lines, so gates 4 and 7
 # measure it at their existing thresholds rather than moving a baseline.
 tests/unused-result-fortify-check.py
+tests/qwaitfor-result-check.py
 docs/qwen-fixes-2026-10/cluster-ci-aa184f959f204bcd.md
 # Cluster ci-151e338efff6843e: the Qt 5 QList API portability regression for the Eq
 # spectrum view. Hosted windows-arm64 builds against Qt 5.15, where QList has neither the
@@ -2855,6 +2856,7 @@ tests/src/core/LufsMeterTest.cpp
 tests/src/core/Lv2StateTest.cpp
 tests/src/core/McuSurfaceFeedbackTest.cpp
 tests/src/core/MasteringTest.cpp
+tests/src/core/MasteringTestSourceMix.cpp
 tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiClockCaptureOutputTest.cpp
@@ -4018,3 +4020,18 @@ tests/src/plugins/BitInvaderLoadSettingsTest.cpp
 tests/src/core/AudioOssDeviceConfigTest.cpp
 # cluster new-p16-100: LocaleHelper::toFloat parse contract and the project-load non-finite leg (fork-NEW).
 tests/src/core/LocaleHelperTest.cpp
+# cluster ci-6cf85fbc066bfe48: Qt 5 QSslSocket::sslErrors overload report (fork-NEW).
+docs/qwen-fixes-2026-10/cluster-ci-6cf85fbc066bfe48.md
+# cluster ci-4ff107c9ee4dc69c: the header-only MS friend-lookup probe and its clang driver.
+tests/scripts/ms_friend_lookup_check.py
+tests/src/compile/MsFriendLookupProbe.cpp
+# cluster new-p9-340: PeakController's default null effect is a supported state (fork-NEW
+# regression: construction with the default argument and with explicit nullptr stays silent
+# across periods). The product guard is the ancestor fix; this pins it.
+tests/src/core/PeakControllerNullEffectTest.cpp
+# cluster new-p10-343: SampleBuffer::toBase64 byte count past INT_MAX (fork-NEW).
+tests/src/core/SampleBufferBase64Test.cpp
+# cluster new-p21-172: sfizz stereo-linked gate builds its detector input from the right channel.
+tests/src/plugins/SfzGateStereoLinkTest.cpp
+# cluster new-p21-172: sfizz stereo-linked compressor builds its detector input from the right channel.
+tests/src/plugins/SfzCompressorStereoLinkTest.cpp

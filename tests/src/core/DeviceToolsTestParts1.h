@@ -428,3 +428,34 @@ void DeviceToolsTest::aRepeatedSaveKeyKeepsTheFirstModelsValueThroughTheDeviceSa
 	QCOMPARE(restored.m_first.value(), 0.3f);
 	QCOMPARE(restored.m_second.value(), 0.f);  // not registered, so not loaded
 }
+void DeviceToolsTest::crossoversAboveNyquistStillSumFlatAtLowOutputRate() {
+	// 32 kHz output: Nyquist is 16 kHz, so the accepted 20 kHz maximum lies above it.
+	constexpr double rate = 32000.0;
+	RackSplit split;
+	split.mode = RackSplitMode::Bands;
+	split.crossovers = {15000.f, RackSplit::MaxCrossoverHz};
+	split.crossoverCount = 2;
+	const int frames = 6400;
+	for (const double hz : {500.0, 4000.0, 9000.0})
+	{
+		std::vector<float> sum(static_cast<std::size_t>(frames) * 2, 0.f);
+		for (int position = 0; position < 3; ++position)
+		{
+			RackSplitFilter filter;
+			filter.configure(split, position, 3, static_cast<float>(rate));
+			std::vector<float> block(static_cast<std::size_t>(frames) * 2);
+			for (int f = 0; f < frames; ++f) { block[2 * f] = block[2 * f + 1] = static_cast<float>(std::sin(kTwoPi * hz * f / rate)); }
+			filter.process(block.data(), frames);
+			for (std::size_t i = 0; i < block.size(); ++i)
+			{
+				QVERIFY(std::isfinite(block[i]));
+				sum[i] += block[i];
+			}
+		}
+		// RMS, not the sampled peak: the bands' phase shift moves the sine's crest between samples.
+		double energy = 0.0;
+		for (int f = frames / 2; f < frames; ++f) { energy += static_cast<double>(sum[2 * f]) * sum[2 * f]; }
+		const double rms = std::sqrt(energy / (frames - frames / 2)) * std::sqrt(2.0);
+		QVERIFY2(std::abs(rms - 1.0) < 0.02, qPrintable(QString::number(hz) + QStringLiteral(" Hz: ") + QString::number(rms)));
+	}
+}

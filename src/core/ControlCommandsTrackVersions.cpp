@@ -104,7 +104,7 @@ ControlResult switchVersion(const QJsonObject& args)
 	if (!before.clips.contains(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the track has no version '%1'").arg(name)); }
 	if (name == before.active) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("'%1' is the version playing").arg(name)); }
 	const QString stored = before.clips.value(name);
-	if (!QDomDocument().setContent(stored))  // review L19 #15: checked before the undo step, so nothing is recorded
+	if (!TrackVersions::isValidClipsXml(stored))  // review L19 #15, cluster 5431: unreadable or not a clip list: checked before the undo step, so nothing is recorded
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the stored version '%1' cannot be read; the track is left as it is").arg(name));
 	}

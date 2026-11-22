@@ -1075,7 +1075,9 @@ private slots:
 	void gigplayerBidirectionalLoopReflectsAtExclusiveEnd();
 	void gigplayerSingleFrameLoopRepeatsFrame();
 	void gigplayerNoProgressFallbackKeepsEarlierSamples();
+	void gigplayerForwardLoopZeroFillsShortRead();
 	void gigplayerAudioPathDoesNotAllocate();
+	void gigplayer24BitSamplePlaysAtFullScale();
 	void gigplayerCallbackDoesNotWaitForAFileLoad();
 	void gigplayerKeepsEveryOverlappingNote();
 	void gigplayerPlaysMoreThan512OverlappingNotes();
@@ -3083,6 +3085,46 @@ void PluginPortsMigrationTest::gigplayerBidirectionalLoopReflectsAtExclusiveEnd(
 namespace
 {
 
+//! Renders one held note and returns the peak of the rendered signal.
+auto renderGigPeak(lmms::Instrument& instrument, int key, int periods) -> float
+{
+	using namespace lmms;
+
+	const auto frames = Engine::audioEngine()->framesPerPeriod();
+	InstrumentTrack* track = instrument.instrumentTrack();
+
+	const Note note{TimePos{static_cast<tick_t>(frames * periods)}, TimePos{0}, key};
+	NotePlayHandle handle{track, 0, frames * periods, note, nullptr, -1,
+		NotePlayHandle::Origin::MidiClip};
+
+	if (instrument.isSingleStreamed())
+	{
+		instrument.handleMidiEvent(
+			MidiEvent{MidiNoteOn, 0, static_cast<std::int16_t>(key), 100}, TimePos{0}, 0);
+	}
+
+	std::vector<SampleFrame> data(static_cast<std::size_t>(frames));
+	float peak = 0.0f;
+
+	for (int period = 0; period < periods; ++period)
+	{
+		std::fill(data.begin(), data.end(), SampleFrame{0.0f, 0.0f});
+		const std::span<SampleFrame> span{data};
+
+		instrument.playNote(&handle, span);
+		if (instrument.isSingleStreamed()) { instrument.play(span); }
+
+		for (f_cnt_t frame = 0; frame < frames; ++frame)
+		{
+			peak = std::max(peak, std::fabs(data[frame].left()));
+			peak = std::max(peak, std::fabs(data[frame].right()));
+		}
+	}
+
+	return peak;
+}
+
+
 //! Renders one new note per period and counts the heap traffic of the render.
 auto renderGigNotesCountingHeap(lmms::Instrument& instrument, int key, int notes)
 	-> std::pair<std::size_t, std::size_t>
@@ -3246,6 +3288,142 @@ void pauseGigFileLoad(void* context)
 	}
 }
 
+
+auto readLittleEndian32(const char* data) -> std::uint32_t
+{
+	return static_cast<std::uint32_t>(static_cast<unsigned char>(data[0]))
+		| (static_cast<std::uint32_t>(static_cast<unsigned char>(data[1])) << 8)
+		| (static_cast<std::uint32_t>(static_cast<unsigned char>(data[2])) << 16)
+		| (static_cast<std::uint32_t>(static_cast<unsigned char>(data[3])) << 24);
+}
+
+void writeLittleEndian32(char* data, std::uint32_t value)
+{
+	data[0] = static_cast<char>(value & 0xFF);
+	data[1] = static_cast<char>((value >> 8) & 0xFF);
+	data[2] = static_cast<char>((value >> 16) & 0xFF);
+	data[3] = static_cast<char>((value >> 24) & 0xFF);
+}
+
+struct WaveChunks
+{
+	std::size_t format = 0;
+	std::size_t data = 0;
+	std::size_t dataSize = 0;
+};
+
+
+//! Finds the format and the data chunk of the sample inside a wave list.
+auto findWaveChunksInList(const std::vector<char>& file, std::size_t begin, std::size_t end,
+	WaveChunks& chunks) -> bool
+{
+	std::size_t inner = begin;
+	while (inner + 8 <= end)
+	{
+		const char* const chunkId = file.data() + inner;
+		const std::uint32_t chunkSize = readLittleEndian32(file.data() + inner + 4);
+		if (std::memcmp(chunkId, "fmt ", 4) == 0) { chunks.format = inner + 8; }
+		else if (std::memcmp(chunkId, "data", 4) == 0)
+		{
+			chunks.data = inner + 8;
+			chunks.dataSize = chunkSize;
+		}
+		inner += 8 + chunkSize + (chunkSize & 1u);
+	}
+
+	return chunks.format != 0 && chunks.data != 0;
+}
+
+
+//! Finds the wave list of the file and the chunks of its sample.
+auto findWaveChunks(const std::vector<char>& file, std::size_t begin, std::size_t end,
+	WaveChunks& chunks) -> bool
+{
+	std::size_t offset = begin;
+	while (offset + 8 <= end)
+	{
+		const char* const id = file.data() + offset;
+		const std::uint32_t size = readLittleEndian32(file.data() + offset + 4);
+		const std::size_t body = offset + 8;
+
+		const bool isContainer = std::memcmp(id, "LIST", 4) == 0
+			|| std::memcmp(id, "RIFF", 4) == 0;
+		if (isContainer && body + 4 <= end)
+		{
+			if (std::memcmp(file.data() + body, "wave", 4) == 0)
+			{
+				return findWaveChunksInList(file, body + 4, body + size, chunks);
+			}
+
+			if (findWaveChunks(file, body + 4, body + size, chunks)) { return true; }
+		}
+
+		offset = body + size + (size & 1u);
+	}
+
+	return false;
+}
+
+
+/*!
+ * Writes a GIG file whose sample is the positive full-scale value in every
+ * frame, with the given bit depth.
+ *
+ * The tracked fixture is a valid 16-bit GIG file. A 24-bit file with the same
+ * structure differs in the sample's format chunk and in the sample data
+ * itself: the three bytes of a 24-bit frame replace the two bytes of a
+ * 16-bit frame. The file is patched in place, so its size - and with it every
+ * offset in it - stays the same.
+ */
+auto writeFullScaleGig(const QString& source, const QString& target, int bitDepth) -> bool
+{
+	const std::size_t frameSize = bitDepth == 24 ? 3 : 2;
+
+	QFile input{source};
+	if (!input.open(QIODevice::ReadOnly)) { return false; }
+	const auto bytes = input.readAll();
+	input.close();
+
+	std::vector<char> file(bytes.begin(), bytes.end());
+
+	WaveChunks chunks;
+	if (!findWaveChunks(file, 0, file.size(), chunks)) { return false; }
+	if (chunks.dataSize % frameSize != 0) { return false; }
+
+	// The format chunk: the block align and the average byte rate that go
+	// with the bit depth.
+	char* const format = file.data() + chunks.format;
+	writeLittleEndian32(format + 8, 44100u * static_cast<std::uint32_t>(frameSize));
+	format[12] = static_cast<char>(frameSize);
+	format[13] = 0;
+	format[14] = static_cast<char>(bitDepth);
+	format[15] = 0;
+
+	// The sample data: every frame is the full-scale maximum of the bit
+	// depth, written little endian.
+	char* const data = file.data() + chunks.data;
+	for (std::size_t frame = 0; frame < chunks.dataSize / frameSize; ++frame)
+	{
+		if (frameSize == 3)
+		{
+			data[3 * frame + 0] = static_cast<char>(0xFF);
+			data[3 * frame + 1] = static_cast<char>(0xFF);
+			data[3 * frame + 2] = static_cast<char>(0x7F);
+		}
+		else
+		{
+			data[2 * frame + 0] = static_cast<char>(0xFF);
+			data[2 * frame + 1] = static_cast<char>(0x7F);
+		}
+	}
+
+	QFile output{target};
+	if (!output.open(QIODevice::WriteOnly)) { return false; }
+	const bool written = output.write(file.data(), static_cast<qint64>(file.size()))
+		== static_cast<qint64>(file.size());
+	output.close();
+	return written;
+}
 
 } // namespace
 
@@ -3830,6 +4008,77 @@ void PluginPortsMigrationTest::gigplayerSurvivesGlobalVoicePoolExhaustion()
 }
 
 
+//! A full-scale 24-bit sample has to play at the full scale of the output.
+//!
+//! Both bit depths normalise a full-scale sample to the digital full scale:
+//! the 16-bit path divides by 0x8000 (BUG-8), the 24-bit path shifts the value
+//! left by eight and divides it by 0x80000000. The two full-scale fixtures
+//! therefore render at the same level. A 24-bit sample that divided by
+//! 0x100000000 would play at half of the expected level, i.e. at half the
+//! level of the 16-bit fixture.
+void PluginPortsMigrationTest::gigplayer24BitSamplePlaysAtFullScale()
+{
+#ifndef PART_C_MIGRATED_gigplayer
+	QSKIP("GigPlayer is unavailable in this configuration");
+#else
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_gigplayer)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	partc::prepareInstrumentEnvironment("gigplayer");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+
+	QTemporaryDir directory;
+	QVERIFY(directory.isValid());
+	const QString fixture16 = directory.filePath(QStringLiteral("fullscale16.gig"));
+	const QString fixture24 = directory.filePath(QStringLiteral("fullscale24.gig"));
+	QVERIFY2(writeFullScaleGig(QString::fromUtf8(PART_C_GIG_FILE), fixture16, 16),
+		"the 16-bit test fixture could not be written");
+	QVERIFY2(writeFullScaleGig(QString::fromUtf8(PART_C_GIG_FILE), fixture24, 24),
+		"the 24-bit test fixture could not be written");
+
+	const auto renderFixture = [&](const QString& path) {
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("instrument"));
+		QDomElement saved = instrument->saveState(doc, root);
+		saved.setAttribute(QStringLiteral("src"), path);
+		saved.setAttribute(QStringLiteral("patch"), QStringLiteral("0"));
+		saved.setAttribute(QStringLiteral("bank"), QStringLiteral("0"));
+		instrument->restoreState(saved);
+		return renderGigPeak(*instrument, lmms::DefaultKey, 64);
+	};
+
+	const float peak16 = renderFixture(fixture16);
+	const float peak24 = renderFixture(fixture24);
+	delete instrument;
+
+	QVERIFY2(peak16 > 0.05f,
+		qPrintable(QString{"the full-scale 16-bit fixture rendered at %1, which is silence"}
+			.arg(peak16, 0, 'g', 6)));
+
+	const float ratio = peak24 / peak16;
+	QVERIFY2(ratio > 0.9f,
+		qPrintable(QString{"a full-scale 24-bit sample played at %1, which is half the "
+			"level of the full-scale 16-bit sample (%2)"}
+			.arg(peak24, 0, 'g', 6).arg(peak16, 0, 'g', 6)));
+	QVERIFY2(ratio < 1.1f,
+		qPrintable(QString{"a full-scale 24-bit sample played at %1, which is not the "
+			"level of the full-scale 16-bit sample (%2)"}
+			.arg(peak24, 0, 'g', 6).arg(peak16, 0, 'g', 6)));
+#endif
+}
+
+
 void PluginPortsMigrationTest::gigplayerSingleFrameLoopRepeatsFrame()
 {
 #ifndef PART_C_MIGRATED_gigplayer
@@ -3949,6 +4198,103 @@ void PluginPortsMigrationTest::gigplayerNoProgressFallbackKeepsEarlierSamples()
 	QCOMPARE(shared[1].right(), 0.375f);
 	QCOMPARE(shared[2].left(), 0.125f);
 	QCOMPARE(shared[2].right(), 0.5f);
+#endif
+}
+
+
+namespace
+{
+
+//! A fake GIG sample: frame i is four bytes of value i + 1; reads stop at `length`.
+struct FakeGigSource
+{
+	long position = 0;
+	long length = 0;
+};
+
+long fakeGigRead(void* context, void* destination, long frames)
+{
+	auto* source = static_cast<FakeGigSource*>(context);
+	auto* bytes = static_cast<std::int8_t*>(destination);
+	long done = 0;
+	for (; done < frames && source->position < source->length; ++done, ++source->position)
+	{
+		for (int b = 0; b < 4; ++b) { bytes[done * 4 + b] = static_cast<std::int8_t>(source->position + 1); }
+	}
+	return done;
+}
+
+long fakeGigPosition(void* context) { return static_cast<FakeGigSource*>(context)->position; }
+void fakeGigSeek(void* context, long frame) { static_cast<FakeGigSource*>(context)->position = frame; }
+
+struct FakeGigLoopSource
+{
+	void* context;
+	long (*read)(void*, void*, long);
+	long (*position)(void*);
+	void (*seek)(void*, long);
+};
+
+} // namespace
+
+// A forward loop whose source runs out before the block is full (a loop that
+// lies past the end of the sample data, or a short Read()) must not leave the
+// tail of the block uninitialised: the caller converts the whole block.
+void PluginPortsMigrationTest::gigplayerForwardLoopZeroFillsShortRead()
+{
+#ifndef PART_C_MIGRATED_gigplayer
+	QSKIP("GigPlayer is unavailable in this configuration");
+#else
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_gigplayer)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	using ReadForwardLoop = lmms::f_cnt_t (*)(const FakeGigLoopSource*, std::int8_t*, unsigned long,
+		lmms::f_cnt_t, lmms::f_cnt_t, lmms::f_cnt_t);
+	auto readLoop = reinterpret_cast<ReadForwardLoop>(lib->resolve("gigplayerReadForwardLoop"));
+	QVERIFY2(readLoop != nullptr, "the GigPlayer module does not export gigplayerReadForwardLoop");
+
+	constexpr unsigned long frameSize = 4;
+	constexpr lmms::f_cnt_t frames = 16;
+
+	// Short read: the sample has 100 frames but the loop ends at 200, so the
+	// source runs dry after 10 frames. The buffer is poisoned beforehand.
+	{
+		FakeGigSource fake{90, 100};
+		const FakeGigLoopSource source{&fake, fakeGigRead, fakeGigPosition, fakeGigSeek};
+		std::array<std::int8_t, frames * frameSize> buffer;
+		buffer.fill(0x55);
+		const auto read = readLoop(&source, buffer.data(), frameSize, frames, 64, 200);
+		QCOMPARE(read, lmms::f_cnt_t{10});
+		for (std::size_t i = 0; i < buffer.size(); ++i)
+		{
+			const std::int8_t expected = i < 10 * frameSize ? static_cast<std::int8_t>(90 + i / frameSize + 1) : 0;
+			QVERIFY2(buffer[i] == expected,
+				qPrintable(QString{"byte %1 is %2, expected %3 (unread tail must be zero)"}
+					.arg(i).arg(buffer[i]).arg(expected)));
+		}
+	}
+
+	// A loop that really wraps keeps filling the whole block from the loop start.
+	{
+		FakeGigSource fake{6, 100};
+		const FakeGigLoopSource source{&fake, fakeGigRead, fakeGigPosition, fakeGigSeek};
+		std::array<std::int8_t, frames * frameSize> buffer;
+		buffer.fill(0x55);
+		const auto read = readLoop(&source, buffer.data(), frameSize, frames, 4, 8);
+		QCOMPARE(read, frames);
+		for (lmms::f_cnt_t i = 0; i < frames; ++i)
+		{
+			const int frame = i < 2 ? 6 + i : 4 + (i - 2) % 4;
+			QCOMPARE(static_cast<int>(buffer[i * frameSize]), frame + 1);
+		}
+	}
 #endif
 }
 

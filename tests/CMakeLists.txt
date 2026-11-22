@@ -335,6 +335,10 @@ set(LMMS_TESTS
 	# in-process claim with no hardware - and the mapping templates
 	# (save/list/read/apply, and what they report they cannot resolve).
 	src/core/ControllerSurfaceTest.cpp
+	# cluster new-p9-340: PeakController's default null effect is a supported
+	# state. Construction must not dereference it, and the null branch fills
+	# each period with silence (default and explicit nullptr arguments).
+	src/core/PeakControllerNullEffectTest.cpp
 	# cluster new-p15-90: a replaced user LFO waveform stays owned through a
 	# render lease and is reclaimed only on the control thread after release.
 	src/core/LfoControllerUserWaveTest.cpp
@@ -506,6 +510,7 @@ set(LMMS_TESTS
 	src/core/LoudnessReportTest.cpp
 	src/core/LufsMeterTest.cpp
 	src/core/MasteringTest.cpp
+	src/core/MasteringTestSourceMix.cpp
 	# Startup and CLI regressions: the selected UI scale, dump/compress refusals,
 	# and session-marker cleanup on failed command startup.
 	src/core/MainCliStartupTest.cpp
@@ -1050,6 +1055,8 @@ set(LMMS_TESTS
 	src/core/RecordToolsNoEngineTest.cpp
 	# Cluster stress-1 (2026-10-27): a default SampleBuffer and the metronome samples with no engine and no data dir.
 	src/core/SampleBufferNoEngineTest.cpp
+	# Cluster new-p10-343: toBase64() byte count past INT_MAX.
+	src/core/SampleBufferBase64Test.cpp
 	# 0.5.0 L04 (W3): the clip list, sections, remove silence, tab to transient, note rotation.
 	src/core/ArrangeToolsTest.cpp
 	# 0.5.0 L05/L06 (W3): crop, unique copies, fade curves, asymmetric crossfades, automation switches, trim, moving a point.
@@ -2077,6 +2084,10 @@ if(TARGET sfzplayer_sfizz)
 	list(APPEND LMMS_TESTS src/plugins/SfzEQPoolExhaustionTest.cpp)
 	# Cluster new-p21-169: a zero-duration sustained FlexEG stage holds its target level.
 	list(APPEND LMMS_TESTS src/plugins/SfzFlexEnvelopeZeroStageTest.cpp)
+	# Cluster new-p21-172: sfizz's stereo-linked gate builds its detector input from the right channel.
+	list(APPEND LMMS_TESTS src/plugins/SfzGateStereoLinkTest.cpp)
+	# Cluster new-p21-172: sfizz's stereo-linked compressor builds its detector input from the right channel.
+	list(APPEND LMMS_TESTS src/plugins/SfzCompressorStereoLinkTest.cpp)
 endif()
 
 # Qwen cluster new-p21-158: a reset filter holder must bypass until its next setup.
@@ -2288,7 +2299,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if(LMMS_TEST_NAME STREQUAL "HistoricalBufferResizeTest"
 		OR LMMS_TEST_NAME STREQUAL "HistoricalBufferEmptyTest"
 		OR LMMS_TEST_NAME STREQUAL "SfzEQPoolExhaustionTest"
-		OR LMMS_TEST_NAME STREQUAL "SfzFlexEnvelopeZeroStageTest")
+		OR LMMS_TEST_NAME STREQUAL "SfzFlexEnvelopeZeroStageTest"
+		OR LMMS_TEST_NAME STREQUAL "SfzCompressorStereoLinkTest"
+		OR LMMS_TEST_NAME STREQUAL "SfzGateStereoLinkTest")
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src/sfizz
 			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src
@@ -3965,6 +3978,20 @@ set_tests_properties(ShellTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen
 set_tests_properties(ShellFloatButtonTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TouchLayoutTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# RED regression probe for the ClipView/AutomationTrackView/PatternClipView
+# friend-lookup ambiguity: clang in MS compatibility mode compiles a header-only
+# probe with the TouchLayoutTest flags and must report the three ambiguity errors
+# until the headers are fixed. Registered only where clang is installed; MSVC CI is covered by compiling TouchLayoutTest.cpp itself.
+find_program(CLANG_COMPAT_EXECUTABLE NAMES clang++ clang)
+if(CLANG_COMPAT_EXECUTABLE AND PYTHON3_EXECUTABLE)
+	add_test(NAME MsFriendLookupTest
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/ms_friend_lookup_check.py
+			${CMAKE_BINARY_DIR}/compile_commands.json
+			${CMAKE_CURRENT_SOURCE_DIR}/src/compile/MsFriendLookupProbe.cpp
+			${CLANG_COMPAT_EXECUTABLE})
+endif()
+
 set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteMelodyTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(StepGridPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -4709,6 +4736,10 @@ set_tests_properties(PluginPortsMigrationTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FreeBoy FreeBoyPoolReclamation FreeBoySampleRateHandoff PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# Cluster new-p15-71: a full-scale 24-bit GIG sample has to render at the same
+# level as the full-scale 16-bit path, not at half of it.
+add_test(NAME GigPlayer24BitFullScale COMMAND PluginPortsMigrationTest gigplayer24BitSamplePlaysAtFullScale)
+set_tests_properties(GigPlayer24BitFullScale PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # Cluster new-p9-326: the focused OpulenZ held-note regression. It runs in the
 # PluginPortsMigrationTest executable (the plugin-module host it needs lives
 # there), so the registration is a second ctest entry over the same binary.
@@ -9436,6 +9467,21 @@ if(PYTHON3_EXECUTABLE)
 			--build-dir ${CMAKE_BINARY_DIR}
 			--compiler ${CMAKE_CXX_COMPILER})
 	set_tests_properties(UnusedResultFortifyCheck PROPERTIES TIMEOUT 300)
+endif()
+
+
+# cluster ci-d1d791015ce10efd: hosted linux-arm64 (-DUSE_WERROR=ON) stopped on
+# tests/src/core/UpdateCheckTest.cpp, which discarded QTest::qWaitFor's [[nodiscard]] result.
+# The local build tree carries -Wno-error=unused-result, so the check recompiles the real
+# translation unit from compile_commands.json with that relaxation removed and
+# -Werror=unused-result added; its fixtures prove the flags reject a discarded result.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME QWaitForResultCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/qwaitfor-result-check.py
+			--build-dir ${CMAKE_BINARY_DIR}
+			--compiler ${CMAKE_CXX_COMPILER})
+	set_tests_properties(QWaitForResultCheck PROPERTIES TIMEOUT 300)
 endif()
 
 

@@ -37,6 +37,24 @@ namespace lmms
 
 class SampleTrack;
 
+//! One period of capture input as the monitor reads it: the wide interleaved buffer
+//! (`wideFrames == 0` when no backend fills it) and the stereo input buffer.
+struct MonitorInputSource
+{
+	const float* wide = nullptr;
+	f_cnt_t wideFrames = 0;
+	int wideChannels = 0;
+	const SampleFrame* stereo = nullptr;
+	f_cnt_t stereoFrames = 0;
+};
+
+//! Copies input channel @a channel of @a source into @a buffer, mono to both sides, and
+//! returns the frames passed. While the wide capture is active (`wideFrames > 0`) only its
+//! own channels are read: a channel it does not carry is silence (0 frames), never another
+//! input. The stereo buffer is read only while the wide capture is inactive. Realtime-safe.
+LMMS_EXPORT f_cnt_t copyMonitorInput(const MonitorInputSource& source, int channel,
+	std::span<SampleFrame> buffer) noexcept;
+
 /*! The monitor path of ONE sample track: a play handle on the track's own bus, so the input
  *  goes through the track's devices, fader, pan and mixer channel exactly like its clips.
  *  It exists only while the track's mode is not Off (SampleTrack adds and removes it), and

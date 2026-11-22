@@ -2799,6 +2799,7 @@ tests/data/vst2-test-instrument/zene_vst2_abi.h
 tests/data/vst3-chunk-probe/vst3-chunk-probe.cpp
 tests/data/vst3-test-instrument/vst3-test-instrument.cpp
 tests/exprtk.hpp
+tests/src/compile/MsFriendLookupProbe.cpp
 tests/src/core/AafImportTest.cpp
 tests/src/core/AbletonLinkAllocatorTest.cpp
 tests/src/core/AbletonLinkEsp32RunnerTest.cpp
@@ -3057,6 +3058,7 @@ tests/src/core/Lv2StateTest.cpp
 tests/src/core/MainCliStartupTest.cpp
 tests/src/core/MasteringSequenceTest.cpp
 tests/src/core/MasteringTest.cpp
+tests/src/core/MasteringTestSourceMix.cpp
 tests/src/core/MasteringTestSupport.h
 tests/src/core/MathTest.cpp
 tests/src/core/McuSurfaceFeedbackTest.cpp
@@ -3146,6 +3148,7 @@ tests/src/core/ParameterControlsTest.cpp
 tests/src/core/PartialLoadTest.cpp
 tests/src/core/PatcherCommandsTest.cpp
 tests/src/core/PdcMixerTest.cpp
+tests/src/core/PeakControllerNullEffectTest.cpp
 tests/src/core/PeakJobsTest.cpp
 tests/src/core/PhaseDMixerTestSupport.h
 tests/src/core/PhaseDPerfBench.cpp
@@ -3232,6 +3235,7 @@ tests/src/core/SaSpectrumViewTest.cpp
 tests/src/core/SafeStartLoadPathTest.cpp
 tests/src/core/SafeStartTest.cpp
 tests/src/core/SampleAccurateAutomationTest.cpp
+tests/src/core/SampleBufferBase64Test.cpp
 tests/src/core/SampleBufferNoEngineTest.cpp
 tests/src/core/SampleBufferResampleTest.cpp
 tests/src/core/SampleDecoderLimitTest.cpp
@@ -3652,12 +3656,14 @@ tests/src/plugins/SampleRateDependentLadspa.cpp
 tests/src/plugins/Sf2PlayerFixture.h
 tests/src/plugins/Sf2PlayerRealtimeTest.cpp
 tests/src/plugins/SfizzLeakDetectorTest.cpp
+tests/src/plugins/SfzCompressorStereoLinkTest.cpp
 tests/src/plugins/SfzDistoBuffersTest.cpp
 tests/src/plugins/SfzEQPoolExhaustionTest.cpp
 tests/src/plugins/SfzEffectBusViewTest.cpp
 tests/src/plugins/SfzFilePoolTest.cpp
 tests/src/plugins/SfzFilterEqDescriptionTest.cpp
 tests/src/plugins/SfzFlexEnvelopeZeroStageTest.cpp
+tests/src/plugins/SfzGateStereoLinkTest.cpp
 tests/src/plugins/SfzPlayerRealtimeTest.cpp
 tests/src/plugins/SfzPlayerTest.cpp
 tests/src/plugins/SfzSimdGainAVXTest.cpp
