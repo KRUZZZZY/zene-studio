@@ -122,3 +122,20 @@ independent of what the library reports.
   44100..192000 window at `src/core/ControlCommandsExportPresets.cpp:231-241`),
   and no `app.*`, `arrangement.*` or other sibling command reads the loader, so
   none is affected.
+
+## Round 2 re-verification (logs in runs/new-p10-223.r2/logs)
+
+Round 1's session ended with nothing committed after the review; the fix and
+tests were already on the branch. Round 2 re-proved red/green on the merged tree
+(product code unchanged, `src/core/MasteringJob.cpp` at HEAD `69c2987e1562728961ec1e0fb5a4126895820af9`).
+
+| step | command | exit |
+| --- | --- | --- |
+| RED | behaviour-only reversal `logs/unfix.patch` (rate window check disabled, cap and overflow check in `checkedSampleCount` removed), `cmake --build build -j4 --target MasteringTestSourceMix` (`build-1-unfixed.log`) exit 0, then `cd build/tests && ctest -R MasteringTest --output-on-failure` (`test-1-unfixed.log`) | 8 - MasteringTestSourceMix failed, 8 FAIL! rows |
+| GREEN | `git apply -R logs/unfix.patch` (exit 0, `git status` clean), rebuild `zene MasteringTest MasteringTestSourceMix` (`build-2-fixed.log`) exit 0, `XDG_CACHE_HOME=<log dir> ctest -R Mastering --output-on-failure` (`test-2-fixed.log`) | 0 - 10/10 passed |
+| gates | `feature_check.py <worktree>` (`gates-1.log`) | 0 - no FAIL |
+
+The literal `git apply -R fix.patch` is not usable here for the reason given
+under "Notes on method" (it removes the seams the tests call), so the reversal is
+behaviour-only. `XDG_CACHE_HOME` is redirected only because `~/.cache` is
+read-only in this sandbox (`MasteringSequenceTest` writes its template there).
