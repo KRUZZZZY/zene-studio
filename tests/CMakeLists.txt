@@ -4793,6 +4793,33 @@ target_compile_definitions(Lb302NotePathTest PRIVATE
 	PLUGIN_NAME=lb302
 )
 
+# Cluster new-p9-255: the LB302 filter settings must cross from the control
+# thread to the audio thread through a published snapshot rather than writing
+# the audio-owned state synchronously. The test guards on the header, so it
+# builds (and fails with a clear message) until the mailbox exists.
+add_executable(Lb302FilterMailboxTest
+	src/plugins/Lb302FilterMailboxTest.cpp
+)
+add_test(NAME Lb302FilterMailboxTest COMMAND Lb302FilterMailboxTest)
+set_tests_properties(Lb302FilterMailboxTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(Lb302FilterMailboxTest PRIVATE
+	# the generated plugin_export.h (PLUGIN_EXPORT) of the lb302 plug-in
+	${CMAKE_BINARY_DIR}/plugins/Lb302
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/Lb302
+)
+add_dependencies(Lb302FilterMailboxTest lb302)
+target_compile_features(Lb302FilterMailboxTest PRIVATE cxx_std_20)
+target_link_libraries(Lb302FilterMailboxTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_definitions(Lb302FilterMailboxTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_STATIC_DEFINE
+	PLUGIN_NAME=lb302
+)
+
 # Regression for cluster new-p10-377: SlicerT waveform zoom clamped only at
 # zero (waveform disappears) and unbounded above. The plugin is built as a
 # module, so its sources are compiled into the test binary like WasmSandboxTest.

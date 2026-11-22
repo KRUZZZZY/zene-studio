@@ -1545,6 +1545,7 @@ plugins/Gate/GateControls.cpp
 plugins/Gate/GateControls.h
 plugins/InsertRecorder/InsertRecorder.cpp
 plugins/InsertRecorder/InsertRecorder.h
+plugins/Lb302/Lb302FilterMailbox.h
 plugins/Modulation/Modulation.cpp
 plugins/Modulation/Modulation.h
 plugins/Modulation/ModulationControlDialog.cpp
@@ -3471,6 +3472,9 @@ docs/qwen-fixes-2026-10/cluster-new-p16-64.md
 # cluster new-p12-44-port-port (2026-10): the landing pass checkpoints one track once - report for the fix ported onto the newest line.
 docs/qwen-fixes-2026-10/cluster-new-p12-44-port-port.md
 tests/src/plugins/Lb302NotePathTest.cpp
+# cluster new-p9-255 (2026-10): the LB302 filter settings cross from the control thread to
+# the audio thread through a published snapshot adopted at a block boundary (fork-NEW test).
+tests/src/plugins/Lb302FilterMailboxTest.cpp
 # cluster 409 (2026-10): FFTW's planner API may not run while the audio thread executes a plan;
 # the convolution kernel's plans live in a scope that takes the engine's model-change guard
 # (the fork-NEW product sources are listed in the sorted block above; the regression test and
