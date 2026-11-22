@@ -88,6 +88,30 @@ p5 commands:
 
 None.
 
+## Round 2 re-verification (logs in `runs/ci-4ff107c9ee4dc69c.r2/logs/`)
+
+Round 1 QA: "previous session ended without committing anything". This round
+re-ran step 4b with every exit code written to a log file, then committed.
+
+| # | Command | EXIT | Log |
+|---|---|---|---|
+| 01 | `git diff 8571717ae8 HEAD -- include/Clip.h include/AutomationTrack.h include/PatternClip.h > logs/fix.patch` | 0 | `01-patch.log` (`PATCH_EXIT=0`) |
+| 01 | `git apply -R logs/fix.patch` | 0 | `01-patch.log` (`APPLY_R_EXIT=0`; 3 headers changed) |
+| 02 | `cd build/tests && ctest -R MsFriendLookupTest --output-on-failure` (fix reverted) | 8 | `02-test-red.log` (`reference to 'ClipView' is ambiguous`, same for `AutomationTrackView`, `PatternClipView`; `CTEST_EXIT=8`) |
+| 03 | `git apply logs/fix.patch` | 0 | `03-reapply.log` (`APPLY_EXIT=0`, tree clean afterwards) |
+| 04 | `cd build/tests && ctest -R MsFriendLookupTest --output-on-failure` (fix applied) | 0 | `04-test-green.log` (1/1 passed, `CTEST_EXIT=0`) |
+| 05 | `cmake --build build --target zene TouchLayoutTest -j4` | 0 | `05-build.log` |
+| 11 | `cmake --build build -j4 --target <16 automation test targets not yet built>` | 0 | `11-build-family.log` |
+| 12 | `ctest -R "MsFriendLookup\|TouchLayout\|Clip\|Automation\|Pattern" -j4` | 0 | `12-test-family.log` (100% of 66 passed) |
+| 07 | `python3 feature_check.py <worktree>` | 0 | `07-feature-check.log` (`RESULT: PASS`) |
+
+The probe reads the headers straight from the source tree via clang, so the
+red/green runs need no binary rebuild. An earlier family run (`06`, EXIT=8)
+showed 16 tests `Not Run` because their executables had never been built;
+after building them (`11`) the family passed (`12`). Two build attempts
+(`09`, `11`-precursor) failed only from shell word-splitting of the target
+list (make: "File name too long"), not from code.
+
 ## Self-check
 
 - **Regression test fails with the product change reverted and passes with it.**
@@ -97,7 +121,10 @@ None.
   original red at `05-test-red.log`, EXIT=8). Restoring the fix
   (`git apply`, EXIT seen from `; echo EXIT=$?` on the console in p4, not
   saved to a log) made it pass: `logs/13-test-reapplied.log`, EXIT=0
-  (also `07-test-green.log`, EXIT=0). Each mutant that reverted one friend to
+  (also `07-test-green.log`, EXIT=0). Round 2 re-ran this with the apply
+  exits logged: `r2/logs/01-patch.log` APPLY_R_EXIT=0, `02-test-red.log`
+  CTEST_EXIT=8, `03-reapply.log` APPLY_EXIT=0, `04-test-green.log`
+  CTEST_EXIT=0. Each mutant that reverted one friend to
   its unqualified form also fails (logs 14/15/16, EXIT=8 each).
 - **The test is deterministic.** It runs a `clang++ -fsyntax-only` compile
   probe with fixed flags and a fixed `-fms-compatibility-version=19.40`; there
