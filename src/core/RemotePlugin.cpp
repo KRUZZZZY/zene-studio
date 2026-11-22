@@ -468,13 +468,12 @@ auto periodBudget() -> std::chrono::steady_clock::duration
 auto periodDeadline(std::chrono::steady_clock::time_point now) -> std::chrono::steady_clock::time_point
 {
 	const auto budget = periodBudget();
-	// The wait ends an eighth of a period early: the rest of the graph still has time after a late client.
-	const auto usable = budget - budget / 8;
 	// Only the thread that renders a period is inside one; anywhere else the budget is one period from now.
-	if (!RenderPeriodClock::renderingOnThisThread()) { return now + usable; }
-	const auto renderStart = RenderPeriodClock::periodStart();
-	if (now < renderStart || now - renderStart > 2 * budget) { return now + usable; }
-	return renderStart + usable;
+	if (!RenderPeriodClock::renderingOnThisThread())
+	{
+		return RemotePlugin::periodDeadlineForTesting(now, now, budget);
+	}
+	return RemotePlugin::periodDeadlineForTesting(now, RenderPeriodClock::periodStart(), budget);
 }
 
 } // namespace
@@ -488,6 +487,21 @@ void RemotePlugin::setPeriodBudgetForTesting(std::chrono::microseconds budget)
 void RemotePlugin::setQueryReplyTimeoutForTesting(std::chrono::milliseconds timeout)
 {
 	s_queryReplyTimeoutForTestingMs.store(timeout.count(), std::memory_order_relaxed);
+}
+
+std::chrono::steady_clock::time_point RemotePlugin::periodDeadlineForTesting(
+	std::chrono::steady_clock::time_point now,
+	std::chrono::steady_clock::time_point renderStart,
+	std::chrono::steady_clock::duration budget )
+{
+	// The wait ends at least an eighth of a period early: the rest of the graph still has time after a late client.
+	// The margin is also at least 1 ms because receiveFrameBefore rounds the remaining span up with ceil.
+	const auto minimum = std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::milliseconds{1});
+	const auto usable = budget - std::max(budget / 8, minimum);
+	// A start in the future or more than two periods old is no running period, so the budget is one period
+	// from now; otherwise the wait gets only what is left of the period that started at renderStart.
+	if (now < renderStart || now - renderStart > 2 * budget) { return now + usable; }
+	return renderStart + usable;
 }
 
 
