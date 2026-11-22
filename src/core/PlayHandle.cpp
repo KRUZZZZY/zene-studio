@@ -25,6 +25,7 @@
 #include "PlayHandle.h"
 #include "AudioEngine.h"
 #include "BufferManager.h"
+#include "RealtimeScope.h"
 #include "Engine.h"
 #include "SampleFrame.h"
 
@@ -34,11 +35,11 @@
 namespace lmms
 {
 
-PlayHandle::PlayHandle(const Type type, f_cnt_t offset) :
+PlayHandle::PlayHandle(const Type type, f_cnt_t offset, bool poolBuffer) :
 		m_type(type),
 		m_offset(offset),
 		m_affinity(QThread::currentThread()),
-		m_playHandleBuffer(BufferManager::acquire()),
+		m_playHandleBuffer((poolBuffer && RealtimeScope::isActive()) ? BufferManager::acquire() : BufferManager::leaseBlocking()),
 		m_bufferReleased(true),
 		m_usesBuffer(true),
 		m_audioBusHandle(nullptr)
@@ -55,9 +56,11 @@ void PlayHandle::doProcessing()
 {
 	if( m_usesBuffer )
 	{
+		if (!m_playHandleBuffer) { return; } // exhausted pool: nothing to render into this period
 		m_bufferReleased = false;
-		zeroSampleFrames(m_playHandleBuffer.data(), m_playHandleBuffer.size());
-		play(m_playHandleBuffer);
+		const auto frames = m_playHandleBuffer.frames();
+		zeroSampleFrames(frames.data(), frames.size());
+		play(frames);
 	}
 	else
 	{
@@ -73,7 +76,7 @@ void PlayHandle::releaseBuffer()
 
 std::span<SampleFrame> PlayHandle::buffer()
 {
-	return m_bufferReleased ? std::span<SampleFrame>{} : m_playHandleBuffer;
+	return (m_bufferReleased || !m_playHandleBuffer) ? std::span<SampleFrame>{} : m_playHandleBuffer.frames();
 };
 
 } // namespace lmms
