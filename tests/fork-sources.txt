@@ -4024,3 +4024,5 @@ tests/src/plugins/BitInvaderLoadSettingsTest.cpp
 tests/src/core/AudioOssDeviceConfigTest.cpp
 # cluster new-p16-100: LocaleHelper::toFloat parse contract and the project-load non-finite leg (fork-NEW).
 tests/src/core/LocaleHelperTest.cpp
+# cluster ci-6cf85fbc066bfe48: Qt 5 QSslSocket::sslErrors overload report (fork-NEW).
+docs/qwen-fixes-2026-10/cluster-ci-6cf85fbc066bfe48.md
