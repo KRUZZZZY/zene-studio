@@ -183,15 +183,40 @@ Log: `logs/feature-check-1.log`.
 
 ## Self-check
 
-- Does the test fail without the product change? Yes, exit 8 with ratio 0.435972 /
-  0.871917 (~0.5); see RED and 4b above.
-- Does it pass with the change? Yes, exit 0, and the case appears as `PASS` in the
-  17-case GigPlayer run (`logs/test-4-gigfamily.log`).
-- Are callers and siblings consistent? `loadSample()` is the only conversion site.
-  The frozen reference is intentionally left at the old behaviour because it is
-  the pre-migration baseline and the harness only renders the 16-bit fixture.
-- Any work left unverified? No: this box built and ran the test; the unrelated
-  family failures are named with their missing fixtures.
+- **The regression test FAILS with the product change reverted and PASSES with it
+  (exit codes).** Reverted: `ctest -R GigPlayer24BitFullScale` EXIT=8 with
+  `ratio > 0.9f` false (24-bit 0.435972 vs 16-bit 0.871917). Restored: same
+  command EXIT=0. Logs `logs/test-5-reverted-red.log`,
+  `logs/test-6-refixed-green.log`.
+- **The test is deterministic.** It uses no wall clock, sleeps or threads. The
+  fixtures are generated deterministically from the tracked
+  `tests/data/gigproof/sine440.gig` (16-bit and 24-bit full-scale PCM written
+  into the same-sized file), the render is a fixed 64 periods through the real
+  plugin entry point. The measured ratio is produced by injected sample values,
+  not by timing.
+- **The fix is at the cause and complete.** `GigInstrument::loadSample()` is the
+  only 24-bit conversion in the product (`rg -n "0x100000000" plugins/GigPlayer`
+  now finds nothing). Both channels were changed (`:1372`, `:1385`), and the
+  16-bit sibling (`:1395`, `:1404`) already normalised by `0x8000`. The frozen
+  pre-migration reference keeps the old constant on purpose: it is the baseline
+  the harness compares against and the harness only renders the tracked 16-bit
+  fixture, with a documented 2x scale factor at
+  `tests/src/plugins/PluginPortsMigrationTest.cpp:2584-2600`.
+- **No collateral damage.** Project and preset XML, the `src`/`patch`/`bank`
+  attributes, patch selection and save/load are untouched; only the arithmetic
+  scale applied to decoded 24-bit PCM changed, and 16-bit audio is untouched. No
+  limit or check was added, so no other caller can be rejected. The focused
+  ctest case and all 15 GigPlayer cases pass (`logs/test-4-gigfamily.log`).
+- **ALREADY-FIXED / FALSE-POSITIVE code evidence.** Not applicable: the verdict
+  is FIXED. The buggy constant was visible at
+  `plugins/GigPlayer/GigPlayer.cpp:1372` before this change, and the earlier
+  revert is commit `c844f8f1cf`.
+- **Sibling commands.** This fix changes no command file
+  (`ControlCommands*`, `ControlRegistry*`, `ControlReversibilityTable*` are
+  untouched). The `app.*` and `arrangement.*` ids listed by the pre-submit
+  check come from other commits on the shared branch, not this cluster. GIG
+  sample decoding has no agent command and this fix adds none, so no sibling
+  command behaviour changes.
 
 ## Other findings
 
