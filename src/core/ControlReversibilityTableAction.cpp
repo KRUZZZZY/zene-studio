@@ -276,6 +276,8 @@ const ReversibilityRow kActionRows[] = {
 		"a scene's name and its tempo / time-signature overrides live in the <session> block", "action checkpoint: the block is restored whole, so an override that was OFF before is OFF again rather than merely zeroed", ""),
 	R("session.set_slot", RC::TrueInverse, true,
 		"a clip slot's reference and launch settings are cells of the <session> block and have no journalled object behind them", "action checkpoint: the block is restored whole, so the slot's previous reference kind, launch mode and playback settings return together", ""),
+	R("session.import_midi_cell", RC::TrueInverse, true,
+		"it makes a new pattern track holding a Standard MIDI File's notes and points a cell of the <session> block at it; the cell's previous reference lives only in that block", "action checkpoint: the undo step restores the captured <session> block whole and removes the pattern track the import made; its redo imports the same notes again", ""),
 	R("session.clear_slot", RC::TrueInverse, true,
 		"clearing a cell destroys a reference id or an audio source path that no live object holds a copy of", "action checkpoint: the captured <session> block is the only place the cleared reference still exists, and it is restored", ""),
 	R("session.clear", RC::TrueInverse, true,

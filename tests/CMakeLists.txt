@@ -1618,6 +1618,11 @@ set(LMMS_TESTS
 	# it on another cell plays the same frames. The failure matrix (missing/empty/damaged/over-decoded source,
 	# duplicate, allocation and write failures) and the realtime render check are in the same file.
 	src/gui/SessionLibrarySaveTest.cpp
+	# Q050-273.2: a populated MIDI launcher cell's Save to Library... (browser.save_clip) writes every note of
+	# its PatternStore pattern - across the store's tracks - as one SMF in one undo step; after a save and
+	# reopen the entry is dragged onto another cell, becomes a playable pattern, and saving that cell gives the
+	# same notes. The agent half, failure matrix included, is tests/control-session-library-midi.py.
+	src/gui/SessionLibraryMidiTest.cpp
 	# Q050-493: an audio cell's Playback and Warp menu - every set_slot playback field from the GUI, one undo step,
 	# saved and reloaded, shown on the cell, rendered as the Q050-013 engine tests expect.
 	src/gui/SessionCellPlaybackMenuTest.cpp
@@ -4012,6 +4017,7 @@ set_tests_properties(RevisionsDocsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=o
 set_tests_properties(SessionGridViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionGridRecordTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionLibrarySaveTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(SessionLibraryMidiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionCellPlaybackMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionTransportBarTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PerformViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -7113,6 +7119,22 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 				${CMAKE_CURRENT_SOURCE_DIR}/control-session-library-save.py
 				$<TARGET_FILE:zene>)
 		set_tests_properties(ControlSessionLibrarySave PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 600
+		)
+		# Q050-273.2 stage 2: a MIDI launcher cell saved into the shared library with browser.save_clip
+		# {track, scene} - every pattern note across the store's tracks, parsed by this script's own SMF
+		# parser - read back through browser.query / browser.tags, undone and redone as ONE true-inverse
+		# step, then the project saved and reopened and the entry imported into another cell with
+		# session.import_midi_cell; saving that cell gives the same notes. The refusal matrix (empty cell,
+		# a pattern with no notes, missing/relative/directory/empty/damaged/too-large/no-notes/past-song
+		# files, bad instrument and address) checks that nothing was written or changed. No window: the
+		# agent drives the same commands the grid's menu and drop run (SessionLibraryMidiTest has that half).
+		add_test(NAME ControlSessionLibraryMidi
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/control-session-library-midi.py
+				$<TARGET_FILE:zene>)
+		set_tests_properties(ControlSessionLibraryMidi PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 			TIMEOUT 600
 		)

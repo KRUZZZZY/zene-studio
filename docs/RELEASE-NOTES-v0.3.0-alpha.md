@@ -1144,8 +1144,10 @@ after merging `050/m0-train-26`, 2026-11-12): `record.midi_capture_commit` adds 
 
 **Q050-183.1** (running audio output and test tone, 2026-11-16): `audio.test_tone` and `audio.test_tone_stop` add two `not_mutating` rows (session audio, not the project) - `rows=944 true_inverse=465 snapshot=42 irreversible=25 not_mutating=412`.
 
+**Q050-273.2** (MIDI launcher cells in the shared library, 2026-11-22): `session.import_midi_cell` adds one `true_inverse` row (an action checkpoint that restores the `<session>` block and removes the pattern track it made) - `rows=945 true_inverse=466 snapshot=42 irreversible=25 not_mutating=412`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=944 true_inverse=465 snapshot=42 irreversible=25 not_mutating=412
+     measured: rows=945 true_inverse=466 snapshot=42 irreversible=25 not_mutating=412
      configuration: telemetry.status wasm.load session.get_state stem.get_state app.update_check_get
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

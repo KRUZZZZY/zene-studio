@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-16T09:57:16Z",
+  "captured_at": "2026-11-22T14:28:35Z",
   "commands": [
     {
       "args_schema": {
@@ -2996,7 +2996,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Save a clip into the library, addressed either by 'clip' (an arrangement clip) or by the pair 'track' + 'scene' (a populated launcher audio cell), exactly one of the two. A sample clip is written as the audio it plays; a MIDI clip as a MIDI file at the song's tempo; an audio cell as the audio its source file holds, at the source's own rate (the cell's gain, transpose, loop and warp are playback settings and are not baked into the entry; the decoded audio is bounded, and a source past the bound is refused before it is decoded). A MIDI cell holds a PatternStore pattern and is refused for now. Written to 'dir' (absolute; <user samples>/Clips, which the Samples browser lists, when left out) as 'name' (the clip's or the cell's own name when left out), refused when the file exists unless 'overwrite'; 'tags' are added to it. The library is outside the project: one undo step deletes the file again.",
+      "description": "Save a clip into the library, addressed either by 'clip' (an arrangement clip) or by the pair 'track' + 'scene' (a populated launcher cell), exactly one of the two. A sample clip is written as the audio it plays; a MIDI clip as a MIDI file at the song's tempo; an audio cell as the audio its source file holds, at the source's own rate (the cell's gain, transpose, loop and warp are playback settings and are not baked into the entry; the decoded audio is bounded, and a source past the bound is refused before it is decoded); a MIDI cell as a MIDI file holding every note of the PatternStore pattern it references, at the song's tempo (the cell's pattern-track settings are playback settings and are not baked into the entry; a pattern with no notes is refused). Written to 'dir' (absolute; <user samples>/Clips, which the Samples browser lists, when left out) as 'name' (the clip's or the cell's own name when left out), refused when the file exists unless 'overwrite'; 'tags' are added to it. The library is outside the project: one undo step deletes the file again.",
       "group": "browser",
       "id": "browser.save_clip",
       "mutating": true,
@@ -30239,6 +30239,48 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "instrument": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "scene": {
+            "maximum": 511,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "track",
+          "scene",
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Import a Standard MIDI File into a launcher cell ('track', 'scene') as a new pattern: the file at 'path' (absolute) becomes a new pattern, its notes written into the clip of pattern-store instrument 'instrument' (0, the first, when left out), and the cell plays that pattern. The cell and its pattern track are named 'name' (the file's name when left out). One undo step restores the cell's previous content and removes the pattern.",
+      "group": "session",
+      "id": "session.import_midi_cell",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "position_ticks": {
             "maximum": 196608,
             "minimum": 0,
@@ -40257,23 +40299,23 @@
       }
     }
   ],
-  "count": 935,
+  "count": 936,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-183.1/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-273.2/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-q4_sbeyz/zene.sock",
-    "version": "0.4.0-alpha.7163+6828471"
+    "source_socket": "/tmp/zctl-run-bty7us44/zene.sock",
+    "version": "0.4.0-alpha.7567+4b6e2af"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 78,
-    "id_count": 935,
-    "ids_sha256": "fc62eb9f915262a9a888ac3ee986dc17fba54227a7daf914bca2096f5ecbf38c"
+    "id_count": 936,
+    "ids_sha256": "666beabd12bc853f50da63edbc75749c7c9e8fec5c7fb6fa8e37219e418cfaba"
   }
 }
