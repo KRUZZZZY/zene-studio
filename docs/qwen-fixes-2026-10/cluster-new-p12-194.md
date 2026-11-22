@@ -23,3 +23,11 @@ The filters are already limited below Nyquist. The finding says the rack does no
 
 ## Other findings
 - The 0.45 x sampleRate clamp is silent: the rack's stored and saved crossover is still the requested value. That is by design and unchanged.
+
+## Self-check
+- Regression test fails without the fix and passes with it: not applicable. The verdict is FALSE-POSITIVE and there is no product change to revert. The guard test passes on the unchanged product (`logs/test-2.log` EXIT=0, `logs/test-3.log` EXIT=0). Its only failure (`logs/test-1.log`, EXIT=8) came from my own peak-sampling check and was fixed by switching to RMS.
+- Deterministic: yes. The input is a computed sine at fixed frequencies (500, 4000, 9000 Hz), a fixed 32 kHz rate and 6400 frames, with no clock, sleeps or threads. It drives `RackSplitFilter` directly.
+- Fix at the cause and complete: no fix was made. The cause the finding names does not exist: every stage in `RackSplit.cpp:102` goes through `designBiquad`, which clamps at `BiquadDesign.h:63`. `RackSplitFilter::configure` is the only caller of the split design (`Rack.cpp:149`), and the other split modes (mid/side, left/right) use no frequencies.
+- Collateral damage: none, since no product code changed. Saved crossovers are untouched, and load/save in `RackSplit.cpp:85-93` is unchanged.
+- FALSE-POSITIVE evidence: `include/BiquadDesign.h:63` (`std::clamp(hz, 1.0, 0.45 * sampleRate)`), `src/core/RackSplit.cpp:102`, `src/core/Rack.cpp:142,149`.
+- Sibling commands (app.*, arrangement.*): I changed no command files, so none are affected. The `tests/control-*.py` files that the check lists were not touched by this branch's commit (it only changed `DeviceToolsTest.cpp`, `DeviceToolsTestParts1.h` and this report).
