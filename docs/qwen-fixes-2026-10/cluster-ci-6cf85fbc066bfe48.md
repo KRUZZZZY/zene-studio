@@ -73,3 +73,30 @@ check-namespace, no-tautology, doc-figures, complexity and file-length.
 ## Other findings
 - tests/src/core/StemModelStoreTest.cpp is not listed in tests/fork-sources.txt (StemJobLoaderTest.cpp
   and StemJobManagerTest.cpp are). This predates the fix, and I left it alone here.
+
+## Self-check
+- **Fails without the fix, passes with it:** with the StemModelStoreTest.cpp change reverted
+  (`git apply -R logs/fix.patch`, EXIT=0), `tests/qt5-overloaded-signal-check.py` gave EXIT=1
+  and the real Qt 5.15 compile probe gave EXIT=1. After `git apply logs/fix.patch` (EXIT=0)
+  they gave EXIT=0 and EXIT=0. Through ctest, RED was EXIT=8 (logs/02-test-red.log) and GREEN
+  was EXIT=0 (logs/04-test-green.log).
+- **Deterministic:** the test is a pure source scan. It uses no compiler, no Qt headers, no
+  timing, no sleeps and no threads. Its fixed in-file red/green fixtures run first: the red
+  fixture must be flagged at lines 4-9 and the green fixture must not be flagged.
+- **At the cause and complete:** the cause is the bare `&QSslSocket::sslErrors` member
+  pointer, an overload set on Qt 5.15 (qsslsocket.h:196 and :216). All three uses in the tree
+  are fixed: `rg -n "&Q\w*(Socket|Reply)::(error|sslErrors)\b" src include plugins tests`
+  matched only StemModelStoreTest.cpp:89, :540 and :645. The scanner now flags any new one.
+  Qt5SignalOverloadCheck, Qt5SignalOverloadArmCheck and the other Qt 5 checks still pass
+  (logs/06-test-family.log: 15/15).
+- **No collateral damage:** only test sources and a test scanner changed. No product code,
+  project load or save path, or saved data is touched. The added table entry flags only
+  `&QSslSocket::sslErrors` without an explicit overload, and the scan over the whole tree
+  is clean after the fix.
+- **ALREADY-FIXED / FALSE-POSITIVE:** does not apply. The verdict is FIXED, and the defect
+  was reproduced against Qt 5.15 (logs/01-qt5-probe-before.log, EXIT=1).
+- **Sibling commands (app.*, arrangement.*):** I changed no control-command file. The
+  checker took this list from the branch's diff against its base (254 files from the train),
+  not from this fix, which touches only tests/qt5-overloaded-signal-check.py,
+  tests/src/core/StemModelStoreTest.cpp, tests/fork-sources.txt and this report. None of
+  those commands is affected, and the ControlCommandsSnapshot does not move.
