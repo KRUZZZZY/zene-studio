@@ -27,6 +27,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
+#include <cstring>
 
 #include <QElapsedTimer>
 #include <QSaveFile>
@@ -305,11 +307,11 @@ int flushDescriptor(int fd) noexcept
 
 //! Finish the sound file (header rewrite, close; the descriptor stays open
 //! because it belongs to the QSaveFile) and flush it to the device.
-void finishSoundFile(SNDFILE* sf, int fd) noexcept
+bool finishSoundFile(SNDFILE* sf, int fd) noexcept
 {
 	sf_write_sync(sf);
 	sf_close(sf);
-	static_cast<void>(flushDescriptor(fd));
+	return flushDescriptor(fd) == 0;
 }
 
 //! Commit the take over its destination; false (nothing replaced) on failure.
@@ -372,12 +374,22 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 	const auto written = sf_writef_float(sf, interleaved.data(),
 		static_cast<sf_count_t>(window.size()));
 	const bool acceptedAll = written >= 0 && static_cast<std::size_t>(written) == window.size();
-	finishSoundFile(sf, output.handle());
+	const bool flushed = finishSoundFile(sf, output.handle());
 
 	if (!acceptedAll)
 	{
 		*error = QStringLiteral("wrote %1 of %2 frames to %3")
 			.arg(written).arg(window.size()).arg(filePath);
+		return false;
+	}
+	if (!flushed)
+	{
+		// Nothing is committed: the QSaveFile destructor discards the temporary,
+		// so a take that may not be on the device never replaces the destination.
+		const int flushErrno = errno;
+		output.cancelWriting();
+		*error = QStringLiteral("could not flush the written take to %1: %2")
+			.arg(filePath, QString::fromLocal8Bit(std::strerror(flushErrno)));
 		return false;
 	}
 	if (!commitTake(output))
