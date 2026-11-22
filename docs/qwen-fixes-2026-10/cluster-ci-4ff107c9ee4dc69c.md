@@ -86,7 +86,13 @@ p5 commands:
 
 ## Other findings
 
-None.
+- `ControllerSurfaceTest::TemplatesSaveListReadAndApply` fails on this box:
+  `'surface.saveTemplate(kTemplate)' returned FALSE`
+  (`tests/src/core/ControllerSurfaceTest.cpp:484`). It fails identically with
+  this cluster's PeakController change reversed (`r3/logs/11-surface-reverted.log`,
+  EXIT=8), so it predates this work; the save returns false when the template
+  file cannot be opened for writing (`ControllerSurface::saveTemplate`), which
+  points at the environment's template directory. Not investigated further here.
 
 ## Round 2 re-verification (logs in `runs/ci-4ff107c9ee4dc69c.r2/logs/`)
 
@@ -112,6 +118,64 @@ after building them (`11`) the family passed (`12`). Two build attempts
 (`09`, `11`-precursor) failed only from shell word-splitting of the target
 list (make: "File name too long"), not from code.
 
+## Round 3 (logs in `runs/ci-4ff107c9ee4dc69c.r3/logs/`)
+
+QA asked for (1) a run of the rebuilt `TouchLayoutTest` slot whose code failed
+to compile on MSVC, with its state sequence; (2) before/after grabs of the
+`gui::ClipView`; (3) a real MSVC before/after; (4) the PeakController friend.
+
+| # | Command | EXIT | Log / result |
+|---|---|---|---|
+| 01 | `python3 -I logs/friend_scan.py <worktree>` | 0 | `01-friend-scan.log` (7 hits, see Self-check) |
+| 02 | RED: probe extended with `PeakControllerDialog`; `ctest -R MsFriendLookupTest` before the header change | 8 | `02-test-red-peak.log` (`reference to 'PeakControllerDialog' is ambiguous`) |
+| 03 | GREEN: `ctest -R MsFriendLookupTest` after qualifying the friend | 0 | `03-test-green-peak.log` |
+| 04 | `cmake --build build --target zene TouchLayoutTest -j4` | 0 | `04-build-touch.log` |
+| 05 | `cd build/tests && ZENE_EVIDENCE_DIR=logs/grab ./TouchLayoutTest aTouchTapSelectsAnArrangerClip` (offscreen) | 0 | `05-slot-run.log` (3 passed, 0 failed) |
+| 06 | MSVC toolchain probe (`command -v cl cl.exe ...`, `find / -iname cl.exe`) | 0 | `06-msvc-probe.log` (no `cl.exe`; only clang-cl and wine) |
+| 07 | `cmake --build build -j4 --target zene peakcontrollereffect ControllerSurfaceTest PeakControllerEffectZeroFrameTest TouchLayoutTest` (every includer of PeakController.h) | 0 | `07-build-includers.log` |
+| 08 | `ctest -R "MsFriendLookup\|TouchLayout\|Clip\|Automation\|Pattern\|PeakController\|ControllerSurface" -j4` | 8 | `08-test-family.log` (67/68; only `ControllerSurfaceTest`, see Other findings) |
+| 09 | `ctest -R ^ControllerSurfaceTest$` alone | 8 | `09-surface-alone.log` (same failure) |
+| 10-11 | the same test with the PeakController change reversed and rebuilt | 8 | `11-surface-reverted.log` (same failure, so not caused by this change) |
+| 12 | 4b: `git diff -- include/PeakController.h > logs/fix.patch && git apply -R logs/fix.patch` | 0 | `12-4b.log` (`APPLY_R_EXIT=0`) |
+| 13 | `ctest -R MsFriendLookupTest` without the fix | 8 | `13-4b-red.log` |
+| 12 | `git apply logs/fix.patch` | 0 | `12-4b.log` (`APPLY_EXIT=0`) |
+| 14 | `ctest -R MsFriendLookupTest` with the fix | 0 | `14-4b-green.log` |
+| 15 | `python3 feature_check.py <worktree>` | 0 | `15-feature-check.log` (`RESULT: PASS`) |
+
+(1) State sequence driven by `TouchLayoutTest::aTouchTapSelectsAnArrangerClip`
+(binary `build/tests/TouchLayoutTest`, built from the working tree that is
+committed with this report; the slot gained only a read-only
+`recordTapState` helper that prints these lines and saves the grabs):
+
+```
+STATE before-tap selected=0 geometry=0,0 513x44
+STATE after-tap selected=1 geometry=0,0 513x44
+STATE rows upperBottom=128 lowerTop=136 gap=8
+```
+
+(2) `view->grab()` of the `gui::ClipView` (the TrackGripContrastTest grab
+path): `logs/grab/before-tap.png` and `logs/grab/after-tap.png`, both
+sha256 `a40b0ebbb916d27e1841f985e49defe3f755653aa017b60f5d68b05a7cb2999f`.
+They are byte-identical: the tap sets `ShellSelection` (the shell's
+inspector selection, asserted by the slot), while the clip's paint
+(`MidiClipView::paintEvent`, `src/gui/clips/MidiClipView.cpp:677`) colours it
+through `getColorForDisplay`, which reads the view's own `isSelected()`
+(`src/gui/clips/ClipView.cpp:1568`); the identical hashes show the tap does
+not set that flag, so the clip's pixels do not change. The selection change is shown by the state sequence,
+not by the image.
+
+(3) **Not done: blocked.** This box has no MSVC (`06-msvc-probe.log`: no
+`cl.exe`, no Windows SDK, no MSVC Qt). A hosted msvc-x64 run needs a push, and
+this run's rules forbid anything leaving the machine and forbid push. Nobody
+can approve one inside the session. The real MSVC before/after
+(8571717ae8 C2872, fix commit builds) remains for the merge train's CI.
+
+(4) Done: `include/PeakController.h` forward-declares
+`gui::PeakControllerDialog` and befriends it; registered in
+`tests/upstream-modifications.txt`. The dialog compiled before without the
+friendship (it befriended a phantom class under GCC), so granting it changes
+no behaviour.
+
 ## Self-check
 
 - **Regression test fails with the product change reverted and passes with it.**
@@ -129,12 +193,26 @@ list (make: "File name too long"), not from code.
 - **The test is deterministic.** It runs a `clang++ -fsyntax-only` compile
   probe with fixed flags and a fixed `-fms-compatibility-version=19.40`; there
   is no wall-clock timing, sleep, thread or race, and no seam is needed.
-- **The fix is at the cause and complete.** The cause is the three unqualified
-  friends. All three were qualified. The other unqualified `friend class ...View`
-  declarations (`InstrumentTrackWindow.h:171-172`, `MixerChannelView.h:190`,
-  `MixerView.h:226`, `TrackOperationsWidget.h:83`) sit inside
-  `namespace lmms::gui`, so they already name the real class; the grep confirms
-  it. The compile probe and the 47-target family exercise all three headers.
+- **The fix is at the cause and complete.** Correction (round 3): rounds 1-2
+  said a search found no other defective unqualified friend. That was wrong:
+  the round-1 grep only looked at `friend class ...View` names and missed
+  `include/PeakController.h:73` `friend class PeakControllerDialog;`, which sits
+  in `namespace lmms` while the dialog is `lmms::gui::PeakControllerDialog`
+  (`include/PeakController.h:90`, inside `namespace gui` at line 87). Round 3
+  qualifies it as `gui::PeakControllerDialog` with a forward declaration. The
+  round-3 scan (`r3/logs/friend_scan.py`, output `r3/logs/01-friend-scan.log`)
+  lists every unqualified `friend class X;` outside a `gui` namespace whose name
+  is also declared after a `namespace gui` line. It printed 7 hits; besides
+  PeakController the six are false matches of that crude rule:
+  `AudioEngine.h:899`, `ConfigManager.h:319`, `Ladspa2LMMS.h:77` befriend
+  `lmms::Engine` (`include/Engine.h:53`, outside its `gui` block), and
+  `Oscilloscope.h:55`, `SlewDistortion.h:85`, `VstEffect.h:97` befriend
+  `lmms::*Controls` (declared at `OscilloscopeControls.h:40`,
+  `SlewDistortionControls.h:59`, `VstEffectControls.h:53` after the `gui`
+  forward-declaration block closes). The `...View` friends in
+  `InstrumentTrackWindow.h`, `MixerChannelView.h`, `MixerView.h` and
+  `TrackOperationsWidget.h` sit inside `namespace lmms::gui` and are correct.
+  The compile probe now covers all four fixed headers.
 - **No collateral damage.** The diff is declarations only: qualified friends
   plus forward declarations. Save/load formats, project loading and existing
   data are untouched, and the family run passed 47/47 (log 09, EXIT=0).

@@ -1,4 +1,4 @@
-// RED probe for the ClipView/AutomationTrackView/PatternClipView friend-lookup
+// RED probe for the ClipView/AutomationTrackView/PatternClipView/PeakControllerDialog friend-lookup
 // ambiguity: these names must resolve unqualified after the using-directives.
 // It is compiled by tests/scripts/ms_friend_lookup_check.py, never built or moc'd.
 #include "Clip.h"
@@ -7,6 +7,7 @@
 #include "AutomationTrackView.h"
 #include "PatternClip.h"
 #include "PatternClipView.h"
+#include "PeakController.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -14,3 +15,4 @@ using namespace lmms::gui;
 [[maybe_unused]] static ClipView* s_clipView = nullptr;
 [[maybe_unused]] static AutomationTrackView* s_automationTrackView = nullptr;
 [[maybe_unused]] static PatternClipView* s_patternClipView = nullptr;
+[[maybe_unused]] static PeakControllerDialog* s_peakControllerDialog = nullptr;
