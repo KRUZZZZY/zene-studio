@@ -9439,6 +9439,21 @@ if(PYTHON3_EXECUTABLE)
 endif()
 
 
+# cluster ci-d1d791015ce10efd: hosted linux-arm64 (-DUSE_WERROR=ON) stopped on
+# tests/src/core/UpdateCheckTest.cpp, which discarded QTest::qWaitFor's [[nodiscard]] result.
+# The local build tree carries -Wno-error=unused-result, so the check recompiles the real
+# translation unit from compile_commands.json with that relaxation removed and
+# -Werror=unused-result added; its fixtures prove the flags reject a discarded result.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME QWaitForResultCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/qwaitfor-result-check.py
+			--build-dir ${CMAKE_BINARY_DIR}
+			--compiler ${CMAKE_CXX_COMPILER})
+	set_tests_properties(QWaitForResultCheck PROPERTIES TIMEOUT 300)
+endif()
+
+
 # cluster ci-017caf2edd434b66: the arranger's gesture code must build on a Qt without gesture
 # support (the hosted mingw64 job's Qt 5 defines QT_NO_GESTURES, so Qt::GestureState and
 # QPinchGesture do not exist there). The hosted job runs no tests, so this check rebuilds the
