@@ -4032,3 +4032,7 @@ docs/qwen-fixes-2026-10/cluster-ci-6cf85fbc066bfe48.md
 # cluster ci-4ff107c9ee4dc69c: the header-only MS friend-lookup probe and its clang driver.
 tests/scripts/ms_friend_lookup_check.py
 tests/src/compile/MsFriendLookupProbe.cpp
+# cluster new-p9-340: PeakController's default null effect is a supported state (fork-NEW
+# regression: construction with the default argument and with explicit nullptr stays silent
+# across periods). The product guard is the ancestor fix; this pins it.
+tests/src/core/PeakControllerNullEffectTest.cpp
