@@ -2,56 +2,59 @@ FIXED
 
 # Cluster 5275: take writes reported success after a flush/close failure
 
+Round 2: Luna's review of round 1 showed the round-1 detection was inert. This report replaces it.
+
 ## Evidence (REAL)
-Before the fix `writeWindow()` in `src/core/RetroAudioCapture.cpp` called
-`sf_write_sync(sf); sf_close(sf);` and discarded both results, then returned success
-from the `sf_writef_float()` count alone (old lines ~314-322, now `finishSoundFile()` and
-the check at `src/core/RetroAudioCapture.cpp:~335-352`). Note `sf_write_sync()` returns
-`void` (/usr/include/sndfile.h:770), so "check its return value" is done via the file's sticky
-`sf_error(sf)`; `sf_close()` returns int (sndfile.h:762).
+Original defect: `writeWindow()` (`src/core/RetroAudioCapture.cpp`) ignored `sf_write_sync()` and `sf_close()` and
+returned success from the `sf_writef_float()` count alone.
 
-## Fix
-`finishSoundFile(SNDFILE*)` flushes, reads `sf_error()`, always closes, and reports which step
-failed; `writeWindow()` returns false with an error (and never calls `QSaveFile::commit()`, so
-the destination is not replaced) when it fails. A short write is still reported first, as before.
-Only the take writer changes; the one caller is `writeRetroAudioTake()`. No audio-thread code touched.
+Round 1 "fixed" it with `sf_error()` after `sf_write_sync()` and `sf_close() != 0`. Neither can fire:
+`sf_write_sync()` returns void and libsndfile's `psf_fsync` discards the fsync result, and the file is opened with
+`sf_open_fd(..., SF_FALSE)` so `sf_close()` does not close the descriptor and returns 0 (per Luna's probe; not
+re-derived from libsndfile sources in this session, but confirmed by the LD_PRELOAD runs below: the old checks
+passed a failing fsync, see round 1 review; the new check fails it).
 
-## Test seam
-A healthy disk cannot be made to fail a flush deterministically, so
-`setRetroTakeFinishTestHook()` (include/RetroAudioCapture.h) lets a test force a step to fail
-after the real step ran (same atomic-function-pointer style as `setPushPauseTestHook`). Null by default.
+## Fix (src/core/RetroAudioCapture.cpp)
+- `flushDescriptor(fd)`: explicit `::fsync` (POSIX) / `_commit` (Windows, `<io.h>`) on the take's `QSaveFile`
+  descriptor; non-zero is a failure.
+- `finishSoundFile()`: `sf_write_sync`, `sf_close` (header rewrite), then `flushDescriptor`; returns false on failure.
+- `writeWindow()`: a short write still reports first; then a failed flush calls `cancelWriting()` and returns false with
+  `could not flush the written take ...: <strerror>`; nothing replaces the destination. The `sf_error`/`sf_close` checks are gone.
+- Close failure signal: the `QSaveFile::commit()` result (existing check, unchanged), routed through `commitTake()`.
+- Test seam `setRetroTakeFinishTestHook()` is now under `#ifdef LMMS_TESTING` like the push-pause hook. For the Flush step the
+  hook's return value REPLACES the real flush result (the real fsync is skipped); for Commit a non-zero return fails the commit.
 
 ## Regression test
-`tests/src/core/RetroAudioCaptureTest.cpp`: `aFailedFlushOrCloseIsReportedAndNothingIsCommitted`
-(rows `flush`, `close`): write must return false, error non-empty, frames written 0,
-destination not created; the same call with the hook cleared succeeds.
+`tests/src/core/RetroAudioCaptureTest.cpp` `aFailedFlushOrCloseIsReportedAndNothingIsCommitted`, rows `flush` and `commit`:
+write returns false, error non-empty, written==0, destination not created; the same call with the hook cleared succeeds.
 
-## Commands (logs in /home/kruzzzzy/.config/kads/zene/state/runs/5275.r1/logs)
-Order note: I wrote the seam and fix together first, then split them: the seam + test were
-committed with the fix block removed, which gave the RED run below.
-- RED (seam + test, no fix): `cmake --build build --target RetroAudioCaptureTest -j4` (build-1.log) EXIT=0;
-  `cd build/tests && ctest -R RetroAudioCaptureTest --output-on-failure` (test-1-red.log) EXIT=8
-  (2 failed: flush and close rows, "a failed flush/close must not report success").
-- GREEN (fix applied): build-2.log EXIT=0; `ctest -R RetroAudio` (test-2-green.log) EXIT=0, RetroAudioCaptureTest passed (16 tests).
-- 4b: `git diff -- src/core/RetroAudioCapture.cpp include/RetroAudioCapture.h > logs/fix.patch && git apply -R logs/fix.patch`
-  REVERT=0; rebuild (build-3.log) EXIT=0; ctest (test-3-revert.log) EXIT=8 (same 2 failures);
-  `git apply logs/fix.patch` REAPPLY=0; rebuild (build-4.log) EXIT=0; ctest (test-4-reapplied.log) EXIT=0.
-- `cmake --build build --target zene -j4` (build-5-zene.log) EXIT=0 (header changed).
-- Gate: `python3 .../feature_check.py <worktree>` (feature-check.txt) EXIT=0, all PASS.
+## Commands (logs in /home/kruzzzzy/.config/kads/zene/state/runs/5275.r2/logs)
+Order: seam + test committed first with the flush result ignored (RED), then the check (GREEN).
+- RED: build-1.log EXIT=0; `cd build/tests && ctest -R '^RetroAudioCaptureTest$' --output-on-failure` (test-1-red.log) EXIT=8.
+- GREEN: build-2.log EXIT=0; test-2-green.log EXIT=0.
+- 4b: `git diff -- src/core/RetroAudioCapture.cpp include/RetroAudioCapture.h > logs/fix.patch && git apply -R logs/fix.patch` REVERT=0;
+  build-4.log EXIT=0; ctest (test-4-revert.log) EXIT=8; `git apply logs/fix.patch` REAPPLY=0; build-5.log (RetroAudioCaptureTest + zene) EXIT=0;
+  ctest (test-5-reapplied.log) EXIT=0. build-3.log (test + zene with fix) EXIT=0, test-3-green.log EXIT=0.
+- Real failing fsync (LD_PRELOAD `libfailfsync.so`, source failfsync.c, makes fsync/fdatasync return -1/EIO) on the unmodified
+  `theTakeWriterWritesTheRetainedWindow`: with the fix EXIT=1 ("could not flush the written take ...: Input/output error",
+  preload-fix.log); with the fix reverted EXIT=0, i.e. success reported (preload-nofix.log).
+- Gate: feature_check.py (feature-check.txt) EXIT=0, all PASS.
 
-## Not verified
-No real full-disk/failing-device run (not reproducible headless); the failure is injected via the hook.
-The `ctest -R RetroAudio` family matched only RetroAudioCaptureTest. Sibling writers
-(`ClipConsolidate.cpp:126` already checks `sf_close`) were not changed.
-
-## Other findings
-- `src/core/ClipConsolidate.cpp` and other `sf_write_sync`-less writers were not audited for sticky-error handling.
+## Honest limits
+- Only the `flush` row goes RED without the fix (test-4-revert.log: 15 passed, 1 failed). The `commit` row passes with and without it,
+  because the commit-failure check pre-dates this work; the row guards that behaviour and the "destination untouched" contract.
+  The review asked for both rows red; I could not make the commit row red without inventing a new commit check, so it stays a guard.
+- fsync failure is injected (hook, and LD_PRELOAD); no real full disk was exercised.
+- Windows `_commit` path is not compiled here.
 
 ## Self-check
-- Fails without / passes with: RED run EXIT=8 (test-1-red.log) and reverted-fix run EXIT=8 (test-3-revert.log); with the fix EXIT=0 (test-2-green.log, test-4-reapplied.log). Both rows (flush, close) fail without the fix.
-- Deterministic: no timing, sleeps or threads. It uses the `setRetroTakeFinishTestHook()` seam, which forces the flush or close step to report failure after the real step ran, plus a QTemporaryDir.
-- Complete: the only product function changed is `writeWindow()` (anonymous namespace), reached only via `writeRetroAudioTake()`. Its three callers (`src/core/ControlCommandsRecordingRetro.cpp:182`, `ControlCommandsSessionAudioRecord.cpp:293`, `ControlCommandsSamplerTake.cpp:331`) already test the bool and read `error`, so they now surface the failure with no edit. The short-write check keeps priority and its message.
-- No collateral damage: nothing is read or loaded; healthy writes behave as before (existing 14 tests in RetroAudioCaptureTest pass). A failed flush/close now skips `QSaveFile::commit()`, so a prior file at the destination is left intact rather than replaced by an unverified take. No new limits.
-- Verdict is FIXED, not ALREADY-FIXED/FALSE-POSITIVE: n/a.
-- Sibling commands: I changed no command files (the three listed above are callers only and unedited), so the app.*/arrangement.* commands the check names are not affected. No control command was added.
-- Realtime: `writeWindow()` runs off the audio thread (command handler); nothing on the audio path changed.
+- Fails without / passes with: flush row RED EXIT=8 (test-1-red.log, test-4-revert.log), GREEN EXIT=0 (test-2/3/5); plus the LD_PRELOAD run on an unmodified test (EXIT=1 with fix, 0 without), which exercises the real fsync call.
+- Deterministic: no timing, sleeps or threads. Seam: `setRetroTakeFinishTestHook()` supplies the flush/commit result; QTemporaryDir.
+- Complete: `writeWindow()` is reached only through `writeRetroAudioTake()`; its callers `src/core/ControlCommandsRecordingRetro.cpp:182`, `ControlCommandsSessionAudioRecord.cpp:293`, `ControlCommandsSamplerTake.cpp:331` already test the bool and `error`, unedited.
+- No collateral damage: healthy writes unchanged (the other 14 tests in the file pass); no data is loaded; one extra fsync per take, off the audio thread (command handler). No new limits.
+- Verdict FIXED, so no ALREADY-FIXED/FALSE-POSITIVE reference needed.
+- Sibling commands: I edited no command files and added no control command.
+- Realtime: nothing on the audio thread changed.
+
+## Other findings
+- Other libsndfile writers (e.g. `src/core/ClipConsolidate.cpp`, which uses `sf_close` only) were not audited for the same fsync-ignored pattern.
