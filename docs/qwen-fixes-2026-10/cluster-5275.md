@@ -97,6 +97,10 @@ plus `./RetroAudioCaptureTest aFailedFlushOrCloseIsReportedAndNothingIsCommitted
 - Realtime: nothing on the audio thread changed. No control commands were added.
 - Registration: all three files are already fork sources (`tests/fork-sources.txt`), so no list change is needed.
 - Seam: `setRetroTakeFinishTestHook` exists only under `#ifdef LMMS_TESTING`.
+- ALREADY-FIXED / FALSE-POSITIVE reference: not applicable, the verdict is FIXED.
+- Sibling commands (app.*, arrangement.* in the check's list): this round changes no command file. The diff touches only
+  `src/core/RetroAudioCapture.cpp`, `include/RetroAudioCapture.h`, the test and this report. Those commands do not reach
+  `writeRetroAudioTake()`, so none of them is affected.
 
 Delegation:
 - Sonnet wrote the `finalize` test row and hook, and ran the first build and the green test.
