@@ -37,6 +37,8 @@ namespace lmms
 
 class PeakControllerEffect;
 
+namespace gui { class PeakControllerDialog; }
+
 using PeakControllerEffectVector = std::vector<PeakControllerEffect*>;
 
 class LMMS_EXPORT PeakController : public Controller
@@ -70,7 +72,7 @@ protected:
 
 	PeakControllerEffect * m_peakEffect;
 
-	friend class PeakControllerDialog;
+	friend class gui::PeakControllerDialog;
 
 private:
 	float m_currentSample;
