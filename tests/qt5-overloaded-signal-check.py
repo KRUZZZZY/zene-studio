@@ -14,6 +14,10 @@ overloaded function, not a member pointer, and template argument deduction for t
 box (and the Qt 6 jobs) never noticed. The same trap exists for every Qt 5 signal that
 kept a deprecated QString overload: QDoubleSpinBox, QComboBox (three of them),
 QButtonGroup, QProcess, QCompleter, QSignalMapper, QSqlDriver and QTextBrowser.
+QSslSocket::sslErrors is the same trap with a different second overload: Qt 5.15 still
+declares the deprecated getter `QList<QSslError> sslErrors() const` beside the signal
+(cluster ci-6cf85fbc066bfe48, hosted macos-x86_64 at 1ab89d758a07:
+tests/src/core/StemModelStoreTest.cpp:89 "no matching member function for call to 'connect'").
 
 The fix at the call site is the resolution the rest of the tree already uses:
 `QOverload<int>::of(&QSpinBox::valueChanged)`, `qOverload<int>(...)`, or an explicit
@@ -53,6 +57,8 @@ QT5_OVERLOADED = {
 	"QSignalMapper": {"mapped"},
 	"QSpinBox": {"valueChanged"},
 	"QSqlDriver": {"notification"},
+	# Not a QString overload: the deprecated getter `sslErrors() const` (QT_DEPRECATED_SINCE(5, 15)).
+	"QSslSocket": {"sslErrors"},
 	"QTextBrowser": {"highlighted"},
 }
 
@@ -171,18 +177,20 @@ def scan_tree(root):
 
 
 FIXTURE_RED = """
-void f(QSpinBox* spin, QDoubleSpinBox* chance, QComboBox* box, QProcess* process)
+void f(QSpinBox* spin, QDoubleSpinBox* chance, QComboBox* box, QProcess* process, QSslSocket* socket)
 {
 \tQObject::connect(spin, &QSpinBox::valueChanged, spin, [spin] { spin->setProperty("edited", true); });
 \tconnect(chance, &QDoubleSpinBox::valueChanged, this, [this](double) {});
 \tconnect(box, &QComboBox::currentIndexChanged, this, [this](int) {});
 \tconnect(box, &QComboBox::activated, this, [this] {});
 \tconnect(process, &QProcess::finished, this, [this](int, QProcess::ExitStatus) {});
+\tconnect(socket, &QSslSocket::sslErrors, socket, [socket](const QList<QSslError>&) { socket->ignoreSslErrors(); });
 }
 """
 
 FIXTURE_GREEN = """
-void f(QSpinBox* spin, QDoubleSpinBox* chance, QComboBox* box, QSlider* slider, QLineEdit* edit)
+void f(QSpinBox* spin, QDoubleSpinBox* chance, QComboBox* box, QSlider* slider, QLineEdit* edit,
+	QSslSocket* socket)
 {
 \t// A comment naming &QSpinBox::valueChanged must not be a finding.
 \tQObject::connect(spin, QOverload<int>::of(&QSpinBox::valueChanged), spin, [spin] {});
@@ -191,11 +199,13 @@ void f(QSpinBox* spin, QDoubleSpinBox* chance, QComboBox* box, QSlider* slider, 
 \tconnect(slider, &QSlider::valueChanged, this, [this](int) {});
 \tconnect(edit, &QLineEdit::textEdited, this, [this](const QString&) {});
 \tconnect(box, SIGNAL(currentIndexChanged(int)), this, SLOT(update()));
+\tconnect(socket, QOverload<const QList<QSslError>&>::of(&QSslSocket::sslErrors), socket, [socket] {});
 }
 """
 
 FIXTURE_EXPECTED = ["&QSpinBox::valueChanged", "&QDoubleSpinBox::valueChanged",
-	"&QComboBox::currentIndexChanged", "&QComboBox::activated", "&QProcess::finished"]
+	"&QComboBox::currentIndexChanged", "&QComboBox::activated", "&QProcess::finished",
+	"&QSslSocket::sslErrors"]
 
 
 def self_test():
@@ -205,8 +215,8 @@ def self_test():
 	if got != FIXTURE_EXPECTED:
 		failures.append(f"red fixture flagged {got}, expected {FIXTURE_EXPECTED}")
 	lines = [line for _, line, _ in red]
-	if lines != [4, 5, 6, 7, 8]:
-		failures.append(f"red fixture lines {lines}, expected [4, 5, 6, 7, 8]")
+	if lines != [4, 5, 6, 7, 8, 9]:
+		failures.append(f"red fixture lines {lines}, expected [4, 5, 6, 7, 8, 9]")
 	green = scan_text("fixture-green.cpp", FIXTURE_GREEN)
 	if green:
 		failures.append(f"green fixture flagged {green}")
