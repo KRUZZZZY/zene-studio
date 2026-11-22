@@ -1,0 +1,126 @@
+FIXED
+
+# cluster new-p16-68 - a malformed effect count can silently discard project effects
+
+## Verdict: REAL
+
+`EffectChain::loadSettings()` trusted the `numofeffects` attribute as the loop
+limit. Before the fix, `src/core/EffectChain.cpp:209` read the attribute and
+`:213` was `while( !node.isNull() && fx_loaded < plugin_cnt )`. Any file with
+`numofeffects` missing, zero, negative, non-numeric or smaller than its actual
+`<effect>` children had those children skipped. The next save wrote the
+shortened `m_effects` list, so the effects were lost for good.
+
+The count is written by `saveSettings()` from the real list
+(`src/core/EffectChain.cpp:160`), so for a file this build wrote the attribute
+is redundant. Using it as a limit gave a malformed writer's claim authority
+over the elements that were actually present.
+
+Every path into the loader goes through this one function:
+`Mixer::loadSettings()` calls `m_fxChain.restoreState(...)`
+(`src/core/Mixer.cpp:3009-3013`), `Rack::loadSettings()` calls
+`chain->restoreState(...)` (`src/core/Rack.cpp:418-421`), and the control /
+preset path ends in the same `restoreState` -> `loadSettings`. Correcting the
+function fixes all of them; no sibling reader needed a separate change
+(`saveSettings` and `ControlCommandsReference::chainWith` already compute the
+count from the elements).
+
+## Fix
+
+`src/core/EffectChain.cpp:210-266`:
+
+- the loop now walks every child and loads every `<effect>` element, so the
+  elements are the source of truth;
+- the declared count is kept only for validation;
+- `fx_loaded != declared_effects` is reported through `Song::collectError()`
+  (`src/core/EffectChain.cpp:258-266`), so a malformed file is visible rather
+  than silently repaired;
+- `saveSettings()` already writes `m_effects.size()`, so the next save writes
+  the recovered count and a later open cannot lose the devices.
+
+No header changed. `loadSettings()` stays on the control thread and keeps the
+existing model-change guard; the audio-thread processing path was not touched.
+There are no platform-specific changes; the test is a `QTEST_GUILESS_MAIN`.
+
+## Regression test
+
+`tests/src/core/MixerRoutingBackwardCompatTest.cpp:601-672`,
+`malformedEffectCountDoesNotDiscardPresentEffects()`. It covers:
+
+- normal path: `numofeffects="1"` with one effect loads one, no error;
+- failure paths: zero, negative, non-numeric and missing counts each load the
+  one effect that is present and report the mismatch;
+- exhaustion paths: a count smaller than the elements loads all elements; a
+  count larger than the elements loads all elements and reports the mismatch;
+- reconfiguration: for every case the chain is saved again and the test checks
+  the rewritten `numofeffects` equals the real element count, so the next open
+  is stable.
+
+The test uses unique unknown effect names, so it deterministically builds
+`DummyEffect`s and needs no plug-in binary.
+
+## Commands and results (all logs under the run log folder)
+
+RED before the product fix:
+
+    cmake --build build --target MixerRoutingBackwardCompatTest -j4    EXIT=0
+    cd build/tests && ctest -R MixerRoutingBackwardCompatTest --output-on-failure    EXIT=8
+
+`test-1-red.log`: `loaded 0 effects, expected 1` for the `numofeffects="0"`
+case; 19 passed, 1 failed.
+
+GREEN with the fix:
+
+    cmake --build build --target MixerRoutingBackwardCompatTest -j4    EXIT=0
+    cd build/tests && ctest -R MixerRoutingBackwardCompatTest --output-on-failure    EXIT=0
+
+Step 4b (product patch only, generated with `git diff -- src/core/EffectChain.cpp`):
+
+    git apply -R .../logs/fix.patch                    EXIT=0
+    cmake --build build --target MixerRoutingBackwardCompatTest -j4    EXIT=0
+    cd build/tests && ctest -R MixerRoutingBackwardCompatTest --output-on-failure    EXIT=8
+    git apply .../logs/fix.patch                       EXIT=0
+    cmake --build build --target MixerRoutingBackwardCompatTest -j4    EXIT=0
+    cd build/tests && ctest -R MixerRoutingBackwardCompatTest --output-on-failure    EXIT=0
+
+Logs: `build-3-red.patch.log`, `test-3-red.patch.log`, `build-4-green.patch.log`,
+`test-4-green.patch.log`. The RED run without the product code fails at the
+same assertion; the GREEN run passes.
+
+Related family:
+
+    cmake --build build --target RackTest MissingDevicesRound2Test RoutingGraphLiveTest ControlChainPresetTest -j4    EXIT=0
+    cd build/tests && ctest -R "^(RackTest|MissingDevicesRound2Test|RoutingGraphLiveTest|ControlChainPresetTest)$" --output-on-failure    EXIT=8
+
+`RackTest`, `MissingDevicesRound2Test` and `RoutingGraphLiveTest` passed.
+`ControlChainPresetTest` has one failure,
+`aCapturedChainAppliesToASecondTrackWithTheSameDevicesAndValues()` at
+`ControlChainPresetTest.cpp:592` (`loadEffects(source, 2, &ids)` returned 1).
+That test does not call `EffectChain::loadSettings`; it loads devices through
+`plugin.load`. I reverted this fix, rebuilt that target and reran it, and it
+failed identically without the fix (`test-7-preset-nofix.log`, EXIT=8), so it
+is a pre-existing environment/plugin-loading failure, not collateral damage.
+`MixerRoutingBackwardCompatTest` remained green in the restore run
+(`test-8-restore.log`).
+
+Product rebuild:
+
+    cmake --build build --target zene -j4    EXIT=0
+
+Gates:
+
+    python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>    EXIT=0
+
+`gates-2.log`: every gate PASS, `RESULT: PASS`.
+
+Registration: `src/core/EffectChain.cpp` is an inherited file, so the change is
+listed in `tests/upstream-modifications.txt` with the cluster and the regression
+test name. The test file is an existing build source already tracked by the
+tree.
+
+## Other findings
+
+- `ControlChainPresetTest::aCapturedChainAppliesToASecondTrackWithTheSameDevicesAndValues()`
+  fails in this build tree because only one of two loadable effects can be
+  loaded through `plugin.load` (`loadEffects(source, 2, &ids)` returns 1). It
+  fails with and without this fix and is unrelated to `EffectChain::loadSettings`.

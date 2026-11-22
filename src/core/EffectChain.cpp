@@ -42,6 +42,7 @@
 #include "LegacyVst2Conversion.h"
 #include "RoutingChainNodes.h"
 #include "RoutingGraph.h"
+#include "Song.h"
 
 namespace lmms
 {
@@ -206,11 +207,17 @@ void EffectChain::loadSettings( const QDomElement & _this )
 
 	m_enabledModel.loadSettings( _this, "enabled" );
 
-	const int plugin_cnt = _this.attribute( "numofeffects" ).toInt();
+	// numofeffects is the writer's claim, not a load limit. A file whose count
+	// is missing, zero, negative, not a number or smaller than the effects it
+	// actually holds still carries every saved <effect> element; loading only
+	// up to the declared count silently discarded the rest, and the next save
+	// wrote the shortened chain. The elements are the source of truth, and the
+	// mismatch is reported so the malformed file is not hidden.
+	const int declared_effects = _this.attribute( "numofeffects" ).toInt();
 
 	QDomNode node = _this.firstChild();
 	int fx_loaded = 0;
-	while( !node.isNull() && fx_loaded < plugin_cnt )
+	while( !node.isNull() )
 	{
 		if( node.isElement() && node.nodeName() == "effect" )
 		{
@@ -246,6 +253,16 @@ void EffectChain::loadSettings( const QDomElement & _this )
 			++fx_loaded;
 		}
 		node = node.nextSibling();
+	}
+
+	if( fx_loaded != declared_effects )
+	{
+		if( Song* song = Engine::getSong() )
+		{
+			song->collectError( tr( "Effect chain: numofeffects declares %1 effect(s), but %2 "
+				"<effect> element(s) are present; loaded all of them." )
+				.arg( declared_effects ).arg( fx_loaded ) );
+		}
 	}
 
 	refreshLatency();
