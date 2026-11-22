@@ -29,6 +29,7 @@
 #include <QString>
 #include <QVector>
 
+#include <cstddef>
 #include <vector>
 
 #include "MasteringChain.h"
@@ -139,6 +140,25 @@ public:
 	//! Renders once, then branches every candidate off that render. Blocking.
 	//! Returns false and fills \p error when the render or a candidate fails.
 	bool run(QString* error = nullptr);
+
+	//! The largest source-mix frame count the loader may allocate (2^32 frames,
+	//! the same bound SampleDecoder's bounded decoder uses). Finite and stated
+	//! here so the acceptance rule is checkable rather than implied by sizeof.
+	static constexpr std::size_t maxSourceFrames = std::size_t{1} << 32;
+
+	//! Pure: validates one interleaved float buffer's element count. Refuses a
+	//! zero channel count, more than maxSourceFrames frames, or a product that
+	//! would overflow std::size_t; writes \p out only when the count is acceptable.
+	static bool checkedSampleCount(std::size_t frames, std::size_t channels,
+		std::size_t* out);
+
+	//! Reads and validates a source mix from \p path: stereo only, 44100..192000
+	//! Hz (the render path's export window), a non-negative frame count, and a
+	//! frame count within maxSourceFrames. Reads in fixed-size chunks rather than
+	//! allocating the header's claim. Touches no project or render state. On
+	//! failure \p out is left empty and \p rate unchanged.
+	static bool readSourceMix(const QString& path, std::vector<SampleFrame>& out,
+		sample_rate_t& rate, QString* error = nullptr);
 
 	//! The one render's own readings (the programme before any mastering).
 	const MasteringMetrics& sourceMetrics() const { return m_sourceMetrics; }
