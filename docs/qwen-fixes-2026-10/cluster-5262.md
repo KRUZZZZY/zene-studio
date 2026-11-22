@@ -18,7 +18,16 @@ Finding: `RackZoneVoice::render` stopped at `index + 1 >= size`, dropping the fi
 | The three named tests directly | `./RackZoneRoutingTest aVoiceRendersTheLastSourceFrame aFractionalStepHoldsTheLastSourceFrame aFractionalStepSoundsEveryFinalFrameVisit > logs/test-2.log 2>&1` | EXIT=0, each PASS (5 passed, 0 failed incl. init/cleanup) |
 | Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/feature-1.log 2>&1` | EXIT=0, all 8 rows PASS |
 
-The tests passed before any edit, so RED is not reproducible on this branch; under procedure step 2 this is ALREADY-FIXED. There is no product patch, so step 4b (revert/reapply) does not apply. I did not re-run the tests against the pre-fix source in this session; the earlier fix commit's message records its own red run (EXIT=8) but I did not verify that.
+The tests passed before any edit, so RED is not reproducible on this branch; under procedure step 2 this is ALREADY-FIXED. There is no product patch, so step 4b (revert/reapply) does not apply. Extra check (not a product change): I temporarily put the buggy condition back on line 50 (`index + 1 >= size`), rebuilt (`logs/build-2-buggy.log`, EXIT=0) and ran the three tests: `./RackZoneRoutingTest <3 names> > logs/test-3-buggy.log` gave EXIT=3, all three FAIL ("Compared floats are not the same"). I then ran `git checkout -- src/core/RackZoneInputs.cpp`, rebuilt (EXIT=0) and ran the whole binary: `logs/test-4-restored.log` EXIT=0, 12 passed, 0 failed. `git status` was clean afterwards.
+
+## Self-check
+- Test fails with the fix reverted, passes with it: yes. The revert was the one-line buggy condition above, not a `git apply -R` of a patch, because there is no product diff this session. Buggy: EXIT=3 (3 FAIL). Restored: EXIT=0 (12 passed).
+- Deterministic: yes. The tests drive `RackZoneVoice::render` directly with fixed in-memory `SampleBuffer`s and fixed steps (1.0, 0.5, 0.25) and compare exact expected floats. There is no clock, sleep, thread or device.
+- Cause and completeness: the only place that reads the sample tail is `RackZoneVoice::render` (`src/core/RackZoneInputs.cpp:42-63`). Its end test (line 50), interpolation partner (line 54) and end-of-sample rule (line 60) are consistent. The other voice code (`restart` line 34, `voiceFor` line 109 onward) does not touch the end condition.
+- No collateral damage: no product, save-format or limit change this session, so old projects load as before.
+- ALREADY-FIXED evidence: `src/core/RackZoneInputs.cpp:50` and `:54`, plus commits `6b0f58b0d5` and `9b02a1992c`.
+- Sibling commands (`app.*`, `arrangement.*`): not affected. I changed no command files. The submit check lists them because the branch carries unrelated merged changes. My only commit adds `docs/qwen-fixes-2026-10/cluster-5262.md`.
+- The submit check's "tests added or changed" row lists `tests/control-*.py` files. They come from the merged train history, not from me.
 
 ## Other findings
 None.
