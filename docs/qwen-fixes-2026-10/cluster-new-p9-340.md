@@ -1,202 +1,121 @@
+ALREADY-FIXED
+
 # Cluster new-p9-340
 
-Verdict: **ALREADY-FIXED**
-
 `PeakController`'s default null effect is not dereferenced on this branch. The
-guard landed in commit `fdeea3bbd` (cluster new-p10-317, 2026-10-12), which is an
-ancestor of HEAD. This lane adds one test-only regression for the explicit-`nullptr`
-and repeated-period path. It makes no product change.
+guard landed in commit `fdeea3bbd` (cluster new-p10-317, 2026-10-12), an ancestor
+of HEAD. The branch carries the registered regression from that commit; this lane
+makes no product change.
+
+Round 5 addressed Luna's blocking item and the diagnostic checkpoint:
+
+- The lane's 15 test-only lines in `tests/src/core/ControllerSurfaceTest.cpp`
+  (the explicit-`nullptr` / repeated-period test) are reverted to the base version
+  `639e1d23e4`. The base already contains the registered default-null regression
+  `defaultPeakControllerWithoutEffectReturnsSilence` from `fdeea3bbdd`.
+- The `tests/src/core/ControllerSurfaceTest.cpp` row is removed from the inherited
+  ledger `tests/upstream-modifications.txt`. That removal is the last source-registry
+  edit; no registry derivation runs after it.
+- Net diff `639e1d23e4..HEAD` contains only this report under `docs/`, no source
+  files. Housekeeping therefore has no changed source file to re-classify.
 
 ## Evidence
 
 - **Default argument is still present, on purpose.** `include/PeakController.h:46-47`
-  keeps `PeakControllerEffect *_peak_effect = nullptr`. Null is a valid state here, so
-  the finding's "remove the default" option is not taken.
+  keeps `PeakControllerEffect *_peak_effect = nullptr`. Null is a valid state, so the
+  finding's "remove the default" option is not taken.
 - **Constructor guard.** `src/core/PeakController.cpp:58-66`: the effect-specific
   `connect` calls, including `m_peakEffect->attackModel()` and `decayModel()`, sit
-  inside `if( m_peakEffect )`. These were the dereferences the finding describes.
+  inside `if( m_peakEffect )`. Those were the dereferences the finding described.
 - **Other effect uses are guarded.** `src/core/PeakController.cpp:76` (destructor),
-  `:85` (coefficient read), `:93` (sample read), `:138-139` (`handleDestroyedEffect`),
-  `:148` (`saveSettings`). Only `:172` assigns the effect, and it takes an entry from
-  `s_effects`, so it is never null.
+  `:85` (coefficient read), `:93` (sample read), `:138-139`
+  (`handleDestroyedEffect`), `:148` (`saveSettings`). Only `:172` assigns the effect,
+  and it takes an entry from `s_effects`, so it is never null.
 - **Null branch.** `src/core/PeakController.cpp:122` fills the buffer with `0`. This
   path allocates nothing.
-- **Regression tests.** `tests/src/core/ControllerSurfaceTest.cpp:162-167`
-  (`defaultPeakControllerWithoutEffectReturnsSilence`, from `fdeea3bbd`) and
-  `tests/src/core/ControllerSurfaceTest.cpp:169-182` (new in this lane:
-  `explicitNullPeakEffectStaysSilentAcrossPeriods`, explicit `nullptr`, four periods,
-  first and last frame).
+- **Regression test.** `tests/src/core/ControllerSurfaceTest.cpp:162-167`
+  (`defaultPeakControllerWithoutEffectReturnsSilence`, from `fdeea3bbdd`) constructs
+  `PeakController controller(Engine::getSong())` and requires `currentValue(0) == 0`.
 - **Registration.** `tests/CMakeLists.txt:274` registers `ControllerSurfaceTest.cpp`,
-  and `tests/all-sources.txt:2710` lists it. The file is fork-authored, so it has no
-  row in the inherited-file ledger `tests/upstream-modifications.txt` (see Round 2).
-  No new file was added.
+  and `tests/all-sources.txt:2710` lists it. It is fork-authored, so it has no active
+  row in `tests/upstream-modifications.txt`.
+- **Ancestry and unchanged product code.**
+  `git merge-base --is-ancestor fdeea3bbdd HEAD` EXIT 0;
+  `git diff --stat fdeea3bbdd..HEAD -- src/core/PeakController.cpp` is empty.
+- **Ledger check.** `rg -n '^tests/src/core/ControllerSurfaceTest\.cpp'
+  tests/upstream-modifications.txt` EXIT 1 (no match), and the ledger still ends
+  with a newline (`tail -c 1 ... | xxd` -> `0a`).
+- **Base boundary.** `git cat-file -e 4e677cb6c6ab:tests/src/core/ControllerSurfaceTest.cpp`
+  EXIT 128 confirms the file is not inherited from that fork point; it is
+  fork-authored and its `all-sources.txt` entry is kept.
 
-## Reversal proof
+## RED/GREEN reversal proof
 
-The committed fix was reversed as a patch and then restored. The patch is the
-`src/core/PeakController.cpp` diff of `fdeea3bbd`, saved as
-`logs/fix.patch`. Procedure step 4b's `git diff --` form would be empty here because
-the fix is already committed.
+The historical fix commit's product hunks were reversed with a patch generated from
+`git show fdeea3bbdd -- src/core/PeakController.cpp`, rebuilt, and run. This removes
+the constructor guard around the attack/decay model connects. Restoring the patch
+and rebuilding returns the test to green. No product change is left in the worktree.
+
+| Step | Command | Log | EXIT |
+|---|---|---|---|
+| Patch | `git show fdeea3bbdd -- src/core/PeakController.cpp > logs/reverse-peak-guard.patch` | reverse-peak-guard.patch | 0 |
+| Reverse | `git apply -R logs/reverse-peak-guard.patch` | (stdout) | 0 |
+| Build RED | `cmake --build build --target ControllerSurfaceTest -j4` | build-2-red.log | 0 |
+| RED test | `./ControllerSurfaceTest defaultPeakControllerWithoutEffectReturnsSilence -v2` | test-3-red-default.log | 139 (SIGSEGV) |
+| Restore | `git apply logs/reverse-peak-guard.patch` | (stdout) | 0 |
+| Build GREEN | `cmake --build build --target ControllerSurfaceTest -j4` | build-3-green.log | 0 |
+| GREEN test | `./ControllerSurfaceTest defaultPeakControllerWithoutEffectReturnsSilence -v2` | test-4-green-default.log | 0 |
+
+The RED stack trace names
+`lmms::PeakController::PeakController(lmms::Model*, lmms::PeakControllerEffect*)`;
+the GREEN run reports `3 passed, 0 failed`.
 
 ## Commands and exit codes
 
-Log folder: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-340.r1/logs`.
-Working directory for `ctest` is `build/tests`. Unless noted, `QT_QPA_PLATFORM` is
-the environment default and `LMMS_PLUGIN_DIR` is not set.
+Log folder: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p9-340.r6/logs`.
+`ctest` runs from `build/tests`; `HOME` is the scratch
+`$TMPDIR/home-new-p9-340` for template writes, and `LMMS_PLUGIN_DIR` is not set.
 
 | Step | Command (abbrev.) | Log | EXIT |
 |---|---|---|---|
-| Build 1 (failed, sandbox) | `cmake --build build --target ControllerSurfaceTest -j4` | build-1.log | 2 |
-| Build 2 | same, with `CCACHE_TEMPDIR=$TMPDIR/ccache-tmp-new-p9-340` | build-2.log | 0 |
-| ctest, first try | `ctest -R '^ControllerSurfaceTest$' --output-on-failure` | test-1.log | 8 |
-| ctest, GREEN baseline | same, with `HOME=$TMPDIR/home-new-p9-340` | test-2.log | 0 |
-| Named tests, GREEN | `./ControllerSurfaceTest explicitNullPeakEffectStaysSilentAcrossPeriods defaultPeakControllerWithoutEffectReturnsSilence -v2` | test-3-green-names.log | 0 |
-| Reversal apply | `git apply -R fix.patch` | (stdout) | 0 |
-| Build, RED | `cmake --build build --target ControllerSurfaceTest -j4` | build-3-red.log | 0 |
-| RED, default test | `./ControllerSurfaceTest defaultPeakControllerWithoutEffectReturnsSilence -v2` | test-4-red-default.log | 139 (SIGSEGV) |
-| RED, new test | `./ControllerSurfaceTest explicitNullPeakEffectStaysSilentAcrossPeriods -v2` | test-5-red-explicit.log | 139 (SIGSEGV) |
-| Restore | `git apply fix.patch` | (stdout) | 0 |
-| Build, GREEN | `cmake --build build --target ControllerSurfaceTest -j4` | build-4-green.log | 0 |
-| ctest, GREEN | `ctest -R '^ControllerSurfaceTest$' --output-on-failure` | test-6-green.log | 0 |
-| Family list | `ctest -N -R 'Controller\|Peak'` | test-7-family-list.log | 0 (6 tests) |
-| Family, unbuilt | `ctest -R 'Controller\|Peak'` (5 targets not yet built: Not Run) | test-8-family.log | 8 |
-| Build family targets | `cmake --build build --target LfoControllerUserWaveTest MidiClipControllersLoadTest MidiControllerMenuTest ControllerTemplateMenuTest EqPeakHandoffTest -j4` | build-5-family.log | 0 |
-| Family, GREEN | `ctest -R 'Controller\|Peak' --output-on-failure` | test-9-family.log | 0 (6/6) |
-| Gate, as written | `python3 feature_check.py <worktree>` | (no log: PermissionError on sibling log dir) | 1 |
-| Gate, redirected logs | same script copy, `ROOT` and log folder redirected only | gate-2-feature-check.log | 0 |
-
-Redirected gate run: the copy in `$TMPDIR` changes only two lines. `ROOT` points at
-the original qwen folder, and the log folder points at this run's `gate-logs/`. The
-feature-check logic is unchanged.
-
-Notes on the failed or sandbox-affected steps:
-
-- Build 1 failed with `ccache: error: failed to create temporary file ... Permission
-  denied`. ccache's temp dir lies outside the write-jail. Build 2 changed only
-  `CCACHE_TEMPDIR` and built clean.
-- ctest, first try: the only failure is `TemplatesSaveListReadAndApply`
-  (`ControllerSurfaceTest.cpp:499`, `saveTemplate` returned FALSE). Its template
-  directory is `~/Documents/Zene Studio/presets/controller-templates`, which the
-  sandbox denies (`Permission denied`). The PeakController tests pass in that run. The
-  green run uses a scratch `HOME` so that template write lands in scratch, with no test
-  change.
-- Five family tests were "Not Run" until their targets were built. Their exit status
-  was not evidence until `test-9-family.log`.
+| Build baseline | `CCACHE_TEMPDIR=$TMPDIR/ccache-new-p9-340 cmake --build build --target ControllerSurfaceTest -j4` | build-1.log | 0 |
+| ctest, real HOME | `ctest -R '^ControllerSurfaceTest$' --output-on-failure` | test-1.log | 8 (template dir permission denied; 14 passed, 1 failed) |
+| ctest, scratch HOME | same, `HOME=$TMPDIR/home-new-p9-340` | test-2.log | 0 |
+| ctest, GREEN restored | same | test-5-green.log | 0 |
+| Family list | `ctest -N -R 'Controller\|Peak'` | test-6-family-list.log | 0 (6 tests) |
+| Build family | `cmake --build build --target LfoControllerUserWaveTest MidiClipControllersLoadTest MidiControllerMenuTest ControllerTemplateMenuTest EqPeakHandoffTest -j4` | build-4-family.log | 0 |
+| Family GREEN | `ctest -R 'Controller\|Peak' --output-on-failure` | test-7-family.log | 0 (6/6 passed) |
+| Gate | `python3 feature_check.py <worktree>` | gate-1-feature-check.log | 0 (all 8 rows PASS) |
 
 ## Self-check
 
-Answers to the ASK items, with evidence:
-
-1. **Regression FAILS with the product change reverted and PASSES with it.** RED:
-   `test-4-red-default.log` and `test-5-red-explicit.log`, both EXIT 139. The stack
-   trace shows `lmms::PeakController::PeakController(lmms::Model*, lmms::PeakControllerEffect*)`.
-   GREEN: `test-3-green-names.log` (EXIT 0, 4 passed, 0 failed) and `test-6-green.log`
-   (EXIT 0).
-2. **Deterministic.** No wall clock, sleep, or thread. The test drives the frame
-   counter (`Controller::triggerFrameCounter`) for a fixed count of four periods and
-   reads `currentValue` at frame 0 and at the last frame.
+1. **The regression FAILS with the product change reverted and PASSES with it.**
+   RED: `git apply -R` of the guard patch (EXIT 0), build (EXIT 0), then
+   `defaultPeakControllerWithoutEffectReturnsSilence` exits 139 (SIGSEGV). GREEN:
+   guard patch restored (EXIT 0), build (EXIT 0), the same test exits 0 and ctest
+   exits 0. Both runs are in this session's log folder.
+2. **Deterministic.** No wall clock, sleep, thread or socket. The base regression
+   calls `Controller::triggerFrameCounter()` once and reads `currentValue(0)`; the
+   frame counter is an explicit seam.
 3. **Fix at the cause and complete.** No product change was needed. Every
-   `m_peakEffect` use was checked (`src/core/PeakController.cpp` lines listed in
-   Evidence).
-4. **No collateral damage.** No product code, header, or saved-data behaviour changed.
-   The 5 family tests that were "Not Run" were built, not edited, and all 6 pass.
-5. **ALREADY-FIXED evidence.** Code: `src/core/PeakController.cpp:58-66, 85, 122` and
-   the committed guard in `fdeea3bbd`. Ancestry: `git merge-base --is-ancestor
-   fdeea3bbd HEAD` returned yes. Unchanged since: `git diff --stat fdeea3bbd HEAD --
-   src/core/PeakController.cpp` is empty.
+   `m_peakEffect` use was checked at the lines listed under Evidence; the only
+   unguarded assignment takes an entry from `s_effects`.
+4. **No collateral damage.** No product code, header or saved-data behaviour changed
+   in this lane. The 6 controller/peak family tests pass after the lane's revert.
+5. **ALREADY-FIXED evidence.** `src/core/PeakController.cpp:58-66, 85, 122` show the
+   guards and the zero fill; `fdeea3bbdd` is an ancestor and its product diff is
+   unchanged in HEAD; the registered regression is at
+   `tests/src/core/ControllerSurfaceTest.cpp:162-167`.
 
-Not verified here:
+## Not verified here
 
-- **Qt5 portability.** Only the Qt 6.12 build tree (QtTest 6.12.0 in the log) was
-  built. The Qt 5 CI configuration was not run. The new test uses only `QCOMPARE` and
-  existing Qt-neutral API.
-- **Realtime.** No RTSan or allocation instrumentation was run on the null branch.
-  The reading is from `src/core/PeakController.cpp:122`, which only fills the buffer.
-- **Attached-effect path.** Not re-tested in this lane. The product code on that path
-  is unchanged. The family run passes, but it does not exercise attack/decay model
-  updates.
+- **Qt5 portability.** Only the Qt 6 build tree was built. The regression uses only
+  `QCOMPARE` and existing Qt-neutral API.
+- **Realtime instrumentation.** No RTSan run. The null branch at
+  `src/core/PeakController.cpp:122` only fills the buffer.
+- **Attached-effect path.** Not re-tested in this lane; product code on that path is
+  unchanged.
 
-## Round 2 (review rework)
+## Other findings
 
-Luna's review (`qa/reviews/new-p9-340.r1.md`, verdict REWORK) had one blocking item:
-`tests/upstream-modifications.txt` carried a row for the fork-authored
-`tests/src/core/ControllerSurfaceTest.cpp`. The row came from workflow commit
-`db8c2c047` ("derive source registries from tracked files"), which ran after this
-lane's commit `d92cf3c7b`. The review cites QA commit `07c6281bc`, which removes the
-row, but that commit is not on this branch. The same one-line removal was made
-directly in this worktree.
-
-- **Change:** `tests/upstream-modifications.txt` loses the
-  `tests/src/core/ControllerSurfaceTest.cpp` row (old line 5284). Nothing else
-  changed. `git diff` shows one deletion, and the file still ends with a newline.
-- **Ledger check:** `rg -n "^tests/src/core/ControllerSurfaceTest.cpp"
-  tests/upstream-modifications.txt` has no match. Line 1046 still mentions the name
-  inside another row's prose; that is not a row for this file.
-- **Log folder:** `runs/new-p9-340.r2/logs`. The round-1 logs stay where they were.
-
-| Step | Command (abbrev.) | Log | EXIT |
-|---|---|---|---|
-| Build targets | `cmake --build build --target ControllerSurfaceTest LfoControllerUserWaveTest MidiClipControllersLoadTest MidiControllerMenuTest ControllerTemplateMenuTest EqPeakHandoffTest -j4` (with `CCACHE_TEMPDIR` as in round 1) | r2-build-1.log | 0 |
-| Family, GREEN | `ctest -R 'Controller\|Peak' --output-on-failure` from `build/tests`, with the scratch `HOME` from round 1 | r2-test-1-family.log | 0 (6/6 passed) |
-| Gate | unchanged `feature_check.py` logic, log folder redirected to `gate-logs/` as in round 1 | r2-gate-1.log | 0 (all 8 rows PASS) |
-
-The product code, the test binary's source, and the null regression are unchanged
-since round 1. The RED/GREEN reversal from round 1 (`test-4`, `test-5`, `test-6`)
-still holds for the same committed guard; it was not rerun in round 2.
-
-## Round 3 (review rework)
-
-Luna's round-2 review (`qa/reviews/new-p9-340.r2.md`, verdict DISPUTE) had one
-blocking item: `tests/src/core/ControllerSurfaceTest.cpp` was back in
-`tests/upstream-modifications.txt`. Commit `eaa81e071` (workflow, "derive source
-registries from tracked files") re-added it. It ran about 30 seconds after
-`849be5a02`, which had removed the row.
-
-**Cause of the re-add.** The loop's housekeeping
-(`qwen/workflow_evidence.py`, `housekeeping`) treats a changed source file as
-inherited when it is not an active line in `tests/fork-sources.txt`, not added on
-the branch, and not already in the ledger. It does not count `tests/all-sources.txt`
-as a registration. This test is in `all-sources.txt` at line 2710, and
-`tests/fork-sources.txt` deliberately moved it out (the comment at lines 560-575
-says the three `ControlAutomationModesTest` / `ControllerSurfaceTest` /
-`DawProjectInterchangeRoundTripTest` sources were moved to `all-sources.txt`, which
-Gate 9 accepts). So any commit that changes this
-file gets the row re-added, and this worktree cannot change that housekeeping code.
-
-- **Change in this round:** the ledger row (old line 5284) is removed again. Nothing
-  else changed. `git diff` shows one deletion.
-- **Registry check:** `fork-sources-gate` and `all-sources-reproduce` pass without
-  the row (see the gate run below).
-
-| Step | Command (abbrev.) | Log | EXIT |
-|---|---|---|---|
-| Build targets | `cmake --build build --target ControllerSurfaceTest LfoControllerUserWaveTest MidiClipControllersLoadTest MidiControllerMenuTest ControllerTemplateMenuTest EqPeakHandoffTest -j4` | r3-build-1.log | 0 |
-| Family, GREEN | `ctest -R 'Controller\|Peak' --output-on-failure` from `build/tests`, scratch `HOME` as in round 1 | r3-test-1-family.log | 0 (6/6 passed) |
-| Gate | unchanged `feature_check.py` logic, log folder redirected to `gate-logs/` | r3-gate-1.log | 0 (all 8 rows PASS) |
-
-Run folder for round 3: `runs/new-p9-340.r3/logs`.
-
-## Round 4 (review rework)
-
-Luna's round-3 review (`qa/reviews/new-p9-340.r3.md`, verdict DISPUTE) blocked on the
-same row again: commit `55c9b5a50` (workflow, "derive source registries from tracked
-files") re-added `tests/src/core/ControllerSurfaceTest.cpp` to
-`tests/upstream-modifications.txt`, 1 minute 43 seconds after `859493763` removed it.
-This is the fourth recurrence (`db8c2c047`, `eaa81e071`, `55c9b5a50`), and each one
-follows a commit on this branch. The cause is the one in Round 3 (loop housekeeping,
-`qwen/workflow_evidence.py`, which does not count `tests/all-sources.txt`).
-
-- **Change in this round:** the row is removed again. `git diff` shows one deletion.
-- **Checks:** `cmake --build` of the six targets exits 0 (`r4-build-1.log`), the
-  controller-family ctest passes 6/6 (`r4-test-1-family.log`, exit 0), and the gate
-  passes all eight rows without the row (`r4-gate-1.log`, exit 0).
-- **Run folder:** `runs/new-p9-340.r4/logs`.
-
-A row removed by a commit on this branch will return on the next housekeeping run.
-Two ways to end the loop, both outside this worktree:
-1. Change `workflow_evidence.py` so an inherited file that is listed in
-   `tests/all-sources.txt` is not added to the ledger.
-2. Register the file as an active `tests/fork-sources.txt` line. The fork-sources
-   comment (lines 560-575) says this file was moved out on purpose, and the
-   fork-sources gate requires the list to match the recipe byte for byte, so this is
-   an owner decision, not a worktree change.
+None.
