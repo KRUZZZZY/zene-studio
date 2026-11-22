@@ -27,7 +27,12 @@ tests/src/core/InputMonitorTest.cpp `anUnavailableWideChannelIsSilenceNotTheSter
 - Gates: `python3 .../feature_check.py <worktree>` (gates.log) EXIT=0, RESULT: PASS (all 8 rows PASS).
 
 ## Self-check
-(see below, filled after submit_check)
+- Red/green: with the product change reverted the test fails (RED_EXIT=8), with it applied it passes (GREEN_EXIT=0); see Commands.
+- Deterministic: the test calls the pure `copyMonitorInput` seam with injected arrays; no device thread, timers or sleeps.
+- Complete: the only caller of the old `copyInput` was `InputMonitorHandle::play` (src/core/InputMonitor.cpp); the stereo-inactive path is unchanged, and the channel is also guarded against negative values.
+- No collateral: no save format, schema or command touched; the stereo fallback with wide capture inactive behaves as before (asserted in the test); no limit added.
+- Verdict is FIXED, not ALREADY-FIXED/FALSE-POSITIVE.
+- Sibling commands: I changed no command files (only InputMonitor.h/.cpp and the test), so the listed app.*/arrangement.* commands are not affected.
 
 ## Other findings
 - ArrangingCatchUpTest fails in this environment (above); not touched.
