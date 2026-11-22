@@ -44,3 +44,31 @@ regression tests above were added with the fix in `ab938848f8`.
 
 ## Other findings
 - None.
+
+## Self-check
+- **Red/green with the product change reverted:** does not apply. This session made no product
+  change (the commit holds only this report), so there is nothing to reverse. The covering tests came
+  with `ab938848f8`. On this branch they pass: `03-test-functions.log` EXIT=0, 6 passed, 0 failed.
+  I did not reverse `ab938848f8` to show them failing. That commit also changes several other
+  recording behaviours (clusters 5312, new-p8-208, 3506, P2, P3, P6), so reversing it here was not
+  attempted.
+- **Determinism:** `droppedFramesArePaddedWithSilenceInTheTake` overflows the ring on purpose: it
+  offers 4096 frames to a 1024-frame ring in one `append()` call, with no drain running. It then
+  calls `finish()`, which joins the drain thread, and checks the result. There are no sleeps or timing
+  checks. `droppedFramesReachTheSongAndTheCommandSurface` calls
+  `acceptRecordedTake(nullptr, 5, ...)` directly, with an injected count of 5.
+- **Fix at the cause and complete:** the gap is recorded where the ring rejects frames
+  (`SampleRecordAccumulator.h:201-213`) and padded on the drain thread (`:272-280`). Every consumer is
+  consistent: `reapRetiredTakes` (`SampleRecordHandle.cpp:171-187`) is the only caller of
+  `acceptRecordedTake` (`rg -n acceptRecordedTake src include`: one call site). It reads the final
+  count after `finish()` joins the drain thread.
+- **No collateral damage:** this session changed no product code, project format or limit
+  (`git show --stat HEAD` lists only this report).
+- **ALREADY-FIXED evidence:** `include/SampleRecordAccumulator.h:201-213`,
+  `src/core/SampleRecordHandle.cpp:171-187`, `src/core/SampleClip.cpp:303-305` and
+  `src/core/ControlCommandsRecordingRoutes.cpp:180-181`. Details are in the Evidence section above.
+- **Sibling commands (app.*, arrangement.*):** not affected. Those come from the branch's earlier
+  merge-train commits compared with master, not from this session. This session changed no command
+  file. `record.get_state` already reports `clip_takes.dropped_frames`.
+- **Tests added or changed (control-*.py):** those also come from earlier branch commits. This
+  session added no tests.
