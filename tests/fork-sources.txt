@@ -4028,3 +4028,5 @@ tests/src/compile/MsFriendLookupProbe.cpp
 # regression: construction with the default argument and with explicit nullptr stays silent
 # across periods). The product guard is the ancestor fix; this pins it.
 tests/src/core/PeakControllerNullEffectTest.cpp
+# cluster new-p10-343: SampleBuffer::toBase64 byte count past INT_MAX (fork-NEW).
+tests/src/core/SampleBufferBase64Test.cpp
