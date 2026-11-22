@@ -86,6 +86,9 @@ because a caller wants to identify its artefact, and it is deliberately not what
   `File > Export MIDI` / `project.export_midi` path (`plugins/MidiExport`), which since Q050-020 writes the
   SAME conductor events (same tick scaling, tempo encoding and tick-0 seed) as its track 0, followed by one
   track per instrument with name, program change, channel and notes at 480 ppq (`docs/050-features/Q050-020.md`).
+- **A file over 16 MiB is refused before it is read.** `readConductorTrack` holds the whole file and one
+  candidate per tempo / metre event, so `SmfMaxReadBytes` (16 MiB, the note reader's `SmfNoteMaxBytes`) bounds
+  its memory on a hostile or runaway file; the refusal names the limit.
 - **Only the tempo and metre meta events are read.** The rest of a foreign file is ignored rather than
   refused (the reader walks every chunk, including running-status channel events and sysex, so it does not
   fall over on them).

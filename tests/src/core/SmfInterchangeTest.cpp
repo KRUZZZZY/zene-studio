@@ -463,6 +463,47 @@ private slots:
 		QVERIFY(!QFile::exists(beyond));
 	}
 
+	//! readConductorTrack() used to readAll() whatever it was pointed at, so a
+	//! multi-gigabyte file was pulled into memory before the first byte was
+	//! checked. The documented limit is 16 MiB (the same bound the note reader
+	//! keeps): a file at the limit reads, a file one byte over is refused with a
+	//! reason before it is read. The bytes are a WELL-FORMED file padded by an
+	//! unknown meta event, so only the size can be the reason for the refusal.
+	void aFileBeyondTheSizeLimitIsRefusedUnread()
+	{
+		const int limit = 16 * 1024 * 1024;
+		auto fileWithPadding = [](int paddingBytes) {
+			QByteArray body;
+			appendVlq(body, 0);
+			appendMeta(body, 0x51, QByteArray("\x07\xA1\x20", 3));  // 120 bpm
+			appendVlq(body, 0);
+			appendMeta(body, 0x7F, QByteArray(paddingBytes, '\0'));  // sequencer-specific: skipped
+			return smfFileWithBody(body + bodyEndingWithEndOfTrack());
+		};
+		// The padding's own length is a 4-byte VLQ at this size, 1 byte when empty.
+		auto fileOfSize = [&](int total) {
+			const int padding = total - fileWithPadding(0).size() - 3;
+			return fileWithPadding(padding);
+		};
+
+		const QString atLimit = path(m_directory, QStringLiteral("size-at-limit.mid"));
+		const QByteArray atLimitBytes = fileOfSize(limit);
+		QCOMPARE(atLimitBytes.size(), limit);
+		QVERIFY(writeFile(atLimit, atLimitBytes));
+		const interchange::SmfReadReport accepted = interchange::readConductorTrack(atLimit);
+		QVERIFY2(accepted.ok, qPrintable(accepted.error));
+		QCOMPARE(accepted.events.size(), static_cast<std::size_t>(1));
+
+		const QString overLimit = path(m_directory, QStringLiteral("size-over-limit.mid"));
+		const QByteArray overBytes = fileOfSize(limit + 1);
+		QCOMPARE(overBytes.size(), limit + 1);
+		QVERIFY(writeFile(overLimit, overBytes));
+		const interchange::SmfReadReport refused = interchange::readConductorTrack(overLimit);
+		QVERIFY2(!refused.ok, "a file beyond the size limit must be refused");
+		QVERIFY2(refused.error.contains(QStringLiteral("16 MiB")), qPrintable(refused.error));
+		QVERIFY(refused.events.empty());
+	}
+
 	//! A global tempo outside the engine's own bounds never reaches the file's
 	//! microseconds-per-quarter arithmetic. An EMPTY map answers the caller's
 	//! global tempo at every tick, so the tick-0 seed carries whatever the caller
