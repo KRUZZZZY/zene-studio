@@ -53,6 +53,12 @@ added the regression tests listed above (see `858a910e07` for the RED test of th
 - Realtime: no code changed. The existing path takes no blocking lock and allocates nothing (frames are stack-encoded, lines 609-610). It waits only until the period deadline.
 - Concurrency: local TSan does not run on this box. This verdict rests on the design reading above (only try-locks are taken on the audio thread) and on the E2E tests.
 - Registration: no product file was added or changed.
+- Red/green with the product change reverted: does not apply. This session changed no product code (the only file in my commit is this report), so there is nothing to revert. The RED test for the period deadline was committed earlier, in `858a910e07`, ahead of its fix `7711cacb85`.
+- Determinism: I added no test. The existing E2E tests use a deterministic fake client (`tests/src/plugins/FakeRemotePluginClient.cpp`, with modes such as `stall`, `late` and `latequery`) and check generous upper bounds (500 ms against a 30 s hang). Those are wall-clock bounds from earlier work, not from this session. In this session they passed with 0 skipped (logs/test-3.log).
+- Fix at the cause and complete: no change was made. All three callers of `process()` (ZynAddSubFx.cpp:367, VstEffect.cpp:93, Vestige.cpp:422) call it without holding the mutex. The sibling send/receive paths (`sendFrameNonBlocking`, `flushPendingSend`, `receiveFrameBefore`) are nonblocking or deadline-bounded on both transports (RemotePluginBase.cpp:162, :286, :627).
+- Collateral damage: none. No code, save format or limit changed.
+- ALREADY-FIXED evidence: src/core/RemotePlugin.cpp:521 (tryLock), :627 (deadline-bounded wait), :681 (Late at the deadline), :549 (silent output).
+- Tests and control commands that submit_check lists (tests/control-*.py, app.*, arrangement.*): these come from the branch diff against its base (merged train work). This session did not touch them. My commit changes only this report.
 
 ## Other findings
 - None.
