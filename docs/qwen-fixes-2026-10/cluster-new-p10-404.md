@@ -34,6 +34,19 @@ No header, command or audio-thread code changed.
 - Collateral: capture is unchanged and old history sections load as before. A snapshot that inflates to 256 MiB or less restores exactly as before, which the existing restore tests (undo, redo, checkpoints) show passing. The only newly refused input is one that expands past the cap or is not a decodable qCompress frame, which already returned false.
 - Sibling `src/core/SessionCheckpoint.cpp:93` also calls `qUncompress` on a snapshot, but only to compute a diff of in-memory snapshots the session captured itself, not from a saved file. I left it out of this fix.
 
+## Round 2 (proof manifest needs a state-sequence)
+`src/core/SongUndoSnapshot.cpp` is an undo-state file, so the manifest carries a `state-sequence` for `anUndoSnapshotExpandingPastTheCapIsRefused`. The states that test drives, in order (`stateOf()` is the session state the test compares):
+1. S0: session after `buildSession()`; `captureUndoSnapshot()` taken.
+2. S1: after `transport.set_tempo` 90 (the test asserts S1 != S0).
+3. S1 again: after `restoreUndoSnapshot(oversized)` returns false (asserted equal to S1: a refused restore leaves the session untouched).
+4. S0 again: after `restoreUndoSnapshot(*before)` returns true (asserted equal to S0).
+Product code is unchanged since b6c0b679e3. Fresh 4b run in this round (logs in new-p10-404.r2/logs, patch = the fix commit's SongUndoSnapshot.cpp diff):
+- `git apply -R fix.patch` APPLYR=0; build-1-reverted.log EXIT=0; `ctest -R ProjectContainerSaveTest` test-1-red.log RED_EXIT=8 with `FAIL! anUndoSnapshotExpandingPastTheCapIsRefused() '!song->restoreUndoSnapshot( oversized )' returned FALSE` (23 passed, 1 failed).
+- `git apply fix.patch` APPLY=0; build-2-fixed.log EXIT=0; test-2-green.log GREEN_EXIT=0.
+- `git status --short` empty afterwards.
+
+Delegation: Haiku ran the revert, rebuild, red ctest, re-apply, rebuild and green ctest sequence and reported the exit codes; I checked the FAIL line in the logs and that `git status` was clean. I wrote the report and manifest myself.
+
 ## Other findings
 - `ControlUndoStructuralTranscript` fails in this worktree with "plugin.load returned no instance id". It fails identically with my change reverted (test-5b-transcript-baseline.log, EXIT=8), so it is not caused by this fix. Not investigated.
 - `UndoHistoryPanelTest` was not built or run.
