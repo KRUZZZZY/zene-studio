@@ -221,7 +221,11 @@ ControlResult chainReceive(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'level' is not a finite number"));
 	}
-	receive.level = std::clamp(level, 0.0, 2.0);
+	if (level < 0.0 || level > 2.0)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("level %1 is out of range: a receive level is 0..2").arg(level));
+	}
+	receive.level = level;
 	Effect* effect = makeReceive(receive, &error);
 	if (effect == nullptr) { return error; }
 	addUndoStep([receive]() { removeReceive(receive); }, [receive]() { ControlResult ignored; makeReceive(receive, &ignored); });
