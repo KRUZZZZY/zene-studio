@@ -82,14 +82,18 @@ protected:
 	IntModel m_waveModel;
 	IntModel m_multiplierModel;
 
-	float m_duration;
+	using SampleFunction = sample_t (*)(const float);
+
+	// Written by the speed/multiplier/waveform slots on the UI thread (direct
+	// connections) while updateValueBuffer() reads them on the render thread.
+	std::atomic<float> m_duration;
 	float m_phaseOffset;
 	float m_currentPhase;
 
-	sample_t (*m_sampleFunction)( const float );
+	std::atomic<SampleFunction> m_sampleFunction;
 
 private:
-	float m_heldSample;
+	std::atomic<float> m_heldSample;
 	std::shared_ptr<const SampleBuffer> m_userDefSampleBuffer = SampleBuffer::emptyBuffer();
 	std::atomic<const SampleBuffer*> m_userDefSampleBufferForRender;
 	std::atomic<unsigned int> m_userWaveRenderReaders{0};

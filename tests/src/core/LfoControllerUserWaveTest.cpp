@@ -13,11 +13,14 @@
 
 #include <QtTest>
 
+#include <cmath>
 #include <memory>
 #include <utility>
 #include <vector>
 
+#include "AudioEngine.h"
 #include "Engine.h"
+#include "Oscillator.h"
 #include "AutomatableModel.h"
 #include "Controller.h"
 #include "ControllerDialog.h"
@@ -57,6 +60,53 @@ private slots:
 	void replacedWaveRemainsAliveWhileRenderLeaseIsHeld()
 	{
 		verifyReplacementLifetime<LfoController>();
+	}
+
+	//! new-p9-249: speed, multiplier and waveform slots run on the UI thread through
+	//! Qt::DirectConnection while updateValueBuffer() reads the same fields on the
+	//! render thread. Every field shared that way must be an atomic handoff.
+	void parameterStateSharedWithRenderIsAtomic()
+	{
+		LfoController lfo(nullptr);
+		const bool durationIsAtomic = [](auto& l) { return requires { l.m_duration.load(std::memory_order_acquire); }; }(lfo);
+		const bool sampleFunctionIsAtomic =
+			[](auto& l) { return requires { l.m_sampleFunction.load(std::memory_order_acquire); }; }(lfo);
+		const bool heldSampleIsAtomic = [](auto& l) { return requires { l.m_heldSample.load(std::memory_order_relaxed); }; }(lfo);
+		QVERIFY2(durationIsAtomic, "m_duration is a plain field written by the UI and read by render");
+		QVERIFY2(sampleFunctionIsAtomic, "m_sampleFunction is a plain field written by the UI and read by render");
+		QVERIFY2(heldSampleIsAtomic, "m_heldSample is a plain field written by the UI and by render");
+
+		// Behaviour of the published duration stays the same: rate * speed, scaled by the multiplier.
+		const float rate = static_cast<float>(Engine::audioEngine()->outputSampleRate());
+		lfo.m_speedModel.setValue(4.f);
+		lfo.m_multiplierModel.setValue(1);
+		QCOMPARE(static_cast<float>(lfo.m_duration), rate * 4.f / 100.f);
+		lfo.m_multiplierModel.setValue(2);
+		QCOMPARE(static_cast<float>(lfo.m_duration), rate * 4.f * 100.f);
+	}
+
+	//! new-p9-249: the waveform model value is published before its dataChanged slot
+	//! updates m_sampleFunction, so a render period can run in between. Model the
+	//! interleaving from the user wave (null function) to white noise.
+	void renderBetweenWaveChangeAndSlotDoesNotCallNullFunction()
+	{
+		LfoController lfo(nullptr);
+		lfo.m_waveModel.setValue(static_cast<int>(Oscillator::WaveShape::UserDefined));
+		QVERIFY(static_cast<sample_t (*)(const float)>(lfo.m_sampleFunction) == nullptr);
+		{
+			QSignalBlocker blockSlot(&lfo.m_waveModel);
+			lfo.m_waveModel.setValue(static_cast<int>(Oscillator::WaveShape::WhiteNoise));
+		}
+		lfo.m_speedModel.setValue(0.01f);
+		lfo.m_multiplierModel.setValue(1); // a few frames per cycle, so the noise phase wraps inside one buffer
+		Controller::triggerFrameCounter();
+		const ValueBuffer* values = lfo.valueBuffer();
+		QVERIFY(values != nullptr);
+		for (int i = 0; i < values->length(); ++i)
+		{
+			QVERIFY(std::isfinite(values->value(i)));
+			QVERIFY(values->value(i) >= 0.0f && values->value(i) <= 1.0f);
+		}
 	}
 
 private:
