@@ -1531,6 +1531,7 @@ plugins/VstBase/VstChannelCount.h
 plugins/VstBase/VstMidiEventBatch.h
 plugins/VstBase/VstPlugin.cpp
 plugins/VstBase/VstPlugin.h
+plugins/VstBase/VstShmHandoff.h
 plugins/VstBase/communication.h
 plugins/VstBase/vst_base.cpp
 plugins/VstEffect/VstEffect.cpp
@@ -3351,6 +3352,7 @@ tests/src/core/VideoTrackTestParts2.h
 tests/src/core/VstChannelCountTest.cpp
 tests/src/core/VstMidiEventBatchTest.cpp
 tests/src/core/VstPeMachineTypeTest.cpp
+tests/src/core/VstShmHandoffTest.cpp
 tests/src/core/VstSubPluginFeaturesTest.cpp
 tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpMarkersTest.cpp
