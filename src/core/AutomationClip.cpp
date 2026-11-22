@@ -1274,6 +1274,10 @@ void AutomationClip::loadSettings( const QDomElement & _this )
 	// we will generate the tangents
 	bool shouldGenerateTangents = false;
 
+	// The saved <object> list is authoritative: replace the live targets and stale
+	// resolve ids instead of appending to them (undo/redo restore path).
+	clearObjects();
+	m_idsToResolve.clear();
 	clear();
 
 	movePosition( _this.attribute( "pos" ).toInt() );
