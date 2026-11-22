@@ -1075,6 +1075,7 @@ private slots:
 	void gigplayerBidirectionalLoopReflectsAtExclusiveEnd();
 	void gigplayerSingleFrameLoopRepeatsFrame();
 	void gigplayerNoProgressFallbackKeepsEarlierSamples();
+	void gigplayerForwardLoopZeroFillsShortRead();
 	void gigplayerAudioPathDoesNotAllocate();
 	void gigplayer24BitSamplePlaysAtFullScale();
 	void gigplayerCallbackDoesNotWaitForAFileLoad();
@@ -4197,6 +4198,103 @@ void PluginPortsMigrationTest::gigplayerNoProgressFallbackKeepsEarlierSamples()
 	QCOMPARE(shared[1].right(), 0.375f);
 	QCOMPARE(shared[2].left(), 0.125f);
 	QCOMPARE(shared[2].right(), 0.5f);
+#endif
+}
+
+
+namespace
+{
+
+//! A fake GIG sample: frame i is four bytes of value i + 1; reads stop at `length`.
+struct FakeGigSource
+{
+	long position = 0;
+	long length = 0;
+};
+
+long fakeGigRead(void* context, void* destination, long frames)
+{
+	auto* source = static_cast<FakeGigSource*>(context);
+	auto* bytes = static_cast<std::int8_t*>(destination);
+	long done = 0;
+	for (; done < frames && source->position < source->length; ++done, ++source->position)
+	{
+		for (int b = 0; b < 4; ++b) { bytes[done * 4 + b] = static_cast<std::int8_t>(source->position + 1); }
+	}
+	return done;
+}
+
+long fakeGigPosition(void* context) { return static_cast<FakeGigSource*>(context)->position; }
+void fakeGigSeek(void* context, long frame) { static_cast<FakeGigSource*>(context)->position = frame; }
+
+struct FakeGigLoopSource
+{
+	void* context;
+	long (*read)(void*, void*, long);
+	long (*position)(void*);
+	void (*seek)(void*, long);
+};
+
+} // namespace
+
+// A forward loop whose source runs out before the block is full (a loop that
+// lies past the end of the sample data, or a short Read()) must not leave the
+// tail of the block uninitialised: the caller converts the whole block.
+void PluginPortsMigrationTest::gigplayerForwardLoopZeroFillsShortRead()
+{
+#ifndef PART_C_MIGRATED_gigplayer
+	QSKIP("GigPlayer is unavailable in this configuration");
+#else
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_gigplayer)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	using ReadForwardLoop = lmms::f_cnt_t (*)(const FakeGigLoopSource*, std::int8_t*, unsigned long,
+		lmms::f_cnt_t, lmms::f_cnt_t, lmms::f_cnt_t);
+	auto readLoop = reinterpret_cast<ReadForwardLoop>(lib->resolve("gigplayerReadForwardLoop"));
+	QVERIFY2(readLoop != nullptr, "the GigPlayer module does not export gigplayerReadForwardLoop");
+
+	constexpr unsigned long frameSize = 4;
+	constexpr lmms::f_cnt_t frames = 16;
+
+	// Short read: the sample has 100 frames but the loop ends at 200, so the
+	// source runs dry after 10 frames. The buffer is poisoned beforehand.
+	{
+		FakeGigSource fake{90, 100};
+		const FakeGigLoopSource source{&fake, fakeGigRead, fakeGigPosition, fakeGigSeek};
+		std::array<std::int8_t, frames * frameSize> buffer;
+		buffer.fill(0x55);
+		const auto read = readLoop(&source, buffer.data(), frameSize, frames, 64, 200);
+		QCOMPARE(read, lmms::f_cnt_t{10});
+		for (std::size_t i = 0; i < buffer.size(); ++i)
+		{
+			const std::int8_t expected = i < 10 * frameSize ? static_cast<std::int8_t>(90 + i / frameSize + 1) : 0;
+			QVERIFY2(buffer[i] == expected,
+				qPrintable(QString{"byte %1 is %2, expected %3 (unread tail must be zero)"}
+					.arg(i).arg(buffer[i]).arg(expected)));
+		}
+	}
+
+	// A loop that really wraps keeps filling the whole block from the loop start.
+	{
+		FakeGigSource fake{6, 100};
+		const FakeGigLoopSource source{&fake, fakeGigRead, fakeGigPosition, fakeGigSeek};
+		std::array<std::int8_t, frames * frameSize> buffer;
+		buffer.fill(0x55);
+		const auto read = readLoop(&source, buffer.data(), frameSize, frames, 4, 8);
+		QCOMPARE(read, frames);
+		for (lmms::f_cnt_t i = 0; i < frames; ++i)
+		{
+			const int frame = i < 2 ? 6 + i : 4 + (i - 2) % 4;
+			QCOMPARE(static_cast<int>(buffer[i * frameSize]), frame + 1);
+		}
+	}
 #endif
 }
 
