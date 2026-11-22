@@ -124,7 +124,7 @@ namespace fx {
         else {
             absl::Span<float> compIn2x = impl._gain2x.getSpan(0);
             for (unsigned i = 0; i < _oversampling * nframes; ++i)
-                compIn2x[i] = std::abs(left2x[i]) + std::abs(right2x[1]);
+                compIn2x[i] = std::abs(left2x[i]) + std::abs(right2x[i]);
 
             absl::Span<float> gain2x = impl._gain2x.getSpan(1);
 
