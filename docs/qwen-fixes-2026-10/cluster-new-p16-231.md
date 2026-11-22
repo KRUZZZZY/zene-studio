@@ -55,3 +55,16 @@ product or test change was made.
 - The `m_oldAutomatedValues` / `m_recordedModels` growth branches (`Song.cpp:849-854`, `892-898`) can only be
   reached once the read has already spilled. With the reserve sized by `ensureAutomationScratchCapacity`, they share
   the same design question as above.
+
+### Answers to submit_check's "?" items
+- Fails without the fix, passes with it: not applicable. No product change, so no regression test (NEEDS-CONTEXT).
+- Deterministic: not applicable, no test added. The existing `anOverflowingReadIsRedoneAndStillAppliesEveryClip`
+  uses the `resizeAutomationScratchForTest` seam, not timing.
+- Fix at the cause, siblings checked: no fix. I read all four overflow sites (`Song.cpp:744`, `763`, `852`, `896`)
+  and the reserve path (`Song.cpp:920-967`). Their shared design question is described above.
+- No collateral damage: no product file changed. The commit adds only this report.
+- ALREADY-FIXED / FALSE-POSITIVE code reference: not my verdict. The contract that may make this by design is
+  `include/AutomationRenderScratch.h` (class comment) and `include/Song.h:406-433`.
+- Sibling commands (app.*, arrangement.*): not affected. Those test files come from earlier commits on this
+  branch, and this session changed no command file.
+- submit_check run this session: "RESULT: PASS - submit", EXIT=0. Its gates row (feature_check.py) was PASS.
