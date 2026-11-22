@@ -44,3 +44,12 @@ I did not run `feature_check.py`: no product file changed, so it had nothing to 
 ## Other findings
 
 None.
+
+## Self-check
+
+* Regression test fails without / passes with the change: not applicable. The verdict is FALSE-POSITIVE and no product code changed, so there is no red/green pair and no `proof.json` regression-test artifact. The manifest has a `code-reference` instead.
+* Deterministic test: no test was added. The probe in `logs/probe/p.cpp` uses fixed constant input and fixed ratios, with no clock or sleeps.
+* Fix at the cause and complete: nothing was changed. The only caller of the mixing helper is the render loop (`GigPlayer.cpp:1137`), and I read the whole loop (`GigPlayer.cpp:1112-1148`).
+* No collateral damage: no product, save-format or command file was touched, so saved projects load as before.
+* Verdict evidence: `plugins/GigPlayer/GigPlayer.cpp:1145` (the source view advances by `inputFramesUsed` on every pass), `GigPlayer.cpp:1140` (the existing 0/0 break), `src/core/AudioResampler.cpp:477-480` (libsamplerate errors throw), and the measured start-up latency in `logs/probe-out.log` (at most 19 calls at ratio 1/256, then output).
+* Sibling commands (`app.*`, `arrangement.*`): not affected. The only file in this commit is this report. The test files `submit_check.py` lists (`tests/control-*.py`) come from the branch's merged history, not from this change.
