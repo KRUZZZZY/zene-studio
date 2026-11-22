@@ -124,3 +124,42 @@ tree.
   fails in this build tree because only one of two loadable effects can be
   loaded through `plugin.load` (`loadEffects(source, 2, &ids)` returns 1). It
   fails with and without this fix and is unrelated to `EffectChain::loadSettings`.
+
+## Self-check
+
+- **Regression test fails with the product change reverted and passes with it.**
+  Step 4b used `fix.patch` from `git diff -- src/core/EffectChain.cpp`.
+  Reverted: build EXIT=0, `ctest -R MixerRoutingBackwardCompatTest` EXIT=8
+  (`test-3-red.patch.log`, `loaded 0 effects, expected 1`). Reapplied: build
+  EXIT=0, same ctest EXIT=0 (`test-4-green.patch.log`). The initial RED run
+  before any fix was also EXIT=8 (`test-1-red.log`) and the fixed run EXIT=0
+  (`test-2-green.log`).
+- **Deterministic.** The test uses fixed XML strings and a local `EffectChain`
+  per case; the effect names are unknown to the plug-in factory, so each becomes
+  a deterministic `DummyEffect` with no plug-in binary, thread or plug-in scan.
+  There is no wall-clock timing, sleep, timer or race: the only engine setup is
+  the existing `QTEST_GUILESS_MAIN` harness, whose audio device is stopped.
+  Mismatch reporting is read synchronously from `Song::collectError()`.
+- **Cause and completeness.** The only entry point is `EffectChain::loadSettings`,
+  reached through `restoreState` from `Mixer::loadSettings`
+  (`src/core/Mixer.cpp:3009-3013`) and `Rack::loadSettings`
+  (`src/core/Rack.cpp:418-421`), and from the control/preset restore path. All
+  now load every element. `saveSettings` writes the real count
+  (`src/core/EffectChain.cpp:160`), and `ControlCommandsReference::chainWith`
+  already recomputes the count from the elements. `DataFile`'s legacy upgrade
+  only copies the attribute during a format migration, so it does not trust it
+  as a load bound.
+- **No collateral damage.** A well-formed file still loads exactly as before:
+  the normal `numofeffects="1"` case is asserted to load one effect and report
+  no error. The fix never rejects an element or a caller; it loads all elements
+  present. A scan of every `.mmp` fixture under `tests/` found no fxchain whose
+  `numofeffects` differs from its `<effect>` child count, so no existing fixture
+  gains an error. The only files that now report an error are files whose count
+  was already wrong and whose effects were previously discarded.
+- **ALREADY-FIXED / FALSE-POSITIVE.** Not applicable: the verdict is REAL.
+- **Sibling commands in changed command files.** This cluster changed no command
+  file and added or altered no control command. It touched
+  `src/core/EffectChain.cpp`, its regression test, the inherited-file
+  registration line and this report. The listed `app.*` and `arrangement.*`
+  commands live in other files and are not affected by the loader change; no
+  command registration or schema was edited.
