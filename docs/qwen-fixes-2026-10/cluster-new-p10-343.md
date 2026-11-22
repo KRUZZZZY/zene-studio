@@ -37,3 +37,14 @@ The seam was committed first with the old int cast (commit "Add SampleBuffer::ba
   test targets that include SampleBuffer.h were NOT rebuilt or run (unverified, they only see an added static declaration).
 - Family: `ctest -R "SampleBuffer|SlicerTWaveform"` -> test-family.log EXIT=0, 4/4 passed.
 
+- Gates: `python3 .../feature_check.py <worktree>` -> gates.log, EXIT=0 (first run FAILED fork-sources/all-sources-reproduce because tests/all-sources.txt lacked the new test; added in sorted place, rerun all 8 PASS):
+```
+  PASS  all-sources-reproduce   exit 0
+  PASS  no-upstream-regression  exit 0
+  PASS  check-namespace         exit 0
+  PASS  no-tautology            exit 0
+  PASS  doc-figures             exit 0
+  PASS  complexity              no new item in your files
+  PASS  file-length             no new item in your files
+RESULT: PASS
+```
