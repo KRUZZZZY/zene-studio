@@ -83,6 +83,35 @@ the control socket's `window.screenshot` with the Pattern Editor panel shown.
 
 ## Self-check
 
+Answers to the pre-submit check's questions:
+
+1. **The regression test fails with the product change reverted and passes with
+   it (exit codes).** Yes. Reversed product diff: EXIT 1, `FAIL! ...
+   a pattern editor with no content width reports 0 px per bar`
+   (`test-3-red.log`). Restored fix: EXIT 0, slot PASS
+   (`test-4-green-restored.log`).
+2. **The test is deterministic: no wall-clock timing, sleeps or races.** Yes. It
+   sets a fixed width, invokes the `updatePixelsPerBar` slot synchronously with
+   `Qt::DirectConnection`, reads `pixelsPerBar()` before restoring the width, and
+   uses one `QCoreApplication::processEvents()` only for the queued row removal.
+   There is no timer, sleep or thread.
+3. **The fix is at the cause and complete: every caller and sibling checked.**
+   Yes. `setPixelsPerBar` has two callers: `PatternEditor::updatePixelsPerBar`
+   (clamped here) and `SongEditor::zoomingChanged`, whose scale comes from
+   `MIN_PIXELS_PER_BAR` (`src/gui/editors/SongEditor.cpp:789-801`) and is never 0.
+   The truncating readers of the scale (`TrackContentWidget.cpp:112, 295, 653`)
+   are protected by the new >= 1 invariant; `dropEvent` additionally guards a
+   non-positive scale itself.
+4. **No collateral damage.** The clamp changes only a scale that was 0 or
+   negative (a crash path); every legitimate scale >= 1 is unchanged, so saved
+   projects load and render as before. The float tick offset truncates to the
+   same tick for integer scales. No command or undo state was added.
+5. **ALREADY-FIXED / FALSE-POSITIVE evidence.** Not applicable: the verdict is
+   FIXED. (The red run above shows the defect was real on this branch.)
+6. **Sibling commands in the command files you changed.** No command file was
+   changed in this fix. `app.*`, `arrangement.*` and every other command listed
+   are untouched, so none of their handlers or schemas is affected.
+
 - **Test proves the fix?** Yes. With only the product diff reversed the same slot
   failed (EXIT 1) with the recorded 0 px per bar; with the fix it passed (EXIT 0).
 - **Realtime?** No audio-thread code touched. Both files are GUI code; no
