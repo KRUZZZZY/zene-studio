@@ -60,12 +60,22 @@ void swap(SampleBuffer& first, SampleBuffer& second) noexcept
 	swap(first.m_channels, second.m_channels);
 }
 
+auto SampleBuffer::base64SourceBytes(size_t numFrames) -> std::optional<qsizetype>
+{
+	return static_cast<qsizetype>(static_cast<int>(numFrames * sizeof(SampleFrame)));
+}
+
 QString SampleBuffer::toBase64() const
 {
 	// TODO: Replace with non-Qt equivalent
-	const auto data = reinterpret_cast<const char*>(m_data.data());
-	const auto size = static_cast<int>(m_data.size() * sizeof(SampleFrame));
-	const auto byteArray = QByteArray{data, size};
+	const auto size = base64SourceBytes(m_data.size());
+	if (!size)
+	{
+		qWarning() << QObject::tr("Sample is too large to embed as Base64, it was not saved");
+		return QString();
+	}
+	// fromRawData: no copy of the (possibly gigabytes of) frames, the array only views them.
+	const auto byteArray = QByteArray::fromRawData(reinterpret_cast<const char*>(m_data.data()), *size);
 	return byteArray.toBase64();
 }
 

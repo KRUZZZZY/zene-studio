@@ -1050,6 +1050,8 @@ set(LMMS_TESTS
 	src/core/RecordToolsNoEngineTest.cpp
 	# Cluster stress-1 (2026-10-27): a default SampleBuffer and the metronome samples with no engine and no data dir.
 	src/core/SampleBufferNoEngineTest.cpp
+	# Cluster new-p10-343: toBase64() byte count past INT_MAX.
+	src/core/SampleBufferBase64Test.cpp
 	# 0.5.0 L04 (W3): the clip list, sections, remove silence, tab to transient, note rotation.
 	src/core/ArrangeToolsTest.cpp
 	# 0.5.0 L05/L06 (W3): crop, unique copies, fade curves, asymmetric crossfades, automation switches, trim, moving a point.
