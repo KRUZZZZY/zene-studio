@@ -31,10 +31,12 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
+#include <QtEndian>
 #include <QStringList>
 #include <QTemporaryDir>
 
 #include "ConfigManager.h"
+#include "ControlProjectAssets.h"
 #include "ControlRegistry.h"
 #include "DataFile.h"
 #include "Engine.h"
@@ -207,6 +209,13 @@ private slots:
 	//! A restore the loader refuses leaves the document, and so its container
 	//! format, exactly as it was.
 	void aRefusedUndoRestoreKeepsTheContainerFormat();
+
+	//! A restore inflates what a project's saved undo history hands it, so the expanded document is
+	//! bounded: a genuine snapshot padded one byte past the document cap is refused and the session is untouched.
+	void anUndoSnapshotExpandingPastTheCapIsRefused();
+
+	//! A snapshot whose header advertises a huge size over a tiny body is refused without a restore.
+	void anUndoSnapshotAdvertisingAHugeSizeIsRefused();
 
 	// -- Checkpoints put back the format of the session they restore ----------
 

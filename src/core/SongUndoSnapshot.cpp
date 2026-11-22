@@ -51,6 +51,7 @@
 #include <QFile>
 #include <QTemporaryDir>
 
+#include "ControlProjectAssets.h"
 #include "DataFile.h"
 #include "Engine.h"
 #include "ProjectIds.h"
@@ -95,7 +96,11 @@ bool Song::restoreUndoSnapshot( const QByteArray & compressed )
 bool Song::restoreUndoSnapshot( const QByteArray & compressed, const QString & restoredFileName,
 	const QStringList& skippedSections )
 {
-	const QByteArray document = qUncompress( compressed );
+	// A saved undo history hands a restore blobs it did not just capture, and qUncompress allocates what
+	// the header claims (then grows past it): the output is counted while it inflates, against the same
+	// cap the other project-document readers use, so a crafted blob is refused before it exhausts memory.
+	QByteArray document;
+	if( !control::inflateQtCompressedWithinCap( compressed, control::MaxProjectAssetDocumentBytes, &document ) ) { return false; }
 	QTemporaryDir dir;
 	if( document.isEmpty() || !dir.isValid() ) { return false; }
 	const QString path = QDir( dir.path() ).filePath( QStringLiteral( "undo-snapshot.mmp" ) );
