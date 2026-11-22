@@ -4039,3 +4039,7 @@ tests/src/compile/MsFriendLookupProbe.cpp
 tests/src/core/PeakControllerNullEffectTest.cpp
 # cluster new-p10-343: SampleBuffer::toBase64 byte count past INT_MAX (fork-NEW).
 tests/src/core/SampleBufferBase64Test.cpp
+# cluster new-p21-172: sfizz stereo-linked gate builds its detector input from the right channel.
+tests/src/plugins/SfzGateStereoLinkTest.cpp
+# cluster new-p21-172: sfizz stereo-linked compressor builds its detector input from the right channel.
+tests/src/plugins/SfzCompressorStereoLinkTest.cpp
