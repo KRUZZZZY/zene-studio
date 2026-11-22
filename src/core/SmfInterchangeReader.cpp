@@ -41,8 +41,6 @@
 
 #include "SmfInterchange.h"
 
-#include <QFile>
-
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -637,14 +635,8 @@ bool readAllTracks(const QByteArray& bytes, SmfReadReport* report, QString* erro
 SmfReadReport readConductorTrack(const QString& path)
 {
 	SmfReadReport report;
-	QFile file(path);
-	if (!file.open(QIODevice::ReadOnly))
-	{
-		report.error = QStringLiteral("cannot read %1: %2").arg(path, file.errorString());
-		return report;
-	}
-	const QByteArray bytes = file.readAll();
-	file.close();
+	QByteArray bytes;
+	if (!readBoundedFile(path, &bytes, &report.error)) { return report; }
 
 	const bool ok = readAllTracks(bytes, &report, &report.error);
 	report.ok = ok;
