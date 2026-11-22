@@ -74,8 +74,11 @@ MonitorInputSource sourceOf(AudioEngine* engine)
 f_cnt_t copyMonitorInput(const MonitorInputSource& source, int channel,
 	std::span<SampleFrame> buffer) noexcept
 {
-	if (source.wideFrames > 0 && channel < source.wideChannels)
+	if (source.wideFrames > 0)
 	{
+		// The wide capture is the input: a channel it does not carry is silence, not the
+		// stereo bus's left side (that would monitor a different input).
+		if (channel < 0 || channel >= source.wideChannels) { return 0; }
 		const f_cnt_t frames = std::min(static_cast<f_cnt_t>(buffer.size()), source.wideFrames);
 		for (f_cnt_t f = 0; f < frames; ++f)
 		{
