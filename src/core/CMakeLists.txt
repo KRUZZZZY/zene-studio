@@ -948,6 +948,7 @@ set(LMMS_SRCS
 	core/MidiClockCapture.cpp
 	core/MidiClockState.cpp
 	core/MidiClockTracker.cpp
+	core/MidiSmfWrite.cpp
 	core/MixHelpers.cpp
 	core/MixerGroups.cpp
 	core/MixerListen.cpp
@@ -1244,6 +1245,8 @@ set(LMMS_SRCS
 	# Q050-273.1: one launcher cell's source audio, saved to the library - bounded by DECODED size,
 	# written atomically through QSaveFile (the decoded-memory hole the 512 MiB input check left).
 	core/LibraryCellAudio.cpp
+	# Q050-273.2: one launcher pattern's notes, saved to the library as a type-0 SMF.
+	core/LibraryCellMidi.cpp
 	core/ControlCommandsBrowserIndex.cpp
 	# Q050-183.1: audio.test_tone / audio.test_tone_stop
 	core/ControlCommandsAudioTestTone.cpp

@@ -30,8 +30,8 @@
  *
  *  The menu entry runs browser.save_clip with {track, scene} fixed, so the GUI and an agent on the socket
  *  are the same command; the agent half (no window at all) is tests/control-session-library-save.py.
- *  An empty cell and a MIDI cell offer no entry: one has no content, and a MIDI cell's PatternStore notes
- *  are stage 2 of Q050-273 (the command refuses one by name).
+ *  An empty cell offers no entry; a MIDI cell does, and the stage-2 half of the feature - its pattern
+ *  notes saved as a Standard MIDI File and reused in another cell - is SessionLibraryMidiTest.cpp.
  *
  *  The failure matrix is part of the feature, not an afterthought: a missing, empty, damaged, unsupported
  *  or over-limit source, a duplicate, an allocation failure and a short or uncommitted write all have to
@@ -174,6 +174,9 @@ private slots:
 		QVERIFY2(!m_tone.isEmpty(), "the audio-cell fixture was not written");
 
 		QVERIFY(run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}}).ok);
+		// The MIDI cell references pattern 0, so the pattern exists in this fixture - it simply has no
+		// notes yet, which is the refusal stage 1 means to prove (a nonexistent pattern is a different one).
+		QVERIFY(run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("pattern")}}).ok);
 		QVERIFY(Track::create(Track::Type::Pattern, Engine::getSong()) != nullptr);
 		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 2}, {QStringLiteral("scenes"), 2}}).ok);
 		QVERIFY(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0},
@@ -308,9 +311,9 @@ private slots:
 		QVERIFY(run(QStringLiteral("session.clear_slot"), {{QStringLiteral("track"), 1}, {QStringLiteral("scene"), 1}}).ok);
 	}
 
-	//! An empty cell and a MIDI cell have nothing this stage can save, so neither offers the entry (the
-	//! command refuses both by name; a menu item that always refused would be a dead entry).
-	void onlyAPopulatedAudioCellOffersTheEntry()
+	//! An empty cell has nothing to save and offers no entry; a populated MIDI cell is stage 2's subject and
+	//! offers the same browser.save_clip entry the audio cell does.
+	void onlyAPopulatedCellOffersTheEntry()
 	{
 		QVERIFY(run(QStringLiteral("session.clear_slot"), {{QStringLiteral("track"), 1}, {QStringLiteral("scene"), 1}}).ok);
 		SessionGridView view;
@@ -320,11 +323,14 @@ private slots:
 		QVERIFY2(menuAction(&empty, {QStringLiteral("Save to Library...")}) == nullptr, "an empty cell offered Save to Library...");
 		QMenu midi;
 		view.populateMenu(&midi, view.cellButton(0, 1));
-		QVERIFY2(menuAction(&midi, {QStringLiteral("Save to Library...")}) == nullptr, "a MIDI cell offered Save to Library...");
+		QAction* midiSave = menuAction(&midi, {QStringLiteral("Save to Library...")});
+		QVERIFY2(midiSave != nullptr, "a populated MIDI cell offered no Save to Library... entry");
+		QCOMPARE(midiSave->property("controlCommand").toString(), QStringLiteral("browser.save_clip"));
+		QVERIFY(midiSave->isEnabled());
 	}
 
-	//! The command's own refusals, read through the registry the menu runs: nothing to save, a MIDI cell,
-	//! an address outside the grid, both addresses at once - and a source that is missing, empty,
+	//! The command's own refusals, read through the registry the menu runs: nothing to save, a MIDI
+	//! pattern with no notes, an address outside the grid, both addresses at once - and a source that is missing, empty,
 	//! damaged/unsupported or over the DECODED-size bound. Every refusal leaves no file behind.
 	void theCommandRefusesWhatItCannotSave()
 	{
@@ -333,7 +339,7 @@ private slots:
 			ControlErrorKind::Refused);
 		const ControlResult midi = run(QStringLiteral("browser.save_clip"), {{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 1}});
 		QCOMPARE(midi.errorKind, ControlErrorKind::Refused);
-		QVERIFY2(midi.errorMessage.contains(QStringLiteral("MIDI")), qPrintable(midi.errorMessage));
+		QVERIFY2(midi.errorMessage.contains(QStringLiteral("no notes")), qPrintable(midi.errorMessage));
 		QCOMPARE(run(QStringLiteral("browser.save_clip"), {{QStringLiteral("track"), 9}, {QStringLiteral("scene"), 0}}).errorKind,
 			ControlErrorKind::InvalidArgs);
 		QCOMPARE(run(QStringLiteral("browser.save_clip"), {{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0},

@@ -1773,6 +1773,8 @@ src/core/ControlCommandsKeyNames.cpp
 src/core/ControlCommandsLaunchBindings.cpp
 src/core/ControlCommandsLibraryClips.cpp
 src/core/LibraryCellAudio.cpp
+src/core/LibraryCellMidi.cpp
+src/core/MidiSmfWrite.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsLinkAudio.cpp
 src/core/ControlCommandsLivecode.cpp
@@ -2580,6 +2582,7 @@ tests/control-save-state.py
 tests/control-session-api-proof.py
 tests/control-session-lifecycle-transcript.py
 tests/control-session-library-save.py
+tests/control-session-library-midi.py
 tests/control-session-m1.py
 tests/control-shell.py
 tests/control-shutdown.py
@@ -3745,7 +3748,10 @@ tests/control-export-settings-cleanup.py
 # Q050-273.1 (2026-10): the launcher cell's source audio saved into the shared library - bounded by DECODED
 # bytes (not the input file's size) and written atomically, with deterministic allocation/write-fault seams.
 include/LibraryCellAudio.h
+include/LibraryCellMidi.h
+include/MidiSmfWrite.h
 tests/src/gui/SessionLibrarySaveTest.cpp
+tests/src/gui/SessionLibraryMidiTest.cpp
 docs/050-features/Q050-273.1.md
 docs/qwen-fixes-2026-10/cluster-Q050-273.1.md
 # Q050-162 (2026-10): transient Repeat / Gate warp modes - the rate type, the transient table and

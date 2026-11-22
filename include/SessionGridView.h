@@ -119,10 +119,11 @@ private:
 	void launchCell(int track, int scene);
 	//! 0.5.0 L02 (WF-053): an audio file dropped on a cell (from the browser or the desktop) becomes its
 	//! clip - session.set_slot - and true when @a event was a drag or drop this handled (SessionGridDrop.cpp).
+	//! Q050-273.2: a MIDI file dropped there becomes a new pattern - session.import_midi_cell.
 	//! 0.5.0 theme 14: a drag over a cell previews the drop, and a drop that replaced a clip says so.
 	bool dropOnCell(QToolButton* cell, QEvent* event);
 	void previewDrop(int cell, const QString& file);
-	void finishDrop(int cell, const QString& file);
+	void finishDrop(int cell, const QString& file, bool midi = false);
 	//! The drop preview on @a button (cell @a index): "Replace" over a filled cell, the file over an empty one.
 	void paintDropPreview(QToolButton* button, int index) const;
 	QString dropPreviewText() const;

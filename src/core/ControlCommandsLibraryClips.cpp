@@ -37,12 +37,15 @@
  *  write live in LibraryCellAudio.cpp, so a compressed file that would decode past the bound is
  *  refused before it is decoded and every failure leaves the destination as it was. Everything else -
  *  the folder, 'name', 'tags', the overwrite refusal and the one undo step - is the clip path's, so
- *  the two routes cannot drift apart. A MIDI cell holds PatternStore notes and is stage 2 of
- *  Q050-273; it is refused by name rather than saved as a bare pattern id, which would be no reusable
- *  entry at all. */
+ *  the two routes cannot drift apart.
+ *
+ *  Q050-273.2: a MIDI launcher cell is saved too. Its music is the PatternStore column the cell
+ *  references - every note on that column, across the store's tracks - written as one type-0 SMF at
+ *  the song's tempo by LibraryCellMidi.cpp. The file is the notes, not the cell's pattern-track
+ *  settings, so inserting the entry elsewhere plays the same music. A column with no notes is
+ *  refused: an empty entry is not reusable. */
 
 #include <algorithm>
-#include <limits>
 #include <vector>
 
 #include <QDir>
@@ -61,10 +64,14 @@
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "LibraryCellAudio.h"
+#include "LibraryCellMidi.h"
+#include "MidiSmfWrite.h"
 #include "Midi.h"
 #include "MidiClip.h"
 #include "Note.h"
 #include "PathUtil.h"
+#include "PatternStore.h"
+#include "PatternTrack.h"
 #include "SampleClip.h"
 #include "SessionModel.h"
 #include "Song.h"
@@ -77,102 +84,17 @@ using namespace control;
 namespace
 {
 
-constexpr int TicksPerQuarter = DefaultTicksPerBar / 4;
-
-void putBigEndian(QByteArray* out, quint32 value, int bytes)
+//! @a clip's notes as a type-0 Standard MIDI File at @a bpm; empty when the writer refuses them.
+std::vector<midismf::Note> smfNotesOf(const MidiClip* clip)
 {
-	for (int shift = (bytes - 1) * 8; shift >= 0; shift -= 8) { out->append(static_cast<char>((value >> shift) & 0xFF)); }
-}
-
-//! The largest delta time a Standard MIDI File can hold: a variable-length quantity of at most four bytes.
-constexpr quint32 MaxVarLen = 0x0FFFFFFF;
-
-//! Appends @a value as a variable-length quantity; false, with nothing appended, when it needs more than four bytes.
-bool putVarLen(QByteArray* out, quint32 value)
-{
-	if (value > MaxVarLen) { return false; }
-	quint8 groups[4];
-	int count = 0;
-	do
-	{
-		groups[count++] = value & 0x7F;
-		value >>= 7;
-	} while (value != 0);
-	while (count > 0)
-	{
-		--count;
-		out->append(static_cast<char>(groups[count] | (count > 0 ? 0x80 : 0)));
-	}
-	return true;
-}
-
-struct SmfEvent
-{
-	tick_t tick = 0;
-	int order = 0;  //!< note-offs before note-ons at one tick
-	quint8 status = 0;
-	quint8 key = 0;
-	quint8 velocity = 0;
-};
-
-//! Whether every note of @a clip ends on a tick the tick type can hold, computed wide: a note-off past the largest
-//! tick cannot be written, and one clamped onto its own note-on would sort before it and stick.
-bool notesFitInSmf(const MidiClip* clip)
-{
+	std::vector<midismf::Note> notes;
+	notes.reserve(static_cast<size_t>(clip->notes().size()));
 	for (const Note* note : clip->notes())
 	{
-		const tick_t start = std::max<tick_t>(0, note->pos().getTicks());
-		const qint64 end = static_cast<qint64>(start) + std::max<tick_t>(1, note->length().getTicks());
-		if (end > static_cast<qint64>(std::numeric_limits<tick_t>::max())) { return false; }
+		notes.push_back(midismf::Note{std::max<tick_t>(0, note->pos().getTicks()),
+			std::max<tick_t>(1, note->length().getTicks()), note->key(), note->midiVelocity(MidiDefaultVelocity)});
 	}
-	return true;
-}
-
-//! @a clip's notes as a type-0 Standard MIDI File at @a bpm; empty when a delta time would not fit a MIDI file's
-//! four-byte variable-length quantity, with @a failedTick the event that does not fit (the caller refuses the save).
-QByteArray smfOf(const MidiClip* clip, int bpm, tick_t* failedTick)
-{
-	std::vector<SmfEvent> events;
-	for (const Note* note : clip->notes())
-	{
-		const auto key = static_cast<quint8>(std::clamp(note->key(), 0, 127));
-		const auto velocity = static_cast<quint8>(std::clamp(note->midiVelocity(MidiDefaultVelocity), 1, 127));
-		const tick_t start = std::max<tick_t>(0, note->pos().getTicks());
-		// notesFitInSmf has refused any clip whose note-off would not fit, so the end is exact.
-		const tick_t end = start + std::max<tick_t>(1, note->length().getTicks());
-		events.push_back(SmfEvent{start, 1, 0x90, key, velocity});
-		events.push_back(SmfEvent{end, 0, 0x80, key, 0});
-	}
-	std::stable_sort(events.begin(), events.end(), [](const SmfEvent& a, const SmfEvent& b) {
-		return a.tick != b.tick ? a.tick < b.tick : a.order < b.order;
-	});
-	QByteArray track;
-	putVarLen(&track, 0);
-	track.append("\xFF\x51\x03", 3);
-	putBigEndian(&track, static_cast<quint32>(60000000 / std::max(1, bpm)), 3);
-	tick_t at = 0;
-	for (const SmfEvent& event : events)
-	{
-		if (!putVarLen(&track, static_cast<quint32>(event.tick - at)))
-		{
-			*failedTick = event.tick;
-			return {};
-		}
-		at = event.tick;
-		track.append(static_cast<char>(event.status));
-		track.append(static_cast<char>(event.key));
-		track.append(static_cast<char>(event.velocity));
-	}
-	putVarLen(&track, 0);
-	track.append("\xFF\x2F\x00", 3);
-	QByteArray file("MThd", 4);
-	putBigEndian(&file, 6, 4);
-	putBigEndian(&file, 0, 2);
-	putBigEndian(&file, 1, 2);
-	putBigEndian(&file, TicksPerQuarter, 2);
-	file.append("MTrk", 4);
-	putBigEndian(&file, static_cast<quint32>(track.size()), 4);
-	return file + track;
+	return notes;
 }
 
 //! Write @a clip to @a path (the extension already chosen by its kind); false with @a error set.
@@ -185,23 +107,16 @@ bool writeClip(Clip* clip, const QString& path, QString* error)
 		*error = rendered.error;
 		return rendered.ok;
 	}
-	if (!notesFitInSmf(static_cast<MidiClip*>(clip)))
-	{
-		*error = QStringLiteral("a note ends past the largest tick the tick type holds; nothing was written");
-		return false;
-	}
 	// Written whole or not at all: a short write must not leave a truncated file (or replace the old one).
-	tick_t failedTick = 0;
-	const QByteArray smf = smfOf(static_cast<MidiClip*>(clip), Engine::getSong()->tempoModel().value(), &failedTick);
-	if (smf.isEmpty())
+	const midismf::Result written = midismf::write(smfNotesOf(static_cast<MidiClip*>(clip)),
+		Engine::getSong()->tempoModel().value());
+	if (!written.ok)
 	{
-		// The first delta is measured from tick 0 (the tempo meta), so the event can be the first note's start.
-		*error = QStringLiteral("a delta time exceeds four bytes: the event at tick %1 is more than %2 ticks after the event "
-			"before it; nothing was written").arg(failedTick).arg(MaxVarLen);
+		*error = written.error;
 		return false;
 	}
 	QSaveFile file(path);
-	if (!file.open(QIODevice::WriteOnly) || file.write(smf) != smf.size() || !file.commit())
+	if (!file.open(QIODevice::WriteOnly) || file.write(written.bytes) != written.bytes.size() || !file.commit())
 	{
 		*error = QStringLiteral("cannot write %1").arg(path);
 		return false;
@@ -319,7 +234,8 @@ struct SaveSubject
 {
 	Clip* clip = nullptr;    //!< the arrangement clip, when the call named one
 	int clipId = -1;         //!< its persistent id, captured for redo (a deleted Clip is never dereferenced)
-	QString source;          //!< the cell's audio file, absolute; empty for a clip
+	QString source;          //!< the cell's audio file, absolute; empty for a clip or a MIDI cell
+	int pattern = -1;        //!< the MIDI cell's PatternStore column
 	QString defaultName;     //!< the entry's name when 'name' is left out
 	bool audio = false;      //!< the entry is a .wav (audio) or a .mid (MIDI)
 	bool cell = false;       //!< the subject is a launcher cell, not a Clip
@@ -348,20 +264,13 @@ bool sameFile(const QString& target, const QString& source)
 #endif
 }
 
-//! Whether @a slot at (track, scene) is one this stage can save; false with the typed refusal in @a error.
+//! Whether @a slot at (track, scene) is one this command can save; false with the typed refusal in @a error.
 bool cellSavable(const ClipSlot& slot, int track, int scene, ControlResult* error)
 {
 	if (slot.isEmpty())
 	{
 		*error = ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("the cell at track %1, scene %2 is empty: there is nothing to save").arg(track).arg(scene));
-		return false;
-	}
-	if (slot.type() == ClipSlot::Type::Midi)
-	{
-		*error = ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("the cell at track %1, scene %2 holds a MIDI pattern; saving a pattern's notes to the "
-				"library is stage 2 of this work, so only an audio cell can be saved yet").arg(track).arg(scene));
 		return false;
 	}
 	return true;
@@ -375,7 +284,18 @@ QString cellEntryName(const ClipSlot& slot, const QString& source, int track, in
 	return name.isEmpty() ? QStringLiteral("track-%1-scene-%2").arg(track).arg(scene) : name;
 }
 
-//! A populated AUDIO launcher cell, addressed by 'track' + 'scene', as a save subject.
+//! The MIDI entry's name: the cell's own, else the pattern track's, else the coordinates.
+QString cellMidiEntryName(const ClipSlot& slot, int track, int scene)
+{
+	QString name = slot.name().trimmed();
+	if (name.isEmpty())
+	{
+		if (PatternTrack* patternTrack = PatternTrack::findPatternTrack(slot.patternId())) { name = patternTrack->name().trimmed(); }
+	}
+	return name.isEmpty() ? QStringLiteral("track-%1-scene-%2").arg(track).arg(scene) : name;
+}
+
+//! A populated launcher cell, addressed by 'track' + 'scene', as a save subject.
 bool resolveCellSubject(const QJsonObject& args, SaveSubject* subject, ControlResult* error)
 {
 	if (!args.contains(QStringLiteral("track")) || !args.contains(QStringLiteral("scene")))
@@ -403,6 +323,22 @@ bool resolveCellSubject(const QJsonObject& args, SaveSubject* subject, ControlRe
 	}
 	const ClipSlot& slot = model.slot(track, scene);
 	if (!cellSavable(slot, track, scene, error)) { return false; }
+	subject->cell = true;
+	if (slot.type() == ClipSlot::Type::Midi)
+	{
+		PatternStore* store = Engine::patternStore();
+		if (store == nullptr || slot.patternId() < 0 || slot.patternId() >= store->numOfPatterns())
+		{
+			*error = ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("the cell at track %1, scene %2 references pattern %3, which is not in this project")
+					.arg(track).arg(scene).arg(slot.patternId()));
+			return false;
+		}
+		subject->pattern = slot.patternId();
+		subject->audio = false;
+		subject->defaultName = cellMidiEntryName(slot, track, scene);
+		return true;
+	}
 	const QString source = PathUtil::toAbsolute(slot.audioSource());
 	if (!QFileInfo(source).isFile())
 	{
@@ -410,7 +346,6 @@ bool resolveCellSubject(const QJsonObject& args, SaveSubject* subject, ControlRe
 			QStringLiteral("the cell's audio file '%1' is not there, so there is nothing to save").arg(slot.audioSource()));
 		return false;
 	}
-	subject->cell = true;
 	subject->source = source;
 	subject->audio = true;
 	subject->defaultName = cellEntryName(slot, source, track, scene);
@@ -444,10 +379,17 @@ bool resolveSaveSubject(const QJsonObject& args, SaveSubject* subject, ControlRe
 	return true;
 }
 
-//! Writes the subject to @a path; for a cell, bounded by decoded frames (LibraryCellAudio).
+//! Writes the subject to @a path: a Clip, a cell's source audio, or a cell's pattern notes.
 bool writeSubject(const SaveSubject& subject, const QString& path, QString* why)
 {
 	if (!subject.cell) { return writeClip(subject.clip, path, why); }
+	if (!subject.audio)
+	{
+		const librarymidi::CellMidi::Result saved = librarymidi::CellMidi::save(Engine::patternStore(),
+			subject.pattern, Engine::getSong()->tempoModel().value(), path);
+		*why = saved.error;
+		return saved.ok;
+	}
 	const libraryaudio::CellAudio::Result saved = libraryaudio::CellAudio::save(subject.source, path);
 	*why = saved.error;
 	return saved.ok;
@@ -465,7 +407,7 @@ bool writeSubjectKeepingPrevious(const SaveSubject& subject, const QString& path
 	return writeSubject(subject, path, why);
 }
 
-//! The redo of a save: the clip or the cell's source written to @a path again.
+//! The redo of a save: the clip, the cell's source or the cell's pattern notes written to @a path again.
 void redoSubject(const SaveSubject& subject, const QString& path)
 {
 	QString unused;
@@ -475,6 +417,15 @@ void redoSubject(const SaveSubject& subject, const QString& path)
 		ControlResult ignored;
 		if (!resolveClip(control::clipId(subject.clipId), &again, &ignored)) { return; }
 		writeClip(again.clip, path, &unused);
+		return;
+	}
+	if (!subject.audio)
+	{
+		if (Engine::getSong() != nullptr)
+		{
+			librarymidi::CellMidi::save(Engine::patternStore(), subject.pattern,
+				Engine::getSong()->tempoModel().value(), path);
+		}
 		return;
 	}
 	libraryaudio::CellAudio::save(subject.source, path);
@@ -492,7 +443,7 @@ ControlResult saveClip(const QJsonObject& args)
 	if (!resolveSaveSubject(args, &subject, &error)) { return error; }
 	QString path;
 	if (!targetPath(args, subject.audio, subject.defaultName, &path, &error)) { return error; }
-	if (subject.cell && sameFile(path, subject.source))
+	if (subject.cell && subject.audio && sameFile(path, subject.source))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("the cell's audio is already '%1': saving it there would replace the file it is reading; "
@@ -527,14 +478,15 @@ void registerLibraryClipCommands(ControlRegistry& registry)
 	cmd.group = QStringLiteral("browser");
 	cmd.verb = QStringLiteral("save_clip");
 	cmd.description = QStringLiteral("Save a clip into the library, addressed either by 'clip' (an arrangement clip) or by the "
-		"pair 'track' + 'scene' (a populated launcher audio cell), exactly one of the two. A sample clip is written as the audio "
+		"pair 'track' + 'scene' (a populated launcher cell), exactly one of the two. A sample clip is written as the audio "
 		"it plays; a MIDI clip as a MIDI file at the song's tempo; an audio cell as the audio its source file holds, at the "
 		"source's own rate (the cell's gain, transpose, loop and warp are playback settings and are not baked into the entry; "
-		"the decoded audio is bounded, and a source past the bound is refused before it is decoded). A MIDI cell holds a "
-		"PatternStore pattern and is refused for now. Written to 'dir' (absolute; <user samples>/Clips, which the Samples "
-		"browser lists, when left out) as 'name' (the clip's or the cell's own name when left out), refused when the file "
-		"exists unless 'overwrite'; 'tags' are added to it. The library is outside the project: one undo step deletes the "
-		"file again.");
+		"the decoded audio is bounded, and a source past the bound is refused before it is decoded); a MIDI cell as a MIDI "
+		"file holding every note of the PatternStore pattern it references, at the song's tempo (the cell's pattern-track "
+		"settings are playback settings and are not baked into the entry; a pattern with no notes is refused). Written to "
+		"'dir' (absolute; <user samples>/Clips, which the Samples browser lists, when left out) as 'name' (the clip's or the "
+		"cell's own name when left out), refused when the file exists unless 'overwrite'; 'tags' are added to it. The "
+		"library is outside the project: one undo step deletes the file again.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("track"), integerProperty(0, 255)},
 		{QStringLiteral("scene"), integerProperty(0, 511)}, {QStringLiteral("name"), stringProperty()},
 		{QStringLiteral("dir"), stringProperty()}, {QStringLiteral("tags"), arrayProperty()}, {QStringLiteral("overwrite"), booleanProperty()}});

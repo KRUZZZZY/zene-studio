@@ -787,8 +787,20 @@ playback settings apply there. After you save and reopen the project the entry i
 another cell, or give a cell the Audio File..., to use it again. An entry that already exists is refused rather than
 replaced unless you ask to overwrite it, and saving is one Edit &gt; Undo step: undo removes the new file again (or puts
 back the file an overwrite replaced). A very long file is refused with a message saying how much audio it holds instead
-of being loaded whole; a MIDI cell is not saved this way (its notes are stage 2). An agent does the same with
-browser.save_clip and the cell's track and scene, and finds the entry with browser.query.</p>
+of being loaded whole. An agent does the same with browser.save_clip and the cell's track and scene, and finds the
+entry with browser.query.</p>
+<p><b>Saving and reusing a MIDI cell.</b> A cell that plays a pattern has the same Save to Library... entry. It writes
+every note of that pattern, from every instrument in the pattern editor, into one Standard MIDI File in your samples
+library under Clips, at the song's tempo; the entry shows in the browser's Samples list with the MIDI kind. The file
+holds the notes, not the pattern track's own settings, so the same music plays wherever you use it. A pattern with no
+notes is refused rather than saved as an empty file, and so is one whose notes are too far apart for a MIDI file to
+hold. Saving is one Edit &gt; Undo step: undo removes the new file again. To use an entry again, even after you save
+and reopen the project, drag it from the browser onto any cell (or drop a .mid file from your desktop): the cell gets
+a new pattern holding the file's notes and plays it, and the pattern track and the cell are named after the file. One
+Edit &gt; Undo puts the cell back as it was and removes the new pattern. A file that is missing, empty, over 16 MiB, not a
+MIDI file, without notes, or that runs past the song's length limit is refused with a message and nothing changes.
+An agent saves with browser.save_clip and the cell's track and scene, and puts a file in a cell with
+session.import_midi_cell (track, scene, an absolute path, and optionally the pattern-editor instrument and a name).</p>
 Reset Gain, Pitch, Loop and Warp puts them all back to their defaults. Each change is one Edit &gt; Undo step and is
 saved with the project. A cell with settings away from their defaults shows them after its name, for example
 "-6.0dB +12st +50ct ⟲ W128" (gain, transpose, detune, a loop region, warped from 128 BPM), and a screen reader hears

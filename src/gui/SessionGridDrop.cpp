@@ -24,8 +24,10 @@
 
 /*! 0.5.0 L02 (WF-053) and theme 14: SessionGridView's drop half. A drag over a cell is previewed - over a filled
  *  cell the cell reads "Replace <clip>" inside a dashed outline and the status line says what the drop replaces -
- *  and the drop is one session.set_slot, so one undo step. A drop that replaced a clip says what it replaced and
- *  offers Undo Replace, which runs control.undo only while nothing else has been edited since. */
+ *  and the drop is one command, so one undo step: an audio file is session.set_slot, a MIDI file is
+ *  session.import_midi_cell (Q050-273.2), which makes the cell play a new pattern holding the file's notes. A
+ *  drop that replaced a clip says what it replaced and offers Undo Replace, which runs control.undo only while
+ *  nothing else has been edited since. */
 
 #include <algorithm>
 
@@ -56,12 +58,30 @@ ControlResult run(const QString& command, const QJsonObject& args = QJsonObject(
 	return ControlRegistry::instance()->invoke(command, args);
 }
 
+//! The local file a drag from outside carries, or empty.
+QString droppedLocalFile(QDropEvent* event)
+{
+	const QList<QUrl> urls = event->mimeData()->urls();
+	return !urls.isEmpty() && urls.first().isLocalFile() ? urls.first().toLocalFile() : QString();
+}
+
 //! The audio file a drag carries: the browser's sample file, or a local file dropped from outside.
 QString droppedFile(QDropEvent* event)
 {
 	if (StringPairDrag::decodeKey(event) == QLatin1String("samplefile")) { return StringPairDrag::decodeValue(event); }
-	const QList<QUrl> urls = event->mimeData()->urls();
-	return !urls.isEmpty() && urls.first().isLocalFile() ? urls.first().toLocalFile() : QString();
+	return droppedLocalFile(event);
+}
+
+//! The MIDI file a drag carries: the browser's MIDI entry (its drag key is importedproject, as the file
+//! browser's own MIDI drags use), or a local .mid/.midi file dropped from outside.
+QString droppedMidi(QDropEvent* event)
+{
+	const QString key = StringPairDrag::decodeKey(event);
+	const QString file = key == QLatin1String("importedproject") ? StringPairDrag::decodeValue(event)
+		: (key.isEmpty() ? droppedLocalFile(event) : QString());
+	const QFileInfo info(file);
+	const QString suffix = info.suffix().toLower();
+	return (suffix == QLatin1String("mid") || suffix == QLatin1String("midi")) && info.isFile() ? info.filePath() : QString();
 }
 
 //! The existing audio file a drag carries, or empty: a text file or a folder is not a clip (review L10-L03-L02-1 #12).
@@ -103,18 +123,25 @@ bool SessionGridView::dropOnCell(QToolButton* cell, QEvent* event)
 	{
 		// Only a drag a cell can take is accepted, so anything else shows the no-drop cursor from the start.
 		auto* enter = static_cast<QDragEnterEvent*>(event);
-		const QString file = droppedAudio(enter);
+		QString file = droppedAudio(enter);
+		if (file.isEmpty()) { file = droppedMidi(enter); }
 		if (!file.isEmpty()) { enter->acceptProposedAction(); }
 		previewDrop(file.isEmpty() ? -1 : index, file);
 		return true;
 	}
 	if (event->type() != QEvent::Drop) { return false; }
 	auto* drop = static_cast<QDropEvent*>(event);
-	const QString file = droppedAudio(drop);
+	QString file = droppedAudio(drop);
+	bool midi = false;
+	if (file.isEmpty())
+	{
+		file = droppedMidi(drop);
+		midi = !file.isEmpty();
+	}
 	previewDrop(-1, QString());
 	if (file.isEmpty()) { return true; }
 	drop->acceptProposedAction();  // the drag source is told the drop was taken (review L17 #11)
-	finishDrop(index, file);
+	finishDrop(index, file, midi);
 	return true;
 }
 
@@ -164,15 +191,27 @@ void SessionGridView::paintDropPreview(QToolButton* button, int index) const
 }
 
 
-void SessionGridView::finishDrop(int cell, const QString& file)
+void SessionGridView::finishDrop(int cell, const QString& file, bool midi)
 {
 	const int track = cell / m_scenes;
 	const int scene = cell % m_scenes;
 	const QString replaced = m_names[static_cast<std::size_t>(cell)];
 	// The cell takes the file's name too: a replaced clip's name must not stay on the clip that replaced it.
-	report(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), track}, {QStringLiteral("scene"), scene},
-		{QStringLiteral("type"), QStringLiteral("audio")}, {QStringLiteral("source"), file},
-		{QStringLiteral("name"), QFileInfo(file).completeBaseName()}}));
+	const QJsonObject args{{QStringLiteral("track"), track}, {QStringLiteral("scene"), scene},
+		{QStringLiteral("name"), QFileInfo(file).completeBaseName()}};
+	if (midi)
+	{
+		QJsonObject import = args;
+		import.insert(QStringLiteral("path"), file);
+		report(run(QStringLiteral("session.import_midi_cell"), import));
+	}
+	else
+	{
+		QJsonObject slot = args;
+		slot.insert(QStringLiteral("type"), QStringLiteral("audio"));
+		slot.insert(QStringLiteral("source"), file);
+		report(run(QStringLiteral("session.set_slot"), slot));
+	}
 	if (!m_notice.isEmpty() || replaced.isEmpty()) { return; }  // refused (and said so), or nothing was replaced
 	m_notice = tr("Replaced %1 in %2 with %3. Undo Replace or Edit > Undo puts it back.")
 		.arg(replaced, cellPlace(track, scene), QFileInfo(file).fileName());
