@@ -120,3 +120,8 @@ ALREADY-FIXED.
   (render thread applies), `Sf2Player.cpp:1120-1176` and `Sf2Player.h:402-408` (lock-free hand-off;
   UI-side mutex never taken by audio). Fix commits `370df75734` and `d73caeacaf` are ancestors of
   HEAD.
+- **Sibling commands:** the pre-submit checker lists command siblings from the branch's whole diff
+  since the fix base, not from this change. This commit changes only
+  `docs/qwen-fixes-2026-10/cluster-new-p14-309.md`; no `ControlCommands`,
+  `ControlReversibilityTable`, `ControlRegistry` or other command file is touched, so no command
+  sibling is affected (`git show --stat HEAD` shows the single report file).
