@@ -26,6 +26,7 @@
 
 #include <cassert>
 
+#include "AudioEngineWorkerThread.h"
 #include "CrashReporter.h"
 
 #ifdef LMMS_HAVE_LV2
@@ -34,6 +35,39 @@
 
 namespace lmms
 {
+
+namespace
+{
+
+//! Depth of inline work() calls on THIS thread. A response must go straight to
+//! run() only when it comes from work() running inline in the caller (offline
+//! render); work() queued to the worker thread must queue its response for
+//! emitResponses() on the audio thread instead. Thread-local because the same
+//! instance may be inline-worked by its render thread and queued-worked by its
+//! worker thread.
+thread_local unsigned s_inlineWorkDepth = 0;
+//! Depth of queued work() calls on THIS thread (the worker thread). A nested
+//! schedule_work() from inside work() must queue, not try to take the work lock
+//! this thread already holds.
+thread_local unsigned s_queuedWorkDepth = 0;
+
+struct InlineWorkScope
+{
+	InlineWorkScope() noexcept { ++s_inlineWorkDepth; }
+	~InlineWorkScope() noexcept { --s_inlineWorkDepth; }
+	InlineWorkScope(const InlineWorkScope&) = delete;
+	InlineWorkScope& operator=(const InlineWorkScope&) = delete;
+};
+
+struct QueuedWorkScope
+{
+	QueuedWorkScope() noexcept { ++s_queuedWorkDepth; }
+	~QueuedWorkScope() noexcept { --s_queuedWorkDepth; }
+	QueuedWorkScope(const QueuedWorkScope&) = delete;
+	QueuedWorkScope& operator=(const QueuedWorkScope&) = delete;
+};
+
+} // namespace
 
 
 // static wrappers
@@ -78,18 +112,17 @@ Lv2Worker::Lv2Worker(Semaphore* commonWorkLock, bool threaded) :
 			return worker->scheduleWork(size, data);
 		};
 
-	if (threaded)
+	// The worker thread always exists. A render-only worker (threaded == false)
+	// still needs it: its inline path is legal only while a deterministic offline
+	// render is running. AudioDummy paces renderNextPeriod() in real time without
+	// that flag, and work() must stay off that thread. Starting it lazily on the
+	// first such request is not an option - it would allocate on the audio thread.
+	m_thread = std::thread([](Lv2Worker* self)
 	{
-		// Signal dispositions are process-wide, but sigaltstack() is per-thread:
-		// this thread runs a plug-in's work() and can overflow the ordinary
-		// stack there. Register before the first work() call, or a handler has
-		// nowhere to run.
-		m_thread = std::thread([](Lv2Worker* self)
-		{
-			crashreporter::installAlternateStackForCurrentThread();
-			self->workerFunc();
-		}, this);
-	}
+		crashreporter::installAlternateStackForCurrentThread();
+		self->workerFunc();
+	}, this);
+
 
 	m_requests.mlock();
 	m_responses.mlock();
@@ -119,10 +152,8 @@ void Lv2Worker::setInterface(const LV2_Worker_Interface* newInterface)
 Lv2Worker::~Lv2Worker()
 {
 	m_exit = true;
-	if(m_threaded) {
-		m_sem.post();
-		m_thread.join();
-	}
+	m_sem.post();
+	m_thread.join();
 }
 
 
@@ -131,7 +162,7 @@ Lv2Worker::~Lv2Worker()
 // Let the worker send responses to the audio thread
 LV2_Worker_Status Lv2Worker::respond(uint32_t size, const void* data)
 {
-	if(m_threaded)
+	if(s_inlineWorkDepth == 0)
 	{
 		if(m_responses.free() < sizeof(size) + size)
 		{
@@ -175,6 +206,7 @@ void Lv2Worker::workerFunc()
 		assert(m_handle);
 		assert(m_interface);
 		m_workLock->wait();
+		QueuedWorkScope queuedScope;
 		m_interface->work(m_handle, staticWorkerRespond, this, size, buf.data());
 		m_workLock->post();
 	}
@@ -186,7 +218,26 @@ void Lv2Worker::workerFunc()
 // Let the audio thread schedule work for the worker
 LV2_Worker_Status Lv2Worker::scheduleWork(uint32_t size, const void *data)
 {
-	if (m_threaded)
+	// Inline execution is allowed only for the render-only worker AND only while
+	// an offline (deterministic) render is running, where the LV2 Worker
+	// specification permits immediate execution and there is no real-time
+	// deadline. AudioDummy's paced renderNextPeriod() runs with that flag off, so
+	// its schedule_work() queues to the worker thread below like live playback.
+	const bool inlineWork = !m_threaded
+		&& s_inlineWorkDepth == 0
+		&& s_queuedWorkDepth == 0
+		&& AudioEngineWorkerThread::deterministicProcessing();
+	if (inlineWork)
+	{
+		assert(m_handle);
+		assert(m_interface);
+		// Execute work immediately in this (offline render) thread
+		m_workLock->wait();
+		InlineWorkScope inlineScope;
+		m_interface->work(m_handle, staticWorkerRespond, this, size, data);
+		m_workLock->post();
+	}
+	else
 	{
 		if(m_requests.free() < sizeof(size) + size)
 		{
@@ -199,15 +250,6 @@ LV2_Worker_Status Lv2Worker::scheduleWork(uint32_t size, const void *data)
 			if(size && data) { m_requests.write((const char*)data, size); }
 			m_sem.post();
 		}
-	}
-	else
-	{
-		assert(m_handle);
-		assert(m_interface);
-		// Execute work immediately in this thread
-		m_workLock->wait();
-		m_interface->work(m_handle, staticWorkerRespond, this, size, data);
-		m_workLock->post();
 	}
 
 	return LV2_WORKER_SUCCESS;
