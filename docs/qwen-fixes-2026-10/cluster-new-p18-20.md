@@ -153,4 +153,51 @@ changed.
 
 ## Self-check
 
-(To be filled from `submit_check.py`.)
+Answers to the `submit_check.py` ASK items (log `submit-1.log`):
+
+* **The regression test FAILS with the product change reverted and PASSES with
+  it.** Product patch only, tests kept:
+  `git diff -- src/core/DataFile.cpp > logs/fix.patch` EXIT 0;
+  `git apply -R logs/fix.patch` EXIT 0;
+  build EXIT 0 (`build-4-revert.log`); `ctest -R '^DataFileSaveIntegrityTest$'`
+  EXIT 8, 4 FAIL (`test-4-revert.log`); `git apply logs/fix.patch` EXIT 0;
+  build EXIT 0 (`build-5-restore.log`); ctest EXIT 0, 100% passed
+  (`test-5-restore.log`). The four failures are exactly the four conflict /
+  backup tests.
+* **Deterministic.** No sleep, no wall-clock ordering. The tests set fixed
+  modification times with `QFile::setFileTime(QDateTime::fromSecsSinceEpoch(1000000 /
+  2000000), FileModificationTime)` (`DataFileSaveIntegrityTestParts2.h:279`),
+  so the newer-canonical conflict and the newer-temp adoption are
+  injected, not observed. The "no backup" failure path blocks the staging name
+  with a non-empty directory (`occupy()`, the same fixture the save-path test
+  uses) rather than relying on permissions or timing.
+* **Cause and complete.** `recoverPendingWrite()` is called from exactly one
+  place, the file constructor (`src/core/DataFile.cpp:601`); `isCompleteDocument()`'s
+  only caller is `recoverPendingWrite()`; `parsesAsRecoverableDocument()` and
+  `decompressesAsRecoverableDocument()` are internal to it. No header changed.
+  The new out-parameter is optional and every other caller passes two arguments,
+  so their behaviour is byte-for-byte unchanged. The type comparison normalizes
+  the loader's own compatibility names (`channelsettings`,
+  `pattern`) so a legacy spelling still matches. Backup uses the existing
+  `replaceBackup()` and the existing `app/disablebackup` switch, keeping the
+  recovery path consistent with `writeFile()`. Siblings pass: 7/7 in
+  `test-3-siblings.log`.
+* **No collateral damage.** The 22 pre-existing `DataFileSaveIntegrityTest`
+  cases still pass, including `orphanedNewFileIsAdoptedWithReport` (a genuine
+  newer temp of the same type is still adopted) and the oversized / deep-nesting
+  / unreadable-temp limits, which are untouched. `DataFileContainerRecoveryTest`
+  (plain and container temps, all adoption outcomes) passes. The backup step is
+  skipped when `app/disablebackup` is set, proven by
+  `adoptionHonoursTheDisableBackupConfiguration`. A canonical file that is not a
+  complete recognized document still does not block adoption of a complete temp
+  (the type/mtime checks only run when there is a recognized project to compare
+  against), and the backup preserves even such a canonical file as `.bak`.
+* **ALREADY-FIXED / FALSE-POSITIVE:** not applicable; verdict is FIXED.
+* **Sibling commands.** This change adds no control command and touches no
+  command handler or command-registration file. The listed `app.*` and
+  `arrangement.*` commands are unaffected: no file under `src/core/Control*` or
+  `src/gui` was edited.
+
+`submit_check.py` exited 0 with `RESULT: PASS - submit`; the only remaining
+items were the ASK questions above (`submit-1.log`).
+
