@@ -315,3 +315,13 @@ registered (2761 fork-NEW, 1213 inherited, 49 tooling)."
    verdict is FIXED, and the pre-fix code is quoted at the top of this report
    (`src/core/ExternalProcessStemSeparator.cpp:143` and `:152-189` on the base
    revision).
+6. **Sibling commands in the command files you changed.** No command file is
+   changed by this fix: the diff is `ExternalProcessStemSeparator.{h,cpp}`, the
+   new test, `tests/CMakeLists.txt`, the two scope manifests and
+   `doc/STEM-SPLIT.md`. The `app.*`/`arrangement.*` ids the pre-submit check
+   lists come from the branch's other commits since its merge-base (`git diff
+   --name-only` since the base names 433 files, none of them
+   `ControlCommands*`, `ControlReversibilityTable*` or `ControlRegistry*`).
+   The `stem.*` commands are untouched, no command id is added, renamed or
+   removed, and `tools/mcp-zene-control/zene_control/commands_snapshot.json` is
+   unchanged (that is why the snapshot canary cannot move).
