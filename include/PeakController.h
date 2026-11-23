@@ -99,7 +99,11 @@ private:
 	
 	float m_attackCoeff;
 	float m_decayCoeff;
-	bool m_coeffNeedsUpdate;
+	//! Set by updateCoeffs() on whichever thread owns the attack/decay models and
+	//! consumed by updateValueBuffer() on the render thread: an atomic handoff, claimed
+	//! before the coefficients are read so a change that lands while they are computed
+	//! is not lost (cluster new-p20-95).
+	std::atomic<bool> m_coeffNeedsUpdate{ true };
 } ;
 
 namespace gui
