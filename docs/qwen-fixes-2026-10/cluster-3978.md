@@ -24,10 +24,10 @@ That is not true: `Engine::audioEngine()->recorder()` exposes every `TrackRecord
 
 ## Fix
 
-`src/core/ControlCommandsRecordingRecovery.cpp:143-162` adds `isLiveCaptureTake()`: it walks the
+`src/core/ControlCommandsRecordingRecovery.cpp:143-160` adds `isLiveCaptureTake()`: it walks the
 engine's record routes (bounded by `MultiTrackRecorder::MaxRoutes`, 64) and returns true when a
 route's non-empty journal path is the take's journal and the route is armed or its writer is
-still running. `recoveryDiscard` (`:170-178`) refuses such a journal with a typed `busy` refusal
+still running. `recoveryDiscard` (`:170-177`) refuses such a journal with a typed `busy` refusal
 naming `record.disarm_track` / `record.disarm_all`, before it builds a transaction or removes
 anything. Only the control thread runs the handler; the reads are `isArmed()` /
 `isWriterRunning()` atomics plus a copy of `m_journalPath`, which is set before the writer starts
