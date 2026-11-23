@@ -108,6 +108,46 @@ already a fork source (`tests/fork-sources.txt`).
 
 ## Self-check
 
+Answers to the pre-submit check's questions:
+
+- **Regression test fails reverted, passes fixed (exit codes).** Reverted product patch:
+  `test-3-reverted-red.log`, `ctest -R ThreadPoolTest` EXIT=8, with
+  `FAIL! : ThreadPoolTest::destructionFromWorkerDoesNotTerminate() ... The child crashed`.
+  Reapplied: `test-4-reapplied-green.log` EXIT=0. The same red was measured at step 4
+  (`test-1-red.log`, EXIT=8) and green at `test-2-green.log` EXIT=0 and
+  `test-2b-green-slot.log` EXIT=0.
+- **Deterministic; no wall-clock timing, sleeps or races.** The test is a child process
+  (`--thread-pool-worker-destruction-child`) so a terminate() is observed by the parent
+  as a crash instead of killing the suite. Inside it, a `std::promise<void>`/`shared_future`
+  gate (`start`/`startGate`) orders the two events: the parent releases its `shared_ptr`
+  and only then lets the task call `pool.reset()`, which is provably the last release, so
+  the destructor always runs on the worker. A second promise (`destroyed`) is set after
+  the destructor returns; the parent waits on it and then on `task.get()`. No sleep, no
+  timeout-based synchronisation, no reliance on scheduling order. The other child tests
+  in the file use the same shape.
+- **Fix at the cause and complete; callers and siblings checked.** The cause was
+  `ThreadPool::~ThreadPool` joining `m_workers` unconditionally (`src/core/ThreadPool.cpp:71-74`
+  pre-fix). The destructor now joins every worker except the calling one and detaches that
+  one (`src/core/ThreadPool.cpp:76-97`); `run()` checks the `thread_local` marker before
+  every member access (`src/core/ThreadPool.cpp:106`), so the detached worker cannot
+  touch the destroyed members. Siblings checked: the constructor's startup-failure catch
+  block also joins workers, but it runs on the constructing thread, never on a worker
+  (the workers it joins started from that same thread), so it is unchanged and still
+  exercised by `partialStartupFailureStopsStartedWorkers`. `enqueue()` and `run()`'s
+  normal wait/drain path are untouched. `#include "ThreadPool.h"` appears in
+  `src/core/ThreadPool.cpp`, `src/core/FileSearchJob.cpp`, `src/gui/FileBrowser.cpp` and
+  the test; `zene` was rebuilt after the header change (`build-5-zene.log`, EXIT=0).
+- **No collateral damage.** No saved-data or project format is involved; no limit or
+  check was added to a caller. The only behaviour change is the destructor's action on
+  the worker that invoked it; outside-thread destruction still drains queued tasks and
+  joins every worker, proven by `destructionDrainsQueuedTasks` (passes in every run
+  above), and the zero-worker, zero-concurrency and partial-startup slots still pass.
+  The global `ThreadPool::instance()` is a static object destroyed on the main thread, so
+  its shutdown path is unchanged.
+- **ALREADY-FIXED/FALSE-POSITIVE question:** not applicable, the verdict is FIXED.
+- **Sibling commands in command files:** this change touches no command file, no control
+  command and no `ControlCommandsSnapshot`; the ids listed (`app.*`, `arrangement.*`)
+  are untouched. Nothing in this fix registers, renames or validates a command.
 - Every verdict here is backed by a log listed above.
 - The test fails without the product change (`test-3-reverted-red.log`, EXIT=8; also
   `test-1-red.log`, EXIT=8) and passes with it (`test-2-green.log` EXIT=0,
