@@ -93,10 +93,12 @@ private:
  * sync() builds them, and after the plug-in rescanned its parameters (HostedPlugin::paramsRevision
  * moved) brings them in step: a parameter that is still there keeps its model, with its name, range
  * and flags refreshed, so automation, controllers, macros and modulators stay connected to it; a new
- * parameter gets a model; a removed one's model is deleted, under the engine's change guard, since the
- * audio thread may be automating it. A model's value is the parameter's plain value: a change is
- * written to the host's lock-free snapshot, except the host's own (pullValues). GUI thread, except the
- * write of a changed value, which runs on the thread that changed the model.
+ * parameter gets a model; a removed one's model is deleted. The whole update - the range refresh, the
+ * publication of the new list and the deletion - is ONE engine-change-guarded operation: the audio
+ * thread may be automating a kept model, and a reader of models() may walk a removed model otherwise.
+ * A model's value is the parameter's plain value: a change is written to the host's lock-free
+ * snapshot, except the host's own (pullValues). GUI thread, except the write of a changed value, which
+ * runs on the thread that changed the model.
  */
 class ClapParamModelList
 {
@@ -121,8 +123,9 @@ public:
 
 private:
 	auto create(const ClapParamDescriptor& descriptor) -> ClapParamModel*;
-	//! Deletes the models not in @a kept.
-	void removeAllBut(const std::vector<ClapParamModel*>& kept);
+	//! Deletes the models of @a models that @a kept does not hold. sync() calls this with the engine's change
+	//! guard held, so a model the render thread may be automating is not destroyed under it.
+	void removeAllBut(const std::vector<ClapParamModel*>& models, const std::vector<ClapParamModel*>& kept);
 
 	clap::HostedPlugin* m_plugin;
 	Model* m_parent;

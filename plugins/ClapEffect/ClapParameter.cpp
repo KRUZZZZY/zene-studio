@@ -118,6 +118,15 @@ auto ClapParamModelList::sync() -> bool
 	if (m_built && revision == m_revision) { return false; }
 	m_built = true;
 	m_revision = revision;
+
+	// BUGS 7 (cluster new-p9-3): one guarded operation, from the first descriptor refresh to the last
+	// deletion. The render thread may automate a parameter of a model we keep, so its range must not be
+	// rewritten under it, and a reader of models() must never see the list while it is republished, nor a
+	// model that has already been deleted. Republishing after doneChangeInModel() left the old vector
+	// naming the freed model for the window in between.
+	auto* engine = Engine::audioEngine();
+	const auto guard = engine != nullptr ? engine->requestChangesGuard() : AudioEngine::RequestChangesGuard{};
+
 	std::vector<ClapParamModel*> next;
 	m_syncing = true;  // a new range may move a value: that is not the user's change
 	for (const auto& descriptor : m_plugin->parameters())
@@ -128,21 +137,22 @@ auto ClapParamModelList::sync() -> bool
 		next.push_back(model);
 	}
 	m_syncing = false;
-	removeAllBut(next);
+	// Publish before deleting: from here on no reader of models() can reach a removed model.
+	std::vector<ClapParamModel*> previous = std::move(m_models);
 	m_models = std::move(next);
+	removeAllBut(previous, m_models);
 	return true;
 }
 
-void ClapParamModelList::removeAllBut(const std::vector<ClapParamModel*>& kept)
+void ClapParamModelList::removeAllBut(const std::vector<ClapParamModel*>& models,
+	const std::vector<ClapParamModel*>& kept)
 {
 	std::vector<ClapParamModel*> gone;
-	std::copy_if(m_models.begin(), m_models.end(), std::back_inserter(gone),
+	std::copy_if(models.begin(), models.end(), std::back_inserter(gone),
 		[&kept](ClapParamModel* model) { return std::find(kept.begin(), kept.end(), model) == kept.end(); });
-	if (gone.empty()) { return; }
-	auto* engine = Engine::audioEngine();
-	if (engine != nullptr) { engine->requestChangeInModel(); }
+	// sync() holds the engine's change guard across this call: the render thread may be automating a model
+	// that is going away.
 	for (ClapParamModel* model : gone) { delete model; }
-	if (engine != nullptr) { engine->doneChangeInModel(); }
 }
 
 void ClapParamModelList::pullValues(float tolerance)
