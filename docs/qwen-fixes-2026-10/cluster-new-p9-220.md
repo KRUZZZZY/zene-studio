@@ -189,9 +189,14 @@ RESULT: PASS
   (no wait), the same session again (no wait), withdrawal with a period in flight (pre-existing wait),
   replacement with a period in flight (the new wait).
 - **ALREADY-FIXED / FALSE-POSITIVE evidence** - not claimed; the verdict is FIXED.
-- **Sibling commands** - no command file changed (`git status` shows only `include/LinkAudioFollower.h`,
-  `src/core/LinkAudioFollower.cpp`, `tests/src/core/LinkPhaseLockTest.cpp` and this report), so the
-  sibling-command question does not apply.
+- **Sibling commands** - this cluster's commit changed no command file: `git show --stat HEAD` lists
+  `docs/qwen-fixes-2026-10/cluster-new-p9-220.md`, `include/LinkAudioFollower.h`,
+  `src/core/LinkAudioFollower.cpp` and `tests/src/core/LinkPhaseLockTest.cpp`, and nothing under
+  `src/core/ControlCommands*`, `ControlReversibilityTable*` or `ControlRegistry*`. The sibling ids the
+  pre-submit check prints (`app.about` ... `arrangement.get_state`) come from the branch-wide
+  `base..HEAD` diff, which carries 432 files from the train this branch was cut from, not from this
+  commit; no command was added, changed or reclassified here, so no sibling command is affected and the
+  `ControlCommandsSnapshot` canary does not move.
 
 ## Other findings
 
