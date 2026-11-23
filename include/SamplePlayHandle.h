@@ -252,8 +252,9 @@ private:
 	 *  snapshotted here like the fades. A clip whose track has no composite has
 	 *  m_comped false and pays nothing (bit-identical render). */
 	void snapshotComp(const SampleClip* clip);
-	//! Silences the frames outside the selected spans, with a short ramp at
-	//! every edge so a lane switch does not click. Only run when m_comped.
+	//! Silences the frames outside the selected spans, with a short ramp at the
+	//! edges of each contiguous run of this lane (a lane switch or the comp's end),
+	//! not at an internal same-lane seam. Only run when m_comped.
 	void applyComp(SampleFrame* buffer, f_cnt_t frames) const;
 	//! Lock-free active-take gate; comp playback bypasses this selection entirely.
 	void applyActiveTakeGate(SampleFrame* buffer, f_cnt_t frames) const;
