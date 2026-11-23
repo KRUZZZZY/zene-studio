@@ -3593,8 +3593,8 @@ tests/src/plugins/BitInvaderAllocationTest.cpp
 tests/src/plugins/BitInvaderLoadSettingsTest.cpp
 tests/src/plugins/BusesTestInstrument.cpp
 tests/src/plugins/CarlaMidiHandoffTest.cpp
-tests/src/plugins/CarlaRenderBuffersTest.cpp
 tests/src/plugins/CarlaParamFloatModelTest.cpp
+tests/src/plugins/CarlaRenderBuffersTest.cpp
 tests/src/plugins/CarlaVst2LegacyStateTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp
 tests/src/plugins/ClapEffectIntegrationTest.cpp
