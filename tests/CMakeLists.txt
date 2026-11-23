@@ -1926,6 +1926,9 @@ if(LMMS_HAVE_ALSA)
 	# cluster 4584: the ALSA capture thread must not log a failed recovery -
 	# the failure is parked and reported by the thread that closes the capture.
 	list(APPEND LMMS_TESTS src/core/AudioAlsaCaptureErrorTest.cpp)
+	# cluster new-p17-220: a playback write error handleError() cannot recover from
+	# stops the run loop and is published on the device status instead of retried.
+	list(APPEND LMMS_TESTS src/core/AudioAlsaFatalWriteTest.cpp)
 	# Q050-488: the ALSA raw-MIDI worker is woken and joined on close, never terminated.
 	list(APPEND LMMS_TESTS src/core/MidiAlsaRawShutdownTest.cpp)
 	# Q050-488: the sequencer worker is joined before the project's ports are destroyed.

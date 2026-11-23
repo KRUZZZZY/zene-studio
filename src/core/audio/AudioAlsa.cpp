@@ -238,10 +238,13 @@ int AudioAlsa::handleError( int _err )
 	{
 		// under-run: the device ran dry - counted for the diagnostics (Q050-074.2), one relaxed add
 		countBackendXrun();
-		_err = snd_pcm_prepare( m_handle );
-		if( _err < 0 )
+		if( int err = snd_pcm_prepare( m_handle ); err < 0 )
+		{
 			printf( "Can't recover from underrun, prepare "
-					"failed: %s\n", snd_strerror( _err ) );
+					"failed: %s\n", snd_strerror( err ) );
+			// Unrecoverable: the caller must stop playback, not keep writing.
+			return err;
+		}
 		return ( 0 );
 	}
 #ifdef ESTRPIPE
@@ -255,10 +258,13 @@ int AudioAlsa::handleError( int _err )
 
 		if( _err < 0 )
 		{
-			_err = snd_pcm_prepare( m_handle );
-			if( _err < 0 )
+			if( int err = snd_pcm_prepare( m_handle ); err < 0 )
+			{
 				printf( "Can't recover from suspend, prepare "
-					"failed: %s\n", snd_strerror( _err ) );
+					"failed: %s\n", snd_strerror( err ) );
+				// Unrecoverable: the caller must stop playback, not keep writing.
+				return err;
+			}
 		}
 		return ( 0 );
 	}
@@ -308,8 +314,15 @@ void AudioAlsa::run()
 				return snd_pcm_writei(m_handle, data, frames);
 			}); framesWritten < 0)
 		{
-			handleError(static_cast<int>(framesWritten));
-			continue;
+			const int err = handleError(static_cast<int>(framesWritten));
+			if (err < 0)
+			{
+				// The recovery could not handle this one (a removed device: -ENODEV forever):
+				// no later write can succeed, so stop here and publish the errno on the device
+				// status instead of rendering into silence while the device says it runs.
+				stopAfterBackendFailure(-err);
+				break;
+			}
 		}
 	}
 }

@@ -123,6 +123,12 @@ public:
 	//! opened - not the engine's late periods. Meaningful only when deviceTiming().countsXruns.
 	std::uint64_t backendXruns() const noexcept { return m_backendXruns.load(std::memory_order_relaxed); }
 
+	/*! The device's own unrecoverable failure: the errno of a read/write its backend's recovery
+	 *  could not handle (a removed ALSA device is ENODEV), or 0 while it has none. Written by the
+	 *  backend's own thread when it stops itself; read by the device status mixer.cpu_load
+	 *  publishes (audio_device.failure). A backend with no such failure reports 0. */
+	int backendFailureCode() const noexcept { return m_backendFailure.load(std::memory_order_relaxed); }
+
 	void startProcessing();
 
 	void stopProcessing();
@@ -150,6 +156,19 @@ protected:
 
 	//! Q050-074.2: counts one backend xrun. Any thread, the audio thread included: one relaxed add.
 	void countBackendXrun() noexcept { m_backendXruns.fetch_add(1, std::memory_order_relaxed); }
+
+	/*! A backend's own thread found an error its recovery could not handle: record @a errnoValue
+	 *  (the positive errno the diagnostics report) and clear the running flag. Clearing it here,
+	 *  rather than through stopProcessing(), is what lets the backend's loop return without
+	 *  joining itself: the stop path's thread wait is for a caller on another thread. Nothing
+	 *  blocks, allocates or logs - this runs on the audio thread, before its loop returns.
+	 *  The backend must then let run()/processCallback() return. */
+	void stopAfterBackendFailure(int errnoValue) noexcept
+	{
+		m_backendFailure.store(errnoValue, std::memory_order_relaxed);
+		// Ordered after the store above: a reader that sees running == false also sees the code.
+		m_running.clear(std::memory_order_release);
+	}
 
 	/*! R2.3: sizes the stereo scratch bus for pushes of up to @a maxFrames and selects the
 	 *  captured pair (@a left, @a right) that bus carries. Off the audio thread - at open, or
@@ -214,6 +233,8 @@ private:
 	//! Open CallbackScopes. Dekker pair with m_running: see waitForOpenCallbacks().
 	std::atomic<int> m_openCallbacks{0};
 	std::atomic<std::uint64_t> m_backendXruns{0};
+	//! The backend's fatal failure (see backendFailureCode()); 0 while it has none.
+	std::atomic<int> m_backendFailure{0};
 };
 
 } // namespace lmms
