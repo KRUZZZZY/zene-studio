@@ -261,7 +261,9 @@ void populateTrack(QMenu* menu, Track* track)
 	const QString id = control::trackIdOf(track);
 	const bool locked = EditLocks::instance().trackLocked(track->id());
 	entry(menu, locked ? "Unlock Track" : "Lock Track", "track.set_locked", {{QStringLiteral("track"), id}, {QStringLiteral("locked"), !locked}}, false);
-	entry(menu, "Flatten Track (Replace With Its Audio)", "track.flatten", {{QStringLiteral("track"), id}}, false);  // ED-207
+	// Cluster 917: queue the render; track.flatten is the synchronous compatibility verb that waits for the child.
+	entry(menu, "Flatten Track (Replace With Its Audio)", "render.queue_bounce",
+		{{QStringLiteral("track"), id}, {QStringLiteral("operation"), QStringLiteral("flatten")}}, false);  // ED-207
 	entry(menu, "Copy to Another Project", "project.copy_tracks", {{QStringLiteral("tracks"), QJsonArray{id}}}, false);  // WF-042
 	const TrackSpacers::Spacer spacer = TrackSpacers::instance().spacer(track->id());  // WF-107
 	entry(menu, spacer.height > 0 ? "Edit Spacer Below..." : "Add Spacer Below...", "track.set_spacer", {{QStringLiteral("track"), id}}, true,

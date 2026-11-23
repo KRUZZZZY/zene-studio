@@ -38,6 +38,7 @@
 #include <QVBoxLayout>
 
 #include "ConfigManager.h"
+#include "ControlBounceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlTrackCreation.h"
 #include "ControlVocabulary.h"
@@ -64,13 +65,40 @@ ControlResult runBusy(const QString& title, const QString& command, const QJsonO
 	return result;
 }
 
+//! The track a stable id names, or nullptr when it is no longer in the song.
+Track* trackForId(const QString& id)
+{
+	for (Track* track : Engine::getSong()->tracks())
+	{
+		if (control::trackIdOf(track) == id) { return track; }
+	}
+	return nullptr;
+}
+
 //! The two rendering actions enter the cancellable render queue; the task area follows the job after this returns.
 void queueTrackRender(const QString& title, const QString& command, const QString& trackId)
 {
-	const QString operation = command == QLatin1String("freeze.track")
-		? QStringLiteral("freeze_track") : QStringLiteral("bounce");
-	const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("render.queue_bounce"),
-		{{QStringLiteral("operation"), operation}, {QStringLiteral("track"), trackId}});
+	ControlResult result;
+	if (command == QLatin1String("freeze.track"))
+	{
+		result = ControlRegistry::instance()->invoke(QStringLiteral("render.queue_bounce"),
+			{{QStringLiteral("operation"), QStringLiteral("freeze_track")}, {QStringLiteral("track"), trackId}});
+	}
+	else
+	{
+		// Bounce in place is output-only, so it belongs to render.queue_add (its
+		// honest not_mutating class) and needs the output path the synchronous
+		// verb would have generated. Same default name, same audio, no wait.
+		Track* track = trackForId(trackId);
+		if (track == nullptr) { result = ControlResult::failure(ControlErrorKind::NotFound, trackId); }
+		else
+		{
+			result = ControlRegistry::instance()->invoke(QStringLiteral("render.queue_add"),
+				{{QStringLiteral("operation"), QStringLiteral("bounce")}, {QStringLiteral("track"), trackId},
+				 {QStringLiteral("out"), control::resolveOutPath(QJsonObject(), track, QStringLiteral("bounce"),
+					 BounceInPlace::Range{})}});
+		}
+	}
 	if (result.ok) { return; }
 	if (isUnattendedRun()) { qWarning("%s refused: %s", qPrintable(command), qPrintable(result.errorMessage)); }
 	else { QMessageBox::warning(QApplication::activeWindow(), title, result.errorMessage); }

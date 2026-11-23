@@ -3385,6 +3385,7 @@ include/RenderRangeMenu.h
 src/gui/RenderRangeMenu.cpp
 src/core/ControlCommandsRenderSections.cpp
 tests/src/gui/RenderRangeMenuTest.cpp
+tests/src/gui/RenderMenuQueueTest.cpp
 tests/src/gui/ExportProjectDialogPresetTest.cpp
 # 2026-10-16 (Q050-022, R-workflow-197): the GUI half of the automation-lane-as-child
 # feature. This fork-NEW product test lives under tests/src/gui, which the recipe's
