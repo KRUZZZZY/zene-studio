@@ -4807,6 +4807,17 @@ set_tests_properties(OpulenZZeroFrameCount PROPERTIES ENVIRONMENT "QT_QPA_PLATFO
 # Cluster new-p16-157: Hz2fnum() range-checks the float before the unsigned conversion.
 add_test(NAME OpulenZHz2fnumRange COMMAND PluginPortsMigrationTest opulenzHz2fnumChecksRangeBeforeUnsignedCast)
 set_tests_properties(OpulenZHz2fnumRange PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# Cluster new-p18-65: the NES coarse detune must reach the renderer through the
+# model, not through a control-thread mirror. The NES held-note regressions get
+# focused entries so they can be run without the whole migration suite.
+add_test(NAME NesDetunePublication
+	COMMAND PluginPortsMigrationTest nesDetuneReachesRendererWithoutControlSignal)
+add_test(NAME NesDetuneRenderPath
+	COMMAND PluginPortsMigrationTest nesDetuneReadsTheModelOnTheRenderPath)
+add_test(NAME NesCoarseDetune
+	COMMAND PluginPortsMigrationTest nesCoarseDetuneRetunesHeldNote)
+set_tests_properties(NesDetunePublication NesDetuneRenderPath NesCoarseDetune PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 target_include_directories(PluginPortsMigrationTest PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
 	${CMAKE_SOURCE_DIR}/plugins/LadspaEffect
@@ -4826,6 +4837,7 @@ target_compile_definitions(PluginPortsMigrationTest PRIVATE
 	# Cluster new-p17-202: the Watsyn regression reads the plugin's own
 	# sources, so it needs to know where they are.
 	WATSYN_PLUGIN_SOURCE_DIR="${CMAKE_SOURCE_DIR}/plugins/Watsyn"
+	NES_PLUGIN_SOURCE_DIR="${CMAKE_SOURCE_DIR}/plugins/Nes"
 	${PART_C_MIGRATED_DEFINITIONS}
 )
 if(BUILD_TESTING AND TARGET freeboy)
