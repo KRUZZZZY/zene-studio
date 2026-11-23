@@ -41,7 +41,7 @@ After:
   `mapRt(uri)` and registers nothing (a URI first seen there gets 0, the LV2 "could not be created"
   value). Outside it, the original canonical path is unchanged, except that a new mapping is
   published into the mirror (`:164`).
-- `src/core/lv2/Lv2UridMap.cpp:175-185` - `unmap()`: inside `RealtimeScope` it returns the mirror's
+- `src/core/lv2/Lv2UridMap.cpp:175-188` - `unmap()`: inside `RealtimeScope` it returns the mirror's
   URI pointer with an acquire load, or `nullptr` for 0/out-of-range; outside it keeps the original
   canonical lookup.
 - Fixture-facing behaviour is unchanged: off the audio thread the map is still dynamic and
@@ -70,23 +70,21 @@ After:
 Product diff saved with
 
 ```sh
-git diff -- include/Lv2UridMap.h src/core/lv2/Lv2UridMap.cpp > logs/fix.patch   # EXIT=0
-git apply -R logs/fix.patch                                                    # EXIT=0
+git diff f34d1784e^ -- include/Lv2UridMap.h src/core/lv2/Lv2UridMap.cpp > logs/fix.patch   # EXIT=0
+git apply -R logs/fix.patch                                                                # EXIT=0
 ```
 
 then rebuilt and ran the test, restored the patch, rebuilt, and ran it again:
 
 | Step | Command | Log | EXIT | Result |
 | --- | --- | --- | --- | --- |
-| GREEN build | `cmake --build build --target zene Lv2StateTest -j4` | `build-green-3.log` | 0 | built |
-| GREEN run | `cd build/tests && ./Lv2StateTest` | `qtest-green-3.log` | **0** | `PASS uridMapOnTheAudioThreadIsLockFreeAndAllocationFree`, 9 passed |
-| save product diff | `git diff -- include/Lv2UridMap.h src/core/lv2/Lv2UridMap.cpp > logs/fix.patch` | - | 0 | 202-line patch |
-| reverse | `git apply -R logs/fix.patch` | - | 0 | product files back to HEAD |
-| RED build | `cmake --build build --target zene Lv2StateTest -j4` | `build-red-2.log` | 0 | built |
-| RED run | `cd build/tests && ./Lv2StateTest` | `qtest-red-2.log` | **1** | `FAIL uridMapOnTheAudioThreadIsLockFreeAndAllocationFree`: `Actual (freshOnAudio): 2`, `Expected (LV2_URID{0}): 0`; 8 passed, 1 failed |
+| save product diff | `git diff f34d1784e^ -- include/Lv2UridMap.h src/core/lv2/Lv2UridMap.cpp > logs/fix.patch` | - | 0 | 202-line patch |
+| reverse | `git apply -R logs/fix.patch` | - | 0 | product files back to the pre-fix state |
+| RED build | `cmake --build build --target zene Lv2StateTest -j4` | `build-red-3.log` | 0 | built |
+| RED run | `cd build/tests && ./Lv2StateTest` | `qtest-red-3.log` | **1** | `FAIL uridMapOnTheAudioThreadIsLockFreeAndAllocationFree`: `Actual (freshOnAudio): 2`, `Expected (LV2_URID{0}): 0`; 8 passed, 1 failed |
 | restore | `git apply logs/fix.patch` | - | 0 | fix back in place |
-| GREEN build | `cmake --build build --target zene Lv2StateTest -j4` | `build-green-4.log` | 0 | built |
-| GREEN run | `cd build/tests && ./Lv2StateTest` | `qtest-green-4.log` | **0** | `PASS uridMapOnTheAudioThreadIsLockFreeAndAllocationFree`, 9 passed |
+| GREEN build | `cmake --build build --target zene Lv2StateTest -j4` | `build-green-6.log` | 0 | built |
+| GREEN run | `cd build/tests && ./Lv2StateTest` | `qtest-green-6.log` | **0** | `PASS uridMapOnTheAudioThreadIsLockFreeAndAllocationFree`, 9 passed |
 
 The RED run stops at the new-URI assertion, so it does not reach the allocation-count assertion;
 that assertion is exercised in the GREEN run and would also fail before the fix, because the old
@@ -111,8 +109,8 @@ configuration refresh. A fresh configure on the train does this by itself.
 
 | Command | Log | EXIT | Result |
 | --- | --- | --- | --- |
-| `cmake --build build --target ControlDeviceCatalogueTest PluginScanCacheTest InstrumentLatencyPdcTest Lv2ViewBaseLifetimeTest Lv2StateTest -j4` | `build-family-1.log` | 0 | built |
-| `ctest -R '^(Lv2StateTest|InstrumentLatencyPdcTest|Lv2ViewBaseLifetimeTest|Lv2InstrumentKeyRegressionTest|PluginScanCacheTest|ControlDeviceCatalogueTest)$' --output-on-failure` (from `build/tests`) | `test-family-2.log` | 0 | 6 of 6 passed |
+| `cmake --build build --target ControlDeviceCatalogueTest PluginScanCacheTest InstrumentLatencyPdcTest Lv2ViewBaseLifetimeTest Lv2StateTest -j4` | `build-family-2.log` | 0 | built |
+| `ctest -R '^(Lv2StateTest\|InstrumentLatencyPdcTest\|Lv2ViewBaseLifetimeTest\|Lv2InstrumentKeyRegressionTest\|PluginScanCacheTest\|ControlDeviceCatalogueTest)$' --output-on-failure` (from `build/tests`) | `test-family-3.log` | 0 | 6 of 6 passed |
 | `python3 .../feature_check.py <worktree>` | `feature-check-3.log` | 0 | all 8 rows PASS: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length |
 
 Registration: the two inherited files are declared in `tests/upstream-modifications.txt` with the
@@ -141,6 +139,11 @@ cluster and the reason (same commit). The test lives in the already-registered
   16384-slot bound is not a limit on the canonical map or on any saved data; beyond it only
   audio-thread lookups of *unpublished* URIs return 0. The only deliberate behaviour change is the
   one the finding asks for: a URI first seen inside `RealtimeScope` is not registered there.
+- **Offline export:** `ProjectRenderer` calls `AudioEngine::renderNextPeriod()` on its own thread
+  (`src/core/ProjectRenderer.cpp:297`, `:312`), so export runs under the same `RealtimeScope` and
+  follows the same policy: a known URI resolves; a URI first seen in the render path gets 0 and is
+  registered only when a control-thread caller maps it. This is deliberate - export is the same
+  render path, and the LV2 contract tells plug-ins to cache before run.
 - **If the verdict is ALREADY-FIXED or FALSE-POSITIVE:** not applicable; this is FIXED. The
   superseded first-pass reasoning is noted at the top.
 - **Nothing new on the audio thread allocates, frees, locks, waits, does I/O or logs:** the
