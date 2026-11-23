@@ -37,7 +37,7 @@ After:
   URI pointer and URID are visible to `mapRt()`.
 - `src/core/lv2/Lv2UridMap.cpp:112-122` - the constructor allocates the fixed mirror once, before
   any plug-in runs, and clears `m_rtUris`.
-- `src/core/lv2/Lv2UridMap.cpp:125-169` - `map()`: null-safe; inside `RealtimeScope` it returns
+- `src/core/lv2/Lv2UridMap.cpp:126-173` - `map()`: null-safe; inside `RealtimeScope` it returns
   `mapRt(uri)` and registers nothing (a URI first seen there gets 0, the LV2 "could not be created"
   value). Outside it, the original canonical path is unchanged, except that a new mapping is
   published into the mirror (`:164`).
@@ -111,7 +111,7 @@ configuration refresh. A fresh configure on the train does this by itself.
 | --- | --- | --- | --- |
 | `cmake --build build --target ControlDeviceCatalogueTest PluginScanCacheTest InstrumentLatencyPdcTest Lv2ViewBaseLifetimeTest Lv2StateTest -j4` | `build-family-2.log` | 0 | built |
 | `ctest -R '^(Lv2StateTest\|InstrumentLatencyPdcTest\|Lv2ViewBaseLifetimeTest\|Lv2InstrumentKeyRegressionTest\|PluginScanCacheTest\|ControlDeviceCatalogueTest)$' --output-on-failure` (from `build/tests`) | `test-family-3.log` | 0 | 6 of 6 passed |
-| `python3 .../feature_check.py <worktree>` | `feature-check-3.log` | 0 | all 8 rows PASS: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length |
+| `python3 .../feature_check.py <worktree>` | `feature-check-5.log` | 0 | all 8 rows PASS: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length |
 
 Registration: the two inherited files are declared in `tests/upstream-modifications.txt` with the
 cluster and the reason (same commit). The test lives in the already-registered
