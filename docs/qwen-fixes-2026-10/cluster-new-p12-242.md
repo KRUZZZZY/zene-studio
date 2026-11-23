@@ -159,6 +159,27 @@ python3 .../qwen/feature_check.py <worktree> > logs/gates-1.log 2>&1            
       files", file-length "no new item in your files")
 ```
 
+### The manifest's red/green commands, run literally (final pass)
+
+`logs/prefix-1663-shape.patch` is the forward patch that restores the pre-1663
+shape; the tree is restored with `git checkout --` afterwards.
+
+```
+git apply logs/prefix-1663-shape.patch                                           EXIT=0   (test-10-red-final.log)
+cmake --build build --target ScriptDawEffectsTest -j4                            EXIT=0
+(cd build/tests && ctest -R 'ScriptDawEffectsTest' --output-on-failure)          EXIT=8
+   -> FAIL! : aWrapperKeptAcrossTheDevicesRemovalReadsNothing, and
+      "Received signal 11 (SIGSEGV) ... accessing address 0x49" in
+      aDeviceViewOfARemovedChannelReadsNothing
+
+git checkout -- include/ScriptDawBindings.h src/core/ScriptDawEffects.cpp         EXIT=0   (test-11-green-final.log)
+cmake --build build --target ScriptDawEffectsTest ScriptDawBindingTest -j4        EXIT=0
+(cd build/tests && ctest -R 'ScriptDawEffectsTest|ScriptDawBindingTest' \
+    --output-on-failure)                                                         EXIT=0
+   -> "100% tests passed out of 2"
+git status --short                                                               (empty)
+```
+
 ## What this run changed
 
 `tests/src/core/ScriptDawEffectsTest.cpp` — one assertion strengthened, nothing
