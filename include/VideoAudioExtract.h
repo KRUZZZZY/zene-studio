@@ -55,14 +55,19 @@ struct VideoExtractControl
  *  32-bit float stereo at the stream's own rate (mono is spread to both sides, more channels are mixed down), and
  *  write it to @a wav. False, with @a error, when the video has no audio, the file cannot be written, nothing
  *  decodes, or the build has no FFmpeg; a failed or cancelled run leaves @a wav unchanged, and success replaces it.
- *  Runs on the calling thread. */
+ *  The claim firstFreeAudioPath took on @a wav (if any) is given back when this returns: the WAV is on disk by then,
+ *  or nothing was written. Runs on the calling thread. */
 LMMS_EXPORT bool extractVideoAudio(const QString& video, const QString& wav, VideoAudio* out, QString* error);
-//! The same, reporting its progress to @a control and stopping when it asks (a cancelled run fails, leaving @a wav unchanged).
+/*! The same, reporting its progress to @a control and stopping when it asks (a cancelled run fails, leaving @a wav
+ *  unchanged); @a wav's claim is given back when this returns, as above. */
 LMMS_EXPORT bool extractVideoAudio(const QString& video, const QString& wav, VideoAudio* out, QString* error,
 	VideoExtractControl* control);
 
 /*! The default WAV for an extraction: "<stem>.wav" in @a dir, then "<stem>-2.wav" up to "<stem>-<maxNames>.wav", the first
- *  name no file takes. Empty when all of them are taken; the caller refuses rather than reuse one. */
+ *  name neither a file nor an extraction in flight takes. The returned name is claimed for the extraction about to
+ *  write it - the WAV itself only appears when its decode commits - so a second extraction running at the same time
+ *  is given the next one instead of writing over the first. Empty when all of them are taken; the caller refuses
+ *  rather than reuse one. */
 LMMS_EXPORT QString firstFreeAudioPath(const QDir& dir, const QString& stem, int maxNames);
 
 } // namespace lmms
