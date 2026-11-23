@@ -89,6 +89,20 @@ ctest -R 'BounceInPlaceTest|ControlBounceRenderTest|ControlRenderJobTest|Control
 python3 .../feature_check.py <worktree>                         EXIT 0   (gates-3.log, RESULT: PASS)
 ```
 
+The manifest's single named test was also replayed alone, from the final tree, with the product
+patch reversed and restored:
+
+```
+git apply -R .../logs/fix.patch                                 EXIT 0
+cmake --build build --target BounceInPlaceTest -j4              EXIT 0   (build-red-5.log)
+./BounceInPlaceTest rangeBounceMutesOnlyTheBouncedRegionOfItsSources
+                                                                EXIT 1   (test-red-5.log)
+git apply .../logs/fix.patch                                    EXIT 0
+cmake --build build --target zene BounceInPlaceTest -j4         EXIT 0   (build-green-5.log)
+./BounceInPlaceTest rangeBounceMutesOnlyTheBouncedRegionOfItsSources
+                                                                EXIT 0   (test-green-5.log)
+```
+
 The sync tests are fully deterministic (model assertions, no clock). The queued tests use the existing
 `waitForJob` seam (`render.queue_report` polling) that every queued-render test uses; the only
 asynchronous part is the fake child renderer, which is the test binary itself answering `render`.
@@ -124,6 +138,9 @@ asynchronous part is the fake child renderer, which is the test binary itself an
 - **Gates and pre-submit check:** `python3 .../feature_check.py <worktree>` EXIT 0 with
   `RESULT: PASS` (`gates-3.log`); `python3 .../submit_check.py <worktree> 3971` EXIT 0 with
   `RESULT: PASS - submit` (`submit-1.log`).
+- **ALREADY-FIXED / FALSE-POSITIVE ask:** not applicable - the verdict is FIXED from the real
+  whole-track mute in the pre-fix code shown above (`src/core/ControlCommandsRangeBounce.cpp:71-74`),
+  and the RED run in `test-red-5.log` fails on exactly that mute.
 
 ## Other findings
 
