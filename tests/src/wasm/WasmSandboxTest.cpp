@@ -230,6 +230,71 @@ private:
 	bool m_held = false;
 	bool m_released = false;
 };
+
+/*! Holds one queued block on the pool lane, so a test can imitate a module
+ * that takes longer than one audio period without racing anything: the lane
+ * stops in the worker's per-block seam
+ * (WasmWorker::setProcessBlockTestHook) right before the held block runs, and
+ * stays there until the test releases it. The block the effect submitted
+ * before the hold therefore misses the call it was due in - observed, not
+ * timed. Like ModuleLoadGate, the only timeout is the safety net that turns
+ * a seam that never fires into a failed assertion instead of a hang.
+ */
+class BlockProcessGate
+{
+public:
+	BlockProcessGate()
+	{
+		WasmWorker::setProcessBlockTestHook(&BlockProcessGate::onProcessBlock, this);
+	}
+
+	~BlockProcessGate()
+	{
+		release();
+		WasmWorker::setProcessBlockTestHook(nullptr, nullptr);
+	}
+
+	BlockProcessGate(const BlockProcessGate&) = delete;
+	BlockProcessGate& operator=(const BlockProcessGate&) = delete;
+
+	//! Waits until the lane reached the seam with the held block.
+	bool waitUntilHeld(int timeoutMs)
+	{
+		std::unique_lock<std::mutex> lock(m_mutex);
+		return m_condition.wait_for(lock, std::chrono::milliseconds(timeoutMs),
+			[this] { return m_held; });
+	}
+
+	//! Lets the held block run; every later block runs straight through.
+	void release()
+	{
+		{
+			std::lock_guard<std::mutex> lock(m_mutex);
+			m_released = true;
+		}
+		m_condition.notify_all();
+	}
+
+private:
+	static void onProcessBlock(void* context)
+	{
+		auto* self = static_cast<BlockProcessGate*>(context);
+		std::unique_lock<std::mutex> lock(self->m_mutex);
+		if (self->m_released || self->m_held)
+		{
+			// Only the first block is held; every later one runs through.
+			return;
+		}
+		self->m_held = true;
+		self->m_condition.notify_all();
+		self->m_condition.wait(lock, [self] { return self->m_released; });
+	}
+
+	std::mutex m_mutex;
+	std::condition_variable m_condition;
+	bool m_held = false;
+	bool m_released = false;
+};
 } // namespace
 
 class WasmSandboxTest : public QObject
@@ -287,6 +352,9 @@ private slots:
 
 	// ---- cluster 5444: an unload is a completed operation, not a failure ----
 	void p8_emptyPathUnloadReportsSuccess();
+
+	// ---- cluster new-p8-249: a late worker result may not be displaced ----
+	void p9_lateWorkerResultIsDroppedNotDisplaced();
 
 private:
 };
@@ -1423,6 +1491,113 @@ void WasmSandboxTest::p8_emptyPathUnloadReportsSuccess()
 
 	qInfo("P8 unload: controls unload returned success, module path empty, "
 		"worker idle, latency 0");
+}
+
+// ---------------------------------------------------------------------------
+// Cluster new-p8-249: a worker backlog made the effect's actual latency vary.
+//
+// WasmEffect::processImpl() collected the oldest completed block every call
+// and submitted a new one unconditionally, while latencyFrames() reports a
+// FIXED one-block pipeline delay. When a module took longer than one call to
+// process, the effect first delivered the delayed dry signal, then played an
+// older queued module block - audio the dry path had already delivered, at a
+// call it did not belong to - so the output timing shifted and could repeat.
+//
+// The regression holds one block in the worker's per-block test seam, so the
+// held block deterministically misses the call it was due in (a module slower
+// than one audio period, without racing the lane), then lets it go. What the
+// effect owes every call is fixed by the contract: either the module's result
+// for the block submitted in the PREVIOUS call, or the dry signal of that
+// position - never an older block's result.
+// ---------------------------------------------------------------------------
+
+void WasmSandboxTest::p9_lateWorkerResultIsDroppedNotDisplaced()
+{
+	constexpr f_cnt_t frames = 48;
+	// Odd multiples of 0.25, so a module result (0.5 * marker) can never be
+	// mistaken for another call's dry marker.
+	const auto marker = [](int block) { return (2 * block + 1) * 0.25f; };
+
+	WasmEffect effect(nullptr, nullptr);
+	QString error;
+	QVERIFY2(effect.loadModule(modulePath("gain"), &error), qPrintable(error));
+	QVERIFY(effect.worker().isReady());
+	QCOMPARE(effect.worker().declaredLatency(), 0);
+	// The gain module: out = param(0) * in, so a delivered result is exactly
+	// half its block's marker.
+	effect.setModuleParam(0, 0.5f);
+
+	AudioBuffer buffer{frames, DEFAULT_CHANNELS};
+	buffer.allocateInterleavedBuffer();
+	const auto drive = [&](int block)
+	{
+		for (f_cnt_t f = 0; f < frames; ++f)
+		{
+			buffer.interleavedBuffer()[f][0] = marker(block);
+			buffer.interleavedBuffer()[f][1] = marker(block);
+		}
+		buffer.assumeNonSilent(0);
+		buffer.assumeNonSilent(1);
+		QVERIFY(effect.processAudioBuffer(buffer));
+	};
+
+	// Call 0 submits block 0; the lane reaches the per-block seam and is held
+	// there, so block 0 cannot be finished for the calls that follow.
+	BlockProcessGate gate;
+	drive(0);
+	QVERIFY2(gate.waitUntilHeld(10000), "the lane never reached the held block");
+
+	// Calls 1 and 2 fall due while the module is behind: nothing is ready, so
+	// the dry signal holds each call's own position.
+	drive(1);
+	QCOMPARE(buffer.interleavedBuffer()[0][0], marker(1));
+	QCOMPARE(buffer.interleavedBuffer()[frames - 1][1], marker(1));
+	drive(2);
+	QCOMPARE(buffer.interleavedBuffer()[0][0], marker(2));
+
+	// The held block finishes only now - after the call it was due in. Its
+	// result belongs to call 1's position, which call 1 already delivered dry.
+	gate.release();
+	QVERIFY(effect.worker().waitForIdle(5000));
+
+	// Call 3: the late result must NOT be inserted here. It is dropped, and
+	// the dry signal holds call 3's own position.
+	drive(3);
+	QCOMPARE(buffer.interleavedBuffer()[0][0], marker(3));
+	QCOMPARE(buffer.interleavedBuffer()[frames - 1][1], marker(3));
+	// The pipeline has room again, so call 3's block is submitted and the
+	// effect is back to its one-block pipeline.
+	QVERIFY(effect.worker().waitForIdle(5000));
+
+	// Call 4: block 3's result is due exactly now - delivered on time.
+	drive(4);
+	QCOMPARE(buffer.interleavedBuffer()[0][0], 0.5f * marker(3));
+	QCOMPARE(buffer.interleavedBuffer()[frames - 1][1], 0.5f * marker(3));
+	QVERIFY(effect.worker().waitForIdle(5000));
+
+	// Call 5: steady state - the previous call's result, on time again.
+	drive(5);
+	QCOMPARE(buffer.interleavedBuffer()[0][0], 0.5f * marker(4));
+	QCOMPARE(buffer.interleavedBuffer()[0][1], 0.5f * marker(4));
+
+	// The fix works by ordering, not by refusing blocks: nothing was dropped
+	// at submit, and the module kept running throughout.
+	QCOMPARE(effect.worker().droppedBlocks(), std::uint64_t{0});
+	QVERIFY(effect.worker().isReady());
+	QVERIFY(!effect.isModuleCorrupted());
+	QVERIFY(effect.worker().waitForIdle(5000));
+
+	qInfo("P9 late result: calls 1-3 held their positions dry "
+		"(%.3f, %.3f, %.3f); the late block was dropped, not played at call 3; "
+		"call 4 delivered block 3 on time (%.3f) and call 5 block 4 (%.3f); "
+		"submitted=%llu collected=%llu dropped=%llu",
+		static_cast<double>(marker(1)), static_cast<double>(marker(2)),
+		static_cast<double>(marker(3)),
+		static_cast<double>(0.5f * marker(3)),
+		static_cast<double>(0.5f * marker(4)),
+		static_cast<unsigned long long>(effect.worker().submittedBlocks()),
+		static_cast<unsigned long long>(effect.worker().collectedBlocks()),
+		static_cast<unsigned long long>(effect.worker().droppedBlocks()));
 }
 
 } // namespace lmms::wasm
