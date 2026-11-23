@@ -35,14 +35,14 @@
 #include <optional>
 #include <vector>
 
-#include <ringbuffer/ringbuffer.h>
-
 #include "LinkedModelGroups.h"
 #include "LmmsSemaphore.h"
 #include "Lv2Basics.h"
 #include "Lv2Features.h"
 #include "Lv2Options.h"
 #include "Lv2Worker.h"
+#include "MidiEvent.h"
+#include "MidiHandoffQueue.h"
 #include "Plugin.h"
 #include "TimePos.h"
 
@@ -52,6 +52,15 @@ namespace lmms
 
 class PluginIssue;
 class SampleFrame;
+
+//! One MIDI event on its way to the plug-in's atom input. Plain data, so the bounded, lock-free
+//! handoff can carry it across a thread boundary without allocating (cluster new-p14-156).
+struct MidiInputEvent
+{
+	MidiEvent ev;
+	TimePos time;
+	f_cnt_t offset;
+};
 
 // forward declare port structs/enums
 namespace Lv2Ports
@@ -169,7 +178,7 @@ public:
 	//! Run the Lv2 plugin instance for @param frames frames
 	void run(f_cnt_t frames);
 
-	void handleMidiInputEvent(const class MidiEvent &event,
+	void handleMidiInputEvent(const MidiEvent &event,
 		const TimePos &time, f_cnt_t offset);
 
 	/*
@@ -218,13 +227,11 @@ private:
 	// MIDI
 	// many things here may be moved into the `Instrument` class
 	constexpr const static std::size_t m_maxMidiInputEvents = 1024;
-	//! spinlock for the MIDI ringbuffer (for MIDI events going to the plugin)
-	std::atomic_flag m_ringLock = ATOMIC_FLAG_INIT;
-
-	//! MIDI ringbuffer (for MIDI events going to the plugin)
-	ringbuffer_t<struct MidiInputEvent> m_midiInputBuf;
-	//! MIDI ringbuffer reader
-	ringbuffer_reader_t<struct MidiInputEvent> m_midiInputReader;
+	//! Bounded, lock-free MIDI handoff (cluster new-p14-156): handleMidiInputEvent() is called by
+	//! several threads at once (the GUI's live input and the audio thread's own note events) while
+	//! copyModelsFromCore() drains it on the audio thread. A full queue, or an exhausted reservation
+	//! budget under contention, refuses and counts the event instead of making a producer wait.
+	MidiHandoffQueue<m_maxMidiInputEvents, MidiInputEvent> m_midiInputQueue;
 
 	// other
 	static int32_t defaultEvbufSize() { return 1 << 15; /* ardour uses this*/ }
@@ -252,6 +259,16 @@ private:
 	static bool portIsSideChain(const LilvPlugin* plugin, const LilvPort *port);
 	static bool portIsOptional(const LilvPlugin* plugin, const LilvPort *port);
 	static AutoLilvNode uri(const char* uriStr);
+
+#ifdef LMMS_TESTING
+public:
+	//! Test seam (cluster new-p14-156): the MIDI handoff producers push into and the audio thread
+	//! drains. Exposed so a test can prove a producer is refused, not made to wait, when it loses.
+	MidiHandoffQueue<m_maxMidiInputEvents, MidiInputEvent>& midiInputHandoffForTest()
+	{
+		return m_midiInputQueue;
+	}
+#endif
 };
 
 

@@ -961,6 +961,10 @@ set(LMMS_TESTS
 	src/core/ScriptCommandBridgeTest.cpp
 	# 0.5.0 engine wiring E13: an LV2 plug-in's own state survives a save and a load.
 	src/core/Lv2StateTest.cpp
+	# cluster new-p14-156: Lv2Proc's MIDI input handoff is bounded and lock-free - a full queue or a
+	# producer that loses the reservation race is refused and counted, never made to spin on the
+	# audio thread; events stay ordered, the consumer drains them, and producing allocates nothing.
+	src/core/Lv2MidiHandoffTest.cpp
 	# 0.5.0 engine wiring E9: a hosted plug-in's sidechain bus is fed the mixer's sidechain.
 	src/core/SidechainInputsTest.cpp
 	# 0.5.0 engine wiring E25: the lock-free MPSC queue JACK MIDI out is fed through.
@@ -2750,6 +2754,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ReferenceProjectPanelTest"
 		# The LV2 state round trip loads the host's real LV2 effects.
 		OR LMMS_TEST_NAME STREQUAL "Lv2StateTest"
+		# cluster new-p14-156: the MIDI handoff test loads the host's real LV2 instrument fixture.
+		OR LMMS_TEST_NAME STREQUAL "Lv2MidiHandoffTest"
 		# The rack menu binds a macro to a parameter of one real effect.
 		OR LMMS_TEST_NAME STREQUAL "RackMenuTest"
 		# Q050-055.2: the keys load a real effect and a real instrument.
@@ -4395,7 +4401,7 @@ endif()
 # latency port when LV2_TEST_INSTRUMENT_LATENCY is set - is InstrumentLatencyPdcTest's LV2 subject.
 # It is Lv2StateTest's subject too: a real LV2 plug-in is what makes a state restore attempt
 # (and its failure) possible without a plug-in installed on the machine.
-if(LMMS_HAVE_LV2 AND TARGET lv2instrument AND (TARGET InstrumentLatencyPdcTest OR TARGET Lv2StateTest))
+if(LMMS_HAVE_LV2 AND TARGET lv2instrument AND (TARGET InstrumentLatencyPdcTest OR TARGET Lv2StateTest OR TARGET Lv2MidiHandoffTest))
 	add_subdirectory(data/lv2-test-instrument)
 	get_filename_component(LMMS_LV2_LATENCY_FIXTURE_DIR "${LMMS_LV2_TEST_INSTRUMENT_BUNDLE}" DIRECTORY)
 	if(TARGET InstrumentLatencyPdcTest)
@@ -4407,6 +4413,11 @@ if(LMMS_HAVE_LV2 AND TARGET lv2instrument AND (TARGET InstrumentLatencyPdcTest O
 		target_compile_definitions(Lv2StateTest PRIVATE
 			LV2_TEST_INSTRUMENT_DIR="${LMMS_LV2_LATENCY_FIXTURE_DIR}")
 		add_dependencies(Lv2StateTest lv2instrument lv2-test-instrument)
+	endif()
+	if(TARGET Lv2MidiHandoffTest)
+		target_compile_definitions(Lv2MidiHandoffTest PRIVATE
+			LV2_TEST_INSTRUMENT_DIR="${LMMS_LV2_LATENCY_FIXTURE_DIR}")
+		add_dependencies(Lv2MidiHandoffTest lv2instrument lv2-test-instrument)
 	endif()
 endif()
 find_file(PART_C_SF2_FILE NAMES FluidR3_GM.sf2 default-GM.sf2
