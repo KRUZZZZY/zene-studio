@@ -152,6 +152,12 @@ check; its table is in `.../logs/submit-1.log` and is answered under `## Self-ch
 
 ### Round 2 (log folder `.../new-p8-263.r2/logs`)
 
+The red and green phases were then re-run from the committed tree as one invocation each, so the manifest's
+commands are commands that ran verbatim:
+
+- RED: `git apply -R .../r2/logs/fix.patch; echo REVERSE_EXIT=$?; cmake --build build --target vst3effect Vst3EffectIntegrationTest -j4 > .../r2/logs/build-5.log 2>&1; echo BUILD_EXIT=$?; cd build/tests && ctest -R Vst3EffectIntegrationTest --output-on-failure > .../r2/logs/test-6.log 2>&1; echo TEST_EXIT=$?` - REVERSE_EXIT=0, build EXIT=0, **TEST_EXIT=8** (`frame 0: output 1 is -0.1875, expected the wet value -0.125 ...`, `Totals: 8 passed, 1 failed`).
+- GREEN: `git apply .../r2/logs/fix.patch; echo APPLY_EXIT=$?; cmake --build build --target vst3effect Vst3EffectIntegrationTest -j4 > .../r2/logs/build-6.log 2>&1; echo BUILD_EXIT=$?; cd build/tests && ctest -R Vst3EffectIntegrationTest --output-on-failure > .../r2/logs/test-7.log 2>&1; echo TEST_EXIT=$?` - the compound command exited 0 with the tree back to the committed state (`git status --porcelain` empty, the buggy expression gone from `include/SidechainInputs.h`), build EXIT=0, **TEST_EXIT=0** (`1/1 Test #801 ... Passed`).
+
 - `cmake --build build --target vst3effect Vst3EffectIntegrationTest SidechainInputsTest -j4 > .../r2/logs/build-1.log 2>&1; echo EXIT=$?` - EXIT=0
 - `ctest -R Vst3EffectIntegrationTest --output-on-failure > .../r2/logs/test-1.log 2>&1; echo EXIT=$?` (from `build/tests`) - EXIT=0
 - `./Vst3EffectIntegrationTest testASidechainChannelIsNotMixedIntoTheSecondOutput > .../r2/logs/test-2.log 2>&1; echo EXIT=$?` (from `build/tests`) - EXIT=0, the slot's own output line quoted above
