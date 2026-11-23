@@ -206,21 +206,22 @@ private slots:
 		Track* track = trackWithClip(QStringLiteral("Shell menu"));
 		QMenu menu;
 		ShellCommandMenus::populateTrack(&menu, track);
-		QAction* bounce = test::menuAction(&menu, {QStringLiteral("Render"), QStringLiteral("Bounce in Place")});
-		QVERIFY(bounce != nullptr);
-		bounce->trigger();
+		// By position, not label: the Render submenu always offers Bounce to New
+		// Track, Bounce in Place and Freeze in that order (the assertion is the job).
+		QAction* render = test::menuAction(&menu, {QStringLiteral("Render")});
+		QVERIFY(render != nullptr && render->menu() != nullptr);
+		const QList<QAction*> entries = render->menu()->actions();
+		QCOMPARE(entries.size(), 3);
+
+		entries.at(1)->trigger();  // Bounce in Place
 		QCOMPARE(jobCountFor(QStringLiteral("bounce")), 1);
 		cancelAndDrain();
 
-		QAction* land = test::menuAction(&menu, {QStringLiteral("Render"), QStringLiteral("Bounce to New Track")});
-		QVERIFY(land != nullptr);
-		land->trigger();
+		entries.at(0)->trigger();  // Bounce to New Track
 		QCOMPARE(jobCountFor(QStringLiteral("bounce_land")), 1);
 		cancelAndDrain();
 
-		QAction* freeze = test::menuAction(&menu, {QStringLiteral("Render"), QStringLiteral("Freeze")});
-		QVERIFY(freeze != nullptr);
-		freeze->trigger();
+		entries.at(2)->trigger();  // Freeze
 		QCOMPARE(jobCountFor(QStringLiteral("freeze_track")), 1);
 	}
 

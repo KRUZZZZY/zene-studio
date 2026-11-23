@@ -62,11 +62,11 @@ Flatten entry, and Navigate > Range > Bounce to a New Track.
 | GREEN build | `cmake --build build --target RenderMenuQueueTest zene -j4` - `build-green-1.log` | 0 |
 | GREEN test | `ctest -R '^RenderMenuQueueTest$' --output-on-failure` - `test-green-1.log` | 0 |
 | 4b revert | `git diff -- src/gui/TrackRenderMenu.cpp src/gui/shell/ShellCommandMenus.cpp src/gui/LibraryCommandMenus.cpp src/gui/MenuBarExtras.cpp > .../fix.patch && git apply -R .../fix.patch` | 0 |
-| 4b RED build | `cmake --build build --target RenderMenuQueueTest -j4` - `build-red-2.log` | 0 |
-| 4b RED test | `ctest -R '^RenderMenuQueueTest$' --output-on-failure` - `test-red-2.log` | 8 |
+| 4b RED build | `cmake --build build --target RenderMenuQueueTest -j4` - `build-red-3.log` | 0 |
+| 4b RED test | `ctest -R '^RenderMenuQueueTest$' --output-on-failure` - `test-red-3.log` | 8 (all four cases: Actual 0 jobs) |
 | 4b restore | `git apply .../fix.patch` | 0 |
-| 4b GREEN build | `cmake --build build --target RenderMenuQueueTest -j4` - `build-green-2.log` | 0 |
-| 4b GREEN test | `ctest -R '^RenderMenuQueueTest$' --output-on-failure` - `test-green-2.log` | 0 |
+| 4b GREEN build | `cmake --build build --target RenderMenuQueueTest -j4` - `build-green-4.log` | 0 |
+| 4b GREEN test | `ctest -R '^RenderMenuQueueTest$' --output-on-failure` - `test-green-4.log` | 0 |
 | family | `ctest -R '^(RenderMenuQueueTest\|TrackRenderMenuTest\|ControlRenderJobTest\|ControlBounceRenderTest\|MixerBusFreezeMenuTest\|RenderRangeMenuTest\|LibraryMenusTest\|BatchFreezeTest)$'` - `test-family-1.log` | 0 (8/8) |
 | gates | `python3 .../feature_check.py <worktree>` - `gates-1.log` | 0 (all eight rows PASS) |
 | GUI harness | `window.screenshot` of `build/zene` - `gui-screenshot-1.log`, `cluster-917-window.png` | 0 |
@@ -77,10 +77,10 @@ sha256 `1fdbebbc5708fbfb873d1f63f00e6eb07c0e8f4169ba9986629e7990fd91696c`.
 ## Self-check
 
 - **The regression test fails with the product change reverted and passes with
-  it.** Proven twice: the initial RED run (`test-red-1.log`, EXIT 8; all four
-  cases found 0 queue jobs) and the 4b reversed-patch run (`test-red-2.log`,
-  EXIT 8). Restored: `test-green-2.log`, EXIT 0. The patch and both
-  `git apply` calls exited 0.
+  it.** Proven twice: the initial RED run (`test-red-1.log`, EXIT 8) and the
+  4b reversed-patch run (`test-red-3.log`, EXIT 8), where all four cases report
+  `Actual 0` queue jobs against `Expected 1`. Restored: `test-green-4.log`,
+  EXIT 0. The patch and both `git apply` calls exited 0.
 - **The test is deterministic.** The oracle is `render.queue_list` immediately
   after `QAction::trigger()`, before any `processEvents()`: either the menu
   invoked a queue command (one job recorded synchronously) or it did not. There
