@@ -87,33 +87,33 @@ Song.cpp is in the diff, so the states the test drives, in order:
 3. `automationWriteDrainTimer` fires, a node exists at tick 100 with the control's value;
 4. control half: no edit, period at tick 140 queues a write, the drain plants a node at tick 140.
 
-## Commands and EXIT codes (logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-248.r1/logs; sequence summary in 10-sequence.log)
-- GREEN build: `cmake --build build --target zene AutomationRenderLockTest -j4` → 11-build-green.log EXIT=0.
+## Commands and EXIT codes (logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-248.r2/logs; sequence summary in 28-sequence.log)
+- GREEN build: `cmake --build build --target zene AutomationRenderLockTest -j4` → 29-build-green.log EXIT=0.
 - GREEN test: `ctest -R '^AutomationRenderLockTest$' --output-on-failure` (from build/tests)
-  → 12-test-green.log EXIT=0 (`100% tests passed out of 1`).
-- 4b patch: `git diff 2c58bac4de~1 2c58bac4de -- include/AutomationClip.h src/core/AutomationClip.cpp src/core/Song.cpp > logs/fix.patch`
+  → 30-test-green.log EXIT=0 (`100% tests passed out of 1`).
+- 4b patch: `git diff 2c58bac4de~1 2c58bac4de -- include/AutomationClip.h src/core/AutomationClip.cpp src/core/Song.cpp > logs/fix-r2.patch`
   (the product hunks of the recording fix: atomic target/recording publication and the lock-free Song.cpp scan) → EXIT=0;
-  `git apply -R logs/fix.patch` → EXIT=0 (`git status --short` showed the three files modified).
-- 4b RED: rebuild → 13-build-red.log EXIT=0; `ctest -R '^AutomationRenderLockTest$' --output-on-failure`
-  → 14-test-red.log **EXIT=8** (`0% tests passed, 1 tests failed out of 1`):
+  `git apply -R logs/fix-r2.patch` → EXIT=0 (`git status --short` showed the three files modified).
+- 4b RED: rebuild → 31-build-red.log EXIT=0; `ctest -R '^AutomationRenderLockTest$' --output-on-failure`
+  → 32-test-red.log **EXIT=8** (`0% tests passed, 1 tests failed out of 1`):
   `FAIL!  : AutomationRenderLockTest::aRecordingClipKeepsItsTickWhileAnEditHoldsTheLock() 'clip->pendingWriteCount() > 0'
   returned FALSE. (a recording clip lost its tick while an edit held the clip lock)`, Loc tests/src/core/AutomationRenderLockTest.cpp(280).
-- 4b GREEN: `git apply logs/fix.patch` → EXIT=0, `git status --short` empty; rebuild →
-  15-build-green-again.log EXIT=0; ctest → 16-test-green-again.log **EXIT=0** (`100% tests passed out of 1`).
-- GUI harness: `cd tests && QT_QPA_PLATFORM=offscreen python3 control-shell.py ../build/zene /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-248.r1/logs/gui`
-  → 17-gui-harness.log EXIT=0, `PASS: shell control-surface driver (every check held)`.
-  `sha256sum gui/*.png` → 18-sha256.log EXIT=0; shell-arrange.png
-  0f76075ee2dfe8ac8c0e0e1a7075634ea84eb778221baadf701f2d5a989bba97.
+- 4b GREEN: `git apply logs/fix-r2.patch` → EXIT=0, `git status --short` empty; rebuild →
+  33-build-green-again.log EXIT=0; ctest → 34-test-green-again.log **EXIT=0** (`100% tests passed out of 1`).
+- GUI harness: `cd tests && QT_QPA_PLATFORM=offscreen python3 control-shell.py ../build/zene /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-248.r2/logs/gui`
+  → 35-gui-harness.log EXIT=0, `PASS: shell control-surface driver (every check held)`.
+  `sha256sum gui/*.png` → 36-sha256.log EXIT=0; shell-arrange.png
+  a67d15648608d49a683c771215ca96e472cbb36838a2b20b39012bdd10b3657b.
 - Gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>`
-  → 19-feature-check.log EXIT=0, `RESULT: PASS`.
+  → 37-feature-check.log EXIT=0, `RESULT: PASS`.
 - Completion check: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p12-248`
-  → 20-submit-check.log EXIT=0, `RESULT: PASS - submit` (run on commit 1a158e79fa, before this line was added).
+  → see the final line of this report.
 - Registration: `tests/upstream-modifications.txt` lists `src/core/AutomationClip.cpp` and the
   `include/AutomationClip.h` and `src/core/Song.cpp` reasons; the list ends with a newline.
 
 ## Self-check
-- **Regression test FAILS with the product change reverted and PASSES with it:** 14-test-red.log EXIT=8
-  (the recording case loses its tick), 16-test-green-again.log EXIT=0. The red failure is the
+- **Regression test FAILS with the product change reverted and PASSES with it:** 32-test-red.log EXIT=8
+  (the recording case loses its tick), 34-test-green-again.log EXIT=0. The red failure is the
   data-loss assertion, not a timeout: the round-2 `tryLock` guard is still present in the red build, so
   the period returns but records nothing.
 - **Deterministic:** no sleeps and no injected wall-clock values. The clip lock is held by a real
@@ -128,15 +128,15 @@ Song.cpp is in the diff, so the states the test drives, in order:
 - **No collateral damage:** no saved data, file format, command or undo path is touched; no limit or
   capacity is added. Without contention every path behaves as before; the six-test family
   passed in the previous round; that run's log is not in this run's log dir and it was not re-run here (unverified this round).
-- **Screenshot artifact:** gui/shell-arrange.png (sha256 0f76075ee2dfe8ac8c0e0e1a7075634ea84eb778221baadf701f2d5a989bba97), made by
-  `cd tests && QT_QPA_PLATFORM=offscreen python3 control-shell.py ../build/zene <logs>/gui` (17-gui-harness.log EXIT=0, PASS line
+- **Screenshot artifact:** gui/shell-arrange.png (sha256 a67d15648608d49a683c771215ca96e472cbb36838a2b20b39012bdd10b3657b), made by
+  `cd tests && QT_QPA_PLATFORM=offscreen python3 control-shell.py ../build/zene <logs>/gui` (35-gui-harness.log EXIT=0, PASS line
   quoted above). The branch diff against master carries inherited src/gui files from the train merge, so the harness rendered
   the real fixed binary headless as proof; this fix itself changes no GUI behaviour (it touches only AutomationClip and Song.cpp).
 - **ALREADY-FIXED / FALSE-POSITIVE code reference:** not applicable; the verdict is FIXED.
 - **Sibling commands in the command files you changed:** this job changed no command file.
 
 Delegation: Haiku ran the rebuild, the green / revert / red / restore / green sequence, the GUI harness and sha256sum
-(logs 10-18); I checked 10-sequence.log, the ctest summaries, the FAIL! line, the PASS line, the hashes and the clean
+(logs 28-36); I checked 28-sequence.log, the ctest summaries, the FAIL! line, the PASS line, the hashes and the clean
 `git status` myself, and ran feature_check and submit_check myself. No Sonnet start: no product or test code changed this round.
 
 ## Other findings
