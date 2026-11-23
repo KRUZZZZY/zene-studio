@@ -168,6 +168,13 @@ is kept for honesty, not cited as evidence.
   DeviceDspTest family (including the impulse-load and allocation-probe cases) passes.
 - **ALREADY-FIXED / FALSE-POSITIVE item.** Not applicable: this report's verdict is
   FIXED, with the code evidence above.
+- **Sibling commands in changed command files.** This cluster's commit changes no
+  command file at all: `git show --stat --oneline HEAD` lists only
+  `plugins/ConvolutionReverb/ConvolutionReverb.{h,cpp}`,
+  `tests/src/core/DeviceDspTest{,Parts2}.{cpp,h}` and this report, and the fix adds no
+  command and moves no canary. The `app.*` / `arrangement.*` ids the checker lists come
+  from the other commits already on the merge train between `FIX-BASE` and this branch
+  tip, not from this work; no sibling command is affected.
 
 ## Other findings
 
