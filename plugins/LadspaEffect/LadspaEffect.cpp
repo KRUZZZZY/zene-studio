@@ -53,6 +53,32 @@ namespace lmms
 {
 
 
+namespace
+{
+
+//! The port loop maps an audio port onto a mixer channel only when its name
+//! marks the direction ("...IN..." / "...OUT..."). The layout check below and
+//! the port classification use these predicates, so the two cannot drift apart.
+bool isChannelInputPort( Ladspa2LMMS * manager, const ladspa_key_t & key,
+							int port )
+{
+	return manager->isPortAudio( key, port ) &&
+		manager->isPortInput( key, port ) &&
+		manager->getPortName( key, port ).toUpper().contains( "IN" );
+}
+
+
+bool isChannelOutputPort( Ladspa2LMMS * manager, const ladspa_key_t & key,
+							int port )
+{
+	return manager->isPortAudio( key, port ) &&
+		manager->isPortOutput( key, port ) &&
+		manager->getPortName( key, port ).toUpper().contains( "OUT" );
+}
+
+} // namespace
+
+
 extern "C"
 {
 
@@ -339,6 +365,49 @@ void LadspaEffect::pluginInstantiation()
 	// Categorize the ports, and create the buffers.
 	m_portCount = manager->getPortCount( m_key );
 
+	// The processors share the effect's two-channel view: every processor reads
+	// its ChannelIn ports and writes its ChannelOut ports to the next mixer
+	// channel. A layout whose mapped ports do not fit that view would read or
+	// write past it, so refuse it here, before any port buffer exists (the
+	// in-place sharing below also indexes a two-entry array by output channel).
+	int mappedInputs = 0;
+	int mappedOutputs = 0;
+	for( int port = 0; port < m_portCount; ++port )
+	{
+		if( isChannelInputPort( manager, m_key, port ) )
+		{
+			++mappedInputs;
+		}
+		else if( isChannelOutputPort( manager, m_key, port ) )
+		{
+			++mappedOutputs;
+		}
+	}
+	const int processors = static_cast<int>( m_processors );
+	if( processors * mappedInputs > DEFAULT_CHANNELS ||
+		processors * mappedOutputs > DEFAULT_CHANNELS )
+	{
+		const QString reason = QStringLiteral( "LADSPA plugin %1 maps %2 input "
+				"and %3 output channels per processor; %4 processors do not fit "
+				"the %5-channel effect bus" )
+			.arg( m_key.second )
+			.arg( mappedInputs )
+			.arg( mappedOutputs )
+			.arg( processors )
+			.arg( static_cast<int>( DEFAULT_CHANNELS ) );
+		if( lmms::isUnattendedRun() )
+		{
+			qWarning() << reason;
+		}
+		else
+		{
+			QMessageBox::warning( 0, "Effect", reason,
+				QMessageBox::Ok, QMessageBox::NoButton );
+		}
+		setOkay( false );
+		return;
+	}
+
 	int inputch = 0;
 	int outputch = 0;
 	std::array<LADSPA_Data*, 2> inbuf;
@@ -358,32 +427,30 @@ void LadspaEffect::pluginInstantiation()
 			p->buffer = nullptr;
 
 			// Determine the port's category.
-			if( manager->isPortAudio( m_key, port ) )
+			if( isChannelInputPort( manager, m_key, port ) )
 			{
-				if( p->name.toUpper().contains( "IN" ) &&
-					manager->isPortInput( m_key, port ) )
+				p->rate = BufferRate::ChannelIn;
+				p->buffer = new LADSPA_Data[Engine::audioEngine()->framesPerPeriod()];
+				inbuf[ inputch ] = p->buffer;
+				inputch++;
+			}
+			else if( isChannelOutputPort( manager, m_key, port ) )
+			{
+				p->rate = BufferRate::ChannelOut;
+				if( ! m_inPlaceBroken && inbuf[ outputch ] )
 				{
-					p->rate = BufferRate::ChannelIn;
+					p->buffer = inbuf[ outputch ];
+					outputch++;
+				}
+				else
+				{
 					p->buffer = new LADSPA_Data[Engine::audioEngine()->framesPerPeriod()];
-					inbuf[ inputch ] = p->buffer;
-					inputch++;
+					m_inPlaceBroken = true;
 				}
-				else if( p->name.toUpper().contains( "OUT" ) &&
-					manager->isPortOutput( m_key, port ) )
-				{
-					p->rate = BufferRate::ChannelOut;
-					if( ! m_inPlaceBroken && inbuf[ outputch ] )
-					{
-						p->buffer = inbuf[ outputch ];
-						outputch++;
-					}
-					else
-					{
-						p->buffer = new LADSPA_Data[Engine::audioEngine()->framesPerPeriod()];
-						m_inPlaceBroken = true;
-					}
-				}
-				else if( manager->isPortInput( m_key, port ) )
+			}
+			else if( manager->isPortAudio( m_key, port ) )
+			{
+				if( manager->isPortInput( m_key, port ) )
 				{
 					p->rate = BufferRate::AudioRateInput;
 					p->buffer = new LADSPA_Data[Engine::audioEngine()->framesPerPeriod()];

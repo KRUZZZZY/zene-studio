@@ -9354,6 +9354,13 @@ target_compile_definitions(LadspaChannelCountsTest PRIVATE
 	LADSPA_CHANNEL_FIXTURE_PATH="$<TARGET_FILE:ladspa_channel_count_fixture>"
 )
 add_dependencies(LadspaChannelCountsTest ladspa_channel_count_fixture)
+# Cluster new-p9-213: the same fixture also hosts the mono-in/stereo-out layout
+# the LADSPA effect wrapper must refuse. PluginPortsMigrationTest constructs the
+# real migrated effect, so it needs the fixture on its LADSPA search path.
+target_compile_definitions(PluginPortsMigrationTest PRIVATE
+	"PART_C_CHANNEL_LADSPA_MODULE=\"$<TARGET_FILE:ladspa_channel_count_fixture>\""
+)
+add_dependencies(PluginPortsMigrationTest ladspa_channel_count_fixture)
 
 # The NAM engine's local CTest registrations live with its headless harness.
 # Mirror those cases here so ctest launched from build/tests discovers them.
