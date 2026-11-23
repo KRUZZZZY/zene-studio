@@ -62,17 +62,6 @@ namespace lmms
 {
 
 
-// container for everything required to store MIDI events going to the plugin
-struct MidiInputEvent
-{
-	MidiEvent ev;
-	TimePos time;
-	f_cnt_t offset;
-};
-
-
-
-
 //! 0.5.0 MX-114: more than a stereo pair of outputs is refused for an effect only; an instrument (no audio
 //! input) plays the rest as extra output buses.
 static bool tooManyOutputs(unsigned inputs, unsigned outputs)
@@ -215,9 +204,7 @@ private:
 Lv2Proc::Lv2Proc(const LilvPlugin *plugin, Model* parent) :
 	LinkedModelGroup(parent),
 	m_plugin(plugin),
-	m_workLock(1),
-	m_midiInputBuf(m_maxMidiInputEvents),
-	m_midiInputReader(m_midiInputBuf)
+	m_workLock(1)
 {
 	createPorts();
 	initPlugin();
@@ -300,10 +287,10 @@ void Lv2Proc::copyModelsFromCore()
 	if(m_midiIn)
 	{
 		LV2_Evbuf_Iterator iter = lv2_evbuf_begin(m_midiIn->m_buf.get());
-		// MIDI events waiting to go to the plugin?
-		while(m_midiInputReader.read_space() > 0)
+		// MIDI events waiting to go to the plugin? The handoff's single consumer is this audio thread.
+		MidiInputEvent ev{};
+		while(m_midiInputQueue.pop(ev))
 		{
-			const MidiInputEvent ev = m_midiInputReader.read(1)[0];
 			uint32_t atomStamp =
 				ev.time.frames(Engine::framesPerTick()) + ev.offset;
 			uint32_t type = Engine::getLv2Manager()->
@@ -445,28 +432,17 @@ void Lv2Proc::run(f_cnt_t frames)
 
 // in case there will be a PR which removes this callback and instead adds a
 // `ringbuffer_t<MidiEvent + time info>` to `class Instrument`, this
-// function (and the ringbuffer and its reader in `Lv2Proc`) will simply vanish
+// function (and the handoff and its reader in `Lv2Proc`) will simply vanish
 void Lv2Proc::handleMidiInputEvent(const MidiEvent &event, const TimePos &time, f_cnt_t offset)
 {
 	if(m_midiIn)
 	{
-		// ringbuffer allows only one writer at a time
-		// however, this function can be called by multiple threads
-		// (different RT and non-RT!) at the same time
-		// for now, a spinlock looks like the most safe/easy compromise
-
-		// source: https://en.cppreference.com/w/cpp/atomic/atomic_flag
-		while (m_ringLock.test_and_set(std::memory_order_acquire))  // acquire lock
-			 ; // spin
-
-		MidiInputEvent ev { event, time, offset };
-		std::size_t written = m_midiInputBuf.write(&ev, 1);
-		if(written != 1)
-		{
-			qWarning("MIDI ringbuffer is too small! Discarding MIDI event.");
-		}
-
-		m_ringLock.clear(std::memory_order_release);
+		// Several threads call this at once (the GUI for live input, the audio thread for the song's
+		// own notes), so it must not lock and must not wait for another producer (cluster new-p14-156).
+		// The bounded, lock-free handoff refuses - and counts - an event when the queue is full or
+		// when this producer lost the reservation race for the whole retry budget; it never spins.
+		// Nothing here may log: the audio thread is one of the callers.
+		m_midiInputQueue.push(MidiInputEvent { event, time, offset });
 	}
 	else
 	{
