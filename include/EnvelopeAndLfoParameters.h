@@ -96,6 +96,12 @@ public:
 			return m_lfos.isEmpty();
 		}
 
+		/*! The audio thread's per-period LFO advance, and the reset the song's
+		 *  per-period scheduling calls at the start of the song. Both run on
+		 *  the audio thread, so neither locks and neither walks the instance
+		 *  list: each one touches the two frame counters below, and the work
+		 *  does not grow with the number of LFOs. add() and remove() stay on
+		 *  the control thread and keep m_lfoListMutex. */
 		void trigger();
 		void reset();
 
@@ -256,7 +262,16 @@ private:
 	BoolModel m_controlEnvAmountModel;
 
 
-	std::atomic<f_cnt_t> m_lfoFrame;
+	//! The frames rendered so far, advanced once per period by the audio
+	//! thread (LfoInstances::trigger()), and the value the last LFO reset
+	//! happened at (LfoInstances::reset()). An LFO's phase is the distance
+	//! from its own origin - the counter at its construction, or the last
+	//! reset, whichever is later - so the audio thread advances every LFO
+	//! through these two counters alone.
+	static std::atomic<std::uint64_t> s_frameCounter;
+	static std::atomic<std::uint64_t> s_frameCounterAtReset;
+	//! The value of s_frameCounter this LFO's phase is measured from.
+	std::atomic<std::uint64_t> m_frameCounterOrigin;
 	sample_t * m_lfoShapeData;
 	//! The snapshot version the cached LFO shape data was built from, and the
 	//! LFO frame it was built at. The cache is valid only for that pair, so a
@@ -288,6 +303,9 @@ private:
 
 	sample_t lfoShapeSample( f_cnt_t _frame_offset, const AudioState & _state,
 							f_cnt_t _lfoFrame );
+	//! The LFO's phase in frames: the frames rendered since its origin. Two
+	//! atomic loads and no lock, so the audio path may call it per period.
+	f_cnt_t lfoFrame() const;
 	void updateLfoShapeData( const AudioState & _state );
 
 	//! The audio path's snapshot: no lock, no wait, no allocation.
