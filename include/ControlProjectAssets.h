@@ -150,6 +150,17 @@ struct ProjectAssetRelink
 constexpr int MaxProjectAssetReferences = 10000;
 constexpr qint64 MaxProjectAssetHashBytes = 1024LL * 1024LL * 1024LL;
 
+/*! The most ONE hash command may read in total, across every DISTINCT file it hashes.
+ *  The per-file cap above bounds one read; on its own it still permits 10,000 references
+ *  x 1 GiB of work in one call, and the command runs on the caller's (UI) thread. A
+ *  repeated reference is hashed once (the command caches by resolved file identity), and
+ *  this second bound stops a project with thousands of distinct large files from blocking
+ *  the caller for an unbounded time. References past it are reported unhashed with the
+ *  reason - the same reported state an over-cap file has - so the command still answers
+ *  instead of failing. Four full-cap stems fit; media beyond that is not hashed in this
+ *  call. */
+constexpr qint64 MaxProjectAssetTotalHashBytes = 4LL * 1024LL * 1024LL * 1024LL;
+
 /*! The largest project file these verbs read, and the largest expanded document
  *  they will inflate from a .mmpz. Same bound, same reason, and the same
  *  measured-first rule the engine's own document recovery uses
