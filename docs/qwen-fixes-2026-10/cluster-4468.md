@@ -203,8 +203,23 @@ file lived under `4468.r1/logs`, which no longer exists).
 
 **9. Completion check.**
 `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 4468`
-is run after this report is committed; its table and exit code are quoted in the
-follow-up commit "docs(4468): record the pre-submit check for round 2".
+(`logs/submit-1.log`) exited 0 with `RESULT: PASS - submit`:
+
+```
+PRE-SUBMIT CHECK for 4468
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-4468.md
+  PASS  tests added or changed
+  PASS  new test files registered in tests/CMakeLists.txt
+  PASS  gates (feature_check.py)
+RESULT: PASS - submit
+```
+
+The manifest is `4468.r2/logs/proof.json`: a `code-reference` to
+`plugins/SlicerT/SlicerT.cpp:402` plus the `regression-test` artifact for
+`SlicerTPlayheadTest::aSoundingSliceNoteEmitsItsPlayheadFromTheGuiThreadOnly`
+(`red_exit` 8, `green_exit` 0, commands as in the table above).
 
 ## Other findings
 
