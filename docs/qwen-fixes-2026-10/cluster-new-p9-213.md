@@ -204,3 +204,53 @@ file was added.
   (`LadspaEffect.cpp:430-462`). Pre-existing, unrelated to the overrun.
 - `slice6PluginsAreLiveAndExact` also needs plugin modules this build tree does
   not produce yet (`lb302 render missing`); not related to this change.
+
+## Self-check
+
+Answers to `submit_check.py`'s ASK items, each with the evidence from this session.
+
+- **The regression test FAILS with the product change reverted and PASSES with it (exit codes).**
+  Logs `build-3-red.log` / `test-2-red-slot.log` and `build-4-green.log` /
+  `test-3-green-slot.log`: after `git apply -R .../logs/fix.patch` (EXIT=0) and a
+  rebuild (EXIT=0), `./PluginPortsMigrationTest ladspaEffectRejectsOutputChannelOverflow`
+  exits 1 with `FAIL! ... 'storage[frames].left() == guardLeft &&
+  storage[frames].right() == guardRight' returned FALSE`; after
+  `git apply .../logs/fix.patch` (EXIT=0) and a rebuild (EXIT=0), the same
+  command exits 0. The final run on the committed code is `test-9-final-ladspa-slots.log`
+  (EXIT=0).
+- **The test is deterministic: no wall-clock timing, sleeps or races.**
+  It uses a fixed fixture descriptor, fixed guard sentinels (`12345.0f` /
+  `-12345.0f`), a fixed 0.25/-0.25 bus, and the engine's own
+  `framesPerPeriod()`; there is no thread, timer, sleep or random input. The
+  only "seam" is the direct call to the exact merge loop `processImpl` that the
+  production path calls, with one extra stereo frame allocated after the bus so
+  the out-of-range write is observable inside the allocation.
+- **The fix is at the cause and complete.**
+  The overrun comes from the unbounded channel counter in the merge loop
+  (`LadspaEffect.cpp:269`), fed by `m_processors = DEFAULT_CHANNELS /
+  effect_channels`. The check counts the same `ChannelIn`/`ChannelOut` ports the
+  loop walks, with the same predicates the classifier uses
+  (`isChannelInputPort` / `isChannelOutputPort`, `LadspaEffect.cpp:59-77`), and
+  refuses an overrun before any port buffer exists. Every caller of
+  `pluginInstantiation()` is covered: the constructor and `changeSampleRate()`;
+  the latter returns early when `m_controls == nullptr` (`LadspaEffect.cpp:135-140`),
+  so a refused effect is never re-instantiated. The merge loop's only other
+  consumer of the channel counter is the input loop, whose count is checked by
+  the same rule. No sibling function maps ports.
+- **No collateral damage.**
+  The check is the exact set of channels the loop touches, so it cannot reject a
+  layout that fit before: mono `2 x 1 = 2`, stereo `1 x 2 = 2`, and
+  `2-in/1-out` `1 x 1 = 1` all stay accepted (the latter keeps its old dry
+  channel 1). This is held by `migratedPluginsPreserveBehaviour`, which renders
+  the SWH mono `amp_1181` and stereo `dj_eq` through the migrated module and the
+  pre-migration reference module and compares sample-exactly - it passes
+  (`test-9-final-ladspa-slots.log`). No saved-data format, project XML,
+  control/undo or audio-thread path changed; `LadspaEffect.h` is untouched, so
+  no other target needs a rebuild for a header change.
+- **ALREADY-FIXED / FALSE-POSITIVE:** not claimed; the verdict is FIXED and the
+  pre-fix code path is cited in the Decision section.
+- **Sibling commands (`app.*`, `arrangement.*`):** this change touches no
+  command file and adds no control command (the ControlCommandsSnapshot canary
+  is unchanged). `plugins/LadspaEffect/LadspaEffect.cpp` is only reachable
+  through the effect's own `processImpl`/`pluginInstantiation` and has no
+  command handler, so none of the listed commands is affected.
