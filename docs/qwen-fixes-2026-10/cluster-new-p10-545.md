@@ -163,6 +163,14 @@ EXIT=0
 - **Verdict evidence.** This is a FIXED verdict, so the ALREADY-FIXED / FALSE-POSITIVE
   rule does not apply; the pre-fix code is cited above at
   `plugins/CarlaBase/Carla.cpp:535-541` (HEAD).
+- **Sibling commands (`app.*`, `arrangement.*`).** This commit changes no command file:
+  `git show --stat HEAD` lists only `Carla.cpp`, `Carla.h`, the new
+  `CarlaRenderBuffers.h`, three registration manifests, `rt-safety-scope.txt`,
+  `tests/CMakeLists.txt`, the Carla test and this report. The sibling list in the
+  submit check comes from the branch's accumulated diff against its base, not from this
+  fix. No control command, undo step or reversibility class is added or changed, so none
+  of those commands is affected; the engine-level period bound they all share is
+  unchanged.
 
 ## Other findings
 
