@@ -103,6 +103,7 @@ Logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p9-67.r1/logs/`.
 | gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | `gates-1-feature-check.log` | **0** |
 | final build | `cmake --build build --target zene VideoAudioNameTest VideoTrackTest VideoClipsTest VideoFfmpegTest VideoTestClipTest VideoTestClipPortabilityTest ArrangerOverlaysVideoLaneTest VideoClipsGuiTest -j4` | `build-8-final.log` | 0 |
 | final family run | `cd build/tests && ctest -R Video --output-on-failure` | `test-7-final-family.log` | **0** (11 of 11) |
+| completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-67` | `submit-1.log` | **0** (`RESULT: PASS - submit`) |
 
 Gate table (`gates-1-feature-check.log`):
 
@@ -166,6 +167,19 @@ touched.
 5. **Verdict is FIXED**, so no ALREADY-FIXED/FALSE-POSITIVE citation is needed; the evidence is above
    (`ControlCommandsVideo.cpp:293-319` naming before the worker writes, `VideoAudioExtract.cpp:100`/`:128-156` the
    late commit).
+6. **The sibling list `submit_check.py` prints** (`app.about`, `app.ask`, `app.help`, `app.online_help`,
+   `app.task_cancel`, `app.tasks`, `app.tour`, `app.tours`, `app.update_check_get/run/set`, `app.version`,
+   `app.whats_new`, `arrangement.fit_tracks`, `arrangement.get_state`) is not the command file this fix touched: the
+   checker builds it from every `ControlCommands*` file in the branch-versus-base diff, and this branch carries the
+   whole train (`433 changed files`). My commit changes one command file, `src/core/ControlCommandsVideo.cpp`, whose
+   group is `video.*` (plus `video.render_frames` and `video.window_show`, registered from
+   `src/core/ControlCommandsVideoRender.cpp` and `src/gui/VideoWindow.cpp`). The `app.*` ids are registered in
+   `src/gui/ControlCommandsShell.cpp` (`:166`, `MainWindow.cpp:553`) and their reversibility rows in
+   `src/core/ControlReversibilityTableShell.cpp:147`; `arrangement.*` lives in `src/core/ControlCommandsArrangement.cpp`.
+   None of those files is in this commit (`git show --name-only HEAD`), and none of them names or writes a WAV. The
+   `video.*` siblings are covered in item 3 above; all are unchanged, and none gained or lost a command, a schema
+   field or an undo step - `tools/mcp-zene-control/zene_control/commands_snapshot.json` keeps the same nine `video.*`
+   ids.
 
 ## Other findings
 
