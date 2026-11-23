@@ -3259,6 +3259,7 @@ tests/src/gui/ArrangerTakePunchTest.cpp
 tests/src/gui/NoteMelodyTest.cpp
 tests/src/plugins/BusesTestInstrument.cpp
 tests/src/plugins/CarlaMidiHandoffTest.cpp
+tests/src/plugins/CarlaPlayImplTest.cpp
 tests/src/plugins/CarlaRenderBuffersTest.cpp
 tests/src/plugins/FakeHostModule.cpp
 tests/src/plugins/NeuralAmpModelLoadTest.cpp
