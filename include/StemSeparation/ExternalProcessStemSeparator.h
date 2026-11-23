@@ -41,7 +41,11 @@ namespace lmms
 class LMMS_EXPORT ExternalProcessStemSeparator : public StemSeparator
 {
 public:
-	// Empty arguments fall back to the corresponding locate*() helper.
+	// Empty arguments fall back to the corresponding finder. The interpreter is
+	// NOT probed here: with an empty @a pythonExecutable, separate() discovers it
+	// on the backend's worker thread. Probing can launch child processes and wait
+	// for them, so it must not run on the constructing thread (the GUI drives
+	// `stem.get_state` synchronously, which constructs this backend).
 	explicit ExternalProcessStemSeparator(QString pythonExecutable = QString(),
 		QString cliPath = QString(),
 		QString modelPath = QString());
@@ -58,6 +62,9 @@ public:
 
 	// Discovery order: LMMS_STEM_PYTHON, /usr/bin/python3, python3,
 	// /usr/local/bin/python3; the first one that imports onnxruntime wins.
+	// The WHOLE sequence is bounded by one short deadline, so a hanging
+	// interpreter cannot hold the caller and the remaining candidates are not
+	// started after it (the next call probes again).
 	static QString locatePython(QString* error = nullptr);
 
 	// Discovery order: LMMS_STEM_CLI, the build-time source path, then

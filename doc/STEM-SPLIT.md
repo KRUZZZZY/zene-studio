@@ -47,6 +47,15 @@ progress/cancel, and delivers results via queued signals.
 `StemSplitController` is the GUI side; `StemTrackBuilder` turns a finished
 `StemSet` into tracks/clips in the Song.
 
+**Interpreter discovery is deferred and bounded.** Constructing
+`ExternalProcessStemSeparator` probes nothing: an empty interpreter argument is
+resolved by `separate()`, on the job's worker thread. `locatePython()` bounds the
+WHOLE probe sequence with one 5 s deadline, so an interpreter that hangs while
+importing `onnxruntime` cannot hold the caller for the old per-candidate
+timeouts (5 s to start plus 30 s to import, four candidates). A call that runs
+out of time reports that, starts no further process, and the next call probes
+again; `LMMS_STEM_PYTHON_PROBE_MS` (a test hook) can only lower the budget.
+
 ## Quality: the segment overlap (Q050-062.1)
 
 Both backends and `tools/stem_split_cli.py` run the model over overlapping

@@ -4040,3 +4040,5 @@ tests/src/plugins/SfzCompressorStereoLinkTest.cpp
 # cluster new-p9-240 (2026-10): LOMM sample-rate change regression - the lookahead ring cursor and contents are re-anchored when the rings are resized (fork-NEW test).
 tests/src/plugins/LommSampleRateTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p9-240.md
+# cluster new-p15-64 (2026-11): the external stem backend defers interpreter discovery out of its constructor and bounds the whole probe sequence (fork-NEW test).
+tests/src/core/StemPythonDiscoveryTest.cpp
