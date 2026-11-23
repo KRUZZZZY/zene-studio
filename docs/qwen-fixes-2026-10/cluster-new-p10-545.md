@@ -144,7 +144,9 @@ What the RED runs show, stated exactly:
 
 ## Self-check
 
-- **Regression test fails with the product change reverted, passes with it.** Two REDs, both with the
+- **Regression test fails with the product change reverted, passes with it.** (Round 4 below supersedes this
+  bullet: the helper-level test could not see the `playImpl()` integration reversed, so the regression is now
+  `CarlaPlayImplTest`, which drives `playImpl()` itself.) Two REDs, both with the
   exit codes above. (1) Bug re-introduced inside `CarlaRenderBuffers::render()` (two period-sized stack
   arrays): `ctest -R CarlaRenderBuffersTest` `EXIT=8`, `renderClipsASpanLongerThanThePlanes` failed and the
   binary ended in SEGFAULT (`red-2-vla-test.log`). (2) Whole product fix reversed with
@@ -184,3 +186,60 @@ What the RED runs show, stated exactly:
 Delegation: Haiku ran every build and ctest run (the GREEN runs, the 30x repeats and the RED/restore
 sequence; four Haiku starts, the first stopped at the configure guard); I designed and wrote the fix, the tests and the
 stress-test rendezvous, reviewed the results and wrote this report.
+
+## Round 4: the regression now drives the production `playImpl()`
+
+Review finding: with only the `Carla.cpp`/`Carla.h` integration reversed and `CarlaRenderBuffers.h` still
+present, `CarlaRenderBuffersTest` and `CarlaMidiHandoffTest` both passed, because the test called the helper
+directly. That is true and is confirmed again below (`r3-test.log`: both still pass in the reversed state).
+
+New `tests/src/plugins/CarlaPlayImplTest.cpp` (registered in `tests/CMakeLists.txt` next to
+`CarlaParamFloatModelTest`, in `tests/all-sources.txt` and `tests/fork-sources.txt`) builds a real
+`CarlaInstrument(nullptr, nullptr, isPatchbay=false, nullptr, playNow=false)` and calls the public
+`Instrument::play(std::span<SampleFrame>)`, which is `playImpl()`. The Carla native library in this tree is
+a dummy whose `carla_get_native_rack_plugin()` returns null, so the test executable defines
+`carla_get_native_rack_plugin()`, `carla_get_native_patchbay_plugin()` and `carla_get_library_folder()` itself
+(`ENABLE_EXPORTS`); the executable comes first in the dynamic lookup order, so `libcarlabase.so` binds to the
+fake descriptor, whose `process` callback records what it receives. The assertions:
+
+- `playImplRendersIntoPlanesOffTheStack`: for a 256-frame period and a `MAXIMUM_BUFFER_SIZE*2+1` span, run on
+  a default-stack thread, `process()` is called once with the right frame count (256, then clipped to 4096),
+  neither plane pointer lies inside the rendering thread's stack (`pthread_getattr_np`), the planes arrive
+  silent, the output is interleaved, and the clipped tail stays silent.
+- `maximumPeriodRendersOnASmallStack`: a 4096-frame `play()` on a thread with about 16 KiB of usable stack
+  (smallest startable stack found by probing `pthread_create`, plus 8 KiB), less than the two planes (32 KiB).
+
+Deterministic: no clock, sleep or race; span sizes and the fake callback are injected; each thread is joined
+before anything is checked. Non-POSIX platforms `QSKIP`.
+
+Commands (logs in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p10-545.r4/logs`; the product patch is
+`git diff c6b40333d8 -- plugins/CarlaBase/Carla.cpp plugins/CarlaBase/Carla.h`, saved as `fix.patch`, which
+leaves `CarlaRenderBuffers.h` in place):
+
+| step | command | EXIT | log |
+| --- | --- | --- | --- |
+| regenerate | `cmake --build build --target CarlaMidiHandoffTest -j4` | 0 | `g1-regen.log` |
+| build (first try) | `cmake --build build --target carlabase CarlaPlayImplTest -j4`: `CARLA_EXPORT` not declared in this Carla header branch | 2 | `g2-build.log` |
+| build | same, after switching to `CARLA_API_EXPORT` | 0 | `g4-build.log` |
+| first run | `ctest -R '^CarlaPlayImplTest$' --output-on-failure` | 0 | `g5-test.log` |
+| RED: revert integration | `git apply -R fix.patch` | 0 | `r1-revert.log` |
+| RED build | `cmake --build build --target zene carlabase CarlaRenderBuffersTest CarlaMidiHandoffTest CarlaPlayImplTest -j4` (builds: the helper header remains) | 0 | `r2-build.log` |
+| RED run | `ctest -R '^(CarlaPlayImplTest\|CarlaRenderBuffersTest\|CarlaMidiHandoffTest)$' -V` | 8 | `r3-test.log` |
+| restore | `git apply fix.patch` | 0 | `g6-restore.log` |
+| GREEN build | same five targets | 0 | `g7-build.log` |
+| GREEN run | same ctest, `-V` | 0 | `g8-test.log` |
+
+RED result, exactly: `CarlaPlayImplTest::playImplRendersIntoPlanesOffTheStack` FAILS
+(`'!g_seen.leftOnStack && !g_seen.rightOnStack' returned FALSE. (the render planes are on the thread's stack)`,
+`CarlaPlayImplTest.cpp:222`); the process then ends in SIGSEGV, reported by ctest as `808 - CarlaPlayImplTest
+(SEGFAULT)`. The log has no line for the next slot, `maximumPeriodRendersOnASmallStack`, so the crash is
+in it by elimination: the period-sized arrays do not fit its small stack (not confirmed under a debugger).
+In the same RED run `CarlaRenderBuffersTest` (8/8) and `CarlaMidiHandoffTest` (7/7) still pass, as the
+review said; they test the helper and the MIDI hand-off, not the integration. GREEN: all three pass (3/3,
+`CarlaPlayImplTest` slots `initTestCase`, `playImplRendersIntoPlanesOffTheStack`,
+`maximumPeriodRendersOnASmallStack`, `cleanupTestCase`).
+
+Gates: `feature_check.py` `EXIT=0`, `RESULT: PASS` for all eight gates (`gate-1.log`), commit `3a7be9a08f`.
+
+Delegation (round 4): Haiku built and ran the tests in three starts (first build, rebuild, RED/restore
+sequence); I read the code, wrote the test and its CMake entry, reviewed the logs and wrote this section.
