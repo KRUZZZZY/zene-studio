@@ -40,6 +40,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
+#include <QSaveFile>
 #include <QSet>
 #include <QTemporaryDir>
 #include <QUuid>
@@ -553,6 +554,28 @@ bool openTrimWindow(const QString& source, qint64 startFrame, qint64 frameCount,
 	return true;
 }
 
+/*! Copies the frames still to be read from \a in to \a target, which \a info describes, and installs
+ *  the result only when all \a frames were written and the file closed cleanly.
+ *
+ *  The copy goes to a sibling temporary that QSaveFile renames over \a target on commit: opening
+ *  \a target itself for writing truncates it, so a copy that failed part way used to destroy the file
+ *  that was there before. On any failure the temporary is discarded and \a target is untouched. Does
+ *  not close \a in.
+ */
+namespace
+{
+bool writeTrimmed(SNDFILE* in, const QString& target, SF_INFO* info, qint64 frames, qint64* framesWritten)
+{
+	QSaveFile staged(target);
+	if (!staged.open(QIODevice::WriteOnly)) { return false; }
+	SNDFILE* out = sf_open_fd(staged.handle(), SFM_WRITE, info, 0);
+	if (out == nullptr) { return false; }
+	const bool copied = copyFrames(in, out, info->channels, frames, framesWritten);
+	const bool closed = sf_close(out) == 0;
+	return copied && closed && *framesWritten == frames && staged.commit();
+}
+} // namespace
+
 bool BounceInPlace::trimWav(const QString& source, const QString& target,
 		qint64 startFrame, qint64 frameCount, qint64* framesWritten, QString* error)
 {
@@ -578,22 +601,14 @@ bool BounceInPlace::trimWav(const QString& source, const QString& target,
 
 	SF_INFO targetInfo = sourceInfo;
 	targetInfo.frames = toWrite;
-	SNDFILE* out = sf_open(target.toLocal8Bit().constData(), SFM_WRITE, &targetInfo);
-	if (out == nullptr)
-	{
-		sf_close(in);
-		*error = QStringLiteral("could not write the trimmed render");
-		return false;
-	}
-	const bool copied = copyFrames(in, out, sourceInfo.channels, toWrite, framesWritten);
+	const bool wrote = writeTrimmed(in, target, &targetInfo, toWrite, framesWritten);
 	sf_close(in);
-	const bool closed = sf_close(out) == 0;
-	if (!copied || !closed)
+	if (!wrote)
 	{
 		*error = QStringLiteral("could not write the trimmed render");
 		return false;
 	}
-	return *framesWritten == toWrite;
+	return true;
 }
 
 qint64 BounceInPlace::wavFrameCount(const QString& path)
