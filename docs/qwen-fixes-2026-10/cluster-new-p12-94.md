@@ -162,6 +162,13 @@ already red.
   `NotePlayHandle::nphsOfInstrumentTrack` keeps its signature and behaviour for `InstrumentPlayHandle`.
 - **Realtime, undo, commands**: the new code allocates, frees, locks, waits and logs nothing; no undo step and no
   control command was added.
+- **ALREADY-FIXED / FALSE-POSITIVE do not apply**: the verdict is FIXED. The pre-fix construct is in this branch's
+  own source (`src/core/InstrumentFunctions.cpp:365` pre-fix, quoted in the 4b RED log line
+  `src/core/InstrumentFunctions.cpp:375: cnphv.push_back( _n );`), not in an inherited contract or a by-design entry.
+- **No command file changed**: this fix touches `src/core/InstrumentFunctions.cpp`,
+  `src/core/PresetPreviewPlayHandle.cpp`, `include/PresetPreviewPlayHandle.h`, the two `tests/` ledgers and the
+  test file - no command file and no `ControlRegistry` handler. So no sibling command (`app.*`, `arrangement.*` or
+  otherwise) is affected, and the `ControlCommandsSnapshot` canary does not move.
 - **Not verified here**: only two test binaries are built in this work tree (`InstrumentTrackRenderPathTest`,
   `NotePlaybackTest`), so the wider suite was not run; and RTSan builds are not available on this box, so the
   "no allocation" claim on the audio thread rests on the static sweep plus code reading, not a runtime sanitizer.
