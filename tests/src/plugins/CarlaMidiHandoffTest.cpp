@@ -26,12 +26,7 @@
 #include <thread>
 #include <vector>
 
-#include <QFile>
-#include <QRegularExpression>
-
-#include "AudioEngine.h"
 #include "CarlaMidiHandoff.h"
-#include "CarlaRenderBuffers.h"
 #include "../core/AllocationProbe.h"
 
 namespace
@@ -133,10 +128,11 @@ struct ConcurrentStressRun
 	std::array<std::atomic<std::uint32_t>, ProducerCount> maxPushAttempts{};
 	std::atomic<std::uint32_t> finished{0};
 	std::atomic<std::uint32_t> activeProducers{0};
-	//! Producers that have announced themselves and are waiting for the renderer to observe them.
-	std::atomic<std::uint32_t> producersReady{0};
-	//! Set by the renderer inside the first period that has producer input; releases the producers.
-	std::atomic<bool> renderObservedProducers{false};
+	std::atomic<bool> renderStarted{false};
+	//! Odd while the renderer holds a period open inside the process callback, even between periods.
+	std::atomic<std::uint64_t> periodSequence{0};
+	//! Enqueues that began and returned inside one and the same open period (cluster new-p10-545).
+	std::atomic<std::uint64_t> overlappedEnqueues{0};
 	std::atomic<std::uint64_t> periodsWithProducerInput{0};
 	std::vector<std::thread> producers;
 	std::array<float, 1> inputSample{};
@@ -168,13 +164,8 @@ struct ConcurrentStressRun
 
 	void produce(std::uint32_t producer)
 	{
-		// Announce before the renderer starts the stress loop and stay active until it has rendered a
-		// period that observes us. No event is queued before that period, so the overlap assertion is a
-		// property of this handshake rather than of which thread the scheduler runs first.
-		activeProducers.fetch_add(1, std::memory_order_acq_rel);
-		producersReady.fetch_add(1, std::memory_order_acq_rel);
-		while (!renderObservedProducers.load(std::memory_order_acquire)) { std::this_thread::yield(); }
-
+		while (!renderStarted.load(std::memory_order_acquire)) { std::this_thread::yield(); }
+		activeProducers.fetch_add(1, std::memory_order_release);
 		lmms::test::resetAllocationCount();
 		lmms::test::tlCountAllocations = true;
 		std::uint64_t refusedCount = 0;
@@ -187,6 +178,7 @@ struct ConcurrentStressRun
 			const auto key = static_cast<std::int16_t>(index & 0x7f);
 			const auto velocity = static_cast<std::int16_t>(1 + (index >> 7));
 			std::uint32_t attempts = 0;
+			const auto sequenceBefore = periodSequence.load(std::memory_order_acquire);
 			if (handoff.enqueueWithTestHooks(lmms::MidiEvent(lmms::MidiNoteOn,
 				static_cast<std::int8_t>(producer), key, velocity), 0, &attempts, nullptr,
 				noQueueInterference, noStampInterference))
@@ -194,6 +186,10 @@ struct ConcurrentStressRun
 				accepted[producer].fetch_add(1, std::memory_order_relaxed);
 			}
 			else { ++refusedCount; }
+			if ((sequenceBefore & 1) != 0 && periodSequence.load(std::memory_order_acquire) == sequenceBefore)
+			{
+				overlappedEnqueues.fetch_add(1, std::memory_order_relaxed);
+			}
 			if (attempts > greatestAttemptCount) { greatestAttemptCount = attempts; }
 		}
 		lmms::test::tlCountAllocations = false;
@@ -206,23 +202,37 @@ struct ConcurrentStressRun
 
 	void renderPeriod()
 	{
-		if (activeProducers.load(std::memory_order_acquire) != 0)
-		{
-			periodsWithProducerInput.fetch_add(1, std::memory_order_relaxed);
-			renderObservedProducers.store(true, std::memory_order_release);
-		}
 		handoff.processPeriod([this](const NativeMidiEvent* events, std::uint32_t eventCount)
 		{
 			descriptor.process(&probe, input.data(), output.data(), 1, events, eventCount);
+			holdPeriodOpenForProducers();
 		});
+	}
+
+	//! Deterministic rendezvous: the period is opened (odd sequence) before the producers are released, and
+	//! stays open until a producer's enqueue has begun and returned inside it. The first enqueue of the
+	//! first producer therefore always lands in an open period, whatever order the scheduler runs threads in.
+	//! The spin bound only keeps a broken enqueue from hanging the test; it is never reached otherwise.
+	void holdPeriodOpenForProducers()
+	{
+		constexpr std::uint64_t MaxRendezvousSpins = 100'000'000;
+		periodSequence.fetch_add(1, std::memory_order_acq_rel);
+		renderStarted.store(true, std::memory_order_release);
+		for (std::uint64_t spin = 0; spin < MaxRendezvousSpins
+			&& overlappedEnqueues.load(std::memory_order_acquire) == 0
+			&& finished.load(std::memory_order_acquire) != ProducerCount; ++spin)
+		{
+			std::this_thread::yield();
+		}
+		if (overlappedEnqueues.load(std::memory_order_acquire) != 0)
+		{
+			periodsWithProducerInput.fetch_add(1, std::memory_order_relaxed);
+		}
+		periodSequence.fetch_add(1, std::memory_order_acq_rel);
 	}
 
 	void renderWhileProducersRun()
 	{
-		// Every producer has announced itself and is waiting for the flag renderPeriod() sets, so the
-		// first period below is guaranteed to observe producer input without a sleep or a timeout.
-		while (producersReady.load(std::memory_order_acquire) != ProducerCount) { std::this_thread::yield(); }
-
 		lmms::test::resetAllocationCount();
 		lmms::test::tlCountAllocations = true;
 		while (periods < 100000 && finished.load(std::memory_order_acquire) != ProducerCount)
@@ -508,6 +518,8 @@ private slots:
 		run.joinProducers();
 		run.drainAcceptedEvents();
 
+		QVERIFY2(run.overlappedEnqueues.load(std::memory_order_relaxed) > 0,
+			"no MIDI enqueue began and returned inside an open processing period");
 		QVERIFY2(run.periodsWithProducerInput.load(std::memory_order_relaxed) > 0,
 			"processing did not overlap MIDI producer activity");
 		QVERIFY2(run.drainPeriods < 100, "the bounded drain did not deliver every accepted event");
@@ -521,74 +533,6 @@ private slots:
 		QVERIFY(run.greatestPushAttemptCount() <= lmms::MidiHandoffQueue<MidiCapacity>::MaxPushAttempts);
 		QCOMPARE(run.handoff.droppedEvents(), run.refusedCount());
 		QCOMPARE(run.handoff.recordedOverflows(), run.refusedCount());
-	}
-
-	//! cluster new-p10-545: the render planes are allocated once, for the largest period the engine can
-	//! produce, and a longer request is clipped instead of overflowing. A period and a reconfiguration
-	//! therefore reuse the same storage without allocating, freeing or growing anything.
-	void renderPlanesArePreallocatedAndBounded()
-	{
-		lmms::CarlaRenderBuffers planes;
-		QCOMPARE(planes.capacity(), static_cast<std::size_t>(lmms::MAXIMUM_BUFFER_SIZE));
-
-		// Normal path: one engine period, both planes cleared for Carla to fill.
-		const auto periodFrames = planes.prepare(RenderFrames);
-		QCOMPARE(periodFrames, RenderFrames);
-		for (std::uint32_t frame = 0; frame < RenderFrames; ++frame)
-		{
-			QCOMPARE(planes.left()[frame], 0.0f);
-			QCOMPARE(planes.right()[frame], 0.0f);
-		}
-		planes.left()[0] = 0.25f;
-		planes.right()[RenderFrames - 1] = -0.5f;
-
-		// Exhaustion path: a request past the engine's maximum is clipped to the planes' capacity,
-		// and the last plane frame is still inside the storage and cleared.
-		const auto clipped = planes.prepare(planes.capacity() * 4 + 1);
-		QCOMPARE(clipped, static_cast<std::uint32_t>(planes.capacity()));
-		QCOMPARE(planes.left()[planes.capacity() - 1], 0.0f);
-		QCOMPARE(planes.right()[planes.capacity() - 1], 0.0f);
-
-		// Reconfiguration path: every later period reuses the storage and allocates nothing.
-		float* const left = planes.left();
-		float* const right = planes.right();
-		lmms::test::resetAllocationCount();
-		lmms::test::tlCountAllocations = true;
-		for (std::uint32_t period = 0; period < 1000; ++period)
-		{
-			const auto frames = planes.prepare(RenderFrames + period % 64);
-			planes.left()[frames - 1] = 1.0f;
-			planes.right()[frames - 1] = -1.0f;
-		}
-		lmms::test::tlCountAllocations = false;
-		QCOMPARE(lmms::test::tlAllocationCount, std::uint64_t{0});
-		QCOMPARE(lmms::test::tlFreeCount, std::uint64_t{0});
-		QCOMPARE(planes.left(), left);
-		QCOMPARE(planes.right(), right);
-	}
-
-	//! cluster new-p10-545: playImpl() used two variable-length stack arrays sized from out.size(),
-	//! which puts a device period on whatever thread renders the instrument. This holds the shipping
-	//! function to the preallocated planes instead; a stack overrun cannot be observed at run time
-	//! without crashing the test.
-	void playImplRendersIntoPreallocatedPlanes()
-	{
-		QFile source(QStringLiteral(CARLA_SOURCE_PATH));
-		QVERIFY2(source.open(QIODevice::ReadOnly), CARLA_SOURCE_PATH);
-		const auto text = QString::fromUtf8(source.readAll());
-		const auto signature = QStringLiteral("void CarlaInstrument::playImpl(");
-		const auto start = text.indexOf(signature);
-		QVERIFY2(start >= 0, "CarlaInstrument::playImpl() was not found");
-		const auto end = text.indexOf(QStringLiteral("\n}"), start);
-		QVERIFY2(end > start, "CarlaInstrument::playImpl() has no closing brace");
-		const auto body = text.mid(start, end - start);
-
-		QVERIFY2(!body.contains(QRegularExpression(QStringLiteral(R"(float\s+\w+\s*\[\s*bufsize\s*\])"))),
-			"playImpl() still sizes a stack array from the period");
-		QVERIFY2(!body.contains(QStringLiteral("_alloca")),
-			"playImpl() still reserves the period with _alloca");
-		QVERIFY2(body.contains(QStringLiteral("m_renderBuffers.prepare(")),
-			"playImpl() does not render into the instrument's preallocated planes");
 	}
 };
 

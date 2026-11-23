@@ -36,198 +36,99 @@ Sibling check (also in this change's matrix):
 
 ## The fix
 
-- New `plugins/CarlaBase/CarlaRenderBuffers.h` owns the two planes. Its capacity is the
-  engine's largest period (`CarlaRenderBuffers::MaxPeriodFrames = 4096`,
-  `CarlaRenderBuffers.h:47`), the storage is allocated by its constructor
-  (`CarlaRenderBuffers.h:49-55`) when the instrument is built, and `prepare()`
-  (`CarlaRenderBuffers.h:59-65`) clears at most `capacity()` frames and returns the count.
-  It allocates, frees, locks and waits nothing.
-- `plugins/CarlaBase/Carla.h:241-243` adds `CarlaRenderBuffers m_renderBuffers;` to the
-  instrument, so the memory lives with the instance instead of on a stack.
-- `plugins/CarlaBase/Carla.cpp:544-546` replaces the VLA/`_alloca` block with
-  `m_renderBuffers.prepare(out.size())`; the process callback and the copy-back use the
-  returned frame count (`Carla.cpp:547-563`). The output span was already zeroed at
-  `Carla.cpp:519`, so a span longer than the planes (outside the engine's contract) is
-  clipped and its tail stays silent instead of writing past the storage.
-- `plugins/CarlaBase/Carla.cpp:67-68` static-asserts the planes' capacity against
-  `MAXIMUM_BUFFER_SIZE`, so the two bounds cannot drift apart silently.
-- Registration: `tests/fork-sources.txt`, `tests/all-sources.txt` (new header),
-  `tests/upstream-modifications.txt` (Carla.cpp / Carla.h reason lines),
-  `tests/rt-safety-scope.txt` (`CarlaRenderBuffers::prepare` declared; the allocating
-  constructor is on the control thread and deliberately outside the declared render path).
+- `plugins/CarlaBase/CarlaRenderBuffers.h` owns the two planar planes. Capacity is the engine's largest
+  period (`MaxPeriodFrames = 4096`, line 50); the storage is allocated by the constructor (lines 52-59) when
+  the instrument is built. `prepare()` (line 62) clears at most `capacity()` frames and returns the count.
+  **Round 3:** the whole render step is now `render(out, process)` (line 75): prepare, call `process(planes,
+  frames)`, interleave into `out`. It keeps a fixed few pointers on the stack whatever the period, and it
+  allocates, frees, locks and waits nothing. Extracting it lets a test run the shipping step directly.
+- `plugins/CarlaBase/Carla.h` has the `CarlaRenderBuffers m_renderBuffers;` member, so the memory lives with
+  the instance instead of on a stack.
+- `plugins/CarlaBase/Carla.cpp:544` `playImpl()` calls `m_renderBuffers.render(out, ...)` and runs
+  `fMidiHandoff.processPeriod(...)` with Carla's `process` inside it, replacing the VLA/`_alloca` block. The
+  output was already zeroed at `Carla.cpp:519`, so a span longer than the planes (outside the engine's
+  contract) is clipped and its tail stays silent.
+- `plugins/CarlaBase/Carla.cpp:67` static-asserts the planes' capacity against `MAXIMUM_BUFFER_SIZE`.
+- Registration: `tests/fork-sources.txt` and `tests/all-sources.txt` (new header and new test),
+  `tests/upstream-modifications.txt` (Carla.cpp / Carla.h reasons), `tests/rt-safety-scope.txt`
+  (`CarlaRenderBuffers::render` and `::prepare`; the allocating constructor runs on the control thread and
+  is outside the declared path), `tests/CMakeLists.txt` (new test and its include directory).
 
-No command, undo, save-format or GUI behaviour is touched. Nothing new on the audio path
-allocates, frees, locks, waits or logs.
+No command, undo, save-format or GUI behaviour is touched. Nothing new on the audio path allocates, frees,
+locks, waits or logs. TSan does not run on this box; there is no shared mutable state in the new code (each
+instrument owns its planes and `playImpl()` is called from one thread at a time), which is the reasoning.
 
-## Test matrix
+## Round 3: what changed after review
 
-| path | how it is covered |
+- The render-plane tests moved out of `CarlaMidiHandoffTest` into a standalone `CarlaRenderBuffersTest`, so
+  this bug's gate no longer depends on the MIDI stress test.
+- The regex grep of `Carla.cpp` and the `CARLA_SOURCE_PATH` define are gone (`tests/CMakeLists.txt` no longer
+  defines it). The replacement is a runtime check: `maximumPeriodRendersOnASmallStack` renders a 4096-frame
+  period on a thread whose usable stack is about 16 KiB, below the 32 KiB two period-sized arrays need.
+- The stress-test edits of `01308f2` and `09dfc23` (producer-parking counter) were reverted, leaving
+  `ConcurrentStressRun` as it was before this unit; then a separate deterministic rendezvous was added, as the
+  review asked: `periodSequence` is odd while the renderer holds a period open inside the process callback;
+  the renderer opens the period *before* releasing the producers and spins (bounded by 100,000,000 iterations,
+  only a hang guard) until a producer's enqueue has begun and returned inside that same open period. Producers
+  count `overlappedEnqueues` only when the sequence was odd before the enqueue and unchanged after it. The
+  test asserts `overlappedEnqueues > 0`, plus the old `periodsWithProducerInput > 0`, now counted from the
+  rendezvous. The first enqueue of the first producer always lands in the open period, because producers
+  start only after the period opens and it stays open until one has landed. Every other assertion in that
+  test is unchanged.
+
+## Test matrix (`tests/src/plugins/CarlaRenderBuffersTest.cpp`)
+
+| path | slot |
 | --- | --- |
-| normal period | `renderPlanesArePreallocatedAndBounded`: `prepare(32)` returns 32 and clears both planes. |
-| failure / exhaustion | same slot: `prepare(capacity * 4 + 1)` returns `capacity()` and the last plane frame is still zero. |
-| reconfiguration | same slot: 1000 further periods, each with a different size, reuse the same `left()`/`right()` pointers, with 0 allocations and 0 frees on the thread. |
-| audio-thread constraint | the allocation probe (`tests/src/core/AllocationProbe.h`) wraps the repeated-period loop; the source slot rejects any `_alloca` or `float ... [bufsize]` in `playImpl()`. |
-| supported platforms | header-only C++20 with no platform-specific API; the MSVC `_alloca` branch is gone. Built here on Linux/GCC 16.2.1; `carlabase` compiled, so the `#if CARLA_VERSION_HEX` process branch used by this build is the one exercised. |
+| capacity bound | `capacityIsTheEnginesLargestPeriod`: `capacity() == MAXIMUM_BUFFER_SIZE` |
+| normal period | `renderClearsPlanesAndInterleavesOutput`: stale planes arrive silent, ramp is interleaved into the span |
+| exhaustion | `renderClipsASpanLongerThanThePlanes`: span of `capacity*2+1` is clipped to `capacity`, tail untouched |
+| short span | `renderLeavesFramesPastASmallSpanAlone` |
+| reconfiguration + audio thread | `periodsAfterConstructionAllocateNothing`: 1000 periods of changing size, 0 allocations, 0 frees, same plane pointers (allocation probe) |
+| the cause | `maximumPeriodRendersOnASmallStack`: maximum period on a ~16 KiB usable stack |
+| platforms | header-only C++20; the small-stack slot uses pthreads and `QSKIP`s elsewhere; the MSVC `_alloca` branch is gone |
 
-## Commands and results (all logs in the job log folder)
+## Commands and results (logs in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p10-545.r3/logs`)
 
-RED before the product behaviour change (test slot exists, helper seam compiled, `playImpl` still has the stack arrays):
+All `EXIT` values below were reported by the delegated runs; the logs hold the test output.
 
-```
-cd build/tests && ctest -R CarlaMidiHandoffTest --output-on-failure
-EXIT=8
-  FAIL! CarlaMidiHandoffTest::playImplRendersIntoPreallocatedPlanes()
-    '!body.contains(QRegularExpression(...float\\s+\\w+\\s*\\[\\s*bufsize...))' returned FALSE.
-    (playImpl() still sizes a stack array from the period)
-log: test-1-red.log
-```
+| step | command | EXIT | log |
+| --- | --- | --- | --- |
+| build | `cmake --build build --target CarlaRenderBuffersTest -j4` (first attempt: target missing, Makefiles not yet regenerated) | 2 | `green-2-build.log` |
+| build | `cmake --build build --target CarlaMidiHandoffTest -j4` | 0 | `green-2b-build-midi.log` |
+| pre-unit stress test | `ctest -R CarlaMidiHandoffTest` (x5, new regression slots not yet registered) | 8 each | `green-3-test.log`, `green-7-midi-1..5.log` |
+| build | `cmake --build build --target CarlaRenderBuffersTest -j4` | 0 | `green-5-build-render.log` |
+| first run of new test | `ctest -R CarlaRenderBuffersTest` (small-stack slot failed: `pthread_create` returned 22, 32 KiB is below the system minimum; test then changed to probe the smallest startable stack) | 8 | `green-6-test-render.log` |
+| GREEN build | `cmake --build build --target CarlaRenderBuffersTest CarlaMidiHandoffTest -j4` | 0 | `green-8-build.log` |
+| GREEN | `ctest -R "CarlaRenderBuffersTest\|CarlaMidiHandoffTest" --output-on-failure` (from `build/tests`) | 0 | `green-9-test.log` |
+| repeat | `ctest -R CarlaMidiHandoffTest` x30 and `ctest -R CarlaRenderBuffersTest` x30 | 30/30 and 30/30 passed | (counts reported; per-run output not kept) |
+| RED, bug re-introduced | `cp CarlaRenderBuffers.vla.h plugins/CarlaBase/CarlaRenderBuffers.h` (render() with two period-sized stack arrays), build 0, `ctest -R CarlaRenderBuffersTest` | 8 | `red-1-vla-build.log`, `red-2-vla-test.log` |
+| RED, product reversed | `git apply -R fix.patch` (the product diff `git diff c6b40333d8 -- plugins/CarlaBase`) | 0 | `fix.patch`, `red-3-revert-apply.log` |
+| RED build | `cmake --build build --target CarlaRenderBuffersTest CarlaMidiHandoffTest -j4` | 2 | `red-4-reverted-build.log` |
+| restore | `git apply fix.patch` | 0 | `green-11-restore-apply.log` |
+| GREEN rebuild | same targets | 0 | `green-12-restored-build.log` |
+| GREEN rerun | `ctest -R "CarlaRenderBuffersTest\|CarlaMidiHandoffTest" --output-on-failure` | 0 | `green-13-restored-test.log` |
 
-The same RED through the focused QtTest slot, after reverting the product behaviour with
-the patch from 4b (below): `test-4-reverted.log`, `EXIT=1`.
+What the RED runs show, stated exactly:
 
-4b, proof that the test catches the bug. `fix.patch` holds the behaviour change
-(`plugins/CarlaBase/Carla.h`, `plugins/CarlaBase/Carla.cpp`); the new helper header stays
-in place because the test compiles against that seam, and the only caller is `playImpl()`:
-
-```
-git diff -- plugins/CarlaBase/Carla.h plugins/CarlaBase/Carla.cpp > .../logs/fix.patch
-EXIT=0
-git apply -R .../logs/fix.patch
-EXIT=0
-cmake --build build --target carlabase CarlaMidiHandoffTest -j4   # build-5-reverted.log
-EXIT=0
-cd build/tests && ./CarlaMidiHandoffTest playImplRendersIntoPreallocatedPlanes   # test-4-reverted.log
-EXIT=1   (FAIL! playImpl() still sizes a stack array from the period)
-
-git apply .../logs/fix.patch
-EXIT=0
-cmake --build build --target carlabase CarlaMidiHandoffTest -j4   # build-6-restored.log
-EXIT=0
-cd build/tests && ./CarlaMidiHandoffTest playImplRendersIntoPreallocatedPlanes renderPlanesArePreallocatedAndBounded
-EXIT=0   (4 passed, 0 failed; test-5-restored.log)
-```
-
-GREEN with the full family, final tree:
-
-```
-cd build/tests && ctest -R CarlaMidiHandoffTest --output-on-failure   # test-7-green-ctest-final.log
-EXIT=0   (1/1 test passed)
-```
-
-Realtime scope sweep (the new declared path):
-
-```
-cd build/tests && ctest -R '^RtSafetySweep$' --output-on-failure   # test-6-rtsafety.log
-EXIT=0
-```
-
-Gates:
-
-```
-FEATURE_CHECK_LOG_DIR=.../logs/feature-check \
-python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>   # feature-check.log
-EXIT=0
-  PASS fork-sources / all-sources-reproduce / no-upstream-regression / check-namespace /
-       no-tautology / doc-figures / complexity / file-length
-  RESULT: PASS
-```
-
-## Round 2: deterministic stress-test rendezvous
-
-The reviewer sent back the focused concurrency test: it could observe no producer input
-during rendering. The QA commit on this branch (`01308f2afd`) added a first-event barrier,
-but that barrier has its own race. Producers 1-3 enqueue as soon as `renderStarted` is set,
-so they can fill the fixed 512-event queue while the renderer waits for `accepted[0]`;
-producer 0's first enqueue is then refused and both sides wait forever. Measured before
-this change: 30 direct runs of the slot, each under a 10 s bound, timed out 3 times
-(`EXIT=124`, no test result) and passed 27 times (`test-1-qa-loop.log`).
-
-The rendezvous now uses two one-way handshakes, and nothing is queued before the measured
-period:
-
-1. Each producer increments `activeProducers`, then `producersReady`, then spins on
-   `renderObservedProducers`. It has not queued an event yet.
-2. The renderer waits for `producersReady == ProducerCount`, then enters the period loop.
-   Its first `renderPeriod()` sees `activeProducers != 0`, increments
-   `periodsWithProducerInput` and publishes `renderObservedProducers`.
-3. The producers start enqueueing only after that publish; the renderer drains while they
-   run. The overlap, ordering and allocation assertions are unchanged.
-
-There is no sleep, timeout or wall-clock condition in this path; the only waits are the two
-atomic handshakes. After the change:
-
-```
-cmake --build build --target CarlaMidiHandoffTest -j4   # build-2-handshake.log
-EXIT=0
-100 direct runs of the slot, each under a 10 s bound   # test-2-handshake-loop.log
-EXIT=0   (100 passed, 0 timed out)
-20 ctest -R CarlaMidiHandoffTest runs                   # test-3-ctest-loop.log
-EXIT=0   (20 passed)
-```
-
-4b rerun with the new test file. The product fix is already committed, so the patch is the
-branch's product diff rather than an unstaged diff:
-
-```
-git diff c6b40333d8..HEAD -- plugins/CarlaBase/Carla.h plugins/CarlaBase/Carla.cpp > .../logs/fix.patch
-EXIT=0
-git apply -R .../logs/fix.patch
-EXIT=0
-cmake --build build --target carlabase CarlaMidiHandoffTest -j4   # build-4-reverted.log
-EXIT=0
-cd build/tests && ctest -R CarlaMidiHandoffTest --output-on-failure   # test-5-reverted.log
-EXIT=8   (FAIL! playImpl() still sizes a stack array from the period)
-git apply .../logs/fix.patch
-EXIT=0
-cmake --build build --target carlabase CarlaMidiHandoffTest -j4   # build-5-restored.log
-EXIT=0
-cd build/tests && ctest -R CarlaMidiHandoffTest --output-on-failure   # test-6-restored.log
-EXIT=0
-```
-
-## Self-check
-
-- **Regression test fails with the product change reverted, passes with it.** Reverted
-  `Carla.h`/`Carla.cpp` via `git apply -R fix.patch` (`EXIT=0`), rebuilt (`EXIT=0`), test
-  `EXIT=1`; restored with `git apply fix.patch` (`EXIT=0`), rebuilt (`EXIT=0`), test
-  `EXIT=0`. Logs `test-4-reverted.log`, `test-5-restored.log`, `fix.patch`.
-- **The test is deterministic.** It injects the period sizes (`32`, `capacity * 4 + 1`,
-  1000 sizes below 64 frames) and counts allocations on the calling thread; there is no
-  wall-clock assertion, sleep, thread or race in either new slot. The source slot reads
-  the shipping `Carla.cpp` through the compile-time `CARLA_SOURCE_PATH`, the same pattern
-  as the existing `opulenzZeroFrameCountStopsLoop` source regression. The focused
-  concurrency slot now injects its overlap through the `producersReady` /
-  `renderObservedProducers` atomics (Round 2 above): it passed 100 direct runs and 20
-  focused CTest runs with no timeout, and its overlap, ordering and allocation assertions
-  are unchanged. Before the rendezvous, 3/30 direct runs hung on the old barrier.
-- **Cause and completeness.** The cause was the two stack arrays in `playImpl()`; they
-  are gone from both branches (VLA and `_alloca`). Every caller was checked:
-  `InstrumentPlayHandle` (audio thread) and `CarlaVst2Instrument::renderPeriod` (worker,
-  bounded by `Renderer::MaxPeriodFrames = 4096`). The sibling `CarlaVst2Effect::Rack`
-  already preallocates planar buffers and is unchanged. `Carla.h` declares the member and
-  `Carla.cpp` uses it, and `carlabase` plus the test were rebuilt after the header change.
-- **No collateral damage.** A period never exceeds 4096 frames in the engine
-  (`m_framesPerPeriod = min(framesPerAudioBuffer, DEFAULT_BUFFER_SIZE)`, with
-  `framesPerAudioBuffer` clamped to `[32, 4096]`), so every legitimate period now renders
-  exactly the frames and samples it did before. The planes are 32 KiB per instance,
-  allocated once at construction, and repeated periods reuse the same pointers (asserted
-  in the test). A span above the engine's maximum (outside the contract) is clipped and
-  the already-zeroed tail is silent, instead of reading/writing past a stack array. No
-  saved data, save format or load path changes. No limit rejects another caller: the
-  bound equals the engine's own maximum, and `CarlaVst2Renderer` already clamps to it.
-- **Verdict evidence.** This is a FIXED verdict, so the ALREADY-FIXED / FALSE-POSITIVE
-  rule does not apply; the pre-fix code is cited above at
-  `plugins/CarlaBase/Carla.cpp:535-541` (HEAD).
-- **Sibling commands (`app.*`, `arrangement.*`).** The fix commit `05b41a3b7` changes no
-  command file: `git show --stat 05b41a3b7` lists only `Carla.cpp`, `Carla.h`, the new
-  `CarlaRenderBuffers.h`, three registration manifests, `rt-safety-scope.txt`,
-  `tests/CMakeLists.txt`, the Carla test and this report. The sibling list in the
-  submit check comes from the branch's accumulated diff against its base, not from this
-  fix. No control command, undo step or reversibility class is added or changed, so none
-  of those commands is affected; the engine-level period bound they all share is
-  unchanged.
+- **Bug re-introduced (`red-2-vla-test.log`).** `renderClipsASpanLongerThanThePlanes` fails
+  (`record.frames` 8193, expected 4096, `CarlaRenderBuffersTest.cpp:166`), the slots before and after it
+  up to `periodsAfterConstructionAllocateNothing` pass, and ctest reports `CarlaRenderBuffersTest (SEGFAULT)`.
+  The log ends after `periodsAfterConstructionAllocateNothing`, so the crash is in the next slot,
+  `maximumPeriodRendersOnASmallStack` (by elimination from the log order; not separately confirmed under a debugger).
+- **Product reversed.** `git apply -R fix.patch` deletes `CarlaRenderBuffers.h`, so the test no longer
+  compiles: `CarlaRenderBuffersTest.cpp:38:10: fatal error: CarlaRenderBuffers.h: No such file or directory`
+  (`red-4-reverted-build.log`, EXIT=2). That is a build failure, not a runtime failure. The follow-up
+  `ctest` (`red-5-reverted-test.log`, EXIT=8) ran the stale VLA binary, so it is the same result as the
+  scratch variant, not independent evidence.
+- The fix patch was taken against the pre-fix base `c6b40333d8` because earlier rounds had already
+  committed part of the product change; a plain `git diff` would have held only the Round 3 `render()` step.
 
 ## Other findings
 
-- None unrelated to this fix. The focused stress-test race reported in Round 1 is fixed by
-  the handshake in Round 2 above and is no longer outstanding.
+- `CarlaMidiHandoffTest::concurrentMidiStressIsOrderedAndAllocationFree` was nondeterministic before this unit:
+  its overlap assertion (`periodsWithProducerInput > 0`) failed 5 of 5 runs on this box with the
+  untouched pre-unit test (`green-3-test.log`, `green-7-midi-1..5.log`, all `EXIT=8`). It is fixed
+  here only as far as the gate for this bug needs (Round 3 below); the rest of that test is as it was.
+- `cmake --build` of a target that does not exist yet (`CarlaRenderBuffersTest`) fails with "No rule to make
+  target" until another target's build has regenerated the Makefiles; building `CarlaMidiHandoffTest` first did it.

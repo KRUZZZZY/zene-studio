@@ -26,7 +26,10 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
+
+#include "SampleFrame.h"
 
 namespace lmms
 {
@@ -62,6 +65,23 @@ public:
 		std::fill_n(m_left.data(), frames, 0.0f);
 		std::fill_n(m_right.data(), frames, 0.0f);
 		return static_cast<std::uint32_t>(frames);
+	}
+
+	//! The whole render step of CarlaInstrument::playImpl(): clears the planes, lets @a process fill them
+	//! (it receives the two plane pointers and the frame count) and interleaves the result into @a out.
+	//! Frames of @a out beyond capacity() are not touched; the caller has already left them silent.
+	//! Audio thread: reserves a fixed few pointers of stack whatever the period is, and allocates nothing.
+	template<typename Process>
+	void render(std::span<SampleFrame> out, Process&& process)
+	{
+		const auto frames = prepare(out.size());
+		float* planes[] = { left(), right() };
+		process(planes, frames);
+		for (std::uint32_t i = 0; i < frames; ++i)
+		{
+			out[i][0] = planes[0][i];
+			out[i][1] = planes[1][i];
+		}
 	}
 
 	auto left() noexcept -> float* { return m_left.data(); }

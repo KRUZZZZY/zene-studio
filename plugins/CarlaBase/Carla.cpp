@@ -541,26 +541,20 @@ void CarlaInstrument::playImpl(std::span<SampleFrame> out)
     // this period neither reserves a stack array nor grows a container on the render thread. A span
     // longer than the engine's largest period is clipped; the frames beyond it stay silent because
     // the whole output was zeroed above.
-    const auto frames = m_renderBuffers.prepare(out.size());
-    float* planes[] = { m_renderBuffers.left(), m_renderBuffers.right() };
-    float** const buffers = planes;
-    fMidiHandoff.processPeriod([this, buffers, frames](const NativeMidiEvent* events, std::uint32_t eventCount)
+    m_renderBuffers.render(out, [this](float** buffers, std::uint32_t frames)
     {
+        fMidiHandoff.processPeriod([this, buffers, frames](const NativeMidiEvent* events, std::uint32_t eventCount)
+        {
 // TODO FIXME this is just here so it compiles.
 // https://github.com/falkTX/Carla/blob/8bceb9ed173a10b29038f8abb4383710c0e497c1/source/includes/CarlaNative.h
 //     FIXME for v3.0, use const for the input buffer
 #if CARLA_VERSION_HEX >= CARLA_VERSION_HEX_3
-        fDescriptor->process(fHandle, (const float**)buffers, buffers, frames, events, eventCount);
+            fDescriptor->process(fHandle, (const float**)buffers, buffers, frames, events, eventCount);
 #else
-        fDescriptor->process(fHandle, buffers, buffers, frames, events, eventCount);
+            fDescriptor->process(fHandle, buffers, buffers, frames, events, eventCount);
 #endif
+        });
     });
-
-    for (uint i=0; i < frames; ++i)
-    {
-        out[i][0] = buffers[0][i];
-        out[i][1] = buffers[1][i];
-    }
 }
 
 bool CarlaInstrument::handleMidiEvent(const MidiEvent& event, const TimePos&, f_cnt_t offset)

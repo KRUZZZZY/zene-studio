@@ -745,6 +745,9 @@ set(LMMS_TESTS
 	src/core/MidiHandoffQueueTest.cpp
 	# Carla's plugin boundary uses the production MIDI encoder and fixed-capacity drain with a native API stand-in.
 	src/plugins/CarlaMidiHandoffTest.cpp
+	# cluster new-p10-545: the preallocated planes behind CarlaInstrument::playImpl(): capacity, clipping,
+	# silent planes, no allocation after construction, and a maximum period on a small thread stack.
+	src/plugins/CarlaRenderBuffersTest.cpp
 	# The SF2 player's note path: the note hand-off from the note stage to the
 	# render stage must not allocate on the audio thread.
 	src/plugins/Sf2PlayerRealtimeTest.cpp
@@ -2424,10 +2427,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			"${CMAKE_SOURCE_DIR}/plugins/CarlaBase/carla/source/includes"
 			"${CMAKE_SOURCE_DIR}/plugins/CarlaBase/CarlaConfig"
 		)
-		# cluster new-p10-545: the regression reads playImpl() to hold it to the preallocated
-		# render planes (a period-sized stack overrun would crash the test, not fail it).
-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
-			CARLA_SOURCE_PATH="${CMAKE_SOURCE_DIR}/plugins/CarlaBase/Carla.cpp")
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "CarlaRenderBuffersTest")
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/plugins/CarlaBase")
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "MidiHandoffQueueTest")
 		# The structural test of pop() reads the header text.
