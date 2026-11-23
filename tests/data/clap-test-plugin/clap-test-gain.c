@@ -151,6 +151,14 @@ static void gain_param_info(clap_param_info_t* info, clap_id id, const char* nam
 		info->max_value = DBL_MAX;
 		info->default_value = 0.0;
 	}
+	/* cluster new-p9-3: Gain's range CHANGES on a rescan (the default is 0..1), so a host has to refresh the
+	   model of a parameter it keeps - a range the render thread may read while it automates the parameter. */
+	if (id == PARAM_GAIN && getenv("CLAP_TEST_GAIN_GAIN_MAX") != NULL)
+	{
+		const double max = atof(getenv("CLAP_TEST_GAIN_GAIN_MAX"));
+		info->max_value = max;
+		if (info->default_value > max) { info->default_value = max; }
+	}
 }
 
 /* The extended list's entries after Gain (W6). */

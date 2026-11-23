@@ -93,6 +93,7 @@ private slots:
 	void testThePluginsLatencyReachesTheChain();
 	void testThePluginsTailKeepsItRunning();
 	void testParameterRescansRebuildTheModels();
+	void testParameterRescanHoldsTheModelGuardAcrossTheWholeUpdate();
 	void testReadOnlyParametersGetNoKnob();
 	void testReadOnlyParametersAreReportedReadOnly();
 	void testAProcessingErrorFallsBackToDryAudio();
@@ -776,6 +777,66 @@ void lmms::ClapEffectIntegrationTest::testParameterRescansRebuildTheModels()
 	AudioBus bus{busData, 1, 48};
 	QVERIFY(chain.processAudioBuffer(bus));
 	QVERIFY2(std::abs(storage[0][0] - 0.25f) < 1e-6f, qPrintable(QString::number(storage[0][0])));
+	chain.clear();
+}
+
+/*! cluster new-p9-3: sync() deleted a removed parameter's model under the engine change guard, released the
+ *  guard, and only then published the new model vector - so between the two the published list still named a
+ *  deleted model - and it refreshed a kept model's range (ClapParamModel::setDescriptor) outside the guard
+ *  entirely, while the render thread may be automating that parameter. Both are observed through the model's
+ *  own signals: setRange() emits propertiesChanged from inside setDescriptor(), and ~QObject emits destroyed()
+ *  from inside the deletion. The seam is AudioEngine::isChangeInModelHeld() (LMMS_TESTING), so there are no
+ *  threads, sleeps or wall-clock deadlines here. */
+void lmms::ClapEffectIntegrationTest::testParameterRescanHoldsTheModelGuardAcrossTheWholeUpdate()
+{
+	BufferManager::init(48);
+	QVERIFY2(Engine::audioEngine() != nullptr, "the test proves the engine's model-change guard, so it needs one");
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	auto* controls = dynamic_cast<ClapEffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	auto* gain = controls->modelForParam(1);
+	ClapParamModel* bypass = controls->modelForParam(2);
+	QVERIFY(gain != nullptr && bypass != nullptr);
+	QCOMPARE(gain->maxValue(), 1.f);
+
+	// A kept model's range refresh must run with the guard held: the range is what the audio thread reads
+	// while it automates the parameter (ClapParamModel::setDescriptor's own comment).
+	int guardAtRangeChange = -1;
+	QObject::connect(gain, &Model::propertiesChanged, gain,
+		[&guardAtRangeChange] { guardAtRangeChange = Engine::audioEngine()->isChangeInModelHeld() ? 1 : 0; },
+		Qt::DirectConnection);
+
+	// A removed model must be out of the published list before it is deleted, and deleted under the guard.
+	bool publishedWhenDestroyed = false;
+	int guardAtDeletion = -1;
+	QObject::connect(bypass, &QObject::destroyed, bypass, [&](QObject* gone) {
+		const auto& models = controls->paramModels();
+		publishedWhenDestroyed = std::find(models.begin(), models.end(), gone) != models.end();
+		guardAtDeletion = Engine::audioEngine()->isChangeInModelHeld() ? 1 : 0;
+	}, Qt::DirectConnection);
+
+	// The rescan: Gain's range becomes 0..2, and Bypass leaves the list (the fixture's extended parameter list).
+	qputenv("CLAP_TEST_GAIN_GAIN_MAX", "2.0");
+	qputenv("CLAP_TEST_GAIN_RESCAN", "all");
+	effect->reprepare();  // activate() asks for the restart in which the extended list is read
+	QVERIFY(QMetaObject::invokeMethod(controls, "poll"));
+	qunsetenv("CLAP_TEST_GAIN_RESCAN");
+	qunsetenv("CLAP_TEST_GAIN_GAIN_MAX");
+
+	// qVerify, not QVERIFY: each of the three is its own invariant, so a red run reports all of them.
+	QTest::qVerify(guardAtRangeChange == 1, "guardAtRangeChange == 1",
+		"a parameter rescan changed a kept model's range outside the engine model-change guard", __FILE__, __LINE__);
+	QTest::qVerify(guardAtDeletion == 1, "guardAtDeletion == 1",
+		"a parameter rescan deleted a parameter model outside the engine model-change guard", __FILE__, __LINE__);
+	QTest::qVerify(!publishedWhenDestroyed, "!publishedWhenDestroyed",
+		"a parameter rescan deleted a model that the published model list still named", __FILE__, __LINE__);
+	QCOMPARE(controls->modelForParam(1), gain);
+	QCOMPARE(gain->maxValue(), 2.f);
+	QCOMPARE(controls->modelForParam(2), static_cast<ClapParamModel*>(nullptr));
+	QCOMPARE(controls->paramModels().size(), std::size_t{3});
 	chain.clear();
 }
 
