@@ -57,6 +57,20 @@ inline auto sidechainInputs(const float* const* in, int channels, const AudioBuf
 	return out.data();
 }
 
+/*! The output channels a hosted effect's wet/dry mix covers: the channels of its MAIN input bus. The
+ *  auxiliary (side-chain) bus starts at flattened input channel @a mainInputChannels - what
+ *  BusLayout::sideChainChannel carries, and the width of the main input port in front of it - so a key
+ *  signal is never an output's dry source, however narrow the main port is (cluster new-p8-263: a mono
+ *  main port with its key at channel 1 mixed the key into the second output's dry half). @a
+ *  mainInputChannels < 0 means there is no aux bus, so the whole input port is dry signal; channels past
+ *  the output port have no output to mix into. Audio thread: arithmetic on its arguments, allocates
+ *  nothing. */
+inline auto dryMixChannels(ch_cnt_t inputs, ch_cnt_t outputs, int mainInputChannels) -> ch_cnt_t
+{
+	const auto main = mainInputChannels < 0 ? inputs : static_cast<ch_cnt_t>(mainInputChannels);
+	return std::min({inputs, outputs, main});
+}
+
 } // namespace lmms
 
 #endif // LMMS_SIDECHAIN_INPUTS_H
