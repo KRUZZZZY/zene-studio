@@ -112,6 +112,32 @@ feature-check kads-review-f1a74cc54 (base fa4a5f2e7, 349 changed files; logs in 
 RESULT: PASS
 ```
 
+## Round 2 re-verification (proof manifest correction)
+
+The round-1 result was returned for one reason only: `proof.json` used string ranges such
+as `"804-824"` for `line`, while `schemas/proof.json` requires an integer. The corrected
+manifest in the round-2 log folder names one integer line per code reference
+(`AutomatableModel.cpp:824`, `Mixer.cpp:654`, `AudioEngine.cpp:1069`). No product or test
+code changed; the round-1 commits remain on the branch.
+
+I re-ran the evidence this session; the round-2 logs are in
+`/home/kruzzzzy/.config/kads/zene/state/runs/review-f1a74cc54.r2/logs/`:
+
+| # | Command | EXIT |
+| --- | --- | --- |
+| 1 | `git merge-base --is-ancestor c28751cef HEAD` | 0 |
+| 2 | `git merge-base --is-ancestor c674877bc HEAD` | 0 |
+| 3 | `cmake --build build --target PhaseDSidechainTest -- -j4` (log `build-1.log`) | 0 |
+| 4 | `./PhaseDSidechainTest theSidechainAmountReadTakesNoLock` (log `test-1-green.log`) | 0 — `Totals: 3 passed, 0 failed`, 485 ms |
+| 5 | `ctest -R PhaseDSidechainTest --output-on-failure` from `build/tests` (log `test-2-ctest-green.log`) | 0 — `100% tests passed out of 1` |
+| 6 | negative control: added `QMutexLocker negativeControl(&m_valueBufferMutex);` to `valueBuffer()` | n/a |
+| 7 | `cmake --build build --target PhaseDSidechainTest -- -j4` (log `build-2-negative-control.log`) | 0 |
+| 8 | `./PhaseDSidechainTest theSidechainAmountReadTakesNoLock` (log `test-3-negative-control.log`) | **1** — `FAIL! : ... 'completed' returned FALSE. (the sidechain sum waited on the amount's valueBuffer() mutex (cluster 2647))`, `Totals: 2 passed, 1 failed`, 2488 ms |
+| 9 | remove the negative-control line; `sha256sum -c logs/pre-control-sha256.txt` | 0 (`OK` for both files) |
+| 10 | `cmake --build build --target PhaseDSidechainTest -- -j4` (log `build-3-restored.log`) | 0 |
+| 11 | `./PhaseDSidechainTest theSidechainAmountReadTakesNoLock` (log `test-4-green-restored.log`) | 0 — `Totals: 3 passed, 0 failed`, 493 ms |
+| 12 | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (log `gates-1.log`) | 0 — all eight rows PASS, `RESULT: PASS` |
+
 ## Test matrix considered
 
 - Normal path: mixer render with an automated sidechain amount (`PhaseDSidechainTest`
