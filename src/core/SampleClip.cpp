@@ -43,6 +43,7 @@
 #include "PathUtil.h"
 #include "RecordOptions.h"
 #include "SampleClipView.h"
+#include "SamplePlayHandle.h"
 #include "SampleRecordHandle.h"
 #include "SampleTrack.h"
 #include "Song.h"
@@ -58,6 +59,8 @@ SampleClip::SampleClip(Track* _track, Sample sample, bool isPlaying):
 	m_isPlaying(false),
 	m_startFrameOffset(0)
 {
+	s_liveClipCount.fetch_add(1, std::memory_order_relaxed);
+	SamplePlayHandle::reserveForClips();
 	saveJournallingState( false );
 	setSampleFile( "" );
 	restoreJournallingState();
@@ -111,6 +114,8 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	m_leadFrames(orig.leadFrames()),
 	m_loopSource(orig.m_loopSource)
 {
+	s_liveClipCount.fetch_add(1, std::memory_order_relaxed);
+	SamplePlayHandle::reserveForClips();
 	saveJournallingState( false );
 	setSampleFile( "" );
 	restoreJournallingState();
@@ -157,6 +162,7 @@ SampleClip::SampleClip(const SampleClip& orig) :
 
 SampleClip::~SampleClip()
 {
+	s_liveClipCount.fetch_sub(1, std::memory_order_relaxed);
 	// main thread: takes nobody claimed (their handles queue the drain threads)
 	delete m_preparedRecord;
 	delete m_spareRecord;
