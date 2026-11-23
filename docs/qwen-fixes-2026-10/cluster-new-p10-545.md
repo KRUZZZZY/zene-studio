@@ -144,7 +144,10 @@ What the RED runs show, stated exactly:
 
 ## Self-check
 
-- **Regression test fails with the product change reverted, passes with it.** (Round 4 below supersedes this
+- **Regression test fails with the product change reverted, passes with it.** (Current proof: Round 5 below.
+  With only the `playImpl()` hunk reversed, `ctest -R '^CarlaPlayImplTest$'` `EXIT=8`; restored, the
+  three-test ctest `EXIT=0`. The test reaches `playImpl()` through the descriptor constructor, a seam the
+  shipping constructor uses. Round 4 below also supersedes this
   bullet: the helper-level test could not see the `playImpl()` integration reversed, so the regression is now
   `CarlaPlayImplTest`, which drives `playImpl()` itself.) Two REDs, both with the
   exit codes above. (1) Bug re-introduced inside `CarlaRenderBuffers::render()` (two period-sized stack
