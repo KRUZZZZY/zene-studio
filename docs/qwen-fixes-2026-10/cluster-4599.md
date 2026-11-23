@@ -135,6 +135,9 @@ the period), then `captureBlockFrames()` becomes the new period and `recordingLa
 | 4b GREEN again | `cmake --build build --target zene AudioDeviceDiagnosticsTest AudioJackPortRestartTest -j4`; `cd build/tests && ... ctest -R "AudioDeviceDiagnosticsTest\|AudioJackPortRestartTest\|RecordingLatencyTest"` | 0; 0 (3/3 passed) | `logs/build-4-green-reapplied.log`, `logs/test-5-green-reapplied.log` |
 | gates after the round-2 registration lines | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 (8/8 PASS) | `logs/feature-check-1.log`, `logs/feature-check-2.log` |
 
+| manifest RED, reproducible from the commit (`logs/proof.json` red_command) | `git diff a6d8a3d903~1 a6d8a3d903 -- include/AudioEngine.h include/AudioJack.h src/core/audio/AudioJack.cpp > .../logs/fix.patch && git apply -R .../logs/fix.patch && cmake --build build --target AudioDeviceDiagnosticsTest -j4 && cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^AudioDeviceDiagnosticsTest$' --output-on-failure` | **8** (1280 vs 1792, line 419) | `logs/build-5-proof-red.log`, `logs/test-6-proof-red.log` |
+| manifest GREEN (`logs/proof.json` green_command) | `git apply .../logs/fix.patch && cmake --build build --target zene AudioDeviceDiagnosticsTest AudioJackPortRestartTest -j4 && cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R 'AudioDeviceDiagnosticsTest|AudioJackPortRestartTest|RecordingLatencyTest' --output-on-failure` | **0** (3/3 passed), `git status --porcelain` empty | `logs/build-6-proof-green.log`, `logs/test-7-proof-green.log` |
+
 Registration for this round: `include/AudioEngine.h`, `include/AudioJack.h` and
 `src/core/audio/AudioJack.cpp` each carry a `cluster 4599 (round 2)` line in
 `tests/upstream-modifications.txt`.
