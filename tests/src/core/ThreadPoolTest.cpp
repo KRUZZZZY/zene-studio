@@ -28,6 +28,7 @@
 #include <atomic>
 #include <cerrno>
 #include <condition_variable>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <future>
@@ -65,6 +66,20 @@ std::atomic<int> s_successfulCreates{0};
 using PthreadCreate = int (*)(pthread_t*, const pthread_attr_t*, void* (*)(void*), void*);
 PthreadCreate s_realPthreadCreate = nullptr;
 #endif
+
+// Worker-exit witness for the worker-initiated destruction child. A thread-local object
+// with a non-trivial constructor and destructor is created on each worker that arms it and
+// destroyed when that thread exits, which happens only after the worker left run().
+std::atomic<std::size_t> s_workerArmed{0};
+std::atomic<std::size_t> s_workerExits{0};
+
+struct WorkerExitRecorder
+{
+	WorkerExitRecorder() { s_workerArmed.fetch_add(1, std::memory_order_acq_rel); }
+	~WorkerExitRecorder() { s_workerExits.fetch_add(1, std::memory_order_acq_rel); }
+};
+
+thread_local WorkerExitRecorder t_workerExitRecorder;
 
 } // namespace
 
@@ -128,6 +143,76 @@ int runZeroConcurrencyChild()
 	auto future = pool.enqueue([&ran] { ran.store(true, std::memory_order_release); });
 	future.get();
 	return ran.load(std::memory_order_acquire) ? 0 : 3;
+}
+
+// Child-process body: the last owner of a pool is released inside one of that pool's own
+// tasks, so the destructor runs on the worker. With `numWorkers` 2 a sibling task waits
+// for that task's future; joining the sibling from the destructor would deadlock, because
+// the releasing task cannot return until the destructor does. Every worker must leave
+// run() afterwards, which the thread-local recorder below observes from the thread itself.
+int runWorkerDestructionChild(std::size_t numWorkers)
+{
+	auto pool = std::make_shared<lmms::ThreadPool>(numWorkers);
+
+	// Every worker has to enter run() before the scenario starts. The warm-up tasks block
+	// until all of them are running, which only distinct workers can do; touching the
+	// thread-local recorder here also arms the exit witness on each worker.
+	auto warmupGate = std::make_shared<std::promise<void>>();
+	auto warmupRelease = warmupGate->get_future().share();
+	auto warmup = std::vector<std::future<void>>{};
+	for (std::size_t i = 0; i < numWorkers; ++i)
+	{
+		warmup.push_back(pool->enqueue([warmupRelease] {
+			(void)&t_workerExitRecorder;
+			warmupRelease.wait();
+		}));
+	}
+	while (s_workerArmed.load(std::memory_order_acquire) < numWorkers) { std::this_thread::yield(); }
+	warmupGate->set_value();
+	for (auto& task : warmup) { task.get(); }
+
+	auto startGate = std::make_shared<std::promise<void>>();
+	auto start = startGate->get_future().share();
+	auto owner = pool->enqueue([pool = pool, start]() mutable {
+		start.wait();
+		pool.reset(); // last owner: the destructor runs on this worker
+	});
+	auto release = owner.share();
+
+	auto siblingRan = std::make_shared<std::promise<void>>();
+	auto siblingDone = siblingRan->get_future();
+	auto sibling = pool->enqueue([release, siblingRan] {
+		// This task cannot finish until the owner task returns its future, and the owner
+		// task cannot return until the worker-initiated destructor has returned.
+		release.wait();
+		siblingRan->set_value();
+	});
+
+	pool.reset();
+	startGate->set_value();
+
+	release.wait();
+	siblingDone.wait();
+	sibling.get();
+
+	// Shutdown is complete only when every detached worker has left run().
+	while (s_workerExits.load(std::memory_order_acquire) < numWorkers) { std::this_thread::yield(); }
+	return 0;
+}
+
+auto runWorkerDestructionChildProcess(int workers) -> bool
+{
+	QProcess child;
+	child.start(QCoreApplication::applicationFilePath(),
+		{QStringLiteral("--thread-pool-worker-destruction-child"), QString::number(workers)});
+	if (!child.waitForStarted(5000)) { return false; }
+	if (!child.waitForFinished(10000))
+	{
+		child.kill();
+		child.waitForFinished(5000);
+		return false;
+	}
+	return child.exitStatus() == QProcess::NormalExit && child.exitCode() == 0;
 }
 
 struct RvalueQualifiedCallable
@@ -281,6 +366,24 @@ private slots:
 		QVERIFY(ran.load(std::memory_order_acquire));
 	}
 
+	// A task can hold the last owner of its own pool; its release destroys the pool on that
+	// worker. A sibling task waiting for that task's future must neither be joined by the
+	// destructor (that deadlocks) nor abandoned: both tasks finish and every worker exits.
+	void destructionFromWorkerDoesNotWaitForSibling()
+	{
+		QVERIFY2(runWorkerDestructionChildProcess(2),
+			"The child hung or crashed while a sibling waited for the releasing task's future.");
+	}
+
+	// With one worker the sibling sits in the queue behind the releasing task. It must still
+	// run on the detached worker, so its future is not a broken promise, and the worker must
+	// exit afterwards.
+	void destructionFromWorkerDrainsQueuedWork()
+	{
+		QVERIFY2(runWorkerDestructionChildProcess(1),
+			"The child hung or crashed instead of draining the queued task after the worker destroyed the pool.");
+	}
+
 	// The global pool is built from the cached hardware concurrency, which the platform may
 	// report as zero. It runs in a child process so the singleton is still unbuilt here.
 	void zeroHardwareConcurrencyStillRunsTasks()
@@ -315,6 +418,11 @@ int main(int argc, char** argv)
 	if (argc > 1 && std::strcmp(argv[1], "--thread-pool-zero-concurrency-child") == 0)
 	{
 		return runZeroConcurrencyChild();
+	}
+	if (argc > 1 && std::strcmp(argv[1], "--thread-pool-worker-destruction-child") == 0)
+	{
+		if (argc < 3) { return 2; }
+		return runWorkerDestructionChild(std::strtoul(argv[2], nullptr, 10));
 	}
 	ThreadPoolTest test;
 	return QTest::qExec(&test, argc, argv);

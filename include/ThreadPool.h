@@ -27,6 +27,7 @@
 
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <queue>
 #include <tuple>
 #include <type_traits>
@@ -44,7 +45,13 @@ class ThreadPool
 {
 public:
 	//! Destroys the `ThreadPool` object.
-	//! This blocks until all workers have finished executing.
+	//! From any other thread this blocks until the queued tasks have run and all workers
+	//! have finished. When the destructor runs on one of the pool's own workers (a task
+	//! released the pool's last owner), it cannot join the other workers: a sibling may be
+	//! waiting for the future of the task that is releasing the pool. It signals shutdown
+	//! and detaches every worker instead. Each worker keeps the pool's shared state alive,
+	//! runs the tasks already queued, and then exits on its own, so queued tasks are still
+	//! executed and their futures do not become broken promises.
 	~ThreadPool();
 
 	//! Enqueue function `fn` with arguments `args` to be ran asynchronously.
@@ -91,11 +98,11 @@ public:
 		}};
 
 		{
-			const auto lock = std::unique_lock{m_runMutex};
-			m_queue.push(std::move(task));
+			const auto lock = std::unique_lock{m_state->runMutex};
+			m_state->queue.push(std::move(task));
 		}
 
-		m_runCond.notify_one();
+		m_state->runCond.notify_one();
 		return promise->get_future();
 	}
 
@@ -106,6 +113,16 @@ public:
 	static auto instance() -> ThreadPool&;
 
 private:
+	//! State shared with the workers, so a shutdown started from one of them outlives the
+	//! `ThreadPool` object until the last worker has left `run()`.
+	struct State
+	{
+		std::queue<std::packaged_task<void()>> queue;
+		std::condition_variable runCond;
+		std::mutex runMutex;
+		std::atomic<bool> done = false;
+	};
+
 	//! The worker count a pool may run with. Hardware concurrency is allowed to report zero,
 	//! and a pool without workers would never run its queued tasks.
 	static auto workerCount(size_t hardwareConcurrency) -> size_t
@@ -113,12 +130,17 @@ private:
 		return hardwareConcurrency == 0 ? size_t{1} : hardwareConcurrency;
 	}
 	ThreadPool(size_t numWorkers);
-	void run();
+	//! Workers and the shutdown flag reference the shared state, so an accidental move would
+	//! leave them pointing at the moved-from pool's state. The pool was never copyable or
+	//! movable; keep it that way explicitly.
+	ThreadPool(const ThreadPool&) = delete;
+	ThreadPool& operator=(const ThreadPool&) = delete;
+	static void run(std::shared_ptr<State> state);
+	std::shared_ptr<State> m_state;
+	//! Shutdown flag, owned by the shared state so that workers keep using it after a
+	//! worker-initiated destruction has released the rest of the object.
+	std::atomic<bool>& m_done;
 	std::vector<std::thread> m_workers;
-	std::queue<std::packaged_task<void()>> m_queue;
-	std::atomic<bool> m_done = false;
-	std::condition_variable m_runCond;
-	std::mutex m_runMutex;
 	inline static size_t s_numWorkers = workerCount(std::thread::hardware_concurrency());
 };
 } // namespace lmms

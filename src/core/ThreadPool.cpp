@@ -16,8 +16,8 @@
  * General Public License for more details.
  *
  * You should have received a copy of the GNU General Public
- * License along with this program (see COPYING); if not, write to the
- * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * License along with this program; if not, write to the Free
+ * Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301 USA.
  *
  */
@@ -25,9 +25,12 @@
 
 #include <cassert>
 #include <optional>
+#include <utility>
 
 namespace lmms {
 ThreadPool::ThreadPool(size_t numWorkers)
+	: m_state{std::make_shared<State>()}
+	, m_done{m_state->done}
 {
 	numWorkers = workerCount(numWorkers);
 	assert(numWorkers > 0);
@@ -37,18 +40,18 @@ ThreadPool::ThreadPool(size_t numWorkers)
 	{
 		for (size_t i = 0; i < numWorkers; ++i)
 		{
-			m_workers.emplace_back([this] { run(); });
+			m_workers.emplace_back([state = m_state] { run(state); });
 		}
 	}
 	catch (...)
 	{
-		// Workers already started capture `this`; stop and join them before the members die.
+		// Workers already started capture the shared state; stop and join them before it dies.
 		{
-			const auto lock = std::unique_lock{m_runMutex};
-			m_done = true;
+			const auto lock = std::unique_lock{m_state->runMutex};
+			m_state->done = true;
 		}
 
-		m_runCond.notify_all();
+		m_state->runCond.notify_all();
 
 		for (auto& worker : m_workers)
 		{
@@ -61,16 +64,42 @@ ThreadPool::ThreadPool(size_t numWorkers)
 
 ThreadPool::~ThreadPool()
 {
+	const auto self = std::this_thread::get_id();
+	auto selfIsWorker = false;
+	for (const auto& worker : m_workers)
 	{
-		const auto lock = std::unique_lock{m_runMutex};
-		m_done = true;
+		if (worker.joinable() && worker.get_id() == self)
+		{
+			selfIsWorker = true;
+			break;
+		}
 	}
 
-	m_runCond.notify_all();
+	{
+		const auto lock = std::unique_lock{m_state->runMutex};
+		m_state->done = true;
+	}
 
+	m_state->runCond.notify_all();
+
+	if (!selfIsWorker)
+	{
+		for (auto& worker : m_workers)
+		{
+			if (worker.joinable()) { worker.join(); }
+		}
+		return;
+	}
+
+	// A task released the pool's last owner, so this destructor runs on one of the pool's
+	// own workers. Joining that thread throws from a noexcept destructor, and joining a
+	// sibling can deadlock: the sibling may be waiting for the future of the very task this
+	// destructor is running inside, and that task cannot return before we do. Detach every
+	// worker instead; each one keeps the shared state alive, drains what is still queued,
+	// and exits on its own.
 	for (auto& worker : m_workers)
 	{
-		if (worker.joinable()) { worker.join(); }
+		if (worker.joinable()) { worker.detach(); }
 	}
 }
 
@@ -79,18 +108,18 @@ auto ThreadPool::numWorkers() const -> size_t
 	return m_workers.size();
 }
 
-void ThreadPool::run()
+void ThreadPool::run(std::shared_ptr<State> state)
 {
 	while (true)
 	{
 		std::optional<std::packaged_task<void()>> task;
 		{
-			auto lock = std::unique_lock{m_runMutex};
-			m_runCond.wait(lock, [this] { return !m_queue.empty() || m_done; });
+			auto lock = std::unique_lock{state->runMutex};
+			state->runCond.wait(lock, [&state] { return !state->queue.empty() || state->done; });
 
-			if (m_queue.empty()) { break; }
-			task.emplace(std::move(m_queue.front()));
-			m_queue.pop();
+			if (state->queue.empty()) { break; }
+			task.emplace(std::move(state->queue.front()));
+			state->queue.pop();
 		}
 		(*task)();
 	}
