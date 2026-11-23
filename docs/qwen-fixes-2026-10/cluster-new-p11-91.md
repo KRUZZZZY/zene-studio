@@ -144,24 +144,45 @@ reports no new item in a file this branch changes, so the branch-changed-files r
 
 ## Self-check
 
-- RED/GREEN proven by reverting the product diff, not by reasoning: rows 10-12 (exit 8) and 13-15
-  (exit 0), with row 16 showing `12 passed, 0 failed`.
-- The first green attempt failed honestly (row 6): my vacuity guard rendered the 44.1 kHz reference
-  from an effect that also received the signal, so after the fix the two references became equal and
-  the guard correctly refused to certify a vacuous test. The guard now renders at the old rate before
-  the change; no assertion was weakened and no gate was touched.
-- Deterministic: the rate is injected through `AudioDevice::setSampleRateForTesting()` and the
-  engine's signal; there is no timer, sleep, thread or wall clock in the test, and every comparison
-  is one impulse through an effect whose state starts at zero.
-- Complete for the callers and siblings: `m_sampleRate` is read only in `processImpl`
-  (`:105`, `:111`, `:116`) and written only in the constructor and the new slot; the header, the
-  controls, the dialog and the save/load path are untouched, so `amount`, the filter state and
-  `MAX_DISPERSION_FILTERS` behave exactly as before. Of the seven plugins that cache
-  `outputSampleRate()` at construction, Dispersion was the only one with no handler (checked by
-  script over `plugins/*/*.cpp`).
-- No collateral damage: nothing allocates or blocks on the audio thread, no command or model was
-  added, and the six sibling handlers keep their own behaviour. Old projects load identically
-  because the control XML names, ranges and defaults are unchanged.
+Answers to every ASK item of `submit_check.py`:
+
+- *The regression test FAILS with the product change reverted and PASSES with it (exit codes).*
+  Proven, not reasoned: `git diff -- plugins/Dispersion/Dispersion.cpp > logs/fix.patch` (exit 0),
+  `git apply -R logs/fix.patch` (exit 0), rebuild (exit 0), `ctest -R DispersionNonFiniteTest`
+  exit **8** with both new slots failing (`test-6-red-proof.log`); `git apply logs/fix.patch`
+  (exit 0), rebuild (exit 0), same ctest exit **0** (`test-7-regreen.log`); the binary run reports
+  `Totals: 12 passed, 0 failed` (`test-8-verbose.log`). The earlier pre-fix run `test-2-red.log`
+  shows the same two failures. The first green attempt failed honestly (row 6): my vacuity guard
+  rendered the 44.1 kHz reference from an effect that also received the signal, so after the fix the
+  two references became equal and the guard refused to certify a vacuous test. The guard now renders
+  at the old rate before the change; no assertion was weakened and no gate was touched.
+- *Deterministic: no wall-clock timing, sleeps or races.* The seams are
+  `AudioDevice::setSampleRateForTesting()` (`include/AudioDevice.h:87`) and the engine signal
+  `emit engine->sampleRateChanged()`, delivered synchronously on the calling thread; the audio
+  content is one injected impulse through an effect whose state starts at zero, and every comparison
+  is exact-value or tolerance based. No timer, sleep, thread, file or audio-device I/O appears in
+  the two slots.
+- *At the cause, complete for every caller and sibling.* `m_sampleRate` is read only in
+  `processImpl` (`plugins/Dispersion/Dispersion.cpp:105`, `:111`, `:116`) and written only in the
+  constructor and the new slot; `Dispersion.h`, `DispersionControls.cpp` and
+  `DispersionControlDialog.cpp` never touch it, so the header, the controls, the save/load path,
+  `amount` and the filter state stay as they were. Checked by script over `plugins/*/*.cpp`: of the
+  plugins that cache `outputSampleRate()` at construction, Dispersion was the only one without a
+  `sampleRateChanged` handler; the six siblings (Bitcrush, Compressor, CrossoverEQ, FrequencyShifter,
+  LOMM, SlewDistortion) and the Lb302 fix keep their own handling.
+- *No collateral damage.* No model, range, default or control XML name changed, so a saved project
+  loads and renders exactly as before; the fix adds no limit or check that could reject another
+  caller; `m_state`, `m_feedbackVal`, `m_integrator` and `m_amountVal` are untouched. Nothing
+  allocates, locks, waits or logs on the audio thread, and no command or undo step was added.
+- *ALREADY-FIXED / FALSE-POSITIVE evidence.* Not applicable: the verdict is FIXED. The code that
+  shows the defect before this commit is `plugins/Dispersion/Dispersion.cpp:59` (one-shot capture)
+  with no handler in any of the four Dispersion sources, plus the measured
+  `Actual 44100 / Expected 48000` in `test-6-red-proof.log`.
+- *Sibling commands in the command files I changed.* I changed no command file: the diff is
+  `plugins/Dispersion/Dispersion.cpp`, `tests/src/plugins/DispersionNonFiniteTest.cpp`,
+  `tests/upstream-modifications.txt` and this report. None of `app.*`, `arrangement.*` or any other
+  control command is touched, so that sibling list does not apply and the `ControlCommandsSnapshot`
+  canary is unaffected.
 - Unverified: race-freedom is argued from `stopProcessing()` preceding every emit, not measured -
   local TSan does not run on this box.
 
