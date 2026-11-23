@@ -132,6 +132,13 @@ Reconfiguration sibling target:
 - **No collateral damage.** No save/load format or parameter changed; `m_pools` replaces `m_retiredPools` with the same lifetime (freed in the instrument destructor). No limit changed: `MALLETS_VOICE_LIMIT` and `m_voicesInUse` are untouched, so the 128-voice budget and the 129th-note-waits behaviour are exactly as before (`aFreshInstrumentsVoiceBudgetStartsEmpty` green).
 - **If ALREADY-FIXED or FALSE-POSITIVE: code or contract.** Not applicable - the verdict is REAL.
 - **Realtime.** The only new render-thread operation is `m_voicePool.load(std::memory_order_acquire)` (lock-free, no allocation, no lock, no wait, no log); the atomic store and the pool construction happen on the control thread. No new command, so the ControlCommandsSnapshot canary is untouched. No undo interaction (the bug is in audio-device reconfiguration, not an editable model).
+- **Sibling commands in the command files you changed.** None: this commit changes no
+  `ControlCommands*`, `ControlReversibilityTable*` or `ControlRegistry*` file. `git show --stat HEAD`
+  lists exactly `plugins/Stk/Mallets/Mallets.cpp`, `plugins/Stk/Mallets/Mallets.h`,
+  `tests/src/plugins/MalletsInstrumentViewTest.cpp`, `tests/upstream-modifications.txt` and this
+  report. The `app.*`/`arrangement.*` command files the pre-submit check lists come from the
+  branch's base commits (`git diff --name-only <merge-base>..HEAD` spans 351 files of the train
+  line), not from this fix, so no command is affected and no snapshot moved.
 
 ## Other findings
 
