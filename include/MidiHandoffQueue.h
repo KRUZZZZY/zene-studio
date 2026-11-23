@@ -214,9 +214,9 @@ private:
  *
  * All operations are lock-free and allocate nothing. The per-channel slots cover the largest queue in use (512)
  * positions plus one cut boundary. Slot scans have a fixed bound, and each cut-stamp update makes at most
- * MaxStampUpdateAttempts compare-exchange attempts. A channel's stamp is always raised in its m_cutAt before its
- * slot is published, and the consumer clears m_cutAt only together with every covered slot, so a channel whose
- * m_cutAt is 0 has no pending slot at all: the consumer uses that to skip the slot scan when no cut is pending.
+ * MaxStampUpdateAttempts compare-exchange attempts. A per-channel occupancy count is raised before a slot is
+ * published and lowered only after the consumer clears that slot, so the consumer can skip the slot scan when
+ * the count is 0 without hiding a slot that a producer published while a clear was resetting the cached stamps.
  * When contention exhausts that budget or the slots are full,
  * the refusal is counted and the channel is flagged "deferred" with one wait-free fetch_or (release), after
  * queuedBefore was read. The single consumer (drainMidi) clears the flags (acquire) and keeps a consumer-private
@@ -235,7 +235,8 @@ public:
 	void record(int channel, std::uint64_t queuedBefore) noexcept
 	{
 		recordImpl(channel, queuedBefore, nullptr,
-			[](std::atomic<std::uint64_t>&, std::uint64_t, std::uint64_t, std::uint32_t) noexcept {});
+			[](std::atomic<std::uint64_t>&, std::uint64_t, std::uint64_t, std::uint32_t) noexcept {},
+			[]() noexcept {}, []() noexcept {});
 	}
 
 #ifdef LMMS_TESTING
@@ -245,7 +246,19 @@ public:
 		BeforeCompareExchange&& beforeCompareExchange) noexcept
 	{
 		recordImpl(channel, queuedBefore, attemptsUsed,
-			static_cast<BeforeCompareExchange&&>(beforeCompareExchange));
+			static_cast<BeforeCompareExchange&&>(beforeCompareExchange), []() noexcept {}, []() noexcept {});
+	}
+
+	//! Test seam that pauses the producer after the channel's stamp is raised and again after a slot holding it is
+	//! published, before the earliest-cut cache is updated. A test runs the consumer from these pause points, which
+	//! is exactly the window in which a slot is visible but not yet cached.
+	template<typename AfterRaise, typename AfterRemember>
+	void recordWithPublicationHooks(int channel, std::uint64_t queuedBefore,
+		AfterRaise&& afterRaise, AfterRemember&& afterRemember) noexcept
+	{
+		recordImpl(channel, queuedBefore, nullptr,
+			[](std::atomic<std::uint64_t>&, std::uint64_t, std::uint64_t, std::uint32_t) noexcept {},
+			static_cast<AfterRaise&&>(afterRaise), static_cast<AfterRemember&&>(afterRemember));
 	}
 	#endif
 
@@ -316,7 +329,10 @@ public:
 			m_deferredStamp[static_cast<std::size_t>(channel)] = 0;
 		}
 		const auto index = static_cast<std::size_t>(channel);
-		for (auto& pending : m_pendingCutAt[index]) { clearCovered(pending, sent.effective); }
+		for (auto& pending : m_pendingCutAt[index])
+		{
+			if (clearCovered(pending, sent.effective)) { m_pendingUsed[index].fetch_sub(1, std::memory_order_seq_cst); }
+		}
 		clearCovered(m_earliestCutAt[index], sent.effective);
 		clearCovered(m_cutAt[index], sent.effective);
 		refreshEarliest(index);
@@ -366,19 +382,21 @@ private:
 		bool ordered = false;
 	};
 
-	template<typename BeforeCompareExchange>
+	template<typename BeforeCompareExchange, typename AfterRaise, typename AfterRemember>
 	auto recordChannel(std::size_t index, std::uint64_t stamp, std::uint32_t* attemptsUsed,
-		BeforeCompareExchange&& beforeCompareExchange) noexcept -> bool
+		BeforeCompareExchange&& beforeCompareExchange, AfterRaise&& afterRaise, AfterRemember&& afterRemember) noexcept -> bool
 	{
 		if (!raise(m_cutAt[index], stamp, attemptsUsed,
 			static_cast<BeforeCompareExchange&&>(beforeCompareExchange))) { return false; }
-		if (!remember(m_pendingCutAt[index], stamp)) { return false; }
+		afterRaise();
+		if (!remember(index, stamp)) { return false; }
+		afterRemember();
 		return lower(m_earliestCutAt[index], stamp);
 	}
 
-	template<typename BeforeCompareExchange>
+	template<typename BeforeCompareExchange, typename AfterRaise, typename AfterRemember>
 	void recordImpl(int channel, std::uint64_t queuedBefore, std::uint32_t* attemptsUsed,
-		BeforeCompareExchange&& beforeCompareExchange) noexcept
+		BeforeCompareExchange&& beforeCompareExchange, AfterRaise&& afterRaise, AfterRemember&& afterRemember) noexcept
 	{
 		const std::uint64_t stamp = queuedBefore + 1; // 0 is "nothing pending"
 		std::uint32_t failedChannels = 0;
@@ -386,13 +404,13 @@ private:
 		{
 			const auto index = static_cast<std::size_t>(channel);
 			if (!recordChannel(index, stamp, attemptsUsed,
-				static_cast<BeforeCompareExchange&&>(beforeCompareExchange))) { failedChannels = 1u << channel; }
+				static_cast<BeforeCompareExchange&&>(beforeCompareExchange), afterRaise, afterRemember)) { failedChannels = 1u << channel; }
 		}
 		else
 		{
 			for (std::size_t index = 0; index < m_cutAt.size(); ++index)
 			{
-				if (!recordChannel(index, stamp, attemptsUsed, beforeCompareExchange)) { failedChannels |= 1u << index; }
+				if (!recordChannel(index, stamp, attemptsUsed, beforeCompareExchange, afterRaise, afterRemember)) { failedChannels |= 1u << index; }
 			}
 		}
 		if (failedChannels != 0)
@@ -411,14 +429,20 @@ private:
 		result.stamp = m_earliestCutAt[index].load(std::memory_order_acquire);
 		result.ordered = result.stamp != 0;
 		if (result.ordered) { return result; }
-		// Nothing was ever raised on this channel: by the invariant in the class comment its slots are empty,
-		// so the drain's no-cut path needs two loads instead of scanning all MaxPendingCuts slots. Without this
-		// check a period with no overflow cut probes 16 * 513 slots per event on the audio thread.
+		// No slot is published on this channel: a raised stamp without a slot (a refused remember) is all there
+		// is. This is the drain's no-cut fast path, two loads per channel instead of scanning MaxPendingCuts
+		// slots; the count, unlike m_cutAt, is never reset by a clear that a producer's publication raced with.
 		const auto latest = m_cutAt[index].load(std::memory_order_acquire);
-		if (latest == 0) { return result; }
+		if (m_pendingUsed[index].load(std::memory_order_seq_cst) == 0)
+		{
+			// Keep "ordered" false: the raised stamp alone is not a published refusal position, so a deferred
+			// stamp may still move the cut later (the remember that would have published the slot failed).
+			result.stamp = latest;
+			return result;
+		}
 		result.stamp = pendingStamp(index);
 		result.ordered = result.stamp != 0;
-		if (result.stamp == 0 || latest < result.stamp) { result.stamp = latest; }
+		if (result.stamp == 0 || (latest != 0 && latest < result.stamp)) { result.stamp = latest; }
 		return result;
 	}
 
@@ -445,15 +469,23 @@ private:
 	}
 
 	//! Adds one distinct pending position without growing or waiting for another producer.
-	static auto remember(std::array<std::atomic<std::uint64_t>, MaxPendingCuts>& cuts,
-		std::uint64_t stamp) noexcept -> bool
+	auto remember(std::size_t index, std::uint64_t stamp) noexcept -> bool
 	{
-		for (auto& cut : cuts)
+		auto& used = m_pendingUsed[index];
+		for (auto& cut : m_pendingCutAt[index])
 		{
 			auto current = cut.load(std::memory_order_acquire);
 			if (current == stamp) { return true; }
-			if (current == 0 && cut.compare_exchange_strong(current, stamp, std::memory_order_acq_rel)) { return true; }
-			if (current == stamp) { return true; }
+			if (current == 0)
+			{
+				// Announce the occupancy before publishing the slot. The consumer's no-cut fast path reads this
+				// count and never m_cutAt, whose value a clear can reset after a producer raised it; announcing
+				// first means a published slot cannot be hidden from the drain.
+				used.fetch_add(1, std::memory_order_seq_cst);
+				if (cut.compare_exchange_strong(current, stamp, std::memory_order_acq_rel)) { return true; }
+				used.fetch_sub(1, std::memory_order_seq_cst); // the slot was taken meanwhile; try the next one
+				if (current == stamp) { return true; }
+			}
 		}
 		return false;
 	}
@@ -477,11 +509,11 @@ private:
 	{
 		const auto cached = m_earliestCutAt[index].load(std::memory_order_acquire);
 		if (cached != 0) { return cached; }
-		// Same no-cut fast path as sharedCut(): m_cutAt == 0 means no slot can be pending.
+		// Same no-cut fast path as sharedCut(): no published slot means the raised stamp is all there is.
 		const auto latest = m_cutAt[index].load(std::memory_order_acquire);
-		if (latest == 0) { return 0; }
+		if (m_pendingUsed[index].load(std::memory_order_seq_cst) == 0) { return latest; }
 		const auto pending = pendingStamp(index);
-		return pending == 0 || latest < pending ? latest : pending;
+		return pending == 0 || (latest != 0 && latest < pending) ? latest : pending;
 	}
 
 	//! Rebuilds the cached earliest value after clearing the cuts covered by one sent recovery cut.
@@ -509,7 +541,8 @@ private:
 	}
 
 	//! Consumer only. Clears a shared stamp covered by a sent cut with a bounded number of compare-exchanges.
-	void clearCovered(std::atomic<std::uint64_t>& cut, std::uint64_t effective) noexcept
+	//! @return whether the stamp was cleared (the caller keeps the slot occupancy count in step).
+	auto clearCovered(std::atomic<std::uint64_t>& cut, std::uint64_t effective) noexcept -> bool
 	{
 		auto current = cut.load(std::memory_order_acquire);
 		for (std::uint32_t attempt = 1; current != 0 && current <= effective; ++attempt)
@@ -517,15 +550,19 @@ private:
 			if (attempt > MaxStampUpdateAttempts)
 			{
 				m_unclearedCoveredStamps.fetch_add(1, std::memory_order_relaxed);
-				return;
+				return false;
 			}
-			if (cut.compare_exchange_weak(current, 0, std::memory_order_acq_rel)) { return; }
+			if (cut.compare_exchange_weak(current, 0, std::memory_order_acq_rel)) { return true; }
 		}
+		return false;
 	}
 
 	std::array<std::atomic<std::uint64_t>, 16> m_cutAt{};
 	std::array<std::atomic<std::uint64_t>, 16> m_earliestCutAt{};
 	std::array<std::array<std::atomic<std::uint64_t>, MaxPendingCuts>, 16> m_pendingCutAt{};
+	//! Published slots per channel that the consumer has not cleared yet. A producer adds one before it publishes
+	//! a slot and the single consumer subtracts one only after clearing it, so 0 means "no slot can be hidden".
+	std::array<std::atomic<std::uint32_t>, 16> m_pendingUsed{};
 	std::atomic<std::uint64_t> m_recorded{0};
 	std::atomic<std::uint64_t> m_failedStampUpdates{0};
 	std::atomic<std::uint64_t> m_unclearedCoveredStamps{0};
