@@ -214,6 +214,13 @@ operation), which is exactly what the test measures without a race.
   invisible to the save file.
 - **Not an ALREADY-FIXED / FALSE-POSITIVE verdict**, so the fifth ask does not apply;
   the verdict is FIXED with the RED evidence above.
+- **Sibling commands** (`app.*`, `arrangement.*`, `control.*`): this change builds no
+  command, adds no command id and touches no `ControlCommands*` or
+  `ControlReversibilityTable*` file, so no sibling command is affected and no
+  reversibility class changed. The list `submit_check.py` prints comes from the branch's
+  merge-base against the train, which includes the merged lanes' files, not from this
+  fix; the fix's own files are the two `plugins/ClapEffect/ClapParameter` product files,
+  the test source, the CLAP test fixture and this report.
 
 ## Other findings
 
