@@ -127,6 +127,41 @@ bool probePython(const QString& candidate, int timeoutMs)
 	return probe.exitStatus() == QProcess::NormalExit && probe.exitCode() == 0;
 }
 
+#ifdef LMMS_TESTING
+ExternalProcessStemSeparator::DiscoveryHooks& discoveryHooks()
+{
+	static ExternalProcessStemSeparator::DiscoveryHooks hooks;
+	return hooks;
+}
+#endif
+
+//! The monotonic clock the discovery deadline reads (milliseconds since an
+//! arbitrary epoch). A test can replace it through the DiscoveryHooks seam.
+qint64 discoveryNowMs()
+{
+#ifdef LMMS_TESTING
+	if (discoveryHooks().nowMs)
+	{
+		return discoveryHooks().nowMs();
+	}
+#endif
+	return std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+//! True when @a candidate imports onnxruntime within @a timeoutMs; the test seam
+//! replaces the child process, not the decision.
+bool probeInterpreter(const QString& candidate, int timeoutMs)
+{
+#ifdef LMMS_TESTING
+	if (discoveryHooks().probe)
+	{
+		return discoveryHooks().probe(candidate, timeoutMs);
+	}
+#endif
+	return probePython(candidate, timeoutMs);
+}
+
 bool writeMixFile(const QString& path, const SampleBuffer& mix)
 {
 	std::vector<float> interleaved(mix.size() * 2);
@@ -201,6 +236,13 @@ bool readStems(const QString& outDir, int sampleRate, std::size_t frames, StemSe
 
 } // namespace
 
+#ifdef LMMS_TESTING
+void ExternalProcessStemSeparator::setDiscoveryHooksForTest(DiscoveryHooks hooks)
+{
+	discoveryHooks() = std::move(hooks);
+}
+#endif
+
 
 
 
@@ -235,21 +277,19 @@ QString ExternalProcessStemSeparator::locatePython(QString* error)
 	// means a hanging interpreter consumes the budget once, not once per
 	// candidate, and no further process is started after it runs out.
 	const int budgetMs = pythonDiscoveryBudgetMs();
-	const auto deadline = std::chrono::steady_clock::now()
-		+ std::chrono::milliseconds(budgetMs);
+	const auto deadline = discoveryNowMs() + budgetMs;
 	QStringList tried;
 	bool outOfTime = false;
 	for (const auto& candidate : candidates)
 	{
-		const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(
-			deadline - std::chrono::steady_clock::now()).count();
+		const auto left = deadline - discoveryNowMs();
 		if (left <= 0)
 		{
 			outOfTime = true;
 			break;
 		}
 		tried << candidate;
-		if (probePython(candidate, static_cast<int>(left)))
+		if (probeInterpreter(candidate, static_cast<int>(left)))
 		{
 			return candidate;
 		}

@@ -24,6 +24,8 @@
 #ifndef LMMS_EXTERNAL_PROCESS_STEM_SEPARATOR_H
 #define LMMS_EXTERNAL_PROCESS_STEM_SEPARATOR_H
 
+#include <functional>
+
 #include <QString>
 
 #include "StemSeparation/StemSeparator.h"
@@ -66,6 +68,20 @@ public:
 	// interpreter cannot hold the caller and the remaining candidates are not
 	// started after it (the next call probes again).
 	static QString locatePython(QString* error = nullptr);
+
+#ifdef LMMS_TESTING
+	//! Test seam (compiled into test builds only, see AudioResampler's
+	//! *ForTest members): replaces the interpreter probe and the monotonic clock
+	//! the discovery deadline reads, so a candidate that consumes its whole
+	//! share and an exhausted budget are exercised without real waiting. An
+	//! empty function restores the real QProcess probe / steady_clock.
+	struct DiscoveryHooks
+	{
+		std::function<bool(const QString& candidate, int timeoutMs)> probe;
+		std::function<qint64()> nowMs;
+	};
+	static void setDiscoveryHooksForTest(DiscoveryHooks hooks);
+#endif
 
 	// Discovery order: LMMS_STEM_CLI, the build-time source path, then
 	// <appdir>/tools/ and <appdir>/../share/zene/tools/.
