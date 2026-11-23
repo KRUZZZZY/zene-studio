@@ -66,3 +66,24 @@ libsndfile calls; the new test is skipped there).
 ## Other findings
 - `finishPreparedRender` trims into a staged path, then `installPreparedOutput` swaps it in; that path was
   already safe, no change needed.
+
+## Self-check
+- Red/green: with `src/core/BounceInPlace.cpp` reverted (`git apply -R fix.patch`) the new test fails
+  (ctest EXIT=8, test-4.log, sha256 mismatch at BounceInPlaceTest.cpp:364); with the fix it passes
+  (ctest EXIT=0, test-5.log, 11 passed / 0 failed / 0 skipped).
+- Deterministic: the failure is injected with `setrlimit(RLIMIT_FSIZE)` plus `SIGXFSZ` ignored, so the
+  write fails by a fixed byte cap; no clocks, sleeps, threads or races. Limit and signal handler are
+  restored by an RAII guard.
+- Cause and completeness: the cause is opening the final target for writing (truncation) before the copy
+  succeeds. `trimWav` is the only writer of that kind (`rg trimWav src`: one product caller,
+  `BounceInPlace.cpp:411`, plus the tests); the self/symlink/hard-link refusals and clamping are unchanged
+  and their tests pass. The sibling staged/backup install path (`installPreparedOutput`) already uses
+  rename-based replacement.
+- Collateral: no saved data or project format is touched. Successful trims produce the same WAV (same
+  frames, format and error behaviour). One deliberate difference: the target's directory must allow a
+  temporary file to be created next to it; a target already in an unwritable directory used to be
+  rewritten in place and now fails cleanly. No size limit or check was added.
+- ALREADY-FIXED / FALSE-POSITIVE: not applicable, the verdict is FIXED.
+- Sibling commands: this change touches no command file (only `src/core/BounceInPlace.cpp`, its test, and
+  the registration list). The `app.*` / `arrangement.*` commands the check lists come from the branch's
+  earlier merged work, not from this fix, and are not affected: `rg` shows none of them call `trimWav`.
