@@ -121,6 +121,15 @@ sha256 `1fdbebbc5708fbfb873d1f63f00e6eb07c0e8f4169ba9986629e7990fd91696c`.
 - **Portability.** Only existing Qt 5/6-compatible APIs (`QAction`, `QMenu`,
   `QProcess`-backed queue) are used; no Qt-6-only call, `windows.h` name or
   `std::filesystem` was added.
+- **Sibling commands.** No command file, schema or reversibility table was
+  changed. The diff only changes which already-registered id and arguments a
+  GUI action passes: `app.*`, `arrangement.*` and every unrelated command's
+  handler, arguments and class are untouched. The render siblings
+  (`bounce.in_place`, `bounce.land`, `freeze.track`, `freeze.region`,
+  `track.flatten`, `range.bounce`) keep their synchronous compatibility
+  contracts and remain the verbs an agent gets when it sends them; the queue
+  siblings (`render.queue_bounce`, `render.queue_add`) keep their existing
+  enum, required arguments and classes (`true_inverse` / `not_mutating`).
 
 ## Other findings (not changed here)
 
