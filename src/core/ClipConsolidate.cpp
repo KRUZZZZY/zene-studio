@@ -33,6 +33,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QUuid>
 
 #include <sndfile.h>
 
@@ -98,6 +99,35 @@ void mixClip(SampleClip* clip, tick_t start, double framesPerTick, std::vector<S
 	}
 }
 
+//! Moves the completed file at \a staged over \a path. A file already at \a path is moved
+//! aside first and put back when the move fails, so a failed replacement never leaves less at
+//! the destination than it found. \a staged is gone either way; false with \a error set.
+bool installWav(const QString& path, const QString& staged, QString* error)
+{
+	QString backup;
+	if (QFileInfo::exists(path))
+	{
+		backup = path + QStringLiteral(".backup.")
+			+ QUuid::createUuid().toString(QUuid::WithoutBraces);
+		if (!QFile::rename(path, backup))
+		{
+			QFile::remove(staged);
+			*error = QStringLiteral("cannot replace %1: the file already there cannot be moved aside")
+				.arg(path);
+			return false;
+		}
+	}
+	if (!QFile::rename(staged, path))
+	{
+		if (!backup.isEmpty()) { QFile::rename(backup, path); }
+		QFile::remove(staged);
+		*error = QStringLiteral("cannot install %1").arg(path);
+		return false;
+	}
+	if (!backup.isEmpty()) { QFile::remove(backup); }
+	return true;
+}
+
 bool writeWav(const QString& path, const std::vector<SampleFrame>& mix, int sampleRate, QString* error)
 {
 	if (!QDir().mkpath(QFileInfo(path).absolutePath()))
@@ -105,13 +135,24 @@ bool writeWav(const QString& path, const std::vector<SampleFrame>& mix, int samp
 		*error = QStringLiteral("cannot create the directory for %1").arg(path);
 		return false;
 	}
+	if (QFileInfo(path).isDir())
+	{
+		*error = QStringLiteral("cannot write %1: it is a directory").arg(path);
+		return false;
+	}
 	SF_INFO info{};
 	info.samplerate = sampleRate;
 	info.channels = 2;
 	info.format = SF_FORMAT_WAV | SF_FORMAT_FLOAT;
-	SNDFILE* file = sf_open(path.toLocal8Bit().constData(), SFM_WRITE, &info);
+	// Written beside the destination and moved over it only once the close succeeded:
+	// sf_open(SFM_WRITE) empties whatever is at the path it is given, so a write that fails
+	// must never open the destination itself - that would destroy the file already there.
+	const QString staged = path + QStringLiteral(".part.")
+		+ QUuid::createUuid().toString(QUuid::WithoutBraces) + QStringLiteral(".wav");
+	SNDFILE* file = sf_open(staged.toLocal8Bit().constData(), SFM_WRITE, &info);
 	if (file == nullptr)
 	{
+		QFile::remove(staged);
 		*error = QStringLiteral("cannot write %1: %2").arg(path, QString::fromLocal8Bit(sf_strerror(nullptr)));
 		return false;
 	}
@@ -126,11 +167,11 @@ bool writeWav(const QString& path, const std::vector<SampleFrame>& mix, int samp
 	const bool closed = sf_close(file) == 0;
 	if (!written || !closed)
 	{
-		QFile::remove(path);
+		QFile::remove(staged);
 		*error = QStringLiteral("writing %1 failed").arg(path);
 		return false;
 	}
-	return true;
+	return installWav(path, staged, error);
 }
 
 } // namespace

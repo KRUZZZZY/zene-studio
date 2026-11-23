@@ -38,6 +38,7 @@
 
 #include <QtTest>
 
+#include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -48,6 +49,11 @@
 #include <memory>
 #include <new>
 #include <vector>
+
+#if defined(Q_OS_UNIX)
+#include <csignal>
+#include <sys/resource.h>
+#endif
 
 #include "AudioEngine.h"
 #include "ClipConsolidate.h"
@@ -98,6 +104,40 @@ double levelAt(SampleClip* clip, tick_t from, tick_t to)
 	for (std::size_t i = a; i < b; ++i) { sum += std::fabs(buffer->data()[i][0]); }
 	return b > a ? sum / static_cast<double>(b - a) : -1.0;
 }
+
+#if defined(Q_OS_UNIX)
+//! Caps the size any file may grow to for the scope, so a write past it is cut short by the kernel
+//! (write returns fewer bytes than asked). The old limit and SIGXFSZ come back when it leaves scope.
+class ScopedFileSizeLimit
+{
+	struct rlimit m_original{};
+	void (*m_originalHandler)(int) = SIG_DFL;
+	bool m_active = false;
+
+public:
+	explicit ScopedFileSizeLimit(rlim_t bytes)
+	{
+		if (getrlimit(RLIMIT_FSIZE, &m_original) != 0) { return; }
+		m_originalHandler = std::signal(SIGXFSZ, SIG_IGN);
+		if (m_originalHandler == SIG_ERR) { return; }
+		rlimit limited = m_original;
+		limited.rlim_cur = bytes;
+		m_active = setrlimit(RLIMIT_FSIZE, &limited) == 0;
+		if (!m_active) { std::signal(SIGXFSZ, m_originalHandler); }
+	}
+
+	~ScopedFileSizeLimit()
+	{
+		if (m_active)
+		{
+			setrlimit(RLIMIT_FSIZE, &m_original);
+			std::signal(SIGXFSZ, m_originalHandler);
+		}
+	}
+
+	bool active() const { return m_active; }
+};
+#endif
 
 } // namespace
 
@@ -397,6 +437,58 @@ private slots:
 		QVERIFY(!QFileInfo::exists(out));
 		QCOMPARE(clipsOf(track).size(), std::size_t{1});
 		QCOMPARE(clipsOf(track)[0], clip);
+	}
+
+	/*! A render the kernel cuts short must not take the file that was already at the destination
+	 *  with it. sf_open(SFM_WRITE) empties the path before the write can fail (the finding), so the
+	 *  output has to be written beside the destination and moved over it only after a close that
+	 *  succeeded. RLIMIT_FSIZE is the full disk / failed device the failure mode describes, made
+	 *  deterministic: no timing, no race. */
+	void aFailedWriteKeepsTheFileThatWasAtTheDestination()
+	{
+#if !defined(Q_OS_UNIX)
+		QSKIP("RLIMIT_FSIZE is a POSIX facility");
+#else
+		Track* track = newSampleTrack();
+		SampleClip* clip = addTake(track, 0, 0.5f);
+		const tick_t length = clip->length().getTicks();
+		const QString destination = m_dir.filePath(QStringLiteral("destination.wav"));
+		const ClipConsolidate::Result first = ClipConsolidate::render({clip}, 0, length, destination);
+		QVERIFY2(first.ok, qPrintable(first.error));
+		QFile original(destination);
+		QVERIFY(original.open(QIODevice::ReadOnly));
+		const QByteArray before = original.readAll();
+		original.close();
+		QVERIFY(!before.isEmpty());
+
+		{
+			ScopedFileSizeLimit limit(1024);
+			QVERIFY2(limit.active(), "RLIMIT_FSIZE must be enforceable for this test to mean anything");
+			const ClipConsolidate::Result cut = ClipConsolidate::render({clip}, 0, length, destination);
+			QVERIFY2(!cut.ok, "a write the kernel cuts short must be reported as a failure");
+			QVERIFY2(cut.error.contains(QStringLiteral("writing")), qPrintable(cut.error));
+		}
+
+		QFile kept(destination);
+		QVERIFY2(kept.exists(), "the failed render removed the file that was at the destination");
+		QVERIFY(kept.open(QIODevice::ReadOnly));
+		const QByteArray after = kept.readAll();
+		kept.close();
+		QVERIFY2(after == before, "the failed render truncated the file that was at the destination");
+		QCOMPARE(QDir(m_dir.path()).entryList({QStringLiteral("*.part.*")}, QDir::Files), QStringList());
+
+		// The install still replaces the destination wholly once a render succeeds: the shorter
+		// range's file is what plays, not the previous longer one with its head overwritten.
+		const ClipConsolidate::Result shorter = ClipConsolidate::render({clip}, 0, length / 4, destination);
+		QVERIFY2(shorter.ok, qPrintable(shorter.error));
+		QFile replaced(destination);
+		QVERIFY(replaced.exists());
+		QVERIFY(replaced.open(QIODevice::ReadOnly));
+		QVERIFY(replaced.readAll() != before);
+		replaced.close();
+		QCOMPARE(QDir(m_dir.path()).entryList(
+			{QStringLiteral("*.part.*"), QStringLiteral("*.backup.*")}, QDir::Files), QStringList());
+#endif
 	}
 
 private:
