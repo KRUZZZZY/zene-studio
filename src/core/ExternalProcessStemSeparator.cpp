@@ -66,9 +66,10 @@ constexpr int PythonProbeKillGraceMs = 2000;
  *  asks isAvailable() - so it must never hold that thread for long. The old
  *  per-candidate waits (5 s to start + 30 s to import) cost four timeouts in a
  *  row when an interpreter hung importing onnxruntime: minutes of freeze.
- *  5 s is about ten times a normal cold `import onnxruntime` (the reference CLI
- *  starts, imports and begins inference in ~0.45 s on a desktop) and the next
- *  call probes again, so a budget that is too short is recoverable. */
+ *  5 s for the sequence, shared by its candidates (about 1.25 s each when all
+ *  four are tried), is still several times the ~0.45 s a cold reference CLI
+ *  needs to start, import and reach inference; a share that is too short only
+ *  delays discovery, because the next call probes again. */
 constexpr int PythonDiscoveryBudgetMs = 5000;
 
 void setError(QString* error, const QString& text)
@@ -273,14 +274,15 @@ QString ExternalProcessStemSeparator::locatePython(QString* error)
 		<< QStringLiteral("python3")
 		<< QStringLiteral("/usr/local/bin/python3");
 
-	// One deadline for the whole sequence. Checking it before each candidate
-	// means a hanging interpreter consumes the budget once, not once per
-	// candidate, and no further process is started after it runs out.
+	// One deadline for the whole sequence. Each candidate may spend only its
+	// share of what is left, so a slow or hanging one cannot consume the budget
+	// a later candidate needs; a candidate that fails fast leaves its unused
+	// share to the rest. No process is started once the deadline is reached.
 	const int budgetMs = pythonDiscoveryBudgetMs();
 	const auto deadline = discoveryNowMs() + budgetMs;
 	QStringList tried;
 	bool outOfTime = false;
-	for (const auto& candidate : candidates)
+	for (qsizetype index = 0; index < candidates.size(); ++index)
 	{
 		const auto left = deadline - discoveryNowMs();
 		if (left <= 0)
@@ -288,10 +290,12 @@ QString ExternalProcessStemSeparator::locatePython(QString* error)
 			outOfTime = true;
 			break;
 		}
-		tried << candidate;
-		if (probeInterpreter(candidate, static_cast<int>(left)))
+		const auto candidatesLeft = static_cast<qint64>(candidates.size() - index);
+		const int slice = static_cast<int>(std::max<qint64>(1, left / candidatesLeft));
+		tried << candidates.at(index);
+		if (probeInterpreter(candidates.at(index), slice))
 		{
-			return candidate;
+			return candidates.at(index);
 		}
 	}
 

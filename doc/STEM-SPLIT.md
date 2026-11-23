@@ -50,11 +50,14 @@ progress/cancel, and delivers results via queued signals.
 **Interpreter discovery is deferred and bounded.** Constructing
 `ExternalProcessStemSeparator` probes nothing: an empty interpreter argument is
 resolved by `separate()`, on the job's worker thread. `locatePython()` bounds the
-WHOLE probe sequence with one 5 s deadline, so an interpreter that hangs while
-importing `onnxruntime` cannot hold the caller for the old per-candidate
-timeouts (5 s to start plus 30 s to import, four candidates). A call that runs
-out of time reports that, starts no further process, and the next call probes
-again; `LMMS_STEM_PYTHON_PROBE_MS` (a test hook) can only lower the budget.
+WHOLE probe sequence with one 5 s deadline, and each candidate may spend only its
+share of what is left, so neither an interpreter that hangs while importing
+`onnxruntime` nor a merely slow one can hold the caller for the old per-candidate
+timeouts (5 s to start plus 30 s to import, four candidates) or starve a later
+candidate that works. The fallback is still tried within the same deadline. A
+call that runs out of time reports that, starts no further process, and the next
+call probes again; `LMMS_STEM_PYTHON_PROBE_MS` (a test hook) can only lower the
+budget.
 
 ## Quality: the segment overlap (Q050-062.1)
 

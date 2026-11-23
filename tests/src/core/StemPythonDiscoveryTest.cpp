@@ -269,6 +269,55 @@ private slots:
 			"a separation that cannot start must report why");
 	}
 
+	/*! A slow failing candidate must not starve a later candidate that works.
+	 *  This is the case a reviewer found: LMMS_STEM_PYTHON names an interpreter
+	 *  that hangs (or is merely very slow), and the default interpreter after it
+	 *  imports onnxruntime. The slow candidate is modelled by advancing the
+	 *  injected clock by the timeout it was handed, so no real time passes. */
+	void slowCandidateDoesNotStarveTheFallback()
+	{
+		EnvironmentGuard guard({ "LMMS_STEM_PYTHON", "LMMS_STEM_PYTHON_PROBE_MS" });
+		const QString slow = QStringLiteral("/slow/failing/interpreter");
+		const QString fallback = QStringLiteral("/usr/bin/python3");
+		qputenv("LMMS_STEM_PYTHON", slow.toUtf8());
+		qunsetenv("LMMS_STEM_PYTHON_PROBE_MS"); // a positive (default) budget
+
+		struct HookReset
+		{
+			~HookReset() { ExternalProcessStemSeparator::setDiscoveryHooksForTest({}); }
+		} reset;
+
+		qint64 clockMs = 0;
+		QStringList probed;
+		QList<int> budgets;
+		ExternalProcessStemSeparator::setDiscoveryHooksForTest({
+			[&](const QString& candidate, int timeoutMs)
+			{
+				probed << candidate;
+				budgets << timeoutMs;
+				if (candidate == slow)
+				{
+					// It uses every millisecond it is given and never answers.
+					clockMs += timeoutMs;
+					return false;
+				}
+				return candidate == fallback;
+			},
+			[&clockMs]() { return clockMs; }
+		});
+
+		QString error;
+		const QString located = ExternalProcessStemSeparator::locatePython(&error);
+		QVERIFY2(probed.size() >= 2,
+			"the working fallback was never tried: the slow candidate consumed the whole budget");
+		QCOMPARE(probed.value(0), slow);
+		QCOMPARE(probed.value(1), fallback);
+		QVERIFY2(budgets.value(1) > 0,
+			"the fallback was given no time, so a slow candidate starved it");
+		QCOMPARE(located, fallback);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+	}
+
 	/*! The normal path is untouched: the first candidate whose `import
 	 *  onnxruntime` succeeds is the interpreter returned. */
 	void discoveryFindsAnInterpreterThatImportsOnnxRuntime()

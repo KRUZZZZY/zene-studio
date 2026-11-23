@@ -64,9 +64,10 @@ public:
 
 	// Discovery order: LMMS_STEM_PYTHON, /usr/bin/python3, python3,
 	// /usr/local/bin/python3; the first one that imports onnxruntime wins.
-	// The WHOLE sequence is bounded by one short deadline, so a hanging
-	// interpreter cannot hold the caller and the remaining candidates are not
-	// started after it (the next call probes again).
+	// The WHOLE sequence is bounded by one short deadline, and each candidate
+	// may spend only its share of what is left, so neither a hanging interpreter
+	// nor a slow one can hold the caller or starve a later candidate. The next
+	// call probes again.
 	static QString locatePython(QString* error = nullptr);
 
 #ifdef LMMS_TESTING
