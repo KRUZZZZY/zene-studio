@@ -4040,3 +4040,7 @@ tests/src/plugins/SfzCompressorStereoLinkTest.cpp
 # cluster new-p9-240 (2026-10): LOMM sample-rate change regression - the lookahead ring cursor and contents are re-anchored when the rings are resized (fork-NEW test).
 tests/src/plugins/LommSampleRateTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p9-240.md
+# cluster new-p12-223 (2026-11): muting a track leaves the sample cursor behind - the muted
+# pass advances the source with the same reads the audible pass makes (fork-NEW test).
+tests/src/tracks/SampleClipMuteCursorTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p12-223.md

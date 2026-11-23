@@ -1732,6 +1732,10 @@ set(LMMS_TESTS
 	src/tracks/SampleClipTransientRepeatSafetyTest.cpp
 	src/tracks/SampleClipWarpTest.cpp
 	src/tracks/SampleClipWindowTest.cpp
+	# cluster new-p12-223: muting a track keeps the sample cursor in step - the resample
+	# path, the pitch-preserving path, and the muted pass's allocation budget. Its own
+	# target because Gate 7 measures SampleClipWindowTest.cpp at 494 of its 500 lines.
+	src/tracks/SampleClipMuteCursorTest.cpp
 	# Soundpipe lifecycle methods must report SP_OK on successful setup and teardown.
 	src/plugins/ReverbSCBaseTest.cpp
 	# The undo half of session.arrangement_record_land: the pass is ONE undo step, whatever it lands.
