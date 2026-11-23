@@ -129,12 +129,22 @@ feature-check kads-new-p21-90 (base fa4a5f2e7, 429 changed files; logs in .../bu
 RESULT: PASS
 ```
 
+## Completion check
+
+```
+$ python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p21-90 > .../logs/check-2-submit.log 2>&1 ; echo EXIT=$?
+```
+
+The first run (`check-1-submit.log`) printed `RESULT: PASS - submit` with `EXIT=0`; the second run
+after the Self-check answer above is recorded in `check-2-submit.log`.
+
 ## Logs
 
 All under `/home/kruzzzzy/.config/kads/zene/state/runs/new-p21-90.r1/logs/`:
 `evidence-1-controller-guard.txt`, `evidence-2-blame-before.txt`,
 `build-1-controller-surface.log`, `test-1-controller-surface.log`,
-`test-2-controller-surface-rerun.log`, `gates-1-feature-check.log`.
+`test-2-controller-surface-rerun.log`, `gates-1-feature-check.log`, `git-commit-1.log`,
+`check-1-submit.log`, `check-2-submit.log`.
 
 ## Self-check
 
@@ -175,6 +185,22 @@ contract that shows it."** `src/core/Controller.cpp:205` (guard in `triggerFrame
 `src/core/AudioEngine.cpp:1220` (the render period holds `m_changeMutex` across
 `renderStageMix()` at `:1240`, where `:1211` calls it), introduced by `c28751cef2`. Before that
 commit the same file had no guard in the constructor or destructor (`evidence-2-blame-before.txt`).
+
+**6. "Sibling commands in the command files you changed — confirm each is consistent with your
+fix (or say why it is not affected): app.*, arrangement.fit_tracks, arrangement.get_state, …"**
+The check lists those because its diff base is `fa4a5f2e78` (the merge-base with the train,
+`050/m0-train-35`), and 18 control-command files arrive in that range from train merges that are
+already on this branch — not from this session. My only commit on the branch is the report:
+
+```
+$ git show --stat --format=%H HEAD
+7c369b38c66ec297fda4422f5bafa09a6137d638
+ docs/qwen-fixes-2026-10/cluster-new-p21-90.md | 189 ++++++++++++++++++++++++++
+ 1 file changed, 189 insertions(+)
+```
+
+So no command, reversibility row or `commands_snapshot.json` entry is added, changed or removed by
+this work, and no sibling command can disagree with it: the verdict changes no behaviour at all.
 
 ## Other findings
 
