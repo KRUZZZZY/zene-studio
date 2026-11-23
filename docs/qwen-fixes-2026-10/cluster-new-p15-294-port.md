@@ -78,6 +78,25 @@ runtime red evidence is the CollabTransportTest failure.
 - Unverified: tests/control-collab.py was not run here. TSan is not available on this box. The
   reservation race is handled by O_EXCL plus the byte check after writing, and is argued from the design only.
 
+- Red without the fix, green with it: yes. Red build EXIT 2 (CollabPolicyTest does not compile without the
+  API) and red ctest EXIT 8 (CollabTransportTest::applySnapshotUsesUniqueDestinationInSource FAIL). Green
+  build EXIT 0, green ctest EXIT 0. See the table above.
+- Deterministic: the tests use only a QTemporaryDir and pre-created files. The "another process took the
+  name" race is simulated deterministically: the test creates the file at the selected path before calling
+  `reserveSnapshotFile`. There are no sleeps, timers or wall-clock reads.
+- At the cause and complete: the cause was the fixed name plus the replacing QSaveFile in `applySnapshot`.
+  That is the only writer of joined copies, and its only caller is the snapshot sink set in
+  `CollabSession::join`. The host-side `writeSnapshot` uses a QTemporaryDir and is unaffected.
+  `resetToIdle` clears the new per-join state, so a re-join gets a fresh token and name.
+- No collateral damage: no load path changed. Existing `joined-*.mmpz` files are left in place and still
+  open normally. The 64-character label cap and the 64-sibling walk only affect naming new joined copies,
+  and no other caller uses them.
+- ALREADY-FIXED or FALSE-POSITIVE: not applicable (verdict FIXED). The original fix was confirmed missing
+  from this branch with `git merge-base --is-ancestor` (NOT in HEAD).
+- Sibling commands (app.*, arrangement.*, ...): this change touches no command handler or ControlCommands*
+  file, and adds or changes no command. tests/control-collab.py is a test script. No sibling command is
+  affected, and the ControlCommandsSnapshot canary does not move.
+
 Delegation: Haiku ran every build and ctest step and the 4b reverse/restore sequence (build-1..3, test-1..3).
 I did not use Sonnet: this job was a clean port of an existing reviewed fix (`git apply`), with no new test
 or fix to design.
