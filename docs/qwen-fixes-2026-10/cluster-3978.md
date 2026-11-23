@@ -68,6 +68,26 @@ The same test also failed on the first RED run before the product change existed
 (`test-2.log`, EXIT=8), and the baseline suite passed before the test was added (`test-1.log`,
 EXIT=0).
 
+### Round 2 re-verification
+
+The product and test commits were unchanged in round 2; the same red/green pair was reproduced
+from the fix commit itself, with every log written to this run's folder:
+
+```
+git diff 33fba8e9d5^ 33fba8e9d5 -- src/core/ControlCommandsRecordingRecovery.cpp \
+    > .../3978.r2/logs/fix.patch                                                EXIT=0
+cmake --build build --target zene RecordingRecoveryMenuTest -j4                 EXIT=0   (build-1.log)
+cd build/tests && ctest -R '^RecordingRecoveryMenuTest$' --output-on-failure    EXIT=0   (test-1.log)
+git apply -R .../3978.r2/logs/fix.patch                                         EXIT=0
+cmake --build build --target zene RecordingRecoveryMenuTest -j4                 EXIT=0   (build-2-red.log)
+cd build/tests && ctest -R '^RecordingRecoveryMenuTest$' --output-on-failure    EXIT=8   (test-2-red.log)
+  FAIL!  : aLiveCapturesJournalIsNotDiscarded() '!discarded.ok' returned FALSE.
+           (record.recovery_discard removed a live capture's journal)
+git apply .../3978.r2/logs/fix.patch                                            EXIT=0
+cmake --build build --target zene RecordingRecoveryMenuTest -j4                 EXIT=0   (build-3-green.log)
+cd build/tests && ctest -R '^RecordingRecoveryMenuTest$' --output-on-failure    EXIT=0   (test-3-green.log)
+```
+
 ## Family and gates
 
 ```
@@ -75,6 +95,16 @@ cd build/tests && ctest -R '^(RecordingRecoveryMenuTest|MultiTrackRecorderTest|C
     --output-on-failure                                                          EXIT=0   (test-6-family.log, 3/3 passed)
 cd build/tests && ctest -R '^ControlRecordingRecovery$' --output-on-failure      EXIT=0   (test-7-control-recovery.log, 1/1 passed)
 python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>           EXIT=0   (gate-1.log, RESULT: PASS)
+```
+
+Round 2, same commands against the unchanged commits, logs in this run's folder:
+
+```
+cmake --build build --target MultiTrackRecorderTest ControlRecordingRoutesTest -j4   EXIT=0 (build-4-family.log)
+cd build/tests && ctest -R '^(RecordingRecoveryMenuTest|MultiTrackRecorderTest|ControlRecordingRoutesTest)$' \
+    --output-on-failure                                                         EXIT=0   (test-4-family.log, 3/3 passed)
+cd build/tests && ctest -R '^ControlRecordingRecovery$' --output-on-failure     EXIT=0   (test-5-control-recovery.log, 1/1 passed)
+python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>          EXIT=0   (gate-1.log, RESULT: PASS)
 ```
 
 ## Test matrix
@@ -98,13 +128,18 @@ python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>          
 
 ## Self-check
 
-- Regression test FAILS with the product change reverted and PASSES with it: `test-4` EXIT=8
-  (reverted) and `test-5` EXIT=0 (restored), commands above, `fix.patch` contains only the
-  product file.
+- Regression test FAILS with the product change reverted and PASSES with it: round 1
+  `test-4-red-without-fix.log` EXIT=8 / `test-5-green-with-fix.log` EXIT=0, and round 2
+  `test-2-red.log` EXIT=8 / `test-3-green.log` EXIT=0, commands above; `fix.patch` contains only
+  the product file.
+- Proof manifest (`3978.r2/logs/proof.json`): one `regression-test` artifact (`test_file`,
+  `test`, red/green commands and exits) and one `state-sequence` artifact naming the test and
+  the five ordered states the test drives. The state-sequence shape uses the schema's `test` +
+  `states` fields (round 1's `steps` key was rejected by `schemas/proof.json`).
 - Deterministic: no timing. The route is armed by `armTrack()`, the refusal is a direct command
   call, and the journal state is read from the file. No sleeps or races are used.
 - Sibling ask (`app.*`, `arrangement.*`, ...): those ids are printed because the pre-submit
-  checker diffs the whole branch against the train's merge-base, where 351 other changed files
+  checker diffs the whole branch against the train's merge-base, where more than 350 other changed files
   (including `ControlCommandsShell.cpp` and `ControlCommandsArrangementState.cpp`) already live.
   This fix changes no file in those groups and no id, schema or handler there; the only command
   file in this fix is `src/core/ControlCommandsRecordingRecovery.cpp`, whose siblings are handled
