@@ -1012,6 +1012,7 @@ include/ArticulationMap.h
 include/ArticulationMapEditor.h
 include/ArticulationRemap.h
 include/AuComponent.h
+include/AudioAlsaRecovery.h
 include/AudioAlsaWrite.h
 include/AudioBus.h
 include/AudioWorkerWake.h
@@ -2708,6 +2709,8 @@ tests/src/core/ArticulationPlaybackTest.cpp
 tests/src/core/AudioAlsaCaptureErrorTest.cpp
 tests/src/core/AudioAlsaFatalWriteTest.cpp
 tests/src/core/AudioAlsaPollDescriptorTest.cpp
+tests/src/core/AudioAlsaResumeRecoveryTest.cpp
+tests/src/core/AudioAlsaSuspendShutdownTest.cpp
 tests/src/core/AudioAlsaWriteTest.cpp
 tests/src/core/AudioAnalysisTest.cpp
 tests/src/core/PeakJobsTest.cpp
