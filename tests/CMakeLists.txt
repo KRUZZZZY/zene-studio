@@ -1798,6 +1798,11 @@ IF(LMMS_HAVE_STEM_SPLIT)
 		src/gui/StemSplitBackgroundTest.cpp
 		# new-p21-107: the stem WAV writer's header arithmetic and its refusals (ControlStemWav.cpp).
 		src/core/ControlStemWavTest.cpp
+		# new-p15-64: interpreter discovery is deferred out of the constructor and the
+		# whole probe sequence is bounded (ExternalProcessStemSeparator).
+		src/core/StemPythonDiscoveryTest.cpp
+		# new-p15-64: the non-blocking, cached discovery service GUI-thread callers use.
+		src/core/StemPythonDiscoveryServiceTest.cpp
 	)
 	IF(LMMS_HAVE_ONNXRUNTIME)
 		LIST(APPEND LMMS_TESTS src/core/OnnxRuntimeStemSeparatorTest.cpp)

@@ -132,6 +132,7 @@ public:
 		m_manager.setSeparator(std::make_unique<OnnxRuntimeStemSeparator>());
 #else
 		m_manager.setSeparator(std::make_unique<ExternalProcessStemSeparator>());
+		ExternalProcessStemSeparator::requestPythonDiscovery(); // in the background, now
 #endif
 		m_backend = m_manager.backendName();
 		// Owner decision 14: the first job fetches the pinned model on the
@@ -396,7 +397,8 @@ private:
 		(void) error;
 		return true;
 #else
-		return !ExternalProcessStemSeparator::locatePython(error).isEmpty()
+		// discoveredPython() waits at most one bounded run, never for a hanging probe.
+		return !ExternalProcessStemSeparator::discoveredPython(error).isEmpty()
 			&& !ExternalProcessStemSeparator::locateCli(error).isEmpty();
 #endif
 	}
@@ -414,7 +416,8 @@ private:
 		}
 		return true;
 #else
-		return ExternalProcessStemSeparator().isAvailable(error);
+		const auto python = ExternalProcessStemSeparator::discoveredPython(error);
+		return !python.isEmpty() && ExternalProcessStemSeparator(python).isAvailable(error);
 #endif
 	}
 
