@@ -188,6 +188,39 @@ bash tests/file-length-gate.sh --check > logs/file-length-1.log 2>&1           E
 
 `gates-3.log`: all eight rows PASS; `RESULT: PASS`.
 
+## Round 3: verify-and-close pass on HEAD `9065852f92` (no source edits)
+
+The diagnostic checkpoint asked for a rebuild, a mutation check and a check of the
+dropped 42-line reviewer fix. No product or test file was changed this round.
+
+- **The dropped reviewer fix is already in HEAD.** The position-aware preflight it
+  described is `ControlCommandsClipImportFile.cpp:202` (`prepareAudio(path, position,
+  ...)`), `:223` (`position + length > MaxSongLength` before `SampleDecoder::decode`)
+  and `:250`/`:366` (`prepareFile` forwards `validateImport`'s position); it is commit
+  `6086a4aa32`. Commit `9065852f92` adds `AnalysisDecode::PrefixOnly`
+  (`ImportDetection.h`, `ImportDetection.cpp`, `LoopImportWarp.cpp:127`) so standalone
+  `analyseAudioFile` still validates the whole file, pinned by
+  `SampleDecoderShortReadTest::analysisRefusesAFlacWithAudioButMissingDeclaredFrames`.
+- **Green on HEAD** (`logs/build-green.log`, `logs/test-green.log`):
+  `cmake --build build --target zene ClipImportFileTest SampleDecoderShortReadTest ImportDetectionTest -j4`
+  EXIT=0; `cd build/tests && ctest -R '^(ClipImportFileTest|SampleDecoderShortReadTest|ImportDetectionTest)$' --output-on-failure`
+  EXIT=0, `100% tests passed out of 3`.
+- **Mutation check, only the position term reverted** (`logs/fix.patch` is the
+  mutation: `position + length > MaxSongLength` became `length > MaxSongLength` at
+  `:223`). `cmake --build ... -j4` (`logs/build-red.log`) EXIT=0, then the same ctest
+  (`logs/test-red.log`) EXIT=8: `ClipImportFileTest::anAudioFilePastTheSongEndIsRefusedBeforeItIsFullyDecoded`
+  failed at `tests/src/core/ClipImportFileTest.cpp:481` (`full` actual 1, expected 0).
+  Only that one test went red; `SampleDecoderShortReadTest` stayed green, because it
+  guards the separate `PrefixOnly` change, not the position term. The checkpoint
+  expected two reds from this single revert; one is what I observed.
+- **Restored**: `git apply -R logs/fix.patch` EXIT=0, `git status` clean, rebuild
+  (`logs/build-green2.log`) and ctest (`logs/test-green2.log`): `100% tests passed out of 3`.
+- **Gates**: `feature_check.py` (`logs/gates-r3.log`) EXIT=0, all eight rows PASS.
+
+Delegation: Haiku ran the three build-and-ctest runs (green, mutated, restored) and
+reported exit codes and failure lines, which I checked against the logs; I made the
+mutation edit, the restore, the gates run and this report.
+
 ## Self-check
 
 - **Round-2 send-back addressed.** `prepareAudio` takes the requested `tick_t
