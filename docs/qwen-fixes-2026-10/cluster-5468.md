@@ -45,26 +45,28 @@ the shipping `AudioEngineWorkerThread::wakeWorkers()` to the promise:
 - `repeatedWakeupsDeliverEveryPeriodWithoutDeadlock` (`:526`) drives 240 periods × 8 jobs
   on real pool workers and requires every job once and exactly 240 posts.
 
-## Red/green evidence from this session
+## Red/green evidence from QA review
 
-No product code was changed in this session; the fix was already committed. To prove the
-existing test catches this defect, I temporarily restored the old wake shape inside
-`notifyWorkers()` (mutex + lazily allocated condition variable) in the product file only,
-built and ran the test, then reverted that temporary change with `git apply -R`.
+The proof manifest and logs specified for this run were not available at
+`/home/kruzzzzy/.config/kads/zene/state/runs/5468.r1/logs/` in the review environment. QA
+independently rebuilt and reran the same regression slot on the shipping `wakeWorkers()` path.
+To make it red, QA temporarily restored the historical lazy mutex/condition-variable notifier
+in `src/core/AudioEngineWorkerThread.cpp` only, then restored that file from HEAD.
 
 | Command | Exit |
 |---|---|
-| `cmake --build build --target AudioWorkerWakeTest -j4` (green tree) | 0 |
+| `cmake --build build --target zene AudioWorkerWakeTest -j4` (green tree) | 0 |
 | `cd build/tests && ctest -R '^AudioWorkerWakeTest$' --output-on-failure` | 0 |
-| `git diff -- src/core/AudioEngineWorkerThread.cpp > logs/red-revert.patch` | 0 |
-| `cmake --build build --target AudioWorkerWakeTest -j4` (temporary old shape) | 0 |
-| `cd build/tests && ./AudioWorkerWakeTest theRenderSideWakeAllocatesNothingAndTakesNoMutex` | **1** |
-| `git apply -R logs/red-revert.patch` (restore product code) | 0 |
-| `cmake --build build --target AudioWorkerWakeTest -j4` (restored) | 0 |
+| `cd build/tests && ./AudioWorkerWakeTest theRenderSideWakeAllocatesNothingAndTakesNoMutex` (green) | 0 |
+| `cmake --build build --target zene AudioWorkerWakeTest -j4` (temporary old notifier) | 0 |
+| `cd build/tests && ./AudioWorkerWakeTest theRenderSideWakeAllocatesNothingAndTakesNoMutex` (red) | **1** |
+| `git checkout -- src/core/AudioEngineWorkerThread.cpp` (restore product file) | 0 |
+| `cmake --build build --target zene AudioWorkerWakeTest -j4` (restored) | 0 |
 | `cd build/tests && ctest -R '^AudioWorkerWakeTest$' --output-on-failure` (restored) | 0 |
-| `python3 .../feature_check.py <worktree>` | 0 |
+| `cd build/tests && ./AudioWorkerWakeTest theRenderSideWakeAllocatesNothingAndTakesNoMutex` (restored) | 0 |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5468` | 0 |
 
-The red run's own output:
+The red run's output:
 
 ```
 FAIL!  : AudioWorkerWakeTest::theRenderSideWakeAllocatesNothingAndTakesNoMutex()
@@ -73,10 +75,9 @@ FAIL!  : AudioWorkerWakeTest::theRenderSideWakeAllocatesNothingAndTakesNoMutex()
 Totals: 2 passed, 1 failed, 0 skipped, 0 blacklisted, 0ms
 ```
 
-Logs in `/home/kruzzzzy/.config/kads/zene/state/runs/5468.r1/logs/`:
-`build-1-green.log`, `test-1-green.log`, `build-2-red.log`, `test-2-red.log`,
-`build-3-restored.log`, `test-3-restored-green.log`, `feature-check-1.log`, and the
-temporary change in `red-revert.patch`.
+The fixer's claimed log files and `red-revert.patch` were unavailable in the review
+environment. QA's independent command output is recorded in
+`/home/kruzzzzy/.config/kads/zene/state/runs/5468.review.r1/session.log`.
 
 The product fix commit is in this branch's history (`git branch --contains de249b1ecb`
 lists `050/m0-train-13` and later trains); the worktree was clean after the restore
@@ -87,8 +88,9 @@ lists `050/m0-train-13` and later trains); the worktree was clean after the rest
 - **Regression test fails with the product change reverted and passes with it (exit
   codes).** Proven above: the temporary restoration of the old wake shape makes
   `theRenderSideWakeAllocatesNothingAndTakesNoMutex` exit **1** ("allocated 2 time(s)"),
-  and after `git apply -R` the full `AudioWorkerWakeTest` exits **0**. No product change was
-  left in this session's diff; the fix is the existing commit `de249b1ecb`.
+  and after `git checkout -- src/core/AudioEngineWorkerThread.cpp` the full
+  `AudioWorkerWakeTest` exits **0**. No product change was left in QA's worktree; the fix is
+  the existing commit `de249b1ecb`.
 - **The test is deterministic: no wall-clock timing, sleeps or races.** The red/green case
   counts allocations and mutex calls around 256 real `wakeWorkers()` posts and checks the
   notify counter; it uses no clock and no sleep. (`quitRacingAWakeupAlwaysJoinsTheWorker`
