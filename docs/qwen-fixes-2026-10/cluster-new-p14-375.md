@@ -113,8 +113,8 @@ cmake --build build --target SampleClipWarpTest -j4            -> EXIT=0  (build
 ctest -R '^SampleClipWarpTest$' --output-on-failure            -> EXIT=0  (test-4-green.log)
 ```
 
-No product file is modified in the committed tree (`git status` clean apart from
-the report and test; `git diff` shows only the test).
+No product file is modified by this cluster: the committed diff is the test, its
+registration line and this report, and `git status` is clean.
 
 The whole `Warp` ctest family:
 
