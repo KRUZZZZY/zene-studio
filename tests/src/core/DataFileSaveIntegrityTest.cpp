@@ -25,6 +25,7 @@
 
 #include <QtTest>
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -298,6 +299,37 @@ private slots:
 	//! file that belongs to some other project. An unnamed load must leave that
 	//! temp exactly where it is and must not report a recovery it never made.
 	void unnamedDataFileLeavesTheWorkingDirectoryTempAlone();
+
+	//! Cluster new-p18-20. A complete .new older than a complete canonical file
+	//! cannot be the save that was interrupted: that save wrote the temp BEFORE
+	//! the canonical file existed in its current form, so a newer canonical was
+	//! written separately. Adopting the temp would replace the newer project
+	//! with a stale one. The newer project must stand and the temp must be kept.
+	void olderPendingSaveDoesNotReplaceANewerProject();
+
+	//! Cluster new-p18-20. A valid document of ANOTHER type at the sidecar path
+	//! is not this project's interrupted save. Adopting it replaces a song with
+	//! a template (or any other document). The project must stand, the temp must
+	//! be kept, and the refusal must be reported.
+	void pendingSaveOfAnotherDocumentTypeIsNotAdopted();
+
+	//! Cluster new-p18-20. Adoption used to rename the temp over the project
+	//! without the backup a completed save makes, so the previous version was
+	//! destroyed. Adoption must reproduce the completed save's end state: the
+	//! project holds the new content and <name>.bak holds the previous one.
+	void adoptionKeepsThePreviousProjectAsABackup();
+
+	//! Cluster new-p18-20. If the previous project cannot be backed up, the
+	//! recovery cannot preserve it while adopting. Both files must be left in
+	//! place (nothing destroyed) and the refusal reported, exactly as writeFile()
+	//! refuses a save whose backup cannot be staged.
+	void adoptionIsRefusedWhenTheBackupCannotBeMade();
+
+	//! Cluster new-p18-20. The backup step follows the same app/disablebackup
+	//! configuration writeFile() honours: with backups turned off, recovery
+	//! still adopts the temp and writes no .bak, so the option keeps its meaning
+	//! on the recovery path too.
+	void adoptionHonoursTheDisableBackupConfiguration();
 };
 
 #include "DataFileSaveIntegrityTestParts1.h"

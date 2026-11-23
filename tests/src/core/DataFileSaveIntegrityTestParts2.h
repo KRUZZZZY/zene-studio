@@ -261,3 +261,220 @@ void DataFileSaveIntegrityTest::successfulBackupReplacesTheOlderBackupAtomically
 	QVERIFY2( !QFileInfo::exists( bakTemp ),
 		"the staged backup was left behind after a successful save" );
 }
+
+namespace
+{
+
+//! A complete recognised song document whose song element carries \a probe.
+QString pendingSong( const QString& probe )
+{
+	return QStringLiteral( "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+		"<zene-project version=\"40\" type=\"song\"><head/>"
+		"<song s5probe=\"%1\"><trackcontainer type=\"song\"/></song>"
+		"</zene-project>\n" ).arg( probe );
+}
+
+//! Sets \a path's modification time to \a secondsSinceEpoch, so the recovery's
+//! conflict test runs on an injected order instead of on wall-clock timing.
+bool setModifiedTime( const QString& path, qint64 secondsSinceEpoch )
+{
+	QFile file( path );
+	if( !file.open( QIODevice::ReadWrite ) )
+	{
+		return false;
+	}
+	return file.setFileTime( QDateTime::fromSecsSinceEpoch( secondsSinceEpoch ),
+		QFileDevice::FileModificationTime );
+}
+
+} // namespace
+
+void DataFileSaveIntegrityTest::olderPendingSaveDoesNotReplaceANewerProject() {
+	qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+	QTemporaryDir dir;
+	QVERIFY( dir.isValid() );
+	ConfigManager::inst()->setValue( QStringLiteral( "app" ),
+		QStringLiteral( "disablebackup" ), QStringLiteral( "0" ) );
+
+	const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+	const QString temp = target + QStringLiteral( ".new" );
+
+	DataFile first( DataFile::Type::SongProject );
+	first.content().setAttribute( "s5probe", "newer" );
+	QVERIFY( first.writeFile( target ) );
+	const QString newerText = readText( target );
+
+	// A complete temp a save left behind. The canonical file was then updated
+	// separately, which the injected times state: the canonical is NEWER.
+	QVERIFY( writeText( temp, pendingSong( QStringLiteral( "stale" ) ) ) );
+	QVERIFY( setModifiedTime( temp, 1000000 ) );
+	QVERIFY( setModifiedTime( target, 2000000 ) );
+
+	QString report;
+	QString probe;
+	{
+		MessageRecorder recorder;
+		DataFile loaded( target );
+		report = recorder.messages();
+		probe = loaded.content().attribute( QStringLiteral( "s5probe" ) );
+	}
+
+	QVERIFY2( report.contains( QStringLiteral( "older than the project" ) ),
+		qPrintable( QStringLiteral( "no conflict report for a stale .new; captured: [%1]" ).arg( report ) ) );
+	QVERIFY2( QFile::exists( temp ), "the stale .new was consumed over the newer project" );
+	QCOMPARE( probe, QStringLiteral( "newer" ) );
+	QCOMPARE( readText( target ), newerText );
+}
+void DataFileSaveIntegrityTest::pendingSaveOfAnotherDocumentTypeIsNotAdopted() {
+	qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+	QTemporaryDir dir;
+	QVERIFY( dir.isValid() );
+	ConfigManager::inst()->setValue( QStringLiteral( "app" ),
+		QStringLiteral( "disablebackup" ), QStringLiteral( "0" ) );
+
+	const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+	const QString temp = target + QStringLiteral( ".new" );
+
+	DataFile first( DataFile::Type::SongProject );
+	first.content().setAttribute( "s5probe", "project" );
+	QVERIFY( first.writeFile( target ) );
+	const QString projectText = readText( target );
+
+	// Complete and recognised, but a TEMPLATE - not this project's save.
+	QVERIFY( writeText( temp, QStringLiteral(
+		"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+		"<zene-project version=\"40\" type=\"songtemplate\"><head/>"
+		"<songtemplate s5probe=\"template\"/></zene-project>\n" ) ) );
+	// Newer than the project, so only the type check can refuse it.
+	QVERIFY( setModifiedTime( target, 1000000 ) );
+	QVERIFY( setModifiedTime( temp, 2000000 ) );
+
+	QString report;
+	QString probe;
+	{
+		MessageRecorder recorder;
+		DataFile loaded( target );
+		report = recorder.messages();
+		probe = loaded.content().attribute( QStringLiteral( "s5probe" ) );
+	}
+
+	QVERIFY2( report.contains( QStringLiteral( "is not this project's save" ) ),
+		qPrintable( QStringLiteral( "no type-mismatch report; captured: [%1]" ).arg( report ) ) );
+	QVERIFY2( QFile::exists( temp ), "the other-type .new was consumed over the project" );
+	QCOMPARE( probe, QStringLiteral( "project" ) );
+	QCOMPARE( readText( target ), projectText );
+}
+void DataFileSaveIntegrityTest::adoptionKeepsThePreviousProjectAsABackup() {
+	qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+	QTemporaryDir dir;
+	QVERIFY( dir.isValid() );
+	ConfigManager::inst()->setValue( QStringLiteral( "app" ),
+		QStringLiteral( "disablebackup" ), QStringLiteral( "0" ) );
+
+	const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+	const QString temp = target + QStringLiteral( ".new" );
+	const QString bak = target + QStringLiteral( ".bak" );
+
+	DataFile first( DataFile::Type::SongProject );
+	first.content().setAttribute( "s5probe", "old" );
+	QVERIFY( first.writeFile( target ) );
+	const QString oldText = readText( target );
+
+	// The interrupted save's complete temp, as a real crash leaves it.
+	DataFile second( DataFile::Type::SongProject );
+	second.content().setAttribute( "s5probe", "new" );
+	QVERIFY( !saveWithFault( second, target, QStringLiteral( "after-write" ) ) );
+	QVERIFY( QFile::exists( temp ) );
+	QVERIFY( setModifiedTime( target, 1000000 ) );
+	QVERIFY( setModifiedTime( temp, 2000000 ) );
+
+	QString probe;
+	{
+		MessageRecorder recorder;
+		DataFile loaded( target );
+		probe = loaded.content().attribute( QStringLiteral( "s5probe" ) );
+		QVERIFY2( recorder.messages().contains( QStringLiteral( "Recovered interrupted save" ) ),
+			qPrintable( QStringLiteral( "adoption printed no report; captured: [%1]" )
+				.arg( recorder.messages() ) ) );
+	}
+
+	QCOMPARE( probe, QStringLiteral( "new" ) );
+	QVERIFY2( !QFile::exists( temp ), "the adopted .new was not consumed" );
+	// A completed save would have left the previous version here before the
+	// rename; recovery must not be the one path that destroys it.
+	QVERIFY2( QFile::exists( bak ), "adoption destroyed the previous project with no backup" );
+	QCOMPARE( readText( bak ), oldText );
+}
+void DataFileSaveIntegrityTest::adoptionIsRefusedWhenTheBackupCannotBeMade() {
+	qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+	QTemporaryDir dir;
+	QVERIFY( dir.isValid() );
+	ConfigManager::inst()->setValue( QStringLiteral( "app" ),
+		QStringLiteral( "disablebackup" ), QStringLiteral( "0" ) );
+
+	const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+	const QString temp = target + QStringLiteral( ".new" );
+
+	DataFile first( DataFile::Type::SongProject );
+	first.content().setAttribute( "s5probe", "old" );
+	QVERIFY( first.writeFile( target ) );
+	const QString oldText = readText( target );
+
+	QVERIFY( writeText( temp, pendingSong( QStringLiteral( "pending" ) ) ) );
+	QVERIFY( setModifiedTime( target, 1000000 ) );
+	QVERIFY( setModifiedTime( temp, 2000000 ) );
+	// Occupy the backup staging name, as failedBackupCopyKeepsThePreviousBackup
+	// does for a save, so no backup can be produced.
+	QVERIFY( occupy( target + QStringLiteral( ".bak.new" ) ) );
+
+	QString report;
+	QString probe;
+	{
+		MessageRecorder recorder;
+		DataFile loaded( target );
+		report = recorder.messages();
+		probe = loaded.content().attribute( QStringLiteral( "s5probe" ) );
+	}
+
+	QVERIFY2( report.contains( QStringLiteral( "could not back up" ) ),
+		qPrintable( QStringLiteral( "no backup-failure report; captured: [%1]" ).arg( report ) ) );
+	QVERIFY2( QFile::exists( temp ), "the .new was consumed although its predecessor was not preserved" );
+	QCOMPARE( probe, QStringLiteral( "old" ) );
+	QCOMPARE( readText( target ), oldText );
+}
+void DataFileSaveIntegrityTest::adoptionHonoursTheDisableBackupConfiguration() {
+	qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+	QTemporaryDir dir;
+	QVERIFY( dir.isValid() );
+	ConfigManager::inst()->setValue( QStringLiteral( "app" ),
+		QStringLiteral( "disablebackup" ), QStringLiteral( "0" ) );
+
+	const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+	const QString temp = target + QStringLiteral( ".new" );
+	const QString bak = target + QStringLiteral( ".bak" );
+
+	DataFile first( DataFile::Type::SongProject );
+	first.content().setAttribute( "s5probe", "old" );
+	QVERIFY( first.writeFile( target ) );
+	QVERIFY( !QFileInfo::exists( bak ) );
+
+	QVERIFY( writeText( temp, pendingSong( QStringLiteral( "new" ) ) ) );
+	QVERIFY( setModifiedTime( target, 1000000 ) );
+	QVERIFY( setModifiedTime( temp, 2000000 ) );
+
+	ConfigManager::inst()->setValue( QStringLiteral( "app" ),
+		QStringLiteral( "disablebackup" ), QStringLiteral( "1" ) );
+	QString probe;
+	{
+		MessageRecorder recorder;
+		DataFile loaded( target );
+		probe = loaded.content().attribute( QStringLiteral( "s5probe" ) );
+	}
+	ConfigManager::inst()->setValue( QStringLiteral( "app" ),
+		QStringLiteral( "disablebackup" ), QStringLiteral( "0" ) );
+
+	QCOMPARE( probe, QStringLiteral( "new" ) );
+	QVERIFY2( !QFile::exists( temp ), "the adopted .new was not consumed" );
+	QVERIFY2( !QFileInfo::exists( bak ),
+		"recovery wrote a backup although app/disablebackup is set" );
+}
