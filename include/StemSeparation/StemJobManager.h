@@ -190,7 +190,9 @@ private:
 	static bool prepareJob(const std::shared_ptr<SharedState>& state, const std::shared_ptr<Job>& job);
 	//! The loader step of runJob (submitFrom): false when it ended the job.
 	static bool loadMix(const std::shared_ptr<SharedState>& state, const std::shared_ptr<Job>& job);
-	//! Ends @a job as failed with @a error, on the worker.
+	//! Ends @a job as failed with @a error, on the worker - unless it has already
+	//! ended: the first terminal state stands, so a throw that arrives after the
+	//! status switch cannot publish a second end for the same job.
 	static void failJob(const std::shared_ptr<SharedState>& state, const std::shared_ptr<Job>& job, const QString& error);
 	int enqueue(std::shared_ptr<Job> job);
 	//! The worker's signals: queued to this manager, dropped once it is destroyed.

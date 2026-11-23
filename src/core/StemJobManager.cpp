@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <chrono>
 #include <deque>
+#include <exception>
 #include <functional>
 #include <thread>
 
@@ -88,7 +89,10 @@ StemJobManager::StemJobManager(QObject* parent) :
 		// The backend is native code that can overflow a stack; sigaltstack()
 		// is per-thread, so register on this thread before workerLoop() calls it.
 		crashreporter::installAlternateStackForCurrentThread();
-		workerLoop(state);
+		// Last resort: nothing may escape a detached thread's entry function, since
+		// std::terminate would end the whole DAW. workerLoop() already ends a failed
+		// JOB on a throw; this one covers the loop itself (a mutex or the wait).
+		try { workerLoop(state); } catch (...) { }
 	}).detach();
 	reportToTaskArea();
 }
@@ -515,7 +519,13 @@ void StemJobManager::workerLoop(const std::shared_ptr<SharedState>& state)
 		}
 		else
 		{
-			runJob(state, job);
+			// The backend and the provisioner are native code: a corrupt model, a
+			// failed inference or an allocation error can surface as a throw. It
+			// ends THIS job; the worker lives on, because the jobs queued behind
+			// it are the user's next splits.
+			try { runJob(state, job); }
+			catch (const std::exception& thrown) { failJob(state, job, QString::fromUtf8(thrown.what())); }
+			catch (...) { failJob(state, job, QStringLiteral("the stem-separation backend threw an exception")); }
 		}
 		// The input is read by this worker only and is spent once the job has ended, so a
 		// finished job keeps only its result rather than its whole source mix as well.
@@ -530,11 +540,18 @@ void StemJobManager::workerLoop(const std::shared_ptr<SharedState>& state)
 
 void StemJobManager::failJob(const std::shared_ptr<SharedState>& state, const std::shared_ptr<Job>& job, const QString& error)
 {
-	{
-		QMutexLocker locker(&state->mutex);
-		job->error = error;
-		job->state.store(State::Failed);
-	}
+	// A job that has ended fetches nothing: a throw out of the provisioner skips
+	// the clear that follows its call, and the job would report a download forever.
+	job->fetchingModel.store(false);
+	QMutexLocker locker(&state->mutex);
+	// A throw can arrive after the status switch has already ended the job, and a
+	// listener must not hear about one job's end twice: the first terminal state
+	// stands, so this is the one place that decides whether to publish.
+	const State current = job->state.load();
+	if (current == State::Completed || current == State::Cancelled || current == State::Failed) { return; }
+	job->error = error;
+	job->state.store(State::Failed);
+	locker.unlock();
 	emitJobFailed(state, job->id, error);
 }
 
