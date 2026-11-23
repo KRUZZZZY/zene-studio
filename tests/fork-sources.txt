@@ -4028,6 +4028,9 @@ tests/src/core/WorkerAltStackTest.cpp
 # Q050-224.2: the crash report's raw frame sequence proven against a real fault (present,
 # bounded, starts at the crash site, survives a fault inside the loader).
 tests/src/core/CrashReporterFramesTest.cpp
+docs/050-features/Q050-224.2.md
+# Q050-224.2 (stage 2/4): verification report with acceptance evidence and self-check.
+docs/qwen-fixes-2026-10/cluster-Q050-224.2.md
 # cluster new-p10-541: BitInvader's loadSettings clamp and refusal regression.
 tests/src/plugins/BitInvaderLoadSettingsTest.cpp
 tests/src/core/AudioOssDeviceConfigTest.cpp

@@ -252,6 +252,11 @@ version=0.1.0-alpha
 platform=Linux x86_64
 compiler=GCC 13.3.0
 project=/path/to/the/project.mmp
+frames=10             # 0..kMaxCrashFrames raw addresses, nearest frame first (Q050-224.2)
+frame[0]=0x5589894369b0
+frame[1]=0x55898943981b
+...
+frame[9]=0x5589894368d5
 ```
 
 - `fault_addr` comes from `si_addr` and is only meaningful for the synchronous
@@ -268,6 +273,46 @@ project=/path/to/the/project.mmp
   each load path — the argv load (`main.cpp:996`), the render load
   (`main.cpp:760`) and the script load (`main.cpp:814`) — so a crash inside a
   modal dialog raised during the load still names the file.
+- `frames`/`frame[i]` are the RAW STACK (§2.7): instruction addresses, never
+  symbolised and never module-resolved, up to `kMaxCrashFrames = 24` of them,
+  nearest first. `frame[0]` is the faulting instruction itself where the
+  architecture exposes one, so the sequence always starts at the crash site. The
+  block is additive: a reader that only wants the named fields below/above is
+  unaffected, and a `frames=` line that is absent means this build or platform
+  captured none.
+
+### 2.7 Raw stack context (Q050-224.2, stage 2 of Q050-224)
+
+The report preserves context and refuses to interpret it. `captureFrames()`
+(`src/core/CrashReporterFormat.cpp`) is called from the handler with the signal
+context; it writes the faulting instruction first and then walks the crashing
+thread's stack with `_Unwind_Backtrace`, keeping at most `kMaxCrashFrames`
+addresses. `appendFrames()` writes them through the same capped appenders as
+every other field. There is no `dladdr`, no `backtrace_symbols`, no `.symtab`
+read, no `maps` parse and no module lookup anywhere in the handler: the
+addresses are raw, and a reader resolves them with debug symbols for the build
+the report names in `version=`/`platform=`/`compiler=`.
+
+Why the walk is safe here, and where the argument stops:
+
+- **No allocation, no I/O, no lock of ours.** The unwinder reads the thread's
+  unwind tables; nothing in this path builds a container, formats a string or
+  touches a file.
+- **Bounded, not merely finite.** The callback returns `_URC_END_OF_STACK` once
+  the budget is full, so a corrupt or cyclic unwind ends at 24 steps rather than
+  spinning, and the frame lines cannot push the report past `kMaxReportBytes`.
+- **The loader's lock is recursive.** Resolving an FDE consults the loaded
+  modules through the loader, whose lock glibc (`__rtld_lock_define_recursive`)
+  and musl define recursively. A fault on the thread that already holds it —
+  i.e. during plug-in loading — therefore re-enters instead of deadlocking.
+  `CrashReporterFramesTest::crash_while_the_loader_is_busy_still_reports` puts a
+  child in exactly that state and asserts a bounded wait, a written report and
+  death by `SIGSEGV`.
+- **What it cannot promise.** A crash that corrupts the loader's own structures
+  can yield fewer frames or none; Darwin's unwinder stops at its signal
+  trampoline, so the interrupted call chain may be missing there (frame 0, the
+  faulting instruction, is still present); Windows captures nothing, as
+  everywhere else in this module.
 
 ---
 
