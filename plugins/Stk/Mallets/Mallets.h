@@ -233,14 +233,20 @@ private:
 			float _hardness, float _position, float _modulator, float _crossfade,
 			float _pressure, float _speed ) const;
 
-	//! The prepared voices of this instrument. The pool belongs to the
-	//! instrument, so the number of notes it voices at the same time is the
+	//! The prepared voices of this instrument, published to the render thread
+	//! through a lock-free atomic pointer. The render thread only loads the
+	//! pointer and claims a voice of the pool; the sample-rate-change slot
+	//! stores a fully built pool. An atomic pointer is required because
+	//! playNoteImpl() reads it on the audio thread while the control thread
+	//! replaces it. The number of notes it voices at the same time is the
 	//! instrument's own limit and no other instrument can take its voices.
-	std::unique_ptr<MalletsVoicePool> m_voicePool;
+	std::atomic<MalletsVoicePool*> m_voicePool{nullptr};
 
-	//! Pools of an earlier sample rate. They stay alive while notes still
-	//! hold a voice of theirs.
-	std::vector<std::unique_ptr<MalletsVoicePool>> m_retiredPools;
+	//! Every pool this instrument built: the current one and the pools of an
+	//! earlier sample rate that sustained notes still render through. Owning
+	//! them here keeps the pointed-to pool alive for as long as any note may
+	//! hold one of its voices. Control thread only.
+	std::vector<std::unique_ptr<MalletsVoicePool>> m_pools;
 
 	//! The one voice budget of the instrument. Every pool - the current one
 	//! and every retired one that still serves a sustained note - draws from
