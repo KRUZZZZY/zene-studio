@@ -93,25 +93,36 @@ Fresh RED/GREEN with the product patch reversed and restored (logs in
   complexity "no new item in your files", file-length "no new item in your files"), in 08-feature-check.log.
 
 ## Self-check
-- Fails without the fix, passes with it: step 4b above, red EXIT=8 and green EXIT=0.
-- Deterministic: no sleeps or timing. It uses the `resizeAutomationScratchForTest` seam, the allocation probe
-  (`test::tlCountAllocations`), and fires the drain timer's `timeout` synchronously with `Qt::DirectConnection`.
-- Fix at the cause, siblings checked: all four former overflow sites are covered by the single check. Values and
-  inner were redone; recording clips were redone; `m_oldAutomatedValues` and `m_recordedModels` grew. The last two
-  can no longer grow on the render path, because the hold check makes sure their capacity covers this tick's values
-  and clips (recorded models are at most the clips). The control-path redo is kept as before. The only caller of
+- The regression test FAILS with the product change reverted and PASSES with it: fresh round-2 step 4b above —
+  RED `ctest ...` TEST_EXIT=8 with `Actual (overflowAllocations): 86`
+  (04-test-red.log), GREEN TEST_EXIT=0, "100% tests passed out of 1" (06-test-green.log). The reverts/applies of
+  `logs/fix.patch` printed REVERT_EXIT=0 and APPLY_EXIT=0, and both rebuilds BUILD_EXIT=0 (03-build-red.log,
+  05-build-green.log). The manifest in `logs/proof.json` records red_exit 8 and green_exit 0.
+- Deterministic: no wall-clock timing, sleeps or races. The test uses the `resizeAutomationScratchForTest`
+  capacity seam, the `test::tlCountAllocations` allocation probe, and fires the drain timer's `timeout`
+  synchronously with `Qt::DirectConnection`. No `QTest::qWait`, sleep or elapsed-time assertion is involved.
+- Fix at the cause and complete: all four former overflow sites are covered by one check. Values and inner were
+  redone; recording clips were redone; `m_oldAutomatedValues` and `m_recordedModels` grew. The last two can no
+  longer grow on the render path, because the hold check makes sure their capacity covers this tick's values and
+  clips (recorded models are at most the clips). The control-path redo is kept as before. The only caller of
   `processAutomations` is `processNextBuffer` (`Song.cpp:652`).
-- No collateral damage: no file format, save or load change. The off-render path behaves exactly as before. No
-  limit was added. No control command was added.
+- No collateral damage: no file format, save or load change; the off-render path behaves exactly as before; no
+  limit was added and no control command was added. `git diff --name-only 200c5b1ff6..HEAD` lists only
+  `docs/qwen-fixes-2026-10/cluster-new-p16-231.md`, `include/Song.h`, `src/core/Song.cpp`,
+  `tests/src/core/AutomationRenderAllocationTest.cpp` and `tests/upstream-modifications.txt`.
+- ALREADY-FIXED / FALSE-POSITIVE: not applicable; the verdict is FIXED.
+- Sibling commands (app.about, app.ask, app.help, app.online_help, app.task_cancel, app.tasks, app.tour,
+  app.tours, app.update_check_get, app.update_check_run, app.update_check_set, app.version, app.whats_new,
+  arrangement.fit_tracks, arrangement.get_state): this fix changes no command file and adds no command. Those
+  test files come from earlier commits on this branch, and the diff of this fix (listed above) does not touch
+  them, so each stays consistent.
 - Realtime: the new render-path code does relaxed atomic stores and integer comparisons only. Growth happens on the
   control thread under `requestChangesGuard`. Local TSan does not run here. The design argument is that the flag is
   an atomic, and the scratch is resized only with the render thread locked out, as `ensureAutomationScratchCapacity`
   already did.
-- ALREADY-FIXED / FALSE-POSITIVE reference: not applicable (FIXED).
-- Sibling commands (app.*, arrangement.*), as listed by submit_check: those test files come from earlier commits on
-  this branch. This fix changes no command file and adds no command.
 - GUI: no src/gui change. Transport, recording and undo state are not changed by this fix: a held tick only skips
-  that tick's automation work.
+  that tick's automation work. The state sequence the test drives (warm tick, reset, short capacity, four held
+  realtime periods, drain, post-drain periods) is recorded in `logs/proof.json` as the `state-sequence` artifact.
 
 ## Other findings
 - If a realtime overflow happened with no Qt event loop running on the song's thread (for example a headless
