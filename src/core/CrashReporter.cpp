@@ -133,6 +133,10 @@ void zeneCrashSignalHandler(int signum, siginfo_t* info, void* context)
 			break;
 	}
 	ci.programCounter = programCounterFrom(context);
+	// Raw frames, captured HERE rather than in the writer: the walk starts from
+	// the signal context and the crashing thread's own stack, and the writer is
+	// also the tests' entry point, which has neither. Bounded to kMaxCrashFrames.
+	ci.frameCount = captureFrames(context, ci.frames, kMaxCrashFrames);
 	ci.threadId = currentThreadId();
 	ci.processId = static_cast<unsigned long long>(::getpid());
 	ci.unixTime = static_cast<unsigned long long>(::time(nullptr));
@@ -517,6 +521,7 @@ bool writeReportIfIdle(const CrashInfo& info)
 		pos = appendCapped(buf, cap, pos, s_projectPath[s_projectSlot.load(std::memory_order_acquire)],
 			kMaxProjectPathBytes);
 		pos = appendStr(buf, cap, pos, "\n");
+		pos = appendFrames(buf, cap, pos, info.frames, info.frameCount);
 
 		wrote = writeReportFile(fd, subFd, buf, pos);
 	}

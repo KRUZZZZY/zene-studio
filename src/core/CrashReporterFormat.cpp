@@ -50,6 +50,7 @@
 #include <sys/types.h>
 #include <ucontext.h>
 #include <unistd.h>
+#include <unwind.h>
 #endif
 
 namespace lmms::crashreporter
@@ -187,6 +188,88 @@ unsigned long long currentThreadId()
 	return static_cast<unsigned long long>(::syscall(SYS_gettid));
 #endif
 }
+
+// ---- raw frames (Q050-224.2) -------------------------------------------------
+//
+// The frame walk is the platform's own table walk (_Unwind_Backtrace), which
+// reads the crashing thread's unwind tables: no allocation in here, no lock, no
+// I/O, and no symbol or module resolution - those belong to whoever reads the
+// report, in another process. The BOUND is the sink's capacity: once it is
+// full the callback returns _URC_END_OF_STACK, so a corrupt or cyclic unwind
+// spends at most kMaxCrashFrames steps and the handler cannot spin.
+
+namespace
+{
+
+struct FrameSink
+{
+	unsigned long long* out;
+	int capacity;
+	int count;
+};
+
+_Unwind_Reason_Code collectFrame(struct _Unwind_Context* context, void* argument)
+{
+	FrameSink* sink = static_cast<FrameSink*>(argument);
+	if (sink == nullptr || sink->count >= sink->capacity) { return _URC_END_OF_STACK; }
+	if (context != nullptr)
+	{
+		const unsigned long long ip =
+			static_cast<unsigned long long>(_Unwind_GetIP(context));
+		// Repeated addresses are KEPT: a recursive chain reaches the same call
+		// site at every depth, and folding those into one would hide the depth
+		// the report exists to show. Only an empty address is dropped.
+		if (ip != 0) { sink->out[sink->count++] = ip; }
+	}
+	return sink->count >= sink->capacity ? _URC_END_OF_STACK : _URC_NO_REASON;
+}
+
+} // namespace
+
+int captureFrames(void* context, unsigned long long* out, int capacity)
+{
+	if (out == nullptr || capacity <= 0) { return 0; }
+
+	// The faulting instruction first: the unwinder cannot always cross a signal
+	// frame (Darwin stops at the trampoline), and the crash site is the one
+	// address that must never be missing from the sequence.
+	int count = 0;
+	const unsigned long long pc = programCounterFrom(context);
+	if (pc != 0) { out[count++] = pc; }
+	if (count >= capacity) { return count; }
+
+	FrameSink sink{out, capacity, count};
+	_Unwind_Backtrace(&collectFrame, &sink);
+	return sink.count;
+}
+
+unsigned long appendFrames(char* buf, unsigned long cap, unsigned long pos,
+	const unsigned long long* frames, int count)
+{
+	pos = appendStr(buf, cap, pos, "frames=");
+	pos = appendUInt(buf, cap, pos,
+		static_cast<unsigned long long>(count > 0 ? count : 0));
+	pos = appendStr(buf, cap, pos, "\n");
+	for (int i = 0; i < count && frames != nullptr; ++i)
+	{
+		pos = appendStr(buf, cap, pos, "frame[");
+		pos = appendUInt(buf, cap, pos, static_cast<unsigned long long>(i));
+		pos = appendStr(buf, cap, pos, "]=");
+		pos = appendHex(buf, cap, pos, frames[i]);
+		pos = appendStr(buf, cap, pos, "\n");
+	}
+	return pos;
+}
+
+#else // LMMS_BUILD_WIN32
+
+// Windows installs no handler (see include/CrashReporter.h), so nothing captures
+// or formats frames there; these stubs exist so the module links wherever it is
+// compiled, exactly like the rest of the Windows half.
+int captureFrames(void*, unsigned long long*, int) { return 0; }
+
+unsigned long appendFrames(char* buf, unsigned long, unsigned long pos,
+	const unsigned long long*, int) { return pos; }
 
 #endif // LMMS_BUILD_WIN32
 

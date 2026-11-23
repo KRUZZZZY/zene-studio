@@ -2136,6 +2136,14 @@ list(APPEND LMMS_TESTS src/core/SurroundDevicePathTest.cpp)
 # death by SIGSEGV. The other three launch sites are covered by the source gate
 # tests/worker-altstack-registration-check.py.
 list(APPEND LMMS_TESTS src/core/WorkerAltStackTest.cpp)
+# Q050-224.2: the crash report's RAW context - a real fault's report carries the
+# thread id, the faulting address, the PC and a bounded sequence of frame
+# addresses in its own binary (CrashReporterTest.cpp is an inherited file and
+# adding them there broke its 500-code-line ratchet). CrashReporterTest stays the
+# owner of the report/offer lifecycle; this is the frame sequence: present and
+# starting at the crash site, capped exactly at kMaxCrashFrames on a 200-deep
+# stack, and still written when the fault lands while the loader's lock is held.
+list(APPEND LMMS_TESTS src/core/CrashReporterFramesTest.cpp)
 
 # Q050-054.1: MIDI takes recorded on armed instrument tracks by transport.record - the capture queue,
 # plain and loop passes, undo/redo, the active-take model and save/load (core); the Record menu entry

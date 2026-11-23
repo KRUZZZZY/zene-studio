@@ -50,9 +50,25 @@ namespace lmms::crashreporter
 // arbitrary state is corrupt.  It therefore calls ONLY functions on POSIX's
 // async-signal-safe list:
 //
-//     openat(), write(), close(), raise(), sigaction(), sigemptyset(),
-//     getpid(), time()
-// plus the raw syscall gettid(), which allocates nothing and takes no lock.
+//     openat(), mkdirat(), unlinkat(), write(), close(), raise(), sigaction(),
+//     sigemptyset(), sigprocmask(), getpid(), time()
+// plus two calls that are NOT on that list and are named here rather than
+// glossed over:
+//
+//   * the raw syscall gettid(), which allocates nothing and takes no lock;
+//   * _Unwind_Backtrace()/_Unwind_GetIP() (Q050-224.2), the frame walk.  It is
+//     the platform's own table walk over the crashing thread's stack: no
+//     allocation by our code, no I/O, no symbol or module lookup - the addresses
+//     are written raw and resolved by whoever reads the report, elsewhere.  It
+//     does consult the loaded modules' unwind tables, through the loader's lock;
+//     glibc and musl define that lock RECURSIVE, so a fault on the thread that
+//     already holds it (plug-in loading) reports instead of deadlocking, which
+//     CrashReporterFramesTest::crash_while_the_loader_is_busy_still_reports
+//     measures.  What makes the walk bounded is its own frame budget: the
+//     callback returns _URC_END_OF_STACK once kMaxCrashFrames addresses are
+//     kept, so a corrupt or cyclic unwind stops at the budget instead of
+//     spinning.  A platform that cannot walk (Windows; Darwin stops at the
+//     signal trampoline) yields fewer frames, never a different contract.
 //
 // There is no malloc, no C++ object construction, no stdio, no mutex, no Qt
 // call and no unbounded loop in the handler path.  The report is assembled in
@@ -121,6 +137,13 @@ constexpr unsigned long kMaxReportBytes = 4096;
 // Hard cap on the "currently open project" hint kept for the handler.
 constexpr unsigned long kMaxProjectPathBytes = 512;
 
+// Hard cap on the raw frame addresses one report carries (Q050-224.2).  The
+// frame walk stops at this budget, which is what keeps a corrupt or cyclic
+// unwind bounded: 24 lines of at most 29 bytes fit kMaxReportBytes with every
+// other field at its widest, so the byte cap stays reachable only in principle.
+// Proven by CrashReporterFramesTest::frames_are_capped_on_a_deep_crash.
+constexpr int kMaxCrashFrames = 24;
+
 // POD snapshot of a crash.  Trivially copyable on purpose: it is filled in
 // inside the handler and passed by const reference.
 struct CrashInfo
@@ -131,6 +154,15 @@ struct CrashInfo
 	// Instruction pointer from the signal ucontext where the architecture
 	// exposes it (x86_64, aarch64); 0 elsewhere.
 	unsigned long long programCounter = 0;
+	// Raw instruction addresses, nearest frame first, captured in the handler
+	// with NO symbol or module resolution (that belongs to whoever reads the
+	// report, off the crashing process).  frame[0] is the faulting instruction
+	// itself where the architecture exposes one, so the sequence always starts
+	// at the crash site; the rest are the unwinder's return addresses, and a
+	// recursive chain repeats one address per depth on purpose.  Kept addresses
+	// are never 0.
+	unsigned long long frames[kMaxCrashFrames] = {};
+	int frameCount = 0;
 	unsigned long long threadId = 0;
 	unsigned long long processId = 0;
 	unsigned long long unixTime = 0;

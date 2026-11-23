@@ -72,6 +72,25 @@ const char* signalName(int sig);
 //! architecture exposes it (x86_64, aarch64); 0 elsewhere.
 unsigned long long programCounterFrom(void* context);
 
+//! Fill \p out with at most \p capacity raw instruction addresses of the calling
+//! thread, nearest frame first, and return how many were kept (Q050-224.2).
+//!
+//! \p context is the signal ucontext the handler was given, or nullptr outside a
+//! signal: the faulting instruction it exposes becomes frame 0, so the sequence
+//! starts at the crash site, and the platform unwinder supplies the callers.
+//! Zero addresses are dropped and repeated ones are kept (a recursive chain
+//! reaches one call site at every depth). The walk stops as soon as \p capacity
+//! addresses are kept, which is the budget that keeps a corrupt or cyclic
+//! unwinding bounded. NO symbol or module resolution happens here - there is
+//! none in a signal handler - so these stay raw addresses.
+int captureFrames(void* context, unsigned long long* out, int capacity);
+
+//! Appends the report's frame block: "frames=<count>\n" and one
+//! "frame[<i>]=0x<hex>\n" line per address, bounding every write against \p cap
+//! exactly like the other appenders. Returns the new position.
+unsigned long appendFrames(char* buf, unsigned long cap, unsigned long pos,
+	const unsigned long long* frames, int count);
+
 //! The thread id, straight from the kernel (gettid); 0 on Darwin, which has no
 //! declared syscall() to reach one through - see the note in the .cpp.
 unsigned long long currentThreadId();

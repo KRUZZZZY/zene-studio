@@ -2973,6 +2973,7 @@ tests/src/core/ControllerConversionTest.cpp
 tests/src/core/ControllerScriptTest.cpp
 tests/src/core/ControllerSurfaceTest.cpp
 tests/src/core/CrashReporterArmTest.cpp
+tests/src/core/CrashReporterFramesTest.cpp
 tests/src/core/CrashReporterTest.cpp
 tests/src/core/CustomAccessTest.cpp
 tests/src/core/CustomAccessTestParts1.h
