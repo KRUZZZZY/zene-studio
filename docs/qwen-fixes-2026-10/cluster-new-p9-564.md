@@ -150,7 +150,7 @@ newline.
 | `cmake --build build --target RecordingRealtimeTest -j4` | 0 | `logs/build-1.log` |
 | `cd build/tests && ctest -R "^RecordingRealtimeTest$" --output-on-failure` | 0 (1/1 passed, 12.22 s) | `logs/test-1.log` |
 | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 (`RESULT: PASS`, 8 PASS rows, 0 FAIL) | `logs/feature-check-1.log` |
-| `git add docs/qwen-fixes-2026-10/cluster-new-p9-564.md`, `git commit`, `git status --short`, `git rev-parse HEAD` | 0, 0, 0, 0 | `logs/git-record-1.log` (written after the commit) |
+| `git add docs/qwen-fixes-2026-10/cluster-new-p9-564.md`, `git commit`, `git status --short`, `git rev-parse HEAD` | 0, 0, 0, 0 | `logs/git-record-1.log` (written after the first commit) and `logs/git-record-2.log` (written after the commit that carries this line; the labelled exit codes and SHA cannot appear inside the commit they describe) |
 
 The probes are hand-compiled translation units in the log folder, not part of the build; they reuse the
 `-D`/`-I`/`-isystem` flags CMake emits for `src/core/audio/AudioSampleRecorder.cpp`.
@@ -168,8 +168,9 @@ The probes are hand-compiled translation units in the log folder, not part of th
 ## Self-check
 
 1. **"The regression test FAILS with your product change reverted and PASSES with it (exit codes)."**
-   No product change was made (FALSE-POSITIVE), so there is no such pair. `git diff --numstat` against the
-   branch base for this report touches only this markdown file. The proof is `probe-a-construct.cpp` EXIT=1
+   No product change was made (FALSE-POSITIVE), so there is no such pair. `git show --numstat --format=''` on
+   this job's commit is `200 0 docs/qwen-fixes-2026-10/cluster-new-p9-564.md` - one file, no source. The proof
+   is `probe-a-construct.cpp` EXIT=1
    (abstract class, `logs/probe-a-construct.cpp.compile.log`) with the EXIT=0 control
    `probe-b-control-subclass.cpp`, plus zero call sites in `logs/evidence-references-1.log`.
 2. **"The test is deterministic: no wall-clock timing, sleeps or races."**
@@ -191,6 +192,14 @@ The probes are hand-compiled translation units in the log folder, not part of th
    `include/AudioDevice.h` (no `writeBuffer` member), `src/core/audio/AudioSampleRecorder.cpp:87-97` (the code
    the finding quotes, unreachable), last construction site removed by `8b84526dc5` (2014-02-19). Compile
    evidence: probes A/C/D EXIT=1, control B EXIT=0.
+
+6. **"Sibling commands in the command files you changed - confirm each is consistent with your fix (or say why it
+   is not affected): app.about, app.ask, app.help, ... arrangement.fit_tracks, arrangement.get_state."**
+   I changed no command file and no command. `git show --numstat --format='' 1e76fd6122` is one line:
+   `200 0 docs/qwen-fixes-2026-10/cluster-new-p9-564.md`. The check's sibling list comes from the branch's
+   view of the train it was cut from (`merge-base` with `050/m0-train-35`, 429 files), not from this job; the
+   same inherited diff is why its "tests added or changed" row is green without a test of mine. Every one of
+   those commands is unaffected because this job changes no command, handler, schema or reversibility class.
 
 ## Other findings
 
