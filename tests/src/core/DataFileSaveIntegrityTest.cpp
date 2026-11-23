@@ -25,6 +25,8 @@
 
 #include <QtTest>
 
+#include <memory>
+
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -35,6 +37,9 @@
 
 #include "ConfigManager.h"
 #include "DataFile.h"
+#include "DataFileSaveLock.h"
+#include "ProjectRevisions.h"
+#include "RevisionTimeline.h"
 #include "XmlDepthGuard.h"
 
 using namespace lmms;
@@ -373,6 +378,19 @@ private slots:
 	//! fail-closed on the same terms: an unusable lock means the temp stays
 	//! where it is, which is the harmless direction.
 	void unusableSaveLockFailsClosed();
+
+	//! Cluster new-p10-89, round 3. The lock is an RAII type a caller can hold
+	//! ACROSS a save: it is exclusive, it is released when it goes out of scope,
+	//! writeFile() given a held lock for the file it writes uses it (QLockFile is
+	//! not re-entrant for one process, so a second acquisition would refuse) and
+	//! leaves it held, and a lock held for another file is refused.
+	void aHeldSaveLockIsExclusiveAndHandedToWriteFile();
+
+	//! A restore rotates the revision set and replaces the project, so it must
+	//! not run while another instance's save holds the lock: both restore paths
+	//! (the keep-3 rotation ids and the timeline's other slots) refuse BEFORE
+	//! staging or rotating anything, and succeed once the lock is gone.
+	void restoreIsRefusedBeforeRotatingWhileASaveHoldsTheLock();
 };
 
 #include "DataFileSaveIntegrityTestParts1.h"

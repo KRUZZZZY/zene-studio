@@ -226,3 +226,95 @@ void DataFileSaveIntegrityTest::unusableSaveLockFailsClosed() {
 		| QFileDevice::WriteOwner | QFileDevice::ExeOwner ) );
 #endif
 }
+void DataFileSaveIntegrityTest::aHeldSaveLockIsExclusiveAndHandedToWriteFile() {
+	qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+	QTemporaryDir dir;
+	QVERIFY( dir.isValid() );
+	ConfigManager::inst()->setValue( QStringLiteral( "app" ),
+		QStringLiteral( "disablebackup" ), QStringLiteral( "0" ) );
+	const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+	const QString other = dir.filePath( QStringLiteral( "other.mmp" ) );
+	const QString lockPath = DataFileSaveLock::lockPathFor( target );
+	QCOMPARE( lockPath, target + QStringLiteral( ".save-lock" ) );
+	// The name a save writes is the name its lock is taken for.
+	QCOMPARE( DataFile::normalisedName( DataFile::Type::SongProject, dir.filePath( QStringLiteral( "bare" ) ) ),
+		dir.filePath( QStringLiteral( "bare" ) ) + QStringLiteral( ".mmpz" ) );
+	QCOMPARE( DataFile::normalisedName( DataFile::Type::SongProject, target ), target );
+
+	QString refusal;
+	std::unique_ptr<DataFileSaveLock> held = DataFileSaveLock::tryAcquire( target, &refusal );
+	QVERIFY2( held, qPrintable( refusal ) );
+	QVERIFY( QFile::exists( lockPath ) );
+
+	// Exclusive: a second contender in this process is refused with the reason.
+	QString second;
+	QVERIFY( !DataFileSaveLock::tryAcquire( target, &second ) );
+	QVERIFY2( second.contains( QStringLiteral( "another instance" ) ), qPrintable( second ) );
+
+	// A lock for another file is not this file's lock.
+	{
+		DataFile mismatched( DataFile::Type::SongProject );
+		QTest::ignoreMessage( QtWarningMsg, QRegularExpression( QStringLiteral( "was NOT saved" ) ) );
+		QVERIFY( !mismatched.writeFile( other, false, held.get() ) );
+		QVERIFY( !QFileInfo::exists( other ) );
+		QVERIFY( !QFileInfo::exists( other + QStringLiteral( ".new" ) ) );
+	}
+
+	// The held lock is used, not re-acquired: the save lands and the caller
+	// still owns the lock afterwards.
+	DataFile writer( DataFile::Type::SongProject );
+	QVERIFY2( writer.writeFile( target, false, held.get() ), "a save given its held lock failed" );
+	QVERIFY( readText( target ).contains( QStringLiteral( "<zene-project" ) ) );
+	QVERIFY2( QFile::exists( lockPath ), "writeFile released a lock it was only handed" );
+	QVERIFY( !DataFileSaveLock::tryAcquire( target ) );
+
+	held.reset();
+	QVERIFY2( !QFileInfo::exists( lockPath ), "releasing the lock left its sidecar behind" );
+	QVERIFY( DataFileSaveLock::tryAcquire( target ) );
+}
+void DataFileSaveIntegrityTest::restoreIsRefusedBeforeRotatingWhileASaveHoldsTheLock() {
+	QTemporaryDir dir;
+	QVERIFY( dir.isValid() );
+	const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+	const QString rev0 = control::projectRevisionPath( target, 0 );
+	const QString rev1 = control::projectRevisionPath( target, 1 );
+	QVERIFY( writeText( target, QStringLiteral( "live" ) ) );
+	QVERIFY( writeText( rev0, QStringLiteral( "zero" ) ) );
+	QVERIFY( writeText( rev1, QStringLiteral( "one" ) ) );
+	QVERIFY( writeText( target + QStringLiteral( ".bak" ), QStringLiteral( "bak" ) ) );
+
+	QString error;
+	{
+		const std::unique_ptr<DataFileSaveLock> writer = DataFileSaveLock::tryAcquire( target );
+		QVERIFY( writer );
+
+		// The keep-3 restore: refused, and NOTHING moved - no rotation of the
+		// set, no replacement, no staging file left beside the project.
+		QVERIFY2( !control::restoreProjectRevision( target, 0, &error ), "restore ran during a save" );
+		QVERIFY2( error.contains( QStringLiteral( "NOT restored" ) ), qPrintable( error ) );
+		// The timeline's own restore (the backup slot) takes the other path.
+		QVERIFY2( !control::restoreTimelineRevision( target, QString(), QStringLiteral( "backup" ), &error ),
+			"a timeline restore ran during a save" );
+		QVERIFY2( error.contains( QStringLiteral( "NOT restored" ) ), qPrintable( error ) );
+
+		QCOMPARE( readText( target ), QStringLiteral( "live" ) );
+		QCOMPARE( readText( rev0 ), QStringLiteral( "zero" ) );
+		QCOMPARE( readText( rev1 ), QStringLiteral( "one" ) );
+		QVERIFY( !QFileInfo::exists( control::projectRevisionPath( target, 2 ) ) );
+		QCOMPARE( readText( target + QStringLiteral( ".bak" ) ), QStringLiteral( "bak" ) );
+		QStringList left = QDir( dir.path() ).entryList( QDir::Files | QDir::Hidden );
+		left.removeAll( QStringLiteral( "song.mmp.save-lock" ) );
+		left.sort();
+		QCOMPARE( left, ( QStringList{ QStringLiteral( "song.mmp" ), QStringLiteral( "song.mmp.bak" ),
+			QStringLiteral( "song.mmp.rev0" ), QStringLiteral( "song.mmp.rev1" ) } ) );
+	}
+
+	// Lock gone: both restores proceed and rotate as they always did.
+	QVERIFY2( control::restoreProjectRevision( target, 0, &error ), qPrintable( error ) );
+	QCOMPARE( readText( target ), QStringLiteral( "zero" ) );
+	QCOMPARE( readText( rev0 ), QStringLiteral( "live" ) );
+	QVERIFY2( control::restoreTimelineRevision( target, QString(), QStringLiteral( "backup" ), &error ),
+		qPrintable( error ) );
+	QCOMPARE( readText( target ), QStringLiteral( "bak" ) );
+	QVERIFY( !QFileInfo::exists( target + QStringLiteral( ".save-lock" ) ) );
+}

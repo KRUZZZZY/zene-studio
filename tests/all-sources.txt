@@ -379,6 +379,7 @@ include/CrashReporter.h
 include/CrashReporterFormat.h
 include/CrossfadeEditorDialog.h
 include/DataFile.h
+include/DataFileSaveLock.h
 include/DawProjectInterchange.h
 include/Delay.h
 include/DeltaTap.h
@@ -2039,6 +2040,7 @@ src/core/CrashReporter.cpp
 src/core/CrashReporterFormat.cpp
 src/core/CrashReporterWindows.cpp
 src/core/DataFile.cpp
+src/core/DataFileSaveLock.cpp
 src/core/DawProjectModel.cpp
 src/core/DawProjectRead.cpp
 src/core/DawProjectReadShared.h

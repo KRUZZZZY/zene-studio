@@ -1314,7 +1314,9 @@ include/ProjectInfo.h
 include/ProjectKey.h
 include/ProjectMarkers.h
 include/ProjectRecovery.h
+include/DataFileSaveLock.h
 include/ProjectRevisions.h
+src/core/DataFileSaveLock.cpp
 include/ProjectSection.h
 include/ProjectSectionRegistry.h
 include/ProjectWorkspace.h

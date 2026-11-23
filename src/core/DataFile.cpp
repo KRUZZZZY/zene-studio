@@ -25,6 +25,7 @@
 
 
 #include "DataFile.h"
+#include "DataFileSaveLock.h"
 #include "XmlDepthGuard.h"
 
 #include <algorithm>
@@ -34,12 +35,12 @@
 #include <filesystem>  // renameOverwrite, Windows only (below)
 #endif
 #include <map>
+#include <memory>
 
 #include <QDebug>
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
-#include <QLockFile>
 #include <QMessageBox>
 #include <QRegularExpression>
 #include <QSaveFile>
@@ -192,56 +193,36 @@ inline bool replaceBackup( const QString & current, const QString & bak )
 	return true;
 }
 
-//! Cluster new-p10-89. The sidecar that says "a save of this file is in
-//! flight". A save writes <name>.new BEFORE it replaces <name>, so while it
-//! runs a COMPLETE temp sits on disk that is not an orphan at all: a second
-//! instance opening the project in that window would adopt it (recovery moves
-//! the temp over the canonical path), and the writer's own publish would then
-//! fail with its temp gone - a failed save, plus, when recovery ran before the
-//! writer's backup step, the previous <name>.bak overwritten by the recovered
-//! content, so the only older copy is lost. Both sides therefore take this lock:
-//! a save for the whole window in which a temp of its own exists, recovery
-//! before it touches any temp. QLockFile rather than a bare marker because it
-//! records the holder's pid: a writer that CRASHED leaves a lock the next
-//! tryLock() reports as stale and removes, so recovery stays available for real
-//! orphans and no dead marker has to be cleaned up by hand. Neither side waits -
-//! recovery runs inside an open and a save that blocks a session is a save that
-//! hangs - so both ask for the lock with no timeout and back out.
-QString saveLockPath( const QString & fileName )
+//! Cluster new-p10-89. A save writes <name>.new BEFORE it replaces <name>, so a
+//! COMPLETE temp can belong to a save still running in another instance, and
+//! recovery adopting it would take the temp its writer is about to publish
+//! (see DataFileSaveLock). The save holds <name>.save-lock for the whole window
+//! in which a temp of its own exists; recovery asks for it before touching any
+//! temp.
+//!
+//! \a held, when given, is the lock the caller already owns (project.save takes
+//! it before rotating the revision set). Returns the refusal text when this
+//! write may not proceed, empty when it may; \a own then keeps the lock this
+//! call took, if it had to take one.
+QString lockForWrite( const QString & fullName, DataFileSaveLock * held,
+	std::unique_ptr<DataFileSaveLock> * own )
 {
-	return fileName + QStringLiteral( ".save-lock" );
-}
-
-//! Cluster new-p10-89 round 2. QLockFile's default staleness is a 30 second
-//! age: a lock file whose mtime is older than that is reported as stale and
-//! REMOVED by the next contender, on the Qt versions whose isApparentlyStale()
-//! applies the age rule even to a live pid. A save that legitimately runs
-//! longer than that - a bundle copying its resources, a large project, a slow
-//! network share - would then have its own lock taken away from it, and the
-//! window this fix closes reopens: recovery adopts the live temp, or a second
-//! save writes a second temp beside the first. So both contenders pin the
-//! staleness criterion to "the holder's process is gone" and nothing else, by
-//! disabling the age rule. The cost is that a lock left by a writer that
-//! crashed on ANOTHER host on a shared folder is never reclaimed on time
-//! alone; both refusals name the sidecar, so it can be removed by hand, which
-//! is the safe direction for a save.
-void disableLockAge( QLockFile & lock )
-{
-	lock.setStaleLockTime( 0 );	// the int overload: Qt 5.15 has only this one
-}
-
-//! Why \a lock could not be taken, for a refusal the user can act on.
-QString saveLockRefusal( const QLockFile & lock )
-{
-	switch( lock.error() )
+	if( held != nullptr )
 	{
-	case QLockFile::LockFailedError:
-		return gui::SongEditor::tr( "another instance of Zene Studio is saving it right now" );
-	case QLockFile::PermissionError:
-		return gui::SongEditor::tr( "the folder it is in refuses the lock file" );
-	default:
-		return gui::SongEditor::tr( "the lock file it needs could not be created" );
+		if( held->fileName() == fullName ) { return QString(); }
+		return gui::SongEditor::tr( "%1 was NOT saved: the save lock that was taken is for %2, "
+			"not for this file." ).arg( fullName, held->fileName() );
 	}
+	QString refusal;
+	*own = DataFileSaveLock::tryAcquire( fullName, &refusal );
+	if( *own ) { return QString(); }
+	// FAIL CLOSED on every reason: another instance's save, a folder that
+	// refuses the lock file, anything else. Writing <name>.new with no lock in
+	// hand is exactly the state this fix exists to prevent.
+	return gui::SongEditor::tr( "%1 was NOT saved: %2. Nothing has been discarded, and no "
+		"other instance's save was disturbed. If no other instance is saving this "
+		"project, delete %3 and try again." )
+		.arg( fullName, refusal, DataFileSaveLock::lockPathFor( fullName ) );
 }
 
 #ifndef Q_OS_WIN
@@ -506,12 +487,13 @@ void recoverPendingWrite( const QString & fileName )
 	// nothing is touched while it is held. A writer that crashed holds nothing
 	// once QLockFile sees its pid is gone, and the adoption below runs as it
 	// always did - the recovery path stays open for real orphans.
-	QLockFile saveLock( saveLockPath( fileName ) );
-	disableLockAge( saveLock );	// a long save keeps its lock (see disableLockAge)
-	if( ! saveLock.tryLock( 0 ) )
+	QString lockRefusal;
+	const std::unique_ptr<DataFileSaveLock> saveLock =
+		DataFileSaveLock::tryAcquire( fileName, &lockRefusal );
+	if( ! saveLock )
 	{
 		qWarning() << "Found" << pending << "left by a save of" << fileName
-			<< "that may still be in flight (" << saveLockRefusal( saveLock ) << ")"
+			<< "that may still be in flight (" << lockRefusal << ")"
 			<< "- leaving it in place and keeping the project";
 		return;
 	}
@@ -806,9 +788,17 @@ bool DataFile::validate( QString extension )
 
 QString DataFile::nameWithExtension( const QString & _fn ) const
 {
+	return normalisedName( type(), _fn );
+}
+
+
+
+
+QString DataFile::normalisedName( Type type, const QString & _fn )
+{
 	const QString extension = _fn.section( '.', -1 );
 
-	switch( type() )
+	switch( type )
 	{
 		case Type::SongProject:
 			if( extension != "mmp" &&
@@ -987,7 +977,7 @@ bool DataFile::writePayload(const QString& tempPath, const QString& fullName,
 
 
 
-bool DataFile::writeFile(const QString& filename, bool withResources)
+bool DataFile::writeFile(const QString& filename, bool withResources, SaveLock* held)
 {
 	// Small lambda function for displaying errors
 	auto showError = [](QString title, QString body){
@@ -1066,22 +1056,15 @@ bool DataFile::writeFile(const QString& filename, bool withResources)
 
 	// Cluster new-p10-89. From here until <name>.new has been published, this
 	// temp is ours, and another instance opening the project must not adopt or
-	// discard it as an orphan. The lock is held by this local for exactly that
-	// window, so every way out of the function - a reported failure, an
-	// injected stop, a completed save - releases it.
-	QLockFile saveLock( saveLockPath( fullName ) );
-	disableLockAge( saveLock );	// a long save keeps its lock (see disableLockAge)
-	if ( !saveLock.tryLock( 0 ) )
+	// discard it as an orphan. The lock is the caller's (project.save rotates
+	// the revision set inside it) or this local's, so every way out of the
+	// function - a reported failure, an injected stop, a completed save -
+	// releases it.
+	std::unique_ptr<DataFileSaveLock> ownLock;
+	const QString lockRefusal = lockForWrite(fullName, held, &ownLock);
+	if (!lockRefusal.isEmpty())
 	{
-		// FAIL CLOSED on every reason: another instance's save, a folder that
-		// refuses the lock file, anything else. Writing <name>.new with no lock
-		// in hand is exactly the state this fix exists to prevent, so a save
-		// that cannot announce itself does not proceed.
-		showError(SongEditor::tr("Could not save file"),
-			SongEditor::tr("%1 was NOT saved: %2. Nothing has been discarded, and no "
-				"other instance's save was disturbed. If no other instance is saving "
-				"this project, delete %3 and try again.")
-				.arg(fullName, saveLockRefusal(saveLock), saveLockPath(fullName)));
+		showError(SongEditor::tr("Could not save file"), lockRefusal);
 		return false;
 	}
 

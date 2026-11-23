@@ -896,6 +896,7 @@ set(LMMS_SRCS
 	core/Controller.cpp
 	core/ControllerConnection.cpp
 	core/DataFile.cpp
+	core/DataFileSaveLock.cpp
 	${CMAKE_SOURCE_DIR}/include/XmlDepthGuard.h
 	core/DrumSynth.cpp
 	core/Effect.cpp
