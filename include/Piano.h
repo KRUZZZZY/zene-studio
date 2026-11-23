@@ -26,6 +26,7 @@
 #define LMMS_PIANO_H
 
 #include <array>
+#include <atomic>
 
 #include "Model.h"
 #include "Note.h"
@@ -52,7 +53,7 @@ public:
 
 	bool isKeyPressed(int key) const
 	{
-		return isValidKey(key) && m_pressedKeys[key];
+		return isValidKey(key) && m_pressedKeys[key].load(std::memory_order_relaxed);
 	}
 
 	void handleKeyPress(int key, int midiVelocity = -1);
@@ -84,7 +85,10 @@ private:
 
 	InstrumentTrack* m_instrumentTrack;
 	MidiEventProcessor* m_midiEvProc;
-	std::array<bool, NumKeys> m_pressedKeys = {};
+	/*! cluster new-p9-189: the audio thread publishes played keys here (sendNoteOn()/
+	 *  sendNoteOff()) while the GUI thread presses and reads them, so each key is atomic
+	 *  and the audio path never takes a lock. */
+	std::array<std::atomic<bool>, NumKeys> m_pressedKeys{};
 
 } ;
 

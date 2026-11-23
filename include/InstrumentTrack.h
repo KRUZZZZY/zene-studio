@@ -26,6 +26,7 @@
 #ifndef LMMS_INSTRUMENT_TRACK_H
 #define LMMS_INSTRUMENT_TRACK_H
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 
@@ -496,7 +497,16 @@ private:
 	NotePlayHandle* m_notes[NumKeys];
 	NotePlayHandleList m_sustainedNotes;
 
-	int m_runningMidiNotes[NumKeys];
+	/*! cluster new-p9-189: how many note-ons of each key are sounding. sendNoteOn()/
+	 *  sendNoteOff() run on the AUDIO thread and silenceAllNotes() runs on the control
+	 *  thread, so the count is atomic and never guarded by a mutex: a waiting audio
+	 *  thread would stall a period. */
+	std::array<std::atomic<int>, NumKeys> m_runningMidiNotes{};
+	/*! cluster new-p9-189: legacy lock, retained only as a test sentinel. The note paths
+	 *  publish their state through the atomics above and Piano's own atomic key state, so
+	 *  product code never acquires this lock; the regression test takes it with
+	 *  tryLock(0) to prove the audio path does not. Like AutomatableModel's
+	 *  m_valueBufferMutex, it must stay un-acquired. */
 	QMutex m_midiNotesMutex;
 
 	bool m_sustainPedalPressed;

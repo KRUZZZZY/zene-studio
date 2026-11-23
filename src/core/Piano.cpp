@@ -78,7 +78,7 @@ void Piano::setKeyState(int key, bool state)
 {
 	if (isValidKey(key))
 	{
-		m_pressedKeys[key] = state;
+		m_pressedKeys[key].store(state, std::memory_order_relaxed);
 
 		emit dataChanged();
 	}
@@ -100,7 +100,7 @@ void Piano::handleKeyPress(int key, int midiVelocity)
 	if (isValidKey(key))
 	{
 		m_midiEvProc->processInEvent(MidiEvent(MidiNoteOn, -1, key, midiVelocity));
-		m_pressedKeys[key] = true;
+		m_pressedKeys[key].store(true, std::memory_order_relaxed);
 	}
 }
 
@@ -117,7 +117,7 @@ void Piano::handleKeyRelease(int key)
 	if (isValidKey(key))
 	{
 		m_midiEvProc->processInEvent(MidiEvent(MidiNoteOff, -1, key, 0));
-		m_pressedKeys[key] = false;
+		m_pressedKeys[key].store(false, std::memory_order_relaxed);
 	}
 }
 
