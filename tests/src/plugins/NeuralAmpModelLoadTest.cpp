@@ -101,16 +101,20 @@ Gate g_gate;
 
 void beforeLoad(const QString& path) { g_gate.onLoad(path); }
 
-//! A one-layer WaveNet with 8 weights, named \a name so the status text identifies it.
-void writeModel(const QString& path, const QString& name)
+//! A one-layer WaveNet with 8 weights, named \a name so the status text identifies it. A
+//! non-positive \a sampleRate writes no sample_rate key, the fixture older tests load.
+void writeModel(const QString& path, const QString& name, double sampleRate = -1.0)
 {
 	QFile file(path);
 	QVERIFY2(file.open(QIODevice::WriteOnly), "cannot write the fixture model");
+	const QString rate = sampleRate > 0.0
+		? QStringLiteral(",\"sample_rate\":%1").arg(QString::number(sampleRate, 'g', 17))
+		: QString{};
 	file.write(QStringLiteral(
-		"{\"version\":\"0.5.0\",\"architecture\":\"WaveNet\",\"metadata\":{\"name\":\"%1\"},"
+		"{\"version\":\"0.5.0\",\"architecture\":\"WaveNet\",\"metadata\":{\"name\":\"%1\"}%2,"
 		"\"config\":{\"layers\":[{\"input_size\":1,\"condition_size\":1,\"head_size\":1,\"head_bias\":false,"
 		"\"channels\":1,\"kernel_size\":1,\"dilations\":[1],\"activation\":\"Tanh\"}],\"head\":null},"
-		"\"weights\":[0.5,0.1,0.2,0.3,0.4,0.1,0.5,0.9]}").arg(name).toUtf8());
+		"\"weights\":[0.5,0.1,0.2,0.3,0.4,0.1,0.5,0.9]}").arg(name, rate).toUtf8());
 }
 
 template<typename Pred>
@@ -364,6 +368,52 @@ private slots:
 		auto zeroModel = nam::NamModel::loadFromFile(path("dilation_zero").toStdString(), &zeroError);
 		QVERIFY(zeroModel == nullptr);
 		QVERIFY(!zeroError.empty());
+	}
+
+	// new-p8-175: the effect must never run a model at a rate other than the one it was trained at.
+	// A model whose declared rate differs from the engine's is refused at load; a model that was
+	// loaded before the engine changes rate is bypassed. Both cases keep the audio dry instead of
+	// processing it at the wrong rate. The engine rate is read from the engine and the reconfiguration
+	// is driven through the device's test hook plus the signal the device itself emits, so nothing here
+	// depends on wall-clock timing.
+	void aModelTrainedAtAnotherRateIsNeverProcessed()
+	{
+		auto* engine = Engine::audioEngine();
+		const double engineRate = engine->outputSampleRate();
+		QVERIFY2(engineRate > 0.0, qPrintable(QString::number(engineRate)));
+		// Far enough apart that no tolerance can bridge it, and positive either way.
+		const double otherRate = engineRate >= 96000.0 ? engineRate / 2.0 : engineRate * 2.0;
+
+		writeModel(path("rate_match"), "rate_match", engineRate);
+		writeModel(path("rate_other"), "rate_other", otherRate);
+
+		NeuralAmpEffect effect(nullptr, nullptr);
+
+		// 1. A model trained at another rate is refused: nothing is published, so the audio is dry.
+		applySettings(effect, path("rate_other"));
+		QVERIFY2(waitFor([&] { return effect.modelStatus().startsWith("load refused"); }),
+			qPrintable(effect.modelStatus()));
+		QVERIFY2(rendersDry(effect), "a refused model must not reach the audio");
+
+		// 2. The control: the same fixture trained at the engine rate loads and processes.
+		applySettings(effect, path("rate_match"));
+		QVERIFY2(waitFor([&] { return loaded(effect, "rate_match"); }), qPrintable(effect.modelStatus()));
+		QVERIFY2(!rendersDry(effect), "a model at the engine rate must process the audio");
+
+		// 3. The engine moves to another rate with the model still loaded: the effect bypasses.
+		AudioDevice* device = engine->audioDev();
+		QVERIFY(device != nullptr);
+		const sample_rate_t originalRate = device->sampleRate();
+		device->setSampleRateForTesting(static_cast<sample_rate_t>(otherRate));
+		QVERIFY(QMetaObject::invokeMethod(engine, "sampleRateChanged", Qt::DirectConnection));
+		QVERIFY2(effect.modelStatus().startsWith("bypassed"), qPrintable(effect.modelStatus()));
+		QVERIFY2(rendersDry(effect), "the model cannot run once the engine rate no longer matches");
+
+		// 4. Back at the model's rate the same model runs again.
+		device->setSampleRateForTesting(originalRate);
+		QVERIFY(QMetaObject::invokeMethod(engine, "sampleRateChanged", Qt::DirectConnection));
+		QVERIFY2(loaded(effect, "rate_match"), qPrintable(effect.modelStatus()));
+		QVERIFY2(!rendersDry(effect), "the model must run again at its own rate");
 	}
 };
 
