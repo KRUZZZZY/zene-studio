@@ -201,8 +201,15 @@ The test file was already registered in `tests/fork-sources.txt:3834`; no new pr
   control thread's event loop until the posted refresh lands (5 s bound, the same QTRY idiom the
   file's existing JACK slot uses). No sleep decides a value, and 3/3 repeats passed
   (`logs/test-3-repeat3.log`).
-- **Completion check** (`logs/submit-check-1.log`, round 2: `logs/submit-check-2.log` and the final
-  `logs/submit-check-3.log`): the run and its result are recorded there; every
+- **No `state-sequence` artifact applies.** The manifest rule names files matching
+  `src/core/AudioEngine*`, `*Record*`, `*Transport*`, `*Take*`, `*Undo*` and `src/core/Song*`. No such
+  file changed in round 2: the only engine file is `include/AudioEngine.h` (a `friend` declaration,
+  `:667`) and the backend code is `src/core/audio/AudioJack.cpp`. The two states the test drives, in
+  order, are: server period 512 with round trip `in + out + 512 + engine period`, then live
+  `jack_set_buffer_size` to 1024 with round trip `in + out + 1024 + engine period`
+  (`logs/test-5-green-reapplied.log`).
+- **Completion check** (round 2: `logs/submit-check-1.log`, EXIT=0, `RESULT: PASS - submit`, and
+  `logs/submit-check-2.log` after this paragraph; round 1's run is in the r1 log folder): the run and its result are recorded there; every
   FAIL it named was fixed before this report was committed, and this section answers each ASK item.
   The sibling-command ASK lists `app.*`, `arrangement.*` and others because the check diffs the whole
   branch against its merge base, and this branch carries other clusters' commits. My own commit
