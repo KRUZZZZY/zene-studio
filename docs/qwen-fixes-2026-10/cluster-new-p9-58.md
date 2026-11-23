@@ -103,25 +103,29 @@ $ cd build/tests && ctest -R RevisionRestoreUndoAfterSaveTest --output-on-failur
 EXIT=0
 ```
 
-Step 4b, proved with the FINAL product code (the patch below is the one committed):
+Step 4b, proved with the FINAL product code and `logs/fix.patch` (the patch committed in
+`7db49a6dfe`), run once more after the commit so the chain below is exactly what was executed
+(`logs/proof-red-1.log`, `logs/build-red-5.log`, `logs/test-red-5.log`, `logs/build-green-5.log`,
+`logs/test-green-5.log`):
 
 ```
 $ git diff -- src/core/ControlCommandsRevisions.cpp src/core/ControlCommandsProjectFiles.cpp \
       src/core/ControlReversibilityTableRevisions.cpp docs/REVISION-TIMELINE.md > logs/fix.patch
 EXIT=0
-$ git apply -R logs/fix.patch
-EXIT=0
-$ cmake --build build --target RevisionRestoreUndoAfterSaveTest -j 4 > logs/build-red-4.log 2>&1
-EXIT=0
-$ cd build/tests && ctest -R RevisionRestoreUndoAfterSaveTest --output-on-failure > logs/test-red-4.log 2>&1
+# RED, the whole chain (recorded: APPLY_R_EXIT=0, BUILD_EXIT=0, CTEST_EXIT=8)
+$ git apply -R logs/fix.patch && cmake --build build --target RevisionRestoreUndoAfterSaveTest -j 4 \
+      && cd build/tests && ctest -R RevisionRestoreUndoAfterSaveTest --output-on-failure > logs/test-red-5.log 2>&1
 EXIT=8      # Totals: 3 passed, 4 failed - the test catches the bug
-$ cd <worktree> && git apply logs/fix.patch
+# GREEN, the whole chain (recorded: APPLY_EXIT=0, BUILD_EXIT=0, CTEST_EXIT=0)
+$ cd <worktree> && git apply logs/fix.patch && cmake --build build --target RevisionRestoreUndoAfterSaveTest zene -j 4 \
+      && cd build/tests && ctest -R RevisionRestoreUndoAfterSaveTest --output-on-failure > logs/test-green-5.log 2>&1
 EXIT=0
-$ cmake --build build --target RevisionRestoreUndoAfterSaveTest zene -j 4 > logs/build-green-4.log 2>&1
-EXIT=0
-$ cd build/tests && ctest -R RevisionRestoreUndoAfterSaveTest --output-on-failure > logs/test-green-4.log 2>&1
-EXIT=0
+$ git status --short      # empty: the tree is the committed fix again
 ```
+
+The first measurement of the same proof (before the final comment compaction) is in
+`logs/build-red-4.log`, `logs/test-red-4.log`, `logs/build-green-4.log`, `logs/test-green-4.log`:
+builder `EXIT=0`, ctest `EXIT=8` (3 passed, 4 failed), then ctest `EXIT=0`.
 
 The rest of the family (12 tests: `RevisionTimelineTest`, `ProjectRevisionRestoreStagingTest`,
 `ProjectRestoreMissingTargetTest`, `RevisionRestoreCreatedFileUndoTest`,
@@ -212,8 +216,8 @@ EXIT=0      # logs/feature-check-2.log
    measured twice; the last measurement uses the exact patch that is committed:
    `git apply -R logs/fix.patch` `EXIT=0`, rebuild `EXIT=0`, `ctest -R RevisionRestoreUndoAfterSaveTest`
    `EXIT=8` (`Totals: 3 passed, 4 failed`); `git apply logs/fix.patch` `EXIT=0`, rebuild `EXIT=0`,
-   `ctest -R RevisionRestoreUndoAfterSaveTest` `EXIT=0`. Logs: `build-red-4.log`, `test-red-4.log`,
-   `build-green-4.log`, `test-green-4.log`.
+   `ctest -R RevisionRestoreUndoAfterSaveTest` `EXIT=0`. Logs: `build-red-5.log`, `test-red-5.log`,
+   `build-green-5.log`, `test-green-5.log` (and the earlier `-4` pair with the same exits).
 2. **"The test is deterministic: no wall-clock timing, sleeps or races"** — no `QTest::qWait`, no
    sleep, no clock and no thread in the test. Its state is injected by writes to a `QTemporaryDir` and
    by one call to the product's own `control::rotateProjectRevision()` (the call `project.save` makes
