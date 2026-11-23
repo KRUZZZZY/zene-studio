@@ -56,6 +56,19 @@ std::atomic<int> g_closeCalls{0};
 std::atomic<int> g_callsOnClosedHandle{0};
 std::atomic<int> g_writeCalls{0};
 std::atomic<int> g_lastWritten{-1};
+//! The bytes the device accepted, in the order it accepted them, and how many. The writer is
+//! whichever thread calls snd_rawmidi_write(); a test synchronises on g_writeSignal to read them.
+std::array<unsigned char, 4096> g_writtenBytes{};
+std::atomic<int> g_writtenCount{0};
+//! Released by every accepted write, so a test waits for the writer instead of for a duration.
+QSemaphore g_writeSignal;
+//! The thread a test drives the output path from (its "audio thread"), so the device can report
+//! whether the write came from there - which is what BUG 12 is about.
+std::atomic<std::thread::id> g_audioPathThread{};
+std::atomic<bool> g_writtenFromAudioPath{false};
+//! Writes to refuse with -EAGAIN ("the device buffer is full"), and how many were refused.
+std::atomic<int> g_refuseWrites{0};
+std::atomic<int> g_refusedWrites{0};
 std::atomic<bool> g_workerRunningAtClose{false};
 const QThread* g_client = nullptr;
 
@@ -78,8 +91,14 @@ void resetDevice()
 	g_callsOnClosedHandle = 0;
 	g_writeCalls = 0;
 	g_lastWritten = -1;
+	g_writtenCount = 0;
+	g_writtenFromAudioPath = false;
+	g_audioPathThread = std::thread::id{};
+	g_refuseWrites = 0;
+	g_refusedWrites = 0;
 	g_workerRunningAtClose = false;
 	g_client = nullptr;
+	while (g_writeSignal.tryAcquire()) {}
 }
 
 } // namespace
@@ -143,12 +162,31 @@ extern "C" ssize_t snd_rawmidi_write(snd_rawmidi_t* handle, const void* buffer, 
 	noteUse(handle);
 	++g_writeCalls;
 	g_lastWritten = *static_cast<const unsigned char*>(buffer);
+	// A full device buffer: ALSA's non-blocking write refuses and the client must keep the message.
+	// The test arms a bounded number of refusals, so this always terminates.
+	if (g_refuseWrites.load() > 0)
+	{
+		g_refuseWrites.fetch_sub(1);
+		++g_refusedWrites;
+		return -EAGAIN;
+	}
+	// Who reached the device. The audio path must never be the writer (BUG 12, cluster new-p12-118).
+	if (g_audioPathThread.load() == std::this_thread::get_id()) { g_writtenFromAudioPath = true; }
+	const auto* bytes = static_cast<const unsigned char*>(buffer);
+	int written = g_writtenCount.load();
+	for (size_t i = 0; i < size && written < static_cast<int>(g_writtenBytes.size()); ++i)
+	{
+		g_writtenBytes[written++] = bytes[i];
+	}
+	g_writtenCount.store(written);
+	g_writeSignal.release();
 	return static_cast<ssize_t>(size);
 }
 
 class TestMidiAlsaRaw final : public lmms::MidiAlsaRaw
 {
 public:
+	using lmms::MidiAlsaRaw::processOutEvent;
 	using lmms::MidiAlsaRaw::sendByte;
 	using lmms::MidiAlsaRaw::stopWorker;
 };
@@ -302,11 +340,15 @@ private slots:
 		client.retroCapture().arm(false);
 	}
 
-	//! The audio-thread entry point (MidiClientRaw::processOutEvent -> sendByte) still
-	//! hands the byte to ALSA directly: no allocation, no free, no wake-pipe traffic.
+	//! The byte sink of the audio-thread entry point (processOutEvent -> MidiClientRaw's encoder ->
+	//! sendByte) allocates and frees nothing - and, since cluster new-p12-118, hands nothing to ALSA
+	//! either: it collects the message the sender thread is assembling, and the worker writes it
+	//! (audioPathQueuesOutputInsteadOfWritingIt). Before that change sendByte() called
+	//! snd_rawmidi_write() on this thread, which is the block the finding reports.
 	void sendByteStaysAllocationFree()
 	{
 		TestMidiAlsaRaw client;
+		g_audioPathThread = std::this_thread::get_id();
 		lmms::test::resetAllocationCount();
 		lmms::test::tlCountAllocations = true;
 		client.sendByte(0x90);
@@ -314,8 +356,75 @@ private slots:
 		lmms::test::tlCountAllocations = false;
 		QCOMPARE(lmms::test::tlAllocationCount, std::uint64_t{0});
 		QCOMPARE(lmms::test::tlFreeCount, std::uint64_t{0});
-		QCOMPARE(g_writeCalls.load(), 2);
-		QCOMPARE(g_lastWritten.load(), 0x3c);
+		QVERIFY2(!g_writtenFromAudioPath.load(), "the audio path wrote the MIDI device itself");
+	}
+
+	//! BUG 12 / cluster new-p12-118: the audio path must not write the device. snd_rawmidi_write()
+	//! on a full or stalled device blocks for as long as the device takes, and this path runs inside
+	//! a render period, so the message is queued and the worker writes it - nothing here allocates,
+	//! frees, locks or waits. Before the fix the three bytes reached ALSA on this very thread, which
+	//! the fake device reports as g_writtenFromAudioPath.
+	void audioPathQueuesOutputInsteadOfWritingIt()
+	{
+		TestMidiAlsaRaw client;
+		QVERIFY(client.isRunning());
+		g_audioPathThread = std::this_thread::get_id();
+
+		const lmms::MidiEvent noteOn(lmms::MidiNoteOn, 0, 60, 100);
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		client.processOutEvent(noteOn, lmms::TimePos(), nullptr);
+		lmms::test::tlCountAllocations = false;
+
+		QCOMPARE(lmms::test::tlAllocationCount, std::uint64_t{0});
+		QCOMPARE(lmms::test::tlFreeCount, std::uint64_t{0});
+		QVERIFY2(!g_writtenFromAudioPath.load(),
+			"the audio path wrote the MIDI device itself: a full or stalled device blocks it there");
+		QVERIFY2(g_writeSignal.tryAcquire(1, 5000), "the worker never wrote the queued message");
+		QCOMPARE(g_writtenCount.load(), 3);
+		QCOMPARE(int{g_writtenBytes[0]}, 0x90);
+		QCOMPARE(int{g_writtenBytes[1]}, 60);
+		QCOMPARE(int{g_writtenBytes[2]}, 100);
+		QCOMPARE(client.outputQueueOverflowCount(), std::uint64_t{0});
+	}
+
+	//! The failure path: the device's buffer is full (-EAGAIN) when the worker first offers the
+	//! message. No byte may be lost and no message may be split, so the rest is kept and written
+	//! once the device takes it. The old code ignored snd_rawmidi_write()'s result and dropped it.
+	void fullDeviceBufferKeepsTheMessageForTheWorker()
+	{
+		TestMidiAlsaRaw client;
+		QVERIFY(client.isRunning());
+		g_audioPathThread = std::this_thread::get_id();
+		g_refuseWrites = 1;
+
+		client.processOutEvent(lmms::MidiEvent(lmms::MidiNoteOn, 0, 60, 100), lmms::TimePos(), nullptr);
+
+		QVERIFY2(!g_writtenFromAudioPath.load(), "the audio path wrote the MIDI device itself");
+		QVERIFY2(g_writeSignal.tryAcquire(1, 5000), "the worker never retried the refused message");
+		QVERIFY2(g_refusedWrites.load() >= 1, "the test never made the device refuse a write");
+		QCOMPARE(g_writtenCount.load(), 3);
+		QCOMPARE(int{g_writtenBytes[0]}, 0x90);
+		QCOMPARE(int{g_writtenBytes[1]}, 60);
+		QCOMPARE(int{g_writtenBytes[2]}, 100);
+	}
+
+	//! The exhaustion path: with the worker joined nothing drains the hand-off. The queue is
+	//! bounded, so pushes past its capacity are refused and counted instead of blocking the
+	//! caller or growing - a hand-off that lost the bound would allocate on the audio thread.
+	void queueOverflowIsCountedAndTheAudioPathNeverBlocks()
+	{
+		TestMidiAlsaRaw client;
+		QVERIFY(client.isRunning());
+		client.stopWorker();
+		QVERIFY(!client.isRunning());
+		const lmms::MidiEvent noteOn(lmms::MidiNoteOn, 0, 60, 100);
+		for (int i = 0; i < 4096; ++i)
+		{
+			client.processOutEvent(noteOn, lmms::TimePos(), nullptr);
+		}
+		QVERIFY2(client.outputQueueOverflowCount() > 0,
+			"the output hand-off neither refused nor counted the events past its capacity");
 	}
 
 	//! Callback ownership: stopInput() is the point after which a port may be destroyed.
