@@ -139,6 +139,10 @@ driver, which starts the real `zene` binary headless and calls `window.screensho
 - GUI: no src/gui change. Transport, recording and undo state are not changed by this fix: a held tick only skips
   that tick's automation work. The state sequence the test drives (warm tick, reset, short capacity, four held
   realtime periods, drain, post-drain periods) is recorded in `logs/proof.json` as the `state-sequence` artifact.
+  The reviewer-requested GUI-harness evidence is `logs/gui/shell-arrange.png` (1600 x 1000, sha256
+  `3f9233ec8840a80207d4511e6186cf43315252ba967c5aa8d2489e75d730e618`), rendered by `window.screenshot` from
+  `tests/control-shell.py` EXIT=0 (01-gui-harness.log); `logs/proof.json` carries it as the `screenshot` artifact
+  next to the `regression-test` and `state-sequence` ones.
 
 ## Other findings
 - If a realtime overflow happened with no Qt event loop running on the song's thread (for example a headless
