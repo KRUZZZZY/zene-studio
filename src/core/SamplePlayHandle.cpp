@@ -75,7 +75,7 @@ SamplePlayHandle::SamplePlayHandle(Sample* sample, bool ownAudioBusHandle)
 	m_state.setFrameIndex(m_sample->startFrame());
 	if (ownAudioBusHandle)
 	{
-		setAudioBusHandle(new AudioBusHandle("SamplePlayHandle", false));
+		setAudioBusHandle(new AudioBusHandle(QStringLiteral("SamplePlayHandle"), false));
 	}
 }
 

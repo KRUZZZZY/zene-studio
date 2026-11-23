@@ -42,12 +42,15 @@
 #include "AudioEngine.h"
 #include "AudioEngineWorkerThread.h"
 #include "AudioDevice.h"
+#include "BufferManager.h"
 #include "Engine.h"
 #include "LatencyCompensation.h"
 #include "MpscQueue.h"
 #include "PlayHandle.h"
 #include "RealtimeScope.h"
+#include "Sample.h"
 #include "SampleFrame.h"
+#include "SamplePlayHandle.h"
 #include "Song.h"
 #include "Track.h"
 #include "AllocationProbe.h"
@@ -470,6 +473,42 @@ private slots:
 		QVERIFY(periodSized);
 		QVERIFY(hasEffects);
 		QVERIFY(!stillListed);
+	}
+
+	//! Cluster new-p15-253 (round 11): the standalone bus is created through the real product
+	//! call path - SamplePlayHandle's constructor with ownAudioBusHandle - on the audio path,
+	//! with the allocation probe armed. The bus name must be static QStringLiteral data, not a
+	//! heap QString built per bus: two live standalone buses share the same name bytes. A heap
+	//! conversion gives each its own buffer, so the two pointers differ (RED). With
+	//! QStringLiteral they are the same static data (GREEN). Qt's implicitly shared strings
+	//! allocate through malloc, which the operator-new probe cannot see (docs/KNOWN-LIMITATIONS.md,
+	//! "The allocation probe"), so the pointer identity is the observable for the name.
+	void realtimeStandaloneBusNameIsStaticAcrossConstructions()
+	{
+		// A play handle acquires a period-sized buffer; an empty period keeps it out of the
+		// probe, so the count below is the two objects only. Restored before the service.
+		BufferManager::init(0);
+		SampleFrame frames[4] = {};
+		Sample* samples[2] = { new Sample(frames, 4, Engine::audioEngine()->baseSampleRate()),
+			new Sample(frames, 4, Engine::audioEngine()->baseSampleRate()) };
+		SamplePlayHandle* handles[2] = {};
+		{
+			const RealtimeScope realtime;
+			lmms::test::resetAllocationCount();
+			lmms::test::tlCountAllocations = true;
+			for (int i = 0; i < 2; ++i) { handles[i] = new SamplePlayHandle(samples[i], true); }
+		}
+		lmms::test::tlCountAllocations = false;
+		BufferManager::init(Engine::audioEngine()->framesPerPeriod());
+		Engine::audioEngine()->serviceAudioBusHandlesOnControlThread();
+		const QChar* firstName = handles[0]->audioBusHandle()->name().constData();
+		const QChar* secondName = handles[1]->audioBusHandle()->name().constData();
+		QCOMPARE(handles[0]->audioBusHandle()->registrationState(),
+			AudioBusHandle::RegistrationState::Registered);
+		for (auto* handle : handles) { delete handle; }
+		QCOMPARE(lmms::test::tlAllocationCount, std::uint64_t{4});
+		QVERIFY2(firstName == secondName,
+			"each standalone bus built its own heap QString name; the call site is not QStringLiteral");
 	}
 
 	//! Cluster new-p15-253: the realtime constructor must not take the engine's change lock.
