@@ -734,6 +734,17 @@ f_cnt_t AudioJack::outputLatencyFrames() const
 }
 
 
+f_cnt_t AudioJack::captureBlockFrames() const
+{
+	// Cluster 4599: JACK's process callback is handed one SERVER period per call (processCallback's
+	// nframes), so that - not the engine's configured buffer - is the block a pushed capture block
+	// carries. Reading it live reports the size the server runs at NOW, after a restart or a
+	// buffer-size change alike. Realtime-safe, like the latency ranges above; no client, no capture.
+	if (m_client == nullptr) { return 0; }
+	return static_cast<f_cnt_t>(jack_get_buffer_size(m_client));
+}
+
+
 AudioDevice::DeviceTiming AudioJack::deviceTiming() const
 {
 	DeviceTiming timing;

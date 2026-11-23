@@ -110,6 +110,21 @@ bool available(const QJsonObject& device, const char* key)
 constexpr const char* DeviceReadings[] = {"sample_rate", "input_sample_rate", "period_frames", "buffer_frames", "input_latency",
 	"output_latency", "xruns"};
 
+//! A private `jackd -d dummy` and the engine's device swap, undone even when an assertion returns
+//! from a slot early (QCOMPARE does): the client must leave the engine before its server dies.
+struct PrivateJackServer
+{
+	QProcess daemon;
+	AudioEngine* engine = nullptr;
+
+	~PrivateJackServer()
+	{
+		if (engine != nullptr) { engine->restoreAudioDevice(); }
+		daemon.terminate();
+		if (!daemon.waitForFinished(5000)) { daemon.kill(); daemon.waitForFinished(); }
+	}
+};
+
 } // namespace
 
 class AudioDeviceDiagnosticsTest : public QObject
@@ -334,6 +349,57 @@ private slots:
 		engine->restoreAudioDevice();
 		daemon.terminate();
 		if (!daemon.waitForFinished(5000)) { daemon.kill(); daemon.waitForFinished(); }
+#endif
+	}
+
+	//! Cluster 4599: the capture block is the JACK server's period, not the engine's configured
+	//! buffer. refreshRecordingLatency() adds one capture block, so a server period that differs
+	//! from the engine's buffer has to show up in the round trip a recorder drops from a take.
+	void jackReportsTheServersPeriodAsTheCaptureBlock()
+	{
+#ifndef LMMS_HAVE_JACK
+		QSKIP("built without JACK");
+#else
+		const QString jackd = QStandardPaths::findExecutable(QStringLiteral("jackd"));
+		if (jackd.isEmpty()) { QSKIP("jackd is not installed"); }
+		AudioEngine* engine = Engine::audioEngine();
+		// A period the engine's configured buffer is NOT, so the two figures can be told apart.
+		const f_cnt_t period = engine->framesPerAudioBuffer() == 512 ? 768 : 512;
+		QVERIFY2(engine->framesPerAudioBuffer() != period, "the engine buffer and the server period must differ");
+
+		const QString server = QStringLiteral("zene-capture-block-%1").arg(QCoreApplication::applicationPid());
+		qputenv("JACK_DEFAULT_SERVER", server.toUtf8());
+		qputenv("JACK_NO_START_SERVER", "1");
+		qputenv("JACK_NO_AUDIO_RESERVATION", "1");
+		PrivateJackServer privateServer;
+		QProcess& daemon = privateServer.daemon;
+		daemon.setProcessChannelMode(QProcess::ForwardedErrorChannel);
+		daemon.setStandardOutputFile(QProcess::nullDevice());
+		daemon.start(jackd, {QStringLiteral("--no-realtime"), QStringLiteral("-n"), server, QStringLiteral("-d"),
+			QStringLiteral("dummy"), QStringLiteral("-r"), QStringLiteral("48000"), QStringLiteral("-p"),
+			QString::number(period)});
+		if (!daemon.waitForStarted(5000)) { QSKIP("jackd did not start"); }
+
+		AudioJack* jack = nullptr;
+		for (int attempt = 0; attempt < 100 && jack == nullptr; ++attempt)
+		{
+			bool ok = false;
+			auto* candidate = new AudioJack(ok, engine);
+			if (ok) { jack = candidate; break; }
+			delete candidate;
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		}
+		if (jack == nullptr) { QSKIP("no client could join the private jackd"); }
+		engine->storeAudioDevice();
+		privateServer.engine = engine;
+		engine->setAudioDevice(jack, true);  // activates the client and refreshes the round trip
+
+		QCOMPARE(jack->deviceTiming().periodFrames.value_or(0), period);
+		// The block one capture push carries is the server's own buffer size...
+		QCOMPARE(jack->captureBlockFrames(), period);
+		// ...so the round trip gains that block, not the engine's configured buffer.
+		QCOMPARE(engine->recordingLatencyFrames(),
+			jack->inputLatencyFrames() + jack->outputLatencyFrames() + period + engine->framesPerPeriod());
 #endif
 	}
 };

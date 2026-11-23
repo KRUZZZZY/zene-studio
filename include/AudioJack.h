@@ -66,6 +66,9 @@ public:
 	//! R2.2: JACK's own latency ranges for the first capture and playback port (the max).
 	f_cnt_t inputLatencyFrames() const override;
 	f_cnt_t outputLatencyFrames() const override;
+	//! Cluster 4599: the block one capture push carries is the SERVER's buffer size
+	//! (jack_get_buffer_size), not the engine's configured buffer that the base class reports.
+	f_cnt_t captureBlockFrames() const override;
 	//! 0.5.0 F1 (MX-040): JACK opens as many output ports as the interface's I/O setup asks for.
 	bool supportsMultichannelOutput() const override { return true; }
 	//! Q050-074.2: the server's rate and period (jack_get_buffer_size) and the first ports' latency
