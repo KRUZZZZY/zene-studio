@@ -166,6 +166,17 @@ already in `tests/fork-sources.txt`, so no list file changes; nothing new runs o
    called at `:249`). The existing GUI test drives the same registered command
    (`LayerRackPanel.cpp:126-130`) and observes both the published gain and real rendered audio
    (`InstrumentSetupUiTest.cpp:404-422`), rerun green with the plugins present (run 11, `0 skipped`).
+6. **Sibling commands in the command files the check lists.** This cluster adds or changes no command
+   file and registers no command: my commit touches only
+   `tests/src/core/InstrumentLayerZonePublishTest.cpp` and this report (`git show --stat 4f90cec1a`).
+   `submit_check.py` builds that sibling list from the whole `base..HEAD` diff (431 files of the
+   train's merged commits since `fa4a5f2e7`), not from this cluster. None of `app.about`, `app.ask`,
+   `app.help`, `app.online_help`, `app.task_cancel`, `app.tasks`, `app.tour`, `app.tours`,
+   `app.update_check_get`, `app.update_check_run`, `app.update_check_set`, `app.version`,
+   `app.whats_new`, `arrangement.fit_tracks` or `arrangement.get_state` reads or writes a layer mix;
+   they are untouched by this change. The layer command family itself (`rack.layer_set`,
+   `rack.layers`, `rack.layer_add`, `rack.layer_remove`) is unchanged and consistent - all of it
+   publishes through `InstrumentLayers::publishMix`. No `ControlCommandsSnapshot` row moves.
 
 ## Other findings
 
