@@ -105,10 +105,15 @@ every mutator of the routing state takes the period guard (`src/core/AudioPortsM
    own `Matrix::setPin` journals nothing. `ControlReversibilityTableRouting.cpp` is unchanged, so no A16 histogram row
    moves and the commands snapshot does not need regenerating (no command metadata changed). The Pin Connector test
    `PinConnectorTest` (ctest #580, exit 0 in `test-12-family.log`) still drives the click and its undo.
-4. **"Nothing you added runs on the audio thread and allocates, frees, locks, waits, does I/O or emits a signal."** - The
-   diff adds a test, two manifests, a document and a manual paragraph; no product code. The test's render half only calls
-   what the mixer and the router call in production, under the same guard, on a test thread - it is not on the audio
-   thread. No realtime path changed at all.
+4. **"Nothing you added runs on the audio thread and allocates, frees, locks, waits, does I/O or emits a signal."** - This
+   branch's three commits touch seven files and add 952 lines, all of them a test, three manifests, a feature record, a
+   report and a manual paragraph (`git diff --stat 21c2f3ee2e..HEAD`: `data/manual/index.html`, `docs/...`,
+   `tests/CMakeLists.txt`, `tests/all-sources.txt`, `tests/fork-sources.txt`,
+   `tests/src/core/AudioPortsLiveEditStressTest.cpp`); no product code. The test's render half only calls what the mixer and
+   the router call in production, under the same guard, on a test thread - it is not the audio thread. No realtime path
+   changed at all. (The pre-submit check's FLAGGED lines name `plugins/LadspaEffect/LadspaEffect.cpp` and the GUI/command
+   items name other files: those come from the train history between `FIX-BASE` and this branch's cut point, not from this
+   unit's commits - the diffstat above is the whole of what these commits change.)
 5. **"Old projects still load and render exactly as before; new data round-trips through save and load."** - No product
    file changed, so the load and render paths are byte-identical to the train. The test additionally saves the edited
    device and loads it into a fresh one and requires the same pins up to the same bound
