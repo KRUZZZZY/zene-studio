@@ -107,6 +107,12 @@ lists `050/m0-train-13` and later trains); the worktree was clean after the rest
   primitive, and the generation value remains the signal, so the no-lost-wake guarantee
   is unchanged. No limit or check was added. `repeatedWakeupsDeliverEveryPeriodWithoutDeadlock`
   and `quitRacingAWakeupAlwaysJoinsTheWorker` still pass (exit 0).
+- **Sibling commands in changed command files.** This session changed no command,
+  reversibility or control-registry file: the only file committed for cluster 5468 is this
+  report. The `app.*` and `arrangement.*` ids the check lists come from train history
+  between `FIX-BASE` and this branch, not from this unit. The wake is reached by the
+  existing Play/`transport.play` render path, and no command id, schema, undo step or
+  reversibility class was added or changed, so none of those commands is affected.
 - **ALREADY-FIXED cites code (file:line).** `src/core/AudioEngineWorkerThread.cpp:248-252`
   (`notifyWorkers()` is `workerwake::notify`), `src/core/AudioWorkerWake.cpp:84-105`
   (futex/ulock post, no lock/allocation), `src/core/AudioWorkerWake.cpp:69-73`
