@@ -61,6 +61,28 @@ private slots:
 		QCOMPARE(sidechainInputs(in, 2, &sidechain, -1, scratch), static_cast<const float* const*>(in));
 	}
 
+	//! Cluster new-p8-263: a mono main input bus whose side-chain starts at flattened channel 1 must not
+	//! count that side-chain channel as dry audio. The wet/dry mix covered max(2, 1) = 2 channels, so a
+	//! second output's dry half was the key signal itself.
+	void aMonoMainBusKeepsItsSidechainOutOfTheDryMix()
+	{
+		QCOMPARE(dryMixChannels(2, 2, 1), ch_cnt_t{1});
+		QCOMPARE(dryMixChannels(3, 2, 1), ch_cnt_t{1});  // a wider key does not widen the mix either
+		QCOMPARE(dryMixChannels(1, 2, -1), ch_cnt_t{1}); // the same main bus with no key at all
+	}
+
+	//! The rest of the rule: the main input bus is what is dry, the side-chain is excluded, an aux-only
+	//! input port has no dry channel at all, and the output port bounds the mix (round 6: channels past
+	//! the second are mixed too, they do not stay fully wet).
+	void theDryMixCoversTheMainInputBusOnly()
+	{
+		QCOMPARE(dryMixChannels(2, 2, -1), ch_cnt_t{2}); // no side-chain: the whole input port
+		QCOMPARE(dryMixChannels(6, 6, -1), ch_cnt_t{6}); // round 6: past the stereo pair
+		QCOMPARE(dryMixChannels(4, 2, 2), ch_cnt_t{2}); // stereo main bus + stereo key
+		QCOMPARE(dryMixChannels(4, 1, 2), ch_cnt_t{1}); // one output: one channel to mix
+		QCOMPARE(dryMixChannels(2, 2, 0), ch_cnt_t{0}); // aux only: nothing in the port is dry
+	}
+
 	//! A sidechain AudioBuffer move-assigned across memory resources must keep
 	//! its group views inside its own storage, so sidechainInputs fed from it
 	//! reads the live signal and not the moved-from table. Cluster new-p9-557.
