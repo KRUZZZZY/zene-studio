@@ -149,6 +149,14 @@ so no list changed (and `fork-sources` passes). No command file, no `ControlComm
   as before; the pool has the same 64 slots and the same `dropped()` accounting (only clicks that find every slot
   `Writing` or `Live` in the current generation are dropped, i.e. exactly the pre-fix cases); no limit or check was
   added. `ModulationLayerProjectRoundTripTest` and `ModulationLayerValueTest` pass unchanged.
+- **Sibling commands: none affected.** This fix touches no command file at all: `git diff --name-only 6b04c5cbae
+  0c03cbf6b8` lists `include/ModulationVoices.h`, `src/core/ModulationVoices.cpp` and the two
+  `tests/src/core/InstrumentRoutingTest*` files, and the seam commit `6b04c5cbae` the same two product files. The groups
+  the pre-submit check lists (`app.*`, `arrangement.*`) come
+  from the lane's wider diff against the fix base, not from this cluster: no command id, schema, argument check or
+  reversibility class changed, so none of them can behave differently. `ControlModulatorCommandsTest` (which drives the
+  modulator commands that do read the pool, `src/core/ControlModulationSupport.cpp:262`) passes — see
+  `logs/11-test-family.log`.
 - **Realtime, undo, commands.** Per period nothing new allocates, frees, locks, waits or logs: `claim()`, `publish()`,
   `noteOff()`, `voice()` and `activeCount()` are atomic loads/stores/compare-exchanges on 32-bit words; `clear()` is
   one atomic add on the control thread and replaced 64 stores. Undo is untouched (no model, command or selection
