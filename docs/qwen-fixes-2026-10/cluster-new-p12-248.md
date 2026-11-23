@@ -2,8 +2,9 @@ FIXED
 
 # cluster new-p12-248 — Sample accurate automation locks on the audio thread
 
-new-p12-248: FIXED (round 3; round 1 reported NEEDS-CONTEXT without a test, round 2's submit check
-asked for a state-sequence artifact and an explicit three-state test, both added here)
+new-p12-248: FIXED (round 4; round 1 reported NEEDS-CONTEXT without a test, round 2's submit check
+asked for a state-sequence artifact and a three-state test, round 3's reviewer asked for the
+GUI-harness screenshot the branch's inherited `src/gui` files trigger; all three are here)
 
 ## Verdict: REAL
 - `Song::processNextBuffer()` calls `buildAutomationRamps()` once per period (src/core/Song.cpp:582).
@@ -75,26 +76,42 @@ built in), with a hard assertion per state:
    (`automationRamp() != nullptr`).
 
 State 2 is the bug: in the unfixed build the publish blocks inside the edit and the reader thread
-never returns (05-test-red.log: four reads each hit the 10 s escape hatch, 40.5 s total). State 1 and
+never returns (06-test-red.log: four reads each hit the 10 s escape hatch, 40.5 s total). State 1 and
 state 3 are the controls that show the assertion cannot pass vacuously.
 
-## Commands and EXIT codes (logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-248.r3/logs)
-Round 3 reruns the extended test from the configured build tree; the round-2 log paths are stale and
-superseded by these.
-- GREEN (extended three-state test, fix in place): `cmake --build build --target zene AutomationRenderLockTest -j4` → 01-build-green.log EXIT=0; `ctest -R '^AutomationRenderLockTest$' --output-on-failure` (run from build/tests) → 02-test-green.log EXIT=0 (Passed 0.51 sec)
-- 4b patch (the fix is committed, so the patch is read from the fix commit, not from `git diff`): `git diff HEAD^ HEAD -- include/AutomationClip.h include/Song.h src/core/Song.cpp src/core/TrackContainer.cpp > logs/fix.patch` → EXIT=0 (99 lines); `git apply -R logs/fix.patch` → 03-revert.log REVERT_EXIT=0
-- 4b RED: `cmake --build build --target zene AutomationRenderLockTest -j4` → 04-build-red.log EXIT=0; `ctest -R '^AutomationRenderLockTest$' --output-on-failure` → 05-test-red.log **EXIT=8** (Totals: 2 passed, 4 failed; `theRampPublishDoesNotWaitForAnEditedClip` fails at state 2)
-- 4b GREEN: `git apply logs/fix.patch` → 06-restore.log RESTORE_EXIT=0; `cmake --build build --target zene AutomationRenderLockTest -j4` → 07-build-green-4b.log EXIT=0; `ctest -R '^AutomationRenderLockTest$' --output-on-failure` → 08-test-green-4b.log **EXIT=0** (100% passed)
-- Family: `ctest -R '^(AutomationModesTest|AutomationPreFirstValueTest|AutomationRenderLockTest|SampleAccurateAutomationTest|ControlRecordingRoutesTest|ControlSessionRecordLandTest)$' --output-on-failure` → 09-test-family.log EXIT=0 (6/6 passed)
-- Gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` → 10-feature-check.log EXIT=0, RESULT: PASS (all 8 rows PASS)
+## GUI harness evidence
+This unit's own change is not under `src/gui`, but the branch diff contains inherited `src/gui` files,
+so the proof manifest also carries a screenshot from the control-socket GUI harness. The real `zene`
+binary was started headless by `tests/control-shell.py`; its `window.screenshot` verb rendered the
+arrange view at the working size, and the harness also rendered mix and edit and proved the three
+images differ. No GUI behaviour is changed by this fix; the screenshot is the harness's proof that
+the application still starts and renders.
+
+- PNG: `01-gui-shell.log` output `shell-arrange.png` in this run's log folder
+  (`/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-248.r4/logs/shell-arrange.png`)
+- sha256: `0f76075ee2dfe8ac8c0e0e1a7075634ea84eb778221baadf701f2d5a989bba97`
+- Driver: `QT_QPA_PLATFORM=offscreen python3 tests/control-shell.py build/zene <logs dir>` EXIT=0
+  ("PASS: shell control-surface driver (every check held)")
+
+## Commands and EXIT codes (logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-248.r4/logs)
+Round 4 reruns the whole regression from the configured build tree; the round-2 and round-3 log paths
+are gone and superseded by these.
+- GUI harness: `QT_QPA_PLATFORM=offscreen python3 tests/control-shell.py build/zene <logs dir>` → 01-gui-shell.log EXIT=0
+- GREEN (extended three-state test, fix in place): `cmake --build build --target zene AutomationRenderLockTest -j4` → 02-build-green.log EXIT=0; `ctest -R '^AutomationRenderLockTest$' --output-on-failure` (run from build/tests) → 03-test-green.log EXIT=0 (Passed 0.51 sec)
+- 4b patch (the fix is committed, so the patch is read from the fix commit, not from `git diff`): `git diff 4a6c78f81f^ 4a6c78f81f -- include/AutomationClip.h include/Song.h src/core/Song.cpp src/core/TrackContainer.cpp > logs/fix.patch` → EXIT=0 (99 lines); `git apply -R logs/fix.patch` → 04-revert.log REVERT_EXIT=0
+- 4b RED: `cmake --build build --target zene AutomationRenderLockTest -j4` → 05-build-red.log EXIT=0; `ctest -R '^AutomationRenderLockTest$' --output-on-failure` → 06-test-red.log **EXIT=8** (Totals: 2 passed, 4 failed; `theRampPublishDoesNotWaitForAnEditedClip` fails at state 2)
+- 4b GREEN: `git apply logs/fix.patch` → 07-restore.log RESTORE_EXIT=0; `cmake --build build --target zene AutomationRenderLockTest -j4` → 08-build-green-4b.log EXIT=0; `ctest -R '^AutomationRenderLockTest$' --output-on-failure` → 09-test-green-4b.log **EXIT=0** (100% passed)
+- Family: `ctest -R '^(AutomationModesTest|AutomationPreFirstValueTest|AutomationRenderLockTest|SampleAccurateAutomationTest|ControlRecordingRoutesTest|ControlSessionRecordLandTest)$' --output-on-failure` → 10-test-family.log EXIT=0 (6/6 passed)
+- Gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` → 11-feature-check.log EXIT=0, RESULT: PASS (all 8 rows PASS)
 - Full-tree rebuild: every target this fix needs was rebuilt by name (`zene` plus `AutomationRenderLockTest`, which pulls `include/AutomationClip.h` and `include/Song.h`). Other targets that include those headers were not rebuilt in this lane; the header change is purely additive (a nested class plus a comment), so their objects stay valid at link time.
 
 ## Self-check
-- **Regression test FAILS with the product change reverted and PASSES with it:** `git apply -R logs/fix.patch` then rebuild and run → 05-test-red.log EXIT=8 (4 of 4 cases fail; the extended three-state case fails at state 2). `git apply logs/fix.patch` then rebuild and run → 08-test-green-4b.log EXIT=0.
-- **State-sequence artifact:** `theRampPublishDoesNotWaitForAnEditedClip` drives baseline publish → edit-held skip with no ramp → released publish, each with its own period counter and assertion (see State sequence above). 02-test-green.log and 08-test-green-4b.log are the green runs; 05-test-red.log is the red run.
+- **Regression test FAILS with the product change reverted and PASSES with it:** `git apply -R logs/fix.patch` then rebuild and run → 06-test-red.log EXIT=8 (4 of 4 cases fail; the extended three-state case fails at state 2). `git apply logs/fix.patch` then rebuild and run → 09-test-green-4b.log EXIT=0.
+- **State-sequence artifact:** `theRampPublishDoesNotWaitForAnEditedClip` drives baseline publish → edit-held skip with no ramp → released publish, each with its own period counter and assertion (see State sequence above). 03-test-green.log and 09-test-green-4b.log are the green runs; 06-test-red.log is the red run.
+- **Screenshot artifact:** the control-socket GUI harness rendered the running `zene` shell (`01-gui-shell.log` EXIT=0); `shell-arrange.png` sha256 `0f76075ee2dfe8ac8c0e0e1a7075634ea84eb778221baadf701f2d5a989bba97`, in this run's log folder. The fix changes no GUI behaviour; the branch diff carries inherited `src/gui` files, hence the artifact.
 - **Deterministic:** no sleeps and no injected timing. The lock is held by a real edit parked on a `std::promise` from a direct `dataChanged` slot (a synchronisation hook), and the test waits on that promise before reading. The fixed read never waits, so GREEN does not depend on timing (0.51 s). The single `future::wait_for(10 s)` bound is only the escape hatch for the unfixed build, whose read would otherwise block until release. It mirrors the existing `PhaseDSidechainTest::theSidechainAmountReadTakesNoLock`, which uses `wait_for(2 s)`.
 - **Fix at the cause and complete; callers and siblings checked:** every audio-thread call into `m_clipMutex` on the automation-track path is now under `RenderLock`: buildAutomationRamps (`objects`, `writeBlockRamp`), collectAutomatedValues (`valueAt`, `objects`), applyRelativeClips (`valueAt`, `getMin`/`getMax`→`firstObject`, `objects`), and the processAutomations recording scan (`firstObject`). `aWholePeriodDoesNotWaitForAnEditedClip` proves a whole `processNextBuffer()` period returns. Other callers found by `rg`: AutomatableModel.cpp:350 and :1182 (`globalAutomationValueAt`) are control-thread paths. NotePlayHandle.cpp:752 (per-note detuning) is a separate inherited feature and is listed under Other findings.
-- **No collateral damage:** no saved data, file format, command or undo path is touched. No limit or capacity was added. Without contention, every path behaves as before (`tryLock` succeeds where `lock` would have). SampleAccurateAutomationTest, AutomationPreFirstValueTest, AutomationModesTest, ControlRecordingRoutesTest and ControlSessionRecordLandTest pass alongside this test (09-test-family.log EXIT=0, 6/6).
+- **No collateral damage:** no saved data, file format, command or undo path is touched. No limit or capacity was added. Without contention, every path behaves as before (`tryLock` succeeds where `lock` would have). SampleAccurateAutomationTest, AutomationPreFirstValueTest, AutomationModesTest, ControlRecordingRoutesTest and ControlSessionRecordLandTest pass alongside this test (10-test-family.log EXIT=0, 6/6).
 - **ALREADY-FIXED / FALSE-POSITIVE code reference:** not applicable. The verdict is FIXED, and the bug was real (RED evidence above).
 - **Sibling commands in command files changed:** this job changed no command file (no `ControlCommands*.cpp` in the diff). The app.* and arrangement.* commands the check lists come from earlier history on this branch and do not touch automation clip locking.
 
