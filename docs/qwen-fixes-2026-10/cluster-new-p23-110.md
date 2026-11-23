@@ -113,6 +113,43 @@ EXIT=0
   (dry is `1 - wet`), `src/core/Effect.cpp:65` (default wet = 1.0),
   `src/core/Effect.cpp:114,186` (one persisted `"wet"` value), and
   `plugins/Gate/Gate.cpp:138` with the algebra above.
+- **Sibling commands in the command files you changed** (`app.*`,
+  `arrangement.*`): this lane changed no command file. The submit check lists
+  them because `base..HEAD` (base `fa4a5f2e7`) contains the train's earlier
+  commits; this cluster's only commit adds one report file:
+
+  ```
+  $ git show --stat --oneline HEAD
+  a771f35bff docs: cluster new-p23-110 - Gate dry/wet mix is a complementary crossfade (FALSE-POSITIVE)
+   docs/qwen-fixes-2026-10/cluster-new-p23-110.md | 119 +++++++++++++++++++++++++
+   1 file changed, 119 insertions(+)
+  ```
+
+  So none of those commands is touched, and none needs a consistency change.
+  The same applies to the `tests/control-*.py` files named by the "tests added
+  or changed" row: they come from earlier commits on the branch, not from this
+  cluster.
+
+## Submit check
+
+```
+$ python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p23-110 new-p23-110 > /home/kruzzzzy/.config/kads/zene/state/runs/new-p23-110.r1/logs/3-submit-check.log 2>&1; echo EXIT=$?
+EXIT=0
+```
+
+Table (`logs/3-submit-check.log`):
+
+```
+PRE-SUBMIT CHECK for new-p23-110
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-new-p23-110.md
+  PASS  tests added or changed - tests/control-audio-test-tone.py, tests/control-no-audio-device.py, tests/control-session-lifecycle-transcript.py
+  PASS  new test files registered in tests/CMakeLists.txt
+  PASS  gates (feature_check.py)
+  ?     ... (all asks answered in Self-check above)
+RESULT: PASS - submit
+```
 
 ## Other findings
 
