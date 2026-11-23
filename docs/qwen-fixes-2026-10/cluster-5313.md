@@ -49,7 +49,11 @@ can observe never carries `WriterBit`.
 | 8 | `git apply -R .../logs/fix.patch` (restore the fix) | 0 | — |
 | 9 | `cmake --build build --target SessionTuningPublicationTest SessionTuningTest -j4` | 0 | build-4-green.log |
 | 10 | `ctest -R '^SessionTuning(Publication)?Test$' --output-on-failure` | 0 | test-4-green.log |
-| 11 | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | gates-1.log |
+| 11 | `ctest -R 'SessionTuning' --output-on-failure` (whole family; GUI target not built yet) | 8 (Not Run) | test-5-family.log |
+| 12 | `cmake --build build --target SessionTuningMenuTest -j4` | 0 | build-5-menu.log |
+| 13 | `ctest -R 'SessionTuning' --output-on-failure` (3/3 pass) | 0 | test-6-family.log |
+| 14 | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | gates-1.log |
+| 15 | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 5313` | 0 | submit-2.log |
 
 `test-3-red.log` shows exactly the regression assertion failing:
 `FAIL! : ...readerReturnsWhileWriterIsPausedAfterPublication() ... reader timed
@@ -57,6 +61,10 @@ out while the writer was paused after publication`, `Totals: 3 passed, 1
 failed`, ctest `1 tests failed out of 1`, exit 8.
 `test-4-green.log`: `SessionTuningTest Passed`, `SessionTuningPublicationTest
 Passed`, `100% tests passed out of 2`, exit 0.
+The first whole-family run (`test-5-family.log`, exit 8) was red only because
+`SessionTuningMenuTest` had never been built in this tree (`Unable to find
+executable`); after building that target (`build-5-menu.log`, exit 0) the family
+is 3/3 green (`test-6-family.log`, exit 0).
 
 Note on the revert: a first naive swap (front store before the clear) left the
 seam after the clear and the test passed (`test-2-red.log`, exit 0). That is
