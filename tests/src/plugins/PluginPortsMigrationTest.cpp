@@ -1061,6 +1061,7 @@ private slots:
 	void ladspaControlDialogSurvivesFailedInstantiationsDuringSampleRateChange();
 	void ladspaEffectProcessLockTakesNoExclusiveMutex();
 	void ladspaEffectRejectsZeroInputPlugin();
+	void ladspaEffectRejectsOutputChannelOverflow();
 	void typedDecodeRejectsIncompleteElement();
 	void basicFiltersCannotBeCopied();
 	void xpressiveSelectionRejectsUnavailableGraphs();
@@ -1209,9 +1210,14 @@ void PluginPortsMigrationTest::initTestCase()
 	// constructed, so it has to be set before Engine::init(). The reference
 	// renderer is spawned as a child process and inherits this environment.
 	const auto failurePluginPath = QString::fromUtf8(PART_C_FAILURE_LADSPA_MODULE);
-	const auto ladspaPath = QString::fromUtf8(PART_C_LADSPA_DIR) + QDir::listSeparator()
-		+ QFileInfo{failurePluginPath}.absolutePath();
-	qputenv("LADSPA_PATH", ladspaPath.toLocal8Bit());
+	QStringList ladspaPath{QString::fromUtf8(PART_C_LADSPA_DIR),
+		QFileInfo{failurePluginPath}.absolutePath()};
+#ifdef PART_C_CHANNEL_LADSPA_MODULE
+	// Cluster new-p9-213: the asymmetric-layout effect regression loads the
+	// mono-in/stereo-out descriptor from the channel-count fixture module.
+	ladspaPath << QFileInfo{QString::fromUtf8(PART_C_CHANNEL_LADSPA_MODULE)}.absolutePath();
+#endif
+	qputenv("LADSPA_PATH", ladspaPath.join(QDir::listSeparator()).toLocal8Bit());
 
 	lmms::Engine::init(true);
 	lmms::NotePlayHandleManager::init();
@@ -2158,6 +2164,79 @@ void PluginPortsMigrationTest::ladspaEffectRejectsZeroInputPlugin()
 	QVERIFY(effect != nullptr);
 	QVERIFY2(!effect->isOkay(),
 		"a zero-input LADSPA source must be rejected as an effect");
+	QVERIFY(effect->controls() == nullptr);
+}
+
+void PluginPortsMigrationTest::ladspaEffectRejectsOutputChannelOverflow()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	// A valid LADSPA transfer with one audio input and two audio outputs. The
+	// wrapper makes DEFAULT_CHANNELS / 1 = 2 processors, one per input channel,
+	// and its merge loop maps both outputs of every processor onto the next
+	// mixer channel: four consecutive channels in the effect's two-channel
+	// view, so the last processor writes inOut[frame][2] and inOut[frame][3].
+	const QString fixturePath = QString::fromUtf8(PART_C_CHANNEL_LADSPA_MODULE);
+	auto* fixtureLib = new QLibrary{fixturePath};
+	fixtureLib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(fixtureLib->load(), qPrintable(fixtureLib->errorString()));
+	m_libraries.push_back(fixtureLib);
+
+	auto* hostLib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_ladspaeffect)};
+	hostLib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(hostLib->load(), qPrintable(hostLib->errorString()));
+	m_libraries.push_back(hostLib);
+
+	auto entry = reinterpret_cast<MainFn>(hostLib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	auto* descriptor = reinterpret_cast<const lmms::Plugin::Descriptor*>(
+		hostLib->resolve("ladspaeffect_plugin_descriptor"));
+	QVERIFY(descriptor != nullptr);
+
+	lmms::Plugin::Descriptor::SubPluginFeatures::Key key{descriptor,
+		QStringLiteral("ladspaeffect:mono_in_stereo_out")};
+	key.attributes["file"] = QFileInfo{fixturePath}.fileName();
+	key.attributes["plugin"] = QStringLiteral("mono_in_stereo_out");
+
+	auto effect = std::unique_ptr<lmms::LadspaEffect>{
+		static_cast<lmms::LadspaEffect*>(entry(nullptr, &key))};
+	QVERIFY(effect != nullptr);
+
+	if (effect->isOkay())
+	{
+		// Before the layout check the plugin was accepted. Drive the merge loop
+		// (the exact function that writes the channels) over a bus holding one
+		// extra stereo frame of guard storage, and require the guard to survive.
+		// The out-of-range channels land in that frame, so this observes the
+		// overrun without reading or writing outside the allocation.
+		const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+		std::vector<lmms::SampleFrame> storage(static_cast<std::size_t>(frames) + 1);
+		for (auto frame = lmms::f_cnt_t{0}; frame < frames; ++frame)
+		{
+			storage[frame].setLeft(0.25f);
+			storage[frame].setRight(-0.25f);
+		}
+		constexpr lmms::sample_t guardLeft = 12345.0f;
+		constexpr lmms::sample_t guardRight = -12345.0f;
+		storage[frames].setLeft(guardLeft);
+		storage[frames].setRight(guardRight);
+
+		effect->processImpl(lmms::InterleavedBufferView<float, 2>{
+			storage.data(), frames});
+
+		QVERIFY2(storage[frames].left() == guardLeft &&
+			storage[frames].right() == guardRight,
+			"the LADSPA merge loop wrote past the two-channel effect buffer");
+	}
+
+	QVERIFY2(!effect->isOkay(),
+		"a one-input/two-output LADSPA plugin needs four mixer channels per "
+		"period; the effect must refuse the layout instead of writing past "
+		"its two-channel view");
 	QVERIFY(effect->controls() == nullptr);
 }
 
