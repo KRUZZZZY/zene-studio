@@ -1119,6 +1119,8 @@ private slots:
 	void multitapEchoRetunesAllTapsAfterSampleRateChange();
 	void multitapEchoGraphEditsAreDeferredToAudioThread();
 	void multitapEchoStagesCascade();
+	void nesDetuneReadsTheModelOnTheRenderPath();
+	void nesDetuneReachesRendererWithoutControlSignal();
 	void nesCoarseDetuneRetunesHeldNote();
 	void opulenzUpdatePatchLocksEmulatorForWholeUpdate();
 	void opulenzReloadEmulatorReplacesEmulatorUnderMutex();
@@ -6220,6 +6222,195 @@ void PluginPortsMigrationTest::multitapEchoStagesCascade()
 	}
 }
 
+//! The oscillator period of a rendered pulse wave, by autocorrelation over
+//! [minPeriod, maxPeriod]: the lag whose self-similarity is strongest.
+int nesOscillatorPeriod(const std::vector<float>& samples, int minPeriod, int maxPeriod)
+{
+	float mean = 0.0f;
+	for (const float sample : samples) { mean += sample; }
+	mean /= static_cast<float>(samples.size());
+	double bestCorrelation = -std::numeric_limits<double>::infinity();
+	int bestPeriod = minPeriod;
+	for (int lag = minPeriod; lag <= maxPeriod; ++lag)
+	{
+		double correlation = 0.0;
+		for (std::size_t index = 0; index + static_cast<std::size_t>(lag) < samples.size(); ++index)
+		{
+			correlation += (samples[index] - mean) * (samples[index + static_cast<std::size_t>(lag)] - mean);
+		}
+		if (correlation > bestCorrelation)
+		{
+			bestCorrelation = correlation;
+			bestPeriod = lag;
+		}
+	}
+	return bestPeriod;
+}
+
+
+/*!
+ * Cluster new-p18-65: the channel coarse detune must reach the renderer
+ * through the model's audio-safe published value, not through a plain mirror
+ * the control thread writes.
+ *
+ * The detune factors used to live in plain floats on NesInstrument, written by
+ * updateFreq1()/updateFreq2()/updateFreq3() - public slots connected to the
+ * knobs' dataChanged with Qt::DirectConnection - and read by
+ * NesObject::updatePitch() on the audio thread. Turning a detune knob during
+ * playback therefore wrote, on the GUI thread, the very floats the audio
+ * thread was reading, with nothing in between: a data race on the render
+ * path. This slot pins the cause in the plugin's own source: the mirror is
+ * gone and the render path reads the three models.
+ */
+void PluginPortsMigrationTest::nesDetuneReadsTheModelOnTheRenderPath()
+{
+	const auto pluginPath = [](const QString& name)
+	{
+		return QDir{QStringLiteral(NES_PLUGIN_SOURCE_DIR)}.filePath(name);
+	};
+	QFile sourceFile{pluginPath(QStringLiteral("Nes.cpp"))};
+	QVERIFY2(sourceFile.open(QIODevice::ReadOnly), qPrintable(sourceFile.fileName()));
+	const QString source = QString::fromUtf8(sourceFile.readAll());
+	QFile headerFile{pluginPath(QStringLiteral("Nes.h"))};
+	QVERIFY2(headerFile.open(QIODevice::ReadOnly), qPrintable(headerFile.fileName()));
+	const QString header = QString::fromUtf8(headerFile.readAll());
+
+	// The cause: no plain float on the instrument may carry a detune factor
+	// from the control thread to the audio thread.
+	for (const auto* mirror : {"m_freq1", "m_freq2", "m_freq3"})
+	{
+		QVERIFY2(!header.contains(QString::fromLatin1(mirror)),
+			qPrintable(QStringLiteral("Nes.h still declares the control-thread detune cache %1")
+				.arg(QString::fromLatin1(mirror))));
+	}
+	const auto updatePitchBody = functionBodyStartingAt(source, QStringLiteral("void NesObject::updatePitch()"));
+	QVERIFY2(!updatePitchBody.isEmpty(), "NesObject::updatePitch() was not found");
+	QVERIFY2(!updatePitchBody.contains(QStringLiteral("m_parent->m_freq")),
+		"the NES render path still reads the control-thread detune cache");
+	for (const auto* model : {"m_ch1Crs.value()", "m_ch2Crs.value()", "m_ch3Crs.value()"})
+	{
+		QVERIFY2(updatePitchBody.contains(QString::fromLatin1(model)),
+			qPrintable(QStringLiteral("the NES render path does not read %1 on the audio thread")
+				.arg(QString::fromLatin1(model))));
+	}
+	QVERIFY2(!source.contains(QStringLiteral("SLOT( updateFreq")),
+		"a NES detune slot still publishes the render path's values from the control thread");
+}
+
+
+/*!
+ * Cluster new-p18-65, behaviour: a detune change must reach a sounding note
+ * even when the write runs no control-side slot.
+ *
+ * The detune write below is made with the instrument's models holding their
+ * change signal. AutomatableModel::setValueInternal() defers the signal the
+ * same way for a write made on the render thread, so this is also the shape a
+ * render-thread automation tick has. A renderer that reads the model (value()
+ * is an atomic load of the published value) still follows the change; a
+ * renderer that reads a slot-written mirror keeps the old detune for good.
+ */
+void PluginPortsMigrationTest::nesDetuneReachesRendererWithoutControlSignal()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_nes)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto instrument = std::unique_ptr<lmms::Instrument>{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(instrument != nullptr);
+
+	const auto setNesSettings = [](lmms::Instrument& inst, const QString& coarseDetune)
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement("instrument");
+		QDomElement state = inst.saveState(doc, root);
+		state.setAttribute("crs1", coarseDetune);
+		state.setAttribute("on2", "0");
+		state.setAttribute("on3", "0");
+		state.setAttribute("envon1", "0");
+		state.setAttribute("sweep1", "0");
+		state.setAttribute("vibr", "0");
+		inst.restoreState(state);
+	};
+	setNesSettings(*instrument, QStringLiteral("0"));
+
+	const lmms::f_cnt_t frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	constexpr int BeforeDetuneChange = 8;
+	constexpr int WarmupAfterDetune = 8;
+	constexpr int MeasureAfterDetune = 8;
+	constexpr int TotalPeriods = BeforeDetuneChange + WarmupAfterDetune + MeasureAfterDetune;
+	const lmms::Note note{
+		lmms::TimePos{static_cast<lmms::tick_t>(frames * TotalPeriods)},
+		lmms::TimePos{0}, lmms::DefaultKey};
+	lmms::NotePlayHandle noteHandle{
+		track.get(), 0, frames * TotalPeriods, note, nullptr, -1,
+		lmms::NotePlayHandle::Origin::MidiClip};
+	std::vector<lmms::SampleFrame> buffer(static_cast<std::size_t>(frames));
+	std::vector<float> beforeDetune;
+	std::vector<float> afterDetune;
+	beforeDetune.reserve(static_cast<std::size_t>(BeforeDetuneChange * frames));
+	afterDetune.reserve(static_cast<std::size_t>(MeasureAfterDetune * frames));
+
+	for (int period = 0; period < TotalPeriods; ++period)
+	{
+		if (period == BeforeDetuneChange)
+		{
+			// A detune write that runs no control-side slot.
+			for (auto* child : instrument->children()) { child->blockSignals(true); }
+			setNesSettings(*instrument, QStringLiteral("12"));
+			for (auto* child : instrument->children()) { child->blockSignals(false); }
+		}
+		std::fill(buffer.begin(), buffer.end(), lmms::SampleFrame{0.0f, 0.0f});
+		instrument->playNote(&noteHandle, std::span<lmms::SampleFrame>{buffer});
+		if (period < BeforeDetuneChange || period >= BeforeDetuneChange + WarmupAfterDetune)
+		{
+			auto& samples = period < BeforeDetuneChange ? beforeDetune : afterDetune;
+			for (lmms::f_cnt_t frame = 0; frame < frames; ++frame)
+			{
+				samples.push_back(buffer[static_cast<std::size_t>(frame)].left());
+			}
+		}
+	}
+	if (noteHandle.m_pluginData != nullptr)
+	{
+		instrument->deleteNotePluginData(&noteHandle);
+		noteHandle.m_pluginData = nullptr;
+	}
+	const int initialPeriod = static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()
+		/ noteHandle.frequency());
+	const int beforePeriod = nesOscillatorPeriod(beforeDetune, initialPeriod - 2, initialPeriod + 2);
+	const int afterPeriod = nesOscillatorPeriod(afterDetune, initialPeriod / 2 - 2, initialPeriod + 2);
+	qInfo("NES detune without a control signal: before=%d after=%d", beforePeriod, afterPeriod);
+	QVERIFY2(std::abs(afterPeriod * 2 - beforePeriod) <= 3,
+		"a coarse-detune write that ran no control-side slot did not retune the held note: "
+		"the render path reads a mirror the control thread writes instead of the model");
+
+	setNesSettings(*instrument, QStringLiteral("0"));
+	track->microtuner()->enabledModel()->setValue(true);
+	track->microtuner()->keyRangeImportModel()->setValue(false);
+	track->firstKeyModel()->setValue(lmms::DefaultKey + 1);
+	lmms::NotePlayHandle unmappedNote{
+		track.get(), 0, frames * TotalPeriods, note, nullptr, -1,
+		lmms::NotePlayHandle::Origin::MidiClip};
+	QCOMPARE(unmappedNote.frequency(), 0.0f);
+	std::fill(buffer.begin(), buffer.end(), lmms::SampleFrame{1.0f, 1.0f});
+	instrument->playNote(&unmappedNote, std::span<lmms::SampleFrame>{buffer});
+	instrument->deleteNotePluginData(&unmappedNote);
+	QVERIFY2(std::all_of(buffer.begin(), buffer.end(), [](const lmms::SampleFrame& frame)
+	{
+		return frame.left() == 0.0f && frame.right() == 0.0f;
+	}), "an unmapped NES note must render silence");
+}
+
+
 void PluginPortsMigrationTest::nesCoarseDetuneRetunesHeldNote()
 {
 	if (!testHostCanLoadPluginModules())
@@ -6293,32 +6484,10 @@ void PluginPortsMigrationTest::nesCoarseDetuneRetunesHeldNote()
 	}
 	delete instrument;
 
-	const auto estimatePeriod = [](const std::vector<float>& samples, int minPeriod, int maxPeriod)
-	{
-		float mean = 0.0f;
-		for (const float sample : samples) { mean += sample; }
-		mean /= static_cast<float>(samples.size());
-		double bestCorrelation = -std::numeric_limits<double>::infinity();
-		int bestPeriod = minPeriod;
-		for (int lag = minPeriod; lag <= maxPeriod; ++lag)
-		{
-			double correlation = 0.0;
-			for (std::size_t index = 0; index + static_cast<std::size_t>(lag) < samples.size(); ++index)
-			{
-				correlation += (samples[index] - mean) * (samples[index + static_cast<std::size_t>(lag)] - mean);
-			}
-			if (correlation > bestCorrelation)
-			{
-				bestCorrelation = correlation;
-				bestPeriod = lag;
-			}
-		}
-		return bestPeriod;
-	};
 	const int initialPeriod = static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()
 		/ noteHandle.frequency());
-	const int beforePeriod = estimatePeriod(beforeDetune, initialPeriod - 2, initialPeriod + 2);
-	const int afterPeriod = estimatePeriod(afterDetune, initialPeriod / 2 - 2, initialPeriod + 2);
+	const int beforePeriod = nesOscillatorPeriod(beforeDetune, initialPeriod - 2, initialPeriod + 2);
+	const int afterPeriod = nesOscillatorPeriod(afterDetune, initialPeriod / 2 - 2, initialPeriod + 2);
 	qInfo("NES held-note oscillator periods: before=%d after=%d", beforePeriod, afterPeriod);
 	QVERIFY2(std::abs(afterPeriod * 2 - beforePeriod) <= 3,
 		"changing NES channel 1 coarse detune did not halve the held note's oscillator period");
