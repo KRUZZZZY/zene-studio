@@ -172,6 +172,19 @@ and `src/core/AudioEngine.cpp:1065-1069` prepares every registered model before 
 The fix commits are `c674877bc5` and `c28751cef2`, both ancestors of HEAD
 (`git merge-base --is-ancestor` exited 0).
 
+**Sibling commands in the command files you changed.** This session changed no command
+files and no product code at all; the command files the pre-submit check lists are part of
+the inherited `base..HEAD` train range, not this closure. The listed `app.*` and
+`arrangement.*` commands are unaffected because the sidechain amount read is not on any
+command path, and the report-only commit changes no registry, reversibility table or
+command snapshot.
+
+## Pre-submit check
+
+`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> review-f1a74cc54`
+exited 0 (log `submit-check-1.log`), with every mechanical item PASS and no FAIL. The ASK
+items are answered above and the sibling-command ASK immediately before this section.
+
 ## Other findings
 
 - `src/core/Mixer.cpp:652-653` still carries the comment from the first fix: "the
