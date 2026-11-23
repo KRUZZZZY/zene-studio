@@ -820,6 +820,71 @@ private slots:
 		QCOMPARE(ports.buffers()->output().channels(), channelsOut);
 	}
 
+	//! A refused count is a coordinated protocol outcome, not only a log line (cluster new-p12-212).
+	//!
+	//! The client stores its own counts before it sends IdChangeInputOutputCount
+	//! (RemotePluginClient::setInputOutputCount) and its doProcessing() then refuses to render a period whose
+	//! counts no longer fit the block the host sized - while still answering IdProcessingDone. A host that
+	//! only logged the refusal would take that answer as a processed period and copy the stale shared output
+	//! planes. The refusal must therefore fail the host instance, which is what makes process() render
+	//! silence, exactly as the retired count ids and any other protocol mismatch do.
+	//!
+	//! The "not failed, running" precondition is the state a completed handshake leaves; it is steered
+	//! through the friend seams (no client process is started here), so nothing is timed or waited on.
+	void refusedOutOfRangeChannelCountFailsTheHostInstance()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+
+		constexpr auto channelsIn = ch_cnt_t{2};
+		constexpr auto channelsOut = ch_cnt_t{2};
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		QVERIFY(CachedRunningState<RemotePlugin>::steer(plugin, true));
+		plugin.m_failed = false;
+		QVERIFY(!plugin.failed());
+		QVERIFY(plugin.isRunning());
+
+		ports.audioPortsModel().setChannelCounts(channelsIn, channelsOut);
+		QCOMPARE(ports.buffers()->initialized(), true);
+		auto inBefore = ports.buffers()->input();
+		auto outBefore = ports.buffers()->output();
+
+		// What a client that rendered this period writes; only a processed period may replace it.
+		std::fill(outBefore.bufferPtr(0), outBefore.bufferPtr(0) + frames, 1.0f);
+
+		plugin.processMessage(
+			RemotePlugin::message(IdChangeInputOutputCount).addInt(-1).addInt(2));
+
+		// The client has laid its planes out for the counts it reported and skips its periods, so the host
+		// must stop treating them as processed: the instance is failed from here on.
+		QVERIFY(plugin.failed());
+
+		// The refusal itself changed neither the counts nor the block.
+		QCOMPARE(ports.audioPortsModel().in().channelCount(), channelsIn);
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), channelsOut);
+		QCOMPARE(ports.buffers()->input().bufferPtr(0), inBefore.bufferPtr(0));
+		QCOMPARE(ports.buffers()->output().bufferPtr(0), outBefore.bufferPtr(0));
+
+		// Silence, not the stale planes: the period is not processed and nothing of the old output is kept.
+		QCOMPARE(plugin.process(), false);
+		for (f_cnt_t frame = 0; frame < frames; ++frame)
+		{
+			QCOMPARE(outBefore.sample(0, frame), 0.0f);
+			QCOMPARE(outBefore.sample(1, frame), 0.0f);
+		}
+
+		// The main thread's half still reports the refusal, once, and does not wait for the plugin's end.
+		g_warningsSeen = 0;
+		const QtMessageHandler previous = qInstallMessageHandler(countWarnings);
+		plugin.applyDeferredClientRequests();
+		qInstallMessageHandler(previous);
+		QCOMPARE(g_warningsSeen, 1);
+		QVERIFY(!plugin.reportRefusedChannelCounts());
+	}
+
 	//! processMessage can run on the audio thread, so a refused count must not log there: a log allocates and
 	//! locks. Counted on this thread, refusing a negative and an oversized count allocates nothing.
 	void refusedChannelCountsAllocateNothing()
