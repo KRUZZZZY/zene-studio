@@ -150,6 +150,13 @@ under Other findings.
   unchanged.
 - **Verdict is FIXED**, so the ALREADY-FIXED/FALSE-POSITIVE evidence item is not
   applicable.
+- **Sibling commands (ASK).** This fix changes no command file and no command id: the
+  commit's own file list is `include/Lv2Proc.h`, `include/MidiHandoffQueue.h`,
+  `src/core/lv2/Lv2Proc.cpp`, `tests/src/core/Lv2MidiHandoffTest.cpp`,
+  `tests/CMakeLists.txt`, `tests/fork-sources.txt`, `tests/upstream-modifications.txt` and
+  this report (`git show --stat d6c7ab7234`). The sibling ids the checker lists (`app.*`,
+  `arrangement.*`) come from the lane's earlier commits in `base..HEAD`, not from this
+  fix; none of them reaches `Lv2Proc`'s MIDI handoff, so none is affected.
 
 ## Other findings
 
