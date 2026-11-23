@@ -57,6 +57,18 @@ inline auto sidechainInputs(const float* const* in, int channels, const AudioBuf
 	return out.data();
 }
 
+/*! The output channels a hosted effect's wet/dry mix covers: every channel of the main input port (a
+ *  side-chain port's channels follow it, from @a mainInputChannels - what BusLayout::sideChainChannel
+ *  carries - and are not dry signal for the outputs), never fewer than the stereo pair it always
+ *  covered (round 6: channels past the second stayed fully wet). @a mainInputChannels < 0 means there
+ *  is no side-chain port, so the whole input port is dry signal. Audio thread: arithmetic on its
+ *  arguments, allocates nothing. */
+inline auto dryMixChannels(ch_cnt_t inputs, ch_cnt_t outputs, int mainInputChannels) -> ch_cnt_t
+{
+	const auto main = mainInputChannels < 0 ? inputs : static_cast<ch_cnt_t>(std::max(2, mainInputChannels));
+	return std::min({inputs, outputs, main});
+}
+
 } // namespace lmms
 
 #endif // LMMS_SIDECHAIN_INPUTS_H
