@@ -154,4 +154,53 @@ Log folder: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-118.r1/logs`.
 
 ## Self-check
 
-Submitted with this section filled in from the completion check below.
+Answers to the completion check's ASK items, each with the evidence it asks for.
+
+- **The regression test FAILS with the product change reverted and PASSES with it (exit codes).** Proven
+  in step 4b, twice: `git diff -- include/MidiAlsaRaw.h src/core/midi/MidiAlsaRaw.cpp include/MidiClient.h
+  > .../logs/fix.patch` (EXIT=0) then `git apply -R .../logs/fix.patch` (EXIT=0), rebuild (EXIT=0,
+  `.../logs/build-6-reverted.log`), run -> **EXIT=8** with the four tests failing
+  (`.../logs/test-8-reverted-red.log`); then `git apply .../logs/fix.patch` (EXIT=0), rebuild (EXIT=0,
+  `.../logs/build-7-reapplied.log`), run -> **EXIT=0** (`.../logs/test-9-reapplied-green.log`). The same
+  four tests also failed in the first, tests-only RED run (`.../logs/test-3-red.log`, EXIT=8) before any
+  product edit existed.
+- **The test is deterministic: no wall-clock timing, sleeps or races.** No `sleep`, no `QTest::qWait`
+  and no elapsed-time assertion is used by the four tests. The seam is the fake ALSA layer that already
+  exists in `tests/src/core/MidiAlsaRawShutdownTest.cpp` (the executable's `extern "C"`
+  `snd_rawmidi_*` definitions win over libasound, the technique of `MidiOutQueueTest` and
+  `AudioAlsaPollDescriptorTest`): the "device" is a pipe, its write stub records the bytes, the thread
+  that wrote them, and can refuse a bounded number of writes with `-EAGAIN`. Delivery is awaited through
+  `g_writeSignal.tryAcquire(1, 5000)` - a `QSemaphore` released by the write stub, the same
+  synchronisation hook the file already uses for its gated port - so the timeout only bounds a failure
+  and no assertion depends on how long anything took. The RED direction is a synchronous fact, not a
+  race: the unfixed `sendByte()` writes before `processOutEvent()` returns.
+- **The fix is at the cause and complete; every caller and sibling checked.** Callers: the audio path
+  (`MidiPort.cpp:222` <- `InstrumentTrack.cpp:720`), the GUI patch path (`MidiPort::sendOutputPatch`),
+  the base `MidiClient::processOutEventAt` fall-through (`include/MidiClient.h:66`), and the second
+  thread's `MidiClientRaw::processNonAudioOutEvent` (`src/core/midi/MidiClient.cpp:68`) - all of them
+  now reach the queue, which is multi-producer for exactly that reason. Siblings kept consistent:
+  `MidiJack::sendByte`/`processOutEventAt` (`src/core/midi/MidiJack.cpp:226-249`, the thread-local
+  assembly + `MpscQueue` + dropped counter idiom copied here), `MidiAlsaSeq::enqueueOutEvent`
+  (`src/core/midi/MidiAlsaSeq.cpp:374`, the wake-pipe protocol copied here), `MidiOss`/`MidiSndio`
+  (already non-blocking pipes with a writer). `outputQueueOverflowCount()` is overridden as the sibling
+  does, and `include/MidiClient.h:258` no longer describes the removed direct write. Declaration and
+  definition changed together, and every target that includes the headers was rebuilt (`zene` and the
+  MIDI family in the table above).
+- **No collateral damage.** No file format, project field, model or default changed, so saved projects
+  load exactly as before; the only persistence-adjacent member is a queue that lives and dies with the
+  client. The limits added are on the new hand-off only: `OutputQueueCapacity` (1024 messages) refuses
+  and counts past-full pushes, so no other caller is affected by it, and no existing check or limit was
+  changed or re-anchored. Behaviour outside the bug is preserved: the same bytes in the same order, the
+  same encoding (`MidiClientRaw::processOutEvent` untouched), a missing device still drops output
+  without a crash, and shutdown still joins the worker within the old bound (destructor plus one drain).
+  The one deliberate behaviour change is the added latency of at most one 5 ms worker pacing sleep, the
+  price of not writing from the render path; it is documented in the file header comment.
+- **ALREADY-FIXED / FALSE-POSITIVE evidence.** Not claimed: the verdict is FIXED, and the defect was
+  reproduced before the change (the four failing tests above show bytes reaching the device from the
+  audio-path thread, a lost `-EAGAIN` byte and no overflow counter).
+- **Sibling commands in the command files changed.** No command file was changed: this fix adds no
+  control command and touches nothing under `src/core/Control*` or `src/gui`, so the shell/command
+  siblings listed (`app.*`, `arrangement.*`) and the `ControlCommandsSnapshot` canary are untouched; the
+  completion check's `commits on the branch`, `working tree clean`, `gates` and
+  `new test files registered` rows all PASS (`.../logs/submit-1.log`).
+
