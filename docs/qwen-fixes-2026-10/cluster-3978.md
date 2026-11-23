@@ -102,6 +102,12 @@ python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>          
   product file.
 - Deterministic: no timing. The route is armed by `armTrack()`, the refusal is a direct command
   call, and the journal state is read from the file. No sleeps or races are used.
+- Sibling ask (`app.*`, `arrangement.*`, ...): those ids are printed because the pre-submit
+  checker diffs the whole branch against the train's merge-base, where 351 other changed files
+  (including `ControlCommandsShell.cpp` and `ControlCommandsArrangementState.cpp`) already live.
+  This fix changes no file in those groups and no id, schema or handler there; the only command
+  file in this fix is `src/core/ControlCommandsRecordingRecovery.cpp`, whose siblings are handled
+  next.
 - Fix at the cause and complete; siblings: `recovery_get_state` is read-only;
   `recovery_restore` (`src/core/ControlCommandsRecordingRecovery.cpp:95-110`) and
   `recovery_place` (`src/core/ControlCommandsRecordingPlace.cpp:79-99`) REWRITE the journal to
