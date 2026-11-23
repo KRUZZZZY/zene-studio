@@ -214,7 +214,10 @@ private:
  *
  * All operations are lock-free and allocate nothing. The per-channel slots cover the largest queue in use (512)
  * positions plus one cut boundary. Slot scans have a fixed bound, and each cut-stamp update makes at most
- * MaxStampUpdateAttempts compare-exchange attempts. When contention exhausts that budget or the slots are full,
+ * MaxStampUpdateAttempts compare-exchange attempts. A channel's stamp is always raised in its m_cutAt before its
+ * slot is published, and the consumer clears m_cutAt only together with every covered slot, so a channel whose
+ * m_cutAt is 0 has no pending slot at all: the consumer uses that to skip the slot scan when no cut is pending.
+ * When contention exhausts that budget or the slots are full,
  * the refusal is counted and the channel is flagged "deferred" with one wait-free fetch_or (release), after
  * queuedBefore was read. The single consumer (drainMidi) clears the flags (acquire) and keeps a consumer-private
  * deferred stamp = enqueued() read after the flag + 1. enqueued() only grows, so that stamp is never earlier than
@@ -335,6 +338,13 @@ public:
 	}
 
 #ifdef LMMS_TESTING
+	//! Slot probes the pending-cut fallback scan made. A drain with no cut pending must make none: the
+	//! fallback scans the 513 slots of a channel, so repeating it per event would cost over a million loads.
+	auto pendingSlotReads() const noexcept -> std::uint64_t
+	{
+		return m_pendingSlotReads.load(std::memory_order_relaxed);
+	}
+
 	//! Cuts after which a covered shared stamp could not be cleared within the bounded budget (a redundant cut may follow).
 	auto unclearedCoveredStamps() const noexcept -> std::uint64_t
 	{
@@ -401,10 +411,14 @@ private:
 		result.stamp = m_earliestCutAt[index].load(std::memory_order_acquire);
 		result.ordered = result.stamp != 0;
 		if (result.ordered) { return result; }
+		// Nothing was ever raised on this channel: by the invariant in the class comment its slots are empty,
+		// so the drain's no-cut path needs two loads instead of scanning all MaxPendingCuts slots. Without this
+		// check a period with no overflow cut probes 16 * 513 slots per event on the audio thread.
+		const auto latest = m_cutAt[index].load(std::memory_order_acquire);
+		if (latest == 0) { return result; }
 		result.stamp = pendingStamp(index);
 		result.ordered = result.stamp != 0;
-		const auto latest = m_cutAt[index].load(std::memory_order_acquire);
-		if (result.stamp == 0 || (latest != 0 && latest < result.stamp)) { result.stamp = latest; }
+		if (result.stamp == 0 || latest < result.stamp) { result.stamp = latest; }
 		return result;
 	}
 
@@ -450,6 +464,9 @@ private:
 		std::uint64_t earliest = 0;
 		for (const auto& pending : m_pendingCutAt[index])
 		{
+#ifdef LMMS_TESTING
+			m_pendingSlotReads.fetch_add(1, std::memory_order_relaxed);
+#endif
 			const auto value = pending.load(std::memory_order_acquire);
 			if (value != 0 && (earliest == 0 || value < earliest)) { earliest = value; }
 		}
@@ -460,9 +477,11 @@ private:
 	{
 		const auto cached = m_earliestCutAt[index].load(std::memory_order_acquire);
 		if (cached != 0) { return cached; }
-		const auto pending = pendingStamp(index);
+		// Same no-cut fast path as sharedCut(): m_cutAt == 0 means no slot can be pending.
 		const auto latest = m_cutAt[index].load(std::memory_order_acquire);
-		return pending == 0 || (latest != 0 && latest < pending) ? latest : pending;
+		if (latest == 0) { return 0; }
+		const auto pending = pendingStamp(index);
+		return pending == 0 || latest < pending ? latest : pending;
 	}
 
 	//! Rebuilds the cached earliest value after clearing the cuts covered by one sent recovery cut.
@@ -510,6 +529,10 @@ private:
 	std::atomic<std::uint64_t> m_recorded{0};
 	std::atomic<std::uint64_t> m_failedStampUpdates{0};
 	std::atomic<std::uint64_t> m_unclearedCoveredStamps{0};
+	//! Declared in every build: classes that embed this one (RemotePlugin.h) are compiled both with and without
+	//! LMMS_TESTING, and a test-only member would move their layout apart and break the vtable thunks they share.
+	//! Only pendingStamp() touches it, and only in testing builds; the value stays zero in product builds.
+	[[maybe_unused]] mutable std::atomic<std::uint64_t> m_pendingSlotReads{0};
 	std::atomic<std::uint32_t> m_deferredFlags{0};
 	std::array<std::uint64_t, 16> m_deferredStamp{}; //!< consumer-private; never touched by producers
 };

@@ -423,6 +423,37 @@ private slots:
 		QCOMPARE(queue.consumed(), std::uint64_t{3});  // the rest stays queued
 	}
 
+	//! A period with no overflow cut pending must not scan a channel's 513 pending slots for every event
+	//! and channel: 16 x 129 drain checks x 513 slots would be over a million atomic loads on the audio thread.
+	//! Once the only cut has been served, the channel is empty again and the scan must stay off.
+	void drainWithoutCutsDoesNotScanPendingSlots()
+	{
+		lmms::MidiHandoffQueue<512> queue; lmms::MidiChannelOverflow overflow;
+		for (std::uint32_t id = 0; id < 128; ++id) { QVERIFY(queue.push(eventWithOffset(id))); }
+		const auto allocations = countAllocations([&] {
+			lmms::drainMidi(queue, overflow, 128,
+				[](const lmms::HandoffMidiEvent&) { return true; }, [](int) { return false; });
+		});
+		QCOMPARE(queue.consumed(), std::uint64_t{128});
+		QCOMPARE(allocations, std::uint64_t{0});
+		QCOMPARE(overflow.pendingSlotReads(), std::uint64_t{0});
+
+		lmms::MidiHandoffQueue<4> small; lmms::MidiChannelOverflow smallOverflow;
+		for (std::uint32_t id : {1u, 2u, 3u, 4u}) { QVERIFY(small.push(eventWithOffset(id))); }
+		lmms::HandoffMidiEvent refused = eventWithOffset(99);
+		refused.channel = 3;
+		QVERIFY(!lmms::pushOrRecord(small, smallOverflow, refused));
+		std::size_t cuts = 0;
+		lmms::drainMidi(small, smallOverflow, 10,
+			[](const lmms::HandoffMidiEvent&) { return true; }, [&cuts](int) { ++cuts; return true; });
+		QCOMPARE(cuts, std::size_t{1});
+		QCOMPARE(smallOverflow.stamp(3), std::uint64_t{0});
+		const auto readsAfterCut = smallOverflow.pendingSlotReads();
+		lmms::drainMidi(small, smallOverflow, 10,
+			[](const lmms::HandoffMidiEvent&) { return true; }, [](int) { return false; });
+		QCOMPARE(smallOverflow.pendingSlotReads(), readsAfterCut);
+	}
+
 	//! Overflow cuts share the fixed native event budget with queue events; a limited drain leaves the rest queued.
 	void drainCapsEmittedEventsIncludingCuts()
 	{
