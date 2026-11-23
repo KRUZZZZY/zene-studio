@@ -44,8 +44,9 @@ class TakeLaneModel;
  *  A composite segment's slip (TakeLaneSegment::sourceOffset, include/TakeLane.h) says: over the segment, read
  *  the lane's take N ticks LATER than its own place. The take's SamplePlayHandle already renders the take at its
  *  own place and gates it by its lane's spans (R3.1); this object renders the same source a second time, N ticks
- *  ahead, and writes that read over the frames of the slipped spans before the gate runs. So the comp's ramps at
- *  every span edge (SamplePlayHandle::applyComp) cover the jump in the take too, and a span with no slip is the
+ *  ahead, and writes that read over the frames of the slipped spans before the gate runs. So a slip change at a
+ *  same-lane seam is heard as the new read, while the gate's ramp only guards the edges of a contiguous run of
+ *  the lane (a genuine lane switch or the comp's end); a span with no slip is the
  *  handle's own read, untouched.
  *
  *  One READER per distinct slip of the clip's lane (at most MaxReaders; a further slip plays unslipped), each a

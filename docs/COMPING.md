@@ -196,7 +196,10 @@ MIDI clips are both takes; a nonzero `srcpos` on a MIDI track is refused), a hal
 ## 5. What is NOT built here (read this before assuming)
 
 - **Playback priority.** When a composite exists it decides which take lanes sound, with the
-  existing 64-frame lane-switch ramp. Without a composite, exactly the active pass in each recorded
+  existing 64-frame lane-switch ramp. Adjacent selections of the SAME lane are one contiguous run
+  and are not ramped at their shared tick even when their slips differ (the slip still changes what
+  the take reads there); only a genuine lane switch or the run's outer edge ramps. Without a
+  composite, exactly the active pass in each recorded
   group sounds. `comp.play_all_takes` bypasses active-pass selection and sums all unmuted takes on
   the track. Audition temporarily replaces the composite and remains monitoring state; it is not
   saved or journalled. Slipped spans read their takes slipped (§2.3).
