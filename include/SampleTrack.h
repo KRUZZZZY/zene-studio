@@ -55,7 +55,8 @@ public:
 	//! True while clip updates are suspended (see setClipUpdatesSuspended). Read on the render thread too.
 	bool clipUpdatesSuspended() const noexcept { return m_clipUpdatesSuspended.load( std::memory_order_relaxed ); }
 
-	//! Clip starts the per-pass cap deferred to a later pass, process-wide (see play()).
+	//! Clip starts deferred past the pass that entered their span, process-wide. play() completes
+	//! every start of a pass, so this stays 0; kept for record.get_state's counter.
 	static std::uint64_t deferredClipStarts() noexcept;
 	SampleTrack( TrackContainer* tc );
 	~SampleTrack() override;
