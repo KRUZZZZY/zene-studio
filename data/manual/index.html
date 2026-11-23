@@ -431,13 +431,14 @@ than two outputs (JACK or ALSA). With a surround master, the WAV export's Channe
 channel per speaker (6 for 5.1, 8 for 7.1) in the standard WAV order with its speaker mask; Stereo, the default, folds it
 with the downmix.</p>
 
-<p id="pins-during-playback"><b>Changing pins while audio plays.</b> A pin click, an agent's
-<code>port.set_pin</code> or <code>port.set_pins</code>, a project load and a plug-in that asks for new channel counts all
-land between two audio periods: the edit waits for the period being rendered to finish, and the next period hears the whole
-new routing. No period routes a channel partly on the old pins and partly on the new ones, so re-pinning a device during
-playback cannot send audio to the wrong channel or leave the router using stale used-channel state. Nothing in the click
-itself changes: the Pin Connector's pins, the <b>Channels</b> menu and the two commands are the same paths, each still one
-Edit &gt; Undo step.</p>
+<p id="pins-during-playback"><b>Changing pins while audio plays.</b> The Pin Connector's <b>Channels</b> menu and a click
+on a pin are the same calls an agent makes: the menu runs <code>port.set_pins</code> for the pair it names, and a click runs
+<code>port.set_pins</code> for the one pin it toggles (an agent can set one pin with <code>port.set_pin</code> instead). They
+land between two audio periods - the edit waits for the period being rendered to finish, the engine's own model change
+guard - so the next period hears the whole new routing and none hears a channel routed partly on the old pins and partly on
+the new ones. Re-pinning a device during playback therefore cannot send audio to the wrong channel or leave the router on
+stale used-channel state. The same holds for a project load and for a plug-in that asks for new channel counts. Each click
+is still one Edit &gt; Undo step, exactly as before.</p>
 
 <p id="surround-devices"><b>Devices on a 5.1 or 7.1 channel.</b> A speaker-layout channel's devices (LCR, quad, 5.1, 7.1...) see all its
 speakers (L R C LFE Ls Rs, and Lrs Rrs on 7.1) as channels. A device with default pins still processes only L/R, and the

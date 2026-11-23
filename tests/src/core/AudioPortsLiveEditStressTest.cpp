@@ -53,8 +53,10 @@
 //!
 //! Nothing here is timing-based: the ordering observation is "it is parked" vs
 //! "it finished", and the stress half asserts on state and audio values, never
-//! on a clock. TSAN_OPTIONS evidence is collected by
-//! tests/run-audio-ports-live-edit-tsan.sh.
+//! on a clock. There is no sanitizer runner for this slot: a ThreadSanitizer
+//! build of the product needs `WANT_DEBUG_TSAN=ON` at configure time, which a
+//! lane tree may not re-run, so the race is argued from the design and from the
+//! ordering observation (docs/050-features/Q050-305.md records that measurement).
 
 #include <QDomDocument>
 #include <QScopeGuard>
