@@ -60,7 +60,7 @@ selection rule at `src/core/lv2/Lv2Proc.cpp:603`: threaded whenever the engine i
 | Command | EXIT | Log / result |
 | --- | --- | --- |
 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `logs/feature-check-1.log` — all 8 rows PASS, `RESULT: PASS` |
-| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p12-125` | see below | `logs/submit-check-1.log` |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p12-125` | 0 | `logs/submit-check-1.log` — `RESULT: PASS - submit`, no FAIL rows |
 
 No build and no test run is claimed: the verdict is FALSE-POSITIVE, so there is no product change and no RED/GREEN
 pair is applicable. `submit_check.py` accepts a claim-only closure for `FALSE-POSITIVE` when no
@@ -81,6 +81,15 @@ pair is applicable. `submit_check.py` accepts a claim-only closure for `FALSE-PO
   `Engine::audioEngine()->renderOnly()` is true; `src/core/main.cpp:1479` and `:1626` are the only render-only
   `Engine::init` callers, `src/gui/GuiApplication.cpp:215` is the real-audio GUI path and passes `false`; and
   `/usr/include/lv2/worker/worker.h:138-147` states immediate execution is allowed for offline rendering.
+- **Sibling commands:** this commit changes no command file, so there are no command siblings to keep
+  consistent. `submit_check.py` listed `app.*`, `arrangement.*` and other ids only because its diff range
+  (`FIX-BASE..HEAD`) also contains the pre-existing train commits; `git diff --name-only` for this job's own
+  commit (`20dd5964fa`) contains exactly one path, the report. No control command, undo state, reversibility
+  class or `ControlCommandsSnapshot` canary is touched.
+- **Completion check:** `submit_check.py` (log `logs/submit-check-1.log`, EXIT=0) printed six PASS rows and
+  `RESULT: PASS - submit` before this Self-check bullet was added; the rerun after the report update is
+  `logs/submit-check-2.log`. Its "tests added or changed" row names `tests/control-*.py` files that belong to
+  the pre-existing train range, not to this job: this job's commit changes only this report.
 
 ## Other findings
 
