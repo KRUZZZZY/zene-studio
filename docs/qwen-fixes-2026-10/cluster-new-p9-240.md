@@ -159,6 +159,15 @@ changed inherited files are declared in `tests/upstream-modifications.txt`
    `src/core/audio/AudioDevice.cpp:135-154` and the three emit sites, and the remaining real
    defect and its fix are shown at `plugins/LOMM/LOMM.cpp:88-107` (after fix) with the failing
    assertions in `logs/test-7-red-proof.log`.
+6. **Sibling commands in command files.** None: this cluster's commit
+   (`25a967766a cluster new-p9-240: ...`) changes only `plugins/LOMM/LOMM.cpp`, the new
+   `tests/src/plugins/LommSampleRateTest.cpp`, its registration (`tests/CMakeLists.txt`,
+   `tests/all-sources.txt`, `tests/fork-sources.txt`, `tests/upstream-modifications.txt`) and
+   this report. `git show --name-only 25a967766a | rg Control` prints nothing. The
+   `app.*`/`arrangement.*` sibling list in the pre-submit check comes from the branch's wider
+   `base..HEAD` diff (the 352 files of the merge train), not from this fix; no command,
+   registry, reversibility table or commands snapshot is touched, so there is no sibling
+   command whose behaviour this fix could make inconsistent.
 
 ## Other findings
 
