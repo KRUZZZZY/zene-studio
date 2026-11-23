@@ -54,6 +54,31 @@ namespace
 //! Set by release() on any thread, taken by the recycler: "some voice is dirty".
 std::atomic<bool> s_dirtyPending{false};
 
+/*! The band a time ratio is trusted in, measured on the R3 real-time engine fed
+ *  in MaxBlock blocks (RubberBandVoice::render). It renders cleanly while the
+ *  ratio stays below about sourceRate/86: above that it logs "ideal inhop <
+ *  minimum" from the audio thread, and from 1e5 it grows its own output buffer,
+ *  which is an allocation. On the fast side it renders cleanly while the ratio
+ *  stays above about the reciprocal of sourceRate/21, and below that it grows
+ *  the same buffer. Both bounds here sit a factor of 1.5 to 4 inside those
+ *  measured limits at every rate from 8 kHz to 192 kHz, and they cover the
+ *  slowest rate the clip path can ask for (clipSpeedAt never goes below 1/32). */
+constexpr double SlowRatioSpan = 128.0; //!< time ratio at most sourceRate / this
+constexpr double FastRatioSpan = 64.0;  //!< time ratio at least this / sourceRate
+
+//! The slowest and fastest rate (source frames per output frame) a voice built
+//! at \a sourceRate is rendered at. 1.0 is always inside, so the fallback rate
+//! and every ordinary speed pass through untouched.
+double slowestSpeed(int sourceRate)
+{
+	return std::min(1.0, SlowRatioSpan / static_cast<double>(std::max(sourceRate, 1)));
+}
+
+double fastestSpeed(int sourceRate)
+{
+	return std::max(1.0, static_cast<double>(std::max(sourceRate, 1)) / FastRatioSpan);
+}
+
 } // namespace
 
 /*! The one thread that resets released voices, so the audio thread never pays
@@ -135,6 +160,7 @@ private:
 
 RubberBandVoice::RubberBandVoice(int sourceRate, WarpStretchMode mode)
 {
+	m_sourceRate = std::max(sourceRate, 1);
 #ifdef LMMS_HAVE_RUBBERBAND
 	using RB = RubberBand::RubberBandStretcher;
 	// R3 ("finer") in real-time mode: the engine whose steady state was measured
@@ -150,7 +176,7 @@ RubberBandVoice::RubberBandVoice(int sourceRate, WarpStretchMode mode)
 	// may reallocate when changed, and begin() runs on the audio thread.
 	int options = RB::OptionProcessRealTime | RB::OptionEngineFiner | RB::OptionChannelsTogether;
 	if (mode == WarpStretchMode::Beats) { options |= RB::OptionWindowShort; }
-	m_stretcher = std::make_unique<RB>(static_cast<size_t>(std::max(sourceRate, 1)), 2, options);
+	m_stretcher = std::make_unique<RB>(static_cast<size_t>(m_sourceRate), 2, options);
 	m_stretcher->setMaxProcessSize(MaxBlock);
 #else
 	(void) sourceRate; (void) mode;
@@ -222,7 +248,16 @@ f_cnt_t RubberBandVoice::render(const SampleFrame* src, f_cnt_t srcFrames, Sampl
 {
 #ifdef LMMS_HAVE_RUBBERBAND
 	if (!m_stretcher) { return 0; }
-	const double validSpeed = std::isfinite(speed) && speed > 0.0 ? speed : 1.0;
+	/* An out-of-band rate is clamped into the band above, and the SAME rate
+	 *  advances sourcePosition() below: the ratio the engine is given and the
+	 *  cursor the caller reads have to describe one timeline. Unclamped, a tiny
+	 *  positive rate is a time ratio of 1e300 - or infinity once the reciprocal
+	 *  overflows - and Rubber Band drops the stretch and renders the source at
+	 *  full speed while the cursor barely moves, and a huge one collapses the
+	 *  ratio until the render stalls short of the block. Non-finite and
+	 *  non-positive rates keep their 1.0 fallback. */
+	const double validSpeed = std::isfinite(speed) && speed > 0.0
+		? std::clamp(speed, slowestSpeed(m_sourceRate), fastestSpeed(m_sourceRate)) : 1.0;
 	const double timeRatio = 1.0 / validSpeed;
 	if (!m_started) { start(timeRatio); }
 	else if (timeRatio != m_timeRatio)
