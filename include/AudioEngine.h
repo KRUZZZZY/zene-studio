@@ -44,6 +44,7 @@
 #include "LmmsTypes.h"
 #include "SampleFrame.h"
 #include "LocklessList.h"
+#include "MpscQueue.h"
 #include "AudioEngineProfiler.h"
 #include "MasterLoudnessTap.h"
 #include "PunchWindow.h"
@@ -218,9 +219,66 @@ public:
 
 
 	// audio-bus-handle-stuff
+	//! Registers a bus with the engine.
+	//!
+	//! REALTIME-SAFE (cluster new-p15-253). The registration takes the model lock and grows
+	//! the bus list, and neither may happen on the audio path. A bus created on the render path
+	//! is linked onto the engine's registration stack (intrusive, lock-free, no allocation), and
+	//! the control thread registers it on its next service tick. The control thread registers a
+	//! bus inline, under the model lock.
 	void addAudioBusHandle(AudioBusHandle* busHandle);
 
+	//! Removes a bus from the engine.
+	//!
+	//! REALTIME-SAFE (cluster new-p15-253). The render owner removes the bus under the model lock
+	//! it holds for the period; the control thread removes it under the model lock; a render worker
+	//! links it onto the retirement stack, because the model lock belongs to the render owner, which
+	//! waits for that worker - taking it here would deadlock. The control-thread service removes it
+	//! on its next tick.
 	void removeAudioBusHandle(AudioBusHandle* busHandle);
+
+	//! Destroys a bus whose owner is a play handle (the standalone sample bus).
+	//!
+	//! REALTIME-SAFE (cluster new-p15-253). On the audio path the bus is linked onto the retirement
+	//! stack; the control-thread service removes it and frees it once no registration or port link
+	//! still points at it. On the control thread the bus is freed at once unless a link holds it.
+	void destroyAudioBusHandle(AudioBusHandle* busHandle);
+
+	//! How many bus registrations the audio path linked for the control thread (diagnostics,
+	//! cluster new-p15-253).
+	std::uint64_t deferredAudioBusHandleRegistrations() const noexcept
+	{
+		return m_deferredAudioBusHandleRegistrations.load(std::memory_order_relaxed);
+	}
+	//! How many published buses could not be linked. Stays 0: the links are intrusive, so a
+	//! registration cannot be refused for lack of room (diagnostics).
+	std::uint64_t droppedAudioBusHandleRegistrations() const noexcept
+	{
+		return m_droppedAudioBusHandleRegistrations.load(std::memory_order_relaxed);
+	}
+	//! How many retirements could not be recorded. Stays 0 for the same reason (diagnostics).
+	std::uint64_t droppedAudioBusHandleRetirements() const noexcept
+	{
+		return m_droppedAudioBusHandleRetirements.load(std::memory_order_relaxed);
+	}
+	//! How many buses the engine kept alive because a link still pointed at them, until the
+	//! control thread could free them (diagnostics, cluster new-p15-253).
+	std::uint64_t heldAudioBusHandleFrees() const noexcept
+	{
+		return m_heldAudioBusHandleFrees.load(std::memory_order_relaxed);
+	}
+
+	//! Asks the control thread to apply the device port state of a bus. A realtime thread only links
+	//! the bus onto the port-update stack; the wanted state is read by the control thread, so repeated
+	//! requests coalesce. The control thread calls the device.
+	void requestDevicePortUpdate(AudioBusHandle* busHandle, bool enable);
+
+	//! Brings the device port in line with what the bus wants. Control thread.
+	void applyDevicePortState(AudioBusHandle* busHandle);
+
+	//! The control-thread bus service: the single point that registers, removes, frees and applies
+	//! the device port of buses. The play-handle capacity timer runs it, on the control thread.
+	void serviceAudioBusHandlesOnControlThread();
 
 	//! Read-only view of the registered handles (#605). The audio thread
 	//! iterates this under m_changeMutex (see renderStageEffects), which is the
@@ -746,6 +804,26 @@ private:
 	//! Q050-074.1: records the period just rendered in m_latePeriods when it took longer than it lasts.
 	void noteLatePeriod() noexcept;
 
+	//! Removes a bus from the bus list. The caller holds the model lock.
+	void eraseAudioBusHandle(AudioBusHandle* busHandle);
+	//! Grows the bus list, keeping room for the buses the control-thread add path registers. The caller holds the model lock.
+	void reserveAudioBusHandleCapacity();
+	//! Service phase 1. Takes the registration stack; under the model lock, registers each bus
+	//! still pending (prepares its storage, appends it). A bus retired meanwhile is marked handled.
+	void serviceRegistrations();
+	//! Service phase 2. Takes the retirement stack; removes each bus from the list. Frees a bus
+	//! that is to be freed and has no link left; keeps any other bus for the next tick.
+	void serviceRetirements();
+	//! Service phase 3. Takes the port-update stack; applies the wanted state of each bus still in
+	//! the list, and removes the applied port of a bus that is no longer in it.
+	void servicePortUpdates();
+	//! Links a bus onto the retirement stack with a state (RetirementRemove or RetirementRemoveAndFree).
+	//! A bus is on that stack at most once: a later request only raises its state.
+	void linkRetirement(AudioBusHandle* busHandle, std::uint8_t state);
+	//! Control thread. Removes a bus from the list and frees it now, unless a link still points at it:
+	//! then the retirement stack frees it on a later service tick.
+	void releaseAudioBusHandle(AudioBusHandle* busHandle);
+
 
 	void swapBuffers();
 
@@ -754,6 +832,30 @@ private:
 	bool m_renderOnly;
 
 	std::vector<AudioBusHandle*> m_audioBusHandles;
+
+	//! The room the bus list keeps for the buses the audio path may register before the next
+	//! service tick. The list only grows on the control thread.
+	static constexpr std::size_t PendingAudioBusHandleCapacity = 64;
+
+	//! Control-thread activation stacks (cluster new-p15-253). Each is an intrusive, lock-free stack
+	//! over the buses' own links: a realtime thread pushes (no allocation, no lock), and only the
+	//! control thread takes a whole stack (one consumer).
+	std::atomic<AudioBusHandle*> m_registrationHead{nullptr};
+	std::atomic<AudioBusHandle*> m_retirementHead{nullptr};
+	std::atomic<AudioBusHandle*> m_portUpdateHead{nullptr};
+
+	//! Retirement states of a bus (AudioBusHandle::m_retirement).
+	static constexpr std::uint8_t RetirementRemove = 1;        //!< remove from the bus list
+	static constexpr std::uint8_t RetirementRemoveAndFree = 2; //!< remove from the bus list, then free
+
+	//! Buses whose registration the audio path linked for the control thread (diagnostics).
+	std::atomic<std::uint64_t> m_deferredAudioBusHandleRegistrations{0};
+	//! Stays 0: the intrusive links cannot be exhausted (diagnostics).
+	std::atomic<std::uint64_t> m_droppedAudioBusHandleRegistrations{0};
+	//! Stays 0 for the same reason (diagnostics).
+	std::atomic<std::uint64_t> m_droppedAudioBusHandleRetirements{0};
+	//! Buses kept alive because a link still pointed at them (diagnostics).
+	std::atomic<std::uint64_t> m_heldAudioBusHandleFrees{0};
 
 	f_cnt_t m_framesPerAudioBuffer;
 	//! R2.2: the cached round trip; the audio thread reads it when a take starts.
