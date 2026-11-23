@@ -206,6 +206,15 @@ private:
 bool writeRetroAudioTake(const QString& filePath, const std::vector<SampleFrame>& window,
 	int sampleRate, std::uint64_t* framesWritten, QString* error);
 
+#ifdef LMMS_TESTING
+namespace retroaudiotesting
+{
+//! Test hook: the next writeRetroAudioTake() treats its flush/close as failed (SF_ERR_SYSTEM), the
+//! fault a full disk or a failing device gives after libsndfile accepted every frame.
+void failNextTakeFinish() noexcept;
+} // namespace retroaudiotesting
+#endif
+
 
 } // namespace lmms
 
