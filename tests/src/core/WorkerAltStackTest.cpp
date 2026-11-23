@@ -74,8 +74,10 @@
 #endif
 
 #ifdef LMMS_HAVE_LV2
+#include "AudioEngineWorkerThread.h"
 #include "LmmsSemaphore.h"
 #include "Lv2Worker.h"
+#include <thread>
 #endif
 
 // GCC/Clang AddressSanitizer only (MSVC's /fsanitize=address has no LeakSanitizer).
@@ -222,6 +224,42 @@ LV2_Worker_Status fakeWork(LV2_Handle handle,
 
 const LV2_Worker_Interface kFakeInterface = { &fakeWork, nullptr, nullptr };
 
+// ---------------------------------------------------------------------------
+// Q: a render-only worker's inline path is only legal while an offline render
+// is running. The AudioDummy device paces renderNextPeriod() in real time and
+// never turns deterministic processing on, so work scheduled there must run on
+// the worker thread, not inline on the paced render thread.
+// ---------------------------------------------------------------------------
+
+struct ThreadProbe
+{
+	std::atomic<bool> ran{false};
+	std::atomic<bool> ranOnSchedulingThread{false};
+	std::thread::id schedulingThread;
+};
+
+LV2_Worker_Status threadProbeWork(LV2_Handle handle,
+	LV2_Worker_Respond_Function /*respond*/,
+	LV2_Worker_Respond_Handle /*respondHandle*/,
+	uint32_t /*size*/,
+	const void* /*data*/) noexcept
+{
+	auto* probe = static_cast<ThreadProbe*>(handle);
+	probe->ranOnSchedulingThread.store(
+		std::this_thread::get_id() == probe->schedulingThread,
+		std::memory_order_relaxed);
+	probe->ran.store(true, std::memory_order_release);
+	return LV2_WORKER_SUCCESS;
+}
+
+const LV2_Worker_Interface kThreadProbeInterface = { &threadProbeWork, nullptr, nullptr };
+
+//! Restores live-processing mode after a test that simulated an offline export.
+struct LiveProcessingGuard
+{
+	~LiveProcessingGuard() { lmms::AudioEngineWorkerThread::setDeterministicProcessing(false); }
+};
+
 #endif // LMMS_HAVE_LV2
 
 } // namespace
@@ -237,6 +275,12 @@ private slots:
 	//! The second acceptance criterion: a non-main-thread overflow produces a
 	//! bounded report and the child still terminates by the signal.
 	void forked_worker_overflow_reports_and_dies_by_signal();
+
+	//! new-p12-125: live (AudioDummy) processing must not run work() inline.
+	void lv2_worker_live_processing_keeps_work_off_the_calling_thread();
+
+	//! new-p12-125: the offline-render inline behaviour is preserved.
+	void lv2_worker_offline_render_still_runs_work_inline();
 };
 
 void WorkerAltStackTest::lv2_worker_has_alternate_stack_before_first_work()
@@ -352,6 +396,60 @@ void WorkerAltStackTest::forked_worker_overflow_reports_and_dies_by_signal()
 		"from the main thread, not from the worker that overflowed");
 	QVERIFY2(QFileInfo(reportPath).size() <= static_cast<qint64>(kMaxReportBytes),
 		"the report exceeded kMaxReportBytes");
+#endif
+}
+
+void WorkerAltStackTest::lv2_worker_live_processing_keeps_work_off_the_calling_thread()
+{
+#if !defined(LMMS_HAVE_LV2)
+	QSKIP("built without LV2: there is no Lv2Worker to schedule");
+#else
+	// This is the state AudioDummy's paced renderNextPeriod() runs in: only
+	// ProjectRenderer's deterministic export scope sets this true.
+	lmms::AudioEngineWorkerThread::setDeterministicProcessing(false);
+	LiveProcessingGuard guard;
+
+	lmms::Semaphore workLock(1);
+	ThreadProbe probe;
+	probe.schedulingThread = std::this_thread::get_id();
+
+	const char request[4] = {'w', 'o', 'r', 'k'};
+	lmms::Lv2Worker worker(&workLock, /*threaded=*/false);
+	worker.setHandle(&probe);
+	worker.setInterface(&kThreadProbeInterface);
+
+	QCOMPARE(worker.scheduleWork(sizeof(request), request), LV2_WORKER_SUCCESS);
+	QTRY_VERIFY_WITH_TIMEOUT(probe.ran.load(std::memory_order_acquire), 10000);
+	QVERIFY2(!probe.ranOnSchedulingThread.load(std::memory_order_relaxed),
+		"work() ran inline on the thread that called schedule_work(): in the "
+		"render-only AudioDummy path that thread is the realtime-paced render "
+		"thread, and a plug-in's work() may block or allocate there");
+#endif
+}
+
+void WorkerAltStackTest::lv2_worker_offline_render_still_runs_work_inline()
+{
+#if !defined(LMMS_HAVE_LV2)
+	QSKIP("built without LV2: there is no Lv2Worker to schedule");
+#else
+	lmms::AudioEngineWorkerThread::setDeterministicProcessing(true);
+	LiveProcessingGuard guard;
+
+	lmms::Semaphore workLock(1);
+	ThreadProbe probe;
+	probe.schedulingThread = std::this_thread::get_id();
+
+	const char request[4] = {'w', 'o', 'r', 'k'};
+	lmms::Lv2Worker worker(&workLock, /*threaded=*/false);
+	worker.setHandle(&probe);
+	worker.setInterface(&kThreadProbeInterface);
+
+	QCOMPARE(worker.scheduleWork(sizeof(request), request), LV2_WORKER_SUCCESS);
+	QVERIFY2(probe.ran.load(std::memory_order_acquire),
+		"an offline render must deliver the request before schedule_work() returns");
+	QVERIFY2(probe.ranOnSchedulingThread.load(std::memory_order_relaxed),
+		"an offline render must keep running work() inline on the render thread, "
+		"as the LV2 Worker specification intends for free-wheeling");
 #endif
 }
 

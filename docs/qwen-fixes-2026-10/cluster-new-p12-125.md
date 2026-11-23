@@ -1,100 +1,129 @@
-FALSE-POSITIVE
+FIXED
 
 # Cluster new-p12-125 — "Non-threaded LV2 worker runs work synchronously from scheduling"
 
 ## Verdict
 
-The code does execute `work()` inline when `m_threaded == false`, exactly as the finding says. That is not a
-defect: the non-threaded worker is selected only for a render-only (`Engine::init(true)`) engine, which is the
-offline-render and headless-script path with no real-time audio device, and the LV2 Worker specification
-explicitly allows (and expects) immediate execution in that situation. Every engine that drives a real audio
-device is initialised with `Engine::init(false)`, so its LV2 workers are always threaded. There is therefore no
-path where plug-in `work()` runs on a real-time audio thread. No product change was made.
+REAL, and fixed. Round 1's FALSE-POSITIVE verdict was wrong: I had treated `renderOnly()` as "no
+real-time audio thread", but `Engine::init(true)` starts `AudioDummy`, whose paced `run()` calls
+`renderNextPeriod()` on its own thread, and `--script` can load a project and play it through that
+device (`ScriptBindings.cpp:891-894`, `ScriptEngine.cpp:590-592`). `renderNextPeriod()` opens a
+`RealtimeScope` (`src/core/AudioEngine.cpp:1212`), so a render-only `Lv2Worker` was calling the
+plug-in's `work()` inline on that realtime-paced thread.
 
-## Evidence (all line numbers re-read in this worktree, branch `bugs/qwen-new-p12-125`, product tree `c6b40333d8`; the report-only commits after it change no code)
+The fix: a render-only worker may still run `work()` inline, but only while the offline
+(deterministic) render flag is set — which only `ProjectRenderer` sets. Everywhere else, including
+`AudioDummy`'s paced rendering, the request is queued to the worker thread. The worker thread now
+always exists, so the audio thread never has to allocate or start one.
 
-| Fact | Location | Code |
-| --- | --- | --- |
-| Inline execution is the non-threaded branch of `scheduleWork()` | `src/core/lv2/Lv2Worker.cpp:203-211` | `else { … m_workLock->wait(); m_interface->work(m_handle, staticWorkerRespond, this, size, data); m_workLock->post(); }` |
-| Threaded mode queues instead of executing | `src/core/lv2/Lv2Worker.cpp:189-201` | `if (m_threaded) { … m_requests.write(…); m_sem.post(); }` |
-| Worker mode is chosen from `renderOnly()` | `src/core/lv2/Lv2Proc.cpp:603-604` | `bool threaded = !Engine::audioEngine()->renderOnly();` / `m_worker.emplace(&m_workLock, threaded);` |
-| `renderOnly()` is the constructor flag | `include/AudioEngine.h:160` | `bool renderOnly() const { return m_renderOnly; }` |
-| Render-only engine has no real device: `AudioDummy` + `MidiDummy` | `src/core/AudioEngine.cpp:796-800` | `if( m_renderOnly ) { m_audioDev = new AudioDummy( … ); … }` |
-| The GUI engine, which opens a real device, is never render-only | `src/gui/GuiApplication.cpp:215` | `Engine::init(false);` |
-| Render-only is used only by the headless offline paths | `src/core/main.cpp:1479` (`--render`) and `src/core/main.cpp:1626` (`--script`) | `Engine::init( true );` |
-| The only place `AudioEngine` is constructed is from that flag | `src/core/Engine.cpp:72` | `s_audioEngine = new AudioEngine( renderOnly );` |
-| The LV2 Worker spec permits immediate execution for free-wheeling/offline rendering | `/usr/include/lv2/worker/worker.h:138-147` | "This function is always safe to call from run(), but it is not guaranteed that the worker is actually called from a different thread. In particular, when free-wheeling (for example, during offline rendering), the worker may be executed immediately. …" |
-| The response path is consistent with it | `src/core/lv2/Lv2Worker.cpp:146-151` | non-threaded `respond()` calls `m_interface->work_response(...)` directly, as the spec's "delivered immediately" wording requires |
+## Root cause (line numbers re-read in this worktree)
 
-## Why the finding's mechanism cannot happen
+| Fact | Location |
+| --- | --- |
+| Render-only engine (used by `--render` and `--script`) starts `AudioDummy` | `src/core/AudioEngine.cpp:796-800`; `src/core/main.cpp:1479`, `:1626` |
+| `AudioDummy` is a paced device thread that calls `renderNextPeriod()` | `include/AudioDummy.h:93-123` |
+| `renderNextPeriod()` enters a `RealtimeScope` | `src/core/AudioEngine.cpp:1212` |
+| The worker mode is chosen from `renderOnly()` | `src/core/lv2/Lv2Proc.cpp:603-605` |
+| Old non-threaded branch ran `work()` inline unconditionally | `src/core/lv2/Lv2Worker.cpp:203-211` (before this fix) |
+| Only `ProjectRenderer` marks a deterministic offline render | `src/core/ProjectRenderer.cpp:94-101`, `:289-290`; `include/AudioEngineWorkerThread.h:139-140` |
 
-1. `m_threaded == false` exists only when `Engine::audioEngine()->renderOnly()` is true
-   (`src/core/lv2/Lv2Proc.cpp:603`). `Engine::init(true)` is reached only from `--render` and `--script`
-   (`src/core/main.cpp:1479`, `:1626`); the GUI calls `Engine::init(false)` (`src/gui/GuiApplication.cpp:215`).
-2. In the render-only engine the audio device is `AudioDummy`, not a real-time backend
-   (`src/core/AudioEngine.cpp:796-800`). `--render` additionally swaps in a file device and renders on
-   `ProjectRenderer`'s own thread, which `src/core/ProjectRenderer.cpp:288-290` documents as
-   "Everything below renders on this thread alone". Neither path feeds a real-time audio callback.
-3. A real device (`tryAudioDevices()`, `src/core/AudioEngine.cpp:801-803`) is only reached when
-   `renderOnly()` is false, i.e. when the worker is threaded. So the "audio thread can block … causing
-   dropouts" scenario has no reachable configuration.
-4. The spec text above says immediate execution is legal precisely for offline rendering and gives the reason
-   (sample-accurate single-threaded processing). Refusing it would discard the intended offline semantics.
+## The fix (product diff)
 
-The finding's own proposed guard ("refuse this worker mode during real-time processing") is already the
-selection rule at `src/core/lv2/Lv2Proc.cpp:603`: threaded whenever the engine is not render-only.
+- `include/Lv2Worker.h:49-54`, `:77`: the constructor parameter's contract is documented — `threaded
+  == true` always queues; `threaded == false` (render-only) inlines only during an offline render and
+  queues otherwise. The worker thread always exists.
+- `src/core/lv2/Lv2Worker.cpp:103-112`: the `std::thread` is started unconditionally (with its
+  alternate-stack registration). This is what makes the audio thread able to queue without starting
+  or allocating anything.
+- `src/core/lv2/Lv2Worker.cpp:140-145`: the destructor always posts and joins.
+- `src/core/lv2/Lv2Worker.cpp:205-241`: `scheduleWork()` chooses `inlineWork = !m_threaded &&
+  s_inlineWorkDepth == 0 && s_queuedWorkDepth == 0 &&
+  AudioEngineWorkerThread::deterministicProcessing()`. The inline branch is the old offline path
+  (semaphore + `work()` on the render thread); the else branch is the old threaded, lock-free ring
+  path. `AudioDummy` never sets the deterministic flag, so its scheduling takes the queue path.
+- `src/core/lv2/Lv2Worker.cpp:42-70`, `:151-172`: `respond()` delivers `work_response()` straight to
+  `run()` only when it is called from an inline `work()` (thread-local inline depth), and queues it
+  otherwise — so queued work on the worker thread still responds through `emitResponses()` on the
+  audio thread. The queued-depth guard also makes a nested `schedule_work()` from inside `work()`
+  queue instead of re-taking the work lock that thread already holds.
+- No change to `Lv2Proc.cpp`, plugin save/load, commands, undo, or project data.
 
-## What was checked around the change (siblings / callers)
+Realtime: the queue path is the existing lock-free `LocklessRingBuffer` write plus `Semaphore::post`
+(no allocation, lock or wait), the same code the live GUI path already runs on the audio thread. The
+inline path is reachable only on the offline render thread.
 
-- The only `Lv2Worker` construction is `src/core/lv2/Lv2Proc.cpp:604`; `grep -rn "Lv2Worker(" src include`
-  finds the constructor plus this one emplacement.
-- `respond()` (`src/core/lv2/Lv2Worker.cpp:132-153`), `workerFunc()` (`:159-181`), `emitResponses()`
-  (`:220-233`) and `notifyPluginThatRunFinished()` (`include/Lv2Worker.h:57-60`) all already have a matching
-  non-threaded branch or are harmless when no queue is used. There is no second path into `scheduleWork()`:
-  it is reached through the `LV2_Worker_Schedule` lambda at `src/core/lv2/Lv2Worker.cpp:75-79`.
-- No header, product source, control command, undo state or save format was modified, so no other caller can
-  be affected.
+## Test matrix
 
-## Commands run and exit codes
+| Path | Coverage |
+| --- | --- |
+| Normal live/AudioDummy path (deterministic flag off) | `lv2_worker_live_processing_keeps_work_off_the_calling_thread` — `work()` must not run on the scheduling thread |
+| Offline-render path (deterministic flag on) | `lv2_worker_offline_render_still_runs_work_inline` — `work()` must run inline before `schedule_work()` returns |
+| Failure/exhaustion | unchanged: the queued path keeps its `m_requests.free() < sizeof(size) + size` → `LV2_WORKER_ERR_NO_SPACE` check (`Lv2Worker.cpp:227-230`); no new limit was added |
+| Reconfiguration | none: `renderOnly` is fixed for the engine lifetime and is read once at worker construction (`Lv2Proc.cpp:603`) |
+| Audio-thread constraint | live scheduling now takes only the existing lock-free ring + semaphore post; no allocation/lock/wait added |
+| Platforms | test uses only QtTest and `std::thread`; the test file is already registered (`tests/CMakeLists.txt:2119`) and builds on the configured Linux tree |
 
-| Command | EXIT | Log / result |
-| --- | --- | --- |
-| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `logs/feature-check-1.log` — all 8 rows PASS, `RESULT: PASS` |
-| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p12-125` | 0 | `logs/submit-check-1.log` — `RESULT: PASS - submit`, no FAIL rows |
+The test drives the affected decision directly with the same seam the production code reads:
+`AudioEngineWorkerThread::setDeterministicProcessing(false/true)`. `AudioDummy`'s thread never calls
+the setter, so `false` is exactly the live/`AudioDummy` state; `ProjectRenderer` is the only caller
+that passes `true`. No sleeps or wall-clock assertions are used; the live test waits for the worker
+to finish with `QTRY_VERIFY_WITH_TIMEOUT` and then asserts the thread identity.
 
-No build and no test run is claimed: the verdict is FALSE-POSITIVE, so there is no product change and no RED/GREEN
-pair is applicable. `submit_check.py` has a claim-only branch for such closures when its diff range contains no
-product file; in this lane the range also contains the pre-existing train commits, so its
-"tests added or changed: PASS" row is populated by the train's test files, not by this job. It finds no FAIL.
+## Commands and exit codes (all logs in `.../new-p12-125.r2/logs/`)
+
+| Step | Command | EXIT | Log / result |
+| --- | --- | --- | --- |
+| RED build | `cmake --build build --target WorkerAltStackTest -j4` | 0 | `build-red-1.log` |
+| RED test | `cd build/tests && ctest -R '^WorkerAltStackTest$' --output-on-failure` | 8 | `test-red-1.log` — new live test FAILED: "work() ran inline on the thread that called schedule_work()"; 5 passed, 1 failed |
+| GREEN build | `cmake --build build --target zene WorkerAltStackTest -j4` | 0 | `build-green-4.log` |
+| GREEN test (final) | `cd build/tests && ctest -R '^WorkerAltStack' -V` | 0 | `test-green-5.log` — 6 passed, 0 failed; family 2/2 (`WorkerAltStackTest`, `WorkerAltStackRegistration`) |
+| 4b save patch | `git diff -- include/Lv2Worker.h src/core/lv2/Lv2Worker.cpp > .../fix.patch` | 0 | `fix.patch` |
+| 4b reverse | `git apply -R .../fix.patch` | 0 | product files reverted, test kept |
+| 4b rebuild | `cmake --build build --target zene WorkerAltStackTest -j4` | 0 | `build-reverted-2.log` |
+| 4b test reverted | `cd build/tests && ctest -R '^WorkerAltStackTest$' --output-on-failure` | 8 | `test-reverted-2.log` — live test FAILED again, offline test passed |
+| 4b reapply | `git apply .../fix.patch` | 0 | product files restored |
+| 4b rebuild | `cmake --build build --target zene WorkerAltStackTest -j4` | 0 | `build-green-4.log` |
+| 4b test restored | `cd build/tests && ctest -R '^WorkerAltStack' -V` | 0 | `test-green-5.log` — PASS |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `feature-check-1.log` — all 8 rows PASS, `RESULT: PASS` |
+| Completion | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p12-125` | see `submit-check-1.log` | recorded after the report commit |
+
+Registration: the two changed product files are declared in `tests/upstream-modifications.txt`
+(`include/Lv2Worker.h`, `src/core/lv2/Lv2Worker.cpp`); the test file is already in
+`tests/fork-sources.txt`.
 
 ## Self-check
 
-- **Regression test FAILS reverted / PASSES with the fix:** not applicable. There is no product change and no
-  bug to fix; the finding is a false positive. No RED/GREEN result is claimed. `submit_check.py` reports no
-  FAIL for this closure.
-- **Test deterministic:** not applicable, for the same reason; no test was added or run.
-- **Fix at the cause and complete:** no fix was made. Every user of `Lv2Worker` and every sibling method of
-  `scheduleWork()` was inspected (list above), and all of them already distinguish threaded from non-threaded
-  consistently with the LV2 Worker specification.
-- **No collateral damage:** no code, header, save format, command or test changed, so old projects and saved
-  data load exactly as before.
-- **FALSE-POSITIVE evidence:** `src/core/lv2/Lv2Proc.cpp:603` selects the non-threaded worker only when
-  `Engine::audioEngine()->renderOnly()` is true; `src/core/main.cpp:1479` and `:1626` are the only render-only
-  `Engine::init` callers, `src/gui/GuiApplication.cpp:215` is the real-audio GUI path and passes `false`; and
-  `/usr/include/lv2/worker/worker.h:138-147` states immediate execution is allowed for offline rendering.
-- **Sibling commands:** this commit changes no command file, so there are no command siblings to keep
-  consistent. `submit_check.py` listed `app.*`, `arrangement.*` and other ids only because its diff range
-  (`FIX-BASE..HEAD`) also contains the pre-existing train commits; `git diff --name-only` for this job's own
-  commit (`20dd5964fa`) contains exactly one path, the report. No control command, undo state, reversibility
-  class or `ControlCommandsSnapshot` canary is touched.
-- **Completion check:** `submit_check.py` (log `logs/submit-check-1.log`, EXIT=0) printed six PASS rows and
-  `RESULT: PASS - submit`; the rerun after the report update is `logs/submit-check-2.log` (EXIT=0) and the
-  final rerun is `logs/submit-check-3.log`. Its "tests added or changed" row names `tests/control-*.py` files
-  that belong to the pre-existing train range, not to this job: this job's commit changes only this report.
+- **Regression test FAILS with the product change reverted and PASSES with it:** `test-reverted-2.log`
+  (EXIT=8, the live test fails with "work() ran inline on the thread that called schedule_work()")
+  and `test-green-5.log` (EXIT=0, 6 passed / 0 failed). The same test failed before the first product
+  edit in `test-red-1.log` (EXIT=8).
+- **Deterministic test:** no wall clock, sleep or race assertion. The seam is
+  `AudioEngineWorkerThread::setDeterministicProcessing(false/true)`, the production flag
+  `ProjectRenderer` alone sets; the live test waits for the worker's completion flag with
+  `QTRY_VERIFY_WITH_TIMEOUT` and then compares `std::thread::id`s. `AudioDummy` never sets the flag,
+  so `false` is the real live state.
+- **Fix at the cause and complete:** the scheduling decision in `Lv2Worker::scheduleWork()` is the
+  cause; `respond()`, the worker thread lifecycle, and the destructor are kept consistent with it.
+  `Lv2Proc.cpp` needs no change: it still passes `!renderOnly()`. Sibling paths checked:
+  `respond()` queue-vs-direct, `workerFunc()` queued execution, `emitResponses()` and
+  `notifyPluginThatRunFinished()` were read and remain correct for both modes.
+- **No collateral damage:** no save format, project data, command, undo or GUI file changed. Offline
+  `--render` exports still run `work()` inline on the render thread (the second test asserts this),
+  and live/GUI workers still always queue as before. The only new behaviour is that a render-only
+  worker during paced `AudioDummy` processing queues instead of inlining; the existing 32 KiB request
+  ring and its `NO_SPACE` result are unchanged.
+- **ALREADY-FIXED / FALSE-POSITIVE evidence:** not applicable; this is a FIXED verdict with the code
+  and contract above, and round 1's false-positive claim is explicitly retracted here.
+- **Sibling commands:** no command file was changed, so no command siblings exist. `submit_check.py`
+  lists `app.*`/`arrangement.*` ids only because its diff range includes the pre-existing train
+  commits; this job's commit contains only the LV2 worker fix, its test, the two registration lines
+  and this report. The `ControlCommandsSnapshot` canary is untouched.
+- **Completion check:** `submit_check.py` run after the report commit, log `submit-check-1.log`.
 
 ## Other findings
 
-- `AudioEngine::renderNextPeriod()` opens a `RealtimeScope` unconditionally (`src/core/AudioEngine.cpp:1212`).
-  Under a `WANT_DEBUG_RTSAN` build an offline render that reaches a non-threaded LV2 `work()` could report the
-  plug-in's own allocations as realtime violations, although the offline path has no realtime deadline. This
-  is an instrumentation false alarm, not a dropout defect; it is not fixed here (out of scope).
+- `AudioEngine::renderNextPeriod()` opens a `RealtimeScope` unconditionally
+  (`src/core/AudioEngine.cpp:1212`), including offline renders. In a `WANT_DEBUG_RTSAN` build the
+  inline offline `work()` path can therefore report a plug-in's own allocations as realtime
+  violations even though the export thread has no deadline. Not fixed here (instrumentation-only,
+  outside this bug).
