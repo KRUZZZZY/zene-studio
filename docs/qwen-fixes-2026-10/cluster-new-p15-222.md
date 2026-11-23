@@ -121,6 +121,12 @@ Logs: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p15-222.r1/logs/`
 | 5 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (again, with this report in the tree) | `gate-2.log` | 0 (RESULT: PASS) |
 | 6 | `git add docs/qwen-fixes-2026-10/cluster-new-p15-222.md && git commit -m "..."` → commit `16b118691d` (`git show --stat`: 1 file changed, 171 insertions) | — | 0 |
 | 7 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p15-222` (final, after that commit) | `submit-check-2.log` | 0 (RESULT: PASS - submit) |
+| 8 | `git commit` → commit `cb1fb234f3` (the log and self-check rows), then `feature_check.py` | `gate-3.log` | 0 (RESULT: PASS) |
+| 9 | `submit_check.py <worktree> new-p15-222` on `cb1fb234f3` | `submit-check-3.log` | 0 (RESULT: PASS - submit) |
+
+The commits after `cb1fb234f3` change only this report file: the check that reads it looks at the
+whole branch, and `pre-submit` PASSes on each of these commits (`submit-check-4.log` is the run on the
+last one).
 
 No build and no ctest run: this job changes no C++, so there is no stale binary to distrust and no
 test target to build. `git status` after the commit is empty (checked with `git status --short`).
