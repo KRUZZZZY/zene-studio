@@ -151,6 +151,16 @@ PRE-SUBMIT CHECK for new-p23-110
 RESULT: PASS - submit
 ```
 
+Final validation after recording the submit evidence (unpiped exit code):
+
+```
+$ python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p23-110 new-p23-110 > /home/kruzzzzy/.config/kads/zene/state/runs/new-p23-110.r1/logs/5-submit-check-final.log 2>&1; echo EXIT=$?
+EXIT=0
+```
+
+`logs/5-submit-check-final.log` ends in `RESULT: PASS - submit`, and
+`git status --porcelain` was empty (EXIT=0).
+
 ## Other findings
 
 None reported here; anything unrelated is out of scope for this lane.
