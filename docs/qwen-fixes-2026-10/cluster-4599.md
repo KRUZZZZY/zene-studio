@@ -85,7 +85,7 @@ assertion returns early. No injected clock and no sleeps in the assertions.
 | 4b: GREEN again | `cmake --build build --target zene AudioDeviceDiagnosticsTest -j4`; `cd build/tests && ... ctest -R "^AudioDeviceDiagnosticsTest$"` | 0; 0 (1/1 passed) | `logs/build-7-green-reapplied.log`, `logs/test-7-green-reapplied.log` |
 | stability | `cd build/tests && ... ctest -R "^AudioDeviceDiagnosticsTest$" --repeat until-fail:3` | 0 (3/3 passed) | `logs/test-8-repeat3.log` |
 | gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `logs/feature-check-1.log` — 8/8 PASS, `RESULT: PASS` |
-| completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 4599` | see `## Self-check` | `logs/submit-check-1.log` |
+| completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 4599` | 0 (`RESULT: PASS - submit`, 6/6 checked items PASS) | `logs/submit-check-1.log` |
 
 `RecordingLatencyTest` was built and run because it pins the same formula on the Dummy device
 (`tests/src/core/RecordingLatencyTest.cpp:104`); it is unchanged and still passes.
@@ -133,7 +133,13 @@ The test file was already registered in `tests/fork-sources.txt:3834`; no new pr
   above.
 - **Completion check** (`logs/submit-check-1.log`): the run and its result are recorded there; every
   FAIL it named was fixed before this report was committed, and this section answers each ASK item.
-  Sibling-command ASK does not apply: no `ControlCommands*` file is in this diff.
+  The sibling-command ASK lists `app.*`, `arrangement.*` and others because the check diffs the whole
+  branch against its merge base, and this branch carries other clusters' commits. My own commit
+  (`git diff --name-only HEAD~1..HEAD`, EXIT=0) touches exactly
+  `docs/qwen-fixes-2026-10/cluster-4599.md`, `include/AudioJack.h`,
+  `src/core/audio/AudioJack.cpp`, `tests/src/core/AudioDeviceDiagnosticsTest.cpp` and
+  `tests/upstream-modifications.txt` — no `ControlCommands*`, no command id, no reversibility class,
+  so no sibling command is affected or needs to change.
 
 ## Other findings (not fixed here)
 
