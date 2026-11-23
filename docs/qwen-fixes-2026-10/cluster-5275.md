@@ -4,141 +4,107 @@ FIXED
 
 5275: FIXED
 
-Round 3. This round replaces the round-2 report. Review found that the round-2 regression only exercised a hook-forced
-branch, and that a failure in the real header finalize or close went undetected.
-
 ## Evidence (REAL)
-`writeWindow()` (`src/core/RetroAudioCapture.cpp`) opens the take with `sf_open_fd(output.handle(), SFM_WRITE, &info, SF_FALSE)`.
-It then used `sf_write_sync()` (which returns void) and `sf_close()`. With `SF_FALSE`, `sf_close()` returns 0 whatever
-happened, so a failed header rewrite (a full or failing disk) still committed the take and returned `true`. The proof
-for this is the RED run below. With the round-2 code (HEAD before this round), a descriptor whose writes really fail with
-EBADF still gives `ok == true` (test-10-rows.log).
+Pre-cluster `writeWindow()` (`git show 1d9f160c89^:src/core/RetroAudioCapture.cpp`, lines 314-315) did
+`sf_write_sync(sf); sf_close(sf);` and ignored both. Success then came only from `sf_writef_float()`'s count.
+`sf_write_sync()` returns void, and `sf_close()` on a descriptor opened with `sf_open_fd(..., SF_FALSE)` returns 0
+whatever happened. So a header write that failed, or a durable flush that failed, still committed the take and
+returned `true`.
 
-## Fix (src/core/RetroAudioCapture.cpp, include/RetroAudioCapture.h)
-- `finalizeHeader()` (RetroAudioCapture.cpp:312) does the following while the handle is open:
-  - It calls `sf_command(sf, SFC_UPDATE_HEADER_NOW, nullptr, 0)`.
-  - It checks `sf_error(sf) == SF_ERR_NO_ERROR`. libsndfile records the failed write there.
-  - Then it calls `sf_close`.
-  - `sf_write_sync` is dropped.
-- `readBackMatches()` (:328) is an independent check of the finished file:
-  - It runs `lseek(fd, 0)` (`_lseek` on Windows), then `sf_open_fd(fd, SFM_READ, ..., SF_FALSE)`.
-  - It requires `frames == window.size()`, `channels == 2` and `samplerate == sampleRate`.
-- `finishSoundFile()` (:346) works in this order:
-  - It runs the finalize step, then the read-back. If either fails, it returns "could not finalize the take header".
-  - It then runs the existing `fsync`/`_commit` check (`flushDescriptor`, unchanged from round 2). If that fails, it
-    returns "could not flush the written take: <strerror>".
-- `writeWindow()`: when the finish step returns an error:
-  - it calls `cancelWriting()`, sets a non-empty error and returns false;
-  - `written` stays 0, and the destination is not created or replaced.
-  - A short `sf_writef_float` still reports first, and now closes the handle itself.
-- Close-failure signal: the `QSaveFile::commit()` result (`commitTake`), which is unchanged.
-- Seam (`LMMS_TESTING` only, as before): a new `RetroTakeFinishStep::BeforeFinalize` is called with the take fd just before
-  the header rewrite. Its return value is ignored, so the hook supplies no result. `Flush` and `Commit` behave as in round 2.
+## Fix (round 5: rewritten from the pre-cluster files at the reviewer's checkpoint, 35 product lines)
+`git diff --numstat 1d9f160c89^ -- src/core/RetroAudioCapture.cpp include/RetroAudioCapture.h` gives `29 2` and `6 0`.
+- `src/core/RetroAudioCapture.cpp` `writeWindow()`: `sf_write_sync` is removed. The code then runs, in order:
+  - `sf_command(sf, SFC_UPDATE_HEADER_NOW, nullptr, 0)`
+  - `finished = sf_error(sf) == SF_ERR_NO_ERROR`, then `finished = (sf_close(sf) == 0) && finished`
+  - only if finished, `fsync(output.handle())`. On Windows this is `_commit`, from the `#ifdef _WIN32` include block.
+
+  The existing short-write check comes next, unchanged. If anything failed, `output.cancelWriting()` runs, `*error` is set
+  to "could not finalize/flush the take <path>", and the function returns false. Nothing is committed.
+- **`sf_error()` after `SFC_UPDATE_HEADER_NOW` is the check that catches a failed header write.** libsndfile records the
+  system error there, and `sf_close()` cannot report it.
+- Test seam, `LMMS_TESTING` only (`include/RetroAudioCapture.h`): `enum class RetroTakeFinishStep { BeforeFinalize, Flush }`
+  and `setRetroTakeFinishTestHook()`.
+  - The hook is a plain static pointer, set only from the single test thread while no write is running.
+  - It is called at BeforeFinalize with its result ignored.
+  - At Flush, its result replaces the fsync result.
+- **Removed on purpose to meet the 40-line limit:** the round-3/4 read-back of the finished header and the Commit-step
+  guard. The commit row and `failCommit` were deleted from the test with them, because the Commit step no longer exists.
+  `QSaveFile::commit()` failure is still reported by the existing check.
 
 ## Regression test
-`tests/src/core/RetroAudioCaptureTest.cpp` `aFailedFlushOrCloseIsReportedAndNothingIsCommitted`. Every row checks:
-`ok == false`, a non-empty error, `written == 0` and `!QFileInfo::exists(path)`. Then the same call with the hook cleared
-succeeds with `written == 64`.
-- `finalize` (new): at `BeforeFinalize` the hook does `open("/proc/self/fd/<fd>", O_RDONLY)`, `dup2` over the take fd
-  and `close`. From then on every header write really fails with EBADF, as on a failing disk. The hook returns 0 for the
-  Flush step, so only the finalize detection can catch the failure. Off Linux this row uses the portable stand-in
-  below instead (round 4: the `QSKIP` is gone).
-- `finalize-portable` (round 4, every platform): the test first writes a valid 64-frame take `stand-in.wav`. At
-  `BeforeFinalize` the hook `swapInReadOnlyStandIn` opens it read-only (`open`, or `_wopen` on Windows) and `dup2`s/`_dup2`s it
-  over the take fd. The real `SFC_UPDATE_HEADER_NOW` write then fails with EBADF and `sf_error()` records it. Because the stand-in
-  is a valid take of the same frames, the read-back matches. If the `sf_error()` check is ignored, the take commits, so the
-  row fails. Reopening the QSaveFile temporary by path does not work on Linux, where Qt uses an unnamed `O_TMPFILE`
-  (log test-1-green.log: the first attempt did not inject).
-- `flush`: the hook replaces the fsync result with -1 (round 2).
-- `commit`: kept as a guard only. It was already green before this cluster (round-2 report), and it stays green in
-  every variant below.
+`tests/src/core/RetroAudioCaptureTest.cpp` `aFailedFlushOrCloseIsReportedAndNothingIsCommitted` has no `QSKIP` on any
+platform. Every row asserts:
+- `!ok`, a non-empty error, `written == 0` and `!QFileInfo::exists(path)`;
+- then, with the hook cleared, the same call succeeds with 64 frames.
 
-## Commands and EXIT codes (logs in /home/kruzzzzy/.config/kads/zene/state/runs/5275.r3/logs)
-Build = `cmake --build build --target zene RetroAudioCaptureTest -j4`. Test = `cd build/tests && ctest -R '^RetroAudioCaptureTest$' --output-on-failure`,
-plus `./RetroAudioCaptureTest aFailedFlushOrCloseIsReportedAndNothingIsCommitted` for the per-row results.
+The rows:
+- `finalize`: on Linux, the real EBADF regression. At BeforeFinalize the hook does `open("/proc/self/fd/<fd>", O_RDONLY)`
+  and `dup2`s it over the take fd. Off Linux the row uses the portable stand-in below.
+- `finalize-portable` (every platform): a valid 64-frame `stand-in.wav` is written first. At BeforeFinalize the hook
+  `swapInReadOnlyStandIn` `dup2`s a read-only descriptor of it over the take fd (`_wopen`/`_dup2` on Windows). The real
+  header rewrite then fails with EBADF and `sf_error()` sees it. If the check is ignored, the take commits and the row
+  fails.
+- `flush`: the hook replaces the fsync result with -1.
 
-| step | product code | build | ctest | finalize | flush | commit |
-|---|---|---|---|---|---|---|
-| 1 / 2 | fix (green) | 0 | 0 | PASS | PASS | PASS |
-| 10 | `git apply -R logs/fix.patch` (round-2 code) | 0 | **8** | **FAIL** | PASS | PASS |
-| 11 | `git apply logs/fix.patch` | 0 | 0 | PASS | PASS | PASS |
-| 12 | sf_error check AND read-back removed | 0 | **8** | **FAIL** | PASS | PASS |
-| 13 | only the read-back removed (sf_error kept) | 0 | 0 | PASS | PASS | PASS |
-| 7 | only the sf_error check removed (read-back kept) | 0 | **8** | **FAIL** | PASS | PASS |
-| 14 | fix restored (`cmp` with the fixed copy = 0) | 0 | 0 | PASS | PASS | PASS |
+## Commands and EXIT codes (logs in /home/kruzzzzy/.config/kads/zene/state/runs/5275.r5/logs)
+`B` stands for `cmake --build build --target zene RetroAudioCaptureTest -j4`. ctest runs from build/tests.
 
-- FAIL message (steps 7, 10, 12): `'!ok' returned FALSE. (a failed flush/commit must not report success)` at
-  `RetroAudioCaptureTest.cpp(350)`, with `Totals: 4 passed, 1 failed`.
-- `fix.patch` is `git diff -- src/core/RetroAudioCapture.cpp`. The header is left out on purpose: the test refers to the
-  new `BeforeFinalize` enumerator, so reverting the header too makes the test fail to compile rather than fail. With the
-  header reverted as well (step 3), the build stopped at `RetroAudioCaptureTest.cpp:102`, and that run was discarded.
-- In the variants, a removed check is neutralised in place, for example
-  `if (!finalized || !(readBackMatches(...) || true))`. The function is still called, so `-Werror=unused-function`
-  does not fire. Steps 5 and 6 of the first pass did not build for that reason and were discarded.
-- Gate: `python3 .../feature_check.py <worktree>` gives EXIT=0 with no FAIL rows (feature-check.txt).
+The mutants:
+- `mutant-sferror.diff` replaces `bool finished = sf_error(sf) == SF_ERR_NO_ERROR;` with `bool finished = true;`. This is
+  the sf_error product check reversed.
+- `mutant-nofix.diff` replaces `if (flushed != 0)` with `if (false && flushed != 0)`. Every finish failure is ignored, as
+  before the fix.
 
-## What the proof shows
-- The `sf_error` check after `SFC_UPDATE_HEADER_NOW` is enough on its own: step 13 is green, and step 7 is red without it.
-- The read-back is not enough on its own for this injection: step 7 is red. libsndfile still reports the expected frame
-  count on reopen even though the final header write failed. I did not find out why in this session. The read-back is kept
-  as the checkpoint asked: it independently verifies frames, channels and rate. It does not reject any healthy take,
-  because the whole test binary passes (test-15-full.log: `Totals: 17 passed, 0 failed`, EXIT=0).
-- The fsync check comes from round 2 and is covered by the `flush` row.
+| # | Command | EXIT | Result |
+|---|---|---|---|
+| 1 | `B > build-1.log` | 0 | |
+| 2 | `ctest -R RetroAudioCaptureTest -V > test-1-green.log` | 0 | Totals: 17 passed, 0 failed, 0 skipped. finalize, finalize-portable and flush PASS. |
+| 3 | `git apply mutant-sferror.diff`; `B > build-2-sferror.log` | 0, 0 | |
+| 4 | `ctest -R RetroAudioCaptureTest --output-on-failure > test-2-red-sferror.log` | **8** | FAIL! `(finalize)` and `(finalize-portable)` `'!ok' returned FALSE`. 15 passed, 2 failed. |
+| 5 | `git apply -R mutant-sferror.diff` | 0 | |
+| 6 | `git apply mutant-nofix.diff`; `B > build-3-nofix.log` | 0, 0 | |
+| 7 | `ctest ... > test-3-red-nofix.log` | **8** | FAIL! `(finalize)`, `(finalize-portable)` and `(flush)`. 14 passed, 3 failed. |
+| 8 | `git apply -R mutant-nofix.diff`; `B > build-4.log` | 0, 0 | |
+| 9 | `ctest -R RetroAudioCaptureTest -V > test-4-green.log` | 0 | Totals: 17 passed, 0 failed, 0 skipped. |
+| 10 | `python3 .../feature_check.py <worktree> > gates-1.log` | 0 | No FAIL rows. |
 
-## Round 4 (review: finalize row skipped off Linux) - logs in /home/kruzzzzy/.config/kads/zene/state/runs/5275.r4/logs
-Test-only change. The product code is unchanged from round 3. The mutant `mutant-sferror.patch` reverses the product check
-in `finalizeHeader()` (`src/core/RetroAudioCapture.cpp:321`): `const bool ok = sf_error(sf) == SF_ERR_NO_ERROR;` becomes
-`const bool ok = true; (void)sf_error(sf);`.
-- First attempt (reopen the temporary by path): build-1 EXIT=0. test-1-green EXIT=8, `finalize-reopened '!ok' returned FALSE`
-  because there is no named temporary on Linux. I replaced it with the stand-in design.
-- `cmake --build build --target zene RetroAudioCaptureTest -j4 > build-4.log` EXIT=0
-- `ctest -R RetroAudioCaptureTest --output-on-failure > test-4-green.log` EXIT=0 (100% passed)
-- `git apply mutant-sferror.patch` EXIT=0. The rebuild (build-5-mutant) EXIT=0.
-- `ctest -R RetroAudioCaptureTest --output-on-failure > test-5-red.log` EXIT=8. FAIL! rows: `(finalize)` and
-  `(finalize-portable)`, `'!ok' returned FALSE`. Totals: 16 passed, 2 failed.
-- `git apply -R mutant-sferror.patch` EXIT=0. The rebuild (build-6) EXIT=0. test-6-green EXIT=0.
-- `ctest -R RetroAudioCaptureTest -V > test-7-green-verbose.log` EXIT=0. PASS on all four rows: finalize, finalize-portable,
-  flush and commit. Totals: 18 passed, 0 failed, 0 skipped.
-- `python3 .../feature_check.py <worktree> > gates-1.log` EXIT=0, no FAIL rows.
+A literal `git apply -R fix.patch` against the pre-cluster code cannot be built: the test needs the seam, which is part of
+the fix. The two mutants above take its place. They keep the seam and remove exactly the checks.
 
 ## Honest limits
-- Round 4: the Windows `_wopen`/`_dup2` branch of `swapInReadOnlyStandIn` is not compiled on this box. On Windows, `_commit`
-  on the read-only stand-in may also fail, so there the flush check could catch a mutant that the header check missed. On
-  Linux (proved above) only the header check catches it.
-- The failure is injected by swapping the descriptor for a read-only one: real EBADF from the kernel, but no full disk.
-- The Windows `_commit` and `_lseek` paths are not compiled here.
-- `writeWindow()` runs on the command handler thread, not the audio thread. It adds one header rewrite and one short reopen
-  per take.
+- The failures are injected by swapping in a read-only descriptor: a real EBADF from the OS, but not a full disk.
+- The Windows `_wopen`/`_dup2`/`_commit` branches are not compiled on this machine.
+- `writeWindow()` runs on the command-handler thread, never the audio thread. It adds one header rewrite and one fsync per
+  take.
 
 ## Self-check
-- Round 4: the new `finalize-portable` row is also deterministic. It uses the LMMS_TESTING seam
-  `setRetroTakeFinishTestHook` and a pre-written stand-in file in a `QTemporaryDir`, with no timing. Red/green against the
-  reversed `sf_error` check: test-5-red EXIT=8, test-4/6/7 green EXIT=0. No row is skipped on any platform (0 skipped).
-  submit_check: submit-1.log EXIT=0.
-- Fails without the fix and passes with it: steps 10/12/7 are RED with ctest EXIT=8; steps 11/13/14 are GREEN with EXIT=0.
-- Deterministic: no timing, sleeps or threads in the test. Fault injection is through the LMMS_TESTING seam plus
-  `dup2`, in a `QTemporaryDir`.
-- Complete: `writeWindow()` is reached only through `writeRetroAudioTake()`. Its callers check the bool and the error and
-  were not edited:
-  - `ControlCommandsRecordingRetro.cpp:182`
-  - `ControlCommandsSessionAudioRecord.cpp:293`
-  - `ControlCommandsSamplerTake.cpp:331`
-- No collateral damage: healthy takes are unchanged (the full test file is green), no load path is touched and no new limits are added.
-- Realtime: nothing on the audio thread changed. No control commands were added.
-- Registration: all three files are already fork sources (`tests/fork-sources.txt`), so no list change is needed.
-- Seam: `setRetroTakeFinishTestHook` exists only under `#ifdef LMMS_TESTING`.
-- ALREADY-FIXED / FALSE-POSITIVE reference: not applicable, the verdict is FIXED.
-- Sibling commands (app.*, arrangement.* in the check's list): this round changes no command file. The diff touches only
-  `src/core/RetroAudioCapture.cpp`, `include/RetroAudioCapture.h`, the test and this report. Those commands do not reach
-  `writeRetroAudioTake()`, so none of them is affected.
+- **Fails without the fix, passes with it:** test-2 and test-3 are RED (EXIT=8); test-1 and test-4 are GREEN (EXIT=0).
+  The reversed sf_error check fails both finalize rows, as the reviewer asked.
+- **Deterministic:** no timing, sleeps or threads in this test. Faults come in through the `LMMS_TESTING` seam
+  `setRetroTakeFinishTestHook`, plus `dup2` and a pre-written stand-in file in a `QTemporaryDir`.
+- **Seam thread safety:** the seam is a plain pointer. It is written only from the test thread while no write is running.
+  `concurrentTakesToOnePathRemainIndependent` only reads it, as null, so there is no data race. This is reasoned from the
+  code; TSan is not run on this box.
+- **Complete:** `writeWindow()` is reached only through `writeRetroAudioTake()`. Its callers check the bool and the
+  error, and they are unchanged:
+  - `src/core/ControlCommandsRecordingRetro.cpp:182`
+  - `src/core/ControlCommandsSessionAudioRecord.cpp:293`
+  - `src/core/ControlCommandsSamplerTake.cpp:331`
+- **No collateral damage:** healthy takes are unchanged (all 17 cases green, including the bit-exact round-trip and
+  concurrent-writer tests). No load path is touched and no limit is added.
+- **Realtime and commands:** nothing on the audio thread changed. No control command was added.
+- **Registration:** `include/RetroAudioCapture.h` (fork-sources.txt:1344) and `src/core/RetroAudioCapture.cpp` (:2193)
+  are already fork sources.
+- **ALREADY-FIXED / FALSE-POSITIVE reference:** not applicable. The verdict is FIXED.
+- **Sibling commands (app.*, arrangement.* in the check's list):** no command file is changed. The diff touches only
+  RetroAudioCapture.{h,cpp}, its test and this report. Those commands do not reach `writeRetroAudioTake()`.
 
 Delegation:
-- Round 4: Haiku ran the build and the green/mutant-red/green ctest sequence twice. The first run exposed the O_TMPFILE
-  problem. I designed and wrote the portable test hook, created the mutant patch, checked the logs and wrote this section.
-- Sonnet wrote the `finalize` test row and hook, and ran the first build and the green test.
-- Haiku ran the red/green and variant proof matrix twice. The second run was needed after the variants were corrected to
-  keep compiling.
-- I designed and wrote the product change and the proof variants, reviewed the diffs, checked the logs and wrote this report.
+- Haiku ran every build and the green / two-mutant red / green ctest matrix, and reported the exit codes and the FAIL!
+  rows. I re-checked them in the logs.
+- No Sonnet was used. The product fix (35 lines, prescribed by the checkpoint) and the test edits (removing one row and
+  one hook) were smaller than writing a request.
+- I wrote the code, the mutants, this report and the manifest.
 
 ## Other findings
 - Other libsndfile writers, for example `src/core/ClipConsolidate.cpp`, which only checks `sf_close`, were not audited for

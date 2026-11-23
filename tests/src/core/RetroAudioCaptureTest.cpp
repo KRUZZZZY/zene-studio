@@ -120,9 +120,8 @@ int swapInReadOnlyStandIn(lmms::RetroTakeFinishStep step, int fd)
 //! Stand-ins for the real steps (see setRetroTakeFinishTestHook): the finalize
 //! row makes the take descriptor genuinely read-only just before libsndfile
 //! rewrites the header (every write then fails with EBADF, like a failing disk;
-//! the flush step then reports success and the commit is real), the flush row makes the durable flush
-//! of the descriptor fail, the commit row makes the flush succeed and the
-//! commit fail.
+//! the flush step then reports success and the commit is real), and the flush
+//! row makes the durable flush of the descriptor fail.
 int makeDescriptorReadOnly(lmms::RetroTakeFinishStep step, int fd)
 {
 #ifdef Q_OS_LINUX
@@ -144,10 +143,6 @@ int makeDescriptorReadOnly(lmms::RetroTakeFinishStep step, int fd)
 int failFlush(lmms::RetroTakeFinishStep step, int)
 {
 	return step == lmms::RetroTakeFinishStep::Flush ? -1 : 0;
-}
-int failCommit(lmms::RetroTakeFinishStep step, int)
-{
-	return step == lmms::RetroTakeFinishStep::Commit ? -1 : 0;
 }
 
 //! Clears the finish hook however the test leaves.
@@ -340,27 +335,25 @@ private slots:
 
 	//! libsndfile can accept every frame and still fail to flush or close the
 	//! file (full or failing disk); its own sync/close cannot report that (see
-	//! flushDescriptor in RetroAudioCapture.cpp), so the writer fsyncs itself. The take must then report failure, and the
-	//! destination must not be replaced by the unverified file. The finalize row
-	//! makes the descriptor genuinely read-only so every header write fails with
-	//! EBADF like a failing disk; the flush row fails the durable flush; the
-	//! commit row is kept as a guard (it was already green before this fix).
+	//! writeWindow in RetroAudioCapture.cpp), so the writer checks sf_error() after
+	//! the header rewrite and fsyncs itself. The take must then report failure, and
+	//! the destination must not be replaced by the unverified file. The finalize
+	//! rows make every header write fail with EBADF like a failing disk; the flush
+	//! row fails the durable flush.
 	void aFailedFlushOrCloseIsReportedAndNothingIsCommitted_data()
 	{
 		QTest::addColumn<QString>("step");
 		QTest::newRow("finalize") << QStringLiteral("finalize");
 		QTest::newRow("finalize-portable") << QStringLiteral("finalize-portable");
 		QTest::newRow("flush") << QStringLiteral("flush");
-		QTest::newRow("commit") << QStringLiteral("commit");
 	}
 
 	void aFailedFlushOrCloseIsReportedAndNothingIsCommitted()
 	{
 		QFETCH(QString, step);
-		lmms::RetroTakeFinishTestHook hook = &failCommit;
+		lmms::RetroTakeFinishTestHook hook = &failFlush;
 		if (step == QLatin1String("finalize")) { hook = &makeDescriptorReadOnly; }
 		else if (step == QLatin1String("finalize-portable")) { hook = &swapInReadOnlyStandIn; }
-		else if (step == QLatin1String("flush")) { hook = &failFlush; }
 		const auto frames = makeFrames(64);
 		QTemporaryDir dir;
 		QVERIFY(dir.isValid());
