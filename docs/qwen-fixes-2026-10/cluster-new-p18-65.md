@@ -2,6 +2,75 @@ FIXED
 
 # Cluster new-p18-65 — NES detune changes raced with audio rendering
 
+## Round 2 — the two returned regressions, both closed with their own red/green run
+
+Round 1's detune fix was accepted; two regressions came back with it. Both are fixed,
+and each has its own red and green run in this round's log folder
+(`/home/kruzzzzy/.config/kads/zene/state/runs/new-p18-65.r2/logs`).
+
+### R1 — an unmapped note could render from uninitialized wavelengths
+
+`NesObject::updatePitch()` recomputes the three wavelengths only when the note frequency
+or a channel detune *changed*, and round 1 initialised `m_lastCrs1/2/3` to `0.0f` — the
+default model value. A note whose key is not mapped has `frequency()` exactly `0`
+(`src/core/NotePlayHandle.cpp:711`), so its first update compared `0 == 0` on both sides,
+computed nothing, and `renderOutput()` then read `m_wlen1/2/3` uninitialized.
+
+Fixed at the gate: `NesInstrument::playNoteImpl()` renders silence and returns for a
+zero-frequency note, before any oscillator state is constructed or read
+(`plugins/Nes/Nes.cpp:570-574`):
+
+```cpp
+if (n->frequency() == 0.0f)
+{
+    zeroSampleFrames(out.data() + offset, frames);
+    return;
+}
+```
+
+`zeroSampleFrames()` is the existing `std::fill` helper (`include/SampleFrame.h:192-198`),
+so nothing allocates, frees, locks, waits or logs on the audio thread, and it writes
+exactly the range the render path writes (`out.data() + offset`, `frames` frames).
+`NesObject` is constructed in one place only (`std::construct_at` inside `playNoteImpl`),
+so this guard covers every path into oscillator state; a note that is unmapped for part
+of its life simply renders silence for those periods.
+
+The regression, inside `nesDetuneReachesRendererWithoutControlSignal()`, builds such a
+note (microtuner enabled, its key outside the range, `QCOMPARE(frequency(), 0.0f)`), fills
+both buffer channels with 1.0 first, renders one period and asserts both channels come
+back exactly 0.0. Evidence in `test-10-red-guard-reverted.log` / `test-12-…`: with only
+this guard reverted (`git apply -R guard.patch`, exit 0) and rebuilt (exit 0),
+`ctest -R NesDetunePublication` is **exit 8** with `FAIL! … (an unmapped NES note must
+render silence)`; guard restored (exit 0) and rebuilt (exit 0), the same ctest is **exit
+0** and all three focused tests pass.
+
+Why the wavelength members are not instead zero-initialised in the constructor: that would
+make an unmapped note silent whatever the guard does, so this regression could no longer
+fail — a test that passes without the fix is a wrong test. The guard is the fix; the
+wavelength members stay the render path's own state, written by `updatePitch()` on every
+note the guard admits.
+
+### R2 — the source-level test could not find the plugin sources from another layout
+
+`nesDetuneReadsTheModelOnTheRenderPath()` opened `../../plugins/Nes/Nes.cpp` relative to
+`QCoreApplication::applicationDirPath()`, so a test binary run from any other layout (a
+relocated binary, a temp directory) failed at `sourceFile.open(QIODevice::ReadOnly)`.
+
+Fixed by resolving the sources at configure time instead of run time: the test target now
+carries `NES_PLUGIN_SOURCE_DIR="${CMAKE_SOURCE_DIR}/plugins/Nes"`
+(`tests/CMakeLists.txt:4788`, next to the existing `WATSYN_PLUGIN_SOURCE_DIR`) and the
+test builds its path from it (`tests/src/plugins/PluginPortsMigrationTest.cpp:6269`).
+`QStringLiteral(NES_PLUGIN_SOURCE_DIR)` also sidesteps `POSIX_ABS`-style absolute-path
+assumptions in a test.
+
+Evidence, with the binary copied to `$TMPDIR/nes-ext-layout/` and run there:
+the old relative form fails — `test-5-external-layout-red.log`, **exit 1**,
+`FAIL! … 'sourceFile.open(QIODevice::ReadOnly)' returned FALSE
+(/home/kruzzzzy/.config/kads/zene/state/runs/new-p18-65.r2/tmp/nes-ext-layout/../../plugins/Nes/Nes.cpp)`;
+the CMake-provided path passes from the same directory — `test-3-external-layout-green.log`
+**exit 0** and `test-7-external-layout-green-again.log` **exit 0** (four passes, the source
+test and the detune test). The relocated scratch directory was removed at the end.
+
 ## Verdict: REAL, fixed at the cause
 
 The finding is real. On the pre-change tree the three channel coarse-detune factors
@@ -63,7 +132,10 @@ Changes, all in `plugins/Nes`:
 - `Nes.cpp`: the constructor body no longer wires or seeds the removed slots
   (`plugins/Nes/Nes.cpp:558-562`).
 - `Nes.cpp`: zero-frequency notes from unmapped keys render silence before
-  oscillator state is constructed or read.
+  oscillator state is constructed or read (`plugins/Nes/Nes.cpp:570-574`, round 2).
+- `tests/CMakeLists.txt`: `NES_PLUGIN_SOURCE_DIR` is configured for the test target, so
+  the source-level regression finds the plugin sources from any binary directory
+  (round 2).
 
 Siblings checked: `rg -n "m_freq|updateFreq|m_lastFreq" plugins/Nes` returns nothing, so
 the three channels were the only users of the removed members, and the three channels are
@@ -85,23 +157,26 @@ NES plugin needs already lives in that binary:
   `AutomatableModel::setValueInternal()` defers the signal there), then measures the
   oscillator period of the next 8 periods by autocorrelation. Unfixed: `before=100
   after=100` (the mirror was never refreshed). Fixed: `before=100 after=50`.
-  The test also renders an unmapped note at default detune and checks both channels
-  for silence.
+  The same slot then renders an unmapped note (microtuner on, key outside the range,
+  `frequency() == 0`) with both channels pre-filled with 1.0 and asserts both come back
+  silent — the R1 regression above.
 - `nesDetuneReadsTheModelOnTheRenderPath()` — cause. Reads `plugins/Nes/Nes.cpp` and
   `Nes.h` and asserts the mirror type is gone, that `updatePitch()` reads
   `m_ch1Crs/m_ch2Crs/m_ch3Crs` and no longer reads `m_parent->m_freq*`, and that no
-  `SLOT( updateFreq` publishing slot survives.
+  `SLOT( updateFreq` publishing slot survives. Its sources are located through
+  `NES_PLUGIN_SOURCE_DIR`, so it does not depend on the build-directory layout.
 
 Neither test uses a thread, a sleep or a clock: both are straight-line calls, and the
-seam is the model's own signal state plus the plugin source.
+seams are the model's own signal state, the microtuner's key range and the plugin source.
 
 `tests/CMakeLists.txt` gained focused `ctest` entries `NesDetunePublication`,
 `NesDetuneRenderPath` and `NesCoarseDetune` (the latter is the pre-existing held-note
 detune regression from new-p9-321, which previously had no entry of its own).
 
-## Commands and exit codes (copied from the logs)
+## Commands and exit codes, round 1 (copied from the logs)
 
-Log folder: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p18-65.r1/logs`.
+Log folder: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p18-65.r1/logs` (round 2 is
+in `…/new-p18-65.r2/logs` and has its own table below).
 
 | Step | Exact command | Exit | Log |
 | --- | --- | --- | --- |
@@ -141,6 +216,54 @@ Decimator fixture not installed on this box) and `slice8PluginsAreLiveAndExact`
 messages, fail with the product change reverted (`test-mallets-14-reverted.log`, exit 4)
 and fail again with it restored (`test-mallets-16-fixed.log`, exit 4). See Other findings.
 
+## Commands and exit codes, round 2 (copied from the logs)
+
+Log folder: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p18-65.r2/logs`. Every row
+below was run in this round, on top of `2a580e032c`.
+
+| Step | Exact command | Exit | Log |
+| --- | --- | --- | --- |
+| Build plugin + test | `(cmake --build build --target nes PluginPortsMigrationTest -j4; echo BUILD_EXIT=$?) > …/build-1.log 2>&1` | 0 | `build-1.log` |
+| Green baseline, three focused tests | `cd build/tests && ctest -R "NesDetunePublication\|NesDetuneRenderPath\|NesCoarseDetune" --output-on-failure > …/test-2-baseline.log 2>&1; echo EXIT=$?` | 0 | `test-2-baseline.log` |
+| Source test from a relocated binary (CMake-provided path) | `cp build/tests/PluginPortsMigrationTest $TMPDIR/nes-ext-layout/ && cd $TMPDIR/nes-ext-layout && ./PluginPortsMigrationTest nesDetuneReadsTheModelOnTheRenderPath > …/test-3-external-layout-green.log 2>&1; echo EXIT=$?` | 0 | `test-3-external-layout-green.log` |
+| Rebuild with the old applicationDirPath-relative source path | `(cmake --build build --target PluginPortsMigrationTest -j4; echo BUILD_EXIT=$?) > …/build-4-red-layout.log 2>&1` | 0 | `build-4-red-layout.log` |
+| RED for R2, relocated binary | `cd $TMPDIR/nes-ext-layout && ./PluginPortsMigrationTest nesDetuneReadsTheModelOnTheRenderPath > …/test-5-external-layout-red.log 2>&1; echo EXIT=$?` | 1 | `test-5-external-layout-red.log` |
+| Restore the CMake-provided path and rebuild | `(cmake --build build --target PluginPortsMigrationTest -j4; echo BUILD_EXIT=$?) > …/build-6-green-layout.log 2>&1` | 0 | `build-6-green-layout.log` |
+| GREEN for R2, relocated binary, two slots | `cd $TMPDIR/nes-ext-layout && ./PluginPortsMigrationTest nesDetuneReadsTheModelOnTheRenderPath nesDetuneReachesRendererWithoutControlSignal > …/test-7-external-layout-green-again.log 2>&1; echo EXIT=$?` | 0 | `test-7-external-layout-green-again.log` |
+| Revert only the unmapped-note guard | `git show 2a580e032c -- plugins/Nes/Nes.cpp > …/guard.patch && git apply -R …/guard.patch; echo GUARD_REVERSE_EXIT=$?` | 0 | `step-8-guard-revert.log` |
+| Rebuild without the guard | `(cmake --build build --target nes PluginPortsMigrationTest -j4; echo BUILD_EXIT=$?) > …/build-9-red-guard-reverted.log 2>&1` | 0 | `build-9-red-guard-reverted.log` |
+| RED for R1 | `cd build/tests && ctest -R "NesDetunePublication" --output-on-failure > …/test-10-red-guard-reverted.log 2>&1; echo EXIT=$?` | 8 | `test-10-red-guard-reverted.log` |
+| Restore the guard and rebuild | `git apply …/guard.patch; echo GUARD_FORWARD_EXIT=$?` then `(cmake --build build --target nes PluginPortsMigrationTest -j4; echo BUILD_EXIT=$?) > …/build-11-green-guard-restored.log 2>&1` | 0 / 0 | `step-8-guard-revert.log`, `build-11-green-guard-restored.log` |
+| GREEN for R1, three focused tests | `cd build/tests && ctest -R "NesDetunePublication\|NesDetuneRenderPath\|NesCoarseDetune" --output-on-failure > …/test-12-green-guard-restored.log 2>&1; echo EXIT=$?` | 0 | `test-12-green-guard-restored.log` |
+| Whole product diff (detune fix + guard) out | `git diff $(git rev-parse f404dd2349^)..HEAD -- plugins/Nes/Nes.cpp plugins/Nes/Nes.h > …/fix.patch; git apply -R …/fix.patch; echo APPLY_REVERSE_EXIT=$?` | 0 | `step-13-fix-patch.log` |
+| Rebuild with the product code reverted | `(cmake --build build --target nes PluginPortsMigrationTest -j4; echo BUILD_EXIT=$?) > …/build-14-red-product-reverted.log 2>&1` | 0 | `build-14-red-product-reverted.log` |
+| RED, both detune regressions | `cd build/tests && ctest -R "NesDetunePublication\|NesDetuneRenderPath" --output-on-failure > …/test-15-red-product-reverted.log 2>&1; echo EXIT=$?` | 8 | `test-15-red-product-reverted.log` |
+| Restore the product diff and rebuild | `git apply …/fix.patch; echo APPLY_FORWARD_EXIT=$?` then `(cmake --build build --target nes PluginPortsMigrationTest -j4; echo BUILD_EXIT=$?) > …/build-16-green-product-restored.log 2>&1` | 0 / 0 | `step-13-fix-patch.log`, `build-16-green-product-restored.log` |
+| GREEN, three focused tests | `cd build/tests && ctest -R "NesDetunePublication\|NesDetuneRenderPath\|NesCoarseDetune" --output-on-failure > …/test-17-green-product-restored.log 2>&1; echo EXIT=$?` | 0 | `test-17-green-product-restored.log` |
+| Whole migration suite (family) | `cd build/tests && ctest -R "PluginPortsMigrationTest" --output-on-failure > …/test-18-family.log 2>&1; echo CTEST_EXIT=$?` | 8 | `test-18-family.log` |
+| Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > …/feature-check-19.log 2>&1; echo EXIT=$?` | 0 | `feature-check-19.log` |
+
+What the round-2 logs say:
+
+- `test-2-baseline.log`, `test-12-…`, `test-17-…`: `NesDetunePublication Passed`,
+  `NesDetuneRenderPath Passed`, `NesCoarseDetune Passed`, `100% tests passed out of 3`,
+  exit 0.
+- `test-10-red-guard-reverted.log`: exit 8, `FAIL! :
+  PluginPortsMigrationTest::nesDetuneReachesRendererWithoutControlSignal() 'std::all_of(…)'
+  returned FALSE. (an unmapped NES note must render silence)`.
+- `test-15-red-product-reverted.log`: exit 8, `QINFO … before=100 after=100` plus
+  `FAIL! … std::abs(afterPeriod * 2 - beforePeriod) <= 3 …` and `FAIL! …
+  '!header.contains(…) m_freq1' returned FALSE`.
+- `test-3-…` / `test-7-external-layout-*.log`: relocated binary, exit 0 with
+  `Totals: 3 passed` / `Totals: 4 passed`.
+- `test-5-external-layout-red.log`: relocated binary with the old relative path, exit 1,
+  `FAIL! … 'sourceFile.open(QIODevice::ReadOnly)' returned FALSE
+  (…/new-p18-65.r2/tmp/nes-ext-layout/../../plugins/Nes/Nes.cpp)`.
+- `test-18-family.log`: `Totals: 95 passed, 4 failed, 2 skipped`, exit 8 — byte-for-byte
+  the same four failures and messages as round 1's `test-family-12.log`, so the guard
+  added no new collateral.
+- `feature-check-19.log`: all eight gates `PASS`, `RESULT: PASS`, exit 0.
+
 ## Test matrix
 
 - Normal path: `NesCoarseDetune` — a detune write with the signals free still retunes the
@@ -152,56 +275,76 @@ and fail again with it restored (`test-mallets-16-fixed.log`, exit 4). See Other
   the note is sounding and the instrument's model signals are blocked.
 - Exhaustion path: not applicable — no pool, limit or cache grows here; the removed
   members were three scalars.
+- Unmapped / degenerate-input path (round 2): `NesDetunePublication` also renders a
+  zero-frequency note and requires silence on both channels; red without the guard
+  (`test-10-red-guard-reverted.log`), green with it (`test-12-…`).
 - Audio-thread constraints: the render path uses the existing model reads and calls
   `std::exp2` on the pitch-change branch. The per-note `m_lastCrs*` fields are
-  audio-thread-owned.
+  audio-thread-owned. The zero-frequency guard calls `zeroSampleFrames()`
+  (`std::fill`) and returns: no allocation, free, lock, wait, log or Qt call.
 - Platform: the module-host assertions skip on Windows via the file's existing
   `testHostCanLoadPluginModules()`/`PluginModuleHostSkipMessage` path (unchanged); the
-  source-level assertions are platform-independent and still run there. No Qt-6-only API,
-  no `windows.h` names, no `std::filesystem`.
+  source-level assertions are platform-independent and still run there, and their paths
+  are now configured by CMake rather than guessed from the executable directory. No
+  Qt-6-only API, no `windows.h` names, no `std::filesystem`.
 
 ## Self-check
 
 - **The regression test FAILS with the product change reverted and PASSES with it.**
-  Reverted: `git apply -R fix.patch` (exit 0), rebuild (exit 0), `ctest -R
+  Round 1: `git apply -R fix.patch` (exit 0), rebuild (exit 0), `ctest -R
   "NesDetunePublication|NesDetuneRenderPath"` → exit 8 with `before=100 after=100` and
-  the `m_freq1` header failure (`test-red-9.log`). Restored: `git apply fix.patch` (exit
-  0), rebuild (exit 0), same ctest → exit 0 (`test-green-11.log`). The first RED, before
-  any product edit, is `test-red-4.log` (exit 8).
+  the `m_freq1` header failure (`test-red-9.log`); restored (exit 0), rebuild (exit 0),
+  same ctest → exit 0 (`test-green-11.log`); the first RED, before any product edit, is
+  `test-red-4.log` (exit 8). Round 2 repeats it in its own folder:
+  `test-15-red-product-reverted.log` → exit 8, `test-17-green-product-restored.log` →
+  exit 0. Round 2 additionally proves each returned regression on its own: the
+  unmapped-note guard reverted alone gives exit 8 with `an unmapped NES note must render
+  silence` (`test-10-red-guard-reverted.log`) and exit 0 restored (`test-12-…`), and the
+  source-path fix gives exit 1 from a relocated binary with the old relative path
+  (`test-5-external-layout-red.log`) and exit 0 with the CMake-provided path (`test-3-…`,
+  `test-7-…`).
 - **The test is deterministic.** No threads, sleeps or clocks. The seams are (a) the
   instrument's models holding their `dataChanged` signal during one detune write
-  (`QObject::blockSignals`), and (b) autocorrelation over 8 rendered periods, using
-  floating-point arithmetic on a fixed sample buffer. The renderer is called directly through
-  `Instrument::playNote()` with a fixed `framesPerPeriod` (44100/256).
+  (`QObject::blockSignals`), (b) autocorrelation over 8 rendered periods, using
+  floating-point arithmetic on a fixed sample buffer, and (c) the microtuner's key range,
+  which makes `NotePlayHandle::frequency()` exactly 0 — the test asserts that with
+  `QCOMPARE(unmappedNote.frequency(), 0.0f)` before rendering it. The renderer is called
+  directly through `Instrument::playNote()` with a fixed `framesPerPeriod` (44100/256).
 - **Fix at the cause, complete.** The cause was the plain control-thread-written mirror;
   it is deleted, not merely ordered. All three channels were converted together; the
   three `DirectConnection` slots and their definitions were removed, the constructor no
   longer seeds them, and `rg -n "m_freq|updateFreq|m_lastFreq" plugins/Nes` is empty. No
-  other file in the tree referenced them.
+  other file in the tree referenced them. The round-2 guard sits on the only path into
+  oscillator state (`NesObject` is constructed only by `std::construct_at` inside
+  `playNoteImpl`, `plugins/Nes/Nes.cpp:582`), so a zero frequency can neither
+  construct nor be read by the render path.
 - **No collateral damage.** `crs1/2/3` are still the saved and loaded attributes, so
   project files round-trip unchanged; the existing `nesCoarseDetuneRetunesHeldNote`
   regression (the saved-settings path) still passes, as do 95 of the 99 other slots in
-  the suite (the 4 failures reproduce without this change). No limit or check was added.
+  the suite (the 4 failures are identical, with identical messages, with and without this
+  change: `test-family-12.log` round 1 and `test-18-family.log` round 2). No limit or
+  check was added; the zero-frequency guard only changes notes that produce no pitch.
 - **ALREADY-FIXED / FALSE-POSITIVE evidence:** not applicable, the verdict is FIXED; the
   code showing the race is cited above at `plugins/Nes/Nes.cpp:462,465-470,552,726` and
   `plugins/Nes/Nes.h:233-235` (pre-change `HEAD`).
 - **Sibling commands in the command files the diff touched** (the check lists
   `app.about`, `arrangement.fit_tracks`, …): not applicable to this cluster. The check
-  measures the branch against `FIX-BASE`, so it also sees the 431 files other clusters
-  already landed on this branch. This cluster's own commit touches no command file:
-  `git show --stat f404dd2349` lists exactly `docs/qwen-fixes-2026-10/cluster-new-p18-65.md`,
-  `plugins/Nes/Nes.cpp`, `plugins/Nes/Nes.h`, `tests/CMakeLists.txt`,
-  `tests/src/plugins/PluginPortsMigrationTest.cpp`, `tests/upstream-modifications.txt`.
-  No agent command, no `ControlCommands*` file and no
-  `tools/mcp-zene-control/zene_control/commands_snapshot.json` was changed, so the
+  measures the branch against `FIX-BASE`, so it also sees the files other clusters
+  already landed on this branch. This cluster's own commits touch no command file:
+  `git show --stat f404dd2349` and `git show --stat 2a580e032c` list only
+  `docs/qwen-fixes-2026-10/cluster-new-p18-65.md`, `plugins/Nes/Nes.cpp`,
+  `plugins/Nes/Nes.h` (round 1), `tests/CMakeLists.txt`,
+  `tests/src/plugins/PluginPortsMigrationTest.cpp` and `tests/upstream-modifications.txt`,
+  plus this round's report and ledger edits. No agent command, no `ControlCommands*` file
+  and no `tools/mcp-zene-control/zene_control/commands_snapshot.json` was changed, so the
   `ControlCommandsSnapshot` canary cannot move.
 
 ## Other findings
 
-Unrelated, not fixed here — the whole-suite run `test-family-12.log` reports four
-pre-existing environment failures that reproduce identically with this cluster's product
-change reverted (`test-mallets-14-reverted.log`) and restored
-(`test-mallets-16-fixed.log`):
+Unrelated, not fixed here — the whole-suite run reports four pre-existing environment
+failures, identical in round 1 (`test-family-12.log`) and round 2 (`test-18-family.log`),
+and identical again with this cluster's product change reverted
+(`test-mallets-14-reverted.log`) and restored (`test-mallets-16-fixed.log`):
 
 - `PluginPortsMigrationTest::malletsVoiceLimitIsEnforcedPerInstrument` and
   `::malletsVoiceLimitSurvivesDeviceChange` — a Mallets note is silenced instead of taking
