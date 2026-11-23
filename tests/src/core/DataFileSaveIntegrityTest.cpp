@@ -349,18 +349,35 @@ private slots:
 	//! refuses a second lock on a file whose recorded pid is a live process, and
 	//! this process is one, so holding it stands in for another instance holding
 	//! it without any timing or second process.
+	//!
+	//! The fixture AGES the held sidecar to 1970 before the load. A real save can
+	//! run past QLockFile's 30 second default staleness age, and a lock that is
+	//! reclaimed on age is no lock at all, so the aged case is the one that
+	//! matters: recovery must still leave it alone.
 	void liveSaveInAnotherInstanceIsNotAdopted();
 
 	//! Cluster new-p10-89, the writer's half. Two instances must not both write
 	//! <name>.new, so a save whose lock is held elsewhere is refused, says so,
 	//! and changes nothing on disk (project, previous backup and temp all
-	//! untouched). Once the holder is gone the same save lands, and a completed
-	//! save leaves no lock behind - otherwise every later save would be refused.
+	//! untouched). The held sidecar is aged here too, so a long-running writer
+	//! keeps its lock. Once the holder is gone the same save lands, and a
+	//! completed save leaves no lock behind - otherwise every later save would
+	//! be refused.
 	void saveIsRefusedWhileAnotherInstanceHoldsTheLock();
+
+	//! Cluster new-p10-89, the fail-closed half. A save that cannot take its
+	//! lock must not write <name>.new anyway: a name that is occupied by
+	//! something that is not a lock file, and a folder that refuses the lock
+	//! file outright (permission), both refuse the save with a report and leave
+	//! the project, the older backup and the temp untouched. Recovery is
+	//! fail-closed on the same terms: an unusable lock means the temp stays
+	//! where it is, which is the harmless direction.
+	void unusableSaveLockFailsClosed();
 };
 
 #include "DataFileSaveIntegrityTestParts1.h"
 #include "DataFileSaveIntegrityTestParts2.h"
+#include "DataFileSaveIntegrityTestParts3.h"
 
 QTEST_GUILESS_MAIN( DataFileSaveIntegrityTest )
 #include "DataFileSaveIntegrityTest.moc"

@@ -212,6 +212,38 @@ QString saveLockPath( const QString & fileName )
 	return fileName + QStringLiteral( ".save-lock" );
 }
 
+//! Cluster new-p10-89 round 2. QLockFile's default staleness is a 30 second
+//! age: a lock file whose mtime is older than that is reported as stale and
+//! REMOVED by the next contender, on the Qt versions whose isApparentlyStale()
+//! applies the age rule even to a live pid. A save that legitimately runs
+//! longer than that - a bundle copying its resources, a large project, a slow
+//! network share - would then have its own lock taken away from it, and the
+//! window this fix closes reopens: recovery adopts the live temp, or a second
+//! save writes a second temp beside the first. So both contenders pin the
+//! staleness criterion to "the holder's process is gone" and nothing else, by
+//! disabling the age rule. The cost is that a lock left by a writer that
+//! crashed on ANOTHER host on a shared folder is never reclaimed on time
+//! alone; both refusals name the sidecar, so it can be removed by hand, which
+//! is the safe direction for a save.
+void disableLockAge( QLockFile & lock )
+{
+	lock.setStaleLockTime( 0 );	// the int overload: Qt 5.15 has only this one
+}
+
+//! Why \a lock could not be taken, for a refusal the user can act on.
+QString saveLockRefusal( const QLockFile & lock )
+{
+	switch( lock.error() )
+	{
+	case QLockFile::LockFailedError:
+		return gui::SongEditor::tr( "another instance of Zene Studio is saving it right now" );
+	case QLockFile::PermissionError:
+		return gui::SongEditor::tr( "the folder it is in refuses the lock file" );
+	default:
+		return gui::SongEditor::tr( "the lock file it needs could not be created" );
+	}
+}
+
 #ifndef Q_OS_WIN
 //! Flush \a path's data to stable storage (SPEC-ARCH-4 1.8 part 2: fsync the
 //! file before the rename publishes it). Qt offers no fsync, so this reaches
@@ -473,14 +505,13 @@ void recoverPendingWrite( const QString & fileName )
 	// flight. The writer holds <file>.save-lock for exactly that window, so
 	// nothing is touched while it is held. A writer that crashed holds nothing
 	// once QLockFile sees its pid is gone, and the adoption below runs as it
-	// always did - the recovery path stays open for real orphans. A lock that
-	// cannot be taken at all (no permission on the directory) also leaves the
-	// temp for the next open, which is the harmless direction.
+	// always did - the recovery path stays open for real orphans.
 	QLockFile saveLock( saveLockPath( fileName ) );
+	disableLockAge( saveLock );	// a long save keeps its lock (see disableLockAge)
 	if( ! saveLock.tryLock( 0 ) )
 	{
-		qWarning() << "Found" << pending << "but a save of" << fileName
-			<< "is in progress in another instance or the save lock could not be taken"
+		qWarning() << "Found" << pending << "left by a save of" << fileName
+			<< "that may still be in flight (" << saveLockRefusal( saveLock ) << ")"
 			<< "- leaving it in place and keeping the project";
 		return;
 	}
@@ -1039,19 +1070,19 @@ bool DataFile::writeFile(const QString& filename, bool withResources)
 	// window, so every way out of the function - a reported failure, an
 	// injected stop, a completed save - releases it.
 	QLockFile saveLock( saveLockPath( fullName ) );
+	disableLockAge( saveLock );	// a long save keeps its lock (see disableLockAge)
 	if ( !saveLock.tryLock( 0 ) )
 	{
-		if ( saveLock.error() == QLockFile::LockFailedError )
-		{
-			showError(SongEditor::tr("Could not save file"),
-				SongEditor::tr("%1 is being saved by another instance of Zene Studio "
-					"right now, so it was NOT saved. Nothing has been discarded: "
-					"try again once that save has finished.").arg(fullName));
-			return false;
-		}
-		// Any other error is the directory refusing a file it will refuse again
-		// for <name>.new itself, which reports its own, accurate message just
-		// below - so the save is not refused here for a reason it cannot name.
+		// FAIL CLOSED on every reason: another instance's save, a folder that
+		// refuses the lock file, anything else. Writing <name>.new with no lock
+		// in hand is exactly the state this fix exists to prevent, so a save
+		// that cannot announce itself does not proceed.
+		showError(SongEditor::tr("Could not save file"),
+			SongEditor::tr("%1 was NOT saved: %2. Nothing has been discarded, and no "
+				"other instance's save was disturbed. If no other instance is saving "
+				"this project, delete %3 and try again.")
+				.arg(fullName, saveLockRefusal(saveLock), saveLockPath(fullName)));
+		return false;
 	}
 
 	if (!writePayload(fullNameTemp, fullName, showError)) { return false; }

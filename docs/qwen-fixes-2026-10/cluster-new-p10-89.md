@@ -1,204 +1,219 @@
 FIXED
 
-# cluster new-p10-89 — recovery can adopt a live save from another process
+# cluster new-p10-89 — recovery can adopt a live save from another process (round 2)
 
-Verdict: **REAL**, fixed at the cause in `src/core/DataFile.cpp`, with two deterministic
-regression tests in `tests/src/core/DataFileSaveIntegrityTest.cpp` (+
-`tests/src/core/DataFileSaveIntegrityTestParts2.h`).
+Verdict: **REAL**, fixed at the cause in `src/core/DataFile.cpp`. Round 1 (`8421bcb81f`)
+coordinated saves and recovery through `<file>.save-lock`; this round fixes the two things the
+review sent back:
 
-## The bug, in the branch's own code
+1. **The lock could be taken away from a live save.** `QLockFile`'s staleness age defaults to 30
+   seconds, and on the Qt versions whose `isApparentlyStale()` applies the age rule a lock file
+   older than that is reported stale and *removed* by the next contender. A save that legitimately
+   runs longer (a bundle copying resources, a large project, a slow share) would lose its own lock,
+   and the window this fix closes reopens. Both contenders now pin the criterion to "the holder's
+   process is gone": `disableLockAge()` (`src/core/DataFile.cpp:228`) calls
+   `setStaleLockTime(0)`, and it is called at `:510` (recovery) and `:1073` (save).
+2. **The save side failed open.** Round 1 refused only on `QLockFile::LockFailedError` and went on
+   to write `<name>.new` for any other lock error. That is the state this fix exists to prevent, so
+   `writeFile()` now **fails closed on every failed acquisition** (`:1072`-`:1086`): it refuses,
+   reports the reason (`saveLockRefusal()`, `:234`) and names the sidecar so a lock left by a
+   crashed writer on another host can be cleared by hand. Recovery is fail-closed on the same
+   terms and leaves the temp for the next open (`:509`-`:517`).
 
-A save writes `<name>.new` and publishes it later, in two separate steps:
+## The bug in the branch's base (`21c2f3ee2e:src/core/DataFile.cpp`)
 
-- `src/core/DataFile.cpp:950` (`git show HEAD:src/core/DataFile.cpp`) — `const QString fullNameTemp = fullName + ".new";`
-- `src/core/DataFile.cpp:996` (`HEAD`) — `if (!writePayload(fullNameTemp, fullName, showError)) { return false; }` writes the **complete** document into the temp.
-- `src/core/DataFile.cpp:1070` (`HEAD`) — `if( ! renameOverwrite( fullNameTemp, fullName ) )` publishes it.
+- `:950` `const QString fullNameTemp = fullName + ".new";` — the temp name.
+- `:996` `if (!writePayload(fullNameTemp, fullName, showError)) { return false; }` — writes the
+  **complete** document into it.
+- `:1070` `if( ! renameOverwrite( fullNameTemp, fullName ) )` — publishes it, later.
+- `:433` `void recoverPendingWrite( const QString & fileName )`, which starts from
+  `:442` `const QString pending = fileName + QStringLiteral( ".new" );` and adopts any complete
+  temp (`:489` `renameOverwrite( pending, fileName )`), with `:1046`
+  `replaceBackup( fullName, fullNameBak )` on the writer's side copying whatever the canonical path
+  holds at that moment.
 
-Between those two statements a complete `.new` exists and the canonical file is still the old
-one, and nothing says the temp belongs to a save that is still running. Recovery adopts any
-complete temp it finds:
+So in the window between `:996` and `:1070` a complete, unowned `.new` sits on disk. A second
+instance opening the project adopts it; the writer's publish then fails with its temp gone and, if
+recovery ran first, the writer copies the *recovered* content over the previous `.bak`. Reproduced
+in the RED run below with no timing at all (`Recovered interrupted save: ".../song.mmp.new" adopted
+as ".../song.mmp"` while a live holder owned the sidecar).
 
-- `src/core/DataFile.cpp:433` (`HEAD`) — `void recoverPendingWrite( const QString & fileName )`
-- `src/core/DataFile.cpp:442` (`HEAD`) — `const QString pending = fileName + QStringLiteral( ".new" );` — the only condition it starts from.
-- `src/core/DataFile.cpp:483` (`HEAD`) — `replaceBackup( fileName, fileName + ".bak" )`, then
-- `src/core/DataFile.cpp:489` (`HEAD`) — `renameOverwrite( pending, fileName )` — the temp is moved over the project.
+## What round 2 changed
 
-So a second instance opening the project in that window consumes the writer's temp. The
-writer's own `renameOverwrite( fullNameTemp, fullName )` then fails because the temp is gone
-(`:1070`), it reports a failed save, and — when recovery ran *before* the writer's backup step
-(`:1046` in the pre-fix file, `replaceBackup( fullName, fullNameBak )`) — the writer then copies
-the *recovered* content over the previous `.bak`, destroying the only older copy. That is
-exactly the finding's "the writer may then copy the new file as its backup and fail its final
-rename because the temp is gone, losing the previous backup and reporting save failure".
+- `src/core/DataFile.cpp:228` `disableLockAge()` — `setStaleLockTime(0)`: no age-based reclaim, so
+  a save of any duration keeps its own lock. The PID check stays, which is what keeps the crash path
+  open (measured below).
+- `src/core/DataFile.cpp:234` `saveLockRefusal()` — the refusal says *why* (another instance is
+  saving / the folder refuses the lock file / the lock file could not be created).
+- `src/core/DataFile.cpp:1072` — the save's guard: `tryLock(0)` after `disableLockAge()`, and
+  **any** failure refuses the save (`:1081` "… was NOT saved: …"). No temp is written.
+- `src/core/DataFile.cpp:509` — the recovery guard: same lock, same staleness setting, still
+  `tryLock(0)`; a refusal leaves both the temp and the project untouched, before any branch that
+  adopts, discards, or refuses an oversized/unreadable temp.
+- Callers/siblings unchanged from round 1 and re-checked: `recoverPendingWrite`'s one caller is
+  `:672` (the `QString` constructor; the `QByteArray` constructor never reaches it);
+  `writeFile`'s callers are `Song.cpp:2512`, `InstrumentTrackWindow.cpp:442`,
+  `PianoRoll.cpp:5965`, `ControlCommandsTrackPresets.cpp:73`, all of which already treat `false`
+  as "not saved"; `replaceBackup()`'s `<name>.bak.new` is not read by recovery and lies inside the
+  same locked window; `writePayload()` is the only product writer of `<file>.new`.
 
-Reproduced this session without any timing: the RED run below shows recovery adopting the temp
-of a holder that still owns the file
-(`Recovered interrupted save: ".../song.mmp.new" adopted as ".../song.mmp"`), and a save
-completing while another instance held the file.
+## Measurements from this session (log folder)
 
-## The fix
+`probe-lock-run.log` (a standalone Qt6Core probe, not part of the tree):
 
-One coordination primitive, both sides of the same cause (`src/core/DataFile.cpp`):
+```
+holder tryLock=1
+default staleLockTime contender tryLock=0 (true means the live lock was reclaimed)
+staleLockTime(0) contender tryLock=0 error=LockFailedError   (aged live lock still held)
+directory-at-path tryLock=0 error=LockFailedError
+```
 
-- `:210` `saveLockPath()` — `<file>.save-lock`: the sidecar a save of that file holds while a
-  temp of its own exists. `QLockFile` (Qt Core, Qt 5.1+/Qt 6, no platform code) because it
-  records the holder's pid: a writer that **crashed** leaves a lock whose pid is gone, which the
-  next `tryLock()` reports as stale and removes, so adoption still runs for real orphans and no
-  dead marker has to be cleaned by hand.
-- `:1041` in `writeFile()` — the lock is taken immediately before `writePayload()` (`:1057`),
-  i.e. before the only code that creates the temp, and is held by an RAII local until the
-  function returns, so it covers the whole window in which `<file>.new` exists. If the lock is
-  held elsewhere the save is **refused** and says so (`:1047`), instead of writing a second temp
-  over a save already in flight. A lock failure for any *other* reason (a directory that refuses
-  the lock file also refuses the temp) is not turned into a refusal: the payload write reports
-  its own, accurate error.
-- `:479` in `recoverPendingWrite()` — before anything is read, adopted or discarded, recovery
-  takes the same lock; if it cannot, it reports that a save is in progress (`:483`) and leaves
-  the temp **and** the project untouched. This one guard covers all recovery branches (adopt,
-  discard-incomplete, oversized, unreadable), so a half-written temp of a live save is not
-  deleted either.
+So on **Qt 6.12** here the default age does not reclaim a live same-host lock, while the Qt
+documentation states the 30 second default; the setting removes the age rule outright, which is
+what makes the guarantee hold on every Qt the project builds against (5.15 included).
 
-Neither side waits (`tryLock(0)`): recovery runs inside an open, and a save that blocks a
-session is a save that hangs.
+`probe-contend.log` — a holder process was killed with `kill -9` (no destructor, lock file left
+with a dead pid, `-rw-r--r-- x.lock` still on disk), then a contender with `setStaleLockTime(0)`:
 
-Callers/siblings checked:
+```
+holder pid=40451 tryLock=1        (then: kill -9, KILL_EXIT=0, file still present)
+contender tryLock=1 error=0 (1 means the dead holder's lock was reclaimed)
+```
 
-- `recoverPendingWrite` has one caller, `src/core/DataFile.cpp:641` (the `QString` constructor);
-  the `QByteArray` constructor never reaches it, and its empty-name guard still returns before
-  any temp path is derived.
-- `writeFile` callers: `src/core/Song.cpp:2512`, `src/gui/instrument/InstrumentTrackWindow.cpp:442`,
-  `src/gui/editors/PianoRoll.cpp:5965`, `src/core/ControlCommandsTrackPresets.cpp:73`. All treat
-  `false` as "not saved", exactly as the pre-existing backup/rename refusals do; `Song::save`
-  returns the flag (`Song.cpp:2512-2514`).
-- The sibling temp `replaceBackup()` creates (`<name>.bak.new`) is never read by recovery, and it
-  is created inside the same locked window.
-- `writePayload` (`:1057`) is the only product writer of `<file>.new` for both the legacy and the
-  v2-container path, so the container save is covered by the same lock.
+So `staleLockTime(0)` keeps the crash path open: a crashed writer's lock is reclaimed and adoption
+still runs. (The test suite covers the "holder gone" half; a test that leaves a lock file behind
+would have to build `QLockFile`'s private on-disk format, which differs between Qt 5.15 and Qt 6.)
+Local TSan does not run on this box, so the concurrency argument is the design argument above plus
+these measurements.
 
-Realtime / undo / commands: no audio-path function touched (this is the open/save path only), no
-undo step added, no control command added or changed.
+## Tests
 
-## Test matrix
+`tests/src/core/DataFileSaveIntegrityTest.cpp` (declarations, `#include
+"DataFileSaveIntegrityTestParts3.h"`), bodies in the new
+`tests/src/core/DataFileSaveIntegrityTestParts3.h` (the round-1 bodies lived in
+`...Parts2.h`, which the file-length ratchet then counted at 513 lines; Parts2 is back to its
+480-line state and the new file is 228 lines):
 
-| path | test | result |
+| path | test | what it pins |
 | --- | --- | --- |
-| normal save | `DataFileSaveIntegrityTest::ordinarySaveStillWritesAndKeepsABackup` (existing) + `:saveIsRefusedWhileAnotherInstanceHoldsTheLock` second half (save lands once the holder is gone, no lock or temp left) | PASS |
-| failure: live save in the window | `:liveSaveInAnotherInstanceIsNotAdopted` (temp kept, project unchanged, no backup made, message printed) | PASS |
-| failure: save while another instance holds the file | `:saveIsRefusedWhileAnotherInstanceHoldsTheLock` (returns false, project and previous `.bak` intact, no second temp) | PASS |
-| exhaustion | none added — the change allocates no resource and adds no limit | n/a |
-| reconfiguration | `:adoptionHonoursTheDisableBackupConfiguration` (existing, `app/disablebackup`) | PASS |
-| crash / stale coordination | `:liveSaveInAnotherInstanceIsNotAdopted` second half (holder gone → the very same temp is adopted) — the lock left by a *crashed* writer is not exercised by a test: building one means writing `QLockFile`'s private on-disk format, which differs between Qt 5.15 and Qt 6; QLockFile documents that a lock whose pid is gone is stale and removed by the next `tryLock`. Said plainly rather than claimed. | PASS (indirect) |
-| audio thread | none of this runs on it (load/save paths only) | n/a |
-| platforms | `QLockFile` is Qt Core on Linux/macOS/Windows; no `flock`/`fcntl`, no `windows.h`, no std::filesystem added | builds here, no platform code added |
+| live save in the window, aged lock | `liveSaveInAnotherInstanceIsNotAdopted` | recovery refuses while the holder's sidecar is aged to 1970, reports it, keeps the temp/project/absent-bak, and the aged lock is still the holder's; once the holder goes the very same temp is adopted and the previous version becomes `.bak` |
+| save beside a live save, aged lock | `saveIsRefusedWhileAnotherInstanceHoldsTheLock` | the save returns false, reports "was NOT saved", touches neither project nor `.bak`, writes no second temp, and does not take the aged lock of a live writer; once the holder goes the save lands and leaves no lock or temp |
+| unusable lock, both sides | `unusableSaveLockFailsClosed` | an obstructed sidecar (a directory at the name) and, on `Q_OS_UNIX`, a folder that refuses the lock file: the save returns false, writes no temp, backs nothing up, and reports "was NOT saved"; recovery leaves a complete temp in place and keeps the project |
+| normal path / reconfiguration / crash | existing slots: `ordinarySaveStillWritesAndKeepsABackup`, `adoptionHonoursTheDisableBackupConfiguration`, and every recovery test | unchanged behaviour |
+| audio thread | none of this runs there (open/save only) | — |
+| platforms | `QLockFile` is Qt Core on Linux/macOS/Windows; `setStaleLockTime(int)` is the Qt 5.15+ overload; no `flock`/`fcntl`, no `windows.h`, no std::filesystem | builds here, no platform code added |
 
-Determinism: no sleeps, no threads, no wall-clock. The "other process" is simulated by holding
-the **real** `<file>.save-lock` with a real `QLockFile` in the test process — QLockFile refuses a
-lock whose recorded pid is a live process, and the test process is one, so this is the same
-on-disk state another instance's save produces. Adoption order is injected with
-`setModifiedTime()` as the other recovery tests do.
+Determinism: no sleeps, no threads, no wall-clock. The "other process" is a real `QLockFile` held
+on the real sidecar in the test process (QLockFile refuses a lock whose recorded pid is a live
+process); age is *injected* with `setModifiedTime(path, 1000000)`; adoption order likewise.
 
-## Commands and exit codes (all from this session; logs in the run's log folder)
+## Commands and EXIT codes (this session; logs in the r2 folder)
 
-Baseline before touching anything:
+Green with the round-2 fix:
 ```
-cmake --build build --target DataFileSaveIntegrityTest -j4 > logs/build-0-baseline.log 2>&1   EXIT=0
-cd build/tests && ctest -R '^DataFileSaveIntegrityTest$' --output-on-failure > logs/test-0-baseline.log 2>&1   EXIT=0
+cmake --build build --target DataFileSaveIntegrityTest -j4 > logs/build-1-green.log 2>&1        EXIT=0
+cd build/tests && ctest -R '^DataFileSaveIntegrityTest$' --output-on-failure > logs/test-1-green.log 2>&1   EXIT=0
+cd build/tests && ./DataFileSaveIntegrityTest > logs/test-2-verbose-green.log 2>&1               EXIT=0
+   PASS liveSaveInAnotherInstanceIsNotAdopted / saveIsRefusedWhileAnotherInstanceHoldsTheLock /
+        unusableSaveLockFailsClosed      Totals: 30 passed, 0 failed
 ```
-RED (tests added, product untouched):
+The fail-closed change is load-bearing (guard put back to round 1's `LockFailedError`-only form):
 ```
-cmake --build build --target DataFileSaveIntegrityTest -j4 > logs/build-1-red.log 2>&1   EXIT=0
-cd build/tests && ctest -R '^DataFileSaveIntegrityTest$' --output-on-failure > logs/test-1-red.log 2>&1   EXIT=8
-  FAIL! liveSaveInAnotherInstanceIsNotAdopted: recovered the live save's temp
-  FAIL! saveIsRefusedWhileAnotherInstanceHoldsTheLock: a save ran while another instance held it
+cmake --build build --target DataFileSaveIntegrityTest -j4 > logs/build-3-failopen.log 2>&1      EXIT=0
+cd build/tests && ./DataFileSaveIntegrityTest unusableSaveLockFailsClosed liveSaveInAnotherInstanceIsNotAdopted \
+    saveIsRefusedWhileAnotherInstanceHoldsTheLock > logs/test-4-failopen-red.log 2>&1            EXIT=1
+   FAIL! unusableSaveLockFailsClosed: Not all expected messages were received
 ```
-GREEN (fix applied):
+and the age pinning is called on both sides: removing both calls does not compile —
+`build-2-round1-guard.log`: `DataFile.cpp:228: error: 'disableLockAge(QLockFile&)' defined but not used
+[-Werror=unused-function]` (EXIT=2), so no build can silently drop it.
+
+Step 4b, the whole product fix reverted (both rounds, `git diff 21c2f3ee2e -- src/core/DataFile.cpp`):
 ```
-cmake --build build --target DataFileSaveIntegrityTest -j4 > logs/build-2-green.log 2>&1   EXIT=0
-cd build/tests && ctest -R '^DataFileSaveIntegrityTest$' --output-on-failure > logs/test-2-green.log 2>&1   EXIT=0
+git diff 21c2f3ee2e -- src/core/DataFile.cpp > logs/fix.patch                     DIFF_EXIT=0   (124 lines)
+git apply -R logs/fix.patch                                                       REVERT_EXIT=0
+cmake --build build --target DataFileSaveIntegrityTest -j4 > logs/build-6-reverted-relink.log 2>&1   BUILD_EXIT=0
+cd build/tests && ctest -R '^DataFileSaveIntegrityTest$' --output-on-failure > logs/test-7-reverted-red.log 2>&1   TEST_EXIT=8
+   Totals: 27 passed, 3 failed - the three new-p10-89 slots, and only those
+git apply logs/fix.patch                                                          APPLY_EXIT=0
+cmake --build build --target DataFileSaveIntegrityTest -j4 > logs/build-7-restored.log 2>&1   BUILD_EXIT=0
+cd build/tests && ctest -R '^DataFileSaveIntegrityTest$' --output-on-failure > logs/test-8-restored-green.log 2>&1   TEST_EXIT=0
 ```
-Step 4b, proof that the tests catch the bug:
+(The first reverted build was cut short by the tool's 300 s limit while linking and left the binary
+without its execute bit; `build-5-reverted.log` shows it stopping at "Linking CXX executable …".
+I removed the binary and relinked — `logs/build-6-reverted-relink.log`, `BUILD_EXIT=0` — before the
+RED run above.)
+
+Collateral, `zene` plus the save-touching family:
 ```
-git diff -- src/core/DataFile.cpp > logs/fix.patch            EXIT=0   (93 lines)
-git apply -R logs/fix.patch                                   EXIT=0
-cmake --build build --target DataFileSaveIntegrityTest MainCliStartupTest -j4 > logs/build-4-reverted.log 2>&1   EXIT=0
-cd build/tests && ctest -R '^DataFileSaveIntegrityTest$' --output-on-failure > logs/test-5-reverted-red.log 2>&1   EXIT=8
-  Totals: 27 passed, 2 failed   (the two new tests, and only those)
-git apply logs/fix.patch                                      EXIT=0
-cmake --build build --target DataFileSaveIntegrityTest -j4 > logs/build-5-restored.log 2>&1   EXIT=0
-cd build/tests && ctest -R '^DataFileSaveIntegrityTest$' --output-on-failure > logs/test-7-restored-green.log 2>&1   EXIT=0
+cmake --build build --target zene DataFileFormatTest DataFileContainerRecoveryTest ProjectContainerSaveTest RoutingGraphTest SessionModelTest -j4 > logs/build-8-collateral.log 2>&1   BUILD_EXIT=0
+cd build/tests && ctest -R '^(DataFileSaveIntegrityTest|DataFileFormatTest|DataFileContainerRecoveryTest|ProjectContainerSaveTest|RoutingGraphTest|SessionModelTest)$' --output-on-failure > logs/test-9-collateral.log 2>&1   TEST_EXIT=0   (6/6 passed)
 ```
-Collateral (product binary and the save-touching test family):
+After moving the three bodies to `Parts3.h`:
 ```
-cmake --build build --target zene -j4 > logs/build-6-zene.log 2>&1                            EXIT=0
-cmake --build build --target DataFileFormatTest DataFileContainerRecoveryTest ProjectContainerSaveTest MainCliStartupTest -j4 > logs/build-3-family.log 2>&1   EXIT=0
-cd build/tests && ctest -R '^(DataFileSaveIntegrityTest|DataFileFormatTest|DataFileContainerRecoveryTest|ProjectContainerSaveTest|MainCliStartupTest)$' -j2 --output-on-failure > logs/test-3-family.log 2>&1   EXIT=8
-  (4 of 5 pass; MainCliStartupTest fails - see Other findings, it fails with the fix reverted too:
-   logs/test-6-maincli-reverted.log EXIT=8, same assertion, so it is not caused by this change)
-cmake --build build --target RoutingGraphTest TrackRouteDropTest SessionModelTest -j4 > logs/build-7-collateral.log 2>&1   EXIT=0
-cd build/tests && ctest -R '^(DataFileSaveIntegrityTest|DataFileFormatTest|DataFileContainerRecoveryTest|ProjectContainerSaveTest|RoutingGraphTest|TrackRouteDropTest|SessionModelTest)$' --output-on-failure > logs/test-8-collateral.log 2>&1   EXIT=0   (7/7 passed)
+cmake --build build --target DataFileSaveIntegrityTest -j4 > logs/build-9-parts3.log 2>&1        EXIT=0
+cd build/tests && ctest -R '^DataFileSaveIntegrityTest$' --output-on-failure > logs/test-10-parts3-green.log 2>&1   EXIT=0
 ```
 Gates:
 ```
-FEATURE_CHECK_LOG_DIR=logs/feature-check python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/gates-1.log 2>&1   EXIT=0
-  PASS fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology,
-       doc-figures, complexity (no new item in your files), file-length (no new item in your files)
-  RESULT: PASS
+FEATURE_CHECK_LOG_DIR=logs/feature-check python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/gates-1.log 2>&1   EXIT=1
+   FAIL file-length: NEW: new file over 500 lines: tests/src/core/DataFileSaveIntegrityTestParts2.h (513)
+   -> the three bodies moved to DataFileSaveIntegrityTestParts3.h (Parts2 back to 480 lines)
+FEATURE_CHECK_LOG_DIR=logs/feature-check python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/gates-2.log 2>&1   EXIT=0
+   PASS fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology,
+        doc-figures, complexity, file-length      RESULT: PASS
 ```
 
 ## Self-check
 
 - **The regression test FAILS with the product change reverted and PASSES with it.** Reverted:
-  `ctest -R '^DataFileSaveIntegrityTest$'` EXIT=8, 27 passed / 2 failed, both failures being the
-  new slots (`logs/test-5-reverted-red.log`); restored: EXIT=0 (`logs/test-7-restored-green.log`).
-  The compile of the test does not depend on the fix (it uses `QLockFile` and the sidecar name
-  directly), so RED is an assertion failure, not a build error.
-- **Deterministic, no wall-clock.** No sleeps, no threads, no timing assertions. The "live
-  writer" is a real `QLockFile` held on the real sidecar path in the test process (QLockFile
-  treats a lock whose recorded pid is a live process as held, and this process is one); the
-  recovery's own "older/newer" comparison uses `setModifiedTime()` injected epochs, as
-  `olderPendingSaveDoesNotReplaceANewerProject` already does.
-- **Fix at the cause and complete.** One primitive (`saveLockPath`, `DataFile.cpp:210`) used by
-  the only writer of `<file>.new` (`writeFile`, `:1041`, before `writePayload` at `:1057`) and by
-  the only reader of it (`recoverPendingWrite`, `:479`, before every branch that adopts, discards
-  or refuses). `recoverPendingWrite`'s one caller is `:641`; `writeFile`'s callers are
-  `Song.cpp:2512`, `InstrumentTrackWindow.cpp:442`, `PianoRoll.cpp:5965`,
-  `ControlCommandsTrackPresets.cpp:73`, and all of them already treat `false` as "not saved"
-  (that is the existing contract for a refused backup or rename). `replaceBackup`'s `<name>.bak.new`
-  sibling is not part of recovery and lies inside the same locked window.
-- **No collateral damage.** With no `<file>.new` present, recovery returns at `:464` and never
-  touches the lock — every existing load is byte-for-byte the old path (27 pre-existing slots in
-  `DataFileSaveIntegrityTest` still pass, plus `DataFileFormatTest`, `DataFileContainerRecoveryTest`,
-  `ProjectContainerSaveTest`, `RoutingGraphTest`, `TrackRouteDropTest`, `SessionModelTest`).
-  A completed save leaves no `.save-lock` and no `.new` (`:saveIsRefusedWhileAnotherInstanceHoldsTheLock`
-  asserts both), so no later save is refused. The refusal is scoped to `LockFailedError` only: a
-  directory that cannot hold the lock file cannot hold the temp either, and that case keeps the
-  old, accurate "could not open … for writing" report instead of a new refusal.
-- **Verdict evidence (REAL).** Pre-fix lines quoted above: temp written at `HEAD:950`/`996`,
-  published at `HEAD:1070`; recovery adopts on "complete" alone at `HEAD:433/442/483/489`. The RED
-  run prints recovery adopting a temp owned by a live holder.
+  `test-7-reverted-red.log` `TEST_EXIT=8`, `Totals: 27 passed, 3 failed` — exactly
+  `liveSaveInAnotherInstanceIsNotAdopted`, `saveIsRefusedWhileAnotherInstanceHoldsTheLock`,
+  `unusableSaveLockFailsClosed`. Restored: `test-8-restored-green.log` `TEST_EXIT=0`. The test
+  compiles without the fix (it holds a real `QLockFile` on the documented sidecar name), so RED is
+  an assertion failure, not a build error.
+- **The two round-2 defects are each pinned.** Fail-open: with the guard narrowed back to
+  `LockFailedError`, `unusableSaveLockFailsClosed` fails (`test-4-failopen-red.log`, EXIT=1). Age:
+  the three fixtures age the held sidecar to 1970 before the load/save and assert the refusal plus
+  `holder.isLocked()`; `disableLockAge()` is what makes that hold on any Qt, and the compiler
+  proves it is called (`-Werror=unused-function`, `build-2-round1-guard.log`).
+- **Deterministic.** No wall-clock, sleeps, threads or races: the "other process" is a real
+  `QLockFile` held in this process (refused because its recorded pid is alive), and every time
+  value is injected with `setModifiedTime()`.
+- **Fix at the cause and complete.** One sidecar name (`saveLockPath`, `:210`), one staleness
+  policy (`disableLockAge`, `:228`), taken by the only writer of `<file>.new` (`:1072`, before
+  `writePayload` at `:1088`) and the only reader of it (`:509`, before every recovery branch).
+  Callers: `:672` for recovery; `Song.cpp:2512`, `InstrumentTrackWindow.cpp:442`,
+  `PianoRoll.cpp:5965`, `ControlCommandsTrackPresets.cpp:73` for saves, all already
+  `false`-means-not-saved. Sibling temp `<name>.bak.new` is outside recovery and inside the lock.
+- **No collateral damage.** With no `<file>.new` recovery returns before the lock, so every
+  existing load is unchanged (27 pre-existing slots plus `DataFileFormatTest`,
+  `DataFileContainerRecoveryTest`, `ProjectContainerSaveTest`, `RoutingGraphTest`,
+  `SessionModelTest` pass). A completed save leaves neither `.save-lock` nor `.new`. The new
+  refusal covers *all* lock failures, which is the requested fail-closed behaviour: the message
+  names the sidecar so the one case it can over-refuse (a lock left by a crash on another host on
+  a share, which `staleLockTime(0)` no longer expires on time) is clearable by hand; on the same
+  host a dead pid is still reclaimed, as `probe-contend.log` shows.
 - **Realtime / undo / commands.** Nothing added on the audio path (no allocation, lock, wait,
-  signal or I/O in any `process*`/`play*` function - the changed functions are
-  `DataFile::writeFile`, `recoverPendingWrite` and a path helper, all on the open/save path);
-  one save is still one honest save (no new undo step, no new command, no
-  `ControlCommandsSnapshot` change).
-- **Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE**, so the last ASK does not apply; the
-  pre-fix code that shows the defect is quoted at the top (`HEAD:950`, `HEAD:996`, `HEAD:1070`
-  for the writer, `HEAD:433`, `HEAD:442`, `HEAD:483`, `HEAD:489` for the adopting recovery).
-- **Sibling commands: none.** The commit touches five files only -
-  `src/core/DataFile.cpp`, `tests/src/core/DataFileSaveIntegrityTest.cpp`,
-  `tests/src/core/DataFileSaveIntegrityTestParts2.h`, `tests/upstream-modifications.txt`,
-  `docs/qwen-fixes-2026-10/cluster-new-p10-89.md` (`git show --stat HEAD`) - so no
-  `ControlCommands*`, `ControlReversibilityTable*` or `ControlRegistry` file, and no command id,
-  changed here. The `app.*`/`arrangement.*` sibling list the pre-submit check prints comes from
-  the train's other commits between the base and this branch, not from this fix; a file-save
-  coordination lock is below the command surface and changes no command's behaviour, error class
-  or reversibility, so those commands are unaffected.
+  signal or I/O in `process*`/`play*`); the changed functions are `DataFile::writeFile`,
+  `recoverPendingWrite` and three file-local helpers on the open/save path. One save is still one
+  honest save: no undo step, no control command, no `ControlCommandsSnapshot` change.
+- **Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE**, so that ASK does not apply; the
+  pre-fix code showing the defect is quoted above from `21c2f3ee2e`.
+- **Sibling commands: none.** This round touches `src/core/DataFile.cpp`,
+  `tests/src/core/DataFileSaveIntegrityTest.cpp`, `...Parts2.h`, the new `...Parts3.h`,
+  `tests/upstream-modifications.txt` and this report — no `ControlCommands*`,
+  `ControlReversibilityTable*` or `ControlRegistry` file, no command id. The `app.*` /
+  `arrangement.*` siblings the pre-submit check lists come from the train between the base and this
+  branch, not from this fix; a file-save lock is below the command surface and changes no command's
+  behaviour, error class or reversibility.
 
 ## Other findings
 
 - `MainCliStartupTest::failedControlSocketStartupClearsBothSessionMarkers` fails on this box with
-  `QLocalServer::listen: Unknown error 25` for its own `zene-qwen-5110-<uuid>` socket, before any
-  CLI run (`tests/src/core/MainCliStartupTest.cpp:154`). It fails identically with this fix
-  reverted (`logs/test-6-maincli-reverted.log`, EXIT=8) and with a shorter `TMPDIR`
-  (`logs/test-10-maincli-shorttmp.log`, EXIT=8), so it is environmental to this sandbox and
-  unrelated to this cluster. Not touched.
+  `QLocalServer::listen: Unknown error 25` for its own `zene-qwen-5110-<uuid>` socket
+  (`tests/src/core/MainCliStartupTest.cpp:154`). Round 1 measured it failing with this fix reverted
+  and with a shorter `TMPDIR`, so it is environmental to this sandbox; not touched here.
+- The first reverted build in this session was interrupted by the 300 s tool limit while linking
+  `DataFileSaveIntegrityTest` and left the binary non-executable (`ls -l` showed `-rw-r--r--`),
+  which made ctest report `BAD_COMMAND`; deleting and relinking fixed it (`build-6-reverted-relink.log`).
