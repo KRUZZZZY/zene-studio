@@ -1710,6 +1710,8 @@ set(LMMS_TESTS
 	src/plugins/BitInvaderAllocationTest.cpp
 	# BitInvader's loadSettings clamps out-of-range wavetable values and refuses malformed payloads.
 	src/plugins/BitInvaderLoadSettingsTest.cpp
+	# new-p16-228: an extreme Sfxr pitch renders a bounded amount of synth per audio period.
+	src/plugins/SfxrPitchBoundTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
 	src/tracks/HeadlessGuiGuardTest.cpp
@@ -2653,6 +2655,24 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/BitInvader ${CMAKE_BINARY_DIR}/plugins/BitInvader)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE PLUGIN_NAME=bitinvader)
+	endif()
+	# cluster new-p16-228: the Sfxr pitch-bound regression compiles the plug-in's own note path
+	# into the test (the Watsyn/Vestige shape), so the period it measures is the shipping one.
+	# Sfxr's view lives in the same source file and reads the plug-in's artwork, which is
+	# generated in its build directory; without CMP0118 the GENERATED mark is per-directory, so a
+	# fresh configure of THIS directory would refuse a file that does not exist yet.
+	# add_dependencies below orders its build.
+	if(LMMS_TEST_NAME STREQUAL "SfxrPitchBoundTest")
+		set_source_files_properties("${CMAKE_BINARY_DIR}/plugins/Sfxr/qrc_sfxr.cpp"
+			PROPERTIES GENERATED TRUE)
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Sfxr/Sfxr.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Sfxr/Sfxr.h
+			${CMAKE_BINARY_DIR}/plugins/Sfxr/qrc_sfxr.cpp)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Sfxr ${CMAKE_BINARY_DIR}/plugins/Sfxr)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE PLUGIN_NAME=sfxr)
+		add_dependencies(${LMMS_TEST_NAME} sfxr)
 	endif()
 	# cluster new-p17-203: the Watsyn wavetable-snapshot regression compiles the plug-in's
 	# own sources into the test (the SlicerT/Vibed/BitInvader shape), so the note path under

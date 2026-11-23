@@ -439,12 +439,23 @@ QString SfxrInstrument::nodeName() const
 namespace
 {
 
+//! The most synth frames one output frame may take. SfxrSynth generates one frame per 44100 Hz sample and a
+//! note plays it frequency/baseFreq times faster, so one output frame takes that many synth frames, and a
+//! whole period renders that many again per frame of the period. Nothing bounded the ratio: a tuning whose
+//! base frequency sits far below the note's own frequency made one audio period render hundreds of
+//! thousands of synth frames before the audio callback could return (new-p16-228). 64 frames per output
+//! frame is a pitch of 28 kHz against the 440 Hz base the default tuning reports - past hearing, and two
+//! octaves above the highest note that tuning reaches (2^(127-57)/12 = 28.5) - so only notes that are
+//! already ultrasonic are held to it, and a period's synthesis stays around a tenth of the period's own
+//! running time.
+constexpr f_cnt_t SfxrMaxSynthFramesPerOutputFrame = 64;
+
 //! Fills @a frameNum frames of @a out from @a pitchedFrameNum synth frames, each output frame taking the synth
 //! frame at the same relative position, as the per-period buffer did. The synth runs through a fixed block
 //! on the stack, still all @a pitchedFrameNum frames of it, so no period allocates (round 6).
-void renderPitched(SfxrSynth& synth, SampleFrame* out, f_cnt_t frameNum, int32_t pitchedFrameNum)
+void renderPitched(SfxrSynth& synth, SampleFrame* out, f_cnt_t frameNum, f_cnt_t pitchedFrameNum)
 {
-	const auto pitched = static_cast<f_cnt_t>(std::max(pitchedFrameNum, 0));
+	const f_cnt_t pitched = pitchedFrameNum;
 	if (pitched == 0)
 	{
 		zeroSampleFrames(out, frameNum);  // the old buffer was empty here, and read past its end
@@ -487,12 +498,21 @@ void SfxrInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out
 	}
 
 	const auto baseFreq = instrumentTrack()->baseFreq();
-	int32_t pitchedFrameNum = (_n->frequency() / baseFreq) * frameNum;
+	const float rateScale = currentSampleRate / 44100;
 
-	pitchedFrameNum /= ( currentSampleRate / 44100 );
-
-// debug code
-//	qDebug( "pFN %d", pitchedFrameNum );
+	// The synth frames this period needs, in the arithmetic this line always used: the pitch ratio times the
+	// period's frames, truncated, then divided by the engine's rate ratio and truncated again. It runs in
+	// double so an extreme ratio cannot overflow the int32 it used to be squeezed into, and the result is
+	// bounded to SfxrMaxSynthFramesPerOutputFrame synth frames per output frame, which is what keeps one
+	// period's work finite (new-p16-228).
+	double pitchedFrames = std::trunc(static_cast<double>(_n->frequency() / baseFreq * static_cast<float>(frameNum)));
+	if (rateScale != 0.0f)
+	{
+		pitchedFrames = std::trunc(static_cast<double>(static_cast<float>(pitchedFrames) / rateScale));
+	}
+	const f_cnt_t pitchedFrameNum = std::min<f_cnt_t>(
+		static_cast<f_cnt_t>(std::max(pitchedFrames, 0.0)),
+		frameNum * SfxrMaxSynthFramesPerOutputFrame);
 
 	renderPitched(*static_cast<SfxrSynth*>(_n->m_pluginData), out.data() + offset, frameNum, pitchedFrameNum);
 

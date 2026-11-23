@@ -3659,6 +3659,7 @@ tests/src/plugins/SampleRateDependentLadspa.cpp
 tests/src/plugins/Sf2PlayerFixture.h
 tests/src/plugins/Sf2PlayerRealtimeTest.cpp
 tests/src/plugins/SfizzLeakDetectorTest.cpp
+tests/src/plugins/SfxrPitchBoundTest.cpp
 tests/src/plugins/SfzCompressorStereoLinkTest.cpp
 tests/src/plugins/SfzDistoBuffersTest.cpp
 tests/src/plugins/SfzEQPoolExhaustionTest.cpp
