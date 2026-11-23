@@ -23,8 +23,8 @@ the same branch with an ordinary width.
 
 This session's RED run is the hard evidence: with only the product diff reversed,
 the product method reports 0 px per bar and the slot fails
-(`test-9-red.log`, EXIT 1: `a pattern editor with no content width reports 0 px per
-bar`). With the diff applied the same slot passes (`test-10-green-restored.log`,
+(`test-3-red.log`, EXIT 1: `a pattern editor with no content width reports 0 px per
+bar`). With the diff applied the same slot passes (`test-4-green-restored.log`,
 EXIT 0).
 
 The Song Editor scale cannot reach this branch: it is clamped to
@@ -67,30 +67,49 @@ the meta-object with `Qt::DirectConnection`, records `pixelsPerBar()`, restores 
 width, forces it again, and asserts the recorded scale is >= 1. No drag is simulated
 and no timing is involved. The test file was already registered as a fork source.
 
+## State sequence
+
+The proof manifest carries a `state-sequence` for
+`AutomationLaneChildGuiTest::aZeroWidthPatternEditorKeepsOnePixelPerBar`. The slot
+drives these editor states in order (`AutomationLaneChildGuiTest.cpp:500-520`):
+
+1. `tracks cleared` - `clearAllTracks()` on the editor and the pattern store, one
+   `processEvents()` for the queued row removal; `trackViews().isEmpty()` is asserted
+   (0 rows).
+2. `zero content width` - `setFixedWidth(trackSettingsWidth + trackOperationsWidth)`;
+   `updatePixelsPerBar` is invoked with `Qt::DirectConnection`; the scale recorded in
+   this state is 0 before the fix and 1 after it.
+3. `width restored` - the original width is restored and `updatePixelsPerBar` is
+   invoked again; the scale is >= 1.
+
+Across the red/green runs the same slot drove the scale through the two states
+`zero content width: 0 px/bar` (product diff reversed, `test-3-red.log`, EXIT 1) and
+`zero content width: 1 px/bar` (fix applied, `test-4-green-restored.log`, EXIT 0).
+
 ## Commands and exit codes
 
-All logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p15-270.r7/logs/`.
+All logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p15-270.r8/logs/`.
 This session's runs:
 
 | # | Command | EXIT | Log / result |
 |---|---------|------|--------------|
-| 1 | `cmake --build build --target AutomationLaneChildGuiTest -j4` | 0 | build-6-green.log, fix applied |
-| 2 | `ctest -R AutomationLaneChildGuiTest --output-on-failure` (build/tests) | 0 | test-7-green.log, 1/1 passed |
-| 3 | `QT_QPA_PLATFORM=offscreen ./AutomationLaneChildGuiTest aZeroWidthPatternEditorKeepsOnePixelPerBar -v1` | 0 | test-8-green-slot.log, slot PASS |
+| 1 | `cmake --build build --target AutomationLaneChildGuiTest -j4` | 0 | build-1.log, fix applied |
+| 2 | `ctest -R AutomationLaneChildGuiTest --output-on-failure` (build/tests) | 0 | test-1-green.log, 1/1 passed |
+| 3 | `QT_QPA_PLATFORM=offscreen ./AutomationLaneChildGuiTest aZeroWidthPatternEditorKeepsOnePixelPerBar -v1` | 0 | test-2-green-slot.log, slot PASS |
 | 4 | `git diff a0070f8b8b^ a0070f8b8b -- src/gui/editors/PatternEditor.cpp src/gui/tracks/AutomationTrackView.cpp > logs/fix.patch` | 0 | 47-line product patch |
 | 5 | `git apply -R --check logs/fix.patch` | 0 | patch reverses cleanly |
 | 6 | `git apply -R logs/fix.patch` | 0 | product change reversed |
-| 7 | `cmake --build build --target AutomationLaneChildGuiTest -j4` | 0 | build-7-red.log |
-| 8 | `QT_QPA_PLATFORM=offscreen ./AutomationLaneChildGuiTest aZeroWidthPatternEditorKeepsOnePixelPerBar -v1` | 1 | test-9-red.log: FAIL, reports 0 px per bar |
+| 7 | `cmake --build build --target AutomationLaneChildGuiTest -j4` | 0 | build-2-red.log |
+| 8 | `QT_QPA_PLATFORM=offscreen ./AutomationLaneChildGuiTest aZeroWidthPatternEditorKeepsOnePixelPerBar -v1` | 1 | test-3-red.log: FAIL, reports 0 px per bar |
 | 9 | `git apply logs/fix.patch` | 0 | product change restored |
-| 10 | `cmake --build build --target AutomationLaneChildGuiTest -j4` | 0 | build-8-green-restored.log |
-| 11 | `QT_QPA_PLATFORM=offscreen ./AutomationLaneChildGuiTest -v1` | 0 | test-10-green-restored.log, 12 passed |
-| 12 | `cmake --build build --target AccessibilityWalkTest ArrangerFileDropTest TrackRouteDropTest -j4` | 0 | build-9-family.log |
-| 13 | `ctest -R "AutomationLaneChildGuiTest\|ArrangerFileDropTest\|TrackRouteDropTest\|AccessibilityWalkTest" --output-on-failure` | 0 | test-11-family.log, 4/4 passed |
-| 14 | `python3 .../feature_check.py <worktree>` | 0 | feature-check-2.log, `RESULT: PASS` |
-| 15 | `cmake --build build --target zene -j4` | 0 | build-10-zene.log |
-| 16 | `python3 logs/pattern-shot.py build/zene logs/gui` | 0 | gui-shot-2.log, `window.screenshot` 1600x1000 |
-| 17 | `python3 .../submit_check.py <worktree> new-p15-270` | 0 | submit-check-2.log, `RESULT: PASS - submit` |
+| 10 | `cmake --build build --target AutomationLaneChildGuiTest -j4` | 0 | build-3-green-restored.log |
+| 11 | `QT_QPA_PLATFORM=offscreen ./AutomationLaneChildGuiTest -v1` | 0 | test-4-green-restored.log, 12 passed |
+| 12 | `cmake --build build --target AccessibilityWalkTest ArrangerFileDropTest TrackRouteDropTest -j4` | 0 | build-5-family.log |
+| 13 | `ctest -R "AutomationLaneChildGuiTest\|ArrangerFileDropTest\|TrackRouteDropTest\|AccessibilityWalkTest" --output-on-failure` | 0 | test-5-family.log, 4/4 passed |
+| 14 | `python3 .../feature_check.py <worktree>` | 0 | feature-check-1.log, `RESULT: PASS` |
+| 15 | `cmake --build build --target zene -j4` | 0 | build-4-zene.log |
+| 16 | `python3 logs/pattern-shot.py build/zene logs/gui` | 0 | gui-shot.log, `window.screenshot` 1600x1000 |
+| 17 | `python3 .../submit_check.py <worktree> new-p15-270` | 0 | submit-check-1.log, `RESULT: PASS - submit` |
 
 RED/GREEN proof: step 8 ran the same slot with only the product diff reversed and
 failed with `a pattern editor with no content width reports 0 px per bar` (EXIT 1);
@@ -111,15 +130,17 @@ was already a fork source.
 ## Self-check
 
 1. **The regression test fails with the product change reverted and passes with
-   it.** Yes, this session. Reversed product diff: `test-9-red.log`, EXIT 1,
+   it.** Yes, this session. Reversed product diff: `test-3-red.log`, EXIT 1,
    `FAIL! ... 'narrowPixelsPerBar >= 1.0f' returned FALSE. (a pattern editor with no
-   content width reports 0 px per bar)`. Restored fix: `test-10-green-restored.log`,
+   content width reports 0 px per bar)`. Restored fix: `test-4-green-restored.log`,
    EXIT 0, `Totals: 12 passed, 0 failed`.
 2. **The test is deterministic.** It injects the layout instead of waiting for one:
    `clearAllTracks()` plus one `processEvents()` for the queued row removal, a fixed
    `setFixedWidth(trackSettingsWidth + trackOperationsWidth)`, and synchronous
    `QMetaObject::invokeMethod(..., "updatePixelsPerBar", Qt::DirectConnection)`
-   calls. No timer, sleep, thread, drag or wall-clock value is used.
+   calls. The state sequence it drives (cleared -> zero content width -> width
+   restored) is the `state-sequence` artifact in the proof manifest. No timer, sleep,
+   thread, drag or wall-clock value is used.
 3. **The fix is at the cause and complete.** Yes: the only truncating producer of
    the scale (`PatternEditor::updatePixelsPerBar`) is clamped, the other producer
    (`SongEditor::zoomingChanged`) is already bounded at 4..400, and the readers
