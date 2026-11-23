@@ -100,7 +100,9 @@ tests/fork-sources.txt and tests/all-sources.txt). Five cases; the two that matt
 - Family: `ctest -R '^(AutomationModesTest|AutomationPreFirstValueTest|AutomationRenderLockTest|SampleAccurateAutomationTest|ControlRecordingRoutesTest|ControlSessionRecordLandTest)$' --output-on-failure`
   → 12-test-family.log EXIT=0 (6/6 passed; AutomationModesTest covers the no-target recording cases).
 - Gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>`
-  → 13-feature-check.log EXIT=0, RESULT: PASS (all 8 rows PASS).
+  → 13-feature-check.log EXIT=0 and 14-feature-check-final.log EXIT=0, RESULT: PASS (all 8 rows PASS).
+- Completion check: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p12-248`
+  → 16-submit-check.log EXIT=0, every mechanical row PASS, RESULT: PASS - submit.
 - Registration: `tests/upstream-modifications.txt` now lists `src/core/AutomationClip.cpp` and updates
   the `include/AutomationClip.h` and `src/core/Song.cpp` reasons; the list ends with a newline.
 
