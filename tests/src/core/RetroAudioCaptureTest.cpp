@@ -49,6 +49,7 @@
 #include <vector>
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QTemporaryDir>
 
@@ -385,6 +386,43 @@ private slots:
 		QVERIFY(!error.isEmpty());
 		QCOMPARE(written, std::uint64_t{0});
 		QVERIFY(!QFileInfo::exists(path));
+	}
+
+	//! A flush/close failure after libsndfile accepted every frame (full disk, failing
+	//! device) must be reported and must leave the previous take in place.
+	void aFailedFlushOrCloseIsReportedAndKeepsTheOldTake()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("take.wav"));
+		const QByteArray previous("previous take");
+		{
+			QFile old(path);
+			QVERIFY(old.open(QIODevice::WriteOnly));
+			QCOMPARE(old.write(previous), static_cast<qint64>(previous.size()));
+			old.close();
+		}
+
+		const std::vector<SampleFrame> frames(64, SampleFrame(0.25f, -0.25f));
+
+		lmms::retroaudiotesting::failNextTakeFinish();
+		std::uint64_t written = 777;
+		QString error;
+		const bool ok = lmms::writeRetroAudioTake(path, frames, SampleRate, &written, &error);
+		QVERIFY2(!ok, "a failed flush/close must make the take fail");
+		QVERIFY(!error.isEmpty());
+		QCOMPARE(written, std::uint64_t{0});
+
+		QFile after(path);
+		QVERIFY(after.open(QIODevice::ReadOnly));
+		QCOMPARE(after.readAll(), previous);
+		after.close();
+
+		std::uint64_t written2 = 0;
+		QString error2;
+		const bool ok2 = lmms::writeRetroAudioTake(path, frames, SampleRate, &written2, &error2);
+		QVERIFY2(ok2, qPrintable(error2));
+		QCOMPARE(written2, std::uint64_t{64});
 	}
 
 	//! Luna cluster new-p12-200, BUG 5: a take must not label frames recorded at

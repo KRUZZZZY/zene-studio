@@ -26,6 +26,7 @@
 #include "RetroAudioCapture.h"
 
 #include <algorithm>
+#include <atomic>
 
 #include <QElapsedTimer>
 #include <QSaveFile>
@@ -266,6 +267,25 @@ QString takeRequestProblem(const QString& filePath, std::size_t frames, int samp
 	return QString();
 }
 
+#ifdef LMMS_TESTING
+std::atomic<bool> s_failNextTakeFinish{false};
+#endif
+
+//! Flush and close \a sf; the libsndfile error code of the first step that failed, else
+//! SF_ERR_NO_ERROR. sf_write_sync() returns nothing, so a failed header rewrite or flush is read
+//! back from sf_error() before the close.
+int finishEncoding(SNDFILE* sf)
+{
+	sf_write_sync(sf);
+	const int syncError = sf_error(sf);
+	const int closeError = sf_close(sf);
+	int finishError = syncError != SF_ERR_NO_ERROR ? syncError : closeError;
+#ifdef LMMS_TESTING
+	if (s_failNextTakeFinish.exchange(false, std::memory_order_acq_rel)) { finishError = SF_ERR_SYSTEM; }
+#endif
+	return finishError;
+}
+
 //! The write itself: clamp, encode, flush, close, and report what libsndfile
 //! accepted (measured, never assumed).
 bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window,
@@ -311,13 +331,21 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 
 	const auto written = sf_writef_float(sf, interleaved.data(),
 		static_cast<sf_count_t>(window.size()));
-	sf_write_sync(sf);
-	sf_close(sf);
+	const int finishError = finishEncoding(sf);
 
 	if (written < 0 || static_cast<std::size_t>(written) != window.size())
 	{
 		*error = QStringLiteral("wrote %1 of %2 frames to %3")
 			.arg(written).arg(window.size()).arg(filePath);
+		return false;
+	}
+	// Every frame was accepted, but a take whose flush or close failed may be
+	// truncated or carry a stale header: refused before commit(), so the
+	// destination keeps what it held (QSaveFile discards the temporary).
+	if (finishError != SF_ERR_NO_ERROR)
+	{
+		*error = QStringLiteral("could not finish writing %1: %2")
+			.arg(filePath, QString::fromUtf8(sf_error_number(finishError)));
 		return false;
 	}
 	if (!output.commit())
@@ -331,6 +359,14 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 }
 
 } // namespace
+
+
+#ifdef LMMS_TESTING
+void retroaudiotesting::failNextTakeFinish() noexcept
+{
+	s_failNextTakeFinish.store(true, std::memory_order_release);
+}
+#endif
 
 
 bool writeRetroAudioTake(const QString& filePath, const std::vector<SampleFrame>& window,
