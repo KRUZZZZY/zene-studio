@@ -425,3 +425,77 @@ void InstrumentRoutingTest::perVoiceFieldsRoundTrip() {
 	rackRoute.track = -1;
 	QVERIFY(loaded.findRoute(rackRoute) == nullptr);  // a rack address is not the instrument's parameter
 }
+
+//! A pool clear never hands out a slot a note-on is still filling: the slot belongs to that worker
+//! until it publishes, so a second worker cannot claim it and mix its fields into the first note's.
+void InstrumentRoutingTest::clearingThePoolDoesNotHandOutAHalfFilledSlot() {
+	ModulationVoices voices;
+	// The control thread clears the pool (no modulator follows a track per voice any more) while an
+	// audio worker is between its claim and the fields it fills the claimed slot with.
+	const ModulationVoices::Claim filling = voices.claim();
+	QVERIFY2(filling.slot >= 0, "the pool had no slot for the first claim");
+	voices.clear();
+
+	const ModulationVoices::Claim next = voices.claim();
+	QVERIFY2(next.slot >= 0, "the cleared pool had no slot for a second claim");
+	QVERIFY2(next.slot != filling.slot,
+		"clear() freed a slot another worker was still filling: two note-ons may claim it at once");
+
+	// Both notes publish into their own slot, so neither voice carries the other note's fields.
+	voices.publish(filling, 7, 0, 60, 1.0);
+	voices.publish(next, 9, 1, 62, 2.0);
+	ModulationVoice voice;
+	QVERIFY(voices.voice(filling.slot, &voice) || voices.voice(next.slot, &voice));
+	int tracks[2] = {-1, -1};
+	int keys[2] = {-1, -1};
+	int live = 0;
+	for (int slot = 0; slot < ModulationVoices::VoiceCount; ++slot) {
+		if (!voices.voice(slot, &voice)) { continue; }
+		tracks[live] = voice.track;
+		keys[live] = voice.key;
+		++live;
+	}
+	QCOMPARE(live, voices.activeCount());
+	QCOMPARE(live, 1);  // the pre-clear note is retired; only the note claimed after the clear is a voice
+	QCOMPARE(tracks[0], 9);
+	QCOMPARE(keys[0], 62);
+}
+
+//! A note whose claim spans a clear belongs to the pool the clear retired: it never becomes a voice of
+//! the new pool, and every retired voice is claimable again.
+void InstrumentRoutingTest::aClaimThatSpansAClearStaysOutOfThePool() {
+	ModulationVoices voices;
+	const ModulationVoices::Claim interrupted = voices.claim();
+	QVERIFY2(interrupted.slot >= 0, "the pool had no slot for the first claim");
+	voices.clear();
+
+	// The worker finishes its note-on after the clear: the pool it was claimed in is gone.
+	voices.publish(interrupted, 7, 0, 60, 1.0);
+	ModulationVoice voice;
+	QVERIFY2(!voices.voice(interrupted.slot, &voice),
+		"a note claimed before the clear became a voice after it");
+	QCOMPARE(voices.activeCount(), 0);
+
+	// The pool is ordinary afterwards: a note played through the usual path is voiced, and nobody else
+	// can take the slot that note holds.
+	voices.noteOn(11, 2, 64, 5.0);
+	QCOMPARE(voices.activeCount(), 1);
+	int held = -1;
+	for (int slot = 0; slot < ModulationVoices::VoiceCount && held < 0; ++slot) {
+		held = voices.voice(slot, &voice) ? slot : -1;
+	}
+	QVERIFY(held >= 0);
+	QCOMPARE(voice.track, 11);
+	QCOMPARE(voice.key, 64);
+	QVERIFY(voices.claim().slot != held);
+
+	// A full pool's voices are retired by a clear, so a cleared pool hands out every slot again.
+	ModulationVoices filled;
+	for (int key = 0; key < ModulationVoices::VoiceCount; ++key) { filled.noteOn(3, 0, key, 0.0); }
+	QCOMPARE(filled.activeCount(), ModulationVoices::VoiceCount);
+	filled.clear();
+	QCOMPARE(filled.activeCount(), 0);
+	int claimed = 0;
+	for (int i = 0; i < ModulationVoices::VoiceCount; ++i) { claimed += filled.claim().slot >= 0 ? 1 : 0; }
+	QCOMPARE(claimed, ModulationVoices::VoiceCount);
+}

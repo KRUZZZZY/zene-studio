@@ -253,6 +253,15 @@ private slots:
 	//! MX-120: one voice per (track, channel, key); a retrigger restarts it; the fixed pool drops, never grows.
 	void voicePoolIsFixed();
 
+	//! A pool clear must not free a slot a note-on is still filling: the slot stays that worker's until
+	//! it publishes, so two claims cannot land on it (clear() runs on the control thread while audio
+	//! workers are in noteOn()).
+	void clearingThePoolDoesNotHandOutAHalfFilledSlot();
+
+	//! A note whose claim spans a clear belongs to the pool the clear retired: it never becomes a voice
+	//! of the new pool, and a cleared pool hands out every slot again.
+	void aClaimThatSpansAClearStaysOutOfThePool();
+
 	//! MX-120: a modulator's per-voice flag and a route's track address survive the project file; a
 	//! modulator without them writes neither attribute (existing projects keep their bytes).
 	void perVoiceFieldsRoundTrip();
