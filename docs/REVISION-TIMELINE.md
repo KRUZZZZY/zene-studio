@@ -36,9 +36,12 @@ Group `revisions`, three ids, registered from `src/core/ControlRegistryRegistrat
   semantic**: `mmpz-git diff` owns the musical diff and is not re-implemented here. `b` defaults to the
   working file, the id `live`.
 * **`revisions.restore`** `{project?, id}` → the file on disk is replaced *after* the live file is
-  rotated into the keep-3 set, so `control.undo` restores revision 0 (or removes the file the restore
-  created when there was none). Refused typed, before any write, when the id is unknown, the artefact
-  is gone, or the live file is over the policy's 8 MiB per-revision cap.
+  rotated into the keep-3 set, so `control.undo` puts the replaced file back - it restores the retained
+  revision that still holds those bytes, by content, because revision 0 is a position every save shifts
+  (three rotations later those bytes are gone and the undo refuses typed instead of writing another
+  revision over the project). With no file on disk the undo removes the file the restore created.
+  Refused typed, before any write, when the id is unknown, the artefact is gone, or the live file is
+  over the policy's 8 MiB per-revision cap.
 
 A16 (`src/core/ControlReversibilityTableRevisions.cpp`, joined into the table): two `not_mutating`
 reads and one recorded-action `true_inverse` writer. **No irreversible row** — the one path that could

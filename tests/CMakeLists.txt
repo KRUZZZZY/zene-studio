@@ -784,6 +784,12 @@ set(LMMS_TESTS
 	# the restore wrote, and leaves a newer file at the path in place. Its own file
 	# so RevisionTimelineTest does not grow past the file-length ratchet.
 	src/core/RevisionRestoreCreatedFileUndoTest.cpp
+	# The undo of a revision restore after the keep-3 set rotated (cluster
+	# new-p9-58, BUG 2): the recorded undo restores the retained revision that
+	# holds the bytes the restore REPLACED, not revision 0 by number - revision 0
+	# is a position every save shifts. Its own file so RevisionTimelineTest and
+	# RevisionRestoreCreatedFileUndoTest stay under the file-length ratchet.
+	src/core/RevisionRestoreUndoAfterSaveTest.cpp
 	# ARCH-4 S1b: the elements a loader did not claim, kept verbatim so that
 	# opening and re-saving cannot destroy them (SPEC-ARCH-4 1.6.1). The
 	# mechanism's own slots are unit-level; the owed proof is the integration
@@ -4238,6 +4244,10 @@ set_tests_properties(ProjectRestoreMissingTargetTest PROPERTIES
 # RevisionRestoreCreatedFileUndoTest drives a real Engine through the registry,
 # the same way RevisionTimelineTest does, so it needs the same Qt platform plugin.
 set_tests_properties(RevisionRestoreCreatedFileUndoTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# RevisionRestoreUndoAfterSaveTest drives a real Engine through the registry, the
+# same way RevisionTimelineTest does, so it needs the same Qt platform plugin.
+set_tests_properties(RevisionRestoreUndoAfterSaveTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The dither and SRC-quality tests build a real Engine and drive the real
