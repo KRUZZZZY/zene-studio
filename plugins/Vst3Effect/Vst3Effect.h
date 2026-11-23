@@ -75,6 +75,17 @@ public:
 		m_reprepareTestHook = hook;
 		m_reprepareTestContext = context;
 	}
+
+	//! Test-only bus layout (cluster new-p8-263). The wet/dry mix is decided by the plug-in's own
+	//! buses, and the SDK's test effect declares one stereo port pair with no auxiliary input, so a
+	//! test that needs the layout of a plug-in with a side-chain (a mono main port, the key bus at
+	//! flattened channel 1) reports it here. Only the layout the effect reads is substituted; the
+	//! plug-in call and the wet/dry mix stay the product's own.
+	void setBusLayoutForTest(const vst3::BusLayout& layout) noexcept
+	{
+		m_busLayoutForTest = layout;
+		m_hasBusLayoutForTest = true;
+	}
 #endif
 
 	//! BUGS 11.34: the latency the plug-in reported after its last successful prepare, so the
@@ -95,6 +106,16 @@ protected:
 		PlanarBufferView<float, DynamicChannelCount> out) -> lmms::ProcessStatus override;
 
 private:
+	//! The bus layout the effect reads: the plug-in's own, or the one a test reported (LMMS_TESTING).
+	//! Audio thread: a flag test and a reference, never an allocation.
+	auto busLayout() const -> const vst3::BusLayout&
+	{
+#ifdef LMMS_TESTING
+		if (m_hasBusLayoutForTest) { return m_busLayoutForTest; }
+#endif
+		return m_plugin.busLayout();
+	}
+
 	vst3::AudioProcessGate m_processGate;
 	vst3::HostedPlugin m_plugin;
 	gui::PluginNativeEditor m_editor;
@@ -102,6 +123,8 @@ private:
 #ifdef LMMS_TESTING
 	ReprepareTestHook m_reprepareTestHook = nullptr;
 	void* m_reprepareTestContext = nullptr;
+	vst3::BusLayout m_busLayoutForTest{};
+	bool m_hasBusLayoutForTest = false;
 #endif
 	//! Set from the audio thread when the plug-in is not prepared, polled by
 	//! Vst3EffectControls on the GUI thread which then calls reprepare().

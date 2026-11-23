@@ -202,7 +202,7 @@ auto Vst3Effect::processImpl(PlanarBufferView<const float, DynamicChannelCount> 
 {
 	if (!m_processGate.tryEnterAudioProcess())
 	{
-		passThrough(in, out, m_plugin.busLayout().sideChainChannel);
+		passThrough(in, out, busLayout().sideChainChannel);
 		return lmms::ProcessStatus::Continue;
 	}
 
@@ -211,7 +211,7 @@ auto Vst3Effect::processImpl(PlanarBufferView<const float, DynamicChannelCount> 
 		// Either the plug-in failed to load or the sample rate changed. Do the
 		// actual re-configuration on the GUI thread, this path only records it.
 		m_needsReprepare.store(true, std::memory_order_relaxed);
-		passThrough(in, out, m_plugin.busLayout().sideChainChannel);
+		passThrough(in, out, busLayout().sideChainChannel);
 		m_processGate.leaveAudioProcess();
 		return lmms::ProcessStatus::Continue;
 	}
@@ -226,7 +226,7 @@ auto Vst3Effect::processImpl(PlanarBufferView<const float, DynamicChannelCount> 
 	// E9: the plug-in's sidechain bus hears the mixer's sidechain send, when this channel has one.
 	std::array<const float*, MaxHostedInputChannels> inputs{};
 	const float* const* fed = sidechainInputs(in.data(), static_cast<int>(in.channels()), sidechainBuffer(),
-		m_plugin.busLayout().sideChainChannel, inputs);
+		busLayout().sideChainChannel, inputs);
 	m_plugin.process(fed, out.data(),
 		static_cast<int>(in.channels()), static_cast<int>(out.channels()), frames);
 
@@ -234,7 +234,7 @@ auto Vst3Effect::processImpl(PlanarBufferView<const float, DynamicChannelCount> 
 	// The plug-in wrote wet output into `out`, `in` still holds the dry signal.
 	const auto wet = wetLevel();
 	const auto dry = dryLevel();
-	const auto mixChannels = dryMixChannels(in.channels(), out.channels(), m_plugin.busLayout().sideChainChannel);
+	const auto mixChannels = dryMixChannels(in.channels(), out.channels(), busLayout().sideChainChannel);
 	for (ch_cnt_t c = 0; c < mixChannels; ++c)
 	{
 		auto* outChannel = out.bufferPtr(c);
