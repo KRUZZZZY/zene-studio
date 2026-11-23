@@ -30,6 +30,9 @@
 
 #include "CollabPolicy.h"
 
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QSet>
 
@@ -246,6 +249,85 @@ QStringList remoteAllowList()
 		QStringLiteral("transport.panic"), QStringLiteral("marker.list"), QStringLiteral("marker.jump"),
 		QStringLiteral("marker.add"), QStringLiteral("marker.set"), QStringLiteral("marker.remove"),
 		QStringLiteral("mixer.get_state"), QStringLiteral("mixer.set_volume"), QStringLiteral("mixer.set_pan")};
+}
+
+namespace
+{
+
+//! A joined copy's name is bounded: a long or hostile host name cannot produce an unwieldy or unsafe name.
+constexpr int MaxSnapshotLabelChars = 64;
+//! The bounded sibling names tried before allocation gives up rather than replace an occupied file.
+constexpr int MaxSnapshotAttempts = 64;
+
+QString snapshotLabel(const QString& hostLabel)
+{
+	QString label;
+	label.reserve(qMin<qsizetype>(hostLabel.size(), MaxSnapshotLabelChars));
+	for (const QChar c : hostLabel)
+	{
+		if (label.size() >= MaxSnapshotLabelChars) { break; }
+		label.append(c.isLetterOrNumber() ? c : QLatin1Char('-'));
+	}
+	return label;
+}
+
+QString snapshotSibling(const QString& directory, const QString& stem, int attempt)
+{
+	const QString suffix = attempt == 1 ? QString() : QStringLiteral("-%1").arg(attempt);
+	return QDir(directory).filePath(QStringLiteral("joined-%1%2.mmpz").arg(stem, suffix));
+}
+
+} // namespace
+
+QString snapshotDestination(const QString& directory, const QString& hostLabel, const QString& sessionToken)
+{
+	const QString stem = snapshotLabel(hostLabel) + QLatin1Char('-') + sessionToken;
+	for (int attempt = 1; attempt <= MaxSnapshotAttempts; ++attempt)
+	{
+		const QString path = snapshotSibling(directory, stem, attempt);
+		if (!QFileInfo::exists(path)) { return path; }
+	}
+	return QString();
+}
+
+bool reserveSnapshotFile(QFile* file, const QString& path, QString* error)
+{
+	file->setFileName(path);
+	// NewOnly creates the name atomically (O_CREAT|O_EXCL): a file another process created after
+	// snapshotDestination() selected the name is never opened, truncated or replaced.
+	if (file->open(QIODevice::WriteOnly | QIODevice::NewOnly)) { return true; }
+	*error = QStringLiteral("could not create %1: %2").arg(path, file->errorString());
+	return false;
+}
+
+bool reserveSnapshotDestination(const QString& directory, const QString& hostLabel, const QString& sessionToken,
+	QFile* file, QString* path, QString* error)
+{
+	QString lastError;
+	for (int attempt = 1; attempt <= MaxSnapshotAttempts; ++attempt)
+	{
+		const QString candidate = snapshotDestination(directory, hostLabel, sessionToken);
+		if (candidate.isEmpty())
+		{
+			*error = QStringLiteral("could not find a free name for the joined copy in %1").arg(directory);
+			return false;
+		}
+		QString reason;
+		if (reserveSnapshotFile(file, candidate, &reason))
+		{
+			*path = candidate;
+			return true;
+		}
+		lastError = reason;
+		if (!QFileInfo::exists(candidate))
+		{
+			*error = reason;
+			return false;
+		}
+		// Another process took the candidate after it was selected; the next pass picks the next free name.
+	}
+	*error = lastError.isEmpty() ? QStringLiteral("could not reserve a joined copy in %1").arg(directory) : lastError;
+	return false;
 }
 
 namespace

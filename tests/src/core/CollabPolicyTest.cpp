@@ -27,6 +27,11 @@
 
 #include <QtTest>
 
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QTemporaryDir>
+
 #include "CollabCommandTap.h"
 #include "CollabPolicy.h"
 #include "ControlRegistry.h"
@@ -167,6 +172,160 @@ private slots:
 		QVERIFY(!roleFromName(QStringLiteral("admin"), &role));
 		QCOMPARE(role, CollabRole::Remote);
 		QCOMPARE(roleName(CollabRole::Viewer), QStringLiteral("viewer"));
+	}
+
+	//! The joined copy must never be written over an existing project: both the legacy deterministic
+	//! name and this session's token name are occupied, so a safe destination has to be a third path.
+	void snapshotDestinationNeverReplacesAnExistingFile()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
+		const QString label = QStringLiteral("192.168.1.5:41740");
+		const QString token = QStringLiteral("0123456789ab");
+		const QString legacy = dir.filePath(QStringLiteral("joined-192-168-1-5-41740.mmpz"));
+		const QString tokenPath = dir.filePath(QStringLiteral("joined-192-168-1-5-41740-0123456789ab.mmpz"));
+		for (const QString& occupied : {legacy, tokenPath})
+		{
+			QFile file(occupied);
+			QVERIFY2(file.open(QIODevice::WriteOnly), qPrintable(file.errorString()));
+			QCOMPARE(file.write("an existing project"), qint64(19));
+		}
+
+		const QString chosen = snapshotDestination(dir.path(), label, token);
+		QVERIFY2(!chosen.isEmpty(), "no destination was allocated");
+		QVERIFY2(QFileInfo(chosen).absoluteFilePath() != QFileInfo(legacy).absoluteFilePath(),
+			qPrintable(QStringLiteral("the legacy path %1 was chosen").arg(chosen)));
+		QVERIFY2(QFileInfo(chosen).absoluteFilePath() != QFileInfo(tokenPath).absoluteFilePath(),
+			qPrintable(QStringLiteral("the token path %1 was chosen").arg(chosen)));
+		QVERIFY2(!QFileInfo::exists(chosen), qPrintable(QStringLiteral("the chosen path %1 is occupied").arg(chosen)));
+	}
+
+	//! The label is sanitised to letters, digits and '-', and capped at 64 characters.
+	void snapshotDestinationSanitisesAndCapsTheLabel()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
+		const QString token = QStringLiteral("0123456789ab");
+		QCOMPARE(snapshotDestination(dir.path(), QStringLiteral("a/b:c d"), token),
+			dir.filePath(QStringLiteral("joined-a-b-c-d-0123456789ab.mmpz")));
+		const QString longLabel(100, QLatin1Char('x'));
+		QCOMPARE(QFileInfo(snapshotDestination(dir.path(), longLabel, token)).fileName(),
+			QStringLiteral("joined-%1-%2.mmpz").arg(QString(64, QLatin1Char('x')), token));
+	}
+
+	//! An occupied name walks the bounded -2..-64 siblings instead of replacing a file.
+	void snapshotDestinationWalksToAFreeSibling()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
+		const QString token = QStringLiteral("0123456789ab");
+		const QString first = dir.filePath(QStringLiteral("joined-host-0123456789ab.mmpz"));
+		const QString second = dir.filePath(QStringLiteral("joined-host-0123456789ab-2.mmpz"));
+		for (const QString& occupied : {first, second})
+		{
+			QFile file(occupied);
+			QVERIFY2(file.open(QIODevice::WriteOnly), qPrintable(file.errorString()));
+		}
+		QCOMPARE(snapshotDestination(dir.path(), QStringLiteral("host"), token),
+			dir.filePath(QStringLiteral("joined-host-0123456789ab-3.mmpz")));
+	}
+
+	//! When every bounded sibling is taken, allocation fails instead of returning an occupied path.
+	void snapshotDestinationReturnsEmptyWhenEverySiblingIsTaken()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
+		const QString token = QStringLiteral("0123456789ab");
+		for (int attempt = 1; attempt <= 64; ++attempt)
+		{
+			const QString suffix = attempt == 1 ? QString() : QStringLiteral("-%1").arg(attempt);
+			QFile file(dir.filePath(QStringLiteral("joined-host-%1%2.mmpz").arg(token, suffix)));
+			QVERIFY2(file.open(QIODevice::WriteOnly), qPrintable(file.errorString()));
+		}
+		QVERIFY(snapshotDestination(dir.path(), QStringLiteral("host"), token).isEmpty());
+	}
+
+	//! The selection is only a hint: another process can create a file at the chosen name before this join
+	//! publishes. Reservation must create the name atomically, leave that file untouched and refuse.
+	void snapshotReservationNeverReplacesAFileCreatedAfterSelection()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
+		const QString selected = snapshotDestination(dir.path(), QStringLiteral("host"), QStringLiteral("0123456789ab"));
+		QVERIFY2(!selected.isEmpty(), "no destination was selected");
+		QFile winner(selected);
+		QVERIFY2(winner.open(QIODevice::WriteOnly), qPrintable(winner.errorString()));
+		QCOMPARE(winner.write("the other project"), qint64(17));
+		winner.close();
+
+		QFile reservation;
+		QString error;
+		QVERIFY2(!reserveSnapshotFile(&reservation, selected, &error),
+			"reservation replaced a file created after selection");
+		QVERIFY2(!error.isEmpty(), "a refused reservation has no reason");
+
+		QFile preserved(selected);
+		QVERIFY2(preserved.open(QIODevice::ReadOnly), qPrintable(preserved.errorString()));
+		QCOMPARE(preserved.readAll(), QByteArray("the other project"));
+	}
+
+	//! A free name is reserved and the snapshot is written through the reservation.
+	void snapshotReservationCreatesANewFile()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
+		const QString path = dir.filePath(QStringLiteral("joined-new.mmpz"));
+		QFile reserved;
+		QString error;
+		QVERIFY2(reserveSnapshotFile(&reserved, path, &error), qPrintable(error));
+		const QByteArray snapshot = QByteArrayLiteral("the incoming snapshot");
+		QCOMPARE(reserved.write(snapshot), qint64(snapshot.size()));
+		QVERIFY(reserved.flush());
+		reserved.close();
+		QFile file(path);
+		QVERIFY2(file.open(QIODevice::ReadOnly), qPrintable(file.errorString()));
+		QCOMPARE(file.readAll(), snapshot);
+	}
+
+	//! Reservation walks past names that are already taken and atomically creates the first free one.
+	void snapshotReservationWalksPastOccupiedNames()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
+		for (const QString& name : {QStringLiteral("joined-host-0123456789ab.mmpz"),
+			QStringLiteral("joined-host-0123456789ab-2.mmpz")})
+		{
+			QFile occupied(dir.filePath(name));
+			QVERIFY2(occupied.open(QIODevice::WriteOnly), qPrintable(occupied.errorString()));
+		}
+		QFile reserved;
+		QString path;
+		QString error;
+		QVERIFY2(reserveSnapshotDestination(dir.path(), QStringLiteral("host"), QStringLiteral("0123456789ab"),
+			&reserved, &path, &error), qPrintable(error));
+		QCOMPARE(path, dir.filePath(QStringLiteral("joined-host-0123456789ab-3.mmpz")));
+		QVERIFY(QFileInfo::exists(path));
+		QCOMPARE(reserved.write("x"), qint64(1));
+	}
+
+	//! When the bounded names are all taken, reservation fails instead of reusing an occupied one.
+	void snapshotReservationFailsWhenEveryNameIsTaken()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
+		for (int attempt = 1; attempt <= 64; ++attempt)
+		{
+			const QString suffix = attempt == 1 ? QString() : QStringLiteral("-%1").arg(attempt);
+			QFile occupied(dir.filePath(QStringLiteral("joined-host-0123456789ab%1.mmpz").arg(suffix)));
+			QVERIFY2(occupied.open(QIODevice::WriteOnly), qPrintable(occupied.errorString()));
+		}
+		QFile reserved;
+		QString path;
+		QString error;
+		QVERIFY(!reserveSnapshotDestination(dir.path(), QStringLiteral("host"), QStringLiteral("0123456789ab"),
+			&reserved, &path, &error));
+		QVERIFY(!error.isEmpty());
+		QVERIFY(path.isEmpty());
 	}
 
 	//! The tap: nested commands and commands applied from the host are never intercepted; only top-level
