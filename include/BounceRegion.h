@@ -69,7 +69,8 @@ LMMS_EXPORT void isolateRegionInTrackElement(QDomElement track, tick_t start, ti
 
 /*! Ticks past \a range.end the render of \a tracks keeps for the sound of the in-range pieces that rings on: up to
  *  MaxTailTicks, and no further than the next unmuted clip a source has at or after the range's end (that clip
- *  stays audible in the song). 0 when a source plays a frozen take, whose tail is already in the take. Reads the
+ *  stays audible in the song). A source that plays a frozen take is skipped (its tail is already in the take) and does
+ *  not shorten or cancel the tail of the other sources; 0 only when no unfrozen audio source is left. Reads the
  *  live model, so it is called while the tracks are intact, before any cut. */
 LMMS_EXPORT tick_t tailTicksPastRange(const std::vector<Track*>& tracks, const BounceInPlace::Range& range);
 

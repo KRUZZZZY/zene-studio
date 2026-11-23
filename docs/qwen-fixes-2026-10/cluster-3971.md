@@ -32,7 +32,8 @@ When set, the shared preparation (`BounceInPlace::prepareRenderTracks`, used by 
 2. **Tail** (`tailTicksPastRange`, `audibleFramesIn`): the trim window extends past `end` by up to one bar
    (`MaxTailTicks`), and no further than the next unmuted source clip that starts at or after the range end
    (read from the intact model before any cut, so a clip crossing `end` is not mistaken for the "next" clip). A
-   frozen source gets no tail (its take already holds it). The trailing silence of that tail is trimmed
+   frozen source is skipped when sizing the tail (its take already holds it) and no longer cancels the tail of the other
+   sources in the group (round 4); the tail is 0 only when no unfrozen audio source is left. The trailing silence of that tail is trimmed
    (`finishPreparedRender`, still free of Engine/Track access) and the longer file lands; `Result.range.end`
    follows the file.
 3. The live cuts and mutes stay in `muteRangeSources`, inside its single undo checkpoint, run after the render.
@@ -110,9 +111,45 @@ Delegation: Haiku ran every build and ctest run (build-green-1/2/3, build-red-3,
 reported exit codes and failing assertions; I read the failing assertion lines and the ctest tails, wrote all code
 and tests, and ran the patch revert/apply and the manifest edits myself.
 
+## Round 4: a frozen track no longer drops the group's tail
+
+Review finding: `tailTicksPastRange` returned 0 for the whole group as soon as any selected track was frozen
+(`src/core/BounceRegion.cpp:114` in `c3be3d76cb`), so an unfrozen source selected beside it lost its ringing tail.
+The change is already on the branch as `f9b082880c` (`src/core/BounceRegion.cpp:109-126`): frozen sources are
+skipped (`continue`), `hasUnfrozenSource` is set by each unfrozen audio source, and the function returns `room` only
+then, else 0. This round re-proved it and made two small follow-ups: the `BounceRegion.h` comment for
+`tailTicksPastRange` still said "0 when a source plays a frozen take" and now describes the real contract, and a guard
+test `rangeBounceOfOnlyFrozenSourcesKeepsThePlainWindow` pins the "0 when no unfrozen audio source is left" half.
+
+- Regression test: `rangeBounceKeepsOtherSourceTailBesideFrozenTrack` (unfrozen clip 0..192 + frozen track, range 0..192,
+  tail 96): expects 113400 frames (288 ticks).
+- Without the fix (`git diff 1d5fbf18c0 -- src/core/BounceRegion.cpp include/BounceRegion.h` reversed): that test fails with
+  75600 frames, the only failure (12 passed, 1 failed). The frozen-only test passes either way - it is a guard, not a
+  fail-first test.
+- Sync `range.bounce` only is covered for the mixed case; queued/bounce_land share `prepareRenderTracks` and the same
+  function, but I did not add a queued mixed-frozen test.
+
+```
+git diff 1d5fbf18c0 -- src/core/BounceRegion.cpp include/BounceRegion.h > logs/fix.patch   EXIT 0
+git apply -R logs/fix.patch                                                              EXIT 0
+cmake --build build --target zene RangeBounceRenderSideTest -j4                          EXIT 0  (r4 build-red-1.log)
+ctest -R '^RangeBounceRenderSideTest$' (build/tests)                                     EXIT 8  (r4 test-red-1.log)
+    FAIL! rangeBounceKeepsOtherSourceTailBesideFrozenTrack() 'std::abs(framesIn(path) - framesOf(288)) <= 3' returned FALSE. (75600)
+git apply logs/fix.patch                                                                 EXIT 0
+cmake --build build --target zene RangeBounceRenderSideTest BounceInPlaceTest ControlBounceRenderTest
+    ControlRenderJobTest ControlBounceSupportTest FreezeRegionRepairTest -j4             EXIT 0  (r4 build-green-1.log)
+ctest -R '^(RangeBounceRenderSideTest|BounceInPlaceTest|ControlBounceRenderTest|ControlRenderJobTest|
+    ControlBounceSupportTest|FreezeRegionRepairTest)$' (build/tests)                     EXIT 0  (r4 test-green-1.log, 6/6)
+```
+
+Known limitation (not changed, outside this finding, unverified in the real engine): in a mixed group, a frozen
+source's take is still unmuted in the serialised render, so for a real engine the tail window may also contain that
+take's audio after `end`, which the song keeps playing as well. The stand-in render cannot show this. Frozen-take handling
+was deliberately left alone.
+
 ## Self-check
 
-- **Fails reverted, passes with the fix:** RED `ctest -R RangeBounceRenderSideTest` with `fix.patch` reverted: EXIT 8, 7 of 11
+- **Fails reverted, passes with the fix (round 4: see its section; round 3 evidence follows):** RED `ctest -R RangeBounceRenderSideTest` with `fix.patch` reverted: EXIT 8, 7 of 11
   failed (`test-red-3.log`); GREEN, patch re-applied, the six-test family: EXIT 0, 6/6 passed (`test-green-4.log`). Two of
   the nine new tests pass without the fix by design (see "Honest note on coverage").
 - **Deterministic:** no sleeps or timing as an oracle. The render is the test binary's own `fakeRender` (a pure function of

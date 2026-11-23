@@ -322,6 +322,22 @@ private slots:
 		QCOMPARE(frozen->frozenTake().path, take);
 	}
 
+	//! When every selected source plays a frozen take there is no unfrozen audio source to ring on: no tail.
+	void rangeBounceOfOnlyFrozenSourcesKeepsThePlainWindow()
+	{
+		Track* frozen = trackWithClips(QStringLiteral("Only frozen"), {0});
+		const QString take = out(QStringLiteral("only-frozen.wav"));
+		QVERIFY(writeConstantTake(take));
+		QString freezeError;
+		QVERIFY2(frozen->freezeTo(take, 0, 192, {}, &freezeError), qPrintable(freezeError));
+		selectRange(frozen, 0, 192);
+		const QString path = out(QStringLiteral("only-frozen-bounce.wav"));
+		QVERIFY(run(QStringLiteral("range.bounce"), {{QStringLiteral("out"), path}}).ok);
+		QVERIFY2(std::abs(framesIn(path) - framesOf(192)) <= 3, qPrintable(QString::number(framesIn(path))));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(frozen->frozenTake().path, take);
+	}
+
 	//! The tail stops where the next unmuted clip of a source starts, and never runs past the one-bar cap.
 	void rangeBounceTailStopsAtTheNextClipAndAtTheCap()
 	{
