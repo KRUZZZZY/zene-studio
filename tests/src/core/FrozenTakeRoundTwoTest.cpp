@@ -25,6 +25,7 @@
 #include <mutex>
 #include <thread>
 #include <vector>
+#include <cmath>
 
 #include "AudioEngine.h"
 #include "AudioEngineWorkerThread.h"
@@ -37,6 +38,7 @@
 #include "SamplePlayHandle.h"
 #include "SampleTrack.h"
 #include "Song.h"
+#include "TempoMap.h"
 #include "Timeline.h"
 #include "Track.h"
 #include "TakeLaneTestSupport.h"
@@ -488,6 +490,72 @@ private slots:
 		const Track::clipVector& loadedClips = song->tracks().back()->getClips();
 		QCOMPARE(loadedClips.size(), std::size_t{1});
 		QVERIFY2(!loadedClips.front()->isMuted(), "a rejected take left the clip its freeze muted silent");
+	}
+
+	//! Cluster 5418: a take declares where it ends. A pass that starts inside the window must stop
+	//! there, at the source frame the tempo map gives for `endTicks` - not at the end of its file.
+	void frozenPassStopsAtTheTakesDeclaredEndTick()
+	{
+		AudioEngine* const audio = Engine::audioEngine();
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		constexpr tick_t takeEnd = 48;
+		SampleTrack* track = nullptr;
+		std::shared_ptr<const SampleBuffer> source;
+		const QString error = prepareFrozenTake(scratch, 440.0, &track, &source, takeEnd);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QVERIFY(source != nullptr);
+		const qint64 fileFrames = static_cast<qint64>(source->size());
+		const auto rate = static_cast<int>(source->sampleRate());
+		const int globalTempo = static_cast<int>(Engine::getSong()->getTempo());
+		const float oneRate = Engine::framesPerTick(static_cast<sample_rate_t>(rate));
+		const qint64 takeFrames = Track::frozenTakeSourceFrame(Engine::getSong()->tempoMap().map(), globalTempo,
+			0, takeEnd, rate, oneRate);
+		QVERIFY2(takeFrames > 0 && takeFrames * 2 < fileFrames,
+			qPrintable(QStringLiteral("the fixture take (%1 frames) has to end well before its file (%2)")
+				.arg(takeFrames).arg(fileFrames)));
+
+		QVERIFY(track->play(TimePos(0), audio->framesPerPeriod(), 0, -1));
+		renderPeriod();
+		const std::vector<f_cnt_t> lengths = frozenPassLengths(audio, track);
+		QCOMPARE(lengths.size(), std::size_t{1});
+		QVERIFY2(static_cast<qint64>(lengths.front()) < fileFrames,
+			qPrintable(QStringLiteral("the pass ran %1 frames, past the declared end of a %2-frame file")
+				.arg(lengths.front()).arg(fileFrames)));
+		QCOMPARE(static_cast<qint64>(lengths.front()), takeFrames);
+		audio->removePlayHandlesOfTypes(track, PlayHandle::Type::SamplePlayHandle);
+		QTest::qWait(130);
+
+		// The same crop under a tempo map in force: the end is the mapped frame for `endTicks`, so a
+		// fix that counted one-rate ticks would land thousands of frames away from it.
+		Song* const song = Engine::getSong();
+		QVERIFY(song->tempoMap().edit([](TempoMap& map) {
+			map.setActive(true);
+			TempoMapEvent event;
+			event.tick = 24;
+			event.hasTempo = true;
+			event.tempo = 60;
+			return map.addEvent(event);
+		}));
+		const TempoMap map = song->tempoMap().map();
+		const double mappedEnd = static_cast<double>(map.framesAtTick(takeEnd, rate, globalTempo))
+			- static_cast<double>(map.framesAtTick(0, rate, globalTempo));
+		const double oneRateEnd = takeEnd * static_cast<double>(oneRate);
+		QVERIFY2(std::abs(mappedEnd - oneRateEnd) > 1000.0, "the fixture tempo map must move the take's end");
+		QMetaObject::invokeMethod(song, "playbackPositionJumped", Qt::DirectConnection);
+		QVERIFY(track->play(TimePos(0), audio->framesPerPeriod(), 0, -1));
+		renderPeriod();
+		const std::vector<f_cnt_t> mappedLengths = frozenPassLengths(audio, track);
+		QCOMPARE(mappedLengths.size(), std::size_t{1});
+		const auto takenFrames = static_cast<double>(mappedLengths.front());
+		QVERIFY2(std::abs(takenFrames - mappedEnd) <= 1.0,
+			qPrintable(QStringLiteral("the pass ran %1 frames; the take's end tick maps to %2")
+				.arg(takenFrames).arg(mappedEnd)));
+		QVERIFY2(std::abs(takenFrames - oneRateEnd) > 1000.0,
+			qPrintable(QStringLiteral("the pass ran %1 frames, the one-rate end %2").arg(takenFrames).arg(oneRateEnd)));
+		audio->removePlayHandlesOfTypes(track, PlayHandle::Type::SamplePlayHandle);
+		QTest::qWait(130);
+		song->tempoMap().edit([](TempoMap& m) { m.clear(); return true; });
 	}
 };
 

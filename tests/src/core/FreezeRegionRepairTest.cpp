@@ -285,37 +285,41 @@ private slots:
 
 		// The playback side: where in the take the voice starts at the region's start and at its end.
 		AudioEngine* const audio = Engine::audioEngine();
-		const auto playbackFrame = [&](tick_t position) -> qint64 {
+		// The frames this pass renders: from the frame the render cut for this tick to the take's
+		// declared end (cluster 5418 - a take whose file runs past its end no longer plays to the
+		// file's end), so the length pins both where the pass starts and where it stops.
+		const auto playbackFrames = [&](tick_t position) -> qint64 {
 			if (!track->play(TimePos(position), audio->framesPerPeriod(), 0, -1)) { return -1; }
 			audio->renderNextPeriod();  // the queued voice joins the engine's handle list
-			qint64 frame = -1;
+			qint64 frames = -1;
 			for (PlayHandle* handle : audio->playHandles())
 			{
 				auto* voice = handle->type() == PlayHandle::Type::SamplePlayHandle
 					? static_cast<SamplePlayHandle*>(handle) : nullptr;
 				if (voice != nullptr && voice->isFromTrack(track) && voice->isFrozenTakePoolVoice())
 				{
-					frame = static_cast<qint64>(SampleBuffer::fromFile(wav)->size()) - voice->totalFrames();
+					frames = static_cast<qint64>(voice->totalFrames());
 				}
 			}
 			audio->removePlayHandlesOfTypes(track, PlayHandle::Type::SamplePlayHandle);
 			QTest::qWait(130);
 			QMetaObject::invokeMethod(song, "playbackPositionJumped", Qt::DirectConnection);
-			return frame;
+			return frames;
 		};
-		QCOMPARE(playbackFrame(regionStart), qint64{0});
-		// What the voice is actually fed, after the tempo event and at the last tick: the render's own frame
-		// offset for that tick (timeline frame minus the frame the render cut the region at).
+		// The render's own frame offset for that tick (timeline frame minus the frame the render cut
+		// the region at), which a pass that starts there does not render again.
 		const auto renderOffset = [&](tick_t tick) {
 			return static_cast<qint64>(std::llround(map.framesAtTick(tick, rate, globalTempo))) - renderStart;
 		};
-		QCOMPARE(playbackFrame(96), renderOffset(96));
-		QCOMPARE(playbackFrame(regionEnd - 1), renderOffset(regionEnd - 1));
+		QCOMPARE(playbackFrames(regionStart), renderLength);
+		// What the voice is actually fed, after the tempo event and at the last tick.
+		QCOMPARE(playbackFrames(96), renderLength - renderOffset(96));
+		QCOMPARE(playbackFrames(regionEnd - 1), renderLength - renderOffset(regionEnd - 1));
 		// The end is exclusive: the pass AT the take's end tick is not the take's, the last tick before it
-		// starts inside the rendered length, and the end tick itself maps to exactly the rendered length.
-		QCOMPARE(playbackFrame(regionEnd), qint64{-1});
-		const qint64 lastFrame = playbackFrame(regionEnd - 1);
-		QVERIFY2(lastFrame >= 0 && lastFrame < renderLength, qPrintable(QString::number(lastFrame)));
+		// still sounds, and the end tick itself maps to exactly the rendered length.
+		QCOMPARE(playbackFrames(regionEnd), qint64{-1});
+		const qint64 lastFrames = playbackFrames(regionEnd - 1);
+		QVERIFY2(lastFrames > 0 && lastFrames <= renderLength, qPrintable(QString::number(lastFrames)));
 		QCOMPARE(Track::frozenTakeSourceFrame(map, globalTempo, regionStart, regionEnd, rate,
 			Engine::framesPerTick(rate)), renderLength);
 		song->tempoMap().edit([](TempoMap& m) { m.clear(); return true; });
@@ -363,6 +367,7 @@ private slots:
 		SampleTrack* track = trackWithOneClip(scratch.path());
 		const QString wav = taketest::writeToneWav(scratch.filePath(QStringLiteral("t.wav")), 330.0);
 		constexpr tick_t takeStart = 24;
+		constexpr tick_t takeEnd = 190;
 		constexpr tick_t position = 96;
 		Song* const song = Engine::getSong();
 		TempoMapPublisher& publisher = song->tempoMap();
@@ -378,7 +383,7 @@ private slots:
 		};
 		if (mapBeforeFreeze) { activate(); }
 		QString why;
-		QVERIFY2(track->freezeTo(wav, takeStart, 190, {}, &why, true), qPrintable(why));
+		QVERIFY2(track->freezeTo(wav, takeStart, takeEnd, {}, &why, true), qPrintable(why));
 		if (!mapBeforeFreeze) { activate(); }
 
 		AudioEngine* const audio = Engine::audioEngine();
@@ -391,17 +396,25 @@ private slots:
 		QVERIFY2(track->play(TimePos(position), audio->framesPerPeriod(), 0, -1), "an exhausted read must still start the take");
 		publisher.setPinProbeForTest(nullptr);
 		const double first = rms(audio->renderNextPeriod());  // the master buffer lags one period
-		qint64 frame = -1;
+		qint64 frames = -1;
 		for (PlayHandle* handle : audio->playHandles())
 		{
 			auto* voice = handle->type() == PlayHandle::Type::SamplePlayHandle ? static_cast<SamplePlayHandle*>(handle) : nullptr;
-			if (voice != nullptr && voice->isFrozenTakePoolVoice()) { frame = static_cast<qint64>(SampleBuffer::fromFile(wav)->size()) - voice->totalFrames(); }
+			if (voice != nullptr && voice->isFrozenTakePoolVoice()) { frames = static_cast<qint64>(voice->totalFrames()); }
 		}
 		const int globalTempo = static_cast<int>(song->getTempo());
 		const double mapped = publisher.map().framesAtTick(position, 44100, globalTempo)
 			- publisher.map().framesAtTick(takeStart, 44100, globalTempo);
 		QVERIFY(std::abs(mapped - (position - takeStart) * Engine::framesPerTick(44100)) > 1000.0);
-		QCOMPARE(frame, static_cast<qint64>(std::llround(mapped)));
+		// The pass runs from that mapped start to the take's declared end - or to the end of its file
+		// when the take is longer than the audio it holds (cluster 5418) - so its length is what
+		// proves where on the map the take was started.
+		const double fileFrames = static_cast<double>(taketest::kRate) * taketest::kSeconds;
+		const double takeLength = std::min(fileFrames, publisher.map().framesAtTick(takeEnd, 44100, globalTempo)
+			- publisher.map().framesAtTick(takeStart, 44100, globalTempo));
+		QVERIFY2(std::abs(static_cast<double>(frames) - (takeLength - mapped)) <= 1.0,
+			qPrintable(QStringLiteral("the pass ran %1 frames; the map gives %2 from its start")
+				.arg(frames).arg(takeLength - mapped)));
 		const double level = std::max(first, rms(audio->renderNextPeriod()));
 		QVERIFY2(level > 0.01, qPrintable(QStringLiteral("the take was silent: %1").arg(level)));
 		audio->removePlayHandlesOfTypes(track, PlayHandle::Type::SamplePlayHandle);
