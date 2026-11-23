@@ -455,17 +455,43 @@ private slots:
 		const auto calls = SampleDecoder::decodeCallCountsForTesting();
 		QCOMPARE(calls.full, std::uint64_t{0});  // the length was answered without allocating the whole file
 		QVERIFY(calls.limited > 0);              // ...by the bounded decoder
-		Engine::getSong()->setTempo(restoreTempo.tempo);  // the short file below is judged at the project's own tempo
+	}
 
-		// The same compressed path just inside the limit still imports: the new check refuses no legitimate file.
-		const QString shortFile = m_dir.filePath(QStringLiteral("short.flac"));
-		QVERIFY(writeSilentFlac(shortFile, rate, 2 * rate));
+	//! Cluster new-p16-7 (round 2): the preflight must use the same position-plus-length limit as
+	//! validateImport. A short compressed file that fits the song on its own, placed at the song's end, used to
+	//! be fully decoded and then refused by the post-decode check; it must be refused before that decode.
+	void anAudioFilePastTheSongEndIsRefusedBeforeItIsFullyDecoded()
+	{
+		const int rate = 1000;
+		const qint64 frames = 2 * rate;  // a clip far shorter than the whole song
+		const QString file = m_dir.filePath(QStringLiteral("at-the-end.flac"));
+		if (!writeSilentFlac(file, rate, frames)) { QSKIP("this build's libsndfile cannot write FLAC"); }
+		const auto length = static_cast<qint64>(static_cast<double>(frames) / Engine::framesPerTick(rate));
+		QVERIFY(length > 0 && length < static_cast<qint64>(MaxSongLength));
+
+		const QString before = stateOf();
+		SampleDecoder::resetDecodeCallCountsForTesting();
+		const ControlResult refused = run(QStringLiteral("clip.import_file"),
+			{{QStringLiteral("path"), file}, {QStringLiteral("position"), static_cast<int>(MaxSongLength)},
+				{QStringLiteral("loop_mode"), QStringLiteral("keep_unstretched")}});
+		QVERIFY2(!refused.ok, "a clip that ends past the song was imported");
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(!refused.errorMessage.isEmpty(), "the refusal must say why");
+		QCOMPARE(stateOf(), before);  // no clip, no track, no undo step
+		QCOMPARE(SampleDecoder::decodeCallCountsForTesting().full, std::uint64_t{0});  // refused before the full decode
+
+		// The same compressed file still imports where it fits: the position-aware check rejects only the song's
+		// end, and the compressed path itself stays a normal, accepted import.
+		const auto room = static_cast<int>(static_cast<qint64>(MaxSongLength) - length - 1);
 		const int tracks = static_cast<int>(Engine::getSong()->tracks().size());
+		SampleDecoder::resetDecodeCallCountsForTesting();
 		const ControlResult made = run(QStringLiteral("clip.import_file"),
-			{{QStringLiteral("path"), shortFile}, {QStringLiteral("loop_mode"), QStringLiteral("keep_unstretched")}});
+			{{QStringLiteral("path"), file}, {QStringLiteral("position"), room},
+				{QStringLiteral("loop_mode"), QStringLiteral("keep_unstretched")}});
 		QVERIFY2(made.ok, qPrintable(made.errorMessage));
-		QCOMPARE(made.result.value(QStringLiteral("kind")).toString(), QStringLiteral("audio"));
+		QCOMPARE(made.result.value(QStringLiteral("position")).toInt(), room);
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracks + 1);
+		QCOMPARE(SampleDecoder::decodeCallCountsForTesting().full, std::uint64_t{1});
 	}
 
 	//! A file outside the temporary folder is referenced by path, as the browser's drag does: no copy of the audio in the clip.

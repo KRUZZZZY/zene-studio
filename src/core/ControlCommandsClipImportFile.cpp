@@ -199,7 +199,7 @@ qint64 clipLengthTicks(qint64 frames, int sampleRate, const LoopSource& loop, lo
 	return static_cast<qint64>(static_cast<double>(frames) / framesPerTick);
 }
 
-bool prepareAudio(const QString& path, Prepared* out, ControlResult* error)
+bool prepareAudio(const QString& path, tick_t position, Prepared* out, ControlResult* error)
 {
 	if (QFileInfo(path).size() > MaxAudioFileBytes)
 	{
@@ -218,12 +218,12 @@ bool prepareAudio(const QString& path, Prepared* out, ControlResult* error)
 		{
 			out->loop = loopwarp::analyse(path, &out->analysisError);
 			const qint64 length = clipLengthTicks(probe->totalFrames, probe->window.sampleRate, out->loop, out->loopMode);
-			// At any position in [0, MaxSongLength], a clip that is itself longer than the song ends past its
-			// limit: this is exactly the refusal validateImport would make, taken before the sample buffer exists.
-			if (length > static_cast<qint64>(MaxSongLength))
+			// The same check validateImport makes after decoding - this file's clip, at the position it was asked
+			// for, would end past the song - taken before the sample buffer exists (cluster new-p16-7, round 2).
+			if (static_cast<qint64>(position) + length > static_cast<qint64>(MaxSongLength))
 			{
-				*error = invalid(QStringLiteral("'%1' is longer than the song's limit of %2 ticks")
-					.arg(QFileInfo(path).fileName()).arg(MaxSongLength));
+				*error = invalid(QStringLiteral("a clip at tick %1 would end past the song's limit of %2")
+					.arg(position).arg(MaxSongLength));
 				return false;
 			}
 		}
@@ -247,13 +247,13 @@ bool prepareAudio(const QString& path, Prepared* out, ControlResult* error)
 }
 
 //! Reads and validates the file into \a out; nothing in the session is touched.
-bool prepareFile(const QString& path, Prepared* out, ControlResult* error)
+bool prepareFile(const QString& path, tick_t position, Prepared* out, ControlResult* error)
 {
 	if (!checkFile(path, error)) { return false; }
 	out->path = path;
 	out->name = QFileInfo(path).completeBaseName();
 	if (isMidiFile(path)) { return prepareMidi(path, out, error); }
-	if (isAudioExtension(QFileInfo(path).suffix().toLower())) { return prepareAudio(path, out, error); }
+	if (isAudioExtension(QFileInfo(path).suffix().toLower())) { return prepareAudio(path, position, out, error); }
 	*error = invalid(QStringLiteral("'%1' is neither a MIDI file nor audio this build reads").arg(QFileInfo(path).fileName()));
 	return false;
 }
@@ -363,7 +363,7 @@ bool validateImport(const QJsonObject& args, Prepared* file, Track** track, Cont
 	}
 	const auto position = static_cast<tick_t>(args.value(QStringLiteral("position")).toDouble(0.0));
 	if (!readLoopMode(args, file, error)) { return false; }
-	if (!prepareFile(path, file, error)) { return false; }
+	if (!prepareFile(path, position, file, error)) { return false; }
 	if (static_cast<qint64>(position) + resultingLengthTicks(*file) > static_cast<qint64>(MaxSongLength))
 	{
 		*error = invalid(QStringLiteral("a clip at tick %1 would end past the song's limit of %2").arg(position).arg(MaxSongLength));
