@@ -97,6 +97,13 @@ The 4b proof used exactly the required commands:
 - `git apply -R /home/kruzzzzy/.config/kads/zene/state/runs/new-p8-263.r1/logs/fix.patch` - EXIT=0, then build EXIT=0 and test **EXIT=8**
 - `git apply /home/kruzzzzy/.config/kads/zene/state/runs/new-p8-263.r1/logs/fix.patch` - EXIT=0, then build EXIT=0 and test **EXIT=0**
 
+The same two-phase proof was then run once more as a single invocation per phase, so the manifest's commands
+are commands that were executed verbatim from the committed tree (`build-9.log`, `test-9.log`, `build-10.log`,
+`test-10.log`; the worktree was clean before and after, `git status --porcelain` empty):
+
+- RED: `cd <worktree> && git apply -R .../logs/fix.patch; echo REVERSE_EXIT=$?; cmake --build build --target SidechainInputsTest -j4 > .../logs/build-9.log 2>&1; echo BUILD_EXIT=$?; cd build/tests && ctest -R SidechainInputsTest --output-on-failure > .../logs/test-9.log 2>&1; echo TEST_EXIT=$?` - REVERSE_EXIT=0, BUILD_EXIT=0, **TEST_EXIT=8** (same two assertions).
+- GREEN: `cd <worktree> && git apply .../logs/fix.patch; echo APPLY_EXIT=$?; cmake --build build --target vst3effect clapeffect SidechainInputsTest -j4 > .../logs/build-10.log 2>&1; echo BUILD_EXIT=$?; cd build/tests && ctest -R SidechainInputsTest --output-on-failure > .../logs/test-10.log 2>&1; echo TEST_EXIT=$?` - APPLY_EXIT=0, BUILD_EXIT=0, **TEST_EXIT=0** (1/1 passed).
+
 `feature_check.py` ran once, EXIT=0 (`feature-1.log`, RESULT: PASS). `submit_check.py` ran as the completion
 check; its table is in `.../logs/submit-1.log` and is answered under `## Self-check`.
 
