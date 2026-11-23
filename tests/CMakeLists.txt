@@ -1938,6 +1938,12 @@ if(LMMS_HAVE_ALSA)
 	# cluster 4584: the ALSA capture thread must not log a failed recovery -
 	# the failure is parked and reported by the thread that closes the capture.
 	list(APPEND LMMS_TESTS src/core/AudioAlsaCaptureErrorTest.cpp)
+	# cluster 5490: the ALSA capture suspend recovery must stop when the capture is closing
+	# instead of retrying snd_pcm_resume() without a bound, which hung closeCapture()'s join.
+	list(APPEND LMMS_TESTS src/core/AudioAlsaSuspendShutdownTest.cpp)
+	# ...and the retry policy itself: stop flag, exhausted budget, terminal error, all
+	# without a clock (the wait is injected).
+	list(APPEND LMMS_TESTS src/core/AudioAlsaResumeRecoveryTest.cpp)
 	# cluster new-p17-220: a playback write error handleError() cannot recover from
 	# stops the run loop and is published on the device status instead of retried.
 	list(APPEND LMMS_TESTS src/core/AudioAlsaFatalWriteTest.cpp)
