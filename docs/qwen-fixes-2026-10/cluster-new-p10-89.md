@@ -92,7 +92,9 @@ these measurements.
 "DataFileSaveIntegrityTestParts3.h"`), bodies in the new
 `tests/src/core/DataFileSaveIntegrityTestParts3.h` (the round-1 bodies lived in
 `...Parts2.h`, which the file-length ratchet then counted at 513 lines; Parts2 is back to its
-480-line state and the new file is 228 lines):
+480-line state and the new file is 228 lines; the new header is registered in
+`tests/fork-sources.txt` and `tests/all-sources.txt`, the two manifests every new source has to
+appear in):
 
 | path | test | what it pins |
 | --- | --- | --- |
@@ -163,6 +165,19 @@ FEATURE_CHECK_LOG_DIR=logs/feature-check python3 ~/.local/share/zene-bunny-fix/q
    PASS fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology,
         doc-figures, complexity, file-length      RESULT: PASS
 ```
+That run was taken while the new header was still untracked, so it did not exercise registration.
+After the commit the same command failed on the two manifests, and the entry was added:
+```
+... feature_check.py <worktree> > logs/gates-3.log 2>&1   EXIT=1
+   FAIL fork-sources exit 1 | FAIL all-sources-reproduce exit 1
+        "all-sources.txt does not match the recipe in its own header ... the manifest is missing"
+        (tests/src/core/DataFileSaveIntegrityTestParts3.h was in neither manifest)
+# added tests/src/core/DataFileSaveIntegrityTestParts3.h to tests/fork-sources.txt (line 781, after
+# ...Parts2.h) and tests/all-sources.txt (line 2981), both byte-order positions, both end in a newline
+... feature_check.py <worktree> > logs/gates-4.log 2>&1   EXIT=0
+   PASS fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology,
+        doc-figures, complexity, file-length      RESULT: PASS
+```
 
 ## Self-check
 
@@ -202,7 +217,8 @@ FEATURE_CHECK_LOG_DIR=logs/feature-check python3 ~/.local/share/zene-bunny-fix/q
   pre-fix code showing the defect is quoted above from `21c2f3ee2e`.
 - **Sibling commands: none.** This round touches `src/core/DataFile.cpp`,
   `tests/src/core/DataFileSaveIntegrityTest.cpp`, `...Parts2.h`, the new `...Parts3.h`,
-  `tests/upstream-modifications.txt` and this report — no `ControlCommands*`,
+  `tests/upstream-modifications.txt`, `tests/fork-sources.txt`, `tests/all-sources.txt` and this
+  report — no `ControlCommands*`,
   `ControlReversibilityTable*` or `ControlRegistry` file, no command id. The `app.*` /
   `arrangement.*` siblings the pre-submit check lists come from the train between the base and this
   branch, not from this fix; a file-save lock is below the command surface and changes no command's

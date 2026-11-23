@@ -2978,6 +2978,7 @@ tests/src/core/DataFileFormatTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/DataFileSaveIntegrityTestParts1.h
 tests/src/core/DataFileSaveIntegrityTestParts2.h
+tests/src/core/DataFileSaveIntegrityTestParts3.h
 tests/src/core/DawProjectDeflateImportTest.cpp
 tests/src/core/DawProjectInterchangeRoundTripTest.cpp
 tests/src/core/DeviceAbUndoTest.cpp

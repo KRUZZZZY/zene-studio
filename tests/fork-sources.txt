@@ -778,6 +778,7 @@ tests/src/core/CustomAccessTestParts1.h
 tests/src/core/CustomAccessTestParts2.h
 tests/src/core/DataFileSaveIntegrityTestParts1.h
 tests/src/core/DataFileSaveIntegrityTestParts2.h
+tests/src/core/DataFileSaveIntegrityTestParts3.h
 tests/src/core/DeviceDspTestParts1.h
 tests/src/core/DeviceDspTestParts2.h
 tests/src/core/DeviceToolsTestParts1.h
