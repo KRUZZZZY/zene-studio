@@ -40,8 +40,11 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <memory>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -207,6 +210,52 @@ private slots:
 
 		comp.setAuditionLane(-1);
 		QVERIFY2(meanLevel(render(first), 256, a.size() - 256) > 0.4999, "stopping the audition did not bring the comp back");
+	}
+
+	//! Cluster new-p15-196: a take-lane edit cannot run while a render period owns the model.
+	//! AudioEngine::renderNextPeriod() holds the change lock for the whole period, and
+	//! SampleTrack::play() iterates takeLanes().segments() under it (namedByComposite), so an edit
+	//! that did not take that lock could reallocate the segment vector under the audio thread.
+	//! The writer is a second thread; modelChangeWaiters() is the seam that reports it reached
+	//! requestChangeInModel(), so no sleep or timing decides the outcome (the deadline only turns a
+	//! missing lock into a failure instead of a hang).
+	void compositeEditsWaitForTheEngineChangeLock()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		TakeLaneModel& comp = track->takeLanes();
+		QVERIFY(comp.addLane() >= 0);
+		AudioEngine* engine = Engine::audioEngine();
+		QVERIFY(engine != nullptr);
+
+		std::atomic<bool> edited{false};
+		bool reachedLock = false;
+		bool stillBlocked = false;
+		bool unchangedUnderLock = false;
+		std::thread writer;
+		{
+			// What renderNextPeriod() holds while SampleTrack::play() walks the composite.
+			const auto renderPeriod = engine->requestChangesGuard();
+			writer = std::thread([&comp, &edited] {
+				comp.selectSegment(0, 96, 0);
+				edited.store(true, std::memory_order_release);
+			});
+			const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+			while (engine->modelChangeWaiters() == 0 && !edited.load(std::memory_order_acquire)
+				&& std::chrono::steady_clock::now() < deadline)
+			{
+			}
+			reachedLock = engine->modelChangeWaiters() == 1;
+			stillBlocked = !edited.load(std::memory_order_acquire);
+			unchangedUnderLock = comp.segments().empty();
+		}
+		writer.join();
+		QVERIFY2(reachedLock, "a take-lane edit never asked for the audio engine's change lock");
+		QVERIFY2(stillBlocked, "a take-lane edit completed while a render period owned the model");
+		QVERIFY2(unchangedUnderLock, "the composite changed while a render period owned the model");
+		QVERIFY(edited.load(std::memory_order_acquire));
+		QCOMPARE(static_cast<int>(comp.segments().size()), 1);
+		delete track;
 	}
 
 	//! No composite, no gate: the same clip renders byte-for-byte alike on a track with no
