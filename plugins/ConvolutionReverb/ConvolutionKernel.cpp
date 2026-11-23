@@ -94,6 +94,18 @@ void ConvolutionKernel::transformPartitions(const std::vector<float>& impulse, s
 	}
 }
 
+void ConvolutionKernel::resetHistory()
+{
+	// The impulse's own spectra (m_spectra) describe the response and stay; only the input's
+	// delay line, the overlap and the ring cursor are dropped.
+	for (int c = 0; c < 2; ++c)
+	{
+		std::fill(m_history[c].begin(), m_history[c].end(), Complex{});
+		std::fill(m_previous[c].begin(), m_previous[c].end(), 0.f);
+	}
+	m_head = 0;
+}
+
 void ConvolutionKernel::convolveChannel(int channel, const float* input, float* output) noexcept
 {
 	auto* timeIn = static_cast<float*>(m_timeIn.get());

@@ -108,6 +108,66 @@ void DeviceDspTest::anUnresamplableImpulseIsRefusedThroughTheCommand() {
 	QVERIFY2(again.ok, qPrintable(again.errorMessage));
 	chainOf(1).clear();
 }
+void DeviceDspTest::theConvolutionReverbDropsOldRateStateOnASampleRateChange() {
+	const QString reverb = loadByName(ch(1), QStringLiteral("convolutionreverb"));
+	if (reverb.isEmpty()) { QSKIP("this build has no convolution reverb module"); }
+	AudioDevice* const device = Engine::audioEngine()->audioDev();
+	QVERIFY(device != nullptr);
+	const sample_rate_t originalRate = device->sampleRate();
+	QTemporaryDir dir;
+	QVERIFY(dir.isValid());
+	// Put the engine's rate back, with the signal a real device setup would send, however this test leaves.
+	// Declared after the directory so it is destroyed before it.
+	struct RestoreRate
+	{
+		AudioDevice* device;
+		sample_rate_t rate;
+		~RestoreRate()
+		{
+			device->setSampleRateForTesting(rate);
+			emit Engine::audioEngine()->sampleRateChanged();
+		}
+	} restore{device, originalRate};
+	const QString click = dir.filePath(QStringLiteral("click.wav"));
+	std::vector<qint16> samples(64, 0);
+	samples[0] = 16384;
+	QVERIFY(writeWav(click, samples, 48000));
+	device->setSampleRateForTesting(48000);
+	emit Engine::audioEngine()->sampleRateChanged();
+	const QString target = ch(1);
+	QJsonObject load{{QStringLiteral("target"), target}, {QStringLiteral("plugin"), reverb},
+		{QStringLiteral("path"), click}};
+	const ControlResult loaded = run(QStringLiteral("plugin.impulse_load"), load);
+	QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
+	set(target, reverb, "Pre-delay", 100.0);
+	const Signal loud = sine(1000.0, 0.5f);
+	const Signal quiet = [](long) { return SampleFrame(); };
+	long at = 0;
+	// 0.32 s at 48 kHz fills the whole 100 ms pre-delay line with the old-rate tone.
+	const SampleFrame before = runBlocks(chainOf(1), loud, 60, &at);
+	QVERIFY2(before[0] > 0.1f, qPrintable(QString::number(before[0])));
+	// The same 100 ms is twice as many frames at 96 kHz. The line, the queued blocks and the filter
+	// histories still hold the 48 kHz tone, which belongs 200 ms back at the new scale: not silence.
+	device->setSampleRateForTesting(96000);
+	emit Engine::audioEngine()->sampleRateChanged();
+	const SampleFrame stale = runBlocks(chainOf(1), quiet, 8, &at);
+	QVERIFY2(stale[0] < 1.0e-6f && stale[1] < 1.0e-6f,
+		qPrintable(QStringLiteral("old-rate audio survived the rate change: %1, %2").arg(stale[0]).arg(stale[1])));
+	// The reverb still plays a signal arriving at the new rate, one new-rate pre-delay later.
+	const SampleFrame fresh = runBlocks(chainOf(1), loud, 60, &at);
+	QVERIFY2(fresh[0] > 0.1f, qPrintable(QStringLiteral("no audio after the rate change: %1").arg(fresh[0])));
+	// A rate change the impulse cannot follow: the file is unreadable, so the rebuild fails and the
+	// old kernel stays installed. Its overlap and frequency-domain history hold the 96 kHz tone and
+	// must not play it back as a 48 kHz one.
+	QVERIFY(QFile::remove(click));
+	device->setSampleRateForTesting(48000);
+	emit Engine::audioEngine()->sampleRateChanged();
+	const SampleFrame unreadable = runBlocks(chainOf(1), quiet, 8, &at);
+	QVERIFY2(unreadable[0] < 1.0e-6f && unreadable[1] < 1.0e-6f,
+		qPrintable(QStringLiteral("old-rate audio survived a failed rebuild: %1, %2")
+			.arg(unreadable[0]).arg(unreadable[1])));
+	chainOf(1).clear();
+}
 void DeviceDspTest::recorderLandRefusesWithoutSong() {
 	const QString recorder = loadByName(ch(1), QStringLiteral("insertrecorder"));
 	if (recorder.isEmpty()) { QSKIP("this build has no recorder module"); }

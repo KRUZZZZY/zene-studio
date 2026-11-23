@@ -69,6 +69,11 @@ public:
 	//! The impulse response's length in frames (its tail).
 	int length() const { return m_length; }
 
+	//! Zeroes the frequency-domain delay line and the overlap, so the kernel starts silent again
+	//! (its impulse's own spectra stay). Control thread, under the engine's model-change guard;
+	//! it only zeroes storage that already exists, so it allocates nothing.
+	void resetHistory();
+
 	//! One block: @a input (Partition samples per channel) in, the next @a output block out.
 	//! Audio thread: FFTW's execute on the kernel's own buffers, no allocation.
 	void process(const float* const input[2], float* const output[2]) noexcept;

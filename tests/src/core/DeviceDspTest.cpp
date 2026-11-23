@@ -461,6 +461,10 @@ private slots:
 	//! saved impulse, the response and the undo state stay as they were; a valid impulse still loads afterwards.
 	void anUnresamplableImpulseIsRefusedThroughTheCommand();
 
+	//! Cluster 5036: after the engine's rate doubles, the pre-delay line, the queued input/output/dry blocks and the
+	//! filter histories of the old rate must not be played back as if they were measured at the new one.
+	void theConvolutionReverbDropsOldRateStateOnASampleRateChange();
+
 	//! MX-156: the Recorder passes the sound unchanged and writes what passed to its take; the take lands
 	//! on a new audio track as one undo step; a device that is not a Recorder is refused.
 	void recorderLandRefusesWithoutSong();
