@@ -68,13 +68,16 @@ constexpr double FastRatioSpan = 64.0;  //!< time ratio at least this / sourceRa
 
 //! The slowest and fastest rate (source frames per output frame) a voice built
 //! at \a sourceRate is rendered at. 1.0 is always inside, so the fallback rate
-//! and every ordinary speed pass through untouched.
-double slowestSpeed(int sourceRate)
+//! and every ordinary speed pass through untouched. Only render()'s
+//! Rubber Band branch calls these, so a build without the library leaves them
+//! unused - [[maybe_unused]] keeps such a -Werror build compiling (the CI's
+//! linux-arm64 job: WANT_RUBBERBAND=OFF, USE_WERROR=ON).
+[[maybe_unused]] double slowestSpeed(int sourceRate)
 {
 	return std::min(1.0, SlowRatioSpan / static_cast<double>(std::max(sourceRate, 1)));
 }
 
-double fastestSpeed(int sourceRate)
+[[maybe_unused]] double fastestSpeed(int sourceRate)
 {
 	return std::max(1.0, static_cast<double>(std::max(sourceRate, 1)) / FastRatioSpan);
 }
