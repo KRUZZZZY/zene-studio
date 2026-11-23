@@ -34,7 +34,11 @@ who calls it, and the answer is in the recording paths.
   (`src/core/Song.cpp:260`), drains from a `QTimer` (`src/core/MidiTakeRecorder.cpp:105-108`,
   `:163-168`) and calls `clip->addNote(...)` only in `commitPlain()` / `loopTakeClip()`
   (`src/core/MidiTakeRecorder.cpp:322-342`, `:363-374`) after `Song::stopped`, which is emitted
-  from `Song::stop()` (`src/core/Song.cpp:1328`) on the caller's (UI/control) thread. The existing
+  from `Song::stop()` (`src/core/Song.cpp:1328`). `MidiTakeRecorder` is a child of `Song` created
+  on the main thread (`src/core/Song.cpp:260`), so the default `AutoConnection` delivers
+  `onStopped()` in the main thread even when `Song::stop()` itself is called from another
+  non-audio thread (for example the export worker); a normal UI/control stop runs it directly on
+  that thread. It is never the audio thread. The existing
   test `MidiTakeRecordTest::theCaptureQueueIsBoundedAndAllocationFree`
   (`tests/src/core/MidiTakeRecordTest.cpp:210-231`) asserts the producer half allocates and frees
   nothing, using the allocation counter, not wall-clock timing.
