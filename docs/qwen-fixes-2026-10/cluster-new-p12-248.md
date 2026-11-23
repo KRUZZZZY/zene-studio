@@ -37,7 +37,7 @@ the recording scan no longer takes the clip lock at all and reads an atomically 
 The round-2 guard was also applied to the recording scan in `Song::processAutomations`. A failed
 acquisition skipped the whole branch, including its only `queuePendingWrite()` call, so a recording
 clip silently lost that tick's value while an edit held the lock (src/core/Song.cpp:793-824 before
-this round; recording is enabled through include/AutomationClip.h:388-389).
+this round; recording is enabled through include/AutomationClip.h:395-396).
 
 The scan now takes no clip lock at all:
 - `include/AutomationClip.h`: `m_liveTarget`, a `std::atomic<const AutomatableModel*>`, is published
