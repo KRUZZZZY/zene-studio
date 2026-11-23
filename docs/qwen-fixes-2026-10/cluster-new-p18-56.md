@@ -154,7 +154,12 @@ were run by me because the Haiku start budget (5) was spent. I read every log li
 - **No collateral damage.** Header-only logic; no saved-data change. Seams are `LMMS_TESTING`-only functions; no
   data member was added, so classes embedding `MidiChannelOverflow` keep their layout. No allocation, lock,
   wait or log on the audio thread; the only change on that path is the order of loads already present.
-- **No control command added.**
+- **Sibling commands.** No command file was changed, so `app.about`, `app.ask`, `app.help`, `app.online_help`,
+  `app.task_cancel`, `app.tasks`, `app.tour`, `app.tours`, `app.update_check_get`, `app.update_check_run`,
+  `app.update_check_set`, `app.version`, `app.whats_new`, `arrangement.fit_tracks` and `arrangement.get_state`
+  are not affected. No control command was added (the ControlCommandsSnapshot canary is unchanged).
+- **Not ALREADY-FIXED / FALSE-POSITIVE.** REAL: with the fix reverted the consumer misses a concurrently
+  published refusal (`test-f-red.log`).
 
 ## Other findings
 
