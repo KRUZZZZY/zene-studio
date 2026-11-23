@@ -126,6 +126,11 @@ RESULT: PASS
   are one atomic load per block and, only when a design is pending, one bounded `calcKeyFilter()`
   (pure arithmetic + atomic stores, no allocation/lock/wait/I/O/log/signal).
 - **ALREADY-FIXED / FALSE-POSITIVE:** not applicable; verdict is FIXED.
+- **Sibling commands in command files (`app.*`, `arrangement.*`, ...):** this cluster changed no
+  command file. The command sources the pre-submit check lists are inherited from the branch's
+  base commits, not from this fix, so none is affected by the bounded key-filter hand-off.
+- **Windows/macOS portability:** no Qt-6-only API, no `windows.h` names, no `std::filesystem`; the
+  test uses `QStringLiteral`, `qPrintable`, `QCOMPARE`/`QVERIFY` and `std::atomic` only.
 
 ## Other findings
 
