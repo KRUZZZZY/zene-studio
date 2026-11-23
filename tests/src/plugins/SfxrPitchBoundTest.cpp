@@ -29,6 +29,7 @@
 #include "InstrumentTrack.h"
 #include "Note.h"
 #include "NotePlayHandle.h"
+#include "SessionTuning.h"
 #include "Sfxr.h"
 #include "Song.h"
 
@@ -154,10 +155,12 @@ public:
 	{
 		const float rateScale = Engine::audioEngine()->outputSampleRate() / 44100.f;
 		const float truncatedProduct = std::trunc(pitchRatio() * static_cast<float>(m_frames));
-		const f_cnt_t pitched = rateScale != 0.f
-			? static_cast<f_cnt_t>(std::trunc(truncatedProduct / rateScale))
-			: 0;
-		return std::min<f_cnt_t>(pitched, m_frames * MaxSynthFramesPerOutputFrame);
+		const double pitchedFrames = rateScale != 0.f ? std::trunc(truncatedProduct / rateScale) : 0.0;
+		// The render path clamps the count in double before converting it: a pitch past f_cnt_t's range
+		// cannot be converted at all, and a non-finite one is clamped to the ceiling too.
+		const f_cnt_t ceiling = m_frames * MaxSynthFramesPerOutputFrame;
+		if (!(pitchedFrames < static_cast<double>(ceiling))) { return ceiling; }
+		return pitchedFrames > 0.0 ? static_cast<f_cnt_t>(pitchedFrames) : 0;
 	}
 
 private:
@@ -184,6 +187,7 @@ private slots:
 
 	void cleanupTestCase()
 	{
+		SessionTuning::instance()->reset();
 		Engine::getSong()->clearProject();
 		Engine::destroy();
 		NotePlayHandleManager::free();
@@ -283,6 +287,40 @@ private slots:
 
 		QVERIFY2(audible, "the note must have sounded before it went quiet");
 		QVERIFY2(silent(note.buffer()), "a period after the sound has ended must be silent");
+	}
+
+	//! MTS-ESP accepts any finite positive frequency a float holds (`src/core/SessionTuning.cpp:373-381`),
+	//! so a note can be tuned to 1e30 Hz and its pitch count is far past the range of f_cnt_t. The count
+	//! must be clamped in double, BEFORE that conversion: converting an out-of-range value is undefined,
+	//! and the conversion this platform emits for one yields zero - a period of silence.
+	void sessionPitchBeyondFrameCountRangeIsClampedBeforeConversion()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		constexpr double ExtremeSessionFrequency = 1e30;
+		SessionTuning* const tuning = SessionTuning::instance();
+		QVERIFY2(tuning->setNoteFrequency(NormalKey, ExtremeSessionFrequency, QStringLiteral("test"), nullptr),
+			"the session table must accept a frequency a float can hold");
+
+		HeldNote note{NormalKey, NormalBaseNote, frames};
+		note.holdTheSound();
+
+		const auto pitched = note.synthFramesForPeriod();
+		QVERIFY2(note.handle().frequency() > 1e29f,
+			qPrintable(QStringLiteral("the note must carry the tuned frequency, took %1 Hz")
+				.arg(note.handle().frequency())));
+		QVERIFY2(pitched == frames * MaxSynthFramesPerOutputFrame,
+			qPrintable(QStringLiteral("the count must be the ceiling, took %1").arg(pitched)));
+
+		note.playPeriod();
+		tuning->reset();
+
+		SfxrSynth reference{&note.instrument()};
+		std::vector<SampleFrame> raw(static_cast<std::size_t>(pitched));
+		reference.update(raw.data(), static_cast<int32_t>(pitched));
+
+		QVERIFY2(sameFrames(note.buffer(), resampled(raw, frames)),
+			"an accepted 1e30 Hz tuning must render the bounded pitch, not an undefined conversion");
+		QVERIFY2(!silent(note.buffer()), "that period must sound");
 	}
 };
 

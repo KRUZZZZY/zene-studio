@@ -501,18 +501,16 @@ void SfxrInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out
 	const float rateScale = currentSampleRate / 44100;
 
 	// The synth frames this period needs, in the arithmetic this line always used: the pitch ratio times the
-	// period's frames, truncated, then divided by the engine's rate ratio and truncated again. It runs in
-	// double so an extreme ratio cannot overflow the int32 it used to be squeezed into, and the result is
-	// bounded to SfxrMaxSynthFramesPerOutputFrame synth frames per output frame, which is what keeps one
-	// period's work finite (new-p16-228).
+	// period's frames, truncated, then divided by the engine's rate ratio and truncated again. The count is
+	// clamped in double BEFORE the conversion: a tuning may be any frequency a float holds, which makes it
+	// larger than f_cnt_t can represent, and converting such a value - or a non-finite one - is undefined.
+	// The ceiling keeps one period's synthesis finite (new-p16-228).
 	double pitchedFrames = std::trunc(static_cast<double>(_n->frequency() / baseFreq * static_cast<float>(frameNum)));
-	if (rateScale != 0.0f)
-	{
-		pitchedFrames = std::trunc(static_cast<double>(static_cast<float>(pitchedFrames) / rateScale));
-	}
-	const f_cnt_t pitchedFrameNum = std::min<f_cnt_t>(
-		static_cast<f_cnt_t>(std::max(pitchedFrames, 0.0)),
-		frameNum * SfxrMaxSynthFramesPerOutputFrame);
+	if (rateScale != 0.0f) { pitchedFrames = std::trunc(static_cast<double>(static_cast<float>(pitchedFrames) / rateScale)); }
+	const f_cnt_t pitchedCeiling = frameNum * SfxrMaxSynthFramesPerOutputFrame;
+	const f_cnt_t pitchedFrameNum = !(pitchedFrames < static_cast<double>(pitchedCeiling))
+		? pitchedCeiling  // at or above the ceiling, and non-finite counts too
+		: static_cast<f_cnt_t>(pitchedFrames > 0.0 ? pitchedFrames : 0.0);
 
 	renderPitched(*static_cast<SfxrSynth*>(_n->m_pluginData), out.data() + offset, frameNum, pitchedFrameNum);
 
