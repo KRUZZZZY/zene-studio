@@ -80,16 +80,21 @@ inline KeyFilterDesign designKeyFilter(float hpHz, float lpHz, float sampleRate)
  *  The reader never waits: while a design is being written it keeps the one it has and picks the new
  *  one up next block. Writers never wait either: one that finds another mid-write marks the design
  *  dirty and leaves; the writer holding the lock then designs again from the current knobs, so the
- *  last design published is always the one the knobs ask for. */
+ *  last design published is always the one the knobs ask for.
+ *  A writer is BOUNDED: at most MaxDesignsPerPush designs per call, so a thread that keeps marking
+ *  the design dirty (a knob moved while automation is also on the audio thread) cannot hold the
+ *  audio callback in publish(). A design still owed after the bound is left pending (m_dirty stays
+ *  true) and the audio thread finishes it at the top of a later block - see pending(). */
 class KeyFilterMailbox
 {
 public:
-	//! Any thread: publishes @a make(), which designs from the current knob values.
+	//! Any thread: publishes @a make(), which designs from the current knob values. At most
+	//! MaxDesignsPerPush designs run here; anything still dirty is left for a later call.
 	template<typename Make>
 	void publish(const Make& make)
 	{
 		m_dirty.store(true);
-		while (m_dirty.load())
+		for (unsigned attempt = 0; attempt < MaxDesignsPerPush; ++attempt)
 		{
 			unsigned version = m_version.load();
 			if ((version & 1u) != 0u || !m_version.compare_exchange_strong(version, version + 1)) { return; }
@@ -97,8 +102,14 @@ public:
 			m_dirty.exchange(false);  // a read: it sees the knob a writer that left early moved
 			store(make());
 			m_version.store(version + 2);
+			if (!m_dirty.load()) { return; }
 		}
 	}
+
+	//! Audio thread: a writer left a design pending at the end of its bound. The caller designs from
+	//! the current knobs once more (calcKeyFilter()) at the top of a later block; bounded per block
+	//! because publish() itself is bounded.
+	bool pending() const noexcept { return m_dirty.load(std::memory_order_acquire); }
 
 	//! Audio thread: a newer complete design into @a out, or false (nothing new, or one mid-write).
 	bool take(KeyFilterDesign& out) noexcept
@@ -116,6 +127,9 @@ public:
 
 private:
 	static constexpr std::size_t Fields = 12;
+	//! The hand-off that keeps the audio callback bounded: one design, plus one to catch a writer
+	//! that arrived during it. Further work is left pending for the next block.
+	static constexpr unsigned MaxDesignsPerPush = 2;
 
 	void store(const KeyFilterDesign& design) noexcept
 	{
@@ -131,7 +145,7 @@ private:
 
 	std::array<std::atomic<float>, Fields> m_fields{};
 	std::atomic<unsigned> m_version{0};  //!< odd while a design is being written
-	std::atomic<bool> m_dirty{false};    //!< a writer found the lock taken: design again
+	std::atomic<bool> m_dirty{false};    //!< a design is owed; cleared by each completed one
 	unsigned m_taken = 0;                //!< the version the audio thread last adopted (audio thread only)
 };
 
