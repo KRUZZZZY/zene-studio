@@ -153,6 +153,16 @@ QByteArray pythonPath(const QStringList& dirs)
 	return dirs.join(QDir::listSeparator()).toUtf8();
 }
 
+//! Discovery publishes the winner while lower-priority probes may still run
+//! (cancelled in the background). Wait for them before counting probes or
+//! reading what they leave behind.
+void settleProbes()
+{
+#ifdef LMMS_STEM_PYTHON_EARLY_PUBLISH
+	ExternalProcessStemSeparator::waitForDiscoveryProbesForTest();
+#endif
+}
+
 } // namespace
 
 class StemPythonDiscoveryTest : public QObject
@@ -200,6 +210,7 @@ private slots:
 
 		// Discovery still happens where a caller asks for it, and only there.
 		(void) ExternalProcessStemSeparator::locatePython();
+		settleProbes();
 		QVERIFY2(QFile::exists(marker),
 			"locatePython() must probe the configured interpreter");
 	}
@@ -226,6 +237,7 @@ private slots:
 
 		QString error;
 		const QString located = ExternalProcessStemSeparator::locatePython(&error);
+		settleProbes();
 		QVERIFY2(located.isEmpty(), "an exhausted budget cannot discover an interpreter");
 		QVERIFY2(!QFile::exists(marker),
 			"an exhausted discovery budget launched a probe: a zero "
@@ -236,6 +248,7 @@ private slots:
 		// so the deadline is a bound, not a permanent refusal.
 		qunsetenv("LMMS_STEM_PYTHON_PROBE_MS");
 		(void) ExternalProcessStemSeparator::locatePython();
+		settleProbes();
 		QVERIFY(QFile::exists(marker));
 	}
 
@@ -277,6 +290,7 @@ private slots:
 		const auto status = separator.separate(mix, StemModelSampleRate,
 			HTDemucsSegmentFrames, DefaultStemQuality, StemSeparator::ProgressFn(),
 			stems, error);
+		settleProbes();
 		QVERIFY2(status == StemSeparator::Status::Failed, qPrintable(error));
 		QVERIFY2(QFile::exists(marker),
 			"separate() must resolve the interpreter it deferred from the constructor");
@@ -322,6 +336,7 @@ private slots:
 
 		QString error;
 		const QString located = ExternalProcessStemSeparator::locatePython(&error);
+		settleProbes(); // the lower-priority probes may still be running
 		QCOMPARE(located, fallback);
 		QVERIFY2(error.isEmpty(), qPrintable(error));
 		QCOMPARE(probed.size(), 4);
@@ -358,6 +373,7 @@ private slots:
 
 		QString error;
 		const QString located = ExternalProcessStemSeparator::locatePython(&error);
+		settleProbes();
 		QCOMPARE(located, python);
 		QVERIFY2(error.isEmpty(), qPrintable(QStringLiteral("unexpected error: ") + error));
 		QVERIFY(QFile::exists(marker));
@@ -401,6 +417,7 @@ private slots:
 		qputenv("PYTHONPATH", pythonPath({ site.path(), goodModule.path() }));
 		qputenv("LMMS_STEM_PYTHON", python.toUtf8());
 		QCOMPARE(ExternalProcessStemSeparator::locatePython(), python);
+		settleProbes(); // no probe may still read PYTHONPATH when the guard restores it
 	}
 };
 

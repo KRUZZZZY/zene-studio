@@ -24,10 +24,12 @@
 #include "StemSeparation/ExternalProcessStemSeparator.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <future>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <system_error>
 #include <thread>
 #include <vector>
@@ -41,26 +43,23 @@ namespace lmms
 namespace
 {
 
-//! How long one interpreter may take to start before it counts as missing.
+//! Time a probe may take to start before it counts as missing.
 constexpr int PythonProbeStartMs = 5000;
 //! How long a killed probe may take to be reaped.
 constexpr int PythonProbeKillGraceMs = 2000;
+//! Cancellation poll interval of a running probe.
+constexpr int PythonProbeCancelPollMs = 50;
 
-/*! Upper bound for ONE interpreter probe, and therefore for a whole discovery:
- *  every candidate is probed concurrently and gets this full deadline (there is
- *  no shared budget to starve a later candidate). 5 s is several times the
- *  ~0.45 s a cold reference CLI needs to start, import and reach inference, and
- *  covers a cold `import onnxruntime` that takes a couple of seconds. */
+//! Upper bound for ONE probe (and a whole discovery): every candidate gets this
+//! full deadline, so none starves another. Covers a cold `import onnxruntime`.
 constexpr int PythonDiscoveryBudgetMs = 5000;
 
-//! A failed discovery is not repeated sooner than this (the service caches it).
+//! A failed discovery is not repeated sooner than this.
 constexpr qint64 PythonDiscoveryRetryDelayMs = 10000;
 
-/*! The budget for this discovery run. LMMS_STEM_PYTHON_PROBE_MS is a test hook
- *  (like LMMS_STEM_CHUNK_DELAY_MS) that can only make discovery stricter: a
- *  value outside [0, PythonDiscoveryBudgetMs] keeps the default. Zero is the
- *  boundary the regression test uses to observe "no process is started"
- *  without waiting. */
+//! The budget for this run. LMMS_STEM_PYTHON_PROBE_MS is a test hook that can
+//! only make discovery stricter: a value outside [0, PythonDiscoveryBudgetMs]
+//! keeps the default (zero starts no process).
 int pythonDiscoveryBudgetMs()
 {
 	bool ok = false;
@@ -72,41 +71,54 @@ int pythonDiscoveryBudgetMs()
 	return requested;
 }
 
-//! True when @a candidate starts and imports onnxruntime within @a timeoutMs.
-//! On timeout the child is killed, so no probe outlives its deadline.
-bool probePython(const QString& candidate, int timeoutMs)
+//! Waits for the started @a probe until @a deadline; true when it exited with
+//! status 0. On timeout or cancellation the child is killed and reaped.
+bool awaitProbe(QProcess& probe, std::chrono::steady_clock::time_point deadline,
+	const std::atomic<bool>& cancelled)
 {
-	if (timeoutMs <= 0)
+	while (!cancelled.load())
+	{
+		const auto remainingMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+			deadline - std::chrono::steady_clock::now()).count();
+		if (remainingMs <= 0)
+		{
+			break;
+		}
+		const int slice = static_cast<int>(std::min<long long>(remainingMs, PythonProbeCancelPollMs));
+		if (probe.waitForFinished(slice))
+		{
+			return probe.exitStatus() == QProcess::NormalExit && probe.exitCode() == 0;
+		}
+		if (probe.state() == QProcess::NotRunning)
+		{
+			return false;
+		}
+	}
+	probe.kill();
+	probe.waitForFinished(PythonProbeKillGraceMs);
+	return false;
+}
+
+//! True when @a candidate starts and imports onnxruntime within @a timeoutMs
+//! and the run is not cancelled meanwhile (the child is then killed).
+bool probePython(const QString& candidate, int timeoutMs, const std::atomic<bool>& cancelled)
+{
+	if (timeoutMs <= 0 || cancelled.load())
 	{
 		return false;
 	}
-	const auto started = std::chrono::steady_clock::now();
-	const auto remainingMs = [&started, timeoutMs]()
-	{
-		const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-			std::chrono::steady_clock::now() - started).count();
-		return timeoutMs - static_cast<int>(elapsed);
-	};
-
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
 	QProcess probe;
 	probe.start(candidate, { QStringLiteral("-c"), QStringLiteral("import onnxruntime") });
 	if (!probe.waitForStarted(std::min(timeoutMs, PythonProbeStartMs)))
 	{
 		return false;
 	}
-	const int finishMs = remainingMs();
-	if (finishMs <= 0 || !probe.waitForFinished(finishMs))
-	{
-		probe.kill();
-		probe.waitForFinished(PythonProbeKillGraceMs);
-		return false;
-	}
-	return probe.exitStatus() == QProcess::NormalExit && probe.exitCode() == 0;
+	return awaitProbe(probe, deadline, cancelled);
 }
 
 #ifdef LMMS_TESTING
-//! Read concurrently by the probe threads; only replaced while none is running
-//! (setDiscoveryHooksForTest waits for that).
+//! Read by the probe threads; replaced only while none runs.
 ExternalProcessStemSeparator::DiscoveryHooks& discoveryHooks()
 {
 	static ExternalProcessStemSeparator::DiscoveryHooks hooks;
@@ -114,8 +126,7 @@ ExternalProcessStemSeparator::DiscoveryHooks& discoveryHooks()
 }
 #endif
 
-//! The monotonic clock the failure-retry delay reads (milliseconds since an
-//! arbitrary epoch). A test can replace it through the DiscoveryHooks seam.
+//! Monotonic ms clock for the failure-retry delay (replaceable by a test hook).
 qint64 discoveryNowMs()
 {
 #ifdef LMMS_TESTING
@@ -129,8 +140,9 @@ qint64 discoveryNowMs()
 }
 
 //! True when @a candidate imports onnxruntime within @a timeoutMs; the test seam
-//! replaces the child process, not the decision. Runs on a probe thread.
-bool probeInterpreter(const QString& candidate, int timeoutMs)
+//! replaces the child process, not the decision (and ignores @a cancelled).
+//! Runs on a probe thread.
+bool probeInterpreter(const QString& candidate, int timeoutMs, const std::atomic<bool>& cancelled)
 {
 #ifdef LMMS_TESTING
 	if (discoveryHooks().probe)
@@ -138,15 +150,12 @@ bool probeInterpreter(const QString& candidate, int timeoutMs)
 		return discoveryHooks().probe(candidate, timeoutMs);
 	}
 #endif
-	return probePython(candidate, timeoutMs);
+	return probePython(candidate, timeoutMs, cancelled);
 }
 
 void setError(QString* error, const QString& text)
 {
-	if (error != nullptr)
-	{
-		*error = text;
-	}
+	if (error != nullptr) { *error = text; }
 }
 
 QStringList discoveryCandidates()
@@ -163,61 +172,128 @@ QStringList discoveryCandidates()
 	return candidates;
 }
 
-//! Starts one probe on its own thread. If no thread can be created the probe
-//! runs on the first get() instead, so discovery still completes.
-std::future<bool> startProbe(const QString& candidate, int budgetMs)
+enum class ProbeResult { Running, Works, Fails };
+
+//! Shared by the decider and its probe threads (shared_ptr: outlives the decider).
+struct DiscoveryRun
 {
-	try
+	std::mutex mutex;
+	std::condition_variable settled;
+	std::vector<ProbeResult> results; //!< per candidate, in priority order
+	std::atomic<bool> cancelled{false};
+};
+
+//! Probe threads still running (tells a test/reset that none reads the hooks).
+struct LiveProbes
+{
+	std::mutex mutex;
+	std::condition_variable idle;
+	int live = 0;
+};
+
+LiveProbes& liveProbes()
+{
+	static auto* instance = new LiveProbes;
+	return *instance;
+}
+
+void addLiveProbes(int delta)
+{
 	{
-		return std::async(std::launch::async, probeInterpreter, candidate, budgetMs);
+		std::lock_guard lock(liveProbes().mutex);
+		liveProbes().live += delta;
 	}
-	catch (const std::system_error&)
+	liveProbes().idle.notify_all();
+}
+
+#ifdef LMMS_TESTING
+void waitForIdleProbes()
+{
+	std::unique_lock lock(liveProbes().mutex);
+	liveProbes().idle.wait(lock, []() { return liveProbes().live == 0; });
+}
+#endif
+
+//! The winner index once decided (-1: all failed); nullopt while a Running entry
+//! precedes the first Works (that probe may still win).
+std::optional<int> settledWinner(const std::vector<ProbeResult>& results)
+{
+	for (std::size_t index = 0; index < results.size(); ++index)
 	{
-		return std::async(std::launch::deferred, probeInterpreter, candidate, budgetMs);
+		if (results[index] == ProbeResult::Running)
+		{
+			return std::nullopt;
+		}
+		if (results[index] == ProbeResult::Works)
+		{
+			return static_cast<int>(index);
+		}
 	}
+	return -1;
+}
+
+void runProbe(const std::shared_ptr<DiscoveryRun>& run, std::size_t index, const QString& candidate, int budgetMs)
+{
+	bool worked = false;
+	try { worked = probeInterpreter(candidate, budgetMs, run->cancelled); }
+	catch (...) { worked = false; }
+	{
+		std::lock_guard lock(run->mutex);
+		run->results[index] = worked ? ProbeResult::Works : ProbeResult::Fails;
+	}
+	run->settled.notify_all();
+	addLiveProbes(-1);
+}
+
+//! Starts one probe on a detached thread (on the caller's if none can be made).
+void startProbe(const std::shared_ptr<DiscoveryRun>& run, std::size_t index, const QString& candidate, int budgetMs)
+{
+	addLiveProbes(1);
+	try { std::thread([run, index, candidate, budgetMs]() { runProbe(run, index, candidate, budgetMs); }).detach(); }
+	catch (const std::system_error&) { runProbe(run, index, candidate, budgetMs); }
 }
 
 /*! One discovery run: every candidate is probed concurrently with the FULL
- *  budget, then the futures are read in priority order, so the winner is the
- *  highest-priority candidate that works and is only chosen once every
- *  higher-priority one has finished. A slow failing candidate therefore cannot
- *  starve a working fallback. Every probe is bounded by the budget (the child
- *  is killed at its deadline), so the run ends within it. Blocking: never call
- *  this from the GUI thread. */
+ *  budget. The highest-priority working candidate is returned as soon as every
+ *  higher-priority one has failed; lower-priority probes are cancelled (child
+ *  killed) and reaped by their own threads in the background. Ends within the
+ *  budget. Blocking: never call this from the GUI thread. */
 QString runParallelDiscovery(QString* error)
 {
 	const QStringList candidates = discoveryCandidates();
 	const int budgetMs = pythonDiscoveryBudgetMs();
 
-	std::vector<std::future<bool>> probes;
-	probes.reserve(static_cast<std::size_t>(candidates.size()));
-	for (const auto& candidate : candidates)
-	{
-		probes.push_back(startProbe(candidate, budgetMs));
-	}
-
-	QString winner;
+	auto run = std::make_shared<DiscoveryRun>();
+	run->results.assign(static_cast<std::size_t>(candidates.size()), ProbeResult::Running);
 	for (qsizetype index = 0; index < candidates.size(); ++index)
 	{
-		const bool worked = probes[static_cast<std::size_t>(index)].get();
-		if (worked && winner.isEmpty())
-		{
-			winner = candidates.at(index);
-		}
+		startProbe(run, static_cast<std::size_t>(index), candidates.at(index), budgetMs);
 	}
-	if (winner.isEmpty())
+
+	std::optional<int> decision;
 	{
-		setError(error, QStringLiteral("No Python interpreter with the 'onnxruntime' "
-			"module found (tried: %1). Install onnxruntime or set LMMS_STEM_PYTHON.")
-			.arg(candidates.join(QStringLiteral(", "))));
+		std::unique_lock lock(run->mutex);
+		run->settled.wait(lock, [&run, &decision]()
+		{
+			decision = settledWinner(run->results);
+			return decision.has_value();
+		});
 	}
-	return winner;
+	run->cancelled.store(true);
+
+	if (*decision >= 0)
+	{
+		return candidates.at(*decision);
+	}
+	setError(error, QStringLiteral("No Python interpreter with the 'onnxruntime' "
+		"module found (tried: %1). Install onnxruntime or set LMMS_STEM_PYTHON.")
+		.arg(candidates.join(QStringLiteral(", "))));
+	return QString();
 }
 
 enum class Phase { Idle, Pending, Found, Failed };
 
-//! The per-process discovery cache. Heap-allocated and never destroyed so a
-//! detached discovery thread never touches a destroyed object at exit.
+//! The per-process discovery cache; leaked so detached threads never outlive it.
 struct Service
 {
 	std::mutex mutex;
@@ -238,8 +314,8 @@ Service& service()
 	return *instance;
 }
 
-//! Forgets the cached result when the configuration it belongs to changed. A
-//! run still in flight for the old key becomes stale: its result is dropped.
+//! Forgets the cached result when its LMMS_STEM_PYTHON key changed (a run in
+//! flight for the old key becomes stale: its result is dropped).
 void forgetIfKeyChanged(Service& s, const QString& key)
 {
 	if (key == s.key)
@@ -301,10 +377,7 @@ void startRun(Service& s)
 	s.running = true;
 	++s.activeThreads;
 	const quint64 generation = s.generation;
-	try
-	{
-		std::thread([&s, generation]() { runDiscoveryThread(s, generation); }).detach();
-	}
+	try { std::thread([&s, generation]() { runDiscoveryThread(s, generation); }).detach(); }
 	catch (const std::system_error&)
 	{
 		--s.activeThreads;
@@ -338,9 +411,6 @@ int ExternalProcessStemSeparator::pythonDiscoveryWaitBoundMs()
 {
 	return PythonDiscoveryBudgetMs + PythonProbeKillGraceMs;
 }
-
-
-
 
 ExternalProcessStemSeparator::PythonDiscoveryState ExternalProcessStemSeparator::pythonDiscoveryState(int waitMs)
 {
@@ -380,9 +450,6 @@ QString ExternalProcessStemSeparator::discoveredPython(QString* error)
 	return state.python;
 }
 
-
-
-
 QString ExternalProcessStemSeparator::waitForPythonDiscovery(QString* error)
 {
 	requestPythonDiscovery();
@@ -402,15 +469,24 @@ QString ExternalProcessStemSeparator::waitForPythonDiscovery(QString* error)
 void ExternalProcessStemSeparator::resetPythonDiscoveryForTest()
 {
 	auto& s = service();
-	std::unique_lock lock(s.mutex);
-	s.changed.wait(lock, [&s]() { return s.activeThreads == 0; });
-	s.phase = Phase::Idle;
-	s.python.clear();
-	s.error.clear();
-	s.key.clear();
-	s.failedAtMs = 0;
-	s.running = false;
-	++s.generation;
+	{
+		std::unique_lock lock(s.mutex);
+		s.changed.wait(lock, [&s]() { return s.activeThreads == 0; });
+		s.phase = Phase::Idle;
+		s.python.clear();
+		s.error.clear();
+		s.key.clear();
+		s.failedAtMs = 0;
+		s.running = false;
+		++s.generation;
+	}
+	// Losing probes are reaped after publication: wait for them (unlocked).
+	waitForIdleProbes();
+}
+
+void ExternalProcessStemSeparator::waitForDiscoveryProbesForTest()
+{
+	waitForIdleProbes();
 }
 
 void ExternalProcessStemSeparator::setDiscoveryHooksForTest(DiscoveryHooks hooks)

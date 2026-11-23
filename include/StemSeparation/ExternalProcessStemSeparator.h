@@ -26,6 +26,9 @@
 
 //! Defined when the non-blocking discovery service below exists (tests use it).
 #define LMMS_STEM_PYTHON_DISCOVERY_SERVICE 1
+//! Defined when discovery publishes the winner before lower-priority probes end
+//! (tests then settle those probes before counting them).
+#define LMMS_STEM_PYTHON_EARLY_PUBLISH 1
 
 #include <functional>
 
@@ -70,7 +73,9 @@ public:
 	// /usr/local/bin/python3. All candidates are probed CONCURRENTLY, each with
 	// the full deadline (5 s), and the highest-priority one that imports
 	// onnxruntime wins - a slow or hanging candidate cannot starve a later one.
-	// BLOCKS until every probe finished; each call runs a fresh discovery (no
+	// BLOCKS only until the winner is settled, i.e. every higher-priority
+	// candidate has failed; lower-priority probes are then cancelled (child
+	// killed) and reaped in the background. Each call runs a fresh discovery (no
 	// cache). For the CLI and tests: never call it from the GUI thread.
 	static QString locatePython(QString* error = nullptr);
 
@@ -126,8 +131,12 @@ public:
 	//! Waits for any running discovery, forgets the cached result, then swaps the
 	//! hooks (so no probe thread reads them while they change).
 	static void setDiscoveryHooksForTest(DiscoveryHooks hooks);
-	//! Waits for any running discovery and clears the cached result.
+	//! Waits for any running discovery and its background probes, then clears
+	//! the cached result.
 	static void resetPythonDiscoveryForTest();
+	//! Waits until no probe thread is running (cancelled losers included),
+	//! without resetting anything.
+	static void waitForDiscoveryProbesForTest();
 #endif
 
 	// Discovery order: LMMS_STEM_CLI, the build-time source path, then

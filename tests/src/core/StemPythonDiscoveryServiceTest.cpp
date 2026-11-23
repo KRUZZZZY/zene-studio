@@ -38,6 +38,7 @@
 #include <atomic>
 #include <future>
 #include <initializer_list>
+#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -103,6 +104,23 @@ private:
 };
 
 constexpr int CandidatesWithoutEnv = 3; // /usr/bin/python3, python3, /usr/local/bin/python3
+
+//! Discovery publishes the winner while lower-priority probes may still run
+//! (cancelled in the background). Wait for them before counting probe calls.
+void settleProbes()
+{
+#ifdef LMMS_STEM_PYTHON_EARLY_PUBLISH
+	ExternalProcessStemSeparator::waitForDiscoveryProbesForTest();
+#endif
+}
+
+//! A probe held open by a closed gate; shared with the hook so a probe thread
+//! that outlives a failing assertion still has valid state to touch.
+struct HeldProbe
+{
+	Gate gate;
+	std::atomic<bool> returned{ false };
+};
 
 } // namespace
 
@@ -170,6 +188,7 @@ private slots:
 		state = ExternalProcessStemSeparator::pythonDiscoveryState();
 		QVERIFY(state.phase == ExternalProcessStemSeparator::PythonDiscoveryPhase::Found);
 		QCOMPARE(state.python, python);
+		settleProbes();
 		QCOMPARE(calls.load(), CandidatesWithoutEnv);
 #else
 		QFAIL("no non-blocking discovery service");
@@ -195,6 +214,7 @@ private slots:
 		QString error;
 		QVERIFY(ExternalProcessStemSeparator::waitForPythonDiscovery(&error).isEmpty());
 		QVERIFY2(!error.isEmpty(), "a failed discovery says why");
+		settleProbes();
 		const int firstRun = calls.load();
 		QCOMPARE(firstRun, CandidatesWithoutEnv);
 
@@ -203,16 +223,19 @@ private slots:
 		QVERIFY(state.phase == ExternalProcessStemSeparator::PythonDiscoveryPhase::Failed);
 		QCOMPARE(state.error, error);
 		QVERIFY(ExternalProcessStemSeparator::waitForPythonDiscovery().isEmpty());
+		settleProbes();
 		QCOMPARE(calls.load(), firstRun);
 
 		// Just short of the delay: still cached.
 		clockMs += 9999;
 		QVERIFY(ExternalProcessStemSeparator::waitForPythonDiscovery().isEmpty());
+		settleProbes();
 		QCOMPARE(calls.load(), firstRun);
 
 		// Past the 10 s delay: discovered again.
 		clockMs += 2;
 		QVERIFY(ExternalProcessStemSeparator::waitForPythonDiscovery().isEmpty());
+		settleProbes();
 		QCOMPARE(calls.load(), 2 * firstRun);
 #else
 		QFAIL("no non-blocking discovery service");
@@ -241,17 +264,71 @@ private slots:
 
 		qputenv("LMMS_STEM_PYTHON", first.toUtf8());
 		QCOMPARE(ExternalProcessStemSeparator::waitForPythonDiscovery(), first);
+		settleProbes();
 		const int firstRun = calls.load();
 		QCOMPARE(firstRun, CandidatesWithoutEnv + 1);
 
 		QCOMPARE(ExternalProcessStemSeparator::waitForPythonDiscovery(), first);
 		QVERIFY(ExternalProcessStemSeparator::pythonDiscoveryState().phase
 			== ExternalProcessStemSeparator::PythonDiscoveryPhase::Found);
+		settleProbes();
 		QCOMPARE(calls.load(), firstRun); // served from the cache
 
 		qputenv("LMMS_STEM_PYTHON", second.toUtf8());
 		QCOMPARE(ExternalProcessStemSeparator::waitForPythonDiscovery(), second);
+		settleProbes();
 		QCOMPARE(calls.load(), 2 * firstRun); // a new value, a new discovery
+#else
+		QFAIL("no non-blocking discovery service");
+#endif
+	}
+
+	/*! The preferred interpreter is published as soon as it is settled: with
+	 *  /usr/bin/python3 working at once and the lower-priority `python3` held
+	 *  open, readiness (what stem.get_state waits on) must not wait for the held
+	 *  probe. Before the fix the held probe held the run for its whole deadline,
+	 *  so discoveredPython() ran into its own bound and returned empty. The
+	 *  closed gate (not a clock) is what keeps the loser running. */
+	void readinessDoesNotWaitForALosingLowerPriorityProbe()
+	{
+#ifdef LMMS_STEM_PYTHON_DISCOVERY_SERVICE
+		EnvironmentGuard guard({ "LMMS_STEM_PYTHON", "LMMS_STEM_PYTHON_PROBE_MS" });
+		qunsetenv("LMMS_STEM_PYTHON");
+		qunsetenv("LMMS_STEM_PYTHON_PROBE_MS");
+		const QString preferred = QStringLiteral("/usr/bin/python3");
+		const QString held = QStringLiteral("python3");
+
+		const auto heldProbe = std::make_shared<HeldProbe>();
+		ExternalProcessStemSeparator::setDiscoveryHooksForTest({
+			[heldProbe, preferred, held](const QString& candidate, int)
+			{
+				if (candidate == preferred) { return true; }
+				if (candidate == held)
+				{
+					heldProbe->gate.wait();
+					heldProbe->returned = true;
+				}
+				return false;
+			},
+			{}
+		});
+
+		QString error;
+		const QString python = ExternalProcessStemSeparator::discoveredPython(&error);
+		const bool heldReturnedAtPublish = heldProbe->returned.load();
+
+		// Release the loser before asserting, so a failure cannot strand it.
+		heldProbe->gate.open();
+		settleProbes();
+
+		QVERIFY2(python == preferred,
+			"readiness waited for a losing lower-priority probe instead of publishing "
+			"the preferred interpreter");
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QVERIFY2(!heldReturnedAtPublish,
+			"the preferred interpreter was only published after the held probe returned");
+		QVERIFY(ExternalProcessStemSeparator::pythonDiscoveryState().phase
+			== ExternalProcessStemSeparator::PythonDiscoveryPhase::Found);
 #else
 		QFAIL("no non-blocking discovery service");
 #endif

@@ -54,8 +54,9 @@ per-process discovery service (`src/core/StemPythonDiscovery.cpp`). A discovery
 run probes every candidate (`LMMS_STEM_PYTHON`, `/usr/bin/python3`, `python3`,
 `/usr/local/bin/python3`) concurrently, each with the full 5 s deadline (the
 child is killed at it), and the highest-priority candidate that imports
-`onnxruntime` wins - decided only after every higher-priority candidate has
-finished. A hanging or slow interpreter therefore neither holds the caller for
+`onnxruntime` wins - published as soon as every higher-priority candidate has
+failed, without waiting for the lower-priority probes, which are cancelled (the
+child is killed) and reaped in the background. A hanging or slow interpreter therefore neither holds the caller for
 the old per-candidate timeouts (5 s to start plus 30 s to import, four
 candidates) nor starves a fallback that needs a couple of seconds to cold-import
 `onnxruntime`. The probes run on the service's own threads (started in the

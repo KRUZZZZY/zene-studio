@@ -4,6 +4,8 @@ FIXED
 
 new-p15-64: FIXED
 
+This is round 4. Its changes are in the section "Round 4" below; the round-3 text after it is still accurate except where round 4 says otherwise.
+
 ## The defect (real)
 
 On the base revision, the default constructor ran `m_python(... locatePython())`
@@ -25,7 +27,81 @@ This round replaces the sequential search with **parallel probes plus a cached
 per-process discovery service**. The design is the one in the diagnostic
 checkpoint, with one deliberate deviation, explained below.
 
-## The fix (current lines)
+## Round 4: the reviewer's early-publish regression, and the fix
+
+Review of round 3 found that `runParallelDiscovery` called `get()` on every future
+in turn. When `/usr/bin/python3` (higher priority) had already succeeded and
+`python3` (lower priority) hung, readiness still waited out the hanging probe's
+5 s deadline. The `ControlStemSupport.cpp:419` readiness path waited for it too.
+
+Fix (`src/core/StemPythonDiscovery.cpp`):
+
+* Each candidate is probed on its own detached thread. The thread holds a
+  `std::shared_ptr<DiscoveryRun>` (per-candidate result, mutex, condition variable,
+  `cancelled` flag) and writes its result there (`startProbe`, `:249`).
+* `runParallelDiscovery` (`:261`) waits only until `settledWinner` (`:219`) can
+  decide: the first `Works` with no `Running` entry before it, or all `Fails`. It
+  then publishes at once and sets `cancelled` (`:282`).
+* Each losing probe polls `cancelled` every `PythonProbeCancelPollMs` (50 ms,
+  `:51`) in `awaitProbe` (`:76`). When it is set, the probe kills and reaps its
+  child on its own thread, so readiness is never delayed.
+* A process-wide live-probe counter lets `resetPythonDiscoveryForTest` and
+  `waitForDiscoveryProbesForTest` (`:487`) wait until no probe thread still reads
+  the test hooks.
+* Each probe still gets the full 5 s deadline, so the round-2 cold-fallback fix
+  is kept.
+
+Regression: `tests/src/core/StemPythonDiscoveryServiceTest.cpp:292`
+`readinessDoesNotWaitForALosingLowerPriorityProbe`.
+
+* `/usr/bin/python3` works at once. `python3` is held open on a gate the test
+  controls.
+* The test calls `discoveredPython()`, which is the readiness path of
+  `stem.get_state`/`stem.start`.
+* It asserts that the preferred interpreter is returned while the held probe has
+  provably not returned, because its gate opens only afterwards.
+* There are no sleeps and no clock reads. The cold-fallback test
+  (`StemPythonDiscoveryTest.cpp:309`) is kept unchanged.
+
+Existing assertions that count probes now call `settleProbes()`, which is
+`waitForDiscoveryProbesForTest()`, before counting, because losing probes finish
+after the result is published. No assertion was removed or loosened.
+
+### Round 4 commands and EXIT codes (logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p15-64.r4/logs)
+
+| step | command | EXIT | log |
+|---|---|---|---|
+| build | `cmake --build build -j4 --target zene StemPythonDiscoveryTest StemPythonDiscoveryServiceTest StemSplitPipelineTest StemSplitMenuTest StemJobManagerTest` | 0 | build-1.log |
+| green x5 | `cd build/tests && ctest -R StemPythonDiscovery --output-on-failure` | 0 each (`100% tests passed out of 2`) | test-2.log, test-2b..2e.log |
+| family | `cd build/tests && ctest -R Stem --output-on-failure` | 0 (`100% tests passed out of 17`; ControlStemCommands and StemQualityBench skipped, code 77) | test-3.log |
+| save patch | `git diff -- include/StemSeparation/ExternalProcessStemSeparator.h src/core/StemPythonDiscovery.cpp > fix.patch` (2 files) | 0 | fix.patch |
+| revert | `git apply -R fix.patch` | 0 | |
+| red build | `cmake --build build -j4 --target zene StemPythonDiscoveryTest StemPythonDiscoveryServiceTest` | 0 | build-4-red.log |
+| **red** | `cd build/tests && ctest -R StemPythonDiscovery --output-on-failure` | **8** (`50% tests passed, 1 tests failed out of 2`) | test-5-red.log |
+| reapply | `git apply fix.patch` | 0 | |
+| green build | same build as red | 0 | build-6-green.log |
+| **green** | `cd build/tests && ctest -R StemPythonDiscovery --output-on-failure` | **0** (`100% tests passed out of 2`) | test-7-green.log |
+| gates | `python3 -I /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 (`RESULT: PASS`, all 8 rows PASS) | gates-8.log |
+
+Red output (test-5-red.log). On the round-3 code, readiness hit its own 7 s
+bound (`7.10 sec`) waiting for the held probe:
+
+```
+FAIL!  : StemPythonDiscoveryServiceTest::readinessDoesNotWaitForALosingLowerPriorityProbe() 'python == preferred' returned FALSE. (readiness waited for a losing lower-priority probe instead of publishing the preferred interpreter)
+   Loc: [../../tests/src/core/StemPythonDiscoveryServiceTest.cpp(324)]
+```
+
+Delegation (round 4):
+* Sonnet: implemented the early-publish run, the cancellable probe, the
+  live-probe counter, the new test and the `settleProbes()` insertions, from my
+  design.
+* Haiku: the build, the five green repeats, the family run, red/green and the
+  gates.
+* Me: the diagnosis, the design, the review of the diff, checking the red log
+  (Haiku misreported it as 2 of 2 failing; the log shows 1 of 2), and this report.
+
+## Round 3 design (still in place, extended by round 4)
+
 
 * `src/core/StemPythonDiscovery.cpp` (new file; discovery moved here so that
   `ExternalProcessStemSeparator.cpp` stays under 500 lines):
@@ -192,14 +268,23 @@ Delegation:
 
 ## Self-check
 
-1. **Red without the fix, green with it.** Red: `ctest -R StemPythonDiscovery`
+1. **Red without the fix, green with it.** Round 4: red `ctest -R
+   StemPythonDiscovery` EXIT=8 with only `readinessDoesNotWaitForALosingLowerPriorityProbe`
+   failing (test-5-red.log, r4); green EXIT=0 (test-7-green.log, r4), stable over
+   five runs (test-2*.log). Round 3: Red: `ctest -R StemPythonDiscovery`
    EXIT=8 (test-23-red.log), four runtime `FAIL!` lines quoted above. Green: EXIT=0
    (test-25-green.log). The two `git apply` commands both exited 0.
-2. **Deterministic.** The tests contain no sleep, `qWait` or wall-clock read
+2. **Deterministic.** Round 4's test holds the losing probe on a gate that the
+   test opens only after readiness has returned, so "published before the loser
+   finished" holds by construction rather than by timing. Probe counts are read
+   only after `waitForDiscoveryProbesForTest()`. Round 3: The tests contain no sleep, `qWait` or wall-clock read
    (`rg -n "sleep|qWait|steady_clock"` on both test files finds only the comments
    saying so). The pending state is held by a gate the test controls. The 1 ms
    bounded wait runs with that gate closed, so its result is fixed.
-3. **Cause and siblings.** Every path into discovery was changed:
+3. **Cause and siblings.** Round 4 changes only the run underneath every
+   discovery path (`locatePython`, `waitForPythonDiscovery`, `discoveredPython`
+   via `ControlStemSupport.cpp:401,419`, and `separate`/`isAvailable` through the
+   service), so all of them publish early. Round 3: Every path into discovery was changed:
    * the constructor (`:145`);
    * `isAvailable` (`:201`);
    * `separate` (worker thread, `waitForPythonDiscovery`);
