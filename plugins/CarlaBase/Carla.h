@@ -57,6 +57,7 @@
 #include "AutomatableModel.h"
 #include "Instrument.h"
 #include "CarlaMidiHandoff.h"
+#include "CarlaRenderBuffers.h"
 #include "InstrumentView.h"
 #include "SubWindow.h"
 
@@ -208,6 +209,11 @@ signals:
     void paramsUpdated();
 
 protected:
+    //! cluster new-p10-545: builds the instrument over the given native Carla plug-in descriptor. The public
+    //! constructor passes Carla's Patchbay or Rack plug-in; a test passes a stand-in to drive playImpl().
+    CarlaInstrument(InstrumentTrack* const instrumentTrack, const Descriptor* const descriptor, const bool isPatchbay,
+        const NativePluginDescriptor* nativeDescriptor, const Descriptor::SubPluginFeatures::Key* key, bool playNow);
+
     //! Q050-481.1: the Carla Rack instance underneath, for a single-plug-in host.
     NativePluginHandle nativeHandle() const { return fHandle; }
     const NativePluginDescriptor* nativeDescriptor() const { return fDescriptor; }
@@ -236,6 +242,10 @@ private:
     const NativePluginDescriptor* fDescriptor;
 
     NativeTimeInfo  fTimeInfo;
+
+    //! Planar scratch for Carla's process call, allocated when the instrument is built (cluster new-p10-545).
+    //! playImpl() used period-sized stack arrays here, which put an audio-device period on the render thread's stack.
+    CarlaRenderBuffers m_renderBuffers;
 
     //! MIDI hand-off shared by handleMidiEvent() and playImpl(); the latter stages it at Carla's process boundary.
     CarlaMidiHandoff<kMaxMidiEvents> fMidiHandoff;

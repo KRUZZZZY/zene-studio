@@ -747,6 +747,9 @@ set(LMMS_TESTS
 	src/core/MidiHandoffQueueTest.cpp
 	# Carla's plugin boundary uses the production MIDI encoder and fixed-capacity drain with a native API stand-in.
 	src/plugins/CarlaMidiHandoffTest.cpp
+	# cluster new-p10-545: the preallocated planes behind CarlaInstrument::playImpl(): capacity, clipping,
+	# silent planes, no allocation after construction, and a maximum period on a small thread stack.
+	src/plugins/CarlaRenderBuffersTest.cpp
 	# The SF2 player's note path: the note hand-off from the note stage to the
 	# render stage must not allocate on the audio thread.
 	src/plugins/Sf2PlayerRealtimeTest.cpp
@@ -2429,6 +2432,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			"${CMAKE_SOURCE_DIR}/plugins/CarlaBase/carla/source/includes"
 			"${CMAKE_SOURCE_DIR}/plugins/CarlaBase/CarlaConfig"
 		)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "CarlaRenderBuffersTest")
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/plugins/CarlaBase")
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "MidiHandoffQueueTest")
 		# The structural test of pop() reads the header text.
@@ -6296,6 +6302,30 @@ if(TARGET carlabase)
 		LMMS_TESTING
 		CARLA_HEADER_PATH="${CMAKE_SOURCE_DIR}/plugins/CarlaBase/Carla.h")
 	set_target_properties(CarlaParamFloatModelTest PROPERTIES ENABLE_EXPORTS ON)
+	# cluster new-p10-545: drives the production CarlaInstrument::playImpl() over a fake native Carla plug-in
+	# (passed through CarlaInstrument's descriptor constructor), so the render planes and a maximum period on a
+	# tiny thread stack are observed on the shipping code, not on a helper.
+	add_executable(CarlaPlayImplTest src/plugins/CarlaPlayImplTest.cpp)
+	add_test(NAME CarlaPlayImplTest COMMAND CarlaPlayImplTest)
+	set_tests_properties(CarlaPlayImplTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	target_include_directories(CarlaPlayImplTest PRIVATE
+		$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+		${CMAKE_SOURCE_DIR}/plugins/CarlaBase
+		${CMAKE_SOURCE_DIR}/plugins/CarlaBase/carla/source
+		${CMAKE_SOURCE_DIR}/plugins/CarlaBase/carla/source/includes
+		${CMAKE_SOURCE_DIR}/plugins/CarlaBase/carla/source/utils
+		${CMAKE_SOURCE_DIR}/plugins/CarlaBase/carla/source/backend
+		${CMAKE_SOURCE_DIR}/plugins/CarlaBase/CarlaConfig
+		${CMAKE_BINARY_DIR}/plugins/CarlaBase)
+	target_static_libraries(CarlaPlayImplTest PRIVATE lmmsobjs)
+	target_link_libraries(CarlaPlayImplTest PRIVATE
+		carlabase
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY})
+	target_compile_features(CarlaPlayImplTest PRIVATE cxx_std_20)
+	target_compile_definitions(CarlaPlayImplTest PRIVATE LMMS_TESTING)
+	add_dependencies(CarlaPlayImplTest carlabase)
 	# Q050-481.3 r3: a legacy VST2 dump never applies more entries than the plug-in has parameters.
 	add_executable(CarlaVst2LegacyStateTest src/plugins/CarlaVst2LegacyStateTest.cpp ${CMAKE_SOURCE_DIR}/plugins/CarlaBase/CarlaVst2Legacy.cpp)
 	add_test(NAME CarlaVst2LegacyStateTest COMMAND CarlaVst2LegacyStateTest)

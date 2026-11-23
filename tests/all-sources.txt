@@ -1069,6 +1069,7 @@ plugins/CarlaBase/Carla.cpp
 plugins/CarlaBase/Carla.h
 plugins/CarlaBase/CarlaConfig/config.h
 plugins/CarlaBase/CarlaMidiHandoff.h
+plugins/CarlaBase/CarlaRenderBuffers.h
 plugins/CarlaBase/CarlaVst2Discovery.cpp
 plugins/CarlaBase/CarlaVst2Discovery.h
 plugins/CarlaBase/CarlaVst2Legacy.cpp
@@ -3598,6 +3599,8 @@ tests/src/plugins/BitInvaderLoadSettingsTest.cpp
 tests/src/plugins/BusesTestInstrument.cpp
 tests/src/plugins/CarlaMidiHandoffTest.cpp
 tests/src/plugins/CarlaParamFloatModelTest.cpp
+tests/src/plugins/CarlaPlayImplTest.cpp
+tests/src/plugins/CarlaRenderBuffersTest.cpp
 tests/src/plugins/CarlaVst2LegacyStateTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp
 tests/src/plugins/ClapEffectIntegrationTest.cpp
