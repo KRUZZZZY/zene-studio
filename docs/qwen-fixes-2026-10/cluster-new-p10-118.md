@@ -246,6 +246,14 @@ product file, so `tests/fork-sources.txt` is untouched.
   `theLfoResetPutsEveryLfoBackToTheSamePhase`).
 - **No undo, command or control-registry change:** no command file, no
   `ControlCommandsSnapshot` regeneration, no new product file.
+- **No sibling command is affected.** This fix touches no command file, no
+  `ControlRegistry`/`ControlCommands` source and no reversibility table, so the
+  `control.*`/`app.*`/`arrangement.*` ids that `submit_check.py` lists as siblings come
+  from earlier commits on this branch, not from this change: `git show --stat db0df4af0f`
+  touches only the two `EnvelopeAndLfoParameters` files, one test file, the two
+  rt-safety list files, `tests/upstream-modifications.txt` and this report. The
+  `ControlCommandsSnapshot` canary is therefore untouched, and the fix adds no undo
+  step and no user-visible command.
 - **Verdict basis:** the finding's line numbers had moved but the code it describes was
   present at HEAD, and the ledger carried it as debt; both are cited above with the
   measurements that show the lock before and after.
