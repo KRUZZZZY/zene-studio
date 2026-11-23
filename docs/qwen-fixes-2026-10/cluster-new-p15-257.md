@@ -219,6 +219,14 @@ unchanged.
   `ControlCommands` change), so `ControlCommandsSnapshot` is unaffected.
 - **Verdict is not ALREADY-FIXED or FALSE-POSITIVE**, so no code-reference defence is needed;
   the "before" code is quoted above with `file:line`.
+- **Sibling commands (`app.*`, `arrangement.*` in the pre-submit ASK).** This cluster touches
+  no command file and adds no command id: the commit is
+  `src/core/AudioEngineWorkerThread.cpp`, `tests/src/core/RenderJobQueueTest.cpp`,
+  `tests/upstream-modifications.txt` and this report (`git show --stat 6ee307e9c2`). The
+  command-file changes the check lists come from the other clusters already merged into this
+  branch's base (`git diff --name-only $(git merge-base HEAD $(cat $HOME/.local/share/zene-bunny-fix/qwen/FIX-BASE))..HEAD`
+  is 431 files wide), so `tools/mcp-zene-control/zene_control/commands_snapshot.json` is
+  unchanged by this fix and no command's reversibility class moves.
 
 ## Other findings
 
