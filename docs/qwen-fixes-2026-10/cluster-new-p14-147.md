@@ -153,20 +153,56 @@ RESULT: PASS
 
 ## Self-check
 
-- **A regression test that fails without the product change**: `fix.patch` reverse step above,
-  EXIT=8 with `Actual 1 / Expected 2`, then apply + rebuild, EXIT=0. Both runs are in the log
-  folder and in `proof.json` (`red_exit` 8, `green_exit` 0).
-- **The cause, and its siblings**: the only consumer of the RX ring is `receivePeriod()`
-  (`m_rx.read` in `addFromRing`, `m_rx.skip` in this branch and the two epoch/rate flushes).
-  The rate-change paths already dropped everything (`m_rx.skip(m_rx.fill())`), so this branch
-  is the one place partial frames survived; nothing else reads or assumes the stale frames.
-- **No collateral damage**: one counter and one ring drop, no API, no format, nothing saved
-  or loaded changes; every other test in the binary passes unchanged.
-- **Realtime / undo / commands**: `skip()` is a consumer counter update on a preallocated
-  ring (no allocation, lock, wait or log - `audioThreadAllocatesNothing` = 0). No undo step
-  and no control command added, so `ControlCommandsSnapshot` cannot move.
-- **Registration and gates**: no new file; the changed files are already in
-  `tests/fork-sources.txt`. `feature_check.py` prints `RESULT: PASS`, EXIT=0.
+Answers to the pre-submit check's ASK items, in its order:
+
+1. **The regression test FAILS with the product change reverted and PASSES with it.**
+   Reverted: `git apply -R .../fix.patch` EXIT=0, rebuild EXIT=0, `ctest -V -R
+   '^LinkAudioStreamTest$'` **EXIT=8**, `Actual (mix.front().left()): 1` vs
+   `Expected (2.f): 2` (`test-6-revert.log`). Applied: `git apply .../fix.patch` EXIT=0,
+   rebuild EXIT=0, ctest **EXIT=0**, `PASS :
+   LinkAudioStreamTest::anUnderrunDiscardsTheStalePartialFrames()`, `Totals: 24 passed, 0
+   failed` (`test-7-reapply.log`). Identical results came from the RED-first sequence
+   (`test-2-red.log` EXIT=8, `test-5-green.log` EXIT=0).
+2. **Deterministic.** No socket, no thread, no sleep, no elapsed clock. It drives the
+   existing `LinkAudioStreamTestAccess` seams `enableReceiver` (sets `latencyMs` and turns
+   the receiver on) and `writeRx` (the ring's producer side directly), and injects every
+   input: 48 kHz, period 480, `latencyMs = 5` (so the target clamps to 960), 1000 frames of
+   `1.0`, then 960 frames of `2.0`. The only timing is the call order of `process()`.
+3. **At the cause and complete.** `receivePeriod()` is the only consumer of the RX ring
+   (`src/core/LinkAudioStream.cpp:245-276`: `addFromRing`'s `m_rx.read`, this branch's
+   `m_rx.skip`, and the two epoch/rate flushes). The rate-change paths already dropped the
+   whole ring (`m_rx.skip(m_rx.fill())`, lines 237 and 248, and `onRateChanged` line 294), so
+   the underrun branch was the one place stale frames survived; all three now leave an empty
+   ring and `m_primed == false`. The producer side (`acceptPacket`/`insertGapSilence`) is
+   unaffected: the drop happens on the consumer's counter, so a frame written concurrently
+   is still counted by `left = m_rx.fill()` and then played. Nothing else reads `m_primed`
+   or assumes frames survive an underrun (`report()` only mirrors it into `primed`).
+4. **No collateral damage.** The change drops one bounded quantity of stale audio and adds
+   no limit, threshold or validation, so no caller can be newly rejected. Nothing on the
+   save/load path, the wire format, the config schema or the report's shape changed: the
+   report gains no field and `underruns` keeps its meaning (periods that could not fill).
+   The whole binary passes unchanged (24 tests, 0 failed), including the loopback round
+   trip, the ring-exhaustion and the sample-rate-change scenarios.
+5. **ALREADY-FIXED / FALSE-POSITIVE:** not the verdict here. The verdict is **REAL** and
+   **FIXED**, with the code evidence at `src/core/LinkAudioStream.cpp:263-272` (before the
+   change: the branch counted the underrun, cleared `m_primed` and left `fill` frames in the
+   ring, so `left = m_rx.fill()` reported them and the next period played them).
+6. **Sibling commands in the command files I changed:** none. No command file is in this
+   commit (`git show --stat d9303b77b3` lists only `docs/LINK-AUDIO.md`,
+   `include/LinkAudioStream.h`, `src/core/LinkAudioStream.cpp` and two test files), so
+   `app.*`, `arrangement.*` and the rest of the `link.audio_*` surface are untouched by
+   construction. `link.audio_set_enabled` only writes `m_latencyMs`/`m_receiveOn`/`m_epoch`,
+   whose meaning the fix preserves (the same target is computed from the same inputs), and
+   `commandsAreRegisteredAndUndoable` still passes.
+7. **Realtime / undo / commands:** `AudioRing::skip()` is the consumer counter update on a
+   preallocated ring - no allocation, lock, wait or log, and `audioThreadAllocatesNothing`
+   still measures 0 `operator new` over 200 periods. No undo step and no control command
+   was added, so the `ControlCommandsSnapshot` canary cannot move.
+8. **Registration and gates:** no new file; the changed files are already listed in
+   `tests/fork-sources.txt` (788, 789, 1201, 2101, 2854, 2855).
+   `feature_check.py` prints `RESULT: PASS`, EXIT=0 (`gates-1.log`), and
+   `submit_check.py` prints `RESULT: PASS - submit`, EXIT=0 (`submit-1.log`).
+
 
 ## Other findings
 
