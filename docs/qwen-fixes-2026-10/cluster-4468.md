@@ -190,11 +190,33 @@ fix that is on the branch": `plugins/SlicerT/SlicerT.cpp:402-419` for the handof
 poll, plus the regression test at `tests/src/core/SlicerTPlayheadTest.cpp:289` which
 fails in 2.6 s if anyone puts the emission back.
 
-**6. "Sibling commands in the command files you changed."** None changed. This session
-touches only `docs/`, so the ControlCommandsSnapshot canary does not move.
+**6. "Sibling commands in the command files you changed."** No command file changed:
+this session's only commit touches `docs/qwen-fixes-2026-10/cluster-4468.md`, so the
+ControlCommandsSnapshot canary does not move and no command group is affected. The ids
+the check prints (`app.*`, `arrangement.*`, ...) come from the train's diff between
+`050/m0-train-35` (FIX-BASE) and HEAD, not from this session.
 
-**7. Completion check.** `submit_check.py` output is appended below this line after it
-was run (see the last section of this file).
+**7. Completion check.**
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 4468`
+(`logs/submit-1.log`) exited 0 with `RESULT: PASS - submit`:
+
+```
+PRE-SUBMIT CHECK for 4468
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-4468.md
+  PASS  tests added or changed
+  PASS  new test files registered in tests/CMakeLists.txt
+  PASS  gates (feature_check.py)
+RESULT: PASS - submit
+```
+
+The proof manifest is `logs/proof.json`: a `code-reference` to
+`plugins/SlicerT/SlicerT.cpp:402` plus the `regression-test` artifact for
+`SlicerTPlayheadTest::aSoundingSliceNoteEmitsItsPlayheadFromTheGuiThreadOnly` with
+`red_exit` 8 and `green_exit` 0. The red run is reproducible with
+`logs/unfix.patch`, which is the one-line product edit this session made and reverted
+(`git apply .../unfix.patch`, rebuild `slicert`, run the test).
 
 ## Other findings
 
