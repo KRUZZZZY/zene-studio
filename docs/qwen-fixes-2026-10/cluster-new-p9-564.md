@@ -150,7 +150,7 @@ newline.
 | `cmake --build build --target RecordingRealtimeTest -j4` | 0 | `logs/build-1.log` |
 | `cd build/tests && ctest -R "^RecordingRealtimeTest$" --output-on-failure` | 0 (1/1 passed, 12.22 s) | `logs/test-1.log` |
 | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 (`RESULT: PASS`, 8 PASS rows, 0 FAIL) | `logs/feature-check-1.log` |
-| `git add docs/qwen-fixes-2026-10/cluster-new-p9-564.md`, `git commit`, `git status --short`, `git rev-parse HEAD` | 0, 0, 0, 0 | `logs/git-record-1.log` (written after the first commit) and `logs/git-record-2.log` (written after the commit that carries this line; the labelled exit codes and SHA cannot appear inside the commit they describe) |
+| `git add docs/qwen-fixes-2026-10/cluster-new-p9-564.md`, `git commit`, `git status --short`, `git rev-parse HEAD` | 0, 0, 0, 0 | `logs/git-record-N.log`, one per docs commit, written after the commit it describes (a labelled exit code or SHA cannot appear inside the commit it is produced by) |
 
 The probes are hand-compiled translation units in the log folder, not part of the build; they reuse the
 `-D`/`-I`/`-isystem` flags CMake emits for `src/core/audio/AudioSampleRecorder.cpp`.
