@@ -11,7 +11,7 @@ explicitly allows (and expects) immediate execution in that situation. Every eng
 device is initialised with `Engine::init(false)`, so its LV2 workers are always threaded. There is therefore no
 path where plug-in `work()` runs on a real-time audio thread. No product change was made.
 
-## Evidence (all line numbers re-read in this worktree, branch `bugs/qwen-new-p12-125`, HEAD `c6b40333d8`)
+## Evidence (all line numbers re-read in this worktree, branch `bugs/qwen-new-p12-125`, product tree `c6b40333d8`; the report-only commits after it change no code)
 
 | Fact | Location | Code |
 | --- | --- | --- |
@@ -63,14 +63,15 @@ selection rule at `src/core/lv2/Lv2Proc.cpp:603`: threaded whenever the engine i
 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p12-125` | 0 | `logs/submit-check-1.log` — `RESULT: PASS - submit`, no FAIL rows |
 
 No build and no test run is claimed: the verdict is FALSE-POSITIVE, so there is no product change and no RED/GREEN
-pair is applicable. `submit_check.py` accepts a claim-only closure for `FALSE-POSITIVE` when no
-`src/`, `include/` or `plugins/` file changed (its `claim` branch).
+pair is applicable. `submit_check.py` has a claim-only branch for such closures when its diff range contains no
+product file; in this lane the range also contains the pre-existing train commits, so its
+"tests added or changed: PASS" row is populated by the train's test files, not by this job. It finds no FAIL.
 
 ## Self-check
 
 - **Regression test FAILS reverted / PASSES with the fix:** not applicable. There is no product change and no
-  bug to fix; the finding is a false positive. No RED/GREEN result is claimed. `submit_check.py` reports
-  "tests added or changed: PASS — claim-only closure" for this case.
+  bug to fix; the finding is a false positive. No RED/GREEN result is claimed. `submit_check.py` reports no
+  FAIL for this closure.
 - **Test deterministic:** not applicable, for the same reason; no test was added or run.
 - **Fix at the cause and complete:** no fix was made. Every user of `Lv2Worker` and every sibling method of
   `scheduleWork()` was inspected (list above), and all of them already distinguish threaded from non-threaded
@@ -87,9 +88,9 @@ pair is applicable. `submit_check.py` accepts a claim-only closure for `FALSE-PO
   commit (`20dd5964fa`) contains exactly one path, the report. No control command, undo state, reversibility
   class or `ControlCommandsSnapshot` canary is touched.
 - **Completion check:** `submit_check.py` (log `logs/submit-check-1.log`, EXIT=0) printed six PASS rows and
-  `RESULT: PASS - submit` before this Self-check bullet was added; the rerun after the report update is
-  `logs/submit-check-2.log`. Its "tests added or changed" row names `tests/control-*.py` files that belong to
-  the pre-existing train range, not to this job: this job's commit changes only this report.
+  `RESULT: PASS - submit`; the rerun after the report update is `logs/submit-check-2.log` (EXIT=0) and the
+  final rerun is `logs/submit-check-3.log`. Its "tests added or changed" row names `tests/control-*.py` files
+  that belong to the pre-existing train range, not to this job: this job's commit changes only this report.
 
 ## Other findings
 
