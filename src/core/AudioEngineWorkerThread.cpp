@@ -148,24 +148,68 @@ struct OverflowJob
  * dependencies it just satisfied, from inside the sender's doProcessing() - then took
  * that same path while the queue was still full, which nested one process() call per
  * link: a chain of dependent channels, or a wide fan-out that keeps the queue full, ran
- * the audio thread out of stack. A thread already draining the fallback now parks the
- * job here and the drain loop runs it in iteration, so the C++ stack stays one job deep
- * however long the chain is.
+ * the audio thread out of stack. A thread that is already draining the fallback parks the
+ * job here instead, and the drain loop runs it in iteration, so the C++ stack stays one
+ * job deep however long the chain or how wide the fan-out is.
  *
  * Preallocated and thread-local: no allocation, no lock and no wait on the audio thread.
- * Its capacity is the queue's own, so the fallback holds exactly as much work as the
- * queue it stands in for; work beyond that (a full queue plus JOB_QUEUE_SIZE jobs parked
- * here, i.e. more than 2 x JOB_QUEUE_SIZE jobs in one period) still runs on the spot,
- * which is the old path at a scale the queue itself no longer covers. Trivial fields
+ * `OverflowBankCount` banks of `OverflowBankCapacity` entries: a fan-out that fills one
+ * bank spills into the next, so parking still succeeds instead of running the job inside
+ * the frame of the job that queued it (round 1 ran it, and a chain hung off the first
+ * spilling successor nested again - measured 130 frames for a 16384-job fan-out plus a
+ * 128-link chain). With every bank full the fallback holds twice the queue it stands in
+ * for; only work beyond that - more than 3 x JOB_QUEUE_SIZE jobs live in one period, the
+ * queue full AND both banks full - still runs on the spot, because fixed storage cannot
+ * hold unbounded work and dropping or blocking would lose audio instead. Trivial fields
  * only, so a thread's copy is zero-initialised storage with no constructor to run. */
-struct OverflowDrainList
+constexpr std::size_t OverflowBankCapacity = AudioEngineWorkerThread::JobQueue::JOB_QUEUE_SIZE;
+constexpr std::size_t OverflowBankCount = 2;
+
+struct OverflowDrain
 {
-	OverflowJob pending[AudioEngineWorkerThread::JobQueue::JOB_QUEUE_SIZE];
-	std::size_t size;
+	OverflowJob pending[OverflowBankCount][OverflowBankCapacity];
+	//! Entries taken in each bank, pending[bank][0 ... size[bank] - 1].
+	std::size_t size[OverflowBankCount];
+	//! The bank parking and taking start from, so a drained bank is reused before another.
+	std::size_t bank;
 	bool draining;
 };
 
-thread_local OverflowDrainList tl_overflowDrain;
+thread_local OverflowDrain tl_overflowDrain;
+
+//! Park \a overflow in the first bank with room. False only when every bank is full.
+bool parkOverflowJob( OverflowDrain & drain, const OverflowJob & overflow )
+{
+	for( std::size_t i = 0; i < OverflowBankCount; ++i )
+	{
+		const std::size_t bank = ( drain.bank + i ) % OverflowBankCount;
+		if( drain.size[bank] < OverflowBankCapacity )
+		{
+			drain.bank = bank;
+			drain.pending[bank][drain.size[bank]++] = overflow;
+			return true;
+		}
+	}
+	return false;
+}
+
+//! Take the next pending job out of the first non-empty bank, freeing its slot. False when
+//! the fallback is empty. Taking before running is what keeps a chain one frame deep: the
+//! slot an entry leaves behind is the one its own successor is parked in.
+bool takeOverflowJob( OverflowDrain & drain, OverflowJob & job )
+{
+	for( std::size_t i = 0; i < OverflowBankCount; ++i )
+	{
+		const std::size_t bank = ( drain.bank + i ) % OverflowBankCount;
+		if( drain.size[bank] > 0 )
+		{
+			drain.bank = bank;
+			job = drain.pending[bank][--drain.size[bank]];
+			return true;
+		}
+	}
+	return false;
+}
 
 //! Run one overflow job the way the fallback always has - inside a RealtimeScope, and
 //! counted complete for its queue - but without letting the stack grow with the chain.
@@ -177,30 +221,46 @@ void processOverflowJob( const OverflowJob & overflow )
 }
 
 //! Drain the queue-full fallback iteratively: run \a job, then every job it queues while
-//! the queue is full, until none is left. A nested call only appends to the list.
+//! the queue is full, until none is left. A nested call only parks the job.
 void runOverflowFallback( ThreadableJob * job, std::atomic_size_t & done )
 {
-	OverflowDrainList & list = tl_overflowDrain;
-	if( list.draining )
+	OverflowDrain & drain = tl_overflowDrain;
+	const OverflowJob overflow{ &done, job };
+	if( drain.draining )
 	{
-		if( list.size < AudioEngineWorkerThread::JobQueue::JOB_QUEUE_SIZE )
+		if( parkOverflowJob( drain, overflow ) )
 		{
-			list.pending[list.size++] = OverflowJob{ &done, job };
 			return;
 		}
-		// The fallback's storage is full too (see OverflowDrainList): run this one here.
-		processOverflowJob( OverflowJob{ &done, job } );
+		// Every bank is full: make room with pending work instead of running the job inside
+		// the frame that queued it. The entry taken here frees its slot before it runs, so
+		// whatever IT queues is parked again rather than nested - which is what keeps the
+		// depth constant when a fan-out fills the fallback and then queues a chain from the
+		// same frame (measured 129 frames before this, 2 with it).
+		OverflowJob displaced{ nullptr, nullptr };
+		if( takeOverflowJob( drain, displaced ) )
+		{
+			processOverflowJob( displaced );
+			if( parkOverflowJob( drain, overflow ) )
+			{
+				return;
+			}
+		}
+		// Still no room: run this one here, which is the pre-fix path at a scale the queue
+		// and both banks together no longer cover.
+		processOverflowJob( overflow );
 		return;
 	}
 
-	list.draining = true;
-	processOverflowJob( OverflowJob{ &done, job } );
-	while( list.size > 0 )
+	drain.draining = true;
+	drain.bank = 0;
+	processOverflowJob( overflow );
+	OverflowJob next{ nullptr, nullptr };
+	while( takeOverflowJob( drain, next ) )
 	{
-		const OverflowJob next = list.pending[--list.size];
 		processOverflowJob( next );
 	}
-	list.draining = false;
+	drain.draining = false;
 }
 
 } // namespace

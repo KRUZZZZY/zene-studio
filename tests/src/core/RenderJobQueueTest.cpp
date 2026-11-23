@@ -194,6 +194,42 @@ private:
 	int& m_maxDepth;
 };
 
+//! Queues a whole list of successors from inside doProcessing() - the wide fan-out a
+//! mixer graph produces when one channel sends to many receivers - and records whether
+//! it nested, the same way ChainedOverflowJob does.
+class FanOutOverflowJob : public ThreadableJob
+{
+public:
+	FanOutOverflowJob(int& depth, int& maxDepth, std::vector<ThreadableJob*>& successors) :
+		m_depth(depth),
+		m_maxDepth(maxDepth),
+		m_successors(successors)
+	{
+	}
+
+	bool requiresProcessing() const override { return true; }
+
+	int runs = 0;
+	//! Queued after every successor, i.e. from the same frame that just filled the fallback.
+	ThreadableJob* trailing = nullptr;
+
+protected:
+	void doProcessing() override
+	{
+		++runs;
+		const int nested = ++m_depth;
+		if (nested > m_maxDepth) { m_maxDepth = nested; }
+		for (ThreadableJob* successor : m_successors) { AudioEngineWorkerThread::addJob(successor); }
+		if (trailing != nullptr) { AudioEngineWorkerThread::addJob(trailing); }
+		--m_depth;
+	}
+
+private:
+	int& m_depth;
+	int& m_maxDepth;
+	std::vector<ThreadableJob*>& m_successors;
+};
+
 //! Stop a test worker the way AudioEngine's own shutdown does (src/core/AudioEngine.cpp:
 //! quit(), then one startAndWaitForJobs() to wake the condition, then join()).
 //!
@@ -706,6 +742,164 @@ private slots:
 			qPrintable(QStringLiteral("the queue-full fallback nested %1 process() calls for a "
 				"%2-link chain; it must drain the chain iteratively, in one frame for the whole "
 				"chain instead of one nested frame per link").arg(maxDepth).arg(kLinks)));
+	}
+
+	//! The fallback must stay iterative when its OWN storage is full (cluster new-p15-257,
+	//! round 2). A wide fan-out fills it: one job queues more successors than the whole queue
+	//! can hold, so all of them are parked in the fallback. The successor that spilled first
+	//! used to be run inside the fan-out job's frame, and any successor IT queued nested one
+	//! frame deeper - the same recursion the fallback exists to remove, one burst later. This
+	//! case fills the queue and the entire fallback list, attaches a 128-link chain to the
+	//! successor that spills first, and asserts every job ran exactly once with doProcessing
+	//! never nested more than one deep. Single-threaded, no sleeps, no wall clock.
+	void queueOverflowStaysShallowWhenTheFallbackListIsFull()
+	{
+		AudioEngineWorkerThread::setDeterministicProcessing(true);
+		AudioEngineWorkerThread::resetJobQueue(
+			AudioEngineWorkerThread::JobQueue::OperationMode::Dynamic);
+
+		static OverflowFillerJob filler;
+		for (std::size_t i = 0; i < AudioEngineWorkerThread::JobQueue::JOB_QUEUE_SIZE; ++i)
+		{
+			AudioEngineWorkerThread::addJob(&filler);
+		}
+
+		// Twice the queue: the fallback's whole list (both banks), so nothing below has room
+		// that this fill did not take.
+		constexpr int kFanOut =
+			static_cast<int>(2 * AudioEngineWorkerThread::JobQueue::JOB_QUEUE_SIZE);
+		constexpr int kChainLinks = 128;
+		constexpr int kSpilling = static_cast<int>(AudioEngineWorkerThread::JobQueue::JOB_QUEUE_SIZE);
+
+		int depth = 0;
+		int maxDepth = 0;
+		std::vector<std::unique_ptr<ChainedOverflowJob>> fanOut;
+		fanOut.reserve(kFanOut);
+		for (int i = 0; i < kFanOut; ++i)
+		{
+			fanOut.push_back(std::make_unique<ChainedOverflowJob>(depth, maxDepth));
+		}
+		std::vector<std::unique_ptr<ChainedOverflowJob>> chain;
+		chain.reserve(kChainLinks);
+		for (int i = 0; i < kChainLinks; ++i)
+		{
+			chain.push_back(std::make_unique<ChainedOverflowJob>(depth, maxDepth));
+		}
+		for (int i = 0; i + 1 < kChainLinks; ++i) { chain[i]->successor = chain[i + 1].get(); }
+
+		// The chain hangs off the successor that spills first once the list is full: with the
+		// queue filled above, entries 1..kSpilling take the fallback's first bank and this one
+		// is the first that had to be run on the spot.
+		fanOut[kSpilling]->successor = chain.front().get();
+
+		std::vector<ThreadableJob*> successors;
+		successors.reserve(kFanOut);
+		for (const auto& job : fanOut) { successors.push_back(job.get()); }
+		FanOutOverflowJob source(depth, maxDepth, successors);
+
+		AudioEngineWorkerThread::addJob(&source);
+
+		// Every job runs exactly once: the fallback may not drop what it cannot queue, and the
+		// fan-out plus its chain is more work than the queue and the fallback hold together.
+		QCOMPARE(source.runs, 1);
+		int observed = 0;
+		for (const auto& job : fanOut)
+		{
+			QCOMPARE(job->runs, 1);
+			observed += job->runs;
+		}
+		QCOMPARE(observed, kFanOut);
+		for (const auto& link : chain)
+		{
+			QCOMPARE(link->runs, 1);
+			observed += link->runs;
+		}
+		QCOMPARE(observed, kFanOut + kChainLinks);
+
+		// Leave the queue as the other cases expect it: drain the filler slots this case took
+		// (every other job is already complete) and clear the indices.
+		AudioEngineWorkerThread::startAndWaitForJobs();
+		AudioEngineWorkerThread::resetJobQueue();
+
+		QVERIFY2(maxDepth == 1,
+			qPrintable(QStringLiteral("a %1-job fan-out with a %2-link chain nested process() %3 "
+				"calls deep; the fallback must run one job at a time even while its list is full")
+				.arg(kFanOut).arg(kChainLinks).arg(maxDepth)));
+	}
+
+	//! An EXHAUSTED fallback must not let a chain follow the fan-out into the stack (cluster
+	//! new-p15-257, round 2). The previous case leaves the fallback room by draining what it
+	//! parked; this one does not: the fan-out fills the queue and the whole fallback list and
+	//! then queues the chain head from the same frame, so the last push has no slot at all.
+	//! The fallback may run pending work to make room, but the depth must stay a constant -
+	//! it may not grow with the chain the way it did before (measured: 130 frames for 128
+	//! links). Single-threaded, no sleeps, no wall clock.
+	void queueOverflowBoundsTheNestingWhenTheFallbackListIsExhausted()
+	{
+		AudioEngineWorkerThread::setDeterministicProcessing(true);
+		AudioEngineWorkerThread::resetJobQueue(
+			AudioEngineWorkerThread::JobQueue::OperationMode::Dynamic);
+
+		static OverflowFillerJob filler;
+		for (std::size_t i = 0; i < AudioEngineWorkerThread::JobQueue::JOB_QUEUE_SIZE; ++i)
+		{
+			AudioEngineWorkerThread::addJob(&filler);
+		}
+
+		constexpr int kFanOut =
+			static_cast<int>(2 * AudioEngineWorkerThread::JobQueue::JOB_QUEUE_SIZE);
+		constexpr int kChainLinks = 128;
+
+		int depth = 0;
+		int maxDepth = 0;
+		std::vector<std::unique_ptr<ChainedOverflowJob>> fanOut;
+		fanOut.reserve(kFanOut);
+		for (int i = 0; i < kFanOut; ++i)
+		{
+			fanOut.push_back(std::make_unique<ChainedOverflowJob>(depth, maxDepth));
+		}
+		std::vector<std::unique_ptr<ChainedOverflowJob>> chain;
+		chain.reserve(kChainLinks);
+		for (int i = 0; i < kChainLinks; ++i)
+		{
+			chain.push_back(std::make_unique<ChainedOverflowJob>(depth, maxDepth));
+		}
+		for (int i = 0; i + 1 < kChainLinks; ++i) { chain[i]->successor = chain[i + 1].get(); }
+
+		std::vector<ThreadableJob*> successors;
+		successors.reserve(kFanOut);
+		for (const auto& job : fanOut) { successors.push_back(job.get()); }
+		FanOutOverflowJob source(depth, maxDepth, successors);
+		// The chain is queued by the frame that just filled the fallback: no parked entry is
+		// popped first, so this is the exhausted path.
+		source.trailing = chain.front().get();
+
+		AudioEngineWorkerThread::addJob(&source);
+
+		QCOMPARE(source.runs, 1);
+		int observed = 0;
+		for (const auto& job : fanOut)
+		{
+			QCOMPARE(job->runs, 1);
+			observed += job->runs;
+		}
+		for (const auto& link : chain)
+		{
+			QCOMPARE(link->runs, 1);
+			observed += link->runs;
+		}
+		QCOMPARE(observed, kFanOut + kChainLinks);
+
+		AudioEngineWorkerThread::startAndWaitForJobs();
+		AudioEngineWorkerThread::resetJobQueue();
+
+		// Two frames at most: the job run to make room, plus the caller's. What may not happen
+		// is a depth that follows the chain - that is the stack growth this fallback exists to
+		// remove.
+		QVERIFY2(maxDepth <= 2,
+			qPrintable(QStringLiteral("an exhausted fallback with a %1-job fan-out and a "
+				"%2-link chain nested process() %3 calls deep; the depth must not follow the "
+				"chain").arg(kFanOut).arg(kChainLinks).arg(maxDepth)));
 	}
 
 private:

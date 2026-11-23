@@ -2,112 +2,113 @@ FIXED
 
 # Cluster new-p15-257 — queue-full fallback recursed until the stack ran out
 
-Verdict: **FIXED** (REAL defect, reproduced). Branch `bugs/qwen-new-p15-257`, worktree
-`/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p15-257`.
-All logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p15-257.r1/logs`.
+**Round 2.** The reviewer's finding was correct and is now fixed: with the round-1 code the
+fallback's own list could fill, and the branch that then ran a job synchronously nested again
+(measured 130 frames for a 16384-job fan-out plus a 128-link chain). Both new regressions
+below fail on the round-1 product code and pass on this one.
 
-## The defect, and why it is real
+Worktree `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p15-257`,
+branch `bugs/qwen-new-p15-257`. Logs for this round:
+`/home/kruzzzzy/.config/kads/zene/state/runs/new-p15-257.r2/logs` (every file named below is in it).
 
-`src/core/AudioEngineWorkerThread.cpp:222-240` (`JobQueue::addJob`, before this fix): when
-`m_writeIndex` reaches `JOB_QUEUE_SIZE` the excess job cannot take a slot, so the old code
-ran it on the spot:
+Note on the files the round-1 review did not find: `AGENTS.md`, `HANDOVER-2026-10-05.md` and
+`plans/CLAUDE-READ-FIRST.md` do not exist in this worktree —
 
-```cpp
-queueFullRefusals.fetch_add(1, std::memory_order_relaxed);
-const RealtimeScope realtime;
-_job->process();          // <-- executes the job inside addJob's frame
-++m_itemsDone;
+```
+$ ls -1 AGENTS.md HANDOVER-2026-10-05.md plans/CLAUDE-READ-FIRST.md
+ls: cannot access 'AGENTS.md': No such file or directory
+ls: cannot access 'HANDOVER-2026-10-05.md': No such file or directory
+ls: cannot access 'plans/CLAUDE-READ-FIRST.md': No such file or directory
 ```
 
-`process()` calls `doProcessing()`, and the mixer's channels queue their successors from
-inside their own `doProcessing()`: `MixerChannel::processed()` (`src/core/Mixer.cpp:465-505`)
-calls `incrementDeps()` on every receiver it just satisfied, and `incrementDeps()`
-(`src/core/Mixer.cpp:535-543`) calls `AudioEngineWorkerThread::addJob(this)`. So any job
-queued while the queue is full re-entered `addJob()`, found the queue still full
-(`m_writeIndex` only grows until the next `reset()`, and `Mixer::render` resets it once per
-period — `src/core/Mixer.cpp:2462`), and took the same branch again: one nested `process()`
-frame per link of the dependency chain.
+— and the round-1 `proof.json` went with the round-1 run folder, which no longer exists. The
+manifest for this round is `…/new-p15-257.r2/logs/proof.json`. The rules this job follows are in
+the job brief (`…/new-p15-257.r2/brief.md`), which is present.
 
-Reachability: the queue holds `JOB_QUEUE_SIZE = 8192` slots (`include/AudioEngineWorkerThread.h:60`)
-and mixer channels are an unbounded vector (AGENTS.md, "Verified facts"), so a project with
-more than 8192 channels in one period — or any caller that queues past the bound — makes the
-overflow path the path for every remaining job, and the C++ stack then follows the graph's
-depth. That is the finding's claim, and it reproduces deterministically (below).
+## The defect
 
-## The fix (at the cause)
+`JobQueue::addJob()` (`src/core/AudioEngineWorkerThread.cpp:279-298`) cannot grow the queue on
+the audio path, so a job past `JOB_QUEUE_SIZE` is run on the spot. `process()` runs
+`doProcessing()`, and the mixer queues successors from inside it: `MixerChannel::processed()`
+(`src/core/Mixer.cpp:465-505`) calls `incrementDeps()` on every receiver it just satisfied, and
+`incrementDeps()` (`src/core/Mixer.cpp:535-543`) calls `AudioEngineWorkerThread::addJob(this)`.
+Any job queued while the queue is full therefore re-entered the same branch: one nested
+`process()` frame per link, i.e. a stack that follows the graph. Reachable because mixer
+channels are an unbounded vector and `Mixer::render` resets the queue only once per period
+(`src/core/Mixer.cpp:2462`), so a period can enqueue far more than 8192 jobs.
 
-`src/core/AudioEngineWorkerThread.cpp:126-205`, new file-local machinery:
+Round 1 made the first spill iterative but kept a synchronous branch for when the fallback's
+own list filled — the reviewer's probe: a fan-out that fills the list, then a chain queued from
+the spilling job, nested 128 deep again.
 
-- `OverflowJob` — one job the fallback still owes, plus a pointer to the owning queue's
-  `m_itemsDone` (the queue counts an overflow job's enqueue in `m_writeIndex` before it knows
-  the queue is full, so the completion must still be recorded once).
-- `OverflowDrainList` / `tl_overflowDrain` (`:161-168`) — a preallocated, thread-local
-  pending list of `JobQueue::JOB_QUEUE_SIZE` entries. Trivial fields only, so it is
-  zero-initialised storage with no constructor, no allocation, no lock and no wait.
-- `processOverflowJob()` (`:172-177`) — unchanged per-job semantics: the old
-  `RealtimeScope` plus `job->process()` plus one `m_itemsDone` increment.
-- `runOverflowFallback()` (`:181-205`) — the change: a thread that is already draining the
-  fallback appends to the list and returns; the thread that entered the fallback runs the
-  list in a `while` loop. The stack therefore stays one job deep however long the chain is.
-- `addJob()`'s overflow branch (`:229-236`) now calls `runOverflowFallback(_job, m_itemsDone)`
-  instead of `_job->process()`.
+## The fix
 
-Only the order in which fallback work is executed changes (depth-first nesting becomes an
-iterative drain of the same set of jobs, last-queued first). Job order is not a contract of
-this queue: `run()` already hands slots to several workers concurrently, and the mixer
-schedules by dependency count, not by queue position. `MixerChannel::processed()` is the
-last statement of `MixerChannel::doProcessing()` (`src/core/Mixer.cpp:1042`) and the
-receivers' sidechain/feedback taps are written before it, so running a receiver after the
-sender's `doProcessing()` returns reads exactly the data the inline version read.
+`src/core/AudioEngineWorkerThread.cpp:126-264`, file-local, preallocated, thread-local:
 
-Edge case the storage cannot cover, stated rather than hidden: a full queue *and*
-`JOB_QUEUE_SIZE` jobs already parked in the fallback (more than 2 x `JOB_QUEUE_SIZE` jobs in
-one period) runs that one job on the spot — the old path, at a scale the queue itself no
-longer covers. Bounded memory and zero allocation make a larger guarantee impossible; the
-fallback holds as much work as the queue it stands in for.
+- `OverflowDrain` (`:168-178`): `OverflowBankCount = 2` banks (`:166`) of
+  `OverflowBankCapacity = JOB_QUEUE_SIZE` entries (`:165`). Trivial fields only, so a thread's
+  copy is zero-initialised storage: no constructor, no allocation, no lock, no wait.
+- `parkOverflowJob()` (`:181-197`): parks in the first bank with room, so a fan-out that fills
+  one bank spills into the next instead of running the job inside the frame that queued it.
+- `takeOverflowJob()` (`:199-214`): takes an entry out of the first non-empty bank, freeing its
+  slot. The drain loop takes before it runs, so the slot an entry leaves behind is the slot its
+  own successor is parked in — a chain of any length is one frame deep.
+- `processOverflowJob()` (`:216-221`): unchanged per-job semantics — the same `RealtimeScope`,
+  one `process()` call, one `m_itemsDone` increment for the owning queue.
+- `runOverflowFallback()` (`:225-264`): a thread already draining only parks; the thread that
+  entered the fallback runs the banks in a loop. When both banks are full, one *pending* entry
+  is taken and run to make room (its own successors are then parked in the slot it freed), and
+  only if that still leaves no room does the new job run on the spot. That is what removes the
+  sharing of the 128-frame chain: the depth no longer follows the chain, it is 1 while the
+  fallback has room and at most 2 when it does not.
 
-Callers and siblings checked: `AudioEngineWorkerThread::addJob` is the only entry to the
-queue, called from `MixerChannel::incrementDeps()` (`src/core/Mixer.cpp:541`),
-`Mixer::masterMix` (`src/core/Mixer.cpp:2527`), and `fillJobQueue()` for the play-handle and
-bus stages (`include/AudioEngineWorkerThread.h:100-111`). All of them go through the single
-`JobQueue::addJob` changed here; none has its own overflow path. `run()`/`wait()` are
-untouched, and `m_itemsDone` is still incremented once per fallback job, so the
-`m_itemsDone < m_writeIndex` bookkeeping `wait()` spins on is unchanged.
+Bound, stated rather than hidden: the fallback holds 2 x `JOB_QUEUE_SIZE` = 16384 pending jobs
+plus the queue's own 8192, so ~24 576 jobs can be live in one period without any nesting. Work
+beyond that still runs on the spot, because the pool is thread-local and preallocated: the only
+thread that can free a slot is the one that is blocked, so waiting deadlocks, dropping breaks
+the mixer's dependency count (and would hang `wait()`), and a larger guarantee needs either an
+allocator or unbounded memory. Both regressions measure the property that matters — depth does
+not grow with the chain — and the second pins the constant at 2.
 
-## Regression test
+Callers and siblings checked: `AudioEngineWorkerThread::addJob` is the only entry to the queue
+(`MixerChannel::incrementDeps` at `src/core/Mixer.cpp:541`, `Mixer::masterMix` at
+`src/core/Mixer.cpp:2527`, `fillJobQueue` at `include/AudioEngineWorkerThread.h:100-111`); all
+go through the single `JobQueue::addJob` changed here. `run()`, `wait()` and `reset()` are
+untouched, and `m_itemsDone` is still incremented exactly once per fallback job, so the
+`m_itemsDone < m_writeIndex` bookkeeping `wait()` spins on is unchanged. No header was changed.
 
-`tests/src/core/RenderJobQueueTest.cpp:660-712`
-(`queueOverflowDoesNotNestProcessCallsForAJobChain`), with two helpers at `:159-196`:
-`OverflowFillerJob` (always claimable, fills all 8192 slots) and `ChainedOverflowJob`
-(queues its successor from inside `doProcessing()` — the mixer's shape — and records the
-nesting depth of `doProcessing()`).
+## Regressions (deterministic: single thread, no worker, no sleeps, no wall clock)
 
-The case is single-threaded and clock-free: no worker is started, nothing sleeps, nothing is
-timed. It resets the queue in `Dynamic` mode (the mixer's mode), fills every slot, queues a
-256-link chain, and asserts (a) every link ran exactly once and (b) the deepest nesting of
-`doProcessing()` was 1. It then drains the filler slots and resets the queue, so the other
-cases in the family start from an empty queue.
+`tests/src/core/RenderJobQueueTest.cpp`:
 
-Failure message seen without the fix: `the queue-full fallback nested 256 process() calls for
-a 256-link chain` — the nesting depth equals the chain length, which is the defect.
+- `queueOverflowStaysShallowWhenTheFallbackListIsFull` (`:755-828`) — fills the queue's slots,
+  then a 16384-job fan-out fills the whole fallback list, and the chain (128 links) hangs off
+  the successor that spills first. Asserts every job ran exactly once and
+  `maxDepth == 1`.
+- `queueOverflowBoundsTheNestingWhenTheFallbackListIsExhausted` (`:837-903`) — same fill, but
+  the chain head is queued from the frame that just exhausted the list, so a pending entry has
+  to be run to make room. Asserts every job ran exactly once and `maxDepth <= 2`.
+- Helpers: `OverflowFillerJob` (`:159`), `ChainedOverflowJob` (`:172`), `FanOutOverflowJob`
+  (`:200`), all in the file's anonymous namespace, all counting their own `doProcessing`
+  nesting depth on the test thread (no atomics, no timing).
+
+Nesting depth is measured inside the jobs themselves, so no product seam was added for it.
 
 ## Commands and exit codes (copied from the logs)
 
-Logs: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p15-257.r1/logs`.
-
-RED — test added, product code untouched:
+RED — round-2 regression added, round-1 product code still in place:
 
 ```
-cmake --build build --target RenderJobQueueTest -j4 > LOGS/build-1-red.log 2>&1; echo EXIT=$?
+cd <worktree> && cmake --build build --target RenderJobQueueTest -j4 > LOGS/build-1-red.log 2>&1; echo EXIT=$?
 EXIT=0
 
 cd build/tests && ctest -R '^RenderJobQueueTest$' --output-on-failure > LOGS/test-1-red.log 2>&1; echo EXIT=$?
 EXIT=8
-FAIL!  : RenderJobQueueTest::queueOverflowDoesNotNestProcessCallsForAJobChain() 'maxDepth == 1' returned FALSE. (the queue-full fallback nested 256 process() calls for a 256-link chain; ...)
-Totals: 13 passed, 1 failed, 0 skipped, 0 blacklisted, 1067ms
+FAIL!  : RenderJobQueueTest::queueOverflowStaysShallowWhenTheFallbackListIsFull() 'maxDepth == 1' returned FALSE. (a 16384-job fan-out with a 128-link chain nested process() 130 calls deep; ...)
+Totals: 14 passed, 1 failed, 0 skipped, 0 blacklisted, 1067ms
 ```
 
-GREEN — fix in place:
+GREEN — spill banks in place:
 
 ```
 cmake --build build --target RenderJobQueueTest -j4 > LOGS/build-2-green.log 2>&1; echo EXIT=$?
@@ -116,67 +117,71 @@ EXIT=0
 cd build/tests && ctest -R '^RenderJobQueueTest$' --output-on-failure > LOGS/test-2-green.log 2>&1; echo EXIT=$?
 EXIT=0
 
-cd build/tests && ./RenderJobQueueTest > LOGS/test-6-cases-green.log 2>&1; echo EXIT=$?
-EXIT=0
-PASS   : RenderJobQueueTest::queueOverflowDoesNotNestProcessCallsForAJobChain()
-Totals: 14 passed, 0 failed, 0 skipped, 0 blacklisted, 1072ms
+cd build/tests && ./RenderJobQueueTest > LOGS/test-3-cases-green.log 2>&1; echo EXIT=$?
+EXIT=0          # Totals: 15 passed, 0 failed
 ```
 
-Step 4b — prove the test catches the bug (`git apply -R`, rebuild, run):
+RED — the exhausted-list regression, against the spill-bank code before the make-room step:
+
+```
+cmake --build build --target RenderJobQueueTest -j4 > LOGS/build-10-red-exhausted.log 2>&1; echo EXIT=$?
+EXIT=0
+
+cd build/tests && ctest -R '^RenderJobQueueTest$' --output-on-failure > LOGS/test-11-red-exhausted.log 2>&1; echo EXIT=$?
+EXIT=8
+FAIL!  : RenderJobQueueTest::queueOverflowBoundsTheNestingWhenTheFallbackListIsExhausted() 'maxDepth <= 2' returned FALSE. (an exhausted fallback with a 16384-job fan-out and a 128-link chain nested process() 129 calls deep; ...)
+```
+
+GREEN — make-room step in place:
+
+```
+cmake --build build --target RenderJobQueueTest -j4 > LOGS/build-12-green-exhausted.log 2>&1; echo EXIT=$?
+EXIT=0
+
+cd build/tests && ctest -R '^RenderJobQueueTest$' --output-on-failure > LOGS/test-13-green-exhausted.log 2>&1; echo EXIT=$?
+EXIT=0
+
+cd build/tests && ./RenderJobQueueTest > LOGS/test-14-cases-green.log 2>&1; echo EXIT=$?
+EXIT=0          # Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted
+```
+
+Step 4b — the whole product change (`fix.patch`, 143 lines, `src/core/AudioEngineWorkerThread.cpp`
+only) reversed and restored:
 
 ```
 git diff -- src/core/AudioEngineWorkerThread.cpp > LOGS/fix.patch; echo EXIT=$?
-EXIT=0                          (107 lines, product file only)
-
+EXIT=0
 git apply -R LOGS/fix.patch; echo EXIT=$?
 EXIT=0
-
-cmake --build build --target RenderJobQueueTest -j4 > LOGS/build-4-red-without-fix.log 2>&1; echo EXIT=$?
+cmake --build build --target RenderJobQueueTest -j4 > LOGS/build-15-red-without-fix.log 2>&1; echo EXIT=$?
 EXIT=0
-
-cd build/tests && ctest -R '^RenderJobQueueTest$' --output-on-failure > LOGS/test-4-red-without-fix.log 2>&1; echo EXIT=$?
+cd build/tests && ctest -R '^RenderJobQueueTest$' --output-on-failure > LOGS/test-16-red-without-fix.log 2>&1; echo EXIT=$?
 EXIT=8
-FAIL!  : RenderJobQueueTest::queueOverflowDoesNotNestProcessCallsForAJobChain() 'maxDepth == 1' returned FALSE. (the queue-full fallback nested 256 process() calls for a 256-link chain; ...)
+FAIL!  : RenderJobQueueTest::queueOverflowStaysShallowWhenTheFallbackListIsFull() 'maxDepth == 1' returned FALSE. (a 16384-job fan-out with a 128-link chain nested process() 130 calls deep; ...)
+FAIL!  : RenderJobQueueTest::queueOverflowBoundsTheNestingWhenTheFallbackListIsExhausted() 'maxDepth <= 2' returned FALSE. (an exhausted fallback with a 16384-job fan-out and a 128-link chain nested process() 129 calls deep; ...)
+Totals: 14 passed, 2 failed, 0 skipped, 0 blacklisted, 1072ms
 
 git apply LOGS/fix.patch; echo EXIT=$?
 EXIT=0
-
-cmake --build build --target RenderJobQueueTest zene -j4 > LOGS/build-5-green-with-fix.log 2>&1; echo EXIT=$?
+cmake --build build --target RenderJobQueueTest zene -j4 > LOGS/build-17-green-with-fix.log 2>&1; echo EXIT=$?
 EXIT=0
-
-cd build/tests && ctest -R '^RenderJobQueueTest$' --output-on-failure > LOGS/test-5-green-with-fix.log 2>&1; echo EXIT=$?
-EXIT=0
-100% tests passed out of 1
+cd build/tests && ctest -R '^RenderJobQueueTest$' --output-on-failure > LOGS/test-18-green-with-fix.log 2>&1; echo EXIT=$?
+EXIT=0           # 100% tests passed out of 1
 ```
 
-Family (`ctest -R` around the queue, the mixer and the render reference):
+Family (`ctest -R` over the queue, the mixer and the byte-exact render reference):
 
 ```
-cmake --build build --target zene RoutingGraphScheduleTest AudioWorkerWakeTest MixerConcurrencyTest PdcMixerTest WorkerAltStackTest -j4 > LOGS/build-3-family.log 2>&1; echo EXIT=$?
+cmake --build build --target zene RoutingGraphScheduleTest AudioWorkerWakeTest MixerConcurrencyTest PdcMixerTest WorkerAltStackTest -j4 > LOGS/build-19-family.log 2>&1; echo EXIT=$?
 EXIT=0
-
-cd build/tests && ctest -R '^(RenderJobQueueTest|RoutingGraphScheduleTest|AudioWorkerWakeTest|MixerConcurrencyTest|PdcMixerTest|WorkerAltStackTest)$' --output-on-failure > LOGS/test-3-family.log 2>&1; echo EXIT=$?
-EXIT=0
-100% tests passed out of 6
-
-cmake --build build --target RoutingGraphScheduleTest AudioWorkerWakeTest MixerConcurrencyTest PdcMixerTest WorkerAltStackTest -j4 > LOGS/build-6-family-relink.log 2>&1; echo EXIT=$?
-EXIT=0
-
-cd build/tests && ctest -R '^(RenderJobQueueTest|RoutingGraphScheduleTest|AudioWorkerWakeTest|MixerConcurrencyTest|PdcMixerTest|WorkerAltStackTest)$' --output-on-failure > LOGS/test-7-family-final.log 2>&1; echo EXIT=$?
-EXIT=0
-100% tests passed out of 6
+cd build/tests && ctest -R '^(RenderJobQueueTest|RoutingGraphScheduleTest|AudioWorkerWakeTest|MixerConcurrencyTest|PdcMixerTest|WorkerAltStackTest)$' --output-on-failure > LOGS/test-20-family.log 2>&1; echo EXIT=$?
+EXIT=0           # 100% tests passed out of 6
 ```
 
-`RoutingGraphScheduleTest` includes the byte-identical reference render of the routing graph
-(`publishedScheduleMatchesThePlanOrderExecution`), which still matches, and its
-`queueFullFallbackIsCounted` case still observes exactly one counted fallback for one excess
-job. `RenderJobQueueTest::queueOverflowRunsEveryJob` (8193 jobs through a static queue) still
-passes, so the non-chained overflow path is unchanged.
-
-Registration and gates:
+Gates:
 
 ```
-python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p15-257 > LOGS/gates-1.log 2>&1; echo EXIT=$?
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > LOGS/gates-1.log 2>&1; echo EXIT=$?
 EXIT=0
   PASS  fork-sources / all-sources-reproduce / no-upstream-regression / check-namespace /
         no-tautology / doc-figures
@@ -185,57 +190,51 @@ EXIT=0
 RESULT: PASS
 ```
 
-`src/core/AudioEngineWorkerThread.cpp` and `tests/src/core/RenderJobQueueTest.cpp` were already
-registered in `tests/upstream-modifications.txt`; this cluster's reason is appended there (two
-lines, file still ends with a newline). No new file was added, so `tests/fork-sources.txt` is
-unchanged.
+Registration: both files are inherited and already listed in `tests/upstream-modifications.txt`;
+this cluster's two entries (lines 6077-6078) now describe the banks, the make-room step and both
+regressions. No new file, so `tests/fork-sources.txt` is unchanged.
 
 ## Self-check
 
-- **The regression test FAILS with the product change reverted and PASSES with it.** Yes:
-  `EXIT=8` with `git apply -R LOGS/fix.patch` (log `test-4-red-without-fix.log`, message names
-  the 256 nested `process()` calls) and `EXIT=0` restored (log `test-5-green-with-fix.log`).
-  The first RED run before the fix existed at all (`test-1-red.log`) shows the same failure.
-- **The test is deterministic.** No wall clock, no sleeps, no worker thread, no race: it drives
-  `JobQueue` directly on the test thread, in `Dynamic` mode, with a fixed 256-link chain, and
-  measures nesting by incrementing/decrementing an `int` around `doProcessing()` in the test's
-  own job class. The only "seam" is the product's existing `queueFullRefusals` counter, which
-  this case does not need.
-- **Fix at the cause, callers and siblings consistent.** The single overflow site is fixed
-  (`addJob`, now `runOverflowFallback`); all three callers of the queue (`MixerChannel::incrementDeps`,
-  `Mixer::masterMix`, `fillJobQueue`) share it. `run()`, `wait()`, `reset()` and the
-  `m_itemsDone`/`m_writeIndex` contract are untouched; the per-job `RealtimeScope` and the
-  completion increment moved into `processOverflowJob()` unchanged. The header was not
-  changed, so no other target sees a new declaration; `zene` and every test in the family were
-  rebuilt and run anyway.
-- **No collateral damage.** Old projects: no save/load, project or model code touched — the
-  change is inside the job queue only. The mixer's arithmetic is unaffected: the byte-identical
-  routing-graph reference render still matches (`RoutingGraphScheduleTest`, `EXIT=0`). No new
-  limit or check rejects a caller: the fallback's capacity equals the queue's, and a caller
-  that exceeds both still gets its work done (on the spot), exactly as before. Realtime: the
-  added code allocates nothing, frees nothing, locks nothing, waits on nothing and logs
-  nothing — a fixed thread-local array plus `process()` and one atomic increment, inside the
-  same `RealtimeScope` as before. Undo and control commands: untouched (no `Song`, undo or
-  `ControlCommands` change), so `ControlCommandsSnapshot` is unaffected.
-- **Verdict is not ALREADY-FIXED or FALSE-POSITIVE**, so no code-reference defence is needed;
-  the "before" code is quoted above with `file:line`.
-- **Sibling commands (`app.*`, `arrangement.*` in the pre-submit ASK).** This cluster touches
-  no command file and adds no command id: the commit is
-  `src/core/AudioEngineWorkerThread.cpp`, `tests/src/core/RenderJobQueueTest.cpp`,
-  `tests/upstream-modifications.txt` and this report (`git show --stat 6ee307e9c2`). The
-  command-file changes the check lists come from the other clusters already merged into this
-  branch's base (`git diff --name-only $(git merge-base HEAD $(cat $HOME/.local/share/zene-bunny-fix/qwen/FIX-BASE))..HEAD`
-  is 431 files wide), so `tools/mcp-zene-control/zene_control/commands_snapshot.json` is
-  unchanged by this fix and no command's reversibility class moves.
+- **The regression tests FAIL with the product change reverted and PASS with it.** Yes, both, in
+  one run: reversed `EXIT=8` with `queueOverflowStaysShallowWhenTheFallbackListIsFull` at 130
+  nested frames and `queueOverflowBoundsTheNestingWhenTheFallbackListIsExhausted` at 129
+  (`test-16-red-without-fix.log`), restored `EXIT=0` (`test-18-green-with-fix.log`). Each case
+  also has its own RED log against the code as it stood when it was written
+  (`test-1-red.log`, `test-11-red-exhausted.log`).
+- **The tests are deterministic.** No worker thread, no sleep, no clock, no sampling: one thread
+  drives `JobQueue` in `Dynamic` mode with fixed counts (8192 fillers, 16384 fan-out jobs, 128
+  chain links) and the depth is an `int` incremented and decremented around `doProcessing()` in
+  the test's own job classes. No product seam was needed, so `setWorkerDrainProbeForTesting` is
+  not involved.
+- **Fix at the cause, callers and siblings consistent.** The only overflow site in the product
+  (`JobQueue::addJob`, `:279-298`) now always parks or drains iteratively; all three callers
+  (`MixerChannel::incrementDeps`, `Mixer::masterMix`, `fillJobQueue`) share it. `run()`,
+  `wait()`, `reset()`, the `m_itemsDone`/`m_writeIndex` contract and the per-job
+  `RealtimeScope` are unchanged. No header changed, so no other target sees a new declaration.
+- **No collateral damage.** No save/load, model or project code touched. The mixer's arithmetic
+  is unchanged: `RoutingGraphScheduleTest`'s byte-identical reference render still matches
+  (`test-20-family.log`, `EXIT=0`), and `queueFullFallbackIsCounted` still sees exactly one
+  counted fallback for one excess job. No new limit rejects a caller: the fallback only decides
+  *where* overflow work runs, and a caller beyond its size still gets its work done, as before.
+  Realtime: the added code allocates nothing, frees nothing, locks nothing, waits on nothing and
+  logs nothing — a fixed thread-local array, `process()`, and one atomic increment, inside the
+  same `RealtimeScope`. Cost: 2 x 8192 x 16 B = 256 KB of thread-local storage per thread that
+  enters the fallback (was 128 KB in round 1). Undo and control commands are untouched, so
+  `ControlCommandsSnapshot` cannot move.
+- **Sibling commands (`app.*`, `arrangement.*` in the pre-submit ASK).** This cluster changes no
+  command file and adds no command id: the commit is `src/core/AudioEngineWorkerThread.cpp`,
+  `tests/src/core/RenderJobQueueTest.cpp`, `tests/upstream-modifications.txt` and this report
+  (`git show --stat`). The command files the check lists come from the other clusters already
+  merged into this branch's base (the branch diff against its base is 433 files wide), so
+  `commands_snapshot.json` is unchanged by this fix.
 
 ## Other findings
 
-- Not fixed here, out of scope: `JobQueue::reset()` clears `m_writeIndex`/`m_itemsDone` but not
-  the slots of `m_items`, so a caller that resets a queue while slots are still occupied leaves
-  those pointers behind (`run()` then counts them when a later fill reaches their index). The
-  existing `RoutingGraphScheduleTest::queueFullFallbackIsCounted` does exactly that; it is a
-  test-only pattern and does not affect the product path, where `Mixer::render` resets before
-  every fill.
-- `AudioEngineWorkerThread::JobQueue` is a `public` nested class with a `public` constructor, so
-  tests can instantiate an independent queue; that is what makes the new case hermetic. Noted
-  in case a later tightening makes it private.
+- Out of scope, unchanged: `JobQueue::reset()` clears `m_writeIndex`/`m_itemsDone` but not the
+  slots of `m_items`, so a caller that resets a queue while slots are occupied leaves those
+  pointers behind (`RoutingGraphScheduleTest::queueFullFallbackIsCounted` does exactly that; the
+  product path resets before every fill, so it is a test-only pattern).
+- The last-resort path (more than ~24 576 live jobs in one period) still runs on the spot. It is
+  bounded in *number*, not eliminated; see "Bound" above for why a thread-local preallocated pool
+  cannot do better without an allocator, and why waiting or dropping is worse on the audio thread.
