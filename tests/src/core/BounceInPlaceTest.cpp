@@ -35,6 +35,8 @@
 #include <filesystem>
 #include <system_error>
 #else
+#include <csignal>
+#include <sys/resource.h>
 #include <unistd.h>
 #endif
 
@@ -65,6 +67,35 @@ using namespace browserfixture;
 namespace
 {
 constexpr qint64 kFixtureFrames = 2048;
+
+#ifndef _WIN32
+//! Caps the size of any file this process writes, and ignores the SIGXFSZ that crossing the cap would raise,
+//! so the write fails with an error instead (deterministic: no disk is filled, nothing is timed). Restores both.
+class FileSizeCap
+{
+public:
+	explicit FileSizeCap(rlim_t bytes)
+	{
+		m_applied = getrlimit(RLIMIT_FSIZE, &m_saved) == 0;
+		m_previous = std::signal(SIGXFSZ, SIG_IGN);
+		if (!m_applied) { return; }
+		rlimit capped = m_saved;
+		capped.rlim_cur = bytes;
+		m_applied = setrlimit(RLIMIT_FSIZE, &capped) == 0;
+	}
+	~FileSizeCap()
+	{
+		if (m_applied) { setrlimit(RLIMIT_FSIZE, &m_saved); }
+		std::signal(SIGXFSZ, m_previous);
+	}
+	bool applied() const { return m_applied; }
+
+private:
+	rlimit m_saved{};
+	bool m_applied = false;
+	void (*m_previous)(int) = SIG_DFL;
+};
+#endif
 
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
@@ -298,6 +329,43 @@ private slots:
 		QCOMPARE(written, qint64(0));
 		QCOMPARE(BounceInPlace::sha256OfFile(source), before);
 		QCOMPARE(BounceInPlace::wavFrameCount(source), kFixtureFrames);
+	}
+
+	/*! A trim that fails PART WAY must leave an existing target as it was. The target used to be opened for
+	 *  writing straight away, which truncates it, so a write that then failed (a full disk, a quota) left
+	 *  the previous good file destroyed and a partial one in its place. The failure is forced by capping the
+	 *  file size the process may write (RLIMIT_FSIZE), which makes the copy fail deterministically after the
+	 *  target has been opened. Unix-only, as the cap is a POSIX limit.
+	 */
+	void trimWavFailureLeavesAnExistingTargetIntact()
+	{
+#ifdef _WIN32
+		QSKIP("the write failure is forced with RLIMIT_FSIZE, which is POSIX only");
+#else
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString source = QDir(dir.path()).filePath(QStringLiteral("source.wav"));
+		const QString target = QDir(dir.path()).filePath(QStringLiteral("range.wav"));
+		QVERIFY(writeWave(source, WaveSpec()));
+		QVERIFY(writeWave(target, WaveSpec()));
+		const QString before = BounceInPlace::sha256OfFile(target);
+		QVERIFY(!before.isEmpty());
+
+		bool trimmed = true;
+		QString error;
+		qint64 written = -1;
+		{
+			FileSizeCap cap(1024);
+			QVERIFY2(cap.applied(), "could not cap the file size");
+			trimmed = BounceInPlace::trimWav(source, target, 0, kFixtureFrames, &written, &error);
+		}
+		QVERIFY2(!trimmed, "the trim reported success although the write was capped");
+		QVERIFY2(!error.isEmpty(), "the failure carried no reason");
+		QCOMPARE(BounceInPlace::sha256OfFile(target), before);
+		QCOMPARE(BounceInPlace::wavFrameCount(target), kFixtureFrames);
+		// No half-written sibling is left behind either.
+		QCOMPARE(QDir(dir.path()).entryList(QDir::Files).size(), 2);
+#endif
 	}
 
 	/*! The tick span from INT32_MIN to INT32_MAX is 2^32 - 1, which a tick_t cannot hold: the subtraction
