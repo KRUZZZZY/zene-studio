@@ -741,6 +741,8 @@
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/warp-docs-agree.py ; \
 
 # Train 29: retain independently accepted Linux Qt5 compile/scanner regressions and MinGW no-gestures regression.
+include/BounceRegion.h
+src/core/BounceRegion.cpp
 tests/qt5-signal-overload-check.py
 tests/qt5-signal-overload-arm-check.py
 tests/arranger-zoom-no-gestures-check.py
@@ -793,6 +795,7 @@ tests/src/core/ProjectContainerSaveTestParts1.h
 tests/src/core/ProjectContainerSaveTestParts2.h
 tests/src/core/RackMacrosTestParts1.h
 tests/src/core/RackMacrosTestParts2.h
+tests/src/core/RangeBounceRenderSideTest.cpp
 tests/src/core/RecordToolsTestParts1.h
 tests/src/core/RecordToolsTestParts2.h
 tests/src/core/RevisionTimelineTestParts1.h

@@ -65,6 +65,8 @@ ControlResult bounceLand(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, problem);
 	}
+	// A bounce of a RANGE mutes only that range afterwards, so its render holds those pieces and their ringing tail.
+	range.replacesRegion = !range.coversWholeTrack();
 	const BounceInPlace::Result rendered = BounceInPlace::renderTrack(source,
 		resolveOutPath(args, source, QStringLiteral("bounce"), range), range);
 	if (!rendered.ok) { return ControlResult::failure(ControlErrorKind::Refused, rendered.error); }
@@ -78,33 +80,45 @@ ControlResult bounceLand(const QJsonObject& args)
 	const tick_t at = range.start;
 	const bool wasMuted = source->isMuted();
 	const QString sourceId = trackIdOf(source);
+	// A whole-track bounce mutes the whole source (its whole output is replaced). A bounce of a RANGE mutes only the
+	// range: clips are cut at its edges, automation lanes keep running outside it and a frozen take is rewritten
+	// with only the overlap silent (cluster 3971) - that half of the step is what muteRangeSources records.
+	const bool region = !range.coversWholeTrack();
+	if (region)
+	{
+		const QString muteError = muteRangeSources({source}, range);
+		if (!muteError.isEmpty()) { return ControlResult::failure(ControlErrorKind::Refused, muteError); }
+	}
 	// The landed track by its stable id, found again when the undo runs: a later
 	// track.remove and its undo re-create the track as a NEW object under the same id,
 	// so a pointer kept here would name a deleted track.
 	auto landed = std::make_shared<QString>();
 	addUndoStep(
-		[landed, sourceId, wasMuted]() {
+		[landed, sourceId, wasMuted, region]() {
 			ControlResult ignored;
 			if (Track* track = resolveTrack(*landed, &ignored)) { removeTrack(track); }
 			landed->clear();
-			if (Track* current = resolveTrack(sourceId, &ignored)) { current->setMuted(wasMuted); }
+			if (!region) { if (Track* current = resolveTrack(sourceId, &ignored)) { current->setMuted(wasMuted); } }
 		},
-		[landed, sourceId, song, name, path, at]() {
+		[landed, sourceId, song, name, path, at, region]() {
 			*landed = trackIdOf(landTrack(song, name, path, at));
-			ControlResult ignored;
-			if (Track* current = resolveTrack(sourceId, &ignored)) { current->setMuted(true); }
+			if (!region) {
+				ControlResult ignored;
+				if (Track* current = resolveTrack(sourceId, &ignored)) { current->setMuted(true); }
+			}
 		});
 	*landed = trackIdOf(landTrack(song, name, path, at));
-	source->setMuted(true);
+	if (!region) { source->setMuted(true); }
 
 	QJsonObject result = renderJson(rendered);
 	result.insert(QStringLiteral("track"), trackIdOf(source));
 	result.insert(QStringLiteral("landed_track"), *landed);
 	result.insert(QStringLiteral("__transaction"),
 		transactionPayload(QJsonObject{{QStringLiteral("track"), trackIdOf(source)}, {QStringLiteral("muted"), wasMuted}},
-			QStringLiteral("remove the landed track and restore the source's mute"), QJsonObject(), true,
+			QStringLiteral("remove the landed track and restore the source's mutes"), QJsonObject(), true,
 			QStringLiteral("action checkpoint: the recorded undo step removes the created track through "
-				"control::removeTrack (as track.add's does) and writes the source's mute back")));
+				"control::removeTrack (as track.add's does); a Track checkpoint writes back the cuts and mutes of "
+				"a bounced range")));
 	return ControlResult::success(result);
 }
 

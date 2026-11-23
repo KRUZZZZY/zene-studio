@@ -24,8 +24,11 @@
 /*! 0.5.0 L12 (ED-205): bounce a selection to a new track. The arranger range's tracks (range.set),
  *  over the range's ticks, are rendered together - their summed contribution to the mix, in a child
  *  render of a copy of the session (BounceInPlace::renderTracks) - and the file lands on a new audio
- *  track at the range's start; with 'mute_sources' (the default) the bounced tracks are muted so the
- *  song sounds as before. One undo step removes the new track and puts the mutes back. */
+ *  track at the range's start; with 'mute_sources' (the default) the bounced part of each source
+ *  track is muted: clips inside the range (cut at its edges), the same part of a frozen take, and
+ *  automation only inside its clips - so the song sounds as before while audio and automation outside
+ *  the selection keep running. One undo step removes the new track, uncuts the clips, restores the
+ *  takes and puts the mutes back. */
 
 #include <memory>
 #include <vector>
@@ -55,11 +58,6 @@ struct Landing
 {
 	QString path;
 	tick_t at = 0;
-	bool muteSources = true;
-	// Tracks by their stable ids, found again when a step runs: a track.remove and its undo rebuild a track as a NEW
-	// object under the same id, so a kept pointer would name a deleted track (or, guarded, stop acting).
-	std::vector<int> sources;
-	std::vector<bool> wereMuted;
 	int landed = -1;  //!< -1 once the undo took it away; a track deleted some other way is not found, so nothing is removed
 };
 
@@ -69,22 +67,12 @@ void land(Landing* l)
 	track->setName(QObject::tr("Bounce"));
 	if (auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(l->at)))) { clip->setSampleFile(l->path); }
 	l->landed = track->id();
-	for (const int id : l->sources)
-	{
-		Track* source = trackWithId(id);
-		if (source != nullptr && l->muteSources) { source->setMuted(true); }
-	}
 }
 
 void unland(Landing* l)
 {
 	if (Track* track = trackWithId(l->landed)) { removeTrack(track); }
 	l->landed = -1;
-	for (std::size_t i = 0; i < l->sources.size(); ++i)
-	{
-		Track* source = trackWithId(l->sources[i]);
-		if (source != nullptr && l->muteSources) { source->setMuted(l->wereMuted[i]); }  // only the mutes land() set
-	}
 }
 
 ControlResult rangeBounce(const QJsonObject& args)
@@ -97,18 +85,24 @@ ControlResult rangeBounce(const QJsonObject& args)
 	BounceInPlace::Range window;
 	window.start = range.start();
 	window.end = range.end();
+	// With 'mute_sources' the bounced pieces are muted afterwards, so the render holds exactly those pieces and the
+	// tail they ring on (cluster 3971); without it the render is the plain window.
+	const bool muteSources = args.value(QStringLiteral("mute_sources")).toBool(true);
+	window.replacesRegion = muteSources;
 	const QString out = resolveOutPath(args, tracks.front(), QStringLiteral("selection"), window);
 	const BounceInPlace::Result rendered = BounceInPlace::renderTracks(tracks, out, window);
 	if (!rendered.ok) { return ControlResult::failure(ControlErrorKind::Refused, rendered.error); }
+	// The mutes of the bounced region are a Track checkpoint (or a rewritten frozen take) recorded by
+	// muteRangeSources; the registry merges it with the landing action below into ONE undo step. A take that
+	// cannot be rewritten refuses before any model change; the render file that was just written stays.
+	if (muteSources)
+	{
+		const QString muteError = muteRangeSources(tracks, window);
+		if (!muteError.isEmpty()) { return ControlResult::failure(ControlErrorKind::Refused, muteError); }
+	}
 	auto l = std::make_shared<Landing>();
 	l->path = rendered.path;
 	l->at = window.start;
-	l->muteSources = args.value(QStringLiteral("mute_sources")).toBool(true);
-	for (Track* track : tracks)
-	{
-		l->sources.push_back(track->id());
-		l->wereMuted.push_back(track->isMuted());
-	}
 	addUndoStep([l]() { unland(l.get()); }, [l]() { land(l.get()); });
 	land(l.get());
 	QJsonObject result = renderJson(rendered);
@@ -116,7 +110,7 @@ ControlResult rangeBounce(const QJsonObject& args)
 	result.insert(QStringLiteral("tracks"), static_cast<int>(tracks.size()));
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("tracks"), static_cast<int>(tracks.size())}},
 		QStringLiteral("control.undo"), {}, true, QStringLiteral("action checkpoint: the recorded undo step removes the landed track "
-			"and puts the bounced tracks' mutes back; its redo lands the same file again")));
+			"and a Track checkpoint puts back the cuts and the mutes of the bounced region; its redo lands the same file again")));
 	return ControlResult::success(result);
 }
 

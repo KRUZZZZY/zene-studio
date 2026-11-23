@@ -75,6 +75,9 @@ public:
 	{
 		tick_t start = 0;
 		tick_t end = 0;
+		/*! A range bounce that will mute the pieces it bounces (cluster 3971): the render holds only the clip
+		 *  pieces inside the range, and runs on past `end` for their ringing tail (see BounceRegion.h). */
+		bool replacesRegion = false;
 
 		bool coversWholeTrack() const { return end <= start; }
 	};
@@ -113,6 +116,7 @@ public:
 		float framesPerTick = 0.0f;
 		qint64 startFrame = 0;
 		qint64 wantedFrames = 0;
+		qint64 tailFrames = 0;  //!< the most frames kept past wantedFrames for a ringing tail (trailing silence cut)
 		bool trimmed = false;
 		bool installed = false;
 		bool replacedPrevious = false;

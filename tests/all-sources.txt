@@ -248,6 +248,7 @@ include/BasicFilters.h
 include/BatchFreeze.h
 include/BiquadDesign.h
 include/BounceInPlace.h
+include/BounceRegion.h
 include/BrowserCatalog.h
 include/BrowserIndex.h
 include/BrowserPanel.h
@@ -1607,6 +1608,7 @@ src/core/AutomationSwitches.cpp
 src/core/BandLimitedWave.cpp
 src/core/BatchFreeze.cpp
 src/core/BounceInPlace.cpp
+src/core/BounceRegion.cpp
 src/core/BrowserCatalog.cpp
 src/core/BrowserFeatures.cpp
 src/core/BrowserIndex.cpp
@@ -3196,6 +3198,7 @@ tests/src/core/RackTestSupport.h
 tests/src/core/RackZoneFeedRunTest.cpp
 tests/src/core/RackZoneRoutingTest.cpp
 tests/src/core/RackZonesTest.cpp
+tests/src/core/RangeBounceRenderSideTest.cpp
 tests/src/core/RangeEditsTest.cpp
 tests/src/core/RealtimeSnapshotTest.cpp
 tests/src/core/ReceiverEffectTest.cpp
