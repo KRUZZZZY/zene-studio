@@ -1551,6 +1551,9 @@ set(LMMS_TESTS
 	src/gui/ControllerTemplateMenuTest.cpp
 	# The track menu's Freeze / Bounce items and File's DAWproject items.
 	src/gui/TrackRenderMenuTest.cpp
+	# cluster 917: every menu render entry (bounce, freeze, flatten, range bounce) starts a queue job, not the
+	# synchronous command whose child wait freezes the interface.
+	src/gui/RenderMenuQueueTest.cpp
 	# The piano roll's Groove menu: extract, apply with strength, quantise with strength.
 	src/gui/GrooveMenuTest.cpp
 	# A mixer strip's tooltip names its delay compensation.
@@ -4196,6 +4199,7 @@ set_tests_properties(ControlCommandsSaveVersionTest PROPERTIES ENVIRONMENT "QT_Q
 set_tests_properties(MidiControllerMenuTest LfoControllerUserWaveTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ControllerTemplateMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackRenderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(RenderMenuQueueTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(BatchFreezeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(GrooveMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ClipEditsMenuTest ClipEffectsDialogTest SampleClipWarpModeMenuTest ClipWaveformEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
