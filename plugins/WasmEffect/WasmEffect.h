@@ -117,6 +117,13 @@ private:
 	void pullDelayed(SampleFrame* buf, std::uint32_t frames, std::uint64_t delay);
 	//! Read offset for the compensated dry signal (see the definition).
 	std::uint64_t dryReadOffset(std::uint32_t moduleLatency, std::uint32_t frames) const;
+	//! Audio thread: the worker handoff of one call - take the result the
+	//! pipeline owes this call (dropping one that arrives late, so the
+	//! effect's actual latency stays the fixed figure latencyFrames()
+	//! reports, with the dry signal holding the position), then submit the
+	//! next block only when the previous one's result was taken.
+	void advancePipeline(SampleFrame* buf, std::uint32_t frameCount,
+		std::uint32_t moduleLatency, float sampleRate);
 
 	WasmEffectControls* m_controls = nullptr;
 	wasm::WasmWorker m_worker;
@@ -144,9 +151,27 @@ private:
 	//! signal after collect() has overwritten the host buffer. Sized in the
 	//! constructor; audio thread only.
 	std::vector<SampleFrame> m_dryScratch;
+	//! Landing buffer for results that arrive too late to be played: they are
+	//! popped into it and dropped, without touching the host buffer. Sized in
+	//! the constructor; audio thread only.
+	std::vector<SampleFrame> m_discardScratch;
 	//! Absolute write position, primed to the capacity so the zero-filled
 	//! history can be read back without underflow before any audio arrives.
 	std::uint64_t m_delayWrite = delayLineCapacity;
+
+	//! Pipeline bookkeeping, audio thread only. The block submitted in call N
+	//! is due in call N+1 - the one-block pipeline delay latencyFrames()
+	//! reports - so at most one block is ever in flight, and a result that
+	//! missed its call is dropped, never inserted at a later one.
+	//! Epoch of the worker's queues this bookkeeping belongs to: a mismatch
+	//! means the worker was stopped (a reload, an unload) and a block still
+	//! counted as in flight is gone.
+	std::uint64_t m_pipelineEpoch = 0;
+	//! Whether a submitted block's result has not been taken yet.
+	bool m_pipelineInFlight = false;
+	//! Calls started since the in-flight block was submitted; 1 = due now,
+	//! 2 or more = late (the call it was due in has passed).
+	std::uint64_t m_pipelineAge = 0;
 };
 
 } // namespace lmms

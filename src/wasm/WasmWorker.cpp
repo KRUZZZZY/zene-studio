@@ -43,6 +43,10 @@ using ModuleLoadTestHook = void (*)(void*);
 std::atomic<ModuleLoadTestHook> moduleLoadTestHook{nullptr};
 std::atomic<void*> moduleLoadTestContext{nullptr};
 
+using ProcessBlockTestHook = void (*)(void*);
+std::atomic<ProcessBlockTestHook> processBlockTestHook{nullptr};
+std::atomic<void*> processBlockTestContext{nullptr};
+
 } // namespace
 #endif
 
@@ -131,6 +135,10 @@ void WasmWorker::stop()
 	m_declaredChannels.store(1, std::memory_order_relaxed);
 	m_declaredLatency.store(0, std::memory_order_relaxed);
 	m_loadedSampleRate = 0.0f;
+	// The queues and slots are empty from here: a block the audio thread
+	// still counts as in flight can never come back. Bump the epoch so it
+	// can tell (queueEpoch()); the release store pairs with its load.
+	m_queueEpoch.fetch_add(1, std::memory_order_release);
 }
 
 bool WasmWorker::claimForLane()
@@ -213,7 +221,21 @@ void WasmWorker::notifyModuleLoadForTest()
 		hook(moduleLoadTestContext.load(std::memory_order_relaxed));
 	}
 }
-#endif
+
+void WasmWorker::setProcessBlockTestHook(ProcessBlockTestHook hook, void* context)
+{
+	processBlockTestContext.store(context, std::memory_order_relaxed);
+	processBlockTestHook.store(hook, std::memory_order_release);
+}
+
+void WasmWorker::notifyProcessBlockForTest()
+{
+	if (const auto hook = processBlockTestHook.load(std::memory_order_acquire))
+	{
+		hook(processBlockTestContext.load(std::memory_order_relaxed));
+	}
+}
+#endif // LMMS_TESTING
 
 bool WasmWorker::hasPendingWork() const
 {
@@ -245,6 +267,11 @@ bool WasmWorker::drainOnLane()
 		didWork = true;
 		Slot& slot = m_slots[index];
 		slot.state.store(SlotState::Processing, std::memory_order_release);
+#ifdef LMMS_TESTING
+		// Deterministic per-block seam (see setProcessBlockTestHook): the
+		// lane is inside this block, before the module runs.
+		notifyProcessBlockForTest();
+#endif
 		const float sampleRate = m_sampleRate.load(std::memory_order_acquire);
 		if (m_state.load(std::memory_order_acquire) == State::Ready &&
 			sampleRate != m_loadedSampleRate)

@@ -106,6 +106,14 @@ public:
 	//! Copy the oldest processed block into \p interleaved. Returns false when
 	//! no processed block is waiting (caller should pass audio through dry).
 	bool collect(SampleFrame* interleaved, std::uint32_t frames);
+	//! Identity of the worker's current queue contents: stop() drains both
+	//! queues and bumps this, so the audio thread can tell that a block it
+	//! still counts as in flight is gone and must not be waited for. One
+	//! atomic load; the queues are empty from that stop on.
+	std::uint64_t queueEpoch() const
+	{
+		return m_queueEpoch.load(std::memory_order_acquire);
+	}
 
 	// ---- control thread API ----
 	void setParam(std::uint32_t index, float value);
@@ -129,6 +137,13 @@ public:
 	using ModuleLoadTestHook = void (*)(void*);
 	static void setModuleLoadTestHook(ModuleLoadTestHook hook, void* context);
 	static void notifyModuleLoadForTest();
+	//! Test seam: called on the pool lane for every queued block, right
+	//! before the module processes it. A test can hold one block - imitating
+	//! a module that takes longer than one audio period, deterministically,
+	//! without racing the lane - and let it go once the effect has moved on.
+	using ProcessBlockTestHook = void (*)(void*);
+	static void setProcessBlockTestHook(ProcessBlockTestHook hook, void* context);
+	static void notifyProcessBlockForTest();
 #endif
 
 private:
@@ -246,6 +261,10 @@ private:
 	std::atomic<std::uint64_t> m_dropped{0};
 	std::atomic<std::uint64_t> m_trapped{0};
 	std::atomic<std::uint64_t> m_collected{0};
+	//! Bumped by stop(), which drains both queues and frees every slot: a
+	//! block submitted before the bump can never come back through collect().
+	//! The audio thread reads it to drop bookkeeping about such a block.
+	std::atomic<std::uint64_t> m_queueEpoch{0};
 };
 
 } // namespace lmms::wasm
