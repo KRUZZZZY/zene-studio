@@ -176,6 +176,35 @@ private slots:
 			"the dirty flag stayed set after the recalculation was published");
 	}
 
+	//! cluster new-p20-95, the reconfiguration path: a controller built without an effect
+	//! keeps the coefficient request pending, so the first period after loadSettings()
+	//! attaches one publishes the coefficients. The handoff must not claim the flag while
+	//! there is no effect to read the models from - that is why m_peakEffect is tested
+	//! before the exchange.
+	void nullEffectKeepsCoefficientRequestPending()
+	{
+		auto effect = std::make_unique<PeakControllerEffect>(nullptr, nullptr);
+		PeakController controller(Engine::getSong());
+		QVERIFY(controller.m_peakEffect == nullptr);
+		QVERIFY(static_cast<bool>(controller.m_coeffNeedsUpdate));
+
+		Controller::triggerFrameCounter();
+		QCOMPARE(controller.currentValue(0), 0.0f);
+		QVERIFY2(static_cast<bool>(controller.m_coeffNeedsUpdate),
+			"the coefficient request was consumed while there was no effect to compute it from");
+
+		// What loadSettings() does once the saved effectId resolves to this effect.
+		controller.m_peakEffect = effect.get();
+		measureSilence(*effect, Engine::audioEngine()->framesPerPeriod());
+		controller.m_currentSample = 0.0f;
+		Controller::triggerFrameCounter();
+		const float published = controller.currentValue(0);
+		QVERIFY2(!static_cast<bool>(controller.m_coeffNeedsUpdate),
+			"the attached effect's coefficients were never published");
+		QVERIFY2(published > 0.0f,
+			qPrintable(QStringLiteral("the first period with an effect ramped to %1").arg(published)));
+	}
+
 private:
 	//! Feeds one silent block through the effect, so its output holds the base value
 	//! (0.5) and the controller ramps towards it with the attack coefficient.

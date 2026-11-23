@@ -115,6 +115,11 @@ registered in `tests/upstream-modifications.txt`).
 - `coeffDirtyFlagIsAtomicHandoff()` — the flag must support `load(acquire)`,
   `exchange(false, acq_rel)` and `store(true, release)`, asserted with C++20 `requires`
   expressions, plus `std::atomic<bool>::is_always_lock_free`. Fails on a plain `bool`.
+- `nullEffectKeepsCoefficientRequestPending()` — the reconfiguration path: a controller
+  built without an effect must keep the request pending (a period with a null effect leaves
+  the flag set) so the first period after `loadSettings()` attaches one still publishes its
+  coefficients. This is what forces `m_peakEffect` to be tested before the exchange; it holds
+  before and after the fix, and it fails if the exchange is moved in front of the null check.
 - `attackChangeDuringPublicationIsNotLost()` — the finding's own interleaving, made
   deterministic by the seam instead of by timing: the effect measures one silent block (its
   `lastSample()` is the base value 0.5), period 1 publishes the default coefficients, the GUI
@@ -130,7 +135,7 @@ Test matrix covered:
 | --- | --- |
 | normal publication | `attackChangeDuringPublicationIsNotLost` period 1 / period 2 |
 | the failure (change inside the publication window) | `attackChangeDuringPublicationIsNotLost` period 3 |
-| no effect (null effect / reconfiguration) | `defaultNullEffectConstructsAndIsSilent`, `explicitNullEffectStaysSilentAcrossPeriods` (existing) |
+| no effect (null effect / reconfiguration) | `defaultNullEffectConstructsAndIsSilent`, `explicitNullEffectStaysSilentAcrossPeriods` (existing), `nullEffectKeepsCoefficientRequestPending` |
 | audio-thread constraint | `coeffDirtyFlagIsAtomicHandoff` (`is_always_lock_free`); the fix adds a lock-free atomic exchange and nothing else |
 | build (supported platforms) | `std::atomic<bool>` with `#include <atomic>`; the header is rebuilt by `zene`, the plugin and the tests (below) |
 
@@ -184,6 +189,18 @@ ctest -R "PeakController|ControllerSurface|LfoController" --output-on-failure
   LfoControllerUserWaveTest ............. Passed
   ControllerSurfaceTest ................. Failed  (pre-existing, see Other findings)
 
+# 4b again, now against the committed fix and with the third test in place
+git diff 6536ca482b HEAD -- include/PeakController.h src/core/PeakController.cpp \
+  > .../logs/fix-committed.patch                                       DIFF_EXIT=0
+git apply -R .../logs/fix-committed.patch                              REVERT_EXIT=0
+cmake --build build --target PeakControllerNullEffectTest -j4          build-13-reverted.log BUILD_EXIT=0
+ctest -R PeakControllerNullEffectTest --output-on-failure              test-10-red-reverted.log EXIT=8
+  Totals: 5 passed, 2 failed  (the two regression tests fail; the reconfiguration guard passes)
+git apply .../logs/fix-committed.patch                                 REAPPLY_EXIT=0
+cmake --build build --target PeakControllerNullEffectTest -j4          build-14-reapplied.log BUILD_EXIT=0
+ctest -R PeakControllerNullEffectTest --output-on-failure              test-11-green.log EXIT=0
+  ./PeakControllerNullEffectTest  Totals: 7 passed, 0 failed
+
 # gates
 python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>
                                                                        gates-1.log   EXIT=0
@@ -228,10 +245,10 @@ build gets anyway, with the machine otherwise idle.
 1. **The regression test fails with the product change reverted and passes with it.**
    Exit codes from this session: `git apply -R .../logs/fix.patch` → `REVERT_EXIT=0`,
    rebuild → `BUILD_EXIT=0`, `ctest -R PeakControllerNullEffectTest --output-on-failure` →
-   `EXIT=8` with both new tests failing (`test-2-red.log`, `test-6-red-reverted.log`); then
-   `git apply .../logs/fix.patch` → `REAPPLY_EXIT=0`, rebuild → `BUILD_EXIT=0`,
-   `ctest -R PeakControllerNullEffectTest --output-on-failure` → `EXIT=0`
-   (`test-8-green.log`), `Totals: 6 passed, 0 failed`. The reverted failure is a *test*
+   `EXIT=8` with both regression tests failing (`test-2-red.log`, `test-6-red-reverted.log`,
+   `test-10-red-reverted.log`); then `git apply .../logs/fix.patch` → `REAPPLY_EXIT=0`,
+   rebuild → `BUILD_EXIT=0`, `ctest -R PeakControllerNullEffectTest --output-on-failure` →
+   `EXIT=0` (`test-8-green.log`, `test-11-green.log`), `Totals: 7 passed, 0 failed`. The reverted failure is a *test*
    failure, not a build failure: the probe and the friend live in their own commit
    (`6536ca482b`), so the revert restores only the behaviour.
 2. **The test is deterministic.** No sleep, no thread, no clock, no wall-clock threshold on a
@@ -256,8 +273,8 @@ build gets anyway, with the machine otherwise idle.
 4. **No collateral damage.** The flag is not persisted: `saveSettings`/`loadSettings`, the
    `effectId` compatibility path (`initGetControllerBySetting`, `getControllerBySetting`) and
    the value-buffer arithmetic are untouched, so an old project loads exactly as before and
-   still publishes its coefficients on the first period after the effect is attached (the
-   null-effect tests in the same file cover that reconfiguration path). No limit or check was
+   still publishes its coefficients on the first period after the effect is attached
+   (`nullEffectKeepsCoefficientRequestPending` proves it). No limit or check was
    added. The header change is an ABI change inside a tree that builds the plugin and the core
    together; `zene`, `peakcontrollereffect` and `PeakControllerEffectZeroFrameTest` were all
    rebuilt (`build-11.log`, `EXIT=0`).
