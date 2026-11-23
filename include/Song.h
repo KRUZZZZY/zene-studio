@@ -411,7 +411,8 @@ public:
 	 *  are an upper bound of the true counts; when the larger passes the reserve, ensureAutomationScratch-
 	 *  Capacity recounts exactly and reserves 2x under the engine change lock. That is O(1) per call and
 	 *  O(project) once per doubling. On the render thread (or inside a RealtimeScope) only the bounds move:
-	 *  nothing there may allocate, and the read's overflow redo covers it. */
+	 *  nothing there may allocate; a read that then overflows holds its tick and flags the scratch, and
+	 *  growAutomationScratchIfShort grows it from the song's control-thread drain timer (new-p16-231). */
 	void noteAutomationGrowth(std::size_t clips, std::size_t targets) noexcept;
 	//! Recounts the clips and automation targets of the song, the global track and the pattern store exactly
 	//! and reserves the scratch for them (control thread; takes the engine change lock itself).
@@ -422,11 +423,15 @@ public:
 	{
 		return std::max(m_automationClipBound.load(), m_automationTargetBound.load());
 	}
+	//! Control thread (the song's automationWriteDrainTimer): grows the scratch after the render path held an
+	//! overflowing tick. Does nothing when no tick overflowed.
+	void growAutomationScratchIfShort();
 	//! Test seam: replaces the scratch with one of \a capacity (call with the render locked out).
 	void resizeAutomationScratchForTest(std::size_t capacity);
 	//! How many ticks read more clips or values than the scratch had room for since the song was made.
-	//! Each was redone on an allocating scratch, so the automation applied was still complete; a non-zero
-	//! count means ensureAutomationScratchCapacity had not run for a change (e.g. a load) before it played.
+	//! On the render path such a tick is held (nothing applied, no allocation) and the scratch is grown by
+	//! growAutomationScratchIfShort on the control thread; off it, the tick is redone on an allocating scratch.
+	//! A non-zero count means ensureAutomationScratchCapacity had not run for a change before it played.
 	std::uint64_t automationScratchOverflows() const noexcept
 	{
 		return m_automationScratchOverflows.load(std::memory_order_relaxed);
@@ -803,6 +808,7 @@ private:
 	 *  preserved for. */
 	bool restoreGuiSection(const QDomElement & element);
 
+	bool holdOverflowingAutomationTick() noexcept;
 	void processAutomations(const TrackList& tracks, TimePos timeStart, f_cnt_t frames,
 		const AutomationLatency::ReadSnapshot& latencySnapshot);
 	void noteRecordedModel(const AutomatableModel* model);
@@ -978,6 +984,8 @@ private:
 	AutomationRenderScratch m_automationRecordClips{AutomationRenderScratch::RenderCapacity};
 	std::vector<const AutomatableModel*> m_recordedModels;
 	std::atomic<std::uint64_t> m_automationScratchOverflows{0};
+	//! Set by the render path when it held an overflowing tick; cleared by growAutomationScratchIfShort.
+	std::atomic<bool> m_automationScratchShort{false};
 	std::atomic<std::size_t> m_automationClipBound{0};
 	std::atomic<std::size_t> m_automationTargetBound{0};
 	//! The smallest capacity of the lists above, as of the last reserve.

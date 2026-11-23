@@ -154,6 +154,8 @@ Song::Song() :
 	automationWriteTimer->setObjectName(QStringLiteral("automationWriteDrainTimer"));
 	automationWriteTimer->setInterval(10);
 	connect(automationWriteTimer, &QTimer::timeout, this, &Song::applyPendingAutomationWrites);
+	// new-p16-231: the same control-thread drain grows a scratch the render path found too small.
+	connect(automationWriteTimer, &QTimer::timeout, this, &Song::growAutomationScratchIfShort);
 	automationWriteTimer->start();
 
 	// Frozen takes keep the committed tempo map in step with every publication (control thread, render period
@@ -734,13 +736,25 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 
 	// Everything this tick builds lives in the Song's scratch, reserved in the constructor: the read runs on
 	// the audio thread, where RealtimeSanitizer reported the vector and map it used to allocate.
-	// A read that overflowed the reserved scratch is incomplete. It is redone on an unbounded one (these
-	// stay empty, and allocate nothing, unless that happens): late, but never wrong.
+	// A read that overflowed the reserved scratch is incomplete. On the render path (new-p16-231) the tick is
+	// held - nothing applied, nothing restored - and the control thread grows the scratch (see
+	// growAutomationScratchIfShort). Off it, the read is redone on an unbounded scratch (these stay empty, and
+	// allocate nothing, unless that happens): late, but never wrong.
 	AutomationRenderScratch spillValues;
 	AutomationRenderScratch spillInner;
 	AutomationRenderScratch spillClips;
 	AutomationRenderScratch* valuesIn = &m_automationLevel;
 	container->fillAutomatedValues(*valuesIn, &m_automationInner, timeStart, clipNum, latencySnapshot);
+	const TrackList& tracks = container->tracks();
+	AutomationRenderScratch* clipsIn = &m_automationRecordClips;
+	clipsIn->clear();
+	for (Track* track : tracks)
+	{
+		if (track->type() == Track::Type::Automation) {
+			clipsIn->insertClipsInRange(*track, 0, timeStart);
+		}
+	}
+	if (holdOverflowingAutomationTick()) { return; }
 	if (valuesIn->overflows() != 0 || m_automationInner.overflows() != 0)
 	{
 		m_automationScratchOverflows.fetch_add(1, std::memory_order_relaxed);
@@ -750,16 +764,6 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 		valuesIn = &spillValues;
 	}
 	AutomationRenderScratch& values = *valuesIn;
-	const TrackList& tracks = container->tracks();
-
-	AutomationRenderScratch* clipsIn = &m_automationRecordClips;
-	clipsIn->clear();
-	for (Track* track : tracks)
-	{
-		if (track->type() == Track::Type::Automation) {
-			clipsIn->insertClipsInRange(*track, 0, timeStart);
-		}
-	}
 	if (clipsIn->overflows() != 0)
 	{
 		m_automationScratchOverflows.fetch_add(1, std::memory_order_relaxed);
@@ -882,6 +886,35 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 		}
 	}
 
+}
+
+//! True when this tick's bounded read did not fit the reserved scratch (or the lists the apply pass fills could
+//! not hold it) and the tick runs on the render path, where the allocating redo is not allowed (new-p16-231).
+//! The tick is then counted, the scratch is flagged for the control thread to grow, and the caller holds the
+//! tick: no value is applied and the cached models stay on automation, so nothing is dropped or handed back.
+bool Song::holdOverflowingAutomationTick() noexcept
+{
+	const bool overflowed = m_automationLevel.overflows() != 0 || m_automationInner.overflows() != 0
+		|| m_automationRecordClips.overflows() != 0
+		|| m_oldAutomatedValues.capacity() < m_automationLevel.size()
+		|| m_recordedModels.capacity() < m_automationRecordClips.clips().size();
+	const AudioEngine* audio = Engine::audioEngine();
+	const bool renderPath = RealtimeScope::isActive() || (audio != nullptr && audio->isRenderThread());
+	if (!overflowed || !renderPath) { return false; }
+	m_automationScratchOverflows.fetch_add(1, std::memory_order_relaxed);
+	m_automationScratchShort.store(true, std::memory_order_relaxed);
+	m_automationLevel.takeOverflows();
+	m_automationInner.takeOverflows();
+	m_automationRecordClips.takeOverflows();
+	return true;
+}
+
+void Song::growAutomationScratchIfShort()
+{
+	if (!m_automationScratchShort.exchange(false, std::memory_order_relaxed)) { return; }
+	if (Engine::audioEngine() == nullptr) { return; }
+	try { ensureAutomationScratchCapacity(); }
+	catch (...) { m_automationScratchShort.store(true, std::memory_order_relaxed); /* out of memory: retry next drain */ }
 }
 
 //! Remembers \a model as written to this tick (kept sorted for the lookup in the apply pass). A full list drops it.
