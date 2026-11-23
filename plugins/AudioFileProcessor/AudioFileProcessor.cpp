@@ -426,7 +426,7 @@ auto AudioFileProcessor::beatLen(NotePlayHandle* note) const -> f_cnt_t
 
 	const auto startFrame = m_nextPlayStartPoint >= static_cast<std::size_t>(m_sample.endFrame())
 		? m_sample.startFrame()
-		: m_nextPlayStartPoint;
+		: static_cast<f_cnt_t>(m_nextPlayStartPoint);
 	const auto duration = m_sample.endFrame() - startFrame;
 
 	return static_cast<f_cnt_t>(std::floor(duration * freqFactor * sampleRateRatio));
@@ -453,10 +453,17 @@ void AudioFileProcessor::setAudioFile(const QString& _audio_file, bool _rename)
 	}
 	// else we don't touch the track-name, because the user named it self
 
-	replaceSample(Sample(SampleBuffer::fromFile(_audio_file)));
-	loopPointChanged();
-	ampModelChanged();
-	reverseModelChanged();
+	auto next = Sample(SampleBuffer::fromFile(_audio_file));
+	{
+		// The sample, its point frames and the reset cursor reach a starting note together. The guard
+		// is recursive and is dropped before the final signal, so no GUI handler runs under the lock.
+		auto* const engine = Engine::audioEngine();
+		const auto guard = engine ? engine->requestChangesGuard() : AudioEngine::RequestChangesGuard{};
+		replaceSample(std::move(next));
+		loopPointChanged();
+		ampModelChanged();
+		reverseModelChanged();
+	}
 	emit sampleUpdated();
 }
 
@@ -470,7 +477,7 @@ void AudioFileProcessor::replaceSample(Sample next)
 	// sounding note keeps the buffer it captured; the old one is freed here, never on the audio
 	// thread, once no note holds it anymore.
 	AudioEngine* const engine = Engine::audioEngine();
-	if (engine != nullptr) { engine->requestChangeInModel(); }
+	const auto guard = engine ? engine->requestChangesGuard() : AudioEngine::RequestChangesGuard{};
 	const auto previous = m_sample.buffer();
 	if (previous != SampleBuffer::emptyBuffer()) { m_retiredSamples.push_back(previous); }
 	m_sample = std::move(next);
@@ -478,7 +485,6 @@ void AudioFileProcessor::replaceSample(Sample next)
 	m_retiredSamples.erase(std::remove_if(m_retiredSamples.begin(), m_retiredSamples.end(),
 		[](const std::shared_ptr<const SampleBuffer>& buffer) { return buffer.use_count() == 1; }),
 		m_retiredSamples.end());
-	if (engine != nullptr) { engine->doneChangeInModel(); }
 }
 
 

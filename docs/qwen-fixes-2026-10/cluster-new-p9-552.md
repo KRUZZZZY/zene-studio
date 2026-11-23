@@ -10,11 +10,10 @@ control thread while `playNoteImpl()` read the same object on the render/audio w
 worker could observe a half-updated `Sample`, and the copy assignment could free the old
 buffer while a note was still reading its frames.
 
-Round-2 revision: the code was trimmed to **30 added non-comment product lines** (limit
-40; round 1 was 51) with no change in behaviour. The mutex and the GUI-poll pruning call
-were removed; retirement now happens inside the model-guarded publish in `replaceSample()`,
-which serialises control threads as well as the render thread. The report below describes
-the trimmed code and the re-run proof.
+Round-3 revision (the round-2 reviewer's checkpoint): the snapshot design is kept and the two
+missing pieces are added - the playback cursor is atomic, and the whole publish sequence in
+`setAudioFile()` runs under one engine model guard. The product diff against `21c2f3ee2e` is
+**40 added non-comment lines** (limit 40; round 1 was 51).
 
 ## Evidence (code before the fix, branch `bugs/qwen-new-p9-552`)
 
@@ -57,6 +56,27 @@ took that lock.
   `AudioFileProcessor.h:156`, `AudioFileProcessor.cpp:423-425`) instead of dereferencing the
   buffer pointer.
 
+- Round 3, cursor: `m_nextPlayStartPoint` / `m_nextPlayBackwards` are now
+  `std::atomic<f_cnt_t>` / `std::atomic<bool>` (`AudioFileProcessor.h:179-180`). They are
+  written by the knob/automation slots (control thread), by the stutter and end-of-note
+  writes on the render thread, and by the magic-key write, and read by note starts and by
+  `beatLen()` (MIDI thread). The existing assignments and comparisons compile unchanged, so
+  they use the default (sequentially consistent) ordering, not an explicit relaxed one;
+  `beatLen()` needed one `static_cast<f_cnt_t>` (`AudioFileProcessor.cpp:429`) because the
+  `?:` operands differ in type.
+- Round 3, atomic publish: `setAudioFile()` decodes the file first (outside the lock), then
+  holds the engine model guard across `replaceSample()`, `loopPointChanged()`,
+  `ampModelChanged()` and `reverseModelChanged()` (`AudioFileProcessor.cpp:458-466`), so the new
+  sample, its point frames and the reset cursor appear together to a starting note. The guard
+  is released before the final `emit sampleUpdated()`. `replaceSample()` now takes the guard
+  with the same RAII idiom (`:480`); the lock is recursive, so the nesting is safe. The
+  `sampledata` branch of `loadSettings()` (`:353`) calls `replaceSample()`, which holds the
+  guard for the swap; it does not call the point/amp/reverse slots (the model loads that
+  follow do), so there is no wider sequence to hold there.
+- Known limit: `loopPointChanged()`, `ampModelChanged()` and `reverseModelChanged()` emit
+  `sampleUpdated()` themselves, so those inner emits run under the guard (the test below
+  relies on that to observe it). Only the final emit is outside. The handlers are GUI repaints.
+
 Realtime: the only audio-thread additions are a `shared_ptr` copy (atomic refcount) for the
 per-note snapshot, one `Sample` assignment for the live-settings refresh (atomic loads and
 refcount ops), and an atomic rate read in `beatLen()`. Nothing on the render path allocates,
@@ -64,7 +84,7 @@ frees, locks, waits, logs or emits.
 
 Product-line count (the round-1 send-back):
 
-- `git diff 21c2f3ee2e -- plugins/AudioFileProcessor/AudioFileProcessor.cpp plugins/AudioFileProcessor/AudioFileProcessor.h | grep '^+' | grep -v '^+++' | sed 's/^+//' | sed 's/^[[:space:]]*//' | grep -v '^//' | awk 'NF' | wc -l` -> `30` (limit 40; round 1 measured 51).
+- `git diff 21c2f3ee2e -- plugins/AudioFileProcessor/AudioFileProcessor.cpp plugins/AudioFileProcessor/AudioFileProcessor.h | grep '^+' | grep -v '^+++' | sed 's/^+//' | sed 's/^[[:space:]]*//' | grep -v '^//' | awk 'NF' | wc -l` -> `40` (limit 40; round 1 measured 51; round 2 was 30 before the cursor/guard additions).
 
 ## Regression test
 
@@ -77,6 +97,15 @@ flat 0.5 buffer (peak > 0.4) rather than the ramp (~0.01). It then checks that a
 started after the replacement plays the new ramp (peak < 0.1), and that a second
 replacement still leaves the first note on its own source. Deterministic: fixed sample
 files, fixed period counts, no sleeps, threads, clocks or timestamps.
+
+Second regression test, `tests/src/core/SamplerVoiceReuseTest.cpp:235`
+`setAudioFilePublishesUnderOneModelGuard`: a direct-connected probe on `sampleUpdated()`
+records `AudioEngine::isChangeInModelHeld()` (thread-local lock depth of the emitting thread)
+at each emission. With the fix the first emission (from `ampModelChanged()`) is under the
+guard and the last (the final emit) is not. Without it the first emission is unguarded.
+Deterministic: single thread, no timing. It covers the atomic-publish part; the cursor
+atomics are a type-level change with no deterministic behavioural test (TSan does not run on
+this box), so they are justified by the design argument only.
 
 The allocation case `noteStartAndVoiceReuseDoNotAllocate` (`:223`) is a companion check, not
 proof of the lifetime fix: it counts `operator new` only, during note start, voice reuse and
@@ -96,38 +125,40 @@ frees at disposal. The "no free on the audio thread" guarantee above is a design
 | old projects | `loadSettings()` still loads `src` through `setAudioFile()` and `sampledata` through `replaceSample()` with identical `m_sample` contents; `SamplerEnvelopeTest` (defaults, save/load round trip) passes |
 | supported platforms | no Qt-6-only API, no platform-specific code; the change is portable C++20 (`<atomic>`, `<vector>`) |
 
-## Commands and results (logs in `~/.config/kads/zene/state/runs/new-p9-552.r2/logs/`)
+## Commands and results (logs in `~/.config/kads/zene/state/runs/new-p9-552.r3/logs/`)
 
-Trimmed fix builds and passes:
+Run by a Haiku assistant, with the exit codes and test lines checked against the logs by me.
+`ctest -R Sampler` returns 8 because `SamplerTakeGuiTest` is registered but its binary is not
+built in this tree (`Not Run`); the three built Sampler tests passed (`test-1.log`, `test-4.log`).
 
-- `cmake --build build --target audiofileprocessor SamplerVoiceReuseTest -j4` -> `EXIT=0` (`build-1.log`)
-- `ctest -R '^SamplerVoiceReuseTest$' --output-on-failure` -> `EXIT=0` (`test-green-1.log`)
+- Green, tree as committed + round-3 edits: `cmake --build build --target zene SamplerVoiceReuseTest -j4` -> `EXIT=0` (`build-1.log`);
+  `ctest -R Sampler` -> SamplerTakeTest, SamplerEnvelopeTest, SamplerVoiceReuseTest Passed (`test-1.log`).
+- Step 4b, red with only the round-3 delta reversed (`git diff HEAD -- plugins > delta.patch; git apply -R delta.patch`
+  -> exit 0, rebuild `EXIT=0` `build-2.log`): `ctest -R SamplerVoiceReuseTest` -> `EXIT=8`,
+  9 passed 1 failed (`test-2.log`):
+  `FAIL! : SamplerVoiceReuseTest::setAudioFilePublishesUnderOneModelGuard() 'probe.held.front()' returned FALSE.`
+  Delta restored with `git apply delta.patch` -> exit 0.
+- Step 4b, red with the whole product fix reversed (`git diff 21c2f3ee2e -- plugins > fix.patch; git apply -R fix.patch`
+  -> exit 0, rebuild `EXIT=0` `build-3.log`): `ctest -R SamplerVoiceReuseTest` -> `EXIT=8`,
+  8 passed 2 failed (`test-3.log`):
+  `FAIL! : ... replacingTheSampleKeepsASoundingNoteOnItsSource() ... (the sounding note switched samples: last-period peak 0.010437)` and
+  `FAIL! : ... setAudioFilePublishesUnderOneModelGuard() 'probe.held.front()' returned FALSE.`
+- Restored with `git apply fix.patch` -> exit 0; `git diff 21c2f3ee2e -- plugins | cmp - fix.patch` -> `CMP=0`;
+  rebuild `EXIT=0` (`build-4.log`); `ctest -R Sampler` -> the three built tests Passed (`test-4.log`).
+- Family: `cmake --build build --target zene SamplerTakeTest AudioFileProcessorWaveViewTest AudioFileProcessorPlayheadTest SamplerEnvelopeTest SamplerVoiceReuseTest -j4`
+  -> `EXIT=0` (`build-family.log`); `ctest -R '^(SamplerTakeTest|AudioFileProcessorWaveViewTest|AudioFileProcessorPlayheadTest|SamplerEnvelopeTest|SamplerVoiceReuseTest)$'`
+  -> `EXIT=0`, `100% tests passed out of 5` (`test-family.log`).
+- Gates: `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` -> `EXIT=0`, `RESULT: PASS`,
+  all eight rows PASS (`feature-check.log`).
 
-Step 4b, reverting the whole product change to the base commit and rebuilding:
-
-- `git diff 21c2f3ee2e -- plugins/AudioFileProcessor/AudioFileProcessor.cpp plugins/AudioFileProcessor/AudioFileProcessor.h > .../logs/fix.patch` -> `DIFF_EXIT=0`
-- `git apply -R .../logs/fix.patch` -> `REVERSE_APPLY_EXIT=0`
-- `cmake --build build --target audiofileprocessor SamplerVoiceReuseTest -j4` -> `BUILD_EXIT=0` (`build-red-without-fix.log`)
-- `ctest -R '^SamplerVoiceReuseTest$' --output-on-failure` -> `TEST_EXIT=8` (`test-red-without-fix.log`)
-  `FAIL! : ... replacingTheSampleKeepsASoundingNoteOnItsSource() 'lastPeriodPeak(held) > 0.4f' returned FALSE. (the sounding note switched samples: last-period peak 0.010437)`
-- `git apply .../logs/fix.patch` -> `APPLY_EXIT=0`
-- `cmake --build build --target audiofileprocessor SamplerVoiceReuseTest -j4` -> `BUILD_EXIT=0` (`build-green-after-reapply.log`)
-- `ctest -R '^SamplerVoiceReuseTest$' --output-on-failure` -> `TEST_EXIT=0` (`test-green-after-reapply.log`)
-
-Family (all tests around the changed area):
-
-- `ctest -R '^(SamplerTakeTest|AudioFileProcessorWaveViewTest|AudioFileProcessorPlayheadTest|SamplerEnvelopeTest|SamplerVoiceReuseTest)$' --output-on-failure` -> `EXIT=0`, 5/5 passed (`test-family-1.log`)
-
-Gates:
-
-- `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` -> `EXIT=0`, `RESULT: PASS` (`feature-check-1.log`), all eight rows PASS including complexity and file-length.
+Not verified: no ThreadSanitizer run (it does not run on this box); the race reasoning is by design.
 
 ## Self-check
 
 - **The regression test FAILS with the product change reverted and PASSES with it.**
-  Reverted the cumulative product patch to the base commit and rebuilt (`REVERSE_APPLY_EXIT=0`,
-  `BUILD_EXIT=0`): `TEST_EXIT=8` with the failure quoted above. Re-applied
-  (`APPLY_EXIT=0`), rebuilt, reran: `TEST_EXIT=0`. Exact commands and logs are listed above.
+  Reversed the product patch (whole fix, and separately the round-3 delta), rebuilt, and saw the
+  failures quoted above (`test-2.log`, `test-3.log`); re-applied, rebuilt, and the tests pass
+  (`test-4.log`). Exact commands and logs are listed above.
 - **The test is deterministic: no wall-clock timing, sleeps or races.** It uses fixed WAV
   fixtures (a flat 0.5 file and a ramp), a fixed number of rendered periods, and checks the
   rendered peak of the last period. It starts no thread and reads no clock; all ordering is
@@ -155,12 +186,10 @@ Gates:
 
 ## Other findings (not fixed here)
 
-- `m_nextPlayStartPoint` / `m_nextPlayBackwards` are plain members written by the control
-  thread (`pointChanged()`, `stutterModelChanged()`, `setAudioFile()`'s follow-up calls)
-  and read/written by `playNoteImpl()` on the render thread, and `m_nextPlayStartPoint` is
-  also read by `beatLen()` on a MIDI thread. That is a pre-existing value race unrelated to
-  the buffer lifetime this cluster reports; making them atomic would touch far more of the
-  playback state and was left for a separate finding.
 - `AudioFileProcessorWaveView` keeps a raw `Sample const*` into the instrument and repaints
   from it; a control-command thread replacing the file while the GUI paints could race with
-  it. Also outside this finding's audio-playback scope.
+  it. Outside this finding's audio-playback scope.
+
+Delegation: a Haiku assistant ran every build and ctest run (green, the two red reversals,
+restore, the family run) and the feature-check gate, and reported exit codes and test lines
+that I re-read from the logs. I designed and wrote the code, both tests, and this report.

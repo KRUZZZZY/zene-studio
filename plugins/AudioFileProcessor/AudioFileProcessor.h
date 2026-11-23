@@ -175,8 +175,9 @@ private:
 	//! Built once, in the converter mode Sample::play requests, so the render path only claims and releases voices.
 	std::unique_ptr<SamplerVoicePool> m_voices;
 
-	f_cnt_t m_nextPlayStartPoint;
-	bool m_nextPlayBackwards;
+	//! Written by knob/automation slots and the render thread, read by note starts: atomic.
+	std::atomic<f_cnt_t> m_nextPlayStartPoint;
+	std::atomic<bool> m_nextPlayBackwards;
 } ;
 
 } // namespace lmms

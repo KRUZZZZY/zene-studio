@@ -45,6 +45,16 @@ void operator delete[](void* memory) noexcept { std::free(memory); }
 void operator delete(void* memory, std::size_t) noexcept { std::free(memory); }
 void operator delete[](void* memory, std::size_t) noexcept { std::free(memory); }
 
+//! Records, at each sampleUpdated() emission, whether the emitting thread holds the engine model lock.
+class UpdateProbe : public QObject
+{
+	Q_OBJECT
+public:
+	std::vector<bool> held;
+public slots:
+	void onUpdated() { held.push_back(Engine::audioEngine()->isChangeInModelHeld()); }
+};
+
 class SamplerVoiceReuseTest : public SamplerFixture
 {
 	Q_OBJECT
@@ -217,6 +227,23 @@ private slots:
 
 		NotePlayHandleManager::release(held.nph);
 		NotePlayHandleManager::release(fresh.nph);
+	}
+
+	//! BUG new-p9-552: setAudioFile() publishes the new sample, the point frames and the reset cursor
+	//! under one engine model guard, so a starting note sees them together. The inner slots' signals
+	//! are emitted inside that guard; the final sampleUpdated() is emitted after it is released.
+	void setAudioFilePublishesUnderOneModelGuard()
+	{
+		freshSampler(writeWav(m_dir.filePath(QStringLiteral("a.wav")), false));
+		const QString next = writeWav(m_dir.filePath(QStringLiteral("b.wav")), true);
+		UpdateProbe probe;
+		QVERIFY(QObject::connect(m_instrument, SIGNAL(sampleUpdated()), &probe, SLOT(onUpdated()),
+			Qt::DirectConnection));
+		QVERIFY(QMetaObject::invokeMethod(m_instrument, "setAudioFile",
+			Q_ARG(QString, next), Q_ARG(bool, false)));
+		QVERIFY(probe.held.size() >= 2);
+		QVERIFY2(probe.held.front(), "the amp/reverse publish steps must run under the model guard");
+		QVERIFY2(!probe.held.back(), "the final sampleUpdated() must be emitted after the guard is released");
 	}
 
 	//! Starting a note, reusing a voice and releasing a note allocate nothing.
