@@ -32,6 +32,8 @@
 
 #include "lmms_export.h"
 
+class QFile;
+
 namespace lmms
 {
 struct ControlCommand;
@@ -88,6 +90,23 @@ LMMS_EXPORT bool hasPathLikeArgument(const QJsonObject& args);
 
 //! The commands a Remote-role peer may run (WF-052): transport, markers, mixer faders and state polling.
 LMMS_EXPORT QStringList remoteAllowList();
+
+/*! Where a joined peer's copy lives: \a directory joined with joined-<label>-<token>.mmpz. The label is
+ *  sanitised to letters, digits and '-', and capped at 64 characters. Never returns a path that already
+ *  exists: when that name is taken it tries the bounded -2..-64 siblings, and returns an empty string
+ *  when they are all taken, so no occupied file is ever replaced. */
+LMMS_EXPORT QString snapshotDestination(const QString& directory, const QString& hostLabel, const QString& sessionToken);
+
+/*! Selects a free name as snapshotDestination() does and reserves it atomically: \a file is opened with
+ *  QIODevice::NewOnly, so a name another process takes between selection and reservation is skipped (the
+ *  other file is left untouched) and the next free sibling is tried. On success \a file holds the
+ *  reservation and \a path names it; on failure \a error says why. */
+LMMS_EXPORT bool reserveSnapshotDestination(const QString& directory, const QString& hostLabel,
+	const QString& sessionToken, QFile* file, QString* path, QString* error);
+
+/*! Reserves exactly \a path: opens \a file with QIODevice::NewOnly, so an existing file is never replaced.
+ *  The caller writes the snapshot through the returned handle, which stays open for this join. */
+LMMS_EXPORT bool reserveSnapshotFile(QFile* file, const QString& path, QString* error);
 
 } // namespace lmms::collab
 

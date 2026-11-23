@@ -236,6 +236,24 @@ void CollabTransportTest::snapshotReadFailuresPreserveFileReason() {
 	QVERIFY2(openReason > openFailure, "snapshot open failure discards QFile's error reason");
 	QVERIFY2(read >= 0 && readFailure > read, "snapshot read errors are not checked after readAll");
 }
+void CollabTransportTest::applySnapshotUsesUniqueDestinationInSource() {
+	QFile sessionSyncSource(QStringLiteral(COLLAB_SESSION_SYNC_SOURCE_PATH));
+	QVERIFY2(sessionSyncSource.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(sessionSyncSource.errorString()));
+	const QString source = QString::fromUtf8(sessionSyncSource.readAll());
+	QVERIFY2(!source.contains(QStringLiteral("snapshotPathFor")), "the deterministic snapshotPathFor helper is still present");
+	const qsizetype applyStart = source.indexOf(QStringLiteral("bool CollabSession::applySnapshot"));
+	const qsizetype applyEnd = source.indexOf(QStringLiteral("bool CollabSession::applyCommand"), applyStart);
+	QVERIFY2(applyStart >= 0 && applyEnd > applyStart, "the snapshot applier is missing");
+	const QString applier = source.mid(applyStart, applyEnd - applyStart);
+	QVERIFY2(applier.contains(QStringLiteral("reserveSnapshotDestination(")),
+		"applySnapshot does not reserve a unique destination atomically");
+	QVERIFY2(applier.contains(QStringLiteral("m_snapshotPath")),
+		"applySnapshot does not cache the session's destination");
+	QVERIFY2(applier.contains(QStringLiteral("m_snapshotFile")),
+		"applySnapshot does not write through the reserved handle");
+	QVERIFY2(!applier.contains(QStringLiteral("QSaveFile")),
+		"applySnapshot still publishes with a replacing QSaveFile");
+}
 void CollabTransportTest::blankLinesAreDispatchedInSource() {
 	QFile hostSource(QStringLiteral(COLLAB_HOST_SOURCE_PATH));
 	QVERIFY2(hostSource.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(hostSource.errorString()));

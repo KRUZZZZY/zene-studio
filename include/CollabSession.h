@@ -38,6 +38,7 @@
 #include "ControlRegistry.h"
 #include "lmms_export.h"
 
+class QFile;
 class QTimer;
 
 namespace lmms
@@ -123,6 +124,9 @@ private:
 
 	Mode m_mode = Mode::Idle;
 	QString m_name;
+	QString m_snapshotToken;  //!< per-join, so two joins never share a joined-copy name
+	QString m_snapshotPath;   //!< allocated once per join, and reused by every resync of it
+	std::unique_ptr<QFile> m_snapshotFile;  //!< the handle this join reserved; writes never replace another file
 	QString m_origin;  //!< the peer whose request is being applied (host side)
 	QString m_resyncReason;
 	QString m_notice;

@@ -11,7 +11,12 @@ THE STEPS (every assertion reads a copy's own state, never the reply of the edit
   2. A hosts (consent true, map_port false: no router is involved) and hands out a
      "local" editor invite; collab.host without consent is refused.
   3. B joins and reaches peer.state "joined" with the project; A lists B.
-  3a. Re-sync both ways (collab.resync on the peer, then on the host) leaves the
+  3a. The finding's user scenario: B leaves, a sentinel project is saved at the legacy
+     deterministic collab/joined-<host>.mmpz name, and B re-joins. The sentinel must be
+     byte-for-byte unchanged, the re-join must use a DIFFERENT per-join token name that
+     holds the host snapshot, and B's open copy must match A's track count. A screenshot
+     of B after the re-join is taken (to <screenshot.png> when given).
+  3b. Re-sync both ways (collab.resync on the peer, then on the host) leaves the
      copies equal; the host changes B's role to viewer and back (collab.set_role),
      its peer list says so each time, and an unknown peer or a peer asking is refused.
   4. A adds a track: B's track count follows.
@@ -21,11 +26,12 @@ THE STEPS (every assertion reads a copy's own state, never the reply of the edit
   7. A viewer invite: a viewer's edit is refused locally, typed.
   8. B leaves, A stops; both quit with exit code 0.
 
-Usage: QT_QPA_PLATFORM=offscreen python3 control-collab.py <zene-binary>
+Usage: QT_QPA_PLATFORM=offscreen python3 control-collab.py <zene-binary> [<screenshot.png>]
 Exit 0 when every check held, 1 when one did not, 77 when the build has no collaboration.
 """
 
 import os
+import re
 import sys
 import time
 
@@ -117,6 +123,89 @@ def peer_role(a, peer_id):
     return None
 
 
+def step_rejoin_never_replaces_an_unrelated_project(a, b, invite, screenshot_path, problems):
+    """The finding's user scenario: a project already saved at the old deterministic
+    collab/joined-<host>.mmpz name must survive a re-join, while the joined copy moves to
+    this join's own joined-<host>-<token>.mmpz name and holds the host's project.
+
+    The first join tells us the joined-copy directory and its token name; the label before
+    the token is exactly the sanitised host:port the legacy path was derived from.
+    """
+    first = b.ok("project.get_state").get("file", "")
+    directory, first_name = os.path.split(first)
+    match = re.match(r"^joined-(?P<label>.+)-(?P<token>[0-9a-f]{12})(?:-\d+)?\.mmpz$", first_name)
+    problems.require(bool(match), "B's joined copy is not a token name: %r" % first_name)
+    if match:
+        legacy = os.path.join(directory, "joined-%s.mmpz" % match.group("label"))
+    else:
+        # The unfixed build's deterministic name IS the legacy path; keep going so the
+        # sentinel assertion below reports the data loss itself, not only the naming.
+        legacy = first
+    problems.require(not os.path.exists(legacy),
+                     "the legacy deterministic path already exists before the scenario: %r" % legacy)
+    sentinel = (b'<?xml version="1.0"?>\n<lmms-project sentinel="new-p15-294">'
+                b'a project the user saved at the legacy joined name</lmms-project>\n')
+
+    b.ok("collab.leave")
+    wait_for(lambda: b.state().get("mode") == "idle", "B is idle after collab.leave")
+    os.makedirs(directory, exist_ok=True)
+    with open(legacy, "wb") as handle:
+        handle.write(sentinel)
+    print("[B-peer] wrote the sentinel project at the legacy path %s" % legacy, flush=True)
+
+    joined = b.ok("collab.join", {"invite": invite, "name": "B"})
+    problems.require(joined.get("mode") == "joined", "B did not re-join: %r" % joined.get("mode"))
+    wait_for(lambda: peer_joined(b), "B re-joined with the host's project")
+    wait_for(lambda: len(a.state().get("host", {}).get("peers", [])) == 1, "A lists B again")
+
+    state = b.ok("project.get_state")
+    second = state.get("file", "")
+    directory2, second_name = os.path.split(second)
+    second_match = re.match(r"^joined-(?P<label>.+)-(?P<token>[0-9a-f]{12})\.mmpz$", second_name)
+    problems.require(directory2 == directory, "the re-join changed the joined-copy directory: %r" % second)
+    problems.require(bool(second_match), "the re-join did not use a token name: %r" % second_name)
+    if second_match and match:
+        problems.require(second_match.group("label") == match.group("label"),
+                         "the re-join changed the host label: %r" % second_name)
+        problems.require(second_match.group("token") != match.group("token"),
+                         "the re-join reused the first join's token: %r" % second_name)
+    problems.require(second != first, "the re-join reused the first join's path: %r" % second)
+    problems.require(second != legacy, "the re-join wrote to the legacy deterministic path: %r" % second)
+
+    # (a) the sentinel project is byte-for-byte unchanged.
+    with open(legacy, "rb") as handle:
+        preserved = handle.read()
+    problems.require(preserved == sentinel,
+                     "the sentinel project at %r was changed by the re-join" % legacy)
+
+    # (c) the token file is a real snapshot, and it is the copy B now has open.
+    problems.require(os.path.isfile(second), "the re-join's token file does not exist: %r" % second)
+    if os.path.isfile(second):
+        size = os.path.getsize(second)
+        problems.require(size > 0, "the re-join's token file is empty: %r" % second)
+        problems.require(size != len(sentinel), "the token file still holds the sentinel, not the host snapshot")
+        with open(second, "rb") as handle:
+            problems.require(handle.read() != sentinel, "the token file holds the sentinel, not the host snapshot")
+    problems.require(a.track_count() == state.get("track_count"),
+                     "the re-join's opened copy does not match the host's track count")
+
+    take_screenshot(b, screenshot_path, problems)
+
+
+def take_screenshot(side, path, problems):
+    """A real rendered frame of the re-joined peer, for the proof manifest."""
+    if not path:
+        path = os.path.join(side.instance.tmp, "b-after-rejoin.png")
+    side.ok("window.screenshot", {"path": path})
+    problems.require(os.path.isfile(path), "the after-rejoin screenshot was not written: %r" % path)
+    if os.path.isfile(path):
+        with open(path, "rb") as handle:
+            signature = handle.read(8)
+        problems.require(signature == b"\x89PNG\r\n\x1a\n", "the after-rejoin screenshot is not a PNG: %r" % signature)
+        problems.require(os.path.getsize(path) > 0, "the after-rejoin screenshot is empty")
+        print("[%s] screenshot -> %s (%d bytes)" % (side.label, path, os.path.getsize(path)), flush=True)
+
+
 def step_session_controls(a, b, problems):
     resent = b.ok("collab.resync")
     problems.require(resent.get("mode") == "joined", "B's collab.resync did not answer with its session state")
@@ -189,7 +278,7 @@ def step_quit(a, b, problems):
         problems.require(exited and code == 0, "%s did not exit cleanly (exited=%s code=%r)" % (side.label, exited, code))
 
 
-def run(binary):
+def run(binary, screenshot_path=None):
     problems = H.Problems()
     a = Side("A-host", binary)
     b = Side("B-peer", binary)
@@ -200,6 +289,7 @@ def run(binary):
             return SKIP_EXIT
         invite = step_host(a, problems)
         step_join(a, b, invite, problems)
+        step_rejoin_never_replaces_an_unrelated_project(a, b, invite, screenshot_path, problems)
         step_session_controls(a, b, problems)
         step_host_edit(a, b, problems)
         step_peer_edit(a, b, problems)
@@ -215,7 +305,7 @@ def run(binary):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    if len(sys.argv) not in (2, 3):
         print(__doc__)
         sys.exit(2)
-    sys.exit(run(os.path.abspath(sys.argv[1])))
+    sys.exit(run(os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2]) if len(sys.argv) == 3 else None))
