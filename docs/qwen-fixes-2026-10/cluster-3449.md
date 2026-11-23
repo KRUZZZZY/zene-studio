@@ -22,7 +22,7 @@ cleanly in, and advances `sourcePosition()` with that same clamped rate.
 
 ## File and line evidence
 
-- Defect, pre-fix: `git show HEAD:src/core/RubberBandStretch.cpp:225-226` -
+- Defect, pre-fix (`git show 21c2f3ee2e:src/core/RubberBandStretch.cpp:225-226`):
   `const double validSpeed = std::isfinite(speed) && speed > 0.0 ? speed : 1.0;` then
   `1.0 / validSpeed`, and `:250` `m_sourcePos += produced * validSpeed`. The finding's
   line 205 has moved to 225 on this branch; the previous cluster (`new-p10-340`,
@@ -41,6 +41,48 @@ cleanly in, and advances `sourcePosition()` with that same clamped rate.
   fallback and needs no band: it never forms a reciprocal, it only multiplies its hop by
   `speed`, so its cursor and its audio stay one timeline at any positive rate. Left alone.
 - Regression test: `tests/src/tracks/SampleClipRubberBandTest.cpp:269-355` (slot at `:280`).
+
+## Round 2: the no-librubberband `-Werror` compile
+
+The review found that `slowestSpeed()` / `fastestSpeed()` (`src/core/RubberBandStretch.cpp:72,77`)
+are called only from render()'s `#ifdef LMMS_HAVE_RUBBERBAND` branch, so CI's
+linux-arm64 job (`.github/workflows/build.yml:316-318`, `WANT_RUBBERBAND=OFF` with
+`USE_WERROR=ON`) failed with `-Werror=unused-function`. Round 1's report claimed that
+configuration still compiled; that claim was wrong. Commit `60e79243e6` marks both helpers
+`[[maybe_unused]]`, with the reason in the comment above them, which is this codebase's own
+idiom for a helper a compile-time branch can leave unused.
+
+Verified this session with a real `-c` compile - the exact command line from
+`build/compile_commands.json` (it already carries `-Wall -Werror`), with a shadow
+`lmmsconfig.h` placed **first** on the include path that includes the real config and then
+`#undef LMMS_HAVE_RUBBERBAND`. `-c`, never `-fsyntax-only`, because a syntax-only run does
+not emit unused-function diagnostics:
+
+| Compile | Exit | Result |
+|---|---:|---|
+| shadow-config control (`#ifdef LMMS_HAVE_RUBBERBAND` -> `#error`, so 0 means the shadow really won) | 0 | no diagnostics: the macro is genuinely undefined |
+| pre-qa-fix source (`git show 60e79243e6^:src/core/RubberBandStretch.cpp`), same flags | 1 | `error: 'double lmms::{anonymous}::fastestSpeed(int)' defined but not used [-Werror=unused-function]`, and the same for `slowestSpeed` at `:72` |
+| current source, same flags | 0 | compiles clean |
+
+Command (rerunnable; the script is in the log folder) and its exit code:
+
+```
+python3 /home/kruzzzzy/.config/kads/zene/state/runs/3449.r2/logs/compile-probe.py \
+    /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-3449 \
+    /home/kruzzzzy/.config/kads/zene/state/runs/3449.r2/logs '60e79243e6^'   # EXIT 0
+shadowmacro  EXIT=0
+prefix       EXIT=1
+current      EXIT=0
+```
+
+Logs: `logs/compile-probe-run.log`, `logs/compile-norb-shadowmacro.log`,
+`logs/compile-norb-prefix.log`, `logs/compile-norb-current.log`. The probe exits non-zero if
+any of the three results is not the expected one.
+
+The review's other two points are corrected above: the platform row now states the
+`[[maybe_unused]]` requirement instead of claiming an unqualified compile, and the
+collateral-damage bullet now says plainly that rates between the clamp and the first
+measured warning are trimmed too, and why that margin is deliberate.
 
 ## Measurements behind the band (this session, this box)
 
@@ -90,14 +132,32 @@ second half; a full-speed render runs the source out and falls silent):
 | exhaustion | new slot's oracle: the source ends at `rate/100` frames; a full-speed render falls silent inside the block | the oracle is proven by the `speed == 1.0` control (`tail < 1e-3`) |
 | reconfiguration | `aNaNSpeedKeepsSourcePositionFinite` (ratio path), `theStretchCommandDrivesTheMode` and `theModeRoundTripsThroughTheProjectFile` (mode changes) | unchanged: 10/10 slots pass |
 | audio thread | `theAudioThreadHalfAllocatesNothing` (malloc interposer, control `reset()` = 2 allocations) | still 0 allocations for claim + 32 periods; the clamp adds arithmetic only, and removes the library's own logging/allocation path |
-| platform | `init()` skips every slot but the persistence one when `RubberBandPool::available()` is false | a build without librubberband still compiles the band helpers (`<cmath>`/`<algorithm>`, no library type) |
+| platform | `init()` skips every slot but the persistence one when `RubberBandPool::available()` is false | a `WANT_RUBBERBAND=OFF USE_WERROR=ON` build compiles: the two band helpers are `[[maybe_unused]]` (`src/core/RubberBandStretch.cpp:72,77`) because only render()'s library branch calls them; proved with a real `-c` compile, see Round 2 |
 
 ## Commands and exit codes
 
-All build and test logs are in
-`/home/kruzzzzy/.config/kads/zene/state/runs/3449.r1/logs/`. Builds ran in the background
-through the runtime's process tool because this box serialises builds; the exit codes are
-the ones the process completions reported.
+Round 2 re-ran every step; those logs are in
+`/home/kruzzzzy/.config/kads/zene/state/runs/3449.r2/logs/` and are the ones the rows below
+name. Round 1's evidence is still under `…/3449.r1/logs/` on this box. Builds ran in the
+background through the runtime's process tool because this box serialises builds; the exit
+codes are the ones the process completions reported.
+
+| Round 2 step | Exact command | Exit |
+|---|---|---:|
+| green at HEAD | `cmake --build build --target zene SampleClipRubberBandTest -j4 > …/logs/build-1-head.log 2>&1` | 0 |
+| green at HEAD | `cd build/tests && ctest -R SampleClipRubberBandTest --output-on-failure > …/logs/test-1-green.log 2>&1` | 0 |
+| 4b: patch out | `git diff 21c2f3ee2e..HEAD -- src/core/RubberBandStretch.cpp include/RubberBandStretch.h > …/logs/fix.patch; git apply -R …/logs/fix.patch` | 0 |
+| 4b: rebuild | `cmake --build build --target zene SampleClipRubberBandTest -j4 > …/logs/build-2-reverted.log 2>&1` | 0 |
+| 4b: run (must fail) | `cd build/tests && ctest -R SampleClipRubberBandTest --output-on-failure > …/logs/test-2-red.log 2>&1` | 8 |
+| 4b: patch back | `git apply …/logs/fix.patch` | 0 |
+| 4b: rebuild | `cmake --build build --target zene SampleClipRubberBandTest -j4 > …/logs/build-3-restored.log 2>&1` | 0 |
+| 4b: run (must pass) | `cd build/tests && ctest -R SampleClipRubberBandTest --output-on-failure > …/logs/test-3-green.log 2>&1` | 0 |
+| slots | `cd build/tests && ./SampleClipRubberBandTest > …/logs/test-4-slots.log 2>&1` | 0 |
+| family | `cd build/tests && ctest -R "SampleClip\|AudioStretcher\|Warp\|ClipTranspose\|TransientRepeat\|WorkerAltStack" --output-on-failure > …/logs/test-5-family.log 2>&1` | 0 |
+| gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > …/logs/gates-1.log 2>&1` | 0 |
+| CI compile probe | `python3 …/logs/compile-probe.py <worktree> …/logs '60e79243e6^' > …/logs/compile-probe-run.log 2>&1` | 0 (prefix compile 1, current 0, control 0) |
+
+Round 1's table follows, for the record (logs under `…/3449.r1/logs/`):
 
 | Step | Exact command | Exit |
 |---|---|---:|
@@ -146,11 +206,15 @@ file-length ("no new item in your files") all PASS, `RESULT: PASS`, exit 0.
 - Old projects: no saved data is read or written differently; the band is a render-time
   clamp. Nothing outside the band changes behaviour: `1.0`, `1/32` and every in-band rate
   take the exact same arithmetic as before (the `speed == 1.0` and `1/32` rows above).
-- A caller that legitimately exceeds the band: the bound tracks the library, not the app.
-  Measurements show the engine stops rendering cleanly well below the clamp
-  (`sourceRate/86` vs the clamp's `sourceRate/128` on the slow side, `sourceRate/21` vs
-  `sourceRate/64` on the fast side), so a rate the clamp trims is one the engine already
-  mishandled.
+- A caller that legitimately exceeds the band: the bound is derived from the library, not
+  from the app, and sits 1.5-4x inside the first measured warning (`sourceRate/86` vs the
+  clamp's `sourceRate/128` on the slow side, `sourceRate/21` vs `sourceRate/64` on the
+  fast side). Rates in that margin - e.g. a warp mapping ~344x to ~512x slower than
+  natural at 44.1 kHz - are therefore trimmed too, and render at the clamp rate. That is a
+  deliberate design choice with the margin stated here, not a claim that every trimmed rate
+  was previously broken: in the margin the pre-fix render was not shown to be correct or
+  incorrect. The alternative (clamping at the first warning) would sit exactly on an
+  engine limit whose onset moves with the engine version and the sample rate.
 - Realtime: `render()` gains a comparison and a two-branch clamp - no allocation, lock,
   logging or Qt call. It removes a library logging path and an `ensureOutbuf` reallocation
   that an out-of-band rate used to trigger on the audio thread.
@@ -172,13 +236,16 @@ printed `RESULT: PASS - submit` (exit 0, `logs/submit-check-1.log`). Answers to 
 items:
 
 1. **The regression test fails with the product change reverted and passes with it.**
-   RED before any product change: `logs/test-1-red.log`, exit 8, 9 passed / 1 failed.
-   Then `git diff -- src/core/RubberBandStretch.cpp include/RubberBandStretch.h >
-   logs/fix.patch; git apply -R logs/fix.patch` (exit 0), rebuild (exit 0), run:
-   `logs/test-6-red-proof.log`, **exit 8**, the same assertion
-   (`'denormal.tail > 0.05' returned FALSE ... tail RMS 4.4782e-05 while
-   sourcePosition() said 2.02369e-320`). `git apply logs/fix.patch` (exit 0), rebuild
-   (exit 0), run: `logs/test-7-green-proof.log`, **exit 0**.
+   Round 2, from HEAD: green first (`logs/test-1-green.log`, **exit 0**). Then
+   `git diff 21c2f3ee2e..HEAD -- src/core/RubberBandStretch.cpp include/RubberBandStretch.h
+   > logs/fix.patch` (exit 0), `git apply -R logs/fix.patch` (exit 0), rebuild (exit 0),
+   run `logs/test-2-red.log`: **exit 8**, `FAIL! ...
+   anOutOfBandSpeedCannotSilenceOrStallTheStretch() 'denormal.tail > 0.05' returned FALSE.
+   (a speed of 5e-324 rendered the source at full speed (tail RMS 4.4782e-05) while
+   sourcePosition() said 2.02369e-320)`. `git apply logs/fix.patch` (exit 0), rebuild
+   (exit 0), run `logs/test-3-green.log`: **exit 0**, and `logs/test-4-slots.log`:
+   `Totals: 10 passed, 0 failed`. Round 1 recorded the same pair under
+   `…/3449.r1/logs/test-1-red.log` (exit 8) and `test-2-green.log` (exit 0).
 2. **Deterministic; no wall-clock timing, sleeps or races.** Every input is an injected
    constant: block 4096 frames, source `m_rate/100` frames, speeds `1.0`, `1.0/32`,
    `std::numeric_limits<double>::denorm_min()`, `1e-300`, `1e300`, `1e5`. The oracle is a
@@ -207,7 +274,7 @@ items:
    engine would have rendered correctly - only ones it was already mishandling.
 5. **ALREADY-FIXED / FALSE-POSITIVE evidence:** not applicable, the verdict is FIXED. The
    branch did carry a partial guard (commit `6d423361c6`,
-   `git show HEAD:src/core/RubberBandStretch.cpp:225`), which only rejected non-finite and
+   `git show 21c2f3ee2e:src/core/RubberBandStretch.cpp:225`), which only rejected non-finite and
    non-positive rates; the measured cases above show why a range test was still needed.
 6. **Sibling commands in the command files changed:** none. `git show --stat c5261a97f3`
    lists four paths (`include/RubberBandStretch.h`, `src/core/RubberBandStretch.cpp`, the
@@ -215,3 +282,9 @@ items:
    `ControlCommandsSnapshot` entry changed, so `app.*` and `arrangement.*` - including the
    stretch-adjacent `arrangement.get_state` and the warp commands - are untouched and
    consistent by construction.
+7. **The blocking CI configuration compiles (round 2).** With the shadow `lmmsconfig.h` that
+   `#undef`s `LMMS_HAVE_RUBBERBAND`, a real `-c` compile of the pre-qa-fix source exits 1
+   with `-Werror=unused-function` at `src/core/RubberBandStretch.cpp:72,77`, the current
+   source exits 0, and the control that errors when the macro is still defined exits 0 -
+   so the shadow really won. Commands, logs and the rerunnable probe: see
+   "Round 2: the no-librubberband `-Werror` compile" above.
