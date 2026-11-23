@@ -94,6 +94,22 @@ EXIT=0
 RESULT: PASS
 ```
 
+Then, after committing the report, the completion check was run on the committed tree:
+
+```
+$ python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py \
+    /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p14-309 new-p14-309 \
+    > .../logs/submit-check-2.log 2>&1; echo EXIT=$?
+EXIT=0
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-new-p14-309.md
+  PASS  tests added or changed - tests/control-audio-test-tone.py, tests/control-no-audio-device.py, tests/control-session-lifecycle-transcript.py
+  PASS  new test files registered in tests/CMakeLists.txt
+  PASS  gates (feature_check.py)
+RESULT: PASS - submit
+```
+
 No product code was changed, so there is no product diff to reverse for a red/green run; the
 verdict rests on the code above and the existing test, as the procedure allows for
 ALREADY-FIXED.
