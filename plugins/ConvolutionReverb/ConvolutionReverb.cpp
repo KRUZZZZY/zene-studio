@@ -174,7 +174,16 @@ ConvolutionReverbEffect::ConvolutionReverbEffect(Model* parent, const Descriptor
 	// The kernel is resampled to the engine's rate when it is built; a new rate (another device, an export at another
 	// rate) builds it again, on this side, under the engine's change lock (review W3-agent-devices #2). The state the
 	// kernel reads was measured in frames of the old rate, so the same lock drops it (cluster 5036).
-	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, [this] { buildKernel(m_impulsePath, true); });
+	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, [this] {
+		if (buildKernel(m_impulsePath, true)) { return; }
+		// The impulse cannot be rebuilt at the new rate (its file is unreadable now), so the old
+		// kernel stays installed. Its overlap and frequency-domain history, and the effect's own
+		// delay lines, still hold old-rate audio: drop them together, under the same guard.
+		Engine::audioEngine()->requestChangeInModel();
+		if (m_kernel != nullptr) { m_kernel->resetHistory(); }
+		resetRateDependentState();
+		Engine::audioEngine()->doneChangeInModel();
+	});
 }
 
 ConvolutionReverbEffect::~ConvolutionReverbEffect() = default;

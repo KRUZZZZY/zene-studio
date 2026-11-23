@@ -156,6 +156,16 @@ void DeviceDspTest::theConvolutionReverbDropsOldRateStateOnASampleRateChange() {
 	// The reverb still plays a signal arriving at the new rate, one new-rate pre-delay later.
 	const SampleFrame fresh = runBlocks(chainOf(1), loud, 60, &at);
 	QVERIFY2(fresh[0] > 0.1f, qPrintable(QStringLiteral("no audio after the rate change: %1").arg(fresh[0])));
+	// A rate change the impulse cannot follow: the file is unreadable, so the rebuild fails and the
+	// old kernel stays installed. Its overlap and frequency-domain history hold the 96 kHz tone and
+	// must not play it back as a 48 kHz one.
+	QVERIFY(QFile::remove(click));
+	device->setSampleRateForTesting(48000);
+	emit Engine::audioEngine()->sampleRateChanged();
+	const SampleFrame unreadable = runBlocks(chainOf(1), quiet, 8, &at);
+	QVERIFY2(unreadable[0] < 1.0e-6f && unreadable[1] < 1.0e-6f,
+		qPrintable(QStringLiteral("old-rate audio survived a failed rebuild: %1, %2")
+			.arg(unreadable[0]).arg(unreadable[1])));
 	chainOf(1).clear();
 }
 void DeviceDspTest::recorderLandRefusesWithoutSong() {
