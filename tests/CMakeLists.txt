@@ -4968,6 +4968,47 @@ if(TARGET dispersion)
 	add_dependencies(DispersionNonFiniteTest dispersion)
 endif()
 
+# Cluster new-p9-240: LOMM's sample-rate handler resized the lookahead rings but
+# left the ring cursor at its old-ring value, so after a rate drop the next
+# period indexed the shorter rings past their end. The plugin sources are
+# compiled into this test binary (the DispersionNonFiniteTest pattern), so the
+# real handler is driven through AudioEngine::sampleRateChanged() and the ring
+# invariant is checked without loading a module.
+add_executable(LommSampleRateTest
+	src/plugins/LommSampleRateTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/LOMM/LOMM.cpp
+	${CMAKE_SOURCE_DIR}/plugins/LOMM/LOMM.h
+	${CMAKE_SOURCE_DIR}/plugins/LOMM/LOMMControls.cpp
+	${CMAKE_SOURCE_DIR}/plugins/LOMM/LOMMControls.h
+	${CMAKE_SOURCE_DIR}/plugins/LOMM/LOMMControlDialog.cpp
+	${CMAKE_SOURCE_DIR}/plugins/LOMM/LOMMControlDialog.h
+)
+add_test(NAME LommSampleRateTest COMMAND LommSampleRateTest)
+set_tests_properties(LommSampleRateTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(LommSampleRateTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/LOMM
+	# the generated plugin_export.h (PLUGIN_EXPORT) of the LOMM plugin
+	${CMAKE_BINARY_DIR}/plugins/LOMM
+)
+target_static_libraries(LommSampleRateTest PRIVATE lmmsobjs)
+target_link_libraries(LommSampleRateTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(LommSampleRateTest PRIVATE cxx_std_20)
+target_compile_definitions(LommSampleRateTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=lomm
+	# the test compiles the plugin sources itself, so PLUGIN_EXPORT must not
+	# be the import attribute of the plugin's own export header
+	PLUGIN_STATIC_DEFINE
+)
+if(TARGET lomm)
+	add_dependencies(LommSampleRateTest lomm)
+endif()
+
 # Cluster new-p12-275: TripleOscillator's user-wave buffer and anti-alias table
 # were published straight onto the model from the control thread while
 # playNoteImpl() read them on the audio thread. The plugin sources are compiled

@@ -86,12 +86,22 @@ void LOMMEffect::changeSampleRate()
 	m_crestTimeConst = std::exp(-1.f / (0.2f * m_sampleRate));
 	
 	m_lookBufLength = std::ceil((LOMM_MAX_LOOKAHEAD / 1000.f) * m_sampleRate) + 2;
+	// The rings hold audio captured at the old rate, and m_lookWrite is an index
+	// into them. Rebuilding the rings to the new length without re-anchoring the
+	// cursor left the next period indexing past the end after a rate drop (the
+	// old cursor can be larger than the new ring); the retained samples would
+	// also replay old-rate audio into the new-rate periods. This handler resets
+	// the rest of the DSP state below, so the rings and the cursor are reset
+	// here too. Processing is stopped when this slot runs
+	// (AudioDevice::stopProcessing waits for the backend callback), so the
+	// rebuild cannot race processImpl.
+	m_lookWrite = 0;
 	for (int i = 0; i < 2; ++i)
 	{
 		for (int j = 0; j < 3; ++j)
 		{
-			m_inLookBuf[j][i].resize(m_lookBufLength);
-			m_scLookBuf[j][i].resize(m_lookBufLength, LOMM_MIN_FLOOR);
+			m_inLookBuf[j][i].assign(m_lookBufLength, 0.f);
+			m_scLookBuf[j][i].assign(m_lookBufLength, LOMM_MIN_FLOOR);
 		}
 	}
 
