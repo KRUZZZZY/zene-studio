@@ -187,6 +187,24 @@ bool escapesTheRenderPeriod(Mutate&& mutate, Changed&& changed)
 	return escaped;
 }
 
+//! What the tap-write seam (MixerSnapshots::setTapWriteProbeForTest) reports back: how many
+//! fader-tap writes the recall reached, and whether the recalling thread still held the audio
+//! change boundary at the last one. Read from another thread after the recall returned, so the
+//! report is an ordering fact, not a timing one.
+struct TapWriteProbe
+{
+	std::atomic<int> writes{0};
+	std::atomic<bool> boundaryHeld{false};
+};
+
+//! Runs on the recalling thread, between the send's model writes and its fader tap.
+void tapWriteProbe(void* context)
+{
+	auto* probe = static_cast<TapWriteProbe*>(context);
+	probe->writes.fetch_add(1, std::memory_order_release);
+	probe->boundaryHeld.store(Engine::audioEngine()->isChangeInModelHeld(), std::memory_order_release);
+}
+
 //! Feeds one block into a mixer channel from a render thread. The job is taken
 //! by the render pool (or run inline by the calling thread), so the feeding
 //! thread owns a render slot - exactly where production feeds a channel from
@@ -721,9 +739,16 @@ private slots:
 	// D6 - AudioBusHandle::m_playHandles is appended under m_playHandleLock
 	// but a worker range-fors it without the lock.
 	// -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
 	// Recall writes a send's fader tap (preFader) on the control thread, as
-	// createChannelSend() does for an existing route. The write has to wait
-	// for the render period to end, like the route update it mirrors.
+	// createChannelSend() does for an existing route. The tap is the one field
+	// of a send the render thread reads that has no model of its own, so two
+	// things have to hold and both are asserted here: the recall waits for the
+	// render period to end, and the tap write itself happens inside the change
+	// boundary the rest of the send was written under. The boundary is what the
+	// seam reports - without it the tap is written after the last model write
+	// has already released the lock, in a gap the period can resume in.
+	// -----------------------------------------------------------------------
 	void recallingASnapshotWaitsForTheRenderPeriodToEnd()
 	{
 		Mixer* mixer = Engine::mixer();
@@ -736,16 +761,25 @@ private slots:
 		const MixerSnapshot snapshot = MixerSnapshots::capture(QStringLiteral("Tap"));
 		send->setPreFader(false);
 
+		TapWriteProbe probe;
+		MixerSnapshots::setTapWriteProbeForTest(&tapWriteProbe, &probe);
+
 		const bool flippedWhileRendering = escapesTheRenderPeriod(
 			[&snapshot]
 			{
 				MixerSnapshots::apply(snapshot, MixerSnapshots::Parts{});
 			},
 			[send] { return send->preFader(); });
+
+		MixerSnapshots::setTapWriteProbeForTest(nullptr, nullptr);
+
 		QVERIFY2(!flippedWhileRendering,
 			"a snapshot recall wrote a send's fader tap while a render period was in flight");
 		QVERIFY2(send->preFader(),
 			"the recalled fader tap never landed after the render period ended");
+		QVERIFY2(probe.writes.load() > 0, "the recall never wrote a send's fader tap");
+		QVERIFY2(probe.boundaryHeld.load(),
+			"a snapshot recall wrote a send's fader tap outside the change boundary");
 	}
 
 	void addingAPlayHandleIsSerialisedWithTheIterator()
