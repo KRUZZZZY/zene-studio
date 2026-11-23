@@ -18,9 +18,12 @@
 #include <QTemporaryDir>
 #include <QtTest>
 #include <algorithm>
+#include <atomic>
 #include <memory>
 #include <vector>
 
+#include "AudioDevice.h"
+#include "AudioEngine.h"
 #include "ConfigManager.h"
 #include "ComboBox.h"
 #include "Engine.h"
@@ -93,6 +96,19 @@ bool renderMalletsNote(MalletsInstrument* instrument, NotePlayHandle* handle,
 	}
 	return false;
 }
+
+//! The instrument header as the test target sees it (MALLETS_TEST_PLUGIN_DIR).
+QString malletsHeaderText()
+{
+	QFile header(QString::fromUtf8(MALLETS_TEST_PLUGIN_DIR) + QStringLiteral("/Mallets.h"));
+	if (!header.open(QIODevice::ReadOnly)) { return {}; }
+	return QString::fromUtf8(header.readAll());
+}
+
+//! The publication of the prepared-voice pool is read on the render thread, so
+//! a pointer to a pool must be lock-free there (cluster new-p21-233).
+static_assert(std::atomic<MalletsVoicePool*>::is_always_lock_free,
+	"Mallets' published pool pointer must be lock-free on the audio thread");
 
 } // namespace
 
@@ -273,6 +289,95 @@ private slots:
 			qPrintable(QString{"the voice budget is declared without an initialiser (%1); a build "
 				"where std::atomic is not value-initialised would start it indeterminate"}
 				.arg(declared.trimmed())));
+	}
+
+	//! BUG new-p21-233: the prepared-voice pool is published to the render
+	//! thread through a lock-free atomic pointer. Before the fix m_voicePool was
+	//! a std::unique_ptr that the sample-rate-change slot moved out and then
+	//! reassigned: the render thread read the pointer while the control thread
+	//! wrote it (a data race), and between the move and the assignment it read a
+	//! null pointer that playNoteImpl then dereferenced. The declaration is the
+	//! fix, so pin it - the same probe the sibling FreeBoy pool handoff uses
+	//! (freeBoySampleRatePoolHandoffIsRealtimeSafe).
+	void theVoicePoolIsPublishedThroughALockFreeAtomicPointer()
+	{
+		QVERIFY2(QString::fromUtf8(MALLETS_TEST_PLUGIN_DIR).size() > 0,
+			"MALLETS_TEST_PLUGIN_DIR is not defined for this target");
+		const QString text = malletsHeaderText();
+		QVERIFY2(!text.isEmpty(), "Mallets.h could not be read");
+
+		const QRegularExpression atomicDeclaration(QStringLiteral(
+			R"(\bstd::atomic\s*<\s*MalletsVoicePool\s*\*\s*>\s+m_voicePool\s*\{\s*nullptr\s*\}\s*;)"));
+		QVERIFY2(atomicDeclaration.match(text).hasMatch(),
+			"Mallets.h does not publish m_voicePool as an initialised "
+			"std::atomic<MalletsVoicePool*>; the render thread reads the pool on the audio path, "
+			"so a std::unique_ptr reassigned by the sample-rate-change slot races it");
+
+		const QRegularExpression uniquePtrDeclaration(QStringLiteral(
+			R"(\bstd::unique_ptr\s*<\s*MalletsVoicePool\s*>\s+m_voicePool\b)"));
+		QVERIFY2(!uniquePtrDeclaration.match(text).hasMatch(),
+			"Mallets.h owns the published pool through a std::unique_ptr again");
+	}
+
+	//! BUG new-p21-233, reconfiguration path: publishing the pool of a new sample
+	//! rate must not disturb the note that is already rendering through the
+	//! retired pool, and a note started afterwards must get a voice from the new
+	//! pool. The sustained note keeps the very slot it held and stays audible.
+	void aSampleRateChangeKeepsSustainedNotesAndVoicesNewOnes()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+
+		auto* engine = Engine::audioEngine();
+		auto* device = engine->audioDev();
+		QVERIFY(device != nullptr);
+		const sample_rate_t originalRate = device->sampleRate();
+		struct RestoreRate
+		{
+			AudioEngine* engine;
+			AudioDevice* device;
+			sample_rate_t rate;
+			~RestoreRate()
+			{
+				device->setSampleRateForTesting(rate);
+				emit engine->sampleRateChanged();
+			}
+		} restoreRate{engine, device, originalRate};
+
+		const std::unique_ptr<MalletsInstrument> instrument{new MalletsInstrument(track)};
+		const f_cnt_t frames = engine->framesPerPeriod();
+		QVERIFY(frames > 0);
+		std::vector<SampleFrame> data(static_cast<std::size_t>(frames));
+		const Note note{TimePos{static_cast<tick_t>(frames * 8)}, TimePos{0}, DefaultKey};
+
+		auto* sustained = NotePlayHandleManager::acquire(track, 0, frames * 8, note,
+			nullptr, -1, NotePlayHandle::Origin::MidiClip);
+		QVERIFY(sustained != nullptr);
+		QVERIFY2(renderMalletsNote(instrument.get(), sustained, data),
+			"a Mallets note was silent before the device change");
+		void* const sustainedVoice = sustained->m_pluginData;
+		QVERIFY(sustainedVoice != nullptr);
+
+		const sample_rate_t changedRate = originalRate == 44100 ? 32000 : 44100;
+		device->setSampleRateForTesting(changedRate);
+		emit engine->sampleRateChanged();
+		QCOMPARE(engine->outputSampleRate(), changedRate);
+
+		QVERIFY2(renderMalletsNote(instrument.get(), sustained, data),
+			"the sustained note lost its voice when the device changed");
+		QVERIFY2(sustained->m_pluginData == sustainedVoice,
+			"the sustained note was moved to another prepared voice across the device change");
+
+		auto* fresh = NotePlayHandleManager::acquire(track, 0, frames * 8, note,
+			nullptr, -1, NotePlayHandle::Origin::MidiClip);
+		QVERIFY(fresh != nullptr);
+		QVERIFY2(renderMalletsNote(instrument.get(), fresh, data),
+			"a note started after the device change was not voiced");
+
+		instrument->deleteNotePluginData(sustained);
+		instrument->deleteNotePluginData(fresh);
+		NotePlayHandleManager::release(sustained);
+		NotePlayHandleManager::release(fresh);
 	}
 
 	//! BUG 11 (new-p17-91): with the STK rawwaves missing the instrument renders silence, and its only

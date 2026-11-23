@@ -213,7 +213,6 @@ MalletsSynth::Family familyForPreset( const int _preset )
 
 MalletsInstrument::MalletsInstrument( InstrumentTrack * _instrument_track ):
 	Instrument( _instrument_track, &malletsstk_plugin_descriptor ),
-	m_voicePool( std::make_unique<MalletsVoicePool>( Engine::audioEngine()->outputSampleRate() ) ),
 	m_hardnessModel(64.0f, 0.0f, 128.0f, 0.1f, this, tr( "Hardness" )),
 	m_positionModel(64.0f, 0.0f, 64.0f, 0.1f, this, tr( "Position" )),
 	m_vibratoGainModel(0.0f, 0.0f, 128.0f, 0.1f, this, tr( "Vibrato gain" )),
@@ -237,6 +236,13 @@ MalletsInstrument::MalletsInstrument( InstrumentTrack * _instrument_track ):
 	m_filesMissing( !QDir( ConfigManager::inst()->stkDir() ).exists() ||
 		!QFileInfo( ConfigManager::inst()->stkDir() + "/sinewave.raw" ).exists() )
 {
+	// Prepared voices are built once, off the audio thread, and published with a
+	// release store: the render thread loads the pointer with acquire before it
+	// claims a voice of the pool.
+	m_pools.push_back( std::make_unique<MalletsVoicePool>(
+		Engine::audioEngine()->outputSampleRate() ) );
+	m_voicePool.store( m_pools.back().get(), std::memory_order_release );
+
 	// ModalBar
 	m_presetsModel.addItem( tr( "Marimba" ) );
 	m_scalers.append( 4.0 );
@@ -272,23 +278,29 @@ MalletsInstrument::MalletsInstrument( InstrumentTrack * _instrument_track ):
 	m_scalers.append( 7.0 );
 
 	// Prepared voices are voiced for one sample rate; a device change rebuilds
-	// the pool off the audio thread. The pool of the old rate stays alive
-	// while notes still hold a voice of it.
+	// the pool off the audio thread and publishes it with one atomic store, so
+	// the render thread never sees a half-replaced pointer. The pools of the old
+	// rates stay owned by the instrument while notes still hold a voice of them.
 	QObject::connect( Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, [this]() {
 		auto pool = std::make_unique<MalletsVoicePool>( Engine::audioEngine()->outputSampleRate() );
-		m_retiredPools.push_back( std::move( m_voicePool ) );
-		m_voicePool = std::move( pool );
+		MalletsVoicePool* const published = pool.get();
+		// Own the new pool before publishing it, and keep the old one: a note
+		// that already holds a voice of it keeps rendering through it.
+		m_pools.push_back( std::move( pool ) );
+		m_voicePool.store( published, std::memory_order_release );
 	} );
 }
 
 
 
 
-//! The prepared voices and the pools of earlier sample rates are freed here,
-//! on the control thread. A note that outlives its instrument already reaches
-//! a deleted instrument in the engine (InstrumentTrack's destructor deletes
-//! the instrument while the engine still owns the note handles), so the pool
-//! is freed with the instrument it belongs to.
+//! The prepared voices of every pool this instrument built - the current pool
+//! and the pools of earlier sample rates sustained notes may still render
+//! through - are freed here, on the control thread. A note that outlives its
+//! instrument already reaches a deleted instrument in the engine
+//! (InstrumentTrack's destructor deletes the instrument while the engine still
+//! owns the note handles), so the pool is freed with the instrument it belongs
+//! to.
 MalletsInstrument::~MalletsInstrument() = default;
 
 
@@ -502,16 +514,19 @@ void MalletsInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 
 		// STK is not thread-safe, so its global setup and voice construction
 		// happen off the audio thread; here the render thread only claims a
-		// prepared voice and arms it in place. No allocation, no lock.
+		// prepared voice and arms it in place. No allocation, no lock. The pool
+		// pointer is published atomically, so a device change that swaps it
+		// cannot clear or tear the pointer this thread is reading.
 		const auto family = familyForPreset( p );
-		if( !acquireVoiceBudget( m_voicesInUse ) )
+		MalletsVoicePool* const pool = m_voicePool.load( std::memory_order_acquire );
+		if( pool == nullptr || !acquireVoiceBudget( m_voicesInUse ) )
 		{
 			// Every voice of this instrument is busy - in the current pool or
 			// in a retired pool that still serves a sustained note: the note
 			// waits for one and takes it in a later period.
 			return;
 		}
-		MalletsVoiceSlot* slot = m_voicePool->claim( family );
+		MalletsVoiceSlot* slot = pool->claim( family );
 		if( slot == nullptr )
 		{
 			releaseVoiceBudget( m_voicesInUse );
