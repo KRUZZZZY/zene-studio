@@ -44,7 +44,10 @@ Measured in this worktree, with the reverb module rebuilt from source each time:
 ## Fix
 
 All changes are on the control thread; nothing was added to `processImpl` or any
-per-period path.
+per-period path. This round's product delta is three files
+(`ConvolutionReverb.cpp`, `ConvolutionKernel.cpp`, `ConvolutionKernel.h`), within the
+three-product-file limit; the superseded attempt that touched a fourth
+(`ConvolutionReverb.h`) was not carried over.
 
 - `ConvolutionReverb.cpp:177-186` — the `sampleRateChanged` handler calls
   `buildKernel(m_impulsePath, true)`. On success `install()` swaps the kernel and clears
