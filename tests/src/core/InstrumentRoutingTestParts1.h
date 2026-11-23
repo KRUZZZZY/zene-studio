@@ -499,3 +499,57 @@ void InstrumentRoutingTest::aClaimThatSpansAClearStaysOutOfThePool() {
 	for (int i = 0; i < ModulationVoices::VoiceCount; ++i) { claimed += filled.claim().slot >= 0 ? 1 : 0; }
 	QCOMPARE(claimed, ModulationVoices::VoiceCount);
 }
+
+/*! A worker that read the pool before a clear must not take a voice published in the newer generation: its
+ *  observation of the slot, and its generation, are stale. */
+void InstrumentRoutingTest::aStaleClaimSnapshotCannotTakeANewerVoice() {
+	ModulationVoices voices;
+	// A worker reads a free slot and the pool it belongs to (generation 0), then is descheduled.
+	const std::uint32_t staleGeneration = voices.currentGeneration();
+	QCOMPARE(staleGeneration, std::uint32_t{0});
+
+	// The control thread clears the pool, and a newer worker claims a slot and publishes a live voice.
+	voices.clear();
+	const ModulationVoices::Claim newer = voices.claim();
+	QVERIFY2(newer.slot >= 0, "the cleared pool had no slot for the newer claim");
+	QCOMPARE(newer.generation, voices.currentGeneration());
+	voices.publish(newer, 9, 1, 62, 2.0);
+
+	// The paused worker resumes holding its stale view of the slot (free). The compare-exchange is what refuses
+	// that: the slot no longer holds the word it observed, so the attempt fails and is re-decided at the
+	// generation the pool has now - and that re-decision must not judge a voice of the newer generation
+	// reclaimable, or the newer note is overwritten and published as retired.
+	const std::uint32_t liveNow = ModulationVoices::stateWord(voices.currentGeneration(), ModulationVoices::Live);
+	QVERIFY2(!voices.claimable(liveNow, staleGeneration),
+		"a stale generation snapshot may reclaim a voice published in the newer generation");
+	QVERIFY2(!voices.claimable(liveNow, voices.currentGeneration() - 1),
+		"a claim one generation behind may reclaim a voice published in the current one");
+	QVERIFY2(!voices.claimable(liveNow, voices.currentGeneration()),
+		"a voice of the generation the claim is made in must not be handed out a second time");
+	QVERIFY2(voices.claimable(ModulationVoices::stateWord(0, ModulationVoices::Live), voices.currentGeneration()),
+		"a voice of a pool that has since been cleared is claimable again");
+
+	// The newer voice is intact, in its own slot, with its own note's fields, and no claim hands it out.
+	ModulationVoice voice;
+	QVERIFY2(voices.voice(newer.slot, &voice), "the newer generation's voice is gone");
+	QCOMPARE(voice.track, 9);
+	QCOMPARE(voice.channel, 1);
+	QCOMPARE(voice.key, 62);
+	QCOMPARE(voice.startedAt, 2.0);
+	QCOMPARE(voices.activeCount(), 1);
+	const ModulationVoices::Claim other = voices.claim();
+	QVERIFY(other.slot >= 0);
+	QVERIFY2(other.slot != newer.slot, "a later claim took the slot of a live voice of its own generation");
+	// A note claimed and published now (after the clear) is a voice of the current pool: it is visible.
+	voices.publish(other, 4, 2, 50, 3.0);
+	QCOMPARE(voices.activeCount(), 2);
+	int tracks[2] = {-1, -1};
+	int live = 0;
+	for (int slot = 0; slot < ModulationVoices::VoiceCount; ++slot) {
+		if (!voices.voice(slot, &voice)) { continue; }
+		tracks[live] = voice.track;
+		++live;
+	}
+	QCOMPARE(live, 2);
+	QCOMPARE(tracks[0] + tracks[1], 13);  // both notes: the newer one published before the clear, and this one
+}

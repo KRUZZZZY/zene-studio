@@ -262,6 +262,10 @@ private slots:
 	//! of the new pool, and a cleared pool hands out every slot again.
 	void aClaimThatSpansAClearStaysOutOfThePool();
 
+	//! A worker whose generation snapshot predates a clear must not reclaim (and overwrite) a voice a newer
+	//! worker published after it.
+	void aStaleClaimSnapshotCannotTakeANewerVoice();
+
 	//! MX-120: a modulator's per-voice flag and a route's track address survive the project file; a
 	//! modulator without them writes neither attribute (existing projects keep their bytes).
 	void perVoiceFieldsRoundTrip();

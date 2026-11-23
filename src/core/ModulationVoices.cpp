@@ -57,21 +57,29 @@ void ModulationVoices::noteOn(int track, int channel, int key, double seconds) n
 
 auto ModulationVoices::claimable(std::uint32_t state, std::uint32_t generation) noexcept -> bool
 {
-	// A slot another worker is filling is not ours to take. A voice of a pool that has since been cleared
-	// is: its generation is behind the one this claim is stamped with.
+	// Only a slot nobody owns is claimable: a free one, or a voice of a pool that has since been cleared
+	// (its generation is strictly behind the one the claim is judged against). A slot another worker is
+	// filling belongs to that worker, and a voice of the pool the claim is made in - or of a newer pool,
+	// which a caller whose generation snapshot is stale can observe - belongs to the note that published it.
+	// Taking either would overwrite that note's fields and publish it as retired.
 	const State kind = kindOf(state);
-	return kind != Writing && (kind != Live || generationOf(state) != generation);
+	if (kind == Free) { return true; }
+	return kind == Live && generationOf(state) < generation;
 }
 
 auto ModulationVoices::claim() noexcept -> Claim
 {
-	const std::uint32_t generation = currentGeneration();
 	for (int i = 0; i < VoiceCount; ++i)
 	{
 		Slot& slot = m_slots[static_cast<std::size_t>(i)];
 		std::uint32_t state = slot.state.load(std::memory_order_acquire);
 		for (;;)
 		{
+			// The generation is read AFTER the slot, and re-read after every failed exchange: a clear that
+			// lands in between is seen, so a voice published in the new generation is never judged against
+			// the generation this attempt began in. The exchange compares the whole word (generation
+			// included), so a slot that changed since it was observed is re-decided, never taken blind.
+			const std::uint32_t generation = currentGeneration();
 			if (!claimable(state, generation)) { break; }
 			if (slot.state.compare_exchange_weak(state, stateWord(generation, Writing),
 				std::memory_order_acq_rel, std::memory_order_acquire))
