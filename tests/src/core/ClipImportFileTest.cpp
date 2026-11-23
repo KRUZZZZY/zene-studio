@@ -482,7 +482,7 @@ private slots:
 
 		// The same compressed file still imports where it fits: the position-aware check rejects only the song's
 		// end, and the compressed path itself stays a normal, accepted import.
-		const auto room = static_cast<int>(static_cast<qint64>(MaxSongLength) - length - 1);
+		const auto room = static_cast<int>(static_cast<qint64>(MaxSongLength) - length);
 		const int tracks = static_cast<int>(Engine::getSong()->tracks().size());
 		SampleDecoder::resetDecodeCallCountsForTesting();
 		const ControlResult made = run(QStringLiteral("clip.import_file"),

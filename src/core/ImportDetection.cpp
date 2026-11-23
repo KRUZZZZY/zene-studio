@@ -109,7 +109,7 @@ bool scaleNameIsKnown(const QString& name)
 }
 
 
-ImportDetectionResult analyseAudioFile(const QString& path, double maxSeconds)
+ImportDetectionResult analyseAudioFile(const QString& path, double maxSeconds, AnalysisDecode decode)
 {
 	ImportDetectionResult result;
 	result.path = path;
@@ -122,13 +122,16 @@ ImportDetectionResult analyseAudioFile(const QString& path, double maxSeconds)
 		return result;
 	}
 
-	// The estimators read at most `bound` seconds of the file, so only that window is decoded. A
-	// compressed file can decode to far more than its size on disk, and holding all of it here was
-	// memory the detector never needed (cluster new-p16-7); the bounded decoder reports the whole
-	// file's own length next to the window it returns.
 	const double bound = std::clamp(std::isnan(maxSeconds) ? DefaultAnalysisSeconds : maxSeconds, 1.0,
 		MaxAnalysisSeconds);
-	const std::optional<SampleDecoder::BoundedResult> decoded = SampleDecoder::decodeLimited(path, bound);
+	const auto decoded = [&]() -> std::optional<SampleDecoder::BoundedResult> {
+		// Import preflight can estimate from a prefix before allocating the sample buffer.
+		if (decode == AnalysisDecode::PrefixOnly) { return SampleDecoder::decodeLimited(path, bound); }
+		auto whole = SampleDecoder::decode(path);
+		if (!whole) { return std::nullopt; }
+		const auto frames = static_cast<qint64>(whole->data.size());
+		return SampleDecoder::BoundedResult{std::move(*whole), frames};
+	}();
 	if (!decoded || decoded->window.data.empty())
 	{
 		result.error = QStringLiteral("no decoder in this build could read `%1`").arg(path);
