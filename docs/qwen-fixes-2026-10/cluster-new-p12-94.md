@@ -53,8 +53,9 @@ The runtime probe (`tests/src/core/AllocationProbe.h`) replaces `operator new` o
 containers - `QList` among them - allocate through `QArrayData` with `malloc`, which the probe does not count; the
 repo says so itself (`docs/KNOWN-LIMITATIONS.md:3228`, "What it still does not prove"), and it points at the static
 sweep for those. I confirmed it rather than assumed it: a control measurement in the same armed window counted a
-`QList<int>` push_back as **0** allocations (`logs/build-4-debug.log` run), while `AllocationProbeTest` passes in
-this build tree (`logs/test-3-probe.log`), i.e. the probe works and the container is simply invisible to it.
+`QList<int>` push_back as **0** allocations while the same probe counted its own control correctly
+(`logs/probe-control.log`: `QList control alloc=0 free=0` next to the slot's 0), and `AllocationProbeTest` passes
+in this build tree (`logs/test-3-probe.log`), i.e. the probe works and the container is simply invisible to it.
 
 So the regression vehicle is the programme's own tool for container growth on audio-thread paths: this function is
 now a DECLARED audio-thread path, and the sweep fails on the pre-fix construct and passes on the fix.
@@ -147,7 +148,8 @@ already red.
   `RtSafetySweep ***Failed` under ctest (exit 8). Re-applied: sweep exit **0**, 4/4 ctest targets pass.
 - **A test that passes without the fix is not used as the regression**: the allocation-probe slot passes both
   before and after, and is documented as the runtime half only, because the probe cannot see Qt containers
-  (`docs/KNOWN-LIMITATIONS.md:3228`, confirmed with the in-test control in `build-4-debug.log`). It stays as a
+  (`docs/KNOWN-LIMITATIONS.md:3228`, measured with the temporary control saved in `logs/probe-control.log`, removed
+  again before the commit - the committed slot has no such block). It stays as a
   guard against an `operator new` allocation appearing there later.
 - **Deterministic**: no wall-clock, sleep, race or second thread. The sweep reads source text; the golden slot
   injects the first note's played frame count; skip, miss and random direction stay 0.
