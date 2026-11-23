@@ -55,7 +55,7 @@ private slots:
 		QVERIFY(getGUI() != nullptr && getGUI()->mainWindow() != nullptr);
 		ControlRegistry::setReady(true);
 		getGUI()->mainWindow()->show();
-		QTest::qWaitForWindowExposed(getGUI()->mainWindow());
+		QVERIFY(QTest::qWaitForWindowExposed(getGUI()->mainWindow()));
 		QTest::qWait(100);
 	}
 
