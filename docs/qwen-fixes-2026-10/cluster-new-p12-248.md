@@ -75,8 +75,8 @@ built in), with a hard assertion per state:
    (`automationRamp() != nullptr`).
 
 State 2 is the bug: in the unfixed build the publish blocks inside the edit and the reader thread
-never returns (05-test-red.log, 40.5 s of the 10 s escape-hatch bounds). State 1 and state 3 are the
-controls that show the assertion cannot pass vacuously.
+never returns (05-test-red.log: four reads each hit the 10 s escape hatch, 40.5 s total). State 1 and
+state 3 are the controls that show the assertion cannot pass vacuously.
 
 ## Commands and EXIT codes (logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-248.r3/logs)
 Round 3 reruns the extended test from the configured build tree; the round-2 log paths are stale and
