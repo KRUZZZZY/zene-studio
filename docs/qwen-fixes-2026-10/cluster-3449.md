@@ -167,4 +167,51 @@ file-length ("no new item in your files") all PASS, `RESULT: PASS`, exit 0.
 
 ## Self-check
 
-Answers to the completion check's open items are appended below once it has been run.
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 3449`
+printed `RESULT: PASS - submit` (exit 0, `logs/submit-check-1.log`). Answers to its ASK
+items:
+
+1. **The regression test fails with the product change reverted and passes with it.**
+   RED before any product change: `logs/test-1-red.log`, exit 8, 9 passed / 1 failed.
+   Then `git diff -- src/core/RubberBandStretch.cpp include/RubberBandStretch.h >
+   logs/fix.patch; git apply -R logs/fix.patch` (exit 0), rebuild (exit 0), run:
+   `logs/test-6-red-proof.log`, **exit 8**, the same assertion
+   (`'denormal.tail > 0.05' returned FALSE ... tail RMS 4.4782e-05 while
+   sourcePosition() said 2.02369e-320`). `git apply logs/fix.patch` (exit 0), rebuild
+   (exit 0), run: `logs/test-7-green-proof.log`, **exit 0**.
+2. **Deterministic; no wall-clock timing, sleeps or races.** Every input is an injected
+   constant: block 4096 frames, source `m_rate/100` frames, speeds `1.0`, `1.0/32`,
+   `std::numeric_limits<double>::denorm_min()`, `1e-300`, `1e300`, `1e5`. The oracle is a
+   length, not a clock: the source ends after 10 ms, so "how far the audio went" is read as
+   where the output falls silent, and the `speed == 1.0` control proves that oracle on the
+   same run (`tail < 1e-3`). The slot starts no thread, takes no lock, and uses no `QTRY_*`
+   or sleep. The file's only wait-based assertion
+   (`aThirdConcurrentHandleFallsBackAndReleasedVoicesComeBack`'s `QTRY_COMPARE_WITH_TIMEOUT`
+   on the recycler) is pre-existing and untouched.
+3. **The fix is at the cause and complete.** Only caller: `src/core/SamplePlayHandle.cpp:736`
+   (it reads the cursor back at `:750-753`, so it now gets the rate the audio was rendered
+   at). Sibling: `src/core/AudioStretcher.cpp:205` (WSOLA) never forms a reciprocal - it
+   multiplies its hop by `speed` - so its cursor and audio stay consistent at any positive
+   rate and it needs no band; left as found. Declaration and definition changed together
+   (`include/RubberBandStretch.h:97-101,122-124` and `src/core/RubberBandStretch.cpp:57-80,
+   163,179,259-261`), and every target that includes the header was rebuilt: `zene`,
+   `SampleClipRubberBandTest`, `SampleClipWarpModesTest`, `SampleClipWarpModeMenuTest`,
+   `ClipTransposeTest`, `WorkerAltStackTest`; the 22-test family run is green.
+4. **No collateral damage.** No persistence code is touched: the mode round-trip slot
+   (`theModeRoundTripsThroughTheProjectFile`) and the NaN slot pass unchanged, so old
+   projects load and render as before. The clamp is `std::min`/`std::max` around `1.0`, so
+   `1.0` is always inside it and every in-band rate sees the identical arithmetic: the
+   test's own `1.0` and `1/32` rows show `4096 / 4096` and `4096 / 128`, exactly the pre-fix
+   values. The bound is derived from the library's measured clean limits
+   (`sourceRate/86` and `sourceRate/21`) and sits inside them, so it cannot trim a rate the
+   engine would have rendered correctly - only ones it was already mishandling.
+5. **ALREADY-FIXED / FALSE-POSITIVE evidence:** not applicable, the verdict is FIXED. The
+   branch did carry a partial guard (commit `6d423361c6`,
+   `git show HEAD:src/core/RubberBandStretch.cpp:225`), which only rejected non-finite and
+   non-positive rates; the measured cases above show why a range test was still needed.
+6. **Sibling commands in the command files changed:** none. `git show --stat c5261a97f3`
+   lists four paths (`include/RubberBandStretch.h`, `src/core/RubberBandStretch.cpp`, the
+   test, this report); no command file, no control command, and no
+   `ControlCommandsSnapshot` entry changed, so `app.*` and `arrangement.*` - including the
+   stretch-adjacent `arrangement.get_state` and the warp commands - are untouched and
+   consistent by construction.
