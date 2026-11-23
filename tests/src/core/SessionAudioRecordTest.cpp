@@ -563,6 +563,45 @@ private slots:
 		QCOMPARE(state(), QStringLiteral("idle"));  // nothing was armed
 	}
 
+	//! BUG 4: cancelling a take used to drop it FIRST and then queue the cell's stop without looking at the answer, so
+	//! a full command queue threw the take away, left the cell playing and reported success. The stop is now queued
+	//! under the same hold as the drop: a refusal leaves the take in hand, the cell playing, and says so.
+	void aCancelWhoseStopCannotBeQueuedKeepsTheTakeInHand()
+	{
+		QVERIFY(run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("bars"), 1}}).ok);
+		for (int i = 0; i < 4000 && state() != QStringLiteral("recording"); ++i) { period(); }
+		QCOMPARE(state(), QStringLiteral("recording"));
+		SessionScheduler& scheduler = Engine::getSong()->sessionScheduler();
+		QVERIFY(scheduler.trackIsSessionActive(m_column));  // the take's cell is playing
+
+		// No period renders here (the fixture stops the dummy device), so nothing drains: the queue stays full.
+		for (std::size_t space = scheduler.commandQueueSpace(); space > 0; space = scheduler.commandQueueSpace())
+		{
+			QVERIFY(scheduler.requestStop(999, 0, LaunchMode::Trigger, LaunchQuantisation::None));
+		}
+		const std::uint64_t dropped = scheduler.droppedCommands();
+
+		const ControlResult refused = run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("cancel"), true}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::Busy);
+		QCOMPARE(scheduler.droppedCommands(), dropped + 1);    // the stop it could not queue, counted where refused
+		QCOMPARE(state(), QStringLiteral("recording"));        // the take is still in hand
+		QVERIFY(scheduler.trackIsSessionActive(m_column));     // and its cell is still playing, which the answer says
+
+		// The audio thread drains the queue on its next period: the same cancel now stops the cell and drops the take.
+		period();
+		QCOMPARE(state(), QStringLiteral("recording"));
+		const ControlResult cancelled = run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("cancel"), true}});
+		QVERIFY2(cancelled.ok, qPrintable(cancelled.errorMessage));
+		QVERIFY(cancelled.result.value(QStringLiteral("cancelled")).toBool());
+		QCOMPARE(state(), QStringLiteral("idle"));
+		// The stop lands on the slot's own quantisation (the cell's bar line), so the periods drive the clock to it.
+		for (int i = 0; i < 4000 && scheduler.trackIsSessionActive(m_column); ++i) { period(); }
+		QVERIFY(!scheduler.trackIsSessionActive(m_column));
+	}
+
 private:
 	//! One period: the next input frames are staged, then rendered; notes the period the column took over in.
 	void period()

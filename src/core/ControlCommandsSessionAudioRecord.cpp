@@ -135,14 +135,26 @@ QString recordableProblem(const SessionModel& model, Song& song, int track, int 
 //! Drops the take in hand, whichever cell it is for, and stops that cell if it was launched for it.
 ControlResult cancelRecording(Song& song)
 {
-	SessionAudioRecorder& recorder = song.sessionScheduler().audioRecorder();
+	SessionScheduler& scheduler = song.sessionScheduler();
+	SessionAudioRecorder& recorder = scheduler.audioRecorder();
 	const int track = recorder.track();
 	const int scene = recorder.scene();
 	const SessionAudioRecorder::State before = recorder.state();
-	withEngineHeld([&recorder] { recorder.cancel(); });
-	if (before != SessionAudioRecorder::State::Idle && before != SessionAudioRecorder::State::Done)
+	const bool stopsCell = before != SessionAudioRecorder::State::Idle && before != SessionAudioRecorder::State::Done;
+	// BUG 4: the stop is queued BEFORE the take is dropped, under the same hold, and a refused stop is not ignored.
+	// Dropping first would throw the take away and leave its cell playing with the command reporting success; the
+	// refusal leaves both in hand, and a retry (once the audio thread has drained the queue) cancels as usual.
+	bool stopQueued = true;
+	withEngineHeld([&]
 	{
-		song.sessionScheduler().requestStop(track, scene, LaunchMode::Trigger, LaunchQuantisation::None);
+		stopQueued = !stopsCell || scheduler.requestStop(track, scene, LaunchMode::Trigger, LaunchQuantisation::None);
+		if (stopQueued) { recorder.cancel(); }
+	});
+	if (!stopQueued)
+	{
+		return ControlResult::failure(ControlErrorKind::Busy, QStringLiteral("the stop queue is full: cell (track %1, scene "
+			"%2) would keep playing, so nothing was cancelled and the take (still %3) is in hand: cancel again once the "
+			"engine has drained it").arg(track).arg(scene).arg(stateName(before)));
 	}
 	QJsonObject result = recorderState(recorder);
 	result.insert(QStringLiteral("cancelled"), before != SessionAudioRecorder::State::Idle);
