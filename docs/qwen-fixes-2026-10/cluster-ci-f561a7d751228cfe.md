@@ -40,3 +40,11 @@ Delegation: Sonnet extended `tests/qwaitfor-result-check.py` (fixture pair, swee
 
 ## Other findings
 - Both Shortcuts tests still call `QTest::qWait(100)` after the window is exposed. That is a fixed sleep in existing test code, and I left it unchanged here.
+
+## Self-check
+- **RED without the fix, GREEN with it:** with `fix.patch` reverted (`git apply -R`, EXIT=0) and the targets rebuilt (EXIT=0), `ctest -R '^QWaitForResultCheck$'` returned EXIT=8 (`test-4-red.log`: "0% tests passed, 1 tests failed out of 1", error at `ShortcutsPageTest.cpp:58:45`). With it re-applied (EXIT=0) and the targets rebuilt (EXIT=0), the same command returned EXIT=0 (`test-5-green.log`: "100% tests passed out of 1").
+- **Deterministic:** the check is a compile-only check plus a textual sweep. It recompiles the recorded `compile_commands.json` flags with `-Werror=unused-result` and runs a regex over `tests/src`. It has no timing, no sleeps and no threads. The fixed inputs are the two fixture pairs: a discarded result must be rejected and a used one must compile.
+- **At the cause and complete:** the cause is the two discarded results. The sweep `^\s*QTest::qWaitFor\w*\s*\(` over every `tests/src` .cpp/.h matched only `ShortcutsPageTest.cpp:58` and `ShortcutsCommandsTest.cpp:130` (`test-4-red.log`), and both are fixed. The green run reports no matches. UpdateCheckTest, the earlier sibling from cluster ci-d1d791015ce10efd, still passes.
+- **No collateral damage:** only test code and the check script changed. No product code, project loading or saved data is involved, and no limit was added. ShortcutsPageTest and ShortcutsCommandsTest still pass (`test-3-family.log`, EXIT=0, 100% passed out of 2).
+- **ALREADY-FIXED / FALSE-POSITIVE:** not applicable. The verdict is FIXED.
+- **Sibling commands (app.about, app.ask, app.help, app.online_help, app.task_cancel, app.tasks, app.tour, app.tours, app.update_check_get/run/set, app.version, app.whats_new, arrangement.fit_tracks, arrangement.get_state):** not affected. This change touches no command handler or command file. It only changes how two GUI tests wait for the main window in `initTestCase`, so command behaviour is unchanged.
