@@ -165,6 +165,19 @@ qint64 framesIn(const QString& path)
 	return info.frames;
 }
 
+bool writeConstantTake(const QString& path)
+{
+	SF_INFO info{};
+	info.channels = 1;
+	info.samplerate = Rate;
+	info.format = SF_FORMAT_WAV | SF_FORMAT_FLOAT;
+	SNDFILE* wav = sf_open(path.toLocal8Bit().constData(), SFM_WRITE, &info);
+	if (wav == nullptr) { return false; }
+	const std::vector<float> samples(static_cast<size_t>(Rate * 4), Body);
+	const sf_count_t written = sf_writef_float(wav, samples.data(), static_cast<sf_count_t>(samples.size()));
+	return sf_close(wav) == 0 && written == static_cast<sf_count_t>(samples.size());
+}
+
 QJsonObject waitForJob(int id)
 {
 	QElapsedTimer timer;
@@ -281,6 +294,32 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(!source->isMuted());
 		QCOMPARE(trackCount(), before);
+	}
+
+	//! A frozen source needs no extra tail itself, but must not suppress another source's tail in a group bounce.
+	void rangeBounceKeepsOtherSourceTailBesideFrozenTrack()
+	{
+		Track* source = trackWithClips(QStringLiteral("Unfrozen"), {0});
+		Track* frozen = Track::create(Track::Type::Instrument, Engine::getSong());
+		frozen->setName(QStringLiteral("Frozen"));
+		const QString take = out(QStringLiteral("frozen.wav"));
+		QVERIFY(writeConstantTake(take));
+		QString freezeError;
+		QVERIFY2(frozen->freezeTo(take, 0, 192, {}, &freezeError), qPrintable(freezeError));
+		const auto selected = QJsonArray{control::trackIdOf(source), control::trackIdOf(frozen)};
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 0}, {QStringLiteral("end"), 192},
+			{QStringLiteral("tracks"), selected}}).ok);
+
+		const QString path = out(QStringLiteral("mixed-frozen.wav"));
+		const ControlResult bounced = run(QStringLiteral("range.bounce"), {{QStringLiteral("out"), path}});
+		QVERIFY2(bounced.ok, qPrintable(bounced.errorMessage));
+		QVERIFY2(std::abs(framesIn(path) - framesOf(288)) <= 3, qPrintable(QString::number(framesIn(path))));
+		QVERIFY(std::abs(peakBetween(path, 0, 200, 284) - Tail) < 0.005f);
+		QVERIFY(source->isMuted());
+		QVERIFY(frozen->isFrozen() && frozen->frozenTake().path != take);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!source->isMuted());
+		QCOMPARE(frozen->frozenTake().path, take);
 	}
 
 	//! The tail stops where the next unmuted clip of a source starts, and never runs past the one-bar cap.

@@ -109,10 +109,12 @@ void isolateRegionInTrackElement(QDomElement track, tick_t start, tick_t end)
 tick_t tailTicksPastRange(const std::vector<Track*>& tracks, const BounceInPlace::Range& range)
 {
 	tick_t room = MaxTailTicks;
+	bool hasUnfrozenSource = false;
 	for (const Track* track : tracks)
 	{
-		if (track == nullptr || track->isFrozen()) { return 0; }
+		if (track == nullptr || track->isFrozen()) { continue; }
 		if (static_cast<int>(track->type()) >= static_cast<int>(Track::Type::Automation)) { continue; }
+		hasUnfrozenSource = true;
 		for (const Clip* clip : track->getClips())
 		{
 			if (clip == nullptr || clip->isMuted()) { continue; }
@@ -120,7 +122,7 @@ tick_t tailTicksPastRange(const std::vector<Track*>& tracks, const BounceInPlace
 			if (at >= range.end) { room = std::min(room, at - range.end); }
 		}
 	}
-	return room;
+	return hasUnfrozenSource ? room : 0;
 }
 
 qint64 audibleFramesIn(const QString& wav, qint64 from, qint64 maxFrames)
