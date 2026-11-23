@@ -78,7 +78,7 @@ it.
 
 | Step | Command (logs in `/home/kruzzzzy/.config/kads/zene/state/runs/2163.r1/logs`) | EXIT | Observed |
 | --- | --- | --- | --- |
-| Patch out the fix | `git diff HEAD -- include/ControlProjectAssets.h src/core/ControlProjectAssets.cpp src/core/ControlProjectAssetsDocument.cpp src/core/CMakeLists.txt > logs/fix.patch` | 0 | 931-line product patch. |
+| Patch out the fix | `git diff HEAD -- include/ControlProjectAssets.h src/core/ControlProjectAssets.cpp src/core/ControlProjectAssetsDocument.cpp src/core/CMakeLists.txt > logs/fix.patch` | 0 | 947-line product patch. |
 | Reverse it | `git apply -R logs/fix.patch` | 0 | New document TU deleted, old monolithic `ControlProjectAssets.cpp` restored. |
 | Build RED | `cmake --build build --target ControlProjectArchiveTest -j4 > logs/build-18-red.log 2>&1` | 0 | Compiles and links the unfixed code. |
 | Test RED | `ctest -R '^ControlProjectArchiveTest$' --output-on-failure > logs/test-red-4.log 2>&1` (from `build/tests`) | 8 | 21 passed, 2 failed: `aRepeatedReferenceIsHashedOnce` — read log absent (`QFileInfo::exists(readLog)` false); `aCommandStopsAtItsTotalHashBudgetAndSaysSo` — 4 hashed instead of 2. |
