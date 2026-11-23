@@ -41,6 +41,8 @@ namespace lmms
 
 static_assert(std::atomic<const SampleBuffer*>::is_always_lock_free);
 static_assert(std::atomic<unsigned int>::is_always_lock_free);
+static_assert(std::atomic<float>::is_always_lock_free);
+static_assert(std::atomic<sample_t (*)(const float)>::is_always_lock_free);
 
 
 LfoController::LfoController( Model * _parent ) :
@@ -98,13 +100,16 @@ void LfoController::updateValueBuffer()
 	m_phaseOffset = m_phaseModel.value() / 360.0;
 	float phase = m_currentPhase + m_phaseOffset;
 	float phasePrev = 0.0f;
+	// One snapshot per period: the UI thread may publish new values meanwhile.
+	const float duration = m_duration.load(std::memory_order_acquire);
+	const SampleFunction sampleFunction = m_sampleFunction.load(std::memory_order_acquire);
 
 	// roll phase up until we're in sync with period counter
 	m_bufferLastUpdated++;
 	if( m_bufferLastUpdated < s_periods )
 	{
 		f_cnt_t diff = s_periods - m_bufferLastUpdated;
-		phase += static_cast<float>( Engine::audioEngine()->framesPerPeriod() * diff ) / m_duration;
+		phase += static_cast<float>( Engine::audioEngine()->framesPerPeriod() * diff ) / duration;
 		m_bufferLastUpdated += diff;
 	}
 
@@ -126,12 +131,14 @@ void LfoController::updateValueBuffer()
 		{
 		case Oscillator::WaveShape::WhiteNoise:
 		{
-			if (absFraction(phase) < absFraction(phasePrev))
+			// The wave model is published before its slot updates the function,
+			// so this period may still see the previous (possibly null) function.
+			if (sampleFunction != nullptr && absFraction(phase) < absFraction(phasePrev))
 			{
 				// Resample when phase period has completed
-				m_heldSample = m_sampleFunction(phase);
+				m_heldSample.store(sampleFunction(phase), std::memory_order_relaxed);
 			}
-			currentSample = m_heldSample;
+			currentSample = m_heldSample.load(std::memory_order_relaxed);
 			break;
 		}
 		case Oscillator::WaveShape::UserDefined:
@@ -141,9 +148,9 @@ void LfoController::updateValueBuffer()
 		}
 		default:
 		{
-			if (m_sampleFunction != nullptr)
+			if (sampleFunction != nullptr)
 			{
-				currentSample = m_sampleFunction(phase);
+				currentSample = sampleFunction(phase);
 			}
 		}
 	}
@@ -151,7 +158,7 @@ void LfoController::updateValueBuffer()
 		f = std::clamp(m_baseModel.value() + (*amountPtr * currentSample / 2.0f), 0.0f, 1.0f);
 
 		phasePrev = phase;
-		phase += 1.0 / m_duration;
+		phase += 1.0 / duration;
 		amountPtr += amountInc;
 	}
 	if (usesUserWave) { releaseUserDefSampleBufferForRender(); }
@@ -211,7 +218,7 @@ void LfoController::scheduleUserDefSampleBufferReclaim()
 
 void LfoController::updatePhase()
 {
-	m_currentPhase = ( Engine::getSong()->getFrames() ) / m_duration;
+	m_currentPhase = Engine::getSong()->getFrames() / m_duration.load(std::memory_order_acquire);
 	m_bufferLastUpdated = s_periods - 1;
 }
 
@@ -234,7 +241,7 @@ void LfoController::updateDuration()
 			break;
 	}
 
-	m_duration = newDurationF;
+	m_duration.store(newDurationF, std::memory_order_release);
 }
 
 void LfoController::updateSampleFunction()
@@ -261,8 +268,9 @@ void LfoController::updateSampleFunction()
 			m_sampleFunction = &Oscillator::expSample;
 			break;
 		case Oscillator::WaveShape::WhiteNoise:
-			m_sampleFunction = &Oscillator::noiseSample;
-			m_heldSample = m_sampleFunction(0.0f);
+			// Seed the held sample before render can observe the noise function.
+			m_heldSample.store(Oscillator::noiseSample(0.0f), std::memory_order_relaxed);
+			m_sampleFunction.store(&Oscillator::noiseSample, std::memory_order_release);
 			break;
 		case Oscillator::WaveShape::UserDefined:
 			m_sampleFunction = nullptr;
