@@ -19,6 +19,18 @@ the unused-result relaxations, adds `-Werror=unused-result` and compiles the rea
 Two fixtures under the same flags keep it honest: a discarded qWaitFor must be REJECTED
 (otherwise the check cannot see the defect and FAILS), a used one must COMPILE.
 
+Cluster ci-f561a7d751228cfe. The same hosted `build / linux-arm64` job (train
+050/m0-train-49 at 21c2f3ee2e0d) stopped at
+
+    tests/src/gui/ShortcutsPageTest.cpp:58:45: error: ignoring return value of
+    'bool QTest::qWaitForWindowExposed(QWidget*, int)', declared with attribute 'nodiscard'
+    [-Werror=unused-result]
+
+A sibling of the qWaitFor defect: the whole QTest::qWaitFor* family is nodiscard. The check now
+also compiles the GUI shortcuts tests, carries a qWaitForWindowExposed fixture pair, and runs a
+cheap textual sweep over tests/src for any statement that starts with QTest::qWaitFor*( and so
+discards the bool result, which catches future siblings without compiling every unit.
+
 Usage:
   qwaitfor-result-check.py --build-dir <build> [--compiler <c++>]
 
@@ -32,18 +44,40 @@ import pathlib
 import shlex
 import subprocess
 import sys
+import re
 import tempfile
 
-#! Translation units that call QTest::qWaitFor and are built on the hosted jobs.
-SOURCES = ("tests/src/core/UpdateCheckTest.cpp",)
+#! Translation units that call the QTest::qWaitFor* family and are built on the hosted jobs.
+SOURCES = (
+	"tests/src/core/UpdateCheckTest.cpp",
+	"tests/src/gui/ShortcutsPageTest.cpp",
+	"tests/src/gui/ShortcutsCommandsTest.cpp",
+)
 
-BAD = """#include <QtTest>
+#! (label, discarded result source, used result source); compiled only, never run.
+FIXTURES = (
+	("qWaitFor",
+	 """#include <QtTest>
 int main() { QTest::qWaitFor([] { return true; }, 1); return 0; }
-"""
-
-GOOD = """#include <QtTest>
+""",
+	 """#include <QtTest>
 int main() { return QTest::qWaitFor([] { return true; }, 1) ? 0 : 1; }
-"""
+"""),
+	("qWaitForWindowExposed",
+	 """#include <QtTest>
+#include <QWidget>
+int main() { QWidget* w = nullptr; QTest::qWaitForWindowExposed(w, 1); return 0; }
+""",
+	 """#include <QtTest>
+#include <QWidget>
+int main() { QWidget* w = nullptr; return QTest::qWaitForWindowExposed(w, 1) ? 0 : 1; }
+"""),
+)
+
+#! Directory swept for statements that discard a QTest::qWaitFor* result.
+SWEEP_DIR = "tests/src"
+SWEEP_SUFFIXES = (".cpp", ".h")
+DISCARDED_CALL = re.compile(r"^\s*QTest::qWaitFor\w*\s*\(")
 
 OUTPUT_FLAGS = ("-o", "-MF", "-MT", "-MQ")
 SOLO_FLAGS = ("-c", "-MD", "-MMD", "-MP")
@@ -84,21 +118,55 @@ def compile_source(flags, source, output, work):
 	return result.returncode, result.stdout
 
 
-def check_fixtures(flags, work):
-	"""True when the flags reject a discarded result and accept a used one."""
-	for name, text in (("bad", BAD), ("good", GOOD)):
-		(work / f"{name}.cpp").write_text(text, encoding="utf-8")
-	code, output = compile_source(flags, work / "bad.cpp", work / "bad.o", work)
+def check_fixture(flags, work, label, bad, good):
+	"""True when the flags reject a discarded `label` result and accept a used one."""
+	(work / f"{label}-bad.cpp").write_text(bad, encoding="utf-8")
+	(work / f"{label}-good.cpp").write_text(good, encoding="utf-8")
+	code, output = compile_source(flags, work / f"{label}-bad.cpp", work / "bad.o", work)
 	if code == 0:
-		print("FAIL the discarded-qWaitFor fixture compiled: these flags cannot see the defect")
+		print(f"FAIL the discarded-{label} fixture compiled: these flags cannot see the defect")
 		return False
-	print("PASS the discarded-qWaitFor fixture is rejected (the check can fail)")
-	code, output = compile_source(flags, work / "good.cpp", work / "good.o", work)
+	print(f"PASS the discarded-{label} fixture is rejected (the check can fail)")
+	code, output = compile_source(flags, work / f"{label}-good.cpp", work / "good.o", work)
 	if code != 0:
-		print("FAIL the checked-qWaitFor fixture was rejected (the flags are too strict):")
+		print(f"FAIL the checked-{label} fixture was rejected (the flags are too strict):")
 		print(output.strip())
 		return False
-	print("PASS the checked-qWaitFor fixture compiles")
+	print(f"PASS the checked-{label} fixture compiles")
+	return True
+
+
+def check_fixtures(flags, work):
+	"""True when every fixture pair behaves: discarded rejected, used accepted."""
+	return all([check_fixture(flags, work, *fixture) for fixture in FIXTURES])
+
+
+def sweep_discarded_results(root):
+	"""Count statements under tests/src that start with QTest::qWaitFor*( and drop the result."""
+	failures = 0
+	base = root / SWEEP_DIR
+	for path in sorted(base.rglob("*")):
+		if not path.is_file() or path.suffix not in SWEEP_SUFFIXES:
+			continue
+		lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+		for number, line in enumerate(lines, 1):
+			if DISCARDED_CALL.match(line):
+				print(f"FAIL {path.relative_to(root).as_posix()}:{number} "
+				      "discards a QTest::qWaitFor* result")
+				failures += 1
+	if not failures:
+		print(f"PASS no {SWEEP_DIR} statement discards a QTest::qWaitFor* result")
+	return failures
+
+
+def check_source(flags, source, source_path, work):
+	"""True when one translation unit compiles under -Werror=unused-result."""
+	code, output = compile_source(flags, source_path, work / "unit.o", work)
+	if code != 0:
+		print(f"FAIL {source} does not compile with -Werror=unused-result:")
+		print(output.strip())
+		return False
+	print(f"PASS {source} compiles with -Werror=unused-result")
 	return True
 
 
@@ -124,13 +192,9 @@ def main():
 				if not check_fixtures(flags, work):
 					return 1
 				fixtures_checked = True
-			code, output = compile_source(flags, source_path, work / "unit.o", work)
-			if code != 0:
-				print(f"FAIL {source} does not compile with -Werror=unused-result:")
-				print(output.strip())
+			if not check_source(flags, source, source_path, work):
 				failures += 1
-			else:
-				print(f"PASS {source} compiles with -Werror=unused-result")
+	failures += sweep_discarded_results(pathlib.Path(__file__).resolve().parent.parent)
 	return 1 if failures else 0
 
 
