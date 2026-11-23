@@ -93,6 +93,11 @@ Round-1 evidence (same helper, ordinary clips) remains in
 `/home/kruzzzzy/.config/kads/zene/state/runs/3971.r1/logs`: RED `test-red-5.log` EXIT 1, GREEN
 `test-green-5.log` EXIT 0.
 
+Each named regression was also replayed alone from the final tree (the manifest's record): with the
+product hunks reversed each exited **1** (`test-red-<test name>.log`), and after
+`git apply .../fix.patch` and rebuilding `zene` + `BounceInPlaceTest` each exited **0**
+(`test-green-<test name>.log`).
+
 ## Self-check
 
 - **Regression tests fail with the product change reverted and pass with it:** yes for all four new
