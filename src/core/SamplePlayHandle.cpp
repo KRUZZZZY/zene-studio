@@ -659,6 +659,14 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 		// Q050-111: the clip's own effects, on this clip's audio alone - the track sums its clips after this.
 		if (m_effectsClip != nullptr) { m_effectsClip->processClipEffects(buffer); }
 	}
+	else
+	{
+		/* cluster new-p12-223: the track is muted, so nothing sounds - but the
+		 * clip's timeline moves on (`m_frame += frames` below) and the source has
+		 * to move with it, or unmuting inside the clip replays audio that has
+		 * already sounded and the tail runs out early. */
+		advanceSourceSilently(frames);
+	}
 
 	m_frame += frames;
 }
@@ -780,6 +788,63 @@ void SamplePlayHandle::renderPreservingPitch(SampleFrame* dst, f_cnt_t frames)
 }
 
 
+
+
+/*! cluster new-p12-223: the audible branch's source reads, with the audio thrown away.
+ *
+ *  A muted track makes `play()` skip its whole render, but the handle's own
+ *  `m_frame` - the clip's timeline position - advances anyway (src/core/SamplePlayHandle.cpp,
+ *  the `m_frame += frames` at the end of play()). The playback state therefore has to
+ *  consume the same period the audible branch would have consumed, or the two drift apart
+ *  for as long as the mute lasts: unmuting inside the clip then replays audio that has
+ *  already sounded, and the tail is cut short.
+ *
+ *  The same three render modes as the audible branch, the same ratio, the same comp-slip
+ *  readers - into the handle's own scratch. The fades, the take gate, the comp and the
+ *  clip's effects are deliberately absent: a muted clip does not sound at all, so only the
+ *  read position has to keep step.
+ */
+void SamplePlayHandle::advanceSourceSilently(f_cnt_t frames)
+{
+	// Q050-162: the transient repeaters keep their own source cursor (src/core/TransientRepeat.cpp:361).
+	if (m_repeatsTransients)
+	{
+		for (f_cnt_t done = 0; done < frames;)
+		{
+			const f_cnt_t count = std::min<f_cnt_t>(frames - done, DEFAULT_BUFFER_SIZE);
+			renderTransientRepeat(m_silentScratch.data(), count);
+			done += count;
+		}
+		return;
+	}
+	// One ratio for the period, exactly as the audible branch takes one per `Sample::play` call.
+	const double ratio = warpRatio() / speedHere();
+	for (f_cnt_t done = 0; done < frames;)
+	{
+		const f_cnt_t count = std::min<f_cnt_t>(frames - done, DEFAULT_BUFFER_SIZE);
+		SampleFrame* const chunk = m_silentScratch.data();
+		if (m_preservePitch)
+		{
+			renderPreservingPitch(chunk, count);
+		}
+		else
+		{
+			// The return value only decides whether the block ended early; the frames are
+			// discarded either way, so it just has to leave the state where the read after
+			// it starts.
+			if (!m_sample->play(chunk, &m_state, count, m_loopMode, ratio))
+			{
+				zeroSampleFrames(chunk, count);
+			}
+			// 0.5.0 E2: the slipped spans' readers keep step with the handle's own read.
+			if (m_compSlip != nullptr)
+			{
+				m_compSlip->render(*m_sample, chunk, count, m_envelopeStart + m_frame + done, ratio);
+			}
+		}
+		done += count;
+	}
+}
 
 
 bool SamplePlayHandle::isFinished() const
