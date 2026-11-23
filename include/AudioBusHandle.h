@@ -64,11 +64,32 @@ public:
 	AudioBusHandle(const QString& name, bool hasEffectChain = true,
 		FloatModel* volumeModel = nullptr, FloatModel* panningModel = nullptr,
 		BoolModel* mutedModel = nullptr);
+	//! Destructor contract: a bus built on the audio path has engine links (registration, retirement,
+	//! port update) and must be destroyed through AudioEngine::destroyAudioBusHandle. A plain delete on
+	//! the audio or render path frees an object a link still names. Stack and track buses have no links.
 	virtual ~AudioBusHandle();
 
 	// indicate whether JACK & Co should provide output-buffer at ext. port
-	bool extOutputEnabled() const { return m_extOutputEnabled; }
+	bool extOutputEnabled() const { return m_extOutputWanted.load(std::memory_order_relaxed); }
 	void setExtOutputEnabled(bool enabled);
+
+	//! Where this bus stands with the engine's registration (cluster new-p15-253).
+	//!
+	//! A bus that is created on the audio path is pushed onto the engine's registration stack;
+	//! the control thread registers it on its next service tick. Until then the bus may still be
+	//! reached through that stack - so the engine keeps it alive (see AudioEngine::destroyAudioBusHandle)
+	//! and never registers a bus that was retired in the meantime.
+	enum class RegistrationState : std::uint8_t
+	{
+		Registered = 0, //!< the bus is in the engine's bus list
+		Pending = 1,    //!< published to the registration stack; the control thread did not serve it yet
+		Retired = 2,    //!< retired before the control thread served the entry: it must not be registered
+		Handled = 3     //!< the pending entry was consumed, or the bus left the list: the bus is in no list
+	};
+	RegistrationState registrationState() const noexcept
+	{
+		return m_registrationState.load(std::memory_order_acquire);
+	}
 
 	// next mixer-channel after this audio-bus-handle
 	// (-1 = none  0 = master)
@@ -158,6 +179,14 @@ private:
 	void removePlayHandleUnderEngineChangeLock(PlayHandle* handle);
 	//! The track's volume and panning, applied to m_buffer in place
 	void applyVolumeAndPanning(f_cnt_t fpp);
+	//! Prepares the buffer, the compensation history and the effect chain. Control thread only: it allocates.
+	void prepareStorage();
+	//! True while one of this bus's links sits on an engine stack.
+	bool hasQueuedLinks() const noexcept
+	{
+		return m_registrationLink.enqueued.load(std::memory_order_acquire) || m_retirement.load(std::memory_order_acquire) != 0
+			|| m_portUpdateLink.enqueued.load(std::memory_order_acquire);
+	}
 
 	volatile bool m_bufferUsage;
 
@@ -169,11 +198,16 @@ private:
 	//! Audio bus view over m_buffer, used for effect processing and mixing
 	AudioBus m_bus;
 
-	bool m_extOutputEnabled;
+	//! What the owner asked for (see setExtOutputEnabled); any thread writes it.
+	std::atomic<bool> m_extOutputWanted{false};
+	//! What the device has, as the control thread applied it.
+	bool m_extOutputApplied = false;
 	mix_ch_t m_nextMixerChannel;
 
 	QString m_name;
 
+	//! Whether the bus gets an effect chain once its storage is prepared.
+	bool m_hasEffectChain = false;
 	std::unique_ptr<EffectChain> m_effects;
 
 	PlayHandleList m_playHandles;
@@ -245,6 +279,24 @@ private:
 	std::atomic<int> m_offsetFrames{0};
 	//! Q050-174: see setMonitorUnaligned().
 	std::atomic<bool> m_monitorUnaligned{false};
+
+	//! Cluster new-p15-253: the state of this bus's registration with the engine.
+	//! Only the engine writes it (AudioEngine is a friend); it decides whether the
+	//! control thread may register the bus and whether the engine may free it.
+	std::atomic<RegistrationState> m_registrationState{RegistrationState::Registered};
+
+	//! Intrusive links into the engine's control-thread stacks (cluster new-p15-253). A bus is on each
+	//! stack at most once: `enqueued` is set by the pusher and cleared by the consumer that took the bus off.
+	struct ControlLink
+	{
+		std::atomic<AudioBusHandle*> next{nullptr};
+		std::atomic<bool> enqueued{false};
+	};
+	ControlLink m_registrationLink;
+	std::atomic<AudioBusHandle*> m_retirementNext{nullptr};
+		//! 0 idle, 1 queued for removal, 2 queued for removal and free.
+		std::atomic<std::uint8_t> m_retirement{0};
+	ControlLink m_portUpdateLink;
 
 	friend class AudioEngine;
 	friend class AudioEngineWorkerThread;

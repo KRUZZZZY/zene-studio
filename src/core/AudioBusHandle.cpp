@@ -75,32 +75,53 @@ AudioBusHandle::AudioBusHandle(const QString& name, bool hasEffectChain,
 	FloatModel* volumeModel, FloatModel* panningModel,
 	BoolModel* mutedModel) :
 	m_bufferUsage(false),
-	m_buffer(BufferManager::acquire()),
-	m_trackChannels(m_buffer.data()),
-	m_bus(&m_trackChannels, 1, m_buffer.size()),
-	m_extOutputEnabled(false),
+	m_trackChannels(nullptr),
+	m_bus(&m_trackChannels, 1, 0),
 	m_nextMixerChannel(0),
 	m_name(name),
-	m_effects(hasEffectChain ? new EffectChain(nullptr) : nullptr),
+	m_hasEffectChain(hasEffectChain),
 	m_volumeModel(volumeModel),
 	m_panningModel(panningModel),
 	m_mutedModel(mutedModel)
 {
 	// Mark all track channels as quiet
 	m_bus.quietChannels().set();
+	if (RealtimeScope::isActive())
+	{
+		// The audio path (cluster new-p15-253): no storage, no lock, no device call. The engine links
+		// the bus onto its registration stack (pending), and the port request is linked too; the control
+		// thread prepares the storage and applies the port on its next service tick.
+		Engine::audioEngine()->addAudioBusHandle(this);
+		setExtOutputEnabled(true);
+		return;
+	}
+	// Buffer, compensation history and effect chain (PDC #605 preallocates on the control thread).
+	prepareStorage();
 
-	// PDC (#605): preallocate the compensation history on the control thread.
-	m_compensation.init(m_buffer.size());
 	// Track and instrument buses reserve one full bounded polyphony batch on the
 	// control thread. Standalone sample buses created on the audio path use the
 	// inline handle slot below until the main thread tops up their list.
-	if (!RealtimeScope::isActive() && QThread::currentThread() == Engine::audioEngine()->thread())
+	if (QThread::currentThread() == Engine::audioEngine()->thread())
 	{
 		m_playHandles.reserve(static_cast<qsizetype>(PlayHandle::MaxNumber));
 	}
 
 	Engine::audioEngine()->addAudioBusHandle(this);
 	setExtOutputEnabled(true);
+}
+
+
+void AudioBusHandle::prepareStorage()
+{
+	if (!m_buffer.empty()) { return; }
+	m_buffer = BufferManager::acquire();
+	m_trackChannels = m_buffer.data();
+	// AudioBus has const members, so it cannot be assigned: rebuild it in place.
+	std::destroy_at(&m_bus);
+	std::construct_at(&m_bus, &m_trackChannels, 1, m_buffer.size());
+	m_bus.quietChannels().set();
+	m_compensation.init(m_buffer.size());
+	if (m_hasEffectChain && !m_effects) { m_effects = std::make_unique<EffectChain>(nullptr); }
 }
 
 
@@ -137,18 +158,15 @@ AudioBusHandle::~AudioBusHandle()
 
 void AudioBusHandle::setExtOutputEnabled(bool enabled)
 {
-	if (enabled != m_extOutputEnabled)
+	if (m_extOutputWanted.exchange(enabled, std::memory_order_acq_rel) == enabled) { return; }
+	// The device call allocates and can block (the JACK backend registers a port per
+	// channel), so a realtime thread only requests it (cluster new-p15-253 / new-p12-313).
+	if (RealtimeScope::isActive())
 	{
-		m_extOutputEnabled = enabled;
-		if (m_extOutputEnabled)
-		{
-			Engine::audioEngine()->audioDev()->registerPort(this);
-		}
-		else
-		{
-			Engine::audioEngine()->audioDev()->unregisterPort(this);
-		}
+		Engine::audioEngine()->requestDevicePortUpdate(this, enabled);
+		return;
 	}
+	Engine::audioEngine()->applyDevicePortState(this);
 }
 
 
@@ -199,6 +217,8 @@ void AudioBusHandle::applyVolumeAndPanning(const f_cnt_t fpp)
 
 void AudioBusHandle::doProcessing()
 {
+	// Not prepared yet (a bus on the audio path before the control thread prepared it): nothing to do.
+	if (m_buffer.empty()) { return; }
 	// Cluster 5467: non-worker off-stage edits land here before this bus reads the list. Worker-stage
 	// edits are drained by the render owner after the worker queue joins.
 	applyPlayHandleEdits();
