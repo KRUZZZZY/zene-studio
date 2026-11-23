@@ -33,12 +33,18 @@
 #include <QtTest>
 
 #include <cmath>
+#include <cstdint>
 #include <memory>
 #include <vector>
+
+#include <QTemporaryDir>
+
+#include <sndfile.h>
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "Engine.h"
+#include "MultiTrackRecorder.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
@@ -187,6 +193,85 @@ private slots:
 		QVERIFY2(std::llabs(recordedAt - static_cast<long long>(kInsidePunchAt)) <= 1,
 			qPrintable(QStringLiteral("the inside transient landed at %1, not %2")
 				.arg(recordedAt).arg(kInsidePunchAt)));
+	}
+
+	//! Cluster 5465: the capture staging ring is drained whole, so one render can
+	//! take a batch that holds more than one engine period - a render that fell
+	//! behind takes the backlog with it. Such a batch ends at the end of the
+	//! period being rendered; the punch gate must place it by that end, not start
+	//! all of it at this period's start. Here a two-period batch is staged for the
+	//! first period with the punch region covering song frames [0, one tick): the
+	//! batch's first (older, pre-punch) period must be cut and its second period
+	//! kept. Mapping the whole batch from the period start kept the wrong half and
+	//! dropped the half inside the region.
+	void anOversizedCaptureBatchIsGatedAtItsOwnSongPosition()
+	{
+		AudioEngine* engine = Engine::audioEngine();
+		Song* song = Engine::getSong();
+		QVERIFY(engine != nullptr && song != nullptr);
+		// Drive the periods ourselves: with the device stopped this test's staged
+		// batch is the only input, so the assertion does not depend on wall time.
+		engine->audioDev()->stopProcessing();
+		engine->renderNextPeriod();  // drain whatever the stopped device left staged
+
+		Timeline& timeline = song->getTimeline(Song::PlayMode::Song);
+		timeline.setPunchRange(0, 1);  // song frames [0, framesPerTick): the first tick
+		timeline.setPunchEnabled(true);
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString takePath = dir.filePath(QStringLiteral("oversized-batch.wav"));
+		MultiTrackRecorder& recorder = engine->recorder();
+		// A failing assertion must still join the writer before the temp dir goes.
+		struct DisarmOnExit
+		{
+			MultiTrackRecorder& recorder;
+			~DisarmOnExit() { recorder.disarmAll(); }
+		} disarmOnExit{recorder};
+		QVERIFY2(recorder.armTrack(0, takePath.toStdString(),
+			static_cast<int>(engine->outputSampleRate()), 0), "the test route would not arm");
+
+		const f_cnt_t periodFrames = engine->framesPerPeriod();
+		const f_cnt_t batchFrames = 2 * periodFrames;
+		std::vector<SampleFrame> batch(static_cast<std::size_t>(batchFrames));
+		for (f_cnt_t frame = 0; frame < batchFrames; ++frame)
+		{
+			const auto value = static_cast<float>(frame + 1) / 1024.0f;
+			batch[static_cast<std::size_t>(frame)] = SampleFrame(value, value);
+		}
+
+		song->setPlayPos(0, Song::PlayMode::Song);
+		song->playSong();
+		engine->pushInputFrames(batch.data(), batchFrames);
+		// This render is song frames [0, periodFrames), so the batch's SECOND
+		// period is the period being rendered and its first is the backlog.
+		engine->renderNextPeriod();
+		song->stop();
+		timeline.setPunchEnabled(false);
+		// The whole staged batch reached the engine, and the gate handed the
+		// recorder exactly the period inside the region.
+		QCOMPARE(engine->inputBufferFrames(), batchFrames);
+		QCOMPARE(recorder.track(0).framesPushed(), static_cast<std::uint64_t>(periodFrames));
+		recorder.disarmAll();
+
+		SF_INFO info{};
+		SNDFILE* file = sf_open(takePath.toUtf8().constData(), SFM_READ, &info);
+		QVERIFY(file != nullptr);
+		std::vector<float> recorded(static_cast<std::size_t>(info.frames), 0.0f);
+		const sf_count_t read = sf_readf_float(file, recorded.data(), info.frames);
+		sf_close(file);
+		// Only the batch's second period lies inside the punch region.
+		QCOMPARE(info.frames, static_cast<sf_count_t>(periodFrames));
+		QCOMPARE(read, static_cast<sf_count_t>(periodFrames));
+		if (recorded.size() != static_cast<std::size_t>(periodFrames)) { return; }
+		for (f_cnt_t frame = 0; frame < periodFrames; ++frame)
+		{
+			const float expected = static_cast<float>(periodFrames + frame + 1) / 1024.0f;
+			QVERIFY2(std::fabs(recorded[static_cast<std::size_t>(frame)] - expected) <= 1e-6f,
+				qPrintable(QStringLiteral("take frame %1 is %2, not batch frame %3 (%4)")
+					.arg(frame).arg(recorded[static_cast<std::size_t>(frame)])
+					.arg(periodFrames + frame).arg(expected)));
+		}
 	}
 
 private:
