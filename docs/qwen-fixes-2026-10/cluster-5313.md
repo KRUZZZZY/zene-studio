@@ -117,6 +117,13 @@ only then does the test go red.
    before publish), `include/SessionTuning.h:234-251` (reader protocol),
    `src/core/SessionTuning.cpp:255-256` (writer serialisation), and the
    regression test above.
+6. **Sibling commands.** No command file, handler, registry entry or
+   reversibility row was changed by this lane (the only change is this report),
+   so the `app.*`/`arrangement.*` siblings listed by the checker are not
+   affected and no ControlCommandsSnapshot canary moves. The fix was a
+   control-thread publication order inside `SessionTuning::commit()`, which no
+   command handler overrides; every `mts.*` mutation path keeps the same
+   contract.
 
 ## Other findings
 
