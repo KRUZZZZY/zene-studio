@@ -121,3 +121,9 @@ baseline (`51b528f7c8`, `309e3ce831`, both ancestors of `050/m0-train-35`).
   (`plugins/Vst3Effect/Vst3Host.h:87-141`), and `processImpl()` refuses admission at
   `Vst3Effect.cpp:212` / `Vst3Instrument.cpp:388`. Fixed by ancestors `51b528f7c8` and `309e3ce831`
   of the fix base.
+- **Sibling commands in the command files you changed — confirm each is consistent with your fix (or
+  say why it is not affected).** This job changed no command file and adds no command: the only
+  committed file is this report. The submit check derives that sibling list from every path changed
+  since the fix base (`git diff --name-only 050/m0-train-35..HEAD`, 349 files from the merge train), not
+  from this job's commit `93e4df5449`; none of `app.*`, `arrangement.*` or any other control command is
+  touched here, so the ControlCommandsSnapshot canary is unchanged.
