@@ -332,12 +332,20 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 	const auto written = sf_writef_float(sf, interleaved.data(),
 		static_cast<sf_count_t>(window.size()));
 	const int finishError = finishEncoding(sf);
-	static_cast<void>(finishError); // checked in the follow-up fix
 
 	if (written < 0 || static_cast<std::size_t>(written) != window.size())
 	{
 		*error = QStringLiteral("wrote %1 of %2 frames to %3")
 			.arg(written).arg(window.size()).arg(filePath);
+		return false;
+	}
+	// Every frame was accepted, but a take whose flush or close failed may be
+	// truncated or carry a stale header: refused before commit(), so the
+	// destination keeps what it held (QSaveFile discards the temporary).
+	if (finishError != SF_ERR_NO_ERROR)
+	{
+		*error = QStringLiteral("could not finish writing %1: %2")
+			.arg(filePath, QString::fromUtf8(sf_error_number(finishError)));
 		return false;
 	}
 	if (!output.commit())
