@@ -51,8 +51,18 @@ REAL. The historical line 225 now holds `recordSlot()`; the code the finding des
    The recorder states the test drives, in order: `done` (the take finished) -> `done` (the failed write kept it in
    hand) -> `idle` (landed).
 
-RED/GREEN, all commands run from the worktree or `build/tests` and logged in
-`/home/kruzzzzy/.config/kads/zene/state/runs/new-p9-76.r1/logs`:
+## Review verification (2026-11-23)
+
+The fixer's proof manifest and run directory at
+`/home/kruzzzzy/.config/kads/zene/state/runs/new-p9-76.r1` were not present in the review filesystem, so those
+artifacts could not be inspected. I independently reproduced the regression: with the product hunks reversed,
+`cmake --build build --target zene SessionAudioRecordTest SessionAudioRecorderTest -j12` exited 0 and
+`ctest -R '^SessionAudioRecordTest$' --output-on-failure` from `build/tests` exited 8 with actual state `idle` instead
+of `done` at line 292. After restoring the product files, `cmake --build build --target zene SessionAudioRecordTest
+SessionAudioRecorderTest -j4` exited 0 and `ctest -R 'SessionAudioRecord' --output-on-failure` exited 0 (2/2).
+
+The following red/green details are from the original fixer report; its abbreviated redirect paths and referenced log
+files were unavailable for inspection in this review:
 
 - RED test (before the product fix; test already added):
   `cmake --build build --target SessionAudioRecordTest -j4 > .../logs/build-1.log 2>&1` (EXIT=0), then
