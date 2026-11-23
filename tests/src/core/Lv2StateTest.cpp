@@ -43,6 +43,7 @@
 #ifdef LMMS_HAVE_LV2
 #include <memory>
 
+#include "AllocationProbe.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "Lv2ControlBase.h"
@@ -50,7 +51,9 @@
 #include "Lv2Manager.h"
 #include "Lv2Evbuf.h"
 #include "Lv2Proc.h"
+#include "Lv2UridMap.h"
 #include "PluginFactory.h"
+#include "RealtimeScope.h"
 #include "Song.h"
 #include "Track.h"
 #include <lilv/lilv.h>
@@ -154,6 +157,52 @@ private slots:
 		features.initCommon();
 		features.createFeatureVectors();
 		QCOMPARE(Lv2FeaturesTestAccess::pointerCount(features), expectedPointerCount);
+#endif
+	}
+
+	//! Cluster new-p17-82: a plug-in may call the URID map from run(). A URI the host already
+	//! knows must resolve without the mutex or the heap, and a URI first seen there must not be
+	//! registered on the audio thread at all; the control thread registers it for later runs.
+	void uridMapOnTheAudioThreadIsLockFreeAndAllocationFree()
+	{
+#ifndef LMMS_HAVE_LV2
+		QSKIP("this build has no LV2 host");
+#else
+		UridMap map;
+		const char* known = "urn:zene:test:urid-known";
+		const LV2_URID knownId = map.map(known);
+		QVERIFY(knownId != 0u);
+
+		LV2_URID knownOnAudio = 0u;
+		LV2_URID freshOnAudio = 1u;
+		const char* unmappedOnAudio = nullptr;
+		const char* tooHighOnAudio = nullptr;
+		{
+			const RealtimeScope realtime;
+			lmms::test::resetAllocationCount();
+			lmms::test::tlCountAllocations = true;
+			knownOnAudio = map.map(known);
+			freshOnAudio = map.map("urn:zene:test:urid-first-seen-in-run");
+			unmappedOnAudio = map.unmap(knownId);
+			tooHighOnAudio = map.unmap(LV2_URID{0xFFFFFFFFu});
+			lmms::test::tlCountAllocations = false;
+		}
+		QCOMPARE(knownOnAudio, knownId);
+		QCOMPARE(freshOnAudio, LV2_URID{0});
+		QVERIFY(unmappedOnAudio != nullptr);
+		QCOMPARE(QString::fromUtf8(unmappedOnAudio), QString::fromUtf8(known));
+		QVERIFY(tooHighOnAudio == nullptr);
+		QCOMPARE(lmms::test::tlAllocationCount, std::uint64_t{0});
+
+		// Registration happens off the audio thread, and the next run sees the same ID.
+		const LV2_URID fresh = map.map("urn:zene:test:urid-first-seen-in-run");
+		QVERIFY(fresh != 0u);
+		LV2_URID freshAgain = 0u;
+		{
+			const RealtimeScope realtime;
+			freshAgain = map.map("urn:zene:test:urid-first-seen-in-run");
+		}
+		QCOMPARE(freshAgain, fresh);
 #endif
 	}
 

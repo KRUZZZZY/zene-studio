@@ -27,6 +27,10 @@
 
 #ifdef LMMS_HAVE_LV2
 
+#include <cstring>
+
+#include "RealtimeScope.h"
+
 namespace lmms
 {
 
@@ -43,8 +47,76 @@ static const char* staticUnmap(LV2_URID_Unmap_Handle handle, LV2_URID urid)
 	return map->unmap(urid);
 }
 
-UridMap::UridMap()
+std::uint32_t UridMap::rtHash(const char* uri) noexcept
 {
+	// FNV-1a, the usual small non-cryptographic choice: no allocation, no lock.
+	std::uint32_t hash = 2166136261u;
+	for (const auto* c = reinterpret_cast<const unsigned char*>(uri); *c != 0; ++c)
+	{
+		hash ^= *c;
+		hash *= 16777619u;
+	}
+	// 0 is the empty-slot marker.
+	return hash != 0u ? hash : 1u;
+}
+
+LV2_URID UridMap::mapRt(const char* uri) const noexcept
+{
+	const std::uint32_t hash = rtHash(uri);
+	const std::size_t home = hash % RtCapacity;
+	for (std::size_t probe = 0; probe < RtCapacity; ++probe)
+	{
+		const RtEntry& entry = m_rtEntries[(home + probe) % RtCapacity];
+		const std::uint32_t slotHash = entry.hash.load(std::memory_order_acquire);
+		if (slotHash == 0u)
+		{
+			// Insertions only ever fill the first empty slot on the probe path and
+			// are never removed, so an empty slot means the URI is not published.
+			return 0;
+		}
+		if (slotHash == hash && std::strcmp(entry.uri, uri) == 0)
+		{
+			// urid was stored before hash's release store.
+			return entry.urid.load(std::memory_order_relaxed);
+		}
+	}
+	return 0;
+}
+
+void UridMap::publishRt(const char* uri, LV2_URID urid) noexcept
+{
+	if (urid == 0u) { return; }
+
+	if (urid <= RtCapacity)
+	{
+		m_rtUris[urid - 1].store(uri, std::memory_order_release);
+	}
+
+	if (m_rtSize >= RtCapacity) { return; }
+
+	const std::uint32_t hash = rtHash(uri);
+	const std::size_t home = hash % RtCapacity;
+	for (std::size_t probe = 0; probe < RtCapacity; ++probe)
+	{
+		RtEntry& entry = m_rtEntries[(home + probe) % RtCapacity];
+		if (entry.hash.load(std::memory_order_relaxed) != 0u) { continue; }
+		entry.uri = uri;
+		entry.urid.store(urid, std::memory_order_relaxed);
+		// Publishing the hash last makes the uri and urid above visible to mapRt().
+		entry.hash.store(hash, std::memory_order_release);
+		++m_rtSize;
+		return;
+	}
+}
+
+UridMap::UridMap()
+	: m_rtEntries(std::make_unique<RtEntry[]>(RtCapacity))
+	, m_rtUris(std::make_unique<std::atomic<const char*>[]>(RtCapacity))
+{
+	for (std::size_t i = 0; i < RtCapacity; ++i)
+	{
+		m_rtUris[i].store(nullptr, std::memory_order_relaxed);
+	}
 	m_mapFeature.handle = static_cast<LV2_URID_Map_Handle>(this);
 	m_mapFeature.map = staticMap;
 	m_unmapFeature.handle = static_cast<LV2_URID_Unmap_Handle>(this);
@@ -53,6 +125,14 @@ UridMap::UridMap()
 
 LV2_URID UridMap::map(const char *uri)
 {
+	if (uri == nullptr) { return 0u; }
+
+	// A plug-in's run() may call this. The contract (lv2/urid/urid.h) allows the map
+	// to be slow, but this host keeps its audio-thread callers off the mutex and off
+	// the heap: a known URI is read from the lock-free mirror, and a URI first seen
+	// here is left for the control thread to register instead of allocating now.
+	if (RealtimeScope::isActive()) { return mapRt(uri); }
+
 	LV2_URID result = 0u;
 
 	// the Lv2 docs say that 0 should be returned in any case
@@ -81,6 +161,7 @@ LV2_URID UridMap::map(const char *uri)
 			if (pr.second)
 			{
 				m_unMap.emplace_back(pr.first->first.c_str());
+				publishRt(pr.first->first.c_str(), index);
 				result = index;
 			}
 		}
@@ -93,6 +174,13 @@ LV2_URID UridMap::map(const char *uri)
 
 const char *UridMap::unmap(LV2_URID urid)
 {
+	if (RealtimeScope::isActive())
+	{
+		// The mirror's URI pointers are the canonical map's stable key storage.
+		if (urid == 0u || urid > RtCapacity) { return nullptr; }
+		return m_rtUris[urid - 1].load(std::memory_order_acquire);
+	}
+
 	std::size_t idx = static_cast<std::size_t>(urid) - 1;
 
 	std::lock_guard<std::mutex> guard (m_MapMutex);

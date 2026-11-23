@@ -1,150 +1,176 @@
-FALSE-POSITIVE
+FIXED
 
 # Cluster new-p17-82: LV2 URI mapping can lock and allocate during audio processing
 
-**Verdict: FALSE-POSITIVE.** The code does lock and allocate, but only when a plug-in calls the
-`LV2_URID_Map` callback. That callback is defined by the LV2 contract as *not necessarily RT-safe*,
-with the caching obligation on the plug-in; the host itself never maps a URI from the audio thread.
-Making this host-side map real-time safe would either cap the dynamic map (refusing legitimate URIs)
-or return 0 for runtime registrations (breaking the "dynamic map" and referential-transparency
-contract the same specification states). Neither is a fix to a host defect.
+**Verdict: FIXED.** `UridMap::map()`/`unmap()` now have a lock-free, allocation-free branch
+inside `RealtimeScope`: a URI the host already knows resolves from a published mirror, and a URI
+first seen on the audio thread is not registered there at all (`map()` returns 0). The canonical
+map and its mutex stay exactly as they were for every control-thread caller.
 
-## Evidence
+An earlier pass in this session recorded FALSE-POSITIVE, reading the LV2 header's "not necessarily
+very fast or RT-safe" as closing the finding. That was too narrow for this project's realtime rule:
+`Lv2Features` hands this callback to every plug-in (`src/core/lv2/Lv2Features.cpp:64-65`), so a
+plug-in really can call it from `run()`, and the host side can keep that path off the mutex and the
+heap. This report supersedes that pass.
 
-### 1. The code does what the finding says - when the plug-in calls it
+## Cause and fix
 
-- `src/core/lv2/Lv2UridMap.cpp:54-92` - `UridMap::map()` builds a temporary `std::string` (`:71`),
-  takes `std::lock_guard<std::mutex> guard(m_MapMutex)` (`:73`), looks the URI up (`:75`) and, for a
-  new URI, allocates map/vector nodes (`:80`, `:83`). `unmap()` also takes the same mutex (`:98`).
-- `src/core/lv2/Lv2Features.cpp:64-65` - the `LV2_URID__map` / `LV2_URID__unmap` features are handed
-  to every plug-in instance, so a plug-in can retain the callback and invoke it from `run()`.
+Before: `src/core/lv2/Lv2UridMap.cpp:54-92` built a temporary `std::string` (`:71`), took
+`std::lock_guard<std::mutex>` (`:73`), and for a new URI allocated the map node and the unmap entry
+(`:80`, `:83`). `unmap()` took the same mutex (`:98`). Both are reachable from `Lv2Proc::run()`
+because `Lv2Features::initCommon()` passes the feature pointers to every plug-in instance.
 
-This is the mechanism the finding describes. It says nothing yet about whose thread invokes it.
+After:
 
-### 2. The LV2 contract puts that call and its cache on the plug-in
+- `include/Lv2UridMap.h:53-95` - declares the mirror: `RtCapacity` (16384 slots), `RtEntry`
+  (`std::atomic` hash + URID + a pointer to the canonical key), `m_rtEntries`, `m_rtUris`,
+  `m_rtSize`, and the `rtHash`/`mapRt`/`publishRt` helpers. `m_MapMutex` still protects the
+  canonical `m_map`/`m_unMap` and publication into the mirror.
+- `src/core/lv2/Lv2UridMap.cpp:50-61` - `rtHash()`: FNV-1a over the URI, no allocation, never 0
+  (0 marks an empty slot).
+- `src/core/lv2/Lv2UridMap.cpp:63-84` - `mapRt()`: open-addressed read of the mirror under an
+  acquire load of each slot's hash. It never takes the mutex and never allocates. An empty slot on
+  the probe path means the URI is not published, because entries are only appended and never
+  removed.
+- `src/core/lv2/Lv2UridMap.cpp:86-110` - `publishRt()`: called with `m_MapMutex` held, it publishes
+  `urid - 1 -> URI` in `m_rtUris` and then a mirror slot, storing the hash last with release so the
+  URI pointer and URID are visible to `mapRt()`.
+- `src/core/lv2/Lv2UridMap.cpp:112-122` - the constructor allocates the fixed mirror once, before
+  any plug-in runs, and clears `m_rtUris`.
+- `src/core/lv2/Lv2UridMap.cpp:125-169` - `map()`: null-safe; inside `RealtimeScope` it returns
+  `mapRt(uri)` and registers nothing (a URI first seen there gets 0, the LV2 "could not be created"
+  value). Outside it, the original canonical path is unchanged, except that a new mapping is
+  published into the mirror (`:164`).
+- `src/core/lv2/Lv2UridMap.cpp:175-185` - `unmap()`: inside `RealtimeScope` it returns the mirror's
+  URI pointer with an acquire load, or `nullptr` for 0/out-of-range; outside it keeps the original
+  canonical lookup.
+- Fixture-facing behaviour is unchanged: off the audio thread the map is still dynamic and
+  unbounded, IDs are assigned in the same order, and `Lv2UridCache` still pre-maps the eight common
+  URIs at manager construction.
 
-Installed specification header this build compiles against, `/usr/include/lv2/urid/urid.h:75-81`:
+## Test matrix
 
-> This function is not necessarily very fast or RT-safe: plugins SHOULD cache any IDs they might
-> need in performance critical situations.
->
-> The return value 0 is reserved and indicates that an ID for that URI could not be created for
-> whatever reason. However, hosts SHOULD NOT return 0 from this function in non-exceptional
-> circumstances (i.e. the URI map SHOULD be dynamic).
+- **Normal path:** a URI mapped by the control thread resolves in `RealtimeScope` to the same ID,
+  with zero allocations, and `unmap()` returns its URI with zero allocations.
+- **New-URI / failure path:** a URI first seen in `RealtimeScope` returns 0 and does not register;
+  the same URI mapped afterwards on the control thread gets a nonzero ID, and the next
+  `RealtimeScope` lookup returns that ID.
+- **Bounds/exhaustion:** `unmap(0xFFFFFFFF)` in `RealtimeScope` returns `nullptr` with zero
+  allocations. The mirror has a bounded 16384 slots; once full, RT lookups of unpublished URIs
+  return 0, while the canonical map remains unbounded, so no control-thread caller or saved project
+  is capped.
+- **Reconfiguration:** none; the map has no per-project reconfiguration path.
+- **Audio-thread constraints:** the test runs the calls inside `RealtimeScope` with
+  `AllocationProbe` armed; `mapRt`/`publishRt` contain no mutex, allocation, free or logging.
+- **Platform:** pure C++20 (`<atomic>`, `<memory>`, `<cstring>`), no POSIX or compiler-specific
+  code; built and run on this Linux tree. MSVC/macOS were not available in this session.
 
-The same specification requires the map to be dynamic (new URIs create IDs for the life of an
-instance) and referentially transparent (the same URI returns the same ID). A lock-free host map
-that rejected runtime registrations, or that returned 0 on the audio thread and an ID later, would
-violate that contract. A bounded preallocated map would instead create a capacity limit that can
-refuse a legitimate URI, which the procedure's collateral rule forbids. The specified design is a
-dynamic, possibly-blocking map plus a plug-in that caches the IDs it needs before `run()`.
+## RED/GREEN and the reversal proof (procedure step 4b)
 
-The tree already records the same intent: `include/Lv2UridMap.h:33` includes `<mutex>` with the
-comment *"TODO: use semaphore, even though this is not realtime critical"*, and `:51-53` says the
-mutex is required because the URID map is global.
-
-### 3. Host code never calls `map()`/`unmap()` from the audio thread
-
-`Lv2Proc::run()` is the host's per-period entry (`src/core/lv2/Lv2Proc.cpp:417-441`): after
-`m_worker->emitResponses()` it calls `lilv_instance_run()` (`:425`) and then reads a latency port and
-notifies the worker. It never maps a URI. Every host call site of `UridMap::map()` is off that path:
-
-| Host call site | Thread / phase |
-| --- | --- |
-| `src/core/lv2/Lv2UridCache.cpp:52-59` | `Lv2Manager` construction (`src/core/lv2/Lv2Manager.cpp:171`), before the engine runs |
-| `src/core/lv2/Lv2Proc.cpp:175` | plug-in check/scan |
-| `src/core/lv2/Lv2Proc.cpp:764-765` | `createPorts()` during instantiation |
-| `src/core/lv2/Lv2Proc.cpp:807` | `saveState()`, explicitly under `requestChangeInModel()` (`:806`, `:809`) |
-| `src/core/lv2/Lv2Proc.cpp:901` | `decodeStateProperty()`, called from `restoreState()` |
-| `src/core/lv2/Lv2Proc.cpp:1028` | `restoreState()`, under `requestChangeInModel()` (`:1035`, `:1037`) |
-
-`unmap()` is reached only through the same feature and `lilv_state_to_string()` in `saveState()`
-(the control thread). None of these is rendered per period.
-
-The only route from `Lv2Proc::run()` into `UridMap::map()` is a plug-in calling the callback from its
-own `run()`. The project's own LV2 fixture shows the intended pattern: it maps every URI it needs in
-`instantiate()` (`tests/data/lv2-test-instrument/lv2-test-instrument.c:101-106`) and its `run()`
-(`:167`) maps nothing.
-
-### 4. Reproduction of the mechanism (diagnostic probe, not a regression test)
-
-To see exactly what a plug-in's callback costs in this tree, I compiled a scratch probe against
-`src/core/lv2/Lv2UridMap.cpp` with a counting `operator new` (source:
-`logs/urid-probe.cpp`, removed from the tree; it is not committed):
+Product diff saved with
 
 ```sh
-g++ -std=c++20 -O1 -Iinclude -Ibuild <logs>/urid-probe.cpp src/core/lv2/Lv2UridMap.cpp -o ${TMPDIR}/urid-probe \
-  > <logs>/probe-build-1.log 2>&1; echo EXIT=$?
+git diff -- include/Lv2UridMap.h src/core/lv2/Lv2UridMap.cpp > logs/fix.patch   # EXIT=0
+git apply -R logs/fix.patch                                                    # EXIT=0
 ```
 
-`EXIT=0`. Run:
+then rebuilt and ran the test, restored the patch, rebuilt, and ran it again:
 
-```sh
-${TMPDIR}/urid-probe > <logs>/probe-run-1.log 2>&1; echo EXIT=$?
-```
+| Step | Command | Log | EXIT | Result |
+| --- | --- | --- | --- | --- |
+| GREEN build | `cmake --build build --target zene Lv2StateTest -j4` | `build-green-3.log` | 0 | built |
+| GREEN run | `cd build/tests && ./Lv2StateTest` | `qtest-green-3.log` | **0** | `PASS uridMapOnTheAudioThreadIsLockFreeAndAllocationFree`, 9 passed |
+| save product diff | `git diff -- include/Lv2UridMap.h src/core/lv2/Lv2UridMap.cpp > logs/fix.patch` | - | 0 | 202-line patch |
+| reverse | `git apply -R logs/fix.patch` | - | 0 | product files back to HEAD |
+| RED build | `cmake --build build --target zene Lv2StateTest -j4` | `build-red-2.log` | 0 | built |
+| RED run | `cd build/tests && ./Lv2StateTest` | `qtest-red-2.log` | **1** | `FAIL uridMapOnTheAudioThreadIsLockFreeAndAllocationFree`: `Actual (freshOnAudio): 2`, `Expected (LV2_URID{0}): 0`; 8 passed, 1 failed |
+| restore | `git apply logs/fix.patch` | - | 0 | fix back in place |
+| GREEN build | `cmake --build build --target zene Lv2StateTest -j4` | `build-green-4.log` | 0 | built |
+| GREEN run | `cd build/tests && ./Lv2StateTest` | `qtest-green-4.log` | **0** | `PASS uridMapOnTheAudioThreadIsLockFreeAndAllocationFree`, 9 passed |
 
-`EXIT=0`, with:
+The RED run stops at the new-URI assertion, so it does not reach the allocation-count assertion;
+that assertion is exercised in the GREEN run and would also fail before the fix, because the old
+`map()` built the temporary `std::string` and the map/unmap nodes on every new URI.
 
-```
-known  first-id=1 second-id=1 allocations=1
-fresh  id=2 allocations=4
-unmap  uri=urn:zene:test:known allocations=0
-fresh2 id=2 allocations=1
-```
+### Build notes
 
-So a plug-in that calls `map()` from `run()` does allocate once for a known URI and four times for a
-new one. That confirms the mechanism, not a host defect: the call is the plug-in's, and the
-specification above tells plug-ins to cache instead. The probe is deliberately not committed as a
-regression test because there is no product behaviour to change.
+The first attempt to build the test failed to link the allocation probe:
 
-### Commands run (logs in `logs/` of this run)
+| Step | Command | Log | EXIT |
+| --- | --- | --- | --- |
+| first build | `cmake --build build --target zene Lv2StateTest -j4` | `build-1.log` | **2** - `undefined reference to lmms::test::tlAllocationCount` |
+| manual configure | `cmake -S . -B build` | `configure-1.log` | **97** - refused by the lane guard ("configuring is the parent's job") |
+| configuration refresh | `cmake --build build --target rebuild_cache -j4` | `configure-2.log` | 0 |
+| build after refresh | `cmake --build build --target zene Lv2StateTest -j4` | `build-2.log` | 0 |
 
-| Command | Log | EXIT |
-| --- | --- | --- |
-| `g++ -std=c++20 -O1 -Iinclude -Ibuild <logs>/urid-probe.cpp src/core/lv2/Lv2UridMap.cpp -o ${TMPDIR}/urid-probe` | `probe-build-1.log` | 0 |
-| `${TMPDIR}/urid-probe` | `probe-run-1.log` | 0 |
-| `python3 .../feature_check.py <worktree>` | `feature-check-1.log` | 0 |
-| `git status --porcelain` before the report commit | (empty) | 0 |
+`tests/CMakeLists.txt:2382` links the probe by scanning the test source for
+`#include "AllocationProbe.h"`; that scan runs at configure time, and the new include needed the
+configuration refresh. A fresh configure on the train does this by itself.
 
-`feature_check.py` printed `RESULT: PASS` with all eight rows PASS (`fork-sources`,
-`all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`,
-`doc-figures`, `complexity`, `file-length`).
+## Family and gates
+
+| Command | Log | EXIT | Result |
+| --- | --- | --- | --- |
+| `cmake --build build --target ControlDeviceCatalogueTest PluginScanCacheTest InstrumentLatencyPdcTest Lv2ViewBaseLifetimeTest Lv2StateTest -j4` | `build-family-1.log` | 0 | built |
+| `ctest -R '^(Lv2StateTest|InstrumentLatencyPdcTest|Lv2ViewBaseLifetimeTest|Lv2InstrumentKeyRegressionTest|PluginScanCacheTest|ControlDeviceCatalogueTest)$' --output-on-failure` (from `build/tests`) | `test-family-2.log` | 0 | 6 of 6 passed |
+| `python3 .../feature_check.py <worktree>` | `feature-check-3.log` | 0 | all 8 rows PASS: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length |
+
+Registration: the two inherited files are declared in `tests/upstream-modifications.txt` with the
+cluster and the reason (same commit). The test lives in the already-registered
+`tests/src/core/Lv2StateTest.cpp`; no new source file or manifest entry was needed.
+`tests/upstream-modifications.txt` still ends with a newline.
 
 ## Self-check
 
-- **Regression test fails with the product change reverted and passes with it:** not applicable. The
-  verdict is FALSE-POSITIVE with no product change, so there is no RED/GREEN pair to run. The
-  diagnostic probe above is deterministic evidence of the mechanism, and the code-reference below
-  is the evidence for the verdict, as the procedure's not-real branch requires.
-- **Deterministic:** the probe uses fixed URI strings and a thread-local-free counting `operator
-  new`; no clocks, sleeps, threads or scheduling. It is not a regression test and is not committed.
-- **Fix at the cause and complete:** no fix was made. I checked every host caller of `UridMap::map()`
-  and `unmap()` (table above) and its siblings: `Lv2UridCache`, `Lv2Features`, `Lv2Proc` port
-  creation, state save/restore and plug-in checking. All are control-thread/instantiation paths.
-- **No collateral damage:** no production file changed; no saved format, limit or check changed.
-  Old projects and plug-in state load exactly as before.
-- **False-positive evidence:** the LV2 specification at `/usr/include/lv2/urid/urid.h:75-81`
-  (map is not necessarily RT-safe; plug-ins SHOULD cache; the map SHOULD remain dynamic), the
-  host's non-realtime-only call sites above, and the fixture's instantiate-time mapping at
-  `tests/data/lv2-test-instrument/lv2-test-instrument.c:101-106`.
-- **Realtime:** nothing was added on the audio thread. The existing callback can run there only when
-  a plug-in invokes it; the host's own `Lv2Proc::run()` (`src/core/lv2/Lv2Proc.cpp:417-441`) does not
-  map or unmap.
-- **Undo and commands:** no undo state and no control command was touched.
-- **Old projects / round-trip:** unchanged (no production edit).
-- **Completeness and user path:** the behaviour is a plug-in callback, not a user action; the agent
-  surface and GUI are unaffected.
-- **Sibling commands in the command files you changed:** none, by this session. The completion check
-  lists `app.*` and `arrangement.*` siblings because its diff base is the train base, and the branch
-  already contains earlier commits that changed `src/core/ControlCommands*.cpp`,
-  `include/ControlRegistry.h` and their snapshot; `git show --stat HEAD` for this session's commit
-  shows only `docs/qwen-fixes-2026-10/cluster-new-p17-82.md`. No command handler, reversibility row,
-  snapshot or patch was touched here, so those commands are unaffected. The three
-  `tests/control-*.py` files the check reports as "changed" are likewise earlier branch content,
-  not files this session edited.
+- **The regression test FAILS with the product change reverted and PASSES with it:** RED
+  `./Lv2StateTest` EXIT=1 (`freshOnAudio` 2 vs 0), GREEN EXIT=0, both after a rebuild from
+  `build/tests`; commands and logs are in the table above. The product diff is
+  `logs/fix.patch`, reversed and restored with `git apply` (both EXIT=0).
+- **The test is deterministic:** fixed URI strings, no clock, no sleeps, no threads and no
+  scheduling. It uses the existing `RealtimeScope` seam and the thread-local `AllocationProbe`
+  counters; the only timing is none.
+- **The fix is at the cause and complete:** every host caller of `map()`/`unmap()` was checked -
+  `Lv2UridCache.cpp:52-59` (manager construction), `Lv2Proc.cpp:175` (plug-in check),
+  `:764-765` (port creation), `:807`/`:901`/`:1028` (state save/restore, under
+  `requestChangeInModel()`), and `Lv2Features.cpp:64-65` (the feature pointers handed to plug-ins).
+  All are off the audio thread. The sibling `unmap()` takes the same realtime branch, and the
+  canonical path still publishes every new mapping, so a URI registered on the control thread is
+  visible to later `run()` calls.
+- **No collateral damage:** the canonical map, its IDs and their insertion order are unchanged;
+  the mirror is a read-only copy. Old projects and LV2 state load exactly as before. The mirror's
+  16384-slot bound is not a limit on the canonical map or on any saved data; beyond it only
+  audio-thread lookups of *unpublished* URIs return 0. The only deliberate behaviour change is the
+  one the finding asks for: a URI first seen inside `RealtimeScope` is not registered there.
+- **If the verdict is ALREADY-FIXED or FALSE-POSITIVE:** not applicable; this is FIXED. The
+  superseded first-pass reasoning is noted at the top.
+- **Nothing new on the audio thread allocates, frees, locks, waits, does I/O or logs:** the
+  `RealtimeScope` branch of `map()` calls `mapRt()` (FNV-1a + atomic loads + `strcmp`), and the
+  branch of `unmap()` is one atomic load; no mutex, allocation, free, logging or wait appears in
+  either. Publication happens on the control thread under the existing mutex. `Lv2Proc::run()`
+  itself is unchanged.
+- **Undo and commands:** no undo state, journal checkpoint or control command was touched; no new
+  command or snapshot change.
+- **Old projects and round-trip:** unchanged canonical map and IDs, so a project's saved LV2 state
+  and port data do not change. No new file format.
+- **Completeness and edge cases:** known URI (hit), first-seen URI (returns 0, then registered),
+  `unmap(0)`/out-of-range (nullptr), and the capacity bound were considered; the test covers the
+  first three, and the capacity path is described above. A real plug-in that maps only from `run()`
+  and ignores 0 is relying on behaviour the LV2 specification does not promise; the host does not
+  block or allocate for it.
+- **Sibling commands in the command files you changed:** none, by this session. The completion
+  check lists `app.*` and `arrangement.*` siblings because its diff base is the train base and the
+  branch already contains earlier commits that changed `src/core/ControlCommands*.cpp`,
+  `include/ControlRegistry.h` and their snapshot. This session changed only
+  `include/Lv2UridMap.h`, `src/core/lv2/Lv2UridMap.cpp`, `tests/src/core/Lv2StateTest.cpp`,
+  `tests/upstream-modifications.txt` and this report. No command handler, reversibility row,
+  snapshot or patch was touched. The three `tests/control-*.py` files the check reports as
+  "changed" are likewise earlier branch content, not files this session edited.
+- **Qt 5.15 / MSVC / macOS portability:** the product code uses only C++20 standard headers
+  (`<atomic>`, `<memory>`, `<cstring>`, `<cstdint>`), no Qt API, no POSIX, no `windows.h` names
+  and no `std::filesystem`. It built with GCC on this box; MSVC/macOS were not run here.
 
 ## Other findings
 
-- The URID map's known-URI lookup still allocates the temporary `std::string` described by the TODO
-  at `src/core/lv2/Lv2UridMap.cpp:62-71`. That is an optimisation (C++20 transparent hashing would
-  remove it), not the reported realtime defect, and it is not changed here.
+- The control-thread `map()` still builds a temporary `std::string` for the canonical lookup (the
+  TODO at `src/core/lv2/Lv2UridMap.cpp:142-151`). That is an optimisation outside this finding: it
+  is not on the audio-thread branch and is unchanged.
