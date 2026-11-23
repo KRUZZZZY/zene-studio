@@ -153,7 +153,7 @@ check; its table is in `.../logs/submit-1.log` and is answered under `## Self-ch
 `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p8-263 > .../logs/submit-1.log 2>&1; echo EXIT=$?`
 - **EXIT=0**, `RESULT: PASS - submit`: commits on the branch PASS, working tree clean PASS, report PASS, tests
   added or changed PASS, new test files registered PASS, gates PASS, no FAIL item. The six ASK items are answered
-  above.
+  above. The check was rerun after the report's addendum commits (`submit-2.log`) with the same result, EXIT=0.
 
 ## Other findings
 
