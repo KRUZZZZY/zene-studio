@@ -237,6 +237,9 @@ commands are commands that ran verbatim:
 - **EXIT=0**, `RESULT: PASS - submit`: commits on the branch PASS, working tree clean PASS, report PASS, tests
   added or changed PASS, new test files registered PASS, gates PASS, no FAIL item. The six ASK items are answered
   above. The check was rerun after the report's addendum commits (`submit-2.log`) with the same result, EXIT=0.
+- Round 2 (log folder `.../new-p8-263.r2/logs`): `feature_check.py` EXIT=0 with RESULT: PASS (`feature-2.log`) and
+  `submit_check.py` **EXIT=0**, `RESULT: PASS - submit` (`submit-1.log`) - the round-2 report answers the ASK items
+  the same way, with the hosted VST3 test named in items 1 and 2.
 
 ## Other findings
 
