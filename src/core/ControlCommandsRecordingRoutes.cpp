@@ -158,8 +158,9 @@ ControlResult getState(const QJsonObject&)
 	result.insert(QStringLiteral("latency_frames"), static_cast<int>(Engine::audioEngine()->recordingLatencyFrames()));
 	// The clip record path (sample tracks armed for recording): frames a full capture ring lost
 	// (each padded with silence in its take, unless padded_frames falls short), takes that found
-	// no prepared handle, takes the main thread could not queue, and clip starts the per-pass cap
-	// deferred. All since the process started.
+	// no prepared handle, takes the main thread could not queue, and clip starts deferred past their
+	// pass (none since new-p12-218: the scheduling storage bounds a batch, not the pass). All since the
+	// process started.
 	// Per clip: the frames its last take lost to overflow (padded in that take).
 	QJsonArray dropped;
 	for (const Track* track : Engine::getSong()->tracks())

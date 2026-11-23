@@ -108,7 +108,9 @@ void SampleTrack::monitorModeChanged()
 
 namespace
 {
-//! Clip starts deferred by the per-pass cap in SampleTrack::play, process-wide.
+//! Clip starts deferred past the pass that entered their span, process-wide. play() schedules every
+//! start of a pass (the fixed storage bounds a batch, not the pass), so this stays 0; the counter is
+//! kept for record.get_state's deferred_clip_starts field.
 std::atomic<std::uint64_t> s_deferredClipStarts{0};
 
 //! True when the track's composite names this clip's lane somewhere: that take plays its comped
@@ -173,14 +175,63 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		f_cnt_t lead = 0;  //!< 0.5.0 ED-021: output frames before a frame-exact clip's audio starts
 		WarpSnapshot warp;  //!< Q050-063: the one warp generation this pass's window, lead and handle come from
 	};
-	// Fixed storage: the audio thread never grows it. The cap is on the clips that START in one
-	// pass, not on overlaps: overlapping clips are allowed (a script can stack many on one track).
-	// A clip past the cap is deferred: its isPlaying flag stays clear, so it starts on a later pass,
-	// and each deferral is counted (deferredClipStarts).
-	constexpr std::size_t MaxScheduledClipsPerPass = 64;
-	std::array<ScheduledClip, MaxScheduledClipsPerPass> clips{};
+	// Fixed storage: the audio thread never grows it. The bound is on one BATCH of scheduled clips,
+	// not on the pass and not on overlaps (overlapping clips are allowed - a script can stack many on
+	// one track): a pass that starts more clips than one batch schedules the batch and keeps
+	// collecting, so every clip that starts in this pass is handed the window this pass derived for
+	// it. Deferring a start to a later pass dropped the clip's opening frames, and missed a clip
+	// shorter than the gap entirely (new-p12-218).
+	constexpr std::size_t ScheduledClipBatchSize = 64;
+	std::array<ScheduledClip, ScheduledClipBatchSize> clips{};
 	std::size_t clipCount = 0;
 	class PatternTrack * pattern_track = nullptr;
+
+	//! Schedule the clips collected into the batch so far, then empty it. Called once per batch and
+	//! once at the end of the pass, so the fixed storage bounds memory, not the number of starts.
+	const auto flushScheduledClips = [&]()
+	{
+		for (std::size_t i = 0; i < clipCount; ++i)
+		{
+			const auto& scheduled = clips[i];
+			auto st = scheduled.clip;
+			// A muted take still plays where the composite names its lane: the comp, not the mute,
+			// decides what a comped take contributes (BUGS P6, round 4).
+			if( !st->isMuted() || namedByComposite( *this, *st ) )
+			{
+				PlayHandle* handle;
+				if( st->isRecord() )
+				{
+					// Not scheduled while the song is not recording (see above); kept as a guard.
+					if( !Engine::getSong()->isRecording() )
+					{
+						continue;
+					}
+					// The take was built on the main thread when the clip was armed or the transport
+					// started (SampleClip::prepareRecordTake): the audio thread only claims it.
+					handle = st->claimRecordHandle();
+					if( handle == nullptr )
+					{
+						st->setIsPlaying( false );
+						SampleRecordHandle::countUnpreparedTake();
+						continue;
+					}
+				}
+				else
+				{
+					const Clip::WarpPassScope warpPass(*st, scheduled.warp);
+					auto smpHandle = new SamplePlayHandle(st, scheduled.window);
+					smpHandle->setPatternTrack(pattern_track);
+					smpHandle->setClipEffects(st);  // Q050-111: the clip's own effects, before the track's sum
+					handle = smpHandle;
+				}
+				handle->setOffset( _offset + scheduled.lead );
+				// send it to the audio engine
+				Engine::audioEngine()->addPlayHandle( handle );
+				played_a_note = true;
+			}
+		}
+		clipCount = 0;
+	};
 	if( _clip_num >= 0 )
 	{
 		// Audio thread: a clip this track does not hold has nothing to play, and getClip() would
@@ -250,16 +301,15 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 					const bool activeTake = activeTakeForPlayback(*sClip, comped, playAllTakes);
 					if( startable && activeTake && ( windowStart < windowEnd || sClip->isRecord() ) )
 					{
-						if( clipCount < clips.size() )
+						if( clipCount == clips.size() )
 						{
-							clips[clipCount++] = {sClip, { windowStart, windowEnd }, sClip->leadOutputFramesAt( _start ), std::move( warp )};
-							sClip->setIsPlaying( true );
-							nowPlaying = true;
+							// The batch is full: schedule it and keep collecting, so this clip
+							// still starts in the pass that entered its span (new-p12-218).
+							flushScheduledClips();
 						}
-						else
-						{
-							s_deferredClipStarts.fetch_add( 1, std::memory_order_relaxed );
-						}
+						clips[clipCount++] = {sClip, { windowStart, windowEnd }, sClip->leadOutputFramesAt( _start ), std::move( warp )};
+						sClip->setIsPlaying( true );
+						nowPlaying = true;
 					}
 				}
 			}
@@ -272,46 +322,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		setPlaying(nowPlaying);
 	}
 
-	for (std::size_t i = 0; i < clipCount; ++i)
-	{
-		const auto& scheduled = clips[i];
-		auto st = scheduled.clip;
-		// A muted take still plays where the composite names its lane: the comp, not the mute,
-		// decides what a comped take contributes (BUGS P6, round 4).
-		if( !st->isMuted() || namedByComposite( *this, *st ) )
-		{
-			PlayHandle* handle;
-			if( st->isRecord() )
-			{
-				// Not scheduled while the song is not recording (see above); kept as a guard.
-				if( !Engine::getSong()->isRecording() )
-				{
-					continue;
-				}
-				// The take was built on the main thread when the clip was armed or the transport
-				// started (SampleClip::prepareRecordTake): the audio thread only claims it.
-				handle = st->claimRecordHandle();
-				if( handle == nullptr )
-				{
-					st->setIsPlaying( false );
-					SampleRecordHandle::countUnpreparedTake();
-					continue;
-				}
-			}
-			else
-			{
-				const Clip::WarpPassScope warpPass(*st, scheduled.warp);
-				auto smpHandle = new SamplePlayHandle(st, scheduled.window);
-				smpHandle->setPatternTrack(pattern_track);
-				smpHandle->setClipEffects(st);  // Q050-111: the clip's own effects, before the track's sum
-				handle = smpHandle;
-			}
-			handle->setOffset( _offset + scheduled.lead );
-			// send it to the audio engine
-			Engine::audioEngine()->addPlayHandle( handle );
-			played_a_note = true;
-		}
-	}
+	flushScheduledClips();
 
 	return played_a_note;
 }
