@@ -1,163 +1,179 @@
 FIXED
 
-# cluster new-p15-219 — destroying a ThreadPool from one of its workers terminated the process
+# cluster new-p15-219 — destroying a ThreadPool from one of its workers
+
+Round 2. Round 1 (commits `d90bb0c4ec`, `4ee99b9b7d`) removed the self-join crash but the
+review sent it back: its destructor still joined sibling workers, and a sibling task that
+waits for the releasing task's future deadlocks there. That deadlock, plus the queued-work
+outcome, is fixed in this round.
 
 ## Verdict and cause
 
-REAL. Before the fix, `ThreadPool::~ThreadPool` joined every element of `m_workers`:
+REAL. `ThreadPool::~ThreadPool` must not join the thread it runs on, and must not wait for
+any sibling while it runs inside one of the pool's tasks.
 
-- `src/core/ThreadPool.cpp:71-74` (pre-fix) — `for (auto& worker : m_workers) { if (worker.joinable()) { worker.join(); } }`
-
-A task can hold the last `shared_ptr` to its own pool; when that task releases the
-owner, the destructor runs on the pool's own worker. `std::thread::join()` on the
-calling thread throws `std::system_error` (`resource deadlock avoided`), and because a
-destructor is implicitly `noexcept`, the escaping exception calls `std::terminate`.
-The new child-process regression reproduced exactly that: the child died by signal
-instead of returning.
+- `src/core/ThreadPool.cpp:71-74` (original) — the destructor joined every worker.
+  `join()` on the calling thread throws `std::system_error`, which escapes the implicit
+  `noexcept` destructor and calls `std::terminate`; round 1 reproduced that with a child
+  that died by signal.
+- Round 1 kept a `thread_local` marker and detached only the calling worker, but still
+  joined the siblings. A sibling task that waits for the releasing task's future can only
+  finish after the releasing task returns, and the releasing task cannot return until the
+  destructor does: the destructor joined a sibling that waited on it. Reproduced this
+  round: the two-worker child of the new test hung (`timeout 5 ...` exited 124,
+  `probe-2-workers-round1.log`), matching the reviewer's probe.
+- A one-worker round-1 pool also stopped its loop after the destroying task and abandoned
+  work already queued, so the queued task's future became a broken promise (`timeout 5`
+  on the one-worker child also exited 124, `probe-1-worker-round1.log`).
 
 ## Fix
 
-- `src/core/ThreadPool.cpp:34` — a `thread_local` marker identifies the worker whose own
-  pool is being destroyed on it.
-- `src/core/ThreadPool.cpp:76-97` — the destructor still stops and joins every other
-  worker; when the join candidate is the calling thread it sets the marker and
-  `worker.detach()`es it (line 88-89) instead of joining it. A detached `std::thread`'s
-  destructor is safe, and the worker thread is dedicated to this pool.
-- `src/core/ThreadPool.cpp:106` — the `run()` loop checks the marker before touching any
-  member, so the detached worker returns from `run()` after the task that destroyed the
-  pool finishes and never reads `m_queue`/`m_runMutex`/`m_runCond` again.
-- `include/ThreadPool.h:46-50` — the destructor's contract documents the worker case.
+- `include/ThreadPool.h:118-124` — the queue, condition variable, mutex and stop flag live
+  in a private `State`.
+- `include/ThreadPool.h:138-142` — `State` is held by `std::shared_ptr`; workers receive
+  their own copy, so the state outlives a `ThreadPool` destroyed from one of its tasks.
+  `run()` is static and takes that state, so no worker touches the `ThreadPool` object
+  after a worker-initiated destruction. The existing test's `m_done` observation stays
+  valid as a reference into the state (`m_done`), and copying/moving are deleted so the
+  reference can never bind a moved-from pool's state.
+- `src/core/ThreadPool.cpp:65-104` — the destructor sets the stop flag and notifies once.
+  From an external thread it then joins every worker (unchanged behaviour,
+  `src/core/ThreadPool.cpp:85-92`). When it runs on one of the pool's own workers it
+  detaches every worker instead of joining any of them
+  (`src/core/ThreadPool.cpp:96-104`): nothing it could join is allowed to be waited on
+  from here. Each detached worker keeps the shared state alive, runs the tasks already
+  queued (the `run()` loop still drains until the queue is empty,
+  `src/core/ThreadPool.cpp:111-126`), and exits, releasing the state with it.
+- `include/ThreadPool.h:47-54` — the destructor contract now states the worker-initiated
+  outcome, including that queued tasks still run (their futures are not broken).
 
-The ordinary path is unchanged: an outside thread still sets `m_done`, notifies, drains
-queued tasks and joins every worker (`ThreadPoolTest::destructionDrainsQueuedTasks`
-still passes). The constructor's startup-failure join path never runs on a worker, so it
-is unchanged. No other file includes `ThreadPool.h` except `src/core/ThreadPool.cpp`,
-`src/core/FileSearchJob.cpp`, `src/gui/FileBrowser.cpp` and the test; `zene` was rebuilt
-after the header change.
+Constructor startup-failure joining is unchanged: it runs on the constructing thread, never
+on a worker, and still stops and joins the workers that started
+(`ThreadPoolTest::partialStartupFailureStopsStartedWorkers` passes).
 
-## Regression test
+## Regression tests
 
-`tests/src/core/ThreadPoolTest.cpp:312` `ThreadPoolTest::destructionFromWorkerDoesNotTerminate`.
-It starts the test binary with `--thread-pool-worker-destruction-child`
-(`tests/src/core/ThreadPoolTest.cpp:366`). The child (`runWorkerDestructionChild`,
-`tests/src/core/ThreadPoolTest.cpp:136`) builds a two-worker pool owned by a
-`shared_ptr`, enqueues a task that holds a copy, releases the test thread's copy, then
-lets the task release the last copy — a promise/future gate, no sleeps or timeouts, so the
-destructor provably runs on the worker. The parent asserts a normal child exit with code
-0; a crash is a failure. The child then `task.get()`s the future, which completes only
-after the destructor returned.
+- `tests/src/core/ThreadPoolTest.cpp:372`
+  `ThreadPoolTest::destructionFromWorkerDoesNotWaitForSibling` runs the child with two
+  workers. `runWorkerDestructionChild` (`tests/src/core/ThreadPoolTest.cpp:153`) creates a
+  pool owned by a `shared_ptr`, warms both workers up with gate-blocked tasks so each has
+  provably entered `run()`, then enqueues the releasing task (which destroys the pool) and
+  a sibling that waits on the releasing task's future. Both tasks must complete and both
+  workers must leave `run()`.
+- `tests/src/core/ThreadPoolTest.cpp:381`
+  `ThreadPoolTest::destructionFromWorkerDrainsQueuedWork` runs the same child with one
+  worker, so the sibling sits in the queue behind the releasing task: it must still run and
+  its future must not be a broken promise, then the worker must exit.
+- Worker exit is observed from the threads themselves: a `thread_local` object with a
+  non-trivial constructor and destructor (`tests/src/core/ThreadPoolTest.cpp:70-82`) is
+  armed inside each warm-up task and destroyed when that thread exits; the child waits for
+  the count to reach the worker count. So a passing child has proven both tasks ran and
+  every detached worker left `run()`, not merely that a task future became ready.
+- No sleeps: ordering is promise/future gated. Worker startup is a gate all workers must
+  pass, not a timing assumption. A missing completion hangs the child, and the parent
+  test's `QProcess` timeout turns that into a deterministic failure
+  (`runWorkerDestructionChildProcess`, `tests/src/core/ThreadPoolTest.cpp:203`).
 
-## Commands and EXIT codes (logs under .../new-p15-219.r1/logs)
+## Commands and EXIT codes (logs under .../new-p15-219.r2/logs)
 
-Baseline, before any edit:
-
-- `cmake --build build --target ThreadPoolTest -j4` → build-0-baseline.log, EXIT=0
-- `ctest -R ThreadPoolTest --output-on-failure` (from build/tests) → test-0-baseline.log, EXIT=0
-
-RED, test added, no product change:
-
-- `cmake --build build --target ThreadPoolTest -j4` → build-1-red.log, EXIT=0
-- `ctest -R ThreadPoolTest --output-on-failure` → test-1-red.log, EXIT=8
-  - `FAIL! : ThreadPoolTest::destructionFromWorkerDoesNotTerminate() 'child.exitStatus() == QProcess::NormalExit' returned FALSE. (The child crashed instead of shutting down a pool destroyed by its own worker.)`
-
-GREEN, fix applied:
-
-- `cmake --build build --target ThreadPoolTest -j4` → build-2-green.log, EXIT=0
-- `ctest -R ThreadPoolTest --output-on-failure` → test-2-green.log, EXIT=0
-- `./ThreadPoolTest destructionFromWorkerDoesNotTerminate` → test-2b-green-slot.log, EXIT=0
-  (`Totals: 3 passed, 0 failed`)
-
-Proof the test catches the bug (step 4b):
+RED against the round-1 product code (the code the reviewer rejected), with the new test:
 
 - `git diff -- src/core/ThreadPool.cpp include/ThreadPool.h > .../logs/fix.patch` → EXIT=0
 - `git apply -R .../logs/fix.patch` → EXIT=0
-- `cmake --build build --target ThreadPoolTest -j4` → build-3-reverted.log, EXIT=0
-- `ctest -R ThreadPoolTest --output-on-failure` → test-3-reverted-red.log, EXIT=8
-  (same `FAIL!`, child crashed)
+- `cmake --build build --target ThreadPoolTest -j4` → build-1-red-round1.log, EXIT=0
+- `ctest -R ThreadPoolTest --output-on-failure` (from `build/tests`) →
+  test-1-red-round1.log, EXIT=8, `Totals: 12 passed, 2 failed`, including
+  `FAIL! : ThreadPoolTest::destructionFromWorkerDoesNotWaitForSibling() ... The child hung or crashed while a sibling waited for the releasing task's future.`
+  and `FAIL! : ThreadPoolTest::destructionFromWorkerDrainsQueuedWork() ...`
+- `timeout 5 ./ThreadPoolTest --thread-pool-worker-destruction-child 2` →
+  probe-2-workers-round1.log, EXIT=124 (the deadlock)
+- `timeout 5 ./ThreadPoolTest --thread-pool-worker-destruction-child 1` →
+  probe-1-worker-round1.log, EXIT=124
+
+GREEN with this round's fix:
+
 - `git apply .../logs/fix.patch` → EXIT=0
-- `cmake --build build --target ThreadPoolTest -j4` → build-4-reapplied.log, EXIT=0
-- `ctest -R ThreadPoolTest --output-on-failure` → test-4-reapplied-green.log, EXIT=0
+- `cmake --build build --target ThreadPoolTest -j4` → build-2-green.log, EXIT=0
+- `ctest -R ThreadPoolTest --output-on-failure` → test-2-green.log, EXIT=0
+- `./ThreadPoolTest destructionFromWorkerDoesNotWaitForSibling destructionFromWorkerDrainsQueuedWork`
+  → test-2b-green-slots.log, EXIT=0 (`Totals: 4 passed, 0 failed`)
+- `cmake --build build --target ThreadPoolTest -j4` after adding the deleted copy/move
+  → build-5-green-deletes.log, EXIT=0; `ctest -R ThreadPoolTest` → test-5-green-deletes.log, EXIT=0
+
+Final proof that the test catches the remaining bug (step 4b, final patch `fix-final.patch`):
+
+- `git diff -- src/core/ThreadPool.cpp include/ThreadPool.h > .../logs/fix-final.patch` → EXIT=0
+- `git apply -R .../logs/fix-final.patch` → EXIT=0
+- `cmake --build build --target ThreadPoolTest -j4` → build-6-final-reverted.log, EXIT=0
+- `ctest -R ThreadPoolTest --output-on-failure` → test-6-final-reverted-red.log, EXIT=8
+  (two `FAIL!` lines)
+- `git apply .../logs/fix-final.patch` → EXIT=0
+- `cmake --build build --target ThreadPoolTest -j4` → build-7-final-reapplied.log, EXIT=0
+- `ctest -R ThreadPoolTest --output-on-failure` → test-7-final-reapplied-green.log, EXIT=0
 
 Header change rebuilt the app target too:
 
-- `cmake --build build --target zene -j4` → build-5-zene.log, EXIT=0
+- `cmake --build build --target zene -j4` → build-8-zene.log, EXIT=0
 
-Registration: `tests/upstream-modifications.txt` gained one entry each for
-`src/core/ThreadPool.cpp` and `include/ThreadPool.h` in this commit. The test file is
-already a fork source (`tests/fork-sources.txt`).
+Registration: `tests/upstream-modifications.txt` has this round's entries for
+`src/core/ThreadPool.cpp` and `include/ThreadPool.h`. The test file is a fork source
+(`tests/fork-sources.txt`). The file ends with a newline.
 
 ## Gates
 
-- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` → EXIT=0
-  (`RESULT: PASS`; all 8 rows PASS, complexity and file-length report "no new item in
-  your files"), saved as feature-check-1.log.
+- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` →
+  EXIT=0 (`RESULT: PASS`, all 8 rows PASS), saved as feature-check-1.log.
 
 ## Test matrix
 
 - Normal path: outside-thread shutdown drains the queue and joins all workers —
-  `destructionDrainsQueuedTasks` passed before and after.
-- Failure path under test: destruction from a worker — new slot, red before the fix,
-  green after.
-- Exhaustion/reconfiguration: zero-worker and zero-hardware-concurrency paths untouched
-  and still pass; partial worker-startup failure still passes.
-- Audio thread: no change touches process/render code; the destructor never runs on the
-  audio thread and the fix adds no allocation or lock to any per-period path beyond the
-  existing `unique_lock` in the destructor.
-- Platforms: `detach()` and `thread::id` comparison are standard C++20. The new test is
-  platform-neutral (no glibc interposition; it uses `QProcess`, like its siblings).
+  `destructionDrainsQueuedTasks` passes (it also does not hang: it reads `m_done`, which is
+  still a member reference).
+- Reviewer's failure path: sibling waits on the releasing task's future — red on round-1
+  code, green now.
+- Exhaustion/reconfiguration: zero-worker, zero-hardware-concurrency and partial
+  worker-startup failure paths pass unchanged.
+- Queued-work outcome: the one-worker child proves queued work still runs after a
+  worker-initiated destruction.
+- Audio thread: no process/render code touched; the destructor is not on the audio thread
+  and adds no allocation to any per-period path.
+- Platforms: `detach()`, `shared_ptr` and `thread::id` are standard C++20. The test uses
+  `QProcess` like its siblings; the glibc interposer tests still skip/run as before.
 
 ## Self-check
 
-Answers to the pre-submit check's questions:
-
-- **Regression test fails reverted, passes fixed (exit codes).** Reverted product patch:
-  `test-3-reverted-red.log`, `ctest -R ThreadPoolTest` EXIT=8, with
-  `FAIL! : ThreadPoolTest::destructionFromWorkerDoesNotTerminate() ... The child crashed`.
-  Reapplied: `test-4-reapplied-green.log` EXIT=0. The same red was measured at step 4
-  (`test-1-red.log`, EXIT=8) and green at `test-2-green.log` EXIT=0 and
-  `test-2b-green-slot.log` EXIT=0.
-- **Deterministic; no wall-clock timing, sleeps or races.** The test is a child process
-  (`--thread-pool-worker-destruction-child`) so a terminate() is observed by the parent
-  as a crash instead of killing the suite. Inside it, a `std::promise<void>`/`shared_future`
-  gate (`start`/`startGate`) orders the two events: the parent releases its `shared_ptr`
-  and only then lets the task call `pool.reset()`, which is provably the last release, so
-  the destructor always runs on the worker. A second promise (`destroyed`) is set after
-  the destructor returns; the parent waits on it and then on `task.get()`. No sleep, no
-  timeout-based synchronisation, no reliance on scheduling order. The other child tests
-  in the file use the same shape.
-- **Fix at the cause and complete; callers and siblings checked.** The cause was
-  `ThreadPool::~ThreadPool` joining `m_workers` unconditionally (`src/core/ThreadPool.cpp:71-74`
-  pre-fix). The destructor now joins every worker except the calling one and detaches that
-  one (`src/core/ThreadPool.cpp:76-97`); `run()` checks the `thread_local` marker before
-  every member access (`src/core/ThreadPool.cpp:106`), so the detached worker cannot
-  touch the destroyed members. Siblings checked: the constructor's startup-failure catch
-  block also joins workers, but it runs on the constructing thread, never on a worker
-  (the workers it joins started from that same thread), so it is unchanged and still
-  exercised by `partialStartupFailureStopsStartedWorkers`. `enqueue()` and `run()`'s
-  normal wait/drain path are untouched. `#include "ThreadPool.h"` appears in
-  `src/core/ThreadPool.cpp`, `src/core/FileSearchJob.cpp`, `src/gui/FileBrowser.cpp` and
-  the test; `zene` was rebuilt after the header change (`build-5-zene.log`, EXIT=0).
-- **No collateral damage.** No saved-data or project format is involved; no limit or
-  check was added to a caller. The only behaviour change is the destructor's action on
-  the worker that invoked it; outside-thread destruction still drains queued tasks and
-  joins every worker, proven by `destructionDrainsQueuedTasks` (passes in every run
-  above), and the zero-worker, zero-concurrency and partial-startup slots still pass.
-  The global `ThreadPool::instance()` is a static object destroyed on the main thread, so
-  its shutdown path is unchanged.
-- **ALREADY-FIXED/FALSE-POSITIVE question:** not applicable, the verdict is FIXED.
-- **Sibling commands in command files:** this change touches no command file, no control
-  command and no `ControlCommandsSnapshot`; the ids listed (`app.*`, `arrangement.*`)
-  are untouched. Nothing in this fix registers, renames or validates a command.
-- Every verdict here is backed by a log listed above.
-- The test fails without the product change (`test-3-reverted-red.log`, EXIT=8; also
-  `test-1-red.log`, EXIT=8) and passes with it (`test-2-green.log` EXIT=0,
-  `test-2b-green-slot.log` EXIT=0, `test-4-reapplied-green.log` EXIT=0).
-- No test, gate or ratchet was weakened; no gate file was touched.
-- `git status` is clean after the commit; only the four files above are changed.
+- **Regression test fails reverted, passes fixed (exit codes).** Reverted final product
+  patch: test-6-final-reverted-red.log EXIT=8 with two `FAIL!` lines. Reapplied:
+  test-7-final-reapplied-green.log EXIT=0. Also RED against the round-1 product code the
+  reviewer rejected: test-1-red-round1.log EXIT=8; GREEN: test-2-green.log EXIT=0,
+  test-2b-green-slots.log EXIT=0, test-5-green-deletes.log EXIT=0.
+- **Deterministic; no wall-clock timing, sleeps or races.** Promise/future gates order
+  pool ownership release, the sibling's wait and the worker exits; every worker must pass
+  a blocking warm-up task before the scenario, so the `thread_local` exit witness counts
+  real workers. The only clock is the parent's `QProcess` timeout, which converts a hang
+  into a failure; it is not used to order assertions.
+- **Fix at the cause and complete.** The cause was the destructor waiting for workers
+  (`src/core/ThreadPool.cpp:65-104`). Worker-visible state now lives in the shared `State`
+  (`include/ThreadPool.h:118-124`), workers only use it (`src/core/ThreadPool.cpp:111-126`),
+  and a worker-initiated destructor detaches instead of waiting
+  (`src/core/ThreadPool.cpp:96-104`). External destruction still drains and joins
+  (`src/core/ThreadPool.cpp:85-92`). Constructor failure join is unaffected (external
+  thread). `#include "ThreadPool.h"` appears in `src/core/ThreadPool.cpp`,
+  `src/core/FileSearchJob.cpp`, `src/gui/FileBrowser.cpp` and the test; `zene` was rebuilt
+  (build-8-zene.log, EXIT=0).
+- **No collateral damage.** No project/save format is touched; no caller limit added.
+  Copying/moving of `ThreadPool` was already impossible (an atomic member); it is now
+  explicitly deleted, same contract. `ThreadPool::instance()` is a static object destroyed
+  on the main thread, so its path is unchanged.
+- **ALREADY-FIXED/FALSE-POSITIVE:** not applicable, verdict FIXED.
+- **Sibling commands:** this change touches no command file, no control command and no
+  `ControlCommandsSnapshot`; `app.*` and `arrangement.*` are untouched.
 
 ## Other findings
 
 - The finding is latent for the product's only use, `ThreadPool::instance()` (a static
-  object destroyed on the main thread); no current caller heap-allocates a pool. The
-  class is public API and constructible from tests, so the crash was reachable as soon
-  as any owner released it inside a task, which is what the test exercises.
+  object destroyed on the main thread); no product caller heap-allocates a pool. The class
+  is public API and constructible from tests, and any owner released inside a task hits
+  both failure modes above.
+- A handler that calls `enqueue()` after the pool was destroyed from a worker is still a
+  use-after-free by the caller; the destructor contract does not and cannot allow that.
