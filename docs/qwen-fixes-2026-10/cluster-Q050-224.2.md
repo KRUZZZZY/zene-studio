@@ -33,10 +33,12 @@ async-signal-safety statement), `include/CrashReporterFormat.h` (`captureFrames`
 | 2c | Normal shutdown still leaves no report or stale marker | `CrashReporterTest::clean_run_leaves_no_state` (unchanged) | `ctest -R '^(CrashReporterTest\|CrashReporterFramesTest\|ControlCrashReporter)$' --output-on-failure` (`test-12-final.log`) | 0 |
 | 3 | Every new case fails without the product change | the three cases on the reverted product | `./CrashReporterFramesTest` (`test-07-red-behaviour.log`) → `2 passed, 3 failed`; full revert → `build-12-red-full.log` | 3 / 2 (build) |
 | 3b | …and passes restored | all four crash binaries | `ctest -R '^(CrashReporterArmTest\|CrashReporterTest\|CrashReporterFramesTest\|CrashReporterAppleSignalCheck)$'` (`test-14-arm-and-apple.log`) | 0 |
-| 4 | Gates | `feature_check.py` (8/8 PASS), `tests/doc-figures-gate.py`, `ReversibilityContractTest` | `gates-02.log`, `doc-figures-gate.log`, `test-13-a16.log` | 0 / 0 / 0 |
+| 4 | Gates | `feature_check.py` (8/8 PASS), `tests/doc-figures-gate.py`, `ReversibilityContractTest` | `gates-03.log`, `doc-figures-gate-02.log`, `test-13-a16.log` | 0 / 0 / 0 |
 
 Build for the runs above: `build-17-final-product.log` (exit 0), `build-14`/`build-15` for the
-revert/restore cycle, `build-16-guards.log` after the POSIX guards.
+revert/restore cycle, `build-16-guards.log` after the POSIX guards. Final state of the committed tree:
+`test-15-final-all.log` — `ctest -R '^(CrashReporterArmTest|CrashReporterTest|CrashReporterFramesTest|CrashReporterAppleSignalCheck|ControlCrashReporter)$'`
+-> 5/5 passed, exit 0.
 
 ## Self-check
 
