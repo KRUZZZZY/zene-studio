@@ -19,7 +19,7 @@ The intended contract is stated in the code, not inferred:
 - The invariant is only ever **established**, at four points: a child joins
   (`TrackFolder::childLinked`, `src/tracks/TrackFolder.cpp:244` → `routeChild`, `:294`), routing is
   turned on (`enableRouting`, `:358`), a restored folder gets its channel
-  (`ensureRoutingChannel`, `:481`), and a folder channel is deleted (`channelDeleted`, `:440`).
+  (`ensureRoutingChannel`, `:482`), and a folder channel is deleted (`channelDeleted`, `:440`).
   Nothing re-establishes it when the child's own `IntModel` is written afterwards.
 - The only observers of a track's mixer-channel model are the track's own slot
   (`src/tracks/InstrumentTrack.cpp:116`, `src/tracks/SampleTrack.cpp:67` →
@@ -27,7 +27,7 @@ The intended contract is stated in the code, not inferred:
   silently.
 - The folder's state read kept advertising routing over children it no longer summed:
   `src/core/ControlCommandsTrackFolderShared.h:146` (`"routing": folder->isRouting()`), with each
-  child's own `mixer_channel` beside it (`:133-137`).
+  child's own `mixer_channel` beside it (`:137`).
 
 Reproduced before anything was changed: the regression slot asserted the refusal and instead the
 reassignment went through — `test-1-red.log:27`
@@ -64,7 +64,7 @@ Choices, and why they are the smallest correct fix:
   a routed child **with** the folder's strip: an unconditional restore would pull the child back to
   the folder's stale index and feed it into the wrong strip — a regression outside this bug.
 - **A refusal changes nothing and records nothing**, so undo stays one honest step: the check runs
-  before the model checkpoint (`ControlCommandsTrackChannel.cpp:80-84`), and the regression test
+  before the model checkpoint (`ControlCommandsTrackChannel.cpp:80-83`), and the regression test
   asserts the last recorded transaction is unchanged across the refusal.
 - **Naming the folder's own channel stays allowed** (`channel->index() != folderChannel`): it is a
   no-op for a child already routed, and it is how a child left off the folder channel by an older
@@ -165,8 +165,25 @@ The gates table (`gates-1.log`, `gates-2-precommit.log`):
 RESULT: PASS
 ```
 
-The completion check (`submit_check.py <worktree> 4536`) is run on the committed branch; its table
-and exit code are appended below in the commit that carries them.
+The completion check on the committed branch (`submit-1.log`):
+
+```
+python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 4536 > …/logs/submit-1.log 2>&1; echo EXIT=$?
+
+PRE-SUBMIT CHECK for 4536
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-4536.md
+  PASS  tests added or changed
+  PASS  new test files registered in tests/CMakeLists.txt
+  PASS  gates (feature_check.py)
+RESULT: PASS - submit
+EXIT=0
+```
+
+(It has no FAIL. The "tests added or changed" row lists transcripts the train already carried; this
+cluster's own test change is `tests/src/core/TrackFolderTest.cpp`, which needed no CMakeLists edit
+because the file is already a registered target.)
 
 ## Self-check
 
@@ -207,7 +224,20 @@ missing MIDI plugins were built (`test-6-family-plugins.log`).
 the control/GUI thread, before any model write, and allocates only a `QString` for the refusal
 message. A refusal records no journal step (asserted by the test), and the command's reversibility
 class is unchanged (`ControlReversibilityTableLive.cpp:104`, `TrueInverse`), so the A16 histogram
-and the `ControlCommandsSnapshot` canary are untouched — both canaries re-run and passed.
+and the command snapshot are untouched: `ControlCommandsSnapshot` was re-run with the folder
+transcript and both PASSED (`test-7-canary.log`, `CTEST_EXIT=0`).
+
+**Sibling commands (the check's list).** `submit_check` names `app.*` and two `arrangement.*`
+commands because the file it matches them from contains those id strings; none of them touches a
+track's mixer channel, a folder, or a model this fix reads. The `track.*` commands that DO touch
+channels or membership are the ones this fix had to be consistent with, and they are listed in the
+paragraph above: `track.set_folder` / `track.folder_move` (membership → `childLinked` /
+`childUnlinked`, so joining routes and leaving un-routes), `track.set_routing` (the mode switch;
+`releaseRouting()` still gives every child back its saved channel, which is exactly the call this
+refusal tells the user to make), `track.folder_get_state` / `track.get_state` / `track.list` /
+`track.overview` (reads, reporting each child's real channel), `track.add` (`output` is set before
+the track can have a folder), `track.drum_rack_pad_add` / `track.flatten` (create the track, then
+join it), `track.remove` (`childUnlinked`, then the container deletes). None of them changes here.
 
 **One deliberate behaviour change, stated.** A script or menu that reassigns a routed child now gets
 a typed `refused` instead of a channel it cannot have. That is the fix; the way out is named in the
