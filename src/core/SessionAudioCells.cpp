@@ -150,6 +150,11 @@ struct Clips
 {
 	std::map<QString, std::shared_ptr<const SampleBuffer>> held;  //!< the source files, by path
 	std::map<QString, std::shared_ptr<const SampleBuffer>> variants;  //!< the settings-variants, by path and settings
+	//! new-p15-204: clips an engine-rate change REPLACED. The scheduler's content table and a running
+	//! renderer can still name them, so they wait for the next project close to join `retired` instead
+	//! of being freed by the close that follows them (a retirement needs one scheduler reset between it
+	//! and the free, exactly like a project's own clips).
+	std::vector<std::shared_ptr<const SampleBuffer>> stale;
 	std::vector<std::shared_ptr<const SampleBuffer>> retired;
 	std::vector<QPointer<Track>> handled;  //!< tracks that have a SessionCellPlayHandle
 	int cachedRate = 0;  //!< the engine rate held clips were resampled for; 0 before first load
@@ -181,8 +186,12 @@ const SampleBuffer* load(const QString& source)
 	const auto rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
 	if (all.cachedRate != 0 && all.cachedRate != rate)
 	{
-		for (auto& entry : all.held) { all.retired.push_back(std::move(entry.second)); }
-		for (auto& entry : all.variants) { all.retired.push_back(std::move(entry.second)); }
+		// new-p15-204: PARK the replaced buffers, do not retire them. The scheduler's content table (and a
+		// renderer between periods) can still name one; retire() moves them to `retired` at the next close,
+		// so they are freed only by the close after one whose reset cleared the table - the same cadence
+		// the project's own clips follow.
+		for (auto& entry : all.held) { all.stale.push_back(std::move(entry.second)); }
+		for (auto& entry : all.variants) { all.stale.push_back(std::move(entry.second)); }
 		all.held.clear();
 		all.variants.clear();
 	}
@@ -264,7 +273,13 @@ Prepared prepare(Song& song, int column, const ClipSlot& slot, double tempo) noe
 void retire() noexcept
 {
 	Clips& all = clips();
+	// Frees what was retired at the previous close. By now the reset that close requested has been
+	// processed, so the scheduler's content table no longer names any of these.
 	all.retired.clear();
+	// new-p15-204: clips an engine-rate change replaced join this close's set instead of being freed
+	// here - they were retired DURING the project being closed, so its reset is only requested below.
+	for (auto& entry : all.stale) { all.retired.push_back(std::move(entry)); }
+	all.stale.clear();
 	for (auto& entry : all.held) { all.retired.push_back(std::move(entry.second)); }
 	for (auto& entry : all.variants) { all.retired.push_back(std::move(entry.second)); }
 	all.held.clear();
@@ -290,6 +305,10 @@ bool holdsClipForTest( const SampleBuffer* clip ) noexcept
 		if (entry.second.get() == clip) { return true; }
 	}
 	for (const auto& entry : all.retired)
+	{
+		if (entry.get() == clip) { return true; }
+	}
+	for (const auto& entry : all.stale)
 	{
 		if (entry.get() == clip) { return true; }
 	}
