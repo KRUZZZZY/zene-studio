@@ -54,6 +54,13 @@
 
 #include <sndfile.h>
 
+#include <fcntl.h>
+#ifdef Q_OS_WIN
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
+
 #include "AllocationProbe.h"
 
 using lmms::RetroAudioCapture;
@@ -84,6 +91,66 @@ std::vector<SampleFrame> makeFrames(std::size_t count, std::size_t offset = 0)
 	}
 	return frames;
 }
+
+//! A complete, valid take of the row's frames, written before the failing call
+//! (test-only state; see swapInReadOnlyStandIn).
+QString s_standInTake;
+
+//! Portable stand-in for the failing disk, on every supported platform: open
+//! s_standInTake read-only and put that descriptor in place of the take's, so
+//! the header rewrite fails with EBADF through the real libsndfile path and
+//! sf_error(). The stand-in is a valid take of the same frames, so the header
+//! check is the only thing that can catch the failure: ignoring sf_error()
+//! lets the read-back match and the take commit, and the row fails.
+int swapInReadOnlyStandIn(lmms::RetroTakeFinishStep step, int fd)
+{
+	if (step != lmms::RetroTakeFinishStep::BeforeFinalize) { return 0; }
+#ifdef Q_OS_WIN
+	const int ro = ::_wopen(
+		reinterpret_cast<const wchar_t*>(QDir::toNativeSeparators(s_standInTake).utf16()),
+		_O_RDONLY | _O_BINARY);
+	if (ro >= 0) { ::_dup2(ro, fd); ::_close(ro); }
+#else
+	const int ro = ::open(QFile::encodeName(s_standInTake).constData(), O_RDONLY);
+	if (ro >= 0) { ::dup2(ro, fd); ::close(ro); }
+#endif
+	return 0;
+}
+
+//! Stand-ins for the real steps (see setRetroTakeFinishTestHook): the finalize
+//! row makes the take descriptor genuinely read-only just before libsndfile
+//! rewrites the header (every write then fails with EBADF, like a failing disk;
+//! the flush step then reports success and the commit is real), and the flush
+//! row makes the durable flush of the descriptor fail.
+int makeDescriptorReadOnly(lmms::RetroTakeFinishStep step, int fd)
+{
+#ifdef Q_OS_LINUX
+	if (step == lmms::RetroTakeFinishStep::BeforeFinalize)
+	{
+		const int ro = ::open(QByteArray("/proc/self/fd/" + QByteArray::number(fd)).constData(), O_RDONLY);
+		if (ro >= 0)
+		{
+			::dup2(ro, fd);
+			::close(ro);
+		}
+	}
+	return 0;
+#else
+	// No /proc/self/fd: the same EBADF failure, through the portable stand-in.
+	return swapInReadOnlyStandIn(step, fd);
+#endif
+}
+int failFlush(lmms::RetroTakeFinishStep step, int)
+{
+	return step == lmms::RetroTakeFinishStep::Flush ? -1 : 0;
+}
+
+//! Clears the finish hook however the test leaves.
+struct FinishHookGuard
+{
+	explicit FinishHookGuard(lmms::RetroTakeFinishTestHook hook) { lmms::setRetroTakeFinishTestHook(hook); }
+	~FinishHookGuard() { lmms::setRetroTakeFinishTestHook(nullptr); }
+};
 
 } // namespace
 
@@ -264,6 +331,54 @@ private slots:
 			QVERIFY(std::fabs(static_cast<double>(interleaved[i * 2 + 1])
 				- static_cast<double>(window.frames[i].right())) <= OneLsb24);
 		}
+	}
+
+	//! libsndfile can accept every frame and still fail to flush or close the
+	//! file (full or failing disk); its own sync/close cannot report that (see
+	//! writeWindow in RetroAudioCapture.cpp), so the writer checks sf_error() after
+	//! the header rewrite and fsyncs itself. The take must then report failure, and
+	//! the destination must not be replaced by the unverified file. The finalize
+	//! rows make every header write fail with EBADF like a failing disk; the flush
+	//! row fails the durable flush.
+	void aFailedFlushOrCloseIsReportedAndNothingIsCommitted_data()
+	{
+		QTest::addColumn<QString>("step");
+		QTest::newRow("finalize") << QStringLiteral("finalize");
+		QTest::newRow("finalize-portable") << QStringLiteral("finalize-portable");
+		QTest::newRow("flush") << QStringLiteral("flush");
+	}
+
+	void aFailedFlushOrCloseIsReportedAndNothingIsCommitted()
+	{
+		QFETCH(QString, step);
+		lmms::RetroTakeFinishTestHook hook = &failFlush;
+		if (step == QLatin1String("finalize")) { hook = &makeDescriptorReadOnly; }
+		else if (step == QLatin1String("finalize-portable")) { hook = &swapInReadOnlyStandIn; }
+		const auto frames = makeFrames(64);
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("retro.wav"));
+
+		std::uint64_t written = 123;
+		QString error;
+		s_standInTake = dir.filePath(QStringLiteral("stand-in.wav"));
+		QVERIFY2(lmms::writeRetroAudioTake(s_standInTake, frames, SampleRate, &written, &error),
+			qPrintable(error));
+		written = 123;
+		bool ok = true;
+		{
+			FinishHookGuard guard(hook);
+			ok = lmms::writeRetroAudioTake(path, frames, SampleRate, &written, &error);
+		}
+		QVERIFY2(!ok, "a failed flush/commit must not report success");
+		QVERIFY(!error.isEmpty());
+		QCOMPARE(written, std::uint64_t{0});
+		QVERIFY(!QFileInfo::exists(path));
+
+		// With the hook cleared the same call succeeds: the failure was the hook's.
+		QVERIFY2(lmms::writeRetroAudioTake(path, frames, SampleRate, &written, &error),
+			qPrintable(error));
+		QCOMPARE(written, std::uint64_t{64});
 	}
 
 	//! Concurrent writes to one destination each commit a complete take. Their
