@@ -30,6 +30,8 @@
 
 #include "lmms_export.h"
 
+class InstrumentRoutingTest;
+
 namespace lmms
 {
 
@@ -72,11 +74,18 @@ public:
 	auto dropped() const noexcept -> unsigned { return m_dropped.load(std::memory_order_relaxed); }
 
 private:
+	friend class ::InstrumentRoutingTest;
 	enum State : int
 	{
 		Free = 0,
 		Writing = 1,
 		Live = 2,
+	};
+
+	//! A slot a note-on has claimed and is still filling: what noteOn() passes from claim() to publish().
+	struct Claim
+	{
+		int slot = -1;  //!< -1: the pool was full, so the note was not voiced
 	};
 
 	struct Slot
@@ -90,6 +99,11 @@ private:
 
 	//! The live slot holding (track, channel, key), or -1.
 	auto find(int track, int channel, int key) const noexcept -> int;
+	//! A free slot marked Writing, or {-1} when every slot is taken: the half of a note-on that runs
+	//! before its fields are written.
+	auto claim() noexcept -> Claim;
+	//! Fills a claimed slot and publishes it as a live voice; a {-1} claim counts a dropped note.
+	void publish(const Claim& claim, int track, int channel, int key, double seconds) noexcept;
 
 	std::array<Slot, VoiceCount> m_slots{};
 	std::atomic<unsigned> m_dropped{0};

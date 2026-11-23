@@ -50,18 +50,36 @@ void ModulationVoices::noteOn(int track, int channel, int key, double seconds) n
 		m_slots[static_cast<std::size_t>(existing)].startedAt.store(seconds, std::memory_order_relaxed);
 		return;
 	}
-	for (Slot& slot : m_slots)
+	publish(claim(), track, channel, key, seconds);
+}
+
+auto ModulationVoices::claim() noexcept -> Claim
+{
+	for (int i = 0; i < VoiceCount; ++i)
 	{
+		Slot& slot = m_slots[static_cast<std::size_t>(i)];
 		int expected = Free;
-		if (!slot.state.compare_exchange_strong(expected, Writing, std::memory_order_acq_rel)) { continue; }
-		slot.track.store(track, std::memory_order_relaxed);
-		slot.channel.store(channel, std::memory_order_relaxed);
-		slot.key.store(key, std::memory_order_relaxed);
-		slot.startedAt.store(seconds, std::memory_order_relaxed);
-		slot.state.store(Live, std::memory_order_release);
+		if (slot.state.compare_exchange_strong(expected, Writing, std::memory_order_acq_rel))
+		{
+			return Claim{i};
+		}
+	}
+	return Claim{};
+}
+
+void ModulationVoices::publish(const Claim& claim, int track, int channel, int key, double seconds) noexcept
+{
+	if (claim.slot < 0)
+	{
+		m_dropped.fetch_add(1, std::memory_order_relaxed);
 		return;
 	}
-	m_dropped.fetch_add(1, std::memory_order_relaxed);
+	Slot& slot = m_slots[static_cast<std::size_t>(claim.slot)];
+	slot.track.store(track, std::memory_order_relaxed);
+	slot.channel.store(channel, std::memory_order_relaxed);
+	slot.key.store(key, std::memory_order_relaxed);
+	slot.startedAt.store(seconds, std::memory_order_relaxed);
+	slot.state.store(Live, std::memory_order_release);
 }
 
 void ModulationVoices::noteOff(int track, int channel, int key) noexcept
