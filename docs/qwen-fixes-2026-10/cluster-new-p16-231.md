@@ -2,8 +2,9 @@ FIXED
 
 # cluster new-p16-231: Automation scratch overflow can allocate on the render thread
 
-Round 2. It addresses Luna's round-1 review ("tests: no test added or changed"). Round 1 had reported
-NEEDS-CONTEXT. This round fixes the bug without changing the existing contract test.
+Round 3. It adds the GUI-harness screenshot the round-3 review asked for, on top of round 2's state-sequence and
+round 1's fix. Round 1 had reported NEEDS-CONTEXT. This round fixes the bug without changing the existing contract
+test.
 
 ## Verdict: REAL
 In `src/core/Song.cpp`, `Song::processAutomations` (before this fix, lines 737-772) handled a read that overflowed
@@ -68,36 +69,51 @@ The round-2 test drives these states, in this order (line numbers in
    (line 380) and the overflow count did not move (lines 381-382) — all 200 models hold their expected values.
 
 Fresh RED/GREEN with the product patch reversed and restored (logs in
-`/home/kruzzzzy/.config/kads/zene/state/runs/new-p16-231.r3/logs`):
-- `git diff HEAD^ HEAD -- include/Song.h src/core/Song.cpp > .../logs/fix.patch` DIFF_EXIT=0 (144 lines);
-  `git apply -R .../logs/fix.patch` REVERT_EXIT=0.
-- RED: `cmake --build build --target zene AutomationRenderAllocationTest -j4` BUILD_EXIT=0 (03-build-red.log);
-  `ctest -R '^AutomationRenderAllocationTest$' --output-on-failure` TEST_EXIT=8 (04-test-red.log):
+`/home/kruzzzzy/.config/kads/zene/state/runs/new-p16-231.r4/logs`):
+- `git diff d6bbc50a41^ d6bbc50a41 -- include/Song.h src/core/Song.cpp > .../logs/fix.patch` DIFF_EXIT=0
+  (144 lines); `git apply -R .../logs/fix.patch` REVERT_EXIT=0.
+- RED: `cmake --build build --target zene AutomationRenderAllocationTest -j4` BUILD_EXIT=0 (04-build-red.log);
+  `ctest -R '^AutomationRenderAllocationTest$' --output-on-failure` TEST_EXIT=8 (05-test-red.log):
   `FAIL! ... anOverflowOnTheRenderPathAllocatesNothingAndTheControlThreadGrowsTheScratch()`,
   `Actual (overflowAllocations): 86`, `Loc: [../../tests/src/core/AutomationRenderAllocationTest.cpp(370)]`.
 - `git apply .../logs/fix.patch` APPLY_EXIT=0;
-  `cmake --build build --target zene AutomationRenderAllocationTest -j4` BUILD_EXIT=0 (05-build-green.log);
-  `ctest -R '^AutomationRenderAllocationTest$' --output-on-failure` TEST_EXIT=0 (06-test-green.log,
+  `cmake --build build --target zene AutomationRenderAllocationTest -j4` BUILD_EXIT=0 (06-build-green.log);
+  `ctest -R '^AutomationRenderAllocationTest$' --output-on-failure` TEST_EXIT=0 (07-test-green.log,
   "100% tests passed out of 1").
 
-## Commands and EXIT codes (logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p16-231.r3/logs)
-- Test-only build with the fix in place (before the fresh RED): `cmake --build build --target
-  AutomationRenderAllocationTest -j4` EXIT=0 (01-build-test.log). `ctest -R '^AutomationRenderAllocationTest$'
-  --output-on-failure` EXIT=0, "100% tests passed out of 1" (02-test-green.log).
+## Round 3 (proof manifest needs a screenshot)
+The round-3 review asked for a `screenshot-or-recording` artifact from the GUI harness. The fix changes no GUI
+file, so this proves the product still renders and is driven through the control socket. I ran the reviewed shell
+driver, which starts the real `zene` binary headless and calls `window.screenshot` over the socket:
+- command: `cd tests && QT_QPA_PLATFORM=offscreen python3 control-shell.py ../build/zene
+  /home/kruzzzzy/.config/kads/zene/state/runs/new-p16-231.r4/logs/gui` EXIT=0 (01-gui-harness.log,
+  "PASS: shell control-surface driver (every check held)").
+- artifacts (each 1600 x 1000 PNG, rendered by `window.screenshot`):
+  - `logs/gui/shell-arrange.png` sha256 `3f9233ec8840a80207d4511e6186cf43315252ba967c5aa8d2489e75d730e618`
+  - `logs/gui/shell-mix.png` sha256 `cb364b7ae380aa715ff2cffcee36e2def2ecb00282065e65c4b55e0783662e31`
+  - `logs/gui/shell-edit.png` sha256 `82526510e3f96a5a41439356dcb28b3455671a2222e472d6cacf5d896e9ed3ab`
+- `logs/proof.json` carries the `screenshot` artifact (`shell-arrange.png`, its sha256 above) next to the
+  `regression-test` and `state-sequence` artifacts.
+
+## Commands and EXIT codes (logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p16-231.r4/logs)
+- Green build/run with the fix in place, before the fresh RED: `cmake --build build --target zene
+  AutomationRenderAllocationTest -j4` BUILD_EXIT=0 (02-build-green.log). `ctest -R
+  '^AutomationRenderAllocationTest$' --output-on-failure` TEST_EXIT=0, "100% tests passed out of 1"
+  (03-test-green.log).
 - The fresh RED/GREEN of step 4b are the six numbered lines in the Round 2 section above: RED TEST_EXIT=8,
   GREEN TEST_EXIT=0.
 - Family: `ctest -R 'Automation|^Song|MixerConcurrency' --output-on-failure` TEST_EXIT=0, "100% tests passed
-  out of 21" (07-test-family.log).
+  out of 21" (08-test-family.log).
 - Gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` EXIT=0, all PASS
   (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures,
-  complexity "no new item in your files", file-length "no new item in your files"), in 08-feature-check.log.
+  complexity "no new item in your files", file-length "no new item in your files"), in 09-feature-check.log.
 
 ## Self-check
-- The regression test FAILS with the product change reverted and PASSES with it: fresh round-2 step 4b above —
+- The regression test FAILS with the product change reverted and PASSES with it: fresh round-3 step 4b above —
   RED `ctest ...` TEST_EXIT=8 with `Actual (overflowAllocations): 86`
-  (04-test-red.log), GREEN TEST_EXIT=0, "100% tests passed out of 1" (06-test-green.log). The reverts/applies of
-  `logs/fix.patch` printed REVERT_EXIT=0 and APPLY_EXIT=0, and both rebuilds BUILD_EXIT=0 (03-build-red.log,
-  05-build-green.log). The manifest in `logs/proof.json` records red_exit 8 and green_exit 0.
+  (05-test-red.log), GREEN TEST_EXIT=0, "100% tests passed out of 1" (07-test-green.log). The reverts/applies of
+  `logs/fix.patch` printed REVERT_EXIT=0 and APPLY_EXIT=0, and both rebuilds BUILD_EXIT=0 (04-build-red.log,
+  06-build-green.log). The manifest in `logs/proof.json` records red_exit 8 and green_exit 0.
 - Deterministic: no wall-clock timing, sleeps or races. The test uses the `resizeAutomationScratchForTest`
   capacity seam, the `test::tlCountAllocations` allocation probe, and fires the drain timer's `timeout`
   synchronously with `Qt::DirectConnection`. No `QTest::qWait`, sleep or elapsed-time assertion is involved.
