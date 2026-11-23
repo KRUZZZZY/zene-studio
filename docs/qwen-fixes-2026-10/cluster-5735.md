@@ -206,6 +206,31 @@ RESULT: PASS
   allocation, lock, signal or I/O was added to any realtime function.
 - **ALREADY-FIXED / FALSE-POSITIVE**: not claimed; the bug was reproduced on this
   branch before the change (`repro-2.log`).
+- **Sibling commands in the command file I changed** (`src/core/ControlCommandsProject.cpp:615`
+  registers `render.render`; the `render`/`project` verbs live in sibling files of the
+  same family). Every one is either the thing I fixed or unaffected, and each was
+  checked against the code:
+  - `render.render` — fixed; proved by `ControlRenderOutputPublish` (EXIT=0).
+  - `render.sections` — renders each section through `render.render`
+    (`ControlCommandsRenderSections.cpp:291`), so it takes the same staging rule; no
+    code change was needed and `ControlRenderSections` passes (`test-10-family.log`).
+  - `render.stems` / `exportstems` — its own child spawn
+    (`ControlCommandsRenderStems.cpp:173-201`), which ALREADY renders into a staging
+    directory and rewrites the child's quoted path back to the caller's
+    (`:207-215`: "a refusal naming an internal staging path would send the caller
+    looking for a directory that none of its business"). Unchanged; it is the
+    precedent this fix follows.
+  - `render.queue_bounce` / the render queue — `RenderQueue` already stages
+    (`.zene-render-<uuid>.<format>`, `RenderQueue.cpp:109-123`) and commits on success
+    (`:169-196`). Unchanged.
+  - `project.subproject_add` / `project.subproject_refresh` — call
+    `controlRenderProjectFile` (`ControlCommandsSubprojects.cpp:157`), the second
+    caller of `runCliRender`, so they take the same rule; both render checks pass in
+    `ControlSuccessPaths` (`test-11-subprojects.log`, lines 23-24 `ok`).
+  - `project.*` save/open/archive verbs in the same file never reach `runCliRender`
+    and are untouched; `mastering.run` and `app.*` are different files and different
+    paths, untouched — no command id, schema or reply field changed anywhere
+    (`git diff` is one file plus a test).
 - **Other findings (not fixed here).** (1) `ControlRenderSurround` fails on this host
   on two CLI-stderr checks (`--channels 9.1`, `exportstems --channels surround`): the
   shipped CLI exits 1 with EMPTY stderr, so `usageError`'s `qCritical()`
