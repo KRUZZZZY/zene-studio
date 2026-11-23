@@ -3530,6 +3530,7 @@ tests/src/gui/RecordModeMenuTest.cpp
 tests/src/gui/RecordRemainingTest.cpp
 tests/src/gui/RecordingRecoveryMenuTest.cpp
 tests/src/gui/ReferenceProjectPanelTest.cpp
+tests/src/gui/RenderMenuQueueTest.cpp
 tests/src/gui/RenderPresetMenuTest.cpp
 tests/src/gui/RenderRangeMenuTest.cpp
 tests/src/gui/RevisionsDocsTest.cpp

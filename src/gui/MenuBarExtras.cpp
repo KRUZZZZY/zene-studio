@@ -137,7 +137,9 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	onRange(QObject::tr("Paste"), QStringLiteral("range.paste"), {});
 	onRange(QObject::tr("Duplicate"), QStringLiteral("range.duplicate"), {});
 	onRange(QObject::tr("Consolidate"), QStringLiteral("range.consolidate"), {});
-	onRange(QObject::tr("Bounce to a New Track"), QStringLiteral("range.bounce"), {});  // the manual's "bounce it from Navigate > Range"
+	// Cluster 917: the render enters the cancellable queue (range.bounce waits for the child).
+	onRange(QObject::tr("Bounce to a New Track"), QStringLiteral("render.queue_bounce"),
+		{{QStringLiteral("operation"), QStringLiteral("range_bounce")}});  // the manual's "bounce it from Navigate > Range"
 	// 0.5.0 L12 (Q050-009): render the selection to a file, and export the song's named sections.
 	range->addSeparator();
 	addRenderRangeActions(range);

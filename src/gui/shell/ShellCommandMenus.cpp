@@ -36,6 +36,7 @@
 #include "AutomationClip.h"
 #include "CommandLists.h"
 #include "ControlAutomationSupport.h"
+#include "ControlBounceSupport.h"
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
 #include "ClipEdits.h"
@@ -277,10 +278,16 @@ void populateTrack(QMenu* menu, Track* track)
 	add(takes, "Comp a Range...", "comp.select", self, true);
 	add(takes, "Move a Comp Edge...", "comp.move_edge", self, true);  // ED-169
 	add(takes, "Comp These Tracks Together...", "comp.select_group", {{QStringLiteral("tracks"), QJsonArray{id}}}, true);  // ED-172
+	// Cluster 917: the render entries enter the cancellable queue instead of the
+	// synchronous compatibility verbs, whose child wait freezes the interface. The
+	// default output path is the one bounce.in_place would have generated.
 	QMenu* render = menu->addMenu(tr("Render"));
-	add(render, "Bounce to New Track...", "bounce.land", self, true);
-	add(render, "Bounce in Place...", "bounce.in_place", self, true);
-	add(render, "Freeze", "freeze.track", self, false);
+	add(render, "Bounce to New Track", "render.queue_bounce",
+		with(self, "operation", "bounce_land"), false);
+	add(render, "Bounce in Place", "render.queue_add",
+		with(with(self, "operation", "bounce"), "out",
+			control::resolveOutPath(QJsonObject(), track, QStringLiteral("bounce"), BounceInPlace::Range{})), false);
+	add(render, "Freeze", "render.queue_bounce", with(self, "operation", "freeze_track"), false);
 	QMenu* presets = menu->addMenu(tr("Track Preset"));  // L11 (WF-024)
 	add(presets, "Save Preset...", "track.preset_save", self, true);
 	add(presets, "Load Preset...", "track.preset_load", self, true, {}, true);  // Q050-331: the form shows the bindings it restored
@@ -494,7 +501,8 @@ void populateProject(QMenu* menu)
 	add(menu, "Save as Template...", "project.save_as_template", {}, true);
 	add(menu, "Import Tracks...", "project.import_tracks", {}, true);
 	add(menu, "Hand Off...", "project.handoff", {}, true);
-	add(menu, "Bounce the Range to a New Track", "range.bounce", {}, false);
+	add(menu, "Bounce the Range to a New Track", "render.queue_bounce",
+		{{QStringLiteral("operation"), QStringLiteral("range_bounce")}}, false);
 	choices(menu, "Low-Latency Monitoring", "transport.low_latency", "enabled", {});  // L01 (MX-159)
 	add(menu, "Global Swing...", "transport.groove", {}, true);  // L07 (ED-142)
 	choices(menu, "Pan Law", "mixer.options", "pan_law", {});  // L08 (MX-025)
