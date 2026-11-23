@@ -6266,8 +6266,7 @@ void PluginPortsMigrationTest::nesDetuneReadsTheModelOnTheRenderPath()
 {
 	const auto pluginPath = [](const QString& name)
 	{
-		return QDir{QCoreApplication::applicationDirPath()}
-			.filePath(QStringLiteral("../../plugins/Nes/%1").arg(name));
+		return QDir{QStringLiteral(NES_PLUGIN_SOURCE_DIR)}.filePath(name);
 	};
 	QFile sourceFile{pluginPath(QStringLiteral("Nes.cpp"))};
 	QVERIFY2(sourceFile.open(QIODevice::ReadOnly), qPrintable(sourceFile.fileName()));
@@ -6324,7 +6323,8 @@ void PluginPortsMigrationTest::nesDetuneReachesRendererWithoutControlSignal()
 	QVERIFY(entry != nullptr);
 
 	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
-	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	auto instrument = std::unique_ptr<lmms::Instrument>{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
 	QVERIFY(instrument != nullptr);
 
 	const auto setNesSettings = [](lmms::Instrument& inst, const QString& coarseDetune)
@@ -6384,8 +6384,6 @@ void PluginPortsMigrationTest::nesDetuneReachesRendererWithoutControlSignal()
 		instrument->deleteNotePluginData(&noteHandle);
 		noteHandle.m_pluginData = nullptr;
 	}
-	delete instrument;
-
 	const int initialPeriod = static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()
 		/ noteHandle.frequency());
 	const int beforePeriod = nesOscillatorPeriod(beforeDetune, initialPeriod - 2, initialPeriod + 2);
@@ -6394,6 +6392,22 @@ void PluginPortsMigrationTest::nesDetuneReachesRendererWithoutControlSignal()
 	QVERIFY2(std::abs(afterPeriod * 2 - beforePeriod) <= 3,
 		"a coarse-detune write that ran no control-side slot did not retune the held note: "
 		"the render path reads a mirror the control thread writes instead of the model");
+
+	setNesSettings(*instrument, QStringLiteral("0"));
+	track->microtuner()->enabledModel()->setValue(true);
+	track->microtuner()->keyRangeImportModel()->setValue(false);
+	track->firstKeyModel()->setValue(lmms::DefaultKey + 1);
+	lmms::NotePlayHandle unmappedNote{
+		track.get(), 0, frames * TotalPeriods, note, nullptr, -1,
+		lmms::NotePlayHandle::Origin::MidiClip};
+	QCOMPARE(unmappedNote.frequency(), 0.0f);
+	std::fill(buffer.begin(), buffer.end(), lmms::SampleFrame{1.0f, 1.0f});
+	instrument->playNote(&unmappedNote, std::span<lmms::SampleFrame>{buffer});
+	instrument->deleteNotePluginData(&unmappedNote);
+	QVERIFY2(std::all_of(buffer.begin(), buffer.end(), [](const lmms::SampleFrame& frame)
+	{
+		return frame.left() == 0.0f && frame.right() == 0.0f;
+	}), "an unmapped NES note must render silence");
 }
 
 

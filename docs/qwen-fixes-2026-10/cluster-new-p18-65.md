@@ -46,10 +46,10 @@ plugins/Nes/Nes.cpp:472  m_wlen1 = wavelength( freq * std::exp2( crs1 / 12.0f ) 
 plugins/Nes/Nes.cpp:475  m_lastCrs1 = crs1;
 ```
 
-That read is the fork's existing audio-safe publication contract: `AutomatableModel::value()`
-returns `publishedValue()` (`include/AutomatableModel.h:239`), which is an atomic acquire
-load of a packed old/new pair published by the control thread
-(`src/core/AutomatableModel.cpp:897-908`). No plain field crosses threads any more.
+For unconnected models, `AutomatableModel::value()` returns `publishedValue()`
+(`include/AutomatableModel.h:239`), an atomic acquire load of the packed old/new pair
+(`src/core/AutomatableModel.cpp:897-908`). Connected models follow the existing
+controller read path. The three plain detune mirrors are gone.
 
 Changes, all in `plugins/Nes`:
 
@@ -58,10 +58,12 @@ Changes, all in `plugins/Nes`:
   `m_lastCrs1/2/3` (`plugins/Nes/Nes.h:186-188`) so it is obvious that the only writer
   is the audio thread.
 - `Nes.cpp`: `updatePitch()` derives the three wavelengths from the model values and
-  recomputes `exp2` only when a detune actually changed, so the render path gains one
-  atomic load per channel per pitch tick and no transcendental in the steady state.
+  recomputes `exp2` when the note frequency or a channel detune changes. The
+  wavelengths are reused when those inputs hold steady.
 - `Nes.cpp`: the constructor body no longer wires or seeds the removed slots
   (`plugins/Nes/Nes.cpp:558-562`).
+- `Nes.cpp`: zero-frequency notes from unmapped keys render silence before
+  oscillator state is constructed or read.
 
 Siblings checked: `rg -n "m_freq|updateFreq|m_lastFreq" plugins/Nes` returns nothing, so
 the three channels were the only users of the removed members, and the three channels are
@@ -83,6 +85,8 @@ NES plugin needs already lives in that binary:
   `AutomatableModel::setValueInternal()` defers the signal there), then measures the
   oscillator period of the next 8 periods by autocorrelation. Unfixed: `before=100
   after=100` (the mirror was never refreshed). Fixed: `before=100 after=50`.
+  The test also renders an unmapped note at default detune and checks both channels
+  for silence.
 - `nesDetuneReadsTheModelOnTheRenderPath()` — cause. Reads `plugins/Nes/Nes.cpp` and
   `Nes.h` and asserts the mirror type is gone, that `updatePitch()` reads
   `m_ch1Crs/m_ch2Crs/m_ch3Crs` and no longer reads `m_parent->m_freq*`, and that no
@@ -144,15 +148,13 @@ and fail again with it restored (`test-mallets-16-fixed.log`, exit 4). See Other
 - Failure/regression path: `NesDetunePublication` — a detune write that runs no
   control-side slot must still reach the renderer. Red before, green after.
 - Reconfiguration path: `Restore/restoreState` is the project-load path and is what both
-  NES tests use to write the detune; the new test additionally proves the value read by
-  the renderer is the model's published value, so a project loaded with a non-zero detune
-  renders at the saved detune without any slot firing.
+  NES tests use to write the detune. The new test restores a non-zero detune while
+  the note is sounding and the instrument's model signals are blocked.
 - Exhaustion path: not applicable — no pool, limit or cache grows here; the removed
   members were three scalars.
-- Audio-thread constraints: the render path gained three atomic loads
-  (`AutomatableModel::publishedValue()`) and keeps `std::exp2` only on the change branch;
-  no allocation, free, lock, wait, log or Qt call was added. Renaming `m_lastFreq*` to
-  `m_lastCrs*` keeps those fields audio-thread-only.
+- Audio-thread constraints: the render path uses the existing model reads and calls
+  `std::exp2` on the pitch-change branch. The per-note `m_lastCrs*` fields are
+  audio-thread-owned.
 - Platform: the module-host assertions skip on Windows via the file's existing
   `testHostCanLoadPluginModules()`/`PluginModuleHostSkipMessage` path (unchanged); the
   source-level assertions are platform-independent and still run there. No Qt-6-only API,
@@ -168,8 +170,8 @@ and fail again with it restored (`test-mallets-16-fixed.log`, exit 4). See Other
   any product edit, is `test-red-4.log` (exit 8).
 - **The test is deterministic.** No threads, sleeps or clocks. The seams are (a) the
   instrument's models holding their `dataChanged` signal during one detune write
-  (`QObject::blockSignals`), and (b) autocorrelation over 8 rendered periods, which is
-  integer arithmetic on a fixed sample buffer. The renderer is called directly through
+  (`QObject::blockSignals`), and (b) autocorrelation over 8 rendered periods, using
+  floating-point arithmetic on a fixed sample buffer. The renderer is called directly through
   `Instrument::playNote()` with a fixed `framesPerPeriod` (44100/256).
 - **Fix at the cause, complete.** The cause was the plain control-thread-written mirror;
   it is deleted, not merely ordered. All three channels were converted together; the

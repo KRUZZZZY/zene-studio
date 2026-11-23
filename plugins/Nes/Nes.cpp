@@ -567,6 +567,11 @@ void NesInstrument::playNoteImpl(NotePlayHandle* n, std::span<SampleFrame> out)
 {
 	const f_cnt_t frames = n->framesLeftForCurrentPeriod();
 	const f_cnt_t offset = n->noteOffset();
+	if (n->frequency() == 0.0f)
+	{
+		zeroSampleFrames(out.data() + offset, frames);
+		return;
+	}
 	
 	if (!n->m_pluginData)
 	{

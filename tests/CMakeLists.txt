@@ -4785,6 +4785,7 @@ target_compile_definitions(PluginPortsMigrationTest PRIVATE
 	# Cluster new-p17-202: the Watsyn regression reads the plugin's own
 	# sources, so it needs to know where they are.
 	WATSYN_PLUGIN_SOURCE_DIR="${CMAKE_SOURCE_DIR}/plugins/Watsyn"
+	NES_PLUGIN_SOURCE_DIR="${CMAKE_SOURCE_DIR}/plugins/Nes"
 	${PART_C_MIGRATED_DEFINITIONS}
 )
 if(BUILD_TESTING AND TARGET freeboy)
