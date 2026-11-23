@@ -4035,3 +4035,7 @@ tests/src/core/SampleBufferBase64Test.cpp
 tests/src/plugins/SfzGateStereoLinkTest.cpp
 # cluster new-p21-172: sfizz stereo-linked compressor builds its detector input from the right channel.
 tests/src/plugins/SfzCompressorStereoLinkTest.cpp
+# cluster ci-64efb7585b33898b (2026-11): Qt5/Clang portability of C++ test sources (ambiguous QAbstractSocket::bind with a SpecialAddress, QVERIFY_EXCEPTION_THROWN expression parsed as a declaration) - source scan plus clang compile probe (fork-NEW test).
+tests/qt5-clang-test-portability-check.py
+# cluster ci-64efb7585b33898b: report
+docs/qwen-fixes-2026-10/cluster-ci-64efb7585b33898b.md
