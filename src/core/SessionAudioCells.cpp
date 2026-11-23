@@ -277,6 +277,26 @@ int heldClips() noexcept
 	return static_cast<int>(clips().held.size() + clips().variants.size());
 }
 
+#ifdef LMMS_TESTING
+bool holdsClipForTest( const SampleBuffer* clip ) noexcept
+{
+	const Clips& all = clips();
+	for (const auto& entry : all.held)
+	{
+		if (entry.second.get() == clip) { return true; }
+	}
+	for (const auto& entry : all.variants)
+	{
+		if (entry.second.get() == clip) { return true; }
+	}
+	for (const auto& entry : all.retired)
+	{
+		if (entry.get() == clip) { return true; }
+	}
+	return false;
+}
+#endif
+
 } // namespace sessionaudio
 
 } // namespace lmms

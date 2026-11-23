@@ -109,6 +109,14 @@ LMMS_EXPORT void retire() noexcept;
 //! Clips currently held (loaded for the open project). Model thread.
 LMMS_EXPORT int heldClips() noexcept;
 
+#ifdef LMMS_TESTING
+/*! Whether @a clip is still owned by the clip cache - a loaded source, a settings-variant, a buffer a
+ *  rate change replaced, or one retired at a close. The deferred-reclamation regression test
+ *  (new-p15-204) reads it to prove a clip is not freed while the scheduler's content table can still
+ *  name it. Model thread. */
+LMMS_EXPORT bool holdsClipForTest( const SampleBuffer* clip ) noexcept;
+#endif
+
 } // namespace sessionaudio
 
 } // namespace lmms
