@@ -111,4 +111,47 @@ green.
 
 ## Self-check
 
-(To be completed from the completion check output.)
+- **The regression test fails with the product change reverted and passes with it.**
+  Reverted (`git apply -R logs/fix.patch`, rebuild, `ctest -R '^MidiHandoffQueueTest$'`): exit 8,
+  `Actual (overflow.pendingSlotReads()) : 1058832` vs `Expected : 0` (`test-11-red-final.log`).
+  Restored (rebuild, `ctest -R '^(MidiHandoffQueueTest|CarlaMidiHandoffTest|VestigeMidiHandoffTest|Sf2PlayerRealtimeTest)$'`):
+  exit 0, 4/4 passed (`test-12-green-final.log`). The earlier RED run before any fix also exited 8
+  (`test-2-red.log`).
+- **The test is deterministic.** It uses the compile-time seam `MidiChannelOverflow::pendingSlotReads()`, a
+  relaxed counter incremented once per slot load inside `pendingStamp()` (`include/MidiHandoffQueue.h:466-469`),
+  and reads it after a normal `drainMidi()` on one thread. There is no wall clock, sleep, thread or race: the
+  128 pushed events, the single refused event at `queuedBefore == 4`, and the drain bounds are injected values.
+  The same digits (1,058,832 = 16 x 129 x 513) appeared on both RED runs.
+- **Fix at the cause, callers and siblings checked.** `drainMidi()` (`:581`) is the only caller of
+  `dueCut()`/`clear()`; both public stamp readers (`stamp()`/`due()` -> `sharedStamp()` `:476`) and the drain
+  (`sharedCut()` `:408`) now use the same no-cut fast path. Render callers (`plugins/ZynAddSubFx/ZynAddSubFx.cpp:387`,
+  `plugins/Vestige/Vestige.cpp:405`, `RemotePlugin::sendQueuedMidiEvents()`, Carla's `processPeriod()`) keep the
+  same `drainMidi()` contract. `refreshEarliest()` still scans after a served cut, and every overflow/ordering
+  test in the family passes. The one implementation detail found while rebuilding dependents — a test-only data
+  member moves `MidiChannelOverflow`'s layout between test and product TUs — is handled by declaring the probe
+  member in every build (see Fix).
+- **No collateral damage.** The change is header-only runtime logic: no project, save-file, format or
+  serialization code is touched, so old projects load exactly as before. No limit or validation was added.
+  A pending slot always implies `m_cutAt != 0`, so the skipped scan could only ever return 0; channels with a
+  cut pending still take the original scan path. `fiveTwelveCapacityKeepsAllRecoveryCuts`,
+  `repeatedOverflowKeepsEarlierRecoveryCut`, `exhaustedStampUpdateDefersTheCutBehindQueuedEvents` and
+  `drainSendsTheCutAtTheRefusalPoint` pass unchanged.
+- **Verdict is not ALREADY-FIXED/FALSE-POSITIVE.** It is REAL: the pre-fix test produced exactly the
+  finding's "over a million atomic loads" (1,058,832 slot probes; see Verdict and RED rows above), and
+  `include/MidiHandoffQueue.h:408-425` plus `:476-487` are the code that now avoids them.
+- **Sibling commands.** No command file, command registration or control surface file was changed by this
+  fix (`git show --stat HEAD` lists only the two source/test files, the ledger and this report), so
+  `app.about`, `app.ask`, `app.help`, `app.online_help`, `app.task_cancel`, `app.tasks`, `app.tour`,
+  `app.tours`, `app.update_check_get`, `app.update_check_run`, `app.update_check_set`, `app.version`,
+  `app.whats_new`, `arrangement.fit_tracks` and `arrangement.get_state` are untouched and consistent.
+  No control command was added for this bug fix (the ControlCommandsSnapshot canary is unchanged).
+
+## Other findings
+
+- `MidiChannelOverflow` is compiled with `LMMS_TESTING` in test TUs but without it in product/plugin TUs,
+  while objects of classes embedding it cross the vtable boundary in `VestigeMidiHandoffTest` (it compiles
+  `plugins/Vestige/Vestige.cpp` itself and links `libvstbase.so`). A test-only data member therefore silently
+  changes the derived-object layout and produces a link-time thunk mismatch (`undefined reference to
+  non-virtual thunk to lmms::VstPlugin::saveSettings`, offsets 74040 vs 73976). This is pre-existing design
+  debt in the class, not part of this bug; the probe member is declared in every build and the hazard is
+  documented at `include/MidiHandoffQueue.h:531-536`.
