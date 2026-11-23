@@ -132,6 +132,59 @@ EXIT=0
   RESULT: PASS
 ```
 
+## Round 2: deterministic stress-test rendezvous
+
+The reviewer sent back the focused concurrency test: it could observe no producer input
+during rendering. The QA commit on this branch (`01308f2afd`) added a first-event barrier,
+but that barrier has its own race. Producers 1-3 enqueue as soon as `renderStarted` is set,
+so they can fill the fixed 512-event queue while the renderer waits for `accepted[0]`;
+producer 0's first enqueue is then refused and both sides wait forever. Measured before
+this change: 30 direct runs of the slot, each under a 10 s bound, timed out 3 times
+(`EXIT=124`, no test result) and passed 27 times (`test-1-qa-loop.log`).
+
+The rendezvous now uses two one-way handshakes, and nothing is queued before the measured
+period:
+
+1. Each producer increments `activeProducers`, then `producersReady`, then spins on
+   `renderObservedProducers`. It has not queued an event yet.
+2. The renderer waits for `producersReady == ProducerCount`, then enters the period loop.
+   Its first `renderPeriod()` sees `activeProducers != 0`, increments
+   `periodsWithProducerInput` and publishes `renderObservedProducers`.
+3. The producers start enqueueing only after that publish; the renderer drains while they
+   run. The overlap, ordering and allocation assertions are unchanged.
+
+There is no sleep, timeout or wall-clock condition in this path; the only waits are the two
+atomic handshakes. After the change:
+
+```
+cmake --build build --target CarlaMidiHandoffTest -j4   # build-2-handshake.log
+EXIT=0
+100 direct runs of the slot, each under a 10 s bound   # test-2-handshake-loop.log
+EXIT=0   (100 passed, 0 timed out)
+20 ctest -R CarlaMidiHandoffTest runs                   # test-3-ctest-loop.log
+EXIT=0   (20 passed)
+```
+
+4b rerun with the new test file. The product fix is already committed, so the patch is the
+branch's product diff rather than an unstaged diff:
+
+```
+git diff c6b40333d8..HEAD -- plugins/CarlaBase/Carla.h plugins/CarlaBase/Carla.cpp > .../logs/fix.patch
+EXIT=0
+git apply -R .../logs/fix.patch
+EXIT=0
+cmake --build build --target carlabase CarlaMidiHandoffTest -j4   # build-4-reverted.log
+EXIT=0
+cd build/tests && ctest -R CarlaMidiHandoffTest --output-on-failure   # test-5-reverted.log
+EXIT=8   (FAIL! playImpl() still sizes a stack array from the period)
+git apply .../logs/fix.patch
+EXIT=0
+cmake --build build --target carlabase CarlaMidiHandoffTest -j4   # build-5-restored.log
+EXIT=0
+cd build/tests && ctest -R CarlaMidiHandoffTest --output-on-failure   # test-6-restored.log
+EXIT=0
+```
+
 ## Self-check
 
 - **Regression test fails with the product change reverted, passes with it.** Reverted
@@ -142,9 +195,11 @@ EXIT=0
   1000 sizes below 64 frames) and counts allocations on the calling thread; there is no
   wall-clock assertion, sleep, thread or race in either new slot. The source slot reads
   the shipping `Carla.cpp` through the compile-time `CARLA_SOURCE_PATH`, the same pattern
-  as the existing `opulenzZeroFrameCountStopsLoop` source regression. (The pre-existing
-  `concurrentMidiStressIsOrderedAndAllocationFree` slot is timing-sensitive on this fast
-  machine and is discussed under Other findings; it is not part of this fix.)
+  as the existing `opulenzZeroFrameCountStopsLoop` source regression. The focused
+  concurrency slot now injects its overlap through the `producersReady` /
+  `renderObservedProducers` atomics (Round 2 above): it passed 100 direct runs and 20
+  focused CTest runs with no timeout, and its overlap, ordering and allocation assertions
+  are unchanged. Before the rendezvous, 3/30 direct runs hung on the old barrier.
 - **Cause and completeness.** The cause was the two stack arrays in `playImpl()`; they
   are gone from both branches (VLA and `_alloca`). Every caller was checked:
   `InstrumentPlayHandle` (audio thread) and `CarlaVst2Instrument::renderPeriod` (worker,
@@ -174,8 +229,5 @@ EXIT=0
 
 ## Other findings
 
-- QA review found that `CarlaMidiHandoffTest::concurrentMidiStressIsOrderedAndAllocationFree`
-  could finish its 100000-period render loop before the producer threads were scheduled.
-  A first-event barrier now waits for producer zero to queue one event, renders that period,
-  then releases it. Its ordering, allocation, and overlap assertions remain in place. The
-  focused CTest passed five consecutive runs after this adjustment.
+- None unrelated to this fix. The focused stress-test race reported in Round 1 is fixed by
+  the handshake in Round 2 above and is no longer outstanding.

@@ -133,7 +133,10 @@ struct ConcurrentStressRun
 	std::array<std::atomic<std::uint32_t>, ProducerCount> maxPushAttempts{};
 	std::atomic<std::uint32_t> finished{0};
 	std::atomic<std::uint32_t> activeProducers{0};
-	std::atomic<bool> renderStarted{false};
+	//! Producers that have announced themselves and are waiting for the renderer to observe them.
+	std::atomic<std::uint32_t> producersReady{0};
+	//! Set by the renderer inside the first period that has producer input; releases the producers.
+	std::atomic<bool> renderObservedProducers{false};
 	std::atomic<std::uint64_t> periodsWithProducerInput{0};
 	std::vector<std::thread> producers;
 	std::array<float, 1> inputSample{};
@@ -165,8 +168,13 @@ struct ConcurrentStressRun
 
 	void produce(std::uint32_t producer)
 	{
-		while (!renderStarted.load(std::memory_order_acquire)) { std::this_thread::yield(); }
-		activeProducers.fetch_add(1, std::memory_order_release);
+		// Announce before the renderer starts the stress loop and stay active until it has rendered a
+		// period that observes us. No event is queued before that period, so the overlap assertion is a
+		// property of this handshake rather than of which thread the scheduler runs first.
+		activeProducers.fetch_add(1, std::memory_order_acq_rel);
+		producersReady.fetch_add(1, std::memory_order_acq_rel);
+		while (!renderObservedProducers.load(std::memory_order_acquire)) { std::this_thread::yield(); }
+
 		lmms::test::resetAllocationCount();
 		lmms::test::tlCountAllocations = true;
 		std::uint64_t refusedCount = 0;
@@ -187,9 +195,6 @@ struct ConcurrentStressRun
 			}
 			else { ++refusedCount; }
 			if (attempts > greatestAttemptCount) { greatestAttemptCount = attempts; }
-			if (producer == 0 && index == 0) {
-				while (periodsWithProducerInput.load(std::memory_order_acquire) == 0) { std::this_thread::yield(); }
-			}
 		}
 		lmms::test::tlCountAllocations = false;
 		producerAllocations[producer].store(lmms::test::tlAllocationCount, std::memory_order_relaxed);
@@ -204,21 +209,22 @@ struct ConcurrentStressRun
 		if (activeProducers.load(std::memory_order_acquire) != 0)
 		{
 			periodsWithProducerInput.fetch_add(1, std::memory_order_relaxed);
+			renderObservedProducers.store(true, std::memory_order_release);
 		}
 		handoff.processPeriod([this](const NativeMidiEvent* events, std::uint32_t eventCount)
 		{
 			descriptor.process(&probe, input.data(), output.data(), 1, events, eventCount);
-			renderStarted.store(true, std::memory_order_release);
 		});
 	}
 
 	void renderWhileProducersRun()
 	{
+		// Every producer has announced itself and is waiting for the flag renderPeriod() sets, so the
+		// first period below is guaranteed to observe producer input without a sleep or a timeout.
+		while (producersReady.load(std::memory_order_acquire) != ProducerCount) { std::this_thread::yield(); }
+
 		lmms::test::resetAllocationCount();
 		lmms::test::tlCountAllocations = true;
-		renderPeriod();
-		++periods;
-		while (accepted[0].load(std::memory_order_acquire) == 0) { std::this_thread::yield(); }
 		while (periods < 100000 && finished.load(std::memory_order_acquire) != ProducerCount)
 		{
 			renderPeriod();
