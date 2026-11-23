@@ -2,9 +2,10 @@ FIXED
 
 # cluster new-p12-248 — Sample accurate automation locks on the audio thread
 
-new-p12-248: FIXED (round 4; round 1 reported NEEDS-CONTEXT without a test, round 2's submit check
-asked for a state-sequence artifact and a three-state test, round 3's reviewer asked for the
-GUI-harness screenshot the branch's inherited `src/gui` files trigger; all three are here)
+new-p12-248: FIXED (round 5). Round 1 reported NEEDS-CONTEXT, round 2 added the lock-free render
+guard and its test, round 3 added the explicit state sequence, round 4 added a GUI screenshot the
+branch diff no longer needs here, and round 5 fixes the data loss the round-2 guard introduced:
+the recording scan no longer takes the clip lock at all and reads an atomically published target.
 
 ## Verdict: REAL
 - `Song::processNextBuffer()` calls `buildAutomationRamps()` once per period (src/core/Song.cpp:582).
@@ -13,109 +14,125 @@ GUI-harness screenshot the branch's inherited `src/gui` files trigger; all three
 - In the same period, the per-tick read also took a blocking lock: `processAutomations` →
   `collectAutomatedValues` → `valueAt` (src/core/TrackContainer.cpp:589 → AutomationClip.cpp:864),
   `applyRelativeClips` → `valueAt`/`getMin`/`getMax`/`objects` (TrackContainer.cpp:479), and the
-  recording scan's `firstObject()` for every clip in range (src/core/Song.cpp:796 → AutomationClip.cpp:288).
+  recording scan's `firstObject()` for every clip in range (Song.cpp:796 → AutomationClip.cpp:288).
 - Control-thread edits hold that same mutex without the engine guard: `putValue` (AutomationClip.cpp:418),
   `removeNode` (:514), `setDragValue` (:772). `putValue` also emits `dataChanged()` while holding the lock.
   So a period that reaches a clip under edit waited for the edit to finish.
-- The RED run below shows the wait: each of the four reads failed to return while a real `putValue`
-  edit held the lock.
 
-## Fix (at the cause, every audio-thread taker of the clip lock)
-- `include/AutomationClip.h`: adds `AutomationClip::RenderLock`, an RAII guard that calls
-  `m_clipMutex.tryLock()` once and never waits. While it owns the lock, the clip's own accessors
-  (`objects()`, `firstObject()`, `valueAt()`, `writeBlockRamp()`) re-enter the recursive mutex as owner,
-  so they never wait either.
-- `src/core/Song.cpp` `buildAutomationRamps`: each clip is taken through `RenderLock`. A clip whose
-  lock is busy is left out of that block. No ramp is published, so `AutomatableModel::automationRamp()`
-  returns null for the period (AutomatableModel.cpp:1070) and the control keeps its per-tick value.
-- `src/core/Song.cpp` `processAutomations` recording scan: a busy clip is skipped for that tick.
-  `firstObject()` is no longer reached without the lock.
-- `src/core/TrackContainer.cpp` `collectAutomatedValues` and `applyRelativeClips`: a busy clip is
-  skipped for that tick, so the control keeps its previous value for one tick.
-- `include/Song.h` contract comment and docs/SAMPLE-ACCURATE-AUTOMATION.md updated to say "never waits".
+## Fix, part 1: the render never waits on the clip lock (round 2, kept)
+- `include/AutomationClip.h` adds `AutomationClip::RenderLock`, an RAII guard that calls
+  `m_clipMutex.tryLock()` once and never waits (include/AutomationClip.h:135-142).
+- `Song::buildAutomationRamps` takes each clip through `RenderLock` and leaves a busy clip out of the
+  block (src/core/Song.cpp:1635). No ramp is published, so `AutomatableModel::automationRamp()` returns
+  null for the period and the control keeps its per-tick value.
+- `TrackContainer::collectAutomatedValues` and `applyRelativeClips` do the same for their tick
+  (src/core/TrackContainer.cpp:471, :575).
+- Why `tryLock` rather than an immutable published copy: the clip's node map is a `QMap` (allocating,
+  implicitly shared). An immutable published copy would need a node capacity (which would refuse large
+  clips: definition-of-done item 4) and an off-thread reclamation scheme. That is a redesign. The guard
+  removes the wait with no allocation, no new command and no change to saved data. Without contention
+  behaviour is unchanged; under contention one block or tick reads the previous value.
 
-Why `tryLock` rather than an immutable published copy: the clip's node map is a `QMap` (allocating,
-implicitly shared). An immutable published copy would need a node capacity (which would refuse
-large clips: definition-of-done item 4) and an off-thread reclamation scheme. That is a redesign. The
-guard removes the wait with no allocation, no new command and no change to saved data.
-- Without contention, behaviour is unchanged: `tryLock` succeeds wherever the blocking lock would
-  have.
-- With contention, the only difference is that one block or tick reads the previous value instead
-  of waiting for the edit.
+## Fix, part 2: recording never loses a tick (round 5, this review)
+The round-2 guard was also applied to the recording scan in `Song::processAutomations`. A failed
+acquisition skipped the whole branch, including its only `queuePendingWrite()` call, so a recording
+clip silently lost that tick's value while an edit held the lock (src/core/Song.cpp:793-824 before
+this round; recording is enabled through include/AutomationClip.h:388-389).
 
-Realtime: there is no allocation and no logging. The thread never waits: `tryLock` never blocks, and
-`unlock` at most wakes a waiter. The repo already uses this pattern on the render path
-(include/Track.h:476 and include/PlayHandle.h:122, `tryLock`). Local TSan does not run on this box.
-Race reasoning: every read of the node map on these paths still happens under the clip mutex, now
-held by the guard. When the guard fails, the path reads nothing from that clip. So no read happens
-without the mutex that did not already happen before this change (`hasAutomation()` was already
-read unlocked, see Other findings).
+The scan now takes no clip lock at all:
+- `include/AutomationClip.h`: `m_liveTarget`, a `std::atomic<const AutomatableModel*>`, is published
+  under `m_clipMutex` by `publishLiveTarget()` (include/AutomationClip.h:478-486). It is republished by
+  every change to `m_objects`: `addObject` (AutomationClip.cpp:216), `removeObject` (:245),
+  `objectDestroyed` (:1562), `cleanObjects` (:1585), and `clearObjects` (header :406). Those changes
+  already take the engine change guard, and a target's destructor takes the guard before it tells the
+  clip, so a pointer read inside a render period stays alive for it.
+- `liveTarget()` reads that atomic with acquire (header :121-124); `hasLiveTarget()` is derived from
+  the same pointer (:126). The old `std::atomic<bool> m_hasLiveTarget` is gone.
+- `m_isRecording` is now `std::atomic<bool>` (header :509); `isRecording()`/`setRecording()` load/store
+  it (header :395-396). Both atomics are always lock-free on the supported targets.
+- `Song::processAutomations` uses `p->liveTarget()` and `p->isRecording()` with no guard and no
+  `RenderLock` (src/core/Song.cpp:790-800), so `queuePendingWrite()` runs for every in-range tick while
+  an edit holds the lock (Song.cpp:821-823). `RenderLock` stays on `buildAutomationRamps`,
+  `collectAutomatedValues` and `applyRelativeClips`, as accepted in the earlier review.
+- A clip with no live target still records nothing: `liveTarget()` is null and `writes` stays false;
+  the old `firstObject()` fallback model is no longer consulted on this path
+  (src/core/AutomationClip.cpp:286-296 remains the control-thread fallback for min/max).
+
+Realtime: the scan does two lock-free atomic loads and the existing lock-free `queuePendingWrite()`
+(no allocation, no logging, no wait). No new control command and no undo change. Local TSan does not
+run on this box; the race argument is the atomic publication above, with the engine change guard
+protecting pointer lifetime across a period.
 
 ## Regression test
-tests/src/core/AutomationRenderLockTest.cpp. Registered in tests/CMakeLists.txt,
-tests/fork-sources.txt and tests/all-sources.txt. Four cases:
-`theRampPublishDoesNotWaitForAnEditedClip`, `thePerTickReadDoesNotWaitForAnEditedClip`,
-`aRelativeClipReadDoesNotWaitForAnEditedClip`, `aWholePeriodDoesNotWaitForAnEditedClip`.
-- A helper thread runs a real `putValue()`. A `Qt::DirectConnection` slot on `dataChanged`, which is
-  emitted inside putValue's lock scope, parks that thread on a promise, so the clip lock is held the
-  way an editor holds it.
-- The read under test runs on its own thread.
-- Each case also has a control half: after the edit is released, the same read publishes the ramp
-  or value, so the "skipped" assertion cannot pass vacuously.
+tests/src/core/AutomationRenderLockTest.cpp (registered in tests/CMakeLists.txt,
+tests/fork-sources.txt and tests/all-sources.txt). Five cases; the two that matter here:
+- `theRampPublishDoesNotWaitForAnEditedClip` drives the per-block publish through an explicit
+  three-state sequence, one automation period each: **baseline publish** (no edit, ramp published),
+  **edit-held skip** (a real `putValue()` holds the clip lock; the publish returns and leaves no ramp),
+  **released publish** (the edit is gone, the ramp is published again).
+- `aRecordingClipKeepsItsTickWhileAnEditHoldsTheLock` (new this round): the clip is recording; a real
+  `putValue()` edit holds the clip lock; the render period must return, `pendingWriteCount()` must be
+  greater than zero right after it, and firing the `automationWriteDrainTimer` must plant a node at the
+  recorded tick with the value the control held. A no-edit control half repeats the period at a second
+  tick and asserts the same, so the edit-held assertions cannot pass vacuously.
+- The edit is REAL, not a seam: `AutomationClip::putValue()` emits `dataChanged()` inside its
+  `m_clipMutex` scope, and a `Qt::DirectConnection` slot parks that thread on a `std::promise`, so the
+  lock is held the way an editor holds it. The test waits on that promise before reading; no sleeps.
+  The only bound is the 10 s escape hatch for the unfixed build, whose read would never return.
 
-## State sequence
-`theRampPublishDoesNotWaitForAnEditedClip` drives the per-block publish through three explicit
-states, one automation period each (a model's published ramp is only valid for the period it was
-built in), with a hard assertion per state:
-
-1. **baseline publish** - no edit in progress; `buildAutomationRamps()` publishes the ramp
-   (`model.automationRamp() != nullptr`).
-2. **edit-held skip** - a real `putValue()` edit holds the clip's `m_clipMutex`; the publish
-   returns without waiting and leaves the period with no ramp (`automationRamp() == nullptr`).
-3. **released publish** - the edit is released; the same block publishes the ramp again
-   (`automationRamp() != nullptr`).
-
-State 2 is the bug: in the unfixed build the publish blocks inside the edit and the reader thread
-never returns (06-test-red.log: four reads each hit the 10 s escape hatch, 40.5 s total). State 1 and
-state 3 are the controls that show the assertion cannot pass vacuously.
-
-## GUI harness evidence
-This unit's own change is not under `src/gui`, but the branch diff contains inherited `src/gui` files,
-so the proof manifest also carries a screenshot from the control-socket GUI harness. The real `zene`
-binary was started headless by `tests/control-shell.py`; its `window.screenshot` verb rendered the
-arrange view at the working size, and the harness also rendered mix and edit and proved the three
-images differ. No GUI behaviour is changed by this fix; the screenshot is the harness's proof that
-the application still starts and renders.
-
-- PNG: `01-gui-shell.log` output `shell-arrange.png` in this run's log folder
-  (`/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-248.r4/logs/shell-arrange.png`)
-- sha256: `0f76075ee2dfe8ac8c0e0e1a7075634ea84eb778221baadf701f2d5a989bba97`
-- Driver: `QT_QPA_PLATFORM=offscreen python3 tests/control-shell.py build/zene <logs dir>` EXIT=0
-  ("PASS: shell control-surface driver (every check held)")
-
-## Commands and EXIT codes (logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-248.r4/logs)
-Round 4 reruns the whole regression from the configured build tree; the round-2 and round-3 log paths
-are gone and superseded by these.
-- GUI harness: `QT_QPA_PLATFORM=offscreen python3 tests/control-shell.py build/zene <logs dir>` → 01-gui-shell.log EXIT=0
-- GREEN (extended three-state test, fix in place): `cmake --build build --target zene AutomationRenderLockTest -j4` → 02-build-green.log EXIT=0; `ctest -R '^AutomationRenderLockTest$' --output-on-failure` (run from build/tests) → 03-test-green.log EXIT=0 (Passed 0.51 sec)
-- 4b patch (the fix is committed, so the patch is read from the fix commit, not from `git diff`): `git diff 4a6c78f81f^ 4a6c78f81f -- include/AutomationClip.h include/Song.h src/core/Song.cpp src/core/TrackContainer.cpp > logs/fix.patch` → EXIT=0 (99 lines); `git apply -R logs/fix.patch` → 04-revert.log REVERT_EXIT=0
-- 4b RED: `cmake --build build --target zene AutomationRenderLockTest -j4` → 05-build-red.log EXIT=0; `ctest -R '^AutomationRenderLockTest$' --output-on-failure` → 06-test-red.log **EXIT=8** (Totals: 2 passed, 4 failed; `theRampPublishDoesNotWaitForAnEditedClip` fails at state 2)
-- 4b GREEN: `git apply logs/fix.patch` → 07-restore.log RESTORE_EXIT=0; `cmake --build build --target zene AutomationRenderLockTest -j4` → 08-build-green-4b.log EXIT=0; `ctest -R '^AutomationRenderLockTest$' --output-on-failure` → 09-test-green-4b.log **EXIT=0** (100% passed)
-- Family: `ctest -R '^(AutomationModesTest|AutomationPreFirstValueTest|AutomationRenderLockTest|SampleAccurateAutomationTest|ControlRecordingRoutesTest|ControlSessionRecordLandTest)$' --output-on-failure` → 10-test-family.log EXIT=0 (6/6 passed)
-- Gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` → 11-feature-check.log EXIT=0, RESULT: PASS (all 8 rows PASS)
-- Full-tree rebuild: every target this fix needs was rebuilt by name (`zene` plus `AutomationRenderLockTest`, which pulls `include/AutomationClip.h` and `include/Song.h`). Other targets that include those headers were not rebuilt in this lane; the header change is purely additive (a nested class plus a comment), so their objects stay valid at link time.
+## Commands and EXIT codes (logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-248.r5/logs)
+- Build (header change): `cmake --build build --target zene AutomationRenderLockTest -j4`
+  → 03-build-green.log EXIT=0. Two intermediate compiles failed and were fixed in the change:
+  01-build-green.log EXIT=2 (`std::atomic<AutomatableModel*>` could not take the const pointer the
+  accessor returns) and 02-build-green.log EXIT=2 (`value<float>()` is not a template on `FloatModel`).
+- GREEN: `ctest -R '^AutomationRenderLockTest$' --output-on-failure` (from build/tests)
+  → 04-test-green.log EXIT=0 (1/1 passed, 0.52 s); the recording case alone
+  `./AutomationRenderLockTest aRecordingClipKeepsItsTickWhileAnEditHoldsTheLock`
+  → 05-test-recording-green.log EXIT=0 (1 passed).
+- 4b patch: `git diff -- include/AutomationClip.h src/core/AutomationClip.cpp src/core/Song.cpp > logs/fix.patch`
+  → EXIT=0 (113 lines); `git apply -R logs/fix.patch` → 06-revert.log REVERT_EXIT=0.
+- 4b RED: `cmake --build build --target zene AutomationRenderLockTest -j4` → 07-build-red.log EXIT=0;
+  `ctest -R '^AutomationRenderLockTest$' --output-on-failure` → 08-test-red.log **EXIT=8**:
+  `FAIL! : aRecordingClipKeepsItsTickWhileAnEditHoldsTheLock() 'clip->pendingWriteCount() > 0' returned
+  FALSE. (a recording clip lost its tick while an edit held the clip lock)`; Totals: 6 passed, 1 failed.
+- 4b GREEN: `git apply logs/fix.patch` → 09-restore.log RESTORE_EXIT=0; rebuild →
+  10-build-green-4b.log EXIT=0; `ctest -R '^AutomationRenderLockTest$'` → 11-test-green-4b.log **EXIT=0**.
+- Family: `ctest -R '^(AutomationModesTest|AutomationPreFirstValueTest|AutomationRenderLockTest|SampleAccurateAutomationTest|ControlRecordingRoutesTest|ControlSessionRecordLandTest)$' --output-on-failure`
+  → 12-test-family.log EXIT=0 (6/6 passed; AutomationModesTest covers the no-target recording cases).
+- Gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>`
+  → 13-feature-check.log EXIT=0, RESULT: PASS (all 8 rows PASS).
+- Registration: `tests/upstream-modifications.txt` now lists `src/core/AutomationClip.cpp` and updates
+  the `include/AutomationClip.h` and `src/core/Song.cpp` reasons; the list ends with a newline.
 
 ## Self-check
-- **Regression test FAILS with the product change reverted and PASSES with it:** `git apply -R logs/fix.patch` then rebuild and run → 06-test-red.log EXIT=8 (4 of 4 cases fail; the extended three-state case fails at state 2). `git apply logs/fix.patch` then rebuild and run → 09-test-green-4b.log EXIT=0.
-- **State-sequence artifact:** `theRampPublishDoesNotWaitForAnEditedClip` drives baseline publish → edit-held skip with no ramp → released publish, each with its own period counter and assertion (see State sequence above). 03-test-green.log and 09-test-green-4b.log are the green runs; 06-test-red.log is the red run.
-- **Screenshot artifact:** the control-socket GUI harness rendered the running `zene` shell (`01-gui-shell.log` EXIT=0); `shell-arrange.png` sha256 `0f76075ee2dfe8ac8c0e0e1a7075634ea84eb778221baadf701f2d5a989bba97`, in this run's log folder. The fix changes no GUI behaviour; the branch diff carries inherited `src/gui` files, hence the artifact.
-- **Deterministic:** no sleeps and no injected timing. The lock is held by a real edit parked on a `std::promise` from a direct `dataChanged` slot (a synchronisation hook), and the test waits on that promise before reading. The fixed read never waits, so GREEN does not depend on timing (0.51 s). The single `future::wait_for(10 s)` bound is only the escape hatch for the unfixed build, whose read would otherwise block until release. It mirrors the existing `PhaseDSidechainTest::theSidechainAmountReadTakesNoLock`, which uses `wait_for(2 s)`.
-- **Fix at the cause and complete; callers and siblings checked:** every audio-thread call into `m_clipMutex` on the automation-track path is now under `RenderLock`: buildAutomationRamps (`objects`, `writeBlockRamp`), collectAutomatedValues (`valueAt`, `objects`), applyRelativeClips (`valueAt`, `getMin`/`getMax`→`firstObject`, `objects`), and the processAutomations recording scan (`firstObject`). `aWholePeriodDoesNotWaitForAnEditedClip` proves a whole `processNextBuffer()` period returns. Other callers found by `rg`: AutomatableModel.cpp:350 and :1182 (`globalAutomationValueAt`) are control-thread paths. NotePlayHandle.cpp:752 (per-note detuning) is a separate inherited feature and is listed under Other findings.
-- **No collateral damage:** no saved data, file format, command or undo path is touched. No limit or capacity was added. Without contention, every path behaves as before (`tryLock` succeeds where `lock` would have). SampleAccurateAutomationTest, AutomationPreFirstValueTest, AutomationModesTest, ControlRecordingRoutesTest and ControlSessionRecordLandTest pass alongside this test (10-test-family.log EXIT=0, 6/6).
-- **ALREADY-FIXED / FALSE-POSITIVE code reference:** not applicable. The verdict is FIXED, and the bug was real (RED evidence above).
-- **Sibling commands in command files changed:** this job changed no command file (no `ControlCommands*.cpp` in the diff). The app.* and arrangement.* commands the check lists come from earlier history on this branch and do not touch automation clip locking.
+- **Regression test FAILS with the product change reverted and PASSES with it:** reverse of the
+  round-5 product hunks → 08-test-red.log EXIT=8 (the recording case loses its tick); restore →
+  11-test-green-4b.log EXIT=0. The red failure is the data-loss assertion, not a timeout: the round-2
+  `tryLock` guard is still present in the red build, so the period returns but records nothing.
+- **Deterministic:** no sleeps and no injected wall-clock values. The clip lock is held by a real
+  `putValue()` parked on a `std::promise` from a direct `dataChanged` slot, and the test waits on that
+  promise before reading. The recording tick is fixed by `setTicks(100)` / `setTicks(140)`; the drain is
+  fired by invoking the `automationWriteDrainTimer` timeout directly. The 10 s `future::wait_for` is
+  only the escape hatch for the fully unfixed build, whose read would otherwise block.
+- **Fix at the cause and complete; callers and siblings checked:** the recording scan no longer takes
+  any clip lock; `liveTarget()`/`isRecording()` are the only render-side reads, both atomics. Every
+  `m_objects` mutation republishes the pointer (`addObject`, `removeObject`, `objectDestroyed`,
+  `cleanObjects`, `clearObjects`). The remaining `RenderLock` users are the three accepted read paths.
+  `firstObject()` is now control-thread only on this path (its min/max and GUI users are unchanged).
+- **No collateral damage:** no saved data, file format, command or undo path is touched; no limit or
+  capacity is added. Without contention every path behaves as before. AutomationModesTest's
+  no-target/destroyed-target recording cases still pass, so a clip without a live target still records
+  nothing (12-test-family.log EXIT=0).
+- **ALREADY-FIXED / FALSE-POSITIVE code reference:** not applicable. The verdict is FIXED and the bug
+  was real (the recording data loss is demonstrated red above).
+- **Sibling commands in the command files you changed:** this job changed no command file (no
+  `ControlCommands*.cpp` in the diff); the listed app.*/arrangement.* commands come from earlier
+  branch history and do not touch automation clip locking.
 
 ## Other findings
-- `NotePlayHandle::processTimePos` (src/core/NotePlayHandle.cpp:752) reads the per-note detuning clip with the blocking `valueAt()` on the render path. Piano-roll detuning edits hold the same kind of clip lock. This is the same realtime exposure in a separate, inherited feature. It is not changed here because its regression would need a note-play fixture.
-- `AutomationClip::hasAutomation()` (include/AutomationClip.h:247) reads `m_timeMap.isEmpty()` without the lock, and the render paths call it before taking any lock. This is a pre-existing unsynchronised read and is not changed here.
-- `ControlAutomationScriptTest` / `ControlAutomationModesTest` failed in round 2 in this lane's build because no instrument plugin modules were available; that was an environment gap and the round-2 logs no longer exist, so this run does not re-verify it and the tests were not part of the family run.
+- `NotePlayHandle::processTimePos` (src/core/NotePlayHandle.cpp:752) reads the per-note detuning clip
+  with the blocking `valueAt()` on the render path. Piano-roll detuning edits hold the same kind of clip
+  lock. This is the same realtime exposure in a separate, inherited feature; it is not changed here
+  because its regression would need a note-play fixture.
+- `AutomationClip::hasAutomation()` (include/AutomationClip.h) reads `m_timeMap.isEmpty()` without the
+  lock, and the render paths call it before taking any lock. This is a pre-existing unsynchronised read.

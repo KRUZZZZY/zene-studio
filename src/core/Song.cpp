@@ -789,15 +789,16 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 	{
 		auto p = dynamic_cast<AutomationClip *>(clip);
 		TimePos relTime = timeStart - p->startPosition();
-		// new-p12-248: a clip a control thread is editing is left out of this tick, never waited for.
-		const AutomationClip::RenderLock clipLock(p);
-		if (relTime >= 0 && relTime < p->length() && clipLock.owns())
+		// new-p12-248: the recording decision reads the clip's atomically published live
+		// target and recording flag, so this scan never takes the clip lock and an edit on
+		// a control thread cannot make it skip (and lose) a recorded tick.
+		if (relTime >= 0 && relTime < p->length())
 		{
-			const AutomatableModel* recordedModel = p->firstObject();
+			const AutomatableModel* recordedModel = p->liveTarget();
 			// A clip with no live target has nothing to record from: firstObject() hands back a
-			// fallback model for it, which must not be written (new-p9-439). hasLiveTarget() is a
-			// lock-free read of the flag the clip publishes on every change to its targets.
-			bool writes = p->isRecording() && p->hasLiveTarget();
+			// fallback model for it, which must not be written (new-p9-439). liveTarget() is the
+			// pointer the clip publishes on every change to its targets.
+			bool writes = p->isRecording() && recordedModel != nullptr;
 			if( !writes && recordedModel
 				&& recordedModel->automationMode() != AutomatableModel::AutomationMode::Read )
 			{

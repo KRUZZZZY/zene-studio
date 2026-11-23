@@ -39,6 +39,8 @@
 
 #include <QtTest>
 
+#include <QTimer>
+
 #include <chrono>
 #include <future>
 #include <thread>
@@ -247,6 +249,62 @@ private slots:
 		}
 		song->stop();
 		QVERIFY2(returned, "a render period waited for the clip lock an edit held");
+	}
+
+	//! A recording clip keeps its tick while an edit holds the clip's lock: the
+	//! render must return without waiting AND still queue the recorded value, which
+	//! the drain timer then applies as a node at that tick.
+	void aRecordingClipKeepsItsTickWhileAnEditHoldsTheLock()
+	{
+		Song* song = Engine::getSong();
+		FloatModel model{kInit, 0.0f, 1.0f, 0.001f};
+		AutomationTrack track(song);
+		AutomationClip* clip = curveClip(track, model);
+		clip->setRecording(true);
+
+		auto* timer = song->findChild<QTimer*>(QStringLiteral("automationWriteDrainTimer"));
+		QVERIFY2(timer != nullptr, "the song has no automation write drain timer");
+
+		// State 1: a real putValue() edit holds the clip's lock while the period renders.
+		const int heldTick = 100;
+		clip->discardPendingWrites();
+		song->playSong();
+		song->getTimeline().setTicks(heldTick);
+		bool returned = false;
+		{
+			EditHoldingTheClipLock edit(clip);
+			returned = returnsWhileTheEditHolds(edit, [song] { song->processNextBuffer(); });
+		}
+		const float heldValue = model.inverseScaledValue(model.value());
+		QVERIFY2(returned, "the recording period waited for the clip lock an edit held");
+		QVERIFY2(clip->pendingWriteCount() > 0,
+			"a recording clip lost its tick while an edit held the clip lock");
+
+		// The control thread's drain applies the queued tick as a node of the same value.
+		QVERIFY(QMetaObject::invokeMethod(timer, "timeout", Qt::DirectConnection));
+		auto heldNode = clip->getTimeMap().constFind(heldTick);
+		QVERIFY2(heldNode != clip->getTimeMap().end(),
+			"the drained write planted no node at the tick the edit-held period recorded");
+		QCOMPARE(heldNode.value().getInValue(), heldValue);
+
+		// State 2 (control): with no edit, the same period queues and plants its tick,
+		// so the state-1 assertions cannot pass vacuously.
+		const int controlTick = 140;
+		model.setValue(0.7f);
+		clip->discardPendingWrites();
+		song->playSong();
+		song->getTimeline().setTicks(controlTick);
+		song->processNextBuffer();
+		const float controlValue = model.inverseScaledValue(model.value());
+		QVERIFY2(clip->pendingWriteCount() > 0,
+			"no write without an edit: the edit-held assertion proves nothing");
+		QVERIFY(QMetaObject::invokeMethod(timer, "timeout", Qt::DirectConnection));
+		auto controlNode = clip->getTimeMap().constFind(controlTick);
+		QVERIFY2(controlNode != clip->getTimeMap().end(),
+			"the control period planted no node at its tick");
+		QCOMPARE(controlNode.value().getInValue(), controlValue);
+
+		song->stop();
 	}
 };
 
