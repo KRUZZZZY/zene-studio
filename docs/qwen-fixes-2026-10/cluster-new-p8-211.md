@@ -144,7 +144,16 @@ cluster-specific reason in `tests/upstream-modifications.txt`.
 
 ## Completion check
 
-See the `Self-check` section below for the `submit_check.py` result and each answer.
+```
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p8-211 > .../logs/submit-2.log 2>&1
+EXIT=0
+RESULT: PASS - submit
+(PASS: commits on the branch, working tree clean, report present, tests changed,
+ registration, gates)
+```
+
+The pre-commit run (`.../logs/submit-1.log`, EXIT=1) had the expected single FAIL for an
+uncommitted working tree; it cleared after the commit and every `?` item is answered below.
 
 ## Self-check
 
