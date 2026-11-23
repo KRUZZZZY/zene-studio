@@ -73,6 +73,7 @@ EXIT=0).
 ```
 cd build/tests && ctest -R '^(RecordingRecoveryMenuTest|MultiTrackRecorderTest|ControlRecordingRoutesTest)$' \
     --output-on-failure                                                          EXIT=0   (test-6-family.log, 3/3 passed)
+cd build/tests && ctest -R '^ControlRecordingRecovery$' --output-on-failure      EXIT=0   (test-7-control-recovery.log, 1/1 passed)
 python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>           EXIT=0   (gate-1.log, RESULT: PASS)
 ```
 
