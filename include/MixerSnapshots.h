@@ -107,6 +107,16 @@ public:
 	//! Write @a parts of @a snapshot onto the live mixer.
 	static Applied apply(const MixerSnapshot& snapshot, const Parts& parts);
 
+#ifdef LMMS_TESTING
+	/*! Test seam: \a probe runs on the recalling thread after a send's level, pan and switch
+	 *  have been written and immediately before its fader tap is - the fader tap is the one
+	 *  field of a send the render thread reads that has no model of its own, so a regression
+	 *  asks at that exact point whether the change boundary the rest of the send was written
+	 *  under is still held (AudioEngine::isChangeInModelHeld()). The seam exists in test
+	 *  builds only and is null in the product, where a recall pays one pointer test per send. */
+	static void setTapWriteProbeForTest(void (*probe)(void* context), void* context);
+#endif
+
 	QString elementName() const override { return QStringLiteral("mixer-snapshots"); }
 	bool shouldPersist() const override { return !m_snapshots.empty(); }
 	void save(QDomDocument& doc, QDomElement& parent) const override;
