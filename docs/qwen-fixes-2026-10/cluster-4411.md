@@ -114,9 +114,15 @@ GREEN output (`logs/test-3-green.log`): `1/1 Test #237: RecordingRealtimeTest ..
    main-thread construction site), `include/SampleRecordAccumulator.h:178-187` (where the
    allocations and the `std::thread` live), plus the registration note at
    `tests/upstream-modifications.txt:2158` naming cluster 4411.
-6. **Sibling commands.** This run changes no command file and no command; the commands snapshot
-   is untouched (the diff is the report only), so `clip_record.*`, `take.*` and the other record
-   commands behave exactly as before.
+6. **Sibling commands.** This run's diff against the merge base is the report only (`git diff
+   --name-only` on the branch tip minus the previous commits = `docs/qwen-fixes-2026-10/cluster-4411.md`);
+   no product file, command file, registry table or commands snapshot is touched, so `clip_record.*`,
+   `take.*` and every record command behave exactly as before. The siblings the check lists (`app.about`,
+   `app.ask`, `app.help`, `app.online_help`, `app.task_cancel`, `app.tasks`, `app.tour`, `app.tours`,
+   `app.update_check_get`, `app.update_check_run`, `app.update_check_set`, `app.version`, `app.whats_new`,
+   `arrangement.fit_tracks`, `arrangement.get_state`) come from earlier commits already on
+   `bugs/qwen-4411`, not from this run: none of them is affected by, or needs a change for, cluster 4411.
+   No control command was added (the ControlCommandsSnapshot canary is unchanged).
 
 ## Other findings
 
