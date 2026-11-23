@@ -102,6 +102,9 @@ does not occur: the take-end pass is not silenced and the source resumes on the 
   `InstrumentTrack.cpp:941-951`; `SampleTrack.cpp:154-160`).
 - **Undo/commands/realtime:** nothing changed; no command ids added, no control-command snapshot
   change.
+- **Sibling commands (from the check's list):** this cluster changed no command file; the
+  `app.*/arrangement.*` siblings listed by the completion check come from earlier commits on this
+  branch (the diff since `FIX-BASE`), not from this work. Nothing in this verdict touches them.
 
 ## Other findings
 
