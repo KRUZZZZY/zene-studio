@@ -79,9 +79,14 @@ ControlResult bounceLand(const QJsonObject& args)
 	const bool wasMuted = source->isMuted();
 	const QString sourceId = trackIdOf(source);
 	// A whole-track bounce mutes the whole source (its whole output is replaced). A bounce of a RANGE mutes only the
-	// range: the clips inside it are cut at its edges and muted, so the source keeps playing outside the selection
-	// (cluster 3971) - that half of the step is the Track checkpoint muteRangeSources records.
+	// range: clips are cut at its edges, automation lanes keep running outside it and a frozen take is rewritten
+	// with only the overlap silent (cluster 3971) - that half of the step is what muteRangeSources records.
 	const bool region = !range.coversWholeTrack();
+	if (region)
+	{
+		const QString muteError = muteRangeSources({source}, range);
+		if (!muteError.isEmpty()) { return ControlResult::failure(ControlErrorKind::Refused, muteError); }
+	}
 	// The landed track by its stable id, found again when the undo runs: a later
 	// track.remove and its undo re-create the track as a NEW object under the same id,
 	// so a pointer kept here would name a deleted track.
@@ -100,7 +105,6 @@ ControlResult bounceLand(const QJsonObject& args)
 				if (Track* current = resolveTrack(sourceId, &ignored)) { current->setMuted(true); }
 			}
 		});
-	if (region) { muteRangeSources({source}, range); }
 	*landed = trackIdOf(landTrack(song, name, path, at));
 	if (!region) { source->setMuted(true); }
 

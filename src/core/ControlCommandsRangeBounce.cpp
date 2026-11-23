@@ -25,9 +25,10 @@
  *  over the range's ticks, are rendered together - their summed contribution to the mix, in a child
  *  render of a copy of the session (BounceInPlace::renderTracks) - and the file lands on a new audio
  *  track at the range's start; with 'mute_sources' (the default) the bounced part of each source
- *  track is muted (the clips inside the range, cut at its edges) so the song sounds as before while
- *  audio outside the selection keeps playing. One undo step removes the new track, uncuts the clips
- *  and puts the mutes back. */
+ *  track is muted: clips inside the range (cut at its edges), the same part of a frozen take, and
+ *  automation only inside its clips - so the song sounds as before while audio and automation outside
+ *  the selection keep running. One undo step removes the new track, uncuts the clips, restores the
+ *  takes and puts the mutes back. */
 
 #include <memory>
 #include <vector>
@@ -87,13 +88,18 @@ ControlResult rangeBounce(const QJsonObject& args)
 	const QString out = resolveOutPath(args, tracks.front(), QStringLiteral("selection"), window);
 	const BounceInPlace::Result rendered = BounceInPlace::renderTracks(tracks, out, window);
 	if (!rendered.ok) { return ControlResult::failure(ControlErrorKind::Refused, rendered.error); }
+	// The mutes of the bounced region are a Track checkpoint (or a rewritten frozen take) recorded by
+	// muteRangeSources; the registry merges it with the landing action below into ONE undo step. A take that
+	// cannot be rewritten refuses before any model change; the render file that was just written stays.
+	if (args.value(QStringLiteral("mute_sources")).toBool(true))
+	{
+		const QString muteError = muteRangeSources(tracks, window);
+		if (!muteError.isEmpty()) { return ControlResult::failure(ControlErrorKind::Refused, muteError); }
+	}
 	auto l = std::make_shared<Landing>();
 	l->path = rendered.path;
 	l->at = window.start;
-	// The landing action is the structural half; the mutes of the bounced region are a track checkpoint pushed by
-	// muteRangeSources, and the registry merges both into ONE undo step.
 	addUndoStep([l]() { unland(l.get()); }, [l]() { land(l.get()); });
-	if (args.value(QStringLiteral("mute_sources")).toBool(true)) { muteRangeSources(tracks, window); }
 	land(l.get());
 	QJsonObject result = renderJson(rendered);
 	result.insert(QStringLiteral("landed_track"), trackIdOf(trackWithId(l->landed)));

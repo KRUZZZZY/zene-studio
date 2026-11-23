@@ -28,10 +28,14 @@
 #include "ControlBounceSupport.h"
 
 #include <algorithm>
+#include <vector>
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QVector>
+
+#include <sndfile.h>
 
 #include "ArrangementEdits.h"
 #include "Clip.h"
@@ -144,35 +148,188 @@ bool audibleClipsInside(const Track* track, const BounceInPlace::Range& range)
 	return true;
 }
 
+//! Copies \a source to \a target, writing digital silence for frames [\a gapStart, \a gapEnd) and the original
+//! samples everywhere else. The format (rate, channels, sample format) is the source's own.
+bool writeTakeWithSilentWindow(const QString& source, const QString& target, qint64 gapStart, qint64 gapEnd,
+		QString* error)
+{
+	SF_INFO info{};
+	SNDFILE* in = sf_open(source.toLocal8Bit().constData(), SFM_READ, &info);
+	if (in == nullptr)
+	{
+		*error = QStringLiteral("could not read the frozen take '%1'").arg(source);
+		return false;
+	}
+	SNDFILE* out = sf_open(target.toLocal8Bit().constData(), SFM_WRITE, &info);
+	if (out == nullptr)
+	{
+		sf_close(in);
+		*error = QStringLiteral("could not write the range-muted frozen take '%1'").arg(target);
+		return false;
+	}
+	std::vector<float> block(static_cast<size_t>(std::max(1, info.channels)) * 4096);
+	qint64 position = 0;
+	bool copied = true;
+	for (;;)
+	{
+		const sf_count_t got = sf_readf_float(in, block.data(), 4096);
+		if (got <= 0) { break; }
+		for (sf_count_t frame = 0; frame < got; ++frame)
+		{
+			const qint64 at = position + frame;
+			if (at < gapStart || at >= gapEnd) { continue; }
+			for (int channel = 0; channel < info.channels; ++channel)
+			{
+				block[static_cast<size_t>(frame) * static_cast<size_t>(info.channels) + static_cast<size_t>(channel)] = 0.0f;
+			}
+		}
+		if (sf_writef_float(out, block.data(), got) != got) { copied = false; break; }
+		position += got;
+	}
+	sf_close(in);
+	const bool closed = sf_close(out) == 0;
+	if (!copied || !closed)
+	{
+		*error = QStringLiteral("could not write the range-muted frozen take '%1'").arg(target);
+		return false;
+	}
+	return true;
+}
+
+/*! Writes the frozen take of \a track with its overlap with \a range silent, returning the file in
+ *  \a target (empty when the take does not overlap the range at all). Only a file is produced here; the track
+ *  is not touched, so a failure refuses the command before the journal or the mix changes. */
+bool prepareFrozenGap(Track* track, const BounceInPlace::Range& range, QString* target, QString* error)
+{
+	target->clear();
+	if (!track->isFrozen()) { return true; }
+	const Track::FrozenTake take = track->frozenTake();
+	const tick_t from = std::max(range.start, take.startTicks);
+	// A take with no end boundary plays to the end of its file; any range past its start overlaps it.
+	const tick_t to = take.endTicks > take.startTicks ? std::min(range.end, take.endTicks) : range.end;
+	if (to <= from) { return true; }
+
+	SF_INFO info{};
+	SNDFILE* probe = sf_open(take.path.toLocal8Bit().constData(), SFM_READ, &info);
+	if (probe == nullptr)
+	{
+		*error = QStringLiteral("could not read the frozen take '%1'").arg(take.path);
+		return false;
+	}
+	sf_close(probe);
+	const qint64 totalFrames = info.frames;
+	if (info.samplerate <= 0 || totalFrames <= 0) { return true; }
+
+	const Song* song = Engine::getSong();
+	const TempoMap map = song->tempoMap().map();
+	const int tempo = static_cast<int>(song->getTempo());
+	const float oneRate = Engine::framesPerTick(static_cast<sample_rate_t>(info.samplerate));
+	const qint64 gapStart = std::max<qint64>(0, Track::frozenTakeSourceFrame(
+		map, tempo, take.startTicks, from, info.samplerate, oneRate));
+	const qint64 gapEnd = std::min<qint64>(totalFrames, Track::frozenTakeSourceFrame(
+		map, tempo, take.startTicks, to, info.samplerate, oneRate));
+	if (gapEnd <= gapStart) { return true; }
+
+	// Beside the take it replaces, named by stable track id and range so a repeated bounce of the same range
+	// reuses the one file instead of accumulating copies.
+	const QString finalPath = QFileInfo(take.path).dir().filePath(
+		QStringLiteral("%1-range-mute-%2-%3.wav").arg(trackIdOf(track)).arg(range.start).arg(range.end));
+	const QString staging = finalPath + QStringLiteral(".part");
+	if (!writeTakeWithSilentWindow(take.path, staging, gapStart, gapEnd, error)) { return false; }
+	if (BounceInPlace::wavFrameCount(staging) <= 0)
+	{
+		QFile::remove(staging);
+		*error = QStringLiteral("the range-muted frozen take '%1' is not readable audio").arg(staging);
+		return false;
+	}
+	QFile::remove(finalPath);
+	if (!QFile::rename(staging, finalPath))
+	{
+		QFile::remove(staging);
+		*error = QStringLiteral("could not install the range-muted frozen take '%1'").arg(finalPath);
+		return false;
+	}
+	*target = finalPath;
+	return true;
+}
+
+//! Installs \a takePath as the track's take with the same window, muted-clip record and whole/region flag.
+bool installFrozenGap(Track* track, const QString& takePath, QString* error)
+{
+	const Track::FrozenTake take = track->frozenTake();
+	QString reason;
+	if (!track->freezeTo(takePath, take.startTicks, take.endTicks, take.mutedClips, &reason, take.region))
+	{
+		*error = reason;
+		return false;
+	}
+	return true;
+}
+
+//! Cuts the clips of \a track at the range's edges and mutes the pieces inside it.
+void muteClipsInRange(Track* track, const BounceInPlace::Range& range)
+{
+	arrangement::isolateRegion(track, range.start, range.end, nullptr);
+	for (Clip* clip : track->getClips())
+	{
+		if (clip == nullptr || clip->isMuted()) { continue; }
+		const tick_t start = clip->startPosition().getTicks();
+		if (start >= range.start && start < range.end) { clip->setMuted(true); }
+	}
+}
+
 } // namespace
 
-void muteRangeSources(const std::vector<Track*>& tracks, const BounceInPlace::Range& range)
+QString muteRangeSources(const std::vector<Track*>& tracks, const BounceInPlace::Range& range)
 {
+	// The frozen takes are rewritten first, while the track is untouched: a take that cannot be copied refuses
+	// the command with no journal step and no model change.
+	std::vector<std::pair<Track*, QString>> gaps;
+	for (Track* track : tracks)
+	{
+		if (track == nullptr || !track->isFrozen()) { continue; }
+		QString gapPath;
+		QString gapError;
+		if (!prepareFrozenGap(track, range, &gapPath, &gapError)) { return gapError; }
+		if (!gapPath.isEmpty()) { gaps.emplace_back(track, gapPath); }
+	}
+
 	QVector<JournallingObject*> checkpoints;
 	for (Track* track : tracks)
 	{
 		if (track != nullptr) { checkpoints.append(track); }
 	}
-	// One step before any cut or mute: undo puts the arrangement and the mutes back exactly as they were.
+	// One step before any cut, take or mute: undo puts the arrangement and the takes back exactly as they were.
 	addUndoStep(checkpoints);
+
+	for (const auto& gap : gaps)
+	{
+		QString installError;
+		if (!installFrozenGap(gap.first, gap.second, &installError)) { return installError; }
+	}
+
 	for (Track* track : tracks)
 	{
 		if (track == nullptr) { continue; }
-		// A track with no audio of its own is muted whole as before: the bounce carries no automation to replace.
-		if (static_cast<int>(track->type()) >= static_cast<int>(Track::Type::Automation)
-			|| audibleClipsInside(track, range))
+		const Track::Type type = track->type();
+		// A folder or neutral row carries no audio of its own; its whole flag is the only mute it has.
+		if (type == Track::Type::Folder || type == Track::Type::Neutral)
 		{
 			track->setMuted(true);
 			continue;
 		}
-		arrangement::isolateRegion(track, range.start, range.end, nullptr);
-		for (Clip* clip : track->getClips())
+		const bool automation = type == Track::Type::Automation || type == Track::Type::HiddenAutomation;
+		const bool audio = static_cast<int>(type) < static_cast<int>(Track::Type::Automation);
+		// A frozen take's playback, and every automation lane, are region-replaced at clip level: muting the
+		// whole lane would also stop what happens outside the range (cluster 3971 review).
+		if (track->isFrozen() || automation || (audio && !audibleClipsInside(track, range)))
 		{
-			if (clip == nullptr || clip->isMuted()) { continue; }
-			const tick_t start = clip->startPosition().getTicks();
-			if (start >= range.start && start < range.end) { clip->setMuted(true); }
+			muteClipsInRange(track, range);
+			continue;
 		}
+		track->setMuted(true);  // audio whose whole output lies inside the range
 	}
+	return QString();
 }
 
 //! The render facts every verb of this file reports.

@@ -47,9 +47,13 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <vector>
+
+#include <sndfile.h>
 
 #include "ArrangementEdits.h"
 #include "AudioDevice.h"
@@ -123,17 +127,66 @@ QByteArray readFile(const QString& path)
 
 int trackCount() { return static_cast<int>(Engine::getSong()->tracks().size()); }
 
-//! Every clip of \a track as "start[muted],..." in arrangement order: one value that shows a region mute AND
+//! Every clip of \a track as "start[muted],..." in tick order: one value that shows a region mute AND
 //! the cuts that isolate it (cluster 3971). Read fresh on every call: an undo reloads the track's clips.
 QString clipState(Track* track)
 {
+	QVector<QPair<tick_t, bool>> clips;
+	for (const Clip* clip : track->getClips()) { clips.append({clip->startPosition().getTicks(), clip->isMuted()}); }
+	std::sort(clips.begin(), clips.end(), [](const auto& left, const auto& right) { return left.first < right.first; });
 	QString state;
-	for (const Clip* clip : track->getClips())
+	for (const auto& clip : clips)
 	{
-		state += QStringLiteral("%1%2,").arg(clip->startPosition().getTicks())
-			.arg(clip->isMuted() ? QLatin1Char('M') : QLatin1Char('a'));
+		state += QStringLiteral("%1%2,").arg(clip.first).arg(clip.second ? QLatin1Char('M') : QLatin1Char('a'));
 	}
 	return state;
+}
+
+constexpr int kTakeRate = 44100;
+
+//! The frame in a take that starts at tick \a takeStart where timeline tick \a tick falls: the same mapping
+//! Track::playFrozenTake() and the range-mute rewrite use (BounceInPlace::framesBetweenTicks).
+qint64 takeFrameAt(tick_t takeStart, tick_t tick)
+{
+	const Song* song = Engine::getSong();
+	return static_cast<qint64>(std::llround(BounceInPlace::framesBetweenTicks(takeStart, tick,
+		Engine::framesPerTick(static_cast<sample_rate_t>(kTakeRate)), song->tempoMap().map(),
+		static_cast<int>(song->getTempo()), kTakeRate)));
+}
+
+//! The absolute peak of a WAV between two frames; -1 when it cannot be read. Used to prove exactly which
+//! samples a rewritten frozen take has silenced.
+float peakInFrames(const QString& path, qint64 from, qint64 to)
+{
+	SF_INFO info{};
+	SNDFILE* wav = sf_open(path.toLocal8Bit().constData(), SFM_READ, &info);
+	if (wav == nullptr) { return -1.0f; }
+	std::vector<float> data(static_cast<size_t>(std::max<qint64>(1, info.frames)) * static_cast<size_t>(std::max(1, info.channels)));
+	const sf_count_t got = sf_readf_float(wav, data.data(), info.frames > 0 ? info.frames : 0);
+	sf_close(wav);
+	float peak = 0.0f;
+	const qint64 first = std::max<qint64>(0, from);
+	const qint64 last = std::min<qint64>(to, got);
+	for (qint64 frame = first; frame < last; ++frame)
+	{
+		for (int channel = 0; channel < info.channels; ++channel)
+		{
+			peak = std::max(peak, std::fabs(data[static_cast<size_t>(frame) * static_cast<size_t>(info.channels)
+				+ static_cast<size_t>(channel)]));
+		}
+	}
+	return peak;
+}
+
+//! A four-second, constant, non-silent take: every frame is audio, so a silence written into it is measurable.
+bool writeConstantTake(const QString& path)
+{
+	WaveSpec spec;
+	spec.sampleRate = kTakeRate;
+	spec.frames = 4 * kTakeRate;
+	spec.burstStartFrame = 0;
+	spec.burstFrames = spec.frames;
+	return writeWave(path, spec);
 }
 
 //! Polls the render queue through its own command until the job leaves the running states (the seam every
@@ -437,6 +490,111 @@ private slots:
 			QStringLiteral("done"));
 		QVERIFY(!source->isMuted());
 		QCOMPARE(clipState(source), QStringLiteral("0a,48M,144a,"));
+	}
+
+	//! Cluster 3971 review: a selected automation lane is region-replaced, not muted whole, so its
+	//! automation outside the range keeps running while the clip inside is muted.
+	void rangeBounceKeepsAutomationOutsideTheRangeRunning()
+	{
+		Track* audio = trackWithClip(QStringLiteral("Audio"));
+		Track* lane = Track::create(Track::Type::Automation, Engine::getSong());
+		lane->setName(QStringLiteral("Lane"));
+		lane->createClip(TimePos(96));   // 96..288: crosses the range's start at 192
+		lane->createClip(TimePos(384));  // after the range
+		const int before = trackCount();
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 192}, {QStringLiteral("end"), 384},
+			{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(audio), control::trackIdOf(lane)}}}).ok);
+		const ControlResult bounced = run(QStringLiteral("range.bounce"), {{QStringLiteral("out"), out(QStringLiteral("lane-range.wav"))}});
+		QVERIFY2(bounced.ok, qPrintable(bounced.errorMessage));
+		QCOMPARE(trackCount(), before + 1);
+		QVERIFY(!lane->isMuted());
+		QCOMPARE(clipState(lane), QStringLiteral("96a,192M,384a,"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(trackCount(), before);
+		QVERIFY(!lane->isMuted());
+		QCOMPARE(clipState(lane), QStringLiteral("96a,384a,"));
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCOMPARE(clipState(lane), QStringLiteral("96a,192M,384a,"));
+	}
+
+	//! Cluster 3971 review: a frozen source's take is rewritten with only its overlap with the range silent, so
+	//! it cannot play over the bounce inside the range, and it is not muted for its whole take window either.
+	void rangeBounceSilencesOnlyItsTicksInAWholeFrozenTake()
+	{
+		Track* source = trackWithClip(QStringLiteral("Frozen"));
+		const QString take = out(QStringLiteral("whole-take.wav"));
+		QVERIFY(writeConstantTake(take));
+		QString error;
+		QVERIFY2(source->freezeTo(take, 0, 768, {}, &error, false), qPrintable(error));
+		const QString original = source->frozenTake().path;
+		const int before = trackCount();
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 0}, {QStringLiteral("end"), 192},
+			{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(source)}}}).ok);
+		const ControlResult bounced = run(QStringLiteral("range.bounce"), {{QStringLiteral("out"), out(QStringLiteral("frozen-whole.wav"))}});
+		QVERIFY2(bounced.ok, qPrintable(bounced.errorMessage));
+		QCOMPARE(trackCount(), before + 1);
+		QVERIFY(!source->isMuted());
+		QVERIFY(source->isFrozen());
+		QVERIFY(source->frozenTake().path != original);
+		QCOMPARE(source->frozenTake().startTicks, tick_t{0});
+		QCOMPARE(source->frozenTake().endTicks, tick_t{768});
+		QVERIFY(!source->frozenTake().region);
+		const QString gap = source->frozenTake().path;
+		QCOMPARE(peakInFrames(gap, takeFrameAt(0, 0), takeFrameAt(0, 192)), 0.0f);
+		QVERIFY(peakInFrames(gap, takeFrameAt(0, 192), takeFrameAt(0, 384)) > 0.1f);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(trackCount(), before);
+		QCOMPARE(source->frozenTake().path, original);
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCOMPARE(peakInFrames(source->frozenTake().path, takeFrameAt(0, 0), takeFrameAt(0, 192)), 0.0f);
+	}
+
+	//! A region take covers only its window: the range's overlap with that window is silenced, the rest of the
+	//! take and its window are untouched, and the clips outside the take keep their own region muting.
+	void rangeBounceSilencesOnlyItsOverlapInARegionFrozenTake()
+	{
+		Track* source = trackWithClip(QStringLiteral("Region frozen"));
+		const QString take = out(QStringLiteral("region-take.wav"));
+		QVERIFY(writeConstantTake(take));
+		QString error;
+		QVERIFY2(source->freezeTo(take, 0, 192, {}, &error, true), qPrintable(error));
+		const QString original = source->frozenTake().path;
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 96}, {QStringLiteral("end"), 288},
+			{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(source)}}}).ok);
+		const ControlResult bounced = run(QStringLiteral("range.bounce"), {{QStringLiteral("out"), out(QStringLiteral("frozen-region.wav"))}});
+		QVERIFY2(bounced.ok, qPrintable(bounced.errorMessage));
+		QVERIFY(!source->isMuted());
+		QVERIFY(source->frozenTake().path != original);
+		QVERIFY(source->frozenTake().region);
+		QCOMPARE(source->frozenTake().startTicks, tick_t{0});
+		QCOMPARE(source->frozenTake().endTicks, tick_t{192});
+		const QString gap = source->frozenTake().path;
+		QCOMPARE(peakInFrames(gap, takeFrameAt(0, 96), takeFrameAt(0, 192)), 0.0f);
+		QVERIFY(peakInFrames(gap, takeFrameAt(0, 0), takeFrameAt(0, 96)) > 0.1f);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(source->frozenTake().path, original);
+	}
+
+	//! The queued range bounce runs the same frozen-take rewrite on the UI thread when the job completes.
+	void queuedRangeBounceSilencesOnlyTheSelectedPartOfAFrozenTake()
+	{
+		Track* source = trackWithClip(QStringLiteral("Queued frozen"));
+		const QString take = out(QStringLiteral("queued-take.wav"));
+		QVERIFY(writeConstantTake(take));
+		QString error;
+		QVERIFY2(source->freezeTo(take, 0, 768, {}, &error, false), qPrintable(error));
+		const QString original = source->frozenTake().path;
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 192}, {QStringLiteral("end"), 384},
+			{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(source)}}}).ok);
+		const ControlResult accepted = run(QStringLiteral("render.queue_bounce"), {{QStringLiteral("operation"), QStringLiteral("range_bounce")},
+			{QStringLiteral("out"), out(QStringLiteral("frozen-queued.wav"))}});
+		QVERIFY2(accepted.ok, qPrintable(accepted.errorMessage));
+		QCOMPARE(waitForJob(accepted.result.value(QStringLiteral("job")).toInt()).value(QStringLiteral("state")).toString(),
+			QStringLiteral("done"));
+		QVERIFY(!source->isMuted());
+		QVERIFY(source->frozenTake().path != original);
+		QCOMPARE(peakInFrames(source->frozenTake().path, takeFrameAt(0, 192), takeFrameAt(0, 384)), 0.0f);
+		QVERIFY(peakInFrames(source->frozenTake().path, takeFrameAt(0, 0), takeFrameAt(0, 192)) > 0.1f);
 	}
 
 	/*! The tick span from INT32_MIN to INT32_MAX is 2^32 - 1, which a tick_t cannot hold: the subtraction

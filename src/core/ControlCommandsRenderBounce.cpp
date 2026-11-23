@@ -215,16 +215,18 @@ QJsonObject applyBounceLand(const std::shared_ptr<BounceContext>& context,
 	const QString name = context->sourceName + QObject::tr(" (bounce)");
 	const tick_t at = context->range.start;
 	const bool wasMuted = context->targets.front().wasMuted;
-	// A whole-track bounce mutes the whole source; a bounce of a RANGE mutes only the range (cluster 3971).
+	// A whole-track bounce mutes the whole source; a bounce of a RANGE replaces only the range (cluster 3971).
 	const bool region = !context->wholeTrack;
 	auto landed = std::make_shared<int>(-1);
-	Track* made = control::landAudioTrack(name, path, at, -1);
-	if (made == nullptr)
+	if (region)
 	{
-		*error = QStringLiteral("could not create the landed audio track");
-		return {};
+		const QString muteError = muteRangeSources({source}, context->range);
+		if (!muteError.isEmpty())
+		{
+			*error = muteError;
+			return {};
+		}
 	}
-	*landed = made->id();
 	addUndoStep(
 		[landed, sourceId, wasMuted, region] {
 			if (Track* live = control::trackWithId(*landed)) { control::removeTrack(live); }
@@ -243,8 +245,14 @@ QJsonObject applyBounceLand(const std::shared_ptr<BounceContext>& context,
 				if (Track* current = control::trackWithId(sourceId.mid(4).toInt())) { current->setMuted(true); }
 			}
 		});
-	if (region) { muteRangeSources({source}, context->range); }
-	else { source->setMuted(true); }
+	Track* made = control::landAudioTrack(name, path, at, -1);
+	if (made == nullptr)
+	{
+		*error = QStringLiteral("could not create the landed audio track");
+		return {};
+	}
+	*landed = made->id();
+	if (!region) { source->setMuted(true); }
 	return {{QStringLiteral("track"), context->sourceId}, {QStringLiteral("landed_track"), control::trackIdOf(made)},
 		{QStringLiteral("undo"), QStringLiteral("control.undo")}};
 }
@@ -313,13 +321,18 @@ void removeRangeLanding(RangeLanding* landing)
 QJsonObject applyRangeBounce(const std::shared_ptr<BounceContext>& context, const QString& path, QString* error)
 {
 	const auto landing = makeRangeLanding(*context, path);
-	addUndoStep([landing] { removeRangeLanding(landing.get()); }, [landing] { createRangeLanding(landing.get()); });
 	if (landing->mute)
 	{
 		std::vector<Track*> sources;
 		for (const int id : landing->sourceIds) { if (Track* live = control::trackWithId(id)) { sources.push_back(live); } }
-		muteRangeSources(sources, context->range);
+		const QString muteError = muteRangeSources(sources, context->range);
+		if (!muteError.isEmpty())
+		{
+			*error = muteError;
+			return {};
+		}
 	}
+	addUndoStep([landing] { removeRangeLanding(landing.get()); }, [landing] { createRangeLanding(landing.get()); });
 	Track* made = createRangeLanding(landing.get());
 	if (made == nullptr)
 	{

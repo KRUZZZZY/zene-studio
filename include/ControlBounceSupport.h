@@ -60,12 +60,22 @@ LMMS_EXPORT std::vector<Track::FrozenTake::MutedClip> isolateFreezeRegion(Track*
 	const BounceInPlace::Range& range, QJsonArray* cut);
 /*! Cluster 3971: what `mute_sources` mutes for a RANGE bounce, so the bounced region is replaced and not the
  *  whole source tracks. \a tracks' pre-mute state is recorded as ONE undo step (the caller's landing action
- *  merges with it). A track whose audible clips all lie inside [range.start, range.end) is muted as a whole:
- *  the bounce replaces its entire output. Otherwise the clips that cross the range's edges are cut there and
- *  every piece inside is muted, so audio before and after the range keeps playing. A track that carries no
- *  audio of its own (automation, hidden automation, folder, neutral) is muted as a whole, exactly as before:
- *  the bounce holds no automation to replace it with. Call only when the render succeeded. */
-LMMS_EXPORT void muteRangeSources(const std::vector<Track*>& tracks, const BounceInPlace::Range& range);
+ *  merges with it).
+ *
+ *  - An audio track whose audible clips all lie inside [range.start, range.end) is muted as a whole: the
+ *    bounce replaces its entire output.
+ *  - Otherwise the region is replaced: the clips that cross the range's edges are cut there and every piece
+ *    inside is muted, so audio before and after the range keeps playing. Automation and hidden-automation
+ *    tracks are treated the same way at clip level, so their automation outside the range keeps running
+ *    (muting such a track as a whole would switch the lane off outside the bounce as well).
+ *  - A FROZEN track's take plays instead of its clips, so the take is rewritten with its [range overlap]
+ *    frames silent (the rest of the take untouched) and installed as the same take window; the track keeps
+ *    playing the take outside the range and is silent only inside it.
+ *  - A folder or neutral row carries no audio of its own and is muted as a whole, as before.
+ *
+ *  Returns the typed refusal (nothing recorded, nothing muted) when a frozen take cannot be rewritten;
+ *  empty on success. Call only after the render succeeded. */
+LMMS_EXPORT QString muteRangeSources(const std::vector<Track*>& tracks, const BounceInPlace::Range& range);
 //! Adds `audio_missing` and `recovery` to a frozen-take report when the take's file is gone: the ways out are
 //! project.missing_assets / project.relink (point it at the moved file) and freeze.unfreeze (undoable).
 LMMS_EXPORT void insertFrozenRecovery(Track* track, QJsonObject* report);
