@@ -138,7 +138,7 @@ RESULT: PASS
   reads the cache's ownership through `sessionaudio::holdsClipForTest()`.
 - **Fix at the cause and complete:** yes. `load()` (rate-change retirement) and `retire()` (close retirement) are
   the only two places a clip leaves the cache; both are updated. `load()` has one caller (`prepare()`,
-  `src/core/SessionAudioCells.cpp:255`), `retire()` has one product caller (`src/core/Song.cpp:1820`), and the
+  `src/core/SessionAudioCells.cpp:256`), `retire()` has one product caller (`src/core/Song.cpp:1820`), and the
   target-family `variant()`/`heldClips()` budget and reporting are untouched. `SessionAudioCells.cpp` is a
   fork-new file (`tests/fork-sources.txt:2227`), so no upstream-modifications entry is required.
 - **No collateral damage:** the normal path (no rate change) is byte-for-byte the same schedule: held clips are
@@ -148,3 +148,8 @@ RESULT: PASS
 - **Realtime/undo/commands:** no audio-thread code changed; `stale` is model-thread state touched only under the
   engine change lock, and nothing new allocates, frees, locks, waits or logs in a render path. No control command
   was added and no undo step changed.
+- **Sibling commands in the command files the diff appears to touch:** this lane changed no file matching
+  `ControlCommands*`, `ControlReversibilityTable*` or `ControlRegistry*` (the changed-file list the check sees is
+  the train's `base..HEAD` merge diff). The `app.*` / `arrangement.*` ids the ASK lists therefore have no sibling
+  relationship to this fix and are unaffected; the fix adds no command and moves no `ControlCommandsSnapshot`
+  canary.
