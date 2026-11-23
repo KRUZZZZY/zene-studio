@@ -113,6 +113,17 @@ asynchronous part is the fake child renderer, which is the test binary itself an
   allocation, lock, I/O or signal was added to `process*`/`play*`/render code. No control command was
   added.
 - **Undo:** one `control.undo` restores the cuts and the mutes in all four tested paths (asserted).
+- **Sibling commands named by the submit check** (`app.about`, `app.ask`, ... `app.whats_new`,
+  `arrangement.fit_tracks`, `arrangement.get_state`): the check derives them from the groups its regex
+  finds in the changed command files; none of them mutes tracks. The only muting path in this change is
+  `control::muteRangeSources`, called by `range.bounce` and `bounce.land` (sync) and their queued
+  operations; `arrangement.get_state` only reports and `arrangement.fit_tracks` only moves the view.
+  A grep for `setMuted(true)` in `src/core/*.cpp` after the change shows only the intentional
+  whole-track branches (`ControlCommandsBounceLand.cpp:100,105`,
+  `ControlCommandsRenderBounce.cpp:243,247`) and the helper at `ControlBounceSupport.cpp:165`.
+- **Gates and pre-submit check:** `python3 .../feature_check.py <worktree>` EXIT 0 with
+  `RESULT: PASS` (`gates-3.log`); `python3 .../submit_check.py <worktree> 3971` EXIT 0 with
+  `RESULT: PASS - submit` (`submit-1.log`).
 
 ## Other findings
 
