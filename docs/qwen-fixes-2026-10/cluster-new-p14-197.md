@@ -56,6 +56,12 @@ The same test was red against the seam-only commit before the fix was written (`
 `ctest -R 'Modulat|MidiInputTransform|InstrumentRouting'` → TEST_EXIT=0, 10/10 (`12-test-family.log`);
 `feature_check.py` → GATE_EXIT=0, `RESULT: PASS` (`13-feature-check.log`).
 
+The round-2 proof manifest (`.../r2/logs/proof.json`) carries this test only: it is the one whose red and green runs
+happened in this session. The round-1 pair was proven red/green in the round-1 log folder
+(`.../new-p14-197.r1/logs/13-test-red2.log` TEST_EXIT=8, `15-test-green2.log` TEST_EXIT=0, same session as those
+commits); this session I only re-ran them green (`06-test-green.log`, `10-test-green2.log`), and both also passed in
+the round-2 RED run (`08-test-red2.log`, "22 passed, 1 failed": the one failure is the new test).
+
 Round-1 behaviour the review asked to keep is unchanged: the clear during a claim
 (`clearingThePoolDoesNotHandOutAHalfFilledSlot`) and the claim that spans a clear
 (`aClaimThatSpansAClearStaysOutOfThePool`) both still pass, in the RED and the GREEN runs above.
