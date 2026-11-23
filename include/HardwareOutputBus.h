@@ -86,8 +86,9 @@ public:
 	//! Device channel @a channel at @a frame of the period being fed, with @a master that period's frame.
 	//! A @a frame outside the period (before 0 or from frames() on) reads as silence.
 	float sample(int channel, f_cnt_t frame, const SampleFrame& master) const noexcept;
-	//! A one-channel device: the bus's first channel plus the master averaged, when it is placed there.
-	//! A @a frame outside the period reads as silence, as in sample().
+	//! A one-channel device: the mono downmix of everything routed to the bus (each stereo route
+	//! folded at equal weight, a mono route at its own level) plus the master averaged, when it is
+	//! placed on the first channel. A @a frame outside the period reads as silence, as in sample().
 	float monoSample(f_cnt_t frame, const SampleFrame& master) const noexcept;
 	//! The highest channel (plus one) the period being fed carries: the bus's and the master's.
 	int channelsInUse() const noexcept;
@@ -96,6 +97,7 @@ private:
 	struct Side
 	{
 		std::vector<float> data;  //!< MaxChannels planes of m_frames
+		std::vector<float> mono;  //!< the mono downmix of what was added, m_frames
 		int used = 0;             //!< the channels written, plus one
 		Placement master;
 	};

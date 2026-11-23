@@ -88,7 +88,8 @@ void HardwareIoTest::outOfRangeFrameReadsAsSilence() {
 	outputs.swap();  // the period just written is the one the device reads
 	const SampleFrame master(0.f, 0.f);
 	QVERIFY(outputs.sample(0, 255, master) == 0.5f);
-	QVERIFY(outputs.monoSample(255, master) == 0.5f);
+	// The mono output folds every routed channel: 0.5 (channel 0) + 0.25 (channel 1).
+	QVERIFY2(outputs.monoSample(255, master) == 0.75f, "the mono output drops a routed channel");
 	QVERIFY2(outputs.sample(0, 256, master) == 0.f, "a frame past the period is silence");
 	QVERIFY2(outputs.monoSample(256, master) == 0.f, "a frame past the period is silence");
 }
