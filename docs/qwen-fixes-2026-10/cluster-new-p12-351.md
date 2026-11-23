@@ -99,6 +99,10 @@ Logs are under `/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-351.r1/logs/
 Not run: the step 4 RED/GREEN reversal. It is not applicable because the verdict is
 FALSE-POSITIVE and there is no product hunk to reverse and no new test.
 
+The completion check's `tests added or changed` row passes on test files that are already in the
+branch's merge-train diff (`base..HEAD`), not on a test from this session; this session adds only
+this report.
+
 ## Self-check
 
 - **Regression test FAILS with the product change reverted and PASSES with it:** not applicable.
