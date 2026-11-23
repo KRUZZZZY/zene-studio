@@ -178,6 +178,14 @@ python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py \
   `loopwarp::clipStateJson(*sample)` from the resolved clip; it decodes no file and is
   unaffected. Every other `clip.*` id in the snapshot is implemented in other files
   and never calls `prepareAudio`, `analyseAudioFile` or `loopwarp::analyse`.
+- **The pre-submit check lists `app.*` and `arrangement.*` siblings.** Those command
+  files are part of the branch's train history since `FIX-BASE` (`050/m0-train-35`),
+  not of this cluster: `git show --stat HEAD` shows this commit touches only
+  `ControlCommandsClipImportFile.cpp` (`clip.*`) and `ImportDetection.cpp`. The
+  `app.*`/`arrangement.*` commands neither import files nor decode audio, and the one
+  shared function this commit changes (`analyseAudioFile`) is exercised for its own
+  callers, `detect.analyze` and `detect.apply`, by the passing `ControlDetectCommands`
+  run above.
 
 ## Other findings
 
