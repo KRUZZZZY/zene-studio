@@ -73,8 +73,8 @@ lock, wait or log. No control command, undo step or saved-data format changes.
 (`ladspaEffectRejectsOutputChannelOverflow`), with the new
 `mono_in_stereo_out` descriptor in
 `tests/src/plugins/LadspaChannelCountFixture.cpp` and the fixture module added
-to the test's `LADSPA_PATH` (`PluginPortsMigrationTest.cpp:1210-1221`) and its
-CMake definition/dependency (`tests/CMakeLists.txt:9357-9365`).
+to the test's `LADSPA_PATH` (`PluginPortsMigrationTest.cpp:1213-1220`) and its
+CMake definition/dependency (`tests/CMakeLists.txt:9357-9363`).
 
 The fixture is a valid hard-real-time, in-place-broken LADSPA transfer with one
 audio input and two audio outputs named `Output Left`/`Output Right`. The test
