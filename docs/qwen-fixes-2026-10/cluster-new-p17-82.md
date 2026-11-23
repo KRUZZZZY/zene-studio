@@ -134,6 +134,10 @@ assertion is exercised in the capacity RED above and in every GREEN run. The all
 also asserted in every GREEN run; before the fix the old `map()` built a temporary `std::string`
 and map nodes.
 
+The two chained commands were also run verbatim against the final tree, as the proof manifest
+records them: `proof-red-1.log` EXIT=1 (the same `freshOnAudio` failure) and `proof-green-1.log`
+EXIT=0 (9 passed).
+
 ## Family, gates and the focused ctest
 
 | Command | Log | EXIT | Result |
