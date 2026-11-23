@@ -25,11 +25,14 @@
 #ifndef LMMS_PEAK_CONTROLLER_H
 #define LMMS_PEAK_CONTROLLER_H
 
+#include <atomic>
 #include <vector>
 #include "Controller.h"
 #include "ControllerDialog.h"
 
 class QWidget;
+//! The white-box regression that owns the coefficient-publication seam below.
+class PeakControllerNullEffectTest;
 
 namespace lmms
 {
@@ -60,6 +63,17 @@ public:
 
 	static PeakControllerEffectVector s_effects;
 
+#ifdef LMMS_TESTING
+	/*! Test seam (cluster new-p20-95): \a probe runs on the thread that renders a
+	 *  period, inside updateValueBuffer(), immediately after that period's attack
+	 *  and decay coefficients have been computed from the models - the window in
+	 *  which the GUI thread's attack/decay change lands (the models' dataChanged
+	 *  slot, updateCoeffs(), asks for the coefficients again from the GUI thread).
+	 *  A regression injects exactly that change there and reads what the following
+	 *  period publishes. It is null in the product. */
+	static void setCoeffPublishProbeForTest( void (*probe)(PeakController*) );
+#endif
+
 
 public slots:
 	gui::ControllerDialog * createDialog( QWidget * _parent ) override;
@@ -73,6 +87,8 @@ protected:
 	PeakControllerEffect * m_peakEffect;
 
 	friend class gui::PeakControllerDialog;
+	//! White-box access for the coefficient-publication regression (cluster new-p20-95).
+	friend class ::PeakControllerNullEffectTest;
 
 private:
 	float m_currentSample;

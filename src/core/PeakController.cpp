@@ -47,6 +47,14 @@ int PeakController::m_getCount;
 int PeakController::m_loadCount;
 bool PeakController::m_buggedFile;
 
+#ifdef LMMS_TESTING
+namespace
+{
+// Test seam (cluster new-p20-95), null in the product: see setCoeffPublishProbeForTest().
+void (*s_coeffPublishProbeForTest)(PeakController*) = nullptr;
+}
+#endif
+
 
 PeakController::PeakController( Model * _parent,
 		PeakControllerEffect * _peak_effect ) :
@@ -87,6 +95,12 @@ void PeakController::updateValueBuffer()
 		const float ratio = 44100.0f / Engine::audioEngine()->outputSampleRate();
 		m_attackCoeff = 1.0f - powf( 2.0f, -0.3f * ( 1.0f - m_peakEffect->attackModel()->value() ) * ratio );
 		m_decayCoeff = 1.0f -  powf( 2.0f, -0.3f * ( 1.0f - m_peakEffect->decayModel()->value()  ) * ratio );
+#ifdef LMMS_TESTING
+		if( s_coeffPublishProbeForTest != nullptr )
+		{
+			s_coeffPublishProbeForTest( this );
+		}
+#endif
 		m_coeffNeedsUpdate = false;
 	}
 
@@ -129,6 +143,14 @@ void PeakController::updateCoeffs()
 {
 	m_coeffNeedsUpdate = true;
 }
+
+
+#ifdef LMMS_TESTING
+void PeakController::setCoeffPublishProbeForTest( void (*probe)(PeakController*) )
+{
+	s_coeffPublishProbeForTest = probe;
+}
+#endif
 
 
 void PeakController::handleDestroyedEffect()
