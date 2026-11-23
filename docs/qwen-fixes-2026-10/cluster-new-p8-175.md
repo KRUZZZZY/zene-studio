@@ -176,6 +176,14 @@ projects store only the model path, so nothing about project load/save changed. 
 emitted at `src/core/AudioEngine.cpp:808,1423,1450`). Landed in `3d83d022da` and `71a36b4ff1`, both
 ancestors of HEAD `21c2f3ee2e`.
 
+**ASK: sibling commands in the command files you changed.**
+None. This cluster changed no file under `src/core/Control*`, no control command file and no
+`tools/mcp-zene-control` code; the commit holds one test file and this report
+(`git show --stat af2a29b0cd` - `tests/src/plugins/NeuralAmpModelLoadTest.cpp`, 54 insertions, and
+this document). The `app.*` / `arrangement.*` sibling list the pre-submit check prints comes from
+the train's 430 changed files against the base, not from this cluster, so no command's behaviour or
+reversibility class is touched, and the ControlCommandsSnapshot canary is unchanged.
+
 ## Other findings
 
 - The test those two commits added (`AudioPluginTest::neuralAmpRejectsModelsTrainedAtAnotherSampleRate`)
