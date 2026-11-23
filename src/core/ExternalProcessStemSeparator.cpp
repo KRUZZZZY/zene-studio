@@ -53,114 +53,12 @@ constexpr int PollIntervalMs = 100;
 constexpr int ProgressPollIntervalMs = 200;
 constexpr int KillGraceMs = 30000;
 
-//! How long one interpreter may take to start before it counts as missing.
-constexpr int PythonProbeStartMs = 5000;
-//! How long a killed probe may take to be reaped (it never gets a new candidate
-//! started in that time - locatePython() checks the deadline first).
-constexpr int PythonProbeKillGraceMs = 2000;
-
-/*! Upper bound for the WHOLE interpreter discovery sequence.
- *
- *  Discovery runs on whichever thread asked for it - the GUI invokes
- *  `stem.get_state` synchronously, and its handler constructs this backend and
- *  asks isAvailable() - so it must never hold that thread for long. The old
- *  per-candidate waits (5 s to start + 30 s to import) cost four timeouts in a
- *  row when an interpreter hung importing onnxruntime: minutes of freeze.
- *  5 s for the sequence, shared by its candidates (about 1.25 s each when all
- *  four are tried), is still several times the ~0.45 s a cold reference CLI
- *  needs to start, import and reach inference; a share that is too short only
- *  delays discovery, because the next call probes again. */
-constexpr int PythonDiscoveryBudgetMs = 5000;
-
 void setError(QString* error, const QString& text)
 {
 	if (error != nullptr)
 	{
 		*error = text;
 	}
-}
-
-/*! The budget for this discovery call. LMMS_STEM_PYTHON_PROBE_MS is a test hook
- *  (like LMMS_STEM_CHUNK_DELAY_MS) that can only make discovery stricter: a
- *  value outside [0, PythonDiscoveryBudgetMs] keeps the default. Zero is the
- *  boundary the regression test uses to observe "no candidate is started after
- *  the deadline" without waiting. */
-int pythonDiscoveryBudgetMs()
-{
-	bool ok = false;
-	const int requested = qEnvironmentVariableIntValue("LMMS_STEM_PYTHON_PROBE_MS", &ok);
-	if (!ok || requested < 0 || requested > PythonDiscoveryBudgetMs)
-	{
-		return PythonDiscoveryBudgetMs;
-	}
-	return requested;
-}
-
-//! True when @a candidate starts and imports onnxruntime within @a timeoutMs.
-//! On timeout the child is killed, so no probe outlives the discovery call.
-bool probePython(const QString& candidate, int timeoutMs)
-{
-	if (timeoutMs <= 0)
-	{
-		return false;
-	}
-	const auto started = std::chrono::steady_clock::now();
-	const auto remainingMs = [&started, timeoutMs]()
-	{
-		const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-			std::chrono::steady_clock::now() - started).count();
-		return timeoutMs - static_cast<int>(elapsed);
-	};
-
-	QProcess probe;
-	probe.start(candidate, { QStringLiteral("-c"), QStringLiteral("import onnxruntime") });
-	if (!probe.waitForStarted(std::min(timeoutMs, PythonProbeStartMs)))
-	{
-		return false;
-	}
-	const int finishMs = remainingMs();
-	if (finishMs <= 0 || !probe.waitForFinished(finishMs))
-	{
-		probe.kill();
-		probe.waitForFinished(PythonProbeKillGraceMs);
-		return false;
-	}
-	return probe.exitStatus() == QProcess::NormalExit && probe.exitCode() == 0;
-}
-
-#ifdef LMMS_TESTING
-ExternalProcessStemSeparator::DiscoveryHooks& discoveryHooks()
-{
-	static ExternalProcessStemSeparator::DiscoveryHooks hooks;
-	return hooks;
-}
-#endif
-
-//! The monotonic clock the discovery deadline reads (milliseconds since an
-//! arbitrary epoch). A test can replace it through the DiscoveryHooks seam.
-qint64 discoveryNowMs()
-{
-#ifdef LMMS_TESTING
-	if (discoveryHooks().nowMs)
-	{
-		return discoveryHooks().nowMs();
-	}
-#endif
-	return std::chrono::duration_cast<std::chrono::milliseconds>(
-		std::chrono::steady_clock::now().time_since_epoch()).count();
-}
-
-//! True when @a candidate imports onnxruntime within @a timeoutMs; the test seam
-//! replaces the child process, not the decision.
-bool probeInterpreter(const QString& candidate, int timeoutMs)
-{
-#ifdef LMMS_TESTING
-	if (discoveryHooks().probe)
-	{
-		return discoveryHooks().probe(candidate, timeoutMs);
-	}
-#endif
-	return probePython(candidate, timeoutMs);
 }
 
 bool writeMixFile(const QString& path, const SampleBuffer& mix)
@@ -237,15 +135,6 @@ bool readStems(const QString& outDir, int sampleRate, std::size_t frames, StemSe
 
 } // namespace
 
-#ifdef LMMS_TESTING
-void ExternalProcessStemSeparator::setDiscoveryHooksForTest(DiscoveryHooks hooks)
-{
-	discoveryHooks() = std::move(hooks);
-}
-#endif
-
-
-
 
 ExternalProcessStemSeparator::ExternalProcessStemSeparator(QString pythonExecutable,
 	QString cliPath,
@@ -258,67 +147,6 @@ ExternalProcessStemSeparator::ExternalProcessStemSeparator(QString pythonExecuta
 	m_model(modelPath.isEmpty() ? defaultModelPath() : std::move(modelPath))
 {
 }
-
-
-
-
-QString ExternalProcessStemSeparator::locatePython(QString* error)
-{
-	QStringList candidates;
-	const auto env = qEnvironmentVariable("LMMS_STEM_PYTHON");
-	if (!env.isEmpty())
-	{
-		candidates << env;
-	}
-	candidates << QStringLiteral("/usr/bin/python3")
-		<< QStringLiteral("python3")
-		<< QStringLiteral("/usr/local/bin/python3");
-
-	// One deadline for the whole sequence. Each candidate may spend only its
-	// share of what is left, so a slow or hanging one cannot consume the budget
-	// a later candidate needs; a candidate that fails fast leaves its unused
-	// share to the rest. No process is started once the deadline is reached.
-	const int budgetMs = pythonDiscoveryBudgetMs();
-	const auto deadline = discoveryNowMs() + budgetMs;
-	QStringList tried;
-	bool outOfTime = false;
-	for (qsizetype index = 0; index < candidates.size(); ++index)
-	{
-		const auto left = deadline - discoveryNowMs();
-		if (left <= 0)
-		{
-			outOfTime = true;
-			break;
-		}
-		const auto candidatesLeft = static_cast<qint64>(candidates.size() - index);
-		const int slice = static_cast<int>(std::max<qint64>(1, left / candidatesLeft));
-		tried << candidates.at(index);
-		if (probeInterpreter(candidates.at(index), slice))
-		{
-			return candidates.at(index);
-		}
-	}
-
-	if (outOfTime)
-	{
-		setError(error, QStringLiteral("Python discovery ran out of time (%1 ms) "
-			"before an interpreter answered (tried: %2). Probing is bounded so a "
-			"hanging interpreter cannot stall the caller; retry, or set "
-			"LMMS_STEM_PYTHON to a working interpreter.")
-			.arg(budgetMs)
-			.arg(tried.isEmpty() ? QStringLiteral("none")
-				: tried.join(QStringLiteral(", "))));
-	}
-	else
-	{
-		setError(error, QStringLiteral("No Python interpreter with the 'onnxruntime' "
-			"module found (tried: %1). Install onnxruntime or set LMMS_STEM_PYTHON.")
-			.arg(tried.join(QStringLiteral(", "))));
-	}
-	return QString();
-}
-
-
 
 
 QString ExternalProcessStemSeparator::locateCli(QString* error)
@@ -368,7 +196,9 @@ QString ExternalProcessStemSeparator::defaultModelPath()
 bool ExternalProcessStemSeparator::isAvailable(QString* error) const
 {
 	QString localError;
-	const auto python = locatePython(&localError);
+	// A caller-supplied interpreter needs no discovery (and no waiting); only an
+	// instance without one waits for the per-process discovery service.
+	const auto python = m_python.isEmpty() ? waitForPythonDiscovery(&localError) : m_python;
 	if (python.isEmpty())
 	{
 		setError(error, localError);
@@ -410,9 +240,9 @@ StemSeparator::Status ExternalProcessStemSeparator::separate(const SampleBuffer&
 	if (m_python.isEmpty())
 	{
 		// Deferred discovery: the constructor must stay cheap (it can run on the
-		// GUI thread), so the single probe per instance runs here, on the
-		// backend's worker thread.
-		m_python = locatePython(&error);
+		// GUI thread), so the interpreter is resolved here, on the backend's
+		// worker thread, from the per-process discovery service (cached).
+		m_python = waitForPythonDiscovery(&error);
 		if (m_python.isEmpty())
 		{
 			if (error.isEmpty())

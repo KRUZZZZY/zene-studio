@@ -2308,6 +2308,7 @@ src/core/SongSections.cpp
 src/core/SongUndoSnapshot.cpp
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
+src/core/StemPythonDiscovery.cpp
 src/core/StemTrackBuilder.cpp
 src/core/StepRecorder.cpp
 src/core/StripMeters.cpp
@@ -3297,6 +3298,7 @@ tests/src/core/StemExportTestSupport.h
 tests/src/core/StemJobLoaderTest.cpp
 tests/src/core/StemJobManagerTest.cpp
 tests/src/core/StemModelStoreTest.cpp
+tests/src/core/StemPythonDiscoveryServiceTest.cpp
 tests/src/core/StemPythonDiscoveryTest.cpp
 tests/src/core/StemQualityTest.cpp
 tests/src/core/StemSplitPipelineTest.cpp

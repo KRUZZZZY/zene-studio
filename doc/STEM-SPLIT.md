@@ -47,17 +47,27 @@ progress/cancel, and delivers results via queued signals.
 `StemSplitController` is the GUI side; `StemTrackBuilder` turns a finished
 `StemSet` into tracks/clips in the Song.
 
-**Interpreter discovery is deferred and bounded.** Constructing
-`ExternalProcessStemSeparator` probes nothing: an empty interpreter argument is
-resolved by `separate()`, on the job's worker thread. `locatePython()` bounds the
-WHOLE probe sequence with one 5 s deadline, and each candidate may spend only its
-share of what is left, so neither an interpreter that hangs while importing
-`onnxruntime` nor a merely slow one can hold the caller for the old per-candidate
-timeouts (5 s to start plus 30 s to import, four candidates) or starve a later
-candidate that works. The fallback is still tried within the same deadline. A
-call that runs out of time reports that, starts no further process, and the next
-call probes again; `LMMS_STEM_PYTHON_PROBE_MS` (a test hook) can only lower the
-budget.
+**Interpreter discovery is deferred, parallel and bounded.**
+Constructing `ExternalProcessStemSeparator` probes nothing: an empty interpreter
+argument is resolved by `separate()`, on the job's worker thread, from a
+per-process discovery service (`src/core/StemPythonDiscovery.cpp`). A discovery
+run probes every candidate (`LMMS_STEM_PYTHON`, `/usr/bin/python3`, `python3`,
+`/usr/local/bin/python3`) concurrently, each with the full 5 s deadline (the
+child is killed at it), and the highest-priority candidate that imports
+`onnxruntime` wins - decided only after every higher-priority candidate has
+finished. A hanging or slow interpreter therefore neither holds the caller for
+the old per-candidate timeouts (5 s to start plus 30 s to import, four
+candidates) nor starves a fallback that needs a couple of seconds to cold-import
+`onnxruntime`. The probes run on the service's own threads (started in the
+background when the stem surface is created); `stem.get_state` and `stem.start`
+wait for a run in flight at most once per run, bounded by the deadline plus the
+kill grace (7 s), and only while no result is cached. If it is still
+pending, `stem.get_state` reports the backend unavailable with a "discovering a
+Python interpreter" reason and the next call sees the result. A success is
+cached per `LMMS_STEM_PYTHON` value (changing the variable discovers anew); a
+failure is cached too and re-probed at most every 10 s. `locatePython()` is the
+blocking, uncached variant for the CLI and tests; `LMMS_STEM_PYTHON_PROBE_MS` (a
+test hook) can only lower the 5 s deadline.
 
 ## Quality: the segment overlap (Q050-062.1)
 

@@ -1,296 +1,135 @@
 FIXED
 
-# cluster new-p15-64 — Python discovery blocked the constructing thread for minutes
+# cluster new-p15-64: Python discovery could block the constructing thread for minutes
 
-Verdict: **FIXED**. The defect the patrol named was real: the default
-constructor probed up to four interpreters synchronously, and every probe could
-wait 5 s to start plus 30 s to import `onnxruntime`. The probe is now deferred out
-of the constructor (it runs in `separate()`, on the job's worker thread) and the
-whole discovery sequence is bounded by one 5 s deadline.
+new-p15-64: FIXED
 
-Round 1 shipped the deferral plus a first-come-first-served deadline. Review
-round 2 found that this starved a working fallback behind a slow candidate
-configured through `LMMS_STEM_PYTHON`; that regression is fixed here by sharing
-the remaining budget between the remaining candidates, and it has its own
-regression test.
+## The defect (real)
 
-## Evidence: the defect was real (round 1)
+On the base revision, the default constructor ran `m_python(... locatePython())`
+(`git show 93ab9fb13f^:src/core/ExternalProcessStemSeparator.cpp`, line 143). That
+probed up to four interpreters one after another. Each probe waited 5 s to start
+and then 30 s for `import onnxruntime`. `stem.get_state` runs on the GUI thread
+and reaches this code through `StemSurface::probe()` → `ExternalProcessStemSeparator().isAvailable()`
+and through `fetchable()` → `locatePython()` in `src/core/ControlStemSupport.cpp`. A
+hanging interpreter could therefore freeze the UI for minutes.
 
-Historical line 143 is still the same statement on the base revision:
+## Round 3: what the reviewer sent back, and how this round answers it
 
-* `src/core/ExternalProcessStemSeparator.cpp:143` (base) — the default
-  constructor:
-  `m_python(pythonExecutable.isEmpty() ? locatePython() : std::move(pythonExecutable))`.
-* `src/core/ExternalProcessStemSeparator.cpp:152-189` (base) — `locatePython()`
-  ran `QProcess` for up to four candidates, each with `waitForStarted(5000)` and
-  `waitForFinished(30000)`: a hanging `import onnxruntime` cost 35 s per
-  candidate, about 2 minutes and 20 s for the sequence, on the calling thread.
-* The caller chain that puts that on the GUI thread exists on this branch:
-  * `src/gui/StemSplitController.cpp:172` and `:184` call
-    `ControlRegistry::instance()->invoke("stem.get_state")` synchronously from
-    the GUI.
-  * The handler reaches `src/core/ControlStemSupport.cpp:493`
-    (`static StemSurface* s_surface = new StemSurface();`), whose constructor at
-    `src/core/ControlStemSupport.cpp:134` does
-    `m_manager.setSeparator(std::make_unique<ExternalProcessStemSeparator>())`.
-  * `src/core/ControlStemSupport.cpp:417` (`probe()`) constructs another default
-    separator and calls `isAvailable()`, which (base
-    `src/core/ExternalProcessStemSeparator.cpp:241`) called `locatePython()`
-    again. `StemSurface::available()` remembers success but re-probes failure on
-    every call (`src/core/ControlStemSupport.cpp:144-161`), so repeated
-    `stem.get_state` calls repeated the hang.
-* The class's own contract says the backend is used by the job worker and never
-  by the GUI thread (`include/StemSeparation/StemSeparator.h:38-40`); a
-  constructor that spawns and waits on children violates that on the caller's
-  thread.
+The reviewer found that round 2 split one 5 s deadline across the candidates
+(`left / candidatesLeft`). A slow, failing `LMMS_STEM_PYTHON` interpreter used
+up its share, and a working `/usr/bin/python3` that needs about 2 s to cold-import
+onnxruntime got only 1.25 s. Discovery failed where the base succeeded.
 
-## Round 2 — the reviewer's starvation regression, and the fix
+This round replaces the sequential search with **parallel probes plus a cached
+per-process discovery service**. The design is the one in the diagnostic
+checkpoint, with one deliberate deviation, explained below.
 
-Reviewer's finding: `src/core/ExternalProcessStemSeparator.cpp:242-252` (round 1)
-handed the *entire* remaining budget to each candidate. A slow failing candidate
-therefore used the whole 5 s deadline, and no later candidate (the working
-fallback) was ever started, on every retry. The reviewer measured base = found
-the fallback, round-1 branch = "Python discovery ran out of time (5000 ms)".
+## The fix (current lines)
 
-Reproduced here, deterministically, with the round-1 loop and the committed test
-seam (test clock injected; the "slow" candidate advances the clock by exactly
-the timeout it is handed): `logs/test-red-2.log` (round-2 log folder), EXIT=8:
+* `src/core/StemPythonDiscovery.cpp` (new file; discovery moved here so that
+  `ExternalProcessStemSeparator.cpp` stays under 500 lines):
+  * `runParallelDiscovery` (`:187`) starts every candidate at the same time with
+    `std::async`. Each probe gets the **full** 5 s deadline (`PythonDiscoveryBudgetMs`,
+    `:54`), and its child process is killed at that deadline. The futures are then
+    read in priority order, so the highest-priority success wins, and it is chosen
+    only after every higher-priority probe has finished. With no time split, a
+    slow candidate cannot starve a fallback.
+  * The service is a leaked singleton guarded by a mutex and a condition variable.
+    * `requestPythonDiscovery()` (`:325`) never blocks. It starts a detached
+      background run unless one is already running, a result for the current
+      `LMMS_STEM_PYTHON` value is cached, or a failure is younger than
+      `PythonDiscoveryRetryDelayMs` (10 s, `:57`; checked by `shouldStartRun`, `:257`).
+    * `pythonDiscoveryState(int waitMs = 0)` (`:345`) returns Pending, Found or Failed.
+    * `waitForPythonDiscovery()` (`:386`) blocks, and is meant for worker threads and tests.
+    * `discoveredPython()` (`:373`) waits for at most one bounded run.
+    * A change of `LMMS_STEM_PYTHON` discards the cached result, and a generation
+      counter drops the result of a stale run.
+  * `locatePython()` (`:320`) is still the blocking, uncached wrapper over the same
+    parallel run, for the CLI and tests.
+* `src/core/ExternalProcessStemSeparator.cpp`:
+  * The constructor stores the argument and does not probe (`:145`).
+  * `isAvailable()` uses `m_python` when it was given, and otherwise the service (`:201`).
+  * `separate()`, on the worker thread, calls `waitForPythonDiscovery()`.
+* `src/core/ControlStemSupport.cpp`:
+  * The `StemSurface` constructor starts discovery in the background (`:135`).
+  * `fetchable()` (`:401`) and `probe()` (`:419`) use `discoveredPython()`. They no
+    longer call `locatePython()` and never construct a probing backend.
 
-```
-FAIL!  : StemPythonDiscoveryTest::slowCandidateDoesNotStarveTheFallback() 'probed.size() >= 2' returned FALSE.
-   (the working fallback was never tried: the slow candidate consumed the whole budget)
-Totals: 7 passed, 1 failed, 0 skipped, 0 blacklisted, 242ms
-0% tests passed, 1 tests failed out of 1
-```
+**Deliberate deviation from the checkpoint: a bounded wait, not zero.** Step 3 of
+the checkpoint asks `stem.get_state` to answer `available:false` immediately while
+discovery is pending. The end-to-end harness, however, asserts
+`state.get("available") is True` on the **first** `stem.get_state`
+(`tests/stem_commands_lib.py:232`, run by `ControlStemCommands`). The GUI's
+`StemSplitController::ensureBackendReady` (`src/gui/StemSplitController.cpp:184`)
+also shows "Stem separation is not ready" after a single call. A zero wait would
+turn both into a race. Instead, the control surface waits for at most
+`pythonDiscoveryWaitBoundMs()`, which is the deadline plus the kill grace (7 s).
+That wait happens only while a run is in flight and nothing is cached. The probes
+themselves never run on the GUI thread.
 
-The same scenario with real child processes was also run once, as a temporary
-diagnostic that is **not** committed (it sleeps for real, which the test rules
-forbid): a six-second failing `LMMS_STEM_PYTHON` followed by an importable
-`/usr/bin/python3` returned `/usr/bin/python3` in 1263 ms
-(`.../new-p15-64.r2/logs/manual-real-slow.log`, EXIT=0:
+The worst case for the GUI thread falls from four sequential 35 s probes (minutes)
+to one bounded 7 s wait, once per discovery. If the run is still going after that,
+the state reports "discovering a Python interpreter with onnxruntime; ask again in
+a moment". I did not add the `python_discovery` reply field: it would change the
+`stem.get_state` reply schema (`src/core/ControlCommandsStems.cpp:338`), and the
+`error` reason already carries the pending state.
 
-```
-QINFO  : StemPythonDiscoveryTest::manualRealSlowProcessReproduction() real-process slow-candidate run: located='/usr/bin/python3' error=''
-Totals: 3 passed, 0 failed, 0 skipped, 0 blacklisted, 1263ms
-```
+## Regression tests
 
-). The diagnostic slot was removed and the committed suite rebuilt and re-run
-(`test-green-3.log`, EXIT=0).
+The tests are deterministic. They use no sleeps and read no wall clock. Probes
+come from the `LMMS_TESTING` `DiscoveryHooks` seam, and the clock is an injected
+`std::atomic<qint64>`.
 
-The fix: a candidate may spend only its share of what is left of the deadline,
-`max(1, left / candidatesLeft)` (`src/core/ExternalProcessStemSeparator.cpp:294`),
-so a slow or hanging candidate cannot consume the budget a later one needs. A
-candidate that fails fast leaves its unused share to the others, so the normal
-path still gives the remaining candidates more than a quarter each. The overall
-budget is unchanged (5 s), the constructor still probes nothing, and a candidate
-still cannot start once the deadline is reached.
+* `tests/src/core/StemPythonDiscoveryTest.cpp:295`
+  `slowFailingCandidateDoesNotStarveAColdFallback` reproduces the reviewer's case.
+  `LMMS_STEM_PYTHON` points to an interpreter that costs 6000 ms and fails;
+  `/usr/bin/python3` costs 2000 ms and works. The test asserts that the fallback is
+  returned and that every candidate was handed the full 5000 ms budget.
+* `tests/src/core/StemPythonDiscoveryServiceTest.cpp` covers the service:
+  * `:125` `stateIsPendingWhileAProbeRunsAndNeverBlocks`. The probe is held by a
+    gate the test controls. The state reads Pending, constructing the backend
+    probes nothing, and a 1 ms bounded wait returns Pending. The gate is closed, so
+    the outcome is fixed and does not depend on timing. After the gate opens, the
+    state reads Found.
+  * `:181` `failureIsCachedThenRetriedAfterTheDelay`. A failure is not re-probed
+    before 10 s of injected time have passed, and is re-probed after.
+  * `:224` `successIsCachedPerLmmsStemPythonValue`. A success is cached, and
+    changing `LMMS_STEM_PYTHON` starts a new discovery.
+* The existing tests (constructor does not probe, a zero budget launches no
+  process, `separate()` resolves on demand, the first importable candidate wins,
+  reconfiguration is retried) are kept. `init()`/`cleanup()` now reset the service
+  and the hooks between tests.
 
-## The fix (product files, current lines)
+## Commands and EXIT codes (copied from the logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p15-64.r3/logs)
 
-* `include/StemSeparation/ExternalProcessStemSeparator.h:44-48` — the
-  constructor documents that the interpreter is discovered by `separate()`.
-* `include/StemSeparation/ExternalProcessStemSeparator.h:65-70` — `locatePython()`
-  documents the one deadline and the per-candidate share.
-* `src/core/ExternalProcessStemSeparator.cpp:250-260` — the constructor only
-  stores the caller's interpreter hint (`m_python(std::move(pythonExecutable))`,
-  `:256`); the CLI and model path stay filesystem-only lookups.
-* `src/core/ExternalProcessStemSeparator.cpp:73` — `PythonDiscoveryBudgetMs =
-  5000`: one deadline for the whole sequence.
-* `src/core/ExternalProcessStemSeparator.cpp:88-98` — `pythonDiscoveryBudgetMs()`
-  reads the `LMMS_STEM_PYTHON_PROBE_MS` test hook (same shape as the existing
-  `LMMS_STEM_CHUNK_DELAY_MS` hook at `:484`), clamped to `[0, default]`, so a
-  value can only make discovery stricter.
-* `src/core/ExternalProcessStemSeparator.cpp:101-128` — `probePython()` starts a
-  candidate and finishes it within the timeout it is given; on timeout it kills
-  and reaps the child.
-* `src/core/ExternalProcessStemSeparator.cpp:131-164` — the `LMMS_TESTING`-only
-  `DiscoveryHooks` accessors (`discoveryHooks()`, `discoveryNowMs()`,
-  `probeInterpreter()`); with no hooks installed they return `steady_clock` and
-  the real probe, exactly as before.
-* `src/core/ExternalProcessStemSeparator.cpp:241-244` — the test-only setter.
-* `src/core/ExternalProcessStemSeparator.cpp:265-323` — `locatePython()`: the
-  deadline (`:282`), no process after it, and the fair share (`:294`). It
-  reports "ran out of time" separately from "no interpreter found".
-* `src/core/ExternalProcessStemSeparator.cpp:411-424` — `separate()` performs the
-  deferred discovery once per instance, on the caller (worker) thread.
+| step | command | EXIT | log |
+|---|---|---|---|
+| build | `cmake --build build -j4 --target zene StemPythonDiscoveryTest StemPythonDiscoveryServiceTest StemSplitPipelineTest StemSplitMenuTest StemJobManagerTest` | 0 | build-20.log |
+| family | `cd build/tests && ctest -R Stem --output-on-failure` | 0 (`100% tests passed out of 17`; ControlStemCommands and StemQualityBench skipped with code 77) | test-21.log |
+| save patch | `git diff -- include/StemSeparation/ExternalProcessStemSeparator.h src/core/ExternalProcessStemSeparator.cpp src/core/StemPythonDiscovery.cpp src/core/ControlStemSupport.cpp src/core/CMakeLists.txt > fix.patch` (5 files) | 0 | fix.patch |
+| revert | `git apply -R fix.patch` | 0 | |
+| red build | `cmake --build build -j4 --target zene StemPythonDiscoveryTest StemPythonDiscoveryServiceTest` | 0 | build-22-red.log |
+| **red** | `cd build/tests && ctest -R StemPythonDiscovery --output-on-failure` | **8** (`0% tests passed, 2 tests failed out of 2`) | test-23-red.log |
+| reapply | `git apply fix.patch` | 0 | |
+| green build | same build as red | 0 | build-24-green.log |
+| **green** | `cd build/tests && ctest -R StemPythonDiscovery --output-on-failure` | **0** (`100% tests passed out of 2`) | test-25-green.log |
+| gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 (`RESULT: PASS`) | gates-26.log |
 
-Every path into discovery is consistent:
-
-* `isAvailable()` (`src/core/ExternalProcessStemSeparator.cpp:368-389`) still
-  calls `locatePython()`, now bounded and fair; its behaviour is otherwise
-  unchanged.
-* `ControlStemSupport::fetchable()` (`src/core/ControlStemSupport.cpp:399-400`)
-  calls the same bounded `locatePython()`.
-* `StemSurface`'s constructor is cheap, and its `probe()` still measures the same
-  three facts (python, CLI, model).
-* A caller-provided interpreter path is used without a probe, exactly as before.
-
-## Test seam (committed separately, inert)
-
-`include/StemSeparation/ExternalProcessStemSeparator.h:73-85` declares and
-`src/core/ExternalProcessStemSeparator.cpp:131-164,241-244` define a
-`DiscoveryHooks` seam under `#ifdef LMMS_TESTING` (the same pattern as
-`AudioResampler`'s `*ForTest` members, `include/AudioResampler.h:164`). It
-replaces the probe function and the monotonic clock the deadline reads. The seam
-has **no behaviour of its own**: with no hooks installed the shipped code is
-`steady_clock` + `QProcess`. It is commit `ab76f2ce2`, separate from the
-behaviour fix, so the 4b revert below removes only the behaviour and the test
-still compiles and fails behaviourally (not with a build error).
-
-## Regression test
-
-`tests/src/core/StemPythonDiscoveryTest.cpp` (fork-NEW; registered in
-`tests/fork-sources.txt` and `tests/all-sources.txt`; added to
-`tests/CMakeLists.txt` under the existing `LMMS_HAVE_STEM_SPLIT` block).
-
-No timing, no sleeps and no races: interpreter launches are observed through a
-`sitecustomize.py` placed on `PYTHONPATH` that appends one line to a marker file
-whenever an interpreter starts (one line = one probe); the budget boundary is
-driven with `LMMS_STEM_PYTHON_PROBE_MS=0`; and the slow candidate is modelled by
-injecting the clock and probe through `DiscoveryHooks` (the probe advances the
-injected clock by the exact slice it was handed). Environment variables and hooks
-are restored by RAII guards.
-
-It lives in a new file rather than `tests/src/core/StemSplitPipelineTest.cpp`
-because that file's `initTestCase()` calls `QSKIP` when the external backend is
-unavailable, which skips the whole case on this host (round-1 log
-`new-p15-64.r1/logs/test-pipeline-skip.log`):
+The red run failed with these lines (test-23-red.log). Each failure is a runtime
+assertion; nothing failed to compile:
 
 ```
-SKIP : StemSplitPipelineTest::initTestCase() external-process backend unavailable: No Python interpreter with the 'onnxruntime' module found ...
-Totals: 0 passed, 0 failed, 1 skipped, 0 blacklisted, 552ms
+FAIL!  : StemPythonDiscoveryTest::slowFailingCandidateDoesNotStarveAColdFallback() Compared values are not the same
+FAIL!  : StemPythonDiscoveryServiceTest::stateIsPendingWhileAProbeRunsAndNeverBlocks() no non-blocking discovery service
+FAIL!  : StemPythonDiscoveryServiceTest::failureIsCachedThenRetriedAfterTheDelay() no non-blocking discovery service
+FAIL!  : StemPythonDiscoveryServiceTest::successIsCachedPerLmmsStemPythonValue() no non-blocking discovery service
 ```
 
-Test matrix:
+The red baseline is the round-2 code on this branch, the code the reviewer
+rejected. With it, the fallback gets a 1250 ms share and fails.
 
-| path | test |
-|---|---|
-| construction (deferral) | `constructorDoesNotProbeForAnInterpreter` |
-| deferred work placement | `separateResolvesTheInterpreterOnDemand` |
-| slow candidate + fallback (round 2) | `slowCandidateDoesNotStarveTheFallback` |
-| normal discovery | `discoveryFindsAnInterpreterThatImportsOnnxRuntime` |
-| budget exhaustion | `exhaustedBudgetLaunchesNoProbe` |
-| failure + reconfiguration | `failedProbeIsRetriedAfterReconfiguration` |
-| audio thread | none touched: no audio-path file is in the diff; construction, `isAvailable()` and `separate()` are control/worker code |
-| platforms | `QProcess` + `QStandardPaths::findExecutable` + `QDir::listSeparator`; the fake module/site are plain Python files, so the test is not POSIX-only; it skips only when no `python3`/`python` exists at all |
-
-## Commands and EXIT codes (round 2, copied from the logs)
-
-Log folder: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p15-64.r2/logs`.
-
-Seam commit, built with every target that includes the header:
-
-```
-cmake --build build --target zene StemPythonDiscoveryTest StemSplitPipelineTest StemSplitMenuTest -j4
-                                                             # build-1.log      EXIT=0
-```
-
-RED for the round-2 regression (seam committed, round-1 loop in place):
-
-```
-cmake --build build --target StemPythonDiscoveryTest -j4      # build-red-1.log  EXIT=0
-cd build/tests && ctest -R StemPythonDiscoveryTest --output-on-failure \
-    > .../test-red-1.log 2>&1                                # test-red-1.log   EXIT=8
-```
-
-`test-red-1.log`: 7 passed, 1 failed — `slowCandidateDoesNotStarveTheFallback`.
-
-GREEN:
-
-```
-cmake --build build --target zene StemPythonDiscoveryTest StemSplitPipelineTest StemSplitMenuTest -j4
-                                                             # build-green-1.log EXIT=0
-cd build/tests && ctest -R StemPythonDiscoveryTest --output-on-failure \
-    > .../test-green-1.log 2>&1                              # test-green-1.log  EXIT=0
-```
-
-All six committed test slots run directly (`test-green-2.log`, EXIT=0; the
-Totals line counts `initTestCase` and `cleanupTestCase` too):
-
-```
-PASS   : constructorDoesNotProbeForAnInterpreter()
-PASS   : exhaustedBudgetLaunchesNoProbe()
-PASS   : separateResolvesTheInterpreterOnDemand()
-PASS   : slowCandidateDoesNotStarveTheFallback()
-PASS   : discoveryFindsAnInterpreterThatImportsOnnxRuntime()
-PASS   : failedProbeIsRetriedAfterReconfiguration()
-Totals: 8 passed, 0 failed, 0 skipped, 0 blacklisted, 246ms
-```
-
-## 4b — the test catches the round-2 regression
-
-The patch holds only this round's behaviour hunks (the seam is committed):
-
-```
-git diff -- include/StemSeparation/ExternalProcessStemSeparator.h \
-            src/core/ExternalProcessStemSeparator.cpp > .../fix.patch   # 72 lines
-git apply -R .../fix.patch                                  # REVERSE_EXIT=0
-cmake --build build --target StemPythonDiscoveryTest -j4    # build-red-2.log  EXIT=0
-cd build/tests && ctest -R StemPythonDiscoveryTest --output-on-failure \
-    > .../test-red-2.log 2>&1                               # test-red-2.log   EXIT=8
-```
-
-`test-red-2.log`:
-
-```
-FAIL!  : StemPythonDiscoveryTest::slowCandidateDoesNotStarveTheFallback() 'probed.size() >= 2' returned FALSE.
-   (the working fallback was never tried: the slow candidate consumed the whole budget)
-Totals: 7 passed, 1 failed, 0 skipped, 0 blacklisted, 242ms
-0% tests passed, 1 tests failed out of 1
-```
-
-Restored and re-ran:
-
-```
-git apply .../fix.patch                                     # FORWARD_EXIT=0
-cmake --build build --target zene StemPythonDiscoveryTest StemSplitPipelineTest StemSplitMenuTest -j4
-                                                             # build-green-3.log EXIT=0
-cd build/tests && ctest -R StemPythonDiscoveryTest --output-on-failure \
-    > .../test-green-4.log 2>&1                              # test-green-4.log  EXIT=0
-```
-
-`100% tests passed out of 1`. This is a behavioural red, not a build break: the
-test compiles against the reverted code because the seam is a separate commit.
-
-## Family
-
-All 16 registered `Stem` targets built first (`build-stem-family-1.log`,
-EXIT=0), then:
-
-```
-cd build/tests && ctest -R "Stem" --output-on-failure       # test-stem-family-1.log EXIT=0
-```
-
-```
- 1/16 StemExportTest ...................   Passed
- 2/16 ControlStemExportTest ............   Passed
- 3/16 StemJobManagerTest ...............   Passed
- 4/16 StemJobLoaderTest ................   Passed
- 5/16 StemModelStoreTest ...............   Passed
- 6/16 StemQualityTest ..................   Passed
- 7/16 StemSplitPipelineTest ............   Passed
- 8/16 StemSplitMenuTest ................   Passed
- 9/16 StemSplitBackgroundTest ..........   Passed
-10/16 ControlStemWavTest ...............   Passed
-11/16 StemPythonDiscoveryTest ..........   Passed
-12/16 OnnxRuntimeStemSeparatorTest .....   Passed
-13/16 ControlStemExportVerb ............   Passed
-14/16 ControlStemCommands ..............***Skipped
-15/16 StemQualityBench .................***Skipped
-16/16 StemAvailabilityDocsGate .........   Passed
-100% tests passed out of 16
-```
-
-The two skips are environmental (no `onnxruntime` on this host), as round 1
-recorded (`new-p15-64.r1/logs/test-skip-reason.log`).
-
-## Gates
-
-```
-python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py \
-    /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p15-64
-                                                             # feature-check-1.log EXIT=0
-```
+Gate table (gates-26.log):
 
 ```
   PASS  fork-sources            exit 0
@@ -304,84 +143,79 @@ python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py \
 RESULT: PASS
 ```
 
+An earlier run of the gate (gates-12.log) failed `file-length` on
+`src/core/ControlStemSupport.cpp (503)`. I shrank the change there by moving the
+state check into `ExternalProcessStemSeparator::discoveredPython()`, and the gate
+then passed.
+
+## Concurrency (reasoned; local TSan does not run on this box)
+
+* All service state is read and written under `Service::mutex`.
+* The detached run thread only touches the leaked singleton, so it cannot reach a
+  destroyed object at exit.
+* Probes read the test hooks at the same time as each other. `setDiscoveryHooksForTest`
+  first waits until no run thread is active (`activeThreads == 0`), so the hooks are
+  never swapped mid-read.
+* No audio-thread code is touched.
+
 ## Files changed
 
-Round 1 (`93ab9fb13`, `4eab52386`):
+`include/StemSeparation/ExternalProcessStemSeparator.h`,
+`src/core/ExternalProcessStemSeparator.cpp`, `src/core/StemPythonDiscovery.cpp`
+(new), `src/core/ControlStemSupport.cpp`, `src/core/CMakeLists.txt`,
+`tests/src/core/StemPythonDiscoveryTest.cpp`,
+`tests/src/core/StemPythonDiscoveryServiceTest.cpp` (new), `tests/CMakeLists.txt`,
+`tests/fork-sources.txt`, `tests/all-sources.txt`, `doc/STEM-SPLIT.md`, and this
+report. All of these are fork files, so no `upstream-modifications.txt` entry is
+needed.
 
-* `src/core/ExternalProcessStemSeparator.cpp` (fork-NEW, product fix)
-* `include/StemSeparation/ExternalProcessStemSeparator.h` (fork-NEW, contract)
-* `tests/src/core/StemPythonDiscoveryTest.cpp` (new regression test)
-* `tests/CMakeLists.txt` (register the test)
-* `tests/fork-sources.txt`, `tests/all-sources.txt` (registration)
-* `doc/STEM-SPLIT.md` (documents the deferred, bounded discovery)
-* the round-1 report
-
-Round 2 (this session):
-
-* `ab76f2ce2` — the `LMMS_TESTING` `DiscoveryHooks` seam (no behaviour change)
-* the fair-share discovery loop, its regression, the doc sentence and this
-  report (the commit named in `proof.json`)
+Delegation:
+* Sonnet: implemented the parallel run, the discovery service, the file split,
+  the registrations, the ControlStemSupport changes and the tests, from my design.
+* Haiku (×4): every build and ctest run, the two red/green rounds, and the gate
+  runs.
+* Me: the diagnosis, the design, review of the diff, the bounded-wait deviation
+  and the `discoveredPython()` refactor, switching `separate()` to the cached
+  service (Sonnet's change had left it on `locatePython()`), the test-fixture
+  guards so the red run compiles, and this report.
 
 ## Other findings
 
-* `include/RevisionTimeline.h:77` mentions this class's bounded probing in a
-  comment; it describes the same intent and needed no edit.
-* Not fixed here: `isAvailable()` probes the default interpreter even when the
-  instance was constructed with an explicit `pythonExecutable`. That asymmetry
-  predates this bug and changing it would alter availability semantics beyond
-  the finding; left as is.
+* `ControlStemCommands` (the end-to-end harness that would exercise the
+  first-call `available:true` contract) skips on this host because no Python here
+  has onnxruntime (`tests/control-stem-commands.py:183-188`). The bounded wait was
+  chosen to keep it green on hosts that do. That outcome was not verified here.
+* With a cached failure, every `stem.get_state` made at least 10 s after the
+  failure starts a new run and can wait up to 7 s for it. That is bounded, but a
+  GUI that polls while no interpreter exists will see that wait about once every
+  10 s.
 
 ## Self-check
 
-1. **The regression test FAILS with the product change reverted and PASSES with
-   it (exit codes).** Yes, twice:
-   * Round 2 (the new starvation regression): `git apply -R` EXIT=0, rebuild
-     EXIT=0, test EXIT=8 with exactly `slowCandidateDoesNotStarveTheFallback`
-     failing (`test-red-2.log`); `git apply` EXIT=0, rebuild EXIT=0, test EXIT=0
-     (`test-green-4.log`).
-   * Round 1 (deferral + deadline): `new-p15-64.r1/logs/test-red-3.log` EXIT=8
-     with three failing slots, then `test-green-8.log` EXIT=0.
-   The round-2 red is a test assertion failure, not a build error: the seam was
-   committed separately (`ab76f2ce2`) before the behaviour change, so reverting
-   the behaviour leaves the test compiling against the old loop.
-2. **The test is deterministic: no wall-clock timing, sleeps or races.** The
-   committed tests never measure or wait for real time. Interpreter starts are
-   counted with a `sitecustomize.py` marker file; the budget boundary is
-   `LMMS_STEM_PYTHON_PROBE_MS=0`; the slow candidate injects the clock through
-   `DiscoveryHooks` and advances it by the timeout it is handed; environment
-   variables and hooks are restored by RAII. No `QTest::qWait`, no
-   `QElapsedTimer`, no threads. (The real 6 s reproduction was a temporary,
-   uncommitted diagnostic, logged and then removed, precisely because it uses
-   real time.)
-3. **The fix is at the cause and complete; callers and siblings checked.**
-   Cause 1 (probe in the constructor) is gone (`:250-260`, `:411-424`). Cause 2
-   (unbounded sequence) is gone (`:73`, `:265-323`), and the round-2 regression
-   (one candidate consuming the whole sequence) is gone (`:294`). Every path into
-   discovery uses the bounded, fair helper: `isAvailable()` (`:368`),
-   `separate()` (`:415`), `ControlStemSupport::fetchable()` (`:399-400`),
-   `StemSurface::probe()` (`:417`). CLI/model lookups and a caller-supplied
-   interpreter path are unchanged. No command, undo or audio-path file is in the
-   diff.
-4. **No collateral damage.** No save/load, project, undo or model code changed,
-   so old projects load exactly as before. The only new limits are the discovery
-   budget and the per-candidate share; both apply only to the probe sequence, the
-   hook `LMMS_STEM_PYTHON_PROBE_MS` can only lower the budget, and a candidate
-   that fails fast leaves its share to the rest. A discovery that runs out of
-   time is retried by the next call, and a successful discovery behaves exactly
-   as before (`discoveryFindsAnInterpreterThatImportsOnnxRuntime` pins that the
-   first candidate that imports wins). The stem family and the
-   `ControlStemExportVerb` agent driver still pass (see above).
-5. **ALREADY-FIXED / FALSE-POSITIVE code reference.** Not applicable: the
-   verdict is FIXED, and the pre-fix code is quoted at the top of this report
-   (`src/core/ExternalProcessStemSeparator.cpp:143` and `:152-189` on the base
-   revision; the round-1 loop the reviewer rejected is visible in `git show
-   ab76f2ce2:src/core/ExternalProcessStemSeparator.cpp`).
-6. **Sibling commands in the command files you changed.** No command file is
-   changed by this fix: the diff is `ExternalProcessStemSeparator.{h,cpp}`, the
-   new test, `tests/CMakeLists.txt`, the two scope manifests, `doc/STEM-SPLIT.md`
-   and this report. The `app.*`/`arrangement.*` ids the pre-submit check lists
-   come from the branch's other commits since its merge-base (`git diff
-   --name-only` since the base names 435 files, none of them `ControlCommands*`,
-   `ControlReversibilityTable*` or `ControlRegistry*`). The `stem.*` commands are
-   untouched, no command id is added, renamed or removed, and
-   `tools/mcp-zene-control/zene_control/commands_snapshot.json` is unchanged.
+1. **Red without the fix, green with it.** Red: `ctest -R StemPythonDiscovery`
+   EXIT=8 (test-23-red.log), four runtime `FAIL!` lines quoted above. Green: EXIT=0
+   (test-25-green.log). The two `git apply` commands both exited 0.
+2. **Deterministic.** The tests contain no sleep, `qWait` or wall-clock read
+   (`rg -n "sleep|qWait|steady_clock"` on both test files finds only the comments
+   saying so). The pending state is held by a gate the test controls. The 1 ms
+   bounded wait runs with that gate closed, so its result is fixed.
+3. **Cause and siblings.** Every path into discovery was changed:
+   * the constructor (`:145`);
+   * `isAvailable` (`:201`);
+   * `separate` (worker thread, `waitForPythonDiscovery`);
+   * `ControlStemSupport` `fetchable` (`:401`) and `probe` (`:419`).
+
+   `locatePython()` is left only for the CLI and test callers
+   (`tests/src/core/StemSplitPipelineTest.cpp:149,304`).
+4. **No collateral damage.**
+   * No project, save, undo or command-schema code changed.
+   * The `stem.get_state` reply fields are unchanged.
+   * The stem family passes: 17/17 (test-21.log).
+   * Discovery order and the first-importable-wins rule are unchanged
+     (`discoveryFindsAnInterpreterThatImportsOnnxRuntime`).
+5. **ALREADY-FIXED/FALSE-POSITIVE reference.** Not applicable (FIXED).
+6. **Sibling commands in changed command files.** No `ControlCommands*`,
+   `ControlRegistry*` or reversibility table is changed. No command is added,
+   renamed or removed. `ControlStemSupport.cpp` changes only the availability
+   helpers.
+7. **Realtime.** Nothing here runs on the audio thread.

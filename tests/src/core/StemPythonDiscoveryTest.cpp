@@ -31,11 +31,17 @@
  * These tests observe interpreter launches without timing anything: a
  * `sitecustomize.py` on PYTHONPATH appends one line to a marker file every time
  * an interpreter starts. One marker line = one probe. Nothing here sleeps.
+ * Candidates are probed in parallel, each with the full deadline; the
+ * non-blocking, cached discovery service is tested in
+ * StemPythonDiscoveryServiceTest.cpp.
  */
 
 #include <QtTest>
 
+#include <algorithm>
+#include <atomic>
 #include <initializer_list>
+#include <mutex>
 #include <vector>
 
 #include <QByteArray>
@@ -153,6 +159,16 @@ class StemPythonDiscoveryTest : public QObject
 {
 	Q_OBJECT
 private slots:
+	//! The discovery service caches per process: every test starts from a clean
+	//! one and leaves neither its hooks nor its result behind.
+	void init()
+	{
+#ifdef LMMS_STEM_PYTHON_DISCOVERY_SERVICE
+		ExternalProcessStemSeparator::resetPythonDiscoveryForTest();
+#endif
+	}
+	void cleanup() { ExternalProcessStemSeparator::setDiscoveryHooksForTest({}); }
+
 	/*! The constructor must not launch a probe. It runs on whichever thread
 	 *  asked for the backend - the GUI calls `stem.get_state` synchronously -
 	 *  and a hanging interpreter must not hold that thread. */
@@ -188,9 +204,8 @@ private slots:
 			"locatePython() must probe the configured interpreter");
 	}
 
-	/*! An exhausted discovery budget starts no process at all: the whole
-	 *  sequence is bounded, not just each child. A zero budget is the boundary
-	 *  of that deadline and needs no waiting to observe. */
+	/*! An exhausted discovery budget starts no process at all: a zero budget is
+	 *  the boundary of the deadline and needs no waiting to observe. */
 	void exhaustedBudgetLaunchesNoProbe()
 	{
 		const QString python = findPython();
@@ -213,8 +228,8 @@ private slots:
 		const QString located = ExternalProcessStemSeparator::locatePython(&error);
 		QVERIFY2(located.isEmpty(), "an exhausted budget cannot discover an interpreter");
 		QVERIFY2(!QFile::exists(marker),
-			"an exhausted discovery budget launched a probe: the deadline must cover the "
-			"whole sequence, so no candidate may start a process after it");
+			"an exhausted discovery budget launched a probe: a zero "
+			"budget must refuse before any candidate starts a process");
 		QVERIFY2(!error.isEmpty(), "an exhausted budget must be reported");
 
 		// With the budget back at its default the same candidates are probed,
@@ -270,11 +285,14 @@ private slots:
 	}
 
 	/*! A slow failing candidate must not starve a later candidate that works.
-	 *  This is the case a reviewer found: LMMS_STEM_PYTHON names an interpreter
-	 *  that hangs (or is merely very slow), and the default interpreter after it
-	 *  imports onnxruntime. The slow candidate is modelled by advancing the
-	 *  injected clock by the timeout it was handed, so no real time passes. */
-	void slowCandidateDoesNotStarveTheFallback()
+	 *  LMMS_STEM_PYTHON names an interpreter that is slow and fails (6 s, longer
+	 *  than the budget), and /usr/bin/python3 needs 2 s to cold-import
+	 *  onnxruntime. Probing sequentially with a shared deadline handed the
+	 *  fallback 5000 / 4 = 1250 ms, so it failed; every candidate now runs
+	 *  concurrently with the FULL budget. The cost model is an injected probe
+	 *  (a candidate succeeds when it works and its cost fits the budget it was
+	 *  handed) and a fake clock - no real time passes. */
+	void slowFailingCandidateDoesNotStarveAColdFallback()
 	{
 		EnvironmentGuard guard({ "LMMS_STEM_PYTHON", "LMMS_STEM_PYTHON_PROBE_MS" });
 		const QString slow = QStringLiteral("/slow/failing/interpreter");
@@ -282,40 +300,37 @@ private slots:
 		qputenv("LMMS_STEM_PYTHON", slow.toUtf8());
 		qunsetenv("LMMS_STEM_PYTHON_PROBE_MS"); // a positive (default) budget
 
-		struct HookReset
-		{
-			~HookReset() { ExternalProcessStemSeparator::setDiscoveryHooksForTest({}); }
-		} reset;
-
-		qint64 clockMs = 0;
+		std::atomic<qint64> clockMs{ 0 };
+		std::mutex mutex; // the probe runs on one thread per candidate
 		QStringList probed;
 		QList<int> budgets;
 		ExternalProcessStemSeparator::setDiscoveryHooksForTest({
 			[&](const QString& candidate, int timeoutMs)
 			{
-				probed << candidate;
-				budgets << timeoutMs;
-				if (candidate == slow)
+				const qint64 cost = candidate == slow ? 6000 : candidate == fallback ? 2000 : 0;
+				const bool works = candidate == fallback;
 				{
-					// It uses every millisecond it is given and never answers.
-					clockMs += timeoutMs;
-					return false;
+					std::lock_guard lock(mutex);
+					probed << candidate;
+					budgets << timeoutMs;
 				}
-				return candidate == fallback;
+				clockMs += std::min<qint64>(cost, timeoutMs);
+				return timeoutMs >= cost && works;
 			},
-			[&clockMs]() { return clockMs; }
+			[&clockMs]() { return clockMs.load(); }
 		});
 
 		QString error;
 		const QString located = ExternalProcessStemSeparator::locatePython(&error);
-		QVERIFY2(probed.size() >= 2,
-			"the working fallback was never tried: the slow candidate consumed the whole budget");
-		QCOMPARE(probed.value(0), slow);
-		QCOMPARE(probed.value(1), fallback);
-		QVERIFY2(budgets.value(1) > 0,
-			"the fallback was given no time, so a slow candidate starved it");
 		QCOMPARE(located, fallback);
 		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QCOMPARE(probed.size(), 4);
+		QVERIFY2(probed.contains(slow) && probed.contains(fallback),
+			"every candidate must be probed, not only those before the first success");
+		for (const int budget : budgets)
+		{
+			QCOMPARE(budget, 5000); // the full budget, never a share of it
+		}
 	}
 
 	/*! The normal path is untouched: the first candidate whose `import
