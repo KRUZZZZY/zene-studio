@@ -446,7 +446,7 @@ private slots:
 		auto emitCut = [&sent](int channel) { sent.push_back("CUT" + std::to_string(channel)); return true; };
 		lmms::drainMidi(queue, overflow, 4, emitEvent, emitCut); // consumed = 4: a refusal there is due
 		overflow.recordWithPublicationHooks(3, 4,
-			[&] { lmms::drainMidi(queue, overflow, 1, emitEvent, emitCut, 1); }, // after raise: the cut is sent and m_cutAt cleared
+			[&] { lmms::drainMidi(queue, overflow, 1, emitEvent, emitCut, 1); }, [] {}, // after raise: the cut is sent and m_cutAt cleared; then no pause at the occupancy announcement
 			[&] {
 				// after the slot publish: another producer queues the post-refusal note, then the one-event drain
 				QVERIFY(queue.push(eventWithOffset(5)));

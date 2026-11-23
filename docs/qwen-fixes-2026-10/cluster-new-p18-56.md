@@ -47,17 +47,44 @@ the publish (the consumer scans, which is safe), and is decremented only by the 
 successful slot clear. No allocation, lock, wait or log is added to the render path; the only new render-side
 work is one seq-cst load per channel per drain check and one seq-cst subtract per cleared slot.
 
-## Regression tests (`tests/src/core/MidiHandoffQueueTest.cpp`)
+## Round 3: consumer read order
 
-- `drainWithoutCutsDoesNotScanPendingSlots` (`:428`, kept from round 1) — 128 events on a 512-capacity queue
-  with no overflow: `pendingSlotReads() == 0` and all 128 events consumed.
-- `publishedCutIsNotHiddenByAClearedStamp` (`:440`, new) — fills a 4-capacity queue, drains it, then records a
-  refusal with the publication hooks. At the `afterRaise` pause the consumer sends the due cut (clearing
-  `m_cutAt`); at the `afterRemember` pause a second producer queues the post-refusal note and the consumer
-  drains with a one-event budget. The test asserts the budget was spent on the cut (`consumed == 4`) and the
-  trace is `E1 E2 E3 E4 CUT3 CUT3 CUT3 E5`, i.e. every cut precedes the post-refusal note. The two pauses are
-  the exact window the review named; no thread, sleep or wall clock is involved (the hooks run the consumer
-  from inside the producer's record call, the note is queued by the second-producer simulation).
+The review's checkpoint asked for the consumer's read order to be fixed on top of the `m_pendingUsed` accounting.
+Before this round `sharedCut()` / `sharedStamp()` read `m_earliestCutAt`, then `m_cutAt`, then `m_pendingUsed`.
+A producer that raises `m_cutAt` and publishes its slot *between* the `m_cutAt` read and the `m_pendingUsed`
+read left the consumer with a stale `latest == 0` and `used == 0`, so the cut was missed and the post-refusal
+note could be popped first (baseline reads the raised stamp last, after the slot scan).
+
+Fix (`include/MidiHandoffQueue.h`, `sharedCut()` and `sharedStamp()`): read `m_earliestCutAt`, then
+`m_pendingUsed`, then (only if `used > 0`) `pendingStamp()`, and read `m_cutAt` **last**, so the `used == 0`
+branch also returns a fresh raised stamp. Since a producer raises the stamp before it announces or publishes a
+slot, a stamp read after the occupancy is at least as fresh as that occupancy. The `ordered`/deferred-stamp
+semantics are unchanged (`ordered` is true only when a published slot was found), and with no pending cut the
+drain is still two loads per channel (`pendingSlotReads() == 0`).
+
+Test seams (compiled only with `LMMS_TESTING`, no layout change):
+- `recordWithPublicationHooks()` now has a third pause, `afterAnnounce`, between `used++` and the slot CAS
+  (`remember()`), in addition to `afterRaise` and `afterRemember`.
+- `dueCutWithTestHook()` runs a callback between the consumer's occupancy read and its raised-stamp read
+  (`sharedCut()` calls it through `dueCutImpl()`; product `dueCut()` passes a no-op).
+
+## Regression tests
+
+- `MidiHandoffQueueTest::drainWithoutCutsDoesNotScanPendingSlots` (kept): `pendingSlotReads() == 0`, 128 events.
+- `MidiHandoffQueueTest::publishedCutIsNotHiddenByAClearedStamp` (kept; hook call gains the no-op middle hook):
+  trace `E1 E2 E3 E4 CUT3 CUT3 CUT3 E5`, one-event budget spent on the cut.
+- `VestigeMidiHandoffTest::aCutIsNotHiddenBeforeItsSlotIsPublished` (new): pause after the occupancy
+  announcement and before the slot CAS; a note is queued; the one-event-budget drain must take the cut
+  (`consumed() == 4`). This guards the third pause; it also passes on the pre-round-3 order, because the stamp
+  was already raised there (reported honestly: it is not the RED test).
+- `VestigeMidiHandoffTest::theRaisedStampIsReadAfterTheSlotOccupancy` (new, the RED test): the producer's full
+  publication runs inside the consumer's read window; the cut must be due (`effective == 5`). It fails with the
+  old order (`effective` 0) and passes with the new one.
+- Why in the Vestige target: `MidiHandoffQueueTest.cpp` is at the 500-code-line limit (adding the tests there
+  failed the file-length gate: 529) and the lane build tree refuses reconfiguration
+  (`cmake build` -> `bunny-guard: configuring is the parent's job`, exit 97, `configure-1.log`), so a new test
+  target was not possible. The Vestige test already includes `MidiHandoffQueue.h` and is built with
+  `LMMS_TESTING`.
 
 ## Test matrix
 
@@ -71,83 +98,66 @@ work is one seq-cst load per channel per drain check and one seq-cst subtract pe
 | Audio thread | no allocation/lock/wait/log added; the existing allocation test `pushAndPopAllocateNothing` still passes. |
 | Platforms | header-only change built for `zene`, `vstbase` and the MIDI test family on linux x86-64 (RelWithDebInfo). |
 
-## Evidence (this session; logs in the r2 log folder)
+## Evidence (this session; logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p18-56.r3/logs)
 
 | Step | Command | Exit | Result |
 | --- | --- | ---: | --- |
-| RED: ordering test added, round-1 fast path still in place | `cmake --build build --target MidiHandoffQueueTest -j4` (`build-1-red.log`) | 0 | built |
-| RED | `cd build/tests && ctest -R '^MidiHandoffQueueTest$' --output-on-failure` (`test-1-red.log`) | 8 | `consumedInBudgetCall`: 5 vs 4 |
-| first counter attempt (found the ordering/fallback interaction) | build (`build-2-green.log`), test (`test-2-green.log`) | 0 / 8 | two older tests exposed the `ordered` flag and the 0-latest overwrite |
-| counter + guards | build (`build-4-green.log` / `build-5-green.log`), test (`test-4-green.log` / `test-5-green.log`) | 0 / 0 | all 17 pass |
-| staged seam only (no counter), RED re-proof | build (`build-6-red-prefix.log`), test (`test-6-red-prefix.log`) | 0 / 8 | same consumed 5 vs 4 |
-| GREEN final code | build (`build-13-green.log`), test (`test-13-green.log`) | 0 / 0 | 17 passed |
+| RED (old read order, new seams) | `cmake --build build --target MidiHandoffQueueTest -j4` (`build-red2.log`) | 0 | built |
+| RED | `cd build/tests && ctest -R MidiHandoffQueueTest --output-on-failure` (`test-red2.log`) | 8 | `raisedStampIsReadAfterTheSlotOccupancy`: `cut.effective` 0 vs 5 (19 passed, 1 failed) |
+| tests moved to the Vestige target | file-length gate said 529 > 500 in `MidiHandoffQueueTest.cpp`; `cmake build` refused (`configure-1.log`) | 97 | see above |
+| 4b: `git diff -- include/MidiHandoffQueue.h > fix.patch` (seams staged, read-order only) | 0 | 53-line patch |
+| 4b RED: `git apply -R fix.patch`, `cmake --build build --target VestigeMidiHandoffTest MidiHandoffQueueTest -j4` (`build-f-red2.log`) | 0 / 0 | reverted, built |
+| 4b RED: `ctest -R '^(VestigeMidiHandoffTest\|MidiHandoffQueueTest)$' --output-on-failure` (`test-f-red.log`) | 8 | `VestigeMidiHandoffTest::theRaisedStampIsReadAfterTheSlotOccupancy`: Actual 0, Expected 5 (5 passed, 1 failed) |
+| 4b GREEN: `git apply fix.patch` | 0 | restored |
+| GREEN build: `cmake --build build --target zene vstbase MidiHandoffQueueTest CarlaMidiHandoffTest VestigeMidiHandoffTest Sf2PlayerRealtimeTest -j4` (`build-f-green.log`) | 0 | built |
+| GREEN: `ctest -R '^(MidiHandoffQueueTest\|CarlaMidiHandoffTest\|VestigeMidiHandoffTest\|Sf2PlayerRealtimeTest)$' --output-on-failure` (`test-f-green.log`) | 0 | 4/4 passed; Vestige binary: 6 passed |
+| Gates: `feature_check.py <worktree>` (`gates-3.log`) | 0 | all 8 PASS |
 
-### Step 4b — the test catches the bug
+Earlier rounds' evidence (round 2: the `m_pendingUsed` count and the `m_cutAt`-cleared-stamp RED/GREEN) is
+unchanged and still holds; see the commit history of this file.
 
-`fix.patch` is `git diff -- include/MidiHandoffQueue.h` with the test seam and test file staged, so it holds
-only the behavioural counter change (43 insertions, 21 deletions; no test code, no publication hooks).
-
-| Command | Exit | Result |
-| --- | ---: | --- |
-| `git diff -- include/MidiHandoffQueue.h > .../logs/fix.patch` | 0 | patch with the counter fix only |
-| `git apply -R .../logs/fix.patch` | 0 | reverted |
-| `cmake --build build --target MidiHandoffQueueTest -j4` (`build-14-red.log`) | 0 | built |
-| `cd build/tests && ctest -R '^MidiHandoffQueueTest$' --output-on-failure` (`test-14-red.log`) | 8 | `queue.consumed()` 5 vs 4, and `sent` = `E1 E2 E3 E4 CUT3 E5 CUT3` vs `... CUT3 CUT3 CUT3 E5` |
-| `git apply .../logs/fix.patch` | 0 | restored |
-| `cmake --build build --target zene vstbase MidiHandoffQueueTest CarlaMidiHandoffTest VestigeMidiHandoffTest Sf2PlayerRealtimeTest -j4` (`build-15-green-family.log`) | 0 | all built |
-| `cd build/tests && ctest -R '^(MidiHandoffQueueTest\|CarlaMidiHandoffTest\|VestigeMidiHandoffTest\|Sf2PlayerRealtimeTest)$'` (`test-15-green-family.log`) | 0 | 4/4 passed |
+Concurrency note (reasoned, not run: local TSan does not work on this box): the producer's order is
+raise `m_cutAt` -> `used++` (seq-cst) -> slot CAS -> lower `m_earliestCutAt`; the consumer's is
+`m_earliestCutAt` -> `used` (seq-cst) -> slots -> `m_cutAt`. Whatever `used` the consumer sees, a refusal whose
+raise precedes that read is visible through the final `m_cutAt` read; one whose raise follows it is a refusal
+the producer had not yet made visible, which is the same window the baseline has.
 
 ## Gates
 
-`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`gates-2.log`, exit 0):
-fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures,
-complexity, file-length — all PASS. `bash tests/file-length-gate.sh --check` after the compact test rewrite:
-PASS (exit 0, `gate-filelength-2.log`). The test file sits at the 500-code-line limit, so both regressions are
-kept in the existing target rather than a new one.
+`feature_check.py` exit 0: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace,
+no-tautology, doc-figures, complexity, file-length all PASS.
 
 ## Files in the commit
 
 - `include/MidiHandoffQueue.h`
-- `tests/src/core/MidiHandoffQueueTest.cpp`
-- `tests/upstream-modifications.txt` (the test-file reason now covers both regressions)
+- `tests/src/core/MidiHandoffQueueTest.cpp` (one-line hook-arity update)
+- `tests/src/plugins/VestigeMidiHandoffTest.cpp` (two new slots)
+- `tests/upstream-modifications.txt` (reason text)
 - `docs/qwen-fixes-2026-10/cluster-new-p18-56.md`
+
+Delegation: Haiku ran the RED build/test (twice: first hit a compile error in my seam placement), the GREEN
+family build/tests and the first 4b revert/restore cycle; the final RED/GREEN cycle and the reconfigure probe
+were run by me because the Haiku start budget (5) was spent. I read every log line cited here myself.
 
 ## Self-check
 
-- **The regression test fails with the product change reverted and passes with it.** Reverted (`git apply -R
-  logs/fix.patch`, rebuild, `ctest -R '^MidiHandoffQueueTest$'`): exit 8, `queue.consumed()` 5 vs 4 and the
-  note before the cut (`test-14-red.log`). Restored (rebuild, family ctest): exit 0, 4/4 passed
-  (`test-15-green-family.log`). The pre-seam RED with the round-1 code also exited 8 (`test-1-red.log`).
-- **The test is deterministic.** It uses the compile-time seam `recordWithPublicationHooks()` (after-raise and
-  after-remember callbacks inside `recordChannel()`) and the `pendingSlotReads()` probe; the consumer drains
-  from inside those callbacks, and the post-refusal note is queued by the simulated second producer. There is
-  no thread, sleep, wall clock or race in the test: the queue, the refusal position (4) and the one-event
-  budgets are injected values.
-- **Fix at the cause, callers and siblings.** `drainMidi()` (`:618`) is the only caller of `dueCut()`/`clear()`;
-  both `sharedCut()` (drain) and `sharedStamp()` (`stamp()`/`due()`), plus the deferred path through
-  `effectiveStamp()`, stay consistent (the raised-stamp fallback keeps `ordered == false`). Render callers
-  (`plugins/ZynAddSubFx/ZynAddSubFx.cpp:387`, `plugins/Vestige/Vestige.cpp:405`,
-  `RemotePlugin::sendQueuedMidiEvents()`, Carla's `processPeriod()`) keep the same `drainMidi()` contract.
-  `refreshEarliest()` still scans after a served cut. All existing queue tests pass, including the 512-capacity
-  and deferred-stamp ones.
-- **No collateral damage.** Header-only runtime logic; no project/save/format/serialization change, no new
-  limit or validation. The count only ever skips a scan that would find no slot; a published slot always
-  forces the scan. A redundant cut at the same stamp still occurs after a served cut, exactly as before.
-- **Not ALREADY-FIXED / FALSE-POSITIVE.** REAL: the reverted build emits the post-refusal note before the
-  cut (`test-14-red.log`), and the fix makes the cut precede it.
-- **Sibling commands.** No command file or registration was changed; `app.about`, `app.ask`, `app.help`,
-  `app.online_help`, `app.task_cancel`, `app.tasks`, `app.tour`, `app.tours`, `app.update_check_get`,
-  `app.update_check_run`, `app.update_check_set`, `app.version`, `app.whats_new`, `arrangement.fit_tracks`
-  and `arrangement.get_state` are untouched. No control command was added (the ControlCommandsSnapshot
-  canary is unchanged).
+- **The regression test fails without the fix and passes with it.** `test-f-red.log` (fix reverted): exit 8,
+  `theRaisedStampIsReadAfterTheSlotOccupancy` Actual 0 / Expected 5. `test-f-green.log` (fix applied): exit 0,
+  4/4 passed.
+- **Deterministic.** Both new tests run the producer's steps inside seam callbacks on one thread; no thread,
+  sleep or wall clock.
+- **Fix at the cause, callers and siblings.** Both consumer readers of the shared stamps (`sharedCut()` for the
+  drain, `sharedStamp()` for `stamp()`/`due()`) got the same order; the only product caller of `dueCut()` is
+  `drainMidi()`. `refreshEarliest()` (consumer, after a served cut) already reads the slots then `m_cutAt`.
+- **Scan-count regression kept.** `drainWithoutCutsDoesNotScanPendingSlots` passes (`pendingSlotReads()==0`),
+  as does `publishedCutIsNotHiddenByAClearedStamp` (`CUT3 x3` then `E5`).
+- **No collateral damage.** Header-only logic; no saved-data change. Seams are `LMMS_TESTING`-only functions; no
+  data member was added, so classes embedding `MidiChannelOverflow` keep their layout. No allocation, lock,
+  wait or log on the audio thread; the only change on that path is the order of loads already present.
+- **No control command added.**
 
 ## Other findings
 
-- The lane build tree refuses reconfiguration (`bunny-guard: configuring is the parent's job`), so a new test
-  target cannot be built or run here; the two regressions consequently live in the existing
-  `MidiHandoffQueueTest` target at exactly 500 code lines. A future change to that file will need to split it
-  when the parent reconfigure is available.
-- `MidiChannelOverflow` is compiled with `LMMS_TESTING` in test TUs but without it in product/plugin TUs while
-  objects cross the vtable boundary in `VestigeMidiHandoffTest`. The probe counter is a test-only *function*
-  (not data), and `m_pendingUsed` is declared in every build, so the layout stays identical; the round-1
-  hook refactor is method-only.
+- The lane build tree refuses reconfiguration, so a new test target is impossible here; the queue test is at the
+  500-line limit. A later change to `MidiHandoffQueueTest.cpp` needs the file split when the parent can
+  reconfigure.
