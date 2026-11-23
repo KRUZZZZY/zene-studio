@@ -157,10 +157,17 @@ static const char* host_ui_save_file(NativeHostHandle, bool isDir, const char* t
 
 CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const Descriptor* const descriptor, const bool isPatchbay,
     const Descriptor::SubPluginFeatures::Key* key, bool playNow)
+    : CarlaInstrument(instrumentTrack, descriptor, isPatchbay,
+        isPatchbay ? carla_get_native_patchbay_plugin() : carla_get_native_rack_plugin(), key, playNow)
+{
+}
+
+CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const Descriptor* const descriptor, const bool isPatchbay,
+    const NativePluginDescriptor* nativeDescriptor, const Descriptor::SubPluginFeatures::Key* key, bool playNow)
     : Instrument(instrumentTrack, descriptor, key, Flag::IsSingleStreamed | Flag::IsMidiBased | Flag::IsNotBendable),
       kIsPatchbay(isPatchbay),
       fHandle(nullptr),
-      fDescriptor(isPatchbay ? carla_get_native_patchbay_plugin() : carla_get_native_rack_plugin()),
+      fDescriptor(nativeDescriptor),
       m_paramModels()
 {
     fHost.handle      = this;

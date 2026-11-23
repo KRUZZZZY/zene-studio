@@ -6301,8 +6301,8 @@ if(TARGET carlabase)
 		CARLA_HEADER_PATH="${CMAKE_SOURCE_DIR}/plugins/CarlaBase/Carla.h")
 	set_target_properties(CarlaParamFloatModelTest PROPERTIES ENABLE_EXPORTS ON)
 	# cluster new-p10-545: drives the production CarlaInstrument::playImpl() over a fake native Carla plug-in
-	# (the executable's carla_get_native_rack_plugin() interposes the dummy library), so the render planes and a
-	# maximum period on a tiny thread stack are observed on the shipping code, not on a helper.
+	# (passed through CarlaInstrument's descriptor constructor), so the render planes and a maximum period on a
+	# tiny thread stack are observed on the shipping code, not on a helper.
 	add_executable(CarlaPlayImplTest src/plugins/CarlaPlayImplTest.cpp)
 	add_test(NAME CarlaPlayImplTest COMMAND CarlaPlayImplTest)
 	set_tests_properties(CarlaPlayImplTest PROPERTIES
@@ -6323,7 +6323,6 @@ if(TARGET carlabase)
 		${QT_QTTEST_LIBRARY})
 	target_compile_features(CarlaPlayImplTest PRIVATE cxx_std_20)
 	target_compile_definitions(CarlaPlayImplTest PRIVATE LMMS_TESTING)
-	set_target_properties(CarlaPlayImplTest PROPERTIES ENABLE_EXPORTS ON)
 	add_dependencies(CarlaPlayImplTest carlabase)
 	# Q050-481.3 r3: a legacy VST2 dump never applies more entries than the plug-in has parameters.
 	add_executable(CarlaVst2LegacyStateTest src/plugins/CarlaVst2LegacyStateTest.cpp ${CMAKE_SOURCE_DIR}/plugins/CarlaBase/CarlaVst2Legacy.cpp)

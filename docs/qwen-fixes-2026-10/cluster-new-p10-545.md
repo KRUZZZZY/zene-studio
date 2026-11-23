@@ -243,3 +243,59 @@ Gates: `feature_check.py` `EXIT=0`, `RESULT: PASS` for all eight gates (`gate-1.
 
 Delegation (round 4): Haiku built and ran the tests in three starts (first build, rebuild, RED/restore
 sequence); I read the code, wrote the test and its CMake entry, reviewed the logs and wrote this section.
+
+## Round 5: the test reaches `playImpl()` through a descriptor constructor, not symbol interposition
+
+Review checkpoint: keep `CarlaRenderBuffers`, the `playImpl()` change and both helper tests; inject the fake
+native plug-in through a constructor instead of interposing `carla_get_*`; prove RED by reversing only the
+`playImpl()` hunk.
+
+Changes:
+
+- `plugins/CarlaBase/Carla.h:216-219`: a protected `CarlaInstrument(InstrumentTrack*, const Descriptor*, bool
+  isPatchbay, const NativePluginDescriptor* nativeDescriptor, const Key* key, bool playNow)` (six arguments, no
+  defaults, so no existing five-argument call becomes ambiguous).
+- `plugins/CarlaBase/Carla.cpp:158-170`: the public constructor delegates to it with
+  `isPatchbay ? carla_get_native_patchbay_plugin() : carla_get_native_rack_plugin()`, the same expression that
+  used to initialise `fDescriptor`, so Rack, Patchbay and `CarlaVst2` (which use the public constructor) behave
+  exactly as before. I did not add the optional null-descriptor guard: no shipping path passes null, and the
+  guard would also be needed in the parameter-count loop and the destructor, which is outside this bug.
+- `tests/src/plugins/CarlaPlayImplTest.cpp`: the `extern "C"` `carla_get_*` definitions are gone; a local
+  `FakeCarlaInstrument` subclass passes `fakeDescriptor()` through the new constructor. Both cases are kept
+  (`playImplRendersIntoPlanesOffTheStack`, `maximumPeriodRendersOnASmallStack`).
+- `tests/CMakeLists.txt`: `ENABLE_EXPORTS ON` and the interposition comment removed from `CarlaPlayImplTest`.
+- `tests/upstream-modifications.txt`: one line each for `Carla.cpp` and `Carla.h` (round 5).
+
+The product patch for RED/GREEN, `fix.patch`, is only the `playImpl()` hunk: it was made with
+`diff -u` between a copy of the current `Carla.cpp` whose `playImpl()` has the original period-sized
+`float buf1[bufsize]; float buf2[bufsize];` arrays (`_alloca` on MSVC) and copy loop
+(`logs/Carla.cpp.stack-arrays`, the pre-fix text from commit `05b41a3b78`), and the current `Carla.cpp`. It
+leaves the descriptor constructor, `CarlaRenderBuffers.h` and the `m_renderBuffers` member in place, so the
+reversed tree builds.
+
+Commands (logs in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p10-545.r5/logs`, ctest run from
+`build/tests`):
+
+| step | command | EXIT | log |
+| --- | --- | --- | --- |
+| GREEN build | `cmake --build build --target zene carlabase CarlaRenderBuffersTest CarlaMidiHandoffTest CarlaPlayImplTest -j4` | 0 | `build-1.log` |
+| GREEN run | `ctest -R '^(CarlaPlayImplTest\|CarlaRenderBuffersTest\|CarlaMidiHandoffTest)$' --output-on-failure` | 0 | `test-1-green.log` (100% of 3) |
+| reverse playImpl hunk | `git apply -R .../logs/fix.patch` | 0 | |
+| RED build | `cmake --build build --target zene carlabase CarlaPlayImplTest -j4` | 0 | `build-2-red.log` |
+| RED run | `ctest -R '^CarlaPlayImplTest$' --output-on-failure` | 8 | `test-2-red.log` |
+| restore | `git apply .../logs/fix.patch` | 0 | |
+| GREEN build | same five targets | 0 | `build-3.log` |
+| GREEN run | same three-test ctest | 0 | `test-3-green.log` (100% of 3) |
+
+RED, from `test-2-red.log`: `FAIL!  : CarlaPlayImplTest::playImplRendersIntoPlanesOffTheStack()
+'!g_seen.leftOnStack && !g_seen.rightOnStack' returned FALSE. (the render planes are on the thread's stack)`,
+then `CarlaPlayImplTest ...***Exception: SegFault` (the small-stack case overflowing, by elimination as in
+round 4; not checked under a debugger).
+
+Gates: `python3 .../feature_check.py <worktree>` `EXIT=0`, `RESULT: PASS`, all eight gates
+(`feature-check-1.log`).
+
+Delegation (round 5): Haiku ran the GREEN, RED and restored builds and ctest runs (one start); I made the
+constructor, test and CMake edits myself because each was a few lines, built the playImpl-only patch,
+checked the logs and wrote this section. Sonnet was not used: there was no multi-file change large enough to
+hand off.

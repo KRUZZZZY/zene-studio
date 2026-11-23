@@ -21,8 +21,8 @@
  */
 
 // cluster new-p10-545: CarlaInstrument::playImpl() used two stack arrays sized from the audio period.
-// This test builds a real CarlaInstrument over a fake Carla native plug-in (the test executable defines
-// carla_get_native_rack_plugin(), which interposes the dummy library the carlabase module links) and drives
+// This test builds a real CarlaInstrument over a fake Carla native plug-in (passed through the descriptor
+// constructor that the public constructor delegates to with Carla's Rack or Patchbay plug-in) and drives
 // the public Instrument::play() entry, so what it observes is the shipping code: the planes Carla's process
 // callback receives, and whether a maximum-size period renders on a thread with a very small stack.
 
@@ -188,14 +188,20 @@ auto sentinelFrames(std::size_t count) -> std::vector<lmms::SampleFrame>
 
 } // namespace
 
-// The carlabase module calls these through the dynamic symbol table; the executable's definitions come first
-// in the lookup order, so CarlaInstrument sees the fake rack and patchbay plug-in instead of the dummy library's.
-extern "C"
+namespace
 {
-CARLA_API_EXPORT const NativePluginDescriptor* carla_get_native_rack_plugin() { return fakeDescriptor(); }
-CARLA_API_EXPORT const NativePluginDescriptor* carla_get_native_patchbay_plugin() { return fakeDescriptor(); }
-CARLA_API_EXPORT const char* carla_get_library_folder() { return "/nonexistent/lib/carla"; }
-}
+
+//! A CarlaInstrument over the fake native plug-in, through the descriptor constructor the shipping one uses.
+class FakeCarlaInstrument final : public lmms::CarlaInstrument
+{
+public:
+	FakeCarlaInstrument()
+		: lmms::CarlaInstrument(nullptr, nullptr, false, fakeDescriptor(), nullptr, false)
+	{
+	}
+};
+
+} // namespace
 
 class CarlaPlayImplTest final : public QObject
 {
@@ -212,7 +218,7 @@ private slots:
 	void playImplRendersIntoPlanesOffTheStack()
 	{
 #ifdef ZENE_CARLA_PLAY_TEST_HAS_PTHREAD
-		auto instrument = std::make_unique<lmms::CarlaInstrument>(nullptr, nullptr, false, nullptr, false);
+		auto instrument = std::make_unique<FakeCarlaInstrument>();
 
 		auto period = sentinelFrames(256);
 		PlayJob job{instrument.get(), &period};
@@ -247,7 +253,7 @@ private slots:
 	void maximumPeriodRendersOnASmallStack()
 	{
 #ifdef ZENE_CARLA_PLAY_TEST_HAS_PTHREAD
-		auto instrument = std::make_unique<lmms::CarlaInstrument>(nullptr, nullptr, false, nullptr, false);
+		auto instrument = std::make_unique<FakeCarlaInstrument>();
 		auto out = sentinelFrames(MaxFrames);
 
 		// The smallest stack the C library will start a thread on (it holds the thread's TLS as well) plus a
