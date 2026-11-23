@@ -81,9 +81,7 @@ Existing regression coverage (deterministic, already in the tree):
 | test-6-restored | `cd build/tests && ctest -R '^DrumSynthTest$' --output-on-failure` | **0** | `100% tests passed out of 1` |
 | gates-1 | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **0** | `PASS` on `fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity`, `file-length`; `RESULT: PASS` |
 | submit-pre-1 | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-102` | **1** | only FAILs at that point were the still-missing report and its `Self-check` section |
-
-The post-commit completion-check run and its result are added in a follow-up docs commit,
-after the run itself, so the recorded exit code comes from an observed run.
+| submit-final-1 | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-102` (after the report commit, clean tree) | **0** | `RESULT: PASS - submit`; every mechanical item PASS, the six ASK items are answered above |
 
 The command-and-output record of the inspection itself is in `evidence-1.log` in the same
 log folder (`git blame` of `src/core/DrumSynth.cpp:76-90`, the test declarations, the branch
