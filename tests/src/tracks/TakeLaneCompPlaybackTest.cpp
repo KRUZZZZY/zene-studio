@@ -469,6 +469,72 @@ private slots:
 		QCOMPARE(removeComp.segments().size(), std::size_t{257});
 	}
 
+	//! Cluster new-p8-211: rebuild() fills the span it is given with the base lane. A filled
+	//! gap that touches an existing base-lane segment is the SAME lane at the same slip, so
+	//! the two must be one span and one read; left as two, the play handle ramps out and back
+	//! in at their shared tick and the take audibly dips though its lane never changed.
+	void rebuildMergesFilledGapsIntoTheBaseLaneSoItDoesNotDip()
+	{
+		SampleTrack track(Engine::getSong());
+		SampleClip* take = makeTake(track, m_rate, 0.5f, 0);
+		TakeLaneModel& comp = track.takeLanes();
+		comp.addLane();
+		comp.addLane();
+		const int length = take->length().getTicks();
+		const int quarter = length / 4;
+		QVERIFY(quarter > 0);
+		// The base lane is selected up to Q; the alternate lane occupies [2Q, 3Q). Rebuilding
+		// over the whole clip fills [Q, 2Q) with the base lane, touching the base selection.
+		QVERIFY(comp.selectSegment(0, quarter, 0));
+		QVERIFY(comp.selectSegment(2 * quarter, 3 * quarter, 1));
+		const int rebuilt = comp.rebuild(0, length);
+
+		const std::vector<SampleFrame> out = render(take);
+		const auto at = [this](int ticks) { return static_cast<std::size_t>(std::llround(ticks * Engine::framesPerTick(m_rate))); };
+		const std::size_t guard = 128;  // clear of the 64-frame comp ramp at both span edges
+		QVERIFY(at(quarter) > guard && at(2 * quarter) > at(quarter) + 2 * guard && at(2 * quarter) + guard < out.size());
+		const double around = meanLevel(out, at(quarter) - guard, at(quarter) + guard);
+		std::printf("REBUILD_DIP_EVIDENCE at Q(=%d) %.4f\n", quarter, around);
+		QVERIFY2(std::fabs(around - 0.5) < 1e-4,
+			qPrintable(QStringLiteral("the base lane dips at the filled gap's shared edge: %1").arg(around)));
+
+		// The model's own invariant says so: [0, Q) and [Q, 2Q) are one base-lane span.
+		QCOMPARE(rebuilt, 3);
+		QCOMPARE(comp.segments().size(), std::size_t{3});
+		QCOMPARE(comp.segments().front().beginTick, 0);
+		QCOMPARE(comp.segments().front().endTick, 2 * quarter);
+	}
+
+	//! Cluster new-p8-211 round 3: two adjacent same-lane segments with DIFFERENT slips are a
+	//! seam in the take's read, not a lane switch. The gate must not ramp across their shared
+	//! boundary: the slip still changes what is read there, but the take itself is continuous.
+	void adjacentSameLaneDifferentSlipSegmentsDoNotDip()
+	{
+		SampleTrack track(Engine::getSong());
+		SampleClip* take = makeStepTake(track, m_rate);
+		TakeLaneModel& comp = track.takeLanes();
+		comp.addLane();
+		const int quarter = take->length().getTicks() / 4;
+		QVERIFY(quarter > 0);
+		// [0,2Q) reads the take 2Q ahead: the second (0.25) half. [2Q,4Q) reads it at its own
+		// place: the same 0.25 immediately after the boundary, so the audio level is continuous.
+		QVERIFY(comp.selectSegment(0, 2 * quarter, 0, 2 * quarter));
+		QVERIFY(comp.selectSegment(2 * quarter, 4 * quarter, 0, 0));
+		// Different slips are a seam in the read, not one span: the model keeps them apart.
+		QCOMPARE(comp.segments().size(), std::size_t{2});
+
+		const std::vector<SampleFrame> out = render(take);
+		const auto at = [this](int ticks) { return static_cast<std::size_t>(std::llround(ticks * Engine::framesPerTick(m_rate))); };
+		const std::size_t guard = 256;
+		QVERIFY(at(quarter) > guard && at(2 * quarter) > at(quarter) + 2 * guard && at(2 * quarter) + 128 < out.size());
+		const double slipped = meanLevel(out, guard, at(quarter) - guard);
+		const double atSeam = meanLevel(out, at(2 * quarter) - 128, at(2 * quarter) + 128);
+		std::printf("SLIP_SEAM_EVIDENCE slipped[0,Q)=%.4f seam(=%d)=%.4f\n", slipped, 2 * quarter, atSeam);
+		QVERIFY2(std::fabs(slipped - 0.25) < 1e-4, "the slipped segment must still read the take slipped");
+		QVERIFY2(std::fabs(atSeam - 0.25) < 1e-4,
+			qPrintable(QStringLiteral("the same-lane slip seam dips: %1").arg(atSeam)));
+	}
+
 	//! R3.3: a MIDI take is comped by note - the gate InstrumentTrack::play asks per note.
 	void midiNotesPlayWhereTheirLaneIsSelected()
 	{

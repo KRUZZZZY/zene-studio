@@ -457,6 +457,11 @@ int TakeLaneModel::fillGaps(int spanBegin, int spanEnd)
 		gap.endTick = spanEnd;
 		filled.push_back(gap);
 	}
+	// A gap is filled with the base lane at slip 0, and the segment on either side of it
+	// may be the base lane at slip 0 too. Those are one continuous read (the same lane and
+	// slip, contiguous), so merge them into one span: the play handle ramps at span edges,
+	// and an unmerged pair would fade out and back in although the lane never changed.
+	mergeAdjacentSegments(&filled);
 	m_segments.swap(filled);
 	return static_cast<int>(m_segments.size());
 }
