@@ -2205,6 +2205,21 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			ZENE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 	endif()
+	# cluster new-p20-95: the coefficient-publication regression drives the real Peak
+	# Controller effect - its attack/decay models and its measured lastSample() - through
+	# the controller the effect itself creates, so the plugin's sources are compiled into
+	# this test the same way PeakControllerEffectZeroFrameTest compiles them.
+	if(LMMS_TEST_NAME STREQUAL "PeakControllerNullEffectTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/PeakControllerEffect/PeakControllerEffect.cpp
+			${CMAKE_SOURCE_DIR}/plugins/PeakControllerEffect/PeakControllerEffectControls.cpp
+			${CMAKE_SOURCE_DIR}/plugins/PeakControllerEffect/PeakControllerEffectControlDialog.cpp)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/PeakControllerEffect
+			${CMAKE_BINARY_DIR}/plugins/PeakControllerEffect)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			PLUGIN_STATIC_DEFINE PLUGIN_NAME=peakcontrollereffect)
+	endif()
 	# Q050-317.1: the release-sequence tests open a real mastering document through
 	# project.new_document, so the build's own template devices must exist (the same reason
 	# ArrangingCatchUpTest's plugin directory is set below).
