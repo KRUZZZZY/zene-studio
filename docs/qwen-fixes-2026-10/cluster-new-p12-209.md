@@ -80,8 +80,9 @@ Logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-209.r1/logs`.
 
 5. Completion check: `python3 .../submit_check.py <worktree> new-p12-209` -> EXIT=1 before the
    report existed (`submit-check-1.log`), failing only "report ... missing" and "report has a
-   'Self-check' section"; gates and tests items passed. Final run after this report:
-   `submit-check-2.log` (see Self-check).
+   'Self-check' section"; gates and tests items passed. With the report written but still
+   untracked, `submit-check-2.log` -> EXIT=1, failing only "working tree clean". After committing
+   the report, `submit-check-3.log` -> EXIT=0, `RESULT: PASS - submit`, all six checks PASS.
 
 ## Self-check
 
