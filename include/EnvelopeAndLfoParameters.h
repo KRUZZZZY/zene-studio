@@ -193,6 +193,12 @@ public:
 	bool holdAudioState();
 	void releaseHeldAudioState();
 
+	/*! TEST SEAM. detachAudioState() takes the published snapshot away
+	 *  exactly as the destructor does (the pointer is exchanged to null), so
+	 *  a test can drive the audio path while no snapshot is published. A
+	 *  production path never calls it. */
+	void detachAudioState();
+
 	/*! TEST SEAM. The publisher calls this hook while it publishes a snapshot,
 	 *  so a test can hold the publication and watch what the audio path does
 	 *  while a publication is in flight. The hook is empty in production. */

@@ -710,6 +710,22 @@ void EnvelopeAndLfoParameters::releaseHeldAudioState()
 
 
 
+// The published snapshot and the retired ones are taken away the way the
+// destructor takes them, so a test can drive the audio path when no snapshot
+// is published.
+void EnvelopeAndLfoParameters::detachAudioState()
+{
+	delete m_audioState.exchange( nullptr );
+	for( AudioState * state : m_retiredAudioStates )
+	{
+		delete state;
+	}
+	m_retiredAudioStates.clear();
+}
+
+
+
+
 f_cnt_t EnvelopeAndLfoParameters::PAHD_Frames() const
 {
 	const AudioState * const state = acquireAudioState();
