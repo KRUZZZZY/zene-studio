@@ -180,3 +180,13 @@ was already a fork source.
   that reports 0 would divide by zero there. Not changed beyond this finding.
 - `TrackContentWidget::updateBackground` (`:112`) would take the log of a zero
   pixel spacing if a zero scale ever returned; the same invariant protects it.
+
+## Round 9
+
+No product or test edits. The proof manifest's `state-sequence` artifact now lists its
+`states` as a flat list of strings, in the order the test drove them. This round
+re-ran the green build and test (`build-1.log` EXIT 0, `test-1-green.log` EXIT 0,
+1/1 passed) and re-took the Pattern Editor screenshot through `window.screenshot`
+(`gui-shot.log`, EXIT 0, sha256 `a3cd9952...ff775`, identical to round 8). The RED run
+(product diff reversed, EXIT 1) was not repeated this round; its evidence is the
+round-8 `test-3-red.log` quoted above, and its log folder no longer exists.
