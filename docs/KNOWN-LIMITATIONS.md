@@ -2066,7 +2066,9 @@ chord sequences and no chord detection from audio in this release.
 `project.missing_assets` lists every file a project file references (sample clips, AudioFileProcessor
 and SF2 instruments, session-view audio slots) and which of those have nothing on disk at them;
 `project.hash_assets` adds a sha256 and a size per reference that is on disk, plus one digest over the
-reference set; `project.relink` points the references the caller names at the file that was found,
+reference set; each distinct referenced file is read once, and the read is bounded to 4 GiB of media
+per call, with any further reference reported unhashed and the reason (a reference over the 1 GiB
+per-file cap is reported the same way); `project.relink` points the references the caller names at the file that was found,
 refusing unless that file hashes to an `expect_sha256` the caller names. All three work on **one
 project FILE**, so they answer for a project that is not open and for one that cannot be loaded, and
 `project.relink` is reversible through a recorded action checkpoint that restores the file's previous

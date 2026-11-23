@@ -1946,6 +1946,7 @@ src/core/ControlMixerSupport.cpp
 src/core/ControlModulationSupport.cpp
 src/core/ControlNoteShared.cpp
 src/core/ControlProjectAssets.cpp
+src/core/ControlProjectAssetsDocument.cpp
 src/core/ControlProjectAssetsRelink.cpp
 src/core/ControlProjectAssetsShared.h
 src/core/ControlProjectMedia.cpp
