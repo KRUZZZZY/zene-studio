@@ -131,6 +131,17 @@ that only the render thread calls these methods, as the class contract states
 5. **Verdict FIXED**, so no ALREADY-FIXED/FALSE-POSITIVE contract citation is needed; the REAL evidence
    is `src/core/HardwareOutputBus.cpp:105` (old `side.data[frame]`) versus the writer at `:69-78` that
    put the right side in a second plane.
+6. **Sibling commands in the command files:** this cluster changed no command file. The commit's own
+   file list is `git show --name-only --format= 0193d4dc7379ecf24fcf6dc1979eb044111e1dcc` and contains only
+   `include/HardwareOutputBus.h`, `src/core/HardwareOutputBus.cpp`,
+   `tests/src/core/HardwareOutputBusTest.cpp`, `tests/src/core/HardwareIoTestParts1.h` and this report.
+   The sibling list the pre-submit check prints comes from the branch's whole diff since the base (other
+   clusters' committed work), not from this fix; `app.*`, `arrangement.*` and every other command are
+   untouched, and no command schema, registry or snapshot file is in this commit.
+
+Pre-submit completion check: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p8-123 new-p8-123`
+exited 0 with `RESULT: PASS - submit` (`submit-check-1.log`; the report was amended afterwards only to add
+this answer, and the check was rerun).
 
 ## Other findings
 
