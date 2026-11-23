@@ -96,7 +96,16 @@ The fix, at the cause:
   device with no failure reports `available:false` rather than a zero. No project, save or
   undo data is touched.
 - **Verdict is REAL, not ALREADY-FIXED/FALSE-POSITIVE.** The unfixed line is quoted above
-  and the reverted run reproduces the infinite retry.
+  and the reverted run reproduces the infinite retry. (The "ALREADY-FIXED/FALSE-POSITIVE
+  code evidence" ask is therefore not applicable: this is a FIXED verdict.)
+- **Sibling commands.** This fix changes no control command file: the commit
+  (`4709129ec6`) touches only `include/AudioDevice.h`, `include/AudioDeviceDiagnostics.h`,
+  `src/core/AudioDeviceDiagnostics.cpp`, `src/core/audio/AudioAlsa.cpp`,
+  `src/core/audio/AudioDevice.cpp`, the three test-registration lists,
+  `tests/CMakeLists.txt`, `tests/src/core/AudioAlsaFatalWriteTest.cpp` and this report. The
+  `app.*`/`arrangement.*` siblings the checker lists come from the branch's merge history
+  against the gate base (`fa4a5f2e7`), not from this cluster's commit, and no command id,
+  schema or reply other than the additive `audio_device.failure` reading changed.
 
 ## Other findings
 
