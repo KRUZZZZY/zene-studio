@@ -33,6 +33,12 @@ It also runs its own self-test on fixture lines.
 - Siblings: every `bind(QHostAddress::` in the tree was found with `rg -n "bind\(QHostAddress::"` (4 sites, all fixed). Every `QVERIFY_EXCEPTION_THROWN(Type(` use was checked; only LinkAudioCodecTest.cpp:90 parses as a declaration.
 - Registration: the new script is in tests/fork-sources.txt. The tests/CMakeLists.txt change (an upstream file) is recorded in tests/upstream-modifications.txt. The three edited test files are already fork files.
 - GUI and Song/Record/Undo/Transport/AudioEngine files: none touched, so no screenshot or state-sequence is needed.
+- Red/green: with the fix reverted (\`git apply -R fix.patch\`, EXIT=0), Qt5ClangTestPortabilityCheck gave EXIT=1 (24-check-red.log) and the clang+Qt5 compile of the real files gave EXIT=1 x3 (25-repro-red.log). With the fix reapplied (EXIT=0), the check gave EXIT=0 (26-check-green2.log) and the compile gave EXIT=0 x3 (27-repro-green2.log).
+- Deterministic: the check is a static text scan plus \`clang++ -fsyntax-only\` on fixed fixture text. It has no timing, sleeps, threads or network.
+- Complete at the cause: see "Siblings" above. All four \`bind(QHostAddress::\` sites and the only declaration-shaped exception expression were fixed.
+- No collateral damage: the added check reads sources only, and it limits nothing at runtime.
+- ALREADY-FIXED / FALSE-POSITIVE: not applicable (verdict FIXED, reproduced in 01..03-repro-*.log).
+- Sibling control commands (app.*, arrangement.* ...): this cluster changes no command files. The list comes from the branch-wide diff against base, and none of those commands is affected by a test-only change.
 - Not verified: an actual Windows arm64 build. The equivalent toolchain combination, clang plus Qt 5.15 headers, was verified locally with -fsyntax-only. Qt5 builds of the whole tree were not run locally.
 
 Delegation: Haiku reproduced the clang+Qt5 errors and wrote repro-commands.sh. Sonnet wrote qt5-clang-test-portability-check.py and its CMake and fork-sources registration. Haiku ran the build, ctest and the 4b red/green proof. I diagnosed the cause, applied the 5 one-line fixes, reviewed the diffs, and wrote the report and the commit.
