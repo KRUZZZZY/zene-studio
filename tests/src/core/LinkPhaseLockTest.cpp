@@ -14,6 +14,11 @@
  * the shared AllocationProbe.h (via LinkRealtimeProbe.h's allocationsDuring()),
  * whose operator new replaces the WHOLE program's since BUGS_FOUND 13.9's fix.
  *
+ * The lifetime half: attach() publishes the session the audio thread may use and
+ * returns only once the session it replaces is out of every period, so the caller
+ * may destroy it there. The test parks one period inside the follower through the
+ * seam (LinkFollowerSeam) and lets attach()'s own wait loop release it.
+ *
  * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
@@ -35,6 +40,9 @@
  */
 
 #include <QtTest>
+
+#include <atomic>
+#include <thread>
 
 #include "AbletonLinkSession.h"
 #include "AudioDevice.h"
@@ -66,6 +74,42 @@ PhaseLockInput at(double linkBeat, double zeneBeat, bool started = false)
 	in.started = started;
 	return in;
 }
+
+/*! The follower's test seam handles for the attach() lifetime test: one period is
+ *  parked inside the follower, holding its session, until attach()'s own wait
+ *  loop - or, without that wait, the test - lets it go. Everything is a flag the
+ *  two threads set and read, so the order of events is the test's, not the
+ *  scheduler's: no sleeps and no clock. */
+struct AttachGate
+{
+	std::atomic<bool> inPeriod{false};       //!< a period is holding the session
+	std::atomic<bool> release{false};        //!< the parked period may finish
+	std::atomic<bool> releasedByAttach{false}; //!< attach()'s wait loop released it
+
+	//! Audio thread, once attach() has published the replacement: park, then go on.
+	void parkInPeriod()
+	{
+		inPeriod.store(true, std::memory_order_release);
+		while (!release.load(std::memory_order_acquire)) { std::this_thread::yield(); }
+		inPeriod.store(false, std::memory_order_release);
+	}
+
+	//! Control thread, inside attach()'s wait loop: let the parked period finish.
+	void releaseFromAttachWait()
+	{
+		releasedByAttach.store(true, std::memory_order_release);
+		release.store(true, std::memory_order_release);
+	}
+
+	//! Control thread: wait until the period is parked (it sets the flag itself).
+	void waitForPeriod()
+	{
+		while (!inPeriod.load(std::memory_order_acquire)) { std::this_thread::yield(); }
+	}
+};
+
+void parkInPeriod(void* context) { static_cast<AttachGate*>(context)->parkInPeriod(); }
+void releaseFromAttachWait(void* context) { static_cast<AttachGate*>(context)->releaseFromAttachWait(); }
 
 } // namespace
 
@@ -191,6 +235,102 @@ private slots:
 		QCOMPARE(after.periods - before.periods, std::uint64_t{64});
 		QVERIFY2(after.jumps > before.jumps, "no re-lock jump ran - the claim would not cover it");
 		QCOMPARE(allocations, std::uint64_t{0});
+	}
+
+	/*! attach() of a DIFFERENT session returns only once no period is using the
+	 *  session it replaces (include/LinkAudioFollower.h: the caller may destroy
+	 *  the previous session the moment attach() returns). A period that loaded the
+	 *  old pointer before the store is still inside that session; returning early
+	 *  lets the caller free a session the audio thread is dereferencing.
+	 *
+	 *  The seam parks one period inside the follower, holding `first`, and only
+	 *  attach()'s own wait loop releases it - so a follower that does not wait
+	 *  leaves the period parked and attach() is seen returning into a live period,
+	 *  with no clock and no sleep deciding the outcome. */
+	void replacingASessionWaitsForThePeriodUsingIt()
+	{
+		Engine::init(true);
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		Song* song = Engine::getSong();
+		AbletonLinkSession first(120.0);
+		AbletonLinkSession second(120.0);
+		LinkAudioFollower& follower = LinkAudioFollower::instance();
+		follower.attach(&first);
+		follower.setQuantum(4.0);
+		follower.setStartStopSync(false);
+		follower.setEngaged(true);
+
+		AttachGate gate;
+		LinkFollowerSeam seam;
+		seam.context = &gate;
+		seam.inPeriod = &parkInPeriod;
+		seam.attachWait = &releaseFromAttachWait;
+		follower.setTestSeam(&seam);
+
+		// One period, on a thread of its own, parked by the seam while it holds
+		// `first` - the state the audio thread is in when a session is replaced.
+		std::thread period([&] { followLinkSession(*song, true); });
+		gate.waitForPeriod();
+
+		follower.attach(&second);   // the call under test
+		const bool periodStillRunning = gate.inPeriod.load(std::memory_order_acquire);
+		const bool releasedByAttach = gate.releasedByAttach.load(std::memory_order_acquire);
+		// A follower that did not wait leaves the period parked; let it go so the
+		// thread joins and the failure is reported instead of a hung test.
+		gate.release.store(true, std::memory_order_release);
+		period.join();
+
+		follower.setTestSeam(nullptr);
+		follower.setEngaged(false);
+		follower.attach(nullptr);
+		song->stop();
+		Engine::destroy();
+
+		QVERIFY2(!periodStillRunning,
+			"attach(&second) returned while the audio thread was still inside the session it replaced");
+		QVERIFY2(releasedByAttach, "attach(&second) returned without waiting for the period using the old session");
+	}
+
+	/*! Publishing the SAME session again replaces nothing, so it must not stall the
+	 *  caller for a period: the wait is for a session that is replaced or
+	 *  withdrawn, not for work in flight. (Unchanged behaviour - this one holds
+	 *  before the fix too, and guards the wait from spreading to a re-attach.) */
+	void attachingTheSameSessionAgainDoesNotWait()
+	{
+		Engine::init(true);
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		Song* song = Engine::getSong();
+		AbletonLinkSession session(120.0);
+		LinkAudioFollower& follower = LinkAudioFollower::instance();
+		follower.attach(&session);
+		follower.setQuantum(4.0);
+		follower.setStartStopSync(false);
+		follower.setEngaged(true);
+
+		AttachGate gate;
+		LinkFollowerSeam seam;
+		seam.context = &gate;
+		seam.inPeriod = &parkInPeriod;
+		seam.attachWait = &releaseFromAttachWait;
+		follower.setTestSeam(&seam);
+
+		std::thread period([&] { followLinkSession(*song, true); });
+		gate.waitForPeriod();
+
+		follower.attach(&session);   // the same pointer: nothing is replaced
+		const bool periodStillRunning = gate.inPeriod.load(std::memory_order_acquire);
+		const bool enteredTheWait = gate.releasedByAttach.load(std::memory_order_acquire);
+		gate.release.store(true, std::memory_order_release);
+		period.join();
+
+		follower.setTestSeam(nullptr);
+		follower.setEngaged(false);
+		follower.attach(nullptr);
+		song->stop();
+		Engine::destroy();
+
+		QVERIFY2(periodStillRunning, "a re-attach of the same session waited for the period in flight");
+		QVERIFY2(!enteredTheWait, "a re-attach of the same session entered attach()'s wait loop");
 	}
 };
 

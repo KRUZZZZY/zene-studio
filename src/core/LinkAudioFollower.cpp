@@ -107,11 +107,32 @@ LinkAudioFollower& LinkAudioFollower::instance()
 
 void LinkAudioFollower::attach(AbletonLinkSession* session)
 {
-	m_session.store(session);
-	if (session != nullptr) { return; }
-	// A period that loaded the old pointer before the store above is still using
-	// it; it lets go at the end of that one period.
-	while (m_busy.load()) { std::this_thread::yield(); }
+	// Publish FIRST and wait after it: a period raises m_busy before it loads the
+	// pointer (process), so once the flag is seen clear after this exchange, no
+	// period can still be holding the session that was published before it -
+	// whether that one is withdrawn (nullptr) or replaced by a different session.
+	// A replacement therefore returns only when the previous session is free to
+	// destroy, which is what a caller that swaps sessions needs.
+	AbletonLinkSession* const previous = m_session.exchange(session);
+	if (session != nullptr && (previous == nullptr || previous == session))
+	{
+		// Nothing published before this store is in a period: nothing to wait for.
+		return;
+	}
+	while (m_busy.load()) { pauseAttachWait(); }
+}
+
+void LinkAudioFollower::pauseAttachWait() const
+{
+	if (const LinkFollowerSeam* const seam = m_seam.load(std::memory_order_acquire))
+	{
+		if (seam->attachWait != nullptr)
+		{
+			seam->attachWait(seam->context);
+			return;
+		}
+	}
+	std::this_thread::yield();
 }
 
 bool LinkAudioFollower::audioRunning(std::int64_t nowUs) const
@@ -139,6 +160,10 @@ LinkPeriod LinkAudioFollower::process(Song& song, bool rolling) noexcept
 	const BusyScope busy(m_busy);
 	AbletonLinkSession* session = m_session.load();
 	if (session == nullptr) { return disengaged(); }
+	if (const LinkFollowerSeam* const seam = m_seam.load(std::memory_order_acquire))
+	{
+		if (seam->inPeriod != nullptr) { seam->inPeriod(seam->context); }
+	}
 	return engagedPeriod(*session, song, rolling);
 }
 

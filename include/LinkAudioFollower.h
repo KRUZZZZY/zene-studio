@@ -24,8 +24,9 @@
  * on this thread. LinkPhaseLockTest measures the allocation count.
  *
  * Every control-side setter is a relaxed or release atomic store: the UI thread
- * never waits on the audio thread, except in attach(nullptr), which waits for
- * the period in flight to let go of the session before it may be destroyed.
+ * never waits on the audio thread, except in attach(), which waits for the
+ * period in flight to let go of the session it replaces or withdraws before that
+ * session may be destroyed.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -84,6 +85,23 @@ struct LinkFollowerReading
 	std::int64_t lastHostTimeUs = 0;
 };
 
+/*! Test seam; the product never sets one and LinkPhaseLockTest is the only
+ *  setter. Each callback runs on the thread named here, and a callback that runs
+ *  on the audio thread does what any audio-thread code does: no allocation, no
+ *  lock, no log.
+ *   - inPeriod:   audio thread, inside a period, after the session pointer is
+ *                 loaded and while it is held (BusyScope). Lets a test keep one
+ *                 period in flight at a point the test chooses.
+ *   - attachWait: control thread, once per poll of attach()'s wait loop, in place
+ *                 of the yield. Lets a test see that attach() waits and release
+ *                 the period it is waiting for. */
+struct LinkFollowerSeam
+{
+	void (*inPeriod)(void* context) = nullptr;
+	void (*attachWait)(void* context) = nullptr;
+	void* context = nullptr;
+};
+
 class LMMS_EXPORT LinkAudioFollower
 {
 public:
@@ -92,8 +110,10 @@ public:
 	static LinkAudioFollower& instance();
 
 	// ---- control side (UI thread) ------------------------------------------
-	//! Publish the session the audio thread may use; nullptr withdraws it and
-	//! returns only once no period is using the old one.
+	//! Publish the session the audio thread may use. Returns only once no period
+	//! is using the session published before it - nullptr withdraws that session,
+	//! a different pointer replaces it - so the caller may destroy the previous
+	//! session the moment this returns.
 	void attach(AbletonLinkSession* session);
 	void setEngaged(bool on) { m_engaged.store(on, std::memory_order_release); }
 	bool engaged() const { return m_engaged.load(std::memory_order_acquire); }
@@ -116,6 +136,9 @@ public:
 	// ---- audio thread ------------------------------------------------------
 	LinkPeriod process(Song& song, bool rolling) noexcept;
 
+	//! Test seam (see LinkFollowerSeam); nullptr removes it. Control thread.
+	void setTestSeam(const LinkFollowerSeam* seam) { m_seam.store(seam, std::memory_order_release); }
+
 private:
 	struct PeriodClock
 	{
@@ -133,9 +156,13 @@ private:
 		bool started) noexcept;
 	void apply(Timeline& timeline, const link::PhaseLockOutput& out, double framesPerTick) noexcept;
 	LinkPeriod releaseRate() noexcept;
+	//! One poll of attach()'s wait: the test seam's callback, or a yield.
+	void pauseAttachWait() const;
 
 	std::atomic<AbletonLinkSession*> m_session{nullptr};
 	std::atomic<bool> m_busy{false};
+	//! Test seam (LinkFollowerSeam); read once per engaged period and per poll below.
+	std::atomic<const LinkFollowerSeam*> m_seam{nullptr};
 	std::atomic<bool> m_engaged{false};
 	std::atomic<bool> m_startStopSync{false};
 	std::atomic<double> m_quantum{4.0};
