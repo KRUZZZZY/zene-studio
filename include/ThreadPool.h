@@ -44,7 +44,9 @@ class ThreadPool
 {
 public:
 	//! Destroys the `ThreadPool` object.
-	//! This blocks until all workers have finished executing.
+	//! This blocks until all workers have finished executing. When the destructor runs on
+	//! one of the pool's own workers (a task released the pool's last owner), that worker
+	//! cannot be joined: it is detached and exits after the task that is running on it.
 	~ThreadPool();
 
 	//! Enqueue function `fn` with arguments `args` to be ran asynchronously.

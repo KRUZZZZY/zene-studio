@@ -130,6 +130,32 @@ int runZeroConcurrencyChild()
 	return ran.load(std::memory_order_acquire) ? 0 : 3;
 }
 
+// Child-process body: the last owner of a pool is released inside one of that pool's own
+// tasks, so the destructor runs on the worker. Joining the calling thread throws from a
+// noexcept destructor and terminates the process; shutdown must not join that worker.
+int runWorkerDestructionChild()
+{
+	auto pool = std::make_shared<lmms::ThreadPool>(2);
+	auto startGate = std::make_shared<std::promise<void>>();
+	auto start = startGate->get_future().share();
+	auto destroyed = std::make_shared<std::promise<void>>();
+	auto destroyedOnWorker = destroyed->get_future();
+
+	auto task = pool->enqueue([pool = pool, start, destroyed]() mutable {
+		// Wait until the test thread has released its own share, so the reset below is
+		// the last release and the destructor provably runs on this worker.
+		start.wait();
+		pool.reset();
+		destroyed->set_value();
+	});
+
+	pool.reset();
+	startGate->set_value();
+	destroyedOnWorker.wait();
+	task.get();
+	return 0;
+}
+
 struct RvalueQualifiedCallable
 {
 	auto operator()() && -> int { return 413; }
@@ -281,6 +307,25 @@ private slots:
 		QVERIFY(ran.load(std::memory_order_acquire));
 	}
 
+	// A task can hold the last owner of its own pool; its release destroys the pool on that
+	// worker. The destructor must shut that worker down without joining it.
+	void destructionFromWorkerDoesNotTerminate()
+	{
+		QProcess child;
+		child.start(QCoreApplication::applicationFilePath(),
+			{QStringLiteral("--thread-pool-worker-destruction-child")});
+		QVERIFY2(child.waitForStarted(5000), qPrintable(child.errorString()));
+		if (!child.waitForFinished(10000))
+		{
+			child.kill();
+			child.waitForFinished(5000);
+			QFAIL("The child did not return from a destruction on a pool worker.");
+		}
+		QVERIFY2(child.exitStatus() == QProcess::NormalExit,
+			"The child crashed instead of shutting down a pool destroyed by its own worker.");
+		QCOMPARE(child.exitCode(), 0);
+	}
+
 	// The global pool is built from the cached hardware concurrency, which the platform may
 	// report as zero. It runs in a child process so the singleton is still unbuilt here.
 	void zeroHardwareConcurrencyStillRunsTasks()
@@ -315,6 +360,10 @@ int main(int argc, char** argv)
 	if (argc > 1 && std::strcmp(argv[1], "--thread-pool-zero-concurrency-child") == 0)
 	{
 		return runZeroConcurrencyChild();
+	}
+	if (argc > 1 && std::strcmp(argv[1], "--thread-pool-worker-destruction-child") == 0)
+	{
+		return runWorkerDestructionChild();
 	}
 	ThreadPoolTest test;
 	return QTest::qExec(&test, argc, argv);

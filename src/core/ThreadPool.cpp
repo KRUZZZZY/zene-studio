@@ -27,6 +27,13 @@
 #include <optional>
 
 namespace lmms {
+namespace {
+// Set on a worker thread whose pool is destroyed from inside one of that pool's tasks.
+// That worker cannot be joined; it is detached and leaves run() after the current task,
+// before touching members the destructor has already released.
+thread_local bool s_poolDestroyedOnThisWorker = false;
+} // namespace
+
 ThreadPool::ThreadPool(size_t numWorkers)
 {
 	numWorkers = workerCount(numWorkers);
@@ -61,6 +68,7 @@ ThreadPool::ThreadPool(size_t numWorkers)
 
 ThreadPool::~ThreadPool()
 {
+	const auto self = std::this_thread::get_id();
 	{
 		const auto lock = std::unique_lock{m_runMutex};
 		m_done = true;
@@ -70,7 +78,19 @@ ThreadPool::~ThreadPool()
 
 	for (auto& worker : m_workers)
 	{
-		if (worker.joinable()) { worker.join(); }
+		if (!worker.joinable()) { continue; }
+
+		if (worker.get_id() == self)
+		{
+			// A task released the last owner of this pool, so the destructor runs on that
+			// worker. Joining the calling thread throws from a noexcept destructor; let
+			// this worker exit after its task instead of joining it.
+			s_poolDestroyedOnThisWorker = true;
+			worker.detach();
+			continue;
+		}
+
+		worker.join();
 	}
 }
 
@@ -81,7 +101,9 @@ auto ThreadPool::numWorkers() const -> size_t
 
 void ThreadPool::run()
 {
-	while (true)
+	// Leave without touching any member when the destructor ran on this worker: the pool
+	// is gone except for the task still running on this stack.
+	while (!s_poolDestroyedOnThisWorker)
 	{
 		std::optional<std::packaged_task<void()>> task;
 		{
