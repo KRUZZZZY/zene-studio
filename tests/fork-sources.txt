@@ -4040,3 +4040,11 @@ tests/src/plugins/SfzCompressorStereoLinkTest.cpp
 # cluster new-p9-240 (2026-10): LOMM sample-rate change regression - the lookahead ring cursor and contents are re-anchored when the rings are resized (fork-NEW test).
 tests/src/plugins/LommSampleRateTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p9-240.md
+# Q050-305 (2026-11): live pin and channel-count edits during a render period. The ordering half
+# proves a routing edit parks on the engine's model-change guard (it cannot land inside a period),
+# the stress half renders real periods through AudioPorts::Router while a second thread edits pins
+# and channel counts and compares the routing caches and the routed audio with the pins the render
+# period read. Fork-NEW test, and its report and feature record.
+tests/src/core/AudioPortsLiveEditStressTest.cpp
+docs/050-features/Q050-305.md
+docs/qwen-fixes-2026-10/cluster-Q050-305.md
