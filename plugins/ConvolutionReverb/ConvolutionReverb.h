@@ -88,7 +88,13 @@ public:
 
 private:
 	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
-	void install(std::unique_ptr<ConvolutionKernel> kernel);
+	void install(std::unique_ptr<ConvolutionKernel> kernel, bool rateChanged);
+	//! Builds the kernel for @a path at the engine's current rate and installs it; @a rateChanged
+	//! also drops the state whose sample counts were measured at the old rate.
+	bool buildKernel(const QString& path, bool rateChanged);
+	//! Zeroes the pre-delay lines, the queued blocks and the filter histories. Control thread, under
+	//! the model-change guard: every count in them was measured at the rate they were filled at.
+	void resetRateDependentState();
 	void designFilters(float rate);
 	//! The pre-delay in frames at @a rate, as long as the line holds at most.
 	std::size_t predelayFrames(float rate) const;
