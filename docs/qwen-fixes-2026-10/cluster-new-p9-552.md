@@ -146,6 +146,12 @@ Gates:
   through the same `Sample` construction as before. No new limit or rejection was added.
   `SamplerEnvelopeTest` (Q050-103 defaults, persistence, old-project defaults) passes.
 - **ALREADY-FIXED / FALSE-POSITIVE** does not apply; the verdict is FIXED.
+- **Sibling commands in the command files changed.** This fix changes no command file, no
+  control-command registration and no commands snapshot; it is a sampler playback fix
+  driven by the existing `setAudioFile` slot and the existing project-load paths. The
+  command files the branch touches (for example `app.*` and `arrangement.*`) are other
+  clusters' work on this train and are unaffected by this change; none reads or writes a
+  sampler sample buffer.
 
 ## Other findings (not fixed here)
 
