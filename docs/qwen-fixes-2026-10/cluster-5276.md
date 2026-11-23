@@ -105,6 +105,9 @@ Logs: `/home/kruzzzzy/.config/kads/zene/state/runs/5276.r2/logs`.
 | 19 | `cmake --build build --target zene RetroAudioCaptureTest -j4 > 19-build-4b-green.log 2>&1` | 0 |
 | 20 | `cd build/tests && ./RetroAudioCaptureTest > 20-test-4b-green.log 2>&1` | 0 (16 passed) |
 | 21 | `cd build/tests && ctest -R '^RetroAudioCaptureTest$' --output-on-failure > 21-ctest-green.log 2>&1` | 0 (100% passed) |
+| 22 | `git add docs/qwen-fixes-2026-10/cluster-5276.md && git commit -m "docs(5276): report ALREADY-FIXED with the deterministic refused-move regression test"` | 0 (`d8b260e425`) |
+| 23 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 5276 > 23-submit.log 2>&1` | 0, every row PASS, `RESULT: PASS - submit` (log `23-submit.log`) |
+| 24 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > 24-feature-check-final.log 2>&1` | 0 (every row PASS, `RESULT: PASS`) |
 
 ## Self-check
 
