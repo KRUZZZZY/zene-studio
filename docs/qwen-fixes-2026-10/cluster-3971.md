@@ -109,3 +109,35 @@ Gates: see the Self-check section.
 Delegation: Haiku ran every build and ctest run (build-green-1/2/3, build-red-3, test-green-2/3/4, test-red-3) and
 reported exit codes and failing assertions; I read the failing assertion lines and the ctest tails, wrote all code
 and tests, and ran the patch revert/apply and the manifest edits myself.
+
+## Self-check
+
+- **Fails reverted, passes with the fix:** RED `ctest -R RangeBounceRenderSideTest` with `fix.patch` reverted: EXIT 8, 7 of 11
+  failed (`test-red-3.log`); GREEN, patch re-applied, the six-test family: EXIT 0, 6/6 passed (`test-green-4.log`). Two of
+  the nine new tests pass without the fix by design (see "Honest note on coverage").
+- **Deterministic:** no sleeps or timing as an oracle. The render is the test binary's own `fakeRender` (a pure function of
+  the serialised session and `ZENE_FAKE_TAIL_TICKS`, set per test in `init()`); expected sizes are `framesOf(ticks)` from
+  `Engine::framesPerTick` with a 3-frame tolerance for rounding. The queued tests poll the existing `render.queue_report`
+  seam (`waitForJob`, same as `BounceInPlaceTest`); the 5 ms `qWait` there only yields to the event loop between polls and
+  a 15 s limit is a failure bound, not a synchronisation.
+- **Cause and completeness:** the cause is that the render ignored which pieces get muted. All four paths into
+  `muteRangeSources` set `replacesRegion` (`ControlCommandsRangeBounce.cpp`, `ControlCommandsBounceLand.cpp`,
+  `ControlCommandsRenderBounce.cpp` `prepareBounceJob`); the only other callers of `renderTracks`/`renderTrack`/
+  `prepareRenderTracks` (`bounce.in_place`, `freeze.track`/`freeze.region` sync and queued/batch, `track.flatten`,
+  `FreezeRegionRepairTest`) leave it false and are unchanged. Frozen and automation handling were not touched.
+- **No collateral damage:** nothing is saved or loaded differently (the XML edit is on a scratch copy; the project file and
+  the model are untouched by the render). `Range` gained a defaulted field; `{start, end}` initialisation still compiles
+  (whole build green). The tail is bounded by `MaxTailTicks` and the next unmuted source clip, and the existing
+  `trimWav` clamp to the render's own length still applies, so no caller can ask for more than the render has. One
+  existing assertion was changed (see Tests).
+- **Not ALREADY-FIXED / FALSE-POSITIVE:** verdict is FIXED.
+- **Sibling commands:** the changed command files register `range.bounce`, `bounce.land` and `render.queue_bounce`
+  (`range_bounce`/`bounce_land` operations); all three are covered above. No command, argument or schema was added or
+  changed (the ControlCommandsSnapshot canary is untouched), and the other commands named by the check (`app.*`,
+  `arrangement.*`, ...) share a file with these only by registration order and never reach `BounceInPlace`, so they are
+  not affected. I did not enumerate the check's truncated list command by command.
+
+## Gate results
+
+`feature_check.py` on the committed tree: EXIT 0, all eight rows PASS (`gates-2.log`). `submit_check.py`: EXIT 0
+(`submit-1.log`) before this section was added.
