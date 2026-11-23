@@ -150,6 +150,13 @@ private slots:
 	void cleanupTestCase() { Engine::destroy(); }
 
 	//! The finding itself: the per-block ramp publish skips the busy clip instead of waiting.
+	//!
+	//! The test drives the publish through an explicit three-state sequence, one period
+	//! per state (the model's published ramp is only valid for the period it was built in):
+	//!   1. baseline publish  - no edit, the block publishes the ramp;
+	//!   2. edit-held skip    - a control-thread edit holds the clip lock, the publish
+	//!                          returns without waiting and leaves NO ramp for the period;
+	//!   3. released publish  - the edit is gone, the same block publishes the ramp again.
 	void theRampPublishDoesNotWaitForAnEditedClip()
 	{
 		Song* song = Engine::getSong();
@@ -158,20 +165,29 @@ private slots:
 		AutomationClip* clip = curveClip(track, model);
 		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
 
+		// State 1 of 3: baseline publish. With no edit, the block publishes the ramp.
+		AutomatableModel::incrementPeriodCounter();
+		song->buildAutomationRamps(song->tracks(), TimePos(60), frames, 0);
+		QVERIFY2(model.automationRamp() != nullptr,
+			"state 1 (baseline publish): no ramp was published with no edit in progress");
+
+		// State 2 of 3: edit-held skip. A real putValue() edit holds the clip's lock; the
+		// publish must return without waiting and leave the period with no ramp.
 		AutomatableModel::incrementPeriodCounter();
 		{
 			EditHoldingTheClipLock edit(clip);
 			QVERIFY2(returnsWhileTheEditHolds(edit,
 				[song, frames] { song->buildAutomationRamps(song->tracks(), TimePos(60), frames, 0); }),
-				"buildAutomationRamps waited for the clip lock an edit held (audio-thread wait)");
+				"state 2 (edit-held skip): buildAutomationRamps waited for the clip lock an edit held (audio-thread wait)");
 		}
 		QVERIFY2(model.automationRamp() == nullptr,
-			"a ramp was published from a clip whose lock the render did not hold");
+			"state 2 (edit-held skip): a ramp was published from a clip whose lock the render did not hold");
 
-		// Control: with the edit done, the same call publishes the ramp.
+		// State 3 of 3: released publish. With the edit released, the same call publishes the ramp.
 		AutomatableModel::incrementPeriodCounter();
 		song->buildAutomationRamps(song->tracks(), TimePos(60), frames, 0);
-		QVERIFY2(model.automationRamp() != nullptr, "no ramp without an edit: the test is vacuous");
+		QVERIFY2(model.automationRamp() != nullptr,
+			"state 3 (released publish): no ramp after the edit released");
 	}
 
 	//! The per-tick read of the same block (TrackContainer::collectAutomatedValues).
