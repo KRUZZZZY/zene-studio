@@ -154,6 +154,46 @@ private:
 	bool& m_destroyed;
 };
 
+//! Always claimable, so every addJob() call really takes a slot: a job that reports
+//! itself done would be skipped and the queue would never reach capacity.
+class OverflowFillerJob : public ThreadableJob
+{
+public:
+	bool requiresProcessing() const override { return true; }
+
+protected:
+	void doProcessing() override {}
+};
+
+//! Queues its successor from inside doProcessing() - the shape MixerChannel::processed()
+//! has when it schedules the receivers it just satisfied - and records how deeply that
+//! nests: `depth` is one while a single doProcessing() runs and two when a second one runs
+//! inside it. The two counters belong to the calling thread, so no atomics are needed.
+class ChainedOverflowJob : public ThreadableJob
+{
+public:
+	ChainedOverflowJob(int& depth, int& maxDepth) : m_depth(depth), m_maxDepth(maxDepth) {}
+
+	bool requiresProcessing() const override { return true; }
+
+	ChainedOverflowJob* successor = nullptr;
+	int runs = 0;
+
+protected:
+	void doProcessing() override
+	{
+		++runs;
+		const int nested = ++m_depth;
+		if (nested > m_maxDepth) { m_maxDepth = nested; }
+		if (successor != nullptr) { AudioEngineWorkerThread::addJob(successor); }
+		--m_depth;
+	}
+
+private:
+	int& m_depth;
+	int& m_maxDepth;
+};
+
 //! Stop a test worker the way AudioEngine's own shutdown does (src/core/AudioEngine.cpp:
 //! quit(), then one startAndWaitForJobs() to wake the condition, then join()).
 //!
@@ -608,6 +648,64 @@ private slots:
 			QCOMPARE(job->runs, 1);
 		}
 		QCOMPARE(total.load(), kJobs);
+	}
+
+	//! Queue overflow must drain a CHAIN of dependent jobs iteratively (cluster
+	//! new-p15-257). A job queued while the queue is full takes the synchronous fallback;
+	//! MixerChannel::processed() queues the receivers it just satisfied from inside the
+	//! sender's doProcessing(), so when that fallback runs the excess job on the spot and
+	//! the excess job queues another one, every link of the chain nests another process()
+	//! call and the audio thread's stack follows the graph. The case is a single-threaded,
+	//! deterministic observation of that nesting: no worker, no sleep, no wall clock.
+	void queueOverflowDoesNotNestProcessCallsForAJobChain()
+	{
+		AudioEngineWorkerThread::setDeterministicProcessing(true);
+		// The mixer's own mode: jobs are queued while the queue is drained.
+		AudioEngineWorkerThread::resetJobQueue(
+			AudioEngineWorkerThread::JobQueue::OperationMode::Dynamic);
+
+		// Fill every slot, so the chain below starts on the overflow path and stays on it:
+		// m_writeIndex only grows until the next reset(), and run() never scans past the
+		// queue's own size.
+		static OverflowFillerJob filler;
+		for (std::size_t i = 0; i < AudioEngineWorkerThread::JobQueue::JOB_QUEUE_SIZE; ++i)
+		{
+			AudioEngineWorkerThread::addJob(&filler);
+		}
+
+		constexpr int kLinks = 256;
+		int depth = 0;
+		int maxDepth = 0;
+		std::vector<std::unique_ptr<ChainedOverflowJob>> chain;
+		chain.reserve(kLinks);
+		for (int i = 0; i < kLinks; ++i)
+		{
+			chain.push_back(std::make_unique<ChainedOverflowJob>(depth, maxDepth));
+		}
+		for (int i = 0; i + 1 < kLinks; ++i) { chain[i]->successor = chain[i + 1].get(); }
+
+		AudioEngineWorkerThread::addJob(chain.front().get());
+
+		// Every link runs exactly once: the fallback may not drop the work it cannot queue.
+		int observed = 0;
+		for (const auto& link : chain)
+		{
+			QCOMPARE(link->runs, 1);
+			observed += link->runs;
+		}
+		QCOMPARE(observed, kLinks);
+
+		// Leave the queue as the other cases expect it: drain the filler slots this case
+		// took (the chain links are already complete) and clear the indices.
+		AudioEngineWorkerThread::startAndWaitForJobs();
+		AudioEngineWorkerThread::resetJobQueue();
+
+		// The recursion bound is the point of the fallback: a depth that follows the
+		// chain's length is the defect, one frame per link of C++ stack.
+		QVERIFY2(maxDepth == 1,
+			qPrintable(QStringLiteral("the queue-full fallback nested %1 process() calls for a "
+				"%2-link chain; it must drain the chain iteratively, in one frame for the whole "
+				"chain instead of one nested frame per link").arg(maxDepth).arg(kLinks)));
 	}
 
 private:

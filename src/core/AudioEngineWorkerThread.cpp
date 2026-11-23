@@ -125,6 +125,86 @@ void AudioEngineWorkerThread::drainDeferredPlayHandleEdits() noexcept
 // addJob() runs on the audio thread, so this records no formatted log output.
 std::atomic<std::uint64_t> queueFullRefusals{0};
 
+namespace
+{
+
+/*! One job the queue-full fallback has yet to run, and the queue whose completion count
+ * it belongs to (addJob() enqueues before it knows the queue is full, so an overflow job
+ * is already counted in m_writeIndex and completes the period's bookkeeping only when it
+ * has actually run). */
+struct OverflowJob
+{
+	//! The owning queue's m_itemsDone. A pointer to the counter, not to the queue: the
+	//! fallback needs nothing else, and JobQueue is a public class that a caller may
+	//! instantiate on its own.
+	std::atomic_size_t* done;
+	ThreadableJob* job;
+};
+
+/*! The queue-full fallback's work list (BUGS_FOUND cluster new-p15-257).
+ *
+ * The queue cannot grow on the audio path, so an excess job is processed on the spot.
+ * A job queued FROM a job - MixerChannel::processed() queues the receivers whose
+ * dependencies it just satisfied, from inside the sender's doProcessing() - then took
+ * that same path while the queue was still full, which nested one process() call per
+ * link: a chain of dependent channels, or a wide fan-out that keeps the queue full, ran
+ * the audio thread out of stack. A thread already draining the fallback now parks the
+ * job here and the drain loop runs it in iteration, so the C++ stack stays one job deep
+ * however long the chain is.
+ *
+ * Preallocated and thread-local: no allocation, no lock and no wait on the audio thread.
+ * Its capacity is the queue's own, so the fallback holds exactly as much work as the
+ * queue it stands in for; work beyond that (a full queue plus JOB_QUEUE_SIZE jobs parked
+ * here, i.e. more than 2 x JOB_QUEUE_SIZE jobs in one period) still runs on the spot,
+ * which is the old path at a scale the queue itself no longer covers. Trivial fields
+ * only, so a thread's copy is zero-initialised storage with no constructor to run. */
+struct OverflowDrainList
+{
+	OverflowJob pending[AudioEngineWorkerThread::JobQueue::JOB_QUEUE_SIZE];
+	std::size_t size;
+	bool draining;
+};
+
+thread_local OverflowDrainList tl_overflowDrain;
+
+//! Run one overflow job the way the fallback always has - inside a RealtimeScope, and
+//! counted complete for its queue - but without letting the stack grow with the chain.
+void processOverflowJob( const OverflowJob & overflow )
+{
+	const RealtimeScope realtime;
+	overflow.job->process();
+	++*overflow.done;
+}
+
+//! Drain the queue-full fallback iteratively: run \a job, then every job it queues while
+//! the queue is full, until none is left. A nested call only appends to the list.
+void runOverflowFallback( ThreadableJob * job, std::atomic_size_t & done )
+{
+	OverflowDrainList & list = tl_overflowDrain;
+	if( list.draining )
+	{
+		if( list.size < AudioEngineWorkerThread::JobQueue::JOB_QUEUE_SIZE )
+		{
+			list.pending[list.size++] = OverflowJob{ &done, job };
+			return;
+		}
+		// The fallback's storage is full too (see OverflowDrainList): run this one here.
+		processOverflowJob( OverflowJob{ &done, job } );
+		return;
+	}
+
+	list.draining = true;
+	processOverflowJob( OverflowJob{ &done, job } );
+	while( list.size > 0 )
+	{
+		const OverflowJob next = list.pending[--list.size];
+		processOverflowJob( next );
+	}
+	list.draining = false;
+}
+
+} // namespace
+
 // implementation of internal JobQueue
 void AudioEngineWorkerThread::JobQueue::reset( OperationMode _opMode )
 {
@@ -148,11 +228,11 @@ void AudioEngineWorkerThread::JobQueue::addJob( ThreadableJob * _job )
 			m_items[index] = _job;
 		} else {
 			// The queue cannot grow on the audio path. Process the excess job here
-			// instead of reporting it complete without doing its work.
+			// instead of reporting it complete without doing its work - iteratively,
+			// because a job processed here may queue another one (BUGS_FOUND cluster
+			// new-p15-257; see runOverflowFallback()).
 			queueFullRefusals.fetch_add(1, std::memory_order_relaxed);
-			const RealtimeScope realtime;
-			_job->process();
-			++m_itemsDone;
+			runOverflowFallback( _job, m_itemsDone );
 		}
 	}
 }
