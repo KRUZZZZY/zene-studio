@@ -1,0 +1,267 @@
+FIXED
+
+# cluster new-p14-197: Clearing voices can race with slot claims
+
+## Round 2 (a reviewer found a hole in round 1's `claim()`)
+The review is right. Round 1 read the pool generation once, before the slot scan (`claim()`, then
+`src/core/ModulationVoices.cpp:60`), and its rule treated **every** `Live` slot whose generation differed from that
+snapshot as reclaimable (line 70). A worker that paused between that read and its compare-exchange therefore observed a
+voice published by a *newer* worker (generation + 1), judged it reclaimable, CAS'd it to `Writing` at its own stale
+generation and published it as retired: the newer note lost its slot and never became a voice. The interleaving is
+reachable directly from those three facts, exactly as the review says.
+
+What changed:
+
+- `claimable()` (`src/core/ModulationVoices.cpp:58-68`) is now the whole decision, and it takes a slot only when it is
+  `Free` or holds a voice of a pool **strictly older** than the generation the claim is judged at
+  (`generationOf(state) < generation`). A voice of the current pool - or of a newer one, visible only to a caller whose
+  snapshot is stale - belongs to the note that published it; a slot another worker is filling stays that worker's.
+- `claim()` (lines 70-92) reads the generation **after** the slot word it observed and re-reads it after every failed
+  exchange. A clear that lands in between is therefore seen, and the compare-exchange compares the whole word
+  (generation included), so a slot that changed since it was observed is re-decided, never taken blind. A claim that
+  begins after a clear is stamped with the pool it actually claims in, so the note is voiced and visible; a claim that
+  began before the clear keeps the retired generation it began in.
+- `publish()` is unchanged: it stores `Live` in the claim's own generation, which is what retires a claim that spans a
+  clear without either side waiting.
+
+Regression (the sequence the review asked for: stale snapshot, clear, new-generation claim and publish, stale
+resumption): `InstrumentRoutingTest::aStaleClaimSnapshotCannotTakeANewerVoice`
+(`tests/src/core/InstrumentRoutingTestParts1.h:505-555`). It reads the generation and a free slot, clears the pool,
+lets a newer worker claim and publish, and then feeds the paused worker's stale observation and stale generation to the
+same decision `claim()` uses - which must refuse a voice of the newer generation, and must still refuse it for a claim
+one generation behind. It then checks the newer voice is intact in its own slot with its own note's fields, that no
+later claim hands that slot out, and that a note claimed after the clear is visible.
+
+Round-2 RED/GREEN, with `fix.patch` = the round-2 product change only
+(`git diff d1b860203b 75dd02968f -- include/ModulationVoices.h src/core/ModulationVoices.cpp`, 38 lines):
+
+| step | command | exit | log |
+|---|---|---|---|
+| patch written | `git diff d1b860203b 75dd02968f -- include/ModulationVoices.h src/core/ModulationVoices.cpp > .../r2/logs/fix.patch` | DIFF_EXIT=0 | `fix.patch` |
+| revert | `git apply -R .../r2/logs/fix.patch` | REVERT_EXIT=0 | |
+| build | `cmake --build build --target zene InstrumentRoutingTest -j4` | BUILD_EXIT=0 | `07-build-red2.log` |
+| RED | `cd build/tests && ctest -R '^InstrumentRoutingTest$' --output-on-failure` | **TEST_EXIT=8** | `08-test-red2.log` |
+| restore | `git apply .../r2/logs/fix.patch` | APPLY_EXIT=0 | |
+| build | `cmake --build build --target zene InstrumentRoutingTest -j4` | BUILD_EXIT=0 | `09-build-green2.log` |
+| GREEN | `cd build/tests && ctest -R '^InstrumentRoutingTest$' --output-on-failure` | **TEST_EXIT=0** | `10-test-green2.log` |
+
+RED (`08-test-red2.log`), the reviewer's case verbatim:
+```
+FAIL!  : InstrumentRoutingTest::aStaleClaimSnapshotCannotTakeANewerVoice() '!voices.claimable(liveNow, staleGeneration)' returned FALSE. (a stale generation snapshot may reclaim a voice published in the newer generation)
+   Loc: [../../tests/src/core/InstrumentRoutingTestParts1.h(523)]
+Totals: 22 passed, 1 failed, 0 skipped, 0 blacklisted, 837ms
+```
+The same test was red against the seam-only commit before the fix was written (`03-build-red.log` BUILD_EXIT=0,
+`04-test-red.log` TEST_EXIT=8, same assertion). Family and gates for round 2:
+`ctest -R 'Modulat|MidiInputTransform|InstrumentRouting'` → TEST_EXIT=0, 10/10 (`12-test-family.log`);
+`feature_check.py` → GATE_EXIT=0, `RESULT: PASS` (`13-feature-check.log`).
+
+The round-2 proof manifest (`.../r2/logs/proof.json`) carries this test only: it is the one whose red and green runs
+happened in this session. The round-1 pair was proven red/green in the round-1 log folder
+(`.../new-p14-197.r1/logs/13-test-red2.log` TEST_EXIT=8, `15-test-green2.log` TEST_EXIT=0, same session as those
+commits); this session I only re-ran them green (`06-test-green.log`, `10-test-green2.log`), and both also passed in
+the round-2 RED run (`08-test-red2.log`, "22 passed, 1 failed": the one failure is the new test).
+
+Round-1 behaviour the review asked to keep is unchanged: the clear during a claim
+(`clearingThePoolDoesNotHandOutAHalfFilledSlot`) and the claim that spans a clear
+(`aClaimThatSpansAClearStaysOutOfThePool`) both still pass, in the RED and the GREEN runs above.
+
+Notes on the review's other points:
+- The reviewer could not find `AGENTS.md`, the handover file or my round-1 proof manifest. `AGENTS.md` and
+  `plans/CLAUDE-READ-FIRST.md` are not in this worktree (`ls` reports "No such file or directory" for all three paths
+  this session); they were supplied to me as session instructions, not as repository files, so there is nothing to
+  commit. The proof manifest is written to the run's log folder, `.../new-p14-197.r2/logs/proof.json`; round 1's is in
+  `.../new-p14-197.r1/logs/proof.json`.
+- The stale `libzene_api` object the reviewer hit: every build in this round was
+  `cmake --build build --target zene <Test> -j4` with `zene` first, so the library the test links was rebuilt from the
+  same headers as the test in each RED and GREEN run above.
+
+## Verdict: REAL
+The finding names `src/core/ModulationLayerPublisher.cpp:95`, now line 96:
+
+```cpp
+// src/core/ModulationLayerPublisher.cpp:95-97
+m_anyPerVoice.store(anyPerVoice, std::memory_order_release);
+if (!anyPerVoice) { m_voices.clear(); }
+else { removeUnfollowedVoices(m_voices, m_triggerTrack, m_perVoice); }
+```
+
+`publishTriggers()` runs on the control thread (from `ModulationLayerPublisher::edit()`, `include/ModulationLayer.h:392`,
+inside the reader-visible write window). Audio workers are in the same pool at the same time:
+`InstrumentTrackNotes.cpp:416` → `ModulationLayerPublisher::voiceChanged()` → `m_voices.noteOn()`.
+`clear()` wrote every slot's state unconditionally (`src/core/ModulationVoices.cpp:93-96` before this fix):
+
+```cpp
+void ModulationVoices::clear() noexcept
+{
+	for (Slot& slot : m_slots) { slot.state.store(Free, std::memory_order_release); }
+}
+```
+
+`noteOn()` claimed a slot with `compare_exchange(Free → Writing)` and only wrote its fields afterwards, so a `clear()`
+that landed in that window freed a slot another worker was filling. Two consequences, both reproduced by the tests
+below (they fail on the pre-fix code, see RED):
+
+1. a second worker claimed the same slot (`Free` again) and both wrote `track`/`channel`/`key`/`startedAt`, so one
+   voice could carry a mixture of two notes' fields;
+2. the first worker then stored `Live`, leaving a voice that was active in a pool that had been cleared, and nothing
+   frees it afterwards: while no modulator is per-voice, `voiceChanged()` returns before `noteOff()` (line 102), and
+   the note's own note-off is ignored for the same reason. When per-voice modulation came back, that stale voice drove
+   `Instrument::modulateNote` for a note that had already ended.
+
+## Fix
+`ModulationVoices` now carries a pool **generation** (`include/ModulationVoices.h:143`) and every slot's state word is
+`(generation << 2) | State` (`stateWord()`/`kindOf()`/`generationOf()`, lines 115-124, and `currentGeneration()`, lines 126-130):
+
+- `clear()` (`src/core/ModulationVoices.cpp:115-121`) only bumps the generation. It writes no slot, so a slot another
+  worker is filling stays `Writing` and no second claim can take it.
+- `claim()` (round 2 rewrote it, see the round-2 section above: `claimable()` at lines 58-68 and `claim()` at
+  lines 70-92) stamps the claim with the pool generation it reads after observing the slot, and takes a slot only when
+  it is free or holds a voice of a strictly older pool. A voice of a retired generation is claimable again, which is
+  what keeps a cleared pool as roomy as before.
+- `publish()` (lines 81-96) stores `Live` **in the claim's own generation**. A note-on that finishes after a clear
+  therefore publishes a voice of the pool that was retired: invisible to `find()`/`voice()`/`activeCount()`
+  (lines 30-44, 123-147), and claimable by the next note-on. Neither side waits, and the audio path still only touches
+  atomics.
+- `noteOff()` (lines 98-113) frees only the voice `find()` returned, with a compare-exchange on the full state word, so
+  a slot re-claimed in between keeps its new claim.
+
+Realtime: `clear()` went from 64 atomic stores to one atomic add; `claim()`/`publish()`/`noteOff()`/`voice()` add one
+32-bit atomic load (and one word compare) each. Nothing allocates, locks, waits or logs, and `std::atomic<std::uint32_t>`
+is lock-free on every target (no 64-bit atomic was introduced). This is a `clear()` that is cheaper than before, on a
+path that was already: `publishTriggers()` used to write 64 slots inside the reader-visible write window.
+
+The seam commit before it (`6b04c5cbae`) splits `noteOn()` into `claim()` + `publish()` without changing any state,
+ordering or atomic: same code, same order, only so a test can hold a claim open across a `clear()` deterministically.
+
+## Regression test
+`tests/src/core/InstrumentRoutingTestParts1.h` (declarations in `tests/src/core/InstrumentRoutingTest.cpp:259` and `:263`, bodies at `InstrumentRoutingTestParts1.h:431` and `:466`):
+
+- `clearingThePoolDoesNotHandOutAHalfFilledSlot` — claims a slot, clears the pool, claims again: the second claim must
+  not take the slot being filled, and after both notes publish, exactly one voice is live, with the second note's
+  `track` and `key`.
+- `aClaimThatSpansAClearStaysOutOfThePool` — a claim held across `clear()` must not become a voice when it publishes,
+  the pool must be ordinary afterwards (`noteOn()` + `voice()`), and a cleared full pool must hand out all 64 slots.
+
+Test matrix this covers: **normal path** (`voicePoolIsFixed`, plus the `noteOn()`/`voice()` leg in the new test),
+**failure** (the clear during a claim, both symptoms), **exhaustion** (full pool, `dropped()`, and 64 slots claimable
+again after a clear), **reconfiguration** (a note after the clear, and the publisher family below), **audio thread**
+(atomics only, no allocation/lock/wait/log — `clear()` is one atomic add), **platform** (32-bit atomics only, no new
+include beyond `<cstdint>`, no Qt API, no `std::filesystem`).
+
+## RED / GREEN (all exits seen this session; logs in
+`/home/kruzzzzy/.config/kads/zene/state/runs/new-p14-197.r1/logs`)
+Step 4b, with `fix.patch` = the product part of the fix (`git diff 6b04c5cbae 0c03cbf6b8 -- include/ModulationVoices.h
+src/core/ModulationVoices.cpp`, 218 lines):
+
+| step | command | exit | log |
+|---|---|---|---|
+| patch written | `git diff 6b04c5cbae 0c03cbf6b8 -- include/ModulationVoices.h src/core/ModulationVoices.cpp > .../logs/fix.patch` | DIFF_EXIT=0 | `logs/fix.patch` |
+| revert | `git apply -R .../logs/fix.patch` | REVERT_EXIT=0 | |
+| build | `cmake --build build --target zene InstrumentRoutingTest -j4` | BUILD_EXIT=0 | `12-build-red2.log` |
+| RED | `cd build/tests && ctest -R '^InstrumentRoutingTest$' --output-on-failure` | **TEST_EXIT=8** | `13-test-red2.log` |
+| restore | `git apply .../logs/fix.patch` | APPLY_EXIT=0 | |
+| build | `cmake --build build --target zene InstrumentRoutingTest -j4` | BUILD_EXIT=0 | `14-build-green2.log` |
+| GREEN | `cd build/tests && ctest -R '^InstrumentRoutingTest$' --output-on-failure` | **TEST_EXIT=0** | `15-test-green2.log` |
+
+RED output (`13-test-red2.log`):
+```
+FAIL!  : InstrumentRoutingTest::clearingThePoolDoesNotHandOutAHalfFilledSlot() 'next.slot != filling.slot' returned FALSE. (clear() freed a slot another worker was still filling: two note-ons may claim it at once)
+   Loc: [../../tests/src/core/InstrumentRoutingTestParts1.h(441)]
+FAIL!  : InstrumentRoutingTest::aClaimThatSpansAClearStaysOutOfThePool() '!voices.voice(interrupted.slot, &voice)' returned FALSE. (a note claimed before the clear became a voice after it)
+   Loc: [../../tests/src/core/InstrumentRoutingTestParts1.h(475)]
+0% tests passed, 1 tests failed out of 1
+```
+The same two tests also failed against the seam-only code before the fix was written
+(`03-build-red.log` BUILD_EXIT=0, `04-test-red.log` TEST_EXIT=8, same two assertions), so the test is red with or
+without the fix.patch machinery.
+
+## GREEN family (`logs/11-test-family.log`, TEST_EXIT=0)
+`cd build/tests && ctest -R 'Modulat|MidiInputTransform|InstrumentRouting' --output-on-failure` → 10/10 passed:
+`InstrumentRoutingTest`, `ModulationLayerTest`, `ModulationLayerValueTest`, `ModulationLayerProjectRoundTripTest`,
+`ModulationAudioViewTest`, `ModulationRateTest`, `ControlModulatorCommandsTest`, `ModulatorToolsTest`,
+`MidiInputTransformTest`, `ModulatorPanelTest`. Targets built first with
+`cmake --build build --target zene ModulationLayerValueTest ModulationLayerTest ModulationAudioViewTest ControlModulatorCommandsTest ModulationLayerProjectRoundTripTest ModulationRateTest MidiInputTransformTest ModulatorToolsTest -j4`
+(BUILD_EXIT=0, `08-build-family.log`) and `... ModulatorPanelTest -j4` (BUILD_EXIT=0, `10-build-family2.log`).
+`zene` itself rebuilt after the header change (`05-build-green.log`, `14-build-green2.log`, BUILD_EXIT=0); the header is
+included by `include/ModulationLayer.h`, so the library and every test that includes it were rebuilt.
+
+## Gates
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (unpiped) → **GATE_EXIT=0**
+(`logs/16-feature-check.log`):
+```
+  PASS  fork-sources            exit 0
+  PASS  all-sources-reproduce   exit 0
+  PASS  no-upstream-regression  exit 0
+  PASS  check-namespace         exit 0
+  PASS  no-tautology            exit 0
+  PASS  doc-figures             exit 0
+  PASS  complexity              no new item in your files
+  PASS  file-length             no new item in your files
+RESULT: PASS
+```
+Registration: no new files. `include/ModulationVoices.h` and `src/core/ModulationVoices.cpp` are already fork sources
+(`tests/fork-sources.txt:1260`, `:2136`) and `tests/src/core/InstrumentRoutingTestParts1.h` is `tests/fork-sources.txt:787`,
+so no list changed (and `fork-sources` passes). No command file, no `ControlCommandsSnapshot`, no undo machinery touched.
+
+## Self-check
+- **The regression test FAILS with the product change reverted and PASSES with it.** Reverted: `git apply -R
+  .../logs/fix.patch` (REVERT_EXIT=0), rebuild (`12-build-red2.log` BUILD_EXIT=0), `ctest -R '^InstrumentRoutingTest$'`
+  → **TEST_EXIT=8** (`13-test-red2.log`, the two new assertions). Restored: `git apply .../logs/fix.patch`
+  (APPLY_EXIT=0), rebuild (`14-build-green2.log` BUILD_EXIT=0), same ctest → **TEST_EXIT=0** (`15-test-green2.log`).
+- **Deterministic, no timing, no races.** The test drives the two halves of a note-on directly and in order:
+  `voices.claim()` (a worker that has claimed and not yet published), `voices.clear()` (the control thread's edit),
+  `voices.claim()`, `voices.publish(...)`. No threads, no sleeps, no wall clock; the seam is the `claim()`/`publish()`
+  split added in `6b04c5cbae`, which is a pure refactor of `noteOn()`.
+- **Fix at the cause, every caller and sibling checked.** The only caller of `ModulationVoices::clear()` is
+  `ModulationLayerPublisher::publishTriggers()` (`src/core/ModulationLayerPublisher.cpp:96`). The other path into the
+  same pool, `removeUnfollowedVoices()` (`src/core/ModulationLayerPublisher.cpp:44-60`), uses `voice()` + `noteOff()`; both were made generation-aware and
+  their CAS now checks the full state word. `voiceChanged()`'s early return and `ControlModulationSupport.cpp:262`
+  (`voices().activeCount()`) keep their contracts: `activeCount()` counts only the current generation, which is what
+  `clear()` used to achieve by writing `Free`. `find()` (retrigger and note-off matching) is generation-aware too, so a
+  retired voice neither absorbs a retrigger nor is freed twice.
+- **No collateral damage.** The save format is untouched (no attribute added or removed), so old projects load exactly
+  as before; the pool has the same 64 slots and the same `dropped()` accounting (only clicks that find every slot
+  `Writing` or `Live` in the current generation are dropped, i.e. exactly the pre-fix cases); no limit or check was
+  added. `ModulationLayerProjectRoundTripTest` and `ModulationLayerValueTest` pass unchanged.
+- **Sibling commands: none affected.** This fix touches no command file at all: `git diff --name-only 6b04c5cbae
+  0c03cbf6b8` lists `include/ModulationVoices.h`, `src/core/ModulationVoices.cpp` and the two
+  `tests/src/core/InstrumentRoutingTest*` files, and the seam commit `6b04c5cbae` the same two product files. The groups
+  the pre-submit check lists (`app.*`, `arrangement.*`) come
+  from the lane's wider diff against the fix base, not from this cluster: no command id, schema, argument check or
+  reversibility class changed, so none of them can behave differently. `ControlModulatorCommandsTest` (which drives the
+  modulator commands that do read the pool, `src/core/ControlModulationSupport.cpp:262`) passes — see
+  `logs/11-test-family.log`.
+- **Round 2, the review's case: a stale claim snapshot must not take a newer voice.** The regression is
+  `InstrumentRoutingTest::aStaleClaimSnapshotCannotTakeANewerVoice` (`InstrumentRoutingTestParts1.h:505-555`); with the
+  round-2 product change reversed it fails (REVERT_EXIT=0, `07-build-red2.log` BUILD_EXIT=0, `08-test-red2.log`
+  **TEST_EXIT=8**: `'!voices.claimable(liveNow, staleGeneration)' returned FALSE`), and with it restored it passes
+  (APPLY_EXIT=0, `09-build-green2.log` BUILD_EXIT=0, `10-test-green2.log` **TEST_EXIT=0**). The round-1 pair still
+  passes in both runs, so the clear-during-a-claim and claim-spanning-a-clear behaviour was kept, not traded away.
+- **Round 2, why the fix closes the window rather than narrowing it.** A claim can only take a slot it observed as
+  `Free`, or one holding a voice with `generationOf(state) < generation` where `generation` is read *after* that
+  observation; the compare-exchange then re-checks the whole word, generation included. A voice published in a newer
+  generation is therefore never claimable by an older snapshot, and any clear between the read and the exchange either
+  fails the exchange (re-decided at the newer generation) or retires the claim's own voice - the conservative side.
+  Nothing waits: the claim is bounded by 64 slots and one extra atomic load per slot attempt.
+- **Realtime, undo, commands.** Per period nothing new allocates, frees, locks, waits or logs: `claim()`, `publish()`,
+  `noteOff()`, `voice()` and `activeCount()` are atomic loads/stores/compare-exchanges on 32-bit words; `clear()` is
+  one atomic add on the control thread and replaced 64 stores. Undo is untouched (no model, command or selection
+  changed), and no control command was added, so the `ControlCommandsSnapshot` canary does not move.
+
+## Notes
+- The residual case, unchanged from before this fix: `voice()` reads a slot's fields and then re-checks its state word.
+  If the same slot were freed, re-claimed and re-published *within the same generation* between those two loads, the
+  reader would report the new note under the old read. The window is one short read of four atomics and no deallocation
+  is involved (the fields are plain values); it is not this finding, and closing it would need a claim serial wide
+  enough to rule out wrap, i.e. a 64-bit atomic on the audio path.
+- The generation is 30 bits inside the state word. A claim would have to span 2^30 clears (2^30 layer edits) to be
+  mistaken for a live voice.
+- One intermediate build of the fix was red: my first version left `activeCount()` and `voice()`'s final re-check
+  comparing the raw state word against the old bare `Live`. Both were completed before the fix was committed; the runs
+  recorded above are from the committed code.
+
+## Other findings
+- `tests/fork-sources.txt:1-20` records that its own recipe does not parse at HEAD, so the list cannot currently be
+  re-derived mechanically (`tests/all-sources.txt` does reproduce; the `all-sources-reproduce` gate passes). Not touched
+  here.
