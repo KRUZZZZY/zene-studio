@@ -76,6 +76,11 @@ namespace
 
 constexpr qint64 MaxAudioFileBytes = 512LL * 1024 * 1024;
 
+//! The window the decoder reads to answer a file's length before the import decodes it (cluster new-p16-7).
+//! A compressed file bounded by the encoded-size limit can decode to hours of audio, far more than the song
+//! can hold; one second is enough for the decoder to report the file's own length without allocating it.
+constexpr double LengthProbeSeconds = 1.0;
+
 //! What the file turned out to be, with everything needed to make its clip - read and decoded in full.
 struct Prepared
 {
@@ -177,12 +182,51 @@ bool prepareMidi(const QString& path, Prepared* out, ControlResult* error)
 	return true;
 }
 
+//! The clip length \a frames of audio at \a sampleRate make under \a loop and \a mode, before any clip exists:
+//! the decoded length in ticks (capped like the stored length), rescaled by the tempo ratio a follow_project
+//! import applies. The same arithmetic answers the pre-decode length check and the post-decode one.
+qint64 clipLengthTicks(qint64 frames, int sampleRate, const LoopSource& loop, loopwarp::Mode mode)
+{
+	if (frames <= 0 || sampleRate <= 0) { return 0; }
+	const double ticks = static_cast<double>(frames) / static_cast<double>(Engine::framesPerTick(sampleRate));
+	const qint64 sourceTicks = static_cast<qint64>(std::min<double>(ticks, static_cast<double>(MaxSongLength) + 1.0));
+	if (mode != loopwarp::Mode::FollowProject || !loop.tempoFound) { return sourceTicks; }
+	const float sourceTempo = static_cast<float>(std::lround(loop.bpm));
+	const float projectTempo = static_cast<float>(Engine::getSong()->getTempo());
+	if (sourceTempo <= 0.0f || projectTempo <= 0.0f) { return sourceTicks; }
+	const float framesPerTick = Engine::framesPerTick(sampleRate) * projectTempo / sourceTempo;
+	if (framesPerTick <= 0.0f) { return sourceTicks; }
+	return static_cast<qint64>(static_cast<double>(frames) / framesPerTick);
+}
+
 bool prepareAudio(const QString& path, Prepared* out, ControlResult* error)
 {
 	if (QFileInfo(path).size() > MaxAudioFileBytes)
 	{
 		*error = invalid(QStringLiteral("'%1' is larger than the 512 MiB of audio read here").arg(path));
 		return false;
+	}
+	// Cluster new-p16-7: the limit above bounds the ENCODED file. A compressed file of a few kilobytes can
+	// decode to more audio than the song holds, and it was fully decoded and stored before validateImport
+	// refused it. The decoder reports the file's own length from a bounded read, and the detector reads only
+	// a bounded prefix (ImportDetection), so an import that cannot fit allocates neither.
+	bool lengthKnown = false;
+	{
+		const std::optional<SampleDecoder::BoundedResult> probe = SampleDecoder::decodeLimited(path, LengthProbeSeconds);
+		lengthKnown = probe && probe->window.sampleRate > 0 && probe->totalFrames > 0;
+		if (lengthKnown)
+		{
+			out->loop = loopwarp::analyse(path, &out->analysisError);
+			const qint64 length = clipLengthTicks(probe->totalFrames, probe->window.sampleRate, out->loop, out->loopMode);
+			// At any position in [0, MaxSongLength], a clip that is itself longer than the song ends past its
+			// limit: this is exactly the refusal validateImport would make, taken before the sample buffer exists.
+			if (length > static_cast<qint64>(MaxSongLength))
+			{
+				*error = invalid(QStringLiteral("'%1' is longer than the song's limit of %2 ticks")
+					.arg(QFileInfo(path).fileName()).arg(MaxSongLength));
+				return false;
+			}
+		}
 	}
 	auto decoded = SampleDecoder::decode(path);
 	if (!decoded || decoded->data.empty() || decoded->sampleRate <= 0)
@@ -196,8 +240,9 @@ bool prepareAudio(const QString& path, Prepared* out, ControlResult* error)
 	out->embedded = inTemporaryFolder(path);
 	out->buffer = std::make_shared<SampleBuffer>(std::move(decoded->data), decoded->sampleRate,
 		out->embedded ? QString() : PathUtil::toShortestRelative(path));
-	// Q050-093: never a refusal - a file the detector cannot read is still imported, and says so.
-	out->loop = loopwarp::analyse(path, &out->analysisError);
+	// Q050-093: never a refusal - a file the detector cannot read is still imported, and says so. The detector
+	// already ran for a file whose length was known, so it is read (and decoded) once.
+	if (!lengthKnown) { out->loop = loopwarp::analyse(path, &out->analysisError); }
 	return true;
 }
 
@@ -302,13 +347,8 @@ QJsonObject applyLoopMode(SampleClip* clip, const Prepared& file)
 //! The clip's preflight duration after applyTempo, or its source duration when this import will not follow a tempo.
 qint64 resultingLengthTicks(const Prepared& file)
 {
-	if (file.midi || file.loopMode != loopwarp::Mode::FollowProject || !file.loop.tempoFound) { return file.lengthTicks; }
-	const float sourceTempo = static_cast<float>(std::lround(file.loop.bpm));
-	const float projectTempo = static_cast<float>(Engine::getSong()->getTempo());
-	if (sourceTempo <= 0.0f || projectTempo <= 0.0f) { return file.lengthTicks; }
-	const float framesPerTick = Engine::framesPerTick(file.buffer->sampleRate()) * projectTempo / sourceTempo;
-	if (framesPerTick <= 0.0f) { return file.lengthTicks; }
-	return static_cast<qint64>(static_cast<double>(file.buffer->size()) / framesPerTick);
+	if (file.midi) { return file.lengthTicks; }
+	return clipLengthTicks(static_cast<qint64>(file.buffer->size()), file.buffer->sampleRate(), file.loop, file.loopMode);
 }
 
 //! Every check of an import, before the first change: the file read in full, the clip's end inside the song, the
