@@ -76,7 +76,14 @@ Delegation:
 
 ## Self-check
 
-The answers to the completion check's "?" items are added below after it ran.
+I ran `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 5275-port > 10-submit-check.log 2>&1`: EXIT=0, every row PASS, `RESULT: PASS - submit`.
+
+- **The test fails without the fix and passes with it.** With `fix.patch` reverted, `ctest -R '^RetroAudioCaptureTest$'` gave EXIT=8 (`06-test-4b-red.log:15`, the `'!ok' returned FALSE` line). With it re-applied, EXIT=0 (`08-test-4b-green.log:5`, 100% passed). The first RED run on commit 32bb837d5d also gave EXIT=8 (`02-test-red.log:15`).
+- **The test is deterministic.** It forces the fault with the `LMMS_TESTING` seam `retroaudiotesting::failNextTakeFinish()`, a one-shot atomic flag read in `finishEncoding()`. The test uses no clock, no sleeps and no threads, and its input is 64 constant frames `(0.25, -0.25)`.
+- **The fix is at the cause and complete.** The ignored results were in `writeWindow()` itself, which now checks them. Its only caller, `writeRetroAudioTake()` (`src/core/RetroAudioCapture.cpp`, after the anonymous namespace), already passes `false` and the error text on to its callers, so they handle this failure like the existing short-write and commit failures. Sibling take writers that also ignore flush and close results are `TrackRecorder::disarm()` and `TakeRecorder::stop()`. I left them unchanged on purpose because their return contracts differ, and they are listed under "Other findings".
+- **No collateral damage.** The only new refusal fires when libsndfile reports an error from the flush or the close, which never happens on a healthy write. The other 14 `RetroAudioCaptureTest` cases still pass (`06-test-4b-red.log:22`, and the green runs). The change touches no project or saved-data format, and adds no limit.
+- **ALREADY-FIXED / FALSE-POSITIVE evidence:** does not apply (the verdict is FIXED).
+- **Sibling commands (app.*, arrangement.*):** not affected. This change touches no command file, only `src/core/RetroAudioCapture.cpp`, `include/RetroAudioCapture.h` and the test (`git show --stat 32bb837d5d 9b29f0b703`). The check lists those commands, and the `tests/control-*.py` files, from the branch's earlier merges against its base, not from my commits.
 
 ## Other findings
 
