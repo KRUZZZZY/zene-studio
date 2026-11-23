@@ -153,6 +153,11 @@ void HardwareInsert::setSettings(const Settings& settings, f_cnt_t frames)
 		m_ringRead = 0;
 		m_ringFill = 0;
 	}
+	// Switched on or off: the dry signal's delay line starts from silence. A disabled insert is not
+	// processed, so nothing keeps the line's history moving, and prepare() only re-initialises it when
+	// the buffers grow: without this a re-enable at the same block size emitted the audio the line was
+	// still holding when the insert went off. The render is held off (the caller has the change lock).
+	if (settings.enabled != m_settings.enabled) { m_dry.reset(); }
 	const bool routeChanged = settings.send != m_settings.send || settings.ret != m_settings.ret;
 	const bool waitingAtAnotherRate = pingState() == PingState::Waiting && m_pingSampleRate != rate;
 	if (routeChanged || !settings.enabled || waitingAtAnotherRate) { movePingTo(PingState::Idle); }

@@ -203,4 +203,14 @@ void LatencyCompensation::advanceSilence(f_cnt_t frames)
 	m_write = (m_write + frames) % capacity;
 }
 
+
+void LatencyCompensation::reset()
+{
+	// The storage keeps its size: this only overwrites samples, so a bypassed path can call it
+	// between periods without allocating or growing anything.
+	std::fill(m_ring.begin(), m_ring.end(), SampleFrame{});
+	m_write = 0;
+	m_delay.store(0, std::memory_order_relaxed);
+}
+
 } // namespace lmms

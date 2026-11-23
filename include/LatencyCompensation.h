@@ -83,6 +83,12 @@ public:
 	//! line's timeline aligned with the rest of the graph.
 	void advanceSilence(f_cnt_t frames);
 
+	//! Lose the history: the line holds silence and the write cursor restarts, so the next
+	//! process() after a reset emits nothing until a period has been played into it. For a path
+	//! that stops being fed (a bypassed insert) and must not replay what it held when it stopped.
+	//! Overwrites the storage init() allocated and allocates nothing; call it between periods.
+	void reset();
+
 	//! Frames of history the line can hold (excluding the block being written).
 	int capacity() const { return static_cast<int>(m_ring.size()); }
 
