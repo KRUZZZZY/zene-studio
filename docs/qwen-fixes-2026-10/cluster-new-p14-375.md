@@ -167,6 +167,16 @@ all PASS; `RESULT: PASS`.
   `SamplePlayHandle.cpp:156-162`) show the snapshot handoff; the accepted
   Q050-063 record (`docs/qwen-fixes-2026-10/cluster-Q050-063.md:27-29,45,52`)
   records that this exact race was the fix's subject.
+- **Sibling commands.** This cluster changed no command file, registry file or
+  reversibility table: the commit touches only
+  `tests/src/tracks/SampleClipWarpTest.cpp`, `tests/upstream-modifications.txt`
+  and this report. The `app.*` / `arrangement.*` sibling list in the pre-submit
+  check comes from other lanes' commits in the train range (the base is
+  `050/m0-train-35`), not from this fix. None of those commands reads or writes
+  the warp map, so none is affected.
+- **Proof manifest.** `logs/proof.json` names this commit, the claim and the
+  `code-reference` artifacts (`include/WarpPublication.h:84` and
+  `src/core/Clip.cpp:840`).
 
 ## Other findings
 
