@@ -22,6 +22,7 @@
  */
 
 #include "BounceInPlace.h"
+#include "BounceRegion.h"
 
 #include <algorithm>
 #include <cmath>
@@ -84,11 +85,18 @@ bool isTheTarget(const QDomElement& element, const QSet<int>& targetIds)
  *  audio to mute - so muting one would silently drop the target's automation
  *  from the render instead of silencing anything.
  */
-bool muteTrackElement(QDomElement element, const QSet<int>& targetIds)
+bool muteTrackElement(QDomElement element, const QSet<int>& targetIds, const bouncefix::RegionEdit& region)
 {
 	const bool isTarget = isTheTarget(element, targetIds);
 	if (!isTarget && !carriesAudio(element)) { return false; }
 	element.setAttribute(QStringLiteral("muted"), isTarget ? 0 : 1);
+	// A range bounce that mutes its sources renders only the pieces it will mute (cluster 3971). A frozen source
+	// plays its take whatever its clips say, so its clips are left as they are.
+	if (isTarget && region.active && carriesAudio(element)
+		&& !region.frozenIds.contains(element.attribute(QStringLiteral("id")).toInt()))
+	{
+		bouncefix::isolateRegionInTrackElement(element, region.start, region.end);
+	}
 	return isTarget;
 }
 
@@ -116,7 +124,8 @@ bool writeXml(QDomDocument& document, const QString& path, QString* error)
  *  everything but the track it is about to render), and the target is forced
  *  UNMUTED so a bounce of a muted track is its audio rather than silence.
  */
-bool muteOtherTracks(const QString& source, const QString& target, const QSet<int>& targetIds, QString* error)
+bool muteOtherTracks(const QString& source, const QString& target, const QSet<int>& targetIds,
+		const bouncefix::RegionEdit& region, QString* error)
 {
 	QFile file(source);
 	if (!file.open(QIODevice::ReadOnly))
@@ -138,7 +147,7 @@ bool muteOtherTracks(const QString& source, const QString& target, const QSet<in
 	{
 		QDomElement element = tracks.at(i).toElement();
 		if (element.isNull()) { continue; }
-		found = muteTrackElement(element, targetIds) || found;
+		found = muteTrackElement(element, targetIds, region) || found;
 	}
 	if (!found)
 	{
@@ -202,7 +211,7 @@ QString validateRequest(const std::vector<Track*>& tracks, const QString& outPat
 
 //! Serialises the session and mutes every track but @a tracks in the copy.
 bool serialiseWithOnlyTracks(const std::vector<Track*>& tracks, const QString& projectPath,
-		const QString& mutedProjectPath, QString* error)
+		const QString& mutedProjectPath, const BounceInPlace::Range& range, QString* error)
 {
 	if (!Engine::getSong()->saveProjectFile(projectPath))
 	{
@@ -210,8 +219,16 @@ bool serialiseWithOnlyTracks(const std::vector<Track*>& tracks, const QString& p
 		return false;
 	}
 	QSet<int> ids;
-	for (const Track* track : tracks) { ids.insert(track->id()); }
-	return muteOtherTracks(projectPath, mutedProjectPath, ids, error);
+	bouncefix::RegionEdit region;
+	region.active = range.replacesRegion && !range.coversWholeTrack();
+	region.start = range.start;
+	region.end = range.end;
+	for (const Track* track : tracks)
+	{
+		ids.insert(track->id());
+		if (track->isFrozen()) { region.frozenIds.insert(track->id()); }
+	}
+	return muteOtherTracks(projectPath, mutedProjectPath, ids, region, error);
 }
 
 //! True when the render follows a tempo map, so one frames-per-tick rate does not hold across the range.
@@ -381,13 +398,17 @@ bool BounceInPlace::prepareRenderTracks(const std::vector<Track*>& tracks, const
 	next.tempoMap = song->tempoMap().map();
 	next.globalTempo = static_cast<int>(song->getTempo());
 	next.framesPerTick = Engine::framesPerTick(static_cast<sample_rate_t>(sampleRate));
-	if (!serialiseWithOnlyTracks(tracks, next.projectPath, next.mutedProjectPath, error)) { return false; }
+	// The tail is sized from the intact model, so it is read before the session is serialised.
+	const tick_t tail = range.replacesRegion && !range.coversWholeTrack() ? bouncefix::tailTicksPastRange(tracks, range) : 0;
+	if (!serialiseWithOnlyTracks(tracks, next.projectPath, next.mutedProjectPath, range, error)) { return false; }
 	if (next.trimmed)
 	{
 		next.startFrame = static_cast<qint64>(std::llround(
 			BounceInPlace::framesBetweenTicks(0, range.start, next.framesPerTick, next.tempoMap, next.globalTempo, sampleRate)));
 		next.wantedFrames = static_cast<qint64>(std::llround(
 			BounceInPlace::framesBetweenTicks(range.start, range.end, next.framesPerTick, next.tempoMap, next.globalTempo, sampleRate)));
+		next.tailFrames = static_cast<qint64>(std::llround(
+			BounceInPlace::framesBetweenTicks(range.end, range.end + tail, next.framesPerTick, next.tempoMap, next.globalTempo, sampleRate)));
 	}
 	*prepared = std::move(next);
 	return true;
@@ -408,8 +429,11 @@ BounceInPlace::Result BounceInPlace::finishPreparedRender(const PreparedRender& 
 		return Result::failure(*error);
 	}
 	qint64 written = 0;
+	// The ringing tail past the range: whatever of it is audible, with the trailing silence cut off.
+	const qint64 tail = prepared.tailFrames > 0
+		? bouncefix::audibleFramesIn(prepared.renderPath, prepared.startFrame + prepared.wantedFrames, prepared.tailFrames) : 0;
 	if (prepared.trimmed && !trimWav(prepared.renderPath, prepared.stagedPath,
-			prepared.startFrame, prepared.wantedFrames, &written, error))
+			prepared.startFrame, prepared.wantedFrames + tail, &written, error))
 	{
 		return Result::failure(*error);
 	}

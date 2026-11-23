@@ -52,6 +52,7 @@
 #include <sndfile.h>
 
 #include "BounceInPlace.h"
+#include "BounceRegion.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -270,9 +271,12 @@ private slots:
 			{QStringLiteral("out"), wav}, {QStringLiteral("start"), 48}, {QStringLiteral("end"), 144}});
 		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
 		QCOMPARE(landed.result.value(QStringLiteral("start_ticks")).toInt(), 48);
-		// 96 ticks of the project's tempo, not the render's whole length.
+		// The 96 ticks of the range at the project's tempo plus the ringing tail a range bounce keeps past its end
+		// (cluster 3971): this stand-in render never falls silent, so the tail is the whole one-bar cap - and still
+		// not the render's whole length.
 		const qint64 frames = wavFacts(wav).frames;
-		QVERIFY2(frames > 0 && frames < static_cast<qint64>(FakeRate) * FakeSeconds / 2, qPrintable(QString::number(frames)));
+		const qint64 expected = std::llround(Engine::framesPerTick(static_cast<sample_rate_t>(FakeRate)) * (96 + bouncefix::MaxTailTicks));
+		QVERIFY2(std::abs(frames - expected) <= 3 && frames < static_cast<qint64>(FakeRate) * FakeSeconds, qPrintable(QString::number(frames)));
 		QCOMPARE(jsonInteger(landed.result.value(QStringLiteral("frames"))), frames);
 		Track* landedTrack = resolved(landed.result.value(QStringLiteral("landed_track")).toString());
 		QVERIFY(landedTrack != nullptr);

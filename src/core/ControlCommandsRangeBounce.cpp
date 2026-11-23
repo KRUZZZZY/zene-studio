@@ -85,13 +85,17 @@ ControlResult rangeBounce(const QJsonObject& args)
 	BounceInPlace::Range window;
 	window.start = range.start();
 	window.end = range.end();
+	// With 'mute_sources' the bounced pieces are muted afterwards, so the render holds exactly those pieces and the
+	// tail they ring on (cluster 3971); without it the render is the plain window.
+	const bool muteSources = args.value(QStringLiteral("mute_sources")).toBool(true);
+	window.replacesRegion = muteSources;
 	const QString out = resolveOutPath(args, tracks.front(), QStringLiteral("selection"), window);
 	const BounceInPlace::Result rendered = BounceInPlace::renderTracks(tracks, out, window);
 	if (!rendered.ok) { return ControlResult::failure(ControlErrorKind::Refused, rendered.error); }
 	// The mutes of the bounced region are a Track checkpoint (or a rewritten frozen take) recorded by
 	// muteRangeSources; the registry merges it with the landing action below into ONE undo step. A take that
 	// cannot be rewritten refuses before any model change; the render file that was just written stays.
-	if (args.value(QStringLiteral("mute_sources")).toBool(true))
+	if (muteSources)
 	{
 		const QString muteError = muteRangeSources(tracks, window);
 		if (!muteError.isEmpty()) { return ControlResult::failure(ControlErrorKind::Refused, muteError); }

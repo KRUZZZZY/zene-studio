@@ -206,6 +206,7 @@ set(LMMS_SRCS
 	core/ImportDetection.cpp
 	core/ProjectKey.cpp
 	core/BounceInPlace.cpp
+	core/BounceRegion.cpp
 	core/BufferManager.cpp
 	core/Clipboard.cpp
 	core/ComboBoxModel.cpp

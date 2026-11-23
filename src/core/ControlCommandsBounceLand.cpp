@@ -65,6 +65,8 @@ ControlResult bounceLand(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, problem);
 	}
+	// A bounce of a RANGE mutes only that range afterwards, so its render holds those pieces and their ringing tail.
+	range.replacesRegion = !range.coversWholeTrack();
 	const BounceInPlace::Result rendered = BounceInPlace::renderTrack(source,
 		resolveOutPath(args, source, QStringLiteral("bounce"), range), range);
 	if (!rendered.ok) { return ControlResult::failure(ControlErrorKind::Refused, rendered.error); }

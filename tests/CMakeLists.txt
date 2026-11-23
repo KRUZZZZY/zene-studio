@@ -156,6 +156,8 @@ set(LMMS_TESTS
 	src/core/ControlTrackRouteNoSongTest.cpp
 	# Coverage lane (M0): bounce.land, track.flatten, range.bounce and the subproject verbs through a stand-in render child.
 	src/core/ControlBounceRenderTest.cpp
+	# Cluster 3971: a range bounce renders only the pieces it mutes plus their ringing tail (stand-in render child).
+	src/core/RangeBounceRenderSideTest.cpp
 	# Cluster 917: cancellable bounce jobs apply edits on the main thread after stale-target checks.
 	src/core/ControlRenderJobTest.cpp
 	# Q050-327: freeze.tracks - concurrent renders behind one task, one undo step, cancel/failure/stale restore, and the menu.

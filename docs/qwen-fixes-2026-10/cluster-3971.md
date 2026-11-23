@@ -1,144 +1,111 @@
 FIXED
 
-# Cluster 3971 - range bounce mutes entire source tracks (round 2)
+# Cluster 3971 - range bounce mutes entire source tracks (round 3: the render side)
 
-## Verdict and the two review points
+## Verdict
 
-REAL, and both round-1 review findings are now fixed:
+REAL. Rounds 1 and 2 already stopped the whole-track mute (clips are cut at the range edges and only the
+in-range pieces are muted; automation lanes are region-muted; a frozen take is rewritten with only the overlap
+silent - `src/core/ControlBounceSupport.cpp:140-333`, unchanged this round per the diagnostic checkpoint).
+What was still wrong was the render: it was the whole track trimmed to `[start,end)`. Once the in-range pieces
+are muted, the song loses (a) the sound of those pieces that rings on past `end` (a note sustaining past `end`,
+a release tail of a whole-muted track whose clip ends at `end`), and (b) a piece before `start` whose own
+ring-out sounds in the range stays audible in the song, so it must not also be baked into the bounce.
 
-1. **Selected automation tracks were muted as a whole**, so their automation outside the bounced
-   interval stopped (`ControlBounceSupport.cpp` old whole-mute branch; `ArrangementEdits.cpp:522-528`
-   offers every track type to a range, and `TrackContainer.cpp:528-545` skips a muted automation
-   track). `muteRangeSources()` no longer mutes automation or hidden-automation tracks as a whole: it
-   cuts their clips at the range edges and mutes only the pieces inside
-   (`src/core/ControlBounceSupport.cpp:270,321-327`), exactly like audio clips, so automation outside
-   `[start,end)` keeps running.
-2. **Frozen-take playback ignored clip muting.** A frozen track plays its take instead of its clips
-   (`src/tracks/InstrumentTrack.cpp:941-950`, `src/tracks/SampleTrack.cpp:154-160`), so a range bounce
-   could leave the take audible over the new bounce, or (when every clip was inside the range) mute the
-   track for its whole take window. A frozen source is now handled by rewriting its take:
-   `prepareFrozenGap()` (`src/core/ControlBounceSupport.cpp:202`) writes a copy of the take with exactly
-   the frames of the range's overlap zeroed (`writeTakeWithSilentWindow()`, `:153`), using the same
-   tempo/take-start mapping playback uses (`Track::frozenTakeSourceFrame`, `:227-230`), and
-   `installFrozenGap()` (`:257`) installs it with the SAME take window, muted-clip record and
-   whole/region flag. The source keeps playing its take outside the range and is silent only inside it.
-   Whole takes and region takes are both covered; a region take is gapped only over its intersection
-   with the range.
+## The fix (render side only)
 
-The original cause (whole `Track::setMuted(true)` after rendering only a range) is still fixed by the
-round-1 change: audio tracks are muted whole only when every audible clip lies inside the range
-(`audibleClipsInside`, `ControlBounceSupport.cpp:141`); otherwise clips are cut at the edges and only
-the inside pieces are muted (`muteClipsInRange`, `:270`). Folder and neutral rows keep their whole mute
-(no audio of their own), and whole-track bounces (`bounce.land` without ticks) keep the whole-source
-mute.
+`BounceInPlace::Range::replacesRegion` (`include/BounceInPlace.h`) marks a range bounce that mutes its sources
+afterwards. It is set by the four paths that call `muteRangeSources`:
+`range.bounce` (`ControlCommandsRangeBounce.cpp`, only with `mute_sources`), `bounce.land` with start/end
+(`ControlCommandsBounceLand.cpp`), and the queued `range_bounce` / `bounce_land` (`prepareBounceJob` in
+`ControlCommandsRenderBounce.cpp`). `bounce.in_place`, `freeze.*`, `track.flatten` and a whole-track bounce keep
+`replacesRegion == false` and render exactly as before.
 
-## Callers and siblings
+When set, the shared preparation (`BounceInPlace::prepareRenderTracks`, used by the sync and the queued path):
 
-All four range-muting paths call the shared helper and now propagate its typed refusal:
+1. **Cuts and mutes in the serialised session** (`bouncefix::isolateRegionInTrackElement`, new
+   `src/core/BounceRegion.cpp`): every unmuted clip of an audio source is split at `start` and `end` the way
+   `splitClipAlone` does (right piece keeps its content through `off`), then every clip starting outside
+   `[start,end)` is muted, so the render holds only the pieces that `muteRangeSources` will mute. Frozen sources and
+   automation lanes are not touched (a frozen source plays its take; automation outside the range must keep
+   running in the render, as it does in the song).
+2. **Tail** (`tailTicksPastRange`, `audibleFramesIn`): the trim window extends past `end` by up to one bar
+   (`MaxTailTicks`), and no further than the next unmuted source clip that starts at or after the range end
+   (read from the intact model before any cut, so a clip crossing `end` is not mistaken for the "next" clip). A
+   frozen source gets no tail (its take already holds it). The trailing silence of that tail is trimmed
+   (`finishPreparedRender`, still free of Engine/Track access) and the longer file lands; `Result.range.end`
+   follows the file.
+3. The live cuts and mutes stay in `muteRangeSources`, inside its single undo checkpoint, run after the render.
 
-- `range.bounce` - `src/core/ControlCommandsRangeBounce.cpp:96`
-- `bounce.land` with `start`/`end` - `src/core/ControlCommandsBounceLand.cpp:87`
-- queued `render.queue_bounce` operation `range_bounce` - `src/core/ControlCommandsRenderBounce.cpp:328`
-- queued `bounce_land` with `start`/`end` - `src/core/ControlCommandsRenderBounce.cpp:223`
+**Deviation from the checkpoint, and why:** the checkpoint asked for `isolateRegion` to run on the live model
+before rendering. I applied the same cut to the serialised copy instead. The queued paths snapshot the session at
+queue time and re-check a fingerprint of the live tracks when the job completes (`targetStillMatches`); cutting
+the live model at queue time would edit the model of a job that may still be cancelled or fail, and would make
+the fingerprint check refuse its own job. Cutting the copy gives the render the same pieces, one code path serves
+sync and queued, and a failed render leaves nothing to roll back. Undo stays one step (unchanged).
 
-The fallible part (copying a frozen take) runs BEFORE the Track checkpoint and before any model edit, so
-a take that cannot be read/written refuses without a landed track or a mute. `bounce.in_place`,
-`freeze.*` and `track.flatten` never mute sources and are unchanged.
+Realtime: nothing here runs on the audio thread (XML edit and WAV scan on the control/job path; the queued scan
+runs in `finishPreparedRender` which already runs off the model).
 
-## Regression tests
+## Tests
 
-`tests/src/core/BounceInPlaceTest.cpp` (the existing bounce test file; it stays under the file-length
-ratchet at 490 code lines):
+New `tests/src/core/RangeBounceRenderSideTest.cpp` (registered in `tests/CMakeLists.txt` and the manifests). The
+render is a child process, so the test is its own stand-in `zene render`: it reads the serialised session and draws
+0.2 for every unmuted clip of every unmuted audio track plus a 0.1 release tail after each clip end
+(`ZENE_FAKE_TAIL_TICKS`). What it proves is therefore the session and the window the product prepares, not the real
+engine's voices (unverified here: no real-engine render was run).
 
-- `rangeBounceKeepsAutomationOutsideTheRangeRunning` (line 497): an automation lane with a clip crossing
-  the range start and one after it; asserts the lane is not muted, clip states are
-  `96a,192M,384a,` after the bounce, `96a,384a,` after ONE undo, and the redo re-mutes only the inside
-  piece.
-- `rangeBounceSilencesOnlyItsTicksInAWholeFrozenTake` (line 522): whole take 0..768, range 0..192; asserts
-  the source is not muted, the take path changed, its window/whole flag are unchanged, the take WAV is
-  digital silence over ticks [0,192) and still non-silent over [192,384), one undo restores the original
-  take path and removes the landed track, redo silences it again.
-- `rangeBounceSilencesOnlyItsOverlapInARegionFrozenTake` (line 554): region take 0..192, range 96..288;
-  asserts only the take's [96,192) overlap is silent, [0,96) still sounds, the region window is
-  unchanged, and one undo restores the original take.
-- `queuedRangeBounceSilencesOnlyTheSelectedPartOfAFrozenTake` (line 579): the async `range_bounce` path
-  through the existing `render.queue_report` seam; take path changes, [192,384) silent, [0,192) audible.
-- Round-1 tests still present and passing: `rangeBounceMutesOnlyTheBouncedRegionOfItsSources` (408),
-  `bounceLandOfARangeMutesOnlyItsSelection` (444), `queuedRangeBounceMutesOnlyTheBouncedRegion` (458),
-  `queuedBounceLandOfARangeMutesOnlyItsSelection` (482).
+- `rangeBounceLandsTheTailOfASoundSustainingPastEnd` (sustains past `end`; one-step undo)
+- `rangeBounceDoesNotBounceTheTailOfAPieceBeforeItsStart` (note crossing `start`)
+- `rangeBounceOfAWholeMutedSourceLandsItsReleaseTail` (whole-track mute, clip ends at `end`; one-step undo)
+- `rangeBounceTailStopsAtTheNextClipAndAtTheCap`
+- `rangeBounceWithoutMutingKeepsThePlainWindow`
+- `bounceLandOfARangeLandsTheTail` (sync bounce.land)
+- `queuedRangeBounceLandsTheTail`, `queuedRangeBounceOfAWholeMutedSourceLandsItsReleaseTail`,
+  `queuedBounceLandOfARangeLandsTheTail` (queued paths; undo checked in the first)
 
-Commands and EXIT codes (logs in `/home/kruzzzzy/.config/kads/zene/state/runs/3971.r2/logs`):
+**Honest note on coverage:** `rangeBounceDoesNotBounceTheTailOfAPieceBeforeItsStart` PASSES without the fix (the
+whole clip is not cut there, so nothing doubles); it guards the combination "cuts without outside-mutes" (which
+would give 0.3, not 0.2) but is not one of the tests that fail without the fix. `rangeBounceWithoutMutingKeepsThePlainWindow`
+likewise passes without the fix (it guards that the plain window is unchanged).
+
+**One existing test edited, deliberately:** `ControlBounceRenderTest::bounceLandOfARangeLandsAtItsStartAndTrimsTheRender`
+asserted `frames < 2 s` for a range of 96 ticks. Its stand-in render is a constant 4 s tone that never decays, so the
+whole one-bar tail is audible and the new contract lands 96 + 192 ticks (113400 frames, 2.57 s). I replaced the loose
+bound with an exact one (`|frames - round(framesPerTick * (96 + MaxTailTicks))| <= 3` and still `< 4 s`). It is
+stricter, but it is an edit to an existing assertion, forced by the requested behaviour change; a reviewer should
+look at it.
+
+## Commands and EXIT codes (logs in `/home/kruzzzzy/.config/kads/zene/state/runs/3971.r3/logs`)
 
 ```
-git diff -- <product files> > .../logs/fix.patch                       EXIT 0
-git apply -R .../logs/fix.patch                                       EXIT 0
-cmake --build build --target BounceInPlaceTest -j4                    EXIT 0  (build-red-2.log)
-./BounceInPlaceTest rangeBounceKeepsAutomationOutsideTheRangeRunning \
-    rangeBounceSilencesOnlyItsTicksInAWholeFrozenTake \
-    rangeBounceSilencesOnlyItsOverlapInARegionFrozenTake \
-    queuedRangeBounceSilencesOnlyTheSelectedPartOfAFrozenTake          EXIT 4  (test-red-2.log)
-      FAIL rangeBounceKeepsAutomationOutsideTheRangeRunning '!lane->isMuted()' returned FALSE
-      FAIL rangeBounceSilencesOnlyItsTicksInAWholeFrozenTake '!source->isMuted()' returned FALSE
-      FAIL rangeBounceSilencesOnlyItsOverlapInARegionFrozenTake 'source->frozenTake().path != original' returned FALSE
-      FAIL queuedRangeBounceSilencesOnlyTheSelectedPartOfAFrozenTake 'source->frozenTake().path != original' returned FALSE
-git apply .../logs/fix.patch                                          EXIT 0
-cmake --build build --target zene BounceInPlaceTest -j4               EXIT 0  (build-green-2.log)
-./BounceInPlaceTest                                                   EXIT 0  (test-green-2.log, 18 passed)
-ctest -R 'BounceInPlaceTest|ControlBounceRenderTest|ControlRenderJobTest|ControlBounceSupportTest|ReversibilityContractTest'
-                                                                      EXIT 0  (test-7.log, 5/5 passed)
-python3 .../feature_check.py <worktree>                               EXIT 0  (gates-1.log, RESULT: PASS)
+git diff -- <7 product files + BounceRegion.{h,cpp}> > logs/fix.patch      EXIT 0
+git apply -R logs/fix.patch                                              EXIT 0
+cmake --build build --target zene RangeBounceRenderSideTest -j4          EXIT 0   (build-red-3.log)
+ctest -R RangeBounceRenderSideTest (build/tests)                         EXIT 8   (test-red-3.log)
+    Totals: 4 passed, 7 failed; the 7 failures are the tail/replace tests above, e.g.
+    rangeBounceLandsTheTailOfASoundSustainingPastEnd 'std::abs(framesIn(path) - framesOf(192)) <= 3' returned FALSE. (37800)
+git apply logs/fix.patch                                                 EXIT 0
+cmake --build build --target zene RangeBounceRenderSideTest BounceInPlaceTest ControlBounceRenderTest
+    ControlRenderJobTest ControlBounceSupportTest FreezeRegionRepairTest -j4   EXIT 0   (build-green-3.log)
+ctest -R "^(RangeBounceRenderSideTest|BounceInPlaceTest|ControlBounceRenderTest|ControlRenderJobTest|
+    ControlBounceSupportTest|FreezeRegionRepairTest)$" (build/tests)     EXIT 0   (test-green-4.log, 6/6 passed)
 ```
 
-Round-1 evidence (same helper, ordinary clips) remains in
-`/home/kruzzzzy/.config/kads/zene/state/runs/3971.r1/logs`: RED `test-red-5.log` EXIT 1, GREEN
-`test-green-5.log` EXIT 0.
+An earlier GREEN run (`test-green-2.log`, EXIT 8) showed the existing-test failure described above, before I edited
+it. A broader filter (`test-green-3.log`, EXIT 8) also listed `BatchFreezeTest`, `MixerBusFreezeTest` and
+`MixerBusFreezeMenuTest` as "Not Run" (never built: I did not build them) and `ControlFreezeCommandsTranscript` as
+Failed; its output shows only "no audible instrument in this build: the audibility checks cannot run" with no checks
+executed. It drives `freeze.*`, which never touches the new path; I did not run it on a base build, so I cannot
+state it fails there too.
 
-Each named regression was also replayed alone from the final tree (the manifest's record): with the
-product hunks reversed each exited **1** (`test-red-<test name>.log`), and after
-`git apply .../fix.patch` and rebuilding `zene` + `BounceInPlaceTest` each exited **0**
-(`test-green-<test name>.log`).
-
-## Self-check
-
-- **Regression tests fail with the product change reverted and pass with it:** yes for all four new
-  tests - `EXIT 4` with the product hunks reversed (`test-red-2.log`), `EXIT 0` restored
-  (`test-green-2.log`); round-1 tests likewise (`test-red-5.log` EXIT 1, `test-green-5.log` EXIT 0).
-- **Deterministic:** the sync tests assert model state (clip state strings, muted flags, take window)
-  and read exact WAV frame windows; no sleeps or clocks. The queued test uses the existing
-  `waitForJob` report-polling seam that every queued-render test uses, with the test binary's own
-  synchronous fake child renderer.
-- **Fix at the cause and complete:** automation/hidden-automation lanes now use clip-level region
-  muting; frozen whole and region takes are gapped with the same mapping playback uses; folder/neutral
-  rows and whole-track bounces keep their prior behaviour. All four sync/queued callers were updated
-  and checked; `bounce.in_place`/`freeze`/`flatten` are unaffected.
-- **No collateral damage:** no serialisation format or model field changed (the take path is existing
-  project state; the gapped WAV is a normal take file beside the original), old projects load and
-  render as before, and audio tracks whose whole output is inside the range are still muted whole (the
-  round-1 tests and `ControlSuccessPaths`' `range.bounce mutes the bounced track` check still pass).
-  The only new refusal is a frozen take that cannot be copied - a take that cannot be read cannot be
-  region-silenced. No existing limit was tightened.
-- **Realtime:** all new code runs in command handlers / apply callbacks on the control or UI thread
-  (file copy, `freezeTo` under its existing render-period guard). Nothing was added to `process*`,
-  `play*`, `renderNextPeriod` or any per-period path; no control command was added.
-- **Undo:** every new test performs exactly one `control.undo` and asserts both the take/clip and the
-  landed track are restored; redo replays the same state. A failed take copy happens before the
-  checkpoint.
-- **ALREADY-FIXED / FALSE-POSITIVE ask:** not applicable; the verdict is FIXED and the pre-fix
-  whole-track mute and unmuted take playback are shown by the RED runs above.
-- **Sibling commands named by the submit check** (`app.*`, `arrangement.*`, `app.whats_new`,
-  `arrangement.fit_tracks`, `arrangement.get_state`): derived by the check's group regex from the
-  changed command files; none mutes tracks. Only `control::muteRangeSources` mutes anything, and it is
-  called only by `range.bounce` / `bounce.land` (sync and queued); `arrangement.get_state` reports and
-  `arrangement.fit_tracks` moves the view. Other `range.*` commands do not mute sources.
-- **Gates and completion check:** `feature_check.py` EXIT 0 `RESULT: PASS` (`gates-1.log`);
-  `submit_check.py ... 3971` result recorded in `submit-*.log` at submission time.
+Gates: see the Self-check section.
 
 ## Other findings
 
-- `ControlSuccessPaths` fails in this environment only because this build has no MIDI import/export
-  filter (`project.import` / `project.export_midi` refused); all `range.bounce`/`bounce.land` checks in
-  it pass. `ControlFreezeCommandsTranscript` returns 77 (no loadable instrument) but is registered
-  without `SKIP_RETURN_CODE`, so ctest reports it Failed. Both are unrelated to this change.
-- A gapped frozen take is a new derived WAV beside the original take. It is referenced by the project
-  like any take; repeated bounces of the same range reuse the same file name. Nothing prunes files of
-  ranges no longer in use.
+- `ControlFreezeCommandsTranscript` exits "Failed" in this build when it has no audible instrument and runs zero
+  checks, while its two siblings report "Skipped" (not investigated).
+
+Delegation: Haiku ran every build and ctest run (build-green-1/2/3, build-red-3, test-green-2/3/4, test-red-3) and
+reported exit codes and failing assertions; I read the failing assertion lines and the ctest tails, wrote all code
+and tests, and ran the patch revert/apply and the manifest edits myself.

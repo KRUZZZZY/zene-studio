@@ -470,6 +470,10 @@ QString outputVerb(const QString& operation)
 bool prepareBounceJob(const QJsonObject& args, const std::shared_ptr<BounceContext>& context,
 		const QVector<Track*>& tracks, RenderJob* job, QString* outPath, QString* error)
 {
+	// The two operations that mute the bounced region afterwards render only its pieces and their tail (cluster 3971).
+	context->range.replacesRegion = !context->range.coversWholeTrack()
+		&& ((context->operation == QLatin1String("range_bounce") && context->muteSources)
+			|| context->operation == QLatin1String("bounce_land"));
 	*outPath = resolveOutPath(args, tracks.front(), outputVerb(context->operation), context->range);
 	BounceInPlace::PreparedRender prepared;
 	std::vector<Track*> renderTracks;
