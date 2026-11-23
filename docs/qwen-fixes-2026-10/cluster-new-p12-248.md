@@ -2,10 +2,10 @@ FIXED
 
 # cluster new-p12-248 — Sample accurate automation locks on the audio thread
 
-new-p12-248: FIXED (round 5). Round 1 reported NEEDS-CONTEXT, round 2 added the lock-free render
-guard and its test, round 3 added the explicit state sequence, round 4 added a GUI screenshot the
-branch diff no longer needs here, and round 5 fixes the data loss the round-2 guard introduced:
-the recording scan no longer takes the clip lock at all and reads an atomically published target.
+new-p12-248: FIXED (round 6 evidence). Round 2 added the lock-free render guard (`RenderLock`) on the
+block, tick and relative-clip reads; round 5 removed the data loss that guard caused in the recording
+scan, which now reads an atomically published target and takes no clip lock. Round 6 re-ran the whole
+proof into its own log folder; no product code changed in round 6.
 
 ## Verdict: REAL
 - `Song::processNextBuffer()` calls `buildAutomationRamps()` once per period (src/core/Song.cpp:582).
@@ -80,56 +80,60 @@ tests/fork-sources.txt and tests/all-sources.txt). Five cases; the two that matt
   lock is held the way an editor holds it. The test waits on that promise before reading; no sleeps.
   The only bound is the 10 s escape hatch for the unfixed build, whose read would never return.
 
-## Commands and EXIT codes (logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-248.r5/logs)
-- Build (header change): `cmake --build build --target zene AutomationRenderLockTest -j4`
-  → 03-build-green.log EXIT=0. Two intermediate compiles failed and were fixed in the change:
-  01-build-green.log EXIT=2 (`std::atomic<AutomatableModel*>` could not take the const pointer the
-  accessor returns) and 02-build-green.log EXIT=2 (`value<float>()` is not a template on `FloatModel`).
-- GREEN: `ctest -R '^AutomationRenderLockTest$' --output-on-failure` (from build/tests)
-  → 04-test-green.log EXIT=0 (1/1 passed, 0.52 s); the recording case alone
-  `./AutomationRenderLockTest aRecordingClipKeepsItsTickWhileAnEditHoldsTheLock`
-  → 05-test-recording-green.log EXIT=0 (1 passed).
-- 4b patch: `git diff -- include/AutomationClip.h src/core/AutomationClip.cpp src/core/Song.cpp > logs/fix.patch`
-  → EXIT=0 (113 lines); `git apply -R logs/fix.patch` → 06-revert.log REVERT_EXIT=0.
-- 4b RED: `cmake --build build --target zene AutomationRenderLockTest -j4` → 07-build-red.log EXIT=0;
-  `ctest -R '^AutomationRenderLockTest$' --output-on-failure` → 08-test-red.log **EXIT=8**:
-  `FAIL! : aRecordingClipKeepsItsTickWhileAnEditHoldsTheLock() 'clip->pendingWriteCount() > 0' returned
-  FALSE. (a recording clip lost its tick while an edit held the clip lock)`; Totals: 6 passed, 1 failed.
-- 4b GREEN: `git apply logs/fix.patch` → 09-restore.log RESTORE_EXIT=0; rebuild →
-  10-build-green-4b.log EXIT=0; `ctest -R '^AutomationRenderLockTest$'` → 11-test-green-4b.log **EXIT=0**.
+## State sequence (test `aRecordingClipKeepsItsTickWhileAnEditHoldsTheLock`)
+Song.cpp is in the diff, so the states the test drives, in order:
+1. recording enabled, a real `putValue()` edit holds the clip lock, period at tick 100 returns;
+2. `pendingWriteCount() > 0` straight after that period (the tick was queued, not lost);
+3. `automationWriteDrainTimer` fires, a node exists at tick 100 with the control's value;
+4. control half: no edit, period at tick 140 queues a write, the drain plants a node at tick 140.
+
+## Commands and EXIT codes (logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-248.r6/logs)
+- GREEN build: `cmake --build build -j4 --target zene AutomationRenderLockTest` → build-1-green.log EXIT=0.
+- GREEN test: `ctest -R AutomationRenderLockTest --output-on-failure` (from build/tests)
+  → test-1-green.log EXIT=0 (1/1 passed).
 - Family: `ctest -R '^(AutomationModesTest|AutomationPreFirstValueTest|AutomationRenderLockTest|SampleAccurateAutomationTest|ControlRecordingRoutesTest|ControlSessionRecordLandTest)$' --output-on-failure`
-  → 12-test-family.log EXIT=0 (6/6 passed; AutomationModesTest covers the no-target recording cases).
+  after building those targets (build-4-family.log EXIT=0) → test-5-family-green.log EXIT=0, 6/6 passed.
+  (A first, broader `ctest -R Automation` run, test-2-family-green.log EXIT=8, failed only on
+  ControlAutomationScriptTest/ControlAutomationModesTest, which need LMMS_TEST_PLUGIN_DIR, and on
+  13 tests whose binaries were not built; it is not used as evidence.)
+- 4b patch: `git show 2c58bac4de -- include src > logs/fix.patch` (the round-5 product hunks: 3 files,
+  the atomic target/recording publication and the Song.cpp scan change) → EXIT=0;
+  `git apply -R logs/fix.patch` → EXIT=0.
+- 4b RED: rebuild → build-2-red.log EXIT=0; `ctest -R '^AutomationRenderLockTest$' --output-on-failure`
+  → test-3-red.log **EXIT=8**: `FAIL! : aRecordingClipKeepsItsTickWhileAnEditHoldsTheLock()
+  'clip->pendingWriteCount() > 0' returned FALSE. (a recording clip lost its tick while an edit held the
+  clip lock)`, Loc tests/src/core/AutomationRenderLockTest.cpp(280); Totals: 6 passed, 1 failed.
+- 4b GREEN: `git apply logs/fix.patch` → EXIT=0, `git status --short` empty; rebuild →
+  build-3-green-again.log EXIT=0; ctest → test-4-green-again.log **EXIT=0** (1/1 passed).
 - Gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>`
-  → 13-feature-check.log EXIT=0 and 14-feature-check-final.log EXIT=0, RESULT: PASS (all 8 rows PASS).
-- Completion check: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p12-248`
-  → 16-submit-check.log EXIT=0, every mechanical row PASS, RESULT: PASS - submit.
-- Registration: `tests/upstream-modifications.txt` now lists `src/core/AutomationClip.cpp` and updates
-  the `include/AutomationClip.h` and `src/core/Song.cpp` reasons; the list ends with a newline.
+  → feature-check.log EXIT=0, RESULT: PASS (all 8 rows PASS).
+- Completion check: see the last section of this file.
+- Registration: `tests/upstream-modifications.txt` lists `src/core/AutomationClip.cpp` and the
+  `include/AutomationClip.h` and `src/core/Song.cpp` reasons; the list ends with a newline.
 
 ## Self-check
-- **Regression test FAILS with the product change reverted and PASSES with it:** reverse of the
-  round-5 product hunks → 08-test-red.log EXIT=8 (the recording case loses its tick); restore →
-  11-test-green-4b.log EXIT=0. The red failure is the data-loss assertion, not a timeout: the round-2
-  `tryLock` guard is still present in the red build, so the period returns but records nothing.
+- **Regression test FAILS with the product change reverted and PASSES with it:** test-3-red.log EXIT=8
+  (the recording case loses its tick), test-4-green-again.log EXIT=0. The red failure is the
+  data-loss assertion, not a timeout: the round-2 `tryLock` guard is still present in the red build, so
+  the period returns but records nothing.
 - **Deterministic:** no sleeps and no injected wall-clock values. The clip lock is held by a real
   `putValue()` parked on a `std::promise` from a direct `dataChanged` slot, and the test waits on that
   promise before reading. The recording tick is fixed by `setTicks(100)` / `setTicks(140)`; the drain is
   fired by invoking the `automationWriteDrainTimer` timeout directly. The 10 s `future::wait_for` is
   only the escape hatch for the fully unfixed build, whose read would otherwise block.
-- **Fix at the cause and complete; callers and siblings checked:** the recording scan no longer takes
-  any clip lock; `liveTarget()`/`isRecording()` are the only render-side reads, both atomics. Every
-  `m_objects` mutation republishes the pointer (`addObject`, `removeObject`, `objectDestroyed`,
-  `cleanObjects`, `clearObjects`). The remaining `RenderLock` users are the three accepted read paths.
-  `firstObject()` is now control-thread only on this path (its min/max and GUI users are unchanged).
+- **Fix at the cause and complete; callers and siblings checked:** the recording scan takes no clip
+  lock; `liveTarget()`/`isRecording()` are the only render-side reads, both atomics. Every `m_objects`
+  mutation republishes the pointer (`addObject`, `removeObject`, `objectDestroyed`, `cleanObjects`,
+  `clearObjects`). The remaining `RenderLock` users are the three accepted read paths.
 - **No collateral damage:** no saved data, file format, command or undo path is touched; no limit or
-  capacity is added. Without contention every path behaves as before. AutomationModesTest's
-  no-target/destroyed-target recording cases still pass, so a clip without a live target still records
-  nothing (12-test-family.log EXIT=0).
-- **ALREADY-FIXED / FALSE-POSITIVE code reference:** not applicable. The verdict is FIXED and the bug
-  was real (the recording data loss is demonstrated red above).
-- **Sibling commands in the command files you changed:** this job changed no command file (no
-  `ControlCommands*.cpp` in the diff); the listed app.*/arrangement.* commands come from earlier
-  branch history and do not touch automation clip locking.
+  capacity is added. Without contention every path behaves as before; the six-test family passes
+  (test-5-family-green.log EXIT=0).
+- **GUI screenshot:** none. The diff touches no src/gui file, so no screenshot is claimed.
+- **ALREADY-FIXED / FALSE-POSITIVE code reference:** not applicable; the verdict is FIXED.
+- **Sibling commands in the command files you changed:** this job changed no command file.
+
+Delegation: Haiku ran the green build/test runs, the family run, and the revert / red / restore / green
+sequence; I read its logs (test-1, test-3, test-4, test-5) and the clean `git status` myself.
 
 ## Other findings
 - `NotePlayHandle::processTimePos` (src/core/NotePlayHandle.cpp:752) reads the per-note detuning clip
