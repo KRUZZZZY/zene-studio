@@ -187,6 +187,9 @@ struct ConcurrentStressRun
 			}
 			else { ++refusedCount; }
 			if (attempts > greatestAttemptCount) { greatestAttemptCount = attempts; }
+			if (producer == 0 && index == 0) {
+				while (periodsWithProducerInput.load(std::memory_order_acquire) == 0) { std::this_thread::yield(); }
+			}
 		}
 		lmms::test::tlCountAllocations = false;
 		producerAllocations[producer].store(lmms::test::tlAllocationCount, std::memory_order_relaxed);
@@ -213,6 +216,9 @@ struct ConcurrentStressRun
 	{
 		lmms::test::resetAllocationCount();
 		lmms::test::tlCountAllocations = true;
+		renderPeriod();
+		++periods;
+		while (accepted[0].load(std::memory_order_acquire) == 0) { std::this_thread::yield(); }
 		while (periods < 100000 && finished.load(std::memory_order_acquire) != ProducerCount)
 		{
 			renderPeriod();

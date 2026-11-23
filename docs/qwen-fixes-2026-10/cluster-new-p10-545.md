@@ -174,9 +174,8 @@ EXIT=0
 
 ## Other findings
 
-- `CarlaMidiHandoffTest::concurrentMidiStressIsOrderedAndAllocationFree` is
-  timing-sensitive on this machine: run directly three times before any product change it
-  failed twice and passed once, because the render loop can complete its 100000-period cap
-  before the producer threads are scheduled (`periodsWithProducerInput == 0`). It is not
-  touched by this fix, was observed in the RED run, and passed in the final ctest run.
-  Not fixed here: the brief says unrelated defects stay out of this change.
+- QA review found that `CarlaMidiHandoffTest::concurrentMidiStressIsOrderedAndAllocationFree`
+  could finish its 100000-period render loop before the producer threads were scheduled.
+  A first-event barrier now waits for producer zero to queue one event, renders that period,
+  then releases it. Its ordering, allocation, and overlap assertions remain in place. The
+  focused CTest passed five consecutive runs after this adjustment.
