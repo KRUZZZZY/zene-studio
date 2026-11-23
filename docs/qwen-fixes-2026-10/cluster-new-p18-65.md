@@ -116,6 +116,8 @@ Log folder: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p18-65.r1/logs`.
 | GREEN with the fix restored | `ctest -R "NesDetunePublication\|NesDetuneRenderPath\|NesCoarseDetune" --output-on-failure > …/test-green-11.log 2>&1; echo EXIT=$?` | 0 | `test-green-11.log` |
 | Whole migration suite (family) | `ctest -R "PluginPortsMigrationTest" --output-on-failure > …/test-family-12.log 2>&1; echo CTEST_EXIT=$?` | 8 | `test-family-12.log` |
 | Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > …/feature-check-18.log 2>&1; echo EXIT=$?` | 0 | `feature-check-18.log` |
+| Rebuild `zene` | `(cmake --build build --target zene -j4; echo BUILD_EXIT=$?) > …/build-19-zene.log 2>&1` | 0 | `build-19-zene.log` |
+| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p18-65 > …/submit-check-20.log 2>&1; echo EXIT=$?` | 0 | `submit-check-20.log` |
 
 What the logs say:
 
@@ -124,6 +126,8 @@ What the logs say:
 - `test-green-6.log` / `test-green-11.log`: `NesDetunePublication Passed`, `NesDetuneRenderPath Passed`, `NesCoarseDetune Passed`, `100% tests passed out of 3`, exit 0.
 - `test-green-7.log`: `QINFO … NES detune without a control signal: before=100 after=50`, `Totals: 3 passed, 0 failed`.
 - `feature-check-18.log`: `PASS fork-sources`, `PASS all-sources-reproduce`, `PASS no-upstream-regression`, `PASS check-namespace`, `PASS no-tautology`, `PASS doc-figures`, `PASS complexity`, `PASS file-length`, `RESULT: PASS`, exit 0.
+- `submit-check-20.log`: `PASS commits on the branch`, `PASS working tree clean`, `PASS report docs/qwen-fixes-2026-10/cluster-new-p18-65.md`, `PASS tests added or changed`, `PASS new test files registered in tests/CMakeLists.txt`, `PASS gates (feature_check.py)`, `RESULT: PASS - submit`, exit 0.
+- `build-19-zene.log`: `[100%] Built target zene`, `BUILD_EXIT=0`.
 
 The family run `test-family-12.log` is exit 8 with `Totals: 95 passed, 4 failed, 2
 skipped`; the four failures are `malletsVoiceLimitIsEnforcedPerInstrument`,
@@ -179,6 +183,16 @@ and fail again with it restored (`test-mallets-16-fixed.log`, exit 4). See Other
 - **ALREADY-FIXED / FALSE-POSITIVE evidence:** not applicable, the verdict is FIXED; the
   code showing the race is cited above at `plugins/Nes/Nes.cpp:462,465-470,552,726` and
   `plugins/Nes/Nes.h:233-235` (pre-change `HEAD`).
+- **Sibling commands in the command files the diff touched** (the check lists
+  `app.about`, `arrangement.fit_tracks`, …): not applicable to this cluster. The check
+  measures the branch against `FIX-BASE`, so it also sees the 431 files other clusters
+  already landed on this branch. This cluster's own commit touches no command file:
+  `git show --stat f404dd2349` lists exactly `docs/qwen-fixes-2026-10/cluster-new-p18-65.md`,
+  `plugins/Nes/Nes.cpp`, `plugins/Nes/Nes.h`, `tests/CMakeLists.txt`,
+  `tests/src/plugins/PluginPortsMigrationTest.cpp`, `tests/upstream-modifications.txt`.
+  No agent command, no `ControlCommands*` file and no
+  `tools/mcp-zene-control/zene_control/commands_snapshot.json` was changed, so the
+  `ControlCommandsSnapshot` canary cannot move.
 
 ## Other findings
 
