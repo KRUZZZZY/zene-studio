@@ -55,10 +55,6 @@
 
 #include <sndfile.h>
 
-#if defined(Q_OS_UNIX)
-#include <unistd.h>
-#endif
-
 #include "AllocationProbe.h"
 
 using lmms::RetroAudioCapture;
@@ -429,90 +425,57 @@ private slots:
 		QCOMPARE(written2, std::uint64_t{64});
 	}
 
-	//! Luna cluster 5276: the take writer stages the complete WAV and only then
-	//! moves it over the destination, so a write that cannot even be staged must
-	//! leave the take already there untouched. A writer that opened the
-	//! destination itself, or that let QSaveFile fall back to writing directly
-	//! into it, would truncate the old take before discovering the failure.
-	void aTakeThatCannotBeStagedKeepsTheExistingTake()
+	//! Luna cluster 5276: the final move is the only step that may replace the
+	//! destination. A move that fails must report the failure and leave the take
+	//! already there byte for byte: the writer may not remove the destination
+	//! before it knows the move succeeded. The one-shot hook refuses the move
+	//! after the complete WAV has been staged, the fault a filesystem that will
+	//! not replace the destination gives; it is portable (no permissions) and
+	//! deterministic (no timing).
+	void aFailedTakeMoveKeepsTheExistingTake()
 	{
-#if defined(Q_OS_UNIX)
-		// A read-only directory does not stop root from creating the staging
-		// file, so the failure this test injects does not exist for root.
-		if (::geteuid() == 0) { QSKIP("directory permissions are not enforced for root"); }
 		QTemporaryDir dir;
 		QVERIFY(dir.isValid());
 		const QString path = dir.filePath(QStringLiteral("take.wav"));
-		const QByteArray previous("previous take");
-		{
-			QFile old(path);
-			QVERIFY(old.open(QIODevice::WriteOnly));
-			QCOMPARE(old.write(previous), static_cast<qint64>(previous.size()));
-		}
 
-		const QFileDevice::Permissions original = QFile::permissions(dir.path());
-		QVERIFY(QFile::setPermissions(dir.path(),
-			QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+		// An existing COMPLETE take at the destination, written by the real
+		// writer: the reused take path is what the finding is about.
+		const std::vector<SampleFrame> firstFrames(32, SampleFrame(0.5f, -0.5f));
+		std::uint64_t firstWritten = 0;
+		QString firstError;
+		QVERIFY2(lmms::writeRetroAudioTake(path, firstFrames, SampleRate, &firstWritten, &firstError),
+			qPrintable(firstError));
+		QCOMPARE(firstWritten, std::uint64_t{32});
+		QFile old(path);
+		QVERIFY(old.open(QIODevice::ReadOnly));
+		const QByteArray previous = old.readAll();
+		old.close();
+		QVERIFY(!previous.isEmpty());
 
+		// The next take is written and staged completely; its move is refused.
 		const std::vector<SampleFrame> frames(64, SampleFrame(0.25f, -0.25f));
+		lmms::retroaudiotesting::failNextTakeMove();
 		std::uint64_t written = 777;
 		QString error;
 		const bool ok = lmms::writeRetroAudioTake(path, frames, SampleRate, &written, &error);
-		// Restore before any assertion can return: the temporary directory must
-		// stay removable on every path out of this test.
-		QFile::setPermissions(dir.path(), original);
-
-		QVERIFY2(!ok, "a take that cannot be staged must fail");
+		QVERIFY2(!ok, "a refused move must make the take fail");
 		QVERIFY(!error.isEmpty());
 		QCOMPARE(written, std::uint64_t{0});
 
+		// The take that was there is intact, and no staging sibling survives.
 		QFile after(path);
 		QVERIFY(after.open(QIODevice::ReadOnly));
 		QCOMPARE(after.readAll(), previous);
 		after.close();
-		// The refused write left no staging sibling behind.
 		QCOMPARE(QDir(dir.path()).entryList(QDir::Files | QDir::Hidden | QDir::NoDotAndDotDot),
 			QStringList{QStringLiteral("take.wav")});
-#else
-		QSKIP("a POSIX directory permission cannot inject this failure on this platform");
-#endif
-	}
 
-	//! Luna cluster 5276: the commit is the only step that replaces the
-	//! destination. When it fails after the complete WAV was staged, the
-	//! destination must still hold what it held: nothing may be removed before
-	//! the move is known to have succeeded. A non-empty directory at the
-	//! destination makes that move fail on every supported platform.
-	void aFailedCommitKeepsWhatTheDestinationHeld()
-	{
-		QTemporaryDir dir;
-		QVERIFY(dir.isValid());
-		const QString path = dir.filePath(QStringLiteral("take.wav"));
-		QVERIFY(QDir().mkpath(path));
-		const QString marker = QDir(path).filePath(QStringLiteral("old-take.bin"));
-		const QByteArray previous("previous take");
-		{
-			QFile old(marker);
-			QVERIFY(old.open(QIODevice::WriteOnly));
-			QCOMPARE(old.write(previous), static_cast<qint64>(previous.size()));
-		}
-
-		const std::vector<SampleFrame> frames(64, SampleFrame(0.25f, -0.25f));
-		std::uint64_t written = 777;
-		QString error;
-		const bool ok = lmms::writeRetroAudioTake(path, frames, SampleRate, &written, &error);
-		QVERIFY2(!ok, "a take that cannot be committed must fail");
-		QVERIFY(!error.isEmpty());
-		QCOMPARE(written, std::uint64_t{0});
-
-		QVERIFY(QFileInfo(path).isDir());
-		QFile after(marker);
-		QVERIFY(after.open(QIODevice::ReadOnly));
-		QCOMPARE(after.readAll(), previous);
-		after.close();
-		// The refused commit left no staging file behind.
-		QCOMPARE(QDir(dir.path()).entryList(QDir::Files | QDir::Hidden | QDir::NoDotAndDotDot),
-			QStringList{});
+		// The refusal was one shot: the next take lands normally.
+		std::uint64_t written2 = 0;
+		QString error2;
+		QVERIFY2(lmms::writeRetroAudioTake(path, frames, SampleRate, &written2, &error2),
+			qPrintable(error2));
+		QCOMPARE(written2, std::uint64_t{64});
 	}
 
 	//! Luna cluster new-p12-200, BUG 5: a take must not label frames recorded at

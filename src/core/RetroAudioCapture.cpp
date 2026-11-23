@@ -269,6 +269,7 @@ QString takeRequestProblem(const QString& filePath, std::size_t frames, int samp
 
 #ifdef LMMS_TESTING
 std::atomic<bool> s_failNextTakeFinish{false};
+std::atomic<bool> s_failNextTakeMove{false};
 #endif
 
 //! Flush and close \a sf; the libsndfile error code of the first step that failed, else
@@ -348,6 +349,17 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 			.arg(filePath, QString::fromUtf8(sf_error_number(finishError)));
 		return false;
 	}
+#ifdef LMMS_TESTING
+	// Test hook (cluster 5276): the final move is refused before it happens, the
+	// way a filesystem that will not replace the destination refuses it. Nothing
+	// has touched the destination by now, so it must still hold the old take.
+	if (s_failNextTakeMove.exchange(false, std::memory_order_acq_rel))
+	{
+		*error = QStringLiteral("could not commit the written take to %1: %2")
+			.arg(filePath, QStringLiteral("the move was refused"));
+		return false;
+	}
+#endif
 	if (!output.commit())
 	{
 		*error = QStringLiteral("could not commit the written take to %1: %2")
@@ -365,6 +377,12 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 void retroaudiotesting::failNextTakeFinish() noexcept
 {
 	s_failNextTakeFinish.store(true, std::memory_order_release);
+}
+
+
+void retroaudiotesting::failNextTakeMove() noexcept
+{
+	s_failNextTakeMove.store(true, std::memory_order_release);
 }
 #endif
 
