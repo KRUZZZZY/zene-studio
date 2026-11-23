@@ -37,6 +37,7 @@
 
 #include <atomic>
 #include <memory>
+#include <vector>
 
 
 namespace lmms
@@ -131,15 +132,31 @@ private:
 
 	friend class gui::AudioFileProcessorView;
 
-	//! What a note keeps in its inline storage: the voice it plays on (Q050-103).
+	//! What a note keeps in its inline storage: the voice it plays on (Q050-103) and the source it
+	//! started on (cluster new-p9-552). Replacing the instrument's file must neither switch a
+	//! sounding note to the new buffer nor free the old one under it; the note renders from its own
+	//! snapshot for its whole life.
 	struct NoteVoice
 	{
 		SamplerVoicePool::Claim claim;
+		Sample sample;
+		int loopMode = 0;
 	};
+	static_assert(sizeof(NoteVoice) <= 1024, "NoteVoice must fit NotePlayHandle::PluginDataStorageSize");
+
+	//! Control thread: publish \a next as the instrument's sample. A sounding note keeps the buffer
+	//! it captured; the replaced one is retired until no note holds it and only then freed here.
+	void replaceSample(Sample next);
 
 	void applyAttack(SampleFrame* dst, f_cnt_t frames, f_cnt_t firstFrame) const;
 
 	Sample m_sample;
+	//! The current source buffer's sample rate, mirrored for beatLen() (a live MIDI note may be built
+	//! off the render thread while the control thread replaces the buffer).
+	std::atomic<int> m_sampleRate{m_sample.sampleRate()};
+	//! Buffers replaced while a sounding note still captures them. Only the control thread touches
+	//! this list, so the note's last reference is dropped on the audio thread without freeing.
+	std::vector<std::shared_ptr<const SampleBuffer>> m_retiredSamples;
 
 	FloatModel m_ampModel;
 	FloatModel m_startPointModel;
@@ -158,8 +175,9 @@ private:
 	//! Built once, in the converter mode Sample::play requests, so the render path only claims and releases voices.
 	std::unique_ptr<SamplerVoicePool> m_voices;
 
-	f_cnt_t m_nextPlayStartPoint;
-	bool m_nextPlayBackwards;
+	//! Written by knob/automation slots and the render thread, read by note starts: atomic.
+	std::atomic<f_cnt_t> m_nextPlayStartPoint;
+	std::atomic<bool> m_nextPlayBackwards;
 } ;
 
 } // namespace lmms
