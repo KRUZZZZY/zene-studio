@@ -203,3 +203,26 @@ RESULT: PASS
    one unprepared worker read of a sample-exact parameter during a period in which the prepass
    missed it records two misses (visible in the test output as `reported=2`). Harmless for the
    counter's purpose, but the two counts are not one-per-request-per-parameter.
+
+## Completion check
+
+`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p17-44` -> **EXIT 0**
+(`logs/submit-check-2.log`):
+
+```
+PRE-SUBMIT CHECK for new-p17-44
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-new-p17-44.md
+  PASS  tests added or changed - tests/control-audio-test-tone.py, tests/control-no-audio-device.py, tests/control-session-lifecycle-transcript.py
+  PASS  new test files registered in tests/CMakeLists.txt
+  PASS  gates (feature_check.py)
+RESULT: PASS - submit
+```
+
+No FAIL is left; the six ASK items above are answered in `## Self-check`. (The "tests added or
+changed" row lists files from earlier commits between the merge base and HEAD, not from this
+cluster's patch - my two commits touch only `tests/src/core/PhaseDSidechainTest.cpp` and this
+report.) The proof manifest is at
+`~/.config/kads/zene/state/runs/new-p17-44.r1/logs/proof.json` (`code-reference` artifacts for a
+FALSE-POSITIVE verdict).
