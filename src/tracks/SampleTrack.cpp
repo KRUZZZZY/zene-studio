@@ -301,7 +301,16 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			else
 			{
 				const Clip::WarpPassScope warpPass(*st, scheduled.warp);
-				auto smpHandle = new SamplePlayHandle(st, scheduled.window);
+				auto smpHandle = SamplePlayHandle::tryCreate(st, scheduled.window);
+				if (smpHandle == nullptr)
+				{
+					// The pool is empty: nothing is added and nothing leaks. Clearing the latch lets the scheduling
+					// above retry on the next pass; the control thread tops the pool up off this thread.
+					st->setIsPlaying( false );
+					s_deferredClipStarts.fetch_add( 1, std::memory_order_relaxed );
+					Engine::audioEngine()->requestPlayHandleCapacityRefresh();
+					continue;
+				}
 				smpHandle->setPatternTrack(pattern_track);
 				smpHandle->setClipEffects(st);  // Q050-111: the clip's own effects, before the track's sum
 				handle = smpHandle;

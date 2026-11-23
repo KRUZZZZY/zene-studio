@@ -28,6 +28,7 @@
 #include <memory>
 #include <optional>
 
+#include "RealtimeFreeList.h"
 #include "LmmsTypes.h"
 #include "Sample.h"
 #include "lmms_export.h"
@@ -38,6 +39,16 @@ namespace lmms
 class SampleClip;
 class SampleFrame;
 class TakeLaneModel;
+class CompSlipReaders;
+
+//! Gives a reader object back: to the pool when it is pooled (no allocation, audio-thread safe), else deletes it.
+struct LMMS_EXPORT CompSlipRecycler
+{
+	void operator()(CompSlipReaders* readers) const noexcept;
+};
+
+//! Owner of one reader object; destroying it gives the object back through CompSlipRecycler.
+using CompSlipOwner = std::unique_ptr<CompSlipReaders, CompSlipRecycler>;
 
 /*! 0.5.0 E2: the slipped reads of one take's play handle.
  *
@@ -58,10 +69,10 @@ class TakeLaneModel;
  *  position-dependent rate does not give. Such a take, and an auditioned lane, play unslipped. A slipped span
  *  sounds where the take's clip is on the timeline (its handle's lifetime); the slip chooses what it reads there.
  *
- *  Threading: create() runs where the handle is constructed (it allocates the readers, as the handle's own
- *  construction does); render() is the audio thread's and neither allocates nor locks.
+ *  Threading: create() takes a pooled object on the audio thread and never allocates; control-thread and
+ *  offline callers allocate. render() is the audio thread's and neither allocates nor locks.
  */
-class LMMS_EXPORT CompSlipReaders
+class LMMS_EXPORT CompSlipReaders : public RealtimeFreeNode<CompSlipReaders>
 {
 public:
 	static constexpr int MaxReaders = 4;
@@ -69,9 +80,15 @@ public:
 
 	/*! The readers for @a clip's slipped spans in @a comp, or nullptr when the clip has none (the handle then pays
 	 *  nothing). @a sourceIn is the source frame the handle starts on; @a outputFramesPerTick converts the spans
-	 *  to output frames from the clip's start (the frame base SamplePlayHandle's own comp spans use). */
-	static std::unique_ptr<CompSlipReaders> create(const TakeLaneModel& comp, const SampleClip& clip, f_cnt_t sourceIn,
-		double outputFramesPerTick);
+	 *  to output frames from the clip's start (the frame base SamplePlayHandle's own comp spans use).
+	 *
+	 *  Audio thread (RealtimeScope active): takes a pooled object and never allocates. An empty pool returns
+	 *  nullptr and sets @a exhausted (true on a pool miss, false on a hit): the caller must wait, not play
+	 *  unslipped. Control-thread and offline callers allocate. */
+	static CompSlipOwner create(const TakeLaneModel& comp, const SampleClip& clip, f_cnt_t sourceIn,
+		double outputFramesPerTick, bool* exhausted = nullptr);
+	//! Control thread only: grows the pool until it holds at least @a readers free objects.
+	static void reserve(std::size_t readers);
 
 	/*! Audio thread: plays every reader over @a frames with @a ratio (the handle's own) and writes each slipped
 	 *  span's frames of @a dst - output frame @a clipFrame from the clip's start onwards - from its reader. */
@@ -93,6 +110,9 @@ private:
 	};
 
 	CompSlipReaders() = default;
+	friend struct CompSlipRecycler;
+	//! Drops the reader state so a pooled object can be armed again.
+	void resetForReuse() noexcept;
 
 	//! The reader of @a slipTicks: the one already open for it, a new one, or -1 when all are taken.
 	int readerFor(int slipTicks);
@@ -106,6 +126,8 @@ private:
 	int m_readerCount = 0;
 	std::array<Span, MaxSpans> m_spans{};
 	int m_spanCount = 0;
+	//! True for an object the pool owns: giving it back is a push to the pool, never a delete.
+	bool m_pooled = false;
 };
 
 } // namespace lmms
