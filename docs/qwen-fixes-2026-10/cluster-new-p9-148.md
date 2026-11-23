@@ -231,6 +231,15 @@ rate.
 `284740ac67`.  The RED/GREEN experiment above shows the existing test
 distinguishes the two revisions.
 
+**6. Sibling commands in the command files you changed - confirm each is consistent with your fix (or say why it is not affected).**
+This unit changed no command files and no agent command.  `submit_check.py`
+lists `app.*`, `arrangement.*` siblings only because it diffs the branch
+against `050/m0-train-35`, so other lanes' commits between that base and HEAD
+appear in the diff; none of those files were touched by this session or by
+the granular fix (`git log --oneline fa4a5f2e7..HEAD -- tools/mcp-zene-control`
+shows other lanes' work, and the granular fix commit `b3a4d9d7c3` touched only
+the plugin, tests and registries).  No command semantics are affected.
+
 **TSan note.**  Local TSan does not run on this box, so the race freedom is
 argued from the design: the only cross-thread values are
 `std::atomic<PreparedBuffers*>` slots with acquire/release ordering, the
