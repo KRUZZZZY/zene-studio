@@ -97,14 +97,16 @@ so the pointer identity is the observable for the name (see the test comment and
 Logs: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p15-253.r11/logs`. Each log's last line is
 `EXIT=n` for the command it records, except the compile-failure logs noted below.
 
-- RED for the name fix (only that fix not in the tree; all other product code at HEAD): build
-  `cmake --build build --target AudioBusPlayHandleQueueTest -j4` EXIT=0 (`build-6-red.log`);
-  `./AudioBusPlayHandleQueueTest realtimeStandaloneBusNameIsStaticAcrossConstructions` EXIT=1
-  (`test-3-red.log`: "each standalone bus built its own heap QString name; the call site is not
-  QStringLiteral").
-- GREEN: after `src/core/SamplePlayHandle.cpp:78` became `QStringLiteral(...)`, build EXIT=0
-  (`build-7-green.log`); the same focused run EXIT=0 (`test-4-green.log`); the final focused run
-  EXIT=0 (`test-8-focused-green.log`).
+- RED for the name fix (only that fix reverted; all other product code at HEAD): `git apply -R`
+  of the one-line `src/core/SamplePlayHandle.cpp` commit diff EXIT=0 (`apply-name-reverse.log`,
+  13-line `name-fix.patch`); build `cmake --build build --target AudioBusPlayHandleQueueTest -j4`
+  EXIT=0 (`build-14-name-red.log`); `./AudioBusPlayHandleQueueTest
+  realtimeStandaloneBusNameIsStaticAcrossConstructions` EXIT=1 (`test-12-name-red.log`:
+  "'firstName == secondName' returned FALSE. (each standalone bus built its own heap QString name;
+  the call site is not QStringLiteral)").
+- GREEN: `git apply` the line EXIT=0 (`apply-name-forward.log`), build EXIT=0
+  (`build-15-name-green.log`), the same focused run EXIT=0 (`test-13-name-green.log`); the final
+  focused and family runs also pass (`test-8-focused-green.log`, `test-9-family-green.log`).
 - Whole product patch RED (non-test hunks only): `git diff 730db9d871 --
   include/AudioBusHandle.h include/AudioEngine.h src/core/AudioBusHandle.cpp
   src/core/AudioEngine.cpp src/core/SamplePlayHandle.cpp > fix.patch` EXIT=0, 762 lines
@@ -133,9 +135,10 @@ the test before the RED/GREEN runs above.
 
 ## Self-check (answers to the submit_check ASK items)
 
-- **RED/GREEN exit codes.** The name regression is RED at EXIT=1 focused (`test-3-red.log`) and
-  GREEN at EXIT=0 (`test-4-green.log`, `test-8-focused-green.log`). The whole-product patch gives
-  `ctest` EXIT=8 (`test-10-red.log`) and EXIT=0 (`test-11-green.log`) with the final test file.
+- **RED/GREEN exit codes.** The name regression is RED at EXIT=1 focused
+  (`test-12-name-red.log`) and GREEN at EXIT=0 (`test-13-name-green.log`). The whole-product patch
+  gives `ctest` EXIT=8 (`test-10-red.log`) and EXIT=0 (`test-11-green.log`) with the final test
+  file.
 - **Determinism.** No sleep or wall-clock assertion. The realtime cases enter `RealtimeScope` and
   drive the control-thread service explicitly. The name assertion compares two live pointers; heap
   QStrings are distinct while both live, so there is no allocator-reuse race. The held-lock test
