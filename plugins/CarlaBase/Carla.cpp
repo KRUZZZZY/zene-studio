@@ -62,6 +62,11 @@
 namespace lmms
 {
 
+// cluster new-p10-545: the instrument's render planes hold the engine's largest period. If either
+// bound moves, fail the build rather than clip a legitimate period or write past the planes.
+static_assert(CarlaRenderBuffers::MaxPeriodFrames == static_cast<std::size_t>(MAXIMUM_BUFFER_SIZE),
+    "the Carla render planes must hold AudioEngine's largest period");
+
 // this doesn't seem to be defined anywhere
 static const double ticksPerBeat = 48.0;
 
@@ -152,10 +157,17 @@ static const char* host_ui_save_file(NativeHostHandle, bool isDir, const char* t
 
 CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const Descriptor* const descriptor, const bool isPatchbay,
     const Descriptor::SubPluginFeatures::Key* key, bool playNow)
+    : CarlaInstrument(instrumentTrack, descriptor, isPatchbay,
+        isPatchbay ? carla_get_native_patchbay_plugin() : carla_get_native_rack_plugin(), key, playNow)
+{
+}
+
+CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const Descriptor* const descriptor, const bool isPatchbay,
+    const NativePluginDescriptor* nativeDescriptor, const Descriptor::SubPluginFeatures::Key* key, bool playNow)
     : Instrument(instrumentTrack, descriptor, key, Flag::IsSingleStreamed | Flag::IsMidiBased | Flag::IsNotBendable),
       kIsPatchbay(isPatchbay),
       fHandle(nullptr),
-      fDescriptor(isPatchbay ? carla_get_native_patchbay_plugin() : carla_get_native_rack_plugin()),
+      fDescriptor(nativeDescriptor),
       m_paramModels()
 {
     fHost.handle      = this;
@@ -532,36 +544,24 @@ void CarlaInstrument::playImpl(std::span<SampleFrame> out)
     fTimeInfo.bbt.ticksPerBeat   = ticksPerBeat;
     fTimeInfo.bbt.beatsPerMinute = s->getTempo();
 
-#ifndef _MSC_VER
-    float buf1[bufsize];
-    float buf2[bufsize];
-#else
-    float *buf1 = static_cast<float *>(_alloca(bufsize * sizeof(float)));
-    float *buf2 = static_cast<float *>(_alloca(bufsize * sizeof(float)));
-#endif
-
-    float* rBuf[] = { buf1, buf2 };
-    std::memset(buf1, 0, sizeof(float)*bufsize);
-    std::memset(buf2, 0, sizeof(float)*bufsize);
-
-    float** const buffers = rBuf;
-    fMidiHandoff.processPeriod([this, buffers, bufsize](const NativeMidiEvent* events, std::uint32_t eventCount)
+    // cluster new-p10-545: the planes are owned by the instrument and allocated when it is built, so
+    // this period neither reserves a stack array nor grows a container on the render thread. A span
+    // longer than the engine's largest period is clipped; the frames beyond it stay silent because
+    // the whole output was zeroed above.
+    m_renderBuffers.render(out, [this](float** buffers, std::uint32_t frames)
     {
+        fMidiHandoff.processPeriod([this, buffers, frames](const NativeMidiEvent* events, std::uint32_t eventCount)
+        {
 // TODO FIXME this is just here so it compiles.
 // https://github.com/falkTX/Carla/blob/8bceb9ed173a10b29038f8abb4383710c0e497c1/source/includes/CarlaNative.h
 //     FIXME for v3.0, use const for the input buffer
 #if CARLA_VERSION_HEX >= CARLA_VERSION_HEX_3
-        fDescriptor->process(fHandle, (const float**)buffers, buffers, bufsize, events, eventCount);
+            fDescriptor->process(fHandle, (const float**)buffers, buffers, frames, events, eventCount);
 #else
-        fDescriptor->process(fHandle, buffers, buffers, bufsize, events, eventCount);
+            fDescriptor->process(fHandle, buffers, buffers, frames, events, eventCount);
 #endif
+        });
     });
-
-    for (uint i=0; i < bufsize; ++i)
-    {
-        out[i][0] = buf1[i];
-        out[i][1] = buf2[i];
-    }
 }
 
 bool CarlaInstrument::handleMidiEvent(const MidiEvent& event, const TimePos&, f_cnt_t offset)

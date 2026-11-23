@@ -1497,6 +1497,7 @@ plugins/AuInstrument/AuInstrumentView.cpp
 plugins/AuInstrument/AuInstrumentView.h
 plugins/AuInstrument/logo.png
 plugins/CarlaBase/CarlaMidiHandoff.h
+plugins/CarlaBase/CarlaRenderBuffers.h
 plugins/ClapEffect/ClapBusMap.cpp
 plugins/ClapEffect/ClapBusMap.h
 plugins/ClapEffect/ClapEffect.cpp
@@ -3260,6 +3261,8 @@ tests/src/gui/ArrangerTakePunchTest.cpp
 tests/src/gui/NoteMelodyTest.cpp
 tests/src/plugins/BusesTestInstrument.cpp
 tests/src/plugins/CarlaMidiHandoffTest.cpp
+tests/src/plugins/CarlaPlayImplTest.cpp
+tests/src/plugins/CarlaRenderBuffersTest.cpp
 tests/src/plugins/FakeHostModule.cpp
 tests/src/plugins/NeuralAmpModelLoadTest.cpp
 plugins/VstBase/PeMachineType.h

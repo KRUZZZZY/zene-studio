@@ -135,6 +135,8 @@ src/tracks/SampleTrack.cpp	activeTakeForPlayback	the clip scheduler's active-tak
 plugins/CarlaBase/Carla.cpp	CarlaInstrument::playImpl	Carla's per-period audio callback stages queued events and calls the native process function
 plugins/CarlaBase/Carla.cpp	CarlaInstrument::handleMidiEvent	MIDI may arrive on the audio thread, GUI or input thread; this producer only publishes a fixed-size event
 plugins/CarlaBase/CarlaMidiHandoff.h	*	all helper methods run on the render path or MIDI producer path and must stay allocation-free and lock-free
+plugins/CarlaBase/CarlaRenderBuffers.h	CarlaRenderBuffers::prepare	cluster new-p10-545: the render path clears the instrument's preallocated planes once per period; it must not allocate, free, lock or grow anything (the constructor, which does allocate, runs on the control thread and is deliberately outside this declared path)
+plugins/CarlaBase/CarlaRenderBuffers.h	CarlaRenderBuffers::render	cluster new-p10-545: the whole render step of CarlaInstrument::playImpl() runs on the render path with a fixed few pointers of stack whatever the period is; it must not allocate, free, lock or grow anything
 include/MidiHandoffQueue.h	MidiHandoffQueue::push	Carla's any-thread MIDI producers publish fixed-size events through this bounded queue
 include/MidiHandoffQueue.h	MidiHandoffQueue::pop	Carla's audio callback takes the oldest queued event through this bounded queue
 include/MidiHandoffQueue.h	MidiHandoffQueue::consumed	Carla's audio callback checks the queue position when placing overflow cuts
