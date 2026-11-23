@@ -29,6 +29,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QLockFile>
 #include <QRegularExpression>
 #include <QTemporaryDir>
 
@@ -330,6 +331,32 @@ private slots:
 	//! still adopts the temp and writes no .bak, so the option keeps its meaning
 	//! on the recovery path too.
 	void adoptionHonoursTheDisableBackupConfiguration();
+
+	//! Cluster new-p10-89. A save writes <name>.new BEFORE it replaces <name>,
+	//! so during that window a COMPLETE temp belongs to a save that is still
+	//! running in another instance - it is not an orphan. Recovery used to adopt
+	//! it, which consumes the temp the writer is about to publish: the writer's
+	//! own rename then fails and reports a failed save, and if recovery ran
+	//! before the writer's backup step the writer copies the recovered content
+	//! over the previous <name>.bak, destroying the only older copy.
+	//!
+	//! The writer says so with the save lock it holds for exactly that window
+	//! (<name>.save-lock, a QLockFile naming its pid). Recovery must leave both
+	//! the temp and the project alone while that lock is held - and adopt the
+	//! very same temp once the holder is gone, which is what a writer that
+	//! crashed leaves behind, so the recovery path is not closed for real
+	//! orphans. The lock is the REAL one, held here in this process: QLockFile
+	//! refuses a second lock on a file whose recorded pid is a live process, and
+	//! this process is one, so holding it stands in for another instance holding
+	//! it without any timing or second process.
+	void liveSaveInAnotherInstanceIsNotAdopted();
+
+	//! Cluster new-p10-89, the writer's half. Two instances must not both write
+	//! <name>.new, so a save whose lock is held elsewhere is refused, says so,
+	//! and changes nothing on disk (project, previous backup and temp all
+	//! untouched). Once the holder is gone the same save lands, and a completed
+	//! save leaves no lock behind - otherwise every later save would be refused.
+	void saveIsRefusedWhileAnotherInstanceHoldsTheLock();
 };
 
 #include "DataFileSaveIntegrityTestParts1.h"

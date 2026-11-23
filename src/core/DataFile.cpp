@@ -39,6 +39,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
+#include <QLockFile>
 #include <QMessageBox>
 #include <QRegularExpression>
 #include <QSaveFile>
@@ -189,6 +190,26 @@ inline bool replaceBackup( const QString & current, const QString & bak )
 		return false;
 	}
 	return true;
+}
+
+//! Cluster new-p10-89. The sidecar that says "a save of this file is in
+//! flight". A save writes <name>.new BEFORE it replaces <name>, so while it
+//! runs a COMPLETE temp sits on disk that is not an orphan at all: a second
+//! instance opening the project in that window would adopt it (recovery moves
+//! the temp over the canonical path), and the writer's own publish would then
+//! fail with its temp gone - a failed save, plus, when recovery ran before the
+//! writer's backup step, the previous <name>.bak overwritten by the recovered
+//! content, so the only older copy is lost. Both sides therefore take this lock:
+//! a save for the whole window in which a temp of its own exists, recovery
+//! before it touches any temp. QLockFile rather than a bare marker because it
+//! records the holder's pid: a writer that CRASHED leaves a lock the next
+//! tryLock() reports as stale and removes, so recovery stays available for real
+//! orphans and no dead marker has to be cleaned up by hand. Neither side waits -
+//! recovery runs inside an open and a save that blocks a session is a save that
+//! hangs - so both ask for the lock with no timeout and back out.
+QString saveLockPath( const QString & fileName )
+{
+	return fileName + QStringLiteral( ".save-lock" );
 }
 
 #ifndef Q_OS_WIN
@@ -442,6 +463,25 @@ void recoverPendingWrite( const QString & fileName )
 	const QString pending = fileName + QStringLiteral( ".new" );
 	if( ! QFile::exists( pending ) )
 	{
+		return;
+	}
+	// Cluster new-p10-89. A save writes this temp BEFORE it replaces the
+	// project, so in the window a COMPLETE temp can belong to a save that is
+	// still running in another instance: adopting it would take the temp its
+	// writer is about to publish (the writer's rename then fails and reports a
+	// failed save) and discarding a half-written one would delete a save in
+	// flight. The writer holds <file>.save-lock for exactly that window, so
+	// nothing is touched while it is held. A writer that crashed holds nothing
+	// once QLockFile sees its pid is gone, and the adoption below runs as it
+	// always did - the recovery path stays open for real orphans. A lock that
+	// cannot be taken at all (no permission on the directory) also leaves the
+	// temp for the next open, which is the harmless direction.
+	QLockFile saveLock( saveLockPath( fileName ) );
+	if( ! saveLock.tryLock( 0 ) )
+	{
+		qWarning() << "Found" << pending << "but a save of" << fileName
+			<< "is in progress in another instance or the save lock could not be taken"
+			<< "- leaving it in place and keeping the project";
 		return;
 	}
 	QString reason;
@@ -991,6 +1031,27 @@ bool DataFile::writeFile(const QString& filename, bool withResources)
 				SongEditor::tr("Failed to copy resources."));
 			return false;
 		}
+	}
+
+	// Cluster new-p10-89. From here until <name>.new has been published, this
+	// temp is ours, and another instance opening the project must not adopt or
+	// discard it as an orphan. The lock is held by this local for exactly that
+	// window, so every way out of the function - a reported failure, an
+	// injected stop, a completed save - releases it.
+	QLockFile saveLock( saveLockPath( fullName ) );
+	if ( !saveLock.tryLock( 0 ) )
+	{
+		if ( saveLock.error() == QLockFile::LockFailedError )
+		{
+			showError(SongEditor::tr("Could not save file"),
+				SongEditor::tr("%1 is being saved by another instance of Zene Studio "
+					"right now, so it was NOT saved. Nothing has been discarded: "
+					"try again once that save has finished.").arg(fullName));
+			return false;
+		}
+		// Any other error is the directory refusing a file it will refuse again
+		// for <name>.new itself, which reports its own, accurate message just
+		// below - so the save is not refused here for a reason it cannot name.
 	}
 
 	if (!writePayload(fullNameTemp, fullName, showError)) { return false; }
