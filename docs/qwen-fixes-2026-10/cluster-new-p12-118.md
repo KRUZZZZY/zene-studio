@@ -1,206 +1,172 @@
 FIXED
 
-# new-p12-118: Raw MIDI output can block the audio thread
+# new-p12-118: Raw MIDI output can block the audio thread (round 2)
 
-Verdict: REAL, fixed. `MidiAlsaRaw::sendByte()` called `snd_rawmidi_write()` on the calling thread,
-and that thread is the audio thread for a rendered instrument. The other raw clients already avoid
-this (`MidiOss::sendByte`, `src/core/midi/MidiOss.cpp:191`, and `MidiSndio::sendByte`,
-`src/core/midi/MidiSndio.cpp:160`, only ever write into a non-blocking pipe that a dedicated writer
-drains), so this client was the last one writing the device from the render path.
+Verdict: FIXED. Round 1 was sent back with four points; all four are addressed below, each with the
+test that now holds it. The defect itself is unchanged from round 1 and remains real:
+`MidiAlsaRaw::sendByte()` used to call `snd_rawmidi_write()` on the caller, which for a rendered
+instrument is inside a render period (`src/core/midi/MidiPort.cpp:222` <- `src/tracks/InstrumentTrack.cpp:720`
+<- `src/core/midi/MidiClient.cpp:398`, the raw encoder). Its siblings already avoid it
+(`MidiOss::sendByte`, `src/core/midi/MidiOss.cpp:191`, and `MidiSndio::sendByte`,
+`src/core/midi/MidiSndio.cpp:160`, only write into a non-blocking pipe that a writer of their own
+drains).
 
-## Evidence (line numbers after the fix)
+## What the review asked for, and where it is
 
-The output path really is the render path:
+**1. [realtime] No producer-side I/O. A successful render-thread enqueue executed a pipe write.**
+The wake protocol of round 1 is deleted. `MidiAlsaRaw::processOutEvent()`
+(`src/core/midi/MidiAlsaRaw.cpp:256`, declared at `include/MidiAlsaRaw.h:97`) now does exactly two
+things: it runs the encoder (`MidiClientRaw::processOutEvent`, whose bytes land in the sender's own
+`thread_local` buffer at `:246`) and pushes one whole message into the bounded queue
+(`MpscQueue<OutMessage, 1024>`, `include/MidiAlsaRaw.h:116`, one compare-exchange). On refusal it
+increments a relaxed counter. No `write()`, no fd, no allocation, no lock, no wait, no log. Nothing
+wakes anybody: the writer paces itself.
 
-- `src/core/midi/MidiPort.cpp:222` - `m_midiClient->processOutEventAt( outEvent, time, this, offset )`,
-  reached from `src/tracks/InstrumentTrack.cpp:720` (`m_midiPort.processOutEvent( event, time, offset )`),
-  i.e. from `InstrumentTrackNotes`' note-on/note-off inside a render period.
-- `include/MidiClient.h:66` - the base `processOutEventAt()` falls through to `processOutEvent()`, and
-  `src/core/midi/MidiClient.cpp:398` (`MidiClientRaw::processOutEvent`) encodes each event by calling
-  the client's `sendByte()` two or three times.
+**2. [regression] An input read/descriptor error stopped the only output consumer.**
+Output now has a thread of its own: `MidiAlsaRaw::OutputWriter` (`include/MidiAlsaRaw.h:122`, body at
+`src/core/midi/MidiAlsaRaw.cpp:283`), started next to the input worker (`:152`) and stopped and joined
+separately (`stopOutput()`, `:302`). The input loop (`:392` onwards) is input only, so its `break` paths
+- poll error, descriptor error, `POLLERR/POLLHUP`, read error - end input and nothing else.
+`stopInput()` likewise stops input only, so output keeps being delivered after it, which is what
+`MidiClient.h` promises.
 
-The defect (before this change):
+**3. [regression] Shutdown discarded queued MIDI on transient backpressure.**
+`finishOutput()` (`src/core/midi/MidiAlsaRaw.cpp:314`) is a bounded flush: it retries a refused message
+until the retry deadline (`OutputCloseRetryMs`, 100 ms, at `:66`) and only then breaks out, counting what
+the device never took in `m_outUndelivered` (`include/MidiAlsaRaw.h:160`), which
+`outputQueueOverflowCount()` reports together with the queue refusals (`include/MidiAlsaRaw.h:70`). The
+writer runs that flush as it leaves (`:296`), and the destructor runs it again after the join (`:168`)
+so a client whose writer never started is covered too; only then is the device closed (`:170`). A
+message the device takes partly is still completed first (`drainOutQueue()`, `:340`, `writePending()`,
+`:358`), so no message is split by the next one.
 
-- `src/core/midi/MidiAlsaRaw.cpp:196-201` (old) - `sendByte()` did
-  `snd_rawmidi_write( m_output, &c, sizeof( c ) )` with `m_output` opened blocking:
-  `snd_rawmidi_open(..., 0)` at line 66 (old) and only `snd_rawmidi_nonblock( m_input, 1 )` at line 76
-  (old) - the output handle was never made non-blocking. A full or stalled device buffer therefore
-  blocked the caller for as long as the device took, inside the audio period. The return value was
-  ignored, so a refused byte was silently lost as well.
+**4. [weakened-check] The failed-open and partial-startup checks called the byte collector directly.**
+Both now drive the production entry point and keep their assertions:
+`failedOpenStartsNothingAndDropsOutput()` calls `processOutEvent()` and asserts `g_writeCalls == 0`,
+`g_closeCalls == 0`, `g_callsOnClosedHandle == 0`; `partialStartupFailureReleasesOnce()` calls
+`processOutEvent()` and asserts `g_writeCalls == 0` plus the released-once counts
+(`tests/src/core/MidiAlsaRawShutdownTest.cpp:320-360`). `sendByteStaysAllocationFree()` drives both the
+encoder's byte sink and `processOutEvent()` under the allocation probe.
 
-The fix, at the cause:
+**Deterministic coverage added (review's closing list).**
 
-- `src/core/midi/MidiAlsaRaw.cpp:242` - new `MidiAlsaRaw::processOutEvent()` is the audio path's output:
-  it encodes the event on the calling thread (`MidiClientRaw::processOutEvent`, whose bytes go to
-  `sendByte()`) and pushes the whole message into a bounded, lock-free queue
-  (`MpscQueue<OutMessage, 1024>`, `include/MidiAlsaRaw.h:139`). A full queue is refused and counted
-  (`m_outDropped`, `include/MidiAlsaRaw.h:140`) instead of waiting, and
-  `outputQueueOverflowCount()` (`include/MidiAlsaRaw.h:67`) reports it, as the sibling clients do.
-- `src/core/midi/MidiAlsaRaw.cpp:232` - `sendByte()` only collects the current thread's message
-  (`thread_local t_outBytes`, `src/core/midi/MidiAlsaRaw.cpp:63`); it no longer touches the device.
-  This mirrors `MidiJack::sendByte` (`src/core/midi/MidiJack.cpp:245`), so two senders never interleave
-  bytes in the stream.
-- `src/core/midi/MidiAlsaRaw.cpp:292` `drainOutQueue()` and `:310` `writePending()` - the raw worker
-  (the only writer of the device) drains the queue, and a message the device accepts only partly is
-  retained and resumed, so no message is ever split by the next one.
-- `src/core/midi/MidiAlsaRaw.cpp:107` - the output handle is now non-blocking, so that drain can never
-  block the worker either; `-EAGAIN` means "keep the rest", any other error drops the message (the old
-  behaviour, which ignored errors entirely).
-- `src/core/midi/MidiAlsaRaw.cpp:270` `requestWake()` / `:284` `acknowledgeWake()` - one non-blocking
-  wake byte on the existing self-pipe per drain (not per event), the same protocol `MidiAlsaSeq` uses
-  (`src/core/midi/MidiAlsaSeq.cpp:374`), so a joined message is written within microseconds and the
-  pipe never stays readable.
-- `src/core/midi/MidiAlsaRaw.cpp:341` - the worker acknowledges before draining at the top of its loop
-  and consumes the wake byte after `poll()`; the poll timeout is 5 ms while a partly written message is
-  pending and the old 10 s while idle (`:361`).
-- `src/core/midi/MidiAlsaRaw.cpp:154` - the destructor drains what is still queued after the join, so
-  output produced during shutdown is delayed, never lost. `stopInput()` still joins the worker; output
-  queued after it waits for that final drain (documented in the header at `include/MidiAlsaRaw.h:117`).
-- `include/MidiClient.h:258` - the `Q050-277` note no longer claims MidiAlsaRaw writes "one
-  `snd_rawmidi_write()` of one byte" on the calling thread; it now names its multi-producer queue.
-
-Callers and siblings checked, kept consistent:
-
-- The other path into the same function: `MidiClientRaw::processNonAudioOutEvent` (the MIDI clock's
-  capture sender, `src/core/midi/MidiClient.cpp:68`) calls `processOutEvent()`, so its one-byte System
-  Real-Time message now goes through the same queue. Because the queue is multi-producer (`MpscQueue`,
-  not the single-producer `MidiOutQueue` that `MidiAlsaSeq` uses with a second queue), that second
-  producer is safe here and needs no separate queue.
-- The wider type the value flows into: `MidiPort::processOutEvent` is also called from the GUI
-  (`sendOutputPatch()`, bank select + program change), so the queue had to be multi-producer; a
-  single-producer queue would have raced the audio thread.
-- `sendByte` is declared and defined together (`include/MidiAlsaRaw.h:86`,
-  `src/core/midi/MidiAlsaRaw.cpp:232`), and the header change was followed by rebuilding every
-  affected target: `zene`, `MidiAlsaRawShutdownTest` and the rest of the MIDI family below.
-- Undo, commands, project data: untouched. No allocation, free, lock, wait or log was added to the
-  audio path: the push is one compare-exchange, the wake is at most one non-blocking `write()` of one
-  byte, and the refusal path is a relaxed increment - all asserted by the allocation probe in the test.
+- producer-side I/O: `audioPathQueuesOutputInsteadOfWritingIt()` counts *every* `write()` the
+  executable makes on the audio-path thread. The test interposes `write()` in its own translation unit
+  (`tests/src/core/MidiAlsaRawShutdownTest.cpp:172`), which works exactly as this file's `snd_rawmidi_*`
+  fakes do (the client is built into the test executable, so its `::write` resolves there) and forwards
+  to the real syscall, so nothing is disturbed. It asserts `0` writes on the render thread, `0`
+  allocations, `0` frees, and that the message is still delivered - by the other thread, without any
+  wake.
+- input failure with usable output: `outputKeepsFlowingAfterAnInputFailure()` makes the device's read
+  return `-EIO`, joins the input worker, and then requires a message queued afterwards to reach the
+  device.
+- transient backpressure during shutdown: `shutdownStillDeliversWhenTheDeviceAcceptsAgain()` refuses the
+  first two writes and requires all three bytes to arrive with nothing counted as lost; and
+  `shutdownCountsWhatTheDeviceNeverTook()` refuses everything, requires destruction to return, and
+  requires the message to be counted - read through `outputQueueOverflowCount()` at the moment the
+  device is closed, the last instant the client is still alive (the fake `snd_rawmidi_close` records it).
 
 ## Test matrix
 
-Recorded before editing (scratchpad `matrix.md`).
-
 | Path | Test | Assertion |
 | --- | --- | --- |
-| normal | `audioPathQueuesOutputInsteadOfWritingIt` | from the audio-path thread: 0 allocations, 0 frees, the device was **not** written by that thread, and the worker then writes `0x90 60 100` in order; `outputQueueOverflowCount() == 0` |
-| failure (device buffer full) | `fullDeviceBufferKeepsTheMessageForTheWorker` | the device refuses the first write with `-EAGAIN`; the message is kept and re-offered whole, all three bytes arrive in order |
-| exhaustion | `queueOverflowIsCountedAndTheAudioPathNeverBlocks` | with the worker joined, 4096 pushes past the 1024-message bound: refused and counted, the caller never waits |
-| reconfiguration / no device | `sendByteStaysAllocationFree`, `failedOpenStartsNothingAndDropsOutput`, `partialStartupFailureReleasesOnce` | a client with no output handle writes nothing and drops the message, no crash, no closed-handle call |
-| audio-thread rules | the two above + allocation probe | 0 allocations and 0 frees on the calling thread |
-| platform | whole file inside `LMMS_HAVE_ALSA`; registered only for ALSA builds (`tests/CMakeLists.txt:1933`) | builds and runs on this Linux/ALSA box |
+| normal | `audioPathQueuesOutputInsteadOfWritingIt` | render thread: no `write()` at all, no allocation, no free, the device was not written from it; the message then arrives as `0x90 60 100` in order, overflow count 0 |
+| failure (device full) | `fullDeviceBufferKeepsTheMessageForTheWorker` | device refuses the first write with `-EAGAIN`; nothing lost, whole message written in order |
+| failure (input) | `outputKeepsFlowingAfterAnInputFailure` | after the input worker dies on `-EIO`, output queued afterwards is still delivered; device not closed |
+| exhaustion | `queueOverflowIsCountedAndTheAudioPathNeverBlocks` | a device that never takes anything: 4096 pushes past the 1024 bound are refused and counted, the caller never waits |
+| shutdown, transient | `shutdownStillDeliversWhenTheDeviceAcceptsAgain` | two refusals then acceptance: all 3 bytes delivered, `outputQueueOverflowCount() == 0` |
+| shutdown, stuck | `shutdownCountsWhatTheDeviceNeverTook` | destruction returns within the bounded budget, nothing delivered, the message is counted |
+| reconfiguration | `failedOpenStartsNothingAndDropsOutput`, `partialStartupFailureReleasesOnce` | no device: through `processOutEvent`, nothing written, nothing closed twice, no call on a closed handle |
+| audio-thread rules | the two entry-point tests + allocation probe | 0 allocations, 0 frees, 0 syscalls on the calling thread |
+| platform | whole suite inside `LMMS_HAVE_ALSA`; target registered only for ALSA builds (`tests/CMakeLists.txt:1933`) | builds and runs on this Linux/ALSA box |
 
-Concurrency reasoning (local TSan does not run on this box, so this is reasoned, not measured):
-producers are the audio thread (`MidiPort::processOutEvent` from the render period) and the main
-thread (`MidiPort::sendOutputPatch`, pitch/pitch-range changes); the queue is `MpscQueue`, which is
-multi-producer and single-consumer by construction, and the consumer is the raw worker alone (and the
-destructor after the join, when no producer can still be the worker). `m_writing`/`m_written` have the
-worker as their only writer. `m_wakeRequested` is exchanged before the wake byte is written and
-cleared by the consumer before it drains, so a wake can be lost only if the queue is also empty,
-which the drain at the top of the loop covers.
-
-The one existing test whose premise the bug invalidated is
-`MidiAlsaRawShutdownTest::sendByteStaysAllocationFree` ("The audio-thread entry point ... still hands
-the byte to ALSA directly"): it asserted `g_writeCalls == 2` after two `sendByte()` calls. That is the
-defect itself, so the fix changes the expectation to "the audio path wrote nothing" while keeping, not
-weakening, its allocation and free checks; the delivery half is now asserted in
-`audioPathQueuesOutputInsteadOfWritingIt`. Nothing else in that file changed except the fake device
-(recording bytes, the writer's thread, a bounded `-EAGAIN` mode) and its reset.
+Concurrency (local TSan does not run on this box; reasoned, not measured): producers are the audio
+thread and the main thread (`MidiPort::sendOutputPatch`), consumer is the writer thread alone -
+`MpscQueue` is multi-producer/single-consumer by construction, and the destructor consumes only after
+the join. `m_writing`/`m_written` have the writer as their only writer. `m_outDropped`,
+`m_outUndelivered`, `m_outputQuit` are atomics; `m_output` is nulled by `closeDevice()` only after both
+threads are joined. `stopWorker()`'s wake byte is control-thread only.
 
 ## Commands and results (all from this session)
 
 | Step | Command | Result |
 | --- | --- | --- |
-| baseline build | `cmake --build build --target zene MidiOutQueueTest -j4 > .../logs/build-1-baseline-test-target.log 2>&1; echo EXIT=$?` | EXIT=0 |
-| baseline run | `ctest -R MidiOutQueue --output-on-failure > .../logs/test-2-baseline.log` (from `build/tests`) | EXIT=0, 1/1 passed |
-| RED build (tests only) | `cmake --build build --target MidiAlsaRawShutdownTest -j4 > .../logs/build-2-red.log` | EXIT=0 |
-| RED run | `ctest -R MidiAlsaRawShutdown --output-on-failure > .../logs/test-3-red.log` | **EXIT=8**, 11 passed, 4 failed (`sendByteStaysAllocationFree`, `audioPathQueuesOutputInsteadOfWritingIt`, `fullDeviceBufferKeepsTheMessageForTheWorker`, `queueOverflowIsCountedAndTheAudioPathNeverBlocks`) |
-| GREEN build | `cmake --build build --target zene MidiAlsaRawShutdownTest -j4 > .../logs/build-3-green.log` | EXIT=0 |
-| GREEN run | `ctest -R MidiAlsaRawShutdown --output-on-failure > .../logs/test-4-green.log` | EXIT=0, 1/1 passed |
-| GREEN slots | `./MidiAlsaRawShutdownTest > .../logs/test-5-green-slots.log` (from `build/tests`) | EXIT=0, 15 passed, 0 failed |
-| family build | `cmake --build build -j4 --target MidiOutQueueTest MidiAlsaSeqShutdownTest MidiClockCaptureOutputTest MidiClockSourceTest MidiClockTest MidiOssTest MidiSndioTest MidiJackOutScheduleTest MidiReconnectTest RetroMidiCaptureCommandsTest ControlMidiReconnectSharedTest > .../logs/build-4-family.log` | EXIT=0 |
-| family run | `ctest -R "Midi\|RetroMidi" --output-on-failure > .../logs/test-6-family.log` | EXIT=8 - 16 built members passed, 34 matched targets are **Not Run** because they are not built in this tree (they were never built here; none of them failed) |
-| more of the family built | `cmake --build build -j4 --target ControllerScriptTest ExternalMidiDeviceTest > .../logs/build-5-family2.log` | EXIT=0 |
-| more of the family run | `ctest -R "ControllerScriptTest\|ExternalMidiDeviceTest" --output-on-failure > .../logs/test-7-family2.log` | EXIT=0, 2/2 passed |
-| 4b revert | `git diff -- include/MidiAlsaRaw.h src/core/midi/MidiAlsaRaw.cpp include/MidiClient.h > .../logs/fix.patch; git apply -R .../logs/fix.patch` | both EXIT=0 |
-| 4b rebuild (product reverted) | `cmake --build build -j4 --target zene MidiAlsaRawShutdownTest > .../logs/build-6-reverted.log` | EXIT=0 |
-| 4b run (product reverted) | `ctest -R MidiAlsaRawShutdown --output-on-failure > .../logs/test-8-reverted-red.log` | **EXIT=8**, the same 4 tests fail |
-| 4b restore | `git apply .../logs/fix.patch` | EXIT=0 |
-| 4b rebuild (fix back) | `cmake --build build -j4 --target zene MidiAlsaRawShutdownTest > .../logs/build-7-reapplied.log` | EXIT=0 |
-| 4b run (fix back) | `ctest -R MidiAlsaRawShutdown --output-on-failure > .../logs/test-9-reapplied-green.log` | EXIT=0, 1/1 passed |
-| gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > .../logs/gates-1.log 2>&1` | EXIT=0, `RESULT: PASS` (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length) |
+| build (round-2 code) | `cmake --build build -j4 --target zene MidiAlsaRawShutdownTest > .../logs/build-1-compile.log` | EXIT=0 |
+| all slots, round-2 code | `./MidiAlsaRawShutdownTest > .../logs/test-1-first-green.log` (from `build/tests`) | EXIT=0, 18 passed |
+| 4b: patch + revert | `git diff -- include/MidiAlsaRaw.h src/core/midi/MidiAlsaRaw.cpp > .../logs/fix.patch; git apply -R .../logs/fix.patch` | diff EXIT=0, revert EXIT=0 |
+| 4b: rebuild (product reverted) | `cmake --build build -j4 --target zene MidiAlsaRawShutdownTest > .../logs/build-2-reverted.log` | BUILD_EXIT=0 |
+| 4b: run (product reverted) | `ctest -R MidiAlsaRawShutdown --output-on-failure > .../logs/test-2-red.log` (from `build/tests`) | **TEST_EXIT=8**, 14 passed, 4 failed: `outputKeepsFlowingAfterAnInputFailure`, `shutdownCountsWhatTheDeviceNeverTook`, `sendByteStaysAllocationFree` and `audioPathQueuesOutputInsteadOfWritingIt` (the last two on the `write()` counter: 1 vs 0) |
+| 4b: restore | `git apply .../logs/fix.patch` | EXIT=0 |
+| 4b: rebuild (fix back) | `cmake --build build -j4 --target zene MidiAlsaRawShutdownTest > .../logs/build-3-restored.log` | BUILD_EXIT=0 |
+| 4b: run (fix back) | `ctest -R MidiAlsaRawShutdown --output-on-failure > .../logs/test-3-green.log` | **TEST_EXIT=0**, 1/1 passed |
+| family build | `cmake --build build -j4 --target MidiOutQueueTest MidiAlsaSeqShutdownTest MidiClockCaptureOutputTest MidiClockSourceTest MidiClockTest MidiOssTest MidiSndioTest MidiJackOutScheduleTest MidiReconnectTest RetroMidiCaptureCommandsTest ControlMidiReconnectSharedTest ControllerScriptTest ExternalMidiDeviceTest > .../logs/build-4-family.log` | EXIT=0 |
+| family run | `ctest -R "MidiAlsaRawShutdown\|MidiOutQueue\|MidiAlsaSeqShutdown\|MidiClock\|MidiOss\|MidiSndio\|MidiJackOutSchedule\|MidiReconnect\|RetroMidiCaptureCommands\|ControlMidiReconnectShared\|ControllerScriptTest\|ExternalMidiDeviceTest" --output-on-failure > .../logs/test-4-family.log` | EXIT=8 from two targets that were not built: `MidiClockMenuTest`, `MidiReconnectActionTest` ("Not Run") |
+| those two built | `cmake --build build -j4 --target MidiClockMenuTest MidiReconnectActionTest > .../logs/build-5-family2.log` | EXIT=0 |
+| family re-run | same as family run, `> .../logs/test-6-family-rerun.log` | 17/19 passed, the same two "Not Run" |
+| the two, run | `ctest -R "MidiClockMenuTest\|MidiReconnectActionTest" --output-on-failure > .../logs/test-7-family2.log` | EXIT=0, 2/2 passed - so every built member of the family passes |
+| pre-existing flake, isolated | `./MidiOutQueueTest ProducerConsumer_PreservesOrder > .../logs/test-5-producerconsumer-{1,2,3}.log` | EXIT=0 three times (see Other findings) |
+| gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > .../logs/gates-1.log 2>&1` | EXIT=0, `RESULT: PASS` |
 
-The first baseline attempt (`.../logs/test-1-baseline.log`, EXIT=8) is recorded too: the test binary did
-not exist yet in this build tree ("Unable to find executable"), which is why the target was built first.
+Log folder: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-118.r2/logs`.
 
-Log folder: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-118.r1/logs`.
+## Files changed in round 2
 
-## Files changed
-
-- `src/core/midi/MidiAlsaRaw.cpp`, `include/MidiAlsaRaw.h` - the fix.
-- `include/MidiClient.h` - one comment corrected (no code change).
-- `tests/src/core/MidiAlsaRawShutdownTest.cpp` - the regression tests and the fake device they need.
-- `tests/upstream-modifications.txt` - reasons for the three inherited files (all three were already
-  registered; the entries for this change were added). No new product file, so `tests/fork-sources.txt`
-  is unchanged.
+- `src/core/midi/MidiAlsaRaw.cpp`, `include/MidiAlsaRaw.h` - the rework above (writer thread, bounded
+  flush, no producer I/O).
+- `tests/src/core/MidiAlsaRawShutdownTest.cpp` - the `write()` interposition, the device-side
+  read-failure and close-time accounting hooks, the four new/updated tests.
+- `tests/upstream-modifications.txt` - reasons for both inherited files (already registered; no new
+  product file, so `tests/fork-sources.txt` is unchanged).
+- `docs/qwen-fixes-2026-10/cluster-new-p12-118.md` - this report.
 
 ## Other findings (not fixed here)
 
-- `MidiAlsaSeq`'s audio-path queue is a single-producer `MidiOutQueue` (`include/MidiAlsaSeq.h:222`),
-  but `MidiPort::processOutEvent` is also called from the main thread (`sendOutputPatch()`, bank select
-  and program change), so that queue can have two producers. My fix used the multi-producer
-  `MpscQueue` for exactly this reason; the sibling is left alone because it is a separate finding.
-- `MidiOss`/`MidiSndio` are retired (Q050-479) and still stop only in their destructors, though their
-  output path is already non-blocking.
+- `MidiOutQueueTest::ProducerConsumer_PreservesOrder` failed once inside the family run (`.../logs/test-4-family.log`),
+  then passed three times in isolation and again in the family re-run. It is a pre-existing 100 000-event
+  `MidiOutQueue` stress on `std::this_thread::yield()`, untouched by this change, so it looks like a
+  load-sensitive flake rather than a regression; it is reported, not fixed.
+- `MidiAlsaSeq`'s audio-path queue is a single-producer `MidiOutQueue` (`include/MidiAlsaSeq.h:222`)
+  although `MidiPort::processOutEvent` is also called from the main thread (`sendOutputPatch()`); this
+  fix used the multi-producer `MpscQueue` for that reason, the sibling is left alone.
+- `MidiOss`/`MidiSndio` are retired (Q050-479) and still stop only in their destructors, and their
+  output path is a non-blocking pipe write - still I/O on the render thread by the standard applied
+  here, but out of scope for this finding.
 
 ## Self-check
 
-Answers to the completion check's ASK items, each with the evidence it asks for.
-
-- **The regression test FAILS with the product change reverted and PASSES with it (exit codes).** Proven
-  in step 4b, twice: `git diff -- include/MidiAlsaRaw.h src/core/midi/MidiAlsaRaw.cpp include/MidiClient.h
-  > .../logs/fix.patch` (EXIT=0) then `git apply -R .../logs/fix.patch` (EXIT=0), rebuild (EXIT=0,
-  `.../logs/build-6-reverted.log`), run -> **EXIT=8** with the four tests failing
-  (`.../logs/test-8-reverted-red.log`); then `git apply .../logs/fix.patch` (EXIT=0), rebuild (EXIT=0,
-  `.../logs/build-7-reapplied.log`), run -> **EXIT=0** (`.../logs/test-9-reapplied-green.log`). The same
-  four tests also failed in the first, tests-only RED run (`.../logs/test-3-red.log`, EXIT=8) before any
-  product edit existed.
-- **The test is deterministic: no wall-clock timing, sleeps or races.** No `sleep`, no `QTest::qWait`
-  and no elapsed-time assertion is used by the four tests. The seam is the fake ALSA layer that already
-  exists in `tests/src/core/MidiAlsaRawShutdownTest.cpp` (the executable's `extern "C"`
-  `snd_rawmidi_*` definitions win over libasound, the technique of `MidiOutQueueTest` and
-  `AudioAlsaPollDescriptorTest`): the "device" is a pipe, its write stub records the bytes, the thread
-  that wrote them, and can refuse a bounded number of writes with `-EAGAIN`. Delivery is awaited through
-  `g_writeSignal.tryAcquire(1, 5000)` - a `QSemaphore` released by the write stub, the same
-  synchronisation hook the file already uses for its gated port - so the timeout only bounds a failure
-  and no assertion depends on how long anything took. The RED direction is a synchronous fact, not a
-  race: the unfixed `sendByte()` writes before `processOutEvent()` returns.
-- **The fix is at the cause and complete; every caller and sibling checked.** Callers: the audio path
-  (`MidiPort.cpp:222` <- `InstrumentTrack.cpp:720`), the GUI patch path (`MidiPort::sendOutputPatch`),
-  the base `MidiClient::processOutEventAt` fall-through (`include/MidiClient.h:66`), and the second
-  thread's `MidiClientRaw::processNonAudioOutEvent` (`src/core/midi/MidiClient.cpp:68`) - all of them
-  now reach the queue, which is multi-producer for exactly that reason. Siblings kept consistent:
-  `MidiJack::sendByte`/`processOutEventAt` (`src/core/midi/MidiJack.cpp:226-249`, the thread-local
-  assembly + `MpscQueue` + dropped counter idiom copied here), `MidiAlsaSeq::enqueueOutEvent`
-  (`src/core/midi/MidiAlsaSeq.cpp:374`, the wake-pipe protocol copied here), `MidiOss`/`MidiSndio`
-  (already non-blocking pipes with a writer). `outputQueueOverflowCount()` is overridden as the sibling
-  does, and `include/MidiClient.h:258` no longer describes the removed direct write. Declaration and
-  definition changed together, and every target that includes the headers was rebuilt (`zene` and the
-  MIDI family in the table above).
-- **No collateral damage.** No file format, project field, model or default changed, so saved projects
-  load exactly as before; the only persistence-adjacent member is a queue that lives and dies with the
-  client. The limits added are on the new hand-off only: `OutputQueueCapacity` (1024 messages) refuses
-  and counts past-full pushes, so no other caller is affected by it, and no existing check or limit was
-  changed or re-anchored. Behaviour outside the bug is preserved: the same bytes in the same order, the
-  same encoding (`MidiClientRaw::processOutEvent` untouched), a missing device still drops output
-  without a crash, and shutdown still joins the worker within the old bound (destructor plus one drain).
-  The one deliberate behaviour change is the added latency of at most one 5 ms worker pacing sleep, the
-  price of not writing from the render path; it is documented in the file header comment.
-- **ALREADY-FIXED / FALSE-POSITIVE evidence.** Not claimed: the verdict is FIXED, and the defect was
-  reproduced before the change (the four failing tests above show bytes reaching the device from the
-  audio-path thread, a lost `-EAGAIN` byte and no overflow counter).
-- **Sibling commands in the command files changed.** No command file was changed: this fix adds no
-  control command and touches nothing under `src/core/Control*` or `src/gui`, so the shell/command
-  siblings listed (`app.*`, `arrangement.*`) and the `ControlCommandsSnapshot` canary are untouched; the
-  completion check's `commits on the branch`, `working tree clean`, `gates` and
-  `new test files registered` rows all PASS (`.../logs/submit-1.log`).
-
+- **The regression test FAILS with the product change reverted and PASSES with it (exit codes).** 4b
+  above: revert (`git apply -R .../logs/fix.patch`, EXIT=0) -> rebuild (EXIT=0) -> run
+  `.../logs/test-2-red.log` **EXIT=8** with four failures; restore (`git apply`, EXIT=0) -> rebuild
+  (EXIT=0) -> run `.../logs/test-3-green.log` **EXIT=0**. The round-1 code those four failures pin is
+  the branch state the reviewer rejected, and the first build/run with the round-2 code is
+  `.../logs/build-1-compile.log` / `.../logs/test-1-first-green.log`.
+- **The test is deterministic: no wall-clock timing, sleeps or races.** No test sleeps and none asserts
+  an elapsed time. The seams are: the file's fake ALSA device (bytes, writing thread, a bounded
+  `-EAGAIN` counter, a settable read result, a close-time read of the client's counter), the interposed
+  `write()` (a syscall counter for one designated thread), `QSemaphore::tryAcquire` released by the
+  write stub (a synchronisation hook, where the timeout only bounds a failure), `QThread::wait` for the
+  input worker, and the allocation probe. The shutdown-stuck test asserts counts and termination, not
+  durations: the flush is bounded in the product, so the assertion holds however long the device refuses.
+- **The fix is at the cause and complete; every caller and sibling checked.** Callers into the encoder
+  are all covered: the render path (`MidiPort.cpp:222`), the GUI patch path (`MidiPort::sendOutputPatch`),
+  the base `processOutEventAt` fall-through (`include/MidiClient.h:66`) and the off-audio
+  `MidiClientRaw::processNonAudioOutEvent` (`src/core/midi/MidiClient.cpp:68`) - all reach the one
+  multi-producer queue. Siblings: `MidiJack`'s thread-local assembly + queue idiom
+  (`src/core/midi/MidiJack.cpp:226-249`) is what the encoder side copies; `MidiOss`/`MidiSndio` already
+  have their own writer threads; `MidiAlsaSeq`'s wake pipe remains its own design (single-producer
+  queue, documented above). Declaration and definition changed together, and every target that includes
+  the headers was rebuilt (`zene` plus the 15 family targets in the table).
+- **No collateral damage.** No project data, model, default or file format changed; the queue, the
+  counters and the writer are per-client runtime state. The only limit added is the 1024-message bound
+  on the new hand-off (refuse-and-count, nobody else can be affected by it), and no existing check or
+  limit was changed or re-anchored. Behaviour outside the bug is preserved: same bytes, same order, same
+  encoder, a client without a device still drops output without crashing or touching a closed handle,
+  and shutdown still joins within the old bound (the bounded flush only runs when something is actually
+  pending; the strictest existing bound test, `closingAWorkerBlockedOnInputIsBounded`, still passes).
+  Deliberate trade-offs: up to one writer pace (2 ms) of added output latency, and a bounded 100 ms
+  flush at close only when the device refuses; both are documented in the file header comment.
+- **ALREADY-FIXED / FALSE-POSITIVE evidence.** Not claimed; the verdict is FIXED and the defect was
+  reproduced (round 1's four failing tests, and this round's `test-2-red.log`).
+- **Sibling commands in the command files changed.** No command file changed: no control command was
+  added, and nothing under `src/core/Control*` or `src/gui` was touched, so `app.*`, `arrangement.*` and
+  the `ControlCommandsSnapshot` canary are unaffected.
