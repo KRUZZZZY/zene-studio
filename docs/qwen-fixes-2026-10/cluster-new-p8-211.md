@@ -142,15 +142,16 @@ The same sequence is recorded in `logs/proof.json` as the required `state-sequen
 ## Completion check
 
 ```
-python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p8-211 > .../logs/submit-2.log 2>&1
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p8-211 > .../logs/submit-1.log 2>&1
 EXIT=0
 RESULT: PASS - submit
 (PASS: commits on the branch, working tree clean, report present, tests changed,
  registration, gates)
 ```
 
-The pre-commit run (`.../logs/submit-1.log`, EXIT=1) had the expected single FAIL for an
-uncommitted working tree; it cleared after the commit and every `?` item is answered below.
+Every `?` item is answered below. Round 1's pre-commit run (its `submit-1.log`, EXIT=1) had the
+expected single FAIL for an uncommitted working tree and cleared after the commit; the round-2
+run above is the current clean-tree result.
 
 ## Self-check
 
