@@ -112,12 +112,15 @@ counter is for, and it ends when that push's `fetch_sub` runs.
 
 Logs: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p15-222.r1/logs/`
 
-| # | command | log | EXIT |
+| # | command, in the order run | log | EXIT |
 |---|---|---|---|
 | 1 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | `gate-1.log` | 0 (RESULT: PASS) |
 | 2 | the code-reading sweep quoted above (grep -n over `TakeRecorder.cpp`, `InsertRecorder.cpp`, `AudioEngine.cpp`, `EffectChain.cpp`, `EffectRackView.cpp`) | `code-reading-1.log` | 0 |
 | 3 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p15-222` (before this report existed) | `submit-check-1.log` | 1 (the two report FAILs, no other) |
-| 4 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p15-222` (final) | `submit-check-2.log` | see that log |
+| 4 | the second code-reading sweep (`rg -l TakeRecorder src include plugins`, the `push()` callers, the `of()` callers, `~PeakController`) | `code-reading-2.log` | 0 |
+| 5 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (again, with this report in the tree) | `gate-2.log` | 0 (RESULT: PASS) |
+| 6 | `git add docs/qwen-fixes-2026-10/cluster-new-p15-222.md && git commit -m "..."` → commit `16b118691d` (`git show --stat`: 1 file changed, 171 insertions) | — | 0 |
+| 7 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p15-222` (final, after that commit) | `submit-check-2.log` | 0 (RESULT: PASS - submit) |
 
 No build and no ctest run: this job changes no C++, so there is no stale binary to distrust and no
 test target to build. `git status` after the commit is empty (checked with `git status --short`).
@@ -126,7 +129,12 @@ test target to build. `git status` after the commit is empty (checked with `git 
 
 - **The regression test FAILS with your product change reverted and PASSES with it (exit codes).**
   Not applicable: the verdict is FALSE-POSITIVE and this job changes no product code, so there is no
-  revertible hunk and no test to fail (`git diff --stat` for this commit touches only this file).
+  revertible hunk and no test to fail (`git show --stat 16b118691d` touches only this file, and so does
+  the follow-up commit that finishes this section). The test
+  files the check lists as "tests added or changed" (`tests/control-audio-test-tone.py`,
+  `tests/control-no-audio-device.py`, `tests/control-session-lifecycle-transcript.py`) are not from
+  this job: they belong to earlier commits in `FIX-BASE..HEAD`, which carries 429 files from the
+  train before this session started (`gate-1.log`, line 1).
   The check script records this as claim-only closure ("tests added or changed" PASS with the note
   "claim-only closure: independent QA must verify its cited code/contract"), which is the intended
   path for this verdict.
