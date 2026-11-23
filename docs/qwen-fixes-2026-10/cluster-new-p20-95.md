@@ -223,6 +223,53 @@ build gets anyway, with the machine otherwise idle.
   data-race part of the verdict is a code argument; the lost-update part is proven by the
   test.
 
+### Answers to the pre-submit ASK items
+
+1. **The regression test fails with the product change reverted and passes with it.**
+   Exit codes from this session: `git apply -R .../logs/fix.patch` → `REVERT_EXIT=0`,
+   rebuild → `BUILD_EXIT=0`, `ctest -R PeakControllerNullEffectTest --output-on-failure` →
+   `EXIT=8` with both new tests failing (`test-2-red.log`, `test-6-red-reverted.log`); then
+   `git apply .../logs/fix.patch` → `REAPPLY_EXIT=0`, rebuild → `BUILD_EXIT=0`,
+   `ctest -R PeakControllerNullEffectTest --output-on-failure` → `EXIT=0`
+   (`test-8-green.log`), `Totals: 6 passed, 0 failed`. The reverted failure is a *test*
+   failure, not a build failure: the probe and the friend live in their own commit
+   (`6536ca482b`), so the revert restores only the behaviour.
+2. **The test is deterministic.** No sleep, no thread, no clock, no wall-clock threshold on a
+   race. The interleaving is injected through the seam
+   `PeakController::setCoeffPublishProbeForTest()` (null in the product), called inside
+   `updateValueBuffer()` immediately after the period's coefficients are computed — the exact
+   window the finding describes. Injected values: the GUI's change is
+   `attackModel()->setValue(0.9f)` made from the probe (after `setValue(0.002f)` on the same
+   model), and `m_currentSample` is reset to 0 before each measured period so the ramped
+   first sample is `0.5 * coefficient`. The assertion is a margin between two arithmetic
+   results (≈0.010 vs 0.094), not a deadline.
+3. **The fix is at the cause and complete.** `rg -n m_coeffNeedsUpdate` shows four sites: the
+   declaration (`include/PeakController.h:106`), the initialiser, the claim in
+   `updateValueBuffer()` (`src/core/PeakController.cpp:98`) and the store in `updateCoeffs()`
+   (`src/core/PeakController.cpp:148`). Both writers and the reader are updated; the
+   constructor's `m_coeffNeedsUpdate = true;` moved into the member initialiser so every
+   construction path (including the null-effect one) still starts dirty. The sibling reader
+   path — the GUI's `Controller::value()`/`valueBuffer()` — reaches the same function under
+   the same `m_changeMutex`, so the coefficients need no separate publication. `gui::
+   PeakControllerDialog` and `PeakControllerEffect` touch neither the flag nor the
+   coefficients.
+4. **No collateral damage.** The flag is not persisted: `saveSettings`/`loadSettings`, the
+   `effectId` compatibility path (`initGetControllerBySetting`, `getControllerBySetting`) and
+   the value-buffer arithmetic are untouched, so an old project loads exactly as before and
+   still publishes its coefficients on the first period after the effect is attached (the
+   null-effect tests in the same file cover that reconfiguration path). No limit or check was
+   added. The header change is an ABI change inside a tree that builds the plugin and the core
+   together; `zene`, `peakcontrollereffect` and `PeakControllerEffectZeroFrameTest` were all
+   rebuilt (`build-11.log`, `EXIT=0`).
+5. **ALREADY-FIXED / FALSE-POSITIVE:** not applicable, the verdict is FIXED.
+6. **Sibling commands in the command files I changed:** none. The commit's diff is
+   `include/PeakController.h`, `src/core/PeakController.cpp`, `tests/src/core/
+   PeakControllerNullEffectTest.cpp`, `tests/CMakeLists.txt`,
+   `tests/upstream-modifications.txt` and this report (`git diff --stat 6536ca482b..HEAD`);
+   no file under `src/core/Control*` and no command registration or schema changed, so the
+   `ControlCommandsSnapshot` canary and the enumerated `app.*` / `arrangement.*` siblings are
+   unaffected.
+
 ## Other findings
 
 - `ControllerSurfaceTest::TemplatesSaveListReadAndApply()` fails in this environment at
