@@ -504,6 +504,41 @@ private slots:
 		drainPlayHandles(track);
 	}
 
+	//! Q050-063, the core of "editing a live warp map can race audio playback":
+	//! a pass takes ONE published generation and keeps reading it even when the
+	//! control thread commits a different map before the pass ends. The commit
+	//! reaches the next pass, never the one in flight. Deterministic: the pass
+	//! scope is the seam, so this needs no second thread and no sleep.
+	void anEditDuringAPassChangesTheNextPassNotThisOne()
+	{
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeClip(track, m_rate);
+		applyWarp(*clip);
+
+		const WarpMarkers committed = clip->warpMarkers();
+		const f_cnt_t frameAtForty = clip->sourceFrameAt(atOffset(*clip, 40));
+		const WarpSnapshot pass = clip->snapshotWarp();
+		QVERIFY(pass.map() != nullptr);
+
+		const std::array<WarpMarker, 2> replacement{ WarpMarker{ 22050, 12 }, WarpMarker{ 88200, 48 } };
+		{
+			const Clip::WarpPassScope warpPass(*clip, pass);
+
+			// The control thread's edit lands while the pass is reading.
+			QVERIFY(clip->setWarpMarkers(std::span<const WarpMarker>(replacement.data(), replacement.size())));
+
+			// What the pass reads - the map and every mapping derived from it -
+			// is still the generation it took, whole.
+			QVERIFY(clip->warpMarkers() == committed);
+			QCOMPARE(N(clip->sourceFrameAt(atOffset(*clip, 40))), N(frameAtForty));
+		}
+
+		// The edit is not lost: the next pass reads the new generation.
+		QVERIFY(clip->warpMarkers() != committed);
+		QCOMPARE(N(clip->sourceFrameAt(atOffset(*clip, replacement[1].offsetTicks))),
+			N(replacement[1].sourceFrame));
+	}
+
 	//! The resampler ratio convention, pinned as a MEASUREMENT rather than a
 	//! belief - and pinned END TO END, through `Sample::play`, not at the
 	//! library boundary (tests/src/core/AudioResamplerRatioTest.cpp does that
