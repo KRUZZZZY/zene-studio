@@ -245,6 +245,11 @@ private slots:
 
 	void malformedListenKeepsItsDefault();
 
+	/*! Deleting a channel with an enabled insert clears it off the change lock (MixerView::deleteChannel ->
+	 *  Mixer::clearChannel, before Mixer::deleteChannel takes the lock), so that clear must leave the dry delay
+	 *  line alone and let the render thread restart it. */
+	void clearingAnEnabledChannelLeavesTheDryLineToTheRenderThread();
+
 private:
 	//! What everythingSurvivesASaveAndLoad routed, read back after the load.
 	static void verifyLoaded(Mixer& mixer)

@@ -423,3 +423,51 @@ void HardwareIoTest::malformedListenKeepsItsDefault() {
 	QVERIFY(!hardwareio::cueMaster(1).followListen);  // "0" switches it off
 	hardwareio::resetMixer();
 }
+/*! The Delete key deletes a channel through MixerView::deleteChannel(), which clears it (Mixer::clearChannel ->
+ *  ChannelHardwareIo::clear -> HardwareInsert::setSettings) BEFORE Mixer::deleteChannel() takes the change lock
+ *  (MixerView.cpp:781 against :785, the lock at Mixer.cpp:1382). That clear runs off the lock, so it must not
+ *  write the dry delay line's ring and cursor, which the render thread reads and writes every period: it only
+ *  flags the restart, and the next period of the insert clears the line. Driven without a thread and without a
+ *  clock - the control side and the period run one after the other, like the ping's two halves. */
+void HardwareIoTest::clearingAnEnabledChannelLeavesTheDryLineToTheRenderThread() {
+	AudioEngine* engine = Engine::audioEngine();
+	const f_cnt_t fpp = engine->framesPerPeriod();
+	Mixer* mixer = Engine::mixer();
+	const int index = mixer->createChannel();
+	HardwareInsert& insert = mixer->mixerChannel(index)->m_hardwareIo.insert;
+
+	// An enabled insert, 'mix' 0 (the dry signal alone) delayed by one whole period.
+	HardwareInsert::Settings settings;
+	settings.enabled = true;
+	settings.send = {2, 2};
+	settings.ret = {0, 2};
+	settings.mix = 0.f;
+	settings.latencyOverride = static_cast<int>(fpp);
+	insert.setSettings(settings, fpp);
+
+	//! Play one period of @a level through the insert and return the first frame it emitted. The buffer is
+	//! refilled every period: process() writes the insert's output back into it.
+	std::vector<SampleFrame> block(static_cast<std::size_t>(fpp));
+	auto play = [&](float level) {
+		for (f_cnt_t f = 0; f < fpp; ++f) { block[static_cast<std::size_t>(f)] = SampleFrame(level, level); }
+		insert.process(block.data(), fpp, *engine);
+		return block[0][0];
+	};
+	QCOMPARE(play(0.25f), 0.f);    // a fresh line has nothing to emit yet
+	QCOMPARE(play(0.25f), 0.25f);  // the dry signal, one period late
+	QCOMPARE(insert.m_dry.delayFrames(), static_cast<int>(fpp));  // armed by the last period
+
+	// What the Delete key does first, off the change lock: clear the channel. The line the render thread owns
+	// keeps its delay, because the interface thread wrote neither its ring nor its cursor.
+	mixer->clearChannel(static_cast<mix_ch_t>(index));
+	QVERIFY(!insert.enabled());
+	QCOMPARE(insert.m_dry.delayFrames(), static_cast<int>(fpp));
+
+	// On again: the first period clears the line on the render thread and emits silence - neither the 0.25 the
+	// line held from before the clear nor the undelayed 0.125 played now. The period after that carries it.
+	insert.setSettings(settings, fpp);
+	QCOMPARE(play(0.125f), 0.f);
+	QCOMPARE(play(0.125f), 0.125f);
+
+	mixer->deleteChannel(index);  // and the deletion itself, as the key goes on to do
+}

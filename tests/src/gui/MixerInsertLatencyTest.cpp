@@ -33,6 +33,7 @@
 #include <QJsonArray>
 #include <QTemporaryDir>
 
+#include <cmath>
 #include <span>
 #include <vector>
 
@@ -212,6 +213,39 @@ private slots:
 		const float reEnabled = playIntoInsert(*channel, fpp, 0.125f);
 		QVERIFY2(reEnabled == 0.f, qPrintable(QStringLiteral("the first period after re-enabling emitted %1 instead of silence: "
 			"the audio buffered before the disable is being replayed").arg(reEnabled)));
+	}
+
+	/*! The Delete key on a channel that carries an enabled hardware insert: the handler (MixerView.cpp:951) clears
+	 *  the channel (Mixer::clearChannel, :781, before the change lock Mixer::deleteChannel takes at Mixer.cpp:1382)
+	 *  and then deletes it (:785). The insert's dry line is restarted by the render thread there, and the mixer
+	 *  still renders the period after the deletion. */
+	void theDeleteKeyRemovesAChannelWithAnEnabledInsert()
+	{
+		Mixer* mixer = Engine::mixer();
+		const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+		const int index = mixer->createChannel();
+		const QString id = control::channelIdOf(mixer->mixerChannel(index));
+		getGUI()->mixerView()->syncWithMixer();
+		getGUI()->mixerView()->syncWithMixer();  // a count change rebuilds the strips
+		QVERIFY(getGUI()->mixerView()->channelView(index) != nullptr);
+		QVERIFY(run(QStringLiteral("mixer.hardware_insert"), {{QStringLiteral("channel"), id}, {QStringLiteral("enabled"), true},
+			{QStringLiteral("mix"), 0.0}, {QStringLiteral("latency_frames"), static_cast<int>(fpp)}}).ok);
+		// The line holds a period of dry audio when the key is pressed.
+		playIntoInsert(*mixer->mixerChannel(index), fpp, 0.25f);
+		playIntoInsert(*mixer->mixerChannel(index), fpp, 0.25f);
+
+		const mix_ch_t before = mixer->numChannels();
+		getGUI()->mixerView()->setCurrentMixerChannel(index);
+		QTest::keyClick(getGUI()->mixerView(), Qt::Key_Delete);
+		QCOMPARE(mixer->numChannels(), static_cast<mix_ch_t>(before - 1));
+
+		// The mixer keeps rendering, and nothing of the deleted channel's insert surfaces in the next period.
+		const std::span<const SampleFrame> played = Engine::audioEngine()->renderNextPeriod();
+		QCOMPARE(static_cast<f_cnt_t>(played.size()), fpp);
+		for (f_cnt_t f = 0; f < fpp; ++f)
+		{
+			QVERIFY(std::isfinite(played[f][0]) && std::isfinite(played[f][1]));
+		}
 	}
 
 private:
