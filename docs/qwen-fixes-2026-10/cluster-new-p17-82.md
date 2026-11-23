@@ -90,6 +90,10 @@ The RED run stops at the new-URI assertion, so it does not reach the allocation-
 that assertion is exercised in the GREEN run and would also fail before the fix, because the old
 `map()` built the temporary `std::string` and the map/unmap nodes on every new URI.
 
+The two chained commands were also run verbatim against the final tree, as the proof manifest
+records them: `proof-red-1.log` EXIT=1 (the same `freshOnAudio` failure) and `proof-green-1.log`
+EXIT=0 (9 passed).
+
 ### Build notes
 
 The first attempt to build the test failed to link the allocation probe:
