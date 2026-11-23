@@ -182,5 +182,5 @@ What the RED runs show, stated exactly:
   reversibility class is added or changed.
 
 Delegation: Haiku ran every build and ctest run (the GREEN runs, the 30x repeats and the RED/restore
-sequence, five starts' worth of logs in the folder above); I designed and wrote the fix, the tests and the
+sequence; four Haiku starts, the first stopped at the configure guard); I designed and wrote the fix, the tests and the
 stress-test rendezvous, reviewed the results and wrote this report.
