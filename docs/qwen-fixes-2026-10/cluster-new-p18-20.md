@@ -11,13 +11,13 @@ save from an inappropriate temp:
 
 * **Staleness.** A save writes `<file>.new` *before* the canonical path changes
   (src/core/DataFile.cpp's `writeFile()` stages the temp, backs up, then renames
-  at :983). If the canonical file is a complete recognized document *newer* than
+  at :1070). If the canonical file is a complete recognized document *newer* than
   the temp, that canonical file was written separately after the temp, so the
   temp is stale, not pending. Before this fix the stale temp was adopted and the
   newer project was lost.
 * **Type.** A save of this project cannot write a document of another type, but
   `isRecoverableDocument()` only asks whether the temp is *some* recognized
-  document (src/core/DataFile.cpp:490). Before this fix a complete document of
+  document (src/core/DataFile.cpp:529). Before this fix a complete document of
   another type at the sidecar path (e.g. a `songtemplate` beside `song.mmp`)
   replaced the project.
 * **No backup.** `writeFile()` preserves the previous version in `<file>.bak`
