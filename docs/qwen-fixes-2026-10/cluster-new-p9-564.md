@@ -160,6 +160,9 @@ The probes are hand-compiled translation units in the log folder, not part of th
 * No RED/GREEN pair and no regression test: there is no product change to revert, so a test would pass in both
   directions. The proof is a compile-time impossibility (probe A) plus zero call sites, which a runtime test
   cannot strengthen.
+* No test matrix (normal, failure, exhaustion, reconfiguration, audio-thread constraint, platform rows): every
+  row needs a code path into the class, and there is none - the construction expression is the probe (EXIT=1),
+  not a test case. Adding rows would invent paths that the compiler rules out.
 * No TSAN run (local TSan does not run on this box, and there is no concurrent code in scope), no INT_MAX case,
   no exhaustion-policy case - none of them apply to code that cannot be entered.
 * Not verified at runtime, because no runtime path exists. That is the verdict, not a gap in it.
