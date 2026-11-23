@@ -57,6 +57,8 @@ src/core/EffectChain.cpp	EffectChain::processThroughGraph	the routing-graph rend
 include/AutomatableModel.h	AutomatableModel::incrementPeriodCounter	called at the end of STAGE 3: advances the automation period counter on the audio thread (inline definition in this header)
 src/core/Controller.cpp	Controller::triggerFrameCounter	called at the end of STAGE 3: advances every controller's frame counter on the audio thread
 src/core/EnvelopeAndLfoParameters.cpp	EnvelopeAndLfoParameters::LfoInstances::trigger	called at the end of STAGE 3: the per-period LFO trigger on the audio thread (EnvelopeAndLfoParameters::instances()->trigger())
+src/core/EnvelopeAndLfoParameters.cpp	EnvelopeAndLfoParameters::LfoInstances::reset	called from Song::processNextBuffer at the start of the song, which is STAGE 0 on the audio thread: it marks the reset on the frame counter instead of walking the LFO list
+src/core/EnvelopeAndLfoParameters.cpp	EnvelopeAndLfoParameters::lfoFrame	the audio path's LFO phase, read per period from fillLfoLevel and updateLfoShapeData: two relaxed counter loads and no lock
 src/core/EnvelopeAndLfoParameters.cpp	EnvelopeAndLfoParameters::fillLevel	the envelope/LFO level fill of an instrument's sound shaping, called from InstrumentSoundShaping on the audio thread; it reads the published parameter snapshot and must not lock
 src/core/EnvelopeAndLfoParameters.cpp	EnvelopeAndLfoParameters::fillLfoLevel	the LFO part of the level fill, reached from fillLevel on the audio thread
 src/core/EnvelopeAndLfoParameters.cpp	EnvelopeAndLfoParameters::lfoShapeSample	the LFO shape sample, reached from updateLfoShapeData on the audio thread
