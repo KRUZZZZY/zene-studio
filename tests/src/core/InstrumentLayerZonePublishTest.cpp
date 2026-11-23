@@ -42,6 +42,7 @@
 #include <QDomDocument>
 #include <QDomElement>
 
+#include "AudioBusHandle.h"
 #include "ControlInstrumentCommands.h"
 #include "InstrumentLayers.h"
 #include "InstrumentMidiParts.h"
@@ -220,6 +221,51 @@ private slots:
 		QVERIFY(revtest::run(QStringLiteral("rack.layer_set"),
 			{{QStringLiteral("target"), fresh}, {QStringLiteral("layer"), layer}, {QStringLiteral("level"), 0.5}}).ok);
 		QCOMPARE(track->layers().mix(index).level, 0.5f);
+	}
+
+	//! Cluster new-p19-4: a layer mix update is published as the layer bus's gain - one
+	//! std::atomic<float> the render thread loads once a period - not as shared model state the
+	//! mixer would read. Layer-0 is the track's own instrument, so no loadable instrument is
+	//! needed: rack.layer_set mutes it and the bus gain (what a sounding note is scaled by) goes to
+	//! 0; the undo publishes the old gain back, and a reload publishes the loaded mix.
+	void aLayerMixIsPublishedAsItsBusGain()
+	{
+		const QString fresh = revtest::addTrack();
+		QVERIFY(!fresh.isEmpty());
+		InstrumentTrack* track = trackOf(fresh);
+		QVERIFY(track != nullptr);
+		AudioBusHandle* bus = track->audioBusHandle();
+		QCOMPARE(track->layers().layerCount(), 0);  // layer-0 only: the track's own instrument
+		QCOMPARE(bus->gain(), 1.0f);
+
+		const ControlResult muted = revtest::run(QStringLiteral("rack.layer_set"),
+			{{QStringLiteral("target"), fresh}, {QStringLiteral("layer"), QStringLiteral("layer-0")},
+			 {QStringLiteral("muted"), true}});
+		QVERIFY2(muted.ok, qPrintable(muted.errorMessage));
+		QVERIFY(track->layers().mix(0).muted);
+		QCOMPARE(bus->gain(), 0.0f);  // the value the audio thread reads once a period
+
+		REV_UNDO_OR_FAIL();
+		QVERIFY(!track->layers().mix(0).muted);
+		QCOMPARE(bus->gain(), 1.0f);
+
+		// Solo takes the same path: layer-0 is the only layer, so it stays at unity, and a save and
+		// reload re-publishes the loaded mix instead of leaving the bus with an unset gain.
+		const ControlResult soloed = revtest::run(QStringLiteral("rack.layer_set"),
+			{{QStringLiteral("target"), fresh}, {QStringLiteral("layer"), QStringLiteral("layer-0")},
+			 {QStringLiteral("solo"), true}});
+		QVERIFY2(soloed.ok, qPrintable(soloed.errorMessage));
+		QCOMPARE(bus->gain(), 1.0f);
+		saveAndReload(track);
+		QVERIFY(track->layers().mix(0).solo);
+		QCOMPARE(bus->gain(), 1.0f);
+
+		// Leave the shared fixture without this slot's undo state or its fresh track.
+		REV_UNDO_OR_FAIL();
+		QVERIFY(!track->layers().mix(0).solo);
+		QCOMPARE(bus->gain(), 1.0f);
+		REV_UNDO_OR_FAIL();
+		QVERIFY(!revtest::hasTrack(fresh));
 	}
 
 	//! A saved layer level that is not a number loads as unity, not as a NaN gain (readMix clamped it, and
