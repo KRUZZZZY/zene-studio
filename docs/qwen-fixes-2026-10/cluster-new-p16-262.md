@@ -157,6 +157,51 @@ change is required. No new product file was added.
 
 ## Self-check
 
+Answers to the pre-submit check's ASK items, in its order:
+
+1. **The regression test FAILS with the product change reverted and PASSES with it (exit codes).**
+   Yes. Reverted: `git apply -R logs/fix.patch` (`EXIT=0`), rebuild (`EXIT=0`), `ctest -R
+   "^Vst3HostTest$"` -> `EXIT=8`, `799 - Vst3HostTest (SEGFAULT)` (`logs/test-reversered-1.log`).
+   Restored: `git apply logs/fix.patch` (`EXIT=0`), rebuild (`EXIT=0`), same ctest -> `EXIT=0`,
+   `100% tests passed` (`logs/test-restore-1.log`). The first RED run before the fix was written
+   also exited 8 (`logs/test-red-1.log`).
+2. **The test is deterministic: no wall-clock timing, sleeps or races (name the seam or injected
+   values it uses).** The seam is the public `HostedPlugin::process` boundary itself: the test
+   injects the channel pointers - the array (`nullptr` or a two-element vector), the entries
+   (`nullptr` beside a valid buffer) and the frame count (`TestFrames`, and `TestBlockSize + 128`
+   for the longer request) - and asserts only sample values (`rms` of the buffers) and the exact
+   zero of the silence/scratch path. No sleeps, no threads, no timers, no files, no random data:
+   the fixture is re-prepared with fixed `TestSampleRate`/`TestBlockSize` and the gain parameter is
+   set explicitly, so the only variable is host state the test sets itself.
+3. **The fix is at the cause and complete: every caller and sibling of what you changed was
+   checked and stays consistent.** Yes. `mapBuses(inputs, outputs, numInputs, numOutputs, offset,
+   chunk)` has one caller, `HostedPlugin::Impl::runChunk` (`plugins/Vst3Effect/Vst3Host.cpp:686`),
+   reached from `process`; both channel arrays enter the plug-in only there. The descriptor overload
+   of `mapBuses` (`plugins/Vst3Effect/Vst3BusMap.h:91`, used by `Vst3HostReports.cpp:97`) carries no
+   channel pointers and is unaffected. `clearCallerOutputs` keeps its own null guard, so outputs are
+   zeroed before the mapping and are not zeroed twice. The header
+   (`plugins/Vst3Effect/Vst3HostInternals.h:162`) is unchanged. The one sibling with the same shape
+   is the CLAP host (`plugins/ClapEffect/ClapHost.cpp:454`, `:469`), reported under Other findings
+   and deliberately not touched: this job's checkpoint is the two VST3 files.
+4. **No collateral damage: old projects and saved data still load as before, and any limit or check
+   you added does not hit other callers that legitimately exceed it.** No file format, id or saved
+   state changes: the diff is the two helpers plus the two mapping expressions. This fix adds no
+   limit at all - it removes a dereference, it does not reject anything, so a caller that supplies
+   all its channels is mapped exactly as before (`pointer + offset`), and a caller that supplies
+   fewer channels keeps the pre-existing silence/scratch fallback. The 25 slots of `Vst3HostTest`
+   (including `initTestCase`, `testIdentity`, `testStateRoundTrip`, `testAudioGain`) and the seven
+   other VST3 tests pass on the fixed build: `ctest -R "Vst3"` -> `EXIT=0`, 8/8 passed.
+5. **If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended
+   contract that shows it.** Not applicable - the verdict is FIXED (a real defect, reproduced by
+   SIGSEGV). For contrast, the guard that already existed on the neighbouring path is
+   `plugins/Vst3Effect/Vst3Host.cpp:107` (`clearCallerOutputs`), and the pre-fix mapping at `:754`
+   dereferenced `inputs[channel]` / `outputs[channel]` after checking only the index.
+6. **Sibling commands in the command files you changed.** No command file was changed: the commit
+   touches only `plugins/Vst3Effect/Vst3Host.cpp`, `tests/src/plugins/Vst3HostTest.cpp` and this
+   report. No control command, schema entry or catalogue snapshot is affected, so
+   `app.*`/`arrangement.*` siblings are unchanged and the `ControlCommandsSnapshot` canary cannot
+   move.
+
 - Verdict backed by code: yes - `clearCallerOutputs` null guard
   (`plugins/Vst3Effect/Vst3Host.cpp:107`) versus the unguarded `inputs[channel]` /
   `outputs[channel]` in the pre-fix `mapBuses` (`:754`), reproduced by SIGSEGV at address 0 in the
