@@ -136,3 +136,14 @@ The six items `submit_check.py` asks for, one line each:
    sibling or inverse is affected and the `ControlCommandsSnapshot` canary does not move: the change is inside
    one render-path function, `freeze.*`/`render.*` behave exactly as before (they call `freezeTo()`, whose
    signature and semantics are untouched).
+
+## Other findings
+
+- `MixerBusFreezeMenuTest` (ctest #529) reports `***Not Run` in this build tree because its executable was
+  never built: `ls build/tests/MixerBusFreezeMenuTest` → "No such file or directory", while
+  `build/tests/CTestTestfile.cmake:1063` still registers it. It is a `src/gui` test unrelated to this change;
+  I did not build it and do not claim it passes.
+- Two `FreezeRegionRepairTest` sites used `file length - pass length` as a pass's start frame (the defect's
+  identity, noted above). Any future frozen-take test that needs a pass's start frame must not re-derive it that
+  way; `SamplePlayHandle` exposes only the length (`totalFrames()`), so such a test has to compare lengths the
+  way these two now do, or the handle would need a window-start accessor.
