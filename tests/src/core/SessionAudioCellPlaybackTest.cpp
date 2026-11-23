@@ -364,6 +364,50 @@ private slots:
 		Engine::audioEngine()->audioDev()->setSampleRateForTesting(originalRate);
 	}
 
+	//! new-p15-204: a clip an engine-rate change REPLACED is still named by the scheduler's content
+	//! table, so the project close that follows it must not free it. It joins the previous close's
+	//! retired set at that close, and the close AFTER the scheduler's reset clears the table frees it -
+	//! the same two-close cadence a project's own clips already follow. Deterministic: no timing, the
+	//! test drives the periods and the closes itself.
+	void aRateReplacedClipSurvivesTheCloseThatStillNamesIt()
+	{
+		Song& song = *Engine::getSong();
+		const auto originalRate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+		const std::vector<SampleFrame> clip = rampClip(500);
+		const QString path = m_dir.filePath(QStringLiteral("lifetime.wav"));
+		QVERIFY(writeFloatWav(path, clip, originalRate));
+		QVERIFY(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0},
+			{QStringLiteral("type"), QStringLiteral("audio")}, {QStringLiteral("source"), path}}).ok);
+		const ClipSlot& slot = song.sessionModel().slot(0, 0);
+		const sessionaudio::Prepared p1 = sessionaudio::prepare(song, 0, slot, 120.0);
+		QVERIFY(p1.clip != nullptr);
+		// The content table names it, as it does for a playing cell.
+		QVERIFY(song.sessionScheduler().publishSlotContent(0, 0, -1, 0, false, 0, p1.clip, p1.shape));
+		period();
+
+		// The engine rate changes: prepare() replaces the clip, parking the old-rate buffer.
+		const int newRate = originalRate == 44100 ? 48000 : 44100;
+		Engine::audioEngine()->audioDev()->setSampleRateForTesting(newRate);
+		const sessionaudio::Prepared p2 = sessionaudio::prepare(song, 0, slot, 120.0);
+		QVERIFY(p2.clip != nullptr);
+		QVERIFY(p2.clip != p1.clip);
+		QVERIFY2(sessionaudio::holdsClipForTest(p1.clip), "the replaced clip was dropped before any close");
+
+		// A project close retires the cache; its scheduler reset is only REQUESTED, so the table still
+		// names p1 and this close must keep it.
+		song.clearProject();
+		QVERIFY2(sessionaudio::holdsClipForTest(p1.clip),
+			"the close freed a clip the scheduler's content table can still name");
+
+		// The audio thread processes the reset and clears the table...
+		period();
+		// ...so the NEXT close can reclaim it, exactly like the project's own clips.
+		song.clearProject();
+		QVERIFY2(!sessionaudio::holdsClipForTest(p1.clip), "the retired clip was never reclaimed");
+
+		Engine::audioEngine()->audioDev()->setSampleRateForTesting(originalRate);
+	}
+
 	//! The budget of settings-variants is the variants' alone: 256 loaded source clips do not use it up,
 	//! so a warped cell still gets its warped clip (and not the unwarped original).
 	void theVariantLimitCountsVariantsNotLoadedClips()

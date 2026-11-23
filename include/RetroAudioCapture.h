@@ -212,6 +212,11 @@ namespace retroaudiotesting
 //! Test hook: the next writeRetroAudioTake() treats its flush/close as failed (SF_ERR_SYSTEM), the
 //! fault a full disk or a failing device gives after libsndfile accepted every frame.
 void failNextTakeFinish() noexcept;
+
+//! Test hook: the next writeRetroAudioTake() treats its final move of the staged WAV into place as
+//! failed, the fault a destination that cannot be replaced gives. The move is refused before it
+//! happens, so the take already at the destination must be exactly as it was (cluster 5276).
+void failNextTakeMove() noexcept;
 } // namespace retroaudiotesting
 #endif
 

@@ -905,7 +905,17 @@ PunchFrames AudioEngine::punchWindow(f_cnt_t frames) const noexcept
 	const std::uint64_t punch = m_punch.load(std::memory_order_relaxed);
 	const tick_t begin = punchBeginOf(punch);
 	const tick_t end = punchEndOf(punch);
-	return punchFramesForPeriod(end > begin, m_periodSongPlaying, m_periodStartFrame, Engine::framesPerTick(), frames, begin, end);
+	// The staged capture ring is drained whole, so @a frames can hold MORE than one
+	// engine period: a render that fell behind takes the backlog with it. The batch
+	// ends at the end of the period being rendered (its last m_framesPerPeriod frames
+	// are this period's input; the frames before them are the periods that render
+	// missed), so its first frame sits that many frames BEFORE the period start. A
+	// one-period batch keeps the old origin unchanged. Without the shift a punch-in
+	// or punch-out inside an oversized batch cuts the wrong period (cluster 5465).
+	const double batchStartFrame = frames > m_framesPerPeriod
+		? m_periodStartFrame + static_cast<double>(m_framesPerPeriod) - static_cast<double>(frames)
+		: m_periodStartFrame;
+	return punchFramesForPeriod(end > begin, m_periodSongPlaying, batchStartFrame, Engine::framesPerTick(), frames, begin, end);
 }
 
 void AudioEngine::setPunchWindow(bool armed, tick_t begin, tick_t end) noexcept

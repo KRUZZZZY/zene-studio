@@ -66,7 +66,8 @@ WasmEffect::WasmEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* 
 	Effect(&wasm_effect_plugin_descriptor, parent, key),
 	m_controls(new WasmEffectControls(this)),
 	m_delayLine(delayLineCapacity),
-	m_dryScratch(wasm::WasmWorker::maxBlockFrames)
+	m_dryScratch(wasm::WasmWorker::maxBlockFrames),
+	m_discardScratch(wasm::WasmWorker::maxBlockFrames)
 {
 }
 
@@ -223,6 +224,22 @@ Effect::ProcessStatus WasmEffect::processImpl(SampleFrame* buf, const f_cnt_t fr
 	}
 	const auto frameCount = static_cast<std::uint32_t>(frames);
 
+	// Pipeline bookkeeping, audio thread only: the block submitted in call N
+	// is due in call N+1, which is the fixed one-block pipeline delay
+	// latencyFrames() reports. The worker's queues were drained if it was
+	// stopped since the last call (a reload, an unload): a block still
+	// counted as in flight can then never come back, and waiting for it
+	// would stall the pipeline forever.
+	const std::uint64_t epoch = m_worker.queueEpoch();
+	if (epoch != m_pipelineEpoch)
+	{
+		m_pipelineEpoch = epoch;
+		m_pipelineInFlight = false;
+	}
+	// The in-flight block is one call older, whether or not the worker is
+	// ready this call: the call it is due in passes with the period.
+	if (m_pipelineInFlight) { ++m_pipelineAge; }
+
 	// The module's declared latency, clamped to what the dry path compensates.
 	// A reload keeps the last value and a trap keeps it too, so the dry path
 	// stays aligned with whatever the module was doing.
@@ -255,8 +272,8 @@ Effect::ProcessStatus WasmEffect::processImpl(SampleFrame* buf, const f_cnt_t fr
 		sampleRate = static_cast<float>(Engine::audioEngine()->outputSampleRate());
 	}
 
-	// Keep the dry block: collect() replaces buf with the module's output for
-	// the *previous* block and submit() must be handed the dry signal.
+	// Keep the dry block: the handoff below replaces buf with the module's
+	// output for a *previous* block and submit() must be handed the dry signal.
 	std::memcpy(m_dryScratch.data(), buf, frameCount * sizeof(SampleFrame));
 	if (moduleLatency > 0)
 	{
@@ -265,9 +282,43 @@ Effect::ProcessStatus WasmEffect::processImpl(SampleFrame* buf, const f_cnt_t fr
 		pushDry(m_dryScratch.data(), frameCount);
 	}
 
-	// Collect before submitting so the result popped can never be the block
-	// about to be handed over: the pipeline is deterministically one block.
-	const bool haveOutput = m_worker.collect(buf, frameCount);
+	// The worker handoff: what this call is owed, and the next block when the
+	// pipeline has room for it (see advancePipeline).
+	advancePipeline(buf, frameCount, moduleLatency, sampleRate);
+	return ProcessStatus::Continue;
+}
+
+void WasmEffect::advancePipeline(SampleFrame* buf, std::uint32_t frameCount,
+	std::uint32_t moduleLatency, float sampleRate)
+{
+	// Take the result the pipeline owes this call. The block submitted in the
+	// previous call is due now; one older than that is late - a module that
+	// could not keep up - and is dropped rather than inserted at a call it does
+	// not belong to, so the effect's actual latency stays the fixed figure
+	// latencyFrames() reports while the dry signal holds the position.
+	bool haveOutput = false;
+	bool pipelineFree = true;
+	if (m_pipelineInFlight)
+	{
+		if (m_pipelineAge <= 1)
+		{
+			haveOutput = m_worker.collect(buf, frameCount);
+			pipelineFree = haveOutput;
+		}
+		else
+		{
+			pipelineFree = m_worker.collect(m_discardScratch.data(), frameCount);
+		}
+		m_pipelineInFlight = !pipelineFree;
+	}
+	else
+	{
+		// Nothing in flight: a queued result here is a leftover of an episode
+		// that interrupted the pipeline (a quarantine, a re-instantiation) and
+		// belongs to no call this effect still owes. Drop it and start clean.
+		m_worker.collect(m_discardScratch.data(), frameCount);
+	}
+
 	if (!haveOutput && moduleLatency > 0)
 	{
 		// The module owes us the previous block; deliver the same position from
@@ -275,11 +326,19 @@ Effect::ProcessStatus WasmEffect::processImpl(SampleFrame* buf, const f_cnt_t fr
 		pullDelayed(buf, frameCount, dryReadOffset(moduleLatency, frameCount));
 	}
 
+	// Keep at most the expected block in flight: submit only when the previous
+	// block's result was taken above. Submitting every call let a slow module
+	// queue a backlog whose results came back several calls late - inserted at
+	// calls they did not belong to, shifting the effect's actual latency and
+	// replaying audio the dry fallback had already delivered.
 	// submit() notices a sample-rate change and asks the worker thread to
 	// re-instantiate the module; nothing but atomics happens on the audio
 	// thread (docs/specs/SPEC-wasm-sandbox.md section 4).
-	m_worker.submit(m_dryScratch.data(), frameCount, sampleRate);
-	return ProcessStatus::Continue;
+	if (pipelineFree && m_worker.submit(m_dryScratch.data(), frameCount, sampleRate))
+	{
+		m_pipelineInFlight = true;
+		m_pipelineAge = 0;
+	}
 }
 
 std::uint64_t WasmEffect::dryReadOffset(std::uint32_t moduleLatency,

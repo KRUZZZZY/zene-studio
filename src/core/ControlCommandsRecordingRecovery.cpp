@@ -44,10 +44,14 @@
 #include <QJsonObject>
 #include <QString>
 
+#include "AudioEngine.h"
 #include "ControlEdit.h"
 #include "ControlRecordingSupport.h"
 #include "ControlRegistry.h"
+#include "Engine.h"
+#include "MultiTrackRecorder.h"
 #include "RecordingJournal.h"
+#include "TrackRecorder.h"
 
 namespace lmms
 {
@@ -129,6 +133,32 @@ ControlResult recoveryRestore(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
+/*! True when \a takePath is the take of a capture THIS PROCESS is still writing:
+ *  one of the engine's record routes is running and its journal is the take's
+ *  own. Such a journal looks exactly like an interrupted capture's - state
+ *  in_progress, take present - because the writer only refreshes it once per
+ *  journal interval, so the only thing that tells them apart is the live route
+ *  that owns it. Removing it must be refused: a crash before the writer's next
+ *  commit would then lose the offer for material that already reached the disk. */
+bool isLiveCaptureTake(const QString& takePath)
+{
+	const AudioEngine* engine = Engine::audioEngine();
+	if (engine == nullptr) { return false; }
+	const MultiTrackRecorder& recorder = engine->recorder();
+	const QString journal = journalPathFor(takePath);
+	for (int route = 0; route < recorder.trackCount(); ++route)
+	{
+		const TrackRecorder& track = recorder.track(route);
+		if (!track.journalPath().empty()
+			&& QString::fromStdString(track.journalPath()) == journal
+			&& (track.isArmed() || track.isWriterRunning()))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 // ---------------------------------------------------------------------------
 // record.recovery_discard
 // ---------------------------------------------------------------------------
@@ -137,6 +167,14 @@ ControlResult recoveryDiscard(const QJsonObject& args)
 	TakeJournal journal;
 	ControlResult error;
 	if (!readJournal(args, &journal, &error)) { return error; }
+	if (isLiveCaptureTake(journal.takePath))
+	{
+		return ControlResult::failure(ControlErrorKind::Busy,
+			QStringLiteral("'%1' is still being recorded by this process: its journal belongs "
+				"to the live capture, not to an interrupted one. Its offer is kept; stop the "
+				"capture (record.disarm_track or record.disarm_all) and discard it again.")
+				.arg(journal.takePath));
+	}
 
 	const QJsonObject before = takeJson(journal);
 	if (!remove(journalPathFor(journal.takePath)))

@@ -58,6 +58,7 @@
 #include "Engine.h"
 #include "MidiClock.h"
 #include "ProjectJournal.h"
+#include "RetroAudioCapture.h"
 #include "SampleFrame.h"
 #include "SessionModel.h"
 #include "SessionScheduler.h"
@@ -271,6 +272,30 @@ private slots:
 		const auto frames = static_cast<std::uint64_t>(status.value(QStringLiteral("target_frames")).toDouble());
 		checkQuantisedStart(status);
 		landAndCompare(status, frames, QStringLiteral("cleared.wav"));
+	}
+
+	//! BUG 10: a take whose WAV write fails stays in the recorder (done) and lands once the destination works.
+	//! takeFinished() used to run before the write, so a refused write threw the only copy of the take away.
+	void aFailedTakeWriteKeepsTheTakeInHandForARetry()
+	{
+		QVERIFY(run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column}, {QStringLiteral("scene"), 0},
+			{QStringLiteral("bars"), 1}}).ok);
+		QVERIFY(recordUntilDone());
+
+		const QString path = m_dir.filePath(QStringLiteral("retried.wav"));
+		retroaudiotesting::failNextTakeFinish();
+		const ControlResult failed = run(QStringLiteral("session.record_slot_land"), {{QStringLiteral("file"), path}});
+		QCOMPARE(failed.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(failed.errorMessage.contains(QStringLiteral("could not be written")), qPrintable(failed.errorMessage));
+		QVERIFY(!QFileInfo::exists(path));                                    // the temporary was discarded
+		QVERIFY(Engine::getSong()->sessionModel().slot(m_column, 0).isEmpty());
+		QCOMPARE(state(), QStringLiteral("done"));                            // the take is still in hand
+
+		// The same take lands once the destination works, and it is the one undo step as usual.
+		const QJsonObject status = run(QStringLiteral("session.record_slot_status")).result;
+		const auto frames = static_cast<std::uint64_t>(status.value(QStringLiteral("target_frames")).toDouble());
+		landAndCompare(status, frames, QStringLiteral("retried.wav"));
+		QCOMPARE(state(), QStringLiteral("idle"));  // landed: the WAV is on disk and the recorder is free again
 	}
 
 	//! Q050-277: one bar, clock-synced. START carries the take's own start tick, STOP exactly one bar later, the span's

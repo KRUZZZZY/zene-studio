@@ -73,7 +73,8 @@ launched audio cell plays, so that slice is here:
   its next launch), and WSOLA only tracks periods shorter than 128 frames, as `AudioStretcher.h` states.
 - **Lifetime**: the clips of the open project live until the project is closed; `Song::clearProject` retires them
   and frees the ones retired at the previous close, by which time the scheduler's reset has dropped every
-  reference the audio thread had.
+  reference the audio thread had. A clip an engine-rate change replaces is parked and retired at the next close,
+  so it is freed by the close after that - never while the content table can still name it (new-p15-204).
 
 Proof: `tests/src/core/SessionAudioCellPlaybackTest.cpp` (ctest `SessionAudioCellPlaybackTest`) launches a file
 cell and a recorded-and-landed cell through `session.launch_slot` and checks the engine's OUTPUT is the clip frame

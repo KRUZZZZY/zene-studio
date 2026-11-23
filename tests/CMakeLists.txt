@@ -1929,6 +1929,9 @@ if(LMMS_HAVE_ALSA)
 	# cluster 4584: the ALSA capture thread must not log a failed recovery -
 	# the failure is parked and reported by the thread that closes the capture.
 	list(APPEND LMMS_TESTS src/core/AudioAlsaCaptureErrorTest.cpp)
+	# cluster new-p17-220: a playback write error handleError() cannot recover from
+	# stops the run loop and is published on the device status instead of retried.
+	list(APPEND LMMS_TESTS src/core/AudioAlsaFatalWriteTest.cpp)
 	# Q050-488: the ALSA raw-MIDI worker is woken and joined on close, never terminated.
 	list(APPEND LMMS_TESTS src/core/MidiAlsaRawShutdownTest.cpp)
 	# Q050-488: the sequencer worker is joined before the project's ports are destroyed.
@@ -4972,6 +4975,47 @@ target_compile_definitions(DispersionNonFiniteTest PRIVATE
 )
 if(TARGET dispersion)
 	add_dependencies(DispersionNonFiniteTest dispersion)
+endif()
+
+# Cluster new-p9-240: LOMM's sample-rate handler resized the lookahead rings but
+# left the ring cursor at its old-ring value, so after a rate drop the next
+# period indexed the shorter rings past their end. The plugin sources are
+# compiled into this test binary (the DispersionNonFiniteTest pattern), so the
+# real handler is driven through AudioEngine::sampleRateChanged() and the ring
+# invariant is checked without loading a module.
+add_executable(LommSampleRateTest
+	src/plugins/LommSampleRateTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/LOMM/LOMM.cpp
+	${CMAKE_SOURCE_DIR}/plugins/LOMM/LOMM.h
+	${CMAKE_SOURCE_DIR}/plugins/LOMM/LOMMControls.cpp
+	${CMAKE_SOURCE_DIR}/plugins/LOMM/LOMMControls.h
+	${CMAKE_SOURCE_DIR}/plugins/LOMM/LOMMControlDialog.cpp
+	${CMAKE_SOURCE_DIR}/plugins/LOMM/LOMMControlDialog.h
+)
+add_test(NAME LommSampleRateTest COMMAND LommSampleRateTest)
+set_tests_properties(LommSampleRateTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(LommSampleRateTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/LOMM
+	# the generated plugin_export.h (PLUGIN_EXPORT) of the LOMM plugin
+	${CMAKE_BINARY_DIR}/plugins/LOMM
+)
+target_static_libraries(LommSampleRateTest PRIVATE lmmsobjs)
+target_link_libraries(LommSampleRateTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(LommSampleRateTest PRIVATE cxx_std_20)
+target_compile_definitions(LommSampleRateTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=lomm
+	# the test compiles the plugin sources itself, so PLUGIN_EXPORT must not
+	# be the import attribute of the plugin's own export header
+	PLUGIN_STATIC_DEFINE
+)
+if(TARGET lomm)
+	add_dependencies(LommSampleRateTest lomm)
 endif()
 
 # Cluster new-p12-275: TripleOscillator's user-wave buffer and anti-alias table
@@ -9385,6 +9429,13 @@ target_compile_definitions(LadspaChannelCountsTest PRIVATE
 	LADSPA_CHANNEL_FIXTURE_PATH="$<TARGET_FILE:ladspa_channel_count_fixture>"
 )
 add_dependencies(LadspaChannelCountsTest ladspa_channel_count_fixture)
+# Cluster new-p9-213: the same fixture also hosts the mono-in/stereo-out layout
+# the LADSPA effect wrapper must refuse. PluginPortsMigrationTest constructs the
+# real migrated effect, so it needs the fixture on its LADSPA search path.
+target_compile_definitions(PluginPortsMigrationTest PRIVATE
+	"PART_C_CHANNEL_LADSPA_MODULE=\"$<TARGET_FILE:ladspa_channel_count_fixture>\""
+)
+add_dependencies(PluginPortsMigrationTest ladspa_channel_count_fixture)
 
 # The NAM engine's local CTest registrations live with its headless harness.
 # Mirror those cases here so ctest launched from build/tests discovers them.

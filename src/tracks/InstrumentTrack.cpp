@@ -89,7 +89,7 @@ InstrumentTrack::InstrumentTrack(TrackContainer* tc) :
 	for( int i = 0; i < NumKeys; ++i )
 	{
 		m_notes[i] = nullptr;
-		m_runningMidiNotes[i] = 0;
+		m_runningMidiNotes[i].store(0, std::memory_order_relaxed);
 	}
 
 
@@ -725,13 +725,13 @@ void InstrumentTrack::processOutEventImpl(const MidiEvent& event, const TimePos&
 
 void InstrumentTrack::silenceAllNotes( bool removeIPH )
 {
-	m_midiNotesMutex.lock();
+	// cluster new-p9-189: the audio thread's note paths must not wait for this, so the
+	// running counts are atomic and the reset is a store per key.
 	for( int i = 0; i < NumKeys; ++i )
 	{
 		m_notes[i] = nullptr;
-		m_runningMidiNotes[i] = 0;
+		m_runningMidiNotes[i].store(0, std::memory_order_relaxed);
 	}
-	m_midiNotesMutex.unlock();
 
 	Engine::audioEngine()->requestChangeInModel();
 	// invalidate all NotePlayHandles and PresetPreviewHandles linked to this track

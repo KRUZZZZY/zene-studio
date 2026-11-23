@@ -48,7 +48,8 @@ private slots:
 		outputs.addPlane(1, second.data(), 4);
 		outputs.swap();  // the written period is the one fed
 		const SampleFrame master(0.5f, 0.5f);
-		QVERIFY(outputs.monoSample(3, master) == 0.75f);  // the last frame of the period is in range
+		// The mono downmix of both planes (0.25 + 0.9) plus the averaged master (0.5): 1.65.
+		QVERIFY(qAbs(outputs.monoSample(3, master) - 1.65f) < 1e-5f);  // the last frame of the period is in range
 		QVERIFY2(outputs.monoSample(4, master) == 0.f, "one past the period reads channel 2 or the master");
 		QVERIFY2(outputs.sample(0, 4, master) == 0.f, "one past the period reads channel 2 or the master");
 		QVERIFY(outputs.monoSample(-1, master) == 0.f);
@@ -101,6 +102,124 @@ private slots:
 			QVERIFY2(qAbs(outputs.sample(HardwareOutputBus::MaxChannels - 1, f, zero) - 0.6f) < 1e-5f,
 				"a mono route on the last channel is not written");
 		}
+	}
+
+	void monoOutputDownmixesBothSidesOfAStereoRoute()
+	{
+		// A one-channel device has one output, so a stereo route's two planes must be folded into
+		// it, not just the left one. 0.5 * (0.25 + 0.75) = 0.5.
+		HardwareOutputBus outputs;
+		outputs.init(4);
+		const std::vector<SampleFrame> src(4, SampleFrame(0.25f, 0.75f));
+		outputs.add(0, 2, src.data(), 4, 1.f);
+		outputs.setMasterPlacement({-1, 2});
+		outputs.swap();
+		const SampleFrame master(0.f, 0.f);
+		for (f_cnt_t f = 0; f < 4; ++f)
+		{
+			QVERIFY2(qAbs(outputs.monoSample(f, master) - 0.5f) < 1e-5f,
+				"the mono output drops the right side of a stereo route");
+		}
+	}
+
+	void monoOutputKeepsAMonoRouteAtItsLevel()
+	{
+		// A width-1 route writes the average of the pair into its one plane. Folding it into mono
+		// must use that level as it stands, not halve it again: 0.5 * (0.5 + 0.7) = 0.6.
+		HardwareOutputBus outputs;
+		outputs.init(4);
+		const std::vector<SampleFrame> src(4, SampleFrame(0.5f, 0.7f));
+		outputs.add(0, 1, src.data(), 4, 1.f);
+		outputs.setMasterPlacement({-1, 2});
+		outputs.swap();
+		const SampleFrame master(0.f, 0.f);
+		for (f_cnt_t f = 0; f < 4; ++f)
+		{
+			QVERIFY2(qAbs(outputs.monoSample(f, master) - 0.6f) < 1e-5f,
+				"a mono route is not kept at its intended level");
+		}
+	}
+
+	void monoOutputFoldsEveryRoutedChannel()
+	{
+		// The bus can carry routes beyond the first pair; a mono device plays them all. Each route
+		// contributes its own downmix: 0.5 * (0.2 + 0.4) + 0.5 * (0.6 + 0.8) + 0.5 = 1.5.
+		HardwareOutputBus outputs;
+		outputs.init(4);
+		const std::vector<SampleFrame> first(4, SampleFrame(0.2f, 0.4f));
+		const std::vector<SampleFrame> second(4, SampleFrame(0.6f, 0.8f));
+		const std::vector<float> side(4, 0.5f);
+		outputs.add(0, 2, first.data(), 4, 1.f);
+		outputs.add(2, 2, second.data(), 4, 1.f);
+		outputs.addPlane(4, side.data(), 4, 1.f);
+		outputs.setMasterPlacement({-1, 2});
+		outputs.swap();
+		const SampleFrame master(0.f, 0.f);
+		for (f_cnt_t f = 0; f < 4; ++f)
+		{
+			QVERIFY2(qAbs(outputs.monoSample(f, master) - 1.5f) < 1e-5f,
+				"a route past the first pair is missing from the mono output");
+		}
+	}
+
+	void monoOutputAddsTheMasterOnlyOnItsPlacement()
+	{
+		// The master's own mono downmix is unchanged: averaged when it sits on the first channel,
+		// absent when it is routed elsewhere.
+		HardwareOutputBus outputs;
+		outputs.init(4);
+		const std::vector<SampleFrame> src(4, SampleFrame(0.25f, 0.75f));
+		outputs.add(0, 2, src.data(), 4, 1.f);
+		const SampleFrame master(0.4f, 0.6f);
+		outputs.swap();
+		for (f_cnt_t f = 0; f < 4; ++f)
+		{
+			QVERIFY2(qAbs(outputs.monoSample(f, master) - 1.0f) < 1e-5f,
+				"the master on 1/2 is not averaged into the mono output");
+		}
+		HardwareOutputBus moved;
+		moved.init(4);
+		moved.add(0, 2, src.data(), 4, 1.f);
+		moved.setMasterPlacement({4, 2});
+		moved.swap();
+		for (f_cnt_t f = 0; f < 4; ++f)
+		{
+			QVERIFY2(qAbs(moved.monoSample(f, master) - 0.5f) < 1e-5f,
+				"a master routed away from the first channel leaks into the mono output");
+		}
+	}
+
+	void monoDownmixOfADroppedRouteStaysEmpty()
+	{
+		// A route that does not fit the bus is dropped whole: it must not reach the mono downmix
+		// either.
+		HardwareOutputBus outputs;
+		outputs.init(4);
+		const std::vector<SampleFrame> src(4, SampleFrame(0.5f, 0.75f));
+		outputs.add(HardwareOutputBus::MaxChannels - 1, 2, src.data(), 4, 1.f);
+		outputs.setMasterPlacement({-1, 2});
+		outputs.swap();
+		const SampleFrame zero(0.f, 0.f);
+		for (f_cnt_t f = 0; f < 4; ++f)
+		{
+			QVERIFY2(outputs.monoSample(f, zero) == 0.f,
+				"a dropped route left its downmix on the mono output");
+		}
+	}
+
+	void monoDownmixClearsOnSwap()
+	{
+		// The downmix is per period like the planes: a second swap leaves no residue from the first.
+		HardwareOutputBus outputs;
+		outputs.init(4);
+		const std::vector<SampleFrame> src(4, SampleFrame(0.25f, 0.75f));
+		outputs.add(0, 2, src.data(), 4, 1.f);
+		outputs.setMasterPlacement({-1, 2});
+		outputs.swap();
+		const SampleFrame master(0.f, 0.f);
+		QVERIFY(qAbs(outputs.monoSample(0, master) - 0.5f) < 1e-5f);
+		outputs.swap();  // nothing was written to this period
+		QVERIFY2(outputs.monoSample(0, master) == 0.f, "the previous period's downmix stayed on the mono output");
 	}
 
 	void droppedRouteLeavesNoResidue()

@@ -39,7 +39,9 @@ class AudioEngine;
  *  own rate and period, and what the device negotiated (output and input rate, period and buffer frames, input/output
  *  latency with the basis of each - input latency in ms at the INPUT rate) beside the device's own xrun count. Every device reading is
  *  {available, value, unit}; a value the backend does not report is available:false with no value,
- *  never a zero. The engine's late periods stay in mixer.cpu_load's 'late_periods': a late period is
+ *  never a zero. 'failure' is the backend's own unrecoverable failure (the errno of a write/read its
+ *  recovery could not handle; a removed ALSA device is ENODEV) with the C library's message, so a
+ *  device that stopped itself says why - cluster new-p17-220. The engine's late periods stay in mixer.cpu_load's 'late_periods': a late period is
  *  the engine missing its deadline, an xrun is the device running dry - two different facts.
  *  Main thread (it reads the device's own API, never on the audio thread). */
 LMMS_EXPORT QJsonObject audioDeviceReport(AudioEngine* engine);

@@ -337,6 +337,20 @@ void EnvelopeAndLfoParameters::fillLevel( float * _buf, f_cnt_t _frame,
 	// published parameter snapshot, which the writer hands over atomically.
 	const AudioState * const state = acquireAudioState();
 
+	// The destructor takes the published snapshot away before the object is
+	// gone, so a late audio-path call can find none. It still fills the whole
+	// period with a defined level and gives its claim back: the caller's
+	// buffer is never left unwritten.
+	if( state == nullptr )
+	{
+		for( f_cnt_t offset = 0; offset < _frames; ++offset )
+		{
+			_buf[offset] = 0.0f;
+		}
+		releaseAudioState();
+		return;
+	}
+
 	fillLfoLevel( _buf, _frame, _frames, *state );
 
 	const sample_t * const pahdEnv = state->pahdEnv.data();
@@ -705,6 +719,22 @@ void EnvelopeAndLfoParameters::releaseHeldAudioState()
 		releaseAudioState();
 		m_heldAudioState = nullptr;
 	}
+}
+
+
+
+
+// The published snapshot and the retired ones are taken away the way the
+// destructor takes them, so a test can drive the audio path when no snapshot
+// is published.
+void EnvelopeAndLfoParameters::detachAudioState()
+{
+	delete m_audioState.exchange( nullptr );
+	for( AudioState * state : m_retiredAudioStates )
+	{
+		delete state;
+	}
+	m_retiredAudioStates.clear();
 }
 
 

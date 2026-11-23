@@ -128,6 +128,8 @@ void AudioDevice::startProcessing()
 {
 	// The capture of a device that is (re)starting has delivered nothing yet (BUGS_FOUND 11.29).
 	if (m_audioEngine != nullptr) { m_audioEngine->resetInputStream(); }
+	// A restart is a fresh start: the previous run's fatal failure no longer describes it.
+	m_backendFailure.store(0, std::memory_order_relaxed);
 	m_running.test_and_set(std::memory_order_acquire);
 	startProcessingImpl();
 }

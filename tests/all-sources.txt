@@ -1947,6 +1947,7 @@ src/core/ControlMixerSupport.cpp
 src/core/ControlModulationSupport.cpp
 src/core/ControlNoteShared.cpp
 src/core/ControlProjectAssets.cpp
+src/core/ControlProjectAssetsDocument.cpp
 src/core/ControlProjectAssetsRelink.cpp
 src/core/ControlProjectAssetsShared.h
 src/core/ControlProjectMedia.cpp
@@ -2820,6 +2821,7 @@ tests/src/core/ArrayVectorTest.cpp
 tests/src/core/ArticulationPlaybackTest.cpp
 tests/src/core/AuComponentTest.cpp
 tests/src/core/AudioAlsaCaptureErrorTest.cpp
+tests/src/core/AudioAlsaFatalWriteTest.cpp
 tests/src/core/AudioAlsaPollDescriptorTest.cpp
 tests/src/core/AudioAlsaWriteTest.cpp
 tests/src/core/AudioAnalysisTest.cpp
@@ -3624,6 +3626,7 @@ tests/src/plugins/LadspaChannelCountsTest.cpp
 tests/src/plugins/LadspaGlobalLinkTest.cpp
 tests/src/plugins/Lb302FilterMailboxTest.cpp
 tests/src/plugins/Lb302NotePathTest.cpp
+tests/src/plugins/LommSampleRateTest.cpp
 tests/src/plugins/MalletsInstrumentViewTest.cpp
 tests/src/plugins/MissingDevicesNoEntryModule.cpp
 tests/src/plugins/ModularSynthTest.cpp

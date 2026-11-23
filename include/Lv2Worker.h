@@ -46,6 +46,11 @@ class Lv2Worker
 {
 public:
 	// CTOR/DTOR/feature access
+	//! @param threaded true: always queue work() to the worker thread (live
+	//!        playback). false: the render-only mode, which runs work() inline
+	//!        only while an offline (deterministic) render is active and queues
+	//!        it otherwise. The worker thread always exists, so scheduling from
+	//!        a real-time thread never has to allocate or start one.
 	Lv2Worker(Semaphore* commonWorkLock, bool threaded);
 	~Lv2Worker();
 	void setHandle(LV2_Handle handle);
@@ -69,7 +74,7 @@ private:
 	std::size_t bufferSize() const;  //!< size of internal buffers
 
 	// parameters
-	const bool m_threaded;
+	const bool m_threaded;  //!< never execute work() inline (live audio thread)
 	const LV2_Worker_Interface* m_interface = nullptr;
 	LV2_Handle m_handle = nullptr;
 	LV2_Worker_Schedule m_scheduleFeature;

@@ -39,6 +39,14 @@
 //!
 //! The assertions are on types, not on timing: the test needs no clock, no sleep and no
 //! thread, so it says the same thing on every run.
+//!
+//! Cluster new-p9-19 (the same compressor header): KeyFilterMailbox::publish() retried
+//! `while (m_dirty)` and a writer could be pushed around that loop for as long as other
+//! threads kept moving the key-filter knobs. Automation calls calcKeyFilter() on the audio
+//! thread, so that was an unbounded amount of work in the audio callback. The regression
+//! below forces the same interleaving from inside make() - a nested publish() is exactly a
+//! writer that finds the version odd and leaves - and counts the designs the outer publish()
+//! runs. It is deterministic and thread-free.
 
 #include <QtTest>
 
@@ -79,6 +87,16 @@ struct PublishesTheResetValues<T, std::void_t<
 template <typename T>
 using HoldElement = std::remove_cvref_t<decltype(std::declval<T&>().m_displayPeak[0])>;
 
+constexpr float kKeyFilterSampleRate = 48000.f;
+
+//! A nested publish() from inside make(): another thread moving a knob while this one holds
+//! the version. It marks the design dirty and returns without designing, exactly as a real
+//! writer that finds the version odd does.
+void markKeyFilterDesignDirty(lmms::KeyFilterMailbox& mailbox)
+{
+	mailbox.publish([] { return lmms::KeyFilterDesign{}; });
+}
+
 } // namespace
 
 class CompressorVisualizerTest : public QObject
@@ -105,6 +123,55 @@ private slots:
 		QVERIFY2(PublishesTheResetValues<lmms::CompressorEffect>::value,
 			"the control dialog must reset the holds to values the audio thread published, "
 			"not to the audio thread's own working state");
+	}
+
+	//! Cluster new-p9-19: publish() must run a bounded number of designs while other
+	//! publishers keep marking the design dirty. The old `while (m_dirty)` loop ran one
+	//! design per mark (eight here); the audio thread runs calcKeyFilter() when automation
+	//! moves the knobs, so that loop is audio-callback time with no bound.
+	void theKeyFilterPublishIsBounded()
+	{
+		lmms::KeyFilterMailbox mailbox;
+		const lmms::KeyFilterDesign design =
+			lmms::designKeyFilter(200.f, 6000.f, kKeyFilterSampleRate);
+		QVERIFY(design.hpOn);
+		QVERIFY(design.lpOn);
+
+		// Eight writers arrive, one during each design.
+		int designsRun = 0;
+		int writersLeft = 8;
+		mailbox.publish([&]
+		{
+			++designsRun;
+			if (writersLeft > 0)
+			{
+				--writersLeft;
+				markKeyFilterDesignDirty(mailbox);
+			}
+			return design;
+		});
+
+		QVERIFY2(designsRun <= 2,
+			qPrintable(QStringLiteral("publish() ran %1 designs while writers kept arriving; "
+				"the audio thread is unbounded").arg(designsRun)));
+
+		// The bound did not corrupt the hand-off: the published design is complete, and a
+		// design left pending is finished by the next publish from the current knob values
+		// (processImpl does that at the top of a later block).
+		lmms::KeyFilterDesign taken{};
+		QVERIFY(mailbox.take(taken));
+		QCOMPARE(taken.hp.b0, design.hp.b0);
+		QCOMPARE(taken.hp.a1, design.hp.a1);
+		QCOMPARE(taken.lp.b0, design.lp.b0);
+
+		// The latest knob values are not lost: the next block designs from them (processImpl
+		// calls calcKeyFilter() when the mailbox still has a design pending).
+		const lmms::KeyFilterDesign latest =
+			lmms::designKeyFilter(800.f, 4000.f, kKeyFilterSampleRate);
+		mailbox.publish([&] { return latest; });
+		QVERIFY(mailbox.take(taken));
+		QCOMPARE(taken.hp.b0, latest.hp.b0);
+		QCOMPARE(taken.lp.b0, latest.lp.b0);
 	}
 };
 

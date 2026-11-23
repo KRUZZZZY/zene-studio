@@ -39,10 +39,12 @@
 #include <QStringList>
 #include <QTemporaryDir>
 
+#include "AudioEngine.h"
 #include "ConfigManager.h"
 #include "ControlRecordingSupport.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "MultiTrackRecorder.h"
 #include "PathUtil.h"
 #include "ProjectJournal.h"
 #include "RecordingRecoveryMenu.h"
@@ -325,6 +327,53 @@ private slots:
 			QVERIFY2(!result.ok, qPrintable(id + QStringLiteral(" accepted a relative take")));
 			QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
 		}
+	}
+
+	/*! A capture this process is STILL WRITING is not an interrupted capture. Its journal is the
+	 *  live disk-writer's, refreshed only once per journal interval, so removing it and then
+	 *  crashing before the next commit would lose the offer for material that already reached
+	 *  the disk. record.recovery_discard refuses it (busy) and leaves the journal in place; once
+	 *  the capture stops, an in-progress journal is discardable exactly as before. */
+	void aLiveCapturesJournalIsNotDiscarded()
+	{
+		MultiTrackRecorder& recorder = Engine::audioEngine()->recorder();
+		QVERIFY(!recorder.track(0).isArmed());
+		const QString dir = run(QStringLiteral("record.recovery_get_state"))
+			.result.value(QStringLiteral("dir")).toString();
+		const QString take = QDir(dir).filePath(QStringLiteral("zene-test-take-live.wav"));
+		QVERIFY(recorder.armTrack(0, take.toStdString(), kRate, 0));
+		const QString journal = take + QStringLiteral(".rec-journal");
+		QVERIFY2(QFileInfo::exists(journal), "arming a capture must journal the take");
+		QVERIFY(QFileInfo::exists(take));
+
+		// The live take is what the recovery scan offers - it looks exactly like a crashed one.
+		const ControlResult scanned = run(QStringLiteral("record.recovery_get_state"));
+		QVERIFY2(scanned.ok, qPrintable(scanned.errorMessage));
+		bool listed = false;
+		for (const QJsonValue& value : scanned.result.value(QStringLiteral("takes")).toArray())
+		{
+			if (value.toObject().value(QStringLiteral("take")).toString() == take) { listed = true; }
+		}
+		QVERIFY2(listed, "an armed capture's journal is offered as an interrupted take");
+
+		const ControlResult discarded = run(QStringLiteral("record.recovery_discard"),
+			{{QStringLiteral("take"), take}});
+		QVERIFY2(!discarded.ok, "record.recovery_discard removed a live capture's journal");
+		QCOMPARE(discarded.errorKind, ControlErrorKind::Busy);
+		QVERIFY(QFileInfo::exists(journal));
+		QCOMPARE(journalState(journal), QStringLiteral("in_progress"));
+
+		// A clean stop retires the live journal; a journal that is no longer a live capture
+		// (the abnormal-exit state) is still discardable.
+		QVERIFY(recorder.track(0).disarm());
+		QVERIFY(!QFileInfo::exists(journal));
+		QVERIFY(run(QStringLiteral("record.journal_begin"), {{QStringLiteral("take"), take},
+			{QStringLiteral("sample_rate"), kRate}, {QStringLiteral("channels"), 1}}).ok);
+		const ControlResult after = run(QStringLiteral("record.recovery_discard"),
+			{{QStringLiteral("take"), take}});
+		QVERIFY2(after.ok, qPrintable(after.errorMessage));
+		QVERIFY(!QFileInfo::exists(journal));
+		QFile::remove(take);
 	}
 
 	/*! A FAILED record.recovery_get_state is NOT "there is nothing to recover": the takes are

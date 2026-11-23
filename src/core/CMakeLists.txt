@@ -769,12 +769,14 @@ set(LMMS_SRCS
 	# seam as the routing and mastering rows above.
 	core/ControlReversibilityTableArchive.cpp
 	# project.missing_assets / project.hash_assets / project.relink, the engine
-	# half of feature row 38 split into its READ and WRITE translation units
-	# (the automation/warp/vca/chain read-edit split, for the file-length
-	# ratchet): the scan+hash half and the relink rewrite, sharing
+	# half of feature row 38 split into its DOCUMENT, SCAN/HASH and WRITE
+	# translation units (the automation/warp/vca/chain read-edit split, for the
+	# file-length ratchet): reading the project document, scanning it and hashing
+	# its media, and the relink rewrite, sharing
 	# core/ControlProjectAssetsShared.h.
 	core/ControlCommandsProjectArchive.cpp
 	core/ControlProjectAssets.cpp
+	core/ControlProjectAssetsDocument.cpp
 	core/ControlProjectAssetsRelink.cpp
 	# project.media_usage / project.media_cleanup (Q050-121): the Project Media inventory
 	# (per-file usage counts, unused local assets, distinct missing/external states) and the

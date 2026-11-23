@@ -77,23 +77,36 @@ void SessionAudioRecorder::cancel()
 	m_syncClock = false;
 	setState(State::Idle);
 	m_accum.reset();  // joins the drain thread; the caller made sure no period renders
+	m_finished.reset();
 	m_track.store(-1, std::memory_order_relaxed);
 	m_scene.store(-1, std::memory_order_relaxed);
+}
+
+std::shared_ptr<const SampleBuffer> SessionAudioRecorder::finishedTake()
+{
+	if (state() != State::Done || m_accum == nullptr) { return nullptr; }
+	if (m_finished == nullptr)
+	{
+		// Done is terminal for the audio thread, so the accumulator is the control thread's again.
+		std::shared_ptr<const SampleBuffer> buffer = m_accum->finish();
+		if (buffer != nullptr && m_target > 0 && buffer->size() > m_target)
+		{
+			// The span is counted in whole ticks, so a stop can name a line a fraction of a tick before the
+			// frames already taken: the take is cut to the span, never longer.
+			buffer = std::make_shared<const SampleBuffer>(std::vector<SampleFrame>(buffer->data(),
+				buffer->data() + m_target), static_cast<int>(buffer->sampleRate()));
+		}
+		m_finished = buffer;
+	}
+	return m_finished;
 }
 
 std::shared_ptr<const SampleBuffer> SessionAudioRecorder::takeFinished()
 {
 	if (state() != State::Done || m_accum == nullptr) { return nullptr; }
-	// Done is terminal for the audio thread, so the accumulator is the control thread's again.
-	std::shared_ptr<const SampleBuffer> buffer = m_accum->finish();
+	const std::shared_ptr<const SampleBuffer> buffer = finishedTake();
+	m_finished.reset();
 	m_accum.reset();
-	if (buffer != nullptr && m_target > 0 && buffer->size() > m_target)
-	{
-		// The span is counted in whole ticks, so a stop can name a line a fraction of a tick before the
-		// frames already taken: the take is cut to the span, never longer.
-		buffer = std::make_shared<const SampleBuffer>(std::vector<SampleFrame>(buffer->data(),
-			buffer->data() + m_target), static_cast<int>(buffer->sampleRate()));
-	}
 	m_track.store(-1, std::memory_order_relaxed);
 	m_scene.store(-1, std::memory_order_relaxed);
 	setState(State::Idle);

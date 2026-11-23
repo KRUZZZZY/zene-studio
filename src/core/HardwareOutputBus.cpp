@@ -35,6 +35,7 @@ void HardwareOutputBus::init(f_cnt_t frames)
 	for (Side& side : m_sides)
 	{
 		side.data.assign(static_cast<std::size_t>(MaxChannels) * m_frames, 0.f);
+		side.mono.assign(m_frames, 0.f);
 		side.used = 0;
 		side.master = Placement{};
 	}
@@ -46,6 +47,7 @@ void HardwareOutputBus::swap() noexcept
 	m_write = 1 - m_write;
 	Side& side = m_sides[m_write];
 	std::fill_n(side.data.begin(), static_cast<std::size_t>(side.used) * m_frames, 0.f);
+	std::fill(side.mono.begin(), side.mono.end(), 0.f);
 	side.used = 0;
 	side.master = Placement{};
 }
@@ -59,6 +61,11 @@ void HardwareOutputBus::add(int start, int width, const SampleFrame* src, f_cnt_
 	// A route that does not fit entirely inside the bus is dropped whole, before any channel is written.
 	// Overflow-safe: start + sides could overflow for a start near INT_MAX.
 	if (start > MaxChannels - sides) { return; }
+	// A one-channel device plays the downmix of every route. Each route contributes the average of its
+	// pair - for width 1 the same value its plane gets - so overlapping routes do not average each
+	// other, and a mono route keeps the level it was written at.
+	float* mono = side.mono.data();
+	for (f_cnt_t f = 0; f < count; ++f) { mono[f] += gain * 0.5f * (src[f][0] + src[f][1]); }
 	for (int s = 0; s < sides; ++s)
 	{
 		const int channel = start + s;
@@ -77,7 +84,13 @@ void HardwareOutputBus::addPlane(int channel, const float* src, f_cnt_t frames, 
 	if (src == nullptr || channel < 0 || channel >= MaxChannels || side.data.empty()) { return; }
 	const f_cnt_t count = std::min(frames, m_frames);
 	float* plane = side.data.data() + static_cast<std::size_t>(channel) * m_frames;
-	for (f_cnt_t f = 0; f < count; ++f) { plane[f] += src[f] * (gains != nullptr ? gains[f] : gain); }
+	float* mono = side.mono.data();
+	for (f_cnt_t f = 0; f < count; ++f)
+	{
+		const float sample = src[f] * (gains != nullptr ? gains[f] : gain);
+		plane[f] += sample;
+		mono[f] += sample;
+	}
 	side.used = std::max(side.used, channel + 1);
 }
 
@@ -102,7 +115,7 @@ float HardwareOutputBus::monoSample(f_cnt_t frame, const SampleFrame& master) co
 {
 	if (frame < 0 || frame >= m_frames) { return 0.f; }
 	const Side& side = readSide();
-	const float value = side.used > 0 ? side.data[static_cast<std::size_t>(frame)] : 0.f;
+	const float value = side.mono.empty() ? 0.f : side.mono[static_cast<std::size_t>(frame)];
 	return value + (side.master.start == 0 ? master.average() : 0.f);
 }
 

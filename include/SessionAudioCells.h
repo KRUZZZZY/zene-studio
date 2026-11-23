@@ -103,11 +103,21 @@ LMMS_EXPORT Prepared prepare(Song& song, int column, const ClipSlot& slot, doubl
 
 /*! Model thread, with no period rendering (Song::clearProject holds the model-change lock): the clips of
  *  the project being closed are retired, and the ones retired at the previous close are freed - by then the
- *  scheduler's reset has dropped every reference the audio thread had to them. */
+ *  scheduler's reset has dropped every reference the audio thread had to them. A clip an engine-rate change
+ *  replaced is retired at THIS close (it can still be named), so it is freed one close later, with the same
+ *  guarantee (new-p15-204). */
 LMMS_EXPORT void retire() noexcept;
 
 //! Clips currently held (loaded for the open project). Model thread.
 LMMS_EXPORT int heldClips() noexcept;
+
+#ifdef LMMS_TESTING
+/*! Whether @a clip is still owned by the clip cache - a loaded source, a settings-variant, a buffer a
+ *  rate change replaced, or one retired at a close. The deferred-reclamation regression test
+ *  (new-p15-204) reads it to prove a clip is not freed while the scheduler's content table can still
+ *  name it. Model thread. */
+LMMS_EXPORT bool holdsClipForTest( const SampleBuffer* clip ) noexcept;
+#endif
 
 } // namespace sessionaudio
 

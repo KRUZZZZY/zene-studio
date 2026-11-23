@@ -1968,6 +1968,7 @@ src/core/ControlMixerSupport.cpp
 src/core/ControlModulationSupport.cpp
 src/core/ControlNoteShared.cpp
 src/core/ControlProjectAssets.cpp
+src/core/ControlProjectAssetsDocument.cpp
 src/core/ControlProjectAssetsRelink.cpp
 src/core/ControlProjectAssetsShared.h
 src/core/ControlProjectTransplantChannels.cpp
@@ -2705,6 +2706,7 @@ tests/src/core/ArrangingCatchUpTest.cpp
 tests/src/core/ArrangingSpacerReferenceTest.cpp
 tests/src/core/ArticulationPlaybackTest.cpp
 tests/src/core/AudioAlsaCaptureErrorTest.cpp
+tests/src/core/AudioAlsaFatalWriteTest.cpp
 tests/src/core/AudioAlsaPollDescriptorTest.cpp
 tests/src/core/AudioAlsaWriteTest.cpp
 tests/src/core/AudioAnalysisTest.cpp
@@ -4038,3 +4040,6 @@ tests/src/core/SampleBufferBase64Test.cpp
 tests/src/plugins/SfzGateStereoLinkTest.cpp
 # cluster new-p21-172: sfizz stereo-linked compressor builds its detector input from the right channel.
 tests/src/plugins/SfzCompressorStereoLinkTest.cpp
+# cluster new-p9-240 (2026-10): LOMM sample-rate change regression - the lookahead ring cursor and contents are re-anchored when the rings are resized (fork-NEW test).
+tests/src/plugins/LommSampleRateTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p9-240.md

@@ -25,6 +25,7 @@
 
 #include "AudioDeviceDiagnostics.h"
 
+#include <cstring>
 #include <optional>
 
 #include "AudioDevice.h"
@@ -88,6 +89,22 @@ std::optional<double> xrunCount(const AudioDevice* device, const AudioDevice::De
 	return static_cast<double>(device->backendXruns());
 }
 
+/*! The backend's unrecoverable failure (the errno of a write/read its recovery could not handle),
+ *  with the C library's text for it; unavailable while there is none. Additive to the Q050-074.2
+ *  readings: a backend that has no such failure reports available:false, never a zero. */
+QJsonObject failureReading(const AudioDevice* device)
+{
+	const int code = device != nullptr ? device->backendFailureCode() : 0;
+	QJsonObject out{{QStringLiteral("available"), code != 0}, {QStringLiteral("unit"), QStringLiteral("errno")}};
+	if (code != 0)
+	{
+		const char* text = std::strerror(code);
+		out.insert(QStringLiteral("value"), code);
+		out.insert(QStringLiteral("message"), QString::fromLocal8Bit(text != nullptr ? text : "unknown error"));
+	}
+	return out;
+}
+
 } // namespace
 
 QJsonObject audioDeviceReport(AudioEngine* engine)
@@ -107,7 +124,8 @@ QJsonObject audioDeviceReport(AudioEngine* engine)
 		{QStringLiteral("buffer_frames"), reading(asDouble(timing.bufferFrames), QStringLiteral("frames"))},
 		{QStringLiteral("input_latency"), latency(timing.inputLatencyFrames, timing.inputLatencyBasis, inputRate)},
 		{QStringLiteral("output_latency"), latency(timing.outputLatencyFrames, timing.outputLatencyBasis, rate)},
-		{QStringLiteral("xruns"), reading(xrunCount(device, timing), QStringLiteral("count"))}};
+		{QStringLiteral("xruns"), reading(xrunCount(device, timing), QStringLiteral("count"))},
+		{QStringLiteral("failure"), failureReading(device)}};
 }
 
 } // namespace lmms

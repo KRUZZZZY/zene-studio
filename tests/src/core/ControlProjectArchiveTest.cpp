@@ -147,6 +147,53 @@ QByteArray fixtureDocument(const QString& dir)
 	return xml.toUtf8();
 }
 
+/*! A minimal project whose media references are exactly \a paths, one
+ *  `<sampleclip>` each, in that order. Absolute paths keep resolution out of
+ *  what a test is measuring; the same path may appear more than once. */
+QByteArray referenceDocument(const QStringList& paths)
+{
+	QString xml = QStringLiteral(
+		"<?xml version=\"1.0\"?>\n"
+		"<zene-project creator=\"Zene Studio\" version=\"1.0\" type=\"song\" creatorversion=\"0.3.0\">\n"
+		"  <song><trackcontainer type=\"song\"><track name=\"Audio\" type=\"0\">\n"
+		"    <instrumenttrack>\n");
+	int pos = 0;
+	for (const QString& path : paths)
+	{
+		xml += QStringLiteral("      <sampleclip pos=\"%1\" len=\"192\" src=\"%2\"/>\n")
+			.arg(pos).arg(QDir::fromNativeSeparators(path));
+		pos += 192;
+	}
+	xml += QStringLiteral(
+		"    </instrumenttrack>\n"
+		"  </track></trackcontainer></song>\n"
+		"</zene-project>\n");
+	return xml.toUtf8();
+}
+
+/*! Sets a test-seam environment variable for one scope and restores whatever was
+ *  there before, including when a QVERIFY returns early from the test. */
+class ScopedTestEnv
+{
+public:
+	ScopedTestEnv(const char* name, const QByteArray& value)
+		: m_name(name), m_previous(qgetenv(name))
+	{
+		qputenv(name, value);
+	}
+	~ScopedTestEnv()
+	{
+		if (m_previous.isEmpty()) { qunsetenv(m_name); }
+		else { qputenv(m_name, m_previous); }
+	}
+	ScopedTestEnv(const ScopedTestEnv&) = delete;
+	ScopedTestEnv& operator=(const ScopedTestEnv&) = delete;
+
+private:
+	const char* m_name;
+	QByteArray m_previous;
+};
+
 /*! Writes the fixture project and (optionally) every file it references.
  *  Returns the project's path. */
 QString writeFixture(const QString& dir, const QString& projectName, bool intact)
@@ -603,6 +650,114 @@ private slots:
 		control::projectassets::hashReference(&scan.references[index], 16);
 		QVERIFY(!scan.references[index].hashed);
 		QVERIFY(scan.references[index].error.contains(QStringLiteral("cap")));
+	}
+	//! The same file referenced several times is READ once: its hash is reused, so
+	//! the command's work is proportional to the distinct files. The test-only
+	//! read log (ZENE_TEST_PROJECT_ASSET_HASH_READ_LOG) records every file the
+	//! hasher actually opens, so repeated reads are counted deterministically -
+	//! no timing and no size budget involved.
+	void aRepeatedReferenceIsHashedOnce()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString repeated = dir.filePath(QStringLiteral("repeated.wav"));
+		const QString later = dir.filePath(QStringLiteral("later.wav"));
+		QVERIFY(writeBytes(repeated, fakeWave(96)));
+		QVERIFY(writeBytes(later, fakeWave(32)));
+		const QString project = dir.filePath(QStringLiteral("repeated.mmp"));
+		QVERIFY(writeBytes(project, referenceDocument(
+			{repeated, repeated, repeated, later})));
+
+		const QString readLog = dir.filePath(QStringLiteral("hash-reads.log"));
+		const ScopedTestEnv logEnv("ZENE_TEST_PROJECT_ASSET_HASH_READ_LOG", readLog.toUtf8());
+
+		const ControlResult hashed = run(QStringLiteral("project.hash_assets"),
+			QJsonObject{{QStringLiteral("project"), project}});
+		QVERIFY2(hashed.ok, qPrintable(hashed.errorMessage));
+		QCOMPARE(hashed.result.value(QStringLiteral("reference_count")).toInt(), 4);
+		QCOMPARE(hashed.result.value(QStringLiteral("hashed_count")).toInt(), 4);
+		QCOMPARE(hashed.result.value(QStringLiteral("unhashed_present")).toInt(), 0);
+
+		QVERIFY2(QFileInfo::exists(readLog),
+			"the hasher did not open any file for reading, or the read log was not written");
+		const QStringList readPaths = QString::fromUtf8(readBytes(readLog))
+			.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+		QCOMPARE(readPaths.size(), 2);
+		QCOMPARE(readPaths.count(QDir::fromNativeSeparators(repeated)), 1);
+		QCOMPARE(readPaths.count(QDir::fromNativeSeparators(later)), 1);
+
+		const QString repeatedSha = sha256Of(repeated);
+		const QString laterSha = sha256Of(later);
+		int repeatedSeen = 0;
+		for (const QJsonValue& value : hashed.result.value(QStringLiteral("references")).toArray())
+		{
+			const QJsonObject ref = value.toObject();
+			const QString path = QDir::fromNativeSeparators(
+				ref.value(QStringLiteral("path")).toString());
+			if (path == QDir::fromNativeSeparators(repeated))
+			{
+				++repeatedSeen;
+				QCOMPARE(ref.value(QStringLiteral("sha256")).toString(), repeatedSha);
+			}
+			else if (path == QDir::fromNativeSeparators(later))
+			{
+				QCOMPARE(ref.value(QStringLiteral("sha256")).toString(), laterSha);
+			}
+		}
+		QCOMPARE(repeatedSeen, 3);
+	}
+	//! The per-command total-work bound is REPORTED, not silently ignored: with a
+	//! budget for two of the four distinct files, the rest come back unhashed
+	//! with the reason, the hashed ones keep their correct sha256, and the
+	//! command still succeeds (it is a bound, not an error).
+	void aCommandStopsAtItsTotalHashBudgetAndSaysSo()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		QStringList paths;
+		for (const QString& name : {QStringLiteral("a.wav"), QStringLiteral("b.wav"),
+			QStringLiteral("c.wav"), QStringLiteral("d.wav")})
+		{
+			const QString path = dir.filePath(name);
+			QVERIFY(writeBytes(path, fakeWave(64)));
+			paths.append(path);
+		}
+		const QString project = dir.filePath(QStringLiteral("budget.mmp"));
+		QVERIFY(writeBytes(project, referenceDocument(paths)));
+
+		const qint64 fileBytes = QFileInfo(paths.first()).size();
+		QVERIFY(fileBytes > 0);
+		const qint64 budget = 2 * fileBytes + fileBytes / 2;
+		const ScopedTestEnv lowered("ZENE_TEST_PROJECT_ASSET_HASH_TOTAL_BYTES",
+			QByteArray::number(budget));
+
+		const ControlResult hashed = run(QStringLiteral("project.hash_assets"),
+			QJsonObject{{QStringLiteral("project"), project}});
+		QVERIFY2(hashed.ok, qPrintable(hashed.errorMessage));
+		QCOMPARE(hashed.result.value(QStringLiteral("reference_count")).toInt(), 4);
+		QCOMPARE(hashed.result.value(QStringLiteral("hashed_count")).toInt(), 2);
+		QCOMPARE(hashed.result.value(QStringLiteral("unhashed_present")).toInt(), 2);
+
+		int index = 0;
+		for (const QJsonValue& value : hashed.result.value(QStringLiteral("references")).toArray())
+		{
+			const QJsonObject ref = value.toObject();
+			const QString path = ref.value(QStringLiteral("path")).toString();
+			if (index < 2)
+			{
+				QCOMPARE(ref.value(QStringLiteral("sha256")).toString(), sha256Of(path));
+				QVERIFY(ref.value(QStringLiteral("error")).toString().isEmpty());
+			}
+			else
+			{
+				QVERIFY2(ref.value(QStringLiteral("sha256")).toString().isEmpty(),
+					"an unhashed reference carried a hash");
+				const QString error = ref.value(QStringLiteral("error")).toString();
+				QVERIFY2(error.contains(QStringLiteral("total cap")),
+					qPrintable(QStringLiteral("the total-bound refusal did not name it: %1").arg(error)));
+			}
+			++index;
+		}
 	}
 	//! The relink's inverse, for real: the file is rewritten (the reference
 	//! resolves again, and a rescan says so), then ONE control.undo puts back the

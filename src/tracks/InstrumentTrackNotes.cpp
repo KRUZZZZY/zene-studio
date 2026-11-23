@@ -323,40 +323,54 @@ void InstrumentTrack::sendNoteOn(const MidiEvent& event, int key, int fallbackCh
 {
 	// MX-112: a layer rack whose zones leave the track's own instrument out of this note.
 	if (!m_layers.baseTakesNoteOn(event.key(), event.velocity(), baseInstrumentAccepted)) { return; }
-	m_midiNotesMutex.lock();
+	// cluster new-p9-189: AUDIO thread. The piano key state and the running-note count are
+	// atomic, so this path takes no lock: a wait here would stall the period.
 	m_piano.setKeyState(event.key(), true);  // event.key() = original key
 	if (key >= 0 && key < NumKeys)
 	{
 		// MX-114: the MIDI part (channel) the note plays on; without parts, the fallback channel.
 		const int previousChannel = m_midiParts.channelOfKey(event.key(), fallbackChannel);
 		const int channel = m_midiParts.noteOnChannel(event.key(), event.velocity(), fallbackChannel);
-		if (m_runningMidiNotes[key] > 0)
+		// A key already sounding is retriggered: release its previous channel first.
+		if (m_runningMidiNotes[key].fetch_add(1, std::memory_order_relaxed) > 0)
 		{
 			m_instrument->handleMidiEvent(MidiEvent(MidiNoteOff, previousChannel, key, 0), time, offset);
 		}
-		++m_runningMidiNotes[key];
 		m_instrument->handleMidiEvent(MidiEvent(MidiNoteOn, channel, key, event.velocity()), time, offset);
 		noteVoiceChanged(true, channel, key, offset);  // MX-120: a per-voice modulator's voice
 	}
 	recordNoteOnActivity();	// polled by InstrumentTrackView; no queued Qt signal on the event path
-	m_midiNotesMutex.unlock();
 }
 
 void InstrumentTrack::sendNoteOff(const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset,
 	std::atomic_bool* baseInstrumentAccepted)
 {
 	if (!m_layers.baseTakesNoteOff(event.key(), baseInstrumentAccepted)) { return; }  // MX-112: its note-on was not sent either
-	m_midiNotesMutex.lock();
+	// cluster new-p9-189: AUDIO thread, and lock-free like the note-on above.
 	m_piano.setKeyState(event.key(), false);  // event.key() = original key
-	if (key >= 0 && key < NumKeys && m_runningMidiNotes[key] > 0 && --m_runningMidiNotes[key] == 0)
+	if (key >= 0 && key < NumKeys)
 	{
-		const int channel = m_midiParts.noteOffChannel(event.key(), fallbackChannel);  // MX-114
-		// The note-off velocity (0 unless the note has a release velocity, 0.5.0 L07).
-		m_instrument->handleMidiEvent(MidiEvent(MidiNoteOff, channel, key, event.velocity()), time, offset);
-		noteVoiceChanged(false, channel, key, offset);
+		// CAS rather than fetch_sub: silenceAllNotes() resets the count on the control
+		// thread, and an unconditional decrement could leave it negative.
+		int running = m_runningMidiNotes[key].load(std::memory_order_relaxed);
+		bool released = false;
+		while (running > 0)
+		{
+			if (m_runningMidiNotes[key].compare_exchange_weak(running, running - 1, std::memory_order_relaxed))
+			{
+				released = running == 1;
+				break;
+			}
+		}
+		if (released)
+		{
+			const int channel = m_midiParts.noteOffChannel(event.key(), fallbackChannel);  // MX-114
+			// The note-off velocity (0 unless the note has a release velocity, 0.5.0 L07).
+			m_instrument->handleMidiEvent(MidiEvent(MidiNoteOff, channel, key, event.velocity()), time, offset);
+			noteVoiceChanged(false, channel, key, offset);
+		}
 	}
 	recordNoteOffActivity();	// polled by InstrumentTrackView; no queued Qt signal on the event path
-	m_midiNotesMutex.unlock();
 }
 
 void InstrumentTrack::sendChannelEvent(const MidiEvent& event, const TimePos& time, f_cnt_t offset)
