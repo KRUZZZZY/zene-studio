@@ -134,6 +134,13 @@ lock attempt, no wait, holder pid checked, no age rule) and the tests above.
 - **Sibling commands**: `project.restore_revision` and the undo/redo of `project.save` reach
   `restoreProjectRevision`, which now takes the lock; the timeline restore likewise. No other command
   rotates the set.
+- **Sibling commands in the changed command file** (`ControlCommandsProjectFiles.cpp` registers
+  `project.save`, `project.restore_revision`, `project.get_state`, `project.open`): only `project.save`'s
+  handler changed. `project.restore_revision` reaches the now-locked `restoreProjectRevision` and
+  surfaces its refusal through its existing error path; `project.get_state` and `project.open` write no
+  project file and rotate nothing (open's recovery already took the lock in round 1). The `app.*` /
+  `arrangement.*` commands the check lists come from the train between the base and this branch; this
+  fix adds no command and changes none of theirs.
 - **Verdict**: FIXED (not ALREADY-FIXED / FALSE-POSITIVE), the defect was reproduced RED.
 - **Unverified**: behaviour on Windows/macOS (not built here); the full-header revert described above.
 
