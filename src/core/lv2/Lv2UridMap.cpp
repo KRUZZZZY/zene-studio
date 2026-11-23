@@ -56,71 +56,106 @@ std::uint32_t UridMap::rtHash(const char* uri) noexcept
 		hash ^= *c;
 		hash *= 16777619u;
 	}
-	// 0 is the empty-slot marker.
-	return hash != 0u ? hash : 1u;
+	return hash;
 }
 
 LV2_URID UridMap::mapRt(const char* uri) const noexcept
 {
 	const std::uint32_t hash = rtHash(uri);
-	const std::size_t home = hash % RtCapacity;
-	for (std::size_t probe = 0; probe < RtCapacity; ++probe)
+	// The chain is append-only and nodes are immutable after publication, so the
+	// acquire load of the head makes every node in the chain including its uri visible.
+	const RtNode* node = m_rtBuckets[hash % RtBucketCount].load(std::memory_order_acquire);
+	while (node != nullptr)
 	{
-		const RtEntry& entry = m_rtEntries[(home + probe) % RtCapacity];
-		const std::uint32_t slotHash = entry.hash.load(std::memory_order_acquire);
-		if (slotHash == 0u)
-		{
-			// Insertions only ever fill the first empty slot on the probe path and
-			// are never removed, so an empty slot means the URI is not published.
-			return 0;
-		}
-		if (slotHash == hash && std::strcmp(entry.uri, uri) == 0)
-		{
-			// urid was stored before hash's release store.
-			return entry.urid.load(std::memory_order_relaxed);
-		}
+		if (node->hash == hash && std::strcmp(node->uri, uri) == 0) { return node->urid; }
+		node = node->next;
 	}
 	return 0;
 }
 
-void UridMap::publishRt(const char* uri, LV2_URID urid) noexcept
+void UridMap::ensureUridChunk(std::size_t chunkIndex)
 {
-	if (urid == 0u) { return; }
-
-	if (urid <= RtCapacity)
+	while (m_uridChunkCount.load(std::memory_order_relaxed) <= chunkIndex)
 	{
-		m_rtUris[urid - 1].store(uri, std::memory_order_release);
-	}
-
-	if (m_rtSize >= RtCapacity) { return; }
-
-	const std::uint32_t hash = rtHash(uri);
-	const std::size_t home = hash % RtCapacity;
-	for (std::size_t probe = 0; probe < RtCapacity; ++probe)
-	{
-		RtEntry& entry = m_rtEntries[(home + probe) % RtCapacity];
-		if (entry.hash.load(std::memory_order_relaxed) != 0u) { continue; }
-		entry.uri = uri;
-		entry.urid.store(urid, std::memory_order_relaxed);
-		// Publishing the hash last makes the uri and urid above visible to mapRt().
-		entry.hash.store(hash, std::memory_order_release);
-		++m_rtSize;
-		return;
+		auto chunk = std::make_unique<UridChunk>();
+		for (auto& slot : chunk->uris) { slot.store(nullptr, std::memory_order_relaxed); }
+		UridChunk* raw = chunk.release();
+		m_uridTail->next.store(raw, std::memory_order_release);
+		m_uridTail = raw;
+		m_uridChunkCount.store(m_uridChunkCount.load(std::memory_order_relaxed) + 1,
+			std::memory_order_release);
 	}
 }
 
-UridMap::UridMap()
-	: m_rtEntries(std::make_unique<RtEntry[]>(RtCapacity))
-	, m_rtUris(std::make_unique<std::atomic<const char*>[]>(RtCapacity))
+void UridMap::publishRt(const char* uri, LV2_URID urid)
 {
-	for (std::size_t i = 0; i < RtCapacity; ++i)
+	if (uri == nullptr || urid == 0u) { return; }
+
+	const std::size_t index = static_cast<std::size_t>(urid) - 1u;
+	const std::size_t chunkIndex = index / UridChunkSize;
+	ensureUridChunk(chunkIndex);
+	UridChunk* chunk = m_uridChunks.get();
+	for (std::size_t i = 0; i < chunkIndex; ++i)
 	{
-		m_rtUris[i].store(nullptr, std::memory_order_relaxed);
+		chunk = chunk->next.load(std::memory_order_relaxed);
 	}
+	// The chunk is already linked, so the slot can be published independently.
+	chunk->uris[index % UridChunkSize].store(uri, std::memory_order_release);
+
+	const std::uint32_t hash = rtHash(uri);
+	std::atomic<RtNode*>& head = m_rtBuckets[hash % RtBucketCount];
+	// Idempotent: a retry after a transient allocation failure must not add a
+	// second node (and must not change the URID). The mutex serialises writers.
+	for (const RtNode* node = head.load(std::memory_order_relaxed); node != nullptr; node = node->next)
+	{
+		if (node->urid == urid) { return; }
+	}
+
+	auto node = std::make_unique<RtNode>();
+	node->hash = hash;
+	node->urid = urid;
+	node->uri = uri;
+	node->next = head.load(std::memory_order_relaxed);
+	RtNode* raw = node.release();
+	head.store(raw, std::memory_order_release);
+}
+
+UridMap::UridMap()
+	: m_rtBuckets(std::make_unique<std::atomic<RtNode*>[]>(RtBucketCount))
+	, m_uridChunks(std::make_unique<UridChunk>())
+	, m_uridTail(m_uridChunks.get())
+{
+	for (std::size_t i = 0; i < RtBucketCount; ++i)
+	{
+		m_rtBuckets[i].store(nullptr, std::memory_order_relaxed);
+	}
+	for (auto& slot : m_uridChunks->uris) { slot.store(nullptr, std::memory_order_relaxed); }
+	m_uridChunkCount.store(1, std::memory_order_relaxed);
 	m_mapFeature.handle = static_cast<LV2_URID_Map_Handle>(this);
 	m_mapFeature.map = staticMap;
 	m_unmapFeature.handle = static_cast<LV2_URID_Unmap_Handle>(this);
 	m_unmapFeature.unmap = staticUnmap;
+}
+
+UridMap::~UridMap()
+{
+	for (std::size_t i = 0; i < RtBucketCount; ++i)
+	{
+		RtNode* node = m_rtBuckets[i].load(std::memory_order_relaxed);
+		while (node != nullptr)
+		{
+			RtNode* next = node->next;
+			delete node;
+			node = next;
+		}
+	}
+	UridChunk* chunk = m_uridChunks.release();
+	while (chunk != nullptr)
+	{
+		UridChunk* next = chunk->next.load(std::memory_order_relaxed);
+		delete chunk;
+		chunk = next;
+	}
 }
 
 LV2_URID UridMap::map(const char *uri)
@@ -161,11 +196,20 @@ LV2_URID UridMap::map(const char *uri)
 			if (pr.second)
 			{
 				m_unMap.emplace_back(pr.first->first.c_str());
-				publishRt(pr.first->first.c_str(), index);
 				result = index;
+				// A publication failure (the mirror allocates a node or a chunk) must
+				// not lose an ID the canonical map already assigned; the next map()
+				// of this URI retries publication below.
+				try { publishRt(pr.first->first.c_str(), index); }
+				catch (...) { }
 			}
 		}
-		else { result = itr->second; }
+		else
+		{
+			result = itr->second;
+			try { publishRt(itr->first.c_str(), result); }
+			catch (...) { /* the canonical ID stands */ }
+		}
 	}
 	catch(...) { /* result variable is already 0 */ }
 
@@ -176,9 +220,18 @@ const char *UridMap::unmap(LV2_URID urid)
 {
 	if (RealtimeScope::isActive())
 	{
-		// The mirror's URI pointers are the canonical map's stable key storage.
-		if (urid == 0u || urid > RtCapacity) { return nullptr; }
-		return m_rtUris[urid - 1].load(std::memory_order_acquire);
+		if (urid == 0u) { return nullptr; }
+		const std::size_t index = static_cast<std::size_t>(urid) - 1u;
+		const std::size_t chunkIndex = index / UridChunkSize;
+		// Reject an absurd URID without walking a chain that cannot contain it.
+		if (chunkIndex >= m_uridChunkCount.load(std::memory_order_acquire)) { return nullptr; }
+		const UridChunk* chunk = m_uridChunks.get();
+		for (std::size_t i = 0; i < chunkIndex; ++i)
+		{
+			chunk = chunk->next.load(std::memory_order_acquire);
+			if (chunk == nullptr) { return nullptr; }
+		}
+		return chunk->uris[index % UridChunkSize].load(std::memory_order_acquire);
 	}
 
 	std::size_t idx = static_cast<std::size_t>(urid) - 1;

@@ -42,6 +42,7 @@
 
 #ifdef LMMS_HAVE_LV2
 #include <memory>
+#include <string>
 
 #include "AllocationProbe.h"
 #include "Instrument.h"
@@ -163,6 +164,7 @@ private slots:
 	//! Cluster new-p17-82: a plug-in may call the URID map from run(). A URI the host already
 	//! knows must resolve without the mutex or the heap, and a URI first seen there must not be
 	//! registered on the audio thread at all; the control thread registers it for later runs.
+	//! The mirror is append-only, so this holds past the old fixed 16,384-entry limit too.
 	void uridMapOnTheAudioThreadIsLockFreeAndAllocationFree()
 	{
 #ifndef LMMS_HAVE_LV2
@@ -173,9 +175,24 @@ private slots:
 		const LV2_URID knownId = map.map(known);
 		QVERIFY(knownId != 0u);
 
+		// More unique mappings than the first fixed mirror held. The last one must stay
+		// resolvable and unmappable from the audio thread, without a mirror capacity.
+		LV2_URID lastId = 0u;
+		std::string lastUri;
+		lastUri.reserve(64);
+		for (unsigned i = 1; i <= 16385; ++i)
+		{
+			lastUri = "urn:zene:test:urid-bulk-" + std::to_string(i);
+			lastId = map.map(lastUri.c_str());
+			QVERIFY(lastId != 0u);
+		}
+		QVERIFY(lastId > 16384u);
+
 		LV2_URID knownOnAudio = 0u;
 		LV2_URID freshOnAudio = 1u;
+		LV2_URID lastOnAudio = 0u;
 		const char* unmappedOnAudio = nullptr;
+		const char* lastUnmappedOnAudio = nullptr;
 		const char* tooHighOnAudio = nullptr;
 		{
 			const RealtimeScope realtime;
@@ -183,14 +200,19 @@ private slots:
 			lmms::test::tlCountAllocations = true;
 			knownOnAudio = map.map(known);
 			freshOnAudio = map.map("urn:zene:test:urid-first-seen-in-run");
+			lastOnAudio = map.map(lastUri.c_str());
 			unmappedOnAudio = map.unmap(knownId);
+			lastUnmappedOnAudio = map.unmap(lastId);
 			tooHighOnAudio = map.unmap(LV2_URID{0xFFFFFFFFu});
 			lmms::test::tlCountAllocations = false;
 		}
 		QCOMPARE(knownOnAudio, knownId);
 		QCOMPARE(freshOnAudio, LV2_URID{0});
+		QCOMPARE(lastOnAudio, lastId);
 		QVERIFY(unmappedOnAudio != nullptr);
 		QCOMPARE(QString::fromUtf8(unmappedOnAudio), QString::fromUtf8(known));
+		QVERIFY(lastUnmappedOnAudio != nullptr);
+		QCOMPARE(QString::fromUtf8(lastUnmappedOnAudio), QString::fromUtf8(lastUri.c_str()));
 		QVERIFY(tooHighOnAudio == nullptr);
 		QCOMPARE(lmms::test::tlAllocationCount, std::uint64_t{0});
 
