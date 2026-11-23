@@ -425,6 +425,59 @@ private slots:
 		QCOMPARE(written2, std::uint64_t{64});
 	}
 
+	//! Luna cluster 5276: the final move is the only step that may replace the
+	//! destination. A move that fails must report the failure and leave the take
+	//! already there byte for byte: the writer may not remove the destination
+	//! before it knows the move succeeded. The one-shot hook refuses the move
+	//! after the complete WAV has been staged, the fault a filesystem that will
+	//! not replace the destination gives; it is portable (no permissions) and
+	//! deterministic (no timing).
+	void aFailedTakeMoveKeepsTheExistingTake()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("take.wav"));
+
+		// An existing COMPLETE take at the destination, written by the real
+		// writer: the reused take path is what the finding is about.
+		const std::vector<SampleFrame> firstFrames(32, SampleFrame(0.5f, -0.5f));
+		std::uint64_t firstWritten = 0;
+		QString firstError;
+		QVERIFY2(lmms::writeRetroAudioTake(path, firstFrames, SampleRate, &firstWritten, &firstError),
+			qPrintable(firstError));
+		QCOMPARE(firstWritten, std::uint64_t{32});
+		QFile old(path);
+		QVERIFY(old.open(QIODevice::ReadOnly));
+		const QByteArray previous = old.readAll();
+		old.close();
+		QVERIFY(!previous.isEmpty());
+
+		// The next take is written and staged completely; its move is refused.
+		const std::vector<SampleFrame> frames(64, SampleFrame(0.25f, -0.25f));
+		lmms::retroaudiotesting::failNextTakeMove();
+		std::uint64_t written = 777;
+		QString error;
+		const bool ok = lmms::writeRetroAudioTake(path, frames, SampleRate, &written, &error);
+		QVERIFY2(!ok, "a refused move must make the take fail");
+		QVERIFY(!error.isEmpty());
+		QCOMPARE(written, std::uint64_t{0});
+
+		// The take that was there is intact, and no staging sibling survives.
+		QFile after(path);
+		QVERIFY(after.open(QIODevice::ReadOnly));
+		QCOMPARE(after.readAll(), previous);
+		after.close();
+		QCOMPARE(QDir(dir.path()).entryList(QDir::Files | QDir::Hidden | QDir::NoDotAndDotDot),
+			QStringList{QStringLiteral("take.wav")});
+
+		// The refusal was one shot: the next take lands normally.
+		std::uint64_t written2 = 0;
+		QString error2;
+		QVERIFY2(lmms::writeRetroAudioTake(path, frames, SampleRate, &written2, &error2),
+			qPrintable(error2));
+		QCOMPARE(written2, std::uint64_t{64});
+	}
+
 	//! Luna cluster new-p12-200, BUG 5: a take must not label frames recorded at
 	//! several sample rates with a single rate. While armed, if the engine's
 	//! rate changes the stale (pre-change) frames must be dropped so the window
