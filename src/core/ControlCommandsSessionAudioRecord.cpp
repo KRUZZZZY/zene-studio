@@ -281,9 +281,11 @@ ControlResult writeAndLand(SessionModel& model, SessionAudioRecorder& recorder, 
 	auto landed = std::make_shared<Landed>(Landed{recorder.track(), recorder.scene(), path, name, sessionBlockXml(model)});
 	const int rate = static_cast<int>(recorder.sampleRate());
 	const tick_t start = recorder.startTick();
-	const std::shared_ptr<const SampleBuffer> take = recorder.takeFinished();
+	// The take is peeked, not given up: a failed write must leave it in hand for a retry (BUG 10).
+	const std::shared_ptr<const SampleBuffer> take = recorder.finishedTake();
 	if (take == nullptr || take->size() == 0)
 	{
+		recorder.takeFinished();  // no frames can never land: give the recorder up so another take can start
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the take holds no audio (the cell stopped "
 			"on the line it started on): nothing was landed"));
 	}
@@ -292,8 +294,12 @@ ControlResult writeAndLand(SessionModel& model, SessionAudioRecorder& recorder, 
 	QString why;
 	if (!writeRetroAudioTake(path, frames, rate, &written, &why))
 	{
-		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the take could not be written: %1").arg(why));
+		// Nothing was landed and the take is still in the recorder (Done): the destination can be fixed and
+		// the same take landed again. It is given up below only once the WAV is on disk.
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the take could not be written: %1; "
+			"nothing was landed and the take stays in hand: fix the destination and land again").arg(why));
 	}
+	recorder.takeFinished();  // the WAV is on disk: the take is safe to give up now
 	applyLanded(*landed);
 	addUndoStep([landed] { restoreSessionBlockAndSync(*Engine::getSong(), landed->session); },
 		[landed] { applyLanded(*landed); });
@@ -323,7 +329,8 @@ ControlResult landSlot(const QJsonObject& args)
 	if (!gridContains(*model, recorder.track(), recorder.scene(), &error)) { return error; }
 	if (!model->slot(recorder.track(), recorder.scene()).isEmpty())
 	{
-		// Checked before writeAndLand: takeFinished() gives the take away, so a refusal after it would lose the take.
+		// Checked before writeAndLand: a filled cell is refused before the take is written at all, so the
+		// refusal leaves no WAV behind and the take stays in hand for a landing once the cell is cleared.
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("cell (track %1, scene %2) holds a clip now: it was "
 			"filled while the take recorded, and landing would overwrite it. Nothing was landed and the take stays in hand: clear "
 			"the cell (session.clear_slot) and land again, or drop the take (session.record_slot 'cancel': true)")

@@ -54,11 +54,11 @@ class SampleRecordAccumulator;
  *  fixed length. So a take recorded for one bar is one bar of frames, and it lines up with what was
  *  playing when it was performed.
  *
- *  THREADS. arm(), cancel(), takeFinished() and the readings are control-thread calls. The audio
- *  thread calls slotStarted()/slotStopped() from the scheduler's launch events and push() once per
- *  rendered period; none of them allocates, locks or logs - the accumulator was made by arm().
- *  The audio thread touches the accumulator only while the state is Recording or Finishing, and it
- *  never leaves Done on its own, so takeFinished() may take the accumulator once it reads Done.
+ *  THREADS. arm(), cancel(), finishedTake(), takeFinished() and the readings are control-thread
+ *  calls. The audio thread calls slotStarted()/slotStopped() from the scheduler's launch events and
+ *  push() once per rendered period; none of them allocates, locks or logs - the accumulator was made
+ *  by arm(). The audio thread touches the accumulator only while the state is Recording or Finishing,
+ *  and it never leaves Done on its own, so finishedTake() may take the accumulator once it reads Done.
  *  cancel() can interrupt a take mid-period, so it must run while no period renders: the command
  *  holds the engine's model-change lock around it. */
 class LMMS_EXPORT SessionAudioRecorder
@@ -89,6 +89,10 @@ public:
 	bool arm(int track, int scene, tick_t lengthTicks, sample_rate_t sampleRate, f_cnt_t latencyFrames, bool syncClock = false);
 	//! Drops whatever is armed or recorded. Call with no period rendering (see the class comment).
 	void cancel();
+	/*! The finished take while the state is Done, without giving it up (nullptr when it holds no
+	 *  frames). The recorder stays Done, so a landing whose WAV write fails can be retried;
+	 *  takeFinished() gives the take up once it is safely on disk. */
+	std::shared_ptr<const SampleBuffer> finishedTake();
 	//! The finished take (nullptr when it holds no frames) once the state is Done; back to Idle.
 	std::shared_ptr<const SampleBuffer> takeFinished();
 
@@ -128,6 +132,8 @@ private:
 	std::atomic<int> m_track{-1};
 	std::atomic<int> m_scene{-1};
 	std::unique_ptr<SampleRecordAccumulator> m_accum;
+	//! The finished take kept by finishedTake() until takeFinished() gives it up; control thread only.
+	std::shared_ptr<const SampleBuffer> m_finished;
 	tick_t m_lengthTicks = 0;
 	sample_rate_t m_sampleRate = 0;
 	f_cnt_t m_latency = 0;
