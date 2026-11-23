@@ -110,7 +110,8 @@ configuration refresh. A fresh configure on the train does this by itself.
 | Command | Log | EXIT | Result |
 | --- | --- | --- | --- |
 | `cmake --build build --target ControlDeviceCatalogueTest PluginScanCacheTest InstrumentLatencyPdcTest Lv2ViewBaseLifetimeTest Lv2StateTest -j4` | `build-family-2.log` | 0 | built |
-| `ctest -R '^(Lv2StateTest\|InstrumentLatencyPdcTest\|Lv2ViewBaseLifetimeTest\|Lv2InstrumentKeyRegressionTest\|PluginScanCacheTest\|ControlDeviceCatalogueTest)$' --output-on-failure` (from `build/tests`) | `test-family-3.log` | 0 | 6 of 6 passed |
+| regression ctest | `ctest -R '^Lv2StateTest$' --output-on-failure` (from `build/tests`) | `test-regression-1.log` | 0 | 1 of 1 passed |
+| the six-test family selection `^(Lv2StateTest\|InstrumentLatencyPdcTest\|Lv2ViewBaseLifetimeTest\|Lv2InstrumentKeyRegressionTest\|PluginScanCacheTest\|ControlDeviceCatalogueTest)$` was run with `ctest --output-on-failure` from `build/tests` | `test-family-3.log` | 0 | 6 of 6 passed |
 | `python3 .../feature_check.py <worktree>` | `feature-check-5.log` | 0 | all 8 rows PASS: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length |
 
 Registration: the two inherited files are declared in `tests/upstream-modifications.txt` with the
