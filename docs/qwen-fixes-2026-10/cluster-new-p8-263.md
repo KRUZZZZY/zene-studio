@@ -134,6 +134,19 @@ check; its table is in `.../logs/submit-1.log` and is answered under `## Self-ch
    called from `processImpl()`/`passThrough()` on the audio thread: no allocation, free, lock, wait, log, signal or
    Qt call. No control command was added, so the `ControlCommandsSnapshot` canary does not move, and no undo step
    is involved.
+7. **Sibling commands** (`app.*`, `arrangement.*`, ... in the pre-submit list): this commit changes no command file
+   and no command handler - its diff is `include/SidechainInputs.h`, `plugins/Vst3Effect/Vst3Effect.cpp`,
+   `plugins/ClapEffect/ClapEffect.cpp`, `tests/src/core/SidechainInputsTest.cpp` and this report. The sibling list
+   comes from other lanes' `ControlCommands*` commits inside the shared `base..HEAD` range the check compares
+   against (`050/m0-train-35`); none of them touch the wet/dry mix, so none is affected. No new command id exists
+   in the diff, and the `ControlCommandsSnapshot` canary is untouched.
+
+## Completion check
+
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p8-263 > .../logs/submit-1.log 2>&1; echo EXIT=$?`
+- **EXIT=0**, `RESULT: PASS - submit`: commits on the branch PASS, working tree clean PASS, report PASS, tests
+  added or changed PASS, new test files registered PASS, gates PASS, no FAIL item. The six ASK items are answered
+  above.
 
 ## Other findings
 
