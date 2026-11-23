@@ -249,6 +249,34 @@ private slots:
 		QVERIFY(first != second);
 	}
 
+	/*! A late audio-path call may find no published snapshot: the destructor
+	 *  takes the snapshot away before the object is gone. fillLevel() must not
+	 *  dereference the missing snapshot; it fills the period with a defined
+	 *  level, gives the claim back, and works again once a snapshot is
+	 *  published. */
+	void fillLevelWithoutAPublishedSnapshotFillsSilence()
+	{
+		EnvelopeAndLfoParameters parameters(0.0f, nullptr);
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		std::vector<float> level(frames, 123.0f);
+
+		parameters.detachAudioState();
+		parameters.fillLevel(level.data(), 0, std::numeric_limits<f_cnt_t>::max(), frames);
+
+		for (const float value : level) { QCOMPARE(value, 0.0f); }
+		QCOMPARE(parameters.audioStateReaders(), 0);
+
+		// the empty period: nothing to fill, and still no leaked claim
+		parameters.fillLevel(level.data(), 0, std::numeric_limits<f_cnt_t>::max(), 0);
+		QCOMPARE(parameters.audioStateReaders(), 0);
+
+		// a publication brings the snapshot back and the audio path follows it
+		parameters.updateSampleVars();
+		QVERIFY(parameters.holdAudioState());
+		parameters.releaseHeldAudioState();
+		QCOMPARE(parameters.audioStateReaders(), 0);
+	}
+
 private:
 	QTemporaryDir m_tempDir;
 	QString m_wavePath;
