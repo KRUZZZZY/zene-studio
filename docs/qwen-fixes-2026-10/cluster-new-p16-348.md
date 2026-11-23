@@ -94,6 +94,13 @@ No new file under `src/`, no new control command, no snapshot or gate change.
 - **If ALREADY-FIXED: the code that shows it:** `src/core/AutomationClipTransforms.cpp:235`
   (ceiling) and `:256-257` (count computed and refused before the range is cleared or any node is
   inserted), reached from `src/core/ControlCommandsAutomationLanes.cpp:159`.
+- **Sibling commands in the command files I changed:** I changed no command file. This run's only
+  change is this report (`git show --stat HEAD` after the first commit lists only
+  `docs/qwen-fixes-2026-10/cluster-new-p16-348.md`). The `submit_check.py` changed-file list is
+  computed from the branch's merge base and therefore includes older branch commits; the siblings
+  it names (`app.*`, `arrangement.*`) come from those. Within the automation family the guard
+  covers `automation.draw_shape`, and the other automation point commands are unaffected because
+  they do not expand a tick span into points (Evidence above).
 
 ## Other findings
 
