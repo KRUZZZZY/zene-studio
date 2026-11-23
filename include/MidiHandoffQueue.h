@@ -77,6 +77,8 @@ class MidiHandoffQueue
 public:
 	//! Maximum reservation attempts made by one push(), including the first attempt.
 	static constexpr std::uint32_t MaxPushAttempts = 8;
+	//! The event type this queue carries.
+	using EventType = Event;
 
 	MidiHandoffQueue()
 	{
