@@ -121,6 +121,9 @@ private:
 		std::vector<jack_default_audio_sample_t*>& tempOutputBuffers);
 	bool initJackClient();
 	void resizeInputBuffer(jack_nframes_t nframes);
+	//! Cluster 4599: the server renegotiated the period, so the engine's cached round trip is stale.
+	//! Posts the refresh to the control thread - never called from the process callback.
+	void queueRecordingLatencyRefresh();
 
 	void startProcessingImpl() override;
 	void stopProcessingImpl() override;

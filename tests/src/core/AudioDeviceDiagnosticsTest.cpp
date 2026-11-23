@@ -400,6 +400,27 @@ private slots:
 		// ...so the round trip gains that block, not the engine's configured buffer.
 		QCOMPARE(engine->recordingLatencyFrames(),
 			jack->inputLatencyFrames() + jack->outputLatencyFrames() + period + engine->framesPerPeriod());
+
+		// Cluster 4599 (round 2): a RUNNING server renegotiates its period. The capture block follows
+		// it live, so the engine's cached round trip has to follow too - it used to keep the figure it
+		// read at start-up and left a newly armed take's compensation short by the difference.
+		f_cnt_t reloaded = period * 2;
+		if (reloaded == engine->framesPerAudioBuffer()) { reloaded *= 2; }
+		QVERIFY2(engine->framesPerAudioBuffer() != reloaded, "the engine buffer and the new period must differ");
+		const f_cnt_t latencyBefore = engine->recordingLatencyFrames();
+		if (jack_set_buffer_size(jack->jackClient(), static_cast<jack_nframes_t>(reloaded)) != 0)
+		{
+			QSKIP("the private jackd refused the new period");
+		}
+		// jack_set_buffer_size() returns once the server has granted the period; the refresh the
+		// callback posts then lands on the control thread, so QTRY runs that loop, it does not time
+		// anything. Both assertions below are exact figures.
+		QTRY_COMPARE_WITH_TIMEOUT(jack->captureBlockFrames(), reloaded, 5000);
+		QTRY_COMPARE_WITH_TIMEOUT(engine->recordingLatencyFrames(),
+			jack->inputLatencyFrames() + jack->outputLatencyFrames() + reloaded + engine->framesPerPeriod(),
+			5000);
+		QVERIFY2(engine->recordingLatencyFrames() != latencyBefore,
+			"the round trip still carries the block the server ran at before the change");
 #endif
 	}
 };

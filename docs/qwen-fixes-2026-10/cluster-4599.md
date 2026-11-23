@@ -44,7 +44,7 @@ FIXED
   is the same "no client, nothing to report" case `deviceTiming()` already guards
   (`src/core/audio/AudioJack.cpp:748`), and `shutdownCallback()` clears it (`:511-516`). No cache,
   no allocation, no lock: `captureBlockFrames()` is called only from `refreshRecordingLatency()`
-  (`src/core/AudioEngine.cpp:851`), which runs off the audio thread (`include/AudioEngine.h:727-733`,
+  (`src/core/AudioEngine.cpp:851`), which runs off the audio thread (`include/AudioEngine.h:731-738`,
   `AudioEngine::startProcessing()`), never from `processCallback()`.
 
 ## The regression test
@@ -92,6 +92,53 @@ assertion returns early. No injected clock and no sleeps in the assertions.
 `RecordingLatencyTest` was built and run because it pins the same formula on the Dummy device
 (`tests/src/core/RecordingLatencyTest.cpp:104`); it is unchanged and still passes.
 
+## Round 2: a RUNNING server that renegotiates its period
+
+The round-1 fix made `captureBlockFrames()` live, but the engine CACHES its round trip:
+`refreshRecordingLatency()` runs at `startProcessing()` and nowhere else
+(`include/AudioEngine.h:731-738`), and `recordingLatencyFrames()` returns that cache
+(`include/AudioEngine.h:495`). The JACK buffer-size callback only resized the capture staging
+(`src/core/audio/AudioJack.cpp:206-211` before this round), so a `jack_set_buffer_size()` on a running
+server left the cache holding the block from start-up: a take armed after the change was compensated
+with the old figure. Reproduced before the fix with the private server: the server granted 1024
+frames, `captureBlockFrames()` read 1024, and `recordingLatencyFrames()` stayed at **1280** instead of
+**1792** — `logs/test-1-red.log`, `logs/test-4-red-after-revert.log`, exactly the numbers the review
+reported.
+
+The cause-level fix is in the callback that hears about the change:
+
+- `include/AudioEngine.h:663-667`: `friend class AudioJack;` (line 667) — the backend, and only it, may re-read
+  the engine's cached figures. No public API, no member, no behaviour change for any other caller.
+- `include/AudioJack.h:124-126`: `void queueRecordingLatencyRefresh();` (line 126)
+- `src/core/audio/AudioJack.cpp:206-213`: the buffer-size callback now calls it after
+  `resizeInputBuffer(nframes)` (line 210).
+- `src/core/audio/AudioJack.cpp:274-285`: it posts the refresh to the control thread —
+  `QMetaObject::invokeMethod(this, [this]{ engine->refreshRecordingLatency(); }, Qt::QueuedConnection)`
+  — so the JACK thread never touches the engine, the functor is dropped with the device, and the
+  refreshed figure is the one the server just granted (both `captureBlockFrames()` and the port
+  latency ranges are read fresh).
+
+The regression slot keeps its start-up assertions and adds the live change:
+`jack_set_buffer_size(jack->jackClient(), 2 × period)` (skipped only if the private `jackd` refuses
+the period), then `captureBlockFrames()` becomes the new period and `recordingLatencyFrames()` becomes
+`input + output + new period + engine period`, exactly.
+
+| Round 2 step | Command | EXIT | Log |
+| --- | --- | --- | --- |
+| RED: resize phase added, no product change | `cmake --build build --target AudioDeviceDiagnosticsTest -j4`; `cd build/tests && ... ctest -R "^AudioDeviceDiagnosticsTest$" --output-on-failure` | 0; 8 (`recordingLatencyFrames()` 1280 vs 1792, line 419) | `logs/build-1-red.log`, `logs/test-1-red.log` |
+| GREEN: callback refresh + friend | `cmake --build build --target zene AudioDeviceDiagnosticsTest AudioJackPortRestartTest -j4` | 0 | `logs/build-2-green.log` |
+| GREEN family | `cd build/tests && ... ctest -R "AudioDeviceDiagnosticsTest\|AudioJackPortRestartTest\|RecordingLatencyTest" --output-on-failure` | 0 (3/3 passed) | `logs/test-2-green.log` |
+| stability | `cd build/tests && ... ctest -R "^AudioDeviceDiagnosticsTest$" --repeat until-fail:3` | 0 (3/3 passed) | `logs/test-3-repeat3.log` |
+| 4b revert (product files only) | `git diff -- include/AudioEngine.h include/AudioJack.h src/core/audio/AudioJack.cpp > .../logs/fix.patch`; `git apply -R .../logs/fix.patch` | 0; 0 | `logs/fix.patch` (65 lines) |
+| 4b RED again | `cmake --build build --target AudioDeviceDiagnosticsTest -j4`; `cd build/tests && ... ctest -R "^AudioDeviceDiagnosticsTest$" --output-on-failure` | 0; **8** (1280 vs 1792, line 419) | `logs/build-3-red-after-revert.log`, `logs/test-4-red-after-revert.log` |
+| 4b restore | `git apply .../logs/fix.patch` | 0 | — |
+| 4b GREEN again | `cmake --build build --target zene AudioDeviceDiagnosticsTest AudioJackPortRestartTest -j4`; `cd build/tests && ... ctest -R "AudioDeviceDiagnosticsTest\|AudioJackPortRestartTest\|RecordingLatencyTest"` | 0; 0 (3/3 passed) | `logs/build-4-green-reapplied.log`, `logs/test-5-green-reapplied.log` |
+| gates after the round-2 registration lines | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 (8/8 PASS) | `logs/feature-check-1.log`, `logs/feature-check-2.log` |
+
+Registration for this round: `include/AudioEngine.h`, `include/AudioJack.h` and
+`src/core/audio/AudioJack.cpp` each carry a `cluster 4599 (round 2)` line in
+`tests/upstream-modifications.txt`.
+
 Registration: `include/AudioJack.h` and `src/core/audio/AudioJack.cpp` are inherited files, so both
 carry a `cluster 4599` line in `tests/upstream-modifications.txt` (appended, file ends in a newline).
 The test file was already registered in `tests/fork-sources.txt:3834`; no new product file was added.
@@ -133,7 +180,29 @@ The test file was already registered in `tests/fork-sources.txt:3834`; no new pr
   or changed, so the `ControlCommandsSnapshot` canary is untouched (`feature_check` PASS,
   `logs/feature-check-1.log`). Local TSan does not run on this box; the design argument is the one
   above.
-- **Completion check** (`logs/submit-check-1.log`): the run and its result are recorded there; every
+- **Round 2: the live period change is the same bug, and it is fixed at its cause.** The cached
+  figure had exactly one writer (`AudioEngine::refreshRecordingLatency()`, private,
+  `include/AudioEngine.h:737`) and only `startProcessing()` called it; the JACK buffer-size callback
+  was the one event that changes the block and it did not tell the engine. The test drives the change
+  through the real server (`jack_set_buffer_size`) and asserts the exact new round trip; with the
+  product hunks reverted it fails at 1280 vs 1792 (`logs/test-4-red-after-revert.log`, EXIT=8).
+- **Round 2 realtime constraints.** Nothing was added to `processCallback()`
+  (`src/core/audio/AudioJack.cpp:430`) - the only caller of `queueRecordingLatencyRefresh()` is the
+  buffer-size callback at `:210`, which JACK delivers from its own notification, not from inside our
+  process callback. The invoked functor runs on the device's own thread (the control thread), where
+  `refreshRecordingLatency()` already ran. The post allocates a Qt event in the
+  JACK callback thread, not on the audio thread; the callback reads no model, takes no lock and logs
+  nothing beyond the pre-existing `resizeInputBuffer()` work. `captureBlockFrames()` itself stays a
+  null check plus `jack_get_buffer_size()`, and the audio thread still only reads the cached atomic
+  (`include/AudioEngine.h:495`). Local TSan does not run on this box; the argument is the ownership
+  one above: one writer, one thread, one atomic store.
+- **Round 2 determinism.** The resize assertion is exact, not measured: `jack_set_buffer_size()`
+  returns only once the server has granted the period, and `QTRY_COMPARE_WITH_TIMEOUT` merely runs the
+  control thread's event loop until the posted refresh lands (5 s bound, the same QTRY idiom the
+  file's existing JACK slot uses). No sleep decides a value, and 3/3 repeats passed
+  (`logs/test-3-repeat3.log`).
+- **Completion check** (`logs/submit-check-1.log`, round 2: `logs/submit-check-2.log` and the final
+  `logs/submit-check-3.log`): the run and its result are recorded there; every
   FAIL it named was fixed before this report was committed, and this section answers each ASK item.
   The sibling-command ASK lists `app.*`, `arrangement.*` and others because the check diffs the whole
   branch against its merge base, and this branch carries other clusters' commits. My own commit

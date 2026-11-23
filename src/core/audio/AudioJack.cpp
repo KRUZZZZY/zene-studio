@@ -205,7 +205,9 @@ bool AudioJack::initJackClient()
 	// set buffer-size callback
 	jack_set_buffer_size_callback(m_client,
 		[](jack_nframes_t nframes, void* udata) -> int {
-			static_cast<AudioJack*>(udata)->resizeInputBuffer(nframes);
+			auto* self = static_cast<AudioJack*>(udata);
+			self->resizeInputBuffer(nframes);
+			self->queueRecordingLatencyRefresh();
 			return 0;
 		},
 		this);
@@ -266,6 +268,20 @@ void AudioJack::resizeInputBuffer(jack_nframes_t nframes)
 {
 	prepareCapture(static_cast<f_cnt_t>(nframes));
 	m_captureWide.assign(static_cast<std::size_t>(nframes) * static_cast<std::size_t>(m_inputChannels), 0.f);
+}
+
+
+void AudioJack::queueRecordingLatencyRefresh()
+{
+	// Cluster 4599 (round 2): the server renegotiated the period under a running engine, so the capture
+	// block the round trip adds (captureBlockFrames()) just changed. JACK calls this from its buffer-size
+	// callback, where the engine must not be touched, so the re-read is posted to this object's thread -
+	// the control thread - and is dropped with the device if that thread never gets to it. Nothing is
+	// added to the process callback, which never calls this.
+	if (audioEngine() == nullptr) { return; }
+	QMetaObject::invokeMethod(this, [this] {
+		if (AudioEngine* engine = audioEngine()) { engine->refreshRecordingLatency(); }
+	}, Qt::QueuedConnection);
 }
 
 void AudioJack::attemptToConnect(size_t index, const char *lmms_port_type, const char *source_port, const char *destination_port)
