@@ -209,6 +209,7 @@ No product code, no registration list, no control command, no gate.
   untouched. The one test assertion that changed became stricter, not weaker:
   it still asserts everything it asserted before (`valid=false`, `index=-1`)
   and adds two fields.
+* **Sibling commands in the command files the diff touches** (`app.*`, `arrangement.*`, ...): the check lists them because `base..HEAD` on this branch already changed `src/core/ControlCommands*`, not because of this run. This run's diff (`git diff --name-only 10eb11b2a4^ 10eb11b2a4`) is `tests/src/core/ScriptDawEffectsTest.cpp` and this report — no command file, no command id, no reversibility row. `mixer.remove_channel` itself is unchanged; the finding's fix adds no control command (it is read-side resolution in the Lua bindings), so no sibling command can be affected.
 * **ALREADY-FIXED evidence.** Commit `2b8af3d413` is an ancestor of HEAD
   (`git merge-base --is-ancestor 2b8af3d413 HEAD` → EXIT=0).
   `include/ScriptDawBindings.h:154-156,177-181` show the id-only state;
