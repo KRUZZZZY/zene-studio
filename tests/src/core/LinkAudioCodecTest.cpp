@@ -87,7 +87,7 @@ private slots:
 	// A capacity that no power of two can hold must be refused. Without that check the rounding loop never ends.
 	void rejectsCapacityThatCannotBeRounded()
 	{
-		QVERIFY_EXCEPTION_THROWN(AudioRing(std::numeric_limits<std::size_t>::max()), std::length_error);
+		QVERIFY_EXCEPTION_THROWN(static_cast<void>(AudioRing(std::numeric_limits<std::size_t>::max())), std::length_error);
 	}
 };
 

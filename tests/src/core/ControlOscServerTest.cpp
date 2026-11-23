@@ -110,7 +110,7 @@ private slots:
 	{
 		Engine::init(true);
 		ControlRegistry::setReady(true);
-		QVERIFY(m_client.bind(QHostAddress::LocalHost, 0));
+		QVERIFY(m_client.bind(QHostAddress(QHostAddress::LocalHost), 0));
 	}
 
 	void cleanupTestCase()
@@ -142,7 +142,7 @@ private slots:
 		QCOMPARE(running.result.value(QStringLiteral("port")).toInt(), static_cast<int>(m_port));
 		// The port is taken while it runs ...
 		QUdpSocket probe;
-		QVERIFY(!probe.bind(QHostAddress::LocalHost, m_port));
+		QVERIFY(!probe.bind(QHostAddress(QHostAddress::LocalHost), m_port));
 		QCOMPARE(call(QStringLiteral("transport.get_state")).address, QStringLiteral("/zene/reply"));
 
 		const ControlResult stopped = run(QStringLiteral("osc.stop"));
@@ -151,7 +151,7 @@ private slots:
 		QCOMPARE(run(QStringLiteral("osc.get_state")).result.value(QStringLiteral("running")).toBool(), false);
 		// ... and free once it stopped.
 		QUdpSocket after;
-		QVERIFY2(after.bind(QHostAddress::LocalHost, m_port), "osc.stop left the port bound");
+		QVERIFY2(after.bind(QHostAddress(QHostAddress::LocalHost), m_port), "osc.stop left the port bound");
 
 		// The full scope is for this machine only.
 		const ControlResult open = run(QStringLiteral("osc.start"), {{QStringLiteral("address"), QStringLiteral("0.0.0.0")},

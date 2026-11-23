@@ -6960,6 +6960,21 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(ClangTemplateKeywordCheck PROPERTIES TIMEOUT 120)
 endif()
 
+# Two Qt5/Clang portability defects in C++ test sources that the local Qt6/GCC
+# build accepts (cluster ci-64efb7585b33898b, hosted windows-arm64 build):
+# bind(QHostAddress::LocalHost, 0) is ambiguous before Qt 6.2, and
+# QVERIFY_EXCEPTION_THROWN(Type(std::numeric_limits<T>::max()), ...) is parsed
+# as a declaration. The check scans the tracked C++ sources on every host and,
+# with a clang compiler and Qt5 headers, compiles bad/fixed fixtures too.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME Qt5ClangTestPortabilityCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/qt5-clang-test-portability-check.py
+			--root ${CMAKE_SOURCE_DIR}
+			--compiler ${CMAKE_CXX_COMPILER})
+	set_tests_properties(Qt5ClangTestPortabilityCheck PROPERTIES TIMEOUT 120)
+endif()
+
 # The VST2 test instrument must keep Darwin's C99 <stdio.h> declarations visible
 # (cluster ci-12f4249981b085d6: macos-arm64 saw snprintf undeclared because the
 # fixture's _POSIX_C_SOURCE hid it). The check compiles the real fixture with the
