@@ -95,7 +95,15 @@ All commands ran in
   `tests/upstream-modifications.txt` are unchanged; `feature_check.py` is PASS with exit 0.
 - **GUI evidence:** this job changes no `src/gui` file, so a screenshot/recording is not applicable. The
   scenario test lives in `tests/src/gui/InstrumentSetupUiTest.cpp` but was not modified here.
-- **Sibling commands:** no command file was changed, so no sibling set applies.
+- **Sibling commands (`app.*`, `arrangement.*`, ...):** not applicable to this cluster. The branch is cut
+  from `fa4a5f2e7` and already carries 430 files of earlier accepted work from the train, so the mechanical
+  check lists command files that came in by merge. This cluster's own commit,
+  `git show --stat HEAD` -> `docs/qwen-fixes-2026-10/cluster-new-p8-129.md | 105 +++`, touches no command,
+  registry or reversibility file, so no sibling command's behaviour changes. The command-side surface of
+  live layer routing is nothing at all: routes are internal runtime state, no `rack.*` command reads or
+  writes them.
+- **Registration:** the fix commit `56551280a1` already updated `tests/upstream-modifications.txt` for the
+  inherited `src/core/InstrumentLayers.cpp`; this job adds no file there (report only).
 
 ## Other findings
 
