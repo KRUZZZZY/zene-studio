@@ -157,6 +157,14 @@ remains a not-mutating read, so there is no new undo step.
    the per-file cap behaves exactly as before. The existing `fileGrowthAfterScanRespectsHashCap`,
    `hashingIsStableAndChangesWithTheReferenceSet`, relink and collect-media tests all pass.
 5. **ALREADY-FIXED / FALSE-POSITIVE:** not used; the verdict is FIXED.
+6. **Sibling commands** (the `submit_check.py` list: `app.*` and `arrangement.*`): this
+   commit changes no `ControlCommands*` or `ControlReversibilityTable*` file — `git show
+   --stat HEAD` lists only the asset read/write engine, its split document TU, the test,
+   the two scope manifests, two docs and the report. The sibling list comes from the
+   branch's `base..HEAD` diff, which carries other lanes' command files; none of them
+   calls `controlHashProjectAssets()` or `hashReference()`. The only `project.*` commands
+   affected are the three asset verbs, and their callers are the three sites named in
+   item 3; all are covered by the family run.
 
 ## Other findings
 
