@@ -96,7 +96,7 @@ void SamplePlayHandle::initializeSampleState()
 	m_state.setFrameIndex(m_sample->startFrame());
 	if (m_ownAudioBusHandle)
 	{
-		setAudioBusHandle(new AudioBusHandle("SamplePlayHandle", false));
+		setAudioBusHandle(new AudioBusHandle(QStringLiteral("SamplePlayHandle"), false));
 	}
 }
 
@@ -465,7 +465,13 @@ SamplePlayHandle::~SamplePlayHandle()
 	if (m_rubberBand != nullptr) { m_rubberBand->release(); }
 	if(m_ownAudioBusHandle)
 	{
-		delete audioBusHandle();
+		// Cluster new-p15-253 / new-p12-313: the engine frees the bus once the render
+		// path may no longer read it. On a render worker the engine keeps the bus alive
+		// until the control thread has removed it from the bus list, so the handle is
+		// taken out of that list first - the bus never mixes a freed handle.
+		AudioBusHandle* const bus = audioBusHandle();
+		bus->removePlayHandle(this);
+		Engine::audioEngine()->destroyAudioBusHandle(bus);
 		delete m_sample;
 	}
 }
