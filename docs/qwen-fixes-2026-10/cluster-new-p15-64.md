@@ -204,7 +204,8 @@ cd build/tests && ctest -R StemPythonDiscoveryTest --output-on-failure \
     > .../test-green-1.log 2>&1                              # test-green-1.log  EXIT=0
 ```
 
-The final seven slots run directly (`test-green-2.log`, EXIT=0):
+All six committed test slots run directly (`test-green-2.log`, EXIT=0; the
+Totals line counts `initTestCase` and `cleanupTestCase` too):
 
 ```
 PASS   : constructorDoesNotProbeForAnInterpreter()
