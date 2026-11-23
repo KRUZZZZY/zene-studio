@@ -186,6 +186,15 @@ already in the review base `fa4a5f2e7` (line 89 / line 95 of the same file) via
 `AutomatableModel` rule that a render-visible model write needs the audio change lock
 (`src/core/AutomatableModel.cpp:67-78`).
 
+**Sibling commands in the command files you changed - is each consistent with the fix?** This
+commit changes no command file: the diff of it (`7f2960cfd7`) is `include/MixerSnapshots.h`,
+`src/core/MixerSnapshots.cpp`, `tests/src/core/MixerConcurrencyTest.cpp` and this report. The
+`app.*` / `arrangement.*` sibling list in the pre-submit check comes from the branch's wider diff
+against the review base (the train), not from this fix. The two commands that do reach the changed
+function are `mixer.snapshot_recall` (and its undo/redo) - consistent by construction, they share
+`MixerSnapshots::apply()` - and they are covered by `ProjectStateTest`'s
+`aSnapshotRestoresASendsFaderTap` slot.
+
 ## Other findings
 
 Not fixed here: they are other files and other findings, listed with evidence so a lane that owns
