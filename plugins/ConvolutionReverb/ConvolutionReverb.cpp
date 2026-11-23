@@ -172,13 +172,14 @@ ConvolutionReverbEffect::ConvolutionReverbEffect(Model* parent, const Descriptor
 	for (std::vector<float>& line : m_predelay) { line.assign(longest, 0.f); }
 	loadImpulse(QString());
 	// The kernel is resampled to the engine's rate when it is built; a new rate (another device, an export at another
-	// rate) builds it again, on this side, under the engine's change lock (review W3-agent-devices #2).
-	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, [this] { loadImpulse(m_impulsePath); });
+	// rate) builds it again, on this side, under the engine's change lock (review W3-agent-devices #2). The state the
+	// kernel reads was measured in frames of the old rate, so the same lock drops it (cluster 5036).
+	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, [this] { buildKernel(m_impulsePath, true); });
 }
 
 ConvolutionReverbEffect::~ConvolutionReverbEffect() = default;
 
-void ConvolutionReverbEffect::install(std::unique_ptr<ConvolutionKernel> kernel)
+void ConvolutionReverbEffect::install(std::unique_ptr<ConvolutionKernel> kernel, bool rateChanged)
 {
 	m_tail.store(kernel->length() + ConvolutionKernel::Partition, std::memory_order_relaxed);
 	// The swap is the only edit the audio thread can see: under the model-change guard, a block
@@ -186,10 +187,30 @@ void ConvolutionReverbEffect::install(std::unique_ptr<ConvolutionKernel> kernel)
 	// plans die in the scope that quiesces the audio thread (ConvolutionKernel's destructor).
 	Engine::audioEngine()->requestChangeInModel();
 	m_kernel.swap(kernel);
+	if (rateChanged) { resetRateDependentState(); }
 	Engine::audioEngine()->doneChangeInModel();
 }
 
+void ConvolutionReverbEffect::resetRateDependentState()
+{
+	for (std::vector<float>& line : m_predelay) { std::fill(line.begin(), line.end(), 0.f); }
+	m_predelayWrite = 0;
+	for (std::array<float, ConvolutionKernel::Partition>& block : m_in) { block.fill(0.f); }
+	for (std::array<float, ConvolutionKernel::Partition>& block : m_out) { block.fill(0.f); }
+	for (std::array<float, ConvolutionKernel::Partition>& block : m_dry) { block.fill(0.f); }
+	m_position = 0;
+	m_lowCut.reset();
+	m_highCut.reset();
+	// The filters are re-designed for the new rate on the next block (designFilters).
+	m_rate = 0.f;
+}
+
 bool ConvolutionReverbEffect::loadImpulse(const QString& path)
+{
+	return buildKernel(path, false);
+}
+
+bool ConvolutionReverbEffect::buildKernel(const QString& path, bool rateChanged)
 {
 	const float rate = Engine::audioEngine()->outputSampleRate();
 	const auto limit = static_cast<std::size_t>(MaxSeconds * rate);
@@ -219,7 +240,7 @@ bool ConvolutionReverbEffect::loadImpulse(const QString& path)
 	{
 		return false;
 	}
-	install(std::move(kernel));
+	install(std::move(kernel), rateChanged);
 	m_impulsePath = path;
 	return true;
 }
