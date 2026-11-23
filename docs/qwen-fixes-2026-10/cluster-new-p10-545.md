@@ -132,3 +132,55 @@ What the RED runs show, stated exactly:
   here only as far as the gate for this bug needs (Round 3 below); the rest of that test is as it was.
 - `cmake --build` of a target that does not exist yet (`CarlaRenderBuffersTest`) fails with "No rule to make
   target" until another target's build has regenerated the Makefiles; building `CarlaMidiHandoffTest` first did it.
+
+## Gates and completion check
+
+- `python3 .../feature_check.py <worktree>`: first run `EXIT=1` (`gate-2.log`): `fork-sources` and
+  `all-sources-reproduce` FAIL because the new test was listed out of the recipe's sort order in
+  `tests/all-sources.txt`. After moving the line, `EXIT=0`, `RESULT: PASS` for all eight gates
+  (`gate-3.log`; commit `62a455e6d7`).
+- `python3 .../submit_check.py <worktree> new-p10-545`: first run `EXIT=1`, only the Self-check item
+  failed (`submit-1.log`); the section below answers it.
+
+## Self-check
+
+- **Regression test fails with the product change reverted, passes with it.** Two REDs, both with the
+  exit codes above. (1) Bug re-introduced inside `CarlaRenderBuffers::render()` (two period-sized stack
+  arrays): `ctest -R CarlaRenderBuffersTest` `EXIT=8`, `renderClipsASpanLongerThanThePlanes` failed and the
+  binary ended in SEGFAULT (`red-2-vla-test.log`). (2) Whole product fix reversed with
+  `git apply -R fix.patch` (`EXIT=0`): the test no longer builds, `EXIT=2`, because
+  `CarlaRenderBuffers.h` is gone (`red-4-reverted-build.log`); this is a build failure, and the `EXIT=8`
+  run after it used a stale binary and is not independent. Restored with `git apply fix.patch`
+  (`EXIT=0`), rebuilt (`EXIT=0`), `ctest -R "CarlaRenderBuffersTest|CarlaMidiHandoffTest"` `EXIT=0`
+  (`green-13-restored-test.log`).
+- **The test is deterministic.** `CarlaRenderBuffersTest` has no clock, sleep or race: it injects the span
+  sizes (64, 32, `capacity*2+1`, 1000 sizes in 64..127) and the process callback, and counts allocations on
+  the calling thread. The one thread it starts is joined before anything is checked and its stack size is
+  chosen by probing `pthread_create`, not by timing. The stress test now uses a rendezvous rather than
+  scheduling luck: the renderer opens a period (odd `periodSequence`) before releasing the producers and keeps
+  it open until an enqueue has begun and returned inside it, so `overlappedEnqueues > 0` holds for any
+  thread order. 30/30 `CarlaMidiHandoffTest` runs and 30/30 `CarlaRenderBuffersTest` runs passed (counts
+  reported by the delegated run; per-run output not kept). Before the change the stress test failed 5/5
+  here.
+- **Cause and completeness.** The cause was the two stack arrays in `playImpl()` (`Carla.cpp:536-540` before
+  the fix); both branches (VLA and `_alloca`) are gone. Callers: `InstrumentPlayHandle` (audio thread) and
+  `CarlaVst2Instrument::renderPeriod` (worker, clamped to `Renderer::MaxPeriodFrames = 4096`) both reach the
+  same `playImpl()`. The sibling `CarlaVst2Effect::Rack` already preallocates planar vectors and is unchanged.
+  `Carla.h` and `Carla.cpp` changed together and `carlabase` plus both tests were rebuilt
+  (`green-4-carla-plugin.log` `EXIT=0`, `green-8-build.log` `EXIT=0`).
+- **No collateral damage.** A period never exceeds 4096 frames in the engine (`AudioEngine.h:77`), so every
+  legitimate period renders the same frames and samples as before; the planes are 32 KiB per instance,
+  allocated once at construction. A span above the maximum (outside the contract) is clipped with a silent tail
+  instead of overflowing. No saved data, save format or load path changes, and the bound equals the engine's own
+  maximum, so no legitimate caller is rejected.
+- **Verdict evidence.** The verdict is FIXED, so the ALREADY-FIXED / FALSE-POSITIVE rule does not apply; the
+  pre-fix code is at `plugins/CarlaBase/Carla.cpp:535-541` in `c6b40333d8`.
+- **Sibling commands (`app.*`, `arrangement.*`).** This change touches no command file: the diff against the
+  pre-fix base `c6b40333d8` lists only `plugins/CarlaBase/*`, the registration manifests,
+  `tests/CMakeLists.txt`, two Carla test files and this report. The command list in the check comes from the
+  branch's accumulated diff against its base, not from this fix. No control command, undo step or
+  reversibility class is added or changed.
+
+Delegation: Haiku ran every build and ctest run (the GREEN runs, the 30x repeats and the RED/restore
+sequence, five starts' worth of logs in the folder above); I designed and wrote the fix, the tests and the
+stress-test rendezvous, reviewed the results and wrote this report.
