@@ -62,8 +62,9 @@ worker holds the buffer by `shared_ptr` and reports through a `QPointer<StemSpli
 ## Red/green proof performed in this session (step 4b)
 
 The tests need the external Python `onnxruntime` backend. It was missing on this box at first:
-`test-1.log`/`test-2.log` show `SKIP ... external-process backend unavailable`, 0 passed,
-1 skipped. I installed the module into a scratch directory and re-ran with `PYTHONPATH`; no
+`test-1.log` is a `ctest` pass (0.87 s) that hides the skip; running the binary directly
+(`test-2.log`) shows `SKIP ... external-process backend unavailable`, 0 passed, 1 skipped.
+I installed the module into a scratch directory and re-ran with `PYTHONPATH`; no
 product or test file was changed for this:
 
 - `python3 -m pip install --target .../logs/tmp/pydeps onnxruntime` → EXIT=0
