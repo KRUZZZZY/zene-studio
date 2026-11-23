@@ -205,6 +205,12 @@ private:
  */
 bool writeRetroAudioTake(const QString& filePath, const std::vector<SampleFrame>& window,
 	int sampleRate, std::uint64_t* framesWritten, QString* error);
+#ifdef LMMS_TESTING
+//! Test seam: runs before the header rewrite (result ignored); at Flush its result replaces fsync's.
+enum class RetroTakeFinishStep { BeforeFinalize, Flush };
+using RetroTakeFinishTestHook = int (*)(RetroTakeFinishStep step, int fd);
+void setRetroTakeFinishTestHook(RetroTakeFinishTestHook hook);
+#endif
 
 
 } // namespace lmms

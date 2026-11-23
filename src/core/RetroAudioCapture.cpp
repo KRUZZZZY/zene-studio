@@ -31,6 +31,12 @@
 #include <QSaveFile>
 
 #include <sndfile.h>
+#ifdef _WIN32
+#include <io.h>
+static int fsync(int fd) { return _commit(fd); }
+#else
+#include <unistd.h>
+#endif
 
 namespace lmms
 {
@@ -266,6 +272,9 @@ QString takeRequestProblem(const QString& filePath, std::size_t frames, int samp
 	return QString();
 }
 
+#ifdef LMMS_TESTING
+RetroTakeFinishTestHook s_finishTestHook = nullptr;
+#endif
 //! The write itself: clamp, encode, flush, close, and report what libsndfile
 //! accepted (measured, never assumed).
 bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window,
@@ -311,13 +320,28 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 
 	const auto written = sf_writef_float(sf, interleaved.data(),
 		static_cast<sf_count_t>(window.size()));
-	sf_write_sync(sf);
-	sf_close(sf);
+#ifdef LMMS_TESTING
+	if (s_finishTestHook != nullptr) { s_finishTestHook(RetroTakeFinishStep::BeforeFinalize, output.handle()); }
+#endif
+	// sf_close() on an SF_FALSE descriptor returns 0 regardless; sf_error() sees a failed header write.
+	sf_command(sf, SFC_UPDATE_HEADER_NOW, nullptr, 0);
+	bool finished = sf_error(sf) == SF_ERR_NO_ERROR;
+	finished = (sf_close(sf) == 0) && finished;
+	int flushed = finished ? fsync(output.handle()) : -1;
+#ifdef LMMS_TESTING
+	if (finished && s_finishTestHook != nullptr) { flushed = s_finishTestHook(RetroTakeFinishStep::Flush, output.handle()); }
+#endif
 
 	if (written < 0 || static_cast<std::size_t>(written) != window.size())
 	{
 		*error = QStringLiteral("wrote %1 of %2 frames to %3")
 			.arg(written).arg(window.size()).arg(filePath);
+		return false;
+	}
+	if (flushed != 0)
+	{
+		output.cancelWriting();
+		*error = QStringLiteral("could not finalize/flush the take %1").arg(filePath);
 		return false;
 	}
 	if (!output.commit())
@@ -332,6 +356,9 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 
 } // namespace
 
+#ifdef LMMS_TESTING
+void setRetroTakeFinishTestHook(RetroTakeFinishTestHook hook) { s_finishTestHook = hook; }
+#endif
 
 bool writeRetroAudioTake(const QString& filePath, const std::vector<SampleFrame>& window,
 	int sampleRate, std::uint64_t* framesWritten, QString* error)
