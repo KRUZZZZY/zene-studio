@@ -131,6 +131,9 @@ private:
 
 	//! The live slot of the current generation holding (track, channel, key), or -1.
 	auto find(int track, int channel, int key) const noexcept -> int;
+	//! Whether the slot word @a state - as a claimer observed it - may be taken by a claim that has read
+	//! pool @a generation. The single decision claim() makes per attempt.
+	static auto claimable(std::uint32_t state, std::uint32_t generation) noexcept -> bool;
 	//! A claimable slot marked Writing, or {-1} when every slot is taken: the half of a note-on that runs
 	//! before its fields are written. A slot another worker is writing is never claimable.
 	auto claim() noexcept -> Claim;

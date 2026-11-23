@@ -55,6 +55,14 @@ void ModulationVoices::noteOn(int track, int channel, int key, double seconds) n
 	publish(claim(), track, channel, key, seconds);
 }
 
+auto ModulationVoices::claimable(std::uint32_t state, std::uint32_t generation) noexcept -> bool
+{
+	// A slot another worker is filling is not ours to take. A voice of a pool that has since been cleared
+	// is: its generation is behind the one this claim is stamped with.
+	const State kind = kindOf(state);
+	return kind != Writing && (kind != Live || generationOf(state) != generation);
+}
+
 auto ModulationVoices::claim() noexcept -> Claim
 {
 	const std::uint32_t generation = currentGeneration();
@@ -64,10 +72,7 @@ auto ModulationVoices::claim() noexcept -> Claim
 		std::uint32_t state = slot.state.load(std::memory_order_acquire);
 		for (;;)
 		{
-			// A slot another worker is filling is not ours to take. A voice of a pool that has since been
-			// cleared is: its generation is behind the one this claim is stamped with.
-			const State kind = kindOf(state);
-			if (kind == Writing || (kind == Live && generationOf(state) == generation)) { break; }
+			if (!claimable(state, generation)) { break; }
 			if (slot.state.compare_exchange_weak(state, stateWord(generation, Writing),
 				std::memory_order_acq_rel, std::memory_order_acquire))
 			{
