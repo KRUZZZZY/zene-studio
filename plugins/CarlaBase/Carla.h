@@ -57,6 +57,7 @@
 #include "AutomatableModel.h"
 #include "Instrument.h"
 #include "CarlaMidiHandoff.h"
+#include "CarlaRenderBuffers.h"
 #include "InstrumentView.h"
 #include "SubWindow.h"
 
@@ -236,6 +237,10 @@ private:
     const NativePluginDescriptor* fDescriptor;
 
     NativeTimeInfo  fTimeInfo;
+
+    //! Planar scratch for Carla's process call, allocated when the instrument is built (cluster new-p10-545).
+    //! playImpl() used period-sized stack arrays here, which put an audio-device period on the render thread's stack.
+    CarlaRenderBuffers m_renderBuffers;
 
     //! MIDI hand-off shared by handleMidiEvent() and playImpl(); the latter stages it at Carla's process boundary.
     CarlaMidiHandoff<kMaxMidiEvents> fMidiHandoff;

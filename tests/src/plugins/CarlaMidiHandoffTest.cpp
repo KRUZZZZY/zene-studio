@@ -26,7 +26,12 @@
 #include <thread>
 #include <vector>
 
+#include <QFile>
+#include <QRegularExpression>
+
+#include "AudioEngine.h"
 #include "CarlaMidiHandoff.h"
+#include "CarlaRenderBuffers.h"
 #include "../core/AllocationProbe.h"
 
 namespace
@@ -504,6 +509,74 @@ private slots:
 		QVERIFY(run.greatestPushAttemptCount() <= lmms::MidiHandoffQueue<MidiCapacity>::MaxPushAttempts);
 		QCOMPARE(run.handoff.droppedEvents(), run.refusedCount());
 		QCOMPARE(run.handoff.recordedOverflows(), run.refusedCount());
+	}
+
+	//! cluster new-p10-545: the render planes are allocated once, for the largest period the engine can
+	//! produce, and a longer request is clipped instead of overflowing. A period and a reconfiguration
+	//! therefore reuse the same storage without allocating, freeing or growing anything.
+	void renderPlanesArePreallocatedAndBounded()
+	{
+		lmms::CarlaRenderBuffers planes;
+		QCOMPARE(planes.capacity(), static_cast<std::size_t>(lmms::MAXIMUM_BUFFER_SIZE));
+
+		// Normal path: one engine period, both planes cleared for Carla to fill.
+		const auto periodFrames = planes.prepare(RenderFrames);
+		QCOMPARE(periodFrames, RenderFrames);
+		for (std::uint32_t frame = 0; frame < RenderFrames; ++frame)
+		{
+			QCOMPARE(planes.left()[frame], 0.0f);
+			QCOMPARE(planes.right()[frame], 0.0f);
+		}
+		planes.left()[0] = 0.25f;
+		planes.right()[RenderFrames - 1] = -0.5f;
+
+		// Exhaustion path: a request past the engine's maximum is clipped to the planes' capacity,
+		// and the last plane frame is still inside the storage and cleared.
+		const auto clipped = planes.prepare(planes.capacity() * 4 + 1);
+		QCOMPARE(clipped, static_cast<std::uint32_t>(planes.capacity()));
+		QCOMPARE(planes.left()[planes.capacity() - 1], 0.0f);
+		QCOMPARE(planes.right()[planes.capacity() - 1], 0.0f);
+
+		// Reconfiguration path: every later period reuses the storage and allocates nothing.
+		float* const left = planes.left();
+		float* const right = planes.right();
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		for (std::uint32_t period = 0; period < 1000; ++period)
+		{
+			const auto frames = planes.prepare(RenderFrames + period % 64);
+			planes.left()[frames - 1] = 1.0f;
+			planes.right()[frames - 1] = -1.0f;
+		}
+		lmms::test::tlCountAllocations = false;
+		QCOMPARE(lmms::test::tlAllocationCount, std::uint64_t{0});
+		QCOMPARE(lmms::test::tlFreeCount, std::uint64_t{0});
+		QCOMPARE(planes.left(), left);
+		QCOMPARE(planes.right(), right);
+	}
+
+	//! cluster new-p10-545: playImpl() used two variable-length stack arrays sized from out.size(),
+	//! which puts a device period on whatever thread renders the instrument. This holds the shipping
+	//! function to the preallocated planes instead; a stack overrun cannot be observed at run time
+	//! without crashing the test.
+	void playImplRendersIntoPreallocatedPlanes()
+	{
+		QFile source(QStringLiteral(CARLA_SOURCE_PATH));
+		QVERIFY2(source.open(QIODevice::ReadOnly), CARLA_SOURCE_PATH);
+		const auto text = QString::fromUtf8(source.readAll());
+		const auto signature = QStringLiteral("void CarlaInstrument::playImpl(");
+		const auto start = text.indexOf(signature);
+		QVERIFY2(start >= 0, "CarlaInstrument::playImpl() was not found");
+		const auto end = text.indexOf(QStringLiteral("\n}"), start);
+		QVERIFY2(end > start, "CarlaInstrument::playImpl() has no closing brace");
+		const auto body = text.mid(start, end - start);
+
+		QVERIFY2(!body.contains(QRegularExpression(QStringLiteral(R"(float\s+\w+\s*\[\s*bufsize\s*\])"))),
+			"playImpl() still sizes a stack array from the period");
+		QVERIFY2(!body.contains(QStringLiteral("_alloca")),
+			"playImpl() still reserves the period with _alloca");
+		QVERIFY2(body.contains(QStringLiteral("m_renderBuffers.prepare(")),
+			"playImpl() does not render into the instrument's preallocated planes");
 	}
 };
 

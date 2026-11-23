@@ -2424,6 +2424,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			"${CMAKE_SOURCE_DIR}/plugins/CarlaBase/carla/source/includes"
 			"${CMAKE_SOURCE_DIR}/plugins/CarlaBase/CarlaConfig"
 		)
+		# cluster new-p10-545: the regression reads playImpl() to hold it to the preallocated
+		# render planes (a period-sized stack overrun would crash the test, not fail it).
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			CARLA_SOURCE_PATH="${CMAKE_SOURCE_DIR}/plugins/CarlaBase/Carla.cpp")
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "MidiHandoffQueueTest")
 		# The structural test of pop() reads the header text.
