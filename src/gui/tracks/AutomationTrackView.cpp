@@ -63,12 +63,16 @@ void AutomationTrackView::dropEvent( QDropEvent * _de )
 	if( type == "automatable_model" )
 	{
 		auto mod = dynamic_cast<AutomatableModel*>(Engine::projectJournal()->journallingObject(val.toInt()));
-		if( mod != nullptr )
+		const float ppb = trackContainerView()->pixelsPerBar();
+		if( mod != nullptr && ppb > 0.f )
 		{
+			// Keep the scale as a float: truncating it to int made a view with
+			// less than one pixel per bar divide by zero.
 			const int deX = position(_de).x();
-			TimePos pos = TimePos(trackContainerView()->currentPosition()
-				+ (deX - getTrackContentWidget()->x()) * TimePos::ticksPerBar()
-				/ static_cast<int>(trackContainerView()->pixelsPerBar())).toAbsoluteBar();
+			const float offsetTicks = (deX - getTrackContentWidget()->x())
+				* static_cast<float>(TimePos::ticksPerBar()) / ppb;
+			TimePos pos = TimePos(trackContainerView()->currentPosition().getTicks()
+				+ static_cast<tick_t>(offsetTicks)).toAbsoluteBar();
 
 			if( pos.getTicks() < 0 )
 			{
