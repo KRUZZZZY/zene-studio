@@ -138,6 +138,13 @@ python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktr
    EXIT=0).
 5. **ALREADY-FIXED / FALSE-POSITIVE.** Not the verdict: the pre-fix RED run above shows the
    defect. No code-reference closure is claimed.
+6. **Sibling commands (app.*, arrangement.* and the others the check lists).** This fix
+   changes no command file, adds no command and does not touch the commands snapshot. `git
+   diff e7c7d3c9e^..e7c7d3c9e` contains only `src/core/AudioEngine.cpp`,
+   `tests/src/core/RecordingLatencyTest.cpp`, `tests/upstream-modifications.txt` and this
+   report. The listed command files belong to earlier commits already on this branch (the
+   submit check diffs against the merge base), so none of those commands is affected by, or
+   needs a change for, cluster 5465.
 
 ## Other findings
 
