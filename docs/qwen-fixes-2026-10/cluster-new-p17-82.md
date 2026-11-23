@@ -134,6 +134,14 @@ regression test because there is no product behaviour to change.
 - **Old projects / round-trip:** unchanged (no production edit).
 - **Completeness and user path:** the behaviour is a plug-in callback, not a user action; the agent
   surface and GUI are unaffected.
+- **Sibling commands in the command files you changed:** none, by this session. The completion check
+  lists `app.*` and `arrangement.*` siblings because its diff base is the train base, and the branch
+  already contains earlier commits that changed `src/core/ControlCommands*.cpp`,
+  `include/ControlRegistry.h` and their snapshot; `git show --stat HEAD` for this session's commit
+  shows only `docs/qwen-fixes-2026-10/cluster-new-p17-82.md`. No command handler, reversibility row,
+  snapshot or patch was touched here, so those commands are unaffected. The three
+  `tests/control-*.py` files the check reports as "changed" are likewise earlier branch content,
+  not files this session edited.
 
 ## Other findings
 
