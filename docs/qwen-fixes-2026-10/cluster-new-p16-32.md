@@ -9,9 +9,10 @@ bumps `droppedCommands()`), so the take was gone, the cell kept playing, and `se
 reported success. The stop is now queued **before** the take is dropped, inside the same
 `withEngineHeld` section, and a refusal cancels nothing and reports `Busy`.
 
-**Product change:** `src/core/ControlCommandsSessionAudioRecord.cpp` only (a fork-new file, already listed
-in `tests/fork-sources.txt`, so no registration change). The regression test extends the existing
-`tests/src/core/SessionAudioRecordTest.cpp`.
+**Product change:** `src/core/ControlCommandsSessionAudioRecord.cpp` only — a fork-new file, already
+listed in `tests/fork-sources.txt`, so no new registration was needed. The regression test extends the
+existing `tests/src/core/SessionAudioRecordTest.cpp`, whose new case is recorded with one appended note
+in `tests/upstream-modifications.txt` (the convention that file already uses for this test).
 
 ## Evidence
 
