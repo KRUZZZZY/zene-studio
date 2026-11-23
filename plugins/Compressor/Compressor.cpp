@@ -268,6 +268,9 @@ ProcessStatus CompressorEffect::processImpl(InterleavedBufferView<float, 2> inOu
 {
 	m_cleanedBuffers = false;
 	m_keyFilter.follow(m_keyMailbox);  // a key filter the knobs changed since the last block
+	// A writer that hit the mailbox's bound left a design pending: finish it from the current knob
+	// values here, at the top of a later block, so publish() never runs unbounded on this thread.
+	if (m_keyMailbox.pending()) { calcKeyFilter(); m_keyFilter.follow(m_keyMailbox); }
 
 	const float d = dryLevel();
 	const float w = wetLevel();
