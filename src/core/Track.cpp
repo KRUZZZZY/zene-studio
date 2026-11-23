@@ -1587,7 +1587,15 @@ bool Track::playFrozenTake(const TimePos& start, f_cnt_t /*frames*/, f_cnt_t off
 	// negative take start with a large seek cannot wrap here either.
 	const qint64 sourceIn = frozenTakeSourceFrame(m_frozenLastMap, globalTempo, m_frozen.startTicks, position,
 		static_cast<int>(bufferRate), oneRate);
-	const qint64 sourceOut = static_cast<qint64>(m_frozenBuffer->size());
+	// The take ends where it says it ends, not where its file happens to end: a pass that began
+	// inside the window stops at the source frame the same mapping gives for `endTicks` (cluster
+	// 5418). endTicks <= startTicks is "to its own end", the one case that reads the whole buffer.
+	qint64 sourceOut = static_cast<qint64>(m_frozenBuffer->size());
+	if (m_frozen.endTicks > m_frozen.startTicks)
+	{
+		sourceOut = std::min(sourceOut, frozenTakeSourceFrame(m_frozenLastMap, globalTempo,
+			m_frozen.startTicks, m_frozen.endTicks, static_cast<int>(bufferRate), oneRate));
+	}
 	if (sourceIn >= sourceOut)
 	{
 		m_frozenTakePlaying.store(false, std::memory_order_relaxed);
