@@ -423,6 +423,40 @@ private slots:
 		QCOMPARE(queue.consumed(), std::uint64_t{3});  // the rest stays queued
 	}
 
+	//! A period with no overflow cut pending must not scan a channel's 513 pending slots for every event
+	//! and channel: 16 x 129 drain checks x 513 slots would be over a million atomic loads on the audio thread.
+	void drainWithoutCutsDoesNotScanPendingSlots()
+	{
+		lmms::MidiHandoffQueue<512> queue; lmms::MidiChannelOverflow overflow;
+		for (std::uint32_t id = 0; id < 128; ++id) { QVERIFY(queue.push(eventWithOffset(id))); }
+		lmms::drainMidi(queue, overflow, 128, [](const lmms::HandoffMidiEvent&) { return true; }, [](int) { return false; });
+		QCOMPARE(queue.consumed(), std::uint64_t{128});
+		QCOMPARE(overflow.pendingSlotReads(), std::uint64_t{0});
+	}
+
+	//! A producer paused between raising its stamp and publishing its slot must not hide a due recovery cut: the
+	//! consumer clears m_cutAt at the first pause, the slot is published after that sweep, and the next one-event
+	//! drain must still spend its budget on the cut before the note queued after the refusal.
+	void publishedCutIsNotHiddenByAClearedStamp()
+	{
+		lmms::MidiHandoffQueue<4> queue; lmms::MidiChannelOverflow overflow;
+		for (std::uint32_t id : {1u, 2u, 3u, 4u}) { QVERIFY(queue.push(eventWithOffset(id))); }
+		std::vector<std::string> sent;
+		auto emitEvent = [&sent](const lmms::HandoffMidiEvent& e) { sent.push_back("E" + std::to_string(e.offset)); return true; };
+		auto emitCut = [&sent](int channel) { sent.push_back("CUT" + std::to_string(channel)); return true; };
+		lmms::drainMidi(queue, overflow, 4, emitEvent, emitCut); // consumed = 4: a refusal there is due
+		overflow.recordWithPublicationHooks(3, 4,
+			[&] { lmms::drainMidi(queue, overflow, 1, emitEvent, emitCut, 1); }, [] {}, // after raise: the cut is sent and m_cutAt cleared; then no pause at the occupancy announcement
+			[&] {
+				// after the slot publish: another producer queues the post-refusal note, then the one-event drain
+				QVERIFY(queue.push(eventWithOffset(5)));
+				lmms::drainMidi(queue, overflow, 1, emitEvent, emitCut, 1);
+				QCOMPARE(queue.consumed(), std::uint64_t{4}); // the budget went to the cut, not to the note
+			});
+		lmms::drainMidi(queue, overflow, 4, emitEvent, emitCut);
+		QCOMPARE(sent, std::vector<std::string>({"E1", "E2", "E3", "E4", "CUT3", "CUT3", "CUT3", "E5"}));
+	}
+
 	//! Overflow cuts share the fixed native event budget with queue events; a limited drain leaves the rest queued.
 	void drainCapsEmittedEventsIncludingCuts()
 	{

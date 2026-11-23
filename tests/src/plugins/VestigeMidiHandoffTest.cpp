@@ -179,6 +179,38 @@ private slots:
 		QVERIFY(delivered.cuts.empty());
 	}
 
+	//! A producer paused after it announced its slot but before it published it: the stamp is raised and counted, no slot
+	//! is visible yet. A one-event drain with the note queued after the refusal must spend its budget on the cut.
+	void aCutIsNotHiddenBeforeItsSlotIsPublished()
+	{
+		MidiHandoffQueue<4> queue; MidiChannelOverflow overflow;
+		for (std::uint32_t id = 1; id <= 4; ++id) { HandoffMidiEvent e; e.offset = id; QVERIFY(queue.push(e)); }
+		const auto ignore = [](const HandoffMidiEvent&) { return true; };
+		std::vector<int> cuts;
+		const auto cut = [&cuts](int channel) { cuts.push_back(channel); return true; };
+		drainMidi(queue, overflow, 4, ignore, cut);
+		overflow.recordWithPublicationHooks(3, 4, [] {}, [&]
+			{
+				HandoffMidiEvent note; note.offset = 5;
+				QVERIFY(queue.push(note));
+				drainMidi(queue, overflow, 1, ignore, cut, 1);
+				QCOMPARE(queue.consumed(), std::uint64_t{4}); // the budget went to the cut, not to the note
+			}, [] {});
+		QCOMPARE(cuts, std::vector<int>{3});
+	}
+
+	//! A producer that raises its stamp and publishes its slot after the consumer read the slot occupancy (0) but before
+	//! it read the raised stamp: the consumer reads the stamp last, so the refusal is seen and its cut is due.
+	void theRaisedStampIsReadAfterTheSlotOccupancy()
+	{
+		MidiHandoffQueue<4> queue; MidiChannelOverflow overflow;
+		for (std::uint32_t id = 1; id <= 4; ++id) { HandoffMidiEvent e; e.offset = id; QVERIFY(queue.push(e)); }
+		drainMidi(queue, overflow, 4, [](const HandoffMidiEvent&) { return true; }, [](int) { return true; });
+		const auto cut = overflow.dueCutWithTestHook(3, queue.consumed(), [&] { overflow.record(3, 4); });
+		QCOMPARE(cut.effective, std::uint64_t{5});
+		QVERIFY(cut.due);
+	}
+
 private:
 	//! Presses the instrument view's "Turn off all notes" button.
 	void clickTurnOffAllNotes()
