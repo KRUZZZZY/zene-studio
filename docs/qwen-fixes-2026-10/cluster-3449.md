@@ -176,7 +176,25 @@ Round 1's table follows, for the record (logs under `…/3449.r1/logs/`):
 | 4b: run (must pass) | `cd build/tests && ctest -R SampleClipRubberBandTest --output-on-failure > …/logs/test-7-green-proof.log 2>&1` | 0 |
 | gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-3449 > …/logs/gates-1.log 2>&1` | 0 |
 
-RED, first run (`logs/test-1-red.log`): `Totals: 9 passed, 1 failed`, `CTEST EXIT=8`:
+The proof manifest's two commands are exactly the round-2 chains below; both were run as
+single commands this session and their exit codes are the chains' own:
+
+```
+# red: exit 8
+cd <worktree> && git diff 21c2f3ee2e..HEAD -- src/core/RubberBandStretch.cpp include/RubberBandStretch.h \
+  > …/3449.r2/logs/fix.patch && git apply -R …/3449.r2/logs/fix.patch \
+  && cmake --build build --target zene SampleClipRubberBandTest -j4 > …/logs/build-4-red-chain.log 2>&1 \
+  && cd build/tests && ctest -R SampleClipRubberBandTest --output-on-failure > …/logs/test-6-red-chain.log 2>&1
+# green: exit 0
+cd <worktree> && git apply …/3449.r2/logs/fix.patch \
+  && cmake --build build --target zene SampleClipRubberBandTest -j4 > …/logs/build-5-green-chain.log 2>&1 \
+  && cd build/tests && ctest -R SampleClipRubberBandTest --output-on-failure > …/logs/test-7-green-chain.log 2>&1
+```
+
+Red chain: build EXIT 0, `ctest` `EXIT 8`, one `FAIL!` line. Green chain: build EXIT 0,
+`100% tests passed out of 1`, `EXIT 0`; `git status` clean afterwards. The failure text,
+identical in round 1's run (`logs/test-1-red.log`, `Totals: 9 passed, 1 failed`,
+`CTEST EXIT=8`):
 
 ```
 FAIL!  : SampleClipRubberBandTest::anOutOfBandSpeedCannotSilenceOrStallTheStretch() 'denormal.tail > 0.05' returned FALSE. (a speed of 5e-324 rendered the source at full speed (tail RMS 4.4782e-05) while sourcePosition() said 2.02369e-320)
@@ -244,8 +262,11 @@ items:
    (a speed of 5e-324 rendered the source at full speed (tail RMS 4.4782e-05) while
    sourcePosition() said 2.02369e-320)`. `git apply logs/fix.patch` (exit 0), rebuild
    (exit 0), run `logs/test-3-green.log`: **exit 0**, and `logs/test-4-slots.log`:
-   `Totals: 10 passed, 0 failed`. Round 1 recorded the same pair under
-   `…/3449.r1/logs/test-1-red.log` (exit 8) and `test-2-green.log` (exit 0).
+   `Totals: 10 passed, 0 failed`. The manifest's combined chains were then run as single
+   commands: `logs/test-6-red-chain.log` **exit 8** (one `FAIL!` line) and
+   `logs/test-7-green-chain.log` **exit 0**, with `git status` clean afterwards. Round 1
+   recorded the same pair under `…/3449.r1/logs/test-1-red.log` (exit 8) and
+   `test-2-green.log` (exit 0).
 2. **Deterministic; no wall-clock timing, sleeps or races.** Every input is an injected
    constant: block 4096 frames, source `m_rate/100` frames, speeds `1.0`, `1.0/32`,
    `std::numeric_limits<double>::denorm_min()`, `1e-300`, `1e300`, `1e5`. The oracle is a
