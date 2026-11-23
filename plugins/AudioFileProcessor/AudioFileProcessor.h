@@ -37,6 +37,8 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
+#include <vector>
 
 
 namespace lmms
@@ -131,15 +133,35 @@ private:
 
 	friend class gui::AudioFileProcessorView;
 
-	//! What a note keeps in its inline storage: the voice it plays on (Q050-103).
+	//! What a note keeps in its inline storage: the voice it plays on (Q050-103) and the source it
+	//! started on (cluster new-p9-552). Replacing the instrument's file must neither switch a
+	//! sounding note to the new buffer nor free the old one under it; the note renders from its own
+	//! snapshot for its whole life.
 	struct NoteVoice
 	{
 		SamplerVoicePool::Claim claim;
+		Sample sample;
+		int loopMode = 0;
 	};
+	static_assert(sizeof(NoteVoice) <= 1024, "NoteVoice must fit NotePlayHandle::PluginDataStorageSize");
+
+	//! Control thread: publish \a next as the instrument's sample. A sounding note keeps the buffer
+	//! it captured; the replaced one is retired until no note holds it and only then freed here.
+	void replaceSample(Sample next);
+	//! Control thread: free replaced buffers no sounding note holds anymore.
+	void pruneRetiredSamples();
 
 	void applyAttack(SampleFrame* dst, f_cnt_t frames, f_cnt_t firstFrame) const;
 
 	Sample m_sample;
+	//! The current source buffer's sample rate, mirrored for beatLen() (a live MIDI note may be built
+	//! off the render thread while the control thread replaces the buffer).
+	std::atomic<int> m_sampleRate{0};
+	//! Buffers replaced while a sounding note still captures them. Only control threads touch this
+	//! list (a GUI poll and a control command may run at once), so the note's last reference is
+	//! dropped on the audio thread without freeing. Never taken on the audio thread.
+	std::vector<std::shared_ptr<const SampleBuffer>> m_retiredSamples;
+	std::mutex m_retiredSamplesMutex;
 
 	FloatModel m_ampModel;
 	FloatModel m_startPointModel;

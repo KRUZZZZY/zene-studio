@@ -179,6 +179,46 @@ private slots:
 		QCOMPARE(voices(), 0);
 	}
 
+	//! BUG new-p9-552: replacing the instrument's sample while a note is sounding must not switch
+	//! that note to the new source. The note keeps the sample it started on (and the old buffer
+	//! stays alive under it), while a note started after the replacement plays the new file.
+	void replacingTheSampleKeepsASoundingNoteOnItsSource()
+	{
+		const QString constant = writeWav(m_dir.filePath(QStringLiteral("constant.wav")), false); // flat 0.5
+		const QString ramp = writeWav(m_dir.filePath(QStringLiteral("ramp.wav")), true);          // 0 -> 0.9
+		freshSampler(constant);
+
+		const auto lastPeriodPeak = [&](const Played& p) {
+			return peakOf(p.left, p.left.size() - static_cast<std::size_t>(m_fpp), p.left.size());
+		};
+
+		Played held = start();
+		renderPeriods({&held}, 2);
+		QVERIFY2(lastPeriodPeak(held) > 0.4f, "the held note sounds the file it started on");
+
+		// Replace the file while the note is sounding: its playback keeps rendering from the old buffer.
+		QVERIFY(QMetaObject::invokeMethod(m_instrument, "setAudioFile",
+			Q_ARG(QString, ramp), Q_ARG(bool, false)));
+		renderPeriods({&held}, 2);
+		QVERIFY2(lastPeriodPeak(held) > 0.4f,
+			qPrintable(QStringLiteral("the sounding note switched samples: last-period peak %1").arg(lastPeriodPeak(held))));
+
+		// A note that starts after the replacement plays the replaced file; the ramp starts near silence.
+		Played fresh = start();
+		renderPeriods({&fresh}, 1);
+		QVERIFY2(lastPeriodPeak(fresh) < 0.1f, "a note started after the replacement plays the new sample");
+
+		// A second replacement while the first note still sounds must leave it on its own source too.
+		const QString rampAgain = writeWav(m_dir.filePath(QStringLiteral("ramp-again.wav")), true);
+		QVERIFY(QMetaObject::invokeMethod(m_instrument, "setAudioFile",
+			Q_ARG(QString, rampAgain), Q_ARG(bool, false)));
+		renderPeriods({&held, &fresh}, 2);
+		QVERIFY2(lastPeriodPeak(held) > 0.4f, "a second replacement still does not switch the sounding note");
+
+		NotePlayHandleManager::release(held.nph);
+		NotePlayHandleManager::release(fresh.nph);
+	}
+
 	//! Starting a note, reusing a voice and releasing a note allocate nothing.
 	void noteStartAndVoiceReuseDoNotAllocate()
 	{

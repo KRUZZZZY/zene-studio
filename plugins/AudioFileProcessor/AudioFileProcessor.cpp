@@ -120,6 +120,7 @@ AudioFileProcessor::AudioFileProcessor( InstrumentTrack * _instrument_track ) :
 		model->setDeferChangeSignalOnRenderThread();
 	}
 
+	m_sampleRate.store( m_sample.sampleRate() );
 	pointChanged();
 }
 
@@ -187,6 +188,10 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 		}
 		if (handle->claim.valid())
 		{
+			// Capture the source once, on the note's first period. A file replacement later must not
+			// switch this note to the new buffer or free the old one while the note renders it.
+			handle->sample = m_sample;
+			handle->loopMode = m_loopModel.value();
 			auto& state = pool->voice(handle->claim.index).state;
 			state.setFrameIndex(m_nextPlayStartPoint);
 			state.setBackwards(m_nextPlayBackwards);
@@ -205,10 +210,22 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 	auto& voice = pool->voice(handle->claim.index);
 	if (nph->isReleased()) { pool->markReleased(handle->claim); }
 
+	// While the instrument still publishes the buffer this note started on, follow its knobs and
+	// automation live; once the file is replaced, finish on the captured snapshot.
+	const bool live = handle->sample.buffer() == m_sample.buffer();
+	if (live)
+	{
+		handle->sample.setAllPointFrames(m_sample.startFrame(), m_sample.endFrame(),
+			m_sample.loopStartFrame(), m_sample.loopEndFrame());
+		handle->sample.setReversed(m_sample.reversed());
+		handle->sample.setAmplification(m_sample.amplification());
+		handle->loopMode = m_loopModel.value();
+	}
+
 	if( ! nph->isFinished() )
 	{
-		if (m_sample.play(out.data() + offset, &voice.state,
-						frames, static_cast<Sample::Loop>(m_loopModel.value()),
+		if (handle->sample.play(out.data() + offset, &voice.state,
+						frames, static_cast<Sample::Loop>(handle->loopMode),
 						DefaultBaseFreq / nph->frequency()))
 		{
 			applyAttack(out.data() + offset, frames, nph->totalFramesPlayed());
@@ -273,6 +290,8 @@ void AudioFileProcessor::publishPlayhead( f_cnt_t _current_frame ) noexcept
 
 void AudioFileProcessor::pollPlayhead()
 {
+	// Replaced sample buffers a note has since released are freed here, on the GUI thread.
+	pruneRetiredSamples();
 	flushDeferredSignals();
 	const f_cnt_t current = m_playheadFrame.load( std::memory_order_relaxed );
 	if( current == m_playheadShown ) { return; }
@@ -341,7 +360,7 @@ void AudioFileProcessor::loadSettings(const QDomElement& elem)
 	}
 	else if (auto sampleData = elem.attribute("sampledata"); !sampleData.isEmpty())
 	{
-		m_sample = Sample(SampleBuffer::fromBase64(sampleData));
+		replaceSample(Sample(SampleBuffer::fromBase64(sampleData)));
 	}
 
 	m_loopModel.loadSettings(elem, "looped");
@@ -410,7 +429,10 @@ auto AudioFileProcessor::beatLen(NotePlayHandle* note) const -> f_cnt_t
 	const auto freqFactor = baseFreq / note->frequency()
 		* Engine::audioEngine()->outputSampleRate()
 		/ Engine::audioEngine()->baseSampleRate();
-	const auto sampleRateRatio = static_cast<double>(Engine::audioEngine()->outputSampleRate()) / m_sample.sampleRate();
+	// A live MIDI note may be built off the render thread while the control thread replaces the
+	// buffer; read the mirrored rate instead of the buffer (cluster new-p9-552).
+	const auto sampleRateRatio = static_cast<double>(Engine::audioEngine()->outputSampleRate())
+		/ m_sampleRate.load(std::memory_order_relaxed);
 
 	const auto startFrame = m_nextPlayStartPoint >= static_cast<std::size_t>(m_sample.endFrame())
 		? m_sample.startFrame()
@@ -441,11 +463,50 @@ void AudioFileProcessor::setAudioFile(const QString& _audio_file, bool _rename)
 	}
 	// else we don't touch the track-name, because the user named it self
 
-	m_sample = Sample(SampleBuffer::fromFile(_audio_file));
+	replaceSample(Sample(SampleBuffer::fromFile(_audio_file)));
 	loopPointChanged();
 	ampModelChanged();
 	reverseModelChanged();
 	emit sampleUpdated();
+}
+
+
+
+
+void AudioFileProcessor::replaceSample(Sample next)
+{
+	// A sounding note captured the old buffer and renders from it until it ends, so the buffer must
+	// stay alive and must never be released on the audio thread. Retire it on this control thread.
+	const auto previous = m_sample.buffer();
+	if (previous != SampleBuffer::emptyBuffer())
+	{
+		const std::lock_guard lock{m_retiredSamplesMutex};
+		m_retiredSamples.push_back(previous);
+	}
+
+	// A note's first period captures the instrument's sample on the render thread; holding the model
+	// for the swap keeps that capture from observing a half-replaced source. The engine's lock is
+	// recursive, so callers that already hold it (project load, a control command) are unaffected.
+	AudioEngine* const engine = Engine::audioEngine();
+	if (engine != nullptr) { engine->requestChangeInModel(); }
+	m_sample = std::move(next);
+	m_sampleRate.store(static_cast<int>(m_sample.sampleRate()));
+	if (engine != nullptr) { engine->doneChangeInModel(); }
+
+	pruneRetiredSamples();
+}
+
+
+
+
+void AudioFileProcessor::pruneRetiredSamples()
+{
+	// Sole owner: no sounding note holds it and none can capture it again (the instrument publishes
+	// the new buffer), so this control-thread release is the one that frees it.
+	const std::lock_guard lock{m_retiredSamplesMutex};
+	m_retiredSamples.erase(std::remove_if(m_retiredSamples.begin(), m_retiredSamples.end(),
+		[](const std::shared_ptr<const SampleBuffer>& buffer) { return buffer.use_count() == 1; }),
+		m_retiredSamples.end());
 }
 
 
