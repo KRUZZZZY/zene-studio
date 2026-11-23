@@ -31,7 +31,11 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QVector>
 
+#include "ArrangementEdits.h"
+#include "Clip.h"
+#include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Song.h"
@@ -124,6 +128,51 @@ QString flattenRefusal(const Track* track)
 	if (static_cast<int>(track->type()) < static_cast<int>(Track::Type::Automation)) { return QString(); }
 	return QStringLiteral("%1 carries no audio: a flatten needs an instrument, pattern, sample, event or video track")
 		.arg(trackIdOf(track));
+}
+
+namespace
+{
+
+//! True when every audible clip of @a track lies inside @a range, so muting the track silences nothing outside it.
+bool audibleClipsInside(const Track* track, const BounceInPlace::Range& range)
+{
+	for (const Clip* clip : track->getClips())
+	{
+		if (clip == nullptr || clip->isMuted()) { continue; }
+		if (clip->startPosition().getTicks() < range.start || clip->endPosition().getTicks() > range.end) { return false; }
+	}
+	return true;
+}
+
+} // namespace
+
+void muteRangeSources(const std::vector<Track*>& tracks, const BounceInPlace::Range& range)
+{
+	QVector<JournallingObject*> checkpoints;
+	for (Track* track : tracks)
+	{
+		if (track != nullptr) { checkpoints.append(track); }
+	}
+	// One step before any cut or mute: undo puts the arrangement and the mutes back exactly as they were.
+	addUndoStep(checkpoints);
+	for (Track* track : tracks)
+	{
+		if (track == nullptr) { continue; }
+		// A track with no audio of its own is muted whole as before: the bounce carries no automation to replace.
+		if (static_cast<int>(track->type()) >= static_cast<int>(Track::Type::Automation)
+			|| audibleClipsInside(track, range))
+		{
+			track->setMuted(true);
+			continue;
+		}
+		arrangement::isolateRegion(track, range.start, range.end, nullptr);
+		for (Clip* clip : track->getClips())
+		{
+			if (clip == nullptr || clip->isMuted()) { continue; }
+			const tick_t start = clip->startPosition().getTicks();
+			if (start >= range.start && start < range.end) { clip->setMuted(true); }
+		}
+	}
 }
 
 //! The render facts every verb of this file reports.

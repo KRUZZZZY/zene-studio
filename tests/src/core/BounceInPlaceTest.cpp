@@ -39,8 +39,11 @@
 #endif
 
 #include <QDir>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QTemporaryDir>
 
@@ -48,10 +51,13 @@
 #include <cstring>
 #include <limits>
 
+#include "ArrangementEdits.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "BounceInPlace.h"
 #include "BrowserTestSupport.h"
+#include "Clip.h"
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -71,13 +77,16 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 	return ControlRegistry::instance()->invoke(id, args);
 }
 
-//! The stand-in for `zene render <project> -o <out> ...`.
+//! The stand-in for `zene render <project> -o <out> ...`. Four seconds at the requested rate, so a range
+//! bounce (which trims the render to the range's frame window) has the frames it asks for.
 int fakeRender(int argc, char** argv)
 {
 	QString out;
+	int rate = 48000;
 	for (int i = 1; i + 1 < argc; ++i)
 	{
 		if (std::strcmp(argv[i], "-o") == 0) { out = QString::fromLocal8Bit(argv[i + 1]); }
+		if (std::strcmp(argv[i], "-s") == 0) { rate = QString::fromLocal8Bit(argv[i + 1]).toInt(); }
 	}
 	if (qEnvironmentVariableIsSet("ZENE_FAKE_RENDER_PARTIAL"))
 	{
@@ -85,7 +94,10 @@ int fakeRender(int argc, char** argv)
 		if (partial.open(QIODevice::WriteOnly | QIODevice::Truncate)) { partial.write("partial render"); }
 		return 3;
 	}
-	return writeWave(out, WaveSpec()) ? 0 : 4;
+	WaveSpec spec;
+	spec.sampleRate = rate > 0 ? rate : 48000;
+	spec.frames = spec.sampleRate * 4;
+	return writeWave(out, spec) ? 0 : 4;
 }
 
 //! An instrument track holding one clip (a bounce of a track with no clip is refused).
@@ -110,6 +122,39 @@ QByteArray readFile(const QString& path)
 }
 
 int trackCount() { return static_cast<int>(Engine::getSong()->tracks().size()); }
+
+//! Every clip of \a track as "start[muted],..." in arrangement order: one value that shows a region mute AND
+//! the cuts that isolate it (cluster 3971). Read fresh on every call: an undo reloads the track's clips.
+QString clipState(Track* track)
+{
+	QString state;
+	for (const Clip* clip : track->getClips())
+	{
+		state += QStringLiteral("%1%2,").arg(clip->startPosition().getTicks())
+			.arg(clip->isMuted() ? QLatin1Char('M') : QLatin1Char('a'));
+	}
+	return state;
+}
+
+//! Polls the render queue through its own command until the job leaves the running states (the seam every
+//! queued-render test uses; the child process is the only asynchronous part).
+QJsonObject waitForJob(int id, int timeoutMs = 10000)
+{
+	QElapsedTimer timer;
+	timer.start();
+	QJsonObject last;
+	while (timer.elapsed() < timeoutMs)
+	{
+		QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+		const ControlResult report = run(QStringLiteral("render.queue_report"), {{QStringLiteral("job"), id}});
+		if (!report.ok) { return {}; }
+		last = report.result;
+		const QString state = last.value(QStringLiteral("state")).toString();
+		if (state == QLatin1String("done") || state == QLatin1String("failed")) { return last; }
+		QTest::qWait(5);
+	}
+	return last;
+}
 }
 
 class BounceInPlaceTest : public QObject
@@ -138,6 +183,9 @@ private slots:
 	void init()
 	{
 		qunsetenv("ZENE_FAKE_RENDER_PARTIAL");
+		run(QStringLiteral("render.queue_cancel"), {{QStringLiteral("all"), true}});
+		run(QStringLiteral("render.queue_clear"));
+		ArrangerRange::instance().clear();
 		Engine::getSong()->clearProject();
 	}
 
@@ -298,6 +346,97 @@ private slots:
 		QCOMPARE(written, qint64(0));
 		QCOMPARE(BounceInPlace::sha256OfFile(source), before);
 		QCOMPARE(BounceInPlace::wavFrameCount(source), kFixtureFrames);
+	}
+
+	/*! Cluster 3971: a bounce of a range replaces the SELECTION, not the source tracks. A track with audio on
+	 *  both sides of the range keeps its outside clips audible; only the clips inside are muted, and a clip
+	 *  crossing an edge is cut there. One undo takes the cut and the mutes back with the landed track.
+	 */
+	void rangeBounceMutesOnlyTheBouncedRegionOfItsSources()
+	{
+		Track* padded = Track::create(Track::Type::Instrument, Engine::getSong());
+		padded->setName(QStringLiteral("Padded"));
+		for (const int at : {0, 192, 384}) { padded->createClip(TimePos(at)); }
+		Track* crossing = Track::create(Track::Type::Instrument, Engine::getSong());
+		crossing->setName(QStringLiteral("Crossing"));
+		crossing->createClip(TimePos(144));  // 144..336, crossing the range's start at 192
+		const int before = trackCount();
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 192}, {QStringLiteral("end"), 384},
+			{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(padded), control::trackIdOf(crossing)}}}).ok);
+		const ControlResult bounced = run(QStringLiteral("range.bounce"), {{QStringLiteral("out"), out(QStringLiteral("region.wav"))}});
+		QVERIFY2(bounced.ok, qPrintable(bounced.errorMessage));
+		QCOMPARE(bounced.result.value(QStringLiteral("tracks")).toInt(), 2);
+		QCOMPARE(trackCount(), before + 1);
+		// Whole tracks stay unmuted; the bounced clips are the only muted ones.
+		QVERIFY(!padded->isMuted() && !crossing->isMuted());
+		QCOMPARE(clipState(padded), QStringLiteral("0a,192M,384a,"));
+		QCOMPARE(clipState(crossing), QStringLiteral("144a,192M,"));
+		ControlResult ignored;
+		Track* landed = control::resolveTrack(bounced.result.value(QStringLiteral("landed_track")).toString(), &ignored);
+		QVERIFY(landed != nullptr);
+		QCOMPARE(landed->getClips().front()->startPosition().getTicks(), tick_t{192});
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(trackCount(), before);
+		QCOMPARE(clipState(padded), QStringLiteral("0a,192a,384a,"));
+		QCOMPARE(clipState(crossing), QStringLiteral("144a,"));
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCOMPARE(trackCount(), before + 1);
+		QCOMPARE(clipState(padded), QStringLiteral("0a,192M,384a,"));
+		QCOMPARE(clipState(crossing), QStringLiteral("144a,192M,"));
+	}
+
+	//! The same rule for bounce.land with 'start'/'end': only the selection is muted, so the clip's parts
+	//! before and after it keep playing, and one undo puts the uncut clip back.
+	void bounceLandOfARangeMutesOnlyItsSelection()
+	{
+		Track* source = trackWithClip(QStringLiteral("Keys"));
+		const ControlResult landed = run(QStringLiteral("bounce.land"), {{QStringLiteral("track"), control::trackIdOf(source)},
+			{QStringLiteral("out"), out(QStringLiteral("land-region.wav"))}, {QStringLiteral("start"), 48}, {QStringLiteral("end"), 144}});
+		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
+		QVERIFY(!source->isMuted());
+		QCOMPARE(clipState(source), QStringLiteral("0a,48M,144a,"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(clipState(source), QStringLiteral("0a,"));
+	}
+
+	//! Cluster 3971's asynchronous path (render.queue_bounce, operation range_bounce) applies the same region
+	//! mutes and the same one-step undo.
+	void queuedRangeBounceMutesOnlyTheBouncedRegion()
+	{
+		Track* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		track->setName(QStringLiteral("Queued"));
+		for (const int at : {0, 192, 384}) { track->createClip(TimePos(at)); }
+		const int before = trackCount();
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 192}, {QStringLiteral("end"), 384},
+			{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(track)}}}).ok);
+		const ControlResult accepted = run(QStringLiteral("render.queue_bounce"), {{QStringLiteral("operation"), QStringLiteral("range_bounce")},
+			{QStringLiteral("out"), out(QStringLiteral("region-queued.wav"))}});
+		QVERIFY2(accepted.ok, qPrintable(accepted.errorMessage));
+		QCOMPARE(waitForJob(accepted.result.value(QStringLiteral("job")).toInt()).value(QStringLiteral("state")).toString(),
+			QStringLiteral("done"));
+		QCOMPARE(trackCount(), before + 1);
+		QVERIFY(!track->isMuted());
+		QCOMPARE(clipState(track), QStringLiteral("0a,192M,384a,"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(trackCount(), before);
+		QCOMPARE(clipState(track), QStringLiteral("0a,192a,384a,"));
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCOMPARE(clipState(track), QStringLiteral("0a,192M,384a,"));
+	}
+
+	//! The queued bounce_land sibling: a ranged bounce mutes only its selection there too.
+	void queuedBounceLandOfARangeMutesOnlyItsSelection()
+	{
+		Track* source = trackWithClip(QStringLiteral("Queued keys"));
+		const ControlResult accepted = run(QStringLiteral("render.queue_bounce"), {{QStringLiteral("operation"), QStringLiteral("bounce_land")},
+			{QStringLiteral("track"), control::trackIdOf(source)}, {QStringLiteral("start"), 48}, {QStringLiteral("end"), 144},
+			{QStringLiteral("out"), out(QStringLiteral("queued-land-region.wav"))}});
+		QVERIFY2(accepted.ok, qPrintable(accepted.errorMessage));
+		QCOMPARE(waitForJob(accepted.result.value(QStringLiteral("job")).toInt()).value(QStringLiteral("state")).toString(),
+			QStringLiteral("done"));
+		QVERIFY(!source->isMuted());
+		QCOMPARE(clipState(source), QStringLiteral("0a,48M,144a,"));
 	}
 
 	/*! The tick span from INT32_MIN to INT32_MAX is 2^32 - 1, which a tick_t cannot hold: the subtraction
