@@ -10,6 +10,12 @@ control thread while `playNoteImpl()` read the same object on the render/audio w
 worker could observe a half-updated `Sample`, and the copy assignment could free the old
 buffer while a note was still reading its frames.
 
+Round-2 revision: the code was trimmed to **30 added non-comment product lines** (limit
+40; round 1 was 51) with no change in behaviour. The mutex and the GUI-poll pruning call
+were removed; retirement now happens inside the model-guarded publish in `replaceSample()`,
+which serialises control threads as well as the render thread. The report below describes
+the trimmed code and the re-run proof.
+
 ## Evidence (code before the fix, branch `bugs/qwen-new-p9-552`)
 
 - `plugins/AudioFileProcessor/AudioFileProcessor.cpp:444` (old) - `setAudioFile()` did
@@ -30,35 +36,35 @@ took that lock.
 
 ## Fix (at the cause)
 
-- Every sounding note now captures the sample source once, on its first period
-  (`plugins/AudioFileProcessor/AudioFileProcessor.cpp:193`): the claim's `NoteVoice` carries
+- Every sounding note captures the sample source once, on its first period
+  (`plugins/AudioFileProcessor/AudioFileProcessor.cpp:192`): the voice's `NoteVoice` carries
   a `Sample` snapshot and loop mode (`AudioFileProcessor.h:139-146`). The note renders from
-  that snapshot for its whole life (`:215-231`). While the instrument still publishes the
-  same buffer the snapshot is refreshed from the instrument's atomic point/reverse/amp
-  settings, so knobs and automation stay live; after a replacement the note finishes on the
-  buffer it started on instead of switching under playback.
-- `replaceSample()` (`AudioFileProcessor.cpp:476`) is now the only place that publishes a
-  new instrument sample, for both `setAudioFile()` (`:466`) and the embedded-sample branch
-  of `loadSettings()` (`:363`). It takes the engine's model guard for the swap, so a note's
+  that snapshot for its whole life (`AudioFileProcessor.cpp:214-220`). While the instrument
+  still publishes the same buffer, the snapshot is refreshed from the instrument (one
+  `Sample` copy of its atomic point/reverse/amp settings), so knobs and automation stay
+  live; after a replacement the note finishes on the buffer it started on instead of
+  switching under playback.
+- `replaceSample()` (`AudioFileProcessor.cpp:466-482`) is now the only place that publishes
+  a new instrument sample, for both `setAudioFile()` (`:456`) and the embedded-sample branch
+  of `loadSettings()` (`:353`). It takes the engine's model guard for the swap, so a note's
   first-period capture cannot observe a half-replaced `Sample`.
-- The replaced buffer is retired on the control thread (`:480-486`) and is only released
-  when `use_count()==1`, i.e. after every sounding note has dropped its snapshot
-  (`pruneRetiredSamples()`, `:502-510`; also called from the GUI `pollPlayhead()` at `:294`
-  and at the next replacement). A note's last reference therefore never frees audio data on
-  the audio thread.
+- Inside that same guard it retires the old buffer in `m_retiredSamples` and erases entries
+  whose `use_count()` is 1 (`:474-479`): the last reference a sounding note drops on the
+  audio thread therefore never frees the sample data - the control thread does, at the next
+  publish. The guard (recursive mutex) also serialises two control threads publishing.
 - `beatLen()` is also reached from a MIDI-input thread that does not hold the model lock,
   so it reads the mirrored source rate (`std::atomic<int> m_sampleRate`,
-  `AudioFileProcessor.h:159`, `AudioFileProcessor.cpp:433-435`) instead of dereferencing the
+  `AudioFileProcessor.h:156`, `AudioFileProcessor.cpp:423-425`) instead of dereferencing the
   buffer pointer.
-- The retired list is control-thread state behind a mutex (`AudioFileProcessor.h:163-164`),
-  because a GUI poll and a control command can run at the same time; the audio thread never
-  touches it.
 
 Realtime: the only audio-thread additions are a `shared_ptr` copy (atomic refcount) for the
-per-note snapshot, atomic loads of the point/amp/reverse settings, and an atomic generation
-check. Nothing on the render path allocates, frees, locks, waits, logs or emits. The
-`SamplerVoiceReuseTest::noteStartAndVoiceReuseDoNotAllocate` case still passes (it counts
-`operator new` across note start, reuse and disposal).
+per-note snapshot, one `Sample` assignment for the live-settings refresh (atomic loads and
+refcount ops), and an atomic rate read in `beatLen()`. Nothing on the render path allocates,
+frees, locks, waits, logs or emits.
+
+Product-line count (the round-1 send-back):
+
+- `git diff 21c2f3ee2e -- plugins/AudioFileProcessor/AudioFileProcessor.cpp plugins/AudioFileProcessor/AudioFileProcessor.h | grep '^+' | grep -v '^+++' | sed 's/^+//' | sed 's/^[[:space:]]*//' | grep -v '^//' | awk 'NF' | wc -l` -> `30` (limit 40; round 1 measured 51).
 
 ## Regression test
 
@@ -72,6 +78,12 @@ started after the replacement plays the new ramp (peak < 0.1), and that a second
 replacement still leaves the first note on its own source. Deterministic: fixed sample
 files, fixed period counts, no sleeps, threads, clocks or timestamps.
 
+The allocation case `noteStartAndVoiceReuseDoNotAllocate` (`:223`) is a companion check, not
+proof of the lifetime fix: it counts `operator new` only, during note start, voice reuse and
+rendering; it stops counting before the handles are released, so it says nothing about
+frees at disposal. The "no free on the audio thread" guarantee above is a design argument
+(retirement list, `use_count()==1`), not something that test measures.
+
 ## Test matrix
 
 | path | coverage |
@@ -80,42 +92,30 @@ files, fixed period counts, no sleeps, threads, clocks or timestamps.
 | reconfiguration (the bug) | `replacingTheSampleKeepsASoundingNoteOnItsSource`: held note keeps its source, new note uses the new file, a second replacement does not disturb it |
 | failure / missing file | `SampleBuffer::fromFile()` still returns the empty buffer on a decode failure; `replaceSample()` treats the empty buffer as "nothing to retire" and publishes it, so a failed load behaves as before |
 | exhaustion | `everyNoteSoundsWhenItStarts` and the voice-limit/reuse cases exercise the pool at Capacity; the per-note snapshot does not change voice accounting |
-| audio-thread constraints | `noteStartAndVoiceReuseDoNotAllocate` (0 allocations across start, reuse, render, disposal); no locks/allocations added to `playNoteImpl` |
+| audio-thread constraints | `noteStartAndVoiceReuseDoNotAllocate` counts 0 `operator new` across start, reuse and render; no locks/allocations added to `playNoteImpl` |
 | old projects | `loadSettings()` still loads `src` through `setAudioFile()` and `sampledata` through `replaceSample()` with identical `m_sample` contents; `SamplerEnvelopeTest` (defaults, save/load round trip) passes |
-| supported platforms | no Qt-6-only API, no platform-specific code; the change is portable C++20 (`<atomic>`, `<mutex>`, `<vector>`) |
+| supported platforms | no Qt-6-only API, no platform-specific code; the change is portable C++20 (`<atomic>`, `<vector>`) |
 
-## Commands and results (logs in `~/.config/kads/zene/state/runs/new-p9-552.r1/logs/`)
+## Commands and results (logs in `~/.config/kads/zene/state/runs/new-p9-552.r2/logs/`)
 
-Baseline before adding the test:
+Trimmed fix builds and passes:
 
-- `cmake --build build --target SamplerVoiceReuseTest -j4` -> `EXIT=0` (`build-baseline-test.log`)
-- `ctest -R '^SamplerVoiceReuseTest$' --output-on-failure` -> `EXIT=0` (`test-baseline.log`)
-
-RED (test present, product code unchanged):
-
-- `cmake --build build --target SamplerVoiceReuseTest -j4` -> `EXIT=0` (`build-red-1.log`)
-- `ctest -R '^SamplerVoiceReuseTest$' --output-on-failure` -> `EXIT=8` (`test-red-1.log`)
-  `FAIL! : ... replacingTheSampleKeepsASoundingNoteOnItsSource() 'lastPeriodPeak(held) > 0.4f' returned FALSE. (the sounding note switched samples: last-period peak 0.010437)`
-
-GREEN (with the fix):
-
-- `cmake --build build --target SamplerVoiceReuseTest -j4` -> `EXIT=0` (`build-green-1.log`)
+- `cmake --build build --target audiofileprocessor SamplerVoiceReuseTest -j4` -> `EXIT=0` (`build-1.log`)
 - `ctest -R '^SamplerVoiceReuseTest$' --output-on-failure` -> `EXIT=0` (`test-green-1.log`)
 
-Step 4b, reverting only the product hunks:
+Step 4b, reverting the whole product change to the base commit and rebuilding:
 
-- `git diff -- plugins/AudioFileProcessor/AudioFileProcessor.cpp plugins/AudioFileProcessor/AudioFileProcessor.h > .../logs/fix.patch` -> `DIFF_EXIT=0`
+- `git diff 21c2f3ee2e -- plugins/AudioFileProcessor/AudioFileProcessor.cpp plugins/AudioFileProcessor/AudioFileProcessor.h > .../logs/fix.patch` -> `DIFF_EXIT=0`
 - `git apply -R .../logs/fix.patch` -> `REVERSE_APPLY_EXIT=0`
 - `cmake --build build --target audiofileprocessor SamplerVoiceReuseTest -j4` -> `BUILD_EXIT=0` (`build-red-without-fix.log`)
 - `ctest -R '^SamplerVoiceReuseTest$' --output-on-failure` -> `TEST_EXIT=8` (`test-red-without-fix.log`)
-  `FAIL! : ... replacingTheSampleKeepsASoundingNoteOnItsSource() ... last-period peak 0.010437`
+  `FAIL! : ... replacingTheSampleKeepsASoundingNoteOnItsSource() 'lastPeriodPeak(held) > 0.4f' returned FALSE. (the sounding note switched samples: last-period peak 0.010437)`
 - `git apply .../logs/fix.patch` -> `APPLY_EXIT=0`
 - `cmake --build build --target audiofileprocessor SamplerVoiceReuseTest -j4` -> `BUILD_EXIT=0` (`build-green-after-reapply.log`)
 - `ctest -R '^SamplerVoiceReuseTest$' --output-on-failure` -> `TEST_EXIT=0` (`test-green-after-reapply.log`)
 
 Family (all tests around the changed area):
 
-- `cmake --build build --target SamplerTakeTest AudioFileProcessorWaveViewTest AudioFileProcessorPlayheadTest SamplerEnvelopeTest -j4` -> `EXIT=0` (`build-family-1.log`)
 - `ctest -R '^(SamplerTakeTest|AudioFileProcessorWaveViewTest|AudioFileProcessorPlayheadTest|SamplerEnvelopeTest|SamplerVoiceReuseTest)$' --output-on-failure` -> `EXIT=0`, 5/5 passed (`test-family-1.log`)
 
 Gates:
@@ -125,16 +125,16 @@ Gates:
 ## Self-check
 
 - **The regression test FAILS with the product change reverted and PASSES with it.**
-  Reverted with `git apply -R logs/fix.patch` and rebuilt: `TEST_EXIT=8` with the failure
-  quoted above. Re-applied (`APPLY_EXIT=0`), rebuilt, reran: `TEST_EXIT=0`. Exact commands
-  and logs are listed above.
+  Reverted the cumulative product patch to the base commit and rebuilt (`REVERSE_APPLY_EXIT=0`,
+  `BUILD_EXIT=0`): `TEST_EXIT=8` with the failure quoted above. Re-applied
+  (`APPLY_EXIT=0`), rebuilt, reran: `TEST_EXIT=0`. Exact commands and logs are listed above.
 - **The test is deterministic: no wall-clock timing, sleeps or races.** It uses fixed WAV
   fixtures (a flat 0.5 file and a ramp), a fixed number of rendered periods, and checks the
   rendered peak of the last period. It starts no thread and reads no clock; all ordering is
   explicit (`renderPeriods` calls `NotePlayHandle::play` directly).
 - **The fix is at the cause and complete; every caller and sibling was checked.**
-  `setAudioFile()` (`AudioFileProcessor.cpp:466`) and the embedded-sample branch of
-  `loadSettings()` (`:363`) both go through `replaceSample()`; the `src` branch of
+  `setAudioFile()` (`AudioFileProcessor.cpp:456`) and the embedded-sample branch of
+  `loadSettings()` (`:353`) both go through `replaceSample()`; the `src` branch of
   `loadSettings()` already goes through `setAudioFile()`. `m_sample` is no longer read from
   the render path except its atomic point/reverse/amp settings and the buffer-identity check
   under the engine's model guard. `beatLen()` was the other off-render reader of the buffer
