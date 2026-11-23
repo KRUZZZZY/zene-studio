@@ -107,7 +107,8 @@ Song.cpp is in the diff, so the states the test drives, in order:
   build-3-green-again.log EXIT=0; ctest → test-4-green-again.log **EXIT=0** (1/1 passed).
 - Gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>`
   → feature-check.log EXIT=0, RESULT: PASS (all 8 rows PASS).
-- Completion check: see the last section of this file.
+- Completion check: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p12-248`
+  → submit-check.log EXIT=0, every mechanical row PASS, `RESULT: PASS - submit` (run on the commit before this line was added).
 - Registration: `tests/upstream-modifications.txt` lists `src/core/AutomationClip.cpp` and the
   `include/AutomationClip.h` and `src/core/Song.cpp` reasons; the list ends with a newline.
 
