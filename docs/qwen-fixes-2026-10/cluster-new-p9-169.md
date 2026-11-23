@@ -137,6 +137,17 @@ feature-check kads-new-p9-169 (base fa4a5f2e7, 433 changed files)
 RESULT: PASS
 ```
 
+GUI smoke and the screenshot artifact (no `src/gui` product file changed; the test file lives under
+`tests/src/gui`, so this also shows the app still starts and renders after the change):
+
+```
+QT_QPA_PLATFORM=offscreen python3 tests/control-shell.py build/zene $L/shots > $L/gui-shell.log 2>&1   # GUI_EXIT=0
+sha256sum $L/shots/shell-mix.png   # 87a3c77db3e8470f40338f2209bdc611ebb77ff07ac160796680b7bf26df759c
+```
+
+`gui-shell.log` ends with `PASS: shell control-surface driver (every check held)`, including "the three views
+render three different images".
+
 Registration: `include/LatencyCompensation.h`, `src/core/LatencyCompensation.cpp`,
 `src/core/HardwareInsert.cpp` and `tests/src/gui/MixerInsertLatencyTest.cpp` are already listed in
 `tests/fork-sources.txt` (`:1193`, `:2094`, `:2079`, `:3235`), so no list needed a new entry and no inherited
