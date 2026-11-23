@@ -67,7 +67,7 @@ Flatten entry, and Navigate > Range > Bounce to a New Track.
 | 4b restore | `git apply .../fix.patch` | 0 |
 | 4b GREEN build | `cmake --build build --target RenderMenuQueueTest -j4` - `build-green-4.log` | 0 |
 | 4b GREEN test | `ctest -R '^RenderMenuQueueTest$' --output-on-failure` - `test-green-4.log` | 0 |
-| family | `ctest -R '^(RenderMenuQueueTest\|TrackRenderMenuTest\|ControlRenderJobTest\|ControlBounceRenderTest\|MixerBusFreezeMenuTest\|RenderRangeMenuTest\|LibraryMenusTest\|BatchFreezeTest)$'` - `test-family-1.log` | 0 (8/8) |
+| family | `ctest -R '^(RenderMenuQueueTest\|TrackRenderMenuTest\|ControlRenderJobTest\|ControlBounceRenderTest\|MixerBusFreezeMenuTest\|RenderRangeMenuTest\|LibraryMenusTest\|BatchFreezeTest)$'` - `test-family-2.log` | 0 (8/8) |
 | gates | `python3 .../feature_check.py <worktree>` - `gates-1.log` | 0 (all eight rows PASS) |
 | GUI harness | `window.screenshot` of `build/zene` - `gui-screenshot-1.log`, `cluster-917-window.png` | 0 |
 
