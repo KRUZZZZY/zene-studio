@@ -29,11 +29,14 @@
 
 #include "endian_handling.h"
 #include "AudioEngine.h"
+#include "AudioAlsaRecovery.h"
 #include "AudioAlsaWrite.h"
 #include "AudioInputPath.h"
 #include "AudioIoSetup.h"
 #include "ConfigManager.h"
 #include "CrashReporter.h"
+
+#include <chrono>
 
 namespace lmms
 {
@@ -46,6 +49,14 @@ namespace
 //! device that has stopped delivering would never return, and the join in
 //! closeCapture() would hang on it.
 constexpr int kCaptureWaitMs = 200;
+
+//! The suspend recovery's budget, shared by playback and capture (cluster 5490):
+//! at most this many snd_pcm_resume() attempts, waiting between them, before the
+//! recovery falls back to snd_pcm_prepare(). Bounded because a device that stays
+//! suspended answers -EAGAIN forever; the caller's stop flag is checked before
+//! every attempt, so a shutdown never waits for the whole budget.
+constexpr int kSuspendResumeAttempts = 20;
+constexpr int kSuspendResumeWaitMs = 100;
 
 } // namespace
 
@@ -250,13 +261,20 @@ int AudioAlsa::handleError( int _err )
 #ifdef ESTRPIPE
 	else if( _err == -ESTRPIPE )
 	{
-		while( ( _err = snd_pcm_resume( m_handle ) ) == -EAGAIN )
+		// A device that has not finished suspending answers -EAGAIN on every resume.
+		// The retry is bounded, and it stops when the device is stopping: the old
+		// unbounded sleep loop blocked the shutdown for as long as the device stayed
+		// suspended (cluster 5490).
+		const auto outcome = alsa::detail::resumePcmWithBudget(
+			[this]() { return snd_pcm_resume( m_handle ); },
+			[]() { std::this_thread::sleep_for( std::chrono::milliseconds( kSuspendResumeWaitMs ) ); },
+			[this]() { return !AudioDevice::isRunning(); },
+			kSuspendResumeAttempts );
+		if( outcome.stopped )
 		{
-			sleep( 1 );	// wait until the suspend flag
-					// is released
+			return 0;  // stopping: there is nothing left to recover
 		}
-
-		if( _err < 0 )
+		if( outcome.error < 0 )
 		{
 			if( int err = snd_pcm_prepare( m_handle ); err < 0 )
 			{
@@ -568,14 +586,22 @@ int AudioAlsa::handleCaptureError( int _err )
 	if( _err == -ESTRPIPE )
 	{
 		AudioInputPath::addOverrun();
-		int err = 0;
-		while( ( err = snd_pcm_resume( m_captureHandle ) ) == -EAGAIN )
+		// The capture sibling of the playback suspend recovery: bounded, and it stops
+		// at once when the capture is closing. closeCapture() sets m_captureStop and
+		// then joins this thread, so a retry that ignored the flag hung the shutdown
+		// (cluster 5490).
+		const auto outcome = alsa::detail::resumePcmWithBudget(
+			[this]() { return snd_pcm_resume( m_captureHandle ); },
+			[]() { std::this_thread::sleep_for( std::chrono::milliseconds( kSuspendResumeWaitMs ) ); },
+			[this]() { return m_captureStop.load( std::memory_order_acquire ); },
+			kSuspendResumeAttempts );
+		if( outcome.stopped )
 		{
-			sleep( 1 );
+			return 0;  // closing: there is nothing left to recover
 		}
-		if( err < 0 )
+		if( outcome.error < 0 )
 		{
-			err = snd_pcm_prepare( m_captureHandle );
+			const int err = snd_pcm_prepare( m_captureHandle );
 			if( err < 0 )
 			{
 				// Parked, not logged: see the overrun branch above.
