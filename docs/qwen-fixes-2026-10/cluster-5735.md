@@ -228,9 +228,10 @@ RESULT: PASS
     caller of `runCliRender`, so they take the same rule; both render checks pass in
     `ControlSuccessPaths` (`test-11-subprojects.log`, lines 23-24 `ok`).
   - `project.*` save/open/archive verbs in the same file never reach `runCliRender`
-    and are untouched; `mastering.run` and `app.*` are different files and different
-    paths, untouched — no command id, schema or reply field changed anywhere
-    (`git diff` is one file plus a test).
+    and are untouched. The `app.*` and `arrangement.*` ids the check lists are
+    registered in other files and never spawn a render child, so this fix cannot
+    reach them; `mastering.run` likewise has its own path. No command id, schema or
+    reply field changed anywhere (`git diff` is one product file plus a test).
 - **Other findings (not fixed here).** (1) `ControlRenderSurround` fails on this host
   on two CLI-stderr checks (`--channels 9.1`, `exportstems --channels surround`): the
   shipped CLI exits 1 with EMPTY stderr, so `usageError`'s `qCritical()`
