@@ -28,8 +28,10 @@
 
 #include "CollabSessionAddress.h"
 
+#include <QFile>
 #include <QSysInfo>
 #include <QTimer>
+#include <QUuid>
 
 #include "CollabClient.h"
 #include "CollabCommandTap.h"
@@ -168,6 +170,9 @@ void CollabSession::resetToIdle()
 	m_client.reset();
 	m_dispatcher.reset();
 	m_mode = Mode::Idle;
+	m_snapshotToken.clear();
+	m_snapshotPath.clear();
+	m_snapshotFile.reset();
 	m_autoResyncPending = false;
 }
 
@@ -249,6 +254,7 @@ ControlResult CollabSession::join(const QString& inviteText, const QString& name
 	const QString tls = tlsPskUnavailableReason();
 	if (!tls.isEmpty()) { return refused(tls); }
 	m_name = defaultName(name);
+	m_snapshotToken = QUuid::createUuid().toString(QUuid::WithoutBraces).remove(QLatin1Char('-')).left(12);
 	m_client = std::make_unique<CollabClient>();
 	m_client->setSnapshotSink([this](const QByteArray& project, QString* why) { return applySnapshot(project, why); });
 	m_client->setCommandSink([this](const QString& command, const QJsonObject& args, QString* why) {

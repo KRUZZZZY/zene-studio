@@ -30,7 +30,6 @@
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
-#include <QSaveFile>
 #include <QTemporaryDir>
 #include <QTimer>
 
@@ -80,15 +79,17 @@ QString streamedRefusal(const QString& command, const QJsonObject& args)
 	return streamable ? QString() : QStringLiteral("the host streamed '%1', which a peer does not apply").arg(command);
 }
 
-QString snapshotPathFor(const QString& hostLabel)
+//! The joined copy is written through the handle this join reserved. Before the project is opened, insist
+//! the path still presents those exact bytes: a directory entry another process replaced is never opened.
+bool fileHoldsSnapshot(const QString& path, const QByteArray& snapshot)
 {
-	QString label = hostLabel;
-	for (QChar& c : label)
-	{
-		if (!c.isLetterOrNumber()) { c = QLatin1Char('-'); }
-	}
-	return ConfigManager::inst()->userProjectsDir() + QStringLiteral("collab/joined-%1.mmpz").arg(label);
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly) || file.size() != snapshot.size()) { return false; }
+	return file.readAll() == snapshot;
 }
+
+//! How many times one publication re-reserves when another file takes the reserved name mid-write.
+constexpr int SnapshotPublishAttempts = 4;
 
 } // namespace
 
@@ -219,19 +220,48 @@ QByteArray CollabSession::writeSnapshot(QString* error) const
 bool CollabSession::applySnapshot(const QByteArray& project, QString* error)
 {
 	// Kept beside the user's projects, not in a temporary folder: the joined copy is the open project, and a
-	// save while joined must land somewhere that still exists afterwards.
-	const QString path = snapshotPathFor(m_client->hostAddress());
-	QDir().mkpath(QFileInfo(path).absolutePath());
-	QSaveFile file(path);
-	if (!file.open(QIODevice::WriteOnly) || file.write(project) != project.size() || !file.commit())
+	// save while joined must land somewhere that still exists afterwards. The first publication reserves a
+	// per-join name atomically (NewOnly); a name another process takes first is skipped, never replaced.
+	const QString directory = ConfigManager::inst()->userProjectsDir() + QStringLiteral("collab");
+	QDir().mkpath(directory);
+	for (int attempt = 0; attempt < SnapshotPublishAttempts; ++attempt)
 	{
-		*error = QStringLiteral("could not write %1").arg(path);
-		return false;
+		if (!m_snapshotFile)
+		{
+			QString path;
+			auto file = std::make_unique<QFile>();
+			if (!reserveSnapshotDestination(directory, m_client->hostAddress(), m_snapshotToken, file.get(), &path, error))
+			{
+				return false;
+			}
+			m_snapshotFile = std::move(file);
+			m_snapshotPath = path;
+		}
+		else if (!m_snapshotFile->resize(0) || !m_snapshotFile->seek(0))
+		{
+			*error = QStringLiteral("could not prepare %1: %2").arg(m_snapshotPath, m_snapshotFile->errorString());
+			return false;
+		}
+		if (m_snapshotFile->write(project) != project.size() || !m_snapshotFile->flush())
+		{
+			*error = QStringLiteral("could not write %1: %2").arg(m_snapshotPath, m_snapshotFile->errorString());
+			return false;
+		}
+		if (fileHoldsSnapshot(m_snapshotPath, project)) { break; }
+		// The reserved name was replaced after this join created it. Our handle wrote the old file, not the
+		// one now at the path: close it, leave the other file untouched, and reserve a fresh name.
+		m_snapshotFile.reset();
+		m_snapshotPath.clear();
+		if (attempt + 1 == SnapshotPublishAttempts)
+		{
+			*error = QStringLiteral("could not keep a joined copy in %1").arg(directory);
+			return false;
+		}
 	}
 	ControlResult opened;
 	{
 		RemoteApplyScope applying;
-		opened = ControlRegistry::instance()->invoke(QStringLiteral("project.open"), {{QStringLiteral("path"), path}});
+		opened = ControlRegistry::instance()->invoke(QStringLiteral("project.open"), {{QStringLiteral("path"), m_snapshotPath}});
 	}
 	m_graceUntilMs = nowMs() + SnapshotGraceMs;
 	recordFingerprint();

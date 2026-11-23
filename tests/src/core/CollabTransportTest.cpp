@@ -319,6 +319,10 @@ private slots:
 	//! Snapshot open and read failures must expose the QFile reason to the caller.
 	void snapshotReadFailuresPreserveFileReason();
 
+	//! The snapshot applier must ask CollabPolicy for a unique destination, reserve it atomically and
+	//! cache the session's copy; the old deterministic snapshotPathFor and replacing QSaveFile must be gone.
+	void applySnapshotUsesUniqueDestinationInSource();
+
 	//! Blank lines must not be dropped before the request handler in the host source.
 	void blankLinesAreDispatchedInSource();
 	//! An untracked edit seen during the peer's resync throttle is retried after the interval.
