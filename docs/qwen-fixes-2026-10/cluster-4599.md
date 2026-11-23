@@ -84,6 +84,8 @@ assertion returns early. No injected clock and no sleeps in the assertions.
 | 4b: restore | `git apply .../logs/fix.patch` | 0 | — |
 | 4b: GREEN again | `cmake --build build --target zene AudioDeviceDiagnosticsTest -j4`; `cd build/tests && ... ctest -R "^AudioDeviceDiagnosticsTest$"` | 0; 0 (1/1 passed) | `logs/build-7-green-reapplied.log`, `logs/test-7-green-reapplied.log` |
 | stability | `cd build/tests && ... ctest -R "^AudioDeviceDiagnosticsTest$" --repeat until-fail:3` | 0 (3/3 passed) | `logs/test-8-repeat3.log` |
+| manifest RED (from the committed state, exact `red_command` of `logs/proof.json`) | `git diff 3fb54c6baa~1 3fb54c6baa -- include/AudioJack.h src/core/audio/AudioJack.cpp > .../logs/fix.patch && git apply -R .../logs/fix.patch && cmake --build build --target AudioDeviceDiagnosticsTest -j4 && cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^AudioDeviceDiagnosticsTest$' --output-on-failure` | 8 | `logs/test-9-proof-red.log` |
+| manifest GREEN (exact `green_command` of `logs/proof.json`) | `git apply .../logs/fix.patch && cmake --build build --target zene AudioDeviceDiagnosticsTest -j4 && cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^AudioDeviceDiagnosticsTest$' --output-on-failure` | 0 (1/1 passed), `git status --porcelain` empty | `logs/test-10-proof-green.log` |
 | gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `logs/feature-check-1.log` — 8/8 PASS, `RESULT: PASS` |
 | completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 4599` | 0 (`RESULT: PASS - submit`, 6/6 checked items PASS) | `logs/submit-check-1.log` |
 
