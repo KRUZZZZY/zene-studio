@@ -61,7 +61,9 @@ Neighbours on the fixed tree, one command (`test-07-neighbours.log`):
 Gates: `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`gate-01-feature-check.log`):
 fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity
 and file-length all **PASS**, exit 0. `submit_check.py <worktree> Q050-367` before this report: the only FAILs were
-this file and its Self-check section.
+this file and its Self-check section. With the report committed, the same check prints `RESULT: PASS - submit`
+(`gate-03-submit-check-final.log`, exit 0): every mechanical item PASS, the one WARN being `plugins/LadspaEffect/LadspaEffect.cpp`
+lines from another lane that the merge-base diff pulls in (see the realtime answer below), and every ASK answered here.
 
 Logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/Q050-367.r1/logs`.
 
