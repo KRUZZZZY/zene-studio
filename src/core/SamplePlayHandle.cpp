@@ -382,6 +382,25 @@ void SamplePlayHandle::snapshotComp(const SampleClip* clip)
 			static_cast<f_cnt_t>(std::llround((from - start) * fpt)),
 			static_cast<f_cnt_t>(std::llround((to - start) * fpt))};
 	}
+	// Fold contiguous spans of THIS lane for the gate. The model keeps a same-lane pair
+	// apart when their slips differ (a seam in what the take reads), but the take itself
+	// is one continuous run there: ramping at their shared tick would fade the take out
+	// and back in although its lane never changed. Genuine lane switches stay holes between
+	// runs and keep their ramps at the run's edges. In place in the fixed array: bounded,
+	// allocation-free, lock-free.
+	int kept = 0;
+	for (int i = 0; i < m_compSpanCount; ++i)
+	{
+		if (kept > 0 && m_compSpans[static_cast<std::size_t>(kept - 1)].second
+			== m_compSpans[static_cast<std::size_t>(i)].first)
+		{
+			m_compSpans[static_cast<std::size_t>(kept - 1)].second
+				= m_compSpans[static_cast<std::size_t>(i)].second;
+			continue;
+		}
+		m_compSpans[static_cast<std::size_t>(kept++)] = m_compSpans[static_cast<std::size_t>(i)];
+	}
+	m_compSpanCount = kept;
 }
 
 void SamplePlayHandle::applyComp(SampleFrame* buffer, f_cnt_t frames) const
@@ -395,8 +414,9 @@ void SamplePlayHandle::applyComp(SampleFrame* buffer, f_cnt_t frames) const
 		{
 			const auto [from, to] = m_compSpans[static_cast<std::size_t>(i)];
 			if (at < from || at >= to) { continue; }
-			// A linear ramp over CompRampFrames at each edge: the lane switch is a
-			// crossfade of two clips, each fading at its own span's edge.
+			// A linear ramp over CompRampFrames at each edge of a contiguous run of this
+			// lane: a run's edges are lane switches or the comp's ends, so the crossfade is
+			// between two clips (or into silence) there, never inside one lane's own read.
 			const f_cnt_t edge = std::min(at - from, to - 1 - at);
 			gain = std::max(gain, std::min(1.0f, static_cast<float>(edge + 1) / CompRampFrames));
 		}
