@@ -259,6 +259,13 @@ private slots:
 		saveAndReload(track);
 		QVERIFY(track->layers().mix(0).solo);
 		QCOMPARE(bus->gain(), 1.0f);
+
+		// Leave the shared fixture without this slot's undo state or its fresh track.
+		REV_UNDO_OR_FAIL();
+		QVERIFY(!track->layers().mix(0).solo);
+		QCOMPARE(bus->gain(), 1.0f);
+		REV_UNDO_OR_FAIL();
+		QVERIFY(!revtest::hasTrack(fresh));
 	}
 
 	//! A saved layer level that is not a number loads as unity, not as a NaN gain (readMix clamped it, and

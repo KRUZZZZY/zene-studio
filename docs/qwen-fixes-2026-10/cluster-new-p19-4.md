@@ -157,8 +157,9 @@ already in `tests/fork-sources.txt`, so no list file changes; nothing new runs o
    gain (`AudioBusHandle.cpp:187`).
 4. **No collateral damage.** The only product-file diff is empty; saved projects, load paths, limits
    and other callers are untouched. The new slot runs with or without instrument plugins (it uses
-   layer-0) and leaves the shared engine as it found it (undo removes its step; the track is the last
-   step's). The full three-test family passes 3/3 after the plugins are built (run 9).
+   layer-0), undoes its final solo change, then undoes its newly added track so later slots inherit
+   neither its undo state nor its track. The full three-test family passes 3/3 after the plugins are
+   built (run 9).
 5. **Verdict evidence (FALSE-POSITIVE).** The handler's state is control-thread only
    (`include/InstrumentLayers.h:202`); it is published as `std::atomic<float>` gains
    (`include/AudioBusHandle.h:152-153`, `:240`, `InstrumentLayers.cpp:407`); the audio thread loads
