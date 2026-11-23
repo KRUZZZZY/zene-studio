@@ -262,18 +262,47 @@ quint32 declaredUncompressedSize( const QByteArray & bytes )
 	return qFromBigEndian<quint32>( reinterpret_cast<const uchar*>( bytes.constData() ) );
 }
 
+//! The document type a recognized document declares, expressed with the same
+//! names DataFile::type() maps onto current types. A pre-rename file may spell
+//! a compatibility name ("channelsettings", "pattern"); recovery compares the
+//! meaning, not the spelling. \a doc must already have passed
+//! DataFile::isRecoverableDocument().
+QString recoverableDocumentType( const QDomDocument & doc )
+{
+	const QString name = doc.documentElement().attribute( QStringLiteral( "type" ) );
+	if( name == QLatin1String( "channelsettings" ) )
+	{
+		return QStringLiteral( "instrumenttracksettings" );
+	}
+	if( name == QLatin1String( "pattern" ) )
+	{
+		return QStringLiteral( "midiclip" );
+	}
+	return name;
+}
+
 //! ARCH-4 S5. Parse \a bytes under the SAME depth guard the project load
 //! applies to every parse (SPEC-ARCH-4 1.8) and accept it only if it is a
 //! document this program recognizes. The guard runs BEFORE the parse, so a
 //! deeply nested temp is refused before a single node is built from it.
-bool parsesAsRecoverableDocument( const QByteArray & bytes )
+//! \a typeName, when given, is assigned the recognized document's type (see
+//! recoverableDocumentType()).
+bool parsesAsRecoverableDocument( const QByteArray & bytes, QString * typeName = nullptr )
 {
 	if( ! lmms::projectXmlDepthWithinLimit( bytes ) )
 	{
 		return false;
 	}
 	QDomDocument doc;
-	return lmms::setContent( doc, bytes ) && DataFile::isRecoverableDocument( doc );
+	if( ! lmms::setContent( doc, bytes ) || ! DataFile::isRecoverableDocument( doc ) )
+	{
+		return false;
+	}
+	if( typeName != nullptr )
+	{
+		*typeName = recoverableDocumentType( doc );
+	}
+	return true;
 }
 
 //! ARCH-4 S5. True when \a path holds a COMPLETE document: it parses as XML
@@ -284,13 +313,16 @@ bool parsesAsRecoverableDocument( const QByteArray & bytes )
 //! would only warn on XML bytes; anything else is tried as compressed. \a reason
 //! is set to "oversized" or "unreadable" when the file was refused rather than
 //! found incomplete, so the caller keeps it instead of discarding it.
+//! \a typeName, when given, is assigned the recognized document's type so the
+//! caller can compare it with the file it is about to replace.
 //! ARCH-4 S5. The compressed-temp half of isCompleteDocument(): \a bytes are
 //! not plain XML, so they are a compressed temp (a .mmpz/.xptz save). Its
 //! declared uncompressed size is checked against the recovery limit BEFORE
 //! qUncompress allocates that much, and what comes back is parsed under the
 //! same depth guard as plain XML. \a reason is set to "oversized" when a size
 //! was refused, so the caller reports a refusal as itself, not as truncation.
-bool decompressesAsRecoverableDocument( const QByteArray & bytes, QString * reason )
+bool decompressesAsRecoverableDocument( const QByteArray & bytes, QString * reason,
+	QString * typeName = nullptr )
 {
 	if( declaredUncompressedSize( bytes ) > maxRecoveredDocumentBytes() )
 	{
@@ -307,10 +339,11 @@ bool decompressesAsRecoverableDocument( const QByteArray & bytes, QString * reas
 		*reason = QStringLiteral( "oversized" );
 		return false;
 	}
-	return parsesAsRecoverableDocument( uncompressed );
+	return parsesAsRecoverableDocument( uncompressed, typeName );
 }
 
-inline bool isCompleteDocument( const QString & path, QString * reason )
+inline bool isCompleteDocument( const QString & path, QString * reason,
+	QString * typeName = nullptr )
 {
 	QFile f( path );
 	if( ! f.open( QIODevice::ReadOnly ) )
@@ -341,7 +374,7 @@ inline bool isCompleteDocument( const QString & path, QString * reason )
 	{
 		return false;
 	}
-	if( parsesAsRecoverableDocument( bytes ) )
+	if( parsesAsRecoverableDocument( bytes, typeName ) )
 	{
 		return true;
 	}
@@ -369,23 +402,33 @@ inline bool isCompleteDocument( const QString & path, QString * reason )
 			*reason = QStringLiteral( "oversized" );
 			return false;
 		}
-		return parsesAsRecoverableDocument( document );
+		return parsesAsRecoverableDocument( document, typeName );
 	}
 	if( bytes.trimmed().startsWith( '<' ) )
 	{
 		return false;
 	}
-	return decompressesAsRecoverableDocument( bytes, reason );
+	return decompressesAsRecoverableDocument( bytes, reason, typeName );
 }
 
 
 //! ARCH-4 S5 (SPEC-ARCH-4 1.8 part 2). A save that wrote <file>.new and died
 //! before the final rename used to leave that temp orphaned forever - the
 //! content the user asked to save, sitting beside the old file, never opened.
-//! Called before the file itself is opened: a COMPLETE .new is the newest
-//! intended content (a successful save would have renamed it away), so it is
-//! adopted over the canonical path; a truncated one is discarded. Either way a
-//! report line is printed, so the recovery - or the loss - is never silent.
+//! Called before the file itself is opened: a COMPLETE .new is adopted over the
+//! canonical path; a truncated one is discarded. Either way a report line is
+//! printed, so the recovery - or the loss - is never silent.
+//!
+//! A temp is not adopted merely because it is complete. The save that leaves a
+//! temp writes it BEFORE the canonical file it replaces, so a complete canonical
+//! file NEWER than the temp was written separately and is the newer project:
+//! adopting would discard it. A save of this project also cannot produce a
+//! document of another type, so a temp whose type differs from the canonical
+//! file's is not this project's save. In both cases the temp is left in place
+//! for the user and the canonical file stands. Adoption then reproduces the end
+//! state of a completed save - the previous version in <file>.bak before the
+//! rename - and refuses to adopt if that backup cannot be made, so recovery is
+//! never the path that destroys the only older copy.
 //! Called only from the file constructor, never from audio or realtime paths.
 void recoverPendingWrite( const QString & fileName )
 {
@@ -402,8 +445,47 @@ void recoverPendingWrite( const QString & fileName )
 		return;
 	}
 	QString reason;
-	if( isCompleteDocument( pending, &reason ) )
+	QString pendingType;
+	if( isCompleteDocument( pending, &reason, &pendingType ) )
 	{
+		const QFileInfo canonical( fileName );
+		QString canonicalReason;
+		QString canonicalType;
+		const bool canonicalComplete = canonical.exists()
+			&& isCompleteDocument( fileName, &canonicalReason, &canonicalType );
+		if( canonicalComplete )
+		{
+			// The interrupted save wrote the temp before this file existed in
+			// its current form. A canonical file newer than the temp was
+			// updated separately, so the temp is stale, not pending.
+			if( canonical.lastModified() > QFileInfo( pending ).lastModified() )
+			{
+				qWarning() << "Found a complete" << pending << "older than the project at"
+					<< fileName << "- keeping the newer project and leaving the pending"
+					<< "save in place";
+				return;
+			}
+			// A save of this project cannot produce a document of another type.
+			if( canonicalType != pendingType )
+			{
+				qWarning() << "Found a complete" << pending << "of type" << pendingType
+					<< "but" << fileName << "holds a" << canonicalType
+					<< "- it is not this project's save; leaving it in place";
+				return;
+			}
+		}
+		// A completed save leaves the previous version in <file>.bak before the
+		// rename publishes the new one. Reproduce that here, and if it cannot be
+		// done, keep BOTH files rather than destroy the only older copy.
+		const bool backupDisabled =
+			ConfigManager::inst()->value( "app", "disablebackup" ).toInt() != 0;
+		if( canonical.exists() && !backupDisabled
+			&& !replaceBackup( fileName, fileName + QStringLiteral( ".bak" ) ) )
+		{
+			qWarning() << "Found a complete" << pending << "but could not back up"
+				<< fileName << "- leaving both files in place for the next open";
+			return;
+		}
 		if( renameOverwrite( pending, fileName ) )
 		{
 			qWarning() << "Recovered interrupted save:" << pending
