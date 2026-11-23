@@ -181,6 +181,18 @@ FEATURE_CHECK_LOG_DIR=logs/feature-check python3 ~/.local/share/zene-bunny-fix/q
   `DataFile::writeFile`, `recoverPendingWrite` and a path helper, all on the open/save path);
   one save is still one honest save (no new undo step, no new command, no
   `ControlCommandsSnapshot` change).
+- **Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE**, so the last ASK does not apply; the
+  pre-fix code that shows the defect is quoted at the top (`HEAD:950`, `HEAD:996`, `HEAD:1070`
+  for the writer, `HEAD:433`, `HEAD:442`, `HEAD:483`, `HEAD:489` for the adopting recovery).
+- **Sibling commands: none.** The commit touches five files only -
+  `src/core/DataFile.cpp`, `tests/src/core/DataFileSaveIntegrityTest.cpp`,
+  `tests/src/core/DataFileSaveIntegrityTestParts2.h`, `tests/upstream-modifications.txt`,
+  `docs/qwen-fixes-2026-10/cluster-new-p10-89.md` (`git show --stat HEAD`) - so no
+  `ControlCommands*`, `ControlReversibilityTable*` or `ControlRegistry` file, and no command id,
+  changed here. The `app.*`/`arrangement.*` sibling list the pre-submit check prints comes from
+  the train's other commits between the base and this branch, not from this fix; a file-save
+  coordination lock is below the command surface and changes no command's behaviour, error class
+  or reversibility, so those commands are unaffected.
 
 ## Other findings
 
