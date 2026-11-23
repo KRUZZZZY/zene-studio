@@ -77,9 +77,11 @@ so the four new cases cannot live there — `feature_check-1.log` shows those ad
 failing the ratchet at 569 code lines, and the same file records `StemJobManagerTest.cpp`
 being restored to HEAD. The new cases therefore have their own target,
 `tests/src/core/StemJobManagerThrowTest.cpp`, registered the same way as the other
-single-suite regressions in `tests/CMakeLists.txt`. The same constraint is why the fix
-adds no new function: `src/core/StemJobManager.cpp` was 494 code lines at HEAD and is
-499 now (64 before the compacting described above).
+single-suite regressions in `tests/CMakeLists.txt`. The same constraint shaped the fix:
+`src/core/StemJobManager.cpp` was 494 code lines at HEAD. A first version with a separate
+`failThrownJob()` helper and a multi-line catch was 537 (the `feature_check-1.log` FAIL);
+the shipped version adds five code lines and is 499, so it adds no new function and
+routes the throw through the existing `failJob()`.
 
 ## Commands and EXIT codes (copied from the logs)
 
