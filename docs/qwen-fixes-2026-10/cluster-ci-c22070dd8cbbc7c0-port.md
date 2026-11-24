@@ -67,6 +67,13 @@ passed 4/4.
   existing ones already cover the bug.
 - **Deterministic:** the checks scan source files only. They use no clock, sleeps or threads.
 - **No collateral damage:** this commit has no product diff; only this report is added.
+- **Cause and completeness (callers/siblings):** I changed no code. The existing fix is at the cause, the
+  one `connect` call. All three checks scan every first-party source for every Qt 5-overloaded signal
+  take (QSpinBox/QDoubleSpinBox, QComboBox, QProcess, QButtonGroup and others), and on HEAD they report
+  zero unguarded takes (`check-2-tree.log`, `test-2-family.log`). That covers every sibling connect in the tree.
+- **Sibling commands (app.*, arrangement.*):** not affected. Those command files appear in the
+  check's list only because the branch carries merged train work. This lane's commit adds only this
+  report: `git show --stat HEAD` lists one file under `docs/`. No command file or handler was changed.
 - **Realtime / undo / commands:** untouched.
 - **Qt 5 compile not reproduced here:** this box has no Qt 5 tree at `~/.local/opt/qt5` (`ls` failed),
   so a real Qt 5 compile of the translation unit was not re-run in this session. The original cluster
