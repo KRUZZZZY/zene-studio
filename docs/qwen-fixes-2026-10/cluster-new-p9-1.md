@@ -153,7 +153,16 @@ comment, which is what the RED runs exercised.
    CMake include path. The rule itself (`include/SidechainInputs.h:68-72`) stays branch-free integer
    arithmetic and allocates nothing; the test calls it once on the test thread.
 7. **Sibling commands.** No `ControlCommands*`, `ControlReversibilityTable` or `ControlRegistry` file
-   is touched, no command is added, so the command snapshot canary is unmoved.
+   is touched by this commit, no command is added, so the command snapshot canary is unmoved. The
+   pre-submit check lists `app.about` ... `arrangement.get_state` because the *branch* diff against
+   the train base (`fa4a5f2e7`, 654 files from earlier jobs) includes command files; none of the
+   listed ids belongs to this job's commit, whose diff is `docs/qwen-fixes-2026-10/cluster-new-p9-1.md`,
+   `tests/CMakeLists.txt` and `tests/src/plugins/ClapBusMapTest.cpp` only. They are therefore
+   consistent with this fix by not being affected by it.
+9. **Pre-submit check output.** `python3 .../qwen/submit_check.py <worktree> new-p9-1` →
+   `RESULT: PASS - submit`, exit 0 (`submit-1.log`, `submit-1.exit`): commits on the branch PASS,
+   working tree clean PASS, report PASS, tests added or changed PASS, new test files registered PASS,
+   gates PASS, no FAIL item.
 8. **Undo.** No undo path, model setter or command handler is touched: nothing to make one honest
    step.
 
