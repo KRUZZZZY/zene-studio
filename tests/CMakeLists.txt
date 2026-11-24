@@ -9574,6 +9574,21 @@ target_compile_definitions(PluginPortsMigrationTest PRIVATE
 )
 add_dependencies(PluginPortsMigrationTest ladspa_channel_count_fixture)
 
+# PluginPortsMigrationTest's gig allocation probe needs the POSIX allocator hook,
+# so mingw64 (no Q_OS_UNIX) compiles its caller out; an unguarded helper is then
+# -Werror=unused-function and stops the hosted build (cluster ci-3eb9bda8aa6785a3-port).
+# Compile the real translation unit without the hook on every host. Built with the
+# tests: no link, no test registration.
+add_library(PluginPortsMigrationNoPosixHookCompileCheck OBJECT src/plugins/PluginPortsMigrationTest.cpp)
+target_include_directories(PluginPortsMigrationNoPosixHookCompileCheck PRIVATE
+	$<TARGET_PROPERTY:PluginPortsMigrationTest,INCLUDE_DIRECTORIES>)
+target_link_libraries(PluginPortsMigrationNoPosixHookCompileCheck PRIVATE
+	${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
+target_compile_features(PluginPortsMigrationNoPosixHookCompileCheck PRIVATE cxx_std_20)
+target_compile_definitions(PluginPortsMigrationNoPosixHookCompileCheck PRIVATE
+	$<TARGET_PROPERTY:PluginPortsMigrationTest,COMPILE_DEFINITIONS>
+	PLUGIN_PORTS_TEST_NO_POSIX_ALLOCATOR_HOOK)
+
 # The NAM engine's local CTest registrations live with its headless harness.
 # Mirror those cases here so ctest launched from build/tests discovers them.
 get_property(NAM_LOADER_TEST_CASES GLOBAL PROPERTY ZENE_NAM_LOADER_TEST_CASES)
