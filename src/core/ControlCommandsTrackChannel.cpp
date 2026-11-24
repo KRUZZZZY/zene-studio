@@ -32,6 +32,7 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "Track.h"
+#include "TrackFolder.h"
 
 namespace lmms
 {
@@ -55,6 +56,27 @@ ControlResult setMixerChannel(const QJsonObject& args)
 	}
 	MixerChannel* channel = resolveMixerChannel(args.value(QStringLiteral("channel")).toString(), &error);
 	if (channel == nullptr) { return error; }
+	// BUG 4536: routing mode OWNS the channel of every child it sums - childLinked() points each
+	// child at the folder's channel and the folder goes on reporting routing after that. Moving a
+	// routed child to any OTHER channel used to be applied silently, which left the folder
+	// advertising a channel it no longer summed anything into while the child's audio took a path
+	// nobody had asked the folder about. Refused rather than applied: the reply names the channel
+	// the track really plays into, which is also why this is one honest step (a refusal changes
+	// nothing and records nothing). Naming the folder's own channel stays allowed - it is a no-op
+	// for a child already routed and the way a child left off it gets back.
+	const int folderChannel = track->parentFolder() != nullptr && track->parentFolder()->isRouting()
+		? track->parentFolder()->mixerChannel() : -1;
+	if (folderChannel > 0 && folderChannel < static_cast<int>(Engine::mixer()->numChannels())
+		&& channel->index() != folderChannel)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 is summed through folder %2's mixer channel (%3): routing mode owns the "
+				"channel of every child it sums, so pointing the track elsewhere would leave the folder "
+				"reporting routing while none of this track's audio passed through it. Turn the folder's "
+				"routing off first (track.set_routing with routing false), then set the channel")
+				.arg(trackId).arg(trackIdOf(track->parentFolder()))
+				.arg(channelIdOf(Engine::mixer()->mixerChannel(folderChannel))));
+	}
 	const int previous = model->value();
 	const QString channelNameBefore = channel->m_name;
 	// The track's channel is an IntModel - a JournallingObject - so the checkpoint is an exact
