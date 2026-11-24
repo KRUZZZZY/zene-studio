@@ -44,6 +44,29 @@ static_assert(std::atomic<unsigned int>::is_always_lock_free);
 static_assert(std::atomic<float>::is_always_lock_free);
 static_assert(std::atomic<sample_t (*)(const float)>::is_always_lock_free);
 
+namespace
+{
+
+//! The sample function of a wave shape. The render path derives it from the
+//! shape it read, so the shape and the function can never disagree.
+sample_t (*sampleFunctionFor( Oscillator::WaveShape shape ))( const float )
+{
+	switch( shape )
+	{
+		case Oscillator::WaveShape::Triangle: return &Oscillator::triangleSample;
+		case Oscillator::WaveShape::Saw: return &Oscillator::sawSample;
+		case Oscillator::WaveShape::Square: return &Oscillator::squareSample;
+		case Oscillator::WaveShape::MoogSaw: return &Oscillator::moogSawSample;
+		case Oscillator::WaveShape::Exponential: return &Oscillator::expSample;
+		case Oscillator::WaveShape::WhiteNoise: return &Oscillator::noiseSample;
+		case Oscillator::WaveShape::UserDefined: return nullptr;
+		case Oscillator::WaveShape::Sine:
+		default: return &Oscillator::sinSample;
+	}
+}
+
+} // namespace
+
 
 LfoController::LfoController( Model * _parent ) :
 	Controller( ControllerType::Lfo, _parent, tr( "LFO Controller" ) ),
@@ -58,14 +81,12 @@ LfoController::LfoController( Model * _parent ) :
 	m_phaseOffset( 0 ),
 	m_currentPhase( 0 ),
 	m_sampleFunction( &Oscillator::sinSample ),
+	m_renderedWaveShape( static_cast<int>(Oscillator::WaveShape::Sine) ),
 	m_heldSample( 0.0f ),
 	m_userDefSampleBuffer(std::make_shared<SampleBuffer>()),
 	m_userDefSampleBufferForRender(m_userDefSampleBuffer.get())
 {
 	setSampleExact( true );
-	connect( &m_waveModel, SIGNAL(dataChanged()),
-			this, SLOT(updateSampleFunction()), Qt::DirectConnection );
-
 	connect( &m_speedModel, SIGNAL(dataChanged()),
 			this, SLOT(updateDuration()), Qt::DirectConnection );
 	connect( &m_multiplierModel, SIGNAL(dataChanged()),
@@ -97,8 +118,25 @@ LfoController::~LfoController()
 
 void LfoController::updateValueBuffer()
 {
-	m_phaseOffset = m_phaseModel.value() / 360.0;
-	float phase = m_currentPhase + m_phaseOffset;
+	// ---- apply the state the GUI published, at this safe render boundary ----
+	// The sample function and the white-noise held sample belong to the render
+	// thread: they are derived here from the shape this period renders, never
+	// written by a GUI slot.
+	const auto waveShape = static_cast<Oscillator::WaveShape>(
+				static_cast<int>( m_waveModel.value() ) );
+	if( static_cast<int>( waveShape ) != m_renderedWaveShape )
+	{
+		m_renderedWaveShape = static_cast<int>( waveShape );
+		m_sampleFunction.store( sampleFunctionFor( waveShape ) );
+		if( waveShape == Oscillator::WaveShape::WhiteNoise )
+		{
+			m_heldSample.store( Oscillator::noiseSample( 0.0f ) );
+		}
+	}
+
+	const float phaseOffset = m_phaseModel.value() / 360.0f;
+	m_phaseOffset.store( phaseOffset );
+	float phase = m_currentPhase.load() + phaseOffset;
 	float phasePrev = 0.0f;
 	// One snapshot per period: the UI thread may publish new values meanwhile.
 	const float duration = m_duration.load(std::memory_order_acquire);
@@ -120,19 +158,16 @@ void LfoController::updateValueBuffer()
 	ValueBuffer *amountBuffer = m_amountModel.valueBuffer();
 	int amountInc = amountBuffer ? 1 : 0;
 	float *amountPtr = amountBuffer ? &(amountBuffer->values()[ 0 ] ) : &amount;
-	Oscillator::WaveShape waveshape = static_cast<Oscillator::WaveShape>(m_waveModel.value());
-	const bool usesUserWave = waveshape == Oscillator::WaveShape::UserDefined;
+	const bool usesUserWave = waveShape == Oscillator::WaveShape::UserDefined;
 	const auto* userWave = usesUserWave ? acquireUserDefSampleBufferForRender() : nullptr;
 
 	for( float& f : m_valueBuffer )
 	{
 		float currentSample = 0;
-		switch (waveshape)
+		switch (waveShape)
 		{
 		case Oscillator::WaveShape::WhiteNoise:
 		{
-			// The wave model is published before its slot updates the function,
-			// so this period may still see the previous (possibly null) function.
 			if (sampleFunction != nullptr && absFraction(phase) < absFraction(phasePrev))
 			{
 				// Resample when phase period has completed
@@ -163,7 +198,7 @@ void LfoController::updateValueBuffer()
 	}
 	if (usesUserWave) { releaseUserDefSampleBufferForRender(); }
 
-	m_currentPhase = absFraction(phase - m_phaseOffset);
+	m_currentPhase.store(absFraction(phase - phaseOffset));
 	m_bufferLastUpdated = s_periods;
 }
 
@@ -218,8 +253,10 @@ void LfoController::scheduleUserDefSampleBufferReclaim()
 
 void LfoController::updatePhase()
 {
-	m_currentPhase = Engine::getSong()->getFrames() / m_duration.load(std::memory_order_acquire);
+	Engine::audioEngine()->requestChangeInModel();
+	m_currentPhase.store(Engine::getSong()->getFrames() / m_duration.load(std::memory_order_acquire));
 	m_bufferLastUpdated = s_periods - 1;
+	Engine::audioEngine()->doneChangeInModel();
 }
 
 
@@ -243,47 +280,6 @@ void LfoController::updateDuration()
 
 	m_duration.store(newDurationF, std::memory_order_release);
 }
-
-void LfoController::updateSampleFunction()
-{
-	switch( static_cast<Oscillator::WaveShape>(m_waveModel.value()) )
-	{
-		case Oscillator::WaveShape::Sine:
-		default:
-			m_sampleFunction = &Oscillator::sinSample;
-			break;
-		case Oscillator::WaveShape::Triangle:
-			m_sampleFunction = &Oscillator::triangleSample;
-			break;
-		case Oscillator::WaveShape::Saw:
-			m_sampleFunction = &Oscillator::sawSample;
-			break;
-		case Oscillator::WaveShape::Square:
-			m_sampleFunction = &Oscillator::squareSample;
-			break;
-		case Oscillator::WaveShape::MoogSaw:
-			m_sampleFunction = &Oscillator::moogSawSample;
-			break;
-		case Oscillator::WaveShape::Exponential:
-			m_sampleFunction = &Oscillator::expSample;
-			break;
-		case Oscillator::WaveShape::WhiteNoise:
-			// Seed the held sample before render can observe the noise function.
-			m_heldSample.store(Oscillator::noiseSample(0.0f), std::memory_order_relaxed);
-			m_sampleFunction.store(&Oscillator::noiseSample, std::memory_order_release);
-			break;
-		case Oscillator::WaveShape::UserDefined:
-			m_sampleFunction = nullptr;
-			/*TODO: If C++11 is allowed, should change the type of
-			 m_sampleFunction be std::function<sample_t(const float)>
-			 and use the line below:
-			*/
-			//m_sampleFunction = &(m_userDefSampleBuffer->userWaveSample)
-			break;
-	}
-}
-
-
 
 void LfoController::saveSettings( QDomDocument & _doc, QDomElement & _this )
 {
@@ -320,7 +316,6 @@ void LfoController::loadSettings( const QDomElement & _this )
 		else { Engine::getSong()->collectError(QString("%1: %2").arg(tr("Sample not found"), userWaveFile)); }
 	}
 
-	updateSampleFunction();
 }
 
 
