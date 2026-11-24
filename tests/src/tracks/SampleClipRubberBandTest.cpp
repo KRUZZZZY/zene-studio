@@ -266,6 +266,92 @@ private slots:
 		QCOMPARE(voice.sourcePosition(), static_cast<double>(produced));
 	}
 
+	/*! A rate outside the band the stretcher can render must be clamped, not
+	 *  handed to it. At the small end the time ratio goes to 1e300, or to
+	 *  infinity once 1/x overflows: Rubber Band then drops the stretch and
+	 *  renders the source at FULL SPEED while the caller's cursor still advances
+	 *  at the rate it asked for. At the large end the ratio collapses and the
+	 *  render stalls short of the block, which the caller zero-fills.
+	 *
+	 *  The source ENDS after 10 ms, so "how much source the audio consumed" is
+	 *  observable without new API on the voice: a slow render keeps sounding
+	 *  when a full-speed one has already run out. The audio is the witness, and
+	 *  the cursor has to agree with it. */
+	void anOutOfBandSpeedCannotSilenceOrStallTheStretch()
+	{
+		const auto sourceFrames = static_cast<f_cnt_t>(m_rate / 100);
+		std::vector<SampleFrame> source(static_cast<std::size_t>(sourceFrames));
+		for (std::size_t i = 0; i < source.size(); ++i)
+		{
+			const auto value = static_cast<sample_t>(0.5 * std::sin(kTwoPi * kLowTone * i / m_rate));
+			source[i] = SampleFrame(value, value);
+		}
+		std::vector<SampleFrame> output(4096);
+		struct Run
+		{
+			f_cnt_t produced = 0;
+			double position = 0.0;
+			double tail = 0.0; //!< RMS of the block's second half
+		};
+		auto renderAt = [&](double speed) {
+			std::fill(output.begin(), output.end(), SampleFrame(0.0f, 0.0f));
+			RubberBandVoice voice(m_rate);
+			voice.begin(1.0);
+			Run run;
+			run.produced = voice.render(source.data(), sourceFrames, output.data(),
+				static_cast<f_cnt_t>(output.size()), speed);
+			run.position = voice.sourcePosition();
+			double energy = 0.0;
+			const std::size_t half = output.size() / 2;
+			for (std::size_t i = half; i < output.size(); ++i) { energy += output[i][0] * output[i][0]; }
+			run.tail = std::sqrt(energy / static_cast<double>(output.size() - half));
+			evidence("out-of-band speed: produced / position / tail", static_cast<double>(run.produced),
+				run.position, run.tail);
+			return run;
+		};
+
+		// The oracle: at natural speed the source runs out inside the block.
+		const Run natural = renderAt(1.0);
+		QCOMPARE(natural.produced, static_cast<f_cnt_t>(output.size()));
+		QVERIFY2(natural.tail < 1e-3, "the fixture's source does not end where this test expects");
+
+		// The slowest rate the clip path can ask for (clipSpeedAt never goes
+		// below 1/32) is inside the band: honoured exactly, still sounding.
+		const Run floorSpeed = renderAt(1.0 / 32.0);
+		QCOMPARE(floorSpeed.produced, static_cast<f_cnt_t>(output.size()));
+		QCOMPARE(floorSpeed.position, static_cast<double>(output.size()) / 32.0);
+		QVERIFY2(floorSpeed.tail > 0.05, "a legitimately slow rate was clamped silent");
+
+		// Small end, the reciprocal overflows: an infinite time ratio ...
+		const Run denormal = renderAt(std::numeric_limits<double>::denorm_min());
+		QCOMPARE(denormal.produced, static_cast<f_cnt_t>(output.size()));
+		QVERIFY(std::isfinite(denormal.position));
+		QVERIFY2(denormal.position < static_cast<double>(sourceFrames),
+			"the cursor claims the whole source was consumed");
+		QVERIFY2(denormal.tail > 0.05, qPrintable(QStringLiteral(
+			"a speed of 5e-324 rendered the source at full speed (tail RMS %1) while sourcePosition() said %2")
+			.arg(denormal.tail).arg(denormal.position)));
+
+		// ... and an enormous one that still passes std::isfinite: the same story.
+		const Run enormous = renderAt(1e-300);
+		QCOMPARE(enormous.produced, static_cast<f_cnt_t>(output.size()));
+		QVERIFY2(enormous.tail > 0.05, qPrintable(QStringLiteral(
+			"a speed of 1e-300 rendered the source at full speed (tail RMS %1) while sourcePosition() said %2")
+			.arg(enormous.tail).arg(enormous.position)));
+		// One band, not a per-call improvisation: both land at the same rate.
+		QCOMPARE(enormous.position, denormal.position);
+
+		// Large end: the ratio collapses and the render stalls short of the block.
+		for (const double speed : { 1e300, 1e5 })
+		{
+			const Run fast = renderAt(speed);
+			QVERIFY(std::isfinite(fast.position));
+			QVERIFY2(fast.produced == static_cast<f_cnt_t>(output.size()), qPrintable(QStringLiteral(
+				"a speed of %1 stalled the render at %2 of %3 frames")
+				.arg(speed).arg(static_cast<double>(fast.produced)).arg(static_cast<double>(output.size()))));
+		}
+	}
+
 	void theAudioThreadHalfAllocatesNothing()
 	{
 #ifdef ZENE_MALLOC_PROBE
