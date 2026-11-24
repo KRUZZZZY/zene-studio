@@ -64,6 +64,27 @@ the original cluster. With the branch's current source, it passes.
 - Realtime, undo, control commands: not touched.
 - `git status` clean after the work: yes, apart from this report, which is committed.
 
+Answers to the submit_check "?" items (`submit_check.py` run 1: EXIT=0, "RESULT: PASS - submit"):
+
+- Fails with the fix reverted and passes with it: yes. Reverting `MixerSendsOnFadersTest.cpp:278-282`
+  to the original Qt 6-only line makes `ctest -R '^Train51Portability$'` exit 8 (`test-2-red.log`).
+  With the branch source it exits 0 (`test-1.log`, `test-3-green.log`).
+- Deterministic: yes. `mixer_faders_probe` is a pure compile check. It runs the C++ compiler on a
+  fixture derived from the test source, with `channels = 3` hard-coded. It uses no timing, sleeps
+  or threads.
+- At the cause and complete: the only use of the Qt 6-only `QStringList(count, value)` shape was
+  `MixerSendsOnFadersTest.cpp:278`. A search for `QStringList(channels` in `tests/` now returns 0
+  matches. This job changed no code, so it has no callers or siblings to keep consistent.
+- No collateral damage: this job changes no product code, file format or limit. Only this report
+  was added.
+- ALREADY-FIXED evidence: `tests/src/gui/MixerSendsOnFadersTest.cpp:280-282` (append loop), from
+  commit `421f6f13ae` (an ancestor of HEAD). The guard is at `tests/train-51-portability-check.py`
+  (`mixer_faders_probe`), registered at `tests/CMakeLists.txt:6535-6540`.
+- "Tests added or changed" (`control-audio-test-tone.py` etc.) and the "sibling commands" list
+  (`app.*`, `arrangement.*`): these come from the merge-train commits already on this branch
+  relative to the check's base `fa4a5f2e7`, not from this job. This job's only commit adds this
+  report (`git show --stat HEAD`), so none of those commands or tests are affected by it.
+
 Delegation: Haiku ran the build, the ctest green, red-control and restore runs, and feature_check, and reported their exit codes. I spot-checked the log tails. Sonnet and DeepSeek were not used: no code needed changing, so there was nothing to engineer.
 
 ## Other findings
