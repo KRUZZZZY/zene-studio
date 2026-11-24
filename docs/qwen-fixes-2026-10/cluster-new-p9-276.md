@@ -118,8 +118,8 @@ python3 .../submit_check.py <worktree> new-p9-276                             # 
 ```
 
 The first submit check ran before the commit by design; its only FAIL was the intentionally
-dirty working tree, and its ASK items are answered below. The post-commit run is recorded at
-the end of this report.
+dirty working tree, and its ASK items are answered below. The post-commit run on `9440ed23`
+printed every item PASS and `RESULT: PASS - submit` (`submit-check-2.log`, EXIT 0).
 
 ## Self-check
 
