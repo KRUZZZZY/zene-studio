@@ -1483,6 +1483,10 @@ void Track::loadFrozenTake(const QDomElement& element)
 	// clips it is still reading.
 	subscribeFrozenTakeSignals();
 	m_frozenBuffer = SampleBuffer::fromFile(m_frozen.path);
+#ifdef LMMS_TESTING
+	// Cluster 5415: the load's file work is done and its take is about to be published.
+	if (s_frozenTakeLockProbeForTest != nullptr) { s_frozenTakeLockProbeForTest(); }
+#endif
 	{
 		const auto renderLock = Engine::audioEngine()->requestChangesGuard();
 		adoptTempoMapForFrozenTake(Engine::getSong()->tempoMap().map());
