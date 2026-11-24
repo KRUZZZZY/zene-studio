@@ -108,6 +108,9 @@ here, so the hosted build was not re-run; the Qt 5 compile probe reproduces its 
 - **Qt 5.15 / Qt 6 portability.** The probe compiles the same shipped block with both Qt 5 and Qt 6 on this box.
   MSVC and macOS were not run locally; the change only removes a Qt-6-only expression, and the hosted macOS
   diagnostic is the evidence that the old expression was the failure.
+- **Sibling commands.** `git show --stat HEAD` for this port shows one file, this report; no command file or
+  command registration changed. The `app.*`, `arrangement.*` and other sibling ids the submit check lists come
+  from the existing train range between `fa4a5f2e` and this branch, not from this fix, so they are unaffected.
 
 ## Other findings
 
