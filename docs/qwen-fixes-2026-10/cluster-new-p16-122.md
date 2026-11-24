@@ -120,9 +120,9 @@ complexity and file-length.
 3. **The fix is at the cause and complete.** It covers every atomic type the realtime queue and overflow paths use:
    queue positions/sequences (`size_t`), overflow stamps/counters (`uint64_t`) and occupancy/deferred flags
    (`uint32_t`). The callers and siblings all go through this one header: `push`, `pop`, `consumed`, `record`,
-   `stamp`, `due`, `clear`, `raise`, `pushOrRecord` and `drainMidi`. `zene` and all four dependent test targets were
-   rebuilt with the header: `MidiHandoffQueueTest`, `CarlaMidiHandoffTest`, `Lv2MidiHandoffTest`,
-   `VestigeMidiHandoffTest` and `ZynAddSubFxInstrumentTest`.
+   `stamp`, `due`, `clear`, `raise`, `pushOrRecord` and `drainMidi`. `zene` and the dependent MIDI test targets were
+   rebuilt with the header: `MidiHandoffQueueTest`, `CarlaMidiHandoffTest`, `VestigeMidiHandoffTest` and
+   `ZynAddSubFxInstrumentTest`; `Lv2MidiHandoffTest` was also built to complete the ctest family.
 4. **No collateral damage.** The change is compile-time only on this target; it adds no runtime check, allocation,
    lock, limit or save/load change. Projects and saved data are untouched.
 5. **ALREADY-FIXED/FALSE-POSITIVE is not the verdict.** The pre-fix header had no lock-free requirement; the fix and
