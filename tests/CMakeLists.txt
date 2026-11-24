@@ -3394,6 +3394,9 @@ else()
 	target_compile_options(RemotePluginShmFifoNoSysIpcAppleMacroProbe PRIVATE -U__unix__)
 endif()
 add_dependencies(RemotePluginShmFifoTest RemotePluginShmFifoNoSysIpcAppleMacroProbe)
+add_test(NAME RemotePluginShmFifoAppleMacroProbeCompile
+	COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+		--target RemotePluginShmFifoNoSysIpcAppleMacroProbe --config $<CONFIG>)
 
 # Tell the test whether each target compiles RemotePluginBase.cpp through the
 # static branch of lmms_export.h (cluster ci-v041-5).
