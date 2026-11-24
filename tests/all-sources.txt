@@ -2310,6 +2310,7 @@ src/core/SongSections.cpp
 src/core/SongUndoSnapshot.cpp
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
+src/core/StemPythonDiscovery.cpp
 src/core/StemTrackBuilder.cpp
 src/core/StepRecorder.cpp
 src/core/StripMeters.cpp
@@ -3302,6 +3303,8 @@ tests/src/core/StemExportTestSupport.h
 tests/src/core/StemJobLoaderTest.cpp
 tests/src/core/StemJobManagerTest.cpp
 tests/src/core/StemModelStoreTest.cpp
+tests/src/core/StemPythonDiscoveryServiceTest.cpp
+tests/src/core/StemPythonDiscoveryTest.cpp
 tests/src/core/StemQualityTest.cpp
 tests/src/core/StemSplitPipelineTest.cpp
 tests/src/core/StereoDelay.cpp
@@ -3667,6 +3670,7 @@ tests/src/plugins/SampleRateDependentLadspa.cpp
 tests/src/plugins/Sf2PlayerFixture.h
 tests/src/plugins/Sf2PlayerRealtimeTest.cpp
 tests/src/plugins/SfizzLeakDetectorTest.cpp
+tests/src/plugins/SfxrPitchBoundTest.cpp
 tests/src/plugins/SfzCompressorStereoLinkTest.cpp
 tests/src/plugins/SfzDistoBuffersTest.cpp
 tests/src/plugins/SfzEQPoolExhaustionTest.cpp
@@ -3708,6 +3712,7 @@ tests/src/plugins/ZynSeparateProcessTest.cpp
 tests/src/tracks/AutomationTrackTest.cpp
 tests/src/tracks/HeadlessGuiGuardTest.cpp
 tests/src/tracks/InstrumentTrackRenderPathTest.cpp
+tests/src/tracks/SampleClipMuteCursorTest.cpp
 tests/src/tracks/SampleClipRubberBandTest.cpp
 tests/src/tracks/SampleClipStretchTest.cpp
 tests/src/tracks/SampleClipTransientRepeatSafetyTest.cpp

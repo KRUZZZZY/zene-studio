@@ -47,6 +47,14 @@ int PeakController::m_getCount;
 int PeakController::m_loadCount;
 bool PeakController::m_buggedFile;
 
+#ifdef LMMS_TESTING
+namespace
+{
+// Test seam (cluster new-p20-95), null in the product: see setCoeffPublishProbeForTest().
+void (*s_coeffPublishProbeForTest)(PeakController*) = nullptr;
+}
+#endif
+
 
 PeakController::PeakController( Model * _parent,
 		PeakControllerEffect * _peak_effect ) :
@@ -65,7 +73,6 @@ PeakController::PeakController( Model * _parent,
 				this, SLOT(updateCoeffs()), Qt::DirectConnection );
 	}
 	connect( Engine::audioEngine(), SIGNAL(sampleRateChanged()), this, SLOT(updateCoeffs()));
-	m_coeffNeedsUpdate = true;
 }
 
 
@@ -82,12 +89,23 @@ PeakController::~PeakController()
 
 void PeakController::updateValueBuffer()
 {
-	if( m_coeffNeedsUpdate && m_peakEffect )
+	// updateCoeffs() runs on the thread that owns the attack/decay models - the GUI,
+	// through the constructor's direct connections - while this runs on the render
+	// thread, so the flag is an atomic handoff. It is claimed BEFORE the coefficients
+	// are computed: a change that lands while they are being computed then leaves the
+	// flag set, and the next period publishes it, instead of being overwritten by the
+	// clear that used to follow the assignments (cluster new-p20-95).
+	if( m_peakEffect && m_coeffNeedsUpdate.exchange( false, std::memory_order_acq_rel ) )
 	{
 		const float ratio = 44100.0f / Engine::audioEngine()->outputSampleRate();
 		m_attackCoeff = 1.0f - powf( 2.0f, -0.3f * ( 1.0f - m_peakEffect->attackModel()->value() ) * ratio );
 		m_decayCoeff = 1.0f -  powf( 2.0f, -0.3f * ( 1.0f - m_peakEffect->decayModel()->value()  ) * ratio );
-		m_coeffNeedsUpdate = false;
+#ifdef LMMS_TESTING
+		if( s_coeffPublishProbeForTest != nullptr )
+		{
+			s_coeffPublishProbeForTest( this );
+		}
+#endif
 	}
 
 	if( m_peakEffect )
@@ -129,6 +147,14 @@ void PeakController::updateCoeffs()
 {
 	m_coeffNeedsUpdate = true;
 }
+
+
+#ifdef LMMS_TESTING
+void PeakController::setCoeffPublishProbeForTest( void (*probe)(PeakController*) )
+{
+	s_coeffPublishProbeForTest = probe;
+}
+#endif
 
 
 void PeakController::handleDestroyedEffect()

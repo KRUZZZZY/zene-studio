@@ -247,7 +247,8 @@ ControlResult setOffset(const QJsonObject& args)
 	return ControlResult::success(stateJson());
 }
 
-//! "<video>-audio.wav" in the project's folder (the video's while the project has no file), numbered past any taken;
+//! "<video>-audio.wav" in the project's folder (the video's while the project has no file), numbered past any taken or
+//! held by an extraction still writing its WAV (the name is claimed until that extraction ends, cluster new-p9-67);
 //! empty when every name up to MaxAudioNames is taken.
 QString defaultAudioPath(const QString& videoPath)
 {

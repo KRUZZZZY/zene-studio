@@ -2248,6 +2248,7 @@ src/core/SongSections.cpp
 src/core/SongUndoSnapshot.cpp
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
+src/core/StemPythonDiscovery.cpp
 src/core/StemTrackBuilder.cpp
 src/core/StripMeters.cpp
 src/core/SurroundExport.cpp
@@ -3477,6 +3478,9 @@ docs/qwen-fixes-2026-10/cluster-new-p12-133-port-port.md
 tests/src/plugins/WatsynSelectedGraphTest.cpp
 # cluster new-p17-203: regression for Watsyn's published wavetable snapshot - a note started while a graph edit has the staging table half rewritten renders the last complete published wave (fork-NEW test).
 tests/src/plugins/WatsynWaveSnapshotTest.cpp
+# cluster new-p16-228 (2026-10): an extreme Sfxr pitch renders a bounded amount of synth per audio period, not the whole pitch ratio (fork-NEW test and its report).
+tests/src/plugins/SfxrPitchBoundTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p16-228.md
 # cluster new-p12-162-port-port (2026-10): Multitap Echo constructor graph-bounds guard test (fork-NEW).
 tests/src/plugins/MultitapEchoBoundsTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-162-port-port.md
@@ -4048,3 +4052,10 @@ tests/src/plugins/SfzCompressorStereoLinkTest.cpp
 # cluster new-p9-240 (2026-10): LOMM sample-rate change regression - the lookahead ring cursor and contents are re-anchored when the rings are resized (fork-NEW test).
 tests/src/plugins/LommSampleRateTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p9-240.md
+# cluster new-p15-64 (2026-11): the external stem backend defers interpreter discovery out of its constructor and bounds the whole probe sequence (fork-NEW test).
+tests/src/core/StemPythonDiscoveryTest.cpp
+tests/src/core/StemPythonDiscoveryServiceTest.cpp
+# cluster new-p12-223 (2026-11): muting a track leaves the sample cursor behind - the muted
+# pass advances the source with the same reads the audible pass makes (fork-NEW test).
+tests/src/tracks/SampleClipMuteCursorTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p12-223.md

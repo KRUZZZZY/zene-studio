@@ -28,7 +28,9 @@
 #include <QFile>
 #include <QTemporaryDir>
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <limits>
 #include <thread>
 #include <vector>
@@ -247,6 +249,77 @@ private slots:
 		parameters.fillLevel(second.data(), 0, std::numeric_limits<f_cnt_t>::max(), frames);
 
 		QVERIFY(first != second);
+	}
+
+	/*! Cluster new-p10-118: the audio thread advances the LFOs once per period
+	 *  (AudioEngine STAGE 3 -> LfoInstances::trigger()). The advance must not
+	 *  lock and must not walk the registry of LFO instances: the phase is a
+	 *  property of the LFO and of the frames that were rendered, so it advances
+	 *  the same way whether or not the registry holds the instance. The
+	 *  registry's own list is the control thread's to mutate; the audio thread
+	 *  reads a period counter that no list edit can block.
+	 *
+	 *  The instance is taken out of the registry before the trigger, so this
+	 *  test states the contract rather than the walk: before the fix the phase
+	 *  moved only for the instances the walk met, and this LFO stayed frozen. */
+	void theLfoPhaseAdvancesWithoutARegistryWalk()
+	{
+		EnvelopeAndLfoParameters parameters(0.0f, nullptr);
+		parameters.getLfoAmountModel().setValue(1.0f);
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+
+		const auto render = [&]() {
+			std::vector<float> level(frames, 0.0f);
+			parameters.fillLevel(level.data(), 0, std::numeric_limits<f_cnt_t>::max(), frames);
+			return level;
+		};
+
+		EnvelopeAndLfoParameters::instances()->remove(&parameters);
+		const std::vector<float> before = render();
+		EnvelopeAndLfoParameters::instances()->trigger();
+		const std::vector<float> after = render();
+
+		float step = 0.0f;
+		for (std::size_t i = 0; i < before.size(); ++i)
+		{
+			step = std::max(step, std::fabs(after[i] - before[i]));
+		}
+		QVERIFY2(step > 1.0e-6f,
+			"the LFO phase did not advance by one period: the advance is a walk "
+			"over the LFO registry, not a period counter the audio thread reads");
+	}
+
+	/*! The reset of the LFOs runs on the audio thread as well (Song's per-period
+	 *  scheduling at the start of the song), so it must not lock or walk either.
+	 *  It puts every LFO back to the same phase: two LFOs that were at different
+	 *  phases render the same level after it. */
+	void theLfoResetPutsEveryLfoBackToTheSamePhase()
+	{
+		EnvelopeAndLfoParameters first(0.0f, nullptr);
+		first.getLfoAmountModel().setValue(1.0f);
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		// the phase step of a few periods is a fraction of one oscillation, so
+		// "the two levels differ" is a phase difference and not a wrap
+		QVERIFY(first.getLfoOscillationFrames() > 16 * frames);
+
+		const auto render = [&](EnvelopeAndLfoParameters& parameters) {
+			std::vector<float> level(frames, 0.0f);
+			parameters.fillLevel(level.data(), 0, std::numeric_limits<f_cnt_t>::max(), frames);
+			return level;
+		};
+
+		// one LFO runs for a few periods; the other starts later, at its own
+		// phase origin
+		for (int i = 0; i < 4; ++i) { EnvelopeAndLfoParameters::instances()->trigger(); }
+		EnvelopeAndLfoParameters second(0.0f, nullptr);
+		second.getLfoAmountModel().setValue(1.0f);
+		QVERIFY(render(first) != render(second));
+
+		EnvelopeAndLfoParameters::instances()->reset();
+		const std::vector<float> firstAfter = render(first);
+		const std::vector<float> secondAfter = render(second);
+		QVERIFY(firstAfter == secondAfter);
 	}
 
 	/*! A late audio-path call may find no published snapshot: the destructor
