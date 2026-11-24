@@ -275,6 +275,56 @@ private slots:
 		QVERIFY(!copied->sampleFile().isEmpty());
 	}
 
+	//! CLUSTER 3982, the reported case end to end: an audio cell PLAYED FROM THE SCHEDULER (not a
+	//! hand-written ring), stopped, and landed. The clip must carry the audio that played, not only
+	//! the span and the name - the capture names the launched buffer, and the pass copies it into the
+	//! SampleClip. A clip with the right span and no audio is exactly what the finding describes.
+	void anAudioCellPlayedFromTheSessionLandsWithItsAudio()
+	{
+		m_song->clearProject();
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, m_song));
+		QVERIFY(track != nullptr);
+		QVERIFY(run(QStringLiteral("session.set_grid"),
+			{{QStringLiteral("tracks"), 1}, {QStringLiteral("scenes"), 1}}).ok);
+		const QString source = m_dir.filePath(QStringLiteral("launched-audio.wav"));
+		QVERIFY(browserfixture::writeWave(source, browserfixture::WaveSpec{}));
+		QVERIFY(run(QStringLiteral("session.set_slot"),
+			{{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0},
+				{QStringLiteral("type"), QStringLiteral("audio")},
+				{QStringLiteral("source"), source}, {QStringLiteral("name"), QStringLiteral("Launched")}}).ok);
+
+		SessionScheduler& scheduler = m_song->sessionScheduler();
+		publishSessionSlotContent(scheduler, m_song->sessionModel());
+		QVERIFY(scheduler.requestLaunch(0, 0, LaunchMode::Trigger, LaunchQuantisation::None));
+		SessionClockContext ctx;
+		ctx.ticksPerBar = 192;
+		ctx.framesPerTick = 1.0f;
+		ctx.transportRunning = true;
+		scheduler.processAudio(ctx, 16);
+		ctx.positionTicks = 96;
+		QVERIFY(scheduler.requestStop(0, 0, LaunchMode::Trigger, LaunchQuantisation::None));
+		scheduler.processAudio(ctx, 16);
+
+		const ControlResult landed = run(QStringLiteral("session.arrangement_record_land"));
+		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
+		QCOMPARE(landed.result.value(QStringLiteral("clips")).toInt(), 1);
+		// The launched buffer, not the model fallback: the capture carried the cell's audio.
+		QCOMPARE(landedEntry(landed, 0).value(QStringLiteral("content")).toString(),
+			QStringLiteral("audio_sample_copied"));
+		QCOMPARE(track->getClips().size(), size_t{1});
+		auto* copied = dynamic_cast<SampleClip*>(track->getClips().front());
+		QVERIFY(copied != nullptr);
+		QCOMPARE(copied->name(), QStringLiteral("Launched"));
+		QVERIFY(copied->length().getTicks() > 0);
+		QVERIFY(copied->sample().sampleSize() > 0);
+		bool audible = false;
+		for (std::size_t i = 0; i < copied->sample().sampleSize(); ++i)
+		{
+			audible = audible || copied->sample().data()[i].left() != 0.0f;
+		}
+		QVERIFY2(audible, "the landed clip carries the recorded span but no audio");
+	}
+
 	//! Q050-034: undo takes a landed MIDI clip with its notes away, redo brings back the SAME content - place, length,
 	//! and every note's key, start, length and velocity.
 	void redoRestoresALandedMidiClipExactly()
