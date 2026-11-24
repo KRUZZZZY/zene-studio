@@ -160,6 +160,13 @@ RESULT: PASS
   signal on the audio thread.
 - Undo and commands: no journal entry, no command and no reversibility class changed; the
   ControlCommandsSnapshot canary is untouched.
+- Command siblings: this fix changes no `ControlCommands*`, `ControlRegistry` or
+  `ControlReversibilityTable` file and adds or changes no command id. The `app.*` and
+  `arrangement.*` ids the completion check lists come from the branch's pre-existing diff against
+  the old `FIX-BASE`, not from this cluster's commit; `git show --stat <commit>` lists only
+  `src/core/SampleClip.cpp`, the test registration files, the new test and this report.
+- Verdict: FIXED (REAL), so the ALREADY-FIXED/FALSE-POSITIVE ask does not apply; the REAL evidence
+  with file:line citations is under "Decision" above.
 - Behaviour change: only a clip whose source is replaced while it plays. It now restarts from the
   current position on the next period instead of rendering through the stale snapshot.
 - GUI: no `src/gui` change.
