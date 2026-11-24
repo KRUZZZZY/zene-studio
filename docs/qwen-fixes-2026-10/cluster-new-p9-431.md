@@ -88,7 +88,7 @@ followed a replacement into a buffer that could be freed under it.
 | audio-thread constraints (no allocation at note start) | `firstNoteOnFreshSlicerInstrumentAllocatesNothing` (AllocationProbe, `QCOMPARE(allocations, 0)`) | PASS |
 | audio-thread constraints (static sweep) | `RtSafetySweep` + `RtSafetySelfTest` over `SlicerT::playNoteImpl`, `acquirePlaybackSlot`, `deleteNotePluginData` | PASS |
 | slice-edit siblings (controls, zoom, waveform, saved settings) | `SlicerTSliceControlsTest`, `SlicerTZoomTest`, `SlicerTWaveformTest` (rebuilt after the header change) | PASS |
-| sampler/sample-replacement neighbours | `SamplerVoiceReuseTest`, `SamplerTakeTest`, `SamplerTakeGuiTest` | PASS |
+| sampler/sample-replacement neighbours | `SamplerVoiceReuseTest`, `SamplerTakeTest`, `SamplerTakeGuiTest`, `AudioFileProcessorPlayheadTest` | PASS |
 | supported-platform build | Qt 5/Qt 6 and MSVC: only `std::shared_ptr`/`std::vector`/`<memory>`, no Qt-6-only API, no POSIX call, `RequestChangesGuard` default-constructs when the engine is null (used by the tests that build `SlicerT instrument(nullptr)`) | builds and passes here (Qt 6); not cross-built on MSVC in this session |
 
 ## Commands and exit codes
@@ -115,7 +115,9 @@ them is cited here.
 | 4b rebuild | `cmake --build build --target zene SlicerTPlayheadTest slicert -- -j4` | 0 | build-13-green-restored.log |
 | 4b test (must pass) | `cd build/tests && ctest -R '^SlicerTPlayheadTest$' --output-on-failure` | 0 | test-15-green-restored.log |
 | rebuild the sibling SlicerT tests (header change) | `cmake --build build --target SlicerTZoomTest SlicerTWaveformTest SlicerTSliceControlsTest -- -j4` | 0 | build-14-slicer-tests.log |
-| family, rebuilt | `ctest -R '^(...\|AudioFileProcessorPlayheadTest)$'` | 8 (that one binary is not built in this tree) | test-16-family-rebuilt.log |
+| family, rebuilt | `ctest -R '^(...\|AudioFileProcessorPlayheadTest)$'` | 8 (that one binary was not built yet: "Not Run") | test-16-family-rebuilt.log |
+| build the AFP neighbour | `cmake --build build --target AudioFileProcessorPlayheadTest -- -j4` | 0 | build-15-afp.log |
+| AFP neighbour | `cd build/tests && ctest -R '^AudioFileProcessorPlayheadTest$' --output-on-failure` | 0 | test-19-afp.log |
 | family, final | `ctest -R '^(SlicerTPlayheadTest\|SlicerTZoomTest\|SlicerTWaveformTest\|SlicerTSliceControlsTest\|SamplerTakeTest\|SamplerTakeGuiTest\|SamplerVoiceReuseTest)$' --output-on-failure` | 0 (7/7) | test-18-family-final.log |
 | gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | feature-check-2.log |
 
@@ -165,7 +167,59 @@ fork-added file listed in `tests/fork-sources.txt:3012`. No new ctest executable
 
 ## Self-check
 
-Filled from `submit_check.py` (see below for the items it asked and the answers).
+Answers to `submit_check.py` (submit-check-1.log, exit 0) - every `?` item:
+
+1. **The regression test FAILS with the product change reverted and PASSES with it.** Yes, measured
+   this session: `git apply -R fix.patch` (exit 0) + rebuild (build-12-red-reverted.log, exit 0) +
+   `ctest -R '^SlicerTPlayheadTest$'` = **RED_EXIT=8** (test-14-red-reverted.log,
+   `FAIL! ... 'afterReplacement > 0.3f' returned FALSE. (the sounding note switched samples:
+   last-period peak 0)`); `git apply fix.patch` (exit 0) + rebuild (build-13-green-restored.log,
+   exit 0) + the same ctest = **GREEN_EXIT=0** (test-15-green-restored.log).
+2. **The test is deterministic.** No sleeps, no wall-clock timing, no second thread and no race: it
+   renders real periods itself, in a fixed order (`initTestCase` stops the device with
+   `AudioDevice::stopProcessing()` and sets `AudioEngineWorkerThread::setDeterministicProcessing(true)`,
+   then the test calls `AudioEngine::renderNextPeriod()`), and everything it asserts on is injected:
+   two WAV fixtures it writes itself (`writeConstantWav`, and `writeSilenceThenLevelWav` with
+   0.2 s of silence then a constant 16000) and one synchronous call through the plug-in's own public
+   meta-object slot (`QMetaObject::invokeMethod(slicer, "updateFile", Qt::DirectConnection, ...)`,
+   the same slot the drop handler at `SlicerTView.cpp:303` calls). The measurement is the peak of the
+   routed master output of the last rendered period, not a timing-dependent sample.
+3. **At the cause and complete.** The render path no longer reads any editing state, so every writer
+   had to become a publication point and did: `updateFile` (`SlicerT.cpp:638`, the path of the open
+   dialog at `SlicerTView.cpp:268` and of the drop at `:303`), `updateSlices` (`:651`, the reset
+   button), `loadSettings` (`:743`, project load), the constructor (`:125`), `clearSlices`
+   (`SlicerTView.cpp:237`) and the waveform's delete/move/insert (`SlicerTWaveform.cpp:405`, `:429`,
+   `:513`). Siblings checked and consistent: AudioFileProcessor and SampleClip already publish under
+   the same engine guard with the same retire rule (`AudioFileProcessor.cpp:473-489`,
+   `tests/upstream-modifications.txt:6098`); `SlicerT`'s per-slice controls were already atomics;
+   `PlaybackSlot` reuse now clears the pinned publication before the slot is offered again
+   (`SlicerT.cpp:294`), so a reused slot cannot keep a stale sample. The header/definition pair
+   changed together and every target that includes the header was rebuilt (`zene`, `slicert`,
+   `SlicerTPlayheadTest`, `SlicerTZoomTest`, `SlicerTWaveformTest`, `SlicerTSliceControlsTest`).
+4. **No collateral damage.** `saveSettings` is untouched, so a saved project's SlicerT element is
+   byte-for-byte what it was; `loadSettings` sets the same members as before and only adds the
+   publication afterwards, so old projects (file source, base64 source, or no `totalSlices`) load
+   exactly as before and simply start with a publication that matches. No new limit, bound or check
+   was added anywhere, so no other caller can be rejected by it. Nothing adds or changes a control
+   command (no `ControlCommands*` file is touched, so `ControlCommandsSnapshot` is unchanged), undo
+   is untouched (no command, no undo record - the sample/slice edits were never undoable steps), and
+   no `src/gui`, `src/core/Song*`, `*Record*`, `*Undo*`, `*Transport*`, `Take*` or `AudioEngine*` file
+   is modified, which is why no screenshot or state-sequence artifact is attached. Existing coverage
+   stays green: `SlicerTSliceControlsTest`, `SlicerTZoomTest`, `SlicerTWaveformTest` (rebuilt after
+   the header change), `SamplerVoiceReuseTest`, `SamplerTakeTest`, `SamplerTakeGuiTest`,
+   `AudioFileProcessorPlayheadTest` (test-19-afp.log, exit 0) and `SlicerTPlayheadTest`
+   (test-18-family-final.log, exit 0).
+5. **Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE** - the pre-fix race is quoted with
+   file:line in the Verdict section, and the pre-fix failure was reproduced in this session
+   (test-9-red.log, RED_EXIT=8).
+6. **Sibling commands** (`app.about`, `app.ask`, `app.help`, `app.online_help`, `app.task_cancel`,
+   `app.tasks`, `app.tour`, `app.tours`, `app.update_check_get`, `app.update_check_run`,
+   `app.update_check_set`, `app.version`, `app.whats_new`, `arrangement.fit_tracks`,
+   `arrangement.get_state`): this commit changes no command file and registers no command - it
+   touches the SlicerT plug-in (`SlicerT.h`, `SlicerT.cpp`, `SlicerTView.cpp`,
+   `SlicerTWaveform.cpp`), one test file, the registration list and this report - so none of those
+   commands is affected, and `plugin.slice_get`/`plugin.slice_set` (the SlicerT commands) reach the
+   per-slice control atomics, which this change does not touch.
 
 ## Other findings
 
