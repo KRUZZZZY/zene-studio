@@ -107,17 +107,55 @@ artifact of the ad-hoc subset, not a product defect; not changed here.
 
 ## Self-check
 
-- Verdict backed by evidence seen this session: yes — code lines above, `git merge-base` EXIT=0,
-  the RED run EXIT=1 at `RevisionTimelineTestParts1.h(395)` and the GREEN ctest EXIT=0.
-- Regression test "fails without the fix, passes with it": proven for the existing test by
-  reintroducing the pre-fix `QFile::remove(to)` (RED) and reversing it (GREEN). No new test file was
-  added because the required test already exists and was shown to bite.
-- Callers/siblings checked: `shiftRevisionsUp()` (`ProjectRevisions.cpp:284`), the `rev0` store
-  (`ProjectRevisions.cpp:353`), `restoreProjectRevision()` (`ProjectRevisions.cpp:447`) and
-  `replaceProjectWithStaged()` (`ProjectRevisions.cpp:465`); all go through the same
-  `copyRevision()`/`replaceWithStaged()` pair.
-- Collateral damage: no product file changed; old projects and saved revision data load as before.
-- Realtime/undo/commands: untouched.
-- Registration and gates: no new product file, so `tests/fork-sources.txt` and
-  `tests/upstream-modifications.txt` need no entry; `feature_check.py` EXIT=0 with all rows PASS.
-- `git status` clean after the experiment and before the commit.
+Each pre-submit `?` item, answered with this session's evidence:
+
+- **The regression test FAILS with the product change reverted and PASSES with it.**
+  - Reverted (non-atomic pre-fix shape reintroduced): `./RevisionTimelineTest
+    aFailedReplacementAfterStagingKeepsTheSlot` -> **EXIT=1**,
+    `FAIL! : 'QFileInfo::exists(rev2)' returned FALSE. (the failed replacement emptied the slot it
+    would have replaced)` at `tests/src/core/RevisionTimelineTestParts1.h(395)`, log
+    `test-3-red-slot-with-bug.log`.
+  - With the branch code: same binary after `git apply -R bug-reintroduced.patch` and a rebuild ->
+    `ctest -R "RevisionTimelineTest|ProjectRevisionRestoreStagingTest"` -> **EXIT=0**, 2/2 passed,
+    log `test-5-green-ctest.log`.
+  - The reverted-run patch, its build and the reverse-apply are `bug-reintroduced.patch`
+    (EXIT=0), `build-2-bug-reintroduced.log` (EXIT=0), `git apply -R` (EXIT=0),
+    `build-3-restored.log` (EXIT=0).
+- **The test is deterministic.** No wall clock, sleep or race. The failure is injected by the
+  existing test seam `setRevisionReplacementFailureForTest(true)`
+  (`include/ProjectRevisions.h:105`, flag `g_failReplacementForTest` at
+  `ProjectRevisions.cpp:60`) which makes only the replacement step of `copyRevision()` fail; the
+  staged copy itself is a real, complete file. The fixture values are literal documents
+  (`documentWith(6)`, `documentWith(9)`) compared byte for byte, and the slot asserts the exact
+  retained-count integer `0`.
+- **The fix is at the cause and complete.** `copyRevision()` is the single write path into a
+  revision slot; every caller and sibling goes through it: `shiftRevisionsUp()`
+  (`ProjectRevisions.cpp:284`), the `rev0` store (`ProjectRevisions.cpp:353`),
+  `restoreProjectRevision()` (`ProjectRevisions.cpp:447`, via
+  `replaceProjectWithStaged()` at `ProjectRevisions.cpp:465`) and the timeline restore
+  (`src/core/RevisionTimeline.cpp:464`, `RevisionTimeline.cpp:472`). All of them obtain the
+  destination-preserving replacement from `replaceWithStaged()` (`ProjectRevisions.cpp:65`), so
+  none of them can still delete a destination before a rename. The rotation's refusal path is
+  consistent: `shiftRevisionsUp()` and `rotateProjectRevision()` set `refused` and their callers
+  (`ControlCommandsProjectFiles.cpp:276`, `RevisionTimeline.cpp:464`) report the refusal instead of
+  installing bytes. No product file was changed for this verdict, so nothing else can drift.
+- **No collateral damage.** No product file changed (`git diff --stat` empty before the report
+  commit), so project documents, `keep-3` retention, the 8 MiB per-revision cap and every restore
+  path behave exactly as they did. The existing cap checks (`ProjectRevisions.cpp` size guards) are
+  untouched, so no caller that legitimately exceeds a limit is newly rejected.
+- **ALREADY-FIXED evidence (file:line).** `ProjectRevisions.cpp:124` stages into a unique sibling,
+  `ProjectRevisions.cpp:126` replaces through `replaceWithStaged()` (`ProjectRevisions.cpp:65`),
+  whose POSIX step is `std::rename()` at `ProjectRevisions.cpp:78` and whose Windows step is
+  `std::filesystem::rename()` at `ProjectRevisions.cpp:72`; there is no destination removal in
+  `copyRevision()`. The rework that introduced this is commit `6dbeb12f43`, an ancestor of `HEAD`
+  (`git merge-base --is-ancestor 6dbeb12f43 HEAD` -> EXIT=0), and its regression is
+  `RevisionTimelineTestParts1.h:381` (declared `RevisionTimelineTest.cpp:239`).
+- **Sibling commands in command files changed: none.** This verdict changes no command file and no
+  command handler, so `app.*`, `arrangement.*` (and the rest of the listed sibling commands) are
+  untouched and unaffected; the only rotation caller in the command layer,
+  `ControlCommandsProjectFiles.cpp:276`, is unmodified.
+- **Registration and gates.** No new product file, so `tests/fork-sources.txt` and
+  `tests/upstream-modifications.txt` need no entry; `feature_check.py` -> EXIT=0, all eight rows
+  PASS (`gate-1-feature_check.log`).
+- **`git status`** was clean after the experiment and before the report commit, and clean after it
+  (`submit-1.log`, one commit `a776babb19`).
