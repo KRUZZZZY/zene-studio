@@ -67,33 +67,50 @@ threads or random values.
 
 ## Commands and exit codes
 
-All logs are under
-`/home/kruzzzzy/.config/kads/zene/state/runs/3647-port.r3/logs`.
+Round 4 is a review-only pass pinned to HEAD `6ee78fcac2` (no product or test
+code changed). Every result below was re-run in this round; all logs are under
+`/home/kruzzzzy/.config/kads/zene/state/runs/3647-port.r4/logs`. Commands run
+from the worktree root, ctest from `build/tests`.
 
 | Step | Command | EXIT | Evidence |
 |---|---|---|---|
-| Configure the new target | `make -C build cmake_check_build_system` | 0 | `configure-check-001.log` |
-| RED build | `cmake --build build --target WasmOfflineRenderLimitTest -j4` | 0 | `build-red-002.log` |
-| RED run | `cd build/tests && ctest -R WasmOfflineRenderLimitTest --output-on-failure` | 8 | `test-red-001.log`: `Totals: 5 passed, 2 failed`; both huge-frame slots fail with `loadModuleFileCalls` Actual 1, Expected 0 at line 74 |
+| Pinned HEAD | `git rev-parse HEAD` | 0 | `head-001.log`: `6ee78fcac26b843d05673361c4a2247cb6b7b1d2` |
 | GREEN build | `cmake --build build --target WasmOfflineRenderLimitTest -j4` | 0 | `build-green-001.log` |
-| GREEN run | `cd build/tests && ctest -R WasmOfflineRenderLimitTest --output-on-failure` | 0 | `test-green-001.log`: `100% tests passed out of 1` |
-| 4b patch | `git add -N src/wasm/WasmOfflineRenderLimits.h`; `git diff -- src/wasm/WasmOfflineRender.cpp src/wasm/WasmOfflineRenderLimits.h > logs/fix.patch` | 0 | `fix.patch` (111 lines) |
-| 4b reverse | `git apply -R .../fix.patch` | 0 | `apply-reverse-001.log` |
-| 4b REVERSED build | `cmake --build build --target WasmOfflineRenderLimitTest -j4` | 0 | `build-reversed-001.log` |
-| 4b REVERSED run | `cd build/tests && ctest -R WasmOfflineRenderLimitTest --output-on-failure` | 8 | `test-reversed-001.log`: same two failures at line 74 |
-| 4b restore | `git apply .../fix.patch` | 0 | `apply-forward-001.log` |
-| 4b RESTORED build | `cmake --build build --target WasmOfflineRenderLimitTest -j4` | 0 | `build-restored-001.log` |
-| 4b RESTORED run | `cd build/tests && ctest -R WasmOfflineRenderLimitTest --output-on-failure` | 0 | `test-restored-001.log`: `100% tests passed out of 1` |
-| Family | `cd build/tests && ctest -R Wasm --output-on-failure` | 0 | `test-family-001.log`: one test, `100% tests passed out of 1` |
-| Product build | `cmake --build build --target zene -j4` | 0 | `build-zene-001.log`: `[100%] Built target zene` |
-| Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `feature-check-002.log`: all eight rows PASS, `RESULT: PASS` |
-| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 3647-port` | 0 | `submit-check-001.log`: `RESULT: PASS - submit` |
+| GREEN run | `ctest -R WasmOfflineRenderLimitTest --output-on-failure` | 0 | `test-green-001.log`: `100% tests passed out of 1` |
+| 4b patch | `git diff e4194e0bf5 6ee78fcac2 -- src/wasm/WasmOfflineRender.cpp src/wasm/WasmOfflineRenderLimits.h > logs/fix.patch` | 0 | `fix.patch` (111 lines) |
+| 4b reverse | `git apply -R logs/fix.patch` | 0 | `apply-reverse-001.log` |
+| RED build | `cmake --build build --target WasmOfflineRenderLimitTest -j4` | 0 | `build-red-001.log` |
+| RED run | `ctest -R WasmOfflineRenderLimitTest --output-on-failure` | 8 | `test-red-001.log`: `Totals: 5 passed, 2 failed`; `rejectsOneFrameOverTheLimit` and `rejectsTheLargestFrameCount` fail with `loadModuleFileCalls` Actual 1, Expected 0 at `WasmOfflineRenderLimitTest.cpp(74)` |
+| 4b restore | `git apply logs/fix.patch` | 0 | `apply-forward-001.log` |
+| RESTORED build | `cmake --build build --target WasmOfflineRenderLimitTest -j4` | 0 | `build-restored-001.log` |
+| RESTORED run | `ctest -R WasmOfflineRenderLimitTest --output-on-failure` | 0 | `test-restored-001.log`: `100% tests passed out of 1` |
+| Family | `ctest -R Wasm --output-on-failure` | 0 | `test-family-001.log`: one test, `100% tests passed out of 1` |
+| Clean tree | `git status --short` | 0 | `status-001.log`: empty |
+| Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `feature-check-001.log`: all eight rows PASS, `RESULT: PASS` |
 
-The first gate run (`feature-check-001.log`, EXIT=1) failed only
-`fork-sources` and `all-sources-reproduce`: the two new test files were still
-untracked, and the manifest recipe is `git ls-files`. After staging the
-explicit paths, the same gate passed (`feature-check-002.log`, EXIT=0). No
-manifest content was hand-edited to bypass the recipe.
+`zene` itself was not rebuilt in round 4: no product file changed since the
+round-3 commits, whose `zene` build passed.
+
+## Round 4: MSVC C2491 finding resolved by 6ee78fcac2
+
+- Finding: `eff5c001c7:tests/CMakeLists.txt` built `WasmOfflineRenderLimitTest`
+  without `LMMS_STATIC_DEFINE`, while `src/wasm/WasmSandbox.h:67` declares the
+  class `LMMS_EXPORT` and `tests/src/wasm/WasmOfflineRenderLimitStubs.cpp:42`
+  defines its constructor in the executable. On MSVC, `LMMS_EXPORT` expands to
+  `__declspec(dllimport)` there, and defining such a function is error C2491.
+- Resolution at HEAD `6ee78fcac2`: `tests/CMakeLists.txt:5628` is
+  `target_compile_definitions(WasmOfflineRenderLimitTest PRIVATE LMMS_STATIC_DEFINE LMMS_TESTING)`.
+- The generated export header (`build/src/lmms_export.h`, CMake
+  `GenerateExportHeader`) starts with `#ifdef LMMS_STATIC_DEFINE` /
+  `#define LMMS_EXPORT` (empty) before any platform branch. So on every
+  compiler, all `LMMS_EXPORT` declarations seen by this target become plain
+  declarations, and the stub definitions are ordinary definitions. The test
+  links only Qt, not `lmmsobjs`, so no dllimport/dllexport mix remains.
+- The regression still builds and passes with the define (GREEN and RESTORED
+  rows above), and still fails without the product fix (RED row).
+- Limit: no Windows CI lane is reachable from this machine, so the MSVC check
+  is by source inspection of the generated header, not an MSVC build.
+- No blocking entries remain open.
 
 ## Callers and siblings checked
 
@@ -121,7 +138,7 @@ manifest content was hand-edited to bypass the recipe.
 ## Self-check
 
 1. **Reverse/restore:** the test fails with the product patch reversed
-   (`test-reversed-001.log`, EXIT=8, two failures) and passes restored
+   (round 4 `test-red-001.log`, EXIT=8, two failures) and passes restored
    (`test-restored-001.log`, EXIT=0, `100% tests passed out of 1`).
 2. **Deterministic:** inputs are literal integer counts (`4194305`,
    `UINT32_MAX`, `4194304`, `64`); the seam is the stub's
@@ -148,6 +165,14 @@ manifest content was hand-edited to bypass the recipe.
    command is `wasm.render_offline`, whose schema cap remains the unchanged
    4194304 at `src/core/ControlCommandsWasmRender.cpp:336`, equal to the cap
    added here; its handler and the other command paths are unaffected.
+
+## Delegation
+
+Delegation: round 4 used one Haiku run for the pinned-HEAD build, the
+reverse/restore RED-GREEN runs and the `Wasm` family run (logs above, checked
+against the log files by the lead); the lead ran the gates, reviewed the
+CMake line and export header, and wrote this report. No Sonnet or DeepSeek was
+needed: round 4 changes no code.
 
 ## Other findings
 
