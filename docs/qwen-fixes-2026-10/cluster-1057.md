@@ -57,11 +57,46 @@ not a bug fix.
 There is no product change, so there is no RED/GREEN regression run and no
 `fix.patch` reversal (step 4b does not apply to a not-real verdict). Code evidence was
 gathered with the fff search tools and `sed -n` line reads (no exit codes recorded for
-reads). Gate and completion-check runs are listed in the Self-check below.
+reads). The gate and completion-check runs are in the Gates table below.
+
+## Gates
+
+| Command | Result |
+| --- | --- |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-1057 > .../1057.r1/logs/01-feature-check.log 2>&1; echo EXIT=$?` | EXIT=0. Every row PASS (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length), `RESULT: PASS` |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-1057 1057 > .../1057.r1/logs/02-submit-check.log 2>&1; echo EXIT=$?` | EXIT=0, `RESULT: PASS - submit` |
 
 ## Self-check
 
-See the section appended after the gates ran.
+- **The regression test fails without the fix and passes with it:** not applicable. The
+  verdict is FALSE-POSITIVE, so no product change was made and there is no patch to
+  reverse. The submit check's "tests added or changed" row lists the branch's
+  pre-existing test files (`tests/Qt5QStringListSizeConstructorCheck.py`,
+  `tests/clang-template-keyword-check.py`, `tests/control-audio-test-tone.py`). None
+  of them was added by this session; this session committed only this report.
+- **Deterministic test:** not applicable. I added no test, for the reason above.
+- **The fix is at the cause and complete:** there is no fix. I checked the siblings
+  against the verdict. `interchange.smf_export` has the identical overwrite gate and the
+  same `NotMutating` class (`ControlCommandsInterchange.cpp:248`,
+  `ControlReversibilityTableInterchange.cpp:82`). So do `render.render`
+  (`docs/A16-REVERSIBILITY.md:163`), `shortcuts.export`, `theme.export` and
+  `settings.export`. The family is consistent with the contract.
+- **No collateral damage:** no product, schema or test file changed (the commit touches
+  only `docs/qwen-fixes-2026-10/cluster-1057.md`), so loading old projects and saved
+  data is unaffected.
+- **ALREADY-FIXED / FALSE-POSITIVE evidence:** the contract is
+  `docs/A16-REVERSIBILITY.md:39-41, 132-136, 163`. The row is
+  `src/core/ControlReversibilityTableDawProject.cpp:88-94`. The handler's explicit
+  overwrite opt-in is `src/core/ControlCommandsDawProject.cpp:372-377`. All of these are
+  listed under Evidence above.
+- **Sibling commands in the command files you changed** (app.*, arrangement.*): I changed
+  no command file. The listed ids come from the branch's existing diff against its
+  base, not from this session, and they are unaffected.
+
+Delegation: Haiku ran `feature_check.py` and `submit_check.py`, logged both and reported
+the tables. I checked the `RESULT` lines in both logs myself. I did not use Sonnet: the
+verdict is not-real, so there was no test to write and no fix to implement. The
+diagnosis is lead work. DeepSeek was unavailable (rate-limited).
 
 ## Other findings
 
@@ -69,5 +104,3 @@ See the section appended after the gates ran.
   `src/core/ControlCommandsDawProject.cpp:24-27` say `not_mutating` is "the class
   project.save ... carr[ies]". That is stale: `project.save` is `RC::Snapshot`
   (`src/core/ControlReversibilityTableSnapshot.cpp:73`). This is comment-only and not fixed here.
-
-Delegation: see the Self-check section.
