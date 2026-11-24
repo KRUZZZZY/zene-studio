@@ -46,3 +46,17 @@ None.
 - Collateral: the cap is unchanged and files at or under 512 markers load and save byte-for-byte as before (refusal only when `m_droppedOnLoad > 0`; `clear()` and each `load()` reset it, so Song::clearProject / opening another project lifts it - covered by the test's final clear-and-save step; PartialLoadTest and ProjectSectionTest still pass). No other caller legitimately exceeds the cap: `add()` already returns -1 at MaxMarkers.
 - Not ALREADY-FIXED / FALSE-POSITIVE: verdict is FIXED (b17c98e11 only warned; shown by test-red.log).
 - Sibling commands: I changed no command file (no src/core/ControlCommands*.cpp, no app.* command) and added no control command, so the app.* commands are not affected.
+
+## Round 2 (proof manifest needs a state-sequence)
+Round 1's manifest lacked a `state-sequence`, which the rule requires because the fix touches `src/core/Song.cpp` and `src/core/SongSections.cpp`. No product code changed in round 2; the product commit stays 319b074b96. The manifest (`review-b17c98e11.r2/logs/proof.json`) now carries a `state-sequence` artifact for `ProjectMarkersTest::aProjectOverTheCapLoadedThenSavedDoesNotLoseMarkersInSilence`, with these states in the order the test drives them:
+1. `clearProject` + `loadProject(over-cap.mmp)` with 515 markers: 512 markers in memory, `errors()` names the markers, `droppedOnLoad()` = 3.
+2. `saveProjectFile(out.mmp)` refused: returns false, `saveRefusal()` names the markers, `out.mmp` does not exist, `over-cap.mmp` bytes unchanged.
+3. `clearProject()` + `add(96, "Fits")`: 1 marker, `droppedOnLoad()` = 0.
+4. `saveProjectFile(out.mmp)` succeeds: `saveRefusal()` empty, `out.mmp` exists.
+
+The r1 log folder no longer exists, so the red/green proof was re-run into the r2 logs (`$L` = .config/kads/zene/state/runs/review-b17c98e11.r2/logs):
+- `git diff 9913d36d53 HEAD -- include/ProjectMarkers.h include/ProjectSection.h src/core/ProjectMarkers.cpp src/core/SongSections.cpp src/core/Song.cpp > $L/fix.patch` EXIT=0 (5611 bytes); `git apply -R $L/fix.patch` EXIT=0
+- RED build `cmake --build build -j4 --target zene ProjectMarkersTest` > build-2-red.log EXIT=0; RED test `cd build/tests && ctest -R '^ProjectMarkersTest$' --output-on-failure` > test-2-red.log **EXIT=8**: `FAIL! ProjectMarkersTest::aProjectOverTheCapLoadedThenSavedDoesNotLoseMarkersInSilence() 'reported' returned FALSE ... Loc: ProjectMarkersTest.cpp(381)` (the only failing slot)
+- `git apply $L/fix.patch` EXIT=0; GREEN build `... --target zene ProjectMarkersTest PartialLoadTest ProjectSectionTest` > build-3-green.log EXIT=0; GREEN test `ctest -R '^(ProjectMarkersTest|PartialLoadTest|ProjectSectionTest)$' --output-on-failure` > test-3-green.log EXIT=0 (3/3 passed). A separate run without any revert (build-1.log / test-1.log) was also EXIT=0, 3/3.
+- Gates: `feature_check.py` > gates.log EXIT=0, RESULT: PASS. After the re-apply `git status --short` and `git diff HEAD --stat` were empty.
+Delegation (round 2): Haiku ran the build+ctest and the reverse-patch red/green steps; I read test-2-red.log, test-3-green.log and git status myself.
