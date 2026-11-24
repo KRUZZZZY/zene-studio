@@ -154,6 +154,13 @@ EXIT=0
   `14e637c600` (`git merge-base --is-ancestor 14e637c600 HEAD` exit 0). Putting
   the historical line back makes the registered scanner fail (exit 8), so the
   current code is what keeps CI green.
+- **Sibling commands:** this lane changes no command file. `git show --stat
+  c91c76262` lists exactly two files, `tests/Qt5QStringListBraceCheck.py` and
+  this report; `git show --name-only c91c76262 -- 'tools/mcp-zene-control/*'
+  'src/core/Control*'` is empty. It adds no command id, handler, schema entry,
+  reversibility class or undo step. The `app.*` and `arrangement.*` commands
+  named by `submit_check.py` are train changes between its `FIX-BASE` and this
+  branch's base, not edits from this port lane, so no sibling is affected.
 
 ## Other findings
 
