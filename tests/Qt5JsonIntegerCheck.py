@@ -17,7 +17,7 @@ include/DeprecationHelper.h (used by the src/core and tests files that predate t
 It calls QJsonValue::toInteger on Qt 6 and reproduces the same "default for a value that
 is not a whole, in-range integer" contract on Qt 5.
 
-The check has two deterministic halves:
+The check has three deterministic layers:
 
   * a source scan of the first-party trees (src, include, tests/src, plugins; vendored
     third-party trees excluded) for a `.toInteger(`/`->toInteger(` call that is not
@@ -28,10 +28,16 @@ The check has two deterministic halves:
     headers, with a Qt 5 moc standing in for the Qt 6-generated one, and compiled
     `-fsyntax-only`. Before the fix that is the hosted failure; after it, clean.
 
+  * a port-specific assertion: inside ScriptClockTest::scheduleStateReportsUtf8Bytes()
+    both `source_bytes` reads must be arguments of jsonInteger(). This keeps the check
+    tied to the exact function the hosted linux-arm64 failure named, independently of
+    the wider tree scan.
+
 Both halves prove themselves: the scan has red/green fixtures, and the probe compiles a
 known-bad `toInteger` control (must be rejected by the Qt 5 tree) and a known-good
 `toInt` control (must be accepted). Without a Qt 5 tree the probe reports itself skipped,
-never passed.
+never passed. The port-specific assertion also has a fixture pair: a direct .toInteger()
+read must be flagged while jsonInteger() reads must not.
 
 Usage:
   Qt5JsonIntegerCheck.py [--root DIR] [--build-dir DIR] [--cxx CXX]
@@ -62,11 +68,14 @@ SKIP_DIRS = {
 	os.path.join("plugins", "RnnoiseDenoiser", "rnnoise"),
 }
 TARGET = "tests/src/core/ScriptClockTest.cpp"
+FUNCTION_NAME = "scheduleStateReportsUtf8Bytes"
 
 # Comments, string and char literals are blanked before the scan (line numbers kept).
 NON_CODE = re.compile(r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'', re.S)
 TO_INTEGER = re.compile(r"(?:->|\.)\s*toInteger\s*\(")
 QT6_GUARD = re.compile(r"QT_VERSION\s*(?:>=|>)\s*(?:QT_VERSION_CHECK\s*\(\s*6|6)")
+SOURCE_BYTES = re.compile(r'QStringLiteral\s*\(\s*"source_bytes"\s*\)')
+JSON_INTEGER_CALL = re.compile(r"\bjsonInteger\s*\(")
 
 BAD_PROBE = """\
 #include <QJsonValue>
@@ -109,6 +118,22 @@ qint64 bytes(const QJsonValue& value)
 #endif
 }
 """
+FIXTURE_PORT_DIRECT = """\
+void ScriptClockTest::scheduleStateReportsUtf8Bytes()
+{
+	const qint64 perId = clock.scheduleState(id).value(QStringLiteral("source_bytes")).toInteger(-1);
+	qint64 inState = 0;
+	inState = one.value(QStringLiteral("source_bytes")).toInteger(-1);
+}
+"""
+FIXTURE_PORT_GOOD = """\
+void ScriptClockTest::scheduleStateReportsUtf8Bytes()
+{
+	const qint64 perId = jsonInteger(clock.scheduleState(id).value(QStringLiteral("source_bytes")), -1);
+	qint64 inState = 0;
+	inState = jsonInteger(one.value(QStringLiteral("source_bytes")), -1);
+}
+"""
 
 
 def blank_non_code(text):
@@ -145,6 +170,39 @@ def scan_text(name, text):
 		if line in guarded:
 			continue
 		findings.append((name, line + 1, "QJsonValue::toInteger is Qt 6 only; use jsonInteger()"))
+	return findings
+
+
+def function_lines(text, name):
+	"""(1-based start line, body lines) for `Class::name()`, or (None, []) when absent."""
+	pattern = re.compile(r"\b" + re.escape(name) + r"\s*\(\s*\)")
+	code_lines = blank_non_code(text).splitlines()
+	start = next((index for index, line in enumerate(code_lines)
+		if "::" in line and pattern.search(line)), None)
+	if start is None:
+		return None, []
+	depth, opened = 0, False
+	for index in range(start, len(code_lines)):
+		depth += code_lines[index].count("{") - code_lines[index].count("}")
+		opened = opened or "{" in code_lines[index]
+		if opened and depth == 0:
+			return start + 1, text.splitlines()[start:index + 1]
+	return None, []
+
+
+def source_bytes_findings(name, text):
+	"""(path, line, what) for source_bytes reads in the port regression not using jsonInteger()."""
+	start, lines = function_lines(text, FUNCTION_NAME)
+	if start is None:
+		return [(name, None, f"{FUNCTION_NAME}() was not found; the port regression target is missing")]
+	findings, reads = [], 0
+	for offset, line in enumerate(lines):
+		for match in SOURCE_BYTES.finditer(line):
+			reads += 1
+			if not JSON_INTEGER_CALL.search(line[:match.start()]):
+				findings.append((name, start + offset, "source_bytes is read without jsonInteger()"))
+	if reads < 2:
+		findings.append((name, start, f"expected both source_bytes reads in {FUNCTION_NAME}(), found {reads}"))
 	return findings
 
 
@@ -193,6 +251,10 @@ def self_test():
 		failures.append("the scan reported the jsonInteger() fixture")
 	if scan_text("fixture-guarded.cpp", FIXTURE_GUARDED):
 		failures.append("the scan reported toInteger() inside a QT_VERSION >= 6 guard")
+	if not source_bytes_findings("fixture-port-bad.cpp", FIXTURE_PORT_DIRECT):
+		failures.append("the port check did not report a direct .toInteger() source_bytes read")
+	if source_bytes_findings("fixture-port-good.cpp", FIXTURE_PORT_GOOD):
+		failures.append("the port check reported jsonInteger() source_bytes reads")
 	return failures
 
 
@@ -345,6 +407,11 @@ def compile_probe(entry, flags, moc, workdir):
 
 def check(root, build_dir, cxx):
 	findings = scan_tree(root)
+	target_text = read_text(os.path.join(root, TARGET))
+	if target_text is None:
+		findings.append((TARGET, None, "the port regression target is missing"))
+	else:
+		findings += source_bytes_findings(TARGET, target_text)
 	flags = qt5_flags()
 	moc = qt5_moc() if flags is not None else None
 	if flags is None or moc is None:
@@ -386,7 +453,7 @@ def main(argv):
 		print(f"SELF-TEST FAIL: {failure}")
 	if failures:
 		return 1
-	print("self-test: the unguarded .toInteger() fixture is flagged, jsonInteger() and a Qt 6 guard are not")
+	print("self-test: the unguarded .toInteger() and port source_bytes fixtures are flagged; jsonInteger() and a Qt 6 guard are not")
 	if args.self_test:
 		return 0
 	root = os.path.abspath(args.root)
@@ -397,7 +464,7 @@ def main(argv):
 	findings = check(root, build_dir, args.cxx)
 	if findings:
 		return report(findings)
-	print("PASS: first-party code reaches JSON integers through jsonInteger(), and the affected translation unit compiles against Qt 5")
+	print("PASS: first-party code reaches JSON integers through jsonInteger(), the port source_bytes reads use it, and the affected translation unit compiles against Qt 5")
 	return 0
 
 
