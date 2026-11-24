@@ -151,6 +151,18 @@ RESULT: PASS
   `:406-426` (`applyComp` zeroes everything else), `:655-658` (it runs for every comped handle),
   contract `include/TakeLane.h:38-40`, and the history that the gate predates the admission
   (`git log -S`, `git merge-base --is-ancestor` above).
+- **Undo and commands.** No command was added or changed and no model write was added: this
+  change set is two tests plus this report (`git diff --stat HEAD~1`: `docs/qwen-fixes-2026-10/
+  cluster-new-p14-278.md`, `tests/src/tracks/TakeLaneCompPlaybackTest.cpp`), so undo depth and the
+  ControlCommandsSnapshot canary are untouched.
+- **Sibling commands raised by the pre-submit check (`app.*`, `arrangement.*`).** Those ids come
+  from the whole branch's `base..HEAD` diff (`ControlCommands` files changed by earlier commits on
+  this branch), not from this job: `git show --stat HEAD` lists no file under `src/core/Control*`.
+  The sibling family that would matter here is `comp.*`, and it is unmodified - comp playback reads
+  the `TakeLaneModel` state those commands write (`selectSegment`/`rebuild`/`removeLane` and
+  `setAuditionLane`), and this verdict changes none of their semantics: a segment still names one
+  lane over one tick range, an audition still replaces the composite, and playback still gates at
+  the handle (`src/core/SamplePlayHandle.cpp:350-426`).
 
 ## Other findings (not fixed here)
 
