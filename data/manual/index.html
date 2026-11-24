@@ -632,7 +632,7 @@ thread, so neither a slow plug-in nor the Wine bridge can stall playback; the ef
 chain compensates for it. While a project is exported Zene waits for each VST2 plug-in between audio periods (at most two seconds each), so no audio is dropped from the file, and playback itself never waits. The
 plug-in's settings, including its chunk, are saved with the project, in presets (<code>plugin.preset_save</code> /
 <code>plugin.preset_load</code>) and with <code>plugin.state_save</code> / <code>plugin.state_load</code>. Without a Carla runtime
-no VST2 effect is listed, and a project that used one keeps it as a placeholder until Carla is installed.</p>
+no VST2 effect is listed, and a project that used one keeps it as a placeholder until Carla is installed. Removing the effect while its editor is open - Remove on its card or in its rack, <code>plugin.unload</code>, or a chain taken away with its track or channel - closes the plug-in's own editor first, then removes the device, so nothing of the plug-in is left drawing into a device that is going. The older VeSTige effect host closes its plug-in's window the same way before its dialog is torn down.</p>
 
 <p><strong>Older VST2 projects.</strong> When you open a project or preset made with the older VeSTige instrument or VST effect
 host, using File &gt; Open, the Start hub's Recent list or the agent command <code>project.open</code>, each of those devices opens
