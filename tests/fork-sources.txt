@@ -4059,3 +4059,6 @@ tests/src/core/StemPythonDiscoveryServiceTest.cpp
 # pass advances the source with the same reads the audible pass makes (fork-NEW test).
 tests/src/tracks/SampleClipMuteCursorTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-223.md
+
+# Cluster ci-3eb9bda8aa6785a3-port: mingw64 unused gig allocation helper; report records the guard and the no-POSIX-hook compile check.
+docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3-port.md
