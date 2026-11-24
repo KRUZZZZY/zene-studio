@@ -876,6 +876,10 @@ tests/remote-plugin-shm-fifo-qt-usage-check.py
 tests/no-ffmpeg-video-clips-compile-check.py
 tests/VideoClipsNoFfmpegCheck.py
 docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md
+# cluster ci-e58078851126eac9-port: port-lane report for the already-fixed hosted
+# linux-x86_64 Qt 5 QJsonValue::toInteger build regression; the source scan and the
+# Qt 5 probe registered above cover the same translation unit.
+docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9-port.md
 docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md
 docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md
 docs/qwen-fixes-2026-10/cluster-ci-2fd63d3310176c0c.md
@@ -4105,3 +4109,8 @@ tests/windows-arm64-aligned-new-check.py
 docs/qwen-fixes-2026-10/cluster-ci-00e6f05f41fa4f1a-port.md
 # cluster new-p17-14 (2026-10): every note edit that changes note state marks the project modified through control::markProjectEdited (add, remove, edit, slide, the three transforms); regression ControlNoteNoOpUndoTest::directNoteEditsMarkProjectDirty.
 docs/qwen-fixes-2026-10/cluster-new-p17-14.md
+# cluster ci-e58078851126eac9-port (2026-11-24): the hosted Qt 5.15 build / linux-x86_64 job stopped on
+# QJsonValue::toInteger in ScriptClockTest. The check asserts both source_bytes reads stay on
+# jsonInteger(value, -1) and recompiles the real test through compile_commands.json against Qt 5;
+# ctest ScriptClockQt5JsonIntegerPortCheck.
+tests/ScriptClockQt5JsonIntegerPortCheck.py
