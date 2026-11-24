@@ -59,6 +59,16 @@ DispersionEffect::DispersionEffect(Model* parent, const Descriptor::SubPluginFea
 	m_sampleRate(Engine::audioEngine()->outputSampleRate()),
 	m_amountVal(0)
 {
+	// The engine's output rate can change while the effect stays loaded, and
+	// processImpl() derives the Nyquist clamp, the all-pass coefficients and the
+	// DC-removal time constant from m_sampleRate every period. Follow the change
+	// so a device swap does not leave the effect at the rate it was constructed
+	// at. The signal is emitted by AudioEngine::setAudioDevice() and
+	// restoreAudioDevice() after stopProcessing(), and by initDevices() before
+	// processing starts, so no audio-thread code is inside processImpl() when
+	// the slot writes the member.
+	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this,
+		[this] { m_sampleRate = Engine::audioEngine()->outputSampleRate(); });
 }
 
 
