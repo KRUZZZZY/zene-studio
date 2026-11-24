@@ -61,6 +61,21 @@ On this branch it passes.
 - Gates: feature_check EXIT=0, RESULT: PASS.
 - Realtime, undo and control commands: not touched.
 - Registration: no new product file was added, and no inherited file was changed.
+- Fails without the fix and passes with it: this job did not change the product, so there is
+  nothing to revert. The original cluster report recorded the red/green proof for
+  `UnusedResultFortifyCheck`: ctest EXIT=8 with the header reverted, EXIT=0 with the fix. On
+  this branch it passes (`logs/test-1.log`, "#1015 UnusedResultFortifyCheck: Passed").
+- Deterministic: yes. It is one compiler invocation over fixed probe source, with injected flags
+  (`-D_FORTIFY_SOURCE=3 -Werror=unused-result`). There is no timing, no sleep and no process
+  under test.
+- At the cause and complete: all three `::write` calls in the header use their results (lines 66,
+  86 and 118 via the helper). The `(void)`-cast scan found no other first-party site.
+- Collateral damage: none. This commit only adds this report.
+- ALREADY-FIXED code reference: `tests/src/core/MountNamespaceTestSupport.h:63-68`, `:84-88` and
+  `:118`, plus `tests/CMakeLists.txt:9622`.
+- Sibling commands (app.*, arrangement.*): the check lists them from the train branch's existing
+  diff against its base (575 changed files). This job changed no command file, so none of them is
+  affected.
 
 ## Other findings
 
