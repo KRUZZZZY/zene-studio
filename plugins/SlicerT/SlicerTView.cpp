@@ -234,6 +234,7 @@ void SlicerTView::clearSlices()
 	m_slicerTParent->m_slicePoints.emplace_back(0);
 	m_slicerTParent->m_slicePoints.emplace_back(1);
 	m_slicerTParent->resetSliceControls();
+	m_slicerTParent->publishPlaybackSnapshot();
 
 	emit m_slicerTParent->dataChanged();
 }

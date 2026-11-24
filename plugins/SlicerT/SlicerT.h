@@ -28,6 +28,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <memory>
 
 #include "AutomatableModel.h"
 #include "ComboBoxModel.h"
@@ -88,6 +89,16 @@ public:
 	Q_INVOKABLE bool setSliceControl(int slice, const QString& name, double value);
 
 private:
+	//! What the render path reads of the editing state, as ONE immutable object: the sample (and
+	//! through Sample, the shared buffer it plays) and the slice map. A note pins the publication that
+	//! is current on its first period, so replacing the sample or moving a slice point neither switches
+	//! a sounding note nor frees the buffer under it. Built and published on a control thread only.
+	struct PlaybackSnapshot
+	{
+		Sample sample;
+		std::vector<float> slicePoints;
+	};
+
 	void playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out) override;
 	//! What one sounding slice note keeps between periods: this trigger's two random draws (-1..1) and the
 	//! per-channel state of its filter. Plain floats, owned by the note's slot: nothing is allocated.
@@ -102,8 +113,13 @@ private:
 		Sample::PlaybackState state;
 		std::atomic<bool> inUse{false};
 		SliceVoice voice;
+		std::shared_ptr<const PlaybackSnapshot> snapshot;
 	};
 	PlaybackSlot* acquirePlaybackSlot(int startFrame) noexcept;
+	//! Control thread: publish the current sample and slice map for the notes that start from now. The
+	//! engine's change guard excludes the whole render period, so the render thread's note-start read
+	//! sees a complete publication or the previous one, never a half made replacement.
+	void publishPlaybackSnapshot();
 	//! Gain, pan, filter and random amount of slice @a slice applied to one rendered block. Audio thread:
 	//! reads the control atomics and writes only @a block and @a voice; neutral controls return at once.
 	void applySliceControls(SliceVoice& voice, int slice, SampleFrame* block, f_cnt_t frames) noexcept;
@@ -125,6 +141,12 @@ private:
 	BoolModel m_enableSync;
 
 	Sample m_originalSample;
+
+	//! The render path's view of the two above: one immutable publication, plus the replaced ones a
+	//! sounding note still pins. Written on a control thread only, under the engine's change guard (see
+	//! publishPlaybackSnapshot); a retired publication is destroyed here, never on the audio thread.
+	std::shared_ptr<const PlaybackSnapshot> m_playbackSnapshot;
+	std::vector<std::shared_ptr<const PlaybackSnapshot>> m_retiredSnapshots;
 
 	std::vector<float> m_slicePoints;
 

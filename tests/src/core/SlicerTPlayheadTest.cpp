@@ -76,13 +76,14 @@ void appendLittleEndian(QByteArray& bytes, quint32 value, int size)
 	for (int i = 0; i < size; ++i) { bytes.append(static_cast<char>((value >> (8 * i)) & 0xff)); }
 }
 
-//! A constant-amplitude 16-bit mono WAV: the SlicerT fade is then the only thing that changes the
-//! level, so the envelope can be read straight off the rendered frames.
-QString writeConstantWav(const QString& path, int rate, int frames)
+//! A 16-bit mono WAV of \a silentFrames of silence and then \a level (0..32767) for \a frames. The
+//! step lets a test tell "the replacement, from its start" (silent) from "the source it started on".
+QString writeSilenceThenLevelWav(const QString& path, int rate, int silentFrames, int frames, quint32 level)
 {
 	QByteArray pcm;
-	pcm.reserve(frames * 2);
-	for (int i = 0; i < frames; ++i) { appendLittleEndian(pcm, 16000, 2); }
+	pcm.reserve((silentFrames + frames) * 2);
+	for (int i = 0; i < silentFrames; ++i) { appendLittleEndian(pcm, 0, 2); }
+	for (int i = 0; i < frames; ++i) { appendLittleEndian(pcm, level, 2); }
 
 	QByteArray out;
 	out.append("RIFF");
@@ -104,6 +105,13 @@ QString writeConstantWav(const QString& path, int rate, int frames)
 	file.write(out);
 	file.close();
 	return path;
+}
+
+//! A constant-amplitude 16-bit mono WAV: the SlicerT fade is then the only thing that changes the
+//! level, so the envelope can be read straight off the rendered frames.
+QString writeConstantWav(const QString& path, int rate, int frames)
+{
+	return writeSilenceThenLevelWav(path, rate, 0, frames, 16000);
 }
 
 //! The loudest level over \a count frames from \a from: the slice's own level over a stretch.
@@ -528,6 +536,65 @@ private slots:
 		const auto remainingNotes = std::count_if(audio->playHandles().begin(), audio->playHandles().end(),
 			[](PlayHandle* item) { return item->type() == PlayHandle::Type::NotePlayHandle; });
 		QCOMPARE(remainingNotes, qsizetype{0});
+	}
+
+	//! BUG new-p9-431: replacing the sample while a note is sounding must not switch that note to the
+	//! replacement, and must not release the buffer under it. The note renders the source it started on;
+	//! a note started after the replacement plays the new file. The replacement opens with a fifth of a
+	//! second of silence, so a note that switched to it measures near silence here.
+	void replacingTheSampleKeepsASoundingNoteOnItsSource()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		const QString held = writeConstantWav(scratch.filePath(QStringLiteral("held.wav")),
+			taketest::kRate, taketest::kRate * 3);
+		QVERIFY(!held.isEmpty());
+		const QString replaced = writeSilenceThenLevelWav(scratch.filePath(QStringLiteral("replaced.wav")),
+			taketest::kRate, taketest::kRate / 5, taketest::kRate * 2, 16000);
+		QVERIFY(!replaced.isEmpty());
+
+		InstrumentTrack* track = nullptr;
+		const QString error = prepareSlicerTrack(held, &track);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		AudioEngine* const audio = Engine::audioEngine();
+		audio->setOverloadSheddingEnabled(false);
+		Instrument* const slicer = track->instrument();
+		QVERIFY(slicer != nullptr);
+
+		const Note note(TimePos(1), TimePos(0), track->baseNote());
+		auto* const handle = NotePlayHandleManager::acquire(track, 0,
+			audio->framesPerPeriod() * 8, note);
+		QVERIFY(audio->addPlayHandle(handle));
+
+		// The loudest level of the last of \a periods real render periods, played by the note above.
+		const auto lastPeriodPeak = [audio](int periods) {
+			float peak = 0.0f;
+			for (int i = 0; i < periods; ++i)
+			{
+				const auto period = audio->renderNextPeriod();
+				peak = peakLevel(std::vector<SampleFrame>(period.begin(), period.end()), 0,
+					static_cast<int>(period.size()));
+			}
+			return peak;
+		};
+
+		QVERIFY2(lastPeriodPeak(2) > 0.3f, "the sounding note does not play the file it started on");
+
+		// Replace the sample on the control thread while the note sounds: it keeps rendering its source.
+		QVERIFY(QMetaObject::invokeMethod(slicer, "updateFile", Qt::DirectConnection, Q_ARG(QString, replaced)));
+		const float afterReplacement = lastPeriodPeak(2);
+		QVERIFY2(afterReplacement > 0.3f, qPrintable(QStringLiteral("the sounding note switched samples: "
+			"last-period peak %1").arg(afterReplacement)));
+
+		// A note started after the replacement plays the replaced file, which starts with silence.
+		audio->removePlayHandlesOfTypes(track, PlayHandle::Type::NotePlayHandle);
+		auto* const freshHandle = NotePlayHandleManager::acquire(track, 0,
+			audio->framesPerPeriod() * 8, note);
+		QVERIFY(audio->addPlayHandle(freshHandle));
+		const float fresh = lastPeriodPeak(2);
+		QVERIFY2(fresh < 0.1f, qPrintable(QStringLiteral("a note started after the replacement did not "
+			"play the new sample: last-period peak %1").arg(fresh)));
+		audio->removePlayHandlesOfTypes(track, PlayHandle::Type::NotePlayHandle);
 	}
 };
 

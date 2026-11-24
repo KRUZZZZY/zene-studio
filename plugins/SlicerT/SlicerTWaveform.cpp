@@ -402,6 +402,7 @@ void SlicerTWaveform::mousePressEvent(QMouseEvent* me)
 		{
 			m_slicerTParent->m_slicePoints.erase(m_slicerTParent->m_slicePoints.begin() + m_closestSlice);
 			m_slicerTParent->sliceMerged(m_closestSlice); // the per-slice controls follow their slices
+			m_slicerTParent->publishPlaybackSnapshot();
 			emit m_slicerTParent->dataChanged();
 		}
 		break;
@@ -423,7 +424,11 @@ void SlicerTWaveform::mouseReleaseEvent(QMouseEvent* me)
 		&& m_slicerTParent->m_slicePoints.at(m_draggedSlice) != m_dragStartSlicePosition;
 	std::sort(m_slicerTParent->m_slicePoints.begin(), m_slicerTParent->m_slicePoints.end());
 	m_draggedSlice = -1;
-	if (slicePointChanged) { emit m_slicerTParent->dataChanged(); }
+	if (slicePointChanged)
+	{
+		m_slicerTParent->publishPlaybackSnapshot();
+		emit m_slicerTParent->dataChanged();
+	}
 	updateClosest(me);
 }
 
@@ -505,6 +510,7 @@ void SlicerTWaveform::mouseDoubleClickEvent(QMouseEvent* me)
 	const auto insertIndex = static_cast<int>(insertAt - points.begin());
 	points.insert(insertAt, slicePosition);
 	m_slicerTParent->sliceSplit(insertIndex); // both halves of the slice keep its per-slice controls
+	m_slicerTParent->publishPlaybackSnapshot();
 	emit m_slicerTParent->dataChanged();
 }
 
