@@ -4073,3 +4073,6 @@ tests/src/core/AutomationRenderLockTest.cpp
 tests/Qt5QStringListSizeConstructorCheck.py
 # cluster ci-8764ffa3b495466c-port: repair report and verification evidence.
 docs/qwen-fixes-2026-10/cluster-ci-8764ffa3b495466c-port.md
+
+# Cluster ci-3eb9bda8aa6785a3-port: mingw64 unused gig allocation helper; report records the guard and the no-POSIX-hook compile check.
+docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3-port.md
