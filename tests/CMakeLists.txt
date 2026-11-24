@@ -6531,6 +6531,18 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(NamPortabilityRegistrationCheck PROPERTIES TIMEOUT 120)
 endif()
 
+# Vendored Eigen emits -Wdeprecated-enum-enum-conversion on aarch64 and -DUSE_WERROR makes it an
+# error (linux-arm64 CI, NamModelLoaderTest). Fail when any target that compiles NamModel.cpp
+# lacks -Wno-error=deprecated-enum-enum-conversion, in the CMake sources and in this build.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	add_test(NAME NamEigenOptionsCoverageCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/nam-eigen-options-coverage-check.py
+			--source-root ${CMAKE_SOURCE_DIR}
+			--build-dir ${CMAKE_BINARY_DIR})
+	set_tests_properties(NamEigenOptionsCoverageCheck PROPERTIES TIMEOUT 120)
+endif()
+
 # Train 51: reproduce the four hosted test-source compiler failures on Linux.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
 	add_test(NAME Train51Portability COMMAND ${PYTHON3_EXECUTABLE}
