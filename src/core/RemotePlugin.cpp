@@ -706,6 +706,7 @@ void RemotePlugin::applyDeferredClientRequests()
 	Engine::audioEngine()->requestChangeInModel();
 	lock();
 	m_deferredWork = false;
+	reportRefusedChannelCounts();
 	reportDeferredClientRequests();
 	if (m_connectionLost.exchange(false))
 	{
@@ -1064,7 +1065,8 @@ bool RemotePlugin::reportRefusedChannelCounts()
 {
 	if (!m_refusalPending.exchange(false)) { return false; }
 	qWarning() << "RemotePlugin: remote client reported an out-of-range channel count"
-		<< m_refusedInCount.load() << "in /" << m_refusedOutCount.load() << "out - refusing the request";
+		<< m_refusedInCount.load() << "in /" << m_refusedOutCount.load()
+		<< "out - refusing the request and marking the plugin as failed";
 	return true;
 }
 
@@ -1179,6 +1181,15 @@ bool RemotePlugin::processMessage( const message & _m )
 				m_refusedInCount.store(inCount);
 				m_refusedOutCount.store(outCount);
 				m_refusalPending.store(true);
+				m_deferredWork.store(true);
+				// The refusal is a coordinated protocol outcome, not only a diagnostic. The client stores
+				// the counts it reports (RemotePluginClient::setInputOutputCount) before sending them, and
+				// its doProcessing() then skips every period whose counts no longer fit the block this host
+				// sized - while still answering IdProcessingDone. A host that only logged the refusal would
+				// take those answers as processed periods and copy the stale shared output planes. Failing
+				// the instance is what makes process() render silence instead, exactly as a retired count id
+				// or any other protocol mismatch does (see the IdChangeInputCount case above).
+				m_failed = true;
 				break;
 			}
 			if (m_inProcessPeriod)
