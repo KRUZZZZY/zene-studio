@@ -75,6 +75,50 @@ The proof manifest records only this regression test and the code references. Th
 RecordToolsTest, Train47/Train48 and VideoTestClipPortabilityTest failures from round 2 are
 environment problems. They are listed under Other findings and are not part of the proof.
 
+## Round 4: the regression test is strengthened on this branch (logs in /home/kruzzzzy/.config/kads/zene/state/runs/ci-aa184f959f204bcd-port.r4/logs)
+
+Why round 3 bounced: the proof check measures "a test this branch added or changed" against the
+train base `fa4a5f2e7`, the same base `feature_check.py` prints. `tests/unused-result-fortify-check.py`
+already exists unchanged at that base (`git diff --stat fa4a5f2e7 HEAD -- tests/unused-result-fortify-check.py`
+is empty). Rerunning it unchanged could not satisfy the check.
+
+The real gap: steps 1-3 of the check only prove the header *consumes* every `write` result, which
+is enough to get past `-Werror=unused-result`. A "fix" that consumes the result and then ignores it
+(`if (::write(fd, &value, 1) < 0) { } sent = 1;`) compiles cleanly and passes the old check. It
+then reports a handshake byte as sent when the kernel refused it, and that is exactly the
+dishonesty the original fix removed.
+
+Change, test only: `tests/unused-result-fortify-check.py` gains step 4, `run_handshake_probe`. It
+builds a fixture with the same hardened flags, links it and runs it:
+- it writes byte 7 into a pipe through `writeNamespaceHandshakeByte`, which must return true and
+  deliver exactly 7;
+- it closes the read end with SIGPIPE ignored and writes again, which must return false (EPIPE).
+
+The probe is deterministic. It uses only pipes, with no timing, sleeps or threads. It defines
+`QT_NO_VERSION_TAGGING` so it links without Qt, because it calls no Qt function. The file is 283
+lines. lizard is not installed here; an approximate count of decision points gives
+`run_handshake_probe` 4 and `main` 9. feature_check reports complexity and file-length as PASS
+(no new item).
+
+```
+cd build/tests && ctest -R '^UnusedResultFortifyCheck$' --output-on-failure > logs/test-1-green.log 2>&1; echo EXIT=$?        # EXIT=0
+# RED-B, header line 66 -> "if (::write(fd, &value, 1) < 0) { } sent = 1;"  (logs/red-consumed-ignored.patch, working tree only)
+cd build/tests && ctest -R '^UnusedResultFortifyCheck$' --output-on-failure > logs/test-2-red-new.log 2>&1; echo EXIT=$?      # EXIT=8
+#   FAIL writeNamespaceHandshakeByte misreports a write (probe exit 13): a write with no reader was reported as sent
+python3 build/original-check.py --build-dir build --compiler /usr/bin/c++ > logs/test-3-red-original.log 2>&1; echo EXIT=$?   # EXIT=0
+#   the HEAD (pre-change) script, temporarily copied into the worktree, misses this form: RESULT: every write result ... used
+# RED-A, header line 66 -> "(void)::write(fd, &value, 1); sent = 1;"
+cd build/tests && ctest -R '^UnusedResultFortifyCheck$' --output-on-failure > logs/test-4-red-void.log 2>&1; echo EXIT=$?     # EXIT=8
+#   MountNamespaceTestSupport.h:66:22: error: ignoring return value of 'ssize_t write(...)' [-Werror=unused-result]
+git checkout -- tests/src/core/MountNamespaceTestSupport.h; echo EXIT=$?                                                      # EXIT=0
+cd build/tests && ctest -R '^UnusedResultFortifyCheck$' --output-on-failure > logs/test-5-green.log 2>&1; echo EXIT=$?       # EXIT=0
+cd build/tests && ctest -R '^UnusedResultFortifyCheck$' --output-on-failure > logs/test-6-green.log 2>&1; echo EXIT=$?       # EXIT=0 (rerun by the lead)
+python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/feature-check-1.log 2>&1; echo EXIT=$?          # EXIT=0, RESULT: PASS
+```
+
+The verdict stays ALREADY-FIXED: no product file changed in this round, and the header on the branch
+passes all four steps (`logs/test-1-green-verbose.log` shows the four PASS lines).
+
 ## Self-check
 
 - Verdict backed by evidence: yes. The header lines above were read this session, and
@@ -89,7 +133,7 @@ environment problems. They are listed under Other findings and are not part of t
   `(void)::write` restored at line 66, green EXIT=0 again (logs above). The original cluster report also recorded it for
   `UnusedResultFortifyCheck`: ctest EXIT=8 with the header reverted, EXIT=0 with the fix. On
   this branch it passes (`logs/test-1.log`, "#1015 UnusedResultFortifyCheck: Passed").
-- Deterministic: yes. It is one compiler invocation over fixed probe source, with injected flags
+- Deterministic: yes, and the round-4 step 4 is too: it uses only pipes, with no timing, sleeps or threads. It is one compiler invocation over fixed probe source, with injected flags
   (`-D_FORTIFY_SOURCE=3 -Werror=unused-result`). There is no timing, no sleep and no process
   under test.
 - At the cause and complete: all three `::write` calls in the header use their results (lines 66,
@@ -115,6 +159,7 @@ These are not fixed here and are not caused by this cluster:
   refuses that ("configuring is the parent's job").
 - `VideoTestClipPortabilityTest` was not run because its executable is not built in this tree.
 
+Delegation (round 4): Sonnet wrote step 4 of the check and ran the red/green sequence; I reviewed the diff, checked every log and reran the final green and the gates.
 Delegation (round 3): Haiku ran the green/red/green ctest sequence, made the temporary header edit and restored it.
 Delegation (round 2): Haiku ran the RecordToolsTest build and both ctest runs and summarised the logs. I
 read the header, the registration and the failing assertion myself. No Sonnet or DeepSeek task was
