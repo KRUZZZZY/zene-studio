@@ -4077,3 +4077,11 @@ docs/050-features/Q050-305.md
 docs/qwen-fixes-2026-10/cluster-Q050-305.md
 # cluster new-p12-248 (2026-11): the audio thread never waits on an automation clip's lock (fork-NEW regression).
 tests/src/core/AutomationRenderLockTest.cpp
+
+# cluster ci-8764ffa3b495466c-port (2026-11-24): the sends-on-faders regression used Qt 6's
+# inherited QStringList(size, value) constructor, which Qt 5.15 lacks. The check derives the
+# faders/volume comparison from the test source and compiles it against Qt 5, with the Qt 6-only
+# spelling as its failing control, and against Qt 6 when installed (ctest Qt5QStringListSizeConstructorCheck).
+tests/Qt5QStringListSizeConstructorCheck.py
+# cluster ci-8764ffa3b495466c-port: repair report and verification evidence.
+docs/qwen-fixes-2026-10/cluster-ci-8764ffa3b495466c-port.md
