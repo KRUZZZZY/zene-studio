@@ -876,6 +876,10 @@ tests/remote-plugin-shm-fifo-qt-usage-check.py
 tests/no-ffmpeg-video-clips-compile-check.py
 tests/VideoClipsNoFfmpegCheck.py
 docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md
+# cluster ci-e58078851126eac9-port: port-lane report for the already-fixed hosted
+# linux-x86_64 Qt 5 QJsonValue::toInteger build regression; the source scan and the
+# Qt 5 probe registered above cover the same translation unit.
+docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9-port.md
 docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md
 docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md
 docs/qwen-fixes-2026-10/cluster-ci-2fd63d3310176c0c.md
