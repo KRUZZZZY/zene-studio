@@ -82,6 +82,21 @@ QVector<ScaleCandidate> buildCandidates()
 	return candidates;
 }
 
+std::optional<SampleDecoder::BoundedResult> decodeForAnalysis(const QString& path, double bound, AnalysisDecode decode)
+{
+	// Import preflight can estimate from a prefix before allocating the sample buffer.
+	if (decode == AnalysisDecode::PrefixOnly)
+	{
+		auto prefix = SampleDecoder::decodeLimited(path, bound);
+		if (prefix && prefix->totalFrames <= 0) { prefix->totalFrames = static_cast<qint64>(prefix->window.data.size()); }
+		return prefix;
+	}
+	auto whole = SampleDecoder::decode(path);
+	if (!whole) { return std::nullopt; }
+	const auto frames = static_cast<qint64>(whole->data.size());
+	return SampleDecoder::BoundedResult{std::move(*whole), frames};
+}
+
 } // namespace
 
 
@@ -124,14 +139,7 @@ ImportDetectionResult analyseAudioFile(const QString& path, double maxSeconds, A
 
 	const double bound = std::clamp(std::isnan(maxSeconds) ? DefaultAnalysisSeconds : maxSeconds, 1.0,
 		MaxAnalysisSeconds);
-	const auto decoded = [&]() -> std::optional<SampleDecoder::BoundedResult> {
-		// Import preflight can estimate from a prefix before allocating the sample buffer.
-		if (decode == AnalysisDecode::PrefixOnly) { return SampleDecoder::decodeLimited(path, bound); }
-		auto whole = SampleDecoder::decode(path);
-		if (!whole) { return std::nullopt; }
-		const auto frames = static_cast<qint64>(whole->data.size());
-		return SampleDecoder::BoundedResult{std::move(*whole), frames};
-	}();
+	const auto decoded = decodeForAnalysis(path, bound, decode);
 	if (!decoded || decoded->window.data.empty())
 	{
 		result.error = QStringLiteral("no decoder in this build could read `%1`").arg(path);
@@ -154,10 +162,8 @@ ImportDetectionResult analyseAudioFile(const QString& path, double maxSeconds, A
 	const std::vector<float> mono = monoMix(frames.data(), analysed);
 
 	result.sampleRate = sampleRate;
-	const auto totalFrames = decoded->totalFrames > 0 ? static_cast<qint64>(decoded->totalFrames)
-		: static_cast<qint64>(frames.size());
-	result.frames = totalFrames;
-	result.durationSeconds = static_cast<double>(totalFrames) / sampleRate;
+	result.frames = decoded->totalFrames;
+	result.durationSeconds = static_cast<double>(result.frames) / sampleRate;
 	result.analysedSeconds = std::min(result.durationSeconds, bound);
 
 	result.tempo = estimateTempo(mono.data(), mono.size(), sampleRate, bound);

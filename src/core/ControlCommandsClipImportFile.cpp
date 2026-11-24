@@ -199,6 +199,11 @@ qint64 clipLengthTicks(qint64 frames, int sampleRate, const LoopSource& loop, lo
 	return static_cast<qint64>(static_cast<double>(frames) / framesPerTick);
 }
 
+bool hasReportedLength(const SampleDecoder::BoundedResult& probe)
+{
+	return probe.window.sampleRate > 0 && probe.totalFrames > 0;
+}
+
 bool prepareAudio(const QString& path, tick_t position, Prepared* out, ControlResult* error)
 {
 	if (QFileInfo(path).size() > MaxAudioFileBytes)
@@ -213,7 +218,7 @@ bool prepareAudio(const QString& path, tick_t position, Prepared* out, ControlRe
 	bool lengthKnown = false;
 	{
 		const std::optional<SampleDecoder::BoundedResult> probe = SampleDecoder::decodeLimited(path, LengthProbeSeconds);
-		lengthKnown = probe && probe->window.sampleRate > 0 && probe->totalFrames > 0;
+		lengthKnown = probe && hasReportedLength(*probe);
 		if (lengthKnown)
 		{
 			out->loop = loopwarp::analyse(path, &out->analysisError);
