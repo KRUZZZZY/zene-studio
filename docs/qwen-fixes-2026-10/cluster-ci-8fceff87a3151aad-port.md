@@ -95,7 +95,7 @@ Train51Portability's fixtures: `row-qt5-original: failed as expected`, `sfz-wind
 `mixer-faders-qt5: compiled`. Qt5OverloadedSignalCheck prints `self-test: fixtures flagged and passed as expected`.
 
 
-Proof manifest: `/home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/proof.json`, one `regression-test` artifact per guard (`tests/train-51-portability-check.py` / `Train51Portability`, `tests/qt5-overloaded-signal-check.py` / `Qt5OverloadedSignalCheck`), each with the ctest command above and `green_exit` 0, plus `code-reference` artifacts for the fixed lines.
+Proof manifest: `/home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/proof.json`, one `test` artifact per guard (`tests/train-51-portability-check.py` / `Train51Portability`, `tests/qt5-overloaded-signal-check.py` / `Qt5OverloadedSignalCheck`), each with the ctest command above and `green_exit` 0. The manifest uses only the schema's field names (round 3's `log`/`junit` fields were refused); the log and junit paths are listed here instead.
 
 No new test. Nothing changed, so there is no RED/GREEN pair to show. Existing guards already cover the
 regressions: `Qt5OverloadedSignalCheck` (FollowActionEditor) and `tests/train-51-portability-check.py`
