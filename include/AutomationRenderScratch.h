@@ -90,7 +90,21 @@ public:
 	{
 		m_clips.clear();
 		m_entries.clear();
+		m_clipMoves = 0;
+		m_valueMoves = 0;
 	}
+
+	/*! How many entries of the clip list this scratch has relocated since the last clear().
+	 *
+	 *  This is the read's real work, not a guess at it: an ordered insert that shifts k entries counts k,
+	 *  and a sort counts every element it moves. The audio thread has a period to fill, so the read must
+	 *  stay within O(N log N) relocations for N clips; a quadratic build - an insert near the front of a
+	 *  long list - shows up here as a count in the thousands for a hundred clips. Tests assert the bound
+	 *  (AutomationScratchWorkTest); nothing in the product reads it. */
+	std::size_t clipMoves() const noexcept { return m_clipMoves; }
+
+	//! The same count for the value list (model -> value entries).
+	std::size_t valueMoves() const noexcept { return m_valueMoves; }
 
 	// ---- the clips of this read, sorted by start position (Track::getClipsInRange's order) ----
 
@@ -100,7 +114,10 @@ public:
 	bool insertClip(Clip* clip)
 	{
 		if (!canGrow(m_clips)) { return false; }
-		m_clips.insert(std::upper_bound(m_clips.begin(), m_clips.end(), clip, Clip::comparePosition), clip);
+		const auto at = std::upper_bound(m_clips.begin(), m_clips.end(), clip, Clip::comparePosition);
+		// Every entry from `at` on moves up by one: that is the work this insert really costs.
+		m_clipMoves += static_cast<std::size_t>(m_clips.end() - at);
+		m_clips.insert(at, clip);
 		return true;
 	}
 
@@ -146,6 +163,8 @@ public:
 			return true;
 		}
 		if (!canGrow(m_entries)) { return false; }
+		// Every entry from `it` on moves up by one: that is the work this insert really costs.
+		m_valueMoves += static_cast<std::size_t>(m_entries.end() - it);
 		m_entries.insert(it, Entry{model, value});
 		return true;
 	}
@@ -172,6 +191,9 @@ private:
 	std::vector<Clip*> m_clips;
 	std::vector<Entry> m_entries;
 	std::size_t m_overflows = 0;
+	//! Relocations of the two lists since the last clear(), for clipMoves() and valueMoves().
+	std::size_t m_clipMoves = 0;
+	std::size_t m_valueMoves = 0;
 	bool m_bounded = false;
 };
 
