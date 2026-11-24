@@ -127,6 +127,7 @@ QStringList localList()
 	names = {};
 	TrackPlan plan;
 	plan.documents = {QStringLiteral("one")};
+	plan.documents = {UnparsableTrack, trackDocument(Lead)};
 	TrackPlan* planPtr = &plan;
 	planPtr->documents = {QStringLiteral("two")};
 	(*planPtr).documents = {QStringLiteral("three")};
@@ -148,12 +149,23 @@ void take(const QStringList& ids = {}, QStringList more = {})
 	// plan.documents = {QStringLiteral("commented")};
 	plan.documents = QStringList{QStringLiteral("named")};
 	plan.documents.append(QStringLiteral("f"));
+	// The cluster's target shape: clear, then two appends (ImportTrackIoTest.cpp:415-417).
+	plan.documents.clear();
+	plan.documents.append(UnparsableTrack);
+	plan.documents.append(trackDocument(Lead));
 	const char* text = "names = {QStringLiteral(\\"string\\")}";
 	(void)text; (void)declared; (void)ids; (void)more;
 }
 """
 
-FIXTURE_RED_LINES = [6, 7, 9, 11, 12]
+FIXTURE_RED_LINES = [6, 7, 9, 10, 12, 13]
+
+# The target's fixed shape, pinned so the green fixture cannot silently drop it.
+FIXTURE_GREEN_CLEAR_APPEND = (
+	"plan.documents.clear();",
+	"plan.documents.append(UnparsableTrack);",
+	"plan.documents.append(trackDocument(Lead));",
+)
 
 PROBE_RED = """\
 #include <QStringList>
@@ -400,6 +412,9 @@ def self_test():
 	green = scan_text("fixture-green.cpp", FIXTURE_GREEN)
 	if green:
 		failures.append(f"green fixture flagged {green}")
+	missing = [form for form in FIXTURE_GREEN_CLEAR_APPEND if form not in FIXTURE_GREEN]
+	if missing:
+		failures.append(f"green fixture lacks the target's clear/append form: {missing}")
 	return failures
 
 
