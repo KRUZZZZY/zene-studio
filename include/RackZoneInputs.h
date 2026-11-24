@@ -73,6 +73,8 @@ struct RackZoneVoice
 
 	void restart();
 	//! Adds @a frames of @a sample into @a dst at @a step source frames per frame and @a gain; false once ended.
+	//! @a step is a finite positive number of the sample's own frames per output frame (playVoice voices no
+	//! note whose step is anything else, and a zero step would hold one source frame for the whole note).
 	bool render(const SampleBuffer& sample, SampleFrame* dst, f_cnt_t frames, double step, float gain, bool released);
 };
 
@@ -119,7 +121,9 @@ public:
 	auto routes(int chain) const -> bool;
 	//! Adds @a block (frames() frames) to @a chain's input.
 	void deliver(int chain, const SampleFrame* block);
-	//! Adds @a note's voice of @a sample to @a dst (frames() frames); false when no voice is free for it.
+	//! Adds @a note's voice of @a sample to @a dst (frames() frames); false when no voice is free for it, or
+	//! when the note's pitch gives no finite positive step over the sample's rate (a note that cannot advance
+	//! its voice is silence: it is not voiced and holds no voice).
 	auto playVoice(const RackZoneNote& note, const SampleBuffer& sample, SampleFrame* dst) -> bool;
 
 	// --- audio: the worker that renders the rack ---

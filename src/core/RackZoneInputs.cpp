@@ -25,6 +25,7 @@
 #include "RackZoneInputs.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "SampleBuffer.h"
 
@@ -139,12 +140,18 @@ auto RackZoneInputs::voiceFor(const RackZoneNote& note) -> RackZoneVoice*
 auto RackZoneInputs::playVoice(const RackZoneNote& note, const SampleBuffer& sample, SampleFrame* dst) -> bool
 {
 	if (!active() || note.id == nullptr || sample.empty()) { return false; }
+	// A voice advances by the note's pitch over the sample's own rate, so only a finite positive step can play:
+	// zero - pitch 0, the frequency of a key an active session tuning table or the microtuner does not map, or
+	// a sample that reports no rate - would hold one source frame for the whole note and never end, and a
+	// negative or non-finite one makes the frame index the voice converts from its position undefined. Such a
+	// note is silence: it is not voiced, so it holds no voice of the pool either.
+	const double step = note.pitch * static_cast<double>(sample.sampleRate()) / static_cast<double>(m_outputRate);
+	if (!std::isfinite(step) || step <= 0.0) { return false; }
 	RackZoneVoice* voice = voiceFor(note);
 	if (voice == nullptr) { return false; }
 	voice->touched.store(m_period.load(std::memory_order_relaxed), std::memory_order_relaxed);
 	voice->lastFramesPlayed = note.framesPlayed;
 	const f_cnt_t start = std::clamp<f_cnt_t>(note.startOffset, 0, m_frames);
-	const double step = note.pitch * static_cast<double>(sample.sampleRate()) / static_cast<double>(m_outputRate);
 	voice->render(sample, dst + start, m_frames - start, step, note.gain, note.released);
 	return true;
 }
