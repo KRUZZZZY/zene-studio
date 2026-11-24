@@ -134,7 +134,20 @@ PRE-SUBMIT CHECK for ci-9b3cdba8549c073f-port
 RESULT: FAIL - 1 item(s) to fix before submitting
 ```
 
-The clean-tree rerun after the commit is recorded below.
+After commit `f703a42689`, the clean-tree run exited 0 (`submit-check-2.log`):
+
+```
+PRE-SUBMIT CHECK for ci-9b3cdba8549c073f-port
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f-port.md
+  PASS  tests added or changed - tests/Qt5JsonIntegerCheck.py, tests/Qt5QStringListSizeConstructorCheck.py, tests/clang-template-keyword-check.py
+  PASS  new test files registered in tests/CMakeLists.txt
+  PASS  gates (feature_check.py)
+RESULT: PASS - submit
+```
+
+The six ASK items printed by that run are answered in `## Self-check` above.
 
 ## Other findings
 
