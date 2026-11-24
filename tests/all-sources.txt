@@ -2848,6 +2848,7 @@ tests/src/core/AudioFileProcessorWaveViewTest.cpp
 tests/src/core/AudioJackPortRestartTest.cpp
 tests/src/core/AudioOssDeviceConfigTest.cpp
 tests/src/core/AudioOssWriteTest.cpp
+tests/src/core/AudioPortsLiveEditStressTest.cpp
 tests/src/core/AudioPortsModelTest.cpp
 tests/src/core/AudioPortsTest.cpp
 tests/src/core/AudioResamplerPoolMemoryTest.cpp

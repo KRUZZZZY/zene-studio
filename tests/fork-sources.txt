@@ -4059,3 +4059,11 @@ tests/src/core/StemPythonDiscoveryServiceTest.cpp
 # pass advances the source with the same reads the audible pass makes (fork-NEW test).
 tests/src/tracks/SampleClipMuteCursorTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-223.md
+# Q050-305 (2026-11): live pin and channel-count edits during a render period. The ordering half
+# proves a routing edit parks on the engine's model-change guard (it cannot land inside a period),
+# the stress half renders real periods through AudioPorts::Router while a second thread edits pins
+# and channel counts and compares the routing caches and the routed audio with the pins the render
+# period read. Fork-NEW test, and its report and feature record.
+tests/src/core/AudioPortsLiveEditStressTest.cpp
+docs/050-features/Q050-305.md
+docs/qwen-fixes-2026-10/cluster-Q050-305.md
