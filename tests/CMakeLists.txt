@@ -6563,6 +6563,15 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
 	set_tests_properties(Train51Portability PROPERTIES TIMEOUT 120)
 endif()
 
+# Cluster ci-d3e29f18fa53a626: Qt 5 has no QStringList (count, value) fill constructor; compile the
+# expected-fader list derived from the test source against Qt 5 (red on the old spelling, green fixed).
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	add_test(NAME CiD3e29f18MixerFadersPortability COMMAND ${PYTHON3_EXECUTABLE}
+		${CMAKE_CURRENT_SOURCE_DIR}/ci-d3e29f18-mixer-faders-portability-check.py
+		--source-root ${CMAKE_SOURCE_DIR})
+	set_tests_properties(CiD3e29f18MixerFadersPortability PROPERTIES TIMEOUT 120)
+endif()
+
 # Train 48: optional FFmpeg and platform-specific fixture compilation.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
 	add_test(NAME Train48Portability COMMAND ${PYTHON3_EXECUTABLE}
