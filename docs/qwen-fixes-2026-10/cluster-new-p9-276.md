@@ -84,7 +84,10 @@ the check really compiled the WinMM body (and not the empty `#ifdef` branch) was
 preprocessing the same command: `midiOutShortMsg( static_cast<HMIDIOUT>`,
 `m_outputRouting.forEachDevice`, `refreshOutputRouting` and `winmmShortMessage( event )` all
 appear in the 4.9 MB of preprocessed output. The real Windows build is the train's hosted
-portability job, not this lane.
+portability job, not this lane. The stub headers were lane scratch under the run's own
+`tmp/p9-276-winmm-shim/` (never `/tmp`, never the worktree) and are removed after the run; the
+log keeps the exact command line, which is the three declarations a reviewer needs to rebuild
+it.
 
 ## Test matrix
 
