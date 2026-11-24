@@ -142,10 +142,15 @@ etc.); the slot lives in `RemotePluginClientE2ETest`, which I then ran (`test-6-
   resize runs under `RemotePluginBufferChangeGuard`, and `AudioEngine::renderNextPeriod()` holds `m_changeMutex`
   for the period, `src/core/AudioEngine.cpp:1222`). Ancestry checked: `3152a763ea`, `7de396b3a5`, `ec235fd96a`
   are ancestors of HEAD (`git merge-base --is-ancestor`, all three printed `ancestor=yes`).
-- **Sibling commands** (`app.*`, `arrangement.*`, `plugin.*`): not affected. No command, registry or
-  `ControlCommandsSnapshot` file is in this change, so the canary cannot move. The test files
-  `submit_check.py` may list as "tests added or changed" come from the branch's merged history
-  (652 files against `050/m0-train-35`), not from this session.
+- **Sibling commands** (`app.about`, `app.ask`, `app.help`, `app.online_help`, `app.task_cancel`, `app.tasks`,
+  `app.tour`, `app.tours`, `app.update_check_get`, `app.update_check_run`, `app.update_check_set`, `app.version`,
+  `app.whats_new`, `arrangement.fit_tracks`, `arrangement.get_state`): not affected. This session's only changed
+  file is this report - no `ControlCommands*`, `ControlRegistry`, `ControlReversibilityTable` or
+  `tools/mcp-zene-control/zene_control/commands_snapshot.json` file is in it, so the `ControlCommandsSnapshot`
+  canary cannot move and no command's behaviour or reversibility class changes. Those siblings also do not reach
+  the changed code: the deferral lives in `RemotePlugin::processMessage()` / `applyDeferredClientRequests()`, and
+  no `app.*` or `arrangement.*` handler drives a remote plugin's period (`submit_check.py` lists them because it
+  reads the 652-file merged branch history against `050/m0-train-35`, not this session's diff).
 
 ## Other findings
 
