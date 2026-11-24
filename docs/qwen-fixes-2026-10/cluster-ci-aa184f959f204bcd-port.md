@@ -52,6 +52,29 @@ pair. The existing `UnusedResultFortifyCheck` was already proven red without the
 with it in the original cluster report (`cluster-ci-aa184f959f204bcd.md`, ctest EXIT=8 then EXIT=0).
 On this branch it passes.
 
+## Round 3: red/green proof of the regression test on this branch (logs in /home/kruzzzzy/.config/kads/zene/state/runs/ci-aa184f959f204bcd-port.r3/logs)
+
+The test file `tests/unused-result-fortify-check.py` was added by this branch (`git diff --stat master`
+shows 214 insertions). It was run alone, with no product edits:
+
+```
+cd build/tests && ctest -R '^UnusedResultFortifyCheck$' --output-on-failure > logs/test-1-green.log 2>&1; echo EXIT=$?   # EXIT=0
+#   100% tests passed out of 1
+# RED: working tree only, MountNamespaceTestSupport.h:66 changed to "(void)::write(fd, &value, 1); sent = 1;"
+#   (diff saved as logs/red-revert.patch)
+cd build/tests && ctest -R '^UnusedResultFortifyCheck$' --output-on-failure > logs/test-2-red.log 2>&1; echo EXIT=$?     # EXIT=8
+#   1015 - UnusedResultFortifyCheck (Failed)
+#   MountNamespaceTestSupport.h:66:22: error: ignoring return value of 'ssize_t write(int, const void*, size_t)'
+#   declared with attribute 'warn_unused_result' [-Werror=unused-result]
+git checkout -- tests/src/core/MountNamespaceTestSupport.h; echo EXIT=$?                                                 # EXIT=0, git status clean
+cd build/tests && ctest -R '^UnusedResultFortifyCheck$' --output-on-failure > logs/test-3-green.log 2>&1; echo EXIT=$?   # EXIT=0
+python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/feature-check-1.log 2>&1; echo EXIT=$?     # EXIT=0, RESULT: PASS
+```
+
+The proof manifest records only this regression test and the code references. The
+RecordToolsTest, Train47/Train48 and VideoTestClipPortabilityTest failures from round 2 are
+environment problems. They are listed under Other findings and are not part of the proof.
+
 ## Self-check
 
 - Verdict backed by evidence: yes. The header lines above were read this session, and
@@ -62,7 +85,8 @@ On this branch it passes.
 - Realtime, undo and control commands: not touched.
 - Registration: no new product file was added, and no inherited file was changed.
 - Fails without the fix and passes with it: this job did not change the product, so there is
-  nothing to revert. The original cluster report recorded the red/green proof for
+  nothing to revert. Round 3 reran the red/green proof on this branch: green EXIT=0, red EXIT=8 with
+  `(void)::write` restored at line 66, green EXIT=0 again (logs above). The original cluster report also recorded it for
   `UnusedResultFortifyCheck`: ctest EXIT=8 with the header reverted, EXIT=0 with the fix. On
   this branch it passes (`logs/test-1.log`, "#1015 UnusedResultFortifyCheck: Passed").
 - Deterministic: yes. It is one compiler invocation over fixed probe source, with injected flags
@@ -91,6 +115,7 @@ These are not fixed here and are not caused by this cluster:
   refuses that ("configuring is the parent's job").
 - `VideoTestClipPortabilityTest` was not run because its executable is not built in this tree.
 
-Delegation: Haiku ran the RecordToolsTest build and both ctest runs and summarised the logs. I
+Delegation (round 3): Haiku ran the green/red/green ctest sequence, made the temporary header edit and restored it.
+Delegation (round 2): Haiku ran the RecordToolsTest build and both ctest runs and summarised the logs. I
 read the header, the registration and the failing assertion myself. No Sonnet or DeepSeek task was
 needed, because there was nothing to change.
