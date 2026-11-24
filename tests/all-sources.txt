@@ -2777,6 +2777,7 @@ src/wasm/WasmAbi.h
 src/wasm/WasmLogBuffer.h
 src/wasm/WasmOfflineRender.cpp
 src/wasm/WasmOfflineRender.h
+src/wasm/WasmOfflineRenderLimits.h
 src/wasm/WasmSandbox.cpp
 src/wasm/WasmSandbox.h
 src/wasm/WasmSandboxHost.cpp
@@ -3722,6 +3723,8 @@ tests/src/tracks/SampleClipWarpTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/src/tracks/TakeLaneCompPlaybackTest.cpp
 tests/src/wasm/WasmAbiConformanceTest.cpp
+tests/src/wasm/WasmOfflineRenderLimitStubs.cpp
+tests/src/wasm/WasmOfflineRenderLimitTest.cpp
 tests/src/wasm/WasmSandboxHostFuelTest.cpp
 tests/src/wasm/WasmSandboxTest.cpp
 tests/src/wasm/WasmWorkerPoolTest.cpp

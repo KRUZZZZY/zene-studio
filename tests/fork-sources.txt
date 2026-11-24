@@ -2520,6 +2520,7 @@ src/wasm/WasmAbi.h
 src/wasm/WasmLogBuffer.h
 src/wasm/WasmOfflineRender.cpp
 src/wasm/WasmOfflineRender.h
+src/wasm/WasmOfflineRenderLimits.h
 src/wasm/WasmSandbox.cpp
 src/wasm/WasmSandbox.h
 src/wasm/WasmSandboxHost.cpp
@@ -4059,3 +4060,7 @@ tests/src/core/StemPythonDiscoveryServiceTest.cpp
 # pass advances the source with the same reads the audible pass makes (fork-NEW test).
 tests/src/tracks/SampleClipMuteCursorTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-223.md
+# cluster 3647-port: the offline-render frame cap is tested without WANT_WASM through
+# test-only sandbox/worker stubs (fork-NEW test).
+tests/src/wasm/WasmOfflineRenderLimitStubs.cpp
+tests/src/wasm/WasmOfflineRenderLimitTest.cpp
