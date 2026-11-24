@@ -175,7 +175,9 @@ private:
 	std::vector<QString> m_phases;    //!< per column: launching, playing, stopping or empty
 	QJsonObject m_take;                //!< session.record_slot_status, from the last refresh
 	mutable bool m_landTake = false;   //!< a record entry of this grid's menu started the take in hand
-	int m_tracks = -1;
+	int m_gridTracks = -1;             //!< the authored grid, from session.get_state
+	int m_gridScenes = -1;
+	int m_tracks = -1;                 //!< the columns and scenes this view draws: at most 64 x 64 (cluster 5360)
 	int m_scenes = -1;
 	QTimer m_timer;
 };

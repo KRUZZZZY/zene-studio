@@ -492,6 +492,37 @@ private slots:
 		QCOMPARE(playingScene(1), -1);
 	}
 
+	//! Cluster 5360: the model's grid stays 256 x 512, but the launcher draws at most 64 x 64
+	//! cell buttons - 4,096 widgets, not one for every track/scene pair.
+	void aLargeGridIsDrawnWithBoundedCellWidgets()
+	{
+		constexpr int UI_TRACKS = 64;
+		constexpr int UI_SCENES = 64;
+		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 256}, {QStringLiteral("scenes"), 512}}).ok);
+		const QJsonObject maximum = run(QStringLiteral("session.get_state")).result.value(QStringLiteral("grid")).toObject();
+		QCOMPARE(maximum.value(QStringLiteral("tracks")).toInt(), 256);
+		QCOMPARE(maximum.value(QStringLiteral("scenes")).toInt(), 512);
+
+		QVERIFY(run(QStringLiteral("session.set_grid"),
+			{{QStringLiteral("tracks"), UI_TRACKS + 1}, {QStringLiteral("scenes"), UI_SCENES + 1}}).ok);
+		SessionGridView view;
+		view.refresh();
+		int cellButtons = 0;
+		for (QToolButton* button : view.findChildren<QToolButton*>())
+		{
+			if (button->property("controlCommand").toString() == QLatin1String("session.launch_slot")) { ++cellButtons; }
+		}
+		QCOMPARE(cellButtons, UI_TRACKS * UI_SCENES);
+		QVERIFY(view.cellButton(UI_TRACKS - 1, UI_SCENES - 1) != nullptr);
+		QCOMPARE(view.cellButton(UI_TRACKS, 0), nullptr);
+		QCOMPARE(view.cellButton(0, UI_SCENES), nullptr);
+		QVERIFY2(view.statusLine().contains(QStringLiteral("showing the first 64 x 64")), qPrintable(view.statusLine()));
+
+		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 2}, {QStringLiteral("scenes"), 2}}).ok);
+		view.refresh();
+		QVERIFY(view.cellButton(1, 1) != nullptr);
+	}
+
 };
 
 QTEST_MAIN(SessionGridViewTest)

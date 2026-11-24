@@ -52,6 +52,8 @@ namespace
 constexpr int RefreshMs = 150;
 constexpr int HeaderRow = 1;  //!< 0.5.0 theme 14: the column headers take the grid's first row
 constexpr int CellWidth = 72;
+constexpr int MaxVisibleTracks = 64;  //!< cluster 5360: 64 x 64 = 4,096 cell buttons, not 131,072
+constexpr int MaxVisibleScenes = 64;
 
 void setTip(QWidget* widget, const QString& tip)
 {
@@ -179,12 +181,14 @@ void SessionGridView::rebuild(int tracks, int scenes)
 	m_sceneButtons.clear();
 	m_stopButtons.clear();
 	m_headers.clear();
-	m_tracks = tracks;
-	m_scenes = scenes;
+	m_gridTracks = tracks;
+	m_gridScenes = scenes;
+	m_tracks = std::min(tracks, MaxVisibleTracks);
+	m_scenes = std::min(scenes, MaxVisibleScenes);
 	m_dropCell = -1;
 	m_selected.clear();  // a cell's index means another cell in a grid of another size
-	m_playingScene.assign(static_cast<std::size_t>(tracks), -1);
-	for (int track = 0; track < tracks; ++track)
+	m_playingScene.assign(static_cast<std::size_t>(m_tracks), -1);
+	for (int track = 0; track < m_tracks; ++track)
 	{
 		// 0.5.0 theme 14: the column's header names its track (paintHeaders); a header is read, not pressed.
 		auto* header = new QLabel(this);
@@ -193,7 +197,7 @@ void SessionGridView::rebuild(int tracks, int scenes)
 		header->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);  // the cells set the width; the name elides to it
 		m_grid->addWidget(header, 0, track);
 		m_headers.push_back(header);
-		for (int scene = 0; scene < scenes; ++scene)
+		for (int scene = 0; scene < m_scenes; ++scene)
 		{
 			QToolButton* cell = makeButton(QStringLiteral("session.launch_slot"));
 			cell->setAcceptDrops(true);  // WF-053: an audio file dropped here fills the cell
@@ -210,19 +214,19 @@ void SessionGridView::rebuild(int tracks, int scenes)
 		stop->setText(tr("\u25A0 Stop"));
 		stop->setAccessibleName(tr("Stop track %1").arg(track + 1));
 		connect(stop, &QToolButton::clicked, this, [this, track] { stopColumn(track); });
-		m_grid->addWidget(stop, HeaderRow + scenes, track);
+		m_grid->addWidget(stop, HeaderRow + m_scenes, track);
 		m_stopButtons.push_back(stop);
 	}
-	for (int scene = 0; scene < scenes; ++scene)
+	for (int scene = 0; scene < m_scenes; ++scene)
 	{
 		QToolButton* launch = makeButton(QStringLiteral("session.launch_scene"));
 		connect(launch, &QToolButton::clicked, this, [this, scene] {
 			report(run(QStringLiteral("session.launch_scene"), {{QStringLiteral("scene"), scene}}));
 		});
-		m_grid->addWidget(launch, HeaderRow + scene, tracks);
+		m_grid->addWidget(launch, HeaderRow + scene, m_tracks);
 		m_sceneButtons.push_back(launch);
 	}
-	m_grid->addWidget(m_stopAll, HeaderRow + scenes, tracks);
+	m_grid->addWidget(m_stopAll, HeaderRow + m_scenes, m_tracks);
 }
 
 
@@ -238,7 +242,7 @@ void SessionGridView::refresh()
 	const QJsonObject grid = state.result.value(QStringLiteral("grid")).toObject();
 	const int tracks = grid.value(QStringLiteral("tracks")).toInt();
 	const int scenes = grid.value(QStringLiteral("scenes")).toInt();
-	if (tracks != m_tracks || scenes != m_scenes) { rebuild(tracks, scenes); }
+	if (tracks != m_gridTracks || scenes != m_gridScenes) { rebuild(tracks, scenes); }
 	m_status->setText(statusText(tracks, scenes));
 	readColumns(state.result.value(QStringLiteral("columns")).toArray());
 	m_slots = state.result.value(QStringLiteral("slots")).toArray();
@@ -247,9 +251,9 @@ void SessionGridView::refresh()
 	m_names = cellNames(m_slots);
 	readPlayback(m_slots);
 	paintHeaders();
-	for (int track = 0; track < tracks; ++track)
+	for (int track = 0; track < m_tracks; ++track)
 	{
-		for (int scene = 0; scene < scenes; ++scene) { paintCell(track, scene); }
+		for (int scene = 0; scene < m_scenes; ++scene) { paintCell(track, scene); }
 	}
 	paintScenes(state.result.value(QStringLiteral("scenes")).toArray());
 }
@@ -270,6 +274,11 @@ QString SessionGridView::statusText(int tracks, int scenes) const
 		return selection().isEmpty() ? tr("%n cell(s) selected, in more than one scene: a sub-scene is one scene's cells", nullptr,
 			static_cast<int>(m_selected.size()))
 			: tr("%n cell(s) selected: right-click for Sub-scenes > Make a Sub-scene From the Selection", nullptr, static_cast<int>(m_selected.size()));
+	}
+	if (tracks > m_tracks || scenes > m_scenes)
+	{
+		return tr("%1 tracks, %2 scenes (showing the first %3 x %4: the launcher draws at most %5 cells)")
+			.arg(tracks).arg(scenes).arg(m_tracks).arg(m_scenes).arg(MaxVisibleTracks * MaxVisibleScenes);
 	}
 	return tracks == 0 || scenes == 0 ? tr("The session grid is empty: Grid... (session.set_grid) sizes it.")
 		: tr("%1 tracks, %2 scenes").arg(tracks).arg(scenes);
@@ -498,7 +507,7 @@ void SessionGridView::populateMenu(QMenu* menu, QToolButton* button) const
 		SessionGridMenus::populateScene(menu, row, m_sceneStates.at(row).toObject());
 		SessionGridMenus::populateSubScenes(menu, row, m_subScenes, selection());  // WF-064
 	}
-	else { SessionGridMenus::populateGrid(menu, m_tracks, m_scenes); }
+	else { SessionGridMenus::populateGrid(menu, m_gridTracks, m_gridScenes); }
 }
 
 
