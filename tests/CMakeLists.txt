@@ -6623,6 +6623,21 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(Qt5WorkerThreadCheck PROPERTIES TIMEOUT 300)
 endif()
 
+# Cluster ci-539b88713935565b-port: RemotePluginAudioPortsShmCompileCheck compiles the test
+# with SYNC_WITH_SHM_FIFO but without -Werror=unused-function and is not a ctest, so removing
+# the #ifndef SYNC_WITH_SHM_FIFO guard around countCriticals stayed green on Linux while the
+# hosted mingw64 job (no <sys/ipc.h>) failed. This check reuses that target's compile command
+# plus -Werror=unused-function and fails on any diagnostic.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	add_test(NAME RemotePluginShmUnusedHelperCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/remote-plugin-shm-unused-helper-check.py
+			--root ${CMAKE_SOURCE_DIR}
+			--build-dir ${CMAKE_BINARY_DIR}
+			--cxx ${CMAKE_CXX_COMPILER})
+	set_tests_properties(RemotePluginShmUnusedHelperCheck PROPERTIES TIMEOUT 300)
+endif()
+
 if(PYTHON3_EXECUTABLE)
 	add_test(NAME Qt5QStringListBraceCheck
 		COMMAND ${PYTHON3_EXECUTABLE}

@@ -924,6 +924,8 @@ docs/qwen-fixes-2026-10/cluster-ci-623e9e3a015cd5b1.md
 tests/qt5-worker-thread-check.py
 tests/src/core/TestWorkerThread.h
 docs/qwen-fixes-2026-10/cluster-ci-539b88713935565b.md
+# Cluster ci-539b88713935565b-port: ctest RemotePluginShmUnusedHelperCheck, -Werror=unused-function over the SYNC_WITH_SHM_FIFO build of RemotePluginAudioPortsTest.cpp.
+tests/remote-plugin-shm-unused-helper-check.py
 # Cluster ci-b5ac4280f3e4b317: the Qt 5 QStringList brace-assignment portability
 # regression. Hosted macos-arm64 builds against Qt 5.15, where QStringList's extra
 # `operator=(QList<QString>&&)`/`(const QList<QString>&)` overloads make
