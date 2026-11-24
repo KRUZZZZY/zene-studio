@@ -136,11 +136,14 @@ was rebuilt (0).
 
 ## Self-check
 
-1. **Red/green.** `fix.patch` is `git diff` of the three product files only
+1. **Red/green, exit codes.** `fix.patch` is `git diff` of the three product files only
    (`include/MidiWinMMOutRouting.h`, `include/MidiWinMM.h`, `src/core/midi/MidiWinMM.cpp`).
-   Reverse-applied: build 0, test 8 (the product source assertion fails, and the four routing
-   slots fail with "include/MidiWinMMOutRouting.h is missing"). Forward-applied: build 0, test
-   0. The test does not pass without the fix.
+   With the product change reverted (`git apply -R .../logs/fix.patch`, EXIT 0; build
+   `build-red-3`, EXIT 0) the test exits **8**: the product source assertion fails and the four
+   routing slots fail with "include/MidiWinMMOutRouting.h is missing". With the change
+   (`git apply .../logs/fix.patch`, EXIT 0; build `build-green-6`, EXIT 0) the test exits **0**
+   (13 passed). Before the first commit the same cycle ran as test-red-1 (8) → test-green-2 (0).
+   The test does not pass without the fix.
 2. **Determinism.** No timing, sleeps, threads, timers or randomness: the allocation counts are
    thread-local increments from the repo's `AllocationProbe`, every routing expectation is a
    literal device/port list, and the equivalence slots compare against the pre-fix algorithm
@@ -167,6 +170,15 @@ was rebuilt (0).
    all-sources-reproduce, no-upstream-regression, complexity and file-length.
 7. **Verdict.** FIXED, not ALREADY-FIXED (the branch tip still had the `QStringList` search)
    and not FALSE-POSITIVE (the path runs on the audio thread, which may not allocate).
+8. **Sibling commands.** No command file changed: the diff touches no `ControlCommands*.cpp`,
+   no command registry entry and no command schema (`git diff --name-only` lists only the three
+   WinMM product files, the WinMM test source, the three registration manifests and this
+   report). `app.*`, `arrangement.*` and the other commands the check names are therefore
+   unaffected, and `ControlCommandsSnapshot`'s canary is untouched.
+9. **Old projects and saved data.** Nothing on a save/load path changed: `MidiWinMM` has no
+   `saveSettings`/`loadSettings` (the port's own settings and the project file are untouched),
+   and the routing is rebuilt from live state at startup and on every edit, so a project that
+   loaded before loads the same way and routes the same way.
 
 ## Other findings
 
