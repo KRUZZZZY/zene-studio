@@ -63,6 +63,8 @@ All logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p8-197.r1/logs`
 | `git checkout -- src/core/RemotePlugin.cpp`, then `cmake --build build --target RemotePluginClientE2ETest -- -j4` | `build-3-green.log` | 0 |
 | `./RemotePluginClientE2ETest channelCountRequestDuringPeriodIsAppliedOnTheMainThread` (restored) | `test-5-green.log` | 0 |
 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | `gates-1.log` | 0 (`RESULT: PASS`, 8 of 8 gate rows PASS) |
+| same gate run again at the committed tip | `gates-2.log` | 0 (`RESULT: PASS`, 8 of 8 gate rows PASS) |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p8-197` | `submit-1.log`, `submit-2.log` | 0 (`RESULT: PASS - submit`, all six items PASS) |
 
 The red run's failure, verbatim from `test-4-red.log`:
 
