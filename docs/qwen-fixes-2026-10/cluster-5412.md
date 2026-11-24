@@ -58,3 +58,26 @@ inferred from where the log stops, not measured. ControlFreezeTracksTranscript a
 
 Delegation: Haiku ran the RED build/test, the GREEN build/ctest family, and the 4b revert/rebuild/rerun sequence and reported exit codes
 and failing slot names; I checked the failing assertion line, the `git diff --stat` and the gate result myself. No DeepSeek (unavailable).
+
+## Self-check
+
+- **Fails reverted, passes fixed.** With `src/core/Track.cpp` reverted (`git apply -R fix.patch`, EXIT=0) the new slot fails
+  (`ctest` EXIT=8, `test-red-2.log`, `FreezeRegionRepairTest.cpp:271`, 13 passed / 1 failed); with the fix re-applied it passes
+  (`ctest` EXIT=0, `test-green-2.log`). The first RED (before any fix) was EXIT=8 too (`test-red-1.log`).
+- **Deterministic.** No sleeps, clocks or render loop: it drives `savePreset`, `isolateRegion`, `freezeTo`, `loadPreset` and
+  `unfreeze` directly on the control thread, with fixed ticks (60/120) and a generated WAV in a `QTemporaryDir`.
+- **Cause, callers, siblings.** The cause is the unconditional `clearFrozenTake()` in `loadTrack()`. `loadTrack` has two callers,
+  `Track::loadPreset` (`presetMode=true`, `Track.cpp:~1059`) and `Track::loadSettings` (`false`, `Track.cpp:~1077`). Only the
+  preset caller changes. `loadPreset` is reached from `TrackContainerView.cpp:604` and `InstrumentTrack.cpp:1407`
+  (instrument-preset load), and from the control restore path noted in `tests/control-socket-integration.py:887`. The sibling
+  restore of clips (`deleteClips`, rejected-take unmute, take lanes) already sits after the preset return, so a preset never touched
+  it; the frozen reset was the one piece of full-track state that ran for presets. Other state in the preset block (name, mute,
+  solo, monitor, colour) is outside this bug and unchanged.
+- **No collateral damage.** `!presetMode` is the full-track path as before, so project open, journal restore and clone behave
+  exactly as they did (reset on absence kept). Presets contain no frozen attributes (`Track.cpp:736-739`), so no saved data is read
+  differently. No limit or check added.
+- **Realtime / undo / commands.** No audio-thread code touched, no new control command, no undo change.
+- **Verdict is FIXED**, so the ALREADY-FIXED / FALSE-POSITIVE item does not apply.
+- **Sibling commands in command files.** I changed no command file (`git diff` of the fix touches only `src/core/Track.cpp` and
+  `tests/src/core/FreezeRegionRepairTest.cpp`), so there are no sibling commands to reconcile. The "tests added or changed" list in
+  the check names other test files; those come from the branch's merge history, not from this change.
