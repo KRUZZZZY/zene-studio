@@ -134,6 +134,29 @@ void period(Mixer& mixer)
 	bus().swap();  // the period just mixed is the one the device would be fed
 }
 
+//! A master speaker's own level: distinct per channel, none zero.
+float masterSideLevel(int c)
+{
+	return 0.1f * static_cast<float>(c + 1);
+}
+
+//! Channel @a index's side channels (2 ..) at their own level, then one mixer period.
+void sidesPeriod(Mixer& mixer, int index)
+{
+	ChannelSurround& sides = mixer.mixerChannel(index)->m_surround;
+	const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+	for (int c = 2; c < surround::channelCount(sides.format()); ++c) { std::fill_n(sides.plane(c), fpp, masterSideLevel(c)); }
+	sides.markWritten();
+	period(mixer);
+}
+
+//! A new project's routing: the master alone, then three channels for the feed.
+void clearedMixer(Mixer& mixer)
+{
+	mixer.clear();
+	while (mixer.numChannels() <= 3) { mixer.createChannel(); }
+}
+
 //! Output @a channel's value on every frame of the period just read, or NaN when it is not constant.
 float outputLevel(int channel)
 {
@@ -160,6 +183,14 @@ QString checkOutputs(int carried, float gain)
 		}
 	}
 	return QString();
+}
+
+//! Every device output of the period just mixed, read at once: the bus serves one period at a time.
+std::vector<float> outputsOf(int channels)
+{
+	std::vector<float> levels;
+	for (int c = 0; c < channels; ++c) { levels.push_back(outputLevel(c)); }
+	return levels;
 }
 
 QJsonObject entryFor(const QString& command, const QString& key, const QString& id)
@@ -330,6 +361,68 @@ private slots:
 		QCOMPARE(static_cast<qulonglong>(test::tlAllocationCount), 0ull);
 		const QString wrong = checkOutputs(64, 1.f);
 		QVERIFY2(wrong.isEmpty(), qPrintable(wrong));
+	}
+
+	/*! A surround master's speakers after its pair are the same master signal: the master fader, then the
+	 *  engine's master gain, which `AudioEngine::renderStageMix()` applies to the pair after the master mix
+	 *  (`src/core/AudioEngine.cpp:1186`; docs/SURROUND-EXPORT.md:27 states it for the export tap). Lowering
+	 *  the gain must lower outputs 3..N with outputs 1/2, not leave them at the fader's level. */
+	void theWideMasterOutputFollowsTheMasterGain()
+	{
+		Mixer& mixer = *Engine::mixer();
+		AudioEngine* engine = Engine::audioEngine();
+		clearedMixer(mixer);
+		QVERIFY(format(0, QStringLiteral("5.1")));  // the master's own speakers, on outputs 3-6
+		engine->setMasterGain(1.f);
+		for (int i = 0; i < 2; ++i) { sidesPeriod(mixer, 0); }  // the new format settles
+		const std::vector<float> loud = outputsOf(8);  // read before the next period is mixed
+		engine->setMasterGain(0.25f);
+		sidesPeriod(mixer, 0);
+		const std::vector<float> soft = outputsOf(8);
+		engine->setMasterGain(1.f);
+		QStringList wrong;
+		for (int c = 2; c < 6; ++c)
+		{
+			const auto at = static_cast<std::size_t>(c);
+			if (!(loud[at] > 0.01f) || !(std::abs(soft[at] - loud[at] * 0.25f) < 1e-5f))
+			{
+				wrong << QStringLiteral("output %1: %2 at unity, %3 at a quarter").arg(c + 1).arg(loud[at]).arg(soft[at]);
+			}
+		}
+		QVERIFY2(wrong.isEmpty(), qPrintable(wrong.join(QStringLiteral("; "))));
+		QVERIFY(loud[6] == 0.f && loud[7] == 0.f);  // nothing beyond the master's six speakers
+		QVERIFY(format(0, QStringLiteral("stereo")));
+	}
+
+	/*! A channel's direct out is a tap of that channel, before the master: the engine's master gain must
+	 *  not scale its side planes. Only the master's own wide output follows the gain, because the pair it
+	 *  plays after does. */
+	void aChannelDirectOutIgnoresTheMasterGain()
+	{
+		Mixer& mixer = *Engine::mixer();
+		AudioEngine* engine = Engine::audioEngine();
+		clearedMixer(mixer);
+		QVERIFY(format(2, QStringLiteral("5.1")));
+		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("output"), QStringLiteral("1/2")}}));
+		mixer.mixerChannel(2)->m_volumeModel.setValue(1.f);
+		engine->setMasterGain(1.f);
+		for (int i = 0; i < 2; ++i) { sidesPeriod(mixer, 2); }
+		const std::vector<float> loud = outputsOf(8);
+		engine->setMasterGain(0.25f);
+		sidesPeriod(mixer, 2);
+		const std::vector<float> soft = outputsOf(8);
+		engine->setMasterGain(1.f);
+		QStringList wrong;
+		for (int c = 2; c < 6; ++c)
+		{
+			const auto at = static_cast<std::size_t>(c);
+			if (!(loud[at] > 0.01f) || !(std::abs(soft[at] - loud[at]) < 1e-5f))
+			{
+				wrong << QStringLiteral("output %1: %2 at unity, %3 at a quarter").arg(c + 1).arg(loud[at]).arg(soft[at]);
+			}
+		}
+		QVERIFY2(wrong.isEmpty(), qPrintable(wrong.join(QStringLiteral("; "))));
+		QVERIFY(format(2, QStringLiteral("stereo")));
 	}
 
 private:

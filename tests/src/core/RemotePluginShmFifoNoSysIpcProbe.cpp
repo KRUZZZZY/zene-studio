@@ -26,6 +26,18 @@
 // "use of undeclared identifier 'getpid'" (macos-arm64, run 43076107122).
 #include "RemotePluginBase.h"
 
+#include <type_traits>
+
+#ifdef LMMS_HAVE_UNISTD_H
+// The probe's contract, stated rather than left to the header's inline calls:
+// on a host with <unistd.h>, RemotePluginBase.h alone declares getpid() and
+// usleep(), with __unix__ undefined as on Apple clang (target
+// RemotePluginShmFifoNoSysIpcAppleMacroProbe, ctest
+// RemotePluginShmFifoAppleMacroProbeCompile).
+static_assert(std::is_pointer_v<decltype(&::getpid)>, "RemotePluginBase.h must declare getpid()");
+static_assert(std::is_pointer_v<decltype(&::usleep)>, "RemotePluginBase.h must declare usleep()");
+#endif
+
 int remotePluginShmFifoValueWithoutSysIpc()
 {
 	return SYNC_WITH_SHM_FIFO + 0;
