@@ -89,6 +89,8 @@ All logs are in
 | Direct GREEN via patch | `python3 tests/Qt5QStringListSizeCheck.py --root . --build-dir build` | 0 | `21-check-green-via-patch.log` |
 | ctest GREEN via patch | `cd build/tests && ctest -R '^Qt5QStringListSizeCheck$' --output-on-failure` | 0 | `22-ctest-green-via-patch.log` |
 | Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 (`RESULT: PASS`) | `23-feature-check.log` |
+| Final gate table (with report) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 (`RESULT: PASS`) | `30-feature-check-final.log` |
+| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-b71ed146fd535ea5-port` | 0 (`RESULT: PASS - submit`) | `31-submit-check-final.log` |
 
 The RED output is the hosted failure verbatim:
 `tests/src/gui/MixerSendsOnFadersTest.cpp:278:81: error: no matching function
