@@ -85,6 +85,25 @@ auto refuse(QString* error, const QString& why) -> bool
 	return false;
 }
 
+/**
+ * The caller's channel @a index, or nullptr when the caller provided none: the
+ * channel array is null, or the index is past the count the caller declared. A
+ * null entry beside valid ones is the same case - the caller does not provide
+ * that channel - so the bus mapping reads the host's silence buffer and writes
+ * its scratch buffer instead of dereferencing null.
+ */
+auto callerChannel(const float* const* channels, int count, std::size_t index) -> const float*
+{
+	if (channels == nullptr || index >= static_cast<std::size_t>(count)) { return nullptr; }
+	return channels[index];
+}
+
+auto callerChannel(float* const* channels, int count, std::size_t index) -> float*
+{
+	if (channels == nullptr || index >= static_cast<std::size_t>(count)) { return nullptr; }
+	return channels[index];
+}
+
 void clearCallerOutputs(float* const* outputs, int count, int frames)
 {
 	if (outputs == nullptr || frames <= 0) { return; }
@@ -736,10 +755,11 @@ void HostedPlugin::Impl::mapBuses(const float* const* inputs, float* const* outp
 	int offset, int chunk)
 {
 	// 2. map the planar LMMS channels onto the plug-in's buses. Channels the
-	//    track does not provide read from a pre-allocated silence buffer and
-	//    write into a pre-allocated scratch buffer. Both are maxBlockSize long,
-	//    and a chunk is never longer than that, so the mapping points INTO them
-	//    (at their start) rather than past their end.
+	//    track does not provide - no channel array, an index past the count, or
+	//    a null entry beside valid ones - read from a pre-allocated silence
+	//    buffer and write into a pre-allocated scratch buffer. Both are
+	//    maxBlockSize long, and a chunk is never longer than that, so the
+	//    mapping points INTO them (at their start) rather than past their end.
 	std::size_t channel = 0;
 	for (std::size_t b = 0; b < inputBuses.size(); ++b)
 	{
@@ -747,8 +767,9 @@ void HostedPlugin::Impl::mapBuses(const float* const* inputs, float* const* outp
 		auto& ptrs = inputChannelPtrs[b];
 		for (int32 c = 0; c < bus.numChannels; ++c, ++channel)
 		{
-			ptrs[c] = channel < static_cast<std::size_t>(numInputs)
-				? const_cast<float*>(inputs[channel]) + offset
+			auto* const provided = callerChannel(inputs, numInputs, channel);
+			ptrs[c] = provided != nullptr
+				? const_cast<float*>(provided) + offset
 				: silence.data();
 		}
 		bus.channelBuffers32 = ptrs.data();
@@ -761,11 +782,11 @@ void HostedPlugin::Impl::mapBuses(const float* const* inputs, float* const* outp
 		auto& ptrs = outputChannelPtrs[b];
 		for (int32 c = 0; c < bus.numChannels; ++c, ++channel)
 		{
-			const bool hasCallerOutput = channel < static_cast<std::size_t>(numOutputs);
-			ptrs[c] = hasCallerOutput
-				? outputs[channel] + offset
+			auto* const provided = callerChannel(outputs, numOutputs, channel);
+			ptrs[c] = provided != nullptr
+				? provided + offset
 				: scratchOutput.data();
-			if (!hasCallerOutput)
+			if (provided == nullptr)
 			{
 				std::memset(ptrs[c], 0, static_cast<std::size_t>(chunk) * sizeof(float));
 			}
