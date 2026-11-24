@@ -76,7 +76,9 @@ verified writable with a one-line probe (`000-write-probe.log`, EXIT 0).
 | 16 | RED at the final commit: rows 4 and 5 repeated | **1** — same `VideoClipsTest.cpp:530` error; restored afterwards, `git status --porcelain` empty | `012-probe-red-at-final-commit.log` |
 | 17 | GREEN at the final commit: rows 8 and 14 repeated | 0 and 0 (6/6) | `013-probe-green-at-final-commit.log`, `014-ctest-green-at-final-commit.log` |
 | 18 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 — 8/8 PASS, `RESULT: PASS` | `015-feature-check.log` |
-| 19 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-6422986f4db9676f-port` | see `019-submit-check.log` | `019-submit-check.log` |
+| 19 | Fixture-level RED for the regression binary: rows 4 then `cmake --build build --target VideoTestClipPortabilityTest -j4` (0) then `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^VideoTestClipPortabilityTest$' --output-on-failure` | **8** — `FAIL! : VideoTestClipPortabilityTest::makeClipIsDeclaredWithoutFfmpegAndRefuses() '!videotest::makeClip(path)' returned FALSE. Loc: [../../tests/src/core/VideoTestClipPortabilityTest.cpp(57)]` | `019-red-build-reverted-fixture.log`, `020-red-regression-run.log` |
+| 20 | rows 6, then the same build (0) and the same ctest at HEAD `70f6a4ae6c` | 0 (1/1) | `021-green-build-restored-fixture.log`, `022-green-regression-run.log` |
+| 21 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-6422986f4db9676f-port` | 0 — `RESULT: PASS - submit`, every mechanical row PASS | `023-submit-check.log` |
 
 Two notes on readings that are not code failures. Row 11's EXIT 8 is a binary that was never
 built in this configured tree (`Not Run`), cleared by building it in row 13. Row 5's message
@@ -109,10 +111,15 @@ is the call site, `VideoClipsTest.cpp:530`.
   the code reference in the proof manifest) with the seam at `:51`, and the regression at
   `tests/src/core/VideoTestClipPortabilityTest.cpp:52-79` registered at
   `tests/CMakeLists.txt:1237`; fix commit `d9a26d06ad` is an ancestor of HEAD (row 1).
-- **Sibling commands.** This unit changes no command file: the changed paths are
-  `tests/src/core/VideoTestClipPortabilityTest.cpp` and the report, so no
-  `ControlCommands`/`ControlReversibilityTable` sibling set applies and the
-  `ControlCommandsSnapshot` canary is unchanged.
+- **Sibling commands (submit_check ASK: `app.*`, `arrangement.fit_tracks`,
+  `arrangement.get_state`, …).** Those ids are listed because `FIX-BASE` is `050/m0-train-35`
+  and `git merge-base HEAD 050/m0-train-35` is `fa4a5f2e7`; the diff from that base to HEAD
+  therefore contains the train commits this branch inherited, including
+  `src/core/ControlCommands*.cpp` and `include/ControlRegistry*.h`. This branch's own four
+  commits touch only `tests/src/core/VideoTestClipPortabilityTest.cpp` and this report
+  (`git show --name-only` for `1dd178c25b`, `70f6a4ae6c`, `cb9b4896e7`, `7569963a79`). No
+  command, argument or reversibility class was added or changed here, so every listed sibling
+  keeps its existing behaviour and the `ControlCommandsSnapshot` canary is unchanged.
 - **Registration and gates.** The regression was already registered in `tests/CMakeLists.txt`,
   `tests/fork-sources.txt`, `tests/all-sources.txt` and `tests/upstream-modifications.txt`; no
   new file was added this round. `feature_check.py` reports 8/8 PASS (row 18). No new function
@@ -131,8 +138,19 @@ is the call site, `VideoClipsTest.cpp:530`.
 
 ## Proof manifest
 
-`.../ci-6422986f4db9676f-port.r3/logs/proof.json` — unit `ci-6422986f4db9676f-port`, commit
-`1dd178c25b` (final HEAD), claim: the branch already carries the no-FFmpeg fixture fix and its
-regression. Artifacts: a `test` artifact naming
-`tests/src/core/VideoTestClipPortabilityTest.cpp` with the ctest command and `green_exit` 0,
-and a `code-reference` at `tests/src/core/VideoTestClip.h:243`.
+`.../ci-6422986f4db9676f-port.r3/logs/proof.json` — unit `ci-6422986f4db9676f-port`, worktree
+this tree, commit the final HEAD of this branch, claim: the branch already carries the
+no-FFmpeg fixture fix and its deterministic regression, re-verified red/green this session.
+Artifacts:
+
+- `test` — `tests/src/core/VideoTestClipPortabilityTest.cpp`, command
+  `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^VideoTestClipPortabilityTest$' --output-on-failure`,
+  `green_exit` 0 (`022-green-regression-run.log`).
+- `regression-test` — same test file, test `makeClipIsDeclaredWithoutFfmpegAndRefuses`,
+  `red_exit` 8 (`020-red-regression-run.log`) with `green_exit` 0
+  (`022-green-regression-run.log`), plus the compile-level red at the real call site,
+  `VideoClipsTest.cpp:530`, exit 1 (`003-probe-red-real-cause.log`,
+  `012-probe-red-at-final-commit.log`).
+- `code-reference` — `tests/src/core/VideoTestClip.h:243`, the fallback declaration that keeps
+  the helper visible in every configuration.
+
