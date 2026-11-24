@@ -145,6 +145,16 @@ lock, wait, log or command: the audio path is byte-identical to the code that is
    is therefore a lock-free atomic read with no Qt access, which is exactly the fix the finding asks
    for ("Publish visibility through an audio-safe atomic").
 
+6. **The sibling commands the check listed are not mine.** `submit_check.py` prints
+   `app.*` and `arrangement.*` siblings because its range is `merge-base(HEAD, FIX-BASE)..HEAD`
+   (506 changed files, per `feature-check-1.log`), which carries other lanes' commits. This job's own
+   commit is `cafae880c9` and touches exactly one file, `docs/qwen-fixes-2026-10/cluster-new-p9-536.md`
+   (`git add` of that path only). I changed no `ControlCommands`, `ControlReversibilityTable` or
+   `ControlRegistry` file, so no command or reversibility class moved, undo depth is untouched, and
+   the ControlCommandsSnapshot canary is unmoved: `commands_snapshot.json` is not in my commit. No
+   sibling command can therefore be inconsistent with a fix that is a header change already on the
+   branch.
+
 ## Other findings
 
 - `plugins/SpectrumAnalyzer/SaProcessor.cpp` reads `SaControls` models from the analysis worker
