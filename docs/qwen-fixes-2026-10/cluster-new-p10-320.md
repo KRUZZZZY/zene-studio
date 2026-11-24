@@ -142,6 +142,13 @@ item in your files").
   written) and no control command was added.
 - **ALREADY-FIXED / FALSE-POSITIVE ask:** not applicable — the verdict is FIXED; the evidence for
   "real" is the three file:line references above.
+- **Sibling commands:** this change touches no command file — the three files I edited are
+  `src/core/RackZoneInputs.cpp`, `include/RackZoneInputs.h` and
+  `tests/src/core/RackZoneRoutingTest.cpp` (this commit also adds this report), and none of them
+  registers or calls a control command. The sibling list the pre-submit check prints
+  (`app.*`, `arrangement.*`) comes from the branch-wide diff since the fix base, which contains
+  the train's other commits, not from this fix; no command id, argument schema or reversibility
+  class changed here.
 
 ## Other findings (not fixed here)
 - `src/core/SamplePlayHandle.cpp:754-758` divides by `converterRatio * sampleRateRatio * freqRatio`
