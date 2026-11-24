@@ -83,7 +83,10 @@ plus the four licence files. Not taken: LinkAudio, Link's tests and examples,
 `asio/ssl`, `asio/experimental`, `asio/ts`. **Every file is byte-identical to
 upstream**: `MANIFEST.tsv` records each file's git blob sha, which equals the
 blob `git ls-tree` reports at the pinned commit (the verify loop is in
-`README.lmms`). Local modifications: none.
+`README.lmms`). The deliberate local modifications are listed there and in
+`tests/upstream-modifications.txt` (the ESP32 port's error handling, and the asio
+`Context`'s stop from its own worker, new-p10-26); every other file is
+byte-identical.
 
 **The name.** In the interface the feature is called **Ableton Link**, in full,
 with its Enabled/Disabled state, as Ableton's Link guidelines (the PDF in the

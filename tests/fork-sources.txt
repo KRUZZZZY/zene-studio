@@ -2698,6 +2698,7 @@ tests/src/plugins/AuParameterHandoffTest.cpp
 tests/stem-availability-docs-gate.py
 tests/src/core/AafImportTest.cpp
 tests/src/core/AbletonLinkAllocatorTest.cpp
+tests/src/core/AbletonLinkContextStopTest.cpp
 tests/src/core/AbletonLinkInteropTest.cpp
 tests/src/core/AbletonLinkSessionTest.cpp
 tests/src/core/AbletonLinkWorkDispatcherTest.cpp

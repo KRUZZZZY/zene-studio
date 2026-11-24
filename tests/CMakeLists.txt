@@ -1835,6 +1835,10 @@ IF(LMMS_HAVE_ABLETON_LINK)
 		# specialisation (the header is asio's, so the test needs ableton_link's
 		# include directories and ASIO_STANDALONE definitions).
 		src/core/AbletonLinkWorkDispatcherTest.cpp
+		# Link's asio Context stopped from a handler running on its own worker
+		# (new-p10-26): no self-join, and the worker is still joined afterwards.
+		# It opens no socket, so it may run beside the other tests.
+		src/core/AbletonLinkContextStopTest.cpp
 	)
 ENDIF()
 
@@ -8671,6 +8675,9 @@ IF(LMMS_HAVE_ABLETON_LINK)
 	target_include_directories(AbletonLinkEsp32RunnerTest PRIVATE
 		"${CMAKE_CURRENT_SOURCE_DIR}/src/core/esp32-freertos-host")
 	target_link_libraries(AbletonLinkWorkDispatcherTest PRIVATE ableton_link)
+	# Context.hpp is Link's own header: the test needs ableton_link's include
+	# directories and ASIO_STANDALONE definitions, like the dispatcher test.
+	target_link_libraries(AbletonLinkContextStopTest PRIVATE ableton_link)
 ENDIF()
 # The browser.* group: BrowserCatalogTest drives libsndfile and the config
 # manager's working directory, ControlBrowserCommandsTest constructs a full
