@@ -120,7 +120,8 @@ public:
 
 	/*! The channel's worker: send @a buffer's period, take the return, and write the insert's output
 	 *  (the delayed dry signal and the return, by 'mix') back into @a buffer. Nothing while disabled or
-	 *  unprepared. No allocation, no lock. */
+	 *  unprepared. No allocation, no lock. A settings change that switches the insert on or off restarts
+	 *  the dry delay line here, so clearing its history stays on the thread that owns it. */
 	void process(SampleFrame* buffer, f_cnt_t frames, AudioEngine& engine) noexcept;
 
 	//! The render thread, after every worker: the period to send, or nullptr when none was produced
@@ -194,6 +195,11 @@ private:
 	std::size_t m_ringRead = 0;
 	std::size_t m_ringFill = 0;
 	LatencyCompensation m_dry;
+	/*! Set when the settings switch the insert on or off: the dry line must restart from silence. Only a flag
+	 *  is written here, because setSettings also runs on paths that hold no change lock (a deleted channel is
+	 *  cleared before Mixer::deleteChannel takes it, MixerView.cpp:781 -> Mixer::clearChannel). process() takes
+	 *  the flag and clears the line, so the ring and its cursor are written by one thread only. */
+	std::atomic<bool> m_dryRestart{false};
 	bool m_sent = false;
 	//! The ping's state and the figure it measured, in one word.
 	std::atomic<PingWord> m_ping{packPing(-1, PingState::Idle)};

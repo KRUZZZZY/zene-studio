@@ -153,6 +153,13 @@ void HardwareInsert::setSettings(const Settings& settings, f_cnt_t frames)
 		m_ringRead = 0;
 		m_ringFill = 0;
 	}
+	// Switched on or off: the dry signal's delay line must start from silence. A disabled insert is not
+	// processed, so nothing keeps the line's history moving, and prepare() only re-initialises it when the
+	// buffers grow: without a restart a re-enable at the same block size emitted the audio the line was still
+	// holding when the insert went off. The line's ring and cursor belong to the render thread, and this runs
+	// on paths without the change lock (a deleted channel is cleared before Mixer::deleteChannel takes it), so
+	// the request is only flagged here and process() clears the line before it next reads it.
+	if (settings.enabled != m_settings.enabled) { m_dryRestart.store(true, std::memory_order_release); }
 	const bool routeChanged = settings.send != m_settings.send || settings.ret != m_settings.ret;
 	const bool waitingAtAnotherRate = pingState() == PingState::Waiting && m_pingSampleRate != rate;
 	if (routeChanged || !settings.enabled || waitingAtAnotherRate) { movePingTo(PingState::Idle); }
@@ -220,6 +227,9 @@ void HardwareInsert::setMeasured(int measured) noexcept
 void HardwareInsert::process(SampleFrame* buffer, f_cnt_t frames, AudioEngine& engine) noexcept
 {
 	if (!m_settings.enabled || m_send.size() < static_cast<std::size_t>(frames)) { return; }
+	// The insert was switched on or off since the last period: start the dry line from silence, here, on the
+	// thread that owns its ring and cursor. Nothing is allocated, locked or logged.
+	if (m_dryRestart.exchange(false, std::memory_order_acq_rel)) { m_dry.reset(); }
 	const sample_rate_t rate = engine.outputSampleRate();
 	invalidateMeasurementForRate(rate);
 	PingWord word = pingWord();
