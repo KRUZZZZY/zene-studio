@@ -50,6 +50,17 @@ complexity, file-length all PASS). Log: `logs/gates-1.log`.
   already cover the pattern (EXIT 0 above).
 - Product code changed: none. Only this report is committed. Realtime, undo, control commands and registration are unaffected.
 - Git: no push, merge, rebase or stash was used. Only this report was staged, by explicit path.
+- Fails without the fix and passes with it: not applicable. This job changes no product code, so there is no fix to revert. The
+  guard `Qt5QStringListAssignCheck` reports "PASS (no bare QStringList brace assignments)" on HEAD (EXIT 0, `logs/test-2.log`).
+- Deterministic: the guard tests are static source scans plus a compile probe. They use no timing, sleeps or threads.
+- At the cause and complete: all nine assignments named in the original report are explicit `QStringList{...}` on HEAD (file:line listed above).
+  The fff searches for the same pattern across `tests/` found no further sibling.
+- No collateral damage: no files changed apart from this report, so project loading and other behaviour are unaffected.
+- ALREADY-FIXED evidence: `tests/src/core/ControllerScriptTest.cpp:139`, `tests/src/core/ExternalMidiDeviceTest.cpp:155`,
+  `tests/src/gui/ExternalDeviceCardTest.cpp:123` (and the other lines above). Fix commit `6474195bd6` is an ancestor of HEAD (EXIT 0).
+- Sibling commands (app.about, app.ask, app.help, ...): not affected. This job changes no command file. The check lists them
+  because of the branch's inherited diff against its base, not because of this job's change.
+- Completion check: `python3 .../submit_check.py <worktree> ci-48dcc062d04c645f-port` -> EXIT 0, `RESULT: PASS - submit` (`logs/submit-1.log`).
 
 Delegation: Haiku ran the `ctest -R Qt5QStringList` guard suite and `feature_check.py`, and reported their exit codes. I re-read both log tails myself before relying on them. I ran the verbose single-test rerun and the ancestry and line checks myself because they were one-liners. Sonnet and DeepSeek were not used because there was no code to write.
 
