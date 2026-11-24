@@ -7129,13 +7129,20 @@ endif()
 # `Base::template do_pop_any(...)` failed FilePool.cpp and Synth.cpp). GCC accepts
 # it, so the check scans every tracked C/C++ source and, on a compiler that
 # enforces the rule, also compiles the real atomic_queue header with both affected
-# queue templates instantiated. Its fixtures prove the scanner can fail.
+# queue templates instantiated. clang++ is passed as an additional compiler when
+# found, so the real-header Clang compile runs on GCC hosts too. Its fixtures
+# prove the scanner can fail.
 if(PYTHON3_EXECUTABLE)
+	find_program(ZENE_TEMPLATE_KW_CLANGXX NAMES clang++)
+	set(ZENE_TEMPLATE_KW_COMPILER_ARGS --compiler ${CMAKE_CXX_COMPILER})
+	if(ZENE_TEMPLATE_KW_CLANGXX AND NOT ZENE_TEMPLATE_KW_CLANGXX STREQUAL CMAKE_CXX_COMPILER)
+		list(APPEND ZENE_TEMPLATE_KW_COMPILER_ARGS --compiler ${ZENE_TEMPLATE_KW_CLANGXX})
+	endif()
 	add_test(NAME ClangTemplateKeywordCheck
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/clang-template-keyword-check.py
 			--root ${CMAKE_SOURCE_DIR}
-			--compiler ${CMAKE_CXX_COMPILER})
+			${ZENE_TEMPLATE_KW_COMPILER_ARGS})
 	set_tests_properties(ClangTemplateKeywordCheck PROPERTIES TIMEOUT 120)
 endif()
 
