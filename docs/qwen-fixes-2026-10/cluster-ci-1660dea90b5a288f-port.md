@@ -70,6 +70,22 @@ and Qt 6 and includes a negative control for the original error.
   original code, and `row-qt5-fixed` compiles on HEAD (guard-1.log).
 - Realtime, undo, commands, saved data: not touched. The diff is this report only.
 - Registration: no new or changed product files. The gates pass (gates-1.log).
+- Answers to the submit_check "?" items:
+  - Fails without the fix, passes with it: no product change was made, so there is nothing to revert. The guard
+    stands in for this. Its negative control `row-qt5-original` (the original `itemDelegateForIndex`, compiled
+    against real Qt 5 headers) fails as expected, and `row-qt5-fixed` (HEAD's source) compiles. Guard EXIT=0
+    (guard-1.log).
+  - Deterministic: the guard is a compile-only probe, and both tests are offscreen Qt widget tests that drive
+    `syncWithMixer()` directly. Neither uses sleeps or wall-clock timing.
+  - At the cause and complete: the fixes in f3b5426267 and 421f6f13ae are the only two Qt 5 errors in the
+    linux-x86_64 log of run 43786984969. A tree-wide fff search found no remaining `itemDelegateForIndex` outside
+    the guard's negative control.
+  - No collateral damage: this job changes only this report. No product code, saved-data format or limit is touched.
+  - ALREADY-FIXED evidence: `tests/src/gui/RowTableViewTest.cpp:54,57` and
+    `tests/src/gui/MixerSendsOnFadersTest.cpp:279-281`. The ancestry checks above show both fixes are on HEAD.
+  - Sibling commands (app.*, arrangement.*) and the listed control tests: they come from other work already merged
+    on this branch relative to the check's base, not from this job. This job changes no command file, so none of
+    them is affected.
 - Not verified locally: a full Qt 5 CMake build of the whole tree. The local build tree is Qt 6
   (`-DWANT_QT6=ON`). Qt 5 coverage comes from the guard's real-header compiles of the two affected test bodies.
 
