@@ -15,6 +15,7 @@
 #include <QThread>
 
 #include "MidiClient.h"
+#include "TimePos.h"
 
 #define private public
 #include "MidiSndio.h"
@@ -47,6 +48,16 @@ QSemaphore closed;
 mio_hdl* fakeHandle()
 {
 	return reinterpret_cast<mio_hdl*>(&fakeHandleStorage);
+}
+
+lmms::MidiEvent noteOn(unsigned char key = 0x3C)
+{
+	return lmms::MidiEvent(lmms::MidiNoteOn, 0, key, 0x7F);
+}
+
+lmms::MidiEvent noteOff(unsigned char key = 0x3C)
+{
+	return lmms::MidiEvent(lmms::MidiNoteOff, 0, key, 0);
 }
 
 void resetDevice(bool opens)
@@ -111,7 +122,7 @@ extern "C" int mio_revents(mio_hdl*, struct pollfd*)
 class TestMidiSndio final : public lmms::MidiSndio
 {
 public:
-	using lmms::MidiSndio::sendByte;
+	using lmms::MidiSndio::processOutEvent;
 };
 
 class MidiSndioTest : public QObject
@@ -130,7 +141,7 @@ private slots:
 	{
 		resetDevice(false);
 		TestMidiSndio midi;
-		midi.sendByte(0x90);
+		midi.processOutEvent(noteOn(), lmms::TimePos(), nullptr);
 		QCOMPARE(mioWriteCalls, 0);
 	}
 
@@ -140,23 +151,66 @@ private slots:
 	{
 		resetDevice(true);
 		TestMidiSndio midi;
-		midi.sendByte(0x90);
-		QVERIFY(bytesWritten.tryAcquire(1, 5000));
+		midi.processOutEvent(noteOn(), lmms::TimePos(), nullptr);
+		QVERIFY(bytesWritten.tryAcquire(3, 5000));
 		QVERIFY(writerThread != nullptr);
 		QVERIFY(writerThread != QThread::currentThread());
-		QCOMPARE(deviceBytes, QByteArray::fromHex("90"));
+		QCOMPARE(deviceBytes, QByteArray::fromHex("903C7F"));
 	}
 
-	//! Queuing must not reorder the MIDI stream: the device sees bytes in send order.
-	void queuedBytesReachTheDeviceInSendOrder()
+	//! Queuing must not reorder the MIDI stream: the device sees whole messages in send order.
+	void queuedMessagesReachTheDeviceInSendOrder()
 	{
 		resetDevice(true);
 		TestMidiSndio midi;
-		midi.sendByte(0x90);
-		midi.sendByte(0x3C);
-		midi.sendByte(0x7F);
-		QVERIFY(bytesWritten.tryAcquire(3, 5000));
-		QCOMPARE(deviceBytes, QByteArray::fromHex("903C7F"));
+		midi.processOutEvent(noteOn(), lmms::TimePos(), nullptr);
+		midi.processOutEvent(noteOff(), lmms::TimePos(), nullptr);
+		QVERIFY(bytesWritten.tryAcquire(6, 5000));
+		QCOMPARE(deviceBytes, QByteArray::fromHex("903C7F803C00"));
+	}
+
+	//! The output queue is bounded by whole events. When it is full, the next complete
+	//! event is refused and counted; no byte of it may reach the device. The writer is
+	//! held in its first device write, so the queue is deterministically saturated.
+	void fullOutputQueueRefusesWholeEventsAndCountsOverflow()
+	{
+		constexpr int QueueCapacity = 1024;
+		resetDevice(true);
+		stallWrites = 1;
+		auto midi = std::make_unique<TestMidiSndio>();
+		QVERIFY(midi->isRunning());
+
+		struct GateRelease
+		{
+			bool released = false;
+			~GateRelease()
+			{
+				if (!released) { writeGate.release(); }
+			}
+			void release()
+			{
+				released = true;
+				writeGate.release();
+			}
+		} gate;
+
+		midi->processOutEvent(noteOn(), lmms::TimePos(), nullptr);
+		QVERIFY(writeStarted.tryAcquire(1, 5000));
+		for (int i = 0; i < QueueCapacity; ++i)
+		{
+			midi->processOutEvent(noteOn(), lmms::TimePos(), nullptr);
+		}
+		QCOMPARE(static_cast<qulonglong>(midi->outputQueueOverflowCount()), 0ull);
+
+		const lmms::MidiEvent refused = noteOff(0x7F);
+		midi->processOutEvent(refused, lmms::TimePos(), nullptr);
+		QCOMPARE(static_cast<qulonglong>(midi->outputQueueOverflowCount()), 1ull);
+
+		gate.release();
+		const int expectedBytes = 3 * (QueueCapacity + 1);
+		QVERIFY(bytesWritten.tryAcquire(expectedBytes, 5000));
+		QCOMPARE(deviceBytes, QByteArray::fromHex("903C7F").repeated(QueueCapacity + 1));
+		QVERIFY(!deviceBytes.contains(QByteArray::fromHex("807F00")));
 	}
 
 	//! Ordinary teardown drains the queue: bytes still queued when teardown begins
@@ -176,10 +230,10 @@ private slots:
 		QThread* reader = midi.get();
 		QObject::connect(reader, &QThread::finished, this, [] { readerFinished.release(); },
 			Qt::DirectConnection);
-		midi->sendByte(0x90);
+		midi->processOutEvent(noteOn(), lmms::TimePos(), nullptr);
 		QVERIFY(writeStarted.tryAcquire(1, 5000));
-		midi->sendByte(0x3C);
-		midi->sendByte(0x7F);
+		midi->processOutEvent(noteOff(), lmms::TimePos(), nullptr);
+		midi->processOutEvent(noteOn(), lmms::TimePos(), nullptr);
 
 		// The client is destroyed on its own thread; this thread only waits on globals.
 		std::thread teardown([owned = std::move(midi)]() mutable { owned.reset(); });
@@ -191,7 +245,7 @@ private slots:
 		QVERIFY(teardownStarted);
 		QVERIFY(closed.tryAcquire(1, 5000));
 		QCOMPARE(closeCalls, 1);
-		QCOMPARE(closedBytes, QByteArray::fromHex("903C7F"));
+		QCOMPARE(closedBytes, QByteArray::fromHex("903C7F803C00903C7F"));
 	}
 
 	//! A device write that never returns must not hold teardown up, and the thread
@@ -204,16 +258,16 @@ private slots:
 		stallWrites = 1;
 		{
 			TestMidiSndio midi;
-			midi.sendByte(0x90);
+			midi.processOutEvent(noteOn(), lmms::TimePos(), nullptr);
 			QVERIFY(writeStarted.tryAcquire(1, 5000));
-			midi.sendByte(0x3C);
-			midi.sendByte(0x7F);
+			midi.processOutEvent(noteOff(), lmms::TimePos(), nullptr);
+			midi.processOutEvent(noteOn(), lmms::TimePos(), nullptr);
 		}
 		QCOMPARE(closeCalls, 0);
 		writeGate.release();
 		QVERIFY(closed.tryAcquire(1, 5000));
 		QCOMPARE(closeCalls, 1);
-		QCOMPARE(closedBytes, QByteArray::fromHex("903C7F"));
+		QCOMPARE(closedBytes, QByteArray::fromHex("903C7F803C00903C7F"));
 	}
 };
 

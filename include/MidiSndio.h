@@ -31,6 +31,8 @@
 #ifdef LMMS_HAVE_SNDIO
 
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <future>
 #include <memory>
 #include <thread>
@@ -38,6 +40,7 @@
 #include <QThread>
 
 #include "MidiClient.h"
+#include "MpscQueue.h"
 
 
 struct mio_hdl;
@@ -65,9 +68,15 @@ public:
 		return "MidiSndio";
 	}
 
+	/*! Whole output events refused because the bounded queue was full, or still
+	 *  undelivered when a stalled device was abandoned. A refused event is never
+	 *  partly written, so the MIDI stream cannot be cut in the middle of a message. */
+	std::uint64_t outputQueueOverflowCount() const noexcept override;
+
 
 protected:
 	void sendByte(const unsigned char c) override;
+	void processOutEvent(const MidiEvent& event, const TimePos& time, const MidiPort* port) override;
 	void run() override;
 
 private:
@@ -76,11 +85,12 @@ private:
 	//! after MidiSndio is gone if teardown has to abandon a stalled write.
 	static void runWriter(std::shared_ptr<OutputWriter> out);
 
+	//! Whole outgoing events that may wait for the writer. The audio path refuses
+	//! (and counts) an event when this is full instead of growing or waiting.
+	static constexpr std::size_t OutputQueueCapacity = 1024;
+
 	mio_hdl *m_hdl;
 	std::atomic<bool> m_quit;
-	//! Output queue between sendByte() and m_writer: [0] is read by the writer,
-	//! [1] is written by sendByte() without blocking. Closing [1] ends the queue.
-	int m_outPipe[2];
 	std::shared_ptr<OutputWriter> m_output;
 	std::thread m_writer;
 	std::future<void> m_writerDone;
