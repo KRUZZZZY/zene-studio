@@ -9785,7 +9785,7 @@ endif()
 
 # Reproduce strict hosted compiler contracts against this build's actual sources.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
-	foreach(mode linux nam darwin-signature darwin-tu render wav-write-error)
+	foreach(mode linux nam darwin-signature darwin-tu render wav-write-error midi-out-timing-no-alsa)
 		add_test(NAME Train41-${mode} COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/train-41-portability-check.py
 			--source-root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR}
