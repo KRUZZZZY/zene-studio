@@ -217,10 +217,10 @@ const ReversibilityRow kRoutingRows[] = {
 		"no write",
 		""),
 	R("patcher.set_wiring", RC::Snapshot, true,
-		"the wiring is a bounded recorded state - a list of edges plus one output node - and it is NOT "
-		"part of the chain's serialized <fxchain> form, so the chain's own XML carries no before-state "
-		"for it; and an EffectChain is a Model and a SerializingObject, not a JournallingObject, so no "
-		"live checkpoint exists",
+		"the wiring is a bounded recorded state - a list of edges plus one output node - that the "
+		"transaction records itself (the chain's <fxchain> form saves an authored wiring as <patchwiring> "
+		"for the project file, but no chain checkpoint is taken per edit); and an EffectChain is a Model "
+		"and a SerializingObject, not a JournallingObject, so no live checkpoint exists",
 		"bounded recorded state replayed by an INVERSE COMMAND: the transaction records the wiring in "
 		"force before the write (its edges, its output, and whether it was derived or authored) and the "
 		"recorded inverse is patcher.set_wiring again with it (`applies: command`, which control.undo "

@@ -98,13 +98,16 @@ graph those rows already cover); histogram moved with them
   graph by a command, and no verb sets a node's own parameters (the read *reports* them - a
   `GainNode`'s `gain`, a `OnePoleLowPassNode`'s `alpha`, a `ConstantSourceNode`'s `value` - because
   they are read generically through the node's own `saveSettings`).
-* **The wiring is session state.** There is no `<routinggraph>` element in `<fxchain>`: a patch
-  does not survive a save/load, exactly as the pre-existing re-wired session did not
-  (`docs/ROUTING-GRAPH-LIVE.md` §7).
+* **The wiring is saved; the node set is not.** An AUTHORED wiring is written into `<fxchain>` as
+  `<patchwiring output="effect:N"><edge from=".." fromport=".." to=".." toport=".."/>..</patchwiring>`
+  and restored by `EffectChain::loadSettings()` (cluster new-p11-64, `PatcherWiringPersistenceTest`).
+  A chain on its DERIVED wiring writes no element, so its saved form is unchanged, and a file without
+  the element (every older project) loads on the derivation. A malformed element is reported and
+  the chain falls back to its derivation.
 * **The rack's graph is not editable.** `Rack::rebuildRoutingGraph()` derives it from the rack's
   chain list and its chain selector; this group's target is a track's or a mixer channel's own
   effect chain. `routing.get_state` still reports the rack graph.
-* **The edit is not lock-free** (§2) and it is not saved into the project.
+* **The edit is not lock-free** (§2).
 * **Measured scope limit, unchanged from row 28:** a chain whose devices have audio-ports models
   keeps the plain effect loop (`src/core/EffectChainPatcher.cpp:121`), and the built-in devices
   this tree ships are `AudioPlugin`-derived, so a real track's chain graph is normally EMPTY and

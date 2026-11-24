@@ -55,6 +55,7 @@
 #include "PatchWiring.h"
 #include "RoutingChainNodes.h"
 #include "RoutingGraph.h"
+#include "Song.h"
 
 namespace lmms
 {
@@ -243,6 +244,20 @@ auto EffectChain::setPatchWiring(const PatchWiring& wiring, QString* error) -> b
 	if (applied) { return true; }
 	reportPatchWiringRefusal(hasGraph, error);
 	return false;
+}
+
+void EffectChain::loadPatchWiring(const QDomElement& chainElement)
+{
+	// Control thread, inside loadSettings()'s model-change guard; the wiring
+	// is applied by the rebuildRoutingGraph() that follows, which drops it (and
+	// sets patchDropped()) when the loaded effect list cannot take it.
+	QString error;
+	if (PatchWiring::loadXml(chainElement, &m_patch, &error)) { return; }
+	if (Song* song = Engine::getSong())
+	{
+		song->collectError(tr("Effect chain: the saved wiring could not be read (%1); the chain uses its "
+			"derived wiring.").arg(error));
+	}
 }
 
 } // namespace lmms

@@ -59,6 +59,9 @@
 
 #include "lmms_export.h"
 
+class QDomDocument;
+class QDomElement;
+
 namespace lmms
 {
 
@@ -150,6 +153,21 @@ public:
 	 * field of the command's arguments (@see setOutput).
 	 */
 	static auto fromJson(const QJsonArray& array, PatchWiring* wiring, QString* error) -> bool;
+
+	/**
+	 * Appends this wiring to @a parent (a chain's <fxchain> element) as
+	 * <patchwiring output=".."><edge from=".." fromport=".." to=".." toport=".."/>..</patchwiring>.
+	 * An EMPTY wiring - the derivation - writes nothing, so an unpatched
+	 * chain saves exactly what it saved before wiring was persisted.
+	 */
+	void saveXml(QDomDocument& doc, QDomElement& parent) const;
+	/**
+	 * Reads saveXml()'s <patchwiring> child of @a parent into @a wiring. No
+	 * such child (every file written before wiring was persisted) yields the
+	 * empty, derived wiring. @returns false and sets @a error (if given) when
+	 * the element is malformed; @a wiring is then the derived (empty) wiring.
+	 */
+	static auto loadXml(const QDomElement& parent, PatchWiring* wiring, QString* error) -> bool;
 
 private:
 	std::vector<PatchEdge> m_edges;
