@@ -26,6 +26,7 @@
 
 #include <QDataStream>
 #include <QDir>
+#include <QDomDocument>
 #include <QFile>
 #include <QFileInfo>
 
@@ -60,6 +61,7 @@ private slots:
 	void initTestCase();
 	void cleanupTestCase();
 	void testProcessesAudioThroughAudioBus();
+	void testASidechainChannelIsNotMixedIntoTheSecondOutput();
 	void testWrapperProcessingIsQuiescedDuringReprepare();
 	void testStateRoundTripThroughMmp();
 	void testParameterFallbackWithoutStateChunks();
@@ -202,6 +204,88 @@ void Vst3EffectIntegrationTest::testProcessesAudioThroughAudioBus()
 	}
 	qInfo("effect chain: input 0.5/-0.25, gain 0.5 -> measured out[0]=%.9f out[1]=%.9f",
 		storage[0][0], storage[0][1]);
+}
+
+/*! Cluster new-p8-263: the layout the finding reports, driven through the hosted VST3 path - a mono main
+ *  input bus, a side-chain bus starting at flattened channel 1, and two outputs. The two input channels
+ *  carry different samples and the mix is half dry, so the second output's value says whether the key
+ *  channel reached the dry side of the mix. Channel 1 is past the main input bus, so the mix must leave it
+ *  fully wet: the plug-in's own output and nothing else. A dry contribution from channel 1 would show up as
+ *  0.5 * key + 0.5 * wet, which the assertion below separates by 0.0625.
+ *
+ *  The SDK's test effect ("AGain Sample Accurate") declares one stereo port pair and no auxiliary input,
+ *  so the layout is reported through Vst3Effect::setBusLayoutForTest(); the plug-in call, the key remap in
+ *  processImpl() and the wet/dry mix are the effect's own code. */
+void Vst3EffectIntegrationTest::testASidechainChannelIsNotMixedIntoTheSecondOutput()
+{
+	constexpr f_cnt_t fpp = 48;
+	BufferManager::init(fpp);
+
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new Vst3Effect{&chain, &key};
+	chain.appendEffect(effect);
+	QVERIFY(!effect->isCorrupted());
+
+	auto* controls = dynamic_cast<Vst3EffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	auto* gain = controls->modelForParam(1); // id 1 is "Gain": the plug-in's output is gain * input
+	QVERIFY(gain != nullptr);
+	gain->setValue(0.5f);
+
+	// A half-dry mix, set through the effect's own saved attribute so both halves of the mix are nonzero.
+	QDomDocument settingsDoc;
+	auto settings = settingsDoc.createElement(QStringLiteral("effect"));
+	effect->saveGenericSettings(settingsDoc, settings);
+	settings.setAttribute(QStringLiteral("wet"), QStringLiteral("0.5"));
+	effect->loadSettings(settings);
+	QVERIFY2(std::abs(effect->wetLevel() - 0.5f) < 1e-6f,
+		qPrintable(QStringLiteral("wet level %1").arg(effect->wetLevel())));
+	QVERIFY2(std::abs(effect->dryLevel() - 0.5f) < 1e-6f,
+		qPrintable(QStringLiteral("dry level %1").arg(effect->dryLevel())));
+
+	// The reported layout: inputs = 1 main channel + 1 key channel, the key bus at flattened channel 1.
+	vst3::BusLayout layout;
+	layout.inputBusChannels = {1, 1};
+	layout.outputBusChannels = {2};
+	layout.inputs = 2;
+	layout.outputs = 2;
+	layout.hasSideChain = true;
+	layout.sideChainChannel = 1;
+	effect->setBusLayoutForTest(layout);
+
+	constexpr float mainSample = 0.5f;  // channel 0, the main input bus
+	constexpr float keySample = -0.25f; // channel 1, the side-chain: never an output's dry source
+	SampleFrame storage[fpp];
+	for (f_cnt_t f = 0; f < fpp; ++f)
+	{
+		storage[f][0] = mainSample;
+		storage[f][1] = keySample;
+	}
+	SampleFrame* busData[1] = {storage};
+	AudioBus bus{busData, 1, fpp};
+	QVERIFY(chain.processAudioBuffer(bus));
+
+	// Known results: the plug-in's output is 0.5 * input on each channel. Output 0 is inside the main bus,
+	// so it gets dry * main + wet * 0.5 * main. Output 1 is past the main bus and stays fully wet.
+	constexpr float plugInGain = 0.5f;
+	const auto wet0 = plugInGain * mainSample;
+	const auto wet1 = plugInGain * keySample;
+	const auto expected0 = 0.5f * mainSample + 0.5f * wet0; // 0.375
+	const auto withKeyAsDry1 = 0.5f * keySample + 0.5f * wet1; // -0.1875, what the bug would give
+	for (f_cnt_t f = 0; f < fpp; ++f)
+	{
+		QVERIFY2(std::abs(storage[f][0] - expected0) < 1e-6f,
+			qPrintable(QStringLiteral("frame %1: main output %2, expected %3")
+				.arg(f).arg(storage[f][0]).arg(expected0)));
+		QVERIFY2(std::abs(storage[f][1] - wet1) < 1e-6f,
+			qPrintable(QStringLiteral("frame %1: output 1 is %2, expected the wet value %3 - the "
+				"side-chain channel was mixed into it as dry audio (that would give %4)")
+				.arg(f).arg(storage[f][1]).arg(wet1).arg(withKeyAsDry1)));
+	}
+	qInfo("sidechain layout: main %.6f key %.6f, gain %.3f, wet 0.5 dry 0.5 -> out[0]=%.9f out[1]=%.9f "
+		"(a key-as-dry mix would give out[1]=%.9f)",
+		mainSample, keySample, plugInGain, storage[0][0], storage[0][1], withKeyAsDry1);
 }
 
 void Vst3EffectIntegrationTest::testWrapperProcessingIsQuiescedDuringReprepare()
