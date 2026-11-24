@@ -58,6 +58,18 @@ uses, with the same address, and adds an include.
 
 ## Self-check
 
+- Fails with the change reverted, passes with it: `git apply -R logs/fix.patch`, then the
+  Qt 5 make of the three targets gives EXIT=2 (qt5-4-red.log). `git apply logs/fix.patch`,
+  then the same make gives EXIT=0 (qt5-5-green.log). This build is the regression check for a
+  compile failure. No product file changed, so the reverted patch is the test-side fix itself.
+- Deterministic: a compile result depends only on the source and the Qt 5.15.19 headers. No
+  timing, sleeps or races are involved. The three runtime tests were not changed in behaviour.
+  They bind an ephemeral port (`0`) as before, and they passed on Qt 6 (qt6-8-ctest.log, 3/3).
+- ALREADY-FIXED / FALSE-POSITIVE: not applicable (verdict FIXED). The earlier cluster's
+  product fix (50f8ea2b46) is already present, as shown above, so this failure is new.
+- Sibling commands listed by the completion check (app.*, arrangement.*): not affected. This
+  commit changes no command file, only the three test sources, the registration list and this
+  report. Those commands come from other commits on the train branch.
 - Siblings: every `bind(QHostAddress::...)` call in the tree was searched (fff
   `bind(QHostAddress::`): ControlOscServerTest.cpp:113,145,154 and
   LinkAudioStreamTestSupport.h:358. Only the two calls with a literal `0` were ambiguous, and
