@@ -254,6 +254,15 @@ void VstEffectControlDialog::showEvent(QShowEvent *_se)
 
 VstEffectControlDialog::~VstEffectControlDialog()
 {
+	// Q050-367: the plug-in's editor is closed BEFORE its widget is detached and the VstPlugin behind it can go
+	// (VstPlugin::~VstPlugin deletes the widget). This dialog is where the legacy VST2 host embeds the plug-in's
+	// window, so a dialog torn down with the editor showing leaves that window attached to a widget whose plug-in
+	// is being destroyed. hasEditor() is false until the plug-in reported a window, so a plugin that failed to
+	// load, or one with no editor, is left alone.
+	if( m_plugin && m_plugin->hasEditor() )
+	{
+		m_plugin->hideUI();
+	}
 	if (m_pluginWidget && layout()) {
 		layout()->removeWidget(m_pluginWidget);
 		m_pluginWidget->setParent(nullptr);
